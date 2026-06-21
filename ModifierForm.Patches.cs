@@ -209,6 +209,10 @@ namespace AgainstRomeModifier {
                 });
                 chkFocusLoss.Checked = false;
                 chkToEng.Checked = false;
+                customUnitStats = null;
+                lblTroopPresetFile.Text = "屬性檔案：預設範本";
+                lblTroopPresetFile.ForeColor = Color.FromArgb(160, 165, 170);
+                LoadDefaultStatsData(); // 重新載入表格以呈現原版
                 Log(Loc.Get("LogRestoreAllDone"));
                 MessageBox.Show(Loc.Get("MsgRestoreAllSuccess"), Loc.Get("TitleTips"), MessageBoxButtons.OK, MessageBoxIcon.Information);
             } catch (Exception ex) {
@@ -232,6 +236,10 @@ namespace AgainstRomeModifier {
             try {
                 Log(Loc.Get("LogStartRestoreStats"));
                 await Task.Run(() => RestoreStatsOnlyInternal(gamePath));
+                customUnitStats = null;
+                lblTroopPresetFile.Text = "屬性檔案：預設範本";
+                lblTroopPresetFile.ForeColor = Color.FromArgb(160, 165, 170);
+                LoadDefaultStatsData(); // 重新載入表格以呈現原版
                 Log(Loc.Get("LogRestoreStatsDone"));
                 MessageBox.Show(Loc.Get("MsgRestoreStatsSuccess"), Loc.Get("TitleTips"), MessageBoxButtons.OK, MessageBoxIcon.Information);
             } catch (Exception ex) {
@@ -431,7 +439,21 @@ namespace AgainstRomeModifier {
             string lineEnding = decomp.Contains("\r\n") ? "\r\n" : "\n";
             string[] lines = decomp.Split(new string[] { lineEnding }, StringSplitOptions.None);
 
-            double spellRadiusMult = balanceChecked ? 2.5 : 1.0;
+            double gerMult = balanceChecked ? 2.5 : 1.0;
+            double kelMult = balanceChecked ? 2.5 : 1.0;
+            double hunMult = balanceChecked ? 2.5 : 1.0;
+
+            if (customUnitStats != null) {
+                if (customUnitStats.ContainsKey("FigGerPri00_Priester") && customUnitStats["FigGerPri00_Priester"].Length > 8) {
+                    gerMult = customUnitStats["FigGerPri00_Priester"][8] / 500.0;
+                }
+                if (customUnitStats.ContainsKey("FigKelPri00_Priester") && customUnitStats["FigKelPri00_Priester"].Length > 8) {
+                    kelMult = customUnitStats["FigKelPri00_Priester"][8] / 500.0;
+                }
+                if (customUnitStats.ContainsKey("FigHunPri00_Priester") && customUnitStats["FigHunPri00_Priester"].Length > 8) {
+                    hunMult = customUnitStats["FigHunPri00_Priester"][8] / 500.0;
+                }
+            }
             double civiSpeed = (double)civiSpeedVal;
 
             var newLines = new List<string>();
@@ -445,7 +467,12 @@ namespace AgainstRomeModifier {
                     string comment = match.Groups[4].Value;
                     double val;
                     if (double.TryParse(valStr, NumberStyles.Any, CultureInfo.InvariantCulture, out val)) {
-                        int newVal = (int)(val * spellRadiusMult);
+                        string volkClean = volk.Trim();
+                        double mult = 1.0;
+                        if (volkClean == "GER") mult = gerMult;
+                        else if (volkClean == "KEL") mult = kelMult;
+                        else if (volkClean == "HUN") mult = hunMult;
+                        int newVal = (int)(val * mult);
                         processedLine = string.Format("Radius     ={0}, {1}, {2,-10}{3}", volk, spell, newVal, comment);
                     }
                 }
@@ -661,7 +688,7 @@ namespace AgainstRomeModifier {
             byte[]? origBytes;
             if (!backupFiles.TryGetValue("SYSTEM/DATA_MP/DEFAULTS/objdef.dau", out origBytes)) return;
 
-            bool hasMod = balanceChecked;
+            bool hasMod = balanceChecked || (customUnitStats != null && customUnitStats.Count > 0);
 
             if (!hasMod) {
                 SafeWriteAllBytes(dest, origBytes!);
@@ -690,24 +717,6 @@ namespace AgainstRomeModifier {
                     string utype = meta.Item3;
                     string style = meta.Item4;
 
-                    double speedMult = balanceChecked ? 2.0 : 1.0;
-                    double sightMult = 1.0;
-                    double rangeMult = 1.0;
-                    double reloadMult = 1.0;
-                    if (utype == "priest") {
-                        sightMult = balanceChecked ? 30.0 : 1.0;
-                        rangeMult = balanceChecked ? 30.0 : 1.0;
-                    } else if (utype == "ranged_inf" || utype == "ranged_cav" || utype == "hybrid_inf") {
-                        sightMult = balanceChecked ? 3.0 : 1.0;
-                        rangeMult = balanceChecked ? 3.0 : 1.0;
-                        reloadMult = balanceChecked ? 1.5 : 1.0;
-                    } else if (utype == "siege") {
-                        sightMult = balanceChecked ? 3.0 : 1.0;
-                        rangeMult = balanceChecked ? 3.0 : 1.0;
-                    }
-
-                    bool isPriest = utype == "priest";
-
                     string origLine = originalLines[idx];
                     string[] origCols = ParseCsvLine(origLine);
                     for (int c = 0; c < origCols.Length; c++) origCols[c] = origCols[c].Trim();
@@ -721,9 +730,6 @@ namespace AgainstRomeModifier {
                     double origBmovs;
                     double.TryParse(origCols[(int)ObjdefIndex.Bmovs], NumberStyles.Any, CultureInfo.InvariantCulture, out origBmovs);
 
-                    double origSight;
-                    double.TryParse(origCols[(int)ObjdefIndex.Sirad], NumberStyles.Any, CultureInfo.InvariantCulture, out origSight);
-
                     double origHp;
                     double.TryParse(origCols[(int)ObjdefIndex.Hp], NumberStyles.Any, CultureInfo.InvariantCulture, out origHp);
 
@@ -733,70 +739,60 @@ namespace AgainstRomeModifier {
                     double origAw;
                     double.TryParse(origCols[(int)ObjdefIndex.Aw], NumberStyles.Any, CultureInfo.InvariantCulture, out origAw);
 
-                    var origActiveDams = new List<double>();
-                    bool isRangedClass = utype == "ranged_inf" || utype == "ranged_cav";
-                    for (int w = 1; w <= 8; w++) {
-                        int wAktiIdx = (int)ObjdefIndex.Weapon1Akti + (w - 1) * 8;
-                        int wDamIdx = (int)ObjdefIndex.Weapon1Dam + (w - 1) * 8;
-                        int wDtypIdx = (int)ObjdefIndex.Weapon1Dtyp + (w - 1);
-                        if (origCols[wAktiIdx] == "1") {
-                            string wDtyp = origCols[wDtypIdx];
-                            double wDam = double.Parse(origCols[wDamIdx], CultureInfo.InvariantCulture);
-                            if (isRangedClass) {
-                                if (wDtyp == "1" || wDtyp == "2" || wDtyp == "3" || wDtyp == "4") {
-                                    origActiveDams.Add(wDam);
-                                }
-                            } else {
-                                if (wDtyp == "0" || wDtyp == "6" || wDtyp == "8") {
-                                    origActiveDams.Add(wDam);
-                                }
-                            }
-                        }
+                    double meleeDam = 0, rangedDam = 0;
+                    GetMeleeAndRangedDmg(origCols, utype, out meleeDam, out rangedDam);
+                    double origPrimaryDam = (utype == "ranged_inf" || utype == "ranged_cav") ? rangedDam : meleeDam;
+                    if (utype == "siege") {
+                        origPrimaryDam = Math.Max(meleeDam, rangedDam);
                     }
 
-                    if (origActiveDams.Count == 0) {
-                        for (int w = 1; w <= 8; w++) {
-                            int wAktiIdx = (int)ObjdefIndex.Weapon1Akti + (w - 1) * 8;
-                            int wDamIdx = (int)ObjdefIndex.Weapon1Dam + (w - 1) * 8;
-                            if (origCols[wAktiIdx] == "1") {
-                                origActiveDams.Add(double.Parse(origCols[wDamIdx], CultureInfo.InvariantCulture));
-                            }
-                        }
+                    double[] bal = GetBaseStatsForUnit(name, origHp, origPrimaryDam, origVw, origAw, true);
+
+                    double baseHp = bal[0];
+                    double baseDmg = bal[1];
+                    double baseVw = bal[2];
+                    double baseAw = bal[3];
+
+                    bool isPriest = utype == "priest";
+
+                    double origRange = GetUnitMaxRange(origCols, utype);
+                    double origMeleeRelt = 0, origRangedRelt = 0;
+                    GetMeleeAndRangedRelt(origCols, utype, out origMeleeRelt, out origRangedRelt);
+                    double origPrimaryRelt = origMeleeRelt;
+                    if (utype == "ranged_inf" || utype == "ranged_cav") {
+                        origPrimaryRelt = origRangedRelt;
+                    } else if (utype == "siege") {
+                        origPrimaryRelt = Math.Max(origMeleeRelt, origRangedRelt);
                     }
 
-                    double origPrimaryDam = 1.0;
-                    if (origActiveDams.Count > 0) {
-                        double maxVal = origActiveDams[0];
-                        foreach (var d in origActiveDams) { if (d > maxVal) maxVal = d; }
-                        origPrimaryDam = maxVal;
+                    // 從 bal 陣列中讀取 9 大屬性的值 (bal 之前在 GetBaseStatsForUnit 已經載入)
+                    // bal = [HP, Dmg, VW, AW, Speed, Sight, Relt, Range, SpellRadius]
+                    double customSpeed = bal[4];
+                    double customSight = bal[5];
+                    double customRelt = bal[6];
+                    double customRange = bal[7];
+
+                    double speedMult = 1.0;
+                    if (origMoves > 0 && customSpeed > 0) {
+                        speedMult = customSpeed / (origMoves * 2.0);
                     }
 
-                    double baseHp = origHp;
-                    double baseVw = origVw;
-                    double baseAw = origAw;
-                    double baseDmg = origPrimaryDam;
+                    int newSight = (int)customSight;
 
-                    if (balanceChecked && !isPriest && utype != "siege") {
-                        double[] bal = TroopConfig.CalculateFactionBaseStats(name, faction, tier, utype);
-                        baseHp = bal[0];
-                        baseDmg = bal[1];
-                        baseVw = bal[2];
-                        baseAw = bal[3];
+                    double rangeMult = 1.0;
+                    if (origRange > 0 && customRange > 0) {
+                        rangeMult = customRange / origRange;
+                    }
+
+                    double reltScale = 1.0;
+                    if (origPrimaryRelt > 0 && customRelt > 0) {
+                        reltScale = customRelt / origPrimaryRelt;
                     }
 
                     int finalHp = (int)baseHp;
                     int finalVw = (int)baseVw;
-                    if (style == "shield") {
-                        finalVw = (int)Math.Round(finalVw * 1.3);
-                    }
                     int finalAw = (int)baseAw;
-                    if (style == "shield") {
-                        finalAw = (int)Math.Round(finalAw * 1.15);
-                    }
                     double finalDmg = baseDmg;
-                    if (style == "two_handed") {
-                        finalDmg = finalDmg * 1.3;
-                    }
 
                     var patchActions = new List<Tuple<int, string, string>>();
 
@@ -810,7 +806,6 @@ namespace AgainstRomeModifier {
                         patchActions.Add(Tuple.Create((int)ObjdefIndex.Bmovs, (origBmovs * speedMult).ToString("F2", CultureInfo.InvariantCulture), "移動速度"));
                     }
 
-                    int newSight = (int)(origSight * sightMult);
                     patchActions.Add(Tuple.Create((int)ObjdefIndex.Sirad, newSight.ToString(), "視野"));
 
                     if (isPriest) {
@@ -854,10 +849,7 @@ namespace AgainstRomeModifier {
                             }
                             patchActions.Add(Tuple.Create(damIdx, newDam.ToString("F2", CultureInfo.InvariantCulture), "傷害"));
 
-                            int newRelt = (int)(wRelt / reloadMult);
-                            if (style == "dual_wield") {
-                                newRelt = (int)(newRelt / 1.5);
-                            }
+                            int newRelt = (int)Math.Round(wRelt * reltScale);
                             patchActions.Add(Tuple.Create(reltIdx, newRelt.ToString(), "攻擊冷卻"));
                         }
                     }

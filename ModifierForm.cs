@@ -72,6 +72,9 @@ namespace AgainstRomeModifier {
         private ModernToggle chkNoSpellCost = null!;
         private ModernToggle chkFocusLoss = null!;
         private ModernToggle chkBalance = null!;
+        private Button btnTroopPreset = null!;
+        private Label lblTroopPresetFile = null!;
+        private Dictionary<string, double[]>? customUnitStats = null;
         private ModernToggle chkToEng = null!;
         private ModernToggle chkInfiniteMorale = null!;
 
@@ -367,7 +370,7 @@ namespace AgainstRomeModifier {
             lblMainTitle.MouseUp += TitleBar_MouseUp;
 
             Label lblVersion = new Label {
-                Text = "v19.1",
+                Text = "v20.0",
                 Location = new Point(310, 18),
                 Size = new Size(50, 18),
                 Font = fontConsolas85,
@@ -876,8 +879,28 @@ namespace AgainstRomeModifier {
             };
             chkBalance.CheckedChanged += new EventHandler(ChkBalance_CheckedChanged);
 
+            btnTroopPreset = new Button {
+                Text = "兵種屬性檔案",
+                Location = new Point(680, 14),
+                Size = new Size(130, 30),
+                Font = fontJhengHei95B
+            };
+            StyleButton(btnTroopPreset, Color.FromArgb(45, 45, 55), Color.FromArgb(0, 220, 255), Color.FromArgb(0, 220, 255));
+            btnTroopPreset.Click += new EventHandler(BtnTroopPreset_Click);
+
+            lblTroopPresetFile = new Label {
+                Text = "屬性檔案：預設範本",
+                Location = new Point(825, 18),
+                Size = new Size(350, 25),
+                Font = fontJhengHei9R,
+                ForeColor = Color.FromArgb(160, 165, 170),
+                BackColor = Color.Transparent
+            };
+
             pnlDefaultStatsTitle.Controls.Add(lblDefaultStatsTitle);
             pnlDefaultStatsTitle.Controls.Add(chkBalance);
+            pnlDefaultStatsTitle.Controls.Add(btnTroopPreset);
+            pnlDefaultStatsTitle.Controls.Add(lblTroopPresetFile);
 
             defaultStatsTabControl = new TabControl {
                 Location = new Point(0, 80),
@@ -1268,6 +1291,7 @@ namespace AgainstRomeModifier {
             btnLoadCurrent.Text = Loc.Get("LoadCurrent");
             btnRestore.Text = Loc.Get("Restore");
             btnApply.Text = Loc.Get("Apply");
+            btnTroopPreset.Text = Loc.Get("BtnTroopPreset");
             btnStartGame.Text = Loc.Get("StartGame");
 
             itemRestoreAll.Text = Loc.Get("RestoreAll");
@@ -1403,6 +1427,27 @@ namespace AgainstRomeModifier {
 
             docText = docText.Replace("\r\n", "\n").Replace("\n", "\r\n");
             txtDoc.Text = docText;
+        }
+
+        private void BtnTroopPreset_Click(object? sender, EventArgs e) {
+            using (var form = new TroopPresetForm(this, customUnitStats, unitIcons)) {
+                if (form.ShowDialog() == DialogResult.OK) {
+                    customUnitStats = form.CustomStats;
+                    LoadDefaultStatsData(); // 重新整理預設屬性表格
+                    Log("已套用自訂兵種屬性配置。");
+
+                    if (!string.IsNullOrEmpty(form.LoadedFileName)) {
+                        lblTroopPresetFile.Text = "屬性檔案：" + form.LoadedFileName;
+                        lblTroopPresetFile.ForeColor = Color.FromArgb(0, 220, 255); // 亮藍色表示有特定檔案
+                    } else if (customUnitStats != null && customUnitStats.Count > 0) {
+                        lblTroopPresetFile.Text = "屬性檔案：自訂配置 (手動)";
+                        lblTroopPresetFile.ForeColor = Color.FromArgb(200, 100, 255); // 紫色表示自訂手動修改
+                    } else {
+                        lblTroopPresetFile.Text = "屬性檔案：預設範本";
+                        lblTroopPresetFile.ForeColor = Color.FromArgb(160, 165, 170);
+                    }
+                }
+            }
         }
     }
 }

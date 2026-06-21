@@ -14,10 +14,12 @@
 2. Increase the population limit from 200 to 1600 for players and AI in Endless, Multiplayer, and Custom modes.
 3. Make all building construction and unit production completely free.
 4. Optimize and balance unit stats, movement speeds, spell casting range, and attack ranges for all factions.
+5. Enable players to fully customize all 9 attributes of all 43 units, supporting independent `.artroop` configuration file export/import and deep integration with global presets.
 
 ## Modification Mechanisms
 1. Utilize the built-in `ToEng` backup folder to overwrite the original game's system folder with the English text and graphics resources.
 2. Unpack or decompress configuration and map files (such as `team.dat`, `ress.ini`, `cl_script.ini`, `objdef.dau`, `apt.dat`), apply the modifications, re-compress, and restore the custom headers.
+3. Child form data flow: When user clicks Apply in the preset form, customized unit attributes are cached into `customUnitStats` and synchronized with the global preset `.arpreset` file under `[TroopStats]`. During active patching, the custom stats dynamically overwrite the 9 attributes of units in `objdef.dau` with backward compatibility support for older 4-stats configurations.
 
 ## Backup File Precautions
 * **Backup files are for extracting original data and comparing values only**.
@@ -96,3 +98,9 @@ To avoid the "applying change A reverts change B" issue, all standalone scripts 
 * **v17.0 - v17.1**: Implemented cache memory structures for `objdef.dau` and save files, drastically speeding up loading times. Resolved a population limit check bug.
 * **v18.0**: Redesigned UI with a symmetric layout and added the `ModernToggle` control. Implemented custom dark rendering for menus, dynamic coloring for attribute comparison, and stable unit sorting.
 * **v19.0 - v19.1**: Introduced strong-typed enums for CSV columns, added a thread-safe lock for logger files, and implemented parallel task processing for `team.dat` maps.
+* **v20.0 (Troop Stats File Customization & UI Tab Optimization)**:
+  - **Full 9 Stats Customization**: Supports customizing HP, Dmg, VW, AW, Speed, Sight, Relt, Range, and SpellRadius for all 43 units.
+  - **Independent File Storage (.artroop)**: Supports importing/exporting customized attributes as `.artroop` files.
+  - **Backward Preset Compatibility**: Global preset `.arpreset` INI format dynamically supports varying stats lengths. Legacy 4-stats configs are dynamically padded with original or balanced values in `GetBaseStatsForUnit` to prevent IndexOutOfRangeException crashes.
+  - **Child Form UI Optimization**: Enlarges the troop preset child form to 1250x790, introduces tab pages for Teutons, Celts, Huns, and Romans, controls column widths to eliminate horizontal scrollbars, and hides vertical scrollbars due to reduced row count (10-11 rows per tab).
+  - **Stats File Source Label**: Adds a status label (`lblTroopPresetFile`) on the main form, displaying the source of loaded troop statistics.

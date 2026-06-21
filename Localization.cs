@@ -95,6 +95,19 @@ namespace AgainstRomeModifier {
             }
         }
 
+        public static string GetFactionName(string faction) {
+            if (CurrentLanguage == Language.English) {
+                return faction;
+            }
+            switch (faction) {
+                case "Roman": return "羅馬";
+                case "Teuton": return "條頓";
+                case "Celt": return "塞爾特";
+                case "Hun": return "匈奴";
+                default: return faction;
+            }
+        }
+
         private static readonly Dictionary<string, string> EnUnitNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
             {"FigRomAnf00_Anfuehrer", "Roman Leader"},
             {"FigRomInf00_Lanze_Schild", "Roman Light Infantry"},
@@ -175,6 +188,7 @@ namespace AgainstRomeModifier {
             { "RestoreLang", "僅還原語系設定" },
             { "DefaultStatsTitle", "預設兵種屬性對比 (無自訂加成)" },
             { "EnableBalance", "啟用預設兵種屬性平衡與陣營特色" },
+            { "BtnTroopPreset", "兵種屬性檔案" },
             { "CurrentStatsTitle", "當前兵種數值 (原版與當前對比)" },
             { "GameSavesTitle", "遊戲中存檔列表" },
             { "BackupsTitle", "備份歷史列表" },
@@ -375,6 +389,7 @@ namespace AgainstRomeModifier {
             { "RestoreLang", "Restore Language Only" },
             { "DefaultStatsTitle", "Default Unit Stats Comparison (No Custom Buffs)" },
             { "EnableBalance", "Enable Default Unit Attribute Balance & Faction Traits" },
+            { "BtnTroopPreset", "Troop Stats Profile" },
             { "CurrentStatsTitle", "Current Unit Stats (Original vs. Current)" },
             { "GameSavesTitle", "In-Game Save List" },
             { "BackupsTitle", "Backup History List" },

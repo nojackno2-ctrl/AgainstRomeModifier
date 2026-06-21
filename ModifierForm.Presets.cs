@@ -1,13 +1,16 @@
 using System;
 using System.IO;
 using System.Text;
+using System.Linq;
+using System.Drawing;
 using System.Globalization;
 using System.Windows.Forms;
+using System.Collections.Generic;
 
 namespace AgainstRomeModifier {
     public partial class ModifierForm {
         /// <summary>
-        /// 當使用者點擊「匯出設定」時觸發，將當前 UI 上的數值與勾選狀態序列化為設定檔 (.arpreset)。
+        /// 當使用者點擊「匯出設定」時觸發，將當前 UI 上的數值與勾選狀態序列化為設定檔 (.arpreset)，並一併寫入自訂兵種屬性。
         /// </summary>
         private void BtnPresetSave_Click(object? sender, EventArgs e) {
             SaveFileDialog sfd = new SaveFileDialog {
@@ -31,6 +34,16 @@ namespace AgainstRomeModifier {
                 sb.AppendLine(string.Format("ToEng={0}", chkToEng.Checked));
                 sb.AppendLine(string.Format("InfiniteMorale={0}", chkInfiniteMorale.Checked));
 
+                // 如果當前有自訂兵種屬性設定，也一併寫入
+                if (customUnitStats != null && customUnitStats.Count > 0) {
+                    sb.AppendLine();
+                    sb.AppendLine("[TroopStats]");
+                    foreach (var kvp in customUnitStats) {
+                        string valStr = string.Join(",", kvp.Value.Select(x => x.ToString(CultureInfo.InvariantCulture)));
+                        sb.AppendLine(string.Format(CultureInfo.InvariantCulture, "{0}={1}", kvp.Key, valStr));
+                    }
+                }
+
                 File.WriteAllText(sfd.FileName, sb.ToString(), Encoding.UTF8);
                 Log("已匯出設定至: " + sfd.FileName);
             } catch (Exception ex) {
@@ -39,7 +52,7 @@ namespace AgainstRomeModifier {
         }
 
         /// <summary>
-        /// 當使用者點擊「匯入設定」時觸發，載入並反序列化設定檔 (.arpreset) 以套用數值至 UI 介面。
+        /// 當使用者點擊「匯入設定」時觸發，載入設定檔 (.arpreset) 以套用全域數值與自訂兵種屬性。
         /// </summary>
         private void BtnPresetLoad_Click(object? sender, EventArgs e) {
             OpenFileDialog ofd = new OpenFileDialog {
@@ -48,30 +61,59 @@ namespace AgainstRomeModifier {
             if (ofd.ShowDialog() != DialogResult.OK) return;
             try {
                 string[] lines = File.ReadAllLines(ofd.FileName, Encoding.UTF8);
+                string currentSection = "";
+                var tempCustomStats = new Dictionary<string, double[]>(StringComparer.OrdinalIgnoreCase);
 
                 foreach (string line in lines) {
-                    if (line.Trim().StartsWith("[") && line.Trim().EndsWith("]")) continue;
-                    if (!line.Contains("=")) continue;
-                    string[] kv = line.Split(new char[] { '=' }, 2);
+                    string l = line.Trim();
+                    if (l.StartsWith("[") && l.EndsWith("]")) {
+                        currentSection = l.Substring(1, l.Length - 2).Trim();
+                        continue;
+                    }
+                    if (!l.Contains("=")) continue;
+                    string[] kv = l.Split(new char[] { '=' }, 2);
                     string k = kv[0].Trim();
                     string v = kv[1].Trim();
 
                     try {
-                        if (k == "Version") continue;
-                        else if (k == "PopLimit") { var lv = decimal.Parse(v, CultureInfo.InvariantCulture); numPopLimit.Value = lv < numPopLimit.Minimum ? numPopLimit.Minimum : (lv > numPopLimit.Maximum ? numPopLimit.Maximum : lv); }
-
-                        else if (k == "CiviSpeed") { var cv = decimal.Parse(v, CultureInfo.InvariantCulture); numCiviSpeed.Value = cv < numCiviSpeed.Minimum ? numCiviSpeed.Minimum : (cv > numCiviSpeed.Maximum ? numCiviSpeed.Maximum : cv); }
-                        else if (k == "FreeProd") chkFreeProd.Checked = bool.Parse(v);
-                        else if (k == "FreeUpgrade") chkFreeUpgrade.Checked = bool.Parse(v);
-                        else if (k == "NoSpellCost") chkNoSpellCost.Checked = bool.Parse(v);
-                        else if (k == "FocusLoss") chkFocusLoss.Checked = bool.Parse(v);
-                        else if (k == "Balance") chkBalance.Checked = bool.Parse(v);
-                        else if (k == "ToEng") chkToEng.Checked = bool.Parse(v);
-                        else if (k == "InfiniteMorale") chkInfiniteMorale.Checked = bool.Parse(v);
+                        if (currentSection.Equals("Settings", StringComparison.OrdinalIgnoreCase) || string.IsNullOrEmpty(currentSection)) {
+                            if (k == "Version") continue;
+                            else if (k == "PopLimit") { var lv = decimal.Parse(v, CultureInfo.InvariantCulture); numPopLimit.Value = lv < numPopLimit.Minimum ? numPopLimit.Minimum : (lv > numPopLimit.Maximum ? numPopLimit.Maximum : lv); }
+                            else if (k == "CiviSpeed") { var cv = decimal.Parse(v, CultureInfo.InvariantCulture); numCiviSpeed.Value = cv < numCiviSpeed.Minimum ? numCiviSpeed.Minimum : (cv > numCiviSpeed.Maximum ? numCiviSpeed.Maximum : cv); }
+                            else if (k == "FreeProd") chkFreeProd.Checked = bool.Parse(v);
+                            else if (k == "FreeUpgrade") chkFreeUpgrade.Checked = bool.Parse(v);
+                            else if (k == "NoSpellCost") chkNoSpellCost.Checked = bool.Parse(v);
+                            else if (k == "FocusLoss") chkFocusLoss.Checked = bool.Parse(v);
+                            else if (k == "Balance") chkBalance.Checked = bool.Parse(v);
+                            else if (k == "ToEng") chkToEng.Checked = bool.Parse(v);
+                            else if (k == "InfiniteMorale") chkInfiniteMorale.Checked = bool.Parse(v);
+                        } else if (currentSection.Equals("TroopStats", StringComparison.OrdinalIgnoreCase)) {
+                            string[] vals = v.Split(',');
+                            if (vals.Length >= 4) {
+                                double[] stats = new double[vals.Length];
+                                for (int i = 0; i < vals.Length; i++) {
+                                    stats[i] = double.Parse(vals[i].Trim(), CultureInfo.InvariantCulture);
+                                }
+                                tempCustomStats[k] = stats;
+                            }
+                        }
                     } catch (Exception parseEx) {
                         Log(string.Format("解析設定欄位 {0}={1} 失敗: {2}", k, v, parseEx.Message));
                     }
                 }
+
+                // 如果讀取到自訂兵種屬性，則更新並重載預設屬性表格
+                if (tempCustomStats.Count > 0) {
+                    customUnitStats = tempCustomStats;
+                    lblTroopPresetFile.Text = "屬性檔案：設定檔載入 (" + Path.GetFileName(ofd.FileName) + ")";
+                    lblTroopPresetFile.ForeColor = Color.FromArgb(0, 220, 255);
+                } else {
+                    customUnitStats = null;
+                    lblTroopPresetFile.Text = "屬性檔案：預設範本";
+                    lblTroopPresetFile.ForeColor = Color.FromArgb(160, 165, 170);
+                }
+
+                LoadDefaultStatsData();
 
                 Log("已匯入設定自: " + ofd.FileName);
             } catch (Exception ex) {
