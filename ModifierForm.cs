@@ -19,6 +19,9 @@ namespace AgainstRomeModifier {
         [DllImport("Gdi32.dll", EntryPoint = "CreateRoundRectRgn")]
         private static extern IntPtr CreateRoundRectRgn(int nLeftRect, int nTopRect, int nRightRect, int nBottomRect, int nWidthEllipse, int nHeightEllipse);
 
+        [DllImport("gdi32.dll", EntryPoint = "DeleteObject")]
+        private static extern bool DeleteObject(IntPtr hObject);
+
         // 標題列與控制按鈕
         private Panel pnlTitleBar = null!;
         private Label lblMainTitle = null!;
@@ -75,6 +78,8 @@ namespace AgainstRomeModifier {
         private Button btnTroopPreset = null!;
         private Label lblTroopPresetFile = null!;
         private Dictionary<string, double[]>? customUnitStats = null;
+        private string presetFileSourceType = "default";
+        private string presetFileName = "";
         private ModernToggle chkToEng = null!;
         private ModernToggle chkInfiniteMorale = null!;
 
@@ -336,7 +341,9 @@ namespace AgainstRomeModifier {
 
             // 表單 Load 事件：使用 Win32 API 建立圓角裁剪區域
             this.Load += (s, e) => {
-                this.Region = Region.FromHrgn(CreateRoundRectRgn(0, 0, Width, Height, 15, 15));
+                IntPtr ptr = CreateRoundRectRgn(0, 0, Width, Height, 15, 15);
+                this.Region = Region.FromHrgn(ptr);
+                DeleteObject(ptr);
             };
 
             // 表單 Paint 事件：動態繪製霓虹青色外框線
@@ -889,7 +896,7 @@ namespace AgainstRomeModifier {
             btnTroopPreset.Click += new EventHandler(BtnTroopPreset_Click);
 
             lblTroopPresetFile = new Label {
-                Text = "屬性檔案：預設範本",
+                Text = Loc.Get("TroopPresetDefault"),
                 Location = new Point(825, 18),
                 Size = new Size(350, 25),
                 Font = fontJhengHei9R,
@@ -1339,6 +1346,7 @@ namespace AgainstRomeModifier {
                 LoadCurrentData(false);
                 RefreshSavesAndBackups();
             }
+            UpdateTroopPresetLabel();
         }
 
         /// <summary>
@@ -1393,6 +1401,45 @@ namespace AgainstRomeModifier {
             if (dgvBackups.Columns.Contains("Folder")) dgvBackups.Columns["Folder"].HeaderText = Loc.Get("HeaderOrigFolder");
         }
 
+        private void UpdateTroopPresetLabel() {
+            if (lblTroopPresetFile == null) return;
+            if (presetFileSourceType == "manual") {
+                lblTroopPresetFile.Text = Loc.Get("TroopPresetManual");
+                lblTroopPresetFile.ForeColor = Color.FromArgb(200, 100, 255);
+            } else if (presetFileSourceType == "file") {
+                lblTroopPresetFile.Text = string.Format(Loc.Get("TroopPresetFile"), presetFileName);
+                lblTroopPresetFile.ForeColor = Color.FromArgb(0, 220, 255);
+            } else if (presetFileSourceType == "preset") {
+                lblTroopPresetFile.Text = string.Format(Loc.Get("TroopPresetLoaded"), presetFileName);
+                lblTroopPresetFile.ForeColor = Color.FromArgb(0, 220, 255);
+            } else {
+                lblTroopPresetFile.Text = Loc.Get("TroopPresetDefault");
+                lblTroopPresetFile.ForeColor = Color.FromArgb(160, 165, 170);
+            }
+        }
+ 
+        private void BtnTroopPreset_Click(object? sender, EventArgs e) {
+            using (var form = new TroopPresetForm(this, customUnitStats, unitIcons)) {
+                if (form.ShowDialog() == DialogResult.OK) {
+                    customUnitStats = form.CustomStats;
+                    LoadDefaultStatsData(); // 重新整理預設屬性表格
+                    Log("已套用自訂兵種屬性配置。");
+ 
+                    if (!string.IsNullOrEmpty(form.LoadedFileName)) {
+                        presetFileSourceType = "file";
+                        presetFileName = form.LoadedFileName;
+                    } else if (customUnitStats != null && customUnitStats.Count > 0) {
+                        presetFileSourceType = "manual";
+                        presetFileName = "";
+                    } else {
+                        presetFileSourceType = "default";
+                        presetFileName = "";
+                    }
+                    UpdateTroopPresetLabel();
+                }
+            }
+        }
+
         /// <summary>
         /// 重新載入技術文件內容
         /// </summary>
@@ -1429,7 +1476,7 @@ namespace AgainstRomeModifier {
             txtDoc.Text = docText;
         }
 
-        private void BtnTroopPreset_Click(object? sender, EventArgs e) {
+        private void Obsolete_BtnTroopPreset_Click(object? sender, EventArgs e) {
             using (var form = new TroopPresetForm(this, customUnitStats, unitIcons)) {
                 if (form.ShowDialog() == DialogResult.OK) {
                     customUnitStats = form.CustomStats;

@@ -210,8 +210,9 @@ namespace AgainstRomeModifier {
                 chkFocusLoss.Checked = false;
                 chkToEng.Checked = false;
                 customUnitStats = null;
-                lblTroopPresetFile.Text = "屬性檔案：預設範本";
-                lblTroopPresetFile.ForeColor = Color.FromArgb(160, 165, 170);
+                presetFileSourceType = "default";
+                presetFileName = "";
+                UpdateTroopPresetLabel();
                 LoadDefaultStatsData(); // 重新載入表格以呈現原版
                 Log(Loc.Get("LogRestoreAllDone"));
                 MessageBox.Show(Loc.Get("MsgRestoreAllSuccess"), Loc.Get("TitleTips"), MessageBoxButtons.OK, MessageBoxIcon.Information);
@@ -237,8 +238,9 @@ namespace AgainstRomeModifier {
                 Log(Loc.Get("LogStartRestoreStats"));
                 await Task.Run(() => RestoreStatsOnlyInternal(gamePath));
                 customUnitStats = null;
-                lblTroopPresetFile.Text = "屬性檔案：預設範本";
-                lblTroopPresetFile.ForeColor = Color.FromArgb(160, 165, 170);
+                presetFileSourceType = "default";
+                presetFileName = "";
+                UpdateTroopPresetLabel();
                 LoadDefaultStatsData(); // 重新載入表格以呈現原版
                 Log(Loc.Get("LogRestoreStatsDone"));
                 MessageBox.Show(Loc.Get("MsgRestoreStatsSuccess"), Loc.Get("TitleTips"), MessageBoxButtons.OK, MessageBoxIcon.Information);

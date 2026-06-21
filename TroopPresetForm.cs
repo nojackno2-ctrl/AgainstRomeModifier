@@ -14,6 +14,9 @@ namespace AgainstRomeModifier {
         [DllImport("Gdi32.dll", EntryPoint = "CreateRoundRectRgn")]
         private static extern IntPtr CreateRoundRectRgn(int nLeftRect, int nTopRect, int nRightRect, int nBottomRect, int nWidthEllipse, int nHeightEllipse);
 
+        [DllImport("gdi32.dll", EntryPoint = "DeleteObject")]
+        private static extern bool DeleteObject(IntPtr hObject);
+
         private ModifierForm mainForm;
         private Dictionary<string, Bitmap> unitIcons;
         
@@ -61,6 +64,7 @@ namespace AgainstRomeModifier {
         }
 
         private void InitializeComponent() {
+            bool isEn = Loc.CurrentLanguage == Language.English;
             this.Size = new Size(1250, 790); // 擴大寬度與高度以顯示 9 個屬性欄位且不要出現水平拉桿
             this.FormBorderStyle = FormBorderStyle.None;
             this.StartPosition = FormStartPosition.CenterParent;
@@ -71,6 +75,7 @@ namespace AgainstRomeModifier {
             // 設置圓角
             IntPtr ptr = CreateRoundRectRgn(0, 0, this.Width, this.Height, 15, 15);
             this.Region = Region.FromHrgn(ptr);
+            DeleteObject(ptr);
 
             // 1. 標題列
             pnlTitleBar = new Panel {
@@ -83,9 +88,11 @@ namespace AgainstRomeModifier {
             pnlTitleBar.MouseUp += TitleBar_MouseUp;
 
             lblTitle = new Label {
-                Text = "🛡️  Against Rome 兵種自訂屬性設定檔案 (9 大屬性全面開放)",
+                Text = isEn 
+                    ? "🛡️  Against Rome Troop Custom Preset Profile (9 Stats Mode)" 
+                    : "🛡️  Against Rome 兵種自訂屬性設定檔案 (9 大屬性全面開放)",
                 Location = new Point(20, 13),
-                Size = new Size(500, 25),
+                Size = new Size(600, 25),
                 Font = fontJhengHei10B,
                 ForeColor = Color.FromArgb(0, 220, 255),
                 BackColor = Color.Transparent
@@ -114,9 +121,9 @@ namespace AgainstRomeModifier {
 
             // 2. 範本選擇
             lblTemplate = new Label {
-                Text = "選擇預設屬性範本:",
+                Text = isEn ? "Select Preset Template:" : "選擇預設屬性範本:",
                 Location = new Point(20, 68),
-                Size = new Size(130, 25),
+                Size = isEn ? new Size(185, 25) : new Size(130, 25),
                 Font = fontJhengHei95B,
                 ForeColor = Color.FromArgb(200, 205, 210),
                 BackColor = Color.Transparent
@@ -124,7 +131,7 @@ namespace AgainstRomeModifier {
             this.Controls.Add(lblTemplate);
 
             cbTemplate = new ComboBox {
-                Location = new Point(160, 65),
+                Location = isEn ? new Point(215, 65) : new Point(160, 65),
                 Size = new Size(200, 28),
                 DropDownStyle = ComboBoxStyle.DropDownList,
                 BackColor = Color.FromArgb(32, 32, 40),
@@ -132,7 +139,9 @@ namespace AgainstRomeModifier {
                 Font = fontJhengHei95B,
                 FlatStyle = FlatStyle.Flat
             };
-            cbTemplate.Items.AddRange(new string[] { "(請選擇範本)", "官方原版數值", "修改器內建平衡" });
+            cbTemplate.Items.AddRange(isEn 
+                ? new string[] { "(Select Template)", "Original Base Stats", "Balanced Base Stats" }
+                : new string[] { "(請選擇範本)", "官方原版數值", "修改器內建平衡" });
             cbTemplate.SelectedIndex = 0;
             cbTemplate.SelectedIndexChanged += CbTemplate_SelectedIndexChanged;
             this.Controls.Add(cbTemplate);
@@ -145,7 +154,9 @@ namespace AgainstRomeModifier {
             };
 
             string[] factions = { "Teuton", "Celt", "Hun", "Roman" };
-            string[] factionTexts = { "條頓 Teutons", "塞爾特 Celts", "匈奴 Huns", "羅馬 Romans" };
+            string[] factionTexts = isEn 
+                ? new string[] { "Teutons", "Celts", "Huns", "Romans" }
+                : new string[] { "條頓 Teutons", "塞爾特 Celts", "匈奴 Huns", "羅馬 Romans" };
 
             for (int i = 0; i < factions.Length; i++) {
                 string facKey = factions[i];
@@ -165,19 +176,19 @@ namespace AgainstRomeModifier {
             this.Controls.Add(tabFaction);
 
             // 4. 按鈕
-            btnImport = new Button { Text = "載入屬性檔 (匯入)", Location = new Point(20, 730), Size = new Size(160, 36) };
+            btnImport = new Button { Text = isEn ? "Load Stats File (Import)" : "載入屬性檔 (匯入)", Location = new Point(20, 730), Size = isEn ? new Size(180, 36) : new Size(160, 36) };
             StyleButton(btnImport, Color.FromArgb(45, 45, 55), Color.FromArgb(240, 240, 240), Color.FromArgb(0, 220, 255));
             btnImport.Click += BtnImport_Click;
 
-            btnExport = new Button { Text = "儲存屬性檔 (匯出)", Location = new Point(195, 730), Size = new Size(160, 36) };
+            btnExport = new Button { Text = isEn ? "Save Stats File (Export)" : "儲存屬性檔 (匯出)", Location = isEn ? new Point(215, 730) : new Point(195, 730), Size = isEn ? new Size(180, 36) : new Size(160, 36) };
             StyleButton(btnExport, Color.FromArgb(45, 45, 55), Color.FromArgb(240, 240, 240), Color.FromArgb(180, 100, 255));
             btnExport.Click += BtnExport_Click;
 
-            btnApply = new Button { Text = "確定套用", Location = new Point(950, 730), Size = new Size(130, 36) };
+            btnApply = new Button { Text = isEn ? "Apply" : "確定套用", Location = new Point(950, 730), Size = new Size(130, 36) };
             StyleButton(btnApply, Color.FromArgb(98, 0, 238), Color.White, Color.FromArgb(180, 100, 255));
             btnApply.Click += BtnApply_Click;
 
-            btnCancel = new Button { Text = "取消", Location = new Point(1100, 730), Size = new Size(130, 36) };
+            btnCancel = new Button { Text = isEn ? "Cancel" : "取消", Location = new Point(1100, 730), Size = new Size(130, 36) };
             StyleButton(btnCancel, Color.FromArgb(45, 45, 55), Color.FromArgb(200, 200, 200), Color.FromArgb(255, 75, 75));
             btnCancel.Click += (s, e) => this.Close();
 
@@ -188,6 +199,7 @@ namespace AgainstRomeModifier {
         }
 
         private DataGridView CreateGrid() {
+            bool isEn = Loc.CurrentLanguage == Language.English;
             var dgv = new DataGridView {
                 Dock = DockStyle.Fill,
                 AllowUserToAddRows = false,
@@ -201,7 +213,7 @@ namespace AgainstRomeModifier {
                 RowTemplate = { Height = 42 },
                 SelectionMode = DataGridViewSelectionMode.CellSelect,
                 MultiSelect = false,
-                ScrollBars = ScrollBars.Vertical // 只允許垂直拉桿，且因為行數少，Windows 預設會自動隱藏！徹底避免水平拉桿。
+                ScrollBars = ScrollBars.Vertical
             };
 
             dgv.ColumnHeadersDefaultCellStyle.BackColor = Color.FromArgb(32, 32, 40);
@@ -221,53 +233,53 @@ namespace AgainstRomeModifier {
 
             var imgCol = new DataGridViewImageColumn {
                 Name = "Icon",
-                HeaderText = "圖示",
+                HeaderText = isEn ? "Icon" : "圖示",
                 ImageLayout = DataGridViewImageCellLayout.Zoom,
                 Width = 50,
                 ReadOnly = true
             };
             dgv.Columns.Add(imgCol);
 
-            dgv.Columns.Add("Key", "兵種代碼");
+            dgv.Columns.Add("Key", isEn ? "Unit Key" : "兵種代碼");
             dgv.Columns["Key"].Visible = false;
 
-            dgv.Columns.Add("Name", "兵種名稱");
+            dgv.Columns.Add("Name", Loc.Get("HeaderName"));
             dgv.Columns["Name"].Width = 140;
             dgv.Columns["Name"].ReadOnly = true;
 
-            dgv.Columns.Add("Faction", "陣營");
+            dgv.Columns.Add("Faction", isEn ? "Faction" : "陣營");
             dgv.Columns["Faction"].Visible = false;
             dgv.Columns["Faction"].ReadOnly = true;
 
-            dgv.Columns.Add("Tier", "階級");
+            dgv.Columns.Add("Tier", Loc.Get("HeaderTier"));
             dgv.Columns["Tier"].Width = 80;
             dgv.Columns["Tier"].ReadOnly = true;
 
-            dgv.Columns.Add("Hp", "生命值");
+            dgv.Columns.Add("Hp", Loc.Get("HeaderHp"));
             dgv.Columns["Hp"].Width = 90;
 
-            dgv.Columns.Add("Dmg", "傷害");
+            dgv.Columns.Add("Dmg", isEn ? "Damage" : "傷害");
             dgv.Columns["Dmg"].Width = 90;
 
-            dgv.Columns.Add("VW", "防禦力");
+            dgv.Columns.Add("VW", Loc.Get("HeaderVw"));
             dgv.Columns["VW"].Width = 90;
 
-            dgv.Columns.Add("AW", "戰鬥力");
+            dgv.Columns.Add("AW", Loc.Get("HeaderAw"));
             dgv.Columns["AW"].Width = 90;
 
-            dgv.Columns.Add("Speed", "移動速度");
+            dgv.Columns.Add("Speed", Loc.Get("HeaderSpeed"));
             dgv.Columns["Speed"].Width = 95;
 
-            dgv.Columns.Add("Sight", "視野");
+            dgv.Columns.Add("Sight", Loc.Get("HeaderSight"));
             dgv.Columns["Sight"].Width = 90;
 
-            dgv.Columns.Add("Relt", "攻擊冷卻");
+            dgv.Columns.Add("Relt", isEn ? "Cooldown" : "攻擊冷卻");
             dgv.Columns["Relt"].Width = 95;
 
-            dgv.Columns.Add("Range", "最大射程");
+            dgv.Columns.Add("Range", isEn ? "Max Range" : "最大射程");
             dgv.Columns["Range"].Width = 100;
 
-            dgv.Columns.Add("SpellRadius", "法術半徑");
+            dgv.Columns.Add("SpellRadius", Loc.Get("HeaderSpellRadius"));
             dgv.Columns["SpellRadius"].Width = 95;
 
             return dgv;
@@ -345,15 +357,15 @@ namespace AgainstRomeModifier {
                     spellRadius = stats.Length > 8 ? stats[8] : 0;
                 } else {
                     var stats = mainForm.GetDefaultBalancedStats(key);
-                    hp = stats[0];
-                    dmg = stats[1];
-                    vw = stats[2];
-                    aw = stats[3];
-                    speed = stats[4];
-                    sight = stats[5];
-                    relt = stats[6];
-                    range = stats[7];
-                    spellRadius = stats[8];
+                    hp = stats.Length > 0 ? stats[0] : 0;
+                    dmg = stats.Length > 1 ? stats[1] : 0;
+                    vw = stats.Length > 2 ? stats[2] : 0;
+                    aw = stats.Length > 3 ? stats[3] : 0;
+                    speed = stats.Length > 4 ? stats[4] : 0;
+                    sight = stats.Length > 5 ? stats[5] : 0;
+                    relt = stats.Length > 6 ? stats[6] : 0;
+                    range = stats.Length > 7 ? stats[7] : 0;
+                    spellRadius = stats.Length > 8 ? stats[8] : 0;
                 }
 
                 if (factionGrids.ContainsKey(faction)) {
@@ -380,39 +392,52 @@ namespace AgainstRomeModifier {
         private void CbTemplate_SelectedIndexChanged(object? sender, EventArgs e) {
             int index = cbTemplate.SelectedIndex;
             if (index == 0) return;
+ 
+            bool isEn = Loc.CurrentLanguage == Language.English;
+            string text = "";
+            if (isEn) {
+                text = index == 1 
+                    ? "Are you sure you want to apply the 'Original Base Stats' template? This will overwrite your current changes!" 
+                    : "Are you sure you want to apply the 'Balanced Base Stats' template? This will overwrite your current changes!";
+            } else {
+                text = index == 1 
+                    ? "確定要套用「官方原版數值」範本嗎？這將覆蓋目前表格中的編輯！" 
+                    : "確定要套用「修改器內建平衡」範本嗎？這將覆蓋目前表格中的編輯！";
+            }
+            string title = isEn ? "Confirm Template Overwrite" : "確認範本覆蓋";
 
-            string text = index == 1 ? "確定要套用「官方原版數值」範本嗎？這將覆蓋目前表格中的編輯！" : "確定要套用「修改器內建平衡」範本嗎？這將覆蓋目前表格中的編輯！";
-            if (MessageBox.Show(text, "確認範本覆蓋", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) {
+            if (MessageBox.Show(text, title, MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) {
                 cbTemplate.SelectedIndex = 0;
                 return;
             }
-
+ 
             foreach (var dgv in factionGrids.Values) {
                 for (int i = 0; i < dgv.Rows.Count; i++) {
                     string key = dgv.Rows[i].Cells["Key"].Value?.ToString() ?? "";
                     if (string.IsNullOrEmpty(key)) continue;
-
+ 
                     double[] stats = index == 1 ? mainForm.GetOriginalStats(key) : mainForm.GetDefaultBalancedStats(key);
-                    dgv.Rows[i].Cells["Hp"].Value = Math.Round(stats[0]).ToString();
-                    dgv.Rows[i].Cells["Dmg"].Value = stats[1].ToString("F1", CultureInfo.InvariantCulture);
-                    dgv.Rows[i].Cells["VW"].Value = Math.Round(stats[2]).ToString();
-                    dgv.Rows[i].Cells["AW"].Value = Math.Round(stats[3]).ToString();
-                    dgv.Rows[i].Cells["Speed"].Value = stats[4].ToString("F1", CultureInfo.InvariantCulture);
-                    dgv.Rows[i].Cells["Sight"].Value = Math.Round(stats[5]).ToString();
-                    dgv.Rows[i].Cells["Relt"].Value = Math.Round(stats[6]).ToString();
-                    dgv.Rows[i].Cells["Range"].Value = Math.Round(stats[7]).ToString();
-                    dgv.Rows[i].Cells["SpellRadius"].Value = Math.Round(stats[8]).ToString();
+                    dgv.Rows[i].Cells["Hp"].Value = stats.Length > 0 ? Math.Round(stats[0]).ToString() : "0";
+                    dgv.Rows[i].Cells["Dmg"].Value = stats.Length > 1 ? stats[1].ToString("F1", CultureInfo.InvariantCulture) : "0.0";
+                    dgv.Rows[i].Cells["VW"].Value = stats.Length > 2 ? Math.Round(stats[2]).ToString() : "0";
+                    dgv.Rows[i].Cells["AW"].Value = stats.Length > 3 ? Math.Round(stats[3]).ToString() : "0";
+                    dgv.Rows[i].Cells["Speed"].Value = stats.Length > 4 ? stats[4].ToString("F1", CultureInfo.InvariantCulture) : "0.0";
+                    dgv.Rows[i].Cells["Sight"].Value = stats.Length > 5 ? Math.Round(stats[5]).ToString() : "0";
+                    dgv.Rows[i].Cells["Relt"].Value = stats.Length > 6 ? Math.Round(stats[6]).ToString() : "0";
+                    dgv.Rows[i].Cells["Range"].Value = stats.Length > 7 ? Math.Round(stats[7]).ToString() : "0";
+                    dgv.Rows[i].Cells["SpellRadius"].Value = stats.Length > 8 ? Math.Round(stats[8]).ToString() : "0";
                 }
             }
-
+ 
             cbTemplate.SelectedIndex = 0;
         }
 
         // 載入自訂檔案 (匯入)
         private void BtnImport_Click(object? sender, EventArgs e) {
+            bool isEn = Loc.CurrentLanguage == Language.English;
             OpenFileDialog ofd = new OpenFileDialog {
-                Filter = "兵種自訂屬性檔 (*.artroop)|*.artroop",
-                Title = "匯入自訂兵種屬性"
+                Filter = isEn ? "Troop Preset Files (*.artroop)|*.artroop" : "兵種自訂屬性檔 (*.artroop)|*.artroop",
+                Title = isEn ? "Import Custom Troop Stats" : "匯入自訂兵種屬性"
             };
             if (ofd.ShowDialog() != DialogResult.OK) return;
             this.LoadedFileName = Path.GetFileName(ofd.FileName);
@@ -436,28 +461,25 @@ namespace AgainstRomeModifier {
                         double vw = double.Parse(vals[2].Trim(), CultureInfo.InvariantCulture);
                         double aw = double.Parse(vals[3].Trim(), CultureInfo.InvariantCulture);
                         
-                        // 支援相容讀取舊版 4 欄位或新版 9 欄位
                         double speed = vals.Length > 4 ? double.Parse(vals[4].Trim(), CultureInfo.InvariantCulture) : 0;
                         double sight = vals.Length > 5 ? double.Parse(vals[5].Trim(), CultureInfo.InvariantCulture) : 0;
                         double relt = vals.Length > 6 ? double.Parse(vals[6].Trim(), CultureInfo.InvariantCulture) : 0;
                         double range = vals.Length > 7 ? double.Parse(vals[7].Trim(), CultureInfo.InvariantCulture) : 0;
                         double spellRadius = vals.Length > 8 ? double.Parse(vals[8].Trim(), CultureInfo.InvariantCulture) : 0;
 
-                        // 若為舊版屬性沒有配置剩餘欄位，匯入時會自動取內建平衡值
                         if (vals.Length < 9) {
                             double[] defStats = mainForm.GetDefaultBalancedStats(key);
-                            if (vals.Length <= 4) speed = defStats[4];
-                            if (vals.Length <= 5) sight = defStats[5];
-                            if (vals.Length <= 6) relt = defStats[6];
-                            if (vals.Length <= 7) range = defStats[7];
-                            if (vals.Length <= 8) spellRadius = defStats[8];
+                            if (vals.Length <= 4) speed = defStats.Length > 4 ? defStats[4] : 0;
+                            if (vals.Length <= 5) sight = defStats.Length > 5 ? defStats[5] : 0;
+                            if (vals.Length <= 6) relt = defStats.Length > 6 ? defStats[6] : 0;
+                            if (vals.Length <= 7) range = defStats.Length > 7 ? defStats[7] : 0;
+                            if (vals.Length <= 8) spellRadius = defStats.Length > 8 ? defStats[8] : 0;
                         }
 
                         loadedStats[key] = new double[] { hp, dmg, vw, aw, speed, sight, relt, range, spellRadius };
                     }
                 }
 
-                // 填入 各個 DataGridView
                 foreach (var dgv in factionGrids.Values) {
                     for (int i = 0; i < dgv.Rows.Count; i++) {
                         string key = dgv.Rows[i].Cells["Key"].Value?.ToString() ?? "";
@@ -476,9 +498,9 @@ namespace AgainstRomeModifier {
                     }
                 }
 
-                MessageBox.Show("自訂兵種屬性匯入成功！", "匯入完成", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show(isEn ? "Custom troop stats successfully imported!" : "自訂兵種屬性匯入成功！", isEn ? "Import Completed" : "匯入完成", MessageBoxButtons.OK, MessageBoxIcon.Information);
             } catch (Exception ex) {
-                MessageBox.Show("匯入屬性檔案失敗: " + ex.Message, "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show((isEn ? "Failed to import stats file: " : "匯入屬性檔案失敗: ") + ex.Message, isEn ? "Error" : "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
@@ -486,11 +508,12 @@ namespace AgainstRomeModifier {
         private void BtnExport_Click(object? sender, EventArgs e) {
             if (!ValidateGridInputs()) return;
 
+            bool isEn = Loc.CurrentLanguage == Language.English;
             SaveFileDialog sfd = new SaveFileDialog {
-                Filter = "兵種自訂屬性檔 (*.artroop)|*.artroop",
+                Filter = isEn ? "Troop Preset Files (*.artroop)|*.artroop" : "兵種自訂屬性檔 (*.artroop)|*.artroop",
                 DefaultExt = "artroop",
                 FileName = "custom_troop_preset",
-                Title = "匯出自訂兵種屬性"
+                Title = isEn ? "Export Custom Troop Stats" : "匯出自訂兵種屬性"
             };
             if (sfd.ShowDialog() != DialogResult.OK) return;
             this.LoadedFileName = Path.GetFileName(sfd.FileName);
@@ -521,9 +544,9 @@ namespace AgainstRomeModifier {
                 }
 
                 File.WriteAllText(sfd.FileName, sb.ToString(), Encoding.UTF8);
-                MessageBox.Show("自訂兵種屬性匯出成功！", "匯出完成", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show(isEn ? "Custom troop stats successfully exported!" : "自訂兵種屬性匯出成功！", isEn ? "Export Completed" : "匯出完成", MessageBoxButtons.OK, MessageBoxIcon.Information);
             } catch (Exception ex) {
-                MessageBox.Show("匯出屬性檔案失敗: " + ex.Message, "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show((isEn ? "Failed to export stats file: " : "匯出屬性檔案失敗: ") + ex.Message, isEn ? "Error" : "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
@@ -557,11 +580,15 @@ namespace AgainstRomeModifier {
 
         // 完整的 9 欄位輸入驗證與防呆
         private bool ValidateGridInputs() {
+            bool isEn = Loc.CurrentLanguage == Language.English;
+            string errTitle = isEn ? "Input Error" : "輸入錯誤";
+            string unknownUnit = isEn ? "Unknown Unit" : "未知兵種";
+
             foreach (var dgv in factionGrids.Values) {
                 dgv.EndEdit();
-
+ 
                 for (int i = 0; i < dgv.Rows.Count; i++) {
-                    string unitName = dgv.Rows[i].Cells["Name"].Value?.ToString() ?? "未知兵種";
+                    string unitName = dgv.Rows[i].Cells["Name"].Value?.ToString() ?? unknownUnit;
                     
                     string hpVal = dgv.Rows[i].Cells["Hp"].Value?.ToString() ?? "";
                     string dmgVal = dgv.Rows[i].Cells["Dmg"].Value?.ToString() ?? "";
@@ -572,51 +599,78 @@ namespace AgainstRomeModifier {
                     string reltVal = dgv.Rows[i].Cells["Relt"].Value?.ToString() ?? "";
                     string rangeVal = dgv.Rows[i].Cells["Range"].Value?.ToString() ?? "";
                     string spellRadiusVal = dgv.Rows[i].Cells["SpellRadius"].Value?.ToString() ?? "";
-
+ 
                     double val;
-
+ 
                     if (!double.TryParse(hpVal, NumberStyles.Any, CultureInfo.InvariantCulture, out val) || val <= 0) {
-                        MessageBox.Show(string.Format("【{0}】的生命值 (HP) 必須是有效且大於 0 的數值！", unitName), "輸入錯誤", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        string msg = isEn 
+                            ? string.Format("HP value of 【{0}】 must be a valid number greater than 0!", unitName)
+                            : string.Format("【{0}】的生命值 (HP) 必須是有效且大於 0 的數值！", unitName);
+                        MessageBox.Show(msg, errTitle, MessageBoxButtons.OK, MessageBoxIcon.Warning);
                         return false;
                     }
-
+ 
                     if (!double.TryParse(dmgVal, NumberStyles.Any, CultureInfo.InvariantCulture, out val) || val < 0) {
-                        MessageBox.Show(string.Format("【{0}】的傷害 (Dmg) 必須是有效且大於等於 0 的數值！", unitName), "輸入錯誤", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        string msg = isEn 
+                            ? string.Format("Damage (Dmg) of 【{0}】 must be a valid number greater than or equal to 0!", unitName)
+                            : string.Format("【{0}】的傷害 (Dmg) 必須是有效且大於等於 0 的數值！", unitName);
+                        MessageBox.Show(msg, errTitle, MessageBoxButtons.OK, MessageBoxIcon.Warning);
                         return false;
                     }
-
+ 
                     if (!double.TryParse(vwVal, NumberStyles.Any, CultureInfo.InvariantCulture, out val) || val < 0) {
-                        MessageBox.Show(string.Format("【{0}】的防禦力 (VW) 必須是有效且大於等於 0 的數值！", unitName), "輸入錯誤", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        string msg = isEn 
+                            ? string.Format("Defense (VW) of 【{0}】 must be a valid number greater than or equal to 0!", unitName)
+                            : string.Format("【{0}】的防禦力 (VW) 必須是有效且大於等於 0 的數值！", unitName);
+                        MessageBox.Show(msg, errTitle, MessageBoxButtons.OK, MessageBoxIcon.Warning);
                         return false;
                     }
-
+ 
                     if (!double.TryParse(awVal, NumberStyles.Any, CultureInfo.InvariantCulture, out val) || val < 0) {
-                        MessageBox.Show(string.Format("【{0}】的戰鬥力 (AW) 必須是有效且大於等於 0 的數值！", unitName), "輸入錯誤", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        string msg = isEn 
+                            ? string.Format("Combat (AW) of 【{0}】 must be a valid number greater than or equal to 0!", unitName)
+                            : string.Format("【{0}】的戰鬥力 (AW) 必須是有效且大於等於 0 的數值！", unitName);
+                        MessageBox.Show(msg, errTitle, MessageBoxButtons.OK, MessageBoxIcon.Warning);
                         return false;
                     }
-
+ 
                     if (!double.TryParse(speedVal, NumberStyles.Any, CultureInfo.InvariantCulture, out val) || val < 0) {
-                        MessageBox.Show(string.Format("【{0}】的移動速度 必須是有效且大於等於 0 的數值！", unitName), "輸入錯誤", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        string msg = isEn 
+                            ? string.Format("Speed of 【{0}】 must be a valid number greater than or equal to 0!", unitName)
+                            : string.Format("【{0}】的移動速度 必須是有效且大於等於 0 的數值！", unitName);
+                        MessageBox.Show(msg, errTitle, MessageBoxButtons.OK, MessageBoxIcon.Warning);
                         return false;
                     }
-
+ 
                     if (!double.TryParse(sightVal, NumberStyles.Any, CultureInfo.InvariantCulture, out val) || val < 0) {
-                        MessageBox.Show(string.Format("【{0}】的視野 必須是有效且大於等於 0 的數值！", unitName), "輸入錯誤", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        string msg = isEn 
+                            ? string.Format("Sight of 【{0}】 must be a valid number greater than or equal to 0!", unitName)
+                            : string.Format("【{0}】的視野 必須是有效且大於等於 0 的數值！", unitName);
+                        MessageBox.Show(msg, errTitle, MessageBoxButtons.OK, MessageBoxIcon.Warning);
                         return false;
                     }
-
+ 
                     if (!double.TryParse(reltVal, NumberStyles.Any, CultureInfo.InvariantCulture, out val) || val < 0) {
-                        MessageBox.Show(string.Format("【{0}】的攻擊冷卻 必須是有效且大於等於 0 的數值！", unitName), "輸入錯誤", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        string msg = isEn 
+                            ? string.Format("Cooldown of 【{0}】 must be a valid number greater than or equal to 0!", unitName)
+                            : string.Format("【{0}】的攻擊冷卻 必須是有效且大於等於 0 的數值！", unitName);
+                        MessageBox.Show(msg, errTitle, MessageBoxButtons.OK, MessageBoxIcon.Warning);
                         return false;
                     }
 
                     if (!double.TryParse(rangeVal, NumberStyles.Any, CultureInfo.InvariantCulture, out val) || val < 0) {
-                        MessageBox.Show(string.Format("【{0}】的最大射程/施法距離 必須是有效且大於等於 0 的數值！", unitName), "輸入錯誤", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        string msg = isEn 
+                            ? string.Format("Max Range of 【{0}】 must be a valid number greater than or equal to 0!", unitName)
+                            : string.Format("【{0}】的最大射程/施法距離 必須是有效且大於等於 0 的數值！", unitName);
+                        MessageBox.Show(msg, errTitle, MessageBoxButtons.OK, MessageBoxIcon.Warning);
                         return false;
                     }
 
                     if (!double.TryParse(spellRadiusVal, NumberStyles.Any, CultureInfo.InvariantCulture, out val) || val < 0) {
-                        MessageBox.Show(string.Format("【{0}】的法術半徑 必須是有效且大於等於 0 的數值！", unitName), "輸入錯誤", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        string msg = isEn 
+                            ? string.Format("Spell Radius of 【{0}】 must be a valid number greater than or equal to 0!", unitName)
+                            : string.Format("【{0}】的法術半徑 必須是有效且大於等於 0 的數值！", unitName);
+                        MessageBox.Show(msg, errTitle, MessageBoxButtons.OK, MessageBoxIcon.Warning);
                         return false;
                     }
                 }

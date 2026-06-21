@@ -105,13 +105,14 @@ namespace AgainstRomeModifier {
                 // 如果讀取到自訂兵種屬性，則更新並重載預設屬性表格
                 if (tempCustomStats.Count > 0) {
                     customUnitStats = tempCustomStats;
-                    lblTroopPresetFile.Text = "屬性檔案：設定檔載入 (" + Path.GetFileName(ofd.FileName) + ")";
-                    lblTroopPresetFile.ForeColor = Color.FromArgb(0, 220, 255);
+                    presetFileSourceType = "preset";
+                    presetFileName = Path.GetFileName(ofd.FileName);
                 } else {
                     customUnitStats = null;
-                    lblTroopPresetFile.Text = "屬性檔案：預設範本";
-                    lblTroopPresetFile.ForeColor = Color.FromArgb(160, 165, 170);
+                    presetFileSourceType = "default";
+                    presetFileName = "";
                 }
+                UpdateTroopPresetLabel();
 
                 LoadDefaultStatsData();
 

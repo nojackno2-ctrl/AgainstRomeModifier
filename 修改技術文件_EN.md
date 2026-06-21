@@ -104,3 +104,8 @@ To avoid the "applying change A reverts change B" issue, all standalone scripts 
   - **Backward Preset Compatibility**: Global preset `.arpreset` INI format dynamically supports varying stats lengths. Legacy 4-stats configs are dynamically padded with original or balanced values in `GetBaseStatsForUnit` to prevent IndexOutOfRangeException crashes.
   - **Child Form UI Optimization**: Enlarges the troop preset child form to 1250x790, introduces tab pages for Teutons, Celts, Huns, and Romans, controls column widths to eliminate horizontal scrollbars, and hides vertical scrollbars due to reduced row count (10-11 rows per tab).
   - **Stats File Source Label**: Adds a status label (`lblTroopPresetFile`) on the main form, displaying the source of loaded troop statistics.
+
+* **v20.1 (Fix GDI Memory Leak, Array Bounds Safety, and Main Grid Scrollbar Elimination)**:
+  - **Resolved GDI Handle Leaks**: Fixed missing cleanup for the unmanaged handle created by Win32 API `CreateRoundRectRgn` in `TroopPresetForm.cs` and `ModifierForm.cs`. Added `DeleteObject` and called it immediately after `Region.FromHrgn(ptr)` to prevent GDI resource depletion over time.
+  - **Defensive Array Length Validation**: Added array length safety checks (`stats.Length > X`) when loading balanced stats templates or parsing imported `.artroop` files to ensure they won't throw `IndexOutOfRangeException` in case of incomplete stat inputs.
+  - **Main Form Grid Scrollbar Elimination**: Hid redundant informational columns (`Type`, `Style`, and `Tier`) on the default and current unit stats grids. Optimized remaining column widths to fit within 1085px, and set `ScrollBars` to `ScrollBars.Vertical` to completely eliminate horizontal scrollbars.

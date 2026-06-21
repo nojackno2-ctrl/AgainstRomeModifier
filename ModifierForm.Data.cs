@@ -337,7 +337,8 @@ namespace AgainstRomeModifier {
                 RowTemplate = { Height = 46 },
                 SelectionMode = DataGridViewSelectionMode.FullRowSelect,
                 MultiSelect = false,
-                ReadOnly = true
+                ReadOnly = true,
+                ScrollBars = ScrollBars.Vertical
             };
 
             dgv.ColumnHeadersDefaultCellStyle.BackColor = Color.FromArgb(32, 32, 40);
@@ -355,58 +356,57 @@ namespace AgainstRomeModifier {
 
             dgv.AlternatingRowsDefaultCellStyle.BackColor = Color.FromArgb(28, 28, 35);
             dgv.Columns.Add("Name", "兵種名稱");
-            dgv.Columns["Name"].Width = 130;
+            dgv.Columns["Name"].Width = 110;
 
             var imgColC = new DataGridViewImageColumn {
                 Name = "Icon",
                 HeaderText = "圖示",
                 ImageLayout = DataGridViewImageCellLayout.Zoom,
-                Width = 55
+                Width = 40
             };
             dgv.Columns.Add(imgColC);
 
             dgv.Columns.Add("Type", "部隊類型");
-            dgv.Columns["Type"].Width = 90;
+            dgv.Columns["Type"].Visible = false;
 
             dgv.Columns.Add("Style", "裝備分類");
-            dgv.Columns["Style"].Width = 90;
+            dgv.Columns["Style"].Visible = false;
 
             dgv.Columns.Add("Hp", "生命值對比");
-            dgv.Columns["Hp"].Width = 105;
+            dgv.Columns["Hp"].Width = 85;
 
             dgv.Columns.Add("MeleeDmg", "近戰傷害對比");
-            dgv.Columns["MeleeDmg"].Width = 105;
+            dgv.Columns["MeleeDmg"].Width = 85;
 
             dgv.Columns.Add("RangedDmg", "遠程傷害對比");
-            dgv.Columns["RangedDmg"].Width = 105;
+            dgv.Columns["RangedDmg"].Width = 85;
 
             dgv.Columns.Add("MeleeRelt", "近戰冷卻對比");
-            dgv.Columns["MeleeRelt"].Width = 105;
+            dgv.Columns["MeleeRelt"].Width = 85;
 
             dgv.Columns.Add("RangedRelt", "遠程冷卻對比");
-            dgv.Columns["RangedRelt"].Width = 105;
+            dgv.Columns["RangedRelt"].Width = 85;
 
             dgv.Columns.Add("Vw", "防禦對比");
-            dgv.Columns["Vw"].Width = 105;
+            dgv.Columns["Vw"].Width = 85;
 
             dgv.Columns.Add("Aw", "戰鬥對比");
-            dgv.Columns["Aw"].Width = 105;
+            dgv.Columns["Aw"].Width = 85;
 
             dgv.Columns.Add("Speed", "移動速度對比");
-            dgv.Columns["Speed"].Width = 105;
+            dgv.Columns["Speed"].Width = 85;
 
             dgv.Columns.Add("Sight", "視野對比");
-            dgv.Columns["Sight"].Width = 105;
+            dgv.Columns["Sight"].Width = 85;
 
             dgv.Columns.Add("Range", "射程對比");
-            dgv.Columns["Range"].Width = 105;
+            dgv.Columns["Range"].Width = 85;
 
             dgv.Columns.Add("SpellRadius", "法術半徑對比");
-            dgv.Columns["SpellRadius"].Width = 105;
+            dgv.Columns["SpellRadius"].Width = 85;
 
             dgv.Columns.Add("Tier", "階級");
-            dgv.Columns["Tier"].Width = 75;
-            dgv.Columns["Tier"].DisplayIndex = 4;
+            dgv.Columns["Tier"].Visible = false;
 
             dgv.CellFormatting += (s, e) => {
                 if (e.Value != null) {
@@ -452,7 +452,8 @@ namespace AgainstRomeModifier {
                 RowTemplate = { Height = 46 },
                 SelectionMode = DataGridViewSelectionMode.FullRowSelect,
                 MultiSelect = false,
-                ReadOnly = true
+                ReadOnly = true,
+                ScrollBars = ScrollBars.Vertical
             };
 
             dgv.ColumnHeadersDefaultCellStyle.BackColor = Color.FromArgb(32, 32, 40);
@@ -471,33 +472,33 @@ namespace AgainstRomeModifier {
             dgv.AlternatingRowsDefaultCellStyle.BackColor = Color.FromArgb(28, 28, 35);
 
             dgv.Columns.Add("Name", "兵種名稱");
-            dgv.Columns["Name"].Width = 135;
+            dgv.Columns["Name"].Width = 110;
 
             var imgColD = new DataGridViewImageColumn {
                 Name = "Icon",
                 HeaderText = "圖示",
                 ImageLayout = DataGridViewImageCellLayout.Zoom,
-                Width = 55
+                Width = 40
             };
             dgv.Columns.Add(imgColD);
 
             dgv.Columns.Add("Type", "部隊類型");
-            dgv.Columns["Type"].Width = 95;
+            dgv.Columns["Type"].Visible = false;
 
             dgv.Columns.Add("Style", "裝備分類");
-            dgv.Columns["Style"].Width = 95;
+            dgv.Columns["Style"].Visible = false;
 
             dgv.Columns.Add("Hp", "生命值");
-            dgv.Columns["Hp"].Width = 80;
+            dgv.Columns["Hp"].Width = 85;
 
             dgv.Columns.Add("MeleeDmg", "近戰傷害");
-            dgv.Columns["MeleeDmg"].Width = 90;
+            dgv.Columns["MeleeDmg"].Width = 85;
 
             dgv.Columns.Add("RangedDmg", "遠程傷害");
-            dgv.Columns["RangedDmg"].Width = 90;
+            dgv.Columns["RangedDmg"].Width = 85;
 
             dgv.Columns.Add("MeleeRelt", "近戰冷卻");
-            dgv.Columns["MeleeRelt"].Width = 90;
+            dgv.Columns["MeleeRelt"].Width = 85;
 
             dgv.Columns.Add("RangedRelt", "遠程冷卻");
             dgv.Columns["RangedRelt"].Width = 90;
