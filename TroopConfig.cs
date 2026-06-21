@@ -55,7 +55,10 @@ namespace AgainstRomeModifier {
         FigPriestSpellCostEnd = 28,
         // objres 攻城武器建造費
         FigSiegeBuildCostStart = 1,
-        FigSiegeBuildCostEnd = 7
+        FigSiegeBuildCostEnd = 7,
+        // volkres 單位升級費範圍
+        VolkresUpgradeStart = 264,
+        VolkresUpgradeEnd = 291
     }
 
     // 儲存與處理遊戲兵種相關設定的靜態配置類別

@@ -76,7 +76,7 @@ namespace AgainstRomeModifier {
         /// <summary>
         /// 重新整理並讀取遊戲存檔目錄 (SAVE) 與備份目錄 (SavesBackup) 下的資料，並將結果載入到介面表格中。
         /// </summary>
-        private void RefreshSavesAndBackups() {
+        private async void RefreshSavesAndBackups() {
             try {
                 dgvGameSaves.Rows.Clear();
                 dgvBackups.Rows.Clear();
@@ -92,113 +92,133 @@ namespace AgainstRomeModifier {
                     return;
                 }
 
-                string saveDir = Path.Combine(gamePath, "SAVE");
-                if (Directory.Exists(saveDir)) {
-                    var dirs = Directory.GetDirectories(saveDir);
-                    foreach (var dir in dirs) {
-                        string folderName = Path.GetFileName(dir);
-                        string saveIni = Path.Combine(dir, "save.ini");
-                        if (File.Exists(saveIni)) {
+                var (savesData, backupsData) = await Task.Run(() => {
+                    var savesList = new List<object[]>();
+                    var backupsList = new List<object[]>();
+
+                    string saveDir = Path.Combine(gamePath, "SAVE");
+                    if (Directory.Exists(saveDir)) {
+                        var dirs = Directory.GetDirectories(saveDir);
+                        foreach (var dir in dirs) {
+                            string folderName = Path.GetFileName(dir);
+                            string saveIni = Path.Combine(dir, "save.ini");
+                            if (File.Exists(saveIni)) {
+                                string title = "";
+                                string level = "";
+                                try {
+                                    byte[] raw = File.ReadAllBytes(saveIni);
+                                    byte[] decomp = GameLZSS.DecompressPfil(raw);
+                                    string text = Encoding.GetEncoding(1251).GetString(decomp);
+                                    var lines = text.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+                                    for (int i = 0; i < lines.Length; i++) {
+                                        string line = lines[i].Trim();
+                                        if (line.Contains("[orglevelname]")) {
+                                            if (i + 1 < lines.Length) level = lines[i + 1].Trim();
+                                        }
+                                        if (line.Contains("[titel]")) {
+                                            if (i + 1 < lines.Length) title = lines[i + 1].Trim();
+                                        }
+                                    }
+                                } catch {
+                                    title = Loc.Get("Unparsable");
+                                    level = Loc.Get("Unknown");
+                                }
+                                DateTime writeTime = Directory.GetLastWriteTime(dir);
+                                savesList.Add(new object[] { folderName, title, level, writeTime.ToString("yyyy-MM-dd HH:mm:ss") });
+                            }
+                        }
+                    }
+
+                    string backupDir = Path.Combine(AppContext.BaseDirectory, "SavesBackup");
+                    if (!Directory.Exists(backupDir)) {
+                        Directory.CreateDirectory(backupDir);
+                    }
+
+                    var files = Directory.GetFiles(backupDir, "*.zip");
+                    foreach (var file in files) {
+                        string fileName = Path.GetFileName(file);
+                        DateTime lastWrite = File.GetLastWriteTime(file);
+
+                        BackupSaveCache? cache = null;
+                        lock (_backupSaveCache) {
+                            if (_backupSaveCache.TryGetValue(fileName, out var existingCache) && existingCache.LastWriteTime == lastWrite) {
+                                cache = existingCache;
+                            }
+                        }
+
+                        if (cache == null) {
                             string title = "";
                             string level = "";
+                            string origFolder = "";
+                            string backupTimeStr = "";
                             try {
-                                byte[] raw = File.ReadAllBytes(saveIni);
-                                byte[] decomp = GameLZSS.DecompressPfil(raw);
-                                string text = Encoding.GetEncoding(1251).GetString(decomp);
-                                var lines = text.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
-                                for (int i = 0; i < lines.Length; i++) {
-                                    string line = lines[i].Trim();
-                                    if (line.Contains("[orglevelname]")) {
-                                        if (i + 1 < lines.Length) level = lines[i + 1].Trim();
-                                    }
-                                    if (line.Contains("[titel]")) {
-                                        if (i + 1 < lines.Length) title = lines[i + 1].Trim();
+                                using (var archive = ZipFile.OpenRead(file)) {
+                                    var entry = archive.GetEntry("save.ini");
+                                    if (entry != null) {
+                                        using (var stream = entry.Open()) {
+                                            using (var ms = new MemoryStream()) {
+                                                stream.CopyTo(ms);
+                                                byte[] decomp = GameLZSS.DecompressPfil(ms.ToArray());
+                                                string text = Encoding.GetEncoding(1251).GetString(decomp);
+                                                var lines = text.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+                                                for (int i = 0; i < lines.Length; i++) {
+                                                    string line = lines[i].Trim();
+                                                    if (line.Contains("[orglevelname]")) {
+                                                        if (i + 1 < lines.Length) level = lines[i + 1].Trim();
+                                                    }
+                                                    if (line.Contains("[titel]")) {
+                                                        if (i + 1 < lines.Length) title = lines[i + 1].Trim();
+                                                    }
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             } catch {
                                 title = Loc.Get("Unparsable");
                                 level = Loc.Get("Unknown");
                             }
-                            DateTime writeTime = Directory.GetLastWriteTime(dir);
-                            dgvGameSaves.Rows.Add(folderName, title, level, writeTime.ToString("yyyy-MM-dd HH:mm:ss"));
-                        }
-                    }
-                }
 
-                string backupDir = Path.Combine(AppContext.BaseDirectory, "SavesBackup");
-                if (!Directory.Exists(backupDir)) {
-                    Directory.CreateDirectory(backupDir);
-                }
-
-                var files = Directory.GetFiles(backupDir, "*.zip");
-                foreach (var file in files) {
-                    string fileName = Path.GetFileName(file);
-                    DateTime lastWrite = File.GetLastWriteTime(file);
-
-                    BackupSaveCache? cache = null;
-                    if (_backupSaveCache.TryGetValue(fileName, out var existingCache) && existingCache.LastWriteTime == lastWrite) {
-                        cache = existingCache;
-                    } else {
-                        string title = "";
-                        string level = "";
-                        string origFolder = "";
-                        string backupTimeStr = "";
-                        try {
-                            using (var archive = ZipFile.OpenRead(file)) {
-                                var entry = archive.GetEntry("save.ini");
-                                if (entry != null) {
-                                    using (var stream = entry.Open()) {
-                                        using (var ms = new MemoryStream()) {
-                                            stream.CopyTo(ms);
-                                            byte[] decomp = GameLZSS.DecompressPfil(ms.ToArray());
-                                            string text = Encoding.GetEncoding(1251).GetString(decomp);
-                                            var lines = text.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
-                                            for (int i = 0; i < lines.Length; i++) {
-                                                string line = lines[i].Trim();
-                                                if (line.Contains("[orglevelname]")) {
-                                                    if (i + 1 < lines.Length) level = lines[i + 1].Trim();
-                                                }
-                                                if (line.Contains("[titel]")) {
-                                                    if (i + 1 < lines.Length) title = lines[i + 1].Trim();
-                                                }
-                                            }
-                                        }
-                                    }
+                            var parts = fileName.Split('_');
+                            if (parts.Length >= 4 && parts[0] == "Backup") {
+                                origFolder = parts[1];
+                                string dateStr = parts[2];
+                                string timeStr = parts[3].Replace(".zip", "");
+                                if (dateStr.Length == 8 && timeStr.Length == 6) {
+                                    backupTimeStr = string.Format("{0}-{1}-{2} {3}:{4}:{5}", dateStr.Substring(0, 4), dateStr.Substring(4, 2), dateStr.Substring(6, 2), timeStr.Substring(0, 2), timeStr.Substring(2, 2), timeStr.Substring(4, 2));
                                 }
                             }
-                        } catch {
-                            title = Loc.Get("Unparsable");
-                            level = Loc.Get("Unknown");
-                        }
+                            if (string.IsNullOrEmpty(backupTimeStr)) {
+                                backupTimeStr = File.GetCreationTime(file).ToString("yyyy-MM-dd HH:mm:ss");
+                            }
+                            if (string.IsNullOrEmpty(origFolder)) {
+                                            origFolder = Loc.Get("Unknown");
+                            }
 
-                        var parts = fileName.Split('_');
-                        if (parts.Length >= 4 && parts[0] == "Backup") {
-                            origFolder = parts[1];
-                            string dateStr = parts[2];
-                            string timeStr = parts[3].Replace(".zip", "");
-                            if (dateStr.Length == 8 && timeStr.Length == 6) {
-                                backupTimeStr = string.Format("{0}-{1}-{2} {3}:{4}:{5}", dateStr.Substring(0, 4), dateStr.Substring(4, 2), dateStr.Substring(6, 2), timeStr.Substring(0, 2), timeStr.Substring(2, 2), timeStr.Substring(4, 2));
+                            cache = new BackupSaveCache {
+                                FileName = fileName,
+                                Title = title,
+                                Level = level,
+                                OrigFolder = origFolder,
+                                BackupTimeStr = backupTimeStr,
+                                LastWriteTime = lastWrite
+                            };
+                            lock (_backupSaveCache) {
+                                _backupSaveCache[fileName] = cache;
                             }
                         }
-                        if (string.IsNullOrEmpty(backupTimeStr)) {
-                            backupTimeStr = File.GetCreationTime(file).ToString("yyyy-MM-dd HH:mm:ss");
-                        }
-                        if (string.IsNullOrEmpty(origFolder)) {
-                            origFolder = Loc.Get("Unknown");
-                        }
 
-                        cache = new BackupSaveCache {
-                            FileName = fileName,
-                            Title = title,
-                            Level = level,
-                            OrigFolder = origFolder,
-                            BackupTimeStr = backupTimeStr,
-                            LastWriteTime = lastWrite
-                        };
-                        _backupSaveCache[fileName] = cache;
+                        backupsList.Add(new object[] { cache.FileName, cache.Title, cache.Level, cache.BackupTimeStr, cache.OrigFolder });
                     }
 
-                    dgvBackups.Rows.Add(cache.FileName, cache.Title, cache.Level, cache.BackupTimeStr, cache.OrigFolder);
+                    return (savesList, backupsList);
+                });
+
+                foreach (var row in savesData) {
+                    dgvGameSaves.Rows.Add(row);
+                }
+                foreach (var row in backupsData) {
+                    dgvBackups.Rows.Add(row);
                 }
             } catch (Exception ex) {
                 Log(Loc.Get("LogRefreshSavesFailed") + ex.Message);

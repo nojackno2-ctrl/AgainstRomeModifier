@@ -51,18 +51,31 @@ namespace AgainstRomeModifier {
             int maxRetries = 3;
             int delayMs = 500;
             for (int i = 0; i < maxRetries; i++) {
+                string tempFile = dest + ".tmp";
                 try {
                     string? dir = Path.GetDirectoryName(dest);
                     if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir)) {
                         Directory.CreateDirectory(dir);
                     }
+                    if (File.Exists(tempFile)) {
+                        File.SetAttributes(tempFile, FileAttributes.Normal);
+                        File.Delete(tempFile);
+                    }
+                    File.WriteAllBytes(tempFile, bytes);
+
                     if (File.Exists(dest)) {
                         File.SetAttributes(dest, FileAttributes.Normal);
                         File.Delete(dest);
                     }
-                    File.WriteAllBytes(dest, bytes);
+                    File.Move(tempFile, dest);
                     return;
                 } catch (IOException ioEx) {
+                    try {
+                        if (File.Exists(tempFile)) {
+                            File.Delete(tempFile);
+                        }
+                    } catch { }
+
                     if (i == maxRetries - 1) {
                         throw new Exception(string.Format("寫入檔案失敗，檔案可能被佔用或權限不足：{0}。錯誤訊息：{1}", dest, ioEx.Message), ioEx);
                     }
@@ -615,7 +628,7 @@ namespace AgainstRomeModifier {
                         } else if (freeUpgradeChecked && (
                             i == 8 || i == 10 || i == 12 || i == 14 ||
                             (i >= 24 && i <= 263 && i % 2 == 0) ||
-                            (i >= 264 && i <= 291)
+                            (i >= (int)RessIndex.VolkresUpgradeStart && i <= (int)RessIndex.VolkresUpgradeEnd)
                         )) {
                             newCols.Add("0");
                         } else {
