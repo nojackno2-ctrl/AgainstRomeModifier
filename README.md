@@ -2,6 +2,13 @@
 
 這是一款專為即時戰略遊戲《羅馬的榮耀》（Against Rome）開發的現代化圖形修改器。專案基於 C# (.NET 8) 與 Windows Forms 構建，具備美觀的深色系科技風無邊框介面，並將所有底層修改與還原邏輯整合為單一獨立運行的執行檔。
 
+## 開發初衷與作者的話
+
+> [!NOTE]
+> 本專案的作者是一位在 20 年前深愛《羅馬的榮耀》的忠實玩家。出於對這款遊戲的熱愛，在完全不具備軟體開發背景的情況下，藉由 **AI 代理人 (AI Agent)** 的協助完成了這款修改器的開發。
+>
+> 本專案內的所有程式碼與架構設計均由 AI 代理人撰寫與建構。若您有任何建議、反饋或修改想法，非常歡迎來信討論！後續的任何功能調整與優化，作者也將持續透過 AI 代理人來進行修改與維護。
+
 ---
 
 ## 核心功能特色
@@ -71,6 +78,13 @@
 # Against Rome Modifier
 
 This is a modern graphical modifier developed specifically for the real-time strategy game *Against Rome*. The project is built on C# (.NET 8) and Windows Forms, featuring a beautiful dark-themed tech-style borderless interface, and integrating all underlying modification and restoration logic into a single, standalone executable.
+
+## Project Origin & Author's Note
+
+> [!NOTE]
+> The author of this project is a devoted player who loved *Against Rome* 20 years ago. Out of deep passion for the game, the author created this program with the assistance of an **AI Agent**, without having any prior programming background.
+>
+> All code and architectural decisions in this project were generated and written by the AI agent. If you have any suggestions, feedback, or ideas for modification, please feel free to reach out for discussion! Any future updates or adjustments will also be implemented through the AI agent.
 
 ---
 
