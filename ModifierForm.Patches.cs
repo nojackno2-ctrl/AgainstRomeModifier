@@ -121,7 +121,7 @@ namespace AgainstRomeModifier {
         /// </summary>
         private void BtnBrowseGamePath_Click(object? sender, EventArgs e) {
             using (var fbd = new FolderBrowserDialog()) {
-                fbd.Description = "請選擇《羅馬的榮耀》(Against Rome) 遊戲安裝目錄";
+                fbd.Description = Loc.Get("LogBrowseTitle");
                 if (fbd.ShowDialog() == DialogResult.OK) {
                     txtGamePath.Text = fbd.SelectedPath;
                     LoadIcons();
@@ -136,16 +136,16 @@ namespace AgainstRomeModifier {
         private async void BtnApply_Click(object? sender, EventArgs e) {
             string gamePath = GetGamePath();
             if (string.IsNullOrEmpty(gamePath) || !Directory.Exists(gamePath) || !File.Exists(Path.Combine(gamePath, "Against_Rome.exe"))) {
-                MessageBox.Show("設定的目錄不包含遊戲主程式 Against_Rome.exe，請重新選擇正確的安裝路徑。", "路徑錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show(Loc.Get("MsgWrongGameDir"), Loc.Get("TitlePathError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
 
             try {
-                DialogResult confirm = MessageBox.Show("確定要套用所有修改嗎？\n此操作將覆蓋遊戲檔案。", "確認執行", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+                DialogResult confirm = MessageBox.Show(Loc.Get("MsgConfirmApply"), Loc.Get("TitleConfirm"), MessageBoxButtons.YesNo, MessageBoxIcon.Question);
                 if (confirm != DialogResult.Yes) return;
 
                 SetActionButtonsEnabled(false);
-                Log("開始套用修改...");
+                Log(Loc.Get("LogStartApply"));
 
                 bool focusLoss = chkFocusLoss.Checked;
                 decimal civiSpeed = numCiviSpeed.Value;
@@ -167,11 +167,11 @@ namespace AgainstRomeModifier {
                     ApplyLanguagePatch(gamePath, toEng);
                 });
 
-                Log("所有修改已成功套用！");
-                MessageBox.Show("修改成功套用！", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                Log(Loc.Get("LogApplyAllSuccess"));
+                MessageBox.Show(Loc.Get("MsgApplySuccess"), Loc.Get("TitleTips"), MessageBoxButtons.OK, MessageBoxIcon.Information);
             } catch (Exception ex) {
-                Log("發生錯誤: " + ex.Message + "\r\n" + ex.StackTrace);
-                MessageBox.Show("修改失敗: " + ex.Message, "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                Log(Loc.Get("MsgApplyFailed") + ex.Message + "\r\n" + ex.StackTrace);
+                MessageBox.Show(Loc.Get("MsgApplyFailed") + ex.Message, Loc.Get("TitleError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
             } finally {
                 SetActionButtonsEnabled(true);
             }
@@ -183,12 +183,12 @@ namespace AgainstRomeModifier {
         private async void RestoreAll() {
             string gamePath = GetGamePath();
             if (string.IsNullOrEmpty(gamePath) || !Directory.Exists(gamePath)) {
-                MessageBox.Show("請先設定正確的遊戲路徑。", "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show(Loc.Get("MsgSelectGameDir"), Loc.Get("TitleError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
             SetActionButtonsEnabled(false);
             try {
-                Log("開始恢復全部原版設定...");
+                Log(Loc.Get("LogStartRestoreAll"));
                 await Task.Run(() => {
                     RestoreStatsOnlyInternal(gamePath);
                     RestoreMemoryFile("Against_Rome.exe", Path.Combine(gamePath, @"Against_Rome.exe"));
@@ -196,11 +196,11 @@ namespace AgainstRomeModifier {
                 });
                 chkFocusLoss.Checked = false;
                 chkToEng.Checked = false;
-                Log("已成功恢復全部原版設定。");
-                MessageBox.Show("已成功恢復全部原版設定！", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                Log(Loc.Get("LogRestoreAllDone"));
+                MessageBox.Show(Loc.Get("MsgRestoreAllSuccess"), Loc.Get("TitleTips"), MessageBoxButtons.OK, MessageBoxIcon.Information);
             } catch (Exception ex) {
-                Log("全部還原失敗: " + ex.Message + "\r\n" + ex.StackTrace);
-                MessageBox.Show("還原失敗: " + ex.Message, "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                Log(Loc.Get("MsgRestoreFailed") + ex.Message + "\r\n" + ex.StackTrace);
+                MessageBox.Show(Loc.Get("MsgRestoreFailed") + ex.Message, Loc.Get("TitleError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
             } finally {
                 SetActionButtonsEnabled(true);
             }
@@ -212,18 +212,18 @@ namespace AgainstRomeModifier {
         private async void RestoreStatsOnly() {
             string gamePath = GetGamePath();
             if (string.IsNullOrEmpty(gamePath) || !Directory.Exists(gamePath)) {
-                MessageBox.Show("請先設定正確的遊戲路徑。", "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show(Loc.Get("MsgSelectGameDir"), Loc.Get("TitleError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
             SetActionButtonsEnabled(false);
             try {
-                Log("開始恢復兵種屬性原版設定...");
+                Log(Loc.Get("LogStartRestoreStats"));
                 await Task.Run(() => RestoreStatsOnlyInternal(gamePath));
-                Log("已成功恢復兵種屬性設定。");
-                MessageBox.Show("已成功恢復兵種屬性設定！", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                Log(Loc.Get("LogRestoreStatsDone"));
+                MessageBox.Show(Loc.Get("MsgRestoreStatsSuccess"), Loc.Get("TitleTips"), MessageBoxButtons.OK, MessageBoxIcon.Information);
             } catch (Exception ex) {
-                Log("屬性還原失敗: " + ex.Message + "\r\n" + ex.StackTrace);
-                MessageBox.Show("還原失敗: " + ex.Message, "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                Log(Loc.Get("MsgRestoreFailed") + ex.Message + "\r\n" + ex.StackTrace);
+                MessageBox.Show(Loc.Get("MsgRestoreFailed") + ex.Message, Loc.Get("TitleError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
             } finally {
                 SetActionButtonsEnabled(true);
             }
@@ -235,21 +235,21 @@ namespace AgainstRomeModifier {
         private async void RestoreCompatOnly() {
             string gamePath = GetGamePath();
             if (string.IsNullOrEmpty(gamePath) || !Directory.Exists(gamePath)) {
-                MessageBox.Show("請先設定正確的遊戲路徑。", "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show(Loc.Get("MsgSelectGameDir"), Loc.Get("TitleError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
             SetActionButtonsEnabled(false);
             try {
-                Log("開始恢復相容性原版設定...");
+                Log(Loc.Get("LogStartRestoreCompat"));
                 await Task.Run(() => {
                     RestoreMemoryFile("Against_Rome.exe", Path.Combine(gamePath, @"Against_Rome.exe"));
                 });
                 chkFocusLoss.Checked = false;
-                Log("已成功恢復相容性設定。");
-                MessageBox.Show("已成功恢復相容性設定！", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                Log(Loc.Get("LogRestoreCompatDone"));
+                MessageBox.Show(Loc.Get("MsgRestoreCompatSuccess"), Loc.Get("TitleTips"), MessageBoxButtons.OK, MessageBoxIcon.Information);
             } catch (Exception ex) {
-                Log("相容性還原失敗: " + ex.Message + "\r\n" + ex.StackTrace);
-                MessageBox.Show("還原失敗: " + ex.Message, "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                Log(Loc.Get("MsgRestoreFailed") + ex.Message + "\r\n" + ex.StackTrace);
+                MessageBox.Show(Loc.Get("MsgRestoreFailed") + ex.Message, Loc.Get("TitleError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
             } finally {
                 SetActionButtonsEnabled(true);
             }
@@ -261,19 +261,19 @@ namespace AgainstRomeModifier {
         private async void RestoreLanguageOnly() {
             string gamePath = GetGamePath();
             if (string.IsNullOrEmpty(gamePath) || !Directory.Exists(gamePath)) {
-                MessageBox.Show("請先設定正確的遊戲路徑。", "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show(Loc.Get("MsgSelectGameDir"), Loc.Get("TitleError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
             SetActionButtonsEnabled(false);
             try {
-                Log("開始恢復語言原版設定...");
+                Log(Loc.Get("LogStartRestoreLang"));
                 await Task.Run(() => ApplyLanguagePatch(gamePath, false));
                 chkToEng.Checked = false;
-                Log("已成功恢復語言設定。");
-                MessageBox.Show("已成功恢復語言設定！", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                Log(Loc.Get("LogRestoreLangDone"));
+                MessageBox.Show(Loc.Get("MsgRestoreLangSuccess"), Loc.Get("TitleTips"), MessageBoxButtons.OK, MessageBoxIcon.Information);
             } catch (Exception ex) {
-                Log("語言還原失敗: " + ex.Message + "\r\n" + ex.StackTrace);
-                MessageBox.Show("還原失敗: " + ex.Message, "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                Log(Loc.Get("MsgRestoreFailed") + ex.Message + "\r\n" + ex.StackTrace);
+                MessageBox.Show(Loc.Get("MsgRestoreFailed") + ex.Message, Loc.Get("TitleError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
             } finally {
                 SetActionButtonsEnabled(true);
             }
@@ -312,12 +312,12 @@ namespace AgainstRomeModifier {
         private void BtnStartGame_Click(object? sender, EventArgs e) {
             string gamePath = GetGamePath();
             if (string.IsNullOrEmpty(gamePath) || !Directory.Exists(gamePath)) {
-                MessageBox.Show("請先設定正確的遊戲路徑。", "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show(Loc.Get("MsgSelectGameDir"), Loc.Get("TitleError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
             string exePath = Path.Combine(gamePath, "Against_Rome.exe");
             if (!File.Exists(exePath)) {
-                MessageBox.Show("在遊戲目錄中找不到 Against_Rome.exe。", "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show(Loc.Get("MsgExeNotFound"), Loc.Get("TitleError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
             try {
@@ -326,10 +326,10 @@ namespace AgainstRomeModifier {
                     WorkingDirectory = gamePath
                 };
                 System.Diagnostics.Process.Start(psi);
-                Log("遊戲已成功啟動。");
+                Log(Loc.Get("LogGameStarted"));
             } catch (Exception ex) {
-                Log("啟動遊戲失敗: " + ex.Message);
-                MessageBox.Show("啟動遊戲失敗: " + ex.Message, "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                Log(Loc.Get("MsgLaunchFailed") + ex.Message);
+                MessageBox.Show(Loc.Get("MsgLaunchFailed") + ex.Message, Loc.Get("TitleError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
@@ -339,7 +339,7 @@ namespace AgainstRomeModifier {
         private void ApplyLanguagePatch(string gamePath, bool toEnglish) {
             string localToEngDir = Path.Combine(gamePath, "ToEng");
             if (!Directory.Exists(localToEngDir)) {
-                Log("找不到遊戲目錄下的 ToEng 資料夾，無法切換語系。");
+                Log(Loc.Get("LogNoToEngDir"));
                 return;
             }
 
@@ -359,9 +359,9 @@ namespace AgainstRomeModifier {
                 }
             }
             if (toEnglish) {
-                Log("已套用英文介面與地圖語言包。");
+                Log(Loc.Get("LogLangToEng"));
             } else {
-                Log("已恢復原版介面與地圖語言包。");
+                Log(Loc.Get("LogLangToOrig"));
             }
         }
 
@@ -386,14 +386,14 @@ namespace AgainstRomeModifier {
                         if (isMatch) {
                             fs.Seek(0x161a88, SeekOrigin.Begin);
                             fs.Write(new byte[] { 0x90, 0x90, 0x90, 0x90, 0x90, 0x90 }, 0, 6);
-                            Log("已套用 Against_Rome.exe 視窗失焦不暫停修正。");
+                            Log(Loc.Get("LogExePatchFocus"));
                         } else {
-                            Log("[警告] Against_Rome.exe 版本或特徵碼不符合預期，跳過失焦暫停修正。");
+                            Log(Loc.Get("LogExePatchWarning"));
                         }
                     }
                 }
             } else {
-                Log("已套用 Against_Rome.exe 原版。");
+                Log(Loc.Get("LogExePatchOrig"));
             }
         }
 

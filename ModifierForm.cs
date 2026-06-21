@@ -111,6 +111,44 @@ namespace AgainstRomeModifier {
         }
         private Dictionary<string, BackupSaveCache> _backupSaveCache = new Dictionary<string, BackupSaveCache>(StringComparer.OrdinalIgnoreCase);
         
+        // 語系切換 UI 欄位
+        private Label lblSidebarLang = null!;
+        private Button btnLangZH = null!;
+        private Button btnLangEN = null!;
+        private Label lblNumericTitle = null!;
+        private Label lblSwitchesTitle = null!;
+        private Label lblTipsTitle = null!;
+        private Label lblTipsContent = null!;
+        private Label lblConsoleTitle = null!;
+        private Label lblGameSavesTitle = null!;
+        private Label lblBackupsTitle = null!;
+        private Label lblDetailTitle = null!;
+        private Button btnBackupSave = null!;
+        private Button btnDeleteSave = null!;
+        private Button btnRefreshSaves = null!;
+        private Button btnRestoreBackup = null!;
+        private Button btnDeleteBackup = null!;
+        private Label lblDefaultStatsTitle = null!;
+        private Label lblCurrentStatsTitle = null!;
+
+        // 恢復原版功能選單
+        private ToolStripMenuItem itemRestoreAll = null!;
+        private ToolStripMenuItem itemRestoreStats = null!;
+        private ToolStripMenuItem itemRestoreCompat = null!;
+        private ToolStripMenuItem itemRestoreLang = null!;
+
+        // 預設兵種屬性分頁
+        private TabPage tabDefaultRoman = null!;
+        private TabPage tabDefaultTeuton = null!;
+        private TabPage tabDefaultCelt = null!;
+        private TabPage tabDefaultHun = null!;
+
+        // 當前兵種數值分頁
+        private TabPage tabCurrentRoman = null!;
+        private TabPage tabCurrentTeuton = null!;
+        private TabPage tabCurrentCelt = null!;
+        private TabPage tabCurrentHun = null!;
+
         // 視窗拖曳狀態變數
         private bool dragging = false;
         private Point dragStart = new Point(0, 0);
@@ -133,8 +171,21 @@ namespace AgainstRomeModifier {
 
         // 建構函式：初始化 UI 元件，載入備份檔並初始化現有設定
         public ModifierForm() {
+            // 開啟時讀取系統語言
+            string sysLang = System.Globalization.CultureInfo.CurrentUICulture.Name;
+            if (sysLang.StartsWith("en", StringComparison.OrdinalIgnoreCase)) {
+                Loc.CurrentLanguage = Language.English;
+            } else {
+                Loc.CurrentLanguage = Language.TraditionalChinese;
+            }
+
             InitializeComponent();
-            Log("修改器視窗建構完成，開始載入資料...");
+
+            // 更新語系按鈕視覺狀態與套用語系
+            UpdateLanguageButtonStyles();
+            ApplyLanguageToUI();
+
+            Log(Loc.Get("LogConstructCompleted"));
             // 將內嵌的 Backup.zip 載入記憶體
             LoadBackupZipToMemory();
             // 初始化資料與讀取預設兵種資訊
@@ -377,28 +428,28 @@ namespace AgainstRomeModifier {
 
             // 改為按鈕自繪指示條，pnlActiveIndicator 不再需要
             btnNavSystem = new Button { Location = new Point(10, 30) };
-            StyleNavButton(btnNavSystem, "⚙   主控制台", tabSystem);
+            StyleNavButton(btnNavSystem, "NavSystem", tabSystem);
             btnNavSystem.Click += (s, e) => {
                 ShowTabPage(tabSystem);
                 RefreshNavButtons();
             };
 
             btnNavDefaultStats = new Button { Location = new Point(10, 85) };
-            StyleNavButton(btnNavDefaultStats, "📊   預設兵種屬性", tabDefaultStats);
+            StyleNavButton(btnNavDefaultStats, "NavDefaultStats", tabDefaultStats);
             btnNavDefaultStats.Click += (s, e) => {
                 ShowTabPage(tabDefaultStats);
                 RefreshNavButtons();
             };
 
             btnNavCurrentStats = new Button { Location = new Point(10, 140) };
-            StyleNavButton(btnNavCurrentStats, "📈   當前兵種數值", tabCurrentStats);
+            StyleNavButton(btnNavCurrentStats, "NavCurrentStats", tabCurrentStats);
             btnNavCurrentStats.Click += (s, e) => {
                 ShowTabPage(tabCurrentStats);
                 RefreshNavButtons();
             };
 
             btnNavSaveManager = new Button { Location = new Point(10, 195) };
-            StyleNavButton(btnNavSaveManager, "💾   遊戲存檔管理", tabSaveManager);
+            StyleNavButton(btnNavSaveManager, "NavSaveManager", tabSaveManager);
             btnNavSaveManager.Click += (s, e) => {
                 ShowTabPage(tabSaveManager);
                 RefreshNavButtons();
@@ -406,10 +457,54 @@ namespace AgainstRomeModifier {
             };
 
             btnNavDoc = new Button { Location = new Point(10, 250) };
-            StyleNavButton(btnNavDoc, "📝   修改技術文件", tabDoc);
+            StyleNavButton(btnNavDoc, "NavDoc", tabDoc);
             btnNavDoc.Click += (s, e) => {
                 ShowTabPage(tabDoc);
                 RefreshNavButtons();
+            };
+
+            // 語系切換元件初始化與事件綁定
+            lblSidebarLang = new Label {
+                Text = Loc.Get("LanguageLabel"),
+                Location = new Point(15, 740),
+                Size = new Size(190, 20),
+                Font = fontJhengHei95B,
+                ForeColor = Color.FromArgb(150, 160, 175),
+                BackColor = Color.Transparent
+            };
+
+            btnLangZH = new Button {
+                Text = Loc.Get("LangZhButton"),
+                Location = new Point(15, 765),
+                Size = new Size(90, 30),
+                FlatStyle = FlatStyle.Flat,
+                Font = fontJhengHei9R,
+                Cursor = Cursors.Hand
+            };
+            btnLangZH.FlatAppearance.BorderSize = 1;
+            btnLangZH.Click += (s, e) => {
+                if (Loc.CurrentLanguage != Language.TraditionalChinese) {
+                    Loc.CurrentLanguage = Language.TraditionalChinese;
+                    UpdateLanguageButtonStyles();
+                    ApplyLanguageToUI();
+                }
+            };
+
+            btnLangEN = new Button {
+                Text = Loc.Get("LangEnButton"),
+                Location = new Point(115, 765),
+                Size = new Size(90, 30),
+                FlatStyle = FlatStyle.Flat,
+                Font = fontJhengHei9R,
+                Cursor = Cursors.Hand
+            };
+            btnLangEN.FlatAppearance.BorderSize = 1;
+            btnLangEN.Click += (s, e) => {
+                if (Loc.CurrentLanguage != Language.English) {
+                    Loc.CurrentLanguage = Language.English;
+                    UpdateLanguageButtonStyles();
+                    ApplyLanguageToUI();
+                }
             };
 
             pnlSidebar.Controls.Add(btnNavSystem);
@@ -417,6 +512,9 @@ namespace AgainstRomeModifier {
             pnlSidebar.Controls.Add(btnNavCurrentStats);
             pnlSidebar.Controls.Add(btnNavSaveManager);
             pnlSidebar.Controls.Add(btnNavDoc);
+            pnlSidebar.Controls.Add(lblSidebarLang);
+            pnlSidebar.Controls.Add(btnLangZH);
+            pnlSidebar.Controls.Add(btnLangEN);
 
             mainTabControl = new TabControl {
                 Location = new Point(230, 60),
@@ -450,7 +548,7 @@ namespace AgainstRomeModifier {
             };
             pnlNumericCard.Paint += CardPanel_Paint;
 
-            Label lblNumericTitle = new Label {
+            lblNumericTitle = new Label {
                 Text = "數值偏好與系統設定",
                 Location = new Point(30, 20),
                 Size = new Size(250, 25),
@@ -548,7 +646,7 @@ namespace AgainstRomeModifier {
             };
             pnlSwitchesCard.Paint += CardPanel_Paint;
 
-            Label lblSwitchesTitle = new Label {
+            lblSwitchesTitle = new Label {
                 Text = "核心修改開關設定",
                 Location = new Point(30, 20),
                 Size = new Size(250, 25),
@@ -601,7 +699,7 @@ namespace AgainstRomeModifier {
             };
             pnlTipsCard.Paint += CardPanel_Paint;
 
-            Label lblTipsTitle = new Label {
+            lblTipsTitle = new Label {
                 Text = "修改器使用指引與操作指南",
                 Location = new Point(30, 20),
                 Size = new Size(300, 25),
@@ -611,7 +709,7 @@ namespace AgainstRomeModifier {
             };
             pnlTipsCard.Controls.Add(lblTipsTitle);
 
-            Label lblTipsContent = new Label {
+            lblTipsContent = new Label {
                 Location = new Point(30, 65),
                 Size = new Size(1130, 280),
                 Font = fontJhengHei105R,
@@ -636,7 +734,7 @@ namespace AgainstRomeModifier {
             };
             pnlConsoleCard.Paint += CardPanel_Paint;
 
-            Label lblConsoleTitle = new Label {
+            lblConsoleTitle = new Label {
                 Text = "系統控制台與操作",
                 Location = new Point(20, 20),
                 Size = new Size(200, 25),
@@ -699,10 +797,10 @@ namespace AgainstRomeModifier {
             pnlConsoleCard.Controls.Add(txtLog);
 
             menuRestore = new ContextMenuStrip { Renderer = new DarkContextMenuRenderer() };
-            ToolStripMenuItem itemRestoreAll = new ToolStripMenuItem("全部還原");
-            ToolStripMenuItem itemRestoreStats = new ToolStripMenuItem("僅還原兵種屬性");
-            ToolStripMenuItem itemRestoreCompat = new ToolStripMenuItem("僅還原相容性修正");
-            ToolStripMenuItem itemRestoreLang = new ToolStripMenuItem("僅還原語系設定");
+            itemRestoreAll = new ToolStripMenuItem("全部還原");
+            itemRestoreStats = new ToolStripMenuItem("僅還原兵種屬性");
+            itemRestoreCompat = new ToolStripMenuItem("僅還原相容性修正");
+            itemRestoreLang = new ToolStripMenuItem("僅還原語系設定");
 
             menuRestore.Items.Add(itemRestoreAll);
             menuRestore.Items.Add(itemRestoreStats);
@@ -759,7 +857,7 @@ namespace AgainstRomeModifier {
             };
             pnlDefaultStatsTitle.Paint += CardPanel_Paint;
 
-            Label lblDefaultStatsTitle = new Label {
+            lblDefaultStatsTitle = new Label {
                 Text = "預設兵種屬性對比 (無自訂加成)",
                 Location = new Point(20, 20),
                 Size = new Size(280, 25),
@@ -786,10 +884,10 @@ namespace AgainstRomeModifier {
                 Size = new Size(1190, 715)
             };
 
-            TabPage tabDefaultRoman = new TabPage { Text = " 羅馬 ", BackColor = Color.FromArgb(16, 16, 20), UseVisualStyleBackColor = false };
-            TabPage tabDefaultTeuton = new TabPage { Text = " 條頓 ", BackColor = Color.FromArgb(16, 16, 20), UseVisualStyleBackColor = false };
-            TabPage tabDefaultCelt = new TabPage { Text = " 塞爾特 ", BackColor = Color.FromArgb(16, 16, 20), UseVisualStyleBackColor = false };
-            TabPage tabDefaultHun = new TabPage { Text = " 匈奴 ", BackColor = Color.FromArgb(16, 16, 20), UseVisualStyleBackColor = false };
+            tabDefaultRoman = new TabPage { Text = " 羅馬 ", BackColor = Color.FromArgb(16, 16, 20), UseVisualStyleBackColor = false };
+            tabDefaultTeuton = new TabPage { Text = " 條頓 ", BackColor = Color.FromArgb(16, 16, 20), UseVisualStyleBackColor = false };
+            tabDefaultCelt = new TabPage { Text = " 塞爾特 ", BackColor = Color.FromArgb(16, 16, 20), UseVisualStyleBackColor = false };
+            tabDefaultHun = new TabPage { Text = " 匈奴 ", BackColor = Color.FromArgb(16, 16, 20), UseVisualStyleBackColor = false };
 
             defaultStatsGrids["Roman"] = CreateDefaultStatsGrid();
             defaultStatsGrids["Teuton"] = CreateDefaultStatsGrid();
@@ -815,7 +913,7 @@ namespace AgainstRomeModifier {
             };
             pnlCurrentStatsTitle.Paint += CardPanel_Paint;
 
-            Label lblCurrentStatsTitle = new Label {
+            lblCurrentStatsTitle = new Label {
                 Text = "當前兵種數值 (原版與當前對比)",
                 Location = new Point(20, 20),
                 Size = new Size(350, 25),
@@ -830,10 +928,10 @@ namespace AgainstRomeModifier {
                 Size = new Size(1190, 715)
             };
 
-            TabPage tabCurrentRoman = new TabPage { Text = " 羅馬 ", BackColor = Color.FromArgb(16, 16, 20), UseVisualStyleBackColor = false };
-            TabPage tabCurrentTeuton = new TabPage { Text = " 條頓 ", BackColor = Color.FromArgb(16, 16, 20), UseVisualStyleBackColor = false };
-            TabPage tabCurrentCelt = new TabPage { Text = " 塞爾特 ", BackColor = Color.FromArgb(16, 16, 20), UseVisualStyleBackColor = false };
-            TabPage tabCurrentHun = new TabPage { Text = " 匈奴 ", BackColor = Color.FromArgb(16, 16, 20), UseVisualStyleBackColor = false };
+            tabCurrentRoman = new TabPage { Text = " 羅馬 ", BackColor = Color.FromArgb(16, 16, 20), UseVisualStyleBackColor = false };
+            tabCurrentTeuton = new TabPage { Text = " 條頓 ", BackColor = Color.FromArgb(16, 16, 20), UseVisualStyleBackColor = false };
+            tabCurrentCelt = new TabPage { Text = " 塞爾特 ", BackColor = Color.FromArgb(16, 16, 20), UseVisualStyleBackColor = false };
+            tabCurrentHun = new TabPage { Text = " 匈奴 ", BackColor = Color.FromArgb(16, 16, 20), UseVisualStyleBackColor = false };
 
             currentStatsGrids["Roman"] = CreateCurrentStatsGrid();
             currentStatsGrids["Teuton"] = CreateCurrentStatsGrid();
@@ -859,34 +957,6 @@ namespace AgainstRomeModifier {
             };
             mainTabControl.TabPages.Add(tabDoc);
 
-            string docText = "";
-            try {
-                using (Stream? stream = typeof(Program).Assembly.GetManifestResourceStream("TechDoc.md")) {
-                    if (stream != null) {
-                        using (StreamReader reader = new StreamReader(stream, Encoding.UTF8)) {
-                            docText = reader.ReadToEnd();
-                        }
-                    } else {
-                        foreach (string name in typeof(Program).Assembly.GetManifestResourceNames()) {
-                            if (name.EndsWith("TechDoc.md")) {
-                                using (Stream? s = typeof(Program).Assembly.GetManifestResourceStream(name)) {
-                                    if (s != null) {
-                                        using (StreamReader r = new StreamReader(s, Encoding.UTF8)) {
-                                            docText = r.ReadToEnd();
-                                        }
-                                    }
-                                }
-                                break;
-                            }
-                        }
-                    }
-                }
-            } catch (Exception ex) {
-                Log("載入技術文件資源失敗: " + ex.Message);
-            }
-
-            docText = docText.Replace("\r\n", "\n").Replace("\n", "\r\n");
-
             txtDoc = new TextBox {
                 Dock = DockStyle.Fill,
                 Multiline = true,
@@ -895,9 +965,9 @@ namespace AgainstRomeModifier {
                 BackColor = Color.FromArgb(20, 20, 25),
                 ForeColor = Color.FromArgb(230, 235, 240),
                 Font = fontJhengHei105R,
-                BorderStyle = BorderStyle.None,
-                Text = docText
+                BorderStyle = BorderStyle.None
             };
+            ReloadTechnicalDocument();
             tabDoc.Controls.Add(txtDoc);
 
             tabSaveManager = new TabPage {
@@ -943,7 +1013,7 @@ namespace AgainstRomeModifier {
             pnlDetailCard.Paint += CardPanel_Paint;
             pnlRightSave.Controls.Add(pnlDetailCard);
 
-            Label lblGameSavesTitle = new Label {
+            lblGameSavesTitle = new Label {
                 Text = "遊戲中存檔列表",
                 Location = new Point(20, 15),
                 Size = new Size(200, 20),
@@ -959,7 +1029,7 @@ namespace AgainstRomeModifier {
             dgvGameSaves.SelectionChanged += DgvGameSaves_SelectionChanged;
             pnlGameSavesCard.Controls.Add(dgvGameSaves);
 
-            Button btnBackupSave = new Button {
+            btnBackupSave = new Button {
                 Text = "備份此存檔",
                 Location = new Point(15, 330),
                 Size = new Size(140, 35)
@@ -968,7 +1038,7 @@ namespace AgainstRomeModifier {
             btnBackupSave.Click += BtnBackupSave_Click;
             pnlGameSavesCard.Controls.Add(btnBackupSave);
 
-            Button btnDeleteSave = new Button {
+            btnDeleteSave = new Button {
                 Text = "刪除此存檔",
                 Location = new Point(165, 330),
                 Size = new Size(140, 35)
@@ -977,7 +1047,7 @@ namespace AgainstRomeModifier {
             btnDeleteSave.Click += BtnDeleteSave_Click;
             pnlGameSavesCard.Controls.Add(btnDeleteSave);
 
-            Button btnRefreshSaves = new Button {
+            btnRefreshSaves = new Button {
                 Text = "重新整理",
                 Location = new Point(315, 330),
                 Size = new Size(140, 35)
@@ -986,7 +1056,7 @@ namespace AgainstRomeModifier {
             btnRefreshSaves.Click += (s, e) => RefreshSavesAndBackups();
             pnlGameSavesCard.Controls.Add(btnRefreshSaves);
 
-            Label lblBackupsTitle = new Label {
+            lblBackupsTitle = new Label {
                 Text = "備份歷史列表",
                 Location = new Point(20, 15),
                 Size = new Size(200, 20),
@@ -1002,7 +1072,7 @@ namespace AgainstRomeModifier {
             dgvBackups.SelectionChanged += DgvBackups_SelectionChanged;
             pnlBackupsCard.Controls.Add(dgvBackups);
 
-            Button btnRestoreBackup = new Button {
+            btnRestoreBackup = new Button {
                 Text = "還原此備份",
                 Location = new Point(15, 345),
                 Size = new Size(140, 35)
@@ -1011,7 +1081,7 @@ namespace AgainstRomeModifier {
             btnRestoreBackup.Click += BtnRestoreBackup_Click;
             pnlBackupsCard.Controls.Add(btnRestoreBackup);
 
-            Button btnDeleteBackup = new Button {
+            btnDeleteBackup = new Button {
                 Text = "刪除此備份",
                 Location = new Point(165, 345),
                 Size = new Size(140, 35)
@@ -1020,7 +1090,7 @@ namespace AgainstRomeModifier {
             btnDeleteBackup.Click += BtnDeleteBackup_Click;
             pnlBackupsCard.Controls.Add(btnDeleteBackup);
 
-            Label lblDetailTitle = new Label {
+            lblDetailTitle = new Label {
                 Text = "存檔詳細與預覽",
                 Location = new Point(20, 20),
                 Size = new Size(200, 25),
@@ -1096,7 +1166,7 @@ namespace AgainstRomeModifier {
         /// <summary>
         /// 自訂導覽列按鈕繪製樣式，包含 Hover 漸層與選取指示條
         /// </summary>
-        private void StyleNavButton(Button btn, string text, TabPage associatedPage) {
+        private void StyleNavButton(Button btn, string key, TabPage associatedPage) {
             btn.Text = ""; // 採用 Paint 自繪，清除原生文字
             btn.FlatStyle = FlatStyle.Flat;
             btn.FlatAppearance.BorderSize = 0;
@@ -1124,6 +1194,7 @@ namespace AgainstRomeModifier {
                 }
 
                 // 2. 繪製文字與圖示 (Unicode 圖示)
+                string text = Loc.Get(key);
                 Color foreColor = isSelected ? Color.FromArgb(0, 220, 255) : (isHovered ? Color.White : Color.FromArgb(150, 160, 175));
                 using (var brush = new SolidBrush(foreColor)) {
                     SizeF sz = g.MeasureString(text, fontJhengHei10B);
@@ -1153,6 +1224,185 @@ namespace AgainstRomeModifier {
             btnNavCurrentStats.Invalidate();
             btnNavSaveManager.Invalidate();
             btnNavDoc.Invalidate();
+        }
+
+        /// <summary>
+        /// 更新語系按鈕視覺樣式
+        /// </summary>
+        private void UpdateLanguageButtonStyles() {
+            bool isZh = Loc.CurrentLanguage == Language.TraditionalChinese;
+
+            btnLangZH.BackColor = isZh ? Color.FromArgb(30, 30, 42) : Color.Transparent;
+            btnLangZH.ForeColor = isZh ? Color.FromArgb(0, 220, 255) : Color.FromArgb(120, 125, 135);
+            btnLangZH.FlatAppearance.BorderColor = isZh ? Color.FromArgb(0, 220, 255) : Color.FromArgb(50, 50, 60);
+
+            btnLangEN.BackColor = !isZh ? Color.FromArgb(30, 30, 42) : Color.Transparent;
+            btnLangEN.ForeColor = !isZh ? Color.FromArgb(0, 220, 255) : Color.FromArgb(120, 125, 135);
+            btnLangEN.FlatAppearance.BorderColor = !isZh ? Color.FromArgb(0, 220, 255) : Color.FromArgb(50, 50, 60);
+        }
+
+        /// <summary>
+        /// 套用目前的語系設定到所有的 UI 元件
+        /// </summary>
+        private void ApplyLanguageToUI() {
+            if (lblMainTitle == null) return; // 防止在 InitializeComponent 完成前被調用
+
+            lblMainTitle.Text = Loc.Get("MainTitle");
+            lblNumericTitle.Text = Loc.Get("NumericTitle");
+            lblPopLimit.Text = Loc.Get("PopLimit");
+            lblCiviSpeed.Text = Loc.Get("CiviSpeed");
+            chkFocusLoss.Text = Loc.Get("FocusLoss");
+            chkToEng.Text = Loc.Get("ToEng");
+            btnPresetSave.Text = Loc.Get("PresetSave");
+            btnPresetLoad.Text = Loc.Get("PresetLoad");
+            lblSwitchesTitle.Text = Loc.Get("SwitchesTitle");
+            chkFreeProd.Text = Loc.Get("FreeProd");
+            chkFreeUpgrade.Text = Loc.Get("FreeUpgrade");
+            chkNoSpellCost.Text = Loc.Get("NoSpellCost");
+            chkInfiniteMorale.Text = Loc.Get("InfiniteMorale");
+            lblTipsTitle.Text = Loc.Get("TipsTitle");
+            lblTipsContent.Text = Loc.Get("TipsContent");
+            lblConsoleTitle.Text = Loc.Get("ConsoleTitle");
+            lblGamePath.Text = Loc.Get("GamePath");
+            btnBrowseGamePath.Text = Loc.Get("Browse");
+            btnLoadCurrent.Text = Loc.Get("LoadCurrent");
+            btnRestore.Text = Loc.Get("Restore");
+            btnApply.Text = Loc.Get("Apply");
+            btnStartGame.Text = Loc.Get("StartGame");
+
+            itemRestoreAll.Text = Loc.Get("RestoreAll");
+            itemRestoreStats.Text = Loc.Get("RestoreStats");
+            itemRestoreCompat.Text = Loc.Get("RestoreCompat");
+            itemRestoreLang.Text = Loc.Get("RestoreLang");
+
+            lblGameSavesTitle.Text = Loc.Get("GameSavesTitle");
+            lblBackupsTitle.Text = Loc.Get("BackupsTitle");
+            lblDetailTitle.Text = Loc.Get("DetailTitle");
+            btnBackupSave.Text = Loc.Get("BackupSave");
+            btnDeleteSave.Text = Loc.Get("DeleteSave");
+            btnRefreshSaves.Text = Loc.Get("Refresh");
+            btnRestoreBackup.Text = Loc.Get("RestoreBackup");
+            btnDeleteBackup.Text = Loc.Get("DeleteBackup");
+
+            lblSidebarLang.Text = Loc.Get("LanguageLabel");
+
+            tabDefaultRoman.Text = Loc.Get("TabRoman");
+            tabDefaultTeuton.Text = Loc.Get("TabTeuton");
+            tabDefaultCelt.Text = Loc.Get("TabCelt");
+            tabDefaultHun.Text = Loc.Get("TabHun");
+
+            tabCurrentRoman.Text = Loc.Get("TabRoman");
+            tabCurrentTeuton.Text = Loc.Get("TabTeuton");
+            tabCurrentCelt.Text = Loc.Get("TabCelt");
+            tabCurrentHun.Text = Loc.Get("TabHun");
+
+            lblDefaultStatsTitle.Text = Loc.Get("DefaultStatsTitle");
+            chkBalance.Text = Loc.Get("EnableBalance");
+            lblCurrentStatsTitle.Text = Loc.Get("CurrentStatsTitle");
+
+            // 更新表格標頭
+            UpdateGridHeaders();
+
+            // 重新整理側邊導覽列按鈕
+            RefreshNavButtons();
+
+            // 重新載入技術文件
+            ReloadTechnicalDocument();
+
+            // 重新載入表格與存檔數據
+            if (backupFiles != null && backupFiles.Count > 0) {
+                LoadDefaultStatsData();
+                LoadCurrentData(false);
+                RefreshSavesAndBackups();
+            }
+        }
+
+        /// <summary>
+        /// 動態更新 DataGridView 標頭文字
+        /// </summary>
+        private void UpdateGridHeaders() {
+            foreach (var grid in defaultStatsGrids.Values) {
+                if (grid.Columns.Contains("Name")) grid.Columns["Name"].HeaderText = Loc.Get("HeaderName");
+                if (grid.Columns.Contains("Icon")) grid.Columns["Icon"].HeaderText = Loc.Get("HeaderIcon");
+                if (grid.Columns.Contains("Type")) grid.Columns["Type"].HeaderText = Loc.Get("HeaderType");
+                if (grid.Columns.Contains("Style")) grid.Columns["Style"].HeaderText = Loc.Get("HeaderStyle");
+                if (grid.Columns.Contains("Hp")) grid.Columns["Hp"].HeaderText = Loc.Get("HeaderHp");
+                if (grid.Columns.Contains("MeleeDmg")) grid.Columns["MeleeDmg"].HeaderText = Loc.Get("HeaderMeleeDmg");
+                if (grid.Columns.Contains("RangedDmg")) grid.Columns["RangedDmg"].HeaderText = Loc.Get("HeaderRangedDmg");
+                if (grid.Columns.Contains("MeleeRelt")) grid.Columns["MeleeRelt"].HeaderText = Loc.Get("HeaderMeleeRelt");
+                if (grid.Columns.Contains("RangedRelt")) grid.Columns["RangedRelt"].HeaderText = Loc.Get("HeaderRangedRelt");
+                if (grid.Columns.Contains("Vw")) grid.Columns["Vw"].HeaderText = Loc.Get("HeaderVw");
+                if (grid.Columns.Contains("Aw")) grid.Columns["Aw"].HeaderText = Loc.Get("HeaderAw");
+                if (grid.Columns.Contains("Speed")) grid.Columns["Speed"].HeaderText = Loc.Get("HeaderSpeed");
+                if (grid.Columns.Contains("Sight")) grid.Columns["Sight"].HeaderText = Loc.Get("HeaderSight");
+                if (grid.Columns.Contains("Range")) grid.Columns["Range"].HeaderText = Loc.Get("HeaderRange");
+                if (grid.Columns.Contains("SpellRadius")) grid.Columns["SpellRadius"].HeaderText = Loc.Get("HeaderSpellRadius");
+                if (grid.Columns.Contains("Tier")) grid.Columns["Tier"].HeaderText = Loc.Get("HeaderTier");
+            }
+            foreach (var grid in currentStatsGrids.Values) {
+                if (grid.Columns.Contains("Name")) grid.Columns["Name"].HeaderText = Loc.Get("HeaderName");
+                if (grid.Columns.Contains("Icon")) grid.Columns["Icon"].HeaderText = Loc.Get("HeaderIcon");
+                if (grid.Columns.Contains("Type")) grid.Columns["Type"].HeaderText = Loc.Get("HeaderType");
+                if (grid.Columns.Contains("Style")) grid.Columns["Style"].HeaderText = Loc.Get("HeaderStyle");
+                if (grid.Columns.Contains("Hp")) grid.Columns["Hp"].HeaderText = Loc.Get("HeaderHpComp");
+                if (grid.Columns.Contains("MeleeDmg")) grid.Columns["MeleeDmg"].HeaderText = Loc.Get("HeaderMeleeDmgComp");
+                if (grid.Columns.Contains("RangedDmg")) grid.Columns["RangedDmg"].HeaderText = Loc.Get("HeaderRangedDmgComp");
+                if (grid.Columns.Contains("MeleeRelt")) grid.Columns["MeleeRelt"].HeaderText = Loc.Get("HeaderMeleeReltComp");
+                if (grid.Columns.Contains("RangedRelt")) grid.Columns["RangedRelt"].HeaderText = Loc.Get("HeaderRangedReltComp");
+                if (grid.Columns.Contains("Vw")) grid.Columns["Vw"].HeaderText = Loc.Get("HeaderVwComp");
+                if (grid.Columns.Contains("Aw")) grid.Columns["Aw"].HeaderText = Loc.Get("HeaderAwComp");
+                if (grid.Columns.Contains("Speed")) grid.Columns["Speed"].HeaderText = Loc.Get("HeaderSpeedComp");
+                if (grid.Columns.Contains("Sight")) grid.Columns["Sight"].HeaderText = Loc.Get("HeaderSightComp");
+                if (grid.Columns.Contains("Range")) grid.Columns["Range"].HeaderText = Loc.Get("HeaderRangeComp");
+                if (grid.Columns.Contains("SpellRadius")) grid.Columns["SpellRadius"].HeaderText = Loc.Get("HeaderSpellRadiusComp");
+                if (grid.Columns.Contains("Tier")) grid.Columns["Tier"].HeaderText = Loc.Get("HeaderTier");
+            }
+            if (dgvGameSaves.Columns.Contains("Folder")) dgvGameSaves.Columns["Folder"].HeaderText = Loc.Get("HeaderFolder");
+            if (dgvGameSaves.Columns.Contains("Title")) dgvGameSaves.Columns["Title"].HeaderText = Loc.Get("HeaderSaveTitle");
+            if (dgvGameSaves.Columns.Contains("Level")) dgvGameSaves.Columns["Level"].HeaderText = Loc.Get("HeaderLevel");
+            if (dgvGameSaves.Columns.Contains("Time")) dgvGameSaves.Columns["Time"].HeaderText = Loc.Get("HeaderTime");
+
+            if (dgvBackups.Columns.Contains("File")) dgvBackups.Columns["File"].HeaderText = Loc.Get("HeaderBackupFile");
+            if (dgvBackups.Columns.Contains("Title")) dgvBackups.Columns["Title"].HeaderText = Loc.Get("HeaderSaveTitle");
+            if (dgvBackups.Columns.Contains("Level")) dgvBackups.Columns["Level"].HeaderText = Loc.Get("HeaderLevel");
+            if (dgvBackups.Columns.Contains("Time")) dgvBackups.Columns["Time"].HeaderText = Loc.Get("HeaderBackupTime");
+            if (dgvBackups.Columns.Contains("Folder")) dgvBackups.Columns["Folder"].HeaderText = Loc.Get("HeaderOrigFolder");
+        }
+
+        /// <summary>
+        /// 重新載入技術文件內容
+        /// </summary>
+        private void ReloadTechnicalDocument() {
+            if (txtDoc == null) return;
+            string docText = "";
+            string resourceKey = Loc.CurrentLanguage == Language.English ? "TechDoc_EN.md" : "TechDoc.md";
+            try {
+                using (Stream? stream = typeof(Program).Assembly.GetManifestResourceStream(resourceKey)) {
+                    if (stream != null) {
+                        using (StreamReader reader = new StreamReader(stream, Encoding.UTF8)) {
+                            docText = reader.ReadToEnd();
+                        }
+                    } else {
+                        foreach (string name in typeof(Program).Assembly.GetManifestResourceNames()) {
+                            if (name.EndsWith(resourceKey)) {
+                                using (Stream? s = typeof(Program).Assembly.GetManifestResourceStream(name)) {
+                                    if (s != null) {
+                                        using (StreamReader r = new StreamReader(s, Encoding.UTF8)) {
+                                            docText = r.ReadToEnd();
+                                        }
+                                    }
+                                }
+                                break;
+                            }
+                        }
+                    }
+                }
+            } catch (Exception ex) {
+                Log(Loc.Get("LogLoadTechDocFailed") + ex.Message);
+            }
+
+            docText = docText.Replace("\r\n", "\n").Replace("\n", "\r\n");
+            txtDoc.Text = docText;
         }
     }
 }

@@ -635,17 +635,9 @@ namespace AgainstRomeModifier {
                     double defVwAdd = 0;
                     double defAwAdd = 0;
 
-                    string chineseName = TroopConfig.UnitNames.ContainsKey(key) ? TroopConfig.UnitNames[key] : key;
-                    string typeText = "未知";
-                    if (utype == "melee_inf") typeText = "近戰步兵";
-                    else if (utype == "ranged_inf" || utype == "ranged_cav") typeText = "遠程部隊";
-                    else if (utype == "hybrid_inf") typeText = "混合步兵";
-                    else if (utype == "cav") typeText = "騎兵部隊";
-                    else if (utype == "leader_melee" || utype == "leader_cav") typeText = "領袖";
-                    else if (utype == "priest") typeText = "祭司";
-                    else if (utype == "siege") typeText = "攻城武器";
-
-                    string styleText = GetStyleText(style);
+                    string displayName = Loc.GetUnitName(key);
+                    string typeText = Loc.GetUnitType(utype);
+                    string styleText = Loc.GetStyleText(style);
 
                     var iconImage = unitIcons.ContainsKey(key) ? unitIcons[key] : null;
                     double[] bases = GetBaseStatsForUnit(key, hp, origPrimaryDam, vw, aw, true);
@@ -706,17 +698,11 @@ namespace AgainstRomeModifier {
                     string meleeDmgText = FormatVal(displayMeleeDam, "F1");
                     string rangedDmgText = FormatVal(displayRangedDam, "F1");
 
-                    string tierText = "未知";
-                    if (tier == "low") tierText = "低階";
-                    else if (tier == "mid") tierText = "中階";
-                    else if (tier == "high") tierText = "高階";
-                    else if (tier == "ace") tierText = "王牌";
-                    else if (tier == "leader") tierText = "領袖";
-                    else if (tier == "siege") tierText = "攻城武器";
+                    string tierText = Loc.GetTierText(tier);
 
                     var dgvTarget = defaultStatsGrids[faction];
                     dgvTarget.Rows.Add(
-                        chineseName, iconImage, typeText, styleText,
+                        displayName, iconImage, typeText, styleText,
                         Math.Round(bases[0] * defHpMult, 1),
                         meleeDmgText,
                         rangedDmgText,
@@ -733,10 +719,10 @@ namespace AgainstRomeModifier {
                 }
                 int totalRows = 0;
                 foreach (var dgv in defaultStatsGrids.Values) totalRows += dgv.Rows.Count;
-                Log(string.Format("預設兵種屬性載入完成，共 {0} 筆資料。", totalRows));
+                Log(string.Format(Loc.Get("LogDefaultStatsLoaded"), totalRows));
             } catch (Exception ex) {
-                Log("載入預設屬性數據錯誤: " + ex.Message + "\r\n" + ex.StackTrace);
-                MessageBox.Show("載入預設屬性數據錯誤: " + ex.Message + "\n" + ex.StackTrace, "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                Log(Loc.Get("LogDefaultStatsLoadError") + ex.Message + "\r\n" + ex.StackTrace);
+                MessageBox.Show(Loc.Get("LogDefaultStatsLoadError") + ex.Message + "\n" + ex.StackTrace, Loc.Get("TitleError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
@@ -754,7 +740,7 @@ namespace AgainstRomeModifier {
             try {
                 string gamePath = GetGamePath();
                 if (string.IsNullOrEmpty(gamePath) || !Directory.Exists(gamePath) || !File.Exists(Path.Combine(gamePath, "Against_Rome.exe"))) {
-                    Log("遊戲路徑不包含 Against_Rome.exe，請重新選擇正確的安裝路徑。");
+                    Log(Loc.Get("MsgWrongGameDir"));
                     return;
                 }
 
@@ -780,11 +766,11 @@ namespace AgainstRomeModifier {
                     dauBytes = File.ReadAllBytes(src);
                 } else {
                     if (!backupFiles.TryGetValue("SYSTEM/DATA_MP/DEFAULTS/objdef.dau", out dauBytes)) {
-                        Log("找不到任何 objdef.dau 檔案，無法讀取設定。");
+                        Log(Loc.Get("LogNoObjdefForRead"));
                         return;
                     }
                 }
-                Log("正在讀取現有設定...");
+                Log(Loc.Get("LogReadCurrent"));
                 byte[] decompBytes = GameLZSS.DecompressPfil(dauBytes!);
                 string decomp = Encoding.GetEncoding(1251).GetString(decompBytes);
                 string lineEnding = decomp.Contains("\r\n") ? "\r\n" : "\n";
@@ -941,31 +927,17 @@ namespace AgainstRomeModifier {
                         curSpellRadius = 500 * spellRadMultVal;
                     }
 
-                    string chineseName = TroopConfig.UnitNames.ContainsKey(key) ? TroopConfig.UnitNames[key] : key;
-                    string typeText = "未知";
-                    if (utype == "melee_inf") typeText = "近戰步兵";
-                    else if (utype == "ranged_inf" || utype == "ranged_cav") typeText = "遠程部隊";
-                    else if (utype == "hybrid_inf") typeText = "混合步兵";
-                    else if (utype == "cav") typeText = "騎兵部隊";
-                    else if (utype == "leader_melee" || utype == "leader_cav") typeText = "領袖";
-                    else if (utype == "priest") typeText = "祭司";
-                    else if (utype == "siege") typeText = "攻城武器";
+                    string displayName = Loc.GetUnitName(key);
+                    string typeText = Loc.GetUnitType(utype);
+                    string styleText = Loc.GetStyleText(style);
 
-                    string styleText = GetStyleText(style);
-
-                    string tierText = "未知";
                     string tier = TroopConfig.UnitMeta[key].Item2;
-                    if (tier == "low") tierText = "低階";
-                    else if (tier == "mid") tierText = "中階";
-                    else if (tier == "high") tierText = "高階";
-                    else if (tier == "ace") tierText = "王牌";
-                    else if (tier == "leader") tierText = "領袖";
-                    else if (tier == "siege") tierText = "攻城武器";
+                    string tierText = Loc.GetTierText(tier);
 
                     var iconImage = unitIcons.ContainsKey(key) ? unitIcons[key] : null;
                     var dgvCurrent = currentStatsGrids[faction];
                     dgvCurrent.Rows.Add(
-                        chineseName,
+                        displayName,
                         iconImage,
                         typeText,
                         styleText,
@@ -1094,17 +1066,19 @@ namespace AgainstRomeModifier {
                                 chkFocusLoss.Checked = false;
                             } else {
                                 chkFocusLoss.Checked = false;
-                                Log("[警告] Against_Rome.exe 偵測到未知的位元組特徵，可能是不支援的版本。");
+                                Log(Loc.Get("LogExePatchWarning"));
                             }
                         } else {
-                            Log("[警告] Against_Rome.exe 檔案長度異常，無法讀取視窗失焦不暫停狀態。");
+                            Log(Loc.Get("LogExePatchWarning"));
                         }
                     }
                 }
 
-                Log("已成功載入現有設定。");
+                int totalCurrentRows = 0;
+                foreach (var dgv in currentStatsGrids.Values) totalCurrentRows += dgv.Rows.Count;
+                Log(string.Format(Loc.Get("LogReadCurrentDone"), totalCurrentRows));
             } catch (Exception ex) {
-                Log("載入現有設定失敗: " + ex.Message + "\r\n" + ex.StackTrace);
+                Log(Loc.Get("LogPresetImportError") + ex.Message + "\r\n" + ex.StackTrace);
             }
         }
 

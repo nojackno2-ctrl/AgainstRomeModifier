@@ -49,24 +49,24 @@ namespace AgainstRomeModifier {
             dgv.AlternatingRowsDefaultCellStyle.BackColor = Color.FromArgb(28, 28, 35);
 
             if (!isBackup) {
-                dgv.Columns.Add("Folder", "資料夾");
+                dgv.Columns.Add("Folder", Loc.Get("HeaderFolder"));
                 dgv.Columns["Folder"].Width = 120;
-                dgv.Columns.Add("Title", "存檔標題");
+                dgv.Columns.Add("Title", Loc.Get("HeaderSaveTitle"));
                 dgv.Columns["Title"].Width = 330;
-                dgv.Columns.Add("Level", "原版關卡");
+                dgv.Columns.Add("Level", Loc.Get("HeaderLevel"));
                 dgv.Columns["Level"].Width = 140;
-                dgv.Columns.Add("Time", "存檔時間");
+                dgv.Columns.Add("Time", Loc.Get("HeaderTime"));
                 dgv.Columns["Time"].Width = 180;
             } else {
-                dgv.Columns.Add("File", "備份檔名");
+                dgv.Columns.Add("File", Loc.Get("HeaderBackupFile"));
                 dgv.Columns["File"].Width = 120;
-                dgv.Columns.Add("Title", "存檔標題");
+                dgv.Columns.Add("Title", Loc.Get("HeaderSaveTitle"));
                 dgv.Columns["Title"].Width = 230;
-                dgv.Columns.Add("Level", "原版關卡");
+                dgv.Columns.Add("Level", Loc.Get("HeaderLevel"));
                 dgv.Columns["Level"].Width = 120;
-                dgv.Columns.Add("Time", "備份時間");
+                dgv.Columns.Add("Time", Loc.Get("HeaderBackupTime"));
                 dgv.Columns["Time"].Width = 160;
-                dgv.Columns.Add("Folder", "原資料夾");
+                dgv.Columns.Add("Folder", Loc.Get("HeaderOrigFolder"));
                 dgv.Columns["Folder"].Width = 120;
             }
 
@@ -88,7 +88,7 @@ namespace AgainstRomeModifier {
 
                 string gamePath = GetGamePath();
                 if (string.IsNullOrEmpty(gamePath) || !Directory.Exists(gamePath)) {
-                    Log("遊戲路徑未設定，無法載入存檔。");
+                    Log(Loc.Get("LogSavePathNotSet"));
                     return;
                 }
 
@@ -116,8 +116,8 @@ namespace AgainstRomeModifier {
                                     }
                                 }
                             } catch {
-                                title = "無法解析";
-                                level = "未知";
+                                title = Loc.Get("Unparsable");
+                                level = Loc.Get("Unknown");
                             }
                             DateTime writeTime = Directory.GetLastWriteTime(dir);
                             dgvGameSaves.Rows.Add(folderName, title, level, writeTime.ToString("yyyy-MM-dd HH:mm:ss"));
@@ -167,8 +167,8 @@ namespace AgainstRomeModifier {
                                 }
                             }
                         } catch {
-                            title = "無法解析";
-                            level = "未知";
+                            title = Loc.Get("Unparsable");
+                            level = Loc.Get("Unknown");
                         }
 
                         var parts = fileName.Split('_');
@@ -184,7 +184,7 @@ namespace AgainstRomeModifier {
                             backupTimeStr = File.GetCreationTime(file).ToString("yyyy-MM-dd HH:mm:ss");
                         }
                         if (string.IsNullOrEmpty(origFolder)) {
-                            origFolder = "未知";
+                            origFolder = Loc.Get("Unknown");
                         }
 
                         cache = new BackupSaveCache {
@@ -201,7 +201,7 @@ namespace AgainstRomeModifier {
                     dgvBackups.Rows.Add(cache.FileName, cache.Title, cache.Level, cache.BackupTimeStr, cache.OrigFolder);
                 }
             } catch (Exception ex) {
-                Log("重新整理存檔列表失敗: " + ex.Message);
+                Log(Loc.Get("LogRefreshSavesFailed") + ex.Message);
             }
         }
 
@@ -218,7 +218,7 @@ namespace AgainstRomeModifier {
                 string time = row.Cells[3].Value?.ToString() ?? "";
 
                 lblSaveDetail.Text = string.Format(
-                    "存檔類型: 遊戲存檔\n\n資料夾: {0}\n\n存檔標題: {1}\n\n原版關卡: {2}\n\n存檔時間: {3}",
+                    Loc.Get("SaveDetailGameSave"),
                     folder, title, level, time
                 );
 
@@ -233,7 +233,7 @@ namespace AgainstRomeModifier {
                     picSavePreview.Image = null;
                 }
             } catch (Exception ex) {
-                Log("載入存檔預覽失敗: " + ex.Message);
+                Log(Loc.Get("LogRefreshSavesFailed") + ex.Message);
             }
         }
 
@@ -251,7 +251,7 @@ namespace AgainstRomeModifier {
                 string origFolder = row.Cells[4].Value?.ToString() ?? "";
 
                 lblSaveDetail.Text = string.Format(
-                    "存檔類型: 備份檔案\n\n備份檔名: {0}\n\n原資料夾: {1}\n\n存檔標題: {2}\n\n原版關卡: {3}\n\n備份時間: {4}",
+                    Loc.Get("SaveDetailBackup"),
                     file, origFolder, title, level, time
                 );
 
@@ -262,7 +262,7 @@ namespace AgainstRomeModifier {
                         var entry = archive.GetEntry("savepic.tga");
                         if (entry != null) {
                             using (var stream = entry.Open()) {
-                                using (var ms = new MemoryStream()) {
+                                  using (var ms = new MemoryStream()) {
                                     stream.CopyTo(ms);
                                     if (picSavePreview.Image != null) picSavePreview.Image.Dispose();
                                     picSavePreview.Image = LoadTga(ms.ToArray());
@@ -278,7 +278,7 @@ namespace AgainstRomeModifier {
                     picSavePreview.Image = null;
                 }
             } catch (Exception ex) {
-                Log("載入備份預覽失敗: " + ex.Message);
+                Log(Loc.Get("LogRefreshSavesFailed") + ex.Message);
             }
         }
 
@@ -287,21 +287,21 @@ namespace AgainstRomeModifier {
         /// </summary>
         private void BtnBackupSave_Click(object? sender, EventArgs e) {
             if (dgvGameSaves.SelectedRows.Count == 0) {
-                MessageBox.Show("請先選擇要備份的存檔。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show(Loc.Get("MsgSelectSaveToBackup"), Loc.Get("TitleTips"), MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
             try {
                 var row = dgvGameSaves.SelectedRows[0];
                 string folder = (row.Cells[0].Value?.ToString() ?? "").Trim();
                 if (string.IsNullOrEmpty(folder)) {
-                    MessageBox.Show("無效的存檔目錄，操作已取消。", "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    MessageBox.Show(Loc.Get("MsgInvalidSaveDir"), Loc.Get("TitleError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
                     return;
                 }
                 string title = row.Cells[1].Value?.ToString() ?? "";
                 string gamePath = GetGamePath();
                 string srcDir = Path.Combine(gamePath, "SAVE", folder);
                 if (!Directory.Exists(srcDir)) {
-                    MessageBox.Show("找不到該存檔的原始資料夾。", "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    MessageBox.Show(Loc.Get("MsgNoOrigFolderToBackup"), Loc.Get("TitleError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
                     return;
                 }
                 string backupDir = Path.Combine(AppContext.BaseDirectory, "SavesBackup");
@@ -313,12 +313,12 @@ namespace AgainstRomeModifier {
                 string zipPath = Path.Combine(backupDir, zipName);
 
                 ZipFile.CreateFromDirectory(srcDir, zipPath);
-                Log(string.Format("備份存檔成功: {0} -> {1}", folder, zipName));
+                Log(string.Format(Loc.Get("LogBackupSaveSuccessDetail"), folder, zipName));
                 RefreshSavesAndBackups();
-                MessageBox.Show("備份存檔成功！", "成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show(Loc.Get("MsgBackupSaveSuccess"), Loc.Get("TitleSuccess"), MessageBoxButtons.OK, MessageBoxIcon.Information);
             } catch (Exception ex) {
-                Log("備份存檔失敗: " + ex.Message);
-                MessageBox.Show("備份存檔失敗: " + ex.Message, "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                Log(Loc.Get("LogBackupSaveFailedDetail") + ex.Message);
+                MessageBox.Show(Loc.Get("MsgBackupSaveFailed") + ex.Message, Loc.Get("TitleError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
@@ -327,27 +327,27 @@ namespace AgainstRomeModifier {
         /// </summary>
         private void BtnRestoreBackup_Click(object? sender, EventArgs e) {
             if (dgvBackups.SelectedRows.Count == 0) {
-                MessageBox.Show("請先選擇要還原的備份。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show(Loc.Get("MsgSelectBackup"), Loc.Get("TitleTips"), MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
             try {
                 var row = dgvBackups.SelectedRows[0];
                 string file = row.Cells[0].Value?.ToString() ?? "";
                 string origFolder = row.Cells[4].Value?.ToString() ?? "";
-                if (string.IsNullOrEmpty(origFolder) || origFolder == "未知") {
-                    MessageBox.Show("無法判斷該備份的原資料夾，無法還原。", "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                if (string.IsNullOrEmpty(origFolder) || origFolder == Loc.Get("Unknown")) {
+                    MessageBox.Show(Loc.Get("MsgCannotResolveOrigFolder"), Loc.Get("TitleError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
                     return;
                 }
 
                 string gamePath = GetGamePath();
                 if (string.IsNullOrEmpty(gamePath) || !Directory.Exists(gamePath)) {
-                    MessageBox.Show("遊戲路徑未設定，無法還原。", "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    MessageBox.Show(Loc.Get("MsgGamePathNotSet"), Loc.Get("TitleError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
                     return;
                 }
 
                 string destDir = Path.Combine(gamePath, "SAVE", origFolder);
                 if (Directory.Exists(destDir)) {
-                    var dr = MessageBox.Show(string.Format("目標存檔資料夾 [{0}] 已存在，是否覆蓋？", origFolder), "確認覆蓋", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+                    var dr = MessageBox.Show(string.Format(Loc.Get("MsgConfirmOverwriteSave"), origFolder), Loc.Get("TitleWarning"), MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
                     if (dr == DialogResult.No) return;
                     Directory.Delete(destDir, true);
                 }
@@ -357,12 +357,12 @@ namespace AgainstRomeModifier {
 
                 Directory.CreateDirectory(destDir);
                 ZipFile.ExtractToDirectory(zipPath, destDir);
-                Log(string.Format("還原備份成功: {0} -> {1}", file, origFolder));
+                Log(string.Format(Loc.Get("LogRestoreBackupSuccessDetail"), file, origFolder));
                 RefreshSavesAndBackups();
-                MessageBox.Show("還原備份成功！", "成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show(Loc.Get("MsgRestoreBackupSuccess"), Loc.Get("TitleSuccess"), MessageBoxButtons.OK, MessageBoxIcon.Information);
             } catch (Exception ex) {
-                Log("還原備份失敗: " + ex.Message);
-                MessageBox.Show("還原備份失敗: " + ex.Message, "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                Log(Loc.Get("LogRestoreBackupFailedDetail") + ex.Message);
+                MessageBox.Show(Loc.Get("MsgRestoreBackupFailed") + ex.Message, Loc.Get("TitleError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
@@ -371,17 +371,17 @@ namespace AgainstRomeModifier {
         /// </summary>
         private void BtnDeleteSave_Click(object? sender, EventArgs e) {
             if (dgvGameSaves.SelectedRows.Count == 0) {
-                MessageBox.Show("請先選擇要刪除的存檔。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show(Loc.Get("MsgSelectSaveToDelete"), Loc.Get("TitleTips"), MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
             try {
                 var row = dgvGameSaves.SelectedRows[0];
                 string folder = (row.Cells[0].Value?.ToString() ?? "").Trim();
                 if (string.IsNullOrEmpty(folder)) {
-                    MessageBox.Show("無效的存檔目錄，操作已取消。", "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    MessageBox.Show(Loc.Get("MsgInvalidSaveDir"), Loc.Get("TitleError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
                     return;
                 }
-                var dr = MessageBox.Show(string.Format("確定要永久刪除遊戲存檔 [{0}] 嗎？此操作不可還原！", folder), "確認刪除", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+                var dr = MessageBox.Show(string.Format(Loc.Get("MsgConfirmDeleteSave"), folder), Loc.Get("TitleConfirmDelete"), MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
                 if (dr == DialogResult.No) return;
 
                 string gamePath = GetGamePath();
@@ -389,12 +389,12 @@ namespace AgainstRomeModifier {
                 if (Directory.Exists(srcDir)) {
                     Directory.Delete(srcDir, true);
                 }
-                Log(string.Format("已刪除遊戲存檔: {0}", folder));
+                Log(string.Format(Loc.Get("LogDeleteSaveSuccessDetail"), folder));
                 RefreshSavesAndBackups();
-                MessageBox.Show("已刪除存檔！", "成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show(Loc.Get("MsgDeleteSaveSuccess"), Loc.Get("TitleSuccess"), MessageBoxButtons.OK, MessageBoxIcon.Information);
             } catch (Exception ex) {
-                Log("刪除存檔失敗: " + ex.Message);
-                MessageBox.Show("刪除存檔失敗: " + ex.Message, "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                Log(Loc.Get("LogDeleteSaveFailedDetail") + ex.Message);
+                MessageBox.Show(Loc.Get("MsgDeleteSaveFailed") + ex.Message, Loc.Get("TitleError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
@@ -403,13 +403,13 @@ namespace AgainstRomeModifier {
         /// </summary>
         private void BtnDeleteBackup_Click(object? sender, EventArgs e) {
             if (dgvBackups.SelectedRows.Count == 0) {
-                MessageBox.Show("請先選擇要刪除的備份。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show(Loc.Get("MsgSelectBackupToDelete"), Loc.Get("TitleTips"), MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
             try {
                 var row = dgvBackups.SelectedRows[0];
                 string file = row.Cells[0].Value?.ToString() ?? "";
-                var dr = MessageBox.Show(string.Format("確定要永久刪除備份檔案 [{0}] 嗎？", file), "確認刪除", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+                var dr = MessageBox.Show(string.Format(Loc.Get("MsgConfirmDeleteBackup"), file), Loc.Get("TitleConfirmDelete"), MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
                 if (dr == DialogResult.No) return;
 
                 string backupDir = Path.Combine(AppContext.BaseDirectory, "SavesBackup");
@@ -418,12 +418,12 @@ namespace AgainstRomeModifier {
                     File.Delete(zipPath);
                     _backupSaveCache.Remove(file);
                 }
-                Log(string.Format("已刪除備份檔案: {0}", file));
+                Log(string.Format(Loc.Get("LogDeleteBackupSuccessDetail"), file));
                 RefreshSavesAndBackups();
-                MessageBox.Show("已刪除備份！", "成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show(Loc.Get("MsgDeleteBackupSuccess"), Loc.Get("TitleSuccess"), MessageBoxButtons.OK, MessageBoxIcon.Information);
             } catch (Exception ex) {
-                Log("刪除備份失敗: " + ex.Message);
-                MessageBox.Show("刪除備份失敗: " + ex.Message, "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                Log(Loc.Get("LogDeleteBackupFailedDetail") + ex.Message);
+                MessageBox.Show(Loc.Get("MsgDeleteBackupFailed") + ex.Message, Loc.Get("TitleError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
     }
