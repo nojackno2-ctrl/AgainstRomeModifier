@@ -63,11 +63,20 @@ To avoid the "applying change A reverts change B" issue, all standalone scripts 
   - **Priest Range**: Set priest sight `sirad` (Index 24) to `30000` (original `1500`) to enable distant spell casting.
   - **3x Ranged Range & Sight**: Ranged unit sight (Index 24) and Weapon 2/3 range (Index 88-89, 96-97) are scaled by 3.0x.
   - **1.5x Ranged Fire Rate**: Ranged reload time (`relt`) scaled by `1/1.5`.
-  - **Unit Balance & Faction Traits**: Units are categorized into low/mid/high tiers with balanced health, attack, defense, and combat stats. Faction bonuses:
-    * Romans: 1.15x HP, +7 Defense (VW).
-    * Teutons: 1.3x Melee Dmg, +7 Combat (AW), -2 VW (melee/leaders only).
-    * Celts: +5 VW, 1.25x Ranged Dmg.
-    * Huns: -7 VW, 1.35x Melee Dmg (cavalry/leaders only).
+  - **Unit Balance & Specific Unit Specializations (Reconstructed & Optimized)**: Introduced tiered health points (HP) to prevent high-tier units from easily one-shotting low-tier units, while reducing excessively high melee max damage (capped ace units around 50), and fine-tuning attack/defense ratios:
+    * Low-tier units: HP 110
+    * Mid-tier units: HP 130
+    * High-tier units: HP 150
+    * Ace-tier units: HP 160
+    * Leader units: HP 450
+  - **Specific Unit Specializations (Implemented via C# conditional branches)**:
+    * Celt Spearman (`FigKelInf01_Lanze`): Specialized defense unit. HP 180, base defense VW 32 (final VW reaches 42 after 1.3x shield multiplier), combat AW 18, max damage maxDam 22. Highly fortified to withstand cavalry charges.
+    * Roman Light Infantry (`FigRomInf00_Lanze_Schild`): Mid-tier defense unit. HP 130, base defense VW 22 (final VW 29 with shield), max damage maxDam 24.
+    * Roman Heavy Infantry (`FigRomSch00_Speer_Schild`): Ranged heavy defense unit. HP 140, base defense VW 26 (final VW 34 with shield), max damage maxDam 25.
+    * Roman Praetorian Guard (`FigRomInf01_Schwert_Schild`): Elite infantry unit. HP 200, base defense VW 28 (final VW 36 with shield), max damage maxDam 36.
+    * Hun Swordsman (`FigHunInf01_Schwert_Schild`): Hun defense shield unit. HP 140, base defense VW 24 (final VW 31 with shield), max damage maxDam 24.
+    * Celt Dual Swordsman (`FigKelInf02_Doppelschwert`): Mid-high tier dual-wielder. HP 130, base defense VW 15, max damage maxDam 40.
+    * Teuton Double Hammer (`FigGerInf03_Doppelhammer`): Ace dual-wielder. HP 150, base defense VW 16, combat AW 34, max damage maxDam 60.
 
 ### 5. team.dat Changes
 * **Details**: Unpacks map files and sets the population limit `[maxteamobjgenerell]` and each faction's limit in `[teamdata]` to the custom limit (e.g., 1600). Restores other stats to original backups.

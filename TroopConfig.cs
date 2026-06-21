@@ -181,73 +181,110 @@ namespace AgainstRomeModifier {
                 return new double[] { 0, 0, 0, 0 };
             }
 
-            double hp = 0;
+            // 1. 特定單位屬性特化 (防禦特化、王牌/精銳兵種特化)
+            if (key == "FigKelInf01_Lanze") {
+                // 塞爾特槍兵 (槍盾兵)：防禦特化 (VW 加成後達 42)，高生命，適度傷害
+                return new double[] { 180, 22, 32, 18 };
+            }
+            if (key == "FigRomInf00_Lanze_Schild") {
+                // 羅馬輕裝步兵：防禦特化，中階盾兵
+                return new double[] { 130, 24, 22, 18 };
+            }
+            if (key == "FigRomSch00_Speer_Schild") {
+                // 羅馬重裝步兵 (遠程)：高生命、高防禦
+                return new double[] { 140, 25, 26, 24 };
+            }
+            if (key == "FigRomInf01_Schwert_Schild") {
+                // 羅馬禁衛軍：最強步兵單位，高生命高攻防
+                return new double[] { 200, 36, 28, 28 };
+            }
+            if (key == "FigHunInf01_Schwert_Schild") {
+                // 匈奴劍盾兵：匈奴唯一防禦特化盾兵
+                return new double[] { 140, 24, 24, 20 };
+            }
+            if (key == "FigKelInf02_Doppelschwert") {
+                // 塞爾特雙劍兵：中高階雙持，高傷害高戰鬥力
+                return new double[] { 130, 40, 15, 28 };
+            }
+            if (key == "FigGerInf03_Doppelhammer") {
+                // 條頓雙錘兵：王牌雙持，極高傷害與戰鬥力
+                return new double[] { 150, 60, 16, 34 };
+            }
+
+            // 2. 通用階級生命值 (階梯化 HP)
+            double hp = 100;
+            if (tier == "low") hp = 110;
+            else if (tier == "mid") hp = 130;
+            else if (tier == "high") hp = 150;
+            else if (tier == "ace") hp = 160;
+            else if (tier == "leader") hp = 450;
+
             double maxDam = 0;
             double vw = 0;
             double aw = 0;
 
-            // 依陣營、階級、兵種屬性設定具體數值 (常規兵種血量重設為 100，領袖重設為 400)
+            // 3. 通用屬性矩陣 (調降秒殺傷害，微調攻防比例)
             if (faction == "Roman") {
                 if (tier == "low") {
-                    if (utype == "melee_inf") { hp = 100; vw = 8; aw = 12; maxDam = 20; }
+                    if (utype == "melee_inf") { vw = 8; aw = 12; maxDam = 20; }
                 } else if (tier == "mid") {
-                    if (utype == "melee_inf") { hp = 100; vw = 14; aw = 20; maxDam = 30; }
-                    else if (utype == "ranged_inf") { hp = 100; vw = 12; aw = 28; maxDam = 25; }
+                    if (utype == "melee_inf") { vw = 14; aw = 20; maxDam = 28; }
+                    else if (utype == "ranged_inf") { vw = 12; aw = 24; maxDam = 22; }
                 } else if (tier == "high") {
-                    if (utype == "melee_inf") { hp = 100; vw = 20; aw = 22; maxDam = 50; }
-                    else if (utype == "ranged_inf") { hp = 100; vw = 16; aw = 28; maxDam = 35; }
-                    else if (utype == "hybrid_inf") { hp = 100; vw = 18; aw = 21; maxDam = 45; }
+                    if (utype == "melee_inf") { vw = 20; aw = 22; maxDam = 42; }
+                    else if (utype == "ranged_inf") { vw = 16; aw = 26; maxDam = 30; }
+                    else if (utype == "hybrid_inf") { vw = 18; aw = 22; maxDam = 38; }
                 } else if (tier == "ace") {
-                    if (utype == "cav") { hp = 100; vw = 22; aw = 26; maxDam = 75; }
+                    if (utype == "cav") { vw = 24; aw = 26; maxDam = 50; } // 羅馬突擊騎兵
                 } else if (tier == "leader") {
-                    if (utype == "leader_melee") { hp = 400; vw = 26; aw = 35; maxDam = 90; }
+                    if (utype == "leader_melee") { vw = 28; aw = 36; maxDam = 80; }
                 }
             } else if (faction == "Teuton") {
                 if (tier == "low") {
-                    if (utype == "melee_inf") { hp = 100; vw = 10; aw = 12; maxDam = 30; }
-                    else if (utype == "ranged_inf") { hp = 100; vw = 6; aw = 10; maxDam = 22; }
+                    if (utype == "melee_inf") { vw = 10; aw = 12; maxDam = 25; }
+                    else if (utype == "ranged_inf") { vw = 6; aw = 12; maxDam = 20; }
                 } else if (tier == "mid") {
-                    if (utype == "melee_inf") { hp = 100; vw = 15; aw = 22; maxDam = 35; }
-                    else if (utype == "hybrid_inf") { hp = 100; vw = 14; aw = 21; maxDam = 32; }
+                    if (utype == "melee_inf") { vw = 16; aw = 22; maxDam = 32; }
+                    else if (utype == "hybrid_inf") { vw = 14; aw = 20; maxDam = 28; }
                 } else if (tier == "high") {
-                    if (utype == "melee_inf") { hp = 100; vw = 14; aw = 28; maxDam = 42; }
-                    else if (utype == "cav") { hp = 100; vw = 18; aw = 23; maxDam = 48; }
+                    if (utype == "melee_inf") { vw = 14; aw = 26; maxDam = 38; }
+                    else if (utype == "cav") { vw = 20; aw = 24; maxDam = 42; }
                 } else if (tier == "ace") {
-                    if (utype == "melee_inf") { hp = 100; vw = 12; aw = 30; maxDam = 75; }
+                    if (utype == "melee_inf") { vw = 12; aw = 30; maxDam = 65; }
                 } else if (tier == "leader") {
-                    if (utype == "leader_melee") { hp = 400; vw = 25; aw = 38; maxDam = 73; }
+                    if (utype == "leader_melee") { vw = 26; aw = 38; maxDam = 70; }
                 }
             } else if (faction == "Celt") {
                 if (tier == "low") {
-                    if (utype == "melee_inf") { hp = 100; vw = 10; aw = 12; maxDam = 28; }
-                    else if (utype == "ranged_inf") { hp = 100; vw = 8; aw = 10; maxDam = 24; }
+                    if (utype == "melee_inf") { vw = 10; aw = 12; maxDam = 24; }
+                    else if (utype == "ranged_inf") { vw = 8; aw = 12; maxDam = 20; }
                 } else if (tier == "mid") {
-                    if (utype == "melee_inf") { hp = 100; vw = 18; aw = 18; maxDam = 26; }
-                    else if (utype == "ranged_inf") { hp = 100; vw = 12; aw = 18; maxDam = 22; }
+                    if (utype == "melee_inf") { vw = 18; aw = 18; maxDam = 24; }
+                    else if (utype == "ranged_inf") { vw = 12; aw = 18; maxDam = 20; }
                 } else if (tier == "high") {
-                    if (utype == "melee_inf") { hp = 100; vw = 12; aw = 24; maxDam = 45; }
-                    else if (utype == "cav") { hp = 100; vw = 22; aw = 20; maxDam = 40; }
+                    if (utype == "melee_inf") { vw = 12; aw = 24; maxDam = 38; }
+                    else if (utype == "cav") { vw = 22; aw = 22; maxDam = 38; } // 塞爾特槍騎兵
                 } else if (tier == "ace") {
-                    if (utype == "ranged_inf") { hp = 100; vw = 18; aw = 25; maxDam = 75; }
+                    if (utype == "ranged_inf") { vw = 18; aw = 25; maxDam = 65; }
                 } else if (tier == "leader") {
-                    if (utype == "leader_melee") { hp = 400; vw = 28; aw = 26; maxDam = 25; }
+                    if (utype == "leader_melee") { vw = 30; aw = 28; maxDam = 60; }
                 }
             } else if (faction == "Hun") {
                 if (tier == "low") {
-                    if (utype == "melee_inf") { hp = 100; vw = 10; aw = 10; maxDam = 32; }
-                    else if (utype == "ranged_inf") { hp = 100; vw = 8; aw = 10; maxDam = 22; }
+                    if (utype == "melee_inf") { vw = 10; aw = 10; maxDam = 26; }
+                    else if (utype == "ranged_inf") { vw = 8; aw = 12; maxDam = 20; }
                 } else if (tier == "mid") {
-                    if (utype == "melee_inf") { hp = 100; vw = 12; aw = 20; maxDam = 28; }
-                    else if (utype == "cav") { hp = 100; vw = 14; aw = 22; maxDam = 38; }
+                    if (utype == "melee_inf") { vw = 12; aw = 18; maxDam = 24; }
+                    else if (utype == "cav") { vw = 16; aw = 20; maxDam = 32; } // 匈奴輕裝騎兵
                 } else if (tier == "high") {
-                    if (utype == "melee_inf") { hp = 100; vw = 8; aw = 24; maxDam = 40; }
-                    else if (utype == "ranged_inf") { hp = 100; vw = 16; aw = 24; maxDam = 35; }
-                    else if (utype == "cav") { hp = 100; vw = 18; aw = 28; maxDam = 52; }
-                    else if (utype == "ranged_cav") { hp = 100; vw = 16; aw = 24; maxDam = 45; }
+                    if (utype == "melee_inf") { vw = 8; aw = 22; maxDam = 36; }
+                    else if (utype == "ranged_inf") { vw = 16; aw = 24; maxDam = 32; }
+                    else if (utype == "cav") { vw = 18; aw = 26; maxDam = 45; } // 匈奴幽靈武士
+                    else if (utype == "ranged_cav") { vw = 16; aw = 24; maxDam = 36; } // 匈奴弓騎兵
                 } else if (tier == "ace") {
-                    if (utype == "cav") { hp = 100; vw = 20; aw = 26; maxDam = 75; }
+                    if (utype == "cav") { vw = 22; aw = 26; maxDam = 52; } // 匈奴重裝騎兵
                 } else if (tier == "leader") {
-                    if (utype == "leader_cav") { hp = 400; vw = 24; aw = 35; maxDam = 95; }
+                    if (utype == "leader_cav") { vw = 25; aw = 36; maxDam = 80; }
                 }
             }
 
