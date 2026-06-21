@@ -65,3 +65,74 @@
 ## 授權與聲明
 
 本修改器僅供學術交流與程式設計研究之用。遊戲智慧財產權歸原開發商所有。
+
+---
+
+# Against Rome Modifier
+
+This is a modern graphical modifier developed specifically for the real-time strategy game *Against Rome*. The project is built on C# (.NET 8) and Windows Forms, featuring a beautiful dark-themed tech-style borderless interface, and integrating all underlying modification and restoration logic into a single, standalone executable.
+
+---
+
+## Core Features
+
+* **Break Population Limits**: Dramatically increase the population limit in endless and multiplayer modes from the original 200 to 1600 (or custom limits).
+* **Free Construction & Production**: Eliminate all resource and honor point costs for building construction, technology upgrades, unit training, and siege weapon production.
+* **Healing Food Consumption Optimization**: To address balance issues after eliminating production costs, a food consumption mechanism has been introduced for units when healing, significantly boosting healing efficiency and consumption ratios.
+* **Unit & Faction Balance**:
+  * Comprehensive optimization of base HP, defense, combat power, and damage for all 43 unit types (including siege weapons).
+  * Unique attribute bonuses and unit specialization for the four factions: Roman, Teuton, Celt, and Hun.
+  * Doubled unit movement speed; tripled range and vision for ranged units with 1.5x reload speed; wizard vision and spell range increased by 30x.
+* **Compatibility & Convenience Patches**:
+  * **Background Execution**: Patches the main game executable (using NOP to block the pause flag write) so the game continues running in the background when minimized or losing focus.
+  * **Auto Path Detection**: Automatically detects the installation path of *Against Rome* from the registry upon startup.
+  * **One-Click Launch**: Launch the game directly from the modifier with a single click after applying modifications.
+* **Import/Export Preferences**: Support exporting your custom configuration parameters into an `.arpreset` file for easy backup and quick loading.
+* **Save Manager**: Provide backup, restore, and history management functions for game saves (SAVE) with a caching mechanism to maintain fluid UI response.
+
+---
+
+## Technical Architecture & Project Structure
+
+The project is designed with a modular structure:
+
+* **[Program.cs](file:///c:/Users/nojac/OneDrive/程式/Against_Rome_Modifier/Program.cs)**: Application entry point, handling high DPI adaptation and UAC administrator privilege escalation.
+* **[GameLZSS.cs](file:///c:/Users/nojac/OneDrive/程式/Against_Rome_Modifier/GameLZSS.cs)**: Highly optimized LZSS compression/decompression core algorithm specialized for the game, utilizing Hash Chains and a 16-bit hash table to speed up large file compression.
+* **[TroopConfig.cs](file:///c:/Users/nojac/OneDrive/程式/Against_Rome_Modifier/TroopConfig.cs)**: Store unit correspondence data, sorting rules, attribute matrices, and faction bonus calculation logic.
+* **[ModifierForm.cs](file:///c:/Users/nojac/OneDrive/程式/Against_Rome_Modifier/ModifierForm.cs)**: Main form layout, paint overrides, and UI declarations for custom `ModernToggle` controls.
+* **[ModifierForm.Data.cs](file:///c:/Users/nojac/OneDrive/程式/Against_Rome_Modifier/ModifierForm.Data.cs)**: Load and analyze game data, handle TGA image parsing, and format unit parameters.
+* **[ModifierForm.Patches.cs](file:///c:/Users/nojac/OneDrive/程式/Against_Rome_Modifier/ModifierForm.Patches.cs)**: Core patching logic applying and restoring various configurations (`objdef.dau`, `ress.ini`, `cl_script.ini`, `Against_Rome.exe`, and parallel processing for `team.dat`) via multi-threaded background tasks.
+* **[ModifierForm.SaveManager.cs](file:///c:/Users/nojac/OneDrive/程式/Against_Rome_Modifier/ModifierForm.SaveManager.cs)**: Compress, backup, and cache game saves.
+* **[ModifierForm.Presets.cs](file:///c:/Users/nojac/OneDrive/程式/Against_Rome_Modifier/ModifierForm.Presets.cs)**: Import/export configuration presets and interface data binding.
+
+---
+
+## Embedded Resources & Standalone Mechanism
+
+The project runs completely independently of external backup directories:
+1. **Embedded Original Resources (`Backup.zip`)**: Package the initial game files and executable (e.g. `objdef.dau`, `team.dat`, `Against_Rome.exe`) as an `EmbeddedResource` built directly into the modifier executable.
+2. **Dynamic Extraction & Cleanup**: Upon startup, the modifier automatically decompresses the embedded `Backup.zip` into a random folder in the system Temp directory as a modification base; when closed, it deletes the folder automatically to keep the system clean.
+3. **Embedded Technical Document**: [修改技術文件.md](file:///c:/Users/nojac/OneDrive/程式/Against_Rome_Modifier/修改技術文件.md) (and its English version) is embedded to serve as an in-app documentation.
+
+---
+
+## Development & Compilation Environment
+
+* **Language**: C# 12
+* **Target Framework**: .NET 8.0-windows
+* **Project Type**: Windows Forms (WinExe)
+* **Platform**: Windows (x64)
+
+### Compilation Steps
+1. Install .NET 8.0 SDK and Visual Studio 2022.
+2. Ensure the `Backup.zip` file exists in the project root directory (required as `EmbeddedResource` for compiling).
+3. Open `AgainstRomeModifier.slnx` or the project file using Visual Studio.
+4. Select `Release` / `x64` configuration.
+5. Click "Build Solution" to get the standalone executable under `bin/Release/net8.0-windows/`.
+
+---
+
+## License & Disclaimers
+
+This modifier is developed for academic exchange and programming research purposes only. The intellectual property rights of the game belong to the original game developer.
+
