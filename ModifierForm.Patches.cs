@@ -761,6 +761,10 @@ namespace AgainstRomeModifier {
                                 newLines.Add(line);
                                 continue;
                             }
+                            if (name.Equals("FigTiePac00_Packpferd", StringComparison.OrdinalIgnoreCase)) {
+                                newLines.Add(line);
+                                continue;
+                            }
                             bool isSiegeTrap = name.Contains("Art") || name.Contains("Bar") || name.Contains("Fal");
                             int foodCost = 0;
                             if (TroopConfig.UnitMeta.ContainsKey(name)) {

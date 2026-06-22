@@ -57,6 +57,24 @@ To avoid the "applying change A reverts change B" issue, all standalone scripts 
   - **Zero Spell Cost**: Set all priest spell MP costs in the last 4 columns to `0`.
   - **Free Honor Unlocks**: Honor costs for formations (cols 8,10,12,14), unit/skill/building research (cols 24-263 even columns), and attribute upgrades (cols 264-291) in `[volkres]` are set to `0`.
   - **Population Limit**: Max population limit (Index 2) in `[volkres]` is set to `1600`.
+* **`ress.ini` Field Layout Notes (0-based indexes)**:
+  - **Overall Structure**: Only `[objres]` and `[volkres]` contain CSV-like rows. `[objres]` has 132 rows with 30 columns each. `[volkres]` has 6 rows with 297 columns each. Rows keep the original trailing comma, so the final column is an empty tail field.
+  - **`[objres]` Index 0**: Object ID, such as `BauGer...` buildings or `FigGer...` units.
+  - **`[objres]` Index 1-7**: Build, deploy, or field-construction cost block. Buildings, siege engines, traps, and barricades use this range. The modifier currently treats `2` as building wood cost and `3` as building stone cost.
+  - **`[objres]` Index 8-11**: Building upgrade cost block: wood, stone, gold, and iron.
+  - **`[objres]` Index 12-18**: Normal unit production cost block. The free production feature mainly clears this range.
+  - **`[objres]` Index 19-20**: Almost always `0` in the original data; currently treated as reserved or unused.
+  - **`[objres]` Index 21**: Main healing/repair food consumption field. The modifier writes `10` for infantry/civilians and `20` for cavalry/leaders/priests.
+  - **`[objres]` Index 22-26**: Healing/repair consumption block. Meaning varies by unit type, so this range must not be blindly applied to every `Fig` row.
+  - **`[objres]` Index 25-28**: Priest spell MP cost block. Priest rows usually contain `25,50,75,100`. This overlaps with healing columns `25-26`, so priest rows must be detected before modifying these fields.
+  - **`[objres]` Index 29**: Empty tail field kept to preserve the original CSV trailing comma structure.
+  - **Special Unit `FigTiePac00_Packpferd`**: Corresponds to the Civil unit with horse / Pack horse type. Its original non-zero fields are `18:1` and `24:1`; `24` sits in the healing/repair block rather than the normal production cost block. To prevent accidental free production or healing-cost clearing, `ApplyRessPatch()` keeps this entire row unchanged from the original backup.
+  - **`[volkres]` Row 0-5**: Teuton/German, Celt, Hun, Roman, reserved row, reserved row.
+  - **`[volkres]` Index 0-7**: Faction base settings. Index `2` is confirmed as the population limit.
+  - **`[volkres]` Index 8-23**: Formation or base technology unlock pairs in `honor cost, ID` format.
+  - **`[volkres]` Index 24-263**: Unit, skill, building, and technology unlock pairs. Even indexes are honor costs; odd indexes are the corresponding IDs.
+  - **`[volkres]` Index 264-291**: Four attribute-upgrade cost blocks. The free upgrade feature clears this range, while preserving unrelated maximum-value or ID-like fields.
+  - **`[volkres]` Index 292-296**: Reserved or empty tail fields.
 
 ### 4. objdef.dau Changes
 * **Format**: LZSS compression. Keep original size of `3,310,807` bytes to prevent crash.
