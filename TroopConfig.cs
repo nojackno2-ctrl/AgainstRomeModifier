@@ -45,12 +45,11 @@ namespace AgainstRomeModifier {
         BauUpgradeStone = 9,
         BauUpgradeGold = 10,
         BauUpgradeIron = 11,
-        // objres 單位生產/回血費
+        // objres 單位生產與解除返還
         FigProdCostStart = 12,
         FigProdCostEnd = 18,
-        FigHealFoodCost = 21,
-        FigHealFoodCostStart = 22,
-        FigHealFoodCostEnd = 26,
+        FigEquipmentRefundStart = 21,
+        FigEquipmentRefundEnd = 24,
         FigPriestSpellCostStart = 25,
         FigPriestSpellCostEnd = 28,
         // objres 攻城武器建造費

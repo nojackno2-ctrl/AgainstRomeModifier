@@ -53,7 +53,7 @@ To avoid the "applying change A reverts change B" issue, all standalone scripts 
 * **Format**: Uses LZSS compression with a 64-byte `PFIL@` header.
 * **Modifications**:
   - **Free Construction & Upgrades**: Items starting with `Bau` in `[objres]` have costs set to `0` (including Index 8-11 upgrade materials). Fixed 11 missing tier-3/upgrade buildings at the end of the section to prevent engine fallback.
-  - **Free Production & Healing Food Cost**: Unit costs in `[objres]` (cols 13-19) are set to `0`. Healing food cost is set to `10` for infantry/civilians and `20` for cavalry/leaders/priests (col 22), forcing food consumption when regenerating. Siege weapons/traps/barricades wild construction costs (cols 1-7) are cleared.
+  - **Free Production**: Unit costs in `[objres]` (cols 13-19) are set to `0`. Equipment refund fields (Index 21-24) are also cleared for non-exempt units so free units cannot be converted back into resources by disbanding or disarming. Siege weapons/traps/barricades wild construction costs (cols 1-7) are cleared.
   - **Zero Spell Cost**: Set all priest spell MP costs in the last 4 columns to `0`.
   - **Free Honor Unlocks**: Honor costs for formations (cols 8,10,12,14), unit/skill/building research (cols 24-263 even columns), and attribute upgrades (cols 264-291) in `[volkres]` are set to `0`.
   - **Population Limit**: Max population limit (Index 2) in `[volkres]` is set to `1600`.
@@ -64,11 +64,11 @@ To avoid the "applying change A reverts change B" issue, all standalone scripts 
   - **`[objres]` Index 8-11**: Building upgrade cost block: wood, stone, gold, and iron.
   - **`[objres]` Index 12-18**: Normal unit production cost block. The free production feature mainly clears this range.
   - **`[objres]` Index 19-20**: Almost always `0` in the original data; currently treated as reserved or unused.
-  - **`[objres]` Index 21**: Main healing/repair food consumption field. The modifier writes `10` for infantry/civilians and `20` for cavalry/leaders/priests.
-  - **`[objres]` Index 22-26**: Healing/repair consumption block. Meaning varies by unit type, so this range must not be blindly applied to every `Fig` row.
-  - **`[objres]` Index 25-28**: Priest spell MP cost block. Priest rows usually contain `25,50,75,100`. This overlaps with healing columns `25-26`, so priest rows must be detected before modifying these fields.
+  - **`[objres]` Index 21-24**: Equipment refund block used when disbanding or disarming units. When free construction, repair, and unit production is enabled, this range must be set to `0` for every applicable unit so free units cannot be converted back into resources. For example, Celt Spearman / Lance bearer (`FigKelInf01_Lanze`) with `Index 21:10` can return 200 stone when disarming 20 units, and its original `Index 23:3` can also surface as an incorrect stone refund. Celt lancer cavalry (`FigKelKav00_Lanze_Schild`) has original `Index 22:5`, which can return 100 stone when disarming 20 units.
+  - **`[objres]` Index 25-28**: Priest spell MP cost block. Priest rows usually contain `25,50,75,100`.
   - **`[objres]` Index 29**: Empty tail field kept to preserve the original CSV trailing comma structure.
-  - **Special Unit `FigTiePac00_Packpferd`**: Corresponds to the Civil unit with horse / Pack horse type. Its original non-zero fields are `18:1` and `24:1`; `24` sits in the healing/repair block rather than the normal production cost block. To prevent accidental free production or healing-cost clearing, `ApplyRessPatch()` keeps this entire row unchanged from the original backup.
+  - **Special Unit `FigTiePac00_Packpferd`**: Corresponds to the Civil unit with horse / Pack horse type. Its original non-zero fields are `18:1` and `24:1`. This unit is fully excluded from free production: both production cost and disband/disarm refund values remain original.
+  - **`Civil unit with horses` Production Button Cost Rows**: The `txttact_verziv_01_0/1` tooltip text in `gigm.put` corresponds to "Civil unit with horses". In-game production can go through the four button objects `VerGerZivIco01_Zivil_Icon`, `VerHunZivIco01_Zivil_Icon`, `VerKelZivIco01_Zivil_Icon`, and `VerRomZivIco01_Zivil_Icon`. The original `ress.ini` does not contain `[objres]` resource rows for these `Ver...` button IDs; preserving only the `FigTiePac00_Packpferd` unit row can still leave the button path free. When free production is enabled, `ApplyRessPatch()` inserts four explicit button cost rows with the original-equivalent `18:1` and `24:1`, so mounted civilians keep both original production and disband/disarm behavior.
   - **`[volkres]` Row 0-5**: Teuton/German, Celt, Hun, Roman, reserved row, reserved row.
   - **`[volkres]` Index 0-7**: Faction base settings. Index `2` is confirmed as the population limit.
   - **`[volkres]` Index 8-23**: Formation or base technology unlock pairs in `honor cost, ID` format.

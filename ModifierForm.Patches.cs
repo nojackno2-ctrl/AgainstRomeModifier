@@ -25,6 +25,12 @@ namespace AgainstRomeModifier {
         private static readonly byte[] ExeFocusPatchedBytes = new byte[] { 0x90, 0x90, 0x90, 0x90, 0x90, 0x90 };
         private const long ExeFocusPatchOffset = 0x161a88;
         private const long ExeFocusPatchRequiredLength = 0x161a8e;
+        private static readonly string[] HorseCivilProductionIconIds = new string[] {
+            "VerGerZivIco01_Zivil_Icon",
+            "VerHunZivIco01_Zivil_Icon",
+            "VerKelZivIco01_Zivil_Icon",
+            "VerRomZivIco01_Zivil_Icon"
+        };
 
         private sealed class FileRollbackScope : IDisposable {
             private sealed class RollbackEntry {
@@ -270,6 +276,38 @@ namespace AgainstRomeModifier {
                 rollback?.Dispose();
                 SetActionButtonsEnabled(true);
             }
+        }
+
+        private static string BuildHorseCivilProductionCostRow(string id) {
+            string[] cols = new string[30];
+            for (int i = 0; i < cols.Length - 1; i++) {
+                cols[i] = "0";
+            }
+            cols[cols.Length - 1] = "";
+            cols[0] = id;
+            cols[(int)RessIndex.FigProdCostEnd] = "1";
+            cols[(int)RessIndex.FigEquipmentRefundEnd] = "1";
+            return ToCsvString(cols);
+        }
+
+        private static void EnsureHorseCivilProductionCostRows(List<string> lines) {
+            int insertIndex = lines.FindIndex(line => line.Trim().Equals("[maxskills]", StringComparison.OrdinalIgnoreCase));
+            if (insertIndex < 0) {
+                insertIndex = lines.Count;
+            }
+
+            foreach (string id in HorseCivilProductionIconIds) {
+                bool exists = lines.Any(line => line.StartsWith(id + ",", StringComparison.OrdinalIgnoreCase));
+                if (!exists) {
+                    lines.Insert(insertIndex, BuildHorseCivilProductionCostRow(id));
+                    insertIndex++;
+                }
+            }
+        }
+
+        private static bool ShouldZeroFigFreeProductionField(int index) {
+            return (index >= (int)RessIndex.FigProdCostStart && index <= (int)RessIndex.FigProdCostEnd) ||
+                   (index >= (int)RessIndex.FigEquipmentRefundStart && index <= (int)RessIndex.FigEquipmentRefundEnd);
         }
 
         /// <summary>
@@ -766,41 +804,18 @@ namespace AgainstRomeModifier {
                                 continue;
                             }
                             bool isSiegeTrap = name.Contains("Art") || name.Contains("Bar") || name.Contains("Fal");
-                            int foodCost = 0;
-                            if (TroopConfig.UnitMeta.ContainsKey(name)) {
-                                string utype = TroopConfig.UnitMeta[name].Item3;
-                                if (utype == "melee_inf" || utype == "ranged_inf" || utype == "hybrid_inf") {
-                                    foodCost = 10;
-                                } else if (utype == "cav" || utype == "ranged_cav" || utype == "leader_melee" || utype == "leader_cav" || utype == "priest") {
-                                    foodCost = 20;
-                                }
-                            } else if (!isSiegeTrap) {
-                                if (name.Contains("Kav") || name.Contains("Anf") || name.Contains("Pri") || name.Contains("Dru") || name.Contains("Her")) {
-                                    foodCost = 20;
-                                } else {
-                                    foodCost = 10;
-                                }
-                            }
                             var newCols = new List<string> { cols[0] };
                             bool isPriest = name.Contains("Pri") || name.Contains("Dru");
                             for (int i = 1; i < cols.Length; i++) {
                                 string val = cols[i].Trim();
                                 if (string.IsNullOrEmpty(val)) {
                                     newCols.Add(cols[i]);
-                                } else if (foodCost > 0 && i == (int)RessIndex.FigHealFoodCost) {
-                                    newCols.Add(foodCost.ToString());
-                                } else if (foodCost > 0 && i >= (int)RessIndex.FigHealFoodCostStart && i <= (int)RessIndex.FigHealFoodCostEnd) {
-                                    if (isPriest && i >= (int)RessIndex.FigPriestSpellCostStart) {
-                                        newCols.Add(noSpellCostChecked ? "0" : val);
-                                    } else {
-                                        newCols.Add("0");
-                                    }
+                                } else if (freeProdChecked && ShouldZeroFigFreeProductionField(i)) {
+                                    newCols.Add("0");
                                 } else if (isSiegeTrap && i >= (int)RessIndex.FigSiegeBuildCostStart && i <= (int)RessIndex.FigSiegeBuildCostEnd) {
                                     newCols.Add(freeProdChecked ? "0" : val);
                                 } else if (isPriest && i >= (int)RessIndex.FigPriestSpellCostStart && i <= (int)RessIndex.FigPriestSpellCostEnd) {
                                     newCols.Add(noSpellCostChecked ? "0" : val);
-                                } else if (freeProdChecked && i >= (int)RessIndex.FigProdCostStart && i <= (int)RessIndex.FigProdCostEnd) {
-                                    newCols.Add("0");
                                 } else {
                                     newCols.Add(cols[i]);
                                 }
@@ -838,6 +853,10 @@ namespace AgainstRomeModifier {
                 }
             }
 
+            if (freeProdChecked) {
+                EnsureHorseCivilProductionCostRows(newLines);
+            }
+
             string newContent = string.Join(lineEnding, newLines.ToArray());
             if (decomp.EndsWith(lineEnding) && !newContent.EndsWith(lineEnding)) {
                 newContent += lineEnding;
@@ -847,7 +866,7 @@ namespace AgainstRomeModifier {
             byte[] compressed = GameLZSS.CompressPfil(newBytes, origBytes);
 
             SafeWriteAllBytes(dest, compressed, rollback);
-            Log("已成功修改與寫入 ress.ini (免費建造、人口與食物)。");
+            Log("已成功修改與寫入 ress.ini (免費建造與人口)。");
         }
 
         /// <summary>

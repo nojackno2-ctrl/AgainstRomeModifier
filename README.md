@@ -15,7 +15,6 @@
 
 * **人口上限突破**：可將無盡模式與多人模式的人口上限從原版 200 人大幅提升至 1600 人（或自訂上限）。
 * **全建築與生產免費**：清除所有建築物建造、科技升級、兵種與攻城機具生產的資源及榮譽點數消耗。
-* **回血食物消耗優化**：為解決生產免費後的平衡問題，加入單位回血時的食物消耗機制，並顯著提升回血效率與消耗比率。
 * **自訂兵種屬性檔案自訂與特色平衡**：
   * **9 大屬性全面開放自訂**：支援完全自訂所有 43 個兵種（含攻城武器）的 9 大屬性（生命、傷害、防禦、戰鬥、移動速度、視野、冷卻、射程、法術半徑）。
   * **陣營分類分頁與拉桿消除**：自訂編輯子視窗 `TroopPresetForm` 優化放大至 1250x790，採圓角無邊框美學，並以「條頓、塞爾特、匈奴、羅馬」四個陣營分頁呈現，徹底消除所有水平與垂直拉桿。
@@ -95,7 +94,6 @@ This is a modern graphical modifier developed specifically for the real-time str
 
 * **Break Population Limits**: Dramatically increase the population limit in endless and multiplayer modes from the original 200 to 1600 (or custom limits).
 * **Free Construction & Production**: Eliminate all resource and honor point costs for building construction, technology upgrades, unit training, and siege weapon production.
-* **Healing Food Consumption Optimization**: To address balance issues after eliminating production costs, a food consumption mechanism has been introduced for units when healing, significantly boosting healing efficiency and consumption ratios.
 * **Troop Stats Configuration File Customization & Balance**:
   * **9 Stats Customization**: Fully customize HP, Dmg, VW, AW, Speed, Sight, Relt, Range, and SpellRadius for all 43 units.
   * **UI Tabbed Layout & Zero Scrollbars**: The preset child form is enlarged to 1250x790 and restructured into Teutons, Celts, Huns, and Romans tab pages to completely eliminate scrollbars.
