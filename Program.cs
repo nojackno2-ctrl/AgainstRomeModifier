@@ -67,7 +67,7 @@ namespace AgainstRomeModifier {
         // 避免編譯器內聯此方法，確保權限檢查與 UI 啟動正確分離
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
         private static void StartForm() {
-            Application.SetHighDpiMode(HighDpiMode.SystemAware);
+            Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
             // 啟動主修改器介面

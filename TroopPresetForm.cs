@@ -140,8 +140,8 @@ namespace AgainstRomeModifier {
                 FlatStyle = FlatStyle.Flat
             };
             cbTemplate.Items.AddRange(isEn 
-                ? new string[] { "(Select Template)", "Original Base Stats", "Balanced Base Stats" }
-                : new string[] { "(請選擇範本)", "官方原版數值", "修改器內建平衡" });
+                ? new string[] { "(Select Template)", "Balanced Base Stats" }
+                : new string[] { "(請選擇範本)", "修改器內建平衡" });
             cbTemplate.SelectedIndex = 0;
             cbTemplate.SelectedIndexChanged += CbTemplate_SelectedIndexChanged;
             this.Controls.Add(cbTemplate);
@@ -394,16 +394,9 @@ namespace AgainstRomeModifier {
             if (index == 0) return;
  
             bool isEn = Loc.CurrentLanguage == Language.English;
-            string text = "";
-            if (isEn) {
-                text = index == 1 
-                    ? "Are you sure you want to apply the 'Original Base Stats' template? This will overwrite your current changes!" 
-                    : "Are you sure you want to apply the 'Balanced Base Stats' template? This will overwrite your current changes!";
-            } else {
-                text = index == 1 
-                    ? "確定要套用「官方原版數值」範本嗎？這將覆蓋目前表格中的編輯！" 
-                    : "確定要套用「修改器內建平衡」範本嗎？這將覆蓋目前表格中的編輯！";
-            }
+            string text = isEn 
+                ? "Are you sure you want to apply the 'Balanced Base Stats' template? This will overwrite your current changes!" 
+                : "確定要套用「修改器內建平衡」範本嗎？這將覆蓋目前表格中的編輯！";
             string title = isEn ? "Confirm Template Overwrite" : "確認範本覆蓋";
 
             if (MessageBox.Show(text, title, MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) {
@@ -416,7 +409,7 @@ namespace AgainstRomeModifier {
                     string key = dgv.Rows[i].Cells["Key"].Value?.ToString() ?? "";
                     if (string.IsNullOrEmpty(key)) continue;
  
-                    double[] stats = index == 1 ? mainForm.GetOriginalStats(key) : mainForm.GetDefaultBalancedStats(key);
+                    double[] stats = mainForm.GetDefaultBalancedStats(key);
                     dgv.Rows[i].Cells["Hp"].Value = stats.Length > 0 ? Math.Round(stats[0]).ToString() : "0";
                     dgv.Rows[i].Cells["Dmg"].Value = stats.Length > 1 ? stats[1].ToString("F1", CultureInfo.InvariantCulture) : "0.0";
                     dgv.Rows[i].Cells["VW"].Value = stats.Length > 2 ? Math.Round(stats[2]).ToString() : "0";

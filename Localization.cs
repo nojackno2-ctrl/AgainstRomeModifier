@@ -157,7 +157,7 @@ namespace AgainstRomeModifier {
         private static readonly Dictionary<string, string> Zh = new Dictionary<string, string> {
             // UI elements
             { "NavSystem", "⚙   主控制台" },
-            { "NavDefaultStats", "📊   預設兵種屬性" },
+            { "NavDefaultStats", "📊   自訂兵種屬性" },
             { "NavCurrentStats", "📈   當前兵種數值" },
             { "NavSaveManager", "💾   遊戲存檔管理" },
             { "NavDoc", "📝   修改技術文件" },
@@ -186,8 +186,8 @@ namespace AgainstRomeModifier {
             { "RestoreStats", "僅還原兵種屬性" },
             { "RestoreCompat", "僅還原相容性修正" },
             { "RestoreLang", "僅還原語系設定" },
-            { "DefaultStatsTitle", "預設兵種屬性對比 (無自訂加成)" },
-            { "EnableBalance", "啟用預設兵種屬性平衡與陣營特色" },
+            { "DefaultStatsTitle", "自訂兵種屬性對比 (無自訂加成)" },
+            { "EnableBalance", "啟用自訂兵種屬性平衡與陣營特色" },
             { "BtnTroopPreset", "兵種屬性檔案" },
             { "TroopPresetDefault", "屬性檔案：預設範本" },
             { "TroopPresetManual", "屬性檔案：自訂配置 (手動)" },
@@ -265,8 +265,9 @@ namespace AgainstRomeModifier {
             { "LogConstructCompleted", "修改器視窗建構完成，開始載入資料..." },
             { "LogLoadIconFailed", "載入圖示失敗: " },
             { "LogLoadIconCount", "成功載入 {0} 個兵種圖示。" },
-            { "LogDefaultStatsLoaded", "預設兵種屬性載入完成，共 {0} 筆資料。" },
-            { "LogDefaultStatsLoadError", "載入預設屬性數據錯誤: " },
+            { "LogDefaultStatsLoaded", "自訂兵種屬性載入完成，共 {0} 筆資料。" },
+            { "LogDefaultStatsLoadError", "載入自訂屬性數據錯誤: " },
+            { "LogBalanceToggled", "自訂兵種屬性平衡與陣營特色已{0}。" },
             { "LogReadCurrent", "正在讀取現有設定..." },
             { "LogReadCurrentDone", "現有屬性設定讀取完成，共 {0} 筆比對資料。" },
             { "LogBrowseTitle", "請選擇《羅馬的榮耀》(Against Rome) 遊戲安裝目錄" },
@@ -309,7 +310,7 @@ namespace AgainstRomeModifier {
             { "LogGamePathNotSetIcon", "遊戲路徑未設定或不存在，無法載入兵種圖示。" },
             { "LogGuiDatNotFound", "找不到 gui.dat，無法載入兵種圖示。" },
             { "LogIconIniNotFound", "記憶體備份中找不到 icon.ini，無法載入兵種圖示。" },
-            { "LogObjdefNotFound", "記憶體備份中找不到 objdef.dau，無法載入預設兵種屬性。" },
+            { "LogObjdefNotFound", "記憶體備份中找不到 objdef.dau，無法載入自訂兵種屬性。" },
             { "LogNoObjdefForRead", "找不到任何 objdef.dau 檔案，無法讀取設定。" },
             { "LogSavePathNotSet", "遊戲路徑未設定，無法載入存檔。" },
             { "LogRefreshSavesFailed", "重新整理存檔列表失敗: " },
@@ -356,13 +357,13 @@ namespace AgainstRomeModifier {
             { "LogDeleteSaveFailedDetail", "刪除存檔失敗: " },
             { "LogDeleteBackupSuccessDetail", "已刪除備份檔案: {0}" },
             { "LogDeleteBackupFailedDetail", "刪除備份失敗: " },
-            { "TipsContent", "💡 快速操作指南：\n\n1. 設定遊戲路徑：請在右側「系統控制台」指定 Against Rome 安裝目錄（修改器會自動嘗試讀取註冊表以取得路徑）。\n\n2. 讀取現有設定：點擊右側「讀取現有設定」，修改器會自動從遊戲實體檔案（objdef.dau, ress.ini, cl_script.ini 等）解析目前套用的參數，並呈現於兵種列表對比中。\n\n3. 調整偏好與開關：在主控制台完成您喜好的修改配置（如人口上限、倍率開關等）。\n\n4. 執行修改與啟動：點擊右側「執行修改」按鈕將設定套入遊戲；完成後即可點擊「啟動遊戲」按鈕立刻開啟遊戲進入戰鬥！\n\n5. 兵種屬性觀察：可在左側導覽列切換至「預設兵種屬性」與「當前兵種數值」頁面，即時比對原版與修改後的細部屬性資料。" }
+            { "TipsContent", "💡 快速操作指南：\n\n1. 設定遊戲路徑：請在右側「系統控制台」指定 Against Rome 安裝目錄（修改器會自動嘗試讀取註冊表以取得路徑）。\n\n2. 讀取現有設定：點擊右側「讀取現有設定」，修改器會自動從遊戲實體檔案（objdef.dau, ress.ini, cl_script.ini 等）解析目前套用的參數，並呈現於兵種列表對比中。\n\n3. 調整偏好與開關：在主控制台完成您喜好的修改配置（如人口上限、倍率開關等）。\n\n4. 執行修改與啟動：點擊右側「執行修改」按鈕將設定套入遊戲；完成後即可點擊「啟動遊戲」按鈕立刻開啟遊戲進入戰鬥！\n\n5. 兵種屬性觀察：可在左側導覽列切換至「自訂兵種屬性」與「當前兵種數值」頁面，即時比對原版與修改後的細部屬性資料。" }
         };
 
         private static readonly Dictionary<string, string> En = new Dictionary<string, string> {
             // UI elements
             { "NavSystem", "⚙   Main Console" },
-            { "NavDefaultStats", "📊   Default Unit Stats" },
+            { "NavDefaultStats", "📊   Custom Unit Stats" },
             { "NavCurrentStats", "📈   Current Unit Stats" },
             { "NavSaveManager", "💾   Save Manager" },
             { "NavDoc", "📝   Technical Doc" },
@@ -391,8 +392,8 @@ namespace AgainstRomeModifier {
             { "RestoreStats", "Restore Stats Only" },
             { "RestoreCompat", "Restore Compatibility Only" },
             { "RestoreLang", "Restore Language Only" },
-            { "DefaultStatsTitle", "Default Unit Stats Comparison (No Custom Buffs)" },
-            { "EnableBalance", "Enable Default Unit Attribute Balance & Faction Traits" },
+            { "DefaultStatsTitle", "Custom Unit Stats Comparison (No Custom Buffs)" },
+            { "EnableBalance", "Enable Custom Unit Attribute Balance & Faction Traits" },
             { "BtnTroopPreset", "Troop Stats Profile" },
             { "TroopPresetDefault", "Stats File: Default Template" },
             { "TroopPresetManual", "Stats File: Custom Config (Manual)" },
@@ -470,8 +471,9 @@ namespace AgainstRomeModifier {
             { "LogConstructCompleted", "Modifier form constructed. Loading data..." },
             { "LogLoadIconFailed", "Failed to load unit icon: " },
             { "LogLoadIconCount", "Successfully loaded {0} unit icons." },
-            { "LogDefaultStatsLoaded", "Default unit stats loaded. Total {0} records." },
-            { "LogDefaultStatsLoadError", "Error loading default unit stats: " },
+            { "LogDefaultStatsLoaded", "Custom unit stats loaded. Total {0} records." },
+            { "LogDefaultStatsLoadError", "Error loading custom unit stats: " },
+            { "LogBalanceToggled", "Custom unit attribute balance & faction traits {0}." },
             { "LogReadCurrent", "Reading current settings..." },
             { "LogReadCurrentDone", "Current settings read. Total {0} records for comparison." },
             { "LogBrowseTitle", "Please select the Against Rome installation folder" },
@@ -514,7 +516,7 @@ namespace AgainstRomeModifier {
             { "LogGamePathNotSetIcon", "Game path not set or invalid. Cannot load unit icons." },
             { "LogGuiDatNotFound", "gui.dat not found. Cannot load unit icons." },
             { "LogIconIniNotFound", "icon.ini not found in backup memory. Cannot load unit icons." },
-            { "LogObjdefNotFound", "objdef.dau not found in backup memory. Cannot load default unit stats." },
+            { "LogObjdefNotFound", "objdef.dau not found in backup memory. Cannot load custom unit stats." },
             { "LogNoObjdefForRead", "No objdef.dau file found to read." },
             { "LogSavePathNotSet", "Game path not set. Cannot load saves." },
             { "LogRefreshSavesFailed", "Failed to refresh save list: " },
@@ -561,7 +563,7 @@ namespace AgainstRomeModifier {
             { "LogDeleteSaveFailedDetail", "Failed to delete save: " },
             { "LogDeleteBackupSuccessDetail", "Deleted backup file: {0}" },
             { "LogDeleteBackupFailedDetail", "Failed to delete backup: " },
-            { "TipsContent", "💡 Quick Start Guide:\n\n1. Set Game Path: Specify the Against Rome installation directory in the right 'System Console' (the modifier will automatically try to detect the path from the registry).\n\n2. Load Current Settings: Click 'Load Current Settings' on the right. The modifier will parse the currently applied parameters from game files (objdef.dau, ress.ini, cl_script.ini, etc.) and display them in the unit list.\n\n3. Adjust Preferences & Switches: Configure your preferences (such as population limit, feature toggles, etc.) on the Main Console.\n\n4. Apply & Launch: Click 'Apply Changes' to write the configurations to the game. Once done, click 'Launch Game' to start playing immediately!\n\n5. Inspect Unit Stats: Switch to 'Default Unit Stats' or 'Current Unit Stats' in the sidebar to compare the original and modified attribute details." }
+            { "TipsContent", "💡 Quick Start Guide:\n\n1. Set Game Path: Specify the Against Rome installation directory in the right 'System Console' (the modifier will automatically try to detect the path from the registry).\n\n2. Load Current Settings: Click 'Load Current Settings' on the right. The modifier will parse the currently applied parameters from game files (objdef.dau, ress.ini, cl_script.ini, etc.) and display them in the unit list.\n\n3. Adjust Preferences & Switches: Configure your preferences (such as population limit, feature toggles, etc.) on the Main Console.\n\n4. Apply & Launch: Click 'Apply Changes' to write the configurations to the game. Once done, click 'Launch Game' to start playing immediately!\n\n5. Inspect Unit Stats: Switch to 'Custom Unit Stats' or 'Current Unit Stats' in the sidebar to compare the original and modified attribute details." }
         };
     }
 }

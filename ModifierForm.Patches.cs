@@ -21,7 +21,84 @@ namespace AgainstRomeModifier {
         private static readonly Regex RegexMoraleFleePatch = new Regex(@"^(MoralsDecFlee\s*=\s*[A-Z]{3}\s*,\s*)\d+(.*)$", RegexOptions.Compiled);
         private static readonly Regex RegexMoraleOverPopPatch = new Regex(@"^(MoralsDecOverPop\s*=\s*[A-Z]{3}\s*,\s*)\d+(.*)$", RegexOptions.Compiled);
         private static readonly Regex RegexMoraleIncIdlePatch = new Regex(@"^(MoralsIncIdle\s*=\s*[A-Z]{3}\s*,\s*)\d+(.*)$", RegexOptions.Compiled);
+        private static readonly byte[] ExeFocusOriginalBytes = new byte[] { 0x89, 0x15, 0xC4, 0x7D, 0x9E, 0x02 };
+        private static readonly byte[] ExeFocusPatchedBytes = new byte[] { 0x90, 0x90, 0x90, 0x90, 0x90, 0x90 };
+        private const long ExeFocusPatchOffset = 0x161a88;
+        private const long ExeFocusPatchRequiredLength = 0x161a8e;
 
+        private sealed class FileRollbackScope : IDisposable {
+            private sealed class RollbackEntry {
+                public string Path { get; set; } = "";
+                public string BackupPath { get; set; } = "";
+                public bool Existed { get; set; }
+            }
+
+            private readonly object _syncRoot = new object();
+            private readonly Dictionary<string, RollbackEntry> _entries = new Dictionary<string, RollbackEntry>(StringComparer.OrdinalIgnoreCase);
+            private readonly string _rootPath;
+            private bool _committed;
+
+            public FileRollbackScope() {
+                _rootPath = Path.Combine(Path.GetTempPath(), "AgainstRomeModifierRollback_" + Guid.NewGuid().ToString("N"));
+                Directory.CreateDirectory(_rootPath);
+            }
+
+            public void TrackFile(string path) {
+                string fullPath = Path.GetFullPath(path);
+                lock (_syncRoot) {
+                    if (_entries.ContainsKey(fullPath)) return;
+
+                    var entry = new RollbackEntry {
+                        Path = fullPath,
+                        Existed = File.Exists(fullPath)
+                    };
+
+                    if (entry.Existed) {
+                        string backupPath = Path.Combine(_rootPath, Guid.NewGuid().ToString("N") + ".bak");
+                        File.Copy(fullPath, backupPath, true);
+                        entry.BackupPath = backupPath;
+                    }
+
+                    _entries[fullPath] = entry;
+                }
+            }
+
+            public void Commit() {
+                _committed = true;
+            }
+
+            public void RestoreAll(Action<string>? log) {
+                foreach (var entry in _entries.Values.Reverse()) {
+                    try {
+                        string? dir = Path.GetDirectoryName(entry.Path);
+                        if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir)) {
+                            Directory.CreateDirectory(dir);
+                        }
+
+                        if (entry.Existed) {
+                            if (File.Exists(entry.Path)) {
+                                File.SetAttributes(entry.Path, FileAttributes.Normal);
+                            }
+                            File.Copy(entry.BackupPath, entry.Path, true);
+                        } else if (File.Exists(entry.Path)) {
+                            File.SetAttributes(entry.Path, FileAttributes.Normal);
+                            File.Delete(entry.Path);
+                        }
+                    } catch (Exception ex) {
+                        log?.Invoke(string.Format("[回復警告] 無法回復 {0}: {1}", entry.Path, ex.Message));
+                    }
+                }
+            }
+
+            public void Dispose() {
+                if (_committed || Directory.Exists(_rootPath)) {
+                    try {
+                        Directory.Delete(_rootPath, true);
+                    } catch {
+                    }
+                }
+            }
+        }
 
         /// <summary>
         /// 記錄日誌訊息，輸出至 UI 的文字框，並非同步寫入至本地 modifier_log.txt 檔案。
@@ -47,37 +124,49 @@ namespace AgainstRomeModifier {
         /// <summary>
         /// 安全寫入檔案至指定路徑（附帶 3 次重試機制以防止檔案暫時鎖定）。
         /// </summary>
-        private void SafeWriteAllBytes(string dest, byte[] bytes) {
+        private void SafeWriteAllBytes(string dest, byte[] bytes, FileRollbackScope? rollback = null) {
             int maxRetries = 3;
             int delayMs = 500;
+            string? dir = Path.GetDirectoryName(dest);
+            if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir)) {
+                Directory.CreateDirectory(dir);
+            }
+
             for (int i = 0; i < maxRetries; i++) {
-                string tempFile = dest + ".tmp";
+                string tempFile = Path.Combine(dir ?? AppContext.BaseDirectory, Path.GetFileName(dest) + "." + Guid.NewGuid().ToString("N") + ".tmp");
                 try {
-                    string? dir = Path.GetDirectoryName(dest);
-                    if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir)) {
-                        Directory.CreateDirectory(dir);
-                    }
-                    if (File.Exists(tempFile)) {
-                        File.SetAttributes(tempFile, FileAttributes.Normal);
-                        File.Delete(tempFile);
-                    }
+                    rollback?.TrackFile(dest);
                     File.WriteAllBytes(tempFile, bytes);
 
                     if (File.Exists(dest)) {
                         File.SetAttributes(dest, FileAttributes.Normal);
-                        File.Delete(dest);
+                        File.Replace(tempFile, dest, null, true);
+                    } else {
+                        File.Move(tempFile, dest);
                     }
-                    File.Move(tempFile, dest);
                     return;
                 } catch (IOException ioEx) {
                     try {
                         if (File.Exists(tempFile)) {
+                            File.SetAttributes(tempFile, FileAttributes.Normal);
                             File.Delete(tempFile);
                         }
                     } catch { }
 
                     if (i == maxRetries - 1) {
                         throw new Exception(string.Format("寫入檔案失敗，檔案可能被佔用或權限不足：{0}。錯誤訊息：{1}", dest, ioEx.Message), ioEx);
+                    }
+                    System.Threading.Thread.Sleep(delayMs);
+                } catch (UnauthorizedAccessException accessEx) {
+                    try {
+                        if (File.Exists(tempFile)) {
+                            File.SetAttributes(tempFile, FileAttributes.Normal);
+                            File.Delete(tempFile);
+                        }
+                    } catch { }
+
+                    if (i == maxRetries - 1) {
+                        throw new Exception(string.Format("寫入檔案失敗，檔案可能被佔用或權限不足：{0}。錯誤訊息：{1}", dest, accessEx.Message), accessEx);
                     }
                     System.Threading.Thread.Sleep(delayMs);
                 }
@@ -87,28 +176,11 @@ namespace AgainstRomeModifier {
         /// <summary>
         /// 安全複製檔案至指定路徑（附帶 3 次重試機制以防止檔案暫時鎖定）。
         /// </summary>
-        private void SafeCopyFile(string src, string dest, bool overwrite) {
-            int maxRetries = 3;
-            int delayMs = 500;
-            for (int i = 0; i < maxRetries; i++) {
-                try {
-                    string? dir = Path.GetDirectoryName(dest);
-                    if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir)) {
-                        Directory.CreateDirectory(dir);
-                    }
-                    if (File.Exists(dest)) {
-                        File.SetAttributes(dest, FileAttributes.Normal);
-                        File.Delete(dest);
-                    }
-                    File.Copy(src, dest, overwrite);
-                    return;
-                } catch (IOException ioEx) {
-                    if (i == maxRetries - 1) {
-                        throw new Exception(string.Format("複製檔案失敗，檔案可能被佔用或權限不足：{0} -> {1}。錯誤訊息：{2}", src, dest, ioEx.Message), ioEx);
-                    }
-                    System.Threading.Thread.Sleep(delayMs);
-                }
+        private void SafeCopyFile(string src, string dest, bool overwrite, FileRollbackScope? rollback = null) {
+            if (!overwrite && File.Exists(dest)) {
+                throw new IOException("目標檔案已存在: " + dest);
             }
+            SafeWriteAllBytes(dest, File.ReadAllBytes(src), rollback);
         }
 
         /// <summary>
@@ -153,12 +225,15 @@ namespace AgainstRomeModifier {
                 return;
             }
 
+            FileRollbackScope? rollback = null;
             try {
                 DialogResult confirm = MessageBox.Show(Loc.Get("MsgConfirmApply"), Loc.Get("TitleConfirm"), MessageBoxButtons.YesNo, MessageBoxIcon.Question);
                 if (confirm != DialogResult.Yes) return;
 
                 SetActionButtonsEnabled(false);
                 Log(Loc.Get("LogStartApply"));
+                rollback = new FileRollbackScope();
+                Log("已建立修改前檔案回復點。");
 
                 bool focusLoss = chkFocusLoss.Checked;
                 decimal civiSpeed = numCiviSpeed.Value;
@@ -171,21 +246,28 @@ namespace AgainstRomeModifier {
                 bool toEng = chkToEng.Checked;
 
                 await Task.Run(() => {
-                    ApplyExePatch(gamePath, focusLoss);
-                    ApplyClScriptPatch(gamePath, civiSpeed, infMorale, balance);
-                    ApplyRessPatch(gamePath, freeProd, freeUp, noSpell, popLimit);
-                    ApplyObjdefPatch(gamePath, balance);
-                    ApplyAptAndTeamFiles(gamePath);
-                    ApplyTeamDatPatch(gamePath, popLimit);
-                    ApplyLanguagePatch(gamePath, toEng);
+                    ApplyExePatch(gamePath, focusLoss, rollback);
+                    ApplyClScriptPatch(gamePath, civiSpeed, infMorale, balance, rollback);
+                    ApplyRessPatch(gamePath, freeProd, freeUp, noSpell, popLimit, rollback);
+                    ApplyObjdefPatch(gamePath, balance, rollback);
+                    RestoreTeamFiles(gamePath, rollback);
+                    ApplyTeamDatPatch(gamePath, popLimit, rollback);
+                    ApplyLanguagePatch(gamePath, toEng, rollback);
                 });
 
+                rollback.Commit();
                 Log(Loc.Get("LogApplyAllSuccess"));
                 MessageBox.Show(Loc.Get("MsgApplySuccess"), Loc.Get("TitleTips"), MessageBoxButtons.OK, MessageBoxIcon.Information);
             } catch (Exception ex) {
+                if (rollback != null) {
+                    Log("套用失敗，開始回復已修改的檔案。");
+                    rollback.RestoreAll(Log);
+                    Log("檔案回復流程已完成。");
+                }
                 Log(Loc.Get("MsgApplyFailed") + ex.Message + "\r\n" + ex.StackTrace);
                 MessageBox.Show(Loc.Get("MsgApplyFailed") + ex.Message, Loc.Get("TitleError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
             } finally {
+                rollback?.Dispose();
                 SetActionButtonsEnabled(true);
             }
         }
@@ -199,14 +281,18 @@ namespace AgainstRomeModifier {
                 MessageBox.Show(Loc.Get("MsgSelectGameDir"), Loc.Get("TitleError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
+            FileRollbackScope? rollback = null;
             SetActionButtonsEnabled(false);
             try {
                 Log(Loc.Get("LogStartRestoreAll"));
+                rollback = new FileRollbackScope();
+                Log("已建立還原前檔案回復點。");
                 await Task.Run(() => {
-                    RestoreStatsOnlyInternal(gamePath);
-                    RestoreMemoryFile("Against_Rome.exe", Path.Combine(gamePath, @"Against_Rome.exe"));
-                    ApplyLanguagePatch(gamePath, false);
+                    RestoreStatsOnlyInternal(gamePath, rollback);
+                    ApplyExePatch(gamePath, false, rollback);
+                    ApplyLanguagePatch(gamePath, false, rollback);
                 });
+                rollback.Commit();
                 chkFocusLoss.Checked = false;
                 chkToEng.Checked = false;
                 customUnitStats = null;
@@ -217,9 +303,15 @@ namespace AgainstRomeModifier {
                 Log(Loc.Get("LogRestoreAllDone"));
                 MessageBox.Show(Loc.Get("MsgRestoreAllSuccess"), Loc.Get("TitleTips"), MessageBoxButtons.OK, MessageBoxIcon.Information);
             } catch (Exception ex) {
+                if (rollback != null) {
+                    Log("還原失敗，開始回復還原前檔案。");
+                    rollback.RestoreAll(Log);
+                    Log("檔案回復流程已完成。");
+                }
                 Log(Loc.Get("MsgRestoreFailed") + ex.Message + "\r\n" + ex.StackTrace);
                 MessageBox.Show(Loc.Get("MsgRestoreFailed") + ex.Message, Loc.Get("TitleError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
             } finally {
+                rollback?.Dispose();
                 SetActionButtonsEnabled(true);
             }
         }
@@ -233,10 +325,14 @@ namespace AgainstRomeModifier {
                 MessageBox.Show(Loc.Get("MsgSelectGameDir"), Loc.Get("TitleError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
+            FileRollbackScope? rollback = null;
             SetActionButtonsEnabled(false);
             try {
                 Log(Loc.Get("LogStartRestoreStats"));
-                await Task.Run(() => RestoreStatsOnlyInternal(gamePath));
+                rollback = new FileRollbackScope();
+                Log("已建立還原前檔案回復點。");
+                await Task.Run(() => RestoreStatsOnlyInternal(gamePath, rollback));
+                rollback.Commit();
                 customUnitStats = null;
                 presetFileSourceType = "default";
                 presetFileName = "";
@@ -245,9 +341,15 @@ namespace AgainstRomeModifier {
                 Log(Loc.Get("LogRestoreStatsDone"));
                 MessageBox.Show(Loc.Get("MsgRestoreStatsSuccess"), Loc.Get("TitleTips"), MessageBoxButtons.OK, MessageBoxIcon.Information);
             } catch (Exception ex) {
+                if (rollback != null) {
+                    Log("還原失敗，開始回復還原前檔案。");
+                    rollback.RestoreAll(Log);
+                    Log("檔案回復流程已完成。");
+                }
                 Log(Loc.Get("MsgRestoreFailed") + ex.Message + "\r\n" + ex.StackTrace);
                 MessageBox.Show(Loc.Get("MsgRestoreFailed") + ex.Message, Loc.Get("TitleError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
             } finally {
+                rollback?.Dispose();
                 SetActionButtonsEnabled(true);
             }
         }
@@ -261,19 +363,29 @@ namespace AgainstRomeModifier {
                 MessageBox.Show(Loc.Get("MsgSelectGameDir"), Loc.Get("TitleError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
+            FileRollbackScope? rollback = null;
             SetActionButtonsEnabled(false);
             try {
                 Log(Loc.Get("LogStartRestoreCompat"));
+                rollback = new FileRollbackScope();
+                Log("已建立還原前檔案回復點。");
                 await Task.Run(() => {
-                    RestoreMemoryFile("Against_Rome.exe", Path.Combine(gamePath, @"Against_Rome.exe"));
+                    ApplyExePatch(gamePath, false, rollback);
                 });
+                rollback.Commit();
                 chkFocusLoss.Checked = false;
                 Log(Loc.Get("LogRestoreCompatDone"));
                 MessageBox.Show(Loc.Get("MsgRestoreCompatSuccess"), Loc.Get("TitleTips"), MessageBoxButtons.OK, MessageBoxIcon.Information);
             } catch (Exception ex) {
+                if (rollback != null) {
+                    Log("還原失敗，開始回復還原前檔案。");
+                    rollback.RestoreAll(Log);
+                    Log("檔案回復流程已完成。");
+                }
                 Log(Loc.Get("MsgRestoreFailed") + ex.Message + "\r\n" + ex.StackTrace);
                 MessageBox.Show(Loc.Get("MsgRestoreFailed") + ex.Message, Loc.Get("TitleError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
             } finally {
+                rollback?.Dispose();
                 SetActionButtonsEnabled(true);
             }
         }
@@ -287,17 +399,27 @@ namespace AgainstRomeModifier {
                 MessageBox.Show(Loc.Get("MsgSelectGameDir"), Loc.Get("TitleError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
+            FileRollbackScope? rollback = null;
             SetActionButtonsEnabled(false);
             try {
                 Log(Loc.Get("LogStartRestoreLang"));
-                await Task.Run(() => ApplyLanguagePatch(gamePath, false));
+                rollback = new FileRollbackScope();
+                Log("已建立還原前檔案回復點。");
+                await Task.Run(() => ApplyLanguagePatch(gamePath, false, rollback));
+                rollback.Commit();
                 chkToEng.Checked = false;
                 Log(Loc.Get("LogRestoreLangDone"));
                 MessageBox.Show(Loc.Get("MsgRestoreLangSuccess"), Loc.Get("TitleTips"), MessageBoxButtons.OK, MessageBoxIcon.Information);
             } catch (Exception ex) {
+                if (rollback != null) {
+                    Log("還原失敗，開始回復還原前檔案。");
+                    rollback.RestoreAll(Log);
+                    Log("檔案回復流程已完成。");
+                }
                 Log(Loc.Get("MsgRestoreFailed") + ex.Message + "\r\n" + ex.StackTrace);
                 MessageBox.Show(Loc.Get("MsgRestoreFailed") + ex.Message, Loc.Get("TitleError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
             } finally {
+                rollback?.Dispose();
                 SetActionButtonsEnabled(true);
             }
         }
@@ -305,15 +427,15 @@ namespace AgainstRomeModifier {
         /// <summary>
         /// 僅還原兵種屬性設定，將 cl_script.ini、ress.ini、objdef.dau 以及所有地圖的 team.dat 覆寫回備份資料。
         /// </summary>
-        private void RestoreStatsOnlyInternal(string gamePath) {
-            RestoreMemoryFile("SYSTEM/cl_script.ini", Path.Combine(gamePath, @"SYSTEM\cl_script.ini"));
-            RestoreMemoryFile("SYSTEM/ress.ini", Path.Combine(gamePath, @"SYSTEM\ress.ini"));
-            RestoreMemoryFile("SYSTEM/DATA_MP/DEFAULTS/objdef.dau", Path.Combine(gamePath, @"SYSTEM\DATA_MP\DEFAULTS\objdef.dau"));
+        private void RestoreStatsOnlyInternal(string gamePath, FileRollbackScope? rollback = null) {
+            RestoreMemoryFile("SYSTEM/cl_script.ini", Path.Combine(gamePath, @"SYSTEM\cl_script.ini"), rollback);
+            RestoreMemoryFile("SYSTEM/ress.ini", Path.Combine(gamePath, @"SYSTEM\ress.ini"), rollback);
+            RestoreMemoryFile("SYSTEM/DATA_MP/DEFAULTS/objdef.dau", Path.Combine(gamePath, @"SYSTEM\DATA_MP\DEFAULTS\objdef.dau"), rollback);
 
             foreach (var kvp in backupFiles) {
                 if (kvp.Key.StartsWith("MAPS/", StringComparison.OrdinalIgnoreCase) && kvp.Key.EndsWith("team.dat", StringComparison.OrdinalIgnoreCase)) {
                     string destPath = Path.Combine(gamePath, kvp.Key.Replace('/', '\\'));
-                    RestoreMemoryFile(kvp.Key, destPath);
+                    RestoreMemoryFile(kvp.Key, destPath, rollback);
                 }
             }
         }
@@ -321,10 +443,10 @@ namespace AgainstRomeModifier {
         /// <summary>
         /// 從記憶體備份字典中取出對應的 byte 陣列，寫入至指定的實體路徑。
         /// </summary>
-        private void RestoreMemoryFile(string key, string dest) {
+        private void RestoreMemoryFile(string key, string dest, FileRollbackScope? rollback = null) {
             byte[]? fileBytes;
             if (backupFiles.TryGetValue(key, out fileBytes)) {
-                SafeWriteAllBytes(dest, fileBytes!);
+                SafeWriteAllBytes(dest, fileBytes!, rollback);
                 Log(string.Format("已還原: {0}", dest));
             }
         }
@@ -359,63 +481,100 @@ namespace AgainstRomeModifier {
         /// <summary>
         /// 套用或還原英文介面與地圖語言包。
         /// </summary>
-        private void ApplyLanguagePatch(string gamePath, bool toEnglish) {
+        private void ApplyLanguagePatch(string gamePath, bool toEnglish, FileRollbackScope? rollback = null) {
             string localToEngDir = Path.Combine(gamePath, "ToEng");
-            if (!Directory.Exists(localToEngDir)) {
-                Log(Loc.Get("LogNoToEngDir"));
+
+            if (toEnglish) {
+                if (!Directory.Exists(localToEngDir)) {
+                    Log(Loc.Get("LogNoToEngDir"));
+                    return;
+                }
+
+                string[] files = Directory.GetFiles(localToEngDir, "*", SearchOption.AllDirectories);
+                foreach (string file in files) {
+                    string relPath = file.Substring(localToEngDir.Length + 1);
+                    string destPath = Path.Combine(gamePath, relPath);
+                    SafeCopyFile(file, destPath, true, rollback);
+                }
+                Log(Loc.Get("LogLangToEng"));
                 return;
             }
 
-            string[] files = Directory.GetFiles(localToEngDir, "*", SearchOption.AllDirectories);
-            foreach (string file in files) {
-                string relPath = file.Substring(localToEngDir.Length + 1);
-                string destPath = Path.Combine(gamePath, relPath);
-
-                if (toEnglish) {
-                    SafeCopyFile(file, destPath, true);
-                } else {
-                    string srcKey = relPath.Replace('\\', '/');
-                    byte[]? origBytes;
-                    if (backupFiles.TryGetValue(srcKey, out origBytes)) {
-                        SafeWriteAllBytes(destPath, origBytes!);
+            var restoreKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (Directory.Exists(localToEngDir)) {
+                string[] files = Directory.GetFiles(localToEngDir, "*", SearchOption.AllDirectories);
+                foreach (string file in files) {
+                    string relPath = file.Substring(localToEngDir.Length + 1).Replace('\\', '/');
+                    if (backupFiles.ContainsKey(relPath)) {
+                        restoreKeys.Add(relPath);
                     }
                 }
             }
-            if (toEnglish) {
-                Log(Loc.Get("LogLangToEng"));
+
+            if (restoreKeys.Count == 0 && backupFiles.ContainsKey("SYSTEM/CLMK/icon.ini")) {
+                restoreKeys.Add("SYSTEM/CLMK/icon.ini");
+            }
+
+            foreach (string key in restoreKeys) {
+                RestoreMemoryFile(key, Path.Combine(gamePath, key.Replace('/', '\\')), rollback);
+            }
+
+            if (restoreKeys.Count == 0) {
+                Log("找不到可從內嵌備份還原的語系檔案。");
             } else {
                 Log(Loc.Get("LogLangToOrig"));
+            }
+        }
+
+        private enum ExePatchState {
+            Unknown,
+            Original,
+            FocusPatched
+        }
+
+        private ExePatchState GetExePatchState(string exePath) {
+            if (!File.Exists(exePath)) return ExePatchState.Unknown;
+            using (var fs = new FileStream(exePath, FileMode.Open, FileAccess.Read, FileShare.Read)) {
+                if (fs.Length < ExeFocusPatchRequiredLength) {
+                    return ExePatchState.Unknown;
+                }
+                fs.Seek(ExeFocusPatchOffset, SeekOrigin.Begin);
+                byte[] bytes = new byte[ExeFocusOriginalBytes.Length];
+                int read = fs.Read(bytes, 0, bytes.Length);
+                if (read != bytes.Length) return ExePatchState.Unknown;
+                if (bytes.SequenceEqual(ExeFocusOriginalBytes)) return ExePatchState.Original;
+                if (bytes.SequenceEqual(ExeFocusPatchedBytes)) return ExePatchState.FocusPatched;
+            }
+            return ExePatchState.Unknown;
+        }
+
+        private void WriteExePatchBytes(string exePath, byte[] patchBytes, FileRollbackScope? rollback) {
+            rollback?.TrackFile(exePath);
+            using (var fs = new FileStream(exePath, FileMode.Open, FileAccess.ReadWrite, FileShare.None)) {
+                fs.Seek(ExeFocusPatchOffset, SeekOrigin.Begin);
+                fs.Write(patchBytes, 0, patchBytes.Length);
             }
         }
 
         /// <summary>
         /// 修改 Against_Rome.exe 實體檔案，實現視窗失焦不自動暫停的功能。
         /// </summary>
-        private void ApplyExePatch(string gamePath, bool focusLossChecked) {
+        private void ApplyExePatch(string gamePath, bool focusLossChecked, FileRollbackScope? rollback = null) {
             string dest = Path.Combine(gamePath, @"Against_Rome.exe");
-            byte[]? exeBytes;
-            if (!backupFiles.TryGetValue("Against_Rome.exe", out exeBytes)) return;
-
-            SafeWriteAllBytes(dest, exeBytes!);
+            ExePatchState state = GetExePatchState(dest);
+            if (state == ExePatchState.Unknown) {
+                throw new Exception("Against_Rome.exe 版本或位元組特徵不符合預期，已停止相容性補丁以避免覆蓋未知版本。");
+            }
 
             if (focusLossChecked) {
-                using (var fs = new FileStream(dest, FileMode.Open, FileAccess.ReadWrite)) {
-                    if (fs.Length > 0x161a8e) {
-                        fs.Seek(0x161a88, SeekOrigin.Begin);
-                        byte[] oldBytes = new byte[6];
-                        fs.Read(oldBytes, 0, 6);
-                        bool isMatch = (oldBytes[0] == 0x89 && oldBytes[1] == 0x15 && oldBytes[2] == 0xC4 && oldBytes[3] == 0x7D && oldBytes[4] == 0x9E && oldBytes[5] == 0x02) ||
-                                       (oldBytes[0] == 0x90 && oldBytes[1] == 0x90 && oldBytes[2] == 0x90 && oldBytes[3] == 0x90 && oldBytes[4] == 0x90 && oldBytes[5] == 0x90);
-                        if (isMatch) {
-                            fs.Seek(0x161a88, SeekOrigin.Begin);
-                            fs.Write(new byte[] { 0x90, 0x90, 0x90, 0x90, 0x90, 0x90 }, 0, 6);
-                            Log(Loc.Get("LogExePatchFocus"));
-                        } else {
-                            Log(Loc.Get("LogExePatchWarning"));
-                        }
-                    }
+                if (state == ExePatchState.Original) {
+                    WriteExePatchBytes(dest, ExeFocusPatchedBytes, rollback);
                 }
+                Log(Loc.Get("LogExePatchFocus"));
             } else {
+                if (state == ExePatchState.FocusPatched) {
+                    WriteExePatchBytes(dest, ExeFocusOriginalBytes, rollback);
+                }
                 Log(Loc.Get("LogExePatchOrig"));
             }
         }
@@ -423,15 +582,20 @@ namespace AgainstRomeModifier {
         /// <summary>
         /// 修改 cl_script.ini 檔案，自訂村民產生速度、法術影響半徑以及無限士氣等功能。
         /// </summary>
-        private void ApplyClScriptPatch(string gamePath, decimal civiSpeedVal, bool infiniteMoraleChecked, bool balanceChecked) {
+        private void ApplyClScriptPatch(string gamePath, decimal civiSpeedVal, bool infiniteMoraleChecked, bool balanceChecked, FileRollbackScope? rollback = null) {
             string dest = Path.Combine(gamePath, @"SYSTEM\cl_script.ini");
             byte[]? origBytes;
             if (!backupFiles.TryGetValue("SYSTEM/cl_script.ini", out origBytes)) return;
 
-            bool hasMod = (civiSpeedVal != 1.0M) || infiniteMoraleChecked || balanceChecked;
+            bool hasCustomSpellRadius = customUnitStats != null && customUnitStats.Any(kvp =>
+                (kvp.Key.Equals("FigGerPri00_Priester", StringComparison.OrdinalIgnoreCase) ||
+                 kvp.Key.Equals("FigKelPri00_Priester", StringComparison.OrdinalIgnoreCase) ||
+                 kvp.Key.Equals("FigHunPri00_Priester", StringComparison.OrdinalIgnoreCase)) &&
+                kvp.Value.Length > 8);
+            bool hasMod = (civiSpeedVal != 1.0M) || infiniteMoraleChecked || balanceChecked || hasCustomSpellRadius;
 
             if (!hasMod) {
-                SafeWriteAllBytes(dest, origBytes!);
+                SafeWriteAllBytes(dest, origBytes!, rollback);
                 Log("[已還原原版] cl_script.ini");
                 return;
             }
@@ -519,14 +683,14 @@ namespace AgainstRomeModifier {
             byte[] newBytes = Encoding.GetEncoding(1251).GetBytes(newContent);
             byte[] compressed = GameLZSS.CompressPfil(newBytes, origBytes!);
 
-            SafeWriteAllBytes(dest, compressed);
+            SafeWriteAllBytes(dest, compressed, rollback);
             Log("已成功修改與寫入 cl_script.ini (法術半徑與村民生產速度)。");
         }
 
         /// <summary>
         /// 修改 ress.ini 檔案，設定建築/部隊生產與升級的免費資源、移除祭司施法冷卻/消耗、以及全地圖人口上限。
         /// </summary>
-        private void ApplyRessPatch(string gamePath, bool freeProdChecked, bool freeUpgradeChecked, bool noSpellCostChecked, decimal popLimitVal) {
+        private void ApplyRessPatch(string gamePath, bool freeProdChecked, bool freeUpgradeChecked, bool noSpellCostChecked, decimal popLimitVal, FileRollbackScope? rollback = null) {
             string dest = Path.Combine(gamePath, @"SYSTEM\ress.ini");
             byte[]? origBytes;
             if (!backupFiles.TryGetValue("SYSTEM/ress.ini", out origBytes)) return;
@@ -534,7 +698,7 @@ namespace AgainstRomeModifier {
             bool hasMod = freeProdChecked || freeUpgradeChecked || noSpellCostChecked || (popLimitVal != 100);
 
             if (!hasMod) {
-                SafeWriteAllBytes(dest, origBytes!);
+                SafeWriteAllBytes(dest, origBytes!, rollback);
                 Log("[已還原原版] ress.ini");
                 return;
             }
@@ -678,14 +842,14 @@ namespace AgainstRomeModifier {
             byte[] newBytes = Encoding.GetEncoding(1251).GetBytes(newContent);
             byte[] compressed = GameLZSS.CompressPfil(newBytes, origBytes);
 
-            SafeWriteAllBytes(dest, compressed);
+            SafeWriteAllBytes(dest, compressed, rollback);
             Log("已成功修改與寫入 ress.ini (免費建造、人口與食物)。");
         }
 
         /// <summary>
         /// 修改 objdef.dau 檔案，套用部隊屬性平衡模式、自訂部隊移動速度、射程、技能距離、近戰/遠程傷害與攻擊冷卻等倍率。
         /// </summary>
-        private void ApplyObjdefPatch(string gamePath, bool balanceChecked) {
+        private void ApplyObjdefPatch(string gamePath, bool balanceChecked, FileRollbackScope? rollback = null) {
             string dest = Path.Combine(gamePath, @"SYSTEM\DATA_MP\DEFAULTS\objdef.dau");
             byte[]? origBytes;
             if (!backupFiles.TryGetValue("SYSTEM/DATA_MP/DEFAULTS/objdef.dau", out origBytes)) return;
@@ -693,7 +857,7 @@ namespace AgainstRomeModifier {
             bool hasMod = balanceChecked || (customUnitStats != null && customUnitStats.Count > 0);
 
             if (!hasMod) {
-                SafeWriteAllBytes(dest, origBytes!);
+                SafeWriteAllBytes(dest, origBytes!, rollback);
                 Log("[已還原原版] objdef.dau");
                 return;
             }
@@ -748,7 +912,7 @@ namespace AgainstRomeModifier {
                         origPrimaryDam = Math.Max(meleeDam, rangedDam);
                     }
 
-                    double[] bal = GetBaseStatsForUnit(name, origHp, origPrimaryDam, origVw, origAw, true);
+                    double[] bal = GetBaseStatsForUnit(name, origHp, origPrimaryDam, origVw, origAw, balanceChecked);
 
                     double baseHp = bal[0];
                     double baseDmg = bal[1];
@@ -936,33 +1100,27 @@ namespace AgainstRomeModifier {
             byte[] newBytes = Encoding.GetEncoding(1251).GetBytes(newContent);
             byte[] compressed = GameLZSS.CompressPfil(newBytes, origBytes!);
 
-            SafeWriteAllBytes(dest, compressed);
+            SafeWriteAllBytes(dest, compressed, rollback);
             Log("已成功修改與寫入 objdef.dau (部隊個別屬性與倍率自訂)。");
         }
 
         /// <summary>
-        /// 還原 apt.dat 以及地圖目錄下所有的 team.dat 檔案。
+        /// 還原地圖目錄下所有的 team.dat 檔案。
         /// </summary>
-        private void ApplyAptAndTeamFiles(string gamePath) {
-            byte[]? aptBytes;
-            if (backupFiles.TryGetValue("apt.dat", out aptBytes)) {
-                string destApt = Path.Combine(gamePath, @"apt.dat");
-                SafeWriteAllBytes(destApt, aptBytes!);
-            }
-
+        private void RestoreTeamFiles(string gamePath, FileRollbackScope? rollback = null) {
             foreach (var kvp in backupFiles) {
                 if (kvp.Key.StartsWith("MAPS/", StringComparison.OrdinalIgnoreCase) && kvp.Key.EndsWith("team.dat", StringComparison.OrdinalIgnoreCase)) {
                     string destPath = Path.Combine(gamePath, kvp.Key.Replace('/', '\\'));
-                    SafeWriteAllBytes(destPath, kvp.Value);
+                    SafeWriteAllBytes(destPath, kvp.Value, rollback);
                 }
             }
-            Log("[已還原原版] apt.dat 與所有 team.dat 檔案。");
+            Log("[已還原原版] 所有 team.dat 檔案。");
         }
 
         /// <summary>
         /// 修改各地圖目錄下的 team.dat，使其中定義的人口上限與主程式或 UI 界面上設定的人口數相符。
         /// </summary>
-        private void ApplyTeamDatPatch(string gamePath, decimal popLimitVal) {
+        private void ApplyTeamDatPatch(string gamePath, decimal popLimitVal, FileRollbackScope? rollback = null) {
             string[] teamFiles = Directory.GetFiles(Path.Combine(gamePath, "MAPS"), "team.dat", SearchOption.AllDirectories);
             int popLimit = (int)popLimitVal;
             Parallel.ForEach(teamFiles, file => {
@@ -1011,7 +1169,7 @@ namespace AgainstRomeModifier {
                 }
                 byte[] newBytes = Encoding.GetEncoding(1251).GetBytes(newContent);
                 byte[] compressed = GameLZSS.CompressPfil(newBytes, origBytes);
-                SafeWriteAllBytes(file, compressed);
+                SafeWriteAllBytes(file, compressed, rollback);
             });
             Log(string.Format("已修改所有地圖的 team.dat 人口上限為 {0}。", popLimit));
         }

@@ -33,6 +33,35 @@ namespace AgainstRomeModifier {
 
             using Stream stream = typeof(Program).Assembly.GetManifestResourceStream(resourceName)!;
             LoadZipToDictionary(stream);
+            ValidateBackupResources();
+        }
+
+        private void ValidateBackupResources() {
+            var missing = new List<string>();
+            string[] requiredFiles = {
+                "Against_Rome.exe",
+                "SYSTEM/cl_script.ini",
+                "SYSTEM/ress.ini",
+                "SYSTEM/DATA_MP/DEFAULTS/objdef.dau",
+                "SYSTEM/CLMK/icon.ini"
+            };
+
+            foreach (string key in requiredFiles) {
+                if (!backupFiles.ContainsKey(key)) {
+                    missing.Add(key);
+                }
+            }
+
+            bool hasTeamDat = backupFiles.Keys.Any(k => k.StartsWith("MAPS/", StringComparison.OrdinalIgnoreCase) && k.EndsWith("team.dat", StringComparison.OrdinalIgnoreCase));
+            if (!hasTeamDat) {
+                missing.Add("MAPS/.../team.dat");
+            }
+
+            if (missing.Count > 0) {
+                string msg = "內嵌 Backup.zip 缺少必要檔案，修改與還原功能可能無法安全執行:\r\n" + string.Join("\r\n", missing);
+                Log(msg);
+                MessageBox.Show(msg, Loc.Get("TitleError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
 
         /// <summary>
@@ -199,6 +228,7 @@ namespace AgainstRomeModifier {
         /// 將備份 Zip 壓縮檔的串流解壓縮，並以相對路徑作為 Key，其 byte 陣列作為 Value 載入記憶體字典中。
         /// </summary>
         private void LoadZipToDictionary(Stream stream) {
+            backupFiles.Clear();
             using (ZipArchive archive = new ZipArchive(stream)) {
                 foreach (ZipArchiveEntry entry in archive.Entries) {
                     if (entry.Name == "") continue;
@@ -548,7 +578,7 @@ namespace AgainstRomeModifier {
         private void LoadDefaultStatsData() {
             EnsureBackupUnitRowsParsed();
             if (!_backupUnitRowsParsed || _backupUnitRows.Count == 0) {
-                Log("記憶體備份中找不到 objdef.dau，無法載入預設兵種屬性。");
+                Log(Loc.Get("LogObjdefNotFound"));
                 return;
             }
             try {
@@ -647,7 +677,7 @@ namespace AgainstRomeModifier {
                     string styleText = Loc.GetStyleText(style);
 
                     var iconImage = unitIcons.ContainsKey(key) ? unitIcons[key] : null;
-                    double[] bases = GetBaseStatsForUnit(key, hp, origPrimaryDam, vw, aw, true);
+                    double[] bases = GetBaseStatsForUnit(key, hp, origPrimaryDam, vw, aw, chkBalance.Checked);
 
                     double displayMeleeDam = 0;
                     double displayRangedDam = 0;
@@ -797,66 +827,62 @@ namespace AgainstRomeModifier {
 
                 // 自訂倍率控制項已移除，不進行 UI 賦值。
 
-                // 偵測遊戲當前檔案是否已啟用平衡模式
+                // 偵測遊戲當前檔案是否已修改自訂兵種屬性（只要任何兵種有屬性與原版備份不同即視為已修改）
                 bool isFileBalanced = false;
-                {
-                    int matchCount = 0; // 記錄符合平衡數值的兵種數量
-                    int checkedUnits = 0; // 記錄參與比對的兵種總數
-                    foreach (string key in TroopConfig.UnitMeta.Keys) {
-                        if (!unitRows.ContainsKey(key) || !origUnitRows.ContainsKey(key)) continue;
-                        string utype = TroopConfig.UnitMeta[key].Item3;
-                        if (utype == "priest" || utype == "siege") continue; // 祭司與攻城武器不參與此比對
+                foreach (string key in TroopConfig.UnitMeta.Keys) {
+                    if (!unitRows.ContainsKey(key) || !origUnitRows.ContainsKey(key)) continue;
+                    string utype = TroopConfig.UnitMeta[key].Item3;
 
-                        string[] cols = unitRows[key];
-                        string[] origCols = origUnitRows[key];
-                        string style = TroopConfig.UnitMeta[key].Item4;
-                        double curHp, curVw, curAw;
-                        double origHp;
-                        
-                        // 解析當前與原始的 HP、防禦力(VW)、戰鬥力(AW)
-                        if (double.TryParse(cols[(int)ObjdefIndex.Hp].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out curHp) &&
-                            double.TryParse(cols[(int)ObjdefIndex.Vw].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out curVw) &&
-                            double.TryParse(cols[(int)ObjdefIndex.Aw].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out curAw) &&
-                            double.TryParse(origCols[(int)ObjdefIndex.Hp].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out origHp)) {
-                            
-                            double origVw;
-                            double.TryParse(origCols[(int)ObjdefIndex.Vw].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out origVw);
-                            double origAw;
-                            double.TryParse(origCols[(int)ObjdefIndex.Aw].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out origAw);
-                            double origMeleeDmg = 0;
-                            double origRangedDmg = 0;
-                            GetMeleeAndRangedDmg(origCols, utype, out origMeleeDmg, out origRangedDmg);
+                    string[] cols = unitRows[key];
+                    string[] origCols = origUnitRows[key];
 
-                            double origPrimaryDam = (utype == "ranged_inf" || utype == "ranged_cav") ? origRangedDmg : origMeleeDmg;
+                    double curHp = 0, origHp = 0;
+                    double.TryParse(cols[(int)ObjdefIndex.Hp].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out curHp);
+                    double.TryParse(origCols[(int)ObjdefIndex.Hp].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out origHp);
 
-                            // 獲取平衡後的預期基底數值
-                            double[] basesTemp = GetBaseStatsForUnit(key, origHp, origPrimaryDam, origVw, origAw, true);
-                            double expectedHp = basesTemp[0];
-                            double expectedVw = basesTemp[2];
-                            // 若是持盾單位，預期防禦力應加上 1.3 倍的盾牌加成
-                            if (style == "shield") {
-                                expectedVw = Math.Round(expectedVw * 1.3);
-                            }
-                            double expectedAw = basesTemp[3];
-                            // 若是持盾單位，預期戰鬥力應加上 1.15 倍的盾牌加成
-                            if (style == "shield") {
-                                expectedAw = Math.Round(expectedAw * 1.15);
-                            }
+                    double curVw = 0, origVw = 0;
+                    double.TryParse(cols[(int)ObjdefIndex.Vw].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out curVw);
+                    double.TryParse(origCols[(int)ObjdefIndex.Vw].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out origVw);
 
-                            // 比對 HP、防禦力與戰鬥力是否均與預期平衡值相符
-                            bool hpMatch = Math.Abs(curHp - expectedHp) < 0.1;
-                            bool vwMatch = Math.Abs(curVw - expectedVw) < 0.1;
-                            bool awMatch = Math.Abs(curAw - expectedAw) < 0.1;
+                    double curAw = 0, origAw = 0;
+                    double.TryParse(cols[(int)ObjdefIndex.Aw].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out curAw);
+                    double.TryParse(origCols[(int)ObjdefIndex.Aw].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out origAw);
 
-                            if (hpMatch && vwMatch && awMatch) {
-                                matchCount++;
-                            }
-                            checkedUnits++;
-                        }
-                    }
-                    // 當絕大多數兵種 (允許最多3個誤差) 均符合預期平衡值時，才判定為已啟用平衡模式，防止原版狀態誤判
-                    if (checkedUnits > 0 && matchCount >= checkedUnits - 3) {
+                    double curMoves = 0, origMoves = 0;
+                    double.TryParse(cols[(int)ObjdefIndex.Moves].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out curMoves);
+                    double.TryParse(origCols[(int)ObjdefIndex.Moves].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out origMoves);
+
+                    double curSight = 0, origSight = 0;
+                    double.TryParse(cols[(int)ObjdefIndex.Sirad].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out curSight);
+                    double.TryParse(origCols[(int)ObjdefIndex.Sirad].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out origSight);
+
+                    double curMeleeDmg = 0, curRangedDmg = 0;
+                    GetMeleeAndRangedDmg(cols, utype, out curMeleeDmg, out curRangedDmg);
+                    double origMeleeDmg = 0, origRangedDmg = 0;
+                    GetMeleeAndRangedDmg(origCols, utype, out origMeleeDmg, out origRangedDmg);
+
+                    double curMeleeRelt = 0, curRangedRelt = 0;
+                    GetMeleeAndRangedRelt(cols, utype, out curMeleeRelt, out curRangedRelt);
+                    double origMeleeRelt = 0, origRangedRelt = 0;
+                    GetMeleeAndRangedRelt(origCols, utype, out origMeleeRelt, out origRangedRelt);
+
+                    double curRange = GetUnitMaxRange(cols, utype);
+                    double origRange = GetUnitMaxRange(origCols, utype);
+
+                    bool hasDiff = Math.Abs(curHp - origHp) > 0.01 ||
+                                   Math.Abs(curVw - origVw) > 0.01 ||
+                                   Math.Abs(curAw - origAw) > 0.01 ||
+                                   Math.Abs(curMoves - origMoves) > 0.01 ||
+                                   Math.Abs(curSight - origSight) > 0.01 ||
+                                   Math.Abs(curMeleeDmg - origMeleeDmg) > 0.01 ||
+                                   Math.Abs(curRangedDmg - origRangedDmg) > 0.01 ||
+                                   Math.Abs(curMeleeRelt - origMeleeRelt) > 0.01 ||
+                                   Math.Abs(curRangedRelt - origRangedRelt) > 0.01 ||
+                                   Math.Abs(curRange - origRange) > 0.01;
+
+                    if (hasDiff) {
                         isFileBalanced = true;
+                        break;
                     }
                 }
 
@@ -1225,7 +1251,8 @@ namespace AgainstRomeModifier {
         private void ChkBalance_CheckedChanged(object? sender, EventArgs e) {
             LoadDefaultStatsData();
             LoadCurrentData(false);
-            Log(string.Format("兵種屬性平衡與陣營特色已{0}", chkBalance.Checked ? "啟用" : "停用"));
+            string status = chkBalance.Checked ? (Loc.CurrentLanguage == Language.English ? "enabled" : "啟用") : (Loc.CurrentLanguage == Language.English ? "disabled" : "停用");
+            Log(string.Format(Loc.Get("LogBalanceToggled"), status));
         }
     }
 }

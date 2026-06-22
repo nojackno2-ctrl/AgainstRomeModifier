@@ -16,12 +16,12 @@
 * **人口上限突破**：可將無盡模式與多人模式的人口上限從原版 200 人大幅提升至 1600 人（或自訂上限）。
 * **全建築與生產免費**：清除所有建築物建造、科技升級、兵種與攻城機具生產的資源及榮譽點數消耗。
 * **回血食物消耗優化**：為解決生產免費後的平衡問題，加入單位回血時的食物消耗機制，並顯著提升回血效率與消耗比率。
-* **預設兵種屬性檔案自訂與特色平衡**：
+* **自訂兵種屬性檔案自訂與特色平衡**：
   * **9 大屬性全面開放自訂**：支援完全自訂所有 43 個兵種（含攻城武器）的 9 大屬性（生命、傷害、防禦、戰鬥、移動速度、視野、冷卻、射程、法術半徑）。
   * **陣營分類分頁與拉桿消除**：自訂編輯子視窗 `TroopPresetForm` 優化放大至 1250x790，採圓角無邊框美學，並以「條頓、塞爾特、匈奴、羅馬」四個陣營分頁呈現，徹底消除所有水平與垂直拉桿。
   * **獨立檔案存取 (.artroop)**：支援自訂兵種屬性的匯出與匯入，且與修改器全域設定檔 (`.arpreset`) 完美整合，支援舊設定檔自動補齊的向下相容性。
   * **當前屬性來源顯示**：主介面新增 `lblTroopPresetFile` 狀態標籤，即時高亮顯示當前套用的兵種屬性檔案來源。
-  * **預設兵種特色與倍率**：部隊移動速度加倍，遠程單位射程與視野提升 3 倍、裝填速度提升 1.5 倍，法師視野與施法距離提升 30 倍。
+  * **自訂兵種特色與倍率**：部隊移動速度加倍，遠程單位射程與視野提升 3 倍、裝填速度提升 1.5 倍，法師視野與施法距離提升 30 倍。
 * **相容性與便利性修正**：
   * **防止失焦暫停**：修改遊戲主程式（以 NOP 阻斷 Flag 寫入），使遊戲在視窗失去焦點或最小化時仍能持續在背景執行。
   * **自動路徑偵測**：啟動時自動偵測登錄檔中《羅馬的榮耀》的安裝路徑。
@@ -43,7 +43,7 @@
 * **[ModifierForm.Patches.cs](file:///c:/Users/nojac/OneDrive/程式/Against_Rome_Modifier/ModifierForm.Patches.cs)**：核心修改邏輯，以多執行緒背景套用/還原各種補丁（`objdef.dau`、`ress.ini`、`cl_script.ini`、`Against_Rome.exe` 及平行處理 `team.dat`）。
 * **[ModifierForm.SaveManager.cs](file:///c:/Users/nojac/OneDrive/程式/Against_Rome_Modifier/ModifierForm.SaveManager.cs)**：處理遊戲存檔的壓縮備份與快取管理。
 * **[ModifierForm.Presets.cs](file:///c:/Users/nojac/OneDrive/程式/Against_Rome_Modifier/ModifierForm.Presets.cs)**：實作 Preset 自訂預設檔的讀寫與 UI 控件連動。
-* **[TroopPresetForm.cs](file:///c:/Users/nojac/OneDrive/程式/Against_Rome_Modifier/TroopPresetForm.cs)**：新增的預設兵種屬性檔案自訂與編輯子視窗，實作了 1250x790 圓角無邊框版面、陣營 TabControl 分頁與無拉桿顯示。
+* **[TroopPresetForm.cs](file:///c:/Users/nojac/OneDrive/程式/Against_Rome_Modifier/TroopPresetForm.cs)**：新增的自訂兵種屬性檔案編輯子視窗，實作了 1250x790 圓角無邊框版面、陣營 TabControl 分頁與無拉桿顯示。
 
 ---
 
@@ -101,7 +101,7 @@ This is a modern graphical modifier developed specifically for the real-time str
   * **UI Tabbed Layout & Zero Scrollbars**: The preset child form is enlarged to 1250x790 and restructured into Teutons, Celts, Huns, and Romans tab pages to completely eliminate scrollbars.
   * **Independent Storage (.artroop)**: Support importing/exporting customized stats in `.artroop` format, fully integrated with global presets (`.arpreset`) and backward-compatible with 4-stats configurations.
   * **Source Labeling**: Main UI features a status label (`lblTroopPresetFile`) showing the active configuration file.
-  * **Default Faction Specials**: Doubled movement speed; tripled range and vision for ranged units with 1.5x reload speed; wizard vision and spell range increased by 30x.
+  * **Custom Faction Specials**: Doubled movement speed; tripled range and vision for ranged units with 1.5x reload speed; wizard vision and spell range increased by 30x.
 * **Compatibility & Convenience Patches**:
   * **Background Execution**: Patches the main game executable (using NOP to block the pause flag write) so the game continues running in the background when minimized or losing focus.
   * **Auto Path Detection**: Automatically detects the installation path of *Against Rome* from the registry upon startup.

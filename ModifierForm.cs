@@ -145,7 +145,7 @@ namespace AgainstRomeModifier {
         private ToolStripMenuItem itemRestoreCompat = null!;
         private ToolStripMenuItem itemRestoreLang = null!;
 
-        // 預設兵種屬性分頁
+        // 自訂兵種屬性分頁
         private TabPage tabDefaultRoman = null!;
         private TabPage tabDefaultTeuton = null!;
         private TabPage tabDefaultCelt = null!;
@@ -196,7 +196,7 @@ namespace AgainstRomeModifier {
             Log(Loc.Get("LogConstructCompleted"));
             // 將內嵌的 Backup.zip 載入記憶體
             LoadBackupZipToMemory();
-            // 初始化資料與讀取預設兵種資訊
+            // 初始化資料與讀取自訂兵種資訊
             InitializeData();
             // 註冊表單關閉事件以正確釋放字型與圖形物件資源，防止記憶體洩漏
             this.FormClosing += (s, e) => {
@@ -332,6 +332,9 @@ namespace AgainstRomeModifier {
         // 初始化表單的視覺元件佈局、大小、樣式、圓角區域與雙緩衝
         private void InitializeComponent() {
             this.Size = new Size(1840, 880);
+            this.MinimumSize = new Size(1280, 720);
+            this.AutoScroll = true;
+            this.AutoScrollMinSize = new Size(1840, 880);
             this.FormBorderStyle = FormBorderStyle.None; // 隱藏 Windows 預設視窗邊框
             this.StartPosition = FormStartPosition.CenterScreen; // 視窗預設居中
             this.BackColor = Color.FromArgb(16, 16, 20); // 深色科技感背景
@@ -341,6 +344,14 @@ namespace AgainstRomeModifier {
 
             // 表單 Load 事件：使用 Win32 API 建立圓角裁剪區域
             this.Load += (s, e) => {
+                Rectangle workingArea = Screen.FromControl(this).WorkingArea;
+                if (Width > workingArea.Width || Height > workingArea.Height) {
+                    Size = new Size(Math.Min(Width, workingArea.Width), Math.Min(Height, workingArea.Height));
+                    Location = new Point(
+                        workingArea.Left + Math.Max(0, (workingArea.Width - Width) / 2),
+                        workingArea.Top + Math.Max(0, (workingArea.Height - Height) / 2)
+                    );
+                }
                 IntPtr ptr = CreateRoundRectRgn(0, 0, Width, Height, 15, 15);
                 this.Region = Region.FromHrgn(ptr);
                 DeleteObject(ptr);
@@ -730,7 +741,7 @@ namespace AgainstRomeModifier {
                        "2. 讀取現有設定：點擊右側「讀取現有設定」，修改器會自動從遊戲實體檔案（objdef.dau, ress.ini, cl_script.ini 等）解析目前套用的參數，並呈現於兵種列表對比中。\n\n" +
                        "3. 調整偏好與開關：在主控制台完成您喜好的修改配置（如人口上限、倍率開關等）。\n\n" +
                        "4. 執行修改與啟動：點擊右側「執行修改」按鈕將設定套入遊戲；完成後即可點擊「啟動遊戲」按鈕立刻開啟遊戲進入戰鬥！\n\n" +
-                       "5. 兵種屬性觀察：可在左側導覽列切換至「預設兵種屬性」與「當前兵種數值」頁面，即時比對原版與修改後的細部屬性資料。"
+                       "5. 兵種屬性觀察：可在左側導覽列切換至「自訂兵種屬性」與「當前兵種數值」頁面，即時比對原版與修改後的細部屬性資料。"
             };
             pnlTipsCard.Controls.Add(lblTipsContent);
 
@@ -868,7 +879,7 @@ namespace AgainstRomeModifier {
             pnlDefaultStatsTitle.Paint += CardPanel_Paint;
 
             lblDefaultStatsTitle = new Label {
-                Text = "預設兵種屬性對比 (無自訂加成)",
+                Text = Loc.Get("DefaultStatsTitle"),
                 Location = new Point(20, 20),
                 Size = new Size(280, 25),
                 Font = fontJhengHei105B,
@@ -877,7 +888,7 @@ namespace AgainstRomeModifier {
             };
 
             chkBalance = new ModernToggle {
-                Text = "啟用預設兵種屬性平衡與陣營特色",
+                Text = Loc.Get("EnableBalance"),
                 Location = new Point(320, 18),
                 Size = new Size(350, 25),
                 Checked = false,
