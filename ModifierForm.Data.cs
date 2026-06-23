@@ -19,24 +19,38 @@ namespace AgainstRomeModifier {
         private static readonly Regex RegexMoraleLoad = new Regex(@"MoralsDecLostMem\s*=\s*GER\s*,\s*(\d+)", RegexOptions.Compiled);
 
         /// <summary>
-        /// 從應用程式資源載入內嵌的 Backup.zip 至記憶體中。
+        /// Loads the clean restore source. Public builds do not include original game assets,
+        /// so the fallback source is the user's own installed game directory.
         /// </summary>
         private void LoadBackupZipToMemory() {
             string? resourceName = typeof(Program).Assembly
                 .GetManifestResourceNames()
                 .FirstOrDefault(n => n.EndsWith("Backup.zip"));
 
-            if (resourceName == null) {
-                Log("找不到內嵌的 Backup.zip 資源。");
+            if (resourceName != null) {
+                using Stream stream = typeof(Program).Assembly.GetManifestResourceStream(resourceName)!;
+                LoadZipToDictionary(stream);
+                ValidateBackupResources();
+                Log("已載入內嵌 Backup.zip 備份資料。");
                 return;
             }
 
-            using Stream stream = typeof(Program).Assembly.GetManifestResourceStream(resourceName)!;
-            LoadZipToDictionary(stream);
-            ValidateBackupResources();
+            string localZip = Path.Combine(AppContext.BaseDirectory, "Backup.zip");
+            if (File.Exists(localZip)) {
+                using FileStream stream = File.OpenRead(localZip);
+                LoadZipToDictionary(stream);
+                ValidateBackupResources();
+                Log("已載入程式目錄中的 Backup.zip 備份資料。");
+                return;
+            }
+
+            string gamePath = GetGamePath();
+            if (!TryLoadBackupFromGameDirectory(gamePath, false)) {
+                Log("找不到內嵌或本機 Backup.zip；請選擇合法的遊戲安裝目錄，程式會從該目錄建立本機記憶體備份。");
+            }
         }
 
-        private void ValidateBackupResources() {
+        private List<string> FindMissingBackupResources() {
             var missing = new List<string>();
             string[] requiredFiles = {
                 "Against_Rome.exe",
@@ -57,11 +71,74 @@ namespace AgainstRomeModifier {
                 missing.Add("MAPS/.../team.dat");
             }
 
+            return missing;
+        }
+
+        private void ValidateBackupResources() {
+            var missing = FindMissingBackupResources();
             if (missing.Count > 0) {
-                string msg = "內嵌 Backup.zip 缺少必要檔案，修改與還原功能可能無法安全執行:\r\n" + string.Join("\r\n", missing);
+                string msg = "備份來源缺少必要檔案，修改與還原功能可能無法安全執行:\r\n" + string.Join("\r\n", missing);
                 Log(msg);
                 MessageBox.Show(msg, Loc.Get("TitleError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
+        }
+
+        private bool EnsureBackupLoadedForGamePath(string gamePath) {
+            if (backupFiles.Count > 0 && FindMissingBackupResources().Count == 0) {
+                return true;
+            }
+            return TryLoadBackupFromGameDirectory(gamePath, true);
+        }
+
+        private bool TryLoadBackupFromGameDirectory(string gamePath, bool showError) {
+            if (string.IsNullOrWhiteSpace(gamePath) || !Directory.Exists(gamePath)) {
+                if (showError) {
+                    MessageBox.Show("找不到 Backup.zip，且遊戲路徑無效，無法建立本機備份。", Loc.Get("TitleError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+                return false;
+            }
+
+            var loaded = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
+            string[] requiredFiles = {
+                "Against_Rome.exe",
+                "SYSTEM/cl_script.ini",
+                "SYSTEM/ress.ini",
+                "SYSTEM/DATA_MP/DEFAULTS/objdef.dau",
+                "SYSTEM/CLMK/icon.ini"
+            };
+
+            foreach (string relPath in requiredFiles) {
+                string fullPath = Path.Combine(gamePath, relPath.Replace('/', Path.DirectorySeparatorChar));
+                if (File.Exists(fullPath)) {
+                    loaded[relPath] = File.ReadAllBytes(fullPath);
+                }
+            }
+
+            string mapsPath = Path.Combine(gamePath, "MAPS");
+            if (Directory.Exists(mapsPath)) {
+                foreach (string file in Directory.GetFiles(mapsPath, "team.dat", SearchOption.AllDirectories)) {
+                    string relPath = file.Substring(gamePath.Length + 1).Replace('\\', '/');
+                    loaded[relPath] = File.ReadAllBytes(file);
+                }
+            }
+
+            backupFiles.Clear();
+            foreach (var kvp in loaded) {
+                backupFiles[kvp.Key] = kvp.Value;
+            }
+
+            var missing = FindMissingBackupResources();
+            if (missing.Count > 0) {
+                string msg = "無法從遊戲目錄建立完整備份，缺少:\r\n" + string.Join("\r\n", missing);
+                Log(msg);
+                if (showError) {
+                    MessageBox.Show(msg, Loc.Get("TitleError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+                return false;
+            }
+
+            Log("已從使用者遊戲安裝目錄建立本機記憶體備份。");
+            return true;
         }
 
         /// <summary>

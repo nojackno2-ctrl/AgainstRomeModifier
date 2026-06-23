@@ -209,6 +209,7 @@ namespace AgainstRomeModifier {
                 fbd.Description = Loc.Get("LogBrowseTitle");
                 if (fbd.ShowDialog() == DialogResult.OK) {
                     txtGamePath.Text = fbd.SelectedPath;
+                    EnsureBackupLoadedForGamePath(fbd.SelectedPath);
                     LoadIcons();
                     LoadDefaultStatsData();
                 }
@@ -222,6 +223,9 @@ namespace AgainstRomeModifier {
             string gamePath = GetGamePath();
             if (string.IsNullOrEmpty(gamePath) || !Directory.Exists(gamePath) || !File.Exists(Path.Combine(gamePath, "Against_Rome.exe"))) {
                 MessageBox.Show(Loc.Get("MsgWrongGameDir"), Loc.Get("TitlePathError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+            if (!EnsureBackupLoadedForGamePath(gamePath)) {
                 return;
             }
 
@@ -286,6 +290,9 @@ namespace AgainstRomeModifier {
                 MessageBox.Show(Loc.Get("MsgSelectGameDir"), Loc.Get("TitleError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
+            if (!EnsureBackupLoadedForGamePath(gamePath)) {
+                return;
+            }
             FileRollbackScope? rollback = null;
             SetActionButtonsEnabled(false);
             try {
@@ -328,6 +335,9 @@ namespace AgainstRomeModifier {
             string gamePath = GetGamePath();
             if (string.IsNullOrEmpty(gamePath) || !Directory.Exists(gamePath)) {
                 MessageBox.Show(Loc.Get("MsgSelectGameDir"), Loc.Get("TitleError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+            if (!EnsureBackupLoadedForGamePath(gamePath)) {
                 return;
             }
             FileRollbackScope? rollback = null;

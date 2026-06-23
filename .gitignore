@@ -13,5 +13,27 @@
 Thumbs.db
 
 # Local reverse-engineering workspace and downloaded tools
+.agents/
 .codex/
 re_workspace/
+
+# Original game assets / local restore payloads
+# Keep these locally only. Do not publish bundled game files to GitHub.
+Backup.zip
+Backup/
+Against_Rome.exe
+SAVE/
+MAPS/
+SYSTEM/
+ToEng/
+
+# Reverse-engineering generated output
+*.log
+*.dmp
+*.dump
+*.bin
+*.pdb
+
+# Local package/tool caches
+packages/
+.nuget/

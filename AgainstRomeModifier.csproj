@@ -1,3 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
@@ -10,10 +11,9 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
   </PropertyGroup>
-
   <ItemGroup>
-    <EmbeddedResource Include="Backup.zip" />
-    <EmbeddedResource Include="修改技術文件.md" LogicalName="TechDoc.md" />
-    <EmbeddedResource Include="修改技術文件_EN.md" LogicalName="TechDoc_EN.md" />
+    <EmbeddedResource Include="Backup.zip" Condition="Exists('Backup.zip')" />
+    <EmbeddedResource Include="TechDoc.md" LogicalName="TechDoc.md" />
+    <EmbeddedResource Include="TechDoc_EN.md" LogicalName="TechDoc_EN.md" />
   </ItemGroup>
 </Project>
