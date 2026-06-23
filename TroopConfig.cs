@@ -59,6 +59,20 @@ namespace AgainstRomeModifier {
         VolkresUpgradeEnd = 291
     }
 
+    /// <summary>
+    /// 定義 ress.ini 中 [volkres] 區段 CSV 欄位的常用索引
+    /// </summary>
+    public enum VolkresIndex {
+        ResearchUpgradeWood1 = 8,
+        ResearchUpgradeGold1 = 10,
+        ResearchUpgradeWood2 = 12,
+        ResearchUpgradeGold2 = 14,
+        TechCostStart = 24,
+        TechCostEnd = 263,
+        UnitUpgradeStart = 264,
+        UnitUpgradeEnd = 291
+    }
+
     // 儲存與處理遊戲兵種相關設定的靜態配置類別
     public static class TroopConfig {
         // 對應遊戲兵種 ID 與其繁體中文名稱的字典

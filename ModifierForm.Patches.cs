@@ -37,6 +37,7 @@ namespace AgainstRomeModifier {
             private readonly Dictionary<string, RollbackEntry> _entries = new Dictionary<string, RollbackEntry>(StringComparer.OrdinalIgnoreCase);
             private readonly string _rootPath;
             private bool _committed;
+            private bool _restored;
 
             public FileRollbackScope() {
                 _rootPath = Path.Combine(Path.GetTempPath(), "AgainstRomeModifierRollback_" + Guid.NewGuid().ToString("N"));
@@ -67,7 +68,12 @@ namespace AgainstRomeModifier {
                 _committed = true;
             }
 
+            public bool IsCommitted {
+                get { return _committed; }
+            }
+
             public void RestoreAll(Action<string>? log) {
+                if (_restored) return;
                 foreach (var entry in _entries.Values.Reverse()) {
                     try {
                         string? dir = Path.GetDirectoryName(entry.Path);
@@ -88,10 +94,14 @@ namespace AgainstRomeModifier {
                         log?.Invoke(string.Format("[回復警告] 無法回復 {0}: {1}", entry.Path, ex.Message));
                     }
                 }
+                _restored = true;
             }
 
             public void Dispose() {
-                if (_committed || Directory.Exists(_rootPath)) {
+                if (!_committed && !_restored && _entries.Count > 0) {
+                    RestoreAll(null);
+                }
+                if (Directory.Exists(_rootPath)) {
                     try {
                         Directory.Delete(_rootPath, true);
                     } catch {
@@ -260,10 +270,13 @@ namespace AgainstRomeModifier {
                 });
 
                 rollback.Commit();
+                rollback.Dispose();
+                rollback = null;
+                LoadCurrentData();
                 Log(Loc.Get("LogApplyAllSuccess"));
                 MessageBox.Show(Loc.Get("MsgApplySuccess"), Loc.Get("TitleTips"), MessageBoxButtons.OK, MessageBoxIcon.Information);
             } catch (Exception ex) {
-                if (rollback != null) {
+                if (rollback != null && !rollback.IsCommitted) {
                     Log("套用失敗，開始回復已修改的檔案。");
                     rollback.RestoreAll(Log);
                     Log("檔案回復流程已完成。");
@@ -813,9 +826,12 @@ namespace AgainstRomeModifier {
                     var newCols = new List<string>();
                     for (int i = 0; i < cols.Length; i++) {
                         if (freeUpgradeChecked && (
-                            i == 8 || i == 10 || i == 12 || i == 14 ||
-                            (i >= 24 && i <= 263 && i % 2 == 0) ||
-                            (i >= (int)RessIndex.VolkresUpgradeStart && i <= (int)RessIndex.VolkresUpgradeEnd)
+                            i == (int)VolkresIndex.ResearchUpgradeWood1 ||
+                            i == (int)VolkresIndex.ResearchUpgradeGold1 ||
+                            i == (int)VolkresIndex.ResearchUpgradeWood2 ||
+                            i == (int)VolkresIndex.ResearchUpgradeGold2 ||
+                            (i >= (int)VolkresIndex.TechCostStart && i <= (int)VolkresIndex.TechCostEnd && i % 2 == 0) ||
+                            (i >= (int)VolkresIndex.UnitUpgradeStart && i <= (int)VolkresIndex.UnitUpgradeEnd)
                         )) {
                             newCols.Add("0");
                         } else {
@@ -999,6 +1015,10 @@ namespace AgainstRomeModifier {
                         int damIdx = (int)ObjdefIndex.Weapon1Dam + (w - 1) * 8;
                         int reltIdx = (int)ObjdefIndex.Weapon1Relt + (w - 1) * 8;
 
+                        if (aktiIdx >= cols.Length || damIdx >= cols.Length || reltIdx >= cols.Length ||
+                            aktiIdx >= origCols.Length || damIdx >= origCols.Length || reltIdx >= origCols.Length) {
+                            continue;
+                        }
                         if (cols[aktiIdx].Trim() == "1") {
                             double wDam = double.Parse(origCols[damIdx], CultureInfo.InvariantCulture);
                             int wRelt = int.Parse(origCols[reltIdx]);
@@ -1117,12 +1137,12 @@ namespace AgainstRomeModifier {
         private void ApplyTeamDatPatch(string gamePath, decimal popLimitVal, FileRollbackScope? rollback = null) {
             string[] teamFiles = Directory.GetFiles(Path.Combine(gamePath, "MAPS"), "team.dat", SearchOption.AllDirectories);
             int popLimit = (int)popLimitVal;
-            Parallel.ForEach(teamFiles, file => {
+            foreach (string file in teamFiles) {
                 string mapKey = file.Substring(gamePath.Length + 1).Replace('\\', '/');
                 byte[]? origBytes;
                 if (!backupFiles.TryGetValue(mapKey, out origBytes) || origBytes == null) {
                     Log(string.Format("[警告] 記憶體備份中找不到 {0}，略過此 team.dat。", mapKey));
-                    return;
+                    continue;
                 }
                 byte[] decompBytes = GameLZSS.DecompressPfil(origBytes);
                 string decomp = Encoding.GetEncoding(1251).GetString(decompBytes);
@@ -1164,7 +1184,7 @@ namespace AgainstRomeModifier {
                 byte[] newBytes = Encoding.GetEncoding(1251).GetBytes(newContent);
                 byte[] compressed = GameLZSS.CompressPfil(newBytes, origBytes);
                 SafeWriteAllBytes(file, compressed, rollback);
-            });
+            }
             Log(string.Format("已修改所有地圖的 team.dat 人口上限為 {0}。", popLimit));
         }
     }

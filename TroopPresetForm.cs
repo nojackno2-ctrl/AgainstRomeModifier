@@ -428,72 +428,73 @@ namespace AgainstRomeModifier {
         // 載入自訂檔案 (匯入)
         private void BtnImport_Click(object? sender, EventArgs e) {
             bool isEn = Loc.CurrentLanguage == Language.English;
-            OpenFileDialog ofd = new OpenFileDialog {
+            using (OpenFileDialog ofd = new OpenFileDialog {
                 Filter = isEn ? "Troop Preset Files (*.artroop)|*.artroop" : "兵種自訂屬性檔 (*.artroop)|*.artroop",
                 Title = isEn ? "Import Custom Troop Stats" : "匯入自訂兵種屬性"
-            };
-            if (ofd.ShowDialog() != DialogResult.OK) return;
-            this.LoadedFileName = Path.GetFileName(ofd.FileName);
+            }) {
+                if (ofd.ShowDialog() != DialogResult.OK) return;
+                this.LoadedFileName = Path.GetFileName(ofd.FileName);
 
-            try {
-                string[] lines = File.ReadAllLines(ofd.FileName, Encoding.UTF8);
-                var loadedStats = new Dictionary<string, double[]>(StringComparer.OrdinalIgnoreCase);
+                try {
+                    string[] lines = File.ReadAllLines(ofd.FileName, Encoding.UTF8);
+                    var loadedStats = new Dictionary<string, double[]>(StringComparer.OrdinalIgnoreCase);
 
-                foreach (string line in lines) {
-                    string l = line.Trim();
-                    if (string.IsNullOrEmpty(l) || l.StartsWith("#") || l.StartsWith(";")) continue;
-                    if (!l.Contains("=")) continue;
+                    foreach (string line in lines) {
+                        string l = line.Trim();
+                        if (string.IsNullOrEmpty(l) || l.StartsWith("#") || l.StartsWith(";")) continue;
+                        if (!l.Contains("=")) continue;
 
-                    string[] kv = l.Split(new char[] { '=' }, 2);
-                    string key = kv[0].Trim();
-                    string[] vals = kv[1].Split(',');
+                        string[] kv = l.Split(new char[] { '=' }, 2);
+                        string key = kv[0].Trim();
+                        string[] vals = kv[1].Split(',');
 
-                    if (vals.Length >= 4) {
-                        double hp = double.Parse(vals[0].Trim(), CultureInfo.InvariantCulture);
-                        double dmg = double.Parse(vals[1].Trim(), CultureInfo.InvariantCulture);
-                        double vw = double.Parse(vals[2].Trim(), CultureInfo.InvariantCulture);
-                        double aw = double.Parse(vals[3].Trim(), CultureInfo.InvariantCulture);
-                        
-                        double speed = vals.Length > 4 ? double.Parse(vals[4].Trim(), CultureInfo.InvariantCulture) : 0;
-                        double sight = vals.Length > 5 ? double.Parse(vals[5].Trim(), CultureInfo.InvariantCulture) : 0;
-                        double relt = vals.Length > 6 ? double.Parse(vals[6].Trim(), CultureInfo.InvariantCulture) : 0;
-                        double range = vals.Length > 7 ? double.Parse(vals[7].Trim(), CultureInfo.InvariantCulture) : 0;
-                        double spellRadius = vals.Length > 8 ? double.Parse(vals[8].Trim(), CultureInfo.InvariantCulture) : 0;
+                        if (vals.Length >= 4) {
+                            double hp = double.Parse(vals[0].Trim(), CultureInfo.InvariantCulture);
+                            double dmg = double.Parse(vals[1].Trim(), CultureInfo.InvariantCulture);
+                            double vw = double.Parse(vals[2].Trim(), CultureInfo.InvariantCulture);
+                            double aw = double.Parse(vals[3].Trim(), CultureInfo.InvariantCulture);
+                            
+                            double speed = vals.Length > 4 ? double.Parse(vals[4].Trim(), CultureInfo.InvariantCulture) : 0;
+                            double sight = vals.Length > 5 ? double.Parse(vals[5].Trim(), CultureInfo.InvariantCulture) : 0;
+                            double relt = vals.Length > 6 ? double.Parse(vals[6].Trim(), CultureInfo.InvariantCulture) : 0;
+                            double range = vals.Length > 7 ? double.Parse(vals[7].Trim(), CultureInfo.InvariantCulture) : 0;
+                            double spellRadius = vals.Length > 8 ? double.Parse(vals[8].Trim(), CultureInfo.InvariantCulture) : 0;
 
-                        if (vals.Length < 9) {
-                            double[] defStats = mainForm.GetDefaultBalancedStats(key);
-                            if (vals.Length <= 4) speed = defStats.Length > 4 ? defStats[4] : 0;
-                            if (vals.Length <= 5) sight = defStats.Length > 5 ? defStats[5] : 0;
-                            if (vals.Length <= 6) relt = defStats.Length > 6 ? defStats[6] : 0;
-                            if (vals.Length <= 7) range = defStats.Length > 7 ? defStats[7] : 0;
-                            if (vals.Length <= 8) spellRadius = defStats.Length > 8 ? defStats[8] : 0;
-                        }
+                            if (vals.Length < 9) {
+                                double[] defStats = mainForm.GetDefaultBalancedStats(key);
+                                if (vals.Length <= 4) speed = defStats.Length > 4 ? defStats[4] : 0;
+                                if (vals.Length <= 5) sight = defStats.Length > 5 ? defStats[5] : 0;
+                                if (vals.Length <= 6) relt = defStats.Length > 6 ? defStats[6] : 0;
+                                if (vals.Length <= 7) range = defStats.Length > 7 ? defStats[7] : 0;
+                                if (vals.Length <= 8) spellRadius = defStats.Length > 8 ? defStats[8] : 0;
+                            }
 
-                        loadedStats[key] = new double[] { hp, dmg, vw, aw, speed, sight, relt, range, spellRadius };
-                    }
-                }
-
-                foreach (var dgv in factionGrids.Values) {
-                    for (int i = 0; i < dgv.Rows.Count; i++) {
-                        string key = dgv.Rows[i].Cells["Key"].Value?.ToString() ?? "";
-                        if (loadedStats.ContainsKey(key)) {
-                            var stats = loadedStats[key];
-                            dgv.Rows[i].Cells["Hp"].Value = Math.Round(stats[0]).ToString();
-                            dgv.Rows[i].Cells["Dmg"].Value = stats[1].ToString("F1", CultureInfo.InvariantCulture);
-                            dgv.Rows[i].Cells["VW"].Value = Math.Round(stats[2]).ToString();
-                            dgv.Rows[i].Cells["AW"].Value = Math.Round(stats[3]).ToString();
-                            dgv.Rows[i].Cells["Speed"].Value = stats[4].ToString("F1", CultureInfo.InvariantCulture);
-                            dgv.Rows[i].Cells["Sight"].Value = Math.Round(stats[5]).ToString();
-                            dgv.Rows[i].Cells["Relt"].Value = Math.Round(stats[6]).ToString();
-                            dgv.Rows[i].Cells["Range"].Value = Math.Round(stats[7]).ToString();
-                            dgv.Rows[i].Cells["SpellRadius"].Value = Math.Round(stats[8]).ToString();
+                            loadedStats[key] = new double[] { hp, dmg, vw, aw, speed, sight, relt, range, spellRadius };
                         }
                     }
-                }
 
-                MessageBox.Show(isEn ? "Custom troop stats successfully imported!" : "自訂兵種屬性匯入成功！", isEn ? "Import Completed" : "匯入完成", MessageBoxButtons.OK, MessageBoxIcon.Information);
-            } catch (Exception ex) {
-                MessageBox.Show((isEn ? "Failed to import stats file: " : "匯入屬性檔案失敗: ") + ex.Message, isEn ? "Error" : "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    foreach (var dgv in factionGrids.Values) {
+                        for (int i = 0; i < dgv.Rows.Count; i++) {
+                            string key = dgv.Rows[i].Cells["Key"].Value?.ToString() ?? "";
+                            if (loadedStats.ContainsKey(key)) {
+                                var stats = loadedStats[key];
+                                dgv.Rows[i].Cells["Hp"].Value = Math.Round(stats[0]).ToString();
+                                dgv.Rows[i].Cells["Dmg"].Value = stats[1].ToString("F1", CultureInfo.InvariantCulture);
+                                dgv.Rows[i].Cells["VW"].Value = Math.Round(stats[2]).ToString();
+                                dgv.Rows[i].Cells["AW"].Value = Math.Round(stats[3]).ToString();
+                                dgv.Rows[i].Cells["Speed"].Value = stats[4].ToString("F1", CultureInfo.InvariantCulture);
+                                dgv.Rows[i].Cells["Sight"].Value = Math.Round(stats[5]).ToString();
+                                dgv.Rows[i].Cells["Relt"].Value = Math.Round(stats[6]).ToString();
+                                dgv.Rows[i].Cells["Range"].Value = Math.Round(stats[7]).ToString();
+                                dgv.Rows[i].Cells["SpellRadius"].Value = Math.Round(stats[8]).ToString();
+                            }
+                        }
+                    }
+
+                    MessageBox.Show(isEn ? "Custom troop stats successfully imported!" : "自訂兵種屬性匯入成功！", isEn ? "Import Completed" : "匯入完成", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                } catch (Exception ex) {
+                    MessageBox.Show((isEn ? "Failed to import stats file: " : "匯入屬性檔案失敗: ") + ex.Message, isEn ? "Error" : "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
             }
         }
 
@@ -502,44 +503,45 @@ namespace AgainstRomeModifier {
             if (!ValidateGridInputs()) return;
 
             bool isEn = Loc.CurrentLanguage == Language.English;
-            SaveFileDialog sfd = new SaveFileDialog {
+            using (SaveFileDialog sfd = new SaveFileDialog {
                 Filter = isEn ? "Troop Preset Files (*.artroop)|*.artroop" : "兵種自訂屬性檔 (*.artroop)|*.artroop",
                 DefaultExt = "artroop",
                 FileName = "custom_troop_preset",
                 Title = isEn ? "Export Custom Troop Stats" : "匯出自訂兵種屬性"
-            };
-            if (sfd.ShowDialog() != DialogResult.OK) return;
-            this.LoadedFileName = Path.GetFileName(sfd.FileName);
+            }) {
+                if (sfd.ShowDialog() != DialogResult.OK) return;
+                this.LoadedFileName = Path.GetFileName(sfd.FileName);
 
-            try {
-                StringBuilder sb = new StringBuilder();
-                sb.AppendLine("# Against Rome Modifier - Custom Troop Preset File (9 Stats Mode)");
-                sb.AppendLine(string.Format("# Generated on: {0}", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")));
-                sb.AppendLine("# Format: UnitKey=HP,Dmg,VW,AW,Speed,Sight,Relt,Range,SpellRadius");
-                sb.AppendLine();
+                try {
+                    StringBuilder sb = new StringBuilder();
+                    sb.AppendLine("# Against Rome Modifier - Custom Troop Preset File (9 Stats Mode)");
+                    sb.AppendLine(string.Format("# Generated on: {0}", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")));
+                    sb.AppendLine("# Format: UnitKey=HP,Dmg,VW,AW,Speed,Sight,Relt,Range,SpellRadius");
+                    sb.AppendLine();
 
-                foreach (var dgv in factionGrids.Values) {
-                    for (int i = 0; i < dgv.Rows.Count; i++) {
-                        string key = dgv.Rows[i].Cells["Key"].Value?.ToString() ?? "FigUnknown";
-                        string hp = dgv.Rows[i].Cells["Hp"].Value?.ToString() ?? "0";
-                        string dmg = dgv.Rows[i].Cells["Dmg"].Value?.ToString() ?? "0";
-                        string vw = dgv.Rows[i].Cells["VW"].Value?.ToString() ?? "0";
-                        string aw = dgv.Rows[i].Cells["AW"].Value?.ToString() ?? "0";
-                        string speed = dgv.Rows[i].Cells["Speed"].Value?.ToString() ?? "0";
-                        string sight = dgv.Rows[i].Cells["Sight"].Value?.ToString() ?? "0";
-                        string relt = dgv.Rows[i].Cells["Relt"].Value?.ToString() ?? "0";
-                        string range = dgv.Rows[i].Cells["Range"].Value?.ToString() ?? "0";
-                        string spellRadius = dgv.Rows[i].Cells["SpellRadius"].Value?.ToString() ?? "0";
+                    foreach (var dgv in factionGrids.Values) {
+                        for (int i = 0; i < dgv.Rows.Count; i++) {
+                            string key = dgv.Rows[i].Cells["Key"].Value?.ToString() ?? "FigUnknown";
+                            string hp = dgv.Rows[i].Cells["Hp"].Value?.ToString() ?? "0";
+                            string dmg = dgv.Rows[i].Cells["Dmg"].Value?.ToString() ?? "0";
+                            string vw = dgv.Rows[i].Cells["VW"].Value?.ToString() ?? "0";
+                            string aw = dgv.Rows[i].Cells["AW"].Value?.ToString() ?? "0";
+                            string speed = dgv.Rows[i].Cells["Speed"].Value?.ToString() ?? "0";
+                            string sight = dgv.Rows[i].Cells["Sight"].Value?.ToString() ?? "0";
+                            string relt = dgv.Rows[i].Cells["Relt"].Value?.ToString() ?? "0";
+                            string range = dgv.Rows[i].Cells["Range"].Value?.ToString() ?? "0";
+                            string spellRadius = dgv.Rows[i].Cells["SpellRadius"].Value?.ToString() ?? "0";
 
-                        sb.AppendLine(string.Format(CultureInfo.InvariantCulture, "{0}={1},{2},{3},{4},{5},{6},{7},{8},{9}", 
-                            key, hp, dmg, vw, aw, speed, sight, relt, range, spellRadius));
+                            sb.AppendLine(string.Format(CultureInfo.InvariantCulture, "{0}={1},{2},{3},{4},{5},{6},{7},{8},{9}", 
+                                key, hp, dmg, vw, aw, speed, sight, relt, range, spellRadius));
+                        }
                     }
-                }
 
-                File.WriteAllText(sfd.FileName, sb.ToString(), Encoding.UTF8);
-                MessageBox.Show(isEn ? "Custom troop stats successfully exported!" : "自訂兵種屬性匯出成功！", isEn ? "Export Completed" : "匯出完成", MessageBoxButtons.OK, MessageBoxIcon.Information);
-            } catch (Exception ex) {
-                MessageBox.Show((isEn ? "Failed to export stats file: " : "匯出屬性檔案失敗: ") + ex.Message, isEn ? "Error" : "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    File.WriteAllText(sfd.FileName, sb.ToString(), Encoding.UTF8);
+                    MessageBox.Show(isEn ? "Custom troop stats successfully exported!" : "自訂兵種屬性匯出成功！", isEn ? "Export Completed" : "匯出完成", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                } catch (Exception ex) {
+                    MessageBox.Show((isEn ? "Failed to export stats file: " : "匯出屬性檔案失敗: ") + ex.Message, isEn ? "Error" : "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
             }
         }
 

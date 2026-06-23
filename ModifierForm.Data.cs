@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
@@ -149,7 +149,7 @@ namespace AgainstRomeModifier {
         }
 
         /// <summary>
-        /// 解析單行 CSV 資料（逗號分隔）。
+        /// 解析單行 CSV 資料（逗號分隔），支援雙引號括起來包含逗號或引號的欄位。
         /// </summary>
         private static string[] ParseCsvLine(string line) {
             if (line == null) return Array.Empty<string>();
@@ -157,7 +157,7 @@ namespace AgainstRomeModifier {
         }
 
         /// <summary>
-        /// 將字串陣列重新組合成 CSV 逗號分隔的字串。
+        /// 將字串陣列重新組合成遊戲相容的逗號分隔字串。
         /// </summary>
         private static string ToCsvString(string[] cols) {
             if (cols == null) return "";
@@ -1154,8 +1154,8 @@ namespace AgainstRomeModifier {
                     var mUp = Regex.Match(ressText, @"^.*Ger_Kampf.*$", RegexOptions.Multiline);
                     if (mUp.Success) {
                         string[] cols = ParseCsvLine(mUp.Value);
-                        if (cols.Length > (int)RessIndex.VolkresUpgradeStart) {
-                            if (cols[(int)RessIndex.VolkresUpgradeStart].Trim() == "0") {
+                        if (cols.Length > (int)VolkresIndex.UnitUpgradeStart) {
+                            if (cols[(int)VolkresIndex.UnitUpgradeStart].Trim() == "0") {
                                 freeUp = true;
                             }
                         }
@@ -1218,6 +1218,9 @@ namespace AgainstRomeModifier {
                 int wAktiIdx = (int)ObjdefIndex.Weapon1Akti + (w - 1) * 8;
                 int wDamIdx = wAktiIdx + 1;
                 int wDtypIdx = (int)ObjdefIndex.Weapon1Dtyp + (w - 1);
+                if (wAktiIdx >= cols.Length || wDamIdx >= cols.Length || wDtypIdx >= cols.Length) {
+                    continue;
+                }
                 if (cols[wAktiIdx].Trim() == "1") {
                     double damVal;
                     double.TryParse(cols[wDamIdx].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out damVal);
@@ -1238,13 +1241,13 @@ namespace AgainstRomeModifier {
         private static void GetMeleeAndRangedRelt(string[] cols, string utype, out double meleeRelt, out double rangedRelt) {
             meleeRelt = 0;
             rangedRelt = 0;
-            if (cols[(int)ObjdefIndex.Weapon1Akti].Trim() == "1") {
-                double.TryParse(cols[(int)ObjdefIndex.Weapon1Relt].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out meleeRelt);
-            }
-            for (int w = 2; w <= 8; w++) {
+            for (int w = 1; w <= 8; w++) {
                 int wAktiIdx = (int)ObjdefIndex.Weapon1Akti + (w - 1) * 8;
                 int wReltIdx = wAktiIdx + 6;
                 int wDtypIdx = (int)ObjdefIndex.Weapon1Dtyp + (w - 1);
+                if (wAktiIdx >= cols.Length || wReltIdx >= cols.Length || wDtypIdx >= cols.Length) {
+                    continue;
+                }
                 if (cols[wAktiIdx].Trim() == "1") {
                     double reltVal;
                     double.TryParse(cols[wReltIdx].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out reltVal);
