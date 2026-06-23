@@ -1,0 +1,18 @@
+section,index,name,type,status,used_by,notes
+objres,0,ObjectId,string,stable,ModifierForm.Patches.cs,Row key such as Bau* or Fig*.
+objres,1-7,FigSiegeBuildCostRange,int,candidate,ModifierForm.Patches.cs,Used for siege/trap build cost removal.
+objres,2,BauBuildWood,int,stable,ModifierForm.Patches.cs,Building wood cost.
+objres,3,BauBuildStone,int,stable,ModifierForm.Patches.cs,Building stone cost.
+objres,8,BauUpgradeWood,int,stable,ModifierForm.Patches.cs,Building upgrade wood cost.
+objres,9,BauUpgradeStone,int,stable,ModifierForm.Patches.cs,Building upgrade stone cost.
+objres,10,BauUpgradeGold,int,stable,ModifierForm.Patches.cs,Building upgrade gold cost.
+objres,11,BauUpgradeIron,int,stable,ModifierForm.Patches.cs,Building upgrade iron cost.
+objres,12-18,FigProdCostRange,int,stable,ModifierForm.Patches.cs,Unit production costs.
+objres,19-24,FigEquipmentRefundRange,int,stable,ModifierForm.Patches.cs,Equipment-related costs/refunds.
+objres,25-28,FigPriestSpellCostRange,int,stable,ModifierForm.Patches.cs,Priest spell costs.
+objres,29,LineTerminatorOrPadding,string,candidate,docs,Observed as trailing field in some rows.
+volkres,0-7,FactionSkillCosts,int,candidate,ModifierForm.Patches.cs,Includes heilen/heileng and other skill costs.
+volkres,8-23,FactionSpecials,int,candidate,docs,Formation or faction special references.
+volkres,24-263,UnitAvailabilityAndCosts,int,candidate,ModifierForm.Patches.cs,Even indexes are currently zeroed for free production.
+volkres,264-291,UpgradeCosts,int,stable,ModifierForm.Patches.cs,Upgrade costs.
+volkres,292-296,TrailingFields,string,candidate,docs,Meaning not fully confirmed.
