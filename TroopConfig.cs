@@ -37,7 +37,6 @@ namespace AgainstRomeModifier {
     /// 定義 ress.ini CSV 欄位的常用索引
     /// </summary>
     public enum RessIndex {
-        PopLimit = 2,
         // objres 建築建造/修復費
         BauBuildWood = 2,
         BauBuildStone = 3,
@@ -48,7 +47,7 @@ namespace AgainstRomeModifier {
         // objres 單位生產與解除返還
         FigProdCostStart = 12,
         FigProdCostEnd = 18,
-        FigEquipmentRefundStart = 21,
+        FigEquipmentRefundStart = 19,
         FigEquipmentRefundEnd = 24,
         FigPriestSpellCostStart = 25,
         FigPriestSpellCostEnd = 28,

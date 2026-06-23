@@ -25,12 +25,6 @@ namespace AgainstRomeModifier {
         private static readonly byte[] ExeFocusPatchedBytes = new byte[] { 0x90, 0x90, 0x90, 0x90, 0x90, 0x90 };
         private const long ExeFocusPatchOffset = 0x161a88;
         private const long ExeFocusPatchRequiredLength = 0x161a8e;
-        private static readonly string[] HorseCivilProductionIconIds = new string[] {
-            "VerGerZivIco01_Zivil_Icon",
-            "VerHunZivIco01_Zivil_Icon",
-            "VerKelZivIco01_Zivil_Icon",
-            "VerRomZivIco01_Zivil_Icon"
-        };
 
         private sealed class FileRollbackScope : IDisposable {
             private sealed class RollbackEntry {
@@ -254,7 +248,7 @@ namespace AgainstRomeModifier {
                 await Task.Run(() => {
                     ApplyExePatch(gamePath, focusLoss, rollback);
                     ApplyClScriptPatch(gamePath, civiSpeed, infMorale, balance, rollback);
-                    ApplyRessPatch(gamePath, freeProd, freeUp, noSpell, popLimit, rollback);
+                    ApplyRessPatch(gamePath, freeProd, freeUp, noSpell, rollback);
                     ApplyObjdefPatch(gamePath, balance, rollback);
                     RestoreTeamFiles(gamePath, rollback);
                     ApplyTeamDatPatch(gamePath, popLimit, rollback);
@@ -275,33 +269,6 @@ namespace AgainstRomeModifier {
             } finally {
                 rollback?.Dispose();
                 SetActionButtonsEnabled(true);
-            }
-        }
-
-        private static string BuildHorseCivilProductionCostRow(string id) {
-            string[] cols = new string[30];
-            for (int i = 0; i < cols.Length - 1; i++) {
-                cols[i] = "0";
-            }
-            cols[cols.Length - 1] = "";
-            cols[0] = id;
-            cols[(int)RessIndex.FigProdCostEnd] = "1";
-            cols[(int)RessIndex.FigEquipmentRefundEnd] = "1";
-            return ToCsvString(cols);
-        }
-
-        private static void EnsureHorseCivilProductionCostRows(List<string> lines) {
-            int insertIndex = lines.FindIndex(line => line.Trim().Equals("[maxskills]", StringComparison.OrdinalIgnoreCase));
-            if (insertIndex < 0) {
-                insertIndex = lines.Count;
-            }
-
-            foreach (string id in HorseCivilProductionIconIds) {
-                bool exists = lines.Any(line => line.StartsWith(id + ",", StringComparison.OrdinalIgnoreCase));
-                if (!exists) {
-                    lines.Insert(insertIndex, BuildHorseCivilProductionCostRow(id));
-                    insertIndex++;
-                }
             }
         }
 
@@ -726,14 +693,14 @@ namespace AgainstRomeModifier {
         }
 
         /// <summary>
-        /// 修改 ress.ini 檔案，設定建築/部隊生產與升級的免費資源、移除祭司施法冷卻/消耗、以及全地圖人口上限。
+        /// 修改 ress.ini 檔案，設定建築/部隊生產與升級的免費資源，以及移除祭司施法冷卻/消耗。
         /// </summary>
-        private void ApplyRessPatch(string gamePath, bool freeProdChecked, bool freeUpgradeChecked, bool noSpellCostChecked, decimal popLimitVal, FileRollbackScope? rollback = null) {
+        private void ApplyRessPatch(string gamePath, bool freeProdChecked, bool freeUpgradeChecked, bool noSpellCostChecked, FileRollbackScope? rollback = null) {
             string dest = Path.Combine(gamePath, @"SYSTEM\ress.ini");
             byte[]? origBytes;
             if (!backupFiles.TryGetValue("SYSTEM/ress.ini", out origBytes)) return;
 
-            bool hasMod = freeProdChecked || freeUpgradeChecked || noSpellCostChecked || (popLimitVal != 100);
+            bool hasMod = freeProdChecked || freeUpgradeChecked || noSpellCostChecked;
 
             if (!hasMod) {
                 SafeWriteAllBytes(dest, origBytes!, rollback);
@@ -835,9 +802,7 @@ namespace AgainstRomeModifier {
                     }
                     var newCols = new List<string>();
                     for (int i = 0; i < cols.Length; i++) {
-                        if (i == (int)RessIndex.PopLimit) {
-                            newCols.Add(popLimitVal.ToString());
-                        } else if (freeUpgradeChecked && (
+                        if (freeUpgradeChecked && (
                             i == 8 || i == 10 || i == 12 || i == 14 ||
                             (i >= 24 && i <= 263 && i % 2 == 0) ||
                             (i >= (int)RessIndex.VolkresUpgradeStart && i <= (int)RessIndex.VolkresUpgradeEnd)
@@ -853,10 +818,6 @@ namespace AgainstRomeModifier {
                 }
             }
 
-            if (freeProdChecked) {
-                EnsureHorseCivilProductionCostRows(newLines);
-            }
-
             string newContent = string.Join(lineEnding, newLines.ToArray());
             if (decomp.EndsWith(lineEnding) && !newContent.EndsWith(lineEnding)) {
                 newContent += lineEnding;
@@ -866,7 +827,7 @@ namespace AgainstRomeModifier {
             byte[] compressed = GameLZSS.CompressPfil(newBytes, origBytes);
 
             SafeWriteAllBytes(dest, compressed, rollback);
-            Log("已成功修改與寫入 ress.ini (免費建造與人口)。");
+            Log("已成功修改與寫入 ress.ini (免費建造、生產、升級與法術消耗)。");
         }
 
         /// <summary>

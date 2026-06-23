@@ -767,6 +767,44 @@ namespace AgainstRomeModifier {
             LoadCurrentData();
         }
 
+        private bool TryLoadCurrentPopLimitFromTeamDat(string gamePath, out int popLimit) {
+            popLimit = 0;
+            string mapsPath = Path.Combine(gamePath, "MAPS");
+            if (!Directory.Exists(mapsPath)) {
+                return false;
+            }
+
+            foreach (string teamFile in Directory.GetFiles(mapsPath, "team.dat", SearchOption.AllDirectories)) {
+                try {
+                    byte[] bytes = File.ReadAllBytes(teamFile);
+                    byte[] decompBytes = GameLZSS.DecompressPfil(bytes);
+                    string text = Encoding.GetEncoding(1251).GetString(decompBytes);
+                    string[] lines = text.Split(new string[] { "\r\n", "\n" }, StringSplitOptions.None);
+                    bool inMaxTeamObj = false;
+
+                    foreach (string line in lines) {
+                        string stripped = line.Trim();
+                        if (stripped.StartsWith("[")) {
+                            inMaxTeamObj = stripped.Equals("[maxteamobjgenerell]", StringComparison.OrdinalIgnoreCase);
+                            continue;
+                        }
+
+                        if (inMaxTeamObj && !string.IsNullOrEmpty(stripped)) {
+                            int val;
+                            if (int.TryParse(stripped, out val) && val >= 1 && val <= 10000) {
+                                popLimit = val;
+                                return true;
+                            }
+                            inMaxTeamObj = false;
+                        }
+                    }
+                } catch {
+                }
+            }
+
+            return false;
+        }
+
         /// <summary>
         /// 從遊戲目錄下的實體檔案（objdef.dau, cl_script.ini, ress.ini, Against_Rome.exe）讀取目前的設定值並顯示在介面上。
         /// </summary>
@@ -1023,31 +1061,6 @@ namespace AgainstRomeModifier {
                     byte[] decompRess = GameLZSS.DecompressPfil(ressBytes);
                     string ressText = Encoding.GetEncoding(1251).GetString(decompRess);
                     
-                    var linesVolk = ressText.Split(new string[] { "\r\n", "\n" }, StringSplitOptions.None);
-                    bool inVolkresSection = false;
-                    foreach (var line in linesVolk) {
-                        string stripped = line.Trim();
-                        if (stripped == "[volkres]") {
-                            inVolkresSection = true;
-                            continue;
-                        } else if (stripped.StartsWith("[")) {
-                            inVolkresSection = false;
-                            continue;
-                        }
-                        if (inVolkresSection && line.Contains(",")) {
-                            string[] cols = ParseCsvLine(line);
-                            if (cols.Length >= 10 && cols[9].Trim() == "Rom_Kampf") {
-                                int pop;
-                                if (int.TryParse(cols[(int)RessIndex.PopLimit].Trim(), out pop)) {
-                                    if (pop >= 1 && pop <= 10000) {
-                                        numPopLimit.Value = pop;
-                                    }
-                                }
-                                break;
-                            }
-                        }
-                    }
-
                     bool freeProd = false;
                     var mProdUnit = Regex.Match(ressText, @"^FigRomInf00_Lanze_Schild\s*,\s*(.*)$", RegexOptions.Multiline);
                     if (mProdUnit.Success) {
@@ -1081,6 +1094,11 @@ namespace AgainstRomeModifier {
                         }
                     }
                     chkNoSpellCost.Checked = noSpell;
+                }
+
+                int currentPopLimit;
+                if (TryLoadCurrentPopLimitFromTeamDat(gamePath, out currentPopLimit)) {
+                    numPopLimit.Value = currentPopLimit;
                 }
 
                 string exePath = Path.Combine(gamePath, @"Against_Rome.exe");
