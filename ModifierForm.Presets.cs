@@ -33,6 +33,8 @@ namespace AgainstRomeModifier {
                     sb.AppendLine(string.Format("Balance={0}", chkBalance.Checked));
                     sb.AppendLine(string.Format("ToEng={0}", chkToEng.Checked));
                     sb.AppendLine(string.Format("InfiniteMorale={0}", chkInfiniteMorale.Checked));
+                    sb.AppendLine(string.Format("AiUltimateMode={0}", chkAiUltimateMode.Checked));
+                    sb.AppendLine(string.Format("VillageBuildRange={0}", chkVillageBuildRange.Checked));
 
                     // 如果當前有自訂兵種屬性設定，也一併寫入
                     if (customUnitStats != null && customUnitStats.Count > 0) {
@@ -88,6 +90,8 @@ namespace AgainstRomeModifier {
                                 else if (k == "Balance") chkBalance.Checked = bool.Parse(v);
                                 else if (k == "ToEng") chkToEng.Checked = bool.Parse(v);
                                 else if (k == "InfiniteMorale") chkInfiniteMorale.Checked = bool.Parse(v);
+                                else if (k == "AiUltimateMode") chkAiUltimateMode.Checked = bool.Parse(v);
+                                else if (k == "VillageBuildRange") chkVillageBuildRange.Checked = bool.Parse(v);
                             } else if (currentSection.Equals("TroopStats", StringComparison.OrdinalIgnoreCase)) {
                                 string[] vals = v.Split(',');
                                 if (vals.Length >= 4) {

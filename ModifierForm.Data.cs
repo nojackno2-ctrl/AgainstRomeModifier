@@ -1178,6 +1178,16 @@ namespace AgainstRomeModifier {
                     numPopLimit.Value = currentPopLimit;
                 }
 
+                int endlessMinCount;
+                int endlessMaxCount;
+                if (TryReadEndlessMilitaryCount(gamePath, out endlessMinCount, out endlessMaxCount)) {
+                    if (endlessMinCount == EndlessAiUltimateMilitaryCount && endlessMaxCount == EndlessAiUltimateMilitaryCount) {
+                        chkAiUltimateMode.Checked = true;
+                    } else if (endlessMinCount == EndlessAiOriginalMilitaryCount && endlessMaxCount == EndlessAiOriginalMilitaryCount) {
+                        chkAiUltimateMode.Checked = false;
+                    }
+                }
+
                 string exePath = Path.Combine(gamePath, @"Against_Rome.exe");
                 if (File.Exists(exePath)) {
                     using (var fs = new FileStream(exePath, FileMode.Open, FileAccess.Read)) {
@@ -1196,6 +1206,14 @@ namespace AgainstRomeModifier {
                         } else {
                             Log(Loc.Get("LogExePatchWarning"));
                         }
+                    }
+
+                    ExeVillageRangePatchState villageRangeState = GetVillageBuildRangePatchState(exePath);
+                    chkVillageBuildRange.Checked = false;
+                    if (villageRangeState == ExeVillageRangePatchState.Expanded) {
+                        Log("偵測到舊的村莊建造範圍 EXE patch；此 patch 不影響畫面紅框，下一次套用或還原相容性時會還原。");
+                    } else if (villageRangeState == ExeVillageRangePatchState.Unknown) {
+                        Log(Loc.Get("LogVillageBuildRangeWarning"));
                     }
                 }
 

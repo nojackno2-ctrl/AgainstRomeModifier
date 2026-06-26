@@ -1,131 +1,97 @@
-# Against Rome Modification Technical Document
+# Against Rome Modifier Technical Document
 
-## Document Record Rules
-* **All modifications must be recorded** in this document.
-* **Only correct and successful modifications are recorded**, unsuccessful attempts are excluded.
-* Records must **specify the modified file name, exact modification location (e.g., line numbers or sections), and what changes were made**.
-* **Value Modification Record Format**: When a value is modified, use the format `OriginalValue(ModifiedValue)` (e.g., `200(1600)`).
-* **Encoding Rule**: This file must be saved and edited in **UTF-8 (without BOM)** to prevent character corruption.
-* **No Truncation**: Under no circumstances write truncated text indicators into the file.
-* **Precise Edits**: Use exact line range replacement tools to edit files to avoid accidental data loss.
+This document records the modifier's current implementation, proven reverse
+engineering evidence, and candidate/disabled work. It is not a version history.
 
-## Modification Objectives
-1. Convert the game interface language to English for reference and development.
-2. Increase the population limit from 200 to 1600 for players and AI in Endless, Multiplayer, and Custom modes.
-3. Make all building construction and unit production completely free.
-4. Optimize and balance unit stats, movement speeds, spell casting range, and attack ranges for all factions.
-5. Enable players to fully customize all 9 attributes of all 43 units, supporting independent `.artroop` configuration file export/import and deep integration with global presets.
+## Game And Tool Paths
 
-## Modification Mechanisms
-1. Utilize the built-in `ToEng` backup folder to overwrite the original game's system folder with the English text and graphics resources.
-2. Unpack or decompress configuration and map files (such as `team.dat`, `ress.ini`, `cl_script.ini`, `objdef.dau`, `apt.dat`), apply the modifications, re-compress, and restore the custom headers.
-3. Child form data flow: When user clicks Apply in the preset form, customized unit attributes are cached into `customUnitStats` and synchronized with the global preset `.arpreset` file under `[TroopStats]`. During active patching, the custom stats dynamically overwrite the 9 attributes of units in `objdef.dau` with backward compatibility support for older 4-stats configurations.
+- The game path is selected in the UI. The original
+  `C:\Program Files (x86)\Against Rome` installation has been verified against
+  original EXE bytes.
+- Local Ghidra: `C:\Users\nojac\AppData\Local\Temp\AgainstRome_RE\ghidra`
+- Local JDK: `C:\Users\nojac\AppData\Local\Temp\AgainstRome_RE\jdk21`
+- Ghidra project: `C:\Users\nojac\AppData\Local\Temp\AgainstRome_RE\AgainstRomeVillageBuildArea`
+- Full EXE function index: `re_workspace/ghidra_inventory/against_rome_function_index.csv`
+- Full Ghidra pseudocode: `re_workspace/ghidra_inventory/against_rome_decompiled_functions.c`
 
-## Backup File Precautions
-* **Backup files are for extracting original data and comparing values only**.
-* **Never overwrite files directly with original backups**, otherwise you will revert all subsequent changes.
+`re_workspace/` is local reverse-engineering evidence. It is not committed to
+Git, and original game assets or generated decompiled output must not be
+distributed.
 
-## Anti-Overwrite Workflow & Architecture Integration (Mandatory)
-To avoid the "applying change A reverts change B" issue, all standalone scripts (Python, PowerShell) have been fully integrated into the unified graphic modifier. The project is modularized into `Program.cs`, `GameLZSS.cs`, `TroopConfig.cs`, and `ModifierForm.*.cs`. Old scripts have been deleted. Modifying core files must follow:
-1. **Single Entry Point**: All value adjustments and applications must go through the modifier UI.
-2. **Read-Apply-Write Process**: On each application: **Read original backup from the Backup zip -> Apply custom values and stats from UI -> Compress and overwrite active game files**. This ensures changes accumulate correctly.
-3. **No Independent Scripts**: Any new file modifications must be added directly into this modifier codebase (centered around `ModifierForm.Patches.cs`).
+## Modifier Architecture
 
----
+- `Program.cs`: application entry point, DPI, and elevation setup.
+- `GameLZSS.cs`: game-specific `PFIL@` LZSS compression and decompression.
+- `TroopConfig.cs`: unit IDs, categories, field indexes, and balance rules.
+- `ModifierForm.cs`: main UI and embedded technical document.
+- `ModifierForm.Data.cs`: backup loading, current data reads, icon parsing, and state detection.
+- `ModifierForm.Patches.cs`: all write and restore logic.
+- `ModifierForm.Presets.cs`: `.arpreset` and `.artroop` import/export.
+- `ModifierForm.SaveManager.cs`: save backup and restore.
+- `docs/reverse-engineering/`: auditable reverse-engineering evidence.
+- `data/game_schema.json`: tool-readable file format, field, and patch metadata.
 
-## Technical Details
+## Supported Game Files
 
-### 1. UI & Language Resource Overwrite
-* **Text Resources (`SYSTEM\TEXT\US\`)**: Overwrites `.put` files for main text:
-  - Menu & UI: `opt.put`, `g_mscr.put`, `g_bann.put`
-  - Quests & Briefings: `g_brief.put`, `g_kamp.put`, `debriefg.put`
-  - Units & Objects: `objnames.put`, `g_volk.put`
-  - Dialogs & Tips: `netdlg1.put`, `netdlg2.put`, `nettexts.put`, `msgbox.put`, `g_tut.put`
-* **Graphic Resources (`SYSTEM\CLMK\DLG\`)**: Replaces UI TGA assets:
-  - Stats screens (`STAT_01` to `STAT_05`, `ENDL`)
-  - Settings (`OPTA`), Menu buttons (`VERT`, `INFO`)
-* **Map Briefings (`MAPS\`)**: Overwrites `briefing.put`, `netgame.put`, `text.put` in multiplayer and tutorial folders.
+- `SYSTEM/DATA_MP/DEFAULTS/objdef.dau`
+  - Unit HP, movement, sight, weapon damage, cooldown, range, priest spell
+    ranges, VW, and AW.
+  - Decompressed text length must be preserved.
+- `SYSTEM/ress.ini`
+  - Construction, production, upgrade, and spell costs.
+  - `[objres]` indexes `19-24` are equipment/refund-related and are preserved
+    to avoid breaking UI equipment accounting and AI/job behavior.
+- `SYSTEM/cl_script.ini`
+  - Civilian spawn speed, spell radius, and morale parameters.
+- `MAPS/**/team.dat`
+  - `[maxteamobjgenerell]` and `[teamdata]` population limits.
+  - `[teamdata]` column 6 is `bannerVersion/bver`, not an AI switch.
+- `MAPS/ENDL_*/SCRIPT/ak_level.bci`
+  - Endless AI Ultimate Mode count, respawn wait, action-loop wait, and
+    active-AI gate candidate patches.
+- `Against_Rome.exe`
+  - Background execution when focus is lost.
+  - Legacy village build range candidate bytes are restore-only and are no
+    longer applied.
+- `apt.dat`
+  - Confirmed as a ZIP-like UI/layout container. The modifier does not write it.
 
-### 2. cl_script.ini Changes
-* **Details**: To fix AI respawn issues, all attributes, regeneration, and spawn delays are restored to original backups. Only the priest spell radius (`Radius`) is modified, scaling all spell radii by 2.5x.
+## Current Feature Status
 
-### 3. ress.ini Changes
-* **Format**: Uses LZSS compression with a 64-byte `PFIL@` header.
-* **Reverse-engineered basis**: `Against_Rome.exe` function `FUN_0046c1c0` reads `SYSTEM/ress.ini`, then calls `FUN_0042a230(file, "[objres]", 500, 0x1f, ..., RESS_0046bd00)` and `FUN_0042a230(file, "[volkres]", 6, 0x128, ..., RESS_0046b200)`. `RESS_0046bd00` switches on each `objres` column and writes the object-resource structure; `RESS_0046b200` does the same for `volkres`, so the field layout below follows the decompiled engine logic.
-* **Modifications**:
-  - **Free Construction & Upgrades**: Items starting with `Bau` in `[objres]` have costs set to `0` (including Index 8-11 upgrade materials). Fixed 11 missing tier-3/upgrade buildings at the end of the section to prevent engine fallback.
-  - **Free Production**: Unit costs in `[objres]` (engine `aus` group, Index 13-18) are set to `0`. Equipment refund fields (engine `auf` group, Index 19-24) are also cleared for non-exempt units so free units cannot be converted back into resources by disbanding or disarming. Siege weapons/traps/barricades wild construction costs (cols 1-7) are cleared.
-  - **Zero Spell Cost**: Set all priest spell MP costs in the last 4 columns to `0`.
-  - **Free Honor Unlocks**: Honor costs for formations (cols 8,10,12,14), unit/skill/building research (cols 24-263 even columns), and attribute upgrades (cols 264-291) in `[volkres]` are set to `0`.
-  - **Population Limit**: No longer writes to `ress.ini`. Reverse engineering confirms `[volkres]` Index 2 is the `resv_heilen_volk_*` healing-related field; population limits are controlled through each map's `team.dat` `[maxteamobjgenerell]` and `[teamdata]` values.
-* **`ress.ini` Field Layout Notes (0-based indexes)**:
-  - **Overall Structure**: Only `[objres]` and `[volkres]` contain CSV-like rows. `[objres]` has 132 rows with 30 columns each. `[volkres]` has 6 rows with 297 columns each. Rows keep the original trailing comma, so the final column is an empty tail field.
-  - **`[objres]` Index 0**: Object ID, such as `BauGer...` buildings or `FigGer...` units.
-  - **`[objres]` Index 1-7**: Build, deploy, or field-construction cost block. Buildings, siege engines, traps, and barricades use this range. The modifier currently treats `2` as building wood cost and `3` as building stone cost.
-  - **`[objres]` Index 8-11**: Building upgrade cost block: wood, stone, gold, and iron.
-  - **`[objres]` Index 12**: Last slot of the engine `upg` group; some unit rows use it, so free production still clears it conservatively.
-  - **`[objres]` Index 13-18**: Engine `aus` group, normal unit production/equipment cost block. The free production feature mainly clears this range.
-  - **`[objres]` Index 19-24**: Engine `auf` group, equipment refund block used when disbanding or disarming units. When free construction, repair, and unit production is enabled, this range must be set to `0` for every applicable unit so free units cannot be converted back into resources. For example, Celt Spearman / Lance bearer (`FigKelInf01_Lanze`) with `Index 21:10` can return 200 stone when disarming 20 units, and its original `Index 23:3` can also surface as an incorrect stone refund. Celt lancer cavalry (`FigKelKav00_Lanze_Schild`) has original `Index 23:5, Index 24:1`, which can return stone/horse resources when disarming.
-  - **`[objres]` Index 25-28**: Priest spell MP cost block. Priest rows usually contain `25,50,75,100`.
-  - **`[objres]` Index 29**: Empty tail field kept to preserve the original CSV trailing comma structure.
-  - **Special Unit `FigTiePac00_Packpferd`**: Corresponds to the Civil unit with horse / Pack horse type. Its original non-zero fields are `18:1` and `24:1`. This unit is fully excluded from free production: both production cost and disband/disarm refund values remain original.
-  - **Do not add `[objres]` rows for `Ver...Zivil_Icon` IDs**: `VerGerZivIco01_Zivil_Icon` and related IDs are UI/production icon objects from `objdef.dau`; the original `ress.ini` does not contain rows for them. The modifier therefore only preserves the original `FigTiePac00_Packpferd` row and no longer inserts any `Ver...Zivil_Icon` resource rows.
-  - **Mounted-civilian and battle-equipment UI quotas**: Decompilation confirms that `createBattleUnitsMax` clamps battle-unit creation to 20, while `createCiviUnitsMax` uses a separate civilian/horse path. The equipment screen's `0/20` and `0/4` values come from different resources or paths, so with only 20 villagers selected, choosing 4 mounted civilians first can still leave 20 battle units selectable; with 24 villagers selected, choosing 4 mounted civilians plus 20 battle units should leave 0 unequipped villagers, but the current free-production patch can still show 4 unequipped villagers, effectively allowing 28 reserved equipment slots. This is not caused by the population limit. It appears to be a shared UI-counting issue between the mounted-civilian path and battle-equipment path. The original game usually avoids the issue because the original `ress.ini [objres]` equipment cost/refund data remains intact, so the UI may still infer occupied villager/equipment slots through the `aus`/`auf` fields. Clearing non-exempt unit `auf` fields (Index 19-24) for free production may remove data the UI uses to subtract battle-unit reservations. Priority validation: preserve original battle-unit `auf` fields and test whether the UI remaining count returns to normal, then find a separate way to prevent disband/disarm resource refunds. If data-only changes cannot satisfy both goals, an exe/UI logic patch is required.
-  - **`[volkres]` Row 0-5**: Teuton/German, Celt, Hun, Roman, reserved row, reserved row.
-  - **`[volkres]` Index 0-7**: Reverse-engineered faction-wide resource/skill parameters: `0 goldgeschenk`, `1 goldgeschenkm`, `2 heilen`, `3 heileng`, `4 opferung`, `5 manaaufladen`, `6 motivieren`, `7 motivierenm`. Index `2` is healing-related, not the population limit.
-  - **`[volkres]` Index 8-23**: Formation or base technology unlock pairs in `honor cost, ID` format.
-  - **`[volkres]` Index 24-263**: Unit, skill, building, and technology unlock pairs. Even indexes are honor costs; odd indexes are the corresponding IDs.
-  - **`[volkres]` Index 264-291**: Four attribute-upgrade cost blocks. The free upgrade feature clears this range, while preserving unrelated maximum-value or ID-like fields.
-  - **`[volkres]` Index 292-296**: Reserved or empty tail fields.
+- Stable: population limit, free construction/production/upgrades/spells, unit
+  stats, civilian speed, spell range, morale, language copy, focus-loss
+  background execution, save management, and presets.
+- Candidate: AI Ultimate Mode's endless AI acceleration and active-AI gate
+  bypass. The BCI/EXE path is located, but each effect still needs in-game
+  validation.
+- Disabled: 2x village red build-range frame. The old EXE offsets
+  `0x1366c4`/`0x1366cd` affect `00536630` logical village bounds, but did not
+  enlarge the visible red dashed frame. The modifier hides this option and only
+  restores old patched bytes.
 
-### 4. objdef.dau Changes
-* **Format**: LZSS compression. Keep original size of `3,310,807` bytes to prevent crash.
-* **Modifications**:
-  - **Double Movement Speed**: Double `moves` (Index 4), `movsf` (Index 23), and `bmovs` (Index 191) for all mobile troops, excluding siege engines/projectiles/priests.
-  - **Priest Range**: Set priest sight `sirad` (Index 24) to `30000` (original `1500`) to enable distant spell casting.
-  - **3x Ranged Range & Sight**: Ranged unit sight (Index 24) and Weapon 2/3 range (Index 88-89, 96-97) are scaled by 3.0x.
-  - **1.5x Ranged Fire Rate**: Ranged reload time (`relt`) scaled by `1/1.5`.
-  - **Unit Balance & Specific Unit Specializations (Reconstructed & Optimized)**: Introduced tiered health points (HP) to prevent high-tier units from easily one-shotting low-tier units, while reducing excessively high melee max damage (capped ace units around 50), and fine-tuning attack/defense ratios:
-    * Low-tier units: HP 110
-    * Mid-tier units: HP 130
-    * High-tier units: HP 150
-    * Ace-tier units: HP 160
-    * Leader units: HP 450
-  - **Specific Unit Specializations (Implemented via C# conditional branches)**:
-    * Celt Spearman (`FigKelInf01_Lanze`): Specialized defense unit. HP 180, base defense VW 32 (final VW reaches 42 after 1.3x shield multiplier), combat AW 18, max damage maxDam 22. Highly fortified to withstand cavalry charges.
-    * Roman Light Infantry (`FigRomInf00_Lanze_Schild`): Mid-tier defense unit. HP 130, base defense VW 22 (final VW 29 with shield), max damage maxDam 24.
-    * Roman Heavy Infantry (`FigRomSch00_Speer_Schild`): Ranged heavy defense unit. HP 140, base defense VW 26 (final VW 34 with shield), max damage maxDam 25.
-    * Roman Praetorian Guard (`FigRomInf01_Schwert_Schild`): Elite infantry unit. HP 200, base defense VW 28 (final VW 36 with shield), max damage maxDam 36.
-    * Hun Swordsman (`FigHunInf01_Schwert_Schild`): Hun defense shield unit. HP 140, base defense VW 24 (final VW 31 with shield), max damage maxDam 24.
-    * Celt Dual Swordsman (`FigKelInf02_Doppelschwert`): Mid-high tier dual-wielder. HP 130, base defense VW 15, max damage maxDam 40.
-    * Teuton Double Hammer (`FigGerInf03_Doppelhammer`): Ace dual-wielder. HP 150, base defense VW 16, combat AW 34, max damage maxDam 60.
+## Reverse Engineering Rules
 
-### 5. team.dat Changes
-* **Details**: Unpacks map files and sets the population limit `[maxteamobjgenerell]` and each faction's limit in `[teamdata]` to the custom limit (e.g., 1600). Restores other stats to original backups.
+- Start with `docs/reverse-engineering/`, `data/game_schema.json`, and
+  `re_workspace/ghidra_inventory/`.
+- Mark field meaning confirmed only when EXE or BCI runtime evidence shows how
+  the game consumes it.
+- Ghidra pseudocode is not original source. Unknown `FUN_*` functions remain
+  unknown until call-path, string, or runtime evidence supports a name.
+- EXE patches must verify original bytes and provide restore bytes.
+- Every write path must have a backup or byte-level restore path.
 
-### 6. apt.dat Changes
-* **Details**: Restored collision sizes for projectiles. Directly copy `Backup\apt.dat`.
+## Village Red Frame Status
 
-### 7. Main Executable Changes
-* **Details**: At offset `0x161a88` in `Against_Rome.exe`, replace `89 15 C4 7D 9E 02` with `90 90 90 90 90 90` (`NOP`) to prevent auto-pause when focus is lost.
+Verified original installed EXE bytes:
 
----
+- `0x1366c4`: `C1 E2 06`
+- `0x1366cd`: `C1 E1 06`
+- `0x136867`: `C1 E0 06`
 
-## Version History (Summary)
-* **v1.0 - v14.1**: Implemented core LZSS compression algorithms, GUI styling, bulk settings, presets, safe file access, error handling, and fixed various game bugs.
-* **v15.0 - v15.2**: Integrated movement speed, sight, range, reload speed, and spell radius multipliers directly into the balance toggle (`chkBalance`). Corrected grid alignment and column offsets.
-* **v16.0**: Optimized memory allocations by replacing closures with static local functions in the LZSS compression module.
-* **v17.0 - v17.1**: Implemented cache memory structures for `objdef.dau` and save files, drastically speeding up loading times. Resolved a population limit check bug.
-* **v18.0**: Redesigned UI with a symmetric layout and added the `ModernToggle` control. Implemented custom dark rendering for menus, dynamic coloring for attribute comparison, and stable unit sorting.
-* **v19.0 - v19.1**: Introduced strong-typed enums for CSV columns, added a thread-safe lock for logger files, and implemented parallel task processing for `team.dat` maps.
-* **v20.0 (Troop Stats File Customization & UI Tab Optimization)**:
-  - **Full 9 Stats Customization**: Supports customizing HP, Dmg, VW, AW, Speed, Sight, Relt, Range, and SpellRadius for all 43 units.
-  - **Independent File Storage (.artroop)**: Supports importing/exporting customized attributes as `.artroop` files.
-  - **Backward Preset Compatibility**: Global preset `.arpreset` INI format dynamically supports varying stats lengths. Legacy 4-stats configs are dynamically padded with original or balanced values in `GetBaseStatsForUnit` to prevent IndexOutOfRangeException crashes.
-  - **Child Form UI Optimization**: Enlarges the troop preset child form to 1250x790, introduces tab pages for Teutons, Celts, Huns, and Romans, controls column widths to eliminate horizontal scrollbars, and hides vertical scrollbars due to reduced row count (10-11 rows per tab).
-  - **Stats File Source Label**: Adds a status label (`lblTroopPresetFile`) on the main form, displaying the source of loaded troop statistics.
+Changing the first two shifts to `7` did not enlarge the visible red frame, so
+it is not the correct fix. The next evidence path is the overlay chain:
 
-* **v20.1 (Fix GDI Memory Leak, Array Bounds Safety, and Main Grid Scrollbar Elimination)**:
-  - **Resolved GDI Handle Leaks**: Fixed missing cleanup for the unmanaged handle created by Win32 API `CreateRoundRectRgn` in `TroopPresetForm.cs` and `ModifierForm.cs`. Added `DeleteObject` and called it immediately after `Region.FromHrgn(ptr)` to prevent GDI resource depletion over time.
-  - **Defensive Array Length Validation**: Added array length safety checks (`stats.Length > X`) when loading balanced stats templates or parsing imported `.artroop` files to ensure they won't throw `IndexOutOfRangeException` in case of incomplete stat inputs.
-  - **Main Form Grid Scrollbar Elimination**: Hid redundant informational columns (`Type`, `Style`, and `Tier`) on the custom and current unit stats grids. Optimized remaining column widths to fit within 1085px, and set `ScrollBars` to `ScrollBars.Vertical` to completely eliminate horizontal scrollbars.
+`0044e990 -> 00421c00 -> 00520320 -> 005203a0`
+
+`0044e990` creates overlay type `0x28`. Until the visible frame size source is
+proven, this modifier does not expose a village build-range feature.

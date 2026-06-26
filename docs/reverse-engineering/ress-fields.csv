@@ -8,7 +8,7 @@ objres,9,BauUpgradeStone,int,stable,ModifierForm.Patches.cs,Building upgrade sto
 objres,10,BauUpgradeGold,int,stable,ModifierForm.Patches.cs,Building upgrade gold cost.
 objres,11,BauUpgradeIron,int,stable,ModifierForm.Patches.cs,Building upgrade iron cost.
 objres,12-18,FigProdCostRange,int,stable,ModifierForm.Patches.cs,Unit production costs.
-objres,19-24,FigEquipmentRefundRange,int,stable,ModifierForm.Patches.cs,Equipment-related costs/refunds.
+objres,19-24,FigEquipmentRefundRange,int,stable,preserved,Equipment-related costs/refunds; preserved to avoid disturbing UI equipment accounting and endless AI spawn behavior.
 objres,25-28,FigPriestSpellCostRange,int,stable,ModifierForm.Patches.cs,Priest spell costs.
 objres,29,LineTerminatorOrPadding,string,candidate,docs,Observed as trailing field in some rows.
 volkres,0-7,FactionSkillCosts,int,candidate,ModifierForm.Patches.cs,Includes heilen/heileng and other skill costs.

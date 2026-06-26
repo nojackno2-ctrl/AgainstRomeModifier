@@ -9,8 +9,16 @@ Known compressed text files:
 
 - `SYSTEM/ress.ini`
 - `SYSTEM/cl_script.ini`
+- `SYSTEM/banner.ini`
 - `SYSTEM/DATA_MP/DEFAULTS/objdef.dau`
 - `MAPS/**/team.dat`
+
+Known compressed binary/script files:
+
+- `MAPS/ENDL_*/SCRIPT/ak_level.bci`: `PFIL@` wrapper around a `BCI0`
+  compiled script payload.
+- `MAPS/ENDL_*/Endlos_*_Siedlung*.sdl`: settlement template payloads used by
+  endless-mode village-style AI spawns.
 
 ## Text Encoding
 

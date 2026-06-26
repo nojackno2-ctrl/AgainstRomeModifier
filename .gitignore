@@ -19,6 +19,7 @@ re_workspace/
 
 # Original game assets / local restore payloads
 # Keep these locally only. Do not publish bundled game files to GitHub.
+Original game archives/
 Backup.zip
 Backup/
 Against_Rome.exe

@@ -1,38 +1,97 @@
 # Against Rome Modifier Technical Document
 
-This is the embedded English UTF-8 technical document.
+This document records the modifier's current implementation, proven reverse
+engineering evidence, and candidate/disabled work. It is not a version history.
 
-For the structured reverse-engineering database, see `docs/reverse-engineering/`.
-For tool-readable metadata, see `data/game_schema.json`.
+## Game And Tool Paths
+
+- The game path is selected in the UI. The original
+  `C:\Program Files (x86)\Against Rome` installation has been verified against
+  original EXE bytes.
+- Local Ghidra: `C:\Users\nojac\AppData\Local\Temp\AgainstRome_RE\ghidra`
+- Local JDK: `C:\Users\nojac\AppData\Local\Temp\AgainstRome_RE\jdk21`
+- Ghidra project: `C:\Users\nojac\AppData\Local\Temp\AgainstRome_RE\AgainstRomeVillageBuildArea`
+- Full EXE function index: `re_workspace/ghidra_inventory/against_rome_function_index.csv`
+- Full Ghidra pseudocode: `re_workspace/ghidra_inventory/against_rome_decompiled_functions.c`
+
+`re_workspace/` is local reverse-engineering evidence. It is not committed to
+Git, and original game assets or generated decompiled output must not be
+distributed.
+
+## Modifier Architecture
+
+- `Program.cs`: application entry point, DPI, and elevation setup.
+- `GameLZSS.cs`: game-specific `PFIL@` LZSS compression and decompression.
+- `TroopConfig.cs`: unit IDs, categories, field indexes, and balance rules.
+- `ModifierForm.cs`: main UI and embedded technical document.
+- `ModifierForm.Data.cs`: backup loading, current data reads, icon parsing, and state detection.
+- `ModifierForm.Patches.cs`: all write and restore logic.
+- `ModifierForm.Presets.cs`: `.arpreset` and `.artroop` import/export.
+- `ModifierForm.SaveManager.cs`: save backup and restore.
+- `docs/reverse-engineering/`: auditable reverse-engineering evidence.
+- `data/game_schema.json`: tool-readable file format, field, and patch metadata.
 
 ## Supported Game Files
 
-- `SYSTEM/DATA_MP/DEFAULTS/objdef.dau`: unit statistics, movement, sight, weapon damage, cooldown, range, priest spell ranges, VW, and AW.
-- `SYSTEM/ress.ini`: construction, production, upgrade, equipment, and priest spell costs.
-- `SYSTEM/cl_script.ini`: villager delay, spell radius, and morale parameters.
-- `MAPS/**/team.dat`: map population limits.
-- `Against_Rome.exe`: compatibility patch for background execution when the game loses focus.
-- `apt.dat`: identified as a ZIP-like UI/layout container; not yet patched by the modifier.
+- `SYSTEM/DATA_MP/DEFAULTS/objdef.dau`
+  - Unit HP, movement, sight, weapon damage, cooldown, range, priest spell
+    ranges, VW, and AW.
+  - Decompressed text length must be preserved.
+- `SYSTEM/ress.ini`
+  - Construction, production, upgrade, and spell costs.
+  - `[objres]` indexes `19-24` are equipment/refund-related and are preserved
+    to avoid breaking UI equipment accounting and AI/job behavior.
+- `SYSTEM/cl_script.ini`
+  - Civilian spawn speed, spell radius, and morale parameters.
+- `MAPS/**/team.dat`
+  - `[maxteamobjgenerell]` and `[teamdata]` population limits.
+  - `[teamdata]` column 6 is `bannerVersion/bver`, not an AI switch.
+- `MAPS/ENDL_*/SCRIPT/ak_level.bci`
+  - Endless AI Ultimate Mode count, respawn wait, action-loop wait, and
+    active-AI gate candidate patches.
+- `Against_Rome.exe`
+  - Background execution when focus is lost.
+  - Legacy village build range candidate bytes are restore-only and are no
+    longer applied.
+- `apt.dat`
+  - Confirmed as a ZIP-like UI/layout container. The modifier does not write it.
 
-## Backup Source
+## Current Feature Status
 
-`Backup.zip` is optional for public builds and should not be published to GitHub.
-When it is absent, the modifier reads the required original files from the user's
-selected game installation directory and keeps that backup in memory.
+- Stable: population limit, free construction/production/upgrades/spells, unit
+  stats, civilian speed, spell range, morale, language copy, focus-loss
+  background execution, save management, and presets.
+- Candidate: AI Ultimate Mode's endless AI acceleration and active-AI gate
+  bypass. The BCI/EXE path is located, but each effect still needs in-game
+  validation.
+- Disabled: 2x village red build-range frame. The old EXE offsets
+  `0x1366c4`/`0x1366cd` affect `00536630` logical village bounds, but did not
+  enlarge the visible red dashed frame. The modifier hides this option and only
+  restores old patched bytes.
 
-## Reverse Engineering Workflow
+## Reverse Engineering Rules
 
-1. Decompress target game data with `GameLZSS.DecompressPfil`.
-2. Identify fields in the decompressed text or CSV-like rows.
-3. Record confirmed indexes in `docs/reverse-engineering/*.csv`.
-4. Add tool-readable metadata to `data/game_schema.json`.
-5. Add read-only UI inspection before enabling write patches.
-6. Verify that recompressed files load in game.
+- Start with `docs/reverse-engineering/`, `data/game_schema.json`, and
+  `re_workspace/ghidra_inventory/`.
+- Mark field meaning confirmed only when EXE or BCI runtime evidence shows how
+  the game consumes it.
+- Ghidra pseudocode is not original source. Unknown `FUN_*` functions remain
+  unknown until call-path, string, or runtime evidence supports a name.
+- EXE patches must verify original bytes and provide restore bytes.
+- Every write path must have a backup or byte-level restore path.
 
-## Patch Safety Rules
+## Village Red Frame Status
 
-- Always keep an original backup before writing.
-- Do not patch `Against_Rome.exe` unless the expected bytes match.
-- Preserve decompressed `objdef.dau` text length when modifying fields.
-- Treat newly discovered indexes as experimental until tested in game.
-- Do not distribute original game assets or decompiled source code.
+Verified original installed EXE bytes:
+
+- `0x1366c4`: `C1 E2 06`
+- `0x1366cd`: `C1 E1 06`
+- `0x136867`: `C1 E0 06`
+
+Changing the first two shifts to `7` did not enlarge the visible red frame, so
+it is not the correct fix. The next evidence path is the overlay chain:
+
+`0044e990 -> 00421c00 -> 00520320 -> 005203a0`
+
+`0044e990` creates overlay type `0x28`. Until the visible frame size source is
+proven, this modifier does not expose a village build-range feature.

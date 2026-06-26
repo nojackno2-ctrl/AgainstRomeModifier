@@ -25,6 +25,32 @@ namespace AgainstRomeModifier {
         private static readonly byte[] ExeFocusPatchedBytes = new byte[] { 0x90, 0x90, 0x90, 0x90, 0x90, 0x90 };
         private const long ExeFocusPatchOffset = 0x161a88;
         private const long ExeFocusPatchRequiredLength = 0x161a8e;
+        // FUN_00536630: village bound half-width/half-height shifts from *64 to *128.
+        private static readonly byte[] ExeVillageRangeXOriginalBytes = new byte[] { 0xC1, 0xE2, 0x06 };
+        private static readonly byte[] ExeVillageRangeZOriginalBytes = new byte[] { 0xC1, 0xE1, 0x06 };
+        private static readonly byte[] ExeVillageRangeXPatchedBytes = new byte[] { 0xC1, 0xE2, 0x07 };
+        private static readonly byte[] ExeVillageRangeZPatchedBytes = new byte[] { 0xC1, 0xE1, 0x07 };
+        private const long ExeVillageRangeXPatchOffset = 0x1366c4;
+        private const long ExeVillageRangeZPatchOffset = 0x1366cd;
+        private const long ExeVillageRangePatchRequiredLength = 0x1366d0;
+        private const int EndlessAiOriginalMilitaryCount = 4;
+        private const int EndlessAiUltimateMilitaryCount = 20;
+        private const int EndlessAiOriginalRespawnDelayMs = 180000;
+        private const int EndlessAiUltimateRespawnDelayMs = 5000;
+        private const int EndlessAiUltimateLoopDelayLowerMs = 5000;
+        private const int EndlessAiUltimateLoopDelayUpperMs = 10000;
+        private const int EndlessAiActiveLimitOriginalOpcode = 66;
+        private const int EndlessAiActiveLimitOriginalValue = 0;
+        private const int EndlessAiActiveLimitPatchedOpcode = 112;
+        private const int EndlessAiActiveLimitPatchedRelativeJump = 272;
+        private static readonly (int OriginalUpperMs, int OriginalLowerMs)[] EndlessAiLoopDelayRanges = new (int, int)[] {
+            (960000, 480000),
+            (960000, 480000),
+            (360000, 240000),
+            (120000, 60000),
+            (120000, 60000),
+            (240000, 120000)
+        };
 
         private sealed class FileRollbackScope : IDisposable {
             private sealed class RollbackEntry {
@@ -258,14 +284,17 @@ namespace AgainstRomeModifier {
                 decimal popLimit = numPopLimit.Value;
                 bool balance = chkBalance.Checked;
                 bool toEng = chkToEng.Checked;
+                bool aiUltimateMode = chkAiUltimateMode.Checked;
+                bool villageBuildRange = false;
 
                 await Task.Run(() => {
-                    ApplyExePatch(gamePath, focusLoss, rollback);
+                    ApplyExePatch(gamePath, focusLoss, villageBuildRange, rollback);
                     ApplyClScriptPatch(gamePath, civiSpeed, infMorale, balance, rollback);
                     ApplyRessPatch(gamePath, freeProd, freeUp, noSpell, rollback);
                     ApplyObjdefPatch(gamePath, balance, rollback);
                     RestoreTeamFiles(gamePath, rollback);
                     ApplyTeamDatPatch(gamePath, popLimit, rollback);
+                    ApplyEndlessAiUltimateModePatch(gamePath, aiUltimateMode, rollback);
                     ApplyLanguagePatch(gamePath, toEng, rollback);
                 });
 
@@ -290,8 +319,7 @@ namespace AgainstRomeModifier {
         }
 
         private static bool ShouldZeroFigFreeProductionField(int index) {
-            return (index >= (int)RessIndex.FigProdCostStart && index <= (int)RessIndex.FigProdCostEnd) ||
-                   (index >= (int)RessIndex.FigEquipmentRefundStart && index <= (int)RessIndex.FigEquipmentRefundEnd);
+            return index >= (int)RessIndex.FigProdCostStart && index <= (int)RessIndex.FigProdCostEnd;
         }
 
         /// <summary>
@@ -314,12 +342,15 @@ namespace AgainstRomeModifier {
                 Log("已建立還原前檔案回復點。");
                 await Task.Run(() => {
                     RestoreStatsOnlyInternal(gamePath, rollback);
-                    ApplyExePatch(gamePath, false, rollback);
+                    ApplyExePatch(gamePath, false, false, rollback);
+                    ApplyEndlessAiUltimateModePatch(gamePath, false, rollback);
                     ApplyLanguagePatch(gamePath, false, rollback);
                 });
                 rollback.Commit();
                 chkFocusLoss.Checked = false;
                 chkToEng.Checked = false;
+                chkAiUltimateMode.Checked = false;
+                chkVillageBuildRange.Checked = false;
                 customUnitStats = null;
                 presetFileSourceType = "default";
                 presetFileName = "";
@@ -398,10 +429,13 @@ namespace AgainstRomeModifier {
                 rollback = new FileRollbackScope();
                 Log("已建立還原前檔案回復點。");
                 await Task.Run(() => {
-                    ApplyExePatch(gamePath, false, rollback);
+                    ApplyExePatch(gamePath, false, false, rollback);
+                    ApplyEndlessAiUltimateModePatch(gamePath, false, rollback);
                 });
                 rollback.Commit();
                 chkFocusLoss.Checked = false;
+                chkAiUltimateMode.Checked = false;
+                chkVillageBuildRange.Checked = false;
                 Log(Loc.Get("LogRestoreCompatDone"));
                 MessageBox.Show(Loc.Get("MsgRestoreCompatSuccess"), Loc.Get("TitleTips"), MessageBoxButtons.OK, MessageBoxIcon.Information);
             } catch (Exception ex) {
@@ -560,6 +594,12 @@ namespace AgainstRomeModifier {
             FocusPatched
         }
 
+        private enum ExeVillageRangePatchState {
+            Unknown,
+            Original,
+            Expanded
+        }
+
         private ExePatchState GetExePatchState(string exePath) {
             if (!File.Exists(exePath)) return ExePatchState.Unknown;
             using (var fs = new FileStream(exePath, FileMode.Open, FileAccess.Read, FileShare.Read)) {
@@ -577,17 +617,69 @@ namespace AgainstRomeModifier {
         }
 
         private void WriteExePatchBytes(string exePath, byte[] patchBytes, FileRollbackScope? rollback) {
+            WriteExePatchBytes(exePath, ExeFocusPatchOffset, patchBytes, rollback);
+        }
+
+        private void WriteExePatchBytes(string exePath, long patchOffset, byte[] patchBytes, FileRollbackScope? rollback) {
             rollback?.TrackFile(exePath);
             using (var fs = new FileStream(exePath, FileMode.Open, FileAccess.ReadWrite, FileShare.None)) {
-                fs.Seek(ExeFocusPatchOffset, SeekOrigin.Begin);
+                fs.Seek(patchOffset, SeekOrigin.Begin);
                 fs.Write(patchBytes, 0, patchBytes.Length);
             }
         }
 
+        private ExeVillageRangePatchState GetVillageBuildRangePatchState(string exePath) {
+            if (!File.Exists(exePath)) return ExeVillageRangePatchState.Unknown;
+            using (var fs = new FileStream(exePath, FileMode.Open, FileAccess.Read, FileShare.Read)) {
+                if (fs.Length < ExeVillageRangePatchRequiredLength) {
+                    return ExeVillageRangePatchState.Unknown;
+                }
+
+                fs.Seek(ExeVillageRangeXPatchOffset, SeekOrigin.Begin);
+                byte[] xBytes = new byte[ExeVillageRangeXOriginalBytes.Length];
+                int xRead = fs.Read(xBytes, 0, xBytes.Length);
+                if (xRead != xBytes.Length) return ExeVillageRangePatchState.Unknown;
+
+                fs.Seek(ExeVillageRangeZPatchOffset, SeekOrigin.Begin);
+                byte[] zBytes = new byte[ExeVillageRangeZOriginalBytes.Length];
+                int zRead = fs.Read(zBytes, 0, zBytes.Length);
+                if (zRead != zBytes.Length) return ExeVillageRangePatchState.Unknown;
+
+                bool original = xBytes.SequenceEqual(ExeVillageRangeXOriginalBytes) &&
+                    zBytes.SequenceEqual(ExeVillageRangeZOriginalBytes);
+                bool expanded = xBytes.SequenceEqual(ExeVillageRangeXPatchedBytes) &&
+                    zBytes.SequenceEqual(ExeVillageRangeZPatchedBytes);
+                if (original) return ExeVillageRangePatchState.Original;
+                if (expanded) return ExeVillageRangePatchState.Expanded;
+            }
+            return ExeVillageRangePatchState.Unknown;
+        }
+
         /// <summary>
-        /// 修改 Against_Rome.exe 實體檔案，實現視窗失焦不自動暫停的功能。
+        /// Restores the legacy experimental village-range bytes if an old build wrote them.
+        /// The candidate did not affect the visible selected-village red frame, so it must
+        /// not block other EXE patches when its signature is absent.
         /// </summary>
-        private void ApplyExePatch(string gamePath, bool focusLossChecked, FileRollbackScope? rollback = null) {
+        private void ApplyVillageBuildRangePatch(string gamePath, bool enabled, FileRollbackScope? rollback = null) {
+            string dest = Path.Combine(gamePath, @"Against_Rome.exe");
+            ExeVillageRangePatchState state = GetVillageBuildRangePatchState(dest);
+            if (state == ExeVillageRangePatchState.Unknown) {
+                Log(Loc.Get("LogVillageBuildRangeWarning"));
+                return;
+            }
+
+            if (enabled) {
+                Log("村莊建造範圍 EXE patch 已停用：先前位置不影響畫面紅框，僅保留還原舊 patch。");
+            } else {
+                if (state == ExeVillageRangePatchState.Expanded) {
+                    WriteExePatchBytes(dest, ExeVillageRangeXPatchOffset, ExeVillageRangeXOriginalBytes, rollback);
+                    WriteExePatchBytes(dest, ExeVillageRangeZPatchOffset, ExeVillageRangeZOriginalBytes, rollback);
+                    Log(Loc.Get("LogVillageBuildRangeRestored"));
+                }
+            }
+        }
+
+        private void ApplyExePatch(string gamePath, bool focusLossChecked, bool villageBuildRangeChecked, FileRollbackScope? rollback = null) {
             string dest = Path.Combine(gamePath, @"Against_Rome.exe");
             ExePatchState state = GetExePatchState(dest);
             if (state == ExePatchState.Unknown) {
@@ -605,6 +697,8 @@ namespace AgainstRomeModifier {
                 }
                 Log(Loc.Get("LogExePatchOrig"));
             }
+
+            ApplyVillageBuildRangePatch(gamePath, villageBuildRangeChecked, rollback);
         }
 
         /// <summary>
@@ -1134,6 +1228,267 @@ namespace AgainstRomeModifier {
         /// <summary>
         /// 修改各地圖目錄下的 team.dat，使其中定義的人口上限與主程式或 UI 界面上設定的人口數相符。
         /// </summary>
+        private static int FindEndlessMilitaryCreateUnitCall(byte[] decompressedBci) {
+            int?[] pattern = new int?[] {
+                0x42, 0,
+                0x42, 1,
+                0x42, null,
+                0x42, null,
+                0x42, 0,
+                0x42, 0,
+                0x42, 8,
+                0x42, 3,
+                0x5A, 7,
+                0x80, 0xD4,
+                0x49, unchecked((int)0xFFFFFFF7),
+                0x56
+            };
+
+            int patternBytes = pattern.Length * 4;
+            for (int offset = 0; offset <= decompressedBci.Length - patternBytes; offset += 4) {
+                bool match = true;
+                for (int i = 0; i < pattern.Length; i++) {
+                    int? expected = pattern[i];
+                    if (expected.HasValue && BitConverter.ToInt32(decompressedBci, offset + (i * 4)) != expected.Value) {
+                        match = false;
+                        break;
+                    }
+                }
+                if (match) {
+                    return offset;
+                }
+            }
+            return -1;
+        }
+
+        private static int FindEndlessRespawnDelayLiteral(byte[] decompressedBci) {
+            int?[] pattern = new int?[] {
+                0x80, 83,
+                0x56, 66,
+                null, 32,
+                44, 164,
+                0x42, 34,
+                0x5B, 5
+            };
+
+            int patternBytes = pattern.Length * 4;
+            for (int offset = 0; offset <= decompressedBci.Length - patternBytes; offset += 4) {
+                bool match = true;
+                for (int i = 0; i < pattern.Length; i++) {
+                    int? expected = pattern[i];
+                    if (expected.HasValue && BitConverter.ToInt32(decompressedBci, offset + (i * 4)) != expected.Value) {
+                        match = false;
+                        break;
+                    }
+                }
+                if (match) {
+                    return offset + 16;
+                }
+            }
+            return -1;
+        }
+
+        private static void WriteBciInt32(byte[] buffer, int offset, int value) {
+            byte[] bytes = BitConverter.GetBytes(value);
+            Buffer.BlockCopy(bytes, 0, buffer, offset, 4);
+        }
+
+        private static bool PatchEndlessLoopDelayLiterals(byte[] decompressedBci, bool enabled) {
+            bool changed = false;
+            int delaySiteIndex = 0;
+
+            for (int offset = 0; offset <= decompressedBci.Length - 24; offset += 4) {
+                if (BitConverter.ToInt32(decompressedBci, offset) != 0x42 ||
+                    BitConverter.ToInt32(decompressedBci, offset + 8) != 0x42 ||
+                    BitConverter.ToInt32(decompressedBci, offset + 16) != 0x80 ||
+                    BitConverter.ToInt32(decompressedBci, offset + 20) != 16) {
+                    continue;
+                }
+
+                int currentUpperMs = BitConverter.ToInt32(decompressedBci, offset + 4);
+                int currentLowerMs = BitConverter.ToInt32(decompressedBci, offset + 12);
+                if (delaySiteIndex >= EndlessAiLoopDelayRanges.Length) {
+                    continue;
+                }
+
+                (int originalUpperMs, int originalLowerMs) = EndlessAiLoopDelayRanges[delaySiteIndex];
+                bool matchesOriginal = currentUpperMs == originalUpperMs && currentLowerMs == originalLowerMs;
+                bool matchesUltimate = currentUpperMs == EndlessAiUltimateLoopDelayUpperMs &&
+                    currentLowerMs == EndlessAiUltimateLoopDelayLowerMs;
+                if (!matchesOriginal && !matchesUltimate) {
+                    continue;
+                }
+
+                int targetUpperMs = enabled ? EndlessAiUltimateLoopDelayUpperMs : originalUpperMs;
+                int targetLowerMs = enabled ? EndlessAiUltimateLoopDelayLowerMs : originalLowerMs;
+                if (currentUpperMs != targetUpperMs || currentLowerMs != targetLowerMs) {
+                    WriteBciInt32(decompressedBci, offset + 4, targetUpperMs);
+                    WriteBciInt32(decompressedBci, offset + 12, targetLowerMs);
+                    changed = true;
+                }
+                delaySiteIndex++;
+            }
+
+            return changed;
+        }
+
+        private static int FindEndlessActiveLimitPatchOffset(byte[] decompressedBci) {
+            int?[] pattern = new int?[] {
+                0x5A, 0,
+                0x42, 4,
+                96, 98,
+                0x5B, 11,
+                null, null,
+                0x42, 0,
+                0x42, 0,
+                0x42, 0,
+                0x42, 0,
+                0x5A, 6,
+                102, 117,
+                32
+            };
+
+            int patternBytes = pattern.Length * 4;
+            for (int offset = 0; offset <= decompressedBci.Length - patternBytes; offset += 4) {
+                bool match = true;
+                for (int i = 0; i < pattern.Length; i++) {
+                    int? expected = pattern[i];
+                    if (expected.HasValue && BitConverter.ToInt32(decompressedBci, offset + (i * 4)) != expected.Value) {
+                        match = false;
+                        break;
+                    }
+                }
+                if (match) {
+                    return offset + 32;
+                }
+            }
+            return -1;
+        }
+
+        private static bool PatchEndlessActiveAiLimit(byte[] decompressedBci, bool enabled) {
+            int patchOffset = FindEndlessActiveLimitPatchOffset(decompressedBci);
+            if (patchOffset < 0) {
+                return false;
+            }
+
+            int targetOpcode = enabled ? EndlessAiActiveLimitPatchedOpcode : EndlessAiActiveLimitOriginalOpcode;
+            int targetValue = enabled ? EndlessAiActiveLimitPatchedRelativeJump : EndlessAiActiveLimitOriginalValue;
+            int currentOpcode = BitConverter.ToInt32(decompressedBci, patchOffset);
+            int currentValue = BitConverter.ToInt32(decompressedBci, patchOffset + 4);
+            bool currentIsOriginal = currentOpcode == EndlessAiActiveLimitOriginalOpcode &&
+                currentValue == EndlessAiActiveLimitOriginalValue;
+            bool currentIsPatched = currentOpcode == EndlessAiActiveLimitPatchedOpcode &&
+                currentValue == EndlessAiActiveLimitPatchedRelativeJump;
+            if (!currentIsOriginal && !currentIsPatched) {
+                return false;
+            }
+
+            if (currentOpcode == targetOpcode && currentValue == targetValue) {
+                return false;
+            }
+
+            WriteBciInt32(decompressedBci, patchOffset, targetOpcode);
+            WriteBciInt32(decompressedBci, patchOffset + 4, targetValue);
+            return true;
+        }
+
+        private bool TryReadEndlessMilitaryCount(string gamePath, out int minCount, out int maxCount) {
+            minCount = 0;
+            maxCount = 0;
+            string mapsPath = Path.Combine(gamePath, "MAPS");
+            if (!Directory.Exists(mapsPath)) {
+                return false;
+            }
+
+            string? firstScript = Directory.GetFiles(mapsPath, "ak_level.bci", SearchOption.AllDirectories)
+                .FirstOrDefault(p => p.IndexOf(Path.DirectorySeparatorChar + "ENDL_", StringComparison.OrdinalIgnoreCase) >= 0);
+            if (string.IsNullOrEmpty(firstScript) || !File.Exists(firstScript)) {
+                return false;
+            }
+
+            byte[] raw = File.ReadAllBytes(firstScript);
+            byte[] decomp = GameLZSS.DecompressPfil(raw);
+            int baseOffset = FindEndlessMilitaryCreateUnitCall(decomp);
+            if (baseOffset < 0) {
+                return false;
+            }
+
+            minCount = BitConverter.ToInt32(decomp, baseOffset + 20);
+            maxCount = BitConverter.ToInt32(decomp, baseOffset + 28);
+            return true;
+        }
+
+        private void ApplyEndlessAiUltimateModePatch(string gamePath, bool enabled, FileRollbackScope? rollback = null) {
+            string mapsPath = Path.Combine(gamePath, "MAPS");
+            if (!Directory.Exists(mapsPath)) {
+                Log(Loc.Get("LogEndlessAiNoMaps"));
+                return;
+            }
+
+            string[] scripts = Directory.GetFiles(mapsPath, "ak_level.bci", SearchOption.AllDirectories)
+                .Where(p => p.IndexOf(Path.DirectorySeparatorChar + "ENDL_", StringComparison.OrdinalIgnoreCase) >= 0)
+                .ToArray();
+            if (scripts.Length == 0) {
+                Log(Loc.Get("LogEndlessAiNoScripts"));
+                return;
+            }
+
+            int targetCount = enabled ? EndlessAiUltimateMilitaryCount : EndlessAiOriginalMilitaryCount;
+            int targetRespawnDelayMs = enabled ? EndlessAiUltimateRespawnDelayMs : EndlessAiOriginalRespawnDelayMs;
+            int patched = 0;
+            foreach (string scriptPath in scripts) {
+                byte[] raw = File.ReadAllBytes(scriptPath);
+                byte[] decomp = GameLZSS.DecompressPfil(raw);
+                int baseOffset = FindEndlessMilitaryCreateUnitCall(decomp);
+                if (baseOffset < 0) {
+                    Log(string.Format(Loc.Get("LogEndlessAiPatternMissing"), scriptPath));
+                    continue;
+                }
+
+                int currentMin = BitConverter.ToInt32(decomp, baseOffset + 20);
+                int currentMax = BitConverter.ToInt32(decomp, baseOffset + 28);
+                bool changed = false;
+                if (currentMin != targetCount || currentMax != targetCount) {
+                    WriteBciInt32(decomp, baseOffset + 20, targetCount);
+                    WriteBciInt32(decomp, baseOffset + 28, targetCount);
+                    changed = true;
+                }
+
+                int respawnDelayOffset = FindEndlessRespawnDelayLiteral(decomp);
+                if (respawnDelayOffset < 0) {
+                    Log(string.Format(Loc.Get("LogEndlessAiPatternMissing"), scriptPath));
+                    continue;
+                }
+                int currentRespawnDelayMs = BitConverter.ToInt32(decomp, respawnDelayOffset);
+                if (currentRespawnDelayMs != targetRespawnDelayMs) {
+                    WriteBciInt32(decomp, respawnDelayOffset, targetRespawnDelayMs);
+                    changed = true;
+                }
+
+                if (PatchEndlessLoopDelayLiterals(decomp, enabled)) {
+                    changed = true;
+                }
+
+                if (PatchEndlessActiveAiLimit(decomp, enabled)) {
+                    changed = true;
+                }
+
+                if (!changed) {
+                    continue;
+                }
+
+                byte[] compressed = GameLZSS.CompressPfil(decomp, raw);
+                SafeWriteAllBytes(scriptPath, compressed, rollback);
+                patched++;
+            }
+
+            if (enabled) {
+                Log(string.Format(Loc.Get("LogEndlessAiUltimateApplied"), patched, targetCount));
+            } else {
+                Log(string.Format(Loc.Get("LogEndlessAiUltimateRestored"), patched, targetCount));
+            }
+        }
+
         private void ApplyTeamDatPatch(string gamePath, decimal popLimitVal, FileRollbackScope? rollback = null) {
             string[] teamFiles = Directory.GetFiles(Path.Combine(gamePath, "MAPS"), "team.dat", SearchOption.AllDirectories);
             int popLimit = (int)popLimitVal;

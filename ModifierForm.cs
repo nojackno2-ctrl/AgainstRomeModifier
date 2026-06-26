@@ -75,7 +75,11 @@ namespace AgainstRomeModifier {
         private ModernToggle chkNoSpellCost = null!;
         private ModernToggle chkFocusLoss = null!;
         private ModernToggle chkBalance = null!;
+        private ModernToggle chkAiUltimateMode = null!;
+        private ModernToggle chkVillageBuildRange = null!;
         private Button btnTroopPreset = null!;
+        private Label lblTroopTemplate = null!;
+        private ComboBox cbTroopTemplate = null!;
         private Label lblTroopPresetFile = null!;
         private Dictionary<string, double[]>? customUnitStats = null;
         private string presetFileSourceType = "default";
@@ -643,9 +647,29 @@ namespace AgainstRomeModifier {
             };
             pnlNumericCard.Controls.Add(chkToEng);
 
+            chkAiUltimateMode = new ModernToggle {
+                Text = "AI終極模式",
+                Location = new Point(30, 250),
+                Size = new Size(500, 25),
+                Checked = false,
+                BackColor = Color.Transparent
+            };
+            pnlNumericCard.Controls.Add(chkAiUltimateMode);
+
+            chkVillageBuildRange = new ModernToggle {
+                Text = "村莊建造範圍 2 倍",
+                Location = new Point(30, 290),
+                Size = new Size(500, 25),
+                Checked = false,
+                BackColor = Color.Transparent,
+                Enabled = false,
+                Visible = false
+            };
+            pnlNumericCard.Controls.Add(chkVillageBuildRange);
+
             btnPresetSave = new Button {
                 Text = "匯出設定",
-                Location = new Point(30, 280),
+                Location = new Point(30, 325),
                 Size = new Size(130, 38)
             };
             StyleButton(btnPresetSave, Color.FromArgb(45, 45, 55), Color.FromArgb(0, 220, 255), Color.FromArgb(0, 220, 255));
@@ -653,7 +677,7 @@ namespace AgainstRomeModifier {
 
             btnPresetLoad = new Button {
                 Text = "匯入設定",
-                Location = new Point(180, 280),
+                Location = new Point(180, 325),
                 Size = new Size(130, 38)
             };
             StyleButton(btnPresetLoad, Color.FromArgb(45, 45, 55), Color.FromArgb(240, 240, 240), Color.FromArgb(180, 100, 255));
@@ -712,6 +736,17 @@ namespace AgainstRomeModifier {
                 BackColor = Color.Transparent
             };
             pnlSwitchesCard.Controls.Add(chkInfiniteMorale);
+
+            chkBalance = new ModernToggle {
+                Text = Loc.Get("EnableBalance"),
+                Location = new Point(30, 265),
+                Size = new Size(500, 25),
+                Checked = false,
+                BackColor = Color.Transparent,
+                Font = fontJhengHei10B
+            };
+            chkBalance.CheckedChanged += new EventHandler(ChkBalance_CheckedChanged);
+            pnlSwitchesCard.Controls.Add(chkBalance);
 
             // 新增下方使用指南卡片，使佈局平衡且資訊更完整
             Panel pnlTipsCard = new Panel {
@@ -887,19 +922,30 @@ namespace AgainstRomeModifier {
                 BackColor = Color.Transparent
             };
 
-            chkBalance = new ModernToggle {
-                Text = Loc.Get("EnableBalance"),
-                Location = new Point(320, 18),
-                Size = new Size(350, 25),
-                Checked = false,
-                BackColor = Color.Transparent,
-                Font = fontJhengHei10B
+            lblTroopTemplate = new Label {
+                Text = Loc.Get("TroopTemplateLabel"),
+                Location = new Point(315, 20),
+                Size = new Size(90, 25),
+                Font = fontJhengHei95B,
+                ForeColor = Color.FromArgb(200, 205, 210),
+                BackColor = Color.Transparent
             };
-            chkBalance.CheckedChanged += new EventHandler(ChkBalance_CheckedChanged);
+
+            cbTroopTemplate = new ComboBox {
+                Location = new Point(410, 16),
+                Size = new Size(190, 28),
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                BackColor = Color.FromArgb(32, 32, 40),
+                ForeColor = Color.White,
+                Font = fontJhengHei95B,
+                FlatStyle = FlatStyle.Flat
+            };
+            RefreshTroopTemplateItems();
+            cbTroopTemplate.SelectedIndexChanged += CbTroopTemplate_SelectedIndexChanged;
 
             btnTroopPreset = new Button {
-                Text = "兵種屬性檔案",
-                Location = new Point(680, 14),
+                Text = Loc.Get("BtnTroopPreset"),
+                Location = new Point(615, 14),
                 Size = new Size(130, 30),
                 Font = fontJhengHei95B
             };
@@ -908,15 +954,16 @@ namespace AgainstRomeModifier {
 
             lblTroopPresetFile = new Label {
                 Text = Loc.Get("TroopPresetDefault"),
-                Location = new Point(825, 18),
-                Size = new Size(350, 25),
+                Location = new Point(760, 18),
+                Size = new Size(410, 25),
                 Font = fontJhengHei9R,
                 ForeColor = Color.FromArgb(160, 165, 170),
                 BackColor = Color.Transparent
             };
 
             pnlDefaultStatsTitle.Controls.Add(lblDefaultStatsTitle);
-            pnlDefaultStatsTitle.Controls.Add(chkBalance);
+            pnlDefaultStatsTitle.Controls.Add(lblTroopTemplate);
+            pnlDefaultStatsTitle.Controls.Add(cbTroopTemplate);
             pnlDefaultStatsTitle.Controls.Add(btnTroopPreset);
             pnlDefaultStatsTitle.Controls.Add(lblTroopPresetFile);
 
@@ -1294,6 +1341,8 @@ namespace AgainstRomeModifier {
             lblCiviSpeed.Text = Loc.Get("CiviSpeed");
             chkFocusLoss.Text = Loc.Get("FocusLoss");
             chkToEng.Text = Loc.Get("ToEng");
+            chkAiUltimateMode.Text = Loc.Get("AiUltimateMode");
+            chkVillageBuildRange.Text = Loc.Get("VillageBuildRange");
             btnPresetSave.Text = Loc.Get("PresetSave");
             btnPresetLoad.Text = Loc.Get("PresetLoad");
             lblSwitchesTitle.Text = Loc.Get("SwitchesTitle");
@@ -1340,6 +1389,8 @@ namespace AgainstRomeModifier {
 
             lblDefaultStatsTitle.Text = Loc.Get("DefaultStatsTitle");
             chkBalance.Text = Loc.Get("EnableBalance");
+            lblTroopTemplate.Text = Loc.Get("TroopTemplateLabel");
+            RefreshTroopTemplateItems();
             lblCurrentStatsTitle.Text = Loc.Get("CurrentStatsTitle");
 
             // 更新表格標頭
@@ -1427,6 +1478,47 @@ namespace AgainstRomeModifier {
                 lblTroopPresetFile.Text = Loc.Get("TroopPresetDefault");
                 lblTroopPresetFile.ForeColor = Color.FromArgb(160, 165, 170);
             }
+        }
+
+        private void RefreshTroopTemplateItems() {
+            if (cbTroopTemplate == null) return;
+            int selectedIndex = cbTroopTemplate.SelectedIndex;
+            cbTroopTemplate.SelectedIndexChanged -= CbTroopTemplate_SelectedIndexChanged;
+            cbTroopTemplate.Items.Clear();
+            cbTroopTemplate.Items.Add(Loc.Get("TroopTemplateSelect"));
+            cbTroopTemplate.Items.Add(Loc.Get("TroopTemplateBalanced"));
+            cbTroopTemplate.SelectedIndex = selectedIndex > 0 && selectedIndex < cbTroopTemplate.Items.Count ? selectedIndex : 0;
+            cbTroopTemplate.SelectedIndexChanged += CbTroopTemplate_SelectedIndexChanged;
+        }
+
+        private void CbTroopTemplate_SelectedIndexChanged(object? sender, EventArgs e) {
+            if (cbTroopTemplate == null || cbTroopTemplate.SelectedIndex == 0) return;
+
+            string text = Loc.CurrentLanguage == Language.English
+                ? "Are you sure you want to apply the 'Balanced Base Stats' template? This will overwrite your current custom unit stats."
+                : "確定要套用「修改器內建平衡」範本嗎？這將覆蓋目前的自訂兵種屬性。";
+            string title = Loc.CurrentLanguage == Language.English ? "Confirm Template Overwrite" : "確認範本覆蓋";
+
+            if (MessageBox.Show(text, title, MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) {
+                cbTroopTemplate.SelectedIndex = 0;
+                return;
+            }
+
+            customUnitStats = new Dictionary<string, double[]>(StringComparer.OrdinalIgnoreCase);
+            foreach (string key in TroopConfig.UnitOrder) {
+                if (!TroopConfig.UnitMeta.ContainsKey(key)) continue;
+                customUnitStats[key] = GetDefaultBalancedStats(key).ToArray();
+            }
+
+            presetFileSourceType = "preset";
+            presetFileName = Loc.Get("TroopTemplateBalanced");
+            LoadDefaultStatsData();
+            UpdateTroopPresetLabel();
+            Log(Loc.CurrentLanguage == Language.English
+                ? "Applied built-in balanced troop stats template."
+                : "已套用修改器內建平衡兵種屬性範本。");
+
+            cbTroopTemplate.SelectedIndex = 0;
         }
  
         private void BtnTroopPreset_Click(object? sender, EventArgs e) {

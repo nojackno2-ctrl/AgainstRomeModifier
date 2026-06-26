@@ -29,9 +29,6 @@ namespace AgainstRomeModifier {
         private Label lblTitle = null!;
         private Button btnClose = null!;
         
-        private Label lblTemplate = null!;
-        private ComboBox cbTemplate = null!;
-        
         private TabControl tabFaction = null!;
         private Dictionary<string, DataGridView> factionGrids = new Dictionary<string, DataGridView>(StringComparer.OrdinalIgnoreCase);
         
@@ -119,37 +116,10 @@ namespace AgainstRomeModifier {
 
             this.Controls.Add(pnlTitleBar);
 
-            // 2. 範本選擇
-            lblTemplate = new Label {
-                Text = isEn ? "Select Preset Template:" : "選擇預設屬性範本:",
-                Location = new Point(20, 68),
-                Size = isEn ? new Size(185, 25) : new Size(130, 25),
-                Font = fontJhengHei95B,
-                ForeColor = Color.FromArgb(200, 205, 210),
-                BackColor = Color.Transparent
-            };
-            this.Controls.Add(lblTemplate);
-
-            cbTemplate = new ComboBox {
-                Location = isEn ? new Point(215, 65) : new Point(160, 65),
-                Size = new Size(200, 28),
-                DropDownStyle = ComboBoxStyle.DropDownList,
-                BackColor = Color.FromArgb(32, 32, 40),
-                ForeColor = Color.White,
-                Font = fontJhengHei95B,
-                FlatStyle = FlatStyle.Flat
-            };
-            cbTemplate.Items.AddRange(isEn 
-                ? new string[] { "(Select Template)", "Balanced Base Stats" }
-                : new string[] { "(請選擇範本)", "修改器內建平衡" });
-            cbTemplate.SelectedIndex = 0;
-            cbTemplate.SelectedIndexChanged += CbTemplate_SelectedIndexChanged;
-            this.Controls.Add(cbTemplate);
-
-            // 3. 陣營分類 TabControl
+            // 2. 陣營分類 TabControl
             tabFaction = new TabControl {
-                Location = new Point(20, 110),
-                Size = new Size(1210, 590),
+                Location = new Point(20, 65),
+                Size = new Size(1210, 635),
                 Font = fontJhengHei95B
             };
 
@@ -387,42 +357,6 @@ namespace AgainstRomeModifier {
                     );
                 }
             }
-        }
-
-        private void CbTemplate_SelectedIndexChanged(object? sender, EventArgs e) {
-            int index = cbTemplate.SelectedIndex;
-            if (index == 0) return;
- 
-            bool isEn = Loc.CurrentLanguage == Language.English;
-            string text = isEn 
-                ? "Are you sure you want to apply the 'Balanced Base Stats' template? This will overwrite your current changes!" 
-                : "確定要套用「修改器內建平衡」範本嗎？這將覆蓋目前表格中的編輯！";
-            string title = isEn ? "Confirm Template Overwrite" : "確認範本覆蓋";
-
-            if (MessageBox.Show(text, title, MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) {
-                cbTemplate.SelectedIndex = 0;
-                return;
-            }
- 
-            foreach (var dgv in factionGrids.Values) {
-                for (int i = 0; i < dgv.Rows.Count; i++) {
-                    string key = dgv.Rows[i].Cells["Key"].Value?.ToString() ?? "";
-                    if (string.IsNullOrEmpty(key)) continue;
- 
-                    double[] stats = mainForm.GetDefaultBalancedStats(key);
-                    dgv.Rows[i].Cells["Hp"].Value = stats.Length > 0 ? Math.Round(stats[0]).ToString() : "0";
-                    dgv.Rows[i].Cells["Dmg"].Value = stats.Length > 1 ? stats[1].ToString("F1", CultureInfo.InvariantCulture) : "0.0";
-                    dgv.Rows[i].Cells["VW"].Value = stats.Length > 2 ? Math.Round(stats[2]).ToString() : "0";
-                    dgv.Rows[i].Cells["AW"].Value = stats.Length > 3 ? Math.Round(stats[3]).ToString() : "0";
-                    dgv.Rows[i].Cells["Speed"].Value = stats.Length > 4 ? stats[4].ToString("F1", CultureInfo.InvariantCulture) : "0.0";
-                    dgv.Rows[i].Cells["Sight"].Value = stats.Length > 5 ? Math.Round(stats[5]).ToString() : "0";
-                    dgv.Rows[i].Cells["Relt"].Value = stats.Length > 6 ? Math.Round(stats[6]).ToString() : "0";
-                    dgv.Rows[i].Cells["Range"].Value = stats.Length > 7 ? Math.Round(stats[7]).ToString() : "0";
-                    dgv.Rows[i].Cells["SpellRadius"].Value = stats.Length > 8 ? Math.Round(stats[8]).ToString() : "0";
-                }
-            }
- 
-            cbTemplate.SelectedIndex = 0;
         }
 
         // 載入自訂檔案 (匯入)

@@ -14,13 +14,19 @@ research and personal modding project.
 ## Core Features
 
 - Population limit customization for map `team.dat` files.
-- Free construction, production, upgrades, equipment, and spell costs through `ress.ini`.
+- Endless-mode AI Ultimate Mode, which raises the mass-army spawn count to the
+  vanilla script limit, reduces AI respawn wait to 5 seconds, and shortens
+  endless AI action-loop waits to 5-10 seconds while bypassing the active-AI
+  gate and leaving settlement/village templates untouched.
+- Free construction, production, upgrades, and spell costs through `ress.ini`.
 - Unit stat editing for HP, damage, VW, AW, movement, sight, cooldown, range, and spell radius through `objdef.dau` and `cl_script.ini`.
 - Troop preset import/export through `.artroop` and global preset import/export through `.arpreset`.
 - Background execution patch for `Against_Rome.exe` when the game loses focus.
 - Automatic game path detection and one-click launch.
 - Save backup, restore, and history management.
 - Embedded technical documentation.
+- Local reverse-engineering workflow with a generated Ghidra function index and
+  pseudocode inventory kept under ignored `re_workspace/`.
 
 ## Technical Architecture
 
@@ -56,8 +62,14 @@ Current coverage:
 - `SYSTEM/DATA_MP/DEFAULTS/objdef.dau`: unit stats and weapon fields.
 - `SYSTEM/ress.ini`: construction, production, upgrade, and spell costs.
 - `SYSTEM/cl_script.ini`: villager delay, spell radius, and morale parameters.
-- `MAPS/**/team.dat`: population limits.
-- `Against_Rome.exe`: focus-loss background execution patch.
+- `MAPS/**/team.dat`: population limits and banner version semantics.
+- `MAPS/ENDL_*/SCRIPT/ak_level.bci`: endless AI Ultimate Mode candidate patches.
+- `Against_Rome.exe`: focus-loss background execution patch, rejected village
+  red-frame candidate, and full local Ghidra function inventory.
+
+The generated Ghidra output is local research material, not original source.
+Unknown `FUN_*` functions are not treated as understood until the call path or
+runtime evidence is documented.
 
 ## Development Environment
 
