@@ -12,8 +12,13 @@
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Remove="re_workspace\**\*.cs" />
     <EmbeddedResource Include="Backup.zip" Condition="Exists('Backup.zip')" />
     <EmbeddedResource Include="TechDoc.md" LogicalName="TechDoc.md" />
     <EmbeddedResource Include="TechDoc_EN.md" LogicalName="TechDoc_EN.md" />
+    <EmbeddedResource Include="ThirdParty\dgVoodoo2\D3D8.dll" LogicalName="dgVoodoo2.D3D8.dll" />
+    <EmbeddedResource Include="ThirdParty\dgVoodoo2\DDraw.dll" LogicalName="dgVoodoo2.DDraw.dll" />
+    <EmbeddedResource Include="ThirdParty\dgVoodoo2\dgVoodooCpl.exe" LogicalName="dgVoodoo2.dgVoodooCpl.exe" />
+    <EmbeddedResource Include="ThirdParty\dgVoodoo2\dgVoodoo.conf" LogicalName="dgVoodoo2.dgVoodoo.conf" />
   </ItemGroup>
 </Project>

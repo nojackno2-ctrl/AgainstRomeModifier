@@ -124,13 +124,27 @@ endless maps inspected.
 - Military-style arrival uses script unit-creation jobs.
 - The military create-unit job's current count range is `4..4`, clamped by the
   EXE to `1..20`.
-- The modifier option `AI終極模式` changes only this military count range to
+- The modifier option `AI終極模式` changes this military count range to
   `20..20`, changes the respawn wait literal from `180000` ms to `5000` ms, and
-  changes identified endless AI action-loop `s_randRange` waits to `5000..10000`
-  ms. It also bypasses the active-party flag gate at decompressed BCI offset
-  `0x1960C` by changing `66,0` to `112,272`, which jumps directly to the
-  follow-up dispatch path. Settlement/village-mode `.sdl` templates are
-  intentionally left untouched for later work.
+  raises the active-party comparison literal at `0x195F8` from `4` to `8`.
+  It also changes the last `s_addNPCJob_createUnit` argument at `0x17B1C` from
+  `0` to `1`. EXE runtime analysis shows that this flag removes a job after its
+  status leaves the running state, allowing the 20 per-team NPC-job slots to be
+  reused by later reinforcement waves instead of retaining completed jobs.
+  Original action-loop waits are retained. Older builds changed all of them to
+  `5000..10000` ms and bypassed the gate at `0x1960C` with `112,272`; both legacy
+  changes are now restored because they can enqueue NPC jobs faster than they
+  finish and eventually exhaust the 20 job slots available to each team.
+  Settlement/village-mode `.sdl` templates remain untouched.
+
+### Rejected global village-production patch
+
+Older builds changed `ak_npc.bci` (`0 -> 20` at `0x1EA0`),
+`ak_produktion.bci` (`117 -> 112` at `0x3710`), and `ak_haupthaus.bci`
+(`[81,59] -> [66,20]` at `0x3FCC`). Runtime testing proved these global paths
+are not safely NPC-scoped: staffed player resource buildings remain at zero,
+including in a new game. Current builds always restore the three original
+values and keep AI Ultimate limited to endless-map reinforcement logic.
 - `team.dat` still controls faction, population limit, and banner version, but
   it is not the source of the endless AI spawn-mode decision.
 

@@ -64,10 +64,8 @@ namespace AgainstRomeModifier {
         private Panel pnlConsoleCard = null!;
 
         // 數值控制項 (NumericUpDown) 的宣告
-        private Label lblPopLimit = null!;
-        private NumericUpDown numPopLimit = null!;
-        private Label lblCiviSpeed = null!;
-        private NumericUpDown numCiviSpeed = null!;
+        private ModernToggle chkMaxPopulation = null!;
+        private ModernToggle chkFastCiviProduction = null!;
 
         // 功能開關的核取方塊 (自訂 ModernToggle 開關)
         private ModernToggle chkFreeProd = null!;
@@ -75,7 +73,9 @@ namespace AgainstRomeModifier {
         private ModernToggle chkNoSpellCost = null!;
         private ModernToggle chkFocusLoss = null!;
         private ModernToggle chkBalance = null!;
+        private ModernToggle chkHousingCapacity20x = null!;
         private ModernToggle chkAiUltimateMode = null!;
+        private ModernToggle chkDgVoodoo = null!;
         private ModernToggle chkVillageBuildRange = null!;
         private Button btnTroopPreset = null!;
         private Label lblTroopTemplate = null!;
@@ -111,6 +111,7 @@ namespace AgainstRomeModifier {
         // 快取的備份單兵屬性欄位字典 (以兵種名稱為 Key)
         private Dictionary<string, string[]> _backupUnitRows = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
         private bool _backupUnitRowsParsed = false;
+        private readonly object _backupUnitRowsLock = new object();
 
         // 備份存檔快取
         private class BackupSaveCache {
@@ -287,21 +288,6 @@ namespace AgainstRomeModifier {
             btn.MouseLeave += (s, e) => {
                 btn.FlatAppearance.BorderColor = Color.FromArgb(60, 60, 70);
                 btn.BackColor = backColor;
-            };
-        }
-
-        // 統一設定 CheckBox 的扁平化與自訂色彩樣式，選取時文字顯示霓虹青色
-        private void StyleCheckBox(CheckBox chk) {
-            chk.FlatStyle = FlatStyle.Flat;
-            chk.FlatAppearance.BorderColor = Color.FromArgb(60, 60, 70);
-            chk.ForeColor = Color.FromArgb(200, 205, 210);
-            chk.Cursor = Cursors.Hand;
-            chk.CheckedChanged += (s, e) => {
-                if (chk.Checked) {
-                    chk.ForeColor = Color.FromArgb(0, 220, 255); // 已選取：青色
-                } else {
-                    chk.ForeColor = Color.FromArgb(200, 205, 210); // 未選取：灰色
-                }
             };
         }
 
@@ -583,55 +569,9 @@ namespace AgainstRomeModifier {
             };
             pnlNumericCard.Controls.Add(lblNumericTitle);
 
-            lblPopLimit = new Label {
-                Text = "最大人口上限:",
-                Location = new Point(30, 60),
-                Size = new Size(250, 25),
-                ForeColor = Color.FromArgb(200, 205, 210),
-                BackColor = Color.Transparent
-            };
-            Panel pnlPop = CreateInputWrapper(300, 58, 230, 28);
-            numPopLimit = new NumericUpDown {
-                Location = new Point(5, 5),
-                Size = new Size(220, 20),
-                Minimum = 1,
-                Maximum = 10000,
-                Value = 200,
-                BorderStyle = BorderStyle.None,
-                BackColor = Color.FromArgb(38, 38, 48),
-                ForeColor = Color.White
-            };
-            pnlPop.Controls.Add(numPopLimit);
-            pnlNumericCard.Controls.Add(lblPopLimit);
-            pnlNumericCard.Controls.Add(pnlPop);
-
-            lblCiviSpeed = new Label {
-                Text = "村民生產速度倍率:",
-                Location = new Point(30, 110),
-                Size = new Size(250, 25),
-                ForeColor = Color.FromArgb(200, 205, 210),
-                BackColor = Color.Transparent
-            };
-            Panel pnlCivi = CreateInputWrapper(300, 108, 230, 28);
-            numCiviSpeed = new NumericUpDown {
-                Location = new Point(5, 5),
-                Size = new Size(220, 20),
-                Minimum = 1.0M,
-                Maximum = 50.0M,
-                DecimalPlaces = 1,
-                Increment = 1.0M,
-                Value = 1.0M,
-                BorderStyle = BorderStyle.None,
-                BackColor = Color.FromArgb(38, 38, 48),
-                ForeColor = Color.White
-            };
-            pnlCivi.Controls.Add(numCiviSpeed);
-            pnlNumericCard.Controls.Add(lblCiviSpeed);
-            pnlNumericCard.Controls.Add(pnlCivi);
-
             chkFocusLoss = new ModernToggle {
                 Text = "遊戲視窗失焦時不自動暫停 (背景執行)",
-                Location = new Point(30, 170),
+                Location = new Point(30, 60),
                 Size = new Size(500, 25),
                 Checked = false,
                 BackColor = Color.Transparent
@@ -640,32 +580,29 @@ namespace AgainstRomeModifier {
 
             chkToEng = new ModernToggle {
                 Text = "強制英文語系 (介面圖示與核心文字)",
-                Location = new Point(30, 210),
+                Location = new Point(30, 110),
                 Size = new Size(500, 25),
-                Checked = true,
+                Checked = false,
                 BackColor = Color.Transparent
             };
             pnlNumericCard.Controls.Add(chkToEng);
 
             chkAiUltimateMode = new ModernToggle {
                 Text = "AI終極模式",
-                Location = new Point(30, 250),
+                Location = new Point(30, 325),
                 Size = new Size(500, 25),
                 Checked = false,
                 BackColor = Color.Transparent
             };
-            pnlNumericCard.Controls.Add(chkAiUltimateMode);
 
-            chkVillageBuildRange = new ModernToggle {
-                Text = "村莊建造範圍 2 倍",
-                Location = new Point(30, 290),
+            chkDgVoodoo = new ModernToggle {
+                Text = Loc.Get("DgVoodoo"),
+                Location = new Point(30, 160),
                 Size = new Size(500, 25),
                 Checked = false,
-                BackColor = Color.Transparent,
-                Enabled = false,
-                Visible = false
+                BackColor = Color.Transparent
             };
-            pnlNumericCard.Controls.Add(chkVillageBuildRange);
+            pnlNumericCard.Controls.Add(chkDgVoodoo);
 
             btnPresetSave = new Button {
                 Text = "匯出設定",
@@ -701,9 +638,27 @@ namespace AgainstRomeModifier {
             };
             pnlSwitchesCard.Controls.Add(lblSwitchesTitle);
 
+            chkMaxPopulation = new ModernToggle {
+                Text = Loc.Get("MaxPopulation"),
+                Location = new Point(30, 55),
+                Size = new Size(500, 25),
+                Checked = false,
+                BackColor = Color.Transparent
+            };
+            pnlSwitchesCard.Controls.Add(chkMaxPopulation);
+
+            chkFastCiviProduction = new ModernToggle {
+                Text = Loc.Get("FastCiviProduction"),
+                Location = new Point(30, 85),
+                Size = new Size(500, 25),
+                Checked = false,
+                BackColor = Color.Transparent
+            };
+            pnlSwitchesCard.Controls.Add(chkFastCiviProduction);
+
             chkFreeProd = new ModernToggle {
                 Text = "建造、修復與所有單位生產完全免費",
-                Location = new Point(30, 65),
+                Location = new Point(30, 115),
                 Size = new Size(500, 25),
                 Checked = false,
                 BackColor = Color.Transparent
@@ -712,7 +667,7 @@ namespace AgainstRomeModifier {
 
             chkFreeUpgrade = new ModernToggle {
                 Text = "陣型、研發、屬性解鎖升級免費",
-                Location = new Point(30, 115),
+                Location = new Point(30, 145),
                 Size = new Size(500, 25),
                 Checked = false,
                 BackColor = Color.Transparent
@@ -721,7 +676,7 @@ namespace AgainstRomeModifier {
 
             chkNoSpellCost = new ModernToggle {
                 Text = "祭司與賢者法術無消耗 (MP 零消耗)",
-                Location = new Point(30, 165),
+                Location = new Point(30, 175),
                 Size = new Size(500, 25),
                 Checked = false,
                 BackColor = Color.Transparent
@@ -730,7 +685,7 @@ namespace AgainstRomeModifier {
 
             chkInfiniteMorale = new ModernToggle {
                 Text = "部隊無限士氣 (士氣不減且極速恢復)",
-                Location = new Point(30, 215),
+                Location = new Point(30, 205),
                 Size = new Size(500, 25),
                 Checked = false,
                 BackColor = Color.Transparent
@@ -739,7 +694,7 @@ namespace AgainstRomeModifier {
 
             chkBalance = new ModernToggle {
                 Text = Loc.Get("EnableBalance"),
-                Location = new Point(30, 265),
+                Location = new Point(30, 235),
                 Size = new Size(500, 25),
                 Checked = false,
                 BackColor = Color.Transparent,
@@ -747,6 +702,27 @@ namespace AgainstRomeModifier {
             };
             chkBalance.CheckedChanged += new EventHandler(ChkBalance_CheckedChanged);
             pnlSwitchesCard.Controls.Add(chkBalance);
+
+            chkVillageBuildRange = new ModernToggle {
+                Text = Loc.Get("VillageBuildRange"),
+                Location = new Point(30, 265),
+                Size = new Size(500, 25),
+                Checked = false,
+                BackColor = Color.Transparent,
+                Font = fontJhengHei10B
+            };
+            pnlSwitchesCard.Controls.Add(chkVillageBuildRange);
+
+            chkHousingCapacity20x = new ModernToggle {
+                Text = Loc.Get("HousingCapacity20x"),
+                Location = new Point(30, 295),
+                Size = new Size(500, 25),
+                Checked = false,
+                BackColor = Color.Transparent,
+                Font = fontJhengHei10B
+            };
+            pnlSwitchesCard.Controls.Add(chkHousingCapacity20x);
+            pnlSwitchesCard.Controls.Add(chkAiUltimateMode);
 
             // 新增下方使用指南卡片，使佈局平衡且資訊更完整
             Panel pnlTipsCard = new Panel {
@@ -1226,28 +1202,35 @@ namespace AgainstRomeModifier {
         /// 確保備份的 objdef.dau 檔案已被解析並快取至記憶體中。
         /// </summary>
         private void EnsureBackupUnitRowsParsed() {
-            if (_backupUnitRowsParsed) return;
-            try {
-                byte[]? origBytes;
-                if (backupFiles.TryGetValue("SYSTEM/DATA_MP/DEFAULTS/objdef.dau", out origBytes)) {
-                    byte[] decompBytes = GameLZSS.DecompressPfil(origBytes!);
-                    string decomp = Encoding.GetEncoding(1251).GetString(decompBytes);
-                    string lineEnding = decomp.Contains("\r\n") ? "\r\n" : "\n";
-                    string[] lines = decomp.Split(new string[] { lineEnding }, StringSplitOptions.None);
-                    for (int idx = 2; idx < lines.Length; idx++) {
-                        string line = lines[idx];
-                        if (line.Length < 100) continue;
-                        string[] cols = ParseCsvLine(line);
-                        if (cols.Length < 192) continue;
-                        string name = cols[52].Trim();
-                        if (TroopConfig.UnitMeta.ContainsKey(name) || name == "FigZivMan00_Zivilist") {
-                            _backupUnitRows[name] = cols;
+            string? errorMsg = null;
+            lock (_backupUnitRowsLock) {
+                if (_backupUnitRowsParsed) return;
+                try {
+                    byte[]? origBytes;
+                    if (backupFiles.TryGetValue("SYSTEM/DATA_MP/DEFAULTS/objdef.dau", out origBytes)) {
+                        byte[] decompBytes = GameLZSS.DecompressPfil(origBytes!);
+                        string decomp = Encoding.GetEncoding(1251).GetString(decompBytes);
+                        string lineEnding = decomp.Contains("\r\n") ? "\r\n" : "\n";
+                        string[] lines = decomp.Split(new string[] { lineEnding }, StringSplitOptions.None);
+                        for (int idx = 2; idx < lines.Length; idx++) {
+                            string line = lines[idx];
+                            if (line.Length < 100) continue;
+                            string[] cols = ParseCsvLine(line);
+                            if (cols.Length < 192) continue;
+                            string name = cols[52].Trim();
+                            if (TroopConfig.UnitMeta.ContainsKey(name) || name == "FigZivMan00_Zivilist") {
+                                _backupUnitRows[name] = cols;
+                            }
                         }
                     }
+                    _backupUnitRowsParsed = true;
+                } catch (Exception ex) {
+                    errorMsg = "Failed to parse backup objdef.dau: " + ex.Message;
+                    _backupUnitRowsParsed = true;
                 }
-                _backupUnitRowsParsed = true;
-            } catch (Exception ex) {
-                Log("解析備份 objdef.dau 失敗: " + ex.Message);
+            }
+            if (errorMsg != null) {
+                Log(errorMsg);
             }
         }
 
@@ -1337,15 +1320,17 @@ namespace AgainstRomeModifier {
 
             lblMainTitle.Text = Loc.Get("MainTitle");
             lblNumericTitle.Text = Loc.Get("NumericTitle");
-            lblPopLimit.Text = Loc.Get("PopLimit");
-            lblCiviSpeed.Text = Loc.Get("CiviSpeed");
             chkFocusLoss.Text = Loc.Get("FocusLoss");
             chkToEng.Text = Loc.Get("ToEng");
             chkAiUltimateMode.Text = Loc.Get("AiUltimateMode");
+            chkHousingCapacity20x.Text = Loc.Get("HousingCapacity20x");
+            chkDgVoodoo.Text = Loc.Get("DgVoodoo");
             chkVillageBuildRange.Text = Loc.Get("VillageBuildRange");
             btnPresetSave.Text = Loc.Get("PresetSave");
             btnPresetLoad.Text = Loc.Get("PresetLoad");
             lblSwitchesTitle.Text = Loc.Get("SwitchesTitle");
+            chkMaxPopulation.Text = Loc.Get("MaxPopulation");
+            chkFastCiviProduction.Text = Loc.Get("FastCiviProduction");
             chkFreeProd.Text = Loc.Get("FreeProd");
             chkFreeUpgrade.Text = Loc.Get("FreeUpgrade");
             chkNoSpellCost.Text = Loc.Get("NoSpellCost");
@@ -1579,25 +1564,5 @@ namespace AgainstRomeModifier {
             txtDoc.Text = docText;
         }
 
-        private void Obsolete_BtnTroopPreset_Click(object? sender, EventArgs e) {
-            using (var form = new TroopPresetForm(this, customUnitStats, unitIcons)) {
-                if (form.ShowDialog() == DialogResult.OK) {
-                    customUnitStats = form.CustomStats;
-                    LoadDefaultStatsData(); // 重新整理預設屬性表格
-                    Log("已套用自訂兵種屬性配置。");
-
-                    if (!string.IsNullOrEmpty(form.LoadedFileName)) {
-                        lblTroopPresetFile.Text = "屬性檔案：" + form.LoadedFileName;
-                        lblTroopPresetFile.ForeColor = Color.FromArgb(0, 220, 255); // 亮藍色表示有特定檔案
-                    } else if (customUnitStats != null && customUnitStats.Count > 0) {
-                        lblTroopPresetFile.Text = "屬性檔案：自訂配置 (手動)";
-                        lblTroopPresetFile.ForeColor = Color.FromArgb(200, 100, 255); // 紫色表示自訂手動修改
-                    } else {
-                        lblTroopPresetFile.Text = "屬性檔案：預設範本";
-                        lblTroopPresetFile.ForeColor = Color.FromArgb(160, 165, 170);
-                    }
-                }
-            }
-        }
     }
 }

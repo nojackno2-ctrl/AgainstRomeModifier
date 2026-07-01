@@ -45,6 +45,7 @@ namespace AgainstRomeModifier {
         private Font fontJhengHei10B = new Font("Microsoft JhengHei", 10F, FontStyle.Bold);
         private Font fontJhengHei95B = new Font("Microsoft JhengHei", 9.5F, FontStyle.Bold);
         private Font fontJhengHei9R = new Font("Microsoft JhengHei", 9F, FontStyle.Regular);
+        private bool fontsDisposed;
 
         public TroopPresetForm(ModifierForm mainForm, Dictionary<string, double[]>? currentCustomStats, Dictionary<string, Bitmap> unitIcons) {
             this.mainForm = mainForm;
@@ -339,7 +340,7 @@ namespace AgainstRomeModifier {
                 }
 
                 if (factionGrids.ContainsKey(faction)) {
-                    factionGrids[faction].Rows.Add(
+                    int rowIndex = factionGrids[faction].Rows.Add(
                         iconImage,
                         key,
                         displayName,
@@ -355,6 +356,10 @@ namespace AgainstRomeModifier {
                         Math.Round(range).ToString(),
                         Math.Round(spellRadius).ToString()
                     );
+                    if (!ModifierForm.SupportsConfigurableSpellRadius(key)) {
+                        factionGrids[faction].Rows[rowIndex].Cells["SpellRadius"].ReadOnly = true;
+                        factionGrids[faction].Rows[rowIndex].Cells["SpellRadius"].Value = "0";
+                    }
                 }
             }
         }
@@ -420,7 +425,9 @@ namespace AgainstRomeModifier {
                                 dgv.Rows[i].Cells["Sight"].Value = Math.Round(stats[5]).ToString();
                                 dgv.Rows[i].Cells["Relt"].Value = Math.Round(stats[6]).ToString();
                                 dgv.Rows[i].Cells["Range"].Value = Math.Round(stats[7]).ToString();
-                                dgv.Rows[i].Cells["SpellRadius"].Value = Math.Round(stats[8]).ToString();
+                                dgv.Rows[i].Cells["SpellRadius"].Value = ModifierForm.SupportsConfigurableSpellRadius(key)
+                                    ? Math.Round(stats[8]).ToString()
+                                    : "0";
                             }
                         }
                     }
@@ -489,15 +496,19 @@ namespace AgainstRomeModifier {
                     string key = dgv.Rows[i].Cells["Key"].Value?.ToString() ?? "";
                     if (string.IsNullOrEmpty(key)) continue;
 
-                    double hp = double.Parse(dgv.Rows[i].Cells["Hp"].Value!.ToString()!, CultureInfo.InvariantCulture);
-                    double dmg = double.Parse(dgv.Rows[i].Cells["Dmg"].Value!.ToString()!, CultureInfo.InvariantCulture);
-                    double vw = double.Parse(dgv.Rows[i].Cells["VW"].Value!.ToString()!, CultureInfo.InvariantCulture);
-                    double aw = double.Parse(dgv.Rows[i].Cells["AW"].Value!.ToString()!, CultureInfo.InvariantCulture);
-                    double speed = double.Parse(dgv.Rows[i].Cells["Speed"].Value!.ToString()!, CultureInfo.InvariantCulture);
-                    double sight = double.Parse(dgv.Rows[i].Cells["Sight"].Value!.ToString()!, CultureInfo.InvariantCulture);
-                    double relt = double.Parse(dgv.Rows[i].Cells["Relt"].Value!.ToString()!, CultureInfo.InvariantCulture);
-                    double range = double.Parse(dgv.Rows[i].Cells["Range"].Value!.ToString()!, CultureInfo.InvariantCulture);
-                    double spellRadius = double.Parse(dgv.Rows[i].Cells["SpellRadius"].Value!.ToString()!, CultureInfo.InvariantCulture);
+                    if (!TryReadValidatedCell(dgv.Rows[i], "Hp", out double hp)) return;
+                    if (!TryReadValidatedCell(dgv.Rows[i], "Dmg", out double dmg)) return;
+                    if (!TryReadValidatedCell(dgv.Rows[i], "VW", out double vw)) return;
+                    if (!TryReadValidatedCell(dgv.Rows[i], "AW", out double aw)) return;
+                    if (!TryReadValidatedCell(dgv.Rows[i], "Speed", out double speed)) return;
+                    if (!TryReadValidatedCell(dgv.Rows[i], "Sight", out double sight)) return;
+                    if (!TryReadValidatedCell(dgv.Rows[i], "Relt", out double relt)) return;
+                    if (!TryReadValidatedCell(dgv.Rows[i], "Range", out double range)) return;
+                    double spellRadius = 0;
+                    if (ModifierForm.SupportsConfigurableSpellRadius(key) &&
+                        !TryReadValidatedCell(dgv.Rows[i], "SpellRadius", out spellRadius)) {
+                        return;
+                    }
 
                     CustomStats[key] = new double[] { hp, dmg, vw, aw, speed, sight, relt, range, spellRadius };
                 }
@@ -505,6 +516,11 @@ namespace AgainstRomeModifier {
 
             this.DialogResult = DialogResult.OK;
             this.Close();
+        }
+
+        private static bool TryReadValidatedCell(DataGridViewRow row, string columnName, out double value) {
+            string text = row.Cells[columnName].Value?.ToString() ?? "";
+            return double.TryParse(text, NumberStyles.Any, CultureInfo.InvariantCulture, out value);
         }
 
         // 完整的 9 欄位輸入驗證與防呆
@@ -608,11 +624,14 @@ namespace AgainstRomeModifier {
             return true;
         }
 
-        protected override void OnFormClosing(FormClosingEventArgs e) {
-            fontJhengHei10B.Dispose();
-            fontJhengHei95B.Dispose();
-            fontJhengHei9R.Dispose();
-            base.OnFormClosing(e);
+        protected override void Dispose(bool disposing) {
+            if (disposing && !fontsDisposed) {
+                fontJhengHei10B.Dispose();
+                fontJhengHei95B.Dispose();
+                fontJhengHei9R.Dispose();
+                fontsDisposed = true;
+            }
+            base.Dispose(disposing);
         }
     }
 }

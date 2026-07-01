@@ -91,33 +91,63 @@ Findings are from decompressed `MAPS/ENDL_000/SCRIPT/ak_level.bci`.
   restricted to `0..9`; arguments 6 and 7 become the clamped unit-count range.
   If argument 2 is `0`, max count is 4; otherwise max count is 20.
 
-## Village Bounds And Red Overlay Candidates
+## Village Bounds And Rejected Red-Frame Candidate
 
 - `0054af80`: script callback `s_setVillageTemplate`.
 - `00549500`: village-template implementation; resolves template name and loads
   village building/palisade data.
 - `005363e0`: returns current team village position through `FUN_0050f750`.
-- `00536580`: returns village half-size candidates from object data at
-  `DAT_021460a8` and `DAT_021460aa`.
+- `00536450`: validates the team and deltas, calls `004c0900` to write the X/Z
+  values into the village object's type-definition rectangle, then stores the
+  same values in per-object village state. `00539700` reaches this setter while
+  initializing a pending village from its computed/template record.
+- `00536580`: returns the per-object copy of those half-size candidates.
 - `00536630`: calculates logical village bounds as
   `center +/- (halfSize * 0x40 + 0x20)`.
 - `00536820`: tests whether a world coordinate is inside the village bounds,
   with an optional `param_4 * 0x40` margin.
 - `005368c0`: clamps or projects a coordinate to the village bounds.
-- `00421c00 -> 00520320 -> 005203a0`: overlay creation path. `00520320`
-  converts two world coordinates through `00518d30`, then calls `005203a0`.
-- `0044e990`: selected-object/build interaction candidate; creates overlay
-  type `0x28` through `FUN_00421c00(DAT_00736a4c, DAT_00736a50, x, z, 0x28,
-  param_1 == 1, 0, 0, 0, 5)`.
+- `0053c140 -> 00537d60`: `s_setShowTeamVillageAera` stores the per-team
+  visibility flag.
+- `00535060`: when the village center object is displayed, the visibility flag
+  adds object display bit `0x1d`.
+- `004c0970`: reads the same type-definition words written by `004c0900` and
+  tests whether a point falls inside the object-centered rectangle. It has ten
+  UI callers, so globally changing this generic function would also change
+  non-village object hit testing.
+- `004d7160`: consumes display bit `0x1d`, resolves the displayed object's
+  object-definition ID, reads the type-definition rectangle, and draws four
+  dashed sides through `00495360`.
+- `00536820` is directly called by `005367c0` and `00544fd0`; the latter uses it
+  only when its restrict-to-village argument is enabled while searching for a
+  candidate coordinate. Player previews `0044f4b0` and `0044f7b0` do not use
+  this test, so it is not the general player construction-range gate.
+- `00451650` and overlay type `0x28` are unrelated; their callers are the
+  `igm_but_kampf_beserk` and `igm_but_kampf_normal` combat-mode buttons.
 
-Rejected candidate:
-
-- `0x1366c4` and `0x1366cd` changed the `00536630` multipliers from shift `6`
-  to shift `7`, but this did not enlarge the visible selected-village red
-  dashed frame. The modifier now only restores those bytes if an old build
-  already wrote them.
+Rejected runtime candidate: changing the two logical shifts and the two
+`004d7160` shifts from `6` to `7` produced no observed change to either the
+buildable area or the visible red dashed frame. The modifier therefore never
+applies these bytes and retains them only for detection and restoration. See
+`known-patches.md` for exact file offsets and the failed-test record.
 
 ## Implemented EXE Patch
+
+## Resource Table Runtime Consumers
+
+- `0046bd00`: `[objres]` row loader. It loads five independent groups:
+  columns `1-6` (`bau`), `7-12` (`upg`), `13-18` (`aus`), `19-24` (`auf`),
+  and `25-28` (`spruch`).
+- `0046df80`, `0046dff0`, `0046e070`, `0046e170`, `0046e1e0`: accessors for
+  those five groups in the same order.
+- `00449560` and `0044c4d0`: consume the six `aus` values when calculating
+  producible unit counts and accumulated training resources.
+- `00450020` and related construction paths consume the six `bau` values;
+  `0044fa00` consumes the six `upg` values.
+- `0044a010`: consumes all four `spruch` values for priest spell availability.
+- `0046c6d0` and `0046ce60`: expose/load the `[volkres]` groups by their
+  runtime names. Columns `264-295` are four arrays of eight values:
+  `befehl`, `motivieren`, `angriff`, and `verteidigung`.
 
 Focus-loss pause patch:
 

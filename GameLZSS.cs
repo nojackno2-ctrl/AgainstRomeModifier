@@ -272,6 +272,12 @@ namespace AgainstRomeModifier {
 
         // 壓縮 PFIL 自訂格式檔案：執行壓縮並在頭部填寫正確的 "PFIL" 64位元組檔案標頭與解壓後檔案大小
         public static byte[] CompressPfil(byte[] inputBytes, byte[] origHeader) {
+            ArgumentNullException.ThrowIfNull(inputBytes);
+            ArgumentNullException.ThrowIfNull(origHeader);
+            if (origHeader.Length < 64) {
+                throw new ArgumentException("PFIL header must contain at least 64 bytes.", nameof(origHeader));
+            }
+
             byte[] compressed = Compress(inputBytes);
             byte[] header = new byte[64];
             Array.Copy(origHeader, 0, header, 0, 64);

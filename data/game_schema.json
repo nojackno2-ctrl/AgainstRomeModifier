@@ -26,9 +26,9 @@
         "Name": { "index": 52, "type": "string", "status": "candidate" },
         "Weapon1Akti": { "index": 78, "type": "int", "status": "stable" },
         "Weapon1Dam": { "index": 79, "type": "float", "status": "stable" },
-        "PriestSpell1": { "index": 80, "type": "float", "status": "stable" },
-        "PriestSpell2": { "index": 81, "type": "float", "status": "stable" },
-        "PriestSpell3": { "index": 82, "type": "float", "status": "stable" },
+        "Weapon1RangeMin": { "index": 80, "type": "float", "status": "stable" },
+        "Weapon1RangeMax": { "index": 81, "type": "float", "status": "stable" },
+        "Weapon1Angle": { "index": 82, "type": "float", "status": "stable-preserved" },
         "Weapon1Relt": { "index": 84, "type": "int", "status": "stable" },
         "Weapon2Akti": { "index": 86, "type": "int", "status": "stable" },
         "Weapon2Dam": { "index": 87, "type": "float", "status": "stable" },
@@ -42,6 +42,7 @@
         "Weapon3Relt": { "index": 100, "type": "int", "status": "stable" },
         "Aw": { "index": 142, "type": "float", "status": "stable" },
         "Vw": { "index": 146, "type": "float", "status": "stable" },
+        "HousingCapacity": { "index": 156, "type": "int", "status": "stable", "patchMultiplier": 20 },
         "Bmovs": { "index": 191, "type": "float", "status": "stable" },
         "Weapon1Dtyp": { "index": 199, "type": "int", "status": "candidate" }
       }
@@ -57,14 +58,16 @@
             "ObjectId": { "index": 0, "type": "string", "status": "stable" },
             "BauBuildWood": { "index": 2, "type": "int", "status": "stable" },
             "BauBuildStone": { "index": 3, "type": "int", "status": "stable" },
+            "BauBuildCostRange": { "range": [1, 6], "type": "int", "status": "stable" },
             "BauUpgradeWood": { "index": 8, "type": "int", "status": "stable" },
             "BauUpgradeStone": { "index": 9, "type": "int", "status": "stable" },
             "BauUpgradeGold": { "index": 10, "type": "int", "status": "stable" },
             "BauUpgradeIron": { "index": 11, "type": "int", "status": "stable" },
-            "FigProdCostRange": { "range": [12, 18], "type": "int", "status": "stable" },
+            "BauUpgradeCostRange": { "range": [7, 12], "type": "int", "status": "stable" },
+            "FigProdCostRange": { "range": [13, 18], "type": "int", "status": "stable" },
             "FigEquipmentRefundRange": { "range": [19, 24], "type": "int", "status": "stable-preserved" },
             "FigPriestSpellCostRange": { "range": [25, 28], "type": "int", "status": "stable" },
-            "FigSiegeBuildCostRange": { "range": [1, 7], "type": "int", "status": "candidate" }
+            "FigSiegeBuildCostRange": { "range": [1, 6], "type": "int", "status": "stable" }
           }
         },
         "volkres": {
@@ -74,8 +77,7 @@
             "FactionSkillCosts": { "range": [0, 7], "type": "int", "status": "candidate" },
             "FactionSpecials": { "range": [8, 23], "type": "int", "status": "candidate" },
             "UnitAvailabilityAndCosts": { "range": [24, 263], "type": "int", "status": "candidate" },
-            "UpgradeCosts": { "range": [264, 291], "type": "int", "status": "stable" },
-            "TrailingFields": { "range": [292, 296], "type": "string", "status": "candidate" }
+            "UpgradeCosts": { "range": [264, 295], "type": "int", "status": "stable" }
           }
         }
       }
@@ -93,6 +95,8 @@
       "pathGlob": "MAPS/**/team.dat",
       "format": "pfil-lzss-ini",
       "sections": ["maxteamobjgenerell", "teamdata"],
+      "runtimeLimit": 1600,
+      "patchBehavior": "Only teamdata column 4 is loaded as the per-team limit; maxteamobjgenerell is preserved.",
       "teamdataFields": {
         "TeamId": { "index": 0, "type": "int", "status": "stable" },
         "Faction": { "index": 1, "type": "string", "status": "stable" },
@@ -103,7 +107,7 @@
     "endlessScript": {
       "pathGlob": "MAPS/ENDL_*/SCRIPT/ak_level.bci",
       "format": "pfil-lzss-bci0",
-      "status": "candidate",
+      "status": "stable-runtime-verified",
       "spawnJobs": {
         "MilitaryCreateUnitJob": {
           "decompressedCallOffset": "0x17B60",
@@ -121,6 +125,14 @@
             "flagB"
           ],
           "originalLogicalArguments": ["local7", 3, 8, 0, 0, 4, 4, 1, 0],
+          "ultimateLogicalArguments": ["local7", 3, 8, 0, 0, 20, 20, 1, 1],
+          "completedJobAutoRecycleFlag": {
+            "logicalArgumentIndex": 8,
+            "decompressedLiteralOffset": "0x17B1C",
+            "originalValue": 0,
+            "ultimateValue": 1,
+            "behavior": "Let the engine free completed military reinforcement jobs so the 20 per-team slots can be reused indefinitely."
+          },
           "countArgumentIndexes": [5, 6],
           "countLiteralValueOffsets": ["0x17B2C", "0x17B34"],
           "countOriginalValue": 4,
@@ -136,16 +148,45 @@
             [60000, 120000],
             [120000, 240000]
           ],
-          "actionLoopDelayUltimateRangeMs": [5000, 10000],
+          "actionLoopDelayLegacyUnsafeRangeMs": [5000, 10000],
+          "actionLoopDelayUltimateBehavior": "Keep or restore the original ranges so NPC jobs are not queued faster than they complete.",
+          "activePartyLimit": {
+            "decompressedLiteralOffset": "0x195F8",
+            "originalValue": 4,
+            "ultimateValue": 8
+          },
           "activeAiLimitBypass": {
-            "status": "candidate",
+            "status": "disabled-runtime-regression",
             "decompressedPatchOffset": "0x1960C",
             "originalWords": [66, 0],
-            "patchedWords": [112, 272],
-            "meaning": "Skip the active-party flag gate and jump directly to the follow-up dispatch path."
+            "legacyUnsafeWords": [112, 272],
+            "reason": "The unbounded dispatch can exhaust the 20 NPC-job slots available per team and stop later respawns.",
+            "migration": "Always restore the original gate words."
           },
           "verifiedSameBytesInMaps": ["ENDL_000", "ENDL_001", "ENDL_002", "ENDL_003", "ENDL_004"],
-          "status": "candidate"
+          "status": "auto-recycle-patch-static-verified-runtime-pending"
+        }
+      },
+      "villageEconomy": {
+        "status": "disabled-runtime-regression",
+        "scope": "Rejected global CLAK script edits; always restored because they stop player resource production.",
+        "civilianReserve": {
+          "path": "SYSTEM/CLAK/SCRIPT/ak_npc.bci",
+          "decompressedLiteralOffset": "0x1EA0",
+          "originalValue": 0,
+          "ultimateValue": 20
+        },
+        "automaticProductionGate": {
+          "path": "SYSTEM/CLAK/SCRIPT/ak_produktion.bci",
+          "decompressedOpcodeOffset": "0x3710",
+          "originalWords": [117, 56],
+          "ultimateWords": [112, 56]
+        },
+        "battleFormationLimit": {
+          "path": "SYSTEM/CLAK/SCRIPT/ak_haupthaus.bci",
+          "decompressedArgumentOffset": "0x3FCC",
+          "originalWords": [81, 59],
+          "ultimateWords": [66, 20]
         }
       }
     },
@@ -166,17 +207,45 @@
           "status": "stable-current-exe-only"
         },
         "villageBuildRangeRedFrame": {
-          "status": "disabled-rejected-candidate",
+          "status": "setter-runtime-verified-legacy-sites-rejected",
           "originalBytes": {
             "0x1366c4": "C1 E2 06",
-            "0x1366cd": "C1 E1 06"
+            "0x1366cd": "C1 E1 06",
+            "0x0d722c": "C1 E6 06",
+            "0x0d723b": "C1 E7 06"
           },
           "rejectedPatchedBytes": {
             "0x1366c4": "C1 E2 07",
-            "0x1366cd": "C1 E1 07"
+            "0x1366cd": "C1 E1 07",
+            "0x0d722c": "C1 E6 07",
+            "0x0d723b": "C1 E7 07"
           },
-          "reason": "This changes GetVillageBounds logical bounds but did not enlarge the visible selected-village red dashed frame.",
-          "restoreOnly": true
+          "logicalBoundsFunction": "00536630",
+          "redFrameFunction": "004d7160",
+          "formulaOriginal": "delta * 64 + 32",
+          "rejectedFormula": "delta * 128 + 32",
+          "legacyFourSiteRuntimeResult": "No visible build range or red dashed frame change was observed after all four candidate sites were patched.",
+          "structuralCorrection": "00536450 calls 004c0900 to write X/Z into the village object's type-definition rectangle and then stores the same values in per-object village state. 004c0970 and 004d7160 read the type-definition copy; 00536630 reads the per-object copy.",
+          "playerPathResult": "00536820 is directly called by 005367c0 and 00544fd0; player previews 0044f4b0 and 0044f7b0 do not call it. The logical pair is not the general player construction-range gate.",
+          "setterTrampoline": {
+            "status": "2.5x-pending-runtime-verification",
+            "hookVirtualAddress": "005364c1",
+            "hookFileOffset": "0x1364c1",
+            "hookOriginalBytes": "85 F6 7C A6 85 FF 7C A2",
+            "hookCandidateBytes": "E9 C9 C0 02 00 90 90 90",
+            "codeCaveVirtualAddress": "0056258f",
+            "codeCaveFileOffset": "0x16258f",
+            "codeCaveOriginalBytes": "39 zero bytes",
+            "legacy2xCodeCaveBytes": "85 F6 0F 8C D4 3E FD FF 85 FF 0F 8C CC 3E FD FF D1 E6 D1 E7 57 56 50 E8 55 E3 F5 FF E9 21 3F FD FF followed by 6 zero bytes",
+            "codeCaveCandidateBytes": "85 F6 0F 8C D4 3E FD FF 85 FF 0F 8C CC 3E FD FF 8D 34 B6 D1 EE 8D 3C BF D1 EF 57 56 50 E8 4F E3 F5 FF E9 1B 3F FD FF",
+            "effect": "Preserve both negative checks, scale ESI and EDI with (value * 5) >> 1 in 00536450, call 004c0900, and resume at 005364d1 so both storage paths stay synchronized.",
+            "runtimeResult": "The same setter path was runtime-verified at 2x; the current 2.5x factor still requires game testing.",
+            "redDashedFrameResult": "Not independently verified.",
+            "modifierApplies": true
+          },
+          "inference": "The setter trampoline is verified for player construction range. The red dashed frame remains a separate runtime-verification target.",
+          "legacyFourSitePatchRestoreOnly": true,
+          "legacyLogicOnlyStateSupported": true
         }
       },
       "functions": {
@@ -194,8 +263,18 @@
         "SetVillageTemplateImpl": "00549500",
         "GetVillageBounds": "00536630",
         "TileInVillageBounds": "00536820",
+        "SetObjectTypeRectangle": "004c0900",
+        "PointInsideObjectTypeRectangle": "004c0970",
+        "InitializePendingVillage": "00539700",
+        "FindCandidatePositionInVillage": "00544fd0",
+        "PlayerOrderPreviewCandidate": "0044f4b0",
+        "PlayerTargetPreviewCandidate": "0044f7b0",
+        "SetShowTeamVillageAreaScript": "0053c140",
+        "SetShowTeamVillageAreaImpl": "00537d60",
+        "VillageDisplayControl": "00535060",
+        "DrawVillageRedFrame": "004d7160",
         "OverlayCreate": "005203a0",
-        "SelectedObjectOverlayCandidate": "0044e990"
+        "CombatModeOverlay": "00451650"
       }
     }
   }

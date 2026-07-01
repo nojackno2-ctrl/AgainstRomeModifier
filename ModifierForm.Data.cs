@@ -16,7 +16,10 @@ namespace AgainstRomeModifier {
     public partial class ModifierForm {
         private static readonly Regex RegexSpellLoad = new Regex(@"Radius\s*=\s*(?:HUN|KEL|GER)\s*,\s*Spell\d+\s*,\s*(\d+)", RegexOptions.Compiled);
         private static readonly Regex RegexCiviLoad = new Regex(@"CiviDelay\s*=\s*([A-Z]{3})\s*,\s*(\d+)", RegexOptions.Compiled);
-        private static readonly Regex RegexMoraleLoad = new Regex(@"MoralsDecLostMem\s*=\s*GER\s*,\s*(\d+)", RegexOptions.Compiled);
+        private static readonly Regex RegexMoraleLostMemLoad = new Regex(@"MoralsDecLostMem\s*=\s*GER\s*,\s*(\d+)", RegexOptions.Compiled);
+        private static readonly Regex RegexMoraleFleeLoad = new Regex(@"MoralsDecFlee\s*=\s*GER\s*,\s*(\d+)", RegexOptions.Compiled);
+        private static readonly Regex RegexMoraleOverPopLoad = new Regex(@"MoralsDecOverPop\s*=\s*GER\s*,\s*(\d+)", RegexOptions.Compiled);
+        private static readonly Regex RegexMoraleIdleLoad = new Regex(@"MoralsIncIdle\s*=\s*GER\s*,\s*(\d+)", RegexOptions.Compiled);
 
         /// <summary>
         /// Loads the clean restore source. Public builds do not include original game assets,
@@ -116,8 +119,10 @@ namespace AgainstRomeModifier {
 
             string mapsPath = Path.Combine(gamePath, "MAPS");
             if (Directory.Exists(mapsPath)) {
+                string normalizedGamePath = Path.GetFullPath(gamePath)
+                    .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
                 foreach (string file in Directory.GetFiles(mapsPath, "team.dat", SearchOption.AllDirectories)) {
-                    string relPath = file.Substring(gamePath.Length + 1).Replace('\\', '/');
+                    string relPath = Path.GetRelativePath(normalizedGamePath, file).Replace('\\', '/');
                     loaded[relPath] = File.ReadAllBytes(file);
                 }
             }
@@ -149,7 +154,7 @@ namespace AgainstRomeModifier {
         }
 
         /// <summary>
-        /// 解析單行 CSV 資料（逗號分隔），支援雙引號括起來包含逗號或引號的欄位。
+        /// 解析遊戲資料列。遊戲資料使用單純逗號分隔，不支援 RFC 4180 引號跳脫。
         /// </summary>
         private static string[] ParseCsvLine(string line) {
             if (line == null) return Array.Empty<string>();
@@ -162,6 +167,35 @@ namespace AgainstRomeModifier {
         private static string ToCsvString(string[] cols) {
             if (cols == null) return "";
             return string.Join(",", cols);
+        }
+
+        private static bool HasHousingCapacityMultiplier(string currentContent, string originalContent, int multiplier) {
+            var currentValues = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            string[] currentLines = currentContent.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
+            foreach (string line in currentLines) {
+                if (line.Length < 100) continue;
+                string[] cols = ParseCsvLine(line);
+                if (cols.Length <= (int)ObjdefIndex.HousingCapacity || cols.Length <= (int)ObjdefIndex.Name) continue;
+                if (int.TryParse(cols[(int)ObjdefIndex.HousingCapacity].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int value)) {
+                    currentValues[cols[(int)ObjdefIndex.Name].Trim()] = value;
+                }
+            }
+
+            bool foundHousing = false;
+            string[] originalLines = originalContent.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
+            foreach (string line in originalLines) {
+                if (line.Length < 100) continue;
+                string[] cols = ParseCsvLine(line);
+                if (cols.Length <= (int)ObjdefIndex.HousingCapacity || cols.Length <= (int)ObjdefIndex.Name) continue;
+                if (!int.TryParse(cols[(int)ObjdefIndex.HousingCapacity].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int originalValue) || originalValue <= 0) continue;
+
+                foundHousing = true;
+                string name = cols[(int)ObjdefIndex.Name].Trim();
+                if (!currentValues.TryGetValue(name, out int currentValue) || currentValue != checked(originalValue * multiplier)) {
+                    return false;
+                }
+            }
+            return foundHousing;
         }
 
         /// <summary>
@@ -224,6 +258,7 @@ namespace AgainstRomeModifier {
                     byte b = tgaBytes[entryOffset];
                     byte g = tgaBytes[entryOffset + 1];
                     byte r = tgaBytes[entryOffset + 2];
+                    // Against Rome indexed UI sprites use pure black palette entries as transparent.
                     if (r == 0 && g == 0 && b == 0) {
                         palette[i] = Color.FromArgb(0, 0, 0, 0);
                     } else {
@@ -309,10 +344,15 @@ namespace AgainstRomeModifier {
             using (ZipArchive archive = new ZipArchive(stream)) {
                 foreach (ZipArchiveEntry entry in archive.Entries) {
                     if (entry.Name == "") continue;
+                    string key = entry.FullName.Replace('\\', '/');
+                    if (Path.IsPathRooted(key) ||
+                        key.StartsWith("/", StringComparison.Ordinal) ||
+                        key.Split('/').Any(part => part == "..")) {
+                        throw new InvalidDataException("Backup.zip contains an unsafe entry path: " + entry.FullName);
+                    }
                     using (Stream entryStream = entry.Open()) {
                         using (MemoryStream ms = new MemoryStream()) {
                             entryStream.CopyTo(ms);
-                            string key = entry.FullName.Replace('\\', '/');
                             backupFiles[key] = ms.ToArray();
                         }
                     }
@@ -327,17 +367,17 @@ namespace AgainstRomeModifier {
         private void LoadIcons() {
             string gamePath = GetGamePath();
             if (string.IsNullOrEmpty(gamePath) || !Directory.Exists(gamePath)) {
-                Log("遊戲路徑未設定或不存在，無法載入兵種圖示。");
+                Log(Loc.Get("LogGamePathNotSetIcon"));
                 return;
             }
             string guiDatPath = Path.Combine(gamePath, "gui.dat");
             if (!File.Exists(guiDatPath)) {
-                Log("找不到 gui.dat，無法載入兵種圖示。");
+                Log(Loc.Get("LogGuiDatNotFound"));
                 return;
             }
             byte[]? iniData;
             if (!backupFiles.TryGetValue("SYSTEM/CLMK/icon.ini", out iniData)) {
-                Log("記憶體備份中找不到 icon.ini，無法載入兵種圖示。");
+                Log(Loc.Get("LogIconIniNotFound"));
                 return;
             }
 
@@ -349,6 +389,7 @@ namespace AgainstRomeModifier {
             unitIcons.Clear();
             try {
                 byte[] decompIni = GameLZSS.DecompressPfil(iniData!);
+                // Against Rome data files are stored as Windows-1251, not UTF-8.
                 string iniText = Encoding.GetEncoding(1251).GetString(decompIni);
                 string[] lines = iniText.Split(new string[] { "\r\n", "\n" }, System.StringSplitOptions.RemoveEmptyEntries);
                 Dictionary<string, string> unitToTga = new Dictionary<string, string>();
@@ -385,7 +426,7 @@ namespace AgainstRomeModifier {
                 }
                 Log(string.Format("成功載入 {0} 個兵種圖示。", unitIcons.Count));
             } catch (Exception ex) {
-                Log("載入圖示失敗: " + ex.Message + "\r\n" + ex.StackTrace);
+                Log(Loc.Get("LogLoadIconFailed") + ex.Message + "\r\n" + ex.StackTrace);
             }
         }
 
@@ -396,7 +437,9 @@ namespace AgainstRomeModifier {
             if (customUnitStats != null && customUnitStats.ContainsKey(key)) {
                 double[] custom = customUnitStats[key];
                 if (custom.Length >= 9) {
-                    return custom;
+                    double[] normalized = custom.ToArray();
+                    if (!SupportsConfigurableSpellRadius(key)) normalized[8] = 0;
+                    return normalized;
                 }
                 
                 double[] fullStats = new double[9];
@@ -419,14 +462,6 @@ namespace AgainstRomeModifier {
         /// <summary>
         /// 將裝備分類代碼轉換為易懂的中文文字說明。
         /// </summary>
-        private string GetStyleText(string style) {
-            if (style == "shield") return "持盾";
-            if (style == "two_handed") return "雙手武器";
-            if (style == "dual_wield") return "雙持武器";
-            if (style == "ranged") return "遠程";
-            return "無";
-        }
-
         /// <summary>
         /// 建立並設定用於顯示當前屬性（原版對比修改後）的 DataGridView 表格。
         /// </summary>
@@ -844,42 +879,44 @@ namespace AgainstRomeModifier {
             LoadCurrentData();
         }
 
-        private bool TryLoadCurrentPopLimitFromTeamDat(string gamePath, out int popLimit) {
-            popLimit = 0;
+        private bool IsMaximumPopulationApplied(string gamePath) {
             string mapsPath = Path.Combine(gamePath, "MAPS");
             if (!Directory.Exists(mapsPath)) {
                 return false;
             }
 
+            bool foundActiveTeam = false;
             foreach (string teamFile in Directory.GetFiles(mapsPath, "team.dat", SearchOption.AllDirectories)) {
                 try {
                     byte[] bytes = File.ReadAllBytes(teamFile);
                     byte[] decompBytes = GameLZSS.DecompressPfil(bytes);
                     string text = Encoding.GetEncoding(1251).GetString(decompBytes);
                     string[] lines = text.Split(new string[] { "\r\n", "\n" }, StringSplitOptions.None);
-                    bool inMaxTeamObj = false;
+                    bool inTeamData = false;
 
                     foreach (string line in lines) {
                         string stripped = line.Trim();
                         if (stripped.StartsWith("[")) {
-                            inMaxTeamObj = stripped.Equals("[maxteamobjgenerell]", StringComparison.OrdinalIgnoreCase);
+                            inTeamData = stripped.Equals("[teamdata]", StringComparison.OrdinalIgnoreCase);
                             continue;
                         }
 
-                        if (inMaxTeamObj && !string.IsNullOrEmpty(stripped)) {
-                            int val;
-                            if (int.TryParse(stripped, out val) && val >= 1 && val <= 10000) {
-                                popLimit = val;
-                                return true;
+                        if (inTeamData && stripped.Contains(",")) {
+                            string[] cols = ParseCsvLine(line);
+                            if (cols.Length >= 5 && int.TryParse(cols[4].Trim(), out int val) && val > 0) {
+                                foundActiveTeam = true;
+                                if (val != 1600) {
+                                    return false;
+                                }
                             }
-                            inMaxTeamObj = false;
                         }
                     }
                 } catch {
+                    return false;
                 }
             }
 
-            return false;
+            return foundActiveTeam;
         }
 
         /// <summary>
@@ -939,6 +976,13 @@ namespace AgainstRomeModifier {
 
                 EnsureBackupUnitRowsParsed();
                 Dictionary<string, string[]> origUnitRows = _backupUnitRows;
+
+                if (backupFiles.TryGetValue("SYSTEM/DATA_MP/DEFAULTS/objdef.dau", out byte[]? originalObjdefBytes)) {
+                    string originalObjdef = Encoding.GetEncoding(1251).GetString(GameLZSS.DecompressPfil(originalObjdefBytes));
+                    chkHousingCapacity20x.Checked = HasHousingCapacityMultiplier(decomp, originalObjdef, HousingCapacityMultiplier);
+                } else {
+                    chkHousingCapacity20x.Checked = false;
+                }
 
                 // 自訂倍率控制項已移除，不進行 UI 賦值。
 
@@ -1107,27 +1151,26 @@ namespace AgainstRomeModifier {
                     byte[] decompCl = GameLZSS.DecompressPfil(clBytes);
                     string clText = Encoding.GetEncoding(1251).GetString(decompCl);
                     
-                    var matchCivi = RegexCiviLoad.Match(clText);
-                    if (matchCivi.Success) {
-                        double delay;
-                        if (double.TryParse(matchCivi.Groups[2].Value, NumberStyles.Any, CultureInfo.InvariantCulture, out delay) && delay > 0) {
-                            double speedVal = 5000.0 / delay;
-                            if (speedVal < 1.0) speedVal = 1.0;
-                            if (speedVal > 50.0) speedVal = 50.0;
-                            numCiviSpeed.Value = (decimal)speedVal;
-                        }
+                    MatchCollection civiMatches = RegexCiviLoad.Matches(clText);
+                    if (syncUIWithFile) {
+                        chkFastCiviProduction.Checked = civiMatches.Count > 0 && civiMatches.Cast<Match>().All(match =>
+                            double.TryParse(match.Groups[2].Value, NumberStyles.Any, CultureInfo.InvariantCulture, out double delay) &&
+                            delay > 0 && delay <= 500.0);
                     }
 
                     // spellRadMult 已在方法開始時預先載入處理。
 
                     bool infiniteMorale = false;
-
-                    var matchMorale = RegexMoraleLoad.Match(clText);
-                    if (matchMorale.Success) {
-                        int val;
-                        if (int.TryParse(matchMorale.Groups[1].Value, out val) && val == 0) {
-                            infiniteMorale = true;
-                        }
+                    var matchLost = RegexMoraleLostMemLoad.Match(clText);
+                    var matchFlee = RegexMoraleFleeLoad.Match(clText);
+                    var matchOverPop = RegexMoraleOverPopLoad.Match(clText);
+                    var matchIdle = RegexMoraleIdleLoad.Match(clText);
+                    if (matchLost.Success && matchFlee.Success && matchOverPop.Success && matchIdle.Success &&
+                        int.TryParse(matchLost.Groups[1].Value, out int lost) && lost == 0 &&
+                        int.TryParse(matchFlee.Groups[1].Value, out int flee) && flee == 0 &&
+                        int.TryParse(matchOverPop.Groups[1].Value, out int overPop) && overPop >= 99999999 &&
+                        int.TryParse(matchIdle.Groups[1].Value, out int idle) && idle == 500) {
+                        infiniteMorale = true;
                     }
                     chkInfiniteMorale.Checked = infiniteMorale;
                 }
@@ -1139,14 +1182,12 @@ namespace AgainstRomeModifier {
                     string ressText = Encoding.GetEncoding(1251).GetString(decompRess);
                     
                     bool freeProd = false;
-                    var mProdUnit = Regex.Match(ressText, @"^FigRomInf00_Lanze_Schild\s*,\s*(.*)$", RegexOptions.Multiline);
+                    var mProdUnit = Regex.Match(ressText, @"^FigRomInf00_Lanze_Schild\s*,.*$", RegexOptions.Multiline);
                     if (mProdUnit.Success) {
-                        string[] colsU = ParseCsvLine(mProdUnit.Groups[1].Value);
-                        if (colsU.Length > (int)RessIndex.FigProdCostStart + 4) {
-                            if (colsU[(int)RessIndex.FigProdCostStart + 4 - 1].Trim() == "0") {
-                                freeProd = true;
-                            }
-                        }
+                        string[] colsU = ParseCsvLine(mProdUnit.Value);
+                        freeProd = Enumerable.Range((int)RessIndex.FigProdCostStart,
+                                (int)RessIndex.FigProdCostEnd - (int)RessIndex.FigProdCostStart + 1)
+                            .All(index => index < colsU.Length && colsU[index].Trim() == "0");
                     }
                     chkFreeProd.Checked = freeProd;
 
@@ -1154,65 +1195,55 @@ namespace AgainstRomeModifier {
                     var mUp = Regex.Match(ressText, @"^.*Ger_Kampf.*$", RegexOptions.Multiline);
                     if (mUp.Success) {
                         string[] cols = ParseCsvLine(mUp.Value);
-                        if (cols.Length > (int)VolkresIndex.UnitUpgradeStart) {
-                            if (cols[(int)VolkresIndex.UnitUpgradeStart].Trim() == "0") {
-                                freeUp = true;
-                            }
-                        }
+                        freeUp = Enumerable.Range((int)VolkresIndex.UnitUpgradeStart,
+                                (int)VolkresIndex.UnitUpgradeEnd - (int)VolkresIndex.UnitUpgradeStart + 1)
+                            .All(index => index < cols.Length && cols[index].Trim() == "0");
                     }
                     chkFreeUpgrade.Checked = freeUp;
 
-                    bool noSpell = true;
+                    bool noSpell = false;
                     var mPri = Regex.Match(ressText, @"^FigGerPri00_Priester\s*,.*", RegexOptions.Multiline);
                     if (mPri.Success) {
                         string[] cols = ParseCsvLine(mPri.Value);
-                        if (cols.Length > (int)RessIndex.FigPriestSpellCostEnd) {
-                            if (cols[(int)RessIndex.FigPriestSpellCostStart - 1].Trim() != "0" || cols[(int)RessIndex.FigPriestSpellCostStart].Trim() != "0") noSpell = false;
-                        }
+                        noSpell = Enumerable.Range((int)RessIndex.FigPriestSpellCostStart,
+                                (int)RessIndex.FigPriestSpellCostEnd - (int)RessIndex.FigPriestSpellCostStart + 1)
+                            .All(index => index < cols.Length && cols[index].Trim() == "0");
                     }
                     chkNoSpellCost.Checked = noSpell;
                 }
 
-                int currentPopLimit;
-                if (TryLoadCurrentPopLimitFromTeamDat(gamePath, out currentPopLimit)) {
-                    numPopLimit.Value = currentPopLimit;
+                if (syncUIWithFile) {
+                    chkMaxPopulation.Checked = IsMaximumPopulationApplied(gamePath);
                 }
 
-                int endlessMinCount;
-                int endlessMaxCount;
-                if (TryReadEndlessMilitaryCount(gamePath, out endlessMinCount, out endlessMaxCount)) {
-                    if (endlessMinCount == EndlessAiUltimateMilitaryCount && endlessMaxCount == EndlessAiUltimateMilitaryCount) {
-                        chkAiUltimateMode.Checked = true;
-                    } else if (endlessMinCount == EndlessAiOriginalMilitaryCount && endlessMaxCount == EndlessAiOriginalMilitaryCount) {
-                        chkAiUltimateMode.Checked = false;
-                    }
+                if (TryReadEndlessAiModeState(gamePath, out bool endlessUltimateEnabled)) {
+                    chkAiUltimateMode.Checked = endlessUltimateEnabled;
+                } else {
+                    chkAiUltimateMode.Checked = false;
+                    Log("無盡模式 AI 腳本不是完整的原版或終極模式狀態；已取消勾選，重新套用可修復一致性。");
                 }
 
                 string exePath = Path.Combine(gamePath, @"Against_Rome.exe");
+                chkDgVoodoo.Checked = IsDgVoodooInstalled(gamePath);
                 if (File.Exists(exePath)) {
-                    using (var fs = new FileStream(exePath, FileMode.Open, FileAccess.Read)) {
-                        if (fs.Length > 0x161a8e) {
-                            fs.Seek(0x161a88, SeekOrigin.Begin);
-                            byte[] oldBytes = new byte[6];
-                            fs.Read(oldBytes, 0, 6);
-                            if (oldBytes[0] == 0x90 && oldBytes[1] == 0x90 && oldBytes[2] == 0x90 && oldBytes[3] == 0x90 && oldBytes[4] == 0x90 && oldBytes[5] == 0x90) {
-                                chkFocusLoss.Checked = true;
-                            } else if (oldBytes[0] == 0x89 && oldBytes[1] == 0x15 && oldBytes[2] == 0xC4 && oldBytes[3] == 0x7D && oldBytes[4] == 0x9E && oldBytes[5] == 0x02) {
-                                chkFocusLoss.Checked = false;
-                            } else {
-                                chkFocusLoss.Checked = false;
-                                Log(Loc.Get("LogExePatchWarning"));
-                            }
-                        } else {
-                            Log(Loc.Get("LogExePatchWarning"));
-                        }
+                    ExePatchState exePatchState = GetExePatchState(exePath);
+                    chkFocusLoss.Checked = exePatchState == ExePatchState.FocusPatched;
+                    if (exePatchState == ExePatchState.Unknown) {
+                        Log(Loc.Get("LogExePatchWarning"));
                     }
 
                     ExeVillageRangePatchState villageRangeState = GetVillageBuildRangePatchState(exePath);
-                    chkVillageBuildRange.Checked = false;
-                    if (villageRangeState == ExeVillageRangePatchState.Expanded) {
-                        Log("偵測到舊的村莊建造範圍 EXE patch；此 patch 不影響畫面紅框，下一次套用或還原相容性時會還原。");
+                    if (villageRangeState == ExeVillageRangePatchState.Expanded ||
+                        villageRangeState == ExeVillageRangePatchState.LegacyLogicOnly) {
+                        Log("偵測到已停用的村莊範圍候選補丁；下一次套用或相容性還原時會恢復四處原版 bytes。");
                     } else if (villageRangeState == ExeVillageRangePatchState.Unknown) {
+                        Log(Loc.Get("LogVillageBuildRangeWarning"));
+                    }
+
+                    ExeVillageSetterPatchState villageSetterState = GetVillageSetterPatchState(exePath);
+                    chkVillageBuildRange.Checked = villageSetterState == ExeVillageSetterPatchState.Legacy2x ||
+                        villageSetterState == ExeVillageSetterPatchState.Expanded2Point5x;
+                    if (villageSetterState == ExeVillageSetterPatchState.Unknown) {
                         Log(Loc.Get("LogVillageBuildRangeWarning"));
                     }
                 }
@@ -1286,34 +1317,24 @@ namespace AgainstRomeModifier {
 
 
         /// <summary>
-        /// 從兵種 CSV 行中解析出最大射程（遠程）或施法距離（祭司）。
+        /// 從兵種 CSV 行中解析所有啟用武器槽的最大射程。
         /// </summary>
         private static double GetUnitMaxRange(string[] cols, string utype) {
-            if (utype == "priest") {
-                double maxR = 0;
-                int[] priestFields = { (int)ObjdefIndex.PriestSpell1, (int)ObjdefIndex.PriestSpell2, (int)ObjdefIndex.PriestSpell3 };
-                foreach (int f in priestFields) {
-                    if (f < cols.Length) {
-                        double val;
-                        if (double.TryParse(cols[f].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out val)) {
-                            if (val > maxR) maxR = val;
-                        }
-                    }
+            double maxR = 0;
+            for (int w = 1; w <= 8; w++) {
+                int activeIndex = (int)ObjdefIndex.Weapon1Akti + (w - 1) * 8;
+                int rangeMinIndex = (int)ObjdefIndex.Weapon1RangeMin + (w - 1) * 8;
+                int rangeMaxIndex = (int)ObjdefIndex.Weapon1RangeMax + (w - 1) * 8;
+                if (rangeMaxIndex >= cols.Length || cols[activeIndex].Trim() != "1") continue;
+
+                if (double.TryParse(cols[rangeMinIndex].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out double minRange)) {
+                    maxR = Math.Max(maxR, minRange);
                 }
-                return maxR;
-            } else {
-                double maxR = 0;
-                int[] idxFields = { (int)ObjdefIndex.Weapon2RangeMin, (int)ObjdefIndex.Weapon2RangeMax, (int)ObjdefIndex.Weapon3RangeMin, (int)ObjdefIndex.Weapon3RangeMax };
-                foreach (int f in idxFields) {
-                    if (f < cols.Length) {
-                        double val;
-                        if (double.TryParse(cols[f].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out val)) {
-                            if (val > maxR) maxR = val;
-                        }
-                    }
+                if (double.TryParse(cols[rangeMaxIndex].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out double maxRange)) {
+                    maxR = Math.Max(maxR, maxRange);
                 }
-                return maxR;
             }
+            return maxR;
         }
 
         /// <summary>
@@ -1366,7 +1387,6 @@ namespace AgainstRomeModifier {
         /// </summary>
         private void ChkBalance_CheckedChanged(object? sender, EventArgs e) {
             LoadDefaultStatsData();
-            LoadCurrentData(false);
             string status = chkBalance.Checked ? (Loc.CurrentLanguage == Language.English ? "enabled" : "啟用") : (Loc.CurrentLanguage == Language.English ? "disabled" : "停用");
             Log(string.Format(Loc.Get("LogBalanceToggled"), status));
         }

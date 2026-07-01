@@ -4,6 +4,11 @@ using System.Collections.Generic;
 
 namespace AgainstRomeModifier {
     public partial class ModifierForm {
+        public static bool SupportsConfigurableSpellRadius(string key) {
+            return key.Equals("FigKelPri00_Priester", StringComparison.OrdinalIgnoreCase) ||
+                key.Equals("FigHunPri00_Priester", StringComparison.OrdinalIgnoreCase);
+        }
+
         /// <summary>
         /// 獲取某個兵種的原始 9 大屬性值 (HP, 傷害, 防禦 VW, 戰鬥 AW, 移動速度, 視野, 攻擊冷卻, 最大射程, 法術半徑)
         /// </summary>
@@ -63,7 +68,8 @@ namespace AgainstRomeModifier {
             double range = GetUnitMaxRange(cols, utype);
 
             // 法術半徑
-            double spellRadius = (utype == "priest") ? 500 : 0;
+            bool supportsSpellRadius = SupportsConfigurableSpellRadius(key);
+            double spellRadius = supportsSpellRadius ? 500 : 0;
 
             return new double[] { hp, dmg, vw, aw, speed, sight, relt, range, spellRadius };
         }
@@ -128,7 +134,8 @@ namespace AgainstRomeModifier {
             }
 
             // 內建平衡模式下的法術半徑 (祭司 2.5 倍，即 500 * 2.5 = 1250)
-            double spellRadius = (utype == "priest") ? (500 * 2.5) : 0;
+            bool supportsSpellRadius = SupportsConfigurableSpellRadius(key);
+            double spellRadius = supportsSpellRadius ? (500 * 2.5) : 0;
 
             return new double[] { hp, dmg, vw, aw, speed, sight, relt, range, spellRadius };
         }

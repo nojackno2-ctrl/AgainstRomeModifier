@@ -22,10 +22,9 @@ namespace AgainstRomeModifier {
                 try {
                     var sb = new StringBuilder();
                     sb.AppendLine("[Settings]");
-                    sb.AppendLine("Version=1");
-                    sb.AppendLine(string.Format("PopLimit={0}", numPopLimit.Value));
-
-                    sb.AppendLine(string.Format("CiviSpeed={0}", numCiviSpeed.Value.ToString(CultureInfo.InvariantCulture)));
+                    sb.AppendLine("Version=2");
+                    sb.AppendLine(string.Format("MaxPopulation={0}", chkMaxPopulation.Checked));
+                    sb.AppendLine(string.Format("FastCiviProduction={0}", chkFastCiviProduction.Checked));
                     sb.AppendLine(string.Format("FreeProd={0}", chkFreeProd.Checked));
                     sb.AppendLine(string.Format("FreeUpgrade={0}", chkFreeUpgrade.Checked));
                     sb.AppendLine(string.Format("NoSpellCost={0}", chkNoSpellCost.Checked));
@@ -33,7 +32,9 @@ namespace AgainstRomeModifier {
                     sb.AppendLine(string.Format("Balance={0}", chkBalance.Checked));
                     sb.AppendLine(string.Format("ToEng={0}", chkToEng.Checked));
                     sb.AppendLine(string.Format("InfiniteMorale={0}", chkInfiniteMorale.Checked));
+                    sb.AppendLine(string.Format("HousingCapacity20x={0}", chkHousingCapacity20x.Checked));
                     sb.AppendLine(string.Format("AiUltimateMode={0}", chkAiUltimateMode.Checked));
+                    sb.AppendLine(string.Format("DgVoodoo={0}", chkDgVoodoo.Checked));
                     sb.AppendLine(string.Format("VillageBuildRange={0}", chkVillageBuildRange.Checked));
 
                     // 如果當前有自訂兵種屬性設定，也一併寫入
@@ -81,8 +82,10 @@ namespace AgainstRomeModifier {
                         try {
                             if (currentSection.Equals("Settings", StringComparison.OrdinalIgnoreCase) || string.IsNullOrEmpty(currentSection)) {
                                 if (k == "Version") continue;
-                                else if (k == "PopLimit") { var lv = decimal.Parse(v, CultureInfo.InvariantCulture); numPopLimit.Value = lv < numPopLimit.Minimum ? numPopLimit.Minimum : (lv > numPopLimit.Maximum ? numPopLimit.Maximum : lv); }
-                                else if (k == "CiviSpeed") { var cv = decimal.Parse(v, CultureInfo.InvariantCulture); numCiviSpeed.Value = cv < numCiviSpeed.Minimum ? numCiviSpeed.Minimum : (cv > numCiviSpeed.Maximum ? numCiviSpeed.Maximum : cv); }
+                                else if (k == "MaxPopulation") chkMaxPopulation.Checked = bool.Parse(v);
+                                else if (k == "FastCiviProduction") chkFastCiviProduction.Checked = bool.Parse(v);
+                                else if (k == "PopLimit") chkMaxPopulation.Checked = decimal.Parse(v, CultureInfo.InvariantCulture) >= 1600M;
+                                else if (k == "CiviSpeed") chkFastCiviProduction.Checked = decimal.Parse(v, CultureInfo.InvariantCulture) >= 10M;
                                 else if (k == "FreeProd") chkFreeProd.Checked = bool.Parse(v);
                                 else if (k == "FreeUpgrade") chkFreeUpgrade.Checked = bool.Parse(v);
                                 else if (k == "NoSpellCost") chkNoSpellCost.Checked = bool.Parse(v);
@@ -90,16 +93,24 @@ namespace AgainstRomeModifier {
                                 else if (k == "Balance") chkBalance.Checked = bool.Parse(v);
                                 else if (k == "ToEng") chkToEng.Checked = bool.Parse(v);
                                 else if (k == "InfiniteMorale") chkInfiniteMorale.Checked = bool.Parse(v);
+                                else if (k == "HousingCapacity20x") chkHousingCapacity20x.Checked = bool.Parse(v);
                                 else if (k == "AiUltimateMode") chkAiUltimateMode.Checked = bool.Parse(v);
+                                else if (k == "DgVoodoo") chkDgVoodoo.Checked = bool.Parse(v);
                                 else if (k == "VillageBuildRange") chkVillageBuildRange.Checked = bool.Parse(v);
                             } else if (currentSection.Equals("TroopStats", StringComparison.OrdinalIgnoreCase)) {
                                 string[] vals = v.Split(',');
                                 if (vals.Length >= 4) {
                                     double[] stats = new double[vals.Length];
                                     for (int i = 0; i < vals.Length; i++) {
-                                        stats[i] = double.Parse(vals[i].Trim(), CultureInfo.InvariantCulture);
+                                        if (!double.TryParse(vals[i].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out stats[i])) {
+                                            Log(string.Format("解析兵種自訂屬性失敗: {0} 欄位 {1} = {2}", k, i, vals[i]));
+                                            stats = Array.Empty<double>();
+                                            break;
+                                        }
                                     }
-                                    tempCustomStats[k] = stats;
+                                    if (stats.Length > 0) {
+                                        tempCustomStats[k] = stats;
+                                    }
                                 }
                             }
                         } catch (Exception parseEx) {

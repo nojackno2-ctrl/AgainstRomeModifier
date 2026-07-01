@@ -27,7 +27,8 @@ of scattering addresses and CSV indexes across UI and patch code.
 - `MAPS/ENDL_*/SCRIPT/ak_level.bci`: endless-mode AI spawn script.
 - `MAPS/ENDL_*/Endlos_*_Siedlung*.sdl`: endless-mode settlement templates.
 - `SYSTEM/cl_script.ini`: villager delay, spell radius, morale parameters.
-- `Against_Rome.exe`: focus-loss pause patch.
+- `Against_Rome.exe`: focus-loss pause patch, synchronized village-range setter
+  trampoline, and restore-only signatures for rejected legacy range sites.
 - `Against_Rome.exe`: full local function inventory and Ghidra pseudocode under
   ignored `re_workspace/ghidra_inventory/`.
 - `apt.dat`: identified as ZIP-like container, not yet integrated into the modifier.
@@ -37,6 +38,9 @@ of scattering addresses and CSV indexes across UI and patch code.
 `Backup.zip` and original game files are intentionally excluded from GitHub.
 Public builds should either load a local `Backup.zip` supplied by the user or
 build an in-memory restore baseline from the user's own installed game folder.
+The localized source folder `遊戲原始檔案/`, full decompiler inventories, and
+downloaded reverse-engineering toolchains are local-only. Reproducible scripts
+under `tools/re/`, structured notes, offsets, and patch metadata are publishable.
 
 ## Rules For New Findings
 
