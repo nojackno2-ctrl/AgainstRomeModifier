@@ -149,7 +149,9 @@
             [120000, 240000]
           ],
           "actionLoopDelayLegacyUnsafeRangeMs": [5000, 10000],
-          "actionLoopDelayUltimateBehavior": "Keep or restore the original ranges so NPC jobs are not queued faster than they complete.",
+          "reinforcementPollingLoopIndexes": [0, 1, 2],
+          "reinforcementPollingUltimateRangeMs": [5000, 10000],
+          "actionLoopDelayUltimateBehavior": "Accelerate only the first three military reinforcement polling loops; keep or restore all unrelated AI action loops to their original ranges.",
           "activePartyLimit": {
             "decompressedLiteralOffset": "0x195F8",
             "originalValue": 4,

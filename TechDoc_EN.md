@@ -229,9 +229,9 @@ Every `MAPS/**/team.dat` is restored from its original first. The core switch th
 - Older builds edited three global CLAK economy scripts: `ak_npc.bci`, `ak_produktion.bci`, and `ak_haupthaus.bci`. Runtime testing proved these paths are not safely NPC-scoped and stop all staffed player resource buildings even in a new game. Current builds always restore the three original values regardless of the AI Ultimate toggle.
 - EXE path `0054aa80 -> 00547f50` clamps this mode to 1..20.
 - Respawn wait: `180000 -> 5000 ms`.
-- Action-loop ranges retain their original values to avoid overfilling the NPC-job table.
+- The first three military reinforcement polling loops use `5000..10000` ms so the 5-second cooldown is checked promptly; other AI action loops retain their original values.
 - Active-party comparison literal at decompressed `0x195F8`: `4 -> 8`; the gate at `0x1960C` remains `66,0`.
-- Older `112,272` gate bypasses and 5000..10000 ms action-loop patches are automatically migrated back to safe values.
+- Older `112,272` gate bypasses and blanket 5000..10000 ms action-loop patches are migrated; only the three bounded reinforcement polling loops remain accelerated.
 - Disable/compatibility restore reverses every count, delay, limit, and gate value.
 
 The count represents created military units/formations; the visible individual-soldier total also depends on formation contents. The EXE provides only 20 NPC-job slots per team, so removing the gate entirely is not safe for long-running endless games.

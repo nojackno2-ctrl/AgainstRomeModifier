@@ -96,6 +96,7 @@ namespace AgainstRomeModifier {
         // exhaust the 20 NPC-job slots available to each team.
         private const int EndlessAiActiveLimitPatchedOpcode = 112;
         private const int EndlessAiActiveLimitPatchedRelativeJump = 272;
+        private const int EndlessAiReinforcementLoopCount = 3;
         private static readonly (int OriginalUpperMs, int OriginalLowerMs)[] EndlessAiLoopDelayRanges = new (int, int)[] {
             (960000, 480000),
             (960000, 480000),
@@ -1708,8 +1709,9 @@ namespace AgainstRomeModifier {
                     continue;
                 }
 
-                int targetUpperMs = enabled ? EndlessAiUltimateLoopDelayUpperMs : originalUpperMs;
-                int targetLowerMs = enabled ? EndlessAiUltimateLoopDelayLowerMs : originalLowerMs;
+                bool accelerateReinforcementLoop = enabled && delaySiteIndex < EndlessAiReinforcementLoopCount;
+                int targetUpperMs = accelerateReinforcementLoop ? EndlessAiUltimateLoopDelayUpperMs : originalUpperMs;
+                int targetLowerMs = accelerateReinforcementLoop ? EndlessAiUltimateLoopDelayLowerMs : originalLowerMs;
                 if (currentUpperMs != targetUpperMs || currentLowerMs != targetLowerMs) {
                     WriteBciInt32(decompressedBci, offset + 4, targetUpperMs);
                     WriteBciInt32(decompressedBci, offset + 12, targetLowerMs);
@@ -1792,7 +1794,7 @@ namespace AgainstRomeModifier {
             return changed;
         }
 
-        private static bool HasOriginalEndlessLoopDelays(byte[] decompressedBci) {
+        private static bool HasExpectedEndlessLoopDelays(byte[] decompressedBci, bool enabled) {
             int expectedIndex = 0;
             for (int offset = 0; offset <= decompressedBci.Length - 24 && expectedIndex < EndlessAiLoopDelayRanges.Length; offset += 4) {
                 if (BitConverter.ToInt32(decompressedBci, offset) != 0x42 ||
@@ -1803,8 +1805,11 @@ namespace AgainstRomeModifier {
                 }
 
                 (int originalUpperMs, int originalLowerMs) = EndlessAiLoopDelayRanges[expectedIndex];
-                if (BitConverter.ToInt32(decompressedBci, offset + 4) == originalUpperMs &&
-                    BitConverter.ToInt32(decompressedBci, offset + 12) == originalLowerMs) {
+                bool accelerated = enabled && expectedIndex < EndlessAiReinforcementLoopCount;
+                int expectedUpperMs = accelerated ? EndlessAiUltimateLoopDelayUpperMs : originalUpperMs;
+                int expectedLowerMs = accelerated ? EndlessAiUltimateLoopDelayLowerMs : originalLowerMs;
+                if (BitConverter.ToInt32(decompressedBci, offset + 4) == expectedUpperMs &&
+                    BitConverter.ToInt32(decompressedBci, offset + 12) == expectedLowerMs) {
                     expectedIndex++;
                 }
             }
@@ -1827,7 +1832,7 @@ namespace AgainstRomeModifier {
                 int createOffset = FindEndlessMilitaryCreateUnitCall(decomp);
                 int respawnOffset = FindEndlessRespawnDelayLiteral(decomp);
                 int activeSequenceOffset = FindEndlessActiveLimitSequenceOffset(decomp);
-                if (createOffset < 0 || respawnOffset < 0 || activeSequenceOffset < 0 || !HasOriginalEndlessLoopDelays(decomp)) {
+                if (createOffset < 0 || respawnOffset < 0 || activeSequenceOffset < 0) {
                     return false;
                 }
 
@@ -1842,21 +1847,26 @@ namespace AgainstRomeModifier {
                     return false;
                 }
 
+                bool hasUltimateLoopDelays = HasExpectedEndlessLoopDelays(decomp, true);
+                bool hasOriginalLoopDelays = HasExpectedEndlessLoopDelays(decomp, false);
                 bool isUltimate = countMin == EndlessAiUltimateMilitaryCount &&
                     countMax == EndlessAiUltimateMilitaryCount &&
                     autoRecycleCompletedJob == EndlessAiUltimateAutoRecycleCompletedJob &&
                     respawnDelay == EndlessAiUltimateRespawnDelayMs &&
-                    activeLimit == EndlessAiUltimateActivePartyLimit;
+                    activeLimit == EndlessAiUltimateActivePartyLimit &&
+                    (hasUltimateLoopDelays || hasOriginalLoopDelays);
                 bool isLegacyUltimate = countMin == EndlessAiUltimateMilitaryCount &&
                     countMax == EndlessAiUltimateMilitaryCount &&
                     autoRecycleCompletedJob == EndlessAiOriginalAutoRecycleCompletedJob &&
                     respawnDelay == EndlessAiUltimateRespawnDelayMs &&
-                    activeLimit == EndlessAiUltimateActivePartyLimit;
+                    activeLimit == EndlessAiUltimateActivePartyLimit &&
+                    hasOriginalLoopDelays;
                 bool isOriginal = countMin == EndlessAiOriginalMilitaryCount &&
                     countMax == EndlessAiOriginalMilitaryCount &&
                     autoRecycleCompletedJob == EndlessAiOriginalAutoRecycleCompletedJob &&
                     respawnDelay == EndlessAiOriginalRespawnDelayMs &&
-                    activeLimit == EndlessAiOriginalActivePartyLimit;
+                    activeLimit == EndlessAiOriginalActivePartyLimit &&
+                    hasOriginalLoopDelays;
                 bool isEnabled = isUltimate || isLegacyUltimate;
                 if (!isEnabled && !isOriginal) return false;
                 if (detectedState.HasValue && detectedState.Value != isEnabled) return false;
@@ -1927,10 +1937,12 @@ namespace AgainstRomeModifier {
                     changed = true;
                 }
 
-                // Older builds shortened every action loop to 5-10 seconds. That
-                // can enqueue jobs faster than they finish, so always restore the
-                // original pacing; the dedicated respawn wait remains 5 seconds.
-                if (PatchEndlessLoopDelayLiterals(decomp, false)) {
+                // The dedicated 5-second cooldown is only checked by these first
+                // three military reinforcement loops. Accelerate those loops so
+                // the cooldown is observable, but keep the remaining AI action
+                // loops at their original pacing. The active-party cap and job
+                // recycling prevent the old unbounded queue-exhaustion failure.
+                if (PatchEndlessLoopDelayLiterals(decomp, enabled)) {
                     changed = true;
                 }
 

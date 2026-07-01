@@ -100,14 +100,15 @@
   at `0x17B1C`, `0 -> 1`. This lets completed military reinforcement jobs free
   their per-team NPC-job slots for later waves.
 - EXE path `0054aa80 -> 00547f50` clamps the count to `1..20`.
-- Respawn wait: `180000 -> 5000` ms.
-- Action-loop waits remain at their original ranges.
+- Respawn cooldown: `180000 -> 5000` ms.
+- The first three military reinforcement polling loops change from
+  `480000..960000`, `480000..960000`, and `240000..360000` ms to
+  `5000..10000` ms. The remaining AI action loops retain their original pacing.
 - Active-party comparison literal at decompressed `0x195F8`: `4 -> 8`.
 - The gate at `0x1960C` remains `66,0`.
 - Older builds wrote `112,272` at `0x1960C` and shortened every action loop to
-  `5000..10000` ms. Applying this version migrates both values back to the safe
-  form; the old combination could consume all 20 NPC-job slots for a team and
-  stop its later respawns.
+  `5000..10000` ms. Applying this version restores the gate and all unrelated
+  loops; only the three bounded reinforcement polling loops remain accelerated.
 - The signature is present in `ENDL_000` through `ENDL_004`.
 - Disabling or compatibility restore returns the recycling flag, counts, delays,
   limits, and gate words to their exact original values.

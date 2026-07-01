@@ -131,10 +131,12 @@ endless maps inspected.
   `0` to `1`. EXE runtime analysis shows that this flag removes a job after its
   status leaves the running state, allowing the 20 per-team NPC-job slots to be
   reused by later reinforcement waves instead of retaining completed jobs.
-  Original action-loop waits are retained. Older builds changed all of them to
-  `5000..10000` ms and bypassed the gate at `0x1960C` with `112,272`; both legacy
-  changes are now restored because they can enqueue NPC jobs faster than they
-  finish and eventually exhaust the 20 job slots available to each team.
+  The first three military reinforcement polling loops are also changed to
+  `5000..10000` ms so the 5-second cooldown is checked promptly. Other action
+  loops retain their original pacing. Older builds changed every loop and
+  bypassed the gate at `0x1960C` with `112,272`; the unrelated loop changes and
+  gate bypass are restored because that unbounded combination could exhaust the
+  20 job slots available to each team.
   Settlement/village-mode `.sdl` templates remain untouched.
 
 ### Rejected global village-production patch
