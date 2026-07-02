@@ -41,3 +41,8 @@ ToEng/
 # Local package/tool caches
 packages/
 .nuget/
+
+# One-off AI session artifacts (keep locally only)
+changes_patch.diff
+changes_summary.md
+scratch/
