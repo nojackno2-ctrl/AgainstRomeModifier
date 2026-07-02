@@ -198,6 +198,59 @@ namespace AgainstRomeModifier {
             return foundHousing;
         }
 
+        private static bool HasFastBuildUpgradeRepair(string currentContent, string originalContent) {
+            var currentBuildValues = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            var currentUpgValues = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            
+            string[] currentLines = currentContent.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
+            foreach (string line in currentLines) {
+                if (line.Length < 100) continue;
+                string[] cols = ParseCsvLine(line);
+                if (cols.Length < 192) continue;
+                string name = cols[52].Trim();
+                if (!name.StartsWith("Bau")) continue;
+                
+                if (int.TryParse(cols[73].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int buildVal)) {
+                    currentBuildValues[name] = buildVal;
+                }
+                if (int.TryParse(cols[74].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int upgVal)) {
+                    currentUpgValues[name] = upgVal;
+                }
+            }
+
+            bool foundBuilding = false;
+            string[] originalLines = originalContent.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
+            foreach (string line in originalLines) {
+                if (line.Length < 100) continue;
+                string[] cols = ParseCsvLine(line);
+                if (cols.Length < 192) continue;
+                string name = cols[52].Trim();
+                if (!name.StartsWith("Bau")) continue;
+
+                bool hasBuild = int.TryParse(cols[73].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int origBuildVal) && origBuildVal > 0;
+                bool hasUpg = int.TryParse(cols[74].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int origUpgVal) && origUpgVal > 0;
+
+                if (!hasBuild && !hasUpg) continue;
+
+                foundBuilding = true;
+
+                if (hasBuild) {
+                    int expectedBuild = Math.Max(1, origBuildVal / 10);
+                    if (!currentBuildValues.TryGetValue(name, out int curBuild) || curBuild != expectedBuild) {
+                        return false;
+                    }
+                }
+
+                if (hasUpg) {
+                    int expectedUpg = Math.Max(1, origUpgVal / 10);
+                    if (!currentUpgValues.TryGetValue(name, out int curUpg) || curUpg != expectedUpg) {
+                        return false;
+                    }
+                }
+            }
+            return foundBuilding;
+        }
+
         /// <summary>
         /// 從系統登錄檔中自動偵測《Against Rome》的安裝路徑。
         /// </summary>
@@ -985,8 +1038,10 @@ namespace AgainstRomeModifier {
                 if (backupFiles.TryGetValue("SYSTEM/DATA_MP/DEFAULTS/objdef.dau", out byte[]? originalObjdefBytes)) {
                     string originalObjdef = Encoding.GetEncoding(1251).GetString(GameLZSS.DecompressPfil(originalObjdefBytes));
                     chkHousingCapacity20x.Checked = HasHousingCapacityMultiplier(decomp, originalObjdef, HousingCapacityMultiplier);
+                    chkFastBuildUpgradeRepair.Checked = HasFastBuildUpgradeRepair(decomp, originalObjdef);
                 } else {
                     chkHousingCapacity20x.Checked = false;
+                    chkFastBuildUpgradeRepair.Checked = false;
                 }
 
                 // 自訂倍率控制項已移除，不進行 UI 賦值。

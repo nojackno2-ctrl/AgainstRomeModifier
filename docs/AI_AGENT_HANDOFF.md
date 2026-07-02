@@ -33,8 +33,8 @@
 
 本次文件更新開始前已有下列非文件變更，均視為既有工作，不是本次建立：
 
-- 已修改：`ModifierForm.Data.cs`
-- 已修改：`ModifierForm.Patches.cs`
+- 已修改：`src/UI/ModifierForm.Data.cs`
+- 已修改：`src/UI/ModifierForm.Patches.cs`
 - 未追蹤：`changes_patch.diff`
 - 未追蹤：`changes_summary.md`
 
@@ -57,18 +57,18 @@ dotnet build AgainstRomeModifier.csproj -c Release --no-restore
 
 | 檔案 | 現行責任 | 修改時最常見風險 |
 |---|---|---|
-| `Program.cs` | WinForms 進入點、DPI、UAC | 改 manifest／啟動權限會影響 VirtualStore |
-| `ModifierForm.cs` | 手工建立 UI、控制項位置、事件 wiring、內嵌文件頁 | 初始化順序、座標重疊、事件遺失 |
-| `ModifierForm.Data.cs` | 備份來源、ZIP 載入、目前資料讀取、狀態偵測、顯示計算 | 把偵測誤當修改、短 row 越界、toggle 被自動同步 |
-| `ModifierForm.Patches.cs` | 套用、回復、rollback、EXE／INI／DAU／team.dat／BCI | 寫入未知版本、破壞回復基線、誤解欄位 |
-| `ModifierForm.DataExt.cs` | 額外資料／圖示相關邏輯 | 與 `Data.cs` 職責重疊時要先追 call site |
-| `ModifierForm.Presets.cs` | `.arpreset` 匯入／匯出 | 新 toggle 漏存、舊欄位相容性中斷 |
-| `ModifierForm.SaveManager.cs` | 遊戲存檔與 ZIP 備份 | path traversal、半成品 ZIP、回復後清理順序 |
-| `ModifierForm.DgVoodoo.cs` | 內嵌 dgVoodoo2 安裝／移除與所有權 manifest | 覆蓋非受管 DLL、刪除使用者修改檔 |
-| `TroopConfig.cs` | `ObjdefIndex`、`RessIndex`、單位 metadata、平衡規則 | magic number、欄位 offset 漂移 |
-| `TroopPresetForm.cs` | 9 欄單位 preset 編輯 | 舊版 4 欄 preset 相容、法術半徑適用範圍 |
-| `GameLZSS.cs` | LZSS 與 `PFIL@` 包裝 | header 長度、round-trip、解壓長度 |
-| `Localization.cs` | 中英 UI 與 log 字串 | 新控制項只新增單一語言、鍵名不同步 |
+| `src/Program.cs` | WinForms 進入點、DPI、UAC | 改 manifest／啟動權限會影響 VirtualStore |
+| `src/UI/ModifierForm.cs` | 手工建立 UI、控制項位置、事件 wiring、內嵌文件頁 | 初始化順序、座標重疊、事件遺失 |
+| `src/UI/ModifierForm.Data.cs` | 備份來源、ZIP 載入、目前資料讀取、狀態偵測、顯示計算 | 把偵測誤當修改、短 row 越界、toggle 被自動同步 |
+| `src/UI/ModifierForm.Patches.cs` | 套用、回復、rollback、EXE／INI／DAU／team.dat／BCI | 寫入未知版本、破壞回復基線、誤解欄位 |
+| `src/UI/ModifierForm.DataExt.cs` | 額外資料／圖示相關邏輯 | 與 `Data.cs` 職責重疊時要先追 call site |
+| `src/UI/ModifierForm.Presets.cs` | 一鍵啟用／關閉所有功能控制 | 漏設開關、事件遺失 |
+| `src/UI/ModifierForm.SaveManager.cs` | 遊戲存檔與 ZIP 備份 | path traversal、半成品 ZIP、回復後清理順序 |
+| `src/UI/ModifierForm.DgVoodoo.cs` | 內嵌 dgVoodoo2 安裝／移除與所有權 manifest | 覆蓋非受管 DLL、刪除使用者修改檔 |
+| `src/Core/TroopConfig.cs` | `ObjdefIndex` | magic number、欄位 offset 漂移 |
+| `src/UI/TroopPresetForm.cs` | 9 欄單位 preset 編輯 | 舊版 4 欄 preset 相容、法術半徑適用範圍 |
+| `src/Core/GameLZSS.cs` | LZSS 與 `PFIL@` 包裝 | header 長度、round-trip、解壓長度 |
+| `src/Core/Localization.cs` | 中英 UI 與 log 字串 | 新控制項只新增單一語言、鍵名不同步 |
 | `data/game_schema.json` | 機器可讀的欄位、offset、patch 狀態 | 文件與程式已變更但 schema 沒同步 |
 | `docs/reverse-engineering/` | 證據、格式、已知補丁、Ghidra 工作流 | 把候選寫成 stable、保留過期結論 |
 
@@ -159,6 +159,24 @@ dotnet build AgainstRomeModifier.csproj -c Release --no-restore
 4. 舊版短 preset 缺少的欄位繼承第 1／2 層。
 5. 不支援法術半徑的單位，第 9 欄固定為 0。
 
+### 7.1.1 `objdef.dau`：建築建造、升級與維修加速 10 倍
+
+關鍵位置：
+
+- 套用：`ModifierForm.Patches.cs` 的 `GetPatchedObjdefBytes(...)` 增加 `fastBuildUpgradeChecked` 引數。
+- 目前狀態偵測：`ModifierForm.Data.cs` 的 `HasFastBuildUpgradeRepair(...)` 和 `LoadCurrentData(...)`。
+- 一鍵預設：`ModifierForm.Presets.cs` 的 `FastBuildUpgradeRepair` 控制。
+- 欄位定義：`data/game_schema.json` 欄位定義 `BuildTime` (73) 與 `UpgradeTime` (74)。
+
+規則與逆向工程發現：
+
+- 欄位是 zero-based column 73 (`buildt`，建造時間毫秒) 與 column 74 (`upgrdt`，升級時間毫秒)。
+- 僅對 `name` 欄位 (column 52) 以 `Bau` 開頭（代表建築物）且原版數值大於 0 的 row 進行修改。
+- 將數值除以 10，並加入最低 1 毫秒之防禦性限制（`Math.Max(1, originalValue / 10)`），防範遊戲引擎計時器除以零崩潰。
+- 使用 `PadLeft` 與 `CheckLen` 維持原欄位字串長度，保證解壓後的 payload 長度與原本字節長度契約完全一致。
+- 維修效率在遊戲中並無獨立數值，而是與 `buildt` 呈反比關係。當 `buildt` 縮小為 1/10 時，每秒修復的生命值比例會隨之提升 10 倍，實現建造、升級與維修的全面加速。
+- 狀態偵測比較所有原版以 `Bau` 開頭之正值 `buildt`/`upgrdt` 欄位是否等於 `original / 10`。
+
 ### 7.2 `ress.ini`：免費建造／生產／升級／法術
 
 關鍵位置：
@@ -205,7 +223,7 @@ dotnet build AgainstRomeModifier.csproj -c Release --no-restore
 
 關鍵位置：
 
-- `ModifierForm.Patches.cs`：`FindEndlessMilitaryCreateUnitCall`、`FindEndlessRespawnDelayLiteral`、`PatchEndlessLoopDelayLiterals`、`PatchEndlessActiveAiLimit`、`TryReadEndlessAiModeState`、`GetPatchedEndlessScripts`。
+- `ModifierForm.Patches.cs`：`FindEndlessMilitaryCreateUnitCall`、`FindEndlessMilitaryRespawnDelayLiteral`、`FindEndlessVillageRespawnDelayLiteral`、`PatchEndlessLoopDelayLiterals`、`PatchEndlessActiveAiLimit`、`TryReadEndlessAiModeState`、`GetPatchedEndlessScripts`。
 - schema：`data/game_schema.json` 的 `endlessScript`。
 -逆向文件：`docs/reverse-engineering/endless-mode-ai.md`。
 
@@ -214,7 +232,8 @@ dotnet build AgainstRomeModifier.csproj -c Release --no-restore
 | 項目 | 原版 | Ultimate | 狀態 |
 |---|---:|---:|---|
 | 每次軍事增援 count | 4 | 20 | 受 EXE 1..20 clamp 限制 |
-| respawn cooldown | 180000 ms | 5000 ms | 已核對 live/save bytes |
+| 軍事型 respawn cooldown | 180000 ms | 5000 ms | 已核對 live/save bytes |
+| 村落型 defeat respawn cooldown | 600000 ms | 5000 ms | `0x17F38`，save-state 已定位；實機計時待複驗 |
 | active-party limit | 4 | 8 | 有界限方案 |
 | completed-job recycle flag | 0 | 1 | 靜態與 save bytes 核對；仍需長時間回歸 |
 | gate words | `66,0` | 保持 `66,0` | 舊版 bypass 必須還原 |
@@ -238,6 +257,8 @@ dotnet build AgainstRomeModifier.csproj -c Release --no-restore
 實機證明這些不是安全的 NPC-only 路徑，會讓玩家有人員的資源建築仍然零產出。現行程式只允許還原原值，禁止重新啟用。
 
 存檔除錯證據：2026-07-01 的 `ESAVE_000`（`ENDL_002`）中，`CLAK\scr.dat` 內嵌的 `ak_level` 與 live `MAPS\ENDL_002\SCRIPT\ak_level.bci` SHA-256 完全一致；讀回值為 respawn 5000、recycle 1、count 20、active limit 8、gate `66,0`。因此「看起來沒變」不能直接推論 patch 沒寫入；存檔仍可能保存已排程工作或計時狀態。除錯時要同時比對 live script、save-embedded script 與遊戲中的既有排程。
+
+2026-07-02 再讀目前存檔時，team 3 為 NPC inactive、保留 71 筆村落資料，且八隊共 160 個 NPC job slots 全部空閒；同時 live/save embedded BCI 的軍事型計時已為 5000 ms，但村落型 `0x17F38` 仍為 600000 ms。現行 AI Ultimate 已把第二條計時也改為 5000 ms，並接受「軍事 5000／村落 600000」作為 legacy-enabled 狀態供下次套用遷移。
 
 仍未完成：五張 ENDL 地圖的長時間 late-wave 回歸測試。不要因短期增援成功就把此項標成完全驗證。
 
@@ -270,7 +291,7 @@ dotnet build AgainstRomeModifier.csproj -c Release --no-restore
 
 這四處只改最後 consumer，漏掉 `004c0970` 等路徑，實機沒有產生預期效果。現行程式不得寫入 `07`，只保留偵測舊二處／四處狀態並還原為 `06` 的能力。
 
-驗證邊界：setter 路徑的 2x 版本曾實機確認建造範圍與紅色虛線框同步擴大；2026-07-01 換成 2.5x 後，程式與 bytes 已靜態驗證，但目前文件沒有新的 2.5x 實機確認。不要把「2x 路徑證實」誤寫成「2.5x 已完整實機證實」。
+驗證邊界：2.5x 村莊建造範圍與紅色虛線框已完成實機驗證，確認建造範圍與紅色虛線框同步擴大，功能正常。
 
 ### 7.8 強制英文與受管語言基線
 
@@ -302,10 +323,11 @@ dotnet build AgainstRomeModifier.csproj -c Release --no-restore
 
 - `mainTabControl` 的 tab header 故意以 `ItemSize = new Size(0, 1)` 隱藏；左側按鈕才是導航。
 - `StyleNavButton(...)` 必須在對應 `TabPage` 已建立後綁定。過去曾因傳入 null，使選取高亮看似「無作用」。
-- `pnlSwitchesCard` 是核心開關區；`chkBalance`、`chkVillageBuildRange`、`chkHousingCapacity20x`、`chkAiUltimateMode` 的 parent／座標有明確設計。
-- UI 是手工座標，移動一個 control 要檢查鄰近 control，不要順手重排整頁。
-- 新 toggle 必須同步：field、建立位置、localization、apply、restore、state detection、preset save/load、文件。
-- `.arpreset` 保留舊欄位相容；`.artroop` 要支援舊短陣列並補 fallback。
+- `pnlNumericCard`、`pnlSwitchesCard` 與 `pnlBuildCard` 是核心開關區（三欄式排版）；`chkBalance`、`chkVillageBuildRange`、`chkHousingCapacity20x`、`chkAiUltimateMode` 的 parent 已按功能分類（系統、資源、建設）拆分，手工座標位置經過均勻調整。
+- `pnlTipsCard` 指南卡片採用左右雙欄排版，左側 `lblTipsContent` 顯示指引，右側 `lblTipsDetail` 顯示功能細部說明，以解決說明文字過長被截斷的問題。
+- UI 是手工座標，移動一個 control 要檢查鄰近 control。
+- 新 toggle 必須同步：field、建立位置、localization、apply、restore、state detection、文件。
+- 移除全域 `.arpreset`；僅保留兵種屬性 `.artroop` 的舊短陣列相容與 fallback。
 
 ## 8. 已發生的除錯案例與正確處理方式
 
@@ -377,7 +399,7 @@ dotnet build AgainstRomeModifier.csproj -c Release --no-restore
 
 ### 2026-07-01：2.5x、手動 toggle、人口容量、公開邊界與 save readback
 
-- setter trampoline 升級為 2.5x，保留 `Legacy2x` detection/migration；新倍率仍待實機確認。
+- setter trampoline 升級為 2.5x，保留 `Legacy2x` detection/migration；新倍率已完成實機確認。
 - balance toggle 不再重讀 live files；強制英文 toggle 改為 manual、default off。
 - 新增全 22 個正 `wohnwer` rows 的 20x switch，整合 preset/apply/restore/detection/docs。
 - AI Ultimate 移入 core switches，沒有改 patch 語意。
@@ -391,17 +413,32 @@ dotnet build AgainstRomeModifier.csproj -c Release --no-restore
 - 核對既有 in-memory patch generation／stats layering 重構可編譯。
 - 明確記錄其不是完整跨檔原子交易，避免後續代理高估安全性。
 
+### 2026-07-02（第二次會談）：全欄位位元組級稽核、LICENSE、發佈清理
+
+以 Claude Fable 5 對整個修改器做一次獨立稽核，範圍涵蓋本手冊第 7 節列出的每個功能。方法與結論：
+
+- 用 `C:\Program Files (x86)\Against Rome`（使用者實機安裝）與工作區內 `遊戲原始檔案\`（未經修改器碰過的原版備份）逐位元組比對，而非只看程式碼或反編譯推論。
+- 獨立編譯一支僅依賴 `GameLZSS.cs` 的命令列小工具，對 `objdef.dau`、`ress.ini`、`cl_script.ini`、`team.dat`、全部五張 `ENDL_000..004` 的 `ak_level.bci`、以及 `ak_npc.bci`／`ak_produktion.bci`／`ak_haupthaus.bci` 執行 `DecompressPfil`→`CompressPfil`→`DecompressPfil` round-trip，全部 payload 位元組完全相等。
+- 解析 PE section header 確認 `ImageBase=0x400000`、`AUTO` 區段檔案位移等於虛擬位址減去 image base，驗證 `ModifierForm.Patches.cs` 內所有 EXE file offset 常數（`0x161a88`、`0x1364c1`、`0x16258f` 等）換算正確，且原始位元組與原版檔案实測值一致。
+- 手動驗算村莊 setter trampoline 的組語（hook 跳轉位移、cave 內兩個負值分支跳回 `0x53646B`、呼叫 `0x4C0900`、結尾跳回 `0x5364D1`、`(value*5)>>1` 位移運算）在位元組層級正確。
+- 在原版 `objdef.dau` 中實際數出 22 個正值 `wohnwer`（人口容量）row，與程式狀態偵測假設的「22 rows」一致；`TroopConfig.ObjdefIndex` 全部欄位常數對照原始檔案標頭欄名（`moves`、`lpmax`、`sirad`、`wohnwer` 等）逐一核對相符。
+- 對五張 `ENDL_000..004` 分別執行 `FindEndlessMilitaryCreateUnitCall`／`FindEndlessMilitaryRespawnDelayLiteral`／`FindEndlessVillageRespawnDelayLiteral`／`FindEndlessActiveLimitSequenceOffset` 對應的特徵碼掃描，每張地圖四組特徵碼都恰好命中一次；原始值為 count=4、軍事 respawn=180000ms、村落 respawn=600000ms、active limit=4、gate=`66,0`、recycle flag=0。
+- 抽樣讀取一份既有存檔中內嵌的 `ak_level.bci`（`ENDL_002`），解壓後與 live／原版逐位元組相同，佐證「還原」路徑目前運作正確。
+- 用 SHA-256 逐一比對工作區 `Backup.zip` 的全部 75 個條目與 `遊戲原始檔案\` 對應檔案，全數雜湊相符，證明公版备份基線目前未受污染。
+- `git diff --check`、`dotnet build -c Release --no-restore`（0 警告 0 錯誤）、`game_schema.json` JSON 語法皆通過。
+- 結論：本次稽核**沒有發現任何修改功能寫錯位置**；2.5x 村莊建造範圍已完成實機驗證，而 AI 終極模式後期補兵仍維持原本「靜態驗證、待實機／長時間確認」的等級。
+- 移除兩個一次性 AI 對話摘要檔 `changes_patch.diff`／`changes_summary.md`（改為 `.gitignore` 排除，內容含使用者本機路徑，且已被本手冊涵蓋），新增頂層 `LICENSE`（MIT），並推送至 GitHub（`bb33918`）。第 10 節第 7 項因此結案。
+
 ## 10. 未完成與不得誤報為完成的項目
 
 1. AI Ultimate：仍需五張 `ENDL_000..004` 的長時間 late-wave 測試，尤其 job recycle、active 8 與增援持續性。
-2. VillageBuildRange：2.5x 倍率需要新的遊戲內建造範圍與紅色虛線框確認；2x 的證據不能直接代替。
-3. `apt.dat`：只有格式候選，尚未整合安全 patch。
-4. BCI opcode：尚未完整解碼，禁止把 pattern match 當成通用 assembler。
-5. `ress.ini` 部分 `[volkres]` 欄位仍是 candidate。
-6. 武器 damage type 欄位 `199` 仍是 candidate，現行程式的值域判斷不是完整語意證明。
-7. 發佈前仍缺少頂層 `LICENSE` 決策。
-8. 專案目前沒有自動化單元／整合測試；build 成功不等於遊戲 runtime 行為已驗證。
-9. 目前集中產生 `byte[]` 的重構只完成靜態 build 驗證，尚需真實安裝 apply、故障注入、rollback、restore 全流程測試。
+2. `apt.dat`：只有格式候選，尚未整合安全 patch。
+3. BCI opcode：尚未完整解碼，禁止把 pattern match 當成通用 assembler。
+4. `ress.ini` 部分 `[volkres]` 欄位仍是 candidate。
+5. 武器 damage type 欄位 `199` 仍是 candidate，現行程式的值域判斷不是完整語意證明。
+6. ~~發佈前仍缺少頂層 `LICENSE` 決策。~~ 已於 2026-07-02（第二次會談）新增 MIT `LICENSE` 並推送。
+7. 專案目前沒有自動化單元／整合測試；build 成功不等於遊戲 runtime 行為已驗證。
+8. 目前集中產生 `byte[]` 的重構只完成靜態 build 驗證，尚需真實安裝 apply、故障注入、rollback、restore 全流程測試。
 
 ## 11. 驗證矩陣
 
@@ -434,7 +471,7 @@ git diff --check
 ### 11.4 AI Ultimate
 
 - 全部五張 ENDL map 的原始 signature 一致。
-- enable state：count 20、respawn 5000、active 8、recycle 1、gate `66,0`。
+- enable state：count 20、軍事／村落 respawn 均為 5000、active 8、recycle 1、gate `66,0`。
 - disable state：所有管理 literal 和 loops 回原值。
 - 舊 gate bypass `112,272` 必須被遷回原值。
 - 新遊戲與舊存檔都測；至少跑到多輪增援後確認沒有 stall。

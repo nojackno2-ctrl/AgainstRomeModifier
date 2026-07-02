@@ -56,6 +56,33 @@ settlement composition used by the settlement-style AI arrival. Editing these
 templates is the most direct data-side way to change what the village-style AI
 brings/builds.
 
+The decompressed payload is plain INI text: a `[settlement]` header followed
+by `[objectNNNN]` sections, one per placed object. Confirmed fields include
+`namedef` (object definition name), `def` (numeric id), `pos`, `team`,
+`nation`, `anzv` (unit counts on `Ver*Icon` formation entries), and `resv`
+(six comma-separated stored-resource values). Original campaign templates
+prove `resv` is the engine-native way to grant AI starting stockpiles, e.g.
+`KAMP_006\Team_5.sdl` main house: `resv=614,300,372,250,460,140`. Endless
+templates ship with all-zero `resv`.
+
+### Settlement main-house starting-resources patch (implemented)
+
+`AI終極模式` additionally rewrites the main-building `resv` line in every
+`MAPS\ENDL_*\Endlos_*_Siedlung*.sdl`:
+
+- Main building `namedef` contains `_Haupt`: `Haupthaus` for Germans, Celts,
+  and Huns; `Hauptzelt` for Romans.
+- Enabled: `resv=0,0,0,0,0,0 -> 614,300,372,250,460,288` (each slot is the
+  maximum observed across original campaign AI settlement templates, so all
+  values are in an engine-proven range).
+- Disabled/restore: back to all zeros.
+- Text is decoded/encoded as Latin-1 for byte-exact round-trips; the PFIL
+  recompressor updates the header's uncompressed-size field, so the changed
+  line length is safe (header offset 16 is the only size field).
+- 42 templates across `ENDL_000..004` verified to round-trip with exactly one
+  changed line each. The equivalent templates under `MP_000..004` are left
+  untouched, matching the `ENDL_`-only scope of the script patch.
+
 ## Military-Style Spawn
 
 The military setup path references unit creation helpers rather than settlement
@@ -125,8 +152,10 @@ endless maps inspected.
 - The military create-unit job's current count range is `4..4`, clamped by the
   EXE to `1..20`.
 - The modifier option `AI終極模式` changes this military count range to
-  `20..20`, changes the respawn wait literal from `180000` ms to `5000` ms, and
-  raises the active-party comparison literal at `0x195F8` from `4` to `8`.
+  `20..20`, changes the military respawn wait from `180000` ms to `5000` ms,
+  changes the village-AI defeat respawn wait at `0x17F38` from `600000` ms to
+  `5000` ms, and raises the active-party comparison literal at `0x195F8` from
+  `4` to `8`.
   It also changes the last `s_addNPCJob_createUnit` argument at `0x17B1C` from
   `0` to `1`. EXE runtime analysis shows that this flag removes a job after its
   status leaves the running state, allowing the 20 per-team NPC-job slots to be
@@ -137,16 +166,49 @@ endless maps inspected.
   bypassed the gate at `0x1960C` with `112,272`; the unrelated loop changes and
   gate bypass are restored because that unbounded combination could exhaust the
   20 job slots available to each team.
-  Settlement/village-mode `.sdl` templates remain untouched.
+  Settlement/village-mode `.sdl` templates get the main-house
+  starting-resources rewrite described above; their building layout is
+  otherwise untouched.
+
+The village respawn site was isolated after reading `ESAVE_000` on 2026-07-02:
+team 3 was NPC-inactive with 71 village records, all 160 NPC-job slots were
+free, and both the live and save-embedded scripts still held `600000` at
+`0x17F38`. This distinguishes the village defeat timer from the already-patched
+military reinforcement timer at `0x178E0`. The write is byte-verified across all
+five original endless scripts; an in-game post-defeat timing retest remains due.
 
 ### Rejected global village-production patch
 
 Older builds changed `ak_npc.bci` (`0 -> 20` at `0x1EA0`),
 `ak_produktion.bci` (`117 -> 112` at `0x3710`), and `ak_haupthaus.bci`
-(`[81,59] -> [66,20]` at `0x3FCC`). Runtime testing proved these global paths
-are not safely NPC-scoped: staffed player resource buildings remain at zero,
-including in a new game. Current builds always restore the three original
-values and keep AI Ultimate limited to endless-map reinforcement logic.
+(`[81,59] -> [66,20]` at `0x3FCC`). Runtime testing proved the first two
+paths are not safely NPC-scoped: staffed player resource buildings remain at
+zero, including in a new game. Current builds always restore those two
+original values.
+
+### Main-house conversion-size patch (re-enabled)
+
+The `ak_haupthaus.bci` edit was re-examined in isolation and re-enabled under
+the AI Ultimate toggle:
+
+- The site at decompressed `0x3FCC` (unique hit for signature
+  `[?, ?, 81, 11, 81, 10, 81, 98, 128, 81, 73, -4, 86]`) pushes the last
+  argument of the `s_createBattleUnitsMax` external call (symbol #81 in this
+  script's `SYMBCONS` table).
+- The EXE registers `s_createBattleUnitsMax` with signature `i_iiii` via the
+  trampoline at `0052a110`, which forwards to `FUN_005249d0`.
+- `FUN_005249d0` clamps the count argument to `0..20`, gathers up to 100 idle
+  civilians from the village, and converts all of them in batches of that
+  size — each batch becomes one battle unit via `FUN_00523a00`. The count is
+  therefore members-per-unit, and conversion already continues until the idle
+  civilian pool is exhausted.
+- Original runtime value is 6 (the observed 6-man AI conversion units);
+  `[81,59] -> [66,20]` raises it to the EXE maximum of 20.
+- `var 59` has no `82,59` store anywhere in the script, so it is populated by
+  the runtime/message context rather than script code.
+- Pending: an in-game regression confirming the player's manual conversion UI
+  is unaffected (it uses a separate UI path, and the documented player
+  breakage came from the `ak_npc`/`ak_produktion` paths).
 - `team.dat` still controls faction, population limit, and banner version, but
   it is not the source of the endless AI spawn-mode decision.
 

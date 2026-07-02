@@ -26,19 +26,22 @@ research and personal modding project.
 - Maximum-population switch for map `team.dat` files (1600 when enabled).
 - Reversible 20x capacity switch for every positive population-building
   `wohnwer` value in `objdef.dau`.
+- Reversible 10x building speed switch for construction, upgrades, and repairs
+  in `objdef.dau` (shortens building build/upgrade times by 10, which automatically
+  boosts repair rate).
 - Endless-mode AI Ultimate Mode, which raises the mass-army spawn count to the
   vanilla script limit, recycles completed military reinforcement jobs for
-  continuing waves, reduces AI respawn wait to 5 seconds, and raises the
-  active-party limit to 8 while retaining safe original action-loop pacing.
-  Global CLAK economy scripts and settlement templates remain untouched.
+  continuing waves, reduces both military and village-defeat respawn waits to
+  5 seconds, and raises the active-party limit to 8 while retaining bounded
+  reinforcement polling. Endless settlement templates also receive a reversible
+  starting-resource boost; unsafe global CLAK production edits stay disabled.
 - Free construction, production, upgrades, and spell costs through `ress.ini`.
 - Unit stat editing for HP, damage, VW, AW, movement, sight, cooldown, range, and spell radius through `objdef.dau` and `cl_script.ini`.
-- Troop preset import/export through `.artroop` and global preset import/export through `.arpreset`.
+- Troop preset import/export through `.artroop` and one-click buttons to enable/disable all features.
 - Background execution patch for `Against_Rome.exe` when the game loses focus.
 - Option to scale the village construction/red-frame range to 2.5x through a
-  synchronized `Against_Rome.exe` setter trampoline (the underlying setter path
-  was runtime-verified at 2x, including the red dashed frame; the new 2.5x
-  factor still requires a fresh game test).
+  synchronized `Against_Rome.exe` setter trampoline (successfully
+  runtime-verified in-game, including the red dashed frame).
 - Optional embedded dgVoodoo2 integration that installs the bundled 32-bit
   D3D8/DirectDraw wrappers without overwriting unmanaged DLLs.
 - Automatic game path detection and one-click launch.
@@ -49,17 +52,17 @@ research and personal modding project.
 
 ## Technical Architecture
 
-- `Program.cs`: application entry point, DPI setup, and UAC elevation.
-- `GameLZSS.cs`: game-specific PFIL/LZSS compression and decompression.
-- `TroopConfig.cs`: known unit IDs, unit categories, field indexes, and balance rules.
-- `ModifierForm.cs`: main UI layout and embedded documentation view.
-- `ModifierForm.Data.cs`: backup loading, data inspection, TGA icon parsing, and display formatting.
-- `ModifierForm.Patches.cs`: patch and restore logic for `objdef.dau`, `ress.ini`, `cl_script.ini`, `Against_Rome.exe`, and `team.dat`.
-- `ModifierForm.DgVoodoo.cs`: embedded dgVoodoo2 extraction, managed
+- `src/Program.cs`: application entry point, DPI setup, and UAC elevation.
+- `src/Core/GameLZSS.cs`: game-specific PFIL/LZSS compression and decompression.
+- `src/Core/TroopConfig.cs`: known unit IDs, unit categories, field indexes, and balance rules.
+- `src/UI/ModifierForm.cs`: main UI layout and embedded documentation view.
+- `src/UI/ModifierForm.Data.cs`: backup loading, data inspection, TGA icon parsing, and display formatting.
+- `src/UI/ModifierForm.Patches.cs`: patch and restore logic for `objdef.dau`, `ress.ini`, `cl_script.ini`, `Against_Rome.exe`, and `team.dat`.
+- `src/UI/ModifierForm.DgVoodoo.cs`: embedded dgVoodoo2 extraction, managed
   installation, conflict detection, and removal.
-- `ModifierForm.SaveManager.cs`: save backup, restore, and cache handling.
-- `ModifierForm.Presets.cs`: preset import/export.
-- `TroopPresetForm.cs`: troop stat preset editor.
+- `src/UI/ModifierForm.SaveManager.cs`: save backup, restore, and cache handling.
+- `src/UI/ModifierForm.Presets.cs`: actions to enable or disable all features.
+- `src/UI/TroopPresetForm.cs`: troop stat preset editor.
 - `tools/Repair-LanguageBackup.ps1`: validates and repairs a local language
   overlay backup after an interrupted or incomplete migration.
 - `docs/reverse-engineering/`: structured reverse-engineering notes.

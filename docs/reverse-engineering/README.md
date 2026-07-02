@@ -23,7 +23,7 @@ and patch code.
 ## Current Coverage
 
 - `SYSTEM/DATA_MP/DEFAULTS/objdef.dau`: unit stats, weapons, sight, movement,
-  spell range, and housing capacity.
+  spell range, housing capacity, and building speed (construction/upgrade/repair).
 - `SYSTEM/ress.ini`: construction, production, upgrade, refund, and priest
   spell costs.
 - `SYSTEM/banner.ini`: banner/icon/object variants referenced by `team.dat`.

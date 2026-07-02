@@ -10,7 +10,7 @@ namespace AgainstRomeModifier {
     public class ModernToggle : CheckBox {
         private int _toggleWidth = 40;
         private int _toggleHeight = 20;
-        private Timer _animationTimer;
+        private System.Windows.Forms.Timer _animationTimer;
         private float _animPosition = 0f; // 0 = 關閉, 1 = 開啟
         private float _targetPosition = 0f;
 
@@ -19,7 +19,7 @@ namespace AgainstRomeModifier {
             this.Cursor = Cursors.Hand;
             this.Size = new Size(180, 25);
             
-            _animationTimer = new Timer { Interval = 15 };
+            _animationTimer = new System.Windows.Forms.Timer { Interval = 15 };
             _animationTimer.Tick += (s, e) => {
                 float step = 0.15f;
                 if (Math.Abs(_animPosition - _targetPosition) < step) {

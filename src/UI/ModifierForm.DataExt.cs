@@ -4,6 +4,9 @@ using System.Collections.Generic;
 
 namespace AgainstRomeModifier {
     public partial class ModifierForm {
+        private const double BallistaHitPoints = 1000.0;
+        private const double CatapultHitPoints = 1500.0;
+
         public static bool SupportsConfigurableSpellRadius(string key) {
             return key.Equals("FigKelPri00_Priester", StringComparison.OrdinalIgnoreCase) ||
                 key.Equals("FigHunPri00_Priester", StringComparison.OrdinalIgnoreCase);
@@ -94,7 +97,14 @@ namespace AgainstRomeModifier {
             double vw = orig[2];
             double aw = orig[3];
 
-            if (utype != "priest" && utype != "siege") {
+            if (utype == "siege") {
+                // Siege engines keep their original offensive/defensive stats,
+                // but receive fixed durability by weapon family in the built-in
+                // balance preset. Custom .artroop values still take priority.
+                hp = key.IndexOf("Speerschleuder", StringComparison.OrdinalIgnoreCase) >= 0
+                    ? BallistaHitPoints
+                    : CatapultHitPoints;
+            } else if (utype != "priest") {
                 double[] bal = TroopConfig.CalculateFactionBaseStats(key, faction, tier, utype);
                 hp = bal[0];
                 dmg = bal[1];

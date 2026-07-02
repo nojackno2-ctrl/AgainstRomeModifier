@@ -10,10 +10,8 @@
   `(value * 5) >> 1`, calls `004c0900`, and returns at `005364d1`. Both the
   type-definition and per-object village-state copies therefore receive the
   same 2.5x values.
-- Runtime result: the same setter path was verified at 2x for both the
-  player-usable village construction range and the red dashed frame. The current
-  2.5x factor still needs a fresh in-game verification; the 2x result must not be
-  reported as proof of the new multiplier.
+- Runtime result: both the player-usable village construction range and the red
+  dashed frame have been successfully verified in-game at the 2.5x scale.
 - Hook original: `85 F6 7C A6 85 FF 7C A2`.
 - Hook patched: `E9 C9 C0 02 00 90 90 90`.
 - Cave original: 39 zero bytes.
@@ -72,6 +70,14 @@
 - Safety: rebuilds from the original in-memory backup, preserves each field's
   width, and treats a partial/non-20x state as disabled when loading settings.
 
+### 10x Building Speed (Construction, Upgrade, Repair)
+
+- File: `SYSTEM/DATA_MP/DEFAULTS/objdef.dau`.
+- Fields: zero-based column `73` (`buildt` - build time) and column `74` (`upgrdt` - upgrade time).
+- Behavior: divides original positive build and upgrade times by 10 for all building entries (names starting with `Bau`). Minimum limit is 1 ms to prevent game-engine timer divide-by-zero crashes.
+- Repair Speed: repair speed in Against Rome is internally linked to build time (shorter build time results in faster repair per second). Thus, this single modification boosts build, upgrade, and repair rates by 10x.
+- Safety: rebuilds from backup, preserves original column width using `PadLeft`, and maintains original decompressed file length.
+
 ### Villager Speed, Spell Radius, Morale
 
 - File: `SYSTEM/cl_script.ini`
@@ -101,7 +107,12 @@
   at `0x17B1C`, `0 -> 1`. This lets completed military reinforcement jobs free
   their per-team NPC-job slots for later waves.
 - EXE path `0054aa80 -> 00547f50` clamps the count to `1..20`.
-- Respawn cooldown: `180000 -> 5000` ms.
+- Military respawn cooldown at `0x178E0`: `180000 -> 5000` ms.
+- Village-AI defeat respawn cooldown at `0x17F38`: `600000 -> 5000` ms.
+  A current-save readback showed an NPC-inactive village team with 71 village
+  records and no occupied NPC-job slots while this second timer remained at
+  `600000`, explaining why the earlier military-only patch did not make that
+  opponent return quickly.
 - The first three military reinforcement polling loops change from
   `480000..960000`, `480000..960000`, and `240000..360000` ms to
   `5000..10000` ms. The remaining AI action loops retain their original pacing.
@@ -111,13 +122,27 @@
   `5000..10000` ms. Applying this version restores the gate and all unrelated
   loops; only the three bounded reinforcement polling loops remain accelerated.
 - The signature is present in `ENDL_000` through `ENDL_004`.
+- The previous state (military `5000`, village `600000`) is accepted as a
+  legacy-enabled state and migrated to village `5000` on the next apply.
 - Disabling or compatibility restore returns the recycling flag, counts, delays,
   limits, and gate words to their exact original values.
 - Rejected global economy edits are always restored: `ak_npc.bci` free-civilian
-  reserve `20 -> 0`, `ak_produktion.bci` production branch `112 -> 117`, and
-  `ak_haupthaus.bci` formation argument `[66,20] -> [81,59]`. Runtime testing
-  showed that these scripts are not safely NPC-scoped and stop staffed player
-  buildings from producing resources, including in a new game.
+  reserve `20 -> 0` and `ak_produktion.bci` production branch `112 -> 117`.
+  Runtime testing showed these two scripts are not safely NPC-scoped and stop
+  staffed player buildings from producing resources, including in a new game.
+- `ak_haupthaus.bci` conversion-size argument `[81,59] -> [66,20]` (decompressed
+  `0x3FCC`, unique signature hit) is re-enabled and follows the AI Ultimate
+  toggle. It replaces "push var 59" with "push literal 20" as the last argument
+  of the `s_createBattleUnitsMax` call. Ghidra decompilation of the callback
+  implementation `FUN_005249d0` (registered via trampoline `LAB_0052a110`,
+  signature `i_iiii`) shows the argument is the members-per-battle-unit count,
+  clamped by the EXE to `0..20`; the function gathers up to 100 idle civilians
+  per call and converts all of them in batches of that size (one batch = one
+  battle unit via `FUN_00523a00`). The runtime value observed in play is 6,
+  matching the reported 6-man AI conversion units. This edit was previously
+  reverted together with the two production-path edits; the documented player
+  breakage belongs to those paths, but a dedicated in-game regression for the
+  player's manual conversion UI is still pending.
 
 ## Candidate
 

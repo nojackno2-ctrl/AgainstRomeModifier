@@ -25,18 +25,18 @@ remains the English current-state specification.
 
 | File | Responsibility |
 |---|---|
-| `Program.cs` | WinForms entry, elevation, High DPI startup, global exception handling. |
-| `GameLZSS.cs` | LZSS and `PFIL@` wrapper decode/encode with bounds checks. |
-| `TroopConfig.cs` | Field enums, unit IDs, names, factions, tiers, types, and balance baselines. |
-| `ModifierForm.cs` | Main UI, controls, backup cache, parsed unit cache, shared state. |
-| `ModifierForm.Data.cs` | Current-data reading, CSV-like parsing, comparisons, icons, EXE state detection. |
-| `ModifierForm.DataExt.cs` | Safe access to cached original unit rows. |
-| `ModifierForm.Patches.cs` | Transactional writes, restores, EXE/INI/DAU/team/BCI patches. |
-| `ModifierForm.Presets.cs` | `.arpreset` import/export and compatibility. |
-| `ModifierForm.SaveManager.cs` | Save discovery, ZIP backup/restore/delete, metadata cache. |
-| `TroopPresetForm.cs` | Nine-property editing for 43 units and `.artroop` I/O. |
-| `UIElements.cs` | Owner-drawn toggles, dark menu renderer, GDI disposal. |
-| `Localization.cs` | Chinese/English UI and log strings. |
+| `src/Program.cs` | WinForms entry, elevation, High DPI startup, global exception handling. |
+| `src/Core/GameLZSS.cs` | LZSS and `PFIL@` wrapper decode/encode with bounds checks. |
+| `src/Core/TroopConfig.cs` | Field enums, unit IDs, names, factions, tiers, types, and balance baselines. |
+| `src/UI/ModifierForm.cs` | Main UI, controls, backup cache, parsed unit cache, shared state. |
+| `src/UI/ModifierForm.Data.cs` | Current-data reading, CSV-like parsing, comparisons, icons, EXE state detection. |
+| `src/UI/ModifierForm.DataExt.cs` | Safe access to cached original unit rows. |
+| `src/UI/ModifierForm.Patches.cs` | Transactional writes, restores, EXE/INI/DAU/team/BCI patches. |
+| `src/UI/ModifierForm.Presets.cs` | Actions to enable/disable all features at once. |
+| `src/UI/ModifierForm.SaveManager.cs` | Save discovery, ZIP backup/restore/delete, metadata cache. |
+| `src/UI/TroopPresetForm.cs` | Nine-property editing for 43 units and `.artroop` I/O. |
+| `src/UI/UIElements.cs` | Owner-drawn toggles, dark menu renderer, GDI disposal. |
+| `src/Core/Localization.cs` | Chinese/English UI and log strings. |
 
 The application targets `.NET 8`, `net8.0-windows`, WinForms, x64, nullable reference types, and `PerMonitorV2` DPI. `Backup.zip` is embedded only when present; both embedded technical documents are mandatory resources.
 
@@ -65,6 +65,8 @@ Apply order:
 Known `PFIL@` users include `ress.ini`, `cl_script.ini`, `banner.ini`, `objdef.dau`, all `team.dat`, endless `ak_level.bci`, and some endless settlement `.sdl` files.
 
 The decompressor rejects negative or greater-than-50-MB output sizes. The 4096-byte ring uses `& 4095`. Compression uses a 16-bit hash table, bounded hash chains, and guards against matching not-yet-updated short-distance ring data. Every changed payload should pass `decompress(compress(payload)) == payload`.
+
+**Ring-init contract (fixed 2026-07-02):** the game EXE decompressor (`FUN_00565c00`) fills only the first `0xFEE` ring positions with spaces (`0x20`); the last 18 positions (`0xFEE..0xFFF`) stay `0x00` from `memset`, and the write cursor starts at `0xFEE`. The compressor's window model must match exactly. The old `GameLZSS` modeled the whole ring as spaces, so space runs within the first 18 output bytes could be matched against the "phantom spaces" at `0xFEE..0xFFF`; the game then decoded `0x00` there, and NULs truncated text files at the INI tokenizer (symptom: `No Mem len=0 CLMK\mk_tcon.c [1138]`, `.sdl` parsed as zero objects). Binary payloads (BCI) never triggered it because they contain no early space runs.
 
 The game does not implement RFC 4180 CSV. CSV-like rows use `Split(',')` and `string.Join`. Adding quotes or escaping can make old engine object IDs and paths invalid, causing missing building buttons. Preserve original line endings, trailing empty fields, and cp1251 encoding.
 
@@ -146,6 +148,8 @@ Stable indexes:
 | 142 | AW |
 | 146 | VW |
 | 156 | Housing capacity (`wohnwer`) |
+| 73 | BuildTime (`buildt`) |
+| 74 | UpgradeTime (`upgrdt`) |
 | 191 | Bmovs |
 | 199 | Weapon 1 damage/type candidate |
 
@@ -162,10 +166,16 @@ The fixed nine-property array is `HP,Dmg,VW,AW,Speed,Sight,Relt,Range,SpellRadiu
 - SpellRadius is implemented in `cl_script.ini`, not `objdef.dau`.
 - The core 20x housing-capacity switch multiplies every positive original field
   156 value and remains reversible because each apply starts from the backup.
+- The 10x fast-build/upgrade/repair switch scales down the original `buildt` (Index 73)
+  and `upgrdt` (Index 74) values by a factor of 10 for all building rows (names starting
+  with `Bau`), with a lower bound of 1 ms to prevent divide-by-zero or timer errors.
+  Because repair rate is inversely proportional to build time in Against Rome's data-driven
+  rules, shortening the build time simultaneously boosts building, upgrading, and
+  repair speeds. This switch is fully integrated into apply, restore, and preset actions.
 
-The balance direction includes 2x movement, 3x ranged/siege range, about 1.5x ranged rate, stronger priest sight/range, and 2.5x spell radius. The current exact four-property baseline from `TroopConfig.CalculateFactionBaseStats` follows.
+The balance direction includes 2x movement, 3x ranged/siege range, fixed siege HP (ballista 1000, catapult 1500), about 1.5x ranged rate, stronger priest sight/range, and 2.5x spell radius. The current exact four-property baseline from `TroopConfig.CalculateFactionBaseStats` follows.
 
-Generic HP by tier is low 110, mid 130, high 150, ace 160, and leader 450. Priests and siege units return zero from this matrix function and retain their original four-property values unless explicitly customized.
+Generic HP by tier is low 110, mid 130, high 150, ace 160, and leader 450. Priests and siege units return zero from this matrix function. Priests retain their original four-property values; siege units retain original damage/VW/AW but use fixed HP in the built-in balance preset: ballista 1000 and catapult 1500, including their setup forms. Explicit `.artroop` values still take priority.
 
 | Faction | Tier | Type | HP | Damage | VW | AW |
 |---|---|---|---:|---:|---:|---:|
@@ -234,13 +244,17 @@ Every `MAPS/**/team.dat` is restored from its original first. The core switch th
 - Military create call around decompressed `0x17B60`: interpreted as `s_addNPCJob_createUnit(local7, 3, 8, 0, 0, 4, 4, 1, 0)` after reversing BCI stack order.
 - Count literals near `0x17B2C` and `0x17B34`: `4 -> 20`.
 - Completed-job recycling flag near `0x17B1C`: `0 -> 1`, allowing completed military reinforcement jobs to release their NPC-job slots for later waves.
-- Older builds edited three global CLAK economy scripts: `ak_npc.bci`, `ak_produktion.bci`, and `ak_haupthaus.bci`. Runtime testing proved these paths are not safely NPC-scoped and stop all staffed player resource buildings even in a new game. Current builds always restore the three original values regardless of the AI Ultimate toggle.
+- Older builds edited three global CLAK economy scripts. `ak_npc.bci` (free-civilian reserve) and `ak_produktion.bci` (production gate) proved not NPC-scoped in runtime testing — they stop staffed player resource buildings even in a new game — and are always restored. The third edit, `ak_haupthaus.bci` conversion size `[81,59] -> [66,20]` at `0x3FCC`, is re-enabled under the AI Ultimate toggle: Ghidra decompilation of the `s_createBattleUnitsMax` implementation (`FUN_005249d0`) confirms the argument is the members-per-battle-unit count, clamped by the EXE to 0..20, and each call already converts all gathered idle civilians (up to 100) in batches of that size. The original runtime value is 6, matching the observed 6-man AI conversion units. A player manual-conversion regression check is still pending.
 - EXE path `0054aa80 -> 00547f50` clamps this mode to 1..20.
-- Respawn wait: `180000 -> 5000 ms`.
+- Military respawn wait: `180000 -> 5000 ms`.
+- Village-AI defeat respawn wait at decompressed `0x17F38`: `600000 -> 5000 ms`.
 - The first three military reinforcement polling loops use `5000..10000` ms so the 5-second cooldown is checked promptly; other AI action loops retain their original values.
 - Active-party comparison literal at decompressed `0x195F8`: `4 -> 8`; the gate at `0x1960C` remains `66,0`.
 - Older `112,272` gate bypasses and blanket 5000..10000 ms action-loop patches are migrated; only the three bounded reinforcement polling loops remain accelerated.
+- Builds that already have the military 5-second state but retain the village
+  `600000` value are detected as legacy-enabled and migrated on the next apply.
 - Disable/compatibility restore reverses every count, delay, limit, and gate value.
+- Settlement templates: in `MAPS/ENDL_*/Endlos_*_Siedlung*.sdl` (plain INI text after PFIL decompression), the main building's `resv` line (namedef containing `_Haupt`; `Hauptzelt` for Romans) changes from `0,0,0,0,0,0` to `614,300,372,250,460,288` — each slot is the maximum observed across original campaign AI settlements — giving village-style AI a starting stockpile. Restore returns all zeros. The identical templates under `MP_*` stay untouched to match the ENDL-only scope.
 
 The count represents created military units/formations; the visible individual-soldier total also depends on formation contents. The EXE provides only 20 NPC-job slots per team, so removing the gate entirely is not safe for long-running endless games.
 
@@ -279,7 +293,7 @@ The static hypothesis changed `delta * 64 + 32` to `delta * 128 + 32`. The four 
 
 `00539700` initializes pending-village state through `00536450`. The logical point test `00536820` is directly reached by script/AI wrapper `005367c0` and candidate-position search `00544fd0`; player previews `0044f4b0` and `0044f7b0` do not call it. This rules out `00536630` as the general player construction-range gate.
 
-The current patch hooks `005364c1` (file `0x1364c1`) into a 289-byte executable zero-padding region at `0056258f` (file `0x16258f`). The trampoline preserves both negative-value checks, scales `ESI`/`EDI` with `(value * 5) >> 1`, calls `004c0900`, and returns at `005364d1`, keeping the type-definition and per-object copies synchronized. Runtime testing previously confirmed this setter path at 2x; the current 2.5x factor and its effect on the red dashed frame still require game testing.
+The current patch hooks `005364c1` (file `0x1364c1`) into a 289-byte executable zero-padding region at `0056258f` (file `0x16258f`). The trampoline preserves both negative-value checks, scales `ESI`/`EDI` with `(value * 5) >> 1`, calls `004c0900`, and returns at `005364d1`, keeping the type-definition and per-object copies synchronized. Runtime testing previously confirmed this setter path at 2x; the current 2.5x factor and its effect on the red dashed frame have been successfully runtime-verified in-game.
 
 The modifier never writes the four rejected `07` candidates. It only detects legacy two-site or four-site states and restores all four original shift-6 instructions. The option and preset field control only the runtime-verified setter trampoline. Unknown mixed bytes are left untouched with a warning.
 
@@ -295,9 +309,9 @@ The former altar-limit assembly attempt caused crashes and is not present. Every
 
 `apt.dat` is identified as a ZIP-like container with `SYSTEM/DATA/APT/*.apt` binary entries. The modifier does not alter collision, UI layout, or repack this file. Former projectile collision expansion was restored. Keep it read-only until entry semantics, checksums, and runtime loading are proven.
 
-## 13. Presets, Troop Files, and Saves
+## 13. Troop Files and Saves
 
-`.arpreset` is INI-like text using invariant numeric culture. It stores `MaxPopulation` and `FastCiviProduction` as switches plus the other global settings and nine-property troop rows. Legacy `PopLimit` and `CiviSpeed` fields remain import-compatible; only 1600 and 10x map to enabled. `VillageBuildRange` controls only the runtime-verified setter trampoline and cannot re-enable the rejected four-site patch.
+Global preset files (`.arpreset`) have been removed in favor of one-click "Enable All" and "Disable All" buttons.
 
 `.artroop` rows use:
 
@@ -367,13 +381,12 @@ Use these before repeating whole-program analysis. Rebuild the inventory only fo
 - AI Ultimate testing must cover all five endless maps, late reinforcement
   waves, respawn, action loops, completed-job recycling, restore, and old saves.
 - The current village result remains: all four candidate changes produced no visible effect.
-- The setter trampoline was verified at 2x for both the player-usable village
-  construction range and red dashed frame; the current 2.5x factor still needs
-  a fresh in-game verification.
+- The setter trampoline was verified at 2.5x for both the player-usable village
+  construction range and red dashed frame in-game.
 
 ## 17. Known Limits
 
-Machine decompilation cannot recreate every original source line, identifier, comment, or build project. A function inventory is navigation, not 100% semantic truth. Some `ress.ini` fields, `apt.dat` entries, and BCI opcodes remain candidates. AI Ultimate's count, timing, active-limit, and completed-job recycling changes still require a long-running endless-mode regression test; global civilian production/training edits are disabled after causing player resource-production regression. The setter path was runtime-verified at 2x for both construction range and red dashed frame; the current 2.5x factor still requires fresh runtime verification.
+Machine decompilation cannot recreate every original source line, identifier, comment, or build project. A function inventory is navigation, not 100% semantic truth. Some `ress.ini` fields, `apt.dat` entries, and BCI opcodes remain candidates. AI Ultimate's count, timing, active-limit, and completed-job recycling changes still require a long-running endless-mode regression test; global civilian production/training edits are disabled after causing player resource-production regression. The setter path was runtime-verified at 2.5x for both construction range and red dashed frame in-game.
 
 Always separate a stored value from its runtime meaning. Proximity, naming similarity, or a plausible static formula is not sufficient proof.
 

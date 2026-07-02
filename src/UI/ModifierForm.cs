@@ -61,6 +61,7 @@ namespace AgainstRomeModifier {
         // 介面上的卡片式群組容器
         private Panel pnlNumericCard = null!;
         private Panel pnlSwitchesCard = null!;
+        private Panel pnlBuildCard = null!;
         private Panel pnlConsoleCard = null!;
 
         // 數值控制項 (NumericUpDown) 的宣告
@@ -74,6 +75,7 @@ namespace AgainstRomeModifier {
         private ModernToggle chkFocusLoss = null!;
         private ModernToggle chkBalance = null!;
         private ModernToggle chkHousingCapacity20x = null!;
+        private ModernToggle chkFastBuildUpgradeRepair = null!;
         private ModernToggle chkAiUltimateMode = null!;
         private ModernToggle chkDgVoodoo = null!;
         private ModernToggle chkVillageBuildRange = null!;
@@ -87,9 +89,9 @@ namespace AgainstRomeModifier {
         private ModernToggle chkToEng = null!;
         private ModernToggle chkInfiniteMorale = null!;
 
-        // 匯出/匯入設定檔按鈕
-        private Button btnPresetSave = null!;
-        private Button btnPresetLoad = null!;
+        // 所有功能開啟/關閉按鈕
+        private Button btnEnableAll = null!;
+        private Button btnDisableAll = null!;
 
         // 兵種圖示快取字典
         private Dictionary<string, Bitmap> unitIcons = new Dictionary<string, Bitmap>();
@@ -132,7 +134,9 @@ namespace AgainstRomeModifier {
         private Label lblSwitchesTitle = null!;
         private Label lblTipsTitle = null!;
         private Label lblTipsContent = null!;
+        private Label lblTipsDetail = null!;
         private Label lblConsoleTitle = null!;
+        private Label lblBuildTitle = null!;
         private Label lblGameSavesTitle = null!;
         private Label lblBackupsTitle = null!;
         private Label lblDetailTitle = null!;
@@ -555,13 +559,13 @@ namespace AgainstRomeModifier {
 
             pnlNumericCard = new Panel {
                 Location = new Point(0, 0),
-                Size = new Size(585, 380)
+                Size = new Size(385, 420)
             };
             pnlNumericCard.Paint += CardPanel_Paint;
 
             lblNumericTitle = new Label {
-                Text = "數值偏好與系統設定",
-                Location = new Point(30, 20),
+                Text = "系統與相容性設定",
+                Location = new Point(25, 20),
                 Size = new Size(250, 25),
                 Font = fontJhengHei105B,
                 ForeColor = Color.FromArgb(0, 220, 255),
@@ -571,8 +575,8 @@ namespace AgainstRomeModifier {
 
             chkFocusLoss = new ModernToggle {
                 Text = "遊戲視窗失焦時不自動暫停 (背景執行)",
-                Location = new Point(30, 60),
-                Size = new Size(500, 25),
+                Location = new Point(25, 70),
+                Size = new Size(330, 25),
                 Checked = false,
                 BackColor = Color.Transparent
             };
@@ -580,57 +584,49 @@ namespace AgainstRomeModifier {
 
             chkToEng = new ModernToggle {
                 Text = "強制英文語系 (介面圖示與核心文字)",
-                Location = new Point(30, 110),
-                Size = new Size(500, 25),
+                Location = new Point(25, 135),
+                Size = new Size(330, 25),
                 Checked = false,
                 BackColor = Color.Transparent
             };
             pnlNumericCard.Controls.Add(chkToEng);
 
-            chkAiUltimateMode = new ModernToggle {
-                Text = "AI終極模式",
-                Location = new Point(30, 325),
-                Size = new Size(500, 25),
-                Checked = false,
-                BackColor = Color.Transparent
-            };
-
             chkDgVoodoo = new ModernToggle {
                 Text = Loc.Get("DgVoodoo"),
-                Location = new Point(30, 160),
-                Size = new Size(500, 25),
+                Location = new Point(25, 200),
+                Size = new Size(330, 25),
                 Checked = false,
                 BackColor = Color.Transparent
             };
             pnlNumericCard.Controls.Add(chkDgVoodoo);
 
-            btnPresetSave = new Button {
-                Text = "匯出設定",
-                Location = new Point(30, 325),
-                Size = new Size(130, 38)
+            btnEnableAll = new Button {
+                Text = "所有功能開啟",
+                Location = new Point(25, 350),
+                Size = new Size(155, 42)
             };
-            StyleButton(btnPresetSave, Color.FromArgb(45, 45, 55), Color.FromArgb(0, 220, 255), Color.FromArgb(0, 220, 255));
-            btnPresetSave.Click += new EventHandler(BtnPresetSave_Click);
+            StyleButton(btnEnableAll, Color.FromArgb(45, 45, 55), Color.FromArgb(0, 220, 255), Color.FromArgb(0, 220, 255));
+            btnEnableAll.Click += new EventHandler(BtnEnableAll_Click);
 
-            btnPresetLoad = new Button {
-                Text = "匯入設定",
-                Location = new Point(180, 325),
-                Size = new Size(130, 38)
+            btnDisableAll = new Button {
+                Text = "所有功能關閉",
+                Location = new Point(200, 350),
+                Size = new Size(155, 42)
             };
-            StyleButton(btnPresetLoad, Color.FromArgb(45, 45, 55), Color.FromArgb(240, 240, 240), Color.FromArgb(180, 100, 255));
-            btnPresetLoad.Click += new EventHandler(BtnPresetLoad_Click);
-            pnlNumericCard.Controls.Add(btnPresetSave);
-            pnlNumericCard.Controls.Add(btnPresetLoad);
+            StyleButton(btnDisableAll, Color.FromArgb(45, 45, 55), Color.FromArgb(255, 75, 75), Color.FromArgb(255, 75, 75));
+            btnDisableAll.Click += new EventHandler(BtnDisableAll_Click);
+            pnlNumericCard.Controls.Add(btnEnableAll);
+            pnlNumericCard.Controls.Add(btnDisableAll);
 
             pnlSwitchesCard = new Panel {
-                Location = new Point(605, 0),
-                Size = new Size(585, 380)
+                Location = new Point(402, 0),
+                Size = new Size(386, 420)
             };
             pnlSwitchesCard.Paint += CardPanel_Paint;
 
             lblSwitchesTitle = new Label {
-                Text = "核心修改開關設定",
-                Location = new Point(30, 20),
+                Text = "資源與戰鬥修改",
+                Location = new Point(25, 20),
                 Size = new Size(250, 25),
                 Font = fontJhengHei105B,
                 ForeColor = Color.FromArgb(0, 220, 255),
@@ -638,28 +634,10 @@ namespace AgainstRomeModifier {
             };
             pnlSwitchesCard.Controls.Add(lblSwitchesTitle);
 
-            chkMaxPopulation = new ModernToggle {
-                Text = Loc.Get("MaxPopulation"),
-                Location = new Point(30, 55),
-                Size = new Size(500, 25),
-                Checked = false,
-                BackColor = Color.Transparent
-            };
-            pnlSwitchesCard.Controls.Add(chkMaxPopulation);
-
-            chkFastCiviProduction = new ModernToggle {
-                Text = Loc.Get("FastCiviProduction"),
-                Location = new Point(30, 85),
-                Size = new Size(500, 25),
-                Checked = false,
-                BackColor = Color.Transparent
-            };
-            pnlSwitchesCard.Controls.Add(chkFastCiviProduction);
-
             chkFreeProd = new ModernToggle {
                 Text = "建造、修復與所有單位生產完全免費",
-                Location = new Point(30, 115),
-                Size = new Size(500, 25),
+                Location = new Point(25, 70),
+                Size = new Size(335, 25),
                 Checked = false,
                 BackColor = Color.Transparent
             };
@@ -667,8 +645,8 @@ namespace AgainstRomeModifier {
 
             chkFreeUpgrade = new ModernToggle {
                 Text = "陣型、研發、屬性解鎖升級免費",
-                Location = new Point(30, 145),
-                Size = new Size(500, 25),
+                Location = new Point(25, 130),
+                Size = new Size(335, 25),
                 Checked = false,
                 BackColor = Color.Transparent
             };
@@ -676,8 +654,8 @@ namespace AgainstRomeModifier {
 
             chkNoSpellCost = new ModernToggle {
                 Text = "祭司與賢者法術無消耗 (MP 零消耗)",
-                Location = new Point(30, 175),
-                Size = new Size(500, 25),
+                Location = new Point(25, 190),
+                Size = new Size(335, 25),
                 Checked = false,
                 BackColor = Color.Transparent
             };
@@ -685,8 +663,8 @@ namespace AgainstRomeModifier {
 
             chkInfiniteMorale = new ModernToggle {
                 Text = "部隊無限士氣 (士氣不減且極速恢復)",
-                Location = new Point(30, 205),
-                Size = new Size(500, 25),
+                Location = new Point(25, 250),
+                Size = new Size(335, 25),
                 Checked = false,
                 BackColor = Color.Transparent
             };
@@ -694,8 +672,8 @@ namespace AgainstRomeModifier {
 
             chkBalance = new ModernToggle {
                 Text = Loc.Get("EnableBalance"),
-                Location = new Point(30, 235),
-                Size = new Size(500, 25),
+                Location = new Point(25, 310),
+                Size = new Size(335, 25),
                 Checked = false,
                 BackColor = Color.Transparent,
                 Font = fontJhengHei10B
@@ -703,31 +681,84 @@ namespace AgainstRomeModifier {
             chkBalance.CheckedChanged += new EventHandler(ChkBalance_CheckedChanged);
             pnlSwitchesCard.Controls.Add(chkBalance);
 
-            chkVillageBuildRange = new ModernToggle {
-                Text = Loc.Get("VillageBuildRange"),
-                Location = new Point(30, 265),
-                Size = new Size(500, 25),
-                Checked = false,
-                BackColor = Color.Transparent,
-                Font = fontJhengHei10B
+            // 新增：建設與人口修改卡片
+            pnlBuildCard = new Panel {
+                Location = new Point(805, 0),
+                Size = new Size(385, 420)
             };
-            pnlSwitchesCard.Controls.Add(chkVillageBuildRange);
+            pnlBuildCard.Paint += CardPanel_Paint;
+
+            lblBuildTitle = new Label {
+                Text = Loc.Get("BuildTitle"),
+                Location = new Point(25, 20),
+                Size = new Size(250, 25),
+                Font = fontJhengHei105B,
+                ForeColor = Color.FromArgb(0, 220, 255),
+                BackColor = Color.Transparent
+            };
+            pnlBuildCard.Controls.Add(lblBuildTitle);
+
+            chkMaxPopulation = new ModernToggle {
+                Text = Loc.Get("MaxPopulation"),
+                Location = new Point(25, 70),
+                Size = new Size(335, 25),
+                Checked = false,
+                BackColor = Color.Transparent
+            };
+            pnlBuildCard.Controls.Add(chkMaxPopulation);
 
             chkHousingCapacity20x = new ModernToggle {
                 Text = Loc.Get("HousingCapacity20x"),
-                Location = new Point(30, 295),
-                Size = new Size(500, 25),
+                Location = new Point(25, 125),
+                Size = new Size(335, 25),
                 Checked = false,
                 BackColor = Color.Transparent,
                 Font = fontJhengHei10B
             };
-            pnlSwitchesCard.Controls.Add(chkHousingCapacity20x);
-            pnlSwitchesCard.Controls.Add(chkAiUltimateMode);
+            pnlBuildCard.Controls.Add(chkHousingCapacity20x);
 
-            // 新增下方使用指南卡片，使佈局平衡且資訊更完整
+            chkFastCiviProduction = new ModernToggle {
+                Text = Loc.Get("FastCiviProduction"),
+                Location = new Point(25, 180),
+                Size = new Size(335, 25),
+                Checked = false,
+                BackColor = Color.Transparent
+            };
+            pnlBuildCard.Controls.Add(chkFastCiviProduction);
+
+            chkFastBuildUpgradeRepair = new ModernToggle {
+                Text = Loc.Get("FastBuildUpgradeRepair"),
+                Location = new Point(25, 235),
+                Size = new Size(335, 25),
+                Checked = false,
+                BackColor = Color.Transparent,
+                Font = fontJhengHei10B
+            };
+            pnlBuildCard.Controls.Add(chkFastBuildUpgradeRepair);
+
+            chkVillageBuildRange = new ModernToggle {
+                Text = Loc.Get("VillageBuildRange"),
+                Location = new Point(25, 290),
+                Size = new Size(335, 25),
+                Checked = false,
+                BackColor = Color.Transparent,
+                Font = fontJhengHei10B
+            };
+            pnlBuildCard.Controls.Add(chkVillageBuildRange);
+
+            chkAiUltimateMode = new ModernToggle {
+                Text = Loc.Get("AiUltimateMode"),
+                Location = new Point(25, 345),
+                Size = new Size(335, 25),
+                Checked = false,
+                BackColor = Color.Transparent
+            };
+            pnlBuildCard.Controls.Add(chkAiUltimateMode);
+
+            // 修改下方使用指南卡片，使佈局平衡且資訊更完整
             Panel pnlTipsCard = new Panel {
-                Location = new Point(0, 400),
-                Size = new Size(1190, 380)
+                Location = new Point(0, 440),
+                Size = new Size(1190, 350)
             };
             pnlTipsCard.Paint += CardPanel_Paint;
 
@@ -742,22 +773,26 @@ namespace AgainstRomeModifier {
             pnlTipsCard.Controls.Add(lblTipsTitle);
 
             lblTipsContent = new Label {
-                Location = new Point(30, 65),
-                Size = new Size(1130, 280),
+                Location = new Point(30, 60),
+                Size = new Size(550, 260),
                 Font = fontJhengHei105R,
                 ForeColor = Color.FromArgb(180, 185, 195),
-                BackColor = Color.Transparent,
-                Text = "💡 快速操作指南：\n\n" +
-                       "1. 設定遊戲路徑：請在右側「系統控制台」指定 Against Rome 安裝目錄（修改器會自動嘗試讀取註冊表以取得路徑）。\n\n" +
-                       "2. 讀取現有設定：點擊右側「讀取現有設定」，修改器會自動從遊戲實體檔案（objdef.dau, ress.ini, cl_script.ini 等）解析目前套用的參數，並呈現於兵種列表對比中。\n\n" +
-                       "3. 調整偏好與開關：在主控制台完成您喜好的修改配置（如人口上限、倍率開關等）。\n\n" +
-                       "4. 執行修改與啟動：點擊右側「執行修改」按鈕將設定套入遊戲；完成後即可點擊「啟動遊戲」按鈕立刻開啟遊戲進入戰鬥！\n\n" +
-                       "5. 兵種屬性觀察：可在左側導覽列切換至「自訂兵種屬性」與「當前兵種數值」頁面，即時比對原版與修改後的細部屬性資料。"
+                BackColor = Color.Transparent
             };
             pnlTipsCard.Controls.Add(lblTipsContent);
 
+            lblTipsDetail = new Label {
+                Location = new Point(610, 60),
+                Size = new Size(550, 260),
+                Font = fontJhengHei105R,
+                ForeColor = Color.FromArgb(180, 185, 195),
+                BackColor = Color.Transparent
+            };
+            pnlTipsCard.Controls.Add(lblTipsDetail);
+
             tabSystem.Controls.Add(pnlNumericCard);
             tabSystem.Controls.Add(pnlSwitchesCard);
+            tabSystem.Controls.Add(pnlBuildCard);
             tabSystem.Controls.Add(pnlTipsCard);
 
             pnlConsoleCard = new Panel {
@@ -1324,11 +1359,13 @@ namespace AgainstRomeModifier {
             chkToEng.Text = Loc.Get("ToEng");
             chkAiUltimateMode.Text = Loc.Get("AiUltimateMode");
             chkHousingCapacity20x.Text = Loc.Get("HousingCapacity20x");
+            chkFastBuildUpgradeRepair.Text = Loc.Get("FastBuildUpgradeRepair");
             chkDgVoodoo.Text = Loc.Get("DgVoodoo");
             chkVillageBuildRange.Text = Loc.Get("VillageBuildRange");
-            btnPresetSave.Text = Loc.Get("PresetSave");
-            btnPresetLoad.Text = Loc.Get("PresetLoad");
+            btnEnableAll.Text = Loc.Get("EnableAll");
+            btnDisableAll.Text = Loc.Get("DisableAll");
             lblSwitchesTitle.Text = Loc.Get("SwitchesTitle");
+            lblBuildTitle.Text = Loc.Get("BuildTitle");
             chkMaxPopulation.Text = Loc.Get("MaxPopulation");
             chkFastCiviProduction.Text = Loc.Get("FastCiviProduction");
             chkFreeProd.Text = Loc.Get("FreeProd");
@@ -1337,6 +1374,7 @@ namespace AgainstRomeModifier {
             chkInfiniteMorale.Text = Loc.Get("InfiniteMorale");
             lblTipsTitle.Text = Loc.Get("TipsTitle");
             lblTipsContent.Text = Loc.Get("TipsContent");
+            lblTipsDetail.Text = Loc.Get("TipsDetail");
             lblConsoleTitle.Text = Loc.Get("ConsoleTitle");
             lblGamePath.Text = Loc.Get("GamePath");
             btnBrowseGamePath.Text = Loc.Get("Browse");

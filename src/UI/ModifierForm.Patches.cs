@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
@@ -74,7 +74,8 @@ namespace AgainstRomeModifier {
         private const int EndlessAiOriginalMilitaryCount = 4;
         private const int EndlessAiUltimateMilitaryCount = 20;
         private const int HousingCapacityMultiplier = 20;
-        private const int EndlessAiOriginalRespawnDelayMs = 180000;
+        private const int EndlessAiOriginalMilitaryRespawnDelayMs = 180000;
+        private const int EndlessAiOriginalVillageRespawnDelayMs = 600000;
         private const int EndlessAiUltimateRespawnDelayMs = 5000;
         private const int EndlessAiUltimateLoopDelayLowerMs = 5000;
         private const int EndlessAiUltimateLoopDelayUpperMs = 10000;
@@ -98,6 +99,11 @@ namespace AgainstRomeModifier {
         private const int EndlessAiActiveLimitPatchedOpcode = 112;
         private const int EndlessAiActiveLimitPatchedRelativeJump = 272;
         private const int EndlessAiReinforcementLoopCount = 3;
+        private const string EndlessSdlOriginalHaupthausResv = "0,0,0,0,0,0";
+        // Per-slot maxima observed across the original campaign AI settlement
+        // templates (KAMP_003/004/006 Haupthaus resv), so every value stays in
+        // an engine-proven range.
+        private const string EndlessSdlUltimateHaupthausResv = "614,300,372,250,460,288";
         private static readonly (int OriginalUpperMs, int OriginalLowerMs)[] EndlessAiLoopDelayRanges = new (int, int)[] {
             (960000, 480000),
             (960000, 480000),
@@ -341,6 +347,7 @@ namespace AgainstRomeModifier {
                 bool maxPopulation = chkMaxPopulation.Checked;
                 bool balance = chkBalance.Checked;
                 bool housingCapacity20x = chkHousingCapacity20x.Checked;
+                bool fastBuildUpgradeRepair = chkFastBuildUpgradeRepair.Checked;
                 bool toEng = chkToEng.Checked;
                 bool aiUltimateMode = chkAiUltimateMode.Checked;
                 bool dgVoodoo = chkDgVoodoo.Checked;
@@ -368,7 +375,7 @@ namespace AgainstRomeModifier {
                     patchedFiles[Path.Combine(gamePath, @"SYSTEM\ress.ini")] = ressBytes;
 
                     // D. objdef.dau
-                    byte[] objdefBytes = GetPatchedObjdefBytes(balance, housingCapacity20x);
+                    byte[] objdefBytes = GetPatchedObjdefBytes(balance, housingCapacity20x, fastBuildUpgradeRepair);
                     patchedFiles[Path.Combine(gamePath, @"SYSTEM\DATA_MP\DEFAULTS\objdef.dau")] = objdefBytes;
 
                     // E. team.dat
@@ -383,6 +390,12 @@ namespace AgainstRomeModifier {
                         patchedFiles[kvp.Key] = kvp.Value;
                     }
 
+                    // G. endless AI settlement templates
+                    var settlementPatches = GetPatchedEndlessSettlementTemplates(gamePath, aiUltimateMode);
+                    foreach (var kvp in settlementPatches) {
+                        patchedFiles[kvp.Key] = kvp.Value;
+                    }
+
                     // Dry Run 順利結束，未拋出任何異常。進入實體檔案寫入與交易範圍
                     foreach (var kvp in patchedFiles) {
                         SafeWriteAllBytes(kvp.Key, kvp.Value, rollback);
@@ -392,8 +405,9 @@ namespace AgainstRomeModifier {
                     ApplyLanguagePatch(gamePath, toEng, rollback);
                     ApplyDgVoodooPatch(gamePath, dgVoodoo, rollback);
 
-                    // 呼叫無盡經濟模式還原
-                    ApplyEndlessAiVillageEconomyPatch(gamePath, false, rollback);
+                    // 無盡經濟腳本：ak_npc/ak_produktion 一律還原；
+                    // ak_haupthaus 主營房轉換人數 (6 -> 20) 跟隨 AI 終極模式。
+                    ApplyEndlessAiVillageEconomyPatch(gamePath, aiUltimateMode, rollback);
                 });
 
                 rollback.Commit();
@@ -464,6 +478,10 @@ namespace AgainstRomeModifier {
                     foreach (var kvp in endlessPatches) {
                         patchedFiles[kvp.Key] = kvp.Value;
                     }
+                    var settlementPatches = GetPatchedEndlessSettlementTemplates(gamePath, false);
+                    foreach (var kvp in settlementPatches) {
+                        patchedFiles[kvp.Key] = kvp.Value;
+                    }
 
                     // 還原其它屬性 INI 與 team.dat 到備份原版
                     RestoreStatsOnlyInternal(gamePath, rollback);
@@ -473,6 +491,7 @@ namespace AgainstRomeModifier {
                         SafeWriteAllBytes(kvp.Key, kvp.Value, rollback);
                     }
 
+                    ApplyEndlessAiVillageEconomyPatch(gamePath, false, rollback);
                     ApplyLanguagePatch(gamePath, false, rollback);
                     ApplyDgVoodooPatch(gamePath, false, rollback);
                 });
@@ -483,6 +502,7 @@ namespace AgainstRomeModifier {
                 chkToEng.Checked = false;
                 chkAiUltimateMode.Checked = false;
                 chkHousingCapacity20x.Checked = false;
+                chkFastBuildUpgradeRepair.Checked = false;
                 chkMaxPopulation.Checked = false;
                 chkFastCiviProduction.Checked = false;
                 chkDgVoodoo.Checked = IsDgVoodooInstalled(gamePath);
@@ -531,6 +551,7 @@ namespace AgainstRomeModifier {
                 rollback.Dispose();
                 rollback = null;
                 chkHousingCapacity20x.Checked = false;
+                chkFastBuildUpgradeRepair.Checked = false;
                 chkMaxPopulation.Checked = false;
                 chkFastCiviProduction.Checked = false;
                 customUnitStats = null;
@@ -586,12 +607,17 @@ namespace AgainstRomeModifier {
                     foreach (var kvp in endlessPatches) {
                         patchedFiles[kvp.Key] = kvp.Value;
                     }
+                    var settlementPatches = GetPatchedEndlessSettlementTemplates(gamePath, false);
+                    foreach (var kvp in settlementPatches) {
+                        patchedFiles[kvp.Key] = kvp.Value;
+                    }
 
                     // 統一寫入記憶體修改之檔案
                     foreach (var kvp in patchedFiles) {
                         SafeWriteAllBytes(kvp.Key, kvp.Value, rollback);
                     }
 
+                    ApplyEndlessAiVillageEconomyPatch(gamePath, false, rollback);
                     ApplyDgVoodooPatch(gamePath, false, rollback);
                 });
                 rollback.Commit();
@@ -1363,7 +1389,7 @@ namespace AgainstRomeModifier {
         /// <summary>
         /// 修改 objdef.dau 檔案，套用部隊屬性平衡模式、自訂部隊移動速度、射程、技能距離、近戰/遠程傷害與攻擊冷卻等倍率。
         /// </summary>
-        private byte[] GetPatchedObjdefBytes(bool balanceChecked, bool housingCapacity20xChecked) {
+        private byte[] GetPatchedObjdefBytes(bool balanceChecked, bool housingCapacity20xChecked, bool fastBuildUpgradeChecked) {
             byte[]? origBytes;
             if (!backupFiles.TryGetValue("SYSTEM/DATA_MP/DEFAULTS/objdef.dau", out origBytes)) {
                 throw new InvalidOperationException("記憶體備份中找不到 SYSTEM/DATA_MP/DEFAULTS/objdef.dau。");
@@ -1398,6 +1424,58 @@ namespace AgainstRomeModifier {
                                 name, targetValue, targetLen));
                         }
                         cols[housingIndex] = finalValue.PadLeft(targetLen);
+                    }
+                }
+
+                if (fastBuildUpgradeChecked && name.StartsWith("Bau")) {
+                    string[] origCols = ParseCsvLine(originalLines[idx]);
+                    int buildtIndex = 73;
+                    if (buildtIndex < cols.Length && buildtIndex < origCols.Length) {
+                        if (int.TryParse(origCols[buildtIndex].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int origBuildt) && origBuildt > 0) {
+                            int newBuildt = Math.Max(1, origBuildt / 10);
+                            string targetValue = newBuildt.ToString(CultureInfo.InvariantCulture);
+                            int targetLen = cols[buildtIndex].Length;
+                            if (CheckLen(targetValue, targetLen, out string finalValue)) {
+                                cols[buildtIndex] = finalValue.PadLeft(targetLen);
+                            }
+                        }
+                    }
+                    int upgrdtIndex = 74;
+                    if (upgrdtIndex < cols.Length && upgrdtIndex < origCols.Length) {
+                        if (int.TryParse(origCols[upgrdtIndex].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int origUpgrdt) && origUpgrdt > 0) {
+                            int newUpgrdt = Math.Max(1, origUpgrdt / 10);
+                            string targetValue = newUpgrdt.ToString(CultureInfo.InvariantCulture);
+                            int targetLen = cols[upgrdtIndex].Length;
+                            if (CheckLen(targetValue, targetLen, out string finalValue)) {
+                                cols[upgrdtIndex] = finalValue.PadLeft(targetLen);
+                            }
+                        }
+                    }
+                }
+
+                if (fastBuildUpgradeChecked && name.StartsWith("Bau")) {
+                    string[] origCols = ParseCsvLine(originalLines[idx]);
+                    int buildtIndex = 73;
+                    if (buildtIndex < cols.Length && buildtIndex < origCols.Length) {
+                        if (int.TryParse(origCols[buildtIndex].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int origBuildt) && origBuildt > 0) {
+                            int newBuildt = Math.Max(1, origBuildt / 10);
+                            string targetValue = newBuildt.ToString(CultureInfo.InvariantCulture);
+                            int targetLen = cols[buildtIndex].Length;
+                            if (CheckLen(targetValue, targetLen, out string finalValue)) {
+                                cols[buildtIndex] = finalValue.PadLeft(targetLen);
+                            }
+                        }
+                    }
+                    int upgrdtIndex = 74;
+                    if (upgrdtIndex < cols.Length && upgrdtIndex < origCols.Length) {
+                        if (int.TryParse(origCols[upgrdtIndex].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int origUpgrdt) && origUpgrdt > 0) {
+                            int newUpgrdt = Math.Max(1, origUpgrdt / 10);
+                            string targetValue = newUpgrdt.ToString(CultureInfo.InvariantCulture);
+                            int targetLen = cols[upgrdtIndex].Length;
+                            if (CheckLen(targetValue, targetLen, out string finalValue)) {
+                                cols[upgrdtIndex] = finalValue.PadLeft(targetLen);
+                            }
+                        }
                     }
                 }
 
@@ -1664,13 +1742,40 @@ namespace AgainstRomeModifier {
             return -1;
         }
 
-        private static int FindEndlessRespawnDelayLiteral(byte[] decompressedBci) {
+        private static int FindEndlessMilitaryRespawnDelayLiteral(byte[] decompressedBci) {
             int?[] pattern = new int?[] {
                 0x80, 83,
                 0x56, 66,
                 null, 32,
                 44, 164,
                 0x42, 34,
+                0x5B, 5
+            };
+
+            int patternBytes = pattern.Length * 4;
+            for (int offset = 0; offset <= decompressedBci.Length - patternBytes; offset += 4) {
+                bool match = true;
+                for (int i = 0; i < pattern.Length; i++) {
+                    int? expected = pattern[i];
+                    if (expected.HasValue && BitConverter.ToInt32(decompressedBci, offset + (i * 4)) != expected.Value) {
+                        match = false;
+                        break;
+                    }
+                }
+                if (match) {
+                    return offset + 16;
+                }
+            }
+            return -1;
+        }
+
+        private static int FindEndlessVillageRespawnDelayLiteral(byte[] decompressedBci) {
+            int?[] pattern = new int?[] {
+                0x80, 83,
+                0x56, 66,
+                null, 32,
+                44, 164,
+                0x42, 49,
                 0x5B, 5
             };
 
@@ -1745,41 +1850,48 @@ namespace AgainstRomeModifier {
             SafeWriteAllBytes(scriptPath, compressed, rollback);
         }
 
-        private void ApplyEndlessAiVillageEconomyPatch(string gamePath, bool enabled, FileRollbackScope? rollback) {
+        private void ApplyEndlessAiVillageEconomyPatch(string gamePath, bool haupthausEnabled, FileRollbackScope? rollback) {
             string scriptRoot = Path.Combine(gamePath, @"SYSTEM\CLAK\SCRIPT");
 
             // Keep up to 20 free civilians available. As production buildings
             // consume workers, ak_npc replenishes the reserve with newborns.
+            // ALWAYS restored: runtime testing proved this path is not
+            // NPC-scoped and stops staffed player resource buildings.
             PatchEndlessAiEconomyScript(
                 Path.Combine(scriptRoot, "ak_npc.bci"),
                 new int?[] { 128, 43, 73, -2, 86, 66, null, 96, 99, 117, 476 },
                 6,
                 EndlessAiOriginalFreeCivilianReserve,
                 EndlessAiUltimateFreeCivilianReserve,
-                enabled,
+                false,
                 rollback);
 
             // This branch belongs to the NPC automatic-production path. The
             // patched unconditional jump lets staffed AI buildings continue
             // production even after their normal resource eligibility fails.
+            // ALWAYS restored for the same player-breaking reason as ak_npc.
             PatchEndlessAiEconomyScript(
                 Path.Combine(scriptRoot, "ak_produktion.bci"),
                 new int?[] { 128, 69, 73, -2, 86, null, EndlessAiProductionGateJump, 66, 1, 82, 46 },
                 5,
                 EndlessAiProductionGateOriginalOpcode,
                 EndlessAiProductionGateBypassOpcode,
-                enabled,
+                false,
                 rollback);
 
-            // Allow each main-house conversion pass to form up to 20 battle
-            // units instead of using the original dynamic formation limit.
+            // Main-house civilian-to-battle-unit conversion. The patch replaces
+            // "push var 59" with "push literal 20" as the last argument of the
+            // s_createBattleUnitsMax call: the EXE (FUN_005249d0) uses it as
+            // members-per-unit, clamps it to 0..20, and already converts every
+            // gathered free civilian (up to 100) per pass in batches of that
+            // size, so 20 gives the largest engine-supported conversion units.
             PatchEndlessAiEconomyScript(
                 Path.Combine(scriptRoot, "ak_haupthaus.bci"),
                 new int?[] { null, null, 81, 11, 81, 10, 81, 98, 128, 81, 73, -4, 86 },
                 0,
                 EndlessAiFormationLimitOriginalOpcode,
                 EndlessAiFormationLimitPatchedOpcode,
-                enabled,
+                haupthausEnabled,
                 rollback);
             PatchEndlessAiEconomyScript(
                 Path.Combine(scriptRoot, "ak_haupthaus.bci"),
@@ -1787,8 +1899,9 @@ namespace AgainstRomeModifier {
                 1,
                 EndlessAiFormationLimitOriginalValue,
                 EndlessAiFormationLimitPatchedValue,
-                enabled,
+                haupthausEnabled,
                 rollback);
+            Log(Loc.Get(haupthausEnabled ? "LogHaupthausConversionApplied" : "LogHaupthausConversionRestored"));
         }
 
         private static bool PatchEndlessLoopDelayLiterals(byte[] decompressedBci, bool enabled) {
@@ -1961,16 +2074,19 @@ namespace AgainstRomeModifier {
             foreach (string scriptPath in scripts) {
                 byte[] decomp = GameLZSS.DecompressPfil(File.ReadAllBytes(scriptPath));
                 int createOffset = FindEndlessMilitaryCreateUnitCall(decomp);
-                int respawnOffset = FindEndlessRespawnDelayLiteral(decomp);
+                int militaryRespawnOffset = FindEndlessMilitaryRespawnDelayLiteral(decomp);
+                int villageRespawnOffset = FindEndlessVillageRespawnDelayLiteral(decomp);
                 int activeSequenceOffset = FindEndlessActiveLimitSequenceOffset(decomp);
-                if (createOffset < 0 || respawnOffset < 0 || activeSequenceOffset < 0) {
+                if (createOffset < 0 || militaryRespawnOffset < 0 || villageRespawnOffset < 0 ||
+                    activeSequenceOffset < 0) {
                     return false;
                 }
 
                 int countMin = BitConverter.ToInt32(decomp, createOffset + 20);
                 int countMax = BitConverter.ToInt32(decomp, createOffset + 28);
                 int autoRecycleCompletedJob = BitConverter.ToInt32(decomp, createOffset + 4);
-                int respawnDelay = BitConverter.ToInt32(decomp, respawnOffset);
+                int militaryRespawnDelay = BitConverter.ToInt32(decomp, militaryRespawnOffset);
+                int villageRespawnDelay = BitConverter.ToInt32(decomp, villageRespawnOffset);
                 int activeLimit = BitConverter.ToInt32(decomp, activeSequenceOffset + 12);
                 int gateOpcode = BitConverter.ToInt32(decomp, activeSequenceOffset + 32);
                 int gateValue = BitConverter.ToInt32(decomp, activeSequenceOffset + 36);
@@ -1983,19 +2099,24 @@ namespace AgainstRomeModifier {
                 bool isUltimate = countMin == EndlessAiUltimateMilitaryCount &&
                     countMax == EndlessAiUltimateMilitaryCount &&
                     autoRecycleCompletedJob == EndlessAiUltimateAutoRecycleCompletedJob &&
-                    respawnDelay == EndlessAiUltimateRespawnDelayMs &&
+                    militaryRespawnDelay == EndlessAiUltimateRespawnDelayMs &&
+                    villageRespawnDelay == EndlessAiUltimateRespawnDelayMs &&
                     activeLimit == EndlessAiUltimateActivePartyLimit &&
                     (hasUltimateLoopDelays || hasOriginalLoopDelays);
                 bool isLegacyUltimate = countMin == EndlessAiUltimateMilitaryCount &&
                     countMax == EndlessAiUltimateMilitaryCount &&
-                    autoRecycleCompletedJob == EndlessAiOriginalAutoRecycleCompletedJob &&
-                    respawnDelay == EndlessAiUltimateRespawnDelayMs &&
+                    militaryRespawnDelay == EndlessAiUltimateRespawnDelayMs &&
+                    villageRespawnDelay == EndlessAiOriginalVillageRespawnDelayMs &&
                     activeLimit == EndlessAiUltimateActivePartyLimit &&
-                    hasOriginalLoopDelays;
+                    ((autoRecycleCompletedJob == EndlessAiUltimateAutoRecycleCompletedJob &&
+                      (hasUltimateLoopDelays || hasOriginalLoopDelays)) ||
+                     (autoRecycleCompletedJob == EndlessAiOriginalAutoRecycleCompletedJob &&
+                      hasOriginalLoopDelays));
                 bool isOriginal = countMin == EndlessAiOriginalMilitaryCount &&
                     countMax == EndlessAiOriginalMilitaryCount &&
                     autoRecycleCompletedJob == EndlessAiOriginalAutoRecycleCompletedJob &&
-                    respawnDelay == EndlessAiOriginalRespawnDelayMs &&
+                    militaryRespawnDelay == EndlessAiOriginalMilitaryRespawnDelayMs &&
+                    villageRespawnDelay == EndlessAiOriginalVillageRespawnDelayMs &&
                     activeLimit == EndlessAiOriginalActivePartyLimit &&
                     hasOriginalLoopDelays;
                 bool isEnabled = isUltimate || isLegacyUltimate;
@@ -2032,7 +2153,12 @@ namespace AgainstRomeModifier {
             int targetAutoRecycleCompletedJob = enabled
                 ? EndlessAiUltimateAutoRecycleCompletedJob
                 : EndlessAiOriginalAutoRecycleCompletedJob;
-            int targetRespawnDelayMs = enabled ? EndlessAiUltimateRespawnDelayMs : EndlessAiOriginalRespawnDelayMs;
+            int targetMilitaryRespawnDelayMs = enabled
+                ? EndlessAiUltimateRespawnDelayMs
+                : EndlessAiOriginalMilitaryRespawnDelayMs;
+            int targetVillageRespawnDelayMs = enabled
+                ? EndlessAiUltimateRespawnDelayMs
+                : EndlessAiOriginalVillageRespawnDelayMs;
 
             int patched = 0;
             var incompatibleScripts = new List<string>();
@@ -2040,10 +2166,11 @@ namespace AgainstRomeModifier {
                 byte[] raw = File.ReadAllBytes(scriptPath);
                 byte[] decomp = GameLZSS.DecompressPfil(raw);
                 int baseOffset = FindEndlessMilitaryCreateUnitCall(decomp);
-                int respawnDelayOffset = FindEndlessRespawnDelayLiteral(decomp);
+                int militaryRespawnDelayOffset = FindEndlessMilitaryRespawnDelayLiteral(decomp);
+                int villageRespawnDelayOffset = FindEndlessVillageRespawnDelayLiteral(decomp);
                 int activeSequenceOffset = FindEndlessActiveLimitSequenceOffset(decomp);
-                if (baseOffset < 0 || respawnDelayOffset < 0 || activeSequenceOffset < 0 ||
-                    !HasPatchableEndlessLoopDelays(decomp)) {
+                if (baseOffset < 0 || militaryRespawnDelayOffset < 0 || villageRespawnDelayOffset < 0 ||
+                    activeSequenceOffset < 0 || !HasPatchableEndlessLoopDelays(decomp)) {
                     incompatibleScripts.Add(scriptPath);
                     Log(string.Format(Loc.Get("LogEndlessAiPatternMissing"), scriptPath));
                     continue;
@@ -2053,7 +2180,8 @@ namespace AgainstRomeModifier {
                 int currentMax = BitConverter.ToInt32(decomp, baseOffset + 28);
                 bool changed = false;
                 int currentAutoRecycleCompletedJob = BitConverter.ToInt32(decomp, baseOffset + 4);
-                int currentRespawnDelayMs = BitConverter.ToInt32(decomp, respawnDelayOffset);
+                int currentMilitaryRespawnDelayMs = BitConverter.ToInt32(decomp, militaryRespawnDelayOffset);
+                int currentVillageRespawnDelayMs = BitConverter.ToInt32(decomp, villageRespawnDelayOffset);
                 int currentActiveLimit = BitConverter.ToInt32(decomp, activeSequenceOffset + 12);
                 int currentGateOpcode = BitConverter.ToInt32(decomp, activeSequenceOffset + 32);
                 int currentGateValue = BitConverter.ToInt32(decomp, activeSequenceOffset + 36);
@@ -2061,15 +2189,18 @@ namespace AgainstRomeModifier {
                     (currentMin == EndlessAiOriginalMilitaryCount || currentMin == EndlessAiUltimateMilitaryCount);
                 bool autoRecycleKnown = currentAutoRecycleCompletedJob == EndlessAiOriginalAutoRecycleCompletedJob ||
                     currentAutoRecycleCompletedJob == EndlessAiUltimateAutoRecycleCompletedJob;
-                bool respawnKnown = currentRespawnDelayMs == EndlessAiOriginalRespawnDelayMs ||
-                    currentRespawnDelayMs == EndlessAiUltimateRespawnDelayMs;
+                bool militaryRespawnKnown = currentMilitaryRespawnDelayMs == EndlessAiOriginalMilitaryRespawnDelayMs ||
+                    currentMilitaryRespawnDelayMs == EndlessAiUltimateRespawnDelayMs;
+                bool villageRespawnKnown = currentVillageRespawnDelayMs == EndlessAiOriginalVillageRespawnDelayMs ||
+                    currentVillageRespawnDelayMs == EndlessAiUltimateRespawnDelayMs;
                 bool activeLimitKnown = currentActiveLimit == EndlessAiOriginalActivePartyLimit ||
                     currentActiveLimit == EndlessAiUltimateActivePartyLimit;
                 bool gateKnown = (currentGateOpcode == EndlessAiActiveLimitOriginalOpcode &&
                     currentGateValue == EndlessAiActiveLimitOriginalValue) ||
                     (currentGateOpcode == EndlessAiActiveLimitPatchedOpcode &&
                     currentGateValue == EndlessAiActiveLimitPatchedRelativeJump);
-                if (!countKnown || !autoRecycleKnown || !respawnKnown || !activeLimitKnown || !gateKnown) {
+                if (!countKnown || !autoRecycleKnown || !militaryRespawnKnown || !villageRespawnKnown ||
+                    !activeLimitKnown || !gateKnown) {
                     incompatibleScripts.Add(scriptPath);
                     Log(string.Format(Loc.Get("LogEndlessAiPatternMissing"), scriptPath));
                     continue;
@@ -2084,8 +2215,13 @@ namespace AgainstRomeModifier {
                     changed = true;
                 }
 
-                if (currentRespawnDelayMs != targetRespawnDelayMs) {
-                    WriteBciInt32(decomp, respawnDelayOffset, targetRespawnDelayMs);
+                if (currentMilitaryRespawnDelayMs != targetMilitaryRespawnDelayMs) {
+                    WriteBciInt32(decomp, militaryRespawnDelayOffset, targetMilitaryRespawnDelayMs);
+                    changed = true;
+                }
+
+                if (currentVillageRespawnDelayMs != targetVillageRespawnDelayMs) {
+                    WriteBciInt32(decomp, villageRespawnDelayOffset, targetVillageRespawnDelayMs);
                     changed = true;
                 }
 
@@ -2114,6 +2250,91 @@ namespace AgainstRomeModifier {
                 Log(string.Format(Loc.Get("LogEndlessAiUltimateApplied"), patched, targetCount));
             } else {
                 Log(string.Format(Loc.Get("LogEndlessAiUltimateRestored"), patched, targetCount));
+            }
+
+            return results;
+        }
+
+        /// <summary>
+        /// 修改無盡地圖聚落模板（Endlos_*_Siedlung*.sdl）主營房的開局儲備資源，
+        /// 加速村莊型 AI 的經濟與軍隊生產起步。模板僅由 AI 聚落生成使用，不影響玩家。
+        /// </summary>
+        private Dictionary<string, byte[]> GetPatchedEndlessSettlementTemplates(string gamePath, bool enabled) {
+            var results = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
+            string mapsPath = Path.Combine(gamePath, "MAPS");
+            if (!Directory.Exists(mapsPath)) {
+                return results;
+            }
+
+            string[] templates = Directory.GetFiles(mapsPath, "Endlos_*_Siedlung*.sdl", SearchOption.AllDirectories)
+                .Where(p => p.IndexOf(Path.DirectorySeparatorChar + "ENDL_", StringComparison.OrdinalIgnoreCase) >= 0)
+                .ToArray();
+            if (templates.Length == 0) {
+                return results;
+            }
+
+            string targetResv = enabled ? EndlessSdlUltimateHaupthausResv : EndlessSdlOriginalHaupthausResv;
+            int patched = 0;
+            var incompatibleTemplates = new List<string>();
+            foreach (string templatePath in templates) {
+                byte[] raw = File.ReadAllBytes(templatePath);
+                byte[] decomp = GameLZSS.DecompressPfil(raw);
+                // Latin1 保證位元組與字元 1:1 對應，未修改的內容可原樣寫回。
+                string[] lines = Encoding.Latin1.GetString(decomp).Split('\n');
+                bool inHaupthausSection = false;
+                bool foundHaupthausResv = false;
+                bool incompatible = false;
+                bool changed = false;
+                for (int i = 0; i < lines.Length; i++) {
+                    string trimmed = lines[i].TrimEnd('\r').Trim();
+                    if (trimmed.StartsWith("[")) {
+                        inHaupthausSection = false;
+                    } else if (trimmed.StartsWith("namedef") && trimmed.Contains("_Haupt")) {
+                        // 主建築：日耳曼/凱爾特/匈人為 Haupthaus，羅馬為 Hauptzelt。
+                        inHaupthausSection = true;
+                    } else if (inHaupthausSection && trimmed.StartsWith("resv")) {
+                        inHaupthausSection = false;
+                        int eq = lines[i].IndexOf('=');
+                        if (eq < 0) {
+                            incompatible = true;
+                            break;
+                        }
+                        string suffix = lines[i].EndsWith("\r") ? "\r" : "";
+                        string currentResv = lines[i].Substring(eq + 1).TrimEnd('\r').Trim();
+                        if (currentResv != EndlessSdlOriginalHaupthausResv &&
+                            currentResv != EndlessSdlUltimateHaupthausResv) {
+                            incompatible = true;
+                            break;
+                        }
+                        foundHaupthausResv = true;
+                        if (currentResv != targetResv) {
+                            lines[i] = lines[i].Substring(0, eq + 1) + targetResv + suffix;
+                            changed = true;
+                        }
+                    }
+                }
+                if (incompatible || !foundHaupthausResv) {
+                    incompatibleTemplates.Add(templatePath);
+                    Log(string.Format(Loc.Get("LogEndlessSdlPatternMissing"), templatePath));
+                    continue;
+                }
+                if (changed) {
+                    byte[] newBytes = Encoding.Latin1.GetBytes(string.Join("\n", lines));
+                    results[templatePath] = GameLZSS.CompressPfil(newBytes, raw);
+                    patched++;
+                }
+            }
+
+            if (enabled && incompatibleTemplates.Count > 0) {
+                throw new InvalidOperationException(string.Format(
+                    "AI 終極模式偵測到 {0} 個不相容的無盡聚落模板，已取消整批套用。",
+                    incompatibleTemplates.Count));
+            }
+
+            if (enabled) {
+                Log(string.Format(Loc.Get("LogEndlessSdlApplied"), patched, EndlessSdlUltimateHaupthausResv));
+            } else {
+                Log(string.Format(Loc.Get("LogEndlessSdlRestored"), patched));
             }
 
             return results;

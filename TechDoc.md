@@ -20,17 +20,17 @@
 
 | 檔案 | 責任 |
 |---|---|
-| `Program.cs` | WinForms 入口、DPI、UAC |
-| `ModifierForm.cs` | 手工 UI、事件 wiring、文件頁 |
-| `ModifierForm.Data.cs` | 備份載入、目前資料讀取、狀態偵測、顯示 |
-| `ModifierForm.Patches.cs` | 套用、回復、rollback、遊戲檔補丁 |
-| `ModifierForm.Presets.cs` | `.arpreset` 匯入／匯出 |
-| `ModifierForm.SaveManager.cs` | 存檔瀏覽、備份、回復、刪除 |
-| `ModifierForm.DgVoodoo.cs` | dgVoodoo2 受管安裝／移除 |
-| `TroopConfig.cs` | 欄位 enum、單位 metadata、平衡規則 |
-| `TroopPresetForm.cs` | 9 欄單位 preset 編輯 |
-| `GameLZSS.cs` | 遊戲 LZSS 與 `PFIL@` 包裝 |
-| `Localization.cs` | 中英文 UI／log |
+| `src/Program.cs` | WinForms 入口、DPI、UAC |
+| `src/UI/ModifierForm.cs` | 手工 UI、事件 wiring、文件頁 |
+| `src/UI/ModifierForm.Data.cs` | 備份載入、目前資料讀取、狀態偵測、顯示 |
+| `src/UI/ModifierForm.Patches.cs` | 套用、回復、rollback、遊戲檔補丁 |
+| `src/UI/ModifierForm.Presets.cs` | 一鍵啟用／關閉所有功能控制 |
+| `src/UI/ModifierForm.SaveManager.cs` | 存檔瀏覽、備份、回復、刪除 |
+| `src/UI/ModifierForm.DgVoodoo.cs` | dgVoodoo2 受管安裝／移除 |
+| `src/Core/TroopConfig.cs` | 欄位 enum、單位 metadata、平衡規則 |
+| `src/UI/TroopPresetForm.cs` | 9 欄單位 preset 編輯 |
+| `src/Core/GameLZSS.cs` | 遊戲 LZSS 與 `PFIL@` 包裝 |
+| `src/Core/Localization.cs` | 中英文 UI／log |
 | `data/game_schema.json` | 機器可讀的欄位、offset 與 patch metadata |
 
 目標框架為 .NET 8 Windows、WinForms、x64、nullable enabled、PerMonitorV2 DPI。程式 manifest 要求管理員權限，因為正常遊戲安裝位於 `Program Files (x86)`。
@@ -58,9 +58,17 @@ commit 後要先 Dispose／清空 rollback scope，再更新 UI；UI refresh 例
 ## 5. `PFIL@` 與 CSV-like 格式
 
 - `DecompressPfil` 讀取 64-byte PFIL header 與 LZSS payload；無 PFIL header 時回傳原始 bytes。
-- `CompressPfil` 要求原始 header 至少 64 bytes，並重寫解壓大小。
+- `CompressPfil` 要求原始 header 至少 64 bytes，並重寫解壓大小（header offset 16 是唯一的大小欄位）。
 - 遊戲文字使用 Windows-1251；專案文件使用 UTF-8。
 - 修改後至少驗證 `decompress(compress(payload)) == payload`。
+- **環狀視窗初始化契約（2026-07-02 修正）**：遊戲 EXE 解壓器（`FUN_00565c00`）
+  只把環狀視窗前 `0xFEE` 個位置填為空格 `0x20`，最後 18 個位置
+  （`0xFEE..0xFFF`）是 `memset(0)` 後的 `0x00`；寫入位置從 `0xFEE` 開始。
+  壓縮器的視窗模型必須完全一致。舊版 `GameLZSS` 把整個視窗當成全空格，
+  導致檔案開頭 18 bytes 內的空格串可能被匹配到 `0xFEE..0xFFF` 的「假想空格」，
+  遊戲解壓時輸出 `0x00`——文字檔會被 NUL 截斷（症狀：`No Mem len=0
+  CLMK\mk_tcon.c [1138]`，`.sdl` 解析出 0 個物件）。二進位檔（BCI）
+  開頭無空格串所以從未觸發。
 - `objdef.dau` 還要求解壓文字總長不變。
 - 資料是簡單逗號分隔，現行相容契約為 `Split(',')`／`Join`；不要換成 RFC 4180 quote parser。
 
@@ -83,6 +91,8 @@ commit 後要先 Dispose／清空 rollback scope，再更新 UI；UI refresh 例
 | 142 | Aw | stable |
 | 146 | Vw | stable |
 | 156 | HousingCapacity / `wohnwer` | stable |
+| 73 | BuildTime / `buildt` | stable |
+| 74 | UpgradeTime / `upgrdt` | stable |
 | 191 | Bmovs | stable |
 | 199 | Weapon 1 damage/type base | candidate |
 
@@ -97,6 +107,14 @@ commit 後要先 Dispose／清空 rollback scope，再更新 UI；UI refresh 例
 - 保留欄位寬度與整個解壓 payload 長度。
 - `LoadCurrentData` 以所有正值 row 對比 `original * 20` 來偵測狀態。
 - 整合 UI、preset、apply、restore 與 state detection。
+
+### 6.3 建築建造、升級與維修加速 10 倍
+
+- 對所有以 `Bau` 開頭（即建築物）的 row 生效。
+- 讀取備份原版的 `buildt` (Index 73) 與 `upgrdt` (Index 74)，若數值大於 0 則除以 10，最低限制為 1 毫秒，防止因 0 導致計時器異常。
+- 修改後使用 `PadLeft` 與 `CheckLen` 維持原欄位字串長度，確保 `objdef.dau` 檔案解壓長度完全一致。
+- 遊戲中的維修效率是由生命值與建造時間決定。當建造時間縮短 10 倍，每秒修復生命值比例即同步提升 10 倍，實現建造、升級與維修的全面加速。
+- 整合 UI、一鍵預設開關、讀取現有設定偵測、套用及還原機制。
 
 ## 7. `ress.ini`
 
@@ -142,17 +160,24 @@ commit 後要先 Dispose／清空 rollback scope，再更新 UI；UI refresh 例
 目前目標狀態：
 
 - 增援 count：4 → 20；EXE runtime clamp 為 1..20。
-- respawn cooldown：180000 ms → 5000 ms。
+- 軍事型 respawn cooldown：180000 ms → 5000 ms。
+- 村落型電腦被擊敗後的 respawn cooldown（`0x17F38`）：600000 ms → 5000 ms。
 - active-party limit：4 → 8。
 - completed-job recycle：0 → 1。
 - gate 保持原版 `66,0`。
 - 只把前三個軍事增援 polling loops 改為 `5000..10000 ms`；其他 loops 回原始範圍。
+- 聚落模板：`MAPS/ENDL_*/Endlos_*_Siedlung*.sdl`（解壓後為 INI 文字）主建築
+  （namedef 含 `_Haupt`；羅馬為 `Hauptzelt`）的 `resv` 由 `0,0,0,0,0,0` 改為
+  `614,300,372,250,460,288`（各欄取原版戰役 AI 聚落實測最大值），加速村莊型
+  AI 起步；還原時改回全零。MP_* 下的同名模板不動，維持 ENDL 範圍一致。
 
 舊版 `112,272` gate bypass 已否決：它會配合過快 loops 耗盡每隊 20-slot NPC job table，造成後期不再補兵。現行 migration 一律恢復 `66,0`。
 
-全域 CLAK 經濟 patch 也已否決：`ak_npc.bci`、`ak_produktion.bci`、`ak_haupthaus.bci` 的舊修改會讓玩家資源建築停止生產；現行程式只還原，不啟用。
+全域 CLAK 經濟 patch 部分否決：`ak_npc.bci`（自由平民保留）與 `ak_produktion.bci`（生產閘門）的舊修改會讓玩家資源建築停止生產，一律還原、不啟用。
 
-2026-07-01 曾從 `ESAVE_000`／`ENDL_002` 的 `CLAK\scr.dat` 取出內嵌 `ak_level`，與 live BCI 做 exact SHA-256 比對，兩者相同，且讀到 20／5000／8／recycle 1／gate `66,0`。因此主觀「沒有變」可能是存檔已排程 job／timer，不代表 bytes 未寫入。
+`ak_haupthaus.bci` 的轉換人數修改（`0x3FCC` 處 `[81,59] -> [66,20]`，特徵碼唯一命中）已重新啟用並跟隨 AI Ultimate 開關：`s_createBattleUnitsMax` 的最後一個引數由「推入變數 59」改為「推入常數 20」。EXE 端實作 `FUN_005249d0` 證實該引數是每支戰鬥部隊的成員數（EXE 鉗制 0..20），且每次呼叫會收集最多 100 名閒置村民、按此人數分批全部轉換（一批 = 一支部隊）。實際運行時原版值為 6，即玩家觀察到的 6 人小隊。玩家手動轉換 UI 是否受影響仍需一次實機回歸驗證。
+
+2026-07-01 曾從 `ESAVE_000`／`ENDL_002` 的 `CLAK\scr.dat` 取出內嵌 `ak_level`，與 live BCI 做 exact SHA-256 比對，兩者相同，且讀到 20／5000／8／recycle 1／gate `66,0`。2026-07-02 再讀目前存檔時，team 3 為 NPC inactive、保留 71 筆村落資料、全部 NPC job slots 空閒，而第二條村落型重生計時仍為 600000 ms；因此 AI Ultimate 現在也把 `0x17F38` 改為 5000 ms，並將舊終極模式狀態視為可遷移版本。
 
 目前仍需五張 ENDL 地圖的長時間 late-wave regression test；短期成功不能標成完整 runtime verified。
 
@@ -182,7 +207,7 @@ commit 後要先 Dispose／清空 rollback scope，再更新 UI；UI refresh 例
 - `0x1366c4`, `0x1366cd`
 - `0x0d722c`, `0x0d723b`
 
-現行程式不再寫入舊 `07` bytes，只偵測並還原。2x setter 曾實機確認建造範圍與紅框同步；2.5x 目前為靜態驗證、待新的遊戲內確認。
+現行程式不再寫入舊 `07` bytes，只偵測並還原。2.5x 建造範圍與紅框同步已完成實機驗證確認。
 
 ## 12. 強制英文與語言回復
 
@@ -210,9 +235,10 @@ ZIP 備份先建立 `.tmp`，加入修改器產生的 `manifest.json`，成功�
 
 - `mainTabControl` 的 header 故意隱藏，左側按鈕負責導航。
 - `StyleNavButton` 綁定前必須先建立對應 `TabPage`。
-- `pnlSwitchesCard` 是核心開關區，手工座標不可大範圍自動重排。
-- 新 toggle 必須同步 UI field、localization、apply、restore、state detection、preset save/load 與文件。
-- `.arpreset` 使用簡單 INI-like 格式與 invariant culture；保留舊 `PopLimit`／`CiviSpeed` 相容。
+- `pnlNumericCard`（系統）、`pnlSwitchesCard`（資源）與 `pnlBuildCard`（建設）是核心開關區，手工座標為三欄並排，修改或新增開關時需注意各卡片手工座標定位。
+- `pnlTipsCard` 指南卡片拆分為左右雙欄，左半部 `lblTipsContent` 顯示操作指引，右半部 `lblTipsDetail` 顯示功能詳細說明，以避免說明文字過長導致的高度截斷問題。
+- 新 toggle 必須同步 UI field、localization、apply、restore、state detection 與文件。
+- 移除舊有的 `.arpreset` 全域設定檔匯入／匯出功能，改由一鍵「所有功能開啟」與「所有功能關閉」按鈕控制所有開關狀態。
 - `.artroop` 目前有 9 個屬性；舊短格式缺欄位時使用 fallback。
 
 ## 16. 逆向工程工作流
@@ -230,7 +256,6 @@ ZIP 備份先建立 `.tmp`，加入修改器產生的 `manifest.json`，成功�
 ## 17. 未完成項目
 
 - AI Ultimate 五張 ENDL 地圖的長時間回歸。
-- 2.5x village range／red frame 新倍率的實機確認。
 - `apt.dat` 的安全格式與用途。
 - BCI opcode 的完整解碼。
 - `[volkres]` 多個 candidate 欄位。
