@@ -24,6 +24,7 @@ namespace AgainstRomeModifier {
         private static readonly Regex RegexMoraleFleePatch = new Regex(@"^(MoralsDecFlee\s*=\s*[A-Z]{3}\s*,\s*)\d+(.*)$", RegexOptions.Compiled);
         private static readonly Regex RegexMoraleOverPopPatch = new Regex(@"^(MoralsDecOverPop\s*=\s*[A-Z]{3}\s*,\s*)\d+(.*)$", RegexOptions.Compiled);
         private static readonly Regex RegexMoraleIncIdlePatch = new Regex(@"^(MoralsIncIdle\s*=\s*[A-Z]{3}\s*,\s*)\d+(.*)$", RegexOptions.Compiled);
+        private static readonly Regex RegexMoraleKey = new Regex(@"^(MoralsDecLostMem|MoralsDecFlee|MoralsDecOverPop|MoralsIncIdle)\s*=\s*([A-Z]{3})\s*,", RegexOptions.Compiled);
         private static readonly byte[] ExeFocusOriginalBytes = new byte[] { 0x89, 0x15, 0xC4, 0x7D, 0x9E, 0x02 };
         private static readonly byte[] ExeFocusPatchedBytes = new byte[] { 0x90, 0x90, 0x90, 0x90, 0x90, 0x90 };
         private const long ExeFocusPatchOffset = 0x161a88;
@@ -346,17 +347,53 @@ namespace AgainstRomeModifier {
                 bool villageBuildRange = chkVillageBuildRange.Checked;
 
                 await Task.Run(() => {
-                    ApplyExePatch(gamePath, focusLoss, villageBuildRange, rollback);
-                    ApplyClScriptPatch(gamePath, fastCiviProduction, infMorale, balance, rollback);
-                    ApplyRessPatch(gamePath, freeProd, freeUp, noSpell, rollback);
-                    ApplyObjdefPatch(gamePath, balance, housingCapacity20x, rollback);
-                    RestoreTeamFiles(gamePath, rollback);
-                    if (maxPopulation) {
-                        ApplyTeamDatPatch(gamePath, rollback);
+                    // 1. Dry Run 階段：在記憶體中生成所有補丁 byte[] 並驗證
+                    var patchedFiles = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
+
+                    // A. Against_Rome.exe
+                    string exePath = Path.Combine(gamePath, @"Against_Rome.exe");
+                    byte[] exeBytes = File.ReadAllBytes(exePath);
+                    bool exeModified = false;
+                    ApplyExePatch(exeBytes, focusLoss, villageBuildRange, ref exeModified);
+                    if (exeModified) {
+                        patchedFiles[exePath] = exeBytes;
                     }
-                    ApplyEndlessAiUltimateModePatch(gamePath, aiUltimateMode, rollback);
+
+                    // B. cl_script.ini
+                    byte[] clBytes = GetPatchedClScriptBytes(gamePath, fastCiviProduction, infMorale, balance);
+                    patchedFiles[Path.Combine(gamePath, @"SYSTEM\cl_script.ini")] = clBytes;
+
+                    // C. ress.ini
+                    byte[] ressBytes = GetPatchedRessBytes(freeProd, freeUp, noSpell);
+                    patchedFiles[Path.Combine(gamePath, @"SYSTEM\ress.ini")] = ressBytes;
+
+                    // D. objdef.dau
+                    byte[] objdefBytes = GetPatchedObjdefBytes(balance, housingCapacity20x);
+                    patchedFiles[Path.Combine(gamePath, @"SYSTEM\DATA_MP\DEFAULTS\objdef.dau")] = objdefBytes;
+
+                    // E. team.dat
+                    var teamDatPatches = GetPatchedTeamDatBytes(maxPopulation);
+                    foreach (var kvp in teamDatPatches) {
+                        patchedFiles[Path.Combine(gamePath, kvp.Key.Replace('/', '\\'))] = kvp.Value;
+                    }
+
+                    // F. endless AI scripts
+                    var endlessPatches = GetPatchedEndlessScripts(gamePath, aiUltimateMode);
+                    foreach (var kvp in endlessPatches) {
+                        patchedFiles[kvp.Key] = kvp.Value;
+                    }
+
+                    // Dry Run 順利結束，未拋出任何異常。進入實體檔案寫入與交易範圍
+                    foreach (var kvp in patchedFiles) {
+                        SafeWriteAllBytes(kvp.Key, kvp.Value, rollback);
+                    }
+
+                    // 其它不涉及複雜解壓修改且安全的補丁
                     ApplyLanguagePatch(gamePath, toEng, rollback);
                     ApplyDgVoodooPatch(gamePath, dgVoodoo, rollback);
+
+                    // 呼叫無盡經濟模式還原
+                    ApplyEndlessAiVillageEconomyPatch(gamePath, false, rollback);
                 });
 
                 rollback.Commit();
@@ -411,9 +448,31 @@ namespace AgainstRomeModifier {
                 rollback = new FileRollbackScope();
                 Log("已建立還原前檔案回復點。");
                 await Task.Run(() => {
+                    var patchedFiles = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
+
+                    // EXE 還原
+                    string exePath = Path.Combine(gamePath, @"Against_Rome.exe");
+                    byte[] exeBytes = File.ReadAllBytes(exePath);
+                    bool exeModified = false;
+                    ApplyExePatch(exeBytes, false, false, ref exeModified);
+                    if (exeModified) {
+                        patchedFiles[exePath] = exeBytes;
+                    }
+
+                    // 無盡 AI 還原
+                    var endlessPatches = GetPatchedEndlessScripts(gamePath, false);
+                    foreach (var kvp in endlessPatches) {
+                        patchedFiles[kvp.Key] = kvp.Value;
+                    }
+
+                    // 還原其它屬性 INI 與 team.dat 到備份原版
                     RestoreStatsOnlyInternal(gamePath, rollback);
-                    ApplyExePatch(gamePath, false, false, rollback);
-                    ApplyEndlessAiUltimateModePatch(gamePath, false, rollback);
+
+                    // 統一寫入記憶體修改之檔案
+                    foreach (var kvp in patchedFiles) {
+                        SafeWriteAllBytes(kvp.Key, kvp.Value, rollback);
+                    }
+
                     ApplyLanguagePatch(gamePath, false, rollback);
                     ApplyDgVoodooPatch(gamePath, false, rollback);
                 });
@@ -511,8 +570,28 @@ namespace AgainstRomeModifier {
                 rollback = new FileRollbackScope();
                 Log("已建立還原前檔案回復點。");
                 await Task.Run(() => {
-                    ApplyExePatch(gamePath, false, false, rollback);
-                    ApplyEndlessAiUltimateModePatch(gamePath, false, rollback);
+                    var patchedFiles = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
+
+                    // EXE 還原
+                    string exePath = Path.Combine(gamePath, @"Against_Rome.exe");
+                    byte[] exeBytes = File.ReadAllBytes(exePath);
+                    bool exeModified = false;
+                    ApplyExePatch(exeBytes, false, false, ref exeModified);
+                    if (exeModified) {
+                        patchedFiles[exePath] = exeBytes;
+                    }
+
+                    // 無盡 AI 還原
+                    var endlessPatches = GetPatchedEndlessScripts(gamePath, false);
+                    foreach (var kvp in endlessPatches) {
+                        patchedFiles[kvp.Key] = kvp.Value;
+                    }
+
+                    // 統一寫入記憶體修改之檔案
+                    foreach (var kvp in patchedFiles) {
+                        SafeWriteAllBytes(kvp.Key, kvp.Value, rollback);
+                    }
+
                     ApplyDgVoodooPatch(gamePath, false, rollback);
                 });
                 rollback.Commit();
@@ -817,120 +896,81 @@ namespace AgainstRomeModifier {
             Expanded2Point5x
         }
 
-        private ExePatchState GetExePatchState(string exePath) {
-            if (!File.Exists(exePath)) return ExePatchState.Unknown;
-            using (var fs = new FileStream(exePath, FileMode.Open, FileAccess.Read, FileShare.Read)) {
-                if (fs.Length < ExeFocusPatchRequiredLength) {
-                    return ExePatchState.Unknown;
-                }
-                fs.Seek(ExeFocusPatchOffset, SeekOrigin.Begin);
-                byte[] bytes = new byte[ExeFocusOriginalBytes.Length];
-                int read = fs.Read(bytes, 0, bytes.Length);
-                if (read != bytes.Length) return ExePatchState.Unknown;
-                if (bytes.SequenceEqual(ExeFocusOriginalBytes)) return ExePatchState.Original;
-                if (bytes.SequenceEqual(ExeFocusPatchedBytes)) return ExePatchState.FocusPatched;
+        private ExePatchState GetExePatchState(byte[] exeBytes) {
+            if (exeBytes.Length < ExeFocusPatchRequiredLength) {
+                return ExePatchState.Unknown;
             }
+            byte[] bytes = new byte[ExeFocusOriginalBytes.Length];
+            Buffer.BlockCopy(exeBytes, (int)ExeFocusPatchOffset, bytes, 0, bytes.Length);
+            if (bytes.SequenceEqual(ExeFocusOriginalBytes)) return ExePatchState.Original;
+            if (bytes.SequenceEqual(ExeFocusPatchedBytes)) return ExePatchState.FocusPatched;
             return ExePatchState.Unknown;
         }
 
-        private void WriteExePatchBytes(string exePath, byte[] patchBytes, FileRollbackScope? rollback) {
-            WriteExePatchBytes(exePath, ExeFocusPatchOffset, patchBytes, rollback);
+        private static void WriteExeBytesInMemory(byte[] exeBytes, long patchOffset, byte[] patchBytes) {
+            Buffer.BlockCopy(patchBytes, 0, exeBytes, (int)patchOffset, patchBytes.Length);
         }
 
-        // TrackFile is idempotent, so repeated EXE byte writes share one rollback snapshot.
-        private void WriteExePatchBytes(string exePath, long patchOffset, byte[] patchBytes, FileRollbackScope? rollback) {
-            rollback?.TrackFile(exePath);
-            using (var fs = new FileStream(exePath, FileMode.Open, FileAccess.ReadWrite, FileShare.None)) {
-                fs.Seek(patchOffset, SeekOrigin.Begin);
-                fs.Write(patchBytes, 0, patchBytes.Length);
+        private ExeVillageRangePatchState GetVillageBuildRangePatchState(byte[] exeBytes) {
+            if (exeBytes.Length < ExeVillageRangePatchRequiredLength) {
+                return ExeVillageRangePatchState.Unknown;
             }
-        }
 
-        private ExeVillageRangePatchState GetVillageBuildRangePatchState(string exePath) {
-            if (!File.Exists(exePath)) return ExeVillageRangePatchState.Unknown;
-            using (var fs = new FileStream(exePath, FileMode.Open, FileAccess.Read, FileShare.Read)) {
-                if (fs.Length < ExeVillageRangePatchRequiredLength) {
-                    return ExeVillageRangePatchState.Unknown;
-                }
+            byte[] xBytes = new byte[ExeVillageRangeXOriginalBytes.Length];
+            Buffer.BlockCopy(exeBytes, (int)ExeVillageRangeXPatchOffset, xBytes, 0, xBytes.Length);
 
-                fs.Seek(ExeVillageRangeXPatchOffset, SeekOrigin.Begin);
-                byte[] xBytes = new byte[ExeVillageRangeXOriginalBytes.Length];
-                int xRead = fs.Read(xBytes, 0, xBytes.Length);
-                if (xRead != xBytes.Length) return ExeVillageRangePatchState.Unknown;
+            byte[] zBytes = new byte[ExeVillageRangeZOriginalBytes.Length];
+            Buffer.BlockCopy(exeBytes, (int)ExeVillageRangeZPatchOffset, zBytes, 0, zBytes.Length);
 
-                fs.Seek(ExeVillageRangeZPatchOffset, SeekOrigin.Begin);
-                byte[] zBytes = new byte[ExeVillageRangeZOriginalBytes.Length];
-                int zRead = fs.Read(zBytes, 0, zBytes.Length);
-                if (zRead != zBytes.Length) return ExeVillageRangePatchState.Unknown;
+            byte[] frameXBytes = new byte[ExeVillageFrameXOriginalBytes.Length];
+            Buffer.BlockCopy(exeBytes, (int)ExeVillageFrameXPatchOffset, frameXBytes, 0, frameXBytes.Length);
 
-                fs.Seek(ExeVillageFrameXPatchOffset, SeekOrigin.Begin);
-                byte[] frameXBytes = new byte[ExeVillageFrameXOriginalBytes.Length];
-                int frameXRead = fs.Read(frameXBytes, 0, frameXBytes.Length);
-                if (frameXRead != frameXBytes.Length) return ExeVillageRangePatchState.Unknown;
+            byte[] frameZBytes = new byte[ExeVillageFrameZOriginalBytes.Length];
+            Buffer.BlockCopy(exeBytes, (int)ExeVillageFrameZPatchOffset, frameZBytes, 0, frameZBytes.Length);
 
-                fs.Seek(ExeVillageFrameZPatchOffset, SeekOrigin.Begin);
-                byte[] frameZBytes = new byte[ExeVillageFrameZOriginalBytes.Length];
-                int frameZRead = fs.Read(frameZBytes, 0, frameZBytes.Length);
-                if (frameZRead != frameZBytes.Length) return ExeVillageRangePatchState.Unknown;
-
-                bool original = xBytes.SequenceEqual(ExeVillageRangeXOriginalBytes) &&
-                    zBytes.SequenceEqual(ExeVillageRangeZOriginalBytes) &&
-                    frameXBytes.SequenceEqual(ExeVillageFrameXOriginalBytes) &&
-                    frameZBytes.SequenceEqual(ExeVillageFrameZOriginalBytes);
-                bool legacyLogicOnly = xBytes.SequenceEqual(ExeVillageRangeXPatchedBytes) &&
-                    zBytes.SequenceEqual(ExeVillageRangeZPatchedBytes) &&
-                    frameXBytes.SequenceEqual(ExeVillageFrameXOriginalBytes) &&
-                    frameZBytes.SequenceEqual(ExeVillageFrameZOriginalBytes);
-                bool expanded = xBytes.SequenceEqual(ExeVillageRangeXPatchedBytes) &&
-                    zBytes.SequenceEqual(ExeVillageRangeZPatchedBytes) &&
-                    frameXBytes.SequenceEqual(ExeVillageFrameXPatchedBytes) &&
-                    frameZBytes.SequenceEqual(ExeVillageFrameZPatchedBytes);
-                if (original) return ExeVillageRangePatchState.Original;
-                if (legacyLogicOnly) return ExeVillageRangePatchState.LegacyLogicOnly;
-                if (expanded) return ExeVillageRangePatchState.Expanded;
-            }
+            bool original = xBytes.SequenceEqual(ExeVillageRangeXOriginalBytes) &&
+                zBytes.SequenceEqual(ExeVillageRangeZOriginalBytes) &&
+                frameXBytes.SequenceEqual(ExeVillageFrameXOriginalBytes) &&
+                frameZBytes.SequenceEqual(ExeVillageFrameZOriginalBytes);
+            bool legacyLogicOnly = xBytes.SequenceEqual(ExeVillageRangeXPatchedBytes) &&
+                zBytes.SequenceEqual(ExeVillageRangeZPatchedBytes) &&
+                frameXBytes.SequenceEqual(ExeVillageFrameXOriginalBytes) &&
+                frameZBytes.SequenceEqual(ExeVillageFrameZOriginalBytes);
+            bool expanded = xBytes.SequenceEqual(ExeVillageRangeXPatchedBytes) &&
+                zBytes.SequenceEqual(ExeVillageRangeZPatchedBytes) &&
+                frameXBytes.SequenceEqual(ExeVillageFrameXPatchedBytes) &&
+                frameZBytes.SequenceEqual(ExeVillageFrameZPatchedBytes);
+            if (original) return ExeVillageRangePatchState.Original;
+            if (legacyLogicOnly) return ExeVillageRangePatchState.LegacyLogicOnly;
+            if (expanded) return ExeVillageRangePatchState.Expanded;
             return ExeVillageRangePatchState.Unknown;
         }
 
-        private ExeVillageSetterPatchState GetVillageSetterPatchState(string exePath) {
-            if (!File.Exists(exePath)) return ExeVillageSetterPatchState.Unknown;
-            using (var fs = new FileStream(exePath, FileMode.Open, FileAccess.Read, FileShare.Read)) {
-                if (fs.Length < ExeVillageSetterPatchRequiredLength) {
-                    return ExeVillageSetterPatchState.Unknown;
-                }
-
-                fs.Seek(ExeVillageSetterHookOffset, SeekOrigin.Begin);
-                byte[] hookBytes = new byte[ExeVillageSetterHookOriginalBytes.Length];
-                if (fs.Read(hookBytes, 0, hookBytes.Length) != hookBytes.Length) {
-                    return ExeVillageSetterPatchState.Unknown;
-                }
-
-                fs.Seek(ExeVillageSetterCaveOffset, SeekOrigin.Begin);
-                byte[] caveBytes = new byte[ExeVillageSetterCaveOriginalBytes.Length];
-                if (fs.Read(caveBytes, 0, caveBytes.Length) != caveBytes.Length) {
-                    return ExeVillageSetterPatchState.Unknown;
-                }
-
-                bool original = hookBytes.SequenceEqual(ExeVillageSetterHookOriginalBytes) &&
-                    caveBytes.SequenceEqual(ExeVillageSetterCaveOriginalBytes);
-                bool legacy2x = hookBytes.SequenceEqual(ExeVillageSetterHookPatchedBytes) &&
-                    caveBytes.SequenceEqual(ExeVillageSetterCaveLegacy2xBytes);
-                bool expanded2Point5x = hookBytes.SequenceEqual(ExeVillageSetterHookPatchedBytes) &&
-                    caveBytes.SequenceEqual(ExeVillageSetterCavePatchedBytes);
-                if (original) return ExeVillageSetterPatchState.Original;
-                if (legacy2x) return ExeVillageSetterPatchState.Legacy2x;
-                if (expanded2Point5x) return ExeVillageSetterPatchState.Expanded2Point5x;
+        private ExeVillageSetterPatchState GetVillageSetterPatchState(byte[] exeBytes) {
+            if (exeBytes.Length < ExeVillageSetterPatchRequiredLength) {
+                return ExeVillageSetterPatchState.Unknown;
             }
+
+            byte[] hookBytes = new byte[ExeVillageSetterHookOriginalBytes.Length];
+            Buffer.BlockCopy(exeBytes, (int)ExeVillageSetterHookOffset, hookBytes, 0, hookBytes.Length);
+
+            byte[] caveBytes = new byte[ExeVillageSetterCaveOriginalBytes.Length];
+            Buffer.BlockCopy(exeBytes, (int)ExeVillageSetterCaveOffset, caveBytes, 0, caveBytes.Length);
+
+            bool original = hookBytes.SequenceEqual(ExeVillageSetterHookOriginalBytes) &&
+                caveBytes.SequenceEqual(ExeVillageSetterCaveOriginalBytes);
+            bool legacy2x = hookBytes.SequenceEqual(ExeVillageSetterHookPatchedBytes) &&
+                caveBytes.SequenceEqual(ExeVillageSetterCaveLegacy2xBytes);
+            bool expanded2Point5x = hookBytes.SequenceEqual(ExeVillageSetterHookPatchedBytes) &&
+                caveBytes.SequenceEqual(ExeVillageSetterCavePatchedBytes);
+            if (original) return ExeVillageSetterPatchState.Original;
+            if (legacy2x) return ExeVillageSetterPatchState.Legacy2x;
+            if (expanded2Point5x) return ExeVillageSetterPatchState.Expanded2Point5x;
             return ExeVillageSetterPatchState.Unknown;
         }
 
-        /// <summary>
-        /// The four-site village-range candidate failed runtime verification. Never apply it;
-        /// only restore bytes written by an earlier modifier build.
-        /// </summary>
-        private void RestoreLegacyVillageBuildRangePatch(string gamePath, FileRollbackScope? rollback = null) {
-            string dest = Path.Combine(gamePath, @"Against_Rome.exe");
-            ExeVillageRangePatchState state = GetVillageBuildRangePatchState(dest);
+        private void RestoreLegacyVillageBuildRangePatch(byte[] exeBytes, ref bool exeModified) {
+            ExeVillageRangePatchState state = GetVillageBuildRangePatchState(exeBytes);
             if (state == ExeVillageRangePatchState.Unknown) {
                 Log(Loc.Get("LogVillageBuildRangeWarning"));
                 return;
@@ -938,17 +978,17 @@ namespace AgainstRomeModifier {
 
             if (state == ExeVillageRangePatchState.Expanded ||
                 state == ExeVillageRangePatchState.LegacyLogicOnly) {
-                WriteExePatchBytes(dest, ExeVillageRangeXPatchOffset, ExeVillageRangeXOriginalBytes, rollback);
-                WriteExePatchBytes(dest, ExeVillageRangeZPatchOffset, ExeVillageRangeZOriginalBytes, rollback);
-                WriteExePatchBytes(dest, ExeVillageFrameXPatchOffset, ExeVillageFrameXOriginalBytes, rollback);
-                WriteExePatchBytes(dest, ExeVillageFrameZPatchOffset, ExeVillageFrameZOriginalBytes, rollback);
+                WriteExeBytesInMemory(exeBytes, ExeVillageRangeXPatchOffset, ExeVillageRangeXOriginalBytes);
+                WriteExeBytesInMemory(exeBytes, ExeVillageRangeZPatchOffset, ExeVillageRangeZOriginalBytes);
+                WriteExeBytesInMemory(exeBytes, ExeVillageFrameXPatchOffset, ExeVillageFrameXOriginalBytes);
+                WriteExeBytesInMemory(exeBytes, ExeVillageFrameZPatchOffset, ExeVillageFrameZOriginalBytes);
+                exeModified = true;
                 Log(Loc.Get("LogVillageBuildRangeRestored"));
             }
         }
 
-        private void ApplyVillageSetterRangePatch(string gamePath, bool enabled, FileRollbackScope? rollback = null) {
-            string dest = Path.Combine(gamePath, @"Against_Rome.exe");
-            ExeVillageSetterPatchState state = GetVillageSetterPatchState(dest);
+        private void ApplyVillageSetterRangePatch(byte[] exeBytes, bool enabled, ref bool exeModified) {
+            ExeVillageSetterPatchState state = GetVillageSetterPatchState(exeBytes);
             if (state == ExeVillageSetterPatchState.Unknown) {
                 if (enabled) {
                     throw new InvalidOperationException(Loc.Get("LogVillageBuildRangeWarning"));
@@ -960,69 +1000,124 @@ namespace AgainstRomeModifier {
             if (enabled) {
                 if (state == ExeVillageSetterPatchState.Original ||
                     state == ExeVillageSetterPatchState.Legacy2x) {
-                    WriteExePatchBytes(dest, ExeVillageSetterCaveOffset, ExeVillageSetterCavePatchedBytes, rollback);
-                    WriteExePatchBytes(dest, ExeVillageSetterHookOffset, ExeVillageSetterHookPatchedBytes, rollback);
+                    WriteExeBytesInMemory(exeBytes, ExeVillageSetterCaveOffset, ExeVillageSetterCavePatchedBytes);
+                    WriteExeBytesInMemory(exeBytes, ExeVillageSetterHookOffset, ExeVillageSetterHookPatchedBytes);
+                    exeModified = true;
                 }
                 Log(Loc.Get("LogVillageBuildRangeApplied"));
             } else {
                 if (state == ExeVillageSetterPatchState.Legacy2x ||
                     state == ExeVillageSetterPatchState.Expanded2Point5x) {
-                    WriteExePatchBytes(dest, ExeVillageSetterHookOffset, ExeVillageSetterHookOriginalBytes, rollback);
-                    WriteExePatchBytes(dest, ExeVillageSetterCaveOffset, ExeVillageSetterCaveOriginalBytes, rollback);
+                    WriteExeBytesInMemory(exeBytes, ExeVillageSetterHookOffset, ExeVillageSetterHookOriginalBytes);
+                    WriteExeBytesInMemory(exeBytes, ExeVillageSetterCaveOffset, ExeVillageSetterCaveOriginalBytes);
+                    exeModified = true;
                     Log(Loc.Get("LogVillageBuildRangeSetterRestored"));
                 }
             }
         }
 
-        private void ApplyExePatch(string gamePath, bool focusLossChecked, bool villageBuildRangeChecked, FileRollbackScope? rollback = null) {
-            string dest = Path.Combine(gamePath, @"Against_Rome.exe");
-            rollback?.TrackFile(dest);
-            ExePatchState state = GetExePatchState(dest);
+        private void ApplyExePatch(byte[] exeBytes, bool focusLossChecked, bool villageBuildRangeChecked, ref bool exeModified) {
+            ExePatchState state = GetExePatchState(exeBytes);
             if (state == ExePatchState.Unknown) {
                 throw new Exception("Against_Rome.exe 版本或位元組特徵不符合預期，已停止相容性補丁以避免覆蓋未知版本。");
             }
 
             if (focusLossChecked) {
                 if (state == ExePatchState.Original) {
-                    WriteExePatchBytes(dest, ExeFocusPatchedBytes, rollback);
+                    WriteExeBytesInMemory(exeBytes, ExeFocusPatchOffset, ExeFocusPatchedBytes);
+                    exeModified = true;
                 }
                 Log(Loc.Get("LogExePatchFocus"));
             } else {
                 if (state == ExePatchState.FocusPatched) {
-                    WriteExePatchBytes(dest, ExeFocusOriginalBytes, rollback);
+                    WriteExeBytesInMemory(exeBytes, ExeFocusPatchOffset, ExeFocusOriginalBytes);
+                    exeModified = true;
                 }
                 Log(Loc.Get("LogExePatchOrig"));
             }
 
-            RestoreLegacyVillageBuildRangePatch(gamePath, rollback);
+            RestoreLegacyVillageBuildRangePatch(exeBytes, ref exeModified);
             if (villageBuildRangeChecked &&
-                GetVillageBuildRangePatchState(dest) != ExeVillageRangePatchState.Original) {
+                GetVillageBuildRangePatchState(exeBytes) != ExeVillageRangePatchState.Original) {
                 throw new InvalidOperationException(Loc.Get("LogVillageBuildRangeWarning"));
             }
-            ApplyVillageSetterRangePatch(gamePath, villageBuildRangeChecked, rollback);
+            ApplyVillageSetterRangePatch(exeBytes, villageBuildRangeChecked, ref exeModified);
         }
 
         /// <summary>
         /// 修改 cl_script.ini 檔案，自訂村民產生速度、法術影響半徑以及無限士氣等功能。
         /// </summary>
-        private void ApplyClScriptPatch(string gamePath, bool fastCiviProduction, bool infiniteMoraleChecked, bool balanceChecked, FileRollbackScope? rollback = null) {
-            string dest = Path.Combine(gamePath, @"SYSTEM\cl_script.ini");
+        private static HashSet<string> GetClScriptManagedKeys(string text) {
+            var keys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            string[] lines = text.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
+            foreach (string line in lines) {
+                Match radius = RegexRadiusPatch.Match(line);
+                if (radius.Success) {
+                    keys.Add($"Radius|{radius.Groups[1].Value.Trim()}|{radius.Groups[2].Value.Trim()}");
+                    continue;
+                }
+
+                Match civi = RegexCiviPatch.Match(line);
+                if (civi.Success) {
+                    keys.Add($"CiviDelay|{civi.Groups[1].Value.Trim()}");
+                    continue;
+                }
+
+                Match morale = RegexMoraleKey.Match(line);
+                if (morale.Success) {
+                    keys.Add($"{morale.Groups[1].Value.Trim()}|{morale.Groups[2].Value.Trim()}");
+                }
+            }
+            return keys;
+        }
+
+        private byte[] GetPatchedClScriptBytes(string gamePath, bool fastCiviProduction, bool infiniteMoraleChecked, bool balanceChecked) {
             byte[]? origBytes;
-            if (!backupFiles.TryGetValue("SYSTEM/cl_script.ini", out origBytes)) return;
-
-            bool hasCustomSpellRadius = customUnitStats != null && customUnitStats.Any(kvp =>
-                (kvp.Key.Equals("FigKelPri00_Priester", StringComparison.OrdinalIgnoreCase) ||
-                 kvp.Key.Equals("FigHunPri00_Priester", StringComparison.OrdinalIgnoreCase)) &&
-                kvp.Value.Length > 8);
-            bool hasMod = fastCiviProduction || infiniteMoraleChecked || balanceChecked || hasCustomSpellRadius;
-
-            if (!hasMod) {
-                SafeWriteAllBytes(dest, origBytes!, rollback);
-                Log(string.Format(Loc.Get("LogRestored"), "cl_script.ini"));
-                return;
+            if (!backupFiles.TryGetValue("SYSTEM/cl_script.ini", out origBytes)) {
+                throw new InvalidOperationException("記憶體備份中找不到 SYSTEM/cl_script.ini。");
             }
 
-            byte[] decompBytes = GameLZSS.DecompressPfil(origBytes!);
+            // 1. 建立原版備份中的 Radius 對照字典，以防多次套用導致數值累乘
+            var originalRadiuses = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+            byte[] origDecomp = GameLZSS.DecompressPfil(origBytes!);
+            string origText = Encoding.GetEncoding(1251).GetString(origDecomp);
+            string[] origLines = origText.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
+            HashSet<string> originalManagedKeys = GetClScriptManagedKeys(origText);
+            if (originalManagedKeys.Count == 0) {
+                throw new InvalidDataException("備份中的 SYSTEM/cl_script.ini 缺少可辨識的受管理設定。");
+            }
+            foreach (string line in origLines) {
+                var match = RegexRadiusPatch.Match(line);
+                if (match.Success) {
+                    string volk = match.Groups[1].Value.Trim();
+                    string spell = match.Groups[2].Value.Trim();
+                    string valStr = match.Groups[3].Value.Trim();
+                    if (double.TryParse(valStr, NumberStyles.Any, CultureInfo.InvariantCulture, out double val)) {
+                        originalRadiuses[$"{volk}_{spell}"] = val;
+                    }
+                }
+            }
+
+            // 2. 優先讀取遊戲目錄下現有的 cl_script.ini 作為修改基底（增量修改）
+            byte[] baseBytes = origBytes;
+            string destPath = Path.Combine(gamePath, @"SYSTEM\cl_script.ini");
+            if (File.Exists(destPath)) {
+                try {
+                    byte[] currentBytes = File.ReadAllBytes(destPath);
+                    byte[] currentDecomp = GameLZSS.DecompressPfil(currentBytes);
+                    string currentText = Encoding.GetEncoding(1251).GetString(currentDecomp);
+                    HashSet<string> currentManagedKeys = GetClScriptManagedKeys(currentText);
+                    if (originalManagedKeys.IsSubsetOf(currentManagedKeys)) {
+                        baseBytes = currentBytes;
+                    } else {
+                        Log("現有 cl_script.ini 結構不完整，已改用安全備份作為修改基底。");
+                    }
+                } catch (Exception ex) {
+                    Log("現有 cl_script.ini 無法驗證，已改用安全備份作為修改基底: " + ex.Message);
+                }
+            }
+
+            byte[] decompBytes = GameLZSS.DecompressPfil(baseBytes);
             string decomp = Encoding.GetEncoding(1251).GetString(decompBytes);
             string lineEnding = decomp.Contains("\r\n") ? "\r\n" : "\n";
             string[] lines = decomp.Split(new string[] { lineEnding }, StringSplitOptions.None);
@@ -1039,6 +1134,7 @@ namespace AgainstRomeModifier {
                     hunMult = customUnitStats["FigHunPri00_Priester"][8] / 500.0;
                 }
             }
+
             var newLines = new List<string>();
             foreach (string line in lines) {
                 string processedLine = line;
@@ -1048,26 +1144,46 @@ namespace AgainstRomeModifier {
                     string spell = match.Groups[2].Value;
                     string valStr = match.Groups[3].Value.Trim();
                     string comment = match.Groups[4].Value;
-                    double val;
-                    if (double.TryParse(valStr, NumberStyles.Any, CultureInfo.InvariantCulture, out val)) {
-                        string volkClean = volk.Trim();
-                        double mult = 1.0;
-                        if (volkClean == "GER") mult = gerMult;
-                        else if (volkClean == "KEL") mult = kelMult;
-                        else if (volkClean == "HUN") mult = hunMult;
-                        int newVal = (int)(val * mult);
-                        processedLine = string.Format("Radius     ={0}, {1}, {2,-10}{3}", volk, spell, newVal, comment);
+
+                    string volkClean = volk.Trim();
+                    string spellClean = spell.Trim();
+                    string dictKey = $"{volkClean}_{spellClean}";
+
+                    // 優先使用原版備份對照，避免多次修改累乘
+                    double val = 0;
+                    if (originalRadiuses.TryGetValue(dictKey, out double origVal)) {
+                        val = origVal;
+                    } else {
+                        double.TryParse(valStr, NumberStyles.Any, CultureInfo.InvariantCulture, out val);
                     }
+
+                    double mult = 1.0;
+                    if (volkClean == "GER") mult = gerMult;
+                    else if (volkClean == "KEL") mult = kelMult;
+                    else if (volkClean == "HUN") mult = hunMult;
+
+                    int newVal = (int)(val * mult);
+                    processedLine = string.Format("Radius     ={0}, {1}, {2,-10}{3}", volk, spell, newVal, comment);
                 }
 
                 var matchCivi = RegexCiviPatch.Match(line);
-                if (fastCiviProduction && matchCivi.Success) {
+                if (matchCivi.Success) {
                     string volk = matchCivi.Groups[1].Value;
-                    string valStr = matchCivi.Groups[2].Value.Trim();
                     string comment = matchCivi.Groups[3].Value;
-                    double val;
-                    if (double.TryParse(valStr, NumberStyles.Any, CultureInfo.InvariantCulture, out val)) {
+                    if (fastCiviProduction) {
                         processedLine = string.Format("CiviDelay  ={0}, {1,-10}{2}", volk, 500, comment);
+                    } else {
+                        // 若未開啟，則從原版備份中還原該陣營的原始延遲
+                        string volkClean = volk.Trim();
+                        double origDelay = 5000; // 安全 fallback
+                        string? origLine = origLines.FirstOrDefault(l => RegexCiviPatch.Match(l).Success && RegexCiviPatch.Match(l).Groups[1].Value.Trim() == volkClean);
+                        if (origLine != null) {
+                            var m = RegexCiviPatch.Match(origLine);
+                            if (double.TryParse(m.Groups[2].Value.Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out double d)) {
+                                origDelay = d;
+                            }
+                        }
+                        processedLine = string.Format("CiviDelay  ={0}, {1,-10}{2}", volk, (int)origDelay, comment);
                     }
                 }
 
@@ -1085,6 +1201,22 @@ namespace AgainstRomeModifier {
                         var m = RegexMoraleIncIdlePatch.Match(line);
                         if (m.Success) processedLine = m.Groups[1].Value + "500" + m.Groups[2].Value;
                     }
+                } else {
+                    // 若未開啟，則從原版備份中還原士氣參數
+                    Match moraleKey = RegexMoraleKey.Match(line);
+                    if (moraleKey.Success) {
+                        string setting = moraleKey.Groups[1].Value;
+                        string faction = moraleKey.Groups[2].Value;
+                        string? origLine = origLines.FirstOrDefault(originalLine => {
+                            Match originalKey = RegexMoraleKey.Match(originalLine);
+                            return originalKey.Success &&
+                                originalKey.Groups[1].Value.Equals(setting, StringComparison.OrdinalIgnoreCase) &&
+                                originalKey.Groups[2].Value.Equals(faction, StringComparison.OrdinalIgnoreCase);
+                        });
+                        if (origLine != null) {
+                            processedLine = origLine;
+                        }
+                    }
                 }
 
                 newLines.Add(processedLine);
@@ -1096,26 +1228,16 @@ namespace AgainstRomeModifier {
             }
 
             byte[] newBytes = Encoding.GetEncoding(1251).GetBytes(newContent);
-            byte[] compressed = GameLZSS.CompressPfil(newBytes, origBytes!);
-
-            SafeWriteAllBytes(dest, compressed, rollback);
-            Log(Loc.Get("LogClScriptPatch"));
+            return GameLZSS.CompressPfil(newBytes, origBytes);
         }
 
         /// <summary>
         /// 修改 ress.ini 檔案，設定建築/部隊生產與升級的免費資源，以及移除祭司施法冷卻/消耗。
         /// </summary>
-        private void ApplyRessPatch(string gamePath, bool freeProdChecked, bool freeUpgradeChecked, bool noSpellCostChecked, FileRollbackScope? rollback = null) {
-            string dest = Path.Combine(gamePath, @"SYSTEM\ress.ini");
+        private byte[] GetPatchedRessBytes(bool freeProdChecked, bool freeUpgradeChecked, bool noSpellCostChecked) {
             byte[]? origBytes;
-            if (!backupFiles.TryGetValue("SYSTEM/ress.ini", out origBytes)) return;
-
-            bool hasMod = freeProdChecked || freeUpgradeChecked || noSpellCostChecked;
-
-            if (!hasMod) {
-                SafeWriteAllBytes(dest, origBytes!, rollback);
-                Log(string.Format(Loc.Get("LogRestored"), "ress.ini"));
-                return;
+            if (!backupFiles.TryGetValue("SYSTEM/ress.ini", out origBytes)) {
+                throw new InvalidOperationException("記憶體備份中找不到 SYSTEM/ress.ini。");
             }
 
             byte[] decompBytes = GameLZSS.DecompressPfil(origBytes!);
@@ -1235,26 +1357,16 @@ namespace AgainstRomeModifier {
             }
 
             byte[] newBytes = Encoding.GetEncoding(1251).GetBytes(newContent);
-            byte[] compressed = GameLZSS.CompressPfil(newBytes, origBytes);
-
-            SafeWriteAllBytes(dest, compressed, rollback);
-            Log(Loc.Get("LogRessPatch"));
+            return GameLZSS.CompressPfil(newBytes, origBytes);
         }
 
         /// <summary>
         /// 修改 objdef.dau 檔案，套用部隊屬性平衡模式、自訂部隊移動速度、射程、技能距離、近戰/遠程傷害與攻擊冷卻等倍率。
         /// </summary>
-        private void ApplyObjdefPatch(string gamePath, bool balanceChecked, bool housingCapacity20xChecked, FileRollbackScope? rollback = null) {
-            string dest = Path.Combine(gamePath, @"SYSTEM\DATA_MP\DEFAULTS\objdef.dau");
+        private byte[] GetPatchedObjdefBytes(bool balanceChecked, bool housingCapacity20xChecked) {
             byte[]? origBytes;
-            if (!backupFiles.TryGetValue("SYSTEM/DATA_MP/DEFAULTS/objdef.dau", out origBytes)) return;
-
-            bool hasMod = balanceChecked || housingCapacity20xChecked || (customUnitStats != null && customUnitStats.Count > 0);
-
-            if (!hasMod) {
-                SafeWriteAllBytes(dest, origBytes!, rollback);
-                Log(string.Format(Loc.Get("LogRestored"), "objdef.dau"));
-                return;
+            if (!backupFiles.TryGetValue("SYSTEM/DATA_MP/DEFAULTS/objdef.dau", out origBytes)) {
+                throw new InvalidOperationException("記憶體備份中找不到 SYSTEM/DATA_MP/DEFAULTS/objdef.dau。");
             }
 
             byte[] decompBytes = GameLZSS.DecompressPfil(origBytes!);
@@ -1342,8 +1454,7 @@ namespace AgainstRomeModifier {
                         origPrimaryRelt = Math.Max(origMeleeRelt, origRangedRelt);
                     }
 
-                    // 從 bal 陣列中讀取 9 大屬性的值 (bal 之前在 GetBaseStatsForUnit 已經載入)
-                    // bal = [HP, Dmg, VW, AW, Speed, Sight, Relt, Range, SpellRadius]
+                    // 從 bal 陣列中讀取 9 大屬性的值
                     double customSpeed = bal[4];
                     double customSight = bal[5];
                     double customRelt = bal[6];
@@ -1501,16 +1612,13 @@ namespace AgainstRomeModifier {
             }
 
             byte[] newBytes = Encoding.GetEncoding(1251).GetBytes(newContent);
-            byte[] compressed = GameLZSS.CompressPfil(newBytes, origBytes!);
-
-            SafeWriteAllBytes(dest, compressed, rollback);
-            Log(Loc.Get("LogObjdefPatch"));
+            return GameLZSS.CompressPfil(newBytes, origBytes!);
         }
 
         /// <summary>
         /// 還原地圖目錄下所有的 team.dat 檔案。
         /// </summary>
-        private void RestoreTeamFiles(string gamePath, FileRollbackScope? rollback = null) {
+        /* private void RestoreTeamFiles(string gamePath, FileRollbackScope? rollback = null) {
             foreach (var kvp in backupFiles) {
                 if (kvp.Key.StartsWith("MAPS/", StringComparison.OrdinalIgnoreCase) && kvp.Key.EndsWith("team.dat", StringComparison.OrdinalIgnoreCase)) {
                     string destPath = Path.Combine(gamePath, kvp.Key.Replace('/', '\\'));
@@ -1518,7 +1626,7 @@ namespace AgainstRomeModifier {
                 }
             }
             Log(string.Format(Loc.Get("LogRestored"), "team.dat"));
-        }
+        } */
 
         /// <summary>
         /// 修改各地圖目錄下的 team.dat，使其中定義的人口上限與主程式或 UI 界面上設定的人口數相符。
@@ -1816,6 +1924,29 @@ namespace AgainstRomeModifier {
             return expectedIndex == EndlessAiLoopDelayRanges.Length;
         }
 
+        private static bool HasPatchableEndlessLoopDelays(byte[] decompressedBci) {
+            int expectedIndex = 0;
+            for (int offset = 0; offset <= decompressedBci.Length - 24 && expectedIndex < EndlessAiLoopDelayRanges.Length; offset += 4) {
+                if (BitConverter.ToInt32(decompressedBci, offset) != 0x42 ||
+                    BitConverter.ToInt32(decompressedBci, offset + 8) != 0x42 ||
+                    BitConverter.ToInt32(decompressedBci, offset + 16) != 0x80 ||
+                    BitConverter.ToInt32(decompressedBci, offset + 20) != 16) {
+                    continue;
+                }
+
+                (int originalUpperMs, int originalLowerMs) = EndlessAiLoopDelayRanges[expectedIndex];
+                int currentUpperMs = BitConverter.ToInt32(decompressedBci, offset + 4);
+                int currentLowerMs = BitConverter.ToInt32(decompressedBci, offset + 12);
+                bool matchesOriginal = currentUpperMs == originalUpperMs && currentLowerMs == originalLowerMs;
+                bool matchesUltimate = currentUpperMs == EndlessAiUltimateLoopDelayUpperMs &&
+                    currentLowerMs == EndlessAiUltimateLoopDelayLowerMs;
+                if (matchesOriginal || matchesUltimate) {
+                    expectedIndex++;
+                }
+            }
+            return expectedIndex == EndlessAiLoopDelayRanges.Length;
+        }
+
         private bool TryReadEndlessAiModeState(string gamePath, out bool enabled) {
             enabled = false;
             string mapsPath = Path.Combine(gamePath, "MAPS");
@@ -1877,19 +2008,24 @@ namespace AgainstRomeModifier {
             return detectedState.HasValue;
         }
 
-        private void ApplyEndlessAiUltimateModePatch(string gamePath, bool enabled, FileRollbackScope? rollback = null) {
+        private Dictionary<string, byte[]> GetPatchedEndlessScripts(string gamePath, bool enabled) {
+            var results = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
             string mapsPath = Path.Combine(gamePath, "MAPS");
             if (!Directory.Exists(mapsPath)) {
-                Log(Loc.Get("LogEndlessAiNoMaps"));
-                return;
+                string message = Loc.Get("LogEndlessAiNoMaps");
+                if (enabled) throw new InvalidOperationException(message);
+                Log(message);
+                return results;
             }
 
             string[] scripts = Directory.GetFiles(mapsPath, "ak_level.bci", SearchOption.AllDirectories)
                 .Where(p => p.IndexOf(Path.DirectorySeparatorChar + "ENDL_", StringComparison.OrdinalIgnoreCase) >= 0)
                 .ToArray();
             if (scripts.Length == 0) {
-                Log(Loc.Get("LogEndlessAiNoScripts"));
-                return;
+                string message = Loc.Get("LogEndlessAiNoScripts");
+                if (enabled) throw new InvalidOperationException(message);
+                Log(message);
+                return results;
             }
 
             int targetCount = enabled ? EndlessAiUltimateMilitaryCount : EndlessAiOriginalMilitaryCount;
@@ -1897,12 +2033,18 @@ namespace AgainstRomeModifier {
                 ? EndlessAiUltimateAutoRecycleCompletedJob
                 : EndlessAiOriginalAutoRecycleCompletedJob;
             int targetRespawnDelayMs = enabled ? EndlessAiUltimateRespawnDelayMs : EndlessAiOriginalRespawnDelayMs;
+
             int patched = 0;
+            var incompatibleScripts = new List<string>();
             foreach (string scriptPath in scripts) {
                 byte[] raw = File.ReadAllBytes(scriptPath);
                 byte[] decomp = GameLZSS.DecompressPfil(raw);
                 int baseOffset = FindEndlessMilitaryCreateUnitCall(decomp);
-                if (baseOffset < 0) {
+                int respawnDelayOffset = FindEndlessRespawnDelayLiteral(decomp);
+                int activeSequenceOffset = FindEndlessActiveLimitSequenceOffset(decomp);
+                if (baseOffset < 0 || respawnDelayOffset < 0 || activeSequenceOffset < 0 ||
+                    !HasPatchableEndlessLoopDelays(decomp)) {
+                    incompatibleScripts.Add(scriptPath);
                     Log(string.Format(Loc.Get("LogEndlessAiPatternMissing"), scriptPath));
                     continue;
                 }
@@ -1911,8 +2053,24 @@ namespace AgainstRomeModifier {
                 int currentMax = BitConverter.ToInt32(decomp, baseOffset + 28);
                 bool changed = false;
                 int currentAutoRecycleCompletedJob = BitConverter.ToInt32(decomp, baseOffset + 4);
-                if (currentAutoRecycleCompletedJob != EndlessAiOriginalAutoRecycleCompletedJob &&
-                    currentAutoRecycleCompletedJob != EndlessAiUltimateAutoRecycleCompletedJob) {
+                int currentRespawnDelayMs = BitConverter.ToInt32(decomp, respawnDelayOffset);
+                int currentActiveLimit = BitConverter.ToInt32(decomp, activeSequenceOffset + 12);
+                int currentGateOpcode = BitConverter.ToInt32(decomp, activeSequenceOffset + 32);
+                int currentGateValue = BitConverter.ToInt32(decomp, activeSequenceOffset + 36);
+                bool countKnown = currentMin == currentMax &&
+                    (currentMin == EndlessAiOriginalMilitaryCount || currentMin == EndlessAiUltimateMilitaryCount);
+                bool autoRecycleKnown = currentAutoRecycleCompletedJob == EndlessAiOriginalAutoRecycleCompletedJob ||
+                    currentAutoRecycleCompletedJob == EndlessAiUltimateAutoRecycleCompletedJob;
+                bool respawnKnown = currentRespawnDelayMs == EndlessAiOriginalRespawnDelayMs ||
+                    currentRespawnDelayMs == EndlessAiUltimateRespawnDelayMs;
+                bool activeLimitKnown = currentActiveLimit == EndlessAiOriginalActivePartyLimit ||
+                    currentActiveLimit == EndlessAiUltimateActivePartyLimit;
+                bool gateKnown = (currentGateOpcode == EndlessAiActiveLimitOriginalOpcode &&
+                    currentGateValue == EndlessAiActiveLimitOriginalValue) ||
+                    (currentGateOpcode == EndlessAiActiveLimitPatchedOpcode &&
+                    currentGateValue == EndlessAiActiveLimitPatchedRelativeJump);
+                if (!countKnown || !autoRecycleKnown || !respawnKnown || !activeLimitKnown || !gateKnown) {
+                    incompatibleScripts.Add(scriptPath);
                     Log(string.Format(Loc.Get("LogEndlessAiPatternMissing"), scriptPath));
                     continue;
                 }
@@ -1926,22 +2084,11 @@ namespace AgainstRomeModifier {
                     changed = true;
                 }
 
-                int respawnDelayOffset = FindEndlessRespawnDelayLiteral(decomp);
-                if (respawnDelayOffset < 0) {
-                    Log(string.Format(Loc.Get("LogEndlessAiPatternMissing"), scriptPath));
-                    continue;
-                }
-                int currentRespawnDelayMs = BitConverter.ToInt32(decomp, respawnDelayOffset);
                 if (currentRespawnDelayMs != targetRespawnDelayMs) {
                     WriteBciInt32(decomp, respawnDelayOffset, targetRespawnDelayMs);
                     changed = true;
                 }
 
-                // The dedicated 5-second cooldown is only checked by these first
-                // three military reinforcement loops. Accelerate those loops so
-                // the cooldown is observable, but keep the remaining AI action
-                // loops at their original pacing. The active-party cap and job
-                // recycling prevent the old unbounded queue-exhaustion failure.
                 if (PatchEndlessLoopDelayLiterals(decomp, enabled)) {
                     changed = true;
                 }
@@ -1950,73 +2097,80 @@ namespace AgainstRomeModifier {
                     changed = true;
                 }
 
-                if (!changed) {
-                    continue;
+                if (changed) {
+                    byte[] compressed = GameLZSS.CompressPfil(decomp, raw);
+                    results[scriptPath] = compressed;
+                    patched++;
                 }
-
-                byte[] compressed = GameLZSS.CompressPfil(decomp, raw);
-                SafeWriteAllBytes(scriptPath, compressed, rollback);
-                patched++;
             }
 
-            // The three global CLAK scripts are not safely NPC-scoped. Enabling
-            // their economy edits stops staffed player buildings from producing
-            // resources, including in a new game. Always migrate them back to
-            // the original values; Ultimate Mode remains map-script-only.
-            ApplyEndlessAiVillageEconomyPatch(gamePath, false, rollback);
+            if (enabled && incompatibleScripts.Count > 0) {
+                throw new InvalidOperationException(string.Format(
+                    "AI 終極模式偵測到 {0} 個不相容的無盡模式腳本，已取消整批套用。",
+                    incompatibleScripts.Count));
+            }
 
             if (enabled) {
                 Log(string.Format(Loc.Get("LogEndlessAiUltimateApplied"), patched, targetCount));
             } else {
                 Log(string.Format(Loc.Get("LogEndlessAiUltimateRestored"), patched, targetCount));
             }
+
+            return results;
         }
 
-        private void ApplyTeamDatPatch(string gamePath, FileRollbackScope? rollback = null) {
-            string[] teamFiles = Directory.GetFiles(Path.Combine(gamePath, "MAPS"), "team.dat", SearchOption.AllDirectories);
+        private Dictionary<string, byte[]> GetPatchedTeamDatBytes(bool maxPopulation) {
             const int popLimit = 1600;
-            foreach (string file in teamFiles) {
-                string mapKey = file.Substring(gamePath.Length + 1).Replace('\\', '/');
-                byte[]? origBytes;
-                if (!backupFiles.TryGetValue(mapKey, out origBytes) || origBytes == null) {
-                    Log(string.Format("[警告] 記憶體備份中找不到 {0}，略過此 team.dat。", mapKey));
-                    continue;
-                }
-                byte[] decompBytes = GameLZSS.DecompressPfil(origBytes);
-                string decomp = Encoding.GetEncoding(1251).GetString(decompBytes);
-                string lineEnding = decomp.Contains("\r\n") ? "\r\n" : "\n";
-                string[] lines = decomp.Split(new string[] { lineEnding }, StringSplitOptions.None);
-                var newLines = new System.Collections.Generic.List<string>();
-                bool inTeamData = false;
-                foreach (string line in lines) {
-                    string stripped = line.Trim();
-                    if (stripped.StartsWith("[")) {
-                        inTeamData = (stripped == "[teamdata]");
-                        newLines.Add(line);
-                        continue;
-                    }
-                    if (inTeamData && line.Contains(",")) {
-                        string[] cols = ParseCsvLine(line);
-                        if (cols.Length >= 5) {
-                            int val;
-                            if (int.TryParse(cols[4].Trim(), out val) && val > 0) {
-                                cols[4] = popLimit.ToString();
+            var results = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
+            int processedCount = 0;
+            foreach (var kvp in backupFiles) {
+                if (kvp.Key.StartsWith("MAPS/", StringComparison.OrdinalIgnoreCase) && kvp.Key.EndsWith("team.dat", StringComparison.OrdinalIgnoreCase)) {
+                    if (maxPopulation) {
+                        byte[] decompBytes = GameLZSS.DecompressPfil(kvp.Value);
+                        string decomp = Encoding.GetEncoding(1251).GetString(decompBytes);
+                        string lineEnding = decomp.Contains("\r\n") ? "\r\n" : "\n";
+                        string[] lines = decomp.Split(new string[] { lineEnding }, StringSplitOptions.None);
+                        var newLines = new System.Collections.Generic.List<string>();
+                        bool inTeamData = false;
+                        foreach (string line in lines) {
+                            string stripped = line.Trim();
+                            if (stripped.StartsWith("[")) {
+                                inTeamData = (stripped == "[teamdata]");
+                                newLines.Add(line);
+                                continue;
                             }
+                            if (inTeamData && line.Contains(",")) {
+                                string[] cols = ParseCsvLine(line);
+                                if (cols.Length >= 5) {
+                                    int val;
+                                    if (int.TryParse(cols[4].Trim(), out val) && val > 0) {
+                                        cols[4] = popLimit.ToString();
+                                    }
+                                }
+                                newLines.Add(ToCsvString(cols));
+                                continue;
+                            }
+                            newLines.Add(line);
                         }
-                        newLines.Add(ToCsvString(cols));
-                        continue;
+                        string newContent = string.Join(lineEnding, newLines.ToArray());
+                        if (decomp.EndsWith(lineEnding) && !newContent.EndsWith(lineEnding)) {
+                            newContent += lineEnding;
+                        }
+                        byte[] newBytes = Encoding.GetEncoding(1251).GetBytes(newContent);
+                        byte[] compressed = GameLZSS.CompressPfil(newBytes, kvp.Value);
+                        results[kvp.Key] = compressed;
+                    } else {
+                        results[kvp.Key] = kvp.Value;
                     }
-                    newLines.Add(line);
+                    processedCount++;
                 }
-                string newContent = string.Join(lineEnding, newLines.ToArray());
-                if (decomp.EndsWith(lineEnding) && !newContent.EndsWith(lineEnding)) {
-                    newContent += lineEnding;
-                }
-                byte[] newBytes = Encoding.GetEncoding(1251).GetBytes(newContent);
-                byte[] compressed = GameLZSS.CompressPfil(newBytes, origBytes);
-                SafeWriteAllBytes(file, compressed, rollback);
             }
-            Log(string.Format("已修改所有地圖的 team.dat 人口上限為 {0}。", popLimit));
+            if (maxPopulation) {
+                Log(string.Format("已修改所有地圖的 team.dat 人口上限為 {0} (共處理 {1} 個檔案)。", popLimit, processedCount));
+            } else {
+                Log(string.Format(Loc.Get("LogRestored"), "team.dat"));
+            }
+            return results;
         }
     }
 }

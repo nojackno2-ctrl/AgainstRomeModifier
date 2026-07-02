@@ -154,5 +154,7 @@ values and keep AI Ultimate limited to endless-map reinforcement logic.
 
 - Decode enough of the `BCI0` bytecode instruction set to identify the branch
   that selects `INIT_UNITSCIV` versus `INIT_UNITSMIL`.
-- Add a safe modifier patch that edits the decompressed BCI count literals and
-  recompresses it as `PFIL@`.
+- Run long-duration regression tests on all five `ENDL_000..ENDL_004` maps,
+  including later reinforcement waves, completed-job recycling, disable/restore,
+  and old-save behavior. The safe bounded patch is implemented; its remaining
+  gap is long-run runtime coverage, not BCI write support.

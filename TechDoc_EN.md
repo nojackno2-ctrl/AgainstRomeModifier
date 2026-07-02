@@ -1,12 +1,20 @@
 # Against Rome Modifier Complete Technical Document
 
+Updated: 2026-07-02.
+
 This document describes the current code, data formats, reverse-engineering evidence, enabled patches, candidates, and rejected approaches. It is not a version history. Each feature has one current description. Reproducible runtime behavior and the latest concrete decompiler evidence take precedence over an older interpretation.
+
+For the detailed maintenance chronology, debugging failures, current dirty-tree
+notes, and checklists intended for future AI agents, read
+`docs/AI_AGENT_HANDOFF.md` before changing code. That handoff is maintained in
+Chinese because it preserves the user's original maintenance context; this file
+remains the English current-state specification.
 
 ## 1. Documentation and Evidence Rules
 
 - Project documentation is UTF-8. Decompressed game text is Windows code page 1251.
 - Field indexes are zero-based. Byte sequences and file offsets are hexadecimal.
-- `TechDoc.md` is the Chinese technical document. `TechDoc_EN.md` is the English technical document; both are embedded in the application.
+- `TechDoc.md` is the Chinese technical document. `TechDoc_EN.md` is the English technical document; both are embedded in the application. `docs/AI_AGENT_HANDOFF.md` is the detailed maintenance and debugging record.
 - **Stable** means implemented, signature/format checked, and runtime or round-trip verified.
 - **Implemented candidate** means writable and restorable with strong static evidence, but incomplete runtime coverage.
 - **Read-only candidate** must not be written automatically.
@@ -345,7 +353,8 @@ Use these before repeating whole-program analysis. Rebuild the inventory only fo
 ## 16. Verification Checklist
 
 - Build succeeds and JSON parses.
-- Chinese and English canonical/embedded documents match.
+- The current Chinese and English documents are included by the project as the
+  intended embedded resources.
 - `git diff --check` passes.
 - Every changed PFIL payload round-trips.
 - `objdef.dau` decompressed length is unchanged.
@@ -355,20 +364,25 @@ Use these before repeating whole-program analysis. Rebuild the inventory only fo
 - EXE writes require exact known bytes.
 - The village candidate never writes `07`; only known candidates may be restored to `06`.
 - Runtime coverage includes map load, construction, upgrades, unit production/disarm, four factions, priest behavior, morale, villager speed, and the 24-villager equipment regression.
-- AI Ultimate testing covers all five endless maps, respawn, action loops, and concurrent active forces.
+- AI Ultimate testing must cover all five endless maps, late reinforcement
+  waves, respawn, action loops, completed-job recycling, restore, and old saves.
 - The current village result remains: all four candidate changes produced no visible effect.
-- The setter trampoline was separately verified at 2x for the player-usable village construction range; the current 2.5x factor and red dashed frame remain verification items.
+- The setter trampoline was verified at 2x for both the player-usable village
+  construction range and red dashed frame; the current 2.5x factor still needs
+  a fresh in-game verification.
 
 ## 17. Known Limits
 
-Machine decompilation cannot recreate every original source line, identifier, comment, or build project. A function inventory is navigation, not 100% semantic truth. Some `ress.ini` fields, `apt.dat` entries, and BCI opcodes remain candidates. AI Ultimate's count, timing, active-limit, and completed-job recycling changes still require a long-running endless-mode regression test; global civilian production/training edits are disabled after causing player resource-production regression. The setter path was runtime-verified at 2x for the construction range; the current 2.5x factor and its effect on the red dashed frame remain unverified.
+Machine decompilation cannot recreate every original source line, identifier, comment, or build project. A function inventory is navigation, not 100% semantic truth. Some `ress.ini` fields, `apt.dat` entries, and BCI opcodes remain candidates. AI Ultimate's count, timing, active-limit, and completed-job recycling changes still require a long-running endless-mode regression test; global civilian production/training edits are disabled after causing player resource-production regression. The setter path was runtime-verified at 2x for both construction range and red dashed frame; the current 2.5x factor still requires fresh runtime verification.
 
 Always separate a stored value from its runtime meaning. Proximity, naming similarity, or a plausible static formula is not sufficient proof.
 
 ## 18. Public Repository Boundary
 
 - Publishable: C# source, `data/game_schema.json`, `docs/reverse-engineering/`, reproducible scripts under `tools/re/`, `tools/Repair-LanguageBackup.ps1`, and the redistributable `ThirdParty/dgVoodoo2/` integration files.
-- Never publish: `遊戲原始檔案/`, `Original game archives/`, `Backup.zip`, game executables/data/maps/language/save payloads, or whole-program decompiler output derived from the original executable.
+- Never publish: localized original-game folders covered by `.gitignore`,
+  `Original game archives/`, `Backup.zip`, game executables/data/maps/language/save
+  payloads, or whole-program decompiler output derived from the original executable.
 - Local-only: `.codex/`, `.agents/`, `re_workspace/`, IDE/build output, dumps/logs, language-backup directories, and `CodeAuditReport.md`.
 - Before publishing, run `git status --short --ignored` and verify that local assets are marked `!!`; also inspect `git ls-files` for accidental game payloads.
 - The dgVoodoo2 v2.87.3 upstream terms permit individual files to ship with a game or game mod. This project is not a general-purpose launcher/framework; provenance and terms are recorded in `ThirdParty/dgVoodoo2/REDISTRIBUTION.md`.

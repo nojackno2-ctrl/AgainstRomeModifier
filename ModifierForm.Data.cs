@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
@@ -433,30 +433,35 @@ namespace AgainstRomeModifier {
         /// <summary>
         /// 獲取各兵種的平衡基礎屬性，若未啟用平衡模式，則直接返回原版屬性。
         /// </summary>
+        private static double[] MergeUnitStatsLayers(double[] fallback, double[] custom, bool supportsSpellRadius) {
+            ArgumentNullException.ThrowIfNull(fallback);
+            ArgumentNullException.ThrowIfNull(custom);
+
+            double[] layered = new double[9];
+            for (int i = 0; i < layered.Length; i++) {
+                if (i == 8 && !supportsSpellRadius) {
+                    layered[i] = 0;
+                    continue;
+                }
+
+                // Preset values are concrete overrides. Only fields omitted by an
+                // older/short preset inherit the active balanced or original layer.
+                layered[i] = custom.Length > i
+                    ? custom[i]
+                    : (fallback.Length > i ? fallback[i] : 0);
+            }
+            return layered;
+        }
+
         private double[] GetBaseStatsForUnit(string key, double origHp, double origDmg, double origVw, double origAw, bool forceBalance = false) {
-            if (customUnitStats != null && customUnitStats.ContainsKey(key)) {
-                double[] custom = customUnitStats[key];
-                if (custom.Length >= 9) {
-                    double[] normalized = custom.ToArray();
-                    if (!SupportsConfigurableSpellRadius(key)) normalized[8] = 0;
-                    return normalized;
-                }
-                
-                double[] fullStats = new double[9];
-                for (int i = 0; i < Math.Min(custom.Length, 4); i++) {
-                    fullStats[i] = custom[i];
-                }
-                
-                double[] fallback = (forceBalance || chkBalance.Checked) ? GetDefaultBalancedStats(key) : GetOriginalStats(key);
-                for (int i = 4; i < 9; i++) {
-                    fullStats[i] = fallback[i];
-                }
-                return fullStats;
+            double[] original = GetOriginalStats(key);
+            double[] balanced = (forceBalance || chkBalance.Checked) ? GetDefaultBalancedStats(key) : original;
+
+            if (customUnitStats != null && customUnitStats.TryGetValue(key, out double[]? custom) && custom != null) {
+                return MergeUnitStatsLayers(balanced, custom, SupportsConfigurableSpellRadius(key));
             }
-            if (!forceBalance && !chkBalance.Checked) {
-                return GetOriginalStats(key);
-            }
-            return GetDefaultBalancedStats(key);
+
+            return balanced;
         }
 
         /// <summary>
@@ -1226,13 +1231,14 @@ namespace AgainstRomeModifier {
                 string exePath = Path.Combine(gamePath, @"Against_Rome.exe");
                 chkDgVoodoo.Checked = IsDgVoodooInstalled(gamePath);
                 if (File.Exists(exePath)) {
-                    ExePatchState exePatchState = GetExePatchState(exePath);
+                    byte[] exeBytes = File.ReadAllBytes(exePath);
+                    ExePatchState exePatchState = GetExePatchState(exeBytes);
                     chkFocusLoss.Checked = exePatchState == ExePatchState.FocusPatched;
                     if (exePatchState == ExePatchState.Unknown) {
                         Log(Loc.Get("LogExePatchWarning"));
                     }
 
-                    ExeVillageRangePatchState villageRangeState = GetVillageBuildRangePatchState(exePath);
+                    ExeVillageRangePatchState villageRangeState = GetVillageBuildRangePatchState(exeBytes);
                     if (villageRangeState == ExeVillageRangePatchState.Expanded ||
                         villageRangeState == ExeVillageRangePatchState.LegacyLogicOnly) {
                         Log("偵測到已停用的村莊範圍候選補丁；下一次套用或相容性還原時會恢復四處原版 bytes。");
@@ -1240,7 +1246,7 @@ namespace AgainstRomeModifier {
                         Log(Loc.Get("LogVillageBuildRangeWarning"));
                     }
 
-                    ExeVillageSetterPatchState villageSetterState = GetVillageSetterPatchState(exePath);
+                    ExeVillageSetterPatchState villageSetterState = GetVillageSetterPatchState(exeBytes);
                     chkVillageBuildRange.Checked = villageSetterState == ExeVillageSetterPatchState.Legacy2x ||
                         villageSetterState == ExeVillageSetterPatchState.Expanded2Point5x;
                     if (villageSetterState == ExeVillageSetterPatchState.Unknown) {

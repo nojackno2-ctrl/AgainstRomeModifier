@@ -10,9 +10,10 @@
   `(value * 5) >> 1`, calls `004c0900`, and returns at `005364d1`. Both the
   type-definition and per-object village-state copies therefore receive the
   same 2.5x values.
-- Runtime result: the same setter path was verified at 2x for the player-usable
-  village construction range. The current 2.5x factor and red dashed frame have
-  not yet been independently verified.
+- Runtime result: the same setter path was verified at 2x for both the
+  player-usable village construction range and the red dashed frame. The current
+  2.5x factor still needs a fresh in-game verification; the 2x result must not be
+  reported as proof of the new multiplier.
 - Hook original: `85 F6 7C A6 85 FF 7C A2`.
 - Hook patched: `E9 C9 C0 02 00 90 90 90`.
 - Cave original: 39 zero bytes.

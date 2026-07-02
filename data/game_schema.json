@@ -9,6 +9,14 @@
     "wrapper": "PFIL@",
     "implementation": "GameLZSS"
   },
+  "documentation": {
+    "updated": "2026-07-02",
+    "technicalChinese": "TechDoc.md",
+    "technicalEnglish": "TechDoc_EN.md",
+    "agentHandoff": "docs/AI_AGENT_HANDOFF.md",
+    "knownPatches": "docs/reverse-engineering/known-patches.md",
+    "rule": "Current code and reproducible byte/runtime evidence override historical chat summaries."
+  },
   "files": {
     "objdef": {
       "path": "SYSTEM/DATA_MP/DEFAULTS/objdef.dau",
@@ -166,7 +174,7 @@
             "migration": "Always restore the original gate words."
           },
           "verifiedSameBytesInMaps": ["ENDL_000", "ENDL_001", "ENDL_002", "ENDL_003", "ENDL_004"],
-          "status": "auto-recycle-patch-static-verified-runtime-pending"
+          "status": "save-bytes-verified-long-run-runtime-pending"
         }
       },
       "villageEconomy": {
@@ -241,11 +249,11 @@
             "legacy2xCodeCaveBytes": "85 F6 0F 8C D4 3E FD FF 85 FF 0F 8C CC 3E FD FF D1 E6 D1 E7 57 56 50 E8 55 E3 F5 FF E9 21 3F FD FF followed by 6 zero bytes",
             "codeCaveCandidateBytes": "85 F6 0F 8C D4 3E FD FF 85 FF 0F 8C CC 3E FD FF 8D 34 B6 D1 EE 8D 3C BF D1 EF 57 56 50 E8 4F E3 F5 FF E9 1B 3F FD FF",
             "effect": "Preserve both negative checks, scale ESI and EDI with (value * 5) >> 1 in 00536450, call 004c0900, and resume at 005364d1 so both storage paths stay synchronized.",
-            "runtimeResult": "The same setter path was runtime-verified at 2x; the current 2.5x factor still requires game testing.",
-            "redDashedFrameResult": "Not independently verified.",
+            "runtimeResult": "The same setter path was runtime-verified at 2x for the construction range and red dashed frame; the current 2.5x factor still requires fresh game testing.",
+            "redDashedFrameResult": "Verified together with the construction range at 2x; not yet re-verified after changing the multiplier to 2.5x.",
             "modifierApplies": true
           },
-          "inference": "The setter trampoline is verified for player construction range. The red dashed frame remains a separate runtime-verification target.",
+          "inference": "The setter trampoline was verified at 2x for player construction range and red dashed frame together. The current 2.5x multiplier remains the runtime-verification target.",
           "legacyFourSitePatchRestoreOnly": true,
           "legacyLogicOnlyStateSupported": true
         }

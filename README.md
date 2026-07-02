@@ -5,6 +5,16 @@ It is built with C# on .NET 8. Public builds do not contain original game data;
 the modifier builds its restore baseline from the user's own installation when
 an optional local `Backup.zip` is not present.
 
+## Maintenance Documentation
+
+- [`TechDoc.md`](TechDoc.md): current Chinese technical specification.
+- [`TechDoc_EN.md`](TechDoc_EN.md): current English technical specification.
+- [`docs/AI_AGENT_HANDOFF.md`](docs/AI_AGENT_HANDOFF.md): detailed AI-agent
+  handoff, debugging history, failure cases, safety contracts, and verification
+  checklists. New maintenance agents should read this first.
+- [`docs/reverse-engineering/`](docs/reverse-engineering/README.md): file
+  formats, offsets, patch bytes, evidence, and the local Ghidra workflow.
+
 ## Project Origin & Author's Note
 
 The author of this project is a devoted player who loved *Against Rome* many
@@ -27,7 +37,8 @@ research and personal modding project.
 - Background execution patch for `Against_Rome.exe` when the game loses focus.
 - Option to scale the village construction/red-frame range to 2.5x through a
   synchronized `Against_Rome.exe` setter trampoline (the underlying setter path
-  was runtime-verified at 2x; the new 2.5x factor still requires game testing).
+  was runtime-verified at 2x, including the red dashed frame; the new 2.5x
+  factor still requires a fresh game test).
 - Optional embedded dgVoodoo2 integration that installs the bundled 32-bit
   D3D8/DirectDraw wrappers without overwriting unmanaged DLLs.
 - Automatic game path detection and one-click launch.
@@ -75,7 +86,8 @@ Current coverage:
 - `SYSTEM/ress.ini`: construction, production, upgrade, and spell costs.
 - `SYSTEM/cl_script.ini`: villager delay, spell radius, and morale parameters.
 - `MAPS/**/team.dat`: population limits and banner version semantics.
-- `MAPS/ENDL_*/SCRIPT/ak_level.bci`: runtime-verified AI Ultimate Mode patch.
+- `MAPS/ENDL_*/SCRIPT/ak_level.bci`: bounded AI Ultimate Mode patch with
+  byte/save-state verification; long-running late-wave regression remains.
 - `Against_Rome.exe`: focus-loss background execution patch, runtime-verified
   village construction-range expansion, restore-only handling for the rejected
   legacy four-site range/red-frame candidate, and a full local Ghidra function
