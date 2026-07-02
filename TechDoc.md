@@ -91,6 +91,7 @@ commit 後要先 Dispose／清空 rollback scope，再更新 UI；UI refresh 例
 | 142 | Aw | stable |
 | 146 | Vw | stable |
 | 156 | HousingCapacity / `wohnwer` | stable |
+| 42 | StorageCapacity / `maxre` | stable |
 | 73 | BuildTime / `buildt` | stable |
 | 74 | UpgradeTime / `upgrdt` | stable |
 | 191 | Bmovs | stable |
@@ -114,7 +115,14 @@ commit 後要先 Dispose／清空 rollback scope，再更新 UI；UI refresh 例
 - 讀取備份原版的 `buildt` (Index 73) 與 `upgrdt` (Index 74)，若數值大於 0 則除以 10，最低限制為 1 毫秒，防止因 0 導致計時器異常。
 - 修改後使用 `PadLeft` 與 `CheckLen` 維持原欄位字串長度，確保 `objdef.dau` 檔案解壓長度完全一致。
 - 遊戲中的維修效率是由生命值與建造時間決定。當建造時間縮短 10 倍，每秒修復生命值比例即同步提升 10 倍，實現建造、升級與維修的全面加速。
-- 整合 UI、一鍵預設開關、讀取現有設定偵測、套用及還原機制。
+- 整合 UI、一鍵預設開關、讀取現有設定偵測、套用及還原機制。已完成實機驗證，確認修改後數值在遊戲中生效，功能運作正常。
+
+### 6.4 主堡與倉庫儲存量 10 倍
+
+- 對所有以 `Bau` 開頭且名稱包含 `Hau`（主堡/主帳）或 `Lag`（倉庫/倉帳）的 row 生效。
+- 讀取原版的 `maxre` (Index 42) 資源儲存容量，若大於 0 則乘以 10 倍。
+- 修改後使用 `PadLeft` 與 `CheckLen` 維持原欄位字串長度，確保 `objdef.dau` 檔案解壓長度完全一致。
+- 整合 UI、一鍵預設開關、讀取現有設定偵測、套用及還原機制。已完成實機驗證，確認修改後主堡與倉庫資源容量上限成功提升 10 倍，且無溢位或異常現象。
 
 ## 7. `ress.ini`
 
@@ -160,8 +168,16 @@ commit 後要先 Dispose／清空 rollback scope，再更新 UI；UI refresh 例
 目前目標狀態：
 
 - 增援 count：4 → 20；EXE runtime clamp 為 1..20。
-- 軍事型 respawn cooldown：180000 ms → 5000 ms。
-- 村落型電腦被擊敗後的 respawn cooldown（`0x17F38`）：600000 ms → 5000 ms。
+- 軍事增援 cooldown（`0x178E0`）：180000 ms → 5000 ms。
+- 政黨撤退／清理期限（六處：`0x10700`、`0x119C0`、`0x12FFC`、`0x13FE8`、
+  `0x160EC`、`0x17F38`）：各 600000 ms → 5000 ms。這些
+  `v61[party] := s_getTime() + N` 期限是被殲滅隊伍的政黨離開 RETREAT 鏈進入
+  DELETE_PARTY 的唯一出口；政黨槽位釋放後，無盡生成器才會為該隊派出新的到達
+  隊伍並重新定居，`ak_npc.bci` 隨即以 `s_setNPCActive(team, 1)` 重新啟用該隊。
+  同形的「政黨建立初始到達逾時」（`0x7F24`）刻意不改（改了會讓到達中的政黨
+  在定居前就撤退）。
+- 死亡確認計數（`0x1068C`）：20 → 3 個連續 tick（村莊、領袖、村民、成員
+  全滅的確認去彈跳）。
 - active-party limit：4 → 8。
 - completed-job recycle：0 → 1。
 - gate 保持原版 `66,0`。
@@ -177,7 +193,7 @@ commit 後要先 Dispose／清空 rollback scope，再更新 UI；UI refresh 例
 
 `ak_haupthaus.bci` 的轉換人數修改（`0x3FCC` 處 `[81,59] -> [66,20]`，特徵碼唯一命中）已重新啟用並跟隨 AI Ultimate 開關：`s_createBattleUnitsMax` 的最後一個引數由「推入變數 59」改為「推入常數 20」。EXE 端實作 `FUN_005249d0` 證實該引數是每支戰鬥部隊的成員數（EXE 鉗制 0..20），且每次呼叫會收集最多 100 名閒置村民、按此人數分批全部轉換（一批 = 一支部隊）。實際運行時原版值為 6，即玩家觀察到的 6 人小隊。玩家手動轉換 UI 是否受影響仍需一次實機回歸驗證。
 
-2026-07-01 曾從 `ESAVE_000`／`ENDL_002` 的 `CLAK\scr.dat` 取出內嵌 `ak_level`，與 live BCI 做 exact SHA-256 比對，兩者相同，且讀到 20／5000／8／recycle 1／gate `66,0`。2026-07-02 再讀目前存檔時，team 3 為 NPC inactive、保留 71 筆村落資料、全部 NPC job slots 空閒，而第二條村落型重生計時仍為 600000 ms；因此 AI Ultimate 現在也把 `0x17F38` 改為 5000 ms，並將舊終極模式狀態視為可遷移版本。
+2026-07-01 曾從 `ESAVE_000`／`ENDL_002` 的 `CLAK\scr.dat` 取出內嵌 `ak_level`，與 live BCI 做 exact SHA-256 比對，兩者相同。2026-07-02 的存檔證據（所有參戰隊伍 `npcActive=0`、全部 NPC job slots 空閒、`0x17F38` 已為 5000 仍無人復活）推翻了「`0x17F38` 是村落型重生計時」的舊解讀：該位置實為 type-5 處理器的 RETREAT_INIT 期限。2026-07-02 完整解碼 `ak_level.bci` 政黨狀態機後確認：擊敗後復活的真正流程是「IDLE 狀態每 tick 偵測村莊中心 → 死亡確認計數 → RETREAT 鏈 → v61 期限到期 → DELETE_PARTY 釋放槽位 → 生成器（80/60/40/20% 依現存數）補發新到達 → 重新定居 → ak_npc `s_setNPCActive(team,1)` 重新啟用」。原版瓶頸是六處 10 分鐘期限與 20-tick 確認；AI Ultimate 現在把六處期限全改 5 秒、確認改 3 tick。`ak_npc.bci` 的重新啟用路徑為原生內建，無須修改；存檔檔案一律不碰。舊啟用狀態（僅 `0x17F38` 為 5000 或全部 600000、counter 20）視為 legacy-enabled，下次套用時自動遷移。
 
 目前仍需五張 ENDL 地圖的長時間 late-wave regression test；短期成功不能標成完整 runtime verified。
 
@@ -197,17 +213,17 @@ commit 後要先 Dispose／清空 rollback scope，再更新 UI；UI refresh 例
 
 - hook `005364c1`／file offset `0x1364c1`
 - cave `0056258f`／file offset `0x16258f`
-- 以 `(value * 5) >> 1` 產生 2.5x
+- 以 `value * 3` 產生 3x
 - 保留負值檢查、呼叫 `004c0900`、回到 `005364d1`
 
-狀態包含 Original、Legacy2x、Expanded2Point5x、Unknown；Legacy2x 必須可偵測、升級與回復。
+狀態包含 Original、Legacy2x、Expanded3x、Unknown；Legacy2x 必須可偵測、升級與回復。
 
 舊四處 shift-6 → shift-7 patch 已否決：
 
 - `0x1366c4`, `0x1366cd`
 - `0x0d722c`, `0x0d723b`
 
-現行程式不再寫入舊 `07` bytes，只偵測並還原。2.5x 建造範圍與紅框同步已完成實機驗證確認。
+現行程式不再寫入舊 `07` bytes，只偵測並還原。3x 建造範圍與紅框同步已完成實機驗證確認。
 
 ## 12. 強制英文與語言回復
 

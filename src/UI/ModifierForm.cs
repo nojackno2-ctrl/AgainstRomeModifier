@@ -75,6 +75,7 @@ namespace AgainstRomeModifier {
         private ModernToggle chkFocusLoss = null!;
         private ModernToggle chkBalance = null!;
         private ModernToggle chkHousingCapacity20x = null!;
+        private ModernToggle chkStorageCapacity10x = null!;
         private ModernToggle chkFastBuildUpgradeRepair = null!;
         private ModernToggle chkAiUltimateMode = null!;
         private ModernToggle chkDgVoodoo = null!;
@@ -700,7 +701,7 @@ namespace AgainstRomeModifier {
 
             chkMaxPopulation = new ModernToggle {
                 Text = Loc.Get("MaxPopulation"),
-                Location = new Point(25, 70),
+                Location = new Point(25, 60),
                 Size = new Size(335, 25),
                 Checked = false,
                 BackColor = Color.Transparent
@@ -709,7 +710,7 @@ namespace AgainstRomeModifier {
 
             chkHousingCapacity20x = new ModernToggle {
                 Text = Loc.Get("HousingCapacity20x"),
-                Location = new Point(25, 125),
+                Location = new Point(25, 105),
                 Size = new Size(335, 25),
                 Checked = false,
                 BackColor = Color.Transparent,
@@ -717,9 +718,19 @@ namespace AgainstRomeModifier {
             };
             pnlBuildCard.Controls.Add(chkHousingCapacity20x);
 
+            chkStorageCapacity10x = new ModernToggle {
+                Text = Loc.Get("StorageCapacity10x"),
+                Location = new Point(25, 150),
+                Size = new Size(335, 25),
+                Checked = false,
+                BackColor = Color.Transparent,
+                Font = fontJhengHei10B
+            };
+            pnlBuildCard.Controls.Add(chkStorageCapacity10x);
+
             chkFastCiviProduction = new ModernToggle {
                 Text = Loc.Get("FastCiviProduction"),
-                Location = new Point(25, 180),
+                Location = new Point(25, 195),
                 Size = new Size(335, 25),
                 Checked = false,
                 BackColor = Color.Transparent
@@ -728,7 +739,7 @@ namespace AgainstRomeModifier {
 
             chkFastBuildUpgradeRepair = new ModernToggle {
                 Text = Loc.Get("FastBuildUpgradeRepair"),
-                Location = new Point(25, 235),
+                Location = new Point(25, 240),
                 Size = new Size(335, 25),
                 Checked = false,
                 BackColor = Color.Transparent,
@@ -738,7 +749,7 @@ namespace AgainstRomeModifier {
 
             chkVillageBuildRange = new ModernToggle {
                 Text = Loc.Get("VillageBuildRange"),
-                Location = new Point(25, 290),
+                Location = new Point(25, 285),
                 Size = new Size(335, 25),
                 Checked = false,
                 BackColor = Color.Transparent,
@@ -748,7 +759,7 @@ namespace AgainstRomeModifier {
 
             chkAiUltimateMode = new ModernToggle {
                 Text = Loc.Get("AiUltimateMode"),
-                Location = new Point(25, 345),
+                Location = new Point(25, 330),
                 Size = new Size(335, 25),
                 Checked = false,
                 BackColor = Color.Transparent
@@ -1359,6 +1370,7 @@ namespace AgainstRomeModifier {
             chkToEng.Text = Loc.Get("ToEng");
             chkAiUltimateMode.Text = Loc.Get("AiUltimateMode");
             chkHousingCapacity20x.Text = Loc.Get("HousingCapacity20x");
+            chkStorageCapacity10x.Text = Loc.Get("StorageCapacity10x");
             chkFastBuildUpgradeRepair.Text = Loc.Get("FastBuildUpgradeRepair");
             chkDgVoodoo.Text = Loc.Get("DgVoodoo");
             chkVillageBuildRange.Text = Loc.Get("VillageBuildRange");

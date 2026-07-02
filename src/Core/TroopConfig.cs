@@ -20,7 +20,8 @@ namespace AgainstRomeModifier {
         Vw = 146,
         HousingCapacity = 156,
         Bmovs = 191,
-        Weapon1Dtyp = 199
+        Weapon1Dtyp = 199,
+        StorageCapacity = 42
     }
 
     /// <summary>

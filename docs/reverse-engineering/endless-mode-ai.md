@@ -152,10 +152,11 @@ endless maps inspected.
 - The military create-unit job's current count range is `4..4`, clamped by the
   EXE to `1..20`.
 - The modifier option `AI終極模式` changes this military count range to
-  `20..20`, changes the military respawn wait from `180000` ms to `5000` ms,
-  changes the village-AI defeat respawn wait at `0x17F38` from `600000` ms to
-  `5000` ms, and raises the active-party comparison literal at `0x195F8` from
-  `4` to `8`.
+  `20..20`, changes the military reinforcement wait from `180000` ms to
+  `5000` ms, shortens the six per-handler party retreat/cleanup deadlines from
+  `600000` ms to `5000` ms (see "Party lifecycle" below), cuts the dead-party
+  confirmation counter from `20` to `3` ticks, and raises the comparison
+  literal at `0x195F8` from `4` to `8`.
   It also changes the last `s_addNPCJob_createUnit` argument at `0x17B1C` from
   `0` to `1`. EXE runtime analysis shows that this flag removes a job after its
   status leaves the running state, allowing the 20 per-team NPC-job slots to be
@@ -170,12 +171,56 @@ endless maps inspected.
   starting-resources rewrite described above; their building layout is
   otherwise untouched.
 
-The village respawn site was isolated after reading `ESAVE_000` on 2026-07-02:
-team 3 was NPC-inactive with 71 village records, all 160 NPC-job slots were
-free, and both the live and save-embedded scripts still held `600000` at
-`0x17F38`. This distinguishes the village defeat timer from the already-patched
-military reinforcement timer at `0x178E0`. The write is byte-verified across all
-five original endless scripts; an in-game post-defeat timing retest remains due.
+## Party Lifecycle And Defeat Recovery (decoded 2026-07-02)
+
+`ak_level.bci` manages up to 16 "party" slots. Script arrays (indexed by party
+slot): `v47` = party type, `v48` = state, `v49` = team, `v61` = deadline
+timestamp, `v63[type]` = live count per type. State numbering (from the debug
+name formatter at `0x8C8C`): 0 STOP, 1 IDLE, 16..23 INIT chain
+(20 = INIT_UNITSCIV, 21 = INIT_UNITSMIL), 32..35 CIV states, 48..52 RETREAT
+chain, 256 DELETE_PARTY, 257 DELETE_TEAM.
+
+- Party creation (`0x7B94`): finds a free slot, sets `v49/v47`, state := 16,
+  and `v63[type]++`. Only slot release clears `v47` and decrements `v63`.
+- Occupied-team mask (`fn 0x81E8`): `base | (1 << v49[i])` for every slot with
+  `v47[i] != 0`, where base is `v18` (net game) or `1` (single player, protects
+  team 0). `pickTeam (0xC3DC)` chooses among `~occupied & tribeMask & v68`
+  (`v68` = CPU-controlled teams, `255` in single player).
+- Spawners: Siedler spawner (`0x18828`) rolls 80/60/40/20 % by `v63[1]`
+  (count >= 4 -> 0 %); military-reinforcement spawner (`0x18E8C`) requires an
+  existing settled team with >= 2 buildings; three additional raider spawners
+  hang off the `v72/v74/v76` polling timers.
+- Settled parties (types 1 and 4; handlers at `0xF144` and `0x144AC`, covering
+  both INIT_UNITSCIV and INIT_UNITSMIL) sit in state 1 (IDLE) and check
+  `s_getVillageCenterObj` EVERY tick. When village, leader, and civilians are
+  all gone, a consecutive-failure counter (literal `20` at decompressed
+  `0x1068C`) sends the party into the RETREAT chain with
+  `v61[party] := s_getTime() + 600000`.
+- The RETREAT chain only reaches DELETE_PARTY (256) after the `v61` deadline
+  expires (a wiped team has no units left to walk home, so the deadline is the
+  only exit). Slot release then frees the team for the spawners, a new arrival
+  settles, and `ak_npc.bci` reactivates the team (see below).
+- The six retreat/cleanup deadline literals share the BCI word signature
+  `[81,61, 90,-3, 128,83, 86, 66, <ms>, 32, 44, 164]` at decompressed value
+  offsets `0x10700`, `0x119C0`, `0x12FFC`, `0x13FE8`, `0x160EC`, `0x17F38`.
+  Two same-shaped sites are deliberately excluded: the initial-arrival timeout
+  at `0x7F24` (no `44` word; must stay `600000` or arrivals would retreat
+  before settling) and the military reinforcement wait at `0x178E0` (followed
+  by `pushlit 34` = CIVRECREATE_WAIT; patched separately).
+- `0x17F38` is therefore the type-5 handler's RETREAT_INIT deadline, NOT a
+  "village defeat respawn timer". The 2026-07-02 save read (teams stuck at
+  `npcActive=0` with all job slots free while `0x17F38` was already `5000`)
+  disproved the old interpretation; the stall was the five other handlers'
+  10-minute deadlines plus the 20-tick confirmation counter.
+- `ak_npc.bci` needs no patch for reactivation: its per-team state machine
+  already calls `s_setNPCActive(team, 1)` (call site `0x30F4`) whenever a
+  healthy village exists for an inactive team, and `s_setNPCActive(team, 0)`
+  (`0x3420`, `0x41BC`) when the village is lost. The EXE stores the flag in
+  `DAT_029e6000[8]` (`FUN_00548ce0` setter / `FUN_00548d20` getter); no other
+  EXE writer exists besides level init.
+- The `s_netGame`-gated defeat handler at `0x1AA0C` (clears `v18/v41` team
+  bits, plays `ENDL_ALL_%02i.wav`) recycles defeated HUMAN player slots in
+  multiplayer; it is not part of the AI respawn path and is left untouched.
 
 ### Rejected global village-production patch
 

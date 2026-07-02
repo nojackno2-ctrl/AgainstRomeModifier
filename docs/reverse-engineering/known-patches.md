@@ -7,16 +7,16 @@
 - Hook `005364c1` (file `0x1364c1`) jumps to executable zero padding at
   `0056258f` (file `0x16258f`).
 - The trampoline preserves both negative-value checks, scales `ESI`/`EDI` with
-  `(value * 5) >> 1`, calls `004c0900`, and returns at `005364d1`. Both the
+  `value * 3`, calls `004c0900`, and returns at `005364d1`. Both the
   type-definition and per-object village-state copies therefore receive the
-  same 2.5x values.
+  same 3x values.
 - Runtime result: both the player-usable village construction range and the red
-  dashed frame have been successfully verified in-game at the 2.5x scale.
+  dashed frame have been successfully verified in-game at the 3x scale.
 - Hook original: `85 F6 7C A6 85 FF 7C A2`.
 - Hook patched: `E9 C9 C0 02 00 90 90 90`.
 - Cave original: 39 zero bytes.
 - Legacy 2x cave: `85 F6 0F 8C D4 3E FD FF 85 FF 0F 8C CC 3E FD FF D1 E6 D1 E7 57 56 50 E8 55 E3 F5 FF E9 21 3F FD FF`, followed by six zero bytes. It is recognized for migration and restore.
-- Cave patched: `85 F6 0F 8C D4 3E FD FF 85 FF 0F 8C CC 3E FD FF 8D 34 B6 D1 EE 8D 3C BF D1 EF 57 56 50 E8 4F E3 F5 FF E9 1B 3F FD FF`.
+- Cave patched: `85 F6 0F 8C D4 3E FD FF 85 FF 0F 8C CC 3E FD FF 8D 34 76 90 90 8D 3C 7F 90 90 57 56 50 E8 4F E3 F5 FF E9 1B 3F FD FF`.
 
 ### Population Limit
 
@@ -107,12 +107,20 @@
   at `0x17B1C`, `0 -> 1`. This lets completed military reinforcement jobs free
   their per-team NPC-job slots for later waves.
 - EXE path `0054aa80 -> 00547f50` clamps the count to `1..20`.
-- Military respawn cooldown at `0x178E0`: `180000 -> 5000` ms.
-- Village-AI defeat respawn cooldown at `0x17F38`: `600000 -> 5000` ms.
-  A current-save readback showed an NPC-inactive village team with 71 village
-  records and no occupied NPC-job slots while this second timer remained at
-  `600000`, explaining why the earlier military-only patch did not make that
-  opponent return quickly.
+- Military reinforcement cooldown at `0x178E0`: `180000 -> 5000` ms.
+- Party retreat/cleanup deadlines (six sites, value offsets `0x10700`,
+  `0x119C0`, `0x12FFC`, `0x13FE8`, `0x160EC`, `0x17F38`): `600000 -> 5000` ms
+  each. These `v61[party] := s_getTime() + N` deadlines are the only exit for
+  a wiped team's party out of the RETREAT chain into DELETE_PARTY; only a
+  freed party slot lets the endless spawners send a new arrival for that team,
+  which resettles and makes `ak_npc.bci` call `s_setNPCActive(team, 1)` again.
+  `0x17F38` was previously misclassified as a "village defeat respawn timer";
+  it is the type-5 handler's RETREAT_INIT deadline. The same-shaped
+  initial-arrival timeout at `0x7F24` is deliberately NOT patched (a 5-second
+  value there would retreat parties before they can settle).
+- Dead-party confirmation counter at `0x1068C`: `20 -> 3` consecutive ticks
+  (settled-party handler; counts ticks with village, leader, civilians, and
+  members all gone before entering RETREAT).
 - The first three military reinforcement polling loops change from
   `480000..960000`, `480000..960000`, and `240000..360000` ms to
   `5000..10000` ms. The remaining AI action loops retain their original pacing.
@@ -122,8 +130,10 @@
   `5000..10000` ms. Applying this version restores the gate and all unrelated
   loops; only the three bounded reinforcement polling loops remain accelerated.
 - The signature is present in `ENDL_000` through `ENDL_004`.
-- The previous state (military `5000`, village `600000`) is accepted as a
-  legacy-enabled state and migrated to village `5000` on the next apply.
+- Earlier enabled states (military `5000` with only `0x17F38` or none of the
+  retreat deadlines shortened, and the original `20`-tick counter) are accepted
+  as legacy-enabled and migrated to the full six-site/3-tick state on the next
+  apply.
 - Disabling or compatibility restore returns the recycling flag, counts, delays,
   limits, and gate words to their exact original values.
 - Rejected global economy edits are always restored: `ak_npc.bci` free-civilian

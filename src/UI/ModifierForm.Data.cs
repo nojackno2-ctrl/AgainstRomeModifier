@@ -198,6 +198,36 @@ namespace AgainstRomeModifier {
             return foundHousing;
         }
 
+        private static bool HasStorageCapacityMultiplier(string currentContent, string originalContent, int multiplier) {
+            var currentValues = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            string[] currentLines = currentContent.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
+            foreach (string line in currentLines) {
+                if (line.Length < 100) continue;
+                string[] cols = ParseCsvLine(line);
+                if (cols.Length <= (int)ObjdefIndex.StorageCapacity || cols.Length <= (int)ObjdefIndex.Name) continue;
+                if (int.TryParse(cols[(int)ObjdefIndex.StorageCapacity].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int value)) {
+                    currentValues[cols[(int)ObjdefIndex.Name].Trim()] = value;
+                }
+            }
+
+            bool foundStorage = false;
+            string[] originalLines = originalContent.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
+            foreach (string line in originalLines) {
+                if (line.Length < 100) continue;
+                string[] cols = ParseCsvLine(line);
+                if (cols.Length <= (int)ObjdefIndex.StorageCapacity || cols.Length <= (int)ObjdefIndex.Name) continue;
+                string name = cols[(int)ObjdefIndex.Name].Trim();
+                if (!name.StartsWith("Bau") || !(name.Contains("Hau") || name.Contains("Lag"))) continue;
+                if (!int.TryParse(cols[(int)ObjdefIndex.StorageCapacity].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int originalValue) || originalValue <= 0) continue;
+
+                foundStorage = true;
+                if (!currentValues.TryGetValue(name, out int currentValue) || currentValue != checked(originalValue * multiplier)) {
+                    return false;
+                }
+            }
+            return foundStorage;
+        }
+
         private static bool HasFastBuildUpgradeRepair(string currentContent, string originalContent) {
             var currentBuildValues = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             var currentUpgValues = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
@@ -1038,9 +1068,11 @@ namespace AgainstRomeModifier {
                 if (backupFiles.TryGetValue("SYSTEM/DATA_MP/DEFAULTS/objdef.dau", out byte[]? originalObjdefBytes)) {
                     string originalObjdef = Encoding.GetEncoding(1251).GetString(GameLZSS.DecompressPfil(originalObjdefBytes));
                     chkHousingCapacity20x.Checked = HasHousingCapacityMultiplier(decomp, originalObjdef, HousingCapacityMultiplier);
+                    chkStorageCapacity10x.Checked = HasStorageCapacityMultiplier(decomp, originalObjdef, StorageCapacityMultiplier);
                     chkFastBuildUpgradeRepair.Checked = HasFastBuildUpgradeRepair(decomp, originalObjdef);
                 } else {
                     chkHousingCapacity20x.Checked = false;
+                    chkStorageCapacity10x.Checked = false;
                     chkFastBuildUpgradeRepair.Checked = false;
                 }
 
@@ -1303,7 +1335,8 @@ namespace AgainstRomeModifier {
 
                     ExeVillageSetterPatchState villageSetterState = GetVillageSetterPatchState(exeBytes);
                     chkVillageBuildRange.Checked = villageSetterState == ExeVillageSetterPatchState.Legacy2x ||
-                        villageSetterState == ExeVillageSetterPatchState.Expanded2Point5x;
+                        villageSetterState == ExeVillageSetterPatchState.Legacy2Point5x ||
+                        villageSetterState == ExeVillageSetterPatchState.Expanded3x;
                     if (villageSetterState == ExeVillageSetterPatchState.Unknown) {
                         Log(Loc.Get("LogVillageBuildRangeWarning"));
                     }

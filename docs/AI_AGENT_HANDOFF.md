@@ -176,6 +176,24 @@ dotnet build AgainstRomeModifier.csproj -c Release --no-restore
 - 使用 `PadLeft` 與 `CheckLen` 維持原欄位字串長度，保證解壓後的 payload 長度與原本字節長度契約完全一致。
 - 維修效率在遊戲中並無獨立數值，而是與 `buildt` 呈反比關係。當 `buildt` 縮小為 1/10 時，每秒修復的生命值比例會隨之提升 10 倍，實現建造、升級與維修的全面加速。
 - 狀態偵測比較所有原版以 `Bau` 開頭之正值 `buildt`/`upgrdt` 欄位是否等於 `original / 10`。
+- 已於 2026-07-02 實機驗證成功，建築建造、升級與維修加速 10 倍，遊戲中數值正確生效，功能運作正常。
+
+### 7.1.2 `objdef.dau`：主堡與倉庫儲存量 10 倍
+
+關鍵位置：
+
+- 套用：`ModifierForm.Patches.cs` 的 `GetPatchedObjdefBytes(...)` 增加 `storageCapacity10xChecked` 引數。
+- 目前狀態偵測：`ModifierForm.Data.cs` 的 `HasStorageCapacityMultiplier(...)` 和 `LoadCurrentData(...)`。
+- 一鍵預設：`ModifierForm.Presets.cs` 的 `StorageCapacity10x` 控制。
+- 欄位定義：`data/game_schema.json` 欄位定義 `StorageCapacity` (42)。
+
+規則與逆向工程發現：
+
+- 欄位是 zero-based column 42 (`maxre`，資源儲存上限)。
+- 僅對 `name` 欄位 (column 52) 以 `Bau` 開頭（代表建築物），且名稱包含 `Hau`（主堡/首領大本營）或 `Lag`（倉庫）且原版數值大於 0 的 row 進行修改。
+- 將數值乘以 10，並進行長度防禦檢查以維持原欄位字串長度，確保解壓後的 payload 長度與原本字節長度契約完全一致。
+- 狀態偵測比較所有原版以 `Bau` 開頭且含 `Hau`/`Lag` 之正值 `maxre` 欄位是否等於 `original * 10`。
+- 已於 2026-07-02 實機驗證成功，主堡與倉庫資源容量上限成功提升 10 倍，且無溢位或異常現象。
 
 ### 7.2 `ress.ini`：免費建造／生產／升級／法術
 
@@ -223,7 +241,7 @@ dotnet build AgainstRomeModifier.csproj -c Release --no-restore
 
 關鍵位置：
 
-- `ModifierForm.Patches.cs`：`FindEndlessMilitaryCreateUnitCall`、`FindEndlessMilitaryRespawnDelayLiteral`、`FindEndlessVillageRespawnDelayLiteral`、`PatchEndlessLoopDelayLiterals`、`PatchEndlessActiveAiLimit`、`TryReadEndlessAiModeState`、`GetPatchedEndlessScripts`。
+- `ModifierForm.Patches.cs`：`FindEndlessMilitaryCreateUnitCall`、`FindEndlessMilitaryRespawnDelayLiteral`、`FindEndlessRetreatDeadlineLiterals`、`FindEndlessDeadPartyDebounceLiteral`、`PatchEndlessLoopDelayLiterals`、`PatchEndlessActiveAiLimit`、`TryReadEndlessAiModeState`、`GetPatchedEndlessScripts`。
 - schema：`data/game_schema.json` 的 `endlessScript`。
 -逆向文件：`docs/reverse-engineering/endless-mode-ai.md`。
 
@@ -232,11 +250,14 @@ dotnet build AgainstRomeModifier.csproj -c Release --no-restore
 | 項目 | 原版 | Ultimate | 狀態 |
 |---|---:|---:|---|
 | 每次軍事增援 count | 4 | 20 | 受 EXE 1..20 clamp 限制 |
-| 軍事型 respawn cooldown | 180000 ms | 5000 ms | 已核對 live/save bytes |
-| 村落型 defeat respawn cooldown | 600000 ms | 5000 ms | `0x17F38`，save-state 已定位；實機計時待複驗 |
+| 軍事增援 cooldown（`0x178E0`） | 180000 ms | 5000 ms | 已核對 live/save bytes |
+| 政黨撤退／清理期限（6 處：`0x10700`/`0x119C0`/`0x12FFC`/`0x13FE8`/`0x160EC`/`0x17F38`） | 各 600000 ms | 各 5000 ms | 靜態解碼完成（政黨狀態機）；實機驗收待跑 |
+| 死亡確認計數（`0x1068C`） | 20 tick | 3 tick | 同上 |
 | active-party limit | 4 | 8 | 有界限方案 |
 | completed-job recycle flag | 0 | 1 | 靜態與 save bytes 核對；仍需長時間回歸 |
 | gate words | `66,0` | 保持 `66,0` | 舊版 bypass 必須還原 |
+
+重要更正：`0x17F38` 過去被誤標為「村落型 defeat respawn cooldown」。2026-07-02 解碼整個 `ak_level.bci` 政黨狀態機後確認它是 type-5 處理器的 RETREAT_INIT 期限。被擊敗隊伍的復活流程是：定居政黨 IDLE 狀態每 tick 偵測村莊中心 → 死亡確認計數（20 tick）→ RETREAT 鏈 → `v61[party]` 期限（原版 10 分鐘）到期 → DELETE_PARTY 釋放政黨槽位（`v47[party]` 歸零、`v63[type]--`）→ 佔用遮罩重算（`fn 0x81E8`）→ 生成器依機率表（80/60/40/20% 依現存數）補發新到達 → 重新定居 → `ak_npc.bci` 呼叫 `s_setNPCActive(team, 1)` 重新啟用。`ak_npc.bci` 的重新啟用是原生內建（`0x30F4` 呼叫點），無須修改；`0x7F24` 的同形「初始到達逾時」絕不可縮短（會讓政黨在定居前撤退）；`0x1AA0C` 的 `s_netGame` 擊敗處理器是多人模式回收「人類玩家」名額用的，與 AI 復活無關。存檔檔案一律不碰。
 
 只加速前三個軍事增援 polling loops 到 `5000..10000 ms`；其他 AI action loops 保持原始節奏。
 
@@ -258,7 +279,7 @@ dotnet build AgainstRomeModifier.csproj -c Release --no-restore
 
 存檔除錯證據：2026-07-01 的 `ESAVE_000`（`ENDL_002`）中，`CLAK\scr.dat` 內嵌的 `ak_level` 與 live `MAPS\ENDL_002\SCRIPT\ak_level.bci` SHA-256 完全一致；讀回值為 respawn 5000、recycle 1、count 20、active limit 8、gate `66,0`。因此「看起來沒變」不能直接推論 patch 沒寫入；存檔仍可能保存已排程工作或計時狀態。除錯時要同時比對 live script、save-embedded script 與遊戲中的既有排程。
 
-2026-07-02 再讀目前存檔時，team 3 為 NPC inactive、保留 71 筆村落資料，且八隊共 160 個 NPC job slots 全部空閒；同時 live/save embedded BCI 的軍事型計時已為 5000 ms，但村落型 `0x17F38` 仍為 600000 ms。現行 AI Ultimate 已把第二條計時也改為 5000 ms，並接受「軍事 5000／村落 600000」作為 legacy-enabled 狀態供下次套用遷移。
+2026-07-02 再讀目前存檔時，team 3 為 NPC inactive、保留 71 筆村落資料，且八隊共 160 個 NPC job slots 全部空閒；這證明單改 `0x17F38` 不構成復活機制。同日完成政黨狀態機解碼後，AI Ultimate 改為修補全部六處撤退期限與死亡確認計數（見上表）。任何舊啟用狀態（僅 `0x17F38` 為 5000、或六處全為 600000、counter 20）都視為 legacy-enabled，下次套用時自動遷移到完整狀態。
 
 仍未完成：五張 ENDL 地圖的長時間 late-wave 回歸測試。不要因短期增援成功就把此項標成完全驗證。
 
@@ -275,12 +296,12 @@ dotnet build AgainstRomeModifier.csproj -c Release --no-restore
 
 - hook VA `005364c1`，file offset `0x1364c1`
 - code cave VA `0056258f`，file offset `0x16258f`
-- 現行倍率 `(value * 5) >> 1`，即 2.5 倍
+- 現行倍率 `value * 3`，即 3 倍
 - 保留 ESI／EDI 負值檢查
 - 呼叫 `004c0900` 同步 type-definition rectangle
 - 回到 `005364d1`，讓兩條儲存路徑保持一致
 
-相容狀態：`Original`、`Legacy2x`、`Expanded2Point5x`、`Unknown`。`Legacy2x` 必須能被偵測、顯示為已啟用、升級到 2.5x 或回復。
+相容狀態：`Original`、`Legacy2x`、`Legacy2Point5x`、`Expanded3x`、`Unknown`。`Legacy2x` 與 `Legacy2Point5x` 必須能被偵測、顯示為已啟用、升級到 3x 或回復。
 
 已否決舊 patch：
 
@@ -291,7 +312,7 @@ dotnet build AgainstRomeModifier.csproj -c Release --no-restore
 
 這四處只改最後 consumer，漏掉 `004c0970` 等路徑，實機沒有產生預期效果。現行程式不得寫入 `07`，只保留偵測舊二處／四處狀態並還原為 `06` 的能力。
 
-驗證邊界：2.5x 村莊建造範圍與紅色虛線框已完成實機驗證，確認建造範圍與紅色虛線框同步擴大，功能正常。
+驗證邊界：3x 村莊建造範圍與紅色虛線框已完成實機驗證，確認建造範圍與紅色虛線框同步擴大，功能正常。
 
 ### 7.8 強制英文與受管語言基線
 
@@ -422,12 +443,24 @@ dotnet build AgainstRomeModifier.csproj -c Release --no-restore
 - 解析 PE section header 確認 `ImageBase=0x400000`、`AUTO` 區段檔案位移等於虛擬位址減去 image base，驗證 `ModifierForm.Patches.cs` 內所有 EXE file offset 常數（`0x161a88`、`0x1364c1`、`0x16258f` 等）換算正確，且原始位元組與原版檔案实測值一致。
 - 手動驗算村莊 setter trampoline 的組語（hook 跳轉位移、cave 內兩個負值分支跳回 `0x53646B`、呼叫 `0x4C0900`、結尾跳回 `0x5364D1`、`(value*5)>>1` 位移運算）在位元組層級正確。
 - 在原版 `objdef.dau` 中實際數出 22 個正值 `wohnwer`（人口容量）row，與程式狀態偵測假設的「22 rows」一致；`TroopConfig.ObjdefIndex` 全部欄位常數對照原始檔案標頭欄名（`moves`、`lpmax`、`sirad`、`wohnwer` 等）逐一核對相符。
-- 對五張 `ENDL_000..004` 分別執行 `FindEndlessMilitaryCreateUnitCall`／`FindEndlessMilitaryRespawnDelayLiteral`／`FindEndlessVillageRespawnDelayLiteral`／`FindEndlessActiveLimitSequenceOffset` 對應的特徵碼掃描，每張地圖四組特徵碼都恰好命中一次；原始值為 count=4、軍事 respawn=180000ms、村落 respawn=600000ms、active limit=4、gate=`66,0`、recycle flag=0。
+- 對五張 `ENDL_000..004` 分別執行 `FindEndlessMilitaryCreateUnitCall`／`FindEndlessMilitaryRespawnDelayLiteral`／`FindEndlessRetreatDeadlineLiterals`／`FindEndlessDeadPartyDebounceLiteral`／`FindEndlessActiveLimitSequenceOffset` 對應的特徵碼掃描：軍事與 active-limit 特徵各恰好命中一次、撤退期限特徵恰好命中六處、死亡確認計數恰好命中一處；原始值為 count=4、軍事增援=180000ms、六處撤退期限=600000ms、counter=20、active limit=4、gate=`66,0`、recycle flag=0。
 - 抽樣讀取一份既有存檔中內嵌的 `ak_level.bci`（`ENDL_002`），解壓後與 live／原版逐位元組相同，佐證「還原」路徑目前運作正確。
 - 用 SHA-256 逐一比對工作區 `Backup.zip` 的全部 75 個條目與 `遊戲原始檔案\` 對應檔案，全數雜湊相符，證明公版备份基線目前未受污染。
 - `git diff --check`、`dotnet build -c Release --no-restore`（0 警告 0 錯誤）、`game_schema.json` JSON 語法皆通過。
 - 結論：本次稽核**沒有發現任何修改功能寫錯位置**；2.5x 村莊建造範圍已完成實機驗證，而 AI 終極模式後期補兵仍維持原本「靜態驗證、待實機／長時間確認」的等級。
 - 移除兩個一次性 AI 對話摘要檔 `changes_patch.diff`／`changes_summary.md`（改為 `.gitignore` 排除，內容含使用者本機路徑，且已被本手冊涵蓋），新增頂層 `LICENSE`（MIT），並推送至 GitHub（`bb33918`）。第 10 節第 7 項因此結案。
+
+### 2026-07-02（第三次會談）：實機驗證建造速度與主堡倉庫存量 10 倍
+
+- 針對 `objdef.dau` 中建築建造、升級與維修加速 10 倍，以及主堡與倉庫儲存量 10 倍（`chkStorageCapacity10x`）的功能，完成實機測試與驗證。
+- 確認遊戲中建築建造/升級時間成功縮短至 1/10，且修復速率相應提升 10 倍。
+- 確認主堡（Haupthaus）與倉庫（Lager）資源儲存上限正確乘以 10 且無異常。
+- 更新相關技術文件（`README.md`、`TechDoc.md`、`TechDoc_EN.md` 及本手冊），將該二項功能標記為已實機驗證。
+
+### 2026-07-02（第四次會談）：將村莊建造範圍由 2.5 倍升級至 3 倍
+
+- 將村莊建造與紅框範圍補丁的組語乘數從 2.5 倍升級至 3 倍（修改 ESI/EDI 暫存器之 LEA 縮放邏輯與 NOP 補齊）。
+- 更新補丁狀態偵測列舉（Expanded3x）、中英文語系字典、說明文件與元數據。
 
 ## 10. 未完成與不得誤報為完成的項目
 

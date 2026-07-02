@@ -10,8 +10,10 @@ and patch code.
 - `../AI_AGENT_HANDOFF.md`: cross-feature maintenance chronology, failure cases,
   safety contracts, and verification playbooks for future agents.
 - `file-formats.md`: compressed game files, wrappers, and encodings.
-- `endless-mode-ai.md`: endless AI spawn, timing, gate, job-slot, and save-state
-  findings.
+- `endless-mode-ai.md`: endless AI spawn, timing, gate, job-slot, party
+  lifecycle, and defeat-recovery findings.
+- `bci0-opcodes.md`: `BCI0` script container layout and the partial bytecode
+  instruction reference used to trace the endless party state machine.
 - `objdef-fields.csv`: known `objdef.dau` indexes.
 - `ress-fields.csv`: known `ress.ini` indexes.
 - `exe-functions.md`: executable functions and anchors found with Ghidra.

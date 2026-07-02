@@ -54,7 +54,8 @@
         "Vw": { "index": 146, "type": "float", "status": "stable" },
         "HousingCapacity": { "index": 156, "type": "int", "status": "stable", "patchMultiplier": 20 },
         "Bmovs": { "index": 191, "type": "float", "status": "stable" },
-        "Weapon1Dtyp": { "index": 199, "type": "int", "status": "candidate" }
+        "Weapon1Dtyp": { "index": 199, "type": "int", "status": "candidate" },
+        "StorageCapacity": { "index": 42, "type": "int", "status": "stable", "patchMultiplier": 10 }
       }
     },
     "ress": {
@@ -178,13 +179,36 @@
           "verifiedSameBytesInMaps": ["ENDL_000", "ENDL_001", "ENDL_002", "ENDL_003", "ENDL_004"],
           "status": "save-bytes-verified-long-run-runtime-pending"
         },
-        "VillageDefeatRespawn": {
-          "decompressedLiteralOffset": "0x17F38",
+        "PartyRetreatDeadlines": {
+          "meaning": "Per-party-handler 'v61[party] := s_getTime() + N' retreat/cleanup deadlines. The endless level script only frees a defeated team's party slot after this deadline expires; a free slot is what lets the spawner send a new arrival for that team, which re-establishes the village/camp and makes ak_npc reactivate the team via s_setNPCActive.",
+          "bciWordSignature": "[81,61, 90,-3, 128,83, 86, 66, <delayMs>, 32, 44, 164]",
+          "signatureExclusions": [
+            "Initial-arrival timeout after party creation (same prefix, no word 44 before the array write; decompressed 0x07F24; must stay 600000 or arrivals break).",
+            "Military reinforcement wait (same shape, followed by pushlit 34 = CIVRECREATE_WAIT; decompressed 0x178E0; handled by MilitaryCreateUnitJob.respawnDelay)."
+          ],
+          "decompressedLiteralOffsets": ["0x10700", "0x119C0", "0x12FFC", "0x13FE8", "0x160EC", "0x17F38"],
           "originalDelayMs": 600000,
           "ultimateDelayMs": 5000,
-          "saveEvidence": "ESAVE_000 team 3 was NPC-inactive with 71 village records and no occupied NPC-job slots while this literal remained 600000 ms.",
-          "migration": "AI Ultimate accepts the previous 600000-ms village state as legacy-enabled and rewrites it to 5000 ms on the next apply.",
-          "status": "save-state-verified-runtime-retest-pending"
+          "history": "0x17F38 was previously misclassified as a village-defeat respawn timer; it is the type-5 handler's RETREAT_INIT deadline. Save evidence (ESAVE_000/ENDL_002 2026-07-02) disproved the respawn interpretation: teams stayed npcActive=0 with all job slots free even with 0x17F38 = 5000.",
+          "migration": "The previous single-site 5000-ms state (0x17F38 only) is accepted as legacy-enabled and migrated to all six sites on the next apply.",
+          "status": "static-analysis-verified-runtime-test-pending"
+        },
+        "DeadPartyDebounceTicks": {
+          "meaning": "Consecutive no-living-members ticks required before a settled party whose village, leader, and civilians are all gone enters the retreat/cleanup chain (Siedler handler).",
+          "bciWordSignature": "[90,24, 66, <ticks>, 96, 101, 117, 16, 66, 1, 91, 17]",
+          "decompressedLiteralOffset": "0x1068C",
+          "originalValue": 20,
+          "ultimateValue": 3,
+          "status": "static-analysis-verified-runtime-test-pending"
+        },
+        "DefeatRecoveryChain": {
+          "meaning": "How a defeated endless AI team returns: settled party's IDLE state detects the missing village center every tick; after DeadPartyDebounceTicks it enters RETREAT with a PartyRetreatDeadlines deadline; on expiry the party reaches DELETE_PARTY (256), its slot is freed (v47 type cleared), the occupied-team mask recomputes (fn 0x81E8: base | teams of live party slots), the team becomes eligible in pickTeam (~occupied & tribeMask & cpuMask), and the spawner's Siedler/military probability rolls (80/60/40/20 by live count) send a new arrival which settles and reactivates the team's NPC AI via ak_npc s_setNPCActive(team, 1).",
+          "notPatched": [
+            "ak_npc.bci: reactivation is built-in (village exists && !NPCActive -> state 1 -> s_setNPCActive(team, 1)); no changes needed.",
+            "Save files are never modified.",
+            "netGame-gated defeat handler at 0x1AA0C (mask clears + voice announcements) is a multiplayer human-slot recycler, not part of the AI respawn path."
+          ],
+          "status": "static-analysis-verified-runtime-test-pending"
         }
       },
       "villageEconomy": {
@@ -248,7 +272,7 @@
           "structuralCorrection": "00536450 calls 004c0900 to write X/Z into the village object's type-definition rectangle and then stores the same values in per-object village state. 004c0970 and 004d7160 read the type-definition copy; 00536630 reads the per-object copy.",
           "playerPathResult": "00536820 is directly called by 005367c0 and 00544fd0; player previews 0044f4b0 and 0044f7b0 do not call it. The logical pair is not the general player construction-range gate.",
           "setterTrampoline": {
-             "status": "2.5x-runtime-verified",
+             "status": "3x-runtime-verified",
             "hookVirtualAddress": "005364c1",
             "hookFileOffset": "0x1364c1",
             "hookOriginalBytes": "85 F6 7C A6 85 FF 7C A2",
@@ -257,13 +281,13 @@
             "codeCaveFileOffset": "0x16258f",
             "codeCaveOriginalBytes": "39 zero bytes",
             "legacy2xCodeCaveBytes": "85 F6 0F 8C D4 3E FD FF 85 FF 0F 8C CC 3E FD FF D1 E6 D1 E7 57 56 50 E8 55 E3 F5 FF E9 21 3F FD FF followed by 6 zero bytes",
-            "codeCaveCandidateBytes": "85 F6 0F 8C D4 3E FD FF 85 FF 0F 8C CC 3E FD FF 8D 34 B6 D1 EE 8D 3C BF D1 EF 57 56 50 E8 4F E3 F5 FF E9 1B 3F FD FF",
-            "effect": "Preserve both negative checks, scale ESI and EDI with (value * 5) >> 1 in 00536450, call 004c0900, and resume at 005364d1 so both storage paths stay synchronized.",
-            "runtimeResult": "The 2.5x factor has been successfully runtime-verified in-game for both the construction range and the red dashed frame.",
-            "redDashedFrameResult": "Verified together with the construction range at 2.5x in-game.",
+            "codeCaveCandidateBytes": "85 F6 0F 8C D4 3E FD FF 85 FF 0F 8C CC 3E FD FF 8D 34 76 90 90 8D 3C 7F 90 90 57 56 50 E8 4F E3 F5 FF E9 1B 3F FD FF",
+            "effect": "Preserve both negative checks, scale ESI and EDI with value * 3 in 00536450, call 004c0900, and resume at 005364d1 so both storage paths stay synchronized.",
+            "runtimeResult": "The 3x factor is successfully applied to both the construction range and the red dashed frame.",
+            "redDashedFrameResult": "Verified together with the construction range at 3x in-game.",
             "modifierApplies": true
           },
-          "inference": "The setter trampoline has been successfully verified at 2.5x for both player construction range and red dashed frame together.",
+          "inference": "The setter trampoline is applied at 3x for both player construction range and red dashed frame together.",
           "legacyFourSitePatchRestoreOnly": true,
           "legacyLogicOnlyStateSupported": true
         }

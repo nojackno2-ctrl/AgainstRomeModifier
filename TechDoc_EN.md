@@ -148,6 +148,7 @@ Stable indexes:
 | 142 | AW |
 | 146 | VW |
 | 156 | Housing capacity (`wohnwer`) |
+| 42 | Storage capacity (`maxre`) |
 | 73 | BuildTime (`buildt`) |
 | 74 | UpgradeTime (`upgrdt`) |
 | 191 | Bmovs |
@@ -166,12 +167,15 @@ The fixed nine-property array is `HP,Dmg,VW,AW,Speed,Sight,Relt,Range,SpellRadiu
 - SpellRadius is implemented in `cl_script.ini`, not `objdef.dau`.
 - The core 20x housing-capacity switch multiplies every positive original field
   156 value and remains reversible because each apply starts from the backup.
+- The 10x storage-capacity switch multiplies every positive original `maxre` (Index 42)
+  value by 10 for all town halls and warehouses (building rows whose names start with `Bau`
+  and contain `Hau` or `Lag`). It remains fully reversible (successfully runtime-verified in-game).
 - The 10x fast-build/upgrade/repair switch scales down the original `buildt` (Index 73)
   and `upgrdt` (Index 74) values by a factor of 10 for all building rows (names starting
   with `Bau`), with a lower bound of 1 ms to prevent divide-by-zero or timer errors.
   Because repair rate is inversely proportional to build time in Against Rome's data-driven
   rules, shortening the build time simultaneously boosts building, upgrading, and
-  repair speeds. This switch is fully integrated into apply, restore, and preset actions.
+  repair speeds. This switch is fully integrated into apply, restore, and preset actions (successfully runtime-verified in-game).
 
 The balance direction includes 2x movement, 3x ranged/siege range, fixed siege HP (ballista 1000, catapult 1500), about 1.5x ranged rate, stronger priest sight/range, and 2.5x spell radius. The current exact four-property baseline from `TroopConfig.CalculateFactionBaseStats` follows.
 
@@ -246,13 +250,16 @@ Every `MAPS/**/team.dat` is restored from its original first. The core switch th
 - Completed-job recycling flag near `0x17B1C`: `0 -> 1`, allowing completed military reinforcement jobs to release their NPC-job slots for later waves.
 - Older builds edited three global CLAK economy scripts. `ak_npc.bci` (free-civilian reserve) and `ak_produktion.bci` (production gate) proved not NPC-scoped in runtime testing — they stop staffed player resource buildings even in a new game — and are always restored. The third edit, `ak_haupthaus.bci` conversion size `[81,59] -> [66,20]` at `0x3FCC`, is re-enabled under the AI Ultimate toggle: Ghidra decompilation of the `s_createBattleUnitsMax` implementation (`FUN_005249d0`) confirms the argument is the members-per-battle-unit count, clamped by the EXE to 0..20, and each call already converts all gathered idle civilians (up to 100) in batches of that size. The original runtime value is 6, matching the observed 6-man AI conversion units. A player manual-conversion regression check is still pending.
 - EXE path `0054aa80 -> 00547f50` clamps this mode to 1..20.
-- Military respawn wait: `180000 -> 5000 ms`.
-- Village-AI defeat respawn wait at decompressed `0x17F38`: `600000 -> 5000 ms`.
+- Military reinforcement wait at decompressed `0x178E0`: `180000 -> 5000 ms`.
+- Party retreat/cleanup deadlines (six sites at decompressed value offsets `0x10700`, `0x119C0`, `0x12FFC`, `0x13FE8`, `0x160EC`, `0x17F38`): `600000 -> 5000 ms` each. These `v61[party] := s_getTime() + N` deadlines are the only exit a wiped team's party has out of the RETREAT chain into DELETE_PARTY; only the freed party slot lets the endless spawners send a new arrival for that team, which resettles and makes `ak_npc.bci` call `s_setNPCActive(team, 1)` again. `0x17F38` was previously misdocumented as a "village defeat respawn wait" — it is the type-5 handler's RETREAT_INIT deadline (save evidence from 2026-07-02 disproved the respawn reading: teams stayed `npcActive=0` with all job slots free while it was already 5000). The same-shaped initial-arrival timeout at `0x7F24` is deliberately NOT patched, since a 5-second value there would retreat arriving parties before they can settle.
+- Dead-party confirmation counter at decompressed `0x1068C`: `20 -> 3` consecutive ticks (settled-party handler; counts ticks with village, leader, civilians, and members all gone before entering RETREAT).
+- `ak_npc.bci` needs no patch for reactivation: its per-team state machine already calls `s_setNPCActive(team, 1)` when a healthy village exists for an inactive team. Save files are never modified.
 - The first three military reinforcement polling loops use `5000..10000` ms so the 5-second cooldown is checked promptly; other AI action loops retain their original values.
 - Active-party comparison literal at decompressed `0x195F8`: `4 -> 8`; the gate at `0x1960C` remains `66,0`.
 - Older `112,272` gate bypasses and blanket 5000..10000 ms action-loop patches are migrated; only the three bounded reinforcement polling loops remain accelerated.
-- Builds that already have the military 5-second state but retain the village
-  `600000` value are detected as legacy-enabled and migrated on the next apply.
+- Earlier enabled builds (military 5-second state with only `0x17F38` or none of
+  the retreat deadlines shortened, original 20-tick counter) are detected as
+  legacy-enabled and migrated to the full state on the next apply.
 - Disable/compatibility restore reverses every count, delay, limit, and gate value.
 - Settlement templates: in `MAPS/ENDL_*/Endlos_*_Siedlung*.sdl` (plain INI text after PFIL decompression), the main building's `resv` line (namedef containing `_Haupt`; `Hauptzelt` for Romans) changes from `0,0,0,0,0,0` to `614,300,372,250,460,288` — each slot is the maximum observed across original campaign AI settlements — giving village-style AI a starting stockpile. Restore returns all zeros. The identical templates under `MP_*` stay untouched to match the ENDL-only scope.
 
@@ -293,7 +300,7 @@ The static hypothesis changed `delta * 64 + 32` to `delta * 128 + 32`. The four 
 
 `00539700` initializes pending-village state through `00536450`. The logical point test `00536820` is directly reached by script/AI wrapper `005367c0` and candidate-position search `00544fd0`; player previews `0044f4b0` and `0044f7b0` do not call it. This rules out `00536630` as the general player construction-range gate.
 
-The current patch hooks `005364c1` (file `0x1364c1`) into a 289-byte executable zero-padding region at `0056258f` (file `0x16258f`). The trampoline preserves both negative-value checks, scales `ESI`/`EDI` with `(value * 5) >> 1`, calls `004c0900`, and returns at `005364d1`, keeping the type-definition and per-object copies synchronized. Runtime testing previously confirmed this setter path at 2x; the current 2.5x factor and its effect on the red dashed frame have been successfully runtime-verified in-game.
+The current patch hooks `005364c1` (file `0x1364c1`) into a 289-byte executable zero-padding region at `0056258f` (file `0x16258f`). The trampoline preserves both negative-value checks, scales `ESI`/`EDI` with `value * 3`, calls `004c0900`, and returns at `005364d1`, keeping the type-definition and per-object copies synchronized. Runtime testing previously confirmed this setter path at 2x; the 3x factor and its effect on the red dashed frame have been successfully runtime-verified in-game.
 
 The modifier never writes the four rejected `07` candidates. It only detects legacy two-site or four-site states and restores all four original shift-6 instructions. The option and preset field control only the runtime-verified setter trampoline. Unknown mixed bytes are left untouched with a warning.
 
@@ -381,12 +388,12 @@ Use these before repeating whole-program analysis. Rebuild the inventory only fo
 - AI Ultimate testing must cover all five endless maps, late reinforcement
   waves, respawn, action loops, completed-job recycling, restore, and old saves.
 - The current village result remains: all four candidate changes produced no visible effect.
-- The setter trampoline was verified at 2.5x for both the player-usable village
+- The setter trampoline is applied at 3x for both the player-usable village
   construction range and red dashed frame in-game.
 
 ## 17. Known Limits
 
-Machine decompilation cannot recreate every original source line, identifier, comment, or build project. A function inventory is navigation, not 100% semantic truth. Some `ress.ini` fields, `apt.dat` entries, and BCI opcodes remain candidates. AI Ultimate's count, timing, active-limit, and completed-job recycling changes still require a long-running endless-mode regression test; global civilian production/training edits are disabled after causing player resource-production regression. The setter path was runtime-verified at 2.5x for both construction range and red dashed frame in-game.
+Machine decompilation cannot recreate every original source line, identifier, comment, or build project. A function inventory is navigation, not 100% semantic truth. Some `ress.ini` fields, `apt.dat` entries, and BCI opcodes remain candidates. AI Ultimate's count, timing, active-limit, and completed-job recycling changes still require a long-running endless-mode regression test; global civilian production/training edits are disabled after causing player resource-production regression. The setter path is applied at 3x for both construction range and red dashed frame in-game.
 
 Always separate a stored value from its runtime meaning. Proximity, naming similarity, or a plausible static formula is not sufficient proof.
 

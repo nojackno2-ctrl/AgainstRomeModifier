@@ -176,10 +176,11 @@ namespace AgainstRomeModifier {
             { "NoSpellCost", "祭司與賢者法術無消耗" },
             { "InfiniteMorale", "部隊無限士氣" },
             { "HousingCapacity20x", "所有人口建築容量提升 20 倍" },
+            { "StorageCapacity10x", "主堡與倉庫儲存量提升 10 倍" },
             { "FastBuildUpgradeRepair", "建築建造、升級與維修速度提升 10 倍" },
             { "AiUltimateMode", "AI 終極挑戰模式" },
             { "DgVoodoo", "啟用 dgVoodoo2 圖形相容" },
-            { "VillageBuildRange", "村莊建造／紅框範圍 2.5 倍" },
+            { "VillageBuildRange", "村莊建造／紅框範圍 3 倍" },
             { "TipsTitle", "修改器使用指引與操作指南" },
             { "ConsoleTitle", "系統控制台與操作" },
             { "GamePath", "遊戲路徑:" },
@@ -310,7 +311,7 @@ namespace AgainstRomeModifier {
             { "LogExePatchOrig", "已套用 Against_Rome.exe 原版。" },
             { "LogVillageBuildRangeRestored", "已將村莊範圍四處候選補丁還原為原版 bytes。" },
             { "LogVillageBuildRangeWarning", "[警告] Against_Rome.exe 村莊範圍候選位置不是已知原版或候選 bytes，未進行寫入。" },
-            { "LogVillageBuildRangeApplied", "已套用村莊建造／紅框範圍 2.5 倍補丁。" },
+            { "LogVillageBuildRangeApplied", "已套用村莊建造／紅框範圍 3 倍補丁。" },
             { "LogVillageBuildRangeSetterRestored", "已還原村莊建造範圍補丁。" },
             { "LogDgVoodooInstalled", "已安裝 dgVoodoo2 {0}（32 位元 D3D8/DirectDraw wrapper）。" },
             { "LogDgVoodooRemoved", "已移除修改器管理的 dgVoodoo2 圖形相容層。" },
@@ -324,8 +325,8 @@ namespace AgainstRomeModifier {
             { "LogEndlessAiNoMaps", "找不到 MAPS 資料夾，略過 AI終極模式。" },
             { "LogEndlessAiNoScripts", "找不到無盡模式 ak_level.bci，略過 AI終極模式。" },
             { "LogEndlessAiPatternMissing", "[警告] 找不到無盡軍隊數量 bytecode 特徵，略過: {0}" },
-            { "LogEndlessAiUltimateApplied", "AI終極模式已套用：{0} 個無盡腳本的軍隊數量改為 {1}；完成的增援工作會自動回收，軍事型與村落型電腦的重生冷卻均為 5 秒、增援輪詢為 5–10 秒，同時上場上限為 8；其他 AI 行動與全域生產腳本維持原版。" },
-            { "LogEndlessAiUltimateRestored", "AI終極模式已還原：{0} 個無盡腳本的軍隊數量、增援工作旗標、軍事／村落型重生等待與同時上場上限均改回原始值；全域生產腳本亦維持原版。" },
+            { "LogEndlessAiUltimateApplied", "AI終極模式已套用：{0} 個無盡腳本的軍隊數量改為 {1}；完成的增援工作會自動回收，軍事增援冷卻為 5 秒，被擊敗電腦的政黨撤退／清理期限由 10 分鐘縮短為 5 秒（6 處）、死亡確認由 20 tick 縮短為 3 tick，讓陣亡隊伍名額快速釋放並重新到達；增援輪詢為 5–10 秒，同時上場上限為 8；其他 AI 行動與全域生產腳本維持原版。" },
+            { "LogEndlessAiUltimateRestored", "AI終極模式已還原：{0} 個無盡腳本的軍隊數量、增援工作旗標、軍事增援冷卻、政黨撤退／清理期限、死亡確認 tick 與同時上場上限均改回原始值；全域生產腳本亦維持原版。" },
             { "LogEndlessSdlPatternMissing", "[警告] 無盡聚落模板缺少主營房 resv 或數值非已知狀態，略過: {0}" },
             { "LogEndlessSdlApplied", "AI終極模式聚落強化已套用：{0} 個無盡聚落模板的主營房開局資源改為 {1}，加速村莊型 AI 起步。" },
             { "LogEndlessSdlRestored", "AI終極模式聚落強化已還原：{0} 個無盡聚落模板的主營房開局資源改回 0。" },
@@ -375,7 +376,7 @@ namespace AgainstRomeModifier {
             { "LogDeleteBackupSuccessDetail", "已刪除備份檔案: {0}" },
             { "LogDeleteBackupFailedDetail", "刪除備份失敗: " },
             { "TipsContent", "💡 快速操作指南：\n\n1. 設定遊戲路徑：請在右側「系統控制台」指定 Against Rome 安裝目錄（修改器會自動嘗試讀取註冊表以取得路徑）。\n\n2. 讀取現有設定：點擊右側「讀取現有設定」，修改器會自動從遊戲實體檔案（objdef.dau, ress.ini, cl_script.ini 等）解析目前套用的參數，並呈現於兵種列表對比中。\n\n3. 調整偏好與開關：在主控制台完成您喜好的修改配置（如人口上限、倍率開關等）。\n\n4. 執行修改與啟動：點擊右側「執行修改」按鈕將設定套入遊戲；完成後即可點擊「啟動遊戲」按鈕立刻開啟遊戲進入戰鬥！\n\n5. 兵種屬性觀察：可在左側導覽列切換至「自訂兵種屬性」與「當前兵種數值」頁面，即時比對原版與修改後的細部屬性資料。" },
-            { "TipsDetail", "🛠️ 修改功能詳細說明：\n\n• 視窗失焦不暫停：使視窗在背景繼續運行。\n• dgVoodoo2：解決 Win 10/11 的相容性與卡頓。\n• 法術無消耗：祭司與賢者釋放法術不消耗 MP。\n• 部隊無限士氣：士氣不減且極速恢復。\n• AI 終極挑戰：電腦重生等待與同時上場上限均改為高強度模式（5 秒重生、上限 8 人）。" }
+            { "TipsDetail", "🛠️ 修改功能詳細說明：\n\n• 視窗失焦不暫停：使視窗在背景繼續運行。\n• dgVoodoo2：解決 Win 10/11 的相容性與卡頓。\n• 法術無消耗：祭司與賢者釋放法術不消耗 MP。\n• 部隊無限士氣：士氣不減且極速恢復。\n• AI 終極挑戰：無盡模式電腦增援與被擊敗後的重新到達均加速為秒級（增援 5 秒、陣亡名額 5 秒內釋放），同時上場上限提高為 8。" }
         };
 
         private static readonly Dictionary<string, string> En = new Dictionary<string, string> {
@@ -400,10 +401,11 @@ namespace AgainstRomeModifier {
             { "NoSpellCost", "No Spell Cost for Priests & Druids" },
             { "InfiniteMorale", "Infinite Morale" },
             { "HousingCapacity20x", "20x Capacity for All Population Buildings" },
+            { "StorageCapacity10x", "10x Storage Capacity for Town Halls & Warehouses" },
             { "FastBuildUpgradeRepair", "10x Faster Building Construction, Upgrade & Repair" },
             { "AiUltimateMode", "AI Ultimate Challenge Mode" },
             { "DgVoodoo", "Enable dgVoodoo2 Wrapper" },
-            { "VillageBuildRange", "2.5x Village Build / Red-Frame Range" },
+            { "VillageBuildRange", "3x Village Build / Red-Frame Range" },
             { "TipsTitle", "Modifier Guide & Instructions" },
             { "ConsoleTitle", "System Console & Operations" },
             { "GamePath", "Game Path:" },
@@ -534,7 +536,7 @@ namespace AgainstRomeModifier {
             { "LogExePatchOrig", "Restored Against_Rome.exe to original." },
             { "LogVillageBuildRangeRestored", "Restored all four village-range candidate sites to their original bytes." },
             { "LogVillageBuildRangeWarning", "[Warning] Village-range candidate sites contain neither known original nor candidate bytes; no write was performed." },
-            { "LogVillageBuildRangeApplied", "Applied the 2.5x village build / red-frame range patch." },
+            { "LogVillageBuildRangeApplied", "Applied the 3x village build / red-frame range patch." },
             { "LogVillageBuildRangeSetterRestored", "Restored the village build-range patch." },
             { "LogDgVoodooInstalled", "Installed dgVoodoo2 {0} (32-bit D3D8/DirectDraw wrappers)." },
             { "LogDgVoodooRemoved", "Removed the dgVoodoo2 graphics wrapper managed by this modifier." },
@@ -548,8 +550,8 @@ namespace AgainstRomeModifier {
             { "LogEndlessAiNoMaps", "MAPS folder not found. Skipping AI Ultimate Mode." },
             { "LogEndlessAiNoScripts", "Endless ak_level.bci scripts not found. Skipping AI Ultimate Mode." },
             { "LogEndlessAiPatternMissing", "[Warning] Endless army-count bytecode pattern not found. Skipping: {0}" },
-            { "LogEndlessAiUltimateApplied", "AI Ultimate Mode applied in {0} endless scripts: army count {1}, completed reinforcement jobs recycle, military and village AI respawn cooldowns are both 5 seconds, reinforcement polling is 5-10 seconds, and active-party limit is 8; other AI actions and global production scripts remain original." },
-            { "LogEndlessAiUltimateRestored", "AI Ultimate Mode restored in {0} endless scripts: army count, reinforcement-job flag, military/village respawn waits, and active-party limit returned to original values; global production scripts also remain original." },
+            { "LogEndlessAiUltimateApplied", "AI Ultimate Mode applied in {0} endless scripts: army count {1}, completed reinforcement jobs recycle, military reinforcement cooldown is 5 seconds, defeated-AI party retreat/cleanup deadlines shrink from 10 minutes to 5 seconds (6 sites) with dead-party confirmation cut from 20 to 3 ticks so eliminated teams free their slot and arrive again quickly, reinforcement polling is 5-10 seconds, and active-party limit is 8; other AI actions and global production scripts remain original." },
+            { "LogEndlessAiUltimateRestored", "AI Ultimate Mode restored in {0} endless scripts: army count, reinforcement-job flag, military reinforcement cooldown, party retreat/cleanup deadlines, dead-party confirmation ticks, and active-party limit returned to original values; global production scripts also remain original." },
             { "LogEndlessSdlPatternMissing", "[Warning] Endless settlement template is missing the main-house resv line or holds an unknown value. Skipping: {0}" },
             { "LogEndlessSdlApplied", "AI Ultimate settlement boost applied: main-house starting resources set to {1} in {0} endless settlement templates, accelerating village-style AI build-up." },
             { "LogEndlessSdlRestored", "AI Ultimate settlement boost restored: main-house starting resources reset to 0 in {0} endless settlement templates." },
@@ -599,7 +601,7 @@ namespace AgainstRomeModifier {
             { "LogDeleteBackupSuccessDetail", "Deleted backup file: {0}" },
             { "LogDeleteBackupFailedDetail", "Failed to delete backup: " },
             { "TipsContent", "💡 Quick Start Guide:\n\n1. Set Game Path: Specify the Against Rome installation directory in the right 'System Console' (the modifier will automatically try to detect the path from the registry).\n\n2. Load Current Settings: Click 'Load Current Settings' on the right. The modifier will parse the currently applied parameters from game files (objdef.dau, ress.ini, cl_script.ini, etc.) and display them in the unit list.\n\n3. Adjust Preferences & Switches: Configure your preferences (such as population limit, feature toggles, etc.) on the Main Console.\n\n4. Apply & Launch: Click 'Apply Changes' to write the configurations to the game. Once done, click 'Launch Game' to start playing immediately!\n\n5. Inspect Unit Stats: Switch to 'Custom Unit Stats' or 'Current Unit Stats' in the sidebar to compare the original and modified attribute details." },
-            { "TipsDetail", "🛠️ Feature Explanations:\n\n• Run in Background: Keeps the game running when window loses focus.\n• dgVoodoo2: Fixes Direct3D8 compatibility/stuttering on Windows 10/11.\n• No Spell Cost: Spell mana cost for Priests/Druids is reduced to 0.\n• Infinite Morale: Morale locked at max, never decays.\n• AI Ultimate Mode: Enemy respawn reduced to 5s, infinite patrol, active limit 8." }
+            { "TipsDetail", "🛠️ Feature Explanations:\n\n• Run in Background: Keeps the game running when window loses focus.\n• dgVoodoo2: Fixes Direct3D8 compatibility/stuttering on Windows 10/11.\n• No Spell Cost: Spell mana cost for Priests/Druids is reduced to 0.\n• Infinite Morale: Morale locked at max, never decays.\n• AI Ultimate Mode: Endless-mode AI reinforcements and post-defeat returns accelerated to seconds (5s reinforcement, defeated slots freed within seconds), active limit raised to 8." }
         };
     }
 }

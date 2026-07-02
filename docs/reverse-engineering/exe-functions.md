@@ -91,6 +91,29 @@ Findings are from decompressed `MAPS/ENDL_000/SCRIPT/ak_level.bci`.
   restricted to `0..9`; arguments 6 and 7 become the clamped unit-count range.
   If argument 2 is `0`, max count is 4; otherwise max count is 20.
 
+## NPC Active-State Storage And Endless Defeat Recovery
+
+Findings from decoding the `ak_level.bci`/`ak_npc.bci` party-defeat-recovery
+chain (2026-07-02); see `docs/reverse-engineering/endless-mode-ai.md` and
+`bci0-opcodes.md` for the full script-side trace.
+
+- `DAT_029e6000`: 8-byte array, one entry per team (`0..7`), holding the
+  `npcActive` flag consumed by `s_NPCActive`/set by `s_setNPCActive`.
+- `0054ac80` (`s_setNPCActive` script callback trampoline) forwards to
+  `FUN_00548ce0(team, activeFlag)`: validates `team` in `0..7`, writes
+  `DAT_029e6000[team] = (activeFlag != 0)`.
+- `0054acb0` (`s_NPCActive` script callback trampoline) forwards to
+  `FUN_00548d20(team)`: validates `team` in `0..7`, returns
+  `DAT_029e6000[team] != 0`.
+- `0054a070`: level-init sweep that zeroes `DAT_029e6000[0..7]` (and various
+  other per-team arrays) once per level load. This and the two callbacks
+  above are the *only* writers of `DAT_029e6000` found; the defeat-to-active
+  transition is entirely script-driven (`ak_npc.bci` calls
+  `s_setNPCActive(team, 1)` once a team's village is healthy again), so no
+  EXE patch is needed for AI Ultimate's respawn behavior — only the
+  `ak_level.bci` party retreat/cleanup deadlines gate how quickly that script
+  logic gets a chance to run.
+
 ## Village Bounds And Rejected Red-Frame Candidate
 
 - `0054af80`: script callback `s_setVillageTemplate`.

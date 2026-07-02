@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Windows.Forms;
 
 namespace AgainstRomeModifier {
@@ -16,6 +16,7 @@ namespace AgainstRomeModifier {
             chkNoSpellCost.Checked = true;
             chkInfiniteMorale.Checked = true;
             chkHousingCapacity20x.Checked = true;
+            chkStorageCapacity10x.Checked = true;
             chkFastBuildUpgradeRepair.Checked = true;
             chkAiUltimateMode.Checked = true;
             chkBalance.Checked = true;
@@ -37,6 +38,7 @@ namespace AgainstRomeModifier {
             chkNoSpellCost.Checked = false;
             chkInfiniteMorale.Checked = false;
             chkHousingCapacity20x.Checked = false;
+            chkStorageCapacity10x.Checked = false;
             chkFastBuildUpgradeRepair.Checked = false;
             chkAiUltimateMode.Checked = false;
             chkBalance.Checked = false;

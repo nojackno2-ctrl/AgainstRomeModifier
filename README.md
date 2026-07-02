@@ -28,18 +28,21 @@ research and personal modding project.
   `wohnwer` value in `objdef.dau`.
 - Reversible 10x building speed switch for construction, upgrades, and repairs
   in `objdef.dau` (shortens building build/upgrade times by 10, which automatically
-  boosts repair rate).
+  boosts repair rate, successfully runtime-verified in-game).
+- Reversible 10x storage capacity switch for town halls (`Hau`) and warehouses (`Lag`) in `objdef.dau` (successfully runtime-verified in-game).
 - Endless-mode AI Ultimate Mode, which raises the mass-army spawn count to the
   vanilla script limit, recycles completed military reinforcement jobs for
-  continuing waves, reduces both military and village-defeat respawn waits to
-  5 seconds, and raises the active-party limit to 8 while retaining bounded
-  reinforcement polling. Endless settlement templates also receive a reversible
+  continuing waves, reduces the military reinforcement wait to 5 seconds, cuts
+  the defeated-AI party retreat/cleanup deadlines from 10 minutes to 5 seconds
+  so eliminated computer players free their slot and arrive again quickly, and
+  raises the active-party limit to 8 while retaining bounded reinforcement
+  polling. Endless settlement templates also receive a reversible
   starting-resource boost; unsafe global CLAK production edits stay disabled.
 - Free construction, production, upgrades, and spell costs through `ress.ini`.
 - Unit stat editing for HP, damage, VW, AW, movement, sight, cooldown, range, and spell radius through `objdef.dau` and `cl_script.ini`.
 - Troop preset import/export through `.artroop` and one-click buttons to enable/disable all features.
 - Background execution patch for `Against_Rome.exe` when the game loses focus.
-- Option to scale the village construction/red-frame range to 2.5x through a
+- Option to scale the village construction/red-frame range to 3x through a
   synchronized `Against_Rome.exe` setter trampoline (successfully
   runtime-verified in-game, including the red dashed frame).
 - Optional embedded dgVoodoo2 integration that installs the bundled 32-bit
