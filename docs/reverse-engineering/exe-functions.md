@@ -16,6 +16,79 @@ pseudocode is local reverse-engineering material, not original source, and must
 not be treated as proof of a function's gameplay meaning without call-path or
 runtime evidence.
 
+## BCI Virtual Machine Dispatcher (decoded 2026-07-03, no Ghidra)
+
+The Temp Ghidra install (`C:\Users\nojac\AppData\Local\Temp\AgainstRome_RE\ghidra`)
+lost its `Framework/Utility` module partway through this session and
+`analyzeHeadless.bat` now fails with `Failed to find the 'Utility' module!`
+before loading the existing project. This session's disassembly work used
+`pip install capstone pefile` (into the harness's isolated user Python) instead
+— a linear x86 disassembler plus direct EXE byte scanning is sufficient for
+opcode-table and call-site work; only a fresh Ghidra project/reinstall would
+be needed for broader whole-program analysis again.
+
+- Interpreter entry: `005B1C62` (frame setup, `EBX` = VM context pointer).
+  Opcode fetch at `005B1C72`: read 32-bit opcode word at `[EBX+8]` (PC,
+  byte offset into the code stream), advance PC by 4, `index = opcode - 1`,
+  bounds-check `index <= 0xB0`, dispatch via jump table `005B199C[index]`
+  (unrecognized opcodes fall through to the default handler `005B972C`).
+- VM context layout (offsets from `EBX`): `+0x04` script object, `+0x08` PC,
+  `+0x0C` stack index, `+0x28` code size, `+0x2C` code base, `+0x38` stack
+  capacity, `+0x3C` stack base (grown via `realloc`-style call through
+  `[0x637ed4]`).
+- Every opcode's operand-word count was read directly from its handler's
+  PC-advance guard (`lea eax,[esi+N]; cmp eax,[ebx+0x28]` — `N` is the byte
+  count consumed), not inferred from patterns. This superseded and corrected
+  the pre-existing empirical BCI opcode table — see
+  `docs/reverse-engineering/bci0-opcodes.md` for the full corrected table and
+  the specific errors it fixes (opcodes 76/77/78/82/etc. were wrongly treated
+  as zero-operand, which misaligned any listing containing them).
+- Conditional-jump family `113..118` (jlt/jle/jgt/jge/jz/jnz) share one
+  handler (`005B8377`) with a small 7-entry sub-table at `005B1980`;
+  unconditional `jmp` is opcode `112`. Verified target arithmetic:
+  `target = opcode_word_address + 8 + operand` (NOT `+4`, and NOT relative to
+  the instruction start alone — the PC has already advanced past both the
+  opcode and operand words by the time the branch handler adds the operand).
+- `120` = call internal script function: pushes the return address, then
+  jumps using the same `+8+operand` arithmetic; `121` = return.
+- Regenerable via `tools/re/` scripts is NOT how this was done this session
+  (Ghidra was broken); the throwaway capstone scripts (`trace_lpinc.py`,
+  `dump_keytable.py`, `vm_table.py`, `disfun.py`, `bcidis2.py`) are not
+  checked into the repo — recreate from this spec (jump table at `005B199C`,
+  per-handler PC-advance guard scan) if this needs to be redone.
+
+## Idle HP Regeneration / `s_addLP` Chain (decoded 2026-07-03)
+
+Traced while implementing the idle-regeneration modifier feature; see
+`known-patches.md`'s "10x Idle HP Regeneration" section for the
+patch itself and the exact heal gate conditions.
+
+- `s_addLP` script callback trampoline `0051A090` forwards to `FUN_005129c0`
+  (bounds-checks the object, `-1 < id < 0x3714`) `-> FUN_00512a10` (branches
+  on `FUN_00513f00`: unit-array object vs. plain object)
+  `-> FUN_00525ac0` (iterates every member of a unit/formation object,
+  `iVar3 < *(&DAT_0259e44c + id + 1)>>0x18` member count) or directly
+  `-> FUN_00512aa0` (single object) `-> FUN_004ad190 -> FUN_004ad1e0`, the
+  actual LP-delta applicator. `FUN_004ad1e0` has NO village-bounds test and
+  NO resource-store read/write anywhere in its body — confirmed by full
+  pseudocode read, not just symbol absence.
+- `[TribeData]` key table at `0061BB40` (EXE data, not a script string blob):
+  `LPIncIdle` = key `15`. Parser `0041c600` (`[TribeData]` section callback)
+  stores each key via `FUN_00540dc0`, which switches on the key and clamps:
+  key 15 (`LPIncIdle`) into `DAT_029c50e8[tribe]`, clamp `500..100000000`,
+  default `10000` (the runtime default differs from the `cl_script.ini`
+  shipped default of `15000` — the INI always overrides it at load).
+  Getter `FUN_00540fe0` mirrors the same switch; script-exposed as
+  `s_getTribeValue` via trampoline `00542250`.
+- 18 `SYSTEM/CLAK/SCRIPT/*.bci` scripts call `s_addLP`; 12 are unit AI
+  (healing target of the modifier feature), 7 share an identical byte-for-
+  byte template for `Bau*` building self-repair (`ak_haupthaus`, `ak_lager`,
+  `ak_produktion`, `ak_wohnhaus` all resolve `s_addLP` to symbol index 51 at
+  the identical decompressed offset `0x2890` — strong evidence of a shared
+  compiled template), and 3 unit scripts (`ak_geisterreiter`,
+  `ak_kundschafterwolf`, `ak_verbandswolf`) additionally call `s_addLP` with
+  literal `-1` at a second site (an LP-decay tick, unrelated to healing).
+
 ## Ress Parser
 
 - `0046c1c0`: loads `SYSTEM/ress.ini`.
@@ -168,6 +241,10 @@ applies these bytes and retains them only for detection and restoration. See
 - `00450020` and related construction paths consume the six `bau` values;
   `0044fa00` consumes the six `upg` values.
 - `0044a010`: consumes all four `spruch` values for priest spell availability.
+  It also enforces the hardcoded per-spell altar-count requirements (1/2/3/4
+  `OD_BAUOPF` buildings, counted via `00453730 -> 00421dc0 -> 0052c7c0 ->
+  00538740`); the twelve `cmp esi, imm8` patch sites are documented in
+  `spell-altar-requirements.md`.
 - `0046c6d0` and `0046ce60`: expose/load the `[volkres]` groups by their
   runtime names. Columns `264-295` are four arrays of eight values:
   `befehl`, `motivieren`, `angriff`, and `verteidigung`.

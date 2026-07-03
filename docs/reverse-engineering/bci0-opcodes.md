@@ -35,15 +35,59 @@ A decompressed `BCI0` script has this layout (all integers are little-endian
 repo) implements this layout in its `ReadSymbols` helper; reimplement from
 this spec if the tool is not available.
 
-## Instruction Word Shapes
+## VM Dispatcher (decoded 2026-07-03 — AUTHORITATIVE)
 
-Almost every instruction is a 2-word (8-byte) `[opcode, operand]` pair. A
-handful of opcodes seen in the traced code are 1-word plain markers (function
-prologue/epilogue and stack markers `0x5F`/`0x75`/`0x79`/`0x74`/`0x94`, and
-`argc`-argument opcode `0x83`/`0x87` return markers) — treat any *unknown*
-opcode as a 1-word instruction unless it is in the table below, since that
-was the working heuristic during this trace and matched byte-for-byte across
-5 endless scripts plus `ak_npc.bci`.
+The runtime interpreter lives in the EXE at `005B1C62` (frame setup) with the
+opcode fetch at `005B1C72`: it reads the 32-bit opcode word at PC, advances PC
+by 4, computes `index = opcode - 1`, bounds-checks `index <= 0xB0`, and
+dispatches through the jump table at `005B199C` (unknown opcodes go to the
+default handler `005B972C`). VM context (EBX): `+0x08` PC (byte offset into
+the code stream), `+0x28` code size, `+0x2C` code base, `+0x0C` stack index,
+`+0x3C` stack base (cells grow by realloc), `+0x04` script object (its
+`+0x38` is the global-variable slot table used by opcode 77).
+
+Operand word counts below come from each handler's PC-advance guard, NOT from
+pattern heuristics. Corrections to the earlier empirical table:
+
+- Opcodes **76, 77, 78, 83, 84, 92, 93, 64, 65, 67, 68, 69, 70, 80, 129,
+  160** all take an operand word (the old table treated 76/77/78 as 1-word,
+  which misaligned every listing that contained them). 67 takes TWO operand
+  words. 77 pushes a REFERENCE to global-variable slot `operand`
+  (`table[operand] | 0xC0000000`) — used for script-API write-back args like
+  `s_timeReached(interval, &deadline, now)`.
+- The conditional-jump family is **113..118**, all sharing handler `005B8377`:
+  pop one value, read the operand word, then branch via the sub-table at
+  `005B1980`: 112 `jmp` (unconditional, no pop), 113 jump if `< 0`, 114 `<=
+  0`, 115 `> 0`, 116 `>= 0`, 117 jump if `== 0` (jz), 118 jump if `!= 0`
+  (jnz). The old table's "118 = AND-chain marker" was wrong.
+- **Jump/call target arithmetic**: the branch handlers add the operand AFTER
+  PC has passed both the opcode and operand words, so
+  `target = opcode_addr + 8 + operand`. The old claim `target = off +
+  operand` in this file was wrong (the memory note had it right); under the
+  correct rule the `jmp 0` fillers land on the next instruction (separators),
+  not on themselves.
+- **120 = call internal**: pushes the return address (PC after operand) onto
+  the VM stack, then `PC = opcode_addr + 8 + operand`. 121 is its return.
+- **96..103 comparison family**: each handler is standalone (0 operands).
+  Compiled code emits `push a; push b; op96; op102; jz` for `if (a == b)`
+  and a bare `op102` after a call for `if (0 == result)`; 96/97 peek at
+  stack depth -1/-2 and 98..103 produce the final boolean (lt/le/gt/ge/eq/ne
+  order per the old table appears consistent with usage, but 96/97's exact
+  role — normalize/duplicate before the predicate — is only partially
+  decoded).
+- Opcode 82 (storevar) DOES take an operand word (script-shape evidence;
+  the automated guard scan misses it because its guard sits deeper in the
+  handler).
+- 1-word (no-operand) opcodes confirmed by the dispatcher table: 1-6, 16, 17,
+  32-45, 48-53, 71, 72, 74, 75, 82(see above), 85-89, 94-103, 121-123, 130,
+  131, 144, 145, 161-166, 176, 177.
+
+## Instruction Word Shapes (historical empirical notes)
+
+Almost every instruction is a 2-word (8-byte) `[opcode, operand]` pair. The
+old heuristic "treat unknown opcodes as 1-word" produced misaligned listings
+whenever opcodes 76/77/78 appeared — re-read any older disassembly notes with
+the corrected table above.
 
 | Opcode (dec) | Opcode (hex) | Meaning | Operand |
 |---|---|---|---|

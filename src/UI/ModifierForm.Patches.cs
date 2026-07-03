@@ -20,6 +20,9 @@ namespace AgainstRomeModifier {
         private const string LanguageBackupManifestName = "manifest.json";
         private static readonly Regex RegexRadiusPatch = new Regex(@"^Radius\s*=\s*([A-Z]{3})\s*,\s*(Spell\d+)\s*,\s*([^;]+)(.*)$", RegexOptions.Compiled);
         private static readonly Regex RegexCiviPatch = new Regex(@"^CiviDelay\s*=\s*([A-Z]{3})\s*,\s*([^;]+)(.*)$", RegexOptions.Compiled);
+        // LPIncIdle：閒置單位每 N 毫秒執行一次自動回血（原版四陣營皆 15000）。
+        // 現行功能不修改此間隔；保留規則只用於把舊版安裝遷回原始值。
+        private static readonly Regex RegexLpIncIdlePatch = new Regex(@"^LPIncIdle\s*=\s*([A-Z]{3})\s*,\s*([^;]+)(.*)$", RegexOptions.Compiled);
         private static readonly Regex RegexMoraleLostMemPatch = new Regex(@"^(MoralsDecLostMem\s*=\s*[A-Z]{3}\s*,\s*)\d+(.*)$", RegexOptions.Compiled);
         private static readonly Regex RegexMoraleFleePatch = new Regex(@"^(MoralsDecFlee\s*=\s*[A-Z]{3}\s*,\s*)\d+(.*)$", RegexOptions.Compiled);
         private static readonly Regex RegexMoraleOverPopPatch = new Regex(@"^(MoralsDecOverPop\s*=\s*[A-Z]{3}\s*,\s*)\d+(.*)$", RegexOptions.Compiled);
@@ -29,6 +32,26 @@ namespace AgainstRomeModifier {
         private static readonly byte[] ExeFocusPatchedBytes = new byte[] { 0x90, 0x90, 0x90, 0x90, 0x90, 0x90 };
         private const long ExeFocusPatchOffset = 0x161a88;
         private const long ExeFocusPatchRequiredLength = 0x161a8e;
+
+        private static readonly (long Offset, byte[] Original, byte[] Patched)[] SpellAltarPatchSites = new[] {
+            // Germans
+            (0x4A112L, new byte[] { 0x83, 0xFE, 0x01, 0x0F, 0x8C, 0x54, 0xFF, 0xFF, 0xFF }, new byte[] { 0x83, 0xFE, 0x00, 0x0F, 0x8C, 0x54, 0xFF, 0xFF, 0xFF }),
+            (0x4A136L, new byte[] { 0x83, 0xFE, 0x02, 0x0F, 0x8C, 0x58, 0xFF, 0xFF, 0xFF }, new byte[] { 0x83, 0xFE, 0x00, 0x0F, 0x8C, 0x58, 0xFF, 0xFF, 0xFF }),
+            (0x4A15AL, new byte[] { 0x83, 0xFE, 0x03, 0x0F, 0x8C, 0x5C, 0xFF, 0xFF, 0xFF }, new byte[] { 0x83, 0xFE, 0x00, 0x0F, 0x8C, 0x5C, 0xFF, 0xFF, 0xFF }),
+            (0x4A0E3L, new byte[] { 0x83, 0xFE, 0x04, 0x0F, 0x8D, 0x92, 0x00, 0x00, 0x00 }, new byte[] { 0x83, 0xFE, 0x00, 0x0F, 0x8D, 0x92, 0x00, 0x00, 0x00 }),
+
+            // Celts
+            (0x4A1CCL, new byte[] { 0x83, 0xFE, 0x01, 0x0F, 0x8D, 0xA3, 0x00, 0x00, 0x00 }, new byte[] { 0x83, 0xFE, 0x00, 0x0F, 0x8D, 0xA3, 0x00, 0x00, 0x00 }),
+            (0x4A293L, new byte[] { 0x83, 0xFE, 0x02, 0x0F, 0x8C, 0x61, 0xFF, 0xFF, 0xFF }, new byte[] { 0x83, 0xFE, 0x00, 0x0F, 0x8C, 0x61, 0xFF, 0xFF, 0xFF }),
+            (0x4A2B7L, new byte[] { 0x83, 0xFE, 0x03, 0x0F, 0x8C, 0x65, 0xFF, 0xFF, 0xFF }, new byte[] { 0x83, 0xFE, 0x00, 0x0F, 0x8C, 0x65, 0xFF, 0xFF, 0xFF }),
+            (0x4A249L, new byte[] { 0x83, 0xFE, 0x04, 0x0F, 0x8D, 0x89, 0x00, 0x00, 0x00 }, new byte[] { 0x83, 0xFE, 0x00, 0x0F, 0x8D, 0x89, 0x00, 0x00, 0x00 }),
+
+            // Huns
+            (0x4A329L, new byte[] { 0x83, 0xFE, 0x01, 0x0F, 0x8D, 0xA3, 0x00, 0x00, 0x00 }, new byte[] { 0x83, 0xFE, 0x00, 0x0F, 0x8D, 0xA3, 0x00, 0x00, 0x00 }),
+            (0x4A3F0L, new byte[] { 0x83, 0xFE, 0x02, 0x0F, 0x8C, 0x61, 0xFF, 0xFF, 0xFF }, new byte[] { 0x83, 0xFE, 0x00, 0x0F, 0x8C, 0x61, 0xFF, 0xFF, 0xFF }),
+            (0x4A414L, new byte[] { 0x83, 0xFE, 0x03, 0x0F, 0x8C, 0x65, 0xFF, 0xFF, 0xFF }, new byte[] { 0x83, 0xFE, 0x00, 0x0F, 0x8C, 0x65, 0xFF, 0xFF, 0xFF }),
+            (0x4A3A6L, new byte[] { 0x83, 0xFE, 0x04, 0x0F, 0x8D, 0x89, 0x00, 0x00, 0x00 }, new byte[] { 0x83, 0xFE, 0x00, 0x0F, 0x8D, 0x89, 0x00, 0x00, 0x00 }),
+        };
         // Rejected village-range candidates. Retained only to detect and restore old writes.
         private static readonly byte[] ExeVillageRangeXOriginalBytes = new byte[] { 0xC1, 0xE2, 0x06 };
         private static readonly byte[] ExeVillageRangeZOriginalBytes = new byte[] { 0xC1, 0xE1, 0x06 };
@@ -81,8 +104,53 @@ namespace AgainstRomeModifier {
         private const long ExeVillageSetterPatchRequiredLength = 0x1625b6;
         private const int EndlessAiOriginalMilitaryCount = 4;
         private const int EndlessAiUltimateMilitaryCount = 20;
+        private const int EndlessAiExpectedMapCount = 5;
+        private const int EndlessAiExpectedSettlementTemplateCount = 42;
         private const int HousingCapacityMultiplier = 20;
         private const int StorageCapacityMultiplier = 10;
+        // 待機生命回復量：單位待機（活動 1002）計時到期時呼叫 s_addLP(obj, N) 的
+        // 加血量字面值 N，一律由 1 改為 10（單次跳血量 x10，取代先前「頻率 x10」
+        // 的 LPIncIdle 間隔縮短方案）。前身「資源建築 ptime 生產週期」功能已移除
+        // — 兩次實機測試（/10 與固定 500ms）都觀察不到產量變化，ptime 的運行期
+        // 效果未證實。
+        //
+        // 完整解碼鏈（2026-07-03，capstone 直接反組譯 EXE VM 派發器 0x5B1C62、
+        // 跳躍表 0x5B199C，取代先前不完整的經驗運算碼表，見
+        // docs/reverse-engineering/bci0-opcodes.md）：回血心跳只在腳本的活動
+        // 派發器讀到 s_getObjActivity(obj) == 1002（出生預設的 STOP/待機活動）
+        // 時才會被呼叫——移動、攻擊等活動（8、9、32、1004、1005、1006）直接
+        // 分派到別的處理器，回血程式碼根本不會執行；心跳內再檢查
+        // s_gameMode()、!s_dead(obj)、LPIncIdle 計時到期、s_unitMember(obj)==0
+        // （避免同一編隊的每個成員各自觸發一次——由編隊腳本呼叫一次，EXE
+        // FUN_00525ac0 迴圈套用到每個成員）。整條鏈路（EXE
+        // s_addLP -> FUN_005129c0 -> FUN_00512a10 -> FUN_00512aa0/FUN_004ad1e0）
+        // 沒有任何村莊範圍判斷或食物扣除耦合——食物消耗是完全獨立的機制。
+        private const int FoodHealAmountOriginal = 1;
+        private const int FoodHealAmountUltimate = 10;
+
+        // s_addLP 呼叫點的固定字組形狀（跨 12 個 Fig* 單位 AI 腳本一致）：
+        // pushlit N(=1) / pushvar 10 / pushvar 98 / pushsym s_addLP / argc -3 / callext。
+        // symbol 索引依各腳本自己的 SYMBCONS 表而不同，逐一於下方指定；
+        // 已排除 3 個字面值為 -1 的「扣血」呼叫點（geisterreiter/kundschafterwolf/
+        // verbandswolf 各有一個，屬於另一條衰減邏輯，非本功能目標）。
+        // 排除純建築 AI 腳本（ak_haupthaus/ak_lager/ak_produktion/ak_wohnhaus/
+        // ak_opferstaette/ak_tor/ak_steinschlagfalle）：它們共用同一個 s_addLP
+        // 呼叫形狀做建築自我修復，範圍外，且 ak_produktion 過去已有「全域經濟
+        // 補丁弄壞玩家建築」的前例，故此功能刻意只涵蓋單位（Fig*）腳本。
+        private static readonly (string File, int AddLpSymbolIndex)[] FoodHealAmountSites = new[] {
+            ("ak_anfuehrer", 87),
+            ("ak_artillerie", 69),
+            ("ak_geisterreiter", 68),
+            ("ak_kampfverband", 89),
+            ("ak_krieger", 73),
+            ("ak_kundschafterwolf", 77),
+            ("ak_landtier", 72),
+            ("ak_packpferd", 57),
+            ("ak_priester", 92),
+            ("ak_verbandswolf", 68),
+            ("ak_zivilist", 83),
+            ("ak_zivilverband", 87),
+        };
         private const int EndlessAiOriginalMilitaryRespawnDelayMs = 180000;
         // Per-handler party retreat/cleanup deadline (v61[party] := getTime() + N).
         // The endless level script only frees a defeated team's party slot after
@@ -95,10 +163,37 @@ namespace AgainstRomeModifier {
         private const int EndlessAiOriginalDeadPartyDebounceTicks = 20;
         private const int EndlessAiUltimateDeadPartyDebounceTicks = 3;
         private const int EndlessAiUltimateRespawnDelayMs = 5000;
+        // The interim 1-2 second polling build caused runtime respawn stalls.
+        // Keep recognizing it so Apply can migrate installed scripts back to
+        // the proven 5-10 second range.
+        private const int EndlessAiLegacyLoopDelayLowerMs = 1000;
+        private const int EndlessAiLegacyLoopDelayUpperMs = 2000;
         private const int EndlessAiUltimateLoopDelayLowerMs = 5000;
         private const int EndlessAiUltimateLoopDelayUpperMs = 10000;
+        // 軍事增援生成器的隊伍戰鬥單位數門檻：s_searchTeamUnits(team) 低於此值
+        // 才會派出下一波 type-5 增援黨團。這是增援總量的自然上限 —
+        // 搭配撤退配額歸零（單位全數留在村莊）後，隊伍會累積到門檻為止，
+        // 40 支 20 人部隊 = 800 人，仍低於 EXE 全域人口上限 1600。
         private const int EndlessAiOriginalActivePartyLimit = 4;
-        private const int EndlessAiUltimateActivePartyLimit = 8;
+        private const int EndlessAiLegacyActivePartyLimit = 8;
+        private const int EndlessAiUltimateActivePartyLimit = 40;
+        // type-5 增援黨團的撤退配額 v56[party]（state 49 保留前 v56 支部隊走撤退，
+        // 其餘經 s_setObjMark 移交給村莊的 type-4 黨團 — 引擎原生捐贈路徑）。
+        // 把「push local 15」改成「push literal 0」讓整個黨團（含隊長）都移交、
+        // 不再撤退。2026-07-03 的失敗原因是門檻仍停在 8：移交的單位使
+        // s_searchTeamUnits 永遠 >= 門檻，生成器飽和 — 因此本補丁必須與
+        // 上面的 40 門檻一起套用。
+        private const int EndlessAiRetreatQuotaOriginalOpcode = 90;
+        private const int EndlessAiRetreatQuotaOriginalValue = 15;
+        private const int EndlessAiRetreatQuotaPatchedOpcode = 66;
+        private const int EndlessAiRetreatQuotaPatchedValue = 0;
+        // v56 寫入點簽章（每張 ENDL 圖唯一命中於解壓後 0x17888；較長的前綴
+        // 刻意排除另一個處理器 INIT 鏈裡形狀相同的 0x111EC 寫入點）。
+        // 萬用字元（索引 11/12）即撤退配額的 opcode/operand 兩個字組。
+        private static readonly int?[] EndlessAiRetreatQuotaSignature = new int?[] {
+            81, 57, 90, -3, 90, 14, 164, 81, 56, 90, -3, null, null, 164, 81, 61
+        };
+        private const int EndlessAiRetreatQuotaOpcodeWordIndex = 11;
         private const int EndlessAiOriginalAutoRecycleCompletedJob = 0;
         private const int EndlessAiUltimateAutoRecycleCompletedJob = 1;
         private const int EndlessAiOriginalFreeCivilianReserve = 0;
@@ -112,11 +207,34 @@ namespace AgainstRomeModifier {
         private const int EndlessAiFormationLimitPatchedValue = 20;
         private const int EndlessAiActiveLimitOriginalOpcode = 66;
         private const int EndlessAiActiveLimitOriginalValue = 0;
-        // Written by older builds. It bypassed the active-party gate and could
+        // Written by older builds. It bypassed the military-reinforcement gate and could
         // exhaust the 20 NPC-job slots available to each team.
         private const int EndlessAiActiveLimitPatchedOpcode = 112;
         private const int EndlessAiActiveLimitPatchedRelativeJump = 272;
-        private const int EndlessAiReinforcementLoopCount = 3;
+        // All six scheduler delays must be accelerated. The last three are the
+        // outer action scheduler (initial delay plus its two refresh ranges)
+        // that gates the dispatcher which calls the settlement and military
+        // spawners; leaving them at 60-240 seconds makes the first three inner
+        // polling delays ineffective for AI arrival speed.
+        private const int EndlessAiAcceleratedLoopCount = 6;
+        // Builds before this correction accelerated only the three inner
+        // raider timers. Keep recognizing that state for migration on Apply.
+        private const int EndlessAiLegacyAcceleratedLoopCount = 3;
+        // Dorfverteidigung.bci 村莊防禦 NPC job：
+        // s_addNPCJob_createUnit(team, 1, type, 0, 0, min, max, 1, 0) 的
+        // min/max 成員數字面值。EXE 將兩值存入 job +0x11/+0x12，取得該範圍
+        // 內的閒置村民組成一支戰鬥部隊；arg2=1 時引擎上限為 20。
+        // 這是村莊型 AI 平時「村民轉部隊」的實際路徑（ak_haupthaus 的
+        // s_createBattleUnitsMax 只在 state 34 / CIVRECREATE 鏈觸發）。
+        // 實機驗證 2026-07-03：套用後村莊型 AI 一次轉換 20 名村民為一支部隊。
+        private const int EndlessAiVillageJobCountOriginalValue = 6;
+        private const int EndlessAiVillageJobCountPatchedValue = 20;
+        private const int EndlessAiVillageJobExpectedSites = 4;
+        // 對應四個 push 序列 + pushsym 157 (s_addNPCJob_createUnit) + argc -9 + call。
+        // 兩個成員數與部隊類型 (1/2/6/3) 保留萬用字元。
+        private static readonly int?[] EndlessAiVillageJobSignature = new int?[] {
+            66, 0, 66, 1, 66, null, 66, null, 66, 0, 66, 0, 66, null, 66, 1, 90, 8, 128, 157, 73, -9, 86
+        };
         private const string EndlessSdlOriginalHaupthausResv = "0,0,0,0,0,0";
         // Per-slot maxima observed across the original campaign AI settlement
         // templates (KAMP_003/004/006 Haupthaus resv), so every value stays in
@@ -366,10 +484,12 @@ namespace AgainstRomeModifier {
                 bool balance = chkBalance.Checked;
                 bool housingCapacity20x = chkHousingCapacity20x.Checked; bool storageCapacity10x = chkStorageCapacity10x.Checked;
                 bool fastBuildUpgradeRepair = chkFastBuildUpgradeRepair.Checked;
+                bool foodHealing10x = chkFoodHealing10x.Checked;
                 bool toEng = chkToEng.Checked;
                 bool aiUltimateMode = chkAiUltimateMode.Checked;
                 bool dgVoodoo = chkDgVoodoo.Checked;
                 bool villageBuildRange = chkVillageBuildRange.Checked;
+                bool noSpellAltar = chkNoSpellAltar.Checked;
 
                 await Task.Run(() => {
                     // 1. Dry Run 階段：在記憶體中生成所有補丁 byte[] 並驗證
@@ -379,7 +499,7 @@ namespace AgainstRomeModifier {
                     string exePath = Path.Combine(gamePath, @"Against_Rome.exe");
                     byte[] exeBytes = File.ReadAllBytes(exePath);
                     bool exeModified = false;
-                    ApplyExePatch(exeBytes, focusLoss, villageBuildRange, ref exeModified);
+                    ApplyExePatch(exeBytes, focusLoss, villageBuildRange, noSpellAltar, ref exeModified);
                     if (exeModified) {
                         patchedFiles[exePath] = exeBytes;
                     }
@@ -426,6 +546,9 @@ namespace AgainstRomeModifier {
                     // 無盡經濟腳本：ak_npc/ak_produktion 一律還原；
                     // ak_haupthaus 主營房轉換人數 (6 -> 20) 跟隨 AI 終極模式。
                     ApplyEndlessAiVillageEconomyPatch(gamePath, aiUltimateMode, rollback);
+
+                    // 待機回血：12 個 Fig* 單位 AI 腳本的 s_addLP 單次加血量 1 -> 10。
+                    ApplyFoodHealingAmountPatch(gamePath, foodHealing10x, rollback);
                 });
 
                 rollback.Commit();
@@ -486,7 +609,7 @@ namespace AgainstRomeModifier {
                     string exePath = Path.Combine(gamePath, @"Against_Rome.exe");
                     byte[] exeBytes = File.ReadAllBytes(exePath);
                     bool exeModified = false;
-                    ApplyExePatch(exeBytes, false, false, ref exeModified);
+                    ApplyExePatch(exeBytes, false, false, false, ref exeModified);
                     if (exeModified) {
                         patchedFiles[exePath] = exeBytes;
                     }
@@ -510,6 +633,7 @@ namespace AgainstRomeModifier {
                     }
 
                     ApplyEndlessAiVillageEconomyPatch(gamePath, false, rollback);
+                    ApplyFoodHealingAmountPatch(gamePath, false, rollback);
                     ApplyLanguagePatch(gamePath, false, rollback);
                     ApplyDgVoodooPatch(gamePath, false, rollback);
                 });
@@ -517,12 +641,19 @@ namespace AgainstRomeModifier {
                 rollback.Dispose();
                 rollback = null;
                 chkFocusLoss.Checked = false;
+                chkNoSpellAltar.Checked = false;
                 chkToEng.Checked = false;
                 chkAiUltimateMode.Checked = false;
                 chkHousingCapacity20x.Checked = false; chkStorageCapacity10x.Checked = false;
                 chkFastBuildUpgradeRepair.Checked = false;
+                chkFoodHealing10x.Checked = false;
                 chkMaxPopulation.Checked = false;
                 chkFastCiviProduction.Checked = false;
+                chkFreeProd.Checked = false;
+                chkFreeUpgrade.Checked = false;
+                chkNoSpellCost.Checked = false;
+                chkInfiniteMorale.Checked = false;
+                chkBalance.Checked = false;
                 chkDgVoodoo.Checked = IsDgVoodooInstalled(gamePath);
                 chkVillageBuildRange.Checked = false;
                 customUnitStats = null;
@@ -564,14 +695,23 @@ namespace AgainstRomeModifier {
                 Log(Loc.Get("LogStartRestoreStats"));
                 rollback = new FileRollbackScope();
                 Log("已建立還原前檔案回復點。");
-                await Task.Run(() => RestoreStatsOnlyInternal(gamePath, rollback));
+                await Task.Run(() => {
+                    RestoreStatsOnlyInternal(gamePath, rollback);
+                    ApplyFoodHealingAmountPatch(gamePath, false, rollback);
+                });
                 rollback.Commit();
                 rollback.Dispose();
                 rollback = null;
                 chkHousingCapacity20x.Checked = false; chkStorageCapacity10x.Checked = false;
                 chkFastBuildUpgradeRepair.Checked = false;
+                chkFoodHealing10x.Checked = false;
                 chkMaxPopulation.Checked = false;
                 chkFastCiviProduction.Checked = false;
+                chkFreeProd.Checked = false;
+                chkFreeUpgrade.Checked = false;
+                chkNoSpellCost.Checked = false;
+                chkInfiniteMorale.Checked = false;
+                chkBalance.Checked = false;
                 customUnitStats = null;
                 presetFileSourceType = "default";
                 presetFileName = "";
@@ -615,7 +755,7 @@ namespace AgainstRomeModifier {
                     string exePath = Path.Combine(gamePath, @"Against_Rome.exe");
                     byte[] exeBytes = File.ReadAllBytes(exePath);
                     bool exeModified = false;
-                    ApplyExePatch(exeBytes, false, false, ref exeModified);
+                    ApplyExePatch(exeBytes, false, false, false, ref exeModified);
                     if (exeModified) {
                         patchedFiles[exePath] = exeBytes;
                     }
@@ -642,6 +782,7 @@ namespace AgainstRomeModifier {
                 rollback.Dispose();
                 rollback = null;
                 chkFocusLoss.Checked = false;
+                chkNoSpellAltar.Checked = false;
                 chkAiUltimateMode.Checked = false;
                 chkDgVoodoo.Checked = IsDgVoodooInstalled(gamePath);
                 chkVillageBuildRange.Checked = false;
@@ -926,6 +1067,12 @@ namespace AgainstRomeModifier {
             FocusPatched
         }
 
+        private enum ExeSpellAltarPatchState {
+            Unknown,
+            Original,
+            Patched
+        }
+
         private enum ExeVillageRangePatchState {
             Unknown,
             Original,
@@ -950,6 +1097,55 @@ namespace AgainstRomeModifier {
             if (bytes.SequenceEqual(ExeFocusOriginalBytes)) return ExePatchState.Original;
             if (bytes.SequenceEqual(ExeFocusPatchedBytes)) return ExePatchState.FocusPatched;
             return ExePatchState.Unknown;
+        }
+
+        private ExeSpellAltarPatchState GetSpellAltarPatchState(byte[] exeBytes) {
+            bool allOriginal = true;
+            bool allPatched = true;
+
+            foreach (var site in SpellAltarPatchSites) {
+                if (exeBytes.Length < site.Offset + site.Original.Length) {
+                    return ExeSpellAltarPatchState.Unknown;
+                }
+                byte[] current = new byte[site.Original.Length];
+                Buffer.BlockCopy(exeBytes, (int)site.Offset, current, 0, current.Length);
+
+                if (!current.SequenceEqual(site.Original)) {
+                    allOriginal = false;
+                }
+                if (!current.SequenceEqual(site.Patched)) {
+                    allPatched = false;
+                }
+            }
+
+            if (allOriginal) return ExeSpellAltarPatchState.Original;
+            if (allPatched) return ExeSpellAltarPatchState.Patched;
+            return ExeSpellAltarPatchState.Unknown;
+        }
+
+        private void ApplySpellAltarPatch(byte[] exeBytes, bool noAltarChecked, ref bool exeModified) {
+            ExeSpellAltarPatchState state = GetSpellAltarPatchState(exeBytes);
+            if (state == ExeSpellAltarPatchState.Unknown) {
+                throw new Exception("Against_Rome.exe 版本或法術祭壇特徵碼不符合預期，已停止套用法術祭壇補丁。");
+            }
+
+            if (noAltarChecked) {
+                if (state == ExeSpellAltarPatchState.Original) {
+                    foreach (var site in SpellAltarPatchSites) {
+                        WriteExeBytesInMemory(exeBytes, site.Offset, site.Patched);
+                    }
+                    exeModified = true;
+                    Log("已套用法術免祭壇需求補丁。");
+                }
+            } else {
+                if (state == ExeSpellAltarPatchState.Patched) {
+                    foreach (var site in SpellAltarPatchSites) {
+                        WriteExeBytesInMemory(exeBytes, site.Offset, site.Original);
+                    }
+                    exeModified = true;
+                    Log("已還原法術祭壇需求設定。");
+                }
+            }
         }
 
         private static void WriteExeBytesInMemory(byte[] exeBytes, long patchOffset, byte[] patchBytes) {
@@ -1066,7 +1262,7 @@ namespace AgainstRomeModifier {
             }
         }
 
-        private void ApplyExePatch(byte[] exeBytes, bool focusLossChecked, bool villageBuildRangeChecked, ref bool exeModified) {
+        private void ApplyExePatch(byte[] exeBytes, bool focusLossChecked, bool villageBuildRangeChecked, bool noSpellAltarChecked, ref bool exeModified) {
             ExePatchState state = GetExePatchState(exeBytes);
             if (state == ExePatchState.Unknown) {
                 throw new Exception("Against_Rome.exe 版本或位元組特徵不符合預期，已停止相容性補丁以避免覆蓋未知版本。");
@@ -1092,6 +1288,8 @@ namespace AgainstRomeModifier {
                 throw new InvalidOperationException(Loc.Get("LogVillageBuildRangeWarning"));
             }
             ApplyVillageSetterRangePatch(exeBytes, villageBuildRangeChecked, ref exeModified);
+
+            ApplySpellAltarPatch(exeBytes, noSpellAltarChecked, ref exeModified);
         }
 
         /// <summary>
@@ -1235,6 +1433,25 @@ namespace AgainstRomeModifier {
                         }
                         processedLine = string.Format("CiviDelay  ={0}, {1,-10}{2}", volk, (int)origDelay, comment);
                     }
+                }
+
+                // LPIncIdle 的「頻率 x10」機制已由「單次加血量 x10」（Fig* AI 腳本
+                // s_addLP 字面值補丁，見 ApplyFoodHealingAmountPatch）取代。
+                // 這裡一律還原為原版間隔，讓舊版套用過的安裝自動遷移回原版。
+                var matchLpIdle = RegexLpIncIdlePatch.Match(line);
+                if (matchLpIdle.Success) {
+                    string volk = matchLpIdle.Groups[1].Value;
+                    string comment = matchLpIdle.Groups[3].Value;
+                    string volkClean = volk.Trim();
+                    double origInterval = 15000; // 安全 fallback（原版四陣營皆 15000）
+                    string? origLine = origLines.FirstOrDefault(l => RegexLpIncIdlePatch.Match(l).Success && RegexLpIncIdlePatch.Match(l).Groups[1].Value.Trim() == volkClean);
+                    if (origLine != null) {
+                        var m = RegexLpIncIdlePatch.Match(origLine);
+                        if (double.TryParse(m.Groups[2].Value.Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out double d)) {
+                            origInterval = d;
+                        }
+                    }
+                    processedLine = string.Format("LPIncIdle       ={0}, {1,-10}{2}", volk, (int)origInterval, comment);
                 }
 
                 if (infiniteMoraleChecked) {
@@ -1466,32 +1683,6 @@ namespace AgainstRomeModifier {
                                 name, targetValue, targetLen));
                         }
                         cols[storageIndex] = finalValue.PadLeft(targetLen);
-                    }
-                }
-
-                if (fastBuildUpgradeChecked && name.StartsWith("Bau")) {
-                    string[] origCols = ParseCsvLine(originalLines[idx]);
-                    int buildtIndex = 73;
-                    if (buildtIndex < cols.Length && buildtIndex < origCols.Length) {
-                        if (int.TryParse(origCols[buildtIndex].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int origBuildt) && origBuildt > 0) {
-                            int newBuildt = Math.Max(1, origBuildt / 10);
-                            string targetValue = newBuildt.ToString(CultureInfo.InvariantCulture);
-                            int targetLen = cols[buildtIndex].Length;
-                            if (CheckLen(targetValue, targetLen, out string finalValue)) {
-                                cols[buildtIndex] = finalValue.PadLeft(targetLen);
-                            }
-                        }
-                    }
-                    int upgrdtIndex = 74;
-                    if (upgrdtIndex < cols.Length && upgrdtIndex < origCols.Length) {
-                        if (int.TryParse(origCols[upgrdtIndex].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int origUpgrdt) && origUpgrdt > 0) {
-                            int newUpgrdt = Math.Max(1, origUpgrdt / 10);
-                            string targetValue = newUpgrdt.ToString(CultureInfo.InvariantCulture);
-                            int targetLen = cols[upgrdtIndex].Length;
-                            if (CheckLen(targetValue, targetLen, out string finalValue)) {
-                                cols[upgrdtIndex] = finalValue.PadLeft(targetLen);
-                            }
-                        }
                     }
                 }
 
@@ -1875,9 +2066,9 @@ namespace AgainstRomeModifier {
             Buffer.BlockCopy(bytes, 0, buffer, offset, 4);
         }
 
-        private static int FindBciWordPattern(byte[] decompressedBci, int?[] pattern) {
+        private static int FindBciWordPattern(byte[] decompressedBci, int?[] pattern, int startOffset = 0) {
             int patternBytes = pattern.Length * 4;
-            for (int offset = 0; offset <= decompressedBci.Length - patternBytes; offset += 4) {
+            for (int offset = startOffset; offset <= decompressedBci.Length - patternBytes; offset += 4) {
                 bool match = true;
                 for (int i = 0; i < pattern.Length; i++) {
                     int? expected = pattern[i];
@@ -1922,6 +2113,149 @@ namespace AgainstRomeModifier {
             WriteBciInt32(decomp, patchOffset, targetValue);
             byte[] compressed = GameLZSS.CompressPfil(decomp, raw);
             SafeWriteAllBytes(scriptPath, compressed, rollback);
+        }
+
+        /// <summary>
+        /// 村莊防禦（Dorfverteidigung）NPC job 的部隊成員數 6..6 -> 20..20。
+        /// 四個 s_addNPCJob_createUnit 呼叫點各帶 min/max 兩個字面值，
+        /// 一律同時改寫；還原時改回 6。
+        /// </summary>
+        private void ApplyEndlessAiVillageDefenseJobPatch(string scriptPath, bool enabled, FileRollbackScope? rollback) {
+            if (!File.Exists(scriptPath)) {
+                throw new FileNotFoundException("找不到村莊防禦 AI 腳本。", scriptPath);
+            }
+
+            byte[] raw = File.ReadAllBytes(scriptPath);
+            byte[] decomp = GameLZSS.DecompressPfil(raw);
+
+            var sites = new List<int>();
+            for (int off = FindBciWordPattern(decomp, EndlessAiVillageJobSignature);
+                 off >= 0;
+                 off = FindBciWordPattern(decomp, EndlessAiVillageJobSignature, off + 4)) {
+                sites.Add(off);
+            }
+            if (sites.Count != EndlessAiVillageJobExpectedSites) {
+                throw new InvalidDataException(string.Format(
+                    "村莊防禦 AI 腳本特徵數量不符（預期 {0}、實際 {1}）: {2}",
+                    EndlessAiVillageJobExpectedSites, sites.Count, scriptPath));
+            }
+
+            int targetValue = enabled ? EndlessAiVillageJobCountPatchedValue : EndlessAiVillageJobCountOriginalValue;
+            bool changed = false;
+            foreach (int site in sites) {
+                // 簽名 word 5 = min、word 7 = max（各自緊接在 pushlit 66 之後）。
+                foreach (int wordIndex in new[] { 5, 7 }) {
+                    int patchOffset = site + (wordIndex * 4);
+                    int currentValue = BitConverter.ToInt32(decomp, patchOffset);
+                    if (currentValue != EndlessAiVillageJobCountOriginalValue &&
+                        currentValue != EndlessAiVillageJobCountPatchedValue) {
+                        throw new InvalidDataException("村莊防禦 AI 腳本目標值不是已知原版或修改值: " + scriptPath);
+                    }
+                    if (currentValue != targetValue) {
+                        WriteBciInt32(decomp, patchOffset, targetValue);
+                        changed = true;
+                    }
+                }
+            }
+
+            if (changed) {
+                byte[] compressed = GameLZSS.CompressPfil(decomp, raw);
+                SafeWriteAllBytes(scriptPath, compressed, rollback);
+            }
+        }
+
+        /// <summary>
+        /// 建立單一腳本的 s_addLP 加血量簽章（word 1 = 加血量字面值，寫死為
+        /// amountLiteral，不使用萬用字元）：
+        /// pushlit amountLiteral / pushvar 10 / pushvar 98 / pushsym addLpSymbolIndex /
+        /// argc -3 / callext。
+        /// 呼叫端必須同時嘗試 FoodHealAmountOriginal 與 FoodHealAmountUltimate
+        /// 兩個字面值各自的簽章、合計命中次數，才能同時偵測「原版」與「已修改」
+        /// 兩種狀態——若把這個字面值改成萬用字元，會連同同腳本內字面值為 -1 的
+        /// 扣血（衰減）呼叫點一起命中，錯把兩種不同語意的呼叫點視為同一組。
+        /// </summary>
+        private static int?[] BuildFoodHealAmountSignature(int addLpSymbolIndex, int amountLiteral) {
+            return new int?[] { 66, amountLiteral, 81, 10, 81, 98, 128, addLpSymbolIndex, 73, -3, 86 };
+        }
+
+        private static List<int> FindAllBciWordPatternSites(byte[] decompressedBci, int?[] signature) {
+            var sites = new List<int>();
+            for (int off = FindBciWordPattern(decompressedBci, signature);
+                 off >= 0;
+                 off = FindBciWordPattern(decompressedBci, signature, off + 4)) {
+                sites.Add(off);
+            }
+            return sites;
+        }
+
+        /// <summary>
+        /// 待機回血「單次加血量」補丁：12 個 Fig* 單位 AI 腳本各自唯一一處
+        /// s_addLP(obj, N) 呼叫點的字面值在 1（原版）與 10（已修改）之間切換。
+        /// 每個腳本要求兩種字面值合計剛好命中一次，否則視為未知狀態並中止整批套用。
+        /// </summary>
+        private void ApplyFoodHealingAmountPatch(string gamePath, bool enabled, FileRollbackScope? rollback) {
+            string scriptRoot = Path.Combine(gamePath, @"SYSTEM\CLAK\SCRIPT");
+            int targetValue = enabled ? FoodHealAmountUltimate : FoodHealAmountOriginal;
+
+            foreach (var (file, symbolIndex) in FoodHealAmountSites) {
+                string scriptPath = Path.Combine(scriptRoot, file + ".bci");
+                if (!File.Exists(scriptPath)) {
+                    throw new FileNotFoundException("找不到待機回血 AI 腳本。", scriptPath);
+                }
+
+                byte[] raw = File.ReadAllBytes(scriptPath);
+                byte[] decomp = GameLZSS.DecompressPfil(raw);
+
+                var originalSites = FindAllBciWordPatternSites(decomp,
+                    BuildFoodHealAmountSignature(symbolIndex, FoodHealAmountOriginal));
+                var ultimateSites = FindAllBciWordPatternSites(decomp,
+                    BuildFoodHealAmountSignature(symbolIndex, FoodHealAmountUltimate));
+                if (originalSites.Count + ultimateSites.Count != 1) {
+                    throw new InvalidDataException(string.Format(
+                        "待機回血 AI 腳本特徵數量不符（預期 1、實際 {0}）: {1}",
+                        originalSites.Count + ultimateSites.Count, scriptPath));
+                }
+
+                int currentValue = originalSites.Count == 1 ? FoodHealAmountOriginal : FoodHealAmountUltimate;
+                int patchOffset = (originalSites.Count == 1 ? originalSites[0] : ultimateSites[0]) + 4;
+                if (currentValue == targetValue) continue;
+
+                WriteBciInt32(decomp, patchOffset, targetValue);
+                byte[] compressed = GameLZSS.CompressPfil(decomp, raw);
+                SafeWriteAllBytes(scriptPath, compressed, rollback);
+            }
+        }
+
+        /// <summary>
+        /// 讀取目前遊戲目錄下待機回血補丁的啟用狀態；12 個腳本必須一致，
+        /// 否則視為未知狀態（回傳 false，UI 取消勾選）。
+        /// </summary>
+        private bool TryReadFoodHealingAmountState(string gamePath, out bool enabled) {
+            enabled = false;
+            string scriptRoot = Path.Combine(gamePath, @"SYSTEM\CLAK\SCRIPT");
+            if (!Directory.Exists(scriptRoot)) return false;
+
+            bool? detectedState = null;
+            foreach (var (file, symbolIndex) in FoodHealAmountSites) {
+                string scriptPath = Path.Combine(scriptRoot, file + ".bci");
+                if (!File.Exists(scriptPath)) return false;
+
+                byte[] decomp = GameLZSS.DecompressPfil(File.ReadAllBytes(scriptPath));
+                var originalSites = FindAllBciWordPatternSites(decomp,
+                    BuildFoodHealAmountSignature(symbolIndex, FoodHealAmountOriginal));
+                var ultimateSites = FindAllBciWordPatternSites(decomp,
+                    BuildFoodHealAmountSignature(symbolIndex, FoodHealAmountUltimate));
+                if (originalSites.Count + ultimateSites.Count != 1) {
+                    return false; // 未命中或命中超過一次，視為未知狀態
+                }
+
+                bool isEnabled = ultimateSites.Count == 1;
+                if (detectedState.HasValue && detectedState.Value != isEnabled) return false;
+                detectedState = isEnabled;
+            }
+
+            enabled = detectedState == true;
+            return detectedState.HasValue;
         }
 
         private void ApplyEndlessAiVillageEconomyPatch(string gamePath, bool haupthausEnabled, FileRollbackScope? rollback) {
@@ -1976,6 +2310,14 @@ namespace AgainstRomeModifier {
                 haupthausEnabled,
                 rollback);
             Log(Loc.Get(haupthausEnabled ? "LogHaupthausConversionApplied" : "LogHaupthausConversionRestored"));
+
+            // 村莊防禦 NPC job 是村莊型 AI 日常「村民轉部隊」的實際路徑：
+            // 每支部隊成員數 6..6 -> 20..20（EXE 於 arg2=1 時允許上限 20）。
+            ApplyEndlessAiVillageDefenseJobPatch(
+                Path.Combine(scriptRoot, "Dorfverteidigung.bci"),
+                haupthausEnabled,
+                rollback);
+            Log(Loc.Get(haupthausEnabled ? "LogVillageDefenseJobApplied" : "LogVillageDefenseJobRestored"));
         }
 
         private static bool PatchEndlessLoopDelayLiterals(byte[] decompressedBci, bool enabled) {
@@ -2000,13 +2342,15 @@ namespace AgainstRomeModifier {
                 bool matchesOriginal = currentUpperMs == originalUpperMs && currentLowerMs == originalLowerMs;
                 bool matchesUltimate = currentUpperMs == EndlessAiUltimateLoopDelayUpperMs &&
                     currentLowerMs == EndlessAiUltimateLoopDelayLowerMs;
-                if (!matchesOriginal && !matchesUltimate) {
+                bool matchesLegacy = currentUpperMs == EndlessAiLegacyLoopDelayUpperMs &&
+                    currentLowerMs == EndlessAiLegacyLoopDelayLowerMs;
+                if (!matchesOriginal && !matchesUltimate && !matchesLegacy) {
                     continue;
                 }
 
-                bool accelerateReinforcementLoop = enabled && delaySiteIndex < EndlessAiReinforcementLoopCount;
-                int targetUpperMs = accelerateReinforcementLoop ? EndlessAiUltimateLoopDelayUpperMs : originalUpperMs;
-                int targetLowerMs = accelerateReinforcementLoop ? EndlessAiUltimateLoopDelayLowerMs : originalLowerMs;
+                bool accelerateSchedulerLoop = enabled && delaySiteIndex < EndlessAiAcceleratedLoopCount;
+                int targetUpperMs = accelerateSchedulerLoop ? EndlessAiUltimateLoopDelayUpperMs : originalUpperMs;
+                int targetLowerMs = accelerateSchedulerLoop ? EndlessAiUltimateLoopDelayLowerMs : originalLowerMs;
                 if (currentUpperMs != targetUpperMs || currentLowerMs != targetLowerMs) {
                     WriteBciInt32(decompressedBci, offset + 4, targetUpperMs);
                     WriteBciInt32(decompressedBci, offset + 12, targetLowerMs);
@@ -2063,6 +2407,7 @@ namespace AgainstRomeModifier {
             int currentOpcode = BitConverter.ToInt32(decompressedBci, gateOffset);
             int currentValue = BitConverter.ToInt32(decompressedBci, gateOffset + 4);
             bool currentLimitKnown = currentLimit == EndlessAiOriginalActivePartyLimit ||
+                currentLimit == EndlessAiLegacyActivePartyLimit ||
                 currentLimit == EndlessAiUltimateActivePartyLimit;
             bool currentIsOriginal = currentOpcode == EndlessAiActiveLimitOriginalOpcode &&
                 currentValue == EndlessAiActiveLimitOriginalValue;
@@ -2089,6 +2434,133 @@ namespace AgainstRomeModifier {
             return changed;
         }
 
+        /// <summary>
+        /// 讀取 type-5 增援黨團撤退配額（v56 寫入點）的目前狀態。
+        /// 回傳 -1 表示簽章缺失或字組不在已知的原版/已補丁組合內。
+        /// 0 = 原版（pushloc 15），1 = 已補丁（pushlit 0，單位全數移交不撤退）。
+        /// </summary>
+        private static int ReadEndlessRetreatQuotaState(byte[] decompressedBci) {
+            int sigOffset = FindBciWordPattern(decompressedBci, EndlessAiRetreatQuotaSignature);
+            if (sigOffset < 0) return -1;
+            int opcodeOffset = sigOffset + EndlessAiRetreatQuotaOpcodeWordIndex * 4;
+            int opcode = BitConverter.ToInt32(decompressedBci, opcodeOffset);
+            int value = BitConverter.ToInt32(decompressedBci, opcodeOffset + 4);
+            if (opcode == EndlessAiRetreatQuotaOriginalOpcode && value == EndlessAiRetreatQuotaOriginalValue) return 0;
+            if (opcode == EndlessAiRetreatQuotaPatchedOpcode && value == EndlessAiRetreatQuotaPatchedValue) return 1;
+            return -1;
+        }
+
+        private static bool PatchEndlessRetreatQuota(byte[] decompressedBci, bool enabled) {
+            int currentState = ReadEndlessRetreatQuotaState(decompressedBci);
+            if (currentState < 0) return false;
+
+            int targetState = enabled ? 1 : 0;
+            if (currentState == targetState) return false;
+
+            int sigOffset = FindBciWordPattern(decompressedBci, EndlessAiRetreatQuotaSignature);
+            int opcodeOffset = sigOffset + EndlessAiRetreatQuotaOpcodeWordIndex * 4;
+            int targetOpcode = enabled ? EndlessAiRetreatQuotaPatchedOpcode : EndlessAiRetreatQuotaOriginalOpcode;
+            int targetValue = enabled ? EndlessAiRetreatQuotaPatchedValue : EndlessAiRetreatQuotaOriginalValue;
+            WriteBciInt32(decompressedBci, opcodeOffset, targetOpcode);
+            WriteBciInt32(decompressedBci, opcodeOffset + 4, targetValue);
+            return true;
+        }
+
+        private static bool HasExpectedEndlessSpawners(byte[] decompressedBci, bool enabled) {
+            int?[] pattern = new int?[] {
+                66, null,
+                91, 2,
+                66, null,
+                91, 2,
+                66, 0,
+                91, 3,
+                90, 0,
+                91, 3
+            };
+
+            int offset = FindBciWordPattern(decompressedBci, pattern);
+            if (offset < 0) return false;
+
+            // In single player team 0 is protected by the occupied-team mask,
+            // so pickTeam can select only CPU teams 1..7 and cannot create an
+            // eighth opponent or duplicate an occupied team. Making the default
+            // branch unconditional therefore fills the remaining CPU slots after
+            // v63[1] reaches four, while pickTeam remains the hard seven-opponent
+            // bound.
+            int targetDefault = enabled ? 101 : 0;
+            int targetCase0 = enabled ? 101 : 80;
+            int targetCase1 = enabled ? 101 : 60;
+            int targetCase2 = enabled ? 101 : 40;
+            int targetCase3 = enabled ? 101 : 20;
+
+            return BitConverter.ToInt32(decompressedBci, offset + 4) == targetDefault &&
+                   BitConverter.ToInt32(decompressedBci, offset + 20) == targetDefault &&
+                   BitConverter.ToInt32(decompressedBci, offset + 96) == targetCase0 &&
+                   BitConverter.ToInt32(decompressedBci, offset + 148) == targetCase1 &&
+                   BitConverter.ToInt32(decompressedBci, offset + 200) == targetCase2 &&
+                   BitConverter.ToInt32(decompressedBci, offset + 252) == targetCase3;
+        }
+
+        private static bool PatchEndlessSpawnProbabilities(byte[] decompressedBci, bool enabled) {
+            int?[] pattern = new int?[] {
+                66, null,
+                91, 2,
+                66, null,
+                91, 2,
+                66, 0,
+                91, 3,
+                90, 0,
+                91, 3
+            };
+
+            int offset = FindBciWordPattern(decompressedBci, pattern);
+            if (offset < 0) {
+                return false;
+            }
+
+            int defaultProb1Offset = offset + 4;
+            int defaultProb2Offset = offset + 20;
+            int case0ProbOffset = offset + 96;
+            int case1ProbOffset = offset + 148;
+            int case2ProbOffset = offset + 200;
+            int case3ProbOffset = offset + 252;
+
+            int targetDefault = enabled ? 101 : 0;
+            int targetCase0 = enabled ? 101 : 80;
+            int targetCase1 = enabled ? 101 : 60;
+            int targetCase2 = enabled ? 101 : 40;
+            int targetCase3 = enabled ? 101 : 20;
+
+            bool changed = false;
+
+            if (BitConverter.ToInt32(decompressedBci, defaultProb1Offset) != targetDefault) {
+                WriteBciInt32(decompressedBci, defaultProb1Offset, targetDefault);
+                changed = true;
+            }
+            if (BitConverter.ToInt32(decompressedBci, defaultProb2Offset) != targetDefault) {
+                WriteBciInt32(decompressedBci, defaultProb2Offset, targetDefault);
+                changed = true;
+            }
+            if (BitConverter.ToInt32(decompressedBci, case0ProbOffset) != targetCase0) {
+                WriteBciInt32(decompressedBci, case0ProbOffset, targetCase0);
+                changed = true;
+            }
+            if (BitConverter.ToInt32(decompressedBci, case1ProbOffset) != targetCase1) {
+                WriteBciInt32(decompressedBci, case1ProbOffset, targetCase1);
+                changed = true;
+            }
+            if (BitConverter.ToInt32(decompressedBci, case2ProbOffset) != targetCase2) {
+                WriteBciInt32(decompressedBci, case2ProbOffset, targetCase2);
+                changed = true;
+            }
+            if (BitConverter.ToInt32(decompressedBci, case3ProbOffset) != targetCase3) {
+                WriteBciInt32(decompressedBci, case3ProbOffset, targetCase3);
+                changed = true;
+            }
+
+            return changed;
+        }
+
         private static bool HasExpectedEndlessLoopDelays(byte[] decompressedBci, bool enabled) {
             int expectedIndex = 0;
             for (int offset = 0; offset <= decompressedBci.Length - 24 && expectedIndex < EndlessAiLoopDelayRanges.Length; offset += 4) {
@@ -2100,11 +2572,72 @@ namespace AgainstRomeModifier {
                 }
 
                 (int originalUpperMs, int originalLowerMs) = EndlessAiLoopDelayRanges[expectedIndex];
-                bool accelerated = enabled && expectedIndex < EndlessAiReinforcementLoopCount;
+                bool accelerated = enabled && expectedIndex < EndlessAiAcceleratedLoopCount;
                 int expectedUpperMs = accelerated ? EndlessAiUltimateLoopDelayUpperMs : originalUpperMs;
                 int expectedLowerMs = accelerated ? EndlessAiUltimateLoopDelayLowerMs : originalLowerMs;
                 if (BitConverter.ToInt32(decompressedBci, offset + 4) == expectedUpperMs &&
                     BitConverter.ToInt32(decompressedBci, offset + 12) == expectedLowerMs) {
+                    expectedIndex++;
+                }
+            }
+            return expectedIndex == EndlessAiLoopDelayRanges.Length;
+        }
+
+        private static bool HasLegacyEndlessLoopDelays(byte[] decompressedBci, int acceleratedLoopCount) {
+            int expectedIndex = 0;
+            for (int offset = 0; offset <= decompressedBci.Length - 24 && expectedIndex < EndlessAiLoopDelayRanges.Length; offset += 4) {
+                if (BitConverter.ToInt32(decompressedBci, offset) != 0x42 ||
+                    BitConverter.ToInt32(decompressedBci, offset + 8) != 0x42 ||
+                    BitConverter.ToInt32(decompressedBci, offset + 16) != 0x80 ||
+                    BitConverter.ToInt32(decompressedBci, offset + 20) != 16) {
+                    continue;
+                }
+
+                (int originalUpperMs, int originalLowerMs) = EndlessAiLoopDelayRanges[expectedIndex];
+                bool accelerated = expectedIndex < acceleratedLoopCount;
+                int expectedUpperMs = accelerated ? EndlessAiLegacyLoopDelayUpperMs : originalUpperMs;
+                int expectedLowerMs = accelerated ? EndlessAiLegacyLoopDelayLowerMs : originalLowerMs;
+                if (BitConverter.ToInt32(decompressedBci, offset + 4) == expectedUpperMs &&
+                    BitConverter.ToInt32(decompressedBci, offset + 12) == expectedLowerMs) {
+                    expectedIndex++;
+                }
+            }
+            return expectedIndex == EndlessAiLoopDelayRanges.Length;
+        }
+
+        private static bool HasLegacyPartialUltimateLoopDelays(byte[] decompressedBci) {
+            int expectedIndex = 0;
+            for (int offset = 0; offset <= decompressedBci.Length - 24 && expectedIndex < EndlessAiLoopDelayRanges.Length; offset += 4) {
+                if (BitConverter.ToInt32(decompressedBci, offset) != 0x42 ||
+                    BitConverter.ToInt32(decompressedBci, offset + 8) != 0x42 ||
+                    BitConverter.ToInt32(decompressedBci, offset + 16) != 0x80 ||
+                    BitConverter.ToInt32(decompressedBci, offset + 20) != 16) {
+                    continue;
+                }
+
+                (int originalUpperMs, int originalLowerMs) = EndlessAiLoopDelayRanges[expectedIndex];
+                bool accelerated = expectedIndex < EndlessAiLegacyAcceleratedLoopCount;
+                int expectedUpperMs = accelerated ? EndlessAiUltimateLoopDelayUpperMs : originalUpperMs;
+                int expectedLowerMs = accelerated ? EndlessAiUltimateLoopDelayLowerMs : originalLowerMs;
+                if (BitConverter.ToInt32(decompressedBci, offset + 4) == expectedUpperMs &&
+                    BitConverter.ToInt32(decompressedBci, offset + 12) == expectedLowerMs) {
+                    expectedIndex++;
+                }
+            }
+            return expectedIndex == EndlessAiLoopDelayRanges.Length;
+        }
+
+        private static bool HasAllUltimateEndlessLoopDelays(byte[] decompressedBci) {
+            int expectedIndex = 0;
+            for (int offset = 0; offset <= decompressedBci.Length - 24 && expectedIndex < EndlessAiLoopDelayRanges.Length; offset += 4) {
+                if (BitConverter.ToInt32(decompressedBci, offset) != 0x42 ||
+                    BitConverter.ToInt32(decompressedBci, offset + 8) != 0x42 ||
+                    BitConverter.ToInt32(decompressedBci, offset + 16) != 0x80 ||
+                    BitConverter.ToInt32(decompressedBci, offset + 20) != 16) {
+                    continue;
+                }
+                if (BitConverter.ToInt32(decompressedBci, offset + 4) == EndlessAiUltimateLoopDelayUpperMs &&
+                    BitConverter.ToInt32(decompressedBci, offset + 12) == EndlessAiUltimateLoopDelayLowerMs) {
                     expectedIndex++;
                 }
             }
@@ -2127,11 +2660,128 @@ namespace AgainstRomeModifier {
                 bool matchesOriginal = currentUpperMs == originalUpperMs && currentLowerMs == originalLowerMs;
                 bool matchesUltimate = currentUpperMs == EndlessAiUltimateLoopDelayUpperMs &&
                     currentLowerMs == EndlessAiUltimateLoopDelayLowerMs;
-                if (matchesOriginal || matchesUltimate) {
+                bool matchesLegacy = currentUpperMs == EndlessAiLegacyLoopDelayUpperMs &&
+                    currentLowerMs == EndlessAiLegacyLoopDelayLowerMs;
+                if (matchesOriginal || matchesUltimate || matchesLegacy) {
                     expectedIndex++;
                 }
             }
             return expectedIndex == EndlessAiLoopDelayRanges.Length;
+        }
+
+        private static string[] GetExpectedEndlessLevelScripts(string mapsPath) {
+            return Enumerable.Range(0, EndlessAiExpectedMapCount)
+                .Select(index => Path.Combine(
+                    mapsPath,
+                    string.Format(CultureInfo.InvariantCulture, "ENDL_{0:000}", index),
+                    "SCRIPT",
+                    "ak_level.bci"))
+                .ToArray();
+        }
+
+        private static bool HasExpectedEndlessScriptValue(
+            string scriptPath,
+            int?[] signature,
+            int wordIndex,
+            int expectedValue) {
+            if (!File.Exists(scriptPath)) return false;
+
+            byte[] decompressed = GameLZSS.DecompressPfil(File.ReadAllBytes(scriptPath));
+            List<int> sites = FindAllBciWordPatternSites(decompressed, signature);
+            if (sites.Count != 1) return false;
+
+            int valueOffset = sites[0] + (wordIndex * 4);
+            return BitConverter.ToInt32(decompressed, valueOffset) == expectedValue;
+        }
+
+        private static bool HasExpectedEndlessVillageDefenseState(string scriptPath, bool enabled) {
+            if (!File.Exists(scriptPath)) return false;
+
+            byte[] decompressed = GameLZSS.DecompressPfil(File.ReadAllBytes(scriptPath));
+            List<int> sites = FindAllBciWordPatternSites(decompressed, EndlessAiVillageJobSignature);
+            if (sites.Count != EndlessAiVillageJobExpectedSites) return false;
+
+            int expectedValue = enabled
+                ? EndlessAiVillageJobCountPatchedValue
+                : EndlessAiVillageJobCountOriginalValue;
+            return sites.All(site =>
+                BitConverter.ToInt32(decompressed, site + (5 * 4)) == expectedValue &&
+                BitConverter.ToInt32(decompressed, site + (7 * 4)) == expectedValue);
+        }
+
+        private static bool HasExpectedEndlessSettlementTemplateState(string gamePath, bool enabled) {
+            string mapsPath = Path.Combine(gamePath, "MAPS");
+            if (!Directory.Exists(mapsPath)) return false;
+
+            string[] templates = Directory.GetFiles(mapsPath, "Endlos_*_Siedlung*.sdl", SearchOption.AllDirectories)
+                .Where(path => path.IndexOf(Path.DirectorySeparatorChar + "ENDL_", StringComparison.OrdinalIgnoreCase) >= 0)
+                .ToArray();
+            if (templates.Length != EndlessAiExpectedSettlementTemplateCount) return false;
+
+            string expectedResv = enabled
+                ? EndlessSdlUltimateHaupthausResv
+                : EndlessSdlOriginalHaupthausResv;
+            foreach (string templatePath in templates) {
+                byte[] raw = File.ReadAllBytes(templatePath);
+                string[] lines = Encoding.Latin1.GetString(GameLZSS.DecompressPfil(raw)).Split('\n');
+                bool inHaupthausSection = false;
+                bool foundHaupthausResv = false;
+                foreach (string line in lines) {
+                    string trimmed = line.TrimEnd('\r').Trim();
+                    if (trimmed.StartsWith("[")) {
+                        inHaupthausSection = false;
+                    } else if (trimmed.StartsWith("namedef") && trimmed.Contains("_Haupt")) {
+                        inHaupthausSection = true;
+                    } else if (inHaupthausSection && trimmed.StartsWith("resv")) {
+                        inHaupthausSection = false;
+                        int equalsIndex = line.IndexOf('=');
+                        if (equalsIndex < 0) return false;
+                        string currentResv = line.Substring(equalsIndex + 1).TrimEnd('\r').Trim();
+                        if (currentResv != expectedResv) return false;
+                        foundHaupthausResv = true;
+                    }
+                }
+                if (!foundHaupthausResv) return false;
+            }
+            return true;
+        }
+
+        private static bool HasExpectedEndlessAuxiliaryState(string gamePath, bool enabled) {
+            string scriptRoot = Path.Combine(gamePath, @"SYSTEM\CLAK\SCRIPT");
+            int?[] haupthausSignature = new int?[] {
+                null, null, 81, 11, 81, 10, 81, 98, 128, 81, 73, -4, 86
+            };
+
+            bool rejectedNpcPatchIsOriginal = HasExpectedEndlessScriptValue(
+                Path.Combine(scriptRoot, "ak_npc.bci"),
+                new int?[] { 128, 43, 73, -2, 86, 66, null, 96, 99, 117, 476 },
+                6,
+                EndlessAiOriginalFreeCivilianReserve);
+            bool rejectedProductionPatchIsOriginal = HasExpectedEndlessScriptValue(
+                Path.Combine(scriptRoot, "ak_produktion.bci"),
+                new int?[] { 128, 69, 73, -2, 86, null, EndlessAiProductionGateJump, 66, 1, 82, 46 },
+                5,
+                EndlessAiProductionGateOriginalOpcode);
+            bool haupthausOpcodeMatches = HasExpectedEndlessScriptValue(
+                Path.Combine(scriptRoot, "ak_haupthaus.bci"),
+                haupthausSignature,
+                0,
+                enabled ? EndlessAiFormationLimitPatchedOpcode : EndlessAiFormationLimitOriginalOpcode);
+            bool haupthausValueMatches = HasExpectedEndlessScriptValue(
+                Path.Combine(scriptRoot, "ak_haupthaus.bci"),
+                haupthausSignature,
+                1,
+                enabled ? EndlessAiFormationLimitPatchedValue : EndlessAiFormationLimitOriginalValue);
+            bool villageDefenseMatches = HasExpectedEndlessVillageDefenseState(
+                Path.Combine(scriptRoot, "Dorfverteidigung.bci"),
+                enabled);
+
+            return rejectedNpcPatchIsOriginal &&
+                rejectedProductionPatchIsOriginal &&
+                haupthausOpcodeMatches &&
+                haupthausValueMatches &&
+                villageDefenseMatches &&
+                HasExpectedEndlessSettlementTemplateState(gamePath, enabled);
         }
 
         private bool TryReadEndlessAiModeState(string gamePath, out bool enabled) {
@@ -2139,10 +2789,8 @@ namespace AgainstRomeModifier {
             string mapsPath = Path.Combine(gamePath, "MAPS");
             if (!Directory.Exists(mapsPath)) return false;
 
-            string[] scripts = Directory.GetFiles(mapsPath, "ak_level.bci", SearchOption.AllDirectories)
-                .Where(p => p.IndexOf(Path.DirectorySeparatorChar + "ENDL_", StringComparison.OrdinalIgnoreCase) >= 0)
-                .ToArray();
-            if (scripts.Length == 0) return false;
+            string[] scripts = GetExpectedEndlessLevelScripts(mapsPath);
+            if (scripts.Any(path => !File.Exists(path))) return false;
 
             bool? detectedState = null;
             foreach (string scriptPath in scripts) {
@@ -2187,8 +2835,15 @@ namespace AgainstRomeModifier {
                     return false;
                 }
 
+                int retreatQuotaState = ReadEndlessRetreatQuotaState(decomp);
+                if (retreatQuotaState < 0) {
+                    return false;
+                }
+
                 bool hasUltimateLoopDelays = HasExpectedEndlessLoopDelays(decomp, true);
                 bool hasOriginalLoopDelays = HasExpectedEndlessLoopDelays(decomp, false);
+                bool hasUltimateSpawners = HasExpectedEndlessSpawners(decomp, true);
+                bool hasOriginalSpawners = HasExpectedEndlessSpawners(decomp, false);
                 bool isUltimate = countMin == EndlessAiUltimateMilitaryCount &&
                     countMax == EndlessAiUltimateMilitaryCount &&
                     autoRecycleCompletedJob == EndlessAiUltimateAutoRecycleCompletedJob &&
@@ -2196,15 +2851,22 @@ namespace AgainstRomeModifier {
                     ultimateDeadlines == EndlessAiRetreatDeadlineSiteCount &&
                     debounceTicks == EndlessAiUltimateDeadPartyDebounceTicks &&
                     activeLimit == EndlessAiUltimateActivePartyLimit &&
-                    (hasUltimateLoopDelays || hasOriginalLoopDelays);
-                // 舊版啟用狀態：核心軍事簽章已啟用，但撤退期限/去彈跳/回收旗標
-                // 仍是任一已知的舊組合。下次套用時會自動遷移到完整狀態。
+                    retreatQuotaState == 1 &&
+                    hasUltimateSpawners &&
+                    hasUltimateLoopDelays;
+                // 舊版啟用狀態：核心軍事簽章已啟用，但撤退期限/去彈跳/回收旗標/生成器機率
+                // 仍是任一已知的舊組合（含 8 門檻與原版撤退配額）。下次套用時會自動遷移到完整狀態。
+                bool hasLegacyLoopDelays = HasLegacyEndlessLoopDelays(decomp, 3) ||
+                    HasLegacyEndlessLoopDelays(decomp, EndlessAiLoopDelayRanges.Length) ||
+                    HasLegacyPartialUltimateLoopDelays(decomp) ||
+                    HasAllUltimateEndlessLoopDelays(decomp);
                 bool isLegacyUltimate = !isUltimate &&
                     countMin == EndlessAiUltimateMilitaryCount &&
                     countMax == EndlessAiUltimateMilitaryCount &&
                     militaryRespawnDelay == EndlessAiUltimateRespawnDelayMs &&
-                    activeLimit == EndlessAiUltimateActivePartyLimit &&
-                    (hasUltimateLoopDelays || hasOriginalLoopDelays);
+                    (activeLimit == EndlessAiLegacyActivePartyLimit ||
+                     activeLimit == EndlessAiUltimateActivePartyLimit) &&
+                    (hasUltimateLoopDelays || hasOriginalLoopDelays || hasLegacyLoopDelays);
                 bool isOriginal = countMin == EndlessAiOriginalMilitaryCount &&
                     countMax == EndlessAiOriginalMilitaryCount &&
                     autoRecycleCompletedJob == EndlessAiOriginalAutoRecycleCompletedJob &&
@@ -2212,6 +2874,8 @@ namespace AgainstRomeModifier {
                     originalDeadlines == EndlessAiRetreatDeadlineSiteCount &&
                     debounceTicks == EndlessAiOriginalDeadPartyDebounceTicks &&
                     activeLimit == EndlessAiOriginalActivePartyLimit &&
+                    retreatQuotaState == 0 &&
+                    hasOriginalSpawners &&
                     hasOriginalLoopDelays;
                 bool isEnabled = isUltimate || isLegacyUltimate;
                 if (!isEnabled && !isOriginal) return false;
@@ -2219,8 +2883,10 @@ namespace AgainstRomeModifier {
                 detectedState = isEnabled;
             }
 
-            enabled = detectedState == true;
-            return detectedState.HasValue;
+            if (!detectedState.HasValue) return false;
+
+            enabled = detectedState.Value;
+            return HasExpectedEndlessAuxiliaryState(gamePath, enabled);
         }
 
         private Dictionary<string, byte[]> GetPatchedEndlessScripts(string gamePath, bool enabled) {
@@ -2233,14 +2899,20 @@ namespace AgainstRomeModifier {
                 return results;
             }
 
-            string[] scripts = Directory.GetFiles(mapsPath, "ak_level.bci", SearchOption.AllDirectories)
-                .Where(p => p.IndexOf(Path.DirectorySeparatorChar + "ENDL_", StringComparison.OrdinalIgnoreCase) >= 0)
-                .ToArray();
+            string[] expectedScripts = GetExpectedEndlessLevelScripts(mapsPath);
+            string[] scripts = expectedScripts.Where(File.Exists).ToArray();
             if (scripts.Length == 0) {
                 string message = Loc.Get("LogEndlessAiNoScripts");
                 if (enabled) throw new InvalidOperationException(message);
                 Log(message);
                 return results;
+            }
+            if (enabled && scripts.Length != expectedScripts.Length) {
+                throw new InvalidOperationException(string.Format(
+                    CultureInfo.InvariantCulture,
+                    "AI 終極模式需要完整的 {0} 張 ENDL 地圖腳本；目前只找到 {1} 張。",
+                    expectedScripts.Length,
+                    scripts.Length));
             }
 
             int targetCount = enabled ? EndlessAiUltimateMilitaryCount : EndlessAiOriginalMilitaryCount;
@@ -2267,9 +2939,11 @@ namespace AgainstRomeModifier {
                 List<int> retreatDeadlineOffsets = FindEndlessRetreatDeadlineLiterals(decomp);
                 int debounceOffset = FindEndlessDeadPartyDebounceLiteral(decomp);
                 int activeSequenceOffset = FindEndlessActiveLimitSequenceOffset(decomp);
+                int?[] spawnerPattern = new int?[] { 66, null, 91, 2, 66, null, 91, 2, 66, 0, 91, 3, 90, 0, 91, 3 };
+                int spawnerPatternOffset = FindBciWordPattern(decomp, spawnerPattern);
                 if (baseOffset < 0 || militaryRespawnDelayOffset < 0 ||
                     retreatDeadlineOffsets.Count != EndlessAiRetreatDeadlineSiteCount ||
-                    debounceOffset < 0 ||
+                    debounceOffset < 0 || spawnerPatternOffset < 0 ||
                     activeSequenceOffset < 0 || !HasPatchableEndlessLoopDelays(decomp)) {
                     incompatibleScripts.Add(scriptPath);
                     Log(string.Format(Loc.Get("LogEndlessAiPatternMissing"), scriptPath));
@@ -2298,13 +2972,16 @@ namespace AgainstRomeModifier {
                 bool debounceKnown = currentDebounceTicks == EndlessAiOriginalDeadPartyDebounceTicks ||
                     currentDebounceTicks == EndlessAiUltimateDeadPartyDebounceTicks;
                 bool activeLimitKnown = currentActiveLimit == EndlessAiOriginalActivePartyLimit ||
+                    currentActiveLimit == EndlessAiLegacyActivePartyLimit ||
                     currentActiveLimit == EndlessAiUltimateActivePartyLimit;
+                bool retreatQuotaKnown = ReadEndlessRetreatQuotaState(decomp) >= 0;
                 bool gateKnown = (currentGateOpcode == EndlessAiActiveLimitOriginalOpcode &&
                     currentGateValue == EndlessAiActiveLimitOriginalValue) ||
                     (currentGateOpcode == EndlessAiActiveLimitPatchedOpcode &&
                     currentGateValue == EndlessAiActiveLimitPatchedRelativeJump);
+                bool spawnersKnown = HasExpectedEndlessSpawners(decomp, true) || HasExpectedEndlessSpawners(decomp, false);
                 if (!countKnown || !autoRecycleKnown || !militaryRespawnKnown || !retreatDeadlinesKnown ||
-                    !debounceKnown || !activeLimitKnown || !gateKnown) {
+                    !debounceKnown || !activeLimitKnown || !gateKnown || !spawnersKnown || !retreatQuotaKnown) {
                     incompatibleScripts.Add(scriptPath);
                     Log(string.Format(Loc.Get("LogEndlessAiPatternMissing"), scriptPath));
                     continue;
@@ -2341,6 +3018,16 @@ namespace AgainstRomeModifier {
                 }
 
                 if (PatchEndlessActiveAiLimit(decomp, enabled)) {
+                    changed = true;
+                }
+
+                if (PatchEndlessSpawnProbabilities(decomp, enabled)) {
+                    changed = true;
+                }
+
+                // 增援不撤退：撤退配額歸零（單位全數移交村莊）必須與 40 門檻
+                // 一起套用/還原 — 兩者由同一個 enabled 旗標驅動即保證了這點。
+                if (PatchEndlessRetreatQuota(decomp, enabled)) {
                     changed = true;
                 }
 
@@ -2382,6 +3069,13 @@ namespace AgainstRomeModifier {
                 .ToArray();
             if (templates.Length == 0) {
                 return results;
+            }
+            if (enabled && templates.Length != EndlessAiExpectedSettlementTemplateCount) {
+                throw new InvalidOperationException(string.Format(
+                    CultureInfo.InvariantCulture,
+                    "AI 終極模式需要完整的 {0} 個 ENDL 聚落模板；目前只找到 {1} 個。",
+                    EndlessAiExpectedSettlementTemplateCount,
+                    templates.Length));
             }
 
             string targetResv = enabled ? EndlessSdlUltimateHaupthausResv : EndlessSdlOriginalHaupthausResv;

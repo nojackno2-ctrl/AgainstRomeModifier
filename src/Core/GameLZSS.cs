@@ -24,7 +24,7 @@ namespace AgainstRomeModifier {
             byte[] ring = ArrayPool<byte>.Shared.Rent(ringSize);
             try {
                 // 初始化環狀視窗：遊戲 EXE (FUN_00565c00) 只以空格 (0x20) 填充前
-                // 0xFEE 個位置，最後 18 個位置 (0xFEE..0xFFF) 為 memset 後的 0x00。
+                // 0xFEE 個位置，最後 18 個位置 (0xFEE..0xFFF) 為 memset 後 of 0x00。
                 // 必須與遊戲完全一致，否則壓縮/解壓模型會在檔案開頭不同步。
                 for (int x = 0; x < 4078; x++) ring[x] = 0x20;
                 for (int x = 4078; x < ringSize; x++) ring[x] = 0x00;

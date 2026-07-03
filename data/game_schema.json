@@ -13,7 +13,7 @@
     "updated": "2026-07-02",
     "technicalChinese": "TechDoc.md",
     "technicalEnglish": "TechDoc_EN.md",
-    "agentHandoff": "docs/AI_AGENT_HANDOFF.md",
+    "agentHandoff": "TechDoc.md",
     "knownPatches": "docs/reverse-engineering/known-patches.md",
     "rule": "Current code and reproducible byte/runtime evidence override historical chat summaries."
   },
@@ -102,6 +102,16 @@
         "MoralsDecLostMem": "^(MoralsDecLostMem\\s*=\\s*[A-Z]{3},\\s*)\\d+(.*)$"
       }
     },
+    "idleHpRegeneration": {
+      "pathGlob": "SYSTEM/AI/Fig*.bci",
+      "format": "pfil-lzss-bci0",
+      "scope": "Exactly 12 unit AI scripts; each must contain exactly one recognized s_addLP amount site.",
+      "originalAmount": 1,
+      "patchedAmount": 10,
+      "intervalSource": "SYSTEM/cl_script.ini LPIncIdle remains at the original 15000 ms.",
+      "behavior": "Automatic HP regeneration while the unit is idle; decompilation shows no food-resource read or deduction on this path.",
+      "status": "static-analysis-verified-fresh-game-runtime-test-pending"
+    },
     "teamDat": {
       "pathGlob": "MAPS/**/team.dat",
       "format": "pfil-lzss-ini",
@@ -118,7 +128,7 @@
     "endlessScript": {
       "pathGlob": "MAPS/ENDL_*/SCRIPT/ak_level.bci",
       "format": "pfil-lzss-bci0",
-      "status": "stable-runtime-verified",
+      "status": "static-state-verified-long-duration-runtime-test-pending",
       "spawnJobs": {
         "MilitaryCreateUnitJob": {
           "decompressedCallOffset": "0x17B60",
@@ -160,13 +170,29 @@
             [120000, 240000]
           ],
           "actionLoopDelayLegacyUnsafeRangeMs": [5000, 10000],
-          "reinforcementPollingLoopIndexes": [0, 1, 2],
+          "aiSchedulerLoopIndexes": [0, 1, 2, 3, 4, 5],
+          "reinforcementPollingRejectedFastRangeMs": [1000, 2000],
           "reinforcementPollingUltimateRangeMs": [5000, 10000],
-          "actionLoopDelayUltimateBehavior": "Accelerate only the first three military reinforcement polling loops; keep or restore all unrelated AI action loops to their original ranges.",
-          "activePartyLimit": {
+          "reinforcementPollingRejectedFastReason": "Runtime testing showed computer respawns could stop; this state is accepted only for migration back to 5-10 seconds.",
+          "actionLoopDelayUltimateBehavior": "Accelerate all six scheduler delay sites. Indexes 0-2 are inner raider timers; indexes 3-5 initialize and refresh the outer scheduler that gates the dispatcher calling the settlement and military-reinforcement spawners. The prior first-three-only state is accepted for migration because it left AI arrival checks at 60-240 second intervals.",
+          "militaryReinforcementUnitThreshold": {
             "decompressedLiteralOffset": "0x195F8",
             "originalValue": 4,
-            "ultimateValue": 8
+            "ultimateValue": 40,
+            "meaning": "s_searchTeamUnits(team) threshold in the military-reinforcement spawner; not an AI-player or party-count limit."
+          },
+          "reinforcementRetreatQuota": {
+            "decompressedSignatureRegion": "0x17888",
+            "originalWords": [90, 15],
+            "ultimateWords": [66, 0],
+            "meaning": "Set v56[party] to zero so the complete type-5 reinforcement party is handed to the village instead of retreating.",
+            "coupling": "Must be applied and restored atomically with militaryReinforcementUnitThreshold=40; the rejected threshold-8 plus quota-0 combination stopped later arrivals."
+          },
+          "settlementSpawnerProbabilities": {
+            "decompressedPatternOffset": "0x1888C",
+            "originalValues": [0, 0, 80, 60, 40, 20],
+            "ultimateValues": [101, 101, 101, 101, 101, 101],
+            "singlePlayerBound": "The occupied mask reserves player team 0; pickTeam selects only unoccupied CPU teams 1-7, so at most seven computer opponents coexist and a defeated team becomes eligible again after its party slot is deleted."
           },
           "activeAiLimitBypass": {
             "status": "disabled-runtime-regression",
@@ -177,7 +203,7 @@
             "migration": "Always restore the original gate words."
           },
           "verifiedSameBytesInMaps": ["ENDL_000", "ENDL_001", "ENDL_002", "ENDL_003", "ENDL_004"],
-          "status": "save-bytes-verified-long-run-runtime-pending"
+          "status": "static-state-verified-long-duration-runtime-test-pending"
         },
         "PartyRetreatDeadlines": {
           "meaning": "Per-party-handler 'v61[party] := s_getTime() + N' retreat/cleanup deadlines. The endless level script only frees a defeated team's party slot after this deadline expires; a free slot is what lets the spawner send a new arrival for that team, which re-establishes the village/camp and makes ak_npc reactivate the team via s_setNPCActive.",
@@ -202,18 +228,50 @@
           "status": "static-analysis-verified-runtime-test-pending"
         },
         "DefeatRecoveryChain": {
-          "meaning": "How a defeated endless AI team returns: settled party's IDLE state detects the missing village center every tick; after DeadPartyDebounceTicks it enters RETREAT with a PartyRetreatDeadlines deadline; on expiry the party reaches DELETE_PARTY (256), its slot is freed (v47 type cleared), the occupied-team mask recomputes (fn 0x81E8: base | teams of live party slots), the team becomes eligible in pickTeam (~occupied & tribeMask & cpuMask), and the spawner's Siedler/military probability rolls (80/60/40/20 by live count) send a new arrival which settles and reactivates the team's NPC AI via ak_npc s_setNPCActive(team, 1).",
+          "meaning": "How a defeated endless AI team returns: settled party's IDLE state detects the missing village center every tick; after DeadPartyDebounceTicks it enters RETREAT with a PartyRetreatDeadlines deadline; on expiry the party reaches DELETE_PARTY (256), its slot is freed (v47 type cleared), the occupied-team mask recomputes (fn 0x81E8: base | teams of live party slots), the team becomes eligible in pickTeam (~occupied & tribeMask & cpuMask), and the Siedler spawner sends a new arrival which settles and reactivates the team's NPC AI via ak_npc s_setNPCActive(team, 1). AI Ultimate makes that spawn roll unconditional while an eligible CPU team 1-7 exists.",
           "notPatched": [
             "ak_npc.bci: reactivation is built-in (village exists && !NPCActive -> state 1 -> s_setNPCActive(team, 1)); no changes needed.",
             "Save files are never modified.",
             "netGame-gated defeat handler at 0x1AA0C (mask clears + voice announcements) is a multiplayer human-slot recycler, not part of the AI respawn path."
           ],
           "status": "static-analysis-verified-runtime-test-pending"
+        },
+        "RuntimeIncident20260703": {
+          "status": "resolved-live-state-save-remains-historical",
+          "gameRoot": "C:/Program Files (x86)/Against Rome",
+          "saveSlot": "ESAVE_002",
+          "map": "ENDL_002",
+          "savePayloadTimestampLocal": "2026-07-03T11:04:54+08:00",
+          "liveScriptTimestampLocal": "2026-07-03T11:18:13+08:00",
+          "savedState": {
+            "militaryDelayMs": 5000,
+            "retreatDeadlineMs": [5000, 5000, 5000, 5000, 5000, 5000],
+            "deadPartyDebounceTicks": 3,
+            "completedJobRecycle": 1,
+            "militaryCounts": [20, 20],
+            "militaryReinforcementThreshold": 8,
+            "gateWords": [66, 0],
+            "settlementSpawnerProbabilities": [101, 101, 101, 101, 101, 101],
+            "firstThreePollingRangeMs": [1000, 2000],
+            "classification": "rejected-fast-runtime-stall-state"
+          },
+          "savedDecompressedBciSha256": "4dd021f2f86336e6fc61a269c677ef7403cad833494d467c8fe1cd5580f771a2",
+          "liveDecompressedBciSha256": "49839eb76743893b879be201c729c8104c09415acccc29928fbcea29eee02429",
+          "savedVsLiveDifferingBytes": 42885,
+          "liveIntegrityAtIncident": "failed-normal-bci-opcode-and-signature-matching",
+          "resolution": "Restored all five live scripts from a clean baseline, re-applied, and statically verified the full target state. The old save remains unchanged and is not valid runtime evidence for the repaired scripts.",
+          "roundTripWarning": "Self decompress-compress-decompress equality can reproduce an already-invalid payload and is not game-compatibility proof.",
+          "requiredRecovery": [
+            "Restore ENDL_000 through ENDL_004 ak_level.bci from a known-clean original baseline.",
+            "Re-apply AI Ultimate Mode.",
+            "Decompress and verify the complete expected signature and target-value set in all five maps.",
+            "Start a fresh endless game for runtime acceptance; never rewrite saved CLAK/scr.dat."
+          ]
         }
       },
       "villageEconomy": {
-        "status": "disabled-runtime-regression",
-        "scope": "Rejected global CLAK script edits; always restored because they stop player resource production.",
+        "status": "mixed-two-rejected-one-enabled",
+        "scope": "The global ak_npc/ak_produktion edits are always restored because they stop player production; the independently verified battle-formation changes remain enabled under AI Ultimate.",
         "civilianReserve": {
           "path": "SYSTEM/CLAK/SCRIPT/ak_npc.bci",
           "decompressedLiteralOffset": "0x1EA0",

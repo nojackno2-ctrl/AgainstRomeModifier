@@ -95,7 +95,19 @@
 
 ### AI Ultimate Mode
 
-- Runtime status: verified working by the user.
+- Runtime status: the 2026-07-03 stale-save/invalid-live-script incident
+  (see `endless-mode-ai.md`) is resolved. A full static re-verification the
+  same day (145 automated checks reproducing every finder/signature against
+  the installed game) confirms all five `MAPS/ENDL_*/SCRIPT/ak_level.bci`
+  are structurally valid (`BCI0`, 120657 bytes) and every patch site — create-unit
+  counts/recycle flag, military respawn delay, all six retreat deadlines,
+  dead-party debounce, reinforcement threshold/gate, spawner probabilities,
+  the six reinforcement/action loop delays, the zeroed v56 retreat quota, and vanilla donation
+  values — is at a consistent, internally-coherent state across all five maps,
+  along with `ak_npc.bci`, `ak_produktion.bci`, `ak_haupthaus.bci`,
+  `Dorfverteidigung.bci`, and all 42 `Endlos_*_Siedlung*.sdl` templates.
+  Long-duration in-game regression across multiple reinforcement waves is
+  still the only remaining open item.
 - File: `MAPS/ENDL_*/SCRIPT/ak_level.bci`.
 - Format: `PFIL@` compressed `BCI0` compiled script.
 - Modifier UI: `AI終極模式` / `AI Ultimate Mode`.
@@ -121,11 +133,50 @@
 - Dead-party confirmation counter at `0x1068C`: `20 -> 3` consecutive ticks
   (settled-party handler; counts ticks with village, leader, civilians, and
   members all gone before entering RETREAT).
-- The first three military reinforcement polling loops change from
-  `480000..960000`, `480000..960000`, and `240000..360000` ms to
-  `5000..10000` ms. The remaining AI action loops retain their original pacing.
-- Active-party comparison literal at decompressed `0x195F8`: `4 -> 8`.
+- All six scheduler delay sites change to `5000..10000` ms. The first three
+  are inner raider timers; the remaining `60000..120000`, `60000..120000`, and
+  `120000..240000` sites initialize and refresh the outer action scheduler that
+  gates the settlement/military dispatcher. Leaving those outer sites original
+  caused AI arrival checks to occur only every 1-4 minutes.
+  REJECTED runtime state: `1000..2000` ms caused computer respawns to stop;
+  Apply accepts that interim state and migrates it back to `5000..10000` ms.
+- Military-reinforcement unit-count threshold at decompressed `0x195F8`:
+  `4 -> 40` (2026-07-03 update; the previous `8` is accepted as legacy-enabled
+  and migrated on the next apply). The spawner only sends the next type-5
+  reinforcement wave while `s_searchTeamUnits(team) < threshold`, so with the
+  retreat quota zeroed (below) the team's army accumulates up to ~40 units
+  (40 x 20 members = 800, under the EXE global population cap of 1600) and
+  then stops growing — a natural upper bound below the population limit.
+- Reinforcement no-retreat (RE-ENABLED 2026-07-03 with the missing piece):
+  the type-5 retreat quota write `v56[party] <- pushloc 15` at decompressed
+  `0x17888` region (unique signature
+  `[81,57, 90,-3, 90,14, 164, 81,56, 90,-3, ?, ?, 164, 81,61]`, wildcard =
+  the quota opcode/operand words) becomes `pushlit 0` when AI Ultimate is
+  enabled. State 49 then hands EVERY battle unit plus the leader over to the
+  village's type-4 party via `s_setObjMark` (the vanilla donation path,
+  normally limited to `min(4-teamUnits, 2, partyUnits/2)` units) instead of
+  retreating them. The 2026-07-03 failure of this exact edit is now explained:
+  the threshold was still `8`, so donated units pushed `s_searchTeamUnits`
+  over the spawner condition after roughly one wave and reinforcements
+  stopped — the quota patch MUST ship together with the `40` threshold, and
+  both are driven by the same toggle. Handed-over units are not inserted into
+  the type-4 party's `v52` object array, so the settled handler's dead-party
+  check (leader + civilians + tracked members) is not blocked by them. The
+  donation formula literals at `0x17788` (`4,2,2`) stay vanilla — with the
+  quota forced to 0 the formula only shapes the civilian-recreate quota
+  (`v57`), not the retreat set.
 - The gate at `0x1960C` remains `66,0`.
+- The Siedler spawner's default and 0/1/2/3-live-party probability literals change from `0,0,80,60,40,20` to `101,101,101,101,101,101`. The single-player occupied mask reserves player team 0, and `pickTeam` selects only unoccupied CPU teams 1-7, so this fills at most seven simultaneous computer opponents and reuses a defeated team's slot after cleanup.
+- REJECTED CONFIGURATION 2026-07-03 (same session, before any release): tried making
+  reinforcement parties hand over all units instead of retreating, via the
+  `v56[party]` retreat quota (`[90,15] -> [66,0]` at decompressed `0x17888`
+  region) and separately via widening the donation formula at `0x17788`
+  (`(TH,CAP,DIV)` `4,2,2 -> 8,4,1`). Both broke reinforcement arrivals in
+  runtime testing (reported: Roman reinforcements stopped, active-party
+  limit also appeared to have no effect). The root cause was the still-low
+  threshold of 8. Current AI Ultimate uses quota 0 together with threshold 40;
+  the widened donation formula remains rejected and vanilla. See
+  `endless-mode-ai.md` for full detail.
 - Older builds wrote `112,272` at `0x1960C` and shortened every action loop to
   `5000..10000` ms. Applying this version restores the gate and all unrelated
   loops; only the three bounded reinforcement polling loops remain accelerated.
@@ -134,6 +185,17 @@
   retreat deadlines shortened, and the original `20`-tick counter) are accepted
   as legacy-enabled and migrated to the full six-site/3-tick state on the next
   apply.
+- 2026-07-03 incident: `ESAVE_002` predates the latest Apply and embeds the
+  rejected first-three-loop state `1000..2000` ms despite already containing
+  the six 5000-ms retreat deadlines, debounce 3, recycle 1, counts 20,
+  threshold 8, gate `66,0`, and guaranteed settlement-spawner probabilities.
+  This save is expected to exhibit the known respawn stall and cannot validate
+  the 5–10-second migration. At incident time, the live `ENDL_002` decompressed payload
+  also failed structural signature checks and differed from the saved payload
+  in 42,885 bytes (save SHA-256 `4dd021f2...f771a2`, live
+  `49839eb7...02429`). All five live scripts were subsequently restored from a
+  known-clean baseline, re-applied, and statically verified. Runtime acceptance
+  still requires a fresh game; never migrate by rewriting save payloads.
 - Disabling or compatibility restore returns the recycling flag, counts, delays,
   limits, and gate words to their exact original values.
 - Rejected global economy edits are always restored: `ak_npc.bci` free-civilian
@@ -153,6 +215,133 @@
   reverted together with the two production-path edits; the documented player
   breakage belongs to those paths, but a dedicated in-game regression for the
   player's manual conversion UI is still pending.
+- 2026-07-03 correction: the main-house call only fires in the CIVRECREATE
+  chain (`var57 == 34`). The 6-man units observed in normal play come from
+  `Dorfverteidigung.bci`: four `s_addNPCJob_createUnit` sites
+  (`s_addNPCJob_createUnit(team, 1, type∈{1,2,6,3}, 0, 0, 6, 6, 1, 0)`,
+  pushsym offsets `0xF1BC/0xF264/0xF30C/0xF3B4`). The `6, 6` literals are the
+  per-unit member min/max (job `+0x11/+0x12`; EXE clamp `1..20` because
+  arg 2 is `1`). AI Ultimate now patches all eight literals `6 -> 20` via the
+  word signature
+  `[66,0, 66,1, 66,?, 66,?, 66,0, 66,0, 66,?, 66,1, 90,8, 128,157, 73,-9, 86]`
+  (exactly four hits enforced); disable restores `6`. Job-executor
+  disassembly (`00548700` region) confirms one job creates one unit whose
+  member count is drawn from that range, which also confirms the
+  `ak_level.bci` military job counts (`4..4 -> 20..20`) are members-per-unit.
+  Runtime verified 2026-07-03: in-game the village AI now converts 20
+  villagers per squad with the patch applied.
+
+### 10x Idle HP Regeneration (amount, not interval)
+
+- Files: 12 `SYSTEM/CLAK/SCRIPT/<name>.bci` unit AI scripts (`ak_anfuehrer`,
+  `ak_artillerie`, `ak_geisterreiter`, `ak_kampfverband`, `ak_krieger`,
+  `ak_kundschafterwolf`, `ak_landtier`, `ak_packpferd`, `ak_priester`,
+  `ak_verbandswolf`, `ak_zivilist`, `ak_zivilverband`).
+- Mechanism: each script's idle-regen tick calls `s_addLP(obj, 1)` — the
+  modifier toggle `FoodHealing10x` rewrites the literal `1` argument to `10`
+  (still one call per tick; the tick INTERVAL is untouched). An earlier
+  design rewrote the tick interval (`LPIncIdle` in `cl_script.ini`,
+  15000 -> 1500 ms) to the same effective 10x rate; the amount-based version
+  replaced it because the user asked for "+10 per tick" specifically, and it
+  reads more clearly on the HP bar (one visible jump instead of ten small
+  ones). `cl_script.ini`'s `LPIncIdle` is now unconditionally restored to the
+  original 15000 ms on every apply, migrating any install patched by the
+  earlier interval-based build.
+- Signature per script: `[66,1, 81,10, 81,98, 128,<addLpSym>, 73,-3, 86]`
+  (`pushlit 1 / pushvar 10 / pushvar 98 / pushsym s_addLP / argc -3 /
+  callext`), where `<addLpSym>` is that script's own `s_addLP` index in its
+  `SYMBCONS` table (symbol tables are not stable across scripts — resolved
+  per file: anfuehrer 87, artillerie 69, geisterreiter 68, kampfverband 89,
+  krieger 73, kundschafterwolf 77, landtier 72, packpferd 57, priester 92,
+  verbandswolf 68, zivilist 83, zivilverband 87). Verified 2026-07-03: every
+  site hits exactly once against the installed game (offsets recorded in
+  `docs/reverse-engineering/decompilation-workflow.md` session notes).
+- Excluded on purpose: `geisterreiter`/`kundschafterwolf`/`verbandswolf` each
+  have a SECOND `s_addLP` call with literal `-1` (an LP-decay tick, unrelated
+  to healing) — the `pushlit 1` requirement in the signature naturally
+  excludes it. Also excluded: `ak_haupthaus`/`ak_lager`/`ak_produktion`/
+  `ak_wohnhaus`/`ak_opferstaette`/`ak_tor`/`ak_steinschlagfalle` — these
+  `Bau*`-controlling scripts share the identical call shape for BUILDING
+  self-repair, out of scope for a "unit healing" feature, and `ak_produktion`
+  in particular already has documented history of a global-economy edit
+  breaking staffed player buildings (see the AI Ultimate Mode section) — kept
+  untouched as a deliberate safety margin.
+- Restore: rewrites the literal back to `1` for all 12 scripts; unknown state
+  (site count != 1, or value not in {1, 10}) aborts the whole apply, matching
+  the project's "unknown-state refusal" convention.
+- Full chain decoded 2026-07-03 (capstone disassembly of the EXE VM
+  dispatcher, cross-checked against the local pseudocode function inventory
+  — no working Ghidra install was available this session):
+  `[TribeData]` parser `0041c600` resolves keys via the pointer table at
+  `0061BB40` (`LPIncIdle` = key 15), stores into `DAT_029c50e8[tribe]` via
+  `FUN_00540dc0` (EXE clamps 500..100000000, default 10000), exposed to
+  scripts as `s_getTribeValue` (trampoline `00542250 -> FUN_00540fe0`). Each
+  unit script schedules `deadline = time + getTribeValue(tribe, 15)` and on
+  expiry calls `s_addLP(unit, N)`. **No village-bounds check and no food
+  deduction exist anywhere in this chain** (verified through
+  `s_addLP -> FUN_005129c0 -> FUN_00512a10 -> FUN_00512aa0/FUN_004ad1e0`, and
+  by scanning all CLAK scripts for LP+store symbol pairs). The perceived
+  "units heal in the village by eating main-house food" is this idle regen —
+  units idle safely inside the village; food stores are drained by separate
+  mechanisms. The objdef `reglp` column (index 72) is building/siege
+  self-repair (+1 LP ticks for `Bau*` structures, driven by the SAME
+  `s_addLP` call shape from the building scripts above), not unit healing.
+- Exact heal conditions (fully decoded 2026-07-03 with the corrected VM
+  opcode table — see `bci0-opcodes.md`): the regen tick function is only
+  invoked from each script's activity dispatcher when
+  `s_getObjActivity(obj) == 1002` (the STOP/idle activity set at spawn);
+  moving/attack/other activities (8, 9, 1004, 1005, 1006, 32) route to other
+  handlers, so combat and movement stop healing at the dispatcher level, not
+  via per-tick checks. Inside the tick the gates are: `s_gameMode()` true,
+  `s_dead(obj) == 0`, LPIncIdle deadline reached (self-re-arming via a
+  var-reference argument, opcode 77), and `s_unitMember(obj) == 0` — the
+  FORMATION object (`ak_kampfverband`, tick entry `0x6878`, dispatcher flags
+  `(0,1,1,1)` enabling LP/morale/mana regen) performs the heal once and the
+  EXE (`FUN_00525ac0`) loops it over every member; individual-figure scripts
+  like `ak_krieger` call the same shared tick with the LP flag OFF. The
+  moving/crew/loaded checks visible near the heal code belong to the
+  step-away controller, not the heal gate.
+
+### REJECTED: objdef `ptime` resource-production cycle
+
+- Two runtime tests on 2026-07-03 (original/10 → 300-900 ms, then a fixed
+  500 ms) produced **no observable change** in resource-building output
+  (tested on the Celt Bauernhof with a fresh apply verified on disk).
+- `ptime` (zero-based column `27`), `resb1-6` (28-33) and `resr1-6` (34-39)
+  remain documented as the production-cycle/input/output columns by data
+  correlation, but the engine's runtime production rate is evidently driven
+  by something else (worker cycle timing is a candidate). Do not re-attempt a
+  production-rate patch through `ptime` without new EXE-side evidence.
+- The briefly-shipped toggle was replaced by the idle-regeneration amount
+  patch above; any `ptime` values a previous apply wrote are automatically
+  restored on the next apply because objdef patching always rebuilds from the
+  original backup.
+
+### Priest Spell Altar-Count
+
+- File: `Against_Rome.exe`
+- Target Offsets (imm8 offsets):
+  - Germans (`FigGerPri00`): `0x4A114` (Spell 1), `0x4A138` (Spell 2), `0x4A15C` (Spell 3), `0x4A0E5` (Spell 4)
+  - Celts (`FigKelPri00`): `0x4A1CE` (Spell 1), `0x4A295` (Spell 2), `0x4A2B7` (Spell 3), `0x4A24B` (Spell 4)
+  - Huns (`FigHunPri00`): `0x4A32B` (Spell 1), `0x4A3F2` (Spell 2), `0x4A416` (Spell 3), `0x4A3A8` (Spell 4)
+- Original bytes (9 bytes per site):
+  - Germans:
+    - Spell 1: `83 FE 01 0F 8C 54 FF FF FF` at `0x4A112`
+    - Spell 2: `83 FE 02 0F 8C 58 FF FF FF` at `0x4A136`
+    - Spell 3: `83 FE 03 0F 8C 5C FF FF FF` at `0x4A15A`
+    - Spell 4: `83 FE 04 0F 8D 92 00 00 00` at `0x4A0E3`
+  - Celts:
+    - Spell 1: `83 FE 01 0F 8D A3 00 00 00` at `0x4A1CC`
+    - Spell 2: `83 FE 02 0F 8C 61 FF FF FF` at `0x4A293`
+    - Spell 3: `83 FE 03 0F 8C 65 FF FF FF` at `0x4A2B7`
+    - Spell 4: `83 FE 04 0F 8D 89 00 00 00` at `0x4A249`
+  - Huns:
+    - Spell 1: `83 FE 01 0F 8D A3 00 00 00` at `0x4A329`
+    - Spell 2: `83 FE 02 0F 8C 61 FF FF FF` at `0x4A3F0`
+    - Spell 3: `83 FE 03 0F 8C 65 FF FF FF` at `0x4A414`
+    - Spell 4: `83 FE 04 0F 8D 89 00 00 00` at `0x4A3A6`
+- Behavior: Modifies the hardcoded altar count constants (1, 2, 3, 4) in the spell button logic in `Against_Rome.exe`. Setting these imm8 values to `00` removes the altar count requirement entirely.
+- Safety: The modifier checks all 12 patterns before writing. Setting values from `0x00` to `0x7F` is safe.
 
 ## Candidate
 

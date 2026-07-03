@@ -559,9 +559,9 @@ namespace AgainstRomeModifier {
                 AllowUserToAddRows = false,
                 AllowUserToDeleteRows = false,
                 RowHeadersVisible = false,
-                BackgroundColor = Color.FromArgb(20, 20, 25),
+                BackgroundColor = Color.FromArgb(10, 11, 16),
                 ForeColor = Color.FromArgb(230, 235, 240),
-                GridColor = Color.FromArgb(45, 45, 55),
+                GridColor = Color.FromArgb(28, 30, 42),
                 BorderStyle = BorderStyle.None,
                 EnableHeadersVisualStyles = false,
                 RowTemplate = { Height = 46 },
@@ -571,20 +571,20 @@ namespace AgainstRomeModifier {
                 ScrollBars = ScrollBars.Vertical
             };
 
-            dgv.ColumnHeadersDefaultCellStyle.BackColor = Color.FromArgb(32, 32, 40);
-            dgv.ColumnHeadersDefaultCellStyle.ForeColor = Color.FromArgb(0, 220, 255);
-            dgv.ColumnHeadersDefaultCellStyle.SelectionBackColor = Color.FromArgb(32, 32, 40);
+            dgv.ColumnHeadersDefaultCellStyle.BackColor = Color.FromArgb(26, 27, 37);
+            dgv.ColumnHeadersDefaultCellStyle.ForeColor = Color.FromArgb(0, 230, 255);
+            dgv.ColumnHeadersDefaultCellStyle.SelectionBackColor = Color.FromArgb(26, 27, 37);
             dgv.ColumnHeadersDefaultCellStyle.Font = fontJhengHei95B;
             dgv.ColumnHeadersHeight = 40;
             dgv.ColumnHeadersBorderStyle = DataGridViewHeaderBorderStyle.Single;
 
-            dgv.DefaultCellStyle.BackColor = Color.FromArgb(24, 24, 30);
+            dgv.DefaultCellStyle.BackColor = Color.FromArgb(20, 21, 31);
             dgv.DefaultCellStyle.ForeColor = Color.FromArgb(230, 235, 240);
-            dgv.DefaultCellStyle.SelectionBackColor = Color.FromArgb(45, 45, 60);
+            dgv.DefaultCellStyle.SelectionBackColor = Color.FromArgb(35, 37, 54);
             dgv.DefaultCellStyle.SelectionForeColor = Color.White;
             dgv.DefaultCellStyle.Font = fontJhengHei9R;
 
-            dgv.AlternatingRowsDefaultCellStyle.BackColor = Color.FromArgb(28, 28, 35);
+            dgv.AlternatingRowsDefaultCellStyle.BackColor = Color.FromArgb(24, 25, 35);
             dgv.Columns.Add("Name", "兵種名稱");
             dgv.Columns["Name"].Width = 110;
 
@@ -674,9 +674,9 @@ namespace AgainstRomeModifier {
                 AllowUserToAddRows = false,
                 AllowUserToDeleteRows = false,
                 RowHeadersVisible = false,
-                BackgroundColor = Color.FromArgb(20, 20, 25),
+                BackgroundColor = Color.FromArgb(10, 11, 16),
                 ForeColor = Color.FromArgb(230, 235, 240),
-                GridColor = Color.FromArgb(45, 45, 55),
+                GridColor = Color.FromArgb(28, 30, 42),
                 BorderStyle = BorderStyle.None,
                 EnableHeadersVisualStyles = false,
                 RowTemplate = { Height = 46 },
@@ -686,20 +686,20 @@ namespace AgainstRomeModifier {
                 ScrollBars = ScrollBars.Vertical
             };
 
-            dgv.ColumnHeadersDefaultCellStyle.BackColor = Color.FromArgb(32, 32, 40);
-            dgv.ColumnHeadersDefaultCellStyle.ForeColor = Color.FromArgb(0, 220, 255);
-            dgv.ColumnHeadersDefaultCellStyle.SelectionBackColor = Color.FromArgb(32, 32, 40);
+            dgv.ColumnHeadersDefaultCellStyle.BackColor = Color.FromArgb(26, 27, 37);
+            dgv.ColumnHeadersDefaultCellStyle.ForeColor = Color.FromArgb(0, 230, 255);
+            dgv.ColumnHeadersDefaultCellStyle.SelectionBackColor = Color.FromArgb(26, 27, 37);
             dgv.ColumnHeadersDefaultCellStyle.Font = fontJhengHei95B;
             dgv.ColumnHeadersHeight = 40;
             dgv.ColumnHeadersBorderStyle = DataGridViewHeaderBorderStyle.Single;
 
-            dgv.DefaultCellStyle.BackColor = Color.FromArgb(24, 24, 30);
+            dgv.DefaultCellStyle.BackColor = Color.FromArgb(20, 21, 31);
             dgv.DefaultCellStyle.ForeColor = Color.FromArgb(230, 235, 240);
-            dgv.DefaultCellStyle.SelectionBackColor = Color.FromArgb(45, 45, 60);
+            dgv.DefaultCellStyle.SelectionBackColor = Color.FromArgb(35, 37, 54);
             dgv.DefaultCellStyle.SelectionForeColor = Color.White;
             dgv.DefaultCellStyle.Font = fontJhengHei9R;
 
-            dgv.AlternatingRowsDefaultCellStyle.BackColor = Color.FromArgb(28, 28, 35);
+            dgv.AlternatingRowsDefaultCellStyle.BackColor = Color.FromArgb(24, 25, 35);
 
             dgv.Columns.Add("Name", "兵種名稱");
             dgv.Columns["Name"].Width = 110;
@@ -901,24 +901,23 @@ namespace AgainstRomeModifier {
                         displayRangedDam = 0;
                     }
 
-                    double displayMeleeRelt = meleeRelt;
-                    if (style == "dual_wield" && displayMeleeRelt > 0) {
-                        displayMeleeRelt = Math.Round(displayMeleeRelt / 1.5);
-                    }
-                    double displayRangedRelt = rangedRelt;
-                    if (utype == "ranged_inf" || utype == "ranged_cav" || utype == "hybrid_inf") {
-                        if (displayRangedRelt > 0) {
-                            displayRangedRelt = Math.Round(displayRangedRelt / 1.5);
-                        }
-                    }
-                    if (style == "dual_wield" && displayRangedRelt > 0) {
-                        displayRangedRelt = Math.Round(displayRangedRelt / 1.5);
+                    double origPrimaryRelt = meleeRelt;
+                    if (utype == "ranged_inf" || utype == "ranged_cav") {
+                        origPrimaryRelt = rangedRelt;
+                    } else if (utype == "siege") {
+                        origPrimaryRelt = Math.Max(meleeRelt, rangedRelt);
                     }
 
-                    if (style == "two_handed") {
-                        displayMeleeDam = Math.Round(displayMeleeDam * 1.3, 1);
-                        displayRangedDam = Math.Round(displayRangedDam * 1.3, 1);
+                    double reltScale = 1.0;
+                    if (origPrimaryRelt > 0) {
+                        reltScale = bases[6] / origPrimaryRelt;
                     }
+                    double displayMeleeRelt = meleeRelt > 0
+                        ? Math.Round(meleeRelt * reltScale)
+                        : 0;
+                    double displayRangedRelt = rangedRelt > 0
+                        ? Math.Round(rangedRelt * reltScale)
+                        : 0;
 
                     double finalDefVw = bases[2];
                     double finalDefAw = bases[3];
@@ -1315,6 +1314,13 @@ namespace AgainstRomeModifier {
                     Log("無盡模式 AI 腳本不是完整的原版或終極模式狀態；已取消勾選，重新套用可修復一致性。");
                 }
 
+                if (TryReadFoodHealingAmountState(gamePath, out bool foodHealingEnabled)) {
+                    chkFoodHealing10x.Checked = foodHealingEnabled;
+                } else {
+                    chkFoodHealing10x.Checked = false;
+                    Log("食物回血 AI 腳本不是完整的原版或已修改狀態；已取消勾選，重新套用可修復一致性。");
+                }
+
                 string exePath = Path.Combine(gamePath, @"Against_Rome.exe");
                 chkDgVoodoo.Checked = IsDgVoodooInstalled(gamePath);
                 if (File.Exists(exePath)) {
@@ -1323,6 +1329,12 @@ namespace AgainstRomeModifier {
                     chkFocusLoss.Checked = exePatchState == ExePatchState.FocusPatched;
                     if (exePatchState == ExePatchState.Unknown) {
                         Log(Loc.Get("LogExePatchWarning"));
+                    }
+
+                    ExeSpellAltarPatchState altarPatchState = GetSpellAltarPatchState(exeBytes);
+                    chkNoSpellAltar.Checked = altarPatchState == ExeSpellAltarPatchState.Patched;
+                    if (altarPatchState == ExeSpellAltarPatchState.Unknown) {
+                        Log("無法辨識的 EXE 法術祭壇特徵碼；已將開關設為未勾選。");
                     }
 
                     ExeVillageRangePatchState villageRangeState = GetVillageBuildRangePatchState(exeBytes);

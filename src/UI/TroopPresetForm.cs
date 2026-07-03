@@ -66,7 +66,7 @@ namespace AgainstRomeModifier {
             this.Size = new Size(1250, 790); // 擴大寬度與高度以顯示 9 個屬性欄位且不要出現水平拉桿
             this.FormBorderStyle = FormBorderStyle.None;
             this.StartPosition = FormStartPosition.CenterParent;
-            this.BackColor = Color.FromArgb(16, 16, 20);
+            this.BackColor = Color.FromArgb(10, 11, 16);
             this.ForeColor = Color.FromArgb(230, 235, 240);
             this.DoubleBuffered = true;
 
@@ -79,7 +79,7 @@ namespace AgainstRomeModifier {
             pnlTitleBar = new Panel {
                 Location = new Point(0, 0),
                 Size = new Size(this.Width, 50),
-                BackColor = Color.FromArgb(24, 24, 30)
+                BackColor = Color.FromArgb(18, 19, 29)
             };
             pnlTitleBar.MouseDown += TitleBar_MouseDown;
             pnlTitleBar.MouseMove += TitleBar_MouseMove;
@@ -92,7 +92,7 @@ namespace AgainstRomeModifier {
                 Location = new Point(20, 13),
                 Size = new Size(600, 25),
                 Font = fontJhengHei10B,
-                ForeColor = Color.FromArgb(0, 220, 255),
+                ForeColor = Color.FromArgb(0, 230, 255),
                 BackColor = Color.Transparent
             };
             pnlTitleBar.Controls.Add(lblTitle);
@@ -118,7 +118,7 @@ namespace AgainstRomeModifier {
             this.Controls.Add(pnlTitleBar);
 
             // 2. 陣營分類 TabControl
-            tabFaction = new TabControl {
+            tabFaction = new ModernTabControl {
                 Location = new Point(20, 65),
                 Size = new Size(1210, 635),
                 Font = fontJhengHei95B
@@ -134,7 +134,7 @@ namespace AgainstRomeModifier {
                 string facText = factionTexts[i];
 
                 TabPage tp = new TabPage(facText) {
-                    BackColor = Color.FromArgb(16, 16, 20),
+                    BackColor = Color.FromArgb(10, 11, 16),
                     Padding = new Padding(3)
                 };
 
@@ -176,9 +176,9 @@ namespace AgainstRomeModifier {
                 AllowUserToAddRows = false,
                 AllowUserToDeleteRows = false,
                 RowHeadersVisible = false,
-                BackgroundColor = Color.FromArgb(20, 20, 25),
+                BackgroundColor = Color.FromArgb(10, 11, 16),
                 ForeColor = Color.FromArgb(230, 235, 240),
-                GridColor = Color.FromArgb(45, 45, 55),
+                GridColor = Color.FromArgb(28, 30, 42),
                 BorderStyle = BorderStyle.None,
                 EnableHeadersVisualStyles = false,
                 RowTemplate = { Height = 42 },
@@ -187,20 +187,20 @@ namespace AgainstRomeModifier {
                 ScrollBars = ScrollBars.Vertical
             };
 
-            dgv.ColumnHeadersDefaultCellStyle.BackColor = Color.FromArgb(32, 32, 40);
-            dgv.ColumnHeadersDefaultCellStyle.ForeColor = Color.FromArgb(0, 220, 255);
-            dgv.ColumnHeadersDefaultCellStyle.SelectionBackColor = Color.FromArgb(32, 32, 40);
+            dgv.ColumnHeadersDefaultCellStyle.BackColor = Color.FromArgb(26, 27, 37);
+            dgv.ColumnHeadersDefaultCellStyle.ForeColor = Color.FromArgb(0, 230, 255);
+            dgv.ColumnHeadersDefaultCellStyle.SelectionBackColor = Color.FromArgb(26, 27, 37);
             dgv.ColumnHeadersDefaultCellStyle.Font = fontJhengHei95B;
             dgv.ColumnHeadersHeight = 36;
             dgv.ColumnHeadersBorderStyle = DataGridViewHeaderBorderStyle.Single;
 
-            dgv.DefaultCellStyle.BackColor = Color.FromArgb(24, 24, 30);
+            dgv.DefaultCellStyle.BackColor = Color.FromArgb(20, 21, 31);
             dgv.DefaultCellStyle.ForeColor = Color.FromArgb(230, 235, 240);
-            dgv.DefaultCellStyle.SelectionBackColor = Color.FromArgb(45, 45, 60);
+            dgv.DefaultCellStyle.SelectionBackColor = Color.FromArgb(35, 37, 54);
             dgv.DefaultCellStyle.SelectionForeColor = Color.White;
             dgv.DefaultCellStyle.Font = fontJhengHei9R;
 
-            dgv.AlternatingRowsDefaultCellStyle.BackColor = Color.FromArgb(28, 28, 35);
+            dgv.AlternatingRowsDefaultCellStyle.BackColor = Color.FromArgb(24, 25, 35);
 
             var imgCol = new DataGridViewImageColumn {
                 Name = "Icon",
@@ -272,26 +272,69 @@ namespace AgainstRomeModifier {
             dragging = false;
         }
 
+        private GraphicsPath GetRoundPath(Rectangle r, int radius) {
+            GraphicsPath path = new GraphicsPath();
+            int d = radius * 2;
+            path.AddArc(r.X, r.Y, d, d, 180, 90);
+            path.AddArc(r.Right - d, r.Y, d, d, 270, 90);
+            path.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90);
+            path.AddArc(r.X, r.Bottom - d, d, d, 90, 90);
+            path.CloseFigure();
+            return path;
+        }
+
         private void StyleButton(Button btn, Color backColor, Color foreColor, Color hoverBorderColor) {
             btn.FlatStyle = FlatStyle.Flat;
-            btn.FlatAppearance.BorderSize = 1;
-            btn.FlatAppearance.BorderColor = Color.FromArgb(60, 60, 70);
-            btn.BackColor = backColor;
+            btn.FlatAppearance.BorderSize = 0; // 關閉邊框以利自繪
+            btn.BackColor = Color.Transparent;
             btn.ForeColor = foreColor;
             btn.Cursor = Cursors.Hand;
             btn.Font = fontJhengHei95B;
 
-            btn.MouseEnter += (s, e) => {
-                btn.FlatAppearance.BorderColor = hoverBorderColor;
-                if (backColor == Color.FromArgb(45, 45, 55)) {
-                    btn.BackColor = Color.FromArgb(55, 55, 68);
-                } else if (backColor == Color.FromArgb(98, 0, 238)) {
-                    btn.BackColor = Color.FromArgb(120, 40, 255);
+            bool isHovered = false;
+            btn.MouseEnter += (s, e) => { isHovered = true; btn.Invalidate(); };
+            btn.MouseLeave += (s, e) => { isHovered = false; btn.Invalidate(); };
+
+            btn.Paint += (s, e) => {
+                Graphics g = e.Graphics;
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+
+                Rectangle rect = new Rectangle(0, 0, btn.Width, btn.Height);
+                int radius = 6;
+
+                using (GraphicsPath path = GetRoundPath(rect, radius)) {
+                    // 根據顏色判定角色並套用漸層
+                    Color startColor, endColor;
+                    if (backColor == Color.FromArgb(98, 0, 238)) { // Apply 確定套用 (Primary 紫色)
+                        startColor = isHovered ? Color.FromArgb(120, 30, 255) : Color.FromArgb(98, 0, 238);
+                        endColor = isHovered ? Color.FromArgb(160, 60, 255) : Color.FromArgb(130, 40, 255);
+                    } else { // 預設按鈕 (卡片暗灰漸層)
+                        startColor = isHovered ? Color.FromArgb(40, 42, 54) : Color.FromArgb(28, 30, 40);
+                        endColor = isHovered ? Color.FromArgb(50, 52, 68) : Color.FromArgb(35, 37, 48);
+                    }
+
+                    using (LinearGradientBrush brush = new LinearGradientBrush(rect, startColor, endColor, 45F)) {
+                        g.FillPath(brush, path);
+                    }
+
+                    // 繪製細線邊框
+                    Color borderColor = isHovered ? hoverBorderColor : Color.FromArgb(50, 52, 70);
+                    using (Pen p = new Pen(borderColor, 1.2F)) {
+                        g.DrawPath(p, path);
+                    }
+
+                    // 繪製文字
+                    if (!string.IsNullOrEmpty(btn.Text)) {
+                        TextRenderer.DrawText(
+                            g,
+                            btn.Text,
+                            btn.Font,
+                            rect,
+                            foreColor,
+                            TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.WordBreak
+                        );
+                    }
                 }
-            };
-            btn.MouseLeave += (s, e) => {
-                btn.FlatAppearance.BorderColor = Color.FromArgb(60, 60, 70);
-                btn.BackColor = backColor;
             };
         }
 

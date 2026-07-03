@@ -1,20 +1,17 @@
 # Against Rome Modifier Complete Technical Document
 
-Updated: 2026-07-02.
+Updated: 2026-07-03.
 
 This document describes the current code, data formats, reverse-engineering evidence, enabled patches, candidates, and rejected approaches. It is not a version history. Each feature has one current description. Reproducible runtime behavior and the latest concrete decompiler evidence take precedence over an older interpretation.
 
-For the detailed maintenance chronology, debugging failures, current dirty-tree
-notes, and checklists intended for future AI agents, read
-`docs/AI_AGENT_HANDOFF.md` before changing code. That handoff is maintained in
-Chinese because it preserves the user's original maintenance context; this file
-remains the English current-state specification.
+For the detailed maintenance chronology, debugging failures, checklists, and workflow guidelines intended for future AI agents, refer to the integrated chapters at the end of the Chinese technical document `TechDoc.md`. This file remains the English current-state specification.
+
 
 ## 1. Documentation and Evidence Rules
 
 - Project documentation is UTF-8. Decompressed game text is Windows code page 1251.
 - Field indexes are zero-based. Byte sequences and file offsets are hexadecimal.
-- `TechDoc.md` is the Chinese technical document. `TechDoc_EN.md` is the English technical document; both are embedded in the application. `docs/AI_AGENT_HANDOFF.md` is the detailed maintenance and debugging record.
+- `TechDoc.md` is the Chinese technical document. `TechDoc_EN.md` is the English technical document; both are embedded in the application.
 - **Stable** means implemented, signature/format checked, and runtime or round-trip verified.
 - **Implemented candidate** means writable and restorable with strong static evidence, but incomplete runtime coverage.
 - **Read-only candidate** must not be written automatically.
@@ -177,60 +174,9 @@ The fixed nine-property array is `HP,Dmg,VW,AW,Speed,Sight,Relt,Range,SpellRadiu
   rules, shortening the build time simultaneously boosts building, upgrading, and
   repair speeds. This switch is fully integrated into apply, restore, and preset actions (successfully runtime-verified in-game).
 
-The balance direction includes 2x movement, 3x ranged/siege range, fixed siege HP (ballista 1000, catapult 1500), about 1.5x ranged rate, stronger priest sight/range, and 2.5x spell radius. The current exact four-property baseline from `TroopConfig.CalculateFactionBaseStats` follows.
+The built-in balance layer is now a complete 43-entry final-value table in `TroopConfig.BalancedUnitStats`. Every entry stores `HP,Dmg,VW,AW,Speed,Sight,Relt,Range,SpellRadius`; enabling balance does not apply a generic tier matrix or post-process shield, two-handed, or unit-type multipliers. Static initialization requires the table count to match `UnitMeta` and every `UnitOrder` key to contain exactly nine values. Explicit `.artroop` values still override this fallback layer.
 
-Generic HP by tier is low 110, mid 130, high 150, ace 160, and leader 450. Priests and siege units return zero from this matrix function. Priests retain their original four-property values; siege units retain original damage/VW/AW but use fixed HP in the built-in balance preset: ballista 1000 and catapult 1500, including their setup forms. Explicit `.artroop` values still take priority.
-
-| Faction | Tier | Type | HP | Damage | VW | AW |
-|---|---|---|---:|---:|---:|---:|
-| Roman | low | melee_inf | 110 | 20 | 8 | 12 |
-| Roman | mid | melee_inf | 130 | 28 | 14 | 20 |
-| Roman | mid | ranged_inf | 130 | 22 | 12 | 24 |
-| Roman | high | melee_inf | 150 | 42 | 20 | 22 |
-| Roman | high | ranged_inf | 150 | 30 | 16 | 26 |
-| Roman | high | hybrid_inf | 150 | 38 | 18 | 22 |
-| Roman | ace | cav | 160 | 50 | 24 | 26 |
-| Roman | leader | leader_melee | 450 | 80 | 28 | 36 |
-| Teuton | low | melee_inf | 110 | 25 | 10 | 12 |
-| Teuton | low | ranged_inf | 110 | 20 | 6 | 12 |
-| Teuton | mid | melee_inf | 130 | 32 | 16 | 22 |
-| Teuton | mid | hybrid_inf | 130 | 28 | 14 | 20 |
-| Teuton | high | melee_inf | 150 | 38 | 14 | 26 |
-| Teuton | high | cav | 150 | 42 | 20 | 24 |
-| Teuton | ace | melee_inf | 160 | 65 | 12 | 30 |
-| Teuton | leader | leader_melee | 450 | 70 | 26 | 38 |
-| Celt | low | melee_inf | 110 | 24 | 10 | 12 |
-| Celt | low | ranged_inf | 110 | 20 | 8 | 12 |
-| Celt | mid | melee_inf | 130 | 24 | 18 | 18 |
-| Celt | mid | ranged_inf | 130 | 20 | 12 | 18 |
-| Celt | high | melee_inf | 150 | 38 | 12 | 24 |
-| Celt | high | cav | 150 | 38 | 22 | 22 |
-| Celt | ace | ranged_inf | 160 | 65 | 18 | 25 |
-| Celt | leader | leader_melee | 450 | 60 | 30 | 28 |
-| Hun | low | melee_inf | 110 | 26 | 10 | 10 |
-| Hun | low | ranged_inf | 110 | 20 | 8 | 12 |
-| Hun | mid | melee_inf | 130 | 24 | 12 | 18 |
-| Hun | mid | cav | 130 | 32 | 16 | 20 |
-| Hun | high | melee_inf | 150 | 36 | 8 | 22 |
-| Hun | high | ranged_inf | 150 | 32 | 16 | 24 |
-| Hun | high | cav | 150 | 45 | 18 | 26 |
-| Hun | high | ranged_cav | 150 | 36 | 16 | 24 |
-| Hun | ace | cav | 160 | 52 | 22 | 26 |
-| Hun | leader | leader_cav | 450 | 80 | 25 | 36 |
-
-Specialized units return before the generic matrix and therefore take priority:
-
-| Unit key | Role | HP | Damage | VW | AW |
-|---|---|---:|---:|---:|---:|
-| `FigKelInf01_Lanze` | Celt defensive spearman | 180 | 22 | 32 | 18 |
-| `FigRomInf00_Lanze_Schild` | Roman light infantry | 130 | 24 | 22 | 18 |
-| `FigRomSch00_Speer_Schild` | Roman armored ranged infantry | 140 | 25 | 26 | 24 |
-| `FigRomInf01_Schwert_Schild` | Roman guard | 200 | 36 | 28 | 28 |
-| `FigHunInf01_Schwert_Schild` | Hun sword-and-shield infantry | 140 | 24 | 24 | 20 |
-| `FigKelInf02_Doppelschwert` | Celt dual-sword infantry | 130 | 40 | 15 | 28 |
-| `FigGerInf03_Doppelhammer` | Teuton dual-hammer infantry | 150 | 60 | 16 | 34 |
-
-These are pre-write baselines. Nine-property custom values may replace them, and in-game shield modifiers can make displayed final VW higher than the stored baseline.
+The intended asymmetry is: Roman has the strongest overall roster; Teuton has the highest melee output; Celt has the strongest infantry defense and foot-ranged roster, with slingers using high per-hit damage; Hun has the strongest cavalry, with horse archers using lower per-hit damage and faster reload. Infantry, cavalry, and leaders retain equal movement speed. `BalancedUnitStats` is the single authoritative source for exact final values.
 
 ## 9. `team.dat`
 
@@ -249,21 +195,46 @@ Every `MAPS/**/team.dat` is restored from its original first. The core switch th
 - Count literals near `0x17B2C` and `0x17B34`: `4 -> 20`.
 - Completed-job recycling flag near `0x17B1C`: `0 -> 1`, allowing completed military reinforcement jobs to release their NPC-job slots for later waves.
 - Older builds edited three global CLAK economy scripts. `ak_npc.bci` (free-civilian reserve) and `ak_produktion.bci` (production gate) proved not NPC-scoped in runtime testing — they stop staffed player resource buildings even in a new game — and are always restored. The third edit, `ak_haupthaus.bci` conversion size `[81,59] -> [66,20]` at `0x3FCC`, is re-enabled under the AI Ultimate toggle: Ghidra decompilation of the `s_createBattleUnitsMax` implementation (`FUN_005249d0`) confirms the argument is the members-per-battle-unit count, clamped by the EXE to 0..20, and each call already converts all gathered idle civilians (up to 100) in batches of that size. The original runtime value is 6, matching the observed 6-man AI conversion units. A player manual-conversion regression check is still pending.
+- 2026-07-03 correction: with only the `ak_haupthaus` edit, in-game AI conversions stayed at 6. The main-house call sits in the `var57 == 34` (CIVRECREATE_WAIT) branch and only fires in the military-reinforcement recreate chain; the village AI's day-to-day conversion runs through `Dorfverteidigung.bci`'s four `s_addNPCJob_createUnit(team, 1, type∈{1,2,6,3}, 0, 0, 6, 6, 1, 0)` sites (pushsym at decompressed `0xF1BC/0xF264/0xF30C/0xF3B4`). Args 6/7 are the per-unit member min/max (job `+0x11/+0x12`; EXE clamp 1..20 since arg 2 is 1); the job executor (~`00548700`) gathers that many idle civilians and calls `FUN_00523a00` once — one job creates one N-member unit, which also confirms the `ak_level.bci` military job counts (`4..4 -> 20..20`) are members-per-unit. AI Ultimate now patches all eight literals `6 -> 20` via the signature `[66,0, 66,1, 66,?, 66,?, 66,0, 66,0, 66,?, 66,1, 90,8, 128,157, 73,-9, 86]` (exactly four hits enforced); disabling restores 6. Runtime verified 2026-07-03: with the patch applied, the village AI converts 20 villagers into a single squad in-game.
 - EXE path `0054aa80 -> 00547f50` clamps this mode to 1..20.
 - Military reinforcement wait at decompressed `0x178E0`: `180000 -> 5000 ms`.
+- The reinforcement donation formula remains original. The `v56[party]` retreat quota changes from `[90,15]` to `[66,0]`, handing the whole type-5 reinforcement party to the village instead of retreating. This patch is applied and restored atomically with the threshold of 40; the earlier quota-only combination with threshold 8 stopped arrivals after roughly one wave.
 - Party retreat/cleanup deadlines (six sites at decompressed value offsets `0x10700`, `0x119C0`, `0x12FFC`, `0x13FE8`, `0x160EC`, `0x17F38`): `600000 -> 5000 ms` each. These `v61[party] := s_getTime() + N` deadlines are the only exit a wiped team's party has out of the RETREAT chain into DELETE_PARTY; only the freed party slot lets the endless spawners send a new arrival for that team, which resettles and makes `ak_npc.bci` call `s_setNPCActive(team, 1)` again. `0x17F38` was previously misdocumented as a "village defeat respawn wait" — it is the type-5 handler's RETREAT_INIT deadline (save evidence from 2026-07-02 disproved the respawn reading: teams stayed `npcActive=0` with all job slots free while it was already 5000). The same-shaped initial-arrival timeout at `0x7F24` is deliberately NOT patched, since a 5-second value there would retreat arriving parties before they can settle.
 - Dead-party confirmation counter at decompressed `0x1068C`: `20 -> 3` consecutive ticks (settled-party handler; counts ticks with village, leader, civilians, and members all gone before entering RETREAT).
 - `ak_npc.bci` needs no patch for reactivation: its per-team state machine already calls `s_setNPCActive(team, 1)` when a healthy village exists for an inactive team. Save files are never modified.
-- The first three military reinforcement polling loops use `5000..10000` ms so the 5-second cooldown is checked promptly; other AI action loops retain their original values.
-- Active-party comparison literal at decompressed `0x195F8`: `4 -> 8`; the gate at `0x1960C` remains `66,0`.
+- All six AI scheduler delay sites use `5000..10000` ms. The first three are inner raider timers; the last three initialize and refresh the outer scheduler that gates the settlement/military dispatcher. Leaving the outer sites at their original 60-240 seconds made AI arrivals slow even when the inner timers were accelerated. A `1000..2000` ms interim build caused computer respawns to stall in runtime testing and is rejected; Apply recognizes and migrates that state back to 5-10 seconds.
+- Settlement-spawner default and 0/1/2/3-live-party probabilities are all set to 101, so spawning always triggers while an eligible team exists. In single player the occupied mask protects player team 0 and `pickTeam` selects only unoccupied CPU teams 1-7, giving a hard result of one player plus at most seven simultaneous CPU opponents without duplicating occupied teams.
+- Military-reinforcement unit-count threshold at decompressed `0x195F8`: `4 -> 40`; this is not an AI-player limit. Legacy value 8 is migrated on the next Apply. The gate at `0x1960C` remains `66,0`.
 - Older `112,272` gate bypasses and blanket 5000..10000 ms action-loop patches are migrated; only the three bounded reinforcement polling loops remain accelerated.
-- Earlier enabled builds (military 5-second state with only `0x17F38` or none of
-  the retreat deadlines shortened, original 20-tick counter) are detected as
-  legacy-enabled and migrated to the full state on the next apply.
+- Earlier enabled builds with original spawner probabilities, the prior first-three-only scheduler state, and Gemini's interim all-six-loops state are detected as legacy-enabled. Apply migrates them to guaranteed spawning with all six bounded scheduler delays at 5-10 seconds.
 - Disable/compatibility restore reverses every count, delay, limit, and gate value.
 - Settlement templates: in `MAPS/ENDL_*/Endlos_*_Siedlung*.sdl` (plain INI text after PFIL decompression), the main building's `resv` line (namedef containing `_Haupt`; `Hauptzelt` for Romans) changes from `0,0,0,0,0,0` to `614,300,372,250,460,288` — each slot is the maximum observed across original campaign AI settlements — giving village-style AI a starting stockpile. Restore returns all zeros. The identical templates under `MP_*` stay untouched to match the ENDL-only scope.
 
 The count represents created military units/formations; the visible individual-soldier total also depends on formation contents. The EXE provides only 20 NPC-job slots per team, so removing the gate entirely is not safe for long-running endless games.
+
+### 2026-07-03 respawn incident
+
+Read-only inspection of the current `ESAVE_002` (`ENDL_002`) explains why a
+defeated computer still appeared to take a long time to return. The save was
+written at 11:04:54, before the five live scripts were written at about
+11:18:13, and Apply does not replace the `ak_level` copy embedded in
+`CLAK\scr.dat`. The saved script has the expected 5000-ms military delay, six
+5000-ms retreat deadlines, debounce 3, recycle 1, counts 20, threshold 8, gate
+`66,0`, and six spawner probabilities of 101, but its first three polling loops
+remain at the rejected `1000..2000`-ms state. That state is already known from
+runtime testing to stall computer returns; lower polling intervals are not
+monotonically safer or faster.
+
+The saved decompressed BCI hash was
+`4dd021f2f86336e6fc61a269c677ef7403cad833494d467c8fe1cd5580f771a2`.
+The live `ENDL_002` decompressed payload hash was
+`49839eb76743893b879be201c729c8104c09415acccc29928fbcea29eee02429` and
+differed in 42,885 bytes. The live payload no longer matched normal BCI
+opcode/signature structure even though selected literal offsets still showed
+target values. A successful self round-trip only reproduced that invalid
+payload and is not game-compatibility evidence. Restore all five live scripts
+from a known-clean baseline, re-apply, then verify decompressed signatures
+before starting a fresh endless game. Never rewrite the saved `CLAK\scr.dat`.
 
 ## 11. `Against_Rome.exe`
 
@@ -308,9 +279,21 @@ Overlay type `0x28` at `00451650` is also rejected: callers are `igm_but_kampf_b
 
 Future work must start from the player build-order acceptance/rejection path and runtime breakpoints on the actual reported red-line drawing, not another search for similar shift instructions.
 
-### 11.3 Other EXE Attempts
+### 11.3 Priest Spell Altar-Count Requirements
 
-The former altar-limit assembly attempt caused crashes and is not present. Every future EXE patch requires a version signature, original/patched/restored bytes, a proven call path, and runtime verification.
+- Faction-level spell buttons are checked in `FUN_0044a010` (VA `0x0044a010`).
+- It requires both data-driven `spruch` thresholds (via `ress.ini`) and hardcoded altar counts.
+- The altar count limits are 1, 2, 3, 4 for spells 1-4, hardcoded as `cmp esi, N` immediates (12 sites: 3 factions × 4 spells).
+- The patch replaces the immediate byte (cmp offset + 2) with `0x00` for all 12 sites, eliminating the altar count requirement.
+- **Sites (file offsets):**
+  - Germans (`FigGerPri00`): `0x4A0E3` (Spell 4), `0x4A112` (Spell 1), `0x4A136` (Spell 2), `0x4A15A` (Spell 3)
+  - Celts (`FigKelPri00`): `0x4A1CC` (Spell 1), `0x4A249` (Spell 4), `0x4A293` (Spell 2), `0x4A2B7` (Spell 3)
+  - Huns (`FigHunPri00`): `0x4A329` (Spell 1), `0x4A3A6` (Spell 4), `0x4A3F0` (Spell 2), `0x4A414` (Spell 3)
+- **Safety**: State detection validates all 12 original sequences. Mixed or unknown states are ignored.
+
+### 11.4 Other EXE Attempts
+
+The former altar-limit assembly attempt caused crashes and is not present (replaced by the verified immediate patching). Every future EXE patch requires a version signature, original/patched/restored bytes, a proven call path, and runtime verification.
 
 ## 12. `apt.dat`
 

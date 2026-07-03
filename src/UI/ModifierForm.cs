@@ -45,7 +45,7 @@ namespace AgainstRomeModifier {
         private TextBox txtDoc = null!;
         private TabPage tabSaveManager = null!;
         private Button btnNavSaveManager = null!;
-        
+
         // 存檔管理介面表格與預覽圖
         private DataGridView dgvGameSaves = null!;
         private DataGridView dgvBackups = null!;
@@ -62,7 +62,6 @@ namespace AgainstRomeModifier {
         private Panel pnlNumericCard = null!;
         private Panel pnlSwitchesCard = null!;
         private Panel pnlBuildCard = null!;
-        private Panel pnlConsoleCard = null!;
 
         // 數值控制項 (NumericUpDown) 的宣告
         private ModernToggle chkMaxPopulation = null!;
@@ -72,11 +71,13 @@ namespace AgainstRomeModifier {
         private ModernToggle chkFreeProd = null!;
         private ModernToggle chkFreeUpgrade = null!;
         private ModernToggle chkNoSpellCost = null!;
+        private ModernToggle chkNoSpellAltar = null!;
         private ModernToggle chkFocusLoss = null!;
         private ModernToggle chkBalance = null!;
         private ModernToggle chkHousingCapacity20x = null!;
         private ModernToggle chkStorageCapacity10x = null!;
         private ModernToggle chkFastBuildUpgradeRepair = null!;
+        private ModernToggle chkFoodHealing10x = null!;
         private ModernToggle chkAiUltimateMode = null!;
         private ModernToggle chkDgVoodoo = null!;
         private ModernToggle chkVillageBuildRange = null!;
@@ -106,7 +107,7 @@ namespace AgainstRomeModifier {
         private Button btnLoadCurrent = null!;
         private Button btnStartGame = null!;
         private ContextMenuStrip menuRestore = null!;
-        private TextBox txtLog = null!;
+        private TextBox? txtLog = null;
         
         // 記憶體原版檔案備份字典，用以在修改時直接讀取乾淨數據，避免疊加修改
         private Dictionary<string, byte[]> backupFiles = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
@@ -133,10 +134,26 @@ namespace AgainstRomeModifier {
         private Button btnLangEN = null!;
         private Label lblNumericTitle = null!;
         private Label lblSwitchesTitle = null!;
-        private Label lblTipsTitle = null!;
-        private Label lblTipsContent = null!;
-        private Label lblTipsDetail = null!;
-        private Label lblConsoleTitle = null!;
+        private Label lblSystemHeading = null!;
+        private Label lblSystemSubtitle = null!;
+        private ToolTip myToolTip = null!;
+        private Label lblHelpFocusLoss = null!;
+        private Label lblHelpToEng = null!;
+        private Label lblHelpDgVoodoo = null!;
+        private Label lblHelpFreeProd = null!;
+        private Label lblHelpFreeUpgrade = null!;
+        private Label lblHelpNoSpellCost = null!;
+        private Label lblHelpInfiniteMorale = null!;
+        private Label lblHelpBalance = null!;
+        private Label lblHelpNoSpellAltar = null!;
+        private Label lblHelpMaxPopulation = null!;
+        private Label lblHelpHousingCapacity20x = null!;
+        private Label lblHelpStorageCapacity10x = null!;
+        private Label lblHelpFastCiviProduction = null!;
+        private Label lblHelpFastBuildUpgradeRepair = null!;
+        private Label lblHelpFoodHealing10x = null!;
+        private Label lblHelpVillageBuildRange = null!;
+        private Label lblHelpAiUltimateMode = null!;
         private Label lblBuildTitle = null!;
         private Label lblGameSavesTitle = null!;
         private Label lblBackupsTitle = null!;
@@ -184,8 +201,8 @@ namespace AgainstRomeModifier {
         private Font fontConsolas85 = new Font("Consolas", 8.5F, FontStyle.Regular);
         
         // 統一風格的按鈕基礎顏色
-        private static readonly Color ColorBtnDefault = Color.FromArgb(45, 45, 55);
-        private static readonly Color ColorBtnPrimary = Color.FromArgb(98, 0, 238);
+        private static readonly Color ColorBtnDefault = Color.FromArgb(37, 43, 55);
+        private static readonly Color ColorBtnPrimary = Color.FromArgb(38, 132, 255);
 
         // 建構函式：初始化 UI 元件，載入備份檔並初始化現有設定
         public ModifierForm() {
@@ -247,11 +264,11 @@ namespace AgainstRomeModifier {
         private void CardPanel_Paint(object? sender, PaintEventArgs e) {
             Panel pnl = (Panel)sender!;
             e.Graphics.SmoothingMode = SmoothingMode.AntiAlias; // 啟用抗鋸齒
-            using (SolidBrush sb = new SolidBrush(Color.FromArgb(28, 28, 35))) {
+            using (SolidBrush sb = new SolidBrush(Color.FromArgb(18, 22, 31))) {
                 using (GraphicsPath path = GetRoundPath(new Rectangle(0, 0, pnl.Width, pnl.Height), 10)) {
                     e.Graphics.FillPath(sb, path); // 填滿背景色
-                    using (Pen p = new Pen(Color.FromArgb(45, 45, 55), 1)) {
-                        e.Graphics.DrawPath(p, path); // 繪製卡片邊框
+                    using (Pen p = new Pen(Color.FromArgb(45, 53, 69), 1)) {
+                        e.Graphics.DrawPath(p, path); // 繪製卡片細緻邊框
                     }
                 }
             }
@@ -261,38 +278,67 @@ namespace AgainstRomeModifier {
         private void InputPanel_Paint(object? sender, PaintEventArgs e) {
             Panel pnl = (Panel)sender!;
             e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-            using (Pen p = new Pen(Color.FromArgb(55, 55, 65), 1)) {
+            using (Pen p = new Pen(Color.FromArgb(50, 52, 70), 1)) {
                 e.Graphics.DrawRectangle(p, 0, 0, pnl.Width - 1, pnl.Height - 1);
             }
         }
 
-        // 統一設定 Button 控制項的扁平化樣式、背景顏色、滑鼠懸停 (Hover) 微動畫與邊框發光效果
+        // 統一設定 Button 控制項的扁平化樣式、背景顏色、滑鼠懸停 (Hover) 微動畫與邊框發光效果 (圓角漸層自繪樣式)
         private void StyleButton(Button btn, Color backColor, Color foreColor, Color hoverBorderColor) {
             btn.FlatStyle = FlatStyle.Flat;
-            btn.FlatAppearance.BorderSize = 1;
-            btn.FlatAppearance.BorderColor = Color.FromArgb(60, 60, 70);
-            btn.BackColor = backColor;
+            btn.FlatAppearance.BorderSize = 0; // 關閉預設邊框以利自繪
+            btn.BackColor = Color.Transparent;
             btn.ForeColor = foreColor;
             btn.Cursor = Cursors.Hand;
             btn.Font = fontJhengHei95B;
-            // 註冊滑鼠移入事件，套用高亮懸停特效與霓虹邊框發光
-            btn.MouseEnter += (s, e) => {
-                btn.FlatAppearance.BorderColor = hoverBorderColor;
-                if (backColor == ColorBtnDefault) {
-                    btn.BackColor = Color.FromArgb(55, 55, 68);
-                } else if (backColor == ColorBtnPrimary) {
-                    btn.BackColor = Color.FromArgb(120, 40, 255);
-                } else {
-                    btn.BackColor = Color.FromArgb(
-                        Math.Min(255, backColor.R + 20),
-                        Math.Min(255, backColor.G + 20),
-                        Math.Min(255, backColor.B + 20));
+
+            bool isHovered = false;
+            btn.MouseEnter += (s, e) => { isHovered = true; btn.Invalidate(); };
+            btn.MouseLeave += (s, e) => { isHovered = false; btn.Invalidate(); };
+
+            btn.Paint += (s, e) => {
+                Graphics g = e.Graphics;
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+
+                Rectangle rect = new Rectangle(0, 0, btn.Width, btn.Height);
+                int radius = 6;
+
+                using (GraphicsPath path = GetRoundPath(rect, radius)) {
+                    // 根據 backColor 判斷按鈕角色並套用漸層
+                    Color startColor, endColor;
+                    if (backColor == Color.FromArgb(98, 0, 238) || backColor == ColorBtnPrimary) {
+                        startColor = isHovered ? Color.FromArgb(52, 151, 255) : Color.FromArgb(34, 124, 246);
+                        endColor = isHovered ? Color.FromArgb(66, 199, 255) : Color.FromArgb(43, 160, 255);
+                    } else if (backColor == Color.FromArgb(0, 180, 120)) {
+                        startColor = isHovered ? Color.FromArgb(0, 200, 140) : Color.FromArgb(0, 160, 100);
+                        endColor = isHovered ? Color.FromArgb(0, 240, 170) : Color.FromArgb(0, 190, 130);
+                    } else { // 預設按鈕 (如灰色 btnRestore、btnBrowse 等)
+                        startColor = isHovered ? Color.FromArgb(47, 55, 70) : Color.FromArgb(31, 37, 49);
+                        endColor = isHovered ? Color.FromArgb(56, 66, 84) : Color.FromArgb(38, 45, 59);
+                    }
+
+                    using (LinearGradientBrush brush = new LinearGradientBrush(rect, startColor, endColor, 45F)) {
+                        g.FillPath(brush, path);
+                    }
+
+                    // 繪製細緻邊框
+                    Color borderColor = isHovered ? hoverBorderColor : Color.FromArgb(50, 52, 70);
+                    using (Pen p = new Pen(borderColor, 1.2F)) {
+                        g.DrawPath(p, path);
+                    }
+
+                    // 繪製按鈕文字
+                    if (!string.IsNullOrEmpty(btn.Text)) {
+                        TextRenderer.DrawText(
+                            g,
+                            btn.Text,
+                            btn.Font,
+                            rect,
+                            foreColor,
+                            TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.WordBreak
+                        );
+                    }
                 }
-            };
-            // 註冊滑鼠移出事件，恢復原初按鈕狀態
-            btn.MouseLeave += (s, e) => {
-                btn.FlatAppearance.BorderColor = Color.FromArgb(60, 60, 70);
-                btn.BackColor = backColor;
             };
         }
 
@@ -326,16 +372,46 @@ namespace AgainstRomeModifier {
 
         // 初始化表單的視覺元件佈局、大小、樣式、圓角區域與雙緩衝
         private void InitializeComponent() {
-            this.Size = new Size(1840, 880);
+            this.Size = new Size(1450, 880);
             this.MinimumSize = new Size(1280, 720);
             this.AutoScroll = true;
-            this.AutoScrollMinSize = new Size(1840, 880);
+            this.AutoScrollMinSize = new Size(1450, 880);
             this.FormBorderStyle = FormBorderStyle.None; // 隱藏 Windows 預設視窗邊框
             this.StartPosition = FormStartPosition.CenterScreen; // 視窗預設居中
-            this.BackColor = Color.FromArgb(16, 16, 20); // 深色科技感背景
+            this.BackColor = Color.FromArgb(10, 11, 16); // 深色科技感背景
             this.ForeColor = Color.FromArgb(230, 235, 240);
             this.Font = fontJhengHei95R;
             this.DoubleBuffered = true; // 啟用雙緩衝防止繪圖閃爍
+
+            myToolTip = new ToolTip {
+                InitialDelay = 150,
+                ReshowDelay = 50,
+                AutoPopDelay = 10000,
+                ShowAlways = true,
+                OwnerDraw = true
+            };
+            myToolTip.Popup += (s, e) => {
+                string text = myToolTip.GetToolTip(e.AssociatedControl) ?? "";
+                Size size = TextRenderer.MeasureText(text, fontJhengHei95R);
+                e.ToolTipSize = new Size(size.Width + 18, size.Height + 12);
+            };
+            myToolTip.Draw += (s, e) => {
+                e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+                using (SolidBrush bgBrush = new SolidBrush(Color.FromArgb(18, 19, 29))) {
+                    e.Graphics.FillRectangle(bgBrush, e.Bounds);
+                }
+                using (Pen borderPen = new Pen(Color.FromArgb(0, 230, 255), 1)) {
+                    e.Graphics.DrawRectangle(borderPen, 0, 0, e.Bounds.Width - 1, e.Bounds.Height - 1);
+                }
+                TextRenderer.DrawText(
+                    e.Graphics,
+                    e.ToolTipText,
+                    fontJhengHei95R,
+                    new Rectangle(9, 6, e.Bounds.Width - 18, e.Bounds.Height - 12),
+                    Color.FromArgb(220, 225, 235),
+                    TextFormatFlags.WordBreak | TextFormatFlags.VerticalCenter | TextFormatFlags.HorizontalCenter
+                );
+            };
 
             // 表單 Load 事件：使用 Win32 API 建立圓角裁剪區域
             this.Load += (s, e) => {
@@ -355,7 +431,7 @@ namespace AgainstRomeModifier {
             // 表單 Paint 事件：動態繪製霓虹青色外框線
             this.Paint += (s, e) => {
                 e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-                using (Pen p = new Pen(Color.FromArgb(0, 220, 255), 2)) {
+                using (Pen p = new Pen(Color.FromArgb(0, 230, 255), 2)) {
                     using (GraphicsPath path = GetRoundPath(new Rectangle(0, 0, this.Width, this.Height), 15)) {
                         e.Graphics.DrawPath(p, path);
                     }
@@ -364,8 +440,8 @@ namespace AgainstRomeModifier {
 
             pnlTitleBar = new Panel {
                 Location = new Point(0, 0),
-                Size = new Size(1840, 50),
-                BackColor = Color.FromArgb(24, 24, 30)
+                Size = new Size(1450, 50),
+                BackColor = Color.FromArgb(18, 19, 29)
             };
             pnlTitleBar.MouseDown += TitleBar_MouseDown;
             pnlTitleBar.MouseMove += TitleBar_MouseMove;
@@ -376,7 +452,7 @@ namespace AgainstRomeModifier {
                 Location = new Point(20, 14),
                 Size = new Size(300, 25),
                 Font = fontJhengHei115B,
-                ForeColor = Color.FromArgb(0, 220, 255)
+                ForeColor = Color.FromArgb(0, 230, 255)
             };
             lblMainTitle.MouseDown += TitleBar_MouseDown;
             lblMainTitle.MouseMove += TitleBar_MouseMove;
@@ -395,7 +471,7 @@ namespace AgainstRomeModifier {
 
             btnClose = new Button {
                 Text = "×",
-                Location = new Point(1800, 10),
+                Location = new Point(1410, 10),
                 Size = new Size(30, 30),
                 FlatStyle = FlatStyle.Flat,
                 BackColor = Color.Transparent,
@@ -415,7 +491,7 @@ namespace AgainstRomeModifier {
 
             btnMinimize = new Button {
                 Text = "—",
-                Location = new Point(1760, 10),
+                Location = new Point(1370, 10),
                 Size = new Size(30, 30),
                 FlatStyle = FlatStyle.Flat,
                 BackColor = Color.Transparent,
@@ -439,7 +515,7 @@ namespace AgainstRomeModifier {
             pnlSidebar = new Panel {
                 Location = new Point(0, 50),
                 Size = new Size(220, 830),
-                BackColor = Color.FromArgb(20, 20, 26)
+                BackColor = Color.FromArgb(15, 16, 24)
             };
 
             // 改為按鈕自繪指示條，pnlActiveIndicator 不再需要
@@ -532,7 +608,7 @@ namespace AgainstRomeModifier {
             pnlSidebar.Controls.Add(btnLangZH);
             pnlSidebar.Controls.Add(btnLangEN);
 
-            mainTabControl = new TabControl {
+            mainTabControl = new ModernTabControl {
                 Location = new Point(230, 60),
                 Size = new Size(1200, 810),
                 SizeMode = TabSizeMode.Fixed,
@@ -540,17 +616,17 @@ namespace AgainstRomeModifier {
             };
 
             tabSystem = new TabPage {
-                BackColor = Color.FromArgb(16, 16, 20),
+                BackColor = Color.FromArgb(10, 11, 16),
                 UseVisualStyleBackColor = false
             };
 
             tabDefaultStats = new TabPage {
-                BackColor = Color.FromArgb(16, 16, 20),
+                BackColor = Color.FromArgb(10, 11, 16),
                 UseVisualStyleBackColor = false
             };
 
             tabCurrentStats = new TabPage {
-                BackColor = Color.FromArgb(16, 16, 20),
+                BackColor = Color.FromArgb(10, 11, 16),
                 UseVisualStyleBackColor = false
             };
 
@@ -560,7 +636,7 @@ namespace AgainstRomeModifier {
 
             pnlNumericCard = new Panel {
                 Location = new Point(0, 0),
-                Size = new Size(385, 420)
+                Size = new Size(385, 790)
             };
             pnlNumericCard.Paint += CardPanel_Paint;
 
@@ -576,34 +652,46 @@ namespace AgainstRomeModifier {
 
             chkFocusLoss = new ModernToggle {
                 Text = "遊戲視窗失焦時不自動暫停 (背景執行)",
-                Location = new Point(25, 70),
-                Size = new Size(330, 25),
+                Location = new Point(25, 80),
+                Size = new Size(310, 25),
                 Checked = false,
-                BackColor = Color.Transparent
+                BackColor = Color.Transparent,
+                Font = fontJhengHei10B
             };
+            lblHelpFocusLoss = CreateHelpLabel("FocusLossTip");
+            lblHelpFocusLoss.Location = new Point(340, 80);
             pnlNumericCard.Controls.Add(chkFocusLoss);
+            pnlNumericCard.Controls.Add(lblHelpFocusLoss);
 
             chkToEng = new ModernToggle {
                 Text = "強制英文語系 (介面圖示與核心文字)",
-                Location = new Point(25, 135),
-                Size = new Size(330, 25),
+                Location = new Point(25, 160),
+                Size = new Size(310, 25),
                 Checked = false,
-                BackColor = Color.Transparent
+                BackColor = Color.Transparent,
+                Font = fontJhengHei10B
             };
+            lblHelpToEng = CreateHelpLabel("ToEngTip");
+            lblHelpToEng.Location = new Point(340, 160);
             pnlNumericCard.Controls.Add(chkToEng);
+            pnlNumericCard.Controls.Add(lblHelpToEng);
 
             chkDgVoodoo = new ModernToggle {
                 Text = Loc.Get("DgVoodoo"),
-                Location = new Point(25, 200),
-                Size = new Size(330, 25),
+                Location = new Point(25, 240),
+                Size = new Size(310, 25),
                 Checked = false,
-                BackColor = Color.Transparent
+                BackColor = Color.Transparent,
+                Font = fontJhengHei10B
             };
+            lblHelpDgVoodoo = CreateHelpLabel("DgVoodooTip");
+            lblHelpDgVoodoo.Location = new Point(340, 240);
             pnlNumericCard.Controls.Add(chkDgVoodoo);
+            pnlNumericCard.Controls.Add(lblHelpDgVoodoo);
 
             btnEnableAll = new Button {
                 Text = "所有功能開啟",
-                Location = new Point(25, 350),
+                Location = new Point(25, 710),
                 Size = new Size(155, 42)
             };
             StyleButton(btnEnableAll, Color.FromArgb(45, 45, 55), Color.FromArgb(0, 220, 255), Color.FromArgb(0, 220, 255));
@@ -611,7 +699,7 @@ namespace AgainstRomeModifier {
 
             btnDisableAll = new Button {
                 Text = "所有功能關閉",
-                Location = new Point(200, 350),
+                Location = new Point(200, 710),
                 Size = new Size(155, 42)
             };
             StyleButton(btnDisableAll, Color.FromArgb(45, 45, 55), Color.FromArgb(255, 75, 75), Color.FromArgb(255, 75, 75));
@@ -621,7 +709,7 @@ namespace AgainstRomeModifier {
 
             pnlSwitchesCard = new Panel {
                 Location = new Point(402, 0),
-                Size = new Size(386, 420)
+                Size = new Size(386, 790)
             };
             pnlSwitchesCard.Paint += CardPanel_Paint;
 
@@ -637,55 +725,87 @@ namespace AgainstRomeModifier {
 
             chkFreeProd = new ModernToggle {
                 Text = "建造、修復與所有單位生產完全免費",
-                Location = new Point(25, 70),
-                Size = new Size(335, 25),
+                Location = new Point(25, 80),
+                Size = new Size(310, 25),
                 Checked = false,
-                BackColor = Color.Transparent
+                BackColor = Color.Transparent,
+                Font = fontJhengHei10B
             };
+            lblHelpFreeProd = CreateHelpLabel("FreeProdTip");
+            lblHelpFreeProd.Location = new Point(340, 80);
             pnlSwitchesCard.Controls.Add(chkFreeProd);
+            pnlSwitchesCard.Controls.Add(lblHelpFreeProd);
 
             chkFreeUpgrade = new ModernToggle {
                 Text = "陣型、研發、屬性解鎖升級免費",
-                Location = new Point(25, 130),
-                Size = new Size(335, 25),
+                Location = new Point(25, 160),
+                Size = new Size(310, 25),
                 Checked = false,
-                BackColor = Color.Transparent
+                BackColor = Color.Transparent,
+                Font = fontJhengHei10B
             };
+            lblHelpFreeUpgrade = CreateHelpLabel("FreeUpgradeTip");
+            lblHelpFreeUpgrade.Location = new Point(340, 160);
             pnlSwitchesCard.Controls.Add(chkFreeUpgrade);
+            pnlSwitchesCard.Controls.Add(lblHelpFreeUpgrade);
 
             chkNoSpellCost = new ModernToggle {
                 Text = "祭司與賢者法術無消耗 (MP 零消耗)",
-                Location = new Point(25, 190),
-                Size = new Size(335, 25),
+                Location = new Point(25, 240),
+                Size = new Size(310, 25),
                 Checked = false,
-                BackColor = Color.Transparent
+                BackColor = Color.Transparent,
+                Font = fontJhengHei10B
             };
+            lblHelpNoSpellCost = CreateHelpLabel("NoSpellCostTip");
+            lblHelpNoSpellCost.Location = new Point(340, 240);
             pnlSwitchesCard.Controls.Add(chkNoSpellCost);
+            pnlSwitchesCard.Controls.Add(lblHelpNoSpellCost);
 
             chkInfiniteMorale = new ModernToggle {
                 Text = "部隊無限士氣 (士氣不減且極速恢復)",
-                Location = new Point(25, 250),
-                Size = new Size(335, 25),
+                Location = new Point(25, 320),
+                Size = new Size(310, 25),
                 Checked = false,
-                BackColor = Color.Transparent
+                BackColor = Color.Transparent,
+                Font = fontJhengHei10B
             };
+            lblHelpInfiniteMorale = CreateHelpLabel("InfiniteMoraleTip");
+            lblHelpInfiniteMorale.Location = new Point(340, 320);
             pnlSwitchesCard.Controls.Add(chkInfiniteMorale);
+            pnlSwitchesCard.Controls.Add(lblHelpInfiniteMorale);
 
             chkBalance = new ModernToggle {
                 Text = Loc.Get("EnableBalance"),
-                Location = new Point(25, 310),
-                Size = new Size(335, 25),
+                Location = new Point(25, 400),
+                Size = new Size(310, 25),
                 Checked = false,
                 BackColor = Color.Transparent,
                 Font = fontJhengHei10B
             };
             chkBalance.CheckedChanged += new EventHandler(ChkBalance_CheckedChanged);
+            lblHelpBalance = CreateHelpLabel("BalanceTip");
+            lblHelpBalance.Location = new Point(340, 400);
             pnlSwitchesCard.Controls.Add(chkBalance);
+            pnlSwitchesCard.Controls.Add(lblHelpBalance);
+
+            chkNoSpellAltar = new ModernToggle {
+                Text = "法術免除祭壇數量需求",
+                Location = new Point(25, 480),
+                Size = new Size(310, 25),
+                Checked = false,
+                BackColor = Color.Transparent,
+                Font = fontJhengHei10B
+            };
+            lblHelpNoSpellAltar = CreateHelpLabel("NoSpellAltarTip");
+            lblHelpNoSpellAltar.Location = new Point(340, 480);
+            pnlSwitchesCard.Controls.Add(chkNoSpellAltar);
+            pnlSwitchesCard.Controls.Add(lblHelpNoSpellAltar);
 
             // 新增：建設與人口修改卡片
             pnlBuildCard = new Panel {
                 Location = new Point(805, 0),
-                Size = new Size(385, 420)
+                Size = new Size(385, 790)
             };
             pnlBuildCard.Paint += CardPanel_Paint;
 
@@ -701,155 +821,141 @@ namespace AgainstRomeModifier {
 
             chkMaxPopulation = new ModernToggle {
                 Text = Loc.Get("MaxPopulation"),
-                Location = new Point(25, 60),
-                Size = new Size(335, 25),
+                Location = new Point(25, 80),
+                Size = new Size(310, 25),
                 Checked = false,
-                BackColor = Color.Transparent
+                BackColor = Color.Transparent,
+                Font = fontJhengHei10B
             };
+            lblHelpMaxPopulation = CreateHelpLabel("MaxPopulationTip");
+            lblHelpMaxPopulation.Location = new Point(340, 80);
             pnlBuildCard.Controls.Add(chkMaxPopulation);
+            pnlBuildCard.Controls.Add(lblHelpMaxPopulation);
 
             chkHousingCapacity20x = new ModernToggle {
                 Text = Loc.Get("HousingCapacity20x"),
-                Location = new Point(25, 105),
-                Size = new Size(335, 25),
+                Location = new Point(25, 150),
+                Size = new Size(310, 25),
                 Checked = false,
                 BackColor = Color.Transparent,
                 Font = fontJhengHei10B
             };
+            lblHelpHousingCapacity20x = CreateHelpLabel("HousingCapacity20xTip");
+            lblHelpHousingCapacity20x.Location = new Point(340, 150);
             pnlBuildCard.Controls.Add(chkHousingCapacity20x);
+            pnlBuildCard.Controls.Add(lblHelpHousingCapacity20x);
 
             chkStorageCapacity10x = new ModernToggle {
                 Text = Loc.Get("StorageCapacity10x"),
-                Location = new Point(25, 150),
-                Size = new Size(335, 25),
+                Location = new Point(25, 220),
+                Size = new Size(310, 25),
                 Checked = false,
                 BackColor = Color.Transparent,
                 Font = fontJhengHei10B
             };
+            lblHelpStorageCapacity10x = CreateHelpLabel("StorageCapacity10xTip");
+            lblHelpStorageCapacity10x.Location = new Point(340, 220);
             pnlBuildCard.Controls.Add(chkStorageCapacity10x);
+            pnlBuildCard.Controls.Add(lblHelpStorageCapacity10x);
 
             chkFastCiviProduction = new ModernToggle {
                 Text = Loc.Get("FastCiviProduction"),
-                Location = new Point(25, 195),
-                Size = new Size(335, 25),
+                Location = new Point(25, 290),
+                Size = new Size(310, 25),
                 Checked = false,
-                BackColor = Color.Transparent
+                BackColor = Color.Transparent,
+                Font = fontJhengHei10B
             };
+            lblHelpFastCiviProduction = CreateHelpLabel("FastCiviProductionTip");
+            lblHelpFastCiviProduction.Location = new Point(340, 290);
             pnlBuildCard.Controls.Add(chkFastCiviProduction);
+            pnlBuildCard.Controls.Add(lblHelpFastCiviProduction);
 
             chkFastBuildUpgradeRepair = new ModernToggle {
                 Text = Loc.Get("FastBuildUpgradeRepair"),
-                Location = new Point(25, 240),
-                Size = new Size(335, 25),
+                Location = new Point(25, 360),
+                Size = new Size(310, 25),
                 Checked = false,
                 BackColor = Color.Transparent,
                 Font = fontJhengHei10B
             };
+            lblHelpFastBuildUpgradeRepair = CreateHelpLabel("FastBuildUpgradeRepairTip");
+            lblHelpFastBuildUpgradeRepair.Location = new Point(340, 360);
             pnlBuildCard.Controls.Add(chkFastBuildUpgradeRepair);
+            pnlBuildCard.Controls.Add(lblHelpFastBuildUpgradeRepair);
+
+            chkFoodHealing10x = new ModernToggle {
+                Text = Loc.Get("FoodHealing10x"),
+                Location = new Point(25, 430),
+                Size = new Size(310, 25),
+                Checked = false,
+                BackColor = Color.Transparent,
+                Font = fontJhengHei10B
+            };
+            lblHelpFoodHealing10x = CreateHelpLabel("FoodHealing10xTip");
+            lblHelpFoodHealing10x.Location = new Point(340, 430);
+            pnlBuildCard.Controls.Add(chkFoodHealing10x);
+            pnlBuildCard.Controls.Add(lblHelpFoodHealing10x);
 
             chkVillageBuildRange = new ModernToggle {
                 Text = Loc.Get("VillageBuildRange"),
-                Location = new Point(25, 285),
-                Size = new Size(335, 25),
+                Location = new Point(25, 500),
+                Size = new Size(310, 25),
                 Checked = false,
                 BackColor = Color.Transparent,
                 Font = fontJhengHei10B
             };
+            lblHelpVillageBuildRange = CreateHelpLabel("VillageBuildRangeTip");
+            lblHelpVillageBuildRange.Location = new Point(340, 500);
             pnlBuildCard.Controls.Add(chkVillageBuildRange);
+            pnlBuildCard.Controls.Add(lblHelpVillageBuildRange);
 
             chkAiUltimateMode = new ModernToggle {
                 Text = Loc.Get("AiUltimateMode"),
-                Location = new Point(25, 330),
-                Size = new Size(335, 25),
+                Location = new Point(25, 570),
+                Size = new Size(310, 25),
                 Checked = false,
-                BackColor = Color.Transparent
+                BackColor = Color.Transparent,
+                Font = fontJhengHei10B
             };
+            lblHelpAiUltimateMode = CreateHelpLabel("AiUltimateModeTip");
+            lblHelpAiUltimateMode.Location = new Point(340, 570);
             pnlBuildCard.Controls.Add(chkAiUltimateMode);
-
-            // 修改下方使用指南卡片，使佈局平衡且資訊更完整
-            Panel pnlTipsCard = new Panel {
-                Location = new Point(0, 440),
-                Size = new Size(1190, 350)
-            };
-            pnlTipsCard.Paint += CardPanel_Paint;
-
-            lblTipsTitle = new Label {
-                Text = "修改器使用指引與操作指南",
-                Location = new Point(30, 20),
-                Size = new Size(300, 25),
-                Font = fontJhengHei105B,
-                ForeColor = Color.FromArgb(0, 220, 255),
-                BackColor = Color.Transparent
-            };
-            pnlTipsCard.Controls.Add(lblTipsTitle);
-
-            lblTipsContent = new Label {
-                Location = new Point(30, 60),
-                Size = new Size(550, 260),
-                Font = fontJhengHei105R,
-                ForeColor = Color.FromArgb(180, 185, 195),
-                BackColor = Color.Transparent
-            };
-            pnlTipsCard.Controls.Add(lblTipsContent);
-
-            lblTipsDetail = new Label {
-                Location = new Point(610, 60),
-                Size = new Size(550, 260),
-                Font = fontJhengHei105R,
-                ForeColor = Color.FromArgb(180, 185, 195),
-                BackColor = Color.Transparent
-            };
-            pnlTipsCard.Controls.Add(lblTipsDetail);
+            pnlBuildCard.Controls.Add(lblHelpAiUltimateMode);
 
             tabSystem.Controls.Add(pnlNumericCard);
             tabSystem.Controls.Add(pnlSwitchesCard);
             tabSystem.Controls.Add(pnlBuildCard);
-            tabSystem.Controls.Add(pnlTipsCard);
-
-            pnlConsoleCard = new Panel {
-                Location = new Point(1440, 60),
-                Size = new Size(380, 800)
-            };
-            pnlConsoleCard.Paint += CardPanel_Paint;
-
-            lblConsoleTitle = new Label {
-                Text = "系統控制台與操作",
-                Location = new Point(20, 20),
-                Size = new Size(200, 25),
-                Font = fontJhengHei105B,
-                ForeColor = Color.FromArgb(0, 220, 255),
-                BackColor = Color.Transparent
-            };
-            pnlConsoleCard.Controls.Add(lblConsoleTitle);
 
             lblGamePath = new Label {
                 Text = "遊戲路徑:",
-                Location = new Point(20, 55),
-                Size = new Size(80, 25),
-                ForeColor = Color.FromArgb(200, 205, 210),
+                Location = new Point(15, 330),
+                Size = new Size(190, 20),
+                Font = fontJhengHei95B,
+                ForeColor = Color.FromArgb(150, 160, 175),
                 BackColor = Color.Transparent
             };
-            pnlConsoleCard.Controls.Add(lblGamePath);
+            pnlSidebar.Controls.Add(lblGamePath);
 
-            Panel pnlGamePath = CreateInputWrapper(20, 80, 260, 28);
+            Panel pnlGamePath = CreateInputWrapper(10, 355, 200, 28);
             txtGamePath = new TextBox {
                 Location = new Point(5, 5),
-                Size = new Size(250, 20),
+                Size = new Size(190, 20),
                 BorderStyle = BorderStyle.None,
                 BackColor = Color.FromArgb(38, 38, 48),
                 ForeColor = Color.White
             };
             pnlGamePath.Controls.Add(txtGamePath);
-            pnlConsoleCard.Controls.Add(pnlGamePath);
+            pnlSidebar.Controls.Add(pnlGamePath);
 
             btnBrowseGamePath = new Button {
                 Text = "瀏覽...",
-                Location = new Point(290, 80),
-                Size = new Size(70, 28)
+                Location = new Point(10, 390),
+                Size = new Size(200, 30)
             };
             StyleButton(btnBrowseGamePath, Color.FromArgb(45, 45, 55), Color.FromArgb(240, 240, 240), Color.FromArgb(0, 220, 255));
             btnBrowseGamePath.Click += new EventHandler(BtnBrowseGamePath_Click);
-            pnlConsoleCard.Controls.Add(btnBrowseGamePath);
+            pnlSidebar.Controls.Add(btnBrowseGamePath);
 
             string detectedPath = DetectGamePathFromRegistry();
             if (File.Exists(Path.Combine(AppContext.BaseDirectory, "Against_Rome.exe"))) {
@@ -859,20 +965,6 @@ namespace AgainstRomeModifier {
             } else if (Directory.Exists(@"C:\Program Files (x86)\Against Rome")) {
                 txtGamePath.Text = @"C:\Program Files (x86)\Against Rome";
             }
-
-            txtLog = new TextBox {
-                Location = new Point(20, 120),
-                Size = new Size(340, 540),
-                Multiline = true,
-                ReadOnly = true,
-                ScrollBars = ScrollBars.Vertical,
-                BackColor = Color.FromArgb(12, 12, 16),
-                ForeColor = Color.FromArgb(0, 255, 128),
-                Font = fontConsolas95,
-                BorderStyle = BorderStyle.None,
-                Text = "SYSTEM INITIALIZED\r\n"
-            };
-            pnlConsoleCard.Controls.Add(txtLog);
 
             menuRestore = new ContextMenuStrip { Renderer = new DarkContextMenuRenderer() };
             itemRestoreAll = new ToolStripMenuItem("全部還原");
@@ -892,16 +984,16 @@ namespace AgainstRomeModifier {
 
             btnLoadCurrent = new Button {
                 Text = "讀取現有設定",
-                Location = new Point(20, 675),
-                Size = new Size(165, 45)
+                Location = new Point(10, 440),
+                Size = new Size(200, 40)
             };
             StyleButton(btnLoadCurrent, Color.FromArgb(45, 45, 55), Color.FromArgb(0, 220, 255), Color.FromArgb(0, 220, 255));
             btnLoadCurrent.Click += new EventHandler(BtnLoadCurrent_Click);
 
             btnRestore = new Button {
                 Text = "恢復原版",
-                Location = new Point(195, 675),
-                Size = new Size(165, 45)
+                Location = new Point(10, 490),
+                Size = new Size(200, 40)
             };
             StyleButton(btnRestore, Color.FromArgb(45, 45, 55), Color.FromArgb(240, 240, 240), Color.FromArgb(255, 75, 75));
             btnRestore.Click += (s, e) => {
@@ -910,24 +1002,24 @@ namespace AgainstRomeModifier {
 
             btnApply = new Button {
                 Text = "執行修改",
-                Location = new Point(20, 730),
-                Size = new Size(165, 45)
+                Location = new Point(10, 550),
+                Size = new Size(200, 40)
             };
             StyleButton(btnApply, Color.FromArgb(98, 0, 238), Color.White, Color.FromArgb(180, 100, 255));
             btnApply.Click += new EventHandler(BtnApply_Click);
 
             btnStartGame = new Button {
                 Text = "啟動遊戲",
-                Location = new Point(195, 730),
-                Size = new Size(165, 45)
+                Location = new Point(10, 600),
+                Size = new Size(200, 40)
             };
             StyleButton(btnStartGame, Color.FromArgb(0, 180, 120), Color.White, Color.FromArgb(0, 220, 150));
             btnStartGame.Click += new EventHandler(BtnStartGame_Click);
 
-            pnlConsoleCard.Controls.Add(btnLoadCurrent);
-            pnlConsoleCard.Controls.Add(btnRestore);
-            pnlConsoleCard.Controls.Add(btnApply);
-            pnlConsoleCard.Controls.Add(btnStartGame);
+            pnlSidebar.Controls.Add(btnLoadCurrent);
+            pnlSidebar.Controls.Add(btnRestore);
+            pnlSidebar.Controls.Add(btnApply);
+            pnlSidebar.Controls.Add(btnStartGame);
 
             Panel pnlDefaultStatsTitle = new Panel {
                 Location = new Point(0, 0),
@@ -989,15 +1081,15 @@ namespace AgainstRomeModifier {
             pnlDefaultStatsTitle.Controls.Add(btnTroopPreset);
             pnlDefaultStatsTitle.Controls.Add(lblTroopPresetFile);
 
-            defaultStatsTabControl = new TabControl {
+            defaultStatsTabControl = new ModernTabControl {
                 Location = new Point(0, 80),
                 Size = new Size(1190, 715)
             };
 
-            tabDefaultRoman = new TabPage { Text = " 羅馬 ", BackColor = Color.FromArgb(16, 16, 20), UseVisualStyleBackColor = false };
-            tabDefaultTeuton = new TabPage { Text = " 條頓 ", BackColor = Color.FromArgb(16, 16, 20), UseVisualStyleBackColor = false };
-            tabDefaultCelt = new TabPage { Text = " 塞爾特 ", BackColor = Color.FromArgb(16, 16, 20), UseVisualStyleBackColor = false };
-            tabDefaultHun = new TabPage { Text = " 匈奴 ", BackColor = Color.FromArgb(16, 16, 20), UseVisualStyleBackColor = false };
+            tabDefaultRoman = new TabPage { Text = " 羅馬 ", BackColor = Color.FromArgb(10, 11, 16), UseVisualStyleBackColor = false };
+            tabDefaultTeuton = new TabPage { Text = " 條頓 ", BackColor = Color.FromArgb(10, 11, 16), UseVisualStyleBackColor = false };
+            tabDefaultCelt = new TabPage { Text = " 塞爾特 ", BackColor = Color.FromArgb(10, 11, 16), UseVisualStyleBackColor = false };
+            tabDefaultHun = new TabPage { Text = " 匈奴 ", BackColor = Color.FromArgb(10, 11, 16), UseVisualStyleBackColor = false };
 
             defaultStatsGrids["Roman"] = CreateDefaultStatsGrid();
             defaultStatsGrids["Teuton"] = CreateDefaultStatsGrid();
@@ -1033,15 +1125,15 @@ namespace AgainstRomeModifier {
             };
             pnlCurrentStatsTitle.Controls.Add(lblCurrentStatsTitle);
 
-            currentStatsTabControl = new TabControl {
+            currentStatsTabControl = new ModernTabControl {
                 Location = new Point(0, 80),
                 Size = new Size(1190, 715)
             };
 
-            tabCurrentRoman = new TabPage { Text = " 羅馬 ", BackColor = Color.FromArgb(16, 16, 20), UseVisualStyleBackColor = false };
-            tabCurrentTeuton = new TabPage { Text = " 條頓 ", BackColor = Color.FromArgb(16, 16, 20), UseVisualStyleBackColor = false };
-            tabCurrentCelt = new TabPage { Text = " 塞爾特 ", BackColor = Color.FromArgb(16, 16, 20), UseVisualStyleBackColor = false };
-            tabCurrentHun = new TabPage { Text = " 匈奴 ", BackColor = Color.FromArgb(16, 16, 20), UseVisualStyleBackColor = false };
+            tabCurrentRoman = new TabPage { Text = " 羅馬 ", BackColor = Color.FromArgb(10, 11, 16), UseVisualStyleBackColor = false };
+            tabCurrentTeuton = new TabPage { Text = " 條頓 ", BackColor = Color.FromArgb(10, 11, 16), UseVisualStyleBackColor = false };
+            tabCurrentCelt = new TabPage { Text = " 塞爾特 ", BackColor = Color.FromArgb(10, 11, 16), UseVisualStyleBackColor = false };
+            tabCurrentHun = new TabPage { Text = " 匈奴 ", BackColor = Color.FromArgb(10, 11, 16), UseVisualStyleBackColor = false };
 
             currentStatsGrids["Roman"] = CreateCurrentStatsGrid();
             currentStatsGrids["Teuton"] = CreateCurrentStatsGrid();
@@ -1062,7 +1154,7 @@ namespace AgainstRomeModifier {
             tabCurrentStats.Controls.Add(currentStatsTabControl);
 
             tabDoc = new TabPage {
-                BackColor = Color.FromArgb(16, 16, 20),
+                BackColor = Color.FromArgb(10, 11, 16),
                 UseVisualStyleBackColor = false
             };
             mainTabControl.TabPages.Add(tabDoc);
@@ -1072,7 +1164,7 @@ namespace AgainstRomeModifier {
                 Multiline = true,
                 ReadOnly = true,
                 ScrollBars = ScrollBars.Vertical,
-                BackColor = Color.FromArgb(20, 20, 25),
+                BackColor = Color.FromArgb(15, 16, 24),
                 ForeColor = Color.FromArgb(230, 235, 240),
                 Font = fontJhengHei105R,
                 BorderStyle = BorderStyle.None
@@ -1081,7 +1173,7 @@ namespace AgainstRomeModifier {
             tabDoc.Controls.Add(txtDoc);
 
             tabSaveManager = new TabPage {
-                BackColor = Color.FromArgb(16, 16, 20),
+                BackColor = Color.FromArgb(10, 11, 16),
                 UseVisualStyleBackColor = false
             };
             mainTabControl.TabPages.Add(tabSaveManager);
@@ -1230,8 +1322,331 @@ namespace AgainstRomeModifier {
             this.Controls.Add(pnlTitleBar);
             this.Controls.Add(pnlSidebar);
             this.Controls.Add(mainTabControl);
-            this.Controls.Add(pnlConsoleCard);
+            ApplyModernLayout();
             ShowTabPage(tabSystem);
+        }
+
+        private void ApplyModernLayout() {
+            SuspendLayout();
+
+            Size = new Size(1400, 860);
+            MinimumSize = new Size(1280, 760);
+            AutoScroll = false;
+            BackColor = Color.FromArgb(9, 12, 18);
+
+            pnlTitleBar.Height = 56;
+            pnlTitleBar.BackColor = Color.FromArgb(13, 17, 25);
+            lblMainTitle.Location = new Point(24, 16);
+            lblMainTitle.Size = new Size(360, 26);
+            lblMainTitle.ForeColor = Color.FromArgb(226, 241, 252);
+
+            Label? versionLabel = pnlTitleBar.Controls.OfType<Label>()
+                .FirstOrDefault(label => label != lblMainTitle && label.Text.StartsWith("v", StringComparison.OrdinalIgnoreCase));
+            if (versionLabel != null) {
+                versionLabel.Location = new Point(382, 19);
+                versionLabel.ForeColor = Color.FromArgb(104, 119, 139);
+            }
+
+            pnlSidebar.BackColor = Color.FromArgb(12, 16, 24);
+            pnlSidebar.Width = 250;
+
+            ConfigureSidebarLayout();
+            ConfigureSystemDashboard();
+            ConfigureStatsPages();
+            ConfigureSaveManagerLayout();
+
+            tabDoc.Padding = new Padding(14);
+            txtDoc.BackColor = Color.FromArgb(16, 20, 29);
+            txtDoc.ForeColor = Color.FromArgb(210, 218, 230);
+
+            foreach (DataGridView grid in defaultStatsGrids.Values.Concat(currentStatsGrids.Values)) {
+                grid.ScrollBars = ScrollBars.Both;
+            }
+
+            LayoutModernShell();
+            Resize += (s, e) => LayoutModernShell();
+            ResumeLayout(true);
+        }
+
+        private void LayoutModernShell() {
+            pnlTitleBar.Location = Point.Empty;
+            pnlTitleBar.Size = new Size(ClientSize.Width, 56);
+            btnClose.Location = new Point(ClientSize.Width - 46, 12);
+            btnMinimize.Location = new Point(ClientSize.Width - 86, 12);
+
+            pnlSidebar.Location = new Point(0, 56);
+            pnlSidebar.Size = new Size(250, Math.Max(0, ClientSize.Height - 56));
+
+            mainTabControl.Location = new Point(266, 70);
+            mainTabControl.Size = new Size(
+                Math.Max(0, ClientSize.Width - 282),
+                Math.Max(0, ClientSize.Height - 84));
+
+            lblSidebarLang.Location = new Point(16, Math.Max(610, pnlSidebar.Height - 72));
+            btnLangZH.Location = new Point(16, Math.Max(634, pnlSidebar.Height - 46));
+            btnLangEN.Location = new Point(126, Math.Max(634, pnlSidebar.Height - 46));
+        }
+
+        private void ConfigureSidebarLayout() {
+            Button[] navButtons = {
+                btnNavSystem,
+                btnNavDefaultStats,
+                btnNavCurrentStats,
+                btnNavSaveManager,
+                btnNavDoc
+            };
+            for (int i = 0; i < navButtons.Length; i++) {
+                navButtons[i].Location = new Point(10, 22 + i * 52);
+                navButtons[i].Size = new Size(230, 44);
+            }
+
+            lblGamePath.Location = new Point(18, 306);
+            lblGamePath.Size = new Size(214, 20);
+            lblGamePath.ForeColor = Color.FromArgb(128, 143, 163);
+
+            Panel pathWrapper = txtGamePath.Parent as Panel
+                ?? throw new InvalidOperationException("Game path input wrapper was not initialized.");
+            pathWrapper.Location = new Point(16, 332);
+            pathWrapper.Size = new Size(218, 32);
+            pathWrapper.BackColor = Color.FromArgb(22, 28, 39);
+            txtGamePath.Location = new Point(9, 7);
+            txtGamePath.Size = new Size(200, 20);
+            txtGamePath.BackColor = pathWrapper.BackColor;
+            txtGamePath.ForeColor = Color.FromArgb(222, 230, 240);
+
+            btnBrowseGamePath.Location = new Point(16, 372);
+            btnBrowseGamePath.Size = new Size(218, 34);
+            btnLoadCurrent.Location = new Point(16, 432);
+            btnRestore.Location = new Point(16, 478);
+            btnApply.Location = new Point(16, 536);
+            btnStartGame.Location = new Point(16, 586);
+            foreach (Button actionButton in new[] { btnLoadCurrent, btnRestore, btnApply, btnStartGame }) {
+                actionButton.Size = new Size(218, 40);
+            }
+
+            lblSidebarLang.Size = new Size(218, 20);
+            lblSidebarLang.ForeColor = Color.FromArgb(128, 143, 163);
+            btnLangZH.Size = new Size(102, 30);
+            btnLangEN.Size = new Size(108, 30);
+        }
+
+        private void ConfigureSystemDashboard() {
+            tabSystem.BackColor = Color.FromArgb(9, 12, 18);
+
+            Panel header = new Panel {
+                Dock = DockStyle.Top,
+                Height = 72,
+                BackColor = Color.FromArgb(9, 12, 18)
+            };
+            lblSystemHeading = new Label {
+                Text = Loc.Get("SystemHeading"),
+                Location = new Point(4, 4),
+                Size = new Size(430, 28),
+                Font = fontJhengHei115B,
+                ForeColor = Color.FromArgb(235, 242, 250),
+                BackColor = Color.Transparent
+            };
+            lblSystemSubtitle = new Label {
+                Text = Loc.Get("SystemSubtitle"),
+                Location = new Point(4, 35),
+                Size = new Size(620, 22),
+                Font = fontJhengHei9R,
+                ForeColor = Color.FromArgb(128, 143, 163),
+                BackColor = Color.Transparent
+            };
+            header.Controls.Add(lblSystemHeading);
+            header.Controls.Add(lblSystemSubtitle);
+            header.Controls.Add(btnEnableAll);
+            header.Controls.Add(btnDisableAll);
+            btnEnableAll.Size = new Size(136, 36);
+            btnDisableAll.Size = new Size(136, 36);
+            header.Resize += (s, e) => {
+                btnDisableAll.Location = new Point(Math.Max(0, header.Width - 140), 12);
+                btnEnableAll.Location = new Point(Math.Max(0, header.Width - 284), 12);
+            };
+
+            TableLayoutPanel settingsLayout = new TableLayoutPanel {
+                Dock = DockStyle.Fill,
+                BackColor = Color.FromArgb(9, 12, 18),
+                ColumnCount = 3,
+                RowCount = 1,
+                // The page header is intentionally layered above this fill panel.
+                // Reserve its height so card titles and first rows are never obscured.
+                Padding = new Padding(0, 84, 0, 0)
+            };
+            settingsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33.333F));
+            settingsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33.334F));
+            settingsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33.333F));
+            settingsLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+
+            ConfigureSettingsCard(pnlNumericCard, lblNumericTitle, 230,
+                (chkFocusLoss, lblHelpFocusLoss),
+                (chkToEng, lblHelpToEng),
+                (chkDgVoodoo, lblHelpDgVoodoo));
+            ConfigureSettingsCard(pnlSwitchesCard, lblSwitchesTitle, 374,
+                (chkFreeProd, lblHelpFreeProd),
+                (chkFreeUpgrade, lblHelpFreeUpgrade),
+                (chkNoSpellCost, lblHelpNoSpellCost),
+                (chkInfiniteMorale, lblHelpInfiniteMorale),
+                (chkBalance, lblHelpBalance),
+                (chkNoSpellAltar, lblHelpNoSpellAltar));
+            ConfigureSettingsCard(pnlBuildCard, lblBuildTitle, 470,
+                (chkMaxPopulation, lblHelpMaxPopulation),
+                (chkHousingCapacity20x, lblHelpHousingCapacity20x),
+                (chkStorageCapacity10x, lblHelpStorageCapacity10x),
+                (chkFastCiviProduction, lblHelpFastCiviProduction),
+                (chkFastBuildUpgradeRepair, lblHelpFastBuildUpgradeRepair),
+                (chkFoodHealing10x, lblHelpFoodHealing10x),
+                (chkVillageBuildRange, lblHelpVillageBuildRange),
+                (chkAiUltimateMode, lblHelpAiUltimateMode));
+
+            settingsLayout.Controls.Add(pnlNumericCard, 0, 0);
+            settingsLayout.Controls.Add(pnlSwitchesCard, 1, 0);
+            settingsLayout.Controls.Add(pnlBuildCard, 2, 0);
+            tabSystem.Controls.Add(settingsLayout);
+            tabSystem.Controls.Add(header);
+            header.BringToFront();
+        }
+
+        private void ConfigureSettingsCard(
+            Panel card,
+            Label title,
+            int height,
+            params (ModernToggle Toggle, Label Help)[] rows) {
+            card.Height = height;
+            card.MinimumSize = new Size(0, height);
+            card.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            card.Margin = new Padding(6, 0, 6, 0);
+            card.BackColor = Color.FromArgb(18, 22, 31);
+
+            title.Location = new Point(20, 17);
+            title.Size = new Size(280, 24);
+            title.ForeColor = Color.FromArgb(105, 205, 255);
+
+            void LayoutRows() {
+                for (int i = 0; i < rows.Length; i++) {
+                    ModernToggle toggle = rows[i].Toggle;
+                    Label help = rows[i].Help;
+                    int y = 60 + i * 48;
+                    toggle.Location = new Point(20, y);
+                    toggle.Size = new Size(Math.Max(120, card.Width - 66), 26);
+                    toggle.Font = fontJhengHei95R;
+                    toggle.BackColor = card.BackColor;
+                    help.Location = new Point(Math.Max(20, card.Width - 40), y + 2);
+                }
+            }
+
+            card.Resize += (s, e) => LayoutRows();
+            LayoutRows();
+        }
+
+        private void ConfigureStatsPages() {
+            Panel defaultHeader = lblDefaultStatsTitle.Parent as Panel
+                ?? throw new InvalidOperationException("Default stats header was not initialized.");
+            defaultHeader.Dock = DockStyle.Top;
+            defaultHeader.Height = 68;
+            defaultHeader.BackColor = Color.FromArgb(18, 22, 31);
+            defaultStatsTabControl.Dock = DockStyle.Fill;
+            defaultStatsTabControl.ItemSize = new Size(150, 38);
+            defaultStatsTabControl.Font = fontJhengHei95R;
+            defaultHeader.BringToFront();
+
+            defaultHeader.Resize += (s, e) => {
+                lblTroopPresetFile.Width = Math.Max(120, defaultHeader.Width - lblTroopPresetFile.Left - 18);
+            };
+
+            Panel currentHeader = lblCurrentStatsTitle.Parent as Panel
+                ?? throw new InvalidOperationException("Current stats header was not initialized.");
+            currentHeader.Dock = DockStyle.Top;
+            currentHeader.Height = 68;
+            currentHeader.BackColor = Color.FromArgb(18, 22, 31);
+            currentStatsTabControl.Dock = DockStyle.Fill;
+            currentStatsTabControl.ItemSize = new Size(150, 38);
+            currentStatsTabControl.Font = fontJhengHei95R;
+            currentHeader.BringToFront();
+        }
+
+        private void ConfigureSaveManagerLayout() {
+            Panel gameCard = dgvGameSaves.Parent as Panel
+                ?? throw new InvalidOperationException("Game saves card was not initialized.");
+            Panel backupsCard = dgvBackups.Parent as Panel
+                ?? throw new InvalidOperationException("Backups card was not initialized.");
+            Panel detailCard = picSavePreview.Parent as Panel
+                ?? throw new InvalidOperationException("Save detail card was not initialized.");
+            Panel leftColumn = gameCard.Parent as Panel
+                ?? throw new InvalidOperationException("Save list column was not initialized.");
+            Panel rightColumn = detailCard.Parent as Panel
+                ?? throw new InvalidOperationException("Save detail column was not initialized.");
+
+            TableLayoutPanel root = new TableLayoutPanel {
+                Dock = DockStyle.Fill,
+                BackColor = Color.FromArgb(9, 12, 18),
+                ColumnCount = 2,
+                RowCount = 1
+            };
+            root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 66F));
+            root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 34F));
+            root.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+
+            TableLayoutPanel leftStack = new TableLayoutPanel {
+                Dock = DockStyle.Fill,
+                BackColor = Color.Transparent,
+                RowCount = 2,
+                ColumnCount = 1,
+                Margin = new Padding(0, 0, 10, 0)
+            };
+            leftStack.RowStyles.Add(new RowStyle(SizeType.Percent, 49F));
+            leftStack.RowStyles.Add(new RowStyle(SizeType.Percent, 51F));
+
+            gameCard.Dock = DockStyle.Fill;
+            gameCard.Margin = new Padding(0, 0, 0, 6);
+            gameCard.BackColor = Color.FromArgb(18, 22, 31);
+            backupsCard.Dock = DockStyle.Fill;
+            backupsCard.Margin = new Padding(0, 6, 0, 0);
+            backupsCard.BackColor = Color.FromArgb(18, 22, 31);
+            detailCard.Dock = DockStyle.Fill;
+            detailCard.Margin = new Padding(0);
+            detailCard.BackColor = Color.FromArgb(18, 22, 31);
+
+            leftStack.Controls.Add(gameCard, 0, 0);
+            leftStack.Controls.Add(backupsCard, 0, 1);
+            leftColumn.Controls.Add(leftStack);
+            root.Controls.Add(leftColumn, 0, 0);
+            root.Controls.Add(rightColumn, 1, 0);
+            leftColumn.Dock = DockStyle.Fill;
+            rightColumn.Dock = DockStyle.Fill;
+            tabSaveManager.Controls.Add(root);
+
+            void LayoutGameCard() {
+                dgvGameSaves.Location = new Point(16, 48);
+                dgvGameSaves.Size = new Size(Math.Max(0, gameCard.Width - 32), Math.Max(70, gameCard.Height - 106));
+                int y = Math.Max(54, gameCard.Height - 48);
+                btnBackupSave.Location = new Point(16, y);
+                btnDeleteSave.Location = new Point(164, y);
+                btnRefreshSaves.Location = new Point(312, y);
+            }
+            void LayoutBackupsCard() {
+                dgvBackups.Location = new Point(16, 48);
+                dgvBackups.Size = new Size(Math.Max(0, backupsCard.Width - 32), Math.Max(70, backupsCard.Height - 106));
+                int y = Math.Max(54, backupsCard.Height - 48);
+                btnRestoreBackup.Location = new Point(16, y);
+                btnDeleteBackup.Location = new Point(164, y);
+            }
+            void LayoutDetailCard() {
+                picSavePreview.Location = new Point(18, 54);
+                picSavePreview.Size = new Size(Math.Max(80, detailCard.Width - 36), Math.Min(250, Math.Max(120, detailCard.Height / 3)));
+                lblSaveDetail.Location = new Point(18, picSavePreview.Bottom + 16);
+                lblSaveDetail.Size = new Size(Math.Max(80, detailCard.Width - 36), Math.Max(80, detailCard.Height - picSavePreview.Bottom - 34));
+            }
+
+            dgvGameSaves.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+            dgvBackups.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+            gameCard.Resize += (s, e) => LayoutGameCard();
+            backupsCard.Resize += (s, e) => LayoutBackupsCard();
+            detailCard.Resize += (s, e) => LayoutDetailCard();
+            LayoutGameCard();
+            LayoutBackupsCard();
+            LayoutDetailCard();
         }
 
         private Panel CreateInputWrapper(int x, int y, int w, int h) {
@@ -1294,34 +1709,45 @@ namespace AgainstRomeModifier {
             btn.Paint += (s, e) => {
                 Graphics g = e.Graphics;
                 g.SmoothingMode = SmoothingMode.AntiAlias;
-                bool isSelected = (mainTabControl.SelectedTab == associatedPage);
+                bool isSelected = key switch {
+                    "NavSystem" => mainTabControl.SelectedTab == tabSystem,
+                    "NavDefaultStats" => mainTabControl.SelectedTab == tabDefaultStats,
+                    "NavCurrentStats" => mainTabControl.SelectedTab == tabCurrentStats,
+                    "NavSaveManager" => mainTabControl.SelectedTab == tabSaveManager,
+                    "NavDoc" => mainTabControl.SelectedTab == tabDoc,
+                    _ => mainTabControl.SelectedTab == associatedPage
+                };
                 
                 Point clientPos = btn.PointToClient(Cursor.Position);
                 bool isHovered = btn.ClientRectangle.Contains(clientPos);
 
-                // 1. 繪製背景 (選取時有漂亮的漸層藍色，Hover 時有微亮背景)
-                if (isSelected) {
-                    using (var brush = new LinearGradientBrush(btn.ClientRectangle, Color.FromArgb(30, 30, 42), Color.FromArgb(24, 40, 50), 0f)) {
-                        g.FillRectangle(brush, btn.ClientRectangle);
-                    }
-                } else if (isHovered) {
-                    using (var brush = new SolidBrush(Color.FromArgb(28, 28, 35))) {
-                        g.FillRectangle(brush, btn.ClientRectangle);
+                // 1. 繪製背景 (選取時有漂亮的漸層藍色，Hover 時有微亮背景，均帶有精緻圓角)
+                int radius = 4;
+                Rectangle contentRect = new Rectangle(5, 2, btn.Width - 10, btn.Height - 4);
+                using (GraphicsPath path = GetRoundPath(contentRect, radius)) {
+                    if (isSelected) {
+                        using (var brush = new LinearGradientBrush(contentRect, Color.FromArgb(24, 25, 38), Color.FromArgb(16, 28, 40), 45F)) {
+                            g.FillPath(brush, path);
+                        }
+                    } else if (isHovered) {
+                        using (var brush = new SolidBrush(Color.FromArgb(20, 21, 31))) {
+                            g.FillPath(brush, path);
+                        }
                     }
                 }
 
                 // 2. 繪製文字與圖示 (Unicode 圖示)
                 string text = Loc.Get(key);
-                Color foreColor = isSelected ? Color.FromArgb(0, 220, 255) : (isHovered ? Color.White : Color.FromArgb(150, 160, 175));
+                Color foreColor = isSelected ? Color.FromArgb(0, 230, 255) : (isHovered ? Color.White : Color.FromArgb(120, 125, 140));
                 using (var brush = new SolidBrush(foreColor)) {
                     SizeF sz = g.MeasureString(text, fontJhengHei10B);
-                    g.DrawString(text, fontJhengHei10B, brush, 15, (btn.Height - sz.Height) / 2);
+                    g.DrawString(text, fontJhengHei10B, brush, 22, (btn.Height - sz.Height) / 2);
                 }
 
-                // 3. 繪製左側發光指示條
+                // 3. 繪製左側發光指示條 (融入圓角邊緣)
                 if (isSelected) {
-                    using (var brush = new SolidBrush(Color.FromArgb(0, 220, 255))) {
-                        g.FillRectangle(brush, 0, 8, 4, btn.Height - 16);
+                    using (var brush = new SolidBrush(Color.FromArgb(0, 230, 255))) {
+                        g.FillRectangle(brush, 8, 10, 3, btn.Height - 20);
                     }
                 }
             };
@@ -1365,6 +1791,8 @@ namespace AgainstRomeModifier {
             if (lblMainTitle == null) return; // 防止在 InitializeComponent 完成前被調用
 
             lblMainTitle.Text = Loc.Get("MainTitle");
+            lblSystemHeading.Text = Loc.Get("SystemHeading");
+            lblSystemSubtitle.Text = Loc.Get("SystemSubtitle");
             lblNumericTitle.Text = Loc.Get("NumericTitle");
             chkFocusLoss.Text = Loc.Get("FocusLoss");
             chkToEng.Text = Loc.Get("ToEng");
@@ -1372,6 +1800,7 @@ namespace AgainstRomeModifier {
             chkHousingCapacity20x.Text = Loc.Get("HousingCapacity20x");
             chkStorageCapacity10x.Text = Loc.Get("StorageCapacity10x");
             chkFastBuildUpgradeRepair.Text = Loc.Get("FastBuildUpgradeRepair");
+            chkFoodHealing10x.Text = Loc.Get("FoodHealing10x");
             chkDgVoodoo.Text = Loc.Get("DgVoodoo");
             chkVillageBuildRange.Text = Loc.Get("VillageBuildRange");
             btnEnableAll.Text = Loc.Get("EnableAll");
@@ -1383,11 +1812,8 @@ namespace AgainstRomeModifier {
             chkFreeProd.Text = Loc.Get("FreeProd");
             chkFreeUpgrade.Text = Loc.Get("FreeUpgrade");
             chkNoSpellCost.Text = Loc.Get("NoSpellCost");
+            chkNoSpellAltar.Text = Loc.Get("NoSpellAltar");
             chkInfiniteMorale.Text = Loc.Get("InfiniteMorale");
-            lblTipsTitle.Text = Loc.Get("TipsTitle");
-            lblTipsContent.Text = Loc.Get("TipsContent");
-            lblTipsDetail.Text = Loc.Get("TipsDetail");
-            lblConsoleTitle.Text = Loc.Get("ConsoleTitle");
             lblGamePath.Text = Loc.Get("GamePath");
             btnBrowseGamePath.Text = Loc.Get("Browse");
             btnLoadCurrent.Text = Loc.Get("LoadCurrent");
@@ -1444,6 +1870,59 @@ namespace AgainstRomeModifier {
                 RefreshSavesAndBackups();
             }
             UpdateTroopPresetLabel();
+
+            if (myToolTip != null) {
+                myToolTip.SetToolTip(lblHelpFocusLoss, Loc.Get("FocusLossTip"));
+                myToolTip.SetToolTip(lblHelpToEng, Loc.Get("ToEngTip"));
+                myToolTip.SetToolTip(lblHelpDgVoodoo, Loc.Get("DgVoodooTip"));
+                myToolTip.SetToolTip(lblHelpFreeProd, Loc.Get("FreeProdTip"));
+                myToolTip.SetToolTip(lblHelpFreeUpgrade, Loc.Get("FreeUpgradeTip"));
+                myToolTip.SetToolTip(lblHelpNoSpellCost, Loc.Get("NoSpellCostTip"));
+                myToolTip.SetToolTip(lblHelpInfiniteMorale, Loc.Get("InfiniteMoraleTip"));
+                myToolTip.SetToolTip(lblHelpBalance, Loc.Get("BalanceTip"));
+                myToolTip.SetToolTip(lblHelpNoSpellAltar, Loc.Get("NoSpellAltarTip"));
+                myToolTip.SetToolTip(lblHelpMaxPopulation, Loc.Get("MaxPopulationTip"));
+                myToolTip.SetToolTip(lblHelpHousingCapacity20x, Loc.Get("HousingCapacity20xTip"));
+                myToolTip.SetToolTip(lblHelpStorageCapacity10x, Loc.Get("StorageCapacity10xTip"));
+                myToolTip.SetToolTip(lblHelpFastCiviProduction, Loc.Get("FastCiviProductionTip"));
+                myToolTip.SetToolTip(lblHelpFastBuildUpgradeRepair, Loc.Get("FastBuildUpgradeRepairTip"));
+                myToolTip.SetToolTip(lblHelpFoodHealing10x, Loc.Get("FoodHealing10xTip"));
+                myToolTip.SetToolTip(lblHelpVillageBuildRange, Loc.Get("VillageBuildRangeTip"));
+                myToolTip.SetToolTip(lblHelpAiUltimateMode, Loc.Get("AiUltimateModeTip"));
+            }
+        }
+
+        private Label CreateHelpLabel(string tipKey) {
+            Label lbl = new Label {
+                Text = "?",
+                Size = new Size(22, 22),
+                Cursor = Cursors.Hand,
+                ForeColor = Color.FromArgb(120, 130, 145),
+                BackColor = Color.Transparent,
+                Font = fontConsolas85, // 採用 Consolas 讓 "?" 顯得更好看
+                TextAlign = ContentAlignment.MiddleCenter
+            };
+
+            lbl.Paint += (s, e) => {
+                Graphics g = e.Graphics;
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+                bool isHovered = lbl.ForeColor == Color.FromArgb(0, 230, 255);
+                Color circColor = isHovered ? Color.FromArgb(0, 230, 255) : Color.FromArgb(60, 65, 80);
+                using (Pen p = new Pen(circColor, 1.2F)) {
+                    g.DrawEllipse(p, 1, 1, lbl.Width - 3, lbl.Height - 3);
+                }
+            };
+
+            lbl.MouseEnter += (s, e) => {
+                lbl.ForeColor = Color.FromArgb(0, 230, 255);
+                lbl.Invalidate();
+            };
+            lbl.MouseLeave += (s, e) => {
+                lbl.ForeColor = Color.FromArgb(120, 130, 145);
+                lbl.Invalidate();
+            };
+            myToolTip.SetToolTip(lbl, Loc.Get(tipKey));
+            return lbl;
         }
 
         /// <summary>

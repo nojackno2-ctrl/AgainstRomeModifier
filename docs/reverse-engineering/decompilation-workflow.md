@@ -73,7 +73,7 @@ the entire inventory when a known function address and focused xrefs suffice.
 
 ## Reuse Order
 
-1. `docs/AI_AGENT_HANDOFF.md`
+1. `TechDoc.md` (includes integrated handoff)
 2. `docs/reverse-engineering/`
 3. `data/game_schema.json`
 4. Local function index

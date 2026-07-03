@@ -1,18 +1,32 @@
 # Against Rome Modifier 技術文件
 
-> 更新日期：2026-07-02
+> 更新日期：2026-07-03
 >
 > 編碼：UTF-8
 > 對象：開發者、逆向工程研究者與 AI 維護代理
 
-本文件描述目前程式與補丁契約。完整的修改時間線、失敗案例、代理操作規範與除錯 playbook，請先讀 [`docs/AI_AGENT_HANDOFF.md`](docs/AI_AGENT_HANDOFF.md)。機器可讀的欄位與 offset 位於 `data/game_schema.json`；精確 EXE／BCI bytes 位於 `docs/reverse-engineering/known-patches.md`。
+本文件描述目前程式與補丁契約。完整的修改時間線、除錯案例、代理操作規範與驗證方式均已整合於本文件尾部。機器可讀的欄位與 offset 位於 `data/game_schema.json`；精確 EXE／BCI bytes 位於 `docs/reverse-engineering/known-patches.md`。
 
-## 1. 證據與修改原則
+## 1. 新代理必讀與修改原則
 
-- **穩定**：程式路徑與 runtime 行為都已核對。
-- **靜態驗證**：bytes、格式、反編譯或 round-trip 已核對，但仍缺足夠遊戲測試。
-- **候選**：只能研究，不應由修改器自動寫入。
-- **已否決**：runtime 已證明錯誤或造成回歸；保留紀錄以防重新加入。
+### 1.1 新代理開始前必讀
+1. 唯一的即時工作區是本文件頂端的離線路徑。舊的 OneDrive 路徑只可當歷史背景，不能作為讀寫目標。
+2. 先執行 `Get-Location`。部分沙箱會忽略含中文的 `cwd`，實際從 `C:\` 開始；不要在根目錄做遞迴搜尋。
+3. 先執行 `git status --short --ignored` 和 `git diff`。工作樹可能已有使用者或其他代理的變更，禁止任意覆寫。
+4. Git 若回報 dubious ownership，使用一次性的 `git -c safe.directory=... -C ...`，不要改全域設定。
+5. 修改任何遊戲檔前，必須確認所選路徑內存在 `Against_Rome.exe`。僅有「目錄存在」不足以證明它是遊戲根目錄。
+6. 不得把未知 EXE 位元組、未知 BCI opcode、Ghidra 自動命名的 `FUN_*`，寫成已證實語意。
+7. 不得弱化回復保護。遇到缺少原版基線、未知 patch state 或不安全 ZIP 路徑時，應停止並清楚報錯。
+8. 每個新補丁至少要有：原始值、修改值、狀態偵測、回復方式、版本／長度防護、失敗時 rollback、文件與 schema 同步。
+
+### 1.2 證據等級定義
+本專案文檔與開發使用以下語意；不要混用：
+- **穩定／已實機驗證**（Stable）：程式路徑與遊戲行為都有證據。
+- **靜態驗證**（Static Verified）：位元組、反編譯、檔案結構或 round-trip 已核對，但缺少足夠的長時間實機測試。
+- **候選**（Candidate）：有合理的資料流或格式證據，只能讀取／研究，不應由修改器自動寫入。
+- **舊版相容狀態**：目前不再產生，但偵測和回復必須保留。
+- **已否決**（Rejected）：實機結果證明假設錯誤或造成回歸。保留精確紀錄是為了防止再次加入。
+- **未知**（Unknown）：位元組或資料不符合任何已知狀態。必須保留原檔並警告，不得強寫。
 - Ghidra 的 `FUN_*` 只是導航點，必須有 call path、資料流、字串註冊或實機證據，才能命名其意義。
 - 每個寫入功能必須能偵測原版／目前版／舊版／未知狀態，且有明確回復路徑。
 
@@ -101,6 +115,10 @@ commit 後要先 Dispose／清空 rollback scope，再更新 UI；UI refresh 例
 
 原版／平衡數值先形成 fallback，自訂 preset 再逐欄覆蓋。舊版短 preset 只覆蓋存在的欄位；缺欄位繼承 fallback。不支援 spell radius 的單位，第 9 欄固定為 0。
 
+內建平衡層由 `TroopConfig.BalancedUnitStats` 直接保存全部 43 個兵種的九項最終值：`HP,Dmg,VW,AW,Speed,Sight,Relt,Range,SpellRadius`。啟用平衡後不得再套用通用階級矩陣、盾牌、雙手武器或兵種類型倍率。靜態初始化會檢查平衡表與 `UnitMeta` 數量一致，且 `UnitOrder` 中每個兵種都有完整九欄。
+
+設計方向：羅馬整體素質最強；條頓近戰輸出最高；塞爾特步兵防禦與步行遠程最強，投石兵採高單發傷害；匈奴騎兵最強，弓騎兵採低單發、高射速。步兵、騎兵與領主維持相同移動速度。精確數值以 `BalancedUnitStats` 為唯一來源。
+
 ### 6.2 人口建築容量 20 倍
 
 - 對原版 `wohnwer > 0` 的所有 row 生效；已觀察到 22 rows。
@@ -178,10 +196,12 @@ commit 後要先 Dispose／清空 rollback scope，再更新 UI；UI refresh 例
   在定居前就撤退）。
 - 死亡確認計數（`0x1068C`）：20 → 3 個連續 tick（村莊、領袖、村民、成員
   全滅的確認去彈跳）。
-- active-party limit：4 → 8。
+- 軍事增援部隊數門檻：4 → 40（`s_searchTeamUnits(team) < 40`）；這不是電腦玩家數上限。舊版的 8 可辨識並於下次套用遷移。
 - completed-job recycle：0 → 1。
+- 增援捐贈公式維持原版；`v56[party]` 撤退配額由 `[90,15]` 改為 `[66,0]`，使整個 type-5 增援黨團移交村莊而不撤退。此補丁必須與門檻 40 同步套用及還原；先前只改配額、門檻仍為 8 的組合會在約一波後停止增援。
 - gate 保持原版 `66,0`。
-- 只把前三個軍事增援 polling loops 改為 `5000..10000 ms`；其他 loops 回原始範圍。
+- 六個 AI 排程延遲點全部改為 `5000..10000 ms`。前三個是內層突襲計時器；後三個是外層排程的初始與更新範圍，會直接限制呼叫定居／軍事增援生成器的 dispatcher。後三個若維持原版 60–240 秒，即使前三個已加速，AI 出場仍會變慢。曾測試 `1000..2000 ms`，實機出現電腦不再重生，因此已否決；該暫行狀態可辨識並自動遷回 5–10 秒。
+- 定居生成器的 default 與 0/1/2/3 現存政黨分支機率都改為 101，使有合格隊伍時必定觸發。單人模式的 occupied mask 固定保護玩家 team 0，`pickTeam` 只會從尚未占用的 CPU team 1–7 選擇，因此結果上限是玩家加 7 個電腦（共 8 隊），且不會重複建立已占用隊伍。
 - 聚落模板：`MAPS/ENDL_*/Endlos_*_Siedlung*.sdl`（解壓後為 INI 文字）主建築
   （namedef 含 `_Haupt`；羅馬為 `Hauptzelt`）的 `resv` 由 `0,0,0,0,0,0` 改為
   `614,300,372,250,460,288`（各欄取原版戰役 AI 聚落實測最大值），加速村莊型
@@ -193,9 +213,27 @@ commit 後要先 Dispose／清空 rollback scope，再更新 UI；UI refresh 例
 
 `ak_haupthaus.bci` 的轉換人數修改（`0x3FCC` 處 `[81,59] -> [66,20]`，特徵碼唯一命中）已重新啟用並跟隨 AI Ultimate 開關：`s_createBattleUnitsMax` 的最後一個引數由「推入變數 59」改為「推入常數 20」。EXE 端實作 `FUN_005249d0` 證實該引數是每支戰鬥部隊的成員數（EXE 鉗制 0..20），且每次呼叫會收集最多 100 名閒置村民、按此人數分批全部轉換（一批 = 一支部隊）。實際運行時原版值為 6，即玩家觀察到的 6 人小隊。玩家手動轉換 UI 是否受影響仍需一次實機回歸驗證。
 
-2026-07-01 曾從 `ESAVE_000`／`ENDL_002` 的 `CLAK\scr.dat` 取出內嵌 `ak_level`，與 live BCI 做 exact SHA-256 比對，兩者相同。2026-07-02 的存檔證據（所有參戰隊伍 `npcActive=0`、全部 NPC job slots 空閒、`0x17F38` 已為 5000 仍無人復活）推翻了「`0x17F38` 是村落型重生計時」的舊解讀：該位置實為 type-5 處理器的 RETREAT_INIT 期限。2026-07-02 完整解碼 `ak_level.bci` 政黨狀態機後確認：擊敗後復活的真正流程是「IDLE 狀態每 tick 偵測村莊中心 → 死亡確認計數 → RETREAT 鏈 → v61 期限到期 → DELETE_PARTY 釋放槽位 → 生成器（80/60/40/20% 依現存數）補發新到達 → 重新定居 → ak_npc `s_setNPCActive(team,1)` 重新啟用」。原版瓶頸是六處 10 分鐘期限與 20-tick 確認；AI Ultimate 現在把六處期限全改 5 秒、確認改 3 tick。`ak_npc.bci` 的重新啟用路徑為原生內建，無須修改；存檔檔案一律不碰。舊啟用狀態（僅 `0x17F38` 為 5000 或全部 600000、counter 20）視為 legacy-enabled，下次套用時自動遷移。
+2026-07-03 修正：實機測試顯示僅改 `ak_haupthaus` 後 AI 轉換仍為 6 人。追查確認該呼叫位於 `var57 == 34`（CIVRECREATE_WAIT）分支，只在軍事增援重建鏈觸發；村莊型 AI 日常的「村民轉部隊」實際走 `Dorfverteidigung.bci` 的四個 `s_addNPCJob_createUnit(team, 1, type∈{1,2,6,3}, 0, 0, 6, 6, 1, 0)` 呼叫（pushsym 位於解壓後 `0xF1BC/0xF264/0xF30C/0xF3B4`）。引數 6/7 是每支部隊的成員數下限/上限（job `+0x11/+0x12`；arg2=1 時 EXE 鉗制 1..20），EXE job 執行器（約 `00548700`）按該範圍收集閒置村民後呼叫 `FUN_00523a00` 一次——一個 job 產生一支 N 人部隊。這同時證實 `ak_level.bci` 軍事 job 的 `4..4 -> 20..20` 是每隊成員數而非部隊數。AI Ultimate 現在以特徵碼 `[66,0, 66,1, 66,?, 66,?, 66,0, 66,0, 66,?, 66,1, 90,8, 128,157, 73,-9, 86]`（強制恰好 4 處命中）把八個字面值 `6 -> 20`，還原時改回 6。已於 2026-07-03 實機驗證：套用後村莊型 AI 確實一次轉換 20 名村民為一支部隊。
+
+2026-07-01 曾從 `ESAVE_000`／`ENDL_002` 的 `CLAK\scr.dat` 取出內嵌 `ak_level`，與 live BCI 做 exact SHA-256 比對，兩者相同。2026-07-02 的存檔證據（所有參戰隊伍 `npcActive=0`、全部 NPC job slots 空閒、`0x17F38` 已為 5000 仍無人復活）推翻了「`0x17F38` 是村落型重生計時」的舊解讀：該位置實為 type-5 處理器的 RETREAT_INIT 期限。2026-07-02 完整解碼 `ak_level.bci` 政黨狀態機後確認：擊敗後復活的真正流程是「IDLE 狀態每 tick 偵測村莊中心 → 死亡確認計數 → RETREAT 鏈 → v61 期限到期 → DELETE_PARTY 釋放槽位 → 定居生成器補發新到達 → 重新定居 → ak_npc `s_setNPCActive(team,1)` 重新啟用」。原版瓶頸是六處 10 分鐘期限、20-tick 確認與機率等待；AI Ultimate 把六處期限全改 5 秒、確認改 3 tick，並在仍有合格 CPU team 1–7 時讓定居生成必定觸發。`ak_npc.bci` 的重新啟用路徑為原生內建，無須修改；存檔檔案一律不碰。舊啟用狀態（原始生成機率、只加速前三個排程點，或 Gemini 暫行版把六個 loops 全部加速）視為 legacy-enabled；下次套用時遷移為必定生成，並把六個有界排程延遲全部設為 5–10 秒。
 
 目前仍需五張 ENDL 地圖的長時間 late-wave regression test；短期成功不能標成完整 runtime verified。
+
+2026-07-03 現場診斷紀錄：目前 `ESAVE_002` 是 `ENDL_002`，存檔時間為
+11:04:54；五張 live `ak_level.bci` 約在 11:18:13 才重新寫入，因此存檔早於
+最後一次套用。`CLAK\scr.dat` 內嵌腳本雖已有軍事 cooldown 5000、六處撤退期限
+5000、死亡確認 3 tick、recycle 1、count 20、門檻 8、gate `66,0` 與六個生成
+機率 101，但前三個 polling loops 仍是已否決的 `1000..2000 ms`。此狀態已知會
+讓電腦重生停滯；套用程式不會回寫既有存檔的內嵌腳本，所以舊局不能拿來驗收
+5–10 秒修正版。
+
+同次唯讀檢查發現 live `ENDL_002` 解壓 payload 與存檔不相同（save SHA-256
+`4dd021f2f86336e6fc61a269c677ef7403cad833494d467c8fe1cd5580f771a2`；live
+SHA-256 `49839eb76743893b879be201c729c8104c09415acccc29928fbcea29eee02429`），相差
+42,885 bytes，且 live payload 無法通過正常 BCI opcode／特徵碼結構辨識。即使它
+可自我 decompress→compress→decompress 相等，也只代表能重現既有異常資料，
+不代表遊戲相容。下一步必須先用可信原版基線還原五張 live 腳本、重新套用並逐張
+解壓驗證特徵碼，之後開新無盡局測試；禁止直接修改存檔 `CLAK\scr.dat`。
 
 ## 11. EXE 補丁
 
@@ -224,6 +262,86 @@ commit 後要先 Dispose／清空 rollback scope，再更新 UI；UI refresh 例
 - `0x0d722c`, `0x0d723b`
 
 現行程式不再寫入舊 `07` bytes，只偵測並還原。3x 建造範圍與紅框同步已完成實機驗證確認。
+
+### 11.3 法術免除祭壇數量需求
+
+- 祭司解鎖四個法術對獻祭所（祭壇，`OD_BAUOPF`）數量的限制位於 `FUN_0044a010` (VA `0x0044a010`)。
+- 該限制為硬編碼於 EXE 的 `cmp esi, N` 指令位元組，其中 N 為 1、2、3、4。
+- 修改方案是將這 12 處（3 陣營 × 4 法術） cmp 指令的第 3 個位元組（立即數）修改為 `0x00`，即完全免除祭壇數量限制。
+- 檔案偏移量 (File Offsets)：
+  - 條頓 (`FigGerPri00`): `0x4A112` (法術 1), `0x4A136` (法術 2), `0x4A15A` (法術 3), `0x4A0E3` (法術 4)
+  - 塞爾特 (`FigKelPri00`): `0x4A1CC` (法術 1), `0x4A293` (法術 2), `0x4A2B7` (法術 3), `0x4A249` (法術 4)
+  - 匈奴 (`FigHunPri00`): `0x4A329` (法術 1), `0x4A3F0` (法術 2), `0x4A414` (法術 3), `0x4A3A6` (法術 4)
+- 偵測機制：必須 12 處原始位元組完全匹配或修補位元組完全匹配；任何混合或未知狀態皆判定為 Unknown 並跳過，以確保還原與寫入安全性。
+
+## 12. 強制英文與語言回復
+
+強制英文開關是手動、預設關閉。語言 overlay 原版基線位於 `<gamePath>\.against-rome-modifier-language-backup`。
+
+回復合約：
+
+- overlay 存在且 baseline/manifest 缺失：中止並明確報錯。
+- baseline 完整：精確回復原檔。
+- 原版不存在的 overlay-only 檔案：回復時刪除。
+
+不得把 active `ToEng` 檔當成原版。真實安裝曾有 332 個 overlay 檔但無 baseline，而當時 `Backup.zip` 的 146 entries 不含這些目標。修復工具為 `tools/Repair-LanguageBackup.ps1`。
+
+## 13. 存檔與 VirtualStore
+
+唯一 live save root 是 `<gamePath>\SAVE`。Windows 在非提升狀態啟動舊遊戲時，可能把寫入導向 `%LOCALAPPDATA%\VirtualStore\Program Files (x86)\Against Rome\SAVE`；修改器本身要求管理員並把遊戲 `WorkingDirectory` 設為所選根目錄，但外部非提升捷徑仍可能重建 VirtualStore。
+
+ZIP 備份先建立 `.tmp`，加入修改器產生的 `manifest.json`，成功後再 move。ZIP entry 禁止 absolute path、leading slash 與 `..` traversal。存檔 restore 成功後先 commit，再清理 staging；cleanup 失敗只記錄。
+
+## 14. dgVoodoo2
+
+修改器內嵌 x86 `D3D8.dll`、`DDraw.dll`、`dgVoodooCpl.exe`、`dgVoodoo.conf`。它不下載 runtime dependency，也不覆蓋非受管 DLL。遊戲根目錄的 manifest 記錄受管檔與 hash；使用者改過的受管檔不會被無聲刪除。來源、版本與 SHA-256 見 `ThirdParty/dgVoodoo2/REDISTRIBUTION.md`。
+
+## 15. UI 與 preset
+
+- `mainTabControl` 的 header 故意隱藏，左側按鈕負責導航。
+- `StyleNavButton` 綁定前必須先建立對應 `TabPage`。
+- `pnlNumericCard`（系統）、`pnlSwitchesCard`（資源）與 `pnlBuildCard`（建設）是核心開關區，手工座標為三欄並排，修改或新增開關時需注意各卡片手工座標定位。
+- `pnlTipsCard` 指南卡片拆分為左右雙欄，左半部 `lblTipsContent` 顯示操作指引，右半部 `lblTipsDetail` 顯示功能詳細說明，以避免說明文字過長導致的高度截斷問題。
+- 新 toggle 必須同步 UI field、localization、apply、restore、state detection 與文件。
+- 移除舊有的 `.arpreset` 全域設定檔匯入／匯出功能，改由一鍵「所有功能開啟」與「所有功能關閉」按鈕控制所有開關狀態。
+- `.artroop` 目前有 9 個屬性；舊短格式缺欄位時使用 fallback。
+
+## 16. 逆向工程工作流
+
+查詢順序：
+
+1. `docs/reverse-engineering/`
+2. `data/game_schema.json`
+3. `re_workspace/ghidra_inventory/against_rome_function_index.csv`
+4. `re_workspace/ghidra_inventory/against_rome_decompiled_functions.c`
+5. 必要時新增 focused script 到 `tools/re/`
+
+`re_workspace/` 是本機證據與產物，禁止上傳；`tools/re/` 的可重現 scripts 可以公開。完整反編譯不等於取得原始碼，不能還原原始識別字、註解或 build system。
+
+## 17. 未完成項目
+
+- AI Ultimate 五張 ENDL 地圖的長時間回歸。
+- `apt.dat` 的安全格式與用途。
+- BCI opcode 的完整解碼。
+- `[volkres]` 多個 candidate 欄位。
+- 自動化測試；目前主要依賴 build、schema、round-trip、bytes 與實機驗證。
+- 公開發佈前的頂層 `LICENSE` 決策。
+
+## 18. 驗證
+
+基本驗證：
+
+```powershell
+dotnet build .\AgainstRomeModifier.csproj -c Release --no-restore
+Get-Content .\data\game_schema.json -Raw | ConvertFrom-Json | Out-Null
+git diff --check
+```
+
+依修改類型追加：
+
+- PFIL：壓縮／解壓 round-trip。
+- `objdef.dau`：解壓長度完全相等、短 row bounds。
+- 偵測機制：必須 12 處原始位元組完全匹配或修補位元組完全匹配；任何混合或未知狀態皆判定為 Unknown 並跳過，以確保還原與寫入安全性。
 
 ## 12. 強制英文與語言回復
 
@@ -302,3 +420,107 @@ git diff --check
 不得提交：原始遊戲資料、`Backup.zip`、`MAPS/`、`SYSTEM/`、`SAVE/`、`ToEng/`、原始遊戲封存、本機語言 baseline、`.codex/`、`.agents/`、`re_workspace/`、內部 AI 稽核、工具下載 cache。
 
 可以提交：C# source、README、技術文件、schema、`tools/re/` scripts、已記錄來源與 hash 的 dgVoodoo2 檔。未獲使用者明確要求時，不 commit、不 push、不 rewrite history、不 force-push；本 repo 也不應使用 `git push --mirror`。
+
+## 20. 建議的代理工作順序
+
+1. 讀本文件（`TechDoc.md`）與 `data/game_schema.json`。
+2. 讀特定功能對應的 `docs/reverse-engineering/*` 說明文件。
+3. 檢查工作樹差異，分離既有變更與新開發的變更。
+4. 以穩定識別字定位代碼位置，不要過度依賴歷史行號。
+5. 在撰寫變更前，先明確定義：原始 state 匹配、目標 state、unknown state 的安全拒絕行為、以及 restore 的還原方式。
+6. 保持小步前進與局部修改；不要在無關區域進行大範圍重構。
+7. 跑與所改區域風險相稱的 build、schema、round-trip、或 byte/state 比對測試。
+8. 變更完畢後，同步更新代碼、README、技術文件、補丁細節與 schema。
+9. 最後提交前重新審視 diff，確保沒有覆寫使用者現有工作。
+
+## 21. 歷史除錯案例與正確處理方式
+
+| 症狀 | 根因 | 錯誤處理 | 正確處理 |
+|---|---|---|---|
+| 命令從 `C:\` 掃描並大量 access denied | 中文 cwd 未被沙箱採用 | 繼續進行盲目的全域遞迴搜尋 | `Get-Location`、使用絕對/完整路徑、`git -C`、直接定位目標檔 |
+| Git 回報 dubious ownership | sandbox user 與 repo owner 不同 | 修改全域 safe.directory 設定 | 單次使用 `-c safe.directory=...` 參數 |
+| Build 讀不到 NuGet.Config | sandbox 權限限制 | 認定 C# 專案損毀 | 先用 `--no-restore` 建置；必要時核准讀取使用者設定 |
+| UI 效果不顯示 | 初始化順序導致 null page | 刪除「看似沒用」的 styling 設定 | 先查 UI 建立順序與事件 wiring |
+| Toggle 又自動變回 live 狀態 | constructor 與 load path 同時寫 Checked | 只修改單一地方 | 同時檢查初始化、event、`LoadCurrentData`、以及 preset 相互干擾 |
+| 免費模式仍有錯誤退還 | 成本與退還欄位重疊 | 只清 obvious cost 或清掉 19..24 欄 | 用原版資料核對完整欄位分組並保留 equipment refund (19..24) |
+| AI 前期正常、後期不補兵 | 20-slot NPC job table 耗盡 | 再提高 concurrency 或直接 bypass gate | 設定有界的 active=8、gate 恢復原值、實施 completed job recycle，並進行長時間測試 |
+| AI bytes 已改但玩家感覺沒變 | save 中已有排程／timer | 再次盲改 offsets 常數 | 比對 live BCI、save embedded BCI、與遊戲 runtime 排程狀態 |
+| 語言回復丟 InvalidOperationException | overlay 存在但原版 baseline 缺失 | 移除防護 guard 或直接將 overlay 檔案視為原版 | 保留 loud guard，重建並藉由雜湊驗證 baseline 正確性 |
+| 存檔 ZIP 半成品殘留 | 直接寫入正式 ZIP 檔案 | 捕捉例外後直接繼續 | 先將資料寫入 `.tmp` 暫存檔，完整建立後再 move/rename |
+| restore 後 cleanup 失敗導致整體回滾 | cleanup 程序在 commit 之前執行 | 把刪除 staging 當作核心交易 | 先進行 commit，再對 staging 目錄執行 best-effort cleanup |
+| 廣泛 source patch 套不上 | 亂碼／行尾／context 漂移 | 擴大 patch context 範圍 | 使用 ASCII 穩定識別字小範圍 patch，先用 `Select-String` 檢驗 |
+| 文件把候選當事實 | 只看到 Ghidra decompile | 直接命義並寫成 patch | 結合 call-path + bytes + runtime 證據分層記錄 |
+| `.gitignore` 有英文規則但遊戲檔仍出現 | 真實資料夾是本地化名稱 | 假設已忽略成功 | 對照實際 on-disk name 與 `git status --ignored` 的真實輸出 |
+
+## 22. 歷史修改時間線
+
+### 2026-06-22：免費生產與 Git 清理
+- 修正 `ress.ini` 生產／退還分組；保留 `FigTiePac00_Packpferd`。
+- 移除 healing 修改與 UI 敘述。
+- 發現 `.codex/`、`re_workspace/` 不應納入版本庫；保留可重現的 `tools/re/`。
+
+### 2026-06-23：UI、逆向資料庫、rollback 與初版 AI Ultimate
+- 移除已證實無引用的 UI helper；修正 sidebar highlight 初始化順序。
+- 建立 `docs/reverse-engineering/`、`data/game_schema.json` 與多個 Ghidra scripts。
+- 公開建置改為 `Backup.zip` optional，並支援從使用者安裝建立基線。
+- 修正 rollback commit/Dispose 語意、簡單逗號格式相容、weapon slot bounds。
+- 建立 AI Ultimate toggle，開始區分 `team.dat` 與 `ak_level.bci` 的責任。
+- 記錄騎乘村民／戰鬥單位 UI 計數不是單純資料欄位問題。
+
+### 2026-06-24 至 2026-06-25：AI active-limit 實驗與 UI 移動
+- 曾加入 active gate bypass；後續證明會導致隱藏資源耗盡，現在只保留遷移／回復紀錄。
+- balance toggle 移入核心開關區，保留原事件 wiring。
+- 針對「完整反編譯、DX12、大改架構」只做可行性評估；沒有把 Ghidra output 當原始碼。
+
+### 2026-06-27：dgVoodoo2 內嵌
+- 從下載／cache 構想改成建置時內嵌與受管 install/remove。
+- 建立所有權 manifest、衝突拒絕和使用者修改檔保護。
+
+### 2026-06-28：AI 晚期回歸、清理與回復強化
+- 找到 20-slot NPC job table 是 late-run stall 根因。
+- 改為 count 20、respawn 5s、active 8、gate 原值、job recycle。
+- 強化語言 baseline、存檔回復 commit 後清理與 dead-code 驗證。
+- 舊 checkout 當時移除過無效的 village-range UI；此結論已被後來 live checkout 的 setter patch 取代，不能拿來刪除現行功能。
+
+### 2026-06-29：路徑、VirtualStore、稽核交接
+- 確立 `<selected game path>\SAVE` 是唯一 live save root，並整理 VirtualStore 歷史存檔。
+- 稽核所有 write/delete path，補上 restore game-root 與 ZIP traversal guard。
+- 對 `CodeAuditReport.md` 的 AI claim 逐項查 code，只修已證實問題。
+- backup ZIP改用 temporary archive + generated manifest；避免 lock 內 logging。
+
+### 2026-06-30：搬移工作區、語言修復、村莊範圍與 GitHub 稽核
+- 唯一 live checkout 搬到離線中文路徑；舊 OneDrive 只留歷史參考。
+- 完成 332-file 語言 baseline 重建工具與 hash 驗證流程。
+- 村莊 setter 的 2x 實機路徑與紅色虛線框同步行為獲確認；舊四處 shift patch 正式列為 rejected。
+- 發現本地化原始遊戲資料夾約 1.42 GB、4623 files，必須保持 ignored/local-only。
+
+### 2026-07-01：2.5x、手動 toggle、人口容量、公開邊界與 save readback
+- setter trampoline 升級為 2.5x，保留 `Legacy2x` detection/migration；新倍率已完成實機確認。
+- balance toggle 不再重讀 live files；強制英文 toggle 改為 manual、default off。
+- 新增全 22 個正 `wohnwer` rows 的 20x switch，整合 preset/apply/restore/detection/docs。
+- AI Ultimate 移入 core switches，沒有改 patch 語意。
+- README／技術文件／ignore／dgVoodoo provenance 更新為公開發佈邊界。
+- 讀取 `ESAVE_000` 的 ENDL_002 embedded script，證明 save 與 live BCI exact match。
+
+### 2026-07-02：文件整合與既有重構核對
+- 發現 `TechDoc.md` 與兩個未追蹤摘要是亂碼，重建乾淨 UTF-8 中文技術文件。
+- 整合上述歷史為本手冊。
+- 核對既有 in-memory patch generation／stats layering 重構可編譯。
+- 明確記錄其不是完整跨檔原子交易，避免後續代理高估安全性。
+
+### 2026-07-02（第二次會談）：全欄位位元組級稽核、LICENSE、發佈清理
+- 以比對原版實機安裝與 `遊戲原始檔案\`，驗證修改器所寫的每個位置。
+- 獨立小工具進行 `DecompressPfil`→`CompressPfil` 驗證，對 `objdef.dau`、`ress.ini` 等所有關鍵檔做 round-trip，位元組完全相等。
+- 驗算村莊 setter 3x trampoline 的組語在 bytes 層級正確無誤。
+- 證實 `objdef.dau` 內確實有 22 個正值 `wohnwer` 行。
+- 掃描五張無盡地圖腳本，特徵碼全部命中且初始值正確。
+- MIT LICENSE 新增並推送。
+
+### 2026-07-02（第三次會談）：實機驗證建造速度與主堡倉庫存量 10 倍
+- 完成 `objdef.dau` 建造/升級/維修 10 倍加速，以及主堡與倉庫儲存量 10 倍的實機驗證。
+- 確認建造/升級時間縮小為 1/10，且修復速率相應提升 10 倍。
+- 確認主堡（Haupthaus）與倉庫（Lager）資源儲存上限正確提升 10 倍。
+
+### 2026-07-02（第四次會談）：將村莊建造範圍由 2.5 倍升級至 3 倍
+- 將村莊建造與紅框範圍補丁的組語乘數從 2.5 倍升級至 3 倍（LEA 縮放與 NOP 補齊）。
+- 更新狀態偵測列舉（Expanded3x）、語意字典與元數據。

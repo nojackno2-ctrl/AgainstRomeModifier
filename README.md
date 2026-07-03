@@ -7,11 +7,8 @@ an optional local `Backup.zip` is not present.
 
 ## Maintenance Documentation
 
-- [`TechDoc.md`](TechDoc.md): current Chinese technical specification.
+- [`TechDoc.md`](TechDoc.md): current Chinese technical specification (integrates the AI-agent handoff checklist, debugging history, failure cases, and verification steps at the end).
 - [`TechDoc_EN.md`](TechDoc_EN.md): current English technical specification.
-- [`docs/AI_AGENT_HANDOFF.md`](docs/AI_AGENT_HANDOFF.md): detailed AI-agent
-  handoff, debugging history, failure cases, safety contracts, and verification
-  checklists. New maintenance agents should read this first.
 - [`docs/reverse-engineering/`](docs/reverse-engineering/README.md): file
   formats, offsets, patch bytes, evidence, and the local Ghidra workflow.
 
@@ -34,9 +31,10 @@ research and personal modding project.
   vanilla script limit, recycles completed military reinforcement jobs for
   continuing waves, reduces the military reinforcement wait to 5 seconds, cuts
   the defeated-AI party retreat/cleanup deadlines from 10 minutes to 5 seconds
-  so eliminated computer players free their slot and arrive again quickly, and
-  raises the active-party limit to 8 while retaining bounded reinforcement
-  polling. Endless settlement templates also receive a reversible
+  so eliminated computer players free their slot and arrive again quickly,
+  raises the military-reinforcement unit threshold from 4 to 40, and transfers
+  the whole reinforcement party into the village instead of retreating while
+  retaining the original safety gate and bounded polling. Endless settlement templates also receive a reversible
   starting-resource boost; unsafe global CLAK production edits stay disabled.
 - Free construction, production, upgrades, and spell costs through `ress.ini`.
 - Unit stat editing for HP, damage, VW, AW, movement, sight, cooldown, range, and spell radius through `objdef.dau` and `cl_script.ini`.

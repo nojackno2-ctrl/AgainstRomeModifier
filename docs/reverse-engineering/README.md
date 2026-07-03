@@ -7,8 +7,7 @@ and patch code.
 
 ## Files
 
-- `../AI_AGENT_HANDOFF.md`: cross-feature maintenance chronology, failure cases,
-  safety contracts, and verification playbooks for future agents.
+- `../../TechDoc.md`: current Chinese technical specification, integrating the cross-feature maintenance chronology, failure cases, and safety contracts.
 - `file-formats.md`: compressed game files, wrappers, and encodings.
 - `endless-mode-ai.md`: endless AI spawn, timing, gate, job-slot, party
   lifecycle, and defeat-recovery findings.

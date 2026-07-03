@@ -12,8 +12,8 @@
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Remove="re_workspace\**\*.cs" />
-    <Compile Remove="scratch\**\*.cs" />
+    <Compile Remove="re_workspace\**" />
+    <Compile Remove="scratch\**" />
     <EmbeddedResource Include="Backup.zip" Condition="Exists('Backup.zip')" />
     <EmbeddedResource Include="TechDoc.md" LogicalName="TechDoc.md" />
     <EmbeddedResource Include="TechDoc_EN.md" LogicalName="TechDoc_EN.md" />
