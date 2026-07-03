@@ -206,7 +206,7 @@
           "status": "static-state-verified-long-duration-runtime-test-pending"
         },
         "PartyRetreatDeadlines": {
-          "meaning": "Per-party-handler 'v61[party] := s_getTime() + N' retreat/cleanup deadlines. The endless level script only frees a defeated team's party slot after this deadline expires; a free slot is what lets the spawner send a new arrival for that team, which re-establishes the village/camp and makes ak_npc reactivate the team via s_setNPCActive.",
+          "meaning": "Per-party-handler 'v61[party] := s_getTime() + N' retreat/cleanup fallback deadlines. DELETE_PARTY can be reached when handler cleanup conditions complete or when the fallback expires. Settled-party states 51/52 must be allowed to wait for old-village and palisade teardown before the team slot is reused.",
           "bciWordSignature": "[81,61, 90,-3, 128,83, 86, 66, <delayMs>, 32, 44, 164]",
           "signatureExclusions": [
             "Initial-arrival timeout after party creation (same prefix, no word 44 before the array write; decompressed 0x07F24; must stay 600000 or arrivals break).",
@@ -214,9 +214,17 @@
           ],
           "decompressedLiteralOffsets": ["0x10700", "0x119C0", "0x12FFC", "0x13FE8", "0x160EC", "0x17F38"],
           "originalDelayMs": 600000,
-          "ultimateDelayMs": 5000,
-          "history": "0x17F38 was previously misclassified as a village-defeat respawn timer; it is the type-5 handler's RETREAT_INIT deadline. Save evidence (ESAVE_000/ENDL_002 2026-07-02) disproved the respawn interpretation: teams stayed npcActive=0 with all job slots free even with 0x17F38 = 5000.",
-          "migration": "The previous single-site 5000-ms state (0x17F38 only) is accepted as legacy-enabled and migrated to all six sites on the next apply.",
+          "ultimateDelayMsByOffset": {
+            "0x10700": 600000,
+            "0x119C0": 5000,
+            "0x12FFC": 5000,
+            "0x13FE8": 5000,
+            "0x160EC": 600000,
+            "0x17F38": 5000
+          },
+          "settledCleanupBarrierOffsets": ["0x10700", "0x160EC"],
+          "history": "0x17F38 was previously misclassified as a village-defeat respawn timer. A later all-six-at-5000 build forced settled parties through DELETE_PARTY before old-village cleanup completed; ESAVE_000 on 2026-07-03 showed team 3 active with 71 stale village records and the old base coordinate (1632,5792).",
+          "migration": "Previous enabled states with one, none, or all six deadlines at 5000 ms are accepted as legacy-enabled and migrated to four accelerated non-settlement sites plus two protected settlement-cleanup sites.",
           "status": "static-analysis-verified-runtime-test-pending"
         },
         "DeadPartyDebounceTicks": {
@@ -228,7 +236,7 @@
           "status": "static-analysis-verified-runtime-test-pending"
         },
         "DefeatRecoveryChain": {
-          "meaning": "How a defeated endless AI team returns: settled party's IDLE state detects the missing village center every tick; after DeadPartyDebounceTicks it enters RETREAT with a PartyRetreatDeadlines deadline; on expiry the party reaches DELETE_PARTY (256), its slot is freed (v47 type cleared), the occupied-team mask recomputes (fn 0x81E8: base | teams of live party slots), the team becomes eligible in pickTeam (~occupied & tribeMask & cpuMask), and the Siedler spawner sends a new arrival which settles and reactivates the team's NPC AI via ak_npc s_setNPCActive(team, 1). AI Ultimate makes that spawn roll unconditional while an eligible CPU team 1-7 exists.",
+          "meaning": "How a defeated endless AI team returns: the settled party's IDLE state detects the missing village center, then enters RETREAT after DeadPartyDebounceTicks. States 51/52 wait for cleanup completion or their fallback deadline before DELETE_PARTY (256) frees the slot. The occupied-team mask then recomputes, pickTeam can select the team again, and the Siedler spawner sends a new arrival that settles and is reactivated by ak_npc. AI Ultimate makes the spawn roll unconditional but must not bypass settled-village cleanup.",
           "notPatched": [
             "ak_npc.bci: reactivation is built-in (village exists && !NPCActive -> state 1 -> s_setNPCActive(team, 1)); no changes needed.",
             "Save files are never modified.",
@@ -267,6 +275,23 @@
             "Decompress and verify the complete expected signature and target-value set in all five maps.",
             "Start a fresh endless game for runtime acceptance; never rewrite saved CLAK/scr.dat."
           ]
+        },
+        "RuntimeIncident20260703VillageCleanup": {
+          "status": "code-fixed-fresh-runtime-test-pending",
+          "saveSlot": "ESAVE_000",
+          "map": "ENDL_002",
+          "evidence": {
+            "gameTimeMs": 2497671,
+            "team": 3,
+            "npcActive": 1,
+            "retainedVillageRecords": 71,
+            "retainedVillageBaseCoordinate": [1632, 5792],
+            "embeddedRetreatDeadlineMs": [5000, 5000, 5000, 5000, 5000, 5000],
+            "observedBehavior": "The team resettled before its old palisades and village registry cleared, so villagers continued targeting the old village location."
+          },
+          "rootCause": "The prior AI Ultimate target shortened both settled-party state-51/52 fallback deadlines to 5000 ms, allowing the timeout path to force DELETE_PARTY before engine village cleanup completed.",
+          "fix": "Keep settled-handler offsets 0x10700 and 0x160EC at 600000 ms; accelerate only the four non-settlement deadlines. Recognize the prior all-six-at-5000 state as legacy-enabled and migrate it on Apply.",
+          "acceptance": "Start a fresh endless game, defeat a settlement AI for multiple cycles, and confirm old walls and village records clear before each respawn. Never rewrite the embedded save script."
         }
       },
       "villageEconomy": {

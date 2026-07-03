@@ -153,8 +153,9 @@ endless maps inspected.
   EXE to `1..20`.
 - The modifier option `AI終極模式` changes this military count range to
   `20..20`, changes the military reinforcement wait from `180000` ms to
-  `5000` ms, shortens the six per-handler party retreat/cleanup deadlines from
-  `600000` ms to `5000` ms (see "Party lifecycle" below), cuts the dead-party
+  `5000` ms, shortens four non-settlement party retreat deadlines from
+  `600000` ms to `5000` ms while preserving both settlement-cleanup fallbacks
+  at `600000` ms (see "Party lifecycle" below), cuts the dead-party
   confirmation counter from `20` to `3` ticks, and raises the reinforcement
   unit-count threshold at `0x195F8` from `4` to `40`.
   It also changes the last `s_addNPCJob_createUnit` argument at `0x17B1C` from
@@ -208,10 +209,10 @@ chain, 256 DELETE_PARTY, 257 DELETE_TEAM.
   all gone, a consecutive-failure counter (literal `20` at decompressed
   `0x1068C`) sends the party into the RETREAT chain with
   `v61[party] := s_getTime() + 600000`.
-- The RETREAT chain only reaches DELETE_PARTY (256) after the `v61` deadline
-  expires (a wiped team has no units left to walk home, so the deadline is the
-  only exit). Slot release then frees the team for the spawners, a new arrival
-  settles, and `ak_npc.bci` reactivates the team (see below).
+- The RETREAT chain reaches DELETE_PARTY (256) when its cleanup condition
+  completes or its `v61` fallback deadline expires. In the settled-party
+  handlers, states 51/52 wait on village/palisade teardown state; the deadline
+  is not the normal fast path.
 - The six retreat/cleanup deadline literals share the BCI word signature
   `[81,61, 90,-3, 128,83, 86, 66, <ms>, 32, 44, 164]` at decompressed value
   offsets `0x10700`, `0x119C0`, `0x12FFC`, `0x13FE8`, `0x160EC`, `0x17F38`.
@@ -219,11 +220,17 @@ chain, 256 DELETE_PARTY, 257 DELETE_TEAM.
   at `0x7F24` (no `44` word; must stay `600000` or arrivals would retreat
   before settling) and the military reinforcement wait at `0x178E0` (followed
   by `pushlit 34` = CIVRECREATE_WAIT; patched separately).
+- AI Ultimate accelerates only `0x119C0`, `0x12FFC`, `0x13FE8`, and `0x17F38`
+  to `5000`. Settled-handler sites `0x10700` and `0x160EC` remain `600000`.
+  The previous all-six-at-5000 state forced DELETE_PARTY before the old village
+  registry and palisades were cleared. A 2026-07-03 `ESAVE_000` snapshot showed
+  team 3 active again while retaining 71 old village records and the old
+  village base coordinate `(1632,5792)`; villagers then targeted that old site.
+  Apply accepts the all-six state only for migration to the mixed target.
 - `0x17F38` is therefore the type-5 handler's RETREAT_INIT deadline, NOT a
   "village defeat respawn timer". The 2026-07-02 save read (teams stuck at
   `npcActive=0` with all job slots free while `0x17F38` was already `5000`)
-  disproved the old interpretation; the stall was the five other handlers'
-  10-minute deadlines plus the 20-tick confirmation counter.
+  disproved the old interpretation.
 - `ak_npc.bci` needs no patch for reactivation: its per-team state machine
   already calls `s_setNPCActive(team, 1)` (call site `0x30F4`) whenever a
   healthy village exists for an inactive team, and `s_setNPCActive(team, 0)`

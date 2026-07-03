@@ -30,8 +30,9 @@ research and personal modding project.
 - Endless-mode AI Ultimate Mode, which raises the mass-army spawn count to the
   vanilla script limit, recycles completed military reinforcement jobs for
   continuing waves, reduces the military reinforcement wait to 5 seconds, cuts
-  the defeated-AI party retreat/cleanup deadlines from 10 minutes to 5 seconds
-  so eliminated computer players free their slot and arrive again quickly,
+  four non-settlement party retreat deadlines from 10 minutes to 5 seconds,
+  and preserves the two settlement cleanup fallbacks at 10 minutes so an old
+  village and its palisades finish clearing before that team slot is reused,
   raises the military-reinforcement unit threshold from 4 to 40, and transfers
   the whole reinforcement party into the village instead of retreating while
   retaining the original safety gate and bounded polling. Endless settlement templates also receive a reversible

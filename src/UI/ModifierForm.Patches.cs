@@ -152,12 +152,17 @@ namespace AgainstRomeModifier {
             ("ak_zivilverband", 87),
         };
         private const int EndlessAiOriginalMilitaryRespawnDelayMs = 180000;
-        // Per-handler party retreat/cleanup deadline (v61[party] := getTime() + N).
-        // The endless level script only frees a defeated team's party slot after
-        // this deadline expires, and only a free slot lets the spawner send a new
-        // arrival for that team. Six sites, one per party-type handler.
+        // Per-handler party retreat/cleanup fallback deadline
+        // (v61[party] := getTime() + N). There are six sites, one per handler.
+        // The settled-party handlers are indexes 0 and 4 in scan order. Their
+        // deadlines must stay at the original 10 minutes: states 51/52 normally
+        // wait for the engine to finish removing the old village/palisade state.
+        // Shortening those two fallbacks to 5 seconds can force DELETE_PARTY,
+        // respawn the same team, and leave NPC villagers targeting the old village.
         private const int EndlessAiOriginalRetreatDeadlineMs = 600000;
         private const int EndlessAiRetreatDeadlineSiteCount = 6;
+        private const int EndlessAiSettledRetreatDeadlineSiteCount = 2;
+        private const int EndlessAiAcceleratedRetreatDeadlineSiteCount = 4;
         // Consecutive no-living-members ticks before a settled party with a
         // destroyed village enters its retreat/cleanup chain.
         private const int EndlessAiOriginalDeadPartyDebounceTicks = 20;
@@ -2044,6 +2049,20 @@ namespace AgainstRomeModifier {
             return results;
         }
 
+        private static bool IsEndlessSettledRetreatDeadlineSite(int siteIndex) {
+            // Ascending scan order maps to value offsets:
+            // 0x10700, 0x119C0, 0x12FFC, 0x13FE8, 0x160EC, 0x17F38.
+            // Indexes 0 and 4 belong to the two settled-party handlers.
+            return siteIndex == 0 || siteIndex == 4;
+        }
+
+        private static int GetEndlessRetreatDeadlineTargetMs(int siteIndex, bool enabled) {
+            if (!enabled || IsEndlessSettledRetreatDeadlineSite(siteIndex)) {
+                return EndlessAiOriginalRetreatDeadlineMs;
+            }
+            return EndlessAiUltimateRespawnDelayMs;
+        }
+
         /// <summary>
         /// 找出定居型政黨（Siedler 處理器）的「連續無存活成員」去彈跳計數字面值。
         /// 村莊、領袖、村民全滅後需連續 N 個 tick 確認才進入撤退鏈。
@@ -2817,13 +2836,20 @@ namespace AgainstRomeModifier {
                     return false;
                 }
 
-                int ultimateDeadlines = 0;
+                int acceleratedDeadlines = 0;
+                int protectedSettledDeadlines = 0;
                 int originalDeadlines = 0;
-                foreach (int offset in retreatDeadlineOffsets) {
+                for (int siteIndex = 0; siteIndex < retreatDeadlineOffsets.Count; siteIndex++) {
+                    int offset = retreatDeadlineOffsets[siteIndex];
                     int value = BitConverter.ToInt32(decomp, offset);
-                    if (value == EndlessAiUltimateRespawnDelayMs) ultimateDeadlines++;
-                    else if (value == EndlessAiOriginalRetreatDeadlineMs) originalDeadlines++;
-                    else return false;
+                    if (value == EndlessAiUltimateRespawnDelayMs) {
+                        if (!IsEndlessSettledRetreatDeadlineSite(siteIndex)) acceleratedDeadlines++;
+                    } else if (value == EndlessAiOriginalRetreatDeadlineMs) {
+                        originalDeadlines++;
+                        if (IsEndlessSettledRetreatDeadlineSite(siteIndex)) protectedSettledDeadlines++;
+                    } else {
+                        return false;
+                    }
                 }
                 int debounceTicks = BitConverter.ToInt32(decomp, debounceOffset);
                 if (debounceTicks != EndlessAiOriginalDeadPartyDebounceTicks &&
@@ -2848,7 +2874,8 @@ namespace AgainstRomeModifier {
                     countMax == EndlessAiUltimateMilitaryCount &&
                     autoRecycleCompletedJob == EndlessAiUltimateAutoRecycleCompletedJob &&
                     militaryRespawnDelay == EndlessAiUltimateRespawnDelayMs &&
-                    ultimateDeadlines == EndlessAiRetreatDeadlineSiteCount &&
+                    acceleratedDeadlines == EndlessAiAcceleratedRetreatDeadlineSiteCount &&
+                    protectedSettledDeadlines == EndlessAiSettledRetreatDeadlineSiteCount &&
                     debounceTicks == EndlessAiUltimateDeadPartyDebounceTicks &&
                     activeLimit == EndlessAiUltimateActivePartyLimit &&
                     retreatQuotaState == 1 &&
@@ -2922,9 +2949,6 @@ namespace AgainstRomeModifier {
             int targetMilitaryRespawnDelayMs = enabled
                 ? EndlessAiUltimateRespawnDelayMs
                 : EndlessAiOriginalMilitaryRespawnDelayMs;
-            int targetRetreatDeadlineMs = enabled
-                ? EndlessAiUltimateRespawnDelayMs
-                : EndlessAiOriginalRetreatDeadlineMs;
             int targetDebounceTicks = enabled
                 ? EndlessAiUltimateDeadPartyDebounceTicks
                 : EndlessAiOriginalDeadPartyDebounceTicks;
@@ -3001,7 +3025,9 @@ namespace AgainstRomeModifier {
                     changed = true;
                 }
 
-                foreach (int offset in retreatDeadlineOffsets) {
+                for (int siteIndex = 0; siteIndex < retreatDeadlineOffsets.Count; siteIndex++) {
+                    int offset = retreatDeadlineOffsets[siteIndex];
+                    int targetRetreatDeadlineMs = GetEndlessRetreatDeadlineTargetMs(siteIndex, enabled);
                     if (BitConverter.ToInt32(decomp, offset) != targetRetreatDeadlineMs) {
                         WriteBciInt32(decomp, offset, targetRetreatDeadlineMs);
                         changed = true;

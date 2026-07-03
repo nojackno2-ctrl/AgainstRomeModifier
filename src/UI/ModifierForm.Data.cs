@@ -1064,15 +1064,17 @@ namespace AgainstRomeModifier {
                 EnsureBackupUnitRowsParsed();
                 Dictionary<string, string[]> origUnitRows = _backupUnitRows;
 
-                if (backupFiles.TryGetValue("SYSTEM/DATA_MP/DEFAULTS/objdef.dau", out byte[]? originalObjdefBytes)) {
-                    string originalObjdef = Encoding.GetEncoding(1251).GetString(GameLZSS.DecompressPfil(originalObjdefBytes));
-                    chkHousingCapacity20x.Checked = HasHousingCapacityMultiplier(decomp, originalObjdef, HousingCapacityMultiplier);
-                    chkStorageCapacity10x.Checked = HasStorageCapacityMultiplier(decomp, originalObjdef, StorageCapacityMultiplier);
-                    chkFastBuildUpgradeRepair.Checked = HasFastBuildUpgradeRepair(decomp, originalObjdef);
-                } else {
-                    chkHousingCapacity20x.Checked = false;
-                    chkStorageCapacity10x.Checked = false;
-                    chkFastBuildUpgradeRepair.Checked = false;
+                if (syncUIWithFile) {
+                    if (backupFiles.TryGetValue("SYSTEM/DATA_MP/DEFAULTS/objdef.dau", out byte[]? originalObjdefBytes)) {
+                        string originalObjdef = Encoding.GetEncoding(1251).GetString(GameLZSS.DecompressPfil(originalObjdefBytes));
+                        chkHousingCapacity20x.Checked = HasHousingCapacityMultiplier(decomp, originalObjdef, HousingCapacityMultiplier);
+                        chkStorageCapacity10x.Checked = HasStorageCapacityMultiplier(decomp, originalObjdef, StorageCapacityMultiplier);
+                        chkFastBuildUpgradeRepair.Checked = HasFastBuildUpgradeRepair(decomp, originalObjdef);
+                    } else {
+                        chkHousingCapacity20x.Checked = false;
+                        chkStorageCapacity10x.Checked = false;
+                        chkFastBuildUpgradeRepair.Checked = false;
+                    }
                 }
 
                 // 自訂倍率控制項已移除，不進行 UI 賦值。
@@ -1263,7 +1265,9 @@ namespace AgainstRomeModifier {
                         int.TryParse(matchIdle.Groups[1].Value, out int idle) && idle == 500) {
                         infiniteMorale = true;
                     }
-                    chkInfiniteMorale.Checked = infiniteMorale;
+                    if (syncUIWithFile) {
+                        chkInfiniteMorale.Checked = infiniteMorale;
+                    }
                 }
 
                 string ressPath = Path.Combine(gamePath, @"SYSTEM\ress.ini");
@@ -1280,7 +1284,9 @@ namespace AgainstRomeModifier {
                                 (int)RessIndex.FigProdCostEnd - (int)RessIndex.FigProdCostStart + 1)
                             .All(index => index < colsU.Length && colsU[index].Trim() == "0");
                     }
-                    chkFreeProd.Checked = freeProd;
+                    if (syncUIWithFile) {
+                        chkFreeProd.Checked = freeProd;
+                    }
 
                     bool freeUp = false;
                     var mUp = Regex.Match(ressText, @"^.*Ger_Kampf.*$", RegexOptions.Multiline);
@@ -1290,7 +1296,9 @@ namespace AgainstRomeModifier {
                                 (int)VolkresIndex.UnitUpgradeEnd - (int)VolkresIndex.UnitUpgradeStart + 1)
                             .All(index => index < cols.Length && cols[index].Trim() == "0");
                     }
-                    chkFreeUpgrade.Checked = freeUp;
+                    if (syncUIWithFile) {
+                        chkFreeUpgrade.Checked = freeUp;
+                    }
 
                     bool noSpell = false;
                     var mPri = Regex.Match(ressText, @"^FigGerPri00_Priester\s*,.*", RegexOptions.Multiline);
@@ -1300,56 +1308,70 @@ namespace AgainstRomeModifier {
                                 (int)RessIndex.FigPriestSpellCostEnd - (int)RessIndex.FigPriestSpellCostStart + 1)
                             .All(index => index < cols.Length && cols[index].Trim() == "0");
                     }
-                    chkNoSpellCost.Checked = noSpell;
+                    if (syncUIWithFile) {
+                        chkNoSpellCost.Checked = noSpell;
+                    }
                 }
 
                 if (syncUIWithFile) {
                     chkMaxPopulation.Checked = IsMaximumPopulationApplied(gamePath);
                 }
 
-                if (TryReadEndlessAiModeState(gamePath, out bool endlessUltimateEnabled)) {
-                    chkAiUltimateMode.Checked = endlessUltimateEnabled;
-                } else {
-                    chkAiUltimateMode.Checked = false;
-                    Log("無盡模式 AI 腳本不是完整的原版或終極模式狀態；已取消勾選，重新套用可修復一致性。");
-                }
+                if (syncUIWithFile) {
+                    if (TryReadEndlessAiModeState(gamePath, out bool endlessUltimateEnabled)) {
+                        chkAiUltimateMode.Checked = endlessUltimateEnabled;
+                    } else {
+                        chkAiUltimateMode.Checked = false;
+                        Log("無盡模式 AI 腳本不是完整的原版或終極模式狀態；已取消勾選，重新套用可修復一致性。");
+                    }
 
-                if (TryReadFoodHealingAmountState(gamePath, out bool foodHealingEnabled)) {
-                    chkFoodHealing10x.Checked = foodHealingEnabled;
-                } else {
-                    chkFoodHealing10x.Checked = false;
-                    Log("食物回血 AI 腳本不是完整的原版或已修改狀態；已取消勾選，重新套用可修復一致性。");
+                    if (TryReadFoodHealingAmountState(gamePath, out bool foodHealingEnabled)) {
+                        chkFoodHealing10x.Checked = foodHealingEnabled;
+                    } else {
+                        chkFoodHealing10x.Checked = false;
+                        Log("食物回血 AI 腳本不是完整的原版或已修改狀態；已取消勾選，重新套用可修復一致性。");
+                    }
                 }
 
                 string exePath = Path.Combine(gamePath, @"Against_Rome.exe");
-                chkDgVoodoo.Checked = IsDgVoodooInstalled(gamePath);
+                if (syncUIWithFile) {
+                    chkDgVoodoo.Checked = IsDgVoodooInstalled(gamePath);
+                }
                 if (File.Exists(exePath)) {
                     byte[] exeBytes = File.ReadAllBytes(exePath);
                     ExePatchState exePatchState = GetExePatchState(exeBytes);
-                    chkFocusLoss.Checked = exePatchState == ExePatchState.FocusPatched;
-                    if (exePatchState == ExePatchState.Unknown) {
+                    if (syncUIWithFile) {
+                        chkFocusLoss.Checked = exePatchState == ExePatchState.FocusPatched;
+                    }
+                    if (exePatchState == ExePatchState.Unknown && syncUIWithFile) {
                         Log(Loc.Get("LogExePatchWarning"));
                     }
 
                     ExeSpellAltarPatchState altarPatchState = GetSpellAltarPatchState(exeBytes);
-                    chkNoSpellAltar.Checked = altarPatchState == ExeSpellAltarPatchState.Patched;
-                    if (altarPatchState == ExeSpellAltarPatchState.Unknown) {
+                    if (syncUIWithFile) {
+                        chkNoSpellAltar.Checked = altarPatchState == ExeSpellAltarPatchState.Patched;
+                    }
+                    if (altarPatchState == ExeSpellAltarPatchState.Unknown && syncUIWithFile) {
                         Log("無法辨識的 EXE 法術祭壇特徵碼；已將開關設為未勾選。");
                     }
 
                     ExeVillageRangePatchState villageRangeState = GetVillageBuildRangePatchState(exeBytes);
-                    if (villageRangeState == ExeVillageRangePatchState.Expanded ||
-                        villageRangeState == ExeVillageRangePatchState.LegacyLogicOnly) {
-                        Log("偵測到已停用的村莊範圍候選補丁；下一次套用或相容性還原時會恢復四處原版 bytes。");
-                    } else if (villageRangeState == ExeVillageRangePatchState.Unknown) {
-                        Log(Loc.Get("LogVillageBuildRangeWarning"));
+                    if (syncUIWithFile) {
+                        if (villageRangeState == ExeVillageRangePatchState.Expanded ||
+                            villageRangeState == ExeVillageRangePatchState.LegacyLogicOnly) {
+                            Log("偵測到已停用的村莊範圍候選補丁；下一次套用或相容性還原時會恢復四處原版 bytes。");
+                        } else if (villageRangeState == ExeVillageRangePatchState.Unknown) {
+                            Log(Loc.Get("LogVillageBuildRangeWarning"));
+                        }
                     }
 
                     ExeVillageSetterPatchState villageSetterState = GetVillageSetterPatchState(exeBytes);
-                    chkVillageBuildRange.Checked = villageSetterState == ExeVillageSetterPatchState.Legacy2x ||
-                        villageSetterState == ExeVillageSetterPatchState.Legacy2Point5x ||
-                        villageSetterState == ExeVillageSetterPatchState.Expanded3x;
-                    if (villageSetterState == ExeVillageSetterPatchState.Unknown) {
+                    if (syncUIWithFile) {
+                        chkVillageBuildRange.Checked = villageSetterState == ExeVillageSetterPatchState.Legacy2x ||
+                            villageSetterState == ExeVillageSetterPatchState.Legacy2Point5x ||
+                            villageSetterState == ExeVillageSetterPatchState.Expanded3x;
+                    }
+                    if (villageSetterState == ExeVillageSetterPatchState.Unknown && syncUIWithFile) {
                         Log(Loc.Get("LogVillageBuildRangeWarning"));
                     }
                 }

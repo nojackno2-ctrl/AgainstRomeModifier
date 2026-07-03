@@ -120,12 +120,13 @@
   their per-team NPC-job slots for later waves.
 - EXE path `0054aa80 -> 00547f50` clamps the count to `1..20`.
 - Military reinforcement cooldown at `0x178E0`: `180000 -> 5000` ms.
-- Party retreat/cleanup deadlines (six sites, value offsets `0x10700`,
-  `0x119C0`, `0x12FFC`, `0x13FE8`, `0x160EC`, `0x17F38`): `600000 -> 5000` ms
-  each. These `v61[party] := s_getTime() + N` deadlines are the only exit for
-  a wiped team's party out of the RETREAT chain into DELETE_PARTY; only a
-  freed party slot lets the endless spawners send a new arrival for that team,
-  which resettles and makes `ak_npc.bci` call `s_setNPCActive(team, 1)` again.
+- Party retreat/cleanup deadlines use a mixed target. Non-settlement sites
+  `0x119C0`, `0x12FFC`, `0x13FE8`, and `0x17F38` change `600000 -> 5000` ms.
+  Settled-handler sites `0x10700` and `0x160EC` stay at `600000` because states
+  51/52 normally wait for old-village/palisade cleanup; the deadline is only a
+  fallback. The previous all-six-at-5000 state could force DELETE_PARTY before
+  cleanup, allowing a respawn while NPC village records still referenced the
+  old location.
   `0x17F38` was previously misclassified as a "village defeat respawn timer";
   it is the type-5 handler's RETREAT_INIT deadline. The same-shaped
   initial-arrival timeout at `0x7F24` is deliberately NOT patched (a 5-second
@@ -181,10 +182,10 @@
   `5000..10000` ms. Applying this version restores the gate and all unrelated
   loops; only the three bounded reinforcement polling loops remain accelerated.
 - The signature is present in `ENDL_000` through `ENDL_004`.
-- Earlier enabled states (military `5000` with only `0x17F38` or none of the
-  retreat deadlines shortened, and the original `20`-tick counter) are accepted
-  as legacy-enabled and migrated to the full six-site/3-tick state on the next
-  apply.
+- Earlier enabled states (including only `0x17F38` shortened, no retreat
+  deadlines shortened, or all six deadlines shortened) are accepted as
+  legacy-enabled and migrated to the mixed four-fast/two-protected deadline
+  state with the 3-tick debounce on the next apply.
 - 2026-07-03 incident: `ESAVE_002` predates the latest Apply and embeds the
   rejected first-three-loop state `1000..2000` ms despite already containing
   the six 5000-ms retreat deadlines, debounce 3, recycle 1, counts 20,
