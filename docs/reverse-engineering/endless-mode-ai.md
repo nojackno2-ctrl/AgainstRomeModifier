@@ -227,6 +227,15 @@ chain, 256 DELETE_PARTY, 257 DELETE_TEAM.
   team 3 active again while retaining 71 old village records and the old
   village base coordinate `(1632,5792)`; villagers then targeted that old site.
   Apply accepts the all-six state only for migration to the mixed target.
+- Actual village teardown is driven by `ak_haupthaus.bci`, not by the party
+  deadline. Its unique initialization sequence at `0x3248` sets the dead-house
+  loop delay to `1500 + rand(-25,25)` ms; the leaving-village branch searches
+  buildings inside the team village, sends one cleanup message, waits for its
+  confirmation, and yields for that delay before the next object. AI Ultimate
+  changes the base literal to `100`, preserving the one-at-a-time confirmation
+  protocol while reducing a 71-object village from about 105 seconds to about
+  7 seconds. The final fixed 2000-ms wait at `0x5000` is only a final-state
+  confirmation and is deliberately left unchanged.
 - `0x17F38` is therefore the type-5 handler's RETREAT_INIT deadline, NOT a
   "village defeat respawn timer". The 2026-07-02 save read (teams stuck at
   `npcActive=0` with all job slots free while `0x17F38` was already `5000`)

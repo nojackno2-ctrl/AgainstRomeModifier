@@ -227,6 +227,24 @@
           "migration": "Previous enabled states with one, none, or all six deadlines at 5000 ms are accepted as legacy-enabled and migrated to four accelerated non-settlement sites plus two protected settlement-cleanup sites.",
           "status": "static-analysis-verified-runtime-test-pending"
         },
+        "VillageObjectCleanupCadence": {
+          "path": "SYSTEM/CLAK/SCRIPT/ak_haupthaus.bci",
+          "bciWordSignature": "[66,<baseMs>, 66,25, 66,-25, 128,34, 73,-2, 86,32, 82,14, 81,14, 82,15]",
+          "decompressedSignatureOffset": "0x3248",
+          "baseLiteralOffset": "0x324C",
+          "originalBaseDelayMs": 1500,
+          "ultimateBaseDelayMs": 100,
+          "randomJitterMs": [-25, 25],
+          "meaning": "After the main building dies, the leaving-village loop processes one building or palisade, waits for its confirmation, then yields for this cadence before processing the next object. The patch accelerates the confirmed loop instead of bypassing village cleanup.",
+          "estimatedSeventyOneObjectCleanupMs": {
+            "original": 106500,
+            "ultimate": 7100
+          },
+          "finalConfirmationDelayNotPatchedMs": 2000,
+          "scopeWarning": "ak_haupthaus is global, so this also accelerates cleanup after a player main building dies; normal live-village production cadence is unchanged.",
+          "migration": "An otherwise enabled AI Ultimate state with the original 1500-ms value is accepted as legacy-enabled and patched to 100 ms on the next Apply.",
+          "status": "static-analysis-and-signature-verified-runtime-test-pending"
+        },
         "DeadPartyDebounceTicks": {
           "meaning": "Consecutive no-living-members ticks required before a settled party whose village, leader, and civilians are all gone enters the retreat/cleanup chain (Siedler handler).",
           "bciWordSignature": "[90,24, 66, <ticks>, 96, 101, 117, 16, 66, 1, 91, 17]",

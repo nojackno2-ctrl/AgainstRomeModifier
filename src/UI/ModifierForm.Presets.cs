@@ -20,7 +20,11 @@ namespace AgainstRomeModifier {
             chkStorageCapacity10x.Checked = true;
             chkFastBuildUpgradeRepair.Checked = true;
             chkFoodHealing10x.Checked = true;
-            chkAiUltimateMode.Checked = true;
+            chkAiM1.Checked = true;
+            chkAiM2.Checked = true;
+            chkAiM3.Checked = true;
+            chkAiM4.Checked = true;
+            chkAiM5.Checked = true;
             chkBalance.Checked = true;
             chkVillageBuildRange.Checked = true;
             chkDgVoodoo.Checked = true;
@@ -45,7 +49,11 @@ namespace AgainstRomeModifier {
             chkStorageCapacity10x.Checked = false;
             chkFastBuildUpgradeRepair.Checked = false;
             chkFoodHealing10x.Checked = false;
-            chkAiUltimateMode.Checked = false;
+            chkAiM1.Checked = false;
+            chkAiM2.Checked = false;
+            chkAiM3.Checked = false;
+            chkAiM4.Checked = false;
+            chkAiM5.Checked = false;
             chkBalance.Checked = false;
             chkVillageBuildRange.Checked = false;
             chkDgVoodoo.Checked = false; // 相容性層關閉，以達到最乾淨的還原

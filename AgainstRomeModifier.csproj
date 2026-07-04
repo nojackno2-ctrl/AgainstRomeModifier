@@ -14,6 +14,7 @@
   <ItemGroup>
     <Compile Remove="re_workspace\**" />
     <Compile Remove="scratch\**" />
+    <Compile Remove="tests\**" />
     <EmbeddedResource Include="Backup.zip" Condition="Exists('Backup.zip')" />
     <EmbeddedResource Include="TechDoc.md" LogicalName="TechDoc.md" />
     <EmbeddedResource Include="TechDoc_EN.md" LogicalName="TechDoc_EN.md" />

@@ -1318,11 +1318,21 @@ namespace AgainstRomeModifier {
                 }
 
                 if (syncUIWithFile) {
-                    if (TryReadEndlessAiModeState(gamePath, out bool endlessUltimateEnabled)) {
-                        chkAiUltimateMode.Checked = endlessUltimateEnabled;
-                    } else {
-                        chkAiUltimateMode.Checked = false;
-                        Log("無盡模式 AI 腳本不是完整的原版或終極模式狀態；已取消勾選，重新套用可修復一致性。");
+                    // 逐一偵測 5 個無盡模式模組（M1..M5），各自反映到對應的獨立勾選框。
+                    var aiToggles = new[] { chkAiM1, chkAiM2, chkAiM3, chkAiM4, chkAiM5 };
+                    try {
+                        var aiOrchestrator = new EndlessAiOrchestrator();
+                        for (int i = 0; i < aiOrchestrator.UserModules.Count && i < aiToggles.Length; i++) {
+                            var module = aiOrchestrator.UserModules[i];
+                            PatchState moduleState = aiOrchestrator.DetectModule(gamePath, module);
+                            aiToggles[i].Checked = moduleState == PatchState.Ultimate;
+                            if (moduleState != PatchState.Ultimate && moduleState != PatchState.Original) {
+                                Log($"無盡模式模組「{module.Name}」狀態不一致（{moduleState}）；已取消勾選，重新套用可修復一致性。");
+                            }
+                        }
+                    } catch (Exception aiEx) {
+                        foreach (var toggle in aiToggles) toggle.Checked = false;
+                        Log("讀取無盡模式 AI 模組狀態失敗；已取消勾選：" + aiEx.Message);
                     }
 
                     if (TryReadFoodHealingAmountState(gamePath, out bool foodHealingEnabled)) {

@@ -33,6 +33,8 @@ research and personal modding project.
   four non-settlement party retreat deadlines from 10 minutes to 5 seconds,
   and preserves the two settlement cleanup fallbacks at 10 minutes so an old
   village and its palisades finish clearing before that team slot is reused,
+  accelerates the confirmed one-object-at-a-time cleanup cadence from about
+  1.5 seconds to 0.1 seconds per object,
   raises the military-reinforcement unit threshold from 4 to 40, and transfers
   the whole reinforcement party into the village instead of retreating while
   retaining the original safety gate and bounded polling. Endless settlement templates also receive a reversible

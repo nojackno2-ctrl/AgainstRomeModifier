@@ -127,6 +127,12 @@
   fallback. The previous all-six-at-5000 state could force DELETE_PARTY before
   cleanup, allowing a respawn while NPC village records still referenced the
   old location.
+- Old-village object cleanup cadence in `SYSTEM/CLAK/SCRIPT/ak_haupthaus.bci`:
+  the unique sequence at decompressed `0x3248` initializes the dead-village
+  pass as `1500 + rand(-25,25)` ms. AI Ultimate changes `1500 -> 100`, so the
+  existing one-object-at-a-time message/confirmation loop runs every 75..125 ms
+  instead of 1475..1525 ms. Restore returns 1500. The final standalone 2000-ms
+  confirmation delay remains original.
   `0x17F38` was previously misclassified as a "village defeat respawn timer";
   it is the type-5 handler's RETREAT_INIT deadline. The same-shaped
   initial-arrival timeout at `0x7F24` is deliberately NOT patched (a 5-second

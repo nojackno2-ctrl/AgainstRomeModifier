@@ -30,6 +30,7 @@ namespace AgainstRomeModifier {
 
         // 左側導覽列按鈕
         private Panel pnlSidebar = null!;
+        private Panel pnlRightSidebar = null!;
         private Button btnNavSystem = null!;
         private Button btnNavDefaultStats = null!;
         private Button btnNavCurrentStats = null!;
@@ -62,6 +63,7 @@ namespace AgainstRomeModifier {
         private Panel pnlNumericCard = null!;
         private Panel pnlSwitchesCard = null!;
         private Panel pnlBuildCard = null!;
+        private Panel pnlAiCard = null!;
 
         // 數值控制項 (NumericUpDown) 的宣告
         private ModernToggle chkMaxPopulation = null!;
@@ -78,7 +80,11 @@ namespace AgainstRomeModifier {
         private ModernToggle chkStorageCapacity10x = null!;
         private ModernToggle chkFastBuildUpgradeRepair = null!;
         private ModernToggle chkFoodHealing10x = null!;
-        private ModernToggle chkAiUltimateMode = null!;
+        private ModernToggle chkAiM1 = null!;
+        private ModernToggle chkAiM2 = null!;
+        private ModernToggle chkAiM3 = null!;
+        private ModernToggle chkAiM4 = null!;
+        private ModernToggle chkAiM5 = null!;
         private ModernToggle chkDgVoodoo = null!;
         private ModernToggle chkVillageBuildRange = null!;
         private Button btnTroopPreset = null!;
@@ -153,8 +159,8 @@ namespace AgainstRomeModifier {
         private Label lblHelpFastBuildUpgradeRepair = null!;
         private Label lblHelpFoodHealing10x = null!;
         private Label lblHelpVillageBuildRange = null!;
-        private Label lblHelpAiUltimateMode = null!;
         private Label lblBuildTitle = null!;
+        private Label lblAiTitle = null!;
         private Label lblGameSavesTitle = null!;
         private Label lblBackupsTitle = null!;
         private Label lblDetailTitle = null!;
@@ -372,6 +378,7 @@ namespace AgainstRomeModifier {
 
         // 初始化表單的視覺元件佈局、大小、樣式、圓角區域與雙緩衝
         private void InitializeComponent() {
+            this.Text = "Against Rome Modifier Pro"; // OS 視窗標題（工作列／Alt-Tab 顯示；邊框仍隱藏）
             this.Size = new Size(1450, 880);
             this.MinimumSize = new Size(1280, 720);
             this.AutoScroll = true;
@@ -515,6 +522,12 @@ namespace AgainstRomeModifier {
             pnlSidebar = new Panel {
                 Location = new Point(0, 50),
                 Size = new Size(220, 830),
+                BackColor = Color.FromArgb(15, 16, 24)
+            };
+
+            pnlRightSidebar = new Panel {
+                Location = new Point(1200, 50),
+                Size = new Size(250, 830),
                 BackColor = Color.FromArgb(15, 16, 24)
             };
 
@@ -910,18 +923,35 @@ namespace AgainstRomeModifier {
             pnlBuildCard.Controls.Add(chkVillageBuildRange);
             pnlBuildCard.Controls.Add(lblHelpVillageBuildRange);
 
-            chkAiUltimateMode = new ModernToggle {
-                Text = Loc.Get("AiUltimateMode"),
-                Location = new Point(25, 570),
-                Size = new Size(310, 25),
-                Checked = false,
-                BackColor = Color.Transparent,
-                Font = fontJhengHei10B
+            // AI 終極模式已拆成 5 個可獨立勾選的模組（對應 EndlessAiOrchestrator M1..M5），
+            // 集中放在專屬的整列卡片（設定頁第 2 列，橫跨三欄），由 ConfigureAiCardHorizontal
+            // 以響應式網格橫向排列，說明文字改用滑鼠停留提示（tooltip）掛在各開關上。
+            pnlAiCard = new Panel {
+                Location = new Point(0, 0),
+                Size = new Size(1180, 150)
             };
-            lblHelpAiUltimateMode = CreateHelpLabel("AiUltimateModeTip");
-            lblHelpAiUltimateMode.Location = new Point(340, 570);
-            pnlBuildCard.Controls.Add(chkAiUltimateMode);
-            pnlBuildCard.Controls.Add(lblHelpAiUltimateMode);
+            pnlAiCard.Paint += CardPanel_Paint;
+
+            lblAiTitle = new Label {
+                Text = Loc.Get("AiCardTitle"),
+                Location = new Point(20, 14),
+                Size = new Size(400, 24),
+                Font = fontJhengHei105B,
+                ForeColor = Color.FromArgb(0, 220, 255),
+                BackColor = Color.Transparent
+            };
+            pnlAiCard.Controls.Add(lblAiTitle);
+
+            chkAiM1 = new ModernToggle { Text = Loc.Get("AiM1"), Size = new Size(260, 26), Checked = false, BackColor = Color.Transparent, Font = fontJhengHei10B };
+            chkAiM2 = new ModernToggle { Text = Loc.Get("AiM2"), Size = new Size(260, 26), Checked = false, BackColor = Color.Transparent, Font = fontJhengHei10B };
+            chkAiM3 = new ModernToggle { Text = Loc.Get("AiM3"), Size = new Size(260, 26), Checked = false, BackColor = Color.Transparent, Font = fontJhengHei10B };
+            chkAiM4 = new ModernToggle { Text = Loc.Get("AiM4"), Size = new Size(260, 26), Checked = false, BackColor = Color.Transparent, Font = fontJhengHei10B };
+            chkAiM5 = new ModernToggle { Text = Loc.Get("AiM5"), Size = new Size(260, 26), Checked = false, BackColor = Color.Transparent, Font = fontJhengHei10B };
+            pnlAiCard.Controls.Add(chkAiM1);
+            pnlAiCard.Controls.Add(chkAiM2);
+            pnlAiCard.Controls.Add(chkAiM3);
+            pnlAiCard.Controls.Add(chkAiM4);
+            pnlAiCard.Controls.Add(chkAiM5);
 
             tabSystem.Controls.Add(pnlNumericCard);
             tabSystem.Controls.Add(pnlSwitchesCard);
@@ -935,7 +965,7 @@ namespace AgainstRomeModifier {
                 ForeColor = Color.FromArgb(150, 160, 175),
                 BackColor = Color.Transparent
             };
-            pnlSidebar.Controls.Add(lblGamePath);
+            pnlRightSidebar.Controls.Add(lblGamePath);
 
             Panel pnlGamePath = CreateInputWrapper(10, 355, 200, 28);
             txtGamePath = new TextBox {
@@ -946,7 +976,7 @@ namespace AgainstRomeModifier {
                 ForeColor = Color.White
             };
             pnlGamePath.Controls.Add(txtGamePath);
-            pnlSidebar.Controls.Add(pnlGamePath);
+            pnlRightSidebar.Controls.Add(pnlGamePath);
 
             btnBrowseGamePath = new Button {
                 Text = "瀏覽...",
@@ -955,7 +985,7 @@ namespace AgainstRomeModifier {
             };
             StyleButton(btnBrowseGamePath, Color.FromArgb(45, 45, 55), Color.FromArgb(240, 240, 240), Color.FromArgb(0, 220, 255));
             btnBrowseGamePath.Click += new EventHandler(BtnBrowseGamePath_Click);
-            pnlSidebar.Controls.Add(btnBrowseGamePath);
+            pnlRightSidebar.Controls.Add(btnBrowseGamePath);
 
             string detectedPath = DetectGamePathFromRegistry();
             if (File.Exists(Path.Combine(AppContext.BaseDirectory, "Against_Rome.exe"))) {
@@ -1016,10 +1046,10 @@ namespace AgainstRomeModifier {
             StyleButton(btnStartGame, Color.FromArgb(0, 180, 120), Color.White, Color.FromArgb(0, 220, 150));
             btnStartGame.Click += new EventHandler(BtnStartGame_Click);
 
-            pnlSidebar.Controls.Add(btnLoadCurrent);
-            pnlSidebar.Controls.Add(btnRestore);
-            pnlSidebar.Controls.Add(btnApply);
-            pnlSidebar.Controls.Add(btnStartGame);
+            pnlRightSidebar.Controls.Add(btnLoadCurrent);
+            pnlRightSidebar.Controls.Add(btnRestore);
+            pnlRightSidebar.Controls.Add(btnApply);
+            pnlRightSidebar.Controls.Add(btnStartGame);
 
             Panel pnlDefaultStatsTitle = new Panel {
                 Location = new Point(0, 0),
@@ -1321,6 +1351,7 @@ namespace AgainstRomeModifier {
 
             this.Controls.Add(pnlTitleBar);
             this.Controls.Add(pnlSidebar);
+            this.Controls.Add(pnlRightSidebar);
             this.Controls.Add(mainTabControl);
             ApplyModernLayout();
             ShowTabPage(tabSystem);
@@ -1329,8 +1360,8 @@ namespace AgainstRomeModifier {
         private void ApplyModernLayout() {
             SuspendLayout();
 
-            Size = new Size(1400, 860);
-            MinimumSize = new Size(1280, 760);
+            Size = new Size(1600, 860);
+            MinimumSize = new Size(1400, 760);
             AutoScroll = false;
             BackColor = Color.FromArgb(9, 12, 18);
 
@@ -1349,6 +1380,9 @@ namespace AgainstRomeModifier {
 
             pnlSidebar.BackColor = Color.FromArgb(12, 16, 24);
             pnlSidebar.Width = 250;
+
+            pnlRightSidebar.BackColor = Color.FromArgb(12, 16, 24);
+            pnlRightSidebar.Width = 250;
 
             ConfigureSidebarLayout();
             ConfigureSystemDashboard();
@@ -1377,9 +1411,12 @@ namespace AgainstRomeModifier {
             pnlSidebar.Location = new Point(0, 56);
             pnlSidebar.Size = new Size(250, Math.Max(0, ClientSize.Height - 56));
 
+            pnlRightSidebar.Location = new Point(ClientSize.Width - 250, 56);
+            pnlRightSidebar.Size = new Size(250, Math.Max(0, ClientSize.Height - 56));
+
             mainTabControl.Location = new Point(266, 70);
             mainTabControl.Size = new Size(
-                Math.Max(0, ClientSize.Width - 282),
+                Math.Max(0, ClientSize.Width - 532),
                 Math.Max(0, ClientSize.Height - 84));
 
             lblSidebarLang.Location = new Point(16, Math.Max(610, pnlSidebar.Height - 72));
@@ -1400,13 +1437,13 @@ namespace AgainstRomeModifier {
                 navButtons[i].Size = new Size(230, 44);
             }
 
-            lblGamePath.Location = new Point(18, 306);
-            lblGamePath.Size = new Size(214, 20);
+            lblGamePath.Location = new Point(16, 22);
+            lblGamePath.Size = new Size(218, 20);
             lblGamePath.ForeColor = Color.FromArgb(128, 143, 163);
 
             Panel pathWrapper = txtGamePath.Parent as Panel
                 ?? throw new InvalidOperationException("Game path input wrapper was not initialized.");
-            pathWrapper.Location = new Point(16, 332);
+            pathWrapper.Location = new Point(16, 48);
             pathWrapper.Size = new Size(218, 32);
             pathWrapper.BackColor = Color.FromArgb(22, 28, 39);
             txtGamePath.Location = new Point(9, 7);
@@ -1414,12 +1451,12 @@ namespace AgainstRomeModifier {
             txtGamePath.BackColor = pathWrapper.BackColor;
             txtGamePath.ForeColor = Color.FromArgb(222, 230, 240);
 
-            btnBrowseGamePath.Location = new Point(16, 372);
+            btnBrowseGamePath.Location = new Point(16, 88);
             btnBrowseGamePath.Size = new Size(218, 34);
-            btnLoadCurrent.Location = new Point(16, 432);
-            btnRestore.Location = new Point(16, 478);
-            btnApply.Location = new Point(16, 536);
-            btnStartGame.Location = new Point(16, 586);
+            btnLoadCurrent.Location = new Point(16, 148);
+            btnRestore.Location = new Point(16, 198);
+            btnApply.Location = new Point(16, 258);
+            btnStartGame.Location = new Point(16, 308);
             foreach (Button actionButton in new[] { btnLoadCurrent, btnRestore, btnApply, btnStartGame }) {
                 actionButton.Size = new Size(218, 40);
             }
@@ -1469,7 +1506,7 @@ namespace AgainstRomeModifier {
                 Dock = DockStyle.Fill,
                 BackColor = Color.FromArgb(9, 12, 18),
                 ColumnCount = 3,
-                RowCount = 1,
+                RowCount = 2,
                 // The page header is intentionally layered above this fill panel.
                 // Reserve its height so card titles and first rows are never obscured.
                 Padding = new Padding(0, 84, 0, 0)
@@ -1477,7 +1514,9 @@ namespace AgainstRomeModifier {
             settingsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33.333F));
             settingsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33.334F));
             settingsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33.333F));
-            settingsLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+            // 第 1 列：三張既有卡片；第 2 列：整列 AI 終極模式卡片（橫跨三欄）。
+            settingsLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 486F));
+            settingsLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 128F));
 
             ConfigureSettingsCard(pnlNumericCard, lblNumericTitle, 230,
                 (chkFocusLoss, lblHelpFocusLoss),
@@ -1497,12 +1536,15 @@ namespace AgainstRomeModifier {
                 (chkFastCiviProduction, lblHelpFastCiviProduction),
                 (chkFastBuildUpgradeRepair, lblHelpFastBuildUpgradeRepair),
                 (chkFoodHealing10x, lblHelpFoodHealing10x),
-                (chkVillageBuildRange, lblHelpVillageBuildRange),
-                (chkAiUltimateMode, lblHelpAiUltimateMode));
+                (chkVillageBuildRange, lblHelpVillageBuildRange));
+            ConfigureAiCardHorizontal(pnlAiCard, lblAiTitle,
+                chkAiM1, chkAiM2, chkAiM3, chkAiM4, chkAiM5);
 
             settingsLayout.Controls.Add(pnlNumericCard, 0, 0);
             settingsLayout.Controls.Add(pnlSwitchesCard, 1, 0);
             settingsLayout.Controls.Add(pnlBuildCard, 2, 0);
+            settingsLayout.Controls.Add(pnlAiCard, 0, 1);
+            settingsLayout.SetColumnSpan(pnlAiCard, 3);
             tabSystem.Controls.Add(settingsLayout);
             tabSystem.Controls.Add(header);
             header.BringToFront();
@@ -1538,6 +1580,35 @@ namespace AgainstRomeModifier {
 
             card.Resize += (s, e) => LayoutRows();
             LayoutRows();
+        }
+
+        // AI 終極模式整列卡片：把 N 個開關以響應式網格橫向排列（每格約 250px，寬度不足時自動換行）。
+        // 說明文字改用掛在開關上的 tooltip（在語言套用流程統一設定），故此處不需要 help 圖示。
+        private void ConfigureAiCardHorizontal(Panel card, Label title, params ModernToggle[] toggles) {
+            card.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+            card.Margin = new Padding(6, 6, 6, 0);
+            card.BackColor = Color.FromArgb(18, 22, 31);
+
+            title.Location = new Point(20, 14);
+            title.Size = new Size(400, 24);
+            title.ForeColor = Color.FromArgb(105, 205, 255);
+
+            void LayoutGrid() {
+                const int padX = 20, gapX = 16, gapY = 12, top = 52, cellH = 26, cellTarget = 180;
+                int avail = Math.Max(cellTarget, card.Width - padX * 2);
+                int cols = Math.Max(1, Math.Min(toggles.Length, (avail + gapX) / (cellTarget + gapX)));
+                int cellW = (avail - gapX * (cols - 1)) / cols;
+                for (int i = 0; i < toggles.Length; i++) {
+                    int r = i / cols, c = i % cols;
+                    toggles[i].Location = new Point(padX + c * (cellW + gapX), top + r * (cellH + gapY));
+                    toggles[i].Size = new Size(cellW, cellH);
+                    toggles[i].Font = fontJhengHei95R;
+                    toggles[i].BackColor = card.BackColor;
+                }
+            }
+
+            card.Resize += (s, e) => LayoutGrid();
+            LayoutGrid();
         }
 
         private void ConfigureStatsPages() {
@@ -1796,7 +1867,11 @@ namespace AgainstRomeModifier {
             lblNumericTitle.Text = Loc.Get("NumericTitle");
             chkFocusLoss.Text = Loc.Get("FocusLoss");
             chkToEng.Text = Loc.Get("ToEng");
-            chkAiUltimateMode.Text = Loc.Get("AiUltimateMode");
+            chkAiM1.Text = Loc.Get("AiM1");
+            chkAiM2.Text = Loc.Get("AiM2");
+            chkAiM3.Text = Loc.Get("AiM3");
+            chkAiM4.Text = Loc.Get("AiM4");
+            chkAiM5.Text = Loc.Get("AiM5");
             chkHousingCapacity20x.Text = Loc.Get("HousingCapacity20x");
             chkStorageCapacity10x.Text = Loc.Get("StorageCapacity10x");
             chkFastBuildUpgradeRepair.Text = Loc.Get("FastBuildUpgradeRepair");
@@ -1807,6 +1882,7 @@ namespace AgainstRomeModifier {
             btnDisableAll.Text = Loc.Get("DisableAll");
             lblSwitchesTitle.Text = Loc.Get("SwitchesTitle");
             lblBuildTitle.Text = Loc.Get("BuildTitle");
+            lblAiTitle.Text = Loc.Get("AiCardTitle");
             chkMaxPopulation.Text = Loc.Get("MaxPopulation");
             chkFastCiviProduction.Text = Loc.Get("FastCiviProduction");
             chkFreeProd.Text = Loc.Get("FreeProd");
@@ -1888,7 +1964,11 @@ namespace AgainstRomeModifier {
                 myToolTip.SetToolTip(lblHelpFastBuildUpgradeRepair, Loc.Get("FastBuildUpgradeRepairTip"));
                 myToolTip.SetToolTip(lblHelpFoodHealing10x, Loc.Get("FoodHealing10xTip"));
                 myToolTip.SetToolTip(lblHelpVillageBuildRange, Loc.Get("VillageBuildRangeTip"));
-                myToolTip.SetToolTip(lblHelpAiUltimateMode, Loc.Get("AiUltimateModeTip"));
+                myToolTip.SetToolTip(chkAiM1, Loc.Get("AiM1Tip"));
+                myToolTip.SetToolTip(chkAiM2, Loc.Get("AiM2Tip"));
+                myToolTip.SetToolTip(chkAiM3, Loc.Get("AiM3Tip"));
+                myToolTip.SetToolTip(chkAiM4, Loc.Get("AiM4Tip"));
+                myToolTip.SetToolTip(chkAiM5, Loc.Get("AiM5Tip"));
             }
         }
 
