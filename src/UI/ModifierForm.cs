@@ -113,8 +113,7 @@ namespace AgainstRomeModifier {
         private Button btnLoadCurrent = null!;
         private Button btnStartGame = null!;
         private ContextMenuStrip menuRestore = null!;
-        private TextBox? txtLog = null;
-        
+
         // 記憶體原版檔案備份字典，用以在修改時直接讀取乾淨數據，避免疊加修改
         private Dictionary<string, byte[]> backupFiles = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
 

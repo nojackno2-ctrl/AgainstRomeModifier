@@ -8,11 +8,6 @@ namespace AgainstRomeModifier {
     public enum ObjdefIndex {
         Moves = 4,
         Hp = 19,
-        // 生產建築每個生產週期的毫秒數（ptime）；resr1-6（索引 34-39）為每
-        // 週期產出的六種資源量，resb1-6（28-33）為每週期消耗量。
-        ProductionTime = 27,
-        ProductionOutputStart = 34,
-        ProductionOutputEnd = 39,
         Movsf = 23,
         Sirad = 24,
         Name = 52,
@@ -34,7 +29,6 @@ namespace AgainstRomeModifier {
     /// </summary>
     public enum RessIndex {
         // objres 建築建造/修復費
-        BauBuildWood = 2,
         BauBuildCostStart = 1,
         BauBuildCostEnd = 6,
         BauUpgradeCostStart = 7,

@@ -125,17 +125,10 @@ namespace AgainstRomeModifier {
 
 
         /// <summary>
-        /// 記錄日誌訊息，輸出至 UI 的文字框，並非同步寫入至本地 modifier_log.txt 檔案。
+        /// 記錄日誌訊息並寫入至本地 modifier_log.txt 檔案。
         /// </summary>
         private void Log(string message) {
             string text = string.Format("[{0}] {1}\r\n", DateTime.Now.ToString("HH:mm:ss"), message);
-            if (txtLog != null) {
-                if (txtLog.InvokeRequired) {
-                    txtLog.BeginInvoke(new Action(() => txtLog.AppendText(text)));
-                } else {
-                    txtLog.AppendText(text);
-                }
-            }
             try {
                 lock (LogLock) {
                     File.AppendAllText(Path.Combine(AppContext.BaseDirectory, "modifier_log.txt"), text, Encoding.UTF8);
@@ -1702,19 +1695,6 @@ namespace AgainstRomeModifier {
             byte[] newBytes = Encoding.GetEncoding(1251).GetBytes(newContent);
             return GameLZSS.CompressPfil(newBytes, origBytes!);
         }
-
-        /// <summary>
-        /// 還原地圖目錄下所有的 team.dat 檔案。
-        /// </summary>
-        /* private void RestoreTeamFiles(string gamePath, FileRollbackScope? rollback = null) {
-            foreach (var kvp in backupFiles) {
-                if (kvp.Key.StartsWith("MAPS/", StringComparison.OrdinalIgnoreCase) && kvp.Key.EndsWith("team.dat", StringComparison.OrdinalIgnoreCase)) {
-                    string destPath = Path.Combine(gamePath, kvp.Key.Replace('/', '\\'));
-                    SafeWriteAllBytes(destPath, kvp.Value, rollback);
-                }
-            }
-            Log(string.Format(Loc.Get("LogRestored"), "team.dat"));
-        } */
 
         private static void WriteBciInt32(byte[] buffer, int offset, int value) {
             BciPattern.WriteBciInt32(buffer, offset, value);
