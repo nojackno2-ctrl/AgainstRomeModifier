@@ -1,6 +1,6 @@
 # Against Rome Modifier 技術文件
 
-> 更新日期：2026-07-03
+> 更新日期：2026-07-04
 >
 > 編碼：UTF-8
 > 對象：開發者、逆向工程研究者與 AI 維護代理
@@ -44,6 +44,8 @@
 | `src/Core/TroopConfig.cs` | 欄位 enum、單位 metadata、平衡規則 |
 | `src/UI/TroopPresetForm.cs` | 9 欄單位 preset 編輯 |
 | `src/Core/GameLZSS.cs` | 遊戲 LZSS 與 `PFIL@` 包裝 |
+| `src/Core/Bci/` | BCI 特徵碼搜尋、字組寫入與 PFIL 腳本封裝 |
+| `src/Core/EndlessAi/` | AI Ultimate M1–M5 模組、狀態偵測與套用協調 |
 | `src/Core/Localization.cs` | 中英文 UI／log |
 | `data/game_schema.json` | 機器可讀的欄位、offset 與 patch metadata |
 
@@ -181,7 +183,9 @@ commit 後要先 Dispose／清空 rollback scope，再更新 UI；UI refresh 例
 
 ## 10. AI Ultimate Mode
 
-路徑：`MAPS/ENDL_000..004/SCRIPT/ak_level.bci`。
+AI Ultimate 已拆成五個可獨立控制的模組：M1 增援規模、M2 增援節奏、M3 敗亡快速回收、M4 保證聚落生成與留守、M5 開局資源。R0 常駐修復不提供開關，負責還原已否決的全域 CLAK 修改。實作入口為 `src/Core/EndlessAi/EndlessAiOrchestrator.cs`。
+
+主要路徑：`MAPS/ENDL_000..004/SCRIPT/ak_level.bci`。
 
 目前目標狀態：
 
@@ -307,7 +311,7 @@ ZIP 備份先建立 `.tmp`，加入修改器產生的 `manifest.json`，成功�
 
 - `mainTabControl` 的 header 故意隱藏，左側按鈕負責導航。
 - `StyleNavButton` 綁定前必須先建立對應 `TabPage`。
-- `pnlNumericCard`（系統）、`pnlSwitchesCard`（資源）與 `pnlBuildCard`（建設）是核心開關區，手工座標為三欄並排，修改或新增開關時需注意各卡片手工座標定位。
+- `settingsLayout` 第一列放置 `pnlNumericCard`（系統）、`pnlSwitchesCard`（資源）與 `pnlBuildCard`（建設）三欄；第二列的 `pnlAiCard` 橫跨三欄，容納 M1–M5 並依寬度換行。
 - `pnlTipsCard` 指南卡片拆分為左右雙欄，左半部 `lblTipsContent` 顯示操作指引，右半部 `lblTipsDetail` 顯示功能詳細說明，以避免說明文字過長導致的高度截斷問題。
 - 新 toggle 必須同步 UI field、localization、apply、restore、state detection 與文件。
 - 移除舊有的 `.arpreset` 全域設定檔匯入／匯出功能，改由一鍵「所有功能開啟」與「所有功能關閉」按鈕控制所有開關狀態。
@@ -331,8 +335,6 @@ ZIP 備份先建立 `.tmp`，加入修改器產生的 `manifest.json`，成功�
 - `apt.dat` 的安全格式與用途。
 - BCI opcode 的完整解碼。
 - `[volkres]` 多個 candidate 欄位。
-- 自動化測試；目前主要依賴 build、schema、round-trip、bytes 與實機驗證。
-- 公開發佈前的頂層 `LICENSE` 決策。
 
 ## 18. 驗證
 
@@ -340,75 +342,7 @@ ZIP 備份先建立 `.tmp`，加入修改器產生的 `manifest.json`，成功�
 
 ```powershell
 dotnet build .\AgainstRomeModifier.csproj -c Release --no-restore
-Get-Content .\data\game_schema.json -Raw | ConvertFrom-Json | Out-Null
-git diff --check
-```
-
-依修改類型追加：
-
-- PFIL：壓縮／解壓 round-trip。
-- `objdef.dau`：解壓長度完全相等、短 row bounds。
-- 偵測機制：必須 12 處原始位元組完全匹配或修補位元組完全匹配；任何混合或未知狀態皆判定為 Unknown 並跳過，以確保還原與寫入安全性。
-
-## 12. 強制英文與語言回復
-
-強制英文開關是手動、預設關閉。語言 overlay 原版基線位於 `<gamePath>\.against-rome-modifier-language-backup`。
-
-回復合約：
-
-- overlay 存在且 baseline/manifest 缺失：中止並明確報錯。
-- baseline 完整：精確回復原檔。
-- 原版不存在的 overlay-only 檔案：回復時刪除。
-
-不得把 active `ToEng` 檔當成原版。真實安裝曾有 332 個 overlay 檔但無 baseline，而當時 `Backup.zip` 的 146 entries 不含這些目標。修復工具為 `tools/Repair-LanguageBackup.ps1`。
-
-## 13. 存檔與 VirtualStore
-
-唯一 live save root 是 `<gamePath>\SAVE`。Windows 在非提升狀態啟動舊遊戲時，可能把寫入導向 `%LOCALAPPDATA%\VirtualStore\Program Files (x86)\Against Rome\SAVE`；修改器本身要求管理員並把遊戲 `WorkingDirectory` 設為所選根目錄，但外部非提升捷徑仍可能重建 VirtualStore。
-
-ZIP 備份先建立 `.tmp`，加入修改器產生的 `manifest.json`，成功後再 move。ZIP entry 禁止 absolute path、leading slash 與 `..` traversal。存檔 restore 成功後先 commit，再清理 staging；cleanup 失敗只記錄。
-
-## 14. dgVoodoo2
-
-修改器內嵌 x86 `D3D8.dll`、`DDraw.dll`、`dgVoodooCpl.exe`、`dgVoodoo.conf`。它不下載 runtime dependency，也不覆蓋非受管 DLL。遊戲根目錄的 manifest 記錄受管檔與 hash；使用者改過的受管檔不會被無聲刪除。來源、版本與 SHA-256 見 `ThirdParty/dgVoodoo2/REDISTRIBUTION.md`。
-
-## 15. UI 與 preset
-
-- `mainTabControl` 的 header 故意隱藏，左側按鈕負責導航。
-- `StyleNavButton` 綁定前必須先建立對應 `TabPage`。
-- `pnlNumericCard`（系統）、`pnlSwitchesCard`（資源）與 `pnlBuildCard`（建設）是核心開關區，手工座標為三欄並排，修改或新增開關時需注意各卡片手工座標定位。
-- `pnlTipsCard` 指南卡片拆分為左右雙欄，左半部 `lblTipsContent` 顯示操作指引，右半部 `lblTipsDetail` 顯示功能詳細說明，以避免說明文字過長導致的高度截斷問題。
-- 新 toggle 必須同步 UI field、localization、apply、restore、state detection 與文件。
-- 移除舊有的 `.arpreset` 全域設定檔匯入／匯出功能，改由一鍵「所有功能開啟」與「所有功能關閉」按鈕控制所有開關狀態。
-- `.artroop` 目前有 9 個屬性；舊短格式缺欄位時使用 fallback。
-
-## 16. 逆向工程工作流
-
-查詢順序：
-
-1. `docs/reverse-engineering/`
-2. `data/game_schema.json`
-3. `re_workspace/ghidra_inventory/against_rome_function_index.csv`
-4. `re_workspace/ghidra_inventory/against_rome_decompiled_functions.c`
-5. 必要時新增 focused script 到 `tools/re/`
-
-`re_workspace/` 是本機證據與產物，禁止上傳；`tools/re/` 的可重現 scripts 可以公開。完整反編譯不等於取得原始碼，不能還原原始識別字、註解或 build system。
-
-## 17. 未完成項目
-
-- AI Ultimate 五張 ENDL 地圖的長時間回歸。
-- `apt.dat` 的安全格式與用途。
-- BCI opcode 的完整解碼。
-- `[volkres]` 多個 candidate 欄位。
-- 自動化測試；目前主要依賴 build、schema、round-trip、bytes 與實機驗證。
-- 公開發佈前的頂層 `LICENSE` 決策。
-
-## 18. 驗證
-
-基本驗證：
-
-```powershell
-dotnet build .\AgainstRomeModifier.csproj -c Release --no-restore
+dotnet run --project .\tests\verify_split_patches\verify_split_patches.csproj -c Release
 Get-Content .\data\game_schema.json -Raw | ConvertFrom-Json | Out-Null
 git diff --check
 ```

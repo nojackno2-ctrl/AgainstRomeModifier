@@ -27,8 +27,9 @@ research and personal modding project.
   in `objdef.dau` (shortens building build/upgrade times by 10, which automatically
   boosts repair rate, successfully runtime-verified in-game).
 - Reversible 10x storage capacity switch for town halls (`Hau`) and warehouses (`Lag`) in `objdef.dau` (successfully runtime-verified in-game).
-- Endless-mode AI Ultimate Mode, which raises the mass-army spawn count to the
-  vanilla script limit, recycles completed military reinforcement jobs for
+- Endless-mode AI Ultimate Mode, split into five independently selectable
+  modules, which raises the mass-army spawn count to the vanilla script limit,
+  recycles completed military reinforcement jobs for
   continuing waves, reduces the military reinforcement wait to 5 seconds, cuts
   four non-settlement party retreat deadlines from 10 minutes to 5 seconds,
   and preserves the two settlement cleanup fallbacks at 10 minutes so an old

@@ -67,7 +67,7 @@ templates ship with all-zero `resv`.
 
 ### Settlement main-house starting-resources patch (implemented)
 
-`AI終極模式` additionally rewrites the main-building `resv` line in every
+AI Ultimate M5 additionally rewrites the main-building `resv` line in every
 `MAPS\ENDL_*\Endlos_*_Siedlung*.sdl`:
 
 - Main building `namedef` contains `_Haupt`: `Haupthaus` for Germans, Celts,
@@ -151,7 +151,7 @@ endless maps inspected.
 - Military-style arrival uses script unit-creation jobs.
 - The military create-unit job's current count range is `4..4`, clamped by the
   EXE to `1..20`.
-- The modifier option `AI終極模式` changes this military count range to
+- AI Ultimate M1 changes this military count range to
   `20..20`, changes the military reinforcement wait from `180000` ms to
   `5000` ms, shortens four non-settlement party retreat deadlines from
   `600000` ms to `5000` ms while preserving both settlement-cleanup fallbacks
@@ -261,8 +261,8 @@ original values.
 
 ### Main-house conversion-size patch (re-enabled)
 
-The `ak_haupthaus.bci` edit was re-examined in isolation and re-enabled under
-the AI Ultimate toggle:
+The `ak_haupthaus.bci` edit was re-examined in isolation and is controlled by
+AI Ultimate M1:
 
 - The site at decompressed `0x3FCC` (unique hit for signature
   `[?, ?, 81, 11, 81, 10, 81, 98, 128, 81, 73, -4, 86]`) pushes the last
@@ -388,7 +388,7 @@ civilian-to-battle-unit conversion is driven by `Dorfverteidigung.bci`
   the old open question for the `ak_level.bci` military job counts (`4..4`):
   they are members-per-unit, not unit counts.
 - Because arg 2 is `1`, the EXE clamp allows `1..20`, so `6..6 -> 20..20` is
-  engine-legal. The AI Ultimate toggle now patches both literals at all four
+  engine-legal. AI Ultimate M1 now patches both literals at all four
   sites (signature
   `[66,0, 66,1, 66,?, 66,?, 66,0, 66,0, 66,?, 66,1, 90,8, 128,157, 73,-9, 86]`,
   exactly four hits expected; count words at signature word indexes 5 and 7).

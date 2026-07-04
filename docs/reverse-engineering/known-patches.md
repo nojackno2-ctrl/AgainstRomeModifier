@@ -110,7 +110,7 @@
   still the only remaining open item.
 - File: `MAPS/ENDL_*/SCRIPT/ak_level.bci`.
 - Format: `PFIL@` compressed `BCI0` compiled script.
-- Modifier UI: `AI終極模式` / `AI Ultimate Mode`.
+- Modifier UI: five independent AI Ultimate modules (M1-M5); rejected global CLAK edits are restored by mandatory repair R0.
 - Create-unit call: decompressed BCI offset `0x17B60`,
   `s_addNPCJob_createUnit(local7, 3, 8, 0, 0, 4, 4, 1, 0)` after reversing
   BCI stack argument order.
@@ -210,8 +210,8 @@
   Runtime testing showed these two scripts are not safely NPC-scoped and stop
   staffed player buildings from producing resources, including in a new game.
 - `ak_haupthaus.bci` conversion-size argument `[81,59] -> [66,20]` (decompressed
-  `0x3FCC`, unique signature hit) is re-enabled and follows the AI Ultimate
-  toggle. It replaces "push var 59" with "push literal 20" as the last argument
+  `0x3FCC`, unique signature hit) is controlled by M1 (reinforcement size). It
+  replaces "push var 59" with "push literal 20" as the last argument
   of the `s_createBattleUnitsMax` call. Ghidra decompilation of the callback
   implementation `FUN_005249d0` (registered via trampoline `LAB_0052a110`,
   signature `i_iiii`) shows the argument is the members-per-battle-unit count,

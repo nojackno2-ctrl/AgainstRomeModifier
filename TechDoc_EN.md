@@ -1,6 +1,6 @@
 # Against Rome Modifier Complete Technical Document
 
-Updated: 2026-07-03.
+Updated: 2026-07-04.
 
 This document describes the current code, data formats, reverse-engineering evidence, enabled patches, candidates, and rejected approaches. It is not a version history. Each feature has one current description. Reproducible runtime behavior and the latest concrete decompiler evidence take precedence over an older interpretation.
 
@@ -24,6 +24,8 @@ For the detailed maintenance chronology, debugging failures, checklists, and wor
 |---|---|
 | `src/Program.cs` | WinForms entry, elevation, High DPI startup, global exception handling. |
 | `src/Core/GameLZSS.cs` | LZSS and `PFIL@` wrapper decode/encode with bounds checks. |
+| `src/Core/Bci/` | BCI signature matching, word writes, and PFIL script handling. |
+| `src/Core/EndlessAi/` | AI Ultimate M1-M5 modules, state detection, and orchestration. |
 | `src/Core/TroopConfig.cs` | Field enums, unit IDs, names, factions, tiers, types, and balance baselines. |
 | `src/UI/ModifierForm.cs` | Main UI, controls, backup cache, parsed unit cache, shared state. |
 | `src/UI/ModifierForm.Data.cs` | Current-data reading, CSV-like parsing, comparisons, icons, EXE state detection. |
@@ -189,12 +191,14 @@ Every `MAPS/**/team.dat` is restored from its original first. The core switch th
 
 ## 10. Endless `ak_level.bci`
 
+AI Ultimate is exposed as five independent modules: M1 reinforcement size, M2 reinforcement cadence, M3 defeat recovery, M4 settlement spawning and retention, and M5 starting resources. The non-optional R0 repair restores rejected global CLAK edits. `src/Core/EndlessAi/EndlessAiOrchestrator.cs` owns module detection and application.
+
 `MAPS/ENDL_*/SCRIPT/ak_level.bci` is a `BCI0` compiled-script payload inside `PFIL@`. Patches search opcode/literal signatures and have been found with the same local sequence in `ENDL_000` through `ENDL_004`.
 
 - Military create call around decompressed `0x17B60`: interpreted as `s_addNPCJob_createUnit(local7, 3, 8, 0, 0, 4, 4, 1, 0)` after reversing BCI stack order.
 - Count literals near `0x17B2C` and `0x17B34`: `4 -> 20`.
 - Completed-job recycling flag near `0x17B1C`: `0 -> 1`, allowing completed military reinforcement jobs to release their NPC-job slots for later waves.
-- Older builds edited three global CLAK economy scripts. `ak_npc.bci` (free-civilian reserve) and `ak_produktion.bci` (production gate) proved not NPC-scoped in runtime testing — they stop staffed player resource buildings even in a new game — and are always restored. The third edit, `ak_haupthaus.bci` conversion size `[81,59] -> [66,20]` at `0x3FCC`, is re-enabled under the AI Ultimate toggle: Ghidra decompilation of the `s_createBattleUnitsMax` implementation (`FUN_005249d0`) confirms the argument is the members-per-battle-unit count, clamped by the EXE to 0..20, and each call already converts all gathered idle civilians (up to 100) in batches of that size. The original runtime value is 6, matching the observed 6-man AI conversion units. A player manual-conversion regression check is still pending.
+- Older builds edited three global CLAK economy scripts. `ak_npc.bci` (free-civilian reserve) and `ak_produktion.bci` (production gate) proved not NPC-scoped in runtime testing — they stop staffed player resource buildings even in a new game — and are always restored by R0. The third edit, `ak_haupthaus.bci` conversion size `[81,59] -> [66,20]` at `0x3FCC`, is controlled by M1: Ghidra decompilation of the `s_createBattleUnitsMax` implementation (`FUN_005249d0`) confirms the argument is the members-per-battle-unit count, clamped by the EXE to 0..20, and each call already converts all gathered idle civilians (up to 100) in batches of that size. The original runtime value is 6, matching the observed 6-man AI conversion units. A player manual-conversion regression check is still pending.
 - 2026-07-03 correction: with only the `ak_haupthaus` edit, in-game AI conversions stayed at 6. The main-house call sits in the `var57 == 34` (CIVRECREATE_WAIT) branch and only fires in the military-reinforcement recreate chain; the village AI's day-to-day conversion runs through `Dorfverteidigung.bci`'s four `s_addNPCJob_createUnit(team, 1, type∈{1,2,6,3}, 0, 0, 6, 6, 1, 0)` sites (pushsym at decompressed `0xF1BC/0xF264/0xF30C/0xF3B4`). Args 6/7 are the per-unit member min/max (job `+0x11/+0x12`; EXE clamp 1..20 since arg 2 is 1); the job executor (~`00548700`) gathers that many idle civilians and calls `FUN_00523a00` once — one job creates one N-member unit, which also confirms the `ak_level.bci` military job counts (`4..4 -> 20..20`) are members-per-unit. AI Ultimate now patches all eight literals `6 -> 20` via the signature `[66,0, 66,1, 66,?, 66,?, 66,0, 66,0, 66,?, 66,1, 90,8, 128,157, 73,-9, 86]` (exactly four hits enforced); disabling restores 6. Runtime verified 2026-07-03: with the patch applied, the village AI converts 20 villagers into a single squad in-game.
 - EXE path `0054aa80 -> 00547f50` clamps this mode to 1..20.
 - Military reinforcement wait at decompressed `0x178E0`: `180000 -> 5000 ms`.
