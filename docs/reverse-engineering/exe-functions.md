@@ -249,6 +249,25 @@ applies these bytes and retains them only for detection and restoration. See
   runtime names. Columns `264-295` are four arrays of eight values:
   `befehl`, `motivieren`, `angriff`, and `verteidigung`.
 
+## Spell Parameter Table (see `priest-spells.md`)
+
+- `0041bce0`: loads `SYSTEM/cl_script.ini` then `SYSTEM/CLAK/cl_scint.ini`;
+  both register the `[Spells]`/`[SpecialAbilities]` line callback `0041cba0`.
+- `0041cba0`: `[Spells]` line parser. Key table at file offset `0x21bc10`
+  (MainExpl..SpellODef2 → field indexes 0-9); tribe table `0x61ba40`; spell
+  table `0x61bbd0`. Fields 8/9 (`SpellODef`/`SpellODef2`) take an ODef NAME
+  resolved via `0052ea90` (stricmp loop over the 500-entry name table at
+  `0x265be70`) + `0052ea20` (name index → handle); fields 0-7 parse `%ld`.
+- `00541440`: spell-parameter setter `(tribe<4, spell<8, field<10, value)` —
+  single caller is the parser above.
+- `00541660` region: field getter behind `s_getSpecialEffectValue`.
+  `Duration` is 32-bit at `0x29c5508`; all other fields are 16-bit signed
+  words (`sar eax, 0x10` on read → effective max 32767).
+- `00541dc0`: defaults initializer (MainExpl/SubExpl/SpellODef/SpellODef2 =
+  -1, Radius = 500, others 0) — INI records overwrite these.
+- `00547650` → `005465e0` → `005245d0`: `s_specialEffektCreateUnit` handler
+  chain (summon/resurrect spawn loop, attaches `DEFSCRIPT`).
+
 Focus-loss pause patch:
 
 - File offset: `0x161a88`

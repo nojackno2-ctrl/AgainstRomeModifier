@@ -16,6 +16,8 @@ and patch code.
 - `objdef-fields.csv`: known `objdef.dau` indexes.
 - `ress-fields.csv`: known `ress.ini` indexes.
 - `exe-functions.md`: executable functions and anchors found with Ghidra.
+- `priest-spells.md`: priest spell effect values, summon/resurrect unit
+  types (`SpellODef`), and the decoded resurrection logic.
 - `known-patches.md`: implemented, legacy, candidate, and rejected patches.
 - `decompilation-workflow.md`: local Ghidra/JDK workflow and generated EXE
   inventory.
@@ -28,7 +30,11 @@ and patch code.
 - `SYSTEM/ress.ini`: construction, production, upgrade, refund, and priest
   spell costs.
 - `SYSTEM/banner.ini`: banner/icon/object variants referenced by `team.dat`.
-- `SYSTEM/cl_script.ini`: villager delay, spell radius, and morale parameters.
+- `SYSTEM/cl_script.ini`: villager delay, spell radius, morale parameters,
+  and per-spell effect values (`Value`/`Value2`/`Duration`/`NumObjects`).
+- `SYSTEM/CLAK/cl_scint.ini`: ODef alias tables and summon/resurrect unit
+  types (`SpellODef`/`SpellODef2`) — read-only research, not yet managed by
+  the modifier.
 - `MAPS/**/team.dat`: map population limits and banner versions.
 - `MAPS/ENDL_*/SCRIPT/ak_level.bci`: bounded AI Ultimate Mode patch.
 - `MAPS/ENDL_*/Endlos_*_Siedlung*.sdl`: read-only endless settlement templates.

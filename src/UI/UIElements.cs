@@ -8,6 +8,8 @@ namespace AgainstRomeModifier {
     /// 自訂現代科技感 TabControl，徹底移除預設白邊/灰色框線，並支援 OwnerDraw 繪製頁籤
     /// </summary>
     public class ModernTabControl : TabControl {
+        public bool HideTabs { get; set; } = false;
+
         public ModernTabControl() {
             this.DrawMode = TabDrawMode.OwnerDrawFixed;
             this.SizeMode = TabSizeMode.Fixed;
@@ -15,9 +17,9 @@ namespace AgainstRomeModifier {
         }
 
         protected override void WndProc(ref Message m) {
-            // 0x1328 是 TCM_ADJUSTRECT。當不顯示頁籤 (ItemSize 高度設為 1) 時，
+            // 0x1328 是 TCM_ADJUSTRECT。當不顯示頁籤 (HideTabs = true) 時，
             // 阻斷此訊息可隱藏 WinForms 預設的內縮與灰色邊框。
-            if (m.Msg == 0x1328 && !DesignMode) {
+            if (m.Msg == 0x1328 && !DesignMode && HideTabs) {
                 m.Result = (IntPtr)1;
                 return;
             }
@@ -25,7 +27,7 @@ namespace AgainstRomeModifier {
         }
 
         protected override void OnDrawItem(DrawItemEventArgs e) {
-            if (this.ItemSize.Height <= 5 || e.Index < 0 || e.Index >= this.TabCount) {
+            if (HideTabs || e.Index < 0 || e.Index >= this.TabCount) {
                 return;
             }
 

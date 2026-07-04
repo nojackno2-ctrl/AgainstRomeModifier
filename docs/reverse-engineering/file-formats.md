@@ -9,6 +9,10 @@ Known compressed text files:
 
 - `SYSTEM/ress.ini`
 - `SYSTEM/cl_script.ini`
+- `SYSTEM/CLAK/cl_scint.ini` (ODef aliases, `SpellODef` unit types — see
+  `priest-spells.md`)
+- `SYSTEM/cl_epara.ini` (combat-state factors: Berserker/Schutzschild/
+  Donnerschlag multipliers)
 - `SYSTEM/banner.ini`
 - `SYSTEM/DATA_MP/DEFAULTS/objdef.dau`
 - `MAPS/**/team.dat`

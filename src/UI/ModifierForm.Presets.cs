@@ -1,5 +1,4 @@
 using System;
-using System.Windows.Forms;
 
 namespace AgainstRomeModifier {
     public partial class ModifierForm {
@@ -15,6 +14,7 @@ namespace AgainstRomeModifier {
             chkFreeUpgrade.Checked = true;
             chkNoSpellCost.Checked = true;
             chkNoSpellAltar.Checked = true;
+            chkSpellEnhancement.Checked = true;
             chkInfiniteMorale.Checked = true;
             chkHousingCapacity20x.Checked = true;
             chkStorageCapacity10x.Checked = true;
@@ -44,6 +44,7 @@ namespace AgainstRomeModifier {
             chkFreeUpgrade.Checked = false;
             chkNoSpellCost.Checked = false;
             chkNoSpellAltar.Checked = false;
+            chkSpellEnhancement.Checked = false;
             chkInfiniteMorale.Checked = false;
             chkHousingCapacity20x.Checked = false;
             chkStorageCapacity10x.Checked = false;

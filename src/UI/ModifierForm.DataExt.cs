@@ -1,6 +1,5 @@
 using System;
 using System.Globalization;
-using System.Collections.Generic;
 
 namespace AgainstRomeModifier {
     public partial class ModifierForm {

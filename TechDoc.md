@@ -167,6 +167,8 @@ commit 後要先 Dispose／清空 rollback scope，再更新 UI；UI refresh 例
 目前管理：
 
 - `Radius = <faction>, SpellN, value`
+- `Value = <faction>, SpellN, value` （法術效果主要值，如傷害、治療量或百分比）
+- `Value2 = <faction>, SpellN, value` （法術效果次要值，如復活士氣百分比）
 - `CiviDelay = <faction>, value`
 - `MoralsDecLostMem`
 - `MoralsDecFlee`
@@ -174,6 +176,16 @@ commit 後要先 Dispose／清空 rollback scope，再更新 UI；UI refresh 例
 - `MoralsIncIdle`
 
 修改時保留註解和未管理內容，依 faction + key 定位。Balance toggle 的事件只應更新預覽，不應偷偷重讀所有 live game files。強制英文 toggle 也不應由 live overlay 自動勾選。
+
+## 8a. `cl_scint.ini`
+
+路徑：`SYSTEM/CLAK/cl_scint.ini`。
+
+目前管理：
+- `SpellODef = <faction>, SpellN, alias` （復活技能男性屍體別名）
+- `SpellODef2 = <faction>, SpellN, alias` （復活技能女性屍體別名）
+
+修改時會根據法師技能與復活術強化勾選狀態，將塞爾特的 `SpellODef`（原為 `KEL_INF00` 劍士）改為 `KEL_INF01`（槍盾兵），`SpellODef2`（原為 `KEL_SCH00` 弓兵）改為 `KEL_INF02`（女雙劍士）。本檔案以 `PFIL@` 解壓與寫回。
 
 ## 9. `team.dat`
 
@@ -465,3 +477,8 @@ git diff --check
 ### 2026-07-02（第四次會談）：將村莊建造範圍由 2.5 倍升級至 3 倍
 - 將村莊建造與紅框範圍補丁的組語乘數從 2.5 倍升級至 3 倍（LEA 縮放與 NOP 補齊）。
 - 更新狀態偵測列舉（Expanded3x）、語意字典與元數據。
+
+### 2026-07-04：新增法師技能與復活術強化功能
+- 實作傷害法術提升 5 倍，治療法術提升 50 倍的數據修改邏輯。
+- 將 `SYSTEM/CLAK/cl_scint.ini` 納入備份與修改機制，動態替換復活召喚的 ODef 別名（男屍體轉槍盾兵 `KEL_INF01`，女屍體轉女雙劍士 `KEL_INF02`）。
+- 實作復活後的單位生命值與士氣設定值為 100%。

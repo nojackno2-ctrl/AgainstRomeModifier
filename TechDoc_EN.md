@@ -81,14 +81,21 @@ Language restore is independent from stat and compatibility restore.
 
 ## 6. `SYSTEM/cl_script.ini`
 
-This is cp1251 text inside `PFIL@`. Compiled regular expressions locate `Radius`, `CiviDelay`, `MoralsDecLostMem`, `MoralsDecFlee`, `MoralsDecOverPop`, and `MoralsIncIdle` while preserving comments.
+This is cp1251 text inside `PFIL@`. Compiled regular expressions locate `Radius`, `Value`, `Value2`, `CiviDelay`, `MoralsDecLostMem`, `MoralsDecFlee`, `MoralsDecOverPop`, and `MoralsIncIdle` while preserving comments.
 
+- Spell Value / Value2 parameters are modified by the Spell Enhancement toggle to scale damage by 5x, healing by 50x, and Celt Spell3 resurrection health/morale to 100%.
 - The core villager-speed switch writes every `CiviDelay` as 500 ms (the fastest valid 10x setting). When disabled, original backup values are preserved. The executable clamps the delay to at least 500 ms.
 - Infinite morale uses the executable's minimum accepted `MoralsIncIdle` value of 500 ms and is described as rapid rather than instant recovery.
 - Infinite morale zeroes decay parameters and sets the required idle recovery behavior.
 - Balance mode applies a default 2.5x faction spell-radius multiplier.
 - A custom KEL/HUN priest's ninth property overrides the faction multiplier as `SpellRadius / 500.0`. GER has no original Radius record and remains non-editable at zero.
 - If no relevant feature is enabled, the original file is written; values are never repeatedly multiplied from an already modified file.
+
+## 6a. `SYSTEM/CLAK/cl_scint.ini`
+
+This is cp1251 text inside `PFIL@`. It handles the unit mapping aliases for summon/resurrect spells (`SpellODef` / `SpellODef2` key entries).
+- Under Celt Spell3 (Raise Dead), `SpellODef` is changed from `KEL_INF00` (Swordsman) to `KEL_INF01` (Spearman), and `SpellODef2` from `KEL_SCH00` (Archer) to `KEL_INF02` (Heavy Infantry/Double Swordsman) when Spell Enhancement is checked.
+- On restore, the backup file is written back.
 
 ## 7. `SYSTEM/ress.ini`
 

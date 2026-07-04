@@ -10,7 +10,6 @@ using System.Windows.Forms;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Runtime.InteropServices;
-using System.Threading.Tasks;
 
 namespace AgainstRomeModifier {
     public partial class ModifierForm {
@@ -60,7 +59,8 @@ namespace AgainstRomeModifier {
                 "SYSTEM/cl_script.ini",
                 "SYSTEM/ress.ini",
                 "SYSTEM/DATA_MP/DEFAULTS/objdef.dau",
-                "SYSTEM/CLMK/icon.ini"
+                "SYSTEM/CLMK/icon.ini",
+                "SYSTEM/CLAK/cl_scint.ini"
             };
 
             foreach (string key in requiredFiles) {
@@ -107,7 +107,8 @@ namespace AgainstRomeModifier {
                 "SYSTEM/cl_script.ini",
                 "SYSTEM/ress.ini",
                 "SYSTEM/DATA_MP/DEFAULTS/objdef.dau",
-                "SYSTEM/CLMK/icon.ini"
+                "SYSTEM/CLMK/icon.ini",
+                "SYSTEM/CLAK/cl_scint.ini"
             };
 
             foreach (string relPath in requiredFiles) {
@@ -662,6 +663,8 @@ namespace AgainstRomeModifier {
                 }
             };
 
+            ConfigureStatsGridColumnsToFit(dgv);
+
             return dgv;
         }
 
@@ -755,7 +758,21 @@ namespace AgainstRomeModifier {
             dgv.Columns["Tier"].Width = 75;
             dgv.Columns["Tier"].DisplayIndex = 4;
 
+            ConfigureStatsGridColumnsToFit(dgv);
+
             return dgv;
+        }
+
+        private static void ConfigureStatsGridColumnsToFit(DataGridView dgv) {
+            foreach (DataGridViewColumn column in dgv.Columns) {
+                if (!column.Visible || column.Name == "Name" || column.Name == "Icon" || column.Name == "Tier") {
+                    continue;
+                }
+
+                column.FillWeight = Math.Max(60, column.Width);
+                column.MinimumWidth = 60;
+                column.AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
+            }
         }
 
         /// <summary>
@@ -1267,6 +1284,25 @@ namespace AgainstRomeModifier {
                     }
                     if (syncUIWithFile) {
                         chkInfiniteMorale.Checked = infiniteMorale;
+                    }
+
+                    bool spellEnhancement = false;
+                    var mSpellEnhance = Regex.Match(clText, @"Value\s*=\s*GER\s*,\s*Spell2\s*,\s*350");
+                    if (mSpellEnhance.Success) {
+                        string scintPath = Path.Combine(gamePath, @"SYSTEM\CLAK\cl_scint.ini");
+                        if (File.Exists(scintPath)) {
+                            try {
+                                byte[] scintBytes = File.ReadAllBytes(scintPath);
+                                byte[] decompScint = GameLZSS.DecompressPfil(scintBytes);
+                                string scintText = Encoding.GetEncoding(1251).GetString(decompScint);
+                                if (scintText.Contains("SpellODef =KEL, Spell3, KEL_INF01") || scintText.Contains("SpellODef=KEL,Spell3,KEL_INF01")) {
+                                    spellEnhancement = true;
+                                }
+                            } catch { }
+                        }
+                    }
+                    if (syncUIWithFile) {
+                        chkSpellEnhancement.Checked = spellEnhancement;
                     }
                 }
 

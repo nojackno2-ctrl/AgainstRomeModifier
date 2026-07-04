@@ -1,16 +1,13 @@
 using System;
 using System.IO;
-using System.IO.Compression;
 using System.Linq;
 using System.Text;
-using System.Text.RegularExpressions;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Windows.Forms;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Runtime.InteropServices;
-using System.Threading.Tasks;
 
 namespace AgainstRomeModifier {
     // 修改器的主表單類別，繼承自 Windows Form
@@ -96,6 +93,7 @@ namespace AgainstRomeModifier {
         private string presetFileName = "";
         private ModernToggle chkToEng = null!;
         private ModernToggle chkInfiniteMorale = null!;
+        private ModernToggle chkSpellEnhancement = null!;
 
         // 所有功能開啟/關閉按鈕
         private Button btnEnableAll = null!;
@@ -151,6 +149,7 @@ namespace AgainstRomeModifier {
         private Label lblHelpInfiniteMorale = null!;
         private Label lblHelpBalance = null!;
         private Label lblHelpNoSpellAltar = null!;
+        private Label lblHelpSpellEnhancement = null!;
         private Label lblHelpMaxPopulation = null!;
         private Label lblHelpHousingCapacity20x = null!;
         private Label lblHelpStorageCapacity10x = null!;
@@ -202,7 +201,6 @@ namespace AgainstRomeModifier {
         private Font fontJhengHei10B = new Font("Microsoft JhengHei", 10F, FontStyle.Bold);
         private Font fontJhengHei9R = new Font("Microsoft JhengHei", 9F, FontStyle.Regular);
         private Font fontJhengHei10R = new Font("Microsoft JhengHei", 10F, FontStyle.Regular);
-        private Font fontConsolas95 = new Font("Consolas", 9.5F);
         private Font fontConsolas85 = new Font("Consolas", 8.5F, FontStyle.Regular);
         
         // 統一風格的按鈕基礎顏色
@@ -245,7 +243,6 @@ namespace AgainstRomeModifier {
                     fontJhengHei10B.Dispose();
                     fontJhengHei9R.Dispose();
                     fontJhengHei10R.Dispose();
-                    fontConsolas95.Dispose();
                     fontConsolas85.Dispose();
                 } catch (Exception ex) {
                     Log("釋放資源失敗: " + ex.Message);
@@ -624,7 +621,8 @@ namespace AgainstRomeModifier {
                 Location = new Point(230, 60),
                 Size = new Size(1200, 810),
                 SizeMode = TabSizeMode.Fixed,
-                ItemSize = new Size(0, 1)
+                ItemSize = new Size(0, 1),
+                HideTabs = true
             };
 
             tabSystem = new TabPage {
@@ -813,6 +811,19 @@ namespace AgainstRomeModifier {
             lblHelpNoSpellAltar.Location = new Point(340, 480);
             pnlSwitchesCard.Controls.Add(chkNoSpellAltar);
             pnlSwitchesCard.Controls.Add(lblHelpNoSpellAltar);
+
+            chkSpellEnhancement = new ModernToggle {
+                Text = "法師技能與復活術強化",
+                Location = new Point(25, 560),
+                Size = new Size(310, 25),
+                Checked = false,
+                BackColor = Color.Transparent,
+                Font = fontJhengHei10B
+            };
+            lblHelpSpellEnhancement = CreateHelpLabel("SpellEnhancementTip");
+            lblHelpSpellEnhancement.Location = new Point(340, 560);
+            pnlSwitchesCard.Controls.Add(chkSpellEnhancement);
+            pnlSwitchesCard.Controls.Add(lblHelpSpellEnhancement);
 
             // 新增：建設與人口修改卡片
             pnlBuildCard = new Panel {
@@ -1521,13 +1532,14 @@ namespace AgainstRomeModifier {
                 (chkFocusLoss, lblHelpFocusLoss),
                 (chkToEng, lblHelpToEng),
                 (chkDgVoodoo, lblHelpDgVoodoo));
-            ConfigureSettingsCard(pnlSwitchesCard, lblSwitchesTitle, 374,
+            ConfigureSettingsCard(pnlSwitchesCard, lblSwitchesTitle, 422,
                 (chkFreeProd, lblHelpFreeProd),
                 (chkFreeUpgrade, lblHelpFreeUpgrade),
                 (chkNoSpellCost, lblHelpNoSpellCost),
                 (chkInfiniteMorale, lblHelpInfiniteMorale),
                 (chkBalance, lblHelpBalance),
-                (chkNoSpellAltar, lblHelpNoSpellAltar));
+                (chkNoSpellAltar, lblHelpNoSpellAltar),
+                (chkSpellEnhancement, lblHelpSpellEnhancement));
             ConfigureSettingsCard(pnlBuildCard, lblBuildTitle, 470,
                 (chkMaxPopulation, lblHelpMaxPopulation),
                 (chkHousingCapacity20x, lblHelpHousingCapacity20x),
@@ -1613,13 +1625,7 @@ namespace AgainstRomeModifier {
         private void ConfigureStatsPages() {
             Panel defaultHeader = lblDefaultStatsTitle.Parent as Panel
                 ?? throw new InvalidOperationException("Default stats header was not initialized.");
-            defaultHeader.Dock = DockStyle.Top;
-            defaultHeader.Height = 68;
-            defaultHeader.BackColor = Color.FromArgb(18, 22, 31);
-            defaultStatsTabControl.Dock = DockStyle.Fill;
-            defaultStatsTabControl.ItemSize = new Size(150, 38);
-            defaultStatsTabControl.Font = fontJhengHei95R;
-            defaultHeader.BringToFront();
+            ConfigureStatsPage(tabDefaultStats, defaultHeader, defaultStatsTabControl);
 
             defaultHeader.Resize += (s, e) => {
                 lblTroopPresetFile.Width = Math.Max(120, defaultHeader.Width - lblTroopPresetFile.Left - 18);
@@ -1627,13 +1633,105 @@ namespace AgainstRomeModifier {
 
             Panel currentHeader = lblCurrentStatsTitle.Parent as Panel
                 ?? throw new InvalidOperationException("Current stats header was not initialized.");
-            currentHeader.Dock = DockStyle.Top;
-            currentHeader.Height = 68;
-            currentHeader.BackColor = Color.FromArgb(18, 22, 31);
-            currentStatsTabControl.Dock = DockStyle.Fill;
-            currentStatsTabControl.ItemSize = new Size(150, 38);
-            currentStatsTabControl.Font = fontJhengHei95R;
-            currentHeader.BringToFront();
+            ConfigureStatsPage(tabCurrentStats, currentHeader, currentStatsTabControl);
+
+            void ConfigureStatsPage(TabPage page, Panel header, TabControl statsTabs) {
+                // Keep the title card and the tab content in separate layout rows. A Fill-docked
+                // TabControl placed behind a Top-docked header still starts at y=0, which causes
+                // the header to cover the faction tabs and most of the grid column headings.
+                page.Controls.Remove(header);
+                page.Controls.Remove(statsTabs);
+
+                var layout = new TableLayoutPanel {
+                    Dock = DockStyle.Fill,
+                    BackColor = page.BackColor,
+                    ColumnCount = 1,
+                    RowCount = 3,
+                    Margin = new Padding(0),
+                    Padding = new Padding(0)
+                };
+                layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+                layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 68F));
+                layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 40F));
+                layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+
+                header.Dock = DockStyle.Fill;
+                header.Margin = new Padding(0);
+                header.BackColor = Color.FromArgb(18, 22, 31);
+                statsTabs.Dock = DockStyle.Fill;
+                statsTabs.Margin = new Padding(0);
+                statsTabs.ItemSize = new Size(0, 1);
+                statsTabs.Font = fontJhengHei95R;
+                if (statsTabs is ModernTabControl modernTabs) {
+                    modernTabs.HideTabs = true;
+                }
+
+                var factionBar = new TableLayoutPanel {
+                    Dock = DockStyle.Fill,
+                    BackColor = Color.FromArgb(14, 17, 24),
+                    ColumnCount = statsTabs.TabCount,
+                    RowCount = 1,
+                    Margin = new Padding(0),
+                    Padding = new Padding(0)
+                };
+                factionBar.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+
+                var factionButtons = new List<Button>();
+                for (int i = 0; i < statsTabs.TabCount; i++) {
+                    int tabIndex = i;
+                    factionBar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F / statsTabs.TabCount));
+
+                    var button = new Button {
+                        Dock = DockStyle.Fill,
+                        FlatStyle = FlatStyle.Flat,
+                        BackColor = Color.FromArgb(14, 17, 24),
+                        Cursor = Cursors.Hand,
+                        Margin = new Padding(0),
+                        TabStop = false,
+                        UseVisualStyleBackColor = false
+                    };
+                    button.FlatAppearance.BorderSize = 0;
+                    button.Paint += (s, e) => {
+                        bool selected = statsTabs.SelectedIndex == tabIndex;
+                        Color background = selected
+                            ? Color.FromArgb(26, 31, 43)
+                            : Color.FromArgb(14, 17, 24);
+                        e.Graphics.Clear(background);
+
+                        if (tabIndex > 0) {
+                            using (var divider = new Pen(Color.FromArgb(38, 44, 58))) {
+                                e.Graphics.DrawLine(divider, 0, 8, 0, button.Height - 8);
+                            }
+                        }
+                        if (selected) {
+                            using (var indicator = new SolidBrush(Color.FromArgb(62, 203, 255))) {
+                                e.Graphics.FillRectangle(indicator, 12, button.Height - 3, button.Width - 24, 3);
+                            }
+                        }
+
+                        TextRenderer.DrawText(
+                            e.Graphics,
+                            statsTabs.TabPages[tabIndex].Text.Trim(),
+                            selected ? fontJhengHei95B : fontJhengHei95R,
+                            button.ClientRectangle,
+                            selected ? Color.FromArgb(235, 248, 255) : Color.FromArgb(145, 155, 172),
+                            TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
+                    };
+                    button.Click += (s, e) => statsTabs.SelectedIndex = tabIndex;
+                    factionButtons.Add(button);
+                    factionBar.Controls.Add(button, i, 0);
+                }
+                statsTabs.SelectedIndexChanged += (s, e) => {
+                    foreach (Button button in factionButtons) {
+                        button.Invalidate();
+                    }
+                };
+
+                layout.Controls.Add(header, 0, 0);
+                layout.Controls.Add(factionBar, 0, 1);
+                layout.Controls.Add(statsTabs, 0, 2);
+                page.Controls.Add(layout);
+            }
         }
 
         private void ConfigureSaveManagerLayout() {
@@ -1888,6 +1986,7 @@ namespace AgainstRomeModifier {
             chkFreeUpgrade.Text = Loc.Get("FreeUpgrade");
             chkNoSpellCost.Text = Loc.Get("NoSpellCost");
             chkNoSpellAltar.Text = Loc.Get("NoSpellAltar");
+            chkSpellEnhancement.Text = Loc.Get("SpellEnhancement");
             chkInfiniteMorale.Text = Loc.Get("InfiniteMorale");
             lblGamePath.Text = Loc.Get("GamePath");
             btnBrowseGamePath.Text = Loc.Get("Browse");
@@ -1956,6 +2055,7 @@ namespace AgainstRomeModifier {
                 myToolTip.SetToolTip(lblHelpInfiniteMorale, Loc.Get("InfiniteMoraleTip"));
                 myToolTip.SetToolTip(lblHelpBalance, Loc.Get("BalanceTip"));
                 myToolTip.SetToolTip(lblHelpNoSpellAltar, Loc.Get("NoSpellAltarTip"));
+                myToolTip.SetToolTip(lblHelpSpellEnhancement, Loc.Get("SpellEnhancementTip"));
                 myToolTip.SetToolTip(lblHelpMaxPopulation, Loc.Get("MaxPopulationTip"));
                 myToolTip.SetToolTip(lblHelpHousingCapacity20x, Loc.Get("HousingCapacity20xTip"));
                 myToolTip.SetToolTip(lblHelpStorageCapacity10x, Loc.Get("StorageCapacity10xTip"));

@@ -7,7 +7,6 @@ using System.Windows.Forms;
 using System.Globalization;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
-using System.Linq;
 
 namespace AgainstRomeModifier {
     public class TroopPresetForm : Form {

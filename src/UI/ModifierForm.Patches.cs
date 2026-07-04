@@ -1,6 +1,5 @@
 using System;
 using System.IO;
-using System.IO.Compression;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
@@ -8,8 +7,6 @@ using System.Text.RegularExpressions;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Windows.Forms;
-using System.Drawing;
-using System.Drawing.Drawing2D;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 
@@ -28,6 +25,8 @@ namespace AgainstRomeModifier {
         private static readonly Regex RegexMoraleOverPopPatch = new Regex(@"^(MoralsDecOverPop\s*=\s*[A-Z]{3}\s*,\s*)\d+(.*)$", RegexOptions.Compiled);
         private static readonly Regex RegexMoraleIncIdlePatch = new Regex(@"^(MoralsIncIdle\s*=\s*[A-Z]{3}\s*,\s*)\d+(.*)$", RegexOptions.Compiled);
         private static readonly Regex RegexMoraleKey = new Regex(@"^(MoralsDecLostMem|MoralsDecFlee|MoralsDecOverPop|MoralsIncIdle)\s*=\s*([A-Z]{3})\s*,", RegexOptions.Compiled);
+        private static readonly Regex RegexSpellValuePatch = new Regex(@"^(Value\d*)\s*=\s*([A-Z]{3})\s*,\s*(Spell\d+)\s*,\s*([^;]+)(.*)$", RegexOptions.Compiled);
+        private static readonly Regex RegexSpellODefPatch = new Regex(@"^(SpellODef\d*)\s*=\s*(KEL)\s*,\s*(Spell3)\s*,\s*([^;]+)(.*)$", RegexOptions.Compiled);
         private static readonly byte[] ExeFocusOriginalBytes = new byte[] { 0x89, 0x15, 0xC4, 0x7D, 0x9E, 0x02 };
         private static readonly byte[] ExeFocusPatchedBytes = new byte[] { 0x90, 0x90, 0x90, 0x90, 0x90, 0x90 };
         private const long ExeFocusPatchOffset = 0x161a88;
@@ -275,6 +274,7 @@ namespace AgainstRomeModifier {
                 bool dgVoodoo = chkDgVoodoo.Checked;
                 bool villageBuildRange = chkVillageBuildRange.Checked;
                 bool noSpellAltar = chkNoSpellAltar.Checked;
+                bool spellEnhancement = chkSpellEnhancement.Checked;
 
                 await Task.Run(() => {
                     // 1. Dry Run 階段：在記憶體中生成所有補丁 byte[] 並驗證
@@ -290,8 +290,12 @@ namespace AgainstRomeModifier {
                     }
 
                     // B. cl_script.ini
-                    byte[] clBytes = GetPatchedClScriptBytes(gamePath, fastCiviProduction, infMorale, balance);
+                    byte[] clBytes = GetPatchedClScriptBytes(gamePath, fastCiviProduction, infMorale, balance, spellEnhancement);
                     patchedFiles[Path.Combine(gamePath, @"SYSTEM\cl_script.ini")] = clBytes;
+
+                    // G. cl_scint.ini
+                    byte[] scintBytes = GetPatchedClScintBytes(gamePath, spellEnhancement);
+                    patchedFiles[Path.Combine(gamePath, @"SYSTEM\CLAK\cl_scint.ini")] = scintBytes;
 
                     // C. ress.ini
                     byte[] ressBytes = GetPatchedRessBytes(freeProd, freeUp, noSpell);
@@ -613,6 +617,7 @@ namespace AgainstRomeModifier {
         /// </summary>
         private void RestoreStatsOnlyInternal(string gamePath, FileRollbackScope? rollback = null) {
             RestoreMemoryFile("SYSTEM/cl_script.ini", Path.Combine(gamePath, @"SYSTEM\cl_script.ini"), rollback);
+            RestoreMemoryFile("SYSTEM/CLAK/cl_scint.ini", Path.Combine(gamePath, @"SYSTEM\CLAK\cl_scint.ini"), rollback);
             RestoreMemoryFile("SYSTEM/ress.ini", Path.Combine(gamePath, @"SYSTEM\ress.ini"), rollback);
             RestoreMemoryFile("SYSTEM/DATA_MP/DEFAULTS/objdef.dau", Path.Combine(gamePath, @"SYSTEM\DATA_MP\DEFAULTS\objdef.dau"), rollback);
 
@@ -1085,11 +1090,16 @@ namespace AgainstRomeModifier {
                 if (morale.Success) {
                     keys.Add($"{morale.Groups[1].Value.Trim()}|{morale.Groups[2].Value.Trim()}");
                 }
+
+                Match spellVal = RegexSpellValuePatch.Match(line);
+                if (spellVal.Success) {
+                    keys.Add($"SpellValue|{spellVal.Groups[1].Value.Trim()}|{spellVal.Groups[2].Value.Trim()}|{spellVal.Groups[3].Value.Trim()}");
+                }
             }
             return keys;
         }
 
-        private byte[] GetPatchedClScriptBytes(string gamePath, bool fastCiviProduction, bool infiniteMoraleChecked, bool balanceChecked) {
+        private byte[] GetPatchedClScriptBytes(string gamePath, bool fastCiviProduction, bool infiniteMoraleChecked, bool balanceChecked, bool spellEnhancementChecked) {
             byte[]? origBytes;
             if (!backupFiles.TryGetValue("SYSTEM/cl_script.ini", out origBytes)) {
                 throw new InvalidOperationException("記憶體備份中找不到 SYSTEM/cl_script.ini。");
@@ -1097,6 +1107,7 @@ namespace AgainstRomeModifier {
 
             // 1. 建立原版備份中的 Radius 對照字典，以防多次套用導致數值累乘
             var originalRadiuses = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+            var originalSpellValues = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
             byte[] origDecomp = GameLZSS.DecompressPfil(origBytes!);
             string origText = Encoding.GetEncoding(1251).GetString(origDecomp);
             string[] origLines = origText.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
@@ -1112,6 +1123,16 @@ namespace AgainstRomeModifier {
                     string valStr = match.Groups[3].Value.Trim();
                     if (double.TryParse(valStr, NumberStyles.Any, CultureInfo.InvariantCulture, out double val)) {
                         originalRadiuses[$"{volk}_{spell}"] = val;
+                    }
+                }
+                var mVal = RegexSpellValuePatch.Match(line);
+                if (mVal.Success) {
+                    string keyName = mVal.Groups[1].Value.Trim();
+                    string volk = mVal.Groups[2].Value.Trim();
+                    string spell = mVal.Groups[3].Value.Trim();
+                    string valStr = mVal.Groups[4].Value.Trim();
+                    if (double.TryParse(valStr, NumberStyles.Any, CultureInfo.InvariantCulture, out double val)) {
+                        originalSpellValues[$"{keyName}_{volk}_{spell}"] = val;
                     }
                 }
             }
@@ -1182,6 +1203,36 @@ namespace AgainstRomeModifier {
 
                     int newVal = (int)(val * mult);
                     processedLine = string.Format("Radius     ={0}, {1}, {2,-10}{3}", volk, spell, newVal, comment);
+                }
+
+                var matchSpellVal = RegexSpellValuePatch.Match(line);
+                if (matchSpellVal.Success) {
+                    string keyName = matchSpellVal.Groups[1].Value.Trim();
+                    string volk = matchSpellVal.Groups[2].Value.Trim();
+                    string spell = matchSpellVal.Groups[3].Value.Trim();
+                    string valStr = matchSpellVal.Groups[4].Value.Trim();
+                    string comment = matchSpellVal.Groups[5].Value;
+
+                    string dictKey = $"{keyName}_{volk}_{spell}";
+                    double origVal = 0;
+                    if (!originalSpellValues.TryGetValue(dictKey, out origVal)) {
+                        double.TryParse(valStr, NumberStyles.Any, CultureInfo.InvariantCulture, out origVal);
+                    }
+
+                    int newVal = (int)origVal;
+                    if (spellEnhancementChecked) {
+                        // Apply multiplier: 5x for damage, 50x for healing
+                        if (volk == "GER" && spell == "Spell2" && keyName == "Value") newVal = (int)(origVal * 5);
+                        else if (volk == "HUN" && spell == "Spell0" && keyName == "Value") newVal = (int)(origVal * 5);
+                        else if (volk == "HUN" && spell == "Spell1" && keyName == "Value") newVal = (int)(origVal * 5);
+                        else if (volk == "HUN" && spell == "Spell2" && keyName == "Value") newVal = (int)(origVal * 5);
+                        else if (volk == "KEL" && spell == "Spell0" && keyName == "Value") newVal = (int)(origVal * 5);
+                        else if (volk == "KEL" && spell == "Spell2" && keyName == "Value") newVal = (int)(origVal * 5);
+                        else if (volk == "KEL" && spell == "Spell1" && keyName == "Value") newVal = (int)(origVal * 50);
+                        else if (volk == "KEL" && spell == "Spell3" && (keyName == "Value" || keyName == "Value2")) newVal = 100;
+                    }
+
+                    processedLine = string.Format("{0,-10} ={1}, {2}, {3,-10}{4}", keyName, volk, spell, newVal, comment);
                 }
 
                 var matchCivi = RegexCiviPatch.Match(line);
@@ -1256,6 +1307,87 @@ namespace AgainstRomeModifier {
                     }
                 }
 
+                newLines.Add(processedLine);
+            }
+
+            string newContent = string.Join(lineEnding, newLines.ToArray());
+            if (decomp.EndsWith(lineEnding) && !newContent.EndsWith(lineEnding)) {
+                newContent += lineEnding;
+            }
+
+            byte[] newBytes = Encoding.GetEncoding(1251).GetBytes(newContent);
+            return GameLZSS.CompressPfil(newBytes, origBytes);
+        }
+
+        private byte[] GetPatchedClScintBytes(string gamePath, bool spellEnhancementChecked) {
+            byte[]? origBytes;
+            if (!backupFiles.TryGetValue("SYSTEM/CLAK/cl_scint.ini", out origBytes)) {
+                throw new InvalidOperationException("記憶體備份中找不到 SYSTEM/CLAK/cl_scint.ini。");
+            }
+
+            var originalODefs = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            byte[] origDecomp = GameLZSS.DecompressPfil(origBytes!);
+            string origText = Encoding.GetEncoding(1251).GetString(origDecomp);
+            string[] origLines = origText.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
+            
+            foreach (string line in origLines) {
+                var match = RegexSpellODefPatch.Match(line);
+                if (match.Success) {
+                    string keyName = match.Groups[1].Value.Trim();
+                    string valStr = match.Groups[4].Value.Trim();
+                    originalODefs[keyName] = valStr;
+                }
+            }
+
+            byte[] baseBytes = origBytes;
+            string destPath = Path.Combine(gamePath, @"SYSTEM\CLAK\cl_scint.ini");
+            if (File.Exists(destPath)) {
+                try {
+                    byte[] currentBytes = File.ReadAllBytes(destPath);
+                    byte[] currentDecomp = GameLZSS.DecompressPfil(currentBytes);
+                    string currentText = Encoding.GetEncoding(1251).GetString(currentDecomp);
+                    if (currentText.Contains("SpellODef") && currentText.Contains("KEL, Spell3")) {
+                        baseBytes = currentBytes;
+                    } else {
+                        Log("現有 cl_scint.ini 結構不完整，已改用安全備份作為修改基底。");
+                    }
+                } catch (Exception ex) {
+                    Log("現有 cl_scint.ini 無法驗證，已改用安全備份作為修改基底: " + ex.Message);
+                }
+            }
+
+            byte[] decompBytes = GameLZSS.DecompressPfil(baseBytes);
+            string decomp = Encoding.GetEncoding(1251).GetString(decompBytes);
+            string lineEnding = decomp.Contains("\r\n") ? "\r\n" : "\n";
+            string[] lines = decomp.Split(new string[] { lineEnding }, StringSplitOptions.None);
+
+            var newLines = new List<string>();
+            foreach (string line in lines) {
+                string processedLine = line;
+                var match = RegexSpellODefPatch.Match(line);
+                if (match.Success) {
+                    string keyName = match.Groups[1].Value.Trim();
+                    string volk = match.Groups[2].Value.Trim();
+                    string spell = match.Groups[3].Value.Trim();
+                    string valStr = match.Groups[4].Value.Trim();
+                    string comment = match.Groups[5].Value;
+
+                    string? origVal = "";
+                    if (!originalODefs.TryGetValue(keyName, out origVal)) {
+                        origVal = valStr;
+                    }
+
+                    string newVal = origVal;
+                    if (spellEnhancementChecked) {
+                        if (keyName == "SpellODef") {
+                            newVal = "KEL_INF01";
+                        } else if (keyName == "SpellODef2") {
+                            newVal = "KEL_INF02";
+                        }
+                    }
+
+                    processedLine = string.Format("{0,-10}={1}, {2}, {3,-12}{4}", keyName, volk, spell, newVal, comment);
+                }
                 newLines.Add(processedLine);
             }
 
