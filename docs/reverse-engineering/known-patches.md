@@ -140,6 +140,12 @@
 - Dead-party confirmation counter at `0x1068C`: `20 -> 3` consecutive ticks
   (settled-party handler; counts ticks with village, leader, civilians, and
   members all gone before entering RETREAT).
+- Settled-party terminal cleanup (`P15`): the two settled handlers change their
+  final state literals at `0x109E8` and `0x16374` from `DELETE_PARTY (256)` to
+  `DELETE_TEAM (257)`. The generic dispatcher already implements state 257 by
+  calling the party deletion routine with team cleanup enabled. This prevents a
+  recycled team id from retaining old village/NPC state. Transient raider and
+  reinforcement handlers remain on state 256.
 - All six scheduler delay sites change to `5000..10000` ms. The first three
   are inner raider timers; the remaining `60000..120000`, `60000..120000`, and
   `120000..240000` sites initialize and refresh the outer action scheduler that

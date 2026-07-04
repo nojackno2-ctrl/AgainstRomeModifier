@@ -197,6 +197,11 @@ commit 後要先 Dispose／清空 rollback scope，再更新 UI；UI refresh 例
 
 AI Ultimate 已拆成五個可獨立控制的模組：M1 增援規模、M2 增援節奏、M3 敗亡快速回收、M4 保證聚落生成與留守、M5 開局資源。R0 常駐修復不提供開關，負責還原已否決的全域 CLAK 修改。實作入口為 `src/Core/EndlessAi/EndlessAiOrchestrator.cs`。
 
+M3 另包含 P15：兩個定居型 party 在敗亡清理結束時，終態由
+`DELETE_PARTY (256)` 改為 `DELETE_TEAM (257)`（解壓偏移 `0x109E8`、
+`0x16374`）。這會使用腳本既有的 team-cleanup 路徑，先清除舊村落、NPC
+登錄與隊伍物件，再回收隊伍編號；突襲與增援 party 仍維持 256。
+
 主要路徑：`MAPS/ENDL_000..004/SCRIPT/ak_level.bci`。
 
 目前目標狀態：

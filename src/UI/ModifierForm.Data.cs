@@ -32,6 +32,7 @@ namespace AgainstRomeModifier {
             if (resourceName != null) {
                 using Stream stream = typeof(Program).Assembly.GetManifestResourceStream(resourceName)!;
                 LoadZipToDictionary(stream);
+                TryAutoHealBackupFiles();
                 ValidateBackupResources();
                 Log("已載入內嵌 Backup.zip 備份資料。");
                 return;
@@ -41,6 +42,7 @@ namespace AgainstRomeModifier {
             if (File.Exists(localZip)) {
                 using FileStream stream = File.OpenRead(localZip);
                 LoadZipToDictionary(stream);
+                TryAutoHealBackupFiles();
                 ValidateBackupResources();
                 Log("已載入程式目錄中的 Backup.zip 備份資料。");
                 return;
@@ -52,11 +54,64 @@ namespace AgainstRomeModifier {
             }
         }
 
+        private void TryAutoHealBackupFiles() {
+            string gamePath = GetGamePath();
+            if (string.IsNullOrWhiteSpace(gamePath) || !Directory.Exists(gamePath)) {
+                return;
+            }
+
+            string[] requiredFiles = {
+                "Against_Rome.exe",
+                "SYSTEM/cl_script.ini",
+                "SYSTEM/cl_epara.ini",
+                "SYSTEM/ress.ini",
+                "SYSTEM/DATA_MP/DEFAULTS/objdef.dau",
+                "SYSTEM/CLMK/icon.ini",
+                "SYSTEM/CLAK/cl_scint.ini"
+            };
+
+            foreach (string relPath in requiredFiles) {
+                if (!backupFiles.ContainsKey(relPath)) {
+                    if (relPath == "SYSTEM/cl_epara.ini") {
+                        try {
+                            byte[] cleanEparaBytes = Encoding.GetEncoding(1251).GetBytes(GetCleanEparaText());
+                            backupFiles[relPath] = GameLZSS.CompressPfil(cleanEparaBytes, null!);
+                            Log("已使用修改器內建乾淨預設值修復記憶體備份項目: SYSTEM/cl_epara.ini");
+                        } catch { }
+                    } else {
+                        string fullPath = Path.Combine(gamePath, relPath.Replace('/', Path.DirectorySeparatorChar));
+                        if (File.Exists(fullPath)) {
+                            try {
+                                backupFiles[relPath] = File.ReadAllBytes(fullPath);
+                                Log(string.Format("已從遊戲目錄自動修復缺少之記憶體備份項目: {0}", relPath));
+                            } catch { }
+                        }
+                    }
+                }
+            }
+
+            bool hasTeamDat = backupFiles.Keys.Any(k => k.StartsWith("MAPS/", StringComparison.OrdinalIgnoreCase) && k.EndsWith("team.dat", StringComparison.OrdinalIgnoreCase));
+            if (!hasTeamDat) {
+                string mapsPath = Path.Combine(gamePath, "MAPS");
+                if (Directory.Exists(mapsPath)) {
+                    try {
+                        string normalizedGamePath = Path.GetFullPath(gamePath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                        foreach (string file in Directory.GetFiles(mapsPath, "team.dat", SearchOption.AllDirectories)) {
+                            string relPath = Path.GetRelativePath(normalizedGamePath, file).Replace('\\', '/');
+                            backupFiles[relPath] = File.ReadAllBytes(file);
+                        }
+                        Log("已從遊戲目錄自動修復地圖團隊備份項目 (team.dat)。");
+                    } catch { }
+                }
+            }
+        }
+
         private List<string> FindMissingBackupResources() {
             var missing = new List<string>();
             string[] requiredFiles = {
                 "Against_Rome.exe",
                 "SYSTEM/cl_script.ini",
+                "SYSTEM/cl_epara.ini",
                 "SYSTEM/ress.ini",
                 "SYSTEM/DATA_MP/DEFAULTS/objdef.dau",
                 "SYSTEM/CLMK/icon.ini",
@@ -105,6 +160,7 @@ namespace AgainstRomeModifier {
             string[] requiredFiles = {
                 "Against_Rome.exe",
                 "SYSTEM/cl_script.ini",
+                "SYSTEM/cl_epara.ini",
                 "SYSTEM/ress.ini",
                 "SYSTEM/DATA_MP/DEFAULTS/objdef.dau",
                 "SYSTEM/CLMK/icon.ini",
@@ -112,6 +168,13 @@ namespace AgainstRomeModifier {
             };
 
             foreach (string relPath in requiredFiles) {
+                if (relPath == "SYSTEM/cl_epara.ini") {
+                    try {
+                        byte[] cleanEparaBytes = Encoding.GetEncoding(1251).GetBytes(GetCleanEparaText());
+                        loaded[relPath] = GameLZSS.CompressPfil(cleanEparaBytes, null!);
+                    } catch { }
+                    continue;
+                }
                 string fullPath = Path.Combine(gamePath, relPath.Replace('/', Path.DirectorySeparatorChar));
                 if (File.Exists(fullPath)) {
                     loaded[relPath] = File.ReadAllBytes(fullPath);
@@ -1377,6 +1440,8 @@ namespace AgainstRomeModifier {
                         chkFoodHealing10x.Checked = false;
                         Log("食物回血 AI 腳本不是完整的原版或已修改狀態；已取消勾選，重新套用可修復一致性。");
                     }
+
+                    chkLeaderGloryKeep.Checked = IsLeaderGloryKeepApplied(gamePath);
                 }
 
                 string exePath = Path.Combine(gamePath, @"Against_Rome.exe");
@@ -1424,6 +1489,7 @@ namespace AgainstRomeModifier {
 
                 int totalCurrentRows = 0;
                 foreach (var dgv in currentStatsGrids.Values) totalCurrentRows += dgv.Rows.Count;
+                LoadSkillsData(unitRows, origUnitRows);
                 Log(string.Format(Loc.Get("LogReadCurrentDone"), totalCurrentRows));
             } catch (Exception ex) {
                 Log(Loc.Get("LogPresetImportError") + ex.Message + "\r\n" + ex.StackTrace);
@@ -1563,6 +1629,343 @@ namespace AgainstRomeModifier {
             LoadDefaultStatsData();
             string status = chkBalance.Checked ? (Loc.CurrentLanguage == Language.English ? "enabled" : "啟用") : (Loc.CurrentLanguage == Language.English ? "disabled" : "停用");
             Log(string.Format(Loc.Get("LogBalanceToggled"), status));
+        }
+
+        /// <summary>
+        /// 偵測目前遊戲目錄下的 ak_anfuehrer.bci 檔案，是否已套用首領榮耀保留補丁。
+        /// </summary>
+        private bool IsLeaderGloryKeepApplied(string gamePath) {
+            string scriptPath = Path.Combine(gamePath, @"SYSTEM\CLAK\SCRIPT\ak_anfuehrer.bci");
+            if (!File.Exists(scriptPath)) return false;
+            try {
+                byte[] raw = File.ReadAllBytes(scriptPath);
+                byte[] decomp = GameLZSS.DecompressPfil(raw);
+                string text = Encoding.ASCII.GetString(decomp);
+                return text.Contains("s_getObjGlory");
+            } catch {
+                return false;
+            }
+        }
+
+        private void LoadSkillsData(Dictionary<string, string[]> unitRows, Dictionary<string, string[]> origUnitRows) {
+            try {
+                string gamePath = GetGamePath();
+                bool isEn = Loc.CurrentLanguage == Language.English;
+
+                // 1. 讀取當前的 cl_epara.ini 與備份的 cl_epara.ini
+                string[] currentEparaLines = Array.Empty<string>();
+                string[] backupEparaLines = Array.Empty<string>();
+
+                if (backupFiles.TryGetValue("SYSTEM/cl_epara.ini", out byte[]? backupEparaBytes)) {
+                    string backupText = Encoding.GetEncoding(1251).GetString(GameLZSS.DecompressPfil(backupEparaBytes));
+                    backupEparaLines = backupText.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
+                }
+
+                string currentEparaPath = Path.Combine(gamePath, @"SYSTEM\cl_epara.ini");
+                if (File.Exists(currentEparaPath)) {
+                    try {
+                        byte[] curBytes = File.ReadAllBytes(currentEparaPath);
+                        string curText = Encoding.GetEncoding(1251).GetString(GameLZSS.DecompressPfil(curBytes));
+                        currentEparaLines = curText.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
+                    } catch { }
+                }
+                if (currentEparaLines.Length == 0) {
+                    currentEparaLines = backupEparaLines;
+                }
+
+                // 2. 讀取當前的 cl_script.ini 與備份的 cl_script.ini
+                string[] currentClLines = Array.Empty<string>();
+                string[] backupClLines = Array.Empty<string>();
+
+                if (backupFiles.TryGetValue("SYSTEM/cl_script.ini", out byte[]? backupClBytes)) {
+                    string backupText = Encoding.GetEncoding(1251).GetString(GameLZSS.DecompressPfil(backupClBytes));
+                    backupClLines = backupText.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
+                }
+
+                string currentClPath = Path.Combine(gamePath, @"SYSTEM\cl_script.ini");
+                if (File.Exists(currentClPath)) {
+                    try {
+                        byte[] curBytes = File.ReadAllBytes(currentClPath);
+                        string curText = Encoding.GetEncoding(1251).GetString(GameLZSS.DecompressPfil(curBytes));
+                        currentClLines = curText.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
+                    } catch { }
+                }
+                if (currentClLines.Length == 0) {
+                    currentClLines = backupClLines;
+                }
+
+                // 3. 填寫 dgvGeneralSkills 表格
+                dgvGeneralSkills.Rows.Clear();
+                
+                var skillItems = new[] {
+                    new { NameZh = "狂戰士 - 攻擊力倍率 (AW)", Key = "BerserkerAWfaktor", File = "cl_epara", Def = 2.0 },
+                    new { NameZh = "狂戰士 - 傷害倍率 (DAM)", Key = "BerserkerDAMfaktor", File = "cl_epara", Def = 2.0 },
+                    new { NameZh = "狂戰士 - 防禦力倍率 (VW)", Key = "BerserkerVWfaktor", File = "cl_epara", Def = 0.0 },
+                    new { NameZh = "射擊技巧 - 射程倍率 (RAD)", Key = "SchuetzengeschickRADfaktor", File = "cl_epara", Def = 1.2 },
+                    new { NameZh = "護盾 - 傷害吸收倍率 (DAM)", Key = "SchutzschildDAMfaktor", File = "cl_epara", Def = 0.8 },
+                    new { NameZh = "雷擊 - 傷害加成倍率 (DAM)", Key = "DonnerschlagDAMfaktor", File = "cl_epara", Def = 1.5 },
+                    new { NameZh = "條頓 戰意被動 - 士氣加成", Key = "GER_SAbility1_Value", File = "cl_script", Def = 1.0 },
+                    new { NameZh = "匈奴 恐懼被動 - 敵軍士氣扣減", Key = "HUN_SAbility0_Value", File = "cl_script", Def = 5.0 },
+                    new { NameZh = "匈奴 食人被動 - 擊殺食物加成", Key = "HUN_SAbility1_Value", File = "cl_script", Def = 5.0 }
+                };
+
+                foreach (var item in skillItems) {
+                    double currentVal = item.Def;
+                    double defaultVal = item.Def;
+
+                    if (item.File == "cl_epara") {
+                        defaultVal = GetEparaValue(backupEparaLines, item.Key, item.Def);
+                        currentVal = GetEparaValue(currentEparaLines, item.Key, defaultVal);
+                    } else {
+                        string[] parts = item.Key.Split('_');
+                        string tribe = parts[0];
+                        string ability = parts[1];
+                        defaultVal = GetScriptAbilityValue(backupClLines, tribe, ability, item.Def);
+                        currentVal = GetScriptAbilityValue(currentClLines, tribe, ability, defaultVal);
+                    }
+
+                    string displayTitle = item.NameZh;
+                    if (isEn) {
+                        displayTitle = item.Key switch {
+                            "BerserkerAWfaktor" => "Berserker - ATK Factor (AW)",
+                            "BerserkerDAMfaktor" => "Berserker - DMG Factor (DAM)",
+                            "BerserkerVWfaktor" => "Berserker - DEF Factor (VW)",
+                            "SchuetzengeschickRADfaktor" => "Marksmanship - Range Factor (RAD)",
+                            "SchutzschildDAMfaktor" => "Shield - Incoming DMG Factor (DAM)",
+                            "DonnerschlagDAMfaktor" => "Thunder Strike - DMG Factor (DAM)",
+                            "GER_SAbility1_Value" => "Teuton Battlelust - Morale Bonus",
+                            "HUN_SAbility0_Value" => "Hun Terror - Enemy Morale Penalty",
+                            "HUN_SAbility1_Value" => "Hun Cannibal - Food on Kill Bonus",
+                            _ => item.Key
+                        };
+                    }
+
+                    int rowIndex = dgvGeneralSkills.Rows.Add();
+                    var row = dgvGeneralSkills.Rows[rowIndex];
+                    row.Cells["SkillName"].Value = displayTitle;
+                    row.Cells["SkillKey"].Value = item.Key;
+                    row.Cells["IniFile"].Value = item.File;
+                    row.Cells["SkillValue"].Value = currentVal.ToString("0.##", CultureInfo.InvariantCulture);
+                    row.Cells["SkillDefault"].Value = defaultVal.ToString("0.##", CultureInfo.InvariantCulture);
+                }
+
+                // 4. 填寫 dgvLeaderGlory 表格
+                dgvLeaderGlory.Rows.Clear();
+
+                var leaders = new[] {
+                    new { Key = "FigRomAnf00_Anfuehrer", NameZh = "羅馬領袖", NameEn = "Roman Leader" },
+                    new { Key = "FigGerAnf00_Anfuehrer", NameZh = "條頓領袖", NameEn = "Teuton Leader" },
+                    new { Key = "FigKelAnf00_Anfuehrer", NameZh = "塞爾特領袖", NameEn = "Celt Leader" },
+                    new { Key = "FigHunAnf00_Anfuehrer", NameZh = "匈奴領袖", NameEn = "Hun Leader" }
+                };
+
+                foreach (var leader in leaders) {
+                    string[] cols = unitRows.ContainsKey(leader.Key) ? unitRows[leader.Key] : Array.Empty<string>();
+                    string[] origCols = origUnitRows.ContainsKey(leader.Key) ? origUnitRows[leader.Key] : Array.Empty<string>();
+
+                    string awStuf = "0.1", vwStuf = "0.25", damStuf = "0.1", moraleBonus = "20", moraleTime = "60000", maxRuhm = "100";
+                    if (cols.Length >= 192) {
+                        awStuf = cols[148].Trim();
+                        vwStuf = cols[149].Trim();
+                        damStuf = cols[150].Trim();
+                        maxRuhm = cols[153].Trim();
+                        moraleBonus = cols[161].Trim();
+                        moraleTime = cols[162].Trim();
+                    } else if (origCols.Length >= 192) {
+                        awStuf = origCols[148].Trim();
+                        vwStuf = origCols[149].Trim();
+                        damStuf = origCols[150].Trim();
+                        maxRuhm = origCols[153].Trim();
+                        moraleBonus = origCols[161].Trim();
+                        moraleTime = origCols[162].Trim();
+                    }
+
+                    int rowIndex = dgvLeaderGlory.Rows.Add();
+                    var row = dgvLeaderGlory.Rows[rowIndex];
+                    row.Cells["LeaderName"].Value = isEn ? leader.NameEn : leader.NameZh;
+                    row.Cells["LeaderKey"].Value = leader.Key;
+                    row.Cells["AwStuf"].Value = double.Parse(awStuf, CultureInfo.InvariantCulture).ToString("0.##", CultureInfo.InvariantCulture);
+                    row.Cells["VwStuf"].Value = double.Parse(vwStuf, CultureInfo.InvariantCulture).ToString("0.##", CultureInfo.InvariantCulture);
+                    row.Cells["DamStuf"].Value = double.Parse(damStuf, CultureInfo.InvariantCulture).ToString("0.##", CultureInfo.InvariantCulture);
+                    row.Cells["MoraleBonus"].Value = double.Parse(moraleBonus, CultureInfo.InvariantCulture).ToString("0.##", CultureInfo.InvariantCulture);
+                    row.Cells["MoraleTime"].Value = double.Parse(moraleTime, CultureInfo.InvariantCulture).ToString("0.##", CultureInfo.InvariantCulture);
+                    row.Cells["MaxRuhm"].Value = double.Parse(maxRuhm, CultureInfo.InvariantCulture).ToString("0.##", CultureInfo.InvariantCulture);
+                }
+
+                // 5. 偵測並同步 UI 開關狀態
+                bool generalSkillsModified = false;
+                foreach (DataGridViewRow row in dgvGeneralSkills.Rows) {
+                    string curStr = row.Cells["SkillValue"].Value?.ToString() ?? "";
+                    string defStr = row.Cells["SkillDefault"].Value?.ToString() ?? "";
+                    if (double.TryParse(curStr, NumberStyles.Any, CultureInfo.InvariantCulture, out double cur) &&
+                        double.TryParse(defStr, NumberStyles.Any, CultureInfo.InvariantCulture, out double def)) {
+                        if (Math.Abs(cur - def) > 0.001) {
+                            generalSkillsModified = true;
+                            break;
+                        }
+                    }
+                }
+
+                bool leaderGloryModified = false;
+                foreach (var leader in leaders) {
+                    if (!unitRows.ContainsKey(leader.Key) || !origUnitRows.ContainsKey(leader.Key)) continue;
+                    string[] cols = unitRows[leader.Key];
+                    string[] origCols = origUnitRows[leader.Key];
+                    if (cols.Length >= 192 && origCols.Length >= 192) {
+                        int[] checkIndices = { 148, 149, 150, 153, 161, 162 };
+                        foreach (int idx in checkIndices) {
+                            if (double.TryParse(cols[idx], NumberStyles.Any, CultureInfo.InvariantCulture, out double cur) &&
+                                double.TryParse(origCols[idx], NumberStyles.Any, CultureInfo.InvariantCulture, out double orig)) {
+                                if (Math.Abs(cur - orig) > 0.001) {
+                                    leaderGloryModified = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    if (leaderGloryModified) break;
+                }
+                chkModSkillsAndGlory.Checked = generalSkillsModified || leaderGloryModified;
+
+            } catch (Exception ex) {
+                Log("載入技能屬性資料失敗: " + ex.Message);
+            }
+        }
+
+        private double GetEparaValue(string[] lines, string key, double defaultVal) {
+            for (int i = 0; i < lines.Length; i++) {
+                if (lines[i].Trim().Equals("[" + key + "]", StringComparison.OrdinalIgnoreCase) && i + 1 < lines.Length) {
+                    if (double.TryParse(lines[i + 1].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out double v)) {
+                        return v;
+                    }
+                }
+            }
+            return defaultVal;
+        }
+
+        private double GetScriptAbilityValue(string[] lines, string tribe, string ability, double defaultVal) {
+            var regex = new Regex(@"Value\s*=\s*" + tribe + @"\s*,\s*" + ability + @"\s*,\s*(\d+)", RegexOptions.IgnoreCase);
+            foreach (string line in lines) {
+                var m = regex.Match(line);
+                if (m.Success) {
+                    if (double.TryParse(m.Groups[1].Value, NumberStyles.Any, CultureInfo.InvariantCulture, out double v)) {
+                        return v;
+                    }
+                }
+            }
+            return defaultVal;
+        }
+
+        private static string GetCleanEparaText() {
+            return @";Multiplikator fuer FormationsRotationTempo
+;1.0 entspricht maximalem RotationsTempo wenn alle Figuren die FormationsPosition halten
+;
+;1.0 bis 500.0
+[FormationRotationFaktor]
+500.0
+
+;Multiplikator fuer FormationsBewegungsTempo derjenigen Muckel 
+;die die Formation gerade einhalten, so koennen nicht einhaltende Muckel wieder aufholen
+;
+;0.01 bis 1.00
+[FormationSpeedFaktor]
+0.7
+
+;maximale Anzahl an Pfadfindungsversuchen pro Muckel wenn Ziel bei Stillstand der
+;Formation durch Kollision belegt ist
+;
+;2..16
+[FormationPathDepth]
+2
+
+;Zeit in ms die eine Figur in einer Formationsbewegung wartet, wenn sie auf eine Kollision trifft
+;Defautl=1000
+;0..X
+[FormationCollisionWaitTime]
+150
+
+;Gibt in % an, wieviel eine Heohendifferenz von einem Pattern zum naechsten die
+;Globale Hoehenrichtungsbeleuchtung beeinflusst
+;
+;0..100
+[GlobalFloorLightIntensity]
+10
+
+;Gibt die Intensitдt an von 0 bis 100% an, mit welcher der 3-dimensionale Bewegungsvektor 
+;genutzt wird, es ergibt sich fьr die Bewegungsgeschwindigkeit eine Konvexkombination (baryzentrisch)
+;speed= 3Dspeed*Intensity + 2Dspeed*(100%-Intensity)  (default: intensity=100)
+;
+[MoveVector3DIntensity]
+100
+
+;Gibt die Geschwindigkeit der Bewegung der Wolkenspiegelungstextur an 
+;0=keine 1=langsam 16=normal 256=schnell 4095=maximal (Default=16)
+;
+[CloudReflectMoveSpeed]
+27
+
+;Gibt den Angriffswertfaktor an, mit dem der normale Angriffswert im aktiven Zustand 'Berserker'
+;multipliziert wird, z.B. bewirkt 2.0 eine Verdopplung des AW, 0.5 bewirkt eine Halbierung
+[BerserkerAWfaktor]
+2.0
+
+;Gibt den Damagewertfaktor an (Nahkampf), mit dem der normale Schaden im aktiven Zustand 'Berserker'
+;multipliziert wird, z.B. bewirkt 2.0 eine Verdopplung des Schadens, 0.5 bewirkt eine Halbierung
+[BerserkerDAMfaktor]
+2.0
+
+;Gibt den Verteigungswertfaktor an (Nahkampf), mit dem der normale Verteigungswert im aktiven Zustand 'Berserker'
+;multipliziert wird, z.B. bewirkt 2.0 eine Verdopplung des VW, 0.5 bewirkt eine Halbierung, 0.0 bewirkt eine Setzung zu VW=0
+[BerserkerVWfaktor]
+0.0
+
+;Gibt den Schussradiusfaktor an (Fernkampfwaffe 1+2), mit dem der normale Schussradius im aktiven Zustand 'Schuetzengeschick'
+;multipliziert wird, z.B. bewirkt 2.0 eine Verdopplung des Radius, 0.5 bewirkt eine Halbierung
+[SchuetzengeschickRADfaktor]
+1.2
+
+;Gibt den Schadensfaktor an (saemtlicher Schaeden), mit dem der normale Schaden im aktiven Zustand 'Schutzschild'
+;multipliziert wird, z.B. bewirkt 2.0 eine Verdopplung des Schadens, 0.5 bewirkt eine Halbierung
+[SchutzschildDAMfaktor]
+0.8
+
+;Gibt den Schadensfaktor an (Waffe 0), mit dem der normale Schaden im aktiven Zustand 'Donnerschlag'
+;multipliziert wird, z.B. bewirkt 2.0 eine Verdopplung des Schadens, 0.5 bewirkt eine Halbierung
+[DonnerschlagDAMfaktor]
+1.5
+
+;Gibt den Geschwindigkeitabschussfaktor fьr Geschosse an (Waffe 1-7) ausgehend vom ursprьnglich eingestellten Faktor 1.0
+;annдhernde Korrektur der Flugbahnlдnge durch Multiplikation mit 1.52 des zugehцrigen Parameter Ysub in den ParticleDefaults
+[ProjectileInitSpeedFactor]
+1.5
+
+;gibt die Unsicherheit der Vorhalte bei Projektilattacken an (nur fuer sich bewegende Ziele)
+;0.0 bedeutet: keine Unsicherheit, das Projektil trifft mit Vorhalte absolut prдzise
+;0.5 bedeutet: eine Abweichung von bis zu 0.5*3*MoveSpeed_des_Ziels (in Pattern) ist moeglich
+;1.0 bedeutet: eine Abweichung von bis zu 1.0*3*MoveSpeed_des_Ziels (in Pattern) ist moeglich
+;1.5 bedeutet: eine Abweichung von bis zu 1.5*3*MoveSpeed_des_Ziels (in Pattern) ist moeglich
+;Default =0.5
+[ProjectileVarianceOnMove]
+0.5
+
+;gibt den Winkel zwischen Zielposition und prognostizierter Zielposition in Grad an, ab dem die Vorhalte abgeschaltet wird
+;Vermeidung zu starker Abweichung zwischen Projektilflugrichtung und Blickrichtung des feuernden Objektes
+;Default=45
+[ProjectileVarianceMaximumAngle]
+45
+
+;Gibt den Bereich an, in dem die Distanz zwischen Zielposition und prognostizierter Zielposition variieren darf, bevor die
+;Vorhalte abgeschaltet wird
+;0.4 bedeutet: Distanz zur Vorhalteposition muss zwischen der (1-0.4)=0.6 und (1+0.4)=1.4'fachen Distanz zur Zielposition liegen
+;Default=0.4
+[ProjectileVarianceDistanceRange]
+0.4
+
+;Gibt die Zeit in ms, die als maximale Zeitdifferenz zwischen zwei logischen Frames an
+;Default=3000
+;(Wer hier rumfummelt und nicht genau weiss was er tut, bekommt die Figer abgehackt :-)
+[MaxLogicFrameTime]
+3000";
         }
     }
 }

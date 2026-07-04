@@ -254,13 +254,21 @@
           "status": "static-analysis-verified-runtime-test-pending"
         },
         "DefeatRecoveryChain": {
-          "meaning": "How a defeated endless AI team returns: the settled party's IDLE state detects the missing village center, then enters RETREAT after DeadPartyDebounceTicks. States 51/52 wait for cleanup completion or their fallback deadline before DELETE_PARTY (256) frees the slot. The occupied-team mask then recomputes, pickTeam can select the team again, and the Siedler spawner sends a new arrival that settles and is reactivated by ak_npc. AI Ultimate makes the spawn roll unconditional but must not bypass settled-village cleanup.",
+          "meaning": "How a defeated endless AI team returns: the settled party's IDLE state detects the missing village center, then enters RETREAT after DeadPartyDebounceTicks. States 51/52 wait for cleanup completion or their fallback deadline. AI Ultimate then enters DELETE_TEAM (257), not DELETE_PARTY (256), so the generic dispatcher invokes team cleanup before the slot is reused. The occupied-team mask recomputes, pickTeam can select the team again, and the Siedler spawner sends a new arrival that is reactivated by ak_npc.",
+          "settledTerminalCleanup": {
+            "patchId": "P15",
+            "originalState": 256,
+            "ultimateState": 257,
+            "decompressedLiteralOffsets": ["0x109E8", "0x16374"],
+            "scope": "Only the two settled-party handlers. Transient raider and reinforcement handlers retain DELETE_PARTY.",
+            "reason": "A 2026-07-04 ENDL_002 save had v47 and v63 fully clear and all NPC jobs empty, but four inactive teams retained 71-105 village records and the settlement dispatcher returned without creating a party. DELETE_TEAM uses the existing generic delete routine with team cleanup enabled."
+          },
           "notPatched": [
             "ak_npc.bci: reactivation is built-in (village exists && !NPCActive -> state 1 -> s_setNPCActive(team, 1)); no changes needed.",
             "Save files are never modified.",
             "netGame-gated defeat handler at 0x1AA0C (mask clears + voice announcements) is a multiplayer human-slot recycler, not part of the AI respawn path."
           ],
-          "status": "static-analysis-verified-runtime-test-pending"
+          "status": "save-state-root-cause-confirmed-p15-static-verified-runtime-test-pending"
         },
         "RuntimeIncident20260703": {
           "status": "resolved-live-state-save-remains-historical",
@@ -310,6 +318,27 @@
           "rootCause": "The prior AI Ultimate target shortened both settled-party state-51/52 fallback deadlines to 5000 ms, allowing the timeout path to force DELETE_PARTY before engine village cleanup completed.",
           "fix": "Keep settled-handler offsets 0x10700 and 0x160EC at 600000 ms; accelerate only the four non-settlement deadlines. Recognize the prior all-six-at-5000 state as legacy-enabled and migrate it on Apply.",
           "acceptance": "Start a fresh endless game, defeat a settlement AI for multiple cycles, and confirm old walls and village records clear before each respawn. Never rewrite the embedded save script."
+        },
+        "RuntimeIncident20260704FullExtinction": {
+          "status": "code-fixed-fresh-runtime-test-pending",
+          "saveSlot": "ESAVE_000",
+          "map": "ENDL_002",
+          "saveTimestampLocal": "2026-07-04T19:47:20+08:00",
+          "evidence": {
+            "partyTypesV47": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            "partyCountV63": [0, 0, 0, 0, 0, 0, 0],
+            "settlementLimitV70": 3,
+            "settlementSpawnerEnabledV71": 1,
+            "cpuMaskV68": 255,
+            "occupiedMaskV41": 1,
+            "allNpcActive": 0,
+            "allNpcJobs": 0,
+            "retainedVillageRecordsByTeam": {"1": 105, "3": 71, "6": 95, "7": 105},
+            "dispatcherEvidence": "The saved ak_level task stack was returning through the outer dispatcher after the settlement spawner had run, but no party survived creation."
+          },
+          "rootCause": "Settled defeat ended at DELETE_PARTY (256), which recycled the party slot without requiring full team-owned village/NPC cleanup. Long-running saves could therefore reach an empty party table while stale team state still prevented settlement creation.",
+          "fix": "P15 changes only the two settled-handler terminal transitions to DELETE_TEAM (257). The existing dispatcher then calls its generic delete routine with team cleanup enabled before the team id is recycled.",
+          "compatibility": "Existing saves embed ak_level.bci and are not rewritten. Apply the new M3 patch and start a fresh endless game for runtime acceptance."
         }
       },
       "villageEconomy": {

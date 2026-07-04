@@ -225,11 +225,12 @@ scripts — always resolve via each script's own `CIDX`/blob, never hardcode):
 
 ## Tooling Note
 
-The investigation used a throwaway .NET console tool (not committed) with
-four operations: `dec` (LZSS decompress via the same algorithm as
-`GameLZSS.DecompressPfil`), `hex`, `words <file> <hexOffset> <count>`,
-`findw <file> <w0> <w1> ... ('?' = wildcard)`, `syms` (dump the `CIDX` table
-per the layout above), `calls` (scan for `pushsym`+`argc`+`call` triples and
-print resolved symbol names), and `dis` (linear disassembler using the
-opcode table above). Recreate it from this spec if further BCI reverse
-engineering is needed; do not assume it still exists on disk.
+A committed Python reimplementation now lives at `tools/bcitool.py` (stdlib
+only). Subcommands: `dec` (LZSS decompress via the same algorithm as
+`GameLZSS.DecompressPfil`), `syms` (dump the `CIDX` symbol table), `funcs`
+(list function prologue offsets), `calls` (scan `pushsym`+`argc`+`call` triples
+and resolve names), `find <symbol>` (list pushsym sites for one symbol), and
+`dis [start] [end]` (linear disassembler using the opcode table above). Offsets
+are code-stream relative (add `0x24` for the byte offset inside the
+decompressed container). The original throwaway .NET tool was never committed;
+prefer `bcitool.py`.

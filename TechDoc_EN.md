@@ -200,6 +200,11 @@ Every `MAPS/**/team.dat` is restored from its original first. The core switch th
 
 AI Ultimate is exposed as five independent modules: M1 reinforcement size, M2 reinforcement cadence, M3 defeat recovery, M4 settlement spawning and retention, and M5 starting resources. The non-optional R0 repair restores rejected global CLAK edits. `src/Core/EndlessAi/EndlessAiOrchestrator.cs` owns module detection and application.
 
+M3 also includes P15. The two settled-party terminal transitions change from
+`DELETE_PARTY (256)` to `DELETE_TEAM (257)` at decompressed offsets `0x109E8`
+and `0x16374`. This uses the script's existing team-cleanup path before the team
+id is recycled; transient raider and reinforcement parties remain on state 256.
+
 `MAPS/ENDL_*/SCRIPT/ak_level.bci` is a `BCI0` compiled-script payload inside `PFIL@`. Patches search opcode/literal signatures and have been found with the same local sequence in `ENDL_000` through `ENDL_004`.
 
 - Military create call around decompressed `0x17B60`: interpreted as `s_addNPCJob_createUnit(local7, 3, 8, 0, 0, 4, 4, 1, 0)` after reversing BCI stack order.

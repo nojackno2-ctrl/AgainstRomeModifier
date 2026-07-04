@@ -18,6 +18,10 @@ and patch code.
 - `exe-functions.md`: executable functions and anchors found with Ghidra.
 - `priest-spells.md`: priest spell effect values, summon/resurrect unit
   types (`SpellODef`), and the decoded resurrection logic.
+- `glory-upgrade-combat.md`: glory (`Ruhm`) leader-only per-level stat scaling
+  (`aw_stuf`/`vw_stuf`/`dam_stu`/`maxruhm`), active combat skills
+  (Berserker/marksmanship/shield/thunder/charge) and their `cl_epara.ini`
+  factors, glory earn/loss rules, and the combat upgrade icons.
 - `known-patches.md`: implemented, legacy, candidate, and rejected patches.
 - `decompilation-workflow.md`: local Ghidra/JDK workflow and generated EXE
   inventory.
@@ -31,7 +35,10 @@ and patch code.
   spell costs.
 - `SYSTEM/banner.ini`: banner/icon/object variants referenced by `team.dat`.
 - `SYSTEM/cl_script.ini`: villager delay, spell radius, morale parameters,
-  and per-spell effect values (`Value`/`Value2`/`Duration`/`NumObjects`).
+  per-spell effect values (`Value`/`Value2`/`Duration`/`NumObjects`), and the
+  `[GlobalData]` glory earn/loss rules and `[SpecialAbilities]` tribe abilities.
+- `SYSTEM/cl_epara.ini`: active combat skill factors (Berserker, marksmanship,
+  shield, thunder strike) — read-only research, not yet managed by the modifier.
 - `SYSTEM/CLAK/cl_scint.ini`: ODef alias tables and summon/resurrect unit
   types (`SpellODef`/`SpellODef2`) — read-only research, not yet managed by
   the modifier.

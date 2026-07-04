@@ -127,12 +127,15 @@ namespace AgainstRomeModifier
             // P13: 聚落模板開局資源
             var p13 = new P13_SettlementTemplatePatch();
 
+            // Fully clear a defeated settled AI team before recycling it.
+            var p15 = new P15_SettledPartyDeleteTeamPatch();
+
             // P14: 強制還原已被否決的修補
             var p14 = new P14_ForcedRestorePatch();
 
             M1 = new EndlessAiModule("M1", "增援規模", new List<IEndlessPatch> { p1, p10, p12 });
             M2 = new EndlessAiModule("M2", "增援節奏", new List<IEndlessPatch> { p3, p6, p2 });
-            M3 = new EndlessAiModule("M3", "敗亡快速回收", new List<IEndlessPatch> { p4, p5, p11 });
+            M3 = new EndlessAiModule("M3", "敗亡快速回收", new List<IEndlessPatch> { p4, p5, p11, p15 });
             M4 = new EndlessAiModule("M4", "保證聚落生成與留守", new List<IEndlessPatch> { p7, p8, p9 });
             M5 = new EndlessAiModule("M5", "開局資源", new List<IEndlessPatch> { p13 });
             R0 = new EndlessAiModule("R0", "常駐修復", new List<IEndlessPatch> { p14 });

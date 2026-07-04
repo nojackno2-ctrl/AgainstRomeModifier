@@ -22,5 +22,6 @@
     <EmbeddedResource Include="ThirdParty\dgVoodoo2\DDraw.dll" LogicalName="dgVoodoo2.DDraw.dll" />
     <EmbeddedResource Include="ThirdParty\dgVoodoo2\dgVoodooCpl.exe" LogicalName="dgVoodoo2.dgVoodooCpl.exe" />
     <EmbeddedResource Include="ThirdParty\dgVoodoo2\dgVoodoo.conf" LogicalName="dgVoodoo2.dgVoodoo.conf" />
+    <EmbeddedResource Include="re_workspace\glory_persist_patch\ak_anfuehrer.patched.bci" LogicalName="ak_anfuehrer.patched.bci" />
   </ItemGroup>
 </Project>

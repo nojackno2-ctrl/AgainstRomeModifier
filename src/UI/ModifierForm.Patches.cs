@@ -26,6 +26,7 @@ namespace AgainstRomeModifier {
         private static readonly Regex RegexMoraleIncIdlePatch = new Regex(@"^(MoralsIncIdle\s*=\s*[A-Z]{3}\s*,\s*)\d+(.*)$", RegexOptions.Compiled);
         private static readonly Regex RegexMoraleKey = new Regex(@"^(MoralsDecLostMem|MoralsDecFlee|MoralsDecOverPop|MoralsIncIdle)\s*=\s*([A-Z]{3})\s*,", RegexOptions.Compiled);
         private static readonly Regex RegexSpellValuePatch = new Regex(@"^(Value\d*)\s*=\s*([A-Z]{3})\s*,\s*(Spell\d+)\s*,\s*([^;]+)(.*)$", RegexOptions.Compiled);
+        private static readonly Regex RegexSpecialAbilityValuePatch = new Regex(@"^(Value\d*)\s*=\s*([A-Z]{3})\s*,\s*(SAbility\d+)\s*,\s*([^;]+)(.*)$", RegexOptions.Compiled);
         private static readonly Regex RegexSpellODefPatch = new Regex(@"^(SpellODef\d*)\s*=\s*(KEL)\s*,\s*(Spell3)\s*,\s*([^;]+)(.*)$", RegexOptions.Compiled);
         private static readonly byte[] ExeFocusOriginalBytes = new byte[] { 0x89, 0x15, 0xC4, 0x7D, 0x9E, 0x02 };
         private static readonly byte[] ExeFocusPatchedBytes = new byte[] { 0x90, 0x90, 0x90, 0x90, 0x90, 0x90 };
@@ -213,6 +214,8 @@ namespace AgainstRomeModifier {
             btnStartGame.Enabled = enabled;
             btnNavSystem.Enabled = enabled;
             btnNavDefaultStats.Enabled = enabled;
+            btnNavCurrentStats.Enabled = enabled;
+            btnNavSkills.Enabled = enabled;
             btnNavDoc.Enabled = enabled;
             btnNavSaveManager.Enabled = enabled;
         }
@@ -275,6 +278,36 @@ namespace AgainstRomeModifier {
                 bool villageBuildRange = chkVillageBuildRange.Checked;
                 bool noSpellAltar = chkNoSpellAltar.Checked;
                 bool spellEnhancement = chkSpellEnhancement.Checked;
+                bool leaderGloryKeep = chkLeaderGloryKeep.Checked;
+
+                // 收集技能與首領屬性字典 (cl_epara & cl_script SAbility & objdef.dau)
+                bool modSkillsAndGlory = chkModSkillsAndGlory.Checked;
+                var generalSkillsDict = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+                foreach (DataGridViewRow row in dgvGeneralSkills.Rows) {
+                    string key = row.Cells["SkillKey"].Value?.ToString() ?? "";
+                    string valStr = modSkillsAndGlory
+                        ? (row.Cells["SkillValue"].Value?.ToString() ?? "0")
+                        : (row.Cells["SkillDefault"].Value?.ToString() ?? "0");
+                    if (!string.IsNullOrEmpty(key) && double.TryParse(valStr, NumberStyles.Any, CultureInfo.InvariantCulture, out double v)) {
+                        generalSkillsDict[key] = v;
+                    }
+                }
+
+                var leaderGloryDict = new Dictionary<string, double[]>(StringComparer.OrdinalIgnoreCase);
+                if (modSkillsAndGlory) {
+                    foreach (DataGridViewRow row in dgvLeaderGlory.Rows) {
+                        string leaderKey = row.Cells["LeaderKey"].Value?.ToString() ?? "";
+                        if (!string.IsNullOrEmpty(leaderKey)) {
+                            double awStuf = double.Parse(row.Cells["AwStuf"].Value?.ToString() ?? "0", CultureInfo.InvariantCulture);
+                            double vwStuf = double.Parse(row.Cells["VwStuf"].Value?.ToString() ?? "0", CultureInfo.InvariantCulture);
+                            double damStuf = double.Parse(row.Cells["DamStuf"].Value?.ToString() ?? "0", CultureInfo.InvariantCulture);
+                            double moraleBonus = double.Parse(row.Cells["MoraleBonus"].Value?.ToString() ?? "0", CultureInfo.InvariantCulture);
+                            double moraleTime = double.Parse(row.Cells["MoraleTime"].Value?.ToString() ?? "0", CultureInfo.InvariantCulture);
+                            double maxRuhm = double.Parse(row.Cells["MaxRuhm"].Value?.ToString() ?? "0", CultureInfo.InvariantCulture);
+                            leaderGloryDict[leaderKey] = new double[] { awStuf, vwStuf, damStuf, moraleBonus, moraleTime, maxRuhm };
+                        }
+                    }
+                }
 
                 await Task.Run(() => {
                     // 1. Dry Run 階段：在記憶體中生成所有補丁 byte[] 並驗證
@@ -290,8 +323,12 @@ namespace AgainstRomeModifier {
                     }
 
                     // B. cl_script.ini
-                    byte[] clBytes = GetPatchedClScriptBytes(gamePath, fastCiviProduction, infMorale, balance, spellEnhancement);
+                    byte[] clBytes = GetPatchedClScriptBytes(gamePath, fastCiviProduction, infMorale, balance, spellEnhancement, generalSkillsDict);
                     patchedFiles[Path.Combine(gamePath, @"SYSTEM\cl_script.ini")] = clBytes;
+
+                    // H. cl_epara.ini
+                    byte[] eparaBytes = GetPatchedClEparaBytes(gamePath, generalSkillsDict);
+                    patchedFiles[Path.Combine(gamePath, @"SYSTEM\cl_epara.ini")] = eparaBytes;
 
                     // G. cl_scint.ini
                     byte[] scintBytes = GetPatchedClScintBytes(gamePath, spellEnhancement);
@@ -302,7 +339,7 @@ namespace AgainstRomeModifier {
                     patchedFiles[Path.Combine(gamePath, @"SYSTEM\ress.ini")] = ressBytes;
 
                     // D. objdef.dau
-                    byte[] objdefBytes = GetPatchedObjdefBytes(balance, housingCapacity20x, storageCapacity10x, fastBuildUpgradeRepair);
+                    byte[] objdefBytes = GetPatchedObjdefBytes(balance, housingCapacity20x, storageCapacity10x, fastBuildUpgradeRepair, leaderGloryDict);
                     patchedFiles[Path.Combine(gamePath, @"SYSTEM\DATA_MP\DEFAULTS\objdef.dau")] = objdefBytes;
 
                     // E. team.dat
@@ -328,6 +365,9 @@ namespace AgainstRomeModifier {
                     // 其它不涉及複雜解壓修改且安全的補丁
                     ApplyLanguagePatch(gamePath, toEng, rollback);
                     ApplyDgVoodooPatch(gamePath, dgVoodoo, rollback);
+
+                    // 首領死亡榮耀保留
+                    ApplyLeaderGloryKeepPatch(gamePath, leaderGloryKeep, rollback);
 
                     // 待機回血：12 個 Fig* 單位 AI 腳本的 s_addLP 單次加血量 1 -> 10。
                     ApplyFoodHealingAmountPatch(gamePath, foodHealing10x, rollback);
@@ -411,6 +451,7 @@ namespace AgainstRomeModifier {
                         SafeWriteAllBytes(kvp.Key, kvp.Value, rollback);
                     }
                     orchestrator.SaveAll(gamePath, rollback);
+                    ApplyLeaderGloryKeepPatch(gamePath, false, rollback);
                     ApplyFoodHealingAmountPatch(gamePath, false, rollback);
                     ApplyLanguagePatch(gamePath, false, rollback);
                     ApplyDgVoodooPatch(gamePath, false, rollback);
@@ -425,6 +466,7 @@ namespace AgainstRomeModifier {
                 chkHousingCapacity20x.Checked = false; chkStorageCapacity10x.Checked = false;
                 chkFastBuildUpgradeRepair.Checked = false;
                 chkFoodHealing10x.Checked = false;
+                chkLeaderGloryKeep.Checked = false;
                 chkMaxPopulation.Checked = false;
                 chkFastCiviProduction.Checked = false;
                 chkFreeProd.Checked = false;
@@ -432,6 +474,7 @@ namespace AgainstRomeModifier {
                 chkNoSpellCost.Checked = false;
                 chkInfiniteMorale.Checked = false;
                 chkBalance.Checked = false;
+                chkModSkillsAndGlory.Checked = false;
                 chkDgVoodoo.Checked = IsDgVoodooInstalled(gamePath);
                 chkVillageBuildRange.Checked = false;
                 customUnitStats = null;
@@ -475,6 +518,7 @@ namespace AgainstRomeModifier {
                 Log("已建立還原前檔案回復點。");
                 await Task.Run(() => {
                     RestoreStatsOnlyInternal(gamePath, rollback);
+                    ApplyLeaderGloryKeepPatch(gamePath, false, rollback);
                     ApplyFoodHealingAmountPatch(gamePath, false, rollback);
                 });
                 rollback.Commit();
@@ -483,6 +527,7 @@ namespace AgainstRomeModifier {
                 chkHousingCapacity20x.Checked = false; chkStorageCapacity10x.Checked = false;
                 chkFastBuildUpgradeRepair.Checked = false;
                 chkFoodHealing10x.Checked = false;
+                chkLeaderGloryKeep.Checked = false;
                 chkMaxPopulation.Checked = false;
                 chkFastCiviProduction.Checked = false;
                 chkFreeProd.Checked = false;
@@ -490,6 +535,7 @@ namespace AgainstRomeModifier {
                 chkNoSpellCost.Checked = false;
                 chkInfiniteMorale.Checked = false;
                 chkBalance.Checked = false;
+                chkModSkillsAndGlory.Checked = false;
                 customUnitStats = null;
                 presetFileSourceType = "default";
                 presetFileName = "";
@@ -617,9 +663,11 @@ namespace AgainstRomeModifier {
         /// </summary>
         private void RestoreStatsOnlyInternal(string gamePath, FileRollbackScope? rollback = null) {
             RestoreMemoryFile("SYSTEM/cl_script.ini", Path.Combine(gamePath, @"SYSTEM\cl_script.ini"), rollback);
+            RestoreMemoryFile("SYSTEM/cl_epara.ini", Path.Combine(gamePath, @"SYSTEM\cl_epara.ini"), rollback);
             RestoreMemoryFile("SYSTEM/CLAK/cl_scint.ini", Path.Combine(gamePath, @"SYSTEM\CLAK\cl_scint.ini"), rollback);
             RestoreMemoryFile("SYSTEM/ress.ini", Path.Combine(gamePath, @"SYSTEM\ress.ini"), rollback);
             RestoreMemoryFile("SYSTEM/DATA_MP/DEFAULTS/objdef.dau", Path.Combine(gamePath, @"SYSTEM\DATA_MP\DEFAULTS\objdef.dau"), rollback);
+            RestoreMemoryFile("SYSTEM/CLAK/SCRIPT/ak_anfuehrer.bci", Path.Combine(gamePath, @"SYSTEM\CLAK\SCRIPT\ak_anfuehrer.bci"), rollback);
 
             foreach (var kvp in backupFiles) {
                 if (kvp.Key.StartsWith("MAPS/", StringComparison.OrdinalIgnoreCase) && kvp.Key.EndsWith("team.dat", StringComparison.OrdinalIgnoreCase)) {
@@ -1095,11 +1143,16 @@ namespace AgainstRomeModifier {
                 if (spellVal.Success) {
                     keys.Add($"SpellValue|{spellVal.Groups[1].Value.Trim()}|{spellVal.Groups[2].Value.Trim()}|{spellVal.Groups[3].Value.Trim()}");
                 }
+
+                Match specVal = RegexSpecialAbilityValuePatch.Match(line);
+                if (specVal.Success) {
+                    keys.Add($"SpecialAbilityValue|{specVal.Groups[1].Value.Trim()}|{specVal.Groups[2].Value.Trim()}|{specVal.Groups[3].Value.Trim()}");
+                }
             }
             return keys;
         }
 
-        private byte[] GetPatchedClScriptBytes(string gamePath, bool fastCiviProduction, bool infiniteMoraleChecked, bool balanceChecked, bool spellEnhancementChecked) {
+        private byte[] GetPatchedClScriptBytes(string gamePath, bool fastCiviProduction, bool infiniteMoraleChecked, bool balanceChecked, bool spellEnhancementChecked, Dictionary<string, double> generalSkills) {
             byte[]? origBytes;
             if (!backupFiles.TryGetValue("SYSTEM/cl_script.ini", out origBytes)) {
                 throw new InvalidOperationException("記憶體備份中找不到 SYSTEM/cl_script.ini。");
@@ -1108,6 +1161,7 @@ namespace AgainstRomeModifier {
             // 1. 建立原版備份中的 Radius 對照字典，以防多次套用導致數值累乘
             var originalRadiuses = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
             var originalSpellValues = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+            var originalSpecialAbilityValues = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
             byte[] origDecomp = GameLZSS.DecompressPfil(origBytes!);
             string origText = Encoding.GetEncoding(1251).GetString(origDecomp);
             string[] origLines = origText.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
@@ -1133,6 +1187,16 @@ namespace AgainstRomeModifier {
                     string valStr = mVal.Groups[4].Value.Trim();
                     if (double.TryParse(valStr, NumberStyles.Any, CultureInfo.InvariantCulture, out double val)) {
                         originalSpellValues[$"{keyName}_{volk}_{spell}"] = val;
+                    }
+                }
+                var mSpec = RegexSpecialAbilityValuePatch.Match(line);
+                if (mSpec.Success) {
+                    string keyName = mSpec.Groups[1].Value.Trim();
+                    string volk = mSpec.Groups[2].Value.Trim();
+                    string ability = mSpec.Groups[3].Value.Trim();
+                    string valStr = mSpec.Groups[4].Value.Trim();
+                    if (double.TryParse(valStr, NumberStyles.Any, CultureInfo.InvariantCulture, out double val)) {
+                        originalSpecialAbilityValues[$"{keyName}_{volk}_{ability}"] = val;
                     }
                 }
             }
@@ -1235,6 +1299,27 @@ namespace AgainstRomeModifier {
                     processedLine = string.Format("{0,-10} ={1}, {2}, {3,-10}{4}", keyName, volk, spell, newVal, comment);
                 }
 
+                var matchSpecVal = RegexSpecialAbilityValuePatch.Match(line);
+                if (matchSpecVal.Success) {
+                    string keyName = matchSpecVal.Groups[1].Value.Trim();
+                    string volk = matchSpecVal.Groups[2].Value.Trim();
+                    string ability = matchSpecVal.Groups[3].Value.Trim();
+                    string valStr = matchSpecVal.Groups[4].Value.Trim();
+                    string comment = matchSpecVal.Groups[5].Value;
+
+                    string dictKey = $"{volk}_{ability}_Value";
+                    double targetVal = 0;
+                    if (generalSkills != null && generalSkills.TryGetValue(dictKey, out double uiVal)) {
+                        targetVal = uiVal;
+                    } else {
+                        string cacheKey = $"{keyName}_{volk}_{ability}";
+                        if (!originalSpecialAbilityValues.TryGetValue(cacheKey, out targetVal)) {
+                            double.TryParse(valStr, NumberStyles.Any, CultureInfo.InvariantCulture, out targetVal);
+                        }
+                    }
+                    processedLine = string.Format("{0,-10} ={1}, {2}, {3,-10}{4}", keyName, volk, ability, (int)targetVal, comment);
+                }
+
                 var matchCivi = RegexCiviPatch.Match(line);
                 if (matchCivi.Success) {
                     string volk = matchCivi.Groups[1].Value;
@@ -1311,6 +1396,50 @@ namespace AgainstRomeModifier {
             }
 
             string newContent = string.Join(lineEnding, newLines.ToArray());
+            if (decomp.EndsWith(lineEnding) && !newContent.EndsWith(lineEnding)) {
+                newContent += lineEnding;
+            }
+
+            byte[] newBytes = Encoding.GetEncoding(1251).GetBytes(newContent);
+            return GameLZSS.CompressPfil(newBytes, origBytes);
+        }
+
+        private byte[] GetPatchedClEparaBytes(string gamePath, Dictionary<string, double> generalSkills) {
+            byte[]? origBytes;
+            if (!backupFiles.TryGetValue("SYSTEM/cl_epara.ini", out origBytes)) {
+                throw new InvalidOperationException("記憶體備份中找不到 SYSTEM/cl_epara.ini。");
+            }
+
+            byte[] baseBytes = origBytes;
+            string destPath = Path.Combine(gamePath, @"SYSTEM\cl_epara.ini");
+            if (File.Exists(destPath)) {
+                try {
+                    baseBytes = File.ReadAllBytes(destPath);
+                } catch { }
+            }
+
+            byte[] decompBytes = GameLZSS.DecompressPfil(baseBytes);
+            string decomp = Encoding.GetEncoding(1251).GetString(decompBytes);
+            string lineEnding = decomp.Contains("\r\n") ? "\r\n" : "\n";
+            string[] lines = decomp.Split(new string[] { lineEnding }, StringSplitOptions.None);
+
+            for (int i = 0; i < lines.Length; i++) {
+                string trimmedLine = lines[i].Trim();
+                if (trimmedLine.StartsWith("[") && trimmedLine.EndsWith("]")) {
+                    string key = trimmedLine.Substring(1, trimmedLine.Length - 2).Trim();
+                    if (generalSkills.TryGetValue(key, out double val)) {
+                        int valIdx = i + 1;
+                        while (valIdx < lines.Length && (string.IsNullOrWhiteSpace(lines[valIdx]) || lines[valIdx].Trim().StartsWith(";"))) {
+                            valIdx++;
+                        }
+                        if (valIdx < lines.Length) {
+                            lines[valIdx] = val.ToString("0.##", CultureInfo.InvariantCulture);
+                        }
+                    }
+                }
+            }
+
+            string newContent = string.Join(lineEnding, lines);
             if (decomp.EndsWith(lineEnding) && !newContent.EndsWith(lineEnding)) {
                 newContent += lineEnding;
             }
@@ -1532,7 +1661,7 @@ namespace AgainstRomeModifier {
         /// <summary>
         /// 修改 objdef.dau 檔案，套用部隊屬性平衡模式、自訂部隊移動速度、射程、技能距離、近戰/遠程傷害與攻擊冷卻等倍率。
         /// </summary>
-        private byte[] GetPatchedObjdefBytes(bool balanceChecked, bool housingCapacity20xChecked, bool storageCapacity10xChecked, bool fastBuildUpgradeChecked) {
+        private byte[] GetPatchedObjdefBytes(bool balanceChecked, bool housingCapacity20xChecked, bool storageCapacity10xChecked, bool fastBuildUpgradeChecked, Dictionary<string, double[]> leaderGlory) {
             byte[]? origBytes;
             if (!backupFiles.TryGetValue("SYSTEM/DATA_MP/DEFAULTS/objdef.dau", out origBytes)) {
                 throw new InvalidOperationException("記憶體備份中找不到 SYSTEM/DATA_MP/DEFAULTS/objdef.dau。");
@@ -1551,6 +1680,20 @@ namespace AgainstRomeModifier {
                 string[] cols = ParseCsvLine(line);
                 if (cols.Length < 192) continue;
                 string name = cols[52].Trim();
+
+                if (leaderGlory != null && leaderGlory.TryGetValue(name, out double[]? stats)) {
+                    // stats = { awStuf, vwStuf, damStuf, moraleBonus, moraleTime, maxRuhm }
+                    int[] indices = { 148, 149, 150, 161, 162, 153 };
+                    for (int i = 0; i < indices.Length; i++) {
+                        int colIdx = indices[i];
+                        double val = stats[i];
+                        string targetValue = val.ToString(CultureInfo.InvariantCulture);
+                        int targetLen = cols[colIdx].Length;
+                        if (CheckLen(targetValue, targetLen, out string finalValue)) {
+                            cols[colIdx] = finalValue.PadLeft(targetLen);
+                        }
+                    }
+                }
 
                 if (housingCapacity20xChecked) {
                     string[] origColsForHousing = ParseCsvLine(originalLines[idx]);
@@ -1977,6 +2120,56 @@ namespace AgainstRomeModifier {
                 Log(string.Format(Loc.Get("LogRestored"), "team.dat"));
             }
             return results;
+        }
+
+        /// <summary>
+        /// 套用首領死亡榮耀保留補丁。啟用時，直接覆寫遊戲的 ak_anfuehrer.bci 檔案為內嵌的 patched.bci；
+        /// 停用時，將其還原為備份的原版。
+        /// </summary>
+        private void ApplyLeaderGloryKeepPatch(string gamePath, bool enabled, FileRollbackScope? rollback) {
+            string scriptPath = Path.Combine(gamePath, @"SYSTEM\CLAK\SCRIPT\ak_anfuehrer.bci");
+            string backupKey = "SYSTEM/CLAK/SCRIPT/ak_anfuehrer.bci";
+
+            if (enabled) {
+                if (!File.Exists(scriptPath)) {
+                    throw new FileNotFoundException("找不到首領 AI 腳本。", scriptPath);
+                }
+
+                // 備份原版檔案
+                if (!backupFiles.ContainsKey(backupKey)) {
+                    byte[] originalBytes = File.ReadAllBytes(scriptPath);
+                    bool isAlreadyPatched = false;
+                    try {
+                        byte[] decomp = GameLZSS.DecompressPfil(originalBytes);
+                        string text = Encoding.ASCII.GetString(decomp);
+                        isAlreadyPatched = text.Contains("s_getObjGlory");
+                    } catch {}
+
+                    if (!isAlreadyPatched) {
+                        backupFiles[backupKey] = originalBytes;
+                    }
+                }
+
+                // 載入內嵌資源並寫入
+                var assembly = typeof(Program).Assembly;
+                using Stream? resourceStream = assembly.GetManifestResourceStream("ak_anfuehrer.patched.bci");
+                if (resourceStream == null) {
+                    throw new InvalidDataException("找不到內嵌的首領榮耀保留補丁資源 (ak_anfuehrer.patched.bci)。");
+                }
+
+                using MemoryStream ms = new MemoryStream();
+                resourceStream.CopyTo(ms);
+                byte[] patchedBytes = ms.ToArray();
+
+                SafeWriteAllBytes(scriptPath, patchedBytes, rollback);
+                Log("已套用首領死亡榮耀保留補丁。");
+            } else {
+                // 停用：還原為原版
+                if (backupFiles.TryGetValue(backupKey, out byte[]? origBytes)) {
+                    SafeWriteAllBytes(scriptPath, origBytes, rollback);
+                    Log("已將首領 AI 腳本還原為備份的原版。");
+                }
+            }
         }
     }
 }

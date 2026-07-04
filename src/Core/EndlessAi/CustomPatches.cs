@@ -470,6 +470,101 @@ namespace AgainstRomeModifier
     }
 
     // ==========================================
+    // P15: settled-party terminal team cleanup
+    // ==========================================
+    // A defeated settled party must clear team-owned village/NPC state before
+    // its team id is reused. DELETE_TEAM is already supported by the generic
+    // dispatcher and invokes the delete routine with team cleanup enabled.
+    public class P15_SettledPartyDeleteTeamPatch : IEndlessPatch
+    {
+        public string Id => "P15";
+        public string TargetPattern => "MAPS/ENDL_*/SCRIPT/ak_level.bci";
+
+        private const int DeletePartyState = 256;
+        private const int DeleteTeamState = 257;
+        private const int ExpectedSiteCount = 2;
+
+        private static readonly int?[] TerminalStatePattern = new int?[] {
+            71, 66, 0, 117, 16, 66, null, 91, null, 112, null,
+            66, DeletePartyState, 90, 14, 96, 118
+        };
+
+        public PatchState Detect(byte[] decompressed)
+        {
+            List<int> sites = FindTerminalStateSites(decompressed);
+            if (sites.Count != ExpectedSiteCount) return PatchState.Unknown;
+
+            int original = 0;
+            int ultimate = 0;
+            foreach (int site in sites)
+            {
+                int value = BitConverter.ToInt32(decompressed, site);
+                if (value == DeletePartyState) original++;
+                else if (value == DeleteTeamState) ultimate++;
+                else return PatchState.Unknown;
+            }
+
+            if (original == ExpectedSiteCount) return PatchState.Original;
+            if (ultimate == ExpectedSiteCount) return PatchState.Ultimate;
+            return PatchState.Legacy;
+        }
+
+        public bool Apply(ref byte[] decompressed, bool enabled)
+        {
+            List<int> sites = FindTerminalStateSites(decompressed);
+            if (sites.Count != ExpectedSiteCount)
+            {
+                throw new InvalidOperationException("P15 settled terminal-state signature count mismatch.");
+            }
+
+            int target = enabled ? DeleteTeamState : DeletePartyState;
+            bool changed = false;
+            foreach (int site in sites)
+            {
+                if (BitConverter.ToInt32(decompressed, site) == target) continue;
+                BciPattern.WriteBciInt32(decompressed, site, target);
+                changed = true;
+            }
+            return changed;
+        }
+
+        private static List<int> FindTerminalStateSites(byte[] decompressed)
+        {
+            var sites = new List<int>();
+            int patternBytes = TerminalStatePattern.Length * 4;
+            for (int offset = 0; offset <= decompressed.Length - patternBytes; offset += 4)
+            {
+                bool matches = true;
+                for (int i = 0; i < TerminalStatePattern.Length; i++)
+                {
+                    int? expected = TerminalStatePattern[i];
+                    if (expected.HasValue &&
+                        BitConverter.ToInt32(decompressed, offset + i * 4) != expected.Value)
+                    {
+                        matches = false;
+                        break;
+                    }
+                }
+                if (!matches) continue;
+
+                // The same compiler shape also appears in one transient-party
+                // handler, which stores through local 4.  Settled handlers use
+                // locals 7 and 6 respectively.
+                int stateLocal = BitConverter.ToInt32(decompressed, offset + 8 * 4);
+                if (stateLocal != 6 && stateLocal != 7) continue;
+
+                int terminalStateOffset = offset + 6 * 4;
+                int value = BitConverter.ToInt32(decompressed, terminalStateOffset);
+                if (value == DeletePartyState || value == DeleteTeamState)
+                {
+                    sites.Add(terminalStateOffset);
+                }
+            }
+            return sites;
+        }
+    }
+
+    // ==========================================
     // P13: 聚落模板開局資源
     // ==========================================
     public class P13_SettlementTemplatePatch : IEndlessPatch
