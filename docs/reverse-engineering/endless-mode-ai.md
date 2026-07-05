@@ -196,6 +196,12 @@ chain, 256 DELETE_PARTY, 257 DELETE_TEAM.
   (count >= 4 -> 0 %); military-reinforcement spawner (`0x18E8C`) requires an
   existing settled team with >= 2 buildings; three additional raider spawners
   hang off the `v72/v74/v76` polling timers.
+- New-game initialization stores `s_randRange(4, 2)` in `v70`, so vanilla
+  chooses a type-1 settlement cap of 2, 3, or 4 for that game. The settlement
+  spawner stops once `v63[1]` reaches `v70`. M6 changes only the lower-bound
+  literal (`2 -> 4`) at decompressed offset `0x1B69C`, producing
+  `s_randRange(4, 4)` and a fixed cap of 4. Existing saves retain their
+  already-initialized `v70` value.
 - AI Ultimate changes the Siedler spawner's default and 0/1/2/3-live-party
   probabilities from `0,0,80,60,40,20` to six `101` literals. In single player
   the occupied mask reserves player team 0 and `pickTeam` can select only

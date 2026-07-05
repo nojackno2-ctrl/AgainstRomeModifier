@@ -1399,8 +1399,8 @@ namespace AgainstRomeModifier {
                 }
 
                 if (syncUIWithFile) {
-                    // 逐一偵測 5 個無盡模式模組（M1..M5），各自反映到對應的獨立勾選框。
-                    var aiToggles = new[] { chkAiM1, chkAiM2, chkAiM3, chkAiM4, chkAiM5 };
+                    // 逐一偵測 6 個無盡模式模組（M1..M6），各自反映到對應的獨立勾選框。
+                    var aiToggles = new[] { chkAiM1, chkAiM2, chkAiM3, chkAiM4, chkAiM5, chkAiM6 };
                     try {
                         var aiOrchestrator = new EndlessAiOrchestrator();
                         for (int i = 0; i < aiOrchestrator.UserModules.Count && i < aiToggles.Length; i++) {

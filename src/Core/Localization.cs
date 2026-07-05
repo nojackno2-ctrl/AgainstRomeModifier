@@ -205,6 +205,7 @@ namespace AgainstRomeModifier {
             { "AiM3", "敗亡快速回收" },
             { "AiM4", "保證聚落生成與留守" },
             { "AiM5", "AI 開局資源" },
+            { "AiM6", "村莊上限固定 4" },
             { "DgVoodoo", "啟用 dgVoodoo2 圖形相容" },
             { "VillageBuildRange", "村莊建造／紅框範圍 5 倍" },
             { "GamePath", "遊戲路徑:" },
@@ -409,7 +410,8 @@ namespace AgainstRomeModifier {
             { "AiM2Tip", "無盡模式：縮短增援等待與排程迴圈延遲、回收完工的 NPC 工作槽，使電腦增援波次快速且不間斷。" },
             { "AiM3Tip", "無盡模式：AI 敗亡後加速舊村莊與城牆的逐筆確認清理、死亡判定與撤退；保留原版安全的隊伍終結順序。" },
             { "AiM4Tip", "無盡模式：必定生成對手聚落、增援門檻提高至 40，並讓增援部隊全數移交村莊留守而非撤退（門檻與留守綁定套用）。" },
-            { "AiM5Tip", "無盡模式：AI 聚落開局即擁有主堡儲備資源，加速其經濟與軍隊起步。僅影響電腦聚落，不影響玩家。" }
+            { "AiM5Tip", "無盡模式：AI 聚落開局即擁有主堡儲備資源，加速其經濟與軍隊起步。僅影響電腦聚落，不影響玩家。" },
+            { "AiM6Tip", "無盡模式：新局初始化時把 type-1 村莊型 AI 上限由隨機 2～4 固定為 4。只影響套用後新開的遊戲，不改寫既有存檔。" }
         };
 
         private static readonly Dictionary<string, string> En = new Dictionary<string, string> {
@@ -463,6 +465,7 @@ namespace AgainstRomeModifier {
             { "AiM3", "Fast Defeat Recovery" },
             { "AiM4", "Guaranteed Spawn & Garrison" },
             { "AiM5", "AI Starting Resources" },
+            { "AiM6", "Village Cap Fixed at 4" },
             { "DgVoodoo", "Enable dgVoodoo2 Wrapper" },
             { "VillageBuildRange", "5x Village Build / Red-Frame Range" },
             { "GamePath", "Game Path:" },
@@ -667,7 +670,8 @@ namespace AgainstRomeModifier {
             { "AiM2Tip", "Endless mode: shortens reinforcement wait and scheduler loop delays and recycles completed NPC job slots so AI reinforcement waves arrive quickly and continuously." },
             { "AiM3Tip", "Endless mode: accelerates confirmed per-object cleanup of defeated AI villages and palisades, death detection, and retreat while preserving the vanilla safe terminal order." },
             { "AiM4Tip", "Endless mode: always spawns opponent settlements, raises the reinforcement threshold to 40, and makes reinforcement troops fully garrison the village instead of retreating (threshold and garrison applied together)." },
-            { "AiM5Tip", "Endless mode: AI settlements start with main-hall stockpiles to speed up their economy and army. Affects AI settlements only, never the player." }
+            { "AiM5Tip", "Endless mode: AI settlements start with main-hall stockpiles to speed up their economy and army. Affects AI settlements only, never the player." },
+            { "AiM6Tip", "Endless mode: fixes the type-1 village AI cap at 4 instead of randomly choosing 2-4 when a new game initializes. Affects only games started after applying; existing saves are not rewritten." }
         };
     }
 }

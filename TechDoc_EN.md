@@ -25,7 +25,7 @@ For the detailed maintenance chronology, debugging failures, checklists, and wor
 | `src/Program.cs` | WinForms entry, elevation, High DPI startup, global exception handling. |
 | `src/Core/GameLZSS.cs` | LZSS and `PFIL@` wrapper decode/encode with bounds checks. |
 | `src/Core/Bci/` | BCI signature matching, word writes, and PFIL script handling. |
-| `src/Core/EndlessAi/` | AI Ultimate M1-M5 modules, state detection, and orchestration. |
+| `src/Core/EndlessAi/` | AI Ultimate M1-M6 modules, state detection, and orchestration. |
 | `src/Core/TroopConfig.cs` | Field enums, unit IDs, names, factions, tiers, types, and balance baselines. |
 | `src/Core/Patches/` | Pure, WinForms-independent patch logic: `ObjdefPatcher`, `RessPatcher`, `ClScriptPatcher`, `ClEparaPatcher`, `ClScintPatcher`, `TeamDatPatcher`, `ExePatchModel`, `VerifiedBinaryWriter`. Byte computation and fixed-offset state detection/planning live here so they can be unit-tested without WinForms or copyrighted game files. |
 | `src/UI/ModifierForm.cs` | Main UI, controls, backup cache, parsed unit cache, shared state. |
@@ -199,7 +199,7 @@ Every `MAPS/**/team.dat` is restored from its original first. The core switch th
 
 ## 10. Endless `ak_level.bci`
 
-AI Ultimate is exposed as five independent modules: M1 reinforcement size, M2 reinforcement cadence, M3 defeat recovery, M4 settlement spawning and retention, and M5 starting resources. The non-optional R0 repair restores rejected global CLAK edits. `src/Core/EndlessAi/EndlessAiOrchestrator.cs` owns module detection and application.
+AI Ultimate is exposed as six independent modules: M1 reinforcement size, M2 reinforcement cadence, M3 defeat recovery, M4 settlement spawning and retention, M5 starting resources, and M6 a fixed four-village cap. The non-optional R0 repair restores rejected global CLAK edits. `src/Core/EndlessAi/EndlessAiOrchestrator.cs` owns module detection and application.
 
 P15 is now a mandatory R0 safety repair. The two settled-party terminal
 transitions at decompressed offsets `0x109E8` and `0x16374` must remain on the
@@ -226,6 +226,7 @@ longer part of user-toggleable M3.
 - `ak_npc.bci` needs no patch for reactivation: its per-team state machine already calls `s_setNPCActive(team, 1)` when a healthy village exists for an inactive team. Save files are never modified.
 - All six AI scheduler delay sites use `5000..10000` ms. The first three are inner raider timers; the last three initialize and refresh the outer scheduler that gates the settlement/military dispatcher. Leaving the outer sites at their original 60-240 seconds made AI arrivals slow even when the inner timers were accelerated. A `1000..2000` ms interim build caused computer respawns to stall in runtime testing and is rejected; Apply recognizes and migrates that state back to 5-10 seconds.
 - Settlement-spawner default and 0/1/2/3-live-party probabilities are all set to 101, so spawning always triggers while an eligible team exists. In single player the occupied mask protects player team 0 and `pickTeam` selects only unoccupied CPU teams 1-7, giving a hard result of one player plus at most seven simultaneous CPU opponents without duplicating occupied teams.
+- M6 changes the new-game initialization from `s_randRange(4, 2) -> v70` to `s_randRange(4, 4) -> v70`, fixing the type-1 village-AI cap at 4. Disabling restores the vanilla random 2-4 range. Because `v70` is initialized when the game starts, existing saves are not rewritten.
 - Military-reinforcement unit-count threshold at decompressed `0x195F8`: `4 -> 40`; this is not an AI-player limit. Legacy value 8 is migrated on the next Apply. The gate at `0x1960C` remains `66,0`.
 - Older `112,272` gate bypasses and blanket 5000..10000 ms action-loop patches are migrated; only the three bounded reinforcement polling loops remain accelerated.
 - Earlier enabled builds with original spawner probabilities, the prior first-three-only scheduler state, Gemini's interim all-six-loops state, or all six retreat deadlines at 5000 ms are detected as legacy-enabled. Apply migrates them to guaranteed spawning, six bounded scheduler delays at 5-10 seconds, and the protected settlement-cleanup deadlines.

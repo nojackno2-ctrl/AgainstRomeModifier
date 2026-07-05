@@ -12,6 +12,7 @@ namespace AgainstRomeModifier
         public EndlessAiModule M3 { get; }
         public EndlessAiModule M4 { get; }
         public EndlessAiModule M5 { get; }
+        public EndlessAiModule M6 { get; }
         public EndlessAiModule R0 { get; }
 
         public List<EndlessAiModule> UserModules { get; }
@@ -127,6 +128,19 @@ namespace AgainstRomeModifier
             // P13: 聚落模板開局資源
             var p13 = new P13_SettlementTemplatePatch();
 
+            // P16: Fix the per-game type-1 settlement cap at 4 instead of randRange(2, 4).
+            // The BCI pushes the upper bound first, so changing only the lower bound
+            // from 2 to 4 preserves the original call and produces randRange(4, 4).
+            var p16 = new BciLiteralPatch(
+                "P16",
+                "MAPS/ENDL_*/SCRIPT/ak_level.bci",
+                new int?[] { 66, 4, 66, null, 128, 16, 73, -2, 86, 82, 70 },
+                new int[] { 3 },
+                new int[] { 2 },
+                new int[] { 4 },
+                1
+            );
+
             // Restore the unsafe legacy DELETE_TEAM terminal transitions.
             var p15 = new P15_SettledPartyDeleteTeamPatch();
 
@@ -138,9 +152,10 @@ namespace AgainstRomeModifier
             M3 = new EndlessAiModule("M3", "敗亡快速回收", new List<IEndlessPatch> { p4, p5, p11 });
             M4 = new EndlessAiModule("M4", "保證聚落生成與留守", new List<IEndlessPatch> { p7, p8, p9 });
             M5 = new EndlessAiModule("M5", "開局資源", new List<IEndlessPatch> { p13 });
+            M6 = new EndlessAiModule("M6", "村莊上限固定 4", new List<IEndlessPatch> { p16 });
             R0 = new EndlessAiModule("R0", "常駐修復", new List<IEndlessPatch> { p14, p15 });
 
-            UserModules = new List<EndlessAiModule> { M1, M2, M3, M4, M5 };
+            UserModules = new List<EndlessAiModule> { M1, M2, M3, M4, M5, M6 };
         }
 
         public void ClearCache()

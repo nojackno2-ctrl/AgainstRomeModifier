@@ -45,7 +45,7 @@
 | `src/UI/TroopPresetForm.cs` | 9 欄單位 preset 編輯 |
 | `src/Core/GameLZSS.cs` | 遊戲 LZSS 與 `PFIL@` 包裝 |
 | `src/Core/Bci/` | BCI 特徵碼搜尋、字組寫入與 PFIL 腳本封裝 |
-| `src/Core/EndlessAi/` | AI Ultimate M1–M5 模組、狀態偵測與套用協調 |
+| `src/Core/EndlessAi/` | AI Ultimate M1–M6 模組、狀態偵測與套用協調 |
 | `src/Core/Patches/` | 純 patch 邏輯（`ObjdefPatcher`、`RessPatcher`、`ClScriptPatcher`、`ClEparaPatcher`、`ClScintPatcher`、`TeamDatPatcher`、`ExePatchModel`、`VerifiedBinaryWriter`），不依賴 WinForms，`ModifierForm.Patches.cs` 只負責把 UI 狀態轉成 Options／委派呼叫與記錄日誌 |
 | `src/Core/Localization.cs` | 中英文 UI／log |
 | `data/game_schema.json` | 機器可讀的欄位、offset 與 patch metadata |
@@ -196,7 +196,7 @@ commit 後要先 Dispose／清空 rollback scope，再更新 UI；UI refresh 例
 
 ## 10. AI Ultimate Mode
 
-AI Ultimate 已拆成五個可獨立控制的模組：M1 增援規模、M2 增援節奏、M3 敗亡快速回收、M4 保證聚落生成與留守、M5 開局資源。R0 常駐修復不提供開關，負責還原已否決的全域 CLAK 修改。實作入口為 `src/Core/EndlessAi/EndlessAiOrchestrator.cs`。
+AI Ultimate 已拆成六個可獨立控制的模組：M1 增援規模、M2 增援節奏、M3 敗亡快速回收、M4 保證聚落生成與留守、M5 開局資源、M6 村莊上限固定 4。R0 常駐修復不提供開關，負責還原已否決的全域 CLAK 修改。實作入口為 `src/Core/EndlessAi/EndlessAiOrchestrator.cs`。
 
 P15 現為 R0 常駐安全修復：兩個定居型 party 的終態在解壓偏移
 `0x109E8`、`0x16374` 必須維持原版 `DELETE_PARTY (256)`。舊版曾改成
@@ -232,6 +232,7 @@ team，造成確認永不回傳與模擬迴圈死等。偵測會把 257 或 256/
 - gate 保持原版 `66,0`。
 - 六個 AI 排程延遲點全部改為 `5000..10000 ms`。前三個是內層突襲計時器；後三個是外層排程的初始與更新範圍，會直接限制呼叫定居／軍事增援生成器的 dispatcher。後三個若維持原版 60–240 秒，即使前三個已加速，AI 出場仍會變慢。曾測試 `1000..2000 ms`，實機出現電腦不再重生，因此已否決；該暫行狀態可辨識並自動遷回 5–10 秒。
 - 定居生成器的 default 與 0/1/2/3 現存政黨分支機率都改為 101，使有合格隊伍時必定觸發。單人模式的 occupied mask 固定保護玩家 team 0，`pickTeam` 只會從尚未占用的 CPU team 1–7 選擇，因此結果上限是玩家加 7 個電腦（共 8 隊），且不會重複建立已占用隊伍。
+- M6 將新局初始化的 `s_randRange(4, 2) -> v70` 改為 `s_randRange(4, 4) -> v70`，讓 type-1 村莊型 AI 上限固定為 4；停用時還原 2～4 隨機值。此值在開局時即寫入狀態，因此不改寫既有存檔。
 - 聚落模板：`MAPS/ENDL_*/Endlos_*_Siedlung*.sdl`（解壓後為 INI 文字）主建築
   （namedef 含 `_Haupt`；羅馬為 `Hauptzelt`）的 `resv` 由 `0,0,0,0,0,0` 改為
   `614,300,372,250,460,288`（各欄取原版戰役 AI 聚落實測最大值），加速村莊型
@@ -330,7 +331,7 @@ ZIP 備份先建立 `.tmp`，加入修改器產生的 `manifest.json`，成功�
 
 - `mainTabControl` 的 header 故意隱藏，左側按鈕負責導航。
 - `StyleNavButton` 綁定前必須先建立對應 `TabPage`。
-- `settingsLayout` 第一列放置 `pnlNumericCard`（系統）、`pnlSwitchesCard`（資源）與 `pnlBuildCard`（建設）三欄；第二列的 `pnlAiCard` 橫跨三欄，容納 M1–M5 並依寬度換行。
+- `settingsLayout` 第一列放置 `pnlNumericCard`（系統）、`pnlSwitchesCard`（資源）與 `pnlBuildCard`（建設）三欄；第二列的 `pnlAiCard` 橫跨三欄，容納 M1–M6 並依寬度換行。
 - `pnlTipsCard` 指南卡片拆分為左右雙欄，左半部 `lblTipsContent` 顯示操作指引，右半部 `lblTipsDetail` 顯示功能詳細說明，以避免說明文字過長導致的高度截斷問題。
 - 新 toggle 必須同步 UI field、localization、apply、restore、state detection 與文件。
 - 移除舊有的 `.arpreset` 全域設定檔匯入／匯出功能，改由一鍵「所有功能開啟」與「所有功能關閉」按鈕控制所有開關狀態。

@@ -27,7 +27,7 @@ research and personal modding project.
   in `objdef.dau` (shortens building build/upgrade times by 10, which automatically
   boosts repair rate, successfully runtime-verified in-game).
 - Reversible 10x storage capacity switch for town halls (`Hau`) and warehouses (`Lag`) in `objdef.dau` (successfully runtime-verified in-game).
-- Endless-mode AI Ultimate Mode, split into five independently selectable
+- Endless-mode AI Ultimate Mode, split into six independently selectable
   modules, which raises the mass-army spawn count to the vanilla script limit,
   recycles completed military reinforcement jobs for
   continuing waves, reduces the military reinforcement wait to 5 seconds, cuts
@@ -39,7 +39,8 @@ research and personal modding project.
   raises the military-reinforcement unit threshold from 4 to 40, and transfers
   the whole reinforcement party into the village instead of retreating while
   retaining the original safety gate and bounded polling. Endless settlement templates also receive a reversible
-  starting-resource boost; unsafe global CLAK production edits stay disabled.
+  starting-resource boost, and new games can fix the type-1 village-AI cap at
+  4 instead of randomly choosing 2-4; unsafe global CLAK production edits stay disabled.
 - Free construction, production, upgrades, and spell costs through `ress.ini`.
 - Unit stat editing for HP, damage, VW, AW, movement, sight, cooldown, range, and spell radius through `objdef.dau` and `cl_script.ini`.
 - Troop preset import/export through `.artroop` and one-click buttons to enable/disable all features.

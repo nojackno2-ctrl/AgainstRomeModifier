@@ -194,6 +194,15 @@
             "ultimateValues": [101, 101, 101, 101, 101, 101],
             "singlePlayerBound": "The occupied mask reserves player team 0; pickTeam selects only unoccupied CPU teams 1-7, so at most seven computer opponents coexist and a defeated team becomes eligible again after its party slot is deleted."
           },
+          "settlementCountLimit": {
+            "module": "M6",
+            "decompressedPatternOffset": "0x1B690",
+            "decompressedLowerBoundOffset": "0x1B69C",
+            "bciWordSignature": "[66,4,66,<lowerBound>,128,16,73,-2,86,82,70]",
+            "originalRange": [2, 4],
+            "fixedRange": [4, 4],
+            "meaning": "At new-game initialization, s_randRange(4, lowerBound) is stored in v70 as the live type-1 settlement cap. M6 changes only the lower bound from 2 to 4. Existing saves retain their already initialized v70 value."
+          },
           "activeAiLimitBypass": {
             "status": "disabled-runtime-regression",
             "decompressedPatchOffset": "0x1960C",

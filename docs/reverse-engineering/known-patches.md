@@ -112,7 +112,7 @@
   still the only remaining open item.
 - File: `MAPS/ENDL_*/SCRIPT/ak_level.bci`.
 - Format: `PFIL@` compressed `BCI0` compiled script.
-- Modifier UI: five independent AI Ultimate modules (M1-M5); rejected global CLAK edits are restored by mandatory repair R0.
+- Modifier UI: six independent AI Ultimate modules (M1-M6); rejected global CLAK edits are restored by mandatory repair R0.
 - Create-unit call: decompressed BCI offset `0x17B60`,
   `s_addNPCJob_createUnit(local7, 3, 8, 0, 0, 4, 4, 1, 0)` after reversing
   BCI stack argument order.
@@ -185,6 +185,11 @@
   (`v57`), not the retreat set.
 - The gate at `0x1960C` remains `66,0`.
 - The Siedler spawner's default and 0/1/2/3-live-party probability literals change from `0,0,80,60,40,20` to `101,101,101,101,101,101`. The single-player occupied mask reserves player team 0, and `pickTeam` selects only unoccupied CPU teams 1-7, so this fills at most seven simultaneous computer opponents and reuses a defeated team's slot after cleanup.
+- M6 changes the new-game type-1 settlement limit initialization from
+  `s_randRange(4, 2) -> v70` to `s_randRange(4, 4) -> v70`. The unique BCI
+  signature is `[66,4,66,<lower>,128,16,73,-2,86,82,70]`; the lower-bound
+  literal at decompressed offset `0x1B69C` changes `2 -> 4`. Restore reverses
+  it, and existing saves are not rewritten.
 - REJECTED CONFIGURATION 2026-07-03 (same session, before any release): tried making
   reinforcement parties hand over all units instead of retreating, via the
   `v56[party]` retreat quota (`[90,15] -> [66,0]` at decompressed `0x17888`

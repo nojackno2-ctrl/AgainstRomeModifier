@@ -24,6 +24,7 @@ namespace AgainstRomeModifier {
             chkAiM3.Checked = true;
             chkAiM4.Checked = true;
             chkAiM5.Checked = true;
+            chkAiM6.Checked = true;
             chkBalance.Checked = true;
             chkVillageBuildRange.Checked = true;
             chkDgVoodoo.Checked = true;
@@ -53,6 +54,7 @@ namespace AgainstRomeModifier {
             chkAiM3.Checked = false;
             chkAiM4.Checked = false;
             chkAiM5.Checked = false;
+            chkAiM6.Checked = false;
             chkBalance.Checked = false;
             chkVillageBuildRange.Checked = false;
             chkDgVoodoo.Checked = false; // 相容性層關閉，以達到最乾淨的還原
