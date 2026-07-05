@@ -7,16 +7,18 @@
 - Hook `005364c1` (file `0x1364c1`) jumps to executable zero padding at
   `0056258f` (file `0x16258f`).
 - The trampoline preserves both negative-value checks, scales `ESI`/`EDI` with
-  `value * 3`, calls `004c0900`, and returns at `005364d1`. Both the
+  `value * 5`, calls `004c0900`, and returns at `005364d1`. Both the
   type-definition and per-object village-state copies therefore receive the
-  same 3x values.
-- Runtime result: both the player-usable village construction range and the red
-  dashed frame have been successfully verified in-game at the 3x scale.
+  same 5x values.
+- Runtime status: this shared setter path synchronized the player-usable village
+  construction range and red dashed frame at the previously verified 3x scale.
+  The 5x factor is statically verified and still needs an in-game check.
 - Hook original: `85 F6 7C A6 85 FF 7C A2`.
 - Hook patched: `E9 C9 C0 02 00 90 90 90`.
 - Cave original: 39 zero bytes.
 - Legacy 2x cave: `85 F6 0F 8C D4 3E FD FF 85 FF 0F 8C CC 3E FD FF D1 E6 D1 E7 57 56 50 E8 55 E3 F5 FF E9 21 3F FD FF`, followed by six zero bytes. It is recognized for migration and restore.
-- Cave patched: `85 F6 0F 8C D4 3E FD FF 85 FF 0F 8C CC 3E FD FF 8D 34 76 90 90 8D 3C 7F 90 90 57 56 50 E8 4F E3 F5 FF E9 1B 3F FD FF`.
+- Legacy 3x cave: `85 F6 0F 8C D4 3E FD FF 85 FF 0F 8C CC 3E FD FF 8D 34 76 90 90 8D 3C 7F 90 90 57 56 50 E8 4F E3 F5 FF E9 1B 3F FD FF`.
+- Cave patched (5x): `85 F6 0F 8C D4 3E FD FF 85 FF 0F 8C CC 3E FD FF 8D 34 B6 90 90 8D 3C BF 90 90 57 56 50 E8 4F E3 F5 FF E9 1B 3F FD FF`.
 
 ### Population Limit
 
@@ -140,12 +142,15 @@
 - Dead-party confirmation counter at `0x1068C`: `20 -> 3` consecutive ticks
   (settled-party handler; counts ticks with village, leader, civilians, and
   members all gone before entering RETREAT).
-- Settled-party terminal cleanup (`P15`): the two settled handlers change their
-  final state literals at `0x109E8` and `0x16374` from `DELETE_PARTY (256)` to
-  `DELETE_TEAM (257)`. The generic dispatcher already implements state 257 by
-  calling the party deletion routine with team cleanup enabled. This prevents a
-  recycled team id from retaining old village/NPC state. Transient raider and
-  reinforcement handlers remain on state 256.
+- Settled-party terminal safety repair (`P15`, mandatory R0): the two settled
+  handler literals at `0x109E8` and `0x16374` must remain `DELETE_PARTY (256)`.
+  A previous build changed them to `DELETE_TEAM (257)` to clear stale team
+  state, but full team deletion can race `ak_haupthaus.bci` while it waits for
+  the current village/palisade object's cleanup acknowledgement. Losing that
+  acknowledgement can leave the sequential teardown loop waiting forever,
+  which presents as a frozen simulation rather than a process crash. Detection
+  treats all-256 as Original, all-257 or mixed 256/257 as Legacy, and both
+  Apply paths restore 256. P15 is no longer part of user-toggleable M3.
 - All six scheduler delay sites change to `5000..10000` ms. The first three
   are inner raider timers; the remaining `60000..120000`, `60000..120000`, and
   `120000..240000` sites initialize and refresh the outer action scheduler that

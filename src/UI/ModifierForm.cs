@@ -41,10 +41,6 @@ namespace AgainstRomeModifier {
         private TabPage tabCurrentStats = null!;
         private TabPage tabDoc = null!;
         private TextBox txtDoc = null!;
-        private TabPage tabSkills = null!;
-        private Button btnNavSkills = null!;
-        private DataGridView dgvGeneralSkills = null!;
-        private DataGridView dgvLeaderGlory = null!;
         private TabPage tabSaveManager = null!;
         private Button btnNavSaveManager = null!;
 
@@ -97,11 +93,6 @@ namespace AgainstRomeModifier {
         private string presetFileName = "";
         private ModernToggle chkToEng = null!;
         private ModernToggle chkInfiniteMorale = null!;
-        private ModernToggle chkSpellEnhancement = null!;
-        private ModernToggle chkLeaderGloryKeep = null!;
-        private ModernToggle chkModSkillsAndGlory = null!;
-        private Label lblHelpModSkillsAndGlory = null!;
-        private Label lblHelpLeaderGloryKeep = null!;
 
         // 所有功能開啟/關閉按鈕
         private Button btnEnableAll = null!;
@@ -157,7 +148,6 @@ namespace AgainstRomeModifier {
         private Label lblHelpInfiniteMorale = null!;
         private Label lblHelpBalance = null!;
         private Label lblHelpNoSpellAltar = null!;
-        private Label lblHelpSpellEnhancement = null!;
         private Label lblHelpMaxPopulation = null!;
         private Label lblHelpHousingCapacity20x = null!;
         private Label lblHelpStorageCapacity10x = null!;
@@ -545,13 +535,6 @@ namespace AgainstRomeModifier {
                 RefreshNavButtons();
             };
 
-            btnNavSkills = new Button { Location = new Point(10, 0) };
-            StyleNavButton(btnNavSkills, "NavSkills", tabSkills);
-            btnNavSkills.Click += (s, e) => {
-                ShowTabPage(tabSkills);
-                RefreshNavButtons();
-            };
-
             btnNavSaveManager = new Button { Location = new Point(10, 0) };
             StyleNavButton(btnNavSaveManager, "NavSaveManager", tabSaveManager);
             btnNavSaveManager.Click += (s, e) => {
@@ -614,7 +597,6 @@ namespace AgainstRomeModifier {
             pnlSidebar.Controls.Add(btnNavSystem);
             pnlSidebar.Controls.Add(btnNavDefaultStats);
             pnlSidebar.Controls.Add(btnNavCurrentStats);
-            pnlSidebar.Controls.Add(btnNavSkills);
             pnlSidebar.Controls.Add(btnNavSaveManager);
             pnlSidebar.Controls.Add(btnNavDoc);
             pnlSidebar.Controls.Add(lblSidebarLang);
@@ -815,45 +797,6 @@ namespace AgainstRomeModifier {
             lblHelpNoSpellAltar.Location = new Point(340, 480);
             pnlSwitchesCard.Controls.Add(chkNoSpellAltar);
             pnlSwitchesCard.Controls.Add(lblHelpNoSpellAltar);
-
-            chkSpellEnhancement = new ModernToggle {
-                Text = "法師技能與復活術強化",
-                Location = new Point(25, 560),
-                Size = new Size(310, 25),
-                Checked = false,
-                BackColor = Color.Transparent,
-                Font = fontJhengHei10B
-            };
-            lblHelpSpellEnhancement = CreateHelpLabel("SpellEnhancementTip");
-            lblHelpSpellEnhancement.Location = new Point(340, 560);
-            pnlSwitchesCard.Controls.Add(chkSpellEnhancement);
-            pnlSwitchesCard.Controls.Add(lblHelpSpellEnhancement);
-
-            chkLeaderGloryKeep = new ModernToggle {
-                Text = "首領死亡榮耀保留",
-                Location = new Point(25, 640),
-                Size = new Size(310, 25),
-                Checked = false,
-                BackColor = Color.Transparent,
-                Font = fontJhengHei10B
-            };
-            lblHelpLeaderGloryKeep = CreateHelpLabel("LeaderGloryKeepTip");
-            lblHelpLeaderGloryKeep.Location = new Point(340, 640);
-            pnlSwitchesCard.Controls.Add(chkLeaderGloryKeep);
-            pnlSwitchesCard.Controls.Add(lblHelpLeaderGloryKeep);
-
-            chkModSkillsAndGlory = new ModernToggle {
-                Text = "套用自訂首領與單位技能",
-                Location = new Point(25, 720),
-                Size = new Size(310, 25),
-                Checked = false,
-                BackColor = Color.Transparent,
-                Font = fontJhengHei10B
-            };
-            lblHelpModSkillsAndGlory = CreateHelpLabel("ModSkillsAndGloryTip");
-            lblHelpModSkillsAndGlory.Location = new Point(340, 720);
-            pnlSwitchesCard.Controls.Add(chkModSkillsAndGlory);
-            pnlSwitchesCard.Controls.Add(lblHelpModSkillsAndGlory);
 
             // 新增：建設與人口修改卡片
             pnlBuildCard = new Panel {
@@ -1242,115 +1185,6 @@ namespace AgainstRomeModifier {
             ReloadTechnicalDocument();
             tabDoc.Controls.Add(txtDoc);
 
-            // 技能屬性分頁初始化
-            tabSkills = new TabPage {
-                BackColor = Color.FromArgb(10, 11, 16),
-                UseVisualStyleBackColor = false
-            };
-            mainTabControl.TabPages.Add(tabSkills);
-
-            Panel pnlSkillsTitle = new Panel {
-                Location = new Point(0, 0),
-                Size = new Size(1190, 80),
-                BackColor = Color.FromArgb(15, 16, 24)
-            };
-            Label lblSkillsHeading = new Label {
-                Text = Loc.Get("SkillsHeading"),
-                Location = new Point(20, 15),
-                Size = new Size(600, 25),
-                Font = fontJhengHei115B,
-                ForeColor = Color.FromArgb(0, 220, 255),
-                BackColor = Color.Transparent
-            };
-            Label lblSkillsSubtitle = new Label {
-                Text = Loc.Get("SkillsSubtitle"),
-                Location = new Point(20, 45),
-                Size = new Size(1000, 20),
-                Font = fontJhengHei95R,
-                ForeColor = Color.FromArgb(150, 160, 175),
-                BackColor = Color.Transparent
-            };
-            pnlSkillsTitle.Controls.Add(lblSkillsHeading);
-            pnlSkillsTitle.Controls.Add(lblSkillsSubtitle);
-            tabSkills.Controls.Add(pnlSkillsTitle);
-
-            Panel pnlLeftSkills = new Panel {
-                Location = new Point(0, 95),
-                Size = new Size(500, 680),
-                BackColor = Color.FromArgb(15, 16, 24)
-            };
-            pnlLeftSkills.Paint += CardPanel_Paint;
-
-            Label lblLeftTitle = new Label {
-                Text = Loc.Get("GrpGeneralSkills"),
-                Location = new Point(20, 15),
-                Size = new Size(460, 22),
-                Font = fontJhengHei105B,
-                ForeColor = Color.FromArgb(0, 220, 255),
-                BackColor = Color.Transparent
-            };
-            pnlLeftSkills.Controls.Add(lblLeftTitle);
-
-            dgvGeneralSkills = CreateBaseGrid();
-            dgvGeneralSkills.Location = new Point(20, 50);
-            dgvGeneralSkills.Size = new Size(460, 610);
-            dgvGeneralSkills.Columns.Add("SkillName", Loc.Get("ColSkillName"));
-            dgvGeneralSkills.Columns.Add("SkillKey", "Key");
-            dgvGeneralSkills.Columns["SkillKey"].Visible = false;
-            dgvGeneralSkills.Columns.Add("IniFile", "INI");
-            dgvGeneralSkills.Columns["IniFile"].Visible = false;
-            dgvGeneralSkills.Columns.Add("SkillValue", Loc.Get("ColSkillValue"));
-            dgvGeneralSkills.Columns.Add("SkillDefault", Loc.Get("ColSkillDefault"));
-            dgvGeneralSkills.Columns["SkillName"].Width = 260;
-            dgvGeneralSkills.Columns["SkillName"].ReadOnly = true;
-            dgvGeneralSkills.Columns["SkillValue"].Width = 90;
-            dgvGeneralSkills.Columns["SkillDefault"].Width = 90;
-            dgvGeneralSkills.Columns["SkillDefault"].ReadOnly = true;
-            pnlLeftSkills.Controls.Add(dgvGeneralSkills);
-
-            Panel pnlRightSkills = new Panel {
-                Location = new Point(520, 95),
-                Size = new Size(670, 680),
-                BackColor = Color.FromArgb(15, 16, 24)
-            };
-            pnlRightSkills.Paint += CardPanel_Paint;
-
-            Label lblRightTitle = new Label {
-                Text = Loc.Get("GrpLeaderGlory"),
-                Location = new Point(20, 15),
-                Size = new Size(630, 22),
-                Font = fontJhengHei105B,
-                ForeColor = Color.FromArgb(0, 220, 255),
-                BackColor = Color.Transparent
-            };
-            pnlRightSkills.Controls.Add(lblRightTitle);
-
-            dgvLeaderGlory = CreateBaseGrid();
-            dgvLeaderGlory.Location = new Point(20, 50);
-            dgvLeaderGlory.Size = new Size(630, 610);
-            dgvLeaderGlory.Columns.Add("LeaderName", Loc.Get("ColGloryLeader"));
-            dgvLeaderGlory.Columns.Add("LeaderKey", "Key");
-            dgvLeaderGlory.Columns["LeaderKey"].Visible = false;
-            dgvLeaderGlory.Columns.Add("AwStuf", Loc.Get("ColGloryAwStuf"));
-            dgvLeaderGlory.Columns.Add("VwStuf", Loc.Get("ColGloryVwStuf"));
-            dgvLeaderGlory.Columns.Add("DamStuf", Loc.Get("ColGloryDamStuf"));
-            dgvLeaderGlory.Columns.Add("MoraleBonus", Loc.Get("ColGloryMoraleBonus"));
-            dgvLeaderGlory.Columns.Add("MoraleTime", Loc.Get("ColGloryMoraleTime"));
-            dgvLeaderGlory.Columns.Add("MaxRuhm", Loc.Get("ColGloryMaxRuhm"));
-            
-            dgvLeaderGlory.Columns["LeaderName"].Width = 100;
-            dgvLeaderGlory.Columns["LeaderName"].ReadOnly = true;
-            dgvLeaderGlory.Columns["AwStuf"].Width = 85;
-            dgvLeaderGlory.Columns["VwStuf"].Width = 85;
-            dgvLeaderGlory.Columns["DamStuf"].Width = 85;
-            dgvLeaderGlory.Columns["MoraleBonus"].Width = 90;
-            dgvLeaderGlory.Columns["MoraleTime"].Width = 110;
-            dgvLeaderGlory.Columns["MaxRuhm"].Width = 75;
-            pnlRightSkills.Controls.Add(dgvLeaderGlory);
-
-            tabSkills.Controls.Add(pnlLeftSkills);
-            tabSkills.Controls.Add(pnlRightSkills);
-
             tabSaveManager = new TabPage {
                 BackColor = Color.FromArgb(10, 11, 16),
                 UseVisualStyleBackColor = false
@@ -1572,7 +1406,6 @@ namespace AgainstRomeModifier {
                 btnNavSystem,
                 btnNavDefaultStats,
                 btnNavCurrentStats,
-                btnNavSkills,
                 btnNavSaveManager,
                 btnNavDoc
             };
@@ -1672,10 +1505,7 @@ namespace AgainstRomeModifier {
                 (chkNoSpellCost, lblHelpNoSpellCost),
                 (chkInfiniteMorale, lblHelpInfiniteMorale),
                 (chkBalance, lblHelpBalance),
-                (chkNoSpellAltar, lblHelpNoSpellAltar),
-                (chkSpellEnhancement, lblHelpSpellEnhancement),
-                (chkLeaderGloryKeep, lblHelpLeaderGloryKeep),
-                (chkModSkillsAndGlory, lblHelpModSkillsAndGlory));
+                (chkNoSpellAltar, lblHelpNoSpellAltar));
             ConfigureSettingsCard(pnlBuildCard, lblBuildTitle, 470,
                 (chkMaxPopulation, lblHelpMaxPopulation),
                 (chkHousingCapacity20x, lblHelpHousingCapacity20x),
@@ -2069,7 +1899,6 @@ namespace AgainstRomeModifier {
             btnNavSystem.Invalidate();
             btnNavDefaultStats.Invalidate();
             btnNavCurrentStats.Invalidate();
-            btnNavSkills.Invalidate();
             btnNavSaveManager.Invalidate();
             btnNavDoc.Invalidate();
         }
@@ -2111,7 +1940,6 @@ namespace AgainstRomeModifier {
             chkFastBuildUpgradeRepair.Text = Loc.Get("FastBuildUpgradeRepair");
             chkFoodHealing10x.Text = Loc.Get("FoodHealing10x");
             chkDgVoodoo.Text = Loc.Get("DgVoodoo");
-            chkModSkillsAndGlory.Text = Loc.Get("ModSkillsAndGlory");
             chkVillageBuildRange.Text = Loc.Get("VillageBuildRange");
             btnEnableAll.Text = Loc.Get("EnableAll");
             btnDisableAll.Text = Loc.Get("DisableAll");
@@ -2124,8 +1952,6 @@ namespace AgainstRomeModifier {
             chkFreeUpgrade.Text = Loc.Get("FreeUpgrade");
             chkNoSpellCost.Text = Loc.Get("NoSpellCost");
             chkNoSpellAltar.Text = Loc.Get("NoSpellAltar");
-            chkSpellEnhancement.Text = Loc.Get("SpellEnhancement");
-            chkLeaderGloryKeep.Text = Loc.Get("LeaderGloryKeep");
             chkInfiniteMorale.Text = Loc.Get("InfiniteMorale");
             lblGamePath.Text = Loc.Get("GamePath");
             btnBrowseGamePath.Text = Loc.Get("Browse");
@@ -2194,7 +2020,6 @@ namespace AgainstRomeModifier {
                 myToolTip.SetToolTip(lblHelpInfiniteMorale, Loc.Get("InfiniteMoraleTip"));
                 myToolTip.SetToolTip(lblHelpBalance, Loc.Get("BalanceTip"));
                 myToolTip.SetToolTip(lblHelpNoSpellAltar, Loc.Get("NoSpellAltarTip"));
-                myToolTip.SetToolTip(lblHelpSpellEnhancement, Loc.Get("SpellEnhancementTip"));
                 myToolTip.SetToolTip(lblHelpMaxPopulation, Loc.Get("MaxPopulationTip"));
                 myToolTip.SetToolTip(lblHelpHousingCapacity20x, Loc.Get("HousingCapacity20xTip"));
                 myToolTip.SetToolTip(lblHelpStorageCapacity10x, Loc.Get("StorageCapacity10xTip"));

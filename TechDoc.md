@@ -198,10 +198,11 @@ commit 後要先 Dispose／清空 rollback scope，再更新 UI；UI refresh 例
 
 AI Ultimate 已拆成五個可獨立控制的模組：M1 增援規模、M2 增援節奏、M3 敗亡快速回收、M4 保證聚落生成與留守、M5 開局資源。R0 常駐修復不提供開關，負責還原已否決的全域 CLAK 修改。實作入口為 `src/Core/EndlessAi/EndlessAiOrchestrator.cs`。
 
-M3 另包含 P15：兩個定居型 party 在敗亡清理結束時，終態由
-`DELETE_PARTY (256)` 改為 `DELETE_TEAM (257)`（解壓偏移 `0x109E8`、
-`0x16374`）。這會使用腳本既有的 team-cleanup 路徑，先清除舊村落、NPC
-登錄與隊伍物件，再回收隊伍編號；突襲與增援 party 仍維持 256。
+P15 現為 R0 常駐安全修復：兩個定居型 party 的終態在解壓偏移
+`0x109E8`、`0x16374` 必須維持原版 `DELETE_PARTY (256)`。舊版曾改成
+`DELETE_TEAM (257)`，可能在 `ak_haupthaus.bci` 等待逐筆拆村確認時提前刪除
+team，造成確認永不回傳與模擬迴圈死等。偵測會把 257 或 256/257 混合狀態
+視為 Legacy，套用或還原時都遷移回 256；P15 不再屬於可切換的 M3。
 
 主要路徑：`MAPS/ENDL_000..004/SCRIPT/ak_level.bci`。
 
@@ -280,17 +281,17 @@ SHA-256 `49839eb76743893b879be201c729c8104c09415acccc29928fbcea29eee02429`），
 
 - hook `005364c1`／file offset `0x1364c1`
 - cave `0056258f`／file offset `0x16258f`
-- 以 `value * 3` 產生 3x
+- 以 `value * 5` 產生 5x
 - 保留負值檢查、呼叫 `004c0900`、回到 `005364d1`
 
-狀態包含 Original、Legacy2x、Expanded3x、Unknown；Legacy2x 必須可偵測、升級與回復。
+狀態包含 Original、Legacy2x、Legacy2Point5x、Legacy3x、Expanded5x、Unknown；舊版狀態必須可偵測、升級與回復。
 
 舊四處 shift-6 → shift-7 patch 已否決：
 
 - `0x1366c4`, `0x1366cd`
 - `0x0d722c`, `0x0d723b`
 
-現行程式不再寫入舊 `07` bytes，只偵測並還原。3x 建造範圍與紅框同步已完成實機驗證確認。
+現行程式不再寫入舊 `07` bytes，只偵測並還原。相同 setter 路徑在 3x 時已完成建造範圍與紅框同步的實機驗證；5x 倍率目前完成程式碼與 bytes 測試，仍待遊戲內確認。
 
 ### 11.3 法術免除祭壇數量需求
 
@@ -498,5 +499,16 @@ git diff --check
 - 新增 `tests/AgainstRomeModifier.Tests`（xUnit，`net8.0-windows`），以合成 fixture（非真實遊戲檔案）驗證各 patcher 的 round-trip 與關鍵欄位值，可在乾淨 clone／CI 上執行。
 - 新增 `.github/workflows/ci.yml`（windows-latest：restore／build Release x64／test）。
 - 為每個直接寫固定偏移的 patch 加上落地前驗證：`VerifiedBinaryWriter.WriteBytes`／`BciPattern.WriteBciInt32` 在目前位元組不符預期時丟 `InvalidDataException` 並中止，不靜默寫入，防止對不同版本的 exe/bci 檔案寫壞。
-- 主 csproj 內嵌資源 `ak_anfuehrer.patched.bci`（位於被 gitignore 的 `re_workspace/`）加上 `Condition="Exists(...)"`，讓乾淨 clone／CI 不再因缺檔而建置失敗。
+- 主 csproj 曾對內嵌資源 `ak_anfuehrer.patched.bci`（位於被 gitignore 的 `re_workspace/`）加上 `Condition="Exists(...)"`；該功能後續因實機閃退回歸而完全撤出修改器，csproj 已不再內嵌此資源。
 - 稽核發現「EXE patch 的 state → 預期/取代 bytes 選擇邏輯」（`ApplyExePatch`／`ApplyVillageSetterRangePatch`／`RestoreLegacyVillageBuildRangePatch`）雖然手動核對無誤，但完全沒有測試覆蓋。補強做法：新增 `src/Core/Patches/ExePatchModel.cs`，把失焦補丁、法術免祭壇需求、舊版村落建造範圍候選還原、村落 setter（2x/2.5x/3x 跳板）的常數、enum、狀態偵測與「state → `ExeWriteOp` 清單」規劃邏輯全部抽成純類別；`ModifierForm.Patches.cs`／`ModifierForm.Data.cs` 改為委派呼叫，只保留日誌與在地化。新增 `tests/AgainstRomeModifier.Tests/ExePatchModelTests.cs`（24 個測試，合成 exe 緩衝區），涵蓋四組補丁各自的狀態偵測、enable/disable round-trip、村落 setter 由任一舊版狀態遷移到 3x 再還原、以及預期位元組不符時中止且不破壞緩衝區。測試總數由 9 提升到 33。
+
+### 2026-07-05：首領死亡榮耀保留功能撤出
+- 實機測試確認：嘗試完全停用「首領死亡榮耀保留」行為後，遊戲會閃退；此功能視為無法安全修改。
+- 修改器已移除 UI 選項、內嵌 patched BCI 資源、套用／偵測邏輯與還原邏輯；「所有功能開啟」、一般套用、完整還原與屬性還原均排除此功能。
+- 修改器不會主動寫入或還原安裝目錄的 `ak_anfuehrer.bci` 榮耀保留狀態，既有檔案狀態保持不動。這是撤除修改器功能，不是透過寫入其他腳本狀態去停用遊戲行為。
+- 閃退根因尚未定位。未來若重新實作，必須完成實機驗證；編譯成功與靜態檢查不足以證明安全。
+
+### 2026-07-05：村莊建造／紅框範圍升級為 5 倍
+- setter trampoline 的 X/Z 縮放由 `LEA value*3` 改為 `LEA value*5`，hook、call 與 return 位址不變。
+- 原 3x cave 納入 `Legacy3x` 偵測，可直接遷移至 5x，也能安全還原原版。
+- 5x 已通過合成 EXE state、遷移及 round-trip 測試；實際遊戲內建造邊界與紅色虛線框仍待確認。

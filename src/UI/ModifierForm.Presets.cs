@@ -14,8 +14,6 @@ namespace AgainstRomeModifier {
             chkFreeUpgrade.Checked = true;
             chkNoSpellCost.Checked = true;
             chkNoSpellAltar.Checked = true;
-            chkSpellEnhancement.Checked = true;
-            chkLeaderGloryKeep.Checked = true;
             chkInfiniteMorale.Checked = true;
             chkHousingCapacity20x.Checked = true;
             chkStorageCapacity10x.Checked = true;
@@ -29,8 +27,7 @@ namespace AgainstRomeModifier {
             chkBalance.Checked = true;
             chkVillageBuildRange.Checked = true;
             chkDgVoodoo.Checked = true;
-            chkModSkillsAndGlory.Checked = true;
-            
+
             Log(Loc.CurrentLanguage == Language.English ? "All features enabled." : "已開啟所有功能。");
         }
 
@@ -46,8 +43,6 @@ namespace AgainstRomeModifier {
             chkFreeUpgrade.Checked = false;
             chkNoSpellCost.Checked = false;
             chkNoSpellAltar.Checked = false;
-            chkSpellEnhancement.Checked = false;
-            chkLeaderGloryKeep.Checked = false;
             chkInfiniteMorale.Checked = false;
             chkHousingCapacity20x.Checked = false;
             chkStorageCapacity10x.Checked = false;
@@ -61,7 +56,6 @@ namespace AgainstRomeModifier {
             chkBalance.Checked = false;
             chkVillageBuildRange.Checked = false;
             chkDgVoodoo.Checked = false; // 相容性層關閉，以達到最乾淨的還原
-            chkModSkillsAndGlory.Checked = false;
 
             Log(Loc.CurrentLanguage == Language.English ? "All features disabled." : "已關閉所有功能。");
         }

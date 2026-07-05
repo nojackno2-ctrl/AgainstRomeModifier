@@ -207,6 +207,22 @@ Two implementation routes:
    `obje_aktruhm` in a per-tribe slot. Avoids the script symbol-table and
    persistence-scope unknowns but is an assembly-level code patch.
 
+### Modifier support withdrawn after runtime crash (2026-07-05)
+
+In-game testing confirmed that completely disabling the leader-death glory
+retention behavior causes the game to crash. The feature is therefore treated
+as unsafe to modify.
+
+The modifier no longer exposes this option in the UI, embeds or applies the
+patched BCI, detects its state, or restores `ak_anfuehrer.bci` as part of Apply
+All or either restore workflow. Existing installed-file state is deliberately
+left untouched. This withdrawal removes modifier support; it does not attempt
+to disable the behavior by writing another script state.
+
+The crash cause has not yet been isolated. Static build or script validation is
+not sufficient evidence that a future implementation is safe; any replacement
+must pass in-game validation before this feature can be offered again.
+
 ## Modding Notes
 
 - To let ordinary warriors gain glory-based combat growth, give their objdef row

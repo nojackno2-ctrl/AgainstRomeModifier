@@ -142,7 +142,6 @@ namespace AgainstRomeModifier {
             btnNavSystem.Enabled = enabled;
             btnNavDefaultStats.Enabled = enabled;
             btnNavCurrentStats.Enabled = enabled;
-            btnNavSkills.Enabled = enabled;
             btnNavDoc.Enabled = enabled;
             btnNavSaveManager.Enabled = enabled;
         }
@@ -204,37 +203,6 @@ namespace AgainstRomeModifier {
                 bool dgVoodoo = chkDgVoodoo.Checked;
                 bool villageBuildRange = chkVillageBuildRange.Checked;
                 bool noSpellAltar = chkNoSpellAltar.Checked;
-                bool spellEnhancement = chkSpellEnhancement.Checked;
-                bool leaderGloryKeep = chkLeaderGloryKeep.Checked;
-
-                // 收集技能與首領屬性字典 (cl_epara & cl_script SAbility & objdef.dau)
-                bool modSkillsAndGlory = chkModSkillsAndGlory.Checked;
-                var generalSkillsDict = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
-                foreach (DataGridViewRow row in dgvGeneralSkills.Rows) {
-                    string key = row.Cells["SkillKey"].Value?.ToString() ?? "";
-                    string valStr = modSkillsAndGlory
-                        ? (row.Cells["SkillValue"].Value?.ToString() ?? "0")
-                        : (row.Cells["SkillDefault"].Value?.ToString() ?? "0");
-                    if (!string.IsNullOrEmpty(key) && double.TryParse(valStr, NumberStyles.Any, CultureInfo.InvariantCulture, out double v)) {
-                        generalSkillsDict[key] = v;
-                    }
-                }
-
-                var leaderGloryDict = new Dictionary<string, double[]>(StringComparer.OrdinalIgnoreCase);
-                if (modSkillsAndGlory) {
-                    foreach (DataGridViewRow row in dgvLeaderGlory.Rows) {
-                        string leaderKey = row.Cells["LeaderKey"].Value?.ToString() ?? "";
-                        if (!string.IsNullOrEmpty(leaderKey)) {
-                            double awStuf = double.Parse(row.Cells["AwStuf"].Value?.ToString() ?? "0", CultureInfo.InvariantCulture);
-                            double vwStuf = double.Parse(row.Cells["VwStuf"].Value?.ToString() ?? "0", CultureInfo.InvariantCulture);
-                            double damStuf = double.Parse(row.Cells["DamStuf"].Value?.ToString() ?? "0", CultureInfo.InvariantCulture);
-                            double moraleBonus = double.Parse(row.Cells["MoraleBonus"].Value?.ToString() ?? "0", CultureInfo.InvariantCulture);
-                            double moraleTime = double.Parse(row.Cells["MoraleTime"].Value?.ToString() ?? "0", CultureInfo.InvariantCulture);
-                            double maxRuhm = double.Parse(row.Cells["MaxRuhm"].Value?.ToString() ?? "0", CultureInfo.InvariantCulture);
-                            leaderGloryDict[leaderKey] = new double[] { awStuf, vwStuf, damStuf, moraleBonus, moraleTime, maxRuhm };
-                        }
-                    }
-                }
 
                 await Task.Run(() => {
                     // 1. Dry Run 階段：在記憶體中生成所有補丁 byte[] 並驗證
@@ -250,23 +218,21 @@ namespace AgainstRomeModifier {
                     }
 
                     // B. cl_script.ini
-                    byte[] clBytes = GetPatchedClScriptBytes(gamePath, fastCiviProduction, infMorale, balance, spellEnhancement, generalSkillsDict);
+                    byte[] clBytes = GetPatchedClScriptBytes(gamePath, fastCiviProduction, infMorale, balance);
                     patchedFiles[Path.Combine(gamePath, @"SYSTEM\cl_script.ini")] = clBytes;
 
-                    // H. cl_epara.ini
-                    byte[] eparaBytes = GetPatchedClEparaBytes(gamePath, generalSkillsDict);
-                    patchedFiles[Path.Combine(gamePath, @"SYSTEM\cl_epara.ini")] = eparaBytes;
+                    // H. cl_epara.ini — 已移除技能因子功能，一律還原為原版備份
+                    patchedFiles[Path.Combine(gamePath, @"SYSTEM\cl_epara.ini")] = GetBackupBytes("SYSTEM/cl_epara.ini");
 
-                    // G. cl_scint.ini
-                    byte[] scintBytes = GetPatchedClScintBytes(gamePath, spellEnhancement);
-                    patchedFiles[Path.Combine(gamePath, @"SYSTEM\CLAK\cl_scint.ini")] = scintBytes;
+                    // G. cl_scint.ini — 已移除法術強化功能，一律還原為原版備份
+                    patchedFiles[Path.Combine(gamePath, @"SYSTEM\CLAK\cl_scint.ini")] = GetBackupBytes("SYSTEM/CLAK/cl_scint.ini");
 
                     // C. ress.ini
                     byte[] ressBytes = GetPatchedRessBytes(freeProd, freeUp, noSpell);
                     patchedFiles[Path.Combine(gamePath, @"SYSTEM\ress.ini")] = ressBytes;
 
                     // D. objdef.dau
-                    byte[] objdefBytes = GetPatchedObjdefBytes(balance, housingCapacity20x, storageCapacity10x, fastBuildUpgradeRepair, leaderGloryDict);
+                    byte[] objdefBytes = GetPatchedObjdefBytes(balance, housingCapacity20x, storageCapacity10x, fastBuildUpgradeRepair);
                     patchedFiles[Path.Combine(gamePath, @"SYSTEM\DATA_MP\DEFAULTS\objdef.dau")] = objdefBytes;
 
                     // E. team.dat
@@ -292,9 +258,6 @@ namespace AgainstRomeModifier {
                     // 其它不涉及複雜解壓修改且安全的補丁
                     ApplyLanguagePatch(gamePath, toEng, rollback);
                     ApplyDgVoodooPatch(gamePath, dgVoodoo, rollback);
-
-                    // 首領死亡榮耀保留
-                    ApplyLeaderGloryKeepPatch(gamePath, leaderGloryKeep, rollback);
 
                     // 待機回血：12 個 Fig* 單位 AI 腳本的 s_addLP 單次加血量 1 -> 10。
                     ApplyFoodHealingAmountPatch(gamePath, foodHealing10x, rollback);
@@ -378,7 +341,6 @@ namespace AgainstRomeModifier {
                         SafeWriteAllBytes(kvp.Key, kvp.Value, rollback);
                     }
                     orchestrator.SaveAll(gamePath, rollback);
-                    ApplyLeaderGloryKeepPatch(gamePath, false, rollback);
                     ApplyFoodHealingAmountPatch(gamePath, false, rollback);
                     ApplyLanguagePatch(gamePath, false, rollback);
                     ApplyDgVoodooPatch(gamePath, false, rollback);
@@ -393,7 +355,6 @@ namespace AgainstRomeModifier {
                 chkHousingCapacity20x.Checked = false; chkStorageCapacity10x.Checked = false;
                 chkFastBuildUpgradeRepair.Checked = false;
                 chkFoodHealing10x.Checked = false;
-                chkLeaderGloryKeep.Checked = false;
                 chkMaxPopulation.Checked = false;
                 chkFastCiviProduction.Checked = false;
                 chkFreeProd.Checked = false;
@@ -401,7 +362,6 @@ namespace AgainstRomeModifier {
                 chkNoSpellCost.Checked = false;
                 chkInfiniteMorale.Checked = false;
                 chkBalance.Checked = false;
-                chkModSkillsAndGlory.Checked = false;
                 chkDgVoodoo.Checked = IsDgVoodooInstalled(gamePath);
                 chkVillageBuildRange.Checked = false;
                 customUnitStats = null;
@@ -445,7 +405,6 @@ namespace AgainstRomeModifier {
                 Log("已建立還原前檔案回復點。");
                 await Task.Run(() => {
                     RestoreStatsOnlyInternal(gamePath, rollback);
-                    ApplyLeaderGloryKeepPatch(gamePath, false, rollback);
                     ApplyFoodHealingAmountPatch(gamePath, false, rollback);
                 });
                 rollback.Commit();
@@ -454,7 +413,6 @@ namespace AgainstRomeModifier {
                 chkHousingCapacity20x.Checked = false; chkStorageCapacity10x.Checked = false;
                 chkFastBuildUpgradeRepair.Checked = false;
                 chkFoodHealing10x.Checked = false;
-                chkLeaderGloryKeep.Checked = false;
                 chkMaxPopulation.Checked = false;
                 chkFastCiviProduction.Checked = false;
                 chkFreeProd.Checked = false;
@@ -462,7 +420,6 @@ namespace AgainstRomeModifier {
                 chkNoSpellCost.Checked = false;
                 chkInfiniteMorale.Checked = false;
                 chkBalance.Checked = false;
-                chkModSkillsAndGlory.Checked = false;
                 customUnitStats = null;
                 presetFileSourceType = "default";
                 presetFileName = "";
@@ -594,8 +551,6 @@ namespace AgainstRomeModifier {
             RestoreMemoryFile("SYSTEM/CLAK/cl_scint.ini", Path.Combine(gamePath, @"SYSTEM\CLAK\cl_scint.ini"), rollback);
             RestoreMemoryFile("SYSTEM/ress.ini", Path.Combine(gamePath, @"SYSTEM\ress.ini"), rollback);
             RestoreMemoryFile("SYSTEM/DATA_MP/DEFAULTS/objdef.dau", Path.Combine(gamePath, @"SYSTEM\DATA_MP\DEFAULTS\objdef.dau"), rollback);
-            RestoreMemoryFile("SYSTEM/CLAK/SCRIPT/ak_anfuehrer.bci", Path.Combine(gamePath, @"SYSTEM\CLAK\SCRIPT\ak_anfuehrer.bci"), rollback);
-
             foreach (var kvp in backupFiles) {
                 if (kvp.Key.StartsWith("MAPS/", StringComparison.OrdinalIgnoreCase) && kvp.Key.EndsWith("team.dat", StringComparison.OrdinalIgnoreCase)) {
                     string destPath = Path.Combine(gamePath, kvp.Key.Replace('/', '\\'));
@@ -926,7 +881,7 @@ namespace AgainstRomeModifier {
             return keys;
         }
 
-        private byte[] GetPatchedClScriptBytes(string gamePath, bool fastCiviProduction, bool infiniteMoraleChecked, bool balanceChecked, bool spellEnhancementChecked, Dictionary<string, double> generalSkills) {
+        private byte[] GetPatchedClScriptBytes(string gamePath, bool fastCiviProduction, bool infiniteMoraleChecked, bool balanceChecked) {
             byte[] original = GetBackupBytes("SYSTEM/cl_script.ini");
             byte[] patchBase = SelectValidatedPatchBase(gamePath, @"SYSTEM\cl_script.ini", original, bytes => {
                 string current = Encoding.GetEncoding(1251).GetString(GameLZSS.DecompressPfil(bytes));
@@ -936,7 +891,8 @@ namespace AgainstRomeModifier {
             double hunMultiplier = balanceChecked ? 2.5 : 1.0;
             if (customUnitStats != null && customUnitStats.TryGetValue("FigKelPri00_Priester", out double[]? celt) && celt.Length > 8) celtMultiplier = celt[8] / 500.0;
             if (customUnitStats != null && customUnitStats.TryGetValue("FigHunPri00_Priester", out double[]? hun) && hun.Length > 8) hunMultiplier = hun[8] / 500.0;
-            return ClScriptPatcher.GetPatchedBytes(patchBase, new ClScriptOptions(fastCiviProduction, infiniteMoraleChecked, spellEnhancementChecked, generalSkills, 1.0, celtMultiplier, hunMultiplier, original));
+            // 法師強化與自訂技能已移除：spellEnhancement 固定 false、技能字典留空（一律寫入原版值）。
+            return ClScriptPatcher.GetPatchedBytes(patchBase, new ClScriptOptions(fastCiviProduction, infiniteMoraleChecked, false, new Dictionary<string, double>(), 1.0, celtMultiplier, hunMultiplier, original));
         }
 
         private byte[] GetBackupBytes(string key) {
@@ -957,34 +913,16 @@ namespace AgainstRomeModifier {
             return fallback;
         }
 
-        private byte[] GetPatchedClEparaBytes(string gamePath, Dictionary<string, double> generalSkills) {
-            byte[] original = GetBackupBytes("SYSTEM/cl_epara.ini");
-            string path = Path.Combine(gamePath, @"SYSTEM\cl_epara.ini");
-            byte[] patchBase = original;
-            if (File.Exists(path)) {
-                try { patchBase = File.ReadAllBytes(path); } catch { }
-            }
-            return ClEparaPatcher.GetPatchedBytes(patchBase, new ClEparaOptions(generalSkills, original));
-        }
-
-        private byte[] GetPatchedClScintBytes(string gamePath, bool spellEnhancementChecked) {
-            byte[] original = GetBackupBytes("SYSTEM/CLAK/cl_scint.ini");
-            byte[] patchBase = SelectValidatedPatchBase(gamePath, @"SYSTEM\CLAK\cl_scint.ini", original, bytes => {
-                string current = Encoding.GetEncoding(1251).GetString(GameLZSS.DecompressPfil(bytes));
-                return current.Contains("SpellODef", StringComparison.Ordinal) && current.Contains("KEL, Spell3", StringComparison.Ordinal);
-            }, "cl_scint.ini");
-            return ClScintPatcher.GetPatchedBytes(patchBase, new ClScintOptions(spellEnhancementChecked, original));
-        }
-
         private byte[] GetPatchedRessBytes(bool freeProdChecked, bool freeUpgradeChecked, bool noSpellCostChecked) {
             return RessPatcher.GetPatchedBytes(GetBackupBytes("SYSTEM/ress.ini"), new RessOptions(freeProdChecked, freeUpgradeChecked, noSpellCostChecked));
         }
 
-        private byte[] GetPatchedObjdefBytes(bool balanceChecked, bool housingCapacity20xChecked, bool storageCapacity10xChecked, bool fastBuildUpgradeChecked, Dictionary<string, double[]> leaderGlory) {
+        private byte[] GetPatchedObjdefBytes(bool balanceChecked, bool housingCapacity20xChecked, bool storageCapacity10xChecked, bool fastBuildUpgradeChecked) {
             byte[] original = GetBackupBytes("SYSTEM/DATA_MP/DEFAULTS/objdef.dau");
             var unitStats = new Dictionary<string, double[]>(StringComparer.OrdinalIgnoreCase);
             foreach (string key in TroopConfig.UnitMeta.Keys) unitStats[key] = GetBaseStatsForUnit(key, 0, 0, 0, 0, balanceChecked);
-            return ObjdefPatcher.GetPatchedBytes(original, new ObjdefOptions(balanceChecked, housingCapacity20xChecked, storageCapacity10xChecked, fastBuildUpgradeChecked, leaderGlory, unitStats));
+            // 首領榮耀成長功能已移除：leaderGlory 留空（objdef 榮耀欄位一律保持原版）。
+            return ObjdefPatcher.GetPatchedBytes(original, new ObjdefOptions(balanceChecked, housingCapacity20xChecked, storageCapacity10xChecked, fastBuildUpgradeChecked, new Dictionary<string, double[]>(), unitStats));
         }
 
         private static void WriteBciInt32(byte[] buffer, int offset, int expectedValue, int value, string patchName) {
@@ -1093,50 +1031,5 @@ namespace AgainstRomeModifier {
             return results;
         }
 
-        private void ApplyLeaderGloryKeepPatch(string gamePath, bool enabled, FileRollbackScope? rollback) {
-            string scriptPath = Path.Combine(gamePath, @"SYSTEM\CLAK\SCRIPT\ak_anfuehrer.bci");
-            string backupKey = "SYSTEM/CLAK/SCRIPT/ak_anfuehrer.bci";
-
-            if (enabled) {
-                if (!File.Exists(scriptPath)) {
-                    throw new FileNotFoundException("找不到首領 AI 腳本。", scriptPath);
-                }
-
-                // 備份原版檔案
-                if (!backupFiles.ContainsKey(backupKey)) {
-                    byte[] originalBytes = File.ReadAllBytes(scriptPath);
-                    bool isAlreadyPatched = false;
-                    try {
-                        byte[] decomp = GameLZSS.DecompressPfil(originalBytes);
-                        string text = Encoding.ASCII.GetString(decomp);
-                        isAlreadyPatched = text.Contains("s_getObjGlory");
-                    } catch {}
-
-                    if (!isAlreadyPatched) {
-                        backupFiles[backupKey] = originalBytes;
-                    }
-                }
-
-                // 載入內嵌資源並寫入
-                var assembly = typeof(Program).Assembly;
-                using Stream? resourceStream = assembly.GetManifestResourceStream("ak_anfuehrer.patched.bci");
-                if (resourceStream == null) {
-                    throw new InvalidDataException("找不到內嵌的首領榮耀保留補丁資源 (ak_anfuehrer.patched.bci)。");
-                }
-
-                using MemoryStream ms = new MemoryStream();
-                resourceStream.CopyTo(ms);
-                byte[] patchedBytes = ms.ToArray();
-
-                SafeWriteAllBytes(scriptPath, patchedBytes, rollback);
-                Log("已套用首領死亡榮耀保留補丁。");
-            } else {
-                // 停用：還原為原版
-                if (backupFiles.TryGetValue(backupKey, out byte[]? origBytes)) {
-                    SafeWriteAllBytes(scriptPath, origBytes, rollback);
-                    Log("已將首領 AI 腳本還原為備份的原版。");
-                }
-            }
-        }
     }
 }

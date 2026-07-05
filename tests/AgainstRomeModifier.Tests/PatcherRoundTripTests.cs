@@ -56,23 +56,6 @@ public sealed class PatcherRoundTripTests {
     }
 
     [Fact]
-    public void ClEpara_patch_updates_section_value_and_restore_is_exact() {
-        byte[] original = SyntheticFixture.Pfil("[GER_SAbility0_Value]\r\n10\r\n");
-        var values = new Dictionary<string, double> { ["GER_SAbility0_Value"] = 25 };
-        Assert.Contains("25", SyntheticFixture.Text(ClEparaPatcher.GetPatchedBytes(original, new(values, original))));
-        Assert.Equal(original, ClEparaPatcher.GetPatchedBytes(original, new(NoSkills, original)));
-    }
-
-    [Fact]
-    public void ClScint_patch_updates_object_definitions_and_restores() {
-        byte[] original = SyntheticFixture.Pfil("SpellODef =KEL, Spell3, OLD_ONE     ; a\nSpellODef2=KEL, Spell3, OLD_TWO     ; b\n");
-        string patched = SyntheticFixture.Text(ClScintPatcher.GetPatchedBytes(original, new(true, original)));
-        Assert.Contains("KEL_INF01", patched);
-        Assert.Contains("KEL_INF02", patched);
-        Assert.Equal(original, ClScintPatcher.GetPatchedBytes(original, new(false, original)));
-    }
-
-    [Fact]
     public void TeamDat_patch_sets_positive_population_and_restores() {
         byte[] original = SyntheticFixture.Pfil("[teamdata]\nA,B,C,D,80,F\nA,B,C,D,0,F\n");
         string patched = SyntheticFixture.Text(TeamDatPatcher.GetPatchedBytes(original, new(true)));

@@ -477,11 +477,13 @@ namespace AgainstRomeModifier
     }
 
     // ==========================================
-    // P15: settled-party terminal team cleanup
+    // P15: restore safe settled-party terminal cleanup
     // ==========================================
-    // A defeated settled party must clear team-owned village/NPC state before
-    // its team id is reused. DELETE_TEAM is already supported by the generic
-    // dispatcher and invokes the delete routine with team cleanup enabled.
+    // A previous build changed these transitions to DELETE_TEAM. That can
+    // delete the recipient while ak_haupthaus.bci is waiting for its per-object
+    // cleanup acknowledgement, leaving the cleanup protocol stuck. Keep the
+    // engine-proven DELETE_PARTY path and recognize DELETE_TEAM as legacy so
+    // existing installations are migrated safely.
     public class P15_SettledPartyDeleteTeamPatch : IEndlessPatch
     {
         public string Id => "P15";
@@ -502,17 +504,17 @@ namespace AgainstRomeModifier
             if (sites.Count != ExpectedSiteCount) return PatchState.Unknown;
 
             int original = 0;
-            int ultimate = 0;
+            int legacy = 0;
             foreach (int site in sites)
             {
                 int value = BitConverter.ToInt32(decompressed, site);
                 if (value == DeletePartyState) original++;
-                else if (value == DeleteTeamState) ultimate++;
+                else if (value == DeleteTeamState) legacy++;
                 else return PatchState.Unknown;
             }
 
             if (original == ExpectedSiteCount) return PatchState.Original;
-            if (ultimate == ExpectedSiteCount) return PatchState.Ultimate;
+            if (legacy == ExpectedSiteCount) return PatchState.Legacy;
             return PatchState.Legacy;
         }
 
@@ -524,7 +526,9 @@ namespace AgainstRomeModifier
                 throw new InvalidOperationException("P15 settled terminal-state signature count mismatch.");
             }
 
-            int target = enabled ? DeleteTeamState : DeletePartyState;
+            // This is a mandatory safety repair. Both enable and restore paths
+            // converge on the original DELETE_PARTY state.
+            int target = DeletePartyState;
             bool changed = false;
             foreach (int site in sites)
             {

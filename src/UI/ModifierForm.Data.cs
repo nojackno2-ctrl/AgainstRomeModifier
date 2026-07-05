@@ -1349,25 +1349,6 @@ namespace AgainstRomeModifier {
                     if (syncUIWithFile) {
                         chkInfiniteMorale.Checked = infiniteMorale;
                     }
-
-                    bool spellEnhancement = false;
-                    var mSpellEnhance = Regex.Match(clText, @"Value\s*=\s*GER\s*,\s*Spell2\s*,\s*350");
-                    if (mSpellEnhance.Success) {
-                        string scintPath = Path.Combine(gamePath, @"SYSTEM\CLAK\cl_scint.ini");
-                        if (File.Exists(scintPath)) {
-                            try {
-                                byte[] scintBytes = File.ReadAllBytes(scintPath);
-                                byte[] decompScint = GameLZSS.DecompressPfil(scintBytes);
-                                string scintText = Encoding.GetEncoding(1251).GetString(decompScint);
-                                if (scintText.Contains("SpellODef =KEL, Spell3, KEL_INF01") || scintText.Contains("SpellODef=KEL,Spell3,KEL_INF01")) {
-                                    spellEnhancement = true;
-                                }
-                            } catch { }
-                        }
-                    }
-                    if (syncUIWithFile) {
-                        chkSpellEnhancement.Checked = spellEnhancement;
-                    }
                 }
 
                 string ressPath = Path.Combine(gamePath, @"SYSTEM\ress.ini");
@@ -1442,7 +1423,6 @@ namespace AgainstRomeModifier {
                         Log("食物回血 AI 腳本不是完整的原版或已修改狀態；已取消勾選，重新套用可修復一致性。");
                     }
 
-                    chkLeaderGloryKeep.Checked = IsLeaderGloryKeepApplied(gamePath);
                 }
 
                 string exePath = Path.Combine(gamePath, @"Against_Rome.exe");
@@ -1481,7 +1461,8 @@ namespace AgainstRomeModifier {
                     if (syncUIWithFile) {
                         chkVillageBuildRange.Checked = villageSetterState == ExeVillageSetterPatchState.Legacy2x ||
                             villageSetterState == ExeVillageSetterPatchState.Legacy2Point5x ||
-                            villageSetterState == ExeVillageSetterPatchState.Expanded3x;
+                            villageSetterState == ExeVillageSetterPatchState.Legacy3x ||
+                            villageSetterState == ExeVillageSetterPatchState.Expanded5x;
                     }
                     if (villageSetterState == ExeVillageSetterPatchState.Unknown && syncUIWithFile) {
                         Log(Loc.Get("LogVillageBuildRangeWarning"));
@@ -1490,7 +1471,6 @@ namespace AgainstRomeModifier {
 
                 int totalCurrentRows = 0;
                 foreach (var dgv in currentStatsGrids.Values) totalCurrentRows += dgv.Rows.Count;
-                LoadSkillsData(unitRows, origUnitRows);
                 Log(string.Format(Loc.Get("LogReadCurrentDone"), totalCurrentRows));
             } catch (Exception ex) {
                 Log(Loc.Get("LogPresetImportError") + ex.Message + "\r\n" + ex.StackTrace);
@@ -1632,230 +1612,6 @@ namespace AgainstRomeModifier {
             Log(string.Format(Loc.Get("LogBalanceToggled"), status));
         }
 
-        /// <summary>
-        /// 偵測目前遊戲目錄下的 ak_anfuehrer.bci 檔案，是否已套用首領榮耀保留補丁。
-        /// </summary>
-        private bool IsLeaderGloryKeepApplied(string gamePath) {
-            string scriptPath = Path.Combine(gamePath, @"SYSTEM\CLAK\SCRIPT\ak_anfuehrer.bci");
-            if (!File.Exists(scriptPath)) return false;
-            try {
-                byte[] raw = File.ReadAllBytes(scriptPath);
-                byte[] decomp = GameLZSS.DecompressPfil(raw);
-                string text = Encoding.ASCII.GetString(decomp);
-                return text.Contains("s_getObjGlory");
-            } catch {
-                return false;
-            }
-        }
-
-        private void LoadSkillsData(Dictionary<string, string[]> unitRows, Dictionary<string, string[]> origUnitRows) {
-            try {
-                string gamePath = GetGamePath();
-                bool isEn = Loc.CurrentLanguage == Language.English;
-
-                // 1. 讀取當前的 cl_epara.ini 與備份的 cl_epara.ini
-                string[] currentEparaLines = Array.Empty<string>();
-                string[] backupEparaLines = Array.Empty<string>();
-
-                if (backupFiles.TryGetValue("SYSTEM/cl_epara.ini", out byte[]? backupEparaBytes)) {
-                    string backupText = Encoding.GetEncoding(1251).GetString(GameLZSS.DecompressPfil(backupEparaBytes));
-                    backupEparaLines = backupText.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
-                }
-
-                string currentEparaPath = Path.Combine(gamePath, @"SYSTEM\cl_epara.ini");
-                if (File.Exists(currentEparaPath)) {
-                    try {
-                        byte[] curBytes = File.ReadAllBytes(currentEparaPath);
-                        string curText = Encoding.GetEncoding(1251).GetString(GameLZSS.DecompressPfil(curBytes));
-                        currentEparaLines = curText.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
-                    } catch { }
-                }
-                if (currentEparaLines.Length == 0) {
-                    currentEparaLines = backupEparaLines;
-                }
-
-                // 2. 讀取當前的 cl_script.ini 與備份的 cl_script.ini
-                string[] currentClLines = Array.Empty<string>();
-                string[] backupClLines = Array.Empty<string>();
-
-                if (backupFiles.TryGetValue("SYSTEM/cl_script.ini", out byte[]? backupClBytes)) {
-                    string backupText = Encoding.GetEncoding(1251).GetString(GameLZSS.DecompressPfil(backupClBytes));
-                    backupClLines = backupText.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
-                }
-
-                string currentClPath = Path.Combine(gamePath, @"SYSTEM\cl_script.ini");
-                if (File.Exists(currentClPath)) {
-                    try {
-                        byte[] curBytes = File.ReadAllBytes(currentClPath);
-                        string curText = Encoding.GetEncoding(1251).GetString(GameLZSS.DecompressPfil(curBytes));
-                        currentClLines = curText.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
-                    } catch { }
-                }
-                if (currentClLines.Length == 0) {
-                    currentClLines = backupClLines;
-                }
-
-                // 3. 填寫 dgvGeneralSkills 表格
-                dgvGeneralSkills.Rows.Clear();
-                
-                var skillItems = new[] {
-                    new { NameZh = "狂戰士 - 攻擊力倍率 (AW)", Key = "BerserkerAWfaktor", File = "cl_epara", Def = 2.0 },
-                    new { NameZh = "狂戰士 - 傷害倍率 (DAM)", Key = "BerserkerDAMfaktor", File = "cl_epara", Def = 2.0 },
-                    new { NameZh = "狂戰士 - 防禦力倍率 (VW)", Key = "BerserkerVWfaktor", File = "cl_epara", Def = 0.0 },
-                    new { NameZh = "射擊技巧 - 射程倍率 (RAD)", Key = "SchuetzengeschickRADfaktor", File = "cl_epara", Def = 1.2 },
-                    new { NameZh = "護盾 - 傷害吸收倍率 (DAM)", Key = "SchutzschildDAMfaktor", File = "cl_epara", Def = 0.8 },
-                    new { NameZh = "雷擊 - 傷害加成倍率 (DAM)", Key = "DonnerschlagDAMfaktor", File = "cl_epara", Def = 1.5 },
-                    new { NameZh = "條頓 戰意被動 - 士氣加成", Key = "GER_SAbility1_Value", File = "cl_script", Def = 1.0 },
-                    new { NameZh = "匈奴 恐懼被動 - 敵軍士氣扣減", Key = "HUN_SAbility0_Value", File = "cl_script", Def = 5.0 },
-                    new { NameZh = "匈奴 食人被動 - 擊殺食物加成", Key = "HUN_SAbility1_Value", File = "cl_script", Def = 5.0 }
-                };
-
-                foreach (var item in skillItems) {
-                    double currentVal = item.Def;
-                    double defaultVal = item.Def;
-
-                    if (item.File == "cl_epara") {
-                        defaultVal = GetEparaValue(backupEparaLines, item.Key, item.Def);
-                        currentVal = GetEparaValue(currentEparaLines, item.Key, defaultVal);
-                    } else {
-                        string[] parts = item.Key.Split('_');
-                        string tribe = parts[0];
-                        string ability = parts[1];
-                        defaultVal = GetScriptAbilityValue(backupClLines, tribe, ability, item.Def);
-                        currentVal = GetScriptAbilityValue(currentClLines, tribe, ability, defaultVal);
-                    }
-
-                    string displayTitle = item.NameZh;
-                    if (isEn) {
-                        displayTitle = item.Key switch {
-                            "BerserkerAWfaktor" => "Berserker - ATK Factor (AW)",
-                            "BerserkerDAMfaktor" => "Berserker - DMG Factor (DAM)",
-                            "BerserkerVWfaktor" => "Berserker - DEF Factor (VW)",
-                            "SchuetzengeschickRADfaktor" => "Marksmanship - Range Factor (RAD)",
-                            "SchutzschildDAMfaktor" => "Shield - Incoming DMG Factor (DAM)",
-                            "DonnerschlagDAMfaktor" => "Thunder Strike - DMG Factor (DAM)",
-                            "GER_SAbility1_Value" => "Teuton Battlelust - Morale Bonus",
-                            "HUN_SAbility0_Value" => "Hun Terror - Enemy Morale Penalty",
-                            "HUN_SAbility1_Value" => "Hun Cannibal - Food on Kill Bonus",
-                            _ => item.Key
-                        };
-                    }
-
-                    int rowIndex = dgvGeneralSkills.Rows.Add();
-                    var row = dgvGeneralSkills.Rows[rowIndex];
-                    row.Cells["SkillName"].Value = displayTitle;
-                    row.Cells["SkillKey"].Value = item.Key;
-                    row.Cells["IniFile"].Value = item.File;
-                    row.Cells["SkillValue"].Value = currentVal.ToString("0.##", CultureInfo.InvariantCulture);
-                    row.Cells["SkillDefault"].Value = defaultVal.ToString("0.##", CultureInfo.InvariantCulture);
-                }
-
-                // 4. 填寫 dgvLeaderGlory 表格
-                dgvLeaderGlory.Rows.Clear();
-
-                var leaders = new[] {
-                    new { Key = "FigRomAnf00_Anfuehrer", NameZh = "羅馬領袖", NameEn = "Roman Leader" },
-                    new { Key = "FigGerAnf00_Anfuehrer", NameZh = "條頓領袖", NameEn = "Teuton Leader" },
-                    new { Key = "FigKelAnf00_Anfuehrer", NameZh = "塞爾特領袖", NameEn = "Celt Leader" },
-                    new { Key = "FigHunAnf00_Anfuehrer", NameZh = "匈奴領袖", NameEn = "Hun Leader" }
-                };
-
-                foreach (var leader in leaders) {
-                    string[] cols = unitRows.ContainsKey(leader.Key) ? unitRows[leader.Key] : Array.Empty<string>();
-                    string[] origCols = origUnitRows.ContainsKey(leader.Key) ? origUnitRows[leader.Key] : Array.Empty<string>();
-
-                    string awStuf = "0.1", vwStuf = "0.25", damStuf = "0.1", moraleBonus = "20", moraleTime = "60000", maxRuhm = "100";
-                    if (cols.Length >= 192) {
-                        awStuf = cols[148].Trim();
-                        vwStuf = cols[149].Trim();
-                        damStuf = cols[150].Trim();
-                        maxRuhm = cols[153].Trim();
-                        moraleBonus = cols[161].Trim();
-                        moraleTime = cols[162].Trim();
-                    } else if (origCols.Length >= 192) {
-                        awStuf = origCols[148].Trim();
-                        vwStuf = origCols[149].Trim();
-                        damStuf = origCols[150].Trim();
-                        maxRuhm = origCols[153].Trim();
-                        moraleBonus = origCols[161].Trim();
-                        moraleTime = origCols[162].Trim();
-                    }
-
-                    int rowIndex = dgvLeaderGlory.Rows.Add();
-                    var row = dgvLeaderGlory.Rows[rowIndex];
-                    row.Cells["LeaderName"].Value = isEn ? leader.NameEn : leader.NameZh;
-                    row.Cells["LeaderKey"].Value = leader.Key;
-                    row.Cells["AwStuf"].Value = double.Parse(awStuf, CultureInfo.InvariantCulture).ToString("0.##", CultureInfo.InvariantCulture);
-                    row.Cells["VwStuf"].Value = double.Parse(vwStuf, CultureInfo.InvariantCulture).ToString("0.##", CultureInfo.InvariantCulture);
-                    row.Cells["DamStuf"].Value = double.Parse(damStuf, CultureInfo.InvariantCulture).ToString("0.##", CultureInfo.InvariantCulture);
-                    row.Cells["MoraleBonus"].Value = double.Parse(moraleBonus, CultureInfo.InvariantCulture).ToString("0.##", CultureInfo.InvariantCulture);
-                    row.Cells["MoraleTime"].Value = double.Parse(moraleTime, CultureInfo.InvariantCulture).ToString("0.##", CultureInfo.InvariantCulture);
-                    row.Cells["MaxRuhm"].Value = double.Parse(maxRuhm, CultureInfo.InvariantCulture).ToString("0.##", CultureInfo.InvariantCulture);
-                }
-
-                // 5. 偵測並同步 UI 開關狀態
-                bool generalSkillsModified = false;
-                foreach (DataGridViewRow row in dgvGeneralSkills.Rows) {
-                    string curStr = row.Cells["SkillValue"].Value?.ToString() ?? "";
-                    string defStr = row.Cells["SkillDefault"].Value?.ToString() ?? "";
-                    if (double.TryParse(curStr, NumberStyles.Any, CultureInfo.InvariantCulture, out double cur) &&
-                        double.TryParse(defStr, NumberStyles.Any, CultureInfo.InvariantCulture, out double def)) {
-                        if (Math.Abs(cur - def) > 0.001) {
-                            generalSkillsModified = true;
-                            break;
-                        }
-                    }
-                }
-
-                bool leaderGloryModified = false;
-                foreach (var leader in leaders) {
-                    if (!unitRows.ContainsKey(leader.Key) || !origUnitRows.ContainsKey(leader.Key)) continue;
-                    string[] cols = unitRows[leader.Key];
-                    string[] origCols = origUnitRows[leader.Key];
-                    if (cols.Length >= 192 && origCols.Length >= 192) {
-                        int[] checkIndices = { 148, 149, 150, 153, 161, 162 };
-                        foreach (int idx in checkIndices) {
-                            if (double.TryParse(cols[idx], NumberStyles.Any, CultureInfo.InvariantCulture, out double cur) &&
-                                double.TryParse(origCols[idx], NumberStyles.Any, CultureInfo.InvariantCulture, out double orig)) {
-                                if (Math.Abs(cur - orig) > 0.001) {
-                                    leaderGloryModified = true;
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                    if (leaderGloryModified) break;
-                }
-                chkModSkillsAndGlory.Checked = generalSkillsModified || leaderGloryModified;
-
-            } catch (Exception ex) {
-                Log("載入技能屬性資料失敗: " + ex.Message);
-            }
-        }
-
-        private double GetEparaValue(string[] lines, string key, double defaultVal) {
-            for (int i = 0; i < lines.Length; i++) {
-                if (lines[i].Trim().Equals("[" + key + "]", StringComparison.OrdinalIgnoreCase) && i + 1 < lines.Length) {
-                    if (double.TryParse(lines[i + 1].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out double v)) {
-                        return v;
-                    }
-                }
-            }
-            return defaultVal;
-        }
-
-        private double GetScriptAbilityValue(string[] lines, string tribe, string ability, double defaultVal) {
-            var regex = new Regex(@"Value\s*=\s*" + tribe + @"\s*,\s*" + ability + @"\s*,\s*(\d+)", RegexOptions.IgnoreCase);
-            foreach (string line in lines) {
-                var m = regex.Match(line);
-                if (m.Success) {
-                    if (double.TryParse(m.Groups[1].Value, NumberStyles.Any, CultureInfo.InvariantCulture, out double v)) {
-                        return v;
-                    }
-                }
-            }
-            return defaultVal;
-        }
 
         private static string GetCleanEparaText() {
             return @";Multiplikator fuer FormationsRotationTempo

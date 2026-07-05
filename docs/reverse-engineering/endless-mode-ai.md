@@ -212,10 +212,14 @@ chain, 256 DELETE_PARTY, 257 DELETE_TEAM.
 - The vanilla RETREAT chain reaches DELETE_PARTY (256) when its cleanup
   condition completes or its `v61` fallback deadline expires. In the
   settled-party handlers, states 51/52 wait on village/palisade teardown state;
-  the deadline is not the normal fast path. AI Ultimate M3 now changes only the
-  two settled terminal writes (`0x109E8`, `0x16374`) to DELETE_TEAM (257), which
-  makes the existing generic dispatcher invoke deletion with team cleanup
-  enabled before the id is recycled. Other party families retain state 256.
+  the deadline is not the normal fast path. The two settled terminal writes are
+  at `0x109E8` and `0x16374` and remain DELETE_PARTY. A previous P15 build
+  changed them to DELETE_TEAM (257), but that can delete the team while
+  `ak_haupthaus.bci` is waiting for a per-object cleanup acknowledgement. If the
+  recipient disappears before acknowledging, the sequential teardown protocol
+  can wait forever and stall the simulation loop. P15 is therefore now an R0
+  migration repair: it detects 257 as legacy and restores both sites to 256.
+  Other party families also retain state 256.
 - The six retreat/cleanup deadline literals share the BCI word signature
   `[81,61, 90,-3, 128,83, 86, 66, <ms>, 32, 44, 164]` at decompressed value
   offsets `0x10700`, `0x119C0`, `0x12FFC`, `0x13FE8`, `0x160EC`, `0x17F38`.

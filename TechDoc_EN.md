@@ -201,10 +201,14 @@ Every `MAPS/**/team.dat` is restored from its original first. The core switch th
 
 AI Ultimate is exposed as five independent modules: M1 reinforcement size, M2 reinforcement cadence, M3 defeat recovery, M4 settlement spawning and retention, and M5 starting resources. The non-optional R0 repair restores rejected global CLAK edits. `src/Core/EndlessAi/EndlessAiOrchestrator.cs` owns module detection and application.
 
-M3 also includes P15. The two settled-party terminal transitions change from
-`DELETE_PARTY (256)` to `DELETE_TEAM (257)` at decompressed offsets `0x109E8`
-and `0x16374`. This uses the script's existing team-cleanup path before the team
-id is recycled; transient raider and reinforcement parties remain on state 256.
+P15 is now a mandatory R0 safety repair. The two settled-party terminal
+transitions at decompressed offsets `0x109E8` and `0x16374` must remain on the
+vanilla `DELETE_PARTY (256)` path. A previous build changed them to
+`DELETE_TEAM (257)`, which can delete the team while `ak_haupthaus.bci` waits
+for an individual teardown acknowledgement. The missing acknowledgement can
+stall the simulation loop indefinitely. Detection classifies 257 and mixed
+256/257 states as Legacy, and both apply/restore migrate them to 256. P15 is no
+longer part of user-toggleable M3.
 
 `MAPS/ENDL_*/SCRIPT/ak_level.bci` is a `BCI0` compiled-script payload inside `PFIL@`. Patches search opcode/literal signatures and have been found with the same local sequence in `ENDL_000` through `ENDL_004`.
 
@@ -289,7 +293,7 @@ The static hypothesis changed `delta * 64 + 32` to `delta * 128 + 32`. The four 
 
 `00539700` initializes pending-village state through `00536450`. The logical point test `00536820` is directly reached by script/AI wrapper `005367c0` and candidate-position search `00544fd0`; player previews `0044f4b0` and `0044f7b0` do not call it. This rules out `00536630` as the general player construction-range gate.
 
-The current patch hooks `005364c1` (file `0x1364c1`) into a 289-byte executable zero-padding region at `0056258f` (file `0x16258f`). The trampoline preserves both negative-value checks, scales `ESI`/`EDI` with `value * 3`, calls `004c0900`, and returns at `005364d1`, keeping the type-definition and per-object copies synchronized. Runtime testing previously confirmed this setter path at 2x; the 3x factor and its effect on the red dashed frame have been successfully runtime-verified in-game.
+The current patch hooks `005364c1` (file `0x1364c1`) into a 289-byte executable zero-padding region at `0056258f` (file `0x16258f`). The trampoline preserves both negative-value checks, scales `ESI`/`EDI` with `value * 5`, calls `004c0900`, and returns at `005364d1`, keeping the type-definition and per-object copies synchronized. Runtime testing previously confirmed this setter path and synchronized red frame at 3x. The 5x machine-code and state migration are statically tested but still require in-game confirmation.
 
 The modifier never writes the four rejected `07` candidates. It only detects legacy two-site or four-site states and restores all four original shift-6 instructions. The option and preset field control only the runtime-verified setter trampoline. Unknown mixed bytes are left untouched with a warning.
 
@@ -375,7 +379,7 @@ Use these before repeating whole-program analysis. Rebuild the inventory only fo
 ## 16. Verification Checklist
 
 - `dotnet test .\tests\AgainstRomeModifier.Tests\AgainstRomeModifier.Tests.csproj -c Release` passes (33 xUnit tests as of 2026-07-05). All fixtures are synthetic; no copyrighted game files are required, so this also runs in the `.github/workflows/ci.yml` CI job on a clean checkout. The legacy `tests/verify_split_patches` console project still depends on a local `遊戲原始檔案/` tree and is manual-only, not part of CI.
-- `ExePatchModelTests` specifically covers the EXE fixed-offset patches (focus-loss, spell-altar, legacy village-range restore, village setter 2x/2.5x/3x): state detection, enable/disable round-trips, migration from any legacy setter state to 3x and back, and abort-without-corruption when expected bytes don't match.
+- `ExePatchModelTests` specifically covers the EXE fixed-offset patches (focus-loss, spell-altar, legacy village-range restore, village setter 2x/2.5x/3x/5x): state detection, enable/disable round-trips, migration from any legacy setter state to 5x and back, and abort-without-corruption when expected bytes don't match.
 - Build succeeds and JSON parses.
 - The current Chinese and English documents are included by the project as the
   intended embedded resources.
@@ -391,12 +395,20 @@ Use these before repeating whole-program analysis. Rebuild the inventory only fo
 - AI Ultimate testing must cover all five endless maps, late reinforcement
   waves, respawn, action loops, completed-job recycling, restore, and old saves.
 - The current village result remains: all four candidate changes produced no visible effect.
-- The setter trampoline is applied at 3x for both the player-usable village
-  construction range and red dashed frame in-game.
+- The setter trampoline now targets 5x for both the player-usable village
+  construction range and red dashed frame. The shared path was runtime-verified at
+  3x; the 5x factor still needs an in-game check.
+
+### 2026-07-05: Leader-death glory-retention feature withdrawn
+
+- In-game testing confirmed that attempting to completely disable the leader-death glory-retention behavior causes the game to crash. The behavior is therefore treated as unsafe to modify.
+- The modifier no longer exposes the option, embeds the patched BCI, applies or detects the patch, or restores its script state. Enable All, normal Apply, Restore All, and Restore Stats all exclude this feature.
+- The modifier deliberately leaves the installed `ak_anfuehrer.bci` glory-retention state untouched. Withdrawing modifier support is not the same as writing another script state to disable the game behavior.
+- The root cause is not yet isolated. Any future implementation must pass in-game validation; a successful build and static validation do not establish safety.
 
 ## 17. Known Limits
 
-Machine decompilation cannot recreate every original source line, identifier, comment, or build project. A function inventory is navigation, not 100% semantic truth. Some `ress.ini` fields, `apt.dat` entries, and BCI opcodes remain candidates. AI Ultimate's count, timing, active-limit, and completed-job recycling changes still require a long-running endless-mode regression test; global civilian production/training edits are disabled after causing player resource-production regression. The setter path is applied at 3x for both construction range and red dashed frame in-game.
+Machine decompilation cannot recreate every original source line, identifier, comment, or build project. A function inventory is navigation, not 100% semantic truth. Some `ress.ini` fields, `apt.dat` entries, and BCI opcodes remain candidates. AI Ultimate's count, timing, active-limit, and completed-job recycling changes still require a long-running endless-mode regression test; global civilian production/training edits are disabled after causing player resource-production regression. The setter path now targets 5x for both construction range and red dashed frame; runtime confirmation of the new factor is pending.
 
 Always separate a stored value from its runtime meaning. Proximity, naming similarity, or a plausible static formula is not sufficient proof.
 

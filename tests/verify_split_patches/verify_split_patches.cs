@@ -323,9 +323,10 @@ namespace AgainstRomeModifierTests {
                 int?[] debounceSig = { 0x5A, 24, 0x42, null, 96, 101, 117, 16, 0x42, 1, 0x5B, 17 };
                 int db = BciPattern.FindBciWordPattern(d, debounceSig);
 
-                // P15: both settled-party handlers enter DELETE_TEAM (257).
-                // The later DELETE_PARTY (256) comparison remains unchanged.
-                int settledDeleteTeamSites = 0;
+                // P15 safety migration: both settled-party handlers remain on
+                // DELETE_PARTY (256); legacy DELETE_TEAM (257) must be absent.
+                int safeSettledSites = 0;
+                int legacyDeleteTeamSites = 0;
                 for (int off = 0; off <= d.Length - 68; off += 4) {
                     if (I32(d, off) != 71 || I32(d, off + 4) != 66 || I32(d, off + 8) != 0 ||
                         I32(d, off + 12) != 117 || I32(d, off + 16) != 16 || I32(d, off + 20) != 66 ||
@@ -333,10 +334,13 @@ namespace AgainstRomeModifierTests {
                         I32(d, off + 44) != 66 || I32(d, off + 48) != 256 ||
                         I32(d, off + 52) != 90 || I32(d, off + 56) != 14 ||
                         I32(d, off + 60) != 96 || I32(d, off + 64) != 118) continue;
-                    if (I32(d, off + 24) == 257) settledDeleteTeamSites++;
+                    int stateLocal = I32(d, off + 32);
+                    if (stateLocal != 6 && stateLocal != 7) continue;
+                    if (I32(d, off + 24) == 256) safeSettledSites++;
+                    if (I32(d, off + 24) == 257) legacyDeleteTeamSites++;
                 }
-                if (settledDeleteTeamSites != 2)
-                    Fail($"{name}: P15 settled DELETE_TEAM sites should be 2, actual {settledDeleteTeamSites}");
+                if (safeSettledSites != 2 || legacyDeleteTeamSites != 0)
+                    Fail($"{name}: P15 safe DELETE_PARTY sites should be 2 and legacy DELETE_TEAM sites 0, actual {safeSettledSites}/{legacyDeleteTeamSites}");
                 if (db < 0) Fail($"{name}: 找不到 P5 去彈跳簽章");
                 else if (I32(d, db + 12) != 3) Fail($"{name}: P5 去彈跳應為 3，實為 {I32(d, db + 12)}");
 

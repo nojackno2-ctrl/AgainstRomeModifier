@@ -254,14 +254,15 @@
           "status": "static-analysis-verified-runtime-test-pending"
         },
         "DefeatRecoveryChain": {
-          "meaning": "How a defeated endless AI team returns: the settled party's IDLE state detects the missing village center, then enters RETREAT after DeadPartyDebounceTicks. States 51/52 wait for cleanup completion or their fallback deadline. AI Ultimate then enters DELETE_TEAM (257), not DELETE_PARTY (256), so the generic dispatcher invokes team cleanup before the slot is reused. The occupied-team mask recomputes, pickTeam can select the team again, and the Siedler spawner sends a new arrival that is reactivated by ak_npc.",
+          "meaning": "How a defeated endless AI team returns: the settled party's IDLE state detects the missing village center, then enters RETREAT after DeadPartyDebounceTicks. States 51/52 wait for the sequential village/palisade cleanup protocol or their fallback deadline, then use the vanilla DELETE_PARTY (256) terminal state. DELETE_TEAM (257) is unsafe here because it can remove the acknowledgement recipient while ak_haupthaus.bci is waiting, freezing the simulation loop.",
           "settledTerminalCleanup": {
             "patchId": "P15",
             "originalState": 256,
-            "ultimateState": 257,
+            "safeState": 256,
+            "legacyUnsafeState": 257,
             "decompressedLiteralOffsets": ["0x109E8", "0x16374"],
-            "scope": "Only the two settled-party handlers. Transient raider and reinforcement handlers retain DELETE_PARTY.",
-            "reason": "A 2026-07-04 ENDL_002 save had v47 and v63 fully clear and all NPC jobs empty, but four inactive teams retained 71-105 village records and the settlement dispatcher returned without creating a party. DELETE_TEAM uses the existing generic delete routine with team cleanup enabled."
+            "scope": "Mandatory R0 migration for the two settled-party handlers; P15 is no longer user-toggleable M3 behavior.",
+            "reason": "The previous DELETE_TEAM patch tried to clear stale team state, but it could race the one-message/one-acknowledgement teardown protocol in ak_haupthaus.bci. P15 now detects all-257 and mixed 256/257 as Legacy and restores both sites to DELETE_PARTY."
           },
           "notPatched": [
             "ak_npc.bci: reactivation is built-in (village exists && !NPCActive -> state 1 -> s_setNPCActive(team, 1)); no changes needed.",
@@ -336,9 +337,9 @@
             "retainedVillageRecordsByTeam": {"1": 105, "3": 71, "6": 95, "7": 105},
             "dispatcherEvidence": "The saved ak_level task stack was returning through the outer dispatcher after the settlement spawner had run, but no party survived creation."
           },
-          "rootCause": "Settled defeat ended at DELETE_PARTY (256), which recycled the party slot without requiring full team-owned village/NPC cleanup. Long-running saves could therefore reach an empty party table while stale team state still prevented settlement creation.",
-          "fix": "P15 changes only the two settled-handler terminal transitions to DELETE_TEAM (257). The existing dispatcher then calls its generic delete routine with team cleanup enabled before the team id is recycled.",
-          "compatibility": "Existing saves embed ak_level.bci and are not rewritten. Apply the new M3 patch and start a fresh endless game for runtime acceptance."
+          "rootCause": "The previous P15 DELETE_TEAM (257) transition could delete a settled team during ak_haupthaus.bci's sequential village teardown, after a cleanup message was sent but before its acknowledgement returned. The waiter could then remain blocked indefinitely, freezing the simulation without crashing the process.",
+          "fix": "P15 is moved from M3 to mandatory R0 and restores both settled-handler terminal transitions to the engine-proven DELETE_PARTY (256) path. Existing all-257 and mixed installations are recognized as Legacy and migrated.",
+          "compatibility": "Existing saves embed ak_level.bci and are not rewritten. Re-apply the modifier so the live map scripts are migrated, then use a fresh endless game for runtime acceptance; a save already frozen in a blocked script state is not guaranteed recoverable."
         }
       },
       "villageEconomy": {

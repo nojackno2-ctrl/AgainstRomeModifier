@@ -28,7 +28,8 @@ public enum ExeVillageSetterPatchState {
     Original,
     Legacy2x,
     Legacy2Point5x,
-    Expanded3x
+    Legacy3x,
+    Expanded5x
 }
 
 /// <summary>單一固定偏移寫入計畫：只有目前位元組等於 <see cref="Expected"/> 時才允許覆寫為 <see cref="Replacement"/>。</summary>
@@ -99,11 +100,19 @@ public static class ExePatchModel {
         0x55, 0xE3, 0xF5, 0xFF, 0xE9, 0x21, 0x3F, 0xFD, 0xFF,
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00
     };
-    public static readonly byte[] VillageSetterCavePatchedBytes = {
+    public static readonly byte[] VillageSetterCaveLegacy3xBytes = {
         0x85, 0xF6, 0x0F, 0x8C, 0xD4, 0x3E, 0xFD, 0xFF,
         0x85, 0xFF, 0x0F, 0x8C, 0xCC, 0x3E, 0xFD, 0xFF,
         0x8D, 0x34, 0x76, 0x90, 0x90,
         0x8D, 0x3C, 0x7F, 0x90, 0x90,
+        0x57, 0x56, 0x50, 0xE8, 0x4F, 0xE3, 0xF5, 0xFF,
+        0xE9, 0x1B, 0x3F, 0xFD, 0xFF
+    };
+    public static readonly byte[] VillageSetterCavePatchedBytes = {
+        0x85, 0xF6, 0x0F, 0x8C, 0xD4, 0x3E, 0xFD, 0xFF,
+        0x85, 0xFF, 0x0F, 0x8C, 0xCC, 0x3E, 0xFD, 0xFF,
+        0x8D, 0x34, 0xB6, 0x90, 0x90,
+        0x8D, 0x3C, 0xBF, 0x90, 0x90,
         0x57, 0x56, 0x50, 0xE8, 0x4F, 0xE3, 0xF5, 0xFF,
         0xE9, 0x1B, 0x3F, 0xFD, 0xFF
     };
@@ -197,12 +206,15 @@ public static class ExePatchModel {
             caveBytes.SequenceEqual(VillageSetterCaveLegacy2xBytes);
         bool legacy2Point5x = hookBytes.SequenceEqual(VillageSetterHookPatchedBytes) &&
             caveBytes.SequenceEqual(VillageSetterCaveLegacy2Point5xBytes);
-        bool expanded3x = hookBytes.SequenceEqual(VillageSetterHookPatchedBytes) &&
+        bool legacy3x = hookBytes.SequenceEqual(VillageSetterHookPatchedBytes) &&
+            caveBytes.SequenceEqual(VillageSetterCaveLegacy3xBytes);
+        bool expanded5x = hookBytes.SequenceEqual(VillageSetterHookPatchedBytes) &&
             caveBytes.SequenceEqual(VillageSetterCavePatchedBytes);
         if (original) return ExeVillageSetterPatchState.Original;
         if (legacy2x) return ExeVillageSetterPatchState.Legacy2x;
         if (legacy2Point5x) return ExeVillageSetterPatchState.Legacy2Point5x;
-        if (expanded3x) return ExeVillageSetterPatchState.Expanded3x;
+        if (legacy3x) return ExeVillageSetterPatchState.Legacy3x;
+        if (expanded5x) return ExeVillageSetterPatchState.Expanded5x;
         return ExeVillageSetterPatchState.Unknown;
     }
 
@@ -251,10 +263,12 @@ public static class ExePatchModel {
         if (enabled) {
             if (state == ExeVillageSetterPatchState.Original ||
                 state == ExeVillageSetterPatchState.Legacy2x ||
-                state == ExeVillageSetterPatchState.Legacy2Point5x) {
+                state == ExeVillageSetterPatchState.Legacy2Point5x ||
+                state == ExeVillageSetterPatchState.Legacy3x) {
                 byte[] expectedCave = state == ExeVillageSetterPatchState.Original ? VillageSetterCaveOriginalBytes
                     : state == ExeVillageSetterPatchState.Legacy2x ? VillageSetterCaveLegacy2xBytes
-                    : VillageSetterCaveLegacy2Point5xBytes;
+                    : state == ExeVillageSetterPatchState.Legacy2Point5x ? VillageSetterCaveLegacy2Point5xBytes
+                    : VillageSetterCaveLegacy3xBytes;
                 byte[] expectedHook = state == ExeVillageSetterPatchState.Original ? VillageSetterHookOriginalBytes : VillageSetterHookPatchedBytes;
                 return new[] {
                     new ExeWriteOp(VillageSetterCaveOffset, expectedCave, VillageSetterCavePatchedBytes, "村落建造範圍程式碼洞"),
@@ -266,9 +280,11 @@ public static class ExePatchModel {
 
         if (state == ExeVillageSetterPatchState.Legacy2x ||
             state == ExeVillageSetterPatchState.Legacy2Point5x ||
-            state == ExeVillageSetterPatchState.Expanded3x) {
+            state == ExeVillageSetterPatchState.Legacy3x ||
+            state == ExeVillageSetterPatchState.Expanded5x) {
             byte[] expectedCave = state == ExeVillageSetterPatchState.Legacy2x ? VillageSetterCaveLegacy2xBytes
                 : state == ExeVillageSetterPatchState.Legacy2Point5x ? VillageSetterCaveLegacy2Point5xBytes
+                : state == ExeVillageSetterPatchState.Legacy3x ? VillageSetterCaveLegacy3xBytes
                 : VillageSetterCavePatchedBytes;
             return new[] {
                 new ExeWriteOp(VillageSetterHookOffset, VillageSetterHookPatchedBytes, VillageSetterHookOriginalBytes, "村落建造範圍跳板還原"),
