@@ -128,6 +128,64 @@ public static class ExePatchModel {
     public const long VillageSetterCaveOffset = 0x16258f;
     public const long VillageSetterPatchRequiredLength = 0x1625b6;
 
+    // === 遊戲整體時脈加速（主時脈常數縮放）===
+    // 主時脈函式（VA 0x55e530）回傳「奈秒級的當前時間(double)」，全遊戲模擬（移動／
+    // 生產／戰鬥／AI）都透過它取得時間並以差值推進。它有兩條路徑，各用一個 rodata
+    // double 常數換算單位：
+    //   QPC 路徑（高精度計時器）：scale = 1e9 / freq，常數 1e9 位於 VA 0x604214／檔案偏移 0x204214
+    //   timeGetTime 路徑（退回）：time = (elapsed_ms) * 1e6，常數 1e6 位於 VA 0x60424c／檔案偏移 0x20424c
+    // 兩個常數各自「只被時脈碼引用一次、單一用途」（經 xref 確認），因此同步把兩者乘上
+    // 相同倍率 s，即可讓整個遊戲時脈以 s 倍速前進——不論玩家機器走哪條路徑。差值運算在
+    // 遊戲自身邏輯中先減去基準再乘常數，故無 32-bit 溢位風險，且時間仍由 ~0 開始、無跳變。
+    // 完全可逆：把常數改回原值即還原。
+    public const long GameSpeedQpcConstOffset = 0x204214; // 原版 double 1e9
+    public const long GameSpeedTgtConstOffset = 0x20424c; // 原版 double 1e6
+    private const double GameSpeedQpcBase = 1_000_000_000.0;
+    private const double GameSpeedTgtBase = 1_000_000.0;
+    /// <summary>工具提供的加速倍率選項（1 = 原版／關閉，最高 10 倍）。</summary>
+    public static readonly int[] GameSpeedSupportedMultipliers = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 };
+
+    /// <summary>
+    /// 偵測目前時脈倍率：回傳 1（原版）／2／3／4…；若兩條路徑常數不一致、非整數倍或超出範圍，
+    /// 回傳 0 表示 Unknown（呼叫端不應改寫）。
+    /// </summary>
+    public static int GetGameSpeedMultiplier(byte[] exeBytes) {
+        if (exeBytes.Length < GameSpeedQpcConstOffset + 8 || exeBytes.Length < GameSpeedTgtConstOffset + 8) {
+            return 0;
+        }
+        double qpc = BitConverter.ToDouble(exeBytes, (int)GameSpeedQpcConstOffset);
+        double tgt = BitConverter.ToDouble(exeBytes, (int)GameSpeedTgtConstOffset);
+        if (qpc <= 0 || tgt <= 0) return 0;
+        double sQpc = qpc / GameSpeedQpcBase;
+        double sTgt = tgt / GameSpeedTgtBase;
+        int rq = (int)Math.Round(sQpc);
+        int rt = (int)Math.Round(sTgt);
+        if (rq != rt || rq < 1) return 0;
+        if (Math.Abs(sQpc - rq) > 1e-6 || Math.Abs(sTgt - rt) > 1e-6) return 0;
+        return rq;
+    }
+
+    /// <summary>
+    /// 規劃把時脈倍率從 <paramref name="currentMultiplier"/> 切換為 <paramref name="desiredMultiplier"/>
+    /// 的寫入清單。currentMultiplier 為 0（Unknown）時不動作；倍率相同時不動作。
+    /// desiredMultiplier = 1 代表還原為原版。
+    /// </summary>
+    public static IReadOnlyList<ExeWriteOp> PlanGameSpeed(int desiredMultiplier, int currentMultiplier) {
+        if (currentMultiplier <= 0) return Array.Empty<ExeWriteOp>();
+        if (desiredMultiplier < 1) desiredMultiplier = 1;
+        if (desiredMultiplier == currentMultiplier) return Array.Empty<ExeWriteOp>();
+
+        byte[] expectedQpc = BitConverter.GetBytes(GameSpeedQpcBase * currentMultiplier);
+        byte[] expectedTgt = BitConverter.GetBytes(GameSpeedTgtBase * currentMultiplier);
+        byte[] newQpc = BitConverter.GetBytes(GameSpeedQpcBase * desiredMultiplier);
+        byte[] newTgt = BitConverter.GetBytes(GameSpeedTgtBase * desiredMultiplier);
+        string name = desiredMultiplier == 1 ? "遊戲加速還原" : $"遊戲加速 {desiredMultiplier}×";
+        return new[] {
+            new ExeWriteOp(GameSpeedQpcConstOffset, expectedQpc, newQpc, name + "（QPC 路徑）"),
+            new ExeWriteOp(GameSpeedTgtConstOffset, expectedTgt, newTgt, name + "（timeGetTime 路徑）"),
+        };
+    }
+
     // === 狀態偵測 ===
     public static ExePatchState GetExePatchState(byte[] exeBytes) {
         if (exeBytes.Length < FocusPatchRequiredLength) {

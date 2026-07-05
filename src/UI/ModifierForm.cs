@@ -85,6 +85,9 @@ namespace AgainstRomeModifier {
         private ModernToggle chkAiM6 = null!;
         private ModernToggle chkDgVoodoo = null!;
         private ModernToggle chkVillageBuildRange = null!;
+        private Label lblGameSpeed = null!;
+        private ComboBox cmbGameSpeed = null!;
+        private Label lblHelpGameSpeed = null!;
         private Button btnTroopPreset = null!;
         private Label lblTroopTemplate = null!;
         private ComboBox cbTroopTemplate = null!;
@@ -686,6 +689,33 @@ namespace AgainstRomeModifier {
             lblHelpDgVoodoo.Location = new Point(340, 240);
             pnlNumericCard.Controls.Add(chkDgVoodoo);
             pnlNumericCard.Controls.Add(lblHelpDgVoodoo);
+
+            // 實際位置與寬度由 ConfigureGameSpeedRow 依卡片列版面統一計算，此處僅提供初始佔位值。
+            lblGameSpeed = new Label {
+                Text = Loc.Get("GameSpeedLabel"),
+                Location = new Point(20, 207),
+                Size = new Size(140, 25),
+                Font = fontJhengHei95R,
+                ForeColor = Color.White,
+                BackColor = Color.Transparent,
+                AutoSize = true
+            };
+            cmbGameSpeed = new ComboBox {
+                Location = new Point(170, 204),
+                Size = new Size(150, 25),
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                FlatStyle = FlatStyle.Flat,
+                BackColor = Color.FromArgb(45, 45, 55),
+                ForeColor = Color.White,
+                Font = fontJhengHei10B
+            };
+            PopulateGameSpeedItems();
+            cmbGameSpeed.SelectedIndex = 0;
+            lblHelpGameSpeed = CreateHelpLabel("GameSpeedTip");
+            lblHelpGameSpeed.Location = new Point(340, 207);
+            pnlNumericCard.Controls.Add(lblGameSpeed);
+            pnlNumericCard.Controls.Add(cmbGameSpeed);
+            pnlNumericCard.Controls.Add(lblHelpGameSpeed);
 
             btnEnableAll = new Button {
                 Text = "所有功能開啟",
@@ -1499,10 +1529,13 @@ namespace AgainstRomeModifier {
             settingsLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 560F));
             settingsLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 128F));
 
-            ConfigureSettingsCard(pnlNumericCard, lblNumericTitle, 230,
+            ConfigureSettingsCard(pnlNumericCard, lblNumericTitle, 278,
                 (chkFocusLoss, lblHelpFocusLoss),
                 (chkToEng, lblHelpToEng),
                 (chkDgVoodoo, lblHelpDgVoodoo));
+            // 遊戲加速選單不是 ModernToggle，無法交給 ConfigureSettingsCard 的統一開關列排版；
+            // 沿用同樣的列高公式（60 + rowIndex*48）緊接在最後一個開關之後，卡片高度已含這一列。
+            ConfigureGameSpeedRow(pnlNumericCard, rowIndex: 3);
             ConfigureSettingsCard(pnlSwitchesCard, lblSwitchesTitle, 492,
                 (chkFreeProd, lblHelpFreeProd),
                 (chkFreeUpgrade, lblHelpFreeUpgrade),
@@ -1561,6 +1594,25 @@ namespace AgainstRomeModifier {
 
             card.Resize += (s, e) => LayoutRows();
             LayoutRows();
+        }
+
+        // 遊戲加速選單這一列不是 ModernToggle，走跟 ConfigureSettingsCard.LayoutRows 相同的列高公式
+        // （60 + rowIndex*48），以便緊接在卡片既有開關列之後、隨卡片寬度自動重新排版。
+        private void ConfigureGameSpeedRow(Panel card, int rowIndex) {
+            void LayoutRow() {
+                int y = 60 + rowIndex * 48;
+                lblGameSpeed.Location = new Point(20, y + 3);
+                lblGameSpeed.Font = fontJhengHei95R;
+                lblGameSpeed.BackColor = card.BackColor;
+                int comboLeft = lblGameSpeed.Right + 10;
+                int comboRight = Math.Max(comboLeft + 100, card.Width - 66);
+                cmbGameSpeed.Location = new Point(comboLeft, y);
+                cmbGameSpeed.Width = comboRight - comboLeft;
+                lblHelpGameSpeed.Location = new Point(Math.Max(20, card.Width - 40), y + 2);
+            }
+
+            card.Resize += (s, e) => LayoutRow();
+            LayoutRow();
         }
 
         // AI 終極模式整列卡片：把 N 個開關以響應式網格橫向排列（每格約 250px，寬度不足時自動換行）。
@@ -1945,6 +1997,8 @@ namespace AgainstRomeModifier {
             chkFastBuildUpgradeRepair.Text = Loc.Get("FastBuildUpgradeRepair");
             chkFoodHealing10x.Text = Loc.Get("FoodHealing10x");
             chkDgVoodoo.Text = Loc.Get("DgVoodoo");
+            lblGameSpeed.Text = Loc.Get("GameSpeedLabel");
+            PopulateGameSpeedItems();
             chkVillageBuildRange.Text = Loc.Get("VillageBuildRange");
             btnEnableAll.Text = Loc.Get("EnableAll");
             btnDisableAll.Text = Loc.Get("DisableAll");

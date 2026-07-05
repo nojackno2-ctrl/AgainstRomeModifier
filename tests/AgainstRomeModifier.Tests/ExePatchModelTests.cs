@@ -210,4 +210,79 @@ public sealed class ExePatchModelTests {
         Assert.Throws<InvalidDataException>(() => ExePatchModel.Apply(exe, wrongPlan));
         Assert.Equal(before, exe);
     }
+
+    // ---- 遊戲整體時脈加速（主時脈常數縮放）----
+    // 需容納時脈常數偏移 0x20424c + 8。
+    private const int SpeedExeSize = 0x205000;
+
+    private static byte[] NewSpeedExe(int multiplier) {
+        byte[] exe = new byte[SpeedExeSize];
+        Place(exe, ExePatchModel.GameSpeedQpcConstOffset, BitConverter.GetBytes(1_000_000_000.0 * multiplier));
+        Place(exe, ExePatchModel.GameSpeedTgtConstOffset, BitConverter.GetBytes(1_000_000.0 * multiplier));
+        return exe;
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(4)]
+    [InlineData(5)]
+    [InlineData(6)]
+    [InlineData(7)]
+    [InlineData(8)]
+    [InlineData(9)]
+    [InlineData(10)]
+    public void Game_speed_multiplier_is_detected(int multiplier) {
+        Assert.Equal(multiplier, ExePatchModel.GetGameSpeedMultiplier(NewSpeedExe(multiplier)));
+    }
+
+    [Fact]
+    public void Game_speed_unknown_when_two_paths_disagree() {
+        byte[] exe = new byte[SpeedExeSize];
+        Place(exe, ExePatchModel.GameSpeedQpcConstOffset, BitConverter.GetBytes(2_000_000_000.0)); // 2×
+        Place(exe, ExePatchModel.GameSpeedTgtConstOffset, BitConverter.GetBytes(3_000_000.0));     // 3×
+        Assert.Equal(0, ExePatchModel.GetGameSpeedMultiplier(exe));
+    }
+
+    [Fact]
+    public void Game_speed_unknown_when_not_integer_multiple() {
+        byte[] exe = new byte[SpeedExeSize];
+        Place(exe, ExePatchModel.GameSpeedQpcConstOffset, BitConverter.GetBytes(1_500_000_000.0));
+        Place(exe, ExePatchModel.GameSpeedTgtConstOffset, BitConverter.GetBytes(1_500_000.0));
+        Assert.Equal(0, ExePatchModel.GetGameSpeedMultiplier(exe));
+    }
+
+    [Fact]
+    public void Game_speed_plan_is_empty_when_state_unknown() {
+        Assert.Empty(ExePatchModel.PlanGameSpeed(3, 0));
+    }
+
+    [Fact]
+    public void Game_speed_plan_is_empty_when_already_at_target() {
+        Assert.Empty(ExePatchModel.PlanGameSpeed(3, 3));
+    }
+
+    [Theory]
+    [InlineData(1, 3)] // 原版 → 3×
+    [InlineData(2, 4)] // 2× → 4×
+    [InlineData(4, 1)] // 4× → 還原
+    [InlineData(1, 10)] // 原版 → 10×（最高倍率）
+    [InlineData(10, 1)] // 10× → 還原
+    public void Game_speed_apply_moves_between_multipliers(int from, int to) {
+        byte[] exe = NewSpeedExe(from);
+        IReadOnlyList<ExeWriteOp> ops = ExePatchModel.PlanGameSpeed(to, from);
+        ExePatchModel.Apply(exe, ops);
+        Assert.Equal(to, ExePatchModel.GetGameSpeedMultiplier(exe));
+    }
+
+    [Fact]
+    public void Game_speed_apply_aborts_when_current_state_misdetected() {
+        // 檔案實際是 3×，但計畫誤以為是原版(1×) → 預期位元組不符，必須中止且不破壞緩衝區。
+        byte[] exe = NewSpeedExe(3);
+        byte[] before = exe.ToArray();
+        IReadOnlyList<ExeWriteOp> wrongPlan = ExePatchModel.PlanGameSpeed(2, 1);
+        Assert.Throws<InvalidDataException>(() => ExePatchModel.Apply(exe, wrongPlan));
+        Assert.Equal(before, exe);
+    }
 }

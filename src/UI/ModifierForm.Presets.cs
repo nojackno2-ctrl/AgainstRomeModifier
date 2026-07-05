@@ -28,6 +28,7 @@ namespace AgainstRomeModifier {
             chkBalance.Checked = true;
             chkVillageBuildRange.Checked = true;
             chkDgVoodoo.Checked = true;
+            SetGameSpeedSelection(3); // 一鍵全開時預設 3× 加速（測試最穩範圍）
 
             Log(Loc.CurrentLanguage == Language.English ? "All features enabled." : "已開啟所有功能。");
         }
@@ -58,6 +59,7 @@ namespace AgainstRomeModifier {
             chkBalance.Checked = false;
             chkVillageBuildRange.Checked = false;
             chkDgVoodoo.Checked = false; // 相容性層關閉，以達到最乾淨的還原
+            SetGameSpeedSelection(1); // 還原為原版速度
 
             Log(Loc.CurrentLanguage == Language.English ? "All features disabled." : "已關閉所有功能。");
         }

@@ -307,6 +307,33 @@ SHA-256 `49839eb76743893b879be201c729c8104c09415acccc29928fbcea29eee02429`），
   - 匈奴 (`FigHunPri00`): `0x4A329` (法術 1), `0x4A3F0` (法術 2), `0x4A414` (法術 3), `0x4A3A6` (法術 4)
 - 偵測機制：必須 12 處原始位元組完全匹配或修補位元組完全匹配；任何混合或未知狀態皆判定為 Unknown 並跳過，以確保還原與寫入安全性。
 
+### 11.4 遊戲整體運行速度（加速器）
+
+- **狀態：已實機驗證（2026-07-05）**。套用後移動／生產／戰鬥／AI 一起以所選倍率加速，功能正常。
+- 動機：原版整體時脈偏慢，逐項測試各修改功能耗時。此功能等同「遊戲加速器」（speedhack），
+  以固定倍率縮放遊戲主時脈，使移動／生產／戰鬥／AI 一起變快，而非改單一子系統設定。
+- 逆向定位：遊戲主時脈函式位於 VA `0x55e530`，回傳「奈秒級的當前時間(double)」，只有 3 個
+  呼叫者（全部集中在 `0x566b53` 附近的主迴圈計時碼）。它有兩條路徑：
+  - **QPC 路徑**（`QueryPerformanceCounter`，現代機器走這條）：啟動時由 `QueryPerformanceFrequency`
+    算出 `scale = 1e9 / freq` 存入 `.bss 0x29e89c0`；`1e9` 常數位於 rodata VA `0x604214`／檔案偏移 `0x204214`。
+  - **timeGetTime 路徑**（退回）：`time = (timeGetTime - baseline) * 1e6`；`1e6` 常數位於 rodata
+    VA `0x60424c`／檔案偏移 `0x20424c`。
+- 兩個常數各自經 xref 確認「只被時脈碼引用一次、單一用途」（`0x604214` 僅在 `0x55df8f`，
+  `0x60424c` 僅在 `0x55e588`），因此同步把兩個 double 乘上相同整數倍率 `s`，即讓整個時脈以 `s`
+  倍速前進，不論玩家機器走哪條路徑。差值運算在遊戲自身邏輯中先減基準再乘常數（浮點），無
+  32-bit 溢位風險，時間仍由 ~0 開始、無跳變。完全可逆：常數改回原值即還原。
+- 實作：`ExePatchModel.GetGameSpeedMultiplier`（回傳 1～10 的整數倍率，兩路徑不一致或非整數倍回傳
+  0=Unknown 即不動作）與 `PlanGameSpeed(desired, current)`，倍率位元組以 `BitConverter.GetBytes(base * s)`
+  動態產生，經 `VerifiedBinaryWriter` 逐一驗證預期位元組後寫入。支援倍率清單為
+  `ExePatchModel.GameSpeedSupportedMultipliers = {1..10}`，UI 下拉選單（原版／2×～10×）由此陣列動態產生，
+  套用前先由備份還原 EXE，故一律從 1× 乾淨狀態切換。
+- 使用範圍：**最高開放到 10×**，但建議由 2×～3× 開始測試再逐步調高。倍率越高越可能撞到遊戲主迴圈的
+  單幀最大 delta 上限而不再加速，或造成物理／碰撞不穩、音效（走系統時脈）不同步。這些皆可實測 A/B 確認；
+  「全開」預設仍固定在 3×（最穩範圍），10× 需玩家自行於下拉選單選取。
+- 已知邊界：另有一組「raw ms」讀取器（`0x55e520`，7 個呼叫者，`timeGetTime - baseline` 直接回傳
+  整數毫秒、無常數可改），推測供 UI／動畫／輸入等非模擬用途。若日後實測發現某子系統只加速一半，
+  即為該路徑未被縮放，屆時需改用 API-hook（注入）方案才能全域一致。
+
 ## 12. 強制英文與語言回復
 
 強制英文開關是手動、預設關閉。語言 overlay 原版基線位於 `<gamePath>\.against-rome-modifier-language-backup`。
@@ -375,7 +402,7 @@ git diff --check
 
 - PFIL：壓縮／解壓 round-trip。
 - `objdef.dau`：解壓長度完全相等、短 row bounds。
-- EXE：original/current/legacy/unknown 四種 state；`ExePatchModelTests` 涵蓋失焦補丁、法術祭壇、村落建造範圍舊版候選還原、村落 setter（2x/2.5x/3x）各狀態的 enable/disable round-trip，以及預期位元組不符時中止且不寫壞緩衝區。
+- EXE：original/current/legacy/unknown 四種 state；`ExePatchModelTests` 涵蓋失焦補丁、法術祭壇、村落建造範圍舊版候選還原、村落 setter（2x/2.5x/3x）各狀態的 enable/disable round-trip、遊戲整體運行速度（1～10× 偵測、兩路徑不一致與非整數倍判 Unknown、任意倍率間切換與還原、誤判狀態時中止），以及預期位元組不符時中止且不寫壞緩衝區。
 - ENDL：五張 map、enable/disable/migration、長時間 waves、save embedded script。
 - 語言：manifest、數量、path safety、SHA-256、缺 baseline abort。
 - 存檔：完整 `.tmp` ZIP、manifest、path traversal、commit 後 cleanup。
@@ -515,3 +542,26 @@ git diff --check
 - setter trampoline 的 X/Z 縮放由 `LEA value*3` 改為 `LEA value*5`，hook、call 與 return 位址不變。
 - 原 3x cave 納入 `Legacy3x` 偵測，可直接遷移至 5x，也能安全還原原版。
 - 5x 已通過合成 EXE state、遷移及 round-trip 測試；實際遊戲內建造邊界與紅色虛線框仍待確認。
+
+### 2026-07-05：新增「遊戲整體運行速度」加速器（EXE 主時脈縮放）
+- 需求：使用者要的是「遊戲加速器」（speedhack）式的整體加速，而非改單一子系統設定；動機是原版
+  時脈偏慢、逐項測試各修改功能耗時。
+- 逆向：以 PE import + capstone 反組譯定位主時脈函式 `0x55e530`（回傳奈秒 double，3 個主迴圈呼叫者）。
+  QPC 路徑的 `1e9`（VA `0x604214`／偏移 `0x204214`）與 timeGetTime 路徑的 `1e6`（VA `0x60424c`／偏移
+  `0x20424c`）各自只被時脈碼引用一次；同步乘上倍率即全域加速。詳見 §11.4。
+- 實作：`ExePatchModel` 新增 `GetGameSpeedMultiplier`／`PlanGameSpeed`（動態產生 double 位元組、
+  `VerifiedBinaryWriter` 驗證寫入、兩路徑不一致或非整數倍判 Unknown 不動作）；UI 於「系統與相容性設定」
+  卡片加下拉選單（原版／2×／3×／4×），接入 apply／restore／`LoadCurrentData` 偵測與「全開/全關」預設
+  （全開預設 3×）。新增 12 個 `ExePatchModelTests` 案例，測試總數 39 全過，Debug 建置 0 警告 0 錯誤。
+- **UI 未生效修正**：實際生效的版面邏輯是 `ConfigureSettingsCard`（把卡片高度鎖死、只排版傳入的開關
+  清單），初版把加速選單擺在超出卡片高度的座標，被裁到視窗外看不見。改為把卡片高度加一列（230→278）
+  並新增 `ConfigureGameSpeedRow` 沿用同一套列高公式把選單接進這層真正的版面系統，才真正顯示出來。
+- **倍率上限提升至 10×**：使用者要求「最高加速到 10 倍」；`GameSpeedSupportedMultipliers` 由 `{1,2,3,4}`
+  擴充為 `{1..10}`，UI 下拉選單改由此陣列動態產生選項（不再寫死 2×/3×/4×）。新增 1～10× 偵測與
+  1×↔10× round-trip 測試，測試總數 60 全過。「全開」預設仍固定 3×（最穩範圍），10× 需玩家自行選取，
+  且風險提示已更新為「越高越可能撞單幀 delta 上限或不穩，建議由低倍率開始測試」。
+- 尚待實機驗證：需在遊戲內確認各倍率（尤其 5×~10×）實際加速效果、是否撞到單幀 delta 上限或物理不穩，
+  以及 `0x55e520` raw-ms 路徑（非模擬用途）是否造成任何子系統只加速一半。
+- **實機驗證結果（2026-07-05）**：使用者已於實際遊戲中測試「遊戲整體運行速度」功能，確認套用後移動／
+  生產／戰鬥／AI 確實一起以所選倍率加速，功能運作正常。此功能自逆向、實作到實機驗證已全數完成，
+  §11.4 所述的兩常數同步縮放方案視為 Static + 實機雙重驗證。

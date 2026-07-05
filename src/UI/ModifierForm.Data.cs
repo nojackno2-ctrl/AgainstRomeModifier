@@ -1442,6 +1442,14 @@ namespace AgainstRomeModifier {
                         Log(Loc.Get("LogExePatchWarning"));
                     }
 
+                    int gameSpeedMultiplier = ExePatchModel.GetGameSpeedMultiplier(exeBytes);
+                    if (syncUIWithFile) {
+                        SetGameSpeedSelection(gameSpeedMultiplier);
+                        if (gameSpeedMultiplier == 0) {
+                            Log("無法辨識的遊戲時脈常數；遊戲加速選項已設為原版。");
+                        }
+                    }
+
                     ExeSpellAltarPatchState altarPatchState = ExePatchModel.GetSpellAltarPatchState(exeBytes);
                     if (syncUIWithFile) {
                         chkNoSpellAltar.Checked = altarPatchState == ExeSpellAltarPatchState.Patched;

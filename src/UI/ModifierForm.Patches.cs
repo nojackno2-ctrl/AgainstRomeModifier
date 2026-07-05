@@ -208,6 +208,7 @@ namespace AgainstRomeModifier {
                 bool dgVoodoo = chkDgVoodoo.Checked;
                 bool villageBuildRange = chkVillageBuildRange.Checked;
                 bool noSpellAltar = chkNoSpellAltar.Checked;
+                int gameSpeed = GetSelectedGameSpeedMultiplier();
 
                 await Task.Run(() => {
                     // Always restore every modifier-managed surface before
@@ -224,7 +225,7 @@ namespace AgainstRomeModifier {
                     string exePath = Path.Combine(gamePath, @"Against_Rome.exe");
                     byte[] exeBytes = File.ReadAllBytes(exePath);
                     bool exeModified = false;
-                    ApplyExePatch(exeBytes, focusLoss, villageBuildRange, noSpellAltar, ref exeModified);
+                    ApplyExePatch(exeBytes, focusLoss, villageBuildRange, noSpellAltar, gameSpeed, ref exeModified);
                     if (exeModified) {
                         patchedFiles[exePath] = exeBytes;
                     }
@@ -348,6 +349,7 @@ namespace AgainstRomeModifier {
                 chkBalance.Checked = false;
                 chkDgVoodoo.Checked = IsDgVoodooInstalled(gamePath);
                 chkVillageBuildRange.Checked = false;
+                SetGameSpeedSelection(1);
                 customUnitStats = null;
                 presetFileSourceType = "default";
                 presetFileName = "";
@@ -447,7 +449,7 @@ namespace AgainstRomeModifier {
                     string exePath = Path.Combine(gamePath, @"Against_Rome.exe");
                     byte[] exeBytes = File.ReadAllBytes(exePath);
                     bool exeModified = false;
-                    ApplyExePatch(exeBytes, false, false, false, ref exeModified);
+                    ApplyExePatch(exeBytes, false, false, false, 1, ref exeModified);
                     if (exeModified) {
                         patchedFiles[exePath] = exeBytes;
                     }
@@ -474,6 +476,7 @@ namespace AgainstRomeModifier {
                 chkAiM1.Checked = false; chkAiM2.Checked = false; chkAiM3.Checked = false; chkAiM4.Checked = false; chkAiM5.Checked = false; chkAiM6.Checked = false;
                 chkDgVoodoo.Checked = IsDgVoodooInstalled(gamePath);
                 chkVillageBuildRange.Checked = false;
+                SetGameSpeedSelection(1);
                 Log(Loc.Get("LogRestoreCompatDone"));
                 MessageBox.Show(Loc.Get("MsgRestoreCompatSuccess"), Loc.Get("TitleTips"), MessageBoxButtons.OK, MessageBoxIcon.Information);
             } catch (Exception ex) {
@@ -554,7 +557,7 @@ namespace AgainstRomeModifier {
             string exePath = Path.Combine(gamePath, @"Against_Rome.exe");
             byte[] exeBytes = File.ReadAllBytes(exePath);
             bool exeModified = false;
-            ApplyExePatch(exeBytes, false, false, false, ref exeModified);
+            ApplyExePatch(exeBytes, false, false, false, 1, ref exeModified);
             if (exeModified) {
                 patchedFiles[exePath] = exeBytes;
             }
@@ -838,7 +841,7 @@ namespace AgainstRomeModifier {
             }
         }
 
-        private void ApplyExePatch(byte[] exeBytes, bool focusLossChecked, bool villageBuildRangeChecked, bool noSpellAltarChecked, ref bool exeModified) {
+        private void ApplyExePatch(byte[] exeBytes, bool focusLossChecked, bool villageBuildRangeChecked, bool noSpellAltarChecked, int gameSpeedMultiplier, ref bool exeModified) {
             ExePatchState state = ExePatchModel.GetExePatchState(exeBytes);
             if (state == ExePatchState.Unknown) {
                 throw new Exception("Against_Rome.exe 版本或位元組特徵不符合預期，已停止相容性補丁以避免覆蓋未知版本。");
@@ -859,6 +862,53 @@ namespace AgainstRomeModifier {
             ApplyVillageSetterRangePatch(exeBytes, villageBuildRangeChecked, ref exeModified);
 
             ApplySpellAltarPatch(exeBytes, noSpellAltarChecked, ref exeModified);
+
+            ApplyGameSpeedPatch(exeBytes, gameSpeedMultiplier, ref exeModified);
+        }
+
+        /// <summary>
+        /// 遊戲整體時脈加速：把主時脈函式的兩個 rodata 常數（QPC 與 timeGetTime 路徑）同步
+        /// 乘上倍率，使移動／生產／戰鬥／AI 一起以該倍率前進。<paramref name="multiplier"/> = 1
+        /// 代表關閉（還原原版）。選擇邏輯集中於 <see cref="ExePatchModel"/>，此處只負責日誌與旗標。
+        /// </summary>
+        /// <summary>以目前語系重建加速下拉選單的項目（index 0 = 原版，其後為各支援倍率），並保留目前選項。</summary>
+        private void PopulateGameSpeedItems() {
+            int prev = cmbGameSpeed.SelectedIndex;
+            cmbGameSpeed.BeginUpdate();
+            cmbGameSpeed.Items.Clear();
+            cmbGameSpeed.Items.Add(Loc.Get("GameSpeedOff"));
+            foreach (int m in ExePatchModel.GameSpeedSupportedMultipliers) {
+                if (m <= 1) continue;
+                cmbGameSpeed.Items.Add(string.Format(Loc.Get("GameSpeedItem"), m));
+            }
+            cmbGameSpeed.EndUpdate();
+            cmbGameSpeed.SelectedIndex = prev >= 0 && prev < cmbGameSpeed.Items.Count ? prev : 0;
+        }
+
+        /// <summary>由下拉選單目前選項換算加速倍率（index 0 = 原版 → 1；其餘 → index+1）。</summary>
+        private int GetSelectedGameSpeedMultiplier() {
+            int idx = cmbGameSpeed.SelectedIndex;
+            return idx <= 0 ? 1 : idx + 1;
+        }
+
+        /// <summary>依偵測到的倍率設定下拉選單目前選項；未知或超出範圍時回到原版。</summary>
+        private void SetGameSpeedSelection(int multiplier) {
+            int idx = multiplier >= 2 && multiplier <= cmbGameSpeed.Items.Count ? multiplier - 1 : 0;
+            cmbGameSpeed.SelectedIndex = idx;
+        }
+
+        private void ApplyGameSpeedPatch(byte[] exeBytes, int multiplier, ref bool exeModified) {
+            int current = ExePatchModel.GetGameSpeedMultiplier(exeBytes);
+            if (current == 0) {
+                Log("偵測到未知的遊戲時脈常數，已略過遊戲加速補丁以免覆蓋未知版本。");
+                return;
+            }
+            IReadOnlyList<ExeWriteOp> ops = ExePatchModel.PlanGameSpeed(multiplier, current);
+            if (ops.Count > 0) {
+                ExePatchModel.Apply(exeBytes, ops);
+                exeModified = true;
+            }
+            Log(multiplier > 1 ? $"遊戲整體運行速度：{multiplier}× 加速。" : "遊戲整體運行速度：原版（未加速）。");
         }
 
         /// <summary>
