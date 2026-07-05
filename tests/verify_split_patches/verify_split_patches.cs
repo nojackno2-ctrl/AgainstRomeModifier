@@ -385,11 +385,12 @@ namespace AgainstRomeModifierTests {
                 if (q < 0) Fail($"{name}: 找不到 P9 撤退配額簽章");
                 else if (I32(d, q + 44) != 66 || I32(d, q + 48) != 0) Fail($"{name}: P9 撤退配額應為 66,0，實為 {I32(d, q + 44)},{I32(d, q + 48)}");
 
-                // P16: type-1 settlement cap initialization becomes randRange(4, 4).
-                int?[] settlementCapSig = { 66, 4, 66, null, 128, 16, 73, -2, 86, 82, 70 };
+                // P16: three type-1 settlements leave room for the type-4 military settlement.
+                int?[] settlementCapSig = { 66, null, 66, null, 128, 16, 73, -2, 86, 82, 70 };
                 int cap = BciPattern.FindBciWordPattern(d, settlementCapSig);
                 if (cap < 0) Fail($"{name}: 找不到 P16 村莊上限簽章");
-                else if (I32(d, cap + 12) != 4) Fail($"{name}: P16 村莊上限下限應為 4，實為 {I32(d, cap + 12)}");
+                else if (I32(d, cap + 4) != 3 || I32(d, cap + 12) != 3)
+                    Fail($"{name}: P16 type-1 配額應為 3,3，實為 {I32(d, cap + 4)},{I32(d, cap + 12)}");
             }
 
             // ---- ak_haupthaus.bci ----

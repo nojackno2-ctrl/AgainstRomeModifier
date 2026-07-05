@@ -40,7 +40,8 @@ research and personal modding project.
   the whole reinforcement party into the village instead of retreating while
   retaining the original safety gate and bounded polling. Endless settlement templates also receive a reversible
   starting-resource boost, and new games can fix the type-1 village-AI cap at
-  4 instead of randomly choosing 2-4; unsafe global CLAK production edits stay disabled.
+  3 so the separate type-4 military settlement remains available and the total
+  settled-opponent target stays at four; unsafe global CLAK production edits stay disabled.
 - Free construction, production, upgrades, and spell costs through `ress.ini`.
 - Unit stat editing for HP, damage, VW, AW, movement, sight, cooldown, range, and spell radius through `objdef.dau` and `cl_script.ini`.
 - Troop preset import/export through `.artroop` and one-click buttons to enable/disable all features.

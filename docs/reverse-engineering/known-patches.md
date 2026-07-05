@@ -186,10 +186,13 @@
 - The gate at `0x1960C` remains `66,0`.
 - The Siedler spawner's default and 0/1/2/3-live-party probability literals change from `0,0,80,60,40,20` to `101,101,101,101,101,101`. The single-player occupied mask reserves player team 0, and `pickTeam` selects only unoccupied CPU teams 1-7, so this fills at most seven simultaneous computer opponents and reuses a defeated team's slot after cleanup.
 - M6 changes the new-game type-1 settlement limit initialization from
-  `s_randRange(4, 2) -> v70` to `s_randRange(4, 4) -> v70`. The unique BCI
-  signature is `[66,4,66,<lower>,128,16,73,-2,86,82,70]`; the lower-bound
-  literal at decompressed offset `0x1B69C` changes `2 -> 4`. Restore reverses
-  it, and existing saves are not rewritten.
+  `s_randRange(4, 2) -> v70` to `s_randRange(3, 3) -> v70`. The unique BCI
+  signature is `[66,<upper>,66,<lower>,128,16,73,-2,86,82,70]`; the upper and
+  lower literals at decompressed offsets `0x1B694` and `0x1B69C` both become
+  `3`. This preserves a fourth settled opponent for the separate type-4
+  military path and leaves CPU-team slots for military/attack parties. The
+  former `[4,4]` M6 state is recognized as legacy and migrated. Restore writes
+  the vanilla `[4,2]` bounds, and existing saves are not rewritten.
 - REJECTED CONFIGURATION 2026-07-03 (same session, before any release): tried making
   reinforcement parties hand over all units instead of retreating, via the
   `v56[party]` retreat quota (`[90,15] -> [66,0]` at decompressed `0x17888`

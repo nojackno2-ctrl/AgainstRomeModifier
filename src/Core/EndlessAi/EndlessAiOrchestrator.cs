@@ -128,17 +128,27 @@ namespace AgainstRomeModifier
             // P13: 聚落模板開局資源
             var p13 = new P13_SettlementTemplatePatch();
 
-            // P16: Fix the per-game type-1 settlement cap at 4 instead of randRange(2, 4).
-            // The BCI pushes the upper bound first, so changing only the lower bound
-            // from 2 to 4 preserves the original call and produces randRange(4, 4).
+            // P16: Keep four settled opponents without starving the separate type-4
+            // military settlement and attack parties of team slots.  Vanilla adds
+            // the type-4 settlement outside v70, so fix the type-1 cap at three.
+            // Recognize the former 4/4 implementation as legacy and migrate it.
             var p16 = new BciLiteralPatch(
                 "P16",
                 "MAPS/ENDL_*/SCRIPT/ak_level.bci",
-                new int?[] { 66, 4, 66, null, 128, 16, 73, -2, 86, 82, 70 },
-                new int[] { 3 },
-                new int[] { 2 },
-                new int[] { 4 },
-                1
+                new int?[] { 66, null, 66, null, 128, 16, 73, -2, 86, 82, 70 },
+                new int[] { 1, 3 },
+                new int[] { 4, 2 },
+                new int[] { 3, 3 },
+                1,
+                (buffer, site) =>
+                {
+                    int upper = BitConverter.ToInt32(buffer, site + 4);
+                    int lower = BitConverter.ToInt32(buffer, site + 12);
+                    if (upper == 4 && lower == 2) return PatchState.Original;
+                    if (upper == 3 && lower == 3) return PatchState.Ultimate;
+                    if (upper == 4 && lower == 4) return PatchState.Legacy;
+                    return PatchState.Unknown;
+                }
             );
 
             // Restore the unsafe legacy DELETE_TEAM terminal transitions.
@@ -152,7 +162,7 @@ namespace AgainstRomeModifier
             M3 = new EndlessAiModule("M3", "敗亡快速回收", new List<IEndlessPatch> { p4, p5, p11 });
             M4 = new EndlessAiModule("M4", "保證聚落生成與留守", new List<IEndlessPatch> { p7, p8, p9 });
             M5 = new EndlessAiModule("M5", "開局資源", new List<IEndlessPatch> { p13 });
-            M6 = new EndlessAiModule("M6", "村莊上限固定 4", new List<IEndlessPatch> { p16 });
+            M6 = new EndlessAiModule("M6", "四個定居 AI 配額", new List<IEndlessPatch> { p16 });
             R0 = new EndlessAiModule("R0", "常駐修復", new List<IEndlessPatch> { p14, p15 });
 
             UserModules = new List<EndlessAiModule> { M1, M2, M3, M4, M5, M6 };
