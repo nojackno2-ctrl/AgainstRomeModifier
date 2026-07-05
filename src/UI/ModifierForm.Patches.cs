@@ -8,6 +8,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Windows.Forms;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Threading.Tasks;
 using AgainstRomeModifier.Core.Patches;
 
@@ -33,6 +34,10 @@ namespace AgainstRomeModifier {
         private const int StorageCapacityMultiplier = 10;
         private const int FoodHealAmountOriginal = 1;
         private const int FoodHealAmountUltimate = 10;
+        // SHA-256 of the decompressed, withdrawn leader-glory-retention script
+        // after its independent food-healing literal has been normalized to 1.
+        private const string RetiredLeaderGloryScriptSha256 = "42B07605D20C81A93BE983252DF1CB34104EB7AE9F8456AB31A842D4CD9232DD";
+        private const string VanillaLeaderScriptSha256 = "778A6E01B99664136AC0420B9F48212C41A5D6297A9952EA9D7D3A5D4851272C";
 
         private static readonly (string File, int AddLpSymbolIndex)[] FoodHealAmountSites = new[] {
             ("ak_anfuehrer", 87),
@@ -205,6 +210,13 @@ namespace AgainstRomeModifier {
                 bool noSpellAltar = chkNoSpellAltar.Checked;
 
                 await Task.Run(() => {
+                    // Always restore every modifier-managed surface before
+                    // generating a new patch set. This prevents files written
+                    // by older builds from surviving after their UI option has
+                    // been removed.
+                    Log(Loc.Get("LogPreApplyRestore"));
+                    RestoreOriginalFilesInternal(gamePath, rollback);
+
                     // 1. Dry Run 階段：在記憶體中生成所有補丁 byte[] 並驗證
                     var patchedFiles = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
 
@@ -315,35 +327,7 @@ namespace AgainstRomeModifier {
                 rollback = new FileRollbackScope();
                 Log("已建立還原前檔案回復點。");
                 await Task.Run(() => {
-                    var patchedFiles = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
-
-                    // EXE 還原
-                    string exePath = Path.Combine(gamePath, @"Against_Rome.exe");
-                    byte[] exeBytes = File.ReadAllBytes(exePath);
-                    bool exeModified = false;
-                    ApplyExePatch(exeBytes, false, false, false, ref exeModified);
-                    if (exeModified) {
-                        patchedFiles[exePath] = exeBytes;
-                    }
-
-                    // 無盡 AI 還原
-                    var orchestrator = new EndlessAiOrchestrator();
-                    foreach (var module in orchestrator.UserModules) {
-                        orchestrator.ApplyModule(gamePath, module, false);
-                    }
-                    orchestrator.ApplyMandatoryRepair(gamePath);
-
-                    // 還原其它屬性 INI 與 team.dat 到備份原版
-                    RestoreStatsOnlyInternal(gamePath, rollback);
-
-                    // 統一寫入記憶體修改之檔案
-                    foreach (var kvp in patchedFiles) {
-                        SafeWriteAllBytes(kvp.Key, kvp.Value, rollback);
-                    }
-                    orchestrator.SaveAll(gamePath, rollback);
-                    ApplyFoodHealingAmountPatch(gamePath, false, rollback);
-                    ApplyLanguagePatch(gamePath, false, rollback);
-                    ApplyDgVoodooPatch(gamePath, false, rollback);
+                    RestoreOriginalFilesInternal(gamePath, rollback);
                 });
                 rollback.Commit();
                 rollback.Dispose();
@@ -557,6 +541,39 @@ namespace AgainstRomeModifier {
                     RestoreMemoryFile(kvp.Key, destPath, rollback);
                 }
             }
+        }
+
+        /// <summary>
+        /// Restores every file surface managed by the modifier without changing
+        /// UI selections. Used by Restore All and by the mandatory clean-base
+        /// phase at the beginning of Apply.
+        /// </summary>
+        private void RestoreOriginalFilesInternal(string gamePath, FileRollbackScope? rollback) {
+            var patchedFiles = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
+
+            string exePath = Path.Combine(gamePath, @"Against_Rome.exe");
+            byte[] exeBytes = File.ReadAllBytes(exePath);
+            bool exeModified = false;
+            ApplyExePatch(exeBytes, false, false, false, ref exeModified);
+            if (exeModified) {
+                patchedFiles[exePath] = exeBytes;
+            }
+
+            var orchestrator = new EndlessAiOrchestrator();
+            foreach (var module in orchestrator.UserModules) {
+                orchestrator.ApplyModule(gamePath, module, false);
+            }
+            orchestrator.ApplyMandatoryRepair(gamePath);
+
+            RestoreStatsOnlyInternal(gamePath, rollback);
+
+            foreach (var kvp in patchedFiles) {
+                SafeWriteAllBytes(kvp.Key, kvp.Value, rollback);
+            }
+            orchestrator.SaveAll(gamePath, rollback);
+            ApplyFoodHealingAmountPatch(gamePath, false, rollback);
+            ApplyLanguagePatch(gamePath, false, rollback);
+            ApplyDgVoodooPatch(gamePath, false, rollback);
         }
 
         /// <summary>
@@ -965,6 +982,40 @@ namespace AgainstRomeModifier {
 
                 byte[] raw = File.ReadAllBytes(scriptPath);
                 byte[] decomp = GameLZSS.DecompressPfil(raw);
+                bool retiredLeaderScriptMigrated = false;
+
+                // Older builds could install an experimental ak_anfuehrer.bci
+                // that crashes when combat invokes the leader script. Removing
+                // the feature from the UI did not repair files already written
+                // to the game directory. Detect that exact retired payload
+                // (allowing either food-healing literal) and rebuild from the
+                // clean embedded backup before applying the supported patch.
+                if (file.Equals("ak_anfuehrer", StringComparison.OrdinalIgnoreCase)) {
+                    byte[] normalized = (byte[])decomp.Clone();
+                    var legacyOriginalSites = FindAllBciWordPatternSites(normalized,
+                        BuildFoodHealAmountSignature(symbolIndex, FoodHealAmountOriginal));
+                    var legacyUltimateSites = FindAllBciWordPatternSites(normalized,
+                        BuildFoodHealAmountSignature(symbolIndex, FoodHealAmountUltimate));
+                    if (legacyOriginalSites.Count + legacyUltimateSites.Count == 1) {
+                        if (legacyUltimateSites.Count == 1) {
+                            int valueOffset = legacyUltimateSites[0] + 4;
+                            WriteBciInt32(normalized, valueOffset,
+                                FoodHealAmountUltimate, FoodHealAmountOriginal, "retired leader glory probe");
+                        }
+
+                        string normalizedHash = Convert.ToHexString(SHA256.HashData(normalized));
+                        if (normalizedHash.Equals(RetiredLeaderGloryScriptSha256, StringComparison.Ordinal)) {
+                            raw = GetBackupBytes("SYSTEM/CLAK/SCRIPT/ak_anfuehrer.bci");
+                            decomp = GameLZSS.DecompressPfil(raw);
+                            string cleanHash = Convert.ToHexString(SHA256.HashData(decomp));
+                            if (!cleanHash.Equals(VanillaLeaderScriptSha256, StringComparison.Ordinal)) {
+                                throw new InvalidDataException("乾淨的原版 ak_anfuehrer.bci 備份不存在或版本不符，已取消安全遷移。");
+                            }
+                            retiredLeaderScriptMigrated = true;
+                            Log("已移除會造成戰鬥閃退的舊版首領榮耀腳本，並以原版 ak_anfuehrer.bci 重建。");
+                        }
+                    }
+                }
 
                 var originalSites = FindAllBciWordPatternSites(decomp,
                     BuildFoodHealAmountSignature(symbolIndex, FoodHealAmountOriginal));
@@ -978,7 +1029,12 @@ namespace AgainstRomeModifier {
 
                 int currentValue = originalSites.Count == 1 ? FoodHealAmountOriginal : FoodHealAmountUltimate;
                 int patchOffset = (originalSites.Count == 1 ? originalSites[0] : ultimateSites[0]) + 4;
-                if (currentValue == targetValue) continue;
+                if (currentValue == targetValue) {
+                    if (retiredLeaderScriptMigrated) {
+                        SafeWriteAllBytes(scriptPath, raw, rollback);
+                    }
+                    continue;
+                }
 
                 WriteBciInt32(decomp, patchOffset, currentValue, targetValue, "待機回血量");
                 byte[] compressed = GameLZSS.CompressPfil(decomp, raw);
@@ -1016,6 +1072,24 @@ namespace AgainstRomeModifier {
 
             enabled = detectedState == true;
             return detectedState.HasValue;
+        }
+
+        /// <summary>
+        /// Performs a narrowly fingerprinted one-time safety migration when an
+        /// older build left the withdrawn leader-glory script installed. This
+        /// runs at startup because removing the old UI did not repair scripts
+        /// already written to the game directory. The current supported
+        /// food-healing state is preserved.
+        /// </summary>
+        private void RepairRetiredLeaderGloryScriptOnStartup() {
+            try {
+                string gamePath = GetGamePath();
+                if (string.IsNullOrWhiteSpace(gamePath) || !Directory.Exists(gamePath)) return;
+                if (!TryReadFoodHealingAmountState(gamePath, out bool foodHealingEnabled)) return;
+                ApplyFoodHealingAmountPatch(gamePath, foodHealingEnabled, null);
+            } catch (Exception ex) {
+                Log("舊版首領腳本安全遷移失敗: " + ex.Message);
+            }
         }
 
 

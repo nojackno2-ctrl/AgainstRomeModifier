@@ -225,6 +225,7 @@ namespace AgainstRomeModifier {
             Log(Loc.Get("LogConstructCompleted"));
             // 將內嵌的 Backup.zip 載入記憶體
             LoadBackupZipToMemory();
+            RepairRetiredLeaderGloryScriptOnStartup();
             // 初始化資料與讀取自訂兵種資訊
             InitializeData();
             // 註冊表單關閉事件以正確釋放字型與圖形物件資源，防止記憶體洩漏

@@ -51,14 +51,15 @@ Apply order:
 1. Validate the directory and `Against_Rome.exe`.
 2. Load originals and confirm with the user.
 3. Snapshot UI values on the UI thread.
-4. Apply EXE compatibility state.
-5. Apply `cl_script.ini`.
-6. Apply `ress.ini`.
-7. Apply `objdef.dau`.
-8. Restore original `team.dat` files, then apply population only.
-9. Apply endless-mode BCI changes.
-10. Apply language resources.
-11. Commit, dispose rollback state, and reload current values.
+4. Within the same rollback transaction, run `RestoreOriginalFilesInternal` without changing the UI snapshot. This shares the Restore All file path and clears modifier-managed EXE, stats, team.dat, endless AI, food-healing, language, and dgVoodoo2 state left by older builds.
+5. Apply EXE compatibility state.
+6. Apply `cl_script.ini`.
+7. Apply `ress.ini`.
+8. Apply `objdef.dau`.
+9. Restore original `team.dat` files, then apply population only.
+10. Apply endless-mode BCI changes.
+11. Apply language resources.
+12. Commit, dispose rollback state, and reload current values.
 
 ## 4. PFIL/LZSS and Text Compatibility
 
@@ -404,7 +405,7 @@ Use these before repeating whole-program analysis. Rebuild the inventory only fo
 
 - In-game testing confirmed that attempting to completely disable the leader-death glory-retention behavior causes the game to crash. The behavior is therefore treated as unsafe to modify.
 - The modifier no longer exposes the option, embeds the patched BCI, applies or detects the patch, or restores its script state. Enable All, normal Apply, Restore All, and Restore Stats all exclude this feature.
-- The modifier deliberately leaves the installed `ak_anfuehrer.bci` glory-retention state untouched. Withdrawing modifier support is not the same as writing another script state to disable the game behavior.
+- The modifier no longer exposes or applies leader-death glory retention. Because the retired experimental script is confirmed to cause an access-violation crash in combat, modifier startup and the food-healing apply/restore path now identify that exact legacy `ak_anfuehrer.bci` payload (with either healing literal 1 or 10), rebuild it from the embedded vanilla file, and then apply the still-supported healing-value patch. Unknown or third-party scripts are not overwritten by this migration.
 - The root cause is not yet isolated. Any future implementation must pass in-game validation; a successful build and static validation do not establish safety.
 
 ## 17. Known Limits

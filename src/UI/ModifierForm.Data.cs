@@ -68,7 +68,8 @@ namespace AgainstRomeModifier {
                 "SYSTEM/ress.ini",
                 "SYSTEM/DATA_MP/DEFAULTS/objdef.dau",
                 "SYSTEM/CLMK/icon.ini",
-                "SYSTEM/CLAK/cl_scint.ini"
+                "SYSTEM/CLAK/cl_scint.ini",
+                "SYSTEM/CLAK/SCRIPT/ak_anfuehrer.bci"
             };
 
             foreach (string relPath in requiredFiles) {
@@ -116,7 +117,8 @@ namespace AgainstRomeModifier {
                 "SYSTEM/ress.ini",
                 "SYSTEM/DATA_MP/DEFAULTS/objdef.dau",
                 "SYSTEM/CLMK/icon.ini",
-                "SYSTEM/CLAK/cl_scint.ini"
+                "SYSTEM/CLAK/cl_scint.ini",
+                "SYSTEM/CLAK/SCRIPT/ak_anfuehrer.bci"
             };
 
             foreach (string key in requiredFiles) {
@@ -165,7 +167,8 @@ namespace AgainstRomeModifier {
                 "SYSTEM/ress.ini",
                 "SYSTEM/DATA_MP/DEFAULTS/objdef.dau",
                 "SYSTEM/CLMK/icon.ini",
-                "SYSTEM/CLAK/cl_scint.ini"
+                "SYSTEM/CLAK/cl_scint.ini",
+                "SYSTEM/CLAK/SCRIPT/ak_anfuehrer.bci"
             };
 
             foreach (string relPath in requiredFiles) {
