@@ -73,9 +73,10 @@ namespace AgainstRomeModifier
             {
                 int target = (!enabled || IsSettledSite(i)) ? OriginalRetreatDeadlineMs : UltimateRespawnDelayMs;
                 int offset = sites[i];
-                if (BitConverter.ToInt32(decompressed, offset) != target)
+                int current = BitConverter.ToInt32(decompressed, offset);
+                if (current != target)
                 {
-                    BciPattern.WriteBciInt32(decompressed, offset, target);
+                    BciPattern.WriteBciInt32(decompressed, offset, current, target, "P4 retreat deadline");
                     changed = true;
                 }
             }
@@ -236,8 +237,8 @@ namespace AgainstRomeModifier
 
                 if (currentUpperMs != targetUpperMs || currentLowerMs != targetLowerMs)
                 {
-                    BciPattern.WriteBciInt32(decompressed, offset + 4, targetUpperMs);
-                    BciPattern.WriteBciInt32(decompressed, offset + 12, targetLowerMs);
+                    BciPattern.WriteBciInt32(decompressed, offset + 4, currentUpperMs, targetUpperMs, "P6 scheduler upper delay");
+                    BciPattern.WriteBciInt32(decompressed, offset + 12, currentLowerMs, targetLowerMs, "P6 scheduler lower delay");
                     changed = true;
                 }
                 delaySiteIndex++;
@@ -311,9 +312,10 @@ namespace AgainstRomeModifier
 
         private static bool WriteIfDifferent(byte[] buffer, int offset, int val)
         {
-            if (BitConverter.ToInt32(buffer, offset) != val)
+            int current = BitConverter.ToInt32(buffer, offset);
+            if (current != val)
             {
-                BciPattern.WriteBciInt32(buffer, offset, val);
+                BciPattern.WriteBciInt32(buffer, offset, current, val, "P7 spawner literal");
                 return true;
             }
             return false;
@@ -378,9 +380,10 @@ namespace AgainstRomeModifier
             int targetLimit = enabled ? UltimateActivePartyLimit : OriginalActivePartyLimit;
             int limitOffset = sequenceOffset + 12;
 
-            if (BitConverter.ToInt32(decompressed, limitOffset) != targetLimit)
+            int currentLimit = BitConverter.ToInt32(decompressed, limitOffset);
+            if (currentLimit != targetLimit)
             {
-                BciPattern.WriteBciInt32(decompressed, limitOffset, targetLimit);
+                BciPattern.WriteBciInt32(decompressed, limitOffset, currentLimit, targetLimit, "P8 active party limit");
                 changed = true;
             }
 
@@ -389,8 +392,10 @@ namespace AgainstRomeModifier
             if (BitConverter.ToInt32(decompressed, gateOffset) != ActiveLimitOriginalOpcode ||
                 BitConverter.ToInt32(decompressed, gateOffset + 4) != ActiveLimitOriginalValue)
             {
-                BciPattern.WriteBciInt32(decompressed, gateOffset, ActiveLimitOriginalOpcode);
-                BciPattern.WriteBciInt32(decompressed, gateOffset + 4, ActiveLimitOriginalValue);
+                int currentGateOpcode = BitConverter.ToInt32(decompressed, gateOffset);
+                int currentGateValue = BitConverter.ToInt32(decompressed, gateOffset + 4);
+                BciPattern.WriteBciInt32(decompressed, gateOffset, currentGateOpcode, ActiveLimitOriginalOpcode, "P8 active limit gate opcode");
+                BciPattern.WriteBciInt32(decompressed, gateOffset + 4, currentGateValue, ActiveLimitOriginalValue, "P8 active limit gate value");
                 changed = true;
             }
 
@@ -461,8 +466,10 @@ namespace AgainstRomeModifier
             if (BitConverter.ToInt32(decompressed, opcodeOffset) != targetOpcode ||
                 BitConverter.ToInt32(decompressed, opcodeOffset + 4) != targetValue)
             {
-                BciPattern.WriteBciInt32(decompressed, opcodeOffset, targetOpcode);
-                BciPattern.WriteBciInt32(decompressed, opcodeOffset + 4, targetValue);
+                int currentOpcode = BitConverter.ToInt32(decompressed, opcodeOffset);
+                int currentValue = BitConverter.ToInt32(decompressed, opcodeOffset + 4);
+                BciPattern.WriteBciInt32(decompressed, opcodeOffset, currentOpcode, targetOpcode, "P9 retreat quota opcode");
+                BciPattern.WriteBciInt32(decompressed, opcodeOffset + 4, currentValue, targetValue, "P9 retreat quota value");
                 changed = true;
             }
             return changed;
@@ -521,8 +528,9 @@ namespace AgainstRomeModifier
             bool changed = false;
             foreach (int site in sites)
             {
-                if (BitConverter.ToInt32(decompressed, site) == target) continue;
-                BciPattern.WriteBciInt32(decompressed, site, target);
+                int current = BitConverter.ToInt32(decompressed, site);
+                if (current == target) continue;
+                BciPattern.WriteBciInt32(decompressed, site, current, target, "P15 settled terminal state");
                 changed = true;
             }
             return changed;
@@ -734,9 +742,14 @@ namespace AgainstRomeModifier
             if (npcOffset >= 0)
             {
                 int offset = npcOffset + 6 * 4;
-                if (BitConverter.ToInt32(decompressed, offset) != OriginalFreeCivilianReserve)
+                int current = BitConverter.ToInt32(decompressed, offset);
+                if (current != OriginalFreeCivilianReserve)
                 {
-                    BciPattern.WriteBciInt32(decompressed, offset, OriginalFreeCivilianReserve);
+                    if (current != UltimateFreeCivilianReserve)
+                    {
+                        throw new InvalidOperationException("P14 civilian reserve bytes do not match a supported pattern.");
+                    }
+                    BciPattern.WriteBciInt32(decompressed, offset, UltimateFreeCivilianReserve, OriginalFreeCivilianReserve, "P14 civilian reserve restore");
                     changed = true;
                 }
             }
@@ -745,9 +758,14 @@ namespace AgainstRomeModifier
             if (prodOffset >= 0)
             {
                 int offset = prodOffset + 5 * 4;
-                if (BitConverter.ToInt32(decompressed, offset) != ProductionGateOriginalOpcode)
+                int current = BitConverter.ToInt32(decompressed, offset);
+                if (current != ProductionGateOriginalOpcode)
                 {
-                    BciPattern.WriteBciInt32(decompressed, offset, ProductionGateOriginalOpcode);
+                    if (current != ProductionGateBypassOpcode)
+                    {
+                        throw new InvalidOperationException("P14 production gate bytes do not match a supported pattern.");
+                    }
+                    BciPattern.WriteBciInt32(decompressed, offset, ProductionGateBypassOpcode, ProductionGateOriginalOpcode, "P14 production gate restore");
                     changed = true;
                 }
             }

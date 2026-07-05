@@ -8,6 +8,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Windows.Forms;
 using System.Drawing;
+using AgainstRomeModifier.Core.Patches;
 using System.Drawing.Drawing2D;
 using System.Runtime.InteropServices;
 
@@ -1450,7 +1451,7 @@ namespace AgainstRomeModifier {
                 }
                 if (File.Exists(exePath)) {
                     byte[] exeBytes = File.ReadAllBytes(exePath);
-                    ExePatchState exePatchState = GetExePatchState(exeBytes);
+                    ExePatchState exePatchState = ExePatchModel.GetExePatchState(exeBytes);
                     if (syncUIWithFile) {
                         chkFocusLoss.Checked = exePatchState == ExePatchState.FocusPatched;
                     }
@@ -1458,7 +1459,7 @@ namespace AgainstRomeModifier {
                         Log(Loc.Get("LogExePatchWarning"));
                     }
 
-                    ExeSpellAltarPatchState altarPatchState = GetSpellAltarPatchState(exeBytes);
+                    ExeSpellAltarPatchState altarPatchState = ExePatchModel.GetSpellAltarPatchState(exeBytes);
                     if (syncUIWithFile) {
                         chkNoSpellAltar.Checked = altarPatchState == ExeSpellAltarPatchState.Patched;
                     }
@@ -1466,7 +1467,7 @@ namespace AgainstRomeModifier {
                         Log("無法辨識的 EXE 法術祭壇特徵碼；已將開關設為未勾選。");
                     }
 
-                    ExeVillageRangePatchState villageRangeState = GetVillageBuildRangePatchState(exeBytes);
+                    ExeVillageRangePatchState villageRangeState = ExePatchModel.GetVillageBuildRangePatchState(exeBytes);
                     if (syncUIWithFile) {
                         if (villageRangeState == ExeVillageRangePatchState.Expanded ||
                             villageRangeState == ExeVillageRangePatchState.LegacyLogicOnly) {
@@ -1476,7 +1477,7 @@ namespace AgainstRomeModifier {
                         }
                     }
 
-                    ExeVillageSetterPatchState villageSetterState = GetVillageSetterPatchState(exeBytes);
+                    ExeVillageSetterPatchState villageSetterState = ExePatchModel.GetVillageSetterPatchState(exeBytes);
                     if (syncUIWithFile) {
                         chkVillageBuildRange.Checked = villageSetterState == ExeVillageSetterPatchState.Legacy2x ||
                             villageSetterState == ExeVillageSetterPatchState.Legacy2Point5x ||

@@ -46,6 +46,7 @@
 | `src/Core/GameLZSS.cs` | 遊戲 LZSS 與 `PFIL@` 包裝 |
 | `src/Core/Bci/` | BCI 特徵碼搜尋、字組寫入與 PFIL 腳本封裝 |
 | `src/Core/EndlessAi/` | AI Ultimate M1–M5 模組、狀態偵測與套用協調 |
+| `src/Core/Patches/` | 純 patch 邏輯（`ObjdefPatcher`、`RessPatcher`、`ClScriptPatcher`、`ClEparaPatcher`、`ClScintPatcher`、`TeamDatPatcher`、`ExePatchModel`、`VerifiedBinaryWriter`），不依賴 WinForms，`ModifierForm.Patches.cs` 只負責把 UI 狀態轉成 Options／委派呼叫與記錄日誌 |
 | `src/Core/Localization.cs` | 中英文 UI／log |
 | `data/game_schema.json` | 機器可讀的欄位、offset 與 patch metadata |
 
@@ -359,16 +360,18 @@ ZIP 備份先建立 `.tmp`，加入修改器產生的 `manifest.json`，成功�
 
 ```powershell
 dotnet build .\AgainstRomeModifier.csproj -c Release --no-restore
-dotnet run --project .\tests\verify_split_patches\verify_split_patches.csproj -c Release
+dotnet test .\tests\AgainstRomeModifier.Tests\AgainstRomeModifier.Tests.csproj -c Release
 Get-Content .\data\game_schema.json -Raw | ConvertFrom-Json | Out-Null
 git diff --check
 ```
+
+`tests/AgainstRomeModifier.Tests`（xUnit）以合成 fixture 取代真實遊戲檔案，因此在乾淨 clone、無 `Backup.zip`／遊戲目錄的 CI 環境下也能執行（見 `.github/workflows/ci.yml`）。舊的 `tests/verify_split_patches` console 專案依賴本機 `遊戲原始檔案/`，僅供本機手動比對使用，不在 CI 內執行。
 
 依修改類型追加：
 
 - PFIL：壓縮／解壓 round-trip。
 - `objdef.dau`：解壓長度完全相等、短 row bounds。
-- EXE：original/current/legacy/unknown 四種 state。
+- EXE：original/current/legacy/unknown 四種 state；`ExePatchModelTests` 涵蓋失焦補丁、法術祭壇、村落建造範圍舊版候選還原、村落 setter（2x/2.5x/3x）各狀態的 enable/disable round-trip，以及預期位元組不符時中止且不寫壞緩衝區。
 - ENDL：五張 map、enable/disable/migration、長時間 waves、save embedded script。
 - 語言：manifest、數量、path safety、SHA-256、缺 baseline abort。
 - 存檔：完整 `.tmp` ZIP、manifest、path traversal、commit 後 cleanup。
@@ -487,3 +490,13 @@ git diff --check
 - 實作傷害法術提升 5 倍，治療法術提升 50 倍的數據修改邏輯。
 - 將 `SYSTEM/CLAK/cl_scint.ini` 納入備份與修改機制，動態替換復活召喚的 ODef 別名（男屍體轉槍盾兵 `KEL_INF01`，女屍體轉女雙劍士 `KEL_INF02`）。
 - 實作復活後的單位生命值與士氣設定值為 100%。
+
+### 2026-07-05：patch 邏輯抽離、xUnit 測試、CI 與 EXE 補丁測試補強
+由 Codex 完成主要重構，經後續稽核與補強：
+
+- 把 `ModifierForm.Patches.cs` 中的純位元組計算邏輯抽到 `src/Core/Patches/`（`ObjdefPatcher`、`RessPatcher`、`ClScriptPatcher`、`ClEparaPatcher`、`ClScintPatcher`、`TeamDatPatcher`、`VerifiedBinaryWriter`），不依賴 WinForms；`ModifierForm.Patches.cs` 由 ~2175 行降到約 1300 行，只負責把 UI 狀態轉成 Options 並委派。核對確認 `SelectValidatedPatchBase` 忠實保留了舊碼「優先讀遊戲目錄現有檔案做增量修改、結構驗證失敗才退回記憶體備份」的行為，非新增邏輯。
+- 新增 `tests/AgainstRomeModifier.Tests`（xUnit，`net8.0-windows`），以合成 fixture（非真實遊戲檔案）驗證各 patcher 的 round-trip 與關鍵欄位值，可在乾淨 clone／CI 上執行。
+- 新增 `.github/workflows/ci.yml`（windows-latest：restore／build Release x64／test）。
+- 為每個直接寫固定偏移的 patch 加上落地前驗證：`VerifiedBinaryWriter.WriteBytes`／`BciPattern.WriteBciInt32` 在目前位元組不符預期時丟 `InvalidDataException` 並中止，不靜默寫入，防止對不同版本的 exe/bci 檔案寫壞。
+- 主 csproj 內嵌資源 `ak_anfuehrer.patched.bci`（位於被 gitignore 的 `re_workspace/`）加上 `Condition="Exists(...)"`，讓乾淨 clone／CI 不再因缺檔而建置失敗。
+- 稽核發現「EXE patch 的 state → 預期/取代 bytes 選擇邏輯」（`ApplyExePatch`／`ApplyVillageSetterRangePatch`／`RestoreLegacyVillageBuildRangePatch`）雖然手動核對無誤，但完全沒有測試覆蓋。補強做法：新增 `src/Core/Patches/ExePatchModel.cs`，把失焦補丁、法術免祭壇需求、舊版村落建造範圍候選還原、村落 setter（2x/2.5x/3x 跳板）的常數、enum、狀態偵測與「state → `ExeWriteOp` 清單」規劃邏輯全部抽成純類別；`ModifierForm.Patches.cs`／`ModifierForm.Data.cs` 改為委派呼叫，只保留日誌與在地化。新增 `tests/AgainstRomeModifier.Tests/ExePatchModelTests.cs`（24 個測試，合成 exe 緩衝區），涵蓋四組補丁各自的狀態偵測、enable/disable round-trip、村落 setter 由任一舊版狀態遷移到 3x 再還原、以及預期位元組不符時中止且不破壞緩衝區。測試總數由 9 提升到 33。

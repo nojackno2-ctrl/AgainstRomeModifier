@@ -95,6 +95,10 @@ namespace AgainstRomeModifier
 
         public bool Apply(ref byte[] decompressed, bool enabled)
         {
+            if (Detect(decompressed) == PatchState.Unknown)
+            {
+                throw new InvalidOperationException($"Patch {Id} bytes do not match the original or supported patched pattern.");
+            }
             var sites = BciPattern.FindAllBciWordPatternSites(decompressed, Signature);
             if (sites.Count != ExpectedSiteCount)
             {
@@ -111,7 +115,7 @@ namespace AgainstRomeModifier
                     int currentVal = BitConverter.ToInt32(decompressed, offset);
                     if (currentVal != targetVal)
                     {
-                        BciPattern.WriteBciInt32(decompressed, offset, targetVal);
+                        BciPattern.WriteBciInt32(decompressed, offset, currentVal, targetVal, Id);
                         changed = true;
                     }
                 }

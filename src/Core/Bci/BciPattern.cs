@@ -5,10 +5,9 @@ namespace AgainstRomeModifier
 {
     public static class BciPattern
     {
-        public static void WriteBciInt32(byte[] buffer, int offset, int value)
+        public static void WriteBciInt32(byte[] buffer, int offset, int expectedValue, int value, string patchName)
         {
-            byte[] bytes = BitConverter.GetBytes(value);
-            Buffer.BlockCopy(bytes, 0, buffer, offset, 4);
+            Core.Patches.VerifiedBinaryWriter.WriteInt32(buffer, offset, expectedValue, value, patchName);
         }
 
         public static int FindBciWordPattern(byte[] decompressedBci, int?[] pattern, int startOffset = 0)

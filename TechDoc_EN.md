@@ -1,6 +1,6 @@
 # Against Rome Modifier Complete Technical Document
 
-Updated: 2026-07-04.
+Updated: 2026-07-05.
 
 This document describes the current code, data formats, reverse-engineering evidence, enabled patches, candidates, and rejected approaches. It is not a version history. Each feature has one current description. Reproducible runtime behavior and the latest concrete decompiler evidence take precedence over an older interpretation.
 
@@ -27,10 +27,11 @@ For the detailed maintenance chronology, debugging failures, checklists, and wor
 | `src/Core/Bci/` | BCI signature matching, word writes, and PFIL script handling. |
 | `src/Core/EndlessAi/` | AI Ultimate M1-M5 modules, state detection, and orchestration. |
 | `src/Core/TroopConfig.cs` | Field enums, unit IDs, names, factions, tiers, types, and balance baselines. |
+| `src/Core/Patches/` | Pure, WinForms-independent patch logic: `ObjdefPatcher`, `RessPatcher`, `ClScriptPatcher`, `ClEparaPatcher`, `ClScintPatcher`, `TeamDatPatcher`, `ExePatchModel`, `VerifiedBinaryWriter`. Byte computation and fixed-offset state detection/planning live here so they can be unit-tested without WinForms or copyrighted game files. |
 | `src/UI/ModifierForm.cs` | Main UI, controls, backup cache, parsed unit cache, shared state. |
-| `src/UI/ModifierForm.Data.cs` | Current-data reading, CSV-like parsing, comparisons, icons, EXE state detection. |
+| `src/UI/ModifierForm.Data.cs` | Current-data reading, CSV-like parsing, comparisons, icons, EXE state detection (delegates to `ExePatchModel`). |
 | `src/UI/ModifierForm.DataExt.cs` | Safe access to cached original unit rows. |
-| `src/UI/ModifierForm.Patches.cs` | Transactional writes, restores, EXE/INI/DAU/team/BCI patches. |
+| `src/UI/ModifierForm.Patches.cs` | Transactional writes, restores; delegates EXE/INI/DAU/team/BCI byte computation to `src/Core/Patches/` and only converts UI state to Options / logs results. |
 | `src/UI/ModifierForm.Presets.cs` | Actions to enable/disable all features at once. |
 | `src/UI/ModifierForm.SaveManager.cs` | Save discovery, ZIP backup/restore/delete, metadata cache. |
 | `src/UI/TroopPresetForm.cs` | Nine-property editing for 43 units and `.artroop` I/O. |
@@ -373,6 +374,8 @@ Use these before repeating whole-program analysis. Rebuild the inventory only fo
 
 ## 16. Verification Checklist
 
+- `dotnet test .\tests\AgainstRomeModifier.Tests\AgainstRomeModifier.Tests.csproj -c Release` passes (33 xUnit tests as of 2026-07-05). All fixtures are synthetic; no copyrighted game files are required, so this also runs in the `.github/workflows/ci.yml` CI job on a clean checkout. The legacy `tests/verify_split_patches` console project still depends on a local `遊戲原始檔案/` tree and is manual-only, not part of CI.
+- `ExePatchModelTests` specifically covers the EXE fixed-offset patches (focus-loss, spell-altar, legacy village-range restore, village setter 2x/2.5x/3x): state detection, enable/disable round-trips, migration from any legacy setter state to 3x and back, and abort-without-corruption when expected bytes don't match.
 - Build succeeds and JSON parses.
 - The current Chinese and English documents are included by the project as the
   intended embedded resources.
