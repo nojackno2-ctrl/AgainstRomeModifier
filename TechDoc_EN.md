@@ -25,7 +25,7 @@ For the detailed maintenance chronology, debugging failures, checklists, and wor
 | `src/Program.cs` | WinForms entry, elevation, High DPI startup, global exception handling. |
 | `src/Core/GameLZSS.cs` | LZSS and `PFIL@` wrapper decode/encode with bounds checks. |
 | `src/Core/Bci/` | BCI signature matching, word writes, and PFIL script handling. |
-| `src/Core/EndlessAi/` | AI Ultimate M1-M6 modules, state detection, and orchestration. |
+| `src/Core/EndlessAi/` | AI Ultimate M1-M14 modules, state detection, and orchestration. |
 | `src/Core/TroopConfig.cs` | Field enums, unit IDs, names, factions, tiers, types, and balance baselines. |
 | `src/Core/Patches/` | Pure, WinForms-independent patch logic: `ObjdefPatcher`, `RessPatcher`, `ClScriptPatcher`, `ClEparaPatcher`, `ClScintPatcher`, `TeamDatPatcher`, `ExePatchModel`, `VerifiedBinaryWriter`. Byte computation and fixed-offset state detection/planning live here so they can be unit-tested without WinForms or copyrighted game files. |
 | `src/UI/ModifierForm.cs` | Main UI, controls, backup cache, parsed unit cache, shared state. |
@@ -200,7 +200,8 @@ Every `MAPS/**/team.dat` is restored from its original first. The core switch th
 
 ## 10. Endless `ak_level.bci`
 
-AI Ultimate is exposed as six independent modules: M1 reinforcement size, M2 reinforcement cadence, M3 defeat recovery, M4 settlement spawning and retention, M5 starting resources, and M6 a four-settled-AI quota. The non-optional R0 repair restores rejected global CLAK edits. `src/Core/EndlessAi/EndlessAiOrchestrator.cs` owns module detection and application.
+AI Ultimate is refactored into 8 independent user-facing experience modules: M1 reinforcement size (P1), M2 Town Hall conversion batch (P10), M3 Dorfverteidigung defense batch (P12), M4 reinforcement cooldown (P3), M5 scheduler loop delay (P6), M6 guaranteed settlement spawning (P7), M7 starting resource stockpile (P13), and M8 four settled-AI quota (P16).
+To prevent game logic deadlocks and respawn-related crashes, the 6 technical safety patches: P2 (completed-job slot recycle), P4 (defeat cleanup timeline), P5 (team-death verification loops), P11 (camp demolish delay), P8 (active unit limit), and P9 (zero retreat quota) are merged into R0 as background safety fixes. They are applied automatically under the hood to ensure robust AI execution. `src/Core/EndlessAi/EndlessAiOrchestrator.cs` owns module detection and application.
 
 P15 is now a mandatory R0 safety repair. The two settled-party terminal
 transitions at decompressed offsets `0x109E8` and `0x16374` must remain on the
@@ -209,7 +210,7 @@ vanilla `DELETE_PARTY (256)` path. A previous build changed them to
 for an individual teardown acknowledgement. The missing acknowledgement can
 stall the simulation loop indefinitely. Detection classifies 257 and mixed
 256/257 states as Legacy, and both apply/restore migrate them to 256. P15 is no
-longer part of user-toggleable M3.
+longer part of user-toggleable M3. P2/P4/P5/P11/P8/P9 are also applied as permanent safety valves to prevent NPC job slot exhaustion, overlapping respawn crashes, and reinforcement freezes.
 
 `MAPS/ENDL_*/SCRIPT/ak_level.bci` is a `BCI0` compiled-script payload inside `PFIL@`. Patches search opcode/literal signatures and have been found with the same local sequence in `ENDL_000` through `ENDL_004`.
 
@@ -227,8 +228,8 @@ longer part of user-toggleable M3.
 - `ak_npc.bci` needs no patch for reactivation: its per-team state machine already calls `s_setNPCActive(team, 1)` when a healthy village exists for an inactive team. Save files are never modified.
 - All six AI scheduler delay sites use `5000..10000` ms. The first three are inner raider timers; the last three initialize and refresh the outer scheduler that gates the settlement/military dispatcher. Leaving the outer sites at their original 60-240 seconds made AI arrivals slow even when the inner timers were accelerated. A `1000..2000` ms interim build caused computer respawns to stall in runtime testing and is rejected; Apply recognizes and migrates that state back to 5-10 seconds.
 - Settlement-spawner default and 0/1/2/3-live-party probabilities are all set to 101, so spawning always triggers while an eligible team exists. In single player the occupied mask protects player team 0 and `pickTeam` selects only unoccupied CPU teams 1-7, giving a hard result of one player plus at most seven simultaneous CPU opponents without duplicating occupied teams.
-- M6 changes new-game initialization from `s_randRange(4, 2) -> v70` to `s_randRange(3, 3) -> v70`. Three type-1 village AIs plus the separate type-4 military settlement preserve the intended four settled opponents without consuming too many of CPU teams 1-7 and starving military/attack parties. Disabling restores the vanilla random 2-4 range, and the former incorrect `s_randRange(4, 4)` state is migrated automatically. Because `v70` is initialized when the game starts, existing saves are not rewritten.
-- Military-reinforcement unit-count threshold at decompressed `0x195F8`: `4 -> 40`; this is not an AI-player limit. Legacy value 8 is migrated on the next Apply. The gate at `0x1960C` remains `66,0`.
+- M8 changes new-game initialization from `s_randRange(4, 2) -> v70` to `s_randRange(4, 4) -> v70`. Four type-1 village AIs plus the separate type-4 military settlement produce five settled opponents. Disabling restores the vanilla random 2-4 range, and the former `s_randRange(3, 3)` state is migrated automatically. Because `v70` is initialized when the game starts, existing saves are not rewritten.
+- Military-reinforcement unit-count threshold at decompressed `0x195F8`: `4 -> 40`; this is not an AI-player limit. A 2026-07-05 `ESAVE_000` snapshot showed the active Roman military settlement had only about nine 20-member units when the original main-house resource conditions stopped later waves; the earlier bounded gate still let transient leader/civilian state suppress subsequent waves. P8 now replaces the condition tail beginning at `0x1960C` with three equivalent `teamUnits < 40` branches. Earlier type-4-settlement, building, and one-active-type-5-party checks remain intact. The old unconditional `jmp +272` remains rejected because it also skipped the 40-unit bound and could exhaust job slots. Threshold 8, threshold 40 with the original gate, both earlier bounded gates, and the old unconditional gate are migrated on Apply.
 - Older `112,272` gate bypasses and blanket 5000..10000 ms action-loop patches are migrated; only the three bounded reinforcement polling loops remain accelerated.
 - Earlier enabled builds with original spawner probabilities, the prior first-three-only scheduler state, Gemini's interim all-six-loops state, or all six retreat deadlines at 5000 ms are detected as legacy-enabled. Apply migrates them to guaranteed spawning, six bounded scheduler delays at 5-10 seconds, and the protected settlement-cleanup deadlines.
 - Disable/compatibility restore reverses every count, delay, limit, and gate value.

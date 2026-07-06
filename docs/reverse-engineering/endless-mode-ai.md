@@ -199,11 +199,11 @@ chain, 256 DELETE_PARTY, 257 DELETE_TEAM.
 - New-game initialization stores `s_randRange(4, 2)` in `v70`, so vanilla
   chooses a type-1 settlement cap of 2, 3, or 4 for that game. The settlement
   spawner stops once `v63[1]` reaches `v70`. Type-4 military settlement parties
-  are counted separately but consume the same finite CPU-team pool. M6 therefore
-  changes both bounds to `3`, producing `s_randRange(3, 3)`: three type-1
-  villages plus the separate type-4 military settlement keep four settled
+  are counted separately but consume the same finite CPU-team pool. M8 therefore
+  changes both bounds to `4`, producing `s_randRange(4, 4)`: four type-1
+  villages plus the separate type-4 military settlement keep five settled
   opponents while leaving team slots available for military/attack parties.
-  The former M6 implementation `s_randRange(4, 4)` is recognized as legacy and
+  The former M8 implementation `s_randRange(3, 3)` is recognized as legacy and
   migrated. Existing saves retain their already-initialized `v70` value.
 - AI Ultimate changes the Siedler spawner's default and 0/1/2/3-live-party
   probabilities from `0,0,80,60,40,20` to six `101` literals. In single player
@@ -309,7 +309,7 @@ AI Ultimate M1:
 
 **UPDATE 2026-07-03 (later session): RE-ENABLED with the missing piece.** The
 root cause of both rejected attempts below is identified as the spawner
-threshold at `0x195F8`: it was still `8`, so permanently donated units pushed
+  threshold at `0x195F8`: it was still `8`, so permanently donated units pushed
 `s_searchTeamUnits(team)` past the spawn condition after about one wave and
 reinforcements stopped. AI Ultimate now applies the `v56 <- pushlit 0` quota
 patch TOGETHER with raising the threshold `4 -> 40` (legacy `8` migrated).
@@ -376,7 +376,14 @@ delivering". The type-5 (military reinforcement) handler's flow in
   shows it is the reinforcement unit-count threshold: the spawner requires
   `v63[5] == 0` (one reinforcement party at a time), a settled type-4 party
   whose team has >= 2 buildings, main-house storage checks, a leader check,
-  and `s_searchTeamUnits(team) < <0x195F8 literal>`. The old `112,272`
+  and `s_searchTeamUnits(team) < <0x195F8 literal>`. A 2026-07-05 save proved
+  the main-house resource checks can become false with only about nine Roman
+  units present. The earlier bounded gate still allowed transient leader or
+  civilian state to suppress later waves. P8 now replaces the condition tail at
+  decompressed `0x1960C` with three equivalent `teamUnits < 40` branches, so
+  neither resources nor those transient predicates can stop a valid settled
+  team while the hard unit bound remains. Earlier spawner checks still require
+  a type-4 settlement, buildings, and no active type-5 reinforcement party. The old `112,272`
   bypass at `0x1960C` skipped this whole condition block, which is why it
   exhausted job slots.
 - A second `v56 <- pushloc 15` write exists at `0x111EC` but belongs to a

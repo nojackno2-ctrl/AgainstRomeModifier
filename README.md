@@ -36,12 +36,13 @@ research and personal modding project.
   village and its palisades finish clearing before that team slot is reused,
   accelerates the confirmed one-object-at-a-time cleanup cadence from about
   1.5 seconds to 0.1 seconds per object,
-  raises the military-reinforcement unit threshold from 4 to 40, and transfers
+  raises the military-reinforcement unit threshold from 4 to 40, bypasses the
+  main-house resource and transient leader/civilian checks that otherwise stop later waves below that limit, and transfers
   the whole reinforcement party into the village instead of retreating while
-  retaining the original safety gate and bounded polling. Endless settlement templates also receive a reversible
+  retaining the type-4 settlement, building, one-party-at-a-time, and unit-count safety gates. Endless settlement templates also receive a reversible
   starting-resource boost, and new games can fix the type-1 village-AI cap at
-  3 so the separate type-4 military settlement remains available and the total
-  settled-opponent target stays at four; unsafe global CLAK production edits stay disabled.
+  4 while keeping the separate type-4 military settlement available as the fifth
+  settled opponent; unsafe global CLAK production edits stay disabled.
 - Free construction, production, upgrades, and spell costs through `ress.ini`.
 - Unit stat editing for HP, damage, VW, AW, movement, sight, cooldown, range, and spell radius through `objdef.dau` and `cl_script.ini`.
 - Troop preset import/export through `.artroop` and one-click buttons to enable/disable all features.

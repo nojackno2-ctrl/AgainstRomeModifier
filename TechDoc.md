@@ -45,7 +45,7 @@
 | `src/UI/TroopPresetForm.cs` | 9 欄單位 preset 編輯 |
 | `src/Core/GameLZSS.cs` | 遊戲 LZSS 與 `PFIL@` 包裝 |
 | `src/Core/Bci/` | BCI 特徵碼搜尋、字組寫入與 PFIL 腳本封裝 |
-| `src/Core/EndlessAi/` | AI Ultimate M1–M6 模組、狀態偵測與套用協調 |
+| `src/Core/EndlessAi/` | AI Ultimate M1–M14 模組、狀態偵測與套用協調 |
 | `src/Core/Patches/` | 純 patch 邏輯（`ObjdefPatcher`、`RessPatcher`、`ClScriptPatcher`、`ClEparaPatcher`、`ClScintPatcher`、`TeamDatPatcher`、`ExePatchModel`、`VerifiedBinaryWriter`），不依賴 WinForms，`ModifierForm.Patches.cs` 只負責把 UI 狀態轉成 Options／委派呼叫與記錄日誌 |
 | `src/Core/Localization.cs` | 中英文 UI／log |
 | `data/game_schema.json` | 機器可讀的欄位、offset 與 patch metadata |
@@ -198,13 +198,14 @@ commit 後要先 Dispose／清空 rollback scope，再更新 UI；UI refresh 例
 
 ## 10. AI Ultimate Mode
 
-AI Ultimate 已拆成六個可獨立控制的模組：M1 增援規模、M2 增援節奏、M3 敗亡快速回收、M4 保證聚落生成與留守、M5 開局資源、M6 四個定居 AI 配額。R0 常駐修復不提供開關，負責還原已否決的全域 CLAK 修改。實作入口為 `src/Core/EndlessAi/EndlessAiOrchestrator.cs`。
+AI Ultimate 已拆解並重構為 8 個可獨立控制的體驗型功能模組：M1 軍事增援人數 (P1)、M2 主營轉兵批量 (P10)、M3 村防轉兵人數 (P12)、M4 軍事增援等待 (P3)、M5 排程迴圈優化 (P6)、M6 聚落必定生成 (P7)、M7 聚落開局資源 (P13)、M8 四個定居 AI 配額 (P16)。
+為了防止遊戲邏輯死結與重生死當，原先的 6 個技術型防錯補丁：P2 (任務完工回收)、P4 (敗亡撤退加速)、P5 (死亡判定去彈跳)、P11 (村莊拆除延遲)、P8 (增援限額門檻)、P9 (撤退配額歸零) 則與 P15 一同合併為常駐底層安全修復，不提供 UI 開關，但套用時會自動常駐生效，以確保 AI 運行健全度。實作入口為 `src/Core/EndlessAi/EndlessAiOrchestrator.cs`。
 
 P15 現為 R0 常駐安全修復：兩個定居型 party 的終態在解壓偏移
 `0x109E8`、`0x16374` 必須維持原版 `DELETE_PARTY (256)`。舊版曾改成
 `DELETE_TEAM (257)`，可能在 `ak_haupthaus.bci` 等待逐筆拆村確認時提前刪除
 team，造成確認永不回傳與模擬迴圈死等。偵測會把 257 或 256/257 混合狀態
-視為 Legacy，套用或還原時都遷移回 256；P15 不再屬於可切換的 M3。
+視為 Legacy，套用或還原時都遷移回 256；P15 不再屬於可切換的 M3。此外，P2/P4/P5/P11/P8/P9 亦一同作為安全閥常駐套用，以防止工作槽塞滿、重生重疊死當及增援中斷。
 
 主要路徑：`MAPS/ENDL_000..004/SCRIPT/ak_level.bci`。
 
@@ -228,13 +229,13 @@ team，造成確認永不回傳與模擬迴圈死等。偵測會把 257 或 256/
   在定居前就撤退）。
 - 死亡確認計數（`0x1068C`）：20 → 3 個連續 tick（村莊、領袖、村民、成員
   全滅的確認去彈跳）。
-- 軍事增援部隊數門檻：4 → 40（`s_searchTeamUnits(team) < 40`）；這不是電腦玩家數上限。舊版的 8 可辨識並於下次套用遷移。
+- 軍事增援部隊數門檻：4 → 40（`s_searchTeamUnits(team) < 40`）；這不是電腦玩家數上限。2026-07-05 的 `ESAVE_000` 證實羅馬軍事聚落僅約 9 支 20 人兵團時，原始主建築資源條件已使後續增援停止；先前保留的領袖／村民判斷仍會因短暫狀態阻斷後續波次。P8 因此把 `0x1960C` 起的條件尾端改成三段等價的 `teamUnits < 40` 有界判斷。更前面的 type-4 聚落、建築存在、同時僅一支 type-5 增援隊等安全條件仍保留。舊版無條件 `jmp +272` 仍屬不安全狀態；它連 40 門檻也跳過，會耗盡工作槽。舊門檻 8、目前門檻 40 但原始 gate、兩種舊有界 gate、以及舊無條件 gate 都會在下次套用遷移至新條件。
 - completed-job recycle：0 → 1。
 - 增援捐贈公式維持原版；`v56[party]` 撤退配額由 `[90,15]` 改為 `[66,0]`，使整個 type-5 增援黨團移交村莊而不撤退。此補丁必須與門檻 40 同步套用及還原；先前只改配額、門檻仍為 8 的組合會在約一波後停止增援。
 - gate 保持原版 `66,0`。
 - 六個 AI 排程延遲點全部改為 `5000..10000 ms`。前三個是內層突襲計時器；後三個是外層排程的初始與更新範圍，會直接限制呼叫定居／軍事增援生成器的 dispatcher。後三個若維持原版 60–240 秒，即使前三個已加速，AI 出場仍會變慢。曾測試 `1000..2000 ms`，實機出現電腦不再重生，因此已否決；該暫行狀態可辨識並自動遷回 5–10 秒。
 - 定居生成器的 default 與 0/1/2/3 現存政黨分支機率都改為 101，使有合格隊伍時必定觸發。單人模式的 occupied mask 固定保護玩家 team 0，`pickTeam` 只會從尚未占用的 CPU team 1–7 選擇，因此結果上限是玩家加 7 個電腦（共 8 隊），且不會重複建立已占用隊伍。
-- M6 將新局初始化的 `s_randRange(4, 2) -> v70` 改為 `s_randRange(3, 3) -> v70`，讓 type-1 村莊型 AI 固定為 3，搭配獨立的 type-4 軍事定居 AI 維持四個定居對手，並避免過度占用 CPU team 1～7 而壓縮軍事／討伐 party 的可用名額。停用時還原 2～4 隨機值；舊版錯誤的 `s_randRange(4, 4)` 狀態可自動遷移。此值在開局時即寫入狀態，因此不改寫既有存檔。
+- M8 將新局初始化的 `s_randRange(4, 2) -> v70` 改為 `s_randRange(4, 4) -> v70`，讓 type-1 村莊型 AI 固定為 4，並保留獨立的 type-4 軍事定居 AI 作為第五個定居對手。停用時還原 2～4 隨機值；舊版 `s_randRange(3, 3)` 狀態可自動遷移。此值在開局時即寫入狀態，因此不改寫既有存檔。
 - 聚落模板：`MAPS/ENDL_*/Endlos_*_Siedlung*.sdl`（解壓後為 INI 文字）主建築
   （namedef 含 `_Haupt`；羅馬為 `Hauptzelt`）的 `resv` 由 `0,0,0,0,0,0` 改為
   `614,300,372,250,460,288`（各欄取原版戰役 AI 聚落實測最大值），加速村莊型
@@ -333,6 +334,14 @@ SHA-256 `49839eb76743893b879be201c729c8104c09415acccc29928fbcea29eee02429`），
 - 已知邊界：另有一組「raw ms」讀取器（`0x55e520`，7 個呼叫者，`timeGetTime - baseline` 直接回傳
   整數毫秒、無常數可改），推測供 UI／動畫／輸入等非模擬用途。若日後實測發現某子系統只加速一半，
   即為該路徑未被縮放，屆時需改用 API-hook（注入）方案才能全域一致。
+- **與 BCI 腳本毫秒常數的關係（2026-07-05 追蹤確認）**：BCI 腳本內所有「等待 N 毫秒」型的
+  deadline 判斷（例：`v61 := s_getTime() + 600000`，見 §11.1 各修改）皆呼叫 host function
+  `s_getTime()`，其實作鏈為 `s_getTime → 0x5098d0 → 0x566b90`，該函式直接呼叫本節 patch 的主時脈
+  `0x55e530` 並乘上 `0.001`（ns→ms，常數位於 VA `0x60673b`，未被本功能改動）換算成整數毫秒回傳。
+  **因此本加速器對所有 BCI 毫秒常數（P3/P4/P6/P11 等既有修改的目標值）具有乘法疊加效果**：
+  例如「5000ms 重生」在時脈倍率 `s` 下，實際只需真實時間 `5000/s` ms 即觸發，兩者不是互斥而是相乘。
+  另發現遊戲另有一組獨立的 `s_setTimeFactor`／`s_getTimeFactor`（全域變數 `0x77186c`，一般浮點縮放
+  值），其實作未參照 `s_getTime()` 或主時脈，與本功能無關，尚不知其實際用途。
 
 ## 12. 強制英文與語言回復
 
@@ -360,7 +369,7 @@ ZIP 備份先建立 `.tmp`，加入修改器產生的 `manifest.json`，成功�
 
 - `mainTabControl` 的 header 故意隱藏，左側按鈕負責導航。
 - `StyleNavButton` 綁定前必須先建立對應 `TabPage`。
-- `settingsLayout` 第一列放置 `pnlNumericCard`（系統）、`pnlSwitchesCard`（資源）與 `pnlBuildCard`（建設）三欄；第二列的 `pnlAiCard` 橫跨三欄，容納 M1–M6 並依寬度換行。
+- `settingsLayout` 第一列放置 `pnlNumericCard`（系統）、`pnlSwitchesCard`（資源）與 `pnlBuildCard`（建設）三欄；第二列的 `pnlAiCard` 橫跨三欄，容納 M1–M14 並依寬度換行。
 - `pnlTipsCard` 指南卡片拆分為左右雙欄，左半部 `lblTipsContent` 顯示操作指引，右半部 `lblTipsDetail` 顯示功能詳細說明，以避免說明文字過長導致的高度截斷問題。
 - 新 toggle 必須同步 UI field、localization、apply、restore、state detection 與文件。
 - 移除舊有的 `.arpreset` 全域設定檔匯入／匯出功能，改由一鍵「所有功能開啟」與「所有功能關閉」按鈕控制所有開關狀態。
