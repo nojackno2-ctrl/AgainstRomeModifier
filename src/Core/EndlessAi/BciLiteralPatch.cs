@@ -52,7 +52,7 @@ namespace AgainstRomeModifier
                 if (_customDetectSite != null)
                 {
                     var state = _customDetectSite(decompressed, site);
-                    if (state == PatchState.Unknown) return PatchState.Unknown;
+                    if (state == PatchState.Unknown) return PatchState.Legacy;
                     if (state == PatchState.Legacy)
                     {
                         allOriginal = false;
@@ -82,7 +82,10 @@ namespace AgainstRomeModifier
                         }
                         else
                         {
-                            return PatchState.Unknown;
+                            // Unrecognized value (e.g., from experimental builds);
+                            // treat as Legacy so Apply can safely overwrite.
+                            allOriginal = false;
+                            allUltimate = false;
                         }
                     }
                 }
@@ -95,13 +98,16 @@ namespace AgainstRomeModifier
 
         public bool Apply(ref byte[] decompressed, bool enabled)
         {
-            if (Detect(decompressed) == PatchState.Unknown)
+            var currentState = Detect(decompressed);
+            if (currentState == PatchState.Unknown)
             {
+                if (!enabled) return false;
                 throw new InvalidOperationException($"Patch {Id} bytes do not match the original or supported patched pattern.");
             }
             var sites = BciPattern.FindAllBciWordPatternSites(decompressed, Signature);
             if (sites.Count != ExpectedSiteCount)
             {
+                if (!enabled) return false;
                 throw new InvalidOperationException($"Patch {Id} signature count mismatch. Expected {ExpectedSiteCount}, found {sites.Count}.");
             }
 

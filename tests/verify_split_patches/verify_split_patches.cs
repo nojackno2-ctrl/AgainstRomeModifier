@@ -85,7 +85,7 @@ namespace AgainstRomeModifierTests {
                 Console.WriteLine("測試 1：偵測原始原版狀態...");
 
                 // Detailed debug of module and patch states
-                foreach (var module in new[] { orchestrator.M1, orchestrator.M2, orchestrator.M3, orchestrator.M4, orchestrator.M5, orchestrator.M6, orchestrator.R0 }) {
+                foreach (var module in new[] { orchestrator.M1, orchestrator.M2, orchestrator.M3, orchestrator.M4, orchestrator.M5, orchestrator.R0 }) {
                     var mState = orchestrator.DetectModule(tempDir, module);
                     Console.WriteLine($"Module {module.Name} ({module.Id}) state: {mState}");
                     foreach (var patch in module.Patches) {
@@ -199,11 +199,11 @@ namespace AgainstRomeModifierTests {
                 Console.WriteLine("[成功] 測試 4 通過。所有還原後檔案之解壓內容與原版檔案 100% 相同！");
 
                 // Test 5: 逐模組獨立套用（驗證新 UI 各模組獨立勾選的底層機制）。
-                // 只啟用 M1、M4 與 M6（M4 含 P8+P9 硬耦合），其餘保持關閉，驗證各模組狀態互不干擾。
-                Console.WriteLine("測試 5：混合模組狀態（僅啟用 M1、M4、M6）...");
+                // 只啟用 M1、M4（M4 含 P8+P9 耦合），其餘保持關閉，驗證各模組狀態互不干擾。
+                Console.WriteLine("測試 5：混合模組狀態（僅啟用 M1、M4）...");
                 rollback = new FileRollbackScope();
                 var mixed = new Dictionary<string, bool> {
-                    { "M1", true }, { "M2", false }, { "M3", false }, { "M4", true }, { "M5", false }, { "M6", true }
+                    { "M1", true }, { "M2", false }, { "M3", false }, { "M4", true }, { "M5", false }
                 };
                 foreach (var module in orchestrator.UserModules) {
                     orchestrator.ApplyModule(tempDir, module, mixed[module.Id]);
@@ -384,13 +384,6 @@ namespace AgainstRomeModifierTests {
                 int q = BciPattern.FindBciWordPattern(d, quotaSig);
                 if (q < 0) Fail($"{name}: 找不到 P9 撤退配額簽章");
                 else if (I32(d, q + 44) != 66 || I32(d, q + 48) != 0) Fail($"{name}: P9 撤退配額應為 66,0，實為 {I32(d, q + 44)},{I32(d, q + 48)}");
-
-                // P16: three type-1 settlements leave room for the type-4 military settlement.
-                int?[] settlementCapSig = { 66, null, 66, null, 128, 16, 73, -2, 86, 82, 70 };
-                int cap = BciPattern.FindBciWordPattern(d, settlementCapSig);
-                if (cap < 0) Fail($"{name}: 找不到 P16 村莊上限簽章");
-                else if (I32(d, cap + 4) != 3 || I32(d, cap + 12) != 3)
-                    Fail($"{name}: P16 type-1 配額應為 3,3，實為 {I32(d, cap + 4)},{I32(d, cap + 12)}");
             }
 
             // ---- ak_haupthaus.bci ----

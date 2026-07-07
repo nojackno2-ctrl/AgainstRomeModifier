@@ -203,7 +203,7 @@ namespace AgainstRomeModifier {
                 bool foodHealing10x = chkFoodHealing10x.Checked;
                 bool toEng = chkToEng.Checked;
                 bool[] aiModuleEnabled = {
-                    chkAiM1.Checked, chkAiM2.Checked, chkAiM3.Checked, chkAiM4.Checked, chkAiM5.Checked, chkAiM6.Checked
+                    chkAiM1.Checked, chkAiM2.Checked, chkAiM3.Checked, chkAiM4.Checked, chkAiM5.Checked
                 };
                 bool dgVoodoo = chkDgVoodoo.Checked;
                 bool villageBuildRange = chkVillageBuildRange.Checked;
@@ -255,7 +255,7 @@ namespace AgainstRomeModifier {
                     }
 
                     // F. endless AI scripts, templates, and economy modules
-                    // 每個模組(M1..M6)由各自的獨立勾選框驅動；R0 常駐修復無論如何都執行。
+                    // 每個模組(M1..M5)由各自的獨立勾選框驅動；R0 常駐修復無論如何都執行。
                     var orchestrator = new EndlessAiOrchestrator();
                     for (int i = 0; i < orchestrator.UserModules.Count && i < aiModuleEnabled.Length; i++) {
                         orchestrator.ApplyModule(gamePath, orchestrator.UserModules[i], aiModuleEnabled[i]);
@@ -336,7 +336,7 @@ namespace AgainstRomeModifier {
                 chkFocusLoss.Checked = false;
                 chkNoSpellAltar.Checked = false;
                 chkToEng.Checked = false;
-                chkAiM1.Checked = false; chkAiM2.Checked = false; chkAiM3.Checked = false; chkAiM4.Checked = false; chkAiM5.Checked = false; chkAiM6.Checked = false;
+                chkAiM1.Checked = false; chkAiM2.Checked = false; chkAiM3.Checked = false; chkAiM4.Checked = false; chkAiM5.Checked = false;
                 chkHousingCapacity20x.Checked = false; chkStorageCapacity10x.Checked = false;
                 chkFastBuildUpgradeRepair.Checked = false;
                 chkFoodHealing10x.Checked = false;
@@ -473,7 +473,7 @@ namespace AgainstRomeModifier {
                 rollback = null;
                 chkFocusLoss.Checked = false;
                 chkNoSpellAltar.Checked = false;
-                chkAiM1.Checked = false; chkAiM2.Checked = false; chkAiM3.Checked = false; chkAiM4.Checked = false; chkAiM5.Checked = false; chkAiM6.Checked = false;
+                chkAiM1.Checked = false; chkAiM2.Checked = false; chkAiM3.Checked = false; chkAiM4.Checked = false; chkAiM5.Checked = false;
                 chkDgVoodoo.Checked = IsDgVoodooInstalled(gamePath);
                 chkVillageBuildRange.Checked = false;
                 SetGameSpeedSelection(1);
