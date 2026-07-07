@@ -195,6 +195,7 @@
             "singlePlayerBound": "The occupied mask reserves player team 0; pickTeam selects only unoccupied CPU teams 1-7, so at most seven computer opponents coexist and a defeated team becomes eligible again after its party slot is deleted."
           },
           "settlementCountLimit": {
+            "status": "deprecated-rejected-by-user",
             "module": "M6",
             "decompressedPatternOffset": "0x1B690",
             "decompressedUpperBoundOffset": "0x1B694",

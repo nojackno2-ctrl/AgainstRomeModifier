@@ -112,7 +112,7 @@
   still the only remaining open item.
 - File: `MAPS/ENDL_*/SCRIPT/ak_level.bci`.
 - Format: `PFIL@` compressed `BCI0` compiled script.
-- Modifier UI: six independent AI Ultimate modules (M1-M6); rejected global CLAK edits are restored by mandatory repair R0.
+- Modifier UI: five active independent AI Ultimate modules (M1-M5, with M6 rejected and disabled); rejected global CLAK edits are restored by mandatory repair R0.
 - Create-unit call: decompressed BCI offset `0x17B60`,
   `s_addNPCJob_createUnit(local7, 3, 8, 0, 0, 4, 4, 1, 0)` after reversing
   BCI stack argument order.
@@ -222,7 +222,7 @@
   have no Gruender/Nachschub equivalent). Its spawner (decompressed `0x18E8C`
   region) gates creation on `v63[4] <= 0` (≤1 founder), a `60 >= s_randRange(1,100)`
   60% probability roll, then `pickTeam` (`~occupied & tribeMask & v68`). Because
-  M6 (guaranteed Siedler villages) + M5 (accelerated scheduler) saturate the
+  M6 (guaranteed Siedler villages, which was later rejected and removed from the active modifier UI) + M5 (accelerated scheduler) saturate the
   7-slot single-player CPU-team pool with type-1 villages and raiders, the
   one-at-a-time 60%-gated founder loses the race, `pickTeam` returns `-1`, and
   Rome never reinforces. P17 raises the threshold literal `60 -> 100` so
