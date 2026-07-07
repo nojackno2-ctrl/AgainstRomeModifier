@@ -114,13 +114,16 @@ namespace AgainstRomeModifier {
         private Button btnStartGame = null!;
         private ContextMenuStrip menuRestore = null!;
 
-        // 記憶體原版檔案備份字典，用以在修改時直接讀取乾淨數據，避免疊加修改
-        private Dictionary<string, byte[]> backupFiles = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
+        // 核心解耦服務實例
+        private AgainstRomeModifier.Core.Services.BackupManager backupManager = null!;
+        private AgainstRomeModifier.Core.Services.PatchEngine patchEngine = null!;
 
-        // 快取的備份單兵屬性欄位字典 (以兵種名稱為 Key)
-        private Dictionary<string, string[]> _backupUnitRows = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
-        private bool _backupUnitRowsParsed = false;
-        private readonly object _backupUnitRowsLock = new object();
+        private class FormLogger : AgainstRomeModifier.Core.Services.ILogger
+        {
+            private readonly ModifierForm _form;
+            public FormLogger(ModifierForm form) => _form = form;
+            public void Log(string message) => _form.Log(message);
+        }
 
         // 備份存檔快取
         private class BackupSaveCache {
@@ -224,10 +227,28 @@ namespace AgainstRomeModifier {
             UpdateLanguageButtonStyles();
             ApplyLanguageToUI();
 
+            var logger = new FormLogger(this);
+            backupManager = new AgainstRomeModifier.Core.Services.BackupManager(logger);
+            patchEngine = new AgainstRomeModifier.Core.Services.PatchEngine(logger);
+
             Log(Loc.Get("LogConstructCompleted"));
             // 將內嵌的 Backup.zip 載入記憶體
-            LoadBackupZipToMemory();
-            RepairRetiredLeaderGloryScriptOnStartup();
+            backupManager.LoadBackupZipToMemory(GetGamePath());
+            
+            try {
+                string gamePath = GetGamePath();
+                if (!string.IsNullOrWhiteSpace(gamePath) && Directory.Exists(gamePath)) {
+                    var opts = patchEngine.DetectCurrentPatchState(gamePath, backupManager);
+                    // 執行套用做為修復遷移 (在 startup 只對 foodHealing 修復，但由於 ApplyPatches 會順便修復，在此直接 Apply 即可)
+                    using (var rollback = new FileRollbackScope()) {
+                        patchEngine.ApplyPatches(gamePath, opts, backupManager, rollback);
+                        rollback.Commit();
+                    }
+                }
+            } catch (Exception ex) {
+                Log("舊版首領腳本安全遷移失敗: " + ex.Message);
+            }
+
             // 初始化資料與讀取自訂兵種資訊
             InitializeData();
             // 註冊表單關閉事件以正確釋放字型與圖形物件資源，防止記憶體洩漏
@@ -1849,38 +1870,7 @@ namespace AgainstRomeModifier {
         /// <summary>
         /// 確保備份的 objdef.dau 檔案已被解析並快取至記憶體中。
         /// </summary>
-        private void EnsureBackupUnitRowsParsed() {
-            string? errorMsg = null;
-            lock (_backupUnitRowsLock) {
-                if (_backupUnitRowsParsed) return;
-                try {
-                    byte[]? origBytes;
-                    if (backupFiles.TryGetValue("SYSTEM/DATA_MP/DEFAULTS/objdef.dau", out origBytes)) {
-                        byte[] decompBytes = GameLZSS.DecompressPfil(origBytes!);
-                        string decomp = Encoding.GetEncoding(1251).GetString(decompBytes);
-                        string lineEnding = decomp.Contains("\r\n") ? "\r\n" : "\n";
-                        string[] lines = decomp.Split(new string[] { lineEnding }, StringSplitOptions.None);
-                        for (int idx = 2; idx < lines.Length; idx++) {
-                            string line = lines[idx];
-                            if (line.Length < 100) continue;
-                            string[] cols = ParseCsvLine(line);
-                            if (cols.Length < 192) continue;
-                            string name = cols[52].Trim();
-                            if (TroopConfig.UnitMeta.ContainsKey(name) || name == "FigZivMan00_Zivilist") {
-                                _backupUnitRows[name] = cols;
-                            }
-                        }
-                    }
-                    _backupUnitRowsParsed = true;
-                } catch (Exception ex) {
-                    errorMsg = "Failed to parse backup objdef.dau: " + ex.Message;
-                    _backupUnitRowsParsed = true;
-                }
-            }
-            if (errorMsg != null) {
-                Log(errorMsg);
-            }
-        }
+
 
         /// <summary>
         /// 自訂導覽列按鈕繪製樣式，包含 Hover 漸層與選取指示條
@@ -2058,7 +2048,7 @@ namespace AgainstRomeModifier {
             ReloadTechnicalDocument();
 
             // 重新載入表格與存檔數據
-            if (backupFiles != null && backupFiles.Count > 0) {
+            if (backupManager != null && backupManager.BackupFiles.Count > 0) {
                 LoadDefaultStatsData();
                 LoadCurrentData(false);
                 RefreshSavesAndBackups();
