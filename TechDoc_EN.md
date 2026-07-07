@@ -200,8 +200,8 @@ Every `MAPS/**/team.dat` is restored from its original first. The core switch th
 
 ## 10. Endless `ak_level.bci`
 
-AI Ultimate is refactored into 8 independent user-facing experience modules: M1 reinforcement size (P1), M2 Town Hall conversion batch (P10), M3 Dorfverteidigung defense batch (P12), M4 reinforcement cooldown (P3), M5 scheduler loop delay (P6), M6 guaranteed settlement spawning (P7), M7 starting resource stockpile (P13), and M8 four settled-AI quota (P16).
-To prevent game logic deadlocks and respawn-related crashes, the 6 technical safety patches: P2 (completed-job slot recycle), P4 (defeat cleanup timeline), P5 (team-death verification loops), P11 (camp demolish delay), P8 (active unit limit), and P9 (zero retreat quota) are merged into R0 as background safety fixes. They are applied automatically under the hood to ensure robust AI execution. `src/Core/EndlessAi/EndlessAiOrchestrator.cs` owns module detection and application.
+AI Ultimate is refactored into 5 independent user-facing experience modules: M1 reinforcement size (P1 unit count + P10 Town Hall conversion + P12 Dorfverteidigung defense batch), M2 reinforcement tempo (P3 cooldown + P6 scheduler loop delay), M3 fast defeat recovery (P4 retreat deadline + P5 team-death debounce + P11 camp demolish delay), M4 guaranteed settlement spawn & garrison (P7 settlement spawn probability + P8 active unit limit + P9 zero retreat quota), and M5 AI starting resources (P13 stockpile).
+To prevent game logic deadlocks and respawn-related crashes, P2 (completed-job slot recycle) and P15 (DELETE_PARTY safety migration) are merged into R0 as mandatory background safety fixes. They are applied automatically under the hood to ensure robust AI execution. `src/Core/EndlessAi/EndlessAiOrchestrator.cs` owns module detection and application.
 
 P15 is now a mandatory R0 safety repair. The two settled-party terminal
 transitions at decompressed offsets `0x109E8` and `0x16374` must remain on the

@@ -12,7 +12,6 @@ namespace AgainstRomeModifier
         public EndlessAiModule M3 { get; }
         public EndlessAiModule M4 { get; }
         public EndlessAiModule M5 { get; }
-        public EndlessAiModule M6 { get; }
         public EndlessAiModule R0 { get; }
 
         public List<EndlessAiModule> UserModules { get; }
@@ -128,29 +127,6 @@ namespace AgainstRomeModifier
             // P13: 聚落模板開局資源
             var p13 = new P13_SettlementTemplatePatch();
 
-            // P16: Keep four settled opponents without starving the separate type-4
-            // military settlement and attack parties of team slots.  Vanilla adds
-            // the type-4 settlement outside v70, so fix the type-1 cap at three.
-            // Recognize the former 4/4 implementation as legacy and migrate it.
-            var p16 = new BciLiteralPatch(
-                "P16",
-                "MAPS/ENDL_*/SCRIPT/ak_level.bci",
-                new int?[] { 66, null, 66, null, 128, 16, 73, -2, 86, 82, 70 },
-                new int[] { 1, 3 },
-                new int[] { 4, 2 },
-                new int[] { 3, 3 },
-                1,
-                (buffer, site) =>
-                {
-                    int upper = BitConverter.ToInt32(buffer, site + 4);
-                    int lower = BitConverter.ToInt32(buffer, site + 12);
-                    if (upper == 4 && lower == 2) return PatchState.Original;
-                    if (upper == 3 && lower == 3) return PatchState.Ultimate;
-                    if (upper == 4 && lower == 4) return PatchState.Legacy;
-                    return PatchState.Unknown;
-                }
-            );
-
             // Restore the unsafe legacy DELETE_TEAM terminal transitions.
             var p15 = new P15_SettledPartyDeleteTeamPatch();
 
@@ -162,10 +138,9 @@ namespace AgainstRomeModifier
             M3 = new EndlessAiModule("M3", "敗亡快速回收", new List<IEndlessPatch> { p4, p5, p11 });
             M4 = new EndlessAiModule("M4", "保證聚落生成與留守", new List<IEndlessPatch> { p7, p8, p9 });
             M5 = new EndlessAiModule("M5", "開局資源", new List<IEndlessPatch> { p13 });
-            M6 = new EndlessAiModule("M6", "四個定居 AI 配額", new List<IEndlessPatch> { p16 });
             R0 = new EndlessAiModule("R0", "常駐修復", new List<IEndlessPatch> { p14, p15 });
 
-            UserModules = new List<EndlessAiModule> { M1, M2, M3, M4, M5, M6 };
+            UserModules = new List<EndlessAiModule> { M1, M2, M3, M4, M5 };
         }
 
         public void ClearCache()
@@ -259,7 +234,9 @@ namespace AgainstRomeModifier
                         allUltimate = false;
                         continue;
                     }
-                    return PatchState.Unknown;
+                    // 檔案數量不符預期但仍有找到檔案，視為不完整套用的 Legacy 狀態，而不應直接阻斷為 Unknown
+                    allOriginal = false;
+                    allUltimate = false;
                 }
 
                 foreach (string path in paths)
@@ -330,7 +307,7 @@ namespace AgainstRomeModifier
         public bool ApplyModule(string gamePath, EndlessAiModule module, bool enabled)
         {
             var state = DetectModule(gamePath, module);
-            if (state == PatchState.Unknown)
+            if (state == PatchState.Unknown && enabled)
             {
                 throw new InvalidOperationException($"模組 {module.Name} ({module.Id}) 處於未知或不相容狀態，無法安全套用。");
             }

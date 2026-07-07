@@ -282,7 +282,9 @@ namespace AgainstRomeModifier
 
             if (isOriginal) return PatchState.Original;
             if (isUltimate) return PatchState.Ultimate;
-            return PatchState.Unknown;
+            // Signature found but values are non-standard (e.g., partial or experimental patch);
+            // treat as Legacy so Apply can safely overwrite to the correct values.
+            return PatchState.Legacy;
         }
 
         public bool Apply(ref byte[] decompressed, bool enabled)
@@ -290,6 +292,7 @@ namespace AgainstRomeModifier
             int offset = BciPattern.FindBciWordPattern(decompressed, SpawnerPattern);
             if (offset < 0)
             {
+                if (!enabled) return false;
                 throw new InvalidOperationException("P7 signature not found.");
             }
 
@@ -333,10 +336,18 @@ namespace AgainstRomeModifier
         private const int OriginalActivePartyLimit = 4;
         private const int LegacyActivePartyLimit = 8;
         private const int UltimateActivePartyLimit = 40;
-        private const int ActiveLimitOriginalOpcode = 66;
-        private const int ActiveLimitOriginalValue = 0;
-        private const int ActiveLimitPatchedOpcode = 112;
-        private const int ActiveLimitPatchedRelativeJump = 272;
+
+        // Original gate: 5× pushlit 0 (66,0) + pushsym 6 (90,6) + cmp (102) + jmp (117) + done (32)
+        // Total 15 words at offset +32 from sequence start.
+        // We keep these as the canonical "original" values to restore to.
+        private static readonly int[] OriginalGateWords = {
+            66, 0, 66, 0, 66, 0, 66, 0, 66, 0, 90, 6, 102, 117, 32
+        };
+
+        // Legacy BoundedGate variants introduced in experimental builds.
+        // All share this shape: pushsym,X, jmp,Y repeated 3× then jmprel,Z, done.
+        // We recognize them generically by checking the first word is 90 (pushsym).
+        private const int BoundedGateLeadOpcode = 90;
 
         public PatchState Detect(byte[] decompressed)
         {
@@ -344,13 +355,13 @@ namespace AgainstRomeModifier
             if (sequenceOffset < 0) return PatchState.Unknown;
 
             int currentLimit = BitConverter.ToInt32(decompressed, sequenceOffset + 12);
-            int currentOpcode = BitConverter.ToInt32(decompressed, sequenceOffset + 32);
-            int currentValue = BitConverter.ToInt32(decompressed, sequenceOffset + 36);
 
-            bool isOriginalGate = currentOpcode == ActiveLimitOriginalOpcode && currentValue == ActiveLimitOriginalValue;
-            bool isPatchedGate = currentOpcode == ActiveLimitPatchedOpcode && currentValue == ActiveLimitPatchedRelativeJump;
+            // Check gate region: starts at offset +32, first word indicates gate type
+            int gateStart = sequenceOffset + 32;
+            int firstGateWord = BitConverter.ToInt32(decompressed, gateStart);
 
-            if (!isOriginalGate && !isPatchedGate) return PatchState.Unknown;
+            bool isOriginalGate = IsOriginalGate(decompressed, gateStart);
+            bool isBoundedGate = firstGateWord == BoundedGateLeadOpcode && !isOriginalGate;
 
             if (currentLimit == OriginalActivePartyLimit && isOriginalGate)
             {
@@ -360,12 +371,13 @@ namespace AgainstRomeModifier
             {
                 return PatchState.Ultimate;
             }
-            if (currentLimit == LegacyActivePartyLimit || isPatchedGate)
+            // Any non-original gate or legacy limit values → Legacy (can be migrated)
+            if (isBoundedGate || currentLimit == LegacyActivePartyLimit)
             {
                 return PatchState.Legacy;
             }
-
-            return PatchState.Unknown;
+            // Any other limit value with any gate — treat as Legacy to allow migration
+            return PatchState.Legacy;
         }
 
         public bool Apply(ref byte[] decompressed, bool enabled)
@@ -373,6 +385,7 @@ namespace AgainstRomeModifier
             int sequenceOffset = FindActiveLimitSequenceOffset(decompressed);
             if (sequenceOffset < 0)
             {
+                if (!enabled) return false;
                 throw new InvalidOperationException("P8 active limit sequence not found.");
             }
 
@@ -387,26 +400,46 @@ namespace AgainstRomeModifier
                 changed = true;
             }
 
-            // Always restore the original gate to bypass old versions' unbounded jumps
+            // Always restore the entire gate to original values, handling any legacy variant
             int gateOffset = sequenceOffset + 32;
-            if (BitConverter.ToInt32(decompressed, gateOffset) != ActiveLimitOriginalOpcode ||
-                BitConverter.ToInt32(decompressed, gateOffset + 4) != ActiveLimitOriginalValue)
+            for (int i = 0; i < OriginalGateWords.Length; i++)
             {
-                int currentGateOpcode = BitConverter.ToInt32(decompressed, gateOffset);
-                int currentGateValue = BitConverter.ToInt32(decompressed, gateOffset + 4);
-                BciPattern.WriteBciInt32(decompressed, gateOffset, currentGateOpcode, ActiveLimitOriginalOpcode, "P8 active limit gate opcode");
-                BciPattern.WriteBciInt32(decompressed, gateOffset + 4, currentGateValue, ActiveLimitOriginalValue, "P8 active limit gate value");
-                changed = true;
+                int byteOffset = gateOffset + i * 4;
+                int current = BitConverter.ToInt32(decompressed, byteOffset);
+                if (current != OriginalGateWords[i])
+                {
+                    BciPattern.WriteBciInt32(decompressed, byteOffset, current, OriginalGateWords[i], $"P8 gate word {i}");
+                    changed = true;
+                }
             }
 
             return changed;
         }
 
+        /// <summary>
+        /// Checks whether the gate region matches the original 5×pushlit_0 pattern.
+        /// </summary>
+        private static bool IsOriginalGate(byte[] data, int gateOffset)
+        {
+            if (gateOffset + OriginalGateWords.Length * 4 > data.Length) return false;
+            for (int i = 0; i < OriginalGateWords.Length; i++)
+            {
+                if (BitConverter.ToInt32(data, gateOffset + i * 4) != OriginalGateWords[i])
+                    return false;
+            }
+            return true;
+        }
+
         private static int FindActiveLimitSequenceOffset(byte[] decompressedBci)
         {
+            // Use null wildcards for the entire gate region (15 words at offset 8..22)
+            // so we can match both the original gate (66,0 series) and any legacy
+            // BoundedGate variant (90,11,117,... jump instructions).
+            // This 23-word pattern is unique in all ak_level.bci files, so no tail anchor is required.
             int?[] pattern = new int?[] {
-                0x5A, 0, 0x42, null, 96, 98, 0x5B, 11, null, null,
-                0x42, 0, 0x42, 0, 0x42, 0, 0x42, 0, 0x5A, 6, 102, 117, 32
+                0x5A, 0, 0x42, null, 96, 98, 0x5B, 11,
+                null, null, null, null, null, null, null,
+                null, null, null, null, null, null, null, null
             };
             return BciPattern.FindBciWordPattern(decompressedBci, pattern);
         }
@@ -447,7 +480,9 @@ namespace AgainstRomeModifier
             {
                 return PatchState.Ultimate;
             }
-            return PatchState.Unknown;
+            // Any other value combination (e.g., from experimental builds) is Legacy;
+            // Apply will safely overwrite to the correct target values.
+            return PatchState.Legacy;
         }
 
         public bool Apply(ref byte[] decompressed, bool enabled)
@@ -455,6 +490,7 @@ namespace AgainstRomeModifier
             int sigOffset = BciPattern.FindBciWordPattern(decompressed, RetreatQuotaSignature);
             if (sigOffset < 0)
             {
+                if (!enabled) return false;
                 throw new InvalidOperationException("P9 retreat quota signature not found.");
             }
 
