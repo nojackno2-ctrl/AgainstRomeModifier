@@ -23,8 +23,8 @@ namespace AgainstRomeModifier.Core.Services
         public int GameSpeed { get; set; }
         public bool NoSpellAltar { get; set; }
 
-        // AI Ultimate modules M1..M5
-        public bool[] EndlessAiModules { get; set; } = new bool[5];
+        // AI Ultimate modules M1..M6
+        public bool[] EndlessAiModules { get; set; } = new bool[6];
 
         // Custom unit stats data override
         public Dictionary<string, double[]>? CustomUnitStats { get; set; }

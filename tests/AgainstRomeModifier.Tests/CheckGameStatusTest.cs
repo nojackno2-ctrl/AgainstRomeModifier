@@ -26,7 +26,7 @@ namespace AgainstRomeModifier.Tests
             {
                 var state = orchestrator.DetectModule(gamePath, module);
                 _output.WriteLine($"模組 {module.Id} ({module.Name}) 狀態：{state}");
-                if (module.Id == "M4")
+                if (module.Id == "M4" || module.Id == "M6")
                 {
                     foreach (var patch in module.Patches)
                     {

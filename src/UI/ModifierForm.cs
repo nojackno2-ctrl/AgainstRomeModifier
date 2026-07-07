@@ -82,6 +82,7 @@ namespace AgainstRomeModifier {
         private ModernToggle chkAiM3 = null!;
         private ModernToggle chkAiM4 = null!;
         private ModernToggle chkAiM5 = null!;
+        private ModernToggle chkAiM6 = null!;
         private ModernToggle chkDgVoodoo = null!;
         private ModernToggle chkVillageBuildRange = null!;
         private Label lblGameSpeed = null!;
@@ -982,11 +983,13 @@ namespace AgainstRomeModifier {
             chkAiM3 = new ModernToggle { Text = Loc.Get("AiM3"), Size = new Size(260, 26), Checked = false, BackColor = Color.Transparent, Font = fontJhengHei10B };
             chkAiM4 = new ModernToggle { Text = Loc.Get("AiM4"), Size = new Size(260, 26), Checked = false, BackColor = Color.Transparent, Font = fontJhengHei10B };
             chkAiM5 = new ModernToggle { Text = Loc.Get("AiM5"), Size = new Size(260, 26), Checked = false, BackColor = Color.Transparent, Font = fontJhengHei10B };
+            chkAiM6 = new ModernToggle { Text = Loc.Get("AiM6"), Size = new Size(260, 26), Checked = false, BackColor = Color.Transparent, Font = fontJhengHei10B };
             pnlAiCard.Controls.Add(chkAiM1);
             pnlAiCard.Controls.Add(chkAiM2);
             pnlAiCard.Controls.Add(chkAiM3);
             pnlAiCard.Controls.Add(chkAiM4);
             pnlAiCard.Controls.Add(chkAiM5);
+            pnlAiCard.Controls.Add(chkAiM6);
 
             tabSystem.Controls.Add(pnlNumericCard);
             tabSystem.Controls.Add(pnlSwitchesCard);
@@ -1570,7 +1573,7 @@ namespace AgainstRomeModifier {
                 (chkFoodHealing10x, lblHelpFoodHealing10x),
                 (chkVillageBuildRange, lblHelpVillageBuildRange));
             ConfigureAiCardHorizontal(pnlAiCard, lblAiTitle,
-                chkAiM1, chkAiM2, chkAiM3, chkAiM4, chkAiM5);
+                chkAiM1, chkAiM2, chkAiM3, chkAiM4, chkAiM5, chkAiM6);
 
             settingsLayout.Controls.Add(pnlNumericCard, 0, 0);
             settingsLayout.Controls.Add(pnlSwitchesCard, 1, 0);
@@ -1978,6 +1981,7 @@ namespace AgainstRomeModifier {
             chkAiM3.Text = Loc.Get("AiM3");
             chkAiM4.Text = Loc.Get("AiM4");
             chkAiM5.Text = Loc.Get("AiM5");
+            chkAiM6.Text = Loc.Get("AiM6");
             chkHousingCapacity20x.Text = Loc.Get("HousingCapacity20x");
             chkStorageCapacity10x.Text = Loc.Get("StorageCapacity10x");
             chkFastBuildUpgradeRepair.Text = Loc.Get("FastBuildUpgradeRepair");
@@ -2077,6 +2081,7 @@ namespace AgainstRomeModifier {
                 myToolTip.SetToolTip(chkAiM3, Loc.Get("AiM3Tip"));
                 myToolTip.SetToolTip(chkAiM4, Loc.Get("AiM4Tip"));
                 myToolTip.SetToolTip(chkAiM5, Loc.Get("AiM5Tip"));
+                myToolTip.SetToolTip(chkAiM6, Loc.Get("AiM6Tip"));
             }
         }
 

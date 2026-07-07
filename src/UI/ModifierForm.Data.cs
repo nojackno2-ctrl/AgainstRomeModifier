@@ -942,6 +942,7 @@ namespace AgainstRomeModifier {
                     chkAiM3.Checked = options.EndlessAiModules[2];
                     chkAiM4.Checked = options.EndlessAiModules[3];
                     chkAiM5.Checked = options.EndlessAiModules[4];
+                    chkAiM6.Checked = options.EndlessAiModules[5];
 
                     LoadDefaultStatsData();
                 }

@@ -14,7 +14,7 @@ namespace AgainstRomeModifier
         public string TargetPattern => "MAPS/ENDL_*/SCRIPT/ak_level.bci";
 
         private const int OriginalRetreatDeadlineMs = 600000;
-        private const int UltimateRespawnDelayMs = 5000;
+        private const int UltimateRespawnDelayMs = 60000;
         private const int RetreatDeadlineSiteCount = 6;
 
         public PatchState Detect(byte[] decompressed)
@@ -140,8 +140,8 @@ namespace AgainstRomeModifier
             (240000, 120000)
         };
 
-        private const int UltimateLoopDelayUpperMs = 10000;
-        private const int UltimateLoopDelayLowerMs = 5000;
+        private const int UltimateLoopDelayUpperMs = 30000;
+        private const int UltimateLoopDelayLowerMs = 30000;
         private const int LegacyLoopDelayUpperMs = 2000;
         private const int LegacyLoopDelayLowerMs = 1000;
         private const int AcceleratedLoopCount = 6;

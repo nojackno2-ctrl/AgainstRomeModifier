@@ -160,7 +160,7 @@
           "countRuntimeClamp": [1, 20],
           "respawnDelayLiteralOffset": "0x178E0",
           "respawnDelayOriginalMs": 180000,
-          "respawnDelayUltimateMs": 5000,
+          "respawnDelayUltimateMs": 30000,
           "actionLoopDelayOriginalSequenceMs": [
             [480000, 960000],
             [480000, 960000],
@@ -172,7 +172,7 @@
           "actionLoopDelayLegacyUnsafeRangeMs": [5000, 10000],
           "aiSchedulerLoopIndexes": [0, 1, 2, 3, 4, 5],
           "reinforcementPollingRejectedFastRangeMs": [1000, 2000],
-          "reinforcementPollingUltimateRangeMs": [5000, 10000],
+          "reinforcementPollingUltimateRangeMs": [30000, 30000],
           "reinforcementPollingRejectedFastReason": "Runtime testing showed computer respawns could stop; this state is accepted only for migration back to 5-10 seconds.",
           "actionLoopDelayUltimateBehavior": "Accelerate all six scheduler delay sites. Indexes 0-2 are inner raider timers; indexes 3-5 initialize and refresh the outer scheduler that gates the dispatcher calling the settlement and military-reinforcement spawners. The prior first-three-only state is accepted for migration because it left AI arrival checks at 60-240 second intervals.",
           "militaryReinforcementUnitThreshold": {
@@ -228,15 +228,15 @@
           "originalDelayMs": 600000,
           "ultimateDelayMsByOffset": {
             "0x10700": 600000,
-            "0x119C0": 5000,
-            "0x12FFC": 5000,
-            "0x13FE8": 5000,
+            "0x119C0": 60000,
+            "0x12FFC": 60000,
+            "0x13FE8": 60000,
             "0x160EC": 600000,
-            "0x17F38": 5000
+            "0x17F38": 60000
           },
           "settledCleanupBarrierOffsets": ["0x10700", "0x160EC"],
           "history": "0x17F38 was previously misclassified as a village-defeat respawn timer. A later all-six-at-5000 build forced settled parties through DELETE_PARTY before old-village cleanup completed; ESAVE_000 on 2026-07-03 showed team 3 active with 71 stale village records and the old base coordinate (1632,5792).",
-          "migration": "Previous enabled states with one, none, or all six deadlines at 5000 ms are accepted as legacy-enabled and migrated to four accelerated non-settlement sites plus two protected settlement-cleanup sites.",
+          "migration": "Previous enabled states with one, none, or all six deadlines at 60000 ms are accepted as legacy-enabled and migrated to four accelerated non-settlement sites plus two protected settlement-cleanup sites.",
           "status": "static-analysis-verified-runtime-test-pending"
         },
         "VillageObjectCleanupCadence": {

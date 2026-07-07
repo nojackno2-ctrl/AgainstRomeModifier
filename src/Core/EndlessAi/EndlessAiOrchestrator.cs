@@ -12,6 +12,7 @@ namespace AgainstRomeModifier
         public EndlessAiModule M3 { get; }
         public EndlessAiModule M4 { get; }
         public EndlessAiModule M5 { get; }
+        public EndlessAiModule M6 { get; }
         public EndlessAiModule R0 { get; }
 
         public List<EndlessAiModule> UserModules { get; }
@@ -55,7 +56,7 @@ namespace AgainstRomeModifier
                 },
                 new int[] { 4 },
                 new int[] { 180000 },
-                new int[] { 5000 },
+                new int[] { 30000 },
                 1
             );
 
@@ -136,11 +137,12 @@ namespace AgainstRomeModifier
             M1 = new EndlessAiModule("M1", "增援規模", new List<IEndlessPatch> { p1, p10, p12 });
             M2 = new EndlessAiModule("M2", "增援節奏", new List<IEndlessPatch> { p3, p6, p2 });
             M3 = new EndlessAiModule("M3", "敗亡快速回收", new List<IEndlessPatch> { p4, p5, p11 });
-            M4 = new EndlessAiModule("M4", "保證聚落生成與留守", new List<IEndlessPatch> { p7, p8, p9 });
+            M4 = new EndlessAiModule("M4", "強制部落生成", new List<IEndlessPatch> { p7 });
             M5 = new EndlessAiModule("M5", "開局資源", new List<IEndlessPatch> { p13 });
-            R0 = new EndlessAiModule("R0", "常駐修復", new List<IEndlessPatch> { p14, p15 });
+            M6 = new EndlessAiModule("M6", "提升守軍數量", new List<IEndlessPatch> { p8 });
+            R0 = new EndlessAiModule("R0", "常駐修復", new List<IEndlessPatch> { p14, p15, p9 });
 
-            UserModules = new List<EndlessAiModule> { M1, M2, M3, M4, M5 };
+            UserModules = new List<EndlessAiModule> { M1, M2, M3, M4, M5, M6 };
         }
 
         public void ClearCache()

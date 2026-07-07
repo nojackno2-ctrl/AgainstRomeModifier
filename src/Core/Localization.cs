@@ -204,10 +204,11 @@ namespace AgainstRomeModifier {
             { "FoodHealing10x", "待機生命回復量提升 10 倍" },
             { "AiCardTitle", "AI 終極模式（無盡）" },
             { "AiM1", "增援規模（兵團 20 人）" },
-            { "AiM2", "增援節奏（波次不斷）" },
+            { "AiM2", "加速增援" },
             { "AiM3", "敗亡快速回收" },
-            { "AiM4", "保證聚落生成與留守" },
+            { "AiM4", "強制部落生成" },
             { "AiM5", "AI 開局資源" },
+            { "AiM6", "提升守軍數量" },
             { "DgVoodoo", "啟用 dgVoodoo2 圖形相容" },
             { "VillageBuildRange", "村莊建造／紅框範圍 5 倍" },
             { "GamePath", "遊戲路徑:" },
@@ -411,10 +412,11 @@ namespace AgainstRomeModifier {
             { "FoodHealing10xTip", "單位處於待機活動時，每次自動回血由原版 1 點提升為 10 點；計時間隔不變。反編譯已確認這條回血路徑不讀取或扣除食物資源。" },
             { "VillageBuildRangeTip", "將各個村莊的主堡建造邊界（紅框範圍）半徑提升 5 倍，允許更寬廣的建構區域。" },
             { "AiM1Tip", "無盡模式：AI 兵團人數由 6 人提升為 20 人，涵蓋增援部隊、增援重建與村莊日常民轉兵三條路徑。" },
-            { "AiM2Tip", "無盡模式：縮短增援等待與排程迴圈延遲、回收完工的 NPC 工作槽，使電腦增援波次快速且不間斷。" },
-            { "AiM3Tip", "無盡模式：AI 敗亡後加速舊村莊與城牆的逐筆確認清理、死亡判定與撤退；保留原版安全的隊伍終結順序。" },
-            { "AiM4Tip", "無盡模式：必定生成對手聚落、增援門檻提高至 40，並讓增援部隊全數移交村莊留守而非撤退（門檻與留守綁定套用）。" },
-            { "AiM5Tip", "無盡模式：AI 聚落開局即擁有主堡儲備資源，加速其經濟與軍隊起步。僅影響電腦聚落，不影響玩家。" }
+            { "AiM2Tip", "無盡模式：縮短增援等待至 30 秒與排程迴圈延遲、回收完工的 NPC 工作槽，使電腦增援波次快速且不間斷。" },
+            { "AiM3Tip", "無盡模式：AI 敗亡後加速舊村莊與城牆的逐筆確認清理、將非定居點撤退期限縮短為 1 分鐘；保留原版安全的隊伍終結順序。" },
+            { "AiM4Tip", "無盡模式：定居點 100% 必定會建立聚落（重啟機率由遞減改為 101%）。" },
+            { "AiM5Tip", "無盡模式：AI 聚落開局即擁有主堡儲備資源，加速其經濟與軍隊起步。僅影響電腦聚落，不影響玩家。" },
+            { "AiM6Tip", "無盡模式：將地圖上可容納的活躍隊伍上限從 4 提高到 40，讓守軍和巡邏隊數量變多。" }
         };
 
         private static readonly Dictionary<string, string> En = new Dictionary<string, string> {
@@ -467,10 +469,11 @@ namespace AgainstRomeModifier {
             { "FoodHealing10x", "10x Idle HP Regeneration" },
             { "AiCardTitle", "AI Ultimate (Endless)" },
             { "AiM1", "Reinf. Size (20/unit)" },
-            { "AiM2", "Reinf. Tempo (endless)" },
+            { "AiM2", "Accelerated Reinf." },
             { "AiM3", "Fast Defeat Recovery" },
-            { "AiM4", "Guaranteed Spawn & Garrison" },
+            { "AiM4", "Guaranteed Spawn" },
             { "AiM5", "AI Starting Resources" },
+            { "AiM6", "Increase Garrison Size" },
             { "DgVoodoo", "Enable dgVoodoo2 Wrapper" },
             { "VillageBuildRange", "5x Village Build / Red-Frame Range" },
             { "GamePath", "Game Path:" },

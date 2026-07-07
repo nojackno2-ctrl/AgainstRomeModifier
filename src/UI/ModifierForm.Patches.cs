@@ -106,7 +106,7 @@ namespace AgainstRomeModifier {
                     PresetFileSourceType = this.presetFileSourceType,
                     PresetFileName = this.presetFileName,
                     EndlessAiModules = new[] {
-                        chkAiM1.Checked, chkAiM2.Checked, chkAiM3.Checked, chkAiM4.Checked, chkAiM5.Checked
+                        chkAiM1.Checked, chkAiM2.Checked, chkAiM3.Checked, chkAiM4.Checked, chkAiM5.Checked, chkAiM6.Checked
                     }
                 };
 
@@ -167,7 +167,7 @@ namespace AgainstRomeModifier {
                 chkFocusLoss.Checked = false;
                 chkNoSpellAltar.Checked = false;
                 chkToEng.Checked = false;
-                chkAiM1.Checked = false; chkAiM2.Checked = false; chkAiM3.Checked = false; chkAiM4.Checked = false; chkAiM5.Checked = false;
+                chkAiM1.Checked = false; chkAiM2.Checked = false; chkAiM3.Checked = false; chkAiM4.Checked = false; chkAiM5.Checked = false; chkAiM6.Checked = false;
                 chkHousingCapacity20x.Checked = false; chkStorageCapacity10x.Checked = false;
                 chkFastBuildUpgradeRepair.Checked = false;
                 chkFoodHealing10x.Checked = false;
@@ -332,7 +332,7 @@ namespace AgainstRomeModifier {
                 // UI reset
                 chkFocusLoss.Checked = false;
                 chkNoSpellAltar.Checked = false;
-                chkAiM1.Checked = false; chkAiM2.Checked = false; chkAiM3.Checked = false; chkAiM4.Checked = false; chkAiM5.Checked = false;
+                chkAiM1.Checked = false; chkAiM2.Checked = false; chkAiM3.Checked = false; chkAiM4.Checked = false; chkAiM5.Checked = false; chkAiM6.Checked = false;
                 chkDgVoodoo.Checked = patchEngine.IsDgVoodooInstalled(gamePath);
                 chkVillageBuildRange.Checked = false;
                 cmbGameSpeed.SelectedIndex = 0;
