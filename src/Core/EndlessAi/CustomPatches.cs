@@ -453,61 +453,102 @@ namespace AgainstRomeModifier
         public string Id => "P9";
         public string TargetPattern => "MAPS/ENDL_*/SCRIPT/ak_level.bci";
 
+        // 用通用 signature 匹配所有 10 處撤退配額寫入點 (其中 2 處原版為 15，其餘 8 處為其他值)
         private static readonly int?[] RetreatQuotaSignature = new int?[] {
-            81, 57, 90, -3, 90, 14, 164, 81, 56, 90, -3, null, null, 164, 81, 61
+            81, 56, 90, -3, null, null, 164
         };
 
         private const int RetreatQuotaOriginalOpcode = 90;
         private const int RetreatQuotaOriginalValue = 15;
         private const int RetreatQuotaPatchedOpcode = 66;
         private const int RetreatQuotaPatchedValue = 0;
-        private const int RetreatQuotaOpcodeWordIndex = 11;
+        private const int RetreatQuotaOpcodeWordIndex = 4;
+        private const int ExpectedQuotaSitesCount = 10;
 
         public PatchState Detect(byte[] decompressed)
         {
-            int sigOffset = BciPattern.FindBciWordPattern(decompressed, RetreatQuotaSignature);
-            if (sigOffset < 0) return PatchState.Unknown;
+            var sites = BciPattern.FindAllBciWordPatternSites(decompressed, RetreatQuotaSignature);
+            if (sites.Count == 0) return PatchState.Unknown;
 
-            int opcodeOffset = sigOffset + RetreatQuotaOpcodeWordIndex * 4;
-            int opcode = BitConverter.ToInt32(decompressed, opcodeOffset);
-            int value = BitConverter.ToInt32(decompressed, opcodeOffset + 4);
+            if (sites.Count != ExpectedQuotaSitesCount)
+            {
+                return PatchState.Legacy;
+            }
 
-            if (opcode == RetreatQuotaOriginalOpcode && value == RetreatQuotaOriginalValue)
-            {
-                return PatchState.Original;
-            }
-            if (opcode == RetreatQuotaPatchedOpcode && value == RetreatQuotaPatchedValue)
-            {
-                return PatchState.Ultimate;
-            }
-            // Any other value combination (e.g., from experimental builds) is Legacy;
-            // Apply will safely overwrite to the correct target values.
+            // Check site 8 (initialization of type-5 reinforcement)
+            int sigOffset8 = sites[8];
+            int opcodeOffset8 = sigOffset8 + RetreatQuotaOpcodeWordIndex * 4;
+            int opcode8 = BitConverter.ToInt32(decompressed, opcodeOffset8);
+            int value8 = BitConverter.ToInt32(decompressed, opcodeOffset8 + 4);
+
+            // Check site 9 (donation of type-5 reinforcement)
+            int sigOffset9 = sites[9];
+            int opcodeOffset9 = sigOffset9 + RetreatQuotaOpcodeWordIndex * 4;
+            int opcode9 = BitConverter.ToInt32(decompressed, opcodeOffset9);
+            int value9 = BitConverter.ToInt32(decompressed, opcodeOffset9 + 4);
+
+            bool isUltimate = (opcode8 == RetreatQuotaPatchedOpcode && value8 == RetreatQuotaPatchedValue) &&
+                              (opcode9 == RetreatQuotaPatchedOpcode && value9 == RetreatQuotaPatchedValue);
+
+            bool isOriginal = (opcode8 == RetreatQuotaOriginalOpcode && value8 == 6) &&
+                              (opcode9 == RetreatQuotaOriginalOpcode && value9 == RetreatQuotaOriginalValue);
+
+            if (isUltimate) return PatchState.Ultimate;
+            if (isOriginal) return PatchState.Original;
+
             return PatchState.Legacy;
         }
 
         public bool Apply(ref byte[] decompressed, bool enabled)
         {
-            int sigOffset = BciPattern.FindBciWordPattern(decompressed, RetreatQuotaSignature);
-            if (sigOffset < 0)
+            var sites = BciPattern.FindAllBciWordPatternSites(decompressed, RetreatQuotaSignature);
+            if (sites.Count == 0)
             {
                 if (!enabled) return false;
                 throw new InvalidOperationException("P9 retreat quota signature not found.");
             }
 
-            int opcodeOffset = sigOffset + RetreatQuotaOpcodeWordIndex * 4;
-            int targetOpcode = enabled ? RetreatQuotaPatchedOpcode : RetreatQuotaOriginalOpcode;
-            int targetValue = enabled ? RetreatQuotaPatchedValue : RetreatQuotaOriginalValue;
-
             bool changed = false;
-            if (BitConverter.ToInt32(decompressed, opcodeOffset) != targetOpcode ||
-                BitConverter.ToInt32(decompressed, opcodeOffset + 4) != targetValue)
+
+            if (sites.Count == ExpectedQuotaSitesCount)
             {
-                int currentOpcode = BitConverter.ToInt32(decompressed, opcodeOffset);
-                int currentValue = BitConverter.ToInt32(decompressed, opcodeOffset + 4);
-                BciPattern.WriteBciInt32(decompressed, opcodeOffset, currentOpcode, targetOpcode, "P9 retreat quota opcode");
-                BciPattern.WriteBciInt32(decompressed, opcodeOffset + 4, currentValue, targetValue, "P9 retreat quota value");
-                changed = true;
+                // Patch site 8
+                {
+                    int sigOffset = sites[8];
+                    int opcodeOffset = sigOffset + RetreatQuotaOpcodeWordIndex * 4;
+                    int currentOpcode = BitConverter.ToInt32(decompressed, opcodeOffset);
+                    int currentValue = BitConverter.ToInt32(decompressed, opcodeOffset + 4);
+
+                    int targetOpcode = enabled ? RetreatQuotaPatchedOpcode : RetreatQuotaOriginalOpcode;
+                    int targetValue = enabled ? RetreatQuotaPatchedValue : 6;
+
+                    if (currentOpcode != targetOpcode || currentValue != targetValue)
+                    {
+                        BciPattern.WriteBciInt32(decompressed, opcodeOffset, currentOpcode, targetOpcode, "P9 retreat quota opcode at site 8");
+                        BciPattern.WriteBciInt32(decompressed, opcodeOffset + 4, currentValue, targetValue, "P9 retreat quota value at site 8");
+                        changed = true;
+                    }
+                }
+
+                // Patch site 9
+                {
+                    int sigOffset = sites[9];
+                    int opcodeOffset = sigOffset + RetreatQuotaOpcodeWordIndex * 4;
+                    int currentOpcode = BitConverter.ToInt32(decompressed, opcodeOffset);
+                    int currentValue = BitConverter.ToInt32(decompressed, opcodeOffset + 4);
+
+                    int targetOpcode = enabled ? RetreatQuotaPatchedOpcode : RetreatQuotaOriginalOpcode;
+                    int targetValue = enabled ? RetreatQuotaPatchedValue : RetreatQuotaOriginalValue;
+
+                    if (currentOpcode != targetOpcode || currentValue != targetValue)
+                    {
+                        BciPattern.WriteBciInt32(decompressed, opcodeOffset, currentOpcode, targetOpcode, "P9 retreat quota opcode at site 9");
+                        BciPattern.WriteBciInt32(decompressed, opcodeOffset + 4, currentValue, targetValue, "P9 retreat quota value at site 9");
+                        changed = true;
+                    }
+                }
             }
+
             return changed;
         }
     }

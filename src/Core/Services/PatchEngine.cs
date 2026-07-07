@@ -1249,7 +1249,7 @@ namespace AgainstRomeModifier.Core.Services
             }
 
             // E. team.dat (maxPopulation)
-            // 只要任何一個 team.dat 的內容被修改（第 4 欄為 1600）
+            // 比較當前地圖的 team.dat 是否與備份檔案不一致（若有不一致，代表已套用修改）
             try
             {
                 bool maxPop = false;
@@ -1260,8 +1260,8 @@ namespace AgainstRomeModifier.Core.Services
                         string path = Path.Combine(gamePath, kvp.Key.Replace('/', '\\'));
                         if (File.Exists(path))
                         {
-                            string text = File.ReadAllText(path, Encoding.GetEncoding(1251));
-                            if (text.Contains("1600"))
+                            byte[] currentBytes = File.ReadAllBytes(path);
+                            if (!currentBytes.SequenceEqual(kvp.Value))
                             {
                                 maxPop = true;
                                 break;

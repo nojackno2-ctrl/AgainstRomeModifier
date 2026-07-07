@@ -1,5 +1,9 @@
 # Against Rome Modifier
 
+> [!WARNING]
+> 這個修改器還在測試中，如果要使用請將原始的檔案進行備份。
+> (This modifier is still in testing. Please backup your original files before using it.)
+
 This is a Windows Forms modifier for the real-time strategy game *Against Rome*.
 It is built with C# on .NET 8. Public builds do not contain original game data;
 the modifier builds its restore baseline from the user's own installation when

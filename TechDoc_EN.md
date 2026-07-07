@@ -1,5 +1,8 @@
 # Against Rome Modifier Complete Technical Document
 
+> [!IMPORTANT]
+> This modifier is still in testing. Please backup your original files before using it.
+
 Updated: 2026-07-05.
 
 This document describes the current code, data formats, reverse-engineering evidence, enabled patches, candidates, and rejected approaches. It is not a version history. Each feature has one current description. Reproducible runtime behavior and the latest concrete decompiler evidence take precedence over an older interpretation.
@@ -210,7 +213,7 @@ vanilla `DELETE_PARTY (256)` path. A previous build changed them to
 for an individual teardown acknowledgement. The missing acknowledgement can
 stall the simulation loop indefinitely. Detection classifies 257 and mixed
 256/257 states as Legacy, and both apply/restore migrate them to 256. P15 is no
-longer part of user-toggleable M3. P2/P4/P5/P11/P8/P9 are also applied as permanent safety valves to prevent NPC job slot exhaustion, overlapping respawn crashes, and reinforcement freezes.
+longer part of user-toggleable M3. P2/P4/P5/P11/P8 are also applied as permanent safety valves to prevent NPC job slot exhaustion, overlapping respawn crashes, and reinforcement freezes.
 
 `MAPS/ENDL_*/SCRIPT/ak_level.bci` is a `BCI0` compiled-script payload inside `PFIL@`. Patches search opcode/literal signatures and have been found with the same local sequence in `ENDL_000` through `ENDL_004`.
 
@@ -221,7 +224,8 @@ longer part of user-toggleable M3. P2/P4/P5/P11/P8/P9 are also applied as perman
 - 2026-07-03 correction: with only the `ak_haupthaus` edit, in-game AI conversions stayed at 6. The main-house call sits in the `var57 == 34` (CIVRECREATE_WAIT) branch and only fires in the military-reinforcement recreate chain; the village AI's day-to-day conversion runs through `Dorfverteidigung.bci`'s four `s_addNPCJob_createUnit(team, 1, type∈{1,2,6,3}, 0, 0, 6, 6, 1, 0)` sites (pushsym at decompressed `0xF1BC/0xF264/0xF30C/0xF3B4`). Args 6/7 are the per-unit member min/max (job `+0x11/+0x12`; EXE clamp 1..20 since arg 2 is 1); the job executor (~`00548700`) gathers that many idle civilians and calls `FUN_00523a00` once — one job creates one N-member unit, which also confirms the `ak_level.bci` military job counts (`4..4 -> 20..20`) are members-per-unit. AI Ultimate now patches all eight literals `6 -> 20` via the signature `[66,0, 66,1, 66,?, 66,?, 66,0, 66,0, 66,?, 66,1, 90,8, 128,157, 73,-9, 86]` (exactly four hits enforced); disabling restores 6. Runtime verified 2026-07-03: with the patch applied, the village AI converts 20 villagers into a single squad in-game.
 - EXE path `0054aa80 -> 00547f50` clamps this mode to 1..20.
 - Military reinforcement wait at decompressed `0x178E0`: `180000 -> 30000 ms` (30 seconds).
-- The reinforcement donation formula and `v56[party]` retreat quota remain original (reverting the previous `[66,0]` zero-quota patch to R0 mandatory repair to allow normal retreats under original value 15).
+- The reinforcement donation formula remains original.
+- The `v56[party]` retreat quota is modified to `[66,0]` (zero quota, meaning reinforcement units do not retreat but are fully handed over as defenders, including Roman reinforcement `RoemischerNachschub` which shares this logic) at index 8 (initialization, offset `0x16A44`, original `[90,6]`) and index 9 (donation, offset `0x178A4`, original `[90,15]`) when "increase garrison size (M6)" is enabled. When M6 is disabled, both sites are restored to their original values (`[90,6]` and `[90,15]`). The other 8 signature sites remain untouched to avoid breaking military AI squad initialization and other non-reinforcement retreat mechanisms.
 - Party retreat/cleanup deadlines use a mixed target. The four non-settlement sites `0x119C0`, `0x12FFC`, `0x13FE8`, and `0x17F38` change from `600000 -> 60000 ms` (1 minute). The settled-party sites `0x10700` and `0x160EC` stay at `600000 ms`: states 51/52 normally wait for the engine's old-village/palisade cleanup condition, and the deadline is only a fallback. The earlier all-six-at-5000/60000 build forced DELETE_PARTY before cleanup completed, allowing the same team to resettle while NPC village records still pointed at the old location. Apply recognizes that build as legacy-enabled and migrates it to the mixed target. The initial-arrival timeout at `0x7F24` also remains `600000 ms`.
 - `SYSTEM/CLAK/SCRIPT/ak_haupthaus.bci` old-village cleanup cadence: the unique initialization sequence at `0x3248` sets the dead-village pass to `1500 + rand(-25,25)` ms, then the leave-village loop removes one confirmed building/palisade per pass. AI Ultimate changes only the base literal `1500 -> 100`, yielding `75..125` ms per object while preserving confirmations. A 71-object village therefore drops from roughly 105 seconds to roughly 7 seconds. Disable restores 1500; an enabled install still holding 1500 is accepted for migration. This script path also applies to a player village after its main building dies, but does not affect normal live-village production cadence.
 - Dead-party confirmation counter at decompressed `0x1068C`: `20 -> 3` consecutive ticks (settled-party handler; counts ticks with village, leader, civilians, and members all gone before entering RETREAT).

@@ -182,7 +182,7 @@ namespace AgainstRomeModifier {
                 cmbGameSpeed.SelectedIndex = 0;
 
                 Log(Loc.Get("LogRestoreAllSuccess"));
-                MessageBox.Show(Loc.Get("MsgRestoreSuccess"), Loc.Get("TitleTips"), MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show(Loc.Get("MsgRestoreAllSuccess"), Loc.Get("TitleTips"), MessageBoxButtons.OK, MessageBoxIcon.Information);
                 try {
                     LoadCurrentData();
                 } catch (Exception uiEx) {

@@ -139,8 +139,8 @@ namespace AgainstRomeModifier
             M3 = new EndlessAiModule("M3", "敗亡快速回收", new List<IEndlessPatch> { p4, p5, p11 });
             M4 = new EndlessAiModule("M4", "強制部落生成", new List<IEndlessPatch> { p7 });
             M5 = new EndlessAiModule("M5", "開局資源", new List<IEndlessPatch> { p13 });
-            M6 = new EndlessAiModule("M6", "提升守軍數量", new List<IEndlessPatch> { p8 });
-            R0 = new EndlessAiModule("R0", "常駐修復", new List<IEndlessPatch> { p14, p15, p9 });
+            M6 = new EndlessAiModule("M6", "提升守軍數量", new List<IEndlessPatch> { p8, p9 });
+            R0 = new EndlessAiModule("R0", "常駐修復", new List<IEndlessPatch> { p14, p15 });
 
             UserModules = new List<EndlessAiModule> { M1, M2, M3, M4, M5, M6 };
         }
@@ -312,6 +312,10 @@ namespace AgainstRomeModifier
             if (state == PatchState.Unknown && enabled)
             {
                 throw new InvalidOperationException($"模組 {module.Name} ({module.Id}) 處於未知或不相容狀態，無法安全套用。");
+            }
+            if (!enabled && (state == PatchState.Original || state == PatchState.Unknown))
+            {
+                return false;
             }
 
             bool changed = false;

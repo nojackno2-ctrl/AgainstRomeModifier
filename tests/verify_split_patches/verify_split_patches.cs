@@ -379,11 +379,18 @@ namespace AgainstRomeModifierTests {
                     if (I32(d, lim + 32) != 66 || I32(d, lim + 36) != 0) Fail($"{name}: P8 gate 應保持 66,0，實為 {I32(d, lim + 32)},{I32(d, lim + 36)}");
                 }
 
-                // P9 撤退配額維持原版 [90,15] (已被常駐還原修復)
-                int?[] quotaSig = { 81, 57, 90, -3, 90, 14, 164, 81, 56, 90, -3, null, null, 164, 81, 61 };
-                int q = BciPattern.FindBciWordPattern(d, quotaSig);
-                if (q < 0) Fail($"{name}: 找不到 P9 撤退配額簽章");
-                else if (I32(d, q + 44) != 90 || I32(d, q + 48) != 15) Fail($"{name}: P9 撤退配額應為 90,15，實為 {I32(d, q + 44)},{I32(d, q + 48)}");
+                // P9 撤退配額修改為不撤退 [66,0] (隨 M6 啟用，全域 10 處中的第 8、9 索引處)
+                int?[] quotaSig = { 81, 56, 90, -3, null, null, 164 };
+                var qSites = BciPattern.FindAllBciWordPatternSites(d, quotaSig);
+                if (qSites.Count != 10) Fail($"{name}: P9 撤退配額應有 10 處，實為 {qSites.Count}");
+                else {
+                    int q8 = qSites[8];
+                    if (I32(d, q8 + 16) != 66 || I32(d, q8 + 20) != 0)
+                        Fail($"{name}: P9 撤退配額(索引 8，偏移 0x{q8:X})應為 66,0，實為 {I32(d, q8 + 16)},{I32(d, q8 + 20)}");
+                    int q9 = qSites[9];
+                    if (I32(d, q9 + 16) != 66 || I32(d, q9 + 20) != 0)
+                        Fail($"{name}: P9 撤退配額(索引 9，偏移 0x{q9:X})應為 66,0，實為 {I32(d, q9 + 16)},{I32(d, q9 + 20)}");
+                }
             }
 
             // ---- ak_haupthaus.bci ----
