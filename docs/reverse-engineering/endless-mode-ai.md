@@ -307,6 +307,61 @@ AI Ultimate M1:
 
 ### Reinforcement-party retreat quota (v56) — units handed over instead of retreating
 
+**UPDATE 2026-07-08 (second session): the state-49 donation walk has a UNIT-TYPE
+FILTER that exempts soldier squads from donation.** Runtime report after the
+site-8 fix below: soldiers now spawn, but they still retreat even with the
+site-9 quota verified in-place as `[66,0]` on all five installed maps. Full
+decode of the retreat chain (with the corrected jump rule: bcitool `dis`
+prints jump targets 8 bytes short; real target = printed + 8):
+
+- State 48 (`0x17ce0..0x17f34`) does NOT issue movement orders — it collects
+  all own-marked (`32+party`) team units into the party object array
+  (`v52`/`v53`) via internal fn `0x94A8` (append + counters; flag 1 also does
+  `s_setScriptMode(1)` — used at spawn).
+- State 49 (`0x17f3c..0x18458`): finds a recipient via internal fn `0xABF8`
+  (first party with `v47[i]==4`, else -1 → mark `-1`), re-marks the leader,
+  then walks the array: **only units with `s_getUnitType(obj) == 1` enter the
+  quota logic** (`local33 >= v56[party]` → donate via `s_setObjMark`); units
+  with type != 1 — soldier SQUADS created by `s_createUnitAndMems` — take the
+  else branch and are ALWAYS kept in the retreat array regardless of quota.
+- State 50 walks the remaining array via `0xB0E8`: `s_sendMsg(8, exitX, exitY)`
+  each tick and `s_destroyObj` within distance 100 of the exit; then
+  DELETE_PARTY (`0x8358`), which destroys every team unit still marked
+  `32+party` (donated/re-marked units survive).
+- Also decoded: the REAL vanilla delivery mechanism is state 32
+  (`0x16efc..0x174b0`): units within 400 of the village center are handed over
+  one at a time via `s_sendMsg(6, …)` + `s_addNPCJob_dissolveUnit`; distant
+  idle units are continuously ordered toward the village. State 32 only exits
+  to 33 when the live array count reaches 0 or the village center is gone.
+- Fix shipped: P9 third control point — the type-filter jz at `0x1825C`
+  (signature `[128,214, 73,-2, 86, 66,1, 96,102, 117,92]`, the file's only
+  `s_getUnitType` call) operand `92 -> 0` (fall-through), so squads are also
+  subject to the zeroed quota and get donated via `s_setObjMark` instead of
+  retreating. Caveat for runtime testing: donated squads keep script mode 1
+  (no `s_setScriptMode(0)` on this path — the proper release helper `0xBBC0`
+  does mode-0 + `sendMsg(6,…)` but is only used by settled-party death), so
+  they may stand passively at the village rather than actively patrol.
+
+**UPDATE 2026-07-08: site-8 zeroing REVERTED — that write is the soldier SPAWN
+BUDGET, not a retreat quota.** Runtime report: with both P9 sites at `[66,0]`,
+type-5 reinforcements arrived with villagers only, no soldiers. Disassembly of
+the type-5 INIT (state 16, `0x16984..0x16ab0`) shows `v57[party] =
+s_randRange(2,3)` (civilian count) and `v56[party] = s_randRange(2,4)` (site 8,
+`0x16A44`) — then state 20 (`callint -50000`) creates civilians from v57 and
+state 21 (`callint -49732` -> internal fn `0xA964`) creates soldiers: `0xA964`
+reads `v56[party]` at `0xA9CC`, compares it against `v54[party]` (spawned so
+far), calls the unit-creation subroutine (`callint -1036`/`-1328`) and
+decrements `v56[party]` by each spawned batch (`0xABA0..0xABD4`). Zero budget
+=> zero soldiers. Zeroing site 8 also adds nothing against retreating: the
+spawn loop drains v56 anyway, and site 9 (`0x17880`) rewrites it with the
+donation remainder before the retreat chain. P9 therefore now patches ONLY
+site 9 to `[66,0]`; site 8 is ALWAYS kept/restored to vanilla `[90,6]`, and
+the legacy both-zeroed state is detected as Legacy and migrated on apply.
+Other init-site v56 writes (`0x111C8` randRange(40,100), `0x121F8`
+randRange(40,80), `0x136A8` clamp 20, `0x1471C` randRange(3,5)) are the same
+spawn-budget pattern for other party types; the only v56 READS in the file are
+`0xA9CC` (spawn loop) and `0x18168` (state-49 donation walk).
+
 **UPDATE 2026-07-03 (later session): RE-ENABLED with the missing piece.** The
 root cause of both rejected attempts below is identified as the spawner
   threshold at `0x195F8`: it was still `8`, so permanently donated units pushed

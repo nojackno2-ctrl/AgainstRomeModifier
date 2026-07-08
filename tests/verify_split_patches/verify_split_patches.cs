@@ -379,18 +379,27 @@ namespace AgainstRomeModifierTests {
                     if (I32(d, lim + 32) != 66 || I32(d, lim + 36) != 0) Fail($"{name}: P8 gate 應保持 66,0，實為 {I32(d, lim + 32)},{I32(d, lim + 36)}");
                 }
 
-                // P9 撤退配額修改為不撤退 [66,0] (隨 M6 啟用，全域 10 處中的第 8、9 索引處)
+                // P9：索引 8 是 type-5 士兵生成預算，必須保持原版 [90,6]（歸零會導致增援只有村民）；
+                // 索引 9 才是撤退配額，啟用時改為 [66,0]（全數捐贈、不撤退）。
                 int?[] quotaSig = { 81, 56, 90, -3, null, null, 164 };
                 var qSites = BciPattern.FindAllBciWordPatternSites(d, quotaSig);
                 if (qSites.Count != 10) Fail($"{name}: P9 撤退配額應有 10 處，實為 {qSites.Count}");
                 else {
                     int q8 = qSites[8];
-                    if (I32(d, q8 + 16) != 66 || I32(d, q8 + 20) != 0)
-                        Fail($"{name}: P9 撤退配額(索引 8，偏移 0x{q8:X})應為 66,0，實為 {I32(d, q8 + 16)},{I32(d, q8 + 20)}");
+                    if (I32(d, q8 + 16) != 90 || I32(d, q8 + 20) != 6)
+                        Fail($"{name}: P9 生成預算(索引 8，偏移 0x{q8:X})應保持原版 90,6，實為 {I32(d, q8 + 16)},{I32(d, q8 + 20)}");
                     int q9 = qSites[9];
                     if (I32(d, q9 + 16) != 66 || I32(d, q9 + 20) != 0)
                         Fail($"{name}: P9 撤退配額(索引 9，偏移 0x{q9:X})應為 66,0，實為 {I32(d, q9 + 16)},{I32(d, q9 + 20)}");
                 }
+
+                // P9 第三控制點：狀態 49 捐贈走訪的 s_getUnitType 型別過濾 jz 位移應為 0
+                // （原版 92 會讓士兵小隊繞過捐贈、一律撤退）
+                int?[] typeFilterSig = { 128, 214, 73, -2, 86, 66, 1, 96, 102, 117, null };
+                int tf = BciPattern.FindBciWordPattern(d, typeFilterSig);
+                if (tf < 0) Fail($"{name}: 找不到 P9 捐贈型別過濾簽章");
+                else if (I32(d, tf + 40) != 0)
+                    Fail($"{name}: P9 捐贈型別過濾 jz 位移應為 0，實為 {I32(d, tf + 40)}");
             }
 
             // ---- ak_haupthaus.bci ----

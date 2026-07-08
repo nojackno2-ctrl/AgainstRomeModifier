@@ -453,17 +453,37 @@ namespace AgainstRomeModifier
         public string Id => "P9";
         public string TargetPattern => "MAPS/ENDL_*/SCRIPT/ak_level.bci";
 
-        // 用通用 signature 匹配所有 10 處撤退配額寫入點 (其中 2 處原版為 15，其餘 8 處為其他值)
+        // 用通用 signature 匹配所有 10 處 v56 寫入點。
+        // 注意：init 站點（含 site 8，0x16A44）寫入的 v56 是「士兵生成預算」，
+        // 會被生成迴圈（內部函式 0xA964，讀取點 0xA9CC）消耗；只有 site 9
+        // （0x17880，撤退前的捐贈剩餘寫入）才是真正的撤退配額。因此本補丁
+        // 只動 site 9；site 8 一律維持原版 [90,6]，否則 type-5 增援不會生成
+        // 任何士兵（實測：只出現村民）。
         private static readonly int?[] RetreatQuotaSignature = new int?[] {
             81, 56, 90, -3, null, null, 164
         };
 
         private const int RetreatQuotaOriginalOpcode = 90;
         private const int RetreatQuotaOriginalValue = 15;
+        private const int SpawnBudgetOriginalOpcode = 90;
+        private const int SpawnBudgetOriginalValue = 6;
         private const int RetreatQuotaPatchedOpcode = 66;
         private const int RetreatQuotaPatchedValue = 0;
         private const int RetreatQuotaOpcodeWordIndex = 4;
         private const int ExpectedQuotaSitesCount = 10;
+
+        // 第三控制點：狀態 49 捐贈走訪的單位型別過濾（0x1825C 附近，全檔唯一的
+        // s_getUnitType 呼叫）。原版 `if (s_getUnitType(obj) == 1)` 只讓型別 1
+        // （單人單位）進入配額/捐贈分支，士兵小隊（squad，型別 != 1）一律留在
+        // 撤退陣列走回地圖出口——這就是「配額歸零後士兵仍撤退」的原因。
+        // 把 jz 的跳躍位移 92 改為 0（跳到下一條指令，等同吃掉條件不跳），
+        // 所有單位都進入配額判斷；配額 0 → 全部 s_setObjMark 捐給 type-4 隊伍。
+        private static readonly int?[] DonationTypeFilterSignature = new int?[] {
+            128, 214, 73, -2, 86, 66, 1, 96, 102, 117, null
+        };
+        private const int DonationTypeFilterJzOperandWordIndex = 10;
+        private const int DonationTypeFilterOriginalOperand = 92;
+        private const int DonationTypeFilterPatchedOperand = 0;
 
         public PatchState Detect(byte[] decompressed)
         {
@@ -475,27 +495,38 @@ namespace AgainstRomeModifier
                 return PatchState.Legacy;
             }
 
-            // Check site 8 (initialization of type-5 reinforcement)
+            // Site 8 (type-5 init: soldier spawn budget) must ALWAYS be vanilla [90,6].
             int sigOffset8 = sites[8];
             int opcodeOffset8 = sigOffset8 + RetreatQuotaOpcodeWordIndex * 4;
             int opcode8 = BitConverter.ToInt32(decompressed, opcodeOffset8);
             int value8 = BitConverter.ToInt32(decompressed, opcodeOffset8 + 4);
+            bool site8Vanilla = opcode8 == SpawnBudgetOriginalOpcode && value8 == SpawnBudgetOriginalValue;
 
-            // Check site 9 (donation of type-5 reinforcement)
+            // Site 9 (type-5 pre-retreat donation remainder: the real retreat quota).
             int sigOffset9 = sites[9];
             int opcodeOffset9 = sigOffset9 + RetreatQuotaOpcodeWordIndex * 4;
             int opcode9 = BitConverter.ToInt32(decompressed, opcodeOffset9);
             int value9 = BitConverter.ToInt32(decompressed, opcodeOffset9 + 4);
 
-            bool isUltimate = (opcode8 == RetreatQuotaPatchedOpcode && value8 == RetreatQuotaPatchedValue) &&
-                              (opcode9 == RetreatQuotaPatchedOpcode && value9 == RetreatQuotaPatchedValue);
+            // 第三控制點：狀態 49 的單位型別過濾 jz 位移。
+            int filterOffset = BciPattern.FindBciWordPattern(decompressed, DonationTypeFilterSignature);
+            if (filterOffset < 0) return PatchState.Unknown;
+            int jzOperand = BitConverter.ToInt32(decompressed, filterOffset + DonationTypeFilterJzOperandWordIndex * 4);
 
-            bool isOriginal = (opcode8 == RetreatQuotaOriginalOpcode && value8 == 6) &&
-                              (opcode9 == RetreatQuotaOriginalOpcode && value9 == RetreatQuotaOriginalValue);
+            // 舊版 P9 曾把 site 8 也改成 [66,0]（導致增援只有村民）——判為 Legacy，
+            // Apply 時會自動把 site 8 遷回原版。
+            if (!site8Vanilla) return PatchState.Legacy;
 
-            if (isUltimate) return PatchState.Ultimate;
-            if (isOriginal) return PatchState.Original;
+            bool site9Ultimate = opcode9 == RetreatQuotaPatchedOpcode && value9 == RetreatQuotaPatchedValue;
+            bool site9Original = opcode9 == RetreatQuotaOriginalOpcode && value9 == RetreatQuotaOriginalValue;
 
+            if (site9Ultimate && jzOperand == DonationTypeFilterPatchedOperand)
+                return PatchState.Ultimate;
+            if (site9Original && jzOperand == DonationTypeFilterOriginalOperand)
+                return PatchState.Original;
+
+            // 例如 2026-07-08 出貨的中間狀態：site9 已歸零但型別過濾仍為原版
+            // （士兵小隊照樣撤退）——判為 Legacy，Apply 時補上過濾修改。
             return PatchState.Legacy;
         }
 
@@ -512,25 +543,23 @@ namespace AgainstRomeModifier
 
             if (sites.Count == ExpectedQuotaSitesCount)
             {
-                // Patch site 8
+                // Site 8: always restore/keep vanilla spawn budget [90,6]
+                // (also migrates the legacy both-sites-zeroed state).
                 {
                     int sigOffset = sites[8];
                     int opcodeOffset = sigOffset + RetreatQuotaOpcodeWordIndex * 4;
                     int currentOpcode = BitConverter.ToInt32(decompressed, opcodeOffset);
                     int currentValue = BitConverter.ToInt32(decompressed, opcodeOffset + 4);
 
-                    int targetOpcode = enabled ? RetreatQuotaPatchedOpcode : RetreatQuotaOriginalOpcode;
-                    int targetValue = enabled ? RetreatQuotaPatchedValue : 6;
-
-                    if (currentOpcode != targetOpcode || currentValue != targetValue)
+                    if (currentOpcode != SpawnBudgetOriginalOpcode || currentValue != SpawnBudgetOriginalValue)
                     {
-                        BciPattern.WriteBciInt32(decompressed, opcodeOffset, currentOpcode, targetOpcode, "P9 retreat quota opcode at site 8");
-                        BciPattern.WriteBciInt32(decompressed, opcodeOffset + 4, currentValue, targetValue, "P9 retreat quota value at site 8");
+                        BciPattern.WriteBciInt32(decompressed, opcodeOffset, currentOpcode, SpawnBudgetOriginalOpcode, "P9 spawn budget opcode at site 8 (keep vanilla)");
+                        BciPattern.WriteBciInt32(decompressed, opcodeOffset + 4, currentValue, SpawnBudgetOriginalValue, "P9 spawn budget value at site 8 (keep vanilla)");
                         changed = true;
                     }
                 }
 
-                // Patch site 9
+                // Site 9: the real retreat quota — zero it so all units are donated.
                 {
                     int sigOffset = sites[9];
                     int opcodeOffset = sigOffset + RetreatQuotaOpcodeWordIndex * 4;
@@ -544,6 +573,29 @@ namespace AgainstRomeModifier
                     {
                         BciPattern.WriteBciInt32(decompressed, opcodeOffset, currentOpcode, targetOpcode, "P9 retreat quota opcode at site 9");
                         BciPattern.WriteBciInt32(decompressed, opcodeOffset + 4, currentValue, targetValue, "P9 retreat quota value at site 9");
+                        changed = true;
+                    }
+                }
+            }
+
+            // State-49 donation type filter: with the filter active, soldier squads
+            // (unit type != 1) bypass the quota branch and always retreat; operand 0
+            // makes the jz fall through so every unit is subject to the (zeroed) quota.
+            {
+                int filterOffset = BciPattern.FindBciWordPattern(decompressed, DonationTypeFilterSignature);
+                if (filterOffset < 0)
+                {
+                    if (enabled) throw new InvalidOperationException("P9 donation type filter signature not found.");
+                }
+                else
+                {
+                    int operandOffset = filterOffset + DonationTypeFilterJzOperandWordIndex * 4;
+                    int currentOperand = BitConverter.ToInt32(decompressed, operandOffset);
+                    int targetOperand = enabled ? DonationTypeFilterPatchedOperand : DonationTypeFilterOriginalOperand;
+
+                    if (currentOperand != targetOperand)
+                    {
+                        BciPattern.WriteBciInt32(decompressed, operandOffset, currentOperand, targetOperand, "P9 donation type filter jz operand");
                         changed = true;
                     }
                 }
