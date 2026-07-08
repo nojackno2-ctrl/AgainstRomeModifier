@@ -307,6 +307,24 @@ AI Ultimate M1:
 
 ### Reinforcement-party retreat quota (v56) — units handed over instead of retreating
 
+**RESOLVED & RUNTIME-CONFIRMED 2026-07-08.** The complete fix for "Roman
+reinforcements" needs THREE P9 control points working together, established over
+two sessions of disassembly and two rounds of in-game testing. Final confirmed
+result: reinforcements arrive **with soldiers** (not villagers only), **stay in
+the village as garrison instead of retreating**, military (type-4) AI still
+spawns normally, and destroyed ordinary villages still respawn. The three points:
+
+| Control point | Offset | Vanilla | Ultimate | Role |
+| --- | --- | --- | --- | --- |
+| Site 8 (spawn budget) | `0x16A44` | `[90,6]` | `[90,6]` (kept) | `v56` soldier spawn budget — must stay vanilla or reinforcements have no soldiers |
+| Site 9 (retreat quota) | `0x17880` | `[90,15]` | `[66,0]` | zero retreat quota → over-quota units donated, not retreated |
+| Type filter (state 49) | `0x1825C` | jz `92` | jz `0` | fall-through so soldier SQUADS are also subject to the zeroed quota |
+
+The "donated squads may stand passively" caveat noted below during static
+analysis **did not materialize** — in-game the garrison behaves correctly, so no
+further release/dissolve rework was needed. Detailed decode of each point
+follows.
+
 **UPDATE 2026-07-08 (second session): the state-49 donation walk has a UNIT-TYPE
 FILTER that exempts soldier squads from donation.** Runtime report after the
 site-8 fix below: soldiers now spawn, but they still retreat even with the
@@ -337,10 +355,12 @@ prints jump targets 8 bytes short; real target = printed + 8):
   (signature `[128,214, 73,-2, 86, 66,1, 96,102, 117,92]`, the file's only
   `s_getUnitType` call) operand `92 -> 0` (fall-through), so squads are also
   subject to the zeroed quota and get donated via `s_setObjMark` instead of
-  retreating. Caveat for runtime testing: donated squads keep script mode 1
-  (no `s_setScriptMode(0)` on this path — the proper release helper `0xBBC0`
-  does mode-0 + `sendMsg(6,…)` but is only used by settled-party death), so
-  they may stand passively at the village rather than actively patrol.
+  retreating. Static-analysis caveat (later DISPROVEN in-game): donated squads
+  keep script mode 1 (no `s_setScriptMode(0)` on this path — the proper release
+  helper `0xBBC0` does mode-0 + `sendMsg(6,…)` but is only used by settled-party
+  death), so it was feared they might stand passively at the village. Runtime
+  testing 2026-07-08 confirmed the garrison behaves correctly, so this path was
+  left as-is.
 
 **UPDATE 2026-07-08: site-8 zeroing REVERTED — that write is the soldier SPAWN
 BUDGET, not a retreat quota.** Runtime report: with both P9 sites at `[66,0]`,
