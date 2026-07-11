@@ -85,7 +85,7 @@ namespace AgainstRomeModifierTests {
                 Console.WriteLine("測試 1：偵測原始原版狀態...");
 
                 // Detailed debug of module and patch states
-                foreach (var module in new[] { orchestrator.M1, orchestrator.M2, orchestrator.M3, orchestrator.M4, orchestrator.M5, orchestrator.R0 }) {
+                foreach (var module in new[] { orchestrator.M1, orchestrator.M2, orchestrator.M3, orchestrator.M4, orchestrator.M5, orchestrator.M6, orchestrator.R0 }) {
                     var mState = orchestrator.DetectModule(tempDir, module);
                     Console.WriteLine($"Module {module.Name} ({module.Id}) state: {mState}");
                     foreach (var patch in module.Patches) {
@@ -199,11 +199,11 @@ namespace AgainstRomeModifierTests {
                 Console.WriteLine("[成功] 測試 4 通過。所有還原後檔案之解壓內容與原版檔案 100% 相同！");
 
                 // Test 5: 逐模組獨立套用（驗證新 UI 各模組獨立勾選的底層機制）。
-                // 只啟用 M1 與 M4（M4 含 P8+P9 硬耦合），其餘保持關閉，驗證各模組狀態互不干擾。
+                // 只啟用 M1、M4，其餘保持關閉，驗證各模組狀態互不干擾。
                 Console.WriteLine("測試 5：混合模組狀態（僅啟用 M1、M4）...");
                 rollback = new FileRollbackScope();
                 var mixed = new Dictionary<string, bool> {
-                    { "M1", true }, { "M2", false }, { "M3", false }, { "M4", true }, { "M5", false }
+                    { "M1", true }, { "M2", false }, { "M3", false }, { "M4", true }, { "M5", false }, { "M6", false }
                 };
                 foreach (var module in orchestrator.UserModules) {
                     orchestrator.ApplyModule(tempDir, module, mixed[module.Id]);
@@ -301,19 +301,19 @@ namespace AgainstRomeModifierTests {
                     if (I32(d, c + 4) != 1) Fail($"{name}: P2 回收旗標應為 1，實為 {I32(d, c + 4)}");
                 }
 
-                // P3 軍事增援等待 5000ms
+                // P3 軍事增援等待 30000ms
                 int?[] respawnSig = { 0x80, 83, 0x56, 66, null, 32, 44, 164, 0x42, 34, 0x5B, 5 };
                 int r = BciPattern.FindBciWordPattern(d, respawnSig);
                 if (r < 0) Fail($"{name}: 找不到 P3 增援等待簽章");
-                else if (I32(d, r + 16) != 5000) Fail($"{name}: P3 增援等待應為 5000，實為 {I32(d, r + 16)}");
+                else if (I32(d, r + 16) != 30000) Fail($"{name}: P3 增援等待應為 30000，實為 {I32(d, r + 16)}");
 
-                // P4 撤退期限：6 站中恰 4 站 5000、2 站（settled）600000
+                // P4 撤退期限：6 站中恰 4 站 60000、2 站（settled）600000
                 var deadlines = FindRetreatDeadlines(d);
                 if (deadlines.Count != 6) Fail($"{name}: P4 撤退期限站數應為 6，實為 {deadlines.Count}");
                 else {
-                    int acc = deadlines.Count(o => I32(d, o) == 5000);
+                    int acc = deadlines.Count(o => I32(d, o) == 60000);
                     int settled = deadlines.Count(o => I32(d, o) == 600000);
-                    if (acc != 4 || settled != 2) Fail($"{name}: P4 應為 4×5000 + 2×600000，實為 {acc}×5000 + {settled}×600000");
+                    if (acc != 4 || settled != 2) Fail($"{name}: P4 應為 4×60000 + 2×600000，實為 {acc}×60000 + {settled}×600000");
                     // 索引 0、4 必須保持 600000（§8 不變式）
                     if (I32(d, deadlines[0]) != 600000 || I32(d, deadlines[4]) != 600000)
                         Fail($"{name}: P4 settled 站(索引0/4)必須為 600000");
@@ -323,9 +323,10 @@ namespace AgainstRomeModifierTests {
                 int?[] debounceSig = { 0x5A, 24, 0x42, null, 96, 101, 117, 16, 0x42, 1, 0x5B, 17 };
                 int db = BciPattern.FindBciWordPattern(d, debounceSig);
 
-                // P15: both settled-party handlers enter DELETE_TEAM (257).
-                // The later DELETE_PARTY (256) comparison remains unchanged.
-                int settledDeleteTeamSites = 0;
+                // P15 safety migration: both settled-party handlers remain on
+                // DELETE_PARTY (256); legacy DELETE_TEAM (257) must be absent.
+                int safeSettledSites = 0;
+                int legacyDeleteTeamSites = 0;
                 for (int off = 0; off <= d.Length - 68; off += 4) {
                     if (I32(d, off) != 71 || I32(d, off + 4) != 66 || I32(d, off + 8) != 0 ||
                         I32(d, off + 12) != 117 || I32(d, off + 16) != 16 || I32(d, off + 20) != 66 ||
@@ -333,17 +334,20 @@ namespace AgainstRomeModifierTests {
                         I32(d, off + 44) != 66 || I32(d, off + 48) != 256 ||
                         I32(d, off + 52) != 90 || I32(d, off + 56) != 14 ||
                         I32(d, off + 60) != 96 || I32(d, off + 64) != 118) continue;
-                    if (I32(d, off + 24) == 257) settledDeleteTeamSites++;
+                    int stateLocal = I32(d, off + 32);
+                    if (stateLocal != 6 && stateLocal != 7) continue;
+                    if (I32(d, off + 24) == 256) safeSettledSites++;
+                    if (I32(d, off + 24) == 257) legacyDeleteTeamSites++;
                 }
-                if (settledDeleteTeamSites != 2)
-                    Fail($"{name}: P15 settled DELETE_TEAM sites should be 2, actual {settledDeleteTeamSites}");
+                if (safeSettledSites != 2 || legacyDeleteTeamSites != 0)
+                    Fail($"{name}: P15 safe DELETE_PARTY sites should be 2 and legacy DELETE_TEAM sites 0, actual {safeSettledSites}/{legacyDeleteTeamSites}");
                 if (db < 0) Fail($"{name}: 找不到 P5 去彈跳簽章");
                 else if (I32(d, db + 12) != 3) Fail($"{name}: P5 去彈跳應為 3，實為 {I32(d, db + 12)}");
 
                 // P6 排程迴圈延遲：符合 pushlit/pushlit/pushsym-16 形狀的站點很多（symbol 16
                 // 有多處呼叫），無法只靠 opcode 形狀定位迴圈站。改用值特徵獨立判定：
-                // 迴圈延遲站的值必為「終極 10000/5000」或「原始大範圍」之一，其餘小值站是無關呼叫。
-                // 斷言：恰 6 站持有終極值 10000/5000，且無任何站殘留未加速的原始/legacy 迴圈範圍。
+                // 迴圈延遲站的值必為「終極 30000/30000」或「原始大範圍」之一，其餘小值站是無關呼叫。
+                // 斷言：恰 6 站持有終極值 30000/30000，且無任何站殘留未加速的原始/legacy 迴圈範圍。
                 var origRanges = new HashSet<(int, int)> {
                     (960000, 480000), (360000, 240000), (120000, 60000), (240000, 120000)
                 };
@@ -351,10 +355,10 @@ namespace AgainstRomeModifierTests {
                 for (int off = 0; off <= d.Length - 24; off += 4) {
                     if (I32(d, off) != 0x42 || I32(d, off + 8) != 0x42 || I32(d, off + 16) != 0x80 || I32(d, off + 20) != 16) continue;
                     int up = I32(d, off + 4), lo = I32(d, off + 12);
-                    if (up == 10000 && lo == 5000) ultLoops++;
+                    if (up == 30000 && lo == 30000) ultLoops++;
                     else if (origRanges.Contains((up, lo)) || (up == 2000 && lo == 1000)) leftover++;
                 }
-                if (ultLoops != 6) Fail($"{name}: P6 應有恰 6 站持有終極值 10000/5000，實為 {ultLoops}");
+                if (ultLoops != 6) Fail($"{name}: P6 應有恰 6 站持有終極值 30000/30000，實為 {ultLoops}");
                 if (leftover != 0) Fail($"{name}: P6 有 {leftover} 站殘留未加速的原始/legacy 迴圈範圍");
 
                 // P7 聚落生成機率：6 個 101
@@ -375,11 +379,27 @@ namespace AgainstRomeModifierTests {
                     if (I32(d, lim + 32) != 66 || I32(d, lim + 36) != 0) Fail($"{name}: P8 gate 應保持 66,0，實為 {I32(d, lim + 32)},{I32(d, lim + 36)}");
                 }
 
-                // P9 撤退配額歸零 [66,0]
-                int?[] quotaSig = { 81, 57, 90, -3, 90, 14, 164, 81, 56, 90, -3, null, null, 164, 81, 61 };
-                int q = BciPattern.FindBciWordPattern(d, quotaSig);
-                if (q < 0) Fail($"{name}: 找不到 P9 撤退配額簽章");
-                else if (I32(d, q + 44) != 66 || I32(d, q + 48) != 0) Fail($"{name}: P9 撤退配額應為 66,0，實為 {I32(d, q + 44)},{I32(d, q + 48)}");
+                // P9：索引 8 是 type-5 士兵生成預算，必須保持原版 [90,6]（歸零會導致增援只有村民）；
+                // 索引 9 才是撤退配額，啟用時改為 [66,0]（全數捐贈、不撤退）。
+                int?[] quotaSig = { 81, 56, 90, -3, null, null, 164 };
+                var qSites = BciPattern.FindAllBciWordPatternSites(d, quotaSig);
+                if (qSites.Count != 10) Fail($"{name}: P9 撤退配額應有 10 處，實為 {qSites.Count}");
+                else {
+                    int q8 = qSites[8];
+                    if (I32(d, q8 + 16) != 90 || I32(d, q8 + 20) != 6)
+                        Fail($"{name}: P9 生成預算(索引 8，偏移 0x{q8:X})應保持原版 90,6，實為 {I32(d, q8 + 16)},{I32(d, q8 + 20)}");
+                    int q9 = qSites[9];
+                    if (I32(d, q9 + 16) != 66 || I32(d, q9 + 20) != 0)
+                        Fail($"{name}: P9 撤退配額(索引 9，偏移 0x{q9:X})應為 66,0，實為 {I32(d, q9 + 16)},{I32(d, q9 + 20)}");
+                }
+
+                // P9 第三控制點：狀態 49 捐贈走訪的 s_getUnitType 型別過濾 jz 位移應為 0
+                // （原版 92 會讓士兵小隊繞過捐贈、一律撤退）
+                int?[] typeFilterSig = { 128, 214, 73, -2, 86, 66, 1, 96, 102, 117, null };
+                int tf = BciPattern.FindBciWordPattern(d, typeFilterSig);
+                if (tf < 0) Fail($"{name}: 找不到 P9 捐贈型別過濾簽章");
+                else if (I32(d, tf + 40) != 0)
+                    Fail($"{name}: P9 捐贈型別過濾 jz 位移應為 0，實為 {I32(d, tf + 40)}");
             }
 
             // ---- ak_haupthaus.bci ----

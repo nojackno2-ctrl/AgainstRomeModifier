@@ -1,5 +1,8 @@
 # Against Rome Modifier Complete Technical Document
 
+> [!IMPORTANT]
+> This modifier is still in testing. Please backup your original files before using it.
+
 Updated: 2026-07-05.
 
 This document describes the current code, data formats, reverse-engineering evidence, enabled patches, candidates, and rejected approaches. It is not a version history. Each feature has one current description. Reproducible runtime behavior and the latest concrete decompiler evidence take precedence over an older interpretation.
@@ -25,7 +28,7 @@ For the detailed maintenance chronology, debugging failures, checklists, and wor
 | `src/Program.cs` | WinForms entry, elevation, High DPI startup, global exception handling. |
 | `src/Core/GameLZSS.cs` | LZSS and `PFIL@` wrapper decode/encode with bounds checks. |
 | `src/Core/Bci/` | BCI signature matching, word writes, and PFIL script handling. |
-| `src/Core/EndlessAi/` | AI Ultimate M1-M5 modules, state detection, and orchestration. |
+| `src/Core/EndlessAi/` | AI Ultimate M1-M14 modules, state detection, and orchestration. |
 | `src/Core/TroopConfig.cs` | Field enums, unit IDs, names, factions, tiers, types, and balance baselines. |
 | `src/Core/Patches/` | Pure, WinForms-independent patch logic: `ObjdefPatcher`, `RessPatcher`, `ClScriptPatcher`, `ClEparaPatcher`, `ClScintPatcher`, `TeamDatPatcher`, `ExePatchModel`, `VerifiedBinaryWriter`. Byte computation and fixed-offset state detection/planning live here so they can be unit-tested without WinForms or copyrighted game files. |
 | `src/UI/ModifierForm.cs` | Main UI, controls, backup cache, parsed unit cache, shared state. |
@@ -51,14 +54,15 @@ Apply order:
 1. Validate the directory and `Against_Rome.exe`.
 2. Load originals and confirm with the user.
 3. Snapshot UI values on the UI thread.
-4. Apply EXE compatibility state.
-5. Apply `cl_script.ini`.
-6. Apply `ress.ini`.
-7. Apply `objdef.dau`.
-8. Restore original `team.dat` files, then apply population only.
-9. Apply endless-mode BCI changes.
-10. Apply language resources.
-11. Commit, dispose rollback state, and reload current values.
+4. Within the same rollback transaction, run `RestoreOriginalFilesInternal` without changing the UI snapshot. This shares the Restore All file path and clears modifier-managed EXE, stats, team.dat, endless AI, food-healing, language, and dgVoodoo2 state left by older builds.
+5. Apply EXE compatibility state.
+6. Apply `cl_script.ini`.
+7. Apply `ress.ini`.
+8. Apply `objdef.dau`.
+9. Restore original `team.dat` files, then apply population only.
+10. Apply endless-mode BCI changes.
+11. Apply language resources.
+12. Commit, dispose rollback state, and reload current values.
 
 ## 4. PFIL/LZSS and Text Compatibility
 
@@ -199,12 +203,19 @@ Every `MAPS/**/team.dat` is restored from its original first. The core switch th
 
 ## 10. Endless `ak_level.bci`
 
-AI Ultimate is exposed as five independent modules: M1 reinforcement size, M2 reinforcement cadence, M3 defeat recovery, M4 settlement spawning and retention, and M5 starting resources. The non-optional R0 repair restores rejected global CLAK edits. `src/Core/EndlessAi/EndlessAiOrchestrator.cs` owns module detection and application.
+AI Ultimate is refactored into 6 independent user-facing experience modules: M1 reinforcement size (P1 unit count + P10 Town Hall conversion + P12 Dorfverteidigung defense batch), M2 accelerated reinforcement (P3 cooldown + P6 scheduler loop delay), M3 fast defeat recovery (P4 retreat deadline + P5 team-death debounce + P11 camp demolish delay), M4 guaranteed settlement spawn (P7 spawner probability + P17 Roman founder gate 60 -> 100 + P18/P19 settle-place unlock), M5 AI starting resources (P13 stockpile), and M6 increase garrison size (P8 active unit limit 4 -> 40).
 
-M3 also includes P15. The two settled-party terminal transitions change from
-`DELETE_PARTY (256)` to `DELETE_TEAM (257)` at decompressed offsets `0x109E8`
-and `0x16374`. This uses the script's existing team-cleanup path before the team
-id is recycled; transient raider and reinforcement parties remain on state 256.
+Added 2026-07-08, all in M4, **RUNTIME-CONFIRMED**: P17/P18/P19 fix the long-standing "defeated CPUs eventually stop respawning" endless-mode bug. Root cause: both village (type-1) and Roman founder (type-4) creation must first obtain a free settle place from `fn 0x9904`; a place is vetoed whenever ANY team's village center or ANY team's units (including the player's) are within radius 2500. Late-game player expansion plus dead-team leftovers in npc.dat permanently veto all 8 places, so creation silently deletes the fresh party and fails forever. P18 raises the unit-scan comparand 0 -> 1 (player units no longer veto; anchor = the file's only `callint -636`); P19 shrinks the veto radius 2500 -> 800 (anchor = the only `callint -36800`). P17 (designed and unit-tested 2026-07-06) had never been wired into a module until now — installed files still carried the vanilla 60. After applying M4 to the live install, the player confirmed in-game that defeated CPU teams resume respawning. Independent byte-level verification: all five maps show exactly 1 signature hit each with the exact Ultimate values, correct PFIL header size fields, and byte-identical decompress/recompress round-trips; `dotnet test --filter CheckGameStatusTest` reports M1-M6 all `Ultimate` with zero `Legacy`/`Unknown`. Note: saves embed their own ak_level script, so the fix applies to NEW endless games only. See `docs/reverse-engineering/endless-mode-ai.md` for the full decode.
+To prevent game logic deadlocks and respawn-related crashes, P2 (completed-job slot recycle) and P15 (DELETE_PARTY safety migration) are merged into R0 as mandatory background safety fixes. They are applied automatically under the hood to ensure robust AI execution. `src/Core/EndlessAi/EndlessAiOrchestrator.cs` owns module detection and application.
+
+P15 is now a mandatory R0 safety repair. The two settled-party terminal
+transitions at decompressed offsets `0x109E8` and `0x16374` must remain on the
+vanilla `DELETE_PARTY (256)` path. A previous build changed them to
+`DELETE_TEAM (257)`, which can delete the team while `ak_haupthaus.bci` waits
+for an individual teardown acknowledgement. The missing acknowledgement can
+stall the simulation loop indefinitely. Detection classifies 257 and mixed
+256/257 states as Legacy, and both apply/restore migrate them to 256. P15 is no
+longer part of user-toggleable M3. P2/P4/P5/P11/P8 are also applied as permanent safety valves to prevent NPC job slot exhaustion, overlapping respawn crashes, and reinforcement freezes.
 
 `MAPS/ENDL_*/SCRIPT/ak_level.bci` is a `BCI0` compiled-script payload inside `PFIL@`. Patches search opcode/literal signatures and have been found with the same local sequence in `ENDL_000` through `ENDL_004`.
 
@@ -214,15 +225,19 @@ id is recycled; transient raider and reinforcement parties remain on state 256.
 - Older builds edited three global CLAK economy scripts. `ak_npc.bci` (free-civilian reserve) and `ak_produktion.bci` (production gate) proved not NPC-scoped in runtime testing — they stop staffed player resource buildings even in a new game — and are always restored by R0. The third edit, `ak_haupthaus.bci` conversion size `[81,59] -> [66,20]` at `0x3FCC`, is controlled by M1: Ghidra decompilation of the `s_createBattleUnitsMax` implementation (`FUN_005249d0`) confirms the argument is the members-per-battle-unit count, clamped by the EXE to 0..20, and each call already converts all gathered idle civilians (up to 100) in batches of that size. The original runtime value is 6, matching the observed 6-man AI conversion units. A player manual-conversion regression check is still pending.
 - 2026-07-03 correction: with only the `ak_haupthaus` edit, in-game AI conversions stayed at 6. The main-house call sits in the `var57 == 34` (CIVRECREATE_WAIT) branch and only fires in the military-reinforcement recreate chain; the village AI's day-to-day conversion runs through `Dorfverteidigung.bci`'s four `s_addNPCJob_createUnit(team, 1, type∈{1,2,6,3}, 0, 0, 6, 6, 1, 0)` sites (pushsym at decompressed `0xF1BC/0xF264/0xF30C/0xF3B4`). Args 6/7 are the per-unit member min/max (job `+0x11/+0x12`; EXE clamp 1..20 since arg 2 is 1); the job executor (~`00548700`) gathers that many idle civilians and calls `FUN_00523a00` once — one job creates one N-member unit, which also confirms the `ak_level.bci` military job counts (`4..4 -> 20..20`) are members-per-unit. AI Ultimate now patches all eight literals `6 -> 20` via the signature `[66,0, 66,1, 66,?, 66,?, 66,0, 66,0, 66,?, 66,1, 90,8, 128,157, 73,-9, 86]` (exactly four hits enforced); disabling restores 6. Runtime verified 2026-07-03: with the patch applied, the village AI converts 20 villagers into a single squad in-game.
 - EXE path `0054aa80 -> 00547f50` clamps this mode to 1..20.
-- Military reinforcement wait at decompressed `0x178E0`: `180000 -> 5000 ms`.
-- The reinforcement donation formula remains original. The `v56[party]` retreat quota changes from `[90,15]` to `[66,0]`, handing the whole type-5 reinforcement party to the village instead of retreating. This patch is applied and restored atomically with the threshold of 40; the earlier quota-only combination with threshold 8 stopped arrivals after roughly one wave.
-- Party retreat/cleanup deadlines use a mixed target. The four non-settlement sites `0x119C0`, `0x12FFC`, `0x13FE8`, and `0x17F38` change from `600000 -> 5000 ms`. The settled-party sites `0x10700` and `0x160EC` stay at `600000 ms`: states 51/52 normally wait for the engine's old-village/palisade cleanup condition, and the deadline is only a fallback. The earlier all-six-at-5000 build forced DELETE_PARTY before cleanup completed, allowing the same team to resettle while NPC village records still pointed at the old location. Apply recognizes that build as legacy-enabled and migrates it to the mixed target. The initial-arrival timeout at `0x7F24` also remains `600000 ms`.
+- Military reinforcement wait at decompressed `0x178E0`: `180000 -> 30000 ms` (30 seconds).
+- The reinforcement donation formula remains original.
+- The `v56[party]` retreat quota patch (with "increase garrison size (M6)") now modifies ONLY index 9 (donation flow, offset `0x17880`, original `[90,15]`) to `[66,0]` — zero retreat quota, so units beyond the quota are handed over via `s_setObjMark` to the type-4 party. Index 8 (offset `0x16A44`, `RoemischerNachschub` initialization, original `[90,6]`) is ALWAYS kept vanilla: disassembly proved that this site's `v56` write is the SOLDIER SPAWN BUDGET (`s_randRange(2,4)`), consumed by the spawn loop in internal function `0xA964` (read at `0xA9CC`, decremented per spawned batch). Zeroing it made reinforcements arrive with villagers only and no soldiers (reported and fixed 2026-07-08). The legacy "both sites `[66,0]`" state is detected as Legacy and migrated (index 8 restored to `[90,6]`) on apply. The other 8 signature sites remain untouched.
+- P9 third control point (added 2026-07-08): the unit-type filter inside the state-49 donation walk. Vanilla checks `s_getUnitType(obj) == 1` at `0x18238` (the file's ONLY s_getUnitType call) before entering the quota/donation branch, so soldier SQUADS (unit type != 1) always stay in the retreat array and are marched to the map exit and destroyed by state 50 — this was why soldiers still retreated even with the quota zeroed (reported 2026-07-08). Fix: change the jz jump operand `92 -> 0` in signature `[128,214, 73,-2, 86, 66,1, 96,102, 117,92]` (fall-through, condition consumed), so ALL units are subject to the zeroed quota and get donated. Disable restores 92. The intermediate state "index 9 zeroed but filter still 92" is detected as Legacy and auto-migrated.
+- **P9 three-control-point summary (RUNTIME-CONFIRMED 2026-07-08 ✅)**: the "Roman reinforcements" fix requires all three control points together — ① index 8 `0x16A44` kept at `[90,6]` (soldier spawn budget); ② index 9 `0x17880` set to `[66,0]` (retreat quota zeroed); ③ state-49 type-filter jz at `0x1825C` changed `92 -> 0` (soldier squads also donated). Confirmed in-game result: reinforcements arrive with soldiers (not villagers only), stay in the village as garrison instead of retreating, type-4 military AI still spawns, and destroyed ordinary villages still respawn. The static-analysis worry that "donated squads might stand passively" (donation only re-marks, without `s_setScriptMode(0)`) did NOT materialize; the garrison behaves correctly, so no state-32 dissolve-delivery rework was needed.
+- Party retreat/cleanup deadlines use a mixed target. The four non-settlement sites `0x119C0`, `0x12FFC`, `0x13FE8`, and `0x17F38` change from `600000 -> 60000 ms` (1 minute). The settled-party sites `0x10700` and `0x160EC` stay at `600000 ms`: states 51/52 normally wait for the engine's old-village/palisade cleanup condition, and the deadline is only a fallback. The earlier all-six-at-5000/60000 build forced DELETE_PARTY before cleanup completed, allowing the same team to resettle while NPC village records still pointed at the old location. Apply recognizes that build as legacy-enabled and migrates it to the mixed target. The initial-arrival timeout at `0x7F24` also remains `600000 ms`.
 - `SYSTEM/CLAK/SCRIPT/ak_haupthaus.bci` old-village cleanup cadence: the unique initialization sequence at `0x3248` sets the dead-village pass to `1500 + rand(-25,25)` ms, then the leave-village loop removes one confirmed building/palisade per pass. AI Ultimate changes only the base literal `1500 -> 100`, yielding `75..125` ms per object while preserving confirmations. A 71-object village therefore drops from roughly 105 seconds to roughly 7 seconds. Disable restores 1500; an enabled install still holding 1500 is accepted for migration. This script path also applies to a player village after its main building dies, but does not affect normal live-village production cadence.
 - Dead-party confirmation counter at decompressed `0x1068C`: `20 -> 3` consecutive ticks (settled-party handler; counts ticks with village, leader, civilians, and members all gone before entering RETREAT).
 - `ak_npc.bci` needs no patch for reactivation: its per-team state machine already calls `s_setNPCActive(team, 1)` when a healthy village exists for an inactive team. Save files are never modified.
-- All six AI scheduler delay sites use `5000..10000` ms. The first three are inner raider timers; the last three initialize and refresh the outer scheduler that gates the settlement/military dispatcher. Leaving the outer sites at their original 60-240 seconds made AI arrivals slow even when the inner timers were accelerated. A `1000..2000` ms interim build caused computer respawns to stall in runtime testing and is rejected; Apply recognizes and migrates that state back to 5-10 seconds.
+- All six AI scheduler delay sites use `30000 ms` (30 seconds). The first three are inner raider timers; the last three initialize and refresh the outer scheduler that gates the settlement/military dispatcher. Leaving the outer sites at their original 60-240 seconds made AI arrivals slow even when the inner timers were accelerated. A `1000..2000` ms interim build and the former `5000..10000` ms target are rejected; Apply recognizes and migrates them to 30 seconds.
 - Settlement-spawner default and 0/1/2/3-live-party probabilities are all set to 101, so spawning always triggers while an eligible team exists. In single player the occupied mask protects player team 0 and `pickTeam` selects only unoccupied CPU teams 1-7, giving a hard result of one player plus at most seven simultaneous CPU opponents without duplicating occupied teams.
-- Military-reinforcement unit-count threshold at decompressed `0x195F8`: `4 -> 40`; this is not an AI-player limit. Legacy value 8 is migrated on the next Apply. The gate at `0x1960C` remains `66,0`.
+- M8 changes new-game initialization from `s_randRange(4, 2) -> v70` to `s_randRange(4, 4) -> v70`. Four type-1 village AIs plus the separate type-4 military settlement produce five settled opponents. Disabling restores the vanilla random 2-4 range, and the former `s_randRange(3, 3)` state is migrated automatically. Because `v70` is initialized when the game starts, existing saves are not rewritten.
+- Military-reinforcement unit-count threshold at decompressed `0x195F8`: `4 -> 40`; this is not an AI-player limit. A 2026-07-05 `ESAVE_000` snapshot showed the active Roman military settlement had only about nine 20-member units when the original main-house resource conditions stopped later waves; the earlier bounded gate still let transient leader/civilian state suppress subsequent waves. P8 now replaces the condition tail beginning at `0x1960C` with three equivalent `teamUnits < 40` branches. Earlier type-4-settlement, building, and one-active-type-5-party checks remain intact. The old unconditional `jmp +272` remains rejected because it also skipped the 40-unit bound and could exhaust job slots. Threshold 8, threshold 40 with the original gate, both earlier bounded gates, and the old unconditional gate are migrated on Apply.
 - Older `112,272` gate bypasses and blanket 5000..10000 ms action-loop patches are migrated; only the three bounded reinforcement polling loops remain accelerated.
 - Earlier enabled builds with original spawner probabilities, the prior first-three-only scheduler state, Gemini's interim all-six-loops state, or all six retreat deadlines at 5000 ms are detected as legacy-enabled. Apply migrates them to guaranteed spawning, six bounded scheduler delays at 5-10 seconds, and the protected settlement-cleanup deadlines.
 - Disable/compatibility restore reverses every count, delay, limit, and gate value.
@@ -289,7 +304,7 @@ The static hypothesis changed `delta * 64 + 32` to `delta * 128 + 32`. The four 
 
 `00539700` initializes pending-village state through `00536450`. The logical point test `00536820` is directly reached by script/AI wrapper `005367c0` and candidate-position search `00544fd0`; player previews `0044f4b0` and `0044f7b0` do not call it. This rules out `00536630` as the general player construction-range gate.
 
-The current patch hooks `005364c1` (file `0x1364c1`) into a 289-byte executable zero-padding region at `0056258f` (file `0x16258f`). The trampoline preserves both negative-value checks, scales `ESI`/`EDI` with `value * 3`, calls `004c0900`, and returns at `005364d1`, keeping the type-definition and per-object copies synchronized. Runtime testing previously confirmed this setter path at 2x; the 3x factor and its effect on the red dashed frame have been successfully runtime-verified in-game.
+The current patch hooks `005364c1` (file `0x1364c1`) into a 289-byte executable zero-padding region at `0056258f` (file `0x16258f`). The trampoline preserves both negative-value checks, scales `ESI`/`EDI` with `value * 5`, calls `004c0900`, and returns at `005364d1`, keeping the type-definition and per-object copies synchronized. Runtime testing previously confirmed this setter path and synchronized red frame at 3x. The 5x machine-code and state migration are statically tested but still require in-game confirmation.
 
 The modifier never writes the four rejected `07` candidates. It only detects legacy two-site or four-site states and restores all four original shift-6 instructions. The option and preset field control only the runtime-verified setter trampoline. Unknown mixed bytes are left untouched with a warning.
 
@@ -375,7 +390,7 @@ Use these before repeating whole-program analysis. Rebuild the inventory only fo
 ## 16. Verification Checklist
 
 - `dotnet test .\tests\AgainstRomeModifier.Tests\AgainstRomeModifier.Tests.csproj -c Release` passes (33 xUnit tests as of 2026-07-05). All fixtures are synthetic; no copyrighted game files are required, so this also runs in the `.github/workflows/ci.yml` CI job on a clean checkout. The legacy `tests/verify_split_patches` console project still depends on a local `遊戲原始檔案/` tree and is manual-only, not part of CI.
-- `ExePatchModelTests` specifically covers the EXE fixed-offset patches (focus-loss, spell-altar, legacy village-range restore, village setter 2x/2.5x/3x): state detection, enable/disable round-trips, migration from any legacy setter state to 3x and back, and abort-without-corruption when expected bytes don't match.
+- `ExePatchModelTests` specifically covers the EXE fixed-offset patches (focus-loss, spell-altar, legacy village-range restore, village setter 2x/2.5x/3x/5x): state detection, enable/disable round-trips, migration from any legacy setter state to 5x and back, and abort-without-corruption when expected bytes don't match.
 - Build succeeds and JSON parses.
 - The current Chinese and English documents are included by the project as the
   intended embedded resources.
@@ -391,12 +406,20 @@ Use these before repeating whole-program analysis. Rebuild the inventory only fo
 - AI Ultimate testing must cover all five endless maps, late reinforcement
   waves, respawn, action loops, completed-job recycling, restore, and old saves.
 - The current village result remains: all four candidate changes produced no visible effect.
-- The setter trampoline is applied at 3x for both the player-usable village
-  construction range and red dashed frame in-game.
+- The setter trampoline now targets 5x for both the player-usable village
+  construction range and red dashed frame. The shared path was runtime-verified at
+  3x; the 5x factor still needs an in-game check.
+
+### 2026-07-05: Leader-death glory-retention feature withdrawn
+
+- In-game testing confirmed that attempting to completely disable the leader-death glory-retention behavior causes the game to crash. The behavior is therefore treated as unsafe to modify.
+- The modifier no longer exposes the option, embeds the patched BCI, applies or detects the patch, or restores its script state. Enable All, normal Apply, Restore All, and Restore Stats all exclude this feature.
+- The modifier no longer exposes or applies leader-death glory retention. Because the retired experimental script is confirmed to cause an access-violation crash in combat, modifier startup and the food-healing apply/restore path now identify that exact legacy `ak_anfuehrer.bci` payload (with either healing literal 1 or 10), rebuild it from the embedded vanilla file, and then apply the still-supported healing-value patch. Unknown or third-party scripts are not overwritten by this migration.
+- The root cause is not yet isolated. Any future implementation must pass in-game validation; a successful build and static validation do not establish safety.
 
 ## 17. Known Limits
 
-Machine decompilation cannot recreate every original source line, identifier, comment, or build project. A function inventory is navigation, not 100% semantic truth. Some `ress.ini` fields, `apt.dat` entries, and BCI opcodes remain candidates. AI Ultimate's count, timing, active-limit, and completed-job recycling changes still require a long-running endless-mode regression test; global civilian production/training edits are disabled after causing player resource-production regression. The setter path is applied at 3x for both construction range and red dashed frame in-game.
+Machine decompilation cannot recreate every original source line, identifier, comment, or build project. A function inventory is navigation, not 100% semantic truth. Some `ress.ini` fields, `apt.dat` entries, and BCI opcodes remain candidates. AI Ultimate's count, timing, active-limit, and completed-job recycling changes still require a long-running endless-mode regression test; global civilian production/training edits are disabled after causing player resource-production regression. The setter path now targets 5x for both construction range and red dashed frame; runtime confirmation of the new factor is pending.
 
 Always separate a stored value from its runtime meaning. Proximity, naming similarity, or a plausible static formula is not sufficient proof.
 

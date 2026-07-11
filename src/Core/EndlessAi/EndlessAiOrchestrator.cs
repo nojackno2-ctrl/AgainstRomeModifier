@@ -12,6 +12,7 @@ namespace AgainstRomeModifier
         public EndlessAiModule M3 { get; }
         public EndlessAiModule M4 { get; }
         public EndlessAiModule M5 { get; }
+        public EndlessAiModule M6 { get; }
         public EndlessAiModule R0 { get; }
 
         public List<EndlessAiModule> UserModules { get; }
@@ -55,7 +56,7 @@ namespace AgainstRomeModifier
                 },
                 new int[] { 4 },
                 new int[] { 180000 },
-                new int[] { 5000 },
+                new int[] { 30000 },
                 1
             );
 
@@ -124,10 +125,50 @@ namespace AgainstRomeModifier
                 4
             );
 
+            // P17: 羅馬奠基者生成門檻 — type-4 spawner 的 60% 機率閘 60 -> 100（必過）。
+            // 先前僅有測試（RomanFounderGatePatchTests）而未接進任何模組，導致實際檔案仍為 60。
+            var p17 = new BciLiteralPatch(
+                "P17",
+                "MAPS/ENDL_*/SCRIPT/ak_level.bci",
+                new int?[] { 66, null, 66, 100, 66, 1, 128, 16, 73, -2, 86, 96, 101, 117 },
+                new int[] { 1 },
+                new int[] { 60 },
+                new int[] { 100 },
+                1
+            );
+
+            // P18: 重生據點解鎖 — 定居地點的單位鄰近檢查不再被玩家（team 0）單位否決。
+            // fn0x858 回傳「地點半徑內有單位的最小隊伍編號」（0..7，玩家=0；無=-1），
+            // fnA54 以 result >= <比較值> 判定地點被佔用。比較值 0->1 使玩家駐軍不再永久封鎖重生地點，
+            // CPU 隊伍單位仍會否決。唯一錨點：檔案內唯一的 callint -636（fn0x858 呼叫）。
+            var p18 = new BciLiteralPatch(
+                "P18",
+                "MAPS/ENDL_*/SCRIPT/ak_level.bci",
+                new int?[] { 120, -636, 73, -3, 86, 66, null, 96, 101, 117, 20, 66, 0, 87 },
+                new int[] { 6 },
+                new int[] { 0 },
+                new int[] { 1 },
+                1
+            );
+
+            // P19: 重生據點解鎖 — 地點佔用判定半徑 2500 -> 800。
+            // fn0x9904 對每個定居地點以此半徑呼叫 fnA54（村莊中心距離 + 單位搜尋共用同一半徑）。
+            // 2500 會讓玩家後期擴張與死亡隊伍殘留把全部 8 個地點永久封死（重生停止的根因）；
+            // 800 僅在地點近旁確實被佔用時才否決。唯一錨點：檔案內唯一的 callint -36800（fnA54 呼叫）。
+            var p19 = new BciLiteralPatch(
+                "P19",
+                "MAPS/ENDL_*/SCRIPT/ak_level.bci",
+                new int?[] { 66, null, 90, 1, 90, 0, 120, -36800, 73, -3, 86 },
+                new int[] { 1 },
+                new int[] { 2500 },
+                new int[] { 800 },
+                1
+            );
+
             // P13: 聚落模板開局資源
             var p13 = new P13_SettlementTemplatePatch();
 
-            // Fully clear a defeated settled AI team before recycling it.
+            // Restore the unsafe legacy DELETE_TEAM terminal transitions.
             var p15 = new P15_SettledPartyDeleteTeamPatch();
 
             // P14: 強制還原已被否決的修補
@@ -135,12 +176,13 @@ namespace AgainstRomeModifier
 
             M1 = new EndlessAiModule("M1", "增援規模", new List<IEndlessPatch> { p1, p10, p12 });
             M2 = new EndlessAiModule("M2", "增援節奏", new List<IEndlessPatch> { p3, p6, p2 });
-            M3 = new EndlessAiModule("M3", "敗亡快速回收", new List<IEndlessPatch> { p4, p5, p11, p15 });
-            M4 = new EndlessAiModule("M4", "保證聚落生成與留守", new List<IEndlessPatch> { p7, p8, p9 });
+            M3 = new EndlessAiModule("M3", "敗亡快速回收", new List<IEndlessPatch> { p4, p5, p11 });
+            M4 = new EndlessAiModule("M4", "強制部落生成", new List<IEndlessPatch> { p7, p17, p18, p19 });
             M5 = new EndlessAiModule("M5", "開局資源", new List<IEndlessPatch> { p13 });
-            R0 = new EndlessAiModule("R0", "常駐修復", new List<IEndlessPatch> { p14 });
+            M6 = new EndlessAiModule("M6", "提升守軍數量", new List<IEndlessPatch> { p8, p9 });
+            R0 = new EndlessAiModule("R0", "常駐修復", new List<IEndlessPatch> { p14, p15 });
 
-            UserModules = new List<EndlessAiModule> { M1, M2, M3, M4, M5 };
+            UserModules = new List<EndlessAiModule> { M1, M2, M3, M4, M5, M6 };
         }
 
         public void ClearCache()
@@ -234,7 +276,9 @@ namespace AgainstRomeModifier
                         allUltimate = false;
                         continue;
                     }
-                    return PatchState.Unknown;
+                    // 檔案數量不符預期但仍有找到檔案，視為不完整套用的 Legacy 狀態，而不應直接阻斷為 Unknown
+                    allOriginal = false;
+                    allUltimate = false;
                 }
 
                 foreach (string path in paths)
@@ -305,9 +349,13 @@ namespace AgainstRomeModifier
         public bool ApplyModule(string gamePath, EndlessAiModule module, bool enabled)
         {
             var state = DetectModule(gamePath, module);
-            if (state == PatchState.Unknown)
+            if (state == PatchState.Unknown && enabled)
             {
                 throw new InvalidOperationException($"模組 {module.Name} ({module.Id}) 處於未知或不相容狀態，無法安全套用。");
+            }
+            if (!enabled && (state == PatchState.Original || state == PatchState.Unknown))
+            {
+                return false;
             }
 
             bool changed = false;

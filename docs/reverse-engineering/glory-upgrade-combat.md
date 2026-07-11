@@ -207,6 +207,26 @@ Two implementation routes:
    `obje_aktruhm` in a per-tribe slot. Avoids the script symbol-table and
    persistence-scope unknowns but is an assembly-level code patch.
 
+### Modifier support withdrawn after runtime crash (2026-07-05)
+
+In-game testing confirmed that completely disabling the leader-death glory
+retention behavior causes the game to crash. The feature is therefore treated
+as unsafe to modify.
+
+The modifier no longer exposes this option in the UI, embeds it, or applies it.
+Older builds could nevertheless leave the retired payload installed. Runtime
+evidence now shows that payload can crash with an access violation when combat
+invokes the leader script. Startup, apply, and restore therefore fingerprint that exact
+decompressed `ak_anfuehrer.bci` payload (independent of the food-healing 1/10
+literal), rebuild it from the embedded vanilla file, and only then apply the
+supported food-healing literal patch. Unknown or third-party scripts remain
+untouched.
+
+The precise invalid runtime state inside the retired payload has not yet been
+isolated. Static build or script validation is not sufficient evidence that a
+future implementation is safe; any replacement must pass in-game validation
+before this feature can be offered again.
+
 ## Modding Notes
 
 - To let ordinary warriors gain glory-based combat growth, give their objdef row

@@ -41,10 +41,6 @@ namespace AgainstRomeModifier {
         private TabPage tabCurrentStats = null!;
         private TabPage tabDoc = null!;
         private TextBox txtDoc = null!;
-        private TabPage tabSkills = null!;
-        private Button btnNavSkills = null!;
-        private DataGridView dgvGeneralSkills = null!;
-        private DataGridView dgvLeaderGlory = null!;
         private TabPage tabSaveManager = null!;
         private Button btnNavSaveManager = null!;
 
@@ -86,8 +82,12 @@ namespace AgainstRomeModifier {
         private ModernToggle chkAiM3 = null!;
         private ModernToggle chkAiM4 = null!;
         private ModernToggle chkAiM5 = null!;
+        private ModernToggle chkAiM6 = null!;
         private ModernToggle chkDgVoodoo = null!;
         private ModernToggle chkVillageBuildRange = null!;
+        private Label lblGameSpeed = null!;
+        private ComboBox cmbGameSpeed = null!;
+        private Label lblHelpGameSpeed = null!;
         private Button btnTroopPreset = null!;
         private Label lblTroopTemplate = null!;
         private ComboBox cbTroopTemplate = null!;
@@ -97,11 +97,6 @@ namespace AgainstRomeModifier {
         private string presetFileName = "";
         private ModernToggle chkToEng = null!;
         private ModernToggle chkInfiniteMorale = null!;
-        private ModernToggle chkSpellEnhancement = null!;
-        private ModernToggle chkLeaderGloryKeep = null!;
-        private ModernToggle chkModSkillsAndGlory = null!;
-        private Label lblHelpModSkillsAndGlory = null!;
-        private Label lblHelpLeaderGloryKeep = null!;
 
         // 所有功能開啟/關閉按鈕
         private Button btnEnableAll = null!;
@@ -120,13 +115,16 @@ namespace AgainstRomeModifier {
         private Button btnStartGame = null!;
         private ContextMenuStrip menuRestore = null!;
 
-        // 記憶體原版檔案備份字典，用以在修改時直接讀取乾淨數據，避免疊加修改
-        private Dictionary<string, byte[]> backupFiles = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
+        // 核心解耦服務實例
+        private AgainstRomeModifier.Core.Services.BackupManager backupManager = null!;
+        private AgainstRomeModifier.Core.Services.PatchEngine patchEngine = null!;
 
-        // 快取的備份單兵屬性欄位字典 (以兵種名稱為 Key)
-        private Dictionary<string, string[]> _backupUnitRows = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
-        private bool _backupUnitRowsParsed = false;
-        private readonly object _backupUnitRowsLock = new object();
+        private class FormLogger : AgainstRomeModifier.Core.Services.ILogger
+        {
+            private readonly ModifierForm _form;
+            public FormLogger(ModifierForm form) => _form = form;
+            public void Log(string message) => _form.Log(message);
+        }
 
         // 備份存檔快取
         private class BackupSaveCache {
@@ -157,7 +155,6 @@ namespace AgainstRomeModifier {
         private Label lblHelpInfiniteMorale = null!;
         private Label lblHelpBalance = null!;
         private Label lblHelpNoSpellAltar = null!;
-        private Label lblHelpSpellEnhancement = null!;
         private Label lblHelpMaxPopulation = null!;
         private Label lblHelpHousingCapacity20x = null!;
         private Label lblHelpStorageCapacity10x = null!;
@@ -231,9 +228,28 @@ namespace AgainstRomeModifier {
             UpdateLanguageButtonStyles();
             ApplyLanguageToUI();
 
+            var logger = new FormLogger(this);
+            backupManager = new AgainstRomeModifier.Core.Services.BackupManager(logger);
+            patchEngine = new AgainstRomeModifier.Core.Services.PatchEngine(logger);
+
             Log(Loc.Get("LogConstructCompleted"));
             // 將內嵌的 Backup.zip 載入記憶體
-            LoadBackupZipToMemory();
+            backupManager.LoadBackupZipToMemory(GetGamePath());
+            
+            try {
+                string gamePath = GetGamePath();
+                if (!string.IsNullOrWhiteSpace(gamePath) && Directory.Exists(gamePath)) {
+                    var opts = patchEngine.DetectCurrentPatchState(gamePath, backupManager);
+                    // 執行套用做為修復遷移 (在 startup 只對 foodHealing 修復，但由於 ApplyPatches 會順便修復，在此直接 Apply 即可)
+                    using (var rollback = new FileRollbackScope()) {
+                        patchEngine.ApplyPatches(gamePath, opts, backupManager, rollback);
+                        rollback.Commit();
+                    }
+                }
+            } catch (Exception ex) {
+                Log("舊版首領腳本安全遷移失敗: " + ex.Message);
+            }
+
             // 初始化資料與讀取自訂兵種資訊
             InitializeData();
             // 註冊表單關閉事件以正確釋放字型與圖形物件資源，防止記憶體洩漏
@@ -545,13 +561,6 @@ namespace AgainstRomeModifier {
                 RefreshNavButtons();
             };
 
-            btnNavSkills = new Button { Location = new Point(10, 0) };
-            StyleNavButton(btnNavSkills, "NavSkills", tabSkills);
-            btnNavSkills.Click += (s, e) => {
-                ShowTabPage(tabSkills);
-                RefreshNavButtons();
-            };
-
             btnNavSaveManager = new Button { Location = new Point(10, 0) };
             StyleNavButton(btnNavSaveManager, "NavSaveManager", tabSaveManager);
             btnNavSaveManager.Click += (s, e) => {
@@ -614,7 +623,6 @@ namespace AgainstRomeModifier {
             pnlSidebar.Controls.Add(btnNavSystem);
             pnlSidebar.Controls.Add(btnNavDefaultStats);
             pnlSidebar.Controls.Add(btnNavCurrentStats);
-            pnlSidebar.Controls.Add(btnNavSkills);
             pnlSidebar.Controls.Add(btnNavSaveManager);
             pnlSidebar.Controls.Add(btnNavDoc);
             pnlSidebar.Controls.Add(lblSidebarLang);
@@ -702,6 +710,33 @@ namespace AgainstRomeModifier {
             lblHelpDgVoodoo.Location = new Point(340, 240);
             pnlNumericCard.Controls.Add(chkDgVoodoo);
             pnlNumericCard.Controls.Add(lblHelpDgVoodoo);
+
+            // 實際位置與寬度由 ConfigureGameSpeedRow 依卡片列版面統一計算，此處僅提供初始佔位值。
+            lblGameSpeed = new Label {
+                Text = Loc.Get("GameSpeedLabel"),
+                Location = new Point(20, 207),
+                Size = new Size(140, 25),
+                Font = fontJhengHei95R,
+                ForeColor = Color.White,
+                BackColor = Color.Transparent,
+                AutoSize = true
+            };
+            cmbGameSpeed = new ComboBox {
+                Location = new Point(170, 204),
+                Size = new Size(150, 25),
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                FlatStyle = FlatStyle.Flat,
+                BackColor = Color.FromArgb(45, 45, 55),
+                ForeColor = Color.White,
+                Font = fontJhengHei10B
+            };
+            PopulateGameSpeedItems();
+            cmbGameSpeed.SelectedIndex = 0;
+            lblHelpGameSpeed = CreateHelpLabel("GameSpeedTip");
+            lblHelpGameSpeed.Location = new Point(340, 207);
+            pnlNumericCard.Controls.Add(lblGameSpeed);
+            pnlNumericCard.Controls.Add(cmbGameSpeed);
+            pnlNumericCard.Controls.Add(lblHelpGameSpeed);
 
             btnEnableAll = new Button {
                 Text = "所有功能開啟",
@@ -815,45 +850,6 @@ namespace AgainstRomeModifier {
             lblHelpNoSpellAltar.Location = new Point(340, 480);
             pnlSwitchesCard.Controls.Add(chkNoSpellAltar);
             pnlSwitchesCard.Controls.Add(lblHelpNoSpellAltar);
-
-            chkSpellEnhancement = new ModernToggle {
-                Text = "法師技能與復活術強化",
-                Location = new Point(25, 560),
-                Size = new Size(310, 25),
-                Checked = false,
-                BackColor = Color.Transparent,
-                Font = fontJhengHei10B
-            };
-            lblHelpSpellEnhancement = CreateHelpLabel("SpellEnhancementTip");
-            lblHelpSpellEnhancement.Location = new Point(340, 560);
-            pnlSwitchesCard.Controls.Add(chkSpellEnhancement);
-            pnlSwitchesCard.Controls.Add(lblHelpSpellEnhancement);
-
-            chkLeaderGloryKeep = new ModernToggle {
-                Text = "首領死亡榮耀保留",
-                Location = new Point(25, 640),
-                Size = new Size(310, 25),
-                Checked = false,
-                BackColor = Color.Transparent,
-                Font = fontJhengHei10B
-            };
-            lblHelpLeaderGloryKeep = CreateHelpLabel("LeaderGloryKeepTip");
-            lblHelpLeaderGloryKeep.Location = new Point(340, 640);
-            pnlSwitchesCard.Controls.Add(chkLeaderGloryKeep);
-            pnlSwitchesCard.Controls.Add(lblHelpLeaderGloryKeep);
-
-            chkModSkillsAndGlory = new ModernToggle {
-                Text = "套用自訂首領與單位技能",
-                Location = new Point(25, 720),
-                Size = new Size(310, 25),
-                Checked = false,
-                BackColor = Color.Transparent,
-                Font = fontJhengHei10B
-            };
-            lblHelpModSkillsAndGlory = CreateHelpLabel("ModSkillsAndGloryTip");
-            lblHelpModSkillsAndGlory.Location = new Point(340, 720);
-            pnlSwitchesCard.Controls.Add(chkModSkillsAndGlory);
-            pnlSwitchesCard.Controls.Add(lblHelpModSkillsAndGlory);
 
             // 新增：建設與人口修改卡片
             pnlBuildCard = new Panel {
@@ -987,11 +983,13 @@ namespace AgainstRomeModifier {
             chkAiM3 = new ModernToggle { Text = Loc.Get("AiM3"), Size = new Size(260, 26), Checked = false, BackColor = Color.Transparent, Font = fontJhengHei10B };
             chkAiM4 = new ModernToggle { Text = Loc.Get("AiM4"), Size = new Size(260, 26), Checked = false, BackColor = Color.Transparent, Font = fontJhengHei10B };
             chkAiM5 = new ModernToggle { Text = Loc.Get("AiM5"), Size = new Size(260, 26), Checked = false, BackColor = Color.Transparent, Font = fontJhengHei10B };
+            chkAiM6 = new ModernToggle { Text = Loc.Get("AiM6"), Size = new Size(260, 26), Checked = false, BackColor = Color.Transparent, Font = fontJhengHei10B };
             pnlAiCard.Controls.Add(chkAiM1);
             pnlAiCard.Controls.Add(chkAiM2);
             pnlAiCard.Controls.Add(chkAiM3);
             pnlAiCard.Controls.Add(chkAiM4);
             pnlAiCard.Controls.Add(chkAiM5);
+            pnlAiCard.Controls.Add(chkAiM6);
 
             tabSystem.Controls.Add(pnlNumericCard);
             tabSystem.Controls.Add(pnlSwitchesCard);
@@ -1242,115 +1240,6 @@ namespace AgainstRomeModifier {
             ReloadTechnicalDocument();
             tabDoc.Controls.Add(txtDoc);
 
-            // 技能屬性分頁初始化
-            tabSkills = new TabPage {
-                BackColor = Color.FromArgb(10, 11, 16),
-                UseVisualStyleBackColor = false
-            };
-            mainTabControl.TabPages.Add(tabSkills);
-
-            Panel pnlSkillsTitle = new Panel {
-                Location = new Point(0, 0),
-                Size = new Size(1190, 80),
-                BackColor = Color.FromArgb(15, 16, 24)
-            };
-            Label lblSkillsHeading = new Label {
-                Text = Loc.Get("SkillsHeading"),
-                Location = new Point(20, 15),
-                Size = new Size(600, 25),
-                Font = fontJhengHei115B,
-                ForeColor = Color.FromArgb(0, 220, 255),
-                BackColor = Color.Transparent
-            };
-            Label lblSkillsSubtitle = new Label {
-                Text = Loc.Get("SkillsSubtitle"),
-                Location = new Point(20, 45),
-                Size = new Size(1000, 20),
-                Font = fontJhengHei95R,
-                ForeColor = Color.FromArgb(150, 160, 175),
-                BackColor = Color.Transparent
-            };
-            pnlSkillsTitle.Controls.Add(lblSkillsHeading);
-            pnlSkillsTitle.Controls.Add(lblSkillsSubtitle);
-            tabSkills.Controls.Add(pnlSkillsTitle);
-
-            Panel pnlLeftSkills = new Panel {
-                Location = new Point(0, 95),
-                Size = new Size(500, 680),
-                BackColor = Color.FromArgb(15, 16, 24)
-            };
-            pnlLeftSkills.Paint += CardPanel_Paint;
-
-            Label lblLeftTitle = new Label {
-                Text = Loc.Get("GrpGeneralSkills"),
-                Location = new Point(20, 15),
-                Size = new Size(460, 22),
-                Font = fontJhengHei105B,
-                ForeColor = Color.FromArgb(0, 220, 255),
-                BackColor = Color.Transparent
-            };
-            pnlLeftSkills.Controls.Add(lblLeftTitle);
-
-            dgvGeneralSkills = CreateBaseGrid();
-            dgvGeneralSkills.Location = new Point(20, 50);
-            dgvGeneralSkills.Size = new Size(460, 610);
-            dgvGeneralSkills.Columns.Add("SkillName", Loc.Get("ColSkillName"));
-            dgvGeneralSkills.Columns.Add("SkillKey", "Key");
-            dgvGeneralSkills.Columns["SkillKey"].Visible = false;
-            dgvGeneralSkills.Columns.Add("IniFile", "INI");
-            dgvGeneralSkills.Columns["IniFile"].Visible = false;
-            dgvGeneralSkills.Columns.Add("SkillValue", Loc.Get("ColSkillValue"));
-            dgvGeneralSkills.Columns.Add("SkillDefault", Loc.Get("ColSkillDefault"));
-            dgvGeneralSkills.Columns["SkillName"].Width = 260;
-            dgvGeneralSkills.Columns["SkillName"].ReadOnly = true;
-            dgvGeneralSkills.Columns["SkillValue"].Width = 90;
-            dgvGeneralSkills.Columns["SkillDefault"].Width = 90;
-            dgvGeneralSkills.Columns["SkillDefault"].ReadOnly = true;
-            pnlLeftSkills.Controls.Add(dgvGeneralSkills);
-
-            Panel pnlRightSkills = new Panel {
-                Location = new Point(520, 95),
-                Size = new Size(670, 680),
-                BackColor = Color.FromArgb(15, 16, 24)
-            };
-            pnlRightSkills.Paint += CardPanel_Paint;
-
-            Label lblRightTitle = new Label {
-                Text = Loc.Get("GrpLeaderGlory"),
-                Location = new Point(20, 15),
-                Size = new Size(630, 22),
-                Font = fontJhengHei105B,
-                ForeColor = Color.FromArgb(0, 220, 255),
-                BackColor = Color.Transparent
-            };
-            pnlRightSkills.Controls.Add(lblRightTitle);
-
-            dgvLeaderGlory = CreateBaseGrid();
-            dgvLeaderGlory.Location = new Point(20, 50);
-            dgvLeaderGlory.Size = new Size(630, 610);
-            dgvLeaderGlory.Columns.Add("LeaderName", Loc.Get("ColGloryLeader"));
-            dgvLeaderGlory.Columns.Add("LeaderKey", "Key");
-            dgvLeaderGlory.Columns["LeaderKey"].Visible = false;
-            dgvLeaderGlory.Columns.Add("AwStuf", Loc.Get("ColGloryAwStuf"));
-            dgvLeaderGlory.Columns.Add("VwStuf", Loc.Get("ColGloryVwStuf"));
-            dgvLeaderGlory.Columns.Add("DamStuf", Loc.Get("ColGloryDamStuf"));
-            dgvLeaderGlory.Columns.Add("MoraleBonus", Loc.Get("ColGloryMoraleBonus"));
-            dgvLeaderGlory.Columns.Add("MoraleTime", Loc.Get("ColGloryMoraleTime"));
-            dgvLeaderGlory.Columns.Add("MaxRuhm", Loc.Get("ColGloryMaxRuhm"));
-            
-            dgvLeaderGlory.Columns["LeaderName"].Width = 100;
-            dgvLeaderGlory.Columns["LeaderName"].ReadOnly = true;
-            dgvLeaderGlory.Columns["AwStuf"].Width = 85;
-            dgvLeaderGlory.Columns["VwStuf"].Width = 85;
-            dgvLeaderGlory.Columns["DamStuf"].Width = 85;
-            dgvLeaderGlory.Columns["MoraleBonus"].Width = 90;
-            dgvLeaderGlory.Columns["MoraleTime"].Width = 110;
-            dgvLeaderGlory.Columns["MaxRuhm"].Width = 75;
-            pnlRightSkills.Controls.Add(dgvLeaderGlory);
-
-            tabSkills.Controls.Add(pnlLeftSkills);
-            tabSkills.Controls.Add(pnlRightSkills);
-
             tabSaveManager = new TabPage {
                 BackColor = Color.FromArgb(10, 11, 16),
                 UseVisualStyleBackColor = false
@@ -1572,7 +1461,6 @@ namespace AgainstRomeModifier {
                 btnNavSystem,
                 btnNavDefaultStats,
                 btnNavCurrentStats,
-                btnNavSkills,
                 btnNavSaveManager,
                 btnNavDoc
             };
@@ -1662,20 +1550,20 @@ namespace AgainstRomeModifier {
             settingsLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 560F));
             settingsLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 128F));
 
-            ConfigureSettingsCard(pnlNumericCard, lblNumericTitle, 230,
+            ConfigureSettingsCard(pnlNumericCard, lblNumericTitle, 278,
                 (chkFocusLoss, lblHelpFocusLoss),
                 (chkToEng, lblHelpToEng),
                 (chkDgVoodoo, lblHelpDgVoodoo));
+            // 遊戲加速選單不是 ModernToggle，無法交給 ConfigureSettingsCard 的統一開關列排版；
+            // 沿用同樣的列高公式（60 + rowIndex*48）緊接在最後一個開關之後，卡片高度已含這一列。
+            ConfigureGameSpeedRow(pnlNumericCard, rowIndex: 3);
             ConfigureSettingsCard(pnlSwitchesCard, lblSwitchesTitle, 492,
                 (chkFreeProd, lblHelpFreeProd),
                 (chkFreeUpgrade, lblHelpFreeUpgrade),
                 (chkNoSpellCost, lblHelpNoSpellCost),
                 (chkInfiniteMorale, lblHelpInfiniteMorale),
                 (chkBalance, lblHelpBalance),
-                (chkNoSpellAltar, lblHelpNoSpellAltar),
-                (chkSpellEnhancement, lblHelpSpellEnhancement),
-                (chkLeaderGloryKeep, lblHelpLeaderGloryKeep),
-                (chkModSkillsAndGlory, lblHelpModSkillsAndGlory));
+                (chkNoSpellAltar, lblHelpNoSpellAltar));
             ConfigureSettingsCard(pnlBuildCard, lblBuildTitle, 470,
                 (chkMaxPopulation, lblHelpMaxPopulation),
                 (chkHousingCapacity20x, lblHelpHousingCapacity20x),
@@ -1685,7 +1573,7 @@ namespace AgainstRomeModifier {
                 (chkFoodHealing10x, lblHelpFoodHealing10x),
                 (chkVillageBuildRange, lblHelpVillageBuildRange));
             ConfigureAiCardHorizontal(pnlAiCard, lblAiTitle,
-                chkAiM1, chkAiM2, chkAiM3, chkAiM4, chkAiM5);
+                chkAiM1, chkAiM2, chkAiM3, chkAiM4, chkAiM5, chkAiM6);
 
             settingsLayout.Controls.Add(pnlNumericCard, 0, 0);
             settingsLayout.Controls.Add(pnlSwitchesCard, 1, 0);
@@ -1727,6 +1615,25 @@ namespace AgainstRomeModifier {
 
             card.Resize += (s, e) => LayoutRows();
             LayoutRows();
+        }
+
+        // 遊戲加速選單這一列不是 ModernToggle，走跟 ConfigureSettingsCard.LayoutRows 相同的列高公式
+        // （60 + rowIndex*48），以便緊接在卡片既有開關列之後、隨卡片寬度自動重新排版。
+        private void ConfigureGameSpeedRow(Panel card, int rowIndex) {
+            void LayoutRow() {
+                int y = 60 + rowIndex * 48;
+                lblGameSpeed.Location = new Point(20, y + 3);
+                lblGameSpeed.Font = fontJhengHei95R;
+                lblGameSpeed.BackColor = card.BackColor;
+                int comboLeft = lblGameSpeed.Right + 10;
+                int comboRight = Math.Max(comboLeft + 100, card.Width - 66);
+                cmbGameSpeed.Location = new Point(comboLeft, y);
+                cmbGameSpeed.Width = comboRight - comboLeft;
+                lblHelpGameSpeed.Location = new Point(Math.Max(20, card.Width - 40), y + 2);
+            }
+
+            card.Resize += (s, e) => LayoutRow();
+            LayoutRow();
         }
 
         // AI 終極模式整列卡片：把 N 個開關以響應式網格橫向排列（每格約 250px，寬度不足時自動換行）。
@@ -1966,38 +1873,7 @@ namespace AgainstRomeModifier {
         /// <summary>
         /// 確保備份的 objdef.dau 檔案已被解析並快取至記憶體中。
         /// </summary>
-        private void EnsureBackupUnitRowsParsed() {
-            string? errorMsg = null;
-            lock (_backupUnitRowsLock) {
-                if (_backupUnitRowsParsed) return;
-                try {
-                    byte[]? origBytes;
-                    if (backupFiles.TryGetValue("SYSTEM/DATA_MP/DEFAULTS/objdef.dau", out origBytes)) {
-                        byte[] decompBytes = GameLZSS.DecompressPfil(origBytes!);
-                        string decomp = Encoding.GetEncoding(1251).GetString(decompBytes);
-                        string lineEnding = decomp.Contains("\r\n") ? "\r\n" : "\n";
-                        string[] lines = decomp.Split(new string[] { lineEnding }, StringSplitOptions.None);
-                        for (int idx = 2; idx < lines.Length; idx++) {
-                            string line = lines[idx];
-                            if (line.Length < 100) continue;
-                            string[] cols = ParseCsvLine(line);
-                            if (cols.Length < 192) continue;
-                            string name = cols[52].Trim();
-                            if (TroopConfig.UnitMeta.ContainsKey(name) || name == "FigZivMan00_Zivilist") {
-                                _backupUnitRows[name] = cols;
-                            }
-                        }
-                    }
-                    _backupUnitRowsParsed = true;
-                } catch (Exception ex) {
-                    errorMsg = "Failed to parse backup objdef.dau: " + ex.Message;
-                    _backupUnitRowsParsed = true;
-                }
-            }
-            if (errorMsg != null) {
-                Log(errorMsg);
-            }
-        }
+
 
         /// <summary>
         /// 自訂導覽列按鈕繪製樣式，包含 Hover 漸層與選取指示條
@@ -2069,7 +1945,6 @@ namespace AgainstRomeModifier {
             btnNavSystem.Invalidate();
             btnNavDefaultStats.Invalidate();
             btnNavCurrentStats.Invalidate();
-            btnNavSkills.Invalidate();
             btnNavSaveManager.Invalidate();
             btnNavDoc.Invalidate();
         }
@@ -2106,12 +1981,14 @@ namespace AgainstRomeModifier {
             chkAiM3.Text = Loc.Get("AiM3");
             chkAiM4.Text = Loc.Get("AiM4");
             chkAiM5.Text = Loc.Get("AiM5");
+            chkAiM6.Text = Loc.Get("AiM6");
             chkHousingCapacity20x.Text = Loc.Get("HousingCapacity20x");
             chkStorageCapacity10x.Text = Loc.Get("StorageCapacity10x");
             chkFastBuildUpgradeRepair.Text = Loc.Get("FastBuildUpgradeRepair");
             chkFoodHealing10x.Text = Loc.Get("FoodHealing10x");
             chkDgVoodoo.Text = Loc.Get("DgVoodoo");
-            chkModSkillsAndGlory.Text = Loc.Get("ModSkillsAndGlory");
+            lblGameSpeed.Text = Loc.Get("GameSpeedLabel");
+            PopulateGameSpeedItems();
             chkVillageBuildRange.Text = Loc.Get("VillageBuildRange");
             btnEnableAll.Text = Loc.Get("EnableAll");
             btnDisableAll.Text = Loc.Get("DisableAll");
@@ -2124,8 +2001,6 @@ namespace AgainstRomeModifier {
             chkFreeUpgrade.Text = Loc.Get("FreeUpgrade");
             chkNoSpellCost.Text = Loc.Get("NoSpellCost");
             chkNoSpellAltar.Text = Loc.Get("NoSpellAltar");
-            chkSpellEnhancement.Text = Loc.Get("SpellEnhancement");
-            chkLeaderGloryKeep.Text = Loc.Get("LeaderGloryKeep");
             chkInfiniteMorale.Text = Loc.Get("InfiniteMorale");
             lblGamePath.Text = Loc.Get("GamePath");
             btnBrowseGamePath.Text = Loc.Get("Browse");
@@ -2177,7 +2052,7 @@ namespace AgainstRomeModifier {
             ReloadTechnicalDocument();
 
             // 重新載入表格與存檔數據
-            if (backupFiles != null && backupFiles.Count > 0) {
+            if (backupManager != null && backupManager.BackupFiles.Count > 0) {
                 LoadDefaultStatsData();
                 LoadCurrentData(false);
                 RefreshSavesAndBackups();
@@ -2194,7 +2069,6 @@ namespace AgainstRomeModifier {
                 myToolTip.SetToolTip(lblHelpInfiniteMorale, Loc.Get("InfiniteMoraleTip"));
                 myToolTip.SetToolTip(lblHelpBalance, Loc.Get("BalanceTip"));
                 myToolTip.SetToolTip(lblHelpNoSpellAltar, Loc.Get("NoSpellAltarTip"));
-                myToolTip.SetToolTip(lblHelpSpellEnhancement, Loc.Get("SpellEnhancementTip"));
                 myToolTip.SetToolTip(lblHelpMaxPopulation, Loc.Get("MaxPopulationTip"));
                 myToolTip.SetToolTip(lblHelpHousingCapacity20x, Loc.Get("HousingCapacity20xTip"));
                 myToolTip.SetToolTip(lblHelpStorageCapacity10x, Loc.Get("StorageCapacity10xTip"));
@@ -2207,6 +2081,7 @@ namespace AgainstRomeModifier {
                 myToolTip.SetToolTip(chkAiM3, Loc.Get("AiM3Tip"));
                 myToolTip.SetToolTip(chkAiM4, Loc.Get("AiM4Tip"));
                 myToolTip.SetToolTip(chkAiM5, Loc.Get("AiM5Tip"));
+                myToolTip.SetToolTip(chkAiM6, Loc.Get("AiM6Tip"));
             }
         }
 
