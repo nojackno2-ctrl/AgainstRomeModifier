@@ -4,13 +4,11 @@ using System.IO.Compression;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Windows.Forms;
 using System.Drawing;
 using System.Drawing.Drawing2D;
-using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 
 namespace AgainstRomeModifier {
@@ -103,9 +101,9 @@ namespace AgainstRomeModifier {
                 AllowUserToAddRows = false,
                 AllowUserToDeleteRows = false,
                 RowHeadersVisible = false,
-                BackgroundColor = Color.FromArgb(20, 20, 25),
+                BackgroundColor = Color.FromArgb(10, 11, 16),
                 ForeColor = Color.FromArgb(230, 235, 240),
-                GridColor = Color.FromArgb(45, 45, 55),
+                GridColor = Color.FromArgb(28, 30, 42),
                 BorderStyle = BorderStyle.None,
                 EnableHeadersVisualStyles = false,
                 RowTemplate = { Height = 35 },
@@ -114,20 +112,20 @@ namespace AgainstRomeModifier {
                 ReadOnly = true
             };
 
-            dgv.ColumnHeadersDefaultCellStyle.BackColor = Color.FromArgb(32, 32, 40);
-            dgv.ColumnHeadersDefaultCellStyle.ForeColor = Color.FromArgb(0, 220, 255);
-            dgv.ColumnHeadersDefaultCellStyle.SelectionBackColor = Color.FromArgb(32, 32, 40);
+            dgv.ColumnHeadersDefaultCellStyle.BackColor = Color.FromArgb(26, 27, 37);
+            dgv.ColumnHeadersDefaultCellStyle.ForeColor = Color.FromArgb(0, 230, 255);
+            dgv.ColumnHeadersDefaultCellStyle.SelectionBackColor = Color.FromArgb(26, 27, 37);
             dgv.ColumnHeadersDefaultCellStyle.Font = fontJhengHei95B;
             dgv.ColumnHeadersHeight = 35;
             dgv.ColumnHeadersBorderStyle = DataGridViewHeaderBorderStyle.Single;
 
-            dgv.DefaultCellStyle.BackColor = Color.FromArgb(24, 24, 30);
+            dgv.DefaultCellStyle.BackColor = Color.FromArgb(20, 21, 31);
             dgv.DefaultCellStyle.ForeColor = Color.FromArgb(230, 235, 240);
-            dgv.DefaultCellStyle.SelectionBackColor = Color.FromArgb(45, 45, 60);
+            dgv.DefaultCellStyle.SelectionBackColor = Color.FromArgb(35, 37, 54);
             dgv.DefaultCellStyle.SelectionForeColor = Color.White;
             dgv.DefaultCellStyle.Font = fontJhengHei9R;
 
-            dgv.AlternatingRowsDefaultCellStyle.BackColor = Color.FromArgb(28, 28, 35);
+            dgv.AlternatingRowsDefaultCellStyle.BackColor = Color.FromArgb(24, 25, 35);
 
             if (!isBackup) {
                 dgv.Columns.Add("Folder", Loc.Get("HeaderFolder"));
@@ -308,6 +306,7 @@ namespace AgainstRomeModifier {
                 );
 
                 string gamePath = GetGamePath();
+                if (string.IsNullOrEmpty(gamePath) || !Directory.Exists(gamePath)) return;
                 string picPath = Path.Combine(gamePath, "SAVE", folder, "savepic.tga");
                 if (File.Exists(picPath)) {
                     byte[] bytes = File.ReadAllBytes(picPath);
@@ -398,15 +397,35 @@ namespace AgainstRomeModifier {
                 string timeStr = backupTime.ToString("yyyyMMdd_HHmmss");
                 string zipName = string.Format("Backup_{0}_{1}.zip", folder, timeStr);
                 string zipPath = Path.Combine(backupDir, zipName);
+                string zipTempPath = zipPath + ".tmp";
 
-                ZipFile.CreateFromDirectory(srcDir, zipPath);
-                using (var archive = ZipFile.Open(zipPath, ZipArchiveMode.Update)) {
-                    var oldManifest = archive.GetEntry(SaveBackupManifestName);
-                    oldManifest?.Delete();
-                    var manifestEntry = archive.CreateEntry(SaveBackupManifestName, CompressionLevel.Optimal);
-                    using (var writer = new StreamWriter(manifestEntry.Open(), Encoding.UTF8)) {
-                        writer.Write(CreateBackupManifestJson(folder, title, level, backupTime));
+                try {
+                    if (File.Exists(zipTempPath)) {
+                        File.Delete(zipTempPath);
                     }
+                    using (var archive = ZipFile.Open(zipTempPath, ZipArchiveMode.Create)) {
+                        foreach (string file in Directory.GetFiles(srcDir, "*", SearchOption.AllDirectories)) {
+                            string entryName = Path.GetRelativePath(srcDir, file).Replace('\\', '/');
+                            if (string.Equals(entryName, SaveBackupManifestName, StringComparison.OrdinalIgnoreCase)) {
+                                continue;
+                            }
+                            archive.CreateEntryFromFile(file, entryName, CompressionLevel.Optimal);
+                        }
+
+                        var manifestEntry = archive.CreateEntry(SaveBackupManifestName, CompressionLevel.Optimal);
+                        using (var writer = new StreamWriter(manifestEntry.Open(), Encoding.UTF8)) {
+                            writer.Write(CreateBackupManifestJson(folder, title, level, backupTime));
+                        }
+                    }
+                    File.Move(zipTempPath, zipPath);
+                } catch {
+                    try {
+                        if (File.Exists(zipTempPath)) {
+                            File.Delete(zipTempPath);
+                        }
+                    } catch {
+                    }
+                    throw;
                 }
                 Log(string.Format(Loc.Get("LogBackupSaveSuccessDetail"), folder, zipName));
                 RefreshSavesAndBackups();
@@ -481,9 +500,6 @@ namespace AgainstRomeModifier {
                     Directory.Move(tempDir, destDir);
                     movedNew = true;
 
-                    if (movedOld && Directory.Exists(oldDir)) {
-                        Directory.Delete(oldDir, true);
-                    }
                 } catch {
                     try {
                         if (movedNew && Directory.Exists(destDir)) {
@@ -503,6 +519,14 @@ namespace AgainstRomeModifier {
                         }
                     } catch (Exception cleanupEx) {
                         Log("清理還原暫存資料夾失敗: " + cleanupEx.Message);
+                    }
+                }
+
+                if (movedOld && Directory.Exists(oldDir)) {
+                    try {
+                        Directory.Delete(oldDir, true);
+                    } catch (Exception cleanupEx) {
+                        Log(Loc.Get("LogRestoreBackupCleanupFailed") + cleanupEx.Message);
                     }
                 }
 

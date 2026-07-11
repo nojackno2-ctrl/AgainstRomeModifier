@@ -23,8 +23,11 @@ namespace AgainstRomeModifier {
             int ringSize = 4096; // 4KB 環狀滑動視窗大小
             byte[] ring = ArrayPool<byte>.Shared.Rent(ringSize);
             try {
-                // 初始化環狀視窗，原版規範以空格字元 (0x20) 填充
-                for (int x = 0; x < ringSize; x++) ring[x] = 0x20;
+                // 初始化環狀視窗：遊戲 EXE (FUN_00565c00) 只以空格 (0x20) 填充前
+                // 0xFEE 個位置，最後 18 個位置 (0xFEE..0xFFF) 為 memset 後 of 0x00。
+                // 必須與遊戲完全一致，否則壓縮/解壓模型會在檔案開頭不同步。
+                for (int x = 0; x < 4078; x++) ring[x] = 0x20;
+                for (int x = 4078; x < ringSize; x++) ring[x] = 0x00;
                 int r = 4078; // 視窗寫入起始位置 (4096 - 18)
 
                 // 開始迴圈解壓直到處理完所有輸入或填滿輸出陣列
@@ -75,8 +78,12 @@ namespace AgainstRomeModifier {
             int[] currentHash = ArrayPool<int>.Shared.Rent(N);
 
             try {
-                // 初始化視窗為空格字元 (0x20)
-                for (int x = 0; x < N; x++) win[x] = 0x20;
+                // 初始化視窗：必須與遊戲解壓器的環狀緩衝一致——前 0xFEE 個位置為
+                // 空格 (0x20)，最後 18 個位置 (0xFEE..0xFFF) 為 0x00。若這裡當成
+                // 全空格，壓縮器會在檔案開頭把空格串匹配到 0xFEE..0xFFF 的「假想
+                // 空格」，遊戲解壓時該區是 0x00，輸出即被 NUL 汙染。
+                for (int x = 0; x < N - F; x++) win[x] = 0x20;
+                for (int x = N - F; x < N; x++) win[x] = 0x00;
                 int r = N - F; // 視窗寫入位置起始於 4078
                 List<byte> output = new List<byte>();
                 int src = 0; // 來源資料指標
@@ -272,6 +279,12 @@ namespace AgainstRomeModifier {
 
         // 壓縮 PFIL 自訂格式檔案：執行壓縮並在頭部填寫正確的 "PFIL" 64位元組檔案標頭與解壓後檔案大小
         public static byte[] CompressPfil(byte[] inputBytes, byte[] origHeader) {
+            ArgumentNullException.ThrowIfNull(inputBytes);
+            ArgumentNullException.ThrowIfNull(origHeader);
+            if (origHeader.Length < 64) {
+                throw new ArgumentException("PFIL header must contain at least 64 bytes.", nameof(origHeader));
+            }
+
             byte[] compressed = Compress(inputBytes);
             byte[] header = new byte[64];
             Array.Copy(origHeader, 0, header, 0, 64);
