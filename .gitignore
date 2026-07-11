@@ -20,15 +20,15 @@ CodeAuditReport.md
 
 # Original game assets / local restore payloads
 # Keep these locally only. Do not publish bundled game files to GitHub.
-Original game archives/
-遊戲原始檔案/
-Backup.zip
-Backup/
-Against_Rome.exe
-SAVE/
-MAPS/
-SYSTEM/
-ToEng/
+/Original game archives/
+/遊戲原始檔案/
+/Backup.zip
+/Backup/
+/Against_Rome.exe
+/SAVE/
+/MAPS/
+/SYSTEM/
+/ToEng/
 .against-rome-modifier-language-backup/
 
 # Reverse-engineering generated output
@@ -41,6 +41,7 @@ ToEng/
 # Local package/tool caches
 packages/
 .nuget/
+__pycache__/
 
 # One-off AI session artifacts (keep locally only)
 changes_patch.diff

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
@@ -15,32 +15,6 @@ using System.Runtime.InteropServices;
 namespace AgainstRomeModifier {
     public partial class ModifierForm {
         private static readonly Regex RegexSpellLoad = new Regex(@"Radius\s*=\s*(?:HUN|KEL|GER)\s*,\s*Spell\d+\s*,\s*(\d+)", RegexOptions.Compiled);
-        private static readonly Regex RegexCiviLoad = new Regex(@"CiviDelay\s*=\s*([A-Z]{3})\s*,\s*(\d+)", RegexOptions.Compiled);
-        private static readonly Regex RegexMoraleLostMemLoad = new Regex(@"MoralsDecLostMem\s*=\s*GER\s*,\s*(\d+)", RegexOptions.Compiled);
-        private static readonly Regex RegexMoraleFleeLoad = new Regex(@"MoralsDecFlee\s*=\s*GER\s*,\s*(\d+)", RegexOptions.Compiled);
-        private static readonly Regex RegexMoraleOverPopLoad = new Regex(@"MoralsDecOverPop\s*=\s*GER\s*,\s*(\d+)", RegexOptions.Compiled);
-        private static readonly Regex RegexMoraleIdleLoad = new Regex(@"MoralsIncIdle\s*=\s*GER\s*,\s*(\d+)", RegexOptions.Compiled);
-
-        private void LoadBackupZipToMemory() {
-            backupManager.LoadBackupZipToMemory(GetGamePath());
-        }
-
-        private bool EnsureBackupLoadedForGamePath(string gamePath) {
-            return backupManager.EnsureBackupLoadedForGamePath(gamePath);
-        }
-
-        private bool TryLoadBackupFromGameDirectory(string gamePath, bool showError) {
-            try {
-                return backupManager.TryLoadBackupFromGameDirectory(gamePath, showError);
-            } catch (Exception ex) {
-                if (showError) {
-                    MessageBox.Show(ex.Message, Loc.Get("TitleError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
-                }
-                return false;
-            }
-        }
-
-
 
         /// <summary>
         /// 獲取 UI 文字框中設定的遊戲路徑。
@@ -55,126 +29,6 @@ namespace AgainstRomeModifier {
         private static string[] ParseCsvLine(string line) {
             if (line == null) return Array.Empty<string>();
             return line.Split(',');
-        }
-
-        /// <summary>
-        /// 將字串陣列重新組合成遊戲相容的逗號分隔字串。
-        /// </summary>
-        private static string ToCsvString(string[] cols) {
-            if (cols == null) return "";
-            return string.Join(",", cols);
-        }
-
-        private static bool HasHousingCapacityMultiplier(string currentContent, string originalContent, int multiplier) {
-            var currentValues = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-            string[] currentLines = currentContent.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
-            foreach (string line in currentLines) {
-                if (line.Length < 100) continue;
-                string[] cols = ParseCsvLine(line);
-                if (cols.Length <= (int)ObjdefIndex.HousingCapacity || cols.Length <= (int)ObjdefIndex.Name) continue;
-                if (int.TryParse(cols[(int)ObjdefIndex.HousingCapacity].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int value)) {
-                    currentValues[cols[(int)ObjdefIndex.Name].Trim()] = value;
-                }
-            }
-
-            bool foundHousing = false;
-            string[] originalLines = originalContent.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
-            foreach (string line in originalLines) {
-                if (line.Length < 100) continue;
-                string[] cols = ParseCsvLine(line);
-                if (cols.Length <= (int)ObjdefIndex.HousingCapacity || cols.Length <= (int)ObjdefIndex.Name) continue;
-                if (!int.TryParse(cols[(int)ObjdefIndex.HousingCapacity].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int originalValue) || originalValue <= 0) continue;
-
-                foundHousing = true;
-                string name = cols[(int)ObjdefIndex.Name].Trim();
-                if (!currentValues.TryGetValue(name, out int currentValue) || currentValue != checked(originalValue * multiplier)) {
-                    return false;
-                }
-            }
-            return foundHousing;
-        }
-
-        private static bool HasStorageCapacityMultiplier(string currentContent, string originalContent, int multiplier) {
-            var currentValues = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-            string[] currentLines = currentContent.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
-            foreach (string line in currentLines) {
-                if (line.Length < 100) continue;
-                string[] cols = ParseCsvLine(line);
-                if (cols.Length <= (int)ObjdefIndex.StorageCapacity || cols.Length <= (int)ObjdefIndex.Name) continue;
-                if (int.TryParse(cols[(int)ObjdefIndex.StorageCapacity].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int value)) {
-                    currentValues[cols[(int)ObjdefIndex.Name].Trim()] = value;
-                }
-            }
-
-            bool foundStorage = false;
-            string[] originalLines = originalContent.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
-            foreach (string line in originalLines) {
-                if (line.Length < 100) continue;
-                string[] cols = ParseCsvLine(line);
-                if (cols.Length <= (int)ObjdefIndex.StorageCapacity || cols.Length <= (int)ObjdefIndex.Name) continue;
-                string name = cols[(int)ObjdefIndex.Name].Trim();
-                if (!name.StartsWith("Bau") || !(name.Contains("Hau") || name.Contains("Lag"))) continue;
-                if (!int.TryParse(cols[(int)ObjdefIndex.StorageCapacity].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int originalValue) || originalValue <= 0) continue;
-
-                foundStorage = true;
-                if (!currentValues.TryGetValue(name, out int currentValue) || currentValue != checked(originalValue * multiplier)) {
-                    return false;
-                }
-            }
-            return foundStorage;
-        }
-
-        private static bool HasFastBuildUpgradeRepair(string currentContent, string originalContent) {
-            var currentBuildValues = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-            var currentUpgValues = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-            
-            string[] currentLines = currentContent.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
-            foreach (string line in currentLines) {
-                if (line.Length < 100) continue;
-                string[] cols = ParseCsvLine(line);
-                if (cols.Length < 192) continue;
-                string name = cols[52].Trim();
-                if (!name.StartsWith("Bau")) continue;
-                
-                if (int.TryParse(cols[73].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int buildVal)) {
-                    currentBuildValues[name] = buildVal;
-                }
-                if (int.TryParse(cols[74].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int upgVal)) {
-                    currentUpgValues[name] = upgVal;
-                }
-            }
-
-            bool foundBuilding = false;
-            string[] originalLines = originalContent.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
-            foreach (string line in originalLines) {
-                if (line.Length < 100) continue;
-                string[] cols = ParseCsvLine(line);
-                if (cols.Length < 192) continue;
-                string name = cols[52].Trim();
-                if (!name.StartsWith("Bau")) continue;
-
-                bool hasBuild = int.TryParse(cols[73].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int origBuildVal) && origBuildVal > 0;
-                bool hasUpg = int.TryParse(cols[74].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int origUpgVal) && origUpgVal > 0;
-
-                if (!hasBuild && !hasUpg) continue;
-
-                foundBuilding = true;
-
-                if (hasBuild) {
-                    int expectedBuild = Math.Max(1, origBuildVal / 10);
-                    if (!currentBuildValues.TryGetValue(name, out int curBuild) || curBuild != expectedBuild) {
-                        return false;
-                    }
-                }
-
-                if (hasUpg) {
-                    int expectedUpg = Math.Max(1, origUpgVal / 10);
-                    if (!currentUpgValues.TryGetValue(name, out int curUpg) || curUpg != expectedUpg) {
-                        return false;
-                    }
-                }
-            }
-            return foundBuilding;
         }
 
         /// <summary>
@@ -200,7 +54,7 @@ namespace AgainstRomeModifier {
                         if (val != null) return val.ToString() ?? "";
                     }
                 }
-            } catch { }
+            } catch (Exception ex) { System.Diagnostics.Debug.WriteLine("讀取登錄檔遊戲路徑失敗: " + ex.Message); }
             return "";
         }
 
@@ -361,13 +215,21 @@ namespace AgainstRomeModifier {
                     }
                 }
                 using (var archive = ZipFile.OpenRead(guiDatPath)) {
-                    foreach (var kvp in unitToTga) {
-                        string entryName = "SYSTEM/CLMK/DLG/IGM0806/US/" + kvp.Value;
-                        var entry = archive.GetEntry(entryName);
-                        if (entry == null) {
-                            entry = archive.GetEntry(entryName.Replace('/', '\\'));
+                    // 非英文版遊戲的圖示可能放在 IGM0806/ 下其它語系資料夾（不一定是 US）。
+                    // 先建「檔名 → 壓縮項」索引，US 優先，找不到 US 時退回任一語系的同名檔。
+                    var iconEntries = new Dictionary<string, ZipArchiveEntry>(StringComparer.OrdinalIgnoreCase);
+                    foreach (var archiveEntry in archive.Entries) {
+                        if (string.IsNullOrEmpty(archiveEntry.Name)) continue;
+                        string fullName = archiveEntry.FullName.Replace('\\', '/');
+                        if (!fullName.StartsWith("SYSTEM/CLMK/DLG/IGM0806/", StringComparison.OrdinalIgnoreCase)) continue;
+                        bool isUsFolder = fullName.StartsWith("SYSTEM/CLMK/DLG/IGM0806/US/", StringComparison.OrdinalIgnoreCase);
+                        if (isUsFolder || !iconEntries.ContainsKey(archiveEntry.Name)) {
+                            iconEntries[archiveEntry.Name] = archiveEntry;
                         }
-                        if (entry != null) {
+                    }
+
+                    foreach (var kvp in unitToTga) {
+                        if (iconEntries.TryGetValue(kvp.Value, out ZipArchiveEntry? entry)) {
                             using (var stream = entry.Open()) {
                                 using (var ms = new MemoryStream()) {
                                     stream.CopyTo(ms);
@@ -856,46 +718,6 @@ namespace AgainstRomeModifier {
             LoadCurrentData();
         }
 
-        private bool IsMaximumPopulationApplied(string gamePath) {
-            string mapsPath = Path.Combine(gamePath, "MAPS");
-            if (!Directory.Exists(mapsPath)) {
-                return false;
-            }
-
-            bool foundActiveTeam = false;
-            foreach (string teamFile in Directory.GetFiles(mapsPath, "team.dat", SearchOption.AllDirectories)) {
-                try {
-                    byte[] bytes = File.ReadAllBytes(teamFile);
-                    byte[] decompBytes = GameLZSS.DecompressPfil(bytes);
-                    string text = Encoding.GetEncoding(1251).GetString(decompBytes);
-                    string[] lines = text.Split(new string[] { "\r\n", "\n" }, StringSplitOptions.None);
-                    bool inTeamData = false;
-
-                    foreach (string line in lines) {
-                        string stripped = line.Trim();
-                        if (stripped.StartsWith("[")) {
-                            inTeamData = stripped.Equals("[teamdata]", StringComparison.OrdinalIgnoreCase);
-                            continue;
-                        }
-
-                        if (inTeamData && stripped.Contains(",")) {
-                            string[] cols = ParseCsvLine(line);
-                            if (cols.Length >= 5 && int.TryParse(cols[4].Trim(), out int val) && val > 0) {
-                                foundActiveTeam = true;
-                                if (val != 1600) {
-                                    return false;
-                                }
-                            }
-                        }
-                    }
-                } catch {
-                    return false;
-                }
-            }
-
-            return foundActiveTeam;
-        }
-
         /// <summary>
         /// 從遊戲目錄下的實體檔案（objdef.dau, cl_script.ini, ress.ini, Against_Rome.exe）讀取目前的設定值並顯示在介面上。
         /// </summary>
@@ -961,7 +783,7 @@ namespace AgainstRomeModifier {
                                 spellRadMultVal = r / 500.0;
                             }
                         }
-                    } catch { }
+                    } catch (Exception ex) { Log("讀取 cl_script.ini 法術半徑失敗，將以原版半徑顯示: " + ex.Message); }
                 }
                 string src = Path.Combine(gamePath, @"SYSTEM\DATA_MP\DEFAULTS\objdef.dau");
                 byte[]? dauBytes;
@@ -1053,7 +875,8 @@ namespace AgainstRomeModifier {
 
                     double origSpellRadius = 0;
                     double curSpellRadius = 0;
-                    if (utype == "priest") {
+                    // 只有 KEL/HUN 祭司的法術半徑是可設定項；GER 祭司顯示變動值會造成假象。
+                    if (utype == "priest" && SupportsConfigurableSpellRadius(key)) {
                         origSpellRadius = 500;
                         curSpellRadius = 500 * spellRadMultVal;
                     }
@@ -1200,29 +1023,6 @@ namespace AgainstRomeModifier {
 
 
         /// <summary>
-        /// 檢查數值轉換成字串後是否超出遊戲引擎欄位長度限制，若超出則嘗試降低精度（F1、F0）以適應長度。
-        /// </summary>
-        private bool CheckLen(string val, int targetLen, out string finalVal) {
-            val = val.Trim();
-            finalVal = val;
-            if (val.Length <= targetLen) return true;
-            double dVal;
-            if (double.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out dVal)) {
-                string f1 = dVal.ToString("F1", CultureInfo.InvariantCulture);
-                if (f1.Length <= targetLen) {
-                    finalVal = f1;
-                    return true;
-                }
-                string f0 = Math.Round(dVal).ToString("F0", CultureInfo.InvariantCulture);
-                if (f0.Length <= targetLen) {
-                    finalVal = f0;
-                    return true;
-                }
-            }
-            return false;
-        }
-
-        /// <summary>
         /// 當「平衡模式」勾選狀態改變時，更新預設與現有的數據表格顯示。
         /// </summary>
         private void ChkBalance_CheckedChanged(object? sender, EventArgs e) {
@@ -1231,117 +1031,5 @@ namespace AgainstRomeModifier {
             Log(string.Format(Loc.Get("LogBalanceToggled"), status));
         }
 
-
-        private static string GetCleanEparaText() {
-            return @";Multiplikator fuer FormationsRotationTempo
-;1.0 entspricht maximalem RotationsTempo wenn alle Figuren die FormationsPosition halten
-;
-;1.0 bis 500.0
-[FormationRotationFaktor]
-500.0
-
-;Multiplikator fuer FormationsBewegungsTempo derjenigen Muckel 
-;die die Formation gerade einhalten, so koennen nicht einhaltende Muckel wieder aufholen
-;
-;0.01 bis 1.00
-[FormationSpeedFaktor]
-0.7
-
-;maximale Anzahl an Pfadfindungsversuchen pro Muckel wenn Ziel bei Stillstand der
-;Formation durch Kollision belegt ist
-;
-;2..16
-[FormationPathDepth]
-2
-
-;Zeit in ms die eine Figur in einer Formationsbewegung wartet, wenn sie auf eine Kollision trifft
-;Defautl=1000
-;0..X
-[FormationCollisionWaitTime]
-150
-
-;Gibt in % an, wieviel eine Heohendifferenz von einem Pattern zum naechsten die
-;Globale Hoehenrichtungsbeleuchtung beeinflusst
-;
-;0..100
-[GlobalFloorLightIntensity]
-10
-
-;Gibt die Intensitдt an von 0 bis 100% an, mit welcher der 3-dimensionale Bewegungsvektor 
-;genutzt wird, es ergibt sich fьr die Bewegungsgeschwindigkeit eine Konvexkombination (baryzentrisch)
-;speed= 3Dspeed*Intensity + 2Dspeed*(100%-Intensity)  (default: intensity=100)
-;
-[MoveVector3DIntensity]
-100
-
-;Gibt die Geschwindigkeit der Bewegung der Wolkenspiegelungstextur an 
-;0=keine 1=langsam 16=normal 256=schnell 4095=maximal (Default=16)
-;
-[CloudReflectMoveSpeed]
-27
-
-;Gibt den Angriffswertfaktor an, mit dem der normale Angriffswert im aktiven Zustand 'Berserker'
-;multipliziert wird, z.B. bewirkt 2.0 eine Verdopplung des AW, 0.5 bewirkt eine Halbierung
-[BerserkerAWfaktor]
-2.0
-
-;Gibt den Damagewertfaktor an (Nahkampf), mit dem der normale Schaden im aktiven Zustand 'Berserker'
-;multipliziert wird, z.B. bewirkt 2.0 eine Verdopplung des Schadens, 0.5 bewirkt eine Halbierung
-[BerserkerDAMfaktor]
-2.0
-
-;Gibt den Verteigungswertfaktor an (Nahkampf), mit dem der normale Verteigungswert im aktiven Zustand 'Berserker'
-;multipliziert wird, z.B. bewirkt 2.0 eine Verdopplung des VW, 0.5 bewirkt eine Halbierung, 0.0 bewirkt eine Setzung zu VW=0
-[BerserkerVWfaktor]
-0.0
-
-;Gibt den Schussradiusfaktor an (Fernkampfwaffe 1+2), mit dem der normale Schussradius im aktiven Zustand 'Schuetzengeschick'
-;multipliziert wird, z.B. bewirkt 2.0 eine Verdopplung des Radius, 0.5 bewirkt eine Halbierung
-[SchuetzengeschickRADfaktor]
-1.2
-
-;Gibt den Schadensfaktor an (saemtlicher Schaeden), mit dem der normale Schaden im aktiven Zustand 'Schutzschild'
-;multipliziert wird, z.B. bewirkt 2.0 eine Verdopplung des Schadens, 0.5 bewirkt eine Halbierung
-[SchutzschildDAMfaktor]
-0.8
-
-;Gibt den Schadensfaktor an (Waffe 0), mit dem der normale Schaden im aktiven Zustand 'Donnerschlag'
-;multipliziert wird, z.B. bewirkt 2.0 eine Verdopplung des Schadens, 0.5 bewirkt eine Halbierung
-[DonnerschlagDAMfaktor]
-1.5
-
-;Gibt den Geschwindigkeitabschussfaktor fьr Geschosse an (Waffe 1-7) ausgehend vom ursprьnglich eingestellten Faktor 1.0
-;annдhernde Korrektur der Flugbahnlдnge durch Multiplikation mit 1.52 des zugehцrigen Parameter Ysub in den ParticleDefaults
-[ProjectileInitSpeedFactor]
-1.5
-
-;gibt die Unsicherheit der Vorhalte bei Projektilattacken an (nur fuer sich bewegende Ziele)
-;0.0 bedeutet: keine Unsicherheit, das Projektil trifft mit Vorhalte absolut prдzise
-;0.5 bedeutet: eine Abweichung von bis zu 0.5*3*MoveSpeed_des_Ziels (in Pattern) ist moeglich
-;1.0 bedeutet: eine Abweichung von bis zu 1.0*3*MoveSpeed_des_Ziels (in Pattern) ist moeglich
-;1.5 bedeutet: eine Abweichung von bis zu 1.5*3*MoveSpeed_des_Ziels (in Pattern) ist moeglich
-;Default =0.5
-[ProjectileVarianceOnMove]
-0.5
-
-;gibt den Winkel zwischen Zielposition und prognostizierter Zielposition in Grad an, ab dem die Vorhalte abgeschaltet wird
-;Vermeidung zu starker Abweichung zwischen Projektilflugrichtung und Blickrichtung des feuernden Objektes
-;Default=45
-[ProjectileVarianceMaximumAngle]
-45
-
-;Gibt den Bereich an, in dem die Distanz zwischen Zielposition und prognostizierter Zielposition variieren darf, bevor die
-;Vorhalte abgeschaltet wird
-;0.4 bedeutet: Distanz zur Vorhalteposition muss zwischen der (1-0.4)=0.6 und (1+0.4)=1.4'fachen Distanz zur Zielposition liegen
-;Default=0.4
-[ProjectileVarianceDistanceRange]
-0.4
-
-;Gibt die Zeit in ms, die als maximale Zeitdifferenz zwischen zwei logischen Frames an
-;Default=3000
-;(Wer hier rumfummelt und nicht genau weiss was er tut, bekommt die Figer abgehackt :-)
-[MaxLogicFrameTime]
-3000";
-        }
     }
 }

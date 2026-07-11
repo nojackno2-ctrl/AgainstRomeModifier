@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.IO.Compression;
 using System.Collections.Generic;
@@ -55,7 +55,7 @@ namespace AgainstRomeModifier.Core.Services
                 LoadZipToDictionary(stream);
                 TryAutoHealBackupFiles(gamePath);
                 ValidateBackupResources();
-                _logger.Log("已載入內嵌 Backup.zip 備份資料。");
+                _logger.Log(Loc.Get("SvcLogBackupLoadedEmbedded"));
                 return;
             }
 
@@ -66,13 +66,13 @@ namespace AgainstRomeModifier.Core.Services
                 LoadZipToDictionary(stream);
                 TryAutoHealBackupFiles(gamePath);
                 ValidateBackupResources();
-                _logger.Log("已載入程式目錄中的 Backup.zip 備份資料。");
+                _logger.Log(Loc.Get("SvcLogBackupLoadedLocal"));
                 return;
             }
 
             if (!TryLoadBackupFromGameDirectory(gamePath, false))
             {
-                _logger.Log("找不到內嵌或本機 Backup.zip；請選擇合法的遊戲安裝目錄，程式會從該目錄建立本機記憶體備份。");
+                _logger.Log(Loc.Get("SvcLogBackupMissing"));
             }
         }
 
@@ -103,10 +103,13 @@ namespace AgainstRomeModifier.Core.Services
                         try
                         {
                             byte[] cleanEparaBytes = Encoding.GetEncoding(1251).GetBytes(GetCleanEparaText());
-                            _backupFiles[relPath] = GameLZSS.CompressPfil(cleanEparaBytes, null!);
-                            _logger.Log("已使用修改器內建乾淨預設值修復記憶體備份項目: SYSTEM/cl_epara.ini");
+                            _backupFiles[relPath] = GameLZSS.CompressPfil(cleanEparaBytes, CreateEmptyPfilHeader());
+                            _logger.Log(Loc.Get("SvcLogEparaHealed"));
                         }
-                        catch { }
+                        catch (Exception ex)
+                        {
+                            _logger.Log(string.Format(Loc.Get("SvcLogEparaHealFailed"), ex.Message));
+                        }
                     }
                     else
                     {
@@ -116,9 +119,9 @@ namespace AgainstRomeModifier.Core.Services
                             try
                             {
                                 _backupFiles[relPath] = File.ReadAllBytes(fullPath);
-                                _logger.Log(string.Format("已從遊戲目錄自動修復缺少之記憶體備份項目: {0}", relPath));
+                                _logger.Log(string.Format(Loc.Get("SvcLogAutoHealed"), relPath));
                             }
-                            catch { }
+                            catch (Exception ex) { _logger.Log(string.Format(Loc.Get("SvcLogAutoHealFailed"), relPath, ex.Message)); }
                         }
                     }
                 }
@@ -138,9 +141,9 @@ namespace AgainstRomeModifier.Core.Services
                             string relPath = Path.GetRelativePath(normalizedGamePath, file).Replace('\\', '/');
                             _backupFiles[relPath] = File.ReadAllBytes(file);
                         }
-                        _logger.Log("已從遊戲目錄自動修復地圖團隊備份項目 (team.dat)。");
+                        _logger.Log(Loc.Get("SvcLogTeamDatHealed"));
                     }
-                    catch { }
+                    catch (Exception ex) { _logger.Log(string.Format(Loc.Get("SvcLogTeamDatHealFailed"), ex.Message)); }
                 }
             }
         }
@@ -181,7 +184,7 @@ namespace AgainstRomeModifier.Core.Services
             var missing = FindMissingBackupResources();
             if (missing.Count > 0)
             {
-                string msg = "備份來源缺少必要檔案，修改與還原功能可能無法安全執行:\r\n" + string.Join("\r\n", missing);
+                string msg = Loc.Get("SvcLogBackupIncomplete") + "\r\n" + string.Join("\r\n", missing);
                 _logger.Log(msg);
                 throw new InvalidDataException(msg);
             }
@@ -226,9 +229,12 @@ namespace AgainstRomeModifier.Core.Services
                     try
                     {
                         byte[] cleanEparaBytes = Encoding.GetEncoding(1251).GetBytes(GetCleanEparaText());
-                        loaded[relPath] = GameLZSS.CompressPfil(cleanEparaBytes, null!);
+                        loaded[relPath] = GameLZSS.CompressPfil(cleanEparaBytes, CreateEmptyPfilHeader());
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        _logger.Log(string.Format(Loc.Get("SvcLogEparaBuildFailed"), ex.Message));
+                    }
                     continue;
                 }
                 string fullPath = Path.Combine(gamePath, relPath.Replace('/', Path.DirectorySeparatorChar));
@@ -272,7 +278,7 @@ namespace AgainstRomeModifier.Core.Services
                 return false;
             }
 
-            _logger.Log("已成功從指定遊戲目錄建立乾淨記憶體備份。");
+            _logger.Log(Loc.Get("SvcLogBackupFromGameDir"));
             return true;
         }
 
@@ -305,6 +311,17 @@ namespace AgainstRomeModifier.Core.Services
             {
                 _backupUnitRows = null;
             }
+        }
+
+        /// <summary>建立內容全零的 64-byte PFIL 標頭,供無原始檔可沿用標頭時壓縮使用。</summary>
+        private static byte[] CreateEmptyPfilHeader()
+        {
+            byte[] header = new byte[64];
+            header[0] = (byte)'P';
+            header[1] = (byte)'F';
+            header[2] = (byte)'I';
+            header[3] = (byte)'L';
+            return header;
         }
 
         public Dictionary<string, string[]> GetBackupUnitRows()

@@ -17,7 +17,13 @@ namespace AgainstRomeModifier.Tests
         [Fact]
         public void VerifyRealGamePatches()
         {
-            string gamePath = @"C:\Program Files (x86)\Against Rome";
+            // 本測試是唯讀診斷輸出（無斷言），僅在明確設定 AR_GAME_PATH 環境變數時執行，
+            // 不再硬編碼特定開發機的安裝路徑。
+            string? gamePath = Environment.GetEnvironmentVariable("AR_GAME_PATH");
+            if (string.IsNullOrWhiteSpace(gamePath) || !System.IO.Directory.Exists(gamePath)) {
+                _output.WriteLine("[SKIPPED] 未設定 AR_GAME_PATH 環境變數（或目錄不存在），略過真實安裝目錄診斷輸出。");
+                return;
+            }
             _output.WriteLine($"正在檢測遊戲安裝目錄：{gamePath}");
 
             var orchestrator = new EndlessAiOrchestrator();
@@ -90,6 +96,13 @@ namespace AgainstRomeModifier.Tests
         {
             string gamePath = System.IO.Path.GetFullPath(System.IO.Path.Combine(AppContext.BaseDirectory, "../../../../../遊戲原始檔案"));
             _output.WriteLine($"正在檢測開發目錄下的遊戲原始檔案：{gamePath}");
+
+            // 遊戲原始檔案為專有資料、不進版控；CI 上目錄不存在時略過本驗證
+            // （DetectModule 對找不到檔案的情況回傳 Unknown，不可再拿來斷言 Original）。
+            if (!System.IO.Directory.Exists(gamePath)) {
+                _output.WriteLine("遊戲原始檔案目錄不存在（CI 環境），略過本機專屬驗證。");
+                return;
+            }
 
             var orchestrator = new EndlessAiOrchestrator();
 

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 
 namespace AgainstRomeModifier {
@@ -416,7 +416,46 @@ namespace AgainstRomeModifier {
             { "AiM3Tip", "無盡模式：AI 敗亡後加速舊村莊與城牆的逐筆確認清理、將非定居點撤退期限縮短為 1 分鐘；保留原版安全的隊伍終結順序。" },
             { "AiM4Tip", "無盡模式：定居點 100% 必定會建立聚落（重啟機率由遞減改為 101%）。" },
             { "AiM5Tip", "無盡模式：AI 聚落開局即擁有主堡儲備資源，加速其經濟與軍隊起步。僅影響電腦聚落，不影響玩家。" },
-            { "AiM6Tip", "無盡模式：將地圖上可容納的活躍隊伍上限從 4 提高到 40，讓守軍和巡邏隊數量變多。" }
+            { "AiM6Tip", "無盡模式：將地圖上可容納的活躍隊伍上限從 4 提高到 40，讓守軍和巡邏隊數量變多。" },
+
+            // 服務層 (PatchEngine / BackupManager) 日誌訊息
+            { "SvcLogPreApplyRestore", "正在套用前將相關檔案復原為乾淨狀態，以清除殘留修改..." },
+            { "SvcLogFocusApplied", "已套用視窗失去焦點不暫停補丁。" },
+            { "SvcLogFocusRestored", "已還原視窗失去焦點暫停設定。" },
+            { "SvcLogVillageLegacyRestoreUnknown", "無法還原舊版村莊建造半徑補丁：主程式特徵碼不符合。" },
+            { "SvcLogVillageLegacyRemoved", "已移除舊版村莊建造半徑補丁。" },
+            { "SvcLogVillageApplyUnknown", "無法套用村莊建造半徑補丁：主程式特徵碼不符合。" },
+            { "SvcLogVillageApplied", "已套用村莊建造範圍擴大補丁。" },
+            { "SvcLogVillageRestored", "已還原村莊建造範圍設定。" },
+            { "SvcLogAltarApplied", "已套用法術免祭壇需求補丁。" },
+            { "SvcLogAltarRestored", "已還原法術祭壇需求設定。" },
+            { "SvcLogGameSpeedUnknown", "偵測到未知的遊戲時脈常數，已略過遊戲加速補丁以免覆蓋未知版本。" },
+            { "SvcLogGameSpeedApplied", "遊戲整體運行速度：{0}× 加速。" },
+            { "SvcLogGameSpeedOriginal", "遊戲整體運行速度：原版（未加速）。" },
+            { "SvcLogTeamDatApplied", "已修改所有地圖的 team.dat 人口上限為 {0} (共處理 {1} 個檔案)。" },
+            { "SvcLogTeamDatRestored", "已將所有地圖的 team.dat 人口上限還原為原版。" },
+            { "SvcLogLeaderScriptMigrated", "已移除會造成戰鬥閃退的舊版首領榮耀腳本，並以原版 ak_anfuehrer.bci 重建。" },
+            { "SvcLogLangApplied", "已成功套用英文介面與地圖語言包。" },
+            { "SvcLogLangRestored", "已將英文介面與地圖語言包還原為原版。" },
+            { "SvcLogDgvInstalled", "已成功安裝與設定 dgVoodoo2 ({0}) 繪圖轉譯器。" },
+            { "SvcLogDgvNotManaged", "偵測到遊戲目錄中存在非本修改器部署的 dgVoodoo2 相關元件，為保護使用者資產將不主動進行刪除；若要乾淨卸載，請手動刪除遊戲目錄下的 DDraw.dll, D3D8.dll, dgVoodooCpl.exe。" },
+            { "SvcLogDgvPreserved", "dgVoodoo2 託管設定檔 {0} 的雜湊值已變更，將予以保留不刪除。" },
+            { "SvcLogDgvRemoved", "已成功移除 dgVoodoo2 所有受託管檔案。" },
+            { "SvcLogRestoredFile", "已還原: {0}" },
+            { "SvcLogRestoredPopulation", "已還原人口上限: {0}" },
+            { "SvcLogDetectFailed", "[偵測] {0} 狀態偵測失敗，該群組選項將顯示為未勾選: {1}" },
+            { "SvcLogBackupLoadedEmbedded", "已載入內嵌 Backup.zip 備份資料。" },
+            { "SvcLogBackupLoadedLocal", "已載入程式目錄中的 Backup.zip 備份資料。" },
+            { "SvcLogBackupMissing", "找不到內嵌或本機 Backup.zip；請選擇合法的遊戲安裝目錄，程式會從該目錄建立本機記憶體備份。" },
+            { "SvcLogEparaHealed", "已使用修改器內建乾淨預設值修復記憶體備份項目: SYSTEM/cl_epara.ini" },
+            { "SvcLogEparaHealFailed", "修復記憶體備份項目 SYSTEM/cl_epara.ini 失敗: {0}" },
+            { "SvcLogEparaBuildFailed", "以內建預設值建立 SYSTEM/cl_epara.ini 備份失敗: {0}" },
+            { "SvcLogAutoHealed", "已從遊戲目錄自動修復缺少之記憶體備份項目: {0}" },
+            { "SvcLogAutoHealFailed", "自動修復記憶體備份項目 {0} 失敗: {1}" },
+            { "SvcLogTeamDatHealed", "已從遊戲目錄自動修復地圖團隊備份項目 (team.dat)。" },
+            { "SvcLogTeamDatHealFailed", "自動修復地圖 team.dat 備份失敗: {0}" },
+            { "SvcLogBackupIncomplete", "備份來源缺少必要檔案，修改與還原功能可能無法安全執行:" },
+            { "SvcLogBackupFromGameDir", "已成功從指定遊戲目錄建立乾淨記憶體備份。" }
         };
 
         private static readonly Dictionary<string, string> En = new Dictionary<string, string> {
@@ -679,8 +718,48 @@ namespace AgainstRomeModifier {
             { "AiM1Tip", "Endless mode: raises AI unit size from 6 to 20 members across all three paths (reinforcement units, reinforcement rebuild, and village day-to-day civilian conversion)." },
             { "AiM2Tip", "Endless mode: shortens reinforcement wait and scheduler loop delays and recycles completed NPC job slots so AI reinforcement waves arrive quickly and continuously." },
             { "AiM3Tip", "Endless mode: accelerates confirmed per-object cleanup of defeated AI villages and palisades, death detection, and retreat while preserving the vanilla safe terminal order." },
-            { "AiM4Tip", "Endless mode: always spawns opponent settlements, raises the reinforcement threshold to 40, and makes reinforcement troops fully garrison the village instead of retreating (threshold and garrison applied together)." },
-            { "AiM5Tip", "Endless mode: AI settlements start with main-hall stockpiles to speed up their economy and army. Affects AI settlements only, never the player." }
+            { "AiM4Tip", "Endless mode: settle spots always found new settlements (respawn probability raised from a decaying chance to 101%)." },
+            { "AiM5Tip", "Endless mode: AI settlements start with main-hall stockpiles to speed up their economy and army. Affects AI settlements only, never the player." },
+            { "AiM6Tip", "Endless mode: raises the map's active-party cap from 4 to 40 so garrisons and patrols become far more numerous." },
+
+            // Service-layer (PatchEngine / BackupManager) log messages
+            { "SvcLogPreApplyRestore", "Restoring affected files to a clean state before applying, to clear leftover modifications..." },
+            { "SvcLogFocusApplied", "Applied the no-pause-on-focus-loss patch." },
+            { "SvcLogFocusRestored", "Restored the original pause-on-focus-loss behavior." },
+            { "SvcLogVillageLegacyRestoreUnknown", "Cannot revert the legacy village build-range patch: executable signature mismatch." },
+            { "SvcLogVillageLegacyRemoved", "Removed the legacy village build-range patch." },
+            { "SvcLogVillageApplyUnknown", "Cannot apply the village build-range patch: executable signature mismatch." },
+            { "SvcLogVillageApplied", "Applied the expanded village build-range patch." },
+            { "SvcLogVillageRestored", "Restored the original village build-range." },
+            { "SvcLogAltarApplied", "Applied the no-altar-requirement spell patch." },
+            { "SvcLogAltarRestored", "Restored the original spell altar requirement." },
+            { "SvcLogGameSpeedUnknown", "Unknown game clock constants detected; skipped the game-speed patch to avoid overwriting an unknown build." },
+            { "SvcLogGameSpeedApplied", "Overall game speed: {0}x acceleration." },
+            { "SvcLogGameSpeedOriginal", "Overall game speed: original (no acceleration)." },
+            { "SvcLogTeamDatApplied", "Set the population cap to {0} in every map's team.dat ({1} files processed)." },
+            { "SvcLogTeamDatRestored", "Restored the original population cap in every map's team.dat." },
+            { "SvcLogLeaderScriptMigrated", "Removed the legacy leader-glory script that caused combat crashes and rebuilt ak_anfuehrer.bci from the original." },
+            { "SvcLogLangApplied", "Applied the English UI and map language pack." },
+            { "SvcLogLangRestored", "Restored the original language files." },
+            { "SvcLogDgvInstalled", "Installed and configured the dgVoodoo2 ({0}) graphics wrapper." },
+            { "SvcLogDgvNotManaged", "Detected dgVoodoo2 components in the game folder that were not deployed by this modifier; they will not be deleted to protect your files. For a clean uninstall, manually remove DDraw.dll, D3D8.dll and dgVoodooCpl.exe from the game folder." },
+            { "SvcLogDgvPreserved", "The managed dgVoodoo2 file {0} has been modified; it will be kept, not deleted." },
+            { "SvcLogDgvRemoved", "Removed all modifier-managed dgVoodoo2 files." },
+            { "SvcLogRestoredFile", "Restored: {0}" },
+            { "SvcLogRestoredPopulation", "Restored population cap: {0}" },
+            { "SvcLogDetectFailed", "[Detect] Failed to detect {0} state; options in this group will show as unchecked: {1}" },
+            { "SvcLogBackupLoadedEmbedded", "Loaded the embedded Backup.zip baseline." },
+            { "SvcLogBackupLoadedLocal", "Loaded Backup.zip from the program folder." },
+            { "SvcLogBackupMissing", "No embedded or local Backup.zip found; select a valid game folder and the modifier will build an in-memory baseline from it." },
+            { "SvcLogEparaHealed", "Rebuilt the in-memory backup entry SYSTEM/cl_epara.ini from the modifier's built-in clean defaults." },
+            { "SvcLogEparaHealFailed", "Failed to rebuild backup entry SYSTEM/cl_epara.ini: {0}" },
+            { "SvcLogEparaBuildFailed", "Failed to build the SYSTEM/cl_epara.ini backup from built-in defaults: {0}" },
+            { "SvcLogAutoHealed", "Auto-restored missing backup entry from the game folder: {0}" },
+            { "SvcLogAutoHealFailed", "Failed to auto-restore backup entry {0}: {1}" },
+            { "SvcLogTeamDatHealed", "Auto-restored map team.dat backup entries from the game folder." },
+            { "SvcLogTeamDatHealFailed", "Failed to auto-restore map team.dat backups: {0}" },
+            { "SvcLogBackupIncomplete", "The backup source is missing required files; apply/restore may not run safely:" },
+            { "SvcLogBackupFromGameDir", "Built a clean in-memory baseline from the selected game folder." }
         };
     }
 }

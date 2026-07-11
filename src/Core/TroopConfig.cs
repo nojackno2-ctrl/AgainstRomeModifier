@@ -244,6 +244,12 @@ namespace AgainstRomeModifier {
                 { "siege", 6 }
             };
 
+            // 先建 index 對照表，避免比較器內 IndexOf 造成 O(n²) 查找
+            var originalIndex = new Dictionary<string, int>(UnitOrder.Count);
+            for (int i = 0; i < UnitOrder.Count; i++) {
+                originalIndex[UnitOrder[i]] = i;
+            }
+
             var sorted = new List<string>(UnitOrder);
             sorted.Sort((a, b) => {
                 string tierA = UnitMeta.ContainsKey(a) ? UnitMeta[a].Item2 : "low";
@@ -251,7 +257,7 @@ namespace AgainstRomeModifier {
                 int pA = tierPriority.ContainsKey(tierA) ? tierPriority[tierA] : 99;
                 int pB = tierPriority.ContainsKey(tierB) ? tierPriority[tierB] : 99;
                 if (pA != pB) return pA.CompareTo(pB);
-                return UnitOrder.IndexOf(a).CompareTo(UnitOrder.IndexOf(b));
+                return originalIndex[a].CompareTo(originalIndex[b]);
             });
 
             UnitOrder.Clear();

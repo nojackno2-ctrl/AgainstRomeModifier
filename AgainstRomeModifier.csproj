@@ -12,6 +12,9 @@
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="AgainstRomeModifier.Tests" />
+  </ItemGroup>
+  <ItemGroup>
     <Compile Remove="re_workspace\**" />
     <Compile Remove="scratch\**" />
     <Compile Remove="tests\**" />

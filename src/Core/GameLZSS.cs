@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Buffers;
 
@@ -85,7 +85,8 @@ namespace AgainstRomeModifier {
                 for (int x = 0; x < N - F; x++) win[x] = 0x20;
                 for (int x = N - F; x < N; x++) win[x] = 0x00;
                 int r = N - F; // 視窗寫入位置起始於 4078
-                List<byte> output = new List<byte>();
+                // 以 MemoryStream 累積輸出（預留輸入長度容量），避免 List<byte> 反覆擴容搬移
+                using var output = new System.IO.MemoryStream(Math.Max(64, input.Length));
                 int src = 0; // 來源資料指標
                 int len = input.Length;
                 byte[] codeBuf = new byte[17]; // 暫存編碼緩衝區
@@ -249,7 +250,7 @@ namespace AgainstRomeModifier {
                     mask <<= 1;
                     // 若控制旗標累積滿 8 個，將緩衝區寫入輸出串流並重設旗標
                     if (mask == 256) {
-                        for (int i = 0; i < codePtr; i++) output.Add(codeBuf[i]);
+                        output.Write(codeBuf, 0, codePtr);
                         codeBuf[0] = 0;
                         codePtr = 1;
                         mask = 1;
@@ -257,7 +258,7 @@ namespace AgainstRomeModifier {
                 }
                 // 處理最後殘留未滿 8 個的控制旗標緩衝區
                 if (mask != 1) {
-                    for (int i = 0; i < codePtr; i++) output.Add(codeBuf[i]);
+                    output.Write(codeBuf, 0, codePtr);
                 }
                 return output.ToArray();
             } finally {

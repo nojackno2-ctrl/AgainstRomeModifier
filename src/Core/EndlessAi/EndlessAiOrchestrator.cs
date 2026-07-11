@@ -264,10 +264,15 @@ namespace AgainstRomeModifier
         {
             bool allOriginal = true;
             bool allUltimate = true;
+            bool anyFileFound = false;
 
             foreach (var patch in module.Patches)
             {
                 var paths = ResolvePaths(gamePath, patch.TargetPattern);
+                if (paths.Count > 0)
+                {
+                    anyFileFound = true;
+                }
                 int expectedCount = GetExpectedFileCount(patch.TargetPattern);
                 if (paths.Count != expectedCount)
                 {
@@ -301,6 +306,9 @@ namespace AgainstRomeModifier
                     }
                 }
             }
+
+            // 一個檔案都找不到（路徑錯誤、MAPS 缺失）時不能宣稱「原版」——那是「無法判定」。
+            if (!anyFileFound) return PatchState.Unknown;
 
             if (allOriginal) return PatchState.Original;
             if (allUltimate) return PatchState.Ultimate;
@@ -412,70 +420,7 @@ namespace AgainstRomeModifier
 
         private static void SafeWriteAllBytes(string dest, byte[] bytes, FileRollbackScope? rollback = null)
         {
-            int maxRetries = 3;
-            int delayMs = 500;
-            string? dir = Path.GetDirectoryName(dest);
-            if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
-            {
-                Directory.CreateDirectory(dir);
-            }
-
-            for (int i = 0; i < maxRetries; i++)
-            {
-                string tempFile = Path.Combine(dir ?? AppContext.BaseDirectory, Path.GetFileName(dest) + "." + Guid.NewGuid().ToString("N") + ".tmp");
-                try
-                {
-                    rollback?.TrackFile(dest);
-                    File.WriteAllBytes(tempFile, bytes);
-
-                    if (File.Exists(dest))
-                    {
-                        File.SetAttributes(dest, FileAttributes.Normal);
-                        File.Replace(tempFile, dest, null, true);
-                    }
-                    else
-                    {
-                        File.Move(tempFile, dest);
-                    }
-                    return;
-                }
-                catch (IOException ioEx)
-                {
-                    try
-                    {
-                        if (File.Exists(tempFile))
-                        {
-                            File.SetAttributes(tempFile, FileAttributes.Normal);
-                            File.Delete(tempFile);
-                        }
-                    }
-                    catch { }
-
-                    if (i == maxRetries - 1)
-                    {
-                        throw new Exception(string.Format("寫入檔案失敗，檔案可能被佔用或權限不足：{0}。錯誤訊息：{1}", dest, ioEx.Message), ioEx);
-                    }
-                    System.Threading.Thread.Sleep(delayMs);
-                }
-                catch (UnauthorizedAccessException accessEx)
-                {
-                    try
-                    {
-                        if (File.Exists(tempFile))
-                        {
-                            File.SetAttributes(tempFile, FileAttributes.Normal);
-                            File.Delete(tempFile);
-                        }
-                    }
-                    catch { }
-
-                    if (i == maxRetries - 1)
-                    {
-                        throw new Exception(string.Format("寫入檔案失敗，檔案可能被佔用或權限不足：{0}。錯誤訊息：{1}", dest, accessEx.Message), accessEx);
-                    }
-                    System.Threading.Thread.Sleep(delayMs);
-                }
-            }
+            Core.Services.SafeFileWriter.WriteAllBytes(dest, bytes, rollback);
         }
     }
 }

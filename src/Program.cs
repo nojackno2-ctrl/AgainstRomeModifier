@@ -20,53 +20,25 @@ namespace AgainstRomeModifier {
                 } catch (Exception writeEx) {
                     System.Diagnostics.Debug.WriteLine("日誌寫入失敗: " + writeEx.Message);
                 }
+                try {
+                    // 不再無聲閃退：讓使用者知道發生了什麼、去哪裡找詳細記錄
+                    MessageBox.Show(
+                        "修改器發生未預期的錯誤，已中止執行。\n\n" + ex.Message +
+                        "\n\n詳細記錄已寫入程式目錄下的 crash_log.txt。",
+                        "Against Rome Modifier",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Error);
+                } catch (Exception msgEx) {
+                    System.Diagnostics.Debug.WriteLine("錯誤對話框顯示失敗: " + msgEx.Message);
+                }
             }
         }
 
-        // 處理管理員權限提權以及表單的啟動
+        // 啟動主表單。
+        // 管理員權限由 app.manifest 的 requestedExecutionLevel=requireAdministrator 保證：
+        // OS 會在行程啟動前強制 UAC，因此這裡不需要（也永遠不會走到）手動 runas 重啟邏輯。
+        // 若 UAC 被使用者取消，程式根本不會啟動——這是 Windows 的標準行為。
         private static void RunApplication() {
-            var id = System.Security.Principal.WindowsIdentity.GetCurrent();
-            var principal = new System.Security.Principal.WindowsPrincipal(id);
-            // 檢查當前執行程序是否具有系統管理員權限（修改遊戲檔案需要管理員權限）
-            bool isAdmin = principal.IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator);
-
-            if (!isAdmin) {
-                try {
-                    // 記錄嘗試提權啟動的事件至日誌檔
-                    File.AppendAllText(Path.Combine(AppContext.BaseDirectory, "modifier_log.txt"), string.Format("[{0}] 嘗試提權啟動...\r\n", DateTime.Now.ToString("HH:mm:ss")), Encoding.UTF8);
-                } catch (Exception writeEx) {
-                    System.Diagnostics.Debug.WriteLine("日誌寫入失敗: " + writeEx.Message);
-                }
-
-                // 設定以系統管理員權限 (runas 動作) 重新啟動當前執行檔
-                var startInfo = new System.Diagnostics.ProcessStartInfo {
-                    FileName = Environment.ProcessPath ?? System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName ?? "",
-                    UseShellExecute = true,
-                    Verb = "runas",
-                    WorkingDirectory = AppContext.BaseDirectory
-                };
-                try {
-                    System.Diagnostics.Process.Start(startInfo);
-                } catch (Exception ex) {
-                    try {
-                        // 提權失敗時寫入日誌檔
-                        File.AppendAllText(Path.Combine(AppContext.BaseDirectory, "modifier_log.txt"), string.Format("[{0}] 提權啟動失敗: {1}\r\n", DateTime.Now.ToString("HH:mm:ss"), ex.Message), Encoding.UTF8);
-                    } catch (Exception writeEx) {
-                        System.Diagnostics.Debug.WriteLine("日誌寫入失敗: " + writeEx.Message);
-                    }
-                }
-                // 結束目前未提權的程式執行個體
-                Application.Exit();
-                return;
-            }
-
-            // 若已具備系統管理員權限，則啟動主表單視窗
-            StartForm();
-        }
-
-        // 避免編譯器內聯此方法，確保權限檢查與 UI 啟動正確分離
-        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
-        private static void StartForm() {
             Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);

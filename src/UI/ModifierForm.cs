@@ -239,24 +239,31 @@ namespace AgainstRomeModifier {
             try {
                 string gamePath = GetGamePath();
                 if (!string.IsNullOrWhiteSpace(gamePath) && Directory.Exists(gamePath)) {
-                    var opts = patchEngine.DetectCurrentPatchState(gamePath, backupManager);
-                    // 執行套用做為修復遷移 (在 startup 只對 foodHealing 修復，但由於 ApplyPatches 會順便修復，在此直接 Apply 即可)
+                    // 啟動只做針對性的安全遷移（R0 常駐修復 + 舊版首領閃退腳本重建），
+                    // 不執行完整 ApplyPatches——完整套用會依「可偵測的選項」還原後重寫檔案，
+                    // 而自訂兵種屬性偵測不回來，會在啟動瞬間被無聲覆蓋成平衡值。
                     using (var rollback = new FileRollbackScope()) {
-                        patchEngine.ApplyPatches(gamePath, opts, backupManager, rollback);
+                        patchEngine.RunStartupSafeMigrations(gamePath, backupManager, rollback);
                         rollback.Commit();
                     }
                 }
             } catch (Exception ex) {
-                Log("舊版首領腳本安全遷移失敗: " + ex.Message);
+                Log("舊版腳本安全遷移失敗: " + ex.Message);
             }
 
             // 初始化資料與讀取自訂兵種資訊
             InitializeData();
-            // 註冊表單關閉事件以正確釋放字型與圖形物件資源，防止記憶體洩漏
-            this.FormClosing += (s, e) => {
+        }
+
+        /// <summary>
+        /// 依 WinForms 慣例在 Dispose 釋放自建的字型與圖示資源
+        /// （FormClosing 在部分關閉路徑不保證觸發，不適合當釋放點）。
+        /// </summary>
+        protected override void Dispose(bool disposing) {
+            if (disposing) {
                 try {
                     foreach (var img in unitIcons.Values) {
-                        if (img != null) img.Dispose();
+                        img?.Dispose();
                     }
                     unitIcons.Clear();
                     fontJhengHei95B.Dispose();
@@ -268,10 +275,12 @@ namespace AgainstRomeModifier {
                     fontJhengHei9R.Dispose();
                     fontJhengHei10R.Dispose();
                     fontConsolas85.Dispose();
+                    myToolTip?.Dispose();
                 } catch (Exception ex) {
-                    Log("釋放資源失敗: " + ex.Message);
+                    System.Diagnostics.Debug.WriteLine("釋放資源失敗: " + ex.Message);
                 }
-            };
+            }
+            base.Dispose(disposing);
         }
 
         // 產生帶有圓角矩形的 GraphicsPath 物件，用於 UI 的圓角卡片與視窗繪製
@@ -1871,11 +1880,6 @@ namespace AgainstRomeModifier {
         }
 
         /// <summary>
-        /// 確保備份的 objdef.dau 檔案已被解析並快取至記憶體中。
-        /// </summary>
-
-
-        /// <summary>
         /// 自訂導覽列按鈕繪製樣式，包含 Hover 漸層與選取指示條
         /// </summary>
         private void StyleNavButton(Button btn, string key, TabPage associatedPage) {
@@ -1932,10 +1936,10 @@ namespace AgainstRomeModifier {
                 }
             };
 
-            // 註冊滑鼠事件以即時重繪
+            // 註冊滑鼠進出事件以即時重繪 Hover 狀態
+            //（Paint 內以游標位置判斷 hover，不需要在 MouseMove 每次移動都整鈕重繪）
             btn.MouseEnter += (s, e) => btn.Invalidate();
             btn.MouseLeave += (s, e) => btn.Invalidate();
-            btn.MouseMove += (s, e) => btn.Invalidate();
         }
 
         /// <summary>

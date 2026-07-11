@@ -352,7 +352,8 @@ public static class ExePatchModel {
         return Array.Empty<ExeWriteOp>();
     }
 
-    /// <summary>逐一套用寫入計畫；任一偏移的目前位元組不符預期即中止並丟例外，緩衝區不被破壞。</summary>
+    /// <summary>逐一套用寫入計畫；每筆寫入前先驗證目前位元組，任一不符即丟例外中止。
+    /// 注意：先前已套用的項目會留在緩衝區中——呼叫端捕捉到例外後不得再使用該緩衝區寫檔。</summary>
     public static void Apply(byte[] exeBytes, IEnumerable<ExeWriteOp> ops) {
         foreach (ExeWriteOp op in ops) {
             VerifiedBinaryWriter.WriteBytes(exeBytes, op.Offset, op.Expected, op.Replacement, op.PatchName);

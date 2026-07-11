@@ -414,11 +414,11 @@ namespace AgainstRomeModifier {
                 Title = isEn ? "Import Custom Troop Stats" : "匯入自訂兵種屬性"
             }) {
                 if (ofd.ShowDialog() != DialogResult.OK) return;
-                this.LoadedFileName = Path.GetFileName(ofd.FileName);
 
                 try {
                     string[] lines = File.ReadAllLines(ofd.FileName, Encoding.UTF8);
                     var loadedStats = new Dictionary<string, double[]>(StringComparer.OrdinalIgnoreCase);
+                    int skippedLines = 0;
 
                     foreach (string line in lines) {
                         string l = line.Trim();
@@ -428,30 +428,42 @@ namespace AgainstRomeModifier {
                         string[] kv = l.Split(new char[] { '=' }, 2);
                         string key = kv[0].Trim();
                         string[] vals = kv[1].Split(',');
-
-                        if (vals.Length >= 4) {
-                            double hp = double.Parse(vals[0].Trim(), CultureInfo.InvariantCulture);
-                            double dmg = double.Parse(vals[1].Trim(), CultureInfo.InvariantCulture);
-                            double vw = double.Parse(vals[2].Trim(), CultureInfo.InvariantCulture);
-                            double aw = double.Parse(vals[3].Trim(), CultureInfo.InvariantCulture);
-                            
-                            double speed = vals.Length > 4 ? double.Parse(vals[4].Trim(), CultureInfo.InvariantCulture) : 0;
-                            double sight = vals.Length > 5 ? double.Parse(vals[5].Trim(), CultureInfo.InvariantCulture) : 0;
-                            double relt = vals.Length > 6 ? double.Parse(vals[6].Trim(), CultureInfo.InvariantCulture) : 0;
-                            double range = vals.Length > 7 ? double.Parse(vals[7].Trim(), CultureInfo.InvariantCulture) : 0;
-                            double spellRadius = vals.Length > 8 ? double.Parse(vals[8].Trim(), CultureInfo.InvariantCulture) : 0;
-
-                            if (vals.Length < 9) {
-                                double[] defStats = mainForm.GetDefaultBalancedStats(key);
-                                if (vals.Length <= 4) speed = defStats.Length > 4 ? defStats[4] : 0;
-                                if (vals.Length <= 5) sight = defStats.Length > 5 ? defStats[5] : 0;
-                                if (vals.Length <= 6) relt = defStats.Length > 6 ? defStats[6] : 0;
-                                if (vals.Length <= 7) range = defStats.Length > 7 ? defStats[7] : 0;
-                                if (vals.Length <= 8) spellRadius = defStats.Length > 8 ? defStats[8] : 0;
-                            }
-
-                            loadedStats[key] = new double[] { hp, dmg, vw, aw, speed, sight, relt, range, spellRadius };
+                        if (vals.Length < 4) {
+                            skippedLines++;
+                            continue;
                         }
+
+                        // 單行格式錯誤只略過該行並計數，不再讓一行壞資料中止整批匯入。
+                        double[] parsed = new double[Math.Min(vals.Length, 9)];
+                        bool lineValid = true;
+                        for (int v = 0; v < parsed.Length; v++) {
+                            if (!double.TryParse(vals[v].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out parsed[v])) {
+                                lineValid = false;
+                                break;
+                            }
+                        }
+                        if (!lineValid) {
+                            skippedLines++;
+                            continue;
+                        }
+
+                        double hp = parsed[0], dmg = parsed[1], vw = parsed[2], aw = parsed[3];
+                        double speed = parsed.Length > 4 ? parsed[4] : 0;
+                        double sight = parsed.Length > 5 ? parsed[5] : 0;
+                        double relt = parsed.Length > 6 ? parsed[6] : 0;
+                        double range = parsed.Length > 7 ? parsed[7] : 0;
+                        double spellRadius = parsed.Length > 8 ? parsed[8] : 0;
+
+                        if (vals.Length < 9) {
+                            double[] defStats = mainForm.GetDefaultBalancedStats(key);
+                            if (vals.Length <= 4) speed = defStats.Length > 4 ? defStats[4] : 0;
+                            if (vals.Length <= 5) sight = defStats.Length > 5 ? defStats[5] : 0;
+                            if (vals.Length <= 6) relt = defStats.Length > 6 ? defStats[6] : 0;
+                            if (vals.Length <= 7) range = defStats.Length > 7 ? defStats[7] : 0;
+                            if (vals.Length <= 8) spellRadius = defStats.Length > 8 ? defStats[8] : 0;
+                        }
+
+                        loadedStats[key] = new double[] { hp, dmg, vw, aw, speed, sight, relt, range, spellRadius };
                     }
 
                     foreach (var dgv in factionGrids.Values) {
@@ -459,22 +471,32 @@ namespace AgainstRomeModifier {
                             string key = dgv.Rows[i].Cells["Key"].Value?.ToString() ?? "";
                             if (loadedStats.ContainsKey(key)) {
                                 var stats = loadedStats[key];
-                                dgv.Rows[i].Cells["Hp"].Value = Math.Round(stats[0]).ToString();
-                                dgv.Rows[i].Cells["Dmg"].Value = stats[1].ToString("F1", CultureInfo.InvariantCulture);
-                                dgv.Rows[i].Cells["VW"].Value = Math.Round(stats[2]).ToString();
-                                dgv.Rows[i].Cells["AW"].Value = Math.Round(stats[3]).ToString();
-                                dgv.Rows[i].Cells["Speed"].Value = stats[4].ToString("F1", CultureInfo.InvariantCulture);
-                                dgv.Rows[i].Cells["Sight"].Value = Math.Round(stats[5]).ToString();
-                                dgv.Rows[i].Cells["Relt"].Value = Math.Round(stats[6]).ToString();
-                                dgv.Rows[i].Cells["Range"].Value = Math.Round(stats[7]).ToString();
+                                // 以 0.## 呈現而非取整：保留檔案中的小數精度，套用時直接由表格讀回。
+                                dgv.Rows[i].Cells["Hp"].Value = stats[0].ToString("0.##", CultureInfo.InvariantCulture);
+                                dgv.Rows[i].Cells["Dmg"].Value = stats[1].ToString("0.##", CultureInfo.InvariantCulture);
+                                dgv.Rows[i].Cells["VW"].Value = stats[2].ToString("0.##", CultureInfo.InvariantCulture);
+                                dgv.Rows[i].Cells["AW"].Value = stats[3].ToString("0.##", CultureInfo.InvariantCulture);
+                                dgv.Rows[i].Cells["Speed"].Value = stats[4].ToString("0.##", CultureInfo.InvariantCulture);
+                                dgv.Rows[i].Cells["Sight"].Value = stats[5].ToString("0.##", CultureInfo.InvariantCulture);
+                                dgv.Rows[i].Cells["Relt"].Value = stats[6].ToString("0.##", CultureInfo.InvariantCulture);
+                                dgv.Rows[i].Cells["Range"].Value = stats[7].ToString("0.##", CultureInfo.InvariantCulture);
                                 dgv.Rows[i].Cells["SpellRadius"].Value = ModifierForm.SupportsConfigurableSpellRadius(key)
-                                    ? Math.Round(stats[8]).ToString()
+                                    ? stats[8].ToString("0.##", CultureInfo.InvariantCulture)
                                     : "0";
                             }
                         }
                     }
 
-                    MessageBox.Show(isEn ? "Custom troop stats successfully imported!" : "自訂兵種屬性匯入成功！", isEn ? "Import Completed" : "匯入完成", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    // 匯入成功後才更新檔名狀態，避免失敗時殘留「已載入」的假狀態。
+                    this.LoadedFileName = Path.GetFileName(ofd.FileName);
+
+                    string doneMsg = isEn ? "Custom troop stats successfully imported!" : "自訂兵種屬性匯入成功！";
+                    if (skippedLines > 0) {
+                        doneMsg += isEn
+                            ? string.Format("\n({0} malformed line(s) were skipped.)", skippedLines)
+                            : string.Format("\n（有 {0} 行格式錯誤已略過。）", skippedLines);
+                    }
+                    MessageBox.Show(doneMsg, isEn ? "Import Completed" : "匯入完成", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 } catch (Exception ex) {
                     MessageBox.Show((isEn ? "Failed to import stats file: " : "匯入屬性檔案失敗: ") + ex.Message, isEn ? "Error" : "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
@@ -493,7 +515,6 @@ namespace AgainstRomeModifier {
                 Title = isEn ? "Export Custom Troop Stats" : "匯出自訂兵種屬性"
             }) {
                 if (sfd.ShowDialog() != DialogResult.OK) return;
-                this.LoadedFileName = Path.GetFileName(sfd.FileName);
 
                 try {
                     StringBuilder sb = new StringBuilder();
@@ -521,6 +542,8 @@ namespace AgainstRomeModifier {
                     }
 
                     File.WriteAllText(sfd.FileName, sb.ToString(), Encoding.UTF8);
+                    // 寫檔成功後才更新檔名狀態，避免失敗時殘留假狀態。
+                    this.LoadedFileName = Path.GetFileName(sfd.FileName);
                     MessageBox.Show(isEn ? "Custom troop stats successfully exported!" : "自訂兵種屬性匯出成功！", isEn ? "Export Completed" : "匯出完成", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 } catch (Exception ex) {
                     MessageBox.Show((isEn ? "Failed to export stats file: " : "匯出屬性檔案失敗: ") + ex.Message, isEn ? "Error" : "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
