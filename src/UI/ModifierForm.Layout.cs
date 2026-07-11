@@ -79,6 +79,7 @@ namespace AgainstRomeModifier {
                 btnNavSystem,
                 btnNavDefaultStats,
                 btnNavCurrentStats,
+                btnNavMapManager,
                 btnNavSaveManager,
                 btnNavDoc
             };
