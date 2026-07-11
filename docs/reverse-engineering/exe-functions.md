@@ -1,5 +1,7 @@
 # Executable Functions And Offsets
 
+> Reviewed 2026-07-11. Addresses are version-specific evidence, not portable constants; unknown signatures must remain untouched.
+
 Addresses are from the currently analyzed `Against_Rome.exe`. Function names are
 provisional unless manually named in a Ghidra project.
 

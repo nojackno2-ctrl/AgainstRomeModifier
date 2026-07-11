@@ -1,6 +1,6 @@
 # Projectile Ballistics And Hit Determination
 
-Research notes (2026-07-10). Static analysis of `Against_Rome.exe` (Ghidra
+Research notes (2026-07-10; status reviewed 2026-07-11). Static analysis of `Against_Rome.exe` (Ghidra
 pseudocode inventory + capstone disassembly) plus decompressed config tables.
 Not yet runtime-verified; no product code changed.
 

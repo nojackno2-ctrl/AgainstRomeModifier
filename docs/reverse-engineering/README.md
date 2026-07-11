@@ -1,5 +1,7 @@
 # Against Rome Reverse Engineering Notes
 
+> Index reviewed 2026-07-11. This is evidence documentation, not permission to write original game files directly. Product changes must be made in the modifier and verified through its fixture/apply/restore workflow.
+
 This directory is the project-local knowledge base for original game data
 formats, confirmed field indexes, executable entry points, and patch safety
 notes. Addresses and indexes belong here instead of being scattered across UI
@@ -23,6 +25,8 @@ and patch code.
   (Berserker/marksmanship/shield/thunder/charge) and their `cl_epara.ini`
   factors, glory earn/loss rules, and the combat upgrade icons.
 - `known-patches.md`: implemented, legacy, candidate, and rejected patches.
+- `projectile-ballistics.md` and `priest-spells.md`: experimental projectile,
+  ranged-distance, spell-radius, and priest casting-distance evidence.
 - `decompilation-workflow.md`: local Ghidra/JDK workflow and generated EXE
   inventory.
 - `../../data/game_schema.json`: machine-readable fields and patch metadata.

@@ -1,5 +1,7 @@
 # BCI0 Script Bytecode Reference
 
+> Reviewed 2026-07-11. Partial reference: use only alongside signature checks and the current patch evidence.
+
 Decoded 2026-07-02 while tracing endless-mode AI defeat/respawn logic in
 `MAPS/ENDL_*/SCRIPT/ak_level.bci` and `SYSTEM/CLAK/SCRIPT/ak_npc.bci`. This is
 a partial instruction set covering everything needed to read the party state

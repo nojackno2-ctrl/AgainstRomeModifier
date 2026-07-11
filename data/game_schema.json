@@ -10,10 +10,10 @@
     "implementation": "GameLZSS"
   },
   "documentation": {
-    "updated": "2026-07-02",
+    "updated": "2026-07-11",
     "technicalChinese": "TechDoc.md",
     "technicalEnglish": "TechDoc_EN.md",
-    "agentHandoff": "TechDoc.md",
+    "agentHandoff": "AI_HANDOFF.md",
     "knownPatches": "docs/reverse-engineering/known-patches.md",
     "rule": "Current code and reproducible byte/runtime evidence override historical chat summaries."
   },

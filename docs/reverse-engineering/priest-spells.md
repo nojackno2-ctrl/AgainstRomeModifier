@@ -1,5 +1,7 @@
 # Priest Spell System — Effect Values, Unit Types, Resurrection
 
+> Status reviewed 2026-07-11. `Radius` is the spell effect area; priest casting distance is separately gated by objdef `Sirad` (column 24).
+
 > Decoded 2026-07-04. Status: **static-verified** (parser, storage, getter, and
 > BCI consumption all traced end-to-end against the installed game and EXE).
 > The modifier's characterization tests verify the patch values against these

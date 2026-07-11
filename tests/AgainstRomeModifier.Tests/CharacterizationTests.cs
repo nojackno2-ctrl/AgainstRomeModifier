@@ -51,7 +51,7 @@ public sealed class CharacterizationTests
         },
     };
 
-    [Fact]
+    [RequiresBackupZipFact]
     public void Hybrid_fixture_starts_with_all_endless_ai_modules_in_original_state()
     {
         using var fixture = BackupZipGameFixture.Create();
@@ -64,7 +64,7 @@ public sealed class CharacterizationTests
         Assert.Equal(PatchState.Original, orchestrator.DetectModule(fixture.RootPath, orchestrator.R0));
     }
 
-    [Fact]
+    [RequiresBackupZipFact]
     public void T1_all_enabled_round_trip_is_detected()
     {
         using var fixture = BackupZipGameFixture.Create();
@@ -104,7 +104,7 @@ public sealed class CharacterizationTests
         }
     }
 
-    [Fact]
+    [RequiresBackupZipFact]
     public void T2_restore_all_returns_original_fixture_bytes()
     {
         using var fixture = BackupZipGameFixture.Create();
@@ -134,7 +134,7 @@ public sealed class CharacterizationTests
         Assert.False(File.Exists(Path.Combine(fixture.RootPath, "dgVoodooCpl.exe")));
     }
 
-    [Fact]
+    [RequiresBackupZipFact]
     public void T3_category_restore_keeps_the_other_category_enabled()
     {
         using var statsFixture = BackupZipGameFixture.Create();
@@ -182,7 +182,7 @@ public sealed class CharacterizationTests
         Assert.True(afterCompat.FoodHealing10x);
     }
 
-    [Fact]
+    [RequiresBackupZipFact]
     public void T4_repeated_apply_is_byte_idempotent()
     {
         using var fixture = BackupZipGameFixture.Create();
