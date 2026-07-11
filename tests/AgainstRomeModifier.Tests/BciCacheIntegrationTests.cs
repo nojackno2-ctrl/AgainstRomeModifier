@@ -5,7 +5,7 @@ namespace AgainstRomeModifier.Tests;
 
 public sealed class BciCacheIntegrationTests
 {
-    [Fact]
+    [RequiresBackupZipFact]
     public void FoodHealing_plans_in_shared_cache_and_writes_only_on_save_all()
     {
         using var fixture = BackupZipGameFixture.Create();

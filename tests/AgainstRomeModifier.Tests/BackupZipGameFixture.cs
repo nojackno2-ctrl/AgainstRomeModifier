@@ -2,8 +2,28 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using AgainstRomeModifier.Core.Services;
+using Xunit;
 
 namespace AgainstRomeModifier.Tests;
+
+/// <summary>
+/// Runs only when the local, proprietary Backup.zip is embedded in the product
+/// assembly. Public CI intentionally excludes that archive.
+/// </summary>
+internal sealed class RequiresBackupZipFactAttribute : FactAttribute
+{
+    public RequiresBackupZipFactAttribute()
+    {
+        bool backupIsEmbedded = typeof(BackupManager).Assembly
+            .GetManifestResourceNames()
+            .Any(name => name.EndsWith(".Backup.zip", StringComparison.OrdinalIgnoreCase));
+
+        if (!backupIsEmbedded)
+        {
+            Skip = "Requires the local Backup.zip archive, which public CI intentionally does not include.";
+        }
+    }
+}
 
 /// <summary>
 /// Builds an isolated test game directory from the embedded backup.  Supplemental

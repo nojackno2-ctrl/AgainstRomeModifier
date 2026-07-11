@@ -1,5 +1,7 @@
 # Glory Upgrade & Combat Skills — Leader Ranking and Active Abilities
 
+> Status reviewed 2026-07-11: static-verified research; do not promote it to a managed write feature without the normal detection, restore, and test contract.
+
 > Decoded 2026-07-04. Status: **static-verified** (objdef columns, `cl_epara.ini`
 > ability factors, `cl_script.ini` glory rules, and the BCI ability-setter /
 > glory function names all traced against the installed game and EXE). No

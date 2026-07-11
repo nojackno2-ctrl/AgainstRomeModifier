@@ -28,22 +28,11 @@ The author of this project is a devoted player who loved *Against Rome* many yea
 - **10x Construction Speed**: Reversible switch to accelerate construction, upgrades, and repairs in `objdef.dau` by 10x (shortens building build/upgrade times by 10, which automatically boosts the per-second repair rate; successfully runtime-verified in-game).
 - **10x Storage Capacity**: Reversible switch to scale storage capacities of Town Halls (`Hau` structures) and Warehouses (`Lag` structures) in `objdef.dau` by 10x (successfully runtime-verified in-game).
 - **10x Town Hall HP**: Reversible switch to multiply hit-points (HP) of all Town Halls (`Hau` structures) in `objdef.dau` by 10x (successfully runtime-verified in-game).
-- **Endless-Mode AI Ultimate Mode**: Split into six independently selectable modules:
-  - Raises the mass-army spawn count to the vanilla script limit.
-  - Recycles completed military reinforcement jobs for continuing waves.
-  - Reduces the military reinforcement wait time to 5 seconds.
-  - Cuts four non-settlement party retreat deadlines from 10 minutes to 5 seconds.
-  - Preserves the two settlement cleanup fallbacks at 10 minutes so an old village and its palisades finish clearing before that team slot is reused.
-  - Accelerates the confirmed one-object-at-a-time cleanup cadence from about 1.5 seconds to 0.1 seconds per object.
-  - Raises the military-reinforcement unit threshold from 4 to 40.
-  - Bypasses the main-house resource and transient leader/civilian checks that otherwise stop later waves below that limit.
-  - Transfers the whole reinforcement party into the village instead of retreating, while retaining the type-4 settlement, building, one-party-at-a-time, and unit-count safety gates.
-  - Endless settlement templates also receive a reversible starting-resource boost.
-  - New games can fix the type-1 village-AI cap at 4 while keeping the separate type-4 military settlement available as the fifth settled opponent.
-  - (Unsafe global CLAK production/training edits stay disabled).
+- **Endless-Mode AI Ultimate Mode**: Reversible, bounded BCI patches for the five `ENDL_*` maps. The current safe military configuration is 20 units per reinforcement party, 5-second respawn timing, and an active-party limit of 8; original loop pacing and the two settlement-cleanup safeguards remain intact. It never uses the previously rejected unconditional gate bypass. See [`endless-mode-ai.md`](docs/reverse-engineering/endless-mode-ai.md) for evidence, legacy migration, and runtime limits.
 - **Free Construction & Production**: Free construction, production, upgrades, and spell costs through `ress.ini` modification.
-- **Unit Stat Editing**: Adjust HP, damage, VW, AW, movement speed, sight range, cooldown times, attack range, and spell radius through `objdef.dau` and `cl_script.ini`.
-- **Troop Presets & One-Click Control**: Import/export troop presets via `.artroop` files, and provide one-click buttons to enable/disable all features.
+- **Unit Stat Editing**: Adjust only HP, damage, VW, AW, sight, and cooldown through `objdef.dau`. Movement speed, attack range, spell radius, and priest sight/casting distance are deliberately owned by the independent experimental modifiers, not by custom troop layers.
+- **Experimental Stat Modifiers**: 3× ranged range, 2× unit movement, entire-map priest casting distance, 3× spell effect radius, higher projectile arcs, and ranged-accuracy boost. These are static-verified; the two projectile features still need dedicated runtime-regression observations.
+- **Troop Presets & One-Click Control**: `.artroop` exports use the six-field `HP,Dmg,VW,AW,Sight,Relt` format. Legacy nine-field imports remain readable but their removed fields are discarded; one-click buttons enable or disable all registered features.
 - **Loss-Focus Background Execution**: Patches `Against_Rome.exe` to allow the game to continue running when it loses focus (is minimized or inactive).
 - **Entire Map Construction Range**: Replaces the construction range limit via a synchronized `Against_Rome.exe` setter trampoline, allowing building anywhere on the entire map (successfully runtime-verified in-game, including the red dashed frame).
 - **Embedded dgVoodoo2 Integration**: Optional integration that installs the bundled 32-bit D3D8/DirectDraw wrappers from dgVoodoo2 without overwriting existing unmanaged DLLs.
@@ -89,7 +78,7 @@ Current coverage:
 - `SYSTEM/ress.ini`: Construction, production, upgrade, and spell costs.
 - `SYSTEM/cl_script.ini`: Villager delay, spell radius, and morale parameters.
 - `MAPS/**/team.dat`: Population limits and banner version semantics.
-- `MAPS/ENDL_*/SCRIPT/ak_level.bci`: Bounded AI Ultimate Mode patch with byte/save-state verification; long-running late-wave regression remains.
+- `MAPS/ENDL_*/SCRIPT/ak_level.bci`: Bounded AI Ultimate Mode patch; the active-party limit is 8 because the runtime has 20 NPC-job slots.
 - `Against_Rome.exe`: Focus-loss background execution patch, runtime-verified village construction-range expansion, restore-only handling for the rejected legacy four-site range/red-frame candidate, and a full local Ghidra function inventory.
 
 The generated Ghidra output is local research material, not original source. Unknown `FUN_*` functions are not treated as understood until the call path or runtime evidence is documented.

@@ -3,12 +3,21 @@
 > [!IMPORTANT]
 > 這個修改器還在測試中，如果要使用請將原始的檔案進行備份。
 
-> 更新日期：2026-07-04
+> 更新日期：2026-07-11
 >
 > 編碼：UTF-8
 > 對象：開發者、逆向工程研究者與 AI 維護代理
 
 本文件描述目前程式與補丁契約。完整的修改時間線、除錯案例、代理操作規範與驗證方式均已整合於本文件尾部。機器可讀的欄位與 offset 位於 `data/game_schema.json`；精確 EXE／BCI bytes 位於 `docs/reverse-engineering/known-patches.md`。
+
+## 0. 2026-07-11 現況摘要（優先於下方歷史段落）
+
+- 架構已完成解耦：`PatchProfile`、`FeatureRegistry`、`IFeatureModule`、`PatchContext` 與 `DetectContext` 是唯一功能契約；`PatchOptions` 已移除。套用、偵測、分類還原與 UI 回填均以 registry 為主。
+- `Backup.zip` 是選用且不追蹤的本機基線。內嵌／程式旁沒有它時，修改器才從使用者選取且有效的遊戲根目錄建立**記憶體**基線。開發、測試與文件工作不得直接改寫遊戲安裝目錄。
+- FoodHealing 與 Endless AI 共用 `BciScriptFile` 快取，最後只由 `SaveAll` 寫回；任何新 BCI 功能不得繞過此流程直接寫檔。
+- 自訂兵種新格式只保留 `HP,Dmg,VW,AW,Sight,Relt`。速度、遠程射程、法術半徑與祭司 `Sirad`（施法距離）不得由自訂層管理，避免與六個實驗性功能重疊。
+- 無盡軍事模式安全組態為 `20..20` 人、`5000 ms`、同時活躍隊伍上限 `8`，並保留原始迴圈節奏。runtime 只有 20 個 NPC-job slots；無條件 gate bypass 已否決。
+- 本次文件複核的本機驗證：`dotnet build AgainstRomeModifier.csproj -c Release --no-restore` 為 0 warnings/0 errors；xUnit 為 98 passed、0 failed、0 skipped。
 
 ## 1. 新代理必讀與修改原則
 
@@ -45,10 +54,10 @@
 | `src/UI/ModifierForm.SaveManager.cs` | 存檔瀏覽、備份、回復、刪除 |
 | `src/UI/ModifierForm.DgVoodoo.cs` | dgVoodoo2 受管安裝／移除 |
 | `src/Core/TroopConfig.cs` | 欄位 enum、單位 metadata、平衡規則 |
-| `src/UI/TroopPresetForm.cs` | 9 欄單位 preset 編輯 |
+| `src/UI/TroopPresetForm.cs` | 6 欄單位 preset 編輯（`HP,Dmg,VW,AW,Sight,Relt`）；舊 9 欄匯入相容但移除欄位不會寫回 |
 | `src/Core/GameLZSS.cs` | 遊戲 LZSS 與 `PFIL@` 包裝 |
 | `src/Core/Bci/` | BCI 特徵碼搜尋、字組寫入與 PFIL 腳本封裝 |
-| `src/Core/EndlessAi/` | AI Ultimate M1–M14 模組、狀態偵測與套用協調 |
+| `src/Core/EndlessAi/` | 受約束的無盡 AI BCI 模組、狀態偵測與套用協調 |
 | `src/Core/Features/` | 功能 Registry、`PatchProfile`、EXE/INI/DAU/BCI/安裝功能規劃與統一狀態偵測 |
 | `src/Core/Services/PatchEngine.cs` | 精簡編排器：交易順序、分類還原與功能模組協調，不保存功能專屬常數 |
 | `src/Core/Patches/` | 純 patch 邏輯（`ObjdefPatcher`、`RessPatcher`、`ClScriptPatcher`、`ClEparaPatcher`、`ClScintPatcher`、`TeamDatPatcher`、`ExePatchModel`、`VerifiedBinaryWriter`），不依賴 WinForms；UI 只建立 `PatchProfile` 並委派給 Core |
@@ -56,6 +65,18 @@
 | `data/game_schema.json` | 機器可讀的欄位、offset 與 patch metadata |
 
 目標框架為 .NET 8 Windows、WinForms、x64、nullable enabled、PerMonitorV2 DPI。程式 manifest 要求管理員權限，因為正常遊戲安裝位於 `Program Files (x86)`。
+
+### 2.1 UI 維護規則
+
+UI 是手寫 WinForms 程式碼，控制項與卡片建立位於 `src/UI/ModifierForm.cs`；不要依賴已移除的 `ModifierForm.Layout.cs` 或舊的自動卡片排版範例。新增功能開關時：
+
+1. 在 `ModifierForm.cs` 宣告、建立，並加入使用者指定的既有容器；不得以「看起來相近」為理由移到其他卡片。
+2. 在 `FeatureRegistry` 註冊唯一 ID、類別與 disabled value，並在 `PatchProfile` 和對應 patcher 完整實作 Apply/Detect/Restore。
+3. 在 `ModifierForm.Patches.cs` 的 `featureToggles` map 加入同一 ID；不可另寫平行的 checkbox 清單。
+4. 在 `Localization.cs` 同時補齊 zh-TW/en 的標題、tooltip、log key，且格式化 placeholder 必須對稱。
+5. 新寫入必須有原始／patched／legacy／unknown 狀態、rollback 與測試。未知狀態不可覆寫。
+
+速度、遠程射程、法術效果半徑及祭司施法距離是獨立實驗性功能的專屬欄位，不能加回自訂兵種 UI 或 `.artroop` 新格式。
 
 ## 3. 遊戲根目錄與備份基線
 
@@ -127,9 +148,9 @@ commit 後要先 Dispose／清空 rollback scope，再更新 UI；UI refresh 例
 
 ### 6.1 單位屬性層級
 
-原版／平衡數值先形成 fallback，自訂 preset 再逐欄覆蓋。舊版短 preset 只覆蓋存在的欄位；缺欄位繼承 fallback。不支援 spell radius 的單位，第 9 欄固定為 0。
+原版／平衡數值先形成 fallback，自訂 preset 再逐欄覆蓋。現行新格式只有 `HP,Dmg,VW,AW,Sight,Relt` 六欄；舊九欄 preset 仍可讀取，但速度、射程與法術半徑一定會捨棄，永不套用或重新匯出。祭司 `Sirad` 同時是施法距離閘門，亦會正規化回基線，交由獨立的實驗性功能管理。
 
-內建平衡層由 `TroopConfig.BalancedUnitStats` 直接保存全部 43 個兵種的九項最終值：`HP,Dmg,VW,AW,Speed,Sight,Relt,Range,SpellRadius`。啟用平衡後不得再套用通用階級矩陣、盾牌、雙手武器或兵種類型倍率。靜態初始化會檢查平衡表與 `UnitMeta` 數量一致，且 `UnitOrder` 中每個兵種都有完整九欄。
+內建平衡層 `TroopConfig.BalancedUnitStats` 仍以 43 個兵種的九項內部基線值保存計算資料，但套用自訂層時必須把 `Speed`、`Range`、`SpellRadius`（及祭司的 `Sirad`）回復原版基線；它們不是可自訂或可由平衡層覆寫的使用者欄位。啟用平衡後不得再套用通用階級矩陣、盾牌、雙手武器或兵種類型倍率。
 
 設計方向：羅馬整體素質最強；條頓近戰輸出最高；塞爾特步兵防禦與步行遠程最強，投石兵採高單發傷害；匈奴騎兵最強，弓騎兵採低單發、高射速。步兵、騎兵與領主維持相同移動速度。精確數值以 `BalancedUnitStats` 為唯一來源。
 

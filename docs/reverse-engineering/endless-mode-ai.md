@@ -1,5 +1,7 @@
 # Endless Mode AI Spawn Notes
 
+> Current safety status reviewed 2026-07-11: use the bounded `20..20` military count, `5000 ms` wait, active-party limit `8`, and original loop pacing. The runtime has 20 NPC-job slots; the unconditional gate bypass remains rejected.
+
 These notes cover the original endless-mode spawn logic found in
 `MAPS/ENDL_*/SCRIPT/ak_level.bci` and the associated settlement templates.
 

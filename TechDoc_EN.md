@@ -3,9 +3,18 @@
 > [!IMPORTANT]
 > This modifier is still in testing. Please backup your original files before using it.
 
-Updated: 2026-07-05.
+Updated: 2026-07-11.
 
 This document describes the current code, data formats, reverse-engineering evidence, enabled patches, candidates, and rejected approaches. It is not a version history. Each feature has one current description. Reproducible runtime behavior and the latest concrete decompiler evidence take precedence over an older interpretation.
+
+## 0. Current State — 2026-07-11
+
+- The architecture migration is complete: `PatchProfile`, `FeatureRegistry`, `IFeatureModule`, `PatchContext`, and `DetectContext` are the feature contract; `PatchOptions` is removed. Apply, Detect, category Restore, and UI synchronization use the registry.
+- `Backup.zip` is optional and intentionally untracked. When no embedded or local archive exists, the modifier creates an **in-memory** baseline from the user-selected valid game root. Development and tests must not write directly to an installed game directory.
+- FoodHealing and Endless AI share the `BciScriptFile` cache and commit through one `SaveAll`; new BCI features must not bypass it with direct file writes.
+- New troop presets contain only `HP,Dmg,VW,AW,Sight,Relt`. Speed, ranged distance, spell radius, and priest `Sirad` (casting distance) are exclusive to independent experimental features.
+- The safe endless-military configuration is `20..20` units, `5000 ms` wait, active-party limit `8`, and original loop pacing. The runtime has 20 NPC-job slots; the unconditional gate bypass is rejected.
+- Local verification for this documentation refresh: Release build 0 warnings/0 errors; xUnit 98 passed, 0 failed, 0 skipped.
 
 For the detailed maintenance chronology, debugging failures, checklists, and workflow guidelines intended for future AI agents, refer to the integrated chapters at the end of the Chinese technical document `TechDoc.md`. This file remains the English current-state specification.
 
@@ -28,7 +37,7 @@ For the detailed maintenance chronology, debugging failures, checklists, and wor
 | `src/Program.cs` | WinForms entry, elevation, High DPI startup, global exception handling. |
 | `src/Core/GameLZSS.cs` | LZSS and `PFIL@` wrapper decode/encode with bounds checks. |
 | `src/Core/Bci/` | BCI signature matching, word writes, and PFIL script handling. |
-| `src/Core/EndlessAi/` | AI Ultimate M1-M14 modules, state detection, and orchestration. |
+| `src/Core/EndlessAi/` | Bounded Endless AI BCI modules, state detection, and orchestration. |
 | `src/Core/Features/` | Feature registry, `PatchProfile`, EXE/INI/DAU/BCI/install feature planning, and unified state detection. |
 | `src/Core/Services/PatchEngine.cs` | Thin orchestrator for transaction order, category restores, and feature coordination; it owns no feature-specific constants. |
 | `src/Core/TroopConfig.cs` | Field enums, unit IDs, names, factions, tiers, types, and balance baselines. |
@@ -39,7 +48,7 @@ For the detailed maintenance chronology, debugging failures, checklists, and wor
 | `src/UI/ModifierForm.Patches.cs` | Collects the registry-backed toggle map into a `PatchProfile`, starts transactional apply/restore operations, and reports results. |
 | `src/UI/ModifierForm.Presets.cs` | Actions to enable/disable all features at once. |
 | `src/UI/ModifierForm.SaveManager.cs` | Save discovery, ZIP backup/restore/delete, metadata cache. |
-| `src/UI/TroopPresetForm.cs` | Nine-property editing for 43 units and `.artroop` I/O. |
+| `src/UI/TroopPresetForm.cs` | Six-property editing (`HP,Dmg,VW,AW,Sight,Relt`) and `.artroop` I/O; legacy nine-field imports are normalized. |
 | `src/UI/UIElements.cs` | Owner-drawn toggles, dark menu renderer, GDI disposal. |
 | `src/Core/Localization.cs` | Chinese/English UI and log strings. |
 
@@ -173,7 +182,7 @@ Stable indexes:
 
 Weapon slots use an eight-column stride and up to eight active slots are inspected. Building indexes 28-39 are not costs; they are production-building resource-storage slots and must remain original.
 
-The fixed nine-property array is `HP,Dmg,VW,AW,Speed,Sight,Relt,Range,SpellRadius`. Old four-property presets are completed from original or active balance baselines.
+The current six-property array is `HP,Dmg,VW,AW,Sight,Relt`. Old nine-property presets remain import-compatible, but Speed, Range, and SpellRadius are discarded and never re-exported or applied. Priest Sight is also normalized to its baseline because `Sirad` controls priest casting distance; independent experimental modifiers own these fields.
 
 - HP, VW, and AW use current baseline integers.
 - Damage derives a scale from final/original primary damage and applies it to active weapon slots. Weapon 1 on ranged infantry/cavalry is treated as a melee backup.
@@ -195,7 +204,7 @@ The fixed nine-property array is `HP,Dmg,VW,AW,Speed,Sight,Relt,Range,SpellRadiu
   repair speeds. This switch is fully integrated into apply, restore, and preset actions (successfully runtime-verified in-game).
 - The 10x hit-points (HP) multiplier for town halls scales up the original `hp` (Index 19) value by 10 for all town hall structures (building rows whose names start with `Bau` and contain `Hau`). It is fully integrated with UI layout settings, language bundles, patch detection, state validation, and tests, ensuring clean apply and restore operations (successfully runtime-verified in-game).
 
-The built-in balance layer is now a complete 43-entry final-value table in `TroopConfig.BalancedUnitStats`. Every entry stores `HP,Dmg,VW,AW,Speed,Sight,Relt,Range,SpellRadius`; enabling balance does not apply a generic tier matrix or post-process shield, two-handed, or unit-type multipliers. Static initialization requires the table count to match `UnitMeta` and every `UnitOrder` key to contain exactly nine values. Explicit `.artroop` values still override this fallback layer.
+The built-in balance layer retains a complete 43-entry, nine-value internal baseline in `TroopConfig.BalancedUnitStats`, but custom-layer application restores `Speed`, `Range`, `SpellRadius`, and priest `Sirad` to their original baseline. They are not user-editable or balance-overridable fields. Enabling balance does not apply a generic tier matrix or post-process shield, two-handed, or unit-type multipliers.
 
 The intended asymmetry is: Roman has the strongest overall roster; Teuton has the highest melee output; Celt has the strongest infantry defense and foot-ranged roster, with slingers using high per-hit damage; Hun has the strongest cavalry, with horse archers using lower per-hit damage and faster reload. Infantry, cavalry, and leaders retain equal movement speed. `BalancedUnitStats` is the single authoritative source for exact final values.
 
@@ -345,7 +354,9 @@ Global preset files (`.arpreset`) have been removed in favor of one-click "Enabl
 
 `.artroop` rows use:
 
-`UnitKey=HP,Dmg,VW,AW,Speed,Sight,Relt,Range,SpellRadius`
+`UnitKey=HP,Dmg,VW,AW,Sight,Relt`
+
+Legacy nine-field rows are import-compatible only; removed fields are discarded and never written back.
 
 All 43 known units, including three priests and seven siege units, are supported. Imports validate keys, field counts, and numeric values before updating grids.
 

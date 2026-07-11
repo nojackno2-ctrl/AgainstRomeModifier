@@ -1,5 +1,7 @@
 # Known Patches
 
+> Current-status index reviewed 2026-07-11. The authoritative implementation is `FeatureRegistry` + `PatchProfile`; this page records evidence and compatibility states. Release verification at review: 98 xUnit passed, 0 failed, 0 skipped.
+
 ## Stable
 
 ### Village Build Range

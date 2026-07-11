@@ -1,5 +1,7 @@
 # File Formats
 
+> Reviewed 2026-07-11. Preserve the documented PFIL/LZSS ring initialization and Windows-1251 byte round-trip when changing text payload handling.
+
 ## Compression
 
 Most editable game data files are stored with the game's `PFIL@` LZSS wrapper.

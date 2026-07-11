@@ -1,5 +1,7 @@
 # Decompilation Workflow
 
+> Reviewed 2026-07-11. Generated decompiler output is local evidence; reproducible scripts and these notes are the publishable record.
+
 This project keeps reverse-engineering output reproducible instead of treating
 one conversation or one decompiler view as the source of truth.
 

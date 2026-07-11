@@ -4,6 +4,8 @@
     <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0-windows</TargetFramework>
     <UseWindowsForms>true</UseWindowsForms>
+    <!-- Allows NuGet restore on Linux-based dependency-submission runners. -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <PlatformTarget>x64</PlatformTarget>
@@ -18,7 +20,7 @@
     <Compile Remove="re_workspace\**" />
     <Compile Remove="scratch\**" />
     <Compile Remove="tests\**" />
-    <EmbeddedResource Include="Backup.zip" Condition="Exists('Backup.zip')" />
+    <EmbeddedResource Include="Backup.zip" Condition="'$(IncludeBackupZip)' != 'false' and Exists('Backup.zip')" />
     <EmbeddedResource Include="TechDoc.md" LogicalName="TechDoc.md" />
     <EmbeddedResource Include="TechDoc_EN.md" LogicalName="TechDoc_EN.md" />
     <EmbeddedResource Include="ThirdParty\dgVoodoo2\D3D8.dll" LogicalName="dgVoodoo2.D3D8.dll" />
