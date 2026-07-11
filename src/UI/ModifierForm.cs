@@ -62,6 +62,8 @@ namespace AgainstRomeModifier {
         private Panel pnlSwitchesCard = null!;
         private Panel pnlBuildCard = null!;
         private Panel pnlAiCard = null!;
+        private Panel pnlExperimentalCard = null!;
+        private Label lblExperimentalTitle = null!;
 
         // 數值控制項 (NumericUpDown) 的宣告
         private ModernToggle chkMaxPopulation = null!;
@@ -87,8 +89,7 @@ namespace AgainstRomeModifier {
         private ModernToggle chkAiM6 = null!;
         private ModernToggle chkDgVoodoo = null!;
         private ModernToggle chkVillageBuildRange = null!;
-        private Label lblGameSpeed = null!;
-        private ComboBox cmbGameSpeed = null!;
+        private ModernToggle chkGameSpeed = null!;
         private Button btnTroopPreset = null!;
         private Label lblTroopTemplate = null!;
         private ComboBox cbTroopTemplate = null!;
@@ -98,6 +99,17 @@ namespace AgainstRomeModifier {
         private string presetFileName = "";
         private ModernToggle chkToEng = null!;
         private ModernToggle chkInfiniteMorale = null!;
+        private ModernToggle chkSpellDamage5x = null!;
+        private ModernToggle chkSpellHealing10x = null!;
+        private ModernToggle chkSpellResurrection = null!;
+        private ModernToggle chkGeneralSkills = null!;
+        private ModernToggle chkLeaderGlory = null!;
+        private ModernToggle chkRangedRange3x = null!;
+        private ModernToggle chkUnitMovementSpeed2x = null!;
+        private ModernToggle chkSpellEntireMap = null!;
+        private ModernToggle chkSpellRange3x = null!;
+        private ModernToggle chkProjectileArcHeight = null!;
+        private ModernToggle chkRangedAccuracy = null!;
         private Dictionary<string, ModernToggle> featureToggles = null!;
 
         // 所有功能開啟/關閉按鈕
@@ -394,10 +406,10 @@ namespace AgainstRomeModifier {
         // 初始化表單的視覺元件佈局、大小、樣式、圓角區域與雙緩衝
         private void InitializeComponent() {
             this.Text = "Against Rome Modifier Pro"; // OS 視窗標題（工作列／Alt-Tab 顯示；邊框仍隱藏）
-            this.Size = new Size(1450, 880);
+            this.Size = new Size(2000, 940);
             this.MinimumSize = new Size(1280, 720);
             this.AutoScroll = true;
-            this.AutoScrollMinSize = new Size(1450, 880);
+            this.AutoScrollMinSize = new Size(2000, 940);
             this.FormBorderStyle = FormBorderStyle.None; // 隱藏 Windows 預設視窗邊框
             this.StartPosition = FormStartPosition.CenterScreen; // 視窗預設居中
             this.BackColor = Color.FromArgb(10, 11, 16); // 深色科技感背景
@@ -697,29 +709,14 @@ namespace AgainstRomeModifier {
             };
             pnlNumericCard.Controls.Add(chkDgVoodoo);
 
-            // 實際位置與寬度由 ConfigureGameSpeedRow 依卡片列版面統一計算，此處僅提供初始佔位值。
-            lblGameSpeed = new Label {
+            chkGameSpeed = new ModernToggle {
                 Text = Loc.Get("GameSpeedLabel"),
-                Location = new Point(20, 207),
-                Size = new Size(140, 25),
-                Font = fontJhengHei95R,
-                ForeColor = Color.White,
+                Location = new Point(25, 200),
+                Size = new Size(310, 25),
+                Checked = false,
                 BackColor = Color.Transparent,
-                AutoSize = true
-            };
-            cmbGameSpeed = new ComboBox {
-                Location = new Point(170, 204),
-                Size = new Size(150, 25),
-                DropDownStyle = ComboBoxStyle.DropDownList,
-                FlatStyle = FlatStyle.Flat,
-                BackColor = Color.FromArgb(45, 45, 55),
-                ForeColor = Color.White,
                 Font = fontJhengHei10B
             };
-            PopulateGameSpeedItems();
-            cmbGameSpeed.SelectedIndex = 0;
-            pnlNumericCard.Controls.Add(lblGameSpeed);
-            pnlNumericCard.Controls.Add(cmbGameSpeed);
 
             btnEnableAll = new Button {
                 Text = "所有功能開啟",
@@ -804,7 +801,6 @@ namespace AgainstRomeModifier {
                 Font = fontJhengHei10B
             };
             chkBalance.CheckedChanged += new EventHandler(ChkBalance_CheckedChanged);
-            pnlSwitchesCard.Controls.Add(chkBalance);
 
             chkNoSpellAltar = new ModernToggle {
                 Text = "法術免除祭壇數量需求",
@@ -944,6 +940,137 @@ namespace AgainstRomeModifier {
             pnlAiCard.Controls.Add(chkAiM4);
             pnlAiCard.Controls.Add(chkAiM5);
             pnlAiCard.Controls.Add(chkAiM6);
+
+            pnlExperimentalCard = new Panel {
+                Location = new Point(0, 0),
+                Size = new Size(385, 790)
+            };
+
+            lblExperimentalTitle = new Label {
+                Text = Loc.Get("ExperimentalTitle"),
+                Location = new Point(25, 20),
+                Size = new Size(250, 25),
+                Font = fontJhengHei105B,
+                ForeColor = Color.FromArgb(0, 220, 255),
+                BackColor = Color.Transparent
+            };
+            pnlExperimentalCard.Controls.Add(lblExperimentalTitle);
+
+            chkSpellDamage5x = new ModernToggle {
+                Text = Loc.Get("SpellDamage5x"),
+                Location = new Point(25, 80),
+                Size = new Size(310, 25),
+                Checked = false,
+                BackColor = Color.Transparent,
+                Font = fontJhengHei10B
+            };
+            pnlExperimentalCard.Controls.Add(chkSpellDamage5x);
+
+            chkSpellHealing10x = new ModernToggle {
+                Text = Loc.Get("SpellHealing10x"),
+                Location = new Point(25, 120),
+                Size = new Size(310, 25),
+                Checked = false,
+                BackColor = Color.Transparent,
+                Font = fontJhengHei10B
+            };
+            pnlExperimentalCard.Controls.Add(chkSpellHealing10x);
+
+            chkSpellResurrection = new ModernToggle {
+                Text = Loc.Get("SpellResurrection"),
+                Location = new Point(25, 160),
+                Size = new Size(310, 25),
+                Checked = false,
+                BackColor = Color.Transparent,
+                Font = fontJhengHei10B
+            };
+            pnlExperimentalCard.Controls.Add(chkSpellResurrection);
+
+            chkGeneralSkills = new ModernToggle {
+                Text = Loc.Get("GeneralSkills"),
+                Location = new Point(25, 120),
+                Size = new Size(310, 25),
+                Checked = false,
+                BackColor = Color.Transparent,
+                Font = fontJhengHei10B
+            };
+            pnlExperimentalCard.Controls.Add(chkGeneralSkills);
+
+            chkLeaderGlory = new ModernToggle {
+                Text = Loc.Get("LeaderGlory"),
+                Location = new Point(25, 160),
+                Size = new Size(310, 25),
+                Checked = false,
+                BackColor = Color.Transparent,
+                Font = fontJhengHei10B
+            };
+            pnlExperimentalCard.Controls.Add(chkLeaderGlory);
+            pnlExperimentalCard.Controls.Add(chkGameSpeed);
+            pnlExperimentalCard.Controls.Add(chkBalance);
+
+            chkRangedRange3x = new ModernToggle {
+                Text = Loc.Get("RangedRange3x"),
+                Location = new Point(25, 200),
+                Size = new Size(310, 25),
+                Checked = false,
+                BackColor = Color.Transparent,
+                Font = fontJhengHei10B
+            };
+            chkRangedRange3x.CheckedChanged += new EventHandler(ChkRangedRange3x_CheckedChanged);
+            pnlExperimentalCard.Controls.Add(chkRangedRange3x);
+
+            chkUnitMovementSpeed2x = new ModernToggle {
+                Text = Loc.Get("UnitMovementSpeed2x"),
+                Location = new Point(25, 240),
+                Size = new Size(310, 25),
+                Checked = false,
+                BackColor = Color.Transparent,
+                Font = fontJhengHei10B
+            };
+            chkUnitMovementSpeed2x.CheckedChanged += new EventHandler(ChkUnitMovementSpeed2x_CheckedChanged);
+            pnlExperimentalCard.Controls.Add(chkUnitMovementSpeed2x);
+
+            chkSpellEntireMap = new ModernToggle {
+                Text = Loc.Get("SpellEntireMap"),
+                Location = new Point(25, 280),
+                Size = new Size(310, 25),
+                Checked = false,
+                BackColor = Color.Transparent,
+                Font = fontJhengHei10B
+            };
+            chkSpellEntireMap.CheckedChanged += new EventHandler(ChkSpellEntireMap_CheckedChanged);
+            pnlExperimentalCard.Controls.Add(chkSpellEntireMap);
+
+            chkSpellRange3x = new ModernToggle {
+                Text = Loc.Get("SpellRange3x"),
+                Location = new Point(25, 320),
+                Size = new Size(310, 25),
+                Checked = false,
+                BackColor = Color.Transparent,
+                Font = fontJhengHei10B
+            };
+            chkSpellRange3x.CheckedChanged += new EventHandler(ChkSpellRange3x_CheckedChanged);
+            pnlExperimentalCard.Controls.Add(chkSpellRange3x);
+
+            chkProjectileArcHeight = new ModernToggle {
+                Text = Loc.Get("ProjectileArcHeight"),
+                Location = new Point(25, 360),
+                Size = new Size(310, 25),
+                Checked = false,
+                BackColor = Color.Transparent,
+                Font = fontJhengHei10B
+            };
+            pnlExperimentalCard.Controls.Add(chkProjectileArcHeight);
+
+            chkRangedAccuracy = new ModernToggle {
+                Text = Loc.Get("RangedAccuracy"),
+                Location = new Point(25, 400),
+                Size = new Size(310, 25),
+                Checked = false,
+                BackColor = Color.Transparent,
+                Font = fontJhengHei10B
+            };
+            pnlExperimentalCard.Controls.Add(chkRangedAccuracy);
 
             tabSystem.Controls.Add(pnlNumericCard);
             tabSystem.Controls.Add(pnlSwitchesCard);

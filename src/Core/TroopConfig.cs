@@ -24,6 +24,8 @@ namespace AgainstRomeModifier {
         Weapon1RangeMin = 80,
         Weapon1RangeMax = 81,
         Weapon1Relt = 84,
+        Weapon1Emit = 85,
+        Weapon1Drad = 164,
         Aw = 142,
         Vw = 146,
         HousingCapacity = 156,

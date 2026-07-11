@@ -15,6 +15,9 @@ internal sealed class FeatureDetector
     private static readonly Regex RegexMoraleFleeLoad = new(@"MoralsDecFlee\s*=\s*GER\s*,\s*(\d+)", RegexOptions.Compiled);
     private static readonly Regex RegexMoraleOverPopLoad = new(@"MoralsDecOverPop\s*=\s*GER\s*,\s*(\d+)", RegexOptions.Compiled);
     private static readonly Regex RegexMoraleIdleLoad = new(@"MoralsIncIdle\s*=\s*GER\s*,\s*(\d+)", RegexOptions.Compiled);
+    private static readonly Regex RegexSpellValueLoad = new(@"^(Value\d*)\s*=\s*([A-Z]{3})\s*,\s*(Spell\d+)\s*,\s*([^;\r\n]+)", RegexOptions.Compiled | RegexOptions.Multiline);
+    private static readonly Regex RegexRadiusLoad = new(@"^Radius\s*=\s*([A-Z]{3})\s*,\s*(Spell\d+)\s*,\s*([^;\r\n]+)", RegexOptions.Compiled | RegexOptions.Multiline);
+    private static readonly Regex RegexAbilityValueLoad = new(@"^(Value\d*)\s*=\s*([A-Z]{3})\s*,\s*(SAbility\d+)\s*,\s*([^;\r\n]+)", RegexOptions.Compiled | RegexOptions.Multiline);
     private const int HousingCapacityMultiplier = 20;
     private const int StorageCapacityMultiplier = 10;
     private readonly ILogger _logger;
@@ -82,6 +85,24 @@ internal sealed class FeatureDetector
                         int.TryParse(matchFlee.Groups[1].Value, out int flee) && flee == 0 &&
                         int.TryParse(matchOverPop.Groups[1].Value, out int overPop) && overPop >= 99999999 &&
                         int.TryParse(matchIdle.Groups[1].Value, out int idle) && idle == 500;
+
+                    // 法術/技能強化偵測：與備份原檔逐鍵比對倍率（與 ClScriptPatcher 寫入邏輯對稱）
+                    if (backupManager.BackupFiles.TryGetValue("SYSTEM/cl_script.ini", out byte[]? clOriginalBytes))
+                    {
+                        string originalText = Encoding.GetEncoding(1251).GetString(GameLZSS.DecompressPfil(clOriginalBytes));
+                        var currentSpells = ReadKeyedValues(text, RegexSpellValueLoad);
+                        var originalSpells = ReadKeyedValues(originalText, RegexSpellValueLoad);
+                        var currentRadius = ReadRadiusValues(text);
+                        var originalRadius = ReadRadiusValues(originalText);
+                        options.SpellDamage5x = AllScaled(currentSpells, originalSpells, ClScriptPatcher.DamageSpellKeys.Select(k => $"Value_{k}"), 5);
+                        options.SpellHealing10x = AllScaled(currentSpells, originalSpells, new[] { "Value_KEL_Spell1" }, 10);
+                        options.SpellResurrection = DetectResurrection(currentSpells, originalSpells);
+                        options.SpellRange3x = RadiusScaledByThree(currentRadius, originalRadius);
+
+                        var currentAbilities = ReadKeyedValues(text, RegexAbilityValueLoad);
+                        var originalAbilities = ReadKeyedValues(originalText, RegexAbilityValueLoad);
+                        options.GeneralSkills = AllScaled(currentAbilities, originalAbilities, originalAbilities.Keys, 5);
+                    }
                 }
                 catch (Exception ex) { _logger.Log(string.Format(Loc.Get("SvcLogDetectFailed"), "cl_script.ini", ex.Message)); }
             }
@@ -143,6 +164,8 @@ internal sealed class FeatureDetector
                         options.StorageCapacity10x = HasStorageCapacityMultiplier(currentRows, originalRows, StorageCapacityMultiplier);
                         options.HqHp10x = HasHqHpMultiplier(currentRows, originalRows, 10);
                         options.FastBuildUpgradeRepair = HasFastBuildUpgradeRepair(currentRows, originalRows);
+                        options.ProjectileArcHeight = HasProjectileWeaponScale(currentRows, originalRows, useDrad: false);
+                        options.RangedAccuracy = HasProjectileWeaponScale(currentRows, originalRows, useDrad: true);
                     }
 
                     // 偵測是否已套用 Balance (若有任何一個兵種屬性被修改)
@@ -200,24 +223,76 @@ internal sealed class FeatureDetector
                         double curRange = BackupManager.GetUnitMaxRange(cols, utype);
                         double origRange = BackupManager.GetUnitMaxRange(origCols, utype);
 
-                        bool hasDiff = Math.Abs(curHp - origHp) > 0.01 ||
-                                       Math.Abs(curVw - origVw) > 0.01 ||
-                                       Math.Abs(curAw - origAw) > 0.01 ||
-                                       Math.Abs(curMoves - origMoves) > 0.01 ||
-                                       Math.Abs(curSight - origSight) > 0.01 ||
-                                       Math.Abs(curMeleeDmg - origMeleeDmg) > 0.01 ||
-                                       Math.Abs(curRangedDmg - origRangedDmg) > 0.01 ||
-                                       Math.Abs(curMeleeRelt - origMeleeRelt) > 0.01 ||
-                                       Math.Abs(curRangedRelt - origRangedRelt) > 0.01 ||
-                                       Math.Abs(curRange - origRange) > 0.01;
-
-                        if (hasDiff)
+                        // 排除領袖以防 LeaderGlory 的干擾，且只比對不受 Range3x/Speed2x 影響的屬性 (Hp, Vw, Aw, Sight)
+                        if (TroopConfig.UnitMeta[key].Tier != "leader")
                         {
-                            isFileBalanced = true;
-                            break;
+                            bool hasDiff = Math.Abs(curHp - origHp) > 0.01 ||
+                                           Math.Abs(curVw - origVw) > 0.01 ||
+                                           Math.Abs(curAw - origAw) > 0.01 ||
+                                           Math.Abs(curSight - origSight) > 0.01;
+
+                            if (hasDiff)
+                            {
+                                isFileBalanced = true;
+                                // 繼續比對其他單位，但這裡不能直接 break，因為我們還要走完整個 loop 或等偵測完。
+                                // 不過因為 isFileBalanced 已經是 true，在此也可以不用 break，或者直接設 true 即可。
+                            }
                         }
                     }
                     options.Balance = isFileBalanced;
+                    options.LeaderGlory = DetectLeaderGlory(currentRows, origUnitRows);
+
+                    // 偵測遠程單位射程 3 倍與單位移動速度提升 2 倍
+                    bool speed2x = false;
+                    bool range3x = false;
+
+                    // 使用羅馬輕裝步兵 FigRomInf00_Lanze_Schild 偵測速度 2 倍
+                    if (unitRows.TryGetValue("FigRomInf00_Lanze_Schild", out var testMovesCols) &&
+                        origUnitRows.TryGetValue("FigRomInf00_Lanze_Schild", out var testMovesOrigCols))
+                    {
+                        double curMoves = 0, origMoves = 0;
+                        double.TryParse(testMovesCols[(int)ObjdefIndex.Moves].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out curMoves);
+                        double.TryParse(testMovesOrigCols[(int)ObjdefIndex.Moves].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out origMoves);
+                        double expectedBaseMoves = isFileBalanced ? 3.2 : origMoves;
+                        if (curMoves > 0 && Math.Abs(curMoves - expectedBaseMoves * 2.0) < 0.05)
+                        {
+                            speed2x = true;
+                        }
+                    }
+
+                    // 使用羅馬弓箭手 FigRomSch01_Bogen 偵測射程 3 倍
+                    if (unitRows.TryGetValue("FigRomSch01_Bogen", out var testRangeCols) &&
+                        origUnitRows.TryGetValue("FigRomSch01_Bogen", out var testRangeOrigCols))
+                    {
+                        double curRange = BackupManager.GetUnitMaxRange(testRangeCols, "ranged_inf");
+                        double origRange = BackupManager.GetUnitMaxRange(testRangeOrigCols, "ranged_inf");
+                        double expectedBaseRange = isFileBalanced ? 3600.0 : origRange;
+                        if (curRange > 0 && Math.Abs(curRange - expectedBaseRange * 3.0) < 5.0)
+                        {
+                            range3x = true;
+                        }
+                    }
+
+                    options.UnitMovementSpeed2x = speed2x;
+                    options.RangedRange3x = range3x;
+
+                    // 使用塞爾特祭司 FigKelPri00_Priester 偵測法師施法距離
+                    bool spellEntireMap = false;
+                    if (unitRows.TryGetValue("FigKelPri00_Priester", out var testSpellCols) &&
+                        origUnitRows.TryGetValue("FigKelPri00_Priester", out var testSpellOrigCols))
+                    {
+                        double curRange = BackupManager.GetUnitMaxRange(testSpellCols, "priest");
+                        double origRange = BackupManager.GetUnitMaxRange(testSpellOrigCols, "priest");
+                        double expectedBaseRange = isFileBalanced ? 3840.0 : origRange;
+                        if (curRange > 0)
+                        {
+                            if (Math.Abs(curRange - 30000.0) < 100.0)
+                            {
+                                spellEntireMap = true;
+                            }
+                        }
+                    }
+                    options.SpellEntireMap = spellEntireMap;
                 }
                 catch (Exception ex) { _logger.Log(string.Format(Loc.Get("SvcLogDetectFailed"), "objdef.dau", ex.Message)); }
             }
@@ -283,6 +358,96 @@ internal sealed class FeatureDetector
             catch (Exception ex) { _logger.Log(string.Format(Loc.Get("SvcLogDetectFailed"), "food healing", ex.Message)); }
 
             return options;
+        }
+
+        // --- cl_script.ini 法術/技能強化偵測輔助函數 ---
+
+        /// <summary>以行錨定 regex 解析 ValueN 行為 {key}_{faction}_{spell|ability} → 數值 的字典。</summary>
+        private static Dictionary<string, double> ReadKeyedValues(string text, Regex regex)
+        {
+            var values = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+            foreach (Match m in regex.Matches(text))
+            {
+                if (double.TryParse(m.Groups[4].Value.Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out double value))
+                    values[$"{m.Groups[1].Value.Trim()}_{m.Groups[2].Value.Trim()}_{m.Groups[3].Value.Trim()}"] = value;
+            }
+            return values;
+        }
+
+        private static Dictionary<string, double> ReadRadiusValues(string text)
+        {
+            var values = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+            foreach (Match m in RegexRadiusLoad.Matches(text))
+            {
+                if (double.TryParse(m.Groups[3].Value.Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out double value))
+                    values[$"Radius_{m.Groups[1].Value.Trim()}_{m.Groups[2].Value.Trim()}"] = value;
+            }
+            return values;
+        }
+
+        /// <summary>指定鍵的當前值是否全部等於原值 × multiplier（與 patcher 相同的 (int) 截斷）；至少須有一鍵可比對。</summary>
+        private static bool AllScaled(Dictionary<string, double> current, Dictionary<string, double> original, IEnumerable<string> keys, int multiplier)
+        {
+            bool any = false;
+            foreach (string key in keys)
+            {
+                if (!original.TryGetValue(key, out double orig) || orig <= 0) continue;
+                int expected = (int)(orig * multiplier);
+                if (expected == (int)orig) continue; // 倍率後不變（無法區分），跳過
+                if (!current.TryGetValue(key, out double cur) || (int)cur != expected) return false;
+                any = true;
+            }
+            return any;
+        }
+
+        private static bool RadiusScaledByThree(Dictionary<string, double> current, Dictionary<string, double> original)
+        {
+            bool any = false;
+            foreach (string key in original.Keys)
+            {
+                double baseline = original[key];
+                if (baseline <= 0) continue;
+                if (!current.TryGetValue(key, out double value)) return false;
+                double ratio = value / baseline;
+                // Balance/custom radius may contribute its own baseline (the shipped balance is 2.5x).
+                if (Math.Abs(ratio - 3.0) > 0.05 && Math.Abs(ratio - 7.5) > 0.1) return false;
+                any = true;
+            }
+            return any;
+        }
+
+        /// <summary>復活術強化偵測：KEL Spell3 的 Value/Value2 是否已被寫為 100（且原值非 100，否則無法區分）。</summary>
+        private static bool DetectResurrection(Dictionary<string, double> current, Dictionary<string, double> original)
+        {
+            bool any = false;
+            foreach (string key in new[] { "Value_KEL_Spell3", "Value2_KEL_Spell3" })
+            {
+                if (!original.TryGetValue(key, out double orig) || (int)orig == 100) continue;
+                if (!current.TryGetValue(key, out double cur) || (int)cur != 100) return false;
+                any = true;
+            }
+            return any;
+        }
+
+        /// <summary>首領榮譽偵測：四族首領列的成長/光環欄位是否全部等於備份原值 × 5。</summary>
+        private static bool DetectLeaderGlory(List<string[]> currentRows, Dictionary<string, string[]> originalRows)
+        {
+            bool any = false;
+            foreach (string leader in ObjdefPatcher.GloryLeaders)
+            {
+                if (!originalRows.TryGetValue(leader, out string[]? orig)) continue;
+                string[]? cur = currentRows.FirstOrDefault(r => r.Length > 52 && r[52].Trim().Equals(leader, StringComparison.OrdinalIgnoreCase));
+                if (cur == null) continue;
+                foreach (int index in ObjdefPatcher.GloryColumns)
+                {
+                    if (index >= orig.Length || index >= cur.Length) continue;
+                    if (!double.TryParse(orig[index].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out double origValue) || origValue <= 0) continue;
+                    if (!double.TryParse(cur[index].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out double curValue)) return false;
+                    if (Math.Abs(curValue - origValue * ObjdefPatcher.GloryMultiplier) > 0.01) return false;
+                    any = true;
+                }
+            }
+            return any;
         }
 
         // --- Objdef dau 偵測細部輔助函數 ---
@@ -383,6 +548,43 @@ internal sealed class FeatureDetector
                 }
             }
             return foundHq;
+        }
+
+        /// <summary>拋射武器縮放偵測：所有「akti=1 且 emit&gt;0」的武器欄位，是否全部等於原值 × 對應倍率。
+        /// useDrad=false 比對 w*_emit ×ArcEmitMultiplier（拋射彈道增高）；useDrad=true 比對 w*_drad ×AccuracyDradMultiplier（遠程命中強化）。
+        /// 與 ObjdefPatcher.PatchProjectileWeapons 的寫入邏輯對稱。</summary>
+        private static bool HasProjectileWeaponScale(List<string[]> currentRows, List<string[]> originalRows, bool useDrad)
+        {
+            var currentByName = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
+            foreach (string[] cols in currentRows)
+            {
+                if (cols.Length > (int)ObjdefIndex.Name) currentByName[cols[(int)ObjdefIndex.Name].Trim()] = cols;
+            }
+
+            bool any = false;
+            foreach (string[] orig in originalRows)
+            {
+                if (orig.Length <= (int)ObjdefIndex.Name) continue;
+                if (!currentByName.TryGetValue(orig[(int)ObjdefIndex.Name].Trim(), out string[]? cur)) continue;
+                for (int w = 1; w <= 8; w++)
+                {
+                    int active = (int)ObjdefIndex.Weapon1Akti + (w - 1) * 8;
+                    int emit = (int)ObjdefIndex.Weapon1Emit + (w - 1) * 8;
+                    int drad = (int)ObjdefIndex.Weapon1Drad + (w - 1) * 2;
+                    int target = useDrad ? drad : emit;
+                    if (emit >= orig.Length || target >= orig.Length || target >= cur.Length) continue;
+                    if (orig[active].Trim() != "1") continue;
+                    if (!long.TryParse(orig[emit].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out long emitValue) || emitValue <= 0) continue;
+                    if (!long.TryParse(orig[target].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out long origValue) || origValue <= 0) continue;
+                    long expected = useDrad
+                        ? origValue * ObjdefPatcher.AccuracyDradMultiplier
+                        : (long)Math.Round(origValue * ObjdefPatcher.ArcEmitMultiplier);
+                    if (expected == origValue) continue; // 倍率後不變，無法區分
+                    if (!long.TryParse(cur[target].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out long curValue) || curValue != expected) return false;
+                    any = true;
+                }
+            }
+            return any;
         }
 
         private static bool HasFastBuildUpgradeRepair(List<string[]> currentRows, List<string[]> originalRows)

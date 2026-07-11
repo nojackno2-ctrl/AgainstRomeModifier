@@ -5,6 +5,21 @@ namespace AgainstRomeModifier.Tests;
 
 public sealed class CharacterizationTests
 {
+    [Fact]
+    public void Custom_unit_layers_do_not_duplicate_the_four_experimental_modifiers()
+    {
+        double[] fallback = { 100, 20, 10, 10, 4, 1000, 5, 2000, 500 };
+        double[] custom = { 150, 30, 15, 15, 99, 1200, 9, 9999, 9999 };
+
+        double[] merged = BackupManager.MergeUnitStatsLayers(
+            fallback, custom, supportsSpellRadius: true);
+
+        Assert.Equal(150, merged[0]);
+        Assert.Equal(4, merged[4]);
+        Assert.Equal(2000, merged[7]);
+        Assert.Equal(500, merged[8]);
+    }
+
     private static PatchProfile AllEnabled() => new()
     {
         FocusLoss = true,
@@ -15,6 +30,10 @@ public sealed class CharacterizationTests
         NoSpellCost = true,
         MaxPopulation = true,
         Balance = true,
+        RangedRange3x = true,
+        UnitMovementSpeed2x = true,
+        SpellEntireMap = false,
+        SpellRange3x = true,
         HousingCapacity20x = true,
         StorageCapacity10x = true,
         HqHp10x = true,
@@ -65,6 +84,10 @@ public sealed class CharacterizationTests
         Assert.True(detected.NoSpellCost);
         Assert.True(detected.MaxPopulation);
         Assert.True(detected.Balance);
+        Assert.True(detected.RangedRange3x);
+        Assert.True(detected.UnitMovementSpeed2x);
+        Assert.False(detected.SpellEntireMap);
+        Assert.True(detected.SpellRange3x);
         Assert.True(detected.HousingCapacity20x);
         Assert.True(detected.StorageCapacity10x);
         Assert.True(detected.HqHp10x);
@@ -126,12 +149,16 @@ public sealed class CharacterizationTests
         Assert.False(afterStats.FastCiviProduction);
         Assert.False(afterStats.FreeProduction);
         Assert.False(afterStats.Balance);
+        Assert.False(afterStats.RangedRange3x);
+        Assert.False(afterStats.UnitMovementSpeed2x);
+        Assert.False(afterStats.SpellEntireMap);
+        Assert.False(afterStats.SpellRange3x);
         Assert.False(afterStats.MaxPopulation);
         Assert.False(afterStats.FoodHealing10x);
         Assert.True(afterStats.FocusLoss);
         Assert.True(afterStats.VillageBuildRange);
         Assert.Equal(2, afterStats.GameSpeed);
-
+ 
         using var compatFixture = BackupZipGameFixture.Create();
         var compatEngine = new PatchEngine(new NullLogger());
         Apply(compatEngine, compatFixture);
@@ -147,6 +174,10 @@ public sealed class CharacterizationTests
         Assert.True(afterCompat.FastCiviProduction);
         Assert.True(afterCompat.FreeProduction);
         Assert.True(afterCompat.Balance);
+        Assert.True(afterCompat.RangedRange3x);
+        Assert.True(afterCompat.UnitMovementSpeed2x);
+        Assert.False(afterCompat.SpellEntireMap);
+        Assert.True(afterCompat.SpellRange3x);
         Assert.True(afterCompat.MaxPopulation);
         Assert.True(afterCompat.FoodHealing10x);
     }
@@ -164,6 +195,8 @@ public sealed class CharacterizationTests
         Assert.Equal(first.Keys.OrderBy(x => x), second.Keys.OrderBy(x => x));
         foreach (string path in first.Keys) Assert.Equal(first[path], second[path]);
     }
+
+
 
     private static void Apply(PatchEngine engine, BackupZipGameFixture fixture)
     {

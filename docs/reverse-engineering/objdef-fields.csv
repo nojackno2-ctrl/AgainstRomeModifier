@@ -6,9 +6,9 @@ index,name,type,status,used_by,notes
 52,Name,string,candidate,TroopConfig.cs,Unit display/name reference field.
 78,Weapon1Akti,int,stable,ModifierForm.Data.cs,Weapon 1 active flag.
 79,Weapon1Dam,float,stable,ModifierForm.Patches.cs,Weapon 1 damage.
-80,Weapon1RangeMin,float,stable,ModifierForm.Patches.cs,Weapon 1 minimum range (w1_rad1).
-81,Weapon1RangeMax,float,stable,ModifierForm.Patches.cs,Weapon 1 maximum range (w1_rad2).
-82,Weapon1Angle,float,stable-preserved,ModifierForm.Patches.cs,Weapon 1 angle (w1_angl); never scale as range.
+80,Weapon1RangeMin,float,stable,ObjdefPatcher.cs,w1_rad1; weapon minimum range.
+81,Weapon1RangeMax,float,stable,ObjdefPatcher.cs,w1_rad2; weapon maximum range.
+82,Weapon1Angle,float,stable,ObjdefPatcher.cs,w1_angl; weapon angle, never scaled.
 84,Weapon1Relt,int,stable,ModifierForm.Patches.cs,Weapon 1 reload/cooldown.
 86,Weapon2Akti,int,stable,ModifierForm.Data.cs,Weapon 2 active flag.
 87,Weapon2Dam,float,stable,ModifierForm.Patches.cs,Weapon 2 damage.

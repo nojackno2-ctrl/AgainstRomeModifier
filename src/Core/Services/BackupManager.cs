@@ -90,6 +90,7 @@ namespace AgainstRomeModifier.Core.Services
                 "SYSTEM/cl_epara.ini",
                 "SYSTEM/ress.ini",
                 "SYSTEM/DATA_MP/DEFAULTS/objdef.dau",
+                "SYSTEM/DATA_MP/DEFAULTS/partgeo.dau",
                 "SYSTEM/CLMK/icon.ini",
                 "SYSTEM/CLAK/cl_scint.ini",
                 "SYSTEM/CLAK/SCRIPT/ak_anfuehrer.bci"
@@ -121,7 +122,24 @@ namespace AgainstRomeModifier.Core.Services
                         {
                             try
                             {
-                                _backupFiles[relPath] = File.ReadAllBytes(loadPath);
+                                byte[] healBytes = File.ReadAllBytes(loadPath);
+                                if (relPath == "SYSTEM/DATA_MP/DEFAULTS/partgeo.dau")
+                                {
+                                    // partgeo.dau 不在內嵌 Backup.zip 內，只能以現場檔案為基準：
+                                    // 必須先驗證未被修改，並立即建立 .bak，之後每次啟動都優先讀 .bak，
+                                    // 避免套用「拋射彈道增高」後的檔案被誤收為備份。
+                                    if (!IsPartgeoOriginal(healBytes))
+                                    {
+                                        _logger.Log(string.Format(Loc.Get("SvcLogAutoHealFailed"), relPath, "partgeo.dau 已被修改，不能作為備份基準 / partgeo.dau is already modified"));
+                                        continue;
+                                    }
+                                    if (!File.Exists(bakPath))
+                                    {
+                                        File.Copy(loadPath, bakPath, overwrite: false);
+                                        _logger.Log(string.Format("已建立原版檔案實體備份: {0}", bakPath));
+                                    }
+                                }
+                                _backupFiles[relPath] = healBytes;
                                 _logger.Log(string.Format(Loc.Get("SvcLogAutoHealed"), relPath));
                             }
                             catch (Exception ex) { _logger.Log(string.Format(Loc.Get("SvcLogAutoHealFailed"), relPath, ex.Message)); }
@@ -222,6 +240,7 @@ namespace AgainstRomeModifier.Core.Services
                 "SYSTEM/cl_epara.ini",
                 "SYSTEM/ress.ini",
                 "SYSTEM/DATA_MP/DEFAULTS/objdef.dau",
+                "SYSTEM/DATA_MP/DEFAULTS/partgeo.dau",
                 "SYSTEM/CLMK/icon.ini",
                 "SYSTEM/CLAK/cl_scint.ini",
                 "SYSTEM/CLAK/SCRIPT/ak_anfuehrer.bci"
@@ -273,6 +292,13 @@ namespace AgainstRomeModifier.Core.Services
                             if (!IsObjdefOriginal(fileBytes))
                             {
                                 throw new InvalidDataException("SYSTEM/DATA_MP/DEFAULTS/objdef.dau 已經被修改過，無法作為備份基準。請先驗證遊戲完整性。 / objdef.dau is already modified. Please verify game integrity first.");
+                            }
+                        }
+                        else if (relPath == "SYSTEM/DATA_MP/DEFAULTS/partgeo.dau")
+                        {
+                            if (!IsPartgeoOriginal(fileBytes))
+                            {
+                                throw new InvalidDataException("SYSTEM/DATA_MP/DEFAULTS/partgeo.dau 已經被修改過，無法作為備份基準。請先驗證遊戲完整性。 / partgeo.dau is already modified. Please verify game integrity first.");
                             }
                         }
 
@@ -391,6 +417,28 @@ namespace AgainstRomeModifier.Core.Services
                     }
                 }
                 return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        /// <summary>以 Pfeil00（弓箭拋射物）的原版 ysub 值 5832704 (= 89.0 的 16.16 定點) 驗證 partgeo.dau 未被「拋射彈道增高」修改過。</summary>
+        private static bool IsPartgeoOriginal(byte[] dauBytes)
+        {
+            try
+            {
+                byte[] decomp = GameLZSS.DecompressPfil(dauBytes);
+                string text = Encoding.GetEncoding(1251).GetString(decomp);
+                foreach (string line in text.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None))
+                {
+                    string[] cols = PatchText.ParseCsvLine(line);
+                    if (cols.Length <= PartgeoPatcher.YsubColumn) continue;
+                    if (cols[2].Trim() != "Pfeil00") continue;
+                    return long.TryParse(cols[PartgeoPatcher.YsubColumn].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out long ysub) && ysub == 5832704;
+                }
+                return false;
             }
             catch
             {
@@ -558,13 +606,21 @@ namespace AgainstRomeModifier.Core.Services
 
             if (options.CustomUnitStats != null && options.CustomUnitStats.TryGetValue(key, out double[]? custom) && custom != null)
             {
-                return MergeUnitStatsLayers(balanced, custom, SupportsConfigurableSpellRadius(key));
+                bool ignoreRange = TroopConfig.UnitMeta.TryGetValue(key, out var meta) &&
+                    ((options.RangedRange3x && (meta.UnitType is "ranged_inf" or "ranged_cav" or "siege")) ||
+                     (options.SpellEntireMap && meta.UnitType == "priest"));
+                bool ignoreSpeed = options.UnitMovementSpeed2x;
+                bool ignoreSpellRadius = options.SpellRange3x && SupportsConfigurableSpellRadius(key);
+                return MergeUnitStatsLayers(balanced, custom, SupportsConfigurableSpellRadius(key), ignoreSpeed, ignoreRange, ignoreSpellRadius,
+                    meta?.UnitType == "priest");
             }
 
             return balanced;
         }
 
-        public static double[] MergeUnitStatsLayers(double[] fallback, double[] custom, bool supportsSpellRadius)
+        public static double[] MergeUnitStatsLayers(double[] fallback, double[] custom, bool supportsSpellRadius,
+            bool ignoreMovementSpeed = false, bool ignoreRange = false, bool ignoreSpellRadius = false,
+            bool removePriestSight = false)
         {
             ArgumentNullException.ThrowIfNull(fallback);
             ArgumentNullException.ThrowIfNull(custom);
@@ -575,6 +631,13 @@ namespace AgainstRomeModifier.Core.Services
                 if (i == 8 && !supportsSpellRadius)
                 {
                     layered[i] = 0;
+                    continue;
+                }
+
+                // 這三個欄位已從自訂兵種功能移除，永遠回到基準值；由四個獨立功能負責。
+                if (i is 4 or 7 or 8 || (i == 5 && removePriestSight))
+                {
+                    layered[i] = fallback.Length > i ? fallback[i] : 0;
                     continue;
                 }
 
@@ -656,6 +719,8 @@ namespace AgainstRomeModifier.Core.Services
         public static double GetUnitMaxRange(string[] cols, string utype)
         {
             double maxR = 0;
+            if (utype == "priest")
+                return double.TryParse(cols[(int)ObjdefIndex.Sirad].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out double sight) ? sight : 0;
             for (int w = 1; w <= 8; w++)
             {
                 int activeIndex = (int)ObjdefIndex.Weapon1Akti + (w - 1) * 8;

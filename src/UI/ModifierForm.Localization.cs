@@ -52,9 +52,14 @@ namespace AgainstRomeModifier {
             chkFastBuildUpgradeRepair.Text = Loc.Get("FastBuildUpgradeRepair");
             chkFoodHealing10x.Text = Loc.Get("FoodHealing10x");
             chkDgVoodoo.Text = Loc.Get("DgVoodoo");
-            lblGameSpeed.Text = Loc.Get("GameSpeedLabel");
-            PopulateGameSpeedItems();
+            chkGameSpeed.Text = Loc.Get("GameSpeedLabel");
             chkVillageBuildRange.Text = Loc.Get("VillageBuildRange");
+            lblExperimentalTitle.Text = Loc.Get("ExperimentalTitle");
+            chkSpellDamage5x.Text = Loc.Get("SpellDamage5x");
+            chkSpellHealing10x.Text = Loc.Get("SpellHealing10x");
+            chkSpellResurrection.Text = Loc.Get("SpellResurrection");
+            chkGeneralSkills.Text = Loc.Get("GeneralSkills");
+            chkLeaderGlory.Text = Loc.Get("LeaderGlory");
             btnEnableAll.Text = Loc.Get("EnableAll");
             btnDisableAll.Text = Loc.Get("DisableAll");
             lblSwitchesTitle.Text = Loc.Get("SwitchesTitle");
@@ -103,6 +108,12 @@ namespace AgainstRomeModifier {
 
             lblDefaultStatsTitle.Text = Loc.Get("DefaultStatsTitle");
             chkBalance.Text = Loc.Get("EnableBalance");
+            chkRangedRange3x.Text = Loc.Get("RangedRange3x");
+            chkUnitMovementSpeed2x.Text = Loc.Get("UnitMovementSpeed2x");
+            chkSpellEntireMap.Text = Loc.Get("SpellEntireMap");
+            chkSpellRange3x.Text = Loc.Get("SpellRange3x");
+            chkProjectileArcHeight.Text = Loc.Get("ProjectileArcHeight");
+            chkRangedAccuracy.Text = Loc.Get("RangedAccuracy");
             lblTroopTemplate.Text = Loc.Get("TroopTemplateLabel");
             RefreshTroopTemplateItems();
             lblCurrentStatsTitle.Text = Loc.Get("CurrentStatsTitle");
@@ -128,13 +139,23 @@ namespace AgainstRomeModifier {
                 myToolTip.SetToolTip(chkFocusLoss, Loc.Get("FocusLossTip"));
                 myToolTip.SetToolTip(chkToEng, Loc.Get("ToEngTip"));
                 myToolTip.SetToolTip(chkDgVoodoo, Loc.Get("DgVoodooTip"));
-                myToolTip.SetToolTip(lblGameSpeed, Loc.Get("GameSpeedTip"));
-                myToolTip.SetToolTip(cmbGameSpeed, Loc.Get("GameSpeedTip"));
+                myToolTip.SetToolTip(chkGameSpeed, Loc.Get("GameSpeedTip"));
+                myToolTip.SetToolTip(chkSpellDamage5x, Loc.Get("SpellDamage5xTip"));
+                myToolTip.SetToolTip(chkSpellHealing10x, Loc.Get("SpellHealing10xTip"));
+                myToolTip.SetToolTip(chkSpellResurrection, Loc.Get("SpellResurrectionTip"));
+                myToolTip.SetToolTip(chkGeneralSkills, Loc.Get("GeneralSkillsTip"));
+                myToolTip.SetToolTip(chkLeaderGlory, Loc.Get("LeaderGloryTip"));
                 myToolTip.SetToolTip(chkFreeProd, Loc.Get("FreeProdTip"));
                 myToolTip.SetToolTip(chkFreeUpgrade, Loc.Get("FreeUpgradeTip"));
                 myToolTip.SetToolTip(chkNoSpellCost, Loc.Get("NoSpellCostTip"));
                 myToolTip.SetToolTip(chkInfiniteMorale, Loc.Get("InfiniteMoraleTip"));
                 myToolTip.SetToolTip(chkBalance, Loc.Get("BalanceTip"));
+                myToolTip.SetToolTip(chkRangedRange3x, Loc.Get("RangedRange3xTip"));
+                myToolTip.SetToolTip(chkUnitMovementSpeed2x, Loc.Get("UnitMovementSpeed2xTip"));
+                myToolTip.SetToolTip(chkSpellEntireMap, Loc.Get("SpellEntireMapTip"));
+                myToolTip.SetToolTip(chkSpellRange3x, Loc.Get("SpellRange3xTip"));
+                myToolTip.SetToolTip(chkProjectileArcHeight, Loc.Get("ProjectileArcHeightTip"));
+                myToolTip.SetToolTip(chkRangedAccuracy, Loc.Get("RangedAccuracyTip"));
                 myToolTip.SetToolTip(chkNoSpellAltar, Loc.Get("NoSpellAltarTip"));
                 myToolTip.SetToolTip(chkMaxPopulation, Loc.Get("MaxPopulationTip"));
                 myToolTip.SetToolTip(chkHousingCapacity20x, Loc.Get("HousingCapacity20xTip"));
@@ -249,7 +270,7 @@ namespace AgainstRomeModifier {
             customUnitStats = new Dictionary<string, double[]>(StringComparer.OrdinalIgnoreCase);
             foreach (string key in TroopConfig.UnitOrder) {
                 if (!TroopConfig.UnitMeta.ContainsKey(key)) continue;
-                customUnitStats[key] = GetDefaultBalancedStats(key).ToArray();
+                customUnitStats[key] = NormalizeIndependentCustomFields(key, GetDefaultBalancedStats(key));
             }
 
             presetFileSourceType = "preset";

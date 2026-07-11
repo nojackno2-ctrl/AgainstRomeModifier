@@ -2,10 +2,9 @@
 
 > Decoded 2026-07-04. Status: **static-verified** (parser, storage, getter, and
 > BCI consumption all traced end-to-end against the installed game and EXE).
-> No runtime edit test has been performed yet; `Radius` edits in the same
-> `[Spells]` records are already runtime-proven by the shipped spell-radius
-> feature, so confidence for the sibling fields is high. No modifier patch
-> exists for these fields yet.
+> The modifier's characterization tests verify the patch values against these
+> same `Value`/`Value2` fields. `Radius` remains a separate effect-area field;
+> it is deliberately not used for casting-distance features.
 
 ## Summary
 
@@ -150,3 +149,21 @@ the `FUN_005b1410` sequence around decompiled-inventory lines 186446-186448.
   resurrected unit types.
 - Respect the 16-bit signed storage limit (≤ 32767) for all non-Duration
   fields. All multiplied values are verified to be safe from overflow.
+
+## Experimental feature verification
+
+The static call/data chain and the modifier test suite verify these targets:
+
+| Feature | Decompilation target | Patched value |
+|---|---|---:|
+| Healing 10x | `KEL, Spell1, Value` consumed by `s_getSpecialEffectValue` | 65 -> 650 |
+| Enhanced resurrection | `KEL, Spell3, Value/Value2` passed to `s_specialEffektCreateUnit` | 50/50 -> 100/100 |
+| Ranged unit range 3x | `objdef` `w*_rad1/w*_rad2` (80/81, +8 per weapon) | original x 3 |
+| Unit movement speed 2x | `objdef` `Moves/Movsf/Bmovs` (4/23/191) | original x 2 |
+| Priest casting distance, entire map | priest `objdef` `Sirad` (24, sight radius) | max distance 30000 |
+| Spell effect radius 3x | `cl_script.ini` `[Spells] Radius` | original x 3 |
+
+The priest `Radius` value (field index 4 in the EXE spell table) is the
+effect/search area used by healing and resurrection, not the caster-to-target
+distance. `SpellEntireMap` uses the priest `Sirad` sight-radius field in
+`objdef`; `SpellRange3x` uses these `Radius` records in `cl_script.ini`.

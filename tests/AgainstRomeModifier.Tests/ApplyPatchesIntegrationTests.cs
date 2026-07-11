@@ -59,12 +59,17 @@ namespace AgainstRomeModifier.Tests
                 CopyFile(sourceRoot, gameDir, Path.Combine("SYSTEM", "ress.ini"), copiedFiles);
                 CopyFile(sourceRoot, gameDir, Path.Combine("SYSTEM", "CLAK", "cl_scint.ini"), copiedFiles);
                 CopyFile(sourceRoot, gameDir, Path.Combine("SYSTEM", "DATA_MP", "DEFAULTS", "objdef.dau"), copiedFiles);
+                CopyFile(sourceRoot, gameDir, Path.Combine("SYSTEM", "DATA_MP", "DEFAULTS", "partgeo.dau"), copiedFiles);
                 CopyTree(sourceRoot, gameDir, Path.Combine("SYSTEM", "CLAK", "SCRIPT"), copiedFiles);
                 foreach (string endlDir in Directory.GetDirectories(Path.Combine(sourceRoot, "MAPS"), "ENDL_*"))
                 {
                     CopyTree(sourceRoot, gameDir, Path.GetRelativePath(sourceRoot, endlDir), copiedFiles);
                 }
                 _output.WriteLine($"已複製 {copiedFiles.Count} 個檔案到 {gameDir}");
+
+                // partgeo.dau 不在內嵌 Backup.zip：由測試遊戲目錄自動補齊（會在臨時目錄建立 .bak）
+                backupManager.TryAutoHealBackupFiles(gameDir);
+                Assert.True(backupManager.BackupFiles.ContainsKey("SYSTEM/DATA_MP/DEFAULTS/partgeo.dau"), "partgeo.dau 自動補齊失敗");
 
                 var engine = new PatchEngine(new NullLogger());
 
@@ -79,6 +84,12 @@ namespace AgainstRomeModifier.Tests
                     NoSpellCost = true,
                     MaxPopulation = true,
                     Balance = true,
+                    RangedRange3x = true,
+                    UnitMovementSpeed2x = true,
+                    SpellEntireMap = false,
+                    SpellRange3x = true,
+                    ProjectileArcHeight = true,
+                    RangedAccuracy = true,
                     HousingCapacity20x = true,
                     StorageCapacity10x = true,
                     HqHp10x = true,
@@ -110,6 +121,12 @@ namespace AgainstRomeModifier.Tests
                 Assert.True(detected.NoSpellCost, "NoSpellCost 未回讀為 true");
                 Assert.True(detected.MaxPopulation, "MaxPopulation 未回讀為 true");
                 Assert.True(detected.Balance, "Balance 未回讀為 true");
+                Assert.True(detected.RangedRange3x, "RangedRange3x 未回讀為 true");
+                Assert.True(detected.UnitMovementSpeed2x, "UnitMovementSpeed2x 未回讀為 true");
+                Assert.False(detected.SpellEntireMap, "SpellEntireMap 應回讀為 false");
+                Assert.True(detected.SpellRange3x, "SpellRange3x 未回讀為 true");
+                Assert.True(detected.ProjectileArcHeight, "ProjectileArcHeight 未回讀為 true");
+                Assert.True(detected.RangedAccuracy, "RangedAccuracy 未回讀為 true");
                 Assert.True(detected.HousingCapacity20x, "HousingCapacity20x 未回讀為 true");
                 Assert.True(detected.StorageCapacity10x, "StorageCapacity10x 未回讀為 true");
                 Assert.True(detected.HqHp10x, "HqHp10x 未回讀為 true");
@@ -136,6 +153,12 @@ namespace AgainstRomeModifier.Tests
                 Assert.False(restored.InfiniteMorale, "還原後 InfiniteMorale 仍為 true");
                 Assert.False(restored.MaxPopulation, "還原後 MaxPopulation 仍為 true");
                 Assert.False(restored.Balance, "還原後 Balance 仍為 true");
+                Assert.False(restored.RangedRange3x, "還原後 RangedRange3x 仍為 true");
+                Assert.False(restored.UnitMovementSpeed2x, "還原後 UnitMovementSpeed2x 仍為 true");
+                Assert.False(restored.SpellEntireMap, "還原後 SpellEntireMap 仍為 true");
+                Assert.False(restored.SpellRange3x, "還原後 SpellRange3x 仍為 true");
+                Assert.False(restored.ProjectileArcHeight, "還原後 ProjectileArcHeight 仍為 true");
+                Assert.False(restored.RangedAccuracy, "還原後 RangedAccuracy 仍為 true");
                 Assert.False(restored.FoodHealing10x, "還原後 FoodHealing10x 仍為 true");
                 Assert.False(restored.VillageBuildRange, "還原後 VillageBuildRange 仍為 true");
                 Assert.False(restored.NoSpellAltar, "還原後 NoSpellAltar 仍為 true");

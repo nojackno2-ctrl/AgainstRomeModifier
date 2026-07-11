@@ -6,14 +6,20 @@ namespace AgainstRomeModifier.Core.Patches;
 public sealed record ClScriptOptions(
     bool FastCivilianProduction,
     bool InfiniteMorale,
-    bool SpellEnhancement,
-    IReadOnlyDictionary<string, double> GeneralSkills,
+    bool SpellDamage5x,
+    bool SpellHealing10x,
+    bool SpellResurrection,
+    bool GeneralSkills5x,
     double GermanSpellRadiusMultiplier = 1.0,
     double CeltSpellRadiusMultiplier = 1.0,
     double HunSpellRadiusMultiplier = 1.0,
-    byte[]? OriginalBytes = null);
+    byte[]? OriginalBytes = null,
+    bool SpellRange3x = false);
 
 public static class ClScriptPatcher {
+    /// <summary>SpellDamage5x 影響的傷害法術（faction_spell），偵測邏輯（FeatureDetector）共用同一份清單。</summary>
+    internal static readonly string[] DamageSpellKeys = { "GER_Spell2", "HUN_Spell0", "HUN_Spell1", "HUN_Spell2", "KEL_Spell0", "KEL_Spell2" };
+
     private static readonly Regex Radius = new(@"^Radius\s*=\s*([A-Z]{3})\s*,\s*(Spell\d+)\s*,\s*([^;]+)(.*)$", RegexOptions.Compiled);
     private static readonly Regex Civi = new(@"^CiviDelay\s*=\s*([A-Z]{3})\s*,\s*([^;]+)(.*)$", RegexOptions.Compiled);
     private static readonly Regex LpIdle = new(@"^LPIncIdle\s*=\s*([A-Z]{3})\s*,\s*([^;]+)(.*)$", RegexOptions.Compiled);
@@ -44,6 +50,7 @@ public static class ClScriptPatcher {
                 string spell = match.Groups[2].Value.Trim();
                 double value = GetOriginal(originalRadius, $"{faction}_{spell}", match.Groups[3].Value);
                 double multiplier = faction == "GER" ? options.GermanSpellRadiusMultiplier : faction == "KEL" ? options.CeltSpellRadiusMultiplier : faction == "HUN" ? options.HunSpellRadiusMultiplier : 1.0;
+                if (options.SpellRange3x) multiplier *= 3.0;
                 processed = string.Format("Radius     ={0}, {1}, {2,-10}{3}", match.Groups[1].Value, match.Groups[2].Value, (int)(value * multiplier), match.Groups[4].Value);
             }
             match = SpellValue.Match(line);
@@ -51,18 +58,22 @@ public static class ClScriptPatcher {
                 string key = match.Groups[1].Value.Trim(), faction = match.Groups[2].Value.Trim(), spell = match.Groups[3].Value.Trim();
                 double originalValue = GetOriginal(originalSpells, $"{key}_{faction}_{spell}", match.Groups[4].Value);
                 int value = (int)originalValue;
-                if (options.SpellEnhancement) {
-                    if (faction == "GER" && spell == "Spell2" && key == "Value" || faction == "HUN" && (spell == "Spell0" || spell == "Spell1" || spell == "Spell2") && key == "Value" || faction == "KEL" && (spell == "Spell0" || spell == "Spell2") && key == "Value") value = (int)(originalValue * 5);
-                    else if (faction == "KEL" && spell == "Spell1" && key == "Value") value = (int)(originalValue * 50);
-                    else if (faction == "KEL" && spell == "Spell3" && (key == "Value" || key == "Value2")) value = 100;
+                if (options.SpellDamage5x) {
+                    if (key == "Value" && DamageSpellKeys.Contains($"{faction}_{spell}")) value = (int)(originalValue * 5);
+                }
+                if (options.SpellHealing10x) {
+                    if (faction == "KEL" && spell == "Spell1" && key == "Value") value = (int)(originalValue * 10);
+                }
+                if (options.SpellResurrection) {
+                    if (faction == "KEL" && spell == "Spell3" && (key == "Value" || key == "Value2")) value = 100;
                 }
                 processed = string.Format("{0,-10} ={1}, {2}, {3,-10}{4}", key, faction, spell, value, match.Groups[5].Value);
             }
             match = AbilityValue.Match(line);
             if (match.Success) {
                 string key = match.Groups[1].Value.Trim(), faction = match.Groups[2].Value.Trim(), ability = match.Groups[3].Value.Trim();
-                double value = options.GeneralSkills.TryGetValue($"{faction}_{ability}_Value", out double selected)
-                    ? selected : GetOriginal(originalAbilities, $"{key}_{faction}_{ability}", match.Groups[4].Value);
+                double value = GetOriginal(originalAbilities, $"{key}_{faction}_{ability}", match.Groups[4].Value);
+                if (options.GeneralSkills5x) value *= 5;
                 processed = string.Format("{0,-10} ={1}, {2}, {3,-10}{4}", key, faction, ability, (int)value, match.Groups[5].Value);
             }
             match = Civi.Match(line);

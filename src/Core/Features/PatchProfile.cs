@@ -33,6 +33,17 @@ public sealed class PatchProfile
     public bool DgVoodoo { get => Bool("DgVoodoo"); set => Bool("DgVoodoo", value); }
     public bool ToEnglish { get => Bool("ToEnglish"); set => Bool("ToEnglish", value); }
     public bool NoSpellAltar { get => Bool("NoSpellAltar"); set => Bool("NoSpellAltar", value); }
+    public bool SpellDamage5x { get => Bool("SpellDamage5x"); set => Bool("SpellDamage5x", value); }
+    public bool SpellHealing10x { get => Bool("SpellHealing10x"); set => Bool("SpellHealing10x", value); }
+    public bool SpellResurrection { get => Bool("SpellResurrection"); set => Bool("SpellResurrection", value); }
+    public bool GeneralSkills { get => Bool("GeneralSkills"); set => Bool("GeneralSkills", value); }
+    public bool LeaderGlory { get => Bool("LeaderGlory"); set => Bool("LeaderGlory", value); }
+    public bool RangedRange3x { get => Bool("RangedRange3x"); set => Bool("RangedRange3x", value); }
+    public bool UnitMovementSpeed2x { get => Bool("UnitMovementSpeed2x"); set => Bool("UnitMovementSpeed2x", value); }
+    public bool SpellEntireMap { get => Bool("SpellEntireMap"); set => Bool("SpellEntireMap", value); }
+    public bool SpellRange3x { get => Bool("SpellRange3x"); set => Bool("SpellRange3x", value); }
+    public bool ProjectileArcHeight { get => Bool("ProjectileArcHeight"); set => Bool("ProjectileArcHeight", value); }
+    public bool RangedAccuracy { get => Bool("RangedAccuracy"); set => Bool("RangedAccuracy", value); }
     public int GameSpeed { get => GetInt("GameSpeed"); set => Set("GameSpeed", FeatureValue.Of(value)); }
     public Dictionary<string, bool> EndlessAiModules { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public bool GetEndlessAiModule(string moduleId) =>
