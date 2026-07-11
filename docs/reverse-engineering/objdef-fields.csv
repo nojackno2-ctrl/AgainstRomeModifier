@@ -1,0 +1,26 @@
+index,name,type,status,used_by,notes
+4,Moves,float,stable,ModifierForm.Patches.cs,Primary movement speed multiplier target.
+19,Hp,float,stable,ModifierForm.Patches.cs,Unit hit points.
+23,Movsf,float,stable,ModifierForm.Patches.cs,Secondary movement speed field.
+24,Sirad,float,stable,ModifierForm.Patches.cs,Sight radius.
+52,Name,string,candidate,TroopConfig.cs,Unit display/name reference field.
+78,Weapon1Akti,int,stable,ModifierForm.Data.cs,Weapon 1 active flag.
+79,Weapon1Dam,float,stable,ModifierForm.Patches.cs,Weapon 1 damage.
+80,PriestSpell1,float,stable,ModifierForm.Patches.cs,Priest spell range slot 1.
+81,PriestSpell2,float,stable,ModifierForm.Patches.cs,Priest spell range slot 2.
+82,PriestSpell3,float,stable,ModifierForm.Patches.cs,Priest spell range slot 3.
+84,Weapon1Relt,int,stable,ModifierForm.Patches.cs,Weapon 1 reload/cooldown.
+86,Weapon2Akti,int,stable,ModifierForm.Data.cs,Weapon 2 active flag.
+87,Weapon2Dam,float,stable,ModifierForm.Patches.cs,Weapon 2 damage.
+88,Weapon2RangeMin,float,stable,ModifierForm.Patches.cs,Weapon 2 minimum range.
+89,Weapon2RangeMax,float,stable,ModifierForm.Patches.cs,Weapon 2 maximum range.
+92,Weapon2Relt,int,stable,ModifierForm.Patches.cs,Weapon 2 reload/cooldown.
+94,Weapon3Akti,int,stable,ModifierForm.Data.cs,Weapon 3 active flag.
+95,Weapon3Dam,float,stable,ModifierForm.Patches.cs,Weapon 3 damage.
+96,Weapon3RangeMin,float,stable,ModifierForm.Patches.cs,Weapon 3 minimum range.
+97,Weapon3RangeMax,float,stable,ModifierForm.Patches.cs,Weapon 3 maximum range.
+100,Weapon3Relt,int,stable,ModifierForm.Patches.cs,Weapon 3 reload/cooldown.
+142,Aw,float,stable,ModifierForm.Patches.cs,Attack/combat value shown as AW.
+146,Vw,float,stable,ModifierForm.Patches.cs,Defense value shown as VW.
+191,Bmovs,float,stable,ModifierForm.Patches.cs,Building/alternate movement speed field.
+199,Weapon1Dtyp,int,candidate,ModifierForm.Data.cs,Weapon damage/type table base; values 1-4 are treated as ranged by current code.
