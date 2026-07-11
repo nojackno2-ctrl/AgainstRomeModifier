@@ -200,6 +200,8 @@ namespace AgainstRomeModifier
             return file;
         }
 
+        internal BciScriptFile GetScriptFile(string path) => GetOrCreateFile(path);
+
         public static List<string> ResolvePaths(string gamePath, string pattern)
         {
             var paths = new List<string>();

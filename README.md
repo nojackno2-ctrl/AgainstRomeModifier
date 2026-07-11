@@ -57,9 +57,11 @@ The author of this project is a devoted player who loved *Against Rome* many yea
 - [`src/Program.cs`](src/Program.cs): Application entry point, DPI setup, and UAC elevation.
 - [`src/Core/GameLZSS.cs`](src/Core/GameLZSS.cs): Game-specific PFIL/LZSS compression and decompression.
 - [`src/Core/TroopConfig.cs`](src/Core/TroopConfig.cs): Known unit IDs, unit categories, field indexes, and balance rules.
+- [`src/Core/Features/`](src/Core/Features/): Registry-backed feature definitions, `PatchProfile`, category restores, detection, and per-file patch planning.
+- [`src/Core/Services/PatchEngine.cs`](src/Core/Services/PatchEngine.cs): Thin transactional orchestrator; FoodHealing and Endless AI share the BCI cache and are committed by one `SaveAll`.
 - [`src/UI/ModifierForm.cs`](src/UI/ModifierForm.cs): Main UI layout and embedded documentation view.
 - [`src/UI/ModifierForm.Data.cs`](src/UI/ModifierForm.Data.cs): Backup loading, data inspection, TGA icon parsing, and display formatting.
-- [`src/UI/ModifierForm.Patches.cs`](src/UI/ModifierForm.Patches.cs): Patch and restore logic for `objdef.dau`, `ress.ini`, `cl_script.ini`, `Against_Rome.exe`, and `team.dat`.
+- [`src/UI/ModifierForm.Patches.cs`](src/UI/ModifierForm.Patches.cs): Converts the centralized feature-toggle map into a `PatchProfile` and starts transactional apply/category-restore operations.
 - [`src/UI/ModifierForm.DgVoodoo.cs`](src/UI/ModifierForm.DgVoodoo.cs): Embedded dgVoodoo2 extraction, managed installation, conflict detection, and removal.
 - [`src/UI/ModifierForm.SaveManager.cs`](src/UI/ModifierForm.SaveManager.cs): Save backup, restore, and cache handling.
 - [`src/UI/ModifierForm.Presets.cs`](src/UI/ModifierForm.Presets.cs): Actions to enable or disable all features at once.

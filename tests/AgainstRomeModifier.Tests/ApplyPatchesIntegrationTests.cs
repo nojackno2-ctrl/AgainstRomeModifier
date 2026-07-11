@@ -7,6 +7,7 @@ using Xunit;
 using Xunit.Abstractions;
 using AgainstRomeModifier;
 using AgainstRomeModifier.Core.Services;
+using AgainstRomeModifier.Core.Features;
 
 namespace AgainstRomeModifier.Tests
 {
@@ -68,7 +69,7 @@ namespace AgainstRomeModifier.Tests
                 var engine = new PatchEngine(new NullLogger());
 
                 // 1) 全功能開啟套用
-                var options = new PatchOptions
+                var options = new PatchProfile
                 {
                     FocusLoss = true,
                     FastCiviProduction = true,

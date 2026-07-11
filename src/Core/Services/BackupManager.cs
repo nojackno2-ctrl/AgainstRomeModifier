@@ -6,6 +6,7 @@ using System.Linq;
 using System.Text;
 using System.Globalization;
 using AgainstRomeModifier.Core.Patches;
+using AgainstRomeModifier.Core.Features;
 
 namespace AgainstRomeModifier.Core.Services
 {
@@ -550,7 +551,7 @@ namespace AgainstRomeModifier.Core.Services
             return GetOriginalStats(key);
         }
 
-        public double[] GetBaseStatsForUnit(string key, PatchOptions options)
+        public double[] GetBaseStatsForUnit(string key, PatchProfile options)
         {
             double[] original = GetOriginalStats(key);
             double[] balanced = options.Balance ? GetDefaultBalancedStats(key) : original;

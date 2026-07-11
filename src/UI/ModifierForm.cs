@@ -98,6 +98,7 @@ namespace AgainstRomeModifier {
         private string presetFileName = "";
         private ModernToggle chkToEng = null!;
         private ModernToggle chkInfiniteMorale = null!;
+        private Dictionary<string, ModernToggle> featureToggles = null!;
 
         // 所有功能開啟/關閉按鈕
         private Button btnEnableAll = null!;
@@ -207,6 +208,7 @@ namespace AgainstRomeModifier {
             }
 
             InitializeComponent();
+            BuildFeatureToggleMap();
 
             // 更新語系按鈕視覺狀態與套用語系
             UpdateLanguageButtonStyles();

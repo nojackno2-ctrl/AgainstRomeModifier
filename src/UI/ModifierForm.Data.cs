@@ -10,6 +10,7 @@ using System.Windows.Forms;
 using System.Drawing;
 using AgainstRomeModifier.Core.Patches;
 using System.Drawing.Drawing2D;
+using AgainstRomeModifier.Core.Features;
 using System.Runtime.InteropServices;
 
 namespace AgainstRomeModifier {
@@ -730,42 +731,13 @@ namespace AgainstRomeModifier {
                 }
 
                 // 呼叫解耦的 patchEngine 進行全方位修改狀態偵測
-                var options = patchEngine.DetectCurrentPatchState(gamePath, backupManager);
+                PatchProfile profile = patchEngine.DetectCurrentPatchProfile(gamePath, backupManager);
 
                 if (syncUIWithFile) {
-                    chkFocusLoss.Checked = options.FocusLoss;
-                    chkFastCiviProduction.Checked = options.FastCiviProduction;
-                    chkInfiniteMorale.Checked = options.InfiniteMorale;
-                    chkFreeProd.Checked = options.FreeProduction;
-                    chkFreeUpgrade.Checked = options.FreeUpgrade;
-                    chkNoSpellCost.Checked = options.NoSpellCost;
-                    chkMaxPopulation.Checked = options.MaxPopulation;
-
-                    // 避免觸發 checked changed 時重新跑 LoadDefaultStatsData
                     chkBalance.CheckedChanged -= ChkBalance_CheckedChanged;
-                    chkBalance.Checked = options.Balance;
+                    foreach (var (id, toggle) in featureToggles) toggle.Checked = profile.GetBool(id);
                     chkBalance.CheckedChanged += ChkBalance_CheckedChanged;
-
-                    chkHousingCapacity20x.Checked = options.HousingCapacity20x;
-                    chkStorageCapacity10x.Checked = options.StorageCapacity10x;
-                    chkHqHp10x.Checked = options.HqHp10x;
-                    chkFastBuildUpgradeRepair.Checked = options.FastBuildUpgradeRepair;
-                    chkFoodHealing10x.Checked = options.FoodHealing10x;
-                    chkVillageBuildRange.Checked = options.VillageBuildRange;
-                    chkDgVoodoo.Checked = options.DgVoodoo;
-                    chkToEng.Checked = options.ToEnglish;
-                    chkNoSpellAltar.Checked = options.NoSpellAltar;
-
-                    // 遊戲加速
-                    SetGameSpeedSelection(options.GameSpeed);
-
-                    // Endless AI M1..M5
-                    chkAiM1.Checked = options.GetEndlessAiModule("M1");
-                    chkAiM2.Checked = options.GetEndlessAiModule("M2");
-                    chkAiM3.Checked = options.GetEndlessAiModule("M3");
-                    chkAiM4.Checked = options.GetEndlessAiModule("M4");
-                    chkAiM5.Checked = options.GetEndlessAiModule("M5");
-                    chkAiM6.Checked = options.GetEndlessAiModule("M6");
+                    SetGameSpeedSelection(profile.GetInt("GameSpeed"));
 
                     LoadDefaultStatsData();
                 }
