@@ -17,6 +17,7 @@ namespace AgainstRomeModifier {
             chkInfiniteMorale.Checked = true;
             chkHousingCapacity20x.Checked = true;
             chkStorageCapacity10x.Checked = true;
+            chkHqHp10x.Checked = true;
             chkFastBuildUpgradeRepair.Checked = true;
             chkFoodHealing10x.Checked = true;
             chkAiM1.Checked = true;
@@ -48,6 +49,7 @@ namespace AgainstRomeModifier {
             chkInfiniteMorale.Checked = false;
             chkHousingCapacity20x.Checked = false;
             chkStorageCapacity10x.Checked = false;
+            chkHqHp10x.Checked = false;
             chkFastBuildUpgradeRepair.Checked = false;
             chkFoodHealing10x.Checked = false;
             chkAiM1.Checked = false;

@@ -44,6 +44,7 @@ namespace AgainstRomeModifier {
         private TabPage tabSaveManager = null!;
         private Button btnNavSaveManager = null!;
 
+
         // 存檔管理介面表格與預覽圖
         private DataGridView dgvGameSaves = null!;
         private DataGridView dgvBackups = null!;
@@ -75,6 +76,7 @@ namespace AgainstRomeModifier {
         private ModernToggle chkBalance = null!;
         private ModernToggle chkHousingCapacity20x = null!;
         private ModernToggle chkStorageCapacity10x = null!;
+        private ModernToggle chkHqHp10x = null!;
         private ModernToggle chkFastBuildUpgradeRepair = null!;
         private ModernToggle chkFoodHealing10x = null!;
         private ModernToggle chkAiM1 = null!;
@@ -87,7 +89,6 @@ namespace AgainstRomeModifier {
         private ModernToggle chkVillageBuildRange = null!;
         private Label lblGameSpeed = null!;
         private ComboBox cmbGameSpeed = null!;
-        private Label lblHelpGameSpeed = null!;
         private Button btnTroopPreset = null!;
         private Label lblTroopTemplate = null!;
         private ComboBox cbTroopTemplate = null!;
@@ -146,22 +147,6 @@ namespace AgainstRomeModifier {
         private Label lblSystemHeading = null!;
         private Label lblSystemSubtitle = null!;
         private ToolTip myToolTip = null!;
-        private Label lblHelpFocusLoss = null!;
-        private Label lblHelpToEng = null!;
-        private Label lblHelpDgVoodoo = null!;
-        private Label lblHelpFreeProd = null!;
-        private Label lblHelpFreeUpgrade = null!;
-        private Label lblHelpNoSpellCost = null!;
-        private Label lblHelpInfiniteMorale = null!;
-        private Label lblHelpBalance = null!;
-        private Label lblHelpNoSpellAltar = null!;
-        private Label lblHelpMaxPopulation = null!;
-        private Label lblHelpHousingCapacity20x = null!;
-        private Label lblHelpStorageCapacity10x = null!;
-        private Label lblHelpFastCiviProduction = null!;
-        private Label lblHelpFastBuildUpgradeRepair = null!;
-        private Label lblHelpFoodHealing10x = null!;
-        private Label lblHelpVillageBuildRange = null!;
         private Label lblBuildTitle = null!;
         private Label lblAiTitle = null!;
         private Label lblGameSavesTitle = null!;
@@ -209,7 +194,6 @@ namespace AgainstRomeModifier {
         private Font fontConsolas85 = new Font("Consolas", 8.5F, FontStyle.Regular);
         
         // 統一風格的按鈕基礎顏色
-        private static readonly Color ColorBtnDefault = Color.FromArgb(37, 43, 55);
         private static readonly Color ColorBtnPrimary = Color.FromArgb(38, 132, 255);
 
         // 建構函式：初始化 UI 元件，載入備份檔並初始化現有設定
@@ -669,7 +653,7 @@ namespace AgainstRomeModifier {
                 Location = new Point(0, 0),
                 Size = new Size(385, 790)
             };
-            pnlNumericCard.Paint += CardPanel_Paint;
+            // pnlNumericCard.Paint += CardPanel_Paint;
 
             lblNumericTitle = new Label {
                 Text = "系統與相容性設定",
@@ -689,10 +673,7 @@ namespace AgainstRomeModifier {
                 BackColor = Color.Transparent,
                 Font = fontJhengHei10B
             };
-            lblHelpFocusLoss = CreateHelpLabel("FocusLossTip");
-            lblHelpFocusLoss.Location = new Point(340, 80);
             pnlNumericCard.Controls.Add(chkFocusLoss);
-            pnlNumericCard.Controls.Add(lblHelpFocusLoss);
 
             chkToEng = new ModernToggle {
                 Text = "強制英文語系 (介面圖示與核心文字)",
@@ -702,10 +683,7 @@ namespace AgainstRomeModifier {
                 BackColor = Color.Transparent,
                 Font = fontJhengHei10B
             };
-            lblHelpToEng = CreateHelpLabel("ToEngTip");
-            lblHelpToEng.Location = new Point(340, 160);
             pnlNumericCard.Controls.Add(chkToEng);
-            pnlNumericCard.Controls.Add(lblHelpToEng);
 
             chkDgVoodoo = new ModernToggle {
                 Text = Loc.Get("DgVoodoo"),
@@ -715,10 +693,7 @@ namespace AgainstRomeModifier {
                 BackColor = Color.Transparent,
                 Font = fontJhengHei10B
             };
-            lblHelpDgVoodoo = CreateHelpLabel("DgVoodooTip");
-            lblHelpDgVoodoo.Location = new Point(340, 240);
             pnlNumericCard.Controls.Add(chkDgVoodoo);
-            pnlNumericCard.Controls.Add(lblHelpDgVoodoo);
 
             // 實際位置與寬度由 ConfigureGameSpeedRow 依卡片列版面統一計算，此處僅提供初始佔位值。
             lblGameSpeed = new Label {
@@ -741,11 +716,8 @@ namespace AgainstRomeModifier {
             };
             PopulateGameSpeedItems();
             cmbGameSpeed.SelectedIndex = 0;
-            lblHelpGameSpeed = CreateHelpLabel("GameSpeedTip");
-            lblHelpGameSpeed.Location = new Point(340, 207);
             pnlNumericCard.Controls.Add(lblGameSpeed);
             pnlNumericCard.Controls.Add(cmbGameSpeed);
-            pnlNumericCard.Controls.Add(lblHelpGameSpeed);
 
             btnEnableAll = new Button {
                 Text = "所有功能開啟",
@@ -769,7 +741,7 @@ namespace AgainstRomeModifier {
                 Location = new Point(402, 0),
                 Size = new Size(386, 790)
             };
-            pnlSwitchesCard.Paint += CardPanel_Paint;
+            // pnlSwitchesCard.Paint += CardPanel_Paint;
 
             lblSwitchesTitle = new Label {
                 Text = "資源與戰鬥修改",
@@ -789,10 +761,7 @@ namespace AgainstRomeModifier {
                 BackColor = Color.Transparent,
                 Font = fontJhengHei10B
             };
-            lblHelpFreeProd = CreateHelpLabel("FreeProdTip");
-            lblHelpFreeProd.Location = new Point(340, 80);
             pnlSwitchesCard.Controls.Add(chkFreeProd);
-            pnlSwitchesCard.Controls.Add(lblHelpFreeProd);
 
             chkFreeUpgrade = new ModernToggle {
                 Text = "陣型、研發、屬性解鎖升級免費",
@@ -802,10 +771,7 @@ namespace AgainstRomeModifier {
                 BackColor = Color.Transparent,
                 Font = fontJhengHei10B
             };
-            lblHelpFreeUpgrade = CreateHelpLabel("FreeUpgradeTip");
-            lblHelpFreeUpgrade.Location = new Point(340, 160);
             pnlSwitchesCard.Controls.Add(chkFreeUpgrade);
-            pnlSwitchesCard.Controls.Add(lblHelpFreeUpgrade);
 
             chkNoSpellCost = new ModernToggle {
                 Text = "祭司與賢者法術無消耗 (MP 零消耗)",
@@ -815,10 +781,7 @@ namespace AgainstRomeModifier {
                 BackColor = Color.Transparent,
                 Font = fontJhengHei10B
             };
-            lblHelpNoSpellCost = CreateHelpLabel("NoSpellCostTip");
-            lblHelpNoSpellCost.Location = new Point(340, 240);
             pnlSwitchesCard.Controls.Add(chkNoSpellCost);
-            pnlSwitchesCard.Controls.Add(lblHelpNoSpellCost);
 
             chkInfiniteMorale = new ModernToggle {
                 Text = "部隊無限士氣 (士氣不減且極速恢復)",
@@ -828,10 +791,7 @@ namespace AgainstRomeModifier {
                 BackColor = Color.Transparent,
                 Font = fontJhengHei10B
             };
-            lblHelpInfiniteMorale = CreateHelpLabel("InfiniteMoraleTip");
-            lblHelpInfiniteMorale.Location = new Point(340, 320);
             pnlSwitchesCard.Controls.Add(chkInfiniteMorale);
-            pnlSwitchesCard.Controls.Add(lblHelpInfiniteMorale);
 
             chkBalance = new ModernToggle {
                 Text = Loc.Get("EnableBalance"),
@@ -842,10 +802,7 @@ namespace AgainstRomeModifier {
                 Font = fontJhengHei10B
             };
             chkBalance.CheckedChanged += new EventHandler(ChkBalance_CheckedChanged);
-            lblHelpBalance = CreateHelpLabel("BalanceTip");
-            lblHelpBalance.Location = new Point(340, 400);
             pnlSwitchesCard.Controls.Add(chkBalance);
-            pnlSwitchesCard.Controls.Add(lblHelpBalance);
 
             chkNoSpellAltar = new ModernToggle {
                 Text = "法術免除祭壇數量需求",
@@ -855,17 +812,14 @@ namespace AgainstRomeModifier {
                 BackColor = Color.Transparent,
                 Font = fontJhengHei10B
             };
-            lblHelpNoSpellAltar = CreateHelpLabel("NoSpellAltarTip");
-            lblHelpNoSpellAltar.Location = new Point(340, 480);
             pnlSwitchesCard.Controls.Add(chkNoSpellAltar);
-            pnlSwitchesCard.Controls.Add(lblHelpNoSpellAltar);
 
             // 新增：建設與人口修改卡片
             pnlBuildCard = new Panel {
                 Location = new Point(805, 0),
                 Size = new Size(385, 790)
             };
-            pnlBuildCard.Paint += CardPanel_Paint;
+            // pnlBuildCard.Paint += CardPanel_Paint;
 
             lblBuildTitle = new Label {
                 Text = Loc.Get("BuildTitle"),
@@ -885,10 +839,7 @@ namespace AgainstRomeModifier {
                 BackColor = Color.Transparent,
                 Font = fontJhengHei10B
             };
-            lblHelpMaxPopulation = CreateHelpLabel("MaxPopulationTip");
-            lblHelpMaxPopulation.Location = new Point(340, 80);
             pnlBuildCard.Controls.Add(chkMaxPopulation);
-            pnlBuildCard.Controls.Add(lblHelpMaxPopulation);
 
             chkHousingCapacity20x = new ModernToggle {
                 Text = Loc.Get("HousingCapacity20x"),
@@ -898,10 +849,7 @@ namespace AgainstRomeModifier {
                 BackColor = Color.Transparent,
                 Font = fontJhengHei10B
             };
-            lblHelpHousingCapacity20x = CreateHelpLabel("HousingCapacity20xTip");
-            lblHelpHousingCapacity20x.Location = new Point(340, 150);
             pnlBuildCard.Controls.Add(chkHousingCapacity20x);
-            pnlBuildCard.Controls.Add(lblHelpHousingCapacity20x);
 
             chkStorageCapacity10x = new ModernToggle {
                 Text = Loc.Get("StorageCapacity10x"),
@@ -911,10 +859,17 @@ namespace AgainstRomeModifier {
                 BackColor = Color.Transparent,
                 Font = fontJhengHei10B
             };
-            lblHelpStorageCapacity10x = CreateHelpLabel("StorageCapacity10xTip");
-            lblHelpStorageCapacity10x.Location = new Point(340, 220);
             pnlBuildCard.Controls.Add(chkStorageCapacity10x);
-            pnlBuildCard.Controls.Add(lblHelpStorageCapacity10x);
+
+            chkHqHp10x = new ModernToggle {
+                Text = Loc.Get("HqHp10x"),
+                Location = new Point(25, 256),
+                Size = new Size(310, 25),
+                Checked = false,
+                BackColor = Color.Transparent,
+                Font = fontJhengHei10B
+            };
+            pnlBuildCard.Controls.Add(chkHqHp10x);
 
             chkFastCiviProduction = new ModernToggle {
                 Text = Loc.Get("FastCiviProduction"),
@@ -924,10 +879,7 @@ namespace AgainstRomeModifier {
                 BackColor = Color.Transparent,
                 Font = fontJhengHei10B
             };
-            lblHelpFastCiviProduction = CreateHelpLabel("FastCiviProductionTip");
-            lblHelpFastCiviProduction.Location = new Point(340, 290);
             pnlBuildCard.Controls.Add(chkFastCiviProduction);
-            pnlBuildCard.Controls.Add(lblHelpFastCiviProduction);
 
             chkFastBuildUpgradeRepair = new ModernToggle {
                 Text = Loc.Get("FastBuildUpgradeRepair"),
@@ -937,10 +889,7 @@ namespace AgainstRomeModifier {
                 BackColor = Color.Transparent,
                 Font = fontJhengHei10B
             };
-            lblHelpFastBuildUpgradeRepair = CreateHelpLabel("FastBuildUpgradeRepairTip");
-            lblHelpFastBuildUpgradeRepair.Location = new Point(340, 360);
             pnlBuildCard.Controls.Add(chkFastBuildUpgradeRepair);
-            pnlBuildCard.Controls.Add(lblHelpFastBuildUpgradeRepair);
 
             chkFoodHealing10x = new ModernToggle {
                 Text = Loc.Get("FoodHealing10x"),
@@ -950,10 +899,7 @@ namespace AgainstRomeModifier {
                 BackColor = Color.Transparent,
                 Font = fontJhengHei10B
             };
-            lblHelpFoodHealing10x = CreateHelpLabel("FoodHealing10xTip");
-            lblHelpFoodHealing10x.Location = new Point(340, 430);
             pnlBuildCard.Controls.Add(chkFoodHealing10x);
-            pnlBuildCard.Controls.Add(lblHelpFoodHealing10x);
 
             chkVillageBuildRange = new ModernToggle {
                 Text = Loc.Get("VillageBuildRange"),
@@ -963,10 +909,7 @@ namespace AgainstRomeModifier {
                 BackColor = Color.Transparent,
                 Font = fontJhengHei10B
             };
-            lblHelpVillageBuildRange = CreateHelpLabel("VillageBuildRangeTip");
-            lblHelpVillageBuildRange.Location = new Point(340, 500);
             pnlBuildCard.Controls.Add(chkVillageBuildRange);
-            pnlBuildCard.Controls.Add(lblHelpVillageBuildRange);
 
             // AI 終極模式已拆成 5 個可獨立勾選的模組（對應 EndlessAiOrchestrator M1..M5），
             // 集中放在專屬的整列卡片（設定頁第 2 列，橫跨三欄），由 ConfigureAiCardHorizontal
@@ -975,7 +918,7 @@ namespace AgainstRomeModifier {
                 Location = new Point(0, 0),
                 Size = new Size(1180, 150)
             };
-            pnlAiCard.Paint += CardPanel_Paint;
+            // pnlAiCard.Paint += CardPanel_Paint;
 
             lblAiTitle = new Label {
                 Text = Loc.Get("AiCardTitle"),
@@ -1404,480 +1347,6 @@ namespace AgainstRomeModifier {
             ShowTabPage(tabSystem);
         }
 
-        private void ApplyModernLayout() {
-            SuspendLayout();
-
-            Size = new Size(1600, 860);
-            MinimumSize = new Size(1400, 760);
-            AutoScroll = false;
-            BackColor = Color.FromArgb(9, 12, 18);
-
-            pnlTitleBar.Height = 56;
-            pnlTitleBar.BackColor = Color.FromArgb(13, 17, 25);
-            lblMainTitle.Location = new Point(24, 16);
-            lblMainTitle.Size = new Size(360, 26);
-            lblMainTitle.ForeColor = Color.FromArgb(226, 241, 252);
-
-
-            pnlSidebar.BackColor = Color.FromArgb(12, 16, 24);
-            pnlSidebar.Width = 250;
-
-            pnlRightSidebar.BackColor = Color.FromArgb(12, 16, 24);
-            pnlRightSidebar.Width = 250;
-
-            ConfigureSidebarLayout();
-            ConfigureSystemDashboard();
-            ConfigureStatsPages();
-            ConfigureSaveManagerLayout();
-
-            tabDoc.Padding = new Padding(14);
-            txtDoc.BackColor = Color.FromArgb(16, 20, 29);
-            txtDoc.ForeColor = Color.FromArgb(210, 218, 230);
-
-            foreach (DataGridView grid in defaultStatsGrids.Values.Concat(currentStatsGrids.Values)) {
-                grid.ScrollBars = ScrollBars.Both;
-            }
-
-            LayoutModernShell();
-            Resize += (s, e) => LayoutModernShell();
-            ResumeLayout(true);
-        }
-
-        private void LayoutModernShell() {
-            pnlTitleBar.Location = Point.Empty;
-            pnlTitleBar.Size = new Size(ClientSize.Width, 56);
-            btnClose.Location = new Point(ClientSize.Width - 46, 12);
-            btnMinimize.Location = new Point(ClientSize.Width - 86, 12);
-
-            pnlSidebar.Location = new Point(0, 56);
-            pnlSidebar.Size = new Size(250, Math.Max(0, ClientSize.Height - 56));
-
-            pnlRightSidebar.Location = new Point(ClientSize.Width - 250, 56);
-            pnlRightSidebar.Size = new Size(250, Math.Max(0, ClientSize.Height - 56));
-
-            mainTabControl.Location = new Point(266, 70);
-            mainTabControl.Size = new Size(
-                Math.Max(0, ClientSize.Width - 532),
-                Math.Max(0, ClientSize.Height - 84));
-
-            lblSidebarLang.Location = new Point(16, Math.Max(610, pnlSidebar.Height - 72));
-            btnLangZH.Location = new Point(16, Math.Max(634, pnlSidebar.Height - 46));
-            btnLangEN.Location = new Point(126, Math.Max(634, pnlSidebar.Height - 46));
-        }
-
-        private void ConfigureSidebarLayout() {
-            Button[] navButtons = {
-                btnNavSystem,
-                btnNavDefaultStats,
-                btnNavCurrentStats,
-                btnNavSaveManager,
-                btnNavDoc
-            };
-            for (int i = 0; i < navButtons.Length; i++) {
-                navButtons[i].Location = new Point(10, 22 + i * 52);
-                navButtons[i].Size = new Size(230, 44);
-            }
-
-            lblGamePath.Location = new Point(16, 22);
-            lblGamePath.Size = new Size(218, 20);
-            lblGamePath.ForeColor = Color.FromArgb(128, 143, 163);
-
-            Panel pathWrapper = txtGamePath.Parent as Panel
-                ?? throw new InvalidOperationException("Game path input wrapper was not initialized.");
-            pathWrapper.Location = new Point(16, 48);
-            pathWrapper.Size = new Size(218, 32);
-            pathWrapper.BackColor = Color.FromArgb(22, 28, 39);
-            txtGamePath.Location = new Point(9, 7);
-            txtGamePath.Size = new Size(200, 20);
-            txtGamePath.BackColor = pathWrapper.BackColor;
-            txtGamePath.ForeColor = Color.FromArgb(222, 230, 240);
-
-            btnBrowseGamePath.Location = new Point(16, 88);
-            btnBrowseGamePath.Size = new Size(218, 34);
-            btnLoadCurrent.Location = new Point(16, 148);
-            btnRestore.Location = new Point(16, 198);
-            btnApply.Location = new Point(16, 258);
-            btnStartGame.Location = new Point(16, 308);
-            foreach (Button actionButton in new[] { btnLoadCurrent, btnRestore, btnApply, btnStartGame }) {
-                actionButton.Size = new Size(218, 40);
-            }
-
-            lblSidebarLang.Size = new Size(218, 20);
-            lblSidebarLang.ForeColor = Color.FromArgb(128, 143, 163);
-            btnLangZH.Size = new Size(102, 30);
-            btnLangEN.Size = new Size(108, 30);
-        }
-
-        private void ConfigureSystemDashboard() {
-            tabSystem.BackColor = Color.FromArgb(9, 12, 18);
-
-            Panel header = new Panel {
-                Dock = DockStyle.Top,
-                Height = 72,
-                BackColor = Color.FromArgb(9, 12, 18)
-            };
-            lblSystemHeading = new Label {
-                Text = Loc.Get("SystemHeading"),
-                Location = new Point(4, 4),
-                Size = new Size(430, 28),
-                Font = fontJhengHei115B,
-                ForeColor = Color.FromArgb(235, 242, 250),
-                BackColor = Color.Transparent
-            };
-            lblSystemSubtitle = new Label {
-                Text = Loc.Get("SystemSubtitle"),
-                Location = new Point(4, 35),
-                Size = new Size(620, 22),
-                Font = fontJhengHei9R,
-                ForeColor = Color.FromArgb(128, 143, 163),
-                BackColor = Color.Transparent
-            };
-            header.Controls.Add(lblSystemHeading);
-            header.Controls.Add(lblSystemSubtitle);
-            header.Controls.Add(btnEnableAll);
-            header.Controls.Add(btnDisableAll);
-            btnEnableAll.Size = new Size(136, 36);
-            btnDisableAll.Size = new Size(136, 36);
-            header.Resize += (s, e) => {
-                btnDisableAll.Location = new Point(Math.Max(0, header.Width - 140), 12);
-                btnEnableAll.Location = new Point(Math.Max(0, header.Width - 284), 12);
-            };
-
-            TableLayoutPanel settingsLayout = new TableLayoutPanel {
-                Dock = DockStyle.Fill,
-                BackColor = Color.FromArgb(9, 12, 18),
-                ColumnCount = 3,
-                RowCount = 2,
-                // The page header is intentionally layered above this fill panel.
-                // Reserve its height so card titles and first rows are never obscured.
-                Padding = new Padding(0, 84, 0, 0)
-            };
-            settingsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33.333F));
-            settingsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33.334F));
-            settingsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33.333F));
-            // 第 1 列：三張既有卡片；第 2 列：整列 AI 終極模式卡片（橫跨三欄）。
-            settingsLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 560F));
-            settingsLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 128F));
-
-            ConfigureSettingsCard(pnlNumericCard, lblNumericTitle, 278,
-                (chkFocusLoss, lblHelpFocusLoss),
-                (chkToEng, lblHelpToEng),
-                (chkDgVoodoo, lblHelpDgVoodoo));
-            // 遊戲加速選單不是 ModernToggle，無法交給 ConfigureSettingsCard 的統一開關列排版；
-            // 沿用同樣的列高公式（60 + rowIndex*48）緊接在最後一個開關之後，卡片高度已含這一列。
-            ConfigureGameSpeedRow(pnlNumericCard, rowIndex: 3);
-            ConfigureSettingsCard(pnlSwitchesCard, lblSwitchesTitle, 492,
-                (chkFreeProd, lblHelpFreeProd),
-                (chkFreeUpgrade, lblHelpFreeUpgrade),
-                (chkNoSpellCost, lblHelpNoSpellCost),
-                (chkInfiniteMorale, lblHelpInfiniteMorale),
-                (chkBalance, lblHelpBalance),
-                (chkNoSpellAltar, lblHelpNoSpellAltar));
-            ConfigureSettingsCard(pnlBuildCard, lblBuildTitle, 470,
-                (chkMaxPopulation, lblHelpMaxPopulation),
-                (chkHousingCapacity20x, lblHelpHousingCapacity20x),
-                (chkStorageCapacity10x, lblHelpStorageCapacity10x),
-                (chkFastCiviProduction, lblHelpFastCiviProduction),
-                (chkFastBuildUpgradeRepair, lblHelpFastBuildUpgradeRepair),
-                (chkFoodHealing10x, lblHelpFoodHealing10x),
-                (chkVillageBuildRange, lblHelpVillageBuildRange));
-            ConfigureAiCardHorizontal(pnlAiCard, lblAiTitle,
-                chkAiM1, chkAiM2, chkAiM3, chkAiM4, chkAiM5, chkAiM6);
-
-            settingsLayout.Controls.Add(pnlNumericCard, 0, 0);
-            settingsLayout.Controls.Add(pnlSwitchesCard, 1, 0);
-            settingsLayout.Controls.Add(pnlBuildCard, 2, 0);
-            settingsLayout.Controls.Add(pnlAiCard, 0, 1);
-            settingsLayout.SetColumnSpan(pnlAiCard, 3);
-            tabSystem.Controls.Add(settingsLayout);
-            tabSystem.Controls.Add(header);
-            header.BringToFront();
-        }
-
-        private void ConfigureSettingsCard(
-            Panel card,
-            Label title,
-            int height,
-            params (ModernToggle Toggle, Label Help)[] rows) {
-            card.Height = height;
-            card.MinimumSize = new Size(0, height);
-            card.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-            card.Margin = new Padding(6, 0, 6, 0);
-            card.BackColor = Color.FromArgb(18, 22, 31);
-
-            title.Location = new Point(20, 17);
-            title.Size = new Size(280, 24);
-            title.ForeColor = Color.FromArgb(105, 205, 255);
-
-            void LayoutRows() {
-                for (int i = 0; i < rows.Length; i++) {
-                    ModernToggle toggle = rows[i].Toggle;
-                    Label help = rows[i].Help;
-                    int y = 60 + i * 48;
-                    toggle.Location = new Point(20, y);
-                    toggle.Size = new Size(Math.Max(120, card.Width - 66), 26);
-                    toggle.Font = fontJhengHei95R;
-                    toggle.BackColor = card.BackColor;
-                    help.Location = new Point(Math.Max(20, card.Width - 40), y + 2);
-                }
-            }
-
-            card.Resize += (s, e) => LayoutRows();
-            LayoutRows();
-        }
-
-        // 遊戲加速選單這一列不是 ModernToggle，走跟 ConfigureSettingsCard.LayoutRows 相同的列高公式
-        // （60 + rowIndex*48），以便緊接在卡片既有開關列之後、隨卡片寬度自動重新排版。
-        private void ConfigureGameSpeedRow(Panel card, int rowIndex) {
-            void LayoutRow() {
-                int y = 60 + rowIndex * 48;
-                lblGameSpeed.Location = new Point(20, y + 3);
-                lblGameSpeed.Font = fontJhengHei95R;
-                lblGameSpeed.BackColor = card.BackColor;
-                int comboLeft = lblGameSpeed.Right + 10;
-                int comboRight = Math.Max(comboLeft + 100, card.Width - 66);
-                cmbGameSpeed.Location = new Point(comboLeft, y);
-                cmbGameSpeed.Width = comboRight - comboLeft;
-                lblHelpGameSpeed.Location = new Point(Math.Max(20, card.Width - 40), y + 2);
-            }
-
-            card.Resize += (s, e) => LayoutRow();
-            LayoutRow();
-        }
-
-        // AI 終極模式整列卡片：把 N 個開關以響應式網格橫向排列（每格約 250px，寬度不足時自動換行）。
-        // 說明文字改用掛在開關上的 tooltip（在語言套用流程統一設定），故此處不需要 help 圖示。
-        private void ConfigureAiCardHorizontal(Panel card, Label title, params ModernToggle[] toggles) {
-            card.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
-            card.Margin = new Padding(6, 6, 6, 0);
-            card.BackColor = Color.FromArgb(18, 22, 31);
-
-            title.Location = new Point(20, 14);
-            title.Size = new Size(400, 24);
-            title.ForeColor = Color.FromArgb(105, 205, 255);
-
-            void LayoutGrid() {
-                const int padX = 20, gapX = 16, gapY = 12, top = 52, cellH = 26, cellTarget = 180;
-                int avail = Math.Max(cellTarget, card.Width - padX * 2);
-                int cols = Math.Max(1, Math.Min(toggles.Length, (avail + gapX) / (cellTarget + gapX)));
-                int cellW = (avail - gapX * (cols - 1)) / cols;
-                for (int i = 0; i < toggles.Length; i++) {
-                    int r = i / cols, c = i % cols;
-                    toggles[i].Location = new Point(padX + c * (cellW + gapX), top + r * (cellH + gapY));
-                    toggles[i].Size = new Size(cellW, cellH);
-                    toggles[i].Font = fontJhengHei95R;
-                    toggles[i].BackColor = card.BackColor;
-                }
-            }
-
-            card.Resize += (s, e) => LayoutGrid();
-            LayoutGrid();
-        }
-
-        private void ConfigureStatsPages() {
-            Panel defaultHeader = lblDefaultStatsTitle.Parent as Panel
-                ?? throw new InvalidOperationException("Default stats header was not initialized.");
-            ConfigureStatsPage(tabDefaultStats, defaultHeader, defaultStatsTabControl);
-
-            defaultHeader.Resize += (s, e) => {
-                lblTroopPresetFile.Width = Math.Max(120, defaultHeader.Width - lblTroopPresetFile.Left - 18);
-            };
-
-            Panel currentHeader = lblCurrentStatsTitle.Parent as Panel
-                ?? throw new InvalidOperationException("Current stats header was not initialized.");
-            ConfigureStatsPage(tabCurrentStats, currentHeader, currentStatsTabControl);
-
-            void ConfigureStatsPage(TabPage page, Panel header, TabControl statsTabs) {
-                // Keep the title card and the tab content in separate layout rows. A Fill-docked
-                // TabControl placed behind a Top-docked header still starts at y=0, which causes
-                // the header to cover the faction tabs and most of the grid column headings.
-                page.Controls.Remove(header);
-                page.Controls.Remove(statsTabs);
-
-                var layout = new TableLayoutPanel {
-                    Dock = DockStyle.Fill,
-                    BackColor = page.BackColor,
-                    ColumnCount = 1,
-                    RowCount = 3,
-                    Margin = new Padding(0),
-                    Padding = new Padding(0)
-                };
-                layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
-                layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 68F));
-                layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 40F));
-                layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
-
-                header.Dock = DockStyle.Fill;
-                header.Margin = new Padding(0);
-                header.BackColor = Color.FromArgb(18, 22, 31);
-                statsTabs.Dock = DockStyle.Fill;
-                statsTabs.Margin = new Padding(0);
-                statsTabs.ItemSize = new Size(0, 1);
-                statsTabs.Font = fontJhengHei95R;
-                if (statsTabs is ModernTabControl modernTabs) {
-                    modernTabs.HideTabs = true;
-                }
-
-                var factionBar = new TableLayoutPanel {
-                    Dock = DockStyle.Fill,
-                    BackColor = Color.FromArgb(14, 17, 24),
-                    ColumnCount = statsTabs.TabCount,
-                    RowCount = 1,
-                    Margin = new Padding(0),
-                    Padding = new Padding(0)
-                };
-                factionBar.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
-
-                var factionButtons = new List<Button>();
-                for (int i = 0; i < statsTabs.TabCount; i++) {
-                    int tabIndex = i;
-                    factionBar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F / statsTabs.TabCount));
-
-                    var button = new Button {
-                        Dock = DockStyle.Fill,
-                        FlatStyle = FlatStyle.Flat,
-                        BackColor = Color.FromArgb(14, 17, 24),
-                        Cursor = Cursors.Hand,
-                        Margin = new Padding(0),
-                        TabStop = false,
-                        UseVisualStyleBackColor = false
-                    };
-                    button.FlatAppearance.BorderSize = 0;
-                    button.Paint += (s, e) => {
-                        bool selected = statsTabs.SelectedIndex == tabIndex;
-                        Color background = selected
-                            ? Color.FromArgb(26, 31, 43)
-                            : Color.FromArgb(14, 17, 24);
-                        e.Graphics.Clear(background);
-
-                        if (tabIndex > 0) {
-                            using (var divider = new Pen(Color.FromArgb(38, 44, 58))) {
-                                e.Graphics.DrawLine(divider, 0, 8, 0, button.Height - 8);
-                            }
-                        }
-                        if (selected) {
-                            using (var indicator = new SolidBrush(Color.FromArgb(62, 203, 255))) {
-                                e.Graphics.FillRectangle(indicator, 12, button.Height - 3, button.Width - 24, 3);
-                            }
-                        }
-
-                        TextRenderer.DrawText(
-                            e.Graphics,
-                            statsTabs.TabPages[tabIndex].Text.Trim(),
-                            selected ? fontJhengHei95B : fontJhengHei95R,
-                            button.ClientRectangle,
-                            selected ? Color.FromArgb(235, 248, 255) : Color.FromArgb(145, 155, 172),
-                            TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
-                    };
-                    button.Click += (s, e) => statsTabs.SelectedIndex = tabIndex;
-                    factionButtons.Add(button);
-                    factionBar.Controls.Add(button, i, 0);
-                }
-                statsTabs.SelectedIndexChanged += (s, e) => {
-                    foreach (Button button in factionButtons) {
-                        button.Invalidate();
-                    }
-                };
-
-                layout.Controls.Add(header, 0, 0);
-                layout.Controls.Add(factionBar, 0, 1);
-                layout.Controls.Add(statsTabs, 0, 2);
-                page.Controls.Add(layout);
-            }
-        }
-
-        private void ConfigureSaveManagerLayout() {
-            Panel gameCard = dgvGameSaves.Parent as Panel
-                ?? throw new InvalidOperationException("Game saves card was not initialized.");
-            Panel backupsCard = dgvBackups.Parent as Panel
-                ?? throw new InvalidOperationException("Backups card was not initialized.");
-            Panel detailCard = picSavePreview.Parent as Panel
-                ?? throw new InvalidOperationException("Save detail card was not initialized.");
-            Panel leftColumn = gameCard.Parent as Panel
-                ?? throw new InvalidOperationException("Save list column was not initialized.");
-            Panel rightColumn = detailCard.Parent as Panel
-                ?? throw new InvalidOperationException("Save detail column was not initialized.");
-
-            TableLayoutPanel root = new TableLayoutPanel {
-                Dock = DockStyle.Fill,
-                BackColor = Color.FromArgb(9, 12, 18),
-                ColumnCount = 2,
-                RowCount = 1
-            };
-            root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 66F));
-            root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 34F));
-            root.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
-
-            TableLayoutPanel leftStack = new TableLayoutPanel {
-                Dock = DockStyle.Fill,
-                BackColor = Color.Transparent,
-                RowCount = 2,
-                ColumnCount = 1,
-                Margin = new Padding(0, 0, 10, 0)
-            };
-            leftStack.RowStyles.Add(new RowStyle(SizeType.Percent, 49F));
-            leftStack.RowStyles.Add(new RowStyle(SizeType.Percent, 51F));
-
-            gameCard.Dock = DockStyle.Fill;
-            gameCard.Margin = new Padding(0, 0, 0, 6);
-            gameCard.BackColor = Color.FromArgb(18, 22, 31);
-            backupsCard.Dock = DockStyle.Fill;
-            backupsCard.Margin = new Padding(0, 6, 0, 0);
-            backupsCard.BackColor = Color.FromArgb(18, 22, 31);
-            detailCard.Dock = DockStyle.Fill;
-            detailCard.Margin = new Padding(0);
-            detailCard.BackColor = Color.FromArgb(18, 22, 31);
-
-            leftStack.Controls.Add(gameCard, 0, 0);
-            leftStack.Controls.Add(backupsCard, 0, 1);
-            leftColumn.Controls.Add(leftStack);
-            root.Controls.Add(leftColumn, 0, 0);
-            root.Controls.Add(rightColumn, 1, 0);
-            leftColumn.Dock = DockStyle.Fill;
-            rightColumn.Dock = DockStyle.Fill;
-            tabSaveManager.Controls.Add(root);
-
-            void LayoutGameCard() {
-                dgvGameSaves.Location = new Point(16, 48);
-                dgvGameSaves.Size = new Size(Math.Max(0, gameCard.Width - 32), Math.Max(70, gameCard.Height - 106));
-                int y = Math.Max(54, gameCard.Height - 48);
-                btnBackupSave.Location = new Point(16, y);
-                btnDeleteSave.Location = new Point(164, y);
-                btnRefreshSaves.Location = new Point(312, y);
-            }
-            void LayoutBackupsCard() {
-                dgvBackups.Location = new Point(16, 48);
-                dgvBackups.Size = new Size(Math.Max(0, backupsCard.Width - 32), Math.Max(70, backupsCard.Height - 106));
-                int y = Math.Max(54, backupsCard.Height - 48);
-                btnRestoreBackup.Location = new Point(16, y);
-                btnDeleteBackup.Location = new Point(164, y);
-            }
-            void LayoutDetailCard() {
-                picSavePreview.Location = new Point(18, 54);
-                picSavePreview.Size = new Size(Math.Max(80, detailCard.Width - 36), Math.Min(250, Math.Max(120, detailCard.Height / 3)));
-                lblSaveDetail.Location = new Point(18, picSavePreview.Bottom + 16);
-                lblSaveDetail.Size = new Size(Math.Max(80, detailCard.Width - 36), Math.Max(80, detailCard.Height - picSavePreview.Bottom - 34));
-            }
-
-            dgvGameSaves.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
-            dgvBackups.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
-            gameCard.Resize += (s, e) => LayoutGameCard();
-            backupsCard.Resize += (s, e) => LayoutBackupsCard();
-            detailCard.Resize += (s, e) => LayoutDetailCard();
-            LayoutGameCard();
-            LayoutBackupsCard();
-            LayoutDetailCard();
-        }
-
-        private Panel CreateInputWrapper(int x, int y, int w, int h) {
-            Panel p = new Panel {
-                Location = new Point(x, y),
-                Size = new Size(w, h),
-                BackColor = Color.FromArgb(38, 38, 48)
-            };
-            p.Paint += InputPanel_Paint;
-            return p;
-        }
 
         /// <summary>
         /// 自訂導覽列按鈕繪製樣式，包含 Hover 漸層與選取指示條
@@ -1951,377 +1420,6 @@ namespace AgainstRomeModifier {
             btnNavCurrentStats.Invalidate();
             btnNavSaveManager.Invalidate();
             btnNavDoc.Invalidate();
-        }
-
-        /// <summary>
-        /// 更新語系按鈕視覺樣式
-        /// </summary>
-        private void UpdateLanguageButtonStyles() {
-            bool isZh = Loc.CurrentLanguage == Language.TraditionalChinese;
-
-            btnLangZH.BackColor = isZh ? Color.FromArgb(30, 30, 42) : Color.Transparent;
-            btnLangZH.ForeColor = isZh ? Color.FromArgb(0, 220, 255) : Color.FromArgb(120, 125, 135);
-            btnLangZH.FlatAppearance.BorderColor = isZh ? Color.FromArgb(0, 220, 255) : Color.FromArgb(50, 50, 60);
-
-            btnLangEN.BackColor = !isZh ? Color.FromArgb(30, 30, 42) : Color.Transparent;
-            btnLangEN.ForeColor = !isZh ? Color.FromArgb(0, 220, 255) : Color.FromArgb(120, 125, 135);
-            btnLangEN.FlatAppearance.BorderColor = !isZh ? Color.FromArgb(0, 220, 255) : Color.FromArgb(50, 50, 60);
-        }
-
-        /// <summary>
-        /// 套用目前的語系設定到所有的 UI 元件
-        /// </summary>
-        private void ApplyLanguageToUI() {
-            if (lblMainTitle == null) return; // 防止在 InitializeComponent 完成前被調用
-
-            lblMainTitle.Text = Loc.Get("MainTitle");
-            lblSystemHeading.Text = Loc.Get("SystemHeading");
-            lblSystemSubtitle.Text = Loc.Get("SystemSubtitle");
-            lblNumericTitle.Text = Loc.Get("NumericTitle");
-            chkFocusLoss.Text = Loc.Get("FocusLoss");
-            chkToEng.Text = Loc.Get("ToEng");
-            chkAiM1.Text = Loc.Get("AiM1");
-            chkAiM2.Text = Loc.Get("AiM2");
-            chkAiM3.Text = Loc.Get("AiM3");
-            chkAiM4.Text = Loc.Get("AiM4");
-            chkAiM5.Text = Loc.Get("AiM5");
-            chkAiM6.Text = Loc.Get("AiM6");
-            chkHousingCapacity20x.Text = Loc.Get("HousingCapacity20x");
-            chkStorageCapacity10x.Text = Loc.Get("StorageCapacity10x");
-            chkFastBuildUpgradeRepair.Text = Loc.Get("FastBuildUpgradeRepair");
-            chkFoodHealing10x.Text = Loc.Get("FoodHealing10x");
-            chkDgVoodoo.Text = Loc.Get("DgVoodoo");
-            lblGameSpeed.Text = Loc.Get("GameSpeedLabel");
-            PopulateGameSpeedItems();
-            chkVillageBuildRange.Text = Loc.Get("VillageBuildRange");
-            btnEnableAll.Text = Loc.Get("EnableAll");
-            btnDisableAll.Text = Loc.Get("DisableAll");
-            lblSwitchesTitle.Text = Loc.Get("SwitchesTitle");
-            lblBuildTitle.Text = Loc.Get("BuildTitle");
-            lblAiTitle.Text = Loc.Get("AiCardTitle");
-            chkMaxPopulation.Text = Loc.Get("MaxPopulation");
-            chkFastCiviProduction.Text = Loc.Get("FastCiviProduction");
-            chkFreeProd.Text = Loc.Get("FreeProd");
-            chkFreeUpgrade.Text = Loc.Get("FreeUpgrade");
-            chkNoSpellCost.Text = Loc.Get("NoSpellCost");
-            chkNoSpellAltar.Text = Loc.Get("NoSpellAltar");
-            chkInfiniteMorale.Text = Loc.Get("InfiniteMorale");
-            lblGamePath.Text = Loc.Get("GamePath");
-            btnBrowseGamePath.Text = Loc.Get("Browse");
-            btnLoadCurrent.Text = Loc.Get("LoadCurrent");
-            btnRestore.Text = Loc.Get("Restore");
-            btnApply.Text = Loc.Get("Apply");
-            btnTroopPreset.Text = Loc.Get("BtnTroopPreset");
-            btnStartGame.Text = Loc.Get("StartGame");
-
-            itemRestoreAll.Text = Loc.Get("RestoreAll");
-            itemRestoreStats.Text = Loc.Get("RestoreStats");
-            itemRestoreCompat.Text = Loc.Get("RestoreCompat");
-            itemRestoreLang.Text = Loc.Get("RestoreLang");
-
-            lblGameSavesTitle.Text = Loc.Get("GameSavesTitle");
-            lblBackupsTitle.Text = Loc.Get("BackupsTitle");
-            lblDetailTitle.Text = Loc.Get("DetailTitle");
-            btnBackupSave.Text = Loc.Get("BackupSave");
-            btnDeleteSave.Text = Loc.Get("DeleteSave");
-            btnRefreshSaves.Text = Loc.Get("Refresh");
-            btnRestoreBackup.Text = Loc.Get("RestoreBackup");
-            btnDeleteBackup.Text = Loc.Get("DeleteBackup");
-
-            lblSidebarLang.Text = Loc.Get("LanguageLabel");
-
-            tabDefaultRoman.Text = Loc.Get("TabRoman");
-            tabDefaultTeuton.Text = Loc.Get("TabTeuton");
-            tabDefaultCelt.Text = Loc.Get("TabCelt");
-            tabDefaultHun.Text = Loc.Get("TabHun");
-
-            tabCurrentRoman.Text = Loc.Get("TabRoman");
-            tabCurrentTeuton.Text = Loc.Get("TabTeuton");
-            tabCurrentCelt.Text = Loc.Get("TabCelt");
-            tabCurrentHun.Text = Loc.Get("TabHun");
-
-            lblDefaultStatsTitle.Text = Loc.Get("DefaultStatsTitle");
-            chkBalance.Text = Loc.Get("EnableBalance");
-            lblTroopTemplate.Text = Loc.Get("TroopTemplateLabel");
-            RefreshTroopTemplateItems();
-            lblCurrentStatsTitle.Text = Loc.Get("CurrentStatsTitle");
-
-            // 更新表格標頭
-            UpdateGridHeaders();
-
-            // 重新整理側邊導覽列按鈕
-            RefreshNavButtons();
-
-            // 重新載入技術文件
-            ReloadTechnicalDocument();
-
-            // 重新載入表格與存檔數據
-            if (backupManager != null && backupManager.BackupFiles.Count > 0) {
-                LoadDefaultStatsData();
-                LoadCurrentData(false);
-                RefreshSavesAndBackups();
-            }
-            UpdateTroopPresetLabel();
-
-            if (myToolTip != null) {
-                myToolTip.SetToolTip(lblHelpFocusLoss, Loc.Get("FocusLossTip"));
-                myToolTip.SetToolTip(lblHelpToEng, Loc.Get("ToEngTip"));
-                myToolTip.SetToolTip(lblHelpDgVoodoo, Loc.Get("DgVoodooTip"));
-                myToolTip.SetToolTip(lblHelpFreeProd, Loc.Get("FreeProdTip"));
-                myToolTip.SetToolTip(lblHelpFreeUpgrade, Loc.Get("FreeUpgradeTip"));
-                myToolTip.SetToolTip(lblHelpNoSpellCost, Loc.Get("NoSpellCostTip"));
-                myToolTip.SetToolTip(lblHelpInfiniteMorale, Loc.Get("InfiniteMoraleTip"));
-                myToolTip.SetToolTip(lblHelpBalance, Loc.Get("BalanceTip"));
-                myToolTip.SetToolTip(lblHelpNoSpellAltar, Loc.Get("NoSpellAltarTip"));
-                myToolTip.SetToolTip(lblHelpMaxPopulation, Loc.Get("MaxPopulationTip"));
-                myToolTip.SetToolTip(lblHelpHousingCapacity20x, Loc.Get("HousingCapacity20xTip"));
-                myToolTip.SetToolTip(lblHelpStorageCapacity10x, Loc.Get("StorageCapacity10xTip"));
-                myToolTip.SetToolTip(lblHelpFastCiviProduction, Loc.Get("FastCiviProductionTip"));
-                myToolTip.SetToolTip(lblHelpFastBuildUpgradeRepair, Loc.Get("FastBuildUpgradeRepairTip"));
-                myToolTip.SetToolTip(lblHelpFoodHealing10x, Loc.Get("FoodHealing10xTip"));
-                myToolTip.SetToolTip(lblHelpVillageBuildRange, Loc.Get("VillageBuildRangeTip"));
-                myToolTip.SetToolTip(chkAiM1, Loc.Get("AiM1Tip"));
-                myToolTip.SetToolTip(chkAiM2, Loc.Get("AiM2Tip"));
-                myToolTip.SetToolTip(chkAiM3, Loc.Get("AiM3Tip"));
-                myToolTip.SetToolTip(chkAiM4, Loc.Get("AiM4Tip"));
-                myToolTip.SetToolTip(chkAiM5, Loc.Get("AiM5Tip"));
-                myToolTip.SetToolTip(chkAiM6, Loc.Get("AiM6Tip"));
-            }
-        }
-
-        private Label CreateHelpLabel(string tipKey) {
-            Label lbl = new Label {
-                Text = "?",
-                Size = new Size(22, 22),
-                Cursor = Cursors.Hand,
-                ForeColor = Color.FromArgb(120, 130, 145),
-                BackColor = Color.Transparent,
-                Font = fontConsolas85, // 採用 Consolas 讓 "?" 顯得更好看
-                TextAlign = ContentAlignment.MiddleCenter
-            };
-
-            lbl.Paint += (s, e) => {
-                Graphics g = e.Graphics;
-                g.SmoothingMode = SmoothingMode.AntiAlias;
-                bool isHovered = lbl.ForeColor == Color.FromArgb(0, 230, 255);
-                Color circColor = isHovered ? Color.FromArgb(0, 230, 255) : Color.FromArgb(60, 65, 80);
-                using (Pen p = new Pen(circColor, 1.2F)) {
-                    g.DrawEllipse(p, 1, 1, lbl.Width - 3, lbl.Height - 3);
-                }
-            };
-
-            lbl.MouseEnter += (s, e) => {
-                lbl.ForeColor = Color.FromArgb(0, 230, 255);
-                lbl.Invalidate();
-            };
-            lbl.MouseLeave += (s, e) => {
-                lbl.ForeColor = Color.FromArgb(120, 130, 145);
-                lbl.Invalidate();
-            };
-            myToolTip.SetToolTip(lbl, Loc.Get(tipKey));
-            return lbl;
-        }
-
-        /// <summary>
-        /// 動態更新 DataGridView 標頭文字
-        /// </summary>
-        private void UpdateGridHeaders() {
-            foreach (var grid in defaultStatsGrids.Values) {
-                if (grid.Columns.Contains("Name")) grid.Columns["Name"].HeaderText = Loc.Get("HeaderName");
-                if (grid.Columns.Contains("Icon")) grid.Columns["Icon"].HeaderText = Loc.Get("HeaderIcon");
-                if (grid.Columns.Contains("Type")) grid.Columns["Type"].HeaderText = Loc.Get("HeaderType");
-                if (grid.Columns.Contains("Style")) grid.Columns["Style"].HeaderText = Loc.Get("HeaderStyle");
-                if (grid.Columns.Contains("Hp")) grid.Columns["Hp"].HeaderText = Loc.Get("HeaderHp");
-                if (grid.Columns.Contains("MeleeDmg")) grid.Columns["MeleeDmg"].HeaderText = Loc.Get("HeaderMeleeDmg");
-                if (grid.Columns.Contains("RangedDmg")) grid.Columns["RangedDmg"].HeaderText = Loc.Get("HeaderRangedDmg");
-                if (grid.Columns.Contains("MeleeRelt")) grid.Columns["MeleeRelt"].HeaderText = Loc.Get("HeaderMeleeRelt");
-                if (grid.Columns.Contains("RangedRelt")) grid.Columns["RangedRelt"].HeaderText = Loc.Get("HeaderRangedRelt");
-                if (grid.Columns.Contains("Vw")) grid.Columns["Vw"].HeaderText = Loc.Get("HeaderVw");
-                if (grid.Columns.Contains("Aw")) grid.Columns["Aw"].HeaderText = Loc.Get("HeaderAw");
-                if (grid.Columns.Contains("Speed")) grid.Columns["Speed"].HeaderText = Loc.Get("HeaderSpeed");
-                if (grid.Columns.Contains("Sight")) grid.Columns["Sight"].HeaderText = Loc.Get("HeaderSight");
-                if (grid.Columns.Contains("Range")) grid.Columns["Range"].HeaderText = Loc.Get("HeaderRange");
-                if (grid.Columns.Contains("SpellRadius")) grid.Columns["SpellRadius"].HeaderText = Loc.Get("HeaderSpellRadius");
-                if (grid.Columns.Contains("Tier")) grid.Columns["Tier"].HeaderText = Loc.Get("HeaderTier");
-            }
-            foreach (var grid in currentStatsGrids.Values) {
-                if (grid.Columns.Contains("Name")) grid.Columns["Name"].HeaderText = Loc.Get("HeaderName");
-                if (grid.Columns.Contains("Icon")) grid.Columns["Icon"].HeaderText = Loc.Get("HeaderIcon");
-                if (grid.Columns.Contains("Type")) grid.Columns["Type"].HeaderText = Loc.Get("HeaderType");
-                if (grid.Columns.Contains("Style")) grid.Columns["Style"].HeaderText = Loc.Get("HeaderStyle");
-                if (grid.Columns.Contains("Hp")) grid.Columns["Hp"].HeaderText = Loc.Get("HeaderHpComp");
-                if (grid.Columns.Contains("MeleeDmg")) grid.Columns["MeleeDmg"].HeaderText = Loc.Get("HeaderMeleeDmgComp");
-                if (grid.Columns.Contains("RangedDmg")) grid.Columns["RangedDmg"].HeaderText = Loc.Get("HeaderRangedDmgComp");
-                if (grid.Columns.Contains("MeleeRelt")) grid.Columns["MeleeRelt"].HeaderText = Loc.Get("HeaderMeleeReltComp");
-                if (grid.Columns.Contains("RangedRelt")) grid.Columns["RangedRelt"].HeaderText = Loc.Get("HeaderRangedReltComp");
-                if (grid.Columns.Contains("Vw")) grid.Columns["Vw"].HeaderText = Loc.Get("HeaderVwComp");
-                if (grid.Columns.Contains("Aw")) grid.Columns["Aw"].HeaderText = Loc.Get("HeaderAwComp");
-                if (grid.Columns.Contains("Speed")) grid.Columns["Speed"].HeaderText = Loc.Get("HeaderSpeedComp");
-                if (grid.Columns.Contains("Sight")) grid.Columns["Sight"].HeaderText = Loc.Get("HeaderSightComp");
-                if (grid.Columns.Contains("Range")) grid.Columns["Range"].HeaderText = Loc.Get("HeaderRangeComp");
-                if (grid.Columns.Contains("SpellRadius")) grid.Columns["SpellRadius"].HeaderText = Loc.Get("HeaderSpellRadiusComp");
-                if (grid.Columns.Contains("Tier")) grid.Columns["Tier"].HeaderText = Loc.Get("HeaderTier");
-            }
-            if (dgvGameSaves.Columns.Contains("Folder")) dgvGameSaves.Columns["Folder"].HeaderText = Loc.Get("HeaderFolder");
-            if (dgvGameSaves.Columns.Contains("Title")) dgvGameSaves.Columns["Title"].HeaderText = Loc.Get("HeaderSaveTitle");
-            if (dgvGameSaves.Columns.Contains("Level")) dgvGameSaves.Columns["Level"].HeaderText = Loc.Get("HeaderLevel");
-            if (dgvGameSaves.Columns.Contains("Time")) dgvGameSaves.Columns["Time"].HeaderText = Loc.Get("HeaderTime");
-
-            if (dgvBackups.Columns.Contains("File")) dgvBackups.Columns["File"].HeaderText = Loc.Get("HeaderBackupFile");
-            if (dgvBackups.Columns.Contains("Title")) dgvBackups.Columns["Title"].HeaderText = Loc.Get("HeaderSaveTitle");
-            if (dgvBackups.Columns.Contains("Level")) dgvBackups.Columns["Level"].HeaderText = Loc.Get("HeaderLevel");
-            if (dgvBackups.Columns.Contains("Time")) dgvBackups.Columns["Time"].HeaderText = Loc.Get("HeaderBackupTime");
-            if (dgvBackups.Columns.Contains("Folder")) dgvBackups.Columns["Folder"].HeaderText = Loc.Get("HeaderOrigFolder");
-        }
-
-        private void UpdateTroopPresetLabel() {
-            if (lblTroopPresetFile == null) return;
-            if (presetFileSourceType == "manual") {
-                lblTroopPresetFile.Text = Loc.Get("TroopPresetManual");
-                lblTroopPresetFile.ForeColor = Color.FromArgb(200, 100, 255);
-            } else if (presetFileSourceType == "file") {
-                lblTroopPresetFile.Text = string.Format(Loc.Get("TroopPresetFile"), presetFileName);
-                lblTroopPresetFile.ForeColor = Color.FromArgb(0, 220, 255);
-            } else if (presetFileSourceType == "preset") {
-                lblTroopPresetFile.Text = string.Format(Loc.Get("TroopPresetLoaded"), presetFileName);
-                lblTroopPresetFile.ForeColor = Color.FromArgb(0, 220, 255);
-            } else {
-                lblTroopPresetFile.Text = Loc.Get("TroopPresetDefault");
-                lblTroopPresetFile.ForeColor = Color.FromArgb(160, 165, 170);
-            }
-        }
-
-        private void RefreshTroopTemplateItems() {
-            if (cbTroopTemplate == null) return;
-            int selectedIndex = cbTroopTemplate.SelectedIndex;
-            cbTroopTemplate.SelectedIndexChanged -= CbTroopTemplate_SelectedIndexChanged;
-            cbTroopTemplate.Items.Clear();
-            cbTroopTemplate.Items.Add(Loc.Get("TroopTemplateSelect"));
-            cbTroopTemplate.Items.Add(Loc.Get("TroopTemplateBalanced"));
-            cbTroopTemplate.SelectedIndex = selectedIndex > 0 && selectedIndex < cbTroopTemplate.Items.Count ? selectedIndex : 0;
-            cbTroopTemplate.SelectedIndexChanged += CbTroopTemplate_SelectedIndexChanged;
-        }
-
-        private void CbTroopTemplate_SelectedIndexChanged(object? sender, EventArgs e) {
-            if (cbTroopTemplate == null || cbTroopTemplate.SelectedIndex == 0) return;
-
-            string text = Loc.CurrentLanguage == Language.English
-                ? "Are you sure you want to apply the 'Balanced Base Stats' template? This will overwrite your current custom unit stats."
-                : "確定要套用「修改器內建平衡」範本嗎？這將覆蓋目前的自訂兵種屬性。";
-            string title = Loc.CurrentLanguage == Language.English ? "Confirm Template Overwrite" : "確認範本覆蓋";
-
-            if (MessageBox.Show(text, title, MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) {
-                cbTroopTemplate.SelectedIndex = 0;
-                return;
-            }
-
-            customUnitStats = new Dictionary<string, double[]>(StringComparer.OrdinalIgnoreCase);
-            foreach (string key in TroopConfig.UnitOrder) {
-                if (!TroopConfig.UnitMeta.ContainsKey(key)) continue;
-                customUnitStats[key] = GetDefaultBalancedStats(key).ToArray();
-            }
-
-            presetFileSourceType = "preset";
-            presetFileName = Loc.Get("TroopTemplateBalanced");
-            LoadDefaultStatsData();
-            UpdateTroopPresetLabel();
-            Log(Loc.CurrentLanguage == Language.English
-                ? "Applied built-in balanced troop stats template."
-                : "已套用修改器內建平衡兵種屬性範本。");
-
-            cbTroopTemplate.SelectedIndex = 0;
-        }
- 
-        private void BtnTroopPreset_Click(object? sender, EventArgs e) {
-            using (var form = new TroopPresetForm(this, customUnitStats, unitIcons)) {
-                if (form.ShowDialog() == DialogResult.OK) {
-                    customUnitStats = form.CustomStats;
-                    LoadDefaultStatsData(); // 重新整理預設屬性表格
-                    Log("已套用自訂兵種屬性配置。");
- 
-                    if (!string.IsNullOrEmpty(form.LoadedFileName)) {
-                        presetFileSourceType = "file";
-                        presetFileName = form.LoadedFileName;
-                    } else if (customUnitStats != null && customUnitStats.Count > 0) {
-                        presetFileSourceType = "manual";
-                        presetFileName = "";
-                    } else {
-                        presetFileSourceType = "default";
-                        presetFileName = "";
-                    }
-                    UpdateTroopPresetLabel();
-                }
-            }
-        }
-
-        /// <summary>
-        /// 重新載入技術文件內容
-        /// </summary>
-        private void ReloadTechnicalDocument() {
-            if (txtDoc == null) return;
-            string docText = "";
-            string resourceKey = Loc.CurrentLanguage == Language.English ? "TechDoc_EN.md" : "TechDoc.md";
-            try {
-                using (Stream? stream = typeof(Program).Assembly.GetManifestResourceStream(resourceKey)) {
-                    if (stream != null) {
-                        using (StreamReader reader = new StreamReader(stream, Encoding.UTF8)) {
-                            docText = reader.ReadToEnd();
-                        }
-                    } else {
-                        foreach (string name in typeof(Program).Assembly.GetManifestResourceNames()) {
-                            if (name.EndsWith(resourceKey)) {
-                                using (Stream? s = typeof(Program).Assembly.GetManifestResourceStream(name)) {
-                                    if (s != null) {
-                                        using (StreamReader r = new StreamReader(s, Encoding.UTF8)) {
-                                            docText = r.ReadToEnd();
-                                        }
-                                    }
-                                }
-                                break;
-                            }
-                        }
-                    }
-                }
-            } catch (Exception ex) {
-                Log(Loc.Get("LogLoadTechDocFailed") + ex.Message);
-            }
-
-            docText = docText.Replace("\r\n", "\n").Replace("\n", "\r\n");
-            txtDoc.Text = docText;
-        }
-
-        private DataGridView CreateBaseGrid() {
-            var dgv = new DataGridView {
-                Dock = DockStyle.None,
-                BackgroundColor = Color.FromArgb(20, 21, 31),
-                BorderStyle = BorderStyle.None,
-                AllowUserToAddRows = false,
-                AllowUserToDeleteRows = false,
-                AllowUserToOrderColumns = false,
-                AllowUserToResizeRows = false,
-                RowHeadersVisible = false,
-                SelectionMode = DataGridViewSelectionMode.CellSelect,
-                MultiSelect = false,
-                EnableHeadersVisualStyles = false,
-                GridColor = Color.FromArgb(40, 42, 58),
-                ScrollBars = ScrollBars.Vertical
-            };
-
-            dgv.ColumnHeadersDefaultCellStyle.BackColor = Color.FromArgb(26, 27, 37);
-            dgv.ColumnHeadersDefaultCellStyle.ForeColor = Color.FromArgb(0, 230, 255);
-            dgv.ColumnHeadersDefaultCellStyle.SelectionBackColor = Color.FromArgb(26, 27, 37);
-            dgv.ColumnHeadersDefaultCellStyle.Font = fontJhengHei95B;
-            dgv.ColumnHeadersHeight = 36;
-            dgv.ColumnHeadersBorderStyle = DataGridViewHeaderBorderStyle.Single;
-
-            dgv.DefaultCellStyle.BackColor = Color.FromArgb(20, 21, 31);
-            dgv.DefaultCellStyle.ForeColor = Color.FromArgb(230, 235, 240);
-            dgv.DefaultCellStyle.SelectionBackColor = Color.FromArgb(35, 37, 54);
-            dgv.DefaultCellStyle.SelectionForeColor = Color.White;
-            dgv.DefaultCellStyle.Font = fontJhengHei9R;
-
-            dgv.AlternatingRowsDefaultCellStyle.BackColor = Color.FromArgb(24, 25, 35);
-            return dgv;
         }
 
     }

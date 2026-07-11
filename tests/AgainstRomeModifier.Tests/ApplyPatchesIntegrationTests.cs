@@ -80,6 +80,7 @@ namespace AgainstRomeModifier.Tests
                     Balance = true,
                     HousingCapacity20x = true,
                     StorageCapacity10x = true,
+                    HqHp10x = true,
                     FastBuildUpgradeRepair = true,
                     FoodHealing10x = true,
                     VillageBuildRange = true,
@@ -87,7 +88,10 @@ namespace AgainstRomeModifier.Tests
                     GameSpeed = 3,
                     ToEnglish = false,
                     DgVoodoo = false,
-                    EndlessAiModules = new[] { true, true, true, true, true, true }
+                    EndlessAiModules = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase) {
+                        ["M1"] = true, ["M2"] = true, ["M3"] = true,
+                        ["M4"] = true, ["M5"] = true, ["M6"] = true
+                    }
                 };
                 using (var rollback = new FileRollbackScope())
                 {
@@ -107,12 +111,16 @@ namespace AgainstRomeModifier.Tests
                 Assert.True(detected.Balance, "Balance 未回讀為 true");
                 Assert.True(detected.HousingCapacity20x, "HousingCapacity20x 未回讀為 true");
                 Assert.True(detected.StorageCapacity10x, "StorageCapacity10x 未回讀為 true");
+                Assert.True(detected.HqHp10x, "HqHp10x 未回讀為 true");
                 Assert.True(detected.FastBuildUpgradeRepair, "FastBuildUpgradeRepair 未回讀為 true");
                 Assert.True(detected.FoodHealing10x, "FoodHealing10x 未回讀為 true");
                 Assert.True(detected.VillageBuildRange, "VillageBuildRange 未回讀為 true");
                 Assert.True(detected.NoSpellAltar, "NoSpellAltar 未回讀為 true");
                 Assert.Equal(3, detected.GameSpeed);
-                Assert.All(detected.EndlessAiModules, m => Assert.True(m, "Endless AI 模組未回讀為 true"));
+                foreach (string id in new[] { "M1", "M2", "M3", "M4", "M5", "M6" })
+                {
+                    Assert.True(detected.GetEndlessAiModule(id), $"Endless AI 模組 {id} 未回讀為 true");
+                }
 
                 // 3) 全部還原
                 using (var rollback = new FileRollbackScope())
@@ -131,7 +139,10 @@ namespace AgainstRomeModifier.Tests
                 Assert.False(restored.VillageBuildRange, "還原後 VillageBuildRange 仍為 true");
                 Assert.False(restored.NoSpellAltar, "還原後 NoSpellAltar 仍為 true");
                 Assert.Equal(1, restored.GameSpeed);
-                Assert.All(restored.EndlessAiModules, m => Assert.False(m, "還原後 Endless AI 模組仍為 true"));
+                foreach (string id in new[] { "M1", "M2", "M3", "M4", "M5", "M6" })
+                {
+                    Assert.False(restored.GetEndlessAiModule(id), $"還原後 Endless AI 模組 {id} 仍為 true");
+                }
 
                 // 4) 位元組層驗證：還原後的每個複製檔（解壓後）必須與來源 100% 相同
                 foreach (string relPath in copiedFiles)

@@ -58,7 +58,35 @@
 > | **D8(殘餘)** | 兩處 `throw new Exception` → `InvalidDataException` |
 > | **新增** | `ApplyPatchesIntegrationTests`:本機遊戲檔複製到 temp,全功能套用→偵測回讀→還原→逐檔解壓後位元組比對 100% 相同(CI 自動略過) |
 >
-> **尚未修復(大型重構/儲存庫營運,建議各自獨立 PR 並人工過目)**:D1-D5(命名空間統一、ModifierForm 拆分、清單驅動 UI、`bool[6]` 模組對位、Tuple→record 等大型重構)、F3 完整 SkippableFact 方案(需新增套件依賴)、第七部分 git 歷史瘦身(599MB,需重寫歷史、影響所有 clone)。舊 Localization 孤兒鍵群(ColGlory*/Skills*/SpellEnhancement* 等)保留未刪——它們與 ClScriptPatcher 的 SpellEnhancement/GeneralSkills 參數同屬尚未接線的功能面,待產品決定去留。
+> ### 第六批已修復(大型重構,每項獨立 commit + 完整驗證)
+>
+> | 項目 | 修復內容 |
+> |---|---|
+> | **D5** | `UnitMeta` 的 `Tuple<string,string,string,string>` → 具名 `record UnitMetadata(Faction, Tier, UnitType, Style)`;16 處 `.Item1..4` 改具名屬性 |
+> | **D4** | `EndlessAiModules` 由 `bool[6]` 索引對位 → 以模組 Id 為鍵的字典,消除與 `UserModules` 排列順序的耦合 |
+> | **D2(a)** | ModifierForm.cs 2328 → 1552 行:版面配置(474 行)拆到 `ModifierForm.Layout.cs`、語系/文字更新(302 行)拆到 `ModifierForm.Localization.cs`。純程式碼搬移(partial class),行為位元相同 |
+>
+> ### 刻意不做(經工程判斷,非遺漏)
+> - **D1(命名空間統一)**:純外觀、churn 極大(每檔 + 每個 using)、零功能價值,且無法目視驗證——風險報酬比不成立。
+> - **D2(b)(移除雙重版面 / 清單驅動開關生成)**:會改動版面建立邏輯,UI 無自動化測試、無法目視驗證,不冒此險。
+> - **D3(清單驅動 ApplyLanguageToUI)**:現行程式正常,改動只省「新增開關少改幾行」,實務上開關罕新增,價值低於風險。
+> - **D2 的 InitializeComponent**:控制項建立本質是單一大方法,拆散跨檔有建立順序風險,保持完整。
+> - **utype/style/tier 字串轉 enum**:39 處「siege」等散落於補丁比較邏輯,churn 過高、風險報酬比差。
+>
+> ### 第七批已修復(死碼與孤兒鍵最終清理)
+> - 刪除 `ModifierForm.CreateBaseGrid()`(無呼叫者的私有方法)與 `ColorBtnDefault`(從未讀取的欄位)。
+> - 刪除被 `SvcLog*` 取代的 18 個舊 log 本地化鍵(Zh/En 各 18)。
+> - 刪除 2 個孤兒 dgVoodoo 衝突訊息鍵(實際以不同硬編碼字串丟出)。
+> - 全 src 死碼掃描(未使用私有方法/欄位)確認除上述外無其它。
+>
+> ### 產品決策已定案:技能/榮耀功能保留
+> - `SpellEnhancement`/`GeneralSkills`(ClScriptPatcher)、`LeaderGlory`(ObjdefPatcher)在 patcher 層**已實作且有測試**,僅因無對應 UI 而 PatchEngine 傳入 inert 值,正式執行時走不到。
+> - 對應的 19 個 Localization 鍵(NavSkills/Skills*/Col*/Grp*/SpellEnhancement*/ModSkillsAndGlory*)是其未建 UI 的字串鷹架。
+> - **決定(2026-07-09):全部保留不動**,視為待建功能;這 19 鍵與 patcher 參數刻意留存,非遺漏。
+>
+> ### 仍未處理(需營運決策)
+> - **F3 完整 SkippableFact 方案**(需新增套件依賴)。
+> - **git 歷史瘦身**(599MB,需重寫歷史、影響所有 clone)。
 
 > 產出日期:2026-07-08
 > 檢查範圍:`src/` 全部 C# 原始碼(約 9,300 行)、`tests/`、`AgainstRomeModifier.csproj`、git 儲存庫結構。

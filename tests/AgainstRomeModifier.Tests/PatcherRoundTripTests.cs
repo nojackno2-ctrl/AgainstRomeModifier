@@ -15,7 +15,7 @@ public sealed class PatcherRoundTripTests {
         columns[74] = "   500";
         columns[156] = "    10";
         byte[] original = SyntheticFixture.Pfil("header1\r\nheader2\r\n" + string.Join(',', columns) + "\r\n");
-        var enabled = new ObjdefOptions(false, true, true, true, NoStats, NoStats);
+        var enabled = new ObjdefOptions(false, true, true, true, false, NoStats, NoStats);
 
         byte[] patched = ObjdefPatcher.GetPatchedBytes(original, enabled);
         string[] result = SyntheticFixture.Text(patched).Split("\r\n")[2].Split(',');
@@ -24,7 +24,7 @@ public sealed class PatcherRoundTripTests {
         Assert.Equal("1000", result[42].Trim());
         Assert.Equal("100", result[73].Trim());
         Assert.Equal("50", result[74].Trim());
-        Assert.Equal(original, ObjdefPatcher.GetPatchedBytes(original, new(false, false, false, false, NoStats, NoStats)));
+        Assert.Equal(original, ObjdefPatcher.GetPatchedBytes(original, new(false, false, false, false, false, NoStats, NoStats)));
     }
 
     [Fact]
@@ -51,7 +51,7 @@ public sealed class PatcherRoundTripTests {
         var unitStats = new Dictionary<string, double[]> {
             ["FigKelSch00_Bogen"] = new double[] { 100, 10, 10, 10, 4.0, 1500, 500, 400, 0 }
         };
-        byte[] patched = ObjdefPatcher.GetPatchedBytes(original, new ObjdefOptions(false, false, false, false, NoStats, unitStats));
+        byte[] patched = ObjdefPatcher.GetPatchedBytes(original, new ObjdefOptions(false, false, false, false, false, NoStats, unitStats));
         string[] result = SyntheticFixture.Text(patched).Split("\r\n")[2].Split(',');
 
         Assert.Equal("200.00", result[80].Trim()); // RangeMin ×2

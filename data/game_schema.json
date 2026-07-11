@@ -424,13 +424,13 @@
             "codeCaveFileOffset": "0x16258f",
             "codeCaveOriginalBytes": "39 zero bytes",
             "legacy2xCodeCaveBytes": "85 F6 0F 8C D4 3E FD FF 85 FF 0F 8C CC 3E FD FF D1 E6 D1 E7 57 56 50 E8 55 E3 F5 FF E9 21 3F FD FF followed by 6 zero bytes",
-            "codeCaveCandidateBytes": "85 F6 0F 8C D4 3E FD FF 85 FF 0F 8C CC 3E FD FF 8D 34 76 90 90 8D 3C 7F 90 90 57 56 50 E8 4F E3 F5 FF E9 1B 3F FD FF",
-            "effect": "Preserve both negative checks, scale ESI and EDI with value * 3 in 00536450, call 004c0900, and resume at 005364d1 so both storage paths stay synchronized.",
-            "runtimeResult": "The 3x factor is successfully applied to both the construction range and the red dashed frame.",
-            "redDashedFrameResult": "Verified together with the construction range at 3x in-game.",
+            "codeCaveCandidateBytes": "85 F6 0F 8C D4 3E FD FF 85 FF 0F 8C CC 3E FD FF BE 30 75 00 00 BF 30 75 00 00 57 56 50 E8 4F E3 F5 FF E9 1B 3F FD FF",
+            "effect": "Preserve both negative checks, set ESI and EDI to 30000 in 00536450, call 004c0900, and resume at 005364d1 so both storage paths stay synchronized.",
+            "runtimeResult": "The constant 30000 is successfully applied, granting entire map construction and moving the red dashed frame off-screen or to the map limits.",
+            "redDashedFrameResult": "Verified together with the construction range to cover the entire map in-game.",
             "modifierApplies": true
           },
-          "inference": "The setter trampoline is applied at 3x for both player construction range and red dashed frame together.",
+          "inference": "The setter trampoline is applied with a large constant 30000 for both player construction range and red dashed frame together to achieve Entire Map building.",
           "legacyFourSitePatchRestoreOnly": true,
           "legacyLogicOnlyStateSupported": true
         }
