@@ -14,8 +14,6 @@ namespace AgainstRomeModifier {
             chkFreeUpgrade.Checked = true;
             chkNoSpellCost.Checked = true;
             chkNoSpellAltar.Checked = true;
-            chkSpellEnhancement.Checked = true;
-            chkLeaderGloryKeep.Checked = true;
             chkInfiniteMorale.Checked = true;
             chkHousingCapacity20x.Checked = true;
             chkStorageCapacity10x.Checked = true;
@@ -26,11 +24,12 @@ namespace AgainstRomeModifier {
             chkAiM3.Checked = true;
             chkAiM4.Checked = true;
             chkAiM5.Checked = true;
+            chkAiM6.Checked = true;
             chkBalance.Checked = true;
             chkVillageBuildRange.Checked = true;
             chkDgVoodoo.Checked = true;
-            chkModSkillsAndGlory.Checked = true;
-            
+            SetGameSpeedSelection(3); // 一鍵全開時預設 3× 加速（測試最穩範圍）
+
             Log(Loc.CurrentLanguage == Language.English ? "All features enabled." : "已開啟所有功能。");
         }
 
@@ -46,8 +45,6 @@ namespace AgainstRomeModifier {
             chkFreeUpgrade.Checked = false;
             chkNoSpellCost.Checked = false;
             chkNoSpellAltar.Checked = false;
-            chkSpellEnhancement.Checked = false;
-            chkLeaderGloryKeep.Checked = false;
             chkInfiniteMorale.Checked = false;
             chkHousingCapacity20x.Checked = false;
             chkStorageCapacity10x.Checked = false;
@@ -58,10 +55,11 @@ namespace AgainstRomeModifier {
             chkAiM3.Checked = false;
             chkAiM4.Checked = false;
             chkAiM5.Checked = false;
+            chkAiM6.Checked = false;
             chkBalance.Checked = false;
             chkVillageBuildRange.Checked = false;
             chkDgVoodoo.Checked = false; // 相容性層關閉，以達到最乾淨的還原
-            chkModSkillsAndGlory.Checked = false;
+            SetGameSpeedSelection(1); // 還原為原版速度
 
             Log(Loc.CurrentLanguage == Language.English ? "All features disabled." : "已關閉所有功能。");
         }

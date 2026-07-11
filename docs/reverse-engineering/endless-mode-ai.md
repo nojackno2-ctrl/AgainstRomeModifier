@@ -196,6 +196,15 @@ chain, 256 DELETE_PARTY, 257 DELETE_TEAM.
   (count >= 4 -> 0 %); military-reinforcement spawner (`0x18E8C`) requires an
   existing settled team with >= 2 buildings; three additional raider spawners
   hang off the `v72/v74/v76` polling timers.
+- New-game initialization stores `s_randRange(4, 2)` in `v70`, so vanilla
+  chooses a type-1 settlement cap of 2, 3, or 4 for that game. The settlement
+  spawner stops once `v63[1]` reaches `v70`. Type-4 military settlement parties
+  are counted separately but consume the same finite CPU-team pool. M8 therefore
+  changes both bounds to `4`, producing `s_randRange(4, 4)`: four type-1
+  villages plus the separate type-4 military settlement keep five settled
+  opponents while leaving team slots available for military/attack parties.
+  The former M8 implementation `s_randRange(3, 3)` is recognized as legacy and
+  migrated. Existing saves retain their already-initialized `v70` value.
 - AI Ultimate changes the Siedler spawner's default and 0/1/2/3-live-party
   probabilities from `0,0,80,60,40,20` to six `101` literals. In single player
   the occupied mask reserves player team 0 and `pickTeam` can select only
@@ -212,10 +221,14 @@ chain, 256 DELETE_PARTY, 257 DELETE_TEAM.
 - The vanilla RETREAT chain reaches DELETE_PARTY (256) when its cleanup
   condition completes or its `v61` fallback deadline expires. In the
   settled-party handlers, states 51/52 wait on village/palisade teardown state;
-  the deadline is not the normal fast path. AI Ultimate M3 now changes only the
-  two settled terminal writes (`0x109E8`, `0x16374`) to DELETE_TEAM (257), which
-  makes the existing generic dispatcher invoke deletion with team cleanup
-  enabled before the id is recycled. Other party families retain state 256.
+  the deadline is not the normal fast path. The two settled terminal writes are
+  at `0x109E8` and `0x16374` and remain DELETE_PARTY. A previous P15 build
+  changed them to DELETE_TEAM (257), but that can delete the team while
+  `ak_haupthaus.bci` is waiting for a per-object cleanup acknowledgement. If the
+  recipient disappears before acknowledging, the sequential teardown protocol
+  can wait forever and stall the simulation loop. P15 is therefore now an R0
+  migration repair: it detects 257 as legacy and restores both sites to 256.
+  Other party families also retain state 256.
 - The six retreat/cleanup deadline literals share the BCI word signature
   `[81,61, 90,-3, 128,83, 86, 66, <ms>, 32, 44, 164]` at decompressed value
   offsets `0x10700`, `0x119C0`, `0x12FFC`, `0x13FE8`, `0x160EC`, `0x17F38`.
@@ -294,9 +307,84 @@ AI Ultimate M1:
 
 ### Reinforcement-party retreat quota (v56) — units handed over instead of retreating
 
+**RESOLVED & RUNTIME-CONFIRMED 2026-07-08.** The complete fix for "Roman
+reinforcements" needs THREE P9 control points working together, established over
+two sessions of disassembly and two rounds of in-game testing. Final confirmed
+result: reinforcements arrive **with soldiers** (not villagers only), **stay in
+the village as garrison instead of retreating**, military (type-4) AI still
+spawns normally, and destroyed ordinary villages still respawn. The three points:
+
+| Control point | Offset | Vanilla | Ultimate | Role |
+| --- | --- | --- | --- | --- |
+| Site 8 (spawn budget) | `0x16A44` | `[90,6]` | `[90,6]` (kept) | `v56` soldier spawn budget — must stay vanilla or reinforcements have no soldiers |
+| Site 9 (retreat quota) | `0x17880` | `[90,15]` | `[66,0]` | zero retreat quota → over-quota units donated, not retreated |
+| Type filter (state 49) | `0x1825C` | jz `92` | jz `0` | fall-through so soldier SQUADS are also subject to the zeroed quota |
+
+The "donated squads may stand passively" caveat noted below during static
+analysis **did not materialize** — in-game the garrison behaves correctly, so no
+further release/dissolve rework was needed. Detailed decode of each point
+follows.
+
+**UPDATE 2026-07-08 (second session): the state-49 donation walk has a UNIT-TYPE
+FILTER that exempts soldier squads from donation.** Runtime report after the
+site-8 fix below: soldiers now spawn, but they still retreat even with the
+site-9 quota verified in-place as `[66,0]` on all five installed maps. Full
+decode of the retreat chain (with the corrected jump rule: bcitool `dis`
+prints jump targets 8 bytes short; real target = printed + 8):
+
+- State 48 (`0x17ce0..0x17f34`) does NOT issue movement orders — it collects
+  all own-marked (`32+party`) team units into the party object array
+  (`v52`/`v53`) via internal fn `0x94A8` (append + counters; flag 1 also does
+  `s_setScriptMode(1)` — used at spawn).
+- State 49 (`0x17f3c..0x18458`): finds a recipient via internal fn `0xABF8`
+  (first party with `v47[i]==4`, else -1 → mark `-1`), re-marks the leader,
+  then walks the array: **only units with `s_getUnitType(obj) == 1` enter the
+  quota logic** (`local33 >= v56[party]` → donate via `s_setObjMark`); units
+  with type != 1 — soldier SQUADS created by `s_createUnitAndMems` — take the
+  else branch and are ALWAYS kept in the retreat array regardless of quota.
+- State 50 walks the remaining array via `0xB0E8`: `s_sendMsg(8, exitX, exitY)`
+  each tick and `s_destroyObj` within distance 100 of the exit; then
+  DELETE_PARTY (`0x8358`), which destroys every team unit still marked
+  `32+party` (donated/re-marked units survive).
+- Also decoded: the REAL vanilla delivery mechanism is state 32
+  (`0x16efc..0x174b0`): units within 400 of the village center are handed over
+  one at a time via `s_sendMsg(6, …)` + `s_addNPCJob_dissolveUnit`; distant
+  idle units are continuously ordered toward the village. State 32 only exits
+  to 33 when the live array count reaches 0 or the village center is gone.
+- Fix shipped: P9 third control point — the type-filter jz at `0x1825C`
+  (signature `[128,214, 73,-2, 86, 66,1, 96,102, 117,92]`, the file's only
+  `s_getUnitType` call) operand `92 -> 0` (fall-through), so squads are also
+  subject to the zeroed quota and get donated via `s_setObjMark` instead of
+  retreating. Static-analysis caveat (later DISPROVEN in-game): donated squads
+  keep script mode 1 (no `s_setScriptMode(0)` on this path — the proper release
+  helper `0xBBC0` does mode-0 + `sendMsg(6,…)` but is only used by settled-party
+  death), so it was feared they might stand passively at the village. Runtime
+  testing 2026-07-08 confirmed the garrison behaves correctly, so this path was
+  left as-is.
+
+**UPDATE 2026-07-08: site-8 zeroing REVERTED — that write is the soldier SPAWN
+BUDGET, not a retreat quota.** Runtime report: with both P9 sites at `[66,0]`,
+type-5 reinforcements arrived with villagers only, no soldiers. Disassembly of
+the type-5 INIT (state 16, `0x16984..0x16ab0`) shows `v57[party] =
+s_randRange(2,3)` (civilian count) and `v56[party] = s_randRange(2,4)` (site 8,
+`0x16A44`) — then state 20 (`callint -50000`) creates civilians from v57 and
+state 21 (`callint -49732` -> internal fn `0xA964`) creates soldiers: `0xA964`
+reads `v56[party]` at `0xA9CC`, compares it against `v54[party]` (spawned so
+far), calls the unit-creation subroutine (`callint -1036`/`-1328`) and
+decrements `v56[party]` by each spawned batch (`0xABA0..0xABD4`). Zero budget
+=> zero soldiers. Zeroing site 8 also adds nothing against retreating: the
+spawn loop drains v56 anyway, and site 9 (`0x17880`) rewrites it with the
+donation remainder before the retreat chain. P9 therefore now patches ONLY
+site 9 to `[66,0]`; site 8 is ALWAYS kept/restored to vanilla `[90,6]`, and
+the legacy both-zeroed state is detected as Legacy and migrated on apply.
+Other init-site v56 writes (`0x111C8` randRange(40,100), `0x121F8`
+randRange(40,80), `0x136A8` clamp 20, `0x1471C` randRange(3,5)) are the same
+spawn-budget pattern for other party types; the only v56 READS in the file are
+`0xA9CC` (spawn loop) and `0x18168` (state-49 donation walk).
+
 **UPDATE 2026-07-03 (later session): RE-ENABLED with the missing piece.** The
 root cause of both rejected attempts below is identified as the spawner
-threshold at `0x195F8`: it was still `8`, so permanently donated units pushed
+  threshold at `0x195F8`: it was still `8`, so permanently donated units pushed
 `s_searchTeamUnits(team)` past the spawn condition after about one wave and
 reinforcements stopped. AI Ultimate now applies the `v56 <- pushlit 0` quota
 patch TOGETHER with raising the threshold `4 -> 40` (legacy `8` migrated).
@@ -363,7 +451,14 @@ delivering". The type-5 (military reinforcement) handler's flow in
   shows it is the reinforcement unit-count threshold: the spawner requires
   `v63[5] == 0` (one reinforcement party at a time), a settled type-4 party
   whose team has >= 2 buildings, main-house storage checks, a leader check,
-  and `s_searchTeamUnits(team) < <0x195F8 literal>`. The old `112,272`
+  and `s_searchTeamUnits(team) < <0x195F8 literal>`. A 2026-07-05 save proved
+  the main-house resource checks can become false with only about nine Roman
+  units present. The earlier bounded gate still allowed transient leader or
+  civilian state to suppress later waves. P8 now replaces the condition tail at
+  decompressed `0x1960C` with three equivalent `teamUnits < 40` branches, so
+  neither resources nor those transient predicates can stop a valid settled
+  team while the hard unit bound remains. Earlier spawner checks still require
+  a type-4 settlement, buildings, and no active type-5 reinforcement party. The old `112,272`
   bypass at `0x1960C` skipped this whole condition block, which is why it
   exhausted job slots.
 - A second `v56 <- pushloc 15` write exists at `0x111EC` but belongs to a
@@ -441,6 +536,76 @@ defends.**
   or give `Dorfverteidigung.bci` offensive job/target logic. Both are
   substantially more involved than the literal-value patches shipped so far;
   not attempted.
+
+## Settle-Place Eligibility — the "defeated CPUs stop respawning" root cause (2026-07-08, RUNTIME-CONFIRMED)
+
+**Status: fixed and confirmed working.** P17/P18/P19 (module M4) were applied to
+the live install (all five `MAPS/ENDL_000..004/SCRIPT/ak_level.bci`) and the
+user confirmed in-game that defeated CPU teams resume respawning. Independent
+byte-level verification against the live install after apply: all five maps
+show exactly 1 signature hit each for P17/P18/P19, every value matches the
+Ultimate target (`P17`=100, `P18`=1, `P19`=800), the PFIL header's
+uncompressed-size field matches the decompressed length, and each file's
+decompress -> recompress -> decompress round-trip is byte-identical — the
+patch applied cleanly with no corruption. `dotnet test --filter
+CheckGameStatusTest` also reports all of M1-M6 as `Ultimate` with zero
+`Legacy`/`Unknown` sites. As with every other endless AI fix, this only takes
+effect on a NEW endless game (saves embed their own `ak_level` copy).
+
+Diagnosed from a live `ESAVE_000` (ENDL_002) save exhibiting the long-standing
+symptom: everything fine early, then defeated AI teams never return. Save-state
+decode (`CLAK/scr.dat` task records: `TLCV` = the script's 87 int32 variables,
+`TMEM`/`IARR` = script arrays by handle; array vars v45..v63 hold handles 8..25):
+
+- All patch sites in the save-embedded `ak_level` matched the installed script
+  (31 identical word diffs vs vanilla) — not a stale-script issue.
+- Clock healthy: `s_getTime` ≈ 12.0M (weather task timestamp 12,000,919;
+  engine sim time 35.99M = 3x speedhack), dispatcher `v16` = 12,017,058 pending.
+- Party state: only slot0 (type-1 village, team 6) and slot4 (type-4 Roman,
+  team 3) alive; slots 1,2,3,5,7 released cleanly (v47=0, v63[1]=1 < v70=4);
+  5 CPU teams free; spawn probability 101 (M4). The Siedler spawner had been
+  firing every 30 s for ~80 minutes with zero new villages.
+- v61 note: retreat deadlines are stored NEGATED (`op 44` = negate) — the
+  negative values are by design, not clock overflow.
+
+The only silent-deterministic failure point left is the settle-place finder:
+
+- Type-1 create wrapper (`0xE704`) and the type-4 founder create (caller at
+  `0x142ac`) both call `fn 0x9904` (find-free-settle-place). On -1 the wrapper
+  immediately DELETEs the fresh party and returns 0 — invisible churn, no
+  deadline writes, exactly what the save shows.
+- `fn 0x9904` iterates the 8 `placesSettle` entries (v7/v8) from a random
+  start; a place is eligible iff `fn 0xA54(x, y, 2500)` reports it clear AND no
+  live party claims it (`v47[i]!=0 && v59[i]==place`).
+- `fn 0xA54` vetoes a place when `fn 0x690` finds ANY team's village center
+  within the radius (`s_getVillageCenterObj` per team 0..7) or `fn 0x858`
+  finds ANY team's units within the radius (`s_searchTeamUnits`, team loop
+  starts at 0 = the player).
+- Save evidence for accumulation: dead teams 2/5/7 retain NPC village records
+  in `CLAK/npc.dat` (15/11/107 coordinate records; teams 2, 5 and live team 3
+  share base (1632,5792) = the same settle place reused across generations,
+  team 7 kept a full 107-record village). Team blocks are 19540 bytes at
+  offset 36 + 8*i; the village base coordinate sits near block+0x400.
+- Late game, the player's expansion (units within 2500 of a place veto it) plus
+  dead-team leftovers permanently veto all remaining places → respawn stops.
+
+Fix (AI Ultimate M4, 2026-07-08):
+
+- `P18` — unit-scan comparand `0 -> 1` (value word after the file's only
+  `callint -636`; signature `[120,-636, 73,-3, 86, 66,?, 96,101,117,20,
+  66,0,87]`, decompressed site `0xAF0`). `fn 0x858` returns the lowest team
+  index with units near the place, so `result >= 1` exempts the player
+  (team 0) while CPU units still veto.
+- `P19` — place veto radius `2500 -> 800` (signature `[66,?, 90,1, 90,0,
+  120,-36800, 73,-3, 86]`, the file's only `callint -36800`, site `0x9A10`).
+  Radius flows into both the village-center distance and unit search.
+- `P17` — Roman founder 60% gate `60 -> 100` was previously designed/tested
+  (RomanFounderGatePatchTests) but never wired into any module; now included
+  in M4 as well.
+- All three verified unique (1 hit) on all five vanilla AND currently-patched
+  live maps, before and after value substitution.
+- IMPORTANT: saves embed their own `ak_level`; existing saves keep the old
+  blocking behavior. The fix takes effect on a NEW endless game.
 
 ## Pending Work
 

@@ -271,7 +271,7 @@ namespace AgainstRomeModifier {
 
         // 解壓縮 PFIL 自訂格式檔案：檢查是否有 "PFIL" 標頭，有的話呼叫 Decompress 還原
         public static byte[] DecompressPfil(byte[] data) {
-            if (data.Length < 64 || data[0] != 'P' || data[1] != 'F' || data[2] != 'I' || data[3] != 'L') {
+            if (data.Length < 64 || data[0] != 0x50 || data[1] != 0x46 || data[2] != 0x49 || data[3] != 0x4C) {
                 return data; // 若無 "PFIL" 標頭，視為未壓縮原始資料直接回傳
             }
             return Decompress(data);

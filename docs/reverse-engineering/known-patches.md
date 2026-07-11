@@ -7,16 +7,18 @@
 - Hook `005364c1` (file `0x1364c1`) jumps to executable zero padding at
   `0056258f` (file `0x16258f`).
 - The trampoline preserves both negative-value checks, scales `ESI`/`EDI` with
-  `value * 3`, calls `004c0900`, and returns at `005364d1`. Both the
+  `value * 5`, calls `004c0900`, and returns at `005364d1`. Both the
   type-definition and per-object village-state copies therefore receive the
-  same 3x values.
-- Runtime result: both the player-usable village construction range and the red
-  dashed frame have been successfully verified in-game at the 3x scale.
+  same 5x values.
+- Runtime status: this shared setter path synchronized the player-usable village
+  construction range and red dashed frame at the previously verified 3x scale.
+  The 5x factor is statically verified and still needs an in-game check.
 - Hook original: `85 F6 7C A6 85 FF 7C A2`.
 - Hook patched: `E9 C9 C0 02 00 90 90 90`.
 - Cave original: 39 zero bytes.
 - Legacy 2x cave: `85 F6 0F 8C D4 3E FD FF 85 FF 0F 8C CC 3E FD FF D1 E6 D1 E7 57 56 50 E8 55 E3 F5 FF E9 21 3F FD FF`, followed by six zero bytes. It is recognized for migration and restore.
-- Cave patched: `85 F6 0F 8C D4 3E FD FF 85 FF 0F 8C CC 3E FD FF 8D 34 76 90 90 8D 3C 7F 90 90 57 56 50 E8 4F E3 F5 FF E9 1B 3F FD FF`.
+- Legacy 3x cave: `85 F6 0F 8C D4 3E FD FF 85 FF 0F 8C CC 3E FD FF 8D 34 76 90 90 8D 3C 7F 90 90 57 56 50 E8 4F E3 F5 FF E9 1B 3F FD FF`.
+- Cave patched (5x): `85 F6 0F 8C D4 3E FD FF 85 FF 0F 8C CC 3E FD FF 8D 34 B6 90 90 8D 3C BF 90 90 57 56 50 E8 4F E3 F5 FF E9 1B 3F FD FF`.
 
 ### Population Limit
 
@@ -110,7 +112,7 @@
   still the only remaining open item.
 - File: `MAPS/ENDL_*/SCRIPT/ak_level.bci`.
 - Format: `PFIL@` compressed `BCI0` compiled script.
-- Modifier UI: five independent AI Ultimate modules (M1-M5); rejected global CLAK edits are restored by mandatory repair R0.
+- Modifier UI: five active independent AI Ultimate modules (M1-M5, with M6 rejected and disabled); rejected global CLAK edits are restored by mandatory repair R0.
 - Create-unit call: decompressed BCI offset `0x17B60`,
   `s_addNPCJob_createUnit(local7, 3, 8, 0, 0, 4, 4, 1, 0)` after reversing
   BCI stack argument order.
@@ -140,12 +142,35 @@
 - Dead-party confirmation counter at `0x1068C`: `20 -> 3` consecutive ticks
   (settled-party handler; counts ticks with village, leader, civilians, and
   members all gone before entering RETREAT).
-- Settled-party terminal cleanup (`P15`): the two settled handlers change their
-  final state literals at `0x109E8` and `0x16374` from `DELETE_PARTY (256)` to
-  `DELETE_TEAM (257)`. The generic dispatcher already implements state 257 by
-  calling the party deletion routine with team cleanup enabled. This prevents a
-  recycled team id from retaining old village/NPC state. Transient raider and
-  reinforcement handlers remain on state 256.
+- Settled-party terminal safety repair (`P15`, mandatory R0): the two settled
+  handler literals at `0x109E8` and `0x16374` must remain `DELETE_PARTY (256)`.
+  A previous build changed them to `DELETE_TEAM (257)` to clear stale team
+  state, but full team deletion can race `ak_haupthaus.bci` while it waits for
+  the current village/palisade object's cleanup acknowledgement. Losing that
+  acknowledgement can leave the sequential teardown loop waiting forever,
+  which presents as a frozen simulation rather than a process crash. Detection
+  treats all-256 as Original, all-257 or mixed 256/257 as Legacy, and both
+  Apply paths restore 256. P15 is no longer part of user-toggleable M3.
+- Settle-place eligibility fix (`P18`/`P19`, module M4, 2026-07-08,
+  **RUNTIME-CONFIRMED**: applied to the live install, user confirmed defeated
+  CPUs resume respawning in-game; independent byte check found all five maps
+  at the exact Ultimate values with clean PFIL round-trips): the root
+  cause of the long-standing "defeated CPUs eventually stop respawning" bug.
+  Both village (type-1) and Roman founder (type-4) creation call the
+  free-settle-place finder `fn 0x9904`; a -1 result silently deletes the fresh
+  party. A place is vetoed when any team's village center OR any team's units
+  are within 2500 (`fn 0xA54` -> `fn 0x690`/`fn 0x858`; the unit scan's team
+  loop starts at team 0 = the player). Late-game player expansion plus
+  dead-team leftovers veto all 8 places permanently. `P18` changes the
+  unit-scan comparand `0 -> 1` (player units no longer veto; signature anchor:
+  the file's only `callint -636`, site `0xAF0`); `P19` shrinks the veto radius
+  `2500 -> 800` (anchor: the only `callint -36800`, site `0x9A10`). Full decode
+  and save evidence in `endless-mode-ai.md`. Saves embed `ak_level`, so the fix
+  only affects newly started endless games.
+- Roman founder gate (`P17`, module M4, **RUNTIME-CONFIRMED** with P18/P19
+  above): `60 -> 100` at the type-4 spawner's
+  probability gate (site `0x18E10`). Designed and unit-tested 2026-07-06 but
+  never wired into a module until 2026-07-08 — installed files still had 60.
 - All six scheduler delay sites change to `5000..10000` ms. The first three
   are inner raider timers; the remaining `60000..120000`, `60000..120000`, and
   `120000..240000` sites initialize and refresh the outer action scheduler that
@@ -160,6 +185,14 @@
   retreat quota zeroed (below) the team's army accumulates up to ~40 units
   (40 x 20 members = 800, under the EXE global population cap of 1600) and
   then stops growing — a natural upper bound below the population limit.
+- Bounded reinforcement condition tail at decompressed `0x1960C`: AI Ultimate
+  replaces the original resource/leader/civilian/unit conjunction with three
+  equivalent branches enforcing `s_searchTeamUnits(team) < 40`. This removes
+  the resource checks and transient leader/civilian predicates that could stop
+  Roman reinforcement at about nine units in the 2026-07-05 `ESAVE_000`
+  snapshot. The one-type-5-party gate and the existing type-4 settlement/building checks remain earlier
+  in the function. The former `jmp +272` is still rejected because it skips the
+  unit threshold too.
 - Reinforcement no-retreat (RE-ENABLED 2026-07-03 with the missing piece):
   the type-5 retreat quota write `v56[party] <- pushloc 15` at decompressed
   `0x17888` region (unique signature
@@ -178,8 +211,17 @@
   donation formula literals at `0x17788` (`4,2,2`) stay vanilla — with the
   quota forced to 0 the formula only shapes the civilian-recreate quota
   (`v57`), not the retreat set.
-- The gate at `0x1960C` remains `66,0`.
+- The gate at `0x1960C` uses the unit-count-only bounded sequence
+  above; disabling restores the original condition words exactly.
 - The Siedler spawner's default and 0/1/2/3-live-party probability literals change from `0,0,80,60,40,20` to `101,101,101,101,101,101`. The single-player occupied mask reserves player team 0, and `pickTeam` selects only unoccupied CPU teams 1-7, so this fills at most seven simultaneous computer opponents and reuses a defeated team's slot after cleanup.
+- M8 changes the new-game type-1 settlement limit initialization from
+  `s_randRange(4, 2) -> v70` to `s_randRange(4, 4) -> v70`. The unique BCI
+  signature is `[66,<upper>,66,<lower>,128,16,73,-2,86,82,70]`; the upper and
+  lower literals at decompressed offsets `0x1B694` and `0x1B69C` both become
+  `4`. This preserves five settled opponents (four type-1 plus the separate type-4
+  military path) while leaving CPU-team slots for military/attack parties. The
+  former `[3,3]` M8 state is recognized as legacy and migrated. Restore writes
+  the vanilla `[4,2]` bounds, and existing saves are not rewritten.
 - REJECTED CONFIGURATION 2026-07-03 (same session, before any release): tried making
   reinforcement parties hand over all units instead of retreating, via the
   `v56[party]` retreat quota (`[90,15] -> [66,0]` at decompressed `0x17888`
@@ -193,6 +235,24 @@
 - Older builds wrote `112,272` at `0x1960C` and shortened every action loop to
   `5000..10000` ms. Applying this version restores the gate and all unrelated
   loops; only the three bounded reinforcement polling loops remain accelerated.
+- Roman-founder guaranteed spawn (`P17`, mandatory SafetyModule repair, not a
+  user toggle): the type-4 `RoemischeGruender` military settlement is the ONLY
+  settled party reinforcement (type-5 `RoemischerNachschub`) serves, and it is
+  Roman-hardcoded (builds ROM_ANF/ROM_HAU/ROM_INF/ROM_SCH/ROM_KAVINF; GER/KEL/HUN
+  have no Gruender/Nachschub equivalent). Its spawner (decompressed `0x18E8C`
+  region) gates creation on `v63[4] <= 0` (≤1 founder), a `60 >= s_randRange(1,100)`
+  60% probability roll, then `pickTeam` (`~occupied & tribeMask & v68`). Because
+  M6 (guaranteed Siedler villages, which was later rejected and removed from the active modifier UI) + M5 (accelerated scheduler) saturate the
+  7-slot single-player CPU-team pool with type-1 villages and raiders, the
+  one-at-a-time 60%-gated founder loses the race, `pickTeam` returns `-1`, and
+  Rome never reinforces. P17 raises the threshold literal `60 -> 100` so
+  `100 >= s_randRange(1,100)` is always true and the founder spawns as soon as no
+  type-4 exists and a team is free (pool is sufficient: M8's 4 villages + 1
+  founder = 5 <= 7). Unique 14-word signature
+  `[66, <thr>, 66,100, 66,1, 128,16, 73,-2, 86, 96,101,117]` (threshold word
+  wildcarded), exactly one hit per map; decompressed threshold offset `0x18E14`.
+  Applied with the AI-ultimate enable flag: `enabled` writes `100`, disable
+  restores `60`.
 - The signature is present in `ENDL_000` through `ENDL_004`.
 - Earlier enabled states (including only `0x17F38` shortened, no retreat
   deadlines shortened, or all six deadlines shortened) are accepted as
