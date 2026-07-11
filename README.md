@@ -1,9 +1,16 @@
 # Against Rome Modifier
 
 This is a Windows Forms modifier for the real-time strategy game *Against Rome*.
-It is built with C# on .NET 8 and packages the original backup data as an
-embedded resource so the modifier can patch and restore game files from a single
-application.
+It is built with C# on .NET 8. Public builds do not contain original game data;
+the modifier builds its restore baseline from the user's own installation when
+an optional local `Backup.zip` is not present.
+
+## Maintenance Documentation
+
+- [`TechDoc.md`](TechDoc.md): current Chinese technical specification (integrates the AI-agent handoff checklist, debugging history, failure cases, and verification steps at the end).
+- [`TechDoc_EN.md`](TechDoc_EN.md): current English technical specification.
+- [`docs/reverse-engineering/`](docs/reverse-engineering/README.md): file
+  formats, offsets, patch bytes, evidence, and the local Ghidra workflow.
 
 ## Project Origin & Author's Note
 
@@ -13,15 +20,35 @@ research and personal modding project.
 
 ## Core Features
 
-- Population limit customization for map `team.dat` files.
-- Endless-mode AI Ultimate Mode, which raises the mass-army spawn count to the
-  vanilla script limit, reduces AI respawn wait to 5 seconds, and shortens
-  endless AI action-loop waits to 5-10 seconds while bypassing the active-AI
-  gate and leaving settlement/village templates untouched.
+- Maximum-population switch for map `team.dat` files (1600 when enabled).
+- Reversible 20x capacity switch for every positive population-building
+  `wohnwer` value in `objdef.dau`.
+- Reversible 10x building speed switch for construction, upgrades, and repairs
+  in `objdef.dau` (shortens building build/upgrade times by 10, which automatically
+  boosts repair rate, successfully runtime-verified in-game).
+- Reversible 10x storage capacity switch for town halls (`Hau`) and warehouses (`Lag`) in `objdef.dau` (successfully runtime-verified in-game).
+- Endless-mode AI Ultimate Mode, split into five independently selectable
+  modules, which raises the mass-army spawn count to the vanilla script limit,
+  recycles completed military reinforcement jobs for
+  continuing waves, reduces the military reinforcement wait to 5 seconds, cuts
+  four non-settlement party retreat deadlines from 10 minutes to 5 seconds,
+  and preserves the two settlement cleanup fallbacks at 10 minutes so an old
+  village and its palisades finish clearing before that team slot is reused,
+  accelerates the confirmed one-object-at-a-time cleanup cadence from about
+  1.5 seconds to 0.1 seconds per object,
+  raises the military-reinforcement unit threshold from 4 to 40, and transfers
+  the whole reinforcement party into the village instead of retreating while
+  retaining the original safety gate and bounded polling. Endless settlement templates also receive a reversible
+  starting-resource boost; unsafe global CLAK production edits stay disabled.
 - Free construction, production, upgrades, and spell costs through `ress.ini`.
 - Unit stat editing for HP, damage, VW, AW, movement, sight, cooldown, range, and spell radius through `objdef.dau` and `cl_script.ini`.
-- Troop preset import/export through `.artroop` and global preset import/export through `.arpreset`.
+- Troop preset import/export through `.artroop` and one-click buttons to enable/disable all features.
 - Background execution patch for `Against_Rome.exe` when the game loses focus.
+- Option to scale the village construction/red-frame range to 3x through a
+  synchronized `Against_Rome.exe` setter trampoline (successfully
+  runtime-verified in-game, including the red dashed frame).
+- Optional embedded dgVoodoo2 integration that installs the bundled 32-bit
+  D3D8/DirectDraw wrappers without overwriting unmanaged DLLs.
 - Automatic game path detection and one-click launch.
 - Save backup, restore, and history management.
 - Embedded technical documentation.
@@ -30,15 +57,19 @@ research and personal modding project.
 
 ## Technical Architecture
 
-- `Program.cs`: application entry point, DPI setup, and UAC elevation.
-- `GameLZSS.cs`: game-specific PFIL/LZSS compression and decompression.
-- `TroopConfig.cs`: known unit IDs, unit categories, field indexes, and balance rules.
-- `ModifierForm.cs`: main UI layout and embedded documentation view.
-- `ModifierForm.Data.cs`: backup loading, data inspection, TGA icon parsing, and display formatting.
-- `ModifierForm.Patches.cs`: patch and restore logic for `objdef.dau`, `ress.ini`, `cl_script.ini`, `Against_Rome.exe`, and `team.dat`.
-- `ModifierForm.SaveManager.cs`: save backup, restore, and cache handling.
-- `ModifierForm.Presets.cs`: preset import/export.
-- `TroopPresetForm.cs`: troop stat preset editor.
+- `src/Program.cs`: application entry point, DPI setup, and UAC elevation.
+- `src/Core/GameLZSS.cs`: game-specific PFIL/LZSS compression and decompression.
+- `src/Core/TroopConfig.cs`: known unit IDs, unit categories, field indexes, and balance rules.
+- `src/UI/ModifierForm.cs`: main UI layout and embedded documentation view.
+- `src/UI/ModifierForm.Data.cs`: backup loading, data inspection, TGA icon parsing, and display formatting.
+- `src/UI/ModifierForm.Patches.cs`: patch and restore logic for `objdef.dau`, `ress.ini`, `cl_script.ini`, `Against_Rome.exe`, and `team.dat`.
+- `src/UI/ModifierForm.DgVoodoo.cs`: embedded dgVoodoo2 extraction, managed
+  installation, conflict detection, and removal.
+- `src/UI/ModifierForm.SaveManager.cs`: save backup, restore, and cache handling.
+- `src/UI/ModifierForm.Presets.cs`: actions to enable or disable all features.
+- `src/UI/TroopPresetForm.cs`: troop stat preset editor.
+- `tools/Repair-LanguageBackup.ps1`: validates and repairs a local language
+  overlay backup after an interrupted or incomplete migration.
 - `docs/reverse-engineering/`: structured reverse-engineering notes.
 - `data/game_schema.json`: tool-readable file format and patch metadata.
 
@@ -63,9 +94,12 @@ Current coverage:
 - `SYSTEM/ress.ini`: construction, production, upgrade, and spell costs.
 - `SYSTEM/cl_script.ini`: villager delay, spell radius, and morale parameters.
 - `MAPS/**/team.dat`: population limits and banner version semantics.
-- `MAPS/ENDL_*/SCRIPT/ak_level.bci`: endless AI Ultimate Mode candidate patches.
-- `Against_Rome.exe`: focus-loss background execution patch, rejected village
-  red-frame candidate, and full local Ghidra function inventory.
+- `MAPS/ENDL_*/SCRIPT/ak_level.bci`: bounded AI Ultimate Mode patch with
+  byte/save-state verification; long-running late-wave regression remains.
+- `Against_Rome.exe`: focus-loss background execution patch, runtime-verified
+  village construction-range expansion, restore-only handling for the rejected
+  legacy four-site range/red-frame candidate, and a full local Ghidra function
+  inventory.
 
 The generated Ghidra output is local research material, not original source.
 Unknown `FUN_*` functions are not treated as understood until the call path or
@@ -91,6 +125,33 @@ runtime evidence is documented.
 The GitHub repository does not include original game files. Users must own and
 install *Against Rome*, then select the game folder in the modifier. The modifier
 uses those local files as the clean restore baseline before applying patches.
+
+The following content is intentionally local-only and covered by `.gitignore`:
+
+- `遊戲原始檔案/`, `Original game archives/`, `Backup.zip`, and extracted game
+  trees such as `MAPS/`, `SYSTEM/`, `SAVE/`, and `ToEng/`;
+- `.codex/`, `.agents/`, `re_workspace/`, build output, IDE state, dumps, logs,
+  and private audit handoff files;
+- generated Ghidra inventories and downloaded analysis toolchains.
+
+Small reproducible analysis scripts under `tools/re/` are source material and
+are intentionally published. The bundled dgVoodoo2 files are also intentional:
+the upstream redistribution terms permit individual files to ship with a game
+or game mod; see `ThirdParty/dgVoodoo2/REDISTRIBUTION.md`.
+
+## dgVoodoo2 Integration
+
+Enable the dgVoodoo2 switch and apply changes to extract the bundled v2.87.3
+files directly from the modifier. No network connection or separate download is
+required. The modifier installs only the x86 `D3D8.dll`, `DDraw.dll`,
+`dgVoodooCpl.exe`, and `dgVoodoo.conf`. Uncheck the switch and apply, or restore
+compatibility/all settings, to remove files owned by the modifier. Existing
+unmanaged DLLs are never overwritten, and a user-edited configuration is kept.
+
+Upstream source and redistribution terms:
+
+- [dgVoodoo2 v2.87.3 release](https://github.com/dege-diosg/dgVoodoo2/releases/tag/v2.87.3)
+- [Official redistribution terms](https://dege.fw.hu/dgVoodoo2/ReadmeGeneral/)
 
 ## Disclaimer
 

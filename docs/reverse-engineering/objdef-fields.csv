@@ -6,9 +6,9 @@ index,name,type,status,used_by,notes
 52,Name,string,candidate,TroopConfig.cs,Unit display/name reference field.
 78,Weapon1Akti,int,stable,ModifierForm.Data.cs,Weapon 1 active flag.
 79,Weapon1Dam,float,stable,ModifierForm.Patches.cs,Weapon 1 damage.
-80,PriestSpell1,float,stable,ModifierForm.Patches.cs,Priest spell range slot 1.
-81,PriestSpell2,float,stable,ModifierForm.Patches.cs,Priest spell range slot 2.
-82,PriestSpell3,float,stable,ModifierForm.Patches.cs,Priest spell range slot 3.
+80,Weapon1RangeMin,float,stable,ModifierForm.Patches.cs,Weapon 1 minimum range (w1_rad1).
+81,Weapon1RangeMax,float,stable,ModifierForm.Patches.cs,Weapon 1 maximum range (w1_rad2).
+82,Weapon1Angle,float,stable-preserved,ModifierForm.Patches.cs,Weapon 1 angle (w1_angl); never scale as range.
 84,Weapon1Relt,int,stable,ModifierForm.Patches.cs,Weapon 1 reload/cooldown.
 86,Weapon2Akti,int,stable,ModifierForm.Data.cs,Weapon 2 active flag.
 87,Weapon2Dam,float,stable,ModifierForm.Patches.cs,Weapon 2 damage.
@@ -22,5 +22,6 @@ index,name,type,status,used_by,notes
 100,Weapon3Relt,int,stable,ModifierForm.Patches.cs,Weapon 3 reload/cooldown.
 142,Aw,float,stable,ModifierForm.Patches.cs,Attack/combat value shown as AW.
 146,Vw,float,stable,ModifierForm.Patches.cs,Defense value shown as VW.
+156,HousingCapacity,int,stable,ModifierForm.Patches.cs,wohnwer value summed for all OD_WOHNRAUM objects; optional core switch multiplies positive original values by 20.
 191,Bmovs,float,stable,ModifierForm.Patches.cs,Building/alternate movement speed field.
 199,Weapon1Dtyp,int,candidate,ModifierForm.Data.cs,Weapon damage/type table base; values 1-4 are treated as ranged by current code.

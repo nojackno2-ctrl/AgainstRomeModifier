@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
@@ -8,15 +8,18 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Windows.Forms;
 using System.Drawing;
+using AgainstRomeModifier.Core.Patches;
 using System.Drawing.Drawing2D;
 using System.Runtime.InteropServices;
-using System.Threading.Tasks;
 
 namespace AgainstRomeModifier {
     public partial class ModifierForm {
         private static readonly Regex RegexSpellLoad = new Regex(@"Radius\s*=\s*(?:HUN|KEL|GER)\s*,\s*Spell\d+\s*,\s*(\d+)", RegexOptions.Compiled);
         private static readonly Regex RegexCiviLoad = new Regex(@"CiviDelay\s*=\s*([A-Z]{3})\s*,\s*(\d+)", RegexOptions.Compiled);
-        private static readonly Regex RegexMoraleLoad = new Regex(@"MoralsDecLostMem\s*=\s*GER\s*,\s*(\d+)", RegexOptions.Compiled);
+        private static readonly Regex RegexMoraleLostMemLoad = new Regex(@"MoralsDecLostMem\s*=\s*GER\s*,\s*(\d+)", RegexOptions.Compiled);
+        private static readonly Regex RegexMoraleFleeLoad = new Regex(@"MoralsDecFlee\s*=\s*GER\s*,\s*(\d+)", RegexOptions.Compiled);
+        private static readonly Regex RegexMoraleOverPopLoad = new Regex(@"MoralsDecOverPop\s*=\s*GER\s*,\s*(\d+)", RegexOptions.Compiled);
+        private static readonly Regex RegexMoraleIdleLoad = new Regex(@"MoralsIncIdle\s*=\s*GER\s*,\s*(\d+)", RegexOptions.Compiled);
 
         /// <summary>
         /// Loads the clean restore source. Public builds do not include original game assets,
@@ -30,6 +33,7 @@ namespace AgainstRomeModifier {
             if (resourceName != null) {
                 using Stream stream = typeof(Program).Assembly.GetManifestResourceStream(resourceName)!;
                 LoadZipToDictionary(stream);
+                TryAutoHealBackupFiles();
                 ValidateBackupResources();
                 Log("已載入內嵌 Backup.zip 備份資料。");
                 return;
@@ -39,6 +43,7 @@ namespace AgainstRomeModifier {
             if (File.Exists(localZip)) {
                 using FileStream stream = File.OpenRead(localZip);
                 LoadZipToDictionary(stream);
+                TryAutoHealBackupFiles();
                 ValidateBackupResources();
                 Log("已載入程式目錄中的 Backup.zip 備份資料。");
                 return;
@@ -50,14 +55,68 @@ namespace AgainstRomeModifier {
             }
         }
 
+        private void TryAutoHealBackupFiles() {
+            string gamePath = GetGamePath();
+            if (string.IsNullOrWhiteSpace(gamePath) || !Directory.Exists(gamePath)) {
+                return;
+            }
+
+            string[] requiredFiles = {
+                "Against_Rome.exe",
+                "SYSTEM/cl_script.ini",
+                "SYSTEM/cl_epara.ini",
+                "SYSTEM/ress.ini",
+                "SYSTEM/DATA_MP/DEFAULTS/objdef.dau",
+                "SYSTEM/CLMK/icon.ini",
+                "SYSTEM/CLAK/cl_scint.ini"
+            };
+
+            foreach (string relPath in requiredFiles) {
+                if (!backupFiles.ContainsKey(relPath)) {
+                    if (relPath == "SYSTEM/cl_epara.ini") {
+                        try {
+                            byte[] cleanEparaBytes = Encoding.GetEncoding(1251).GetBytes(GetCleanEparaText());
+                            backupFiles[relPath] = GameLZSS.CompressPfil(cleanEparaBytes, null!);
+                            Log("已使用修改器內建乾淨預設值修復記憶體備份項目: SYSTEM/cl_epara.ini");
+                        } catch { }
+                    } else {
+                        string fullPath = Path.Combine(gamePath, relPath.Replace('/', Path.DirectorySeparatorChar));
+                        if (File.Exists(fullPath)) {
+                            try {
+                                backupFiles[relPath] = File.ReadAllBytes(fullPath);
+                                Log(string.Format("已從遊戲目錄自動修復缺少之記憶體備份項目: {0}", relPath));
+                            } catch { }
+                        }
+                    }
+                }
+            }
+
+            bool hasTeamDat = backupFiles.Keys.Any(k => k.StartsWith("MAPS/", StringComparison.OrdinalIgnoreCase) && k.EndsWith("team.dat", StringComparison.OrdinalIgnoreCase));
+            if (!hasTeamDat) {
+                string mapsPath = Path.Combine(gamePath, "MAPS");
+                if (Directory.Exists(mapsPath)) {
+                    try {
+                        string normalizedGamePath = Path.GetFullPath(gamePath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                        foreach (string file in Directory.GetFiles(mapsPath, "team.dat", SearchOption.AllDirectories)) {
+                            string relPath = Path.GetRelativePath(normalizedGamePath, file).Replace('\\', '/');
+                            backupFiles[relPath] = File.ReadAllBytes(file);
+                        }
+                        Log("已從遊戲目錄自動修復地圖團隊備份項目 (team.dat)。");
+                    } catch { }
+                }
+            }
+        }
+
         private List<string> FindMissingBackupResources() {
             var missing = new List<string>();
             string[] requiredFiles = {
                 "Against_Rome.exe",
                 "SYSTEM/cl_script.ini",
+                "SYSTEM/cl_epara.ini",
                 "SYSTEM/ress.ini",
                 "SYSTEM/DATA_MP/DEFAULTS/objdef.dau",
-                "SYSTEM/CLMK/icon.ini"
+                "SYSTEM/CLMK/icon.ini",
+                "SYSTEM/CLAK/cl_scint.ini"
             };
 
             foreach (string key in requiredFiles) {
@@ -102,12 +161,21 @@ namespace AgainstRomeModifier {
             string[] requiredFiles = {
                 "Against_Rome.exe",
                 "SYSTEM/cl_script.ini",
+                "SYSTEM/cl_epara.ini",
                 "SYSTEM/ress.ini",
                 "SYSTEM/DATA_MP/DEFAULTS/objdef.dau",
-                "SYSTEM/CLMK/icon.ini"
+                "SYSTEM/CLMK/icon.ini",
+                "SYSTEM/CLAK/cl_scint.ini"
             };
 
             foreach (string relPath in requiredFiles) {
+                if (relPath == "SYSTEM/cl_epara.ini") {
+                    try {
+                        byte[] cleanEparaBytes = Encoding.GetEncoding(1251).GetBytes(GetCleanEparaText());
+                        loaded[relPath] = GameLZSS.CompressPfil(cleanEparaBytes, null!);
+                    } catch { }
+                    continue;
+                }
                 string fullPath = Path.Combine(gamePath, relPath.Replace('/', Path.DirectorySeparatorChar));
                 if (File.Exists(fullPath)) {
                     loaded[relPath] = File.ReadAllBytes(fullPath);
@@ -116,8 +184,10 @@ namespace AgainstRomeModifier {
 
             string mapsPath = Path.Combine(gamePath, "MAPS");
             if (Directory.Exists(mapsPath)) {
+                string normalizedGamePath = Path.GetFullPath(gamePath)
+                    .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
                 foreach (string file in Directory.GetFiles(mapsPath, "team.dat", SearchOption.AllDirectories)) {
-                    string relPath = file.Substring(gamePath.Length + 1).Replace('\\', '/');
+                    string relPath = Path.GetRelativePath(normalizedGamePath, file).Replace('\\', '/');
                     loaded[relPath] = File.ReadAllBytes(file);
                 }
             }
@@ -149,7 +219,7 @@ namespace AgainstRomeModifier {
         }
 
         /// <summary>
-        /// 解析單行 CSV 資料（逗號分隔），支援雙引號括起來包含逗號或引號的欄位。
+        /// 解析遊戲資料列。遊戲資料使用單純逗號分隔，不支援 RFC 4180 引號跳脫。
         /// </summary>
         private static string[] ParseCsvLine(string line) {
             if (line == null) return Array.Empty<string>();
@@ -162,6 +232,118 @@ namespace AgainstRomeModifier {
         private static string ToCsvString(string[] cols) {
             if (cols == null) return "";
             return string.Join(",", cols);
+        }
+
+        private static bool HasHousingCapacityMultiplier(string currentContent, string originalContent, int multiplier) {
+            var currentValues = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            string[] currentLines = currentContent.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
+            foreach (string line in currentLines) {
+                if (line.Length < 100) continue;
+                string[] cols = ParseCsvLine(line);
+                if (cols.Length <= (int)ObjdefIndex.HousingCapacity || cols.Length <= (int)ObjdefIndex.Name) continue;
+                if (int.TryParse(cols[(int)ObjdefIndex.HousingCapacity].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int value)) {
+                    currentValues[cols[(int)ObjdefIndex.Name].Trim()] = value;
+                }
+            }
+
+            bool foundHousing = false;
+            string[] originalLines = originalContent.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
+            foreach (string line in originalLines) {
+                if (line.Length < 100) continue;
+                string[] cols = ParseCsvLine(line);
+                if (cols.Length <= (int)ObjdefIndex.HousingCapacity || cols.Length <= (int)ObjdefIndex.Name) continue;
+                if (!int.TryParse(cols[(int)ObjdefIndex.HousingCapacity].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int originalValue) || originalValue <= 0) continue;
+
+                foundHousing = true;
+                string name = cols[(int)ObjdefIndex.Name].Trim();
+                if (!currentValues.TryGetValue(name, out int currentValue) || currentValue != checked(originalValue * multiplier)) {
+                    return false;
+                }
+            }
+            return foundHousing;
+        }
+
+        private static bool HasStorageCapacityMultiplier(string currentContent, string originalContent, int multiplier) {
+            var currentValues = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            string[] currentLines = currentContent.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
+            foreach (string line in currentLines) {
+                if (line.Length < 100) continue;
+                string[] cols = ParseCsvLine(line);
+                if (cols.Length <= (int)ObjdefIndex.StorageCapacity || cols.Length <= (int)ObjdefIndex.Name) continue;
+                if (int.TryParse(cols[(int)ObjdefIndex.StorageCapacity].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int value)) {
+                    currentValues[cols[(int)ObjdefIndex.Name].Trim()] = value;
+                }
+            }
+
+            bool foundStorage = false;
+            string[] originalLines = originalContent.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
+            foreach (string line in originalLines) {
+                if (line.Length < 100) continue;
+                string[] cols = ParseCsvLine(line);
+                if (cols.Length <= (int)ObjdefIndex.StorageCapacity || cols.Length <= (int)ObjdefIndex.Name) continue;
+                string name = cols[(int)ObjdefIndex.Name].Trim();
+                if (!name.StartsWith("Bau") || !(name.Contains("Hau") || name.Contains("Lag"))) continue;
+                if (!int.TryParse(cols[(int)ObjdefIndex.StorageCapacity].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int originalValue) || originalValue <= 0) continue;
+
+                foundStorage = true;
+                if (!currentValues.TryGetValue(name, out int currentValue) || currentValue != checked(originalValue * multiplier)) {
+                    return false;
+                }
+            }
+            return foundStorage;
+        }
+
+        private static bool HasFastBuildUpgradeRepair(string currentContent, string originalContent) {
+            var currentBuildValues = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            var currentUpgValues = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            
+            string[] currentLines = currentContent.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
+            foreach (string line in currentLines) {
+                if (line.Length < 100) continue;
+                string[] cols = ParseCsvLine(line);
+                if (cols.Length < 192) continue;
+                string name = cols[52].Trim();
+                if (!name.StartsWith("Bau")) continue;
+                
+                if (int.TryParse(cols[73].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int buildVal)) {
+                    currentBuildValues[name] = buildVal;
+                }
+                if (int.TryParse(cols[74].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int upgVal)) {
+                    currentUpgValues[name] = upgVal;
+                }
+            }
+
+            bool foundBuilding = false;
+            string[] originalLines = originalContent.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
+            foreach (string line in originalLines) {
+                if (line.Length < 100) continue;
+                string[] cols = ParseCsvLine(line);
+                if (cols.Length < 192) continue;
+                string name = cols[52].Trim();
+                if (!name.StartsWith("Bau")) continue;
+
+                bool hasBuild = int.TryParse(cols[73].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int origBuildVal) && origBuildVal > 0;
+                bool hasUpg = int.TryParse(cols[74].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int origUpgVal) && origUpgVal > 0;
+
+                if (!hasBuild && !hasUpg) continue;
+
+                foundBuilding = true;
+
+                if (hasBuild) {
+                    int expectedBuild = Math.Max(1, origBuildVal / 10);
+                    if (!currentBuildValues.TryGetValue(name, out int curBuild) || curBuild != expectedBuild) {
+                        return false;
+                    }
+                }
+
+                if (hasUpg) {
+                    int expectedUpg = Math.Max(1, origUpgVal / 10);
+                    if (!currentUpgValues.TryGetValue(name, out int curUpg) || curUpg != expectedUpg) {
+                        return false;
+                    }
+                }
+            }
+            return foundBuilding;
         }
 
         /// <summary>
@@ -224,6 +406,7 @@ namespace AgainstRomeModifier {
                     byte b = tgaBytes[entryOffset];
                     byte g = tgaBytes[entryOffset + 1];
                     byte r = tgaBytes[entryOffset + 2];
+                    // Against Rome indexed UI sprites use pure black palette entries as transparent.
                     if (r == 0 && g == 0 && b == 0) {
                         palette[i] = Color.FromArgb(0, 0, 0, 0);
                     } else {
@@ -309,10 +492,15 @@ namespace AgainstRomeModifier {
             using (ZipArchive archive = new ZipArchive(stream)) {
                 foreach (ZipArchiveEntry entry in archive.Entries) {
                     if (entry.Name == "") continue;
+                    string key = entry.FullName.Replace('\\', '/');
+                    if (Path.IsPathRooted(key) ||
+                        key.StartsWith("/", StringComparison.Ordinal) ||
+                        key.Split('/').Any(part => part == "..")) {
+                        throw new InvalidDataException("Backup.zip contains an unsafe entry path: " + entry.FullName);
+                    }
                     using (Stream entryStream = entry.Open()) {
                         using (MemoryStream ms = new MemoryStream()) {
                             entryStream.CopyTo(ms);
-                            string key = entry.FullName.Replace('\\', '/');
                             backupFiles[key] = ms.ToArray();
                         }
                     }
@@ -327,17 +515,17 @@ namespace AgainstRomeModifier {
         private void LoadIcons() {
             string gamePath = GetGamePath();
             if (string.IsNullOrEmpty(gamePath) || !Directory.Exists(gamePath)) {
-                Log("遊戲路徑未設定或不存在，無法載入兵種圖示。");
+                Log(Loc.Get("LogGamePathNotSetIcon"));
                 return;
             }
             string guiDatPath = Path.Combine(gamePath, "gui.dat");
             if (!File.Exists(guiDatPath)) {
-                Log("找不到 gui.dat，無法載入兵種圖示。");
+                Log(Loc.Get("LogGuiDatNotFound"));
                 return;
             }
             byte[]? iniData;
             if (!backupFiles.TryGetValue("SYSTEM/CLMK/icon.ini", out iniData)) {
-                Log("記憶體備份中找不到 icon.ini，無法載入兵種圖示。");
+                Log(Loc.Get("LogIconIniNotFound"));
                 return;
             }
 
@@ -349,6 +537,7 @@ namespace AgainstRomeModifier {
             unitIcons.Clear();
             try {
                 byte[] decompIni = GameLZSS.DecompressPfil(iniData!);
+                // Against Rome data files are stored as Windows-1251, not UTF-8.
                 string iniText = Encoding.GetEncoding(1251).GetString(decompIni);
                 string[] lines = iniText.Split(new string[] { "\r\n", "\n" }, System.StringSplitOptions.RemoveEmptyEntries);
                 Dictionary<string, string> unitToTga = new Dictionary<string, string>();
@@ -385,48 +574,47 @@ namespace AgainstRomeModifier {
                 }
                 Log(string.Format("成功載入 {0} 個兵種圖示。", unitIcons.Count));
             } catch (Exception ex) {
-                Log("載入圖示失敗: " + ex.Message + "\r\n" + ex.StackTrace);
+                Log(Loc.Get("LogLoadIconFailed") + ex.Message + "\r\n" + ex.StackTrace);
             }
         }
 
         /// <summary>
         /// 獲取各兵種的平衡基礎屬性，若未啟用平衡模式，則直接返回原版屬性。
         /// </summary>
+        private static double[] MergeUnitStatsLayers(double[] fallback, double[] custom, bool supportsSpellRadius) {
+            ArgumentNullException.ThrowIfNull(fallback);
+            ArgumentNullException.ThrowIfNull(custom);
+
+            double[] layered = new double[9];
+            for (int i = 0; i < layered.Length; i++) {
+                if (i == 8 && !supportsSpellRadius) {
+                    layered[i] = 0;
+                    continue;
+                }
+
+                // Preset values are concrete overrides. Only fields omitted by an
+                // older/short preset inherit the active balanced or original layer.
+                layered[i] = custom.Length > i
+                    ? custom[i]
+                    : (fallback.Length > i ? fallback[i] : 0);
+            }
+            return layered;
+        }
+
         private double[] GetBaseStatsForUnit(string key, double origHp, double origDmg, double origVw, double origAw, bool forceBalance = false) {
-            if (customUnitStats != null && customUnitStats.ContainsKey(key)) {
-                double[] custom = customUnitStats[key];
-                if (custom.Length >= 9) {
-                    return custom;
-                }
-                
-                double[] fullStats = new double[9];
-                for (int i = 0; i < Math.Min(custom.Length, 4); i++) {
-                    fullStats[i] = custom[i];
-                }
-                
-                double[] fallback = (forceBalance || chkBalance.Checked) ? GetDefaultBalancedStats(key) : GetOriginalStats(key);
-                for (int i = 4; i < 9; i++) {
-                    fullStats[i] = fallback[i];
-                }
-                return fullStats;
+            double[] original = GetOriginalStats(key);
+            double[] balanced = (forceBalance || chkBalance.Checked) ? GetDefaultBalancedStats(key) : original;
+
+            if (customUnitStats != null && customUnitStats.TryGetValue(key, out double[]? custom) && custom != null) {
+                return MergeUnitStatsLayers(balanced, custom, SupportsConfigurableSpellRadius(key));
             }
-            if (!forceBalance && !chkBalance.Checked) {
-                return GetOriginalStats(key);
-            }
-            return GetDefaultBalancedStats(key);
+
+            return balanced;
         }
 
         /// <summary>
         /// 將裝備分類代碼轉換為易懂的中文文字說明。
         /// </summary>
-        private string GetStyleText(string style) {
-            if (style == "shield") return "持盾";
-            if (style == "two_handed") return "雙手武器";
-            if (style == "dual_wield") return "雙持武器";
-            if (style == "ranged") return "遠程";
-            return "無";
-        }
-
         /// <summary>
         /// 建立並設定用於顯示當前屬性（原版對比修改後）的 DataGridView 表格。
         /// </summary>
@@ -436,9 +624,9 @@ namespace AgainstRomeModifier {
                 AllowUserToAddRows = false,
                 AllowUserToDeleteRows = false,
                 RowHeadersVisible = false,
-                BackgroundColor = Color.FromArgb(20, 20, 25),
+                BackgroundColor = Color.FromArgb(10, 11, 16),
                 ForeColor = Color.FromArgb(230, 235, 240),
-                GridColor = Color.FromArgb(45, 45, 55),
+                GridColor = Color.FromArgb(28, 30, 42),
                 BorderStyle = BorderStyle.None,
                 EnableHeadersVisualStyles = false,
                 RowTemplate = { Height = 46 },
@@ -448,20 +636,20 @@ namespace AgainstRomeModifier {
                 ScrollBars = ScrollBars.Vertical
             };
 
-            dgv.ColumnHeadersDefaultCellStyle.BackColor = Color.FromArgb(32, 32, 40);
-            dgv.ColumnHeadersDefaultCellStyle.ForeColor = Color.FromArgb(0, 220, 255);
-            dgv.ColumnHeadersDefaultCellStyle.SelectionBackColor = Color.FromArgb(32, 32, 40);
+            dgv.ColumnHeadersDefaultCellStyle.BackColor = Color.FromArgb(26, 27, 37);
+            dgv.ColumnHeadersDefaultCellStyle.ForeColor = Color.FromArgb(0, 230, 255);
+            dgv.ColumnHeadersDefaultCellStyle.SelectionBackColor = Color.FromArgb(26, 27, 37);
             dgv.ColumnHeadersDefaultCellStyle.Font = fontJhengHei95B;
             dgv.ColumnHeadersHeight = 40;
             dgv.ColumnHeadersBorderStyle = DataGridViewHeaderBorderStyle.Single;
 
-            dgv.DefaultCellStyle.BackColor = Color.FromArgb(24, 24, 30);
+            dgv.DefaultCellStyle.BackColor = Color.FromArgb(20, 21, 31);
             dgv.DefaultCellStyle.ForeColor = Color.FromArgb(230, 235, 240);
-            dgv.DefaultCellStyle.SelectionBackColor = Color.FromArgb(45, 45, 60);
+            dgv.DefaultCellStyle.SelectionBackColor = Color.FromArgb(35, 37, 54);
             dgv.DefaultCellStyle.SelectionForeColor = Color.White;
             dgv.DefaultCellStyle.Font = fontJhengHei9R;
 
-            dgv.AlternatingRowsDefaultCellStyle.BackColor = Color.FromArgb(28, 28, 35);
+            dgv.AlternatingRowsDefaultCellStyle.BackColor = Color.FromArgb(24, 25, 35);
             dgv.Columns.Add("Name", "兵種名稱");
             dgv.Columns["Name"].Width = 110;
 
@@ -539,6 +727,8 @@ namespace AgainstRomeModifier {
                 }
             };
 
+            ConfigureStatsGridColumnsToFit(dgv);
+
             return dgv;
         }
 
@@ -551,9 +741,9 @@ namespace AgainstRomeModifier {
                 AllowUserToAddRows = false,
                 AllowUserToDeleteRows = false,
                 RowHeadersVisible = false,
-                BackgroundColor = Color.FromArgb(20, 20, 25),
+                BackgroundColor = Color.FromArgb(10, 11, 16),
                 ForeColor = Color.FromArgb(230, 235, 240),
-                GridColor = Color.FromArgb(45, 45, 55),
+                GridColor = Color.FromArgb(28, 30, 42),
                 BorderStyle = BorderStyle.None,
                 EnableHeadersVisualStyles = false,
                 RowTemplate = { Height = 46 },
@@ -563,20 +753,20 @@ namespace AgainstRomeModifier {
                 ScrollBars = ScrollBars.Vertical
             };
 
-            dgv.ColumnHeadersDefaultCellStyle.BackColor = Color.FromArgb(32, 32, 40);
-            dgv.ColumnHeadersDefaultCellStyle.ForeColor = Color.FromArgb(0, 220, 255);
-            dgv.ColumnHeadersDefaultCellStyle.SelectionBackColor = Color.FromArgb(32, 32, 40);
+            dgv.ColumnHeadersDefaultCellStyle.BackColor = Color.FromArgb(26, 27, 37);
+            dgv.ColumnHeadersDefaultCellStyle.ForeColor = Color.FromArgb(0, 230, 255);
+            dgv.ColumnHeadersDefaultCellStyle.SelectionBackColor = Color.FromArgb(26, 27, 37);
             dgv.ColumnHeadersDefaultCellStyle.Font = fontJhengHei95B;
             dgv.ColumnHeadersHeight = 40;
             dgv.ColumnHeadersBorderStyle = DataGridViewHeaderBorderStyle.Single;
 
-            dgv.DefaultCellStyle.BackColor = Color.FromArgb(24, 24, 30);
+            dgv.DefaultCellStyle.BackColor = Color.FromArgb(20, 21, 31);
             dgv.DefaultCellStyle.ForeColor = Color.FromArgb(230, 235, 240);
-            dgv.DefaultCellStyle.SelectionBackColor = Color.FromArgb(45, 45, 60);
+            dgv.DefaultCellStyle.SelectionBackColor = Color.FromArgb(35, 37, 54);
             dgv.DefaultCellStyle.SelectionForeColor = Color.White;
             dgv.DefaultCellStyle.Font = fontJhengHei9R;
 
-            dgv.AlternatingRowsDefaultCellStyle.BackColor = Color.FromArgb(28, 28, 35);
+            dgv.AlternatingRowsDefaultCellStyle.BackColor = Color.FromArgb(24, 25, 35);
 
             dgv.Columns.Add("Name", "兵種名稱");
             dgv.Columns["Name"].Width = 110;
@@ -632,7 +822,21 @@ namespace AgainstRomeModifier {
             dgv.Columns["Tier"].Width = 75;
             dgv.Columns["Tier"].DisplayIndex = 4;
 
+            ConfigureStatsGridColumnsToFit(dgv);
+
             return dgv;
+        }
+
+        private static void ConfigureStatsGridColumnsToFit(DataGridView dgv) {
+            foreach (DataGridViewColumn column in dgv.Columns) {
+                if (!column.Visible || column.Name == "Name" || column.Name == "Icon" || column.Name == "Tier") {
+                    continue;
+                }
+
+                column.FillWeight = Math.Max(60, column.Width);
+                column.MinimumWidth = 60;
+                column.AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
+            }
         }
 
         /// <summary>
@@ -778,24 +982,23 @@ namespace AgainstRomeModifier {
                         displayRangedDam = 0;
                     }
 
-                    double displayMeleeRelt = meleeRelt;
-                    if (style == "dual_wield" && displayMeleeRelt > 0) {
-                        displayMeleeRelt = Math.Round(displayMeleeRelt / 1.5);
-                    }
-                    double displayRangedRelt = rangedRelt;
-                    if (utype == "ranged_inf" || utype == "ranged_cav" || utype == "hybrid_inf") {
-                        if (displayRangedRelt > 0) {
-                            displayRangedRelt = Math.Round(displayRangedRelt / 1.5);
-                        }
-                    }
-                    if (style == "dual_wield" && displayRangedRelt > 0) {
-                        displayRangedRelt = Math.Round(displayRangedRelt / 1.5);
+                    double origPrimaryRelt = meleeRelt;
+                    if (utype == "ranged_inf" || utype == "ranged_cav") {
+                        origPrimaryRelt = rangedRelt;
+                    } else if (utype == "siege") {
+                        origPrimaryRelt = Math.Max(meleeRelt, rangedRelt);
                     }
 
-                    if (style == "two_handed") {
-                        displayMeleeDam = Math.Round(displayMeleeDam * 1.3, 1);
-                        displayRangedDam = Math.Round(displayRangedDam * 1.3, 1);
+                    double reltScale = 1.0;
+                    if (origPrimaryRelt > 0) {
+                        reltScale = bases[6] / origPrimaryRelt;
                     }
+                    double displayMeleeRelt = meleeRelt > 0
+                        ? Math.Round(meleeRelt * reltScale)
+                        : 0;
+                    double displayRangedRelt = rangedRelt > 0
+                        ? Math.Round(rangedRelt * reltScale)
+                        : 0;
 
                     double finalDefVw = bases[2];
                     double finalDefAw = bases[3];
@@ -844,42 +1047,44 @@ namespace AgainstRomeModifier {
             LoadCurrentData();
         }
 
-        private bool TryLoadCurrentPopLimitFromTeamDat(string gamePath, out int popLimit) {
-            popLimit = 0;
+        private bool IsMaximumPopulationApplied(string gamePath) {
             string mapsPath = Path.Combine(gamePath, "MAPS");
             if (!Directory.Exists(mapsPath)) {
                 return false;
             }
 
+            bool foundActiveTeam = false;
             foreach (string teamFile in Directory.GetFiles(mapsPath, "team.dat", SearchOption.AllDirectories)) {
                 try {
                     byte[] bytes = File.ReadAllBytes(teamFile);
                     byte[] decompBytes = GameLZSS.DecompressPfil(bytes);
                     string text = Encoding.GetEncoding(1251).GetString(decompBytes);
                     string[] lines = text.Split(new string[] { "\r\n", "\n" }, StringSplitOptions.None);
-                    bool inMaxTeamObj = false;
+                    bool inTeamData = false;
 
                     foreach (string line in lines) {
                         string stripped = line.Trim();
                         if (stripped.StartsWith("[")) {
-                            inMaxTeamObj = stripped.Equals("[maxteamobjgenerell]", StringComparison.OrdinalIgnoreCase);
+                            inTeamData = stripped.Equals("[teamdata]", StringComparison.OrdinalIgnoreCase);
                             continue;
                         }
 
-                        if (inMaxTeamObj && !string.IsNullOrEmpty(stripped)) {
-                            int val;
-                            if (int.TryParse(stripped, out val) && val >= 1 && val <= 10000) {
-                                popLimit = val;
-                                return true;
+                        if (inTeamData && stripped.Contains(",")) {
+                            string[] cols = ParseCsvLine(line);
+                            if (cols.Length >= 5 && int.TryParse(cols[4].Trim(), out int val) && val > 0) {
+                                foundActiveTeam = true;
+                                if (val != 1600) {
+                                    return false;
+                                }
                             }
-                            inMaxTeamObj = false;
                         }
                     }
                 } catch {
+                    return false;
                 }
             }
 
-            return false;
+            return foundActiveTeam;
         }
 
         /// <summary>
@@ -939,6 +1144,19 @@ namespace AgainstRomeModifier {
 
                 EnsureBackupUnitRowsParsed();
                 Dictionary<string, string[]> origUnitRows = _backupUnitRows;
+
+                if (syncUIWithFile) {
+                    if (backupFiles.TryGetValue("SYSTEM/DATA_MP/DEFAULTS/objdef.dau", out byte[]? originalObjdefBytes)) {
+                        string originalObjdef = Encoding.GetEncoding(1251).GetString(GameLZSS.DecompressPfil(originalObjdefBytes));
+                        chkHousingCapacity20x.Checked = HasHousingCapacityMultiplier(decomp, originalObjdef, HousingCapacityMultiplier);
+                        chkStorageCapacity10x.Checked = HasStorageCapacityMultiplier(decomp, originalObjdef, StorageCapacityMultiplier);
+                        chkFastBuildUpgradeRepair.Checked = HasFastBuildUpgradeRepair(decomp, originalObjdef);
+                    } else {
+                        chkHousingCapacity20x.Checked = false;
+                        chkStorageCapacity10x.Checked = false;
+                        chkFastBuildUpgradeRepair.Checked = false;
+                    }
+                }
 
                 // 自訂倍率控制項已移除，不進行 UI 賦值。
 
@@ -1107,29 +1325,49 @@ namespace AgainstRomeModifier {
                     byte[] decompCl = GameLZSS.DecompressPfil(clBytes);
                     string clText = Encoding.GetEncoding(1251).GetString(decompCl);
                     
-                    var matchCivi = RegexCiviLoad.Match(clText);
-                    if (matchCivi.Success) {
-                        double delay;
-                        if (double.TryParse(matchCivi.Groups[2].Value, NumberStyles.Any, CultureInfo.InvariantCulture, out delay) && delay > 0) {
-                            double speedVal = 5000.0 / delay;
-                            if (speedVal < 1.0) speedVal = 1.0;
-                            if (speedVal > 50.0) speedVal = 50.0;
-                            numCiviSpeed.Value = (decimal)speedVal;
-                        }
+                    MatchCollection civiMatches = RegexCiviLoad.Matches(clText);
+                    if (syncUIWithFile) {
+                        chkFastCiviProduction.Checked = civiMatches.Count > 0 && civiMatches.Cast<Match>().All(match =>
+                            double.TryParse(match.Groups[2].Value, NumberStyles.Any, CultureInfo.InvariantCulture, out double delay) &&
+                            delay > 0 && delay <= 500.0);
                     }
 
                     // spellRadMult 已在方法開始時預先載入處理。
 
                     bool infiniteMorale = false;
+                    var matchLost = RegexMoraleLostMemLoad.Match(clText);
+                    var matchFlee = RegexMoraleFleeLoad.Match(clText);
+                    var matchOverPop = RegexMoraleOverPopLoad.Match(clText);
+                    var matchIdle = RegexMoraleIdleLoad.Match(clText);
+                    if (matchLost.Success && matchFlee.Success && matchOverPop.Success && matchIdle.Success &&
+                        int.TryParse(matchLost.Groups[1].Value, out int lost) && lost == 0 &&
+                        int.TryParse(matchFlee.Groups[1].Value, out int flee) && flee == 0 &&
+                        int.TryParse(matchOverPop.Groups[1].Value, out int overPop) && overPop >= 99999999 &&
+                        int.TryParse(matchIdle.Groups[1].Value, out int idle) && idle == 500) {
+                        infiniteMorale = true;
+                    }
+                    if (syncUIWithFile) {
+                        chkInfiniteMorale.Checked = infiniteMorale;
+                    }
 
-                    var matchMorale = RegexMoraleLoad.Match(clText);
-                    if (matchMorale.Success) {
-                        int val;
-                        if (int.TryParse(matchMorale.Groups[1].Value, out val) && val == 0) {
-                            infiniteMorale = true;
+                    bool spellEnhancement = false;
+                    var mSpellEnhance = Regex.Match(clText, @"Value\s*=\s*GER\s*,\s*Spell2\s*,\s*350");
+                    if (mSpellEnhance.Success) {
+                        string scintPath = Path.Combine(gamePath, @"SYSTEM\CLAK\cl_scint.ini");
+                        if (File.Exists(scintPath)) {
+                            try {
+                                byte[] scintBytes = File.ReadAllBytes(scintPath);
+                                byte[] decompScint = GameLZSS.DecompressPfil(scintBytes);
+                                string scintText = Encoding.GetEncoding(1251).GetString(decompScint);
+                                if (scintText.Contains("SpellODef =KEL, Spell3, KEL_INF01") || scintText.Contains("SpellODef=KEL,Spell3,KEL_INF01")) {
+                                    spellEnhancement = true;
+                                }
+                            } catch { }
                         }
                     }
-                    chkInfiniteMorale.Checked = infiniteMorale;
+                    if (syncUIWithFile) {
+                        chkSpellEnhancement.Checked = spellEnhancement;
+                    }
                 }
 
                 string ressPath = Path.Combine(gamePath, @"SYSTEM\ress.ini");
@@ -1139,86 +1377,120 @@ namespace AgainstRomeModifier {
                     string ressText = Encoding.GetEncoding(1251).GetString(decompRess);
                     
                     bool freeProd = false;
-                    var mProdUnit = Regex.Match(ressText, @"^FigRomInf00_Lanze_Schild\s*,\s*(.*)$", RegexOptions.Multiline);
+                    var mProdUnit = Regex.Match(ressText, @"^FigRomInf00_Lanze_Schild\s*,.*$", RegexOptions.Multiline);
                     if (mProdUnit.Success) {
-                        string[] colsU = ParseCsvLine(mProdUnit.Groups[1].Value);
-                        if (colsU.Length > (int)RessIndex.FigProdCostStart + 4) {
-                            if (colsU[(int)RessIndex.FigProdCostStart + 4 - 1].Trim() == "0") {
-                                freeProd = true;
-                            }
-                        }
+                        string[] colsU = ParseCsvLine(mProdUnit.Value);
+                        freeProd = Enumerable.Range((int)RessIndex.FigProdCostStart,
+                                (int)RessIndex.FigProdCostEnd - (int)RessIndex.FigProdCostStart + 1)
+                            .All(index => index < colsU.Length && colsU[index].Trim() == "0");
                     }
-                    chkFreeProd.Checked = freeProd;
+                    if (syncUIWithFile) {
+                        chkFreeProd.Checked = freeProd;
+                    }
 
                     bool freeUp = false;
                     var mUp = Regex.Match(ressText, @"^.*Ger_Kampf.*$", RegexOptions.Multiline);
                     if (mUp.Success) {
                         string[] cols = ParseCsvLine(mUp.Value);
-                        if (cols.Length > (int)VolkresIndex.UnitUpgradeStart) {
-                            if (cols[(int)VolkresIndex.UnitUpgradeStart].Trim() == "0") {
-                                freeUp = true;
-                            }
-                        }
+                        freeUp = Enumerable.Range((int)VolkresIndex.UnitUpgradeStart,
+                                (int)VolkresIndex.UnitUpgradeEnd - (int)VolkresIndex.UnitUpgradeStart + 1)
+                            .All(index => index < cols.Length && cols[index].Trim() == "0");
                     }
-                    chkFreeUpgrade.Checked = freeUp;
+                    if (syncUIWithFile) {
+                        chkFreeUpgrade.Checked = freeUp;
+                    }
 
-                    bool noSpell = true;
+                    bool noSpell = false;
                     var mPri = Regex.Match(ressText, @"^FigGerPri00_Priester\s*,.*", RegexOptions.Multiline);
                     if (mPri.Success) {
                         string[] cols = ParseCsvLine(mPri.Value);
-                        if (cols.Length > (int)RessIndex.FigPriestSpellCostEnd) {
-                            if (cols[(int)RessIndex.FigPriestSpellCostStart - 1].Trim() != "0" || cols[(int)RessIndex.FigPriestSpellCostStart].Trim() != "0") noSpell = false;
+                        noSpell = Enumerable.Range((int)RessIndex.FigPriestSpellCostStart,
+                                (int)RessIndex.FigPriestSpellCostEnd - (int)RessIndex.FigPriestSpellCostStart + 1)
+                            .All(index => index < cols.Length && cols[index].Trim() == "0");
+                    }
+                    if (syncUIWithFile) {
+                        chkNoSpellCost.Checked = noSpell;
+                    }
+                }
+
+                if (syncUIWithFile) {
+                    chkMaxPopulation.Checked = IsMaximumPopulationApplied(gamePath);
+                }
+
+                if (syncUIWithFile) {
+                    // 逐一偵測 5 個無盡模式模組（M1..M5），各自反映到對應的獨立勾選框。
+                    var aiToggles = new[] { chkAiM1, chkAiM2, chkAiM3, chkAiM4, chkAiM5 };
+                    try {
+                        var aiOrchestrator = new EndlessAiOrchestrator();
+                        for (int i = 0; i < aiOrchestrator.UserModules.Count && i < aiToggles.Length; i++) {
+                            var module = aiOrchestrator.UserModules[i];
+                            PatchState moduleState = aiOrchestrator.DetectModule(gamePath, module);
+                            aiToggles[i].Checked = moduleState == PatchState.Ultimate;
+                            if (moduleState != PatchState.Ultimate && moduleState != PatchState.Original) {
+                                Log($"無盡模式模組「{module.Name}」狀態不一致（{moduleState}）；已取消勾選，重新套用可修復一致性。");
+                            }
                         }
+                    } catch (Exception aiEx) {
+                        foreach (var toggle in aiToggles) toggle.Checked = false;
+                        Log("讀取無盡模式 AI 模組狀態失敗；已取消勾選：" + aiEx.Message);
                     }
-                    chkNoSpellCost.Checked = noSpell;
-                }
 
-                int currentPopLimit;
-                if (TryLoadCurrentPopLimitFromTeamDat(gamePath, out currentPopLimit)) {
-                    numPopLimit.Value = currentPopLimit;
-                }
-
-                int endlessMinCount;
-                int endlessMaxCount;
-                if (TryReadEndlessMilitaryCount(gamePath, out endlessMinCount, out endlessMaxCount)) {
-                    if (endlessMinCount == EndlessAiUltimateMilitaryCount && endlessMaxCount == EndlessAiUltimateMilitaryCount) {
-                        chkAiUltimateMode.Checked = true;
-                    } else if (endlessMinCount == EndlessAiOriginalMilitaryCount && endlessMaxCount == EndlessAiOriginalMilitaryCount) {
-                        chkAiUltimateMode.Checked = false;
+                    if (TryReadFoodHealingAmountState(gamePath, out bool foodHealingEnabled)) {
+                        chkFoodHealing10x.Checked = foodHealingEnabled;
+                    } else {
+                        chkFoodHealing10x.Checked = false;
+                        Log("食物回血 AI 腳本不是完整的原版或已修改狀態；已取消勾選，重新套用可修復一致性。");
                     }
+
+                    chkLeaderGloryKeep.Checked = IsLeaderGloryKeepApplied(gamePath);
                 }
 
                 string exePath = Path.Combine(gamePath, @"Against_Rome.exe");
+                if (syncUIWithFile) {
+                    chkDgVoodoo.Checked = IsDgVoodooInstalled(gamePath);
+                }
                 if (File.Exists(exePath)) {
-                    using (var fs = new FileStream(exePath, FileMode.Open, FileAccess.Read)) {
-                        if (fs.Length > 0x161a8e) {
-                            fs.Seek(0x161a88, SeekOrigin.Begin);
-                            byte[] oldBytes = new byte[6];
-                            fs.Read(oldBytes, 0, 6);
-                            if (oldBytes[0] == 0x90 && oldBytes[1] == 0x90 && oldBytes[2] == 0x90 && oldBytes[3] == 0x90 && oldBytes[4] == 0x90 && oldBytes[5] == 0x90) {
-                                chkFocusLoss.Checked = true;
-                            } else if (oldBytes[0] == 0x89 && oldBytes[1] == 0x15 && oldBytes[2] == 0xC4 && oldBytes[3] == 0x7D && oldBytes[4] == 0x9E && oldBytes[5] == 0x02) {
-                                chkFocusLoss.Checked = false;
-                            } else {
-                                chkFocusLoss.Checked = false;
-                                Log(Loc.Get("LogExePatchWarning"));
-                            }
-                        } else {
-                            Log(Loc.Get("LogExePatchWarning"));
+                    byte[] exeBytes = File.ReadAllBytes(exePath);
+                    ExePatchState exePatchState = ExePatchModel.GetExePatchState(exeBytes);
+                    if (syncUIWithFile) {
+                        chkFocusLoss.Checked = exePatchState == ExePatchState.FocusPatched;
+                    }
+                    if (exePatchState == ExePatchState.Unknown && syncUIWithFile) {
+                        Log(Loc.Get("LogExePatchWarning"));
+                    }
+
+                    ExeSpellAltarPatchState altarPatchState = ExePatchModel.GetSpellAltarPatchState(exeBytes);
+                    if (syncUIWithFile) {
+                        chkNoSpellAltar.Checked = altarPatchState == ExeSpellAltarPatchState.Patched;
+                    }
+                    if (altarPatchState == ExeSpellAltarPatchState.Unknown && syncUIWithFile) {
+                        Log("無法辨識的 EXE 法術祭壇特徵碼；已將開關設為未勾選。");
+                    }
+
+                    ExeVillageRangePatchState villageRangeState = ExePatchModel.GetVillageBuildRangePatchState(exeBytes);
+                    if (syncUIWithFile) {
+                        if (villageRangeState == ExeVillageRangePatchState.Expanded ||
+                            villageRangeState == ExeVillageRangePatchState.LegacyLogicOnly) {
+                            Log("偵測到已停用的村莊範圍候選補丁；下一次套用或相容性還原時會恢復四處原版 bytes。");
+                        } else if (villageRangeState == ExeVillageRangePatchState.Unknown) {
+                            Log(Loc.Get("LogVillageBuildRangeWarning"));
                         }
                     }
 
-                    ExeVillageRangePatchState villageRangeState = GetVillageBuildRangePatchState(exePath);
-                    chkVillageBuildRange.Checked = false;
-                    if (villageRangeState == ExeVillageRangePatchState.Expanded) {
-                        Log("偵測到舊的村莊建造範圍 EXE patch；此 patch 不影響畫面紅框，下一次套用或還原相容性時會還原。");
-                    } else if (villageRangeState == ExeVillageRangePatchState.Unknown) {
+                    ExeVillageSetterPatchState villageSetterState = ExePatchModel.GetVillageSetterPatchState(exeBytes);
+                    if (syncUIWithFile) {
+                        chkVillageBuildRange.Checked = villageSetterState == ExeVillageSetterPatchState.Legacy2x ||
+                            villageSetterState == ExeVillageSetterPatchState.Legacy2Point5x ||
+                            villageSetterState == ExeVillageSetterPatchState.Expanded3x;
+                    }
+                    if (villageSetterState == ExeVillageSetterPatchState.Unknown && syncUIWithFile) {
                         Log(Loc.Get("LogVillageBuildRangeWarning"));
                     }
                 }
 
                 int totalCurrentRows = 0;
                 foreach (var dgv in currentStatsGrids.Values) totalCurrentRows += dgv.Rows.Count;
+                LoadSkillsData(unitRows, origUnitRows);
                 Log(string.Format(Loc.Get("LogReadCurrentDone"), totalCurrentRows));
             } catch (Exception ex) {
                 Log(Loc.Get("LogPresetImportError") + ex.Message + "\r\n" + ex.StackTrace);
@@ -1286,34 +1558,24 @@ namespace AgainstRomeModifier {
 
 
         /// <summary>
-        /// 從兵種 CSV 行中解析出最大射程（遠程）或施法距離（祭司）。
+        /// 從兵種 CSV 行中解析所有啟用武器槽的最大射程。
         /// </summary>
         private static double GetUnitMaxRange(string[] cols, string utype) {
-            if (utype == "priest") {
-                double maxR = 0;
-                int[] priestFields = { (int)ObjdefIndex.PriestSpell1, (int)ObjdefIndex.PriestSpell2, (int)ObjdefIndex.PriestSpell3 };
-                foreach (int f in priestFields) {
-                    if (f < cols.Length) {
-                        double val;
-                        if (double.TryParse(cols[f].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out val)) {
-                            if (val > maxR) maxR = val;
-                        }
-                    }
+            double maxR = 0;
+            for (int w = 1; w <= 8; w++) {
+                int activeIndex = (int)ObjdefIndex.Weapon1Akti + (w - 1) * 8;
+                int rangeMinIndex = (int)ObjdefIndex.Weapon1RangeMin + (w - 1) * 8;
+                int rangeMaxIndex = (int)ObjdefIndex.Weapon1RangeMax + (w - 1) * 8;
+                if (rangeMaxIndex >= cols.Length || cols[activeIndex].Trim() != "1") continue;
+
+                if (double.TryParse(cols[rangeMinIndex].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out double minRange)) {
+                    maxR = Math.Max(maxR, minRange);
                 }
-                return maxR;
-            } else {
-                double maxR = 0;
-                int[] idxFields = { (int)ObjdefIndex.Weapon2RangeMin, (int)ObjdefIndex.Weapon2RangeMax, (int)ObjdefIndex.Weapon3RangeMin, (int)ObjdefIndex.Weapon3RangeMax };
-                foreach (int f in idxFields) {
-                    if (f < cols.Length) {
-                        double val;
-                        if (double.TryParse(cols[f].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out val)) {
-                            if (val > maxR) maxR = val;
-                        }
-                    }
+                if (double.TryParse(cols[rangeMaxIndex].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out double maxRange)) {
+                    maxR = Math.Max(maxR, maxRange);
                 }
-                return maxR;
             }
+            return maxR;
         }
 
         /// <summary>
@@ -1366,9 +1628,345 @@ namespace AgainstRomeModifier {
         /// </summary>
         private void ChkBalance_CheckedChanged(object? sender, EventArgs e) {
             LoadDefaultStatsData();
-            LoadCurrentData(false);
             string status = chkBalance.Checked ? (Loc.CurrentLanguage == Language.English ? "enabled" : "啟用") : (Loc.CurrentLanguage == Language.English ? "disabled" : "停用");
             Log(string.Format(Loc.Get("LogBalanceToggled"), status));
+        }
+
+        /// <summary>
+        /// 偵測目前遊戲目錄下的 ak_anfuehrer.bci 檔案，是否已套用首領榮耀保留補丁。
+        /// </summary>
+        private bool IsLeaderGloryKeepApplied(string gamePath) {
+            string scriptPath = Path.Combine(gamePath, @"SYSTEM\CLAK\SCRIPT\ak_anfuehrer.bci");
+            if (!File.Exists(scriptPath)) return false;
+            try {
+                byte[] raw = File.ReadAllBytes(scriptPath);
+                byte[] decomp = GameLZSS.DecompressPfil(raw);
+                string text = Encoding.ASCII.GetString(decomp);
+                return text.Contains("s_getObjGlory");
+            } catch {
+                return false;
+            }
+        }
+
+        private void LoadSkillsData(Dictionary<string, string[]> unitRows, Dictionary<string, string[]> origUnitRows) {
+            try {
+                string gamePath = GetGamePath();
+                bool isEn = Loc.CurrentLanguage == Language.English;
+
+                // 1. 讀取當前的 cl_epara.ini 與備份的 cl_epara.ini
+                string[] currentEparaLines = Array.Empty<string>();
+                string[] backupEparaLines = Array.Empty<string>();
+
+                if (backupFiles.TryGetValue("SYSTEM/cl_epara.ini", out byte[]? backupEparaBytes)) {
+                    string backupText = Encoding.GetEncoding(1251).GetString(GameLZSS.DecompressPfil(backupEparaBytes));
+                    backupEparaLines = backupText.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
+                }
+
+                string currentEparaPath = Path.Combine(gamePath, @"SYSTEM\cl_epara.ini");
+                if (File.Exists(currentEparaPath)) {
+                    try {
+                        byte[] curBytes = File.ReadAllBytes(currentEparaPath);
+                        string curText = Encoding.GetEncoding(1251).GetString(GameLZSS.DecompressPfil(curBytes));
+                        currentEparaLines = curText.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
+                    } catch { }
+                }
+                if (currentEparaLines.Length == 0) {
+                    currentEparaLines = backupEparaLines;
+                }
+
+                // 2. 讀取當前的 cl_script.ini 與備份的 cl_script.ini
+                string[] currentClLines = Array.Empty<string>();
+                string[] backupClLines = Array.Empty<string>();
+
+                if (backupFiles.TryGetValue("SYSTEM/cl_script.ini", out byte[]? backupClBytes)) {
+                    string backupText = Encoding.GetEncoding(1251).GetString(GameLZSS.DecompressPfil(backupClBytes));
+                    backupClLines = backupText.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
+                }
+
+                string currentClPath = Path.Combine(gamePath, @"SYSTEM\cl_script.ini");
+                if (File.Exists(currentClPath)) {
+                    try {
+                        byte[] curBytes = File.ReadAllBytes(currentClPath);
+                        string curText = Encoding.GetEncoding(1251).GetString(GameLZSS.DecompressPfil(curBytes));
+                        currentClLines = curText.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
+                    } catch { }
+                }
+                if (currentClLines.Length == 0) {
+                    currentClLines = backupClLines;
+                }
+
+                // 3. 填寫 dgvGeneralSkills 表格
+                dgvGeneralSkills.Rows.Clear();
+                
+                var skillItems = new[] {
+                    new { NameZh = "狂戰士 - 攻擊力倍率 (AW)", Key = "BerserkerAWfaktor", File = "cl_epara", Def = 2.0 },
+                    new { NameZh = "狂戰士 - 傷害倍率 (DAM)", Key = "BerserkerDAMfaktor", File = "cl_epara", Def = 2.0 },
+                    new { NameZh = "狂戰士 - 防禦力倍率 (VW)", Key = "BerserkerVWfaktor", File = "cl_epara", Def = 0.0 },
+                    new { NameZh = "射擊技巧 - 射程倍率 (RAD)", Key = "SchuetzengeschickRADfaktor", File = "cl_epara", Def = 1.2 },
+                    new { NameZh = "護盾 - 傷害吸收倍率 (DAM)", Key = "SchutzschildDAMfaktor", File = "cl_epara", Def = 0.8 },
+                    new { NameZh = "雷擊 - 傷害加成倍率 (DAM)", Key = "DonnerschlagDAMfaktor", File = "cl_epara", Def = 1.5 },
+                    new { NameZh = "條頓 戰意被動 - 士氣加成", Key = "GER_SAbility1_Value", File = "cl_script", Def = 1.0 },
+                    new { NameZh = "匈奴 恐懼被動 - 敵軍士氣扣減", Key = "HUN_SAbility0_Value", File = "cl_script", Def = 5.0 },
+                    new { NameZh = "匈奴 食人被動 - 擊殺食物加成", Key = "HUN_SAbility1_Value", File = "cl_script", Def = 5.0 }
+                };
+
+                foreach (var item in skillItems) {
+                    double currentVal = item.Def;
+                    double defaultVal = item.Def;
+
+                    if (item.File == "cl_epara") {
+                        defaultVal = GetEparaValue(backupEparaLines, item.Key, item.Def);
+                        currentVal = GetEparaValue(currentEparaLines, item.Key, defaultVal);
+                    } else {
+                        string[] parts = item.Key.Split('_');
+                        string tribe = parts[0];
+                        string ability = parts[1];
+                        defaultVal = GetScriptAbilityValue(backupClLines, tribe, ability, item.Def);
+                        currentVal = GetScriptAbilityValue(currentClLines, tribe, ability, defaultVal);
+                    }
+
+                    string displayTitle = item.NameZh;
+                    if (isEn) {
+                        displayTitle = item.Key switch {
+                            "BerserkerAWfaktor" => "Berserker - ATK Factor (AW)",
+                            "BerserkerDAMfaktor" => "Berserker - DMG Factor (DAM)",
+                            "BerserkerVWfaktor" => "Berserker - DEF Factor (VW)",
+                            "SchuetzengeschickRADfaktor" => "Marksmanship - Range Factor (RAD)",
+                            "SchutzschildDAMfaktor" => "Shield - Incoming DMG Factor (DAM)",
+                            "DonnerschlagDAMfaktor" => "Thunder Strike - DMG Factor (DAM)",
+                            "GER_SAbility1_Value" => "Teuton Battlelust - Morale Bonus",
+                            "HUN_SAbility0_Value" => "Hun Terror - Enemy Morale Penalty",
+                            "HUN_SAbility1_Value" => "Hun Cannibal - Food on Kill Bonus",
+                            _ => item.Key
+                        };
+                    }
+
+                    int rowIndex = dgvGeneralSkills.Rows.Add();
+                    var row = dgvGeneralSkills.Rows[rowIndex];
+                    row.Cells["SkillName"].Value = displayTitle;
+                    row.Cells["SkillKey"].Value = item.Key;
+                    row.Cells["IniFile"].Value = item.File;
+                    row.Cells["SkillValue"].Value = currentVal.ToString("0.##", CultureInfo.InvariantCulture);
+                    row.Cells["SkillDefault"].Value = defaultVal.ToString("0.##", CultureInfo.InvariantCulture);
+                }
+
+                // 4. 填寫 dgvLeaderGlory 表格
+                dgvLeaderGlory.Rows.Clear();
+
+                var leaders = new[] {
+                    new { Key = "FigRomAnf00_Anfuehrer", NameZh = "羅馬領袖", NameEn = "Roman Leader" },
+                    new { Key = "FigGerAnf00_Anfuehrer", NameZh = "條頓領袖", NameEn = "Teuton Leader" },
+                    new { Key = "FigKelAnf00_Anfuehrer", NameZh = "塞爾特領袖", NameEn = "Celt Leader" },
+                    new { Key = "FigHunAnf00_Anfuehrer", NameZh = "匈奴領袖", NameEn = "Hun Leader" }
+                };
+
+                foreach (var leader in leaders) {
+                    string[] cols = unitRows.ContainsKey(leader.Key) ? unitRows[leader.Key] : Array.Empty<string>();
+                    string[] origCols = origUnitRows.ContainsKey(leader.Key) ? origUnitRows[leader.Key] : Array.Empty<string>();
+
+                    string awStuf = "0.1", vwStuf = "0.25", damStuf = "0.1", moraleBonus = "20", moraleTime = "60000", maxRuhm = "100";
+                    if (cols.Length >= 192) {
+                        awStuf = cols[148].Trim();
+                        vwStuf = cols[149].Trim();
+                        damStuf = cols[150].Trim();
+                        maxRuhm = cols[153].Trim();
+                        moraleBonus = cols[161].Trim();
+                        moraleTime = cols[162].Trim();
+                    } else if (origCols.Length >= 192) {
+                        awStuf = origCols[148].Trim();
+                        vwStuf = origCols[149].Trim();
+                        damStuf = origCols[150].Trim();
+                        maxRuhm = origCols[153].Trim();
+                        moraleBonus = origCols[161].Trim();
+                        moraleTime = origCols[162].Trim();
+                    }
+
+                    int rowIndex = dgvLeaderGlory.Rows.Add();
+                    var row = dgvLeaderGlory.Rows[rowIndex];
+                    row.Cells["LeaderName"].Value = isEn ? leader.NameEn : leader.NameZh;
+                    row.Cells["LeaderKey"].Value = leader.Key;
+                    row.Cells["AwStuf"].Value = double.Parse(awStuf, CultureInfo.InvariantCulture).ToString("0.##", CultureInfo.InvariantCulture);
+                    row.Cells["VwStuf"].Value = double.Parse(vwStuf, CultureInfo.InvariantCulture).ToString("0.##", CultureInfo.InvariantCulture);
+                    row.Cells["DamStuf"].Value = double.Parse(damStuf, CultureInfo.InvariantCulture).ToString("0.##", CultureInfo.InvariantCulture);
+                    row.Cells["MoraleBonus"].Value = double.Parse(moraleBonus, CultureInfo.InvariantCulture).ToString("0.##", CultureInfo.InvariantCulture);
+                    row.Cells["MoraleTime"].Value = double.Parse(moraleTime, CultureInfo.InvariantCulture).ToString("0.##", CultureInfo.InvariantCulture);
+                    row.Cells["MaxRuhm"].Value = double.Parse(maxRuhm, CultureInfo.InvariantCulture).ToString("0.##", CultureInfo.InvariantCulture);
+                }
+
+                // 5. 偵測並同步 UI 開關狀態
+                bool generalSkillsModified = false;
+                foreach (DataGridViewRow row in dgvGeneralSkills.Rows) {
+                    string curStr = row.Cells["SkillValue"].Value?.ToString() ?? "";
+                    string defStr = row.Cells["SkillDefault"].Value?.ToString() ?? "";
+                    if (double.TryParse(curStr, NumberStyles.Any, CultureInfo.InvariantCulture, out double cur) &&
+                        double.TryParse(defStr, NumberStyles.Any, CultureInfo.InvariantCulture, out double def)) {
+                        if (Math.Abs(cur - def) > 0.001) {
+                            generalSkillsModified = true;
+                            break;
+                        }
+                    }
+                }
+
+                bool leaderGloryModified = false;
+                foreach (var leader in leaders) {
+                    if (!unitRows.ContainsKey(leader.Key) || !origUnitRows.ContainsKey(leader.Key)) continue;
+                    string[] cols = unitRows[leader.Key];
+                    string[] origCols = origUnitRows[leader.Key];
+                    if (cols.Length >= 192 && origCols.Length >= 192) {
+                        int[] checkIndices = { 148, 149, 150, 153, 161, 162 };
+                        foreach (int idx in checkIndices) {
+                            if (double.TryParse(cols[idx], NumberStyles.Any, CultureInfo.InvariantCulture, out double cur) &&
+                                double.TryParse(origCols[idx], NumberStyles.Any, CultureInfo.InvariantCulture, out double orig)) {
+                                if (Math.Abs(cur - orig) > 0.001) {
+                                    leaderGloryModified = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    if (leaderGloryModified) break;
+                }
+                chkModSkillsAndGlory.Checked = generalSkillsModified || leaderGloryModified;
+
+            } catch (Exception ex) {
+                Log("載入技能屬性資料失敗: " + ex.Message);
+            }
+        }
+
+        private double GetEparaValue(string[] lines, string key, double defaultVal) {
+            for (int i = 0; i < lines.Length; i++) {
+                if (lines[i].Trim().Equals("[" + key + "]", StringComparison.OrdinalIgnoreCase) && i + 1 < lines.Length) {
+                    if (double.TryParse(lines[i + 1].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out double v)) {
+                        return v;
+                    }
+                }
+            }
+            return defaultVal;
+        }
+
+        private double GetScriptAbilityValue(string[] lines, string tribe, string ability, double defaultVal) {
+            var regex = new Regex(@"Value\s*=\s*" + tribe + @"\s*,\s*" + ability + @"\s*,\s*(\d+)", RegexOptions.IgnoreCase);
+            foreach (string line in lines) {
+                var m = regex.Match(line);
+                if (m.Success) {
+                    if (double.TryParse(m.Groups[1].Value, NumberStyles.Any, CultureInfo.InvariantCulture, out double v)) {
+                        return v;
+                    }
+                }
+            }
+            return defaultVal;
+        }
+
+        private static string GetCleanEparaText() {
+            return @";Multiplikator fuer FormationsRotationTempo
+;1.0 entspricht maximalem RotationsTempo wenn alle Figuren die FormationsPosition halten
+;
+;1.0 bis 500.0
+[FormationRotationFaktor]
+500.0
+
+;Multiplikator fuer FormationsBewegungsTempo derjenigen Muckel 
+;die die Formation gerade einhalten, so koennen nicht einhaltende Muckel wieder aufholen
+;
+;0.01 bis 1.00
+[FormationSpeedFaktor]
+0.7
+
+;maximale Anzahl an Pfadfindungsversuchen pro Muckel wenn Ziel bei Stillstand der
+;Formation durch Kollision belegt ist
+;
+;2..16
+[FormationPathDepth]
+2
+
+;Zeit in ms die eine Figur in einer Formationsbewegung wartet, wenn sie auf eine Kollision trifft
+;Defautl=1000
+;0..X
+[FormationCollisionWaitTime]
+150
+
+;Gibt in % an, wieviel eine Heohendifferenz von einem Pattern zum naechsten die
+;Globale Hoehenrichtungsbeleuchtung beeinflusst
+;
+;0..100
+[GlobalFloorLightIntensity]
+10
+
+;Gibt die Intensitдt an von 0 bis 100% an, mit welcher der 3-dimensionale Bewegungsvektor 
+;genutzt wird, es ergibt sich fьr die Bewegungsgeschwindigkeit eine Konvexkombination (baryzentrisch)
+;speed= 3Dspeed*Intensity + 2Dspeed*(100%-Intensity)  (default: intensity=100)
+;
+[MoveVector3DIntensity]
+100
+
+;Gibt die Geschwindigkeit der Bewegung der Wolkenspiegelungstextur an 
+;0=keine 1=langsam 16=normal 256=schnell 4095=maximal (Default=16)
+;
+[CloudReflectMoveSpeed]
+27
+
+;Gibt den Angriffswertfaktor an, mit dem der normale Angriffswert im aktiven Zustand 'Berserker'
+;multipliziert wird, z.B. bewirkt 2.0 eine Verdopplung des AW, 0.5 bewirkt eine Halbierung
+[BerserkerAWfaktor]
+2.0
+
+;Gibt den Damagewertfaktor an (Nahkampf), mit dem der normale Schaden im aktiven Zustand 'Berserker'
+;multipliziert wird, z.B. bewirkt 2.0 eine Verdopplung des Schadens, 0.5 bewirkt eine Halbierung
+[BerserkerDAMfaktor]
+2.0
+
+;Gibt den Verteigungswertfaktor an (Nahkampf), mit dem der normale Verteigungswert im aktiven Zustand 'Berserker'
+;multipliziert wird, z.B. bewirkt 2.0 eine Verdopplung des VW, 0.5 bewirkt eine Halbierung, 0.0 bewirkt eine Setzung zu VW=0
+[BerserkerVWfaktor]
+0.0
+
+;Gibt den Schussradiusfaktor an (Fernkampfwaffe 1+2), mit dem der normale Schussradius im aktiven Zustand 'Schuetzengeschick'
+;multipliziert wird, z.B. bewirkt 2.0 eine Verdopplung des Radius, 0.5 bewirkt eine Halbierung
+[SchuetzengeschickRADfaktor]
+1.2
+
+;Gibt den Schadensfaktor an (saemtlicher Schaeden), mit dem der normale Schaden im aktiven Zustand 'Schutzschild'
+;multipliziert wird, z.B. bewirkt 2.0 eine Verdopplung des Schadens, 0.5 bewirkt eine Halbierung
+[SchutzschildDAMfaktor]
+0.8
+
+;Gibt den Schadensfaktor an (Waffe 0), mit dem der normale Schaden im aktiven Zustand 'Donnerschlag'
+;multipliziert wird, z.B. bewirkt 2.0 eine Verdopplung des Schadens, 0.5 bewirkt eine Halbierung
+[DonnerschlagDAMfaktor]
+1.5
+
+;Gibt den Geschwindigkeitabschussfaktor fьr Geschosse an (Waffe 1-7) ausgehend vom ursprьnglich eingestellten Faktor 1.0
+;annдhernde Korrektur der Flugbahnlдnge durch Multiplikation mit 1.52 des zugehцrigen Parameter Ysub in den ParticleDefaults
+[ProjectileInitSpeedFactor]
+1.5
+
+;gibt die Unsicherheit der Vorhalte bei Projektilattacken an (nur fuer sich bewegende Ziele)
+;0.0 bedeutet: keine Unsicherheit, das Projektil trifft mit Vorhalte absolut prдzise
+;0.5 bedeutet: eine Abweichung von bis zu 0.5*3*MoveSpeed_des_Ziels (in Pattern) ist moeglich
+;1.0 bedeutet: eine Abweichung von bis zu 1.0*3*MoveSpeed_des_Ziels (in Pattern) ist moeglich
+;1.5 bedeutet: eine Abweichung von bis zu 1.5*3*MoveSpeed_des_Ziels (in Pattern) ist moeglich
+;Default =0.5
+[ProjectileVarianceOnMove]
+0.5
+
+;gibt den Winkel zwischen Zielposition und prognostizierter Zielposition in Grad an, ab dem die Vorhalte abgeschaltet wird
+;Vermeidung zu starker Abweichung zwischen Projektilflugrichtung und Blickrichtung des feuernden Objektes
+;Default=45
+[ProjectileVarianceMaximumAngle]
+45
+
+;Gibt den Bereich an, in dem die Distanz zwischen Zielposition und prognostizierter Zielposition variieren darf, bevor die
+;Vorhalte abgeschaltet wird
+;0.4 bedeutet: Distanz zur Vorhalteposition muss zwischen der (1-0.4)=0.6 und (1+0.4)=1.4'fachen Distanz zur Zielposition liegen
+;Default=0.4
+[ProjectileVarianceDistanceRange]
+0.4
+
+;Gibt die Zeit in ms, die als maximale Zeitdifferenz zwischen zwei logischen Frames an
+;Default=3000
+;(Wer hier rumfummelt und nicht genau weiss was er tut, bekommt die Figer abgehackt :-)
+[MaxLogicFrameTime]
+3000";
         }
     }
 }

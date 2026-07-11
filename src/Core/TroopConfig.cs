@@ -13,24 +13,15 @@ namespace AgainstRomeModifier {
         Name = 52,
         Weapon1Akti = 78,
         Weapon1Dam = 79,
-        PriestSpell1 = 80,
-        PriestSpell2 = 81,
-        PriestSpell3 = 82,
+        Weapon1RangeMin = 80,
+        Weapon1RangeMax = 81,
         Weapon1Relt = 84,
-        Weapon2Akti = 86,
-        Weapon2Dam = 87,
-        Weapon2RangeMin = 88,
-        Weapon2RangeMax = 89,
-        Weapon2Relt = 92,
-        Weapon3Akti = 94,
-        Weapon3Dam = 95,
-        Weapon3RangeMin = 96,
-        Weapon3RangeMax = 97,
-        Weapon3Relt = 100,
         Aw = 142,
         Vw = 146,
+        HousingCapacity = 156,
         Bmovs = 191,
-        Weapon1Dtyp = 199
+        Weapon1Dtyp = 199,
+        StorageCapacity = 42
     }
 
     /// <summary>
@@ -38,25 +29,19 @@ namespace AgainstRomeModifier {
     /// </summary>
     public enum RessIndex {
         // objres 建築建造/修復費
-        BauBuildWood = 2,
-        BauBuildStone = 3,
-        BauUpgradeWood = 8,
-        BauUpgradeStone = 9,
-        BauUpgradeGold = 10,
-        BauUpgradeIron = 11,
+        BauBuildCostStart = 1,
+        BauBuildCostEnd = 6,
+        BauUpgradeCostStart = 7,
+        BauUpgradeCostEnd = 12,
         // objres 單位生產與解除返還
-        FigProdCostStart = 12,
+        FigProdCostStart = 13,
         FigProdCostEnd = 18,
-        FigEquipmentRefundStart = 19,
-        FigEquipmentRefundEnd = 24,
         FigPriestSpellCostStart = 25,
         FigPriestSpellCostEnd = 28,
         // objres 攻城武器建造費
         FigSiegeBuildCostStart = 1,
-        FigSiegeBuildCostEnd = 7,
+        FigSiegeBuildCostEnd = 6
         // volkres 單位升級費範圍
-        VolkresUpgradeStart = 264,
-        VolkresUpgradeEnd = 291
     }
 
     /// <summary>
@@ -70,7 +55,7 @@ namespace AgainstRomeModifier {
         TechCostStart = 24,
         TechCostEnd = 263,
         UnitUpgradeStart = 264,
-        UnitUpgradeEnd = 291
+        UnitUpgradeEnd = 295
     }
 
     // 儲存與處理遊戲兵種相關設定的靜態配置類別
@@ -189,122 +174,61 @@ namespace AgainstRomeModifier {
             {"FigKelArt01_Katapult_Aufbau", Tuple.Create("Celt", "siege", "siege", "none")}
         };
 
-        // 計算並獲取各陣營指定兵種的平衡基礎數值 (回傳 [HP, 傷害, 防禦力 VW, 戰鬥力 AW] 陣列)
-        public static double[] CalculateFactionBaseStats(string key, string faction, string tier, string utype) {
-            // 祭司與攻城武器有獨立的平衡計算豁免，在此處不返回覆蓋資料
-            if (utype == "priest" || utype == "siege") {
-                return new double[] { 0, 0, 0, 0 };
-            }
+        // 內建平衡的最終九項屬性：HP, Damage, VW, AW, Speed, Sight,
+        // Cooldown, Range, SpellRadius。這些值不再套用通用階級、盾牌、雙手
+        // 武器或兵種類型倍率，避免預覽值與實際寫入值不一致。
+        public static readonly Dictionary<string, double[]> BalancedUnitStats = new Dictionary<string, double[]>(StringComparer.OrdinalIgnoreCase) {
+            // Roman：整體素質最強。
+            {"FigRomInf00_Lanze_Schild", new double[] {140, 26, 28, 22, 6.4, 1500, 500, 400, 0}},
+            {"FigRomSch00_Speer_Schild", new double[] {180, 34, 34, 30, 6.4, 4500, 400, 2700, 0}},
+            {"FigRomInf01_Schwert_Schild", new double[] {210, 38, 36, 32, 6.4, 1500, 500, 400, 0}},
+            {"FigRomSch01_Bogen", new double[] {140, 24, 14, 24, 6.4, 4500, 700, 3600, 0}},
+            {"FigRomKav00_Schwert_Schild", new double[] {190, 54, 32, 32, 6.4, 1500, 500, 400, 0}},
+            {"FigRomAnf00_Anfuehrer", new double[] {500, 85, 32, 40, 6.4, 1500, 500, 128, 0}},
+            {"FigRomArt00_Speerschleuder", new double[] {1100, 180, 42, 62, 0, 4500, 3000, 3900, 0}},
+            {"FigRomArt00_Speerschleuder_Auf", new double[] {1100, 180, 42, 62, 0, 4500, 3000, 3900, 0}},
+            {"FigRomArt01_Katapult", new double[] {1600, 260, 42, 62, 0, 4500, 6000, 3600, 0}},
+            {"FigRomArt01_Katapult_Aufbau", new double[] {1600, 260, 42, 62, 0, 4500, 6000, 3600, 0}},
 
-            // 1. 特定單位屬性特化 (防禦特化、王牌/精銳兵種特化)
-            if (key == "FigKelInf01_Lanze") {
-                // 塞爾特槍兵 (槍盾兵)：防禦特化 (VW 加成後達 42)，高生命，適度傷害
-                return new double[] { 180, 22, 32, 18 };
-            }
-            if (key == "FigRomInf00_Lanze_Schild") {
-                // 羅馬輕裝步兵：防禦特化，中階盾兵
-                return new double[] { 130, 24, 22, 18 };
-            }
-            if (key == "FigRomSch00_Speer_Schild") {
-                // 羅馬重裝步兵 (遠程)：高生命、高防禦
-                return new double[] { 140, 25, 26, 24 };
-            }
-            if (key == "FigRomInf01_Schwert_Schild") {
-                // 羅馬禁衛軍：最強步兵單位，高生命高攻防
-                return new double[] { 200, 36, 28, 28 };
-            }
-            if (key == "FigHunInf01_Schwert_Schild") {
-                // 匈奴劍盾兵：匈奴唯一防禦特化盾兵
-                return new double[] { 140, 24, 24, 20 };
-            }
-            if (key == "FigKelInf02_Doppelschwert") {
-                // 塞爾特雙劍兵：中高階雙持，高傷害高戰鬥力
-                return new double[] { 130, 40, 15, 28 };
-            }
-            if (key == "FigGerInf03_Doppelhammer") {
-                // 條頓雙錘兵：王牌雙持，極高傷害與戰鬥力
-                return new double[] { 150, 60, 16, 34 };
-            }
+            // Teuton：近戰傷害與爆發最高。
+            {"FigGerInf01_Schwert", new double[] {110, 28, 10, 14, 6.4, 1500, 500, 400, 0}},
+            {"FigGerSch00_Speer", new double[] {110, 28, 8, 14, 6.4, 4500, 900, 2700, 0}},
+            {"FigGerInf00_Hammer_Schild", new double[] {140, 36, 22, 26, 6.4, 1500, 500, 400, 0}},
+            {"FigGerSch01_Axt_Schild", new double[] {140, 34, 20, 24, 6.4, 4500, 400, 2100, 0}},
+            {"FigGerInf02_Zweihandaxt", new double[] {165, 54, 14, 30, 6.4, 1500, 500, 400, 0}},
+            {"FigGerKav00_Schwert_Schild", new double[] {165, 46, 24, 28, 6.4, 1500, 500, 400, 0}},
+            {"FigGerInf03_Doppelhammer", new double[] {180, 68, 16, 38, 6.4, 1500, 333, 400, 0}},
+            {"FigGerAnf00_Anfuehrer", new double[] {480, 96, 28, 42, 6.4, 1500, 500, 128, 0}},
+            {"FigGerPri00_Priester", new double[] {110, 10, 70, 30, 5.2, 45000, 500, 3840, 0}},
+            {"FigGerArt00_Katapult", new double[] {1500, 170, 50, 50, 0, 4500, 5000, 3000, 0}},
+            {"FigGerArt00_Katapult_Aufbau", new double[] {1500, 170, 50, 50, 0, 4500, 5000, 3000, 0}},
 
-            // 2. 通用階級生命值 (階梯化 HP)
-            double hp = 100;
-            if (tier == "low") hp = 110;
-            else if (tier == "mid") hp = 130;
-            else if (tier == "high") hp = 150;
-            else if (tier == "ace") hp = 160;
-            else if (tier == "leader") hp = 450;
+            // Celt：步兵防禦與步行遠程最強，投石兵以高單發傷害輸出。
+            {"FigKelInf00_Schwert", new double[] {120, 24, 12, 14, 6.4, 1500, 500, 400, 0}},
+            {"FigKelSch00_Bogen", new double[] {110, 18, 8, 14, 6.4, 4500, 550, 3300, 0}},
+            {"FigKelInf01_Lanze", new double[] {190, 26, 42, 24, 6.4, 1500, 500, 400, 0}},
+            {"FigKelSch01_Schleuder", new double[] {140, 40, 12, 20, 6.4, 4500, 900, 3000, 0}},
+            {"FigKelInf02_Doppelschwert", new double[] {160, 46, 16, 32, 6.4, 1500, 333, 400, 0}},
+            {"FigKelSch02_Schwere_Schleuder", new double[] {180, 75, 20, 28, 6.4, 4500, 1000, 2700, 0}},
+            {"FigKelKav00_Lanze_Schild", new double[] {170, 44, 30, 28, 6.4, 1500, 500, 400, 0}},
+            {"FigKelAnf00_Anfuehrer", new double[] {480, 68, 42, 36, 6.4, 1500, 500, 128, 0}},
+            {"FigKelPri00_Priester", new double[] {110, 10, 80, 60, 5.2, 45000, 500, 3840, 1250}},
+            {"FigKelArt00_Speerschleuder", new double[] {1000, 110, 42, 60, 0, 4500, 3000, 3300, 0}},
+            {"FigKelArt00_Speerschleuder_A", new double[] {1000, 110, 42, 60, 0, 4500, 3000, 3300, 0}},
+            {"FigKelArt01_Katapult", new double[] {1500, 190, 52, 52, 0, 4500, 5000, 3000, 0}},
+            {"FigKelArt01_Katapult_Aufbau", new double[] {1500, 190, 52, 52, 0, 4500, 5000, 3000, 0}},
 
-            double maxDam = 0;
-            double vw = 0;
-            double aw = 0;
-
-            // 3. 通用屬性矩陣 (調降秒殺傷害，微調攻防比例)
-            if (faction == "Roman") {
-                if (tier == "low") {
-                    if (utype == "melee_inf") { vw = 8; aw = 12; maxDam = 20; }
-                } else if (tier == "mid") {
-                    if (utype == "melee_inf") { vw = 14; aw = 20; maxDam = 28; }
-                    else if (utype == "ranged_inf") { vw = 12; aw = 24; maxDam = 22; }
-                } else if (tier == "high") {
-                    if (utype == "melee_inf") { vw = 20; aw = 22; maxDam = 42; }
-                    else if (utype == "ranged_inf") { vw = 16; aw = 26; maxDam = 30; }
-                    else if (utype == "hybrid_inf") { vw = 18; aw = 22; maxDam = 38; }
-                } else if (tier == "ace") {
-                    if (utype == "cav") { vw = 24; aw = 26; maxDam = 50; } // 羅馬突擊騎兵
-                } else if (tier == "leader") {
-                    if (utype == "leader_melee") { vw = 28; aw = 36; maxDam = 80; }
-                }
-            } else if (faction == "Teuton") {
-                if (tier == "low") {
-                    if (utype == "melee_inf") { vw = 10; aw = 12; maxDam = 25; }
-                    else if (utype == "ranged_inf") { vw = 6; aw = 12; maxDam = 20; }
-                } else if (tier == "mid") {
-                    if (utype == "melee_inf") { vw = 16; aw = 22; maxDam = 32; }
-                    else if (utype == "hybrid_inf") { vw = 14; aw = 20; maxDam = 28; }
-                } else if (tier == "high") {
-                    if (utype == "melee_inf") { vw = 14; aw = 26; maxDam = 38; }
-                    else if (utype == "cav") { vw = 20; aw = 24; maxDam = 42; }
-                } else if (tier == "ace") {
-                    if (utype == "melee_inf") { vw = 12; aw = 30; maxDam = 65; }
-                } else if (tier == "leader") {
-                    if (utype == "leader_melee") { vw = 26; aw = 38; maxDam = 70; }
-                }
-            } else if (faction == "Celt") {
-                if (tier == "low") {
-                    if (utype == "melee_inf") { vw = 10; aw = 12; maxDam = 24; }
-                    else if (utype == "ranged_inf") { vw = 8; aw = 12; maxDam = 20; }
-                } else if (tier == "mid") {
-                    if (utype == "melee_inf") { vw = 18; aw = 18; maxDam = 24; }
-                    else if (utype == "ranged_inf") { vw = 12; aw = 18; maxDam = 20; }
-                } else if (tier == "high") {
-                    if (utype == "melee_inf") { vw = 12; aw = 24; maxDam = 38; }
-                    else if (utype == "cav") { vw = 22; aw = 22; maxDam = 38; } // 塞爾特槍騎兵
-                } else if (tier == "ace") {
-                    if (utype == "ranged_inf") { vw = 18; aw = 25; maxDam = 65; }
-                } else if (tier == "leader") {
-                    if (utype == "leader_melee") { vw = 30; aw = 28; maxDam = 60; }
-                }
-            } else if (faction == "Hun") {
-                if (tier == "low") {
-                    if (utype == "melee_inf") { vw = 10; aw = 10; maxDam = 26; }
-                    else if (utype == "ranged_inf") { vw = 8; aw = 12; maxDam = 20; }
-                } else if (tier == "mid") {
-                    if (utype == "melee_inf") { vw = 12; aw = 18; maxDam = 24; }
-                    else if (utype == "cav") { vw = 16; aw = 20; maxDam = 32; } // 匈奴輕裝騎兵
-                } else if (tier == "high") {
-                    if (utype == "melee_inf") { vw = 8; aw = 22; maxDam = 36; }
-                    else if (utype == "ranged_inf") { vw = 16; aw = 24; maxDam = 32; }
-                    else if (utype == "cav") { vw = 18; aw = 26; maxDam = 45; } // 匈奴幽靈武士
-                    else if (utype == "ranged_cav") { vw = 16; aw = 24; maxDam = 36; } // 匈奴弓騎兵
-                } else if (tier == "ace") {
-                    if (utype == "cav") { vw = 22; aw = 26; maxDam = 52; } // 匈奴重裝騎兵
-                } else if (tier == "leader") {
-                    if (utype == "leader_cav") { vw = 25; aw = 36; maxDam = 80; }
-                }
-            }
-
-            return new double[] { hp, maxDam, vw, aw };
-        }
+            // Hun：騎兵整體最強，弓騎兵以低單發、高射速輸出。
+            {"FigHunInf00_Keule", new double[] {100, 26, 8, 12, 6.4, 1500, 500, 400, 0}},
+            {"FigHunSch00_Bogen", new double[] {100, 18, 8, 12, 6.4, 4500, 450, 3000, 0}},
+            {"FigHunInf01_Schwert_Schild", new double[] {130, 26, 28, 22, 6.4, 1500, 500, 400, 0}},
+            {"FigHunKav00_Schwert_Schild", new double[] {150, 40, 22, 26, 6.4, 1500, 500, 400, 0}},
+            {"FigHunKav01_Bogen", new double[] {160, 24, 18, 28, 6.4, 4500, 350, 3000, 0}},
+            {"FigHunKav02_Lanze_Schild", new double[] {210, 60, 34, 34, 6.4, 1500, 500, 400, 0}},
+            {"FigHunKav03_Geisterreiter", new double[] {180, 52, 20, 32, 6.4, 1500, 500, 400, 0}},
+            {"FigHunAnf00_Anfuehrer", new double[] {500, 90, 30, 42, 6.4, 1500, 500, 128, 0}},
+            {"FigHunPri00_Priester", new double[] {110, 12, 30, 50, 5.2, 45000, 500, 3840, 1250}}
+        };
 
         /// <summary>
         /// 靜態建構函式：在載入配置時，自動將 UnitOrder 依照兵種階級 (Tier) 進行穩定排序 (Stable Sort)，
@@ -332,6 +256,15 @@ namespace AgainstRomeModifier {
 
             UnitOrder.Clear();
             UnitOrder.AddRange(sorted);
+
+            if (BalancedUnitStats.Count != UnitMeta.Count) {
+                throw new InvalidOperationException("內建兵種平衡表與兵種 metadata 數量不一致。");
+            }
+            foreach (string key in UnitOrder) {
+                if (!BalancedUnitStats.TryGetValue(key, out double[]? stats) || stats.Length != 9) {
+                    throw new InvalidOperationException("兵種缺少完整九項最終平衡值: " + key);
+                }
+            }
         }
     }
 }

@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore
+        run: |
+          dotnet restore AgainstRomeModifier.csproj
+          dotnet restore tests/AgainstRomeModifier.Tests/AgainstRomeModifier.Tests.csproj
+
+      - name: Build Release x64
+        run: |
+          dotnet build AgainstRomeModifier.csproj --configuration Release -p:PlatformTarget=x64 --no-restore
+          dotnet build tests/AgainstRomeModifier.Tests/AgainstRomeModifier.Tests.csproj --configuration Release -p:PlatformTarget=x64 --no-restore
+
+      - name: Test
+        run: dotnet test tests/AgainstRomeModifier.Tests/AgainstRomeModifier.Tests.csproj --configuration Release -p:PlatformTarget=x64 --no-build --no-restore
