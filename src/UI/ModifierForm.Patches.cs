@@ -115,6 +115,7 @@ namespace AgainstRomeModifier {
                     Balance = chkBalance.Checked,
                     HousingCapacity20x = chkHousingCapacity20x.Checked,
                     StorageCapacity10x = chkStorageCapacity10x.Checked,
+                    HqHp10x = chkHqHp10x.Checked,
                     FastBuildUpgradeRepair = chkFastBuildUpgradeRepair.Checked,
                     FoodHealing10x = chkFoodHealing10x.Checked,
                     ToEnglish = chkToEng.Checked,
@@ -125,8 +126,9 @@ namespace AgainstRomeModifier {
                     CustomUnitStats = this.customUnitStats,
                     PresetFileSourceType = this.presetFileSourceType,
                     PresetFileName = this.presetFileName,
-                    EndlessAiModules = new[] {
-                        chkAiM1.Checked, chkAiM2.Checked, chkAiM3.Checked, chkAiM4.Checked, chkAiM5.Checked, chkAiM6.Checked
+                    EndlessAiModules = new System.Collections.Generic.Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase) {
+                        ["M1"] = chkAiM1.Checked, ["M2"] = chkAiM2.Checked, ["M3"] = chkAiM3.Checked,
+                        ["M4"] = chkAiM4.Checked, ["M5"] = chkAiM5.Checked, ["M6"] = chkAiM6.Checked
                     }
                 };
 
@@ -188,7 +190,7 @@ namespace AgainstRomeModifier {
                 chkNoSpellAltar.Checked = false;
                 chkToEng.Checked = false;
                 chkAiM1.Checked = false; chkAiM2.Checked = false; chkAiM3.Checked = false; chkAiM4.Checked = false; chkAiM5.Checked = false; chkAiM6.Checked = false;
-                chkHousingCapacity20x.Checked = false; chkStorageCapacity10x.Checked = false;
+                chkHousingCapacity20x.Checked = false; chkStorageCapacity10x.Checked = false; chkHqHp10x.Checked = false;
                 chkFastBuildUpgradeRepair.Checked = false;
                 chkFoodHealing10x.Checked = false;
                 chkMaxPopulation.Checked = false;
@@ -300,7 +302,7 @@ namespace AgainstRomeModifier {
                 rollback = null;
 
                 // UI reset
-                chkHousingCapacity20x.Checked = false; chkStorageCapacity10x.Checked = false;
+                chkHousingCapacity20x.Checked = false; chkStorageCapacity10x.Checked = false; chkHqHp10x.Checked = false;
                 chkFastBuildUpgradeRepair.Checked = false;
                 chkFoodHealing10x.Checked = false;
                 chkMaxPopulation.Checked = false;

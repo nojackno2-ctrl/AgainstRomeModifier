@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -156,9 +156,10 @@ namespace AgainstRomeModifier.Core.Services
             }
 
             // H. Endless AI 模組（沿用開頭建立、已含還原後快取狀態的 orchestrator）
-            for (int i = 0; i < orchestrator.UserModules.Count && i < options.EndlessAiModules.Length; i++)
+            // 以模組 Id 查表，不依賴 UserModules 的排列順序。
+            foreach (var module in orchestrator.UserModules)
             {
-                orchestrator.ApplyModule(gamePath, orchestrator.UserModules[i], options.EndlessAiModules[i]);
+                orchestrator.ApplyModule(gamePath, module, options.GetEndlessAiModule(module.Id));
             }
             orchestrator.ApplyMandatoryRepair(gamePath);
 
@@ -467,7 +468,7 @@ namespace AgainstRomeModifier.Core.Services
             {
                 unitStats[key] = backupManager.GetBaseStatsForUnit(key, options);
             }
-            return ObjdefPatcher.GetPatchedBytes(original, new ObjdefOptions(options.Balance, options.HousingCapacity20x, options.StorageCapacity10x, options.FastBuildUpgradeRepair, new Dictionary<string, double[]>(), unitStats));
+            return ObjdefPatcher.GetPatchedBytes(original, new ObjdefOptions(options.Balance, options.HousingCapacity20x, options.StorageCapacity10x, options.FastBuildUpgradeRepair, options.HqHp10x, new Dictionary<string, double[]>(), unitStats));
         }
 
         private Dictionary<string, byte[]> GetPatchedTeamDatBytes(BackupManager backupManager, bool maxPopulation)
@@ -936,7 +937,8 @@ namespace AgainstRomeModifier.Core.Services
                         options.VillageBuildRange = (setterState == ExeVillageSetterPatchState.Legacy2x ||
                             setterState == ExeVillageSetterPatchState.Legacy2Point5x ||
                             setterState == ExeVillageSetterPatchState.Legacy3x ||
-                            setterState == ExeVillageSetterPatchState.Expanded5x);
+                            setterState == ExeVillageSetterPatchState.Legacy5x ||
+                            setterState == ExeVillageSetterPatchState.EntireMap);
                     }
 
                     var altarState = ExePatchModel.GetSpellAltarPatchState(exeBytes);
@@ -1034,6 +1036,7 @@ namespace AgainstRomeModifier.Core.Services
                         List<string[]> originalRows = ParseObjdefRows(originalObjdef);
                         options.HousingCapacity20x = HasHousingCapacityMultiplier(currentRows, originalRows, HousingCapacityMultiplier);
                         options.StorageCapacity10x = HasStorageCapacityMultiplier(currentRows, originalRows, StorageCapacityMultiplier);
+                        options.HqHp10x = HasHqHpMultiplier(currentRows, originalRows, 10);
                         options.FastBuildUpgradeRepair = HasFastBuildUpgradeRepair(currentRows, originalRows);
                     }
 
@@ -1054,7 +1057,7 @@ namespace AgainstRomeModifier.Core.Services
                     foreach (string key in TroopConfig.UnitMeta.Keys)
                     {
                         if (!unitRows.ContainsKey(key) || !origUnitRows.ContainsKey(key)) continue;
-                        string utype = TroopConfig.UnitMeta[key].Item3;
+                        string utype = TroopConfig.UnitMeta[key].UnitType;
 
                         string[] cols = unitRows[key];
                         string[] origCols = origUnitRows[key];
@@ -1143,11 +1146,10 @@ namespace AgainstRomeModifier.Core.Services
             try
             {
                 var orchestrator = new EndlessAiOrchestrator();
-                for (int i = 0; i < orchestrator.UserModules.Count && i < options.EndlessAiModules.Length; i++)
+                foreach (var module in orchestrator.UserModules)
                 {
-                    var module = orchestrator.UserModules[i];
                     var aiState = orchestrator.DetectModule(gamePath, module);
-                    options.EndlessAiModules[i] = (aiState == PatchState.Ultimate);
+                    options.EndlessAiModules[module.Id] = (aiState == PatchState.Ultimate);
                 }
             }
             catch (Exception ex) { _logger.Log(string.Format(Loc.Get("SvcLogDetectFailed"), "Endless AI", ex.Message)); }
@@ -1247,6 +1249,35 @@ namespace AgainstRomeModifier.Core.Services
                 }
             }
             return foundStorage;
+        }
+
+        private static bool HasHqHpMultiplier(List<string[]> currentRows, List<string[]> originalRows, int multiplier)
+        {
+            var currentValues = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            foreach (string[] cols in currentRows)
+            {
+                if (cols.Length <= (int)ObjdefIndex.Hp || cols.Length <= (int)ObjdefIndex.Name) continue;
+                if (int.TryParse(cols[(int)ObjdefIndex.Hp].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int value))
+                {
+                    currentValues[cols[(int)ObjdefIndex.Name].Trim()] = value;
+                }
+            }
+
+            bool foundHq = false;
+            foreach (string[] cols in originalRows)
+            {
+                if (cols.Length <= (int)ObjdefIndex.Hp || cols.Length <= (int)ObjdefIndex.Name) continue;
+                string name = cols[(int)ObjdefIndex.Name].Trim();
+                if (!name.StartsWith("Bau") || !name.Contains("Hau")) continue;
+                if (!int.TryParse(cols[(int)ObjdefIndex.Hp].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int originalValue) || originalValue <= 0) continue;
+
+                foundHq = true;
+                if (!currentValues.TryGetValue(name, out int currentValue) || currentValue != checked(originalValue * multiplier))
+                {
+                    return false;
+                }
+            }
+            return foundHq;
         }
 
         private static bool HasFastBuildUpgradeRepair(List<string[]> currentRows, List<string[]> originalRows)

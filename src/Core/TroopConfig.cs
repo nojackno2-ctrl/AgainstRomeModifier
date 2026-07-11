@@ -1,7 +1,15 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 
 namespace AgainstRomeModifier {
+    /// <summary>
+    /// 兵種元數據：具名欄位取代先前的 Tuple&lt;string,string,string,string&gt;。
+    /// Faction 陣營 (Roman/Teuton/Celt/Hun)、Tier 階級 (low/mid/high/ace/leader/siege)、
+    /// UnitType 類型分類 (melee_inf/ranged_inf/ranged_cav/hybrid_inf/cav/leader_melee/
+    /// leader_cav/priest/siege)、Style 裝備特性 (shield/two_handed/dual_wield/ranged/none)。
+    /// </summary>
+    public sealed record UnitMetadata(string Faction, string Tier, string UnitType, string Style);
+
     /// <summary>
     /// 定義 objdef.dau CSV 欄位的常用索引
     /// </summary>
@@ -127,51 +135,51 @@ namespace AgainstRomeModifier {
             "FigKelArt01_Katapult", "FigKelArt01_Katapult_Aufbau"
         };
 
-        // 兵種元數據字典：包含 [陣營名稱, 階級, 類型分類, 裝備特性分類] 的 Tuple 對應
-        public static readonly Dictionary<string, Tuple<string, string, string, string>> UnitMeta = new Dictionary<string, Tuple<string, string, string, string>> {
-            {"FigRomInf00_Lanze_Schild", Tuple.Create("Roman", "mid", "melee_inf", "shield")},
-            {"FigRomSch00_Speer_Schild", Tuple.Create("Roman", "high", "hybrid_inf", "shield")},
-            {"FigRomInf01_Schwert_Schild", Tuple.Create("Roman", "high", "melee_inf", "shield")},
-            {"FigRomSch01_Bogen", Tuple.Create("Roman", "mid", "ranged_inf", "ranged")},
-            {"FigRomKav00_Schwert_Schild", Tuple.Create("Roman", "ace", "cav", "shield")},
-            {"FigRomAnf00_Anfuehrer", Tuple.Create("Roman", "leader", "leader_melee", "none")},
-            {"FigGerInf01_Schwert", Tuple.Create("Teuton", "low", "melee_inf", "none")},
-            {"FigGerSch00_Speer", Tuple.Create("Teuton", "low", "ranged_inf", "two_handed")},
-            {"FigGerInf00_Hammer_Schild", Tuple.Create("Teuton", "mid", "melee_inf", "shield")},
-            {"FigGerSch01_Axt_Schild", Tuple.Create("Teuton", "mid", "hybrid_inf", "shield")},
-            {"FigGerInf02_Zweihandaxt", Tuple.Create("Teuton", "high", "melee_inf", "two_handed")},
-            {"FigGerKav00_Schwert_Schild", Tuple.Create("Teuton", "high", "cav", "shield")},
-            {"FigGerInf03_Doppelhammer", Tuple.Create("Teuton", "ace", "melee_inf", "dual_wield")},
-            {"FigGerAnf00_Anfuehrer", Tuple.Create("Teuton", "leader", "leader_melee", "two_handed")},
-            {"FigGerPri00_Priester", Tuple.Create("Teuton", "mid", "priest", "none")},
-            {"FigKelInf00_Schwert", Tuple.Create("Celt", "low", "melee_inf", "none")},
-            {"FigKelSch00_Bogen", Tuple.Create("Celt", "low", "ranged_inf", "ranged")},
-            {"FigKelInf01_Lanze", Tuple.Create("Celt", "mid", "melee_inf", "shield")},
-            {"FigKelSch01_Schleuder", Tuple.Create("Celt", "mid", "ranged_inf", "ranged")},
-            {"FigKelInf02_Doppelschwert", Tuple.Create("Celt", "high", "melee_inf", "dual_wield")},
-            {"FigKelSch02_Schwere_Schleuder", Tuple.Create("Celt", "ace", "ranged_inf", "ranged")},
-            {"FigKelKav00_Lanze_Schild", Tuple.Create("Celt", "high", "cav", "shield")},
-            {"FigKelAnf00_Anfuehrer", Tuple.Create("Celt", "leader", "leader_melee", "shield")},
-            {"FigKelPri00_Priester", Tuple.Create("Celt", "mid", "priest", "none")},
-            {"FigHunInf00_Keule", Tuple.Create("Hun", "low", "melee_inf", "none")},
-            {"FigHunSch00_Bogen", Tuple.Create("Hun", "low", "ranged_inf", "ranged")},
-            {"FigHunInf01_Schwert_Schild", Tuple.Create("Hun", "mid", "melee_inf", "shield")},
-            {"FigHunKav00_Schwert_Schild", Tuple.Create("Hun", "mid", "cav", "shield")},
-            {"FigHunKav01_Bogen", Tuple.Create("Hun", "high", "ranged_cav", "ranged")},
-            {"FigHunKav02_Lanze_Schild", Tuple.Create("Hun", "ace", "cav", "shield")},
-            {"FigHunKav03_Geisterreiter", Tuple.Create("Hun", "high", "cav", "none")},
-            {"FigHunAnf00_Anfuehrer", Tuple.Create("Hun", "leader", "leader_cav", "none")},
-            {"FigHunPri00_Priester", Tuple.Create("Hun", "mid", "priest", "none")},
-            {"FigGerArt00_Katapult", Tuple.Create("Teuton", "siege", "siege", "none")},
-            {"FigGerArt00_Katapult_Aufbau", Tuple.Create("Teuton", "siege", "siege", "none")},
-            {"FigRomArt00_Speerschleuder", Tuple.Create("Roman", "siege", "siege", "none")},
-            {"FigRomArt00_Speerschleuder_Auf", Tuple.Create("Roman", "siege", "siege", "none")},
-            {"FigRomArt01_Katapult", Tuple.Create("Roman", "siege", "siege", "none")},
-            {"FigRomArt01_Katapult_Aufbau", Tuple.Create("Roman", "siege", "siege", "none")},
-            {"FigKelArt00_Speerschleuder", Tuple.Create("Celt", "siege", "siege", "none")},
-            {"FigKelArt00_Speerschleuder_A", Tuple.Create("Celt", "siege", "siege", "none")},
-            {"FigKelArt01_Katapult", Tuple.Create("Celt", "siege", "siege", "none")},
-            {"FigKelArt01_Katapult_Aufbau", Tuple.Create("Celt", "siege", "siege", "none")}
+        // 兵種元數據字典：具名欄位 (Faction 陣營, Tier 階級, UnitType 類型分類, Style 裝備特性分類)
+        public static readonly Dictionary<string, UnitMetadata> UnitMeta = new Dictionary<string, UnitMetadata> {
+            {"FigRomInf00_Lanze_Schild", new UnitMetadata("Roman", "mid", "melee_inf", "shield")},
+            {"FigRomSch00_Speer_Schild", new UnitMetadata("Roman", "high", "hybrid_inf", "shield")},
+            {"FigRomInf01_Schwert_Schild", new UnitMetadata("Roman", "high", "melee_inf", "shield")},
+            {"FigRomSch01_Bogen", new UnitMetadata("Roman", "mid", "ranged_inf", "ranged")},
+            {"FigRomKav00_Schwert_Schild", new UnitMetadata("Roman", "ace", "cav", "shield")},
+            {"FigRomAnf00_Anfuehrer", new UnitMetadata("Roman", "leader", "leader_melee", "none")},
+            {"FigGerInf01_Schwert", new UnitMetadata("Teuton", "low", "melee_inf", "none")},
+            {"FigGerSch00_Speer", new UnitMetadata("Teuton", "low", "ranged_inf", "two_handed")},
+            {"FigGerInf00_Hammer_Schild", new UnitMetadata("Teuton", "mid", "melee_inf", "shield")},
+            {"FigGerSch01_Axt_Schild", new UnitMetadata("Teuton", "mid", "hybrid_inf", "shield")},
+            {"FigGerInf02_Zweihandaxt", new UnitMetadata("Teuton", "high", "melee_inf", "two_handed")},
+            {"FigGerKav00_Schwert_Schild", new UnitMetadata("Teuton", "high", "cav", "shield")},
+            {"FigGerInf03_Doppelhammer", new UnitMetadata("Teuton", "ace", "melee_inf", "dual_wield")},
+            {"FigGerAnf00_Anfuehrer", new UnitMetadata("Teuton", "leader", "leader_melee", "two_handed")},
+            {"FigGerPri00_Priester", new UnitMetadata("Teuton", "mid", "priest", "none")},
+            {"FigKelInf00_Schwert", new UnitMetadata("Celt", "low", "melee_inf", "none")},
+            {"FigKelSch00_Bogen", new UnitMetadata("Celt", "low", "ranged_inf", "ranged")},
+            {"FigKelInf01_Lanze", new UnitMetadata("Celt", "mid", "melee_inf", "shield")},
+            {"FigKelSch01_Schleuder", new UnitMetadata("Celt", "mid", "ranged_inf", "ranged")},
+            {"FigKelInf02_Doppelschwert", new UnitMetadata("Celt", "high", "melee_inf", "dual_wield")},
+            {"FigKelSch02_Schwere_Schleuder", new UnitMetadata("Celt", "ace", "ranged_inf", "ranged")},
+            {"FigKelKav00_Lanze_Schild", new UnitMetadata("Celt", "high", "cav", "shield")},
+            {"FigKelAnf00_Anfuehrer", new UnitMetadata("Celt", "leader", "leader_melee", "shield")},
+            {"FigKelPri00_Priester", new UnitMetadata("Celt", "mid", "priest", "none")},
+            {"FigHunInf00_Keule", new UnitMetadata("Hun", "low", "melee_inf", "none")},
+            {"FigHunSch00_Bogen", new UnitMetadata("Hun", "low", "ranged_inf", "ranged")},
+            {"FigHunInf01_Schwert_Schild", new UnitMetadata("Hun", "mid", "melee_inf", "shield")},
+            {"FigHunKav00_Schwert_Schild", new UnitMetadata("Hun", "mid", "cav", "shield")},
+            {"FigHunKav01_Bogen", new UnitMetadata("Hun", "high", "ranged_cav", "ranged")},
+            {"FigHunKav02_Lanze_Schild", new UnitMetadata("Hun", "ace", "cav", "shield")},
+            {"FigHunKav03_Geisterreiter", new UnitMetadata("Hun", "high", "cav", "none")},
+            {"FigHunAnf00_Anfuehrer", new UnitMetadata("Hun", "leader", "leader_cav", "none")},
+            {"FigHunPri00_Priester", new UnitMetadata("Hun", "mid", "priest", "none")},
+            {"FigGerArt00_Katapult", new UnitMetadata("Teuton", "siege", "siege", "none")},
+            {"FigGerArt00_Katapult_Aufbau", new UnitMetadata("Teuton", "siege", "siege", "none")},
+            {"FigRomArt00_Speerschleuder", new UnitMetadata("Roman", "siege", "siege", "none")},
+            {"FigRomArt00_Speerschleuder_Auf", new UnitMetadata("Roman", "siege", "siege", "none")},
+            {"FigRomArt01_Katapult", new UnitMetadata("Roman", "siege", "siege", "none")},
+            {"FigRomArt01_Katapult_Aufbau", new UnitMetadata("Roman", "siege", "siege", "none")},
+            {"FigKelArt00_Speerschleuder", new UnitMetadata("Celt", "siege", "siege", "none")},
+            {"FigKelArt00_Speerschleuder_A", new UnitMetadata("Celt", "siege", "siege", "none")},
+            {"FigKelArt01_Katapult", new UnitMetadata("Celt", "siege", "siege", "none")},
+            {"FigKelArt01_Katapult_Aufbau", new UnitMetadata("Celt", "siege", "siege", "none")}
         };
 
         // 內建平衡的最終九項屬性：HP, Damage, VW, AW, Speed, Sight,
@@ -252,8 +260,8 @@ namespace AgainstRomeModifier {
 
             var sorted = new List<string>(UnitOrder);
             sorted.Sort((a, b) => {
-                string tierA = UnitMeta.ContainsKey(a) ? UnitMeta[a].Item2 : "low";
-                string tierB = UnitMeta.ContainsKey(b) ? UnitMeta[b].Item2 : "low";
+                string tierA = UnitMeta.ContainsKey(a) ? UnitMeta[a].Tier : "low";
+                string tierB = UnitMeta.ContainsKey(b) ? UnitMeta[b].Tier : "low";
                 int pA = tierPriority.ContainsKey(tierA) ? tierPriority[tierA] : 99;
                 int pB = tierPriority.ContainsKey(tierB) ? tierPriority[tierB] : 99;
                 if (pA != pB) return pA.CompareTo(pB);

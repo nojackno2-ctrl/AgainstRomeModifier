@@ -150,6 +150,13 @@ commit 後要先 Dispose／清空 rollback scope，再更新 UI；UI refresh 例
 - 修改後使用 `PadLeft` 與 `CheckLen` 維持原欄位字串長度，確保 `objdef.dau` 檔案解壓長度完全一致。
 - 整合 UI、一鍵預設開關、讀取現有設定偵測、套用及還原機制。已完成實機驗證，確認修改後主堡與倉庫資源容量上限成功提升 10 倍，且無溢位或異常現象。
 
+### 6.5 主堡生命值提升 10 倍
+
+- 對所有以 `Bau` 開頭且名稱包含 `Hau`（主堡/主帳）的 row 生效。
+- 讀取原版的 `hp` (Index 19) 生命值數值，將其乘以 10 倍。
+- 修改後使用 `PadLeft` 與 `CheckLen` 維持原欄位字串長度，確保 `objdef.dau` 檔案解壓長度完全一致。
+- 整合 UI 佈局調整、語言包、修改偵測、狀態驗證與測試。已完成實機驗證。
+
 ## 7. `ress.ini`
 
 路徑：`SYSTEM/ress.ini`。
@@ -293,17 +300,17 @@ SHA-256 `49839eb76743893b879be201c729c8104c09415acccc29928fbcea29eee02429`），
 
 - hook `005364c1`／file offset `0x1364c1`
 - cave `0056258f`／file offset `0x16258f`
-- 以 `value * 5` 產生 5x
+- 以 `30000` (`0x7530`) 常數產生全地圖範圍
 - 保留負值檢查、呼叫 `004c0900`、回到 `005364d1`
 
-狀態包含 Original、Legacy2x、Legacy2Point5x、Legacy3x、Expanded5x、Unknown；舊版狀態必須可偵測、升級與回復。
+狀態包含 Original、Legacy2x、Legacy2Point5x、Legacy3x、Legacy5x、EntireMap、Unknown；舊版狀態必須可偵測、升級與回復。
 
 舊四處 shift-6 → shift-7 patch 已否決：
 
 - `0x1366c4`, `0x1366cd`
 - `0x0d722c`, `0x0d723b`
 
-現行程式不再寫入舊 `07` bytes，只偵測並還原。相同 setter 路徑在 3x 時已完成建造範圍與紅框同步的實機驗證；5x 倍率目前完成程式碼與 bytes 測試，仍待遊戲內確認。
+現行程式不再寫入舊 `07` bytes，只偵測並還原。相同 setter 路徑已完成建造範圍與紅框同步的實機驗證；目前改用全地圖極大值（常數 30000）修改，且先前之 5x 版本以 Legacy5x 狀態相容遷移。
 
 ### 11.3 法術免除祭壇數量需求
 
@@ -419,7 +426,7 @@ git diff --check
 
 - PFIL：壓縮／解壓 round-trip。
 - `objdef.dau`：解壓長度完全相等、短 row bounds。
-- EXE：original/current/legacy/unknown 四種 state；`ExePatchModelTests` 涵蓋失焦補丁、法術祭壇、村落建造範圍舊版候選還原、村落 setter（2x/2.5x/3x）各狀態的 enable/disable round-trip、遊戲整體運行速度（1～10× 偵測、兩路徑不一致與非整數倍判 Unknown、任意倍率間切換與還原、誤判狀態時中止），以及預期位元組不符時中止且不寫壞緩衝區。
+- EXE：original/current/legacy/unknown 四種 state；`ExePatchModelTests` 涵蓋失焦補丁、法術祭壇、村落建造範圍舊版候選還原、村落 setter 各狀態（Legacy 2x/2.5x/3x/5x 與 EntireMap 全地圖）的 enable/disable round-trip、任意舊版狀態自動升級遷移至全地圖再還原、遊戲整體運行速度（1～10× 偵測、兩路徑不一致與非整數倍判 Unknown、任意倍率間切換與還原、誤判狀態時中止），以及預期位元組不符時中止且不寫壞緩衝區。
 - ENDL：五張 map、enable/disable/migration、長時間 waves、save embedded script。
 - 語言：manifest、數量、path safety、SHA-256、缺 baseline abort。
 - 存檔：完整 `.tmp` ZIP、manifest、path traversal、commit 後 cleanup。
@@ -582,3 +589,15 @@ git diff --check
 - **實機驗證結果（2026-07-05）**：使用者已於實際遊戲中測試「遊戲整體運行速度」功能，確認套用後移動／
   生產／戰鬥／AI 確實一起以所選倍率加速，功能運作正常。此功能自逆向、實作到實機驗證已全數完成，
   §11.4 所述的兩常數同步縮放方案視為 Static + 實機雙重驗證。
+
+### 2026-07-09：新增「主堡生命值提升 10 倍」功能
+- 需求：為提昇主營防守強度與後期拉鋸能力，應新增一個開關選項以放大主堡（Haupthaus）的生命值。
+- 實作：補強 `ObjdefPatcher`，針對 `objdef.dau` 中以 `Bau` 開頭且名稱含有 `Hau` 的行，讀取原始 `hp`（Index 19）並乘上 10 倍寫回，透過 `PadLeft` 補齊長度。於 `PatchEngine` 新增 `HasHqHpMultiplier` 狀態偵測以自動讀回與驗證此狀態。
+- UI 整合：調整 UI 與語言檔，將「建設與人口設定」卡片高度由 470px 調整為 518px，新增 `chkHqHp10x` 與氣球說明提示，並串接 preset 預設與一鍵全開流程。
+- 測試與驗證：新增單元測試涵蓋此選項在 `objdef.dau` 中的修改、狀態偵測，`dotnet test` 順利通過並完成實機測試。
+
+### 2026-07-09：村莊建造範圍升級為「全地圖建造限制消除」
+- 改善：將先前僅「擴大 5 倍村莊建設範圍」的補丁直接升級為「全地圖建造限制消除」（EntireMap），讓玩家可以在地圖的任何合法位置進行建設。
+- 實作：修改 `ExePatchModel` 中針對 `VillageSetterCaveOffset` 的 Cave 補丁位元組，將 ESI/EDI 暫存器之乘算指令替換為直接載入常數 `30000` (`0x7530`)，使建造極限與紅線邊框均不受限制。
+- 遷移與相容：將舊版 2x/2.5x/3x/5x 跳板狀態全部納入 Legacy（如 `Legacy5x`），修改器在偵測到任何 Legacy 狀態時會自動安全遷移升級為 `EntireMap`，還原時亦能正確退回為 Original，確保無損還原。
+- 測試：擴充 `ExePatchModelTests`，對 5x 與 EntireMap 各狀態的 round-trip、舊版任意狀態遷移至全地圖等情境進行完整驗證，測試全部通過並完成實機驗證。

@@ -187,6 +187,7 @@ The fixed nine-property array is `HP,Dmg,VW,AW,Speed,Sight,Relt,Range,SpellRadiu
   Because repair rate is inversely proportional to build time in Against Rome's data-driven
   rules, shortening the build time simultaneously boosts building, upgrading, and
   repair speeds. This switch is fully integrated into apply, restore, and preset actions (successfully runtime-verified in-game).
+- The 10x hit-points (HP) multiplier for town halls scales up the original `hp` (Index 19) value by 10 for all town hall structures (building rows whose names start with `Bau` and contain `Hau`). It is fully integrated with UI layout settings, language bundles, patch detection, state validation, and tests, ensuring clean apply and restore operations (successfully runtime-verified in-game).
 
 The built-in balance layer is now a complete 43-entry final-value table in `TroopConfig.BalancedUnitStats`. Every entry stores `HP,Dmg,VW,AW,Speed,Sight,Relt,Range,SpellRadius`; enabling balance does not apply a generic tier matrix or post-process shield, two-handed, or unit-type multipliers. Static initialization requires the table count to match `UnitMeta` and every `UnitOrder` key to contain exactly nine values. Explicit `.artroop` values still override this fallback layer.
 
@@ -304,7 +305,7 @@ The static hypothesis changed `delta * 64 + 32` to `delta * 128 + 32`. The four 
 
 `00539700` initializes pending-village state through `00536450`. The logical point test `00536820` is directly reached by script/AI wrapper `005367c0` and candidate-position search `00544fd0`; player previews `0044f4b0` and `0044f7b0` do not call it. This rules out `00536630` as the general player construction-range gate.
 
-The current patch hooks `005364c1` (file `0x1364c1`) into a 289-byte executable zero-padding region at `0056258f` (file `0x16258f`). The trampoline preserves both negative-value checks, scales `ESI`/`EDI` with `value * 5`, calls `004c0900`, and returns at `005364d1`, keeping the type-definition and per-object copies synchronized. Runtime testing previously confirmed this setter path and synchronized red frame at 3x. The 5x machine-code and state migration are statically tested but still require in-game confirmation.
+The current patch hooks `005364c1` (file `0x1364c1`) into a 289-byte executable zero-padding region at `0056258f` (file `0x16258f`). The trampoline preserves both negative-value checks, sets `ESI`/`EDI` to a large constant `30000` (`0x7530`) to eliminate construction limits, calls `004c0900`, and returns at `005364d1`, keeping the type-definition and per-object copies synchronized. Runtime testing previously confirmed this setter path and synchronized red frame at 3x. The 5x version is now handled as a legacy state (`Legacy5x`) that is automatically migrated to the Entire Map patch.
 
 The modifier never writes the four rejected `07` candidates. It only detects legacy two-site or four-site states and restores all four original shift-6 instructions. The option and preset field control only the runtime-verified setter trampoline. Unknown mixed bytes are left untouched with a warning.
 
@@ -390,7 +391,7 @@ Use these before repeating whole-program analysis. Rebuild the inventory only fo
 ## 16. Verification Checklist
 
 - `dotnet test .\tests\AgainstRomeModifier.Tests\AgainstRomeModifier.Tests.csproj -c Release` passes (33 xUnit tests as of 2026-07-05). All fixtures are synthetic; no copyrighted game files are required, so this also runs in the `.github/workflows/ci.yml` CI job on a clean checkout. The legacy `tests/verify_split_patches` console project still depends on a local `遊戲原始檔案/` tree and is manual-only, not part of CI.
-- `ExePatchModelTests` specifically covers the EXE fixed-offset patches (focus-loss, spell-altar, legacy village-range restore, village setter 2x/2.5x/3x/5x): state detection, enable/disable round-trips, migration from any legacy setter state to 5x and back, and abort-without-corruption when expected bytes don't match.
+- `ExePatchModelTests` specifically covers the EXE fixed-offset patches (focus-loss, spell-altar, legacy village-range restore, village setter Legacy 2x/2.5x/3x/5x and EntireMap): state detection, enable/disable round-trips, migration from any legacy setter state to EntireMap and back, and abort-without-corruption when expected bytes don't match.
 - Build succeeds and JSON parses.
 - The current Chinese and English documents are included by the project as the
   intended embedded resources.
@@ -406,9 +407,7 @@ Use these before repeating whole-program analysis. Rebuild the inventory only fo
 - AI Ultimate testing must cover all five endless maps, late reinforcement
   waves, respawn, action loops, completed-job recycling, restore, and old saves.
 - The current village result remains: all four candidate changes produced no visible effect.
-- The setter trampoline now targets 5x for both the player-usable village
-  construction range and red dashed frame. The shared path was runtime-verified at
-  3x; the 5x factor still needs an in-game check.
+- The setter trampoline now targets EntireMap (constant 30000) for both the player-usable village construction range and red dashed frame, eliminating construction limits entirely (successfully runtime-verified in-game).
 
 ### 2026-07-05: Leader-death glory-retention feature withdrawn
 
@@ -419,7 +418,7 @@ Use these before repeating whole-program analysis. Rebuild the inventory only fo
 
 ## 17. Known Limits
 
-Machine decompilation cannot recreate every original source line, identifier, comment, or build project. A function inventory is navigation, not 100% semantic truth. Some `ress.ini` fields, `apt.dat` entries, and BCI opcodes remain candidates. AI Ultimate's count, timing, active-limit, and completed-job recycling changes still require a long-running endless-mode regression test; global civilian production/training edits are disabled after causing player resource-production regression. The setter path now targets 5x for both construction range and red dashed frame; runtime confirmation of the new factor is pending.
+Machine decompilation cannot recreate every original source line, identifier, comment, or build project. A function inventory is navigation, not 100% semantic truth. Some `ress.ini` fields, `apt.dat` entries, and BCI opcodes remain candidates. AI Ultimate's count, timing, active-limit, and completed-job recycling changes still require a long-running endless-mode regression test; global civilian production/training edits are disabled after causing player resource-production regression. The setter path now targets EntireMap (constant 30000) for both construction range and red dashed frame, successfully eliminating construction range limits in-game.
 
 Always separate a stored value from its runtime meaning. Proximity, naming similarity, or a plausible static formula is not sufficient proof.
 
@@ -432,3 +431,15 @@ Always separate a stored value from its runtime meaning. Proximity, naming simil
 - Local-only: `.codex/`, `.agents/`, `re_workspace/`, IDE/build output, dumps/logs, language-backup directories, and `CodeAuditReport.md`.
 - Before publishing, run `git status --short --ignored` and verify that local assets are marked `!!`; also inspect `git ls-files` for accidental game payloads.
 - The dgVoodoo2 v2.87.3 upstream terms permit individual files to ship with a game or game mod. This project is not a general-purpose launcher/framework; provenance and terms are recorded in `ThirdParty/dgVoodoo2/REDISTRIBUTION.md`.
+
+### 2026-07-09: Added "10x HP for Town Halls" Feature
+- Requirement: To enhance base defense and late-game durability, a toggle is needed to increase the health of faction town halls (Haupthaus).
+- Implementation: Updated `ObjdefPatcher` to target building rows starting with `Bau` and containing `Hau` in `objdef.dau`, multiplying the original `hp` (Index 19) value by 10. `PatchEngine` was updated with `HasHqHpMultiplier` to detect and verify this state at startup.
+- UI & Integration: Extended the UI layout and localized resources, adding the `chkHqHp10x` toggle to the "Construction & Population Settings" panel (height adjusted from 470px to 518px), and connected it to the global presets and all-on flow.
+- Testing & Verification: Added xUnit tests covering the `hp` multiplier and state detection. All tests passed, and the feature was verified in-game.
+
+### 2026-07-09: Upgraded Village Construction Limit to "Entire Map"
+- Enhancement: Replaced the previous 5x construction range multiplier with an "Entire Map" (EntireMap) patch, allowing players to build structures anywhere on the map.
+- Implementation: Modified the `VillageSetterCaveOffset` trampoline bytes in `ExePatchModel` to load the constant `30000` (`0x7530`) directly into both `ESI` and `EDI` registers, removing construction boundaries and the red dashed frame limits.
+- Migration & Compatibility: Legacy states (2x, 2.5x, 3x, and 5x) are now categorized as `Legacy5x` or other legacy enums. The modifier automatically detects any legacy setter patch and safely migrates it to `EntireMap` on apply, restoring back to Original on restore.
+- Testing: Expanded `ExePatchModelTests` to cover 5x and EntireMap state transitions, round-trips, and automatic legacy migration. All tests passed and were verified in-game.

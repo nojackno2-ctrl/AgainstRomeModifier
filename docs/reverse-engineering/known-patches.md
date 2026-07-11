@@ -6,19 +6,20 @@
 
 - Hook `005364c1` (file `0x1364c1`) jumps to executable zero padding at
   `0056258f` (file `0x16258f`).
-- The trampoline preserves both negative-value checks, scales `ESI`/`EDI` with
-  `value * 5`, calls `004c0900`, and returns at `005364d1`. Both the
+- The trampoline preserves both negative-value checks, sets `ESI`/`EDI` directly
+  to a large constant `30000` (`0x7530`) to eliminate construction boundaries,
+  calls `004c0900`, and returns at `005364d1`. Both the
   type-definition and per-object village-state copies therefore receive the
-  same 5x values.
+  same values.
 - Runtime status: this shared setter path synchronized the player-usable village
-  construction range and red dashed frame at the previously verified 3x scale.
-  The 5x factor is statically verified and still needs an in-game check.
+  construction range and red dashed frame, allowing building anywhere on the entire map (successfully runtime-verified in-game).
 - Hook original: `85 F6 7C A6 85 FF 7C A2`.
 - Hook patched: `E9 C9 C0 02 00 90 90 90`.
 - Cave original: 39 zero bytes.
 - Legacy 2x cave: `85 F6 0F 8C D4 3E FD FF 85 FF 0F 8C CC 3E FD FF D1 E6 D1 E7 57 56 50 E8 55 E3 F5 FF E9 21 3F FD FF`, followed by six zero bytes. It is recognized for migration and restore.
 - Legacy 3x cave: `85 F6 0F 8C D4 3E FD FF 85 FF 0F 8C CC 3E FD FF 8D 34 76 90 90 8D 3C 7F 90 90 57 56 50 E8 4F E3 F5 FF E9 1B 3F FD FF`.
-- Cave patched (5x): `85 F6 0F 8C D4 3E FD FF 85 FF 0F 8C CC 3E FD FF 8D 34 B6 90 90 8D 3C BF 90 90 57 56 50 E8 4F E3 F5 FF E9 1B 3F FD FF`.
+- Legacy 5x cave: `85 F6 0F 8C D4 3E FD FF 85 FF 0F 8C CC 3E FD FF 8D 34 B6 90 90 8D 3C BF 90 90 57 56 50 E8 4F E3 F5 FF E9 1B 3F FD FF`.
+- Cave patched (Entire Map): `85 F6 0F 8C D4 3E FD FF 85 FF 0F 8C CC 3E FD FF BE 30 75 00 00 BF 30 75 00 00 57 56 50 E8 4F E3 F5 FF E9 1B 3F FD FF`.
 
 ### Population Limit
 
@@ -78,6 +79,13 @@
 - Fields: zero-based column `73` (`buildt` - build time) and column `74` (`upgrdt` - upgrade time).
 - Behavior: divides original positive build and upgrade times by 10 for all building entries (names starting with `Bau`). Minimum limit is 1 ms to prevent game-engine timer divide-by-zero crashes.
 - Repair Speed: repair speed in Against Rome is internally linked to build time (shorter build time results in faster repair per second). Thus, this single modification boosts build, upgrade, and repair rates by 10x.
+- Safety: rebuilds from backup, preserves original column width using `PadLeft`, and maintains original decompressed file length.
+
+### Town Hall 10x HP
+
+- File: `SYSTEM/DATA_MP/DEFAULTS/objdef.dau`.
+- Field: zero-based column `19` (`hp` - hit points).
+- Behavior: multiplies the original HP value by 10 for all town hall structures (building rows whose names start with `Bau` and contain `Hau`).
 - Safety: rebuilds from backup, preserves original column width using `PadLeft`, and maintains original decompressed file length.
 
 ### Villager Speed, Spell Radius, Morale

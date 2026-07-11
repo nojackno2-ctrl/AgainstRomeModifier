@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
@@ -543,10 +543,10 @@ namespace AgainstRomeModifier {
                 foreach (string key in TroopConfig.UnitOrder) {
                     if (!TroopConfig.UnitMeta.ContainsKey(key)) continue;
                     var meta = TroopConfig.UnitMeta[key];
-                    string faction = meta.Item1;
-                    string tier = meta.Item2;
-                    string utype = meta.Item3;
-                    string style = meta.Item4;
+                    string faction = meta.Faction;
+                    string tier = meta.Tier;
+                    string utype = meta.UnitType;
+                    string style = meta.Style;
 
                     if (!unitRows.ContainsKey(key)) continue;
                     string[] cols = unitRows[key];
@@ -748,6 +748,7 @@ namespace AgainstRomeModifier {
 
                     chkHousingCapacity20x.Checked = options.HousingCapacity20x;
                     chkStorageCapacity10x.Checked = options.StorageCapacity10x;
+                    chkHqHp10x.Checked = options.HqHp10x;
                     chkFastBuildUpgradeRepair.Checked = options.FastBuildUpgradeRepair;
                     chkFoodHealing10x.Checked = options.FoodHealing10x;
                     chkVillageBuildRange.Checked = options.VillageBuildRange;
@@ -759,12 +760,12 @@ namespace AgainstRomeModifier {
                     SetGameSpeedSelection(options.GameSpeed);
 
                     // Endless AI M1..M5
-                    chkAiM1.Checked = options.EndlessAiModules[0];
-                    chkAiM2.Checked = options.EndlessAiModules[1];
-                    chkAiM3.Checked = options.EndlessAiModules[2];
-                    chkAiM4.Checked = options.EndlessAiModules[3];
-                    chkAiM5.Checked = options.EndlessAiModules[4];
-                    chkAiM6.Checked = options.EndlessAiModules[5];
+                    chkAiM1.Checked = options.GetEndlessAiModule("M1");
+                    chkAiM2.Checked = options.GetEndlessAiModule("M2");
+                    chkAiM3.Checked = options.GetEndlessAiModule("M3");
+                    chkAiM4.Checked = options.GetEndlessAiModule("M4");
+                    chkAiM5.Checked = options.GetEndlessAiModule("M5");
+                    chkAiM6.Checked = options.GetEndlessAiModule("M6");
 
                     LoadDefaultStatsData();
                 }
@@ -826,9 +827,9 @@ namespace AgainstRomeModifier {
 
                     string[] cols = unitRows[key];
                     string[] origCols = origUnitRows[key];
-                    string faction = TroopConfig.UnitMeta[key].Item1;
-                    string utype = TroopConfig.UnitMeta[key].Item3;
-                    string style = TroopConfig.UnitMeta[key].Item4;
+                    string faction = TroopConfig.UnitMeta[key].Faction;
+                    string utype = TroopConfig.UnitMeta[key].UnitType;
+                    string style = TroopConfig.UnitMeta[key].Style;
 
                     double curHp;
                     double.TryParse(cols[(int)ObjdefIndex.Hp].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out curHp);
@@ -885,7 +886,7 @@ namespace AgainstRomeModifier {
                     string typeText = Loc.GetUnitType(utype);
                     string styleText = Loc.GetStyleText(style);
 
-                    string tier = TroopConfig.UnitMeta[key].Item2;
+                    string tier = TroopConfig.UnitMeta[key].Tier;
                     string tierText = Loc.GetTierText(tier);
 
                     var iconImage = unitIcons.ContainsKey(key) ? unitIcons[key] : null;

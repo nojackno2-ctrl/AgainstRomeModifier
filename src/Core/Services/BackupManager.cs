@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.IO.Compression;
 using System.Collections.Generic;
@@ -114,11 +114,13 @@ namespace AgainstRomeModifier.Core.Services
                     else
                     {
                         string fullPath = Path.Combine(gamePath, relPath.Replace('/', Path.DirectorySeparatorChar));
-                        if (File.Exists(fullPath))
+                        string bakPath = fullPath + ".bak";
+                        string loadPath = File.Exists(bakPath) ? bakPath : fullPath;
+                        if (File.Exists(loadPath))
                         {
                             try
                             {
-                                _backupFiles[relPath] = File.ReadAllBytes(fullPath);
+                                _backupFiles[relPath] = File.ReadAllBytes(loadPath);
                                 _logger.Log(string.Format(Loc.Get("SvcLogAutoHealed"), relPath));
                             }
                             catch (Exception ex) { _logger.Log(string.Format(Loc.Get("SvcLogAutoHealFailed"), relPath, ex.Message)); }
@@ -139,7 +141,9 @@ namespace AgainstRomeModifier.Core.Services
                         foreach (string file in Directory.GetFiles(mapsPath, "team.dat", SearchOption.AllDirectories))
                         {
                             string relPath = Path.GetRelativePath(normalizedGamePath, file).Replace('\\', '/');
-                            _backupFiles[relPath] = File.ReadAllBytes(file);
+                            string bakPath = file + ".bak";
+                            string loadPath = File.Exists(bakPath) ? bakPath : file;
+                            _backupFiles[relPath] = File.ReadAllBytes(loadPath);
                         }
                         _logger.Log(Loc.Get("SvcLogTeamDatHealed"));
                     }
@@ -205,7 +209,7 @@ namespace AgainstRomeModifier.Core.Services
             {
                 if (showError)
                 {
-                    throw new InvalidDataException("找不到 Backup.zip，且遊戲路徑無效，無法建立本機備份。");
+                    throw new InvalidDataException("找不到 Backup.zip，且遊戲路徑無效，無法建立本機備份。 / Backup.zip not found and game path is invalid.");
                 }
                 return false;
             }
@@ -222,38 +226,93 @@ namespace AgainstRomeModifier.Core.Services
                 "SYSTEM/CLAK/SCRIPT/ak_anfuehrer.bci"
             };
 
-            foreach (string relPath in requiredFiles)
+            try
             {
-                if (relPath == "SYSTEM/cl_epara.ini")
+                foreach (string relPath in requiredFiles)
                 {
-                    try
+                    if (relPath == "SYSTEM/cl_epara.ini")
                     {
-                        byte[] cleanEparaBytes = Encoding.GetEncoding(1251).GetBytes(GetCleanEparaText());
-                        loaded[relPath] = GameLZSS.CompressPfil(cleanEparaBytes, CreateEmptyPfilHeader());
+                        try
+                        {
+                            byte[] cleanEparaBytes = Encoding.GetEncoding(1251).GetBytes(GetCleanEparaText());
+                            loaded[relPath] = GameLZSS.CompressPfil(cleanEparaBytes, CreateEmptyPfilHeader());
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.Log(string.Format(Loc.Get("SvcLogEparaBuildFailed"), ex.Message));
+                        }
+                        continue;
                     }
-                    catch (Exception ex)
+
+                    string fullPath = Path.Combine(gamePath, relPath.Replace('/', Path.DirectorySeparatorChar));
+                    string bakPath = fullPath + ".bak";
+
+                    if (File.Exists(bakPath))
                     {
-                        _logger.Log(string.Format(Loc.Get("SvcLogEparaBuildFailed"), ex.Message));
+                        loaded[relPath] = File.ReadAllBytes(bakPath);
                     }
-                    continue;
+                    else
+                    {
+                        if (!File.Exists(fullPath))
+                        {
+                            continue;
+                        }
+
+                        byte[] fileBytes = File.ReadAllBytes(fullPath);
+
+                        if (relPath == "Against_Rome.exe")
+                        {
+                            if (!IsExeOriginal(fileBytes))
+                            {
+                                throw new InvalidDataException("Against_Rome.exe 已經被修改過，或不是支援的原版檔案，無法建立備份。請先還原原版檔案。 / Against_Rome.exe is already modified or not supported. Please restore original file first.");
+                            }
+                        }
+                        else if (relPath == "SYSTEM/DATA_MP/DEFAULTS/objdef.dau")
+                        {
+                            if (!IsObjdefOriginal(fileBytes))
+                            {
+                                throw new InvalidDataException("SYSTEM/DATA_MP/DEFAULTS/objdef.dau 已經被修改過，無法作為備份基準。請先驗證遊戲完整性。 / objdef.dau is already modified. Please verify game integrity first.");
+                            }
+                        }
+
+                        File.Copy(fullPath, bakPath, overwrite: false);
+                        _logger.Log(string.Format("已建立原版檔案實體備份: {0}", bakPath));
+                        loaded[relPath] = fileBytes;
+                    }
                 }
-                string fullPath = Path.Combine(gamePath, relPath.Replace('/', Path.DirectorySeparatorChar));
-                if (File.Exists(fullPath))
+
+                string mapsPath = Path.Combine(gamePath, "MAPS");
+                if (Directory.Exists(mapsPath))
                 {
-                    loaded[relPath] = File.ReadAllBytes(fullPath);
+                    string normalizedGamePath = Path.GetFullPath(gamePath)
+                        .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                    foreach (string file in Directory.GetFiles(mapsPath, "team.dat", SearchOption.AllDirectories))
+                    {
+                        string relPath = Path.GetRelativePath(normalizedGamePath, file).Replace('\\', '/');
+                        string bakPath = file + ".bak";
+
+                        if (File.Exists(bakPath))
+                        {
+                            loaded[relPath] = File.ReadAllBytes(bakPath);
+                        }
+                        else
+                        {
+                            byte[] fileBytes = File.ReadAllBytes(file);
+                            File.Copy(file, bakPath, overwrite: false);
+                            _logger.Log(string.Format("已建立原版地圖檔案實體備份: {0}", bakPath));
+                            loaded[relPath] = fileBytes;
+                        }
+                    }
                 }
             }
-
-            string mapsPath = Path.Combine(gamePath, "MAPS");
-            if (Directory.Exists(mapsPath))
+            catch (Exception ex)
             {
-                string normalizedGamePath = Path.GetFullPath(gamePath)
-                    .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-                foreach (string file in Directory.GetFiles(mapsPath, "team.dat", SearchOption.AllDirectories))
+                if (showError)
                 {
-                    string relPath = Path.GetRelativePath(normalizedGamePath, file).Replace('\\', '/');
-                    loaded[relPath] = File.ReadAllBytes(file);
+                    throw;
                 }
+                _logger.Log("建立備份時發生錯誤: " + ex.Message);
+                return false;
             }
 
             _backupFiles.Clear();
@@ -280,6 +339,62 @@ namespace AgainstRomeModifier.Core.Services
 
             _logger.Log(Loc.Get("SvcLogBackupFromGameDir"));
             return true;
+        }
+
+        private bool IsExeOriginal(byte[] exeBytes)
+        {
+            try
+            {
+                var focusState = ExePatchModel.GetExePatchState(exeBytes);
+                var spellState = ExePatchModel.GetSpellAltarPatchState(exeBytes);
+                var rangeState = ExePatchModel.GetVillageBuildRangePatchState(exeBytes);
+                var setterState = ExePatchModel.GetVillageSetterPatchState(exeBytes);
+
+                return focusState == ExePatchState.Original &&
+                       spellState == ExeSpellAltarPatchState.Original &&
+                       rangeState == ExeVillageRangePatchState.Original &&
+                       setterState == ExeVillageSetterPatchState.Original;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private bool IsObjdefOriginal(byte[] dauBytes)
+        {
+            try
+            {
+                byte[] decomp = GameLZSS.DecompressPfil(dauBytes);
+                string text = Encoding.GetEncoding(1251).GetString(decomp);
+                string lineEnding = text.Contains("\r\n") ? "\r\n" : "\n";
+                string[] lines = text.Split(new string[] { lineEnding }, StringSplitOptions.None);
+
+                foreach (string line in lines)
+                {
+                    if (line.Length < 100) continue;
+                    string[] cols = PatchText.ParseCsvLine(line);
+                    if (cols.Length < 192) continue;
+
+                    string name = cols[52].Trim();
+                    if (name == "FigRomAnf00_Anfuehrer")
+                    {
+                        string hpStr = cols[19].Trim();
+                        if (double.TryParse(hpStr, NumberStyles.Any, CultureInfo.InvariantCulture, out double hp))
+                        {
+                            if (Math.Abs(hp - 400) > 0.1)
+                            {
+                                return false;
+                            }
+                        }
+                    }
+                }
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private void LoadZipToDictionary(Stream stream)
@@ -383,7 +498,7 @@ namespace AgainstRomeModifier.Core.Services
             string utype = "melee_inf";
             if (TroopConfig.UnitMeta.ContainsKey(key))
             {
-                utype = TroopConfig.UnitMeta[key].Item3;
+                utype = TroopConfig.UnitMeta[key].UnitType;
             }
 
             double meleeDam = 0, rangedDam = 0;

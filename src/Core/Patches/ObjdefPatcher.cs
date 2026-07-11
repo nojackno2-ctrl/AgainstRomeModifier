@@ -7,6 +7,7 @@ public sealed record ObjdefOptions(
     bool HousingCapacity20x,
     bool StorageCapacity10x,
     bool FastBuildUpgradeRepair,
+    bool HqHp10x,
     IReadOnlyDictionary<string, double[]> LeaderGlory,
     IReadOnlyDictionary<string, double[]> UnitStats);
 
@@ -28,11 +29,12 @@ public static class ObjdefPatcher {
             }
             if (options.HousingCapacity20x) MultiplyOriginalInt(cols, source, (int)ObjdefIndex.HousingCapacity, 20, name, "housing capacity");
             if (options.StorageCapacity10x && name.StartsWith("Bau", StringComparison.Ordinal) && (name.Contains("Hau", StringComparison.Ordinal) || name.Contains("Lag", StringComparison.Ordinal))) MultiplyOriginalInt(cols, source, (int)ObjdefIndex.StorageCapacity, 10, name, "storage capacity");
+            if (options.HqHp10x && name.StartsWith("Bau", StringComparison.Ordinal) && name.Contains("Hau", StringComparison.Ordinal)) MultiplyOriginalInt(cols, source, (int)ObjdefIndex.Hp, 10, name, "hq hp");
             if (options.FastBuildUpgradeRepair && name.StartsWith("Bau", StringComparison.Ordinal)) {
                 DivideOriginalInt(cols, source, 73, 10, name, "建造時間");
                 DivideOriginalInt(cols, source, 74, 10, name, "升級時間");
             }
-            if (TroopConfig.UnitMeta.TryGetValue(name, out var meta) && options.UnitStats.TryGetValue(name, out double[]? stats) && stats.Length >= 8) PatchUnit(cols, source, name, meta.Item3, stats);
+            if (TroopConfig.UnitMeta.TryGetValue(name, out var meta) && options.UnitStats.TryGetValue(name, out double[]? stats) && stats.Length >= 8) PatchUnit(cols, source, name, meta.UnitType, stats);
             else if (name is "FigZivMan00_Zivilist" or "FigZivWei00_Zivilistin" or "FigTiePac00_Packpferd") PatchCivilianSpeed(cols, source, name, options.Balance ? 2.0 : 1.0);
             lines[row] = PatchText.ToCsvString(cols);
         }

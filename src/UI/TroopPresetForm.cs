@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Text;
 using System.Drawing;
@@ -345,9 +345,9 @@ namespace AgainstRomeModifier {
             foreach (string key in TroopConfig.UnitOrder) {
                 if (!TroopConfig.UnitMeta.ContainsKey(key)) continue;
                 var meta = TroopConfig.UnitMeta[key];
-                string faction = meta.Item1;
-                string tier = meta.Item2;
-                string utype = meta.Item3;
+                string faction = meta.Faction;
+                string tier = meta.Tier;
+                string utype = meta.UnitType;
 
                 string displayName = Loc.GetUnitName(key);
                 string factionText = Loc.GetFactionName(faction);

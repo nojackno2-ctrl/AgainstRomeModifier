@@ -44,7 +44,8 @@ public sealed class ExePatchModelTests {
             ExeVillageSetterPatchState.Legacy2x => ExePatchModel.VillageSetterCaveLegacy2xBytes,
             ExeVillageSetterPatchState.Legacy2Point5x => ExePatchModel.VillageSetterCaveLegacy2Point5xBytes,
             ExeVillageSetterPatchState.Legacy3x => ExePatchModel.VillageSetterCaveLegacy3xBytes,
-            ExeVillageSetterPatchState.Expanded5x => ExePatchModel.VillageSetterCavePatchedBytes,
+            ExeVillageSetterPatchState.Legacy5x => ExePatchModel.VillageSetterCaveLegacy5xBytes,
+            ExeVillageSetterPatchState.EntireMap => ExePatchModel.VillageSetterCavePatchedBytes,
             _ => throw new ArgumentOutOfRangeException(nameof(state)),
         };
         Place(exe, ExePatchModel.VillageSetterHookOffset, hook);
@@ -85,7 +86,8 @@ public sealed class ExePatchModelTests {
     [InlineData(ExeVillageSetterPatchState.Legacy2x)]
     [InlineData(ExeVillageSetterPatchState.Legacy2Point5x)]
     [InlineData(ExeVillageSetterPatchState.Legacy3x)]
-    [InlineData(ExeVillageSetterPatchState.Expanded5x)]
+    [InlineData(ExeVillageSetterPatchState.Legacy5x)]
+    [InlineData(ExeVillageSetterPatchState.EntireMap)]
     public void Village_setter_state_is_detected(ExeVillageSetterPatchState state) {
         byte[] exe = NewExe();
         PlaceVillageSetter(exe, state);
@@ -133,27 +135,29 @@ public sealed class ExePatchModelTests {
         Assert.Equal(pristine, exe);
     }
 
-    // ---- 村落 setter：每個舊版狀態都能安全遷移到 3x，並可還原回原版 ----
+    // ---- 村落 setter：每個舊版狀態都能安全遷移到 EntireMap，並可還原回原版 ----
 
     [Theory]
     [InlineData(ExeVillageSetterPatchState.Original)]
     [InlineData(ExeVillageSetterPatchState.Legacy2x)]
     [InlineData(ExeVillageSetterPatchState.Legacy2Point5x)]
     [InlineData(ExeVillageSetterPatchState.Legacy3x)]
-    public void Village_setter_enable_from_any_prior_state_reaches_expanded5x(ExeVillageSetterPatchState start) {
+    [InlineData(ExeVillageSetterPatchState.Legacy5x)]
+    public void Village_setter_enable_from_any_prior_state_reaches_entire_map(ExeVillageSetterPatchState start) {
         byte[] exe = NewExe();
         PlaceVillageSetter(exe, start);
 
         ExePatchModel.Apply(exe, ExePatchModel.PlanVillageSetter(true, ExePatchModel.GetVillageSetterPatchState(exe)));
 
-        Assert.Equal(ExeVillageSetterPatchState.Expanded5x, ExePatchModel.GetVillageSetterPatchState(exe));
+        Assert.Equal(ExeVillageSetterPatchState.EntireMap, ExePatchModel.GetVillageSetterPatchState(exe));
     }
 
     [Theory]
     [InlineData(ExeVillageSetterPatchState.Legacy2x)]
     [InlineData(ExeVillageSetterPatchState.Legacy2Point5x)]
     [InlineData(ExeVillageSetterPatchState.Legacy3x)]
-    [InlineData(ExeVillageSetterPatchState.Expanded5x)]
+    [InlineData(ExeVillageSetterPatchState.Legacy5x)]
+    [InlineData(ExeVillageSetterPatchState.EntireMap)]
     public void Village_setter_disable_from_any_patched_state_restores_original(ExeVillageSetterPatchState start) {
         byte[] exe = NewExe();
         PlaceVillageSetter(exe, ExeVillageSetterPatchState.Original);
@@ -167,9 +171,9 @@ public sealed class ExePatchModelTests {
     }
 
     [Fact]
-    public void Village_setter_enable_noop_when_already_expanded5x() {
+    public void Village_setter_enable_noop_when_already_entire_map() {
         byte[] exe = NewExe();
-        PlaceVillageSetter(exe, ExeVillageSetterPatchState.Expanded5x);
+        PlaceVillageSetter(exe, ExeVillageSetterPatchState.EntireMap);
         Assert.Empty(ExePatchModel.PlanVillageSetter(true, ExePatchModel.GetVillageSetterPatchState(exe)));
     }
 
