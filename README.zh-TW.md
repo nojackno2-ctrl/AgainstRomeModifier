@@ -56,9 +56,11 @@
 - [`src/Program.cs`](src/Program.cs)：應用程式進入點、DPI 設定與 UAC 系統管理員權限提升。
 - [`src/Core/GameLZSS.cs`](src/Core/GameLZSS.cs)：遊戲專用的 PFIL/LZSS 壓縮與解壓縮演算法實作。
 - [`src/Core/TroopConfig.cs`](src/Core/TroopConfig.cs)：已知單位 ID、單位分類、屬性欄位索引與平衡規則。
+- [`src/Core/Features/`](src/Core/Features/)：以 `FeatureRegistry` 與 `PatchProfile` 管理功能、分類還原、偵測及各檔案補丁規劃。
+- [`src/Core/Services/PatchEngine.cs`](src/Core/Services/PatchEngine.cs)：精簡的交易編排器；FoodHealing 與 Endless AI 共用 BCI 快取並由一次 `SaveAll` 落地。
 - [`src/UI/ModifierForm.cs`](src/UI/ModifierForm.cs)：主 UI 版面配置與內建技術規格文件檢視器。
 - [`src/UI/ModifierForm.Data.cs`](src/UI/ModifierForm.Data.cs)：備份載入、數據檢查、TGA 圖示解析與顯示格式化。
-- [`src/UI/ModifierForm.Patches.cs`](src/UI/ModifierForm.Patches.cs)：針對 `objdef.dau`、`ress.ini`、`cl_script.ini`、`Against_Rome.exe` 與 `team.dat` 的補丁與還原邏輯。
+- [`src/UI/ModifierForm.Patches.cs`](src/UI/ModifierForm.Patches.cs)：將集中管理的功能開關轉成 `PatchProfile`，並啟動交易式套用／分類還原。
 - [`src/UI/ModifierForm.DgVoodoo.cs`](src/UI/ModifierForm.DgVoodoo.cs)：內建 dgVoodoo2 檔案釋放、託管安裝、衝突偵測與移除邏輯。
 - [`src/UI/ModifierForm.SaveManager.cs`](src/UI/ModifierForm.SaveManager.cs)：存檔備份、還原與快取處理。
 - [`src/UI/ModifierForm.Presets.cs`](src/UI/ModifierForm.Presets.cs)：一鍵啟用或停用所有修改項目的功能。

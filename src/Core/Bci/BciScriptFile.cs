@@ -23,6 +23,13 @@ namespace AgainstRomeModifier
             IsModified = true;
         }
 
+        public void ReplaceRawBytes(byte[] rawBytes)
+        {
+            RawBytes = rawBytes;
+            DecompressedBytes = GameLZSS.DecompressPfil(rawBytes);
+            IsModified = true;
+        }
+
         public byte[] GetCompressedBytes()
         {
             if (IsModified)

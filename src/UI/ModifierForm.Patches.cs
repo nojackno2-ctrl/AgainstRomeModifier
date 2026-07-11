@@ -6,12 +6,39 @@ using System.Windows.Forms;
 using System.Threading.Tasks;
 using AgainstRomeModifier.Core.Patches;
 using AgainstRomeModifier.Core.Services;
+using AgainstRomeModifier.Core.Features;
 
 namespace AgainstRomeModifier {
     public partial class ModifierForm {
         private static readonly object LogLock = new object();
         private static bool _logRotationChecked;
         private const long LogRotationThresholdBytes = 5 * 1024 * 1024;
+
+        private void BuildFeatureToggleMap() {
+            featureToggles = new Dictionary<string, ModernToggle>(StringComparer.OrdinalIgnoreCase) {
+                ["FocusLoss"] = chkFocusLoss, ["FastCiviProduction"] = chkFastCiviProduction,
+                ["InfiniteMorale"] = chkInfiniteMorale, ["FreeProduction"] = chkFreeProd,
+                ["FreeUpgrade"] = chkFreeUpgrade, ["NoSpellCost"] = chkNoSpellCost,
+                ["MaxPopulation"] = chkMaxPopulation, ["Balance"] = chkBalance,
+                ["HousingCapacity20x"] = chkHousingCapacity20x, ["StorageCapacity10x"] = chkStorageCapacity10x,
+                ["HqHp10x"] = chkHqHp10x, ["FastBuildUpgradeRepair"] = chkFastBuildUpgradeRepair,
+                ["FoodHealing10x"] = chkFoodHealing10x, ["VillageBuildRange"] = chkVillageBuildRange,
+                ["NoSpellAltar"] = chkNoSpellAltar, ["DgVoodoo"] = chkDgVoodoo,
+                ["ToEnglish"] = chkToEng,
+                ["EndlessAi.M1"] = chkAiM1, ["EndlessAi.M2"] = chkAiM2, ["EndlessAi.M3"] = chkAiM3,
+                ["EndlessAi.M4"] = chkAiM4, ["EndlessAi.M5"] = chkAiM5, ["EndlessAi.M6"] = chkAiM6,
+            };
+        }
+
+        private void ResetTogglesForCategory(FeatureCategory category, string gamePath) {
+            foreach (FeatureDefinition feature in FeatureRegistry.ByCategory(category)) {
+                if (featureToggles.TryGetValue(feature.Id, out ModernToggle? toggle)) toggle.Checked = false;
+            }
+            if (category == FeatureCategory.Compat) {
+                cmbGameSpeed.SelectedIndex = 0;
+                chkDgVoodoo.Checked = patchEngine.IsDgVoodooInstalled(gamePath);
+            }
+        }
 
         /// <summary>
         /// 記錄日誌訊息並寫入至本地 modifier_log.txt 檔案。
@@ -103,37 +130,13 @@ namespace AgainstRomeModifier {
                 rollback = new FileRollbackScope();
                 Log("已建立修改前檔案回復點。");
 
-                // 收集 UI 設定至 PatchOptions 模型中
-                var options = new PatchOptions {
-                    FocusLoss = chkFocusLoss.Checked,
-                    FastCiviProduction = chkFastCiviProduction.Checked,
-                    InfiniteMorale = chkInfiniteMorale.Checked,
-                    FreeProduction = chkFreeProd.Checked,
-                    FreeUpgrade = chkFreeUpgrade.Checked,
-                    NoSpellCost = chkNoSpellCost.Checked,
-                    MaxPopulation = chkMaxPopulation.Checked,
-                    Balance = chkBalance.Checked,
-                    HousingCapacity20x = chkHousingCapacity20x.Checked,
-                    StorageCapacity10x = chkStorageCapacity10x.Checked,
-                    HqHp10x = chkHqHp10x.Checked,
-                    FastBuildUpgradeRepair = chkFastBuildUpgradeRepair.Checked,
-                    FoodHealing10x = chkFoodHealing10x.Checked,
-                    ToEnglish = chkToEng.Checked,
-                    DgVoodoo = chkDgVoodoo.Checked,
-                    VillageBuildRange = chkVillageBuildRange.Checked,
-                    NoSpellAltar = chkNoSpellAltar.Checked,
-                    GameSpeed = GetSelectedGameSpeedMultiplier(),
-                    CustomUnitStats = this.customUnitStats,
-                    PresetFileSourceType = this.presetFileSourceType,
-                    PresetFileName = this.presetFileName,
-                    EndlessAiModules = new System.Collections.Generic.Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase) {
-                        ["M1"] = chkAiM1.Checked, ["M2"] = chkAiM2.Checked, ["M3"] = chkAiM3.Checked,
-                        ["M4"] = chkAiM4.Checked, ["M5"] = chkAiM5.Checked, ["M6"] = chkAiM6.Checked
-                    }
-                };
+                var profile = new PatchProfile();
+                foreach (var (id, toggle) in featureToggles) profile.Set(id, FeatureValue.Of(toggle.Checked));
+                profile.Set("GameSpeed", FeatureValue.Of(GetSelectedGameSpeedMultiplier()));
+                profile.Set("CustomUnitStats", FeatureValue.Of(this.customUnitStats));
 
                 await Task.Run(() => {
-                    patchEngine.ApplyPatches(gamePath, options, backupManager, rollback);
+                    patchEngine.ApplyPatches(gamePath, profile, backupManager, rollback);
                 });
 
                 rollback.Commit();
@@ -185,23 +188,9 @@ namespace AgainstRomeModifier {
                 rollback.Dispose();
                 rollback = null;
                 
-                // 還原後重設 UI
-                chkFocusLoss.Checked = false;
-                chkNoSpellAltar.Checked = false;
-                chkToEng.Checked = false;
-                chkAiM1.Checked = false; chkAiM2.Checked = false; chkAiM3.Checked = false; chkAiM4.Checked = false; chkAiM5.Checked = false; chkAiM6.Checked = false;
-                chkHousingCapacity20x.Checked = false; chkStorageCapacity10x.Checked = false; chkHqHp10x.Checked = false;
-                chkFastBuildUpgradeRepair.Checked = false;
-                chkFoodHealing10x.Checked = false;
-                chkMaxPopulation.Checked = false;
-                chkFastCiviProduction.Checked = false;
-                chkFreeProd.Checked = false;
-                chkFreeUpgrade.Checked = false;
-                chkNoSpellCost.Checked = false;
-                chkInfiniteMorale.Checked = false;
-                chkBalance.Checked = false;
-                chkDgVoodoo.Checked = patchEngine.IsDgVoodooInstalled(gamePath);
-                cmbGameSpeed.SelectedIndex = 0;
+                ResetTogglesForCategory(FeatureCategory.Stats, gamePath);
+                ResetTogglesForCategory(FeatureCategory.Compat, gamePath);
+                ResetTogglesForCategory(FeatureCategory.Language, gamePath);
 
                 Log(Loc.Get("LogRestoreAllDone"));
                 MessageBox.Show(Loc.Get("MsgRestoreAllSuccess"), Loc.Get("TitleTips"), MessageBoxButtons.OK, MessageBoxIcon.Information);
@@ -301,17 +290,7 @@ namespace AgainstRomeModifier {
                 rollback.Dispose();
                 rollback = null;
 
-                // UI reset
-                chkHousingCapacity20x.Checked = false; chkStorageCapacity10x.Checked = false; chkHqHp10x.Checked = false;
-                chkFastBuildUpgradeRepair.Checked = false;
-                chkFoodHealing10x.Checked = false;
-                chkMaxPopulation.Checked = false;
-                chkFastCiviProduction.Checked = false;
-                chkFreeProd.Checked = false;
-                chkFreeUpgrade.Checked = false;
-                chkNoSpellCost.Checked = false;
-                chkInfiniteMorale.Checked = false;
-                chkBalance.Checked = false;
+                ResetTogglesForCategory(FeatureCategory.Stats, gamePath);
 
                 Log(Loc.Get("LogRestoreStatsDone"));
                 MessageBox.Show(Loc.Get("MsgRestoreStatsSuccess"), Loc.Get("TitleTips"), MessageBoxButtons.OK, MessageBoxIcon.Information);
@@ -353,13 +332,7 @@ namespace AgainstRomeModifier {
                 rollback.Dispose();
                 rollback = null;
 
-                // UI reset
-                chkFocusLoss.Checked = false;
-                chkNoSpellAltar.Checked = false;
-                chkAiM1.Checked = false; chkAiM2.Checked = false; chkAiM3.Checked = false; chkAiM4.Checked = false; chkAiM5.Checked = false; chkAiM6.Checked = false;
-                chkDgVoodoo.Checked = patchEngine.IsDgVoodooInstalled(gamePath);
-                chkVillageBuildRange.Checked = false;
-                cmbGameSpeed.SelectedIndex = 0;
+                ResetTogglesForCategory(FeatureCategory.Compat, gamePath);
 
                 Log(Loc.Get("LogRestoreCompatDone"));
                 MessageBox.Show(Loc.Get("MsgRestoreCompatSuccess"), Loc.Get("TitleTips"), MessageBoxButtons.OK, MessageBoxIcon.Information);
@@ -401,8 +374,7 @@ namespace AgainstRomeModifier {
                 rollback.Dispose();
                 rollback = null;
 
-                // UI reset
-                chkToEng.Checked = false;
+                ResetTogglesForCategory(FeatureCategory.Language, gamePath);
 
                 Log(Loc.Get("LogRestoreLangDone"));
                 MessageBox.Show(Loc.Get("MsgRestoreLangSuccess"), Loc.Get("TitleTips"), MessageBoxButtons.OK, MessageBoxIcon.Information);

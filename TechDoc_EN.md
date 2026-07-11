@@ -29,12 +29,14 @@ For the detailed maintenance chronology, debugging failures, checklists, and wor
 | `src/Core/GameLZSS.cs` | LZSS and `PFIL@` wrapper decode/encode with bounds checks. |
 | `src/Core/Bci/` | BCI signature matching, word writes, and PFIL script handling. |
 | `src/Core/EndlessAi/` | AI Ultimate M1-M14 modules, state detection, and orchestration. |
+| `src/Core/Features/` | Feature registry, `PatchProfile`, EXE/INI/DAU/BCI/install feature planning, and unified state detection. |
+| `src/Core/Services/PatchEngine.cs` | Thin orchestrator for transaction order, category restores, and feature coordination; it owns no feature-specific constants. |
 | `src/Core/TroopConfig.cs` | Field enums, unit IDs, names, factions, tiers, types, and balance baselines. |
 | `src/Core/Patches/` | Pure, WinForms-independent patch logic: `ObjdefPatcher`, `RessPatcher`, `ClScriptPatcher`, `ClEparaPatcher`, `ClScintPatcher`, `TeamDatPatcher`, `ExePatchModel`, `VerifiedBinaryWriter`. Byte computation and fixed-offset state detection/planning live here so they can be unit-tested without WinForms or copyrighted game files. |
 | `src/UI/ModifierForm.cs` | Main UI, controls, backup cache, parsed unit cache, shared state. |
 | `src/UI/ModifierForm.Data.cs` | Current-data reading, CSV-like parsing, comparisons, icons, EXE state detection (delegates to `ExePatchModel`). |
 | `src/UI/ModifierForm.DataExt.cs` | Safe access to cached original unit rows. |
-| `src/UI/ModifierForm.Patches.cs` | Transactional writes, restores; delegates EXE/INI/DAU/team/BCI byte computation to `src/Core/Patches/` and only converts UI state to Options / logs results. |
+| `src/UI/ModifierForm.Patches.cs` | Collects the registry-backed toggle map into a `PatchProfile`, starts transactional apply/restore operations, and reports results. |
 | `src/UI/ModifierForm.Presets.cs` | Actions to enable/disable all features at once. |
 | `src/UI/ModifierForm.SaveManager.cs` | Save discovery, ZIP backup/restore/delete, metadata cache. |
 | `src/UI/TroopPresetForm.cs` | Nine-property editing for 43 units and `.artroop` I/O. |
@@ -54,11 +56,15 @@ Apply order:
 1. Validate the directory and `Against_Rome.exe`.
 2. Load originals and confirm with the user.
 3. Snapshot UI values on the UI thread.
-4. Within the same rollback transaction, run `RestoreOriginalFilesInternal` without changing the UI snapshot. This shares the Restore All file path and clears modifier-managed EXE, stats, team.dat, endless AI, food-healing, language, and dgVoodoo2 state left by older builds.
+4. Within the same rollback transaction, call `RestoreCategories` without changing the UI snapshot. `FeatureRegistry` is the single source for Stats/Compat/Language membership and disabled values; the restore clears modifier-managed EXE, stats, team.dat, endless AI, food-healing, language, and dgVoodoo2 state left by older builds.
 5. Apply EXE compatibility state.
 6. Apply `cl_script.ini`.
 7. Apply `ress.ini`.
 8. Apply `objdef.dau`.
+
+FoodHealing and Endless AI share the orchestrator's `BciScriptFile` cache. Both plan changes in memory and a single `SaveAll` performs final PFIL compression and writes. Startup-safe migration and category restore use the same path.
+
+Every registry entry implements `IFeatureModule` and participates in Apply/Detect through `PatchContext` and `DetectContext`; values sharing one file are then composed into bytes once by a per-file composer. To add a feature, add its implementation under `src/Core/Features/<category>/`, register its Id/category/disabled value in `FeatureRegistry`, add its UI control to `BuildFeatureToggleMap`, and add tests. The Apply/Detect/Restore orchestrators require no per-checkbox branch.
 9. Restore original `team.dat` files, then apply population only.
 10. Apply endless-mode BCI changes.
 11. Apply language resources.

@@ -49,7 +49,9 @@
 | `src/Core/GameLZSS.cs` | 遊戲 LZSS 與 `PFIL@` 包裝 |
 | `src/Core/Bci/` | BCI 特徵碼搜尋、字組寫入與 PFIL 腳本封裝 |
 | `src/Core/EndlessAi/` | AI Ultimate M1–M14 模組、狀態偵測與套用協調 |
-| `src/Core/Patches/` | 純 patch 邏輯（`ObjdefPatcher`、`RessPatcher`、`ClScriptPatcher`、`ClEparaPatcher`、`ClScintPatcher`、`TeamDatPatcher`、`ExePatchModel`、`VerifiedBinaryWriter`），不依賴 WinForms，`ModifierForm.Patches.cs` 只負責把 UI 狀態轉成 Options／委派呼叫與記錄日誌 |
+| `src/Core/Features/` | 功能 Registry、`PatchProfile`、EXE/INI/DAU/BCI/安裝功能規劃與統一狀態偵測 |
+| `src/Core/Services/PatchEngine.cs` | 精簡編排器：交易順序、分類還原與功能模組協調，不保存功能專屬常數 |
+| `src/Core/Patches/` | 純 patch 邏輯（`ObjdefPatcher`、`RessPatcher`、`ClScriptPatcher`、`ClEparaPatcher`、`ClScintPatcher`、`TeamDatPatcher`、`ExePatchModel`、`VerifiedBinaryWriter`），不依賴 WinForms；UI 只建立 `PatchProfile` 並委派給 Core |
 | `src/Core/Localization.cs` | 中英文 UI／log |
 | `data/game_schema.json` | 機器可讀的欄位、offset 與 patch metadata |
 
@@ -67,7 +69,11 @@
 
 公開版本不包含原始遊戲資料，因此第三種方式是正式支援路徑。補丁從原版基線重新產生，避免在已修改資料上累積倍率。
 
-「執行修改」會在同一個 `FileRollbackScope` 交易內，先執行不改動 UI 勾選狀態的完整原版恢復階段，再依先前快照的選項重新產生並寫入補丁。恢復範圍與「恢復原版」共用 `RestoreOriginalFilesInternal`，包含 EXE、屬性檔、team.dat、無盡 AI、食物治療、語言與 dgVoodoo2。這可清除舊版已寫入、但新版 UI 已不再提供的殘留修改；若任一恢復或重套步驟失敗，整次操作回滾到執行前狀態。
+「執行修改」會在同一個 `FileRollbackScope` 交易內，先透過 `RestoreCategories` 執行不改動 UI 勾選狀態的完整原版恢復，再依 `PatchProfile` 快照重新產生補丁。`FeatureRegistry` 是 Stats／Compat／Language 分類與停用值的唯一來源。EXE、屬性檔、team.dat、無盡 AI、食物治療、語言與 dgVoodoo2 都受同一編排器管理；若任一步驟失敗，整次操作回滾到執行前狀態。
+
+FoodHealing 與 Endless AI 共用 `EndlessAiOrchestrator` 的 `BciScriptFile` 快取。兩者只在記憶體規劃修改，最後由一次 `SaveAll` 統一壓縮與寫入；啟動安全遷移與分類還原也使用相同路徑。
+
+每個 Registry 項目實作 `IFeatureModule`，透過 `PatchContext`／`DetectContext` 參與 Apply 與 Detect 迴圈；同檔案的多個功能值再由 per-file composer 一次產生 bytes。新增功能流程：在 `src/Core/Features/<分類>/` 加入功能實作、於 `FeatureRegistry` 登錄 Id／分類／停用值、在 UI 的 `BuildFeatureToggleMap` 加入控制項，並新增對應測試。Apply／Detect／Restore 的編排器不需增加逐功能 checkbox 分支。
 
 ## 4. 寫入與回復安全
 
