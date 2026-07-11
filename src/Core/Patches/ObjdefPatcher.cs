@@ -63,7 +63,9 @@ public static class ObjdefPatcher {
         SetValue(cols, (int)ObjdefIndex.Aw, ((int)stats[3]).ToString(CultureInfo.InvariantCulture), name, "戰鬥");
         SetValue(cols, (int)ObjdefIndex.Vw, ((int)stats[2]).ToString(CultureInfo.InvariantCulture), name, "防禦");
         for (int w = 1; w <= 8; w++) {
-            int active = (int)ObjdefIndex.Weapon1Akti + (w - 1) * 8, damage = active + 1, min = active + 3, max = active + 4, reload = active + 6;
+            // 射程欄位是 active+2 (RangeMin, w*_rad1) 與 active+3 (RangeMax, w*_rad2)；
+            // active+4 是 Weapon*Angle（角度），依 objdef-fields.csv 絕不可當射程縮放。
+            int active = (int)ObjdefIndex.Weapon1Akti + (w - 1) * 8, damage = active + 1, min = active + 2, max = active + 3, reload = active + 6;
             if (max >= source.Length || source[active] != "1") continue;
             foreach (int index in new[] { min, max }) if (Read(source, index) is double range && range > 0) SetValue(cols, index, (range * rangeScale).ToString("F2", CultureInfo.InvariantCulture), name, "射程");
             double weaponDamage = Read(source, damage);
@@ -81,5 +83,5 @@ public static class ObjdefPatcher {
     private static double Read(string[] cols, int index) => index < cols.Length && double.TryParse(cols[index].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out double value) ? value : 0;
     private static void GetDamage(string[] cols, string type, out double melee, out double ranged) { melee = ranged = 0; for (int w = 1; w <= 8; w++) { int active = (int)ObjdefIndex.Weapon1Akti + (w - 1) * 8, damage = active + 1, damageType = (int)ObjdefIndex.Weapon1Dtyp + (w - 1); if (damageType >= cols.Length || cols[active] != "1") continue; double value = Read(cols, damage); if (damageType < cols.Length && (cols[damageType] is "1" or "2" or "3" or "4" || type == "siege")) ranged = Math.Max(ranged, value); else melee = Math.Max(melee, value); } }
     private static void GetReload(string[] cols, string type, out double melee, out double ranged) { melee = ranged = 0; for (int w = 1; w <= 8; w++) { int active = (int)ObjdefIndex.Weapon1Akti + (w - 1) * 8, reload = active + 6, damageType = (int)ObjdefIndex.Weapon1Dtyp + (w - 1); if (damageType >= cols.Length || cols[active] != "1") continue; double value = Read(cols, reload); bool isRanged = cols[damageType] is "1" or "2" or "3" or "4" || type == "siege"; if (isRanged) { if (value > 0 && (ranged == 0 || value < ranged)) ranged = value; } else if (value > 0 && (melee == 0 || value < melee)) melee = value; } }
-    private static double GetMaxRange(string[] cols) { double result = 0; for (int w = 1; w <= 8; w++) { int active = (int)ObjdefIndex.Weapon1Akti + (w - 1) * 8, min = active + 3, max = active + 4; if (max >= cols.Length || cols[active] != "1") continue; result = Math.Max(result, Math.Max(Read(cols, min), Read(cols, max))); } return result; }
+    private static double GetMaxRange(string[] cols) { double result = 0; for (int w = 1; w <= 8; w++) { int active = (int)ObjdefIndex.Weapon1Akti + (w - 1) * 8, min = active + 2, max = active + 3; if (max >= cols.Length || cols[active] != "1") continue; result = Math.Max(result, Math.Max(Read(cols, min), Read(cols, max))); } return result; }
 }

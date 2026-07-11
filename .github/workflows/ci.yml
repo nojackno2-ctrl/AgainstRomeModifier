@@ -20,11 +20,15 @@ jobs:
         run: |
           dotnet restore AgainstRomeModifier.csproj
           dotnet restore tests/AgainstRomeModifier.Tests/AgainstRomeModifier.Tests.csproj
+          dotnet restore tests/verify_split_patches/verify_split_patches.csproj
 
       - name: Build Release x64
         run: |
           dotnet build AgainstRomeModifier.csproj --configuration Release -p:PlatformTarget=x64 --no-restore
           dotnet build tests/AgainstRomeModifier.Tests/AgainstRomeModifier.Tests.csproj --configuration Release -p:PlatformTarget=x64 --no-restore
+          # verify_split_patches 是手動 golden 值驗證程式（需要本機的遊戲原始檔案才能執行）。
+          # CI 至少驗證它可編譯，避免與產品程式碼漂移後無聲腐化。
+          dotnet build tests/verify_split_patches/verify_split_patches.csproj --configuration Release -p:PlatformTarget=x64 --no-restore
 
       - name: Test
         run: dotnet test tests/AgainstRomeModifier.Tests/AgainstRomeModifier.Tests.csproj --configuration Release -p:PlatformTarget=x64 --no-build --no-restore

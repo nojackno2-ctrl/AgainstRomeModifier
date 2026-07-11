@@ -11,6 +11,13 @@ namespace AgainstRomeModifier.Tests
 {
     public class ClScriptPatchTests
     {
+        private readonly Xunit.Abstractions.ITestOutputHelper _output;
+
+        public ClScriptPatchTests(Xunit.Abstractions.ITestOutputHelper output)
+        {
+            _output = output;
+        }
+
         [Fact]
         public void Test_ClScript_Patch_And_Detect()
         {
@@ -18,23 +25,24 @@ namespace AgainstRomeModifier.Tests
 
             // 1. Prepare backup manager with real embedded backup
             var backupManager = new BackupManager(new NullLogger());
-            backupManager.LoadBackupZipToMemory(null);
+            backupManager.LoadBackupZipToMemory("");
 
             // Backup.zip 內含專有遊戲資料，被 .gitignore 排除，不會推送到 GitHub。
             // 因此在 CI 環境（沒有內嵌資源）時視為無需驗證而略過；本機開發（有 Backup.zip）則完整執行。
             if (!backupManager.BackupFiles.ContainsKey("SYSTEM/cl_script.ini"))
             {
-                return; // Embedded Backup.zip 不可用（gitignore 的專有遊戲資料）；在 CI 中略過。
+                // Embedded Backup.zip 不可用（gitignore 的專有遊戲資料）；在 CI 中略過。
+                // 在輸出中明確標示，避免測試報告呈現「Passed」造成覆蓋率假象。
+                _output.WriteLine("[SKIPPED] Backup.zip 不可用（CI 環境），本測試未執行任何斷言。");
+                return;
             }
 
-            // 2. Patch
+            // 2. Patch — 直接呼叫 internal 方法（InternalsVisibleTo），
+            // 不再用反射：重構時可由編譯器把關，而非執行期才失敗。
             var engine = new PatchEngine(new NullLogger());
-            var method = typeof(PatchEngine).GetMethod("GetPatchedClScriptBytes", 
-                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-            Assert.NotNull(method);
 
             // fastCiviProduction=true, infiniteMoraleChecked=true, balanceChecked=true
-            byte[] patchedCompressed = (byte[])method.Invoke(engine, new object[] { "C:\\dummy", backupManager, true, true, true })!;
+            byte[] patchedCompressed = engine.GetPatchedClScriptBytes("C:\\dummy", backupManager, true, true, true);
 
 
             // 3. Decompress and verify
@@ -50,9 +58,8 @@ namespace AgainstRomeModifier.Tests
             Assert.Contains("MoralsIncIdle=GER,500", cleanText);
 
             // 4. Verify detect logic in PatchEngine
-            var options = engine.DetectCurrentPatchState("C:\\dummy", backupManager);
-            // Wait, DetectCurrentPatchState reads cl_script.ini from the gamePath on disk.
-            // Let's create a temp directory to simulate the game directory
+            // DetectCurrentPatchState 讀取 gamePath 磁碟上的 cl_script.ini，
+            // 以臨時目錄模擬遊戲目錄後再執行偵測。
             string tempDir = Path.Combine(Path.GetTempPath(), "AgainstRomeTest_" + Guid.NewGuid().ToString());
             Directory.CreateDirectory(tempDir);
             try

@@ -28,6 +28,38 @@ public sealed class PatcherRoundTripTests {
     }
 
     [Fact]
+    public void Objdef_unit_range_scaling_touches_range_columns_only_and_never_weapon_angle() {
+        // 依 docs/reverse-engineering/objdef-fields.csv：
+        //   80 = Weapon1RangeMin (w1_rad1)、81 = Weapon1RangeMax (w1_rad2)、
+        //   82 = Weapon1Angle —— 明載 "never scale as range"。
+        string[] columns = Enumerable.Repeat("       0", 205).ToArray();
+        columns[4] = "    2.00";                            // Moves
+        columns[19] = "     100";                           // Hp
+        columns[23] = "    2.00";                           // Movsf
+        columns[24] = "    1500";                           // Sirad
+        columns[52] = "FigKelSch00_Bogen".PadLeft(20);      // ranged_inf
+        columns[78] = "       1";                           // Weapon1Akti
+        columns[79] = "   10.00";                           // Weapon1Dam
+        columns[80] = "  100.00";                           // Weapon1RangeMin
+        columns[81] = "  200.00";                           // Weapon1RangeMax
+        columns[82] = "   45.00";                           // Weapon1Angle（不可被縮放）
+        columns[84] = "     500";                           // Weapon1Relt
+        columns[199] = "       1";                          // Weapon1Dtyp = ranged
+        byte[] original = SyntheticFixture.Pfil("header1\r\nheader2\r\n" + string.Join(',', columns) + "\r\n");
+
+        // stats: HP, Dmg, VW, AW, Speed, Sight, Relt, Range, SpellRadius；Range 400 → rangeScale = 2
+        var unitStats = new Dictionary<string, double[]> {
+            ["FigKelSch00_Bogen"] = new double[] { 100, 10, 10, 10, 4.0, 1500, 500, 400, 0 }
+        };
+        byte[] patched = ObjdefPatcher.GetPatchedBytes(original, new ObjdefOptions(false, false, false, false, NoStats, unitStats));
+        string[] result = SyntheticFixture.Text(patched).Split("\r\n")[2].Split(',');
+
+        Assert.Equal("200.00", result[80].Trim()); // RangeMin ×2
+        Assert.Equal("400.00", result[81].Trim()); // RangeMax ×2
+        Assert.Equal("45.00", result[82].Trim());  // Angle 必須原封不動
+    }
+
+    [Fact]
     public void Ress_cost_patch_zeros_only_selected_fields_and_restores() {
         string building = "BauHau00," + string.Join(',', Enumerable.Repeat("10", 12));
         string unit = "FigGerPri00_Priester," + string.Join(',', Enumerable.Repeat("5", 28));

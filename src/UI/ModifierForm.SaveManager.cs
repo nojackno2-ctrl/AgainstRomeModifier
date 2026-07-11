@@ -152,10 +152,16 @@ namespace AgainstRomeModifier {
             return dgv;
         }
 
+        // RefreshSavesAndBackups 進行中旗標：避免快速連點（重新整理/刪除/備份）時
+        // 兩個背景掃描併發讀寫同一批表格與快取。UI 執行緒單線進入，簡單旗標即足夠。
+        private bool _savesRefreshInFlight;
+
         /// <summary>
         /// 重新整理並讀取遊戲存檔目錄 (SAVE) 與備份目錄 (SavesBackup) 下的資料，並將結果載入到介面表格中。
         /// </summary>
         private async void RefreshSavesAndBackups() {
+            if (_savesRefreshInFlight) return;
+            _savesRefreshInFlight = true;
             try {
                 dgvGameSaves.Rows.Clear();
                 dgvBackups.Rows.Clear();
@@ -285,6 +291,8 @@ namespace AgainstRomeModifier {
                 }
             } catch (Exception ex) {
                 Log(Loc.Get("LogRefreshSavesFailed") + ex.Message);
+            } finally {
+                _savesRefreshInFlight = false;
             }
         }
 
@@ -593,7 +601,9 @@ namespace AgainstRomeModifier {
                 string zipPath = Path.Combine(backupDir, file);
                 if (File.Exists(zipPath)) {
                     File.Delete(zipPath);
-                    _backupSaveCache.Remove(file);
+                    lock (_backupSaveCache) {
+                        _backupSaveCache.Remove(file);
+                    }
                 }
                 Log(string.Format(Loc.Get("LogDeleteBackupSuccessDetail"), file));
                 RefreshSavesAndBackups();

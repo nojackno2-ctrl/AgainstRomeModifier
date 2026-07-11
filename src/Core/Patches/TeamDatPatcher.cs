@@ -1,8 +1,11 @@
 namespace AgainstRomeModifier.Core.Patches;
 
-public readonly record struct TeamDatOptions(bool MaxPopulation, int PopulationLimit = 1600);
+public readonly record struct TeamDatOptions(bool MaxPopulation, int PopulationLimit = TeamDatPatcher.DefaultPopulationLimit);
 
 public static class TeamDatPatcher {
+    /// <summary>「人口上限最大化」功能寫入的預設值；log 與偵測請引用此常數，勿散落魔術數字。</summary>
+    public const int DefaultPopulationLimit = 1600;
+
     public static byte[] GetPatchedBytes(byte[] original, TeamDatOptions options) {
         ArgumentNullException.ThrowIfNull(original);
         if (!options.MaxPopulation) return original.ToArray();

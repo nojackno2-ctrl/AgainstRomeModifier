@@ -10,15 +10,35 @@ using AgainstRomeModifier.Core.Services;
 namespace AgainstRomeModifier {
     public partial class ModifierForm {
         private static readonly object LogLock = new object();
+        private static bool _logRotationChecked;
+        private const long LogRotationThresholdBytes = 5 * 1024 * 1024;
 
         /// <summary>
         /// 記錄日誌訊息並寫入至本地 modifier_log.txt 檔案。
+        /// 每次程式執行的第一筆日誌前檢查檔案大小，超過 5MB 即輪替為 modifier_log.old.txt，
+        /// 避免日誌無上限成長。
         /// </summary>
         private void Log(string message) {
             string text = string.Format("[{0}] {1}\r\n", DateTime.Now.ToString("HH:mm:ss"), message);
             try {
                 lock (LogLock) {
-                    File.AppendAllText(Path.Combine(AppContext.BaseDirectory, "modifier_log.txt"), text, Encoding.UTF8);
+                    string logPath = Path.Combine(AppContext.BaseDirectory, "modifier_log.txt");
+                    if (!_logRotationChecked) {
+                        _logRotationChecked = true;
+                        try {
+                            var logInfo = new FileInfo(logPath);
+                            if (logInfo.Exists && logInfo.Length > LogRotationThresholdBytes) {
+                                string oldPath = Path.Combine(AppContext.BaseDirectory, "modifier_log.old.txt");
+                                if (File.Exists(oldPath)) {
+                                    File.Delete(oldPath);
+                                }
+                                File.Move(logPath, oldPath);
+                            }
+                        } catch (Exception rotateEx) {
+                            System.Diagnostics.Debug.WriteLine("日誌輪替失敗: " + rotateEx.Message);
+                        }
+                    }
+                    File.AppendAllText(logPath, text, Encoding.UTF8);
                 }
             } catch (Exception ex) {
                 System.Diagnostics.Debug.WriteLine("日誌檔案寫入失敗: " + ex.Message);
@@ -181,7 +201,7 @@ namespace AgainstRomeModifier {
                 chkDgVoodoo.Checked = patchEngine.IsDgVoodooInstalled(gamePath);
                 cmbGameSpeed.SelectedIndex = 0;
 
-                Log(Loc.Get("LogRestoreAllSuccess"));
+                Log(Loc.Get("LogRestoreAllDone"));
                 MessageBox.Show(Loc.Get("MsgRestoreAllSuccess"), Loc.Get("TitleTips"), MessageBoxButtons.OK, MessageBoxIcon.Information);
                 try {
                     LoadCurrentData();
@@ -243,16 +263,18 @@ namespace AgainstRomeModifier {
             cmbGameSpeed.SelectedIndex = prev >= 0 && prev < cmbGameSpeed.Items.Count ? prev : 0;
         }
 
-        /// <summary>由下拉選單目前選項換算加速倍率（index 0 = 原版 → 1；其餘 → index+1）。</summary>
+        /// <summary>由下拉選單目前選項換算加速倍率。選單項目與 GameSpeedSupportedMultipliers
+        /// 一一對應（index 0 = 倍率 1 = 原版），一律查表換算，避免與倍率表的排列產生隱性耦合。</summary>
         private int GetSelectedGameSpeedMultiplier() {
             int idx = cmbGameSpeed.SelectedIndex;
-            return idx <= 0 ? 1 : idx + 1;
+            int[] multipliers = ExePatchModel.GameSpeedSupportedMultipliers;
+            return idx >= 0 && idx < multipliers.Length ? multipliers[idx] : 1;
         }
 
-        /// <summary>依偵測到的倍率設定下拉選單目前選項；未知或超出範圍時回到原版。</summary>
+        /// <summary>依偵測到的倍率設定下拉選單目前選項；未知或不在支援清單時回到原版。</summary>
         private void SetGameSpeedSelection(int multiplier) {
-            int idx = multiplier >= 2 && multiplier <= cmbGameSpeed.Items.Count ? multiplier - 1 : 0;
-            cmbGameSpeed.SelectedIndex = idx;
+            int idx = Array.IndexOf(ExePatchModel.GameSpeedSupportedMultipliers, multiplier);
+            cmbGameSpeed.SelectedIndex = idx > 0 && idx < cmbGameSpeed.Items.Count ? idx : 0;
         }
 
         private async void RestoreStatsOnly() {

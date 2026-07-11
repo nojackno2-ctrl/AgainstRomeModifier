@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -13,22 +13,11 @@ namespace AgainstRomeModifier.Core.Services
 {
     public class PatchEngine
     {
-        private static readonly object LogLock = new object();
         private const string LanguageBackupDirectoryName = ".against-rome-modifier-language-backup";
         private const string LanguageBackupManifestName = "manifest.json";
 
-        private static readonly Regex RegexRadiusPatch = new Regex(@"^Radius\s*=\s*([A-Z]{3})\s*,\s*(Spell\d+)\s*,\s*([^;]+)(.*)$", RegexOptions.Compiled);
-        private static readonly Regex RegexCiviPatch = new Regex(@"^CiviDelay\s*=\s*([A-Z]{3})\s*,\s*([^;]+)(.*)$", RegexOptions.Compiled);
-        private static readonly Regex RegexMoraleLostMemPatch = new Regex(@"^(MoralsDecLostMem\s*=\s*[A-Z]{3}\s*,\s*)\d+(.*)$", RegexOptions.Compiled);
-        private static readonly Regex RegexMoraleFleePatch = new Regex(@"^(MoralsDecFlee\s*=\s*[A-Z]{3}\s*,\s*)\d+(.*)$", RegexOptions.Compiled);
-        private static readonly Regex RegexMoraleOverPopPatch = new Regex(@"^(MoralsDecOverPop\s*=\s*[A-Z]{3}\s*,\s*)\d+(.*)$", RegexOptions.Compiled);
-        private static readonly Regex RegexMoraleIncIdlePatch = new Regex(@"^(MoralsIncIdle\s*=\s*[A-Z]{3}\s*,\s*)\d+(.*)$", RegexOptions.Compiled);
-        private static readonly Regex RegexMoraleKey = new Regex(@"^(MoralsDecLostMem|MoralsDecFlee|MoralsDecOverPop|MoralsIncIdle)\s*=\s*([A-Z]{3})\s*,", RegexOptions.Compiled);
-        private static readonly Regex RegexSpellValuePatch = new Regex(@"^(Value\d*)\s*=\s*([A-Z]{3})\s*,\s*(Spell\d+)\s*,\s*([^;]+)(.*)$", RegexOptions.Compiled);
-        private static readonly Regex RegexSpecialAbilityValuePatch = new Regex(@"^(Value\d*)\s*=\s*([A-Z]{3})\s*,\s*(SAbility\d+)\s*,\s*([^;]+)(.*)$", RegexOptions.Compiled);
-        
-        // Regex for status detection
-        private static readonly Regex RegexSpellLoad = new Regex(@"Radius\s*=\s*(?:HUN|KEL|GER)\s*,\s*Spell\d+\s*,\s*(\d+)", RegexOptions.Compiled);
+        // cl_script.ini 的補丁改寫邏輯統一由 ClScriptPatcher 負責（單一正本），
+        // 此處僅保留狀態偵測用的 Regex。
         private static readonly Regex RegexCiviLoad = new Regex(@"CiviDelay\s*=\s*([A-Z]{3})\s*,\s*(\d+)", RegexOptions.Compiled);
         private static readonly Regex RegexMoraleLostMemLoad = new Regex(@"MoralsDecLostMem\s*=\s*GER\s*,\s*(\d+)", RegexOptions.Compiled);
         private static readonly Regex RegexMoraleFleeLoad = new Regex(@"MoralsDecFlee\s*=\s*GER\s*,\s*(\d+)", RegexOptions.Compiled);
@@ -92,74 +81,11 @@ namespace AgainstRomeModifier.Core.Services
             _logger = logger;
         }
 
-        // --- 核心安全寫入工具 ---
+        // --- 核心安全寫入工具（實作集中於 SafeFileWriter，此處保留原有呼叫介面）---
 
         public void SafeWriteAllBytes(string dest, byte[] bytes, FileRollbackScope? rollback = null)
         {
-            int maxRetries = 3;
-            int delayMs = 500;
-            string? dir = Path.GetDirectoryName(dest);
-            if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
-            {
-                Directory.CreateDirectory(dir);
-            }
-
-            for (int i = 0; i < maxRetries; i++)
-            {
-                string tempFile = Path.Combine(dir ?? AppContext.BaseDirectory, Path.GetFileName(dest) + "." + Guid.NewGuid().ToString("N") + ".tmp");
-                try
-                {
-                    rollback?.TrackFile(dest);
-                    File.WriteAllBytes(tempFile, bytes);
-
-                    if (File.Exists(dest))
-                    {
-                        File.SetAttributes(dest, FileAttributes.Normal);
-                        File.Replace(tempFile, dest, null, true);
-                    }
-                    else
-                    {
-                        File.Move(tempFile, dest);
-                    }
-                    return;
-                }
-                catch (IOException ioEx)
-                {
-                    try
-                    {
-                        if (File.Exists(tempFile))
-                        {
-                            File.SetAttributes(tempFile, FileAttributes.Normal);
-                            File.Delete(tempFile);
-                        }
-                    }
-                    catch { }
-
-                    if (i == maxRetries - 1)
-                    {
-                        throw new Exception(string.Format("寫入檔案失敗，檔案可能被佔用或權限不足：{0}。錯誤訊息：{1}", dest, ioEx.Message), ioEx);
-                    }
-                    System.Threading.Thread.Sleep(delayMs);
-                }
-                catch (UnauthorizedAccessException accessEx)
-                {
-                    try
-                    {
-                        if (File.Exists(tempFile))
-                        {
-                            File.SetAttributes(tempFile, FileAttributes.Normal);
-                            File.Delete(tempFile);
-                        }
-                    }
-                    catch { }
-
-                    if (i == maxRetries - 1)
-                    {
-                        throw new Exception(string.Format("寫入檔案失敗，檔案可能被佔用或權限不足：{0}。錯誤訊息：{1}", dest, accessEx.Message), accessEx);
-                    }
-                    System.Threading.Thread.Sleep(delayMs);
-                }
-            }
+            SafeFileWriter.WriteAllBytes(dest, bytes, rollback);
         }
 
         public void SafeCopyFile(string src, string dest, bool overwrite, FileRollbackScope? rollback = null)
@@ -183,9 +109,13 @@ namespace AgainstRomeModifier.Core.Services
 
         public void ApplyPatches(string gamePath, PatchOptions options, BackupManager backupManager, FileRollbackScope rollback)
         {
+            // 還原與重套共用同一個 orchestrator：同一批 BCI 腳本只解壓一次，
+            // 且中間的還原狀態留在快取、由最後的 SaveAll 一次寫入最終狀態。
+            var orchestrator = new EndlessAiOrchestrator();
+
             // 總是先在同個交易中執行原版恢復
-            _logger.Log("正在套用前將相關檔案復原為乾淨狀態，以清除殘留修改...");
-            RestoreOriginalFilesInternal(gamePath, backupManager, rollback);
+            _logger.Log(Loc.Get("SvcLogPreApplyRestore"));
+            RestoreOriginalFilesInternal(gamePath, backupManager, rollback, orchestrator, saveOrchestrator: false);
 
             // 1. Dry Run 階段：在記憶體中生成所有補丁 byte[] 並驗證
             var patchedFiles = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
@@ -225,8 +155,7 @@ namespace AgainstRomeModifier.Core.Services
                 patchedFiles[Path.Combine(gamePath, kvp.Key.Replace('/', '\\'))] = kvp.Value;
             }
 
-            // H. Endless AI 模組
-            var orchestrator = new EndlessAiOrchestrator();
+            // H. Endless AI 模組（沿用開頭建立、已含還原後快取狀態的 orchestrator）
             for (int i = 0; i < orchestrator.UserModules.Count && i < options.EndlessAiModules.Length; i++)
             {
                 orchestrator.ApplyModule(gamePath, orchestrator.UserModules[i], options.EndlessAiModules[i]);
@@ -244,6 +173,28 @@ namespace AgainstRomeModifier.Core.Services
             ApplyLanguagePatch(gamePath, options.ToEnglish, rollback);
             ApplyDgVoodooPatch(gamePath, options.DgVoodoo, rollback);
             ApplyFoodHealingAmountPatch(gamePath, options.FoodHealing10x, backupManager, rollback);
+        }
+
+        /// <summary>
+        /// 啟動時的安全遷移：只修復已知會造成問題的舊版寫入——
+        /// (1) R0 常駐修復（ak_npc / ak_produktion 的被否決舊補丁、DELETE_TEAM 終結狀態），
+        /// (2) 會導致戰鬥閃退的舊版首領榮耀腳本（在 ApplyFoodHealingAmountPatch 內以原版重建，
+        ///     並保留使用者目前的待機回血設定值）。
+        /// 刻意不呼叫完整的 ApplyPatches：完整套用會先整體還原再依「偵測到的選項」重套，
+        /// 但自訂兵種屬性無法從檔案偵測回來，會在啟動瞬間被無聲覆蓋。
+        /// </summary>
+        public void RunStartupSafeMigrations(string gamePath, BackupManager backupManager, FileRollbackScope rollback)
+        {
+            var orchestrator = new EndlessAiOrchestrator();
+            orchestrator.ApplyMandatoryRepair(gamePath);
+            orchestrator.SaveAll(gamePath, rollback);
+
+            // 保留現況：可判定時沿用目前的待機回血狀態；無法判定時視為原版。
+            if (!TryReadFoodHealingAmountState(gamePath, out bool foodHealingEnabled))
+            {
+                foodHealingEnabled = false;
+            }
+            ApplyFoodHealingAmountPatch(gamePath, foodHealingEnabled, backupManager, rollback);
         }
 
         public void RestoreOriginalFiles(string gamePath, BackupManager backupManager, FileRollbackScope rollback)
@@ -289,7 +240,12 @@ namespace AgainstRomeModifier.Core.Services
             ApplyLanguagePatch(gamePath, false, rollback);
         }
 
-        private void RestoreOriginalFilesInternal(string gamePath, BackupManager backupManager, FileRollbackScope rollback)
+        /// <param name="sharedOrchestrator">
+        /// 供 ApplyPatches 傳入共用的 orchestrator：還原與後續重套共用同一份 BCI 檔案快取，
+        /// 同一批腳本不必解壓兩次。共用時由呼叫端負責最終 SaveAll（saveOrchestrator = false）。
+        /// </param>
+        private void RestoreOriginalFilesInternal(string gamePath, BackupManager backupManager, FileRollbackScope rollback,
+            EndlessAiOrchestrator? sharedOrchestrator = null, bool saveOrchestrator = true)
         {
             var patchedFiles = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
 
@@ -302,7 +258,7 @@ namespace AgainstRomeModifier.Core.Services
                 patchedFiles[exePath] = exeBytes;
             }
 
-            var orchestrator = new EndlessAiOrchestrator();
+            var orchestrator = sharedOrchestrator ?? new EndlessAiOrchestrator();
             foreach (var module in orchestrator.UserModules)
             {
                 orchestrator.ApplyModule(gamePath, module, false);
@@ -315,7 +271,10 @@ namespace AgainstRomeModifier.Core.Services
             {
                 SafeWriteAllBytes(kvp.Key, kvp.Value, rollback);
             }
-            orchestrator.SaveAll(gamePath, rollback);
+            if (saveOrchestrator)
+            {
+                orchestrator.SaveAll(gamePath, rollback);
+            }
             ApplyFoodHealingAmountPatch(gamePath, false, backupManager, rollback);
             ApplyLanguagePatch(gamePath, false, rollback);
             ApplyDgVoodooPatch(gamePath, false, rollback);
@@ -335,7 +294,7 @@ namespace AgainstRomeModifier.Core.Services
                     string destPath = Path.Combine(gamePath, kvp.Key.Replace('/', '\\'));
                     byte[] patchedBytes = TeamDatPatcher.GetPatchedBytes(kvp.Value, new TeamDatOptions(false));
                     SafeWriteAllBytes(destPath, patchedBytes, rollback);
-                    _logger.Log(string.Format("已還原人口上限: {0}", destPath));
+                    _logger.Log(string.Format(Loc.Get("SvcLogRestoredPopulation"), destPath));
                 }
             }
         }
@@ -345,7 +304,7 @@ namespace AgainstRomeModifier.Core.Services
             if (backupManager.BackupFiles.TryGetValue(key, out byte[]? fileBytes))
             {
                 SafeWriteAllBytes(dest, fileBytes!, rollback);
-                _logger.Log(string.Format("已還原: {0}", dest));
+                _logger.Log(string.Format(Loc.Get("SvcLogRestoredFile"), dest));
             }
         }
 
@@ -356,7 +315,7 @@ namespace AgainstRomeModifier.Core.Services
             ExePatchState state = ExePatchModel.GetExePatchState(exeBytes);
             if (state == ExePatchState.Unknown)
             {
-                throw new Exception("Against_Rome.exe 版本或位元組特徵不符合預期，已停止相容性補丁以避免覆蓋未知版本。");
+                throw new InvalidDataException("Against_Rome.exe 版本或位元組特徵不符合預期，已停止相容性補丁以避免覆蓋未知版本。");
             }
 
             IReadOnlyList<ExeWriteOp> focusOps = ExePatchModel.PlanFocus(focusLossChecked, state);
@@ -365,7 +324,7 @@ namespace AgainstRomeModifier.Core.Services
                 ExePatchModel.Apply(exeBytes, focusOps);
                 exeModified = true;
             }
-            _logger.Log(focusLossChecked ? "已套用視窗失去焦點不暫停補丁。" : "已還原視窗失去焦點暫停設定。");
+            _logger.Log(focusLossChecked ? Loc.Get("SvcLogFocusApplied") : Loc.Get("SvcLogFocusRestored"));
 
             RestoreLegacyVillageBuildRangePatch(exeBytes, ref exeModified);
             if (villageBuildRangeChecked &&
@@ -385,7 +344,7 @@ namespace AgainstRomeModifier.Core.Services
             ExeVillageRangePatchState state = ExePatchModel.GetVillageBuildRangePatchState(exeBytes);
             if (state == ExeVillageRangePatchState.Unknown)
             {
-                _logger.Log("無法還原舊版村莊建造半徑補丁：主程式特徵碼不符合。");
+                _logger.Log(Loc.Get("SvcLogVillageLegacyRestoreUnknown"));
                 return;
             }
 
@@ -394,7 +353,7 @@ namespace AgainstRomeModifier.Core.Services
             {
                 ExePatchModel.Apply(exeBytes, ops);
                 exeModified = true;
-                _logger.Log("已移除舊版村莊建造半徑補丁。");
+                _logger.Log(Loc.Get("SvcLogVillageLegacyRemoved"));
             }
         }
 
@@ -407,7 +366,7 @@ namespace AgainstRomeModifier.Core.Services
                 {
                     throw new InvalidOperationException("無法套用村莊建造半徑補丁：主程式特徵碼不符合。");
                 }
-                _logger.Log("無法套用村莊建造半徑補丁：主程式特徵碼不符合。");
+                _logger.Log(Loc.Get("SvcLogVillageApplyUnknown"));
                 return;
             }
 
@@ -420,11 +379,11 @@ namespace AgainstRomeModifier.Core.Services
 
             if (enabled)
             {
-                _logger.Log("已套用村莊建造範圍擴大補丁。");
+                _logger.Log(Loc.Get("SvcLogVillageApplied"));
             }
             else if (ops.Count > 0)
             {
-                _logger.Log("已還原村莊建造範圍設定。");
+                _logger.Log(Loc.Get("SvcLogVillageRestored"));
             }
         }
 
@@ -433,7 +392,7 @@ namespace AgainstRomeModifier.Core.Services
             ExeSpellAltarPatchState state = ExePatchModel.GetSpellAltarPatchState(exeBytes);
             if (state == ExeSpellAltarPatchState.Unknown)
             {
-                throw new Exception("Against_Rome.exe 版本或法術祭壇特徵碼不符合預期，已停止套用法術祭壇補丁。");
+                throw new InvalidDataException("Against_Rome.exe 版本或法術祭壇特徵碼不符合預期，已停止套用法術祭壇補丁。");
             }
 
             IReadOnlyList<ExeWriteOp> ops = ExePatchModel.PlanSpellAltar(noAltarChecked, state);
@@ -441,7 +400,7 @@ namespace AgainstRomeModifier.Core.Services
             {
                 ExePatchModel.Apply(exeBytes, ops);
                 exeModified = true;
-                _logger.Log(noAltarChecked ? "已套用法術免祭壇需求補丁。" : "已還原法術祭壇需求設定。");
+                _logger.Log(noAltarChecked ? Loc.Get("SvcLogAltarApplied") : Loc.Get("SvcLogAltarRestored"));
             }
         }
 
@@ -450,7 +409,7 @@ namespace AgainstRomeModifier.Core.Services
             int current = ExePatchModel.GetGameSpeedMultiplier(exeBytes);
             if (current == 0)
             {
-                _logger.Log("偵測到未知的遊戲時脈常數，已略過遊戲加速補丁以免覆蓋未知版本。");
+                _logger.Log(Loc.Get("SvcLogGameSpeedUnknown"));
                 return;
             }
             IReadOnlyList<ExeWriteOp> ops = ExePatchModel.PlanGameSpeed(multiplier, current);
@@ -459,131 +418,40 @@ namespace AgainstRomeModifier.Core.Services
                 ExePatchModel.Apply(exeBytes, ops);
                 exeModified = true;
             }
-            _logger.Log(multiplier > 1 ? $"遊戲整體運行速度：{multiplier}× 加速。" : "遊戲整體運行速度：原版（未加速）。");
+            _logger.Log(multiplier > 1 ? string.Format(Loc.Get("SvcLogGameSpeedApplied"), multiplier) : Loc.Get("SvcLogGameSpeedOriginal"));
         }
 
-        private byte[] GetPatchedClScriptBytes(string gamePath, BackupManager backupManager, bool fastCiviProduction, bool infiniteMoraleChecked, bool balanceChecked)
+        /// <summary>
+        /// 產生 cl_script.ini 的補丁位元組。改寫邏輯統一委派給 <see cref="ClScriptPatcher"/>
+        ///（單一正本；先前此處有一份行為分歧的複本：還原時寫死 3/5/50/200/15000，
+        /// 而非讀回備份中的真實原值）。行為換算說明：
+        /// - 平衡模式的法術半徑目標值 = 各族祭司平衡表的 SpellRadius；ClScriptPatcher 以
+        ///   「倍率 × 原始半徑」計算，故換算為 target / 500（原版半徑為 500）。
+        ///   GER 祭司平衡表 SpellRadius 為 0，倍率 0 → 寫入 0，與既有出貨行為一致。
+        /// - 還原（各選項為 false）時，一律寫回備份原檔中的原值。
+        /// </summary>
+        internal byte[] GetPatchedClScriptBytes(string gamePath, BackupManager backupManager, bool fastCiviProduction, bool infiniteMoraleChecked, bool balanceChecked)
         {
             byte[] original = backupManager.GetBackupBytes("SYSTEM/cl_script.ini");
-            byte[] decompressed = GameLZSS.DecompressPfil(original);
-            string originalText = Encoding.GetEncoding(1251).GetString(decompressed);
-            var managedKeys = GetClScriptManagedKeys(originalText);
 
-            string[] lines = originalText.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
-            string lineEnding = originalText.Contains("\r\n") ? "\r\n" : "\n";
-            var resultLines = new List<string>();
-
-            foreach (string line in lines)
+            double gerMult = 1.0, kelMult = 1.0, hunMult = 1.0;
+            if (balanceChecked)
             {
-                string processedLine = line;
-
-                // A. 祭司法術半徑補丁：若啟用平衡，將法術半徑調整為 Balanced 數值 (從 500 提高，非 priest 則仍維持 0)
-                Match radiusMatch = RegexRadiusPatch.Match(line);
-                if (radiusMatch.Success)
-                {
-                    string faction = radiusMatch.Groups[1].Value.Trim();
-                    string spell = radiusMatch.Groups[2].Value.Trim();
-                    string key = $"Radius|{faction}|{spell}";
-                    if (managedKeys.Contains(key))
-                    {
-                        string pName = $"Fig{faction}Pri00_Priester";
-                        double spellRadiusValue = 500;
-                        if (balanceChecked)
-                        {
-                            double[] balanced = backupManager.GetDefaultBalancedStats(pName);
-                            spellRadiusValue = balanced[8]; // SpellRadius is index 8
-                        }
-                        processedLine = $"Radius = {faction}, {spell}, {spellRadiusValue.ToString("0", CultureInfo.InvariantCulture)}{radiusMatch.Groups[4].Value}";
-                    }
-                }
-
-                // B. 村民生產延遲 (fastCiviProduction)
-                Match civiMatch = RegexCiviPatch.Match(line);
-                if (civiMatch.Success)
-                {
-                    string faction = civiMatch.Groups[1].Value.Trim();
-                    string key = $"CiviDelay|{faction}";
-                    if (managedKeys.Contains(key))
-                    {
-                        double targetDelay = fastCiviProduction ? 500.0 : 15000.0;
-                        processedLine = $"CiviDelay = {faction}, {targetDelay.ToString("0", CultureInfo.InvariantCulture)}{civiMatch.Groups[3].Value}";
-                    }
-                }
-
-                // C. 無限士氣補丁
-                Match moraleMatch = RegexMoraleKey.Match(line);
-                if (moraleMatch.Success)
-                {
-                    string faction = moraleMatch.Groups[2].Value.Trim();
-                    string key = $"{moraleMatch.Groups[1].Value.Trim()}|{faction}";
-                    if (managedKeys.Contains(key))
-                    {
-                        if (line.StartsWith("MoralsDecLostMem"))
-                        {
-                            int val = infiniteMoraleChecked ? 0 : 3;
-                            processedLine = RegexMoraleLostMemPatch.Replace(line, "${1}" + val + "$2");
-                        }
-                        else if (line.StartsWith("MoralsDecFlee"))
-                        {
-                            int val = infiniteMoraleChecked ? 0 : 5;
-                            processedLine = RegexMoraleFleePatch.Replace(line, "${1}" + val + "$2");
-                        }
-                        else if (line.StartsWith("MoralsDecOverPop"))
-                        {
-                            int val = infiniteMoraleChecked ? 99999999 : 50;
-                            processedLine = RegexMoraleOverPopPatch.Replace(line, "${1}" + val + "$2");
-                        }
-                        else if (line.StartsWith("MoralsIncIdle"))
-                        {
-                            int val = infiniteMoraleChecked ? 500 : 200;
-                            processedLine = RegexMoraleIncIdlePatch.Replace(line, "${1}" + val + "$2");
-                        }
-                    }
-                }
-
-                resultLines.Add(processedLine);
+                gerMult = backupManager.GetDefaultBalancedStats("FigGerPri00_Priester")[8] / 500.0;
+                kelMult = backupManager.GetDefaultBalancedStats("FigKelPri00_Priester")[8] / 500.0;
+                hunMult = backupManager.GetDefaultBalancedStats("FigHunPri00_Priester")[8] / 500.0;
             }
 
-            byte[] plainBytes = Encoding.GetEncoding(1251).GetBytes(string.Join(lineEnding, resultLines));
-            byte[] headerToUse = original;
-            if (original.Length < 64 || original[0] != 'P' || original[1] != 'F' || original[2] != 'I' || original[3] != 'L')
-            {
-                headerToUse = new byte[64];
-                headerToUse[0] = (byte)'P';
-                headerToUse[1] = (byte)'F';
-                headerToUse[2] = (byte)'I';
-                headerToUse[3] = (byte)'L';
-            }
-            return GameLZSS.CompressPfil(plainBytes, headerToUse);
-        }
-
-        private static HashSet<string> GetClScriptManagedKeys(string text)
-        {
-            var keys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            string[] lines = text.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
-            foreach (string line in lines)
-            {
-                Match radius = RegexRadiusPatch.Match(line);
-                if (radius.Success)
-                {
-                    keys.Add($"Radius|{radius.Groups[1].Value.Trim()}|{radius.Groups[2].Value.Trim()}");
-                    continue;
-                }
-
-                Match civi = RegexCiviPatch.Match(line);
-                if (civi.Success)
-                {
-                    keys.Add($"CiviDelay|{civi.Groups[1].Value.Trim()}");
-                    continue;
-                }
-
-                Match morale = RegexMoraleKey.Match(line);
-                if (morale.Success)
-                {
-                    keys.Add($"{morale.Groups[1].Value.Trim()}|{morale.Groups[2].Value.Trim()}");
-                }
-            }
-            return keys;
+            var options = new ClScriptOptions(
+                FastCivilianProduction: fastCiviProduction,
+                InfiniteMorale: infiniteMoraleChecked,
+                SpellEnhancement: false,
+                GeneralSkills: new Dictionary<string, double>(),
+                GermanSpellRadiusMultiplier: gerMult,
+                CeltSpellRadiusMultiplier: kelMult,
+                HunSpellRadiusMultiplier: hunMult,
+                OriginalBytes: original);
+            return ClScriptPatcher.GetPatchedBytes(original, options);
         }
 
         private byte[] GetPatchedRessBytes(BackupManager backupManager, bool freeProdChecked, bool freeUpgradeChecked, bool noSpellCostChecked)
@@ -609,7 +477,7 @@ namespace AgainstRomeModifier.Core.Services
             {
                 results[item.Key] = TeamDatPatcher.GetPatchedBytes(item.Value, new TeamDatOptions(maxPopulation));
             }
-            _logger.Log(maxPopulation ? string.Format("已修改所有地圖的 team.dat 人口上限為 {0} (共處理 {1} 個檔案)。", 1600, results.Count) : "已將所有地圖的 team.dat 人口上限還原為原版。");
+            _logger.Log(maxPopulation ? string.Format(Loc.Get("SvcLogTeamDatApplied"), TeamDatPatcher.DefaultPopulationLimit, results.Count) : Loc.Get("SvcLogTeamDatRestored"));
             return results;
         }
 
@@ -654,7 +522,7 @@ namespace AgainstRomeModifier.Core.Services
                                 throw new InvalidDataException("乾淨的原版 ak_anfuehrer.bci 備份不存在或版本不符，已取消安全遷移。");
                             }
                             retiredLeaderScriptMigrated = true;
-                            _logger.Log("已移除會造成戰鬥閃退的舊版首領榮耀腳本，並以原版 ak_anfuehrer.bci 重建。");
+                            _logger.Log(Loc.Get("SvcLogLeaderScriptMigrated"));
                         }
                     }
                 }
@@ -713,7 +581,7 @@ namespace AgainstRomeModifier.Core.Services
                     string destPath = GetSafeLanguagePath(gamePath, relPath);
                     SafeCopyFile(file, destPath, true, rollback);
                 }
-                _logger.Log("已成功套用英文介面與地圖語言包。");
+                _logger.Log(Loc.Get("SvcLogLangApplied"));
                 return;
             }
 
@@ -727,7 +595,7 @@ namespace AgainstRomeModifier.Core.Services
                 return;
             }
             RestoreLanguageBackup(gamePath, rollback);
-            _logger.Log("已將英文介面與地圖語言包還原為原版。");
+            _logger.Log(Loc.Get("SvcLogLangRestored"));
         }
 
         private static string GetLanguageBackupDirectory(string gamePath)
@@ -935,7 +803,7 @@ namespace AgainstRomeModifier.Core.Services
 
             byte[] markerBytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(newManifest, new JsonSerializerOptions { WriteIndented = true }));
             SafeWriteAllBytes(GetDgVoodooMarkerPath(gamePath), markerBytes, rollback);
-            _logger.Log(string.Format("已成功安裝與設定 dgVoodoo2 ({0}) 繪圖轉譯器。", DgVoodooEmbeddedVersion));
+            _logger.Log(string.Format(Loc.Get("SvcLogDgvInstalled"), DgVoodooEmbeddedVersion));
         }
 
         private void RemoveDgVoodoo(string gamePath, FileRollbackScope? rollback)
@@ -945,7 +813,7 @@ namespace AgainstRomeModifier.Core.Services
             {
                 if (DgVoodooManagedFiles.Any(fileName => File.Exists(Path.Combine(gamePath, fileName))))
                 {
-                    _logger.Log("偵測到遊戲目錄中存在非本修改器部署的 dgVoodoo2 相關元件，為保護使用者資產將不主動進行刪除；若要乾淨卸載，請手動刪除遊戲目錄下的 DDraw.dll, D3D8.dll, dgVoodooCpl.exe。");
+                    _logger.Log(Loc.Get("SvcLogDgvNotManaged"));
                 }
                 return;
             }
@@ -962,12 +830,12 @@ namespace AgainstRomeModifier.Core.Services
                 {
                     if (string.Equals(fileName, "dgVoodoo.conf", StringComparison.OrdinalIgnoreCase))
                     {
-                        _logger.Log(string.Format("dgVoodoo2 託管設定檔 {0} 的雜湊值已變更，將予以保留不刪除。", fileName));
+                        _logger.Log(string.Format(Loc.Get("SvcLogDgvPreserved"), fileName));
                         continue;
                     }
 
                     preserved[fileName] = expectedHash;
-                    _logger.Log(string.Format("dgVoodoo2 託管設定檔 {0} 的雜湊值已變更，將予以保留不刪除。", fileName));
+                    _logger.Log(string.Format(Loc.Get("SvcLogDgvPreserved"), fileName));
                     continue;
                 }
 
@@ -978,7 +846,7 @@ namespace AgainstRomeModifier.Core.Services
             if (preserved.Count == 0)
             {
                 SafeDeleteFile(markerPath, rollback);
-                _logger.Log("已成功移除 dgVoodoo2 所有受託管檔案。");
+                _logger.Log(Loc.Get("SvcLogDgvRemoved"));
             }
             else
             {
@@ -1080,7 +948,7 @@ namespace AgainstRomeModifier.Core.Services
                     int speed = ExePatchModel.GetGameSpeedMultiplier(exeBytes);
                     options.GameSpeed = speed;
                 }
-                catch { }
+                catch (Exception ex) { _logger.Log(string.Format(Loc.Get("SvcLogDetectFailed"), "Against_Rome.exe", ex.Message)); }
             }
 
             // B. cl_script.ini (CiviDelay, InfiniteMorale, Balance)
@@ -1108,7 +976,7 @@ namespace AgainstRomeModifier.Core.Services
                         int.TryParse(matchOverPop.Groups[1].Value, out int overPop) && overPop >= 99999999 &&
                         int.TryParse(matchIdle.Groups[1].Value, out int idle) && idle == 500;
                 }
-                catch { }
+                catch (Exception ex) { _logger.Log(string.Format(Loc.Get("SvcLogDetectFailed"), "cl_script.ini", ex.Message)); }
             }
 
             // C. ress.ini (FreeProduction, FreeUpgrade, NoSpellCost)
@@ -1145,7 +1013,7 @@ namespace AgainstRomeModifier.Core.Services
                             .All(idx => idx < cols.Length && cols[idx].Trim() == "0");
                     }
                 }
-                catch { }
+                catch (Exception ex) { _logger.Log(string.Format(Loc.Get("SvcLogDetectFailed"), "ress.ini", ex.Message)); }
             }
 
             // D. objdef.dau (housingCapacity20x, storageCapacity10x, fastBuildUpgradeRepair, balance)
@@ -1157,24 +1025,22 @@ namespace AgainstRomeModifier.Core.Services
                     byte[] raw = File.ReadAllBytes(objdefPath);
                     byte[] decomp = GameLZSS.DecompressPfil(raw);
                     string currentObjdef = Encoding.GetEncoding(1251).GetString(decomp);
+                    // 當前與原版文本各解析一次，四項偵測（Housing/Storage/FastBuild/Balance）共用
+                    List<string[]> currentRows = ParseObjdefRows(currentObjdef);
 
                     if (backupManager.BackupFiles.TryGetValue("SYSTEM/DATA_MP/DEFAULTS/objdef.dau", out byte[]? originalObjdefBytes))
                     {
                         string originalObjdef = Encoding.GetEncoding(1251).GetString(GameLZSS.DecompressPfil(originalObjdefBytes));
-                        options.HousingCapacity20x = HasHousingCapacityMultiplier(currentObjdef, originalObjdef, HousingCapacityMultiplier);
-                        options.StorageCapacity10x = HasStorageCapacityMultiplier(currentObjdef, originalObjdef, StorageCapacityMultiplier);
-                        options.FastBuildUpgradeRepair = HasFastBuildUpgradeRepair(currentObjdef, originalObjdef);
+                        List<string[]> originalRows = ParseObjdefRows(originalObjdef);
+                        options.HousingCapacity20x = HasHousingCapacityMultiplier(currentRows, originalRows, HousingCapacityMultiplier);
+                        options.StorageCapacity10x = HasStorageCapacityMultiplier(currentRows, originalRows, StorageCapacityMultiplier);
+                        options.FastBuildUpgradeRepair = HasFastBuildUpgradeRepair(currentRows, originalRows);
                     }
 
                     // 偵測是否已套用 Balance (若有任何一個兵種屬性被修改)
-                    string lineEnding = currentObjdef.Contains("\r\n") ? "\r\n" : "\n";
-                    string[] lines = currentObjdef.Split(new string[] { lineEnding }, StringSplitOptions.None);
                     var unitRows = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
-                    for (int idx = 2; idx < lines.Length; idx++)
+                    foreach (string[] cols in currentRows)
                     {
-                        string line = lines[idx];
-                        if (line.Length < 100) continue;
-                        string[] cols = PatchText.ParseCsvLine(line);
                         if (cols.Length < 192) continue;
                         string name = cols[52].Trim();
                         if (TroopConfig.UnitMeta.ContainsKey(name) || name == "FigZivMan00_Zivilist")
@@ -1245,7 +1111,7 @@ namespace AgainstRomeModifier.Core.Services
                     }
                     options.Balance = isFileBalanced;
                 }
-                catch { }
+                catch (Exception ex) { _logger.Log(string.Format(Loc.Get("SvcLogDetectFailed"), "objdef.dau", ex.Message)); }
             }
 
             // E. team.dat (maxPopulation)
@@ -1271,7 +1137,7 @@ namespace AgainstRomeModifier.Core.Services
                 }
                 options.MaxPopulation = maxPop;
             }
-            catch { }
+            catch (Exception ex) { _logger.Log(string.Format(Loc.Get("SvcLogDetectFailed"), "team.dat", ex.Message)); }
 
             // F. Endless AI (M1..M5)
             try
@@ -1284,7 +1150,7 @@ namespace AgainstRomeModifier.Core.Services
                     options.EndlessAiModules[i] = (aiState == PatchState.Ultimate);
                 }
             }
-            catch { }
+            catch (Exception ex) { _logger.Log(string.Format(Loc.Get("SvcLogDetectFailed"), "Endless AI", ex.Message)); }
 
             // G. toEnglish
             try
@@ -1292,14 +1158,14 @@ namespace AgainstRomeModifier.Core.Services
                 TryGetLanguageOverlayState(gamePath, out bool langEng);
                 options.ToEnglish = langEng;
             }
-            catch { }
+            catch (Exception ex) { _logger.Log(string.Format(Loc.Get("SvcLogDetectFailed"), "ToEng overlay", ex.Message)); }
 
             // H. DgVoodoo
             try
             {
                 options.DgVoodoo = IsDgVoodooInstalled(gamePath);
             }
-            catch { }
+            catch (Exception ex) { _logger.Log(string.Format(Loc.Get("SvcLogDetectFailed"), "dgVoodoo2", ex.Message)); }
 
             // I. FoodHealing10x
             try
@@ -1307,21 +1173,30 @@ namespace AgainstRomeModifier.Core.Services
                 TryReadFoodHealingAmountState(gamePath, out bool foodHealing);
                 options.FoodHealing10x = foodHealing;
             }
-            catch { }
+            catch (Exception ex) { _logger.Log(string.Format(Loc.Get("SvcLogDetectFailed"), "food healing", ex.Message)); }
 
             return options;
         }
 
         // --- Objdef dau 偵測細部輔助函數 ---
 
-        private static bool HasHousingCapacityMultiplier(string currentContent, string originalContent, int multiplier)
+        /// <summary>把 objdef 文本解析為資料列（長度 >= 100 的行），供各偵測共用、避免重複 split 與解析。</summary>
+        private static List<string[]> ParseObjdefRows(string content)
         {
-            var currentValues = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-            string[] currentLines = currentContent.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
-            foreach (string line in currentLines)
+            var rows = new List<string[]>();
+            foreach (string line in content.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None))
             {
                 if (line.Length < 100) continue;
-                string[] cols = PatchText.ParseCsvLine(line);
+                rows.Add(PatchText.ParseCsvLine(line));
+            }
+            return rows;
+        }
+
+        private static bool HasHousingCapacityMultiplier(List<string[]> currentRows, List<string[]> originalRows, int multiplier)
+        {
+            var currentValues = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            foreach (string[] cols in currentRows)
+            {
                 if (cols.Length <= (int)ObjdefIndex.HousingCapacity || cols.Length <= (int)ObjdefIndex.Name) continue;
                 if (int.TryParse(cols[(int)ObjdefIndex.HousingCapacity].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int value))
                 {
@@ -1330,11 +1205,8 @@ namespace AgainstRomeModifier.Core.Services
             }
 
             bool foundHousing = false;
-            string[] originalLines = originalContent.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
-            foreach (string line in originalLines)
+            foreach (string[] cols in originalRows)
             {
-                if (line.Length < 100) continue;
-                string[] cols = PatchText.ParseCsvLine(line);
                 if (cols.Length <= (int)ObjdefIndex.HousingCapacity || cols.Length <= (int)ObjdefIndex.Name) continue;
                 if (!int.TryParse(cols[(int)ObjdefIndex.HousingCapacity].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int originalValue) || originalValue <= 0) continue;
 
@@ -1348,14 +1220,11 @@ namespace AgainstRomeModifier.Core.Services
             return foundHousing;
         }
 
-        private static bool HasStorageCapacityMultiplier(string currentContent, string originalContent, int multiplier)
+        private static bool HasStorageCapacityMultiplier(List<string[]> currentRows, List<string[]> originalRows, int multiplier)
         {
             var currentValues = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-            string[] currentLines = currentContent.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
-            foreach (string line in currentLines)
+            foreach (string[] cols in currentRows)
             {
-                if (line.Length < 100) continue;
-                string[] cols = PatchText.ParseCsvLine(line);
                 if (cols.Length <= (int)ObjdefIndex.StorageCapacity || cols.Length <= (int)ObjdefIndex.Name) continue;
                 if (int.TryParse(cols[(int)ObjdefIndex.StorageCapacity].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int value))
                 {
@@ -1364,11 +1233,8 @@ namespace AgainstRomeModifier.Core.Services
             }
 
             bool foundStorage = false;
-            string[] originalLines = originalContent.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
-            foreach (string line in originalLines)
+            foreach (string[] cols in originalRows)
             {
-                if (line.Length < 100) continue;
-                string[] cols = PatchText.ParseCsvLine(line);
                 if (cols.Length <= (int)ObjdefIndex.StorageCapacity || cols.Length <= (int)ObjdefIndex.Name) continue;
                 string name = cols[(int)ObjdefIndex.Name].Trim();
                 if (!name.StartsWith("Bau") || !(name.Contains("Hau") || name.Contains("Lag"))) continue;
@@ -1383,16 +1249,13 @@ namespace AgainstRomeModifier.Core.Services
             return foundStorage;
         }
 
-        private static bool HasFastBuildUpgradeRepair(string currentContent, string originalContent)
+        private static bool HasFastBuildUpgradeRepair(List<string[]> currentRows, List<string[]> originalRows)
         {
             var currentBuildValues = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             var currentUpgValues = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
-            string[] currentLines = currentContent.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
-            foreach (string line in currentLines)
+            foreach (string[] cols in currentRows)
             {
-                if (line.Length < 100) continue;
-                string[] cols = PatchText.ParseCsvLine(line);
                 if (cols.Length < 192) continue;
                 string name = cols[52].Trim();
                 if (!name.StartsWith("Bau")) continue;
@@ -1408,11 +1271,8 @@ namespace AgainstRomeModifier.Core.Services
             }
 
             bool foundBuilding = false;
-            string[] originalLines = originalContent.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
-            foreach (string line in originalLines)
+            foreach (string[] cols in originalRows)
             {
-                if (line.Length < 100) continue;
-                string[] cols = PatchText.ParseCsvLine(line);
                 if (cols.Length < 192) continue;
                 string name = cols[52].Trim();
                 if (!name.StartsWith("Bau")) continue;
