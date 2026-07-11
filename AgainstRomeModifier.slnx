@@ -1,4 +1,6 @@
 <Solution>
   <Project Path="AgainstRomeModifier.csproj" />
+  <Project Path="src.Shared/AgainstRome.Shared.csproj" />
+  <Project Path="src.MapEditor/AgainstRomeMapEditor.csproj" />
   <Project Path="tests/AgainstRomeModifier.Tests/AgainstRomeModifier.Tests.csproj" />
 </Solution>
