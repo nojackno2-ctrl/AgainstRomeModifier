@@ -37,12 +37,21 @@ namespace AgainstRomeModifier.Tests
                 return;
             }
 
-            // 2. Patch — 直接呼叫 internal 方法（InternalsVisibleTo），
-            // 不再用反射：重構時可由編譯器把關，而非執行期才失敗。
+            // 2. Patch — 走與 Apply 相同的生產路徑（IniFeaturePatcher/ObjdefFeaturePatcher，
+            // InternalsVisibleTo），確保測試覆蓋的就是實際出貨行為（含實驗性功能旗標）。
             var engine = new PatchEngine(new NullLogger());
-
-            // fastCiviProduction=true, infiniteMoraleChecked=true, balanceChecked=true
-            byte[] patchedCompressed = engine.GetPatchedClScriptBytes("C:\\dummy", backupManager, true, true, true);
+            var profile = new AgainstRomeModifier.Core.Features.PatchProfile {
+                FastCiviProduction = true,
+                InfiniteMorale = true,
+                Balance = true,
+                SpellDamage5x = true,
+                SpellHealing10x = true,
+                SpellResurrection = true,
+                GeneralSkills = true,
+                LeaderGlory = true
+            };
+            byte[] patchedCompressed = AgainstRomeModifier.Core.Features.Ini.IniFeaturePatcher.BuildClScript(backupManager, profile);
+            byte[] patchedObjdef = AgainstRomeModifier.Core.Features.Objdef.ObjdefFeaturePatcher.Build(backupManager, profile);
 
 
             // 3. Decompress and verify
@@ -66,12 +75,19 @@ namespace AgainstRomeModifier.Tests
             {
                 Directory.CreateDirectory(Path.Combine(tempDir, "SYSTEM"));
                 File.WriteAllBytes(Path.Combine(tempDir, "SYSTEM", "cl_script.ini"), patchedCompressed);
+                Directory.CreateDirectory(Path.Combine(tempDir, "SYSTEM", "DATA_MP", "DEFAULTS"));
+                File.WriteAllBytes(Path.Combine(tempDir, "SYSTEM", "DATA_MP", "DEFAULTS", "objdef.dau"), patchedObjdef);
 
                 // Run detection
                 var detectedOptions = engine.DetectCurrentPatchState(tempDir, backupManager);
 
                 Assert.True(detectedOptions.FastCiviProduction, "Fast Civi Production should be detected as true");
                 Assert.True(detectedOptions.InfiniteMorale, "Infinite Morale should be detected as true");
+                Assert.True(detectedOptions.SpellDamage5x, "Spell Damage 5x should be detected as true");
+                Assert.True(detectedOptions.SpellHealing10x, "Spell Healing 10x should be detected as true");
+                Assert.True(detectedOptions.SpellResurrection, "Spell Resurrection should be detected as true");
+                Assert.True(detectedOptions.GeneralSkills, "General Skills should be detected as true");
+                Assert.True(detectedOptions.LeaderGlory, "Leader Glory should be detected as true");
             }
             finally
             {

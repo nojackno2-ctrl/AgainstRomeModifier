@@ -16,8 +16,8 @@ namespace AgainstRomeModifier {
         private void ApplyModernLayout() {
             SuspendLayout();
 
-            Size = new Size(1600, 860);
-            MinimumSize = new Size(1400, 760);
+            Size = new Size(2000, 940);
+            MinimumSize = new Size(1800, 760);
             AutoScroll = false;
             BackColor = Color.FromArgb(9, 12, 18);
 
@@ -153,24 +153,38 @@ namespace AgainstRomeModifier {
             };
 
             Panel pnlContent = new Panel {
-                Dock = DockStyle.Fill,
+                Location = new Point(0, 72),
+                Size = new Size(tabSystem.ClientSize.Width, tabSystem.ClientSize.Height - 72),
+                Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
                 BackColor = Color.FromArgb(9, 12, 18),
                 AutoScroll = false // 確保絕對不滾動
             };
 
-            ConfigureSettingsCard(pnlNumericCard, lblNumericTitle, 278,
+            ConfigureSettingsCard(pnlNumericCard, lblNumericTitle, 206,
                 chkFocusLoss,
                 chkToEng,
                 chkDgVoodoo);
-            ConfigureGameSpeedRow(pnlNumericCard, rowIndex: 3);
-            ConfigureSettingsCard(pnlSwitchesCard, lblSwitchesTitle, 492,
+            ConfigureSettingsCard(pnlExperimentalCard, lblExperimentalTitle, 686,
+                chkGameSpeed,
+                chkSpellDamage5x,
+                chkSpellHealing10x,
+                chkSpellResurrection,
+                chkGeneralSkills,
+                chkLeaderGlory,
+                chkBalance,
+                chkRangedRange3x,
+                chkUnitMovementSpeed2x,
+                chkSpellEntireMap,
+                chkSpellRange3x,
+                chkProjectileArcHeight,
+                chkRangedAccuracy);
+            ConfigureSettingsCard(pnlSwitchesCard, lblSwitchesTitle, 302,
                 chkFreeProd,
                 chkFreeUpgrade,
                 chkNoSpellCost,
                 chkInfiniteMorale,
-                chkBalance,
                 chkNoSpellAltar);
-            ConfigureSettingsCard(pnlBuildCard, lblBuildTitle, 518,
+            ConfigureSettingsCard(pnlBuildCard, lblBuildTitle, 446,
                 chkMaxPopulation,
                 chkHousingCapacity20x,
                 chkStorageCapacity10x,
@@ -184,16 +198,19 @@ namespace AgainstRomeModifier {
 
             // 卡片容器設為透明，移除背景繪製與邊框
             pnlNumericCard.BackColor = Color.Transparent;
+            pnlExperimentalCard.BackColor = Color.Transparent;
             pnlSwitchesCard.BackColor = Color.Transparent;
             pnlBuildCard.BackColor = Color.Transparent;
             pnlAiCard.BackColor = Color.Transparent;
 
             pnlNumericCard.Dock = DockStyle.None;
+            pnlExperimentalCard.Dock = DockStyle.None;
             pnlSwitchesCard.Dock = DockStyle.None;
             pnlBuildCard.Dock = DockStyle.None;
             pnlAiCard.Dock = DockStyle.None;
 
             pnlContent.Controls.Add(pnlNumericCard);
+            pnlContent.Controls.Add(pnlExperimentalCard);
             pnlContent.Controls.Add(pnlSwitchesCard);
             pnlContent.Controls.Add(pnlBuildCard);
             pnlContent.Controls.Add(pnlAiCard);
@@ -216,23 +233,27 @@ namespace AgainstRomeModifier {
             int gapY = 16;
 
             int availWidth = container.ClientSize.Width - (paddingX * 2);
-            int columnWidth = (availWidth - (gapX * 2)) / 3;
+            int columnWidth = (availWidth - (gapX * 3)) / 4;
             if (columnWidth < 300) columnWidth = 300;
 
-            // 第一欄：系統設定與 AI 卡片垂直堆疊
+            // 第一欄：系統設定與資源/戰鬥修改垂直堆疊
             pnlNumericCard.Location = new Point(paddingX, paddingY);
             pnlNumericCard.Width = columnWidth;
-
-            pnlAiCard.Location = new Point(paddingX, paddingY + pnlNumericCard.Height + gapY);
-            pnlAiCard.Width = columnWidth;
-
-            // 第二欄：資源與戰鬥修改
-            pnlSwitchesCard.Location = new Point(paddingX + columnWidth + gapX, paddingY);
+ 
+            pnlSwitchesCard.Location = new Point(paddingX, paddingY + pnlNumericCard.Height + gapY);
             pnlSwitchesCard.Width = columnWidth;
-
-            // 第三欄：建設與人口修改
-            pnlBuildCard.Location = new Point(paddingX + (columnWidth + gapX) * 2, paddingY);
+ 
+            // 第二欄：建設與人口設定
+            pnlBuildCard.Location = new Point(paddingX + columnWidth + gapX, paddingY);
             pnlBuildCard.Width = columnWidth;
+ 
+            // 第三欄：AI 終極戰爭模式 (無盡重生)
+            pnlAiCard.Location = new Point(paddingX + (columnWidth + gapX) * 2, paddingY);
+            pnlAiCard.Width = columnWidth;
+ 
+            // 第四欄：實驗性功能 (頂部對齊獨立一欄)
+            pnlExperimentalCard.Location = new Point(paddingX + (columnWidth + gapX) * 3, paddingY);
+            pnlExperimentalCard.Width = columnWidth;
 
             container.ResumeLayout(true);
         }
@@ -267,22 +288,7 @@ namespace AgainstRomeModifier {
             LayoutRows();
         }
 
-        // 遊戲加速選單這一列不是 ModernToggle，走跟 ConfigureSettingsCard.LayoutRows 相同的列高公式
-        // （60 + rowIndex*48），以便緊接在卡片既有開關列之後、隨卡片寬度自動重新排版。
-        private void ConfigureGameSpeedRow(Panel card, int rowIndex) {
-            void LayoutRow() {
-                int y = 60 + rowIndex * 48;
-                lblGameSpeed.Location = new Point(20, y + 3);
-                lblGameSpeed.Font = fontJhengHei95R;
-                lblGameSpeed.BackColor = card.BackColor;
-                int comboLeft = lblGameSpeed.Right + 10;
-                cmbGameSpeed.Location = new Point(comboLeft, y);
-                cmbGameSpeed.Width = Math.Max(100, card.Width - comboLeft - 40);
-            }
 
-            card.Resize += (s, e) => LayoutRow();
-            LayoutRow();
-        }
 
 
 

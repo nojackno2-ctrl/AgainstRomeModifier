@@ -30,7 +30,7 @@
         "Moves": { "index": 4, "type": "float", "status": "stable" },
         "Hp": { "index": 19, "type": "float", "status": "stable" },
         "Movsf": { "index": 23, "type": "float", "status": "stable" },
-        "Sirad": { "index": 24, "type": "float", "status": "stable" },
+        "Sirad": { "index": 24, "type": "float", "status": "stable", "notes": "Priest casting-distance gate; SpellEntireMap writes 30000." },
         "Name": { "index": 52, "type": "string", "status": "candidate" },
         "Weapon1Akti": { "index": 78, "type": "int", "status": "stable" },
         "Weapon1Dam": { "index": 79, "type": "float", "status": "stable" },

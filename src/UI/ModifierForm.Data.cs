@@ -253,7 +253,9 @@ namespace AgainstRomeModifier {
         /// <summary>
         /// 獲取各兵種的平衡基礎屬性，若未啟用平衡模式，則直接返回原版屬性。
         /// </summary>
-        private static double[] MergeUnitStatsLayers(double[] fallback, double[] custom, bool supportsSpellRadius) {
+        private static double[] MergeUnitStatsLayers(double[] fallback, double[] custom, bool supportsSpellRadius,
+            bool ignoreMovementSpeed = false, bool ignoreRange = false, bool ignoreSpellRadius = false,
+            bool removePriestSight = false) {
             ArgumentNullException.ThrowIfNull(fallback);
             ArgumentNullException.ThrowIfNull(custom);
 
@@ -261,6 +263,12 @@ namespace AgainstRomeModifier {
             for (int i = 0; i < layered.Length; i++) {
                 if (i == 8 && !supportsSpellRadius) {
                     layered[i] = 0;
+                    continue;
+                }
+
+                // 速度、射程、法術範圍不再是自訂兵種欄位，由獨立功能負責。
+                if (i is 4 or 7 or 8 || (i == 5 && removePriestSight)) {
+                    layered[i] = fallback.Length > i ? fallback[i] : 0;
                     continue;
                 }
 
@@ -277,11 +285,37 @@ namespace AgainstRomeModifier {
             double[] original = GetOriginalStats(key);
             double[] balanced = (forceBalance || chkBalance.Checked) ? GetDefaultBalancedStats(key) : original;
 
+            double[] result;
+            if (!TroopConfig.UnitMeta.TryGetValue(key, out var meta)) return balanced;
             if (customUnitStats != null && customUnitStats.TryGetValue(key, out double[]? custom) && custom != null) {
-                return MergeUnitStatsLayers(balanced, custom, SupportsConfigurableSpellRadius(key));
+                bool ignoreRange = (chkRangedRange3x.Checked && (meta.UnitType is "ranged_inf" or "ranged_cav" or "siege")) ||
+                    (chkSpellEntireMap.Checked && meta.UnitType == "priest");
+                result = MergeUnitStatsLayers(balanced, custom, SupportsConfigurableSpellRadius(key),
+                    chkUnitMovementSpeed2x.Checked, ignoreRange,
+                    chkSpellRange3x.Checked && SupportsConfigurableSpellRadius(key),
+                    meta.UnitType == "priest");
+            } else {
+                result = (double[])balanced.Clone();
             }
 
-            return balanced;
+            if (meta != null) {
+                bool isRanged = meta.UnitType is "ranged_inf" or "ranged_cav" or "siege";
+                if (isRanged && chkRangedRange3x.Checked) {
+                    result[7] *= 3.0;
+                }
+                if (chkUnitMovementSpeed2x.Checked) {
+                    result[4] *= 2.0;
+                }
+                bool isPriest = meta.UnitType == "priest";
+                if (isPriest) {
+                    if (chkSpellEntireMap.Checked) {
+                        result[7] = 30000.0;
+                    }
+                    if (chkSpellRange3x.Checked && SupportsConfigurableSpellRadius(key)) result[8] *= 3.0;
+                }
+            }
+
+            return result;
         }
 
         /// <summary>
@@ -735,9 +769,19 @@ namespace AgainstRomeModifier {
 
                 if (syncUIWithFile) {
                     chkBalance.CheckedChanged -= ChkBalance_CheckedChanged;
+                    chkRangedRange3x.CheckedChanged -= ChkRangedRange3x_CheckedChanged;
+                    chkUnitMovementSpeed2x.CheckedChanged -= ChkUnitMovementSpeed2x_CheckedChanged;
+                    chkSpellEntireMap.CheckedChanged -= ChkSpellEntireMap_CheckedChanged;
+                    chkSpellRange3x.CheckedChanged -= ChkSpellRange3x_CheckedChanged;
+
                     foreach (var (id, toggle) in featureToggles) toggle.Checked = profile.GetBool(id);
+
                     chkBalance.CheckedChanged += ChkBalance_CheckedChanged;
-                    SetGameSpeedSelection(profile.GetInt("GameSpeed"));
+                    chkRangedRange3x.CheckedChanged += ChkRangedRange3x_CheckedChanged;
+                    chkUnitMovementSpeed2x.CheckedChanged += ChkUnitMovementSpeed2x_CheckedChanged;
+                    chkSpellEntireMap.CheckedChanged += ChkSpellEntireMap_CheckedChanged;
+                    chkSpellRange3x.CheckedChanged += ChkSpellRange3x_CheckedChanged;
+                    chkGameSpeed.Checked = profile.GameSpeed > 1;
 
                     LoadDefaultStatsData();
                 }
@@ -957,6 +1001,8 @@ namespace AgainstRomeModifier {
         /// </summary>
         private static double GetUnitMaxRange(string[] cols, string utype) {
             double maxR = 0;
+            if (utype == "priest")
+                return double.TryParse(cols[(int)ObjdefIndex.Sirad].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out double sight) ? sight : 0;
             for (int w = 1; w <= 8; w++) {
                 int activeIndex = (int)ObjdefIndex.Weapon1Akti + (w - 1) * 8;
                 int rangeMinIndex = (int)ObjdefIndex.Weapon1RangeMin + (w - 1) * 8;
@@ -1004,5 +1050,27 @@ namespace AgainstRomeModifier {
             Log(string.Format(Loc.Get("LogBalanceToggled"), status));
         }
 
+        private void ChkRangedRange3x_CheckedChanged(object? sender, EventArgs e) {
+            LoadDefaultStatsData();
+            string status = chkRangedRange3x.Checked ? (Loc.CurrentLanguage == Language.English ? "enabled" : "啟用") : (Loc.CurrentLanguage == Language.English ? "disabled" : "停用");
+            Log(string.Format(Loc.Get("LogRangedRange3xToggled"), status));
+        }
+        private void ChkUnitMovementSpeed2x_CheckedChanged(object? sender, EventArgs e) {
+            LoadDefaultStatsData();
+            string status = chkUnitMovementSpeed2x.Checked ? (Loc.CurrentLanguage == Language.English ? "enabled" : "啟用") : (Loc.CurrentLanguage == Language.English ? "disabled" : "停用");
+            Log(string.Format(Loc.Get("LogUnitMovementSpeed2xToggled"), status));
+        }
+
+        private void ChkSpellEntireMap_CheckedChanged(object? sender, EventArgs e) {
+            LoadDefaultStatsData();
+            string status = chkSpellEntireMap.Checked ? (Loc.CurrentLanguage == Language.English ? "enabled" : "啟用") : (Loc.CurrentLanguage == Language.English ? "disabled" : "停用");
+            Log(string.Format(Loc.Get("LogSpellEntireMapToggled"), status));
+        }
+
+        private void ChkSpellRange3x_CheckedChanged(object? sender, EventArgs e) {
+            LoadDefaultStatsData();
+            string status = chkSpellRange3x.Checked ? (Loc.CurrentLanguage == Language.English ? "enabled" : "啟用") : (Loc.CurrentLanguage == Language.English ? "disabled" : "停用");
+            Log(string.Format(Loc.Get("LogSpellRange3xToggled"), status));
+        }
     }
 }

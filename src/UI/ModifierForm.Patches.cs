@@ -20,11 +20,19 @@ namespace AgainstRomeModifier {
                 ["InfiniteMorale"] = chkInfiniteMorale, ["FreeProduction"] = chkFreeProd,
                 ["FreeUpgrade"] = chkFreeUpgrade, ["NoSpellCost"] = chkNoSpellCost,
                 ["MaxPopulation"] = chkMaxPopulation, ["Balance"] = chkBalance,
+                ["RangedRange3x"] = chkRangedRange3x, ["UnitMovementSpeed2x"] = chkUnitMovementSpeed2x,
+                ["SpellEntireMap"] = chkSpellEntireMap, ["SpellRange3x"] = chkSpellRange3x,
+                ["ProjectileArcHeight"] = chkProjectileArcHeight, ["RangedAccuracy"] = chkRangedAccuracy,
                 ["HousingCapacity20x"] = chkHousingCapacity20x, ["StorageCapacity10x"] = chkStorageCapacity10x,
                 ["HqHp10x"] = chkHqHp10x, ["FastBuildUpgradeRepair"] = chkFastBuildUpgradeRepair,
                 ["FoodHealing10x"] = chkFoodHealing10x, ["VillageBuildRange"] = chkVillageBuildRange,
                 ["NoSpellAltar"] = chkNoSpellAltar, ["DgVoodoo"] = chkDgVoodoo,
                 ["ToEnglish"] = chkToEng,
+                ["SpellDamage5x"] = chkSpellDamage5x,
+                ["SpellHealing10x"] = chkSpellHealing10x,
+                ["SpellResurrection"] = chkSpellResurrection,
+                ["GeneralSkills"] = chkGeneralSkills,
+                ["LeaderGlory"] = chkLeaderGlory,
                 ["EndlessAi.M1"] = chkAiM1, ["EndlessAi.M2"] = chkAiM2, ["EndlessAi.M3"] = chkAiM3,
                 ["EndlessAi.M4"] = chkAiM4, ["EndlessAi.M5"] = chkAiM5, ["EndlessAi.M6"] = chkAiM6,
             };
@@ -35,7 +43,7 @@ namespace AgainstRomeModifier {
                 if (featureToggles.TryGetValue(feature.Id, out ModernToggle? toggle)) toggle.Checked = false;
             }
             if (category == FeatureCategory.Compat) {
-                cmbGameSpeed.SelectedIndex = 0;
+                chkGameSpeed.Checked = false;
                 chkDgVoodoo.Checked = patchEngine.IsDgVoodooInstalled(gamePath);
             }
         }
@@ -132,7 +140,7 @@ namespace AgainstRomeModifier {
 
                 var profile = new PatchProfile();
                 foreach (var (id, toggle) in featureToggles) profile.Set(id, FeatureValue.Of(toggle.Checked));
-                profile.Set("GameSpeed", FeatureValue.Of(GetSelectedGameSpeedMultiplier()));
+                profile.Set("GameSpeed", FeatureValue.Of(chkGameSpeed.Checked ? 10 : 1));
                 profile.Set("CustomUnitStats", FeatureValue.Of(this.customUnitStats));
 
                 await Task.Run(() => {
@@ -240,32 +248,9 @@ namespace AgainstRomeModifier {
             }
         }
 
-        /// <summary>以目前語系重建加速下拉選單的項目（index 0 = 原版，其後為各支援倍率），並保留目前選項。</summary>
-        private void PopulateGameSpeedItems() {
-            int prev = cmbGameSpeed.SelectedIndex;
-            cmbGameSpeed.BeginUpdate();
-            cmbGameSpeed.Items.Clear();
-            cmbGameSpeed.Items.Add(Loc.Get("GameSpeedOff"));
-            foreach (int m in ExePatchModel.GameSpeedSupportedMultipliers) {
-                if (m <= 1) continue;
-                cmbGameSpeed.Items.Add(string.Format(Loc.Get("GameSpeedItem"), m));
-            }
-            cmbGameSpeed.EndUpdate();
-            cmbGameSpeed.SelectedIndex = prev >= 0 && prev < cmbGameSpeed.Items.Count ? prev : 0;
-        }
-
-        /// <summary>由下拉選單目前選項換算加速倍率。選單項目與 GameSpeedSupportedMultipliers
-        /// 一一對應（index 0 = 倍率 1 = 原版），一律查表換算，避免與倍率表的排列產生隱性耦合。</summary>
-        private int GetSelectedGameSpeedMultiplier() {
-            int idx = cmbGameSpeed.SelectedIndex;
-            int[] multipliers = ExePatchModel.GameSpeedSupportedMultipliers;
-            return idx >= 0 && idx < multipliers.Length ? multipliers[idx] : 1;
-        }
-
-        /// <summary>依偵測到的倍率設定下拉選單目前選項；未知或不在支援清單時回到原版。</summary>
+        /// <summary>設定遊戲 10 倍加速開關的狀態。</summary>
         private void SetGameSpeedSelection(int multiplier) {
-            int idx = Array.IndexOf(ExePatchModel.GameSpeedSupportedMultipliers, multiplier);
-            cmbGameSpeed.SelectedIndex = idx > 0 && idx < cmbGameSpeed.Items.Count ? idx : 0;
+            chkGameSpeed.Checked = multiplier > 1;
         }
 
         private async void RestoreStatsOnly() {

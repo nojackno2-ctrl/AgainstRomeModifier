@@ -19,5 +19,15 @@ namespace AgainstRomeModifier {
         public double[] GetDefaultBalancedStats(string key) {
             return backupManager.GetDefaultBalancedStats(key);
         }
+
+        public double[] NormalizeIndependentCustomFields(string key, double[] stats) {
+            double[] normalized = (double[])stats.Clone();
+            double[] original = GetOriginalStats(key);
+            foreach (int index in new[] { 4, 7, 8 })
+                if (index < normalized.Length && index < original.Length) normalized[index] = original[index];
+            if (TroopConfig.UnitMeta.TryGetValue(key, out var meta) && meta.UnitType == "priest" && normalized.Length > 5 && original.Length > 5)
+                normalized[5] = original[5];
+            return normalized;
+        }
     }
 }

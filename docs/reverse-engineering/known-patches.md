@@ -96,6 +96,10 @@
   When disabled, the original backup values are retained.
 - Only HUN and KEL have `Radius` records in the original file; GER spell radius
   is not exposed as editable.
+- The experimental 3x spell-range option must multiply these `[Spells] Radius`
+  values in `cl_script.ini`; it must not touch the weapon fields 80/81/82 in
+  `objdef.dau` (the separate Entire Map casting-distance option patches the
+  priest `Sirad` sight-radius field at index 24).
 
 ### Focus-Loss Background Execution
 
@@ -423,6 +427,38 @@
     - Spell 4: `83 FE 04 0F 8D 89 00 00 00` at `0x4A3A6`
 - Behavior: Modifies the hardcoded altar count constants (1, 2, 3, 4) in the spell button logic in `Against_Rome.exe`. Setting these imm8 values to `00` removes the altar count requirement entirely.
 - Safety: The modifier checks all 12 patterns before writing. Setting values from `0x00` to `0x7F` is safe.
+
+### Projectile Arc Height (ProjectileArcHeight)
+
+- Files: `SYSTEM/DATA_MP/DEFAULTS/objdef.dau` + `SYSTEM/DATA_MP/DEFAULTS/partgeo.dau`
+- objdef: every weapon slot with `w*_akti == 1` and `w*_emit > 0` gets
+  `w*_emit ×1.5` (rounded; 16.16 fixed vertical launch speed — bows 7208960,
+  spear thrower 6356992, catapults 10158080 / 9306112).
+- partgeo: the six projectile rows (`Wurfspeer00`, `Wurfaxt00`,
+  `Katapultstein00`, `Katapultstein01`, `Pfeil00`, `Spiess00`) get `ysub`
+  (gravity, column 12) ×1.5. Patcher aborts unless exactly six rows match.
+- Same-factor scaling keeps landing point and flight time unchanged while the
+  arc apex (≈ emit²/(2·ysub)) rises ×1.5. Mechanism evidence:
+  `docs/reverse-engineering/projectile-ballistics.md`.
+- partgeo.dau is not in the embedded Backup.zip: auto-heal captures it from
+  the game directory only after an `IsPartgeoOriginal` check (Pfeil00
+  ysub == 5832704) and immediately creates the physical `.bak`.
+- Detection: all projectile weapon rows must equal original×1.5
+  (`FeatureDetector.HasProjectileWeaponScale`).
+- Status: implemented, unit/integration tested; runtime verification pending.
+
+### Ranged Accuracy Boost (RangedAccuracy)
+
+- Files: `SYSTEM/DATA_MP/DEFAULTS/objdef.dau` + `SYSTEM/cl_epara.ini`
+- objdef: projectile weapon slots (same akti/emit rule as above) get
+  `w*_drad ×2` (impact damage radius — arrows 45→90, artillery 80/120→160/240).
+- cl_epara: `[ProjectileVarianceOnMove]` 0.5 → 0.0 (random lead-aim scatter
+  against moving targets removed; stationary targets never had scatter).
+- Hits are purely geometric (no to-hit roll): a damage zone of radius
+  `w*_drad` spawns at the projectile landing point, so doubling the radius
+  converts near-misses into hits.
+- Detection: objdef drad comparison only (epara is written alongside).
+- Status: implemented, unit/integration tested; runtime verification pending.
 
 ## Candidate
 

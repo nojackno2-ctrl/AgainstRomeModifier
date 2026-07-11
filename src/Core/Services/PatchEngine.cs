@@ -100,11 +100,26 @@ namespace AgainstRomeModifier.Core.Services
             }
 
             // B. cl_script.ini
-            byte[] clBytes = GetPatchedClScriptBytes(gamePath, backupManager, options.FastCiviProduction, options.InfiniteMorale, options.Balance);
+            byte[] clBytes = IniFeaturePatcher.BuildClScript(backupManager, options);
             patchedFiles[Path.Combine(gamePath, @"SYSTEM\cl_script.ini")] = clBytes;
 
-            // C. cl_epara.ini — 一律還原為原版備份
-            patchedFiles[Path.Combine(gamePath, @"SYSTEM\cl_epara.ini")] = backupManager.GetBackupBytes("SYSTEM/cl_epara.ini");
+            // C. cl_epara.ini — 遠程命中強化（拋射預判散布歸零）；未啟用時還原為原版備份
+            patchedFiles[Path.Combine(gamePath, @"SYSTEM\cl_epara.ini")] =
+                EparaPatcher.GetPatchedBytes(backupManager.GetBackupBytes("SYSTEM/cl_epara.ini"), options.RangedAccuracy);
+
+            // C2. partgeo.dau — 拋射彈道增高（重力 ysub 與 objdef w*_emit 同倍率）；未啟用時還原為原版備份。
+            // 舊備份可能沒有 partgeo.dau（不在內嵌 Backup.zip、且自動補齊失敗時）：
+            // 功能未啟用就跳過不動檔案，要啟用則以明確錯誤中止。
+            const string partgeoKey = "SYSTEM/DATA_MP/DEFAULTS/partgeo.dau";
+            if (backupManager.HasFile(partgeoKey))
+            {
+                patchedFiles[Path.Combine(gamePath, @"SYSTEM\DATA_MP\DEFAULTS\partgeo.dau")] =
+                    PartgeoPatcher.GetPatchedBytes(backupManager.GetBackupBytes(partgeoKey), new PartgeoOptions(options.ProjectileArcHeight));
+            }
+            else if (options.ProjectileArcHeight)
+            {
+                throw new InvalidDataException("記憶體備份中缺少 partgeo.dau，無法套用拋射彈道增高。請確認遊戲檔案完整後重新啟動。 / partgeo.dau backup missing; cannot apply projectile arc height.");
+            }
 
             // D. cl_scint.ini — 一律還原為原版備份
             patchedFiles[Path.Combine(gamePath, @"SYSTEM\CLAK\cl_scint.ini")] = backupManager.GetBackupBytes("SYSTEM/CLAK/cl_scint.ini");
@@ -243,6 +258,7 @@ namespace AgainstRomeModifier.Core.Services
             RestoreMemoryFile(backupManager, "SYSTEM/CLAK/cl_scint.ini", Path.Combine(gamePath, @"SYSTEM\CLAK\cl_scint.ini"), rollback);
             RestoreMemoryFile(backupManager, "SYSTEM/ress.ini", Path.Combine(gamePath, @"SYSTEM\ress.ini"), rollback);
             RestoreMemoryFile(backupManager, "SYSTEM/DATA_MP/DEFAULTS/objdef.dau", Path.Combine(gamePath, @"SYSTEM\DATA_MP\DEFAULTS\objdef.dau"), rollback);
+            RestoreMemoryFile(backupManager, "SYSTEM/DATA_MP/DEFAULTS/partgeo.dau", Path.Combine(gamePath, @"SYSTEM\DATA_MP\DEFAULTS\partgeo.dau"), rollback);
             foreach (var kvp in backupManager.BackupFiles)
             {
                 if (kvp.Key.StartsWith("MAPS/", StringComparison.OrdinalIgnoreCase) && kvp.Key.EndsWith("team.dat", StringComparison.OrdinalIgnoreCase))
@@ -265,20 +281,6 @@ namespace AgainstRomeModifier.Core.Services
         }
 
         // --- 補丁生成與檔案偵測邏輯 ---
-
-        /// <summary>
-        /// 產生 cl_script.ini 的補丁位元組。改寫邏輯統一委派給 <see cref="ClScriptPatcher"/>
-        ///（單一正本；先前此處有一份行為分歧的複本：還原時寫死 3/5/50/200/15000，
-        /// 而非讀回備份中的真實原值）。行為換算說明：
-        /// - 平衡模式的法術半徑目標值 = 各族祭司平衡表的 SpellRadius；ClScriptPatcher 以
-        ///   「倍率 × 原始半徑」計算，故換算為 target / 500（原版半徑為 500）。
-        ///   GER 祭司平衡表 SpellRadius 為 0，倍率 0 → 寫入 0，與既有出貨行為一致。
-        /// - 還原（各選項為 false）時，一律寫回備份原檔中的原值。
-        /// </summary>
-        internal byte[] GetPatchedClScriptBytes(string gamePath, BackupManager backupManager, bool fastCiviProduction, bool infiniteMoraleChecked, bool balanceChecked)
-        {
-            return IniFeaturePatcher.BuildClScript(backupManager, fastCiviProduction, infiniteMoraleChecked, balanceChecked);
-        }
 
         private byte[] GetPatchedRessBytes(BackupManager backupManager, bool freeProdChecked, bool freeUpgradeChecked, bool noSpellCostChecked)
         {

@@ -26,10 +26,9 @@ namespace AgainstRomeModifier {
             chkAiM4.Checked = true;
             chkAiM5.Checked = true;
             chkAiM6.Checked = true;
-            chkBalance.Checked = true;
             chkVillageBuildRange.Checked = true;
             chkDgVoodoo.Checked = true;
-            SetGameSpeedSelection(3); // 一鍵全開時預設 3× 加速（測試最穩範圍）
+            // 實驗性功能 (含 10 倍遊戲加速) 排除在一鍵全開之外，保持原樣不變。
 
             Log(Loc.CurrentLanguage == Language.English ? "All features enabled." : "已開啟所有功能。");
         }
@@ -58,9 +57,22 @@ namespace AgainstRomeModifier {
             chkAiM4.Checked = false;
             chkAiM5.Checked = false;
             chkAiM6.Checked = false;
-            chkBalance.Checked = false;
             chkVillageBuildRange.Checked = false;
             chkDgVoodoo.Checked = false; // 相容性層關閉，以達到最乾淨的還原
+
+            // 關閉所有實驗性功能開關
+            chkSpellDamage5x.Checked = false;
+            chkSpellHealing10x.Checked = false;
+            chkSpellResurrection.Checked = false;
+            chkGeneralSkills.Checked = false;
+            chkLeaderGlory.Checked = false;
+            chkBalance.Checked = false;
+            chkRangedRange3x.Checked = false;
+            chkUnitMovementSpeed2x.Checked = false;
+            chkSpellEntireMap.Checked = false;
+            chkSpellRange3x.Checked = false;
+            chkProjectileArcHeight.Checked = false;
+            chkRangedAccuracy.Checked = false;
             SetGameSpeedSelection(1); // 還原為原版速度
 
             Log(Loc.CurrentLanguage == Language.English ? "All features disabled." : "已關閉所有功能。");

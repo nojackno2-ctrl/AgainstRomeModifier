@@ -86,8 +86,8 @@ namespace AgainstRomeModifier {
 
             lblTitle = new Label {
                 Text = isEn 
-                    ? "🛡️  Against Rome Troop Custom Preset Profile (9 Stats Mode)" 
-                    : "🛡️  Against Rome 兵種自訂屬性設定檔案 (9 大屬性全面開放)",
+                    ? "🛡️  Against Rome Troop Custom Preset Profile (6 Editable Stats)"
+                    : "🛡️  Against Rome 兵種自訂屬性設定檔案 (6 項可自訂屬性)",
                 Location = new Point(20, 13),
                 Size = new Size(600, 25),
                 Font = fontJhengHei10B,
@@ -237,20 +237,11 @@ namespace AgainstRomeModifier {
             dgv.Columns.Add("AW", Loc.Get("HeaderAw"));
             dgv.Columns["AW"].Width = 90;
 
-            dgv.Columns.Add("Speed", Loc.Get("HeaderSpeed"));
-            dgv.Columns["Speed"].Width = 95;
-
             dgv.Columns.Add("Sight", Loc.Get("HeaderSight"));
             dgv.Columns["Sight"].Width = 90;
 
             dgv.Columns.Add("Relt", isEn ? "Cooldown" : "攻擊冷卻");
             dgv.Columns["Relt"].Width = 95;
-
-            dgv.Columns.Add("Range", isEn ? "Max Range" : "最大射程");
-            dgv.Columns["Range"].Width = 100;
-
-            dgv.Columns.Add("SpellRadius", Loc.Get("HeaderSpellRadius"));
-            dgv.Columns["SpellRadius"].Width = 95;
 
             return dgv;
         }
@@ -355,21 +346,23 @@ namespace AgainstRomeModifier {
 
                 var iconImage = unitIcons.ContainsKey(key) ? unitIcons[key] : null;
 
-                // 獲取 9 大屬性
+                // 自訂功能只保留 HP、傷害、防禦、戰鬥、視野、攻擊冷卻；速度/射程/法術欄位已移除。
                 double hp, dmg, vw, aw, speed, sight, relt, range, spellRadius;
+                var baselineStats = mainForm.GetDefaultBalancedStats(key);
+                var independentStats = mainForm.GetOriginalStats(key);
                 if (CustomStats.ContainsKey(key)) {
                     var stats = CustomStats[key];
                     hp = stats[0];
                     dmg = stats[1];
                     vw = stats[2];
                     aw = stats[3];
-                    speed = stats.Length > 4 ? stats[4] : 0;
-                    sight = stats.Length > 5 ? stats[5] : 0;
+                    speed = independentStats.Length > 4 ? independentStats[4] : 0;
+                    sight = utype == "priest" && baselineStats.Length > 5 ? baselineStats[5] : (stats.Length > 5 ? stats[5] : 0);
                     relt = stats.Length > 6 ? stats[6] : 0;
-                    range = stats.Length > 7 ? stats[7] : 0;
-                    spellRadius = stats.Length > 8 ? stats[8] : 0;
+                    range = independentStats.Length > 7 ? independentStats[7] : 0;
+                    spellRadius = independentStats.Length > 8 ? independentStats[8] : 0;
                 } else {
-                    var stats = mainForm.GetDefaultBalancedStats(key);
+                    var stats = baselineStats;
                     hp = stats.Length > 0 ? stats[0] : 0;
                     dmg = stats.Length > 1 ? stats[1] : 0;
                     vw = stats.Length > 2 ? stats[2] : 0;
@@ -392,16 +385,11 @@ namespace AgainstRomeModifier {
                         dmg.ToString("F1", CultureInfo.InvariantCulture),
                         Math.Round(vw).ToString(),
                         Math.Round(aw).ToString(),
-                        speed.ToString("F1", CultureInfo.InvariantCulture),
                         Math.Round(sight).ToString(),
-                        Math.Round(relt).ToString(),
-                        Math.Round(range).ToString(),
-                        Math.Round(spellRadius).ToString()
+                        Math.Round(relt).ToString()
                     );
-                    if (!ModifierForm.SupportsConfigurableSpellRadius(key)) {
-                        factionGrids[faction].Rows[rowIndex].Cells["SpellRadius"].ReadOnly = true;
-                        factionGrids[faction].Rows[rowIndex].Cells["SpellRadius"].Value = "0";
-                    }
+                    if (utype == "priest")
+                        factionGrids[faction].Rows[rowIndex].Cells["Sight"].ReadOnly = true;
                 }
             }
         }
@@ -448,13 +436,13 @@ namespace AgainstRomeModifier {
                         }
 
                         double hp = parsed[0], dmg = parsed[1], vw = parsed[2], aw = parsed[3];
-                        double speed = parsed.Length > 4 ? parsed[4] : 0;
-                        double sight = parsed.Length > 5 ? parsed[5] : 0;
-                        double relt = parsed.Length > 6 ? parsed[6] : 0;
+                        double speed = 0;
+                        double sight = vals.Length == 6 ? parsed[4] : (parsed.Length > 5 ? parsed[5] : 0);
+                        double relt = vals.Length == 6 ? parsed[5] : (parsed.Length > 6 ? parsed[6] : 0);
                         double range = parsed.Length > 7 ? parsed[7] : 0;
                         double spellRadius = parsed.Length > 8 ? parsed[8] : 0;
 
-                        if (vals.Length < 9) {
+                        if (vals.Length < 9 && vals.Length != 6) {
                             double[] defStats = mainForm.GetDefaultBalancedStats(key);
                             if (vals.Length <= 4) speed = defStats.Length > 4 ? defStats[4] : 0;
                             if (vals.Length <= 5) sight = defStats.Length > 5 ? defStats[5] : 0;
@@ -476,13 +464,10 @@ namespace AgainstRomeModifier {
                                 dgv.Rows[i].Cells["Dmg"].Value = stats[1].ToString("0.##", CultureInfo.InvariantCulture);
                                 dgv.Rows[i].Cells["VW"].Value = stats[2].ToString("0.##", CultureInfo.InvariantCulture);
                                 dgv.Rows[i].Cells["AW"].Value = stats[3].ToString("0.##", CultureInfo.InvariantCulture);
-                                dgv.Rows[i].Cells["Speed"].Value = stats[4].ToString("0.##", CultureInfo.InvariantCulture);
-                                dgv.Rows[i].Cells["Sight"].Value = stats[5].ToString("0.##", CultureInfo.InvariantCulture);
+                                dgv.Rows[i].Cells["Sight"].Value = TroopConfig.UnitMeta.TryGetValue(key, out var importedMeta) && importedMeta.UnitType == "priest"
+                                    ? mainForm.GetOriginalStats(key)[5].ToString("0.##", CultureInfo.InvariantCulture)
+                                    : stats[5].ToString("0.##", CultureInfo.InvariantCulture);
                                 dgv.Rows[i].Cells["Relt"].Value = stats[6].ToString("0.##", CultureInfo.InvariantCulture);
-                                dgv.Rows[i].Cells["Range"].Value = stats[7].ToString("0.##", CultureInfo.InvariantCulture);
-                                dgv.Rows[i].Cells["SpellRadius"].Value = ModifierForm.SupportsConfigurableSpellRadius(key)
-                                    ? stats[8].ToString("0.##", CultureInfo.InvariantCulture)
-                                    : "0";
                             }
                         }
                     }
@@ -518,9 +503,9 @@ namespace AgainstRomeModifier {
 
                 try {
                     StringBuilder sb = new StringBuilder();
-                    sb.AppendLine("# Against Rome Modifier - Custom Troop Preset File (9 Stats Mode)");
+                    sb.AppendLine("# Against Rome Modifier - Custom Troop Preset File (independent modifiers removed)");
                     sb.AppendLine(string.Format("# Generated on: {0}", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")));
-                    sb.AppendLine("# Format: UnitKey=HP,Dmg,VW,AW,Speed,Sight,Relt,Range,SpellRadius");
+                    sb.AppendLine("# Format: UnitKey=HP,Dmg,VW,AW,Sight,Relt");
                     sb.AppendLine();
 
                     foreach (var dgv in factionGrids.Values) {
@@ -530,14 +515,11 @@ namespace AgainstRomeModifier {
                             string dmg = dgv.Rows[i].Cells["Dmg"].Value?.ToString() ?? "0";
                             string vw = dgv.Rows[i].Cells["VW"].Value?.ToString() ?? "0";
                             string aw = dgv.Rows[i].Cells["AW"].Value?.ToString() ?? "0";
-                            string speed = dgv.Rows[i].Cells["Speed"].Value?.ToString() ?? "0";
                             string sight = dgv.Rows[i].Cells["Sight"].Value?.ToString() ?? "0";
                             string relt = dgv.Rows[i].Cells["Relt"].Value?.ToString() ?? "0";
-                            string range = dgv.Rows[i].Cells["Range"].Value?.ToString() ?? "0";
-                            string spellRadius = dgv.Rows[i].Cells["SpellRadius"].Value?.ToString() ?? "0";
 
-                            sb.AppendLine(string.Format(CultureInfo.InvariantCulture, "{0}={1},{2},{3},{4},{5},{6},{7},{8},{9}", 
-                                key, hp, dmg, vw, aw, speed, sight, relt, range, spellRadius));
+                            sb.AppendLine(string.Format(CultureInfo.InvariantCulture, "{0}={1},{2},{3},{4},{5},{6}",
+                                key, hp, dmg, vw, aw, sight, relt));
                         }
                     }
 
@@ -565,17 +547,15 @@ namespace AgainstRomeModifier {
                     if (!TryReadValidatedCell(dgv.Rows[i], "Dmg", out double dmg)) return;
                     if (!TryReadValidatedCell(dgv.Rows[i], "VW", out double vw)) return;
                     if (!TryReadValidatedCell(dgv.Rows[i], "AW", out double aw)) return;
-                    if (!TryReadValidatedCell(dgv.Rows[i], "Speed", out double speed)) return;
                     if (!TryReadValidatedCell(dgv.Rows[i], "Sight", out double sight)) return;
                     if (!TryReadValidatedCell(dgv.Rows[i], "Relt", out double relt)) return;
-                    if (!TryReadValidatedCell(dgv.Rows[i], "Range", out double range)) return;
-                    double spellRadius = 0;
-                    if (ModifierForm.SupportsConfigurableSpellRadius(key) &&
-                        !TryReadValidatedCell(dgv.Rows[i], "SpellRadius", out spellRadius)) {
-                        return;
-                    }
+                    double[] original = mainForm.GetOriginalStats(key);
+                    double speed = original.Length > 4 ? original[4] : 0;
+                    double range = original.Length > 7 ? original[7] : 0;
+                    double spellRadius = original.Length > 8 ? original[8] : 0;
 
-                    CustomStats[key] = new double[] { hp, dmg, vw, aw, speed, sight, relt, range, spellRadius };
+                    CustomStats[key] = mainForm.NormalizeIndependentCustomFields(key,
+                        new double[] { hp, dmg, vw, aw, speed, sight, relt, range, spellRadius });
                 }
             }
 
@@ -604,11 +584,8 @@ namespace AgainstRomeModifier {
                     string dmgVal = dgv.Rows[i].Cells["Dmg"].Value?.ToString() ?? "";
                     string vwVal = dgv.Rows[i].Cells["VW"].Value?.ToString() ?? "";
                     string awVal = dgv.Rows[i].Cells["AW"].Value?.ToString() ?? "";
-                    string speedVal = dgv.Rows[i].Cells["Speed"].Value?.ToString() ?? "";
                     string sightVal = dgv.Rows[i].Cells["Sight"].Value?.ToString() ?? "";
                     string reltVal = dgv.Rows[i].Cells["Relt"].Value?.ToString() ?? "";
-                    string rangeVal = dgv.Rows[i].Cells["Range"].Value?.ToString() ?? "";
-                    string spellRadiusVal = dgv.Rows[i].Cells["SpellRadius"].Value?.ToString() ?? "";
  
                     double val;
  
@@ -644,14 +621,6 @@ namespace AgainstRomeModifier {
                         return false;
                     }
  
-                    if (!double.TryParse(speedVal, NumberStyles.Any, CultureInfo.InvariantCulture, out val) || val < 0) {
-                        string msg = isEn 
-                            ? string.Format("Speed of 【{0}】 must be a valid number greater than or equal to 0!", unitName)
-                            : string.Format("【{0}】的移動速度 必須是有效且大於等於 0 的數值！", unitName);
-                        MessageBox.Show(msg, errTitle, MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                        return false;
-                    }
- 
                     if (!double.TryParse(sightVal, NumberStyles.Any, CultureInfo.InvariantCulture, out val) || val < 0) {
                         string msg = isEn 
                             ? string.Format("Sight of 【{0}】 must be a valid number greater than or equal to 0!", unitName)
@@ -668,21 +637,6 @@ namespace AgainstRomeModifier {
                         return false;
                     }
 
-                    if (!double.TryParse(rangeVal, NumberStyles.Any, CultureInfo.InvariantCulture, out val) || val < 0) {
-                        string msg = isEn 
-                            ? string.Format("Max Range of 【{0}】 must be a valid number greater than or equal to 0!", unitName)
-                            : string.Format("【{0}】的最大射程/施法距離 必須是有效且大於等於 0 的數值！", unitName);
-                        MessageBox.Show(msg, errTitle, MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                        return false;
-                    }
-
-                    if (!double.TryParse(spellRadiusVal, NumberStyles.Any, CultureInfo.InvariantCulture, out val) || val < 0) {
-                        string msg = isEn 
-                            ? string.Format("Spell Radius of 【{0}】 must be a valid number greater than or equal to 0!", unitName)
-                            : string.Format("【{0}】的法術半徑 必須是有效且大於等於 0 的數值！", unitName);
-                        MessageBox.Show(msg, errTitle, MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                        return false;
-                    }
                 }
             }
 
