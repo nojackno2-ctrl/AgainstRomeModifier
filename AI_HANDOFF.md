@@ -1,5 +1,12 @@
 # AI Handoff - Live Project Memory
 
+## Standalone Release v1.0.0 (2026-07-13)
+
+- Created automatic release script `tools/publish.ps1`.
+- Built and published both `AgainstRomeModifier` and `AgainstRomeMapEditor` as win-x64 Self-Contained and Single-File targets.
+- Merged and packaged the executables into `AgainstRomeModifier_v1.0.0_win-x64.zip` (129 MB) after removing debug files.
+- Successfully uploaded the package to GitHub Release `v1.0.0` as a Pre-release.
+
 ## Bug Fix and Patch Tuning (2026-07-12)
 
 - `SpellDamage5x` was runtime-verified in-game (user report) and promoted from the Experimental UI group into Resource & Combat Upgrades. It is now included by `BtnEnableAll`; its existing reversible `cl_script.ini` patch and detection remain unchanged. The canonical runtime-status evidence is in `docs/reverse-engineering/priest-spells.md`.
