@@ -212,9 +212,9 @@ namespace AgainstRomeModifier
             {
                 if (Directory.Exists(mapsPath))
                 {
-                    for (int i = 0; i < 5; i++)
+                    foreach (string mapDirectory in Directory.GetDirectories(mapsPath, "ENDL_???", SearchOption.TopDirectoryOnly).OrderBy(x => x, StringComparer.OrdinalIgnoreCase))
                     {
-                        string path = Path.Combine(mapsPath, $"ENDL_{i:000}", "SCRIPT", "ak_level.bci");
+                        string path = Path.Combine(mapDirectory, "SCRIPT", "ak_level.bci");
                         if (File.Exists(path))
                         {
                             paths.Add(path);
@@ -262,6 +262,12 @@ namespace AgainstRomeModifier
             return 0;
         }
 
+        public static int GetExpectedFileCount(string gamePath, string pattern)
+        {
+            if (pattern != "MAPS/ENDL_*/SCRIPT/ak_level.bci" && pattern != "MAPS/ENDL_*/Endlos_*_Siedlung*.sdl") return GetExpectedFileCount(pattern);
+            return ResolvePaths(gamePath, pattern).Count;
+        }
+
         public PatchState DetectModule(string gamePath, EndlessAiModule module)
         {
             bool allOriginal = true;
@@ -275,7 +281,7 @@ namespace AgainstRomeModifier
                 {
                     anyFileFound = true;
                 }
-                int expectedCount = GetExpectedFileCount(patch.TargetPattern);
+                int expectedCount = GetExpectedFileCount(gamePath, patch.TargetPattern);
                 if (paths.Count != expectedCount)
                 {
                     if (paths.Count == 0)

@@ -17,6 +17,24 @@
     <InternalsVisibleTo Include="AgainstRomeModifier.Tests" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="src.Shared\AgainstRome.Shared.csproj" />
+    <ProjectReference Include="src.MapEditor\AgainstRomeMapEditor.csproj" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+  <Target Name="CopyMapEditor" AfterTargets="Build;Publish">
+    <ItemGroup>
+      <MapEditorOutput Include="src.MapEditor\bin\$(Configuration)\net8.0-windows\AgainstRomeMapEditor.exe" />
+      <MapEditorOutput Include="src.MapEditor\bin\$(Configuration)\net8.0-windows\AgainstRomeMapEditor.dll" />
+      <MapEditorOutput Include="src.MapEditor\bin\$(Configuration)\net8.0-windows\AgainstRomeMapEditor.runtimeconfig.json" />
+      <MapEditorOutput Include="src.MapEditor\bin\$(Configuration)\net8.0-windows\AgainstRome.Shared.dll" />
+    </ItemGroup>
+    <Copy SourceFiles="@(MapEditorOutput)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" Condition="Exists('%(MapEditorOutput.Identity)')" />
+  </Target>
+  <ItemGroup>
+    <Compile Remove="src\Core\GameLZSS.cs" />
+    <Compile Remove="src\Core\FileRollbackScope.cs" />
+    <Compile Remove="src\Core\Services\SafeFileWriter.cs" />
+    <Compile Remove="src.Shared\**" />
+    <Compile Remove="src.MapEditor\**" />
     <Compile Remove="re_workspace\**" />
     <Compile Remove="scratch\**" />
     <Compile Remove="tests\**" />
