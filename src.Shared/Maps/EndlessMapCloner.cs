@@ -10,11 +10,23 @@ public sealed class EndlessMapCloner
 
     public EndlessMapInfo Clone(string gamePath, int sourceSlot, int newSlot, string newName)
     {
+        string normalizedGamePath = EndlessMapCatalog.ValidateGamePath(gamePath);
+        EndlessMapInfo source = _catalog.Require(normalizedGamePath, sourceSlot);
+        return CloneCore(normalizedGamePath, source.Id, source.DirectoryPath, sourceSlot, newSlot, newName);
+    }
+
+    public EndlessMapInfo Clone(string gamePath, string sourceMapId, int newSlot, string newName)
+    {
+        string normalizedGamePath = EndlessMapCatalog.ValidateGamePath(gamePath);
+        GameMapInfo source = new GameMapCatalog().Require(normalizedGamePath, sourceMapId);
+        return CloneCore(normalizedGamePath, source.Id, source.DirectoryPath, source.EndlessSlot ?? 0, newSlot, newName);
+    }
+
+    private EndlessMapInfo CloneCore(string normalizedGamePath, string sourceMapId, string sourceDirectory, int sourceSlot, int newSlot, string newName)
+    {
         if (newSlot is < 5 or > 999) throw new ArgumentOutOfRangeException(nameof(newSlot), "自製地圖槽位必須在 ENDL_005 至 ENDL_999。");
         if (string.IsNullOrWhiteSpace(newName)) throw new ArgumentException("請輸入地圖名稱。", nameof(newName));
         if (newName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0) throw new ArgumentException("地圖名稱含不允許的字元。", nameof(newName));
-        string normalizedGamePath = EndlessMapCatalog.ValidateGamePath(gamePath);
-        EndlessMapInfo source = _catalog.Require(normalizedGamePath, sourceSlot);
         string mapsPath = Path.Combine(normalizedGamePath, "MAPS");
         string mapId = $"ENDL_{newSlot:000}";
         string destination = Path.Combine(mapsPath, mapId);
@@ -23,9 +35,9 @@ public sealed class EndlessMapCloner
 
         try
         {
-            CopyDirectory(source.DirectoryPath, temporary);
-            VerifyCopy(source.DirectoryPath, temporary);
-            RewriteKnownFiles(temporary, source.Id, mapId, newName);
+            CopyDirectory(sourceDirectory, temporary);
+            VerifyCopy(sourceDirectory, temporary);
+            RewriteKnownFiles(temporary, sourceMapId, mapId, newName);
             var marker = new CustomMapEntry(newSlot, sourceSlot, DateTimeOffset.UtcNow, ToolVersion());
             Core.Services.SafeFileWriter.WriteAllBytes(Path.Combine(temporary, CustomMapManifest.MarkerFileName), JsonSerializer.SerializeToUtf8Bytes(marker, new JsonSerializerOptions { WriteIndented = true }));
             Directory.Move(temporary, destination);

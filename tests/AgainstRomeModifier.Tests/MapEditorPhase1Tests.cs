@@ -63,6 +63,70 @@ public sealed class MapEditorPhase1Tests : IDisposable
         Assert.Equal("T0004095", loaded.GetTexture(63, 63));
     }
 
+    [Fact]
+    public void Delete_Removes_custom_map_and_manifest_entry()
+    {
+        CreateSourceMap();
+        var catalog = new EndlessMapCatalog();
+        new EndlessMapCloner(catalog).Clone(_root, 0, 5, "Delete me");
+
+        new EndlessMapDeleter(catalog).Delete(_root, 5);
+
+        Assert.False(Directory.Exists(Path.Combine(_root, "MAPS", "ENDL_005")));
+        Assert.DoesNotContain(CustomMapManifest.Load(_root).Entries, x => x.Slot == 5);
+        Assert.Equal(5, catalog.GetNextFreeSlot(_root));
+    }
+
+    [Fact]
+    public void Delete_Refuses_original_map()
+    {
+        CreateSourceMap();
+
+        InvalidOperationException error = Assert.Throws<InvalidOperationException>(() => new EndlessMapDeleter().Delete(_root, 0));
+
+        Assert.Contains("只能刪除", error.Message);
+        Assert.True(Directory.Exists(Path.Combine(_root, "MAPS", "ENDL_000")));
+    }
+
+    [Fact]
+    public void GameMapCatalog_Lists_campaign_and_endless_maps()
+    {
+        CreateSourceMap();
+        string campaign = Path.Combine(_root, "MAPS", "KAMP_000");
+        CopyDirectory(Path.Combine(_root, "MAPS", "ENDL_000"), campaign);
+        File.WriteAllBytes(Path.Combine(campaign, "minimap.bmp"), MinimalBitmap());
+        File.WriteAllBytes(Path.Combine(_root, "MAPS", "ENDL_000", "minimap.bmp"), MinimalBitmap());
+        File.WriteAllBytes(Path.Combine(campaign, "boden.txt"), SyntheticFixture.Pfil("[Dimension]\r\n64\r\n[Texturen]\r\n"));
+        File.WriteAllBytes(Path.Combine(_root, "MAPS", "ENDL_000", "boden.txt"), SyntheticFixture.Pfil("[Dimension]\r\n64\r\n[Texturen]\r\n"));
+
+        IReadOnlyList<GameMapInfo> maps = new GameMapCatalog().List(_root);
+
+        Assert.Contains(maps, x => x.Id == "KAMP_000" && x.Category == "劇情戰役");
+        Assert.Contains(maps, x => x.Id == "ENDL_000" && x.Category == "無盡模式");
+    }
+
+    [Fact]
+    public void SdlSceneCatalog_Maps_reference_and_local_position_to_world_coordinates()
+    {
+        Directory.CreateDirectory(_root);
+        string path = Path.Combine(_root, "scene.sdl");
+        File.WriteAllBytes(path, SyntheticFixture.Pfil("[settlement]\r\nrefpos=1632,159,5792\r\n[object0000]\r\nnamedef=BauRomHau00_Haupthaus\r\npos=-32.00,2.00,64.00\r\nteam=3\r\n"));
+
+        MapSceneObject item = Assert.Single(SdlSceneCatalog.Load(path));
+
+        Assert.Equal("建築", item.Kind); Assert.Equal(1600, item.WorldX); Assert.Equal(161, item.WorldY); Assert.Equal(5856, item.WorldZ); Assert.Equal(3, item.Team);
+    }
+
+    private static byte[] MinimalBitmap() => new byte[] { (byte)'B', (byte)'M' };
+    private static void CopyDirectory(string source, string destination)
+    {
+        Directory.CreateDirectory(destination);
+        foreach (string file in Directory.GetFiles(source, "*", SearchOption.AllDirectories))
+        {
+            string target = Path.Combine(destination, Path.GetRelativePath(source, file)); Directory.CreateDirectory(Path.GetDirectoryName(target)!); File.Copy(file, target);
+        }
+    }
+
     private void CreateSourceMap()
     {
         string map = Path.Combine(_root, "MAPS", "ENDL_000");
