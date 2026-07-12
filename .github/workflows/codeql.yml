@@ -1,0 +1,50 @@
+name: CodeQL
+
+on:
+  push:
+  pull_request:
+  schedule:
+    # 每週一 03:00 UTC 補跑一次，涵蓋 push/PR 觸發範圍外的排程掃描
+    - cron: '0 3 * * 1'
+
+# 同分支的新 push 會取消尚在執行的舊 run，避免多個 CodeQL run 排隊互相取消
+# (先前 GitHub 內建 Default setup 因掃描 tools/ 下的 Java/Python 逆向腳本耗時 16 分鐘，
+#  被下一次 push 觸發的新掃描取消，導致 checks 頁面顯示紅字 "Cancelled")。
+concurrency:
+  group: codeql-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyze (csharp)
+    runs-on: windows-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      # 本專案的分析對象只有 AgainstRomeModifier.csproj 這條 C# 產品程式碼；
+      # tools/ 下的 Java (Ghidra 逆向腳本) 與 Python (bcitool.py 等) 是一次性
+      # 研究輔助工具，不隨產品出貨，故不納入 CodeQL 掃描語言矩陣。
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: csharp
+          build-mode: manual
+
+      - name: Build (Release x64)
+        run: dotnet build AgainstRomeModifier.csproj --configuration Release -p:PlatformTarget=x64
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:csharp"

@@ -1,0 +1,49 @@
+# Visual Studio
+.vs/
+[Bb]in/
+[Oo]bj/
+*.csproj.user
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# OS-generated files
+.DS_Store
+Thumbs.db
+
+# Local reverse-engineering workspace and downloaded tools
+.agents/
+.codex/
+re_workspace/
+CodeAuditReport.md
+
+# Original game assets / local restore payloads
+# Keep these locally only. Do not publish bundled game files to GitHub.
+/Original game archives/
+/遊戲原始檔案/
+/Backup.zip
+/Backup/
+/Against_Rome.exe
+/SAVE/
+/MAPS/
+/SYSTEM/
+/ToEng/
+.against-rome-modifier-language-backup/
+
+# Reverse-engineering generated output
+*.log
+*.dmp
+*.dump
+*.bin
+*.pdb
+
+# Local package/tool caches
+packages/
+.nuget/
+__pycache__/
+
+# One-off AI session artifacts (keep locally only)
+changes_patch.diff
+changes_summary.md
+scratch/
