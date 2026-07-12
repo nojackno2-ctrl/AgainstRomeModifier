@@ -28,6 +28,7 @@ namespace AgainstRomeModifier {
             chkAiM6.Checked = true;
             chkVillageBuildRange.Checked = true;
             chkDgVoodoo.Checked = true;
+            chkSpellDamage5x.Checked = true;
             chkRangedRange3x.Checked = true;
             chkUnitMovementSpeed2x.Checked = true;
             // 兩者各自獨立：全地圖 = 施法距離 (objdef Sirad)、3 倍 = 法術效果半徑 (cl_script Radius)。

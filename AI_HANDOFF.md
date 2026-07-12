@@ -2,6 +2,8 @@
 
 ## Bug Fix and Patch Tuning (2026-07-12)
 
+- `SpellDamage5x` was runtime-verified in-game (user report) and promoted from the Experimental UI group into Resource & Combat Upgrades. It is now included by `BtnEnableAll`; its existing reversible `cl_script.ini` patch and detection remain unchanged. The canonical runtime-status evidence is in `docs/reverse-engineering/priest-spells.md`.
+
 - `BtnEnableAll` now also enables the toggles previously promoted out of the Experimental group: `RangedRange3x`, `UnitMovementSpeed2x`, `SpellEntireMap`, `SpellRange3x`, and `ProjectileArcHeight`. Note the two spell toggles are independent since the 2026-07-12 rework (`SpellEntireMap` = casting distance via objdef `Sirad` 30000; `SpellRange3x` = spell effect radius via cl_script `[Spells] Radius` ×3) — an earlier mutual-exclusion assumption was stale and briefly left `SpellRange3x` out (user-reported). Experimental toggles remain excluded by design. Release build 0 warnings/errors; 107/107 tests pass.
 
 - `ProjectileArcHeight` runtime-verified and finalized at 2x: the mechanism was confirmed in-game at 10x (user reported success — visibly higher arcs, landing points unchanged), then per user request the shipped factor was set to 2x and the feature was promoted out of the Experimental group into the Switches (Resource & Combat Upgrades) card (experimental card 446 / switches card 542, labels dropped "(實驗性)"/"(Experimental)" and now read "拋射彈道增高 2 倍" / "2x Projectile Arc Height"). Factor history: 1.5x visually indistinguishable → 10x verification success → 2x production value. Single source of truth remains `ObjdefPatcher.ArcEmitMultiplier` (shared by `PartgeoPatcher.ArcYsubMultiplier`); emit cell widths hold up to ×10. BtnEnableAll now includes it (see the newer bullet above); BtnDisableAll clears it. `RangedAccuracy` stays experimental (runtime observation of hit-rate change still informal). Release build 0 warnings/errors; 107/107 tests pass.
@@ -33,6 +35,10 @@
 ## Current Objective
 
 Build a dedicated map editor that can eventually provide an Age-of-Empires-II-like authored-map workflow, while preserving Against Rome's undocumented-format safety constraints. `docs/map-editor-spec.md` remains the staged implementation guide. Changes are intentionally uncommitted pending user direction.
+
+## Modifier Main Console Layout (2026-07-13)
+
+- Reworked the main console into a responsive four-column masonry layout. Each settings card is placed in the currently shortest column, so the five existing groups distribute compactly without fixed column pairings; the settings area scrolls when the window is too short instead of clipping rows. This is layout-only; no patch feature behavior changed. Verification: Release build 0 warnings/errors; 107/107 tests passed; `git diff --check` clean.
 
 ## Map Editor Phase 1 Progress (2026-07-11)
 
