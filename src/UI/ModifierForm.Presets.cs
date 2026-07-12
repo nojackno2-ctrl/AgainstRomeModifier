@@ -28,7 +28,13 @@ namespace AgainstRomeModifier {
             chkAiM6.Checked = true;
             chkVillageBuildRange.Checked = true;
             chkDgVoodoo.Checked = true;
-            // 實驗性功能 (含 10 倍遊戲加速) 排除在一鍵全開之外，保持原樣不變。
+            chkRangedRange3x.Checked = true;
+            chkUnitMovementSpeed2x.Checked = true;
+            // 兩者各自獨立：全地圖 = 施法距離 (objdef Sirad)、3 倍 = 法術效果半徑 (cl_script Radius)。
+            chkSpellEntireMap.Checked = true;
+            chkSpellRange3x.Checked = true;
+            chkProjectileArcHeight.Checked = true;
+            // 實驗性功能 (含 10 倍遊戲加速、遠程命中強化等) 排除在一鍵全開之外，保持原樣不變。
 
             Log(Loc.CurrentLanguage == Language.English ? "All features enabled." : "已開啟所有功能。");
         }

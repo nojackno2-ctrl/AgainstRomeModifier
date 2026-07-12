@@ -126,7 +126,7 @@ public sealed class PatcherRoundTripTests {
         byte[] patched = ObjdefPatcher.GetPatchedBytes(original, new ObjdefOptions(false, false, false, false, false, false, false, false, false, false, true, true, NoStats));
         string[] result = SyntheticFixture.Text(patched).Split("\r\n")[2].Split(',');
 
-        Assert.Equal("10813440", result[93].Trim()); // w2 emit ×1.5
+        Assert.Equal("14417920", result[93].Trim()); // w2 emit ×2
         Assert.Equal("90", result[166].Trim());      // w2 drad ×2
         Assert.Equal("0", result[85].Trim());        // w1 emit 維持 0
         Assert.Equal("45", result[164].Trim());      // w1（近戰）drad 不可動
@@ -150,9 +150,9 @@ public sealed class PatcherRoundTripTests {
         string patched = SyntheticFixture.Text(PartgeoPatcher.GetPatchedBytes(original, new PartgeoOptions(true)));
         string[] lines = patched.Split("\r\n");
         Assert.Contains("-983040", lines[2]);                       // 非拋射物（煙霧）不可動
-        Assert.Equal("8749056", lines[3].Split(',')[12].Trim());    // Wurfspeer00 ×1.5
-        Assert.Equal("13467648", lines[5].Split(',')[12].Trim());   // Katapultstein00 ×1.5
-        Assert.Equal("8749056", lines[6].Split(',')[12].Trim());    // Pfeil00 ×1.5
+        Assert.Equal("11665408", lines[3].Split(',')[12].Trim());   // Wurfspeer00 ×2
+        Assert.Equal("17956864", lines[5].Split(',')[12].Trim());   // Katapultstein00 ×2
+        Assert.Equal("11665408", lines[6].Split(',')[12].Trim());   // Pfeil00 ×2
         Assert.Equal(original, PartgeoPatcher.GetPatchedBytes(original, new PartgeoOptions(false)));
     }
 
