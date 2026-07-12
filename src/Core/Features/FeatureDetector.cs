@@ -226,16 +226,15 @@ internal sealed class FeatureDetector
                         // 排除領袖以防 LeaderGlory 的干擾，且只比對不受 Range3x/Speed2x 影響的屬性 (Hp, Vw, Aw, Sight)
                         if (TroopConfig.UnitMeta[key].Tier != "leader")
                         {
+                            bool isPriest = utype == "priest";
                             bool hasDiff = Math.Abs(curHp - origHp) > 0.01 ||
                                            Math.Abs(curVw - origVw) > 0.01 ||
                                            Math.Abs(curAw - origAw) > 0.01 ||
-                                           Math.Abs(curSight - origSight) > 0.01;
+                                           (!isPriest && Math.Abs(curSight - origSight) > 0.01);
 
                             if (hasDiff)
                             {
                                 isFileBalanced = true;
-                                // 繼續比對其他單位，但這裡不能直接 break，因為我們還要走完整個 loop 或等偵測完。
-                                // 不過因為 isFileBalanced 已經是 true，在此也可以不用 break，或者直接設 true 即可。
                             }
                         }
                     }
@@ -247,13 +246,11 @@ internal sealed class FeatureDetector
                     bool range3x = false;
 
                     // 使用羅馬輕裝步兵 FigRomInf00_Lanze_Schild 偵測速度 2 倍
-                    if (unitRows.TryGetValue("FigRomInf00_Lanze_Schild", out var testMovesCols) &&
-                        origUnitRows.TryGetValue("FigRomInf00_Lanze_Schild", out var testMovesOrigCols))
+                    if (unitRows.TryGetValue("FigRomInf00_Lanze_Schild", out var testMovesCols))
                     {
-                        double curMoves = 0, origMoves = 0;
+                        double curMoves = 0;
                         double.TryParse(testMovesCols[(int)ObjdefIndex.Moves].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out curMoves);
-                        double.TryParse(testMovesOrigCols[(int)ObjdefIndex.Moves].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out origMoves);
-                        double expectedBaseMoves = isFileBalanced ? 3.2 : origMoves;
+                        double expectedBaseMoves = backupManager.GetBaseStatsForUnit("FigRomInf00_Lanze_Schild", options)[4] / 2.0;
                         if (curMoves > 0 && Math.Abs(curMoves - expectedBaseMoves * 2.0) < 0.05)
                         {
                             speed2x = true;
@@ -261,12 +258,10 @@ internal sealed class FeatureDetector
                     }
 
                     // 使用羅馬弓箭手 FigRomSch01_Bogen 偵測射程 3 倍
-                    if (unitRows.TryGetValue("FigRomSch01_Bogen", out var testRangeCols) &&
-                        origUnitRows.TryGetValue("FigRomSch01_Bogen", out var testRangeOrigCols))
+                    if (unitRows.TryGetValue("FigRomSch01_Bogen", out var testRangeCols))
                     {
                         double curRange = BackupManager.GetUnitMaxRange(testRangeCols, "ranged_inf");
-                        double origRange = BackupManager.GetUnitMaxRange(testRangeOrigCols, "ranged_inf");
-                        double expectedBaseRange = isFileBalanced ? 3600.0 : origRange;
+                        double expectedBaseRange = backupManager.GetBaseStatsForUnit("FigRomSch01_Bogen", options)[7];
                         if (curRange > 0 && Math.Abs(curRange - expectedBaseRange * 3.0) < 5.0)
                         {
                             range3x = true;

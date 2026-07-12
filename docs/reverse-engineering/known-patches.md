@@ -434,20 +434,27 @@
 
 - Files: `SYSTEM/DATA_MP/DEFAULTS/objdef.dau` + `SYSTEM/DATA_MP/DEFAULTS/partgeo.dau`
 - objdef: every weapon slot with `w*_akti == 1` and `w*_emit > 0` gets
-  `w*_emit ×1.5` (rounded; 16.16 fixed vertical launch speed — bows 7208960,
-  spear thrower 6356992, catapults 10158080 / 9306112).
+  `w*_emit ×2` (rounded; 16.16 fixed vertical launch speed — bows 7208960,
+  spear thrower 6356992, catapults 10158080 / 9306112). All original emit
+  values fit their cell widths up to ×10 (verified against the full objdef).
 - partgeo: the six projectile rows (`Wurfspeer00`, `Wurfaxt00`,
   `Katapultstein00`, `Katapultstein01`, `Pfeil00`, `Spiess00`) get `ysub`
-  (gravity, column 12) ×1.5. Patcher aborts unless exactly six rows match.
+  (gravity, column 12) ×2. Patcher aborts unless exactly six rows match.
 - Same-factor scaling keeps landing point and flight time unchanged while the
-  arc apex (≈ emit²/(2·ysub)) rises ×1.5. Mechanism evidence:
+  arc apex (≈ emit²/(2·ysub)) rises by the same factor (bows ≈68 → ≈136
+  height units). The factor lives in `ObjdefPatcher.ArcEmitMultiplier`
+  (shared by `PartgeoPatcher.ArcYsubMultiplier`). Mechanism evidence:
   `docs/reverse-engineering/projectile-ballistics.md`.
+- Runtime verified 2026-07-12 at ×10 (user confirmed visibly higher arcs with
+  unchanged landing points); shipped factor tuned down to ×2 by user request.
+  1.5 was tried first and is visually indistinguishable — keep the factor ≥2.
 - partgeo.dau is not in the embedded Backup.zip: auto-heal captures it from
   the game directory only after an `IsPartgeoOriginal` check (Pfeil00
   ysub == 5832704) and immediately creates the physical `.bak`.
-- Detection: all projectile weapon rows must equal original×1.5
+- Detection: all projectile weapon rows must equal original×2
   (`FeatureDetector.HasProjectileWeaponScale`).
-- Status: implemented, unit/integration tested; runtime verification pending.
+- Status: implemented, unit/integration tested, runtime verified (at ×10);
+  promoted out of the Experimental UI group into Resource & Combat Upgrades.
 
 ### Ranged Accuracy Boost (RangedAccuracy)
 

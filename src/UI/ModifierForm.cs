@@ -32,6 +32,7 @@ namespace AgainstRomeModifier {
         private Button btnNavDefaultStats = null!;
         private Button btnNavCurrentStats = null!;
         private Button btnNavDoc = null!;
+        private Button btnNavMapManager = null!;
 
 
         // 主要分頁控制項與分頁
@@ -43,6 +44,7 @@ namespace AgainstRomeModifier {
         private TextBox txtDoc = null!;
         private TabPage tabSaveManager = null!;
         private Button btnNavSaveManager = null!;
+        private TabPage tabMapManager = null!;
 
 
         // 存檔管理介面表格與預覽圖
@@ -568,6 +570,14 @@ namespace AgainstRomeModifier {
                 RefreshNavButtons();
             };
 
+            btnNavMapManager = new Button { Location = new Point(10, 0) };
+            StyleNavButton(btnNavMapManager, "NavMapManager", tabMapManager);
+            btnNavMapManager.Click += (s, e) => {
+                ShowTabPage(tabMapManager);
+                RefreshNavButtons();
+                RefreshMapManager();
+            };
+
             btnNavSaveManager = new Button { Location = new Point(10, 0) };
             StyleNavButton(btnNavSaveManager, "NavSaveManager", tabSaveManager);
             btnNavSaveManager.Click += (s, e) => {
@@ -630,6 +640,7 @@ namespace AgainstRomeModifier {
             pnlSidebar.Controls.Add(btnNavSystem);
             pnlSidebar.Controls.Add(btnNavDefaultStats);
             pnlSidebar.Controls.Add(btnNavCurrentStats);
+            pnlSidebar.Controls.Add(btnNavMapManager);
             pnlSidebar.Controls.Add(btnNavSaveManager);
             pnlSidebar.Controls.Add(btnNavDoc);
             pnlSidebar.Controls.Add(lblSidebarLang);
@@ -662,6 +673,12 @@ namespace AgainstRomeModifier {
             mainTabControl.TabPages.Add(tabSystem);
             mainTabControl.TabPages.Add(tabDefaultStats);
             mainTabControl.TabPages.Add(tabCurrentStats);
+            tabMapManager = new TabPage {
+                BackColor = Color.FromArgb(10, 11, 16),
+                UseVisualStyleBackColor = false
+            };
+            mainTabControl.TabPages.Add(tabMapManager);
+            InitializeMapManagerPage();
 
             pnlNumericCard = new Panel {
                 Location = new Point(0, 0),
@@ -964,7 +981,7 @@ namespace AgainstRomeModifier {
                 BackColor = Color.Transparent,
                 Font = fontJhengHei10B
             };
-            pnlExperimentalCard.Controls.Add(chkSpellDamage5x);
+            pnlSwitchesCard.Controls.Add(chkSpellDamage5x);
 
             chkSpellHealing10x = new ModernToggle {
                 Text = Loc.Get("SpellHealing10x"),
@@ -1017,7 +1034,7 @@ namespace AgainstRomeModifier {
                 Font = fontJhengHei10B
             };
             chkRangedRange3x.CheckedChanged += new EventHandler(ChkRangedRange3x_CheckedChanged);
-            pnlExperimentalCard.Controls.Add(chkRangedRange3x);
+            pnlSwitchesCard.Controls.Add(chkRangedRange3x);
 
             chkUnitMovementSpeed2x = new ModernToggle {
                 Text = Loc.Get("UnitMovementSpeed2x"),
@@ -1028,7 +1045,7 @@ namespace AgainstRomeModifier {
                 Font = fontJhengHei10B
             };
             chkUnitMovementSpeed2x.CheckedChanged += new EventHandler(ChkUnitMovementSpeed2x_CheckedChanged);
-            pnlExperimentalCard.Controls.Add(chkUnitMovementSpeed2x);
+            pnlSwitchesCard.Controls.Add(chkUnitMovementSpeed2x);
 
             chkSpellEntireMap = new ModernToggle {
                 Text = Loc.Get("SpellEntireMap"),
@@ -1039,7 +1056,7 @@ namespace AgainstRomeModifier {
                 Font = fontJhengHei10B
             };
             chkSpellEntireMap.CheckedChanged += new EventHandler(ChkSpellEntireMap_CheckedChanged);
-            pnlExperimentalCard.Controls.Add(chkSpellEntireMap);
+            pnlSwitchesCard.Controls.Add(chkSpellEntireMap);
 
             chkSpellRange3x = new ModernToggle {
                 Text = Loc.Get("SpellRange3x"),
@@ -1050,7 +1067,7 @@ namespace AgainstRomeModifier {
                 Font = fontJhengHei10B
             };
             chkSpellRange3x.CheckedChanged += new EventHandler(ChkSpellRange3x_CheckedChanged);
-            pnlExperimentalCard.Controls.Add(chkSpellRange3x);
+            pnlSwitchesCard.Controls.Add(chkSpellRange3x);
 
             chkProjectileArcHeight = new ModernToggle {
                 Text = Loc.Get("ProjectileArcHeight"),
@@ -1060,7 +1077,7 @@ namespace AgainstRomeModifier {
                 BackColor = Color.Transparent,
                 Font = fontJhengHei10B
             };
-            pnlExperimentalCard.Controls.Add(chkProjectileArcHeight);
+            pnlSwitchesCard.Controls.Add(chkProjectileArcHeight);
 
             chkRangedAccuracy = new ModernToggle {
                 Text = Loc.Get("RangedAccuracy"),
@@ -1495,6 +1512,7 @@ namespace AgainstRomeModifier {
                     "NavSystem" => mainTabControl.SelectedTab == tabSystem,
                     "NavDefaultStats" => mainTabControl.SelectedTab == tabDefaultStats,
                     "NavCurrentStats" => mainTabControl.SelectedTab == tabCurrentStats,
+                    "NavMapManager" => mainTabControl.SelectedTab == tabMapManager,
                     "NavSaveManager" => mainTabControl.SelectedTab == tabSaveManager,
                     "NavDoc" => mainTabControl.SelectedTab == tabDoc,
                     _ => mainTabControl.SelectedTab == associatedPage
@@ -1547,6 +1565,7 @@ namespace AgainstRomeModifier {
             btnNavSystem.Invalidate();
             btnNavDefaultStats.Invalidate();
             btnNavCurrentStats.Invalidate();
+            btnNavMapManager.Invalidate();
             btnNavSaveManager.Invalidate();
             btnNavDoc.Invalidate();
         }

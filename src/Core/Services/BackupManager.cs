@@ -7,6 +7,7 @@ using System.Text;
 using System.Globalization;
 using AgainstRomeModifier.Core.Patches;
 using AgainstRomeModifier.Core.Features;
+using AgainstRomeModifier.Maps;
 
 namespace AgainstRomeModifier.Core.Services
 {
@@ -159,6 +160,7 @@ namespace AgainstRomeModifier.Core.Services
                         string normalizedGamePath = Path.GetFullPath(gamePath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
                         foreach (string file in Directory.GetFiles(mapsPath, "team.dat", SearchOption.AllDirectories))
                         {
+                            if (CustomMapManifest.IsCustomMapDirectory(Path.GetDirectoryName(file)!)) continue;
                             string relPath = Path.GetRelativePath(normalizedGamePath, file).Replace('\\', '/');
                             string bakPath = file + ".bak";
                             string loadPath = File.Exists(bakPath) ? bakPath : file;
@@ -315,6 +317,8 @@ namespace AgainstRomeModifier.Core.Services
                         .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
                     foreach (string file in Directory.GetFiles(mapsPath, "team.dat", SearchOption.AllDirectories))
                     {
+                        // 自製圖由 .arm_custom_map 明確標記；它們不是原廠備份基準，也不可建立 .bak。
+                        if (CustomMapManifest.IsCustomMapDirectory(Path.GetDirectoryName(file)!)) continue;
                         string relPath = Path.GetRelativePath(normalizedGamePath, file).Replace('\\', '/');
                         string bakPath = file + ".bak";
 

@@ -1,4 +1,4 @@
-# Against Rome Reverse Engineering Notes
+﻿# Against Rome Reverse Engineering Notes
 
 > Index reviewed 2026-07-11. This is evidence documentation, not permission to write original game files directly. Product changes must be made in the modifier and verified through its fixture/apply/restore workflow.
 
@@ -11,6 +11,7 @@ and patch code.
 
 - `../../TechDoc.md`: current Chinese technical specification, integrating the cross-feature maintenance chronology, failure cases, and safety contracts.
 - `file-formats.md`: compressed game files, wrappers, and encodings.
+- `map-formats.md`: static BMP-grid facts, explicitly unverified map-layer semantics, and the controlled experiments required before any terrain or collision write feature.
 - `endless-mode-ai.md`: endless AI spawn, timing, gate, job-slot, party
   lifecycle, and defeat-recovery findings.
 - `bci0-opcodes.md`: `BCI0` script container layout and the partial bytecode

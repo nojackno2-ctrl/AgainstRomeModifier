@@ -105,6 +105,82 @@ public sealed class CharacterizationTests
     }
 
     [RequiresBackupZipFact]
+    public void Test_RangedRange3x_And_Speed2x_Only_Does_Not_Trigger_Balance()
+    {
+        using var fixture = BackupZipGameFixture.Create();
+        var engine = new PatchEngine(new NullLogger());
+        var profile = new PatchProfile();
+        profile.RangedRange3x = true;
+        profile.UnitMovementSpeed2x = true;
+        
+        using (var rollback = new FileRollbackScope())
+        {
+            engine.ApplyPatches(fixture.RootPath, profile, fixture.Backup, rollback);
+            rollback.Commit();
+        }
+
+        var currentObjdefPath = Path.Combine(fixture.RootPath, @"SYSTEM\DATA_MP\DEFAULTS\objdef.dau");
+        byte[] raw = File.ReadAllBytes(currentObjdefPath);
+        byte[] decomp = GameLZSS.DecompressPfil(raw);
+        string currentObjdef = System.Text.Encoding.GetEncoding(1251).GetString(decomp);
+        
+        var currentRows = new List<string[]>();
+        foreach (string line in currentObjdef.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None))
+        {
+            if (line.Length < 100) continue;
+            currentRows.Add(AgainstRomeModifier.Core.Patches.PatchText.ParseCsvLine(line));
+        }
+
+        var origUnitRows = fixture.Backup.GetBackupUnitRows();
+        var unitRows = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
+        foreach (string[] cols in currentRows)
+        {
+            if (cols.Length < 192) continue;
+            string name = cols[52].Trim();
+            if (TroopConfig.UnitMeta.ContainsKey(name))
+            {
+                unitRows[name] = cols;
+            }
+        }
+
+        var diffs = new List<string>();
+        foreach (string key in TroopConfig.UnitMeta.Keys)
+        {
+            if (!unitRows.ContainsKey(key) || !origUnitRows.ContainsKey(key)) continue;
+            string utype = TroopConfig.UnitMeta[key].UnitType;
+
+            string[] cols = unitRows[key];
+            string[] origCols = origUnitRows[key];
+
+            double curHp = 0, origHp = 0;
+            double.TryParse(cols[(int)ObjdefIndex.Hp].Trim(), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out curHp);
+            double.TryParse(origCols[(int)ObjdefIndex.Hp].Trim(), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out origHp);
+
+            double curVw = 0, origVw = 0;
+            double.TryParse(cols[(int)ObjdefIndex.Vw].Trim(), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out curVw);
+            double.TryParse(origCols[(int)ObjdefIndex.Vw].Trim(), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out origVw);
+
+            double curAw = 0, origAw = 0;
+            double.TryParse(cols[(int)ObjdefIndex.Aw].Trim(), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out curAw);
+            double.TryParse(origCols[(int)ObjdefIndex.Aw].Trim(), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out origAw);
+
+            double curSight = 0, origSight = 0;
+            double.TryParse(cols[(int)ObjdefIndex.Sirad].Trim(), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out curSight);
+            double.TryParse(origCols[(int)ObjdefIndex.Sirad].Trim(), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out origSight);
+
+            if (TroopConfig.UnitMeta[key].Tier != "leader")
+            {
+                if (Math.Abs(curHp - origHp) > 0.01) diffs.Add($"{key} HP diff: cur={curHp}, orig={origHp}");
+                if (Math.Abs(curVw - origVw) > 0.01) diffs.Add($"{key} VW diff: cur={curVw}, orig={origVw}");
+                if (Math.Abs(curAw - origAw) > 0.01) diffs.Add($"{key} AW diff: cur={curAw}, orig={origAw}");
+                if (Math.Abs(curSight - origSight) > 0.01) diffs.Add($"{key} Sight diff: cur={curSight}, orig={origSight}");
+            }
+        }
+
+        Assert.Empty(diffs);
+    }
+
+    [RequiresBackupZipFact]
     public void T2_restore_all_returns_original_fixture_bytes()
     {
         using var fixture = BackupZipGameFixture.Create();
@@ -211,4 +287,100 @@ public sealed class CharacterizationTests
 
     private static bool IsPfil(byte[] bytes) =>
         bytes.Length >= 4 && bytes[0] == (byte)'P' && bytes[1] == (byte)'F' && bytes[2] == (byte)'I' && bytes[3] == (byte)'L';
+
+    [RequiresBackupZipFact]
+    public void Test_Unit_And_Civilian_Movement_Speed_Combinations()
+    {
+        System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
+        
+        // 情境 1: Balance = true, UnitMovementSpeed2x = false
+        {
+            using var fixture = BackupZipGameFixture.Create();
+            var engine = new PatchEngine(new NullLogger());
+            var profile = new PatchProfile { Balance = true, UnitMovementSpeed2x = false };
+            using (var rollback = new FileRollbackScope())
+            {
+                engine.ApplyPatches(fixture.RootPath, profile, fixture.Backup, rollback);
+                rollback.Commit();
+            }
+
+            // 讀取 objdef.dau 做精確比對
+            string objdefPath = Path.Combine(fixture.RootPath, "SYSTEM", "DATA_MP", "DEFAULTS", "objdef.dau");
+            byte[] fileBytes = File.ReadAllBytes(objdefPath);
+            byte[] decomp = GameLZSS.DecompressPfil(fileBytes);
+            string text = System.Text.Encoding.GetEncoding(1251).GetString(decomp);
+            string lineEnding = text.Contains("\r\n") ? "\r\n" : "\n";
+            string[] lines = text.Split(new string[] { lineEnding }, StringSplitOptions.None);
+            
+            double? romInfSpeed = null;
+            double? civilianSpeed = null;
+            for (int idx = 2; idx < lines.Length; idx++) {
+                string line = lines[idx];
+                if (line.Length < 100) continue;
+                string[] cols = line.Split(',');
+                if (cols.Length < 192) continue;
+                string name = cols[52].Trim();
+                if (name == "FigRomInf00_Lanze_Schild") {
+                    romInfSpeed = double.Parse(cols[(int)ObjdefIndex.Moves].Trim(), System.Globalization.CultureInfo.InvariantCulture);
+                }
+                if (name == "FigZivMan00_Zivilist") {
+                    civilianSpeed = double.Parse(cols[(int)ObjdefIndex.Moves].Trim(), System.Globalization.CultureInfo.InvariantCulture);
+                }
+            }
+            // 驗證即使有自訂屬性平衡，速度仍應維持原速 (羅馬輕裝步兵=1.60, 平民=1.30)
+            Assert.NotNull(romInfSpeed);
+            Assert.Equal(1.60, romInfSpeed.Value, 2);
+            Assert.NotNull(civilianSpeed);
+            Assert.Equal(1.30, civilianSpeed.Value, 2);
+
+            // 確保 Detector 偵測狀態正常
+            var detected = engine.DetectCurrentPatchState(fixture.RootPath, fixture.Backup);
+            Assert.True(detected.Balance);
+            Assert.False(detected.UnitMovementSpeed2x);
+        }
+
+        // 情境 2: Balance = true, UnitMovementSpeed2x = true
+        {
+            using var fixture = BackupZipGameFixture.Create();
+            var engine = new PatchEngine(new NullLogger());
+            var profile = new PatchProfile { Balance = true, UnitMovementSpeed2x = true };
+            using (var rollback = new FileRollbackScope())
+            {
+                engine.ApplyPatches(fixture.RootPath, profile, fixture.Backup, rollback);
+                rollback.Commit();
+            }
+
+            string objdefPath = Path.Combine(fixture.RootPath, "SYSTEM", "DATA_MP", "DEFAULTS", "objdef.dau");
+            byte[] fileBytes = File.ReadAllBytes(objdefPath);
+            byte[] decomp = GameLZSS.DecompressPfil(fileBytes);
+            string text = System.Text.Encoding.GetEncoding(1251).GetString(decomp);
+            string lineEnding = text.Contains("\r\n") ? "\r\n" : "\n";
+            string[] lines = text.Split(new string[] { lineEnding }, StringSplitOptions.None);
+            
+            double? romInfSpeed = null;
+            double? civilianSpeed = null;
+            for (int idx = 2; idx < lines.Length; idx++) {
+                string line = lines[idx];
+                if (line.Length < 100) continue;
+                string[] cols = line.Split(',');
+                if (cols.Length < 192) continue;
+                string name = cols[52].Trim();
+                if (name == "FigRomInf00_Lanze_Schild") {
+                    romInfSpeed = double.Parse(cols[(int)ObjdefIndex.Moves].Trim(), System.Globalization.CultureInfo.InvariantCulture);
+                }
+                if (name == "FigZivMan00_Zivilist") {
+                    civilianSpeed = double.Parse(cols[(int)ObjdefIndex.Moves].Trim(), System.Globalization.CultureInfo.InvariantCulture);
+                }
+            }
+            // 驗證速度變為 2 倍速 (羅馬輕裝步兵=3.20, 平民=2.60)
+            Assert.NotNull(romInfSpeed);
+            Assert.Equal(3.20, romInfSpeed.Value, 2);
+            Assert.NotNull(civilianSpeed);
+            Assert.Equal(2.60, civilianSpeed.Value, 2);
+
+            var detected = engine.DetectCurrentPatchState(fixture.RootPath, fixture.Backup);
+            Assert.True(detected.Balance);
+            Assert.True(detected.UnitMovementSpeed2x);
+        }
+    }
 }
