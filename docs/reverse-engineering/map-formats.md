@@ -23,6 +23,9 @@
 - `boden.bmp` 在五張圖均近乎 R=G=B；`emboss.bmp` 與 `smooth.bmp` 亦主要為灰階，但 `vertex.bmp` 的三通道明顯不同。
 - `ENDL_000/001/002/003/004` 的 `vertex.bmp` 通道範圍分別不同，不能使用固定「某一顏色等於高度」公式。
 - 目視 `ENDL_000`：`vertex.bmp` 的低色彩區與 minimap 水域／地勢特徵有表面關聯，但這只是候選相關性，尚未具備寫入資格。
+- 2026-07-12 追加唯讀跨層目視：`KAMP_000/boden.bmp` 的連續灰階坡面、河谷與人工高低差和 `minimap.bmp` 明確對齊；`vertex.bmp` 則更接近彩色地表快取。這足以讓離線 renderer 使用 `boden.bmp` 的局部梯度產生只讀 hill-shading，但仍不足以推導世界高度單位或授權高度寫入。
+- 同日比對 `KAMP_000`、`ENDL_000`、`MP_000`、`HIST_000`：`Heightmapstep` 均為 4，`Waterlevel / Heightmapstep` 分別為 62、30、30、36，與各圖 `boden.bmp` 河谷低灰階區吻合。離線 renderer 因此以此門檻和 `WaterColor` 產生只讀水面遮罩；此證據仍只授權顯示，不授權直接改寫高度圖。
+- SDL 唯讀解析確認 `[settlement] refpos` 加上各 `[objectNNNN] pos` 得到物件世界座標；連續柵欄以 64 世界單位排列，而 16,384 世界單位對應 256 地圖像素，因此 `world / 64` 可直接落到地圖像素。`KAMP_000/TEAM_7.sdl` 解析出 138 個有效物件，`ENDL_000` 八個聚落 SDL 合計 613 個。離線 renderer 依此顯示建築／單位／其他物件；目前只讀，不把尚未完成 round-trip 驗證的 SDL 物件編輯暴露給玩家。
 
 ## 未證實，禁止寫入
 
@@ -33,6 +36,15 @@
 5. SDL `refpos`／`pos` 與 256 像素 minimap 的座標轉換。Phase 2 不得疊加物件位置，避免製造誤導性視圖。
 
 ## 原遊戲渲染與內部 TextureEditor
+
+### 可供獨立 renderer 使用的原始資源（2026-07-12）
+
+- `floortex.dat` 是標準 ZIP 容器（副檔名雖為 `.dat`），共 3,005 個 entry；地表圖位於 `SYSTEM/DATA/FLOORTEXTURE/*.bmp`。
+- `boden.txt [Texturen]` 的名稱可直接對應上述 BMP basename。例如 `4BJ___51` 與 `L5B09T1A` 均已在容器內找到；抽查圖檔為 128×128、8-bit BMP。
+- `alr.dat` 同樣是 ZIP 容器，共 2,075 個 `SYSTEM/DATA/ALR/*.alr` 模型／動畫資源。
+- `apt.dat` 是 ZIP 容器，共 222 個 `SYSTEM/DATA/APT/*.apt` 資源；`shad.dat` 是 ZIP 容器，共 2,674 個圖示／陰影資源。
+- 唯讀遊戲樣本的 `MAPS` 下共有 73 個具備 `boden.txt` 與 `minimap.bmp` 的可渲染目錄：`KAMP` 34、`MP` 20、`HIST` 10、`ENDL` 5、`TUTOR` 4。
+- 因此地圖編輯器應以自行讀取這些容器的離線 renderer 為主，不再以 `minimap.bmp` 或啟動遊戲作為主要預覽。原始資源只從使用者選定的遊戲資料夾唯讀載入，不得加入版本庫。
 
 - EXE 靜態庫在 `FUN_004a4c20`（`0x004a4c20`）包含 `TextureEditor V0.1`、參數清單與鍵盤操作字串；主畫面迴圈 `FUN_0047ae20` 僅在全域模式值為 `9` 時呼叫它。
 - 正常模式轉換函式只公開模式 `0、1、2、4、7、8`，目前沒有找到將模式設為 `9` 的正常選單或命令列路徑。
