@@ -981,7 +981,7 @@ namespace AgainstRomeModifier {
                 BackColor = Color.Transparent,
                 Font = fontJhengHei10B
             };
-            pnlExperimentalCard.Controls.Add(chkSpellDamage5x);
+            pnlSwitchesCard.Controls.Add(chkSpellDamage5x);
 
             chkSpellHealing10x = new ModernToggle {
                 Text = Loc.Get("SpellHealing10x"),
