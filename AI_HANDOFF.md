@@ -1,4 +1,18 @@
-﻿# AI Handoff - Live Project Memory
+# AI Handoff - Live Project Memory
+
+## Bug Fix and Patch Tuning (2026-07-12)
+
+- Moved `UnitMovementSpeed2x` out of the Experimental group into the Switches (Resource & Combat Upgrades) group on the UI panel, and removed '(Experimental)' / '(實驗性)' from its localization labels, adjusting card heights to 494 for both cards.
+- Completely decoupled unit movement speed from custom troop stats (including balance layer and custom layer) in `ObjdefPatcher.cs`. The unit speed scale `speedScale` is now simplified to only depend on `options.UnitMovementSpeed2x`, ensuring custom stats can never affect moves, movsf, or bmovs fields.
+- Fixed incorrect base movement speeds in `TroopConfig.BalancedUnitStats` (reduced 6.4/5.2 to their correct original baseline of 3.2/2.6). This resolves the issue where "Custom Unit Attribute Balance" incorrectly applied a 2x movement speed boost, and when combined with "2x Unit Speed" incorrectly applied a 4x boost.
+- Fixed civilian unit movement speed patch logic in `ObjdefPatcher.cs` to prevent the balance modifier from doubling their speeds when the speed patch itself is disabled.
+- Added regression test `Test_Unit_And_Civilian_Movement_Speed_Combinations` to `CharacterizationTests.cs`. All 107 tests passed.
+- Fixed the bug where the "Custom Unit Attribute Balance" feature would be falsely detected as enabled after applying 2x Unit Speed and 3x Ranged Range patches.
+- Optimized `ObjdefPatcher.PatchUnit` to only write fields to `objdef.dau` when their values actually differ from original (>0.01 delta), preserving original number formats and avoiding float-to-int truncation errors during reload.
+- Corrected `FeatureDetector.cs` detection logic to dynamically resolve baseline values via `backupManager.GetBaseStatsForUnit` rather than static-coded expectations (e.g. 3.2, 3600.0) which breaks under custom templates.
+- Excluded priest's `Sirad` (Sight) attribute check in `FeatureDetector.cs` unit balance detection to prevent false positives when `SpellEntireMap` alters the priest's range.
+- Moved `RangedRange3x`, `SpellEntireMap`, and `SpellRange3x` features out of the Experimental group into the Switches (Resource & Combat Upgrades) group on the UI panel, and removed '(Experimental)' / '(實驗性)' from their localization labels.
+- Added regression test `Test_RangedRange3x_And_Speed2x_Only_Does_Not_Trigger_Balance` to `CharacterizationTests.cs`. All 107 tests passed.
 
 ## History Consolidation (2026-07-11)
 

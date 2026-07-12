@@ -57,7 +57,6 @@ public static class ObjdefPatcher {
             if (TroopConfig.UnitMeta.TryGetValue(name, out var meta) && options.UnitStats.TryGetValue(name, out double[]? stats) && stats.Length >= 8) PatchUnit(cols, source, name, meta.UnitType, stats, options);
             else if (name is "FigZivMan00_Zivilist" or "FigZivWei00_Zivilistin" or "FigTiePac00_Packpferd") {
                 double civMult = 1.0;
-                if (options.Balance) civMult *= 2.0;
                 if (options.UnitMovementSpeed2x) civMult *= 2.0;
                 PatchCivilianSpeed(cols, source, name, civMult);
             }
@@ -78,10 +77,7 @@ public static class ObjdefPatcher {
         double originalRange = GetMaxRange(source, type);
         GetReload(source, type, out double meleeReload, out double rangedReload);
         double primaryReload = type is "ranged_inf" or "ranged_cav" ? rangedReload : type == "siege" ? Math.Max(meleeReload, rangedReload) : meleeReload;
-        double speedScale = moves > 0 ? stats[4] / (moves * 2.0) : 1.0;
-        if (options.UnitMovementSpeed2x) {
-            speedScale *= 2.0;
-        }
+        double speedScale = options.UnitMovementSpeed2x ? 2.0 : 1.0;
         double rangeScale = originalRange > 0 ? stats[7] / originalRange : 1.0;
         bool isRangedUnit = type is "ranged_inf" or "ranged_cav" or "siege";
         if (isRangedUnit && options.RangedRange3x) {
@@ -90,14 +86,28 @@ public static class ObjdefPatcher {
         bool isPriest = type == "priest";
         double reloadScale = primaryReload > 0 ? stats[6] / primaryReload : 1.0;
         double damageScale = primaryDamage > 0 ? stats[1] / primaryDamage : 1.0;
-        if (moves > 0) SetValue(cols, (int)ObjdefIndex.Moves, (moves * speedScale).ToString("F2", CultureInfo.InvariantCulture), name, "移動速度");
-        if (movsf > 0) SetValue(cols, (int)ObjdefIndex.Movsf, (movsf * speedScale).ToString("F2", CultureInfo.InvariantCulture), name, "移動速度");
-        if (bmovs > 0) SetValue(cols, (int)ObjdefIndex.Bmovs, (bmovs * speedScale).ToString("F2", CultureInfo.InvariantCulture), name, "移動速度");
+
+        // 僅在有實際數值變動時才寫入檔案，以保持原始格式防範偵測誤判
+        if (moves > 0 && Math.Abs(speedScale - 1.0) > 0.001) {
+            SetValue(cols, (int)ObjdefIndex.Moves, (moves * speedScale).ToString("F2", CultureInfo.InvariantCulture), name, "移動速度");
+            if (movsf > 0) SetValue(cols, (int)ObjdefIndex.Movsf, (movsf * speedScale).ToString("F2", CultureInfo.InvariantCulture), name, "移動速度");
+            if (bmovs > 0) SetValue(cols, (int)ObjdefIndex.Bmovs, (bmovs * speedScale).ToString("F2", CultureInfo.InvariantCulture), name, "移動速度");
+        }
+
         double sight = options.SpellEntireMap && isPriest ? 30000.0 : stats[5];
-        SetValue(cols, (int)ObjdefIndex.Sirad, ((int)sight).ToString(CultureInfo.InvariantCulture), name, "視野");
-        SetValue(cols, (int)ObjdefIndex.Hp, ((int)stats[0]).ToString(CultureInfo.InvariantCulture), name, "生命值");
-        SetValue(cols, (int)ObjdefIndex.Aw, ((int)stats[3]).ToString(CultureInfo.InvariantCulture), name, "戰鬥");
-        SetValue(cols, (int)ObjdefIndex.Vw, ((int)stats[2]).ToString(CultureInfo.InvariantCulture), name, "防禦");
+        if (Math.Abs(sight - Read(source, (int)ObjdefIndex.Sirad)) > 0.01) {
+            SetValue(cols, (int)ObjdefIndex.Sirad, ((int)sight).ToString(CultureInfo.InvariantCulture), name, "視野");
+        }
+        if (Math.Abs(stats[0] - Read(source, (int)ObjdefIndex.Hp)) > 0.01) {
+            SetValue(cols, (int)ObjdefIndex.Hp, ((int)stats[0]).ToString(CultureInfo.InvariantCulture), name, "生命值");
+        }
+        if (Math.Abs(stats[3] - Read(source, (int)ObjdefIndex.Aw)) > 0.01) {
+            SetValue(cols, (int)ObjdefIndex.Aw, ((int)stats[3]).ToString(CultureInfo.InvariantCulture), name, "戰鬥");
+        }
+        if (Math.Abs(stats[2] - Read(source, (int)ObjdefIndex.Vw)) > 0.01) {
+            SetValue(cols, (int)ObjdefIndex.Vw, ((int)stats[2]).ToString(CultureInfo.InvariantCulture), name, "防禦");
+        }
+
         for (int w = 1; w <= 8; w++) {
             // 射程欄位是 active+2 (RangeMin, w*_rad1) 與 active+3 (RangeMax, w*_rad2)；
             // active+4 是 Weapon*Angle（角度），依 objdef-fields.csv 絕不可當射程縮放。
@@ -105,15 +115,37 @@ public static class ObjdefPatcher {
             if (max >= source.Length || source[active] != "1") continue;
             if (isPriest) {
                 double priestWeaponDamage = Read(source, damage);
-                SetValue(cols, damage, (priestWeaponDamage * damageScale).ToString("F2", CultureInfo.InvariantCulture), name, "damage");
-                SetValue(cols, reload, ((int)Math.Round(Read(source, reload) * reloadScale)).ToString(CultureInfo.InvariantCulture), name, "reload");
+                double newPriestDmg = priestWeaponDamage * damageScale;
+                if (Math.Abs(newPriestDmg - priestWeaponDamage) > 0.01) {
+                    SetValue(cols, damage, newPriestDmg.ToString("F2", CultureInfo.InvariantCulture), name, "damage");
+                }
+                double origPriestReload = Read(source, reload);
+                double newPriestReload = Math.Round(origPriestReload * reloadScale);
+                if (Math.Abs(newPriestReload - origPriestReload) > 0.01) {
+                    SetValue(cols, reload, ((int)newPriestReload).ToString(CultureInfo.InvariantCulture), name, "reload");
+                }
                 continue;
             }
-            foreach (int index in new[] { min, max }) if (Read(source, index) is double range && range > 0) SetValue(cols, index, (range * rangeScale).ToString("F2", CultureInfo.InvariantCulture), name, "射程");
+
+            if (Math.Abs(rangeScale - 1.0) > 0.001) {
+                foreach (int index in new[] { min, max }) {
+                    if (Read(source, index) is double range && range > 0) {
+                        SetValue(cols, index, (range * rangeScale).ToString("F2", CultureInfo.InvariantCulture), name, "射程");
+                    }
+                }
+            }
+
             double weaponDamage = Read(source, damage);
             double newDamage = type is "ranged_inf" or "ranged_cav" && w == 1 ? weaponDamage : weaponDamage * damageScale;
-            SetValue(cols, damage, newDamage.ToString("F2", CultureInfo.InvariantCulture), name, "傷害");
-            SetValue(cols, reload, ((int)Math.Round(Read(source, reload) * reloadScale)).ToString(CultureInfo.InvariantCulture), name, "攻擊冷卻");
+            if (Math.Abs(newDamage - weaponDamage) > 0.01) {
+                SetValue(cols, damage, newDamage.ToString("F2", CultureInfo.InvariantCulture), name, "傷害");
+            }
+
+            double origReload = Read(source, reload);
+            double newReload = Math.Round(origReload * reloadScale);
+            if (Math.Abs(newReload - origReload) > 0.01) {
+                SetValue(cols, reload, ((int)newReload).ToString(CultureInfo.InvariantCulture), name, "攻擊冷卻");
+            }
         }
     }
 

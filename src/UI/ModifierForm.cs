@@ -1034,7 +1034,7 @@ namespace AgainstRomeModifier {
                 Font = fontJhengHei10B
             };
             chkRangedRange3x.CheckedChanged += new EventHandler(ChkRangedRange3x_CheckedChanged);
-            pnlExperimentalCard.Controls.Add(chkRangedRange3x);
+            pnlSwitchesCard.Controls.Add(chkRangedRange3x);
 
             chkUnitMovementSpeed2x = new ModernToggle {
                 Text = Loc.Get("UnitMovementSpeed2x"),
@@ -1045,7 +1045,7 @@ namespace AgainstRomeModifier {
                 Font = fontJhengHei10B
             };
             chkUnitMovementSpeed2x.CheckedChanged += new EventHandler(ChkUnitMovementSpeed2x_CheckedChanged);
-            pnlExperimentalCard.Controls.Add(chkUnitMovementSpeed2x);
+            pnlSwitchesCard.Controls.Add(chkUnitMovementSpeed2x);
 
             chkSpellEntireMap = new ModernToggle {
                 Text = Loc.Get("SpellEntireMap"),
@@ -1056,7 +1056,7 @@ namespace AgainstRomeModifier {
                 Font = fontJhengHei10B
             };
             chkSpellEntireMap.CheckedChanged += new EventHandler(ChkSpellEntireMap_CheckedChanged);
-            pnlExperimentalCard.Controls.Add(chkSpellEntireMap);
+            pnlSwitchesCard.Controls.Add(chkSpellEntireMap);
 
             chkSpellRange3x = new ModernToggle {
                 Text = Loc.Get("SpellRange3x"),
@@ -1067,7 +1067,7 @@ namespace AgainstRomeModifier {
                 Font = fontJhengHei10B
             };
             chkSpellRange3x.CheckedChanged += new EventHandler(ChkSpellRange3x_CheckedChanged);
-            pnlExperimentalCard.Controls.Add(chkSpellRange3x);
+            pnlSwitchesCard.Controls.Add(chkSpellRange3x);
 
             chkProjectileArcHeight = new ModernToggle {
                 Text = Loc.Get("ProjectileArcHeight"),
