@@ -24,8 +24,10 @@ public static class ObjdefPatcher {
     internal const int GloryMultiplier = 5;
 
     /// <summary>拋射彈道增高倍率：w*_emit（拋射垂直初速，16.16 定點整數）乘以此倍率；
-    /// 必須與 PartgeoPatcher.ArcYsubMultiplier（重力 ysub）同倍率，落點與飛行時間才不會改變。</summary>
-    internal const double ArcEmitMultiplier = 1.5;
+    /// 必須與 PartgeoPatcher.ArcYsubMultiplier（重力 ysub）同倍率，落點與飛行時間才不會改變，弧頂高度按同倍率增加。
+    /// 機制已於 2026-07-12 以 10 倍實機驗證成功，正式版依使用者要求採 2 倍。
+    /// 原版所有拋射 emit 值 ×10 以內皆不超出欄位寬度（已對全 objdef 驗證）。</summary>
+    internal const double ArcEmitMultiplier = 2.0;
     /// <summary>遠程命中強化倍率：w*_drad（落點傷害半徑）乘以此倍率，讓近失彈也算命中。</summary>
     internal const int AccuracyDradMultiplier = 2;
 

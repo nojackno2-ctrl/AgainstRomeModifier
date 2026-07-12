@@ -1077,7 +1077,7 @@ namespace AgainstRomeModifier {
                 BackColor = Color.Transparent,
                 Font = fontJhengHei10B
             };
-            pnlExperimentalCard.Controls.Add(chkProjectileArcHeight);
+            pnlSwitchesCard.Controls.Add(chkProjectileArcHeight);
 
             chkRangedAccuracy = new ModernToggle {
                 Text = Loc.Get("RangedAccuracy"),
