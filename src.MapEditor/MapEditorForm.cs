@@ -6,20 +6,15 @@ namespace AgainstRomeMapEditor;
 
 internal sealed class MapEditorForm : Form
 {
-    private readonly EndlessMapCatalog _catalog = new();
-    private readonly GameMapCatalog _gameMapCatalog = new();
-    private readonly EndlessMapCloner _cloner = new();
-    private readonly EndlessMapDeleter _deleter = new();
     private readonly MapCanvasControl _canvas = new();
     private Map3DViewControl? _view3d;
     private Panel? _canvasHost;
     private readonly PictureBox _overview = new() { Dock = DockStyle.Fill, SizeMode = PictureBoxSizeMode.Zoom, BackColor = Color.FromArgb(18, 21, 27) };
-    private readonly ListView _maps = new() { Dock = DockStyle.Fill, View = View.Details, FullRowSelect = true, MultiSelect = false, HideSelection = false };
     private readonly ListBox _palette = new() { Dock = DockStyle.Fill, IntegralHeight = false };
     private readonly TextBox _paletteSearch = new() { Dock = DockStyle.Top, PlaceholderText = "搜尋地表樣式…" };
     private readonly Panel _currentMaterialSwatch = new() { Width = 54, Height = 54, BackColor = Color.DimGray };
     private readonly Label _currentMaterialLabel = new() { AutoSize = true, Text = "目前筆刷：尚未取樣", ForeColor = Color.White, Font = new Font("Microsoft JhengHei UI", 10F, FontStyle.Bold) };
-    private readonly TextBox _gamePath = new() { Width = 430 };
+    private readonly string _gamePath;
     private readonly TextBox _title = new() { Dock = DockStyle.Top };
     private readonly TextBox _subtitle = new() { Dock = DockStyle.Top };
     private readonly TextBox _briefing = new() { Dock = DockStyle.Top, Multiline = true, Height = 110, ScrollBars = ScrollBars.Vertical, AcceptsReturn = true };
@@ -43,7 +38,6 @@ internal sealed class MapEditorForm : Form
     private readonly Label _modeBanner = new() { Dock = DockStyle.Top, Height = 34, TextAlign = ContentAlignment.MiddleCenter };
     private readonly ToolStripStatusLabel _status = new() { Spring = true, TextAlign = ContentAlignment.MiddleLeft };
     private readonly ToolStripButton _saveButton = new("儲存") { Enabled = false };
-    private readonly ToolStripButton _deleteButton = new("刪除地圖") { Enabled = false };
     private readonly ToolStripButton _gamePreviewButton = new("選用：啟動遊戲測試") { Enabled = false };
     private readonly ToolStripButton _undoButton = new("復原") { Enabled = false };
     private readonly ToolStripButton _redoButton = new("重做") { Enabled = false };
@@ -51,6 +45,8 @@ internal sealed class MapEditorForm : Form
     private readonly ToolStripButton _resetTerrainButton = new("還原地表") { Enabled = false };
     private readonly ToolStripButton _view2dButton = new("2D 俯視") { CheckOnClick = true };
     private readonly ToolStripButton _view3dButton = new("3D 場景") { CheckOnClick = true, Checked = true };
+    private readonly ToolStripButton _mapMenuButton = new("地圖選單");
+    private readonly ToolStripLabel _currentMapLabel = new();
     private readonly Stack<TextureChange> _undo = new();
     private readonly Stack<TextureChange> _redo = new();
     private GameMapInfo? _selected;
@@ -58,41 +54,33 @@ internal sealed class MapEditorForm : Form
     private string[] _savedTextures = Array.Empty<string>();
     private bool _dirty;
     private bool _loading;
-    private bool _selectionGuard;
-    private int? _requestedSlot;
     private Dictionary<string, string> _textureLabels = new(StringComparer.OrdinalIgnoreCase);
     private float _heightMapStep = 4;
+    private bool _allowClose;
 
-    public MapEditorForm(EditorArguments arguments)
+    public MapEditorForm(string gamePath, GameMapInfo selectedMap)
     {
         Text = "Against Rome 地圖編輯器";
         Width = 1440; Height = 900; MinimumSize = new Size(1100, 700); StartPosition = FormStartPosition.CenterScreen;
         BackColor = Color.FromArgb(30, 34, 42); ForeColor = Color.Gainsboro;
-        _requestedSlot = arguments.SelectedSlot;
+        _gamePath = gamePath;
+        _selected = selectedMap;
         BuildInterface(); WireEvents();
         KeyPreview = true;
-        _gamePath.Text = arguments.GamePath ?? DetectGamePath();
-        Shown += (_, _) => RefreshMaps(_requestedSlot);
-        FormClosing += (_, e) => { if (!ConfirmDiscardOrSave()) e.Cancel = true; };
+        _currentMapLabel.Text = $"目前地圖：{selectedMap.DisplayName ?? selectedMap.Id}（{selectedMap.Id}）";
+        Shown += (_, _) => LoadSelectedMap();
+        FormClosing += (_, e) => { if (!_allowClose && !ConfirmDiscardOrSave()) e.Cancel = true; };
     }
+
+    public bool ReturnToMapMenu { get; private set; }
 
     private void BuildInterface()
     {
         var commands = new ToolStrip { GripStyle = ToolStripGripStyle.Hidden, Dock = DockStyle.Top, Padding = new Padding(8, 5, 8, 5), BackColor = Color.FromArgb(42, 47, 58), ForeColor = Color.White, RenderMode = ToolStripRenderMode.System };
-        var browse = new ToolStripButton("遊戲路徑…");
-        var refresh = new ToolStripButton("重新整理");
-        var clone = new ToolStripButton("複製為自製地圖");
-        commands.Items.AddRange(new ToolStripItem[] { browse, new ToolStripControlHost(_gamePath), refresh, new ToolStripSeparator(), clone, _deleteButton, _saveButton, _gamePreviewButton, new ToolStripSeparator(), _undoButton, _redoButton });
-        browse.Click += (_, _) => Browse(); refresh.Click += (_, _) => RefreshMaps(_selected?.EndlessSlot); clone.Click += (_, _) => CloneSelected();
-        _deleteButton.Click += (_, _) => DeleteSelected();
+        commands.Items.AddRange(new ToolStripItem[] { _mapMenuButton, new ToolStripSeparator(), _currentMapLabel, new ToolStripSeparator(), _saveButton, _gamePreviewButton, new ToolStripSeparator(), _undoButton, _redoButton });
 
         var tools = new ToolStrip { GripStyle = ToolStripGripStyle.Hidden, Dock = DockStyle.Top, Padding = new Padding(8, 4, 8, 4), BackColor = Color.FromArgb(36, 40, 49), ForeColor = Color.White };
         tools.Items.AddRange(new ToolStripItem[] { new ToolStripLabel("地表："), _textureTool, _resetTerrainButton, new ToolStripSeparator(), _view2dButton, _view3dButton });
-
-        _maps.Columns.Add("地圖", 105); _maps.Columns.Add("名稱", 145); _maps.Columns.Add("類型", 90);
-        var mapHeader = SectionHeader("地圖");
-        var left = new Panel { Dock = DockStyle.Fill, Padding = new Padding(8), BackColor = Color.FromArgb(34, 38, 47) };
-        left.Controls.Add(_maps); left.Controls.Add(mapHeader);
 
         var paletteHeader = SectionHeader("地表繪製");
         var palettePanel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(8), BackColor = Color.FromArgb(34, 38, 47) };
@@ -136,12 +124,9 @@ internal sealed class MapEditorForm : Form
 
         var centerRight = new SplitContainer { Dock = DockStyle.Fill, FixedPanel = FixedPanel.Panel2, Size = new Size(1140, 760), SplitterDistance = 820 };
         centerRight.Panel1.Controls.Add(_canvasHost); centerRight.Panel2.Controls.Add(inspectorTabs); centerRight.Panel2MinSize = 280;
-        var main = new SplitContainer { Dock = DockStyle.Fill, FixedPanel = FixedPanel.Panel1, Size = new Size(1400, 760), SplitterDistance = 280 };
-        main.Panel1.Controls.Add(left); main.Panel2.Controls.Add(centerRight); main.Panel1MinSize = 240;
-
         var statusStrip = new StatusStrip { BackColor = Color.FromArgb(42, 47, 58), ForeColor = Color.Gainsboro };
         statusStrip.Items.Add(_status); statusStrip.Items.Add(new ToolStripStatusLabel("滾輪縮放　中鍵平移　右鍵取樣　左鍵繪製　Ctrl+S 儲存"));
-        Controls.Add(main); Controls.Add(tools); Controls.Add(commands); Controls.Add(statusStrip);
+        Controls.Add(centerRight); Controls.Add(tools); Controls.Add(commands); Controls.Add(statusStrip);
         commands.BringToFront(); tools.BringToFront();
         SetActiveView(_view3d is not null);
     }
@@ -166,7 +151,6 @@ internal sealed class MapEditorForm : Form
 
     private void WireEvents()
     {
-        _maps.SelectedIndexChanged += (_, _) => OnMapSelectionChanged();
         _palette.SelectedIndexChanged += (_, _) => { if (_palette.SelectedItem is PaletteItem item) SelectBrush(item.Id); };
         _palette.DrawMode = DrawMode.OwnerDrawFixed; _palette.ItemHeight = 30; _palette.DrawItem += DrawPaletteItem;
         _paletteSearch.TextChanged += (_, _) => LoadPalette(_paletteSearch.Text);
@@ -188,6 +172,7 @@ internal sealed class MapEditorForm : Form
         }
         _view2dButton.Click += (_, _) => SetActiveView(use3D: false);
         _view3dButton.Click += (_, _) => SetActiveView(use3D: true);
+        _mapMenuButton.Click += (_, _) => ReturnToMenu();
         _textureTool.Click += (_, _) => LoadEditingScene();
         _resetTerrainButton.Click += (_, _) => ResetTerrain();
         _saveButton.Click += (_, _) => SaveMap(showSuccess: true);
@@ -202,50 +187,8 @@ internal sealed class MapEditorForm : Form
         }
     }
 
-    private void RefreshMaps(int? selectSlot)
+    private void LoadSelectedMap()
     {
-        if (!ConfirmDiscardOrSave()) return;
-        string? preferredMapId = null;
-        try
-        {
-            _selectionGuard = true; _maps.BeginUpdate(); _maps.Items.Clear();
-            _maps.Groups.Clear();
-            string[] groupOrder = { "自製地圖", "劇情戰役", "歷史戰役", "教學", "無盡模式", "多人地圖", "其他地圖" };
-            IReadOnlyList<GameMapInfo> availableMaps = _gameMapCatalog.List(_gamePath.Text);
-            preferredMapId = availableMaps.FirstOrDefault(map => map.EndlessSlot == selectSlot)?.Id ?? availableMaps.FirstOrDefault()?.Id;
-            var groups = groupOrder.ToDictionary(category => category, category => new ListViewGroup(category, HorizontalAlignment.Left));
-            foreach (string category in groupOrder)
-            {
-                int count = availableMaps.Count(map => (map.IsCustom ? "自製地圖" : map.Category) == category);
-                if (count == 0) continue;
-                groups[category].Header = $"{category}（{count}）"; _maps.Groups.Add(groups[category]);
-            }
-            foreach (GameMapInfo map in availableMaps)
-            {
-                string category = map.IsCustom ? "自製地圖" : map.Category;
-                var item = new ListViewItem(map.Id) { Tag = map, Group = groups[category] }; item.SubItems.Add(map.DisplayName ?? "(無標題)"); item.SubItems.Add(category); _maps.Items.Add(item);
-            }
-        }
-        catch (Exception ex) { ShowError(ex); }
-        finally { _maps.EndUpdate(); _selectionGuard = false; }
-        if (preferredMapId is not null)
-        {
-            ListViewItem? preferred = _maps.Items.Cast<ListViewItem>().FirstOrDefault(item => item.Tag is GameMapInfo map && StringComparer.OrdinalIgnoreCase.Equals(map.Id, preferredMapId));
-            if (preferred is not null) { preferred.Selected = true; preferred.Focused = true; preferred.EnsureVisible(); }
-        }
-        LoadSelectedFromList();
-    }
-
-    private void OnMapSelectionChanged()
-    {
-        if (_selectionGuard || _maps.SelectedItems.Count != 1) return;
-        if (!ConfirmDiscardOrSave()) { ReselectCurrent(); return; }
-        LoadSelectedFromList();
-    }
-
-    private void LoadSelectedFromList()
-    {
-        _selected = _maps.SelectedItems.Count == 1 ? _maps.SelectedItems[0].Tag as GameMapInfo : null;
         if (_selected is null) { UpdateEditorState(); return; }
         try
         {
@@ -279,7 +222,7 @@ internal sealed class MapEditorForm : Form
         IReadOnlyList<MapSceneObject> sceneObjects = SdlSceneCatalog.LoadDirectory(_selected.DirectoryPath);
         LoadSceneList(sceneObjects);
         if (!TryParseGameColor(_waterColor.Text, out Color sceneWaterColor)) sceneWaterColor = Color.SteelBlue;
-        bool hasRealTextures = _texturesDocument is not null && _canvas.LoadTextures(_texturesDocument.Dimension, _texturesDocument.Textures, _savedTextures, _selected.DirectoryPath, Path.Combine(_gamePath.Text.Trim(), "floortex.dat"), sceneObjects, (float)_waterLevel.Value, _heightMapStep, sceneWaterColor);
+        bool hasRealTextures = _texturesDocument is not null && _canvas.LoadTextures(_texturesDocument.Dimension, _texturesDocument.Textures, _savedTextures, _selected.DirectoryPath, Path.Combine(_gamePath, "floortex.dat"), sceneObjects, (float)_waterLevel.Value, _heightMapStep, sceneWaterColor);
         bool has3DScene = false;
         if (_view3d is not null && _texturesDocument is not null)
         {
@@ -288,7 +231,7 @@ internal sealed class MapEditorForm : Form
             _view3d.ShowGrid = _showGrid.Checked;
             _view3d.ShowObjects = _showObjects.Checked;
             _view3d.EditingEnabled = _selected.IsCustom;
-            try { has3DScene = _view3d.LoadTextures(_texturesDocument.Dimension, _texturesDocument.Textures, _savedTextures, _selected.DirectoryPath, Path.Combine(_gamePath.Text.Trim(), "floortex.dat"), sceneObjects, (float)_waterLevel.Value, _heightMapStep, sceneWaterColor); _view3d.SetReliefScale(_reliefScale.Value / 100f); }
+            try { has3DScene = _view3d.LoadTextures(_texturesDocument.Dimension, _texturesDocument.Textures, _savedTextures, _selected.DirectoryPath, Path.Combine(_gamePath, "floortex.dat"), sceneObjects, (float)_waterLevel.Value, _heightMapStep, sceneWaterColor); _view3d.SetReliefScale(_reliefScale.Value / 100f); }
             catch { Disable3DView(); }
         }
         Image? oldOverview = _overview.Image; _overview.Image = null; oldOverview?.Dispose();
@@ -346,11 +289,11 @@ internal sealed class MapEditorForm : Form
     {
         if (_selected is null) { MessageBox.Show(this, "請先選擇要預覽的地圖。", Text); return; }
         if (_selected.IsCustom && _dirty && !SaveMap(showSuccess: false)) return;
-        string exePath = Path.Combine(_gamePath.Text.Trim(), "Against_Rome.exe");
+        string exePath = Path.Combine(_gamePath, "Against_Rome.exe");
         if (!File.Exists(exePath)) { MessageBox.Show(this, "遊戲路徑中找不到 Against_Rome.exe。", Text, MessageBoxButtons.OK, MessageBoxIcon.Error); return; }
         try
         {
-            Process.Start(new ProcessStartInfo(exePath) { WorkingDirectory = _gamePath.Text.Trim(), UseShellExecute = true });
+            Process.Start(new ProcessStartInfo(exePath) { WorkingDirectory = _gamePath, UseShellExecute = true });
             MessageBox.Show(this, $"遊戲已啟動。\n\n若要額外測試自製地圖，請進入「無盡模式」並選擇 {_selected.Id}（{_selected.DisplayName ?? "未命名"}）。\n地圖編輯與離線場景顯示不需要啟動遊戲。", "選用遊戲測試", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
         catch (Exception ex) { ShowError(ex); }
@@ -363,32 +306,10 @@ internal sealed class MapEditorForm : Form
         return result switch { DialogResult.Yes => SaveMap(showSuccess: false), DialogResult.No => true, _ => false };
     }
 
-    private void CloneSelected()
+    private void ReturnToMenu()
     {
-        if (_selected is null) { MessageBox.Show(this, "請先從左側選擇來源地圖。", Text); return; }
         if (!ConfirmDiscardOrSave()) return;
-        string name = Prompt("新地圖名稱", _selected.DisplayName ?? _selected.Id); if (string.IsNullOrWhiteSpace(name)) return;
-        try { int slot = _catalog.GetNextFreeSlot(_gamePath.Text); _cloner.Clone(_gamePath.Text, _selected.Id, slot, name.Trim()); RefreshMaps(slot); }
-        catch (Exception ex) { ShowError(ex); }
-    }
-
-    private void DeleteSelected()
-    {
-        if (_selected is null || !_selected.IsCustom) return;
-        if (!ConfirmDiscardOrSave()) return;
-        string name = _selected.DisplayName ?? "未命名地圖";
-        DialogResult result = MessageBox.Show(this,
-            $"確定要永久刪除這張自製地圖嗎？\n\n{name}\n{_selected.Id}\n\n刪除後無法復原。",
-            "刪除地圖", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);
-        if (result != DialogResult.Yes) return;
-
-        try
-        {
-            _deleter.Delete(_gamePath.Text, _selected.EndlessSlot ?? throw new InvalidOperationException("自製地圖沒有有效槽位。"));
-            _selected = null; _texturesDocument = null; _savedTextures = Array.Empty<string>(); _dirty = false; _undo.Clear(); _redo.Clear();
-            RefreshMaps(null);
-        }
-        catch (Exception ex) { ShowError(ex); }
+        ReturnToMapMenu = true; _allowClose = true; Close();
     }
 
     private void LoadPalette(string? filter = null)
@@ -422,7 +343,7 @@ internal sealed class MapEditorForm : Form
     }
     private void UpdateEditorState()
     {
-        bool editable = _selected?.IsCustom == true; _deleteButton.Enabled = editable; _saveButton.Enabled = editable && _dirty; _gamePreviewButton.Enabled = _selected is not null; _undoButton.Enabled = editable && _undo.Count > 0; _redoButton.Enabled = editable && _redo.Count > 0; _resetTerrainButton.Enabled = editable && _texturesDocument is not null;
+        bool editable = _selected?.IsCustom == true; _saveButton.Enabled = editable && _dirty; _gamePreviewButton.Enabled = _selected is not null; _undoButton.Enabled = editable && _undo.Count > 0; _redoButton.Enabled = editable && _redo.Count > 0; _resetTerrainButton.Enabled = editable && _texturesDocument is not null;
         foreach (Control control in EditablePropertyControls()) control.Enabled = editable;
         _palette.Enabled = editable; UpdateStatus();
     }
@@ -487,8 +408,6 @@ internal sealed class MapEditorForm : Form
         if (e.KeyCode == Keys.S) SaveMap(showSuccess: false); else if (e.KeyCode == Keys.Z) Undo(); else if (e.KeyCode == Keys.Y) Redo(); else return;
         e.SuppressKeyPress = true;
     }
-    private void ReselectCurrent() { if (_selected is null) return; _selectionGuard = true; foreach (ListViewItem item in _maps.Items) item.Selected = item.Tag is GameMapInfo map && StringComparer.OrdinalIgnoreCase.Equals(map.Id, _selected.Id); _selectionGuard = false; }
-    private void Browse() { if (!ConfirmDiscardOrSave()) return; using var dialog = new FolderBrowserDialog { Description = "選擇 Against Rome 安裝資料夾" }; if (dialog.ShowDialog(this) == DialogResult.OK) { _gamePath.Text = dialog.SelectedPath; RefreshMaps(null); } }
     private static Label SectionHeader(string text) => new() { Text = text, Dock = DockStyle.Top, Height = 34, Font = new Font("Microsoft JhengHei UI", 9F, FontStyle.Bold), Padding = new Padding(4, 8, 0, 0), ForeColor = Color.White };
     private static void AddField(TableLayoutPanel table, string label, Control control) { table.Controls.Add(new Label { Text = label, AutoSize = true, Margin = new Padding(3, 10, 3, 3), ForeColor = Color.Gainsboro }); table.Controls.Add(control); }
     private IEnumerable<Control> EditablePropertyControls()
@@ -499,8 +418,6 @@ internal sealed class MapEditorForm : Form
         yield return _dayStart; yield return _dayEnd; yield return _rain;
     }
     private static decimal ParseDecimal(string? value, NumericUpDown control) => decimal.TryParse(value, out decimal parsed) ? Math.Clamp(parsed, control.Minimum, control.Maximum) : control.Minimum;
-    private static string Prompt(string title, string value) { using var form = new Form { Text = title, Width = 430, Height = 150, StartPosition = FormStartPosition.CenterParent }; var input = new TextBox { Text = value, Dock = DockStyle.Top, Margin = new Padding(12) }; var ok = new Button { Text = "確定", DialogResult = DialogResult.OK, Dock = DockStyle.Bottom, Height = 36 }; form.Controls.Add(input); form.Controls.Add(ok); form.AcceptButton = ok; return form.ShowDialog() == DialogResult.OK ? input.Text : ""; }
-    private static string DetectGamePath() => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Against Rome");
     private void ShowError(Exception ex) => MessageBox.Show(this, ex.Message, "地圖編輯器錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
     private sealed record TextureChange(int X, int Y, string Before, string After);
     private sealed record PaletteItem(string Id, string Name);

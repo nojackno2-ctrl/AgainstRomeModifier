@@ -51,7 +51,8 @@ internal sealed class Map3DViewControl : GLControl
         if (!_library.IsAvailable) return false;
         using var bitmap = new Bitmap(Path.Combine(mapDirectory, "boden.bmp"));
         byte[] samples = ReadSamples(bitmap);
-        _heights = new TerrainHeightField(bitmap.Width, bitmap.Height, samples);
+        // A 257x257 source covers the complete 64x64 tile map (four height samples per tile).
+        _heights = new TerrainHeightField(bitmap.Width, bitmap.Height, samples, tileWidth: dimension, tileHeight: dimension);
         _dimension = dimension; _textures = textures.ToArray(); _baselineTextures = baselineTextures.ToArray(); _objects = sceneObjects; _waterLevel = waterLevel; _heightMapStep = heightMapStep; _waterSourceColor = waterColor;
         _atlas?.Dispose(); _atlas = FloorTextureAtlas.Create(_textures, _library);
         BuildMesh();
@@ -188,7 +189,8 @@ internal sealed class Map3DViewControl : GLControl
         if (_atlasTexture != 0) GL.DeleteTexture(_atlasTexture); _atlasTexture = GL.GenTexture(); GL.BindTexture(TextureTarget.Texture2D, _atlasTexture);
         UploadBitmap(_atlas.Image); GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.LinearMipmapLinear); GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear); GL.GenerateMipmap(GenerateMipmapTarget.Texture2D);
         float waterY = _heightMapStep <= 0 ? 0 : _waterLevel / _heightMapStep / 255f * _heights.HeightScale;
-        UploadColoredGeometry(_waterVao, _waterVbo, new[] { new Vector3(0, waterY, 0), new Vector3(_dimension, waterY, 0), new Vector3(_dimension, waterY, _dimension), new Vector3(0, waterY, _dimension) });
+        // Counter-clockwise from above so the water remains visible with back-face culling enabled.
+        UploadColoredGeometry(_waterVao, _waterVbo, new[] { new Vector3(0, waterY, 0), new Vector3(0, waterY, _dimension), new Vector3(_dimension, waterY, _dimension), new Vector3(_dimension, waterY, 0) });
         UploadColoredGeometry(_markerVao, _markerVbo, SceneObjectRenderer.BuildMarkerPoints(_objects, _heights));
         _waterColor = new Vector4(_waterSourceColor.R / 255f, _waterSourceColor.G / 255f, _waterSourceColor.B / 255f, .55f);
     }

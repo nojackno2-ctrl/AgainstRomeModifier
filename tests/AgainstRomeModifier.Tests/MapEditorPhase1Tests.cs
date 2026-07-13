@@ -27,6 +27,18 @@ public sealed class MapEditorPhase1Tests : IDisposable
     }
 
     [Fact]
+    public void Clone_rejects_names_that_the_game_encoding_cannot_store_before_copying_files()
+    {
+        CreateSourceMap();
+
+        ArgumentException error = Assert.Throws<ArgumentException>(() => new EndlessMapCloner().Clone(_root, 0, 5, "地圖副本"));
+
+        Assert.Contains("遊戲無法儲存的字元", error.Message);
+        Assert.False(Directory.Exists(Path.Combine(_root, "MAPS", "ENDL_005")));
+        Assert.False(Directory.Exists(Path.Combine(_root, "MAPS", "ENDL_005.tmp_arm")));
+    }
+
+    [Fact]
     public void Documents_Keep_pfil_header_and_only_change_requested_values()
     {
         string path = Path.Combine(_root, "boden.ini");

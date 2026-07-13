@@ -23,6 +23,11 @@ public abstract class MapTextDocument
         Core.Services.SafeFileWriter.WriteAllBytes(Path, bytes, rollback);
     }
     private static bool IsPfil(byte[] bytes) => bytes.Length >= 64 && bytes[0] == 'P' && bytes[1] == 'F' && bytes[2] == 'I' && bytes[3] == 'L';
+    public static bool CanEncodeGameText(string value)
+    {
+        try { GameEncoding.GetByteCount(value); return true; }
+        catch (EncoderFallbackException) { return false; }
+    }
     protected static Encoding GameEncoding { get; } = CreateGameEncoding();
     private static Encoding CreateGameEncoding() { Encoding.RegisterProvider(CodePagesEncodingProvider.Instance); return Encoding.GetEncoding(1251, EncoderFallback.ExceptionFallback, DecoderFallback.ExceptionFallback); }
 }
