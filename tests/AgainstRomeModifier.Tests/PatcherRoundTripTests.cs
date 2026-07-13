@@ -221,11 +221,28 @@ public sealed class PatcherRoundTripTests {
         const string text = ";comment\r\n[ProjectileInitSpeedFactor]\r\n1.5\r\n\r\n;lead scatter\r\n[ProjectileVarianceOnMove]\r\n0.5\r\n\r\n[ProjectileVarianceMaximumAngle]\r\n45\r\n";
         byte[] original = SyntheticFixture.Pfil(text);
 
-        string patched = SyntheticFixture.Text(EparaPatcher.GetPatchedBytes(original, rangedAccuracy: true));
+        string patched = SyntheticFixture.Text(EparaPatcher.GetPatchedBytes(original, rangedAccuracy: true, rangedRange3x: false));
         Assert.Contains("[ProjectileVarianceOnMove]\r\n0.0\r\n", patched);
-        Assert.Contains("[ProjectileInitSpeedFactor]\r\n1.5\r\n", patched); // 其他區段不可動
+        Assert.Contains("[ProjectileInitSpeedFactor]\r\n1.5\r\n", patched); // 未開三倍射程時初速不動
         Assert.Contains("[ProjectileVarianceMaximumAngle]\r\n45\r\n", patched);
-        Assert.Equal(original, EparaPatcher.GetPatchedBytes(original, rangedAccuracy: false));
+        Assert.Equal(original, EparaPatcher.GetPatchedBytes(original, rangedAccuracy: false, rangedRange3x: false));
+    }
+
+    [Fact]
+    public void Epara_range3x_raises_init_speed_so_projectiles_reach_extended_range() {
+        const string text = ";comment\r\n[ProjectileInitSpeedFactor]\r\n1.5\r\n\r\n;lead scatter\r\n[ProjectileVarianceOnMove]\r\n0.5\r\n\r\n[ProjectileVarianceMaximumAngle]\r\n45\r\n";
+        byte[] original = SyntheticFixture.Pfil(text);
+
+        // 只開三倍射程：拉高初速讓箭矢能命中放大後的射程，散布不動
+        string range3xOnly = SyntheticFixture.Text(EparaPatcher.GetPatchedBytes(original, rangedAccuracy: false, rangedRange3x: true));
+        Assert.Contains("[ProjectileInitSpeedFactor]\r\n1.62\r\n", range3xOnly);
+        Assert.Contains("[ProjectileVarianceOnMove]\r\n0.5\r\n", range3xOnly); // 未開命中強化時散布不動
+        Assert.Contains("[ProjectileVarianceMaximumAngle]\r\n45\r\n", range3xOnly);
+
+        // 三倍射程＋命中強化：兩個區段都改
+        string both = SyntheticFixture.Text(EparaPatcher.GetPatchedBytes(original, rangedAccuracy: true, rangedRange3x: true));
+        Assert.Contains("[ProjectileInitSpeedFactor]\r\n1.62\r\n", both);
+        Assert.Contains("[ProjectileVarianceOnMove]\r\n0.0\r\n", both);
     }
 
     [Fact]
