@@ -2,6 +2,8 @@
 
 ## Standalone Release v1.0.0 (2026-07-13)
 
+- Fixed the user-reported ineffective `RangedRange3x` behavior: previously the modifier tripled `objdef.dau` weapon `w*_rad1/w*_rad2` values but left `Sirad` sight unchanged, so ranged units could not acquire targets across most of their new range. When `RangedRange3x` is enabled, `ObjdefPatcher` now raises each affected ranged infantry/cavalry/siege unit's sight to at least its new maximum weapon range. `FeatureDetector` recognizes this accompanying sight change before balance detection, preventing a false Balance toggle. Added a direct regression test for the weapon-range + targeting-sight contract and updated the existing no-false-Balance characterization test. Verification: Release build 0 warnings/errors; 108/108 tests passed.
+
 - Created automatic release script `tools/publish.ps1`.
 - Built and published both `AgainstRomeModifier` and `AgainstRomeMapEditor` as win-x64 Self-Contained and Single-File targets.
 - Merged and packaged the executables into `AgainstRomeModifier_v1.0.0_win-x64.zip` (129 MB) after removing debug files.

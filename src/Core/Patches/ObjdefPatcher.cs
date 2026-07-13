@@ -96,7 +96,13 @@ public static class ObjdefPatcher {
             if (bmovs > 0) SetValue(cols, (int)ObjdefIndex.Bmovs, (bmovs * speedScale).ToString("F2", CultureInfo.InvariantCulture), name, "移動速度");
         }
 
+        // 遠程攻擊的目標取得仍受 Sirad（視野）限制。僅擴大 w*_rad1/w*_rad2
+        // 會讓單位無法自行鎖定新射程外的目標，因此射程 3 倍時必須同步保證
+        // 視野至少涵蓋新的最遠武器射程。
         double sight = options.SpellEntireMap && isPriest ? 30000.0 : stats[5];
+        if (isRangedUnit && options.RangedRange3x) {
+            sight = Math.Max(sight, originalRange * rangeScale);
+        }
         if (Math.Abs(sight - Read(source, (int)ObjdefIndex.Sirad)) > 0.01) {
             SetValue(cols, (int)ObjdefIndex.Sirad, ((int)sight).ToString(CultureInfo.InvariantCulture), name, "視野");
         }

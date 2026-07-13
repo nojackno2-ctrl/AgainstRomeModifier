@@ -81,6 +81,30 @@ public sealed class PatcherRoundTripTests {
     }
 
     [Fact]
+    public void Objdef_ranged_range_3x_expands_targeting_sight_to_the_new_maximum_range() {
+        string[] columns = Enumerable.Repeat("       0", 205).ToArray();
+        columns[19] = "     100";
+        columns[24] = "    1500"; // 原始視野小於新射程
+        columns[52] = "FigKelSch00_Bogen".PadLeft(20);
+        columns[78] = "       1";
+        columns[80] = " 1000.00";
+        columns[81] = " 2000.00";
+        columns[199] = "       1";
+        byte[] original = SyntheticFixture.Pfil("header1\r\nheader2\r\n" + string.Join(',', columns) + "\r\n");
+        var stats = new Dictionary<string, double[]> {
+            ["FigKelSch00_Bogen"] = new double[] { 100, 10, 10, 10, 2, 1500, 500, 2000, 0 }
+        };
+
+        byte[] patched = ObjdefPatcher.GetPatchedBytes(original,
+            new ObjdefOptions(false, false, false, false, false, false, true, false, false, false, false, false, stats));
+        string[] result = SyntheticFixture.Text(patched).Split("\r\n")[2].Split(',');
+
+        Assert.Equal("3000.00", result[80].Trim());
+        Assert.Equal("6000.00", result[81].Trim());
+        Assert.Equal("6000", result[24].Trim());
+    }
+
+    [Fact]
     public void Objdef_priest_casting_distance_uses_sight_not_weapon_range_or_spell_radius() {
         string[] columns = Enumerable.Repeat("       0", 205).ToArray();
         columns[4] = "    2.00"; columns[23] = "    2.00"; columns[191] = "    2.00";

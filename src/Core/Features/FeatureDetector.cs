@@ -181,6 +181,17 @@ internal sealed class FeatureDetector
                     }
 
                     var origUnitRows = backupManager.GetBackupUnitRows();
+
+                    // 射程 3 倍會同步擴大遠程單位的 Sirad，讓 AI 能鎖定新射程外
+                    // 的目標；在平衡偵測前先識別此狀態，避免把該視野變更誤判為平衡。
+                    bool range3x = false;
+                    if (unitRows.TryGetValue("FigRomSch01_Bogen", out var rangeProbeCols))
+                    {
+                        double currentRange = BackupManager.GetUnitMaxRange(rangeProbeCols, "ranged_inf");
+                        double originalRange = backupManager.GetOriginalStats("FigRomSch01_Bogen")[7];
+                        range3x = currentRange > 0 && Math.Abs(currentRange - originalRange * 3.0) < 5.0;
+                    }
+
                     bool isFileBalanced = false;
                     foreach (string key in TroopConfig.UnitMeta.Keys)
                     {
@@ -227,10 +238,11 @@ internal sealed class FeatureDetector
                         if (TroopConfig.UnitMeta[key].Tier != "leader")
                         {
                             bool isPriest = utype == "priest";
+                            bool hasExpandedRangeSight = range3x && utype is "ranged_inf" or "ranged_cav" or "siege";
                             bool hasDiff = Math.Abs(curHp - origHp) > 0.01 ||
                                            Math.Abs(curVw - origVw) > 0.01 ||
                                            Math.Abs(curAw - origAw) > 0.01 ||
-                                           (!isPriest && Math.Abs(curSight - origSight) > 0.01);
+                                           (!isPriest && !hasExpandedRangeSight && Math.Abs(curSight - origSight) > 0.01);
 
                             if (hasDiff)
                             {
@@ -243,7 +255,6 @@ internal sealed class FeatureDetector
 
                     // 偵測遠程單位射程 3 倍與單位移動速度提升 2 倍
                     bool speed2x = false;
-                    bool range3x = false;
 
                     // 使用羅馬輕裝步兵 FigRomInf00_Lanze_Schild 偵測速度 2 倍
                     if (unitRows.TryGetValue("FigRomInf00_Lanze_Schild", out var testMovesCols))
