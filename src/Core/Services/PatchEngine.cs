@@ -134,7 +134,7 @@ namespace AgainstRomeModifier.Core.Services
             patchedFiles[Path.Combine(gamePath, @"SYSTEM\DATA_MP\DEFAULTS\objdef.dau")] = objdefBytes;
 
             // G. team.dat
-            var teamDatPatches = GetPatchedTeamDatBytes(backupManager, options.MaxPopulation, options.RomanEndless);
+            var teamDatPatches = GetPatchedTeamDatBytes(gamePath, backupManager, options.MaxPopulation, options.RomanEndless);
             foreach (var kvp in teamDatPatches)
             {
                 patchedFiles[Path.Combine(gamePath, kvp.Key.Replace('/', '\\'))] = kvp.Value;
@@ -276,6 +276,8 @@ namespace AgainstRomeModifier.Core.Services
                 if (kvp.Key.StartsWith("MAPS/", StringComparison.OrdinalIgnoreCase) && kvp.Key.EndsWith("team.dat", StringComparison.OrdinalIgnoreCase))
                 {
                     string destPath = Path.Combine(gamePath, kvp.Key.Replace('/', '\\'));
+                    // 與套用路徑一致：地圖已被玩家移除時不重建其 team.dat。
+                    if (!File.Exists(destPath)) continue;
                     byte[] patchedBytes = TeamDatPatcher.GetPatchedBytes(kvp.Value, new TeamDatOptions(false));
                     SafeWriteAllBytes(destPath, patchedBytes, rollback);
                     _logger.Log(string.Format(Loc.Get("SvcLogRestoredPopulation"), destPath));
@@ -304,9 +306,14 @@ namespace AgainstRomeModifier.Core.Services
             return ObjdefFeaturePatcher.Build(backupManager, options);
         }
 
-        private Dictionary<string, byte[]> GetPatchedTeamDatBytes(BackupManager backupManager, bool maxPopulation, bool romanEndless)
+        private Dictionary<string, byte[]> GetPatchedTeamDatBytes(string gamePath, BackupManager backupManager, bool maxPopulation, bool romanEndless)
         {
             var results = MaxPopulationFeature.Build(backupManager, maxPopulation, romanEndless);
+            // 備份中可能保有玩家已自行移除的地圖；只改寫磁碟上仍存在的 team.dat，不重建已刪除的地圖檔。
+            foreach (string key in results.Keys.Where(k => !File.Exists(Path.Combine(gamePath, k.Replace('/', '\\')))).ToList())
+            {
+                results.Remove(key);
+            }
             _logger.Log(maxPopulation ? string.Format(Loc.Get("SvcLogTeamDatApplied"), TeamDatPatcher.DefaultPopulationLimit, results.Count) : Loc.Get("SvcLogTeamDatRestored"));
             int endlessCount = results.Keys.Count(key => key.StartsWith("MAPS/ENDL_", StringComparison.OrdinalIgnoreCase));
             _logger.Log(romanEndless
