@@ -131,6 +131,7 @@ dotnet test tests/AgainstRomeModifier.Tests/AgainstRomeModifier.Tests.csproj -c 
 
 ## Next Steps
 
-1. Complete the current documentation-only refresh and verify UTF-8 readability, internal links, `git diff --check`, build, and test.
+1. Map editor 3D game-style view: the user approved upgrading the editor's central display to an OpenTK-rendered game-perspective terrain scene with in-scene texture painting. The self-contained implementation spec is `docs/map-editor-3d-view-spec.md` (2026-07-13); it fixes the feasibility boundary (no game embedding, no `.alr` reverse engineering, display-only heights) and phases A–C plus optional D. Follow it as written.
+2. Complete the current documentation-only refresh and verify UTF-8 readability, internal links, `git diff --check`, build, and test.
 2. If validating experimental projectile features in-game, record the test map, enabled toggles, expected behavior, observed behavior, and restore result; do not upgrade their runtime status without that evidence.
 3. Keep new proposals in the canonical technical document or a focused reverse-engineering note only when they contain actionable, current evidence; do not recreate completed-plan or historical-review documents.
