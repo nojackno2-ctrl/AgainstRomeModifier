@@ -138,7 +138,7 @@ internal static Dictionary<string, byte[]> Build(BackupManager backup, bool maxP
 ### 3.3 `src/Core/Services/PatchEngine.cs`
 
 - 步驟 G（team.dat）改為傳入兩個布林：
-  `GetPatchedTeamDatBytes(backupManager, options.MaxPopulation, options.RomanEndless)`。
+  `GetPatchedTeamDatBytes(gamePath, backupManager, options.MaxPopulation, options.RomanEndless)`。
 - log：新增鍵 `SvcLogTeamDatRoman`（見 §3.6），在 romanEndless 為 true 時輸出
   「已將 {n} 張無盡地圖的玩家陣營改為羅馬」。既有
   `SvcLogTeamDatApplied/Restored` 邏輯保持。
