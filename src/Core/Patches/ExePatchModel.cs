@@ -14,6 +14,13 @@ public enum ExeSpellAltarPatchState {
     Patched
 }
 
+/// <summary>無盡模式部族選擇強制為羅馬的補丁狀態。</summary>
+public enum ExeRomanEndlessPatchState {
+    Unknown,
+    Original,
+    Patched
+}
+
 /// <summary>已淘汰的村落建造範圍候選補丁（僅用於偵測與還原舊寫入）狀態。</summary>
 public enum ExeVillageRangePatchState {
     Unknown,
@@ -47,6 +54,17 @@ public static class ExePatchModel {
     public static readonly byte[] FocusPatchedBytes = { 0x90, 0x90, 0x90, 0x90, 0x90, 0x90 };
     public const long FocusPatchOffset = 0x161a88;
     public const long FocusPatchRequiredLength = 0x161a8e;
+
+    // === 無盡模式 dlg_volk 部族選擇強制為羅馬 ===
+    public const long RomanEndlessPatchOffset = 0x5bd60;
+    public static readonly byte[] RomanEndlessOriginalBytes = {
+        0x53, 0x8B, 0x5C, 0x24, 0x08, 0x53, 0xE8, 0x25, 0x3B, 0xFE, 0xFF,
+        0x83, 0xC4, 0x04, 0x53, 0x89, 0x1D, 0x78, 0x74, 0x73, 0x00
+    };
+    public static readonly byte[] RomanEndlessPatchedBytes = {
+        0x53, 0x6A, 0x03, 0x5B, 0x90, 0x53, 0xE8, 0x25, 0x3B, 0xFE, 0xFF,
+        0x83, 0xC4, 0x04, 0x53, 0x89, 0x1D, 0x78, 0x74, 0x73, 0x00
+    };
 
     // === 法術免祭壇需求（各族群 12 處特徵）===
     public static readonly (long Offset, byte[] Original, byte[] Patched)[] SpellAltarPatchSites = new[] {
@@ -231,6 +249,16 @@ public static class ExePatchModel {
         return ExeSpellAltarPatchState.Unknown;
     }
 
+    public static ExeRomanEndlessPatchState GetRomanEndlessPatchState(byte[] exeBytes) {
+        if (exeBytes.Length < RomanEndlessPatchOffset + RomanEndlessOriginalBytes.Length) {
+            return ExeRomanEndlessPatchState.Unknown;
+        }
+        byte[] bytes = ReadSpan(exeBytes, RomanEndlessPatchOffset, RomanEndlessOriginalBytes.Length);
+        if (bytes.SequenceEqual(RomanEndlessOriginalBytes)) return ExeRomanEndlessPatchState.Original;
+        if (bytes.SequenceEqual(RomanEndlessPatchedBytes)) return ExeRomanEndlessPatchState.Patched;
+        return ExeRomanEndlessPatchState.Unknown;
+    }
+
     public static ExeVillageRangePatchState GetVillageBuildRangePatchState(byte[] exeBytes) {
         if (exeBytes.Length < VillageRangePatchRequiredLength) {
             return ExeVillageRangePatchState.Unknown;
@@ -309,6 +337,16 @@ public static class ExePatchModel {
             return SpellAltarPatchSites
                 .Select(site => new ExeWriteOp(site.Offset, site.Patched, site.Original, "法術免祭壇需求還原"))
                 .ToArray();
+        }
+        return Array.Empty<ExeWriteOp>();
+    }
+
+    public static IReadOnlyList<ExeWriteOp> PlanRomanEndless(bool enabled, ExeRomanEndlessPatchState state) {
+        if (enabled && state == ExeRomanEndlessPatchState.Original) {
+            return new[] { new ExeWriteOp(RomanEndlessPatchOffset, RomanEndlessOriginalBytes, RomanEndlessPatchedBytes, "無盡模式羅馬陣營") };
+        }
+        if (!enabled && state == ExeRomanEndlessPatchState.Patched) {
+            return new[] { new ExeWriteOp(RomanEndlessPatchOffset, RomanEndlessPatchedBytes, RomanEndlessOriginalBytes, "無盡模式羅馬陣營還原") };
         }
         return Array.Empty<ExeWriteOp>();
     }

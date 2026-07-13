@@ -1,6 +1,8 @@
-# 功能規範：無盡模式玩家陣營改為羅馬人（實驗性功能）
+﻿# 功能規範：無盡模式玩家陣營改為羅馬人（實驗性功能）
 
-> 狀態：規範定稿，待實作。
+> 狀態：**v1（僅 team.dat）實測失敗；v2 已加入 §6 的 dlg_volk EXE patch，並通過
+> 自動化套用、偵測、還原、真實 fixture 與使用者遊戲內驗證。功能已移至正式的
+> 資源與戰鬥升級分組。team.dat patch 保留為輔助。**
 > 本文件為完整實作規範，交付對象為未參與前期逆向工程的實作者（AI 或人類）。
 > 逆向工程證據見文末附錄；實作時不需要重做任何逆向分析。
 
@@ -11,23 +13,34 @@
 | 項目 | 內容 |
 |---|---|
 | 功能 ID | `RomanEndless` |
-| UI 分組 | **實驗性功能**（`pnlExperimentalCard`） |
-| UI 名稱（zh-TW） | `無盡模式羅馬陣營 (實驗性)` |
-| UI 名稱（en） | `Play as Romans in Endless Mode (Experimental)` |
+| UI 分組 | **資源與戰鬥升級**（`pnlSwitchesCard`） |
+| UI 名稱（zh-TW） | `無盡模式羅馬陣營` |
+| UI 名稱（en） | `Play as Romans in Endless Mode` |
 | 修改目標 | `MAPS/ENDL_000..004/DATA/team.dat`（共 5 個檔案，PFIL 壓縮文字檔） |
 | 修改內容 | `[teamdata]` 區段第 0 列（玩家隊伍）第 1 欄 faction token 改為 `ROM` |
 | 生效範圍 | 僅無盡模式（ENDL_* 地圖）；戰役、歷史戰役、多人地圖一律不碰 |
 | 存檔相容 | 只影響**新開局**；舊存檔內含自己的 team 資料，不受影響也不會壞檔 |
 
-### 1.1 原理（一段話版本）
+### 1.1 原理（v2 修訂版）
 
-無盡模式**沒有**玩家陣營選擇 UI，玩家部族由每張地圖的 `team.dat` `[teamdata]`
-第 0 列決定（原版：ENDL_000=GER、001=HUN、002=HUN、003=GER、004=KEL）。
-遊戲載入時 EXE 把 team 0 的 faction 寫入「當前部族」全域變數，驅動建造選單、
-旗幟、技能樹與開局生成。玩家開局開拓隊**不是**預置在地圖裡的，而是執行期依
-`cl_scint.ini` 的 per-tribe `FigType` 表動態生成（羅馬齊全），建村起始資源也有
-羅馬專屬的 `ResTpVillage=ROM` 行。因此**只改 team.dat 一處**即可得到完整一致的
-羅馬開局，不會出現「日耳曼單位 + 羅馬科技」的混搭。
+無盡模式的部族來源有**兩層**：
+
+1. 地圖 `team.dat` `[teamdata]` 第 0 列提供預設值（原版：ENDL_000=GER、001=HUN、
+   002=HUN、003=GER、004=KEL）。
+2. **無盡流程中有一個部族選擇畫面 `dlg_volk`**（三面旗 `volk_00/01/02` =
+   GER/KEL/HUN，刻意不含羅馬）。玩家點旗或對話框套用預設選擇時，setter
+   `0x45bd60(volk)` 會寫入選擇全域 `0x737478`、AktVolk 全域 `0x68b688`，
+   **並直接覆寫玩家 team 的 faction** —— 這一層永遠蓋過 team.dat。
+   （v1 只改 team.dat 因此實測無效；存檔證據：ESAVE_000 在 ENDL_002〔HUN 地圖〕
+   上 team 0 = KEL = 玩家在 dlg_volk 的選擇。）
+
+因此 v2 的主要機制是 **EXE patch：把 `0x45bd60` 的參數強制為 3（ROM）**（§6），
+任何 dlg_volk 互動（含預設套用路徑）都變成選羅馬。team.dat patch 保留為輔助
+（讓載入層預設值一致）。
+
+開局內容不受影響的部分仍成立：玩家開拓隊是執行期依 `cl_scint.ini` per-tribe
+`FigType` 表生成（羅馬齊全），建村起始資源有 `ResTpVillage=ROM` 行 ——
+所以部族一旦是 ROM，開局就是完整的羅馬開局，無混搭。
 
 ### 1.2 已知設計面限制（要寫進 UI tooltip，不是 bug）
 
@@ -169,17 +182,17 @@ internal static Dictionary<string, byte[]> Build(BackupManager backup, bool maxP
 
 ### 3.7 UI（`src/UI/ModifierForm*.cs`）
 
-比照 `chkRangedAccuracy`（最近一個實驗性開關）的完整接線，共五處：
+比照正式開關的完整接線：
 
-1. `ModifierForm.cs`：宣告 `chkRomanEndless`（`ModernToggle`），建立於實驗性卡片
-   區塊並 `pnlExperimentalCard.Controls.Add(chkRomanEndless)`。
+1. `ModifierForm.cs`：宣告 `chkRomanEndless`（`ModernToggle`），建立於資源與戰鬥升級卡片
+   區塊並 `pnlSwitchesCard.Controls.Add(chkRomanEndless)`。
 2. `ModifierForm.Patches.cs` `BuildFeatureToggleMap()`：加 `["RomanEndless"] = chkRomanEndless`。
-3. `ModifierForm.Layout.cs`：把 `chkRomanEndless` 加進實驗性卡片的排版清單，
-   卡片高度若不足需一併調整（`ConfigureSettingsCard(pnlExperimentalCard, ..., 398, ...)`）。
+3. `ModifierForm.Layout.cs`：把 `chkRomanEndless` 加進資源與戰鬥升級卡片的排版清單，
+   卡片高度若不足需一併調整。
 4. `ModifierForm.Localization.cs`：`chkRomanEndless.Text = Loc.Get("RomanEndless");`
    與 `myToolTip.SetToolTip(chkRomanEndless, Loc.Get("RomanEndlessTip"));`
 5. `ModifierForm.Presets.cs`：
-   - 「一鍵全開」**不得**開啟本功能（實驗性功能既有慣例，見檔內註解）。
+   - 「一鍵全開」應開啟本功能。
    - 「全部關閉/還原」要把 `chkRomanEndless.Checked = false`。
 
 ### 3.8 備份
@@ -228,6 +241,78 @@ internal static Dictionary<string, byte[]> Build(BackupManager backup, bool maxP
 
 ---
 
+## 6. v2 主要機制：EXE patch（dlg_volk 部族選擇強制為羅馬）
+
+### 6.1 逆向摘要（2026-07-13 第二輪，實測失敗後補查）
+
+- `dlg_volk` 是無盡流程專用的部族選擇對話框（widget：`volk_00/01/02` 三面旗、
+  `volk_load/volk_next/volk_back`）。兩個開啟入口都在無盡流程：主選單
+  `mscr_endlosspiel` 分支（VA `0x43b5a0` 一帶，`push 0x642`/`push 0x6a6` 對話框
+  命令）與 eload 地圖載入分支（`0x43a659`）。戰役選部族走 `kamp_i*` 圖示、
+  多人走 `cmbNation`、教學固定 —— 都不經過 `dlg_volk`。
+- 選擇 setter = VA `0x45bd60`（函式簽名 `void set(volk)`）：
+  1. `0x43f890(volk)` → AktVolk 全域 `0x68b688`
+  2. `mov [0x737478], ebx` → 選擇全域（全 EXE 僅此一處寫入）
+  3. `0x46a820(playerTeam, volk)` → **覆寫玩家 team faction**
+- 呼叫者恰好 5 處，全部在 dlg_volk 處理器內：三面旗點擊
+  （`0x45beb9`/`0x45bee0`/`0x45bf0b`，分別傳 0/1/2）+ 兩個預設套用路徑
+  （`0x45c060`/`0x45c091`，傳回存的舊值）。
+- 選項畫面有一個 `swi_volk` 開關走不同路徑（`0x45949b`）可手動改 volk 0..3，
+  不受本 patch 影響（見 6.5 注意事項）。
+
+### 6.2 Patch 定義（給 `ExePatchModel.cs`，比照 FocusLoss 模式）
+
+把 setter 開頭的「讀取參數」指令換成「常數 3（ROM）」：
+
+| 項目 | 值 |
+|---|---|
+| 檔案偏移 | `0x5bd60`（VA `0x45bd60`；VA = 檔案偏移 + 0x400000） |
+| Expected（原版，21 bytes） | `53 8B 5C 24 08 53 E8 25 3B FE FF 83 C4 04 53 89 1D 78 74 73 00` |
+| Replacement（修改後） | `53 6A 03 5B 90 53 E8 25 3B FE FF 83 C4 04 53 89 1D 78 74 73 00` |
+
+原版指令：`push ebx; mov ebx,[esp+8]; push ebx; call 0x43f890; add esp,4; push ebx; mov [0x737478],ebx`
+修改後：`push ebx; push 3; pop ebx; nop; push ebx; ...`（`8B 5C 24 08` → `6A 03 5B 90`，
+等長 4 bytes、堆疊平衡不變，其餘 17 bytes 僅作驗證上下文）。
+
+簽章唯一性已驗證：`89 1D 78 74 73 00`（寫入 0x737478）全 EXE 僅此一處；
+已確認安裝目錄的 `Against_Rome.exe`（2,486,272 bytes）在該偏移的位元組與上表
+Expected 完全一致。
+
+### 6.3 實作（比照 FocusLoss 的完整接線）
+
+1. `ExePatchModel.cs`：新增
+   - `enum ExeRomanEndlessPatchState { Unknown, Original, Patched }`
+   - `RomanEndlessPatchOffset = 0x5bd60`、`RomanEndlessOriginalBytes`、
+     `RomanEndlessPatchedBytes`（上表 21 bytes）
+   - `GetRomanEndlessPatchState(byte[])`（比對兩態，其他 → Unknown）
+   - `PlanRomanEndless(bool enabled, state)`（Original+enabled → 寫入 Patched；
+     Patched+disabled → 還原 Original；否則空清單）
+2. 套用/偵測管線：與 FocusLoss/SpellAltar 相同的呼叫點各加一份
+   （PatchEngine 的 EXE patch 區段與 FeatureDetector 的 EXE 狀態偵測）。
+   `RomanEndless` 功能 ID 不變：**同一個開關同時驅動 team.dat patch（§2-3）
+   與本 EXE patch**，偵測以「兩者皆已套用」為開、
+  「兩者皆原版」為關、不一致時以 EXE patch 狀態為準並 log 警告。
+3. 測試（加進 `ExePatchModelTests.cs` 或 `RomanEndlessPatchTests.cs`）：
+   - 合成 buffer：Original → Plan(enabled) → Apply → 等於 Patched；反向還原成立。
+   - 狀態機：Original/Patched/亂改後 Unknown 各一。
+   - Plan 在 Unknown 狀態回空清單（不動檔案）。
+
+### 6.4 為何仍保留 team.dat patch
+
+dlg_volk 的覆寫發生在選單階段；地圖載入時 `[teamdata]` 也會把 faction 寫進
+team 結構。兩層都改成 ROM 可保證不論套用順序為何結果一致，且 team.dat patch
+已實作並通過測試，無害。
+
+### 6.5 注意事項（寫進 tooltip 或 README）
+
+- 開啟後 dlg_volk 三面旗不論點哪面都會是羅馬；旗幟高亮可能顯示「無選中」
+  （值 3 不在 UI 的 0..2 範圍內），純視覺，無功能影響。
+- 選項畫面的 `swi_volk` 開關（若玩家手動去切）走另一條路徑，可把 volk 改回
+  蠻族 —— 屬於玩家主動行為，不在本功能防護範圍。
+- EXE patch 影響所有會開 dlg_volk 的流程；已驗證只有無盡模式使用它。
+
+---
+
 ## 附錄 A：逆向工程證據（不需重做，僅供查證）
 
 VA = `Against_Rome.exe` 檔案偏移 + 0x400000（PE 節區已驗證線性對映）。
@@ -238,7 +323,8 @@ VA = `Against_Rome.exe` 檔案偏移 + 0x400000（PE 節區已驗證線性對映
 | `[teamdata]` 回呼 | EXE `0x468fcc` | 第 1 欄 token → team 結構 `0x73ca88 + team*0x84 + 0x00` |
 | 無盡啟動 | EXE `0x43b5a0` 一帶 | mscr_endlosspiel → gameMode=5 → `SetPlayerTeam(0)` |
 | SetPlayerTeam | EXE `0x44ceb0` | 讀 team faction（`0x46a7f0`）→ 寫 AktVolk 全域 `0x68b688` |
-| 無盡對話框 | `dlg_endl` 控制項 | 只有地圖格/載入/簡報/戰霧，無 nation 欄位（玩家不能選陣營） |
+| 無盡對話框 | `dlg_endl` 控制項 | 只有地圖格/載入/簡報/戰霧；部族選擇在**另一個**對話框 `dlg_volk`（v1 漏掉，見 §6） |
+| 部族選擇 setter | EXE `0x45bd60` | dlg_volk 專用；寫 `0x737478` + AktVolk + 玩家 team faction；v2 patch 點 |
 | 開拓隊生成 | `SYSTEM/CLAK/cl_scint.ini` `[ObjTypes]` | per-tribe `FigType` 表，ROM 齊全（Anf/Inf/KavInf/PackPf/Sch + 共用 ALL_ZIV*/ALL_PACKPF） |
 | 建村起始資源 | `cl_scint.ini` `[TribeData]` `ResTpVillage` | ROM=20,120,20,0,0,0；EXE key 表 `0x61bb40`（ResTpFill=key3、ResTpVillage=key4） |
 | 開拓隊非預置證明 | ESAVE_000 vs ENDL_002 物件池 diff | 地圖 3222 個 active 物件全為場景（slot 0..3221 連續、objdata 全預設值）；存檔新增 4667 物件（slot 3222+ 依序分配）= 所有單位/建物皆執行期建立 |

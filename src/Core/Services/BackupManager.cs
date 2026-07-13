@@ -380,11 +380,13 @@ namespace AgainstRomeModifier.Core.Services
                 var spellState = ExePatchModel.GetSpellAltarPatchState(exeBytes);
                 var rangeState = ExePatchModel.GetVillageBuildRangePatchState(exeBytes);
                 var setterState = ExePatchModel.GetVillageSetterPatchState(exeBytes);
+                var romanEndlessState = ExePatchModel.GetRomanEndlessPatchState(exeBytes);
 
                 return focusState == ExePatchState.Original &&
                        spellState == ExeSpellAltarPatchState.Original &&
                        rangeState == ExeVillageRangePatchState.Original &&
-                       setterState == ExeVillageSetterPatchState.Original;
+                       setterState == ExeVillageSetterPatchState.Original &&
+                       romanEndlessState == ExeRomanEndlessPatchState.Original;
             }
             catch
             {

@@ -83,6 +83,7 @@ namespace AgainstRomeModifier.Tests
                     FreeUpgrade = true,
                     NoSpellCost = true,
                     MaxPopulation = true,
+                    RomanEndless = true,
                     Balance = true,
                     RangedRange3x = true,
                     UnitMovementSpeed2x = true,
@@ -120,6 +121,7 @@ namespace AgainstRomeModifier.Tests
                 Assert.True(detected.FreeUpgrade, "FreeUpgrade 未回讀為 true");
                 Assert.True(detected.NoSpellCost, "NoSpellCost 未回讀為 true");
                 Assert.True(detected.MaxPopulation, "MaxPopulation 未回讀為 true");
+                Assert.True(detected.RomanEndless, "RomanEndless 未回讀為 true");
                 Assert.True(detected.Balance, "Balance 未回讀為 true");
                 Assert.True(detected.RangedRange3x, "RangedRange3x 未回讀為 true");
                 Assert.True(detected.UnitMovementSpeed2x, "UnitMovementSpeed2x 未回讀為 true");
@@ -152,6 +154,7 @@ namespace AgainstRomeModifier.Tests
                 Assert.False(restored.FastCiviProduction, "還原後 FastCiviProduction 仍為 true");
                 Assert.False(restored.InfiniteMorale, "還原後 InfiniteMorale 仍為 true");
                 Assert.False(restored.MaxPopulation, "還原後 MaxPopulation 仍為 true");
+                Assert.False(restored.RomanEndless, "還原後 RomanEndless 仍為 true");
                 Assert.False(restored.Balance, "還原後 Balance 仍為 true");
                 Assert.False(restored.RangedRange3x, "還原後 RangedRange3x 仍為 true");
                 Assert.False(restored.UnitMovementSpeed2x, "還原後 UnitMovementSpeed2x 仍為 true");
