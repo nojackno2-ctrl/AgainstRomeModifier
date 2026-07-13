@@ -19,8 +19,15 @@ internal sealed class MapEditorForm : Form
     private readonly Label _currentMaterialLabel = new() { AutoSize = true, Text = "目前筆刷：尚未取樣", ForeColor = Color.White, Font = new Font("Microsoft JhengHei UI", 10F, FontStyle.Bold) };
     private readonly TextBox _gamePath = new() { Width = 430 };
     private readonly TextBox _title = new() { Dock = DockStyle.Top };
+    private readonly TextBox _subtitle = new() { Dock = DockStyle.Top };
+    private readonly TextBox _briefing = new() { Dock = DockStyle.Top, Multiline = true, Height = 110, ScrollBars = ScrollBars.Vertical, AcceptsReturn = true };
+    private readonly TextBox[] _teamNames = Enumerable.Range(0, 8).Select(_ => new TextBox { Dock = DockStyle.Top }).ToArray();
     private readonly NumericUpDown _waterLevel = new() { Dock = DockStyle.Top, Minimum = 0, Maximum = 4096 };
     private readonly TextBox _waterColor = new() { Dock = DockStyle.Top };
+    private readonly NumericUpDown _waterWarpShift = new() { Dock = DockStyle.Top, Minimum = 0, Maximum = 64 };
+    private readonly NumericUpDown _waterBumpAmplitude = new() { Dock = DockStyle.Top, Minimum = 0, Maximum = 1024 };
+    private readonly NumericUpDown _waterBumpFrequency = new() { Dock = DockStyle.Top, Minimum = 1, Maximum = 16 };
+    private readonly NumericUpDown _flashProbability = new() { Dock = DockStyle.Top, Minimum = 0, Maximum = 1000 };
     private readonly NumericUpDown _dayStart = new() { Dock = DockStyle.Top, Minimum = 0, Maximum = 24 };
     private readonly NumericUpDown _dayEnd = new() { Dock = DockStyle.Top, Minimum = 0, Maximum = 24 };
     private readonly CheckBox _rain = new() { Dock = DockStyle.Top, Text = "水面雨滴" };
@@ -123,7 +130,17 @@ internal sealed class MapEditorForm : Form
     private Panel BuildPropertiesPanel()
     {
         var table = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 1, Padding = new Padding(10) };
-        AddField(table, "地圖名稱", _title); AddField(table, "水面高度", _waterLevel); AddField(table, "水面顏色", _waterColorButton);
+        AddField(table, "地圖名稱", _title); AddField(table, "地圖副標題", _subtitle); AddField(table, "任務說明", _briefing);
+        var teams = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 2 };
+        teams.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 60)); teams.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        for (int index = 0; index < _teamNames.Length; index++)
+        {
+            teams.Controls.Add(new Label { Text = $"隊伍 {index}", AutoSize = true, Anchor = AnchorStyles.Left, ForeColor = Color.Gainsboro }, 0, index);
+            teams.Controls.Add(_teamNames[index], 1, index);
+        }
+        AddField(table, "隊伍名稱", teams); AddField(table, "水面高度", _waterLevel); AddField(table, "水面顏色", _waterColorButton);
+        AddField(table, "水面波動位移", _waterWarpShift); AddField(table, "水面凹凸幅度", _waterBumpAmplitude); AddField(table, "水面凹凸頻率", _waterBumpFrequency);
+        AddField(table, "每秒閃電機率", _flashProbability);
         AddField(table, "日出時間", _dayStart); AddField(table, "日落時間", _dayEnd); AddField(table, "", _rain);
         var panel = new Panel { Dock = DockStyle.Fill, AutoScroll = true, BackColor = Color.FromArgb(34, 38, 47) }; panel.Controls.Add(table); return panel;
     }
@@ -147,7 +164,7 @@ internal sealed class MapEditorForm : Form
         _gamePreviewButton.Click += (_, _) => PreviewInGame();
         _undoButton.Click += (_, _) => Undo(); _redoButton.Click += (_, _) => Redo();
         KeyDown += (_, e) => HandleShortcut(e);
-        foreach (Control control in new Control[] { _title, _waterLevel, _waterColor, _dayStart, _dayEnd, _rain })
+        foreach (Control control in EditablePropertyControls())
         {
             if (control is TextBox text) text.TextChanged += (_, _) => MarkDirty();
             else if (control is NumericUpDown numeric) numeric.ValueChanged += (_, _) => MarkDirty();
@@ -203,9 +220,17 @@ internal sealed class MapEditorForm : Form
         try
         {
             _loading = true; string map = _selected.DirectoryPath;
-            _title.Text = PutTextDocument.Load(Path.Combine(map, "TEXT", "US", "briefing.put")).GetValue("briefing_titel_1") ?? "";
+            var put = PutTextDocument.Load(Path.Combine(map, "TEXT", "US", "briefing.put"));
+            _title.Text = put.GetValue("briefing_titel_1") ?? "";
+            _subtitle.Text = put.GetValue("briefing_titel_2") ?? "";
+            _briefing.Text = put.GetCompositeValue("briefing_text") ?? "";
+            for (int index = 0; index < _teamNames.Length; index++) _teamNames[index].Text = put.GetValue($"briefing_text_teamname{index}") ?? "";
             var ini = BodenIniDocument.Load(Path.Combine(map, "boden.ini"));
             _waterLevel.Value = ParseDecimal(ini.GetValue("Waterlevel"), _waterLevel); _waterColor.Text = ini.GetValue("WaterColor") ?? "";
+            _waterWarpShift.Value = ParseDecimal(ini.GetValue("WaterWarpShift"), _waterWarpShift);
+            _waterBumpAmplitude.Value = ParseDecimal(ini.GetValue("WaterBumpAmplitude"), _waterBumpAmplitude);
+            _waterBumpFrequency.Value = ParseDecimal(ini.GetValue("WaterBumpFrequency"), _waterBumpFrequency);
+            _flashProbability.Value = ParseDecimal(ini.GetValue("FlashPropability"), _flashProbability);
             _heightMapStep = float.TryParse(ini.GetValue("Heightmapstep"), out float heightStep) && heightStep > 0 ? heightStep : 4;
             if (TryParseGameColor(_waterColor.Text, out Color waterColor)) { _waterColorButton.BackColor = waterColor; _waterColorButton.ForeColor = waterColor.GetBrightness() < .45f ? Color.White : Color.Black; }
             _dayStart.Value = ParseDecimal(ini.GetValue("DayStartTime"), _dayStart); _dayEnd.Value = ParseDecimal(ini.GetValue("DayEndTime"), _dayEnd); _rain.Checked = ini.GetValue("RainDropsOnWater") == "1";
@@ -259,8 +284,13 @@ internal sealed class MapEditorForm : Form
         try
         {
             using var rollback = new FileRollbackScope(); string map = _selected.DirectoryPath;
-            var put = PutTextDocument.Load(Path.Combine(map, "TEXT", "US", "briefing.put")); put.SetValue("briefing_titel_1", _title.Text.Trim()); put.Save(rollback);
-            var ini = BodenIniDocument.Load(Path.Combine(map, "boden.ini")); ini.SetValue("Waterlevel", _waterLevel.Value.ToString()); ini.SetValue("WaterColor", _waterColor.Text.Trim()); ini.SetValue("DayStartTime", _dayStart.Value.ToString()); ini.SetValue("DayEndTime", _dayEnd.Value.ToString()); ini.SetValue("RainDropsOnWater", _rain.Checked ? "1" : "0"); ini.Save(rollback);
+            var put = PutTextDocument.Load(Path.Combine(map, "TEXT", "US", "briefing.put"));
+            put.SetValue("briefing_titel_1", _title.Text.Trim()); put.SetValue("briefing_titel_2", _subtitle.Text.Trim()); put.SetCompositeValue("briefing_text", _briefing.Text);
+            for (int index = 0; index < _teamNames.Length; index++) put.SetValue($"briefing_text_teamname{index}", _teamNames[index].Text.Trim());
+            put.Save(rollback);
+            var ini = BodenIniDocument.Load(Path.Combine(map, "boden.ini")); ini.SetValue("Waterlevel", _waterLevel.Value.ToString()); ini.SetValue("WaterColor", _waterColor.Text.Trim());
+            ini.SetValue("WaterWarpShift", _waterWarpShift.Value.ToString()); ini.SetValue("WaterBumpAmplitude", _waterBumpAmplitude.Value.ToString()); ini.SetValue("WaterBumpFrequency", _waterBumpFrequency.Value.ToString()); ini.SetValue("FlashPropability", _flashProbability.Value.ToString());
+            ini.SetValue("DayStartTime", _dayStart.Value.ToString()); ini.SetValue("DayEndTime", _dayEnd.Value.ToString()); ini.SetValue("RainDropsOnWater", _rain.Checked ? "1" : "0"); ini.Save(rollback);
             _texturesDocument?.Save(rollback); rollback.Commit(); _savedTextures = _texturesDocument?.Textures.ToArray() ?? Array.Empty<string>(); _dirty = false; LoadEditingScene(); UpdateEditorState();
             if (showSuccess) MessageBox.Show(this, "地圖已安全儲存。", Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
             return true;
@@ -349,7 +379,7 @@ internal sealed class MapEditorForm : Form
     private void UpdateEditorState()
     {
         bool editable = _selected?.IsCustom == true; _deleteButton.Enabled = editable; _saveButton.Enabled = editable && _dirty; _gamePreviewButton.Enabled = _selected is not null; _undoButton.Enabled = editable && _undo.Count > 0; _redoButton.Enabled = editable && _redo.Count > 0; _resetTerrainButton.Enabled = editable && _texturesDocument is not null;
-        foreach (Control control in new Control[] { _title, _waterLevel, _waterColor, _dayStart, _dayEnd, _rain }) control.Enabled = editable;
+        foreach (Control control in EditablePropertyControls()) control.Enabled = editable;
         _palette.Enabled = editable; UpdateStatus();
     }
     private void UpdateStatus() { _status.Text = _selected is null ? "尚未選擇地圖" : $"{_selected.Id} — {(_selected.IsCustom ? "自製地圖，可編輯" : "原廠地圖，唯讀")}{(_dirty ? "  ● 尚未儲存" : "")}"; }
@@ -401,6 +431,13 @@ internal sealed class MapEditorForm : Form
     private void Browse() { if (!ConfirmDiscardOrSave()) return; using var dialog = new FolderBrowserDialog { Description = "選擇 Against Rome 安裝資料夾" }; if (dialog.ShowDialog(this) == DialogResult.OK) { _gamePath.Text = dialog.SelectedPath; RefreshMaps(null); } }
     private static Label SectionHeader(string text) => new() { Text = text, Dock = DockStyle.Top, Height = 34, Font = new Font("Microsoft JhengHei UI", 9F, FontStyle.Bold), Padding = new Padding(4, 8, 0, 0), ForeColor = Color.White };
     private static void AddField(TableLayoutPanel table, string label, Control control) { table.Controls.Add(new Label { Text = label, AutoSize = true, Margin = new Padding(3, 10, 3, 3), ForeColor = Color.Gainsboro }); table.Controls.Add(control); }
+    private IEnumerable<Control> EditablePropertyControls()
+    {
+        yield return _title; yield return _subtitle; yield return _briefing;
+        foreach (TextBox teamName in _teamNames) yield return teamName;
+        yield return _waterLevel; yield return _waterColor; yield return _waterWarpShift; yield return _waterBumpAmplitude; yield return _waterBumpFrequency; yield return _flashProbability;
+        yield return _dayStart; yield return _dayEnd; yield return _rain;
+    }
     private static decimal ParseDecimal(string? value, NumericUpDown control) => decimal.TryParse(value, out decimal parsed) ? Math.Clamp(parsed, control.Minimum, control.Maximum) : control.Minimum;
     private static string Prompt(string title, string value) { using var form = new Form { Text = title, Width = 430, Height = 150, StartPosition = FormStartPosition.CenterParent }; var input = new TextBox { Text = value, Dock = DockStyle.Top, Margin = new Padding(12) }; var ok = new Button { Text = "確定", DialogResult = DialogResult.OK, Dock = DockStyle.Bottom, Height = 36 }; form.Controls.Add(input); form.Controls.Add(ok); form.AcceptButton = ok; return form.ShowDialog() == DialogResult.OK ? input.Text : ""; }
     private static string DetectGamePath() => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Against Rome");

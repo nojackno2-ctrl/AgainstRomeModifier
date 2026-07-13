@@ -1,4 +1,4 @@
-# Against Rome 無盡模式地圖編輯器 — 實作任務規格書
+﻿# Against Rome 無盡模式地圖編輯器 — 實作任務規格書
 
 > 本文件是自足的實作規格:實作者只需要本文件 + 本 repo 即可完成開發,不需要其他對話上下文。
 > 語言慣例:說明用繁體中文,程式識別字/檔名/技術名詞保留英文。
@@ -277,6 +277,8 @@ Phase 1 編輯操作:改 `team`/`nation`、整體平移(改 `refpos`,物件 `pos
 - 聚落:8 個 SDL 的清單 → 物件表格(namedef/def/pos/angle/team)、整體平移、增刪物件。
 - 材質(可作為 Phase 1.5):64×64 網格檢視(每格填色或縮寫),點格子從材質調色盤替換。
 - **原廠圖(ENDL_000–004)一律唯讀**,只能「另存為新地圖」;要改原廠圖 = 先複製再編輯。
+
+> 實作狀態（2026-07-13）：屬性面板已支援 `briefing_titel_1/2`、可串接／多行的 `briefing_text`、`briefing_text_teamname0..7`，以及 Waterlevel、WaterColor、DayStartTime、DayEndTime、RainDropsOnWater、WaterWarpShift、WaterBumpAmplitude、WaterBumpFrequency、FlashPropability。寫入仍只允許 marker-backed 自製地圖，並沿用 CP1251、PFIL header 保留與 `FileRollbackScope` 交易。SDL 場景物件目前維持唯讀，待其獨立 round-trip／遊戲內驗證完成才開放編輯。
 
 **存檔紀律:** 所有寫入經 `SafeFileWriter`;一次「儲存變更」內的多檔寫入包在 `FileRollbackScope`(全部 `TrackFile` → 寫入 → `Commit`)。PFIL 檔回寫必用原始 64-byte header。
 

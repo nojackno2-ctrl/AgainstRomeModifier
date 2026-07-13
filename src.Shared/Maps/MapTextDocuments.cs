@@ -65,7 +65,47 @@ public sealed class PutTextDocument : MapTextDocument
         Group existing = match.Groups["value"];
         Text = Text[..existing.Index] + value + Text[(existing.Index + existing.Length)..];
     }
+
+    public string? GetCompositeValue(string key)
+    {
+        Match assignment = FindAssignment(key);
+        if (!assignment.Success) return null;
+        MatchCollection fragments = Regex.Matches(assignment.Groups["expression"].Value, @"""(?<value>(?:\\.|[^""\\])*)""");
+        return fragments.Count == 0 ? null : string.Concat(fragments.Select(fragment => Unescape(fragment.Groups["value"].Value)));
+    }
+
+    public void SetCompositeValue(string key, string value)
+    {
+        if (value.Contains('\0')) throw new ArgumentException("地圖文字不可包含 NUL 字元。", nameof(value));
+        Match assignment = FindAssignment(key);
+        if (!assignment.Success) throw new KeyNotFoundException("找不到 .put 變數: " + key);
+        Group expression = assignment.Groups["expression"];
+        string replacement = "\"" + Escape(value) + "\"";
+        Text = Text[..expression.Index] + replacement + Text[(expression.Index + expression.Length)..];
+    }
+
     private Match Find(string key) => Regex.Match(Text, $@"(?im)^\s*var:\s*{Regex.Escape(key)}\s*=\s*""(?<value>[^""]*)""");
+    private Match FindAssignment(string key) => Regex.Match(Text,
+        $@"(?ims)^(?<prefix>[ \t]*var:\s*{Regex.Escape(key)}\s*=\s*)(?<expression>.*?)(?<suffix>;[ \t]*(?:\r?\n|$))");
+
+    private static string Escape(string value) => value
+        .Replace("\\", "\\\\", StringComparison.Ordinal)
+        .Replace("\r", "\\r", StringComparison.Ordinal)
+        .Replace("\n", "\\n", StringComparison.Ordinal)
+        .Replace("\t", "\\t", StringComparison.Ordinal)
+        .Replace("\"", "\\\"", StringComparison.Ordinal);
+
+    private static string Unescape(string value)
+    {
+        var result = new StringBuilder(value.Length);
+        for (int index = 0; index < value.Length; index++)
+        {
+            if (value[index] != '\\' || index + 1 >= value.Length) { result.Append(value[index]); continue; }
+            char escaped = value[++index];
+            result.Append(escaped switch { 'n' => '\n', 'r' => '\r', 't' => '\t', '"' => '"', '\\' => '\\', _ => "\\" + escaped });
+        }
+        return result.ToString();
+    }
 }
 
 public sealed class SdlDocument : MapTextDocument

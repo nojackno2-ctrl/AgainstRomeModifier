@@ -119,7 +119,7 @@ public static class ObjdefPatcher {
         for (int w = 1; w <= 8; w++) {
             // 射程欄位是 active+2 (RangeMin, w*_rad1) 與 active+3 (RangeMax, w*_rad2)；
             // active+4 是 Weapon*Angle（角度），依 objdef-fields.csv 絕不可當射程縮放。
-            int active = (int)ObjdefIndex.Weapon1Akti + (w - 1) * 8, damage = active + 1, min = active + 2, max = active + 3, reload = active + 6;
+            int active = (int)ObjdefIndex.Weapon1Akti + (w - 1) * 8, damage = active + 1, max = active + 3, reload = active + 6;
             if (max >= source.Length || source[active] != "1") continue;
             if (isPriest) {
                 double priestWeaponDamage = Read(source, damage);
@@ -135,12 +135,13 @@ public static class ObjdefPatcher {
                 continue;
             }
 
-            if (Math.Abs(rangeScale - 1.0) > 0.001) {
-                foreach (int index in new[] { min, max }) {
-                    if (Read(source, index) is double range && range > 0) {
-                        SetValue(cols, index, (range * rangeScale).ToString("F2", CultureInfo.InvariantCulture), name, "射程");
-                    }
-                }
+            // 只縮放遠程武器（dtyp 1~4；攻城武器全部），近戰副武器與 dtyp 5/6 特殊武器
+            // 若跟著縮放，弓兵會從三倍距離外揮刀。rad1（最小射程）放大會等比擴大
+            // 近身死區使單位在近距離無法開火，因此僅放大 rad2（最大射程）。
+            int damageTypeIndex = (int)ObjdefIndex.Weapon1Dtyp + (w - 1);
+            bool isRangedWeapon = type == "siege" || (damageTypeIndex < source.Length && source[damageTypeIndex] is "1" or "2" or "3" or "4");
+            if (isRangedWeapon && Math.Abs(rangeScale - 1.0) > 0.001 && Read(source, max) is double range && range > 0) {
+                SetValue(cols, max, (range * rangeScale).ToString("F2", CultureInfo.InvariantCulture), name, "射程");
             }
 
             double weaponDamage = Read(source, damage);

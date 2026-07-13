@@ -610,7 +610,9 @@ namespace AgainstRomeModifier.Core.Services
             double[] original = GetOriginalStats(key);
             double[] balanced = options.Balance ? GetDefaultBalancedStats(key) : original;
 
-            if (options.CustomUnitStats != null && options.CustomUnitStats.TryGetValue(key, out double[]? custom) && custom != null)
+            // 自訂兵種屬性與內建平衡同受「啟用自訂兵種屬性平衡與陣營特色」開關把關，
+            // 未勾選時一律回到原版屬性。
+            if (options.Balance && options.CustomUnitStats != null && options.CustomUnitStats.TryGetValue(key, out double[]? custom) && custom != null)
             {
                 bool ignoreRange = TroopConfig.UnitMeta.TryGetValue(key, out var meta) &&
                     ((options.RangedRange3x && (meta.UnitType is "ranged_inf" or "ranged_cav" or "siege")) ||
