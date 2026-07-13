@@ -1,4 +1,4 @@
-# Against Rome Modifier 技術文件
+﻿# Against Rome Modifier 技術文件
 
 > [!IMPORTANT]
 > 這個修改器還在測試中，如果要使用請將原始的檔案進行備份。
@@ -232,6 +232,14 @@ commit 後要先 Dispose／清空 rollback scope，再更新 UI；UI refresh 例
 路徑：`MAPS/**/team.dat`。
 
 最大人口補丁只修改 `[teamdata]` zero-based column 4 為 1600；`maxteamobjgenerell` 保留。column 5 是 banner version。`team.dat` 不負責無盡模式增援 count。
+
+### 無盡模式羅馬陣營（已實機驗證）
+
+`RomanEndless` 只處理 `MAPS/ENDL_*/DATA/team.dat`：在 `[teamdata]` 找到 team 0 後，把 column 1 faction token 改為 `ROM`，其餘欄位（特別是 column 5 `bver`）原樣保留；非 ENDL 地圖只會受最大人口功能影響。這是載入層預設值，不能單獨保證最終陣營，因無盡模式的 `dlg_volk` 會在選單階段覆寫玩家 team。
+
+`PatchEngine` 因此把同一個開關同時交給 `TeamDatPatcher` 與 EXE patch：`dlg_volk` setter 的檔案偏移 `0x5bd60` 將原版 21-byte 簽章 `53 8B 5C 24 08 ... 89 1D 78 74 73 00` 安全替換為 `53 6A 03 5B 90 ... 89 1D 78 74 73 00`，強制傳入 ROM id 3。EXE 與 team.dat 皆套用才視為完整狀態；不一致時 UI 以 EXE 為準並記錄警告，Unknown 簽章一律不寫入。此功能屬 Stats，故 Stats-only 還原會還原 EXE 與五張 ENDL team.dat，而 Compat-only 還原會保留它。
+
+使用者在「資源與戰鬥升級」勾選後按執行修改，再開啟新無盡對局；一鍵全開包含此功能。三面部族旗都會進入羅馬，可能沒有高亮旗幟，屬預期視覺限制。取消勾選並套用或還原即可回到原版；舊存檔不受影響。羅馬原版沒有祭司與榮耀技能樹，且選項 `swi_volk` 是玩家可手動改回蠻族的獨立路徑。
 
 ## 10. AI Ultimate Mode
 

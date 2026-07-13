@@ -26,6 +26,12 @@ public sealed class ExePatchModelTests {
         }
     }
 
+    private static void PlaceRomanEndless(byte[] exe, ExeRomanEndlessPatchState state) =>
+        Place(exe, ExePatchModel.RomanEndlessPatchOffset,
+            state == ExeRomanEndlessPatchState.Patched
+                ? ExePatchModel.RomanEndlessPatchedBytes
+                : ExePatchModel.RomanEndlessOriginalBytes);
+
     private static void PlaceVillageRange(byte[] exe, ExeVillageRangePatchState state) {
         bool rangePatched = state is ExeVillageRangePatchState.LegacyLogicOnly or ExeVillageRangePatchState.Expanded;
         bool framePatched = state == ExeVillageRangePatchState.Expanded;
@@ -69,6 +75,25 @@ public sealed class ExePatchModelTests {
         Place(exe, ExePatchModel.FocusPatchOffset, new byte[] { 0x11, 0x22, 0x33, 0x44, 0x55, 0x66 });
         Assert.Equal(ExePatchState.Unknown, ExePatchModel.GetExePatchState(exe));
         Assert.Equal(ExePatchState.Unknown, ExePatchModel.GetExePatchState(new byte[8]));
+    }
+
+    [Theory]
+    [InlineData(ExeRomanEndlessPatchState.Original)]
+    [InlineData(ExeRomanEndlessPatchState.Patched)]
+    public void Roman_endless_state_is_detected(ExeRomanEndlessPatchState state) {
+        byte[] exe = NewExe();
+        PlaceRomanEndless(exe, state);
+        Assert.Equal(state, ExePatchModel.GetRomanEndlessPatchState(exe));
+    }
+
+    [Fact]
+    public void Roman_endless_unknown_bytes_and_short_buffer_report_unknown() {
+        byte[] exe = NewExe();
+        Place(exe, ExePatchModel.RomanEndlessPatchOffset, Enumerable.Repeat((byte)0xCC, 21).ToArray());
+        Assert.Equal(ExeRomanEndlessPatchState.Unknown, ExePatchModel.GetRomanEndlessPatchState(exe));
+        Assert.Equal(ExeRomanEndlessPatchState.Unknown, ExePatchModel.GetRomanEndlessPatchState(new byte[8]));
+        Assert.Empty(ExePatchModel.PlanRomanEndless(true, ExeRomanEndlessPatchState.Unknown));
+        Assert.Empty(ExePatchModel.PlanRomanEndless(false, ExeRomanEndlessPatchState.Unknown));
     }
 
     [Theory]
@@ -117,6 +142,22 @@ public sealed class ExePatchModelTests {
         Assert.Empty(ExePatchModel.PlanFocus(true, ExePatchModel.GetExePatchState(exe)));
         PlaceFocus(exe, ExePatchState.Original);
         Assert.Empty(ExePatchModel.PlanFocus(false, ExePatchModel.GetExePatchState(exe)));
+    }
+
+    [Fact]
+    public void Roman_endless_enable_then_disable_round_trips() {
+        byte[] exe = NewExe();
+        PlaceRomanEndless(exe, ExeRomanEndlessPatchState.Original);
+        byte[] pristine = exe.ToArray();
+
+        ExePatchModel.Apply(exe, ExePatchModel.PlanRomanEndless(true,
+            ExePatchModel.GetRomanEndlessPatchState(exe)));
+        Assert.Equal(ExeRomanEndlessPatchState.Patched, ExePatchModel.GetRomanEndlessPatchState(exe));
+
+        ExePatchModel.Apply(exe, ExePatchModel.PlanRomanEndless(false,
+            ExePatchModel.GetRomanEndlessPatchState(exe)));
+        Assert.Equal(ExeRomanEndlessPatchState.Original, ExePatchModel.GetRomanEndlessPatchState(exe));
+        Assert.Equal(pristine, exe);
     }
 
     // ---- 法術祭壇套用/還原 round-trip ----

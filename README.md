@@ -24,6 +24,7 @@ The author of this project is a devoted player who loved *Against Rome* many yea
 ## Core Features
 
 - **Maximum-Population Unlock**: Modifies map `team.dat` files, raising the population limit up to 1600 when enabled.
+- **Play as Romans in Endless Mode**: From Resource & Combat Upgrades, changes the five endless-map team-0 defaults to Romans and safely patches the endless-only `dlg_volk` selector so every faction flag starts as Roman. Runtime-verified; it affects new games only. Romans have no priest or glory skill tree by original design.
 - **20x Housing Capacity**: Reversible switch to scale every positive population-building `wohnwer` value in `objdef.dau` by 20x.
 - **10x Construction Speed**: Reversible switch to accelerate construction, upgrades, and repairs in `objdef.dau` by 10x (shortens building build/upgrade times by 10, which automatically boosts the per-second repair rate; successfully runtime-verified in-game).
 - **10x Storage Capacity**: Reversible switch to scale storage capacities of Town Halls (`Hau` structures) and Warehouses (`Lag` structures) in `objdef.dau` by 10x (successfully runtime-verified in-game).
@@ -41,6 +42,15 @@ The author of this project is a devoted player who loved *Against Rome* many yea
 - **Save Game Management**: Save backup, restore, and history management.
 - **Embedded Technical Documentation**: Built-in viewer for easy documentation reading.
 - **Local Reverse-Engineering Workflow**: Retains generated Ghidra function index and pseudocode inventory kept under the ignored `re_workspace/` folder.
+
+## Playing Romans in Endless Mode
+
+1. Select the game root containing `Against_Rome.exe`.
+2. Enable **Play as Romans in Endless Mode** in Resource & Combat Upgrades and apply changes. Enable All includes it.
+3. Start a **new** endless game. Any of the three faction flags enters as Romans; no highlighted flag is an expected visual limitation.
+4. Uncheck and apply again, or restore, to return new games to their original faction. Existing saves keep their embedded team data.
+
+The original Options `swi_volk` control is a separate player-driven path and can still manually change the faction back to a barbarian one.
 
 ## Technical Architecture
 
@@ -78,9 +88,9 @@ Current coverage:
 - `SYSTEM/DATA_MP/DEFAULTS/objdef.dau`: Unit stats and weapon fields.
 - `SYSTEM/ress.ini`: Construction, production, upgrade, and spell costs.
 - `SYSTEM/cl_script.ini`: Villager delay, spell radius, and morale parameters.
-- `MAPS/**/team.dat`: Population limits and banner version semantics.
+- `MAPS/**/team.dat`: Population limits, player faction, and banner version semantics; Roman Endless changes only team 0 in `ENDL_*` maps to `ROM`.
 - `MAPS/ENDL_*/SCRIPT/ak_level.bci`: Bounded AI Ultimate Mode patch; the active-party limit is 8 because the runtime has 20 NPC-job slots.
-- `Against_Rome.exe`: Focus-loss background execution patch, runtime-verified village construction-range expansion, restore-only handling for the rejected legacy four-site range/red-frame candidate, and a full local Ghidra function inventory.
+- `Against_Rome.exe`: Focus-loss patch, runtime-verified village construction-range expansion and Roman Endless selector patch, restore-only handling for the rejected legacy four-site range/red-frame candidate, and a full local Ghidra function inventory.
 
 The generated Ghidra output is local research material, not original source. Unknown `FUN_*` functions are not treated as understood until the call path or runtime evidence is documented.
 

@@ -29,6 +29,7 @@ public sealed class CharacterizationTests
         FreeUpgrade = true,
         NoSpellCost = true,
         MaxPopulation = true,
+        RomanEndless = true,
         Balance = true,
         RangedRange3x = true,
         UnitMovementSpeed2x = true,
@@ -83,6 +84,7 @@ public sealed class CharacterizationTests
         Assert.True(detected.FreeUpgrade);
         Assert.True(detected.NoSpellCost);
         Assert.True(detected.MaxPopulation);
+        Assert.True(detected.RomanEndless);
         Assert.True(detected.Balance);
         Assert.True(detected.RangedRange3x);
         Assert.True(detected.UnitMovementSpeed2x);
@@ -231,6 +233,7 @@ public sealed class CharacterizationTests
         Assert.False(afterStats.SpellEntireMap);
         Assert.False(afterStats.SpellRange3x);
         Assert.False(afterStats.MaxPopulation);
+        Assert.False(afterStats.RomanEndless);
         Assert.False(afterStats.FoodHealing10x);
         Assert.True(afterStats.FocusLoss);
         Assert.True(afterStats.VillageBuildRange);
@@ -256,6 +259,7 @@ public sealed class CharacterizationTests
         Assert.False(afterCompat.SpellEntireMap);
         Assert.True(afterCompat.SpellRange3x);
         Assert.True(afterCompat.MaxPopulation);
+        Assert.True(afterCompat.RomanEndless);
         Assert.True(afterCompat.FoodHealing10x);
     }
 

@@ -132,6 +132,13 @@ Known strings:
 - `SYSTEM/CLMK/DLG/BANNER/%s` at `005ee6ba`
 - `[teamdata]` at `005ee4c1` and `005ee4ce`
 
+## Endless Roman Faction Selector (runtime-verified)
+
+- Endless maps use `team.dat` team 0 only as the load default. The endless-only `dlg_volk` selector subsequently writes the player choice to both the active-faction global and the player team, so a `team.dat`-only Roman patch is insufficient.
+- `0045bd60` (file offset `0x5bd60`) is the selector setter. It receives the requested faction, writes selection global `00737478`, calls the active-faction setter, and updates player-team faction. All five observed callers are in `dlg_volk`: three flags (GER/KEL/HUN) and two stored-default paths.
+- The modifier verifies the complete 21-byte original signature `53 8B 5C 24 08 53 E8 25 3B FE FF 83 C4 04 53 89 1D 78 74 73 00` before replacing the argument load with `6A 03 5B 90`, producing `53 6A 03 5B 90 53 E8 25 3B FE FF 83 C4 04 53 89 1D 78 74 73 00`. The stack stays balanced and every `dlg_volk` choice becomes ROM id 3.
+- Scope is limited by verified callers: campaign, multiplayer, and tutorial faction paths do not use this setter. `swi_volk` in Options is a separate manual override path.
+
 ## Unit Creation And UI Limits
 
 - `00529f90`: script callback `s_createUnit`

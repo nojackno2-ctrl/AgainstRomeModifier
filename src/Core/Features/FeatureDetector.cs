@@ -25,6 +25,7 @@ internal sealed class FeatureDetector
         internal PatchProfile Detect(string gamePath, BackupManager backupManager)
         {
             var options = new PatchProfile();
+            ExeRomanEndlessPatchState romanExeState = ExeRomanEndlessPatchState.Unknown;
 
             // A. Against_Rome.exe
             string exePath = Path.Combine(gamePath, "Against_Rome.exe");
@@ -54,6 +55,8 @@ internal sealed class FeatureDetector
                     {
                         options.NoSpellAltar = (altarState == ExeSpellAltarPatchState.Patched);
                     }
+
+                    romanExeState = ExePatchModel.GetRomanEndlessPatchState(exeBytes);
 
                     int speed = ExePatchModel.GetGameSpeedMultiplier(exeBytes);
                     options.GameSpeed = speed;
@@ -303,11 +306,12 @@ internal sealed class FeatureDetector
                 catch (Exception ex) { _logger.Log(string.Format(Loc.Get("SvcLogDetectFailed"), "objdef.dau", ex.Message)); }
             }
 
-            // E. team.dat (maxPopulation)
-            // 比較當前地圖的 team.dat 是否與備份檔案不一致（若有不一致，代表已套用修改）
+            // E. team.dat (maxPopulation + romanEndless)
+            // 由原版備份重合成四種合法組合，避免只變更玩家陣營時誤報人口上限。
             try
             {
                 bool maxPop = false;
+                bool romanEndless = false;
                 foreach (var kvp in backupManager.BackupFiles)
                 {
                     if (kvp.Key.StartsWith("MAPS/", StringComparison.OrdinalIgnoreCase) && kvp.Key.EndsWith("team.dat", StringComparison.OrdinalIgnoreCase))
@@ -316,15 +320,34 @@ internal sealed class FeatureDetector
                         if (File.Exists(path))
                         {
                             byte[] currentBytes = File.ReadAllBytes(path);
-                            if (!currentBytes.SequenceEqual(kvp.Value))
+                            bool isEndless = kvp.Key.StartsWith("MAPS/ENDL_", StringComparison.OrdinalIgnoreCase);
+                            if (TryDetectTeamDatOptions(kvp.Value, currentBytes, isEndless, out bool fileMaxPop, out bool fileRoman))
                             {
+                                maxPop |= fileMaxPop;
+                                romanEndless |= fileRoman;
+                            }
+                            else
+                            {
+                                // 保留舊版對未知 team.dat 修改的保守相容行為。
                                 maxPop = true;
-                                break;
+                                _logger.Log(string.Format(Loc.Get("SvcLogDetectFailed"), kvp.Key, "unknown team.dat state"));
                             }
                         }
                     }
                 }
                 options.MaxPopulation = maxPop;
+                if (romanExeState == ExeRomanEndlessPatchState.Unknown)
+                {
+                    options.RomanEndless = romanEndless;
+                    _logger.Log(Loc.Get("SvcLogRomanEndlessExeUnknown"));
+                }
+                else
+                {
+                    bool exeEnabled = romanExeState == ExeRomanEndlessPatchState.Patched;
+                    options.RomanEndless = exeEnabled;
+                    if (exeEnabled != romanEndless)
+                        _logger.Log(Loc.Get("SvcLogRomanEndlessMismatch"));
+                }
             }
             catch (Exception ex) { _logger.Log(string.Format(Loc.Get("SvcLogDetectFailed"), "team.dat", ex.Message)); }
 
@@ -364,6 +387,34 @@ internal sealed class FeatureDetector
             catch (Exception ex) { _logger.Log(string.Format(Loc.Get("SvcLogDetectFailed"), "food healing", ex.Message)); }
 
             return options;
+        }
+
+        internal static bool TryDetectTeamDatOptions(byte[] original, byte[] current, bool isEndless,
+            out bool maxPopulation, out bool romanPlayer)
+        {
+            (bool MaxPopulation, bool RomanPlayer)[] combinations =
+            {
+                (false, false),
+                (true, false),
+                (false, true),
+                (true, true),
+            };
+
+            foreach (var combination in combinations)
+            {
+                bool effectiveRoman = combination.RomanPlayer && isEndless;
+                byte[] candidate = TeamDatPatcher.GetPatchedBytes(original,
+                    new TeamDatOptions(combination.MaxPopulation, RomanPlayer: effectiveRoman));
+                if (!current.SequenceEqual(candidate)) continue;
+
+                maxPopulation = combination.MaxPopulation;
+                romanPlayer = effectiveRoman;
+                return true;
+            }
+
+            maxPopulation = false;
+            romanPlayer = false;
+            return false;
         }
 
         // --- cl_script.ini 法術/技能強化偵測輔助函數 ---

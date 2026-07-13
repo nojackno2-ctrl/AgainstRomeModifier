@@ -93,7 +93,8 @@ namespace AgainstRomeModifier.Core.Services
             string exePath = Path.Combine(gamePath, @"Against_Rome.exe");
             byte[] exeBytes = File.ReadAllBytes(exePath);
             bool exeModified = false;
-            exeModified = ExeFeaturePatcher.Apply(exeBytes, options.FocusLoss, options.VillageBuildRange, options.NoSpellAltar, options.GameSpeed, _logger);
+            exeModified = ExeFeaturePatcher.Apply(exeBytes, options.FocusLoss, options.VillageBuildRange,
+                options.NoSpellAltar, options.RomanEndless, options.GameSpeed, _logger);
             if (exeModified)
             {
                 patchedFiles[exePath] = exeBytes;
@@ -133,7 +134,7 @@ namespace AgainstRomeModifier.Core.Services
             patchedFiles[Path.Combine(gamePath, @"SYSTEM\DATA_MP\DEFAULTS\objdef.dau")] = objdefBytes;
 
             // G. team.dat
-            var teamDatPatches = GetPatchedTeamDatBytes(backupManager, options.MaxPopulation);
+            var teamDatPatches = GetPatchedTeamDatBytes(backupManager, options.MaxPopulation, options.RomanEndless);
             foreach (var kvp in teamDatPatches)
             {
                 patchedFiles[Path.Combine(gamePath, kvp.Key.Replace('/', '\\'))] = kvp.Value;
@@ -222,7 +223,9 @@ namespace AgainstRomeModifier.Core.Services
             {
                 string exePath = Path.Combine(gamePath, @"Against_Rome.exe");
                 byte[] exeBytes = File.ReadAllBytes(exePath);
-                if (ExeFeaturePatcher.Apply(exeBytes, false, false, false, 1, _logger))
+                bool keepRomanEndless = !restoreStats &&
+                    ExePatchModel.GetRomanEndlessPatchState(exeBytes) == ExeRomanEndlessPatchState.Patched;
+                if (ExeFeaturePatcher.Apply(exeBytes, false, false, false, keepRomanEndless, 1, _logger))
                     patchedFiles[exePath] = exeBytes;
 
                 orchestrator = sharedOrchestrator ?? new EndlessAiOrchestrator();
@@ -232,7 +235,16 @@ namespace AgainstRomeModifier.Core.Services
             }
 
             if (restoreStats)
+            {
+                if (!restoreCompat)
+                {
+                    string exePath = Path.Combine(gamePath, @"Against_Rome.exe");
+                    byte[] exeBytes = File.ReadAllBytes(exePath);
+                    if (ExeFeaturePatcher.ApplyRomanEndless(exeBytes, false, _logger))
+                        patchedFiles[exePath] = exeBytes;
+                }
                 RestoreStatsFiles(gamePath, backupManager ?? throw new ArgumentNullException(nameof(backupManager)), rollback);
+            }
 
             if (restoreStats)
             {
@@ -292,10 +304,14 @@ namespace AgainstRomeModifier.Core.Services
             return ObjdefFeaturePatcher.Build(backupManager, options);
         }
 
-        private Dictionary<string, byte[]> GetPatchedTeamDatBytes(BackupManager backupManager, bool maxPopulation)
+        private Dictionary<string, byte[]> GetPatchedTeamDatBytes(BackupManager backupManager, bool maxPopulation, bool romanEndless)
         {
-            var results = MaxPopulationFeature.Build(backupManager, maxPopulation);
+            var results = MaxPopulationFeature.Build(backupManager, maxPopulation, romanEndless);
             _logger.Log(maxPopulation ? string.Format(Loc.Get("SvcLogTeamDatApplied"), TeamDatPatcher.DefaultPopulationLimit, results.Count) : Loc.Get("SvcLogTeamDatRestored"));
+            int endlessCount = results.Keys.Count(key => key.StartsWith("MAPS/ENDL_", StringComparison.OrdinalIgnoreCase));
+            _logger.Log(romanEndless
+                ? string.Format(Loc.Get("SvcLogTeamDatRoman"), endlessCount)
+                : Loc.Get("SvcLogTeamDatRomanRestored"));
             return results;
         }
 

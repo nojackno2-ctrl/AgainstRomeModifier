@@ -35,6 +35,7 @@ namespace AgainstRomeModifier {
             chkSpellEntireMap.Checked = true;
             chkSpellRange3x.Checked = true;
             chkProjectileArcHeight.Checked = true;
+            chkRomanEndless.Checked = true;
             // 實驗性功能 (含 10 倍遊戲加速、遠程命中強化等) 排除在一鍵全開之外，保持原樣不變。
 
             Log(Loc.CurrentLanguage == Language.English ? "All features enabled." : "已開啟所有功能。");
@@ -80,6 +81,7 @@ namespace AgainstRomeModifier {
             chkSpellRange3x.Checked = false;
             chkProjectileArcHeight.Checked = false;
             chkRangedAccuracy.Checked = false;
+            chkRomanEndless.Checked = false;
             SetGameSpeedSelection(1); // 還原為原版速度
 
             Log(Loc.CurrentLanguage == Language.English ? "All features disabled." : "已關閉所有功能。");

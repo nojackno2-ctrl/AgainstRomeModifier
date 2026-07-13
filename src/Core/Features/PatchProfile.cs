@@ -23,6 +23,7 @@ public sealed class PatchProfile
     public bool FreeUpgrade { get => Bool("FreeUpgrade"); set => Bool("FreeUpgrade", value); }
     public bool NoSpellCost { get => Bool("NoSpellCost"); set => Bool("NoSpellCost", value); }
     public bool MaxPopulation { get => Bool("MaxPopulation"); set => Bool("MaxPopulation", value); }
+    public bool RomanEndless { get => Bool("RomanEndless"); set => Bool("RomanEndless", value); }
     public bool Balance { get => Bool("Balance"); set => Bool("Balance", value); }
     public bool HousingCapacity20x { get => Bool("HousingCapacity20x"); set => Bool("HousingCapacity20x", value); }
     public bool StorageCapacity10x { get => Bool("StorageCapacity10x"); set => Bool("StorageCapacity10x", value); }
