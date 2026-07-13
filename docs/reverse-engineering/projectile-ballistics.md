@@ -127,3 +127,23 @@ Let `k` = arc-raise factor, `s` = speed-up factor:
 
 Do not scale `w_emit` when scaling ranges — it is not a range field; scaling
 it alone shifts every landing point long (overshoot).
+
+## Range 3× interaction: arrows land short (fixed 2026-07-13)
+
+The land-short margin is a **fixed fraction of shot distance**, not an absolute
+value: on flat ground the arrow returns to launch height at `T_fall = 2·emit/ysub`
+(bows ≈ 2.47 s) while the horizontal arrival time is the distance-independent
+constant `T_arrival = 4/ISF` (≈ 2.67 s at ISF 1.5), so every shot lands at
+`T_fall/T_arrival ≈ 92.5 %` of the target distance — a ~7.5 %-of-distance short
+fall. At vanilla range that ~7.5 % is roughly within `w_drad` (arrows 45) so
+stationary targets are hit; with **`RangedRange3x`** the shortfall triples to far
+beyond `w_drad`, so arrows physically land in front of the enemy ("根本射不到").
+
+Fix (`EparaPatcher.InitSpeedReachMultiplier`, tied to `RangedRange3x`): raise ISF
+so `T_arrival = 4/ISF` drops to the bow flight time `2·emit/ysub ≈ 2.47 s`, which
+needs ISF ≈ 1.618; shipped multiplier is 1.08 (1.5 → 1.62). This drives the
+land-short fraction to ≈ 0 at **every** distance, so projectiles reach the tripled
+range. It also shortens flight time, reducing dodge on movers. The exact factor is
+static-derived from the estimates above (like `ArcEmitMultiplier`) and still needs
+in-game calibration — the hit window at 3× range is tight (`|1 − T_fall·ISF/4| ·
+range_3x < w_drad`, i.e. ISF within roughly ±0.05 of 1.62 for bows).
