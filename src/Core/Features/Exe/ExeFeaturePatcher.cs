@@ -7,7 +7,8 @@ namespace AgainstRomeModifier.Core.Features.Exe;
 
 internal static class ExeFeaturePatcher
 {
-    internal static bool Apply(byte[] exeBytes, bool focusLoss, bool villageBuildRange, bool noSpellAltar, int gameSpeed, ILogger logger)
+    internal static bool Apply(byte[] exeBytes, bool focusLoss, bool villageBuildRange, bool noSpellAltar,
+        bool romanEndless, int gameSpeed, ILogger logger)
     {
         bool modified = false;
         ExePatchState state = ExePatchModel.GetExePatchState(exeBytes);
@@ -23,8 +24,25 @@ internal static class ExeFeaturePatcher
             throw new InvalidOperationException("遊戲主程式不支援村莊建造半徑擴張補丁（特徵碼不符）。");
         ApplyVillageSetter(exeBytes, villageBuildRange, logger, ref modified);
         ApplySpellAltar(exeBytes, noSpellAltar, logger, ref modified);
+        modified |= ApplyRomanEndless(exeBytes, romanEndless, logger);
         ApplyGameSpeed(exeBytes, gameSpeed, logger, ref modified);
         return modified;
+    }
+
+    internal static bool ApplyRomanEndless(byte[] bytes, bool enabled, ILogger logger)
+    {
+        ExeRomanEndlessPatchState state = ExePatchModel.GetRomanEndlessPatchState(bytes);
+        if (state == ExeRomanEndlessPatchState.Unknown)
+        {
+            logger.Log(Loc.Get("SvcLogRomanEndlessExeUnknown"));
+            return false;
+        }
+
+        IReadOnlyList<ExeWriteOp> ops = ExePatchModel.PlanRomanEndless(enabled, state);
+        if (ops.Count == 0) return false;
+        ExePatchModel.Apply(bytes, ops);
+        logger.Log(enabled ? Loc.Get("SvcLogRomanEndlessExeApplied") : Loc.Get("SvcLogRomanEndlessExeRestored"));
+        return true;
     }
 
     private static void RestoreLegacyVillageRange(byte[] bytes, ILogger logger, ref bool modified)

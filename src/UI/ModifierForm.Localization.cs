@@ -114,6 +114,7 @@ namespace AgainstRomeModifier {
             chkSpellRange3x.Text = Loc.Get("SpellRange3x");
             chkProjectileArcHeight.Text = Loc.Get("ProjectileArcHeight");
             chkRangedAccuracy.Text = Loc.Get("RangedAccuracy");
+            chkRomanEndless.Text = Loc.Get("RomanEndless");
             lblTroopTemplate.Text = Loc.Get("TroopTemplateLabel");
             RefreshTroopTemplateItems();
             lblCurrentStatsTitle.Text = Loc.Get("CurrentStatsTitle");
@@ -156,6 +157,7 @@ namespace AgainstRomeModifier {
                 myToolTip.SetToolTip(chkSpellRange3x, Loc.Get("SpellRange3xTip"));
                 myToolTip.SetToolTip(chkProjectileArcHeight, Loc.Get("ProjectileArcHeightTip"));
                 myToolTip.SetToolTip(chkRangedAccuracy, Loc.Get("RangedAccuracyTip"));
+                myToolTip.SetToolTip(chkRomanEndless, Loc.Get("RomanEndlessTip"));
                 myToolTip.SetToolTip(chkNoSpellAltar, Loc.Get("NoSpellAltarTip"));
                 myToolTip.SetToolTip(chkMaxPopulation, Loc.Get("MaxPopulationTip"));
                 myToolTip.SetToolTip(chkHousingCapacity20x, Loc.Get("HousingCapacity20xTip"));

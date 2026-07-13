@@ -16,6 +16,7 @@ public static class FeatureRegistry
         Bool("HousingCapacity20x", FeatureCategory.Stats), Bool("StorageCapacity10x", FeatureCategory.Stats),
         Bool("HqHp10x", FeatureCategory.Stats), Bool("FastBuildUpgradeRepair", FeatureCategory.Stats),
         Bool("FoodHealing10x", FeatureCategory.Stats), Bool("MaxPopulation", FeatureCategory.Stats),
+        Bool("RomanEndless", FeatureCategory.Stats),
         Bool("SpellDamage5x", FeatureCategory.Stats), Bool("SpellHealing10x", FeatureCategory.Stats),
         Bool("SpellResurrection", FeatureCategory.Stats), Bool("GeneralSkills", FeatureCategory.Stats),
         Bool("LeaderGlory", FeatureCategory.Stats),

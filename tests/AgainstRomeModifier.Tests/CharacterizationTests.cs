@@ -29,6 +29,7 @@ public sealed class CharacterizationTests
         FreeUpgrade = true,
         NoSpellCost = true,
         MaxPopulation = true,
+        RomanEndless = true,
         Balance = true,
         RangedRange3x = true,
         UnitMovementSpeed2x = true,
@@ -83,7 +84,8 @@ public sealed class CharacterizationTests
         Assert.True(detected.FreeUpgrade);
         Assert.True(detected.NoSpellCost);
         Assert.True(detected.MaxPopulation);
-        Assert.True(detected.Balance);
+        Assert.True(detected.RomanEndless);
+        Assert.False(detected.Balance); // 平衡表已等同原版；未套用自訂屬性時不會產生可偵測差異。
         Assert.True(detected.RangedRange3x);
         Assert.True(detected.UnitMovementSpeed2x);
         Assert.False(detected.SpellEntireMap);
@@ -173,7 +175,8 @@ public sealed class CharacterizationTests
                 if (Math.Abs(curHp - origHp) > 0.01) diffs.Add($"{key} HP diff: cur={curHp}, orig={origHp}");
                 if (Math.Abs(curVw - origVw) > 0.01) diffs.Add($"{key} VW diff: cur={curVw}, orig={origVw}");
                 if (Math.Abs(curAw - origAw) > 0.01) diffs.Add($"{key} AW diff: cur={curAw}, orig={origAw}");
-                if (Math.Abs(curSight - origSight) > 0.01) diffs.Add($"{key} Sight diff: cur={curSight}, orig={origSight}");
+                bool hasExpandedRangeSight = profile.RangedRange3x && utype is "ranged_inf" or "ranged_cav" or "siege";
+                if (!hasExpandedRangeSight && Math.Abs(curSight - origSight) > 0.01) diffs.Add($"{key} Sight diff: cur={curSight}, orig={origSight}");
             }
         }
 
@@ -230,6 +233,7 @@ public sealed class CharacterizationTests
         Assert.False(afterStats.SpellEntireMap);
         Assert.False(afterStats.SpellRange3x);
         Assert.False(afterStats.MaxPopulation);
+        Assert.False(afterStats.RomanEndless);
         Assert.False(afterStats.FoodHealing10x);
         Assert.True(afterStats.FocusLoss);
         Assert.True(afterStats.VillageBuildRange);
@@ -249,12 +253,13 @@ public sealed class CharacterizationTests
         Assert.Equal(1, afterCompat.GameSpeed);
         Assert.True(afterCompat.FastCiviProduction);
         Assert.True(afterCompat.FreeProduction);
-        Assert.True(afterCompat.Balance);
+        Assert.False(afterCompat.Balance); // 固定平衡表已是原版數值。
         Assert.True(afterCompat.RangedRange3x);
         Assert.True(afterCompat.UnitMovementSpeed2x);
         Assert.False(afterCompat.SpellEntireMap);
         Assert.True(afterCompat.SpellRange3x);
         Assert.True(afterCompat.MaxPopulation);
+        Assert.True(afterCompat.RomanEndless);
         Assert.True(afterCompat.FoodHealing10x);
     }
 
@@ -335,7 +340,7 @@ public sealed class CharacterizationTests
 
             // 確保 Detector 偵測狀態正常
             var detected = engine.DetectCurrentPatchState(fixture.RootPath, fixture.Backup);
-            Assert.True(detected.Balance);
+            Assert.False(detected.Balance); // 固定平衡表已是原版數值。
             Assert.False(detected.UnitMovementSpeed2x);
         }
 
@@ -379,7 +384,7 @@ public sealed class CharacterizationTests
             Assert.Equal(2.60, civilianSpeed.Value, 2);
 
             var detected = engine.DetectCurrentPatchState(fixture.RootPath, fixture.Backup);
-            Assert.True(detected.Balance);
+            Assert.False(detected.Balance); // 固定平衡表已是原版數值。
             Assert.True(detected.UnitMovementSpeed2x);
         }
     }

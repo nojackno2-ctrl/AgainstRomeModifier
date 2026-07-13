@@ -25,6 +25,7 @@ internal sealed class FeatureDetector
         internal PatchProfile Detect(string gamePath, BackupManager backupManager)
         {
             var options = new PatchProfile();
+            ExeRomanEndlessPatchState romanExeState = ExeRomanEndlessPatchState.Unknown;
 
             // A. Against_Rome.exe
             string exePath = Path.Combine(gamePath, "Against_Rome.exe");
@@ -54,6 +55,8 @@ internal sealed class FeatureDetector
                     {
                         options.NoSpellAltar = (altarState == ExeSpellAltarPatchState.Patched);
                     }
+
+                    romanExeState = ExePatchModel.GetRomanEndlessPatchState(exeBytes);
 
                     int speed = ExePatchModel.GetGameSpeedMultiplier(exeBytes);
                     options.GameSpeed = speed;
@@ -181,6 +184,17 @@ internal sealed class FeatureDetector
                     }
 
                     var origUnitRows = backupManager.GetBackupUnitRows();
+
+                    // 射程 3 倍會同步擴大遠程單位的 Sirad，讓 AI 能鎖定新射程外
+                    // 的目標；在平衡偵測前先識別此狀態，避免把該視野變更誤判為平衡。
+                    bool range3x = false;
+                    if (unitRows.TryGetValue("FigRomSch01_Bogen", out var rangeProbeCols))
+                    {
+                        double currentRange = BackupManager.GetUnitMaxRange(rangeProbeCols, "ranged_inf");
+                        double originalRange = backupManager.GetOriginalStats("FigRomSch01_Bogen")[7];
+                        range3x = currentRange > 0 && Math.Abs(currentRange - originalRange * 3.0) < 5.0;
+                    }
+
                     bool isFileBalanced = false;
                     foreach (string key in TroopConfig.UnitMeta.Keys)
                     {
@@ -227,10 +241,11 @@ internal sealed class FeatureDetector
                         if (TroopConfig.UnitMeta[key].Tier != "leader")
                         {
                             bool isPriest = utype == "priest";
+                            bool hasExpandedRangeSight = range3x && utype is "ranged_inf" or "ranged_cav" or "siege";
                             bool hasDiff = Math.Abs(curHp - origHp) > 0.01 ||
                                            Math.Abs(curVw - origVw) > 0.01 ||
                                            Math.Abs(curAw - origAw) > 0.01 ||
-                                           (!isPriest && Math.Abs(curSight - origSight) > 0.01);
+                                           (!isPriest && !hasExpandedRangeSight && Math.Abs(curSight - origSight) > 0.01);
 
                             if (hasDiff)
                             {
@@ -243,7 +258,6 @@ internal sealed class FeatureDetector
 
                     // 偵測遠程單位射程 3 倍與單位移動速度提升 2 倍
                     bool speed2x = false;
-                    bool range3x = false;
 
                     // 使用羅馬輕裝步兵 FigRomInf00_Lanze_Schild 偵測速度 2 倍
                     if (unitRows.TryGetValue("FigRomInf00_Lanze_Schild", out var testMovesCols))
@@ -274,11 +288,9 @@ internal sealed class FeatureDetector
                     // 使用塞爾特祭司 FigKelPri00_Priester 偵測法師施法距離
                     bool spellEntireMap = false;
                     if (unitRows.TryGetValue("FigKelPri00_Priester", out var testSpellCols) &&
-                        origUnitRows.TryGetValue("FigKelPri00_Priester", out var testSpellOrigCols))
+                        origUnitRows.ContainsKey("FigKelPri00_Priester"))
                     {
                         double curRange = BackupManager.GetUnitMaxRange(testSpellCols, "priest");
-                        double origRange = BackupManager.GetUnitMaxRange(testSpellOrigCols, "priest");
-                        double expectedBaseRange = isFileBalanced ? 3840.0 : origRange;
                         if (curRange > 0)
                         {
                             if (Math.Abs(curRange - 30000.0) < 100.0)
@@ -292,11 +304,12 @@ internal sealed class FeatureDetector
                 catch (Exception ex) { _logger.Log(string.Format(Loc.Get("SvcLogDetectFailed"), "objdef.dau", ex.Message)); }
             }
 
-            // E. team.dat (maxPopulation)
-            // 比較當前地圖的 team.dat 是否與備份檔案不一致（若有不一致，代表已套用修改）
+            // E. team.dat (maxPopulation + romanEndless)
+            // 由原版備份重合成四種合法組合，避免只變更玩家陣營時誤報人口上限。
             try
             {
                 bool maxPop = false;
+                bool romanEndless = false;
                 foreach (var kvp in backupManager.BackupFiles)
                 {
                     if (kvp.Key.StartsWith("MAPS/", StringComparison.OrdinalIgnoreCase) && kvp.Key.EndsWith("team.dat", StringComparison.OrdinalIgnoreCase))
@@ -305,15 +318,34 @@ internal sealed class FeatureDetector
                         if (File.Exists(path))
                         {
                             byte[] currentBytes = File.ReadAllBytes(path);
-                            if (!currentBytes.SequenceEqual(kvp.Value))
+                            bool isEndless = kvp.Key.StartsWith("MAPS/ENDL_", StringComparison.OrdinalIgnoreCase);
+                            if (TryDetectTeamDatOptions(kvp.Value, currentBytes, isEndless, out bool fileMaxPop, out bool fileRoman))
                             {
+                                maxPop |= fileMaxPop;
+                                romanEndless |= fileRoman;
+                            }
+                            else
+                            {
+                                // 保留舊版對未知 team.dat 修改的保守相容行為。
                                 maxPop = true;
-                                break;
+                                _logger.Log(string.Format(Loc.Get("SvcLogDetectFailed"), kvp.Key, "unknown team.dat state"));
                             }
                         }
                     }
                 }
                 options.MaxPopulation = maxPop;
+                if (romanExeState == ExeRomanEndlessPatchState.Unknown)
+                {
+                    options.RomanEndless = romanEndless;
+                    _logger.Log(Loc.Get("SvcLogRomanEndlessExeUnknown"));
+                }
+                else
+                {
+                    bool exeEnabled = romanExeState == ExeRomanEndlessPatchState.Patched;
+                    options.RomanEndless = exeEnabled;
+                    if (exeEnabled != romanEndless)
+                        _logger.Log(Loc.Get("SvcLogRomanEndlessMismatch"));
+                }
             }
             catch (Exception ex) { _logger.Log(string.Format(Loc.Get("SvcLogDetectFailed"), "team.dat", ex.Message)); }
 
@@ -353,6 +385,34 @@ internal sealed class FeatureDetector
             catch (Exception ex) { _logger.Log(string.Format(Loc.Get("SvcLogDetectFailed"), "food healing", ex.Message)); }
 
             return options;
+        }
+
+        internal static bool TryDetectTeamDatOptions(byte[] original, byte[] current, bool isEndless,
+            out bool maxPopulation, out bool romanPlayer)
+        {
+            (bool MaxPopulation, bool RomanPlayer)[] combinations =
+            {
+                (false, false),
+                (true, false),
+                (false, true),
+                (true, true),
+            };
+
+            foreach (var combination in combinations)
+            {
+                bool effectiveRoman = combination.RomanPlayer && isEndless;
+                byte[] candidate = TeamDatPatcher.GetPatchedBytes(original,
+                    new TeamDatOptions(combination.MaxPopulation, RomanPlayer: effectiveRoman));
+                if (!current.SequenceEqual(candidate)) continue;
+
+                maxPopulation = combination.MaxPopulation;
+                romanPlayer = effectiveRoman;
+                return true;
+            }
+
+            maxPopulation = false;
+            romanPlayer = false;
+            return false;
         }
 
         // --- cl_script.ini 法術/技能強化偵測輔助函數 ---

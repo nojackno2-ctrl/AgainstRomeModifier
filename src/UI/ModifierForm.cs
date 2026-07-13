@@ -112,6 +112,7 @@ namespace AgainstRomeModifier {
         private ModernToggle chkSpellRange3x = null!;
         private ModernToggle chkProjectileArcHeight = null!;
         private ModernToggle chkRangedAccuracy = null!;
+        private ModernToggle chkRomanEndless = null!;
         private Dictionary<string, ModernToggle> featureToggles = null!;
 
         // 所有功能開啟/關閉按鈕
@@ -1088,6 +1089,16 @@ namespace AgainstRomeModifier {
                 Font = fontJhengHei10B
             };
             pnlExperimentalCard.Controls.Add(chkRangedAccuracy);
+
+            chkRomanEndless = new ModernToggle {
+                Text = Loc.Get("RomanEndless"),
+                Location = new Point(25, 520),
+                Size = new Size(310, 25),
+                Checked = false,
+                BackColor = Color.Transparent,
+                Font = fontJhengHei10B
+            };
+            pnlSwitchesCard.Controls.Add(chkRomanEndless);
 
             tabSystem.Controls.Add(pnlNumericCard);
             tabSystem.Controls.Add(pnlSwitchesCard);

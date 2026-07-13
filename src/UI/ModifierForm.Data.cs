@@ -283,11 +283,13 @@ namespace AgainstRomeModifier {
 
         private double[] GetBaseStatsForUnit(string key, double origHp, double origDmg, double origVw, double origAw, bool forceBalance = false) {
             double[] original = GetOriginalStats(key);
-            double[] balanced = (forceBalance || chkBalance.Checked) ? GetDefaultBalancedStats(key) : original;
+            bool balanceEnabled = forceBalance || chkBalance.Checked;
+            double[] balanced = balanceEnabled ? GetDefaultBalancedStats(key) : original;
 
             double[] result;
             if (!TroopConfig.UnitMeta.TryGetValue(key, out var meta)) return balanced;
-            if (customUnitStats != null && customUnitStats.TryGetValue(key, out double[]? custom) && custom != null) {
+            // 與 BackupManager.GetBaseStatsForUnit 一致：自訂屬性同受平衡開關把關。
+            if (balanceEnabled && customUnitStats != null && customUnitStats.TryGetValue(key, out double[]? custom) && custom != null) {
                 bool ignoreRange = (chkRangedRange3x.Checked && (meta.UnitType is "ranged_inf" or "ranged_cav" or "siege")) ||
                     (chkSpellEntireMap.Checked && meta.UnitType == "priest");
                 result = MergeUnitStatsLayers(balanced, custom, SupportsConfigurableSpellRadius(key),

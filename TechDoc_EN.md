@@ -217,6 +217,14 @@ Every `MAPS/**/team.dat` is restored from its original first. The core switch th
 - `[teamdata]` index 4: replace only when the original value is greater than zero, so disabled team slots stay disabled.
 - Index 5 is `bver`, a banner version in range 0-9, not an AI switch. The EXE combines faction and `bver` to resolve `banner.ini` sections such as `[volk%02ld_vicon_bver%02ld]` and `[volk%02ld_obdef_bver%02ld]`.
 
+### Roman Endless Mode (Runtime-Verified)
+
+`RomanEndless` changes only `MAPS/ENDL_*/DATA/team.dat`: it finds team 0 in `[teamdata]` and replaces column 1 with `ROM`, preserving every other field, especially column 5 `bver`. Non-ENDL maps remain untouched by this feature and may only receive the population patch. This is only the loading default: the endless `dlg_volk` selector later overwrites the player team.
+
+The same feature switch therefore composes `TeamDatPatcher` with an EXE patch. At file offset `0x5bd60`, the exact 21-byte setter signature `53 8B 5C 24 08 ... 89 1D 78 74 73 00` is replaced with `53 6A 03 5B 90 ... 89 1D 78 74 73 00`, forcing ROM id 3. Both layers must be applied for the complete state; when they disagree, detection follows the EXE and logs a warning. Unknown signatures are never written. The feature is Stats: Stats-only restore restores both EXE and five ENDL team.dat files, while Compat-only restore preserves it.
+
+Enable it in Resource & Combat Upgrades and apply before starting a new endless game; Enable All includes it. Any of the three faction flags enters as Romans and may show no highlight, which is expected visual behavior. Uncheck and apply, or restore, to return new games to vanilla. Existing saves keep embedded team data. Romans have no priest or glory skill tree by design; the Options `swi_volk` control is a separate player-controlled path that can manually select a barbarian faction.
+
 ## 10. Endless `ak_level.bci`
 
 AI Ultimate is refactored into 6 independent user-facing experience modules: M1 reinforcement size (P1 unit count + P10 Town Hall conversion + P12 Dorfverteidigung defense batch), M2 accelerated reinforcement (P3 cooldown + P6 scheduler loop delay), M3 fast defeat recovery (P4 retreat deadline + P5 team-death debounce + P11 camp demolish delay), M4 guaranteed settlement spawn (P7 spawner probability + P17 Roman founder gate 60 -> 100 + P18/P19 settle-place unlock), M5 AI starting resources (P13 stockpile), and M6 increase garrison size (P8 active unit limit 4 -> 40).

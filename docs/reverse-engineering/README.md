@@ -19,6 +19,7 @@ and patch code.
 - `objdef-fields.csv`: known `objdef.dau` indexes.
 - `ress-fields.csv`: known `ress.ini` indexes.
 - `exe-functions.md`: executable functions and anchors found with Ghidra.
+- `../feature-spec-roman-endless.md`: runtime-verified Roman Endless design, its ENDL `team.dat` default layer, and the `dlg_volk` EXE setter patch.
 - `priest-spells.md`: priest spell effect values, summon/resurrect unit
   types (`SpellODef`), and the decoded resurrection logic.
 - `glory-upgrade-combat.md`: glory (`Ruhm`) leader-only per-level stat scaling
@@ -47,11 +48,11 @@ and patch code.
 - `SYSTEM/CLAK/cl_scint.ini`: ODef alias tables and summon/resurrect unit
   types (`SpellODef`/`SpellODef2`) — read-only research, not yet managed by
   the modifier.
-- `MAPS/**/team.dat`: map population limits and banner versions.
+- `MAPS/**/team.dat`: map population limits, faction defaults, and banner versions; `RomanEndless` writes only ENDL team 0 to `ROM`.
 - `MAPS/ENDL_*/SCRIPT/ak_level.bci`: bounded AI Ultimate Mode patch.
 - `MAPS/ENDL_*/Endlos_*_Siedlung*.sdl`: read-only endless settlement templates.
 - `Against_Rome.exe`: focus-loss patch, synchronized village-range setter,
-  restore-only legacy signatures, and local full-function inventory.
+  runtime-verified Roman Endless `dlg_volk` setter patch, restore-only legacy signatures, and local full-function inventory.
 - `apt.dat`: ZIP-like candidate, not integrated into the modifier.
 
 ## Evidence Rules

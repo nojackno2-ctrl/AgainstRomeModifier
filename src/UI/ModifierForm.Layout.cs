@@ -174,7 +174,7 @@ namespace AgainstRomeModifier {
                 chkLeaderGlory,
                 chkBalance,
                 chkRangedAccuracy);
-            ConfigureSettingsCard(pnlSwitchesCard, lblSwitchesTitle, 590,
+            ConfigureSettingsCard(pnlSwitchesCard, lblSwitchesTitle, 638,
                 chkFreeProd,
                 chkFreeUpgrade,
                 chkNoSpellCost,
@@ -185,7 +185,8 @@ namespace AgainstRomeModifier {
                 chkUnitMovementSpeed2x,
                 chkSpellEntireMap,
                 chkSpellRange3x,
-                chkProjectileArcHeight);
+                chkProjectileArcHeight,
+                chkRomanEndless);
             ConfigureSettingsCard(pnlBuildCard, lblBuildTitle, 446,
                 chkMaxPopulation,
                 chkHousingCapacity20x,

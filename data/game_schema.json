@@ -10,7 +10,7 @@
     "implementation": "GameLZSS"
   },
   "documentation": {
-    "updated": "2026-07-11",
+    "updated": "2026-07-13",
     "technicalChinese": "TechDoc.md",
     "technicalEnglish": "TechDoc_EN.md",
     "agentHandoff": "AI_HANDOFF.md",
@@ -118,6 +118,13 @@
       "sections": ["maxteamobjgenerell", "teamdata"],
       "runtimeLimit": 1600,
       "patchBehavior": "Only teamdata column 4 is loaded as the per-team limit; maxteamobjgenerell is preserved.",
+      "romanEndless": {
+        "status": "runtime-verified",
+        "pathGlob": "MAPS/ENDL_*/DATA/team.dat",
+        "teamId": 0,
+        "factionToken": "ROM",
+        "behavior": "Changes only team 0 faction column 1 for endless-map load defaults and preserves bver and every other field. The dlg_volk EXE selector patch is required as the second layer because it overwrites the player team after map load."
+      },
       "teamdataFields": {
         "TeamId": { "index": 0, "type": "int", "status": "stable" },
         "Faction": { "index": 1, "type": "string", "status": "stable" },
@@ -392,6 +399,16 @@
           "originalBytes": "89 15 C4 7D 9E 02",
           "patchedBytes": "90 90 90 90 90 90",
           "status": "stable-current-exe-only"
+        },
+        "romanEndlessFactionSelector": {
+          "status": "runtime-verified-current-exe-only",
+          "fileOffset": "0x5bd60",
+          "virtualAddress": "0x45bd60",
+          "originalBytes": "53 8B 5C 24 08 53 E8 25 3B FE FF 83 C4 04 53 89 1D 78 74 73 00",
+          "patchedBytes": "53 6A 03 5B 90 53 E8 25 3B FE FF 83 C4 04 53 89 1D 78 74 73 00",
+          "behavior": "Forces dlg_volk setter argument to ROM id 3. Verified callers are endless-only; the Options swi_volk path remains a player-controlled manual override.",
+          "detection": "Original and patched full 21-byte signatures are recognized; unknown bytes are never written.",
+          "restore": "RomanEndless is a Stats feature, so Stats restore returns this setter to original alongside ENDL team.dat."
         },
         "villageBuildRangeRedFrame": {
           "status": "setter-runtime-verified-legacy-sites-rejected",

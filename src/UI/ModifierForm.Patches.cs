@@ -23,6 +23,7 @@ namespace AgainstRomeModifier {
                 ["RangedRange3x"] = chkRangedRange3x, ["UnitMovementSpeed2x"] = chkUnitMovementSpeed2x,
                 ["SpellEntireMap"] = chkSpellEntireMap, ["SpellRange3x"] = chkSpellRange3x,
                 ["ProjectileArcHeight"] = chkProjectileArcHeight, ["RangedAccuracy"] = chkRangedAccuracy,
+                ["RomanEndless"] = chkRomanEndless,
                 ["HousingCapacity20x"] = chkHousingCapacity20x, ["StorageCapacity10x"] = chkStorageCapacity10x,
                 ["HqHp10x"] = chkHqHp10x, ["FastBuildUpgradeRepair"] = chkFastBuildUpgradeRepair,
                 ["FoodHealing10x"] = chkFoodHealing10x, ["VillageBuildRange"] = chkVillageBuildRange,
