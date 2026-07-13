@@ -11,6 +11,8 @@ internal sealed class MapEditorForm : Form
     private readonly EndlessMapCloner _cloner = new();
     private readonly EndlessMapDeleter _deleter = new();
     private readonly MapCanvasControl _canvas = new();
+    private Map3DViewControl? _view3d;
+    private Panel? _canvasHost;
     private readonly PictureBox _overview = new() { Dock = DockStyle.Fill, SizeMode = PictureBoxSizeMode.Zoom, BackColor = Color.FromArgb(18, 21, 27) };
     private readonly ListView _maps = new() { Dock = DockStyle.Fill, View = View.Details, FullRowSelect = true, MultiSelect = false, HideSelection = false };
     private readonly ListBox _palette = new() { Dock = DockStyle.Fill, IntegralHeight = false };
@@ -35,6 +37,7 @@ internal sealed class MapEditorForm : Form
     private readonly ComboBox _brushSize = new() { Dock = DockStyle.Top, DropDownStyle = ComboBoxStyle.DropDownList };
     private readonly CheckBox _showGrid = new() { Dock = DockStyle.Top, Height = 30, Text = "顯示格線", Checked = true };
     private readonly CheckBox _showObjects = new() { Dock = DockStyle.Top, Height = 30, Text = "顯示建築與場景物件", Checked = true };
+    private readonly TrackBar _reliefScale = new() { Dock = DockStyle.Top, Minimum = 0, Maximum = 200, Value = 100, TickFrequency = 25 };
     private readonly ListView _sceneList = new() { Dock = DockStyle.Fill, View = View.Details, FullRowSelect = true, HeaderStyle = ColumnHeaderStyle.Nonclickable };
     private readonly Label _sceneSummary = new() { Dock = DockStyle.Top, Height = 54, Padding = new Padding(8), ForeColor = Color.Gainsboro };
     private readonly Label _modeBanner = new() { Dock = DockStyle.Top, Height = 34, TextAlign = ContentAlignment.MiddleCenter };
@@ -46,6 +49,8 @@ internal sealed class MapEditorForm : Form
     private readonly ToolStripButton _redoButton = new("重做") { Enabled = false };
     private readonly ToolStripButton _textureTool = new("材質筆刷") { CheckOnClick = true, Checked = true };
     private readonly ToolStripButton _resetTerrainButton = new("還原地表") { Enabled = false };
+    private readonly ToolStripButton _view2dButton = new("2D 俯視") { CheckOnClick = true };
+    private readonly ToolStripButton _view3dButton = new("3D 場景") { CheckOnClick = true, Checked = true };
     private readonly Stack<TextureChange> _undo = new();
     private readonly Stack<TextureChange> _redo = new();
     private GameMapInfo? _selected;
@@ -82,7 +87,7 @@ internal sealed class MapEditorForm : Form
         _deleteButton.Click += (_, _) => DeleteSelected();
 
         var tools = new ToolStrip { GripStyle = ToolStripGripStyle.Hidden, Dock = DockStyle.Top, Padding = new Padding(8, 4, 8, 4), BackColor = Color.FromArgb(36, 40, 49), ForeColor = Color.White };
-        tools.Items.AddRange(new ToolStripItem[] { new ToolStripLabel("地表："), _textureTool, _resetTerrainButton });
+        tools.Items.AddRange(new ToolStripItem[] { new ToolStripLabel("地表："), _textureTool, _resetTerrainButton, new ToolStripSeparator(), _view2dButton, _view3dButton });
 
         _maps.Columns.Add("地圖", 105); _maps.Columns.Add("名稱", 145); _maps.Columns.Add("類型", 90);
         var mapHeader = SectionHeader("地圖");
@@ -96,8 +101,8 @@ internal sealed class MapEditorForm : Form
         currentText.Controls.Add(_currentMaterialLabel); currentText.Controls.Add(new Label { AutoSize = true, MaximumSize = new Size(200, 0), Text = "右鍵取樣，左鍵拖曳繪製。", ForeColor = Color.Silver });
         currentBrush.Controls.Add(_currentMaterialSwatch); currentBrush.Controls.Add(currentText);
         _brushSize.Items.AddRange(new object[] { "精細（1 格）", "中型（3 × 3）", "大型（5 × 5）" }); _brushSize.SelectedIndex = 0;
-        var brushOptions = new Panel { Dock = DockStyle.Top, Height = 118 };
-        brushOptions.Controls.Add(_showObjects); brushOptions.Controls.Add(_showGrid); brushOptions.Controls.Add(new Label { Dock = DockStyle.Top, Height = 22, Text = "筆刷大小", ForeColor = Color.Gainsboro }); brushOptions.Controls.Add(_brushSize);
+        var brushOptions = new Panel { Dock = DockStyle.Top, Height = 174 };
+        brushOptions.Controls.Add(_showObjects); brushOptions.Controls.Add(_showGrid); brushOptions.Controls.Add(_reliefScale); brushOptions.Controls.Add(new Label { Dock = DockStyle.Top, Height = 22, Text = "地形起伏（近似顯示）", ForeColor = Color.Gainsboro }); brushOptions.Controls.Add(new Label { Dock = DockStyle.Top, Height = 22, Text = "筆刷大小", ForeColor = Color.Gainsboro }); brushOptions.Controls.Add(_brushSize);
         palettePanel.Controls.Add(_palette); palettePanel.Controls.Add(_paletteSearch); palettePanel.Controls.Add(brushOptions); palettePanel.Controls.Add(currentBrush); palettePanel.Controls.Add(paletteHeader);
 
         var properties = BuildPropertiesPanel();
@@ -109,15 +114,28 @@ internal sealed class MapEditorForm : Form
         scenePanel.Controls.Add(_sceneList); scenePanel.Controls.Add(_sceneSummary);
         inspectorTabs.TabPages.Add(new TabPage("場景物件") { BackColor = Color.FromArgb(34, 38, 47) }); inspectorTabs.TabPages[2].Controls.Add(scenePanel);
 
-        var canvasHost = new Panel { Dock = DockStyle.Fill, Padding = new Padding(8), BackColor = Color.FromArgb(20, 23, 29) };
-        canvasHost.Controls.Add(_canvas); canvasHost.Controls.Add(_modeBanner);
+        _canvasHost = new Panel { Dock = DockStyle.Fill, Padding = new Padding(8), BackColor = Color.FromArgb(20, 23, 29) };
+        _canvasHost.Controls.Add(_canvas); _canvasHost.Controls.Add(_modeBanner);
+        try
+        {
+            _view3d = new Map3DViewControl { Visible = true };
+            _canvasHost.Controls.Add(_view3d);
+            _view3d.BringToFront();
+        }
+        catch (Exception)
+        {
+            _view3dButton.Enabled = false;
+            _view3dButton.ToolTipText = "此電腦無法初始化離線 3D 場景。";
+            _modeBanner.Text = "離線 3D 場景無法初始化，已使用 2D 俯視。";
+            _modeBanner.BackColor = Color.FromArgb(86, 69, 40);
+        }
         var overviewHost = new Panel { Width = 190, Height = 190, Anchor = AnchorStyles.Right | AnchorStyles.Bottom, Padding = new Padding(5), BackColor = Color.FromArgb(55, 61, 72) };
         overviewHost.Controls.Add(_overview); overviewHost.Controls.Add(new Label { Text = "地圖概覽", Dock = DockStyle.Top, Height = 25, TextAlign = ContentAlignment.MiddleCenter, ForeColor = Color.White, BackColor = Color.FromArgb(42, 47, 58) });
-        canvasHost.Controls.Add(overviewHost); overviewHost.BringToFront();
-        canvasHost.Resize += (_, _) => overviewHost.Location = new Point(Math.Max(12, canvasHost.ClientSize.Width - overviewHost.Width - 18), Math.Max(46, canvasHost.ClientSize.Height - overviewHost.Height - 18));
+        _canvasHost.Controls.Add(overviewHost); overviewHost.BringToFront();
+        _canvasHost.Resize += (_, _) => overviewHost.Location = new Point(Math.Max(12, _canvasHost.ClientSize.Width - overviewHost.Width - 18), Math.Max(46, _canvasHost.ClientSize.Height - overviewHost.Height - 18));
 
         var centerRight = new SplitContainer { Dock = DockStyle.Fill, FixedPanel = FixedPanel.Panel2, Size = new Size(1140, 760), SplitterDistance = 820 };
-        centerRight.Panel1.Controls.Add(canvasHost); centerRight.Panel2.Controls.Add(inspectorTabs); centerRight.Panel2MinSize = 280;
+        centerRight.Panel1.Controls.Add(_canvasHost); centerRight.Panel2.Controls.Add(inspectorTabs); centerRight.Panel2MinSize = 280;
         var main = new SplitContainer { Dock = DockStyle.Fill, FixedPanel = FixedPanel.Panel1, Size = new Size(1400, 760), SplitterDistance = 280 };
         main.Panel1.Controls.Add(left); main.Panel2.Controls.Add(centerRight); main.Panel1MinSize = 240;
 
@@ -125,6 +143,7 @@ internal sealed class MapEditorForm : Form
         statusStrip.Items.Add(_status); statusStrip.Items.Add(new ToolStripStatusLabel("滾輪縮放　中鍵平移　右鍵取樣　左鍵繪製　Ctrl+S 儲存"));
         Controls.Add(main); Controls.Add(tools); Controls.Add(commands); Controls.Add(statusStrip);
         commands.BringToFront(); tools.BringToFront();
+        SetActiveView(_view3d is not null);
     }
 
     private Panel BuildPropertiesPanel()
@@ -152,12 +171,23 @@ internal sealed class MapEditorForm : Form
         _palette.DrawMode = DrawMode.OwnerDrawFixed; _palette.ItemHeight = 30; _palette.DrawItem += DrawPaletteItem;
         _paletteSearch.TextChanged += (_, _) => LoadPalette(_paletteSearch.Text);
         _brushSize.SelectedIndexChanged += (_, _) => _canvas.BrushSize = _brushSize.SelectedIndex switch { 1 => 3, 2 => 5, _ => 1 };
-        _showGrid.CheckedChanged += (_, _) => { _canvas.ShowGrid = _showGrid.Checked; _canvas.Invalidate(); };
-        _showObjects.CheckedChanged += (_, _) => { _canvas.ShowObjects = _showObjects.Checked; _canvas.Invalidate(); };
+        _brushSize.SelectedIndexChanged += (_, _) => { if (_view3d is not null) _view3d.BrushSize = _canvas.BrushSize; };
+        _showGrid.CheckedChanged += (_, _) => { _canvas.ShowGrid = _showGrid.Checked; _canvas.Invalidate(); if (_view3d is not null) { _view3d.ShowGrid = _showGrid.Checked; _view3d.Invalidate(); } };
+        _showObjects.CheckedChanged += (_, _) => { _canvas.ShowObjects = _showObjects.Checked; _canvas.Invalidate(); if (_view3d is not null) { _view3d.ShowObjects = _showObjects.Checked; _view3d.Invalidate(); } };
+        _reliefScale.ValueChanged += (_, _) => _view3d?.SetReliefScale(_reliefScale.Value / 100f);
         _waterColorButton.Click += (_, _) => ChooseWaterColor();
         _canvas.TexturePainted += (_, e) => PaintTexture(e);
         _canvas.TextureSampled += (_, e) => SelectBrush(e.Texture);
         _canvas.TileHovered += (_, e) => _status.Text = $"格子 ({e.X}, {e.Y})　{FriendlyTextureName(e.Texture)}";
+        if (_view3d is not null)
+        {
+            _view3d.TexturePainted += (_, e) => PaintTexture(e);
+            _view3d.TextureSampled += (_, e) => SelectBrush(e.Texture);
+            _view3d.TileHovered += (_, e) => _status.Text = $"格子 ({e.X}, {e.Y})　{FriendlyTextureName(e.Texture)}";
+            _view3d.InitializationFailed += (_, _) => BeginInvoke(() => Disable3DView());
+        }
+        _view2dButton.Click += (_, _) => SetActiveView(use3D: false);
+        _view3dButton.Click += (_, _) => SetActiveView(use3D: true);
         _textureTool.Click += (_, _) => LoadEditingScene();
         _resetTerrainButton.Click += (_, _) => ResetTerrain();
         _saveButton.Click += (_, _) => SaveMap(showSuccess: true);
@@ -250,32 +280,46 @@ internal sealed class MapEditorForm : Form
         LoadSceneList(sceneObjects);
         if (!TryParseGameColor(_waterColor.Text, out Color sceneWaterColor)) sceneWaterColor = Color.SteelBlue;
         bool hasRealTextures = _texturesDocument is not null && _canvas.LoadTextures(_texturesDocument.Dimension, _texturesDocument.Textures, _savedTextures, _selected.DirectoryPath, Path.Combine(_gamePath.Text.Trim(), "floortex.dat"), sceneObjects, (float)_waterLevel.Value, _heightMapStep, sceneWaterColor);
+        bool has3DScene = false;
+        if (_view3d is not null && _texturesDocument is not null)
+        {
+            _view3d.BrushTexture = _canvas.BrushTexture;
+            _view3d.BrushSize = _canvas.BrushSize;
+            _view3d.ShowGrid = _showGrid.Checked;
+            _view3d.ShowObjects = _showObjects.Checked;
+            _view3d.EditingEnabled = _selected.IsCustom;
+            try { has3DScene = _view3d.LoadTextures(_texturesDocument.Dimension, _texturesDocument.Textures, _savedTextures, _selected.DirectoryPath, Path.Combine(_gamePath.Text.Trim(), "floortex.dat"), sceneObjects, (float)_waterLevel.Value, _heightMapStep, sceneWaterColor); _view3d.SetReliefScale(_reliefScale.Value / 100f); }
+            catch { Disable3DView(); }
+        }
         Image? oldOverview = _overview.Image; _overview.Image = null; oldOverview?.Dispose();
         if (File.Exists(minimapPath)) using (var source = new Bitmap(minimapPath)) _overview.Image = new Bitmap(source);
         _canvas.EditingEnabled = _selected.IsCustom;
         _modeBanner.Text = hasRealTextures
-            ? (_selected.IsCustom ? $"離線地圖場景 — 真實地表、地勢與 {_canvas.SceneObjectCount} 個場景物件；滾輪縮放，中鍵平移" : $"離線地圖場景 — 真實地表、地勢與 {_canvas.SceneObjectCount} 個場景物件；原廠地圖僅供瀏覽")
+            ? (_view3dButton.Checked && has3DScene
+                ? (_selected.IsCustom ? $"離線 3D 場景（近似顯示）— 真實地表、地勢與 {_canvas.SceneObjectCount} 個場景物件" : $"離線 3D 場景（近似顯示）— 原廠地圖僅供瀏覽，含 {_canvas.SceneObjectCount} 個場景物件")
+                : (_selected.IsCustom ? $"離線地圖場景 — 真實地表、地勢與 {_canvas.SceneObjectCount} 個場景物件；滾輪縮放，中鍵平移" : $"離線地圖場景 — 真實地表、地勢與 {_canvas.SceneObjectCount} 個場景物件；原廠地圖僅供瀏覽"))
             : "找不到 floortex.dat，目前只能顯示簡化地表；請選擇完整的遊戲資料夾";
         _modeBanner.BackColor = _canvas.EditingEnabled ? Color.FromArgb(38, 95, 72) : Color.FromArgb(86, 69, 40);
+        if (!has3DScene) SetActiveView(use3D: false);
         UpdateStatus();
     }
 
     private void PaintTexture(TexturePaintEventArgs e)
     {
         if (_selected is null || !_selected.IsCustom || _texturesDocument is null) return;
-        _texturesDocument.SetTexture(e.X, e.Y, e.Texture); _undo.Push(new TextureChange(e.X, e.Y, e.PreviousTexture, e.Texture)); _redo.Clear(); _dirty = true; UpdateEditorState();
+        _texturesDocument.SetTexture(e.X, e.Y, e.Texture); _canvas.SetTexture(e.X, e.Y, e.Texture); _view3d?.SetTexture(e.X, e.Y, e.Texture); _undo.Push(new TextureChange(e.X, e.Y, e.PreviousTexture, e.Texture)); _redo.Clear(); _dirty = true; UpdateEditorState();
     }
 
     private void Undo()
     {
         if (_texturesDocument is null || _undo.Count == 0) return;
-        TextureChange change = _undo.Pop(); _texturesDocument.SetTexture(change.X, change.Y, change.Before); _canvas.SetTexture(change.X, change.Y, change.Before); _redo.Push(change); _dirty = true; UpdateEditorState();
+        TextureChange change = _undo.Pop(); _texturesDocument.SetTexture(change.X, change.Y, change.Before); _canvas.SetTexture(change.X, change.Y, change.Before); _view3d?.SetTexture(change.X, change.Y, change.Before); _redo.Push(change); _dirty = true; UpdateEditorState();
     }
 
     private void Redo()
     {
         if (_texturesDocument is null || _redo.Count == 0) return;
-        TextureChange change = _redo.Pop(); _texturesDocument.SetTexture(change.X, change.Y, change.After); _canvas.SetTexture(change.X, change.Y, change.After); _undo.Push(change); _dirty = true; UpdateEditorState();
+        TextureChange change = _redo.Pop(); _texturesDocument.SetTexture(change.X, change.Y, change.After); _canvas.SetTexture(change.X, change.Y, change.After); _view3d?.SetTexture(change.X, change.Y, change.After); _undo.Push(change); _dirty = true; UpdateEditorState();
     }
 
     private bool SaveMap(bool showSuccess)
@@ -374,7 +418,7 @@ internal sealed class MapEditorForm : Form
     private string FriendlyTextureName(string? texture) => texture != null && _textureLabels.TryGetValue(texture, out string? name) ? name : "未知地表樣式";
     private void SelectBrush(string texture)
     {
-        _canvas.BrushTexture = texture; _currentMaterialSwatch.BackColor = _canvas.GetTexturePreviewColor(texture); _currentMaterialLabel.Text = "目前筆刷：" + FriendlyTextureName(texture); UpdateStatus();
+        _canvas.BrushTexture = texture; if (_view3d is not null) _view3d.BrushTexture = texture; _currentMaterialSwatch.BackColor = _canvas.GetTexturePreviewColor(texture); _currentMaterialLabel.Text = "目前筆刷：" + FriendlyTextureName(texture); UpdateStatus();
     }
     private void UpdateEditorState()
     {
@@ -383,6 +427,22 @@ internal sealed class MapEditorForm : Form
         _palette.Enabled = editable; UpdateStatus();
     }
     private void UpdateStatus() { _status.Text = _selected is null ? "尚未選擇地圖" : $"{_selected.Id} — {(_selected.IsCustom ? "自製地圖，可編輯" : "原廠地圖，唯讀")}{(_dirty ? "  ● 尚未儲存" : "")}"; }
+    private void SetActiveView(bool use3D)
+    {
+        if (use3D && (_view3d is null || !_view3dButton.Enabled)) use3D = false;
+        _view2dButton.Checked = !use3D; _view3dButton.Checked = use3D;
+        _canvas.Visible = !use3D;
+        if (_view3d is not null) _view3d.Visible = use3D;
+        _modeBanner.BringToFront();
+    }
+    private void Disable3DView()
+    {
+        _view3dButton.Enabled = false;
+        _view3dButton.ToolTipText = "此電腦無法初始化離線 3D 場景。";
+        SetActiveView(use3D: false);
+        _modeBanner.Text = "離線 3D 場景無法初始化，已切換為 2D 俯視。";
+        _modeBanner.BackColor = Color.FromArgb(86, 69, 40);
+    }
     private void ResetTerrain()
     {
         if (_texturesDocument is null || _savedTextures.Length != _texturesDocument.Textures.Count) return;
@@ -390,7 +450,7 @@ internal sealed class MapEditorForm : Form
         for (int index = 0; index < _savedTextures.Length; index++)
         {
             int x = index % _texturesDocument.Dimension, y = index / _texturesDocument.Dimension;
-            _texturesDocument.SetTexture(x, y, _savedTextures[index]); _canvas.SetTexture(x, y, _savedTextures[index]);
+            _texturesDocument.SetTexture(x, y, _savedTextures[index]); _canvas.SetTexture(x, y, _savedTextures[index]); _view3d?.SetTexture(x, y, _savedTextures[index]);
         }
         _undo.Clear(); _redo.Clear(); MarkDirty();
     }
