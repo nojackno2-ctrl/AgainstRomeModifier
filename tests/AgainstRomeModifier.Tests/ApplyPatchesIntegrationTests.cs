@@ -122,7 +122,7 @@ namespace AgainstRomeModifier.Tests
                 Assert.True(detected.NoSpellCost, "NoSpellCost 未回讀為 true");
                 Assert.True(detected.MaxPopulation, "MaxPopulation 未回讀為 true");
                 Assert.True(detected.RomanEndless, "RomanEndless 未回讀為 true");
-                Assert.True(detected.Balance, "Balance 未回讀為 true");
+                Assert.False(detected.Balance, "原版平衡表不應產生 Balance 檔案差異");
                 Assert.True(detected.RangedRange3x, "RangedRange3x 未回讀為 true");
                 Assert.True(detected.UnitMovementSpeed2x, "UnitMovementSpeed2x 未回讀為 true");
                 Assert.False(detected.SpellEntireMap, "SpellEntireMap 應回讀為 false");

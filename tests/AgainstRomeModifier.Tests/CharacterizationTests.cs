@@ -85,7 +85,7 @@ public sealed class CharacterizationTests
         Assert.True(detected.NoSpellCost);
         Assert.True(detected.MaxPopulation);
         Assert.True(detected.RomanEndless);
-        Assert.True(detected.Balance);
+        Assert.False(detected.Balance); // 平衡表已等同原版；未套用自訂屬性時不會產生可偵測差異。
         Assert.True(detected.RangedRange3x);
         Assert.True(detected.UnitMovementSpeed2x);
         Assert.False(detected.SpellEntireMap);
@@ -253,7 +253,7 @@ public sealed class CharacterizationTests
         Assert.Equal(1, afterCompat.GameSpeed);
         Assert.True(afterCompat.FastCiviProduction);
         Assert.True(afterCompat.FreeProduction);
-        Assert.True(afterCompat.Balance);
+        Assert.False(afterCompat.Balance); // 固定平衡表已是原版數值。
         Assert.True(afterCompat.RangedRange3x);
         Assert.True(afterCompat.UnitMovementSpeed2x);
         Assert.False(afterCompat.SpellEntireMap);
@@ -340,7 +340,7 @@ public sealed class CharacterizationTests
 
             // 確保 Detector 偵測狀態正常
             var detected = engine.DetectCurrentPatchState(fixture.RootPath, fixture.Backup);
-            Assert.True(detected.Balance);
+            Assert.False(detected.Balance); // 固定平衡表已是原版數值。
             Assert.False(detected.UnitMovementSpeed2x);
         }
 
@@ -384,7 +384,7 @@ public sealed class CharacterizationTests
             Assert.Equal(2.60, civilianSpeed.Value, 2);
 
             var detected = engine.DetectCurrentPatchState(fixture.RootPath, fixture.Backup);
-            Assert.True(detected.Balance);
+            Assert.False(detected.Balance); // 固定平衡表已是原版數值。
             Assert.True(detected.UnitMovementSpeed2x);
         }
     }

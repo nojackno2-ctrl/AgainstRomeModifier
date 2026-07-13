@@ -31,11 +31,15 @@ public sealed class MapEditorPhase1Tests : IDisposable
     {
         string path = Path.Combine(_root, "boden.ini");
         Directory.CreateDirectory(_root);
-        File.WriteAllBytes(path, SyntheticFixture.Pfil("[Waterlevel]\r\n120\r\n[WaterColor]\r\n0xffdfbf\r\n"));
+        File.WriteAllBytes(path, SyntheticFixture.Pfil("[Waterlevel]\r\n120\r\n[WaterColor]\r\n0xffdfbf\r\n[WaterWarpShift]\r\n12\r\n[WaterBumpAmplitude]\r\n256\r\n[WaterBumpFrequency]\r\n4\r\n[FlashPropability]\r\n8\r\n"));
         byte[] original = File.ReadAllBytes(path);
 
         var document = BodenIniDocument.Load(path);
         document.SetValue("Waterlevel", "180");
+        document.SetValue("WaterWarpShift", "14");
+        document.SetValue("WaterBumpAmplitude", "512");
+        document.SetValue("WaterBumpFrequency", "8");
+        document.SetValue("FlashPropability", "16");
         document.Save();
 
         byte[] saved = File.ReadAllBytes(path);
@@ -43,6 +47,35 @@ public sealed class MapEditorPhase1Tests : IDisposable
         string text = SyntheticFixture.Text(saved);
         Assert.Contains("[Waterlevel]\r\n180", text);
         Assert.Contains("[WaterColor]\r\n0xffdfbf", text);
+        Assert.Contains("[WaterWarpShift]\r\n14", text);
+        Assert.Contains("[WaterBumpAmplitude]\r\n512", text);
+        Assert.Contains("[WaterBumpFrequency]\r\n8", text);
+        Assert.Contains("[FlashPropability]\r\n16", text);
+    }
+
+    [Fact]
+    public void PutTextDocument_RoundTrips_composite_briefing_and_team_names()
+    {
+        string path = Path.Combine(_root, "briefing.put");
+        Directory.CreateDirectory(_root);
+        File.WriteAllBytes(path, SyntheticFixture.Pfil(
+            "var:briefing_titel_1 =\"Original\";\r\n" +
+            "var:briefing_titel_2 =\"Subtitle\";\r\n" +
+            "var:briefing_text =\"First line\\n\"\r\n+\"Second line\";\r\n" +
+            "var:briefing_text_teamname0 =\"Player\";\r\n"));
+        byte[] original = File.ReadAllBytes(path);
+
+        var document = PutTextDocument.Load(path);
+        Assert.Equal("First line\nSecond line", document.GetCompositeValue("briefing_text"));
+        document.SetCompositeValue("briefing_text", "Changed line 1\nChanged \"line\" 2");
+        document.SetValue("briefing_text_teamname0", "Romans");
+        document.Save();
+
+        var loaded = PutTextDocument.Load(path);
+        Assert.Equal(original.Take(16), File.ReadAllBytes(path).Take(16));
+        Assert.Equal("Changed line 1\nChanged \"line\" 2", loaded.GetCompositeValue("briefing_text"));
+        Assert.Equal("Romans", loaded.GetValue("briefing_text_teamname0"));
+        Assert.Equal("Original", loaded.GetValue("briefing_titel_1"));
     }
 
     [Fact]

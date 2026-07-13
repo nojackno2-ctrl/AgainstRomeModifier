@@ -75,7 +75,7 @@ public sealed class PatcherRoundTripTests {
         byte[] patched = ObjdefPatcher.GetPatchedBytes(original, new ObjdefOptions(false, false, false, false, false, false, false, false, false, false, false, false, unitStats));
         string[] result = SyntheticFixture.Text(patched).Split("\r\n")[2].Split(',');
 
-        Assert.Equal("200.00", result[80].Trim()); // RangeMin ×2
+        Assert.Equal("100.00", result[80].Trim()); // RangeMin（最小射程）不縮放，避免放大近身死區
         Assert.Equal("400.00", result[81].Trim()); // RangeMax ×2
         Assert.Equal("45.00", result[82].Trim());  // Angle 必須原封不動
     }
@@ -99,9 +99,39 @@ public sealed class PatcherRoundTripTests {
             new ObjdefOptions(false, false, false, false, false, false, true, false, false, false, false, false, stats));
         string[] result = SyntheticFixture.Text(patched).Split("\r\n")[2].Split(',');
 
-        Assert.Equal("3000.00", result[80].Trim());
+        Assert.Equal("1000.00", result[80].Trim()); // 最小射程不隨 3 倍放大
         Assert.Equal("6000.00", result[81].Trim());
         Assert.Equal("6000", result[24].Trim());
+    }
+
+    [Fact]
+    public void Objdef_range_scaling_skips_melee_sidearm_and_special_weapons_of_ranged_units() {
+        // 原版弓兵配置：W1 近戰副武器 (dtyp=0)、W2 弓 (dtyp=1)、W3 特殊武器 (dtyp=5)。
+        // 射程縮放只能動遠程武器 (dtyp 1~4) 的最大射程，否則弓兵會從三倍距離外揮刀。
+        string[] columns = Enumerable.Repeat("       0", 205).ToArray();
+        columns[19] = "     100";
+        columns[24] = "    1500";
+        columns[52] = "FigKelSch00_Bogen".PadLeft(20);
+        columns[78] = "       1"; columns[80] = "  128.00"; columns[81] = "   64.00"; // W1 近戰
+        columns[86] = "       1"; columns[88] = "  100.00"; columns[89] = " 1100.00"; // W2 弓
+        columns[94] = "       1"; columns[96] = "    1.00"; columns[97] = "  400.00"; // W3 特殊
+        columns[199] = "       0"; columns[200] = "       1"; columns[201] = "       5";
+        byte[] original = SyntheticFixture.Pfil("header1\r\nheader2\r\n" + string.Join(',', columns) + "\r\n");
+        var stats = new Dictionary<string, double[]> {
+            ["FigKelSch00_Bogen"] = new double[] { 100, 0, 0, 0, 2, 1500, 0, 1100, 0 }
+        };
+
+        byte[] patched = ObjdefPatcher.GetPatchedBytes(original,
+            new ObjdefOptions(false, false, false, false, false, false, true, false, false, false, false, false, stats));
+        string[] result = SyntheticFixture.Text(patched).Split("\r\n")[2].Split(',');
+
+        Assert.Equal("128.00", result[80].Trim());  // W1 近戰射程不可動
+        Assert.Equal("64.00", result[81].Trim());
+        Assert.Equal("100.00", result[88].Trim());  // W2 最小射程不可動
+        Assert.Equal("3300.00", result[89].Trim()); // W2 最大射程 ×3
+        Assert.Equal("1.00", result[96].Trim());    // W3 特殊武器不可動
+        Assert.Equal("400.00", result[97].Trim());
+        Assert.Equal("3300", result[24].Trim());    // 視野同步涵蓋新射程
     }
 
     [Fact]
