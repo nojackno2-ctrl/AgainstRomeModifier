@@ -288,11 +288,9 @@ internal sealed class FeatureDetector
                     // 使用塞爾特祭司 FigKelPri00_Priester 偵測法師施法距離
                     bool spellEntireMap = false;
                     if (unitRows.TryGetValue("FigKelPri00_Priester", out var testSpellCols) &&
-                        origUnitRows.TryGetValue("FigKelPri00_Priester", out var testSpellOrigCols))
+                        origUnitRows.ContainsKey("FigKelPri00_Priester"))
                     {
                         double curRange = BackupManager.GetUnitMaxRange(testSpellCols, "priest");
-                        double origRange = BackupManager.GetUnitMaxRange(testSpellOrigCols, "priest");
-                        double expectedBaseRange = isFileBalanced ? 3840.0 : origRange;
                         if (curRange > 0)
                         {
                             if (Math.Abs(curRange - 30000.0) < 100.0)
