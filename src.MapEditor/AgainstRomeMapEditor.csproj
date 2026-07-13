@@ -13,4 +13,11 @@
   <ItemGroup>
     <ProjectReference Include="../src.Shared/AgainstRome.Shared.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="OpenTK" Version="4.9.3" />
+    <PackageReference Include="OpenTK.GLControl" Version="4.0.2" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="AgainstRomeModifier.Tests" />
+  </ItemGroup>
 </Project>
