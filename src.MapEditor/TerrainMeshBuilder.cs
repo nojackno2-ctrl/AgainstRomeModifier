@@ -21,8 +21,9 @@ internal static class TerrainMeshBuilder
             if (uv.Length != 4) throw new ArgumentException("Each tile needs four UV coordinates.", nameof(uvForTile));
             int start = vertex;
             AddVertex(x, y, uv[0]); AddVertex(x + 1, y, uv[1]); AddVertex(x + 1, y + 1, uv[2]); AddVertex(x, y + 1, uv[3]);
-            indices[index++] = (uint)start; indices[index++] = (uint)(start + 1); indices[index++] = (uint)(start + 2);
-            indices[index++] = (uint)start; indices[index++] = (uint)(start + 2); indices[index++] = (uint)(start + 3);
+            // Counter-clockwise when viewed from above (+Y), matching the generated normals and OpenGL front-face culling.
+            indices[index++] = (uint)start; indices[index++] = (uint)(start + 2); indices[index++] = (uint)(start + 1);
+            indices[index++] = (uint)start; indices[index++] = (uint)(start + 3); indices[index++] = (uint)(start + 2);
         }
         return new TerrainMeshData(vertices, indices);
 

@@ -27,6 +27,7 @@ public sealed class EndlessMapCloner
         if (newSlot is < 5 or > 999) throw new ArgumentOutOfRangeException(nameof(newSlot), "自製地圖槽位必須在 ENDL_005 至 ENDL_999。");
         if (string.IsNullOrWhiteSpace(newName)) throw new ArgumentException("請輸入地圖名稱。", nameof(newName));
         if (newName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0) throw new ArgumentException("地圖名稱含不允許的字元。", nameof(newName));
+        if (!MapTextDocument.CanEncodeGameText(newName)) throw new ArgumentException("地圖名稱包含遊戲無法儲存的字元。請改用英文、數字或原版地圖使用的字元。", nameof(newName));
         string mapsPath = Path.Combine(normalizedGamePath, "MAPS");
         string mapId = $"ENDL_{newSlot:000}";
         string destination = Path.Combine(mapsPath, mapId);
