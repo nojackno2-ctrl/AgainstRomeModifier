@@ -106,7 +106,8 @@ namespace AgainstRomeModifier.Core.Services
             byte[] clBytes = IniFeaturePatcher.BuildClScript(backupManager, options);
             patchedFiles[Path.Combine(gamePath, @"SYSTEM\cl_script.ini")] = clBytes;
 
-            // C. cl_epara.ini — 遠程命中修正（拋射預判散布歸零），已整合進射程 3 倍；未啟用時還原為原版備份
+            // C. cl_epara.ini — 遠程命中修正（拋射預判散布歸零）＋三倍射程時提高拋射初速讓箭矢能命中放大後的射程；
+            //    兩者皆已整合進射程 3 倍，未啟用時還原為原版備份
             patchedFiles[Path.Combine(gamePath, @"SYSTEM\cl_epara.ini")] =
                 EparaPatcher.GetPatchedBytes(backupManager.GetBackupBytes("SYSTEM/cl_epara.ini"), options.RangedRange3x);
 

@@ -251,15 +251,27 @@ public sealed class PatcherRoundTripTests {
     }
 
     [Fact]
-    public void Epara_accuracy_patch_zeros_variance_on_move_and_restores() {
+    public void Epara_range3x_zeros_variance_on_move_and_restores() {
         const string text = ";comment\r\n[ProjectileInitSpeedFactor]\r\n1.5\r\n\r\n;lead scatter\r\n[ProjectileVarianceOnMove]\r\n0.5\r\n\r\n[ProjectileVarianceMaximumAngle]\r\n45\r\n";
         byte[] original = SyntheticFixture.Pfil(text);
 
-        string patched = SyntheticFixture.Text(EparaPatcher.GetPatchedBytes(original, rangedAccuracy: true));
+        string patched = SyntheticFixture.Text(EparaPatcher.GetPatchedBytes(original, rangedRange3x: true));
         Assert.Contains("[ProjectileVarianceOnMove]\r\n0.0\r\n", patched);
-        Assert.Contains("[ProjectileInitSpeedFactor]\r\n1.5\r\n", patched); // 其他區段不可動
         Assert.Contains("[ProjectileVarianceMaximumAngle]\r\n45\r\n", patched);
-        Assert.Equal(original, EparaPatcher.GetPatchedBytes(original, rangedAccuracy: false));
+        // 未啟用射程 3 倍時完全還原
+        Assert.Equal(original, EparaPatcher.GetPatchedBytes(original, rangedRange3x: false));
+    }
+
+    [Fact]
+    public void Epara_range3x_raises_init_speed_so_projectiles_reach_extended_range() {
+        const string text = ";comment\r\n[ProjectileInitSpeedFactor]\r\n1.5\r\n\r\n;lead scatter\r\n[ProjectileVarianceOnMove]\r\n0.5\r\n\r\n[ProjectileVarianceMaximumAngle]\r\n45\r\n";
+        byte[] original = SyntheticFixture.Pfil(text);
+
+        // 射程 3 倍一併套用兩項命中修正：拉高拋射初速覆蓋放大後的射程 + 預判散布歸零
+        string range3x = SyntheticFixture.Text(EparaPatcher.GetPatchedBytes(original, rangedRange3x: true));
+        Assert.Contains("[ProjectileInitSpeedFactor]\r\n1.62\r\n", range3x);
+        Assert.Contains("[ProjectileVarianceOnMove]\r\n0.0\r\n", range3x);
+        Assert.Contains("[ProjectileVarianceMaximumAngle]\r\n45\r\n", range3x);
     }
 
     [Fact]
