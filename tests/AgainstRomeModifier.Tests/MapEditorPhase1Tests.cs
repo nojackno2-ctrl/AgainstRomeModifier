@@ -1,4 +1,5 @@
 using System.Text;
+using AgainstRomeMapEditor;
 using AgainstRomeModifier.Maps;
 
 namespace AgainstRomeModifier.Tests;
@@ -106,6 +107,59 @@ public sealed class MapEditorPhase1Tests : IDisposable
         Assert.Equal("4BJ___51", loaded.GetTexture(3, 2));
         Assert.Equal("T0000000", loaded.GetTexture(0, 0));
         Assert.Equal("T0004095", loaded.GetTexture(63, 63));
+    }
+
+    [Fact]
+    public void BodenTexturesDocument_SetTextures_writes_whole_grid_in_one_pass()
+    {
+        string path = Path.Combine(_root, "boden.txt");
+        Directory.CreateDirectory(_root);
+        string[] tiles = Enumerable.Range(0, 4096).Select(i => $"T{i:0000000}").ToArray();
+        File.WriteAllBytes(path, SyntheticFixture.Pfil("[Dimension]\r\n64\r\n[Texturen]\r\n" + string.Join("\r\n", tiles) + "\r\n"));
+
+        var document = BodenTexturesDocument.Load(path);
+        string[] replacement = Enumerable.Range(0, 4096).Select(i => $"R{i:0000000}").ToArray();
+        document.SetTextures(replacement);
+        document.Save();
+
+        var loaded = BodenTexturesDocument.Load(path);
+        Assert.Equal("R0000000", loaded.GetTexture(0, 0));
+        Assert.Equal("R0004095", loaded.GetTexture(63, 63));
+        Assert.Equal(replacement, loaded.Textures);
+    }
+
+    [Fact]
+    public void BodenTexturesDocument_SetTextures_rejects_wrong_count()
+    {
+        string path = Path.Combine(_root, "boden.txt");
+        Directory.CreateDirectory(_root);
+        string[] tiles = Enumerable.Range(0, 4096).Select(i => $"T{i:0000000}").ToArray();
+        File.WriteAllBytes(path, SyntheticFixture.Pfil("[Dimension]\r\n64\r\n[Texturen]\r\n" + string.Join("\r\n", tiles) + "\r\n"));
+
+        var document = BodenTexturesDocument.Load(path);
+
+        Assert.Throws<ArgumentException>(() => document.SetTextures(new[] { "only", "three", "items" }));
+    }
+
+    [Fact]
+    public void TerrainEditHistory_change_survives_boden_save_and_reload()
+    {
+        string path = Path.Combine(_root, "boden.txt");
+        Directory.CreateDirectory(_root);
+        string[] tiles = Enumerable.Range(0, 4096).Select(i => $"T{i:0000000}").ToArray();
+        File.WriteAllBytes(path, SyntheticFixture.Pfil("[Dimension]\r\n64\r\n[Texturen]\r\n" + string.Join("\r\n", tiles) + "\r\n"));
+        var document = BodenTexturesDocument.Load(path);
+        var history = new TerrainEditHistory(document.Dimension, document.Textures);
+
+        Assert.NotNull(history.Paint(7, 9, "NEW_TEXTURE"));
+        Assert.True(history.CommitStroke());
+        document.SetTexture(7, 9, history.Current[9 * 64 + 7]);
+        document.Save();
+        history.CommitBaseline();
+
+        var reloaded = BodenTexturesDocument.Load(path);
+        Assert.Equal("NEW_TEXTURE", reloaded.GetTexture(7, 9));
+        Assert.False(history.IsDirty);
     }
 
     [Fact]

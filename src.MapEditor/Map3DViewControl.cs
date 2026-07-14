@@ -20,11 +20,13 @@ internal sealed class Map3DViewControl : GLControl
     private TerrainMeshData? _mesh;
     private IReadOnlyList<MapSceneObject> _objects = Array.Empty<MapSceneObject>();
     private int _dimension;
+    private int _hoverX = -1, _hoverY = -1;
     private float _waterLevel, _heightMapStep;
     private Color _waterSourceColor = Color.SteelBlue;
     private bool _initialized, _painting, _panning, _rotating, _rightClick;
     private Point _lastPointer, _rightStart;
-    private int _terrainProgram, _colorProgram, _vao, _vbo, _ebo, _atlasTexture, _waterVao, _waterVbo, _markerVao, _markerVbo;
+    private int _terrainProgram, _colorProgram, _vao, _vbo, _ebo, _atlasTexture, _waterVao, _waterVbo, _markerVao, _markerVbo, _cursorVao, _cursorVbo;
+    private int _cursorVertexCount;
 
     public Map3DViewControl() : base(new GLControlSettings { API = ContextAPI.OpenGL, APIVersion = new Version(3, 3), Profile = ContextProfile.Core, Flags = ContextFlags.ForwardCompatible })
     {
@@ -43,11 +45,12 @@ internal sealed class Map3DViewControl : GLControl
     public event EventHandler<TexturePaintEventArgs>? TexturePainted;
     public event EventHandler<TileHoverEventArgs>? TileHovered;
     public event EventHandler<TextureSampleEventArgs>? TextureSampled;
+    public event EventHandler? StrokeEnded;
 
-    public bool LoadTextures(int dimension, IReadOnlyList<string> textures, IReadOnlyList<string> baselineTextures, string mapDirectory, string floorTextureArchivePath, IReadOnlyList<MapSceneObject> sceneObjects, float waterLevel, float heightMapStep, Color waterColor)
+    public bool LoadTextures(int dimension, IReadOnlyList<string> textures, IReadOnlyList<string> baselineTextures, string mapDirectory, FloorTextureLibrary floorTextures, IReadOnlyList<MapSceneObject> sceneObjects, float waterLevel, float heightMapStep, Color waterColor)
     {
         if (!File.Exists(Path.Combine(mapDirectory, "boden.bmp"))) return false;
-        _library?.Dispose(); _library = new FloorTextureLibrary(floorTextureArchivePath);
+        _library = floorTextures; // 生命週期由 MapEditorForm 擁有，此處僅借用。
         if (!_library.IsAvailable) return false;
         using var bitmap = new Bitmap(Path.Combine(mapDirectory, "boden.bmp"));
         byte[] samples = ReadSamples(bitmap);
@@ -65,13 +68,21 @@ internal sealed class Map3DViewControl : GLControl
     {
         if (_textures is null || _atlas is null || _mesh is null || x < 0 || x >= _dimension || y < 0 || y >= _dimension) return;
         _textures[y * _dimension + x] = texture;
+        if (!_atlas.Contains(texture)) { RebuildAtlasAndMesh(); return; } // 完整材質庫可能加入原圖沒有的地表，需擴充圖集。
         Vector2[] uv = _atlas.GetUv(texture);
         int vertexOffset = (y * _dimension + x) * 4;
         for (int index = 0; index < 4; index++) _mesh.Vertices[vertexOffset + index] = _mesh.Vertices[vertexOffset + index] with { TexCoord = uv[index] };
         if (_initialized)
         {
             MakeCurrent(); GL.BindBuffer(BufferTarget.ArrayBuffer, _vbo);
-            float[] block = FlattenVertices(_mesh.Vertices.Skip(vertexOffset).Take(4));
+            var block = new float[4 * 8];
+            for (int index = 0; index < 4; index++)
+            {
+                TerrainVertex vertex = _mesh.Vertices[vertexOffset + index]; int b = index * 8;
+                block[b] = vertex.Position.X; block[b + 1] = vertex.Position.Y; block[b + 2] = vertex.Position.Z;
+                block[b + 3] = vertex.Normal.X; block[b + 4] = vertex.Normal.Y; block[b + 5] = vertex.Normal.Z;
+                block[b + 6] = vertex.TexCoord.X; block[b + 7] = vertex.TexCoord.Y;
+            }
             GL.BufferSubData(BufferTarget.ArrayBuffer, (IntPtr)(vertexOffset * 8 * sizeof(float)), block.Length * sizeof(float), block);
         }
         Invalidate();
@@ -87,7 +98,7 @@ internal sealed class Map3DViewControl : GLControl
             GL.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
             _terrainProgram = CreateProgram(TerrainVertexShader, TerrainFragmentShader);
             _colorProgram = CreateProgram(ColorVertexShader, ColorFragmentShader);
-            _vao = GL.GenVertexArray(); _vbo = GL.GenBuffer(); _ebo = GL.GenBuffer(); _waterVao = GL.GenVertexArray(); _waterVbo = GL.GenBuffer(); _markerVao = GL.GenVertexArray(); _markerVbo = GL.GenBuffer();
+            _vao = GL.GenVertexArray(); _vbo = GL.GenBuffer(); _ebo = GL.GenBuffer(); _waterVao = GL.GenVertexArray(); _waterVbo = GL.GenBuffer(); _markerVao = GL.GenVertexArray(); _markerVbo = GL.GenBuffer(); _cursorVao = GL.GenVertexArray(); _cursorVbo = GL.GenBuffer();
             _initialized = true;
             if (_mesh is not null) UploadResources();
         }
@@ -110,6 +121,18 @@ internal sealed class Map3DViewControl : GLControl
         Invalidate();
     }
 
+    /// <summary>改水面高度／顏色時的即時預覽：只更新水面四邊形與顏色，不重建地形。</summary>
+    public void UpdateWater(float waterLevel, Color waterColor)
+    {
+        _waterLevel = waterLevel; _waterSourceColor = waterColor;
+        if (!_initialized || _heights is null) return;
+        MakeCurrent();
+        float waterY = _heightMapStep <= 0 ? 0 : _waterLevel / _heightMapStep / 255f * _heights.HeightScale;
+        UploadColoredGeometry(_waterVao, _waterVbo, new[] { new Vector3(0, waterY, 0), new Vector3(0, waterY, _dimension), new Vector3(_dimension, waterY, _dimension), new Vector3(_dimension, waterY, 0) });
+        _waterColor = new Vector4(_waterSourceColor.R / 255f, _waterSourceColor.G / 255f, _waterSourceColor.B / 255f, .55f);
+        Invalidate();
+    }
+
     protected override void OnPaint(PaintEventArgs e)
     {
         base.OnPaint(e);
@@ -120,8 +143,30 @@ internal sealed class Map3DViewControl : GLControl
         if (ShowGrid) DrawGrid(matrix);
         DrawWater(matrix);
         if (ShowObjects) DrawMarkers(matrix);
+        DrawBrushCursor(matrix);
         SwapBuffers();
     }
+
+    private void DrawBrushCursor(Matrix4 matrix)
+    {
+        if (!EditingEnabled || _hoverX < 0 || _hoverY < 0 || _heights is null || string.IsNullOrWhiteSpace(BrushTexture)) return;
+        int radius = Math.Max(0, BrushSize / 2);
+        int x0 = Math.Max(0, _hoverX - radius), y0 = Math.Max(0, _hoverY - radius);
+        int x1 = Math.Min(_dimension - 1, _hoverX + radius) + 1, y1 = Math.Min(_dimension - 1, _hoverY + radius) + 1;
+        var perimeter = new List<System.Numerics.Vector3>();
+        for (int x = x0; x <= x1; x++) perimeter.Add(CursorPoint(x, y0));
+        for (int y = y0 + 1; y <= y1; y++) perimeter.Add(CursorPoint(x1, y));
+        for (int x = x1 - 1; x >= x0; x--) perimeter.Add(CursorPoint(x, y1));
+        for (int y = y1 - 1; y > y0; y--) perimeter.Add(CursorPoint(x0, y));
+        _cursorVertexCount = perimeter.Count;
+        UploadColoredGeometry(_cursorVao, _cursorVbo, perimeter.ToArray());
+        GL.Disable(EnableCap.DepthTest); GL.LineWidth(2);
+        DrawColorGeometry(_cursorVao, PrimitiveType.LineLoop, _cursorVertexCount, matrix, new System.Numerics.Vector4(1f, .94f, .47f, 1f), 1);
+        GL.Enable(EnableCap.DepthTest);
+    }
+
+    private System.Numerics.Vector3 CursorPoint(int tileX, int tileY)
+        => new(tileX, _heights!.SampleHeight(tileX, tileY) + .15f, tileY);
 
     protected override void OnMouseDown(MouseEventArgs e)
     {
@@ -138,8 +183,20 @@ internal sealed class Map3DViewControl : GLControl
         if (_panning && e.Button == MouseButtons.Middle) { _camera.Pan(-delta.X * .08f, delta.Y * .08f); Invalidate(); }
         else if (_rightClick && e.Button == MouseButtons.Right && Math.Abs(e.X - _rightStart.X) + Math.Abs(e.Y - _rightStart.Y) >= 4) { _rotating = true; _camera.Rotate(delta.X * .35f, -delta.Y * .35f); Invalidate(); }
         else if (_painting && e.Button == MouseButtons.Left) TryPaint(e.Location);
-        if (TryGetTile(e.Location, out int x, out int y)) TileHovered?.Invoke(this, new TileHoverEventArgs(x, y, _textures?[y * _dimension + x]));
+        if (TryGetTile(e.Location, out int x, out int y))
+        {
+            if (x != _hoverX || y != _hoverY) { _hoverX = x; _hoverY = y; if (EditingEnabled) Invalidate(); }
+            TileHovered?.Invoke(this, new TileHoverEventArgs(x, y, _textures?[y * _dimension + x]));
+        }
+        else if (_hoverX != -1) { _hoverX = _hoverY = -1; if (EditingEnabled) Invalidate(); }
         _lastPointer = e.Location;
+    }
+
+    protected override void OnMouseLeave(EventArgs e)
+    {
+        base.OnMouseLeave(e);
+        if (_hoverX == -1) return;
+        _hoverX = _hoverY = -1; if (EditingEnabled) Invalidate();
     }
 
     protected override void OnMouseUp(MouseEventArgs e)
@@ -147,7 +204,23 @@ internal sealed class Map3DViewControl : GLControl
         base.OnMouseUp(e);
         if (e.Button == MouseButtons.Right && _rightClick && !_rotating && TryGetTile(e.Location, out int x, out int y) && _textures is not null)
             TextureSampled?.Invoke(this, new TextureSampleEventArgs(x, y, _textures[y * _dimension + x]));
+        bool wasPainting = _painting;
         _painting = _panning = _rotating = _rightClick = false; _paintedInDrag.Clear();
+        if (wasPainting) StrokeEnded?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>把目前材質設為「已儲存基準」（3D 未渲染變更高亮，僅維持狀態一致）。</summary>
+    public void CommitBaseline()
+    {
+        if (_textures is not null) _baselineTextures = (string[])_textures.Clone();
+    }
+
+    /// <summary>將攝影機對焦到指定 tile，供場景物件清單跳轉使用。</summary>
+    public void FocusTile(float tileX, float tileY)
+    {
+        float y = _heights?.SampleHeight(tileX, tileY) ?? 0;
+        _camera.Target = new Vector3(tileX, y, tileY);
+        Invalidate();
     }
 
     protected override void OnMouseWheel(MouseEventArgs e) { base.OnMouseWheel(e); _camera.Zoom(e.Delta > 0 ? .84f : 1.19f); Invalidate(); }
@@ -160,7 +233,7 @@ internal sealed class Map3DViewControl : GLControl
         for (int px = Math.Max(0, x - radius); px <= Math.Min(_dimension - 1, x + radius); px++)
         {
             int offset = py * _dimension + px;
-            if (!_paintedInDrag.Add(offset) || StringComparer.OrdinalIgnoreCase.Equals(_textures[offset], BrushTexture)) continue;
+            if (!_paintedInDrag.Add(offset)) continue;
             string before = _textures[offset]; SetTexture(px, py, BrushTexture); TexturePainted?.Invoke(this, new TexturePaintEventArgs(px, py, before, BrushTexture));
         }
     }
@@ -178,6 +251,21 @@ internal sealed class Map3DViewControl : GLControl
         _mesh = TerrainMeshBuilder.Build(_heights, _dimension, (x, y) => _atlas.GetUv(_textures[y * _dimension + x]));
     }
 
+    // 繪入原圖沒有的材質時擴充圖集並重建 UV；若圖集容量已滿則保留舊圖集（該材質在 3D 以近似色顯示，2D 仍正確）。
+    private void RebuildAtlasAndMesh()
+    {
+        if (_textures is null || _library is null || _heights is null) return;
+        try
+        {
+            FloorTextureAtlas rebuilt = FloorTextureAtlas.Create(_textures, _library);
+            _atlas?.Dispose(); _atlas = rebuilt;
+            BuildMesh();
+            if (_initialized) UploadResources();
+            Invalidate();
+        }
+        catch (InvalidOperationException) { Invalidate(); }
+    }
+
     private void UploadResources()
     {
         if (_mesh is null || _atlas is null || _heights is null) return;
@@ -188,6 +276,8 @@ internal sealed class Map3DViewControl : GLControl
         ConfigureVertexAttributes();
         if (_atlasTexture != 0) GL.DeleteTexture(_atlasTexture); _atlasTexture = GL.GenTexture(); GL.BindTexture(TextureTarget.Texture2D, _atlasTexture);
         UploadBitmap(_atlas.Image); GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.LinearMipmapLinear); GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear); GL.GenerateMipmap(GenerateMipmapTarget.Texture2D);
+        // 限制 mip 層級：每格 gutter 為 FloorTextureAtlas.Pad 像素，層級 3 的取樣足跡約 8 像素，剛好不越過 gutter 造成串色。
+        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMaxLevel, 3);
         float waterY = _heightMapStep <= 0 ? 0 : _waterLevel / _heightMapStep / 255f * _heights.HeightScale;
         // Counter-clockwise from above so the water remains visible with back-face culling enabled.
         UploadColoredGeometry(_waterVao, _waterVbo, new[] { new Vector3(0, waterY, 0), new Vector3(0, waterY, _dimension), new Vector3(_dimension, waterY, _dimension), new Vector3(_dimension, waterY, 0) });
@@ -234,8 +324,9 @@ internal sealed class Map3DViewControl : GLControl
     private static float[] FlattenVertices(IEnumerable<TerrainVertex> vertices) => vertices.SelectMany(v => new[] { v.Position.X, v.Position.Y, v.Position.Z, v.Normal.X, v.Normal.Y, v.Normal.Z, v.TexCoord.X, v.TexCoord.Y }).ToArray();
     private static byte[] ReadSamples(Bitmap bitmap)
     {
-        var samples = new byte[bitmap.Width * bitmap.Height];
-        for (int y = 0; y < bitmap.Height; y++) for (int x = 0; x < bitmap.Width; x++) samples[y * bitmap.Width + x] = bitmap.GetPixel(x, y).R;
+        int[] pixels = BitmapPixels.Read(bitmap);
+        var samples = new byte[pixels.Length];
+        for (int i = 0; i < pixels.Length; i++) samples[i] = (byte)((pixels[i] >> 16) & 0xff);
         return samples;
     }
     private static void UploadBitmap(Bitmap image)
@@ -258,7 +349,7 @@ internal sealed class Map3DViewControl : GLControl
     }
     protected override void Dispose(bool disposing)
     {
-        if (disposing) { _atlas?.Dispose(); _library?.Dispose(); if (_initialized) { MakeCurrent(); GL.DeleteBuffer(_vbo); GL.DeleteBuffer(_ebo); GL.DeleteVertexArray(_vao); GL.DeleteTexture(_atlasTexture); GL.DeleteProgram(_terrainProgram); GL.DeleteProgram(_colorProgram); } }
+        if (disposing) { _atlas?.Dispose(); /* _library 由 MapEditorForm 擁有，不在此釋放 */ if (_initialized) { MakeCurrent(); GL.DeleteBuffer(_vbo); GL.DeleteBuffer(_ebo); GL.DeleteBuffer(_waterVbo); GL.DeleteBuffer(_markerVbo); GL.DeleteBuffer(_cursorVbo); GL.DeleteVertexArray(_vao); GL.DeleteVertexArray(_waterVao); GL.DeleteVertexArray(_markerVao); GL.DeleteVertexArray(_cursorVao); GL.DeleteTexture(_atlasTexture); GL.DeleteProgram(_terrainProgram); GL.DeleteProgram(_colorProgram); } }
         base.Dispose(disposing);
     }
 

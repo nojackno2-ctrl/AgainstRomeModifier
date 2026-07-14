@@ -139,9 +139,35 @@ public sealed class BodenTexturesDocument : MapTextDocument
     public string GetTexture(int x, int y) => EntryAt(x, y).Value;
     public void SetTexture(int x, int y, string texture)
     {
-        if (string.IsNullOrWhiteSpace(texture) || texture.IndexOfAny(new[] { '\r', '\n' }) >= 0) throw new ArgumentException("材質名稱不可為空或包含換行。", nameof(texture));
+        ValidateTextureName(texture);
         TextureEntry entry = EntryAt(x, y);
         Text = Text[..entry.Start] + texture.Trim() + Text[entry.End..];
+    }
+
+    /// <summary>一次寫入整張 64×64 材質表；比逐格 SetTexture 快一個數量級（單次解析、單次重組）。</summary>
+    public void SetTextures(IReadOnlyList<string> textures)
+    {
+        int dimension = Dimension;
+        if (dimension != 64) throw new InvalidOperationException("目前只支援已驗證的 64×64 boden.txt 材質格。");
+        TextureEntry[] entries = Entries();
+        if (entries.Length != dimension * dimension) throw new InvalidDataException($"boden.txt 應有 {dimension * dimension} 個材質格，實際為 {entries.Length}。");
+        if (textures.Count != entries.Length) throw new ArgumentException($"材質數量應為 {entries.Length}，實際為 {textures.Count}。", nameof(textures));
+        foreach (string texture in textures) ValidateTextureName(texture);
+        var builder = new StringBuilder(Text.Length + 64);
+        int position = 0;
+        for (int index = 0; index < entries.Length; index++)
+        {
+            builder.Append(Text, position, entries[index].Start - position);
+            builder.Append(textures[index].Trim());
+            position = entries[index].End;
+        }
+        builder.Append(Text, position, Text.Length - position);
+        Text = builder.ToString();
+    }
+
+    private static void ValidateTextureName(string texture)
+    {
+        if (string.IsNullOrWhiteSpace(texture) || texture.IndexOfAny(new[] { '\r', '\n' }) >= 0) throw new ArgumentException("材質名稱不可為空或包含換行。", nameof(texture));
     }
 
     private TextureEntry EntryAt(int x, int y)
