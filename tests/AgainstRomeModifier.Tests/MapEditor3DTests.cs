@@ -33,6 +33,22 @@ public sealed class MapEditor3DTests
     }
 
     [Fact]
+    public void Only_endless_or_custom_maps_can_be_cloned_to_custom()
+    {
+        var historical = new GameMapInfo("HIST_001", "historical", false, "Historical", "歷史戰役");
+        var multiplayer = new GameMapInfo("MP_001", "mp", false, "MP", "多人地圖");
+        var originalEndless = new GameMapInfo("ENDL_000", "endless", false, "Endless", "無盡模式");
+        var custom = new GameMapInfo("ENDL_005", "custom", true, "Custom", "無盡模式");
+
+        Assert.True(MapSelectionForm.CanCloneToCustom(originalEndless));
+        Assert.True(MapSelectionForm.CanCloneToCustom(custom));
+        Assert.False(MapSelectionForm.CanCloneToCustom(historical));
+        Assert.False(MapSelectionForm.CanCloneToCustom(multiplayer));
+        // 沒有可用的無盡範本時不得退回其他類型。
+        Assert.Null(MapSelectionForm.SelectNewMapTemplate([historical, multiplayer]));
+    }
+
+    [Fact]
     public void MapSelection_preview_is_detached_from_the_minimap_file()
     {
         string directory = Path.Combine(Path.GetTempPath(), "arm-map-preview-" + Guid.NewGuid().ToString("N"));
@@ -49,6 +65,114 @@ public sealed class MapEditor3DTests
             Assert.False(File.Exists(path));
         }
         finally { Directory.Delete(directory, recursive: true); }
+    }
+
+    [Fact]
+    public void TerrainEditHistory_groups_a_stroke_and_keeps_dirty_undo_redo_and_save_baseline_consistent()
+    {
+        var history = new TerrainEditHistory(2, ["grass", "grass", "water", "rock"]);
+
+        Assert.Equal(new TerrainTextureChange(1, 0, "grass", "sand"), history.Paint(1, 0, "sand"));
+        Assert.Equal(new TerrainTextureChange(1, 0, "sand", "mud"), history.Paint(1, 0, "mud"));
+        Assert.True(history.CommitStroke());
+        Assert.True(history.IsDirty);
+        Assert.True(history.CanUndo);
+        Assert.Equal("mud", history.Current[1]);
+
+        IReadOnlyList<TerrainTextureChange> undone = Assert.IsAssignableFrom<IReadOnlyList<TerrainTextureChange>>(history.Undo());
+        Assert.Single(undone);
+        Assert.Equal(new TerrainTextureChange(1, 0, "grass", "mud"), undone[0]);
+        Assert.Equal("grass", history.Current[1]);
+        Assert.False(history.IsDirty);
+        Assert.True(history.CanRedo);
+
+        Assert.NotNull(history.Redo());
+        Assert.Equal("mud", history.Current[1]);
+        Assert.True(history.IsDirty);
+        history.CommitBaseline();
+        Assert.False(history.IsDirty);
+
+        Assert.NotNull(history.Undo());
+        Assert.True(history.IsDirty);
+        IReadOnlyList<TerrainTextureChange> reset = history.ResetToBaseline();
+        Assert.Single(reset);
+        Assert.Equal("mud", history.Current[1]);
+        Assert.False(history.IsDirty);
+        Assert.False(history.CanUndo);
+        Assert.False(history.CanRedo);
+    }
+
+    [Fact]
+    public void TerrainEditHistory_drops_a_stroke_that_returns_to_its_original_texture()
+    {
+        var history = new TerrainEditHistory(1, ["grass"]);
+
+        history.Paint(0, 0, "sand");
+        history.Paint(0, 0, "grass");
+
+        Assert.False(history.CommitStroke());
+        Assert.False(history.IsDirty);
+        Assert.False(history.CanUndo);
+
+        history.Paint(0, 0, "sand");
+        history.Paint(0, 0, "grass");
+        history.Paint(0, 0, "rock");
+        Assert.True(history.CommitStroke());
+        IReadOnlyList<TerrainTextureChange> stroke = Assert.IsAssignableFrom<IReadOnlyList<TerrainTextureChange>>(history.Undo());
+        Assert.Single(stroke);
+        Assert.Equal(new TerrainTextureChange(0, 0, "grass", "rock"), stroke[0]);
+    }
+
+    [Fact]
+    public void FloorMaterialCatalog_exposes_base_pigments_instead_of_transition_fragments()
+    {
+        var catalog = new FloorMaterialCatalog(["4B1___50", "4B1___51", "4BA___50", "4U13__10", "L5B09T1A", "AA_Brush01"]);
+
+        Assert.Equal(2, catalog.Materials.Count);
+        FloorMaterial first = Assert.Single(catalog.Materials, material => material.Id == "B1");
+        Assert.Equal("土地", first.Category);
+        Assert.Equal("淺灰泥地", first.DisplayName);
+        Assert.Equal("4B1___50", first.RepresentativeTexture);
+        Assert.Equal(new[] { "4B1___50", "4B1___51" }, first.Variants);
+        Assert.Same(first, catalog.FindByTexture("4B1___51"));
+        Assert.Null(catalog.FindByTexture("4U13__10"));
+        Assert.All(Enumerable.Range(0, 32), x => Assert.Equal(first.RepresentativeTexture, first.PickVariant(x, 7)));
+        FloorMaterial grass = Assert.Single(catalog.Materials, material => material.Id == "BA");
+        Assert.Equal("草地", grass.Category);
+        Assert.Equal("深綠草地", grass.DisplayName);
+        Assert.Equal("BA", catalog.Materials[0].Id);
+
+        string[] verifiedCodes = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "A", "B", "C", "D", "E", "G", "I", "J", "K", "L", "M", "O", "R", "S", "T", "U", "V", "W", "X"];
+        var completeCatalog = new FloorMaterialCatalog(verifiedCodes.Select(code => $"4B{code}___50"));
+        Assert.Equal(28, completeCatalog.Materials.Count);
+        Assert.DoesNotContain(completeCatalog.Materials, material => material.Category == "其他地表" || material.DisplayName == "其他地表");
+        Assert.Equal(28, completeCatalog.Materials.Select(material => material.DisplayName).Distinct().Count());
+    }
+
+    [Fact]
+    public void FloorMaterialCatalog_resolves_two_material_edges_without_exposing_transition_tiles_to_the_player()
+    {
+        var catalog = new FloorMaterialCatalog(["4BA___50", "4BB___50", "4UAB__30", "4UAB__31", "4UAB__40", "4UAB__60"]);
+        string?[] materials = Enumerable.Repeat<string?>("BA", 9).ToArray();
+        materials[5] = "BB"; // 新材質位於舊地表右側；過渡片留在舊地表格，第二種材質顯示於右半（數字鍵 6）。
+
+        Assert.Equal("4UAB__60", catalog.ResolveTexture(materials, 3, 1, 1));
+        Assert.Equal("4BB___50", catalog.ResolveTexture(materials, 3, 2, 1));
+        Assert.Equal("BA", catalog.FindByTexture("4UAB__60")?.Id);
+
+        materials[7] = "BB"; // 第二種材質同時位於右側與下方，過渡區位於右下角（數字鍵 3）。
+        string? corner = catalog.ResolveTexture(materials, 3, 1, 1);
+        Assert.StartsWith("4UAB__3", corner);
+        Assert.Equal(corner, catalog.ResolveTexture(materials, 3, 1, 1));
+
+        IReadOnlyList<int> painted = catalog.ApplyPlayerMaterial(materials, 3, 1, 1, "BB");
+        Assert.Equal(new[] { 4 }, painted); // 玩家點的格子本身必須成為完整的新材質，不得被過渡格吞掉。
+        Assert.Equal("BB", materials[4]);
+        Assert.Equal("4BB___50", catalog.ResolveTexture(materials, 3, 1, 1));
+
+        string?[] directPaint = Enumerable.Repeat<string?>("BA", 9).ToArray();
+        Assert.Equal(new[] { 4 }, catalog.ApplyPlayerMaterial(directPaint, 3, 1, 1, "BB"));
+        Assert.Equal("BB", directPaint[4]);
     }
 
     [Fact]

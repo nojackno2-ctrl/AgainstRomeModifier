@@ -39,6 +39,11 @@ internal sealed class MapSelectionForm : Form
     internal static bool IsSelectableMap(GameMapInfo map)
         => !map.Id.StartsWith("KAMP_", StringComparison.OrdinalIgnoreCase);
 
+    // 只有無盡（ENDL）地圖含有 Endlos_*_Siedlung*.sdl 聚落定義；複製其他類型會產生
+    // 出現在無盡選單、卻缺少聚落且可能夾帶戰役腳本的壞地圖，因此禁止作為自製地圖來源。
+    internal static bool CanCloneToCustom(GameMapInfo map)
+        => map.IsCustom || map.Id.StartsWith("ENDL_", StringComparison.OrdinalIgnoreCase);
+
     private void BuildInterface()
     {
         var header = new Label
@@ -125,7 +130,7 @@ internal sealed class MapSelectionForm : Form
                 _mapTabs.SelectedIndex = selected.ListView == _customMaps ? 0 : 1;
                 selected.Selected = true; selected.Focused = true; selected.EnsureVisible();
             }
-            _hint.Text = maps.Length == 0 ? "找不到可用的非劇情地圖。請確認遊戲路徑。" : "原版地圖為唯讀；可選取任一地圖並複製到自製地圖後編輯。劇情地圖不會出現在此選單。";
+            _hint.Text = maps.Length == 0 ? "找不到可用的非劇情地圖。請確認遊戲路徑。" : "原版地圖為唯讀；只有無盡（ENDL）地圖能複製為可編輯的自製地圖。劇情地圖不會出現在此選單。";
         }
         catch (Exception ex) { MessageBox.Show(this, ex.Message, "無法讀取地圖", MessageBoxButtons.OK, MessageBoxIcon.Error); }
         finally
@@ -155,6 +160,13 @@ internal sealed class MapSelectionForm : Form
     {
         GameMapInfo? source = SelectedItem();
         if (source is null) return;
+        if (!CanCloneToCustom(source))
+        {
+            MessageBox.Show(this,
+                "只有無盡模式（ENDL）地圖能複製為自製地圖。\n\n其他類型的地圖缺少無盡聚落定義，複製後會在無盡選單中無法正常遊玩。",
+                "無法複製此地圖", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
         string suggestedName = SuggestedCopyName(source);
         string name = PromptName("複製到自製地圖", suggestedName);
         if (string.IsNullOrWhiteSpace(name)) return;
@@ -173,9 +185,9 @@ internal sealed class MapSelectionForm : Form
         catch (Exception ex) { MessageBox.Show(this, ex.Message, errorTitle, MessageBoxButtons.OK, MessageBoxIcon.Error); }
     }
 
+    // 新建地圖只能以原廠無盡地圖為範本，確保產出的自製地圖帶有完整的聚落定義。
     internal static GameMapInfo? SelectNewMapTemplate(IEnumerable<GameMapInfo> maps)
-        => maps.FirstOrDefault(map => IsSelectableMap(map) && !map.IsCustom && map.Id.StartsWith("ENDL_", StringComparison.OrdinalIgnoreCase))
-            ?? maps.FirstOrDefault(map => IsSelectableMap(map) && !map.IsCustom);
+        => maps.FirstOrDefault(map => IsSelectableMap(map) && !map.IsCustom && map.Id.StartsWith("ENDL_", StringComparison.OrdinalIgnoreCase));
 
     internal static string SuggestedCopyName(GameMapInfo source) => $"{source.DisplayName ?? source.Id} - Copy";
 
@@ -192,7 +204,7 @@ internal sealed class MapSelectionForm : Form
     {
         GameMapInfo? map = SelectedItem();
         _loadButton.Enabled = map is not null;
-        _copyButton.Enabled = map is not null;
+        _copyButton.Enabled = map is not null && CanCloneToCustom(map);
         _deleteButton.Enabled = map?.IsCustom == true;
         UpdatePreview(map);
     }
@@ -237,11 +249,15 @@ internal sealed class MapSelectionForm : Form
     }
     private string PromptName(string title, string value)
     {
-        using var form = new Form { Text = title, Width = 450, Height = 170, StartPosition = FormStartPosition.CenterParent, BackColor = BackColor, ForeColor = ForeColor };
+        using var form = new Form { Text = title, Width = 450, Height = 210, StartPosition = FormStartPosition.CenterParent, BackColor = BackColor, ForeColor = ForeColor, FormBorderStyle = FormBorderStyle.FixedDialog, MinimizeBox = false, MaximizeBox = false };
         var label = new Label { Text = "地圖名稱", Dock = DockStyle.Top, Height = 34, Padding = new Padding(12, 10, 0, 0) };
         var input = new TextBox { Text = value, Dock = DockStyle.Top, Margin = new Padding(12) };
-        var ok = new Button { Text = "建立並開啟", DialogResult = DialogResult.OK, Dock = DockStyle.Bottom, Height = 40 };
-        form.Controls.Add(input); form.Controls.Add(label); form.Controls.Add(ok); form.AcceptButton = ok;
+        var buttons = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 52, Padding = new Padding(12, 8, 12, 8), FlowDirection = FlowDirection.RightToLeft };
+        var ok = new Button { Text = "建立並開啟", DialogResult = DialogResult.OK, Width = 130, Height = 34 };
+        var cancel = new Button { Text = "取消", DialogResult = DialogResult.Cancel, Width = 90, Height = 34 };
+        buttons.Controls.Add(ok); buttons.Controls.Add(cancel);
+        form.Controls.Add(input); form.Controls.Add(label); form.Controls.Add(buttons);
+        form.AcceptButton = ok; form.CancelButton = cancel;
         return form.ShowDialog(this) == DialogResult.OK ? input.Text : "";
     }
 
