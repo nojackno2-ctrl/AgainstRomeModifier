@@ -30,6 +30,7 @@ public sealed class PatchProfile
     public bool HqHp10x { get => Bool("HqHp10x"); set => Bool("HqHp10x", value); }
     public bool FastBuildUpgradeRepair { get => Bool("FastBuildUpgradeRepair"); set => Bool("FastBuildUpgradeRepair", value); }
     public bool FoodHealing10x { get => Bool("FoodHealing10x"); set => Bool("FoodHealing10x", value); }
+    public bool CiviProduce20 { get => Bool("CiviProduce20"); set => Bool("CiviProduce20", value); }
     public bool VillageBuildRange { get => Bool("VillageBuildRange"); set => Bool("VillageBuildRange", value); }
     public bool DgVoodoo { get => Bool("DgVoodoo"); set => Bool("DgVoodoo", value); }
     public bool ToEnglish { get => Bool("ToEnglish"); set => Bool("ToEnglish", value); }
@@ -44,7 +45,6 @@ public sealed class PatchProfile
     public bool SpellEntireMap { get => Bool("SpellEntireMap"); set => Bool("SpellEntireMap", value); }
     public bool SpellRange3x { get => Bool("SpellRange3x"); set => Bool("SpellRange3x", value); }
     public bool ProjectileArcHeight { get => Bool("ProjectileArcHeight"); set => Bool("ProjectileArcHeight", value); }
-    public bool RangedAccuracy { get => Bool("RangedAccuracy"); set => Bool("RangedAccuracy", value); }
     public int GameSpeed { get => GetInt("GameSpeed"); set => Set("GameSpeed", FeatureValue.Of(value)); }
     public Dictionary<string, bool> EndlessAiModules { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public bool GetEndlessAiModule(string moduleId) =>

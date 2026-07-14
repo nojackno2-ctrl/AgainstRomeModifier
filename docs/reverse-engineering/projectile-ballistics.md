@@ -116,7 +116,7 @@ Let `k` = arc-raise factor, `s` = speed-up factor:
 
 - **Raise arc only (same landing point, same flight time):** `w_emit ×k` in
   objdef AND `ysub ×k` in partgeo for the matching projectile (Pfeil00,
-  Wurfspeer00, Wurfaxt00, Katapultstein00/01…). Apex scales ×k.
+  Wurfspeer00, Wurfaxt00, Katapultstein00/01, Fackel…). Apex scales ×k.
   E.g. k=1.5: bows emit 7208960→10813440, Pfeil00 ysub 5832704→8749056.
 - **Faster flight (less dodge, same arc & landing):** ISF ×s in cl_epara,
   `w_emit ×s`, `ysub ×s²`.
@@ -127,3 +127,8 @@ Let `k` = arc-raise factor, `s` = speed-up factor:
 
 Do not scale `w_emit` when scaling ranges — it is not a range field; scaling
 it alone shifts every landing point long (overshoot).
+
+The ordinary unit building torch is weapon `expl=53` (`ED_Fackel`, `dtyp=5`),
+with `w4_emit=9830400`; its projectile resolves through `ParAllFackel` to
+partgeo `Fackel` (`ysub=8126464`). Arc-height patching must scale both values
+together even though `RangedRange3x` correctly leaves the torch range at 400.

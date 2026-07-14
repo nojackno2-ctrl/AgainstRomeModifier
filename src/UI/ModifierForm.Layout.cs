@@ -166,14 +166,14 @@ namespace AgainstRomeModifier {
                 chkFocusLoss,
                 chkToEng,
                 chkDgVoodoo);
-            ConfigureSettingsCard(pnlExperimentalCard, lblExperimentalTitle, 398,
+            ConfigureSettingsCard(pnlExperimentalCard, lblExperimentalTitle, 446,
                 chkGameSpeed,
                 chkSpellHealing10x,
                 chkSpellResurrection,
                 chkGeneralSkills,
                 chkLeaderGlory,
                 chkBalance,
-                chkRangedAccuracy);
+                chkCiviProduce20);
             ConfigureSettingsCard(pnlSwitchesCard, lblSwitchesTitle, 638,
                 chkFreeProd,
                 chkFreeUpgrade,

@@ -437,9 +437,12 @@
   `w*_emit ×2` (rounded; 16.16 fixed vertical launch speed — bows 7208960,
   spear thrower 6356992, catapults 10158080 / 9306112). All original emit
   values fit their cell widths up to ×10 (verified against the full objdef).
-- partgeo: the six projectile rows (`Wurfspeer00`, `Wurfaxt00`,
-  `Katapultstein00`, `Katapultstein01`, `Pfeil00`, `Spiess00`) get `ysub`
-  (gravity, column 12) ×2. Patcher aborts unless exactly six rows match.
+- partgeo: the seven projectile rows (`Wurfspeer00`, `Wurfaxt00`,
+  `Katapultstein00`, `Katapultstein01`, `Pfeil00`, `Spiess00`, `Fackel`) get
+  `ysub` (gravity, column 12) ×2. `Fackel` is the ordinary unit building-torch
+  projectile; synchronizing its original `8126464` gravity with the torch
+  `w4_emit=9830400` prevents overshoot. Patcher aborts unless exactly seven
+  rows match.
 - Same-factor scaling keeps landing point and flight time unchanged while the
   arc apex (≈ emit²/(2·ysub)) rises by the same factor (bows ≈68 → ≈136
   height units). The factor lives in `ObjdefPatcher.ArcEmitMultiplier`
@@ -456,18 +459,23 @@
 - Status: implemented, unit/integration tested, runtime verified (at ×10);
   promoted out of the Experimental UI group into Resource & Combat Upgrades.
 
-### Ranged Accuracy Boost (RangedAccuracy)
+### Ranged Accuracy Fix (folded into RangedRange3x)
 
+- Now driven entirely by `RangedRange3x`. There is no separate toggle or
+  feature ID; accuracy is treated as a fix for the "shots miss at the longer
+  range" problem, so tripling the range and correcting the hit go together.
 - Files: `SYSTEM/DATA_MP/DEFAULTS/objdef.dau` + `SYSTEM/cl_epara.ini`
 - objdef: projectile weapon slots (same akti/emit rule as above) get
   `w*_drad ×2` (impact damage radius — arrows 45→90, artillery 80/120→160/240).
+  Applied to every projectile weapon row, all factions.
 - cl_epara: `[ProjectileVarianceOnMove]` 0.5 → 0.0 (random lead-aim scatter
   against moving targets removed; stationary targets never had scatter).
 - Hits are purely geometric (no to-hit roll): a damage zone of radius
   `w*_drad` spawns at the projectile landing point, so doubling the radius
   converts near-misses into hits.
-- Detection: objdef drad comparison only (epara is written alongside).
-- Status: implemented, unit/integration tested; runtime verification pending.
+- Detection: `RangedRange3x` is detected by range (Roman archer ×3); the
+  accuracy edits are written and reverted alongside it.
+- Status: implemented, unit/integration tested, runtime confirmed working.
 
 ## Candidate
 

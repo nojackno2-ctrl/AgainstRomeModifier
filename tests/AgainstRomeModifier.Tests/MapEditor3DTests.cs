@@ -263,6 +263,27 @@ public sealed class MapEditor3DTests
     }
 
     [Fact]
+    public void Original_4u89_family_bakes_a_b9_island_inside_homogeneous_b8_terrain()
+    {
+        string gamePath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../遊戲原始檔案"));
+        string archivePath = Path.Combine(gamePath, "floortex.dat");
+        if (!File.Exists(archivePath)) return;
+
+        using var library = new FloorTextureLibrary(archivePath);
+        var catalog = new FloorMaterialCatalog(library);
+        string[] source = Enumerable.Repeat("4B8___50", 9).ToArray();
+        NativeTerrainImportResult import = TerrainBlendAuthoringMap.Import(3, source, catalog, "B8");
+        var session = new TerrainBlendEditSession(import, source, catalog);
+
+        TerrainBlendPaintResult result = session.PaintCircle(1.5f, 1.5f, .76f, "B9");
+
+        Assert.True(result.Succeeded, string.Join("; ", result.Issues.Select(issue => $"({issue.TileX},{issue.TileY}) [{string.Join(',', issue.CornerMaterialIds)}]")));
+        Assert.NotEmpty(result.TextureChanges);
+        Assert.Contains(session.CurrentTextures, texture => texture.StartsWith("4U89", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(session.CurrentTextures, texture => texture.StartsWith("4B9", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public void TerrainBlendAuthoringMap_paints_a_circle_and_reports_unbakeable_native_junctions()
     {
         var map = new TerrainBlendAuthoringMap(4, "B8");
@@ -305,6 +326,67 @@ public sealed class MapEditor3DTests
         Assert.Empty(conflicting.UnresolvedTileIndices);
         Assert.NotEmpty(conflicting.CornerConflicts);
         Assert.Contains(conflicting.CornerConflicts, issue => issue.MaterialVotes.ContainsKey("B8") && issue.MaterialVotes.ContainsKey("B9"));
+    }
+
+    [Fact]
+    public void TerrainBlendEditSession_keeps_corner_bake_undo_redo_and_reset_in_one_history()
+    {
+        FloorMaterialCatalog catalog = CompleteSyntheticTwoMaterialCatalog(includeThirdBase: false);
+        string[] source = Enumerable.Repeat("4B8___50", 9).ToArray();
+        NativeTerrainImportResult import = TerrainBlendAuthoringMap.Import(3, source, catalog, "B8");
+        var session = new TerrainBlendEditSession(import, source, catalog);
+
+        TerrainBlendPaintResult paint = session.PaintCircle(1.5f, 1.5f, .76f, "B9");
+        Assert.True(paint.Succeeded);
+        Assert.NotEmpty(paint.TextureChanges);
+        Assert.True(session.CommitStroke());
+        Assert.True(session.IsDirty);
+
+        IReadOnlyList<TerrainTextureChange> undo = Assert.IsAssignableFrom<IReadOnlyList<TerrainTextureChange>>(session.Undo());
+        Assert.NotEmpty(undo);
+        Assert.Equal(source, session.CurrentTextures);
+        Assert.False(session.IsDirty);
+
+        IReadOnlyList<TerrainTextureChange> redo = Assert.IsAssignableFrom<IReadOnlyList<TerrainTextureChange>>(session.Redo());
+        Assert.NotEmpty(redo);
+        Assert.True(session.IsDirty);
+        Assert.Contains(session.CurrentTextures, texture => !texture.Equals("4B8___50", StringComparison.OrdinalIgnoreCase));
+
+        IReadOnlyList<TerrainTextureChange> reset = session.ResetToBaseline();
+        Assert.NotEmpty(reset);
+        Assert.Equal(source, session.CurrentTextures);
+        Assert.False(session.IsDirty);
+        Assert.False(session.CanUndo);
+    }
+
+    [Fact]
+    public void TerrainBlendEditSession_rejects_an_unsupported_junction_and_rolls_back_the_whole_pending_stroke()
+    {
+        FloorMaterialCatalog catalog = CompleteSyntheticTwoMaterialCatalog(includeThirdBase: true);
+        string[] source = Enumerable.Repeat("4B8___50", 16).ToArray();
+        NativeTerrainImportResult import = TerrainBlendAuthoringMap.Import(4, source, catalog, "B8");
+        var session = new TerrainBlendEditSession(import, source, catalog);
+
+        Assert.True(session.PaintCircle(1.5f, 1.5f, .76f, "B9").Succeeded);
+        TerrainBlendPaintResult rejected = session.PaintCircle(2.5f, 1.5f, .76f, "BC");
+
+        Assert.False(rejected.Succeeded);
+        Assert.NotEmpty(rejected.Issues);
+        Assert.NotEmpty(rejected.TextureChanges);
+        Assert.Equal(source, session.CurrentTextures);
+        Assert.False(session.IsDirty);
+        Assert.False(session.CommitStroke());
+        Assert.False(session.CanUndo);
+    }
+
+    private static FloorMaterialCatalog CompleteSyntheticTwoMaterialCatalog(bool includeThirdBase)
+    {
+        var names = new List<string> { "4B8___50", "4B9___50" };
+        if (includeThirdBase) names.Add("4BC___50");
+        foreach (string pair in new[] { "89", "98" })
+        foreach (int shape in new[] { 1, 2, 3, 4, 6, 7, 8, 9 })
+            names.Add($"4U{pair}__{shape}0");
+        return new FloorMaterialCatalog(names);
     }
 
     [Fact]

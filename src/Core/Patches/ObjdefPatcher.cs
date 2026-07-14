@@ -14,7 +14,6 @@ public sealed record ObjdefOptions(
     bool SpellEntireMap,
     bool SpellRange3x,
     bool ProjectileArcHeight,
-    bool RangedAccuracy,
     IReadOnlyDictionary<string, double[]> UnitStats);
 
 public static class ObjdefPatcher {
@@ -28,7 +27,8 @@ public static class ObjdefPatcher {
     /// 機制已於 2026-07-12 以 10 倍實機驗證成功，正式版依使用者要求採 2 倍。
     /// 原版所有拋射 emit 值 ×10 以內皆不超出欄位寬度（已對全 objdef 驗證）。</summary>
     internal const double ArcEmitMultiplier = 2.0;
-    /// <summary>遠程命中強化倍率：w*_drad（落點傷害半徑）乘以此倍率，讓近失彈也算命中。</summary>
+    /// <summary>遠程命中修正倍率：w*_drad（落點傷害半徑）乘以此倍率，讓近失彈也算命中；
+    /// 已整合為射程 3 倍（RangedRange3x）的一部分，用來修正拉遠射程後打不中的問題。</summary>
     internal const int AccuracyDradMultiplier = 2;
 
     public static byte[] GetPatchedBytes(byte[] original, ObjdefOptions options) {
@@ -55,7 +55,7 @@ public static class ObjdefPatcher {
                 DivideOriginalInt(cols, source, 73, 10, name, "建造時間");
                 DivideOriginalInt(cols, source, 74, 10, name, "升級時間");
             }
-            if (options.ProjectileArcHeight || options.RangedAccuracy) PatchProjectileWeapons(cols, source, name, options);
+            if (options.ProjectileArcHeight || options.RangedRange3x) PatchProjectileWeapons(cols, source, name, options);
             if (TroopConfig.UnitMeta.TryGetValue(name, out var meta) && options.UnitStats.TryGetValue(name, out double[]? stats) && stats.Length >= 8) PatchUnit(cols, source, name, meta.UnitType, stats, options);
             else if (name is "FigZivMan00_Zivilist" or "FigZivWei00_Zivilistin" or "FigTiePac00_Packpferd") {
                 double civMult = 1.0;
@@ -160,7 +160,7 @@ public static class ObjdefPatcher {
 
     /// <summary>拋射武器判定：啟用 (akti=1) 且 w*_emit &gt; 0（垂直初速只有拋射物才有值）。
     /// ProjectileArcHeight 將 emit 乘 ArcEmitMultiplier（重力由 PartgeoPatcher 同倍率放大，弧頂增高、落點不變）；
-    /// RangedAccuracy 將 w*_drad（落點傷害半徑）乘 AccuracyDradMultiplier。</summary>
+    /// RangedRange3x 將 w*_drad（落點傷害半徑）乘 AccuracyDradMultiplier（命中修正，已整合進射程 3 倍）。</summary>
     private static void PatchProjectileWeapons(string[] cols, string[] source, string name, ObjdefOptions options) {
         for (int w = 1; w <= 8; w++) {
             int active = (int)ObjdefIndex.Weapon1Akti + (w - 1) * 8;
@@ -169,7 +169,7 @@ public static class ObjdefPatcher {
             if (emit >= source.Length || source[active].Trim() != "1") continue;
             if (!long.TryParse(source[emit].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out long emitValue) || emitValue <= 0) continue;
             if (options.ProjectileArcHeight) SetValue(cols, emit, ((long)Math.Round(emitValue * ArcEmitMultiplier)).ToString(CultureInfo.InvariantCulture), name, "拋射垂直初速");
-            if (options.RangedAccuracy && drad < source.Length && int.TryParse(source[drad].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int dradValue) && dradValue > 0)
+            if (options.RangedRange3x && drad < source.Length && int.TryParse(source[drad].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int dradValue) && dradValue > 0)
                 SetValue(cols, drad, checked(dradValue * AccuracyDradMultiplier).ToString(CultureInfo.InvariantCulture), name, "落點傷害半徑");
         }
     }

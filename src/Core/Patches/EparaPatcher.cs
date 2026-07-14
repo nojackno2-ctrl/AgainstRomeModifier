@@ -5,7 +5,7 @@ namespace AgainstRomeModifier.Core.Patches;
 /// <summary>
 /// cl_epara.ini 補丁：拋射物瞄準參數。
 /// [ProjectileVarianceOnMove] 是對移動目標預判提前量的隨機散布倍率（0.5 = 最多 0.5×3×移動速度的偏差）；
-/// 遠程命中強化將其設為 0.0，預判完全精準。詳見 docs/reverse-engineering/projectile-ballistics.md。
+/// 射程 3 倍（命中修正）將其設為 0.0，預判完全精準。詳見 docs/reverse-engineering/projectile-ballistics.md。
 /// </summary>
 public static class EparaPatcher {
     internal const string VarianceSection = "[ProjectileVarianceOnMove]";

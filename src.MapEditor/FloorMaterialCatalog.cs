@@ -244,17 +244,17 @@ internal sealed class FloorMaterialCatalog
             return (id, color: bitmap is null ? ((double R, double G, double B)?)null : MeanColor(bitmap, 0, 0, bitmap.Width, bitmap.Height));
         }).Where(item => item.color is not null).Select(item => (item.id, color: item.color!.Value)).ToArray();
         if (references.Length != materialIds.Count) return null;
-        int halfWidth = transition.Width / 2, halfHeight = transition.Height / 2;
-        (int X, int Y, int Width, int Height)[] quadrants =
+        int cornerWidth = Math.Max(1, transition.Width / 4), cornerHeight = Math.Max(1, transition.Height / 4);
+        (int X, int Y, int Width, int Height)[] cornerSamples =
         [
-            (0, 0, halfWidth, halfHeight),
-            (halfWidth, 0, transition.Width - halfWidth, halfHeight),
-            (halfWidth, halfHeight, transition.Width - halfWidth, transition.Height - halfHeight),
-            (0, halfHeight, halfWidth, transition.Height - halfHeight)
+            (0, 0, cornerWidth, cornerHeight),
+            (transition.Width - cornerWidth, 0, cornerWidth, cornerHeight),
+            (transition.Width - cornerWidth, transition.Height - cornerHeight, cornerWidth, cornerHeight),
+            (0, transition.Height - cornerHeight, cornerWidth, cornerHeight)
         ];
-        return quadrants.Select(quadrant =>
+        return cornerSamples.Select(sampleArea =>
         {
-            var sample = MeanColor(transition, quadrant.X, quadrant.Y, quadrant.Width, quadrant.Height);
+            var sample = MeanColor(transition, sampleArea.X, sampleArea.Y, sampleArea.Width, sampleArea.Height);
             return references.MinBy(reference => ColorDistanceSquared(sample, reference.color)).id;
         }).ToArray();
     }

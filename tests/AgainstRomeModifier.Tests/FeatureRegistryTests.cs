@@ -16,7 +16,7 @@ public sealed class FeatureRegistryTests
     [Fact]
     public void PatchProfile_supports_named_and_registry_values()
     {
-        var profile = new PatchProfile { FocusLoss = true, GameSpeed = 3, Balance = true, SpellDamage5x = true, SpellHealing10x = true, SpellResurrection = true, GeneralSkills = true, LeaderGlory = true, RangedRange3x = true, UnitMovementSpeed2x = true, SpellEntireMap = true, SpellRange3x = true, ProjectileArcHeight = true, RangedAccuracy = true, RomanEndless = true };
+        var profile = new PatchProfile { FocusLoss = true, GameSpeed = 3, Balance = true, SpellDamage5x = true, SpellHealing10x = true, SpellResurrection = true, GeneralSkills = true, LeaderGlory = true, RangedRange3x = true, UnitMovementSpeed2x = true, SpellEntireMap = true, SpellRange3x = true, ProjectileArcHeight = true, RomanEndless = true };
         profile.EndlessAiModules["M4"] = true;
         profile.NormalizeCompositeValues();
 
@@ -32,7 +32,6 @@ public sealed class FeatureRegistryTests
         Assert.True(profile.GetBool("SpellEntireMap"));
         Assert.True(profile.GetBool("SpellRange3x"));
         Assert.True(profile.GetBool("ProjectileArcHeight"));
-        Assert.True(profile.GetBool("RangedAccuracy"));
         Assert.True(profile.GetBool("RomanEndless"));
         Assert.True(profile.GetBool("EndlessAi.M4"));
         Assert.Equal(3, profile.GetInt("GameSpeed"));
@@ -41,7 +40,7 @@ public sealed class FeatureRegistryTests
     [Fact]
     public void Registry_plan_and_detect_round_trip_profile_values()
     {
-        var source = new PatchProfile { FocusLoss = true, GameSpeed = 4, Balance = true, SpellDamage5x = true, SpellHealing10x = true, SpellResurrection = true, GeneralSkills = true, LeaderGlory = true, RangedRange3x = true, UnitMovementSpeed2x = true, SpellEntireMap = true, SpellRange3x = true, ProjectileArcHeight = true, RangedAccuracy = true, RomanEndless = true };
+        var source = new PatchProfile { FocusLoss = true, GameSpeed = 4, Balance = true, SpellDamage5x = true, SpellHealing10x = true, SpellResurrection = true, GeneralSkills = true, LeaderGlory = true, RangedRange3x = true, UnitMovementSpeed2x = true, SpellEntireMap = true, SpellRange3x = true, ProjectileArcHeight = true, RomanEndless = true };
         var plan = new PatchContext();
         foreach (IFeatureModule module in FeatureRegistry.All) module.Plan(plan, source.Get(module.Id));
 
@@ -61,7 +60,6 @@ public sealed class FeatureRegistryTests
         Assert.True(roundTrip.SpellEntireMap);
         Assert.True(roundTrip.SpellRange3x);
         Assert.True(roundTrip.ProjectileArcHeight);
-        Assert.True(roundTrip.RangedAccuracy);
         Assert.True(roundTrip.RomanEndless);
         Assert.Equal(4, roundTrip.GameSpeed);
     }

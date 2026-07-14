@@ -95,6 +95,8 @@ namespace AgainstRomeModifier.Core.Services
             bool exeModified = false;
             exeModified = ExeFeaturePatcher.Apply(exeBytes, options.FocusLoss, options.VillageBuildRange,
                 options.NoSpellAltar, options.RomanEndless, options.GameSpeed, _logger);
+            if (ExeFeaturePatcher.ApplyCiviProduce20(exeBytes, options.CiviProduce20, _logger))
+                exeModified = true;
             if (exeModified)
             {
                 patchedFiles[exePath] = exeBytes;
@@ -104,9 +106,9 @@ namespace AgainstRomeModifier.Core.Services
             byte[] clBytes = IniFeaturePatcher.BuildClScript(backupManager, options);
             patchedFiles[Path.Combine(gamePath, @"SYSTEM\cl_script.ini")] = clBytes;
 
-            // C. cl_epara.ini — 遠程命中強化（拋射預判散布歸零）；未啟用時還原為原版備份
+            // C. cl_epara.ini — 遠程命中修正（拋射預判散布歸零），已整合進射程 3 倍；未啟用時還原為原版備份
             patchedFiles[Path.Combine(gamePath, @"SYSTEM\cl_epara.ini")] =
-                EparaPatcher.GetPatchedBytes(backupManager.GetBackupBytes("SYSTEM/cl_epara.ini"), options.RangedAccuracy);
+                EparaPatcher.GetPatchedBytes(backupManager.GetBackupBytes("SYSTEM/cl_epara.ini"), options.RangedRange3x);
 
             // C2. partgeo.dau — 拋射彈道增高（重力 ysub 與 objdef w*_emit 同倍率）；未啟用時還原為原版備份。
             // 舊備份可能沒有 partgeo.dau（不在內嵌 Backup.zip、且自動補齊失敗時）：
@@ -148,6 +150,8 @@ namespace AgainstRomeModifier.Core.Services
             }
             orchestrator.ApplyMandatoryRepair(gamePath);
             FoodHealingFeature.Apply(gamePath, options.FoodHealing10x, backupManager, orchestrator, _logger);
+            // 清理：早期版本曾把「一次生產 20」誤打到 ak_npc.bci（AI 路徑），一律還原為原版。
+            CiviProduce20Feature.RestoreAkNpcOriginal(gamePath, orchestrator);
 
             // Dry Run 順利結束，進行實體檔案寫入與交易範圍
             foreach (var kvp in patchedFiles)
@@ -180,6 +184,8 @@ namespace AgainstRomeModifier.Core.Services
                 foodHealingEnabled = false;
             }
             FoodHealingFeature.Apply(gamePath, foodHealingEnabled, backupManager, orchestrator, _logger);
+            // 清理早期誤寫入 ak_npc.bci 的 AI 生產數量（真正的功能改為 EXE 補丁，玩家專屬）。
+            CiviProduce20Feature.RestoreAkNpcOriginal(gamePath, orchestrator);
             orchestrator.SaveAll(gamePath, rollback);
         }
 
@@ -236,13 +242,18 @@ namespace AgainstRomeModifier.Core.Services
 
             if (restoreStats)
             {
+                string exePath = Path.Combine(gamePath, @"Against_Rome.exe");
+                byte[] exeBytes = patchedFiles.TryGetValue(exePath, out byte[]? pendingExe)
+                    ? pendingExe
+                    : File.ReadAllBytes(exePath);
+                bool exeChanged = false;
                 if (!restoreCompat)
-                {
-                    string exePath = Path.Combine(gamePath, @"Against_Rome.exe");
-                    byte[] exeBytes = File.ReadAllBytes(exePath);
-                    if (ExeFeaturePatcher.ApplyRomanEndless(exeBytes, false, _logger))
-                        patchedFiles[exePath] = exeBytes;
-                }
+                    exeChanged |= ExeFeaturePatcher.ApplyRomanEndless(exeBytes, false, _logger);
+                // CiviProduce20 屬 Stats：無論是否同時還原 Compat，都要在此還原玩家生產按鈕補丁。
+                exeChanged |= ExeFeaturePatcher.ApplyCiviProduce20(exeBytes, false, _logger);
+                if (exeChanged)
+                    patchedFiles[exePath] = exeBytes;
+
                 RestoreStatsFiles(gamePath, backupManager ?? throw new ArgumentNullException(nameof(backupManager)), rollback);
             }
 
@@ -250,6 +261,7 @@ namespace AgainstRomeModifier.Core.Services
             {
                 orchestrator ??= sharedOrchestrator ?? new EndlessAiOrchestrator();
                 FoodHealingFeature.Apply(gamePath, false, backupManager!, orchestrator, _logger);
+                CiviProduce20Feature.RestoreAkNpcOriginal(gamePath, orchestrator);
             }
 
             foreach (var kvp in patchedFiles)
