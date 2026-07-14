@@ -35,6 +35,12 @@ internal sealed class MapEditorForm : Form
     private readonly TrackBar _reliefScale = new() { Dock = DockStyle.Top, Minimum = 0, Maximum = 200, Value = 100, TickFrequency = 25 };
     private readonly ListView _sceneList = new() { Dock = DockStyle.Fill, View = View.Details, FullRowSelect = true, HeaderStyle = ColumnHeaderStyle.Nonclickable };
     private readonly Label _sceneSummary = new() { Dock = DockStyle.Top, Height = 54, Padding = new Padding(8), ForeColor = Color.Gainsboro };
+    private readonly NumericUpDown _sceneTeam = new() { Dock = DockStyle.Fill, Minimum = -1, Maximum = 15 };
+    private readonly NumericUpDown _sceneX = SceneCoordinateInput();
+    private readonly NumericUpDown _sceneY = SceneCoordinateInput();
+    private readonly NumericUpDown _sceneZ = SceneCoordinateInput();
+    private readonly Button _sceneApplyButton = new() { Dock = DockStyle.Fill, Height = 32, Text = "套用至待儲存", Enabled = false };
+    private readonly Button _sceneRestoreButton = new() { Dock = DockStyle.Fill, Height = 32, Text = "還原到本次開啟時", Enabled = false };
     private readonly Label _modeBanner = new() { Dock = DockStyle.Top, Height = 34, TextAlign = ContentAlignment.MiddleCenter };
     private readonly ToolStripStatusLabel _status = new() { Spring = true, TextAlign = ContentAlignment.MiddleLeft };
     private readonly ToolStripButton _saveButton = new("儲存") { Enabled = false };
@@ -45,6 +51,7 @@ internal sealed class MapEditorForm : Form
     private readonly ToolStripButton _resetTerrainButton = new("還原地表") { Enabled = false };
     private readonly ToolStripButton _view2dButton = new("2D 俯視") { CheckOnClick = true };
     private readonly ToolStripButton _view3dButton = new("3D 場景") { CheckOnClick = true, Checked = true };
+    private readonly ToolStripButton _3dDiagnosticsButton = new("3D 診斷") { Visible = false };
     private readonly ToolStripButton _mapMenuButton = new("地圖選單");
     private readonly ToolStripLabel _currentMapLabel = new();
     private GameMapInfo? _selected;
@@ -55,15 +62,21 @@ internal sealed class MapEditorForm : Form
     private FloorMaterial? _activeMaterial;
     private string?[] _terrainMaterialIds = Array.Empty<string?>();
     private IReadOnlyList<MapSceneObject> _sceneObjects = Array.Empty<MapSceneObject>();
+    private IReadOnlyList<MapSceneObject> _sceneOriginalObjects = Array.Empty<MapSceneObject>();
+    private IReadOnlyList<MapSceneObject> _sceneSavedObjects = Array.Empty<MapSceneObject>();
     private string[] _savedTextures = Array.Empty<string>();
     private bool _propertyDirty;
     private bool _loading;
     private float _heightMapStep = 4;
     private bool _allowClose;
+    private bool _sceneLoaded;
+    private string? _last3DDiagnostic;
 
     private bool TextureDirty() => _terrainHistory?.IsDirty == true;
 
-    private bool IsDirty => _propertyDirty || TextureDirty();
+    private bool SceneDirty() => _sceneLoaded && SdlSceneEditService.HasChanges(_sceneSavedObjects, _sceneObjects);
+
+    private bool IsDirty => _propertyDirty || TextureDirty() || SceneDirty();
 
     public MapEditorForm(string gamePath, GameMapInfo selectedMap)
     {
@@ -73,7 +86,7 @@ internal sealed class MapEditorForm : Form
         _gamePath = gamePath;
         _selected = selectedMap;
         _floorTextures = new FloorTextureLibrary(Path.Combine(gamePath, "floortex.dat"));
-        _floorMaterials = new FloorMaterialCatalog(_floorTextures.Names);
+        _floorMaterials = new FloorMaterialCatalog(_floorTextures);
         BuildInterface(); WireEvents();
         KeyPreview = true;
         _currentMapLabel.Text = $"目前地圖：{selectedMap.DisplayName ?? selectedMap.Id}（{selectedMap.Id}）";
@@ -89,7 +102,7 @@ internal sealed class MapEditorForm : Form
         commands.Items.AddRange(new ToolStripItem[] { _mapMenuButton, new ToolStripSeparator(), _currentMapLabel, new ToolStripSeparator(), _saveButton, _gamePreviewButton, new ToolStripSeparator(), _undoButton, _redoButton });
 
         var tools = new ToolStrip { GripStyle = ToolStripGripStyle.Hidden, Dock = DockStyle.Top, Padding = new Padding(8, 4, 8, 4), BackColor = Color.FromArgb(36, 40, 49), ForeColor = Color.White };
-        tools.Items.AddRange(new ToolStripItem[] { new ToolStripLabel("地表："), _textureTool, _resetTerrainButton, new ToolStripSeparator(), _view2dButton, _view3dButton });
+        tools.Items.AddRange(new ToolStripItem[] { new ToolStripLabel("地表："), _textureTool, _resetTerrainButton, new ToolStripSeparator(), _view2dButton, _view3dButton, _3dDiagnosticsButton });
 
         var paletteHeader = SectionHeader("地表繪製");
         var palettePanel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(8), BackColor = Color.FromArgb(34, 38, 47) };
@@ -107,8 +120,14 @@ internal sealed class MapEditorForm : Form
         inspectorTabs.TabPages.Add(new TabPage("地表") { BackColor = Color.FromArgb(34, 38, 47) }); inspectorTabs.TabPages[0].Controls.Add(palettePanel);
         inspectorTabs.TabPages.Add(new TabPage("地圖屬性") { BackColor = Color.FromArgb(34, 38, 47) }); inspectorTabs.TabPages[1].Controls.Add(properties);
         var scenePanel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(8), BackColor = Color.FromArgb(34, 38, 47) };
-        _sceneList.Columns.Add("類型", 90); _sceneList.Columns.Add("編號", 90); _sceneList.Columns.Add("隊伍", 70);
-        scenePanel.Controls.Add(_sceneList); scenePanel.Controls.Add(_sceneSummary);
+        _sceneList.Columns.Add("類型", 65); _sceneList.Columns.Add("物件", 170); _sceneList.Columns.Add("隊伍", 65); _sceneList.Columns.Add("來源", 120);
+        var sceneEditor = new TableLayoutPanel { Dock = DockStyle.Bottom, Height = 232, ColumnCount = 2, Padding = new Padding(4), BackColor = Color.FromArgb(40, 45, 55) };
+        sceneEditor.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 74)); sceneEditor.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        var sceneWarning = new Label { AutoSize = true, MaximumSize = new Size(250, 0), Text = "SDL 驗證功能：只修改自製地圖既有物件的隊伍與相對座標。請先選取物件。", ForeColor = Color.Khaki };
+        sceneEditor.Controls.Add(sceneWarning, 0, 0); sceneEditor.SetColumnSpan(sceneWarning, 2);
+        AddSceneField(sceneEditor, 1, "隊伍", _sceneTeam); AddSceneField(sceneEditor, 2, "相對 X", _sceneX); AddSceneField(sceneEditor, 3, "相對 Y", _sceneY); AddSceneField(sceneEditor, 4, "相對 Z", _sceneZ);
+        sceneEditor.Controls.Add(_sceneApplyButton, 0, 5); sceneEditor.Controls.Add(_sceneRestoreButton, 1, 5);
+        scenePanel.Controls.Add(_sceneList); scenePanel.Controls.Add(sceneEditor); scenePanel.Controls.Add(_sceneSummary);
         inspectorTabs.TabPages.Add(new TabPage("場景物件") { BackColor = Color.FromArgb(34, 38, 47) }); inspectorTabs.TabPages[2].Controls.Add(scenePanel);
 
         _canvasHost = new Panel { Dock = DockStyle.Fill, Padding = new Padding(8), BackColor = Color.FromArgb(20, 23, 29) };
@@ -119,12 +138,9 @@ internal sealed class MapEditorForm : Form
             _canvasHost.Controls.Add(_view3d);
             _view3d.BringToFront();
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            _view3dButton.Enabled = false;
-            _view3dButton.ToolTipText = "此電腦無法初始化離線 3D 場景。";
-            _modeBanner.Text = "離線 3D 場景無法初始化，已使用 2D 俯視。";
-            _modeBanner.BackColor = Color.FromArgb(86, 69, 40);
+            Disable3DView("無法建立 OpenGL 3D 控制項。", ex);
         }
         var overviewHost = new Panel { Width = 190, Height = 190, Anchor = AnchorStyles.Right | AnchorStyles.Bottom, Padding = new Padding(5), BackColor = Color.FromArgb(55, 61, 72) };
         overviewHost.Controls.Add(_overview); overviewHost.Controls.Add(new Label { Text = "地圖概覽", Dock = DockStyle.Top, Height = 25, TextAlign = ContentAlignment.MiddleCenter, ForeColor = Color.White, BackColor = Color.FromArgb(42, 47, 58) });
@@ -170,21 +186,25 @@ internal sealed class MapEditorForm : Form
         _reliefScale.ValueChanged += (_, _) => _view3d?.SetReliefScale(_reliefScale.Value / 100f);
         _waterColorButton.Click += (_, _) => ChooseWaterColor();
         _waterLevel.ValueChanged += (_, _) => UpdateWaterPreview();
-        _sceneList.SelectedIndexChanged += (_, _) => FocusSelectedSceneObject();
+        _sceneList.SelectedIndexChanged += (_, _) => SelectSceneObject();
+        _sceneApplyButton.Click += (_, _) => ApplySelectedSceneObjectEdit();
+        _sceneRestoreButton.Click += (_, _) => RestoreOpeningSceneObjects();
         _canvas.TexturePainted += (_, e) => PaintTexture(e);
         _canvas.TextureSampled += (_, e) => SelectSampledTexture(e.Texture);
         _canvas.StrokeEnded += (_, _) => CommitStroke();
         _canvas.TileHovered += (_, e) => _status.Text = $"格子 ({e.X}, {e.Y})　{FriendlyTextureName(e.Texture)}";
         if (_view3d is not null)
         {
+            Map3DViewControl view3d = _view3d;
             _view3d.TexturePainted += (_, e) => PaintTexture(e);
             _view3d.TextureSampled += (_, e) => SelectSampledTexture(e.Texture);
             _view3d.StrokeEnded += (_, _) => CommitStroke();
             _view3d.TileHovered += (_, e) => _status.Text = $"格子 ({e.X}, {e.Y})　{FriendlyTextureName(e.Texture)}";
-            _view3d.InitializationFailed += (_, _) => BeginInvoke(() => Disable3DView());
+            _view3d.InitializationFailed += (_, ex) => BeginInvoke(() => Disable3DView(view3d.LastFailureReason ?? "OpenGL 3.3 初始化失敗。", ex));
         }
         _view2dButton.Click += (_, _) => SetActiveView(use3D: false);
         _view3dButton.Click += (_, _) => SetActiveView(use3D: true);
+        _3dDiagnosticsButton.Click += (_, _) => Show3DDiagnostics();
         _mapMenuButton.Click += (_, _) => ReturnToMenu();
         _textureTool.Click += (_, _) => LoadEditingScene();
         _resetTerrainButton.Click += (_, _) => ResetTerrain();
@@ -221,6 +241,7 @@ internal sealed class MapEditorForm : Form
             if (TryParseGameColor(_waterColor.Text, out Color waterColor)) { _waterColorButton.BackColor = waterColor; _waterColorButton.ForeColor = waterColor.GetBrightness() < .45f ? Color.White : Color.Black; }
             _dayStart.Value = ParseDecimal(ini.GetValue("DayStartTime"), _dayStart); _dayEnd.Value = ParseDecimal(ini.GetValue("DayEndTime"), _dayEnd); _rain.Checked = ini.GetValue("RainDropsOnWater") == "1";
             _texturesDocument = BodenTexturesDocument.Load(Path.Combine(map, "boden.txt")); _savedTextures = _texturesDocument.Textures.ToArray(); _terrainHistory = new TerrainEditHistory(_texturesDocument.Dimension, _savedTextures); RebuildTerrainMaterialIds(); _propertyDirty = false;
+            _sceneObjects = SdlSceneCatalog.LoadDirectory(map); _sceneOriginalObjects = _sceneObjects.ToArray(); _sceneSavedObjects = _sceneObjects.ToArray(); _sceneLoaded = true;
             LoadPalette(); LoadEditingScene(); UpdateEditorState();
         }
         catch (Exception ex) { ShowError(ex); }
@@ -232,7 +253,6 @@ internal sealed class MapEditorForm : Form
         if (_selected is null) return;
         _textureTool.Checked = true;
         string minimapPath = Path.Combine(_selected.DirectoryPath, "minimap.bmp");
-        _sceneObjects = SdlSceneCatalog.LoadDirectory(_selected.DirectoryPath);
         LoadSceneList(_sceneObjects);
         if (!TryParseGameColor(_waterColor.Text, out Color sceneWaterColor)) sceneWaterColor = Color.SteelBlue;
         bool hasRealTextures = _texturesDocument is not null && _floorTextures is not null && _canvas.LoadTextures(_texturesDocument.Dimension, _texturesDocument.Textures, _savedTextures, _selected.DirectoryPath, _floorTextures, _sceneObjects, (float)_waterLevel.Value, _heightMapStep, sceneWaterColor, preserveView);
@@ -245,7 +265,7 @@ internal sealed class MapEditorForm : Form
             _view3d.ShowObjects = _showObjects.Checked;
             _view3d.EditingEnabled = _selected.IsCustom;
             try { has3DScene = _view3d.LoadTextures(_texturesDocument.Dimension, _texturesDocument.Textures, _savedTextures, _selected.DirectoryPath, _floorTextures, _sceneObjects, (float)_waterLevel.Value, _heightMapStep, sceneWaterColor); _view3d.SetReliefScale(_reliefScale.Value / 100f); }
-            catch { Disable3DView(); }
+            catch (Exception ex) { Disable3DView("載入 3D 地圖資源失敗。", ex); }
         }
         Image? oldOverview = _overview.Image; _overview.Image = null; oldOverview?.Dispose();
         if (File.Exists(minimapPath)) using (var source = new Bitmap(minimapPath)) _overview.Image = new Bitmap(source);
@@ -256,7 +276,19 @@ internal sealed class MapEditorForm : Form
                 : (_selected.IsCustom ? $"離線地圖場景 — 真實地表、地勢與 {_canvas.SceneObjectCount} 個場景物件；滾輪縮放，中鍵平移" : $"離線地圖場景 — 真實地表、地勢與 {_canvas.SceneObjectCount} 個場景物件；原廠地圖僅供瀏覽"))
             : "找不到 floortex.dat，目前只能顯示簡化地表；請選擇完整的遊戲資料夾";
         _modeBanner.BackColor = _canvas.EditingEnabled ? Color.FromArgb(38, 95, 72) : Color.FromArgb(86, 69, 40);
-        if (!has3DScene) SetActiveView(use3D: false);
+        if (!has3DScene)
+        {
+            if (_view3d is not null && _view3dButton.Enabled) Disable3DView(_view3d.LastFailureReason ?? "3D 場景缺少必要資源。");
+            else
+            {
+                SetActiveView(use3D: false);
+                if (_last3DDiagnostic is not null)
+                {
+                    _modeBanner.Text = "3D 無法啟用；請按「3D 診斷」查看實際原因。";
+                    _modeBanner.BackColor = Color.FromArgb(86, 69, 40);
+                }
+            }
+        }
         UpdateStatus();
     }
 
@@ -330,6 +362,48 @@ internal sealed class MapEditorForm : Form
         _view3d?.FocusTile(tileX, tileZ);
     }
 
+    private void SelectSceneObject()
+    {
+        bool selected = _sceneList.SelectedItems.Count == 1 && _sceneList.SelectedItems[0].Tag is MapSceneObject;
+        _sceneApplyButton.Enabled = selected && _selected?.IsCustom == true;
+        if (!selected || _sceneList.SelectedItems[0].Tag is not MapSceneObject item) return;
+        _sceneTeam.Value = Math.Clamp(item.Team, (int)_sceneTeam.Minimum, (int)_sceneTeam.Maximum);
+        _sceneX.Value = ClampSceneCoordinate(item.LocalX, _sceneX);
+        _sceneY.Value = ClampSceneCoordinate(item.LocalY, _sceneY);
+        _sceneZ.Value = ClampSceneCoordinate(item.LocalZ, _sceneZ);
+        FocusSelectedSceneObject();
+    }
+
+    private void ApplySelectedSceneObjectEdit()
+    {
+        if (_selected?.IsCustom != true || _sceneList.SelectedItems.Count != 1 || _sceneList.SelectedItems[0].Tag is not MapSceneObject selected) return;
+        int index = _sceneObjects.ToList().FindIndex(item => SceneKey(item) == SceneKey(selected));
+        if (index < 0) return;
+        float localX = (float)_sceneX.Value, localY = (float)_sceneY.Value, localZ = (float)_sceneZ.Value;
+        MapSceneObject updated = selected with
+        {
+            Team = (int)_sceneTeam.Value,
+            WorldX = selected.WorldX + localX - selected.LocalX,
+            WorldY = selected.WorldY + localY - selected.LocalY,
+            WorldZ = selected.WorldZ + localZ - selected.LocalZ,
+            LocalX = localX,
+            LocalY = localY,
+            LocalZ = localZ
+        };
+        MapSceneObject[] objects = _sceneObjects.ToArray(); objects[index] = updated; _sceneObjects = objects;
+        LoadEditingScene(preserveView: true);
+        UpdateEditorState();
+    }
+
+    private void RestoreOpeningSceneObjects()
+    {
+        if (_selected?.IsCustom != true || !SdlSceneEditService.HasChanges(_sceneOriginalObjects, _sceneObjects)) return;
+        if (MessageBox.Show(this, "要將所有待儲存的 SDL 隊伍與位置還原到本次開啟地圖時的值嗎？\n還原後仍需按「儲存」才會寫回自製地圖。", "還原 SDL 驗證變更", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+        _sceneObjects = _sceneOriginalObjects.ToArray();
+        LoadEditingScene(preserveView: true);
+        UpdateEditorState();
+    }
+
     private bool SaveMap(bool showSuccess)
     {
         if (_selected is null || !_selected.IsCustom) return false;
@@ -343,11 +417,12 @@ internal sealed class MapEditorForm : Form
             var ini = BodenIniDocument.Load(Path.Combine(map, "boden.ini")); ini.SetValue("Waterlevel", _waterLevel.Value.ToString()); ini.SetValue("WaterColor", _waterColor.Text.Trim());
             ini.SetValue("WaterWarpShift", _waterWarpShift.Value.ToString()); ini.SetValue("WaterBumpAmplitude", _waterBumpAmplitude.Value.ToString()); ini.SetValue("WaterBumpFrequency", _waterBumpFrequency.Value.ToString()); ini.SetValue("FlashPropability", _flashProbability.Value.ToString());
             ini.SetValue("DayStartTime", _dayStart.Value.ToString()); ini.SetValue("DayEndTime", _dayEnd.Value.ToString()); ini.SetValue("RainDropsOnWater", _rain.Checked ? "1" : "0"); ini.Save(rollback);
+            SdlSceneEditService.SaveChanges(map, _sceneSavedObjects, _sceneObjects, rollback);
             _texturesDocument?.Save(rollback);
             byte[]? minimap = _canvas.RenderMinimapBmp();
             if (minimap is not null) AgainstRomeModifier.Core.Services.SafeFileWriter.WriteAllBytes(Path.Combine(map, "minimap.bmp"), minimap, rollback);
             rollback.Commit();
-            _terrainHistory?.CommitBaseline(); _savedTextures = _terrainHistory?.Current.ToArray() ?? _texturesDocument?.Textures.ToArray() ?? Array.Empty<string>(); _propertyDirty = false;
+            _terrainHistory?.CommitBaseline(); _savedTextures = _terrainHistory?.Current.ToArray() ?? _texturesDocument?.Textures.ToArray() ?? Array.Empty<string>(); _sceneSavedObjects = _sceneObjects.ToArray(); _propertyDirty = false;
             _canvas.CommitBaseline(); _view3d?.CommitBaseline();
             RefreshOverview();
             UpdateEditorState();
@@ -444,6 +519,7 @@ internal sealed class MapEditorForm : Form
     private void UpdateEditorState()
     {
         bool editable = _selected?.IsCustom == true; _saveButton.Enabled = editable && IsDirty; _gamePreviewButton.Enabled = _selected is not null; _undoButton.Enabled = editable && _terrainHistory?.CanUndo == true; _redoButton.Enabled = editable && _terrainHistory?.CanRedo == true; _resetTerrainButton.Enabled = editable && _texturesDocument is not null && TextureDirty();
+        _sceneApplyButton.Enabled = editable && _sceneList.SelectedItems.Count == 1; _sceneRestoreButton.Enabled = editable && _sceneLoaded && SdlSceneEditService.HasChanges(_sceneOriginalObjects, _sceneObjects);
         foreach (Control control in EditablePropertyControls()) control.Enabled = editable;
         _palette.Enabled = editable; UpdateStatus();
     }
@@ -456,13 +532,46 @@ internal sealed class MapEditorForm : Form
         if (_view3d is not null) _view3d.Visible = use3D;
         _modeBanner.BringToFront();
     }
-    private void Disable3DView()
+    private void Disable3DView(string reason, Exception? exception = null)
     {
+        _last3DDiagnostic = Build3DDiagnostic(reason, exception);
         _view3dButton.Enabled = false;
-        _view3dButton.ToolTipText = "此電腦無法初始化離線 3D 場景。";
+        _view3dButton.ToolTipText = reason;
+        _3dDiagnosticsButton.Visible = true;
+        _3dDiagnosticsButton.ToolTipText = "查看 3D 場景無法啟用的實際原因";
         SetActiveView(use3D: false);
-        _modeBanner.Text = "離線 3D 場景無法初始化，已切換為 2D 俯視。";
+        _modeBanner.Text = "3D 無法啟用：" + reason + "　請按「3D 診斷」。";
         _modeBanner.BackColor = Color.FromArgb(86, 69, 40);
+    }
+
+    private string Build3DDiagnostic(string reason, Exception? exception)
+    {
+        string mapPath = _selected?.DirectoryPath ?? "（尚未選擇地圖）";
+        string floorPath = Path.Combine(_gamePath, "floortex.dat");
+        string heightPath = _selected is null ? "（尚未選擇地圖）" : Path.Combine(mapPath, "boden.bmp");
+        return string.Join(Environment.NewLine,
+            "Against Rome Map Editor — 3D 診斷",
+            $"原因：{reason}",
+            $"地圖：{_selected?.Id ?? "（無）"}",
+            $"floortex.dat：{(File.Exists(floorPath) ? "存在" : "缺少")} — {floorPath}",
+            $"boden.bmp：{(File.Exists(heightPath) ? "存在" : "缺少")} — {heightPath}",
+            $"OpenGL：{_view3d?.ContextDescription ?? "尚未建立 context"}",
+            $"作業系統：{Environment.OSVersion}",
+            $"程序架構：{System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture}",
+            exception is null ? "例外：無" : "例外：" + exception);
+    }
+
+    private void Show3DDiagnostics()
+    {
+        string diagnostic = _last3DDiagnostic ?? "目前沒有 3D 失敗診斷。";
+        using var dialog = new Form { Text = "3D 場景診斷", Width = 760, Height = 520, StartPosition = FormStartPosition.CenterParent, BackColor = BackColor, ForeColor = ForeColor };
+        var text = new TextBox { Dock = DockStyle.Fill, Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Both, WordWrap = false, Text = diagnostic, Font = new Font(FontFamily.GenericMonospace, 9F) };
+        var buttons = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 52, Padding = new Padding(10), FlowDirection = FlowDirection.RightToLeft };
+        var close = new Button { Text = "關閉", DialogResult = DialogResult.OK, Width = 90 };
+        var copy = new Button { Text = "複製診斷", Width = 110 };
+        copy.Click += (_, _) => { try { Clipboard.SetText(diagnostic); } catch { } };
+        buttons.Controls.Add(close); buttons.Controls.Add(copy); dialog.Controls.Add(text); dialog.Controls.Add(buttons); dialog.AcceptButton = close;
+        dialog.ShowDialog(this);
     }
     private void ResetTerrain()
     {
@@ -485,8 +594,8 @@ internal sealed class MapEditorForm : Form
         int buildingIndex = 0, unitIndex = 0, objectIndex = 0;
         foreach (MapSceneObject item in objects.OrderBy(x => x.Kind).ThenBy(x => x.Team))
         {
-            int index = item.Kind switch { "建築" => ++buildingIndex, "單位" => ++unitIndex, _ => ++objectIndex };
-            var row = new ListViewItem(item.Kind) { Tag = item }; row.SubItems.Add($"{index:000}"); row.SubItems.Add(item.Team > 0 ? $"隊伍 {item.Team}" : "中立"); _sceneList.Items.Add(row);
+            if (item.Kind == "建築") buildingIndex++; else if (item.Kind == "單位") unitIndex++; else objectIndex++;
+            var row = new ListViewItem(item.Kind) { Tag = item }; row.SubItems.Add(item.Name); row.SubItems.Add(item.Team >= 0 ? item.Team.ToString() : "-"); row.SubItems.Add($"{item.SourceFile} / {item.ObjectIndex:0000}"); _sceneList.Items.Add(row);
         }
         _sceneList.EndUpdate();
         _sceneSummary.Text = $"建築 {buildingIndex}　單位 {unitIndex}　其他 {objectIndex}\n點清單項目可跳到該物件位置。";
@@ -517,6 +626,10 @@ internal sealed class MapEditorForm : Form
     }
     private static Label SectionHeader(string text) => new() { Text = text, Dock = DockStyle.Top, Height = 34, Font = new Font("Microsoft JhengHei UI", 9F, FontStyle.Bold), Padding = new Padding(4, 8, 0, 0), ForeColor = Color.White };
     private static void AddField(TableLayoutPanel table, string label, Control control) { table.Controls.Add(new Label { Text = label, AutoSize = true, Margin = new Padding(3, 10, 3, 3), ForeColor = Color.Gainsboro }); table.Controls.Add(control); }
+    private static void AddSceneField(TableLayoutPanel table, int row, string label, Control control) { table.Controls.Add(new Label { Text = label, AutoSize = true, Anchor = AnchorStyles.Left, ForeColor = Color.Gainsboro }, 0, row); table.Controls.Add(control, 1, row); }
+    private static NumericUpDown SceneCoordinateInput() => new() { Dock = DockStyle.Fill, Minimum = -32768, Maximum = 32768, DecimalPlaces = 2, Increment = 16 };
+    private static decimal ClampSceneCoordinate(float value, NumericUpDown input) => Math.Clamp((decimal)value, input.Minimum, input.Maximum);
+    private static string SceneKey(MapSceneObject item) => item.SourceFile.ToUpperInvariant() + "|" + item.ObjectIndex;
     private IEnumerable<Control> EditablePropertyControls()
     {
         yield return _title; yield return _subtitle; yield return _briefing;

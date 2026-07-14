@@ -135,6 +135,31 @@ public sealed class PatcherRoundTripTests {
     }
 
     [Fact]
+    public void Objdef_ranged_range_3x_expands_legionary_throwing_spear_but_not_melee_weapon() {
+        string[] columns = Enumerable.Repeat("       0", 205).ToArray();
+        columns[19] = "     100";
+        columns[24] = "    1500";
+        columns[52] = "FigRomSch00_Speer_Schild".PadLeft(26); // Legionary, hybrid_inf
+        columns[78] = "       1"; columns[80] = "   64.00"; columns[81] = "  128.00"; // W1 melee
+        columns[86] = "       1"; columns[88] = "  100.00"; columns[89] = "  900.00"; // W2 throwing spear
+        columns[199] = "       0"; columns[200] = "       1";
+        byte[] original = SyntheticFixture.Pfil("header1\r\nheader2\r\n" + string.Join(',', columns) + "\r\n");
+        var stats = new Dictionary<string, double[]> {
+            ["FigRomSch00_Speer_Schild"] = new double[] { 100, 15, 80, 50, 3.2, 1500, 500, 900, 0 }
+        };
+
+        byte[] patched = ObjdefPatcher.GetPatchedBytes(original,
+            new ObjdefOptions(false, false, false, false, false, false, true, false, false, false, false, false, stats));
+        string[] result = SyntheticFixture.Text(patched).Split("\r\n")[2].Split(',');
+
+        Assert.Equal("64.00", result[80].Trim());
+        Assert.Equal("128.00", result[81].Trim());
+        Assert.Equal("100.00", result[88].Trim());
+        Assert.Equal("2700.00", result[89].Trim());
+        Assert.Equal("2700", result[24].Trim());
+    }
+
+    [Fact]
     public void Objdef_priest_casting_distance_uses_sight_not_weapon_range_or_spell_radius() {
         string[] columns = Enumerable.Repeat("       0", 205).ToArray();
         columns[4] = "    2.00"; columns[23] = "    2.00"; columns[191] = "    2.00";

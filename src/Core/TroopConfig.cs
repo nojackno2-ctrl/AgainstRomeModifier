@@ -70,6 +70,9 @@ namespace AgainstRomeModifier {
 
     // 儲存與處理遊戲兵種相關設定的靜態配置類別
     public static class TroopConfig {
+        public static bool SupportsRangedRange3x(string unitType) =>
+            unitType is "ranged_inf" or "ranged_cav" or "hybrid_inf" or "siege";
+
         // 對應遊戲兵種 ID 與其繁體中文名稱的字典
         public static readonly Dictionary<string, string> UnitNames = new Dictionary<string, string> {
             {"FigRomAnf00_Anfuehrer", "羅馬領袖"},

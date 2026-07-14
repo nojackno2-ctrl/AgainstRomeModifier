@@ -32,11 +32,8 @@ internal sealed class FloorTextureAtlas : IDisposable
     public static FloorTextureAtlas Create(IEnumerable<string> names, FloorTextureLibrary library)
     {
         string[] unique = names.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
-        int columns = 1;
-        while (columns * columns < Math.Max(1, unique.Length)) columns *= 2;
-        int needed = columns * Stride;
-        int size = needed <= 2048 ? 2048 : 4096;
-        if (needed > size) throw new InvalidOperationException("This map uses too many distinct ground textures for one atlas.");
+        int size = unique.Length <= Capacity(2048) ? 2048 : 4096;
+        (int columns, _) = GetGrid(unique.Length, size);
         var image = new Bitmap(size, size, PixelFormat.Format32bppArgb);
         using Graphics graphics = Graphics.FromImage(image);
         graphics.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBilinear;
@@ -65,10 +62,26 @@ internal sealed class FloorTextureAtlas : IDisposable
     internal static IReadOnlyDictionary<string, AtlasRect> Layout(IEnumerable<string> names, int atlasSize = 2048)
     {
         string[] unique = names.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
-        int columns = 1; while (columns * columns < Math.Max(1, unique.Length)) columns *= 2;
-        if (columns * Stride > atlasSize) throw new InvalidOperationException("Atlas capacity exceeded.");
+        (int columns, _) = GetGrid(unique.Length, atlasSize);
         return unique.Select((name, index) => new { name, rect = new AtlasRect(index % columns * Stride + Pad, index / columns * Stride + Pad, Cell, Cell) })
             .ToDictionary(x => x.name, x => x.rect, StringComparer.OrdinalIgnoreCase);
+    }
+
+    internal static int Capacity(int atlasSize)
+    {
+        int cellsPerAxis = atlasSize / Stride;
+        return cellsPerAxis * cellsPerAxis;
+    }
+
+    private static (int Columns, int Rows) GetGrid(int count, int atlasSize)
+    {
+        int cellsPerAxis = atlasSize / Stride;
+        int normalizedCount = Math.Max(1, count);
+        if (cellsPerAxis <= 0 || normalizedCount > cellsPerAxis * cellsPerAxis)
+            throw new InvalidOperationException($"地圖使用 {count} 種不同地表貼圖，單張 {atlasSize}×{atlasSize} atlas 最多只能容納 {Math.Max(0, cellsPerAxis * cellsPerAxis)} 種。");
+        int columns = Math.Min(cellsPerAxis, (int)Math.Ceiling(Math.Sqrt(normalizedCount)));
+        int rows = (normalizedCount + columns - 1) / columns;
+        return (columns, rows);
     }
 
     private static Color FallbackColor(string texture)

@@ -241,7 +241,7 @@ internal sealed class FeatureDetector
                         if (TroopConfig.UnitMeta[key].Tier != "leader")
                         {
                             bool isPriest = utype == "priest";
-                            bool hasExpandedRangeSight = range3x && utype is "ranged_inf" or "ranged_cav" or "siege";
+                            bool hasExpandedRangeSight = range3x && TroopConfig.SupportsRangedRange3x(utype);
                             bool hasDiff = Math.Abs(curHp - origHp) > 0.01 ||
                                            Math.Abs(curVw - origVw) > 0.01 ||
                                            Math.Abs(curAw - origAw) > 0.01 ||

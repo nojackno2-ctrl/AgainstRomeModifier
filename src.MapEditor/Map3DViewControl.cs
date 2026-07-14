@@ -42,6 +42,8 @@ internal sealed class Map3DViewControl : GLControl
     public bool ShowObjects { get; set; } = true;
     public float ReliefScale { get; private set; } = 1f;
     public bool IsReady => _initialized;
+    public string? LastFailureReason { get; private set; }
+    public string? ContextDescription { get; private set; }
     public event EventHandler<TexturePaintEventArgs>? TexturePainted;
     public event EventHandler<TileHoverEventArgs>? TileHovered;
     public event EventHandler<TextureSampleEventArgs>? TextureSampled;
@@ -49,10 +51,12 @@ internal sealed class Map3DViewControl : GLControl
 
     public bool LoadTextures(int dimension, IReadOnlyList<string> textures, IReadOnlyList<string> baselineTextures, string mapDirectory, FloorTextureLibrary floorTextures, IReadOnlyList<MapSceneObject> sceneObjects, float waterLevel, float heightMapStep, Color waterColor)
     {
-        if (!File.Exists(Path.Combine(mapDirectory, "boden.bmp"))) return false;
+        LastFailureReason = null;
+        string heightSource = Path.Combine(mapDirectory, "boden.bmp");
         _library = floorTextures; // 生命週期由 MapEditorForm 擁有，此處僅借用。
-        if (!_library.IsAvailable) return false;
-        using var bitmap = new Bitmap(Path.Combine(mapDirectory, "boden.bmp"));
+        LastFailureReason = ValidateResources(mapDirectory, _library.IsAvailable);
+        if (LastFailureReason is not null) return false;
+        using var bitmap = new Bitmap(heightSource);
         byte[] samples = ReadSamples(bitmap);
         // A 257x257 source covers the complete 64x64 tile map (four height samples per tile).
         _heights = new TerrainHeightField(bitmap.Width, bitmap.Height, samples, tileWidth: dimension, tileHeight: dimension);
@@ -62,6 +66,14 @@ internal sealed class Map3DViewControl : GLControl
         if (_initialized) UploadResources();
         Invalidate();
         return true;
+    }
+
+    internal static string? ValidateResources(string mapDirectory, bool floorTextureLibraryAvailable)
+    {
+        string heightSource = Path.Combine(mapDirectory, "boden.bmp");
+        if (!File.Exists(heightSource)) return $"地圖缺少 3D 地勢來源：{heightSource}";
+        if (!floorTextureLibraryAvailable) return "無法讀取 floortex.dat，3D 地表材質庫不可用。";
+        return null;
     }
 
     public void SetTexture(int x, int y, string texture)
@@ -94,17 +106,20 @@ internal sealed class Map3DViewControl : GLControl
         try
         {
             MakeCurrent();
+            ContextDescription = $"OpenGL {GL.GetString(StringName.Version) ?? "unknown"} | {GL.GetString(StringName.Vendor) ?? "unknown"} | {GL.GetString(StringName.Renderer) ?? "unknown"}";
             GL.ClearColor(.07f, .09f, .12f, 1); GL.Enable(EnableCap.DepthTest); GL.Enable(EnableCap.CullFace); GL.Enable(EnableCap.Blend);
             GL.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
             _terrainProgram = CreateProgram(TerrainVertexShader, TerrainFragmentShader);
             _colorProgram = CreateProgram(ColorVertexShader, ColorFragmentShader);
             _vao = GL.GenVertexArray(); _vbo = GL.GenBuffer(); _ebo = GL.GenBuffer(); _waterVao = GL.GenVertexArray(); _waterVbo = GL.GenBuffer(); _markerVao = GL.GenVertexArray(); _markerVbo = GL.GenBuffer(); _cursorVao = GL.GenVertexArray(); _cursorVbo = GL.GenBuffer();
             _initialized = true;
+            LastFailureReason = null;
             if (_mesh is not null) UploadResources();
         }
         catch (Exception ex)
         {
             _initialized = false;
+            LastFailureReason = $"OpenGL 3.3 初始化失敗：{ex.GetType().Name}: {ex.Message}";
             InitializationFailed?.Invoke(this, ex);
         }
     }
@@ -343,9 +358,31 @@ internal sealed class Map3DViewControl : GLControl
     };
     private static int CreateProgram(string vertex, string fragment)
     {
-        int vs = GL.CreateShader(ShaderType.VertexShader); GL.ShaderSource(vs, vertex); GL.CompileShader(vs);
-        int fs = GL.CreateShader(ShaderType.FragmentShader); GL.ShaderSource(fs, fragment); GL.CompileShader(fs);
-        int program = GL.CreateProgram(); GL.AttachShader(program, vs); GL.AttachShader(program, fs); GL.LinkProgram(program); GL.DeleteShader(vs); GL.DeleteShader(fs); return program;
+        int vs = CompileShader(ShaderType.VertexShader, vertex);
+        int fs = 0;
+        try
+        {
+            fs = CompileShader(ShaderType.FragmentShader, fragment);
+            int program = GL.CreateProgram(); GL.AttachShader(program, vs); GL.AttachShader(program, fs); GL.LinkProgram(program);
+            GL.GetProgram(program, GetProgramParameterName.LinkStatus, out int linked);
+            string log = GL.GetProgramInfoLog(program);
+            if (linked == 0) { GL.DeleteProgram(program); throw new InvalidOperationException("OpenGL shader program 連結失敗：" + log); }
+            return program;
+        }
+        finally
+        {
+            GL.DeleteShader(vs);
+            if (fs != 0) GL.DeleteShader(fs);
+        }
+    }
+    private static int CompileShader(ShaderType type, string source)
+    {
+        int shader = GL.CreateShader(type); GL.ShaderSource(shader, source); GL.CompileShader(shader);
+        GL.GetShader(shader, ShaderParameter.CompileStatus, out int compiled);
+        string log = GL.GetShaderInfoLog(shader);
+        if (compiled != 0) return shader;
+        GL.DeleteShader(shader);
+        throw new InvalidOperationException($"OpenGL {type} 編譯失敗：{log}");
     }
     protected override void Dispose(bool disposing)
     {

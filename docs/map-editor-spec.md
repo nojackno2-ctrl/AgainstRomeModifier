@@ -9,11 +9,15 @@
 
 為 2004 年遊戲《Against Rome》建立一個「世紀帝國式」的**無盡模式(Endless)地圖編輯器**,讓玩家能以現有地圖為範本建立、編輯自己的 ENDL 地圖。
 
+> 2026-07-14 介面語意修正：目前可載入的建立流程是**完整複製原版無盡地圖範本**，按鈕必須標示為「從無盡範本建立」，不得稱為空白地圖。真正的空白地圖需要同步產生或重建高度、碰撞與 `DATA` cache；在這些格式完成受控遊戲內驗證前，「新建空白地圖」只能顯示尚未安全支援的說明，不得用清空 SDL／`boden.txt` 的方式偽裝成空白。
+
 **架構決策(已由需求方確定,不可更改):**
 
 1. 地圖編輯器是**獨立程式**(獨立 WinForms EXE),與現有修改器 `AgainstRomeModifier` 互不干擾。
 2. 修改器只新增一個「**地圖管理**」分頁,內含地圖清單與「啟動編輯器」按鈕;按下按鈕才啟動編輯器程式。
 3. 分三個 Phase 交付;Phase 1 只使用**已完全理解的檔案格式**(全部列於本文件第 2 章),不需要任何逆向工程。
+
+**3D fallback 診斷要求（2026-07-14）：**離線 3D 缺少 `boden.bmp`、無法載入 `floortex.dat`，或 OpenGL 3.3 context／shader 編譯連結失敗時，程式應停用 3D、保持 2D 可用，並在「3D 診斷」中提供可複製的實際原因、資源路徑與 OpenGL/OS 資訊；不得再只做無原因的靜默 fallback。
 
 **關鍵可行性事實(已調查確認):**
 
@@ -234,6 +238,16 @@ Phase 1 編輯操作:改 `team`/`nation`、整體平移(改 `refpos`,物件 `pos
 
 2026-07-14 玩家實際 3D 截圖已確認：連續繪製同一「草地」會形成一致區域，先前的深淺棋盤與中央缺格均已消失。此驗證只涵蓋單一素材連續繪製；混合素材邊界與 `4T` 三材質交會仍須分別驗證。
 
+#### 2.7.1 自創 authoring format 與 native bake（2026-07-14 架構決策）
+
+玩家不應直接編輯 64×64 `boden.txt` tile。編輯器應建立自己的專案格式（暫定副檔名 `.armmap`），保存比遊戲輸出更高階的資料：每種基礎材質的 weight map、圓形筆刷半徑／硬度、語意地表、場景物件，以及後續開放的高度資料。3D 預覽可直接依權重在 shader 中平滑混合材質，提供接近現代／官方地圖編輯器的繪製體驗。
+
+遊戲不會直接讀取 `.armmap`。按「儲存到遊戲／遊戲測試」時，獨立 baker 必須將 authoring state 編譯為遊戲原生 `ENDL_*`：材質權重轉成 `boden.txt` 可用的 base／`4U`／`4T` tile，物件轉成 SDL，其他圖層只在格式與相依 cache 通過驗證後輸出。編輯器應提供「平滑 authoring 預覽」與「遊戲原生 bake 預覽」的切換，避免 shader 效果與實際遊戲輸出不一致。
+
+**驗收標準：匯出後在原遊戲中的外觀與行為必須與原版地圖同級。** 自創格式與 shader 只是編輯工具，不能成為降低遊戲輸出品質的理由。原生 bake 預覽是編輯器的預設可信畫面；任何材質混合、高度、碰撞或物件功能都必須在原遊戲內驗證後才可標記完成。若現有逆向證據不足以產生原版 transition／cache，就繼續補齊格式，不以硬方格或 editor-only 平滑效果作為最終交付。
+
+目前 `4U` 僅足以編譯兩材質邊界；`4T` 三材質 junction、更多材質同區混合與任意 alpha 混合仍須逆向或明確降級。自創格式能讓真正空白專案立即成立，但在未知的高度、碰撞、`DATA/*.dat` cache 能安全生成前，仍不能把該專案匯出並宣稱為可載入的真正空白遊戲地圖。若改走讓遊戲直接載入 `.armmap`，就需要額外的 EXE/DLL loader patch，風險與維護成本屬另一專案，不是目前預設路徑。
+
 `[Heightmapstep] 4`(boden.ini)× 64 tiles = 256,+1 = 257 → 對應 vertex/boden/emboss/smooth.bmp 的 257×257(頂點網格),collision/minimap 的 256×256(tile 網格)。此對應關係是 Phase 3 逆向的起點。
 
 ### 2.8 槽位規則
@@ -282,7 +296,7 @@ Phase 1 編輯操作:改 `team`/`nation`、整體平移(改 `refpos`,物件 `pos
 - 材質(可作為 Phase 1.5):64×64 網格檢視(每格填色或縮寫),點格子從材質調色盤替換。
 - **原廠圖(ENDL_000–004)一律唯讀**,只能「另存為新地圖」;要改原廠圖 = 先複製再編輯。
 
-> 實作狀態（2026-07-13）：屬性面板已支援 `briefing_titel_1/2`、可串接／多行的 `briefing_text`、`briefing_text_teamname0..7`，以及 Waterlevel、WaterColor、DayStartTime、DayEndTime、RainDropsOnWater、WaterWarpShift、WaterBumpAmplitude、WaterBumpFrequency、FlashPropability。寫入仍只允許 marker-backed 自製地圖，並沿用 CP1251、PFIL header 保留與 `FileRollbackScope` 交易。SDL 場景物件目前維持唯讀，待其獨立 round-trip／遊戲內驗證完成才開放編輯。
+> 實作狀態（2026-07-14）：屬性面板已支援 `briefing_titel_1/2`、可串接／多行的 `briefing_text`、`briefing_text_teamname0..7`，以及 Waterlevel、WaterColor、DayStartTime、DayEndTime、RainDropsOnWater、WaterWarpShift、WaterBumpAmplitude、WaterBumpFrequency、FlashPropability。寫入仍只允許 marker-backed 自製地圖，並沿用 CP1251、PFIL header 保留與 `FileRollbackScope` 交易。SDL 文件層已通過合成與八個真實聚落檔的 no-op round-trip；場景檢查器現提供受控驗證用的既有物件 `team`／相對 `pos` 暫存編輯與「還原到本次開啟時」，儲存服務會再次驗證 custom marker、`ENDL_005–999`、來源檔名及索引。此功能仍屬遊戲內驗證階段，尚未開放物件增刪、拖曳或宣稱 runtime verified。
 
 **存檔紀律:** 所有寫入經 `SafeFileWriter`;一次「儲存變更」內的多檔寫入包在 `FileRollbackScope`(全部 `TrackFile` → 寫入 → `Commit`)。PFIL 檔回寫必用原始 64-byte header。
 
