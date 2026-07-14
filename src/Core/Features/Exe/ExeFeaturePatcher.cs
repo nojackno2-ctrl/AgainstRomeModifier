@@ -45,6 +45,23 @@ internal static class ExeFeaturePatcher
         return true;
     }
 
+    internal static bool ApplyCiviProduce20(byte[] bytes, bool enabled, ILogger logger)
+    {
+        ExeCiviProduce20PatchState state = ExePatchModel.GetCiviProduce20PatchState(bytes);
+        if (state == ExeCiviProduce20PatchState.Unknown)
+        {
+            if (enabled)
+                throw new InvalidDataException("Against_Rome.exe 版本或住宅生產按鈕特徵碼不符合預期，已停止套用「住宅一次生產 20」補丁。");
+            return false;
+        }
+
+        IReadOnlyList<ExeWriteOp> ops = ExePatchModel.PlanCiviProduce20(enabled, state);
+        if (ops.Count == 0) return false;
+        ExePatchModel.Apply(bytes, ops);
+        logger.Log(enabled ? Loc.Get("SvcLogCiviProduce20Applied") : Loc.Get("SvcLogCiviProduce20Restored"));
+        return true;
+    }
+
     private static void RestoreLegacyVillageRange(byte[] bytes, ILogger logger, ref bool modified)
     {
         ExeVillageRangePatchState state = ExePatchModel.GetVillageBuildRangePatchState(bytes);

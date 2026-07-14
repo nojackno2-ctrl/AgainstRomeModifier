@@ -83,6 +83,7 @@ namespace AgainstRomeModifier {
         private ModernToggle chkHqHp10x = null!;
         private ModernToggle chkFastBuildUpgradeRepair = null!;
         private ModernToggle chkFoodHealing10x = null!;
+        private ModernToggle chkCiviProduce20 = null!;
         private ModernToggle chkAiM1 = null!;
         private ModernToggle chkAiM2 = null!;
         private ModernToggle chkAiM3 = null!;
@@ -111,7 +112,6 @@ namespace AgainstRomeModifier {
         private ModernToggle chkSpellEntireMap = null!;
         private ModernToggle chkSpellRange3x = null!;
         private ModernToggle chkProjectileArcHeight = null!;
-        private ModernToggle chkRangedAccuracy = null!;
         private ModernToggle chkRomanEndless = null!;
         private Dictionary<string, ModernToggle> featureToggles = null!;
 
@@ -1080,15 +1080,15 @@ namespace AgainstRomeModifier {
             };
             pnlSwitchesCard.Controls.Add(chkProjectileArcHeight);
 
-            chkRangedAccuracy = new ModernToggle {
-                Text = Loc.Get("RangedAccuracy"),
-                Location = new Point(25, 400),
+            chkCiviProduce20 = new ModernToggle {
+                Text = Loc.Get("CiviProduce20"),
+                Location = new Point(25, 440),
                 Size = new Size(310, 25),
                 Checked = false,
                 BackColor = Color.Transparent,
                 Font = fontJhengHei10B
             };
-            pnlExperimentalCard.Controls.Add(chkRangedAccuracy);
+            pnlExperimentalCard.Controls.Add(chkCiviProduce20);
 
             chkRomanEndless = new ModernToggle {
                 Text = Loc.Get("RomanEndless"),

@@ -274,17 +274,9 @@ internal sealed class MapCanvasControl : Control
     {
         if (!EditingEnabled || string.IsNullOrWhiteSpace(BrushTexture) || _textures is null) return;
         if (!TryGetTile(location, out int x, out int y)) return;
-        int radius = Math.Max(0, BrushSize / 2);
-        for (int paintY = Math.Max(0, y - radius); paintY <= Math.Min(_dimension - 1, y + radius); paintY++)
-        for (int paintX = Math.Max(0, x - radius); paintX <= Math.Min(_dimension - 1, x + radius); paintX++)
-        {
-            int index = paintY * _dimension + paintX;
-            if (!_paintedInDrag.Add(index)) continue;
-            string previous = _textures[index];
-            _textures[index] = BrushTexture;
-            RenderTerrainCell(paintX, paintY);
-            TexturePainted?.Invoke(this, new TexturePaintEventArgs(paintX, paintY, previous, BrushTexture));
-        }
+        int index = y * _dimension + x;
+        if (!_paintedInDrag.Add(index)) return;
+        TexturePainted?.Invoke(this, new TexturePaintEventArgs(x, y, _textures[index], BrushTexture));
         Invalidate();
     }
 

@@ -13,7 +13,7 @@ public sealed record PartgeoOptions(bool ProjectileArcHeight);
 public static class PartgeoPatcher {
     /// <summary>武器拋射物使用的 partgeo 條目（由 objdef Par* 拋射物物件的 pageo 欄反查而得），
     /// 偵測邏輯（FeatureDetector）共用同一份清單。</summary>
-    internal static readonly string[] ProjectileGeoNames = { "Wurfspeer00", "Wurfaxt00", "Katapultstein00", "Katapultstein01", "Pfeil00", "Spiess00" };
+    internal static readonly string[] ProjectileGeoNames = { "Wurfspeer00", "Wurfaxt00", "Katapultstein00", "Katapultstein01", "Pfeil00", "Spiess00", "Fackel" };
     /// <summary>與 ObjdefPatcher.ArcEmitMultiplier 必須一致（同倍率縮放才能維持落點）。</summary>
     internal const double ArcYsubMultiplier = ObjdefPatcher.ArcEmitMultiplier;
     /// <summary>partgeo 資料列的欄位索引：0=idx, 1=activ, 2=name, ..., 12=ysub。</summary>

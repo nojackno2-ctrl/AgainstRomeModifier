@@ -243,14 +243,9 @@ internal sealed class Map3DViewControl : GLControl
     private void TryPaint(Point point)
     {
         if (!EditingEnabled || string.IsNullOrWhiteSpace(BrushTexture) || !TryGetTile(point, out int x, out int y) || _textures is null) return;
-        int radius = BrushSize / 2;
-        for (int py = Math.Max(0, y - radius); py <= Math.Min(_dimension - 1, y + radius); py++)
-        for (int px = Math.Max(0, x - radius); px <= Math.Min(_dimension - 1, x + radius); px++)
-        {
-            int offset = py * _dimension + px;
-            if (!_paintedInDrag.Add(offset)) continue;
-            string before = _textures[offset]; SetTexture(px, py, BrushTexture); TexturePainted?.Invoke(this, new TexturePaintEventArgs(px, py, before, BrushTexture));
-        }
+        int offset = y * _dimension + x;
+        if (!_paintedInDrag.Add(offset)) return;
+        TexturePainted?.Invoke(this, new TexturePaintEventArgs(x, y, _textures[offset], BrushTexture));
     }
 
     private bool TryGetTile(Point point, out int x, out int y)

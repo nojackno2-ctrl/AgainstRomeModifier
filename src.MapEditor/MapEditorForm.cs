@@ -56,11 +56,10 @@ internal sealed class MapEditorForm : Form
     private readonly ToolStripLabel _currentMapLabel = new();
     private GameMapInfo? _selected;
     private BodenTexturesDocument? _texturesDocument;
-    private TerrainEditHistory? _terrainHistory;
+    private TerrainBlendEditSession? _terrainBlendSession;
     private FloorTextureLibrary? _floorTextures;
     private FloorMaterialCatalog? _floorMaterials;
     private FloorMaterial? _activeMaterial;
-    private string?[] _terrainMaterialIds = Array.Empty<string?>();
     private IReadOnlyList<MapSceneObject> _sceneObjects = Array.Empty<MapSceneObject>();
     private IReadOnlyList<MapSceneObject> _sceneOriginalObjects = Array.Empty<MapSceneObject>();
     private IReadOnlyList<MapSceneObject> _sceneSavedObjects = Array.Empty<MapSceneObject>();
@@ -71,8 +70,9 @@ internal sealed class MapEditorForm : Form
     private bool _allowClose;
     private bool _sceneLoaded;
     private string? _last3DDiagnostic;
+    private string? _terrainBlendNotice;
 
-    private bool TextureDirty() => _terrainHistory?.IsDirty == true;
+    private bool TextureDirty() => _terrainBlendSession?.IsDirty == true;
 
     private bool SceneDirty() => _sceneLoaded && SdlSceneEditService.HasChanges(_sceneSavedObjects, _sceneObjects);
 
@@ -192,14 +192,14 @@ internal sealed class MapEditorForm : Form
         _canvas.TexturePainted += (_, e) => PaintTexture(e);
         _canvas.TextureSampled += (_, e) => SelectSampledTexture(e.Texture);
         _canvas.StrokeEnded += (_, _) => CommitStroke();
-        _canvas.TileHovered += (_, e) => _status.Text = $"格子 ({e.X}, {e.Y})　{FriendlyTextureName(e.Texture)}";
+        _canvas.TileHovered += (_, e) => ShowTerrainHover(e);
         if (_view3d is not null)
         {
             Map3DViewControl view3d = _view3d;
             _view3d.TexturePainted += (_, e) => PaintTexture(e);
             _view3d.TextureSampled += (_, e) => SelectSampledTexture(e.Texture);
             _view3d.StrokeEnded += (_, _) => CommitStroke();
-            _view3d.TileHovered += (_, e) => _status.Text = $"格子 ({e.X}, {e.Y})　{FriendlyTextureName(e.Texture)}";
+            _view3d.TileHovered += (_, e) => ShowTerrainHover(e);
             _view3d.InitializationFailed += (_, ex) => BeginInvoke(() => Disable3DView(view3d.LastFailureReason ?? "OpenGL 3.3 初始化失敗。", ex));
         }
         _view2dButton.Click += (_, _) => SetActiveView(use3D: false);
@@ -240,7 +240,7 @@ internal sealed class MapEditorForm : Form
             _heightMapStep = float.TryParse(ini.GetValue("Heightmapstep"), out float heightStep) && heightStep > 0 ? heightStep : 4;
             if (TryParseGameColor(_waterColor.Text, out Color waterColor)) { _waterColorButton.BackColor = waterColor; _waterColorButton.ForeColor = waterColor.GetBrightness() < .45f ? Color.White : Color.Black; }
             _dayStart.Value = ParseDecimal(ini.GetValue("DayStartTime"), _dayStart); _dayEnd.Value = ParseDecimal(ini.GetValue("DayEndTime"), _dayEnd); _rain.Checked = ini.GetValue("RainDropsOnWater") == "1";
-            _texturesDocument = BodenTexturesDocument.Load(Path.Combine(map, "boden.txt")); _savedTextures = _texturesDocument.Textures.ToArray(); _terrainHistory = new TerrainEditHistory(_texturesDocument.Dimension, _savedTextures); RebuildTerrainMaterialIds(); _propertyDirty = false;
+            _texturesDocument = BodenTexturesDocument.Load(Path.Combine(map, "boden.txt")); _savedTextures = _texturesDocument.Textures.ToArray(); InitializeTerrainBlendSession(); _propertyDirty = false;
             _sceneObjects = SdlSceneCatalog.LoadDirectory(map); _sceneOriginalObjects = _sceneObjects.ToArray(); _sceneSavedObjects = _sceneObjects.ToArray(); _sceneLoaded = true;
             LoadPalette(); LoadEditingScene(); UpdateEditorState();
         }
@@ -294,54 +294,41 @@ internal sealed class MapEditorForm : Form
 
     private void PaintTexture(TexturePaintEventArgs e)
     {
-        if (_selected is null || !_selected.IsCustom || _texturesDocument is null || _terrainHistory is null || _floorMaterials is null || _activeMaterial is null) return;
-        int dimension = _texturesDocument.Dimension;
-        if (_terrainMaterialIds.Length != dimension * dimension) return;
-        IReadOnlyList<int> changedMaterialCells = _floorMaterials.ApplyPlayerMaterial(_terrainMaterialIds, dimension, e.X, e.Y, _activeMaterial.Id);
-
-        var affected = new HashSet<int>();
-        foreach (int changed in changedMaterialCells)
-        {
-            int centerX = changed % dimension, centerY = changed / dimension;
-            for (int y = Math.Max(0, centerY - 1); y <= Math.Min(dimension - 1, centerY + 1); y++)
-            for (int x = Math.Max(0, centerX - 1); x <= Math.Min(dimension - 1, centerX + 1); x++) affected.Add(y * dimension + x);
-        }
-        foreach (int cell in affected)
-        {
-            int x = cell % dimension, y = cell / dimension;
-            string? texture = _floorMaterials.ResolveTexture(_terrainMaterialIds, dimension, x, y);
-            if (texture is null) continue;
-            _terrainHistory.Paint(x, y, texture);
-            ApplyTexture(x, y, texture, inferMaterial: false);
-        }
+        if (_selected is null || !_selected.IsCustom || _texturesDocument is null || _terrainBlendSession is null || _activeMaterial is null) return;
+        float radius = _canvas.BrushSize / 2f + .26f;
+        TerrainBlendPaintResult result = _terrainBlendSession.PaintCircle(e.X + .5f, e.Y + .5f, radius, _activeMaterial.Id);
+        foreach (TerrainTextureChange change in result.TextureChanges) ApplyTexture(change.X, change.Y, change.After);
+        _terrainBlendNotice = result.Succeeded
+            ? null
+            : $"此筆觸無法由原版 transition tile 完整表達，已整筆復原（{result.Issues.Count} 格）。";
         UpdateEditorState();
     }
 
     // 一次筆畫（滑鼠按下到放開）內觸及的所有格子合併為單一 undo 項目。
     private void CommitStroke()
     {
-        if (_terrainHistory?.CommitStroke() != true) return;
+        if (_terrainBlendSession?.CommitStroke() != true) return;
         UpdateEditorState();
     }
 
-    private void ApplyTexture(int x, int y, string texture, bool inferMaterial)
+    private void ApplyTexture(int x, int y, string texture)
     {
         _texturesDocument!.SetTexture(x, y, texture); _canvas.SetTexture(x, y, texture); _view3d?.SetTexture(x, y, texture);
-        if (inferMaterial && _terrainMaterialIds.Length == _texturesDocument.Dimension * _texturesDocument.Dimension)
-            _terrainMaterialIds[y * _texturesDocument.Dimension + x] = _floorMaterials?.FindByTexture(texture)?.Id;
     }
 
     private void Undo()
     {
-        if (_texturesDocument is null || _terrainHistory?.Undo() is not { } stroke) return;
-        for (int index = stroke.Count - 1; index >= 0; index--) ApplyTexture(stroke[index].X, stroke[index].Y, stroke[index].Before, inferMaterial: true);
+        if (_texturesDocument is null || _terrainBlendSession?.Undo() is not { } stroke) return;
+        foreach (TerrainTextureChange change in stroke) ApplyTexture(change.X, change.Y, change.After);
+        _terrainBlendNotice = null;
         UpdateEditorState();
     }
 
     private void Redo()
     {
-        if (_texturesDocument is null || _terrainHistory?.Redo() is not { } stroke) return;
-        foreach (TerrainTextureChange change in stroke) ApplyTexture(change.X, change.Y, change.After, inferMaterial: true);
+        if (_texturesDocument is null || _terrainBlendSession?.Redo() is not { } stroke) return;
+        foreach (TerrainTextureChange change in stroke) ApplyTexture(change.X, change.Y, change.After);
+        _terrainBlendNotice = null;
         UpdateEditorState();
     }
 
@@ -422,7 +409,7 @@ internal sealed class MapEditorForm : Form
             byte[]? minimap = _canvas.RenderMinimapBmp();
             if (minimap is not null) AgainstRomeModifier.Core.Services.SafeFileWriter.WriteAllBytes(Path.Combine(map, "minimap.bmp"), minimap, rollback);
             rollback.Commit();
-            _terrainHistory?.CommitBaseline(); _savedTextures = _terrainHistory?.Current.ToArray() ?? _texturesDocument?.Textures.ToArray() ?? Array.Empty<string>(); _sceneSavedObjects = _sceneObjects.ToArray(); _propertyDirty = false;
+            _terrainBlendSession?.CommitBaseline(); _savedTextures = _terrainBlendSession?.CurrentTextures.ToArray() ?? _texturesDocument?.Textures.ToArray() ?? Array.Empty<string>(); _sceneSavedObjects = _sceneObjects.ToArray(); _propertyDirty = false;
             _canvas.CommitBaseline(); _view3d?.CommitBaseline();
             RefreshOverview();
             UpdateEditorState();
@@ -490,6 +477,11 @@ internal sealed class MapEditorForm : Form
 
     private void MarkDirty() { if (_loading || _selected is null || !_selected.IsCustom) return; _propertyDirty = true; UpdateEditorState(); }
     private string FriendlyTextureName(string? texture) => _floorMaterials?.FindByTexture(texture)?.DisplayName ?? "地表交界";
+    private void ShowTerrainHover(TileHoverEventArgs e)
+    {
+        string hover = $"格子 ({e.X}, {e.Y})　{FriendlyTextureName(e.Texture)}";
+        _status.Text = _terrainBlendNotice is null ? hover : _terrainBlendNotice + "　" + hover;
+    }
     private void SelectBrush(PaletteItem item)
     {
         _activeMaterial = item.Material;
@@ -512,18 +504,26 @@ internal sealed class MapEditorForm : Form
         Image? old = _overview.Image; _overview.Image = null; old?.Dispose();
         if (File.Exists(minimapPath)) using (var source = new Bitmap(minimapPath)) _overview.Image = new Bitmap(source);
     }
-    private void RebuildTerrainMaterialIds()
+    private void InitializeTerrainBlendSession()
     {
-        _terrainMaterialIds = _texturesDocument?.Textures.Select(texture => _floorMaterials?.FindByTexture(texture)?.Id).ToArray() ?? Array.Empty<string?>();
+        _terrainBlendSession = null;
+        _terrainBlendNotice = null;
+        if (_texturesDocument is null || _floorMaterials is null || _floorMaterials.Materials.Count == 0) return;
+        string fallback = _texturesDocument.Textures.Select(texture => _floorMaterials.FindByTexture(texture)?.Id).FirstOrDefault(id => id is not null)
+            ?? _floorMaterials.Materials[0].Id;
+        NativeTerrainImportResult import = TerrainBlendAuthoringMap.Import(_texturesDocument.Dimension, _texturesDocument.Textures, _floorMaterials, fallback);
+        _terrainBlendSession = new TerrainBlendEditSession(import, _texturesDocument.Textures, _floorMaterials);
+        if (import.UnresolvedTileIndices.Count > 0 || import.CornerConflicts.Count > 0)
+            _terrainBlendNotice = $"已保留原圖交界：{import.UnresolvedTileIndices.Count} 個未知 tile、{import.CornerConflicts.Count} 個角點衝突；只重烘筆刷實際碰到的區域。";
     }
     private void UpdateEditorState()
     {
-        bool editable = _selected?.IsCustom == true; _saveButton.Enabled = editable && IsDirty; _gamePreviewButton.Enabled = _selected is not null; _undoButton.Enabled = editable && _terrainHistory?.CanUndo == true; _redoButton.Enabled = editable && _terrainHistory?.CanRedo == true; _resetTerrainButton.Enabled = editable && _texturesDocument is not null && TextureDirty();
+        bool editable = _selected?.IsCustom == true; _saveButton.Enabled = editable && IsDirty; _gamePreviewButton.Enabled = _selected is not null; _undoButton.Enabled = editable && _terrainBlendSession?.CanUndo == true; _redoButton.Enabled = editable && _terrainBlendSession?.CanRedo == true; _resetTerrainButton.Enabled = editable && _texturesDocument is not null && TextureDirty();
         _sceneApplyButton.Enabled = editable && _sceneList.SelectedItems.Count == 1; _sceneRestoreButton.Enabled = editable && _sceneLoaded && SdlSceneEditService.HasChanges(_sceneOriginalObjects, _sceneObjects);
         foreach (Control control in EditablePropertyControls()) control.Enabled = editable;
         _palette.Enabled = editable; UpdateStatus();
     }
-    private void UpdateStatus() { _status.Text = _selected is null ? "尚未選擇地圖" : $"{_selected.Id} — {(_selected.IsCustom ? "自製地圖，可編輯" : "原廠地圖，唯讀")}{(IsDirty ? "  ● 尚未儲存" : "")}"; }
+    private void UpdateStatus() { _status.Text = _selected is null ? "尚未選擇地圖" : $"{_selected.Id} — {(_selected.IsCustom ? "自製地圖，可編輯" : "原廠地圖，唯讀")}{(IsDirty ? "  ● 尚未儲存" : "")}{(_terrainBlendNotice is null ? "" : "　" + _terrainBlendNotice)}"; }
     private void SetActiveView(bool use3D)
     {
         if (use3D && (_view3d is null || !_view3dButton.Enabled)) use3D = false;
@@ -577,14 +577,14 @@ internal sealed class MapEditorForm : Form
     {
         if (_texturesDocument is null || _savedTextures.Length != _texturesDocument.Textures.Count) return;
         if (MessageBox.Show(this, "要放棄這次尚未儲存的地表繪製嗎？\n地圖名稱與環境設定不會受影響。", "還原地表", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
-        if (_terrainHistory is null) return;
-        IReadOnlyList<TerrainTextureChange> changes = _terrainHistory.ResetToBaseline();
-        _texturesDocument.SetTextures(_terrainHistory.Current); // 批次寫回，避免逐格重新解析整份 boden.txt。
+        if (_terrainBlendSession is null) return;
+        IReadOnlyList<TerrainTextureChange> changes = _terrainBlendSession.ResetToBaseline();
+        _texturesDocument.SetTextures(_terrainBlendSession.CurrentTextures); // 批次寫回，避免逐格重新解析整份 boden.txt。
         foreach (TerrainTextureChange change in changes)
         {
             _canvas.SetTexture(change.X, change.Y, change.After); _view3d?.SetTexture(change.X, change.Y, change.After);
         }
-        RebuildTerrainMaterialIds();
+        _terrainBlendNotice = null;
         UpdateEditorState();
     }
 

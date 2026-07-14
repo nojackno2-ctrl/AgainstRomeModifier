@@ -21,6 +21,13 @@ public enum ExeRomanEndlessPatchState {
     Patched
 }
 
+/// <summary>住宅帳篷 ♂/♀ 生產鈕「點一次 +N」補丁狀態。</summary>
+public enum ExeCiviProduce20PatchState {
+    Unknown,
+    Original,
+    Patched
+}
+
 /// <summary>已淘汰的村落建造範圍候選補丁（僅用於偵測與還原舊寫入）狀態。</summary>
 public enum ExeVillageRangePatchState {
     Unknown,
@@ -64,6 +71,24 @@ public static class ExePatchModel {
     public static readonly byte[] RomanEndlessPatchedBytes = {
         0x53, 0x6A, 0x03, 0x5B, 0x90, 0x53, 0xE8, 0x25, 0x3B, 0xFE, 0xFF,
         0x83, 0xC4, 0x04, 0x53, 0x89, 0x1D, 0x78, 0x74, 0x73, 0x00
+    };
+
+    // === 住宅帳篷 ♂/♀ 生產鈕：點一次 +1 → +20 ===
+    // 玩家點住宅帳篷的男/女生產鈕 → EXE 處理器 0x44FBED，內部以 push 1 當作
+    // 「本次要加入未出生佇列的數量」，經 addUnborn 轉發器(0x4211B0)→worker(0x517AD0)
+    // 寫入未出生男/女計數（worker 會自動夾到剩餘居住容量）。此路徑玩家專屬，AI 不經過。
+    // 特徵含尾端 call 0x4211B0 的相對位移(e8 90 15 fd ff)，以與相鄰、幾乎相同的「減少」
+    // 處理器(call 0x4211E0)區分；僅改 `6A 01` 的運算元位元組（索引 14）為 `6A 14`。
+    public const long CiviProduce20PatchOffset = 0x4FC00;
+    public static readonly byte[] CiviProduce20OriginalBytes = {
+        0x83, 0x7C, 0x24, 0x18, 0x01, 0x0F, 0x95, 0xC0, 0x25, 0xFF, 0x00, 0x00, 0x00,
+        0x6A, 0x01, 0x40, 0x50, 0x8B, 0x74, 0x24, 0x0C, 0x56, 0x8B, 0x7C, 0x24, 0x0C, 0x57,
+        0xE8, 0x90, 0x15, 0xFD, 0xFF
+    };
+    public static readonly byte[] CiviProduce20PatchedBytes = {
+        0x83, 0x7C, 0x24, 0x18, 0x01, 0x0F, 0x95, 0xC0, 0x25, 0xFF, 0x00, 0x00, 0x00,
+        0x6A, 0x14, 0x40, 0x50, 0x8B, 0x74, 0x24, 0x0C, 0x56, 0x8B, 0x7C, 0x24, 0x0C, 0x57,
+        0xE8, 0x90, 0x15, 0xFD, 0xFF
     };
 
     // === 法術免祭壇需求（各族群 12 處特徵）===
@@ -259,6 +284,16 @@ public static class ExePatchModel {
         return ExeRomanEndlessPatchState.Unknown;
     }
 
+    public static ExeCiviProduce20PatchState GetCiviProduce20PatchState(byte[] exeBytes) {
+        if (exeBytes.Length < CiviProduce20PatchOffset + CiviProduce20OriginalBytes.Length) {
+            return ExeCiviProduce20PatchState.Unknown;
+        }
+        byte[] bytes = ReadSpan(exeBytes, CiviProduce20PatchOffset, CiviProduce20OriginalBytes.Length);
+        if (bytes.SequenceEqual(CiviProduce20OriginalBytes)) return ExeCiviProduce20PatchState.Original;
+        if (bytes.SequenceEqual(CiviProduce20PatchedBytes)) return ExeCiviProduce20PatchState.Patched;
+        return ExeCiviProduce20PatchState.Unknown;
+    }
+
     public static ExeVillageRangePatchState GetVillageBuildRangePatchState(byte[] exeBytes) {
         if (exeBytes.Length < VillageRangePatchRequiredLength) {
             return ExeVillageRangePatchState.Unknown;
@@ -347,6 +382,16 @@ public static class ExePatchModel {
         }
         if (!enabled && state == ExeRomanEndlessPatchState.Patched) {
             return new[] { new ExeWriteOp(RomanEndlessPatchOffset, RomanEndlessPatchedBytes, RomanEndlessOriginalBytes, "無盡模式羅馬陣營還原") };
+        }
+        return Array.Empty<ExeWriteOp>();
+    }
+
+    public static IReadOnlyList<ExeWriteOp> PlanCiviProduce20(bool enabled, ExeCiviProduce20PatchState state) {
+        if (enabled && state == ExeCiviProduce20PatchState.Original) {
+            return new[] { new ExeWriteOp(CiviProduce20PatchOffset, CiviProduce20OriginalBytes, CiviProduce20PatchedBytes, "住宅生產一次數量") };
+        }
+        if (!enabled && state == ExeCiviProduce20PatchState.Patched) {
+            return new[] { new ExeWriteOp(CiviProduce20PatchOffset, CiviProduce20PatchedBytes, CiviProduce20OriginalBytes, "住宅生產一次數量還原") };
         }
         return Array.Empty<ExeWriteOp>();
     }

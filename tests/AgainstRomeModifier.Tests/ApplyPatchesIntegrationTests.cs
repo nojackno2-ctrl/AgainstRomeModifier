@@ -90,12 +90,12 @@ namespace AgainstRomeModifier.Tests
                     SpellEntireMap = false,
                     SpellRange3x = true,
                     ProjectileArcHeight = true,
-                    RangedAccuracy = true,
                     HousingCapacity20x = true,
                     StorageCapacity10x = true,
                     HqHp10x = true,
                     FastBuildUpgradeRepair = true,
                     FoodHealing10x = true,
+                    CiviProduce20 = true,
                     VillageBuildRange = true,
                     NoSpellAltar = true,
                     GameSpeed = 3,
@@ -128,12 +128,12 @@ namespace AgainstRomeModifier.Tests
                 Assert.False(detected.SpellEntireMap, "SpellEntireMap 應回讀為 false");
                 Assert.True(detected.SpellRange3x, "SpellRange3x 未回讀為 true");
                 Assert.True(detected.ProjectileArcHeight, "ProjectileArcHeight 未回讀為 true");
-                Assert.True(detected.RangedAccuracy, "RangedAccuracy 未回讀為 true");
                 Assert.True(detected.HousingCapacity20x, "HousingCapacity20x 未回讀為 true");
                 Assert.True(detected.StorageCapacity10x, "StorageCapacity10x 未回讀為 true");
                 Assert.True(detected.HqHp10x, "HqHp10x 未回讀為 true");
                 Assert.True(detected.FastBuildUpgradeRepair, "FastBuildUpgradeRepair 未回讀為 true");
                 Assert.True(detected.FoodHealing10x, "FoodHealing10x 未回讀為 true");
+                Assert.True(detected.CiviProduce20, "CiviProduce20 未回讀為 true");
                 Assert.True(detected.VillageBuildRange, "VillageBuildRange 未回讀為 true");
                 Assert.True(detected.NoSpellAltar, "NoSpellAltar 未回讀為 true");
                 Assert.Equal(3, detected.GameSpeed);
@@ -161,8 +161,8 @@ namespace AgainstRomeModifier.Tests
                 Assert.False(restored.SpellEntireMap, "還原後 SpellEntireMap 仍為 true");
                 Assert.False(restored.SpellRange3x, "還原後 SpellRange3x 仍為 true");
                 Assert.False(restored.ProjectileArcHeight, "還原後 ProjectileArcHeight 仍為 true");
-                Assert.False(restored.RangedAccuracy, "還原後 RangedAccuracy 仍為 true");
                 Assert.False(restored.FoodHealing10x, "還原後 FoodHealing10x 仍為 true");
+                Assert.False(restored.CiviProduce20, "還原後 CiviProduce20 仍為 true");
                 Assert.False(restored.VillageBuildRange, "還原後 VillageBuildRange 仍為 true");
                 Assert.False(restored.NoSpellAltar, "還原後 NoSpellAltar 仍為 true");
                 Assert.Equal(1, restored.GameSpeed);

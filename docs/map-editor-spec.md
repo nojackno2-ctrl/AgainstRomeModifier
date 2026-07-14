@@ -248,6 +248,8 @@ Phase 1 編輯操作:改 `team`/`nation`、整體平移(改 `refpos`,物件 `pos
 
 目前 `4U` 僅足以編譯兩材質邊界；`4T` 三材質 junction、更多材質同區混合與任意 alpha 混合仍須逆向或明確降級。自創格式能讓真正空白專案立即成立，但在未知的高度、碰撞、`DATA/*.dat` cache 能安全生成前，仍不能把該專案匯出並宣稱為可載入的真正空白遊戲地圖。若改走讓遊戲直接載入 `.armmap`，就需要額外的 EXE/DLL loader patch，風險與維護成本屬另一專案，不是目前預設路徑。
 
+2026-07-14 transactional native brush 已接入 2D／3D 材質工具：authoring corner 與輸出的 `boden.txt` tile 由同一 stroke history 管理；每個游標位置一次完成依筆刷尺寸計算的圓形 bake，只重烘筆刷碰到的鄰近 tile，未觸及的原圖衝突保持原檔。任何找不到原版 transition 的 junction 會拒絕並回滾整個尚未完成的 stroke，拒絕訊息不會被 hover 狀態覆蓋。暫存 3D smoke 已在全 B8 地形畫入 B9，視覺上形成柔和小區，undo/redo/save 狀態正確；儲存檔實際包含一個 B9 中心與八方向 `4U89`，不是 editor-only shader。仍須由使用者在正式自製地圖完成原遊戲載入比較，才可將「原版品質混合筆刷」標示為 game-runtime verified。
+
 `[Heightmapstep] 4`(boden.ini)× 64 tiles = 256,+1 = 257 → 對應 vertex/boden/emboss/smooth.bmp 的 257×257(頂點網格),collision/minimap 的 256×256(tile 網格)。此對應關係是 Phase 3 逆向的起點。
 
 ### 2.8 槽位規則

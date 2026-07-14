@@ -51,6 +51,7 @@ namespace AgainstRomeModifier {
             chkHqHp10x.Text = Loc.Get("HqHp10x");
             chkFastBuildUpgradeRepair.Text = Loc.Get("FastBuildUpgradeRepair");
             chkFoodHealing10x.Text = Loc.Get("FoodHealing10x");
+            chkCiviProduce20.Text = Loc.Get("CiviProduce20");
             chkDgVoodoo.Text = Loc.Get("DgVoodoo");
             chkGameSpeed.Text = Loc.Get("GameSpeedLabel");
             chkVillageBuildRange.Text = Loc.Get("VillageBuildRange");
@@ -113,7 +114,6 @@ namespace AgainstRomeModifier {
             chkSpellEntireMap.Text = Loc.Get("SpellEntireMap");
             chkSpellRange3x.Text = Loc.Get("SpellRange3x");
             chkProjectileArcHeight.Text = Loc.Get("ProjectileArcHeight");
-            chkRangedAccuracy.Text = Loc.Get("RangedAccuracy");
             chkRomanEndless.Text = Loc.Get("RomanEndless");
             lblTroopTemplate.Text = Loc.Get("TroopTemplateLabel");
             RefreshTroopTemplateItems();
@@ -156,7 +156,6 @@ namespace AgainstRomeModifier {
                 myToolTip.SetToolTip(chkSpellEntireMap, Loc.Get("SpellEntireMapTip"));
                 myToolTip.SetToolTip(chkSpellRange3x, Loc.Get("SpellRange3xTip"));
                 myToolTip.SetToolTip(chkProjectileArcHeight, Loc.Get("ProjectileArcHeightTip"));
-                myToolTip.SetToolTip(chkRangedAccuracy, Loc.Get("RangedAccuracyTip"));
                 myToolTip.SetToolTip(chkRomanEndless, Loc.Get("RomanEndlessTip"));
                 myToolTip.SetToolTip(chkNoSpellAltar, Loc.Get("NoSpellAltarTip"));
                 myToolTip.SetToolTip(chkMaxPopulation, Loc.Get("MaxPopulationTip"));
@@ -166,6 +165,7 @@ namespace AgainstRomeModifier {
                 myToolTip.SetToolTip(chkFastCiviProduction, Loc.Get("FastCiviProductionTip"));
                 myToolTip.SetToolTip(chkFastBuildUpgradeRepair, Loc.Get("FastBuildUpgradeRepairTip"));
                 myToolTip.SetToolTip(chkFoodHealing10x, Loc.Get("FoodHealing10xTip"));
+                myToolTip.SetToolTip(chkCiviProduce20, Loc.Get("CiviProduce20Tip"));
                 myToolTip.SetToolTip(chkVillageBuildRange, Loc.Get("VillageBuildRangeTip"));
                 myToolTip.SetToolTip(chkAiM1, Loc.Get("AiM1Tip"));
                 myToolTip.SetToolTip(chkAiM2, Loc.Get("AiM2Tip"));

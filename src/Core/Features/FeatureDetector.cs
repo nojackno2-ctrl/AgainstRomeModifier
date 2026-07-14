@@ -60,6 +60,9 @@ internal sealed class FeatureDetector
 
                     int speed = ExePatchModel.GetGameSpeedMultiplier(exeBytes);
                     options.GameSpeed = speed;
+
+                    options.CiviProduce20 =
+                        ExePatchModel.GetCiviProduce20PatchState(exeBytes) == ExeCiviProduce20PatchState.Patched;
                 }
                 catch (Exception ex) { _logger.Log(string.Format(Loc.Get("SvcLogDetectFailed"), "Against_Rome.exe", ex.Message)); }
             }
@@ -168,7 +171,6 @@ internal sealed class FeatureDetector
                         options.HqHp10x = HasHqHpMultiplier(currentRows, originalRows, 10);
                         options.FastBuildUpgradeRepair = HasFastBuildUpgradeRepair(currentRows, originalRows);
                         options.ProjectileArcHeight = HasProjectileWeaponScale(currentRows, originalRows, useDrad: false);
-                        options.RangedAccuracy = HasProjectileWeaponScale(currentRows, originalRows, useDrad: true);
                     }
 
                     // 偵測是否已套用 Balance (若有任何一個兵種屬性被修改)
