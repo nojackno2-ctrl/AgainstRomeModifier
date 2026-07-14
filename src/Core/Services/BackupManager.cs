@@ -615,7 +615,7 @@ namespace AgainstRomeModifier.Core.Services
             if (options.Balance && options.CustomUnitStats != null && options.CustomUnitStats.TryGetValue(key, out double[]? custom) && custom != null)
             {
                 bool ignoreRange = TroopConfig.UnitMeta.TryGetValue(key, out var meta) &&
-                    ((options.RangedRange3x && (meta.UnitType is "ranged_inf" or "ranged_cav" or "siege")) ||
+                    ((options.RangedRange3x && TroopConfig.SupportsRangedRange3x(meta.UnitType)) ||
                      (options.SpellEntireMap && meta.UnitType == "priest"));
                 bool ignoreSpeed = options.UnitMovementSpeed2x;
                 bool ignoreSpellRadius = options.SpellRange3x && SupportsConfigurableSpellRadius(key);

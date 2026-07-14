@@ -17,11 +17,14 @@ internal sealed class MapSelectionForm : Form
     private readonly Label _previewTitle = new() { Dock = DockStyle.Top, Height = 58, Padding = new Padding(8, 12, 8, 4), Font = new Font("Microsoft JhengHei UI", 10F, FontStyle.Bold), ForeColor = Color.White };
     private readonly Label _previewDetails = new() { Dock = DockStyle.Bottom, Height = 72, Padding = new Padding(8), ForeColor = Color.Silver };
     private readonly Button _loadButton = new() { Text = "讀取地圖", Width = 120, Height = 38, Enabled = false };
-    private readonly Button _newButton = new() { Text = "新建地圖", Width = 120, Height = 38 };
+    private readonly Button _newButton = new() { Text = "從無盡範本建立", Width = 170, Height = 38 };
+    private readonly Button _blankButton = new() { Text = "新建空白地圖", Width = 145, Height = 38 };
     private readonly Button _copyButton = new() { Text = "複製到自製地圖", Width = 150, Height = 38, Enabled = false };
     private readonly Button _deleteButton = new() { Text = "刪除自製地圖", Width = 130, Height = 38, Enabled = false };
     private readonly Label _hint = new() { Dock = DockStyle.Bottom, Height = 42, TextAlign = ContentAlignment.MiddleLeft, ForeColor = Color.Silver };
     private readonly string? _preferredMapId;
+
+    internal const string BlankMapUnavailableMessage = "真正的空白地圖目前尚未安全支援。\n\nAgainst Rome 地圖含有尚未解讀完成的高度、碰撞與 DATA cache。只清空物件或鋪滿單一材質，仍會殘留範本地勢，也可能讓遊戲無法載入。\n\n目前可以使用「從無盡範本建立」製作可載入的自製地圖；空白範本會在完成遊戲內驗證後開放。";
 
     public MapSelectionForm(string gamePath, string? preferredMapId = null)
     {
@@ -48,7 +51,7 @@ internal sealed class MapSelectionForm : Form
     {
         var header = new Label
         {
-            Text = "選擇要讀取的地圖，或從現有地圖建立新的自製地圖",
+            Text = "選擇地圖，或從無盡範本建立可編輯的自製地圖",
             Dock = DockStyle.Top, Height = 58, Padding = new Padding(14, 18, 0, 0),
             Font = new Font("Microsoft JhengHei UI", 12F, FontStyle.Bold), ForeColor = Color.White
         };
@@ -76,7 +79,7 @@ internal sealed class MapSelectionForm : Form
         listHost.Controls.Add(contentSplit); listHost.Controls.Add(_hint);
         var actions = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 64, Padding = new Padding(12), FlowDirection = FlowDirection.RightToLeft, BackColor = Color.FromArgb(42, 47, 58) };
         var exit = new Button { Text = "離開", Width = 100, Height = 38, DialogResult = DialogResult.Cancel };
-        actions.Controls.Add(exit); actions.Controls.Add(_loadButton); actions.Controls.Add(_newButton); actions.Controls.Add(_copyButton); actions.Controls.Add(_deleteButton);
+        actions.Controls.Add(exit); actions.Controls.Add(_loadButton); actions.Controls.Add(_newButton); actions.Controls.Add(_blankButton); actions.Controls.Add(_copyButton); actions.Controls.Add(_deleteButton);
 
         Controls.Add(listHost); Controls.Add(actions); Controls.Add(pathRow); Controls.Add(header);
         AcceptButton = _loadButton; CancelButton = exit;
@@ -91,6 +94,7 @@ internal sealed class MapSelectionForm : Form
         _mapTabs.SelectedIndexChanged += (_, _) => UpdateSelectionState();
         _loadButton.Click += (_, _) => LoadSelected();
         _newButton.Click += (_, _) => CreateMap();
+        _blankButton.Click += (_, _) => MessageBox.Show(this, BlankMapUnavailableMessage, "空白地圖尚未支援", MessageBoxButtons.OK, MessageBoxIcon.Information);
         _copyButton.Click += (_, _) => CopySelectedMap();
         _deleteButton.Click += (_, _) => DeleteSelected();
     }
@@ -130,7 +134,7 @@ internal sealed class MapSelectionForm : Form
                 _mapTabs.SelectedIndex = selected.ListView == _customMaps ? 0 : 1;
                 selected.Selected = true; selected.Focused = true; selected.EnsureVisible();
             }
-            _hint.Text = maps.Length == 0 ? "找不到可用的非劇情地圖。請確認遊戲路徑。" : "原版地圖為唯讀；只有無盡（ENDL）地圖能複製為可編輯的自製地圖。劇情地圖不會出現在此選單。";
+            _hint.Text = maps.Length == 0 ? "找不到可用的非劇情地圖。請確認遊戲路徑。" : "「從無盡範本建立」會保留範本內容；真正空白地圖尚待格式驗證。原版地圖維持唯讀。";
         }
         catch (Exception ex) { MessageBox.Show(this, ex.Message, "無法讀取地圖", MessageBoxButtons.OK, MessageBoxIcon.Error); }
         finally
@@ -151,7 +155,7 @@ internal sealed class MapSelectionForm : Form
     {
         GameMapInfo? source = SelectNewMapTemplate(_catalog.List(GamePath));
         if (source is null) { MessageBox.Show(this, "沒有可作為新地圖基礎的地圖。", Text); return; }
-        string name = PromptName("新建地圖", source.DisplayName ?? "New Custom Map");
+        string name = PromptName("從無盡範本建立", source.DisplayName ?? "New Custom Map");
         if (string.IsNullOrWhiteSpace(name)) return;
         CloneAndOpen(source, name, "無法新建地圖");
     }

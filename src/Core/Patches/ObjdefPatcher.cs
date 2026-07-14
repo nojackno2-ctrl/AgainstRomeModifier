@@ -81,8 +81,8 @@ public static class ObjdefPatcher {
         double primaryReload = type is "ranged_inf" or "ranged_cav" ? rangedReload : type == "siege" ? Math.Max(meleeReload, rangedReload) : meleeReload;
         double speedScale = options.UnitMovementSpeed2x ? 2.0 : 1.0;
         double rangeScale = originalRange > 0 ? stats[7] / originalRange : 1.0;
-        bool isRangedUnit = type is "ranged_inf" or "ranged_cav" or "siege";
-        if (isRangedUnit && options.RangedRange3x) {
+        bool supportsRangedRange3x = TroopConfig.SupportsRangedRange3x(type);
+        if (supportsRangedRange3x && options.RangedRange3x) {
             rangeScale *= 3.0;
         }
         bool isPriest = type == "priest";
@@ -100,7 +100,7 @@ public static class ObjdefPatcher {
         // 會讓單位無法自行鎖定新射程外的目標，因此射程 3 倍時必須同步保證
         // 視野至少涵蓋新的最遠武器射程。
         double sight = options.SpellEntireMap && isPriest ? 30000.0 : stats[5];
-        if (isRangedUnit && options.RangedRange3x) {
+        if (supportsRangedRange3x && options.RangedRange3x) {
             sight = Math.Max(sight, originalRange * rangeScale);
         }
         if (Math.Abs(sight - Read(source, (int)ObjdefIndex.Sirad)) > 0.01) {

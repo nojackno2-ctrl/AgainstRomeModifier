@@ -25,7 +25,7 @@
 - 目視 `ENDL_000`：`vertex.bmp` 的低色彩區與 minimap 水域／地勢特徵有表面關聯，但這只是候選相關性，尚未具備寫入資格。
 - 2026-07-12 追加唯讀跨層目視：`KAMP_000/boden.bmp` 的連續灰階坡面、河谷與人工高低差和 `minimap.bmp` 明確對齊；`vertex.bmp` 則更接近彩色地表快取。這足以讓離線 renderer 使用 `boden.bmp` 的局部梯度產生只讀 hill-shading，但仍不足以推導世界高度單位或授權高度寫入。
 - 同日比對 `KAMP_000`、`ENDL_000`、`MP_000`、`HIST_000`：`Heightmapstep` 均為 4，`Waterlevel / Heightmapstep` 分別為 62、30、30、36，與各圖 `boden.bmp` 河谷低灰階區吻合。離線 renderer 因此以此門檻和 `WaterColor` 產生只讀水面遮罩；此證據仍只授權顯示，不授權直接改寫高度圖。
-- SDL 唯讀解析確認 `[settlement] refpos` 加上各 `[objectNNNN] pos` 得到物件世界座標；連續柵欄以 64 世界單位排列，而 16,384 世界單位對應 256 地圖像素，因此 `world / 64` 可直接落到地圖像素。`KAMP_000/TEAM_7.sdl` 解析出 138 個有效物件，`ENDL_000` 八個聚落 SDL 合計 613 個。離線 renderer 依此顯示建築／單位／其他物件；目前只讀，不把尚未完成 round-trip 驗證的 SDL 物件編輯暴露給玩家。
+- SDL 唯讀解析確認 `[settlement] refpos` 加上各 `[objectNNNN] pos` 得到物件世界座標；連續柵欄以 64 世界單位排列，而 16,384 世界單位對應 256 地圖像素，因此 `world / 64` 可直接落到地圖像素。`KAMP_000/TEAM_7.sdl` 解析出 138 個有效物件，`ENDL_000` 八個聚落 SDL 合計 613 個。離線 renderer 依此顯示建築／單位／其他物件。2026-07-14 已補齊純文件層的 settlement/object 欄位解析、`refpos` 平移、物件欄位修改、增刪與連續重編號；合成 PFIL round-trip 測試確認未知欄位、註解與空值不會遺失，另將 repo fixture 的八個真實 ENDL_000 聚落 SDL 複製到暫存目錄做 no-op 儲存，解壓文字也逐 byte 相同。場景檢查器目前只在 marker-backed `ENDL_005–999` 提供既有物件 `team`／相對 `pos` 的受控驗證編輯，並可還原到開啟時值；尚未取得遊戲內變更與還原證據，因此不得標記為 runtime verified，也不開放物件增刪。
 
 ## 未證實，禁止寫入
 
@@ -35,15 +35,20 @@
 4. `DATA/*.dat`、`cliprect.dat`、`shadows.dat`、`skydens.dat`、`visible.dat` 的權威性及重建規則。
 5. SDL `refpos`／`pos` 與 256 像素 minimap 的座標轉換。Phase 2 不得疊加物件位置，避免製造誤導性視圖。
 
+因此目前的「從無盡範本建立」是完整複製已知可載入的 `ENDL` 範本，不是空白地圖生成器。只刪除 SDL 物件或將 `boden.txt` 鋪成單一材質，仍會保留範本的高度、碰撞與 `DATA/*.dat` cache，不能對玩家宣稱為真正空白；空白生成必須等上述圖層的權威來源與重建規則通過 modifier workflow 的遊戲內驗證。
+
 ## 原遊戲渲染與內部 TextureEditor
 
 ### 可供獨立 renderer 使用的原始資源（2026-07-12）
+
+- 2026-07-14 起，離線 3D renderer 對缺少 `boden.bmp`、無法讀取 `floortex.dat`、OpenGL 3.3 context／shader 失敗提供可複製診斷，並停用 3D、回退至 2D。診斷實際找出 `ENDL_005` 因 atlas 欄數強制使用 2 的次方而在超過 256 種貼圖後誤判 4096 atlas 容量不足；改用緊密矩形排列後，4096 atlas 可保持 128×128 texture 與 8px gutter 並容納 784 種。使用者實機截圖確認同一張圖已成功進入 3D，完整地勢、水面與地表貼圖可見，該容量問題已 runtime verified；混合素材邊界與 `4T` 規則仍不在此次驗證範圍。
 
 - `floortex.dat` 是標準 ZIP 容器（副檔名雖為 `.dat`），共 3,005 個 entry；地表圖位於 `SYSTEM/DATA/FLOORTEXTURE/*.bmp`。
 - `boden.txt [Texturen]` 的名稱可直接對應上述 BMP basename。例如 `4BJ___51` 與 `L5B09T1A` 均已在容器內找到；抽查圖檔為 128×128、8-bit BMP。
 - 2026-07-14 的靜態縮圖比對顯示，`4B?___5?` 是基礎地表家族：第二個代碼代表材質，同一家族尾碼提供數個自然變體。這一層才適合作為一般使用者的「顏料」。
 - `4T*`、`4U*`、`L*B*T*` 等圖塊具有明顯的邊界、轉角或混合圖樣，屬於渲染拼接素材；`AA_Brush01`～`AA_Brush36` 是筆刷形狀／遮罩。它們不是各自獨立的基礎地表，不得出現在玩家調色盤或要求玩家手動選用。
 - `4Uxy__dV` 的 `x/y` 對應兩個基礎材質代碼；`d` 使用數字鍵盤幾何（`2/4/6/8` 為第二種材質所在半邊，`1/3/7/9` 為所在角落），`V` 是同方向的自然變體。編輯器應將該 tile 歸屬於第一種（外圍舊）材質，並放在它與第二種（新繪）材質相鄰的格子，讓玩家直接繪製的格子保持完整。`4T` 三材質交會規則尚未完整還原，必須留待後續受控驗證。
+- 2026-07-14 全庫盤點：75 張 base `4B`、876 張 `4U`、333 張 `4T`、35 張 `AA_Brush`（缺號 31）。原圖 quadrant 比對確認 `4TABC_dV` 的 `A` 佔一個半面／相鄰兩角，`B/C` 各佔另一角，`d` 只出現 `2/4/6/8`；因此 native baker 應以每 tile 四角材質為輸入。`4U` 完整方向為 `1/2/3/4/6/7/8/9`。但 pair 是 canonical order：例如實庫有 14 張 `4U89`、沒有 `4U98`，所以不能假設交換兩材質代碼即可反向輸出；尾碼 variant 與 layer-order 的完整契約仍待由原版地圖配置校正。現階段 corner compiler 只作純模型，找不到原版 tile 會明確回報，不接入產品寫入。
 - `alr.dat` 同樣是 ZIP 容器，共 2,075 個 `SYSTEM/DATA/ALR/*.alr` 模型／動畫資源。
 - `apt.dat` 是 ZIP 容器，共 222 個 `SYSTEM/DATA/APT/*.apt` 資源；`shad.dat` 是 ZIP 容器，共 2,674 個圖示／陰影資源。
 - 唯讀遊戲樣本的 `MAPS` 下共有 73 個具備 `boden.txt` 與 `minimap.bmp` 的可渲染目錄：`KAMP` 34、`MP` 20、`HIST` 10、`ENDL` 5、`TUTOR` 4。

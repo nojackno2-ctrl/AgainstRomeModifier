@@ -290,7 +290,7 @@ namespace AgainstRomeModifier {
             if (!TroopConfig.UnitMeta.TryGetValue(key, out var meta)) return balanced;
             // 與 BackupManager.GetBaseStatsForUnit 一致：自訂屬性同受平衡開關把關。
             if (balanceEnabled && customUnitStats != null && customUnitStats.TryGetValue(key, out double[]? custom) && custom != null) {
-                bool ignoreRange = (chkRangedRange3x.Checked && (meta.UnitType is "ranged_inf" or "ranged_cav" or "siege")) ||
+                bool ignoreRange = (chkRangedRange3x.Checked && TroopConfig.SupportsRangedRange3x(meta.UnitType)) ||
                     (chkSpellEntireMap.Checked && meta.UnitType == "priest");
                 result = MergeUnitStatsLayers(balanced, custom, SupportsConfigurableSpellRadius(key),
                     chkUnitMovementSpeed2x.Checked, ignoreRange,
@@ -301,7 +301,7 @@ namespace AgainstRomeModifier {
             }
 
             if (meta != null) {
-                bool isRanged = meta.UnitType is "ranged_inf" or "ranged_cav" or "siege";
+                bool isRanged = TroopConfig.SupportsRangedRange3x(meta.UnitType);
                 if (isRanged && chkRangedRange3x.Checked) {
                     result[7] *= 3.0;
                 }

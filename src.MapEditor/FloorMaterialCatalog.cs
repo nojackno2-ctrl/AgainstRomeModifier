@@ -1,3 +1,4 @@
+using System.Drawing;
 using System.Text.RegularExpressions;
 
 namespace AgainstRomeMapEditor;
@@ -15,7 +16,8 @@ internal sealed record FloorMaterial(string Id, string Category, string DisplayN
 internal sealed class FloorMaterialCatalog
 {
     private static readonly Regex BaseMaterialName = new("^4B(?<code>[0-9A-Z])___5[0-9A-Z]$", RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
-    private static readonly Regex TwoMaterialTransitionName = new("^4U(?<first>[0-9A-Z])(?<second>[0-9A-Z])__(?<shape>[1-9])(?<variant>[0-9A-Z])$", RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+    private static readonly Regex TwoMaterialTransitionName = new("^4U(?<first>[0-9A-Z])(?<second>[0-9A-Z])__(?<shape>[1-46-9])(?<variant>[0-9A-Z])$", RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+    private static readonly Regex ThreeMaterialTransitionName = new("^4T(?<first>[0-9A-Z])(?<second>[0-9A-Z])(?<third>[0-9A-Z])_(?<shape>[2468])(?<variant>[0-9A-Z])$", RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
     private static readonly IReadOnlyDictionary<string, (string Category, string Name, int Order)> PlayerNames =
         new Dictionary<string, (string, string, int)>(StringComparer.OrdinalIgnoreCase)
         {
@@ -32,9 +34,21 @@ internal sealed class FloorMaterialCatalog
             ["BK"] = ("岩地", "灰色碎石地", 63), ["BR"] = ("岩地", "風化岩地", 64), ["BO"] = ("岩地", "苔蘚岩地", 65),
         };
     private readonly Dictionary<string, FloorMaterial> _byTexture;
+    private readonly Dictionary<string, FloorMaterial> _byId;
     private readonly IReadOnlyList<FloorTransition> _transitions;
+    private readonly IReadOnlyList<ThreeMaterialFloorTransition> _threeMaterialTransitions;
+    private readonly Dictionary<string, string[]> _nativeCornersByTexture = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, IReadOnlyList<string>> _nativeTexturesByCorners = new(StringComparer.OrdinalIgnoreCase);
 
-    public FloorMaterialCatalog(IEnumerable<string> textureNames)
+    public FloorMaterialCatalog(IEnumerable<string> textureNames) : this(textureNames, null)
+    {
+    }
+
+    public FloorMaterialCatalog(FloorTextureLibrary library) : this(library.Names, library.Get)
+    {
+    }
+
+    private FloorMaterialCatalog(IEnumerable<string> textureNames, Func<string, Bitmap?>? textureResolver)
     {
         string[] names = textureNames.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
         var groups = names
@@ -52,15 +66,30 @@ internal sealed class FloorMaterialCatalog
             (string category, string name, _) = PlayerDefinition(group.Key);
             return new FloorMaterial(group.Key, category, name, representative, variants);
         }).ToArray();
-        Dictionary<string, FloorMaterial> byId = Materials.ToDictionary(material => material.Id, StringComparer.OrdinalIgnoreCase);
+        _byId = Materials.ToDictionary(material => material.Id, StringComparer.OrdinalIgnoreCase);
         _transitions = names
             .Select(name => (name, match: TwoMaterialTransitionName.Match(name)))
             .Where(item => item.match.Success)
             .GroupBy(item => (First: "B" + item.match.Groups["first"].Value.ToUpperInvariant(), Second: "B" + item.match.Groups["second"].Value.ToUpperInvariant()))
-            .Where(group => byId.ContainsKey(group.Key.First) && byId.ContainsKey(group.Key.Second))
+            .Where(group => _byId.ContainsKey(group.Key.First) && _byId.ContainsKey(group.Key.Second))
             .Select(group => new FloorTransition(
                 group.Key.First,
                 group.Key.Second,
+                group.GroupBy(item => int.Parse(item.match.Groups["shape"].Value))
+                    .ToDictionary(shape => shape.Key, shape => (IReadOnlyList<string>)shape.Select(item => item.name).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(name => name, StringComparer.OrdinalIgnoreCase).ToArray())))
+            .ToArray();
+        _threeMaterialTransitions = names
+            .Select(name => (name, match: ThreeMaterialTransitionName.Match(name)))
+            .Where(item => item.match.Success)
+            .GroupBy(item => (
+                First: "B" + item.match.Groups["first"].Value.ToUpperInvariant(),
+                Second: "B" + item.match.Groups["second"].Value.ToUpperInvariant(),
+                Third: "B" + item.match.Groups["third"].Value.ToUpperInvariant()))
+            .Where(group => _byId.ContainsKey(group.Key.First) && _byId.ContainsKey(group.Key.Second) && _byId.ContainsKey(group.Key.Third))
+            .Select(group => new ThreeMaterialFloorTransition(
+                group.Key.First,
+                group.Key.Second,
+                group.Key.Third,
                 group.GroupBy(item => int.Parse(item.match.Groups["shape"].Value))
                     .ToDictionary(shape => shape.Key, shape => (IReadOnlyList<string>)shape.Select(item => item.name).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(name => name, StringComparer.OrdinalIgnoreCase).ToArray())))
             .ToArray();
@@ -69,15 +98,42 @@ internal sealed class FloorMaterialCatalog
             .ToDictionary(item => item.texture, item => item.material, StringComparer.OrdinalIgnoreCase);
         foreach (FloorTransition transition in _transitions)
         {
-            FloorMaterial owner = byId[transition.FirstMaterialId];
-            foreach (string texture in transition.VariantsByShape.Values.SelectMany(value => value))
+            FloorMaterial owner = _byId[transition.FirstMaterialId];
+            foreach ((int shape, IReadOnlyList<string> variants) in transition.VariantsByShape)
             {
-                _byTexture[texture] = owner;
+                foreach (string texture in variants)
+                {
+                    _byTexture[texture] = owner;
+                    string[]? corners = textureResolver is null
+                        ? TwoMaterialCorners(transition.FirstMaterialId, transition.SecondMaterialId, shape)
+                        : InferCorners(textureResolver, texture, [transition.FirstMaterialId, transition.SecondMaterialId]);
+                    if (corners is not null) _nativeCornersByTexture[texture] = corners;
+                }
             }
         }
+        foreach (ThreeMaterialFloorTransition transition in _threeMaterialTransitions)
+        {
+            FloorMaterial owner = _byId[transition.FirstMaterialId];
+            foreach ((int shape, IReadOnlyList<string> variants) in transition.VariantsByShape)
+            {
+                foreach (string texture in variants)
+                {
+                    _byTexture[texture] = owner;
+                    string[]? corners = textureResolver is null
+                        ? ThreeMaterialCorners(transition.FirstMaterialId, transition.SecondMaterialId, transition.ThirdMaterialId, shape)
+                        : InferCorners(textureResolver, texture, [transition.FirstMaterialId, transition.SecondMaterialId, transition.ThirdMaterialId]);
+                    if (corners is not null) _nativeCornersByTexture[texture] = corners;
+                }
+            }
+        }
+        _nativeTexturesByCorners = _nativeCornersByTexture
+            .GroupBy(item => CornerKey(item.Value), item => item.Key, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => (IReadOnlyList<string>)group.OrderBy(value => value, StringComparer.OrdinalIgnoreCase).ToArray(), StringComparer.OrdinalIgnoreCase);
     }
 
     public IReadOnlyList<FloorMaterial> Materials { get; }
+    internal int TwoMaterialTransitionFamilyCount => _transitions.Count;
+    internal int ThreeMaterialTransitionFamilyCount => _threeMaterialTransitions.Count;
     public FloorMaterial? FindByTexture(string? texture)
         => texture is not null && _byTexture.TryGetValue(texture, out FloorMaterial? material) ? material : null;
 
@@ -104,10 +160,65 @@ internal sealed class FloorMaterialCatalog
             bool down = HasMaterial(materialIds, dimension, x, y + 1, transition.SecondMaterialId);
             bool left = HasMaterial(materialIds, dimension, x - 1, y, transition.SecondMaterialId);
             int shape = SecondMaterialRegionShape(up, right, down, left);
-            if (shape != 0 && transition.VariantsByShape.TryGetValue(shape, out IReadOnlyList<string>? variants))
-                return PickStable(transition.FirstMaterialId + transition.SecondMaterialId + shape, variants, x, y);
+            string? resolved = ResolveTwoMaterialTransition(transition.FirstMaterialId, transition.SecondMaterialId, shape, x, y);
+            if (resolved is not null) return resolved;
         }
         return current.PickVariant(x, y);
+    }
+
+    internal string? ResolveTwoMaterialTransition(string firstMaterialId, string secondMaterialId, int shape, int x, int y)
+    {
+        FloorTransition? transition = _transitions.FirstOrDefault(item =>
+            StringComparer.OrdinalIgnoreCase.Equals(item.FirstMaterialId, firstMaterialId) &&
+            StringComparer.OrdinalIgnoreCase.Equals(item.SecondMaterialId, secondMaterialId));
+        return transition is not null && transition.VariantsByShape.TryGetValue(shape, out IReadOnlyList<string>? variants)
+            ? PickStable(firstMaterialId + secondMaterialId + shape, variants, x, y)
+            : null;
+    }
+
+    internal string? ResolveThreeMaterialTransition(string firstMaterialId, string secondMaterialId, string thirdMaterialId, int shape, int x, int y)
+    {
+        ThreeMaterialFloorTransition? transition = _threeMaterialTransitions.FirstOrDefault(item =>
+            StringComparer.OrdinalIgnoreCase.Equals(item.FirstMaterialId, firstMaterialId) &&
+            StringComparer.OrdinalIgnoreCase.Equals(item.SecondMaterialId, secondMaterialId) &&
+            StringComparer.OrdinalIgnoreCase.Equals(item.ThirdMaterialId, thirdMaterialId));
+        return transition is not null && transition.VariantsByShape.TryGetValue(shape, out IReadOnlyList<string>? variants)
+            ? PickStable(firstMaterialId + secondMaterialId + thirdMaterialId + shape, variants, x, y)
+            : null;
+    }
+
+    /// <summary>
+    /// Compiles four texture-space corner materials (top-left, top-right, bottom-right, bottom-left)
+    /// into an existing native floor tile. Returning null is intentional: unsupported junctions must
+    /// be surfaced to the authoring layer instead of silently degrading to a hard square.
+    /// </summary>
+    internal string? ResolveNativeTile(IReadOnlyList<string> cornerMaterialIds, int x, int y)
+    {
+        if (cornerMaterialIds.Count != 4) throw new ArgumentException("原生地表 tile 必須提供四個角的材質。", nameof(cornerMaterialIds));
+        if (cornerMaterialIds.All(value => StringComparer.OrdinalIgnoreCase.Equals(value, cornerMaterialIds[0])))
+            return _byId.TryGetValue(cornerMaterialIds[0], out FloorMaterial? material) ? material.PickVariant(x, y) : null;
+
+        string key = CornerKey(cornerMaterialIds);
+        return _nativeTexturesByCorners.TryGetValue(key, out IReadOnlyList<string>? matching)
+            ? PickStable(key, matching, x, y)
+            : null;
+    }
+
+    internal bool TryResolveNativeCorners(string texture, out IReadOnlyList<string> corners)
+    {
+        if (_nativeCornersByTexture.TryGetValue(texture, out string[]? resolved))
+        {
+            corners = resolved;
+            return true;
+        }
+        FloorMaterial? material = FindByTexture(texture);
+        if (material is not null)
+        {
+            corners = [material.Id, material.Id, material.Id, material.Id];
+            return true;
+        }
+        corners = Array.Empty<string>();
+        return false;
     }
 
     private static (string Category, string Name, int Order) PlayerDefinition(string id)
@@ -115,6 +226,77 @@ internal sealed class FloorMaterialCatalog
 
     private static bool HasMaterial(IReadOnlyList<string?> materials, int dimension, int x, int y, string expected)
         => x >= 0 && y >= 0 && x < dimension && y < dimension && StringComparer.OrdinalIgnoreCase.Equals(materials[y * dimension + x], expected);
+
+    private static bool CornersEqual(IReadOnlyList<string> actual, IReadOnlyList<string> expected)
+        => Enumerable.Range(0, 4).All(index => StringComparer.OrdinalIgnoreCase.Equals(actual[index], expected[index]));
+
+    private static string CornerKey(IReadOnlyList<string> corners)
+        => string.Join("|", corners.Select(value => value.ToUpperInvariant()));
+
+    private string[]? InferCorners(Func<string, Bitmap?> textureResolver, string texture, IReadOnlyList<string> materialIds)
+    {
+        Bitmap? transition = textureResolver(texture);
+        if (transition is null) return null;
+        var references = materialIds.Select(id =>
+        {
+            FloorMaterial material = _byId[id];
+            Bitmap? bitmap = textureResolver(material.RepresentativeTexture);
+            return (id, color: bitmap is null ? ((double R, double G, double B)?)null : MeanColor(bitmap, 0, 0, bitmap.Width, bitmap.Height));
+        }).Where(item => item.color is not null).Select(item => (item.id, color: item.color!.Value)).ToArray();
+        if (references.Length != materialIds.Count) return null;
+        int halfWidth = transition.Width / 2, halfHeight = transition.Height / 2;
+        (int X, int Y, int Width, int Height)[] quadrants =
+        [
+            (0, 0, halfWidth, halfHeight),
+            (halfWidth, 0, transition.Width - halfWidth, halfHeight),
+            (halfWidth, halfHeight, transition.Width - halfWidth, transition.Height - halfHeight),
+            (0, halfHeight, halfWidth, transition.Height - halfHeight)
+        ];
+        return quadrants.Select(quadrant =>
+        {
+            var sample = MeanColor(transition, quadrant.X, quadrant.Y, quadrant.Width, quadrant.Height);
+            return references.MinBy(reference => ColorDistanceSquared(sample, reference.color)).id;
+        }).ToArray();
+    }
+
+    private static (double R, double G, double B) MeanColor(Bitmap bitmap, int x, int y, int width, int height)
+    {
+        long red = 0, green = 0, blue = 0, count = 0;
+        int stepX = Math.Max(1, width / 8), stepY = Math.Max(1, height / 8);
+        for (int sampleY = y + stepY / 2; sampleY < y + height; sampleY += stepY)
+        for (int sampleX = x + stepX / 2; sampleX < x + width; sampleX += stepX)
+        {
+            Color color = bitmap.GetPixel(Math.Min(bitmap.Width - 1, sampleX), Math.Min(bitmap.Height - 1, sampleY));
+            red += color.R; green += color.G; blue += color.B; count++;
+        }
+        return (red / (double)count, green / (double)count, blue / (double)count);
+    }
+
+    private static double ColorDistanceSquared((double R, double G, double B) left, (double R, double G, double B) right)
+        => Math.Pow(left.R - right.R, 2) + Math.Pow(left.G - right.G, 2) + Math.Pow(left.B - right.B, 2);
+
+    // Corner order is texture-space TL, TR, BR, BL, verified against the original floortex BMP quadrants.
+    private static string[]? TwoMaterialCorners(string first, string second, int shape) => shape switch
+    {
+        1 => [second, first, second, second],
+        2 => [first, first, second, second],
+        3 => [first, second, second, second],
+        4 => [second, first, first, second],
+        6 => [first, second, second, first],
+        7 => [second, second, first, second],
+        8 => [second, second, first, first],
+        9 => [second, second, second, first],
+        _ => null
+    };
+
+    private static string[]? ThreeMaterialCorners(string first, string second, string third, int shape) => shape switch
+    {
+        2 => [third, second, first, first],
+        4 => [first, third, second, first],
+        6 => [third, first, first, second],
+        8 => [first, first, second, third],
+        _ => null
+    };
 
     // 4U 尾碼第一位使用數字鍵盤方向：第二種材質位於 2/4/6/8 的半邊，或 1/3/7/9 的角落。
     private static int SecondMaterialRegionShape(bool secondAbove, bool secondRight, bool secondBelow, bool secondLeft)
@@ -146,4 +328,5 @@ internal sealed class FloorMaterialCatalog
     }
 
     private sealed record FloorTransition(string FirstMaterialId, string SecondMaterialId, IReadOnlyDictionary<int, IReadOnlyList<string>> VariantsByShape);
+    private sealed record ThreeMaterialFloorTransition(string FirstMaterialId, string SecondMaterialId, string ThirdMaterialId, IReadOnlyDictionary<int, IReadOnlyList<string>> VariantsByShape);
 }

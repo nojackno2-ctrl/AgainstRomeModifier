@@ -175,7 +175,7 @@ public sealed class CharacterizationTests
                 if (Math.Abs(curHp - origHp) > 0.01) diffs.Add($"{key} HP diff: cur={curHp}, orig={origHp}");
                 if (Math.Abs(curVw - origVw) > 0.01) diffs.Add($"{key} VW diff: cur={curVw}, orig={origVw}");
                 if (Math.Abs(curAw - origAw) > 0.01) diffs.Add($"{key} AW diff: cur={curAw}, orig={origAw}");
-                bool hasExpandedRangeSight = profile.RangedRange3x && utype is "ranged_inf" or "ranged_cav" or "siege";
+                bool hasExpandedRangeSight = profile.RangedRange3x && TroopConfig.SupportsRangedRange3x(utype);
                 if (!hasExpandedRangeSight && Math.Abs(curSight - origSight) > 0.01) diffs.Add($"{key} Sight diff: cur={curSight}, orig={origSight}");
             }
         }
