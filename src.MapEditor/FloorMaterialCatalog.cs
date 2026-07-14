@@ -241,10 +241,11 @@ internal sealed class FloorMaterialCatalog
         {
             FloorMaterial material = _byId[id];
             Bitmap? bitmap = textureResolver(material.RepresentativeTexture);
-            return (id, color: bitmap is null ? ((double R, double G, double B)?)null : MeanColor(bitmap, 0, 0, bitmap.Width, bitmap.Height));
+            return (id, color: bitmap is null ? ((double R, double G, double B)?)null : MeanColor(BitmapPixels.Read(bitmap), bitmap.Width, bitmap.Height, 0, 0, bitmap.Width, bitmap.Height));
         }).Where(item => item.color is not null).Select(item => (item.id, color: item.color!.Value)).ToArray();
         if (references.Length != materialIds.Count) return null;
         int cornerWidth = Math.Max(1, transition.Width / 4), cornerHeight = Math.Max(1, transition.Height / 4);
+        int[] transitionPixels = BitmapPixels.Read(transition);
         (int X, int Y, int Width, int Height)[] cornerSamples =
         [
             (0, 0, cornerWidth, cornerHeight),
@@ -254,20 +255,21 @@ internal sealed class FloorMaterialCatalog
         ];
         return cornerSamples.Select(sampleArea =>
         {
-            var sample = MeanColor(transition, sampleArea.X, sampleArea.Y, sampleArea.Width, sampleArea.Height);
+            var sample = MeanColor(transitionPixels, transition.Width, transition.Height, sampleArea.X, sampleArea.Y, sampleArea.Width, sampleArea.Height);
             return references.MinBy(reference => ColorDistanceSquared(sample, reference.color)).id;
         }).ToArray();
     }
 
-    private static (double R, double G, double B) MeanColor(Bitmap bitmap, int x, int y, int width, int height)
+    // 以單次 LockBits 讀到的 ARGB 陣列取樣，取代逐像素 GetPixel（開啟編輯器時對每個 transition tile 都會呼叫）。
+    private static (double R, double G, double B) MeanColor(int[] pixels, int imageWidth, int imageHeight, int x, int y, int width, int height)
     {
         long red = 0, green = 0, blue = 0, count = 0;
         int stepX = Math.Max(1, width / 8), stepY = Math.Max(1, height / 8);
         for (int sampleY = y + stepY / 2; sampleY < y + height; sampleY += stepY)
         for (int sampleX = x + stepX / 2; sampleX < x + width; sampleX += stepX)
         {
-            Color color = bitmap.GetPixel(Math.Min(bitmap.Width - 1, sampleX), Math.Min(bitmap.Height - 1, sampleY));
-            red += color.R; green += color.G; blue += color.B; count++;
+            int pixel = pixels[Math.Min(imageHeight - 1, sampleY) * imageWidth + Math.Min(imageWidth - 1, sampleX)];
+            red += (pixel >> 16) & 0xff; green += (pixel >> 8) & 0xff; blue += pixel & 0xff; count++;
         }
         return (red / (double)count, green / (double)count, blue / (double)count);
     }

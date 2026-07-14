@@ -193,8 +193,20 @@ public sealed class SdlDocument : MapTextDocument
         Text = Regex.Replace(Text, @"(?im)^\[object\d+\]", _ => $"[object{next++:0000}]");
     }
 
-    private TextSection FindSection(string name) => Sections().FirstOrDefault(section => section.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
+    private TextSection FindSection(string name) => Sections().FirstOrDefault(section => SectionNameMatches(section.Name, name))
         ?? throw new KeyNotFoundException($"SDL 缺少 [{name}] 區段。");
+
+    // 原版 SDL 的 [objectN] 補零寬度不一定是 4 位；讀取端只保留數值索引，因此以數值比對，
+    // 避免寫回 [object0001] 卻對不上檔內 [object1]／[object00001] 而丟出 KeyNotFoundException。
+    private static bool SectionNameMatches(string sectionName, string requested)
+    {
+        if (sectionName.Equals(requested, StringComparison.OrdinalIgnoreCase)) return true;
+        Match actual = ObjectSectionName.Match(sectionName), wanted = ObjectSectionName.Match(requested);
+        return actual.Success && wanted.Success
+            && int.TryParse(actual.Groups["index"].Value, NumberStyles.None, CultureInfo.InvariantCulture, out int actualIndex)
+            && int.TryParse(wanted.Groups["index"].Value, NumberStyles.None, CultureInfo.InvariantCulture, out int wantedIndex)
+            && actualIndex == wantedIndex;
+    }
 
     private IReadOnlyList<TextSection> Sections() => SectionPattern.Matches(Text).Select(match => new TextSection(
         match.Groups["name"].Value,

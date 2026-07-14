@@ -406,8 +406,12 @@ internal sealed class MapEditorForm : Form
             ini.SetValue("DayStartTime", _dayStart.Value.ToString()); ini.SetValue("DayEndTime", _dayEnd.Value.ToString()); ini.SetValue("RainDropsOnWater", _rain.Checked ? "1" : "0"); ini.Save(rollback);
             SdlSceneEditService.SaveChanges(map, _sceneSavedObjects, _sceneObjects, rollback);
             _texturesDocument?.Save(rollback);
-            byte[]? minimap = _canvas.RenderMinimapBmp();
-            if (minimap is not null) AgainstRomeModifier.Core.Services.SafeFileWriter.WriteAllBytes(Path.Combine(map, "minimap.bmp"), minimap, rollback);
+            // 只有地表確實被繪製過才重生小地圖，避免僅改標題／水面等屬性時用近似圖覆蓋原始 minimap.bmp。
+            if (TextureDirty())
+            {
+                byte[]? minimap = _canvas.RenderMinimapBmp();
+                if (minimap is not null) AgainstRomeModifier.Core.Services.SafeFileWriter.WriteAllBytes(Path.Combine(map, "minimap.bmp"), minimap, rollback);
+            }
             rollback.Commit();
             _terrainBlendSession?.CommitBaseline(); _savedTextures = _terrainBlendSession?.CurrentTextures.ToArray() ?? _texturesDocument?.Textures.ToArray() ?? Array.Empty<string>(); _sceneSavedObjects = _sceneObjects.ToArray(); _propertyDirty = false;
             _canvas.CommitBaseline(); _view3d?.CommitBaseline();
