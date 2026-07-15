@@ -506,7 +506,7 @@ namespace AgainstRomeModifier {
                      dgv.Rows.Clear();
                 }
 
-
+                PatchProfile displayProfile = BuildCurrentPatchProfile(chkBalance.Checked);
 
                 foreach (string key in TroopConfig.UnitOrder) {
                     if (!TroopConfig.UnitMeta.ContainsKey(key)) continue;
@@ -597,7 +597,7 @@ namespace AgainstRomeModifier {
                     string styleText = Loc.GetStyleText(style);
 
                     var iconImage = unitIcons.ContainsKey(key) ? unitIcons[key] : null;
-                    double[] bases = unitStatsProjection.Project(key, BuildCurrentPatchProfile(chkBalance.Checked));
+                    double[] bases = unitStatsProjection.Project(key, displayProfile);
 
                     double displayMeleeDam = 0;
                     double displayRangedDam = 0;

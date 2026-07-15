@@ -105,7 +105,8 @@ internal sealed class SaveBackupService
         }
     }
 
-    internal SaveRestoreResult RestoreBackup(string gamePath, string fileName, string folder)
+    internal SaveRestoreResult RestoreBackup(string gamePath, string fileName, string folder,
+        Action<string>? onRollbackFailure = null)
     {
         string archivePath = ResolveBackupPath(fileName);
         if (!File.Exists(archivePath)) throw new FileNotFoundException("找不到備份檔案。", archivePath);
@@ -131,7 +132,7 @@ internal sealed class SaveBackupService
             Directory.Move(temporary, destination);
             movedNew = true;
         }
-        catch (Exception restoreError)
+        catch (Exception)
         {
             try
             {
@@ -141,14 +142,15 @@ internal sealed class SaveBackupService
             }
             catch (Exception rollbackError)
             {
-                throw new AggregateException("還原存檔與回復原存檔都失敗。", restoreError, rollbackError);
+                // 回復原存檔失敗只回報給呼叫端記錄；對外仍拋出原始的還原例外。
+                onRollbackFailure?.Invoke(rollbackError.Message);
             }
             throw;
         }
         finally
         {
             try { if (Directory.Exists(temporary)) Directory.Delete(temporary, true); }
-            catch (Exception error) { warnings.Add("清理還原暫存資料夾失敗: " + error.Message); }
+            catch (Exception error) { warnings.Add(error.Message); }
         }
 
         if (movedOld && Directory.Exists(oldDirectory))

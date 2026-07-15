@@ -179,7 +179,8 @@ namespace AgainstRomeModifier {
                     MessageBox.Show(string.Format(Loc.Get("MsgConfirmOverwriteSave"), folder), Loc.Get("TitleWarning"),
                         MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes) return;
 
-                SaveRestoreResult result = saveBackupService.RestoreBackup(gamePath, file, folder);
+                SaveRestoreResult result = saveBackupService.RestoreBackup(gamePath, file, folder,
+                    message => Log("還原存檔失敗後回復原存檔也失敗: " + message));
                 foreach (string warning in result.CleanupWarnings)
                     Log(Loc.Get("LogRestoreBackupCleanupFailed") + warning);
                 Log(string.Format(Loc.Get("LogRestoreBackupSuccessDetail"), file, folder));
