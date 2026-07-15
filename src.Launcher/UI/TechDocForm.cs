@@ -30,7 +30,7 @@ namespace AgainstRomeModifier {
         }
 
         private void InitializeComponent() {
-            this.Text = "技術文件 (Technical Document)";
+            this.Text = Loc.CurrentLanguage == Language.English ? "Technical Document" : "技術文件 (Technical Document)";
             this.Size = new Size(800, 600);
             this.FormBorderStyle = FormBorderStyle.None;
             this.StartPosition = FormStartPosition.CenterScreen;
@@ -114,7 +114,7 @@ namespace AgainstRomeModifier {
 
         private void LoadTechnicalDocument() {
             string docText = "";
-            string resourceKey = "TechDoc.md"; 
+            string resourceKey = Loc.CurrentLanguage == Language.English ? "TechDoc_EN.md" : "TechDoc.md"; 
             try {
                 using (Stream? stream = typeof(TechDocForm).Assembly.GetManifestResourceStream(resourceKey)) {
                     if (stream != null) {
@@ -137,7 +137,7 @@ namespace AgainstRomeModifier {
                     }
                 }
             } catch (Exception ex) {
-                docText = "無法載入技術文件: " + ex.Message;
+                docText = (Loc.CurrentLanguage == Language.English ? "Failed to load technical document: " : "無法載入技術文件: ") + ex.Message;
             }
 
             docText = docText.Replace("\r\n", "\n").Replace("\n", "\r\n");

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 
 namespace AgainstRomeModifier {
     public enum Language {
@@ -8,7 +9,70 @@ namespace AgainstRomeModifier {
     }
 
     public static class Loc {
-        public static Language CurrentLanguage { get; set; } = Language.TraditionalChinese;
+        private static Language _currentLanguage = Language.TraditionalChinese;
+
+        static Loc() {
+            LoadLanguagePreference();
+        }
+
+        public static Language CurrentLanguage {
+            get => _currentLanguage;
+            set {
+                if (_currentLanguage != value) {
+                    _currentLanguage = value;
+                    SaveLanguagePreference(value);
+                }
+            }
+        }
+
+        public static void ReloadLanguage() {
+            LoadLanguagePreference();
+        }
+
+        private static void LoadLanguagePreference() {
+            try {
+                string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+                string configDir = Path.Combine(appData, "AgainstRomeModifier");
+                string configFile = Path.Combine(configDir, "settings.json");
+                if (File.Exists(configFile)) {
+                    string json = File.ReadAllText(configFile);
+                    if (json.Contains("\"Language\":1") || json.Contains("\"Language\":\"English\"") || json.ToLower().Contains("english")) {
+                        _currentLanguage = Language.English;
+                        return;
+                    } else if (json.Contains("\"Language\":0") || json.Contains("\"Language\":\"TraditionalChinese\"") || json.ToLower().Contains("traditionalchinese")) {
+                        _currentLanguage = Language.TraditionalChinese;
+                        return;
+                    }
+                }
+            }
+            catch {
+                // ignore
+            }
+
+            // Fallback to system language
+            string sysLang = System.Globalization.CultureInfo.CurrentUICulture.Name;
+            if (sysLang.StartsWith("en", StringComparison.OrdinalIgnoreCase)) {
+                _currentLanguage = Language.English;
+            } else {
+                _currentLanguage = Language.TraditionalChinese;
+            }
+        }
+
+        private static void SaveLanguagePreference(Language lang) {
+            try {
+                string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+                string configDir = Path.Combine(appData, "AgainstRomeModifier");
+                if (!Directory.Exists(configDir)) {
+                    Directory.CreateDirectory(configDir);
+                }
+                string configFile = Path.Combine(configDir, "settings.json");
+                string json = $"{{\"Language\":\"{lang}\"}}";
+                File.WriteAllText(configFile, json);
+            }
+            catch {
+                // ignore
+            }
+        }
 
         public static string Get(string key) {
             if (CurrentLanguage == Language.English) {
@@ -155,6 +219,15 @@ namespace AgainstRomeModifier {
         };
 
         private static readonly Dictionary<string, string> Zh = new Dictionary<string, string> {
+            // Launcher elements
+            { "BtnModifier", "啟動修改器" },
+            { "BtnMapEditor", "地圖編輯器" },
+            { "BtnSaveManager", "存檔管理器" },
+            { "BtnTechDoc", "修改技術文件" },
+            { "LauncherTitle", "AGAINST ROME 啟動器" },
+            { "GamePathLabel", "遊戲目錄：" },
+            { "BrowseButton", "瀏覽..." },
+
             // UI elements
             { "NavSystem", "主控制台" },
             { "NavDefaultStats", "自訂兵種屬性" },
@@ -481,6 +554,15 @@ namespace AgainstRomeModifier {
         };
 
         private static readonly Dictionary<string, string> En = new Dictionary<string, string> {
+            // Launcher elements
+            { "BtnModifier", "Launch Modifier" },
+            { "BtnMapEditor", "Map Editor" },
+            { "BtnSaveManager", "Save Manager" },
+            { "BtnTechDoc", "Technical Document" },
+            { "LauncherTitle", "AGAINST ROME LAUNCHER" },
+            { "GamePathLabel", "Game Path:" },
+            { "BrowseButton", "Browse..." },
+
             // UI elements
             { "NavSystem", "Main Console" },
             { "NavDefaultStats", "Custom Unit Stats" },
