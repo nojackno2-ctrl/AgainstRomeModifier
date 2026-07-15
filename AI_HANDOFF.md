@@ -1,5 +1,12 @@
 ﻿# AI Handoff - Live Project Memory
 
+## CI locale-dependent MapSelectionForm title test fix (2026-07-15)
+
+- CI run `29419207320` on `主要開發` (commit `9556b34`) failed with exactly one test: `MapEditor3DTests.MapSelection_form_constructs_with_preview_layout` expected `Against Rome 地圖選單` but got `Against Rome Map Editor - Selection`. CodeQL on the same commit succeeded, so the workflow-path repair itself is confirmed working.
+- Root cause: the bilingual feature commit `783d5cf` made `Loc` fall back to `CultureInfo.CurrentUICulture` when no settings file exists; the GitHub Windows runner is English, so `MapSelectionForm.ApplyLanguageToUI` produced English titles/buttons while the test asserts Traditional Chinese. This is an environment dependency in the test, not a product regression.
+- Fix: added internal `Loc.OverrideLanguageForTesting(Language)` (sets `_currentLanguage` directly, never writes the user's `settings.json`, unlike the `CurrentLanguage` setter) and pinned `TraditionalChinese` in the two form-title tests in `MapEditor3DTests`. Only these two tests assert `Loc`-driven UI strings; other Chinese assertions in the suite are catalog data, not localization.
+- Verification status: this Linux session cannot build the WinForms targets — the Ubuntu apt .NET SDK lacks `Microsoft.NET.Sdk.WindowsDesktop` and the network policy blocks the official SDK download hosts. Changes are syntax-reviewed only; CI on the pushed branch is the verification gate. Do not claim green until the new run finishes.
+
 ## GitHub Actions modular-project path repair (2026-07-15)
 
 - Push `783d5cf` fails in both CI run `29417646283` and CodeQL run `29417646317` because the workflows still build the deleted root `AgainstRomeModifier.csproj` after commit `55452b1` split the repository into `AgainstRomeModifier.slnx` and `src.*` projects.

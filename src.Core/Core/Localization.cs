@@ -29,6 +29,12 @@ namespace AgainstRomeModifier {
             LoadLanguagePreference();
         }
 
+        // 測試專用：直接覆寫目前語言且不寫入使用者設定檔，
+        // 讓測試結果不受執行環境的系統語系或本機偏好影響。
+        internal static void OverrideLanguageForTesting(Language language) {
+            _currentLanguage = language;
+        }
+
         private static void LoadLanguagePreference() {
             try {
                 string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);

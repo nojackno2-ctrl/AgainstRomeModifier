@@ -11,6 +11,8 @@ public sealed class MapEditor3DTests
     [Fact]
     public void MapSelection_form_constructs_with_preview_layout()
     {
+        // CI 與部分開發機是英文系統，Loc 會退回系統語系；固定為繁體中文讓斷言與環境無關。
+        AgainstRomeModifier.Loc.OverrideLanguageForTesting(AgainstRomeModifier.Language.TraditionalChinese);
         using var form = new MapSelectionForm(Path.GetTempPath());
 
         Assert.Equal("Against Rome 地圖選單", form.Text);
@@ -46,6 +48,7 @@ public sealed class MapEditor3DTests
         if (!File.Exists(Path.Combine(gamePath, "floortex.dat")) || !Directory.Exists(mapPath)) return;
         var map = new GameMapInfo("ENDL_000", mapPath, false, "Endless", "無盡模式");
 
+        AgainstRomeModifier.Loc.OverrideLanguageForTesting(AgainstRomeModifier.Language.TraditionalChinese);
         using var form = new MapEditorForm(gamePath, map);
 
         Assert.Equal("Against Rome 地圖編輯器", form.Text);
