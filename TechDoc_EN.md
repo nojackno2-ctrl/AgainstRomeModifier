@@ -12,6 +12,7 @@ This document describes the current code, data formats, reverse-engineering evid
 - The architecture migration is complete: `PatchProfile`, `FeatureRegistry`, `IFeatureModule`, `PatchContext`, and `DetectContext` are the feature contract; `PatchOptions` is removed. Apply, Detect, category Restore, and UI synchronization use the registry.
 - `Backup.zip` is optional and intentionally untracked. When no embedded or local archive exists, the modifier creates an **in-memory** baseline from the user-selected valid game root. Development and tests must not write directly to an installed game directory.
 - FoodHealing and Endless AI share the `BciScriptFile` cache and commit through one `SaveAll`; new BCI features must not bypass it with direct file writes.
+- `CiviProduce20` and `UnitRecruit20` are runtime-verified, reversible player-side EXE features. They are formal Resource & Combat Upgrades toggles and are included by Enable All; neither modifies AI recruitment.
 - New troop presets contain only `HP,Dmg,VW,AW,Sight,Relt`. Speed, ranged distance, spell radius, and priest `Sirad` (casting distance) are exclusive to independent experimental features.
 - The safe endless-military configuration is `20..20` units, `5000 ms` wait, active-party limit `8`, and original loop pacing. The runtime has 20 NPC-job slots; the unconditional gate bypass is rejected.
 - Local verification for this documentation refresh: Release build 0 warnings/0 errors; xUnit 98 passed, 0 failed, 0 skipped.

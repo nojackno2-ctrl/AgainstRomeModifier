@@ -31,6 +31,7 @@ public sealed class PatchProfile
     public bool FastBuildUpgradeRepair { get => Bool("FastBuildUpgradeRepair"); set => Bool("FastBuildUpgradeRepair", value); }
     public bool FoodHealing10x { get => Bool("FoodHealing10x"); set => Bool("FoodHealing10x", value); }
     public bool CiviProduce20 { get => Bool("CiviProduce20"); set => Bool("CiviProduce20", value); }
+    public bool UnitRecruit20 { get => Bool("UnitRecruit20"); set => Bool("UnitRecruit20", value); }
     public bool VillageBuildRange { get => Bool("VillageBuildRange"); set => Bool("VillageBuildRange", value); }
     public bool DgVoodoo { get => Bool("DgVoodoo"); set => Bool("DgVoodoo", value); }
     public bool ToEnglish { get => Bool("ToEnglish"); set => Bool("ToEnglish", value); }

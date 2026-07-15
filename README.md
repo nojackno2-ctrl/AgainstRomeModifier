@@ -26,6 +26,8 @@ The author of this project is a devoted player who loved *Against Rome* many yea
 - **Maximum-Population Unlock**: Modifies map `team.dat` files, raising the population limit up to 1600 when enabled.
 - **Play as Romans in Endless Mode**: From Resource & Combat Upgrades, changes the five endless-map team-0 defaults to Romans and safely patches the endless-only `dlg_volk` selector so every faction flag starts as Roman. Runtime-verified; it affects new games only. Romans have no priest or glory skill tree by original design.
 - **20x Housing Capacity**: Reversible switch to scale every positive population-building `wohnwer` value in `objdef.dau` by 20x.
+- **20 Civilians Per Residential-Tent Click**: Reversible player-only EXE patch that queues up to 20 male or female civilians with one click; successfully runtime-verified in-game.
+- **Fill Unit Conversion to 20 Per Click**: Reversible player-only EXE patch that sets the selected villager-to-unit conversion count to 20 with one click, subject to the original cap and available villagers; successfully runtime-verified in-game.
 - **10x Construction Speed**: Reversible switch to accelerate construction, upgrades, and repairs in `objdef.dau` by 10x (shortens building build/upgrade times by 10, which automatically boosts the per-second repair rate; successfully runtime-verified in-game).
 - **10x Storage Capacity**: Reversible switch to scale storage capacities of Town Halls (`Hau` structures) and Warehouses (`Lag` structures) in `objdef.dau` by 10x (successfully runtime-verified in-game).
 - **10x Town Hall HP**: Reversible switch to multiply hit-points (HP) of all Town Halls (`Hau` structures) in `objdef.dau` by 10x (successfully runtime-verified in-game).

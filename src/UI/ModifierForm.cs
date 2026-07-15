@@ -84,6 +84,7 @@ namespace AgainstRomeModifier {
         private ModernToggle chkFastBuildUpgradeRepair = null!;
         private ModernToggle chkFoodHealing10x = null!;
         private ModernToggle chkCiviProduce20 = null!;
+        private ModernToggle chkUnitRecruit20 = null!;
         private ModernToggle chkAiM1 = null!;
         private ModernToggle chkAiM2 = null!;
         private ModernToggle chkAiM3 = null!;
@@ -1088,7 +1089,17 @@ namespace AgainstRomeModifier {
                 BackColor = Color.Transparent,
                 Font = fontJhengHei10B
             };
-            pnlExperimentalCard.Controls.Add(chkCiviProduce20);
+            pnlSwitchesCard.Controls.Add(chkCiviProduce20);
+
+            chkUnitRecruit20 = new ModernToggle {
+                Text = Loc.Get("UnitRecruit20"),
+                Location = new Point(25, 460),
+                Size = new Size(310, 25),
+                Checked = false,
+                BackColor = Color.Transparent,
+                Font = fontJhengHei10B
+            };
+            pnlSwitchesCard.Controls.Add(chkUnitRecruit20);
 
             chkRomanEndless = new ModernToggle {
                 Text = Loc.Get("RomanEndless"),

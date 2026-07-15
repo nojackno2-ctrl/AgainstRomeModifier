@@ -75,6 +75,35 @@
 - Safety: rebuilds from the original in-memory backup, preserves each field's
   width, and treats a partial/non-20x state as disabled when loading settings.
 
+### Residential-Tent Production Batch 20 (`CiviProduce20`)
+
+- File: `Against_Rome.exe`; patch offset `0x4FC00`.
+- Behavior: changes the production-call literal from `push 1` to `push 20`, so
+  one click on either residential-tent civilian button queues up to 20 people.
+- Scope: player UI only; AI village recruitment is unchanged. The game still
+  clamps the request to remaining housing capacity.
+- Safety: the complete 32-byte signature must be original or patched; unknown
+  signatures are not written. Disable and Stats Restore return the original
+  bytes.
+- Status: implemented, apply/detect/restore tested, and runtime verified in
+  game on 2026-07-15.
+
+### Unit-Conversion Selection 20 (`UnitRecruit20`)
+
+- File: `Against_Rome.exe`; patch offset `0x4C7DD`.
+- Bytes: `29 FD 01 FE` (`sub ebp,edi; add esi,edi`) becomes
+  `6A 14 5E 90` (`push 20; pop esi; nop`).
+- Behavior: one click in the villager-to-unit/equipment panel sets the selected
+  conversion count to 20 instead of incrementing it by one. The original cap
+  remains in front of the patched block, and actual creation still requires
+  enough available villagers.
+- Scope: player UI only; AI conversion paths are unchanged.
+- Safety: the exact four-byte original/patched state is detected; unknown
+  signatures are not written. Disable and Stats Restore return the original
+  bytes.
+- Status: implemented, apply/detect/restore tested, and runtime verified in
+  game on 2026-07-15.
+
 ### 10x Building Speed (Construction, Upgrade, Repair)
 
 - File: `SYSTEM/DATA_MP/DEFAULTS/objdef.dau`.

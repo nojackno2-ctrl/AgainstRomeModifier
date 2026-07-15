@@ -20,6 +20,8 @@ namespace AgainstRomeModifier {
             chkHqHp10x.Checked = true;
             chkFastBuildUpgradeRepair.Checked = true;
             chkFoodHealing10x.Checked = true;
+            chkCiviProduce20.Checked = true;
+            chkUnitRecruit20.Checked = true;
             chkAiM1.Checked = true;
             chkAiM2.Checked = true;
             chkAiM3.Checked = true;
@@ -60,6 +62,7 @@ namespace AgainstRomeModifier {
             chkFastBuildUpgradeRepair.Checked = false;
             chkFoodHealing10x.Checked = false;
             chkCiviProduce20.Checked = false;
+            chkUnitRecruit20.Checked = false;
             chkAiM1.Checked = false;
             chkAiM2.Checked = false;
             chkAiM3.Checked = false;

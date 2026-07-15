@@ -15,6 +15,7 @@
 - 架構已完成解耦：`PatchProfile`、`FeatureRegistry`、`IFeatureModule`、`PatchContext` 與 `DetectContext` 是唯一功能契約；`PatchOptions` 已移除。套用、偵測、分類還原與 UI 回填均以 registry 為主。
 - `Backup.zip` 是選用且不追蹤的本機基線。內嵌／程式旁沒有它時，修改器才從使用者選取且有效的遊戲根目錄建立**記憶體**基線。開發、測試與文件工作不得直接改寫遊戲安裝目錄。
 - FoodHealing 與 Endless AI 共用 `BciScriptFile` 快取，最後只由 `SaveAll` 寫回；任何新 BCI 功能不得繞過此流程直接寫檔。
+- `CiviProduce20` 與 `UnitRecruit20` 已在遊戲內實機驗證，皆為可還原、僅作用於玩家端的 EXE 功能；現已列入正式的「資源與戰鬥升級」及「所有功能開啟」，不影響 AI 招募。
 - 自訂兵種新格式只保留 `HP,Dmg,VW,AW,Sight,Relt`。速度、遠程射程、法術半徑與祭司 `Sirad`（施法距離）不得由自訂層管理，避免與六個實驗性功能重疊。
 - 無盡軍事模式安全組態為 `20..20` 人、`5000 ms`、同時活躍隊伍上限 `8`，並保留原始迴圈節奏。runtime 只有 20 個 NPC-job slots；無條件 gate bypass 已否決。
 - 本次文件複核的本機驗證：`dotnet build AgainstRomeModifier.csproj -c Release --no-restore` 為 0 warnings/0 errors；xUnit 為 98 passed、0 failed、0 skipped。
