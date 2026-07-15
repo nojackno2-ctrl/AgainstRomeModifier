@@ -27,12 +27,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup .NET 8
+      - name: Setup .NET 10
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 8.0.x
+          dotnet-version: 10.0.x
 
-      # 本專案的分析對象只有 AgainstRomeModifier.csproj 這條 C# 產品程式碼；
+      # 本專案的分析對象只有 AgainstRomeModifier.slnx 內的 C# 產品程式碼；
       # tools/ 下的 Java (Ghidra 逆向腳本) 與 Python (bcitool.py 等) 是一次性
       # 研究輔助工具，不隨產品出貨，故不納入 CodeQL 掃描語言矩陣。
       - name: Initialize CodeQL
@@ -42,7 +42,7 @@ jobs:
           build-mode: manual
 
       - name: Build (Release x64)
-        run: dotnet build AgainstRomeModifier.csproj --configuration Release -p:PlatformTarget=x64
+        run: dotnet build AgainstRomeModifier.slnx --configuration Release -p:PlatformTarget=x64
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3
