@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -106,8 +107,19 @@ namespace AgainstRomeModifier {
             btnNavSystem.Enabled = enabled;
             btnNavDefaultStats.Enabled = enabled;
             btnNavCurrentStats.Enabled = enabled;
-            btnNavDoc.Enabled = enabled;
-            btnNavSaveManager.Enabled = enabled;
+        }
+        /// <summary>
+        /// 安全地嘗試載入或建立遊戲備份。如果發生例外 (例如遊戲檔案已被修改)，
+        /// 會捕捉例外並顯示錯誤訊息，回傳 false。
+        /// </summary>
+        private bool TryEnsureBackupLoadedForGamePath(string gamePath) {
+            try {
+                return backupManager.EnsureBackupLoadedForGamePath(gamePath);
+            } catch (Exception ex) {
+                Log("EnsureBackupLoadedForGamePath 發生錯誤: " + ex.Message);
+                MessageBox.Show(ex.Message, Loc.Get("TitleError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return false;
+            }
         }
 
         /// <summary>
@@ -118,7 +130,7 @@ namespace AgainstRomeModifier {
                 fbd.Description = Loc.Get("LogBrowseTitle");
                 if (fbd.ShowDialog() == DialogResult.OK) {
                     txtGamePath.Text = fbd.SelectedPath;
-                    backupManager.EnsureBackupLoadedForGamePath(fbd.SelectedPath);
+                    TryEnsureBackupLoadedForGamePath(fbd.SelectedPath);
                     chkDgVoodoo.Checked = patchEngine.IsDgVoodooInstalled(fbd.SelectedPath);
                     LoadIcons();
                     LoadDefaultStatsData();
@@ -135,7 +147,7 @@ namespace AgainstRomeModifier {
                 MessageBox.Show(Loc.Get("MsgWrongGameDir"), Loc.Get("TitlePathError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
-            if (!backupManager.EnsureBackupLoadedForGamePath(gamePath)) {
+            if (!TryEnsureBackupLoadedForGamePath(gamePath)) {
                 return;
             }
 
@@ -177,7 +189,7 @@ namespace AgainstRomeModifier {
                 MessageBox.Show(Loc.Get("MsgWrongGameDir"), Loc.Get("TitlePathError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
-            if (!backupManager.EnsureBackupLoadedForGamePath(gamePath)) {
+            if (!TryEnsureBackupLoadedForGamePath(gamePath)) {
                 return;
             }
             SetActionButtonsEnabled(false);
@@ -246,7 +258,7 @@ namespace AgainstRomeModifier {
                 MessageBox.Show(Loc.Get("MsgSelectGameDir"), Loc.Get("TitleError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
-            if (!backupManager.EnsureBackupLoadedForGamePath(gamePath)) {
+            if (!TryEnsureBackupLoadedForGamePath(gamePath)) {
                 return;
             }
             SetActionButtonsEnabled(false);

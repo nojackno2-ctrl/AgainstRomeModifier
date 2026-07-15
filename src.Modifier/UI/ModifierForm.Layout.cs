@@ -37,11 +37,8 @@ namespace AgainstRomeModifier {
             ConfigureSidebarLayout();
             ConfigureSystemDashboard();
             ConfigureStatsPages();
-            ConfigureSaveManagerLayout();
 
-            tabDoc.Padding = new Padding(14);
-            txtDoc.BackColor = Color.FromArgb(16, 20, 29);
-            txtDoc.ForeColor = Color.FromArgb(210, 218, 230);
+
 
             foreach (DataGridView grid in defaultStatsGrids.Values.Concat(currentStatsGrids.Values)) {
                 grid.ScrollBars = ScrollBars.Both;
@@ -78,10 +75,7 @@ namespace AgainstRomeModifier {
             Button[] navButtons = {
                 btnNavSystem,
                 btnNavDefaultStats,
-                btnNavCurrentStats,
-                btnNavMapManager,
-                btnNavSaveManager,
-                btnNavDoc
+                btnNavCurrentStats
             };
             for (int i = 0; i < navButtons.Length; i++) {
                 navButtons[i].Location = new Point(10, 22 + i * 52);
@@ -412,88 +406,6 @@ namespace AgainstRomeModifier {
             }
         }
 
-        private void ConfigureSaveManagerLayout() {
-            Panel gameCard = dgvGameSaves.Parent as Panel
-                ?? throw new InvalidOperationException("Game saves card was not initialized.");
-            Panel backupsCard = dgvBackups.Parent as Panel
-                ?? throw new InvalidOperationException("Backups card was not initialized.");
-            Panel detailCard = picSavePreview.Parent as Panel
-                ?? throw new InvalidOperationException("Save detail card was not initialized.");
-            Panel leftColumn = gameCard.Parent as Panel
-                ?? throw new InvalidOperationException("Save list column was not initialized.");
-            Panel rightColumn = detailCard.Parent as Panel
-                ?? throw new InvalidOperationException("Save detail column was not initialized.");
-
-            TableLayoutPanel root = new TableLayoutPanel {
-                Dock = DockStyle.Fill,
-                BackColor = Color.FromArgb(9, 12, 18),
-                ColumnCount = 2,
-                RowCount = 1
-            };
-            root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 66F));
-            root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 34F));
-            root.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
-
-            TableLayoutPanel leftStack = new TableLayoutPanel {
-                Dock = DockStyle.Fill,
-                BackColor = Color.Transparent,
-                RowCount = 2,
-                ColumnCount = 1,
-                Margin = new Padding(0, 0, 10, 0)
-            };
-            leftStack.RowStyles.Add(new RowStyle(SizeType.Percent, 49F));
-            leftStack.RowStyles.Add(new RowStyle(SizeType.Percent, 51F));
-
-            gameCard.Dock = DockStyle.Fill;
-            gameCard.Margin = new Padding(0, 0, 0, 6);
-            gameCard.BackColor = Color.FromArgb(18, 22, 31);
-            backupsCard.Dock = DockStyle.Fill;
-            backupsCard.Margin = new Padding(0, 6, 0, 0);
-            backupsCard.BackColor = Color.FromArgb(18, 22, 31);
-            detailCard.Dock = DockStyle.Fill;
-            detailCard.Margin = new Padding(0);
-            detailCard.BackColor = Color.FromArgb(18, 22, 31);
-
-            leftStack.Controls.Add(gameCard, 0, 0);
-            leftStack.Controls.Add(backupsCard, 0, 1);
-            leftColumn.Controls.Add(leftStack);
-            root.Controls.Add(leftColumn, 0, 0);
-            root.Controls.Add(rightColumn, 1, 0);
-            leftColumn.Dock = DockStyle.Fill;
-            rightColumn.Dock = DockStyle.Fill;
-            tabSaveManager.Controls.Add(root);
-
-            void LayoutGameCard() {
-                dgvGameSaves.Location = new Point(16, 48);
-                dgvGameSaves.Size = new Size(Math.Max(0, gameCard.Width - 32), Math.Max(70, gameCard.Height - 106));
-                int y = Math.Max(54, gameCard.Height - 48);
-                btnBackupSave.Location = new Point(16, y);
-                btnDeleteSave.Location = new Point(164, y);
-                btnRefreshSaves.Location = new Point(312, y);
-            }
-            void LayoutBackupsCard() {
-                dgvBackups.Location = new Point(16, 48);
-                dgvBackups.Size = new Size(Math.Max(0, backupsCard.Width - 32), Math.Max(70, backupsCard.Height - 106));
-                int y = Math.Max(54, backupsCard.Height - 48);
-                btnRestoreBackup.Location = new Point(16, y);
-                btnDeleteBackup.Location = new Point(164, y);
-            }
-            void LayoutDetailCard() {
-                picSavePreview.Location = new Point(18, 54);
-                picSavePreview.Size = new Size(Math.Max(80, detailCard.Width - 36), Math.Min(250, Math.Max(120, detailCard.Height / 3)));
-                lblSaveDetail.Location = new Point(18, picSavePreview.Bottom + 16);
-                lblSaveDetail.Size = new Size(Math.Max(80, detailCard.Width - 36), Math.Max(80, detailCard.Height - picSavePreview.Bottom - 34));
-            }
-
-            dgvGameSaves.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
-            dgvBackups.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
-            gameCard.Resize += (s, e) => LayoutGameCard();
-            backupsCard.Resize += (s, e) => LayoutBackupsCard();
-            detailCard.Resize += (s, e) => LayoutDetailCard();
-            LayoutGameCard();
-            LayoutBackupsCard();
-            LayoutDetailCard();
-        }
 
         private Panel CreateInputWrapper(int x, int y, int w, int h) {
             Panel p = new Panel {

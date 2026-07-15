@@ -7,12 +7,12 @@ namespace AgainstRomeModifier {
     // 程式入口類別
     public class Program {
         [STAThread]
-        public static void Main() {
+        public static void Main(string[] args) {
             try {
                 // 註冊 CodePages 支援（例如 BIG5, CP1251 等編碼，以便解析遊戲資源檔）
                 Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
                 // 啟動主要的應用程式流程
-                RunApplication();
+                RunApplication(args);
             } catch (Exception ex) {
                 try {
                     // 若發生未預期的崩潰，將異常寫入 crash_log.txt 中以利後續分析
@@ -38,12 +38,20 @@ namespace AgainstRomeModifier {
         // 管理員權限由 app.manifest 的 requestedExecutionLevel=requireAdministrator 保證：
         // OS 會在行程啟動前強制 UAC，因此這裡不需要（也永遠不會走到）手動 runas 重啟邏輯。
         // 若 UAC 被使用者取消，程式根本不會啟動——這是 Windows 的標準行為。
-        private static void RunApplication() {
+        private static void RunApplication(string[] args) {
             Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
-            // 啟動主修改器介面
-            Application.Run(new ModifierForm());
+
+            string? gamePath = null;
+            for (int i = 0; i < args.Length; i++) {
+                if (args[i].Equals("--game", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length) {
+                    gamePath = args[++i];
+                }
+            }
+
+            // 啟動主啟動器介面
+            Application.Run(new ModifierForm(gamePath));
         }
     }
 }

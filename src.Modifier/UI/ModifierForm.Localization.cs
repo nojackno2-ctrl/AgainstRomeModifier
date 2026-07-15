@@ -87,14 +87,7 @@ namespace AgainstRomeModifier {
             itemRestoreCompat.Text = Loc.Get("RestoreCompat");
             itemRestoreLang.Text = Loc.Get("RestoreLang");
 
-            lblGameSavesTitle.Text = Loc.Get("GameSavesTitle");
-            lblBackupsTitle.Text = Loc.Get("BackupsTitle");
-            lblDetailTitle.Text = Loc.Get("DetailTitle");
-            btnBackupSave.Text = Loc.Get("BackupSave");
-            btnDeleteSave.Text = Loc.Get("DeleteSave");
-            btnRefreshSaves.Text = Loc.Get("Refresh");
-            btnRestoreBackup.Text = Loc.Get("RestoreBackup");
-            btnDeleteBackup.Text = Loc.Get("DeleteBackup");
+
 
             lblSidebarLang.Text = Loc.Get("LanguageLabel");
 
@@ -126,14 +119,11 @@ namespace AgainstRomeModifier {
             // 重新整理側邊導覽列按鈕
             RefreshNavButtons();
 
-            // 重新載入技術文件
-            ReloadTechnicalDocument();
 
-            // 重新載入表格與存檔數據
+            // 重新載入表格數據
             if (backupManager != null && backupManager.BackupFiles.Count > 0) {
                 LoadDefaultStatsData();
                 LoadCurrentData(false);
-                RefreshSavesAndBackups();
             }
             UpdateTroopPresetLabel();
 
@@ -218,16 +208,6 @@ namespace AgainstRomeModifier {
                 if (grid.Columns.Contains("SpellRadius")) grid.Columns["SpellRadius"].HeaderText = Loc.Get("HeaderSpellRadiusComp");
                 if (grid.Columns.Contains("Tier")) grid.Columns["Tier"].HeaderText = Loc.Get("HeaderTier");
             }
-            if (dgvGameSaves.Columns.Contains("Folder")) dgvGameSaves.Columns["Folder"].HeaderText = Loc.Get("HeaderFolder");
-            if (dgvGameSaves.Columns.Contains("Title")) dgvGameSaves.Columns["Title"].HeaderText = Loc.Get("HeaderSaveTitle");
-            if (dgvGameSaves.Columns.Contains("Level")) dgvGameSaves.Columns["Level"].HeaderText = Loc.Get("HeaderLevel");
-            if (dgvGameSaves.Columns.Contains("Time")) dgvGameSaves.Columns["Time"].HeaderText = Loc.Get("HeaderTime");
-
-            if (dgvBackups.Columns.Contains("File")) dgvBackups.Columns["File"].HeaderText = Loc.Get("HeaderBackupFile");
-            if (dgvBackups.Columns.Contains("Title")) dgvBackups.Columns["Title"].HeaderText = Loc.Get("HeaderSaveTitle");
-            if (dgvBackups.Columns.Contains("Level")) dgvBackups.Columns["Level"].HeaderText = Loc.Get("HeaderLevel");
-            if (dgvBackups.Columns.Contains("Time")) dgvBackups.Columns["Time"].HeaderText = Loc.Get("HeaderBackupTime");
-            if (dgvBackups.Columns.Contains("Folder")) dgvBackups.Columns["Folder"].HeaderText = Loc.Get("HeaderOrigFolder");
         }
 
         private void UpdateTroopPresetLabel() {
@@ -311,40 +291,6 @@ namespace AgainstRomeModifier {
             }
         }
 
-        /// <summary>
-        /// 重新載入技術文件內容
-        /// </summary>
-        private void ReloadTechnicalDocument() {
-            if (txtDoc == null) return;
-            string docText = "";
-            string resourceKey = Loc.CurrentLanguage == Language.English ? "TechDoc_EN.md" : "TechDoc.md";
-            try {
-                using (Stream? stream = typeof(Program).Assembly.GetManifestResourceStream(resourceKey)) {
-                    if (stream != null) {
-                        using (StreamReader reader = new StreamReader(stream, Encoding.UTF8)) {
-                            docText = reader.ReadToEnd();
-                        }
-                    } else {
-                        foreach (string name in typeof(Program).Assembly.GetManifestResourceNames()) {
-                            if (name.EndsWith(resourceKey)) {
-                                using (Stream? s = typeof(Program).Assembly.GetManifestResourceStream(name)) {
-                                    if (s != null) {
-                                        using (StreamReader r = new StreamReader(s, Encoding.UTF8)) {
-                                            docText = r.ReadToEnd();
-                                        }
-                                    }
-                                }
-                                break;
-                            }
-                        }
-                    }
-                }
-            } catch (Exception ex) {
-                Log(Loc.Get("LogLoadTechDocFailed") + ex.Message);
-            }
 
-            docText = docText.Replace("\r\n", "\n").Replace("\n", "\r\n");
-            txtDoc.Text = docText;
-        }
     }
 }

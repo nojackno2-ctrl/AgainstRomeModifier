@@ -35,23 +35,26 @@ For the detailed maintenance chronology, debugging failures, checklists, and wor
 
 | File | Responsibility |
 |---|---|
-| `src/Program.cs` | WinForms entry, elevation, High DPI startup, global exception handling. |
-| `src/Core/GameLZSS.cs` | LZSS and `PFIL@` wrapper decode/encode with bounds checks. |
-| `src/Core/Bci/` | BCI signature matching, word writes, and PFIL script handling. |
-| `src/Core/EndlessAi/` | Bounded Endless AI BCI modules, state detection, and orchestration. |
-| `src/Core/Features/` | Feature registry, `PatchProfile`, EXE/INI/DAU/BCI/install feature planning, and unified state detection. |
-| `src/Core/Services/PatchEngine.cs` | Thin orchestrator for transaction order, category restores, and feature coordination; it owns no feature-specific constants. |
-| `src/Core/TroopConfig.cs` | Field enums, unit IDs, names, factions, tiers, types, and balance baselines. |
-| `src/Core/Patches/` | Pure, WinForms-independent patch logic: `ObjdefPatcher`, `RessPatcher`, `ClScriptPatcher`, `ClEparaPatcher`, `ClScintPatcher`, `TeamDatPatcher`, `ExePatchModel`, `VerifiedBinaryWriter`. Byte computation and fixed-offset state detection/planning live here so they can be unit-tested without WinForms or copyrighted game files. |
-| `src/UI/ModifierForm.cs` | Main UI, controls, backup cache, parsed unit cache, shared state. |
-| `src/UI/ModifierForm.Data.cs` | Current-data reading, CSV-like parsing, comparisons, icons, EXE state detection (delegates to `ExePatchModel`). |
-| `src/UI/ModifierForm.DataExt.cs` | Safe access to cached original unit rows. |
-| `src/UI/ModifierForm.Patches.cs` | Collects the registry-backed toggle map into a `PatchProfile`, starts transactional apply/restore operations, and reports results. |
-| `src/UI/ModifierForm.Presets.cs` | Actions to enable/disable all features at once. |
-| `src/UI/ModifierForm.SaveManager.cs` | Save discovery, ZIP backup/restore/delete, metadata cache. |
-| `src/UI/TroopPresetForm.cs` | Six-property editing (`HP,Dmg,VW,AW,Sight,Relt`) and `.artroop` I/O; legacy nine-field imports are normalized. |
-| `src/UI/UIElements.cs` | Owner-drawn toggles, dark menu renderer, GDI disposal. |
-| `src/Core/Localization.cs` | Chinese/English UI and log strings. |
+| `src.Launcher/` | Suite launcher: starts the Modifier / Map Editor / Save Manager and hosts the technical documentation viewer. |
+| `src.Modifier/Program.cs` | Modifier WinForms entry, elevation, High DPI startup, global exception handling. |
+| `src.Modifier/UI/ModifierForm.cs` | Main UI, controls, backup cache, parsed unit cache, shared state. |
+| `src.Modifier/UI/ModifierForm.Data.cs` | Current-data reading, CSV-like parsing, comparisons, icons, EXE state detection (delegates to `ExePatchModel`). |
+| `src.Modifier/UI/ModifierForm.DataExt.cs` | Safe access to cached original unit rows. |
+| `src.Modifier/UI/ModifierForm.Patches.cs` | Collects the registry-backed toggle map into a `PatchProfile`, starts transactional apply/restore operations, and reports results. |
+| `src.Modifier/UI/ModifierForm.Presets.cs` | Actions to enable/disable all features at once. |
+| `src.Modifier/UI/TroopPresetForm.cs` | Six-property editing (`HP,Dmg,VW,AW,Sight,Relt`) and `.artroop` I/O; legacy nine-field imports are normalized. |
+| `src.Modifier/UI/UIElements.cs` | Owner-drawn toggles, dark menu renderer, GDI disposal. |
+| `src.SaveManager/UI/SaveManagerForm.cs` | Standalone save manager: save discovery, ZIP backup/restore/delete, metadata cache. |
+| `src.MapEditor/` | Map editor, including endless-map clone/delete management. |
+| `src.Core/Core/Bci/` | BCI signature matching, word writes, and PFIL script handling. |
+| `src.Core/Core/EndlessAi/` | Bounded Endless AI BCI modules, state detection, and orchestration. |
+| `src.Core/Core/Features/` | Feature registry, `PatchProfile`, EXE/INI/DAU/BCI/install feature planning, and unified state detection. |
+| `src.Core/Core/Services/PatchEngine.cs` | Thin orchestrator for transaction order, category restores, and feature coordination; it owns no feature-specific constants. |
+| `src.Core/Core/TroopConfig.cs` | Field enums, unit IDs, names, factions, tiers, types, and balance baselines. |
+| `src.Core/Core/Patches/` | Pure, WinForms-independent patch logic: `ObjdefPatcher`, `RessPatcher`, `ClScriptPatcher`, `ClEparaPatcher`, `ClScintPatcher`, `TeamDatPatcher`, `ExePatchModel`, `VerifiedBinaryWriter`. Byte computation and fixed-offset state detection/planning live here so they can be unit-tested without WinForms or copyrighted game files. |
+| `src.Core/Core/Localization.cs` | Chinese/English UI and log strings. |
+| `src.Shared/Core/GameLZSS.cs` | LZSS and `PFIL@` wrapper decode/encode with bounds checks. |
+| `src.Shared/Maps/` | Map catalog, clone, delete, and SDL scene services. |
 
 The application targets `.NET 8`, `net8.0-windows`, WinForms, x64, nullable reference types, and `PerMonitorV2` DPI. `Backup.zip` is embedded only when present; both embedded technical documents are mandatory resources.
 
@@ -74,7 +77,7 @@ Apply order:
 
 FoodHealing and Endless AI share the orchestrator's `BciScriptFile` cache. Both plan changes in memory and a single `SaveAll` performs final PFIL compression and writes. Startup-safe migration and category restore use the same path.
 
-Every registry entry implements `IFeatureModule` and participates in Apply/Detect through `PatchContext` and `DetectContext`; values sharing one file are then composed into bytes once by a per-file composer. To add a feature, add its implementation under `src/Core/Features/<category>/`, register its Id/category/disabled value in `FeatureRegistry`, add its UI control to `BuildFeatureToggleMap`, and add tests. The Apply/Detect/Restore orchestrators require no per-checkbox branch.
+Every registry entry implements `IFeatureModule` and participates in Apply/Detect through `PatchContext` and `DetectContext`; values sharing one file are then composed into bytes once by a per-file composer. To add a feature, add its implementation under `src.Core/Core/Features/<category>/`, register its Id/category/disabled value in `FeatureRegistry`, add its UI control to `BuildFeatureToggleMap`, and add tests. The Apply/Detect/Restore orchestrators require no per-checkbox branch.
 9. Restore original `team.dat` files, then apply population only.
 10. Apply endless-mode BCI changes.
 11. Apply language resources.
@@ -231,7 +234,7 @@ Enable it in Resource & Combat Upgrades and apply before starting a new endless 
 AI Ultimate is refactored into 6 independent user-facing experience modules: M1 reinforcement size (P1 unit count + P10 Town Hall conversion + P12 Dorfverteidigung defense batch), M2 accelerated reinforcement (P3 cooldown + P6 scheduler loop delay), M3 fast defeat recovery (P4 retreat deadline + P5 team-death debounce + P11 camp demolish delay), M4 guaranteed settlement spawn (P7 spawner probability + P17 Roman founder gate 60 -> 100 + P18/P19 settle-place unlock), M5 AI starting resources (P13 stockpile), and M6 increase garrison size (P8 active unit limit 4 -> 40).
 
 Added 2026-07-08, all in M4, **RUNTIME-CONFIRMED**: P17/P18/P19 fix the long-standing "defeated CPUs eventually stop respawning" endless-mode bug. Root cause: both village (type-1) and Roman founder (type-4) creation must first obtain a free settle place from `fn 0x9904`; a place is vetoed whenever ANY team's village center or ANY team's units (including the player's) are within radius 2500. Late-game player expansion plus dead-team leftovers in npc.dat permanently veto all 8 places, so creation silently deletes the fresh party and fails forever. P18 raises the unit-scan comparand 0 -> 1 (player units no longer veto; anchor = the file's only `callint -636`); P19 shrinks the veto radius 2500 -> 800 (anchor = the only `callint -36800`). P17 (designed and unit-tested 2026-07-06) had never been wired into a module until now — installed files still carried the vanilla 60. After applying M4 to the live install, the player confirmed in-game that defeated CPU teams resume respawning. Independent byte-level verification: all five maps show exactly 1 signature hit each with the exact Ultimate values, correct PFIL header size fields, and byte-identical decompress/recompress round-trips; `dotnet test --filter CheckGameStatusTest` reports M1-M6 all `Ultimate` with zero `Legacy`/`Unknown`. Note: saves embed their own ak_level script, so the fix applies to NEW endless games only. See `docs/reverse-engineering/endless-mode-ai.md` for the full decode.
-To prevent game logic deadlocks and respawn-related crashes, P2 (completed-job slot recycle) and P15 (DELETE_PARTY safety migration) are merged into R0 as mandatory background safety fixes. They are applied automatically under the hood to ensure robust AI execution. `src/Core/EndlessAi/EndlessAiOrchestrator.cs` owns module detection and application.
+To prevent game logic deadlocks and respawn-related crashes, P2 (completed-job slot recycle) and P15 (DELETE_PARTY safety migration) are merged into R0 as mandatory background safety fixes. They are applied automatically under the hood to ensure robust AI execution. `src.Core/Core/EndlessAi/EndlessAiOrchestrator.cs` owns module detection and application.
 
 P15 is now a mandatory R0 safety repair. The two settled-party terminal
 transitions at decompressed offsets `0x109E8` and `0x16374` must remain on the
