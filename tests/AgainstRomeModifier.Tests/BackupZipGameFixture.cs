@@ -93,7 +93,9 @@ internal sealed class BackupZipGameFixture : IDisposable
         WritePfil(Path.Combine(root, "SYSTEM", "CLAK", "SCRIPT", "Dorfverteidigung.bci"), Words(villageDefense));
 
         WritePfil(Path.Combine(root, "SYSTEM", "CLAK", "SCRIPT", "ak_npc.bci"),
-            Words(128, 43, 73, -2, 86, 66, 0, 96, 99, 117, 476));
+            Words(128, 43, 73, -2, 86, 66, 0, 96, 99, 117, 476, Gap,
+                // CiviProduce20 特徵：pushlit 1 ; arrbase 3/2/8 ; pushsym s_addUnbornCivis(#46) ; argc -4 ; call
+                66, 1, 90, 3, 90, 2, 90, 8, 128, 46, 73, -4, 86));
         WritePfil(Path.Combine(root, "SYSTEM", "CLAK", "SCRIPT", "ak_produktion.bci"),
             Words(128, 69, 73, -2, 86, 117, 56, 66, 1, 82, 46));
 

@@ -68,7 +68,7 @@ public sealed class RomanEndlessPatchTests
         byte[] current = TeamDatPatcher.GetPatchedBytes(original,
             new TeamDatOptions(maxPopulation, RomanPlayer: romanPlayer));
 
-        Assert.True(FeatureDetector.TryDetectTeamDatOptions(original, current, isEndless: true,
+        Assert.True(TeamDatFeatureDetector.TryDetectOptions(original, current, isEndless: true,
             out bool detectedMaxPopulation, out bool detectedRomanPlayer));
         Assert.Equal(maxPopulation, detectedMaxPopulation);
         Assert.Equal(romanPlayer, detectedRomanPlayer);
@@ -79,8 +79,8 @@ public sealed class RomanEndlessPatchTests
     {
         byte[] original = SyntheticFixture.Pfil(OriginalText);
         var backup = new BackupManager(new NullLogger());
-        backup.BackupFiles["MAPS/ENDL_000/DATA/team.dat"] = original;
-        backup.BackupFiles["MAPS/HIST_000/DATA/team.dat"] = original;
+        backup.SetBackupFile("MAPS/ENDL_000/DATA/team.dat", original);
+        backup.SetBackupFile("MAPS/HIST_000/DATA/team.dat", original);
 
         Dictionary<string, byte[]> result = MaxPopulationFeature.Build(backup, maxPopulation: false, romanEndless: true);
 

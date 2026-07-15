@@ -1,5 +1,6 @@
 using System.Drawing;
 using System.Numerics;
+using System.Windows.Forms;
 using AgainstRomeMapEditor;
 using AgainstRomeModifier.Maps;
 
@@ -10,9 +11,47 @@ public sealed class MapEditor3DTests
     [Fact]
     public void MapSelection_form_constructs_with_preview_layout()
     {
+        // CI 與部分開發機是英文系統，Loc 會退回系統語系；固定為繁體中文讓斷言與環境無關。
+        AgainstRomeModifier.Loc.OverrideLanguageForTesting(AgainstRomeModifier.Language.TraditionalChinese);
         using var form = new MapSelectionForm(Path.GetTempPath());
 
         Assert.Equal("Against Rome 地圖選單", form.Text);
+        string[] buttonTexts = Descendants(form).OfType<Button>().Select(button => button.Text).ToArray();
+        Assert.Contains("從無盡範本建立", buttonTexts);
+        Assert.Contains("新建空白地圖", buttonTexts);
+        Assert.DoesNotContain("新建地圖", buttonTexts);
+        Assert.Contains("高度", MapSelectionForm.BlankMapUnavailableMessage);
+        Assert.Contains("碰撞", MapSelectionForm.BlankMapUnavailableMessage);
+        Assert.Contains("DATA cache", MapSelectionForm.BlankMapUnavailableMessage);
+    }
+
+    [Fact]
+    public void Map3D_resource_validation_reports_the_missing_dependency()
+    {
+        string directory = Path.Combine(Path.GetTempPath(), "arm-map-3d-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            Assert.Contains("boden.bmp", Map3DViewControl.ValidateResources(directory, floorTextureLibraryAvailable: true));
+            File.WriteAllBytes(Path.Combine(directory, "boden.bmp"), [0]);
+            Assert.Contains("floortex.dat", Map3DViewControl.ValidateResources(directory, floorTextureLibraryAvailable: false));
+            Assert.Null(Map3DViewControl.ValidateResources(directory, floorTextureLibraryAvailable: true));
+        }
+        finally { Directory.Delete(directory, recursive: true); }
+    }
+
+    [Fact]
+    public void MapEditor_form_local_fixture_constructs_with_controlled_scene_editor()
+    {
+        string gamePath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../遊戲原始檔案"));
+        string mapPath = Path.Combine(gamePath, "MAPS", "ENDL_000");
+        if (!File.Exists(Path.Combine(gamePath, "floortex.dat")) || !Directory.Exists(mapPath)) return;
+        var map = new GameMapInfo("ENDL_000", mapPath, false, "Endless", "無盡模式");
+
+        AgainstRomeModifier.Loc.OverrideLanguageForTesting(AgainstRomeModifier.Language.TraditionalChinese);
+        using var form = new MapEditorForm(gamePath, map);
+
+        Assert.Equal("Against Rome 地圖編輯器", form.Text);
     }
 
     [Fact]
@@ -33,6 +72,22 @@ public sealed class MapEditor3DTests
     }
 
     [Fact]
+    public void Only_endless_or_custom_maps_can_be_cloned_to_custom()
+    {
+        var historical = new GameMapInfo("HIST_001", "historical", false, "Historical", "歷史戰役");
+        var multiplayer = new GameMapInfo("MP_001", "mp", false, "MP", "多人地圖");
+        var originalEndless = new GameMapInfo("ENDL_000", "endless", false, "Endless", "無盡模式");
+        var custom = new GameMapInfo("ENDL_005", "custom", true, "Custom", "無盡模式");
+
+        Assert.True(MapSelectionForm.CanCloneToCustom(originalEndless));
+        Assert.True(MapSelectionForm.CanCloneToCustom(custom));
+        Assert.False(MapSelectionForm.CanCloneToCustom(historical));
+        Assert.False(MapSelectionForm.CanCloneToCustom(multiplayer));
+        // 沒有可用的無盡範本時不得退回其他類型。
+        Assert.Null(MapSelectionForm.SelectNewMapTemplate([historical, multiplayer]));
+    }
+
+    [Fact]
     public void MapSelection_preview_is_detached_from_the_minimap_file()
     {
         string directory = Path.Combine(Path.GetTempPath(), "arm-map-preview-" + Guid.NewGuid().ToString("N"));
@@ -49,6 +104,292 @@ public sealed class MapEditor3DTests
             Assert.False(File.Exists(path));
         }
         finally { Directory.Delete(directory, recursive: true); }
+    }
+
+    [Fact]
+    public void TerrainEditHistory_groups_a_stroke_and_keeps_dirty_undo_redo_and_save_baseline_consistent()
+    {
+        var history = new TerrainEditHistory(2, ["grass", "grass", "water", "rock"]);
+
+        Assert.Equal(new TerrainTextureChange(1, 0, "grass", "sand"), history.Paint(1, 0, "sand"));
+        Assert.Equal(new TerrainTextureChange(1, 0, "sand", "mud"), history.Paint(1, 0, "mud"));
+        Assert.True(history.CommitStroke());
+        Assert.True(history.IsDirty);
+        Assert.True(history.CanUndo);
+        Assert.Equal("mud", history.Current[1]);
+
+        IReadOnlyList<TerrainTextureChange> undone = Assert.IsAssignableFrom<IReadOnlyList<TerrainTextureChange>>(history.Undo());
+        Assert.Single(undone);
+        Assert.Equal(new TerrainTextureChange(1, 0, "grass", "mud"), undone[0]);
+        Assert.Equal("grass", history.Current[1]);
+        Assert.False(history.IsDirty);
+        Assert.True(history.CanRedo);
+
+        Assert.NotNull(history.Redo());
+        Assert.Equal("mud", history.Current[1]);
+        Assert.True(history.IsDirty);
+        history.CommitBaseline();
+        Assert.False(history.IsDirty);
+
+        Assert.NotNull(history.Undo());
+        Assert.True(history.IsDirty);
+        IReadOnlyList<TerrainTextureChange> reset = history.ResetToBaseline();
+        Assert.Single(reset);
+        Assert.Equal("mud", history.Current[1]);
+        Assert.False(history.IsDirty);
+        Assert.False(history.CanUndo);
+        Assert.False(history.CanRedo);
+    }
+
+    [Fact]
+    public void TerrainEditHistory_drops_a_stroke_that_returns_to_its_original_texture()
+    {
+        var history = new TerrainEditHistory(1, ["grass"]);
+
+        history.Paint(0, 0, "sand");
+        history.Paint(0, 0, "grass");
+
+        Assert.False(history.CommitStroke());
+        Assert.False(history.IsDirty);
+        Assert.False(history.CanUndo);
+
+        history.Paint(0, 0, "sand");
+        history.Paint(0, 0, "grass");
+        history.Paint(0, 0, "rock");
+        Assert.True(history.CommitStroke());
+        IReadOnlyList<TerrainTextureChange> stroke = Assert.IsAssignableFrom<IReadOnlyList<TerrainTextureChange>>(history.Undo());
+        Assert.Single(stroke);
+        Assert.Equal(new TerrainTextureChange(0, 0, "grass", "rock"), stroke[0]);
+    }
+
+    [Fact]
+    public void FloorMaterialCatalog_exposes_base_pigments_instead_of_transition_fragments()
+    {
+        var catalog = new FloorMaterialCatalog(["4B1___50", "4B1___51", "4BA___50", "4U13__10", "L5B09T1A", "AA_Brush01"]);
+
+        Assert.Equal(2, catalog.Materials.Count);
+        FloorMaterial first = Assert.Single(catalog.Materials, material => material.Id == "B1");
+        Assert.Equal("土地", first.Category);
+        Assert.Equal("淺灰泥地", first.DisplayName);
+        Assert.Equal("4B1___50", first.RepresentativeTexture);
+        Assert.Equal(new[] { "4B1___50", "4B1___51" }, first.Variants);
+        Assert.Same(first, catalog.FindByTexture("4B1___51"));
+        Assert.Null(catalog.FindByTexture("4U13__10"));
+        Assert.All(Enumerable.Range(0, 32), x => Assert.Equal(first.RepresentativeTexture, first.PickVariant(x, 7)));
+        FloorMaterial grass = Assert.Single(catalog.Materials, material => material.Id == "BA");
+        Assert.Equal("草地", grass.Category);
+        Assert.Equal("深綠草地", grass.DisplayName);
+        Assert.Equal("BA", catalog.Materials[0].Id);
+
+        string[] verifiedCodes = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "A", "B", "C", "D", "E", "G", "I", "J", "K", "L", "M", "O", "R", "S", "T", "U", "V", "W", "X"];
+        var completeCatalog = new FloorMaterialCatalog(verifiedCodes.Select(code => $"4B{code}___50"));
+        Assert.Equal(28, completeCatalog.Materials.Count);
+        Assert.DoesNotContain(completeCatalog.Materials, material => material.Category == "其他地表" || material.DisplayName == "其他地表");
+        Assert.Equal(28, completeCatalog.Materials.Select(material => material.DisplayName).Distinct().Count());
+    }
+
+    [Fact]
+    public void FloorMaterialCatalog_resolves_two_material_edges_without_exposing_transition_tiles_to_the_player()
+    {
+        var catalog = new FloorMaterialCatalog(["4BA___50", "4BB___50", "4UAB__30", "4UAB__31", "4UAB__40", "4UAB__60"]);
+        string?[] materials = Enumerable.Repeat<string?>("BA", 9).ToArray();
+        materials[5] = "BB"; // 新材質位於舊地表右側；過渡片留在舊地表格，第二種材質顯示於右半（數字鍵 6）。
+
+        Assert.Equal("4UAB__60", catalog.ResolveTexture(materials, 3, 1, 1));
+        Assert.Equal("4BB___50", catalog.ResolveTexture(materials, 3, 2, 1));
+        Assert.Equal("BA", catalog.FindByTexture("4UAB__60")?.Id);
+
+        materials[7] = "BB"; // 第二種材質同時位於右側與下方，過渡區位於右下角（數字鍵 3）。
+        string? corner = catalog.ResolveTexture(materials, 3, 1, 1);
+        Assert.StartsWith("4UAB__3", corner);
+        Assert.Equal(corner, catalog.ResolveTexture(materials, 3, 1, 1));
+
+        IReadOnlyList<int> painted = catalog.ApplyPlayerMaterial(materials, 3, 1, 1, "BB");
+        Assert.Equal(new[] { 4 }, painted); // 玩家點的格子本身必須成為完整的新材質，不得被過渡格吞掉。
+        Assert.Equal("BB", materials[4]);
+        Assert.Equal("4BB___50", catalog.ResolveTexture(materials, 3, 1, 1));
+
+        string?[] directPaint = Enumerable.Repeat<string?>("BA", 9).ToArray();
+        Assert.Equal(new[] { 4 }, catalog.ApplyPlayerMaterial(directPaint, 3, 1, 1, "BB"));
+        Assert.Equal("BB", directPaint[4]);
+    }
+
+    [Fact]
+    public void FloorMaterialCatalog_catalogs_native_three_material_transition_families()
+    {
+        var catalog = new FloorMaterialCatalog([
+            "4B8___50", "4B9___50", "4BC___50",
+            "4U89__20", "4U89__21", "4U89__50",
+            "4TC89_20", "4TC89_21", "4TC89_40", "4TC89_60", "4TC89_80", "4TC89_50"]);
+
+        Assert.Equal(1, catalog.TwoMaterialTransitionFamilyCount);
+        Assert.Equal(1, catalog.ThreeMaterialTransitionFamilyCount);
+        Assert.StartsWith("4U89__2", catalog.ResolveTwoMaterialTransition("B8", "B9", 2, 4, 7));
+        Assert.Null(catalog.ResolveTwoMaterialTransition("B8", "B9", 5, 4, 7));
+        Assert.StartsWith("4TC89_2", catalog.ResolveThreeMaterialTransition("BC", "B8", "B9", 2, 4, 7));
+        Assert.Equal("BC", catalog.FindByTexture("4TC89_40")?.Id);
+        Assert.Null(catalog.ResolveThreeMaterialTransition("BC", "B9", "B8", 2, 4, 7));
+        Assert.Null(catalog.ResolveThreeMaterialTransition("BC", "B8", "B9", 5, 4, 7));
+    }
+
+    [Fact]
+    public void FloorMaterialCatalog_bakes_native_tiles_from_four_corner_materials_without_silent_fallback()
+    {
+        var catalog = new FloorMaterialCatalog([
+            "4B8___50", "4B9___50", "4BC___50",
+            "4U89__10", "4U89__20",
+            "4TC89_20", "4TC89_40", "4TC89_60", "4TC89_80"]);
+
+        Assert.Equal("4B8___50", catalog.ResolveNativeTile(["B8", "B8", "B8", "B8"], 2, 3));
+        Assert.Equal("4U89__10", catalog.ResolveNativeTile(["B9", "B8", "B9", "B9"], 2, 3));
+        Assert.Equal("4U89__20", catalog.ResolveNativeTile(["B8", "B8", "B9", "B9"], 2, 3));
+        Assert.Equal("4TC89_20", catalog.ResolveNativeTile(["B9", "B8", "BC", "BC"], 2, 3));
+        Assert.Equal("4TC89_40", catalog.ResolveNativeTile(["BC", "B9", "B8", "BC"], 2, 3));
+        Assert.Null(catalog.ResolveNativeTile(["B8", "B9", "BC", "B8"], 2, 3));
+        Assert.Null(catalog.ResolveNativeTile(["B8", "B9", "BC", "BX"], 2, 3));
+    }
+
+    [Fact]
+    public void FloorMaterialCatalog_infers_transition_corners_from_original_bitmap_content()
+    {
+        string gamePath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../遊戲原始檔案"));
+        string archivePath = Path.Combine(gamePath, "floortex.dat");
+        if (!File.Exists(archivePath)) return;
+
+        using var library = new FloorTextureLibrary(archivePath);
+        var catalog = new FloorMaterialCatalog(library);
+        Assert.True(catalog.TryResolveNativeCorners("4U89__10", out IReadOnlyList<string> highSecond));
+        Assert.True(catalog.TryResolveNativeCorners("4U89__11", out IReadOnlyList<string> lowSecond));
+        Assert.True(highSecond.Count(material => material == "B9") > lowSecond.Count(material => material == "B9"));
+        Assert.Equal(4, highSecond.Count);
+        Assert.Equal(4, lowSecond.Count);
+    }
+
+    [Fact]
+    public void Original_4u89_family_bakes_a_b9_island_inside_homogeneous_b8_terrain()
+    {
+        string gamePath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../遊戲原始檔案"));
+        string archivePath = Path.Combine(gamePath, "floortex.dat");
+        if (!File.Exists(archivePath)) return;
+
+        using var library = new FloorTextureLibrary(archivePath);
+        var catalog = new FloorMaterialCatalog(library);
+        string[] source = Enumerable.Repeat("4B8___50", 9).ToArray();
+        NativeTerrainImportResult import = TerrainBlendAuthoringMap.Import(3, source, catalog, "B8");
+        var session = new TerrainBlendEditSession(import, source, catalog);
+
+        TerrainBlendPaintResult result = session.PaintCircle(1.5f, 1.5f, .76f, "B9");
+
+        Assert.True(result.Succeeded, string.Join("; ", result.Issues.Select(issue => $"({issue.TileX},{issue.TileY}) [{string.Join(',', issue.CornerMaterialIds)}]")));
+        Assert.NotEmpty(result.TextureChanges);
+        Assert.Contains(session.CurrentTextures, texture => texture.StartsWith("4U89", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(session.CurrentTextures, texture => texture.StartsWith("4B9", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void TerrainBlendAuthoringMap_paints_a_circle_and_reports_unbakeable_native_junctions()
+    {
+        var map = new TerrainBlendAuthoringMap(4, "B8");
+        IReadOnlyList<int> changed = map.PaintCircle(2, 2, 1.1f, "B9");
+
+        Assert.Equal(5, changed.Count);
+        Assert.Equal("B9", map.GetCorner(2, 2));
+        Assert.Equal("B9", map.GetCorner(2, 1));
+        Assert.Equal("B8", map.GetCorner(1, 1));
+
+        var catalog = new FloorMaterialCatalog([
+            "4B8___50", "4B9___50",
+            "4U89__10", "4U89__20", "4U89__30", "4U89__40", "4U89__60", "4U89__70", "4U89__80", "4U89__90",
+            "4U98__10", "4U98__20", "4U98__30", "4U98__40", "4U98__60", "4U98__70", "4U98__80", "4U98__90"]);
+        NativeTerrainBakeResult result = map.Bake(catalog);
+        Assert.True(result.IsComplete);
+        Assert.Equal(16, result.Textures.Count);
+        Assert.Contains(result.Textures, texture => texture is not null && texture.StartsWith("4U", StringComparison.Ordinal));
+
+        map.SetCorner(2, 2, "BC");
+        NativeTerrainBakeResult unsupported = map.Bake(catalog);
+        Assert.False(unsupported.IsComplete);
+        Assert.NotEmpty(unsupported.Issues);
+        Assert.All(unsupported.Issues, issue => Assert.Null(unsupported.Textures[issue.TileY * map.TileDimension + issue.TileX]));
+    }
+
+    [Fact]
+    public void TerrainBlendAuthoringMap_imports_native_corner_topology_and_reports_conflicts()
+    {
+        var catalog = new FloorMaterialCatalog(["4B8___50", "4B9___50", "4U89__10"]);
+        NativeTerrainImportResult imported = TerrainBlendAuthoringMap.Import(1, ["4U89__10"], catalog, "B8");
+
+        Assert.Empty(imported.UnresolvedTileIndices);
+        Assert.Empty(imported.CornerConflicts);
+        Assert.Equal(new[] { "B9", "B8", "B9", "B9" }, imported.Map.CornerMaterials);
+        Assert.Equal("4U89__10", Assert.Single(imported.Map.Bake(catalog).Textures));
+
+        NativeTerrainImportResult conflicting = TerrainBlendAuthoringMap.Import(2,
+            ["4B8___50", "4B9___50", "4B8___50", "4B9___50"], catalog, "B8");
+        Assert.Empty(conflicting.UnresolvedTileIndices);
+        Assert.NotEmpty(conflicting.CornerConflicts);
+        Assert.Contains(conflicting.CornerConflicts, issue => issue.MaterialVotes.ContainsKey("B8") && issue.MaterialVotes.ContainsKey("B9"));
+    }
+
+    [Fact]
+    public void TerrainBlendEditSession_keeps_corner_bake_undo_redo_and_reset_in_one_history()
+    {
+        FloorMaterialCatalog catalog = CompleteSyntheticTwoMaterialCatalog(includeThirdBase: false);
+        string[] source = Enumerable.Repeat("4B8___50", 9).ToArray();
+        NativeTerrainImportResult import = TerrainBlendAuthoringMap.Import(3, source, catalog, "B8");
+        var session = new TerrainBlendEditSession(import, source, catalog);
+
+        TerrainBlendPaintResult paint = session.PaintCircle(1.5f, 1.5f, .76f, "B9");
+        Assert.True(paint.Succeeded);
+        Assert.NotEmpty(paint.TextureChanges);
+        Assert.True(session.CommitStroke());
+        Assert.True(session.IsDirty);
+
+        IReadOnlyList<TerrainTextureChange> undo = Assert.IsAssignableFrom<IReadOnlyList<TerrainTextureChange>>(session.Undo());
+        Assert.NotEmpty(undo);
+        Assert.Equal(source, session.CurrentTextures);
+        Assert.False(session.IsDirty);
+
+        IReadOnlyList<TerrainTextureChange> redo = Assert.IsAssignableFrom<IReadOnlyList<TerrainTextureChange>>(session.Redo());
+        Assert.NotEmpty(redo);
+        Assert.True(session.IsDirty);
+        Assert.Contains(session.CurrentTextures, texture => !texture.Equals("4B8___50", StringComparison.OrdinalIgnoreCase));
+
+        IReadOnlyList<TerrainTextureChange> reset = session.ResetToBaseline();
+        Assert.NotEmpty(reset);
+        Assert.Equal(source, session.CurrentTextures);
+        Assert.False(session.IsDirty);
+        Assert.False(session.CanUndo);
+    }
+
+    [Fact]
+    public void TerrainBlendEditSession_rejects_an_unsupported_junction_and_rolls_back_the_whole_pending_stroke()
+    {
+        FloorMaterialCatalog catalog = CompleteSyntheticTwoMaterialCatalog(includeThirdBase: true);
+        string[] source = Enumerable.Repeat("4B8___50", 16).ToArray();
+        NativeTerrainImportResult import = TerrainBlendAuthoringMap.Import(4, source, catalog, "B8");
+        var session = new TerrainBlendEditSession(import, source, catalog);
+
+        Assert.True(session.PaintCircle(1.5f, 1.5f, .76f, "B9").Succeeded);
+        TerrainBlendPaintResult rejected = session.PaintCircle(2.5f, 1.5f, .76f, "BC");
+
+        Assert.False(rejected.Succeeded);
+        Assert.NotEmpty(rejected.Issues);
+        Assert.NotEmpty(rejected.TextureChanges);
+        Assert.Equal(source, session.CurrentTextures);
+        Assert.False(session.IsDirty);
+        Assert.False(session.CommitStroke());
+        Assert.False(session.CanUndo);
+    }
+
+    private static FloorMaterialCatalog CompleteSyntheticTwoMaterialCatalog(bool includeThirdBase)
+    {
+        var names = new List<string> { "4B8___50", "4B9___50" };
+        if (includeThirdBase) names.Add("4BC___50");
+        foreach (string pair in new[] { "89", "98" })
+        foreach (int shape in new[] { 1, 2, 3, 4, 6, 7, 8, 9 })
+            names.Add($"4U{pair}__{shape}0");
+        return new FloorMaterialCatalog(names);
     }
 
     [Fact]
@@ -124,5 +465,31 @@ public sealed class MapEditor3DTests
         Assert.Equal(3, layout.Count);
         Assert.All(layout.Values, rect => Assert.InRange(rect.X + rect.Width, 1, 2048));
         Assert.DoesNotContain(layout.Values, first => layout.Values.Any(second => first != second && first.X < second.X + second.Width && second.X < first.X + first.Width && first.Y < second.Y + second.Height && second.Y < first.Y + first.Height));
+    }
+
+    [Fact]
+    public void AtlasLayout_tightly_packs_more_than_the_old_256_texture_limit()
+    {
+        string[] textures = Enumerable.Range(0, 300).Select(index => $"texture-{index}").ToArray();
+
+        IReadOnlyDictionary<string, AtlasRect> layout = FloorTextureAtlas.Layout(textures, 4096);
+
+        Assert.Equal(300, layout.Count);
+        Assert.Equal(784, FloorTextureAtlas.Capacity(4096));
+        Assert.All(layout.Values, rect =>
+        {
+            Assert.InRange(rect.X, 0, 4096 - rect.Width);
+            Assert.InRange(rect.Y, 0, 4096 - rect.Height);
+        });
+        Assert.Throws<InvalidOperationException>(() => FloorTextureAtlas.Layout(Enumerable.Range(0, 785).Select(index => index.ToString()), 4096));
+    }
+
+    private static IEnumerable<Control> Descendants(Control root)
+    {
+        foreach (Control child in root.Controls)
+        {
+            yield return child;
+            foreach (Control descendant in Descendants(child)) yield return descendant;
+        }
     }
 }

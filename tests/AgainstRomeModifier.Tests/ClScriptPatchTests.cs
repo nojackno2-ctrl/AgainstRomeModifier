@@ -48,6 +48,7 @@ namespace AgainstRomeModifier.Tests
                 SpellHealing10x = true,
                 SpellResurrection = true,
                 GeneralSkills = true,
+                SpellRange3x = true,
                 LeaderGlory = true
             };
             byte[] patchedCompressed = AgainstRomeModifier.Core.Features.Ini.IniFeaturePatcher.BuildClScript(backupManager, profile);
@@ -87,6 +88,7 @@ namespace AgainstRomeModifier.Tests
                 Assert.True(detectedOptions.SpellHealing10x, "Spell Healing 10x should be detected as true");
                 Assert.True(detectedOptions.SpellResurrection, "Spell Resurrection should be detected as true");
                 Assert.True(detectedOptions.GeneralSkills, "General Skills should be detected as true");
+                Assert.True(detectedOptions.SpellRange3x, "Spell Range 3x should be detected as true");
                 Assert.True(detectedOptions.LeaderGlory, "Leader Glory should be detected as true");
             }
             finally

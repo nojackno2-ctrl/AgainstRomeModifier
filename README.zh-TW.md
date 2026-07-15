@@ -26,13 +26,15 @@
 - **地圖人口上限解鎖**：修改地圖的 `team.dat` 檔案，啟用後可將人口上限提升至 1600。
 - **無盡模式羅馬陣營**：在「資源與戰鬥升級」啟用後，會將五張無盡地圖的 team 0 預設陣營改為羅馬，並安全修改無盡專用的 `dlg_volk` 選擇流程，讓三面部族旗都以羅馬開局。此功能已實機驗證，只影響新開局；羅馬依原版設計沒有祭司與榮耀技能樹。
 - **房屋容量 20 倍**：可還原修改，將 `objdef.dau` 中所有正值人口建築的 `wohnwer` 欄位值提升 20 倍。
+- **住宅帳篷一次生產 20 名村民**：可還原、僅影響玩家的 EXE 補丁；男／女生產鈕點一次即可排入最多 20 名村民，已在遊戲內實機驗證。
+- **部隊轉換一次選滿 20 名**：可還原、僅影響玩家的 EXE 補丁；村民轉部隊／裝備時點一次即可把選取數設為 20，仍受原版上限與可用村民數量限制，已在遊戲內實機驗證。
 - **建造速度 10 倍**：可還原修改，縮短 `objdef.dau` 中的建造、升級與維修時間 10 倍（這會自動提升每秒維修率，已在遊戲內實機驗證）。
 - **資源儲存容量 10 倍**：可還原修改，將 `objdef.dau` 中主堡（`Hau`）和倉庫（`Lag`）的資源儲存上限提升 10 倍（已在遊戲內實機驗證）。
 - **主堡生命值 10 倍**：可還原修改，將 `objdef.dau` 中所有主堡（`Hau` 建築）的生命值（HP）提升 10 倍（已在遊戲內實機驗證）。
 - **無盡模式 AI 終極模式**：可還原的五張 `ENDL_*` 地圖 BCI 補丁。現行安全組態是每支軍事增援隊 20 人、重生等待 5 秒、同時活躍隊伍上限 8；保留原始迴圈節奏與兩個聚落清理保護。過去會跳過安全閘的無條件繞過方案已否決且不會再寫入。實證、舊版遷移與 runtime 限制見 [`endless-mode-ai.md`](docs/reverse-engineering/endless-mode-ai.md)。
 - **免費建設與生產**：透過修改 `ress.ini` 實現免費建造、生產、升級與法術消耗。
 - **單位屬性自訂編輯**：透過 `objdef.dau` 僅調整生命值（HP）、傷害、防禦（VW/AW）、視野與冷卻時間。移動速度、攻擊射程、法術半徑與祭司視野／施法距離由獨立的實驗性功能專責，絕不與自訂兵種層混用。
-- **實驗性屬性功能**：遠程射程 3 倍、單位移速 2 倍、祭司全地圖施法距離、法術效果半徑 3 倍、拋射彈道增高與遠程命中強化。前四項與資料寫入已靜態驗證；兩個拋射物功能仍待專門的實機回歸觀察。
+- **實驗性屬性功能**：遠程射程 3 倍（內建命中修正：落點傷害半徑加倍＋預判散布歸零，避免拉遠射程後打不中）、單位移速 2 倍、祭司全地圖施法距離、法術效果半徑 3 倍與拋射彈道增高。
 - **兵種預設匯出／匯入與一鍵控制**：`.artroop` 新檔格式固定為六欄 `HP,Dmg,VW,AW,Sight,Relt`。舊九欄檔仍可讀取，但已移除的欄位一定會捨棄；另提供一鍵啟用或停用所有已註冊功能。
 - **失去焦點背景執行**：對 `Against_Rome.exe` 進行補丁，使遊戲在失去焦點（最小化或切換視窗）時仍能繼續執行。
 - **全地圖建造限制消除**：修改 `Against_Rome.exe` 的 setter trampoline，免除村莊建設範圍與紅框限制，允許在整張地圖的任何地方進行建造（已在遊戲內實機驗證，包含紅框範圍）。
@@ -53,18 +55,15 @@
 
 ## 技術架構
 
-- [`src/Program.cs`](src/Program.cs)：應用程式進入點、DPI 設定與 UAC 系統管理員權限提升。
-- [`src/Core/GameLZSS.cs`](src/Core/GameLZSS.cs)：遊戲專用的 PFIL/LZSS 壓縮與解壓縮演算法實作。
-- [`src/Core/TroopConfig.cs`](src/Core/TroopConfig.cs)：已知單位 ID、單位分類、屬性欄位索引與平衡規則。
-- [`src/Core/Features/`](src/Core/Features/)：以 `FeatureRegistry` 與 `PatchProfile` 管理功能、分類還原、偵測及各檔案補丁規劃。
-- [`src/Core/Services/PatchEngine.cs`](src/Core/Services/PatchEngine.cs)：精簡的交易編排器；FoodHealing 與 Endless AI 共用 BCI 快取並由一次 `SaveAll` 落地。
-- [`src/UI/ModifierForm.cs`](src/UI/ModifierForm.cs)：主 UI 版面配置與內建技術規格文件檢視器。
-- [`src/UI/ModifierForm.Data.cs`](src/UI/ModifierForm.Data.cs)：備份載入、數據檢查、TGA 圖示解析與顯示格式化。
-- [`src/UI/ModifierForm.Patches.cs`](src/UI/ModifierForm.Patches.cs)：將集中管理的功能開關轉成 `PatchProfile`，並啟動交易式套用／分類還原。
-- [`src/UI/ModifierForm.DgVoodoo.cs`](src/UI/ModifierForm.DgVoodoo.cs)：內建 dgVoodoo2 檔案釋放、託管安裝、衝突偵測與移除邏輯。
-- [`src/UI/ModifierForm.SaveManager.cs`](src/UI/ModifierForm.SaveManager.cs)：存檔備份、還原與快取處理。
-- [`src/UI/ModifierForm.Presets.cs`](src/UI/ModifierForm.Presets.cs)：一鍵啟用或停用所有修改項目的功能。
-- [`src/UI/TroopPresetForm.cs`](src/UI/TroopPresetForm.cs)：兵種屬性預設編輯器。
+方案（`AgainstRomeModifier.slnx`）已拆解為多個獨立專案，各自產出執行檔或函式庫：
+
+- [`src.Launcher/`](src.Launcher/)：`AgainstRomeLauncher.exe` — 套件入口，負責啟動其他工具並內建技術文件檢視器（`TechDocForm`）。
+- [`src.Modifier/`](src.Modifier/)：`AgainstRomeModifier.exe` — 修改器主介面。`ModifierForm` partial 類別涵蓋版面配置、數據檢查（備份載入、TGA 圖示解析）、補丁套用（功能開關 → `PatchProfile` → 交易式套用／分類還原）、一鍵預設，以及兵種屬性預設編輯器（`TroopPresetForm`）。
+- [`src.SaveManager/`](src.SaveManager/)：`AgainstRomeSaveManager.exe` — 存檔備份、還原與預覽（`SaveManagerForm`）。
+- [`src.MapEditor/`](src.MapEditor/)：`AgainstRomeMapEditor.exe` — 地圖編輯器，含無盡地圖複製／刪除管理。
+- [`src.Core/`](src.Core/)：`AgainstRome.Core.dll` — 修改器共用核心：以 `FeatureRegistry` 管理的功能定義（`Core/Features/`）、各檔案補丁器（`Core/Patches/`）、交易式服務如 [`PatchEngine.cs`](src.Core/Core/Services/PatchEngine.cs)（FoodHealing 與 Endless AI 共用 BCI 快取並由一次 `SaveAll` 落地）、[`TroopConfig.cs`](src.Core/Core/TroopConfig.cs)（已知單位 ID、分類、欄位索引與平衡規則）、在地化字串，以及內嵌的 `Backup.zip` 與 dgVoodoo2 資源。
+- [`src.Shared/`](src.Shared/)：`AgainstRome.Shared.dll` — 最底層共用函式庫：[`GameLZSS.cs`](src.Shared/Core/GameLZSS.cs)（遊戲專用 PFIL/LZSS 壓縮）、`SafeFileWriter`、`FileRollbackScope`，以及地圖目錄／複製／刪除服務（`Maps/`）。
+- [`tools/publish.ps1`](tools/publish.ps1)：發佈全部四個執行檔並打包成釋出 ZIP。
 - [`tools/Repair-LanguageBackup.ps1`](tools/Repair-LanguageBackup.ps1)：在語言移轉中斷或不完整時，驗證並修復本地語言覆蓋備份基準。
 - [`docs/reverse-engineering/`](docs/reverse-engineering/)：結構化的逆向工程筆記。
 - [`data/game_schema.json`](data/game_schema.json)：工具可讀取的檔案格式與補丁元數據（Metadata）。
@@ -72,10 +71,9 @@
 ## 內建嵌入資源
 
 - 本地選用的 `Backup.zip` 檔案依設計不會被提交至 GitHub。
-- 若可執行檔旁或嵌入資源中存在 `Backup.zip`，它將被載入為還原來源。
+- 若可執行檔旁存在 `Backup.zip`，或 `AgainstRome.Core.dll` 內嵌有此資源，它將被載入為還原來源。
 - 若不存在 `Backup.zip`，修改器會直接讀取使用者選擇的遊戲目錄中的原始檔案，並在記憶體中建立備份基準。
-- `TechDoc.md` 作為內建資源嵌入。
-- `TechDoc_EN.md` 作為內建資源嵌入。
+- `TechDoc.md` 與 `TechDoc_EN.md` 內嵌於啟動器，供技術文件檢視器使用。
 - 遊戲資源資料在需要時會以 Code Page 1251 (Windows-1251) 解碼；本專案的所有說明文件均採用 UTF-8 編碼。
 
 ## 逆向工程資料
@@ -104,9 +102,9 @@
 
 1. 安裝 .NET 8.0 SDK 與 Visual Studio 2022。
 2. 對於公開版本，`Backup.zip` 為選用項目。若您有此檔案，請將其保留在本地。
-3. 開啟 `AgainstRomeModifier.slnx` 或 `AgainstRomeModifier.csproj`。
+3. 開啟 `AgainstRomeModifier.slnx`。
 4. 選擇編譯組態為 `Release` 且平台為 `x64`。
-5. 進行方案編譯。編譯輸出將位於 `bin/Release/net8.0-windows/` 下。
+5. 進行方案編譯。各程式的輸出位於各自專案資料夾下，例如 `src.Modifier/bin/Release/net8.0-windows/`。若要產生包含全部四個執行檔的釋出包，執行 `tools/publish.ps1`。
 
 ## 公開版本行為說明
 

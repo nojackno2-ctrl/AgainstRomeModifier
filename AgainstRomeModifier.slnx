@@ -1,10 +1,9 @@
 <Solution>
-  <Project Path="AgainstRomeModifier.csproj" />
-  <Project Path="src.MapEditor/AgainstRomeMapEditor.csproj">
-    <Build Solution="Debug|*" Project="false" />
-  </Project>
-  <Project Path="src.Shared/AgainstRome.Shared.csproj">
-    <Build Solution="Debug|*" Project="false" />
-  </Project>
+  <Project Path="src.Launcher/AgainstRomeLauncher.csproj" />
+  <Project Path="src.Modifier/AgainstRomeModifier.csproj" />
+  <Project Path="src.SaveManager/AgainstRomeSaveManager.csproj" />
+  <Project Path="src.Core/AgainstRome.Core.csproj" />
+  <Project Path="src.MapEditor/AgainstRomeMapEditor.csproj" />
+  <Project Path="src.Shared/AgainstRome.Shared.csproj" />
   <Project Path="tests/AgainstRomeModifier.Tests/AgainstRomeModifier.Tests.csproj" />
 </Solution>

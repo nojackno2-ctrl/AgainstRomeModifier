@@ -22,6 +22,10 @@ internal sealed class FloorTextureLibrary : IDisposable
 
     public bool IsAvailable => _archive is not null && _entries.Count > 0;
 
+    /// <summary>floortex.dat 內全部可用的地表材質名稱（排序後），供「完整材質庫」調色盤列舉。</summary>
+    public IReadOnlyList<string> Names => _names ??= _entries.Keys.OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToArray();
+    private IReadOnlyList<string>? _names;
+
     public Bitmap? Get(string textureName)
     {
         if (_textures.TryGetValue(textureName, out Bitmap? cached)) return cached;

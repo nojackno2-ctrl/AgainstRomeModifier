@@ -2,6 +2,13 @@
 
 > 本文件是自足的實作規格:實作者只需要本文件 + 本 repo 即可完成開發,不需要其他對話上下文。
 > 語言慣例:說明用繁體中文,程式識別字/檔名/技術名詞保留英文。
+>
+> **路徑對照（2026-07 專案拆解後）**:本文撰寫時程式碼在單一專案 `src/` 下,現已拆為多專案。
+> 對照:`src/Core/*` → `src.Core/Core/*`;`src/UI/*` → `src.Modifier/UI/*`;
+> `GameLZSS.cs`、`FileRollbackScope.cs`、`SafeFileWriter.cs` 與地圖服務（`Maps/*`）→ `src.Shared/`;
+> 存檔管理 UI → `src.SaveManager/UI/SaveManagerForm.cs`。
+> 另,§3 規劃的修改器內「地圖管理」分頁（`ModifierForm.MapManager.cs`）已改為由啟動器
+> （`src.Launcher/`）直接啟動地圖編輯器,地圖複製/刪除功能整合在 `src.MapEditor/MapSelectionForm.cs`。
 
 ---
 
@@ -9,11 +16,15 @@
 
 為 2004 年遊戲《Against Rome》建立一個「世紀帝國式」的**無盡模式(Endless)地圖編輯器**,讓玩家能以現有地圖為範本建立、編輯自己的 ENDL 地圖。
 
+> 2026-07-14 介面語意修正：目前可載入的建立流程是**完整複製原版無盡地圖範本**，按鈕必須標示為「從無盡範本建立」，不得稱為空白地圖。真正的空白地圖需要同步產生或重建高度、碰撞與 `DATA` cache；在這些格式完成受控遊戲內驗證前，「新建空白地圖」只能顯示尚未安全支援的說明，不得用清空 SDL／`boden.txt` 的方式偽裝成空白。
+
 **架構決策(已由需求方確定,不可更改):**
 
 1. 地圖編輯器是**獨立程式**(獨立 WinForms EXE),與現有修改器 `AgainstRomeModifier` 互不干擾。
 2. 修改器只新增一個「**地圖管理**」分頁,內含地圖清單與「啟動編輯器」按鈕;按下按鈕才啟動編輯器程式。
 3. 分三個 Phase 交付;Phase 1 只使用**已完全理解的檔案格式**(全部列於本文件第 2 章),不需要任何逆向工程。
+
+**3D fallback 診斷要求（2026-07-14）：**離線 3D 缺少 `boden.bmp`、無法載入 `floortex.dat`，或 OpenGL 3.3 context／shader 編譯連結失敗時，程式應停用 3D、保持 2D 可用，並在「3D 診斷」中提供可複製的實際原因、資源路徑與 OpenGL/OS 資訊；不得再只做無原因的靜默 fallback。
 
 **關鍵可行性事實(已調查確認):**
 
@@ -228,7 +239,23 @@ Phase 1 編輯操作:改 `team`/`nation`、整體平移(改 `refpos`,物件 `pos
 ...(共 64×64 = 4096 行,每行一個材質 tile 名稱,row-major)
 ```
 
-地圖是 **64×64 tile 網格**;每 tile 一個 8 字元材質名(對應遊戲材質庫)。這代表**地表材質繪製在 Phase 1/2 就能做**(改文字即可),不需逆向 BMP!材質名清單可從五張原廠圖的 boden.txt 聯集取得(去重後做成調色盤)。注意:材質名有系列規律(如 `4BJ___5x`、`4UJX__xx`),相鄰 tile 用系列變體拼接過渡 — 編輯器先提供「單格替換 + 從調色盤選」即可,過渡美化交給使用者。
+地圖是 **64×64 tile 網格**；每 tile 一個 8 字元材質名（對應遊戲材質庫）。但 `boden.txt` 中的名稱是**渲染用 tile**，不能全部直接當成使用者的作畫顏料。靜態檢視 `floortex.dat` 後，`4B?___5?` 可辨識為同一基礎地表的多個自然變體；`4T*`、`4U*`、`L*B*T*` 等則包含邊界、轉角與拼接片；`AA_Brush*` 是筆刷遮罩／筆觸圖樣，不是地表顏色。
+
+玩家介面必須以 `4B?___5?` 的中間代碼分組，但只呈現「草地、沙地、泥土、岩地」等可理解的地表名稱與實際來源縮圖；材質代碼、自然變體、transition tile 與拼接規則全部屬於編輯器內部實作，不提供專家入口。玩家只需要選地表、筆刷大小並在地圖上繪製。同一玩家素材固定使用一張主紋理，避免相鄰格因底層變體而形成深淺棋盤；兩種相鄰地表使用已驗證的 `4Uxy__dV` 規則，在外圍舊地表格自動選擇朝向新材質的半邊／角落過渡片。玩家直接點擊的格子必須成為完整的新材質，輸入層不得因底層 texture 名稱相同而跳過。三種地表同格交會的 `4T` 規則尚未還原，仍須後續受控驗證，但不得要求玩家手動處理。
+
+2026-07-14 玩家實際 3D 截圖已確認：連續繪製同一「草地」會形成一致區域，先前的深淺棋盤與中央缺格均已消失。此驗證只涵蓋單一素材連續繪製；混合素材邊界與 `4T` 三材質交會仍須分別驗證。
+
+#### 2.7.1 自創 authoring format 與 native bake（2026-07-14 架構決策）
+
+玩家不應直接編輯 64×64 `boden.txt` tile。編輯器應建立自己的專案格式（暫定副檔名 `.armmap`），保存比遊戲輸出更高階的資料：每種基礎材質的 weight map、圓形筆刷半徑／硬度、語意地表、場景物件，以及後續開放的高度資料。3D 預覽可直接依權重在 shader 中平滑混合材質，提供接近現代／官方地圖編輯器的繪製體驗。
+
+遊戲不會直接讀取 `.armmap`。按「儲存到遊戲／遊戲測試」時，獨立 baker 必須將 authoring state 編譯為遊戲原生 `ENDL_*`：材質權重轉成 `boden.txt` 可用的 base／`4U`／`4T` tile，物件轉成 SDL，其他圖層只在格式與相依 cache 通過驗證後輸出。編輯器應提供「平滑 authoring 預覽」與「遊戲原生 bake 預覽」的切換，避免 shader 效果與實際遊戲輸出不一致。
+
+**驗收標準：匯出後在原遊戲中的外觀與行為必須與原版地圖同級。** 自創格式與 shader 只是編輯工具，不能成為降低遊戲輸出品質的理由。原生 bake 預覽是編輯器的預設可信畫面；任何材質混合、高度、碰撞或物件功能都必須在原遊戲內驗證後才可標記完成。若現有逆向證據不足以產生原版 transition／cache，就繼續補齊格式，不以硬方格或 editor-only 平滑效果作為最終交付。
+
+目前 `4U` 僅足以編譯兩材質邊界；`4T` 三材質 junction、更多材質同區混合與任意 alpha 混合仍須逆向或明確降級。自創格式能讓真正空白專案立即成立，但在未知的高度、碰撞、`DATA/*.dat` cache 能安全生成前，仍不能把該專案匯出並宣稱為可載入的真正空白遊戲地圖。若改走讓遊戲直接載入 `.armmap`，就需要額外的 EXE/DLL loader patch，風險與維護成本屬另一專案，不是目前預設路徑。
+
+2026-07-14 transactional native brush 已接入 2D／3D 材質工具：authoring corner 與輸出的 `boden.txt` tile 由同一 stroke history 管理；每個游標位置一次完成依筆刷尺寸計算的圓形 bake，只重烘筆刷碰到的鄰近 tile，未觸及的原圖衝突保持原檔。任何找不到原版 transition 的 junction 會拒絕並回滾整個尚未完成的 stroke，拒絕訊息不會被 hover 狀態覆蓋。暫存 3D smoke 已在全 B8 地形畫入 B9，視覺上形成柔和小區，undo/redo/save 狀態正確；儲存檔實際包含一個 B9 中心與八方向 `4U89`，不是 editor-only shader。仍須由使用者在正式自製地圖完成原遊戲載入比較，才可將「原版品質混合筆刷」標示為 game-runtime verified。
 
 `[Heightmapstep] 4`(boden.ini)× 64 tiles = 256,+1 = 257 → 對應 vertex/boden/emboss/smooth.bmp 的 257×257(頂點網格),collision/minimap 的 256×256(tile 網格)。此對應關係是 Phase 3 逆向的起點。
 
@@ -278,7 +305,7 @@ Phase 1 編輯操作:改 `team`/`nation`、整體平移(改 `refpos`,物件 `pos
 - 材質(可作為 Phase 1.5):64×64 網格檢視(每格填色或縮寫),點格子從材質調色盤替換。
 - **原廠圖(ENDL_000–004)一律唯讀**,只能「另存為新地圖」;要改原廠圖 = 先複製再編輯。
 
-> 實作狀態（2026-07-13）：屬性面板已支援 `briefing_titel_1/2`、可串接／多行的 `briefing_text`、`briefing_text_teamname0..7`，以及 Waterlevel、WaterColor、DayStartTime、DayEndTime、RainDropsOnWater、WaterWarpShift、WaterBumpAmplitude、WaterBumpFrequency、FlashPropability。寫入仍只允許 marker-backed 自製地圖，並沿用 CP1251、PFIL header 保留與 `FileRollbackScope` 交易。SDL 場景物件目前維持唯讀，待其獨立 round-trip／遊戲內驗證完成才開放編輯。
+> 實作狀態（2026-07-14）：屬性面板已支援 `briefing_titel_1/2`、可串接／多行的 `briefing_text`、`briefing_text_teamname0..7`，以及 Waterlevel、WaterColor、DayStartTime、DayEndTime、RainDropsOnWater、WaterWarpShift、WaterBumpAmplitude、WaterBumpFrequency、FlashPropability。寫入仍只允許 marker-backed 自製地圖，並沿用 CP1251、PFIL header 保留與 `FileRollbackScope` 交易。SDL 文件層已通過合成與八個真實聚落檔的 no-op round-trip；場景檢查器現提供受控驗證用的既有物件 `team`／相對 `pos` 暫存編輯與「還原到本次開啟時」，儲存服務會再次驗證 custom marker、`ENDL_005–999`、來源檔名及索引。此功能仍屬遊戲內驗證階段，尚未開放物件增刪、拖曳或宣稱 runtime verified。
 
 **存檔紀律:** 所有寫入經 `SafeFileWriter`;一次「儲存變更」內的多檔寫入包在 `FileRollbackScope`(全部 `TrackFile` → 寫入 → `Commit`)。PFIL 檔回寫必用原始 64-byte header。
 

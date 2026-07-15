@@ -26,6 +26,8 @@ The author of this project is a devoted player who loved *Against Rome* many yea
 - **Maximum-Population Unlock**: Modifies map `team.dat` files, raising the population limit up to 1600 when enabled.
 - **Play as Romans in Endless Mode**: From Resource & Combat Upgrades, changes the five endless-map team-0 defaults to Romans and safely patches the endless-only `dlg_volk` selector so every faction flag starts as Roman. Runtime-verified; it affects new games only. Romans have no priest or glory skill tree by original design.
 - **20x Housing Capacity**: Reversible switch to scale every positive population-building `wohnwer` value in `objdef.dau` by 20x.
+- **20 Civilians Per Residential-Tent Click**: Reversible player-only EXE patch that queues up to 20 male or female civilians with one click; successfully runtime-verified in-game.
+- **Fill Unit Conversion to 20 Per Click**: Reversible player-only EXE patch that sets the selected villager-to-unit conversion count to 20 with one click, subject to the original cap and available villagers; successfully runtime-verified in-game.
 - **10x Construction Speed**: Reversible switch to accelerate construction, upgrades, and repairs in `objdef.dau` by 10x (shortens building build/upgrade times by 10, which automatically boosts the per-second repair rate; successfully runtime-verified in-game).
 - **10x Storage Capacity**: Reversible switch to scale storage capacities of Town Halls (`Hau` structures) and Warehouses (`Lag` structures) in `objdef.dau` by 10x (successfully runtime-verified in-game).
 - **10x Town Hall HP**: Reversible switch to multiply hit-points (HP) of all Town Halls (`Hau` structures) in `objdef.dau` by 10x (successfully runtime-verified in-game).
@@ -33,7 +35,7 @@ The author of this project is a devoted player who loved *Against Rome* many yea
 - **Free Construction & Production**: Free construction, production, upgrades, and spell costs through `ress.ini` modification.
 - **5x Spell Damage**: Reversible `cl_script.ini` patch for six configured active-spell values; successfully runtime-verified in-game.
 - **Unit Stat Editing**: Adjust only HP, damage, VW, AW, sight, and cooldown through `objdef.dau`. Movement speed, attack range, spell radius, and priest sight/casting distance are deliberately owned by the independent experimental modifiers, not by custom troop layers.
-- **Experimental Stat Modifiers**: 3× ranged range, 2× unit movement, entire-map priest casting distance, 3× spell effect radius, higher projectile arcs, and ranged-accuracy boost. These are static-verified; the two projectile features still need dedicated runtime-regression observations.
+- **Experimental Stat Modifiers**: 3× ranged range (with a built-in accuracy fix — doubled impact radius and zeroed lead-aim scatter so shots still land at the longer range), 2× unit movement, entire-map priest casting distance, 3× spell effect radius, and higher projectile arcs.
 - **Troop Presets & One-Click Control**: `.artroop` exports use the six-field `HP,Dmg,VW,AW,Sight,Relt` format. Legacy nine-field imports remain readable but their removed fields are discarded; one-click buttons enable or disable all registered features.
 - **Loss-Focus Background Execution**: Patches `Against_Rome.exe` to allow the game to continue running when it loses focus (is minimized or inactive).
 - **Entire Map Construction Range**: Replaces the construction range limit via a synchronized `Against_Rome.exe` setter trampoline, allowing building anywhere on the entire map (successfully runtime-verified in-game, including the red dashed frame).
@@ -54,18 +56,15 @@ The original Options `swi_volk` control is a separate player-driven path and can
 
 ## Technical Architecture
 
-- [`src/Program.cs`](src/Program.cs): Application entry point, DPI setup, and UAC elevation.
-- [`src/Core/GameLZSS.cs`](src/Core/GameLZSS.cs): Game-specific PFIL/LZSS compression and decompression.
-- [`src/Core/TroopConfig.cs`](src/Core/TroopConfig.cs): Known unit IDs, unit categories, field indexes, and balance rules.
-- [`src/Core/Features/`](src/Core/Features/): Registry-backed feature definitions, `PatchProfile`, category restores, detection, and per-file patch planning.
-- [`src/Core/Services/PatchEngine.cs`](src/Core/Services/PatchEngine.cs): Thin transactional orchestrator; FoodHealing and Endless AI share the BCI cache and are committed by one `SaveAll`.
-- [`src/UI/ModifierForm.cs`](src/UI/ModifierForm.cs): Main UI layout and embedded documentation view.
-- [`src/UI/ModifierForm.Data.cs`](src/UI/ModifierForm.Data.cs): Backup loading, data inspection, TGA icon parsing, and display formatting.
-- [`src/UI/ModifierForm.Patches.cs`](src/UI/ModifierForm.Patches.cs): Converts the centralized feature-toggle map into a `PatchProfile` and starts transactional apply/category-restore operations.
-- [`src/UI/ModifierForm.DgVoodoo.cs`](src/UI/ModifierForm.DgVoodoo.cs): Embedded dgVoodoo2 extraction, managed installation, conflict detection, and removal.
-- [`src/UI/ModifierForm.SaveManager.cs`](src/UI/ModifierForm.SaveManager.cs): Save backup, restore, and cache handling.
-- [`src/UI/ModifierForm.Presets.cs`](src/UI/ModifierForm.Presets.cs): Actions to enable or disable all features at once.
-- [`src/UI/TroopPresetForm.cs`](src/UI/TroopPresetForm.cs): Troop stat preset editor.
+The solution (`AgainstRomeModifier.slnx`) is split into decoupled projects, each producing its own executable or library:
+
+- [`src.Launcher/`](src.Launcher/): `AgainstRomeLauncher.exe` — suite entry point that launches the other tools and hosts the technical documentation viewer (`TechDocForm`).
+- [`src.Modifier/`](src.Modifier/): `AgainstRomeModifier.exe` — the modifier UI. `ModifierForm` partial classes cover layout, data inspection (backup loading, TGA icon parsing), patch application (feature-toggle map → `PatchProfile` → transactional apply/category restore), presets, and the troop stat preset editor (`TroopPresetForm`).
+- [`src.SaveManager/`](src.SaveManager/): `AgainstRomeSaveManager.exe` — save backup, restore, and preview (`SaveManagerForm`).
+- [`src.MapEditor/`](src.MapEditor/): `AgainstRomeMapEditor.exe` — map editor, including endless-map clone/delete management.
+- [`src.Core/`](src.Core/): `AgainstRome.Core.dll` — the shared modifier core: registry-backed feature definitions (`Core/Features/`), file patchers (`Core/Patches/`), transactional services such as [`PatchEngine.cs`](src.Core/Core/Services/PatchEngine.cs) (FoodHealing and Endless AI share the BCI cache and are committed by one `SaveAll`), [`TroopConfig.cs`](src.Core/Core/TroopConfig.cs) (known unit IDs, categories, field indexes, balance rules), localization, and the embedded `Backup.zip`/dgVoodoo2 payloads.
+- [`src.Shared/`](src.Shared/): `AgainstRome.Shared.dll` — lowest-level shared library: [`GameLZSS.cs`](src.Shared/Core/GameLZSS.cs) (game-specific PFIL/LZSS compression), `SafeFileWriter`, `FileRollbackScope`, and the map catalog/clone/delete services (`Maps/`).
+- [`tools/publish.ps1`](tools/publish.ps1): Publishes all four executables and packages them into the release ZIP.
 - [`tools/Repair-LanguageBackup.ps1`](tools/Repair-LanguageBackup.ps1): Validates and repairs a local language overlay backup after an interrupted or incomplete migration.
 - [`docs/reverse-engineering/`](docs/reverse-engineering/): Structured reverse-engineering notes.
 - [`data/game_schema.json`](data/game_schema.json): Tool-readable file format and patch metadata.
@@ -73,10 +72,9 @@ The original Options `swi_volk` control is a separate player-driven path and can
 ## Embedded Resources
 
 - `Backup.zip` is optional and intentionally not committed to GitHub.
-- If `Backup.zip` is embedded or placed next to the executable, it is loaded as the restore source.
+- If `Backup.zip` is embedded (in `AgainstRome.Core.dll`) or placed next to the executable, it is loaded as the restore source.
 - If no `Backup.zip` exists, the modifier builds an in-memory backup from the user's selected game installation directory.
-- `TechDoc.md` is embedded as `TechDoc.md`.
-- `TechDoc_EN.md` is embedded as `TechDoc_EN.md`.
+- `TechDoc.md` and `TechDoc_EN.md` are embedded in the launcher for the documentation viewer.
 - Game payloads are decoded as code page 1251 where required; project documentation is UTF-8.
 
 ## Reverse Engineering Data
@@ -105,9 +103,9 @@ The generated Ghidra output is local research material, not original source. Unk
 
 1. Install .NET 8.0 SDK and Visual Studio 2022.
 2. `Backup.zip` is optional for public builds. Keep it local only if you have one.
-3. Open `AgainstRomeModifier.slnx` or `AgainstRomeModifier.csproj`.
+3. Open `AgainstRomeModifier.slnx`.
 4. Select `Release` and `x64`.
-5. Build the solution. Output is under `bin/Release/net8.0-windows/`.
+5. Build the solution. Each app's output is under its own project folder, e.g. `src.Modifier/bin/Release/net8.0-windows/`. To produce a release package with all four executables, run `tools/publish.ps1`.
 
 ## Public Build Behavior
 

@@ -14,7 +14,7 @@ public sealed class PatcherRoundTripTests {
         columns[74] = "   500";
         columns[156] = "    10";
         byte[] original = SyntheticFixture.Pfil("header1\r\nheader2\r\n" + string.Join(',', columns) + "\r\n");
-        var enabled = new ObjdefOptions(false, true, true, true, false, false, false, false, false, false, false, false, NoStats);
+        var enabled = new ObjdefOptions(false, true, true, true, false, false, false, false, false, false, false, NoStats);
 
         byte[] patched = ObjdefPatcher.GetPatchedBytes(original, enabled);
         string[] result = SyntheticFixture.Text(patched).Split("\r\n")[2].Split(',');
@@ -23,7 +23,7 @@ public sealed class PatcherRoundTripTests {
         Assert.Equal("1000", result[42].Trim());
         Assert.Equal("100", result[73].Trim());
         Assert.Equal("50", result[74].Trim());
-        Assert.Equal(original, ObjdefPatcher.GetPatchedBytes(original, new(false, false, false, false, false, false, false, false, false, false, false, false, NoStats)));
+        Assert.Equal(original, ObjdefPatcher.GetPatchedBytes(original, new(false, false, false, false, false, false, false, false, false, false, false, NoStats)));
     }
 
     [Fact]
@@ -37,7 +37,7 @@ public sealed class PatcherRoundTripTests {
         columns[153] = "   100"; // 升級榮譽需求：依產品決策不修改
         byte[] original = SyntheticFixture.Pfil("header1\r\nheader2\r\n" + string.Join(',', columns) + "\r\n");
 
-        byte[] patched = ObjdefPatcher.GetPatchedBytes(original, new ObjdefOptions(false, false, false, false, false, true, false, false, false, false, false, false, NoStats));
+        byte[] patched = ObjdefPatcher.GetPatchedBytes(original, new ObjdefOptions(false, false, false, false, false, true, false, false, false, false, false, NoStats));
         string[] result = SyntheticFixture.Text(patched).Split("\r\n")[2].Split(',');
 
         Assert.Equal("10", result[148].Trim());
@@ -45,7 +45,7 @@ public sealed class PatcherRoundTripTests {
         Assert.Equal("20", result[150].Trim());
         Assert.Equal("25", result[161].Trim());
         Assert.Equal("100", result[153].Trim());
-        Assert.Equal(original, ObjdefPatcher.GetPatchedBytes(original, new(false, false, false, false, false, false, false, false, false, false, false, false, NoStats)));
+        Assert.Equal(original, ObjdefPatcher.GetPatchedBytes(original, new(false, false, false, false, false, false, false, false, false, false, false, NoStats)));
     }
 
     [Fact]
@@ -72,7 +72,7 @@ public sealed class PatcherRoundTripTests {
         var unitStats = new Dictionary<string, double[]> {
             ["FigKelSch00_Bogen"] = new double[] { 100, 10, 10, 10, 4.0, 1500, 500, 400, 0 }
         };
-        byte[] patched = ObjdefPatcher.GetPatchedBytes(original, new ObjdefOptions(false, false, false, false, false, false, false, false, false, false, false, false, unitStats));
+        byte[] patched = ObjdefPatcher.GetPatchedBytes(original, new ObjdefOptions(false, false, false, false, false, false, false, false, false, false, false, unitStats));
         string[] result = SyntheticFixture.Text(patched).Split("\r\n")[2].Split(',');
 
         Assert.Equal("100.00", result[80].Trim()); // RangeMin（最小射程）不縮放，避免放大近身死區
@@ -96,7 +96,7 @@ public sealed class PatcherRoundTripTests {
         };
 
         byte[] patched = ObjdefPatcher.GetPatchedBytes(original,
-            new ObjdefOptions(false, false, false, false, false, false, true, false, false, false, false, false, stats));
+            new ObjdefOptions(false, false, false, false, false, false, true, false, false, false, false, stats));
         string[] result = SyntheticFixture.Text(patched).Split("\r\n")[2].Split(',');
 
         Assert.Equal("1000.00", result[80].Trim()); // 最小射程不隨 3 倍放大
@@ -122,7 +122,7 @@ public sealed class PatcherRoundTripTests {
         };
 
         byte[] patched = ObjdefPatcher.GetPatchedBytes(original,
-            new ObjdefOptions(false, false, false, false, false, false, true, false, false, false, false, false, stats));
+            new ObjdefOptions(false, false, false, false, false, false, true, false, false, false, false, stats));
         string[] result = SyntheticFixture.Text(patched).Split("\r\n")[2].Split(',');
 
         Assert.Equal("128.00", result[80].Trim());  // W1 近戰射程不可動
@@ -132,6 +132,31 @@ public sealed class PatcherRoundTripTests {
         Assert.Equal("1.00", result[96].Trim());    // W3 特殊武器不可動
         Assert.Equal("400.00", result[97].Trim());
         Assert.Equal("3300", result[24].Trim());    // 視野同步涵蓋新射程
+    }
+
+    [Fact]
+    public void Objdef_ranged_range_3x_expands_legionary_throwing_spear_but_not_melee_weapon() {
+        string[] columns = Enumerable.Repeat("       0", 205).ToArray();
+        columns[19] = "     100";
+        columns[24] = "    1500";
+        columns[52] = "FigRomSch00_Speer_Schild".PadLeft(26); // Legionary, hybrid_inf
+        columns[78] = "       1"; columns[80] = "   64.00"; columns[81] = "  128.00"; // W1 melee
+        columns[86] = "       1"; columns[88] = "  100.00"; columns[89] = "  900.00"; // W2 throwing spear
+        columns[199] = "       0"; columns[200] = "       1";
+        byte[] original = SyntheticFixture.Pfil("header1\r\nheader2\r\n" + string.Join(',', columns) + "\r\n");
+        var stats = new Dictionary<string, double[]> {
+            ["FigRomSch00_Speer_Schild"] = new double[] { 100, 15, 80, 50, 3.2, 1500, 500, 900, 0 }
+        };
+
+        byte[] patched = ObjdefPatcher.GetPatchedBytes(original,
+            new ObjdefOptions(false, false, false, false, false, false, true, false, false, false, false, stats));
+        string[] result = SyntheticFixture.Text(patched).Split("\r\n")[2].Split(',');
+
+        Assert.Equal("64.00", result[80].Trim());
+        Assert.Equal("128.00", result[81].Trim());
+        Assert.Equal("100.00", result[88].Trim());
+        Assert.Equal("2700.00", result[89].Trim());
+        Assert.Equal("2700", result[24].Trim());
     }
 
     [Fact]
@@ -148,7 +173,7 @@ public sealed class PatcherRoundTripTests {
         };
 
         byte[] map = ObjdefPatcher.GetPatchedBytes(original,
-            new ObjdefOptions(false, false, false, false, false, false, false, false, true, false, false, false, stats));
+            new ObjdefOptions(false, false, false, false, false, false, false, false, true, false, false, stats));
         string[] mapRow = SyntheticFixture.Text(map).Split("\r\n")[2].Split(',');
         Assert.Equal("30000", mapRow[24].Trim());
         Assert.Equal("64.00", mapRow[80].Trim());
@@ -156,7 +181,7 @@ public sealed class PatcherRoundTripTests {
         Assert.Equal("96.00", mapRow[82].Trim());
 
         byte[] triple = ObjdefPatcher.GetPatchedBytes(original,
-            new ObjdefOptions(false, false, false, false, false, false, false, false, false, true, false, false, stats));
+            new ObjdefOptions(false, false, false, false, false, false, false, false, false, true, false, stats));
         string[] tripleRow = SyntheticFixture.Text(triple).Split("\r\n")[2].Split(',');
         Assert.Equal("64.00", tripleRow[80].Trim());
         Assert.Equal("128.00", tripleRow[81].Trim());
@@ -164,6 +189,7 @@ public sealed class PatcherRoundTripTests {
     }
 
     [Fact]
+    // arc（emit ×2）由 ProjectileArcHeight 驅動；accuracy（drad ×2）已整合進 RangedRange3x。
     public void Objdef_projectile_arc_and_accuracy_scale_emit_and_drad_only_for_projectile_weapons() {
         // 依 docs/reverse-engineering/projectile-ballistics.md：
         //   85 = w1_emit（拋射垂直初速，16.16 定點）、164 = w1_drad（落點傷害半徑）。
@@ -175,16 +201,22 @@ public sealed class PatcherRoundTripTests {
         columns[86] = "       1";  // w2 akti（拋射）
         columns[93] = " 7208960"; // w2 emit = 110.0
         columns[166] = "      45"; // w2 drad
+        columns[102] = "       1"; // w4 akti（攻擊建築用火把，dtyp=5）
+        columns[109] = " 9830400"; // w4 emit = 150.0
+        columns[170] = "      45"; // w4 drad
+        columns[202] = "       5"; // w4 dtyp = building torch
         byte[] original = SyntheticFixture.Pfil("header1\r\nheader2\r\n" + string.Join(',', columns) + "\r\n");
 
-        byte[] patched = ObjdefPatcher.GetPatchedBytes(original, new ObjdefOptions(false, false, false, false, false, false, false, false, false, false, true, true, NoStats));
+        byte[] patched = ObjdefPatcher.GetPatchedBytes(original, new ObjdefOptions(false, false, false, false, false, false, true, false, false, false, true, NoStats));
         string[] result = SyntheticFixture.Text(patched).Split("\r\n")[2].Split(',');
 
         Assert.Equal("14417920", result[93].Trim()); // w2 emit ×2
         Assert.Equal("90", result[166].Trim());      // w2 drad ×2
+        Assert.Equal("19660800", result[109].Trim());// 火把 w4 emit ×2
+        Assert.Equal("90", result[170].Trim());      // 火把 w4 drad ×2
         Assert.Equal("0", result[85].Trim());        // w1 emit 維持 0
         Assert.Equal("45", result[164].Trim());      // w1（近戰）drad 不可動
-        Assert.Equal(original, ObjdefPatcher.GetPatchedBytes(original, new(false, false, false, false, false, false, false, false, false, false, false, false, NoStats)));
+        Assert.Equal(original, ObjdefPatcher.GetPatchedBytes(original, new(false, false, false, false, false, false, false, false, false, false, false, NoStats)));
     }
 
     [Fact]
@@ -198,7 +230,8 @@ public sealed class PatcherRoundTripTests {
             Row(22, "Katapultstein00", "  8978432") + "\r\n" +
             Row(23, "Pfeil00", "  5832704") + "\r\n" +
             Row(45, "Spiess00", "  5832704") + "\r\n" +
-            Row(70, "Katapultstein01", "  8978432") + "\r\n";
+            Row(70, "Katapultstein01", "  8978432") + "\r\n" +
+            Row(75, "Fackel", "  8126464") + "\r\n";
         byte[] original = SyntheticFixture.Pfil(text);
 
         string patched = SyntheticFixture.Text(PartgeoPatcher.GetPatchedBytes(original, new PartgeoOptions(true)));
@@ -207,6 +240,7 @@ public sealed class PatcherRoundTripTests {
         Assert.Equal("11665408", lines[3].Split(',')[12].Trim());   // Wurfspeer00 ×2
         Assert.Equal("17956864", lines[5].Split(',')[12].Trim());   // Katapultstein00 ×2
         Assert.Equal("11665408", lines[6].Split(',')[12].Trim());   // Pfeil00 ×2
+        Assert.Equal("16252928", lines[9].Split(',')[12].Trim());   // 建築火把 Fackel ×2，與 w4 emit 同步
         Assert.Equal(original, PartgeoPatcher.GetPatchedBytes(original, new PartgeoOptions(false)));
     }
 
@@ -217,15 +251,27 @@ public sealed class PatcherRoundTripTests {
     }
 
     [Fact]
-    public void Epara_accuracy_patch_zeros_variance_on_move_and_restores() {
+    public void Epara_range3x_zeros_variance_on_move_and_restores() {
         const string text = ";comment\r\n[ProjectileInitSpeedFactor]\r\n1.5\r\n\r\n;lead scatter\r\n[ProjectileVarianceOnMove]\r\n0.5\r\n\r\n[ProjectileVarianceMaximumAngle]\r\n45\r\n";
         byte[] original = SyntheticFixture.Pfil(text);
 
-        string patched = SyntheticFixture.Text(EparaPatcher.GetPatchedBytes(original, rangedAccuracy: true));
+        string patched = SyntheticFixture.Text(EparaPatcher.GetPatchedBytes(original, rangedRange3x: true));
         Assert.Contains("[ProjectileVarianceOnMove]\r\n0.0\r\n", patched);
-        Assert.Contains("[ProjectileInitSpeedFactor]\r\n1.5\r\n", patched); // 其他區段不可動
         Assert.Contains("[ProjectileVarianceMaximumAngle]\r\n45\r\n", patched);
-        Assert.Equal(original, EparaPatcher.GetPatchedBytes(original, rangedAccuracy: false));
+        // 未啟用射程 3 倍時完全還原
+        Assert.Equal(original, EparaPatcher.GetPatchedBytes(original, rangedRange3x: false));
+    }
+
+    [Fact]
+    public void Epara_range3x_raises_init_speed_so_projectiles_reach_extended_range() {
+        const string text = ";comment\r\n[ProjectileInitSpeedFactor]\r\n1.5\r\n\r\n;lead scatter\r\n[ProjectileVarianceOnMove]\r\n0.5\r\n\r\n[ProjectileVarianceMaximumAngle]\r\n45\r\n";
+        byte[] original = SyntheticFixture.Pfil(text);
+
+        // 射程 3 倍一併套用兩項命中修正：拉高拋射初速覆蓋放大後的射程 + 預判散布歸零
+        string range3x = SyntheticFixture.Text(EparaPatcher.GetPatchedBytes(original, rangedRange3x: true));
+        Assert.Contains("[ProjectileInitSpeedFactor]\r\n1.62\r\n", range3x);
+        Assert.Contains("[ProjectileVarianceOnMove]\r\n0.0\r\n", range3x);
+        Assert.Contains("[ProjectileVarianceMaximumAngle]\r\n45\r\n", range3x);
     }
 
     [Fact]

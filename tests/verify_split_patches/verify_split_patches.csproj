@@ -6,6 +6,6 @@
     <LangVersion>latest</LangVersion>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="../../AgainstRomeModifier.csproj" />
+    <ProjectReference Include="../../src.Core/AgainstRome.Core.csproj" />
   </ItemGroup>
 </Project>

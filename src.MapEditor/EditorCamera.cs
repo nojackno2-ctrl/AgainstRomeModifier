@@ -48,7 +48,8 @@ internal sealed class EditorCamera
     private Vector3 Unproject(float x, float y, float z, float width, float height)
     {
         Vector4 clip = new(x / width * 2 - 1, 1 - y / height * 2, z * 2 - 1, 1);
-        Matrix4x4.Invert(GetViewMatrix() * GetProjectionMatrix(width / height), out Matrix4x4 inverse);
+        if (!Matrix4x4.Invert(GetViewMatrix() * GetProjectionMatrix(width / height), out Matrix4x4 inverse))
+            return Target; // view×projection 理論上恆可逆；退化時回傳對焦點，避免 NaN 拾取。
         Vector4 world = Vector4.Transform(clip, inverse);
         return new Vector3(world.X, world.Y, world.Z) / world.W;
     }
