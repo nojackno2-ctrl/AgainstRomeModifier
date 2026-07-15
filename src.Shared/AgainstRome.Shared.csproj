@@ -6,8 +6,10 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="../src/Core/GameLZSS.cs" Link="Core/GameLZSS.cs" />
-    <Compile Include="../src/Core/FileRollbackScope.cs" Link="Core/FileRollbackScope.cs" />
-    <Compile Include="../src/Core/Services/SafeFileWriter.cs" Link="Core/Services/SafeFileWriter.cs" />
+    <InternalsVisibleTo Include="AgainstRome.Core" />
+    <InternalsVisibleTo Include="AgainstRomeModifier" />
+    <InternalsVisibleTo Include="AgainstRomeMapEditor" />
+    <InternalsVisibleTo Include="AgainstRomeModifier.Tests" />
   </ItemGroup>
+
 </Project>

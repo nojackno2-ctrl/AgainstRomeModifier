@@ -55,18 +55,15 @@
 
 ## 技術架構
 
-- [`src/Program.cs`](src/Program.cs)：應用程式進入點、DPI 設定與 UAC 系統管理員權限提升。
-- [`src/Core/GameLZSS.cs`](src/Core/GameLZSS.cs)：遊戲專用的 PFIL/LZSS 壓縮與解壓縮演算法實作。
-- [`src/Core/TroopConfig.cs`](src/Core/TroopConfig.cs)：已知單位 ID、單位分類、屬性欄位索引與平衡規則。
-- [`src/Core/Features/`](src/Core/Features/)：以 `FeatureRegistry` 與 `PatchProfile` 管理功能、分類還原、偵測及各檔案補丁規劃。
-- [`src/Core/Services/PatchEngine.cs`](src/Core/Services/PatchEngine.cs)：精簡的交易編排器；FoodHealing 與 Endless AI 共用 BCI 快取並由一次 `SaveAll` 落地。
-- [`src/UI/ModifierForm.cs`](src/UI/ModifierForm.cs)：主 UI 版面配置與內建技術規格文件檢視器。
-- [`src/UI/ModifierForm.Data.cs`](src/UI/ModifierForm.Data.cs)：備份載入、數據檢查、TGA 圖示解析與顯示格式化。
-- [`src/UI/ModifierForm.Patches.cs`](src/UI/ModifierForm.Patches.cs)：將集中管理的功能開關轉成 `PatchProfile`，並啟動交易式套用／分類還原。
-- [`src/UI/ModifierForm.DgVoodoo.cs`](src/UI/ModifierForm.DgVoodoo.cs)：內建 dgVoodoo2 檔案釋放、託管安裝、衝突偵測與移除邏輯。
-- [`src/UI/ModifierForm.SaveManager.cs`](src/UI/ModifierForm.SaveManager.cs)：存檔備份、還原與快取處理。
-- [`src/UI/ModifierForm.Presets.cs`](src/UI/ModifierForm.Presets.cs)：一鍵啟用或停用所有修改項目的功能。
-- [`src/UI/TroopPresetForm.cs`](src/UI/TroopPresetForm.cs)：兵種屬性預設編輯器。
+方案（`AgainstRomeModifier.slnx`）已拆解為多個獨立專案，各自產出執行檔或函式庫：
+
+- [`src.Launcher/`](src.Launcher/)：`AgainstRomeLauncher.exe` — 套件入口，負責啟動其他工具並內建技術文件檢視器（`TechDocForm`）。
+- [`src.Modifier/`](src.Modifier/)：`AgainstRomeModifier.exe` — 修改器主介面。`ModifierForm` partial 類別涵蓋版面配置、數據檢查（備份載入、TGA 圖示解析）、補丁套用（功能開關 → `PatchProfile` → 交易式套用／分類還原）、一鍵預設，以及兵種屬性預設編輯器（`TroopPresetForm`）。
+- [`src.SaveManager/`](src.SaveManager/)：`AgainstRomeSaveManager.exe` — 存檔備份、還原與預覽（`SaveManagerForm`）。
+- [`src.MapEditor/`](src.MapEditor/)：`AgainstRomeMapEditor.exe` — 地圖編輯器，含無盡地圖複製／刪除管理。
+- [`src.Core/`](src.Core/)：`AgainstRome.Core.dll` — 修改器共用核心：以 `FeatureRegistry` 管理的功能定義（`Core/Features/`）、各檔案補丁器（`Core/Patches/`）、交易式服務如 [`PatchEngine.cs`](src.Core/Core/Services/PatchEngine.cs)（FoodHealing 與 Endless AI 共用 BCI 快取並由一次 `SaveAll` 落地）、[`TroopConfig.cs`](src.Core/Core/TroopConfig.cs)（已知單位 ID、分類、欄位索引與平衡規則）、在地化字串，以及內嵌的 `Backup.zip` 與 dgVoodoo2 資源。
+- [`src.Shared/`](src.Shared/)：`AgainstRome.Shared.dll` — 最底層共用函式庫：[`GameLZSS.cs`](src.Shared/Core/GameLZSS.cs)（遊戲專用 PFIL/LZSS 壓縮）、`SafeFileWriter`、`FileRollbackScope`，以及地圖目錄／複製／刪除服務（`Maps/`）。
+- [`tools/publish.ps1`](tools/publish.ps1)：發佈全部四個執行檔並打包成釋出 ZIP。
 - [`tools/Repair-LanguageBackup.ps1`](tools/Repair-LanguageBackup.ps1)：在語言移轉中斷或不完整時，驗證並修復本地語言覆蓋備份基準。
 - [`docs/reverse-engineering/`](docs/reverse-engineering/)：結構化的逆向工程筆記。
 - [`data/game_schema.json`](data/game_schema.json)：工具可讀取的檔案格式與補丁元數據（Metadata）。
@@ -74,10 +71,9 @@
 ## 內建嵌入資源
 
 - 本地選用的 `Backup.zip` 檔案依設計不會被提交至 GitHub。
-- 若可執行檔旁或嵌入資源中存在 `Backup.zip`，它將被載入為還原來源。
+- 若可執行檔旁存在 `Backup.zip`，或 `AgainstRome.Core.dll` 內嵌有此資源，它將被載入為還原來源。
 - 若不存在 `Backup.zip`，修改器會直接讀取使用者選擇的遊戲目錄中的原始檔案，並在記憶體中建立備份基準。
-- `TechDoc.md` 作為內建資源嵌入。
-- `TechDoc_EN.md` 作為內建資源嵌入。
+- `TechDoc.md` 與 `TechDoc_EN.md` 內嵌於啟動器，供技術文件檢視器使用。
 - 遊戲資源資料在需要時會以 Code Page 1251 (Windows-1251) 解碼；本專案的所有說明文件均採用 UTF-8 編碼。
 
 ## 逆向工程資料
@@ -106,9 +102,9 @@
 
 1. 安裝 .NET 8.0 SDK 與 Visual Studio 2022。
 2. 對於公開版本，`Backup.zip` 為選用項目。若您有此檔案，請將其保留在本地。
-3. 開啟 `AgainstRomeModifier.slnx` 或 `AgainstRomeModifier.csproj`。
+3. 開啟 `AgainstRomeModifier.slnx`。
 4. 選擇編譯組態為 `Release` 且平台為 `x64`。
-5. 進行方案編譯。編譯輸出將位於 `bin/Release/net8.0-windows/` 下。
+5. 進行方案編譯。各程式的輸出位於各自專案資料夾下，例如 `src.Modifier/bin/Release/net8.0-windows/`。若要產生包含全部四個執行檔的釋出包，執行 `tools/publish.ps1`。
 
 ## 公開版本行為說明
 

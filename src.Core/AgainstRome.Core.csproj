@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <PlatformTarget>x64</PlatformTarget>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="AgainstRomeModifier" />
+    <InternalsVisibleTo Include="AgainstRomeSaveManager" />
+    <InternalsVisibleTo Include="AgainstRomeMapEditor" />
+    <InternalsVisibleTo Include="AgainstRomeModifier.Tests" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\src.Shared\AgainstRome.Shared.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="..\Backup.zip" Link="Backup.zip" Condition="'$(IncludeBackupZip)' != 'false' and Exists('..\Backup.zip')" />
+    <EmbeddedResource Include="..\ThirdParty\dgVoodoo2\D3D8.dll" LogicalName="dgVoodoo2.D3D8.dll" />
+    <EmbeddedResource Include="..\ThirdParty\dgVoodoo2\DDraw.dll" LogicalName="dgVoodoo2.DDraw.dll" />
+    <EmbeddedResource Include="..\ThirdParty\dgVoodoo2\dgVoodooCpl.exe" LogicalName="dgVoodoo2.dgVoodooCpl.exe" />
+    <EmbeddedResource Include="..\ThirdParty\dgVoodoo2\dgVoodoo.conf" LogicalName="dgVoodoo2.dgVoodoo.conf" />
+  </ItemGroup>
+</Project>

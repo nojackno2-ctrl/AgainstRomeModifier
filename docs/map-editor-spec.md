@@ -2,6 +2,13 @@
 
 > 本文件是自足的實作規格:實作者只需要本文件 + 本 repo 即可完成開發,不需要其他對話上下文。
 > 語言慣例:說明用繁體中文,程式識別字/檔名/技術名詞保留英文。
+>
+> **路徑對照（2026-07 專案拆解後）**:本文撰寫時程式碼在單一專案 `src/` 下,現已拆為多專案。
+> 對照:`src/Core/*` → `src.Core/Core/*`;`src/UI/*` → `src.Modifier/UI/*`;
+> `GameLZSS.cs`、`FileRollbackScope.cs`、`SafeFileWriter.cs` 與地圖服務（`Maps/*`）→ `src.Shared/`;
+> 存檔管理 UI → `src.SaveManager/UI/SaveManagerForm.cs`。
+> 另,§3 規劃的修改器內「地圖管理」分頁（`ModifierForm.MapManager.cs`）已改為由啟動器
+> （`src.Launcher/`）直接啟動地圖編輯器,地圖複製/刪除功能整合在 `src.MapEditor/MapSelectionForm.cs`。
 
 ---
 

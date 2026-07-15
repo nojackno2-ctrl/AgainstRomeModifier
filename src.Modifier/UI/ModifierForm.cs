@@ -31,27 +31,12 @@ namespace AgainstRomeModifier {
         private Button btnNavSystem = null!;
         private Button btnNavDefaultStats = null!;
         private Button btnNavCurrentStats = null!;
-        private Button btnNavDoc = null!;
-        private Button btnNavMapManager = null!;
-
 
         // 主要分頁控制項與分頁
         private TabControl mainTabControl = null!;
         private TabPage tabSystem = null!;
         private TabPage tabDefaultStats = null!;
         private TabPage tabCurrentStats = null!;
-        private TabPage tabDoc = null!;
-        private TextBox txtDoc = null!;
-        private TabPage tabSaveManager = null!;
-        private Button btnNavSaveManager = null!;
-        private TabPage tabMapManager = null!;
-
-
-        // 存檔管理介面表格與預覽圖
-        private DataGridView dgvGameSaves = null!;
-        private DataGridView dgvBackups = null!;
-        private PictureBox picSavePreview = null!;
-        private Label lblSaveDetail = null!;
         
         // 兵種屬性分頁與網格
         private TabControl defaultStatsTabControl = null!;
@@ -139,7 +124,6 @@ namespace AgainstRomeModifier {
         private AgainstRomeModifier.Core.Services.PatchOperationRunner patchOperationRunner = null!;
         private AgainstRomeModifier.Core.Services.UnitStatsProjectionService unitStatsProjection = null!;
         private AgainstRomeModifier.Core.Services.UnitStatsEditorService unitStatsEditorService = null!;
-        private AgainstRomeModifier.Core.Services.SaveBackupService saveBackupService = null!;
 
         private class FormLogger : AgainstRomeModifier.Core.Services.ILogger
         {
@@ -159,14 +143,6 @@ namespace AgainstRomeModifier {
         private ToolTip myToolTip = null!;
         private Label lblBuildTitle = null!;
         private Label lblAiTitle = null!;
-        private Label lblGameSavesTitle = null!;
-        private Label lblBackupsTitle = null!;
-        private Label lblDetailTitle = null!;
-        private Button btnBackupSave = null!;
-        private Button btnDeleteSave = null!;
-        private Button btnRefreshSaves = null!;
-        private Button btnRestoreBackup = null!;
-        private Button btnDeleteBackup = null!;
         private Label lblDefaultStatsTitle = null!;
         private Label lblCurrentStatsTitle = null!;
 
@@ -206,8 +182,11 @@ namespace AgainstRomeModifier {
         // 統一風格的按鈕基礎顏色
         private static readonly Color ColorBtnPrimary = Color.FromArgb(38, 132, 255);
 
+        private string? _initialGamePath;
+
         // 建構函式：初始化 UI 元件，載入備份檔並初始化現有設定
-        public ModifierForm() {
+        public ModifierForm(string? initialGamePath = null) {
+            _initialGamePath = initialGamePath;
             // 開啟時讀取系統語言
             string sysLang = System.Globalization.CultureInfo.CurrentUICulture.Name;
             if (sysLang.StartsWith("en", StringComparison.OrdinalIgnoreCase)) {
@@ -229,8 +208,6 @@ namespace AgainstRomeModifier {
             patchOperationRunner = new AgainstRomeModifier.Core.Services.PatchOperationRunner(Log);
             unitStatsProjection = new AgainstRomeModifier.Core.Services.UnitStatsProjectionService(backupManager);
             unitStatsEditorService = new AgainstRomeModifier.Core.Services.UnitStatsEditorService(backupManager);
-            saveBackupService = new AgainstRomeModifier.Core.Services.SaveBackupService(
-                Path.Combine(AppContext.BaseDirectory, "SavesBackup"));
 
             Log(Loc.Get("LogConstructCompleted"));
             // 將內嵌的 Backup.zip 載入記憶體
@@ -570,29 +547,6 @@ namespace AgainstRomeModifier {
                 RefreshNavButtons();
             };
 
-            btnNavMapManager = new Button { Location = new Point(10, 0) };
-            StyleNavButton(btnNavMapManager, "NavMapManager", tabMapManager);
-            btnNavMapManager.Click += (s, e) => {
-                ShowTabPage(tabMapManager);
-                RefreshNavButtons();
-                RefreshMapManager();
-            };
-
-            btnNavSaveManager = new Button { Location = new Point(10, 0) };
-            StyleNavButton(btnNavSaveManager, "NavSaveManager", tabSaveManager);
-            btnNavSaveManager.Click += (s, e) => {
-                ShowTabPage(tabSaveManager);
-                RefreshNavButtons();
-                RefreshSavesAndBackups();
-            };
-
-            btnNavDoc = new Button { Location = new Point(10, 0) };
-            StyleNavButton(btnNavDoc, "NavDoc", tabDoc);
-            btnNavDoc.Click += (s, e) => {
-                ShowTabPage(tabDoc);
-                RefreshNavButtons();
-            };
-
             // 語系切換元件初始化與事件綁定
             lblSidebarLang = new Label {
                 Text = Loc.Get("LanguageLabel"),
@@ -640,9 +594,7 @@ namespace AgainstRomeModifier {
             pnlSidebar.Controls.Add(btnNavSystem);
             pnlSidebar.Controls.Add(btnNavDefaultStats);
             pnlSidebar.Controls.Add(btnNavCurrentStats);
-            pnlSidebar.Controls.Add(btnNavMapManager);
-            pnlSidebar.Controls.Add(btnNavSaveManager);
-            pnlSidebar.Controls.Add(btnNavDoc);
+
             pnlSidebar.Controls.Add(lblSidebarLang);
             pnlSidebar.Controls.Add(btnLangZH);
             pnlSidebar.Controls.Add(btnLangEN);
@@ -673,12 +625,6 @@ namespace AgainstRomeModifier {
             mainTabControl.TabPages.Add(tabSystem);
             mainTabControl.TabPages.Add(tabDefaultStats);
             mainTabControl.TabPages.Add(tabCurrentStats);
-            tabMapManager = new TabPage {
-                BackColor = Color.FromArgb(10, 11, 16),
-                UseVisualStyleBackColor = false
-            };
-            mainTabControl.TabPages.Add(tabMapManager);
-            InitializeMapManagerPage();
 
             pnlNumericCard = new Panel {
                 Location = new Point(0, 0),
@@ -1144,7 +1090,9 @@ namespace AgainstRomeModifier {
             pnlRightSidebar.Controls.Add(btnBrowseGamePath);
 
             string detectedPath = DetectGamePathFromRegistry();
-            if (File.Exists(Path.Combine(AppContext.BaseDirectory, "Against_Rome.exe"))) {
+            if (!string.IsNullOrWhiteSpace(_initialGamePath) && Directory.Exists(_initialGamePath)) {
+                txtGamePath.Text = _initialGamePath;
+            } else if (File.Exists(Path.Combine(AppContext.BaseDirectory, "Against_Rome.exe"))) {
                 txtGamePath.Text = AppContext.BaseDirectory;
             } else if (!string.IsNullOrEmpty(detectedPath)) {
                 txtGamePath.Text = detectedPath;
@@ -1339,171 +1287,6 @@ namespace AgainstRomeModifier {
             tabCurrentStats.Controls.Add(pnlCurrentStatsTitle);
             tabCurrentStats.Controls.Add(currentStatsTabControl);
 
-            tabDoc = new TabPage {
-                BackColor = Color.FromArgb(10, 11, 16),
-                UseVisualStyleBackColor = false
-            };
-            mainTabControl.TabPages.Add(tabDoc);
-
-            txtDoc = new TextBox {
-                Dock = DockStyle.Fill,
-                Multiline = true,
-                ReadOnly = true,
-                ScrollBars = ScrollBars.Vertical,
-                BackColor = Color.FromArgb(15, 16, 24),
-                ForeColor = Color.FromArgb(230, 235, 240),
-                Font = fontJhengHei105R,
-                BorderStyle = BorderStyle.None
-            };
-            ReloadTechnicalDocument();
-            tabDoc.Controls.Add(txtDoc);
-
-            tabSaveManager = new TabPage {
-                BackColor = Color.FromArgb(10, 11, 16),
-                UseVisualStyleBackColor = false
-            };
-            mainTabControl.TabPages.Add(tabSaveManager);
-
-            Panel pnlLeftSave = new Panel {
-                Location = new Point(0, 0),
-                Size = new Size(800, 790),
-                BackColor = Color.Transparent
-            };
-
-            Panel pnlRightSave = new Panel {
-                Location = new Point(810, 0),
-                Size = new Size(380, 790),
-                BackColor = Color.Transparent
-            };
-
-            tabSaveManager.Controls.Add(pnlLeftSave);
-            tabSaveManager.Controls.Add(pnlRightSave);
-
-            Panel pnlGameSavesCard = new Panel {
-                Location = new Point(0, 0),
-                Size = new Size(800, 380)
-            };
-            pnlGameSavesCard.Paint += CardPanel_Paint;
-
-            Panel pnlBackupsCard = new Panel {
-                Location = new Point(0, 395),
-                Size = new Size(800, 395)
-            };
-            pnlBackupsCard.Paint += CardPanel_Paint;
-
-            pnlLeftSave.Controls.Add(pnlGameSavesCard);
-            pnlLeftSave.Controls.Add(pnlBackupsCard);
-
-            Panel pnlDetailCard = new Panel {
-                Location = new Point(0, 0),
-                Size = new Size(380, 790)
-            };
-            pnlDetailCard.Paint += CardPanel_Paint;
-            pnlRightSave.Controls.Add(pnlDetailCard);
-
-            lblGameSavesTitle = new Label {
-                Text = "遊戲中存檔列表",
-                Location = new Point(20, 15),
-                Size = new Size(200, 20),
-                Font = fontJhengHei95B,
-                ForeColor = Color.FromArgb(0, 220, 255),
-                BackColor = Color.Transparent
-            };
-            pnlGameSavesCard.Controls.Add(lblGameSavesTitle);
-
-            dgvGameSaves = CreateSaveGrid(false);
-            dgvGameSaves.Location = new Point(15, 45);
-            dgvGameSaves.Size = new Size(770, 275);
-            dgvGameSaves.SelectionChanged += DgvGameSaves_SelectionChanged;
-            pnlGameSavesCard.Controls.Add(dgvGameSaves);
-
-            btnBackupSave = new Button {
-                Text = "備份此存檔",
-                Location = new Point(15, 330),
-                Size = new Size(140, 35)
-            };
-            StyleButton(btnBackupSave, Color.FromArgb(45, 45, 55), Color.FromArgb(0, 220, 255), Color.FromArgb(0, 220, 255));
-            btnBackupSave.Click += BtnBackupSave_Click;
-            pnlGameSavesCard.Controls.Add(btnBackupSave);
-
-            btnDeleteSave = new Button {
-                Text = "刪除此存檔",
-                Location = new Point(165, 330),
-                Size = new Size(140, 35)
-            };
-            StyleButton(btnDeleteSave, Color.FromArgb(45, 45, 55), Color.FromArgb(240, 240, 240), Color.FromArgb(255, 75, 75));
-            btnDeleteSave.Click += BtnDeleteSave_Click;
-            pnlGameSavesCard.Controls.Add(btnDeleteSave);
-
-            btnRefreshSaves = new Button {
-                Text = "重新整理",
-                Location = new Point(315, 330),
-                Size = new Size(140, 35)
-            };
-            StyleButton(btnRefreshSaves, Color.FromArgb(45, 45, 55), Color.FromArgb(240, 240, 240), Color.FromArgb(0, 220, 255));
-            btnRefreshSaves.Click += (s, e) => RefreshSavesAndBackups();
-            pnlGameSavesCard.Controls.Add(btnRefreshSaves);
-
-            lblBackupsTitle = new Label {
-                Text = "備份歷史列表",
-                Location = new Point(20, 15),
-                Size = new Size(200, 20),
-                Font = fontJhengHei95B,
-                ForeColor = Color.FromArgb(0, 220, 255),
-                BackColor = Color.Transparent
-            };
-            pnlBackupsCard.Controls.Add(lblBackupsTitle);
-
-            dgvBackups = CreateSaveGrid(true);
-            dgvBackups.Location = new Point(15, 45);
-            dgvBackups.Size = new Size(770, 290);
-            dgvBackups.SelectionChanged += DgvBackups_SelectionChanged;
-            pnlBackupsCard.Controls.Add(dgvBackups);
-
-            btnRestoreBackup = new Button {
-                Text = "還原此備份",
-                Location = new Point(15, 345),
-                Size = new Size(140, 35)
-            };
-            StyleButton(btnRestoreBackup, Color.FromArgb(98, 0, 238), Color.White, Color.FromArgb(180, 100, 255));
-            btnRestoreBackup.Click += BtnRestoreBackup_Click;
-            pnlBackupsCard.Controls.Add(btnRestoreBackup);
-
-            btnDeleteBackup = new Button {
-                Text = "刪除此備份",
-                Location = new Point(165, 345),
-                Size = new Size(140, 35)
-            };
-            StyleButton(btnDeleteBackup, Color.FromArgb(45, 45, 55), Color.FromArgb(240, 240, 240), Color.FromArgb(255, 75, 75));
-            btnDeleteBackup.Click += BtnDeleteBackup_Click;
-            pnlBackupsCard.Controls.Add(btnDeleteBackup);
-
-            lblDetailTitle = new Label {
-                Text = "存檔詳細與預覽",
-                Location = new Point(20, 20),
-                Size = new Size(200, 25),
-                Font = fontJhengHei105B,
-                ForeColor = Color.FromArgb(0, 220, 255),
-                BackColor = Color.Transparent
-            };
-            pnlDetailCard.Controls.Add(lblDetailTitle);
-
-            picSavePreview = new PictureBox {
-                Location = new Point(20, 55),
-                Size = new Size(340, 255),
-                SizeMode = PictureBoxSizeMode.Zoom,
-                BackColor = Color.FromArgb(12, 12, 16)
-            };
-            pnlDetailCard.Controls.Add(picSavePreview);
-
-            lblSaveDetail = new Label {
-                Location = new Point(20, 325),
-                Size = new Size(340, 440),
-                ForeColor = Color.FromArgb(200, 205, 210),
-                BackColor = Color.Transparent,
-                Font = fontJhengHei10R
-            };
-            pnlDetailCard.Controls.Add(lblSaveDetail);
 
             this.Controls.Add(pnlTitleBar);
             this.Controls.Add(pnlSidebar);
@@ -1532,9 +1315,6 @@ namespace AgainstRomeModifier {
                     "NavSystem" => mainTabControl.SelectedTab == tabSystem,
                     "NavDefaultStats" => mainTabControl.SelectedTab == tabDefaultStats,
                     "NavCurrentStats" => mainTabControl.SelectedTab == tabCurrentStats,
-                    "NavMapManager" => mainTabControl.SelectedTab == tabMapManager,
-                    "NavSaveManager" => mainTabControl.SelectedTab == tabSaveManager,
-                    "NavDoc" => mainTabControl.SelectedTab == tabDoc,
                     _ => mainTabControl.SelectedTab == associatedPage
                 };
                 
@@ -1585,9 +1365,6 @@ namespace AgainstRomeModifier {
             btnNavSystem.Invalidate();
             btnNavDefaultStats.Invalidate();
             btnNavCurrentStats.Invalidate();
-            btnNavMapManager.Invalidate();
-            btnNavSaveManager.Invalidate();
-            btnNavDoc.Invalidate();
         }
 
     }

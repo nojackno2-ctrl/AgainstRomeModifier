@@ -5,7 +5,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-Write-Host "Starting publish for Against Rome Modifier, Version: $Version, SelfContained: $SelfContained..."
+Write-Host "Starting publish for Against Rome Modifier suite, Version: $Version, SelfContained: $SelfContained..."
 
 # 1. Get Repo Root
 $scriptPath = $MyInvocation.MyCommand.Path
@@ -20,11 +20,9 @@ if (Test-Path $stagingDir) {
 New-Item -ItemType Directory -Path $stagingDir | Out-Null
 
 # 2. Define common publish parameters
-$commonParams = @{
-    Configuration = "Release"
-    Runtime = "win-x64"
-    SelfContained = $SelfContained.ToString().ToLower()
-}
+$configuration = "Release"
+$runtime = "win-x64"
+$selfContainedArg = $SelfContained.ToString().ToLower()
 
 $extraArgs = @()
 if ($SelfContained) {
@@ -32,35 +30,47 @@ if ($SelfContained) {
     $extraArgs += "-p:PublishReadyToRun=true"
 }
 
-# 3. Publish MapEditor
-Write-Host "Publishing MapEditor..."
-$mapEditorProj = Join-Path $repoRoot "src.MapEditor\AgainstRomeMapEditor.csproj"
-dotnet publish $mapEditorProj -c $commonParams.Configuration -r $commonParams.Runtime --self-contained $commonParams.SelfContained $extraArgs
+# 3. Publish every app in the suite
+$apps = @(
+    @{ Name = "AgainstRomeLauncher";    Project = "src.Launcher\AgainstRomeLauncher.csproj" },
+    @{ Name = "AgainstRomeModifier";    Project = "src.Modifier\AgainstRomeModifier.csproj" },
+    @{ Name = "AgainstRomeSaveManager"; Project = "src.SaveManager\AgainstRomeSaveManager.csproj" },
+    @{ Name = "AgainstRomeMapEditor";   Project = "src.MapEditor\AgainstRomeMapEditor.csproj" }
+)
 
-# 4. Publish Modifier
-Write-Host "Publishing AgainstRomeModifier..."
-$modifierProj = Join-Path $repoRoot "AgainstRomeModifier.csproj"
-dotnet publish $modifierProj -c $commonParams.Configuration -r $commonParams.Runtime --self-contained $commonParams.SelfContained $extraArgs
+foreach ($app in $apps) {
+    Write-Host "Publishing $($app.Name)..."
+    $projPath = Join-Path $repoRoot $app.Project
+    dotnet publish $projPath -c $configuration -r $runtime --self-contained $selfContainedArg $extraArgs
+    if ($LASTEXITCODE -ne 0) {
+        throw "dotnet publish failed for $($app.Name) (exit code $LASTEXITCODE)."
+    }
+}
 
-# 5. Copy outputs to staging
-$modifierPublishDir = Join-Path $repoRoot "bin\Release\net8.0-windows\win-x64\publish"
-$mapEditorPublishDir = Join-Path $repoRoot "src.MapEditor\bin\Release\net8.0-windows\win-x64\publish"
-
+# 4. Copy outputs to staging.
+# The Launcher publish output is copied wholesale (it is the entry point and, for
+# framework-dependent builds, carries the shared runtime config layout); the other
+# apps contribute their executables (plus dll/runtimeconfig when not single-file).
 Write-Host "Copying files to staging: $stagingDir"
-Copy-Item -Path "$modifierPublishDir\*" -Destination $stagingDir -Recurse -Force
 
-if ($SelfContained) {
-    Copy-Item -Path "$mapEditorPublishDir\AgainstRomeMapEditor.exe" -Destination $stagingDir -Force
-} else {
-    Copy-Item -Path "$mapEditorPublishDir\AgainstRomeMapEditor.exe" -Destination $stagingDir -Force
-    Copy-Item -Path "$mapEditorPublishDir\AgainstRomeMapEditor.dll" -Destination $stagingDir -Force
-    Copy-Item -Path "$mapEditorPublishDir\AgainstRomeMapEditor.runtimeconfig.json" -Destination $stagingDir -Force
+foreach ($app in $apps) {
+    $projDir = Split-Path -Parent (Join-Path $repoRoot $app.Project)
+    $publishDir = Join-Path $projDir "bin\$configuration\net8.0-windows\$runtime\publish"
+    if (-not (Test-Path $publishDir)) {
+        throw "Publish output not found for $($app.Name): $publishDir"
+    }
+
+    if ($SelfContained) {
+        Copy-Item -Path (Join-Path $publishDir "$($app.Name).exe") -Destination $stagingDir -Force
+    } else {
+        Copy-Item -Path "$publishDir\*" -Destination $stagingDir -Recurse -Force
+    }
 }
 
 # Remove pdb files
-Get-ChildItem -Path $stagingDir -Filter "*.pdb" | Remove-Item -Force
+Get-ChildItem -Path $stagingDir -Filter "*.pdb" -Recurse | Remove-Item -Force
 
-# 6. Create ZIP archive
+# 5. Create ZIP archive
 $zipName = "AgainstRomeModifier_v$Version`_win-x64.zip"
 $zipPath = Join-Path $repoRoot $zipName
 if (Test-Path $zipPath) {

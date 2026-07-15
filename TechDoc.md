@@ -47,29 +47,32 @@
 
 | 檔案 | 責任 |
 |---|---|
-| `src/Program.cs` | WinForms 入口、DPI、UAC |
-| `src/UI/ModifierForm.cs` | 手工 UI、事件 wiring、文件頁 |
-| `src/UI/ModifierForm.Data.cs` | 備份載入、目前資料讀取、狀態偵測、顯示 |
-| `src/UI/ModifierForm.Patches.cs` | 套用、回復、rollback、遊戲檔補丁 |
-| `src/UI/ModifierForm.Presets.cs` | 一鍵啟用／關閉所有功能控制 |
-| `src/UI/ModifierForm.SaveManager.cs` | 存檔瀏覽、備份、回復、刪除 |
-| `src/UI/ModifierForm.DgVoodoo.cs` | dgVoodoo2 受管安裝／移除 |
-| `src/Core/TroopConfig.cs` | 欄位 enum、單位 metadata、平衡規則 |
-| `src/UI/TroopPresetForm.cs` | 6 欄單位 preset 編輯（`HP,Dmg,VW,AW,Sight,Relt`）；舊 9 欄匯入相容但移除欄位不會寫回 |
-| `src/Core/GameLZSS.cs` | 遊戲 LZSS 與 `PFIL@` 包裝 |
-| `src/Core/Bci/` | BCI 特徵碼搜尋、字組寫入與 PFIL 腳本封裝 |
-| `src/Core/EndlessAi/` | 受約束的無盡 AI BCI 模組、狀態偵測與套用協調 |
-| `src/Core/Features/` | 功能 Registry、`PatchProfile`、EXE/INI/DAU/BCI/安裝功能規劃與統一狀態偵測 |
-| `src/Core/Services/PatchEngine.cs` | 精簡編排器：交易順序、分類還原與功能模組協調，不保存功能專屬常數 |
-| `src/Core/Patches/` | 純 patch 邏輯（`ObjdefPatcher`、`RessPatcher`、`ClScriptPatcher`、`ClEparaPatcher`、`ClScintPatcher`、`TeamDatPatcher`、`ExePatchModel`、`VerifiedBinaryWriter`），不依賴 WinForms；UI 只建立 `PatchProfile` 並委派給 Core |
-| `src/Core/Localization.cs` | 中英文 UI／log |
+| `src.Launcher/` | 套件啟動器：啟動修改器／地圖編輯器／存檔管理器，內建技術文件檢視器 |
+| `src.Modifier/Program.cs` | 修改器 WinForms 入口、DPI、UAC |
+| `src.Modifier/UI/ModifierForm.cs` | 手工 UI、事件 wiring |
+| `src.Modifier/UI/ModifierForm.Data.cs` | 備份載入、目前資料讀取、狀態偵測、顯示 |
+| `src.Modifier/UI/ModifierForm.Patches.cs` | 套用、回復、rollback、遊戲檔補丁 |
+| `src.Modifier/UI/ModifierForm.Presets.cs` | 一鍵啟用／關閉所有功能控制 |
+| `src.Modifier/UI/TroopPresetForm.cs` | 6 欄單位 preset 編輯（`HP,Dmg,VW,AW,Sight,Relt`）；舊 9 欄匯入相容但移除欄位不會寫回 |
+| `src.SaveManager/UI/SaveManagerForm.cs` | 獨立存檔管理器：存檔瀏覽、備份、回復、刪除 |
+| `src.MapEditor/` | 地圖編輯器，含無盡地圖複製／刪除管理 |
+| `src.Core/Core/Features/Install/DgVoodooFeature.cs` | dgVoodoo2 受管安裝／移除 |
+| `src.Core/Core/TroopConfig.cs` | 欄位 enum、單位 metadata、平衡規則 |
+| `src.Core/Core/Bci/` | BCI 特徵碼搜尋、字組寫入與 PFIL 腳本封裝 |
+| `src.Core/Core/EndlessAi/` | 受約束的無盡 AI BCI 模組、狀態偵測與套用協調 |
+| `src.Core/Core/Features/` | 功能 Registry、`PatchProfile`、EXE/INI/DAU/BCI/安裝功能規劃與統一狀態偵測 |
+| `src.Core/Core/Services/PatchEngine.cs` | 精簡編排器：交易順序、分類還原與功能模組協調，不保存功能專屬常數 |
+| `src.Core/Core/Patches/` | 純 patch 邏輯（`ObjdefPatcher`、`RessPatcher`、`ClScriptPatcher`、`ClEparaPatcher`、`ClScintPatcher`、`TeamDatPatcher`、`ExePatchModel`、`VerifiedBinaryWriter`），不依賴 WinForms；UI 只建立 `PatchProfile` 並委派給 Core |
+| `src.Core/Core/Localization.cs` | 中英文 UI／log |
+| `src.Shared/Core/GameLZSS.cs` | 遊戲 LZSS 與 `PFIL@` 包裝 |
+| `src.Shared/Maps/` | 地圖目錄、複製、刪除與 SDL 場景服務 |
 | `data/game_schema.json` | 機器可讀的欄位、offset 與 patch metadata |
 
 目標框架為 .NET 8 Windows、WinForms、x64、nullable enabled、PerMonitorV2 DPI。程式 manifest 要求管理員權限，因為正常遊戲安裝位於 `Program Files (x86)`。
 
 ### 2.1 UI 維護規則
 
-UI 是手寫 WinForms 程式碼，控制項與卡片建立位於 `src/UI/ModifierForm.cs`；不要依賴已移除的 `ModifierForm.Layout.cs` 或舊的自動卡片排版範例。新增功能開關時：
+UI 是手寫 WinForms 程式碼，控制項與卡片建立位於 `src.Modifier/UI/ModifierForm.cs`；不要依賴已移除的 `ModifierForm.Layout.cs` 或舊的自動卡片排版範例。新增功能開關時：
 
 1. 在 `ModifierForm.cs` 宣告、建立，並加入使用者指定的既有容器；不得以「看起來相近」為理由移到其他卡片。
 2. 在 `FeatureRegistry` 註冊唯一 ID、類別與 disabled value，並在 `PatchProfile` 和對應 patcher 完整實作 Apply/Detect/Restore。
@@ -95,7 +98,7 @@ UI 是手寫 WinForms 程式碼，控制項與卡片建立位於 `src/UI/Modifie
 
 FoodHealing 與 Endless AI 共用 `EndlessAiOrchestrator` 的 `BciScriptFile` 快取。兩者只在記憶體規劃修改，最後由一次 `SaveAll` 統一壓縮與寫入；啟動安全遷移與分類還原也使用相同路徑。
 
-每個 Registry 項目實作 `IFeatureModule`，透過 `PatchContext`／`DetectContext` 參與 Apply 與 Detect 迴圈；同檔案的多個功能值再由 per-file composer 一次產生 bytes。新增功能流程：在 `src/Core/Features/<分類>/` 加入功能實作、於 `FeatureRegistry` 登錄 Id／分類／停用值、在 UI 的 `BuildFeatureToggleMap` 加入控制項，並新增對應測試。Apply／Detect／Restore 的編排器不需增加逐功能 checkbox 分支。
+每個 Registry 項目實作 `IFeatureModule`，透過 `PatchContext`／`DetectContext` 參與 Apply 與 Detect 迴圈；同檔案的多個功能值再由 per-file composer 一次產生 bytes。新增功能流程：在 `src.Core/Core/Features/<分類>/` 加入功能實作、於 `FeatureRegistry` 登錄 Id／分類／停用值、在 UI 的 `BuildFeatureToggleMap` 加入控制項，並新增對應測試。Apply／Detect／Restore 的編排器不需增加逐功能 checkbox 分支。
 
 ## 4. 寫入與回復安全
 
@@ -247,7 +250,7 @@ commit 後要先 Dispose／清空 rollback scope，再更新 UI；UI refresh 例
 AI Ultimate 已拆解並重構為 6 個可獨立控制的體驗型功能模組：M1 增援規模 (P1 增援人數 + P10 主營轉兵 + P12 村防轉兵)、M2 加速增援 (P3 增援等待 + P6 排程迴圈優化)、M3 敗亡快速回收 (P4 撤退期限 + P5 死亡判定去彈跳 + P11 村莊拆除延遲)、M4 強制部落生成 (P7 聚落必定生成 + P17 羅馬奠基者門檻 60→100 + P18/P19 重生據點解鎖)、M5 AI 開局資源 (P13 聚落開局資源)、M6 提升守軍數量 (P8 活躍隊伍數上限門檻由 4 提高到 40)。
 
 2026-07-08 新增 P17/P18/P19（皆屬 M4）：修復長期存在的「被擊敗的電腦過一陣子後不再重生」問題，**已套用到實際安裝並經玩家實機確認解決**。根因：type-1 村莊與 type-4 羅馬奠基者的 create 都必須先透過 `fn 0x9904` 找到可用定居地點；地點只要半徑 2500 內有任一隊伍的村莊中心或**任一隊伍的單位（含玩家）**即被否決，後期玩家擴張＋死亡隊伍在 npc.dat 的殘留記錄會把全部 8 個地點永久封死，create 便無聲刪除新派系並失敗（存檔層面完全無痕跡）。P18 將單位鄰近檢查比較值 0→1（玩家單位不再否決，CPU 單位仍否決；錨點＝檔內唯一 `callint -636`）；P19 將否決半徑 2500→800（錨點＝唯一 `callint -36800`）。P17 為 2026-07-06 已設計並有單元測試、但一直未接進任何模組的奠基者機率閘修復（實際檔案先前仍為 60）。套用後獨立位元組驗證：五張地圖各僅 1 個簽名命中、數值皆為目標值（P17=100/P18=1/P19=800）、PFIL 標頭大小欄位正確、解壓縮往返位元組相同，`dotnet test --filter CheckGameStatusTest` 顯示 M1-M6 全數 `Ultimate` 且無 `Legacy`/`Unknown`。注意：存檔內嵌 ak_level 腳本，舊存檔不受修復影響，需開新無盡對局。詳見 `docs/reverse-engineering/endless-mode-ai.md`。
-為了防止遊戲邏輯死結與重生死當，P2 (任務完工回收)、P15 (DELETE_PARTY 安全遷移) 則合併為常駐底層安全修復 R0，不提供 UI 開關，但套用時會自動常駐生效，以確保 AI 運行健全度。實作入口為 `src/Core/EndlessAi/EndlessAiOrchestrator.cs`。
+為了防止遊戲邏輯死結與重生死當，P2 (任務完工回收)、P15 (DELETE_PARTY 安全遷移) 則合併為常駐底層安全修復 R0，不提供 UI 開關，但套用時會自動常駐生效，以確保 AI 運行健全度。實作入口為 `src.Core/Core/EndlessAi/EndlessAiOrchestrator.cs`。
 
 P15 現為 R0 常駐安全修復：兩個定居型 party 的終態在解壓偏移
 `0x109E8`、`0x16374` 必須維持原版 `DELETE_PARTY (256)`。舊版曾改成
