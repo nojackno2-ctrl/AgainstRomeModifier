@@ -459,12 +459,12 @@ namespace AgainstRomeModifier {
                     foreach (var dgv in factionGrids.Values) {
                         for (int i = 0; i < dgv.Rows.Count; i++) {
                             string key = dgv.Rows[i].Cells["Key"].Value?.ToString() ?? "FigUnknown";
-                            TryReadValidatedCell(dgv.Rows[i], "Hp", out double hp);
-                            TryReadValidatedCell(dgv.Rows[i], "Dmg", out double damage);
-                            TryReadValidatedCell(dgv.Rows[i], "VW", out double vw);
-                            TryReadValidatedCell(dgv.Rows[i], "AW", out double aw);
-                            TryReadValidatedCell(dgv.Rows[i], "Sight", out double sight);
-                            TryReadValidatedCell(dgv.Rows[i], "Relt", out double reload);
+                            if (!TryReadValidatedCell(dgv.Rows[i], "Hp", out double hp) ||
+                                !TryReadValidatedCell(dgv.Rows[i], "Dmg", out double damage) ||
+                                !TryReadValidatedCell(dgv.Rows[i], "VW", out double vw) ||
+                                !TryReadValidatedCell(dgv.Rows[i], "AW", out double aw) ||
+                                !TryReadValidatedCell(dgv.Rows[i], "Sight", out double sight) ||
+                                !TryReadValidatedCell(dgv.Rows[i], "Relt", out double reload)) return;
                             stats[key] = new[] { hp, damage, vw, aw, 0, sight, reload, 0, 0 };
                         }
                     }

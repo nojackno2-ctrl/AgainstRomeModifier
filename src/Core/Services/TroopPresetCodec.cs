@@ -78,5 +78,7 @@ internal static class TroopPresetCodec
     }
 
     private static double At(double[] values, int index) => index < values.Length ? values[index] : 0;
-    private static string Format(double[] values, int index) => At(values, index).ToString("0.##", CultureInfo.InvariantCulture);
+
+    // 以最短往返格式輸出，保留使用者輸入的完整小數精度，不得四捨五入。
+    private static string Format(double[] values, int index) => At(values, index).ToString(CultureInfo.InvariantCulture);
 }

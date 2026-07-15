@@ -31,6 +31,7 @@ public sealed class TroopPresetCodecTests
         var stats = new Dictionary<string, double[]>
         {
             ["UnitA"] = new double[] { 101.5, 12.25, 33, 44, 2.6, 1550, 475, 900, 500 },
+            ["UnitB"] = new double[] { 101.125, 12.3456, 33.075, 44, 2.6, 1550.5, 475.25, 900, 500 },
         };
 
         string text = TroopPresetCodec.Write(stats, new DateTime(2026, 7, 15, 1, 2, 3));
@@ -38,5 +39,7 @@ public sealed class TroopPresetCodecTests
 
         Assert.Contains("# Generated on: 2026-07-15 01:02:03", text);
         Assert.Equal(new double[] { 101.5, 12.25, 33, 44, 0, 1550, 475, 0, 0 }, parsed.Stats["UnitA"]);
+        // 匯出不得四捨五入：超過兩位小數的自訂值必須原值往返。
+        Assert.Equal(new double[] { 101.125, 12.3456, 33.075, 44, 0, 1550.5, 475.25, 0, 0 }, parsed.Stats["UnitB"]);
     }
 }
