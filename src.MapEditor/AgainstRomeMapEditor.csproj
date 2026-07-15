@@ -12,6 +12,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../src.Shared/AgainstRome.Shared.csproj" />
+    <ProjectReference Include="../src.Core/AgainstRome.Core.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="OpenTK" Version="4.9.3" />

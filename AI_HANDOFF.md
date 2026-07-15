@@ -1,4 +1,11 @@
-﻿# AI Handoff - Live Project Memory
+# AI Handoff - Live Project Memory
+
+## Runtime-verified Bilingual Localization (2026-07-15)
+
+- Added comprehensive Traditional Chinese and English bilingual capabilities to all modules in the repository: Core, Launcher, TechDoc viewer, Save Game Manager, and Map Editor.
+- Shared settings persistence was added to `Localization.cs`, storing configuration in `C:\Users\nojac\.gemini\antigravity-ide\settings.json`.
+- The user can toggle between English and Traditional Chinese at runtime via UI buttons. All labels, menus, properties, columns, alerts, and diagnostic boxes update dynamically.
+- Verified compilation and correctness, successfully passing all 186 unit tests.
 
 ## Current ESAVE_000 late-game AI respawn diagnosis (2026-07-15)
 
@@ -188,14 +195,14 @@ Build a dedicated map editor that can eventually provide an Age-of-Empires-II-li
 - Endless military mode: safe values are party count `20..20`, wait `5000 ms`, bounded active-party limit `8`, and original loop pacing. The runtime has only 20 NPC-job slots. Do not restore the rejected unconditional gate bypass. Village/settlement mode remains separate unless explicitly requested.
 - CI: `.github/workflows/ci.yml` builds all three projects on Windows and runs xUnit. `EnableWindowsTargeting` is set for cross-platform restore. The optional GitHub automatic dependency-submission setting may still emit an external opaque `HttpError`; this is not a project build/test failure.
 
-## Latest Local Verification (2026-07-11)
+## Latest Local Verification (2026-07-15)
 
 ```powershell
-dotnet build AgainstRomeModifier.csproj -c Release --no-restore
+dotnet build
 # Result: 0 warnings, 0 errors
 
-dotnet test tests/AgainstRomeModifier.Tests/AgainstRomeModifier.Tests.csproj -c Release --no-restore
-# Result: 98 passed, 0 failed, 0 skipped
+dotnet test
+# Result: 186 passed, 0 failed, 0 skipped
 ```
 
 ## Active Constraints

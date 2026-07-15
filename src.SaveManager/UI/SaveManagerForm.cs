@@ -36,6 +36,8 @@ namespace AgainstRomeModifier {
         private Button btnRefreshSaves = null!;
         private Button btnRestoreBackup = null!;
         private Button btnDeleteBackup = null!;
+        private Button btnLangZH = null!;
+        private Button btnLangEN = null!;
 
         private bool _savesRefreshInFlight;
         private SaveBackupService saveBackupService = null!;
@@ -76,8 +78,10 @@ namespace AgainstRomeModifier {
             }
 
             if (!string.IsNullOrWhiteSpace(txtGamePath.Text)) {
-                RefreshSavesAndBackups();
+                // Initial refresh will be triggered by ApplyLanguageToUI
             }
+            UpdateLanguageButtonStyles();
+            ApplyLanguageToUI();
         }
 
         private string DetectGamePathFromRegistry() {
@@ -185,6 +189,44 @@ namespace AgainstRomeModifier {
             btnMinimize.Click += (s, e) => this.WindowState = FormWindowState.Minimized;
             btnMinimize.MouseEnter += (s, e) => btnMinimize.BackColor = Color.FromArgb(45, 45, 55);
             btnMinimize.MouseLeave += (s, e) => btnMinimize.BackColor = Color.Transparent;
+            btnLangZH = new Button {
+                Text = "繁體中文",
+                Location = new Point(this.Width - 276, 12),
+                Size = new Size(80, 30),
+                FlatStyle = FlatStyle.Flat,
+                Font = fontJhengHei9R,
+                Cursor = Cursors.Hand,
+                Anchor = AnchorStyles.Top | AnchorStyles.Right
+            };
+            btnLangZH.FlatAppearance.BorderSize = 1;
+            btnLangZH.Click += (s, e) => {
+                if (Loc.CurrentLanguage != Language.TraditionalChinese) {
+                    Loc.CurrentLanguage = Language.TraditionalChinese;
+                    UpdateLanguageButtonStyles();
+                    ApplyLanguageToUI();
+                }
+            };
+            pnlTitleBar.Controls.Add(btnLangZH);
+
+            btnLangEN = new Button {
+                Text = "English",
+                Location = new Point(this.Width - 186, 12),
+                Size = new Size(80, 30),
+                FlatStyle = FlatStyle.Flat,
+                Font = fontJhengHei9R,
+                Cursor = Cursors.Hand,
+                Anchor = AnchorStyles.Top | AnchorStyles.Right
+            };
+            btnLangEN.FlatAppearance.BorderSize = 1;
+            btnLangEN.Click += (s, e) => {
+                if (Loc.CurrentLanguage != Language.English) {
+                    Loc.CurrentLanguage = Language.English;
+                    UpdateLanguageButtonStyles();
+                    ApplyLanguageToUI();
+                }
+            };
+            pnlTitleBar.Controls.Add(btnLangEN);
+
             pnlTitleBar.Controls.Add(btnMinimize);
             this.Controls.Add(pnlTitleBar);
 
@@ -443,29 +485,29 @@ namespace AgainstRomeModifier {
 
         private void BtnBackupSave_Click(object? sender, EventArgs e) {
             if (dgvGameSaves.SelectedRows.Count == 0) {
-                MessageBox.Show(Loc.Get("MsgSelectSaveToBackup") ?? "請先選擇存檔。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show(Loc.Get("MsgSelectSaveToBackup") ?? "請先選擇存檔。", Loc.Get("TitleTips") ?? "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
             try {
                 DataGridViewRow row = dgvGameSaves.SelectedRows[0];
                 string folder = Cell(row, 0).Trim();
                 if (!SaveBackupService.IsSimpleName(folder)) {
-                    MessageBox.Show(Loc.Get("MsgInvalidSaveDir") ?? "無效的存檔目錄。", "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    MessageBox.Show(Loc.Get("MsgInvalidSaveDir") ?? "無效的存檔目錄。", Loc.Get("TitleError") ?? "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
                     return;
                 }
                 saveBackupService.CreateBackup(GetGamePath(), folder, Cell(row, 1), Cell(row, 2));
                 RefreshSavesAndBackups();
-                MessageBox.Show(Loc.Get("MsgBackupSaveSuccess") ?? "備份成功。", "成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show(Loc.Get("MsgBackupSaveSuccess") ?? "備份成功。", Loc.Get("TitleSuccess") ?? "成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
             } catch (DirectoryNotFoundException) {
-                MessageBox.Show(Loc.Get("MsgNoOrigFolderToBackup") ?? "找不到原始資料夾。", "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show(Loc.Get("MsgNoOrigFolderToBackup") ?? "找不到原始資料夾。", Loc.Get("TitleError") ?? "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
             } catch (Exception ex) {
-                MessageBox.Show((Loc.Get("MsgBackupSaveFailed") ?? "備份失敗：") + ex.Message, "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show((Loc.Get("MsgBackupSaveFailed") ?? "備份失敗：") + ex.Message, Loc.Get("TitleError") ?? "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
         private void BtnRestoreBackup_Click(object? sender, EventArgs e) {
             if (dgvBackups.SelectedRows.Count == 0) {
-                MessageBox.Show(Loc.Get("MsgSelectBackup") ?? "請先選擇備份。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show(Loc.Get("MsgSelectBackup") ?? "請先選擇備份。", Loc.Get("TitleTips") ?? "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
             try {
@@ -476,18 +518,18 @@ namespace AgainstRomeModifier {
                 if (!SaveBackupService.IsSimpleName(folder) || folder == (Loc.Get("Unknown") ?? "未知")) return;
                 string gamePath = GetGamePath();
                 if (string.IsNullOrEmpty(gamePath) || !Directory.Exists(gamePath)) {
-                    MessageBox.Show(Loc.Get("MsgGamePathNotSet") ?? "請先設定遊戲路徑。", "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    MessageBox.Show(Loc.Get("MsgGamePathNotSet") ?? "請先設定遊戲路徑。", Loc.Get("TitleError") ?? "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
                     return;
                 }
                 if (Directory.Exists(Path.Combine(gamePath, "SAVE", folder)) &&
-                    MessageBox.Show(string.Format(Loc.Get("MsgConfirmOverwriteSave") ?? "確定覆蓋 {0} 嗎？", folder), "警告",
+                    MessageBox.Show(string.Format(Loc.Get("MsgConfirmOverwriteSave") ?? "確定覆蓋 {0} 嗎？", folder), Loc.Get("TitleWarning") ?? "警告",
                         MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes) return;
 
                 saveBackupService.RestoreBackup(gamePath, file, folder, msg => System.Diagnostics.Debug.WriteLine(msg));
                 RefreshSavesAndBackups();
-                MessageBox.Show(Loc.Get("MsgRestoreBackupSuccess") ?? "還原成功。", "成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show(Loc.Get("MsgRestoreBackupSuccess") ?? "還原成功。", Loc.Get("TitleSuccess") ?? "成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
             } catch (Exception ex) {
-                MessageBox.Show((Loc.Get("MsgRestoreBackupFailed") ?? "還原失敗：") + ex.Message, "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show((Loc.Get("MsgRestoreBackupFailed") ?? "還原失敗：") + ex.Message, Loc.Get("TitleError") ?? "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
@@ -496,12 +538,12 @@ namespace AgainstRomeModifier {
             try {
                 string folder = Cell(dgvGameSaves.SelectedRows[0], 0).Trim();
                 if (!SaveBackupService.IsSimpleName(folder)) return;
-                if (MessageBox.Show(string.Format(Loc.Get("MsgConfirmDeleteSave") ?? "確定刪除 {0} 嗎？", folder), "確認",
+                if (MessageBox.Show(string.Format(Loc.Get("MsgConfirmDeleteSave") ?? "確定刪除 {0} 嗎？", folder), Loc.Get("TitleConfirm") ?? "確認",
                         MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes) return;
                 saveBackupService.DeleteSave(GetGamePath(), folder);
                 RefreshSavesAndBackups();
             } catch (Exception ex) {
-                MessageBox.Show((Loc.Get("MsgDeleteSaveFailed") ?? "刪除失敗：") + ex.Message, "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show((Loc.Get("MsgDeleteSaveFailed") ?? "刪除失敗：") + ex.Message, Loc.Get("TitleError") ?? "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
@@ -510,12 +552,12 @@ namespace AgainstRomeModifier {
             try {
                 string file = Cell(dgvBackups.SelectedRows[0], 0);
                 if (!SaveBackupService.IsSimpleName(file)) return;
-                if (MessageBox.Show(string.Format(Loc.Get("MsgConfirmDeleteBackup") ?? "確定刪除備份 {0} 嗎？", file), "確認",
+                if (MessageBox.Show(string.Format(Loc.Get("MsgConfirmDeleteBackup") ?? "確定刪除備份 {0} 嗎？", file), Loc.Get("TitleConfirm") ?? "確認",
                         MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes) return;
                 saveBackupService.DeleteBackup(file);
                 RefreshSavesAndBackups();
             } catch (Exception ex) {
-                MessageBox.Show((Loc.Get("MsgDeleteBackupFailed") ?? "刪除失敗：") + ex.Message, "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show((Loc.Get("MsgDeleteBackupFailed") ?? "刪除失敗：") + ex.Message, Loc.Get("TitleError") ?? "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
@@ -708,6 +750,52 @@ namespace AgainstRomeModifier {
                     }
                 }
             };
+        }
+
+        private void UpdateLanguageButtonStyles() {
+            bool isZh = Loc.CurrentLanguage == Language.TraditionalChinese;
+
+            btnLangZH.BackColor = isZh ? Color.FromArgb(30, 30, 42) : Color.Transparent;
+            btnLangZH.ForeColor = isZh ? Color.FromArgb(0, 220, 255) : Color.FromArgb(120, 125, 135);
+            btnLangZH.FlatAppearance.BorderColor = isZh ? Color.FromArgb(0, 220, 255) : Color.FromArgb(50, 50, 60);
+
+            btnLangEN.BackColor = !isZh ? Color.FromArgb(30, 30, 42) : Color.Transparent;
+            btnLangEN.ForeColor = !isZh ? Color.FromArgb(0, 220, 255) : Color.FromArgb(120, 125, 135);
+            btnLangEN.FlatAppearance.BorderColor = !isZh ? Color.FromArgb(0, 220, 255) : Color.FromArgb(50, 50, 60);
+        }
+
+        private void ApplyLanguageToUI() {
+            bool isEn = Loc.CurrentLanguage == Language.English;
+            this.Text = isEn ? "Against Rome Modifier - Save Manager" : "Against Rome Modifier - 存檔管理器";
+            lblMainTitle.Text = isEn ? "AGAINST ROME SAVE MANAGER" : "AGAINST ROME 存檔管理器";
+            lblGamePath.Text = isEn ? "Game Path:" : "遊戲目錄：";
+            btnBrowseGamePath.Text = isEn ? "Browse..." : "瀏覽...";
+            lblGameSavesTitle.Text = isEn ? "In-Game Save List" : "遊戲中存檔列表";
+            lblBackupsTitle.Text = isEn ? "Backup History List" : "備份歷史列表";
+            lblDetailTitle.Text = isEn ? "Save Details & Preview" : "存檔詳細與預覽";
+            btnBackupSave.Text = isEn ? "Backup Save" : "備份此存檔";
+            btnDeleteSave.Text = isEn ? "Delete Save" : "刪除此存檔";
+            btnRefreshSaves.Text = isEn ? "Refresh" : "重新整理";
+            btnRestoreBackup.Text = isEn ? "Restore Backup" : "還原此備份";
+            btnDeleteBackup.Text = isEn ? "Delete Backup" : "刪除此備份";
+
+            // Update column headers
+            if (dgvGameSaves != null && dgvGameSaves.Columns.Count >= 4) {
+                dgvGameSaves.Columns["Folder"].HeaderText = Loc.Get("HeaderFolder");
+                dgvGameSaves.Columns["Title"].HeaderText = Loc.Get("HeaderSaveTitle");
+                dgvGameSaves.Columns["Level"].HeaderText = Loc.Get("HeaderLevel");
+                dgvGameSaves.Columns["Time"].HeaderText = Loc.Get("HeaderTime");
+            }
+            if (dgvBackups != null && dgvBackups.Columns.Count >= 5) {
+                dgvBackups.Columns["File"].HeaderText = Loc.Get("HeaderBackupFile");
+                dgvBackups.Columns["Title"].HeaderText = Loc.Get("HeaderSaveTitle");
+                dgvBackups.Columns["Level"].HeaderText = Loc.Get("HeaderLevel");
+                dgvBackups.Columns["Time"].HeaderText = Loc.Get("HeaderBackupTime");
+                dgvBackups.Columns["Folder"].HeaderText = Loc.Get("HeaderOrigFolder");
+            }
+
+            // Refresh the grids to update localized values in rows (like "Unparsable", "Unknown", etc.)
+            RefreshSavesAndBackups();
         }
 
         protected override void Dispose(bool disposing) {

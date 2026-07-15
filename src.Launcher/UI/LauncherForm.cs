@@ -25,6 +25,8 @@ namespace AgainstRomeModifier {
         private Button btnMapEditor = null!;
         private Button btnSaveManager = null!;
         private Button btnTechDoc = null!;
+        private Button btnLangZH = null!;
+        private Button btnLangEN = null!;
         
         private Font fontJhengHei115B = new Font("Microsoft JhengHei", 11.5F, FontStyle.Bold);
         private Font fontJhengHei10B = new Font("Microsoft JhengHei", 10F, FontStyle.Bold);
@@ -116,7 +118,43 @@ namespace AgainstRomeModifier {
                 btnMinimize.BackColor = Color.Transparent;
             };
 
+            btnLangZH = new Button {
+                Text = "繁體中文",
+                Location = new Point(this.Width - 270, 10),
+                Size = new Size(80, 30),
+                FlatStyle = FlatStyle.Flat,
+                Font = fontJhengHei10B,
+                Cursor = Cursors.Hand
+            };
+            btnLangZH.FlatAppearance.BorderSize = 1;
+            btnLangZH.Click += (s, e) => {
+                if (Loc.CurrentLanguage != Language.TraditionalChinese) {
+                    Loc.CurrentLanguage = Language.TraditionalChinese;
+                    UpdateLanguageButtonStyles();
+                    ApplyLanguageToUI();
+                }
+            };
+
+            btnLangEN = new Button {
+                Text = "English",
+                Location = new Point(this.Width - 180, 10),
+                Size = new Size(80, 30),
+                FlatStyle = FlatStyle.Flat,
+                Font = fontJhengHei10B,
+                Cursor = Cursors.Hand
+            };
+            btnLangEN.FlatAppearance.BorderSize = 1;
+            btnLangEN.Click += (s, e) => {
+                if (Loc.CurrentLanguage != Language.English) {
+                    Loc.CurrentLanguage = Language.English;
+                    UpdateLanguageButtonStyles();
+                    ApplyLanguageToUI();
+                }
+            };
+
             pnlTitleBar.Controls.Add(lblMainTitle);
+            pnlTitleBar.Controls.Add(btnLangZH);
+            pnlTitleBar.Controls.Add(btnLangEN);
             pnlTitleBar.Controls.Add(btnClose);
             pnlTitleBar.Controls.Add(btnMinimize);
             this.Controls.Add(pnlTitleBar);
@@ -145,6 +183,31 @@ namespace AgainstRomeModifier {
             this.Controls.Add(btnMapEditor);
             this.Controls.Add(btnSaveManager);
             this.Controls.Add(btnTechDoc);
+
+            UpdateLanguageButtonStyles();
+            ApplyLanguageToUI();
+        }
+
+        private void UpdateLanguageButtonStyles() {
+            bool isZh = Loc.CurrentLanguage == Language.TraditionalChinese;
+
+            btnLangZH.BackColor = isZh ? Color.FromArgb(30, 30, 42) : Color.Transparent;
+            btnLangZH.ForeColor = isZh ? Color.FromArgb(0, 220, 255) : Color.FromArgb(120, 125, 135);
+            btnLangZH.FlatAppearance.BorderColor = isZh ? Color.FromArgb(0, 220, 255) : Color.FromArgb(50, 50, 60);
+
+            btnLangEN.BackColor = !isZh ? Color.FromArgb(30, 30, 42) : Color.Transparent;
+            btnLangEN.ForeColor = !isZh ? Color.FromArgb(0, 220, 255) : Color.FromArgb(120, 125, 135);
+            btnLangEN.FlatAppearance.BorderColor = !isZh ? Color.FromArgb(0, 220, 255) : Color.FromArgb(50, 50, 60);
+        }
+
+        private void ApplyLanguageToUI() {
+            bool isEn = Loc.CurrentLanguage == Language.English;
+            this.Text = isEn ? "Against Rome Pro Launcher" : "Against Rome 啟動器";
+            lblMainTitle.Text = isEn ? "AGAINST ROME PRO LAUNCHER" : "AGAINST ROME 啟動器";
+            btnModifier.Text = isEn ? "Launch Modifier" : "啟動修改器";
+            btnMapEditor.Text = isEn ? "Map Editor" : "地圖編輯器";
+            btnSaveManager.Text = isEn ? "Save Manager" : "存檔管理器";
+            btnTechDoc.Text = isEn ? "Technical Document" : "修改技術文件";
         }
 
         private void BtnModifier_Click(object? sender, EventArgs e) {
@@ -180,7 +243,12 @@ namespace AgainstRomeModifier {
                 if (process != null) {
                     process.EnableRaisingEvents = true;
                     process.Exited += (s, args) => {
-                        this.Invoke(new Action(() => this.Show()));
+                        this.Invoke(new Action(() => {
+                            Loc.ReloadLanguage();
+                            UpdateLanguageButtonStyles();
+                            ApplyLanguageToUI();
+                            this.Show();
+                        }));
                     };
                 } else {
                     this.Show(); // Fallback if process failed to hook
@@ -215,7 +283,12 @@ namespace AgainstRomeModifier {
                 if (process != null) {
                     process.EnableRaisingEvents = true;
                     process.Exited += (s, args) => {
-                        this.Invoke(new Action(() => this.Show()));
+                        this.Invoke(new Action(() => {
+                            Loc.ReloadLanguage();
+                            UpdateLanguageButtonStyles();
+                            ApplyLanguageToUI();
+                            this.Show();
+                        }));
                     };
                 } else {
                     this.Show();
