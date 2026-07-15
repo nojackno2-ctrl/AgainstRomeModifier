@@ -1,4 +1,11 @@
-# AI Handoff - Live Project Memory
+﻿# AI Handoff - Live Project Memory
+
+## GitHub Actions modular-project path repair (2026-07-15)
+
+- Push `783d5cf` fails in both CI run `29417646283` and CodeQL run `29417646317` because the workflows still build the deleted root `AgainstRomeModifier.csproj` after commit `55452b1` split the repository into `AgainstRomeModifier.slnx` and `src.*` projects.
+- CI also builds `tests/verify_split_patches`, whose project reference still targets `../../AgainstRomeModifier.csproj`; its current failure is `MSB9008` followed by `CS0246` for `AgainstRomeModifier` and `EndlessAiOrchestrator`. The ordinary test project itself builds successfully before this stale auxiliary reference fails, so this is project-path drift rather than a test regression.
+- Repaired CI and CodeQL to restore/build `AgainstRomeModifier.slnx`, retargeted `verify_split_patches` to `src.Core/AgainstRome.Core.csproj`, and retained compile-only CI coverage for that manual golden verifier. Both workflows now install .NET SDK 10 explicitly because `.slnx` CLI support starts at SDK 9.0.200; product target frameworks remain `net8.0`.
+- Local verification matching the workflow passed: solution Release x64 build 0 warnings/errors, verifier Release x64 build 0 warnings/errors, and full xUnit 186/186. Remote checks remain unverified until these local changes are committed and pushed; do not claim GitHub is green before the new push runs finish.
 
 ## Runtime-verified Bilingual Localization (2026-07-15)
 
