@@ -11,6 +11,7 @@ using System.Drawing;
 using AgainstRomeModifier.Core.Patches;
 using System.Drawing.Drawing2D;
 using AgainstRomeModifier.Core.Features;
+using AgainstRomeModifier.Core.Services;
 using System.Runtime.InteropServices;
 
 namespace AgainstRomeModifier {
@@ -248,76 +249,6 @@ namespace AgainstRomeModifier {
             } catch (Exception ex) {
                 Log(Loc.Get("LogLoadIconFailed") + ex.Message + "\r\n" + ex.StackTrace);
             }
-        }
-
-        /// <summary>
-        /// 獲取各兵種的平衡基礎屬性，若未啟用平衡模式，則直接返回原版屬性。
-        /// </summary>
-        private static double[] MergeUnitStatsLayers(double[] fallback, double[] custom, bool supportsSpellRadius,
-            bool ignoreMovementSpeed = false, bool ignoreRange = false, bool ignoreSpellRadius = false,
-            bool removePriestSight = false) {
-            ArgumentNullException.ThrowIfNull(fallback);
-            ArgumentNullException.ThrowIfNull(custom);
-
-            double[] layered = new double[9];
-            for (int i = 0; i < layered.Length; i++) {
-                if (i == 8 && !supportsSpellRadius) {
-                    layered[i] = 0;
-                    continue;
-                }
-
-                // 速度、射程、法術範圍不再是自訂兵種欄位，由獨立功能負責。
-                if (i is 4 or 7 or 8 || (i == 5 && removePriestSight)) {
-                    layered[i] = fallback.Length > i ? fallback[i] : 0;
-                    continue;
-                }
-
-                // Preset values are concrete overrides. Only fields omitted by an
-                // older/short preset inherit the active balanced or original layer.
-                layered[i] = custom.Length > i
-                    ? custom[i]
-                    : (fallback.Length > i ? fallback[i] : 0);
-            }
-            return layered;
-        }
-
-        private double[] GetBaseStatsForUnit(string key, double origHp, double origDmg, double origVw, double origAw, bool forceBalance = false) {
-            double[] original = GetOriginalStats(key);
-            bool balanceEnabled = forceBalance || chkBalance.Checked;
-            double[] balanced = balanceEnabled ? GetDefaultBalancedStats(key) : original;
-
-            double[] result;
-            if (!TroopConfig.UnitMeta.TryGetValue(key, out var meta)) return balanced;
-            // 與 BackupManager.GetBaseStatsForUnit 一致：自訂屬性同受平衡開關把關。
-            if (balanceEnabled && customUnitStats != null && customUnitStats.TryGetValue(key, out double[]? custom) && custom != null) {
-                bool ignoreRange = (chkRangedRange3x.Checked && TroopConfig.SupportsRangedRange3x(meta.UnitType)) ||
-                    (chkSpellEntireMap.Checked && meta.UnitType == "priest");
-                result = MergeUnitStatsLayers(balanced, custom, SupportsConfigurableSpellRadius(key),
-                    chkUnitMovementSpeed2x.Checked, ignoreRange,
-                    chkSpellRange3x.Checked && SupportsConfigurableSpellRadius(key),
-                    meta.UnitType == "priest");
-            } else {
-                result = (double[])balanced.Clone();
-            }
-
-            if (meta != null) {
-                bool isRanged = TroopConfig.SupportsRangedRange3x(meta.UnitType);
-                if (isRanged && chkRangedRange3x.Checked) {
-                    result[7] *= 3.0;
-                }
-                if (chkUnitMovementSpeed2x.Checked) {
-                    result[4] *= 2.0;
-                }
-                bool isPriest = meta.UnitType == "priest";
-                if (isPriest) {
-                    if (chkSpellEntireMap.Checked) {
-                        result[7] = 30000.0;
-                    }
-                    if (chkSpellRange3x.Checked && SupportsConfigurableSpellRadius(key)) result[8] *= 3.0;
-                }
-            }
-
-            return result;
         }
 
         /// <summary>
@@ -599,11 +530,11 @@ namespace AgainstRomeModifier {
 
                     double meleeDam = 0;
                     double rangedDam = 0;
-                    GetMeleeAndRangedDmg(cols, utype, out meleeDam, out rangedDam);
+                    UnitStatParser.GetMeleeAndRangedDamage(cols, utype, out meleeDam, out rangedDam);
 
                     double meleeRelt = 0;
                     double rangedRelt = 0;
-                    GetMeleeAndRangedRelt(cols, utype, out meleeRelt, out rangedRelt);
+                    UnitStatParser.GetMeleeAndRangedReload(cols, utype, out meleeRelt, out rangedRelt);
 
                     double origMoves = 0;
                     double.TryParse(cols[(int)ObjdefIndex.Moves].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out origMoves);
@@ -611,7 +542,7 @@ namespace AgainstRomeModifier {
                     double origSight = 0;
                     double.TryParse(cols[(int)ObjdefIndex.Sirad].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out origSight);
 
-                    double origRange = GetUnitMaxRange(cols, utype);
+                    double origRange = UnitStatParser.GetMaximumRange(cols, utype);
 
                     double defaultSpeed = 0;
                     if (origMoves > 0) {
@@ -666,7 +597,7 @@ namespace AgainstRomeModifier {
                     string styleText = Loc.GetStyleText(style);
 
                     var iconImage = unitIcons.ContainsKey(key) ? unitIcons[key] : null;
-                    double[] bases = GetBaseStatsForUnit(key, hp, origPrimaryDam, vw, aw, chkBalance.Checked);
+                    double[] bases = unitStatsProjection.Project(key, BuildCurrentPatchProfile(chkBalance.Checked));
 
                     double displayMeleeDam = 0;
                     double displayRangedDam = 0;
@@ -865,19 +796,19 @@ namespace AgainstRomeModifier {
 
                     double origMeleeDmg = 0;
                     double origRangedDmg = 0;
-                    GetMeleeAndRangedDmg(origCols, utype, out origMeleeDmg, out origRangedDmg);
+                    UnitStatParser.GetMeleeAndRangedDamage(origCols, utype, out origMeleeDmg, out origRangedDmg);
 
                     double curMeleeDmg = 0;
                     double curRangedDmg = 0;
-                    GetMeleeAndRangedDmg(cols, utype, out curMeleeDmg, out curRangedDmg);
+                    UnitStatParser.GetMeleeAndRangedDamage(cols, utype, out curMeleeDmg, out curRangedDmg);
 
                     double tempOrigMeleeRelt = 0;
                     double tempOrigRangedRelt = 0;
-                    GetMeleeAndRangedRelt(origCols, utype, out tempOrigMeleeRelt, out tempOrigRangedRelt);
+                    UnitStatParser.GetMeleeAndRangedReload(origCols, utype, out tempOrigMeleeRelt, out tempOrigRangedRelt);
 
                     double tempCurMeleeRelt = 0;
                     double tempCurRangedRelt = 0;
-                    GetMeleeAndRangedRelt(cols, utype, out tempCurMeleeRelt, out tempCurRangedRelt);
+                    UnitStatParser.GetMeleeAndRangedReload(cols, utype, out tempCurMeleeRelt, out tempCurRangedRelt);
 
                     double origMoves = 0;
                     double.TryParse(origCols[(int)ObjdefIndex.Moves].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out origMoves);
@@ -889,8 +820,8 @@ namespace AgainstRomeModifier {
                     double curSight = 0;
                     double.TryParse(cols[(int)ObjdefIndex.Sirad].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out curSight);
 
-                    double origRange = GetUnitMaxRange(origCols, utype);
-                    double curRange = GetUnitMaxRange(cols, utype);
+                    double origRange = UnitStatParser.GetMaximumRange(origCols, utype);
+                    double curRange = UnitStatParser.GetMaximumRange(cols, utype);
 
                     double origSpellRadius = 0;
                     double curSpellRadius = 0;
@@ -936,89 +867,6 @@ namespace AgainstRomeModifier {
             } catch (Exception ex) {
                 Log(Loc.Get("LogPresetImportError") + ex.Message + "\r\n" + ex.StackTrace);
             }
-        }
-
-        /// <summary>
-        /// 從兵種 CSV 行中解析出近戰傷害與遠程傷害。
-        /// 遍歷 8 個武器槽位，若啟用且武器類型匹配則回傳最高傷害。
-        /// </summary>
-        private static void GetMeleeAndRangedDmg(string[] cols, string utype, out double meleeDmg, out double rangedDmg) {
-            meleeDmg = 0;
-            rangedDmg = 0;
-            for (int w = 1; w <= 8; w++) {
-                int wAktiIdx = (int)ObjdefIndex.Weapon1Akti + (w - 1) * 8;
-                int wDamIdx = wAktiIdx + 1;
-                int wDtypIdx = (int)ObjdefIndex.Weapon1Dtyp + (w - 1);
-                if (wAktiIdx >= cols.Length || wDamIdx >= cols.Length || wDtypIdx >= cols.Length) {
-                    continue;
-                }
-                if (cols[wAktiIdx].Trim() == "1") {
-                    double damVal;
-                    double.TryParse(cols[wDamIdx].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out damVal);
-                    string wDtyp = cols[wDtypIdx].Trim();
-                    bool isRangedWeapon = (wDtyp == "1" || wDtyp == "2" || wDtyp == "3" || wDtyp == "4" || utype == "siege");
-                    if (isRangedWeapon) {
-                        if (damVal > rangedDmg) rangedDmg = damVal;
-                    } else {
-                        if (damVal > meleeDmg) meleeDmg = damVal;
-                    }
-                }
-            }
-        }
-
-        /// <summary>
-        /// 從兵種 CSV 行中解析出近戰武器與遠程武器的最小冷卻時間（攻擊間隔時間）。
-        /// </summary>
-        private static void GetMeleeAndRangedRelt(string[] cols, string utype, out double meleeRelt, out double rangedRelt) {
-            meleeRelt = 0;
-            rangedRelt = 0;
-            for (int w = 1; w <= 8; w++) {
-                int wAktiIdx = (int)ObjdefIndex.Weapon1Akti + (w - 1) * 8;
-                int wReltIdx = wAktiIdx + 6;
-                int wDtypIdx = (int)ObjdefIndex.Weapon1Dtyp + (w - 1);
-                if (wAktiIdx >= cols.Length || wReltIdx >= cols.Length || wDtypIdx >= cols.Length) {
-                    continue;
-                }
-                if (cols[wAktiIdx].Trim() == "1") {
-                    double reltVal;
-                    double.TryParse(cols[wReltIdx].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out reltVal);
-                    string wDtyp = cols[wDtypIdx].Trim();
-                    bool isRangedWeapon = (wDtyp == "1" || wDtyp == "2" || wDtyp == "3" || wDtyp == "4" || utype == "siege");
-                    if (isRangedWeapon) {
-                        if (reltVal > 0 && (rangedRelt == 0 || reltVal < rangedRelt)) {
-                            rangedRelt = reltVal;
-                        }
-                    } else {
-                        if (reltVal > 0 && (meleeRelt == 0 || reltVal < meleeRelt)) {
-                            meleeRelt = reltVal;
-                        }
-                    }
-                }
-            }
-        }
-
-
-        /// <summary>
-        /// 從兵種 CSV 行中解析所有啟用武器槽的最大射程。
-        /// </summary>
-        private static double GetUnitMaxRange(string[] cols, string utype) {
-            double maxR = 0;
-            if (utype == "priest")
-                return double.TryParse(cols[(int)ObjdefIndex.Sirad].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out double sight) ? sight : 0;
-            for (int w = 1; w <= 8; w++) {
-                int activeIndex = (int)ObjdefIndex.Weapon1Akti + (w - 1) * 8;
-                int rangeMinIndex = (int)ObjdefIndex.Weapon1RangeMin + (w - 1) * 8;
-                int rangeMaxIndex = (int)ObjdefIndex.Weapon1RangeMax + (w - 1) * 8;
-                if (rangeMaxIndex >= cols.Length || cols[activeIndex].Trim() != "1") continue;
-
-                if (double.TryParse(cols[rangeMinIndex].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out double minRange)) {
-                    maxR = Math.Max(maxR, minRange);
-                }
-                if (double.TryParse(cols[rangeMaxIndex].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out double maxRange)) {
-                    maxR = Math.Max(maxR, maxRange);
-                }
-            }
-            return maxR;
         }
 
         /// <summary>

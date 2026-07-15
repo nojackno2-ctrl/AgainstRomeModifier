@@ -3,8 +3,6 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Windows.Forms;
-using System.Threading.Tasks;
-using AgainstRomeModifier.Core.Patches;
 using AgainstRomeModifier.Core.Services;
 using AgainstRomeModifier.Core.Features;
 
@@ -16,29 +14,30 @@ namespace AgainstRomeModifier {
 
         private void BuildFeatureToggleMap() {
             featureToggles = new Dictionary<string, ModernToggle>(StringComparer.OrdinalIgnoreCase) {
-                ["FocusLoss"] = chkFocusLoss, ["FastCiviProduction"] = chkFastCiviProduction,
-                ["InfiniteMorale"] = chkInfiniteMorale, ["FreeProduction"] = chkFreeProd,
-                ["FreeUpgrade"] = chkFreeUpgrade, ["NoSpellCost"] = chkNoSpellCost,
-                ["MaxPopulation"] = chkMaxPopulation, ["Balance"] = chkBalance,
-                ["RangedRange3x"] = chkRangedRange3x, ["UnitMovementSpeed2x"] = chkUnitMovementSpeed2x,
-                ["SpellEntireMap"] = chkSpellEntireMap, ["SpellRange3x"] = chkSpellRange3x,
-                ["ProjectileArcHeight"] = chkProjectileArcHeight,
-                ["RomanEndless"] = chkRomanEndless,
-                ["HousingCapacity20x"] = chkHousingCapacity20x, ["StorageCapacity10x"] = chkStorageCapacity10x,
-                ["HqHp10x"] = chkHqHp10x, ["FastBuildUpgradeRepair"] = chkFastBuildUpgradeRepair,
-                ["FoodHealing10x"] = chkFoodHealing10x, ["CiviProduce20"] = chkCiviProduce20,
-                ["UnitRecruit20"] = chkUnitRecruit20,
-                ["VillageBuildRange"] = chkVillageBuildRange,
-                ["NoSpellAltar"] = chkNoSpellAltar, ["DgVoodoo"] = chkDgVoodoo,
-                ["ToEnglish"] = chkToEng,
-                ["SpellDamage5x"] = chkSpellDamage5x,
-                ["SpellHealing10x"] = chkSpellHealing10x,
-                ["SpellResurrection"] = chkSpellResurrection,
-                ["GeneralSkills"] = chkGeneralSkills,
-                ["LeaderGlory"] = chkLeaderGlory,
-                ["EndlessAi.M1"] = chkAiM1, ["EndlessAi.M2"] = chkAiM2, ["EndlessAi.M3"] = chkAiM3,
-                ["EndlessAi.M4"] = chkAiM4, ["EndlessAi.M5"] = chkAiM5, ["EndlessAi.M6"] = chkAiM6,
+                [FeatureKeys.FocusLoss.Id] = chkFocusLoss, [FeatureKeys.FastCiviProduction.Id] = chkFastCiviProduction,
+                [FeatureKeys.InfiniteMorale.Id] = chkInfiniteMorale, [FeatureKeys.FreeProduction.Id] = chkFreeProd,
+                [FeatureKeys.FreeUpgrade.Id] = chkFreeUpgrade, [FeatureKeys.NoSpellCost.Id] = chkNoSpellCost,
+                [FeatureKeys.MaxPopulation.Id] = chkMaxPopulation, [FeatureKeys.Balance.Id] = chkBalance,
+                [FeatureKeys.RangedRange3x.Id] = chkRangedRange3x, [FeatureKeys.UnitMovementSpeed2x.Id] = chkUnitMovementSpeed2x,
+                [FeatureKeys.SpellEntireMap.Id] = chkSpellEntireMap, [FeatureKeys.SpellRange3x.Id] = chkSpellRange3x,
+                [FeatureKeys.ProjectileArcHeight.Id] = chkProjectileArcHeight,
+                [FeatureKeys.RomanEndless.Id] = chkRomanEndless,
+                [FeatureKeys.HousingCapacity20x.Id] = chkHousingCapacity20x, [FeatureKeys.StorageCapacity10x.Id] = chkStorageCapacity10x,
+                [FeatureKeys.HqHp10x.Id] = chkHqHp10x, [FeatureKeys.FastBuildUpgradeRepair.Id] = chkFastBuildUpgradeRepair,
+                [FeatureKeys.FoodHealing10x.Id] = chkFoodHealing10x, [FeatureKeys.CiviProduce20.Id] = chkCiviProduce20,
+                [FeatureKeys.UnitRecruit20.Id] = chkUnitRecruit20,
+                [FeatureKeys.VillageBuildRange.Id] = chkVillageBuildRange,
+                [FeatureKeys.NoSpellAltar.Id] = chkNoSpellAltar, [FeatureKeys.DgVoodoo.Id] = chkDgVoodoo,
+                [FeatureKeys.ToEnglish.Id] = chkToEng,
+                [FeatureKeys.SpellDamage5x.Id] = chkSpellDamage5x,
+                [FeatureKeys.SpellHealing10x.Id] = chkSpellHealing10x,
+                [FeatureKeys.SpellResurrection.Id] = chkSpellResurrection,
+                [FeatureKeys.GeneralSkills.Id] = chkGeneralSkills,
+                [FeatureKeys.LeaderGlory.Id] = chkLeaderGlory,
+                [FeatureKeys.EndlessAiM1.Id] = chkAiM1, [FeatureKeys.EndlessAiM2.Id] = chkAiM2, [FeatureKeys.EndlessAiM3.Id] = chkAiM3,
+                [FeatureKeys.EndlessAiM4.Id] = chkAiM4, [FeatureKeys.EndlessAiM5.Id] = chkAiM5, [FeatureKeys.EndlessAiM6.Id] = chkAiM6,
             };
+            FeatureRegistry.ValidateToggleIds(featureToggles.Keys);
         }
 
         private void ResetTogglesForCategory(FeatureCategory category, string gamePath) {
@@ -49,6 +48,15 @@ namespace AgainstRomeModifier {
                 chkGameSpeed.Checked = false;
                 chkDgVoodoo.Checked = patchEngine.IsDgVoodooInstalled(gamePath);
             }
+        }
+
+        private PatchProfile BuildCurrentPatchProfile(bool forceBalance = false) {
+            var profile = new PatchProfile();
+            foreach (var (id, toggle) in featureToggles) profile.Set(id, FeatureValue.Of(toggle.Checked));
+            if (forceBalance) profile.Balance = true;
+            profile.Set(FeatureKeys.GameSpeed, chkGameSpeed.Checked ? 10 : 1);
+            profile.Set(FeatureKeys.CustomUnitStats, customUnitStats);
+            return profile;
         }
 
         /// <summary>
@@ -131,28 +139,20 @@ namespace AgainstRomeModifier {
                 return;
             }
 
-            FileRollbackScope? rollback = null;
             try {
                 DialogResult confirm = MessageBox.Show(Loc.Get("MsgConfirmApply"), Loc.Get("TitleConfirm"), MessageBoxButtons.YesNo, MessageBoxIcon.Question);
                 if (confirm != DialogResult.Yes) return;
 
                 SetActionButtonsEnabled(false);
                 Log(Loc.Get("LogStartApply"));
-                rollback = new FileRollbackScope();
-                Log("已建立修改前檔案回復點。");
 
-                var profile = new PatchProfile();
-                foreach (var (id, toggle) in featureToggles) profile.Set(id, FeatureValue.Of(toggle.Checked));
-                profile.Set("GameSpeed", FeatureValue.Of(chkGameSpeed.Checked ? 10 : 1));
-                profile.Set("CustomUnitStats", FeatureValue.Of(this.customUnitStats));
+                PatchProfile profile = BuildCurrentPatchProfile();
 
-                await Task.Run(() => {
-                    patchEngine.ApplyPatches(gamePath, profile, backupManager, rollback);
-                });
-
-                rollback.Commit();
-                rollback.Dispose();
-                rollback = null;
+                await patchOperationRunner.ExecuteAsync(
+                    rollback => patchEngine.ApplyPatches(gamePath, profile, backupManager, rollback),
+                    "已建立修改前檔案回復點。",
+                    "套用失敗，開始回復已修改的檔案。",
+                    "檔案回復流程已完成。");
                 Log(Loc.Get("LogApplyAllSuccess"));
                 MessageBox.Show(Loc.Get("MsgApplySuccess"), Loc.Get("TitleTips"), MessageBoxButtons.OK, MessageBoxIcon.Information);
                 try {
@@ -161,15 +161,9 @@ namespace AgainstRomeModifier {
                     Log("Reload current data failed after successful apply: " + uiEx.Message);
                 }
             } catch (Exception ex) {
-                if (rollback != null && !rollback.IsCommitted) {
-                    Log("套用失敗，開始回復已修改的檔案。");
-                    rollback.RestoreAll(Log);
-                    Log("檔案回復流程已完成。");
-                }
                 Log(Loc.Get("MsgApplyFailed") + ex.Message + "\r\n" + ex.StackTrace);
                 MessageBox.Show(Loc.Get("MsgApplyFailed") + ex.Message, Loc.Get("TitleError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
             } finally {
-                rollback?.Dispose();
                 SetActionButtonsEnabled(true);
             }
         }
@@ -186,18 +180,14 @@ namespace AgainstRomeModifier {
             if (!backupManager.EnsureBackupLoadedForGamePath(gamePath)) {
                 return;
             }
-            FileRollbackScope? rollback = null;
             SetActionButtonsEnabled(false);
             try {
                 Log(Loc.Get("LogStartRestoreAll"));
-                rollback = new FileRollbackScope();
-                Log("已建立還原前檔案回復點。");
-                await Task.Run(() => {
-                    patchEngine.RestoreOriginalFiles(gamePath, backupManager, rollback);
-                });
-                rollback.Commit();
-                rollback.Dispose();
-                rollback = null;
+                await patchOperationRunner.ExecuteAsync(
+                    rollback => patchEngine.RestoreOriginalFiles(gamePath, backupManager, rollback),
+                    "已建立還原前檔案回復點。",
+                    "還原失敗，開始回復變更。",
+                    "還原失敗後的回復流程已完成。");
                 
                 ResetTogglesForCategory(FeatureCategory.Stats, gamePath);
                 ResetTogglesForCategory(FeatureCategory.Compat, gamePath);
@@ -211,15 +201,9 @@ namespace AgainstRomeModifier {
                     Log("Reload current data failed after successful restore: " + uiEx.Message);
                 }
             } catch (Exception ex) {
-                if (rollback != null && !rollback.IsCommitted) {
-                    Log("還原失敗，開始回復變更。");
-                    rollback.RestoreAll(Log);
-                    Log("還原失敗後的回復流程已完成。");
-                }
                 Log(Loc.Get("MsgRestoreFailed") + ex.Message + "\r\n" + ex.StackTrace);
                 MessageBox.Show(Loc.Get("MsgRestoreFailed") + ex.Message, Loc.Get("TitleError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
             } finally {
-                rollback?.Dispose();
                 SetActionButtonsEnabled(true);
             }
         }
@@ -265,18 +249,14 @@ namespace AgainstRomeModifier {
             if (!backupManager.EnsureBackupLoadedForGamePath(gamePath)) {
                 return;
             }
-            FileRollbackScope? rollback = null;
             SetActionButtonsEnabled(false);
             try {
                 Log(Loc.Get("LogStartRestoreStats"));
-                rollback = new FileRollbackScope();
-                Log("已建立屬性檔案回復點。");
-                await Task.Run(() => {
-                    patchEngine.RestoreStatsOnly(gamePath, backupManager, rollback);
-                });
-                rollback.Commit();
-                rollback.Dispose();
-                rollback = null;
+                await patchOperationRunner.ExecuteAsync(
+                    rollback => patchEngine.RestoreStatsOnly(gamePath, backupManager, rollback),
+                    "已建立屬性檔案回復點。",
+                    "還原失敗，開始回復變更。",
+                    "還原失敗後的回復流程已完成。");
 
                 ResetTogglesForCategory(FeatureCategory.Stats, gamePath);
 
@@ -288,15 +268,9 @@ namespace AgainstRomeModifier {
                     Log("Reload current data failed after successful stats restore: " + uiEx.Message);
                 }
             } catch (Exception ex) {
-                if (rollback != null && !rollback.IsCommitted) {
-                    Log("還原失敗，開始回復變更。");
-                    rollback.RestoreAll(Log);
-                    Log("還原失敗後的回復流程已完成。");
-                }
                 Log(Loc.Get("MsgRestoreFailed") + ex.Message + "\r\n" + ex.StackTrace);
                 MessageBox.Show(Loc.Get("MsgRestoreFailed") + ex.Message, Loc.Get("TitleError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
             } finally {
-                rollback?.Dispose();
                 SetActionButtonsEnabled(true);
             }
         }
@@ -307,18 +281,14 @@ namespace AgainstRomeModifier {
                 MessageBox.Show(Loc.Get("MsgSelectGameDir"), Loc.Get("TitleError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
-            FileRollbackScope? rollback = null;
             SetActionButtonsEnabled(false);
             try {
                 Log(Loc.Get("LogStartRestoreCompat"));
-                rollback = new FileRollbackScope();
-                Log("已建立相容性檔案回復點。");
-                await Task.Run(() => {
-                    patchEngine.RestoreCompatOnly(gamePath, backupManager, rollback);
-                });
-                rollback.Commit();
-                rollback.Dispose();
-                rollback = null;
+                await patchOperationRunner.ExecuteAsync(
+                    rollback => patchEngine.RestoreCompatOnly(gamePath, backupManager, rollback),
+                    "已建立相容性檔案回復點。",
+                    "還原失敗，開始回復變更。",
+                    "還原失敗後的回復流程已完成。");
 
                 ResetTogglesForCategory(FeatureCategory.Compat, gamePath);
 
@@ -330,15 +300,9 @@ namespace AgainstRomeModifier {
                     Log("Reload current data failed after successful compat restore: " + uiEx.Message);
                 }
             } catch (Exception ex) {
-                if (rollback != null && !rollback.IsCommitted) {
-                    Log("還原失敗，開始回復變更。");
-                    rollback.RestoreAll(Log);
-                    Log("還原失敗後的回復流程已完成。");
-                }
                 Log(Loc.Get("MsgRestoreFailed") + ex.Message + "\r\n" + ex.StackTrace);
                 MessageBox.Show(Loc.Get("MsgRestoreFailed") + ex.Message, Loc.Get("TitleError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
             } finally {
-                rollback?.Dispose();
                 SetActionButtonsEnabled(true);
             }
         }
@@ -349,18 +313,14 @@ namespace AgainstRomeModifier {
                 MessageBox.Show(Loc.Get("MsgSelectGameDir"), Loc.Get("TitleError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
-            FileRollbackScope? rollback = null;
             SetActionButtonsEnabled(false);
             try {
                 Log(Loc.Get("LogStartRestoreLang"));
-                rollback = new FileRollbackScope();
-                Log("已建立語言檔案回復點。");
-                await Task.Run(() => {
-                    patchEngine.RestoreLanguageOnly(gamePath, rollback);
-                });
-                rollback.Commit();
-                rollback.Dispose();
-                rollback = null;
+                await patchOperationRunner.ExecuteAsync(
+                    rollback => patchEngine.RestoreLanguageOnly(gamePath, rollback),
+                    "已建立語言檔案回復點。",
+                    "還原失敗，開始回復變更。",
+                    "還原失敗後的回復流程已完成。");
 
                 ResetTogglesForCategory(FeatureCategory.Language, gamePath);
 
@@ -372,15 +332,9 @@ namespace AgainstRomeModifier {
                     Log("Reload current data failed after successful language restore: " + uiEx.Message);
                 }
             } catch (Exception ex) {
-                if (rollback != null && !rollback.IsCommitted) {
-                    Log("還原失敗，開始回復變更。");
-                    rollback.RestoreAll(Log);
-                    Log("還原失敗後的回復流程已完成。");
-                }
                 Log(Loc.Get("MsgRestoreFailed") + ex.Message + "\r\n" + ex.StackTrace);
                 MessageBox.Show(Loc.Get("MsgRestoreFailed") + ex.Message, Loc.Get("TitleError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
             } finally {
-                rollback?.Dispose();
                 SetActionButtonsEnabled(true);
             }
         }

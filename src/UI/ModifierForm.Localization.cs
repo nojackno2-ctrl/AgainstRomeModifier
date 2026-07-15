@@ -274,7 +274,8 @@ namespace AgainstRomeModifier {
             customUnitStats = new Dictionary<string, double[]>(StringComparer.OrdinalIgnoreCase);
             foreach (string key in TroopConfig.UnitOrder) {
                 if (!TroopConfig.UnitMeta.ContainsKey(key)) continue;
-                customUnitStats[key] = NormalizeIndependentCustomFields(key, GetDefaultBalancedStats(key));
+                customUnitStats[key] = unitStatsEditorService.NormalizeIndependentFields(
+                    key, unitStatsEditorService.GetBalanced(key));
             }
 
             presetFileSourceType = "preset";
@@ -289,7 +290,7 @@ namespace AgainstRomeModifier {
         }
  
         private void BtnTroopPreset_Click(object? sender, EventArgs e) {
-            using (var form = new TroopPresetForm(this, customUnitStats, unitIcons)) {
+            using (var form = new TroopPresetForm(unitStatsEditorService, customUnitStats, unitIcons)) {
                 if (form.ShowDialog() == DialogResult.OK) {
                     customUnitStats = form.CustomStats;
                     LoadDefaultStatsData(); // 重新整理預設屬性表格
