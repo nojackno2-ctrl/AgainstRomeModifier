@@ -63,6 +63,8 @@ internal sealed class FeatureDetector
 
                     options.CiviProduce20 =
                         ExePatchModel.GetCiviProduce20PatchState(exeBytes) == ExeCiviProduce20PatchState.Patched;
+                    options.UnitRecruit20 =
+                        ExePatchModel.GetUnitRecruit20PatchState(exeBytes) == ExeUnitRecruit20PatchState.Patched;
                 }
                 catch (Exception ex) { _logger.Log(string.Format(Loc.Get("SvcLogDetectFailed"), "Against_Rome.exe", ex.Message)); }
             }

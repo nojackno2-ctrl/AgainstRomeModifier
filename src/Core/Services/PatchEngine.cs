@@ -97,6 +97,8 @@ namespace AgainstRomeModifier.Core.Services
                 options.NoSpellAltar, options.RomanEndless, options.GameSpeed, _logger);
             if (ExeFeaturePatcher.ApplyCiviProduce20(exeBytes, options.CiviProduce20, _logger))
                 exeModified = true;
+            if (ExeFeaturePatcher.ApplyUnitRecruit20(exeBytes, options.UnitRecruit20, _logger))
+                exeModified = true;
             if (exeModified)
             {
                 patchedFiles[exePath] = exeBytes;
@@ -250,8 +252,9 @@ namespace AgainstRomeModifier.Core.Services
                 bool exeChanged = false;
                 if (!restoreCompat)
                     exeChanged |= ExeFeaturePatcher.ApplyRomanEndless(exeBytes, false, _logger);
-                // CiviProduce20 屬 Stats：無論是否同時還原 Compat，都要在此還原玩家生產按鈕補丁。
+                // CiviProduce20 / UnitRecruit20 屬 Stats：無論是否同時還原 Compat，都要在此還原這些玩家按鈕補丁。
                 exeChanged |= ExeFeaturePatcher.ApplyCiviProduce20(exeBytes, false, _logger);
+                exeChanged |= ExeFeaturePatcher.ApplyUnitRecruit20(exeBytes, false, _logger);
                 if (exeChanged)
                     patchedFiles[exePath] = exeBytes;
 

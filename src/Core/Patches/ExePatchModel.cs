@@ -28,6 +28,13 @@ public enum ExeCiviProduce20PatchState {
     Patched
 }
 
+/// <summary>招募/裝備面板「點一次選取數直接跳到上限」補丁狀態。</summary>
+public enum ExeUnitRecruit20PatchState {
+    Unknown,
+    Original,
+    Patched
+}
+
 /// <summary>已淘汰的村落建造範圍候選補丁（僅用於偵測與還原舊寫入）狀態。</summary>
 public enum ExeVillageRangePatchState {
     Unknown,
@@ -90,6 +97,18 @@ public static class ExePatchModel {
         0x6A, 0x14, 0x40, 0x50, 0x8B, 0x74, 0x24, 0x0C, 0x56, 0x8B, 0x7C, 0x24, 0x0C, 0x57,
         0xE8, 0x90, 0x15, 0xFD, 0xFF
     };
+
+    // === 招募/裝備面板：點一次選取數直接到上限 20 ===
+    // 玩家點兵種/裝備頭像 → EXE 點擊處理器 0x44C7CB..0x44C7E7：
+    //   mov edi,1 ; mov ebp,[0x722F14] ; mov esi,[item*20+0x722E28]
+    //   sub ebp,edi ; add esi,edi ; mov [0x722F14],ebp ; mov [item*20+0x722E28],esi
+    // 上限檢查在前（ebp=0x14=20，count>=20 就跳過），故本補丁把「count+1」改為「count=20」。
+    // 只改 4 個位元組：`sub ebp,edi; add esi,edi`(29 FD 01 FE) → `push 20; pop esi; nop`(6A 14 5E 90)。
+    // edi(=1) 保留供迴圈旗標；ebp 原值寫回（資源池不變，無副作用）；esi=20 直接寫入選取數。
+    // 已於執行中的遊戲記憶體即時驗證：點一下選取數直接跳 20，且受既有上限檢查保護不會超過。
+    public const long UnitRecruit20PatchOffset = 0x4C7DD;
+    public static readonly byte[] UnitRecruit20OriginalBytes = { 0x29, 0xFD, 0x01, 0xFE };
+    public static readonly byte[] UnitRecruit20PatchedBytes = { 0x6A, 0x14, 0x5E, 0x90 };
 
     // === 法術免祭壇需求（各族群 12 處特徵）===
     public static readonly (long Offset, byte[] Original, byte[] Patched)[] SpellAltarPatchSites = new[] {
@@ -294,6 +313,16 @@ public static class ExePatchModel {
         return ExeCiviProduce20PatchState.Unknown;
     }
 
+    public static ExeUnitRecruit20PatchState GetUnitRecruit20PatchState(byte[] exeBytes) {
+        if (exeBytes.Length < UnitRecruit20PatchOffset + UnitRecruit20OriginalBytes.Length) {
+            return ExeUnitRecruit20PatchState.Unknown;
+        }
+        byte[] bytes = ReadSpan(exeBytes, UnitRecruit20PatchOffset, UnitRecruit20OriginalBytes.Length);
+        if (bytes.SequenceEqual(UnitRecruit20OriginalBytes)) return ExeUnitRecruit20PatchState.Original;
+        if (bytes.SequenceEqual(UnitRecruit20PatchedBytes)) return ExeUnitRecruit20PatchState.Patched;
+        return ExeUnitRecruit20PatchState.Unknown;
+    }
+
     public static ExeVillageRangePatchState GetVillageBuildRangePatchState(byte[] exeBytes) {
         if (exeBytes.Length < VillageRangePatchRequiredLength) {
             return ExeVillageRangePatchState.Unknown;
@@ -392,6 +421,16 @@ public static class ExePatchModel {
         }
         if (!enabled && state == ExeCiviProduce20PatchState.Patched) {
             return new[] { new ExeWriteOp(CiviProduce20PatchOffset, CiviProduce20PatchedBytes, CiviProduce20OriginalBytes, "住宅生產一次數量還原") };
+        }
+        return Array.Empty<ExeWriteOp>();
+    }
+
+    public static IReadOnlyList<ExeWriteOp> PlanUnitRecruit20(bool enabled, ExeUnitRecruit20PatchState state) {
+        if (enabled && state == ExeUnitRecruit20PatchState.Original) {
+            return new[] { new ExeWriteOp(UnitRecruit20PatchOffset, UnitRecruit20OriginalBytes, UnitRecruit20PatchedBytes, "招募一次到上限") };
+        }
+        if (!enabled && state == ExeUnitRecruit20PatchState.Patched) {
+            return new[] { new ExeWriteOp(UnitRecruit20PatchOffset, UnitRecruit20PatchedBytes, UnitRecruit20OriginalBytes, "招募一次到上限還原") };
         }
         return Array.Empty<ExeWriteOp>();
     }

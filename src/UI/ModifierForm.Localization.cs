@@ -52,6 +52,7 @@ namespace AgainstRomeModifier {
             chkFastBuildUpgradeRepair.Text = Loc.Get("FastBuildUpgradeRepair");
             chkFoodHealing10x.Text = Loc.Get("FoodHealing10x");
             chkCiviProduce20.Text = Loc.Get("CiviProduce20");
+            chkUnitRecruit20.Text = Loc.Get("UnitRecruit20");
             chkDgVoodoo.Text = Loc.Get("DgVoodoo");
             chkGameSpeed.Text = Loc.Get("GameSpeedLabel");
             chkVillageBuildRange.Text = Loc.Get("VillageBuildRange");
@@ -166,6 +167,7 @@ namespace AgainstRomeModifier {
                 myToolTip.SetToolTip(chkFastBuildUpgradeRepair, Loc.Get("FastBuildUpgradeRepairTip"));
                 myToolTip.SetToolTip(chkFoodHealing10x, Loc.Get("FoodHealing10xTip"));
                 myToolTip.SetToolTip(chkCiviProduce20, Loc.Get("CiviProduce20Tip"));
+                myToolTip.SetToolTip(chkUnitRecruit20, Loc.Get("UnitRecruit20Tip"));
                 myToolTip.SetToolTip(chkVillageBuildRange, Loc.Get("VillageBuildRangeTip"));
                 myToolTip.SetToolTip(chkAiM1, Loc.Get("AiM1Tip"));
                 myToolTip.SetToolTip(chkAiM2, Loc.Get("AiM2Tip"));

@@ -62,6 +62,23 @@ internal static class ExeFeaturePatcher
         return true;
     }
 
+    internal static bool ApplyUnitRecruit20(byte[] bytes, bool enabled, ILogger logger)
+    {
+        ExeUnitRecruit20PatchState state = ExePatchModel.GetUnitRecruit20PatchState(bytes);
+        if (state == ExeUnitRecruit20PatchState.Unknown)
+        {
+            if (enabled)
+                throw new InvalidDataException("Against_Rome.exe 版本或招募面板特徵碼不符合預期，已停止套用「招募一次到上限」補丁。");
+            return false;
+        }
+
+        IReadOnlyList<ExeWriteOp> ops = ExePatchModel.PlanUnitRecruit20(enabled, state);
+        if (ops.Count == 0) return false;
+        ExePatchModel.Apply(bytes, ops);
+        logger.Log(enabled ? Loc.Get("SvcLogUnitRecruit20Applied") : Loc.Get("SvcLogUnitRecruit20Restored"));
+        return true;
+    }
+
     private static void RestoreLegacyVillageRange(byte[] bytes, ILogger logger, ref bool modified)
     {
         ExeVillageRangePatchState state = ExePatchModel.GetVillageBuildRangePatchState(bytes);

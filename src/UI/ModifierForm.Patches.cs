@@ -27,6 +27,7 @@ namespace AgainstRomeModifier {
                 ["HousingCapacity20x"] = chkHousingCapacity20x, ["StorageCapacity10x"] = chkStorageCapacity10x,
                 ["HqHp10x"] = chkHqHp10x, ["FastBuildUpgradeRepair"] = chkFastBuildUpgradeRepair,
                 ["FoodHealing10x"] = chkFoodHealing10x, ["CiviProduce20"] = chkCiviProduce20,
+                ["UnitRecruit20"] = chkUnitRecruit20,
                 ["VillageBuildRange"] = chkVillageBuildRange,
                 ["NoSpellAltar"] = chkNoSpellAltar, ["DgVoodoo"] = chkDgVoodoo,
                 ["ToEnglish"] = chkToEng,

@@ -166,15 +166,14 @@ namespace AgainstRomeModifier {
                 chkFocusLoss,
                 chkToEng,
                 chkDgVoodoo);
-            ConfigureSettingsCard(pnlExperimentalCard, lblExperimentalTitle, 446,
+            ConfigureSettingsCard(pnlExperimentalCard, lblExperimentalTitle, 398,
                 chkGameSpeed,
                 chkSpellHealing10x,
                 chkSpellResurrection,
                 chkGeneralSkills,
                 chkLeaderGlory,
-                chkBalance,
-                chkCiviProduce20);
-            ConfigureSettingsCard(pnlSwitchesCard, lblSwitchesTitle, 638,
+                chkBalance);
+            ConfigureSettingsCard(pnlSwitchesCard, lblSwitchesTitle, 734,
                 chkFreeProd,
                 chkFreeUpgrade,
                 chkNoSpellCost,
@@ -186,6 +185,8 @@ namespace AgainstRomeModifier {
                 chkSpellEntireMap,
                 chkSpellRange3x,
                 chkProjectileArcHeight,
+                chkCiviProduce20,
+                chkUnitRecruit20,
                 chkRomanEndless);
             ConfigureSettingsCard(pnlBuildCard, lblBuildTitle, 446,
                 chkMaxPopulation,
