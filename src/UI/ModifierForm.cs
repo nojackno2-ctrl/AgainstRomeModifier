@@ -136,6 +136,10 @@ namespace AgainstRomeModifier {
         // 核心解耦服務實例
         private AgainstRomeModifier.Core.Services.BackupManager backupManager = null!;
         private AgainstRomeModifier.Core.Services.PatchEngine patchEngine = null!;
+        private AgainstRomeModifier.Core.Services.PatchOperationRunner patchOperationRunner = null!;
+        private AgainstRomeModifier.Core.Services.UnitStatsProjectionService unitStatsProjection = null!;
+        private AgainstRomeModifier.Core.Services.UnitStatsEditorService unitStatsEditorService = null!;
+        private AgainstRomeModifier.Core.Services.SaveBackupService saveBackupService = null!;
 
         private class FormLogger : AgainstRomeModifier.Core.Services.ILogger
         {
@@ -144,17 +148,6 @@ namespace AgainstRomeModifier {
             public void Log(string message) => _form.Log(message);
         }
 
-        // 備份存檔快取
-        private class BackupSaveCache {
-            public string FileName { get; set; } = "";
-            public string Title { get; set; } = "";
-            public string Level { get; set; } = "";
-            public string OrigFolder { get; set; } = "";
-            public string BackupTimeStr { get; set; } = "";
-            public DateTime LastWriteTime { get; set; }
-        }
-        private Dictionary<string, BackupSaveCache> _backupSaveCache = new Dictionary<string, BackupSaveCache>(StringComparer.OrdinalIgnoreCase);
-        
         // 語系切換 UI 欄位
         private Label lblSidebarLang = null!;
         private Button btnLangZH = null!;
@@ -233,6 +226,11 @@ namespace AgainstRomeModifier {
             var logger = new FormLogger(this);
             backupManager = new AgainstRomeModifier.Core.Services.BackupManager(logger);
             patchEngine = new AgainstRomeModifier.Core.Services.PatchEngine(logger);
+            patchOperationRunner = new AgainstRomeModifier.Core.Services.PatchOperationRunner(Log);
+            unitStatsProjection = new AgainstRomeModifier.Core.Services.UnitStatsProjectionService(backupManager);
+            unitStatsEditorService = new AgainstRomeModifier.Core.Services.UnitStatsEditorService(backupManager);
+            saveBackupService = new AgainstRomeModifier.Core.Services.SaveBackupService(
+                Path.Combine(AppContext.BaseDirectory, "SavesBackup"));
 
             Log(Loc.Get("LogConstructCompleted"));
             // 將內嵌的 Backup.zip 載入記憶體
