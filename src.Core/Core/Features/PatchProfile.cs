@@ -42,6 +42,7 @@ public sealed class PatchProfile
     public bool SpellResurrection { get => Get(FeatureKeys.SpellResurrection); set => Set(FeatureKeys.SpellResurrection, value); }
     public bool GeneralSkills { get => Get(FeatureKeys.GeneralSkills); set => Set(FeatureKeys.GeneralSkills, value); }
     public bool LeaderGlory { get => Get(FeatureKeys.LeaderGlory); set => Set(FeatureKeys.LeaderGlory, value); }
+    public bool AllUnitsEntireMapVision { get => Get(FeatureKeys.AllUnitsEntireMapVision); set => Set(FeatureKeys.AllUnitsEntireMapVision, value); }
     public bool RangedRange3x { get => Get(FeatureKeys.RangedRange3x); set => Set(FeatureKeys.RangedRange3x, value); }
     public bool UnitMovementSpeed2x { get => Get(FeatureKeys.UnitMovementSpeed2x); set => Set(FeatureKeys.UnitMovementSpeed2x, value); }
     public bool SpellEntireMap { get => Get(FeatureKeys.SpellEntireMap); set => Set(FeatureKeys.SpellEntireMap, value); }
@@ -49,8 +50,12 @@ public sealed class PatchProfile
     public bool ProjectileArcHeight { get => Get(FeatureKeys.ProjectileArcHeight); set => Set(FeatureKeys.ProjectileArcHeight, value); }
     public int GameSpeed { get => Get(FeatureKeys.GameSpeed); set => Set(FeatureKeys.GameSpeed, value); }
     public Dictionary<string, bool> EndlessAiModules { get; set; } = new(StringComparer.OrdinalIgnoreCase);
-    public bool GetEndlessAiModule(string moduleId) =>
-        EndlessAiModules.TryGetValue(moduleId, out bool enabled) ? enabled : Get(FeatureKeys.EndlessAi(moduleId));
+    public bool GetEndlessAiModule(string moduleId)
+    {
+        if (EndlessAiModules.TryGetValue(moduleId, out bool enabled)) return enabled;
+        if (IsLegacyCoreModule(moduleId)) return Get(FeatureKeys.EndlessAiCore);
+        return Get(FeatureKeys.EndlessAi(moduleId));
+    }
     public Dictionary<string, double[]>? CustomUnitStats
     {
         get => Get(FeatureKeys.CustomUnitStats);
@@ -60,5 +65,35 @@ public sealed class PatchProfile
     public void NormalizeCompositeValues()
     {
         foreach (var (id, enabled) in EndlessAiModules) Set(FeatureKeys.EndlessAi(id), enabled);
+
+        bool coreEnabled = Get(FeatureKeys.EndlessAiCore);
+        bool hasLegacyCoreSelection = false;
+        foreach (string id in new[] { "M2", "M3", "M4" })
+        {
+            if (!EndlessAiModules.TryGetValue(id, out bool enabled)) continue;
+            hasLegacyCoreSelection = true;
+            coreEnabled |= enabled;
+        }
+
+        // Old profiles could independently select M2/M3/M4. Once any part of that
+        // lifecycle was requested, migrate it to the complete integrated core.
+        if (hasLegacyCoreSelection || EndlessAiModules.ContainsKey("Core"))
+            EndlessAiModules["Core"] = coreEnabled;
+
+        foreach (string id in new[] { "M2", "M3", "M4" })
+        {
+            if (hasLegacyCoreSelection || EndlessAiModules.ContainsKey("Core"))
+                EndlessAiModules[id] = coreEnabled;
+        }
+
+        Set(FeatureKeys.EndlessAiCore, coreEnabled);
+        Set(FeatureKeys.EndlessAiM2, coreEnabled);
+        Set(FeatureKeys.EndlessAiM3, coreEnabled);
+        Set(FeatureKeys.EndlessAiM4, coreEnabled);
     }
+
+    private static bool IsLegacyCoreModule(string moduleId) =>
+        moduleId.Equals("M2", StringComparison.OrdinalIgnoreCase) ||
+        moduleId.Equals("M3", StringComparison.OrdinalIgnoreCase) ||
+        moduleId.Equals("M4", StringComparison.OrdinalIgnoreCase);
 }

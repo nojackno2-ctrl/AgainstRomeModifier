@@ -19,6 +19,7 @@ namespace AgainstRomeModifier {
                 [FeatureKeys.InfiniteMorale.Id] = chkInfiniteMorale, [FeatureKeys.FreeProduction.Id] = chkFreeProd,
                 [FeatureKeys.FreeUpgrade.Id] = chkFreeUpgrade, [FeatureKeys.NoSpellCost.Id] = chkNoSpellCost,
                 [FeatureKeys.MaxPopulation.Id] = chkMaxPopulation, [FeatureKeys.Balance.Id] = chkBalance,
+                [FeatureKeys.AllUnitsEntireMapVision.Id] = chkAllUnitsEntireMapVision,
                 [FeatureKeys.RangedRange3x.Id] = chkRangedRange3x, [FeatureKeys.UnitMovementSpeed2x.Id] = chkUnitMovementSpeed2x,
                 [FeatureKeys.SpellEntireMap.Id] = chkSpellEntireMap, [FeatureKeys.SpellRange3x.Id] = chkSpellRange3x,
                 [FeatureKeys.ProjectileArcHeight.Id] = chkProjectileArcHeight,
@@ -35,8 +36,8 @@ namespace AgainstRomeModifier {
                 [FeatureKeys.SpellResurrection.Id] = chkSpellResurrection,
                 [FeatureKeys.GeneralSkills.Id] = chkGeneralSkills,
                 [FeatureKeys.LeaderGlory.Id] = chkLeaderGlory,
-                [FeatureKeys.EndlessAiM1.Id] = chkAiM1, [FeatureKeys.EndlessAiM2.Id] = chkAiM2, [FeatureKeys.EndlessAiM3.Id] = chkAiM3,
-                [FeatureKeys.EndlessAiM4.Id] = chkAiM4, [FeatureKeys.EndlessAiM5.Id] = chkAiM5, [FeatureKeys.EndlessAiM6.Id] = chkAiM6,
+                [FeatureKeys.EndlessAiM1.Id] = chkAiM1, [FeatureKeys.EndlessAiCore.Id] = chkAiCore,
+                [FeatureKeys.EndlessAiM5.Id] = chkAiM5, [FeatureKeys.EndlessAiM6.Id] = chkAiM6,
             };
             FeatureRegistry.ValidateToggleIds(featureToggles.Keys);
         }

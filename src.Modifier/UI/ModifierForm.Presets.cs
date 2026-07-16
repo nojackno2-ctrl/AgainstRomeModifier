@@ -23,9 +23,7 @@ namespace AgainstRomeModifier {
             chkCiviProduce20.Checked = true;
             chkUnitRecruit20.Checked = true;
             chkAiM1.Checked = true;
-            chkAiM2.Checked = true;
-            chkAiM3.Checked = true;
-            chkAiM4.Checked = true;
+            chkAiCore.Checked = true;
             chkAiM5.Checked = true;
             chkAiM6.Checked = true;
             chkVillageBuildRange.Checked = true;
@@ -64,9 +62,7 @@ namespace AgainstRomeModifier {
             chkCiviProduce20.Checked = false;
             chkUnitRecruit20.Checked = false;
             chkAiM1.Checked = false;
-            chkAiM2.Checked = false;
-            chkAiM3.Checked = false;
-            chkAiM4.Checked = false;
+            chkAiCore.Checked = false;
             chkAiM5.Checked = false;
             chkAiM6.Checked = false;
             chkVillageBuildRange.Checked = false;
@@ -79,6 +75,7 @@ namespace AgainstRomeModifier {
             chkGeneralSkills.Checked = false;
             chkLeaderGlory.Checked = false;
             chkBalance.Checked = false;
+            chkAllUnitsEntireMapVision.Checked = false;
             chkRangedRange3x.Checked = false;
             chkUnitMovementSpeed2x.Checked = false;
             chkSpellEntireMap.Checked = false;

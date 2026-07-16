@@ -71,9 +71,7 @@ namespace AgainstRomeModifier {
         private ModernToggle chkCiviProduce20 = null!;
         private ModernToggle chkUnitRecruit20 = null!;
         private ModernToggle chkAiM1 = null!;
-        private ModernToggle chkAiM2 = null!;
-        private ModernToggle chkAiM3 = null!;
-        private ModernToggle chkAiM4 = null!;
+        private ModernToggle chkAiCore = null!;
         private ModernToggle chkAiM5 = null!;
         private ModernToggle chkAiM6 = null!;
         private ModernToggle chkDgVoodoo = null!;
@@ -93,6 +91,7 @@ namespace AgainstRomeModifier {
         private ModernToggle chkSpellResurrection = null!;
         private ModernToggle chkGeneralSkills = null!;
         private ModernToggle chkLeaderGlory = null!;
+        private ModernToggle chkAllUnitsEntireMapVision = null!;
         private ModernToggle chkRangedRange3x = null!;
         private ModernToggle chkUnitMovementSpeed2x = null!;
         private ModernToggle chkSpellEntireMap = null!;
@@ -872,7 +871,7 @@ namespace AgainstRomeModifier {
             };
             pnlBuildCard.Controls.Add(chkVillageBuildRange);
 
-            // AI 終極模式已拆成 5 個可獨立勾選的模組（對應 EndlessAiOrchestrator M1..M5），
+            // M2/M3/M4 share one lifecycle and are exposed as a single atomic core toggle.
             // 集中放在專屬的整列卡片（設定頁第 2 列，橫跨三欄），由 ConfigureAiCardHorizontal
             // 以響應式網格橫向排列，說明文字改用滑鼠停留提示（tooltip）掛在各開關上。
             pnlAiCard = new Panel {
@@ -892,15 +891,11 @@ namespace AgainstRomeModifier {
             pnlAiCard.Controls.Add(lblAiTitle);
 
             chkAiM1 = new ModernToggle { Text = Loc.Get("AiM1"), Size = new Size(260, 26), Checked = false, BackColor = Color.Transparent, Font = fontJhengHei10B };
-            chkAiM2 = new ModernToggle { Text = Loc.Get("AiM2"), Size = new Size(260, 26), Checked = false, BackColor = Color.Transparent, Font = fontJhengHei10B };
-            chkAiM3 = new ModernToggle { Text = Loc.Get("AiM3"), Size = new Size(260, 26), Checked = false, BackColor = Color.Transparent, Font = fontJhengHei10B };
-            chkAiM4 = new ModernToggle { Text = Loc.Get("AiM4"), Size = new Size(260, 26), Checked = false, BackColor = Color.Transparent, Font = fontJhengHei10B };
+            chkAiCore = new ModernToggle { Text = Loc.Get("AiCore"), Size = new Size(260, 26), Checked = false, BackColor = Color.Transparent, Font = fontJhengHei10B };
             chkAiM5 = new ModernToggle { Text = Loc.Get("AiM5"), Size = new Size(260, 26), Checked = false, BackColor = Color.Transparent, Font = fontJhengHei10B };
             chkAiM6 = new ModernToggle { Text = Loc.Get("AiM6"), Size = new Size(260, 26), Checked = false, BackColor = Color.Transparent, Font = fontJhengHei10B };
             pnlAiCard.Controls.Add(chkAiM1);
-            pnlAiCard.Controls.Add(chkAiM2);
-            pnlAiCard.Controls.Add(chkAiM3);
-            pnlAiCard.Controls.Add(chkAiM4);
+            pnlAiCard.Controls.Add(chkAiCore);
             pnlAiCard.Controls.Add(chkAiM5);
             pnlAiCard.Controls.Add(chkAiM6);
 
@@ -970,6 +965,17 @@ namespace AgainstRomeModifier {
             pnlExperimentalCard.Controls.Add(chkLeaderGlory);
             pnlExperimentalCard.Controls.Add(chkGameSpeed);
             pnlExperimentalCard.Controls.Add(chkBalance);
+
+            chkAllUnitsEntireMapVision = new ModernToggle {
+                Text = Loc.Get("AllUnitsEntireMapVision"),
+                Location = new Point(25, 200),
+                Size = new Size(310, 25),
+                Checked = false,
+                BackColor = Color.Transparent,
+                Font = fontJhengHei10B
+            };
+            chkAllUnitsEntireMapVision.CheckedChanged += new EventHandler(ChkAllUnitsEntireMapVision_CheckedChanged);
+            pnlExperimentalCard.Controls.Add(chkAllUnitsEntireMapVision);
 
             chkRangedRange3x = new ModernToggle {
                 Text = Loc.Get("RangedRange3x"),

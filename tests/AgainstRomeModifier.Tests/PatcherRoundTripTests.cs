@@ -105,6 +105,77 @@ public sealed class PatcherRoundTripTests {
     }
 
     [Fact]
+    public void Objdef_entire_map_vision_updates_supported_combat_and_civilian_units_only() {
+        static string[] Row(string name, string sight) {
+            string[] columns = Enumerable.Repeat("       0", 205).ToArray();
+            columns[24] = sight.PadLeft(8);
+            columns[52] = name.PadLeft(28);
+            return columns;
+        }
+
+        string[] soldier = Row("FigRomInf00_Lanze_Schild", "1500");
+        string[] civilian = Row("FigZivMan00_Zivilist", "1200");
+        string[] building = Row("BauHau00_Haus", "800");
+        byte[] original = SyntheticFixture.Pfil(
+            "header1\r\nheader2\r\n" +
+            string.Join(',', soldier) + "\r\n" +
+            string.Join(',', civilian) + "\r\n" +
+            string.Join(',', building) + "\r\n");
+
+        byte[] patched = ObjdefPatcher.GetPatchedBytes(original,
+            new ObjdefOptions(false, false, false, false, false, false, false, false, false, false, false, NoStats, true));
+        string[] rows = SyntheticFixture.Text(patched).Split("\r\n");
+
+        Assert.Equal("30000", rows[2].Split(',')[24].Trim());
+        Assert.Equal("30000", rows[3].Split(',')[24].Trim());
+        Assert.Equal("800", rows[4].Split(',')[24].Trim());
+        Assert.Equal(original, ObjdefPatcher.GetPatchedBytes(original,
+            new ObjdefOptions(false, false, false, false, false, false, false, false, false, false, false, NoStats)));
+    }
+
+    [Fact]
+    public void Objdef_entire_map_vision_is_the_final_sirad_override_when_range_and_spell_features_are_enabled() {
+        static string[] UnitRow(string name) {
+            string[] columns = Enumerable.Repeat("       0", 205).ToArray();
+            columns[19] = "     100";
+            columns[24] = "    1500";
+            columns[52] = name.PadLeft(28);
+            columns[78] = "       1";
+            columns[79] = "   10.00";
+            columns[84] = "     500";
+            return columns;
+        }
+
+        string[] archer = UnitRow("FigKelSch00_Bogen");
+        archer[80] = " 1000.00";
+        archer[81] = " 2000.00";
+        archer[199] = "       1";
+        string[] priest = UnitRow("FigKelPri00_Priester");
+        priest[199] = "       0";
+        byte[] original = SyntheticFixture.Pfil(
+            "header1\r\nheader2\r\n" +
+            string.Join(',', archer) + "\r\n" +
+            string.Join(',', priest) + "\r\n");
+        var stats = new Dictionary<string, double[]> {
+            ["FigKelSch00_Bogen"] = new double[] { 100, 10, 10, 10, 2, 1500, 500, 2000 },
+            ["FigKelPri00_Priester"] = new double[] { 100, 10, 10, 10, 2, 1500, 500, 1500 },
+        };
+
+        byte[] beforeFinalOverride = ObjdefPatcher.GetPatchedBytes(original,
+            new ObjdefOptions(false, false, false, false, false, false, true, false, true, false, false, stats));
+        string[] beforeRows = SyntheticFixture.Text(beforeFinalOverride).Split("\r\n");
+        Assert.Equal("6000", beforeRows[2].Split(',')[24].Trim());
+        Assert.Equal("30000", beforeRows[3].Split(',')[24].Trim());
+
+        byte[] withFinalOverride = ObjdefPatcher.GetPatchedBytes(original,
+            new ObjdefOptions(false, false, false, false, false, false, true, false, true, false, false, stats, true));
+        string[] finalRows = SyntheticFixture.Text(withFinalOverride).Split("\r\n");
+        Assert.Equal("30000", finalRows[2].Split(',')[24].Trim());
+        Assert.Equal("6000.00", finalRows[2].Split(',')[81].Trim());
+        Assert.Equal("30000", finalRows[3].Split(',')[24].Trim());
+    }
+
+    [Fact]
     public void Objdef_range_scaling_skips_melee_sidearm_and_special_weapons_of_ranged_units() {
         // 原版弓兵配置：W1 近戰副武器 (dtyp=0)、W2 弓 (dtyp=1)、W3 特殊武器 (dtyp=5)。
         // 射程縮放只能動遠程武器 (dtyp 1~4) 的最大射程，否則弓兵會從三倍距離外揮刀。

@@ -58,6 +58,7 @@ public static class FeatureKeys
     public static readonly FeatureKey<bool> SpellResurrection = FeatureKey<bool>.Bool("SpellResurrection");
     public static readonly FeatureKey<bool> GeneralSkills = FeatureKey<bool>.Bool("GeneralSkills");
     public static readonly FeatureKey<bool> LeaderGlory = FeatureKey<bool>.Bool("LeaderGlory");
+    public static readonly FeatureKey<bool> AllUnitsEntireMapVision = FeatureKey<bool>.Bool("AllUnitsEntireMapVision");
     public static readonly FeatureKey<bool> RangedRange3x = FeatureKey<bool>.Bool("RangedRange3x");
     public static readonly FeatureKey<bool> UnitMovementSpeed2x = FeatureKey<bool>.Bool("UnitMovementSpeed2x");
     public static readonly FeatureKey<bool> SpellEntireMap = FeatureKey<bool>.Bool("SpellEntireMap");
@@ -70,6 +71,7 @@ public static class FeatureKeys
     public static readonly FeatureKey<int> GameSpeed = FeatureKey<int>.Int("GameSpeed", 1);
     public static readonly FeatureKey<bool> DgVoodoo = FeatureKey<bool>.Bool("DgVoodoo");
     public static readonly FeatureKey<bool> EndlessAiM1 = FeatureKey<bool>.Bool("EndlessAi.M1");
+    public static readonly FeatureKey<bool> EndlessAiCore = FeatureKey<bool>.Bool("EndlessAi.Core");
     public static readonly FeatureKey<bool> EndlessAiM2 = FeatureKey<bool>.Bool("EndlessAi.M2");
     public static readonly FeatureKey<bool> EndlessAiM3 = FeatureKey<bool>.Bool("EndlessAi.M3");
     public static readonly FeatureKey<bool> EndlessAiM4 = FeatureKey<bool>.Bool("EndlessAi.M4");
@@ -80,6 +82,7 @@ public static class FeatureKeys
     public static FeatureKey<bool> EndlessAi(string moduleId) => moduleId.ToUpperInvariant() switch
     {
         "M1" => EndlessAiM1,
+        "CORE" => EndlessAiCore,
         "M2" => EndlessAiM2,
         "M3" => EndlessAiM3,
         "M4" => EndlessAiM4,

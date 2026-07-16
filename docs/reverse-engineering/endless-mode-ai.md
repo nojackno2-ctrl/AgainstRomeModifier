@@ -1,6 +1,6 @@
 # Endless Mode AI Spawn Notes
 
-> Current safety status reviewed 2026-07-11: use the bounded `20..20` military count, `5000 ms` wait, active-party limit `8`, and original loop pacing. The runtime has 20 NPC-job slots; the unconditional gate bypass remains rejected.
+> Current safety status reviewed 2026-07-16: use the bounded `20..20` military count, `30000 ms` reinforcement wait and scheduler interval, active-party limit `8`, and the bounded save/load deadline repair. The runtime has 20 NPC-job slots; the unconditional gate bypass remains rejected.
 
 These notes cover the original endless-mode spawn logic found in
 `MAPS/ENDL_*/SCRIPT/ak_level.bci` and the associated settlement templates.
@@ -155,8 +155,8 @@ endless maps inspected.
   EXE to `1..20`.
 - AI Ultimate M1 changes this military count range to
   `20..20`, changes the military reinforcement wait from `180000` ms to
-  `5000` ms, shortens four non-settlement party retreat deadlines from
-  `600000` ms to `5000` ms while preserving both settlement-cleanup fallbacks
+  `30000` ms, shortens four non-settlement party retreat deadlines from
+  `600000` ms to `60000` ms while preserving both settlement-cleanup fallbacks
   at `600000` ms (see "Party lifecycle" below), cuts the dead-party
   confirmation counter from `20` to `3` ticks, and raises the reinforcement
   unit-count threshold at `0x195F8` from `4` to `40`.
@@ -164,7 +164,7 @@ endless maps inspected.
   `0` to `1`. EXE runtime analysis shows that this flag removes a job after its
   status leaves the running state, allowing the 20 per-team NPC-job slots to be
   reused by later reinforcement waves instead of retaining completed jobs.
-  All six scheduler delay sites are changed to `5000..10000` ms. The first
+  All six scheduler delay sites are changed to `30000..30000` ms. The first
   three are inner raider timers; the final three are the outer scheduler's
   initial and refresh ranges, which gate the dispatcher that calls the
   settlement and military-reinforcement spawners. Accelerating only the first
@@ -173,8 +173,8 @@ endless maps inspected.
   the bounded scheduler acceleration, could exhaust the 20 job slots available
   to each team and remains disabled.
   A later `1000..2000` ms experiment was also rejected after runtime testing
-  showed computer respawns could stop; it is recognized only for migration back
-  to `5000..10000` ms.
+  showed computer respawns could stop; it is recognized only for migration to
+  the bounded 30-second scheduler.
   Settlement/village-mode `.sdl` templates get the main-house
   starting-resources rewrite described above; their building layout is
   otherwise untouched.
@@ -239,7 +239,7 @@ chain, 256 DELETE_PARTY, 257 DELETE_TEAM.
   before settling) and the military reinforcement wait at `0x178E0` (followed
   by `pushlit 34` = CIVRECREATE_WAIT; patched separately).
 - AI Ultimate accelerates only `0x119C0`, `0x12FFC`, `0x13FE8`, and `0x17F38`
-  to `5000`. Settled-handler sites `0x10700` and `0x160EC` remain `600000`.
+  to `60000`. Settled-handler sites `0x10700` and `0x160EC` remain `600000`.
   The previous all-six-at-5000 state forced DELETE_PARTY before the old village
   registry and palisades were cleared. A 2026-07-03 `ESAVE_000` snapshot showed
   team 3 active again while retaining 71 old village records and the old
@@ -606,8 +606,95 @@ Fix (AI Ultimate M4, 2026-07-08):
   in M4 as well.
 - All three verified unique (1 hit) on all five vanilla AND currently-patched
   live maps, before and after value substitution.
-- IMPORTANT: saves embed their own `ak_level`; existing saves keep the old
-  blocking behavior. The fix takes effect on a NEW endless game.
+- IMPORTANT: saves embed their own `ak_level`; patching the installed map scripts
+  affects new endless games. Existing saves can now be migrated explicitly from
+  Save Manager with an automatic full backup; normal Apply never rewrites saves.
+
+### Paired-save follow-up: outer scheduler deadline ahead of saved script clock (2026-07-16)
+
+A later `ESAVE_000` pair isolated a separate reason that AI can appear completely
+stopped even when party slots, NPC jobs, teams, and settle places are available.
+After loading the 2026-07-15 save, letting the game run, and overwriting it on
+2026-07-16, the two type-1 parties remained unchanged. The authoritative saved
+script clock is the third `scr.dat` callback scalar (`DAT_02662648`, decompressed
+offset `0x80`), populated by `FUN_0052f860 -> FUN_005098d0`; it was `3,917,589`.
+The embedded `ak_level` retained `v16 = 9,378,294`.
+
+The outer dispatcher at `0x1BC64..0x1BD38` requires
+`s_getTime() >= v16` before it calls the settlement and reinforcement spawners.
+It was therefore closed by `5,460,705 ms` of game-clock time. Read-only EXE
+verification found both master-clock constants at 10x, making the remaining wait
+about 546 real seconds (9m06s); at 1x it would be about 91 minutes. This save's
+embedded outer initial/refresh literals are both `30000`, so after the stale
+deadline is crossed the normal 10x retry interval is roughly three real seconds.
+
+This invalidates using `ak_wetter`'s persisted timestamp as an approximation of
+the current clock: its `v8 = 9,395,235` is also in the future. The 2026-07-08
+settle-place evidence remains valid as a second-stage late-game degradation, but
+it was not the immediate reason this paired save produced no new party. The
+cause of the clock rollback itself is still unproven; a controlled 1x versus 10x
+save/load comparison is required before assigning it to the base game or the
+game-speed patch.
+
+The user continued that same loaded game and overwrote `ESAVE_000` again at
+07:49, well beyond the predicted 9m06s minimum. The saved party table then grew
+from two active slots to eight: types
+`[1,1,1,1,3,4,5,3,0,0,0,0,0,0,0,0]`. The six new slots are 0, 3, 4, 5, 6,
+and 7; `v63` now counts four type-1, two type-3, one type-4, and one type-5
+party. In particular, new type-1 settlements use teams 5/6 at settle places
+3/5, while the type-4/type-5 pair uses team 4 at place 6. This confirms from
+the saved runtime state that the dispatcher did resume after crossing its old
+deadline; the observed stop was delayed spawning, not a permanently dead
+spawner.
+
+The follow-up save has reached both configured bounds: `v63[1] = 4 == v70`,
+and eight total active parties equals the bounded active-party limit. A ninth
+party is therefore not expected until an existing party is released. The newly
+serialized callback clock is `4,841,383`, but refreshed `v16` is
+`14,161,135` (`+9,319,752 ms`), so a future deadline is again persisted relative
+to the loaded script clock. This recurrence explains why a subsequent load can
+again appear not to respawn for a long time, but it still does not identify
+whether the underlying clock rollback comes from base-game save/load behavior
+or the speed patch.
+
+#### Implemented repair (2026-07-16; static/test verified, runtime pending)
+
+P6 now replaces the fixed-size outer scheduler block at code-stream
+`0x1BC44..0x1BD48` with a bounded guard:
+
+`due := s_getTime() >= v16 || v16 > s_getTime() + 60000`
+
+When due, it writes `v16 := s_getTime() + 30000` and calls the original
+settlement spawner at its unchanged offset. A legitimate 30-second pending
+deadline therefore keeps normal throttling, while a deadline more than 60
+seconds ahead is treated as the save/load rollback observed in the paired
+saves. The following dispatcher call, the bounded eight-party gate, and the
+20-slot NPC-job protections remain unchanged. The old 30-second literal-only
+state is detected as Legacy and migrated on Apply.
+
+All five local `ENDL_000..004` decompressed RE samples uniquely matched and
+completed byte-exact Original -> Ultimate -> Original round trips. Save Manager
+also exposes an opt-in "Repair Endless AI Timer" action. It first creates a full
+save backup, then locates the unique `MAPS/ENDL_###/SCRIPT/ak_level` BCI embedded
+in `CLAK/scr.dat`, applies the same P6 repair, recompresses PFIL, verifies the
+decompressed bytes, and writes atomically. No save is changed automatically.
+
+## Integrated Endless Respawn Core (2026-07-16)
+
+The modifier no longer exposes legacy M2, M3, and M4 as independent toggles.
+They are one atomic `EndlessAi.Core` lifecycle:
+
+- M2: reinforcement cooldown, scheduler/deadline repair, and completed-job recycling.
+- M3: safe retreat/death detection and confirmed old-village cleanup acceleration.
+- M4: settlement probability, Roman-founder gate, and settle-place eligibility.
+
+Apply and restore always process all three modules together. Detection reports the
+core enabled for Ultimate or Legacy state (including partial/mixed sites) so the next Apply migrates all
+remaining sites to the complete safe core. Old profiles that request any of
+M2/M3/M4 are normalized to the complete core, while the old feature keys remain
+readable for compatibility. M1 reinforcement size and M5 settlement starting
+resources remain independent difficulty choices. Save Manager repair stays opt-in
+because existing saves embed their own `ak_level`.
 
 ## Pending Work
 

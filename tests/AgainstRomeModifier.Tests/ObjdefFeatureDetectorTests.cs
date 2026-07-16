@@ -12,9 +12,10 @@ public sealed class ObjdefFeatureDetectorTests
         using BackupZipGameFixture fixture = BackupZipGameFixture.Create();
         var enabled = new PatchProfile
         {
+            AllUnitsEntireMapVision = true,
             RangedRange3x = true,
             UnitMovementSpeed2x = true,
-            SpellEntireMap = false,
+            SpellEntireMap = true,
             ProjectileArcHeight = true,
             HousingCapacity20x = true,
             StorageCapacity10x = true,
@@ -29,9 +30,10 @@ public sealed class ObjdefFeatureDetectorTests
         var detected = new PatchProfile();
         new ObjdefFeatureDetector(new NullLogger()).Detect(fixture.RootPath, fixture.Backup, detected);
 
+        Assert.True(detected.AllUnitsEntireMapVision);
         Assert.True(detected.RangedRange3x);
         Assert.True(detected.UnitMovementSpeed2x);
-        Assert.False(detected.SpellEntireMap);
+        Assert.True(detected.SpellEntireMap);
         Assert.True(detected.ProjectileArcHeight);
         Assert.True(detected.HousingCapacity20x);
         Assert.True(detected.StorageCapacity10x);

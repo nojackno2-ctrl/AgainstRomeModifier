@@ -16,7 +16,9 @@ internal sealed class BciFeatureDetector
             foreach (var module in orchestrator.UserModules)
             {
                 PatchState state = orchestrator.DetectModule(gamePath, module);
-                profile.EndlessAiModules[module.Id] = state == PatchState.Ultimate;
+                profile.EndlessAiModules[module.Id] = module.Id == "Core"
+                    ? state is PatchState.Ultimate or PatchState.Legacy
+                    : state == PatchState.Ultimate;
             }
         }
         catch (Exception ex)
