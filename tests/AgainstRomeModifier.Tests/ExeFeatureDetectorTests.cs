@@ -27,12 +27,17 @@ public sealed class ExeFeatureDetectorTests
             Place(exe, ExePatchModel.GameSpeedTgtConstOffset, BitConverter.GetBytes(4_000_000.0));
             Place(exe, ExePatchModel.CiviProduce20PatchOffset, ExePatchModel.CiviProduce20PatchedBytes);
             Place(exe, ExePatchModel.UnitRecruit20PatchOffset, ExePatchModel.UnitRecruit20PatchedBytes);
+            Place(exe, ExePatchModel.IdleSelect999PatchOffset, ExePatchModel.IdleSelect999PatchedBytes);
             Place(exe, ExePatchModel.NativeWidescreenIdentifyOffset, ExePatchModel.NativeWidescreenIdentifyPatchedBytes);
             Place(exe, ExePatchModel.NativeWidescreenCreateOffset, ExePatchModel.NativeWidescreenCreatePatchedBytes);
             Place(exe, ExePatchModel.NativeWidescreenModeTextOffset, ExePatchModel.NativeWidescreenModeTextPatchedBytes);
             Place(exe, ExePatchModel.NativeWidescreenForceModeOffset, ExePatchModel.NativeWidescreenForceModePatchedBytes);
             Place(exe, ExePatchModel.NativeWidescreenActiveModeGetterOffset, ExePatchModel.NativeWidescreenActiveModeGetterPatchedBytes);
             Place(exe, ExePatchModel.NativeWidescreenIgmDialogModeOffset, ExePatchModel.NativeWidescreenIgmDialogModePatchedBytes);
+            Place(exe, ExePatchModel.CameraZoomInitCallOffset, ExePatchModel.CameraZoomInitCallPatchedBytes);
+            Place(exe, ExePatchModel.CameraZoomLoadCallOffset, ExePatchModel.CameraZoomLoadCallPatchedBytes);
+            Place(exe, ExePatchModel.CameraZoomScriptCallOffset, ExePatchModel.CameraZoomScriptCallPatchedBytes);
+            Place(exe, ExePatchModel.CameraZoomCaveOffset, ExePatchModel.CameraZoomCavePatchedBytes);
             File.WriteAllBytes(Path.Combine(root, "Against_Rome.exe"), exe);
 
             var profile = new PatchProfile();
@@ -44,7 +49,9 @@ public sealed class ExeFeatureDetectorTests
             Assert.Equal(4, profile.GameSpeed);
             Assert.True(profile.CiviProduce20);
             Assert.True(profile.UnitRecruit20);
+            Assert.True(profile.IdleSelect999);
             Assert.True(profile.NativeWidescreen1920x1080);
+            Assert.True(profile.CameraZoomOut1);
             Assert.Equal(ExeRomanEndlessPatchState.Patched, detection.RomanEndlessState);
         }
         finally
@@ -100,6 +107,31 @@ public sealed class ExeFeatureDetectorTests
             new ExeFeatureDetector(new NullLogger()).Detect(root, profile);
 
             Assert.True(profile.NativeWidescreen1920x1080);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Detector_keeps_legacy_camera_zoom_one_enabled_for_migration()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "arm-exe-detector-camera-legacy-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            byte[] exe = new byte[ExeSize];
+            Place(exe, ExePatchModel.CameraZoomInitCallOffset, ExePatchModel.CameraZoomInitCallPatchedBytes);
+            Place(exe, ExePatchModel.CameraZoomLoadCallOffset, ExePatchModel.CameraZoomLoadCallPatchedBytes);
+            Place(exe, ExePatchModel.CameraZoomScriptCallOffset, ExePatchModel.CameraZoomScriptCallPatchedBytes);
+            Place(exe, ExePatchModel.CameraZoomCaveOffset, ExePatchModel.CameraZoomCaveLegacyZoom1Bytes);
+            File.WriteAllBytes(Path.Combine(root, "Against_Rome.exe"), exe);
+
+            var profile = new PatchProfile();
+            new ExeFeatureDetector(new NullLogger()).Detect(root, profile);
+
+            Assert.True(profile.CameraZoomOut1);
         }
         finally
         {

@@ -79,6 +79,23 @@ internal static class ExeFeaturePatcher
         return true;
     }
 
+    internal static bool ApplyIdleSelect999(byte[] bytes, bool enabled, ILogger logger)
+    {
+        ExeIdleSelect999PatchState state = ExePatchModel.GetIdleSelect999PatchState(bytes);
+        if (state == ExeIdleSelect999PatchState.Unknown)
+        {
+            if (enabled)
+                throw new InvalidDataException(Loc.Get("SvcLogIdleSelect999Unknown"));
+            return false;
+        }
+
+        IReadOnlyList<ExeWriteOp> ops = ExePatchModel.PlanIdleSelect999(enabled, state);
+        if (ops.Count == 0) return false;
+        ExePatchModel.Apply(bytes, ops);
+        logger.Log(Loc.Get(enabled ? "SvcLogIdleSelect999Applied" : "SvcLogIdleSelect999Restored"));
+        return true;
+    }
+
     internal static bool ApplyNativeWidescreen(byte[] bytes, bool enabled, ILogger logger)
     {
         ExeNativeWidescreenPatchState state = ExePatchModel.GetNativeWidescreenPatchState(bytes);
@@ -93,6 +110,23 @@ internal static class ExeFeaturePatcher
         if (ops.Count == 0) return false;
         ExePatchModel.Apply(bytes, ops);
         logger.Log(Loc.Get(enabled ? "SvcLogNativeWidescreenApplied" : "SvcLogNativeWidescreenRestored"));
+        return true;
+    }
+
+    internal static bool ApplyCameraZoomOut(byte[] bytes, bool enabled, ILogger logger)
+    {
+        ExeCameraZoomOutPatchState state = ExePatchModel.GetCameraZoomOutPatchState(bytes);
+        if (state == ExeCameraZoomOutPatchState.Unknown)
+        {
+            if (enabled)
+                throw new InvalidDataException(Loc.Get("SvcLogCameraZoomOutUnknown"));
+            return false;
+        }
+
+        IReadOnlyList<ExeWriteOp> ops = ExePatchModel.PlanCameraZoomOut(enabled, state);
+        if (ops.Count == 0) return false;
+        ExePatchModel.Apply(bytes, ops);
+        logger.Log(Loc.Get(enabled ? "SvcLogCameraZoomOutApplied" : "SvcLogCameraZoomOutRestored"));
         return true;
     }
 

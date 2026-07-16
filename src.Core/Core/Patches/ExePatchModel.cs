@@ -35,12 +35,27 @@ public enum ExeUnitRecruit20PatchState {
     Patched
 }
 
+/// <summary>IGM「選取閒置村民」鈕一次選取上限 40 → 999 補丁狀態。</summary>
+public enum ExeIdleSelect999PatchState {
+    Unknown,
+    Original,
+    Patched
+}
+
 /// <summary>1600x1200 32-bit 原生顯示模式替換為 1920x1080 的狀態。</summary>
 public enum ExeNativeWidescreenPatchState {
     Unknown,
     Original,
     LegacyUnforced,
     LegacyForcedStaleUi,
+    Patched
+}
+
+/// <summary>Persistent camera zoom setters clamped to a fractional minimum zoom.</summary>
+public enum ExeCameraZoomOutPatchState {
+    Unknown,
+    Original,
+    LegacyZoom1,
     Patched
 }
 
@@ -119,6 +134,36 @@ public static class ExePatchModel {
     public static readonly byte[] UnitRecruit20OriginalBytes = { 0x29, 0xFD, 0x01, 0xFE };
     public static readonly byte[] UnitRecruit20PatchedBytes = { 0x6A, 0x14, 0x5E, 0x90 };
 
+    // === IGM「選取閒置村民」鈕：一次選取上限 40 → 999 ===
+    // 按鈕 igm_select_idle 的處理器（分派點 VA 0x44138B）呼叫 0x44D110（全部取消選取）
+    // 後進入 VA 0x451DC0：以兩個各 40 格的堆疊陣列 + 字面值 push 0x28 呼叫收集器
+    // 0x421820（→過濾器 0x538320 → 搜尋 0x5388A0 填入全域 scratch 清單，上限 1000），
+    // 再逐格以 0x421130 還原物件索引並呼叫 0x44D5A0 加入主選取清單。
+    // 上限鏈：按鈕 40 → 搜尋 scratch 1000（405 個程式碼引用，不可搬移）→
+    // 主選取清單 999（0x7286E8 計數緊貼 1000 格陣列 0x727748，結構固定）。
+    // 因此本補丁把整個函式區域（0x451DC0..0x451E6F，含對齊填充共 0xB0 位元組）
+    // 改寫為 N=999 版本：堆疊框架 0x140 → 0x1F38、緩衝 0xA0 → 0xF9C、push 0x28 →
+    // push 0x3E7；初始化迴圈改為由高位址往低位址遞減寫入，順帶完成 8KB 框架的
+    // stack guard-page 探測。結構與原版逐指令對應，五個 call 目標不變（rel32 依
+    // 位移重算）。0x451DC0 僅有兩個呼叫端（0x42347A 熱鍵、0x441398 按鈕），皆呼叫
+    // 函式入口，無跳入函式中段之處，整段改寫安全。1600 不可達：搜尋 scratch 與
+    // 主選取清單皆為緊鄰全域的固定容量陣列，擴充需搬移重定位，超出安全補丁範圍。
+    public const long IdleSelect999PatchOffset = 0x51DC0;
+    public static readonly byte[] IdleSelect999OriginalBytes = Convert.FromHexString(
+        "53565781EC40010000BAFFFFFFFF31DB31F683C30489541CFC81FBA000000075F1" +
+        "6A036A016A016A006A01E800B1FFFF506A288D44241C508D8424C00000005031DB" +
+        "E819FAFCFF83C4248B0C1C518BBC1CA400000057E815F3FCFF83C40883F8FF7519" +
+        "83C30481FBA000000075DC85F6751A81C4400100005F5E5BC350BE01000000E859" +
+        "B7FFFF83C404EBD76A7CE8EDBCFEFF83C40481C4400100005F5E5BC3" +
+        "8D80000000008D92000000008D442000");
+    public static readonly byte[] IdleSelect999PatchedBytes = Convert.FromHexString(
+        "53565781EC381F0000BAFFFFFFFF31F6BB9C0F000083EB0489141C75F8" +
+        "6A036A016A016A006A01E804B1FFFF5068E70300008D44241C508D8424BC0F0000" +
+        "5031DBE81AFAFCFF83C4248B0C1C518BBC1CA00F000057E816F3FCFF83C40883F8" +
+        "FF751983C30481FB9C0F000075DC85F6751A81C4381F00005F5E5BC350BE010000" +
+        "00E85AB7FFFF83C404EBD76A7CE8EEBCFEFF83C40481C4381F00005F5E5BC3" +
+        "9090909090909090909090909090909090");
+
     // === 原生 1920x1080 viewport（取代 1600x1200 32-bit mode 0x22）===
     // VA 0x424590 會把目前顯示寬高辨識回 mode ID；VA 0x424760 建立並刷新顯示模式。
     // IGM UI 仍沿用原版 igm16001200 資源，故此功能必須保持 Experimental，待實機驗證 UI 與滑鼠座標。
@@ -175,6 +220,39 @@ public static class ExePatchModel {
     };
     public static readonly byte[] NativeWidescreenIgmDialogModePatchedBytes = {
         0x83, 0xF8, 0x22, 0x74, 0xD4
+    };
+
+    // === Camera zoom-out 0.5 (fractional projection, stock integer LOD/information scale) ===
+    // Redirect only persistent setters (startup, save-load and mission script) through
+    // a shared code cave. Internal temporary zoom calls remain untouched.
+    public const long CameraZoomInitCallOffset = 0x81388;
+    public const long CameraZoomLoadCallOffset = 0x8D880;
+    public const long CameraZoomScriptCallOffset = 0x14C1FA;
+    public const long CameraZoomCaveOffset = 0x1625C0;
+    public static readonly byte[] CameraZoomInitCallOriginalBytes = { 0xE8, 0xA3, 0x76, 0x01, 0x00 };
+    public static readonly byte[] CameraZoomInitCallPatchedBytes = { 0xE8, 0x33, 0x12, 0x0E, 0x00 };
+    public static readonly byte[] CameraZoomLoadCallOriginalBytes = { 0xE8, 0xAB, 0xB1, 0x00, 0x00 };
+    public static readonly byte[] CameraZoomLoadCallPatchedBytes = { 0xE8, 0x3B, 0x4D, 0x0D, 0x00 };
+    public static readonly byte[] CameraZoomScriptCallOriginalBytes = { 0xE8, 0x31, 0xC8, 0xF4, 0xFF };
+    public static readonly byte[] CameraZoomScriptCallPatchedBytes = { 0xE8, 0xC1, 0x63, 0x01, 0x00 };
+    public static readonly byte[] CameraZoomCaveOriginalBytes = new byte[28];
+    public static readonly byte[] CameraZoomCaveLegacyZoom1Bytes = {
+        0x8B, 0x44, 0x24, 0x04,                         // mov eax,[esp+4]
+        0x85, 0xC0,                                     // test eax,eax
+        0x78, 0x07,                                     // js set_one
+        0x3D, 0x00, 0x00, 0x80, 0x3F,                   // cmp eax,1.0f
+        0x73, 0x08,                                     // jae jump_setter
+        0xC7, 0x44, 0x24, 0x04, 0x00, 0x00, 0x80, 0x3F, // mov [esp+4],1.0f
+        0xE9, 0x54, 0x64, 0xF3, 0xFF                    // jmp native setter
+    };
+    public static readonly byte[] CameraZoomCavePatchedBytes = {
+        0x8B, 0x44, 0x24, 0x04,                         // mov eax,[esp+4]
+        0x85, 0xC0,                                     // test eax,eax
+        0x78, 0x07,                                     // js set_half
+        0x3D, 0x00, 0x00, 0x00, 0x3F,                   // cmp eax,0.5f
+        0x73, 0x08,                                     // jae jump_setter
+        0xC7, 0x44, 0x24, 0x04, 0x00, 0x00, 0x00, 0x3F, // mov [esp+4],0.5f
+        0xE9, 0x54, 0x64, 0xF3, 0xFF                    // jmp native setter
     };
 
     // === 法術免祭壇需求（各族群 12 處特徵）===
@@ -390,6 +468,16 @@ public static class ExePatchModel {
         return ExeUnitRecruit20PatchState.Unknown;
     }
 
+    public static ExeIdleSelect999PatchState GetIdleSelect999PatchState(byte[] exeBytes) {
+        if (exeBytes.Length < IdleSelect999PatchOffset + IdleSelect999OriginalBytes.Length) {
+            return ExeIdleSelect999PatchState.Unknown;
+        }
+        byte[] bytes = ReadSpan(exeBytes, IdleSelect999PatchOffset, IdleSelect999OriginalBytes.Length);
+        if (bytes.SequenceEqual(IdleSelect999OriginalBytes)) return ExeIdleSelect999PatchState.Original;
+        if (bytes.SequenceEqual(IdleSelect999PatchedBytes)) return ExeIdleSelect999PatchState.Patched;
+        return ExeIdleSelect999PatchState.Unknown;
+    }
+
     public static ExeNativeWidescreenPatchState GetNativeWidescreenPatchState(byte[] exeBytes) {
         var modeSites = new[] {
             (NativeWidescreenIdentifyOffset, NativeWidescreenIdentifyOriginalBytes, NativeWidescreenIdentifyPatchedBytes),
@@ -428,6 +516,32 @@ public static class ExePatchModel {
         if (modesPatched && forcePatched && uiOriginal) return ExeNativeWidescreenPatchState.LegacyForcedStaleUi;
         if (modesPatched && forcePatched && uiPatched) return ExeNativeWidescreenPatchState.Patched;
         return ExeNativeWidescreenPatchState.Unknown;
+    }
+
+    public static ExeCameraZoomOutPatchState GetCameraZoomOutPatchState(byte[] exeBytes) {
+        var callSites = new[] {
+            (CameraZoomInitCallOffset, CameraZoomInitCallOriginalBytes, CameraZoomInitCallPatchedBytes),
+            (CameraZoomLoadCallOffset, CameraZoomLoadCallOriginalBytes, CameraZoomLoadCallPatchedBytes),
+            (CameraZoomScriptCallOffset, CameraZoomScriptCallOriginalBytes, CameraZoomScriptCallPatchedBytes),
+        };
+        bool callsOriginal = true;
+        bool callsPatched = true;
+        foreach (var (offset, original, patched) in callSites) {
+            if (exeBytes.Length < offset + original.Length) return ExeCameraZoomOutPatchState.Unknown;
+            byte[] current = ReadSpan(exeBytes, offset, original.Length);
+            callsOriginal &= current.SequenceEqual(original);
+            callsPatched &= current.SequenceEqual(patched);
+        }
+        if (exeBytes.Length < CameraZoomCaveOffset + CameraZoomCaveOriginalBytes.Length)
+            return ExeCameraZoomOutPatchState.Unknown;
+        byte[] cave = ReadSpan(exeBytes, CameraZoomCaveOffset, CameraZoomCaveOriginalBytes.Length);
+        if (callsOriginal && cave.SequenceEqual(CameraZoomCaveOriginalBytes))
+            return ExeCameraZoomOutPatchState.Original;
+        if (callsPatched && cave.SequenceEqual(CameraZoomCaveLegacyZoom1Bytes))
+            return ExeCameraZoomOutPatchState.LegacyZoom1;
+        if (callsPatched && cave.SequenceEqual(CameraZoomCavePatchedBytes))
+            return ExeCameraZoomOutPatchState.Patched;
+        return ExeCameraZoomOutPatchState.Unknown;
     }
 
     public static ExeVillageRangePatchState GetVillageBuildRangePatchState(byte[] exeBytes) {
@@ -542,6 +656,16 @@ public static class ExePatchModel {
         return Array.Empty<ExeWriteOp>();
     }
 
+    public static IReadOnlyList<ExeWriteOp> PlanIdleSelect999(bool enabled, ExeIdleSelect999PatchState state) {
+        if (enabled && state == ExeIdleSelect999PatchState.Original) {
+            return new[] { new ExeWriteOp(IdleSelect999PatchOffset, IdleSelect999OriginalBytes, IdleSelect999PatchedBytes, "閒置村民一次全選 999") };
+        }
+        if (!enabled && state == ExeIdleSelect999PatchState.Patched) {
+            return new[] { new ExeWriteOp(IdleSelect999PatchOffset, IdleSelect999PatchedBytes, IdleSelect999OriginalBytes, "閒置村民一次全選 999 還原") };
+        }
+        return Array.Empty<ExeWriteOp>();
+    }
+
     public static IReadOnlyList<ExeWriteOp> PlanNativeWidescreen(bool enabled, ExeNativeWidescreenPatchState state) {
         if (enabled && state == ExeNativeWidescreenPatchState.Original) {
             return new[] {
@@ -589,6 +713,41 @@ public static class ExePatchModel {
                 new ExeWriteOp(NativeWidescreenIdentifyOffset, NativeWidescreenIdentifyPatchedBytes, NativeWidescreenIdentifyOriginalBytes, "1920x1080 顯示模式辨識還原"),
                 new ExeWriteOp(NativeWidescreenCreateOffset, NativeWidescreenCreatePatchedBytes, NativeWidescreenCreateOriginalBytes, "1920x1080 顯示模式建立還原"),
                 new ExeWriteOp(NativeWidescreenModeTextOffset, NativeWidescreenModeTextPatchedBytes, NativeWidescreenModeTextOriginalBytes, "1920x1080 顯示模式文字還原"),
+            };
+        }
+        return Array.Empty<ExeWriteOp>();
+    }
+
+    public static IReadOnlyList<ExeWriteOp> PlanCameraZoomOut(bool enabled, ExeCameraZoomOutPatchState state) {
+        if (enabled && state == ExeCameraZoomOutPatchState.Original) {
+            return new[] {
+                // Install the target before redirecting any call site.
+                new ExeWriteOp(CameraZoomCaveOffset, CameraZoomCaveOriginalBytes, CameraZoomCavePatchedBytes, "攝影機拉遠 0.5 code cave"),
+                new ExeWriteOp(CameraZoomInitCallOffset, CameraZoomInitCallOriginalBytes, CameraZoomInitCallPatchedBytes, "攝影機初始縮放下限"),
+                new ExeWriteOp(CameraZoomLoadCallOffset, CameraZoomLoadCallOriginalBytes, CameraZoomLoadCallPatchedBytes, "讀檔攝影機縮放下限"),
+                new ExeWriteOp(CameraZoomScriptCallOffset, CameraZoomScriptCallOriginalBytes, CameraZoomScriptCallPatchedBytes, "任務腳本攝影機縮放下限"),
+            };
+        }
+        if (enabled && state == ExeCameraZoomOutPatchState.LegacyZoom1) {
+            return new[] {
+                new ExeWriteOp(CameraZoomCaveOffset, CameraZoomCaveLegacyZoom1Bytes, CameraZoomCavePatchedBytes, "攝影機拉遠 +1 遷移為 0.5"),
+            };
+        }
+        if (!enabled && state == ExeCameraZoomOutPatchState.Patched) {
+            return new[] {
+                // Remove every redirect before clearing the shared target.
+                new ExeWriteOp(CameraZoomInitCallOffset, CameraZoomInitCallPatchedBytes, CameraZoomInitCallOriginalBytes, "攝影機初始縮放還原"),
+                new ExeWriteOp(CameraZoomLoadCallOffset, CameraZoomLoadCallPatchedBytes, CameraZoomLoadCallOriginalBytes, "讀檔攝影機縮放還原"),
+                new ExeWriteOp(CameraZoomScriptCallOffset, CameraZoomScriptCallPatchedBytes, CameraZoomScriptCallOriginalBytes, "任務腳本攝影機縮放還原"),
+                new ExeWriteOp(CameraZoomCaveOffset, CameraZoomCavePatchedBytes, CameraZoomCaveOriginalBytes, "攝影機拉遠 code cave 還原"),
+            };
+        }
+        if (!enabled && state == ExeCameraZoomOutPatchState.LegacyZoom1) {
+            return new[] {
+                new ExeWriteOp(CameraZoomInitCallOffset, CameraZoomInitCallPatchedBytes, CameraZoomInitCallOriginalBytes, "攝影機初始縮放還原"),
+                new ExeWriteOp(CameraZoomLoadCallOffset, CameraZoomLoadCallPatchedBytes, CameraZoomLoadCallOriginalBytes, "讀檔攝影機縮放還原"),
+                new ExeWriteOp(CameraZoomScriptCallOffset, CameraZoomScriptCallPatchedBytes, CameraZoomScriptCallOriginalBytes, "任務腳本攝影機縮放還原"),
+                new ExeWriteOp(CameraZoomCaveOffset, CameraZoomCaveLegacyZoom1Bytes, CameraZoomCaveOriginalBytes, "舊版攝影機拉遠 code cave 還原"),
             };
         }
         return Array.Empty<ExeWriteOp>();

@@ -45,11 +45,16 @@ internal sealed class ExeFeatureDetector
                 ExePatchModel.GetCiviProduce20PatchState(exeBytes) == ExeCiviProduce20PatchState.Patched;
             profile.UnitRecruit20 =
                 ExePatchModel.GetUnitRecruit20PatchState(exeBytes) == ExeUnitRecruit20PatchState.Patched;
+            profile.IdleSelect999 =
+                ExePatchModel.GetIdleSelect999PatchState(exeBytes) == ExeIdleSelect999PatchState.Patched;
             profile.NativeWidescreen1920x1080 =
                 ExePatchModel.GetNativeWidescreenPatchState(exeBytes) is
                     ExeNativeWidescreenPatchState.LegacyUnforced or
                     ExeNativeWidescreenPatchState.LegacyForcedStaleUi or
                     ExeNativeWidescreenPatchState.Patched;
+            profile.CameraZoomOut1 =
+                ExePatchModel.GetCameraZoomOutPatchState(exeBytes) is
+                    ExeCameraZoomOutPatchState.LegacyZoom1 or ExeCameraZoomOutPatchState.Patched;
         }
         catch (Exception ex)
         {

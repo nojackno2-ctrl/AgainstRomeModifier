@@ -138,6 +138,23 @@
       "currentBehavior": "Enabling the retained profile key restores all six EXE sites to stock and configures dgVoodoo FullScreenMode=true, ScalingMode=stretched_ar, CenterAppWindow=true, empty WindowedAttributes for a normal stock window, and FullscreenAttributes=fake.",
       "runtimePending": ["true expanded widescreen world viewport", "mouse boundary mapping", "edge scrolling", "dialogs", "minimap"]
     },
+    "cameraZoomOut1": {
+      "path": "Against_Rome.exe",
+      "featureKey": "CameraZoomOut1",
+      "status": "zoom-1-runtime-successful-but-information-too-small-zoom-0.5-retest-pending",
+      "behavior": "Clamp persistent native camera zoom requests to a minimum of 0.5. Raw-float projection pulls back to 2/3 scale while integer information, picking, and LOD consumers remain at stock zoom 0.",
+      "nativeSetter": { "virtualAddress": "0x00498A30", "scalar": "DAT_00771800", "stockRange": "0..9" },
+      "sites": [
+        { "fileOffset": "0x81388", "purpose": "startup persistent zoom setter call" },
+        { "fileOffset": "0x8D880", "purpose": "save-load persistent zoom setter call" },
+        { "fileOffset": "0x14C1FA", "purpose": "lgcSetEngineZoom mission-script wrapper call" },
+        { "fileOffset": "0x1625C0", "purpose": "28-byte shared clamp-and-tail-jump code cave" }
+      ],
+      "legacyState": "LegacyZoom1 recognizes the runtime-tested 1.0 cave; enable migrates only the cave and disable can restore it directly.",
+      "integerConversion": { "function": "FUN_00419cc0", "biasAddress": "0x00612C70", "biasBytes": "FD FF FF 3E", "zoom0_5Result": 0 },
+      "safety": "All three call sites and the cave must form Original, LegacyZoom1, or current Patched. Enable writes the cave first; restore removes all redirects before clearing the cave. Other mixed or unknown signatures are preserved.",
+      "runtimePending": ["unit selection and picking", "edge scrolling", "fog of war", "map bounds", "save-load persistence", "mission-script compatibility", "performance"]
+    },
     "teamDat": {
       "pathGlob": "MAPS/**/team.dat",
       "format": "pfil-lzss-ini",

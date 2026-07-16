@@ -425,6 +425,8 @@ ZIP 備份先建立 `.tmp`，加入修改器產生的 `manifest.json`，成功�
 
 最終使用者實測確認：全螢幕的置中 4:3 顯示與視窗化的正常比例均正確，置中後備方案已通過 runtime verification。
 
+獨立的實驗性 `CameraZoomOut1` 不修改解析度。第一版把原生攝影機縮放下限從 0 提高為 1，實測確實顯示更大戰場，但單位與資訊過小。Ghidra 對 19 個 consumer 的後續分析顯示：投影直接使用浮點 `1 / (zoom + 1)`，資訊定位、picking extents 與 LOD 則先轉成整數；`FUN_00419cc0` 會減去 `0x3efffffd`（略低於 0.5）後 `FISTP`，因此 zoom 0.5 的整數結果仍是 0。修正版遂把下限改為 `0.5f`，世界投影為原版的 2/3，同時整數資訊／LOD 層維持原版 zoom 0。實作只把初始化 `0x81388`、讀檔 `0x8D880`、任務腳本 `0x14C1FA` 三個持久化 setter 呼叫導向 `0x1625C0` 的 28-byte cave；引擎生成快取的暫時縮放不攔截。舊 `1.0f` cave 會偵測為 `LegacyZoom1`，勾選時只改寫 cave 遷移，取消時也可直接還原。其他混合／未知狀態拒絕啟用；還原先移除三個 redirect，最後清空 cave。修正版遊戲內選取、捲動、霧區、邊界、存讀檔與任務相容性仍待重新驗證。
+
 ## 15. UI 與 preset
 
 - `mainTabControl` 的 header 故意隱藏，左側按鈕負責導航。

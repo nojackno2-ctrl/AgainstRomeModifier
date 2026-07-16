@@ -394,6 +394,8 @@ Final testing showed that neither fullscreen nor windowed presentation corrected
 
 Final user runtime verification confirms that centered 4:3 fullscreen and correctly proportioned windowed output both look normal.
 
+The independent Experimental `CameraZoomOut1` does not change resolution. The first build raised the native minimum from 0 to 1 and genuinely showed more battlefield, but runtime testing made units and information too small. Follow-up Ghidra analysis of 19 consumers shows that projection uses the raw float through `1 / (zoom + 1)`, while information placement, picking extents, and LOD first convert zoom to an integer. `FUN_00419cc0` subtracts `0x3efffffd` (just below 0.5) before `FISTP`, so zoom 0.5 still maps to integer zoom 0. The revision therefore clamps to `0.5f`: world projection is 2/3 of stock while integer information/LOD consumers retain the stock zoom-0 scale. Only persistent startup (`0x81388`), save-load (`0x8D880`), and mission-script (`0x14C1FA`) calls redirect through the 28-byte cave at `0x1625C0`; temporary cache-generation calls remain untouched. The old `1.0f` cave is detected as `LegacyZoom1` and migrates by replacing only the cave, while disable can restore it directly. Other mixed/unknown states refuse enabling. Selection, scrolling, fog, bounds, save/load, and mission compatibility require runtime retesting.
+
 - Borderless dark WinForms UI with sidebar-driven hidden-header tabs.
 - Owner-drawn `ModernToggle`; every `CreateRoundRectRgn` handle is released with `DeleteObject`.
 - Fixed table widths and vertical scrolling prevent column shifts.

@@ -33,9 +33,11 @@ public sealed class PatchProfile
     public bool FoodHealing10x { get => Get(FeatureKeys.FoodHealing10x); set => Set(FeatureKeys.FoodHealing10x, value); }
     public bool CiviProduce20 { get => Get(FeatureKeys.CiviProduce20); set => Set(FeatureKeys.CiviProduce20, value); }
     public bool UnitRecruit20 { get => Get(FeatureKeys.UnitRecruit20); set => Set(FeatureKeys.UnitRecruit20, value); }
+    public bool IdleSelect999 { get => Get(FeatureKeys.IdleSelect999); set => Set(FeatureKeys.IdleSelect999, value); }
     public bool VillageBuildRange { get => Get(FeatureKeys.VillageBuildRange); set => Set(FeatureKeys.VillageBuildRange, value); }
     public bool DgVoodoo { get => Get(FeatureKeys.DgVoodoo); set => Set(FeatureKeys.DgVoodoo, value); }
     public bool NativeWidescreen1920x1080 { get => Get(FeatureKeys.NativeWidescreen1920x1080); set => Set(FeatureKeys.NativeWidescreen1920x1080, value); }
+    public bool CameraZoomOut1 { get => Get(FeatureKeys.CameraZoomOut1); set => Set(FeatureKeys.CameraZoomOut1, value); }
     public bool ToEnglish { get => Get(FeatureKeys.ToEnglish); set => Set(FeatureKeys.ToEnglish, value); }
     public bool NoSpellAltar { get => Get(FeatureKeys.NoSpellAltar); set => Set(FeatureKeys.NoSpellAltar, value); }
     public bool SpellDamage5x { get => Get(FeatureKeys.SpellDamage5x); set => Set(FeatureKeys.SpellDamage5x, value); }
