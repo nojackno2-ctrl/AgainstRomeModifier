@@ -70,6 +70,25 @@ public class GhidraResolutionAnalysis extends GhidraScript {
             printFunction("00424480", "post-mode global display refresh");
             printFunction("00443b10", "post-mode scene refresh");
             printFunction("004555a0", "post-mode UI refresh");
+            printFunction("00422130", "display size consumer A");
+            printFunction("0045a620", "display size consumer B");
+            printFunction("0045ff20", "display size consumer C");
+            printFunction("00470300", "display size consumer D");
+            printFunction("00424730", "display width-height helper");
+            printFunction("004251c0", "display mode dependent resource selection");
+            printFunction("00429350", "resolution-specific IGM path setup");
+            printFunction("00443f60", "resolution-specific IGM path chooser");
+            printFunction("00443720", "IGM dialog registration callback");
+            printFunction("00441e80", "shared IGM/dialog viewport setup");
+            printFunction("00443ac0", "IGM reload check");
+            printFunction("00443ad0", "IGM reload trigger");
+            printFunction("00427ff0", "resolution dialog construction and callbacks");
+            printFunction("00424700", "current display mode getter");
+            printFunction("00427ee0", "resolution dialog initializer");
+            printFunction("00427d60", "resolution dialog mode callbacks");
+            printFunction("00463350", "options resolution persistence");
+            printFunction("00424b80", "persisted resolution mode getter");
+            printFunction("00424bd0", "persisted resolution mode setter");
         } finally {
             output.close();
         }

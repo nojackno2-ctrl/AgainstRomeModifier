@@ -62,7 +62,10 @@ internal sealed class ExePatchFileContributor : IPatchFileContributor
             profile.NoSpellAltar, profile.RomanEndless, profile.GameSpeed, context.Logger);
         modified |= ExeFeaturePatcher.ApplyCiviProduce20(bytes, profile.CiviProduce20, context.Logger);
         modified |= ExeFeaturePatcher.ApplyUnitRecruit20(bytes, profile.UnitRecruit20, context.Logger);
-        modified |= ExeFeaturePatcher.ApplyNativeWidescreen(bytes, profile.NativeWidescreen1920x1080, context.Logger);
+        // The native 1920x1080 EXE experiment is runtime-rejected: both fullscreen and
+        // windowed modes retained a legacy internal viewport. Always migrate it back to
+        // the verified stock mode; the profile now controls centered dgVoodoo presentation.
+        modified |= ExeFeaturePatcher.ApplyNativeWidescreen(bytes, false, context.Logger);
         if (modified) context.Add("Against_Rome.exe", bytes);
     }
 }

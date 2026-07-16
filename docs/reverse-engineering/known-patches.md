@@ -474,6 +474,18 @@
 
 ### Native 1920x1080 Widescreen (NativeWidescreen1920x1080)
 
+- Final disposition: the native EXE experiment is runtime-rejected. Both
+  fullscreen and windowed testing retained a legacy top-left internal surface.
+  The retained profile key now restores all six EXE sites and applies a stock
+  1600x1200 centered dgVoodoo fallback (`FullScreenMode=true`,
+  `ScalingMode=stretched_ar`, `CenterAppWindow=true`, normal stock windowed
+  attributes, and fake fullscreen). Forced `fullscreensize` windowed output was
+  runtime-rejected because it compressed the image inside a 1280x1024 window.
+  The historical patch details
+  below remain documentation only and are no longer emitted on enable.
+- Runtime verification: user confirmed the final split looks normal in both
+  modes—centered 4:3 fake fullscreen and correctly proportioned stock-sized
+  windowed output. Native 16:9 expansion remains rejected.
 - File: `Against_Rome.exe`; feature remains Experimental.
 - Goal: replace native mode ID `0x22` (1600x1200 32-bit) with 1920x1080 so
   the renderer and UI refresh path receive an actual 1920x1080 framebuffer,
@@ -489,18 +501,56 @@
   - `0x249AA`: both width/height argument pairs used to create and refresh the
     32-bit mode receive the same replacements. The complete surrounding block
     is signature-checked, not just the four immediate values.
+  - `0x24B80`: `FUN_00424b80` originally returns persisted mode
+    `DAT_006580b0` (`A1 B0 80 65 00 C3`). It now returns active mode
+    `DAT_006580bc` (`A1 BC 80 65 00 C3`) so IGM callers see forced `0x22`.
+  - `0x24BD0`: startup originally loads the saved mode ID and pushes it into
+    `FUN_00424760` (`8B 15 B0 80 65 00 52`). The patch pushes `0x22` directly
+    (`6A 22` plus five NOPs), so the experiment actually runs on next launch.
+  - `0x41E25`: the IGM dialog selector's final comparison changes mode `0x21`
+    to `0x22`, routing the forced mode to stock layout `dlg_igm12_10`.
   - `0x1DCC76`: same-length mode text `Modus 1600x1200 32bit\n\0` becomes
     `Modus 1920x1080 32bit\n\0`.
+- Runtime failure and correction: the first three-site build produced no visible
+  effect. `LAB_00427d60` proves the stock resolution dialog sends only mode IDs
+  `0..3`; it never exposes `0x22`. The fourth startup site bypasses that dead UI
+  route. The three-site state is detected as `LegacyUnforced` and can be safely
+  migrated by writing only the verified startup site.
 - UI boundary: the EXE still selects `igm16001200`; no native `igm19201080`
-  resource exists. The patch therefore may expose extra world area while
-  leaving 4:3 UI surfaces anchored, cropped, or with incorrect mouse regions.
-- Safety/detection: all three sites must be consistently Original or Patched.
-  Mixed/unknown bytes are reported as Unknown and enable refuses to write.
-  Restore changes all three sites back through verified expected bytes.
-- Status: focused Ghidra instruction evidence and synthetic apply/detect/restore
-  tests are complete. Actual expanded viewport, aspect ratio, UI anchors,
-  mouse hit-testing, edge scrolling, dialogs, and minimap behavior are not yet
-  runtime verified.
+  resource exists. Mode `0x22` now reuses `dlg_igm12_10`, the stock
+  highest-resolution layout. This is an original-size UI fallback, not proof
+  that the layout is centered or correctly anchored inside 1920x1080.
+- Window-presentation correction: the second runtime screenshot showed the
+  internal wide route rendering inside a 1024x768 client with a black lower
+  band, and the user confirmed that the resizable window cannot exceed
+  1600x1200 on a 2560x1440 desktop. When both this feature and `DgVoodoo` are
+  enabled, the modifier-managed config now uses `ScalingMode=stretched_ar` and
+  `WindowedAttributes=borderless, fullscreensize`. This bypasses the old outer
+  window ceiling with an aspect-preserving borderless desktop-sized window;
+  it does not replace the patched 1920x1080 framebuffer with a fixed 4:3
+  source. For a user-modified `dgVoodoo.conf`, unrelated settings are retained
+  while the two required presentation keys are updated surgically.
+- Fourth runtime result and correction: both fullscreen and windowed occupied
+  the output, but only a left-aligned legacy region was drawn. The black right
+  area still accepted movement orders, proving that framebuffer/input were
+  wide while IGM rendering used the persisted old mode. The active-mode getter
+  and dialog-selector sites above address that exact split.
+- Safety/detection: all six sites must be Original, Patched, or one of two
+  exact migration states. `LegacyUnforced` writes the startup and two IGM
+  sites; `LegacyForcedStaleUi` writes only the two IGM sites. Other mixed or
+  unknown bytes refuse enable writes. Restore verifies every active site.
+- Status: the first runtime experiment failed because `0x22` was unreachable;
+  the second reached the wide rendering path but exposed the outer-window
+  mismatch. Focused Ghidra evidence covers the startup route and dialog
+  callback, while automated tests cover the new managed dgVoodoo profile.
+  Desktop-sized presentation and wide input were observed, but the new IGM
+  correction, expanded world draw extent, UI alignment/centering, mouse
+  hit-testing, edge scrolling, dialogs, and minimap are not runtime verified.
+- Fifth runtime result: on a 2560x1440 screenshot, coherent game/HUD output is
+  centered at x=320..2239, a 1920x1440 4:3 region with symmetric 320 px side
+  bars. The stale left-aligned IGM problem is corrected and the stock-UI
+  fallback is runtime-observed. This is not a native 16:9 expanded viewport;
+  input boundaries, edge scrolling, dialogs, and minimap remain pending.
 
 ### All Units Entire-Map Vision (AllUnitsEntireMapVision)
 
