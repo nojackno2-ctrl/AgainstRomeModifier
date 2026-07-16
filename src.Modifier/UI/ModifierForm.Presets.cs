@@ -22,6 +22,7 @@ namespace AgainstRomeModifier {
             chkFoodHealing10x.Checked = true;
             chkCiviProduce20.Checked = true;
             chkUnitRecruit20.Checked = true;
+            chkIdleSelect999.Checked = true;
             chkAiM1.Checked = true;
             chkAiCore.Checked = true;
             chkAiM5.Checked = true;
@@ -61,6 +62,7 @@ namespace AgainstRomeModifier {
             chkFoodHealing10x.Checked = false;
             chkCiviProduce20.Checked = false;
             chkUnitRecruit20.Checked = false;
+            chkIdleSelect999.Checked = false;
             chkAiM1.Checked = false;
             chkAiCore.Checked = false;
             chkAiM5.Checked = false;
@@ -77,6 +79,7 @@ namespace AgainstRomeModifier {
             chkBalance.Checked = false;
             chkAllUnitsEntireMapVision.Checked = false;
             chkNativeWidescreen1920x1080.Checked = false;
+            chkCameraZoomOut1.Checked = false;
             chkRangedRange3x.Checked = false;
             chkUnitMovementSpeed2x.Checked = false;
             chkSpellEntireMap.Checked = false;

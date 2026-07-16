@@ -8,7 +8,7 @@ namespace AgainstRomeModifier.Tests;
 /// 不需要任何版權遊戲檔案。
 /// </summary>
 public sealed class ExePatchModelTests {
-    // 需容納最大偏移（村落 setter cave 0x16258f + 39）。
+    // 需容納最大偏移（攝影機 code cave 0x1625c0 + 28）。
     private const int ExeSize = 0x163000;
 
     private static byte[] NewExe() => new byte[ExeSize];
@@ -43,6 +43,26 @@ public sealed class ExePatchModelTests {
         Place(exe, ExePatchModel.NativeWidescreenActiveModeGetterOffset, uiPatched ? ExePatchModel.NativeWidescreenActiveModeGetterPatchedBytes : ExePatchModel.NativeWidescreenActiveModeGetterOriginalBytes);
         Place(exe, ExePatchModel.NativeWidescreenIgmDialogModeOffset, uiPatched ? ExePatchModel.NativeWidescreenIgmDialogModePatchedBytes : ExePatchModel.NativeWidescreenIgmDialogModeOriginalBytes);
     }
+
+    private static void PlaceCameraZoomOut(byte[] exe, ExeCameraZoomOutPatchState state) {
+        bool patched = state is ExeCameraZoomOutPatchState.LegacyZoom1 or ExeCameraZoomOutPatchState.Patched;
+        Place(exe, ExePatchModel.CameraZoomInitCallOffset, patched ? ExePatchModel.CameraZoomInitCallPatchedBytes : ExePatchModel.CameraZoomInitCallOriginalBytes);
+        Place(exe, ExePatchModel.CameraZoomLoadCallOffset, patched ? ExePatchModel.CameraZoomLoadCallPatchedBytes : ExePatchModel.CameraZoomLoadCallOriginalBytes);
+        Place(exe, ExePatchModel.CameraZoomScriptCallOffset, patched ? ExePatchModel.CameraZoomScriptCallPatchedBytes : ExePatchModel.CameraZoomScriptCallOriginalBytes);
+        byte[] cave = state switch {
+            ExeCameraZoomOutPatchState.Original => ExePatchModel.CameraZoomCaveOriginalBytes,
+            ExeCameraZoomOutPatchState.LegacyZoom1 => ExePatchModel.CameraZoomCaveLegacyZoom1Bytes,
+            ExeCameraZoomOutPatchState.Patched => ExePatchModel.CameraZoomCavePatchedBytes,
+            _ => throw new ArgumentOutOfRangeException(nameof(state)),
+        };
+        Place(exe, ExePatchModel.CameraZoomCaveOffset, cave);
+    }
+
+    private static void PlaceIdleSelect999(byte[] exe, ExeIdleSelect999PatchState state) =>
+        Place(exe, ExePatchModel.IdleSelect999PatchOffset,
+            state == ExeIdleSelect999PatchState.Patched
+                ? ExePatchModel.IdleSelect999PatchedBytes
+                : ExePatchModel.IdleSelect999OriginalBytes);
 
     private static void PlaceVillageRange(byte[] exe, ExeVillageRangePatchState state) {
         bool rangePatched = state is ExeVillageRangePatchState.LegacyLogicOnly or ExeVillageRangePatchState.Expanded;
@@ -188,6 +208,162 @@ public sealed class ExePatchModelTests {
             ExePatchModel.GetNativeWidescreenPatchState(new byte[8]));
         Assert.Empty(ExePatchModel.PlanNativeWidescreen(true, ExeNativeWidescreenPatchState.Unknown));
         Assert.Empty(ExePatchModel.PlanNativeWidescreen(false, ExeNativeWidescreenPatchState.Unknown));
+    }
+
+    [Theory]
+    [InlineData(ExeCameraZoomOutPatchState.Original)]
+    [InlineData(ExeCameraZoomOutPatchState.LegacyZoom1)]
+    [InlineData(ExeCameraZoomOutPatchState.Patched)]
+    public void Camera_zoom_out_state_is_detected(ExeCameraZoomOutPatchState state) {
+        byte[] exe = NewExe();
+        PlaceCameraZoomOut(exe, state);
+        Assert.Equal(state, ExePatchModel.GetCameraZoomOutPatchState(exe));
+    }
+
+    [Fact]
+    public void Camera_zoom_out_current_cave_clamps_to_half_while_legacy_clamps_to_one() {
+        Assert.Equal(0.5f, BitConverter.ToSingle(ExePatchModel.CameraZoomCavePatchedBytes, 9));
+        Assert.Equal(0.5f, BitConverter.ToSingle(ExePatchModel.CameraZoomCavePatchedBytes, 19));
+        Assert.Equal(1.0f, BitConverter.ToSingle(ExePatchModel.CameraZoomCaveLegacyZoom1Bytes, 9));
+        Assert.Equal(1.0f, BitConverter.ToSingle(ExePatchModel.CameraZoomCaveLegacyZoom1Bytes, 19));
+    }
+
+    [Fact]
+    public void Camera_zoom_out_round_trip_changes_three_calls_and_shared_cave_safely() {
+        byte[] exe = NewExe();
+        PlaceCameraZoomOut(exe, ExeCameraZoomOutPatchState.Original);
+        byte[] pristine = exe.ToArray();
+
+        IReadOnlyList<ExeWriteOp> enable = ExePatchModel.PlanCameraZoomOut(
+            true, ExePatchModel.GetCameraZoomOutPatchState(exe));
+        Assert.Equal(ExePatchModel.CameraZoomCaveOffset, enable[0].Offset);
+        ExePatchModel.Apply(exe, enable);
+        Assert.Equal(ExeCameraZoomOutPatchState.Patched,
+            ExePatchModel.GetCameraZoomOutPatchState(exe));
+        foreach (long callOffset in new[] {
+            ExePatchModel.CameraZoomInitCallOffset,
+            ExePatchModel.CameraZoomLoadCallOffset,
+            ExePatchModel.CameraZoomScriptCallOffset,
+        }) {
+            int relative = BitConverter.ToInt32(exe, (int)callOffset + 1);
+            Assert.Equal(ExePatchModel.CameraZoomCaveOffset, callOffset + 5 + relative);
+        }
+        int tailRelative = BitConverter.ToInt32(
+            exe, (int)ExePatchModel.CameraZoomCaveOffset + ExePatchModel.CameraZoomCavePatchedBytes.Length - 4);
+        Assert.Equal(0x98A30,
+            ExePatchModel.CameraZoomCaveOffset + ExePatchModel.CameraZoomCavePatchedBytes.Length + tailRelative);
+
+        IReadOnlyList<ExeWriteOp> disable = ExePatchModel.PlanCameraZoomOut(
+            false, ExePatchModel.GetCameraZoomOutPatchState(exe));
+        Assert.Equal(ExePatchModel.CameraZoomCaveOffset, disable[^1].Offset);
+        ExePatchModel.Apply(exe, disable);
+        Assert.Equal(ExeCameraZoomOutPatchState.Original,
+            ExePatchModel.GetCameraZoomOutPatchState(exe));
+        Assert.Equal(pristine, exe);
+    }
+
+    [Fact]
+    public void Camera_zoom_out_legacy_zoom_one_migrates_by_replacing_only_the_cave() {
+        byte[] exe = NewExe();
+        PlaceCameraZoomOut(exe, ExeCameraZoomOutPatchState.LegacyZoom1);
+
+        IReadOnlyList<ExeWriteOp> migration = ExePatchModel.PlanCameraZoomOut(
+            true, ExePatchModel.GetCameraZoomOutPatchState(exe));
+        ExeWriteOp op = Assert.Single(migration);
+        Assert.Equal(ExePatchModel.CameraZoomCaveOffset, op.Offset);
+        ExePatchModel.Apply(exe, migration);
+        Assert.Equal(ExeCameraZoomOutPatchState.Patched,
+            ExePatchModel.GetCameraZoomOutPatchState(exe));
+
+        ExePatchModel.Apply(exe, ExePatchModel.PlanCameraZoomOut(
+            false, ExePatchModel.GetCameraZoomOutPatchState(exe)));
+        Assert.Equal(ExeCameraZoomOutPatchState.Original,
+            ExePatchModel.GetCameraZoomOutPatchState(exe));
+    }
+
+    [Fact]
+    public void Camera_zoom_out_legacy_zoom_one_can_restore_without_migration() {
+        byte[] exe = NewExe();
+        PlaceCameraZoomOut(exe, ExeCameraZoomOutPatchState.LegacyZoom1);
+
+        ExePatchModel.Apply(exe, ExePatchModel.PlanCameraZoomOut(
+            false, ExePatchModel.GetCameraZoomOutPatchState(exe)));
+
+        Assert.Equal(ExeCameraZoomOutPatchState.Original,
+            ExePatchModel.GetCameraZoomOutPatchState(exe));
+    }
+
+    [Fact]
+    public void Camera_zoom_out_mixed_or_short_state_is_unknown_and_not_planned() {
+        byte[] exe = NewExe();
+        PlaceCameraZoomOut(exe, ExeCameraZoomOutPatchState.Original);
+        Place(exe, ExePatchModel.CameraZoomLoadCallOffset, ExePatchModel.CameraZoomLoadCallPatchedBytes);
+
+        Assert.Equal(ExeCameraZoomOutPatchState.Unknown,
+            ExePatchModel.GetCameraZoomOutPatchState(exe));
+        Assert.Equal(ExeCameraZoomOutPatchState.Unknown,
+            ExePatchModel.GetCameraZoomOutPatchState(new byte[8]));
+        Assert.Empty(ExePatchModel.PlanCameraZoomOut(true, ExeCameraZoomOutPatchState.Unknown));
+        Assert.Empty(ExePatchModel.PlanCameraZoomOut(false, ExeCameraZoomOutPatchState.Unknown));
+    }
+
+    [Theory]
+    [InlineData(ExeIdleSelect999PatchState.Original)]
+    [InlineData(ExeIdleSelect999PatchState.Patched)]
+    public void Idle_select_999_state_is_detected(ExeIdleSelect999PatchState state) {
+        byte[] exe = NewExe();
+        PlaceIdleSelect999(exe, state);
+        Assert.Equal(state, ExePatchModel.GetIdleSelect999PatchState(exe));
+    }
+
+    [Fact]
+    public void Idle_select_999_bytes_rewrite_the_whole_function_region_in_place() {
+        // 原版函式 0xA0 位元組 + 0x10 對齊填充；補丁版 0x9F + NOP 填充。
+        // 兩者必須等長且覆蓋同一 0xB0 區域，否則會破壞下一個函式 0x451E70。
+        Assert.Equal(0xB0, ExePatchModel.IdleSelect999OriginalBytes.Length);
+        Assert.Equal(0xB0, ExePatchModel.IdleSelect999PatchedBytes.Length);
+        // 補丁版的收集上限 push 0x3E7（999）與堆疊框架 0x1F38 必須成對出現。
+        Assert.Contains("68E7030000", Convert.ToHexString(ExePatchModel.IdleSelect999PatchedBytes));
+        Assert.Contains("81EC381F0000", Convert.ToHexString(ExePatchModel.IdleSelect999PatchedBytes));
+        // 原版特徵：push 0x28（40）與框架 0x140。
+        Assert.Contains("6A28", Convert.ToHexString(ExePatchModel.IdleSelect999OriginalBytes));
+        Assert.Contains("81EC40010000", Convert.ToHexString(ExePatchModel.IdleSelect999OriginalBytes));
+    }
+
+    [Fact]
+    public void Idle_select_999_round_trip_restores_pristine_bytes() {
+        byte[] exe = NewExe();
+        PlaceIdleSelect999(exe, ExeIdleSelect999PatchState.Original);
+        byte[] pristine = exe.ToArray();
+
+        IReadOnlyList<ExeWriteOp> enable = ExePatchModel.PlanIdleSelect999(
+            true, ExePatchModel.GetIdleSelect999PatchState(exe));
+        ExeWriteOp op = Assert.Single(enable);
+        Assert.Equal(ExePatchModel.IdleSelect999PatchOffset, op.Offset);
+        ExePatchModel.Apply(exe, enable);
+        Assert.Equal(ExeIdleSelect999PatchState.Patched,
+            ExePatchModel.GetIdleSelect999PatchState(exe));
+
+        IReadOnlyList<ExeWriteOp> disable = ExePatchModel.PlanIdleSelect999(
+            false, ExePatchModel.GetIdleSelect999PatchState(exe));
+        ExePatchModel.Apply(exe, disable);
+        Assert.Equal(ExeIdleSelect999PatchState.Original,
+            ExePatchModel.GetIdleSelect999PatchState(exe));
+        Assert.Equal(pristine, exe);
+    }
+
+    [Fact]
+    public void Idle_select_999_mixed_or_short_state_is_unknown_and_not_planned() {
+        byte[] exe = NewExe();
+        PlaceIdleSelect999(exe, ExeIdleSelect999PatchState.Original);
+        exe[ExePatchModel.IdleSelect999PatchOffset + 0x31] = 0xCC;
+
+        Assert.Equal(ExeIdleSelect999PatchState.Unknown,
+            ExePatchModel.GetIdleSelect999PatchState(exe));
+        Assert.Equal(ExeIdleSelect999PatchState.Unknown,
+            ExePatchModel.GetIdleSelect999PatchState(new byte[8]));
+        Assert.Empty(ExePatchModel.PlanIdleSelect999(true, ExeIdleSelect999PatchState.Unknown));
+        Assert.Empty(ExePatchModel.PlanIdleSelect999(false, ExeIdleSelect999PatchState.Unknown));
     }
 
     [Theory]

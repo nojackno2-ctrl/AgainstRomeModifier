@@ -97,6 +97,7 @@ namespace AgainstRomeModifier.Tests
                     FoodHealing10x = true,
                     CiviProduce20 = true,
                     UnitRecruit20 = true,
+                    IdleSelect999 = true,
                     VillageBuildRange = true,
                     NoSpellAltar = true,
                     GameSpeed = 3,
@@ -136,6 +137,7 @@ namespace AgainstRomeModifier.Tests
                 Assert.True(detected.FoodHealing10x, "FoodHealing10x 未回讀為 true");
                 Assert.True(detected.CiviProduce20, "CiviProduce20 未回讀為 true");
                 Assert.True(detected.UnitRecruit20, "UnitRecruit20 未回讀為 true");
+                Assert.True(detected.IdleSelect999, "IdleSelect999 未回讀為 true");
                 Assert.True(detected.VillageBuildRange, "VillageBuildRange 未回讀為 true");
                 Assert.True(detected.NoSpellAltar, "NoSpellAltar 未回讀為 true");
                 Assert.Equal(3, detected.GameSpeed);
@@ -166,6 +168,7 @@ namespace AgainstRomeModifier.Tests
                 Assert.False(restored.FoodHealing10x, "還原後 FoodHealing10x 仍為 true");
                 Assert.False(restored.CiviProduce20, "還原後 CiviProduce20 仍為 true");
                 Assert.False(restored.UnitRecruit20, "還原後 UnitRecruit20 仍為 true");
+                Assert.False(restored.IdleSelect999, "還原後 IdleSelect999 仍為 true");
                 Assert.False(restored.VillageBuildRange, "還原後 VillageBuildRange 仍為 true");
                 Assert.False(restored.NoSpellAltar, "還原後 NoSpellAltar 仍為 true");
                 Assert.Equal(1, restored.GameSpeed);

@@ -104,6 +104,47 @@
 - Status: implemented, apply/detect/restore tested, and runtime verified in
   game on 2026-07-15.
 
+### Idle-Villager Select 999 (`IdleSelect999`)
+
+- File: `Against_Rome.exe`; patch offset `0x51DC0` (VA `0x451DC0`), length
+  `0xB0` — the entire select-idle handler function plus its `0x10`-byte
+  alignment padding before the next function at `0x451E70`.
+- Decompilation path (2026-07-16, capstone + the local Ghidra pseudocode
+  inventory; the Temp Ghidra install remains broken): UI string
+  `igm_select_idle` → widget handle global `0x68B568` → generic IGM button
+  callback `0x4410B0` dispatches on the handle at `0x44138B` and calls
+  `0x44D110` (deselect all) then `0x451DC0` (the select-idle handler).
+  `0x451DC0` has exactly two callers (`0x42347A` hotkey path, `0x441398`
+  button path), both to the function entry — no jumps into the body.
+- Original behavior: two 40-entry stack arrays and a literal `push 0x28` are
+  passed to gatherer `0x421820` (filter from `0x44CEF0(1,0,1,1,3)` →
+  `0x538320` → search `0x5388A0` which fills the global scratch list at
+  `0x64D65C`, capped at 1000), then each result resolves through `0x421130`
+  and is added to the master selection via `0x44D5A0`.
+- Cap chain (why 999, not 1600): the button's own cap is 40; the search
+  scratch list is a fixed 1000-entry global with ~405 code references
+  (cannot be relocated safely); the master selection list `0x727748` is a
+  fixed 1000-entry array whose count word `0x7286E8` sits immediately after
+  it, and `0x44D5A0` guards with `cmp [0x7286E8], 0x3E7` (999). 999 is the
+  engine's structural maximum for any selection; reaching 1600 would require
+  relocating both packed global arrays and rewriting hundreds of absolute
+  references, which is beyond safe fixed-offset patching.
+- Patch: rewrites the whole function region in place with an
+  instruction-for-instruction equivalent using N=999 — stack frame
+  `0x140 → 0x1F38`, per-buffer size `0xA0 → 0xF9C`, `push 0x28 → push 0x3E7`,
+  the buffer-B init loop reversed to descend from the top of the buffer so the
+  first touch is within one page of the old ESP (stack guard-page probing for
+  the 8 KB frame), and the five `call rel32` targets recomputed for the ±3-byte
+  layout shift. New code is `0x9F` bytes, NOP-padded to `0xB0`.
+- Scope: player UI only (the idle-select button and its hotkey); the AI does
+  not use this path. With more than 999 idle villagers, one click selects the
+  first 999 found by the category-list scan.
+- Safety: full-region original/patched byte match required; unknown signatures
+  are refused. Disable and Stats Restore return the exact original bytes.
+- Status: implemented, apply/detect/restore covered by unit tests and the
+  local full-round-trip integration test (2026-07-16). In-game runtime
+  verification of a >40 selection is still pending.
+
 ### 10x Building Speed (Construction, Upgrade, Repair)
 
 - File: `SYSTEM/DATA_MP/DEFAULTS/objdef.dau`.
@@ -551,6 +592,49 @@
   bars. The stale left-aligned IGM problem is corrected and the stock-UI
   fallback is runtime-observed. This is not a native 16:9 expanded viewport;
   input boundaries, edge scrolling, dialogs, and minimap remain pending.
+
+### Camera Zoom Out 0.5 (CameraZoomOut1)
+
+- File: `Against_Rome.exe`; UI status is Experimental.
+- Runtime history: the first build enforced native zoom `1`. It genuinely
+  showed much more battlefield, but the user reported that units and
+  information became too small/dense. The current experiment enforces `0.5`
+  for a milder pullback and retains the old profile key for compatibility.
+- Static evidence: `FUN_00498a30` owns scalar `DAT_00771800`, clamps the stock
+  range to `0..9`, and is used by projection as `1 / (zoom + 1)`. Terrain and
+  object coordinate paths also use `1 << zoom`. Save loading calls the same
+  setter, and mission scripts expose it as `lgcSetEngineZoom`.
+- Persistent call redirects:
+  - startup at file offset `0x81388`: `E8 A3 76 01 00` becomes
+    `E8 33 12 0E 00`;
+  - save load at `0x8D880`: `E8 AB B1 00 00` becomes
+    `E8 3B 4D 0D 00`;
+  - mission wrapper at `0x14C1FA`: `E8 31 C8 F4 FF` becomes
+    `E8 C1 63 01 00`.
+- Shared cave: 28 zero bytes at file offset `0x1625C0` become
+  `8B 44 24 04 85 C0 78 07 3D 00 00 00 3F 73 08 C7 44 24 04 00 00 00 3F E9 54 64 F3 FF`.
+  The stub replaces negative or sub-`0.5f` input with `0.5f`, then tail-jumps
+  to the stock setter at VA `0x00498A30`.
+- Fractional-zoom evidence: projection consumes the raw float as
+  `1/(zoom+1)`, so `0.5` renders at 2/3 stock scale. Information placement,
+  picking extents, and LOD consumers convert zoom to an integer.
+  `FUN_00419cc0` subtracts `0x3efffffd` (bytes `FD FF FF 3E`, just below 0.5)
+  before `FISTP`; direct consumers also round `0.5` to zero. Thus the revised
+  projection pulls back while those integer consumers retain stock zoom 0.
+- Scope decision: the universal setter is deliberately not hooked. Engine
+  cache-generation functions temporarily request zoom 0/1; intercepting them
+  could corrupt internal caches. Only the three persistent paths above are
+  redirected.
+- Safety/detection: Original, `LegacyZoom1`, and current Patched are exact
+  states. The old `1.0f` cave migrates to `0.5f` with one write; it can also be
+  restored directly. Enable installs a new cave before redirects, while
+  restore removes every redirect before clearing it. Other mixed/unknown
+  states refuse enable writes.
+- Status: zoom 1 mechanics are runtime-proven but usability failed. Automated
+  tests cover current apply/detect/idempotence/category restore/full-byte
+  round-trip plus legacy migration/direct restore. Zoom 0.5 needs runtime
+  retesting for information readability, selection/picking, edge scrolling,
+  fog, map bounds, save/load, mission compatibility, and performance.
 
 ### All Units Entire-Map Vision (AllUnitsEntireMapVision)
 

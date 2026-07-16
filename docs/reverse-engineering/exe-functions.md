@@ -91,6 +91,42 @@ patch itself and the exact heal gate conditions.
   `ak_kundschafterwolf`, `ak_verbandswolf`) additionally call `s_addLP` with
   literal `-1` at a second site (an LP-decay tick, unrelated to healing).
 
+## Unit Selection Subsystem (decoded 2026-07-16)
+
+Traced while implementing the `IdleSelect999` feature (see `known-patches.md`);
+done with capstone byte scanning plus the local pseudocode inventory because
+the Temp Ghidra install is still broken. `tools/re/GhidraSelectIdleAnalysis.java`
+records the same trace for a future working Ghidra project.
+
+- IGM button registration block `00442a80..` binds UI strings (`igm_but_*`,
+  `igm_select_idle`) to widget handles via `FUN_004e8f80`; all use the shared
+  button callback `004410b0`, which dispatches by comparing the clicked widget
+  against each handle global (select-idle: `cmp ebx,[0x68b568]` at `0044138b`).
+- `0044d110` deselect-all: iterates the master selection and clears it.
+- `00451dc0` select-idle handler: filter descriptor from
+  `FUN_0044cef0(1,0,1,1,3)`, gatherer `FUN_00421820(bufA, bufB, max, ...)`
+  (max = `0x28` in the stock EXE), resolver `FUN_00421130(a,b) -> object index
+  or -1`, adder `FUN_0044d5a0`, feedback sound `FUN_0043db40(0x7c)`.
+- `FUN_00421820 -> FUN_00538320 -> FUN_005388a0`: object search over the
+  per-team per-category unit lists at `DAT_026af93c + team*0x15180` (rows of
+  `0x640` = 1600 shorts, matching the global population cap). Matches are
+  written to the scratch pair `DAT_0064d65c` (indexes) / `DAT_0064f59c`
+  (sort keys) guarded by `DAT_0064d654 < 1000`. The scratch block is two
+  1000-entry banks plus two parallel arrays, all adjacent; ~405 code
+  references across the EXE.
+- `FUN_00419e00`: copies up to `max` scratch entries into the caller's buffer
+  pair as handle pairs via `FUN_00518db0`.
+- `FUN_0044d5a0` add-to-selection: rejects duplicates (`FUN_0044cdd0`), dead
+  (`0x2000` flag) and in-building (`0x200` flag) objects, then appends to the
+  master selection array `0x727744 + count*4` (1-based; data starts
+  `0x727748`) guarded by `cmp [0x7286e8], 0x3E7` — the engine-wide selection
+  maximum is 999, and the count dword sits immediately after the 1000-entry
+  array, so the capacity is structural.
+- All master-selection references (`0x727744/0x727748` array, `0x7286e8`
+  count) are confined to the `0x44cd00..0x44daff` module (`mk_sel.c` per the
+  allocator tag string `CLMK_mk_sel_c`); access elsewhere goes through
+  accessors `FUN_0044cff0` (count) and `FUN_0044d000` (i-th entry).
+
 ## Ress Parser
 
 - `0046c1c0`: loads `SYSTEM/ress.ini`.

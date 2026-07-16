@@ -51,6 +51,7 @@ namespace AgainstRomeModifier {
             chkFoodHealing10x.Text = Loc.Get("FoodHealing10x");
             chkCiviProduce20.Text = Loc.Get("CiviProduce20");
             chkUnitRecruit20.Text = Loc.Get("UnitRecruit20");
+            chkIdleSelect999.Text = Loc.Get("IdleSelect999");
             chkDgVoodoo.Text = Loc.Get("DgVoodoo");
             chkGameSpeed.Text = Loc.Get("GameSpeedLabel");
             chkVillageBuildRange.Text = Loc.Get("VillageBuildRange");
@@ -103,6 +104,7 @@ namespace AgainstRomeModifier {
             chkBalance.Text = Loc.Get("EnableBalance");
             chkAllUnitsEntireMapVision.Text = Loc.Get("AllUnitsEntireMapVision");
             chkNativeWidescreen1920x1080.Text = Loc.Get("NativeWidescreen1920x1080");
+            chkCameraZoomOut1.Text = Loc.Get("CameraZoomOut1");
             chkRangedRange3x.Text = Loc.Get("RangedRange3x");
             chkUnitMovementSpeed2x.Text = Loc.Get("UnitMovementSpeed2x");
             chkSpellEntireMap.Text = Loc.Get("SpellEntireMap");
@@ -144,6 +146,7 @@ namespace AgainstRomeModifier {
                 myToolTip.SetToolTip(chkBalance, Loc.Get("BalanceTip"));
                 myToolTip.SetToolTip(chkAllUnitsEntireMapVision, Loc.Get("AllUnitsEntireMapVisionTip"));
                 myToolTip.SetToolTip(chkNativeWidescreen1920x1080, Loc.Get("NativeWidescreen1920x1080Tip"));
+                myToolTip.SetToolTip(chkCameraZoomOut1, Loc.Get("CameraZoomOut1Tip"));
                 myToolTip.SetToolTip(chkRangedRange3x, Loc.Get("RangedRange3xTip"));
                 myToolTip.SetToolTip(chkUnitMovementSpeed2x, Loc.Get("UnitMovementSpeed2xTip"));
                 myToolTip.SetToolTip(chkSpellEntireMap, Loc.Get("SpellEntireMapTip"));
@@ -160,6 +163,7 @@ namespace AgainstRomeModifier {
                 myToolTip.SetToolTip(chkFoodHealing10x, Loc.Get("FoodHealing10xTip"));
                 myToolTip.SetToolTip(chkCiviProduce20, Loc.Get("CiviProduce20Tip"));
                 myToolTip.SetToolTip(chkUnitRecruit20, Loc.Get("UnitRecruit20Tip"));
+                myToolTip.SetToolTip(chkIdleSelect999, Loc.Get("IdleSelect999Tip"));
                 myToolTip.SetToolTip(chkVillageBuildRange, Loc.Get("VillageBuildRangeTip"));
                 myToolTip.SetToolTip(chkAiM1, Loc.Get("AiM1Tip"));
                 myToolTip.SetToolTip(chkAiCore, Loc.Get("AiCoreTip"));

@@ -70,6 +70,7 @@ namespace AgainstRomeModifier {
         private ModernToggle chkFoodHealing10x = null!;
         private ModernToggle chkCiviProduce20 = null!;
         private ModernToggle chkUnitRecruit20 = null!;
+        private ModernToggle chkIdleSelect999 = null!;
         private ModernToggle chkAiM1 = null!;
         private ModernToggle chkAiCore = null!;
         private ModernToggle chkAiM5 = null!;
@@ -93,6 +94,7 @@ namespace AgainstRomeModifier {
         private ModernToggle chkLeaderGlory = null!;
         private ModernToggle chkAllUnitsEntireMapVision = null!;
         private ModernToggle chkNativeWidescreen1920x1080 = null!;
+        private ModernToggle chkCameraZoomOut1 = null!;
         private ModernToggle chkRangedRange3x = null!;
         private ModernToggle chkUnitMovementSpeed2x = null!;
         private ModernToggle chkSpellEntireMap = null!;
@@ -988,6 +990,16 @@ namespace AgainstRomeModifier {
             };
             pnlExperimentalCard.Controls.Add(chkNativeWidescreen1920x1080);
 
+            chkCameraZoomOut1 = new ModernToggle {
+                Text = Loc.Get("CameraZoomOut1"),
+                Location = new Point(25, 280),
+                Size = new Size(310, 25),
+                Checked = false,
+                BackColor = Color.Transparent,
+                Font = fontJhengHei10B
+            };
+            pnlExperimentalCard.Controls.Add(chkCameraZoomOut1);
+
             chkRangedRange3x = new ModernToggle {
                 Text = Loc.Get("RangedRange3x"),
                 Location = new Point(25, 200),
@@ -1061,6 +1073,16 @@ namespace AgainstRomeModifier {
                 Font = fontJhengHei10B
             };
             pnlSwitchesCard.Controls.Add(chkUnitRecruit20);
+
+            chkIdleSelect999 = new ModernToggle {
+                Text = Loc.Get("IdleSelect999"),
+                Location = new Point(25, 490),
+                Size = new Size(310, 25),
+                Checked = false,
+                BackColor = Color.Transparent,
+                Font = fontJhengHei10B
+            };
+            pnlSwitchesCard.Controls.Add(chkIdleSelect999);
 
             chkRomanEndless = new ModernToggle {
                 Text = Loc.Get("RomanEndless"),

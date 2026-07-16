@@ -52,6 +52,7 @@ public static class FeatureKeys
     public static readonly FeatureKey<bool> MaxPopulation = FeatureKey<bool>.Bool("MaxPopulation");
     public static readonly FeatureKey<bool> CiviProduce20 = FeatureKey<bool>.Bool("CiviProduce20");
     public static readonly FeatureKey<bool> UnitRecruit20 = FeatureKey<bool>.Bool("UnitRecruit20");
+    public static readonly FeatureKey<bool> IdleSelect999 = FeatureKey<bool>.Bool("IdleSelect999");
     public static readonly FeatureKey<bool> RomanEndless = FeatureKey<bool>.Bool("RomanEndless");
     public static readonly FeatureKey<bool> SpellDamage5x = FeatureKey<bool>.Bool("SpellDamage5x");
     public static readonly FeatureKey<bool> SpellHealing10x = FeatureKey<bool>.Bool("SpellHealing10x");
@@ -71,6 +72,7 @@ public static class FeatureKeys
     public static readonly FeatureKey<int> GameSpeed = FeatureKey<int>.Int("GameSpeed", 1);
     public static readonly FeatureKey<bool> DgVoodoo = FeatureKey<bool>.Bool("DgVoodoo");
     public static readonly FeatureKey<bool> NativeWidescreen1920x1080 = FeatureKey<bool>.Bool("NativeWidescreen1920x1080");
+    public static readonly FeatureKey<bool> CameraZoomOut1 = FeatureKey<bool>.Bool("CameraZoomOut1");
     public static readonly FeatureKey<bool> EndlessAiM1 = FeatureKey<bool>.Bool("EndlessAi.M1");
     public static readonly FeatureKey<bool> EndlessAiCore = FeatureKey<bool>.Bool("EndlessAi.Core");
     public static readonly FeatureKey<bool> EndlessAiM2 = FeatureKey<bool>.Bool("EndlessAi.M2");
