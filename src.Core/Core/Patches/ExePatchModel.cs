@@ -39,6 +39,8 @@ public enum ExeUnitRecruit20PatchState {
 public enum ExeNativeWidescreenPatchState {
     Unknown,
     Original,
+    LegacyUnforced,
+    LegacyForcedStaleUi,
     Patched
 }
 
@@ -122,6 +124,9 @@ public static class ExePatchModel {
     // IGM UI 仍沿用原版 igm16001200 資源，故此功能必須保持 Experimental，待實機驗證 UI 與滑鼠座標。
     public const long NativeWidescreenIdentifyOffset = 0x246B3;
     public const long NativeWidescreenCreateOffset = 0x249AA;
+    public const long NativeWidescreenActiveModeGetterOffset = 0x24B80;
+    public const long NativeWidescreenForceModeOffset = 0x24BD0;
+    public const long NativeWidescreenIgmDialogModeOffset = 0x41E25;
     public const long NativeWidescreenModeTextOffset = 0x1DCC76;
     public static readonly byte[] NativeWidescreenIdentifyOriginalBytes = {
         0x81, 0x3E, 0x40, 0x06, 0x00, 0x00, 0x75, 0x12,
@@ -153,6 +158,24 @@ public static class ExePatchModel {
         System.Text.Encoding.ASCII.GetBytes("Modus 1600x1200 32bit\n\0");
     public static readonly byte[] NativeWidescreenModeTextPatchedBytes =
         System.Text.Encoding.ASCII.GetBytes("Modus 1920x1080 32bit\n\0");
+    public static readonly byte[] NativeWidescreenForceModeOriginalBytes = {
+        0x8B, 0x15, 0xB0, 0x80, 0x65, 0x00, 0x52
+    };
+    public static readonly byte[] NativeWidescreenForceModePatchedBytes = {
+        0x6A, 0x22, 0x90, 0x90, 0x90, 0x90, 0x90
+    };
+    public static readonly byte[] NativeWidescreenActiveModeGetterOriginalBytes = {
+        0xA1, 0xB0, 0x80, 0x65, 0x00, 0xC3
+    };
+    public static readonly byte[] NativeWidescreenActiveModeGetterPatchedBytes = {
+        0xA1, 0xBC, 0x80, 0x65, 0x00, 0xC3
+    };
+    public static readonly byte[] NativeWidescreenIgmDialogModeOriginalBytes = {
+        0x83, 0xF8, 0x21, 0x74, 0xD4
+    };
+    public static readonly byte[] NativeWidescreenIgmDialogModePatchedBytes = {
+        0x83, 0xF8, 0x22, 0x74, 0xD4
+    };
 
     // === 法術免祭壇需求（各族群 12 處特徵）===
     public static readonly (long Offset, byte[] Original, byte[] Patched)[] SpellAltarPatchSites = new[] {
@@ -368,21 +391,42 @@ public static class ExePatchModel {
     }
 
     public static ExeNativeWidescreenPatchState GetNativeWidescreenPatchState(byte[] exeBytes) {
-        var sites = new[] {
+        var modeSites = new[] {
             (NativeWidescreenIdentifyOffset, NativeWidescreenIdentifyOriginalBytes, NativeWidescreenIdentifyPatchedBytes),
             (NativeWidescreenCreateOffset, NativeWidescreenCreateOriginalBytes, NativeWidescreenCreatePatchedBytes),
             (NativeWidescreenModeTextOffset, NativeWidescreenModeTextOriginalBytes, NativeWidescreenModeTextPatchedBytes),
         };
-        bool allOriginal = true;
-        bool allPatched = true;
-        foreach (var (offset, original, patched) in sites) {
+        bool modesOriginal = true;
+        bool modesPatched = true;
+        foreach (var (offset, original, patched) in modeSites) {
             if (exeBytes.Length < offset + original.Length) return ExeNativeWidescreenPatchState.Unknown;
             byte[] current = ReadSpan(exeBytes, offset, original.Length);
-            allOriginal &= current.SequenceEqual(original);
-            allPatched &= current.SequenceEqual(patched);
+            modesOriginal &= current.SequenceEqual(original);
+            modesPatched &= current.SequenceEqual(patched);
         }
-        if (allOriginal) return ExeNativeWidescreenPatchState.Original;
-        if (allPatched) return ExeNativeWidescreenPatchState.Patched;
+        if (exeBytes.Length < NativeWidescreenForceModeOffset + NativeWidescreenForceModeOriginalBytes.Length)
+            return ExeNativeWidescreenPatchState.Unknown;
+        byte[] forceMode = ReadSpan(exeBytes, NativeWidescreenForceModeOffset, NativeWidescreenForceModeOriginalBytes.Length);
+        bool forceOriginal = forceMode.SequenceEqual(NativeWidescreenForceModeOriginalBytes);
+        bool forcePatched = forceMode.SequenceEqual(NativeWidescreenForceModePatchedBytes);
+
+        var uiSites = new[] {
+            (NativeWidescreenActiveModeGetterOffset, NativeWidescreenActiveModeGetterOriginalBytes, NativeWidescreenActiveModeGetterPatchedBytes),
+            (NativeWidescreenIgmDialogModeOffset, NativeWidescreenIgmDialogModeOriginalBytes, NativeWidescreenIgmDialogModePatchedBytes),
+        };
+        bool uiOriginal = true;
+        bool uiPatched = true;
+        foreach (var (offset, original, patched) in uiSites) {
+            if (exeBytes.Length < offset + original.Length) return ExeNativeWidescreenPatchState.Unknown;
+            byte[] current = ReadSpan(exeBytes, offset, original.Length);
+            uiOriginal &= current.SequenceEqual(original);
+            uiPatched &= current.SequenceEqual(patched);
+        }
+
+        if (modesOriginal && forceOriginal && uiOriginal) return ExeNativeWidescreenPatchState.Original;
+        if (modesPatched && forceOriginal && uiOriginal) return ExeNativeWidescreenPatchState.LegacyUnforced;
+        if (modesPatched && forcePatched && uiOriginal) return ExeNativeWidescreenPatchState.LegacyForcedStaleUi;
+        if (modesPatched && forcePatched && uiPatched) return ExeNativeWidescreenPatchState.Patched;
         return ExeNativeWidescreenPatchState.Unknown;
     }
 
@@ -504,9 +548,43 @@ public static class ExePatchModel {
                 new ExeWriteOp(NativeWidescreenIdentifyOffset, NativeWidescreenIdentifyOriginalBytes, NativeWidescreenIdentifyPatchedBytes, "1920x1080 顯示模式辨識"),
                 new ExeWriteOp(NativeWidescreenCreateOffset, NativeWidescreenCreateOriginalBytes, NativeWidescreenCreatePatchedBytes, "1920x1080 顯示模式建立"),
                 new ExeWriteOp(NativeWidescreenModeTextOffset, NativeWidescreenModeTextOriginalBytes, NativeWidescreenModeTextPatchedBytes, "1920x1080 顯示模式文字"),
+                new ExeWriteOp(NativeWidescreenForceModeOffset, NativeWidescreenForceModeOriginalBytes, NativeWidescreenForceModePatchedBytes, "啟動時強制選擇 1920x1080 mode 0x22"),
+                new ExeWriteOp(NativeWidescreenActiveModeGetterOffset, NativeWidescreenActiveModeGetterOriginalBytes, NativeWidescreenActiveModeGetterPatchedBytes, "IGM 使用目前 1920x1080 mode 0x22"),
+                new ExeWriteOp(NativeWidescreenIgmDialogModeOffset, NativeWidescreenIgmDialogModeOriginalBytes, NativeWidescreenIgmDialogModePatchedBytes, "mode 0x22 使用最高解析度 IGM 對話框"),
+            };
+        }
+        if (enabled && state == ExeNativeWidescreenPatchState.LegacyUnforced) {
+            return new[] {
+                new ExeWriteOp(NativeWidescreenForceModeOffset, NativeWidescreenForceModeOriginalBytes, NativeWidescreenForceModePatchedBytes, "遷移舊版寬螢幕補丁並強制選擇 mode 0x22"),
+                new ExeWriteOp(NativeWidescreenActiveModeGetterOffset, NativeWidescreenActiveModeGetterOriginalBytes, NativeWidescreenActiveModeGetterPatchedBytes, "遷移 IGM 至目前 mode 0x22"),
+                new ExeWriteOp(NativeWidescreenIgmDialogModeOffset, NativeWidescreenIgmDialogModeOriginalBytes, NativeWidescreenIgmDialogModePatchedBytes, "遷移 mode 0x22 IGM 對話框"),
+            };
+        }
+        if (enabled && state == ExeNativeWidescreenPatchState.LegacyForcedStaleUi) {
+            return new[] {
+                new ExeWriteOp(NativeWidescreenActiveModeGetterOffset, NativeWidescreenActiveModeGetterOriginalBytes, NativeWidescreenActiveModeGetterPatchedBytes, "修正 IGM 仍讀取舊解析度 mode"),
+                new ExeWriteOp(NativeWidescreenIgmDialogModeOffset, NativeWidescreenIgmDialogModeOriginalBytes, NativeWidescreenIgmDialogModePatchedBytes, "修正 mode 0x22 IGM 對話框選擇"),
             };
         }
         if (!enabled && state == ExeNativeWidescreenPatchState.Patched) {
+            return new[] {
+                new ExeWriteOp(NativeWidescreenIdentifyOffset, NativeWidescreenIdentifyPatchedBytes, NativeWidescreenIdentifyOriginalBytes, "1920x1080 顯示模式辨識還原"),
+                new ExeWriteOp(NativeWidescreenCreateOffset, NativeWidescreenCreatePatchedBytes, NativeWidescreenCreateOriginalBytes, "1920x1080 顯示模式建立還原"),
+                new ExeWriteOp(NativeWidescreenModeTextOffset, NativeWidescreenModeTextPatchedBytes, NativeWidescreenModeTextOriginalBytes, "1920x1080 顯示模式文字還原"),
+                new ExeWriteOp(NativeWidescreenForceModeOffset, NativeWidescreenForceModePatchedBytes, NativeWidescreenForceModeOriginalBytes, "啟動解析度選擇還原"),
+                new ExeWriteOp(NativeWidescreenActiveModeGetterOffset, NativeWidescreenActiveModeGetterPatchedBytes, NativeWidescreenActiveModeGetterOriginalBytes, "IGM 解析度來源還原"),
+                new ExeWriteOp(NativeWidescreenIgmDialogModeOffset, NativeWidescreenIgmDialogModePatchedBytes, NativeWidescreenIgmDialogModeOriginalBytes, "IGM 對話框 mode 還原"),
+            };
+        }
+        if (!enabled && state == ExeNativeWidescreenPatchState.LegacyForcedStaleUi) {
+            return new[] {
+                new ExeWriteOp(NativeWidescreenIdentifyOffset, NativeWidescreenIdentifyPatchedBytes, NativeWidescreenIdentifyOriginalBytes, "1920x1080 顯示模式辨識還原"),
+                new ExeWriteOp(NativeWidescreenCreateOffset, NativeWidescreenCreatePatchedBytes, NativeWidescreenCreateOriginalBytes, "1920x1080 顯示模式建立還原"),
+                new ExeWriteOp(NativeWidescreenModeTextOffset, NativeWidescreenModeTextPatchedBytes, NativeWidescreenModeTextOriginalBytes, "1920x1080 顯示模式文字還原"),
+                new ExeWriteOp(NativeWidescreenForceModeOffset, NativeWidescreenForceModePatchedBytes, NativeWidescreenForceModeOriginalBytes, "啟動解析度選擇還原"),
+            };
+        }
+        if (!enabled && state == ExeNativeWidescreenPatchState.LegacyUnforced) {
             return new[] {
                 new ExeWriteOp(NativeWidescreenIdentifyOffset, NativeWidescreenIdentifyPatchedBytes, NativeWidescreenIdentifyOriginalBytes, "1920x1080 顯示模式辨識還原"),
                 new ExeWriteOp(NativeWidescreenCreateOffset, NativeWidescreenCreatePatchedBytes, NativeWidescreenCreateOriginalBytes, "1920x1080 顯示模式建立還原"),

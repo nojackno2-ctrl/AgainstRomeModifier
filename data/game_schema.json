@@ -115,16 +115,28 @@
     "nativeWidescreen": {
       "path": "Against_Rome.exe",
       "featureKey": "NativeWidescreen1920x1080",
-      "status": "experimental-static-verified-runtime-pending",
+      "status": "native-exe-experiment-rejected-centered-4x3-fallback-runtime-verified",
       "replacesMode": { "id": "0x22", "original": "1600x1200x32", "patched": "1920x1080x32" },
       "sites": [
         { "fileOffset": "0x246B3", "purpose": "active display-mode identification" },
         { "fileOffset": "0x249AA", "purpose": "display-mode create and refresh arguments" },
+        { "fileOffset": "0x24B80", "purpose": "make IGM callers read the active mode instead of the persisted old mode" },
+        { "fileOffset": "0x24BD0", "purpose": "force mode 0x22 at startup because the stock dialog exposes only mode IDs 0..3" },
+        { "fileOffset": "0x41E25", "purpose": "route mode 0x22 to the stock highest-resolution dlg_igm12_10 layout" },
         { "fileOffset": "0x1DCC76", "purpose": "same-length mode text" }
       ],
-      "uiResourceFallback": "igm16001200",
-      "safety": "All sites must be consistently Original or Patched; mixed and unknown signatures are never overwritten.",
-      "runtimePending": ["expanded world viewport", "aspect ratio", "UI anchors", "mouse hit-testing", "edge scrolling", "dialogs", "minimap"]
+      "windowPresentation": {
+        "requiresFeature": "DgVoodoo",
+        "settings": { "ScalingMode": "stretched_ar", "WindowedAttributes": "borderless, fullscreensize" },
+        "purpose": "Bypass the observed 1600x1200 outer-window ceiling with an aspect-preserving borderless desktop-sized window.",
+        "customConfigPolicy": "Preserve unrelated user settings while surgically updating ScalingMode and WindowedAttributes required by this feature."
+      },
+      "uiResourceFallback": { "resourcePath": "igm16001200", "dialogLayout": "dlg_igm12_10" },
+      "safety": "All six sites must match Original, a recognized legacy state, or Patched. LegacyUnforced and LegacyForcedStaleUi migrate by writing only their missing verified sites; every other mixed or unknown signature is preserved.",
+      "runtimeObserved": "On 2560x1440, coherent content is centered at x=320..2239 as a 1920x1440 4:3 region with symmetric 320px side bars.",
+      "runtimeVerified": "Fullscreen centered 4:3 presentation and correctly proportioned stock-sized windowed presentation both confirmed by the user.",
+      "currentBehavior": "Enabling the retained profile key restores all six EXE sites to stock and configures dgVoodoo FullScreenMode=true, ScalingMode=stretched_ar, CenterAppWindow=true, empty WindowedAttributes for a normal stock window, and FullscreenAttributes=fake.",
+      "runtimePending": ["true expanded widescreen world viewport", "mouse boundary mapping", "edge scrolling", "dialogs", "minimap"]
     },
     "teamDat": {
       "pathGlob": "MAPS/**/team.dat",

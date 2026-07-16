@@ -89,7 +89,11 @@ public class PatchEngine
         orchestrator.SaveAll(gamePath, rollback);
 
         new LanguagePackFeature(_logger).Apply(gamePath, options.ToEnglish, rollback);
-        new DgVoodooFeature(_logger).Apply(gamePath, options.DgVoodoo, rollback);
+        new DgVoodooFeature(_logger).Apply(
+            gamePath,
+            options.DgVoodoo,
+            rollback,
+            nativeWidescreenWindow: options.NativeWidescreen1920x1080);
     }
 
     public void RunStartupSafeMigrations(

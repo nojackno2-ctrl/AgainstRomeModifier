@@ -46,7 +46,10 @@ internal sealed class ExeFeatureDetector
             profile.UnitRecruit20 =
                 ExePatchModel.GetUnitRecruit20PatchState(exeBytes) == ExeUnitRecruit20PatchState.Patched;
             profile.NativeWidescreen1920x1080 =
-                ExePatchModel.GetNativeWidescreenPatchState(exeBytes) == ExeNativeWidescreenPatchState.Patched;
+                ExePatchModel.GetNativeWidescreenPatchState(exeBytes) is
+                    ExeNativeWidescreenPatchState.LegacyUnforced or
+                    ExeNativeWidescreenPatchState.LegacyForcedStaleUi or
+                    ExeNativeWidescreenPatchState.Patched;
         }
         catch (Exception ex)
         {

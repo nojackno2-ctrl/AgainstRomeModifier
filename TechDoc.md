@@ -419,7 +419,11 @@ ZIP 備份先建立 `.tmp`，加入修改器產生的 `manifest.json`，成功�
 
 修改器內嵌 x86 `D3D8.dll`、`DDraw.dll`、`dgVoodooCpl.exe`、`dgVoodoo.conf`。它不下載 runtime dependency，也不覆蓋非受管 DLL。遊戲根目錄的 manifest 記錄受管檔與 hash；使用者改過的受管檔不會被無聲刪除。來源、版本與 SHA-256 見 `ThirdParty/dgVoodoo2/REDISTRIBUTION.md`。
 
-實驗性 `NativeWidescreen1920x1080` 與 dgVoodoo2 的責任不同：它透過三組已驗證 EXE 特徵碼，將原生 1600×1200 32-bit mode `0x22` 的辨識、建立／刷新參數及模式文字改為 1920×1080，目標是讓引擎建立真正的寬螢幕 viewport。dgVoodoo2 只負責 Direct3D8/DirectDraw 相容與輸出呈現，不能單獨證明可視範圍擴大。此 EXE patch 仍沿用 `igm16001200` UI；套用／偵測／完整還原及自動測試已完成，但世界可視範圍、UI、滑鼠、邊緣捲動、對話框與小地圖仍待遊戲內驗證。
+實驗性 `NativeWidescreen1920x1080` 透過六組 EXE 特徵碼，將原生 1600×1200 32-bit mode `0x22` 的辨識、建立／刷新參數及模式文字改為 1920×1080，啟動時強制送出 `0x22`，並讓 IGM 的 mode getter 改讀目前啟用值。原版 IGM 對話框選擇器沒有 `0x22` 分支，因此補丁讓它沿用原版最高解析度 `dlg_igm12_10` 配置；資源路徑仍為 `igm16001200`。第一版只替換 mode 本身，實測無作用；第二版雖啟動寬畫面，IGM 卻繼續讀取已儲存的舊 mode，造成 1920 framebuffer／輸入空間內只繪出靠左的舊尺寸畫面。現行版把舊三點與舊四點狀態分別視為 `LegacyUnforced`、`LegacyForcedStaleUi`，只補寫缺少的驗證位址。搭配 dgVoodoo2 時，受管設定使用 `ScalingMode=stretched_ar` 與 `WindowedAttributes=borderless, fullscreensize`；若 `dgVoodoo.conf` 曾自訂，修改器會保留其他值，只更新這兩個必要鍵。全螢幕實測可得到置中的 4:3 後備畫面，但切回普通視窗後仍會重現左上舊 surface 與黑區；因此現行修正改為確保自訂設定檔也收到無邊框桌面尺寸 profile，仍待重新實測。這不是 16:9 擴大世界視野，滑鼠邊界、邊緣捲動、對話框、小地圖及獨立鏡頭縮放仍須驗證。
+
+最終實測顯示全螢幕與視窗化都無法修正內部舊 surface，因此上述六點 EXE 實驗已停用，只保留歷史偵測與還原能力。UI 的同一序列化鍵現顯示為「高解析度置中（4:3）」：套用時一律把六點還原成原版，並設定 dgVoodoo `FullScreenMode=true`、`ScalingMode=stretched_ar`、`CenterAppWindow=true`、`FullscreenAttributes=fake`。視窗化的 `WindowedAttributes` 保持空白，因為實測 `fullscreensize` 會把桌面尺寸縮放壓進 1280×1024 視窗而造成狹長變形；視窗模式改為只使用原版尺寸並置中。此後備方案保留原版 1600×1200，不宣稱原生 16:9 或增加世界視野。
+
+最終使用者實測確認：全螢幕的置中 4:3 顯示與視窗化的正常比例均正確，置中後備方案已通過 runtime verification。
 
 ## 15. UI 與 preset
 

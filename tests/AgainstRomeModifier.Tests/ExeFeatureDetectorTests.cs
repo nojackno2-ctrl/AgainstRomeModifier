@@ -30,6 +30,9 @@ public sealed class ExeFeatureDetectorTests
             Place(exe, ExePatchModel.NativeWidescreenIdentifyOffset, ExePatchModel.NativeWidescreenIdentifyPatchedBytes);
             Place(exe, ExePatchModel.NativeWidescreenCreateOffset, ExePatchModel.NativeWidescreenCreatePatchedBytes);
             Place(exe, ExePatchModel.NativeWidescreenModeTextOffset, ExePatchModel.NativeWidescreenModeTextPatchedBytes);
+            Place(exe, ExePatchModel.NativeWidescreenForceModeOffset, ExePatchModel.NativeWidescreenForceModePatchedBytes);
+            Place(exe, ExePatchModel.NativeWidescreenActiveModeGetterOffset, ExePatchModel.NativeWidescreenActiveModeGetterPatchedBytes);
+            Place(exe, ExePatchModel.NativeWidescreenIgmDialogModeOffset, ExePatchModel.NativeWidescreenIgmDialogModePatchedBytes);
             File.WriteAllBytes(Path.Combine(root, "Against_Rome.exe"), exe);
 
             var profile = new PatchProfile();
@@ -43,6 +46,60 @@ public sealed class ExeFeatureDetectorTests
             Assert.True(profile.UnitRecruit20);
             Assert.True(profile.NativeWidescreen1920x1080);
             Assert.Equal(ExeRomanEndlessPatchState.Patched, detection.RomanEndlessState);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Detector_keeps_legacy_unforced_widescreen_enabled_for_migration()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "arm-exe-detector-legacy-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            byte[] exe = new byte[ExeSize];
+            Place(exe, ExePatchModel.NativeWidescreenIdentifyOffset, ExePatchModel.NativeWidescreenIdentifyPatchedBytes);
+            Place(exe, ExePatchModel.NativeWidescreenCreateOffset, ExePatchModel.NativeWidescreenCreatePatchedBytes);
+            Place(exe, ExePatchModel.NativeWidescreenModeTextOffset, ExePatchModel.NativeWidescreenModeTextPatchedBytes);
+            Place(exe, ExePatchModel.NativeWidescreenForceModeOffset, ExePatchModel.NativeWidescreenForceModeOriginalBytes);
+            Place(exe, ExePatchModel.NativeWidescreenActiveModeGetterOffset, ExePatchModel.NativeWidescreenActiveModeGetterOriginalBytes);
+            Place(exe, ExePatchModel.NativeWidescreenIgmDialogModeOffset, ExePatchModel.NativeWidescreenIgmDialogModeOriginalBytes);
+            File.WriteAllBytes(Path.Combine(root, "Against_Rome.exe"), exe);
+
+            var profile = new PatchProfile();
+            new ExeFeatureDetector(new NullLogger()).Detect(root, profile);
+
+            Assert.True(profile.NativeWidescreen1920x1080);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Detector_keeps_forced_stale_ui_widescreen_enabled_for_migration()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "arm-exe-detector-stale-ui-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            byte[] exe = new byte[ExeSize];
+            Place(exe, ExePatchModel.NativeWidescreenIdentifyOffset, ExePatchModel.NativeWidescreenIdentifyPatchedBytes);
+            Place(exe, ExePatchModel.NativeWidescreenCreateOffset, ExePatchModel.NativeWidescreenCreatePatchedBytes);
+            Place(exe, ExePatchModel.NativeWidescreenModeTextOffset, ExePatchModel.NativeWidescreenModeTextPatchedBytes);
+            Place(exe, ExePatchModel.NativeWidescreenForceModeOffset, ExePatchModel.NativeWidescreenForceModePatchedBytes);
+            Place(exe, ExePatchModel.NativeWidescreenActiveModeGetterOffset, ExePatchModel.NativeWidescreenActiveModeGetterOriginalBytes);
+            Place(exe, ExePatchModel.NativeWidescreenIgmDialogModeOffset, ExePatchModel.NativeWidescreenIgmDialogModeOriginalBytes);
+            File.WriteAllBytes(Path.Combine(root, "Against_Rome.exe"), exe);
+
+            var profile = new PatchProfile();
+            new ExeFeatureDetector(new NullLogger()).Detect(root, profile);
+
+            Assert.True(profile.NativeWidescreen1920x1080);
         }
         finally
         {

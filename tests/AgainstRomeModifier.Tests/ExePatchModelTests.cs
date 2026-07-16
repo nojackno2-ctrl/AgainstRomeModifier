@@ -33,10 +33,15 @@ public sealed class ExePatchModelTests {
                 : ExePatchModel.RomanEndlessOriginalBytes);
 
     private static void PlaceNativeWidescreen(byte[] exe, ExeNativeWidescreenPatchState state) {
-        bool patched = state == ExeNativeWidescreenPatchState.Patched;
-        Place(exe, ExePatchModel.NativeWidescreenIdentifyOffset, patched ? ExePatchModel.NativeWidescreenIdentifyPatchedBytes : ExePatchModel.NativeWidescreenIdentifyOriginalBytes);
-        Place(exe, ExePatchModel.NativeWidescreenCreateOffset, patched ? ExePatchModel.NativeWidescreenCreatePatchedBytes : ExePatchModel.NativeWidescreenCreateOriginalBytes);
-        Place(exe, ExePatchModel.NativeWidescreenModeTextOffset, patched ? ExePatchModel.NativeWidescreenModeTextPatchedBytes : ExePatchModel.NativeWidescreenModeTextOriginalBytes);
+        bool modesPatched = state != ExeNativeWidescreenPatchState.Original;
+        bool forcePatched = state is ExeNativeWidescreenPatchState.LegacyForcedStaleUi or ExeNativeWidescreenPatchState.Patched;
+        bool uiPatched = state == ExeNativeWidescreenPatchState.Patched;
+        Place(exe, ExePatchModel.NativeWidescreenIdentifyOffset, modesPatched ? ExePatchModel.NativeWidescreenIdentifyPatchedBytes : ExePatchModel.NativeWidescreenIdentifyOriginalBytes);
+        Place(exe, ExePatchModel.NativeWidescreenCreateOffset, modesPatched ? ExePatchModel.NativeWidescreenCreatePatchedBytes : ExePatchModel.NativeWidescreenCreateOriginalBytes);
+        Place(exe, ExePatchModel.NativeWidescreenModeTextOffset, modesPatched ? ExePatchModel.NativeWidescreenModeTextPatchedBytes : ExePatchModel.NativeWidescreenModeTextOriginalBytes);
+        Place(exe, ExePatchModel.NativeWidescreenForceModeOffset, forcePatched ? ExePatchModel.NativeWidescreenForceModePatchedBytes : ExePatchModel.NativeWidescreenForceModeOriginalBytes);
+        Place(exe, ExePatchModel.NativeWidescreenActiveModeGetterOffset, uiPatched ? ExePatchModel.NativeWidescreenActiveModeGetterPatchedBytes : ExePatchModel.NativeWidescreenActiveModeGetterOriginalBytes);
+        Place(exe, ExePatchModel.NativeWidescreenIgmDialogModeOffset, uiPatched ? ExePatchModel.NativeWidescreenIgmDialogModePatchedBytes : ExePatchModel.NativeWidescreenIgmDialogModeOriginalBytes);
     }
 
     private static void PlaceVillageRange(byte[] exe, ExeVillageRangePatchState state) {
@@ -113,7 +118,7 @@ public sealed class ExePatchModelTests {
     }
 
     [Fact]
-    public void Native_widescreen_round_trip_changes_all_three_verified_sites() {
+    public void Native_widescreen_round_trip_changes_all_six_verified_sites() {
         byte[] exe = new byte[0x1DD000];
         PlaceNativeWidescreen(exe, ExeNativeWidescreenPatchState.Original);
 
@@ -127,6 +132,46 @@ public sealed class ExePatchModelTests {
 
         ExePatchModel.Apply(exe, ExePatchModel.PlanNativeWidescreen(false,
             ExePatchModel.GetNativeWidescreenPatchState(exe)));
+        Assert.Equal(ExeNativeWidescreenPatchState.Original,
+            ExePatchModel.GetNativeWidescreenPatchState(exe));
+    }
+
+    [Fact]
+    public void Native_widescreen_legacy_unforced_patch_migrates_and_restores() {
+        byte[] exe = new byte[0x1DD000];
+        PlaceNativeWidescreen(exe, ExeNativeWidescreenPatchState.LegacyUnforced);
+
+        Assert.Equal(ExeNativeWidescreenPatchState.LegacyUnforced,
+            ExePatchModel.GetNativeWidescreenPatchState(exe));
+        IReadOnlyList<ExeWriteOp> migration = ExePatchModel.PlanNativeWidescreen(
+            true, ExeNativeWidescreenPatchState.LegacyUnforced);
+        Assert.Equal(3, migration.Count);
+        ExePatchModel.Apply(exe, migration);
+        Assert.Equal(ExeNativeWidescreenPatchState.Patched,
+            ExePatchModel.GetNativeWidescreenPatchState(exe));
+
+        ExePatchModel.Apply(exe, ExePatchModel.PlanNativeWidescreen(
+            false, ExePatchModel.GetNativeWidescreenPatchState(exe)));
+        Assert.Equal(ExeNativeWidescreenPatchState.Original,
+            ExePatchModel.GetNativeWidescreenPatchState(exe));
+    }
+
+    [Fact]
+    public void Native_widescreen_forced_stale_ui_patch_migrates_and_restores() {
+        byte[] exe = new byte[0x1DD000];
+        PlaceNativeWidescreen(exe, ExeNativeWidescreenPatchState.LegacyForcedStaleUi);
+
+        Assert.Equal(ExeNativeWidescreenPatchState.LegacyForcedStaleUi,
+            ExePatchModel.GetNativeWidescreenPatchState(exe));
+        IReadOnlyList<ExeWriteOp> migration = ExePatchModel.PlanNativeWidescreen(
+            true, ExeNativeWidescreenPatchState.LegacyForcedStaleUi);
+        Assert.Equal(2, migration.Count);
+        ExePatchModel.Apply(exe, migration);
+        Assert.Equal(ExeNativeWidescreenPatchState.Patched,
+            ExePatchModel.GetNativeWidescreenPatchState(exe));
+
+        ExePatchModel.Apply(exe, ExePatchModel.PlanNativeWidescreen(
+            false, ExePatchModel.GetNativeWidescreenPatchState(exe)));
         Assert.Equal(ExeNativeWidescreenPatchState.Original,
             ExePatchModel.GetNativeWidescreenPatchState(exe));
     }
