@@ -76,6 +76,7 @@ namespace AgainstRomeModifier {
             chkLeaderGlory.Checked = false;
             chkBalance.Checked = false;
             chkAllUnitsEntireMapVision.Checked = false;
+            chkNativeWidescreen1920x1080.Checked = false;
             chkRangedRange3x.Checked = false;
             chkUnitMovementSpeed2x.Checked = false;
             chkSpellEntireMap.Checked = false;

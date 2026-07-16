@@ -20,6 +20,7 @@ namespace AgainstRomeModifier {
                 [FeatureKeys.FreeUpgrade.Id] = chkFreeUpgrade, [FeatureKeys.NoSpellCost.Id] = chkNoSpellCost,
                 [FeatureKeys.MaxPopulation.Id] = chkMaxPopulation, [FeatureKeys.Balance.Id] = chkBalance,
                 [FeatureKeys.AllUnitsEntireMapVision.Id] = chkAllUnitsEntireMapVision,
+                [FeatureKeys.NativeWidescreen1920x1080.Id] = chkNativeWidescreen1920x1080,
                 [FeatureKeys.RangedRange3x.Id] = chkRangedRange3x, [FeatureKeys.UnitMovementSpeed2x.Id] = chkUnitMovementSpeed2x,
                 [FeatureKeys.SpellEntireMap.Id] = chkSpellEntireMap, [FeatureKeys.SpellRange3x.Id] = chkSpellRange3x,
                 [FeatureKeys.ProjectileArcHeight.Id] = chkProjectileArcHeight,

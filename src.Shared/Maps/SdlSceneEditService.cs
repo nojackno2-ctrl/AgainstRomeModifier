@@ -1,12 +1,20 @@
 namespace AgainstRomeModifier.Maps;
 
+/// <summary>以既有物件為模板複製出的新 SDL 物件；模板欄位（namedef/def/angle 等）原樣沿用，只覆寫隊伍與相對座標。</summary>
+public sealed record SdlSceneObjectAddition(string SourceFile, int TemplateIndex, int Team, float LocalX, float LocalY, float LocalZ);
+
+/// <summary>暫存刪除既有 SDL 物件；儲存時移除該 [objectNNNN] 區塊並重新連續編號。</summary>
+public sealed record SdlSceneObjectRemoval(string SourceFile, int ObjectIndex);
+
 public static class SdlSceneEditService
 {
     public static void SaveChanges(
         string mapDirectory,
         IReadOnlyList<MapSceneObject> savedObjects,
         IReadOnlyList<MapSceneObject> currentObjects,
-        FileRollbackScope rollback)
+        FileRollbackScope rollback,
+        IReadOnlyList<SdlSceneObjectRemoval>? removals = null,
+        IReadOnlyList<SdlSceneObjectAddition>? additions = null)
     {
         ArgumentNullException.ThrowIfNull(rollback);
         string mapPath = ValidateCustomMapDirectory(mapDirectory);
@@ -14,20 +22,76 @@ public static class SdlSceneEditService
         Dictionary<SceneKey, MapSceneObject> current = Index(currentObjects);
         if (saved.Count != current.Count || saved.Keys.Any(key => !current.ContainsKey(key)))
             throw new InvalidOperationException("SDL 場景物件集合已改變，請重新開啟地圖後再試。");
+        IReadOnlyList<SdlSceneObjectRemoval> pendingRemovals = ValidateRemovals(removals, current);
+        IReadOnlyList<SdlSceneObjectAddition> pendingAdditions = ValidateAdditions(additions, current);
 
-        foreach (IGrouping<string, MapSceneObject> fileGroup in current.Values
+        IEnumerable<string> files = current.Values
             .Where(item => HasChanged(saved[Key(item)], item))
-            .GroupBy(item => item.SourceFile, StringComparer.OrdinalIgnoreCase))
+            .Select(item => item.SourceFile)
+            .Concat(pendingRemovals.Select(item => item.SourceFile))
+            .Concat(pendingAdditions.Select(item => item.SourceFile))
+            .Distinct(StringComparer.OrdinalIgnoreCase);
+        foreach (string sourceFile in files)
         {
-            string path = ResolveSdlPath(mapPath, fileGroup.Key);
+            string path = ResolveSdlPath(mapPath, sourceFile);
             var document = SdlDocument.Load(path);
-            foreach (MapSceneObject item in fileGroup)
+            foreach (MapSceneObject item in current.Values.Where(item =>
+                item.SourceFile.Equals(sourceFile, StringComparison.OrdinalIgnoreCase) && HasChanged(saved[Key(item)], item)))
             {
                 document.SetObjectTeam(item.ObjectIndex, item.Team);
                 document.SetObjectPosition(item.ObjectIndex, new SdlVector3(item.LocalX, item.LocalY, item.LocalZ));
             }
+            // 先複製再刪除：模板欄位在移除任何區塊前讀取，因此允許「複製後刪除原件」等同移動。
+            foreach (SdlSceneObjectAddition addition in pendingAdditions.Where(item =>
+                item.SourceFile.Equals(sourceFile, StringComparison.OrdinalIgnoreCase)))
+            {
+                SdlObjectSection template = document.Objects.FirstOrDefault(section => section.Index == addition.TemplateIndex)
+                    ?? throw new InvalidDataException($"SDL 複製模板不存在：{sourceFile} / {addition.TemplateIndex}。");
+                var fields = new Dictionary<string, string>(template.Fields, StringComparer.OrdinalIgnoreCase)
+                {
+                    ["team"] = addition.Team.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    ["pos"] = new SdlVector3(addition.LocalX, addition.LocalY, addition.LocalZ).ToString("0.00"),
+                };
+                document.AddObject(fields);
+            }
+            // 由大到小刪除：RemoveObject 會立即重新編號，遞減順序可保持其餘原始索引有效。
+            foreach (SdlSceneObjectRemoval removal in pendingRemovals
+                .Where(item => item.SourceFile.Equals(sourceFile, StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(item => item.ObjectIndex))
+                document.RemoveObject(removal.ObjectIndex);
             document.Save(rollback);
         }
+    }
+
+    private static IReadOnlyList<SdlSceneObjectRemoval> ValidateRemovals(
+        IReadOnlyList<SdlSceneObjectRemoval>? removals, Dictionary<SceneKey, MapSceneObject> current)
+    {
+        if (removals is null || removals.Count == 0) return Array.Empty<SdlSceneObjectRemoval>();
+        var seen = new HashSet<SceneKey>();
+        foreach (SdlSceneObjectRemoval removal in removals)
+        {
+            var key = new SceneKey(removal.SourceFile.ToUpperInvariant(), removal.ObjectIndex);
+            if (!current.ContainsKey(key))
+                throw new InvalidDataException($"待刪除的 SDL 物件不存在：{removal.SourceFile} / {removal.ObjectIndex}。");
+            if (!seen.Add(key))
+                throw new InvalidDataException($"重複的 SDL 刪除項目：{removal.SourceFile} / {removal.ObjectIndex}。");
+        }
+        return removals;
+    }
+
+    private static IReadOnlyList<SdlSceneObjectAddition> ValidateAdditions(
+        IReadOnlyList<SdlSceneObjectAddition>? additions, Dictionary<SceneKey, MapSceneObject> current)
+    {
+        if (additions is null || additions.Count == 0) return Array.Empty<SdlSceneObjectAddition>();
+        foreach (SdlSceneObjectAddition addition in additions)
+        {
+            if (!current.ContainsKey(new SceneKey(addition.SourceFile.ToUpperInvariant(), addition.TemplateIndex)))
+                throw new InvalidDataException($"SDL 複製模板不存在：{addition.SourceFile} / {addition.TemplateIndex}。");
+            if (addition.Team is < -1 or > 15) throw new InvalidDataException("SDL 場景物件隊伍必須介於 -1 與 15。");
+            if (!float.IsFinite(addition.LocalX) || !float.IsFinite(addition.LocalY) || !float.IsFinite(addition.LocalZ))
+                throw new InvalidDataException("SDL 場景物件座標必須是有限數值。");
+        }
+        return additions;
     }
 
     public static bool HasChanges(IReadOnlyList<MapSceneObject> baseline, IReadOnlyList<MapSceneObject> current)

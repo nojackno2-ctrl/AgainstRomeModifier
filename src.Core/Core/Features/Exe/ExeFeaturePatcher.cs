@@ -79,6 +79,23 @@ internal static class ExeFeaturePatcher
         return true;
     }
 
+    internal static bool ApplyNativeWidescreen(byte[] bytes, bool enabled, ILogger logger)
+    {
+        ExeNativeWidescreenPatchState state = ExePatchModel.GetNativeWidescreenPatchState(bytes);
+        if (state == ExeNativeWidescreenPatchState.Unknown)
+        {
+            if (enabled)
+                throw new InvalidDataException(Loc.Get("SvcLogNativeWidescreenUnknown"));
+            return false;
+        }
+
+        IReadOnlyList<ExeWriteOp> ops = ExePatchModel.PlanNativeWidescreen(enabled, state);
+        if (ops.Count == 0) return false;
+        ExePatchModel.Apply(bytes, ops);
+        logger.Log(Loc.Get(enabled ? "SvcLogNativeWidescreenApplied" : "SvcLogNativeWidescreenRestored"));
+        return true;
+    }
+
     private static void RestoreLegacyVillageRange(byte[] bytes, ILogger logger, ref bool modified)
     {
         ExeVillageRangePatchState state = ExePatchModel.GetVillageBuildRangePatchState(bytes);

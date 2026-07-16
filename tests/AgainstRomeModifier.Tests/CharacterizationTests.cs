@@ -30,6 +30,7 @@ public sealed class CharacterizationTests
         NoSpellCost = true,
         MaxPopulation = true,
         RomanEndless = true,
+        NativeWidescreen1920x1080 = true,
         Balance = true,
         RangedRange3x = true,
         UnitMovementSpeed2x = true,
@@ -85,6 +86,7 @@ public sealed class CharacterizationTests
         Assert.True(detected.NoSpellCost);
         Assert.True(detected.MaxPopulation);
         Assert.True(detected.RomanEndless);
+        Assert.True(detected.NativeWidescreen1920x1080);
         Assert.False(detected.Balance); // 平衡表已等同原版；未套用自訂屬性時不會產生可偵測差異。
         Assert.True(detected.RangedRange3x);
         Assert.True(detected.UnitMovementSpeed2x);
@@ -234,6 +236,7 @@ public sealed class CharacterizationTests
         Assert.False(afterStats.SpellRange3x);
         Assert.False(afterStats.MaxPopulation);
         Assert.False(afterStats.RomanEndless);
+        Assert.True(afterStats.NativeWidescreen1920x1080);
         Assert.False(afterStats.FoodHealing10x);
         Assert.True(afterStats.FocusLoss);
         Assert.True(afterStats.VillageBuildRange);
@@ -260,6 +263,7 @@ public sealed class CharacterizationTests
         Assert.True(afterCompat.SpellRange3x);
         Assert.True(afterCompat.MaxPopulation);
         Assert.True(afterCompat.RomanEndless);
+        Assert.False(afterCompat.NativeWidescreen1920x1080);
         Assert.True(afterCompat.FoodHealing10x);
     }
 

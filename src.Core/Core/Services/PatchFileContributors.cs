@@ -62,6 +62,7 @@ internal sealed class ExePatchFileContributor : IPatchFileContributor
             profile.NoSpellAltar, profile.RomanEndless, profile.GameSpeed, context.Logger);
         modified |= ExeFeaturePatcher.ApplyCiviProduce20(bytes, profile.CiviProduce20, context.Logger);
         modified |= ExeFeaturePatcher.ApplyUnitRecruit20(bytes, profile.UnitRecruit20, context.Logger);
+        modified |= ExeFeaturePatcher.ApplyNativeWidescreen(bytes, profile.NativeWidescreen1920x1080, context.Logger);
         if (modified) context.Add("Against_Rome.exe", bytes);
     }
 }

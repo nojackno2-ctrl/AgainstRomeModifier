@@ -27,6 +27,9 @@ public sealed class ExeFeatureDetectorTests
             Place(exe, ExePatchModel.GameSpeedTgtConstOffset, BitConverter.GetBytes(4_000_000.0));
             Place(exe, ExePatchModel.CiviProduce20PatchOffset, ExePatchModel.CiviProduce20PatchedBytes);
             Place(exe, ExePatchModel.UnitRecruit20PatchOffset, ExePatchModel.UnitRecruit20PatchedBytes);
+            Place(exe, ExePatchModel.NativeWidescreenIdentifyOffset, ExePatchModel.NativeWidescreenIdentifyPatchedBytes);
+            Place(exe, ExePatchModel.NativeWidescreenCreateOffset, ExePatchModel.NativeWidescreenCreatePatchedBytes);
+            Place(exe, ExePatchModel.NativeWidescreenModeTextOffset, ExePatchModel.NativeWidescreenModeTextPatchedBytes);
             File.WriteAllBytes(Path.Combine(root, "Against_Rome.exe"), exe);
 
             var profile = new PatchProfile();
@@ -38,6 +41,7 @@ public sealed class ExeFeatureDetectorTests
             Assert.Equal(4, profile.GameSpeed);
             Assert.True(profile.CiviProduce20);
             Assert.True(profile.UnitRecruit20);
+            Assert.True(profile.NativeWidescreen1920x1080);
             Assert.Equal(ExeRomanEndlessPatchState.Patched, detection.RomanEndlessState);
         }
         finally

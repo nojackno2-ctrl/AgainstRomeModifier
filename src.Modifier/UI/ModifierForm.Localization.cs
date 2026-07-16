@@ -102,6 +102,7 @@ namespace AgainstRomeModifier {
             lblDefaultStatsTitle.Text = Loc.Get("DefaultStatsTitle");
             chkBalance.Text = Loc.Get("EnableBalance");
             chkAllUnitsEntireMapVision.Text = Loc.Get("AllUnitsEntireMapVision");
+            chkNativeWidescreen1920x1080.Text = Loc.Get("NativeWidescreen1920x1080");
             chkRangedRange3x.Text = Loc.Get("RangedRange3x");
             chkUnitMovementSpeed2x.Text = Loc.Get("UnitMovementSpeed2x");
             chkSpellEntireMap.Text = Loc.Get("SpellEntireMap");
@@ -142,6 +143,7 @@ namespace AgainstRomeModifier {
                 myToolTip.SetToolTip(chkInfiniteMorale, Loc.Get("InfiniteMoraleTip"));
                 myToolTip.SetToolTip(chkBalance, Loc.Get("BalanceTip"));
                 myToolTip.SetToolTip(chkAllUnitsEntireMapVision, Loc.Get("AllUnitsEntireMapVisionTip"));
+                myToolTip.SetToolTip(chkNativeWidescreen1920x1080, Loc.Get("NativeWidescreen1920x1080Tip"));
                 myToolTip.SetToolTip(chkRangedRange3x, Loc.Get("RangedRange3xTip"));
                 myToolTip.SetToolTip(chkUnitMovementSpeed2x, Loc.Get("UnitMovementSpeed2xTip"));
                 myToolTip.SetToolTip(chkSpellEntireMap, Loc.Get("SpellEntireMapTip"));
