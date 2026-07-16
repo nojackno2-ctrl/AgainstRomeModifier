@@ -19,6 +19,7 @@ internal static class ObjdefFeaturePatcher
             options.FastBuildUpgradeRepair, options.HqHp10x, options.LeaderGlory,
             options.RangedRange3x, options.UnitMovementSpeed2x,
             options.SpellEntireMap, options.SpellRange3x,
-            options.ProjectileArcHeight, unitStats));
+            options.ProjectileArcHeight, unitStats,
+            options.AllUnitsEntireMapVision));
     }
 }

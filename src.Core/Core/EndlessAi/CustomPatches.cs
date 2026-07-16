@@ -144,112 +144,228 @@ namespace AgainstRomeModifier
         private const int UltimateLoopDelayLowerMs = 30000;
         private const int LegacyLoopDelayUpperMs = 2000;
         private const int LegacyLoopDelayLowerMs = 1000;
-        private const int AcceleratedLoopCount = 6;
+        private const int NonSchedulerLoopCount = 4;
+
+        // Saves serialize absolute script deadlines separately from the script clock. In late
+        // games the restored v16 deadline can be millions of milliseconds ahead of s_getTime(),
+        // preventing the outer settlement scheduler from reaching the accelerated branch at all.
+        // The normal Ultimate deadline is 30 seconds, so only a gap greater than 60 seconds is
+        // treated as a load-time rollback. This preserves ordinary throttling and the bounded
+        // active-party/job-slot protections.
+        internal const int DeadlineRollbackThresholdMs = 60000;
+
+        // Code-stream range 0x1bc44..0x1bd48 in all five stock ENDL ak_level scripts.
+        // The four delay literals are wildcarded when locating the original/legacy shape.
+        private static readonly int[] OriginalSchedulerBlock = {
+            66, 0, 128, 72, 86, 102, 117, 48,
+            128, 83, 86, 81, 16, 96, 101, 117,
+            12, 71, 66, 1, 117, 172, 66, 0,
+            91, 19, 81, 71, 102, 117, 52, 66,
+            120000, 66, 60000, 128, 16, 73, -2, 86,
+            91, 19, 112, 44, 66, 240000, 66, 120000,
+            128, 16, 73, -2, 86, 91, 19, 128,
+            83, 86, 90, 19, 32, 82, 16, 120,
+            -9748
+        };
+
+        // Equivalent Ultimate scheduler with a bounded rollback guard:
+        //   due = now >= v16 || v16 > now + 60000
+        //   if (due) { v16 = now + 30000; spawnSettlement(); }
+        // The second outer dispatcher call remains at the original following offset. Branch
+        // operands use the VM's verified target rule: opcode + 8 + displacement.
+        private static readonly int[] UltimateSchedulerBlock = BuildUltimateSchedulerBlock();
+        private static readonly int?[] OriginalSchedulerSignature = BuildOriginalSchedulerSignature();
+        private static readonly int?[] UltimateSchedulerSignature = ToPattern(UltimateSchedulerBlock);
+
+        internal static ReadOnlySpan<int> OriginalSchedulerBlockWords => OriginalSchedulerBlock;
+        internal static ReadOnlySpan<int> UltimateSchedulerBlockWords => UltimateSchedulerBlock;
 
         public PatchState Detect(byte[] decompressed)
         {
-            int expectedIndex = 0;
-            bool allOriginal = true;
-            bool allUltimate = true;
-
-            for (int offset = 0; offset <= decompressed.Length - 24 && expectedIndex < LoopDelayRanges.Length; offset += 4)
-            {
-                if (BitConverter.ToInt32(decompressed, offset) != 0x42 ||
-                    BitConverter.ToInt32(decompressed, offset + 8) != 0x42 ||
-                    BitConverter.ToInt32(decompressed, offset + 16) != 0x80 ||
-                    BitConverter.ToInt32(decompressed, offset + 20) != 16)
-                {
-                    continue;
-                }
-
-                (int originalUpperMs, int originalLowerMs) = LoopDelayRanges[expectedIndex];
-                int currentUpperMs = BitConverter.ToInt32(decompressed, offset + 4);
-                int currentLowerMs = BitConverter.ToInt32(decompressed, offset + 12);
-
-                bool matchesOriginal = currentUpperMs == originalUpperMs && currentLowerMs == originalLowerMs;
-                bool matchesUltimate = currentUpperMs == UltimateLoopDelayUpperMs && currentLowerMs == UltimateLoopDelayLowerMs;
-                bool matchesLegacy = currentUpperMs == LegacyLoopDelayUpperMs && currentLowerMs == LegacyLoopDelayLowerMs;
-
-                if (matchesOriginal)
-                {
-                    allUltimate = false;
-                    expectedIndex++;
-                }
-                else if (matchesUltimate)
-                {
-                    allOriginal = false;
-                    expectedIndex++;
-                }
-                else if (matchesLegacy)
-                {
-                    allOriginal = false;
-                    allUltimate = false;
-                    expectedIndex++;
-                }
-            }
-
-            if (expectedIndex != LoopDelayRanges.Length)
-            {
+            if (!TryFindSchedulerBlock(decompressed, out int schedulerOffset, out bool repaired))
                 return PatchState.Unknown;
-            }
 
-            if (allOriginal) return PatchState.Original;
-            if (allUltimate) return PatchState.Ultimate;
+            List<int> loopSites = FindNonSchedulerLoopSites(decompressed, schedulerOffset);
+            if (loopSites.Count != NonSchedulerLoopCount) return PatchState.Unknown;
+
+            PatchState loopState = DetectNonSchedulerLoops(decompressed, loopSites);
+            PatchState schedulerState = repaired
+                ? PatchState.Ultimate
+                : DetectOriginalShapeScheduler(decompressed, schedulerOffset);
+
+            if (loopState == PatchState.Original && schedulerState == PatchState.Original)
+                return PatchState.Original;
+            if (loopState == PatchState.Ultimate && schedulerState == PatchState.Ultimate)
+                return PatchState.Ultimate;
             return PatchState.Legacy;
         }
 
         public bool Apply(ref byte[] decompressed, bool enabled)
         {
-            bool changed = false;
-            int delaySiteIndex = 0;
-
-            for (int offset = 0; offset <= decompressed.Length - 24; offset += 4)
+            PatchState state = Detect(decompressed);
+            if (state == PatchState.Unknown)
             {
+                if (!enabled) return false;
+                throw new InvalidOperationException("P6 scheduler bytes do not match a supported original, legacy, or repaired pattern.");
+            }
+            if ((enabled && state == PatchState.Ultimate) || (!enabled && state == PatchState.Original))
+                return false;
+
+            if (!TryFindSchedulerBlock(decompressed, out int schedulerOffset, out bool repaired))
+                throw new InvalidOperationException("P6 scheduler block signature count mismatch during Apply.");
+
+            List<int> loopSites = FindNonSchedulerLoopSites(decompressed, schedulerOffset);
+            if (loopSites.Count != NonSchedulerLoopCount)
+                throw new InvalidOperationException("P6 non-scheduler loop count mismatch during Apply.");
+
+            bool changed = false;
+            for (int i = 0; i < loopSites.Count; i++)
+            {
+                int site = loopSites[i];
+                (int originalUpperMs, int originalLowerMs) = LoopDelayRanges[i];
+                int targetUpperMs = enabled ? UltimateLoopDelayUpperMs : originalUpperMs;
+                int targetLowerMs = enabled ? UltimateLoopDelayLowerMs : originalLowerMs;
+                changed |= WriteIfDifferent(ref decompressed, site + 4, targetUpperMs, "P6 scheduler upper delay");
+                changed |= WriteIfDifferent(ref decompressed, site + 12, targetLowerMs, "P6 scheduler lower delay");
+            }
+
+            int[] targetBlock = enabled ? UltimateSchedulerBlock : OriginalSchedulerBlock;
+            if ((enabled && !repaired) || (!enabled && repaired) || state == PatchState.Legacy)
+                changed |= ReplaceSchedulerBlock(ref decompressed, schedulerOffset, targetBlock);
+
+            return changed;
+        }
+
+        private static PatchState DetectNonSchedulerLoops(byte[] decompressed, IReadOnlyList<int> sites)
+        {
+            bool allOriginal = true;
+            bool allUltimate = true;
+            for (int i = 0; i < sites.Count; i++)
+            {
+                int upper = BitConverter.ToInt32(decompressed, sites[i] + 4);
+                int lower = BitConverter.ToInt32(decompressed, sites[i] + 12);
+                (int originalUpper, int originalLower) = LoopDelayRanges[i];
+                bool original = upper == originalUpper && lower == originalLower;
+                bool ultimate = upper == UltimateLoopDelayUpperMs && lower == UltimateLoopDelayLowerMs;
+                bool legacy = upper == LegacyLoopDelayUpperMs && lower == LegacyLoopDelayLowerMs;
+                if (!original && !ultimate && !legacy) return PatchState.Unknown;
+                allOriginal &= original;
+                allUltimate &= ultimate;
+            }
+            if (allOriginal) return PatchState.Original;
+            if (allUltimate) return PatchState.Ultimate;
+            return PatchState.Legacy;
+        }
+
+        private static PatchState DetectOriginalShapeScheduler(byte[] decompressed, int offset)
+        {
+            int upperA = BitConverter.ToInt32(decompressed, offset + (32 * 4));
+            int lowerA = BitConverter.ToInt32(decompressed, offset + (34 * 4));
+            int upperB = BitConverter.ToInt32(decompressed, offset + (45 * 4));
+            int lowerB = BitConverter.ToInt32(decompressed, offset + (47 * 4));
+            if (upperA == LoopDelayRanges[4].OriginalUpperMs && lowerA == LoopDelayRanges[4].OriginalLowerMs &&
+                upperB == LoopDelayRanges[5].OriginalUpperMs && lowerB == LoopDelayRanges[5].OriginalLowerMs)
+                return PatchState.Original;
+            return PatchState.Legacy;
+        }
+
+        private static List<int> FindNonSchedulerLoopSites(byte[] decompressed, int schedulerOffset)
+        {
+            var sites = new List<int>();
+            int schedulerEnd = schedulerOffset + (OriginalSchedulerBlock.Length * 4);
+            for (int offset = 0; offset <= decompressed.Length - 24 && sites.Count < NonSchedulerLoopCount; offset += 4)
+            {
+                if (offset >= schedulerOffset && offset < schedulerEnd) continue;
                 if (BitConverter.ToInt32(decompressed, offset) != 0x42 ||
                     BitConverter.ToInt32(decompressed, offset + 8) != 0x42 ||
                     BitConverter.ToInt32(decompressed, offset + 16) != 0x80 ||
                     BitConverter.ToInt32(decompressed, offset + 20) != 16)
-                {
                     continue;
-                }
 
-                if (delaySiteIndex >= LoopDelayRanges.Length)
-                {
-                    continue;
-                }
-
-                (int originalUpperMs, int originalLowerMs) = LoopDelayRanges[delaySiteIndex];
-                int currentUpperMs = BitConverter.ToInt32(decompressed, offset + 4);
-                int currentLowerMs = BitConverter.ToInt32(decompressed, offset + 12);
-
-                bool matchesOriginal = currentUpperMs == originalUpperMs && currentLowerMs == originalLowerMs;
-                bool matchesUltimate = currentUpperMs == UltimateLoopDelayUpperMs && currentLowerMs == UltimateLoopDelayLowerMs;
-                bool matchesLegacy = currentUpperMs == LegacyLoopDelayUpperMs && currentLowerMs == LegacyLoopDelayLowerMs;
-
-                if (!matchesOriginal && !matchesUltimate && !matchesLegacy)
-                {
-                    continue;
-                }
-
-                bool accelerateSchedulerLoop = enabled && delaySiteIndex < AcceleratedLoopCount;
-                int targetUpperMs = accelerateSchedulerLoop ? UltimateLoopDelayUpperMs : originalUpperMs;
-                int targetLowerMs = accelerateSchedulerLoop ? UltimateLoopDelayLowerMs : originalLowerMs;
-
-                if (currentUpperMs != targetUpperMs || currentLowerMs != targetLowerMs)
-                {
-                    BciPattern.WriteBciInt32(decompressed, offset + 4, currentUpperMs, targetUpperMs, "P6 scheduler upper delay");
-                    BciPattern.WriteBciInt32(decompressed, offset + 12, currentLowerMs, targetLowerMs, "P6 scheduler lower delay");
-                    changed = true;
-                }
-                delaySiteIndex++;
+                int index = sites.Count;
+                int upper = BitConverter.ToInt32(decompressed, offset + 4);
+                int lower = BitConverter.ToInt32(decompressed, offset + 12);
+                (int originalUpper, int originalLower) = LoopDelayRanges[index];
+                bool supported = (upper == originalUpper && lower == originalLower) ||
+                                 (upper == UltimateLoopDelayUpperMs && lower == UltimateLoopDelayLowerMs) ||
+                                 (upper == LegacyLoopDelayUpperMs && lower == LegacyLoopDelayLowerMs);
+                if (supported) sites.Add(offset);
             }
+            return sites;
+        }
 
-            if (delaySiteIndex != LoopDelayRanges.Length)
+        private static bool TryFindSchedulerBlock(byte[] decompressed, out int offset, out bool repaired)
+        {
+            List<int> originalSites = BciPattern.FindAllBciWordPatternSites(decompressed, OriginalSchedulerSignature);
+            List<int> repairedSites = BciPattern.FindAllBciWordPatternSites(decompressed, UltimateSchedulerSignature);
+            if (originalSites.Count + repairedSites.Count != 1)
             {
-                throw new InvalidOperationException("P6 site count mismatch during Apply.");
+                offset = -1;
+                repaired = false;
+                return false;
             }
+            repaired = repairedSites.Count == 1;
+            offset = repaired ? repairedSites[0] : originalSites[0];
+            return true;
+        }
 
+        private static bool ReplaceSchedulerBlock(ref byte[] decompressed, int offset, IReadOnlyList<int> target)
+        {
+            bool changed = false;
+            for (int i = 0; i < target.Count; i++)
+                changed |= WriteIfDifferent(ref decompressed, offset + (i * 4), target[i], "P6 save/load deadline repair");
             return changed;
+        }
+
+        private static bool WriteIfDifferent(ref byte[] decompressed, int offset, int target, string name)
+        {
+            int current = BitConverter.ToInt32(decompressed, offset);
+            if (current == target) return false;
+            BciPattern.WriteBciInt32(decompressed, offset, current, target, name);
+            return true;
+        }
+
+        private static int?[] BuildOriginalSchedulerSignature()
+        {
+            int?[] signature = ToPattern(OriginalSchedulerBlock);
+            foreach (int index in new[] { 32, 34, 45, 47 }) signature[index] = null;
+            return signature;
+        }
+
+        private static int?[] ToPattern(IReadOnlyList<int> words)
+        {
+            var result = new int?[words.Count];
+            for (int i = 0; i < words.Count; i++) result[i] = words[i];
+            return result;
+        }
+
+        private static int[] BuildUltimateSchedulerBlock()
+        {
+            var words = new List<int> {
+                // Single-player guard; skip the settlement spawner in net games.
+                66, 0, 128, 72, 86, 102, 117, 228,
+                // Normal due check: s_getTime() >= v16 -> reset/spawn.
+                128, 83, 86, 81, 16, 96, 101, 118, 56,
+                // Rollback check: v16 > s_getTime() + 60000 -> reset/spawn.
+                81, 16, 128, 83, 86, 66, DeadlineRollbackThresholdMs, 32, 96, 100, 118, 8,
+                // Otherwise preserve the normal pending deadline and skip this spawner.
+                112, 136,
+                // Reset to the normal accelerated interval.
+                128, 83, 86, 66, UltimateLoopDelayUpperMs, 32, 82, 16
+            };
+
+            // Preserve the original call offset so downstream internal-call displacements and
+            // the second dispatcher call remain byte-for-byte stable.
+            while (words.Count < 63)
+            {
+                words.Add(112);
+                words.Add(0);
+            }
+            words.Add(120);
+            words.Add(-9748);
+            if (words.Count != OriginalSchedulerBlock.Length)
+                throw new InvalidOperationException("P6 repaired scheduler block length mismatch.");
+            return words.ToArray();
         }
     }
 

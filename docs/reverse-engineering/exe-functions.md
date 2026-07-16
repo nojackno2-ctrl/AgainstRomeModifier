@@ -277,7 +277,42 @@ applies these bytes and retains them only for detection and restoration. See
 - `00547650` → `005465e0` → `005245d0`: `s_specialEffektCreateUnit` handler
   chain (summon/resurrect spawn loop, attaches `DEFSCRIPT`).
 
-Focus-loss pause patch:
+## Unit Member Capacity / Trupp Size (static-verified 2026-07-16)
+
+Decoded from the local pseudocode inventory while evaluating a "raise the
+20-man unit size" request. No write patch exists; see `known-patches.md`
+"Unit Member Cap Above 20" for the feasibility verdict.
+
+- Runtime per-unit member table: `short[14000][20]` at `025A1B00`.
+  Ghidra renders reads through the byte-offset alias
+  `*(int *)(&DAT_025a1afe + id * 0x28) >> 0x10` (about 41 read sites);
+  the 0x28-byte stride per unit is exactly 20 two-byte member handles.
+- Member-count byte array at `0259E450`, one byte per object id. Reads
+  appear as `*(int *)((int)&DAT_0259e44c + id + 1) >> 0x18`; getter
+  `00527090`, script-exposed via `00527050`.
+- Member-to-unit back-map (`short`, indexed by member object id) at
+  `0262A680` = `025A1B00 + 14000 * 40`. The two arrays are immediately
+  adjacent, so the member table has zero slack bytes.
+- Add-member write site in `00526ea0`: bounds check
+  `count < 0x14`, then `(&DAT_025a1b00)[unit * 0x14 + count] = memberId`
+  and `(&DAT_0259e450)[unit] += 1` — the indexing multiplier itself is 20.
+- Unit-creation (gather) job table: 200 records x 0x208 bytes at
+  `026313E0` (`00529360` scans with end bound `0x19640` = 200 * 0x208).
+  Each record = 0x28-byte header + 20 member slots x 0x18 bytes.
+  Accessors `00529390`, `005294e0`, `00529550`, `005296a0`, `00529770`,
+  `005297c0` all hard-code `< 0x14` member and `< 200` record bounds;
+  `00523ed0` iterates member slots with a `0x13 <` guard.
+- Gather/creation clamps: `00523a00` (unit builder: type 0 civilians max
+  4 members, all other types max 0x14; running total also clamped to
+  0x14), `005249d0` (`s_createBattleUnitsMax` implementation clamps its
+  count argument to 0x14), `00547f50` (NPC create-unit jobs: arg2 == 0
+  max 4, otherwise max 20 — previously documented above).
+- Verdict: 20 is a structural array capacity baked into data layout and
+  index multipliers, not a tunable clamp. Values <= 20 on individual
+  paths (the civilian 4-member clamps) are single-constant patch
+  candidates; values above 20 are not reachable by byte patching.
+
+## Focus-Loss Pause Patch
 
 - File offset: `0x161a88`
 - Original bytes: `89 15 C4 7D 9E 02`

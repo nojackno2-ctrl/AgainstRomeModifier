@@ -8,6 +8,7 @@ namespace AgainstRomeModifier
     public class EndlessAiOrchestrator
     {
         public EndlessAiModule M1 { get; }
+        public EndlessAiModule RespawnCore { get; }
         public EndlessAiModule M2 { get; }
         public EndlessAiModule M3 { get; }
         public EndlessAiModule M4 { get; }
@@ -182,7 +183,12 @@ namespace AgainstRomeModifier
             M6 = new EndlessAiModule("M6", "提升守軍數量", new List<IEndlessPatch> { p8, p9 });
             R0 = new EndlessAiModule("R0", "常駐修復", new List<IEndlessPatch> { p14, p15 });
 
-            UserModules = new List<EndlessAiModule> { M1, M2, M3, M4, M5, M6 };
+            RespawnCore = new EndlessAiModule(
+                "Core",
+                "無盡重生核心",
+                M2.Patches.Concat(M3.Patches).Concat(M4.Patches).ToList());
+
+            UserModules = new List<EndlessAiModule> { M1, RespawnCore, M5, M6 };
         }
 
         public void ClearCache()

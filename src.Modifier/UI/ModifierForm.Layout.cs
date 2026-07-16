@@ -166,7 +166,8 @@ namespace AgainstRomeModifier {
                 chkSpellResurrection,
                 chkGeneralSkills,
                 chkLeaderGlory,
-                chkBalance);
+                chkBalance,
+                chkAllUnitsEntireMapVision);
             ConfigureSettingsCard(pnlSwitchesCard, lblSwitchesTitle, 734,
                 chkFreeProd,
                 chkFreeUpgrade,
@@ -191,8 +192,8 @@ namespace AgainstRomeModifier {
                 chkFastBuildUpgradeRepair,
                 chkFoodHealing10x,
                 chkVillageBuildRange);
-            ConfigureSettingsCard(pnlAiCard, lblAiTitle, 348,
-                chkAiM1, chkAiM2, chkAiM3, chkAiM4, chkAiM5, chkAiM6);
+            ConfigureSettingsCard(pnlAiCard, lblAiTitle, 252,
+                chkAiM1, chkAiCore, chkAiM5, chkAiM6);
 
             // 每組設定以同一層卡片底色收攏，讓長短不一的功能群組仍有清楚邊界。
             Color cardBackColor = Color.FromArgb(14, 18, 26);

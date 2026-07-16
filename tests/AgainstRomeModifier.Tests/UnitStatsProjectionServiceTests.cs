@@ -1,4 +1,5 @@
 using AgainstRomeModifier.Core.Features;
+using AgainstRomeModifier.Core.Patches;
 using AgainstRomeModifier.Core.Services;
 
 namespace AgainstRomeModifier.Tests;
@@ -45,5 +46,20 @@ public sealed class UnitStatsProjectionServiceTests
         Assert.Equal(original[8], normalized[8]);
         Assert.Equal(111, normalized[0]);
         Assert.Equal(77, normalized[6]);
+    }
+
+    [RequiresBackupZipFact]
+    public void Project_shows_entire_map_sight_for_supported_units()
+    {
+        using BackupZipGameFixture fixture = BackupZipGameFixture.Create();
+        const string key = "FigRomInf00_Lanze_Schild";
+        var profile = new PatchProfile { AllUnitsEntireMapVision = true };
+
+        double[] projected = new UnitStatsProjectionService(fixture.Backup).Project(key, profile);
+        double[] priest = new UnitStatsProjectionService(fixture.Backup).Project("FigKelPri00_Priester", profile);
+
+        Assert.Equal(ObjdefPatcher.EntireMapSight, projected[5]);
+        Assert.Equal(ObjdefPatcher.EntireMapSight, priest[5]);
+        Assert.Equal(ObjdefPatcher.EntireMapSight, priest[7]);
     }
 }

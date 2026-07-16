@@ -25,13 +25,14 @@ internal sealed class ObjdefFeatureDetector
                 string currentObjdef = PatchText.GameEncoding.GetString(decomp);
                 // 當前與原版文本各解析一次，四項偵測（Housing/Storage/FastBuild/Balance）共用
                 List<string[]> currentRows = ParseObjdefRows(currentObjdef);
+                var originalRows = new List<string[]>();
 
                 const string backupKey = "SYSTEM/DATA_MP/DEFAULTS/objdef.dau";
                 if (backupManager.HasFile(backupKey))
                 {
                     byte[] originalObjdefBytes = backupManager.GetBackupBytes(backupKey);
                     string originalObjdef = PatchText.GameEncoding.GetString(GameLZSS.DecompressPfil(originalObjdefBytes));
-                    List<string[]> originalRows = ParseObjdefRows(originalObjdef);
+                    originalRows = ParseObjdefRows(originalObjdef);
                     options.HousingCapacity20x = HasHousingCapacityMultiplier(currentRows, originalRows, HousingCapacityMultiplier);
                     options.StorageCapacity10x = HasStorageCapacityMultiplier(currentRows, originalRows, StorageCapacityMultiplier);
                     options.HqHp10x = HasHqHpMultiplier(currentRows, originalRows, 10);
@@ -45,13 +46,15 @@ internal sealed class ObjdefFeatureDetector
                 {
                     if (cols.Length < 192) continue;
                     string name = cols[52].Trim();
-                    if (TroopConfig.UnitMeta.ContainsKey(name) || name == "FigZivMan00_Zivilist")
+                    if (ObjdefPatcher.SupportsEntireMapVision(name))
                     {
                         unitRows[name] = cols;
                     }
                 }
 
                 var origUnitRows = backupManager.GetBackupUnitRows();
+                bool allUnitsEntireMapVision = HasEntireMapVision(currentRows, originalRows);
+                options.AllUnitsEntireMapVision = allUnitsEntireMapVision;
 
                 // 射程 3 倍會同步擴大遠程單位的 Sirad，讓 AI 能鎖定新射程外
                 // 的目標；在平衡偵測前先識別此狀態，避免把該視野變更誤判為平衡。
@@ -113,7 +116,7 @@ internal sealed class ObjdefFeatureDetector
                         bool hasDiff = Math.Abs(curHp - origHp) > 0.01 ||
                                        Math.Abs(curVw - origVw) > 0.01 ||
                                        Math.Abs(curAw - origAw) > 0.01 ||
-                                       (!isPriest && !hasExpandedRangeSight && Math.Abs(curSight - origSight) > 0.01);
+                                       (!allUnitsEntireMapVision && !isPriest && !hasExpandedRangeSight && Math.Abs(curSight - origSight) > 0.01);
 
                         if (hasDiff)
                         {
@@ -161,7 +164,7 @@ internal sealed class ObjdefFeatureDetector
                     double curRange = BackupManager.GetUnitMaxRange(testSpellCols, "priest");
                     if (curRange > 0)
                     {
-                        if (Math.Abs(curRange - 30000.0) < 100.0)
+                        if (Math.Abs(curRange - ObjdefPatcher.EntireMapSight) < 100.0)
                         {
                             spellEntireMap = true;
                         }
@@ -171,6 +174,32 @@ internal sealed class ObjdefFeatureDetector
             }
             catch (Exception ex) { _logger.Log(string.Format(Loc.Get("SvcLogDetectFailed"), "objdef.dau", ex.Message)); }
         }
+    }
+
+    private static bool HasEntireMapVision(List<string[]> currentRows, List<string[]> originalRows)
+    {
+        var currentByName = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
+        foreach (string[] columns in currentRows)
+        {
+            if (columns.Length <= (int)ObjdefIndex.Name) continue;
+            string name = columns[(int)ObjdefIndex.Name].Trim();
+            if (ObjdefPatcher.SupportsEntireMapVision(name)) currentByName[name] = columns;
+        }
+
+        int expectedRows = 0;
+        foreach (string[] original in originalRows)
+        {
+            if (original.Length <= (int)ObjdefIndex.Sirad) continue;
+            string name = original[(int)ObjdefIndex.Name].Trim();
+            if (!ObjdefPatcher.SupportsEntireMapVision(name)) continue;
+            expectedRows++;
+            if (!currentByName.TryGetValue(name, out string[]? current) ||
+                !double.TryParse(current[(int)ObjdefIndex.Sirad].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out double sight) ||
+                Math.Abs(sight - ObjdefPatcher.EntireMapSight) >= 100.0)
+                return false;
+        }
+
+        return expectedRows > 0;
     }
 
     /// <summary>首領榮譽偵測：四族首領列的成長/光環欄位是否全部等於備份原值 × 5。</summary>

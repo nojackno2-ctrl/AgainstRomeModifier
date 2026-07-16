@@ -85,7 +85,7 @@ namespace AgainstRomeModifierTests {
                 Console.WriteLine("測試 1：偵測原始原版狀態...");
 
                 // Detailed debug of module and patch states
-                foreach (var module in new[] { orchestrator.M1, orchestrator.M2, orchestrator.M3, orchestrator.M4, orchestrator.M5, orchestrator.M6, orchestrator.R0 }) {
+                foreach (var module in new[] { orchestrator.M1, orchestrator.RespawnCore, orchestrator.M5, orchestrator.M6, orchestrator.R0 }) {
                     var mState = orchestrator.DetectModule(tempDir, module);
                     Console.WriteLine($"Module {module.Name} ({module.Id}) state: {mState}");
                     foreach (var patch in module.Patches) {
@@ -199,11 +199,11 @@ namespace AgainstRomeModifierTests {
                 Console.WriteLine("[成功] 測試 4 通過。所有還原後檔案之解壓內容與原版檔案 100% 相同！");
 
                 // Test 5: 逐模組獨立套用（驗證新 UI 各模組獨立勾選的底層機制）。
-                // 只啟用 M1、M4，其餘保持關閉，驗證各模組狀態互不干擾。
-                Console.WriteLine("測試 5：混合模組狀態（僅啟用 M1、M4）...");
+                // 只啟用 M1、Core，其餘保持關閉，驗證整合核心與獨立選項互不干擾。
+                Console.WriteLine("測試 5：混合模組狀態（僅啟用 M1、Core）...");
                 rollback = new FileRollbackScope();
                 var mixed = new Dictionary<string, bool> {
-                    { "M1", true }, { "M2", false }, { "M3", false }, { "M4", true }, { "M5", false }, { "M6", false }
+                    { "M1", true }, { "Core", true }, { "M5", false }, { "M6", false }
                 };
                 foreach (var module in orchestrator.UserModules) {
                     orchestrator.ApplyModule(tempDir, module, mixed[module.Id]);

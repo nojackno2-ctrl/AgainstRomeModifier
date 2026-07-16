@@ -41,9 +41,7 @@ namespace AgainstRomeModifier {
             chkFocusLoss.Text = Loc.Get("FocusLoss");
             chkToEng.Text = Loc.Get("ToEng");
             chkAiM1.Text = Loc.Get("AiM1");
-            chkAiM2.Text = Loc.Get("AiM2");
-            chkAiM3.Text = Loc.Get("AiM3");
-            chkAiM4.Text = Loc.Get("AiM4");
+            chkAiCore.Text = Loc.Get("AiCore");
             chkAiM5.Text = Loc.Get("AiM5");
             chkAiM6.Text = Loc.Get("AiM6");
             chkHousingCapacity20x.Text = Loc.Get("HousingCapacity20x");
@@ -103,6 +101,7 @@ namespace AgainstRomeModifier {
 
             lblDefaultStatsTitle.Text = Loc.Get("DefaultStatsTitle");
             chkBalance.Text = Loc.Get("EnableBalance");
+            chkAllUnitsEntireMapVision.Text = Loc.Get("AllUnitsEntireMapVision");
             chkRangedRange3x.Text = Loc.Get("RangedRange3x");
             chkUnitMovementSpeed2x.Text = Loc.Get("UnitMovementSpeed2x");
             chkSpellEntireMap.Text = Loc.Get("SpellEntireMap");
@@ -142,6 +141,7 @@ namespace AgainstRomeModifier {
                 myToolTip.SetToolTip(chkNoSpellCost, Loc.Get("NoSpellCostTip"));
                 myToolTip.SetToolTip(chkInfiniteMorale, Loc.Get("InfiniteMoraleTip"));
                 myToolTip.SetToolTip(chkBalance, Loc.Get("BalanceTip"));
+                myToolTip.SetToolTip(chkAllUnitsEntireMapVision, Loc.Get("AllUnitsEntireMapVisionTip"));
                 myToolTip.SetToolTip(chkRangedRange3x, Loc.Get("RangedRange3xTip"));
                 myToolTip.SetToolTip(chkUnitMovementSpeed2x, Loc.Get("UnitMovementSpeed2xTip"));
                 myToolTip.SetToolTip(chkSpellEntireMap, Loc.Get("SpellEntireMapTip"));
@@ -160,9 +160,7 @@ namespace AgainstRomeModifier {
                 myToolTip.SetToolTip(chkUnitRecruit20, Loc.Get("UnitRecruit20Tip"));
                 myToolTip.SetToolTip(chkVillageBuildRange, Loc.Get("VillageBuildRangeTip"));
                 myToolTip.SetToolTip(chkAiM1, Loc.Get("AiM1Tip"));
-                myToolTip.SetToolTip(chkAiM2, Loc.Get("AiM2Tip"));
-                myToolTip.SetToolTip(chkAiM3, Loc.Get("AiM3Tip"));
-                myToolTip.SetToolTip(chkAiM4, Loc.Get("AiM4Tip"));
+                myToolTip.SetToolTip(chkAiCore, Loc.Get("AiCoreTip"));
                 myToolTip.SetToolTip(chkAiM5, Loc.Get("AiM5Tip"));
                 myToolTip.SetToolTip(chkAiM6, Loc.Get("AiM6Tip"));
             }

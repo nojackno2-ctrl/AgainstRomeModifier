@@ -128,8 +128,9 @@ internal sealed class BackupZipGameFixture : IDisposable
         for (int i = 0; i < 6; i++) Section(words, 81, 61, 90, -3, 128, 83, 86, 66, 600000, 32, 44, 164); // P4
         Section(words, 90, 24, 66, 20, 96, 101, 117, 16, 66, 1, 91, 17); // P5
 
-        (int upper, int lower)[] delays = { (960000, 480000), (960000, 480000), (360000, 240000), (120000, 60000), (120000, 60000), (240000, 120000) };
-        foreach (var delay in delays) Section(words, 66, delay.upper, 66, delay.lower, 128, 16); // P6
+        (int upper, int lower)[] delays = { (960000, 480000), (960000, 480000), (360000, 240000), (120000, 60000) };
+        foreach (var delay in delays) Section(words, 66, delay.upper, 66, delay.lower, 128, 16);
+        Section(words, P6_LoopDelayPatch.OriginalSchedulerBlockWords.ToArray()); // P6 outer scheduler + final two ranges
 
         int[] spawner = Enumerable.Repeat(Gap, 64).ToArray();
         int[] spawnerHead = { 66, 0, 91, 2, 66, 0, 91, 2, 66, 0, 91, 3, 90, 0, 91, 3 };

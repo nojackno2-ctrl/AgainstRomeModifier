@@ -16,7 +16,7 @@
 - `Backup.zip` 是選用且不追蹤的本機基線。內嵌／程式旁沒有它時，修改器才從使用者選取且有效的遊戲根目錄建立**記憶體**基線。開發、測試與文件工作不得直接改寫遊戲安裝目錄。
 - FoodHealing 與 Endless AI 共用 `BciScriptFile` 快取，最後只由 `SaveAll` 寫回；任何新 BCI 功能不得繞過此流程直接寫檔。
 - `CiviProduce20` 與 `UnitRecruit20` 已在遊戲內實機驗證，皆為可還原、僅作用於玩家端的 EXE 功能；現已列入正式的「資源與戰鬥升級」及「所有功能開啟」，不影響 AI 招募。
-- 自訂兵種新格式只保留 `HP,Dmg,VW,AW,Sight,Relt`。速度、遠程射程、法術半徑與祭司 `Sirad`（施法距離）不得由自訂層管理，避免與六個實驗性功能重疊。
+- 自訂兵種新格式只保留 `HP,Dmg,VW,AW,Sight,Relt`。速度、遠程射程、法術半徑與祭司 `Sirad`（施法距離）不得由自訂層管理；啟用實驗性 `AllUnitsEntireMapVision` 時，所有支援單位的 Sight 會在最後統一覆寫為 30000。
 - 無盡軍事模式安全組態為 `20..20` 人、`5000 ms`、同時活躍隊伍上限 `8`，並保留原始迴圈節奏。runtime 只有 20 個 NPC-job slots；無條件 gate bypass 已否決。
 - 本次文件複核的本機驗證：`dotnet build AgainstRomeModifier.csproj -c Release --no-restore` 為 0 warnings/0 errors；xUnit 為 98 passed、0 failed、0 skipped。
 
@@ -80,7 +80,7 @@ UI 是手寫 WinForms 程式碼，控制項與卡片建立位於 `src.Modifier/U
 4. 在 `Localization.cs` 同時補齊 zh-TW/en 的標題、tooltip、log key，且格式化 placeholder 必須對稱。
 5. 新寫入必須有原始／patched／legacy／unknown 狀態、rollback 與測試。未知狀態不可覆寫。
 
-速度、遠程射程、法術效果半徑及祭司施法距離是獨立實驗性功能的專屬欄位，不能加回自訂兵種 UI 或 `.artroop` 新格式。
+速度、遠程射程、法術效果半徑及祭司施法距離是獨立實驗性功能的專屬欄位，不能加回自訂兵種 UI 或 `.artroop` 新格式。一般單位 Sight 仍可自訂，但 `AllUnitsEntireMapVision` 啟用時以 30000 為最終值。
 
 ## 3. 遊戲根目錄與備份基線
 
@@ -152,7 +152,7 @@ commit 後要先 Dispose／清空 rollback scope，再更新 UI；UI refresh 例
 
 ### 6.1 單位屬性層級
 
-原版／平衡數值先形成 fallback，自訂 preset 再逐欄覆蓋。現行新格式只有 `HP,Dmg,VW,AW,Sight,Relt` 六欄；舊九欄 preset 仍可讀取，但速度、射程與法術半徑一定會捨棄，永不套用或重新匯出。祭司 `Sirad` 同時是施法距離閘門，亦會正規化回基線，交由獨立的實驗性功能管理。
+原版／平衡數值先形成 fallback，自訂 preset 再逐欄覆蓋。現行新格式只有 `HP,Dmg,VW,AW,Sight,Relt` 六欄；舊九欄 preset 仍可讀取，但速度、射程與法術半徑一定會捨棄，永不套用或重新匯出。祭司 `Sirad` 同時是施法距離閘門，亦會正規化回基線，交由獨立的實驗性功能管理。共同欄位優先順序固定為 `RangedRange3x`／`SpellEntireMap` 先套用，`AllUnitsEntireMapVision` 最後覆寫 `Sirad=30000`；遠程武器的 3 倍射程欄位仍保留。此最後一層涵蓋 43 個已知戰鬥／領袖／祭司／攻城單位與男女村民、馱馬，建築及未知列不變。
 
 內建平衡層 `TroopConfig.BalancedUnitStats` 仍以 43 個兵種的九項內部基線值保存計算資料，但套用自訂層時必須把 `Speed`、`Range`、`SpellRadius`（及祭司的 `Sirad`）回復原版基線；它們不是可自訂或可由平衡層覆寫的使用者欄位。啟用平衡後不得再套用通用階級矩陣、盾牌、雙手武器或兵種類型倍率。
 

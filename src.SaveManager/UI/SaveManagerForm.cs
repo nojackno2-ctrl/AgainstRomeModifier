@@ -32,6 +32,7 @@ namespace AgainstRomeModifier {
         private Label lblBackupsTitle = null!;
         private Label lblDetailTitle = null!;
         private Button btnBackupSave = null!;
+        private Button btnRepairEndlessAi = null!;
         private Button btnDeleteSave = null!;
         private Button btnRefreshSaves = null!;
         private Button btnRestoreBackup = null!;
@@ -40,6 +41,7 @@ namespace AgainstRomeModifier {
         private Button btnLangEN = null!;
 
         private bool _savesRefreshInFlight;
+        private bool _repairInFlight;
         private SaveBackupService saveBackupService = null!;
 
         private Font fontJhengHei115B = new Font("Microsoft JhengHei", 11.5F, FontStyle.Bold);
@@ -334,6 +336,11 @@ namespace AgainstRomeModifier {
             btnDeleteSave.Click += BtnDeleteSave_Click;
             gameCard.Controls.Add(btnDeleteSave);
 
+            btnRepairEndlessAi = new Button { Text = "修復無盡 AI 計時", Size = new Size(200, 35) };
+            StyleButton(btnRepairEndlessAi, Color.FromArgb(45, 45, 55), Color.FromArgb(255, 214, 64), Color.FromArgb(255, 214, 64));
+            btnRepairEndlessAi.Click += BtnRepairEndlessAi_Click;
+            gameCard.Controls.Add(btnRepairEndlessAi);
+
             btnRefreshSaves = new Button { Text = "重新整理", Size = new Size(140, 35) };
             StyleButton(btnRefreshSaves, Color.FromArgb(45, 45, 55), Color.FromArgb(240, 240, 240), Color.FromArgb(0, 220, 255));
             btnRefreshSaves.Click += (s, e) => RefreshSavesAndBackups();
@@ -368,6 +375,7 @@ namespace AgainstRomeModifier {
                 btnBackupSave.Location = new Point(16, y);
                 btnDeleteSave.Location = new Point(164, y);
                 btnRefreshSaves.Location = new Point(312, y);
+                btnRepairEndlessAi.Location = new Point(460, y);
             };
 
             backupsCard.Resize += (s, e) => {
@@ -530,6 +538,49 @@ namespace AgainstRomeModifier {
                 MessageBox.Show(Loc.Get("MsgRestoreBackupSuccess") ?? "還原成功。", Loc.Get("TitleSuccess") ?? "成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
             } catch (Exception ex) {
                 MessageBox.Show((Loc.Get("MsgRestoreBackupFailed") ?? "還原失敗：") + ex.Message, Loc.Get("TitleError") ?? "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private async void BtnRepairEndlessAi_Click(object? sender, EventArgs e) {
+            if (_repairInFlight) return;
+            if (dgvGameSaves.SelectedRows.Count == 0) {
+                MessageBox.Show(Loc.Get("MsgSelectSaveToRepairAi") ?? "請先選擇要修復的無盡模式存檔。",
+                    Loc.Get("TitleTips") ?? "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            DataGridViewRow row = dgvGameSaves.SelectedRows[0];
+            string folder = Cell(row, 0).Trim();
+            string title = Cell(row, 1);
+            string level = Cell(row, 2);
+            if (!SaveBackupService.IsSimpleName(folder)) return;
+            if (MessageBox.Show(Loc.Get("MsgConfirmRepairEndlessAi") ??
+                    "修復前會先建立完整備份，再更新存檔內嵌的無盡 AI 排程。是否繼續？",
+                    Loc.Get("TitleWarning") ?? "警告", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
+                return;
+
+            _repairInFlight = true;
+            btnRepairEndlessAi.Enabled = false;
+            try {
+                string gamePath = GetGamePath();
+                if (string.IsNullOrEmpty(gamePath) || !Directory.Exists(gamePath))
+                    throw new DirectoryNotFoundException(Loc.Get("MsgGamePathNotSet") ?? "遊戲路徑未設定。");
+
+                EndlessSaveAiRepairResult result = await Task.Run(() => {
+                    saveBackupService.CreateBackup(gamePath, folder, title, level);
+                    return new EndlessSaveAiRepairService().Repair(gamePath, folder);
+                });
+                RefreshSavesAndBackups();
+                string message = result == EndlessSaveAiRepairResult.Changed
+                    ? (Loc.Get("MsgRepairEndlessAiSuccess") ?? "無盡 AI 計時已修復，並已建立修復前備份。")
+                    : (Loc.Get("MsgRepairEndlessAiAlready") ?? "這份存檔已包含無盡 AI 計時修復。");
+                MessageBox.Show(message, Loc.Get("TitleSuccess") ?? "成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            } catch (Exception ex) {
+                MessageBox.Show((Loc.Get("MsgRepairEndlessAiFailed") ?? "修復無盡 AI 計時失敗: ") + ex.Message,
+                    Loc.Get("TitleError") ?? "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            } finally {
+                _repairInFlight = false;
+                btnRepairEndlessAi.Enabled = true;
             }
         }
 
@@ -774,6 +825,7 @@ namespace AgainstRomeModifier {
             lblBackupsTitle.Text = isEn ? "Backup History List" : "備份歷史列表";
             lblDetailTitle.Text = isEn ? "Save Details & Preview" : "存檔詳細與預覽";
             btnBackupSave.Text = isEn ? "Backup Save" : "備份此存檔";
+            btnRepairEndlessAi.Text = Loc.Get("BtnRepairEndlessAi");
             btnDeleteSave.Text = isEn ? "Delete Save" : "刪除此存檔";
             btnRefreshSaves.Text = isEn ? "Refresh" : "重新整理";
             btnRestoreBackup.Text = isEn ? "Restore Backup" : "還原此備份";

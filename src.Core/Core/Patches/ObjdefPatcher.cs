@@ -14,7 +14,8 @@ public sealed record ObjdefOptions(
     bool SpellEntireMap,
     bool SpellRange3x,
     bool ProjectileArcHeight,
-    IReadOnlyDictionary<string, double[]> UnitStats);
+    IReadOnlyDictionary<string, double[]> UnitStats,
+    bool AllUnitsEntireMapVision = false);
 
 public static class ObjdefPatcher {
     /// <summary>LeaderGlory5x 影響的首領列與欄位（攻擊成長、防禦成長、傷害成長、士氣光環），偵測邏輯（FeatureDetector）共用同一份清單。</summary>
@@ -30,6 +31,11 @@ public static class ObjdefPatcher {
     /// <summary>遠程命中修正倍率：w*_drad（落點傷害半徑）乘以此倍率，讓近失彈也算命中；
     /// 已整合為射程 3 倍（RangedRange3x）的一部分，用來修正拉遠射程後打不中的問題。</summary>
     internal const int AccuracyDradMultiplier = 2;
+    internal const int EntireMapSight = 30000;
+
+    internal static bool SupportsEntireMapVision(string name) =>
+        TroopConfig.UnitMeta.ContainsKey(name) ||
+        name is "FigZivMan00_Zivilist" or "FigZivWei00_Zivilistin" or "FigTiePac00_Packpferd";
 
     public static byte[] GetPatchedBytes(byte[] original, ObjdefOptions options) {
         ArgumentNullException.ThrowIfNull(original);
@@ -61,6 +67,11 @@ public static class ObjdefPatcher {
                 double civMult = 1.0;
                 if (options.UnitMovementSpeed2x) civMult *= 2.0;
                 PatchCivilianSpeed(cols, source, name, civMult);
+            }
+            // Final shared-field override. RangedRange3x and SpellEntireMap are
+            // composed first; when this feature is selected, it owns Sirad last.
+            if (options.AllUnitsEntireMapVision && SupportsEntireMapVision(name)) {
+                SetValue(cols, (int)ObjdefIndex.Sirad, EntireMapSight.ToString(CultureInfo.InvariantCulture), name, "視野");
             }
             lines[row] = PatchText.ToCsvString(cols);
         }
@@ -99,7 +110,7 @@ public static class ObjdefPatcher {
         // 遠程攻擊的目標取得仍受 Sirad（視野）限制。僅擴大 w*_rad1/w*_rad2
         // 會讓單位無法自行鎖定新射程外的目標，因此射程 3 倍時必須同步保證
         // 視野至少涵蓋新的最遠武器射程。
-        double sight = options.SpellEntireMap && isPriest ? 30000.0 : stats[5];
+        double sight = options.SpellEntireMap && isPriest ? EntireMapSight : stats[5];
         if (supportsRangedRange3x && options.RangedRange3x) {
             sight = Math.Max(sight, originalRange * rangeScale);
         }

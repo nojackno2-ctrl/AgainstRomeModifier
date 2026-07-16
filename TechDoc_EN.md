@@ -13,7 +13,7 @@ This document describes the current code, data formats, reverse-engineering evid
 - `Backup.zip` is optional and intentionally untracked. When no embedded or local archive exists, the modifier creates an **in-memory** baseline from the user-selected valid game root. Development and tests must not write directly to an installed game directory.
 - FoodHealing and Endless AI share the `BciScriptFile` cache and commit through one `SaveAll`; new BCI features must not bypass it with direct file writes.
 - `CiviProduce20` and `UnitRecruit20` are runtime-verified, reversible player-side EXE features. They are formal Resource & Combat Upgrades toggles and are included by Enable All; neither modifies AI recruitment.
-- New troop presets contain only `HP,Dmg,VW,AW,Sight,Relt`. Speed, ranged distance, spell radius, and priest `Sirad` (casting distance) are exclusive to independent experimental features.
+- New troop presets contain only `HP,Dmg,VW,AW,Sight,Relt`. Speed, ranged distance, spell radius, and priest `Sirad` (casting distance) are owned by independent experimental features; when `AllUnitsEntireMapVision` is enabled, supported-unit Sight is finally overridden to 30000.
 - The safe endless-military configuration is `20..20` units, `5000 ms` wait, active-party limit `8`, and original loop pacing. The runtime has 20 NPC-job slots; the unconditional gate bypass is rejected.
 - Local verification for this documentation refresh: Release build 0 warnings/0 errors; xUnit 98 passed, 0 failed, 0 skipped.
 
@@ -186,7 +186,7 @@ Stable indexes:
 
 Weapon slots use an eight-column stride and up to eight active slots are inspected. Building indexes 28-39 are not costs; they are production-building resource-storage slots and must remain original.
 
-The current six-property array is `HP,Dmg,VW,AW,Sight,Relt`. Old nine-property presets remain import-compatible, but Speed, Range, and SpellRadius are discarded and never re-exported or applied. Priest Sight is also normalized to its baseline because `Sirad` controls priest casting distance; independent experimental modifiers own these fields.
+The current six-property array is `HP,Dmg,VW,AW,Sight,Relt`. Old nine-property presets remain import-compatible, but Speed, Range, and SpellRadius are discarded and never re-exported or applied. Priest Sight is also normalized to its baseline because `Sirad` controls priest casting distance; independent experimental modifiers own these fields. Shared-field precedence applies `RangedRange3x` and `SpellEntireMap` first, then `AllUnitsEntireMapVision` finally writes `Sirad=30000` without reverting the 3x weapon-range columns. This final override covers the 43 supported combat/leader/priest/siege rows plus male/female civilians and packhorses; buildings and unknown rows remain unchanged.
 
 - HP, VW, and AW use current baseline integers.
 - Damage derives a scale from final/original primary damage and applies it to active weapon slots. Weapon 1 on ranged infantry/cavalry is treated as a melee backup.

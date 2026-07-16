@@ -155,7 +155,12 @@
   still the only remaining open item.
 - File: `MAPS/ENDL_*/SCRIPT/ak_level.bci`.
 - Format: `PFIL@` compressed `BCI0` compiled script.
-- Modifier UI: five active independent AI Ultimate modules (M1-M5, with M6 rejected and disabled); rejected global CLAK edits are restored by mandatory repair R0.
+- Modifier UI (2026-07-16 integration): legacy modules M2 (reinforcement scheduling),
+  M3 (defeat cleanup), and M4 (settlement respawn) are exposed and applied as one
+  atomic `EndlessAi.Core` lifecycle toggle. A partial legacy M2/M3/M4 selection
+  migrates to the complete core. M1 (reinforcement size), M5 (starting resources),
+  and M6 remain separate controls; rejected global CLAK edits are restored by
+  mandatory repair R0.
 - Create-unit call: decompressed BCI offset `0x17B60`,
   `s_addNPCJob_createUnit(local7, 3, 8, 0, 0, 4, 4, 1, 0)` after reversing
   BCI stack argument order.
@@ -164,9 +169,9 @@
   at `0x17B1C`, `0 -> 1`. This lets completed military reinforcement jobs free
   their per-team NPC-job slots for later waves.
 - EXE path `0054aa80 -> 00547f50` clamps the count to `1..20`.
-- Military reinforcement cooldown at `0x178E0`: `180000 -> 5000` ms.
+- Military reinforcement cooldown at `0x178E0`: `180000 -> 30000` ms.
 - Party retreat/cleanup deadlines use a mixed target. Non-settlement sites
-  `0x119C0`, `0x12FFC`, `0x13FE8`, and `0x17F38` change `600000 -> 5000` ms.
+  `0x119C0`, `0x12FFC`, `0x13FE8`, and `0x17F38` change `600000 -> 60000` ms.
   Settled-handler sites `0x10700` and `0x160EC` stay at `600000` because states
   51/52 normally wait for old-village/palisade cleanup; the deadline is only a
   fallback. The previous all-six-at-5000 state could force DELETE_PARTY before
@@ -194,7 +199,7 @@
   which presents as a frozen simulation rather than a process crash. Detection
   treats all-256 as Original, all-257 or mixed 256/257 as Legacy, and both
   Apply paths restore 256. P15 is no longer part of user-toggleable M3.
-- Settle-place eligibility fix (`P18`/`P19`, module M4, 2026-07-08,
+- Settle-place eligibility fix (`P18`/`P19`, integrated Core; legacy module M4, 2026-07-08,
   **RUNTIME-CONFIRMED**: applied to the live install, user confirmed defeated
   CPUs resume respawning in-game; independent byte check found all five maps
   at the exact Ultimate values with clean PFIL round-trips): the root
@@ -210,17 +215,25 @@
   `2500 -> 800` (anchor: the only `callint -36800`, site `0x9A10`). Full decode
   and save evidence in `endless-mode-ai.md`. Saves embed `ak_level`, so the fix
   only affects newly started endless games.
-- Roman founder gate (`P17`, module M4, **RUNTIME-CONFIRMED** with P18/P19
+- Roman founder gate (`P17`, integrated Core; legacy module M4, **RUNTIME-CONFIRMED** with P18/P19
   above): `60 -> 100` at the type-4 spawner's
   probability gate (site `0x18E10`). Designed and unit-tested 2026-07-06 but
   never wired into a module until 2026-07-08 — installed files still had 60.
-- All six scheduler delay sites change to `5000..10000` ms. The first three
+- All six scheduler delay sites change to `30000..30000` ms. The first three
   are inner raider timers; the remaining `60000..120000`, `60000..120000`, and
   `120000..240000` sites initialize and refresh the outer action scheduler that
   gates the settlement/military dispatcher. Leaving those outer sites original
   caused AI arrival checks to occur only every 1-4 minutes.
   REJECTED runtime state: `1000..2000` ms caused computer respawns to stop;
-  Apply accepts that interim state and migrates it back to `5000..10000` ms.
+  Apply accepts that interim state and migrates it to the bounded 30-second
+  scheduler.
+- Save/load deadline repair (P6, 2026-07-16): the outer block at code-stream
+  `0x1BC44..0x1BD48` now treats `v16 > s_getTime() + 60000` as a rolled-back
+  saved clock, alongside the ordinary `s_getTime() >= v16` due condition. It
+  then refreshes `v16` to `s_getTime() + 30000`; normal 30-second throttling is
+  preserved. The old literal-only 30-second state is Legacy and migrates on
+  Apply. Save Manager can apply the identical repair to a selected save's
+  embedded `ak_level` only after creating a full backup.
 - Military-reinforcement unit-count threshold at decompressed `0x195F8`:
   `4 -> 40` (2026-07-03 update; the previous `8` is accepted as legacy-enabled
   and migrated on the next apply). The spawner only sends the next type-5
@@ -276,8 +289,8 @@
   the widened donation formula remains rejected and vanilla. See
   `endless-mode-ai.md` for full detail.
 - Older builds wrote `112,272` at `0x1960C` and shortened every action loop to
-  `5000..10000` ms. Applying this version restores the gate and all unrelated
-  loops; only the three bounded reinforcement polling loops remain accelerated.
+  `5000..10000` ms. Applying this version restores the gate and migrates all six
+  recognized scheduler loops to the bounded 30-second target.
 - Roman-founder guaranteed spawn (`P17`, mandatory SafetyModule repair, not a
   user toggle): the type-4 `RoemischeGruender` military settlement is the ONLY
   settled party reinforcement (type-5 `RoemischerNachschub`) serves, and it is
@@ -459,6 +472,30 @@
 - Behavior: Modifies the hardcoded altar count constants (1, 2, 3, 4) in the spell button logic in `Against_Rome.exe`. Setting these imm8 values to `00` removes the altar count requirement entirely.
 - Safety: The modifier checks all 12 patterns before writing. Setting values from `0x00` to `0x7F` is safe.
 
+### All Units Entire-Map Vision (AllUnitsEntireMapVision)
+
+- File: `SYSTEM/DATA_MP/DEFAULTS/objdef.dau`.
+- Patch: writes `Sirad` (zero-based column 24) to `30000` for all 43 rows in
+  `TroopConfig.UnitMeta`, plus `FigZivMan00_Zivilist`,
+  `FigZivWei00_Zivilistin`, and `FigTiePac00_Packpferd`. Buildings and unknown
+  rows are deliberately preserved.
+- Scope: `objdef.dau` is shared across factions, so both player and AI units use
+  the value. Weapon range is unchanged. Existing evidence shows `Sirad` is also
+  a target-acquisition gate and the priest casting-distance gate, so the feature
+  can change AI target selection and implicitly gives priests entire-map casting
+  distance.
+- Precedence: shared `objdef.dau` composition applies `RangedRange3x` and
+  `SpellEntireMap` first, then `AllUnitsEntireMapVision` owns `Sirad` last. The
+  final override does not revert the ranged weapon columns, so 3x weapon range
+  remains active while sight becomes 30000.
+- Detection: every supported row present in the original baseline must be at
+  30000. This intended sight change is excluded from `Balance` detection. The
+  overlapping priest field also satisfies `SpellEntireMap`, so all three toggles
+  read back as enabled after a combined apply.
+- Status: reversible implementation and synthetic/full-baseline detector tests
+  are complete. Runtime fog-of-war, AI behavior, and performance remain
+  unverified, so the UI keeps this feature in Experimental.
+
 ### Projectile Arc Height (ProjectileArcHeight)
 
 - Files: `SYSTEM/DATA_MP/DEFAULTS/objdef.dau` + `SYSTEM/DATA_MP/DEFAULTS/partgeo.dau`
@@ -531,6 +568,26 @@ Observed case:
 - Risk: high until runtime behavior and checksums are confirmed.
 
 ## Disabled / Rejected
+
+### Unit Member Cap Above 20 (structurally infeasible)
+
+- Request: raise the 20-man unit (Trupp) size to a larger value such as 100.
+- The cap is a structural array capacity, not a clamp constant. Evidence in
+  `exe-functions.md` "Unit Member Capacity": runtime member table
+  `short[14000][20]` at `025A1B00` with the member-to-unit back-map starting
+  immediately after it at `0262A680` (zero slack), an add-member write that
+  indexes with a literal `* 0x14` multiplier, 0x208-byte creation-job records
+  holding exactly 20 member slots, and dozens of hard-coded `0x14` bounds in
+  accessors and loops.
+- A byte patch cannot grow the arrays in place. Any increase would require
+  relocating the tables (about 2.8 MB for 100 members), rewriting every
+  stride/index multiplier (`0x14`, `0x28`, `0x208`) across dozens of sites,
+  and re-auditing save serialization and the unit UI. Rejected as a modifier
+  feature under the project patch-safety contract.
+- Feasible alternatives: raising per-path member values that are currently
+  below 20 (the civilian max-4 clamps in `00523a00` and `00547f50`), the
+  already-shipped AI military job counts `4..4 -> 20..20`, or scaling unit
+  strength through existing objdef stat features.
 
 ### Legacy Village Range And Red-Frame Sites
 
