@@ -41,6 +41,8 @@ internal sealed class MapEditorForm : Form
     private readonly NumericUpDown _sceneZ = SceneCoordinateInput();
     private readonly Button _sceneApplyButton = new() { Dock = DockStyle.Fill, Height = 32, Enabled = false };
     private readonly Button _sceneRestoreButton = new() { Dock = DockStyle.Fill, Height = 32, Enabled = false };
+    private readonly Button _sceneDuplicateButton = new() { Dock = DockStyle.Fill, Height = 32, Enabled = false };
+    private readonly Button _sceneDeleteButton = new() { Dock = DockStyle.Fill, Height = 32, Enabled = false };
     private readonly Label _modeBanner = new() { Dock = DockStyle.Top, Height = 34, TextAlign = ContentAlignment.MiddleCenter };
     private readonly ToolStripStatusLabel _status = new() { Spring = true, TextAlign = ContentAlignment.MiddleLeft };
     private readonly ToolStripButton _saveButton = new("儲存") { Enabled = false };
@@ -92,6 +94,9 @@ internal sealed class MapEditorForm : Form
     private IReadOnlyList<MapSceneObject> _sceneObjects = Array.Empty<MapSceneObject>();
     private IReadOnlyList<MapSceneObject> _sceneOriginalObjects = Array.Empty<MapSceneObject>();
     private IReadOnlyList<MapSceneObject> _sceneSavedObjects = Array.Empty<MapSceneObject>();
+    private readonly List<SdlSceneObjectRemoval> _sceneRemovals = new();
+    private readonly List<StagedSceneAddition> _sceneAdditions = new();
+    private int _nextSceneAdditionId;
     private string[] _savedTextures = Array.Empty<string>();
     private bool _propertyDirty;
     private bool _loading;
@@ -103,7 +108,24 @@ internal sealed class MapEditorForm : Form
 
     private bool TextureDirty() => _terrainBlendSession?.IsDirty == true;
 
-    private bool SceneDirty() => _sceneLoaded && SdlSceneEditService.HasChanges(_sceneSavedObjects, _sceneObjects);
+    private bool SceneDirty() => _sceneLoaded && (_sceneRemovals.Count > 0 || _sceneAdditions.Count > 0 || SdlSceneEditService.HasChanges(_sceneSavedObjects, _sceneObjects));
+
+    /// <summary>畫布／清單實際呈現的場景：排除暫存刪除、加入暫存複製出的新物件。</summary>
+    private IReadOnlyList<MapSceneObject> EffectiveSceneObjects()
+    {
+        if (_sceneRemovals.Count == 0 && _sceneAdditions.Count == 0) return _sceneObjects;
+        HashSet<string> removed = _sceneRemovals.Select(item => item.SourceFile.ToUpperInvariant() + "|" + item.ObjectIndex).ToHashSet();
+        return _sceneObjects.Where(item => !removed.Contains(SceneKey(item))).Concat(_sceneAdditions.Select(item => item.Display)).ToArray();
+    }
+
+    private sealed class StagedSceneAddition
+    {
+        public required int Id { get; init; }
+        public required string TemplateFile { get; init; }
+        public required int TemplateIndex { get; init; }
+        public required MapSceneObject Display { get; set; }
+        public SdlSceneObjectAddition ToAddition() => new(TemplateFile, TemplateIndex, Display.Team, Display.LocalX, Display.LocalY, Display.LocalZ);
+    }
 
     private bool IsDirty => _propertyDirty || TextureDirty() || SceneDirty();
 
@@ -155,7 +177,7 @@ internal sealed class MapEditorForm : Form
         _inspectorTabs.TabPages.Add(new TabPage("地圖屬性") { BackColor = Color.FromArgb(34, 38, 47) }); _inspectorTabs.TabPages[1].Controls.Add(properties);
         var scenePanel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(8), BackColor = Color.FromArgb(34, 38, 47) };
         _sceneList.Columns.Add("類型", 65); _sceneList.Columns.Add("物件", 170); _sceneList.Columns.Add("隊伍", 65); _sceneList.Columns.Add("來源", 120);
-        var sceneEditor = new TableLayoutPanel { Dock = DockStyle.Bottom, Height = 232, ColumnCount = 2, Padding = new Padding(4), BackColor = Color.FromArgb(40, 45, 55) };
+        var sceneEditor = new TableLayoutPanel { Dock = DockStyle.Bottom, Height = 272, ColumnCount = 2, Padding = new Padding(4), BackColor = Color.FromArgb(40, 45, 55) };
         sceneEditor.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 74)); sceneEditor.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         _sceneWarningLabel = new Label { AutoSize = true, MaximumSize = new Size(250, 0), ForeColor = Color.Khaki };
         sceneEditor.Controls.Add(_sceneWarningLabel, 0, 0); sceneEditor.SetColumnSpan(_sceneWarningLabel, 2);
@@ -164,6 +186,7 @@ internal sealed class MapEditorForm : Form
         _lblSceneY = AddSceneField(sceneEditor, 3, "相對 Y", _sceneY); 
         _lblSceneZ = AddSceneField(sceneEditor, 4, "相對 Z", _sceneZ);
         sceneEditor.Controls.Add(_sceneApplyButton, 0, 5); sceneEditor.Controls.Add(_sceneRestoreButton, 1, 5);
+        sceneEditor.Controls.Add(_sceneDuplicateButton, 0, 6); sceneEditor.Controls.Add(_sceneDeleteButton, 1, 6);
         scenePanel.Controls.Add(_sceneList); scenePanel.Controls.Add(sceneEditor); scenePanel.Controls.Add(_sceneSummary);
         _inspectorTabs.TabPages.Add(new TabPage("場景物件") { BackColor = Color.FromArgb(34, 38, 47) }); _inspectorTabs.TabPages[2].Controls.Add(scenePanel);
 
@@ -236,6 +259,8 @@ internal sealed class MapEditorForm : Form
         _sceneList.SelectedIndexChanged += (_, _) => SelectSceneObject();
         _sceneApplyButton.Click += (_, _) => ApplySelectedSceneObjectEdit();
         _sceneRestoreButton.Click += (_, _) => RestoreOpeningSceneObjects();
+        _sceneDuplicateButton.Click += (_, _) => DuplicateSelectedSceneObject();
+        _sceneDeleteButton.Click += (_, _) => ToggleDeleteSelectedSceneObject();
         _canvas.TexturePainted += (_, e) => PaintTexture(e);
         _canvas.TextureSampled += (_, e) => SelectSampledTexture(e.Texture);
         _canvas.StrokeEnded += (_, _) => CommitStroke();
@@ -362,7 +387,9 @@ internal sealed class MapEditorForm : Form
             _sceneList.Columns[3].Text = isEn ? "Source" : "來源";
         }
 
-        _sceneWarningLabel.Text = isEn ? "SDL Validation: Modifies team and coordinates of existing custom map objects only. Select an object first." : "SDL 驗證功能：只修改自製地圖既有物件的隊伍與相對座標。請先選取物件。";
+        _sceneWarningLabel.Text = isEn
+            ? "SDL Validation: Edit team/coordinates, copy an existing object, or delete objects on custom maps. Select an object first."
+            : "SDL 驗證功能：可修改自製地圖物件的隊伍與相對座標、複製既有物件或刪除物件。請先選取物件。";
         _lblSceneTeam.Text = isEn ? "Team" : "隊伍";
         _lblSceneX.Text = isEn ? "Rel X" : "相對 X";
         _lblSceneY.Text = isEn ? "Rel Y" : "相對 Y";
@@ -370,6 +397,8 @@ internal sealed class MapEditorForm : Form
 
         _sceneApplyButton.Text = isEn ? "Apply to Buffer" : "套用至待儲存";
         _sceneRestoreButton.Text = isEn ? "Restore to Initial" : "還原到本次開啟時";
+        _sceneDuplicateButton.Text = isEn ? "Copy Object" : "複製物件";
+        UpdateSceneEditButtons();
 
         _lblOverviewTitle.Text = isEn ? "Map Overview" : "地圖概覽";
         _lblStatusInstructions.Text = isEn 
@@ -410,6 +439,7 @@ internal sealed class MapEditorForm : Form
             _dayStart.Value = ParseDecimal(ini.GetValue("DayStartTime"), _dayStart); _dayEnd.Value = ParseDecimal(ini.GetValue("DayEndTime"), _dayEnd); _rain.Checked = ini.GetValue("RainDropsOnWater") == "1";
             _texturesDocument = BodenTexturesDocument.Load(Path.Combine(map, "boden.txt")); _savedTextures = _texturesDocument.Textures.ToArray(); InitializeTerrainBlendSession(); _propertyDirty = false;
             _sceneObjects = SdlSceneCatalog.LoadDirectory(map); _sceneOriginalObjects = _sceneObjects.ToArray(); _sceneSavedObjects = _sceneObjects.ToArray(); _sceneLoaded = true;
+            _sceneRemovals.Clear(); _sceneAdditions.Clear();
             LoadPalette(); LoadEditingScene(); UpdateEditorState();
             
             bool isEn = AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English;
@@ -428,8 +458,9 @@ internal sealed class MapEditorForm : Form
         _textureTool.Checked = true;
         string minimapPath = Path.Combine(_selected.DirectoryPath, "minimap.bmp");
         LoadSceneList(_sceneObjects);
+        IReadOnlyList<MapSceneObject> effectiveObjects = EffectiveSceneObjects();
         if (!TryParseGameColor(_waterColor.Text, out Color sceneWaterColor)) sceneWaterColor = Color.SteelBlue;
-        bool hasRealTextures = _texturesDocument is not null && _floorTextures is not null && _canvas.LoadTextures(_texturesDocument.Dimension, _texturesDocument.Textures, _savedTextures, _selected.DirectoryPath, _floorTextures, _sceneObjects, (float)_waterLevel.Value, _heightMapStep, sceneWaterColor, preserveView);
+        bool hasRealTextures = _texturesDocument is not null && _floorTextures is not null && _canvas.LoadTextures(_texturesDocument.Dimension, _texturesDocument.Textures, _savedTextures, _selected.DirectoryPath, _floorTextures, effectiveObjects, (float)_waterLevel.Value, _heightMapStep, sceneWaterColor, preserveView);
         bool has3DScene = false;
         if (_view3d is not null && _texturesDocument is not null && _floorTextures is not null)
         {
@@ -438,7 +469,7 @@ internal sealed class MapEditorForm : Form
             _view3d.ShowGrid = _showGrid.Checked;
             _view3d.ShowObjects = _showObjects.Checked;
             _view3d.EditingEnabled = _selected.IsCustom;
-            try { has3DScene = _view3d.LoadTextures(_texturesDocument.Dimension, _texturesDocument.Textures, _savedTextures, _selected.DirectoryPath, _floorTextures, _sceneObjects, (float)_waterLevel.Value, _heightMapStep, sceneWaterColor); _view3d.SetReliefScale(_reliefScale.Value / 100f); }
+            try { has3DScene = _view3d.LoadTextures(_texturesDocument.Dimension, _texturesDocument.Textures, _savedTextures, _selected.DirectoryPath, _floorTextures, effectiveObjects, (float)_waterLevel.Value, _heightMapStep, sceneWaterColor); _view3d.SetReliefScale(_reliefScale.Value / 100f); }
             catch (Exception ex) { Disable3DView(isEn ? "Failed to load 3D map resources." : "載入 3D 地圖資源失敗。", ex); }
         }
         Image? oldOverview = _overview.Image; _overview.Image = null; oldOverview?.Dispose();
@@ -534,9 +565,16 @@ internal sealed class MapEditorForm : Form
         _view3d?.UpdateWater((float)_waterLevel.Value, color);
     }
 
+    private MapSceneObject? SelectedSceneDisplay() => _sceneList.SelectedItems.Count != 1 ? null : _sceneList.SelectedItems[0].Tag switch
+    {
+        MapSceneObject item => item,
+        StagedSceneAddition addition => addition.Display,
+        _ => null,
+    };
+
     private void FocusSelectedSceneObject()
     {
-        if (_sceneList.SelectedItems.Count != 1 || _sceneList.SelectedItems[0].Tag is not MapSceneObject item) return;
+        if (SelectedSceneDisplay() is not { } item) return;
         float tileX = item.WorldX / (SdlSceneCatalog.WorldUnitsPerMapPixel * 4f);
         float tileZ = item.WorldZ / (SdlSceneCatalog.WorldUnitsPerMapPixel * 4f);
         _canvas.FocusTile(tileX, tileZ);
@@ -545,9 +583,9 @@ internal sealed class MapEditorForm : Form
 
     private void SelectSceneObject()
     {
-        bool selected = _sceneList.SelectedItems.Count == 1 && _sceneList.SelectedItems[0].Tag is MapSceneObject;
-        _sceneApplyButton.Enabled = selected && _selected?.IsCustom == true;
-        if (!selected || _sceneList.SelectedItems[0].Tag is not MapSceneObject item) return;
+        MapSceneObject? item = SelectedSceneDisplay();
+        UpdateSceneEditButtons();
+        if (item is null) return;
         _sceneTeam.Value = Math.Clamp(item.Team, (int)_sceneTeam.Minimum, (int)_sceneTeam.Maximum);
         _sceneX.Value = ClampSceneCoordinate(item.LocalX, _sceneX);
         _sceneY.Value = ClampSceneCoordinate(item.LocalY, _sceneY);
@@ -557,37 +595,128 @@ internal sealed class MapEditorForm : Form
 
     private void ApplySelectedSceneObjectEdit()
     {
-        if (_selected?.IsCustom != true || _sceneList.SelectedItems.Count != 1 || _sceneList.SelectedItems[0].Tag is not MapSceneObject selected) return;
-        int index = _sceneObjects.ToList().FindIndex(item => SceneKey(item) == SceneKey(selected));
-        if (index < 0) return;
+        if (_selected?.IsCustom != true || _sceneList.SelectedItems.Count != 1) return;
         float localX = (float)_sceneX.Value, localY = (float)_sceneY.Value, localZ = (float)_sceneZ.Value;
-        MapSceneObject updated = selected with
+        int team = (int)_sceneTeam.Value;
+        if (_sceneList.SelectedItems[0].Tag is StagedSceneAddition addition)
         {
-            Team = (int)_sceneTeam.Value,
-            WorldX = selected.WorldX + localX - selected.LocalX,
-            WorldY = selected.WorldY + localY - selected.LocalY,
-            WorldZ = selected.WorldZ + localZ - selected.LocalZ,
-            LocalX = localX,
-            LocalY = localY,
-            LocalZ = localZ
-        };
-        MapSceneObject[] objects = _sceneObjects.ToArray(); objects[index] = updated; _sceneObjects = objects;
+            addition.Display = MoveSceneObject(addition.Display, team, localX, localY, localZ);
+        }
+        else if (_sceneList.SelectedItems[0].Tag is MapSceneObject selected)
+        {
+            int index = _sceneObjects.ToList().FindIndex(item => SceneKey(item) == SceneKey(selected));
+            if (index < 0) return;
+            MapSceneObject[] objects = _sceneObjects.ToArray();
+            objects[index] = MoveSceneObject(selected, team, localX, localY, localZ);
+            _sceneObjects = objects;
+        }
+        else return;
         LoadEditingScene(preserveView: true);
         UpdateEditorState();
     }
 
+    private static MapSceneObject MoveSceneObject(MapSceneObject source, int team, float localX, float localY, float localZ) => source with
+    {
+        Team = team,
+        WorldX = source.WorldX + localX - source.LocalX,
+        WorldY = source.WorldY + localY - source.LocalY,
+        WorldZ = source.WorldZ + localZ - source.LocalZ,
+        LocalX = localX,
+        LocalY = localY,
+        LocalZ = localZ
+    };
+
+    /// <summary>以選取物件為模板暫存一個複製件（唯一安全的新增路徑：所有欄位沿用原版物件）。</summary>
+    private void DuplicateSelectedSceneObject()
+    {
+        if (_selected?.IsCustom != true || _sceneList.SelectedItems.Count != 1) return;
+        (string templateFile, int templateIndex, MapSceneObject source) = _sceneList.SelectedItems[0].Tag switch
+        {
+            MapSceneObject item => (item.SourceFile, item.ObjectIndex, item),
+            StagedSceneAddition staged => (staged.TemplateFile, staged.TemplateIndex, staged.Display),
+            _ => (null!, -1, null!),
+        };
+        if (source is null) return;
+        const float offset = 64f; // 錯開四分之一 tile，避免複製件與原件完全重疊而難以選取。
+        int id = _nextSceneAdditionId++;
+        var display = source with
+        {
+            ObjectIndex = -1000 - id, // 負索引：畫布顯示用，絕不寫入檔案；儲存時由 AddObject 重新編號。
+            WorldX = source.WorldX + offset,
+            WorldZ = source.WorldZ + offset,
+            LocalX = source.LocalX + offset,
+            LocalZ = source.LocalZ + offset,
+        };
+        _sceneAdditions.Add(new StagedSceneAddition { Id = id, TemplateFile = templateFile, TemplateIndex = templateIndex, Display = display });
+        LoadEditingScene(preserveView: true);
+        SelectSceneListItem(tag => tag is StagedSceneAddition added && added.Id == id);
+        UpdateEditorState();
+    }
+
+    /// <summary>暫存刪除選取物件；再按一次可取消。刪除暫存複製件則直接移除該複製件。</summary>
+    private void ToggleDeleteSelectedSceneObject()
+    {
+        if (_selected?.IsCustom != true || _sceneList.SelectedItems.Count != 1) return;
+        if (_sceneList.SelectedItems[0].Tag is StagedSceneAddition addition)
+        {
+            _sceneAdditions.RemoveAll(item => item.Id == addition.Id);
+        }
+        else if (_sceneList.SelectedItems[0].Tag is MapSceneObject selected)
+        {
+            int existing = _sceneRemovals.FindIndex(item =>
+                item.SourceFile.Equals(selected.SourceFile, StringComparison.OrdinalIgnoreCase) && item.ObjectIndex == selected.ObjectIndex);
+            if (existing >= 0) _sceneRemovals.RemoveAt(existing);
+            else _sceneRemovals.Add(new SdlSceneObjectRemoval(selected.SourceFile, selected.ObjectIndex));
+            string key = SceneKey(selected);
+            LoadEditingScene(preserveView: true);
+            SelectSceneListItem(tag => tag is MapSceneObject item && SceneKey(item) == key);
+            UpdateEditorState();
+            return;
+        }
+        else return;
+        LoadEditingScene(preserveView: true);
+        UpdateEditorState();
+    }
+
+    private void SelectSceneListItem(Func<object?, bool> match)
+    {
+        foreach (ListViewItem row in _sceneList.Items)
+        {
+            if (!match(row.Tag)) continue;
+            row.Selected = true; row.EnsureVisible();
+            return;
+        }
+    }
+
     private void RestoreOpeningSceneObjects()
     {
-        if (_selected?.IsCustom != true || !SdlSceneEditService.HasChanges(_sceneOriginalObjects, _sceneObjects)) return;
+        if (_selected?.IsCustom != true) return;
+        if (_sceneRemovals.Count == 0 && _sceneAdditions.Count == 0 && !SdlSceneEditService.HasChanges(_sceneOriginalObjects, _sceneObjects)) return;
         bool isEn = AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English;
-        string msg = isEn 
-            ? "Do you want to restore all unsaved SDL teams and positions to the values when this map was opened?\nYou still need to click \"Save\" to write them back to the custom map."
-            : "要將所有待儲存的 SDL 隊伍與位置還原到本次開啟地圖時的值嗎？\n還原後仍需按「儲存」才會寫回自製地圖。";
+        string msg = isEn
+            ? "Do you want to restore all unsaved SDL edits (teams, positions, pending copies and deletions) to the state when this map was opened?\nYou still need to click \"Save\" to write them back to the custom map."
+            : "要將所有待儲存的 SDL 變更（隊伍、位置、待複製與待刪除）還原到本次開啟地圖時的狀態嗎？\n還原後仍需按「儲存」才會寫回自製地圖。";
         string title = isEn ? "Restore SDL Verification Changes" : "還原 SDL 驗證變更";
         if (MessageBox.Show(this, msg, title, MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
         _sceneObjects = _sceneOriginalObjects.ToArray();
+        _sceneRemovals.Clear(); _sceneAdditions.Clear();
         LoadEditingScene(preserveView: true);
         UpdateEditorState();
+    }
+
+    private void UpdateSceneEditButtons()
+    {
+        bool editable = _selected?.IsCustom == true;
+        bool selected = _sceneList.SelectedItems.Count == 1 && SelectedSceneDisplay() is not null;
+        _sceneApplyButton.Enabled = editable && selected;
+        _sceneDuplicateButton.Enabled = editable && selected;
+        _sceneDeleteButton.Enabled = editable && selected;
+        bool isEn = AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English;
+        bool pendingRemoval = selected && _sceneList.SelectedItems[0].Tag is MapSceneObject item && _sceneRemovals.Any(removal =>
+            removal.SourceFile.Equals(item.SourceFile, StringComparison.OrdinalIgnoreCase) && removal.ObjectIndex == item.ObjectIndex);
+        _sceneDeleteButton.Text = pendingRemoval
+            ? (isEn ? "Undo Delete" : "取消刪除")
+            : (isEn ? "Delete Object" : "刪除物件");
     }
 
     private bool SaveMap(bool showSuccess)
@@ -603,7 +732,9 @@ internal sealed class MapEditorForm : Form
             var ini = BodenIniDocument.Load(Path.Combine(map, "boden.ini")); ini.SetValue("Waterlevel", _waterLevel.Value.ToString()); ini.SetValue("WaterColor", _waterColor.Text.Trim());
             ini.SetValue("WaterWarpShift", _waterWarpShift.Value.ToString()); ini.SetValue("WaterBumpAmplitude", _waterBumpAmplitude.Value.ToString()); ini.SetValue("WaterBumpFrequency", _waterBumpFrequency.Value.ToString()); ini.SetValue("FlashPropability", _flashProbability.Value.ToString());
             ini.SetValue("DayStartTime", _dayStart.Value.ToString()); ini.SetValue("DayEndTime", _dayEnd.Value.ToString()); ini.SetValue("RainDropsOnWater", _rain.Checked ? "1" : "0"); ini.Save(rollback);
-            SdlSceneEditService.SaveChanges(map, _sceneSavedObjects, _sceneObjects, rollback);
+            bool sceneStructureChanged = _sceneRemovals.Count > 0 || _sceneAdditions.Count > 0;
+            SdlSceneEditService.SaveChanges(map, _sceneSavedObjects, _sceneObjects, rollback,
+                _sceneRemovals, _sceneAdditions.Select(item => item.ToAddition()).ToArray());
             _texturesDocument?.Save(rollback);
             // 只有地表確實被繪製過才重生小地圖，避免僅改標題／水面等屬性時用近似圖覆蓋原始 minimap.bmp。
             if (TextureDirty())
@@ -612,7 +743,18 @@ internal sealed class MapEditorForm : Form
                 if (minimap is not null) AgainstRomeModifier.Core.Services.SafeFileWriter.WriteAllBytes(Path.Combine(map, "minimap.bmp"), minimap, rollback);
             }
             rollback.Commit();
-            _terrainBlendSession?.CommitBaseline(); _savedTextures = _terrainBlendSession?.CurrentTextures.ToArray() ?? _texturesDocument?.Textures.ToArray() ?? Array.Empty<string>(); _sceneSavedObjects = _sceneObjects.ToArray(); _propertyDirty = false;
+            _terrainBlendSession?.CommitBaseline(); _savedTextures = _terrainBlendSession?.CurrentTextures.ToArray() ?? _texturesDocument?.Textures.ToArray() ?? Array.Empty<string>(); _propertyDirty = false;
+            if (sceneStructureChanged)
+            {
+                // 複製／刪除已寫回並重新編號，記憶體中的 object 索引不再對應檔案；
+                // 從磁碟重讀並重定基準（「還原到本次開啟時」自此以本次儲存後狀態為起點）。
+                _sceneRemovals.Clear(); _sceneAdditions.Clear();
+                _sceneObjects = SdlSceneCatalog.LoadDirectory(map);
+                _sceneOriginalObjects = _sceneObjects.ToArray();
+                _sceneSavedObjects = _sceneObjects.ToArray();
+                LoadEditingScene(preserveView: true);
+            }
+            else _sceneSavedObjects = _sceneObjects.ToArray();
             _canvas.CommitBaseline(); _view3d?.CommitBaseline();
             RefreshOverview();
             UpdateEditorState();
@@ -813,7 +955,8 @@ internal sealed class MapEditorForm : Form
     private void UpdateEditorState()
     {
         bool editable = _selected?.IsCustom == true; _saveButton.Enabled = editable && IsDirty; _gamePreviewButton.Enabled = _selected is not null; _undoButton.Enabled = editable && _terrainBlendSession?.CanUndo == true; _redoButton.Enabled = editable && _terrainBlendSession?.CanRedo == true; _resetTerrainButton.Enabled = editable && _texturesDocument is not null && TextureDirty();
-        _sceneApplyButton.Enabled = editable && _sceneList.SelectedItems.Count == 1; _sceneRestoreButton.Enabled = editable && _sceneLoaded && SdlSceneEditService.HasChanges(_sceneOriginalObjects, _sceneObjects);
+        UpdateSceneEditButtons();
+        _sceneRestoreButton.Enabled = editable && _sceneLoaded && (_sceneRemovals.Count > 0 || _sceneAdditions.Count > 0 || SdlSceneEditService.HasChanges(_sceneOriginalObjects, _sceneObjects));
         foreach (Control control in EditablePropertyControls()) control.Enabled = editable;
         _palette.Enabled = editable; UpdateStatus();
     }
@@ -944,6 +1087,7 @@ internal sealed class MapEditorForm : Form
         _sceneList.BeginUpdate(); _sceneList.Items.Clear();
         int buildingIndex = 0, unitIndex = 0, objectIndex = 0;
         bool isEn = AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English;
+        HashSet<string> removed = _sceneRemovals.Select(item => item.SourceFile.ToUpperInvariant() + "|" + item.ObjectIndex).ToHashSet();
         foreach (MapSceneObject item in objects.OrderBy(x => x.Kind).ThenBy(x => x.Team))
         {
             string kindText = item.Kind;
@@ -956,13 +1100,36 @@ internal sealed class MapEditorForm : Form
                 };
             }
             if (item.Kind == "建築") buildingIndex++; else if (item.Kind == "單位") unitIndex++; else objectIndex++;
-            var row = new ListViewItem(kindText) { Tag = item }; row.SubItems.Add(item.Name); row.SubItems.Add(item.Team >= 0 ? item.Team.ToString() : "-"); row.SubItems.Add($"{item.SourceFile} / {item.ObjectIndex:0000}"); _sceneList.Items.Add(row);
+            bool pendingRemoval = removed.Contains(SceneKey(item));
+            var row = new ListViewItem(kindText) { Tag = item };
+            row.SubItems.Add(pendingRemoval ? (isEn ? $"{item.Name} (pending delete)" : $"{item.Name}（將刪除）") : item.Name);
+            row.SubItems.Add(item.Team >= 0 ? item.Team.ToString() : "-");
+            row.SubItems.Add($"{item.SourceFile} / {item.ObjectIndex:0000}");
+            if (pendingRemoval) row.ForeColor = Color.IndianRed;
+            _sceneList.Items.Add(row);
+        }
+        foreach (StagedSceneAddition addition in _sceneAdditions)
+        {
+            MapSceneObject item = addition.Display;
+            string kindText = isEn
+                ? item.Kind switch { "建築" => "Building", "單位" => "Unit", _ => "Other" }
+                : item.Kind;
+            if (item.Kind == "建築") buildingIndex++; else if (item.Kind == "單位") unitIndex++; else objectIndex++;
+            var row = new ListViewItem(kindText) { Tag = addition, ForeColor = Color.MediumSpringGreen };
+            row.SubItems.Add(isEn ? $"{item.Name} (pending copy)" : $"{item.Name}（待複製）");
+            row.SubItems.Add(item.Team >= 0 ? item.Team.ToString() : "-");
+            row.SubItems.Add(isEn ? $"{item.SourceFile} / new" : $"{item.SourceFile} / 新增");
+            _sceneList.Items.Add(row);
         }
         _sceneList.EndUpdate();
 
+        int pendingText = _sceneRemovals.Count + _sceneAdditions.Count;
+        string pendingSuffix = pendingText == 0 ? "" : isEn
+            ? $"  Pending: {_sceneAdditions.Count} copies, {_sceneRemovals.Count} deletions."
+            : $"　待儲存：複製 {_sceneAdditions.Count}、刪除 {_sceneRemovals.Count}。";
         _sceneSummary.Text = isEn
-            ? $"Buildings: {buildingIndex} | Units: {unitIndex} | Others: {objectIndex}\nClick an item to jump to its location."
-            : $"建築 {buildingIndex}　單位 {unitIndex}　其他 {objectIndex}\n點清單項目可跳到該物件位置。";
+            ? $"Buildings: {buildingIndex} | Units: {unitIndex} | Others: {objectIndex}{pendingSuffix}\nClick an item to jump to its location."
+            : $"建築 {buildingIndex}　單位 {unitIndex}　其他 {objectIndex}{pendingSuffix}\n點清單項目可跳到該物件位置。";
     }
 
     private void ChooseWaterColor()

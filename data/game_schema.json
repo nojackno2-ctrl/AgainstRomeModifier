@@ -112,6 +112,20 @@
       "behavior": "Automatic HP regeneration while the unit is idle; decompilation shows no food-resource read or deduction on this path.",
       "status": "static-analysis-verified-fresh-game-runtime-test-pending"
     },
+    "nativeWidescreen": {
+      "path": "Against_Rome.exe",
+      "featureKey": "NativeWidescreen1920x1080",
+      "status": "experimental-static-verified-runtime-pending",
+      "replacesMode": { "id": "0x22", "original": "1600x1200x32", "patched": "1920x1080x32" },
+      "sites": [
+        { "fileOffset": "0x246B3", "purpose": "active display-mode identification" },
+        { "fileOffset": "0x249AA", "purpose": "display-mode create and refresh arguments" },
+        { "fileOffset": "0x1DCC76", "purpose": "same-length mode text" }
+      ],
+      "uiResourceFallback": "igm16001200",
+      "safety": "All sites must be consistently Original or Patched; mixed and unknown signatures are never overwritten.",
+      "runtimePending": ["expanded world viewport", "aspect ratio", "UI anchors", "mouse hit-testing", "edge scrolling", "dialogs", "minimap"]
+    },
     "teamDat": {
       "pathGlob": "MAPS/**/team.dat",
       "format": "pfil-lzss-ini",

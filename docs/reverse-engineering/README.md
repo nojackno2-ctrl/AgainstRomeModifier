@@ -52,7 +52,9 @@ and patch code.
 - `MAPS/ENDL_*/SCRIPT/ak_level.bci`: bounded AI Ultimate Mode patch.
 - `MAPS/ENDL_*/Endlos_*_Siedlung*.sdl`: read-only endless settlement templates.
 - `Against_Rome.exe`: focus-loss patch, synchronized village-range setter,
-  runtime-verified Roman Endless `dlg_volk` setter patch, restore-only legacy signatures, and local full-function inventory.
+  runtime-verified Roman Endless `dlg_volk` setter patch, experimental native
+  1920x1080 mode replacement, restore-only legacy signatures, and local
+  full-function inventory.
 - `apt.dat`: ZIP-like candidate, not integrated into the modifier.
 
 ## Evidence Rules

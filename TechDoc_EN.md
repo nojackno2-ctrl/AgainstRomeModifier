@@ -388,6 +388,8 @@ When this legacy game is started from `Program Files (x86)` without elevation, W
 
 ## 14. UI and Performance
 
+Experimental `NativeWidescreen1920x1080` is an EXE patch, not a dgVoodoo2 scaling preset. It replaces native 1600x1200 32-bit mode `0x22` at three verified surfaces: active-mode identification, both create/refresh width-height argument pairs, and the same-length mode text. The goal is to make the engine create a real 1920x1080 viewport. Apply/detect/full restore and automated tests are complete, but the game still reuses `igm16001200`; expanded world view, aspect ratio, UI placement, mouse hit-testing, edge scrolling, dialogs, and minimap behavior remain runtime-unverified.
+
 - Borderless dark WinForms UI with sidebar-driven hidden-header tabs.
 - Owner-drawn `ModernToggle`; every `CreateRoundRectRgn` handle is released with `DeleteObject`.
 - Fixed table widths and vertical scrolling prevent column shifts.

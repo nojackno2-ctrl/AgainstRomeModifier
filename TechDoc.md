@@ -419,6 +419,8 @@ ZIP 備份先建立 `.tmp`，加入修改器產生的 `manifest.json`，成功�
 
 修改器內嵌 x86 `D3D8.dll`、`DDraw.dll`、`dgVoodooCpl.exe`、`dgVoodoo.conf`。它不下載 runtime dependency，也不覆蓋非受管 DLL。遊戲根目錄的 manifest 記錄受管檔與 hash；使用者改過的受管檔不會被無聲刪除。來源、版本與 SHA-256 見 `ThirdParty/dgVoodoo2/REDISTRIBUTION.md`。
 
+實驗性 `NativeWidescreen1920x1080` 與 dgVoodoo2 的責任不同：它透過三組已驗證 EXE 特徵碼，將原生 1600×1200 32-bit mode `0x22` 的辨識、建立／刷新參數及模式文字改為 1920×1080，目標是讓引擎建立真正的寬螢幕 viewport。dgVoodoo2 只負責 Direct3D8/DirectDraw 相容與輸出呈現，不能單獨證明可視範圍擴大。此 EXE patch 仍沿用 `igm16001200` UI；套用／偵測／完整還原及自動測試已完成，但世界可視範圍、UI、滑鼠、邊緣捲動、對話框與小地圖仍待遊戲內驗證。
+
 ## 15. UI 與 preset
 
 - `mainTabControl` 的 header 故意隱藏，左側按鈕負責導航。

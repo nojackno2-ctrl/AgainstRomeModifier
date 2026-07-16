@@ -92,6 +92,7 @@ namespace AgainstRomeModifier {
         private ModernToggle chkGeneralSkills = null!;
         private ModernToggle chkLeaderGlory = null!;
         private ModernToggle chkAllUnitsEntireMapVision = null!;
+        private ModernToggle chkNativeWidescreen1920x1080 = null!;
         private ModernToggle chkRangedRange3x = null!;
         private ModernToggle chkUnitMovementSpeed2x = null!;
         private ModernToggle chkSpellEntireMap = null!;
@@ -976,6 +977,16 @@ namespace AgainstRomeModifier {
             };
             chkAllUnitsEntireMapVision.CheckedChanged += new EventHandler(ChkAllUnitsEntireMapVision_CheckedChanged);
             pnlExperimentalCard.Controls.Add(chkAllUnitsEntireMapVision);
+
+            chkNativeWidescreen1920x1080 = new ModernToggle {
+                Text = Loc.Get("NativeWidescreen1920x1080"),
+                Location = new Point(25, 240),
+                Size = new Size(310, 25),
+                Checked = false,
+                BackColor = Color.Transparent,
+                Font = fontJhengHei10B
+            };
+            pnlExperimentalCard.Controls.Add(chkNativeWidescreen1920x1080);
 
             chkRangedRange3x = new ModernToggle {
                 Text = Loc.Get("RangedRange3x"),

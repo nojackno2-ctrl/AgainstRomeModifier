@@ -38,7 +38,10 @@ internal sealed class PatchRestoreService
             byte[] exeBytes = File.ReadAllBytes(exePath);
             bool keepRomanEndless = !restoreStats &&
                 ExePatchModel.GetRomanEndlessPatchState(exeBytes) == ExeRomanEndlessPatchState.Patched;
-            if (ExeFeaturePatcher.Apply(exeBytes, false, false, false, keepRomanEndless, 1, _logger))
+            bool exeChanged = ExeFeaturePatcher.Apply(
+                exeBytes, false, false, false, keepRomanEndless, 1, _logger);
+            exeChanged |= ExeFeaturePatcher.ApplyNativeWidescreen(exeBytes, false, _logger);
+            if (exeChanged)
                 patchedFiles[exePath] = exeBytes;
 
             orchestrator = sharedOrchestrator ?? new EndlessAiOrchestrator();

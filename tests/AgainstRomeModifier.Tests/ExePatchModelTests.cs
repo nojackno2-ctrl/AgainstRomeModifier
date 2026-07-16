@@ -32,6 +32,13 @@ public sealed class ExePatchModelTests {
                 ? ExePatchModel.RomanEndlessPatchedBytes
                 : ExePatchModel.RomanEndlessOriginalBytes);
 
+    private static void PlaceNativeWidescreen(byte[] exe, ExeNativeWidescreenPatchState state) {
+        bool patched = state == ExeNativeWidescreenPatchState.Patched;
+        Place(exe, ExePatchModel.NativeWidescreenIdentifyOffset, patched ? ExePatchModel.NativeWidescreenIdentifyPatchedBytes : ExePatchModel.NativeWidescreenIdentifyOriginalBytes);
+        Place(exe, ExePatchModel.NativeWidescreenCreateOffset, patched ? ExePatchModel.NativeWidescreenCreatePatchedBytes : ExePatchModel.NativeWidescreenCreateOriginalBytes);
+        Place(exe, ExePatchModel.NativeWidescreenModeTextOffset, patched ? ExePatchModel.NativeWidescreenModeTextPatchedBytes : ExePatchModel.NativeWidescreenModeTextOriginalBytes);
+    }
+
     private static void PlaceVillageRange(byte[] exe, ExeVillageRangePatchState state) {
         bool rangePatched = state is ExeVillageRangePatchState.LegacyLogicOnly or ExeVillageRangePatchState.Expanded;
         bool framePatched = state == ExeVillageRangePatchState.Expanded;
@@ -94,6 +101,48 @@ public sealed class ExePatchModelTests {
         Assert.Equal(ExeRomanEndlessPatchState.Unknown, ExePatchModel.GetRomanEndlessPatchState(new byte[8]));
         Assert.Empty(ExePatchModel.PlanRomanEndless(true, ExeRomanEndlessPatchState.Unknown));
         Assert.Empty(ExePatchModel.PlanRomanEndless(false, ExeRomanEndlessPatchState.Unknown));
+    }
+
+    [Theory]
+    [InlineData(ExeNativeWidescreenPatchState.Original)]
+    [InlineData(ExeNativeWidescreenPatchState.Patched)]
+    public void Native_widescreen_state_is_detected(ExeNativeWidescreenPatchState state) {
+        byte[] exe = new byte[0x1DD000];
+        PlaceNativeWidescreen(exe, state);
+        Assert.Equal(state, ExePatchModel.GetNativeWidescreenPatchState(exe));
+    }
+
+    [Fact]
+    public void Native_widescreen_round_trip_changes_all_three_verified_sites() {
+        byte[] exe = new byte[0x1DD000];
+        PlaceNativeWidescreen(exe, ExeNativeWidescreenPatchState.Original);
+
+        ExePatchModel.Apply(exe, ExePatchModel.PlanNativeWidescreen(true,
+            ExePatchModel.GetNativeWidescreenPatchState(exe)));
+        Assert.Equal(ExeNativeWidescreenPatchState.Patched,
+            ExePatchModel.GetNativeWidescreenPatchState(exe));
+        Assert.Contains("1920x1080", System.Text.Encoding.ASCII.GetString(
+            exe, (int)ExePatchModel.NativeWidescreenModeTextOffset,
+            ExePatchModel.NativeWidescreenModeTextPatchedBytes.Length));
+
+        ExePatchModel.Apply(exe, ExePatchModel.PlanNativeWidescreen(false,
+            ExePatchModel.GetNativeWidescreenPatchState(exe)));
+        Assert.Equal(ExeNativeWidescreenPatchState.Original,
+            ExePatchModel.GetNativeWidescreenPatchState(exe));
+    }
+
+    [Fact]
+    public void Native_widescreen_mixed_or_short_state_is_unknown_and_not_planned() {
+        byte[] exe = new byte[0x1DD000];
+        PlaceNativeWidescreen(exe, ExeNativeWidescreenPatchState.Original);
+        Place(exe, ExePatchModel.NativeWidescreenCreateOffset, ExePatchModel.NativeWidescreenCreatePatchedBytes);
+
+        Assert.Equal(ExeNativeWidescreenPatchState.Unknown,
+            ExePatchModel.GetNativeWidescreenPatchState(exe));
+        Assert.Equal(ExeNativeWidescreenPatchState.Unknown,
+            ExePatchModel.GetNativeWidescreenPatchState(new byte[8]));
+        Assert.Empty(ExePatchModel.PlanNativeWidescreen(true, ExeNativeWidescreenPatchState.Unknown));
+        Assert.Empty(ExePatchModel.PlanNativeWidescreen(false, ExeNativeWidescreenPatchState.Unknown));
     }
 
     [Theory]

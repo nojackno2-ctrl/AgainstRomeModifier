@@ -472,6 +472,36 @@
 - Behavior: Modifies the hardcoded altar count constants (1, 2, 3, 4) in the spell button logic in `Against_Rome.exe`. Setting these imm8 values to `00` removes the altar count requirement entirely.
 - Safety: The modifier checks all 12 patterns before writing. Setting values from `0x00` to `0x7F` is safe.
 
+### Native 1920x1080 Widescreen (NativeWidescreen1920x1080)
+
+- File: `Against_Rome.exe`; feature remains Experimental.
+- Goal: replace native mode ID `0x22` (1600x1200 32-bit) with 1920x1080 so
+  the renderer and UI refresh path receive an actual 1920x1080 framebuffer,
+  rather than asking dgVoodoo2 to scale a fixed 4:3 image.
+- Static call path: `FUN_00424760` calls the display-mode create/check function
+  and the display refresh function with the selected width/height, then passes
+  the queried dimensions into the render/UI refresh path. `FUN_00424590`
+  identifies the active dimensions and maps them back to mode ID `0x22`.
+- Verified file-offset sites:
+  - `0x246B3`: the 32-bit mode-identification block changes width
+    `1600 (40 06 00 00)` to `1920 (80 07 00 00)` and height
+    `1200 (B0 04 00 00)` to `1080 (38 04 00 00)`.
+  - `0x249AA`: both width/height argument pairs used to create and refresh the
+    32-bit mode receive the same replacements. The complete surrounding block
+    is signature-checked, not just the four immediate values.
+  - `0x1DCC76`: same-length mode text `Modus 1600x1200 32bit\n\0` becomes
+    `Modus 1920x1080 32bit\n\0`.
+- UI boundary: the EXE still selects `igm16001200`; no native `igm19201080`
+  resource exists. The patch therefore may expose extra world area while
+  leaving 4:3 UI surfaces anchored, cropped, or with incorrect mouse regions.
+- Safety/detection: all three sites must be consistently Original or Patched.
+  Mixed/unknown bytes are reported as Unknown and enable refuses to write.
+  Restore changes all three sites back through verified expected bytes.
+- Status: focused Ghidra instruction evidence and synthetic apply/detect/restore
+  tests are complete. Actual expanded viewport, aspect ratio, UI anchors,
+  mouse hit-testing, edge scrolling, dialogs, and minimap behavior are not yet
+  runtime verified.
+
 ### All Units Entire-Map Vision (AllUnitsEntireMapVision)
 
 - File: `SYSTEM/DATA_MP/DEFAULTS/objdef.dau`.

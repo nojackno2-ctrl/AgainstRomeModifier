@@ -35,6 +35,13 @@ public enum ExeUnitRecruit20PatchState {
     Patched
 }
 
+/// <summary>1600x1200 32-bit 原生顯示模式替換為 1920x1080 的狀態。</summary>
+public enum ExeNativeWidescreenPatchState {
+    Unknown,
+    Original,
+    Patched
+}
+
 /// <summary>已淘汰的村落建造範圍候選補丁（僅用於偵測與還原舊寫入）狀態。</summary>
 public enum ExeVillageRangePatchState {
     Unknown,
@@ -109,6 +116,43 @@ public static class ExePatchModel {
     public const long UnitRecruit20PatchOffset = 0x4C7DD;
     public static readonly byte[] UnitRecruit20OriginalBytes = { 0x29, 0xFD, 0x01, 0xFE };
     public static readonly byte[] UnitRecruit20PatchedBytes = { 0x6A, 0x14, 0x5E, 0x90 };
+
+    // === 原生 1920x1080 viewport（取代 1600x1200 32-bit mode 0x22）===
+    // VA 0x424590 會把目前顯示寬高辨識回 mode ID；VA 0x424760 建立並刷新顯示模式。
+    // IGM UI 仍沿用原版 igm16001200 資源，故此功能必須保持 Experimental，待實機驗證 UI 與滑鼠座標。
+    public const long NativeWidescreenIdentifyOffset = 0x246B3;
+    public const long NativeWidescreenCreateOffset = 0x249AA;
+    public const long NativeWidescreenModeTextOffset = 0x1DCC76;
+    public static readonly byte[] NativeWidescreenIdentifyOriginalBytes = {
+        0x81, 0x3E, 0x40, 0x06, 0x00, 0x00, 0x75, 0x12,
+        0x81, 0x3B, 0xB0, 0x04, 0x00, 0x00, 0x75, 0x0A,
+        0x83, 0xFD, 0x20, 0x75, 0x05, 0xBF, 0x22, 0x00, 0x00, 0x00
+    };
+    public static readonly byte[] NativeWidescreenIdentifyPatchedBytes = {
+        0x81, 0x3E, 0x80, 0x07, 0x00, 0x00, 0x75, 0x12,
+        0x81, 0x3B, 0x38, 0x04, 0x00, 0x00, 0x75, 0x0A,
+        0x83, 0xFD, 0x20, 0x75, 0x05, 0xBF, 0x22, 0x00, 0x00, 0x00
+    };
+    public static readonly byte[] NativeWidescreenCreateOriginalBytes = {
+        0x6A, 0x50, 0x6A, 0x20,
+        0x68, 0xB0, 0x04, 0x00, 0x00, 0x68, 0x40, 0x06, 0x00, 0x00,
+        0xE8, 0x83, 0x96, 0x15, 0x00, 0x83, 0xC4, 0x10, 0x85, 0xC0,
+        0x0F, 0x85, 0x01, 0xFE, 0xFF, 0xFF,
+        0x68, 0xB0, 0x04, 0x00, 0x00, 0x68, 0x40, 0x06, 0x00, 0x00,
+        0xE8, 0xD9, 0x96, 0x15, 0x00, 0x83, 0xC4, 0x08
+    };
+    public static readonly byte[] NativeWidescreenCreatePatchedBytes = {
+        0x6A, 0x50, 0x6A, 0x20,
+        0x68, 0x38, 0x04, 0x00, 0x00, 0x68, 0x80, 0x07, 0x00, 0x00,
+        0xE8, 0x83, 0x96, 0x15, 0x00, 0x83, 0xC4, 0x10, 0x85, 0xC0,
+        0x0F, 0x85, 0x01, 0xFE, 0xFF, 0xFF,
+        0x68, 0x38, 0x04, 0x00, 0x00, 0x68, 0x80, 0x07, 0x00, 0x00,
+        0xE8, 0xD9, 0x96, 0x15, 0x00, 0x83, 0xC4, 0x08
+    };
+    public static readonly byte[] NativeWidescreenModeTextOriginalBytes =
+        System.Text.Encoding.ASCII.GetBytes("Modus 1600x1200 32bit\n\0");
+    public static readonly byte[] NativeWidescreenModeTextPatchedBytes =
+        System.Text.Encoding.ASCII.GetBytes("Modus 1920x1080 32bit\n\0");
 
     // === 法術免祭壇需求（各族群 12 處特徵）===
     public static readonly (long Offset, byte[] Original, byte[] Patched)[] SpellAltarPatchSites = new[] {
@@ -323,6 +367,25 @@ public static class ExePatchModel {
         return ExeUnitRecruit20PatchState.Unknown;
     }
 
+    public static ExeNativeWidescreenPatchState GetNativeWidescreenPatchState(byte[] exeBytes) {
+        var sites = new[] {
+            (NativeWidescreenIdentifyOffset, NativeWidescreenIdentifyOriginalBytes, NativeWidescreenIdentifyPatchedBytes),
+            (NativeWidescreenCreateOffset, NativeWidescreenCreateOriginalBytes, NativeWidescreenCreatePatchedBytes),
+            (NativeWidescreenModeTextOffset, NativeWidescreenModeTextOriginalBytes, NativeWidescreenModeTextPatchedBytes),
+        };
+        bool allOriginal = true;
+        bool allPatched = true;
+        foreach (var (offset, original, patched) in sites) {
+            if (exeBytes.Length < offset + original.Length) return ExeNativeWidescreenPatchState.Unknown;
+            byte[] current = ReadSpan(exeBytes, offset, original.Length);
+            allOriginal &= current.SequenceEqual(original);
+            allPatched &= current.SequenceEqual(patched);
+        }
+        if (allOriginal) return ExeNativeWidescreenPatchState.Original;
+        if (allPatched) return ExeNativeWidescreenPatchState.Patched;
+        return ExeNativeWidescreenPatchState.Unknown;
+    }
+
     public static ExeVillageRangePatchState GetVillageBuildRangePatchState(byte[] exeBytes) {
         if (exeBytes.Length < VillageRangePatchRequiredLength) {
             return ExeVillageRangePatchState.Unknown;
@@ -431,6 +494,24 @@ public static class ExePatchModel {
         }
         if (!enabled && state == ExeUnitRecruit20PatchState.Patched) {
             return new[] { new ExeWriteOp(UnitRecruit20PatchOffset, UnitRecruit20PatchedBytes, UnitRecruit20OriginalBytes, "招募一次到上限還原") };
+        }
+        return Array.Empty<ExeWriteOp>();
+    }
+
+    public static IReadOnlyList<ExeWriteOp> PlanNativeWidescreen(bool enabled, ExeNativeWidescreenPatchState state) {
+        if (enabled && state == ExeNativeWidescreenPatchState.Original) {
+            return new[] {
+                new ExeWriteOp(NativeWidescreenIdentifyOffset, NativeWidescreenIdentifyOriginalBytes, NativeWidescreenIdentifyPatchedBytes, "1920x1080 顯示模式辨識"),
+                new ExeWriteOp(NativeWidescreenCreateOffset, NativeWidescreenCreateOriginalBytes, NativeWidescreenCreatePatchedBytes, "1920x1080 顯示模式建立"),
+                new ExeWriteOp(NativeWidescreenModeTextOffset, NativeWidescreenModeTextOriginalBytes, NativeWidescreenModeTextPatchedBytes, "1920x1080 顯示模式文字"),
+            };
+        }
+        if (!enabled && state == ExeNativeWidescreenPatchState.Patched) {
+            return new[] {
+                new ExeWriteOp(NativeWidescreenIdentifyOffset, NativeWidescreenIdentifyPatchedBytes, NativeWidescreenIdentifyOriginalBytes, "1920x1080 顯示模式辨識還原"),
+                new ExeWriteOp(NativeWidescreenCreateOffset, NativeWidescreenCreatePatchedBytes, NativeWidescreenCreateOriginalBytes, "1920x1080 顯示模式建立還原"),
+                new ExeWriteOp(NativeWidescreenModeTextOffset, NativeWidescreenModeTextPatchedBytes, NativeWidescreenModeTextOriginalBytes, "1920x1080 顯示模式文字還原"),
+            };
         }
         return Array.Empty<ExeWriteOp>();
     }

@@ -45,6 +45,8 @@ internal sealed class ExeFeatureDetector
                 ExePatchModel.GetCiviProduce20PatchState(exeBytes) == ExeCiviProduce20PatchState.Patched;
             profile.UnitRecruit20 =
                 ExePatchModel.GetUnitRecruit20PatchState(exeBytes) == ExeUnitRecruit20PatchState.Patched;
+            profile.NativeWidescreen1920x1080 =
+                ExePatchModel.GetNativeWidescreenPatchState(exeBytes) == ExeNativeWidescreenPatchState.Patched;
         }
         catch (Exception ex)
         {

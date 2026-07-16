@@ -37,6 +37,7 @@ public static class FeatureRegistry
         Bool(FeatureKeys.FocusLoss, FeatureCategory.Compat), Bool(FeatureKeys.VillageBuildRange, FeatureCategory.Compat),
         Bool(FeatureKeys.NoSpellAltar, FeatureCategory.Compat), new(FeatureKeys.GameSpeed, FeatureCategory.Compat, FeatureControlKind.Specialized),
         Bool(FeatureKeys.DgVoodoo, FeatureCategory.Compat),
+        Bool(FeatureKeys.NativeWidescreen1920x1080, FeatureCategory.Compat),
         Bool(FeatureKeys.EndlessAiM1, FeatureCategory.Compat), Bool(FeatureKeys.EndlessAiCore, FeatureCategory.Compat),
         new(FeatureKeys.EndlessAiM2, FeatureCategory.Compat, FeatureControlKind.Specialized),
         new(FeatureKeys.EndlessAiM3, FeatureCategory.Compat, FeatureControlKind.Specialized),

@@ -70,6 +70,7 @@ public static class FeatureKeys
     public static readonly FeatureKey<bool> NoSpellAltar = FeatureKey<bool>.Bool("NoSpellAltar");
     public static readonly FeatureKey<int> GameSpeed = FeatureKey<int>.Int("GameSpeed", 1);
     public static readonly FeatureKey<bool> DgVoodoo = FeatureKey<bool>.Bool("DgVoodoo");
+    public static readonly FeatureKey<bool> NativeWidescreen1920x1080 = FeatureKey<bool>.Bool("NativeWidescreen1920x1080");
     public static readonly FeatureKey<bool> EndlessAiM1 = FeatureKey<bool>.Bool("EndlessAi.M1");
     public static readonly FeatureKey<bool> EndlessAiCore = FeatureKey<bool>.Bool("EndlessAi.Core");
     public static readonly FeatureKey<bool> EndlessAiM2 = FeatureKey<bool>.Bool("EndlessAi.M2");
