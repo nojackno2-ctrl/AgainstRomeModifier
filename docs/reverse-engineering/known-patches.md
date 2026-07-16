@@ -142,8 +142,9 @@
 - Safety: full-region original/patched byte match required; unknown signatures
   are refused. Disable and Stats Restore return the exact original bytes.
 - Status: implemented, apply/detect/restore covered by unit tests and the
-  local full-round-trip integration test (2026-07-16). In-game runtime
-  verification of a >40 selection is still pending.
+  local full-round-trip integration test, and runtime verified in game on
+  2026-07-16 (user confirmed the select-idle button now selects more than 40
+  villagers).
 
 ### 10x Building Speed (Construction, Upgrade, Repair)
 
