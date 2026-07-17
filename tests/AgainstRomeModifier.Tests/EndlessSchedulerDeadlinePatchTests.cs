@@ -3,7 +3,7 @@ namespace AgainstRomeModifier.Tests;
 public sealed class EndlessSchedulerDeadlinePatchTests
 {
     [Fact]
-    public void Save_repair_updates_embedded_ak_level_and_is_idempotent()
+    public void Save_repair_migrates_embedded_scheduler_and_reinforcement_rules_and_is_idempotent()
     {
         string root = Path.Combine(Path.GetTempPath(), "arm-endless-save-repair-" + Guid.NewGuid().ToString("N"));
         string scrPath = Path.Combine(root, "SAVE", "ESAVE_000", "CLAK", "scr.dat");
@@ -21,6 +21,8 @@ public sealed class EndlessSchedulerDeadlinePatchTests
             Assert.True(bciOffset >= 0);
             byte[] bciTail = decompressed[bciOffset..];
             Assert.Equal(PatchState.Ultimate, new P6_LoopDelayPatch().Detect(bciTail));
+            Assert.Equal(PatchState.Ultimate, new P8_ReinforcementUnitThresholdPatch().Detect(bciTail));
+            Assert.Equal(PatchState.Ultimate, new P9_RetreatQuotaPatch().Detect(bciTail));
         }
         finally
         {
@@ -148,7 +150,11 @@ public sealed class EndlessSchedulerDeadlinePatchTests
 
     private static byte[] CreateEmbeddedSaveScr()
     {
-        byte[] fixture = CreateOriginalFixture(out _, out _);
+        byte[] scheduler = CreateOriginalFixture(out _, out _);
+        byte[] reinforcement = CreateLegacyReinforcementFixture();
+        byte[] fixture = new byte[scheduler.Length + reinforcement.Length];
+        Buffer.BlockCopy(scheduler, 0, fixture, 0, scheduler.Length);
+        Buffer.BlockCopy(reinforcement, 0, fixture, scheduler.Length, reinforcement.Length);
         byte[] bci = new byte[36 + fixture.Length];
         "BCI0"u8.CopyTo(bci);
         Buffer.BlockCopy(fixture, 0, bci, 36, fixture.Length);
@@ -161,6 +167,33 @@ public sealed class EndlessSchedulerDeadlinePatchTests
         byte[] header = new byte[64];
         "PFIL"u8.CopyTo(header);
         return GameLZSS.CompressPfil(decompressed, header);
+    }
+
+    private static byte[] CreateLegacyReinforcementFixture()
+    {
+        const int gap = unchecked((int)0x6F6F6F6F);
+        var words = new List<int>
+        {
+            90, 0, 66, 40, 96, 98, 91, 11,
+            66, 0, 66, 0, 66, 0, 66, 0, 66, 0, 90, 6, 102, 117, 32,
+            gap, gap
+        };
+        for (int i = 0; i < 10; i++)
+        {
+            int opcode = i is 8 or 9 ? 90 : 66;
+            int value = i == 8 ? 6 : i == 9 ? 15 : 0;
+            if (i == 9)
+            {
+                opcode = 66;
+                value = 0;
+            }
+            words.AddRange(new[] { 81, 56, 90, -3, opcode, value, 164, gap, gap });
+        }
+        words.AddRange(new[] { 128, 214, 73, -2, 86, 66, 1, 96, 102, 117, 0 });
+
+        byte[] result = new byte[words.Count * sizeof(int)];
+        for (int i = 0; i < words.Count; i++) WriteInt32(result, i * sizeof(int), words[i]);
+        return result;
     }
 
     private static int FindBytes(byte[] data, byte[] pattern)

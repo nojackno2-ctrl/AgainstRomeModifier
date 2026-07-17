@@ -1,5 +1,22 @@
 ﻿# AI Handoff - Live Project Memory
 
+## Extend endless-save repair for pack-horse pileup (2026-07-17, implementation complete; runtime pending)
+
+- User screenshot `codex-clipboard-8623e832-b92c-4b8e-93de-76186c6e8a29.png` shows the Roman camp packed with donated supply horses and reinforcements stopped. This matches the embedded legacy P9 `jz+0` behavior: type-1 pack horses are donated every wave, remain team units, and eventually contribute to the P8 `s_searchTeamUnits(team)` reinforcement gate.
+- The installed-map M6 detector fix below cannot update a running/old endless save because `CLAK/scr.dat` embeds its own `ak_level`. The existing opt-in Save Manager repair only migrated P6 scheduler timing, leaving embedded P8/P9 unchanged.
+- Extended `EndlessSaveAiRepairService` to validate and atomically migrate embedded P6, P8, and P9 together. It still requires the caller to create a full save backup first, rejects any Unknown patch state before mutation, recompresses/verifies PFIL, and is idempotent.
+- Updated the Save Manager action/confirmation/result text to "Repair Endless AI" and explicitly warns that already-donated pack horses are live save objects and are not removed by script migration. If their existing count still blocks reinforcement, the safe recovery is a pre-pileup backup or a new endless game.
+- Regression fixture now models legacy P8 threshold 40 plus P9 quota 0/filter `jz+0`; repair reaches Ultimate for P6/P8/P9 and a second repair reports AlreadyRepaired. Verification: focused save/M6/P8/Save Manager tests 20/20; full Release solution build 0 warnings/errors; full xUnit 237/237. Actual repair of the user's save and post-repair runtime behavior remain pending.
+- Forced cleanup feasibility review: current script evidence only exposes `s_getUnitType`, whose type 1 includes pack horses and civilians; no verified script API was found that identifies the exact `FigTiePac00_Packpferd` objdef. `TMEM`/`IARR` are task variables/object-handle arrays, not proven authoritative world-object records, so deleting handles would not safely delete entities. A cleanup feature requires a user-provided copy of the affected save for read-only format/reference analysis; do not implement a broad type-1 destroy because it can remove civilians or other legitimate units.
+
+## Fix Roman reinforcements not leaving soldiers (2026-07-17, implementation complete; runtime state pending)
+
+- `RomanEndless` only forces the player faction to Roman; reinforcement handoff is the independent `EndlessAi.M6` module (`P8` + `P9`). Current P9 source still emits the in-game-confirmed split: site 9 quota `[66,0]` plus type filter `jnz(118)+92`, so soldier squads stay and type-1 pack horses/civilians retreat.
+- Fixed the concrete upgrade-state bug: `BciFeatureDetector` now keeps `Legacy` selected for both modules with an established migration contract, `Core` and `M6`. Prior shipped P8/P9 thresholds/filters therefore remain checked after loading current settings and the next Apply migrates them to current Ultimate instead of restoring vanilla (`jz+92`, quota 15) and making soldiers retreat.
+- Existing endless saves are a separate persistence boundary: they embed `ak_level` in `CLAK/scr.dat`, so even a correctly patched installed map does not change an already-created save. No installed game/save path was accessed during this diagnosis; no runtime state has been inspected yet.
+- Added an integration regression that builds a partial legacy M6 fixture, proves detection keeps `EndlessAi.M6` enabled, applies the detected profile, and verifies M6 reaches `Ultimate`. It failed before the fix at the enabled-profile assertion and passes afterward; focused M6/core/P8 verification is 11/11.
+- Verification complete: focused M6/core/P8 tests 11/11; full Release solution build 0 warnings/errors; full xUnit 237/237. Runtime differentiation still requires a newly started endless game because existing saves keep their embedded script.
+
 ## Save Manager responsive UI rearrangement (2026-07-17, complete)
 
 - Replaced the fixed 780/390 save-manager content coordinates with a responsive 68/32 `TableLayoutPanel`; the live-save and backup cards now split the left column evenly and retain a 10px gap from the preview/details card.

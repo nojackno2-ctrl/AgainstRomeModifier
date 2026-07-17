@@ -364,7 +364,7 @@ namespace AgainstRomeModifier {
             btnDeleteSave.Click += BtnDeleteSave_Click;
             gameCard.Controls.Add(btnDeleteSave);
 
-            btnRepairEndlessAi = new Button { Text = "修復無盡 AI 計時", Size = new Size(200, 35) };
+            btnRepairEndlessAi = new Button { Text = "修復無盡 AI", Size = new Size(200, 35) };
             StyleButton(btnRepairEndlessAi, Color.FromArgb(45, 45, 55), Color.FromArgb(255, 214, 64), Color.FromArgb(255, 214, 64));
             btnRepairEndlessAi.Click += BtnRepairEndlessAi_Click;
             gameCard.Controls.Add(btnRepairEndlessAi);
@@ -626,10 +626,10 @@ namespace AgainstRomeModifier {
             DataGridViewRow row = dgvGameSaves.SelectedRows[0];
             string folder = Cell(row, 0).Trim();
             string title = Cell(row, 1);
-            string level = Cell(row, 2);
-            if (!SaveBackupService.IsSimpleName(folder)) return;
-            if (MessageBox.Show(Loc.Get("MsgConfirmRepairEndlessAi") ??
-                    "修復前會先建立完整備份，再更新存檔內嵌的無盡 AI 排程。是否繼續？",
+                string level = Cell(row, 2);
+                if (!SaveBackupService.IsSimpleName(folder)) return;
+                if (MessageBox.Show(Loc.Get("MsgConfirmRepairEndlessAi") ??
+                    "修復前會先建立完整備份，再更新存檔內嵌的無盡 AI 排程與增援規則。已堆積的馱馬不會自動移除。是否繼續？",
                     Loc.Get("TitleWarning") ?? "警告", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
                 return;
 
@@ -646,11 +646,11 @@ namespace AgainstRomeModifier {
                 });
                 RefreshSavesAndBackups();
                 string message = result == EndlessSaveAiRepairResult.Changed
-                    ? (Loc.Get("MsgRepairEndlessAiSuccess") ?? "無盡 AI 計時已修復，並已建立修復前備份。")
-                    : (Loc.Get("MsgRepairEndlessAiAlready") ?? "這份存檔已包含無盡 AI 計時修復。");
+                    ? (Loc.Get("MsgRepairEndlessAiSuccess") ?? "無盡 AI 排程與增援規則已修復，並已建立修復前備份。已堆積的馱馬不會自動移除；若仍阻斷增援，請還原堆積前備份或新開無盡局。")
+                    : (Loc.Get("MsgRepairEndlessAiAlready") ?? "這份存檔已包含目前的無盡 AI 排程與增援修復。");
                 MessageBox.Show(message, Loc.Get("TitleSuccess") ?? "成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
             } catch (Exception ex) {
-                MessageBox.Show((Loc.Get("MsgRepairEndlessAiFailed") ?? "修復無盡 AI 計時失敗: ") + ex.Message,
+                MessageBox.Show((Loc.Get("MsgRepairEndlessAiFailed") ?? "修復無盡 AI 失敗: ") + ex.Message,
                     Loc.Get("TitleError") ?? "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
             } finally {
                 _repairInFlight = false;

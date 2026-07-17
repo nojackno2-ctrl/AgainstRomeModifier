@@ -714,10 +714,14 @@ state is detected as Legacy and migrated on Apply.
 
 All five local `ENDL_000..004` decompressed RE samples uniquely matched and
 completed byte-exact Original -> Ultimate -> Original round trips. Save Manager
-also exposes an opt-in "Repair Endless AI Timer" action. It first creates a full
-save backup, then locates the unique `MAPS/ENDL_###/SCRIPT/ak_level` BCI embedded
-in `CLAK/scr.dat`, applies the same P6 repair, recompresses PFIL, verifies the
-decompressed bytes, and writes atomically. No save is changed automatically.
+also exposes an opt-in "Repair Endless AI" action. It first creates a full save
+backup, then locates the unique `MAPS/ENDL_###/SCRIPT/ak_level` BCI embedded in
+`CLAK/scr.dat`, migrates P6 plus the coupled P8/P9 reinforcement threshold,
+retreat quota, and type filter, recompresses PFIL, verifies the decompressed
+bytes, and writes atomically. Existing donated pack horses are live save objects
+and are not deleted by this script migration; if they already push the team over
+the reinforcement threshold, restore a pre-pileup backup or start a new endless
+game. No save is changed automatically.
 
 ## Integrated Endless Respawn Core (2026-07-16)
 

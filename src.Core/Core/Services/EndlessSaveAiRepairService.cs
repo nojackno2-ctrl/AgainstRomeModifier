@@ -45,14 +45,23 @@ internal sealed class EndlessSaveAiRepairService
         byte[] bciTail = new byte[decompressed.Length - bciOffset];
         Buffer.BlockCopy(decompressed, bciOffset, bciTail, 0, bciTail.Length);
 
-        var patch = new P6_LoopDelayPatch();
-        PatchState state = patch.Detect(bciTail);
-        if (state == PatchState.Unknown)
-            throw new InvalidDataException("The save's ak_level scheduler does not match a supported original, legacy, or repaired layout.");
-        if (state == PatchState.Ultimate)
+        IEndlessPatch[] patches =
+        {
+            new P6_LoopDelayPatch(),
+            new P8_ReinforcementUnitThresholdPatch(),
+            new P9_RetreatQuotaPatch()
+        };
+        foreach (IEndlessPatch patch in patches)
+        {
+            if (patch.Detect(bciTail) == PatchState.Unknown)
+                throw new InvalidDataException($"The save's embedded ak_level {patch.Id} state is unknown and cannot be migrated safely.");
+        }
+
+        bool changed = false;
+        foreach (IEndlessPatch patch in patches)
+            changed |= patch.Apply(ref bciTail, enabled: true);
+        if (!changed)
             return EndlessSaveAiRepairResult.AlreadyRepaired;
-        if (!patch.Apply(ref bciTail, enabled: true))
-            throw new InvalidOperationException("The save scheduler required repair but no bytes changed.");
 
         Buffer.BlockCopy(bciTail, 0, decompressed, bciOffset, bciTail.Length);
         byte[] repairedRaw = GameLZSS.CompressPfil(decompressed, raw);

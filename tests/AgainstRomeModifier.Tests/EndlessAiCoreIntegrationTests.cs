@@ -88,4 +88,36 @@ public sealed class EndlessAiCoreIntegrationTests
         orchestrator.ClearCache();
         Assert.Equal(PatchState.Ultimate, orchestrator.DetectModule(fixture.RootPath, orchestrator.RespawnCore));
     }
+
+    [RequiresBackupZipFact]
+    public void Detecting_a_legacy_m6_state_keeps_m6_selected_for_next_apply_migration()
+    {
+        using var fixture = BackupZipGameFixture.Create();
+        var orchestrator = new EndlessAiOrchestrator();
+        IEndlessPatch p8 = Assert.Single(orchestrator.M6.Patches, patch => patch.Id == "P8");
+
+        foreach (string path in EndlessAiOrchestrator.ResolvePaths(fixture.RootPath, p8.TargetPattern))
+        {
+            BciScriptFile script = orchestrator.GetScriptFile(path);
+            byte[] decompressed = script.DecompressedBytes;
+            Assert.True(p8.Apply(ref decompressed, enabled: true));
+            script.UpdateDecompressedBytes(decompressed);
+        }
+        orchestrator.SaveAll(fixture.RootPath, rollback: null);
+
+        Assert.Equal(PatchState.Legacy, orchestrator.DetectModule(fixture.RootPath, orchestrator.M6));
+
+        var engine = new PatchEngine(new NullLogger());
+        PatchProfile detected = engine.DetectCurrentPatchState(fixture.RootPath, fixture.Backup);
+        Assert.True(detected.Get(FeatureKeys.EndlessAiM6));
+
+        using (var rollback = new FileRollbackScope())
+        {
+            engine.ApplyPatches(fixture.RootPath, detected, fixture.Backup, rollback);
+            rollback.Commit();
+        }
+
+        orchestrator.ClearCache();
+        Assert.Equal(PatchState.Ultimate, orchestrator.DetectModule(fixture.RootPath, orchestrator.M6));
+    }
 }
