@@ -20,14 +20,14 @@ runtime evidence.
 
 ## BCI Virtual Machine Dispatcher (decoded 2026-07-03, no Ghidra)
 
-The Temp Ghidra install (`C:\Users\nojac\AppData\Local\Temp\AgainstRome_RE\ghidra`)
-lost its `Framework/Utility` module partway through this session and
-`analyzeHeadless.bat` now fails with `Failed to find the 'Utility' module!`
-before loading the existing project. This session's disassembly work used
-`pip install capstone pefile` (into the harness's isolated user Python) instead
-— a linear x86 disassembler plus direct EXE byte scanning is sufficient for
-opcode-table and call-site work; only a fresh Ghidra project/reinstall would
-be needed for broader whole-program analysis again.
+Historical method note: this dispatcher decode was completed with Capstone and
+direct EXE byte scanning after the former Temp Ghidra tree lost required
+modules. That incomplete tree is no longer the active toolchain. On 2026-07-17
+an official SHA-256-verified Ghidra 12.1.2 distribution was installed at the
+clean path documented in `decompilation-workflow.md`, and fresh disposable
+headless imports plus focused decompilation scripts completed successfully.
+The original opcode-table conclusions remain byte-derived; broader
+whole-program analysis is available again through the clean one-shot workflow.
 
 - Interpreter entry: `005B1C62` (frame setup, `EBX` = VM context pointer).
   Opcode fetch at `005B1C72`: read 32-bit opcode word at `[EBX+8]` (PC,

@@ -450,9 +450,13 @@ namespace AgainstRomeModifier
         public string TargetPattern => "MAPS/ENDL_*/SCRIPT/ak_level.bci";
 
         private const int OriginalUnitThreshold = 4;
-        private const int LegacyLowUnitThreshold = 8;
-        private const int LegacyHighUnitThreshold = 40;
-        private const int UltimateUnitThreshold = 30;
+        // 歷代出貨過的 Ultimate 門檻（8 → 40 → 30 → 40），全部視為 Legacy，
+        // 下次套用時自動遷移到現行值。
+        private static readonly int[] LegacyUnitThresholds = { 8, 30, 40 };
+        // 2026-07-17 應使用者要求改為 70。上界試算：70 隊 × 20 人 = 1400，
+        // 仍低於 EXE 全圖 1600 人口上限，但已相當接近——若含玩家人口爆滿
+        // 導致增援停擺，優先檢查這裡。
+        private const int UltimateUnitThreshold = 70;
 
         // Original gate: 5× pushlit 0 (66,0) + pushsym 6 (90,6) + cmp (102) + jmp (117) + done (32)
         // Total 15 words at offset +32 from sequence start.
@@ -567,13 +571,12 @@ namespace AgainstRomeModifier
         }
 
         private static bool IsLegacyUnitThreshold(int value) =>
-            value == LegacyLowUnitThreshold || value == LegacyHighUnitThreshold;
+            Array.IndexOf(LegacyUnitThresholds, value) >= 0;
 
         private static bool IsRecognizedUnitThreshold(int value) =>
             value == OriginalUnitThreshold ||
-            value == LegacyLowUnitThreshold ||
             value == UltimateUnitThreshold ||
-            value == LegacyHighUnitThreshold;
+            IsLegacyUnitThreshold(value);
 
         private static int FindReinforcementThresholdSequenceOffset(byte[] decompressedBci)
         {
@@ -617,19 +620,17 @@ namespace AgainstRomeModifier
 
         // 第三控制點：狀態 49 捐贈走訪的單位型別過濾（0x1825C 附近，全檔唯一的
         // s_getUnitType 呼叫）。原版 `if (s_getUnitType(obj) == 1)` 只讓型別 1
-        // （單人單位：平民、駄馬、首領）進入配額/捐贈分支，士兵小隊（squad，
-        // 型別 != 1）一律留在撤退陣列走回地圖出口——這就是「配額歸零後士兵
-        // 仍撤退」的原因。
+        // 單位（平民、駄馬等單體單位）進入配額/捐贈分支，士兵小隊（type != 1）
+        // 一律留在撤退陣列走回地圖出口。
         //
-        // 2026-07-17 修正：舊版 Ultimate 把 jz 位移 92 改 0（吃掉條件），所有
-        // 單位都被捐贈留村——結果 type-5 增援隨隊的駄馬/平民也留下，每波堆積
-        // （ESAVE_001 實測羅馬營地駄馬爆量）。新版改為「反轉」條件：jz(117)
-        // → jnz(118)、位移保留 92。型別 1（駄馬/平民/首領）跳過捐贈分支、
-        // 照原版走撤退離場；士兵小隊落入配額分支，配額 0 → 全部 s_setObjMark
-        // 捐給 type-4 隊伍留村。士兵留下、駄馬撤退，兩者兼得（代價：原版
-        // 會捐 2~3 個平民給村莊的行為不再發生，可接受）。
-        // 簽章的 jz/jnz opcode 字（index 9）與位移字（index 10）都是萬用碼，
-        // 否則已套用檔（118）會比對不到。
+        // 2026-07-17 最終實機確認（使用者兩次觀察，第一次誤判後更正）：
+        // 反轉版 jnz(118)+92 的實際行為正確——士兵小隊留在村裡駐守、
+        // 駄馬與平民照原版撤退離場。這與 2026-07-08 的型別語意記錄一致
+        // （士兵小隊 type != 1；駄馬/平民 type 1）。
+        // - Legacy：jz+0（吃掉條件，2026-07-08 出貨）→ 所有單位含駄馬都被
+        //   捐贈，駄馬每波堆積（ESAVE_001 實測）。
+        // 簽章的跳躍 opcode 字（index 9）與位移字（index 10）都是萬用碼，
+        // 否則已套用檔（118）或 Legacy 檔（位移 0）會比對不到。
         private static readonly int?[] DonationTypeFilterSignature = new int?[] {
             128, 214, 73, -2, 86, 66, 1, 96, 102, null, null
         };
@@ -639,8 +640,6 @@ namespace AgainstRomeModifier
         private const int DonationTypeFilterOriginalOperand = 92;
         private const int DonationTypeFilterPatchedOpcode = 118;   // jnz（條件反轉）
         private const int DonationTypeFilterPatchedOperand = 92;
-        // （2026-07-08 出貨的舊版 Ultimate 為 jz 位移 92→0：全部捐贈、駄馬堆積；
-        //  Detect 時落入 Legacy，Apply 自動遷移。）
 
         public PatchState Detect(byte[] decompressed)
         {
@@ -683,10 +682,8 @@ namespace AgainstRomeModifier
             if (site9Original && jzOpcode == DonationTypeFilterOriginalOpcode && jzOperand == DonationTypeFilterOriginalOperand)
                 return PatchState.Original;
 
-            // Legacy 涵蓋兩種出貨過的中間狀態：
-            // 1. 2026-07-08 前期：site9 已歸零但型別過濾仍為原版（士兵小隊照樣撤退）。
-            // 2. 2026-07-08 後期：jz 位移 92→0（全部捐贈，駄馬/平民堆積在羅馬營地）。
-            // Apply 時自動遷移到 jnz 反轉版。
+            // Legacy 涵蓋出貨過的中間狀態（site9 歸零但過濾原版；jz+0 全捐贈；
+            // 2026-07-17 短暫出貨的「過濾恢復原版」組合），Apply 時自動遷移。
             return PatchState.Legacy;
         }
 
@@ -740,11 +737,11 @@ namespace AgainstRomeModifier
 
             // State-49 donation type filter, INVERTED (jz->jnz, offset kept at 92):
             // soldier squads (unit type != 1) fall into the quota branch and get
-            // donated (quota 0 => all stay in the village); single units (type 1:
-            // pack horses / civilians / leader) take the jump and follow the
-            // vanilla retreat path off the map. This keeps reinforcements while
-            // preventing pack-horse pileup (legacy operand-0 variant donated
-            // EVERYTHING, so pack horses accumulated every wave).
+            // donated (quota 0 => all stay in the village); type-1 units (pack
+            // horses / civilians) take the jump and follow the vanilla retreat
+            // path off the map. In-game confirmed 2026-07-17: soldiers garrison,
+            // pack horses leave. (The legacy operand-0 variant donated EVERYTHING,
+            // so pack horses accumulated every wave.)
             {
                 int filterOffset = BciPattern.FindBciWordPattern(decompressed, DonationTypeFilterSignature);
                 if (filterOffset < 0)

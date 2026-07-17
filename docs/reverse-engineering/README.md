@@ -27,6 +27,9 @@ and patch code.
   (Berserker/marksmanship/shield/thunder/charge) and their `cl_epara.ini`
   factors, glory earn/loss rules, and the combat upgrade icons.
 - `known-patches.md`: implemented, legacy, candidate, and rejected patches.
+- `feature-verification-matrix.md`: all 44 `FeatureRegistry` entries mapped to
+  their actual write targets, reverse-engineering evidence, and separately
+  recorded runtime status.
 - `projectile-ballistics.md` and `priest-spells.md`: experimental projectile,
   ranged-distance, spell-radius, and priest casting-distance evidence.
 - `decompilation-workflow.md`: local Ghidra/JDK workflow and generated EXE
