@@ -1,5 +1,13 @@
 ﻿# AI Handoff - Live Project Memory
 
+## Save Manager responsive UI rearrangement (2026-07-17, complete)
+
+- Replaced the fixed 780/390 save-manager content coordinates with a responsive 68/32 `TableLayoutPanel`; the live-save and backup cards now split the left column evenly and retain a 10px gap from the preview/details card.
+- Reduced the initial/minimum window sizes to 1180x780 and 960x640 so the form fits smaller desktop work areas. Both action rows now use proportional table layouts, the preview scales with its card, and save-grid columns use `FillWeight` rather than fixed widths that forced a horizontal scrollbar.
+- The custom rounded window region is recalculated after resizing. Added `SaveManagerFormLayoutTests` to cover minimum-size visibility, action containment, responsive column ratios, and fill-mode grids.
+- Verification: focused layout test 1/1; isolated TEMP-artifacts Release solution build 0 warnings/errors; full xUnit 236/236. Computer-use visual QA could not start because the app-launch approval timed out, so no runtime screenshot was captured; the minimum-size geometry is regression-tested but player-facing visual confirmation remains useful.
+- Follow-up screenshot exposed a remaining 39px bottom overflow: `Size` had been assigned while the form still used the default sizable border, then `FormBorderStyle.None` changed the client area after anchored controls were created. The initialization now sets borderless mode first and assigns `ClientSize`; the layout regression also asserts that the root content bottom exactly matches `ClientSize.Height`. Follow-up focused test 1/1, isolated Release solution build 0 warnings/errors, and full xUnit 236/236 passed.
+
 ## Repair incomplete local Ghidra installation (2026-07-17, complete)
 
 - Diagnosed the old machine-local `AgainstRome_RE\ghidra` tree as an incomplete/mixed Ghidra 12.1.2 installation: recognizer classes and multiple processor `.pspec` files are missing. This is not safe to repair by copying isolated classes.
