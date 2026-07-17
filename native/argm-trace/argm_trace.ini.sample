@@ -1,0 +1,34 @@
+; argm-trace configuration. Rename to argm_trace.ini and place next to
+; Against_Rome.exe (same folder as version.dll). Every key is optional; the
+; values shown are the built-in defaults.
+
+[general]
+; Master switch. 0 = load and forward version.dll but do nothing else.
+enabled=1
+
+; Verify each hook target's byte signature before patching. Keep this on.
+verifySignatures=1
+
+; How many caller-stack dwords generic hooks may dump (0..16).
+argDumpCount=9
+
+; Stop appending once the log reaches this many megabytes (0 = unlimited).
+maxLogMegabytes=256
+
+[build]
+; PE TimeDateStamp (hex) of the reverse-engineered Against_Rome.exe. Until this
+; is set, only the signature-verified faction hook is installed. Run the game
+; once, open argm_trace.log, copy the TimeDateStamp printed in the [build]
+; banner, and paste it here to unlock the AI-event hooks for that exact build.
+expectedTimeDateStamp=0
+
+[hooks]
+; Low-frequency AI events (safe to leave on). Require expectedTimeDateStamp set.
+traceNpcJobs=1
+traceNpcActive=1
+traceVillage=1
+traceCreateUnit=1
+
+; Full BCI opcode stream. VERY high volume (can be hundreds of MB/min). Only
+; enable for short, targeted captures.
+traceOpcodes=0
