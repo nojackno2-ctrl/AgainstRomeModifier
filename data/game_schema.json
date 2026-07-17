@@ -241,15 +241,17 @@
           "militaryReinforcementUnitThreshold": {
             "decompressedLiteralOffset": "0x195F8",
             "originalValue": 4,
-            "ultimateValue": 40,
-            "meaning": "s_searchTeamUnits(team) threshold in the military-reinforcement spawner; not an AI-player or party-count limit."
+            "ultimateValue": 30,
+            "legacyValues": [8, 40],
+            "meaning": "s_searchTeamUnits(team) threshold in the military-reinforcement spawner; not an AI-player or simultaneous active-party limit.",
+            "unknownPolicy": "Only exact original/current gates and the three documented legacy gate variants with recognized thresholds 4, 8, 30, or 40 are writable; every other combination is Unknown."
           },
           "reinforcementRetreatQuota": {
             "decompressedSignatureRegion": "0x17888",
             "originalWords": [90, 15],
             "ultimateWords": [66, 0],
             "meaning": "Set v56[party] to zero so the complete type-5 reinforcement party is handed to the village instead of retreating.",
-            "coupling": "Must be applied and restored atomically with militaryReinforcementUnitThreshold=40; the rejected threshold-8 plus quota-0 combination stopped later arrivals."
+            "coupling": "Must be applied and restored atomically with militaryReinforcementUnitThreshold=30; the rejected threshold-8 plus quota-0 combination stopped later arrivals."
           },
           "settlementSpawnerProbabilities": {
             "decompressedPatternOffset": "0x1888C",
@@ -269,7 +271,7 @@
             "legacyIncorrectRange": [4, 4],
             "meaning": "At new-game initialization, s_randRange(upperBound, lowerBound) is stored in v70 as the live type-1 settlement cap. M6 fixes it at 3 so the separate type-4 military settlement can remain the fourth settled opponent without starving military/attack parties of CPU-team slots. Existing saves retain their already initialized v70 value."
           },
-          "activeAiLimitBypass": {
+          "legacyUnboundedReinforcementGate": {
             "status": "disabled-runtime-regression",
             "decompressedPatchOffset": "0x1960C",
             "originalWords": [66, 0],

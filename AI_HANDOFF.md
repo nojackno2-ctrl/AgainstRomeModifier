@@ -1,4 +1,25 @@
-# AI Handoff - Live Project Memory
+﻿# AI Handoff - Live Project Memory
+
+## Fix reinforcement pack-horse pileup: invert P9 type filter (2026-07-17)
+
+- In-game report (ESAVE_001): Roman camp accumulates pack horses every reinforcement wave. Root cause: P9's third control point (state-49 donation type filter, jz operand `92 -> 0`) made EVERY unit of the retreating type-5 party get donated to the village — including supply pack horses (`FigTiePac00_Packpferd`) and civilians, which therefore never retreat off-map.
+- Fix: the filter is now INVERTED instead of eaten — jump opcode `117 (jz) -> 118 (jnz)`, operand kept at `92`. Soldier squads (type != 1) fall into the zeroed quota branch and are donated (garrison goal unchanged); single units (type 1: pack horses / civilians / leader) take the vanilla retreat path and leave the map.
+- Signature updated to wildcard both the jump opcode and operand words; states: `jz 92` = Original, `jnz 92` = Ultimate, `jz 0` (shipped 2026-07-08) = Legacy, auto-migrated on next apply.
+- Trade-off: vanilla's 2–3 donated civilians per wave no longer happen (villager growth still comes from Dorfverteidigung conversions). `local33`/`local35` counters (stored to `v54`/`v55[party]`) swap populations; no downstream consumer found, flagged for in-game verification.
+- Updated `verify_split_patches` P9 expectation (jnz 118 + 92) and `docs/reverse-engineering/endless-mode-ai.md`. Build 0 warnings/errors; full xUnit 234/234 passed.
+- NOT yet verified in-game. Existing saves (incl. ESAVE_001) embed the old script in `CLAK/scr.dat` and cannot be fixed — requires re-applying the feature via the modifier and starting a new endless game.
+
+## Reduce Increase Garrison Size from 40 to 30 (2026-07-17)
+
+- Changed Endless AI M6 / P8's active reinforcement unit threshold from `40` to `30`; original restore remains `4`.
+- Added explicit compatibility for the former `40` state: detection reports it as `Legacy`, and the next enabled apply migrates it to `30`. Existing `8` and legacy gate migrations remain intact.
+- Updated the M6 tooltip, schema, canonical technical/reverse-engineering docs, and P8 verification expectations to describe the new `30` bound (approximately 600 members at 20 per unit).
+- Verification complete: focused P8 tests 3/3; full Release solution build 0 warnings/errors; full xUnit 231/231; `data/game_schema.json` parse and `git diff --check` succeeded.
+- Independent audit: `EndlessAi.Core` remains the atomic M2+M3+M4 lifecycle and its focused integration/deadline coverage passed as part of a 15/15 Endless AI run; M6/P8 remains independent.
+- Safety issue resolved: P8 is now `P8_ReinforcementUnitThresholdPatch`; detection accepts only the exact original gate and three exact documented legacy gates with recognized thresholds `4/8/30/40`. Unknown gates or thresholds return `Unknown`, direct Apply refuses enable and leaves bytes unchanged, and negative regressions cover both cases.
+- Terminology/docs resolved: M6/P8 is consistently described as the reinforcement unit-count threshold rather than the separate active-party cap, and the stale `TechDoc.md` summary now uses the current `30000 ms` reinforcement/scheduler timing.
+- Reverse-engineering drift resolved: current P8 changes only the `0x195F8` threshold and preserves the original `0x1960C` condition tail. The two historical bounded tails and the old unbounded tail are documented and implemented only as exact migration inputs, not current output.
+- Follow-up verification complete: focused Endless AI tests 18/18; full Release solution build 0 warnings/errors; full xUnit 234/234 with no skips; schema JSON parse and `git diff --check` succeeded.
 
 ## Optional Features Category & Move Game Speed (2026-07-17)
 

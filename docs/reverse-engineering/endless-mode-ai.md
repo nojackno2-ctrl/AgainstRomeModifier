@@ -159,7 +159,8 @@ endless maps inspected.
   `600000` ms to `60000` ms while preserving both settlement-cleanup fallbacks
   at `600000` ms (see "Party lifecycle" below), cuts the dead-party
   confirmation counter from `20` to `3` ticks, and raises the reinforcement
-  unit-count threshold at `0x195F8` from `4` to `40`.
+  unit-count threshold at `0x195F8` from `4` to `30` (legacy `8` and `40`
+  states migrate on apply).
   It also changes the last `s_addNPCJob_createUnit` argument at `0x17B1C` from
   `0` to `1`. EXE runtime analysis shows that this flag removes a job after its
   status leaves the running state, allowing the 20 per-team NPC-job slots to be
@@ -320,7 +321,7 @@ spawns normally, and destroyed ordinary villages still respawn. The three points
 | --- | --- | --- | --- | --- |
 | Site 8 (spawn budget) | `0x16A44` | `[90,6]` | `[90,6]` (kept) | `v56` soldier spawn budget — must stay vanilla or reinforcements have no soldiers |
 | Site 9 (retreat quota) | `0x17880` | `[90,15]` | `[66,0]` | zero retreat quota → over-quota units donated, not retreated |
-| Type filter (state 49) | `0x1825C` | jz `92` | jz `0` | fall-through so soldier SQUADS are also subject to the zeroed quota |
+| Type filter (state 49) | `0x1825C` | jz `92` | jnz `92` (opcode `117 -> 118`) | inverted condition: squads (type != 1) enter the zeroed quota and are donated; single units (type 1: pack horses / civilians / leader) take the vanilla retreat path (2026-07-17 fix — the earlier jz `0` fall-through donated EVERYTHING, so supply pack horses piled up in the Roman camp every wave; see update below) |
 
 The "donated squads may stand passively" caveat noted below during static
 analysis **did not materialize** — in-game the garrison behaves correctly, so no
@@ -364,6 +365,34 @@ prints jump targets 8 bytes short; real target = printed + 8):
   testing 2026-07-08 confirmed the garrison behaves correctly, so this path was
   left as-is.
 
+**UPDATE 2026-07-17: type filter changed from "eat" (jz operand 0) to "invert"
+(jz -> jnz, operand kept 92).** In-game report (ESAVE_001): the operand-0
+variant donated every unit in the retreating type-5 party — including the
+supply pack horses (`FigTiePac00_Packpferd`, unit type 1) and civilians — so
+each reinforcement wave permanently added pack horses to the Roman camp and
+they visibly piled up. The inverted condition gives the desired split with the
+same single control point:
+
+- type != 1 (soldier squads) now falls INTO the quota branch; with the site-9
+  quota at 0 every squad is donated via `s_setObjMark` and stays as garrison
+  (unchanged goal);
+- type == 1 (pack horses, civilians, the leader) takes the jump to the
+  else branch (`local35 += 1`, no donate flag), stays in the retreat array,
+  and leaves via the vanilla state-50 exit walk (`s_sendMsg(8, exit)` +
+  `s_destroyObj` within 100).
+
+Trade-off: the vanilla behavior of donating 2–3 civilians per wave to the
+village no longer happens (village population growth still comes from the
+`Dorfverteidigung`/`ak_npc` conversion paths). The walk's `local33`/`local35`
+counters swap populations (they are stored to `v54`/`v55[party]` after the
+loop); no downstream consumer of those two writes was found in the retreat
+chain, but this is flagged for the next in-game verification. The signature now
+wildcards both the jump opcode word and the operand word
+(`[128,214, 73,-2, 86, 66,1, 96,102, ?, ?]`); `jz 92` = Original,
+`jnz 92` = Ultimate, `jz 0` = Legacy (auto-migrated on the next apply).
+Saves created with the operand-0 script keep the old behavior — the script
+lives inside the save (`CLAK/scr.dat`), so a new game is required.
+
 **UPDATE 2026-07-08: site-8 zeroing REVERTED — that write is the soldier SPAWN
 BUDGET, not a retreat quota.** Runtime report: with both P9 sites at `[66,0]`,
 type-5 reinforcements arrived with villagers only, no soldiers. Disassembly of
@@ -389,14 +418,15 @@ root cause of both rejected attempts below is identified as the spawner
   threshold at `0x195F8`: it was still `8`, so permanently donated units pushed
 `s_searchTeamUnits(team)` past the spawn condition after about one wave and
 reinforcements stopped. AI Ultimate now applies the `v56 <- pushlit 0` quota
-patch TOGETHER with raising the threshold `4 -> 40` (legacy `8` migrated).
+patch TOGETHER with raising the threshold `4 -> 30` (legacy `8` and `40`
+migrated).
 Decoding state 49 (`0x17F60..0x183D8`) confirms handed-over units and the
 leader are only re-marked via `s_setObjMark` (to `32 + type4Party`, or `-1`
 when no type-4 party exists) and are NOT inserted into the type-4 party's
 `v52` object array, so the settled handler's dead-party check (leader +
 civilians + tracked members, debounce at `0x1600C` region) is not blocked by
 them and team recycling still works. The army is naturally bounded: the
-spawner stops sending waves once the team holds ~40 battle units (800 members
+spawner stops sending waves once the team holds ~30 battle units (600 members
 at 20 per unit), below the 1600 EXE population cap; the engine's population
 check is the hard stop if a map's `team.dat` limit is lower. Historical
 record of the two earlier single-sided attempts follows.
@@ -428,7 +458,7 @@ delivering". The type-5 (military reinforcement) handler's flow in
   forever; (b) lingering handed-over units can keep a defeated team from
   passing the all-gone dead-party confirmation, blocking slot recycling.
   This quota-only configuration was rejected. Current builds use `[66,0]`
-  only together with the corrected threshold of 40.
+  only together with the corrected bounded threshold (currently 30).
 - Second attempt (also reverted 2026-07-03, same session): widen the vanilla
   donation formula instead of zeroing the quota. The state-33 block at
   `0x17788` computes `donate = min(TH - teamUnits, CAP, partyUnits / DIV)`
@@ -440,7 +470,7 @@ delivering". The type-5 (military reinforcement) handler's flow in
   threshold described above.
   **Current state: the donation formula `(TH,CAP,DIV)` remains vanilla
   `(4,2,2)`, while AI Ultimate sets v56 to `[66,0]` atomically with threshold
-  40. Disabling restores `[90,15]` and threshold 4.** Correction (2026-07-03): an
+  30. Disabling restores `[90,15]` and threshold 4.** Correction (2026-07-03): an
   earlier draft of this note claimed dead code named
   `EndlessAiRetainLegacyOpcode/Value`/`EndlessAiDonationUltimateValues`
   remained for migrating legacy-enabled scripts/saves back to vanilla;
@@ -455,14 +485,19 @@ delivering". The type-5 (military reinforcement) handler's flow in
   whose team has >= 2 buildings, main-house storage checks, a leader check,
   and `s_searchTeamUnits(team) < <0x195F8 literal>`. A 2026-07-05 save proved
   the main-house resource checks can become false with only about nine Roman
-  units present. The earlier bounded gate still allowed transient leader or
-  civilian state to suppress later waves. P8 now replaces the condition tail at
-  decompressed `0x1960C` with three equivalent `teamUnits < 40` branches, so
-  neither resources nor those transient predicates can stop a valid settled
-  team while the hard unit bound remains. Earlier spawner checks still require
-  a type-4 settlement, buildings, and no active type-5 reinforcement party. The old `112,272`
-  bypass at `0x1960C` skipped this whole condition block, which is why it
-  exhausted job slots.
+  units present. Earlier experimental builds tried two bounded,
+  unit-count-only condition tails, but current P8 does not install either one:
+  it changes only the threshold literal at `0x195F8` to `30` and keeps the
+  complete original condition tail at `0x1960C`. The original type-4
+  settlement, buildings, resources, leader, civilian, and one-active-type-5
+  reinforcement-party checks therefore remain. The old `112,272` bypass
+  skipped this whole condition block and could exhaust job slots; it and both
+  bounded experimental tails are recognized only for migration back to the
+  original condition words.
+  P8 migration is signature-closed: only the complete original condition tail,
+  the exact old unbounded tail, and the two exact historical bounded tails are
+  recognized, and only with thresholds `4`, `8`, `30`, or `40`. Any other
+  gate/threshold combination is `Unknown` and remains byte-identical.
 - A second `v56 <- pushloc 15` write exists at `0x111EC` but belongs to a
   different handler's INIT chain (value from `randRange(40,100)` context);
   the longer signature excludes it deliberately.
