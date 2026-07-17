@@ -1,12 +1,14 @@
 # Glory Upgrade & Combat Skills — Leader Ranking and Active Abilities
 
-> Status reviewed 2026-07-11: static-verified research; do not promote it to a managed write feature without the normal detection, restore, and test contract.
+> Status reviewed 2026-07-17: the static field/consumer analysis remains valid.
+> The modifier now manages two bounded subsets with detection, restore, and
+> tests: `LeaderGlory` scales the four leader growth columns, and
+> `GeneralSkills` scales shipped `[SpecialAbilities] Value*` records.
 
 > Decoded 2026-07-04. Status: **static-verified** (objdef columns, `cl_epara.ini`
 > ability factors, `cl_script.ini` glory rules, and the BCI ability-setter /
 > glory function names all traced against the installed game and EXE). No
-> runtime edit test has been performed yet, and no modifier patch exists for
-> these fields yet.
+> runtime edit test has been recorded for these two managed subsets yet.
 
 ## Summary
 
@@ -230,6 +232,18 @@ future implementation is safe; any replacement must pass in-game validation
 before this feature can be offered again.
 
 ## Modding Notes
+
+Current managed scope:
+
+- `LeaderGlory` multiplies positive values in zero-based objdef columns 148,
+  149, 150, and 161 by 5 for the four tribal leaders. It does not patch
+  `maxruhm`, base AW/VW, duration, icons, or the abandoned persistence hook.
+- `GeneralSkills` multiplies the shipped `Value`/`Value2` records in
+  `cl_script.ini [SpecialAbilities]` by 5. It does not modify the independent
+  combat-state factors in `cl_epara.ini`.
+- Both transforms rebuild from the original backup and have dedicated
+  detection; the consumer meanings are static-verified, while a separate
+  in-game behavior test is still pending.
 
 - To let ordinary warriors gain glory-based combat growth, give their objdef row
   a non-zero `maxruhm` plus `aw_stuf` / `vw_stuf` / `dam_stu` values.

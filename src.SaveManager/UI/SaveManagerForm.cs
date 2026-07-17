@@ -32,6 +32,7 @@ namespace AgainstRomeModifier {
         private Label lblBackupsTitle = null!;
         private Label lblDetailTitle = null!;
         private Button btnBackupSave = null!;
+        private Button btnRepairEndlessAi = null!;
         private Button btnDeleteSave = null!;
         private Button btnRefreshSaves = null!;
         private Button btnRestoreBackup = null!;
@@ -40,6 +41,7 @@ namespace AgainstRomeModifier {
         private Button btnLangEN = null!;
 
         private bool _savesRefreshInFlight;
+        private bool _repairInFlight;
         private SaveBackupService saveBackupService = null!;
 
         private Font fontJhengHei115B = new Font("Microsoft JhengHei", 11.5F, FontStyle.Bold);
@@ -114,19 +116,24 @@ namespace AgainstRomeModifier {
 
         private void InitializeComponent() {
             this.Text = "Against Rome Modifier - Save Manager";
-            this.Size = new Size(1220, 880);
-            this.MinimumSize = new Size(1000, 700);
             this.FormBorderStyle = FormBorderStyle.None;
+            this.ClientSize = new Size(1180, 780);
+            this.MinimumSize = new Size(960, 640);
             this.StartPosition = FormStartPosition.CenterScreen;
             this.BackColor = Color.FromArgb(9, 12, 18);
             this.ForeColor = Color.FromArgb(230, 235, 240);
             this.DoubleBuffered = true;
 
-            this.Load += (s, e) => {
+            void UpdateRoundedRegion() {
+                if (Width <= 0 || Height <= 0) return;
                 IntPtr ptr = CreateRoundRectRgn(0, 0, Width, Height, 15, 15);
+                Region? previousRegion = this.Region;
                 this.Region = Region.FromHrgn(ptr);
                 DeleteObject(ptr);
-            };
+                previousRegion?.Dispose();
+            }
+            this.Load += (s, e) => UpdateRoundedRegion();
+            this.SizeChanged += (s, e) => UpdateRoundedRegion();
 
             this.Paint += (s, e) => {
                 e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
@@ -290,30 +297,53 @@ namespace AgainstRomeModifier {
 
             // Main Content Area
             Panel root = new Panel {
+                Name = "rootContent",
                 Location = new Point(0, 116),
                 Size = new Size(this.Width, this.Height - 116),
                 Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
-                BackColor = Color.Transparent
+                BackColor = Color.Transparent,
+                Padding = new Padding(20)
             };
             this.Controls.Add(root);
 
-            Panel pnlLeftSave = new Panel { Location = new Point(20, 20), Size = new Size(780, 730), Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right };
-            Panel pnlRightSave = new Panel { Location = new Point(810, 20), Size = new Size(390, 730), Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Right };
-            root.Controls.Add(pnlLeftSave);
-            root.Controls.Add(pnlRightSave);
-
-            Panel gameCard = new Panel { Location = new Point(0, 0), Size = new Size(780, 360), Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right };
-            gameCard.Paint += CardPanel_Paint;
-            Panel backupsCard = new Panel { Location = new Point(0, 370), Size = new Size(780, 360), Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right };
-            backupsCard.Paint += CardPanel_Paint;
-            pnlLeftSave.Controls.Add(gameCard);
-            pnlLeftSave.Controls.Add(backupsCard);
-            
-            pnlLeftSave.Resize += (s, e) => {
-                gameCard.Height = pnlLeftSave.Height / 2 - 5;
-                backupsCard.Location = new Point(0, gameCard.Bottom + 10);
-                backupsCard.Height = pnlLeftSave.Height - backupsCard.Top;
+            TableLayoutPanel contentLayout = new TableLayoutPanel {
+                Name = "contentLayout",
+                Dock = DockStyle.Fill,
+                BackColor = Color.Transparent,
+                ColumnCount = 2,
+                RowCount = 1,
+                Margin = Padding.Empty,
+                Padding = Padding.Empty
             };
+            contentLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 68F));
+            contentLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 32F));
+            contentLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+            root.Controls.Add(contentLayout);
+
+            Panel pnlLeftSave = new Panel { Dock = DockStyle.Fill, Margin = new Padding(0, 0, 10, 0) };
+            Panel pnlRightSave = new Panel { Dock = DockStyle.Fill, Margin = new Padding(0, 0, 0, 0) };
+            contentLayout.Controls.Add(pnlLeftSave, 0, 0);
+            contentLayout.Controls.Add(pnlRightSave, 1, 0);
+
+            TableLayoutPanel listLayout = new TableLayoutPanel {
+                Dock = DockStyle.Fill,
+                BackColor = Color.Transparent,
+                ColumnCount = 1,
+                RowCount = 2,
+                Margin = Padding.Empty,
+                Padding = Padding.Empty
+            };
+            listLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            listLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 50F));
+            listLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 50F));
+            pnlLeftSave.Controls.Add(listLayout);
+
+            Panel gameCard = new Panel { Name = "gameCard", Dock = DockStyle.Fill, Margin = new Padding(0, 0, 0, 5) };
+            gameCard.Paint += CardPanel_Paint;
+            Panel backupsCard = new Panel { Name = "backupsCard", Dock = DockStyle.Fill, Margin = new Padding(0, 5, 0, 0) };
+            backupsCard.Paint += CardPanel_Paint;
+            listLayout.Controls.Add(gameCard, 0, 0);
+            listLayout.Controls.Add(backupsCard, 0, 1);
 
             Panel detailCard = new Panel { Dock = DockStyle.Fill };
             detailCard.Paint += CardPanel_Paint;
@@ -334,10 +364,38 @@ namespace AgainstRomeModifier {
             btnDeleteSave.Click += BtnDeleteSave_Click;
             gameCard.Controls.Add(btnDeleteSave);
 
+            btnRepairEndlessAi = new Button { Text = "修復無盡 AI", Size = new Size(200, 35) };
+            StyleButton(btnRepairEndlessAi, Color.FromArgb(45, 45, 55), Color.FromArgb(255, 214, 64), Color.FromArgb(255, 214, 64));
+            btnRepairEndlessAi.Click += BtnRepairEndlessAi_Click;
+            gameCard.Controls.Add(btnRepairEndlessAi);
+
             btnRefreshSaves = new Button { Text = "重新整理", Size = new Size(140, 35) };
             StyleButton(btnRefreshSaves, Color.FromArgb(45, 45, 55), Color.FromArgb(240, 240, 240), Color.FromArgb(0, 220, 255));
             btnRefreshSaves.Click += (s, e) => RefreshSavesAndBackups();
             gameCard.Controls.Add(btnRefreshSaves);
+
+            TableLayoutPanel gameActions = new TableLayoutPanel {
+                Name = "gameActions",
+                ColumnCount = 4,
+                RowCount = 1,
+                BackColor = Color.Transparent,
+                Margin = Padding.Empty,
+                Padding = Padding.Empty
+            };
+            gameActions.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 22F));
+            gameActions.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 22F));
+            gameActions.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 22F));
+            gameActions.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 34F));
+            gameActions.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+            gameCard.Controls.Add(gameActions);
+            gameActions.Controls.Add(btnBackupSave, 0, 0);
+            gameActions.Controls.Add(btnDeleteSave, 1, 0);
+            gameActions.Controls.Add(btnRefreshSaves, 2, 0);
+            gameActions.Controls.Add(btnRepairEndlessAi, 3, 0);
+            foreach (Button button in gameActions.Controls) {
+                button.Dock = DockStyle.Fill;
+                button.Margin = new Padding(4, 4, 4, 4);
+            }
 
             lblBackupsTitle = new Label { Text = "備份歷史列表", Location = new Point(16, 15), AutoSize = true, Font = fontJhengHei105B, ForeColor = Color.FromArgb(0, 220, 255), BackColor = Color.Transparent };
             backupsCard.Controls.Add(lblBackupsTitle);
@@ -354,6 +412,25 @@ namespace AgainstRomeModifier {
             btnDeleteBackup.Click += BtnDeleteBackup_Click;
             backupsCard.Controls.Add(btnDeleteBackup);
 
+            TableLayoutPanel backupActions = new TableLayoutPanel {
+                Name = "backupActions",
+                ColumnCount = 2,
+                RowCount = 1,
+                BackColor = Color.Transparent,
+                Margin = Padding.Empty,
+                Padding = Padding.Empty
+            };
+            backupActions.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
+            backupActions.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
+            backupActions.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+            backupsCard.Controls.Add(backupActions);
+            backupActions.Controls.Add(btnRestoreBackup, 0, 0);
+            backupActions.Controls.Add(btnDeleteBackup, 1, 0);
+            foreach (Button button in backupActions.Controls) {
+                button.Dock = DockStyle.Fill;
+                button.Margin = new Padding(4, 4, 4, 4);
+            }
+
             lblDetailTitle = new Label { Text = "存檔詳細與預覽", Location = new Point(20, 20), AutoSize = true, Font = fontJhengHei105B, ForeColor = Color.FromArgb(0, 220, 255), BackColor = Color.Transparent };
             detailCard.Controls.Add(lblDetailTitle);
             picSavePreview = new PictureBox { SizeMode = PictureBoxSizeMode.Zoom, BackColor = Color.FromArgb(12, 12, 16) };
@@ -361,29 +438,33 @@ namespace AgainstRomeModifier {
             lblSaveDetail = new Label { ForeColor = Color.FromArgb(200, 205, 210), BackColor = Color.Transparent, Font = fontJhengHei10R };
             detailCard.Controls.Add(lblSaveDetail);
 
-            gameCard.Resize += (s, e) => {
+            void LayoutGameCard() {
                 dgvGameSaves.Location = new Point(16, 48);
-                dgvGameSaves.Size = new Size(Math.Max(0, gameCard.Width - 32), Math.Max(70, gameCard.Height - 106));
-                int y = Math.Max(54, gameCard.Height - 48);
-                btnBackupSave.Location = new Point(16, y);
-                btnDeleteSave.Location = new Point(164, y);
-                btnRefreshSaves.Location = new Point(312, y);
-            };
+                dgvGameSaves.Size = new Size(Math.Max(0, gameCard.Width - 32), Math.Max(70, gameCard.Height - 112));
+                gameActions.Location = new Point(12, Math.Max(54, gameCard.Height - 52));
+                gameActions.Size = new Size(Math.Max(0, gameCard.Width - 24), 43);
+            }
+            gameCard.Resize += (s, e) => LayoutGameCard();
 
-            backupsCard.Resize += (s, e) => {
+            void LayoutBackupsCard() {
                 dgvBackups.Location = new Point(16, 48);
-                dgvBackups.Size = new Size(Math.Max(0, backupsCard.Width - 32), Math.Max(70, backupsCard.Height - 106));
-                int y = Math.Max(54, backupsCard.Height - 48);
-                btnRestoreBackup.Location = new Point(16, y);
-                btnDeleteBackup.Location = new Point(164, y);
-            };
+                dgvBackups.Size = new Size(Math.Max(0, backupsCard.Width - 32), Math.Max(70, backupsCard.Height - 112));
+                backupActions.Location = new Point(12, Math.Max(54, backupsCard.Height - 52));
+                backupActions.Size = new Size(Math.Max(0, backupsCard.Width - 24), 43);
+            }
+            backupsCard.Resize += (s, e) => LayoutBackupsCard();
 
-            detailCard.Resize += (s, e) => {
+            void LayoutDetailCard() {
                 picSavePreview.Location = new Point(20, 54);
-                picSavePreview.Size = new Size(Math.Max(80, detailCard.Width - 40), Math.Min(250, Math.Max(120, detailCard.Height / 3)));
+                picSavePreview.Size = new Size(Math.Max(80, detailCard.Width - 40), Math.Min(320, Math.Max(160, detailCard.Height * 2 / 5)));
                 lblSaveDetail.Location = new Point(20, picSavePreview.Bottom + 16);
                 lblSaveDetail.Size = new Size(Math.Max(80, detailCard.Width - 40), Math.Max(80, detailCard.Height - picSavePreview.Bottom - 34));
-            };
+            }
+            detailCard.Resize += (s, e) => LayoutDetailCard();
+
+            LayoutGameCard();
+            LayoutBackupsCard();
+            LayoutDetailCard();
         }
 
         private DataGridView CreateSaveGrid(bool isBackup) {
@@ -392,7 +473,8 @@ namespace AgainstRomeModifier {
                 BackgroundColor = Color.FromArgb(10, 11, 16), ForeColor = Color.FromArgb(230, 235, 240),
                 GridColor = Color.FromArgb(28, 30, 42), BorderStyle = BorderStyle.None,
                 EnableHeadersVisualStyles = false, RowTemplate = { Height = 35 },
-                SelectionMode = DataGridViewSelectionMode.FullRowSelect, MultiSelect = false, ReadOnly = true
+                SelectionMode = DataGridViewSelectionMode.FullRowSelect, MultiSelect = false, ReadOnly = true,
+                AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill
             };
             dgv.ColumnHeadersDefaultCellStyle.BackColor = Color.FromArgb(26, 27, 37);
             dgv.ColumnHeadersDefaultCellStyle.ForeColor = Color.FromArgb(0, 230, 255);
@@ -407,16 +489,16 @@ namespace AgainstRomeModifier {
             dgv.DefaultCellStyle.Font = fontJhengHei9R;
             dgv.AlternatingRowsDefaultCellStyle.BackColor = Color.FromArgb(24, 25, 35);
             if (!isBackup) {
-                dgv.Columns.Add("Folder", Loc.Get("HeaderFolder") ?? "資料夾"); dgv.Columns["Folder"].Width = 120;
-                dgv.Columns.Add("Title", Loc.Get("HeaderSaveTitle") ?? "標題"); dgv.Columns["Title"].Width = 330;
-                dgv.Columns.Add("Level", Loc.Get("HeaderLevel") ?? "關卡"); dgv.Columns["Level"].Width = 140;
-                dgv.Columns.Add("Time", Loc.Get("HeaderTime") ?? "時間"); dgv.Columns["Time"].Width = 180;
+                dgv.Columns.Add("Folder", Loc.Get("HeaderFolder") ?? "資料夾"); dgv.Columns["Folder"].FillWeight = 16;
+                dgv.Columns.Add("Title", Loc.Get("HeaderSaveTitle") ?? "標題"); dgv.Columns["Title"].FillWeight = 40;
+                dgv.Columns.Add("Level", Loc.Get("HeaderLevel") ?? "關卡"); dgv.Columns["Level"].FillWeight = 18;
+                dgv.Columns.Add("Time", Loc.Get("HeaderTime") ?? "時間"); dgv.Columns["Time"].FillWeight = 26;
             } else {
-                dgv.Columns.Add("File", Loc.Get("HeaderBackupFile") ?? "檔案"); dgv.Columns["File"].Width = 120;
-                dgv.Columns.Add("Title", Loc.Get("HeaderSaveTitle") ?? "標題"); dgv.Columns["Title"].Width = 230;
-                dgv.Columns.Add("Level", Loc.Get("HeaderLevel") ?? "關卡"); dgv.Columns["Level"].Width = 120;
-                dgv.Columns.Add("Time", Loc.Get("HeaderBackupTime") ?? "備份時間"); dgv.Columns["Time"].Width = 160;
-                dgv.Columns.Add("Folder", Loc.Get("HeaderOrigFolder") ?? "原資料夾"); dgv.Columns["Folder"].Width = 120;
+                dgv.Columns.Add("File", Loc.Get("HeaderBackupFile") ?? "檔案"); dgv.Columns["File"].FillWeight = 18;
+                dgv.Columns.Add("Title", Loc.Get("HeaderSaveTitle") ?? "標題"); dgv.Columns["Title"].FillWeight = 30;
+                dgv.Columns.Add("Level", Loc.Get("HeaderLevel") ?? "關卡"); dgv.Columns["Level"].FillWeight = 16;
+                dgv.Columns.Add("Time", Loc.Get("HeaderBackupTime") ?? "備份時間"); dgv.Columns["Time"].FillWeight = 22;
+                dgv.Columns.Add("Folder", Loc.Get("HeaderOrigFolder") ?? "原資料夾"); dgv.Columns["Folder"].FillWeight = 14;
             }
             dgv.SelectionChanged += isBackup ? DgvBackups_SelectionChanged : DgvGameSaves_SelectionChanged;
             return dgv;
@@ -530,6 +612,49 @@ namespace AgainstRomeModifier {
                 MessageBox.Show(Loc.Get("MsgRestoreBackupSuccess") ?? "還原成功。", Loc.Get("TitleSuccess") ?? "成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
             } catch (Exception ex) {
                 MessageBox.Show((Loc.Get("MsgRestoreBackupFailed") ?? "還原失敗：") + ex.Message, Loc.Get("TitleError") ?? "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private async void BtnRepairEndlessAi_Click(object? sender, EventArgs e) {
+            if (_repairInFlight) return;
+            if (dgvGameSaves.SelectedRows.Count == 0) {
+                MessageBox.Show(Loc.Get("MsgSelectSaveToRepairAi") ?? "請先選擇要修復的無盡模式存檔。",
+                    Loc.Get("TitleTips") ?? "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            DataGridViewRow row = dgvGameSaves.SelectedRows[0];
+            string folder = Cell(row, 0).Trim();
+            string title = Cell(row, 1);
+                string level = Cell(row, 2);
+                if (!SaveBackupService.IsSimpleName(folder)) return;
+                if (MessageBox.Show(Loc.Get("MsgConfirmRepairEndlessAi") ??
+                    "修復前會先建立完整備份，再更新存檔內嵌的無盡 AI 排程與增援規則。已堆積的馱馬不會自動移除。是否繼續？",
+                    Loc.Get("TitleWarning") ?? "警告", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
+                return;
+
+            _repairInFlight = true;
+            btnRepairEndlessAi.Enabled = false;
+            try {
+                string gamePath = GetGamePath();
+                if (string.IsNullOrEmpty(gamePath) || !Directory.Exists(gamePath))
+                    throw new DirectoryNotFoundException(Loc.Get("MsgGamePathNotSet") ?? "遊戲路徑未設定。");
+
+                EndlessSaveAiRepairResult result = await Task.Run(() => {
+                    saveBackupService.CreateBackup(gamePath, folder, title, level);
+                    return new EndlessSaveAiRepairService().Repair(gamePath, folder);
+                });
+                RefreshSavesAndBackups();
+                string message = result == EndlessSaveAiRepairResult.Changed
+                    ? (Loc.Get("MsgRepairEndlessAiSuccess") ?? "無盡 AI 排程與增援規則已修復，並已建立修復前備份。已堆積的馱馬不會自動移除；若仍阻斷增援，請還原堆積前備份或新開無盡局。")
+                    : (Loc.Get("MsgRepairEndlessAiAlready") ?? "這份存檔已包含目前的無盡 AI 排程與增援修復。");
+                MessageBox.Show(message, Loc.Get("TitleSuccess") ?? "成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            } catch (Exception ex) {
+                MessageBox.Show((Loc.Get("MsgRepairEndlessAiFailed") ?? "修復無盡 AI 失敗: ") + ex.Message,
+                    Loc.Get("TitleError") ?? "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            } finally {
+                _repairInFlight = false;
+                btnRepairEndlessAi.Enabled = true;
             }
         }
 
@@ -774,6 +899,7 @@ namespace AgainstRomeModifier {
             lblBackupsTitle.Text = isEn ? "Backup History List" : "備份歷史列表";
             lblDetailTitle.Text = isEn ? "Save Details & Preview" : "存檔詳細與預覽";
             btnBackupSave.Text = isEn ? "Backup Save" : "備份此存檔";
+            btnRepairEndlessAi.Text = Loc.Get("BtnRepairEndlessAi");
             btnDeleteSave.Text = isEn ? "Delete Save" : "刪除此存檔";
             btnRefreshSaves.Text = isEn ? "Refresh" : "重新整理";
             btnRestoreBackup.Text = isEn ? "Restore Backup" : "還原此備份";

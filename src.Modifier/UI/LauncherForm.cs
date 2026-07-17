@@ -1,5 +1,4 @@
 using System;
-using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.IO;
@@ -34,7 +33,13 @@ namespace AgainstRomeModifier {
         private bool dragging = false;
         private Point dragStart = new Point(0, 0);
 
-        public LauncherForm() {
+        private string? _initialGamePath;
+
+        public LauncherForm() : this(null) {
+        }
+
+        public LauncherForm(string? initialGamePath) {
+            _initialGamePath = initialGamePath;
             InitializeComponent();
         }
 
@@ -211,95 +216,93 @@ namespace AgainstRomeModifier {
         }
 
         private void BtnModifier_Click(object? sender, EventArgs e) {
-            LaunchApp("AgainstRomeModifier.exe", "修改器");
+            string gamePath = _initialGamePath ?? DetectGamePathFromRegistry();
+            if (string.IsNullOrWhiteSpace(gamePath) || !Directory.Exists(gamePath)) {
+                if (File.Exists(Path.Combine(AppContext.BaseDirectory, "Against_Rome.exe"))) {
+                    gamePath = AppContext.BaseDirectory;
+                }
+            }
+
+            try {
+                this.Hide();
+                using (var modifier = new AgainstRomeModifier.ModifierForm(gamePath)) {
+                    modifier.ShowDialog(this);
+                }
+            }
+            catch (Exception ex) {
+                MessageBox.Show("無法啟動修改器: " + ex.Message, "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally {
+                Loc.ReloadLanguage();
+                UpdateLanguageButtonStyles();
+                ApplyLanguageToUI();
+                this.Show();
+            }
         }
 
         private void BtnSaveManager_Click(object? sender, EventArgs e) {
-            LaunchApp("AgainstRomeSaveManager.exe", "存檔管理器");
+            string gamePath = _initialGamePath ?? DetectGamePathFromRegistry();
+            if (string.IsNullOrWhiteSpace(gamePath) || !Directory.Exists(gamePath)) {
+                if (File.Exists(Path.Combine(AppContext.BaseDirectory, "Against_Rome.exe"))) {
+                    gamePath = AppContext.BaseDirectory;
+                }
+            }
+
+            try {
+                this.Hide();
+                using (var saveManager = new AgainstRomeModifier.SaveManagerForm(gamePath)) {
+                    saveManager.ShowDialog(this);
+                }
+            }
+            catch (Exception ex) {
+                MessageBox.Show("無法啟動存檔管理器: " + ex.Message, "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally {
+                Loc.ReloadLanguage();
+                UpdateLanguageButtonStyles();
+                ApplyLanguageToUI();
+                this.Show();
+            }
         }
 
         private void BtnMapEditor_Click(object? sender, EventArgs e) {
-            string? editorPath = ResolveExecutablePath("AgainstRomeMapEditor.exe", true);
-            if (editorPath == null) {
-                MessageBox.Show("找不到 AgainstRomeMapEditor.exe。請重新建置。", "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                return;
+            string gamePath = _initialGamePath ?? DetectGamePathFromRegistry();
+            if (string.IsNullOrWhiteSpace(gamePath) || !Directory.Exists(gamePath)) {
+                if (File.Exists(Path.Combine(AppContext.BaseDirectory, "Against_Rome.exe"))) {
+                    gamePath = AppContext.BaseDirectory;
+                } else {
+                    gamePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Against Rome");
+                }
             }
-            
-            // Note: Map Editor now has its own Game Path text box so it can discover or ask for the path on its own.
-            // But we can try to pass the detected game path if we find it in registry.
-            string args = "";
-            string gamePath = DetectGamePathFromRegistry();
-            if (!string.IsNullOrWhiteSpace(gamePath) && Directory.Exists(gamePath)) {
-                args = "--game \"" + gamePath + "\"";
-            }
-            
+
             try {
                 this.Hide();
-                var process = Process.Start(new ProcessStartInfo(editorPath, args) { 
-                    WorkingDirectory = string.IsNullOrWhiteSpace(gamePath) ? AppContext.BaseDirectory : gamePath, 
-                    UseShellExecute = true 
-                });
-                
-                if (process != null) {
-                    process.EnableRaisingEvents = true;
-                    process.Exited += (s, args) => {
-                        this.Invoke(new Action(() => {
-                            Loc.ReloadLanguage();
-                            UpdateLanguageButtonStyles();
-                            ApplyLanguageToUI();
-                            this.Show();
-                        }));
-                    };
-                } else {
-                    this.Show(); // Fallback if process failed to hook
+                string? preferredMapId = null;
+                while (true) {
+                    using var selection = new AgainstRomeMapEditor.MapSelectionForm(gamePath, preferredMapId);
+                    if (selection.ShowDialog() != DialogResult.OK || selection.SelectedMap is null) {
+                        break;
+                    }
+                    gamePath = selection.GamePath;
+                    preferredMapId = selection.SelectedMap.Id;
+                    using var editor = new AgainstRomeMapEditor.MapEditorForm(gamePath, selection.SelectedMap);
+                    editor.ShowDialog();
+                    if (!editor.ReturnToMapMenu) {
+                        break;
+                    }
                 }
             }
             catch (Exception ex) {
-                this.Show();
                 MessageBox.Show("無法啟動地圖編輯器: " + ex.Message, "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
-        }
-
-        private void LaunchApp(string exeName, string appName) {
-            string? appPath = ResolveExecutablePath(exeName, false);
-            if (appPath == null) {
-                MessageBox.Show($"找不到 {exeName}。請重新建置{appName}。", "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                return;
-            }
-
-            string args = "";
-            string gamePath = DetectGamePathFromRegistry();
-            if (!string.IsNullOrWhiteSpace(gamePath) && Directory.Exists(gamePath)) {
-                args = "--game \"" + gamePath + "\"";
-            }
-
-            try {
-                this.Hide();
-                var process = Process.Start(new ProcessStartInfo(appPath, args) { 
-                    WorkingDirectory = string.IsNullOrWhiteSpace(gamePath) ? Path.GetDirectoryName(appPath) : gamePath, 
-                    UseShellExecute = true 
-                });
-                
-                if (process != null) {
-                    process.EnableRaisingEvents = true;
-                    process.Exited += (s, args) => {
-                        this.Invoke(new Action(() => {
-                            Loc.ReloadLanguage();
-                            UpdateLanguageButtonStyles();
-                            ApplyLanguageToUI();
-                            this.Show();
-                        }));
-                    };
-                } else {
-                    this.Show();
-                }
-            }
-            catch (Exception ex) {
+            finally {
+                Loc.ReloadLanguage();
+                UpdateLanguageButtonStyles();
+                ApplyLanguageToUI();
                 this.Show();
-                MessageBox.Show($"無法啟動{appName}: " + ex.Message, "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
-        
+
         private string DetectGamePathFromRegistry() {
             try {
                 using (var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Against Rome")) {
@@ -322,35 +325,6 @@ namespace AgainstRomeModifier {
                 }
             } catch (Exception) { }
             return "";
-        }
-
-        private static string? ResolveExecutablePath(string exeName, bool isMapEditor) {
-            var candidates = new List<string> {
-                Path.Combine(AppContext.BaseDirectory, exeName)
-            };
-
-            DirectoryInfo? directory = new DirectoryInfo(AppContext.BaseDirectory);
-            while (directory != null && !File.Exists(Path.Combine(directory.FullName, "AgainstRomeModifier.slnx"))) {
-                directory = directory.Parent;
-            }
-            if (directory != null) {
-                if (isMapEditor) {
-                    candidates.Add(Path.Combine(directory.FullName, "src.MapEditor", "bin", "Debug", "net8.0-windows", exeName));
-                    candidates.Add(Path.Combine(directory.FullName, "src.MapEditor", "bin", "Release", "net8.0-windows", exeName));
-                } else {
-                    string projectName = exeName.Replace(".exe", "");
-                    candidates.Add(Path.Combine(directory.FullName, $"src.{projectName.Replace("AgainstRome", "")}", "bin", "Debug", "net8.0-windows", exeName));
-                    candidates.Add(Path.Combine(directory.FullName, $"src.{projectName.Replace("AgainstRome", "")}", "bin", "Release", "net8.0-windows", exeName));
-                }
-            }
-
-            return candidates
-                .Where(File.Exists)
-                .OrderByDescending(path => {
-                    string dll = Path.ChangeExtension(path, ".dll");
-                    return File.Exists(dll) ? File.GetLastWriteTimeUtc(dll) : File.GetLastWriteTimeUtc(path);
-                })
-                .FirstOrDefault();
         }
 
         private GraphicsPath GetRoundPath(Rectangle r, int radius) {

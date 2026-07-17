@@ -19,7 +19,12 @@ namespace AgainstRomeModifier {
                 [FeatureKeys.InfiniteMorale.Id] = chkInfiniteMorale, [FeatureKeys.FreeProduction.Id] = chkFreeProd,
                 [FeatureKeys.FreeUpgrade.Id] = chkFreeUpgrade, [FeatureKeys.NoSpellCost.Id] = chkNoSpellCost,
                 [FeatureKeys.MaxPopulation.Id] = chkMaxPopulation, [FeatureKeys.Balance.Id] = chkBalance,
-                [FeatureKeys.RangedRange3x.Id] = chkRangedRange3x, [FeatureKeys.UnitMovementSpeed2x.Id] = chkUnitMovementSpeed2x,
+                [FeatureKeys.AllUnitsEntireMapVision.Id] = chkAllUnitsEntireMapVision,
+                [FeatureKeys.NativeWidescreen1920x1080.Id] = chkNativeWidescreen1920x1080,
+                [FeatureKeys.CameraZoomOut1.Id] = chkCameraZoomOut1,
+                [FeatureKeys.RangedRange3x.Id] = chkRangedRange3x,
+                [FeatureKeys.UnitMovementSpeed2x.Id] = chkUnitMovementSpeed2x,
+                [FeatureKeys.VillagerMovementSpeed5x.Id] = chkVillagerMovementSpeed5x,
                 [FeatureKeys.SpellEntireMap.Id] = chkSpellEntireMap, [FeatureKeys.SpellRange3x.Id] = chkSpellRange3x,
                 [FeatureKeys.ProjectileArcHeight.Id] = chkProjectileArcHeight,
                 [FeatureKeys.RomanEndless.Id] = chkRomanEndless,
@@ -27,6 +32,7 @@ namespace AgainstRomeModifier {
                 [FeatureKeys.HqHp10x.Id] = chkHqHp10x, [FeatureKeys.FastBuildUpgradeRepair.Id] = chkFastBuildUpgradeRepair,
                 [FeatureKeys.FoodHealing10x.Id] = chkFoodHealing10x, [FeatureKeys.CiviProduce20.Id] = chkCiviProduce20,
                 [FeatureKeys.UnitRecruit20.Id] = chkUnitRecruit20,
+                [FeatureKeys.IdleSelect999.Id] = chkIdleSelect999,
                 [FeatureKeys.VillageBuildRange.Id] = chkVillageBuildRange,
                 [FeatureKeys.NoSpellAltar.Id] = chkNoSpellAltar, [FeatureKeys.DgVoodoo.Id] = chkDgVoodoo,
                 [FeatureKeys.ToEnglish.Id] = chkToEng,
@@ -35,8 +41,8 @@ namespace AgainstRomeModifier {
                 [FeatureKeys.SpellResurrection.Id] = chkSpellResurrection,
                 [FeatureKeys.GeneralSkills.Id] = chkGeneralSkills,
                 [FeatureKeys.LeaderGlory.Id] = chkLeaderGlory,
-                [FeatureKeys.EndlessAiM1.Id] = chkAiM1, [FeatureKeys.EndlessAiM2.Id] = chkAiM2, [FeatureKeys.EndlessAiM3.Id] = chkAiM3,
-                [FeatureKeys.EndlessAiM4.Id] = chkAiM4, [FeatureKeys.EndlessAiM5.Id] = chkAiM5, [FeatureKeys.EndlessAiM6.Id] = chkAiM6,
+                [FeatureKeys.EndlessAiM1.Id] = chkAiM1, [FeatureKeys.EndlessAiCore.Id] = chkAiCore,
+                [FeatureKeys.EndlessAiM5.Id] = chkAiM5, [FeatureKeys.EndlessAiM6.Id] = chkAiM6,
             };
             FeatureRegistry.ValidateToggleIds(featureToggles.Keys);
         }

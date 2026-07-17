@@ -274,6 +274,86 @@ public sealed class MapEditorPhase1Tests : IDisposable
     }
 
     [Fact]
+    public void SdlSceneEditService_Duplicates_template_and_removes_object_with_renumbering()
+    {
+        string map = CreateCustomSceneMapWithTwoObjects(7);
+        IReadOnlyList<MapSceneObject> baseline = SdlSceneCatalog.LoadDirectory(map);
+        Assert.Equal(2, baseline.Count);
+        string sourceFile = baseline[0].SourceFile;
+
+        using (var rollback = new FileRollbackScope())
+        {
+            SdlSceneEditService.SaveChanges(map, baseline, baseline, rollback,
+                removals: [new SdlSceneObjectRemoval(sourceFile, 1)],
+                additions: [new SdlSceneObjectAddition(sourceFile, 0, Team: 5, LocalX: 10, LocalY: 20, LocalZ: 30)]);
+            rollback.Commit();
+        }
+
+        var document = SdlDocument.Load(Path.Combine(map, sourceFile));
+        Assert.Equal(2, document.Objects.Count);
+        Assert.Equal(new[] { 0, 1 }, document.Objects.Select(x => x.Index));
+        // object0 = 原件；object1 = 由模板複製、覆寫 team/pos，其餘欄位沿用模板。
+        Assert.Equal("BauRomHau00_Haupthaus", document.Objects[0].GetValue("namedef"));
+        Assert.Equal("3", document.Objects[0].GetValue("team"));
+        SdlObjectSection copy = document.Objects[1];
+        Assert.Equal("BauRomHau00_Haupthaus", copy.GetValue("namedef"));
+        Assert.Equal("1676", copy.GetValue("def"));
+        Assert.Equal("0.00", copy.GetValue("angle"));
+        Assert.Equal("5", copy.GetValue("team"));
+        Assert.Equal("10.00,20.00,30.00", copy.GetValue("pos"));
+        // 原 object0001（Turm）已刪除且無殘留編號。
+        Assert.DoesNotContain("BauRomTur00_Turm", ReadPfil(Path.Combine(map, sourceFile)));
+        Assert.DoesNotContain("[object0002]", ReadPfil(Path.Combine(map, sourceFile)));
+    }
+
+    [Fact]
+    public void SdlSceneEditService_Copy_then_delete_original_acts_as_move()
+    {
+        string map = CreateCustomSceneMapWithTwoObjects(8);
+        IReadOnlyList<MapSceneObject> baseline = SdlSceneCatalog.LoadDirectory(map);
+        string sourceFile = baseline[0].SourceFile;
+
+        using (var rollback = new FileRollbackScope())
+        {
+            SdlSceneEditService.SaveChanges(map, baseline, baseline, rollback,
+                removals: [new SdlSceneObjectRemoval(sourceFile, 0)],
+                additions: [new SdlSceneObjectAddition(sourceFile, 0, Team: 3, LocalX: 100, LocalY: 2, LocalZ: -50)]);
+            rollback.Commit();
+        }
+
+        var document = SdlDocument.Load(Path.Combine(map, sourceFile));
+        Assert.Equal(2, document.Objects.Count);
+        Assert.Equal(new[] { 0, 1 }, document.Objects.Select(x => x.Index));
+        Assert.Equal("BauRomTur00_Turm", document.Objects[0].GetValue("namedef"));
+        Assert.Equal("BauRomHau00_Haupthaus", document.Objects[1].GetValue("namedef"));
+        Assert.Equal("100.00,2.00,-50.00", document.Objects[1].GetValue("pos"));
+    }
+
+    [Fact]
+    public void SdlSceneEditService_Rejects_invalid_structural_changes()
+    {
+        string map = CreateCustomSceneMapWithTwoObjects(9);
+        IReadOnlyList<MapSceneObject> baseline = SdlSceneCatalog.LoadDirectory(map);
+        string sourceFile = baseline[0].SourceFile;
+        byte[] before = File.ReadAllBytes(Path.Combine(map, sourceFile));
+
+        using (var rollback = new FileRollbackScope())
+            Assert.Throws<InvalidDataException>(() => SdlSceneEditService.SaveChanges(map, baseline, baseline, rollback,
+                removals: [new SdlSceneObjectRemoval(sourceFile, 99)]));
+        using (var rollback = new FileRollbackScope())
+            Assert.Throws<InvalidDataException>(() => SdlSceneEditService.SaveChanges(map, baseline, baseline, rollback,
+                removals: [new SdlSceneObjectRemoval(sourceFile, 0), new SdlSceneObjectRemoval(sourceFile, 0)]));
+        using (var rollback = new FileRollbackScope())
+            Assert.Throws<InvalidDataException>(() => SdlSceneEditService.SaveChanges(map, baseline, baseline, rollback,
+                additions: [new SdlSceneObjectAddition(sourceFile, 99, 3, 0, 0, 0)]));
+        using (var rollback = new FileRollbackScope())
+            Assert.Throws<InvalidDataException>(() => SdlSceneEditService.SaveChanges(map, baseline, baseline, rollback,
+                additions: [new SdlSceneObjectAddition(sourceFile, 0, Team: 99, 0, 0, 0)]));
+
+        Assert.Equal(before, File.ReadAllBytes(Path.Combine(map, sourceFile)));
+    }
+
+    [Fact]
     public void SdlDocument_Parses_and_updates_settlement_and_object_fields_without_losing_unknown_lines()
     {
         string path = CreateEditableSdl();
@@ -387,6 +467,18 @@ public sealed class MapEditorPhase1Tests : IDisposable
             "[object0000]\r\nnamedef=BauRomHau00_Haupthaus\r\ndef=1676\r\npos=-32.00,2.00,64.00\r\nteam=3\r\nangle=0.00\r\n"));
         return map;
     }
+    private string CreateCustomSceneMapWithTwoObjects(int slot)
+    {
+        string map = Path.Combine(_root, "MAPS", $"ENDL_{slot:000}");
+        Directory.CreateDirectory(map);
+        File.WriteAllText(Path.Combine(map, CustomMapManifest.MarkerFileName), "{}");
+        File.WriteAllBytes(Path.Combine(map, "Endlos_Rom_Siedlung1.sdl"), SyntheticFixture.Pfil(
+            "[settlement]\r\nrefpos=1632,159,5792\r\n" +
+            "[object0000]\r\nnamedef=BauRomHau00_Haupthaus\r\ndef=1676\r\npos=-32.00,2.00,64.00\r\nteam=3\r\nangle=0.00\r\n" +
+            "[object0001]\r\nnamedef=BauRomTur00_Turm\r\ndef=1700\r\npos=64.00,0.00,-96.00\r\nteam=4\r\nangle=90.00\r\n"));
+        return map;
+    }
+
     private static void CopyDirectory(string source, string destination)
     {
         Directory.CreateDirectory(destination);

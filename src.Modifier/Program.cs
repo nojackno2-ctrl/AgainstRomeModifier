@@ -51,7 +51,7 @@ namespace AgainstRomeModifier {
             }
 
             // 啟動主啟動器介面
-            Application.Run(new ModifierForm(gamePath));
+            Application.Run(new LauncherForm(gamePath));
         }
     }
 }

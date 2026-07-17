@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <OutputType>WinExe</OutputType>
+    <OutputType>Library</OutputType>
+    <DisableWinExeValidation>true</DisableWinExeValidation>
     <TargetFramework>net8.0-windows</TargetFramework>
     <UseWindowsForms>true</UseWindowsForms>
     <LangVersion>latest</LangVersion>
@@ -12,5 +13,9 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\src.Core\AgainstRome.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="AgainstRomeModifier.Tests" />
+    <InternalsVisibleTo Include="AgainstRomeModifier" />
   </ItemGroup>
 </Project>

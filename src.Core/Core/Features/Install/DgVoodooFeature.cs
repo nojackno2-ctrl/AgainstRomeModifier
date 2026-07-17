@@ -29,7 +29,11 @@ internal sealed class DgVoodooFeature
         File.SetAttributes(path, FileAttributes.Normal);
         File.Delete(path);
     }
-        internal void Apply(string gamePath, bool enabled, FileRollbackScope? rollback = null)
+        internal void Apply(
+            string gamePath,
+            bool enabled,
+            FileRollbackScope? rollback = null,
+            bool nativeWidescreenWindow = false)
         {
             if (!enabled)
             {
@@ -39,6 +43,13 @@ internal sealed class DgVoodooFeature
 
             DgVoodooManifest? existingManifest = ReadDgVoodooManifest(gamePath);
             Dictionary<string, byte[]> packageFiles = LoadEmbeddedDgVoodooFiles();
+            if (nativeWidescreenWindow)
+            {
+                packageFiles["dgVoodoo.conf"] = DgVoodooConfigProfile.ApplyNativeWidescreenWindow(
+                    packageFiles["dgVoodoo.conf"]);
+            }
+
+            bool preservedCustomConfig = false;
 
             foreach (string fileName in DgVoodooManagedFiles)
             {
@@ -55,7 +66,11 @@ internal sealed class DgVoodooFeature
                 {
                     if (string.Equals(fileName, "dgVoodoo.conf", StringComparison.OrdinalIgnoreCase))
                     {
-                        packageFiles[fileName] = File.ReadAllBytes(destination);
+                        byte[] customizedConfig = File.ReadAllBytes(destination);
+                        packageFiles[fileName] = nativeWidescreenWindow
+                            ? DgVoodooConfigProfile.ApplyNativeWidescreenWindow(customizedConfig)
+                            : customizedConfig;
+                        preservedCustomConfig = true;
                     }
                     else
                     {
@@ -75,6 +90,10 @@ internal sealed class DgVoodooFeature
             byte[] markerBytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(newManifest, new JsonSerializerOptions { WriteIndented = true }));
             SafeFileWriter.WriteAllBytes(GetDgVoodooMarkerPath(gamePath), markerBytes, rollback);
             _logger.Log(string.Format(Loc.Get("SvcLogDgvInstalled"), DgVoodooEmbeddedVersion));
+            if (nativeWidescreenWindow && preservedCustomConfig)
+                _logger.Log(Loc.Get("SvcLogDgvWidescreenCustomConfig"));
+            else if (nativeWidescreenWindow)
+                _logger.Log(Loc.Get("SvcLogDgvWidescreenWindow"));
         }
 
         private void RemoveDgVoodoo(string gamePath, FileRollbackScope? rollback)
@@ -101,6 +120,7 @@ internal sealed class DgVoodooFeature
                 {
                     if (string.Equals(fileName, "dgVoodoo.conf", StringComparison.OrdinalIgnoreCase))
                     {
+                        preserved[fileName] = expectedHash;
                         _logger.Log(string.Format(Loc.Get("SvcLogDgvPreserved"), fileName));
                         continue;
                     }
@@ -136,6 +156,26 @@ internal sealed class DgVoodooFeature
                    File.Exists(Path.Combine(gamePath, "D3D8.dll")) &&
                    File.Exists(Path.Combine(gamePath, "DDraw.dll"));
         }
+
+        internal bool IsCenteredPresentationConfigured(string gamePath)
+        {
+            string path = Path.Combine(gamePath, "dgVoodoo.conf");
+            if (!File.Exists(path)) return false;
+            string config = File.ReadAllText(path, Encoding.UTF8);
+            return HasSetting(config, "FullScreenMode", "true") &&
+                   HasSetting(config, "ScalingMode", "stretched_ar") &&
+                   HasSetting(config, "CenterAppWindow", "true") &&
+                   HasSetting(config, "WindowedAttributes", "") &&
+                   HasSetting(config, "FullscreenAttributes", "fake");
+        }
+
+        private static bool HasSetting(string config, string key, string value) =>
+            System.Text.RegularExpressions.Regex.IsMatch(
+                config,
+                $@"^[ \t]*{System.Text.RegularExpressions.Regex.Escape(key)}[ \t]*=[ \t]*{System.Text.RegularExpressions.Regex.Escape(value)}[ \t]*(?:\r?$)",
+                System.Text.RegularExpressions.RegexOptions.Multiline |
+                System.Text.RegularExpressions.RegexOptions.CultureInvariant |
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
         private static string GetDgVoodooMarkerPath(string gamePath)
         {
@@ -183,4 +223,3 @@ internal sealed class DgVoodooFeature
         }
 
 }
-

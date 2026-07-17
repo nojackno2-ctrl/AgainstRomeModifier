@@ -5,6 +5,32 @@ namespace AgainstRomeModifier.Tests;
 public sealed class FeatureRegistryTests
 {
     [Fact]
+    public void Decompilation_matrix_covers_every_registered_feature_once()
+    {
+        string root = GetRepositoryRoot();
+
+        string matrix = File.ReadAllText(Path.Combine(
+            root, "docs", "reverse-engineering", "feature-verification-matrix.md"));
+        string[] documentedIds = System.Text.RegularExpressions.Regex.Matches(
+                matrix,
+                @"^\| `(?<id>[^`]+)` \|",
+                System.Text.RegularExpressions.RegexOptions.Multiline)
+            .Select(match => match.Groups["id"].Value)
+            .ToArray();
+        string[] registeredIds = FeatureRegistry.All.Select(feature => feature.Id).ToArray();
+
+        Assert.Equal(registeredIds.Length, documentedIds.Length);
+        Assert.Equal(
+            registeredIds.OrderBy(id => id, StringComparer.OrdinalIgnoreCase),
+            documentedIds.OrderBy(id => id, StringComparer.OrdinalIgnoreCase),
+            StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static string GetRepositoryRoot(
+        [System.Runtime.CompilerServices.CallerFilePath] string sourceFile = "") =>
+        Path.GetFullPath(Path.Combine(Path.GetDirectoryName(sourceFile)!, "..", ".."));
+
+    [Fact]
     public void Registry_ids_are_unique_and_game_speed_disables_to_one()
     {
         Assert.Equal(FeatureRegistry.All.Count, FeatureRegistry.All.Select(x => x.Id).Distinct(StringComparer.OrdinalIgnoreCase).Count());
@@ -48,7 +74,7 @@ public sealed class FeatureRegistryTests
     [Fact]
     public void PatchProfile_supports_named_and_registry_values()
     {
-        var profile = new PatchProfile { FocusLoss = true, GameSpeed = 3, Balance = true, SpellDamage5x = true, SpellHealing10x = true, SpellResurrection = true, GeneralSkills = true, LeaderGlory = true, RangedRange3x = true, UnitMovementSpeed2x = true, SpellEntireMap = true, SpellRange3x = true, ProjectileArcHeight = true, RomanEndless = true };
+        var profile = new PatchProfile { FocusLoss = true, GameSpeed = 3, Balance = true, SpellDamage5x = true, SpellHealing10x = true, SpellResurrection = true, GeneralSkills = true, LeaderGlory = true, AllUnitsEntireMapVision = true, RangedRange3x = true, UnitMovementSpeed2x = true, VillagerMovementSpeed5x = true, SpellEntireMap = true, SpellRange3x = true, ProjectileArcHeight = true, RomanEndless = true, NativeWidescreen1920x1080 = true, CameraZoomOut1 = true };
         profile.EndlessAiModules["M4"] = true;
         profile.NormalizeCompositeValues();
 
@@ -61,12 +87,16 @@ public sealed class FeatureRegistryTests
         Assert.True(profile.GetBool("SpellResurrection"));
         Assert.True(profile.GetBool("GeneralSkills"));
         Assert.True(profile.GetBool("LeaderGlory"));
+        Assert.True(profile.GetBool("AllUnitsEntireMapVision"));
         Assert.True(profile.GetBool("RangedRange3x"));
         Assert.True(profile.GetBool("UnitMovementSpeed2x"));
+        Assert.True(profile.GetBool("VillagerMovementSpeed5x"));
         Assert.True(profile.GetBool("SpellEntireMap"));
         Assert.True(profile.GetBool("SpellRange3x"));
         Assert.True(profile.GetBool("ProjectileArcHeight"));
         Assert.True(profile.GetBool("RomanEndless"));
+        Assert.True(profile.GetBool("NativeWidescreen1920x1080"));
+        Assert.True(profile.GetBool("CameraZoomOut1"));
         Assert.True(profile.GetBool("EndlessAi.M4"));
         Assert.Equal(3, profile.GetInt("GameSpeed"));
         Assert.True(profile.Get(FeatureKeys.UnitRecruit20));
@@ -74,9 +104,20 @@ public sealed class FeatureRegistryTests
     }
 
     [Fact]
+    public void Legacy_endless_core_keys_are_specialized_and_the_core_is_toggleable()
+    {
+        string[] toggleIds = FeatureRegistry.ToggleFeatures.Select(feature => feature.Id).ToArray();
+
+        Assert.Contains(FeatureKeys.EndlessAiCore.Id, toggleIds);
+        Assert.DoesNotContain(FeatureKeys.EndlessAiM2.Id, toggleIds);
+        Assert.DoesNotContain(FeatureKeys.EndlessAiM3.Id, toggleIds);
+        Assert.DoesNotContain(FeatureKeys.EndlessAiM4.Id, toggleIds);
+    }
+
+    [Fact]
     public void Registry_plan_and_detect_round_trip_profile_values()
     {
-        var source = new PatchProfile { FocusLoss = true, GameSpeed = 4, Balance = true, SpellDamage5x = true, SpellHealing10x = true, SpellResurrection = true, GeneralSkills = true, LeaderGlory = true, RangedRange3x = true, UnitMovementSpeed2x = true, SpellEntireMap = true, SpellRange3x = true, ProjectileArcHeight = true, RomanEndless = true };
+        var source = new PatchProfile { FocusLoss = true, GameSpeed = 4, Balance = true, SpellDamage5x = true, SpellHealing10x = true, SpellResurrection = true, GeneralSkills = true, LeaderGlory = true, AllUnitsEntireMapVision = true, RangedRange3x = true, UnitMovementSpeed2x = true, VillagerMovementSpeed5x = true, SpellEntireMap = true, SpellRange3x = true, ProjectileArcHeight = true, RomanEndless = true, NativeWidescreen1920x1080 = true, CameraZoomOut1 = true };
         var plan = new PatchContext();
         foreach (IFeatureModule module in FeatureRegistry.All) module.Plan(plan, source.Get(module.Id));
 
@@ -91,12 +132,16 @@ public sealed class FeatureRegistryTests
         Assert.True(roundTrip.SpellResurrection);
         Assert.True(roundTrip.GeneralSkills);
         Assert.True(roundTrip.LeaderGlory);
+        Assert.True(roundTrip.AllUnitsEntireMapVision);
         Assert.True(roundTrip.RangedRange3x);
         Assert.True(roundTrip.UnitMovementSpeed2x);
+        Assert.True(roundTrip.VillagerMovementSpeed5x);
         Assert.True(roundTrip.SpellEntireMap);
         Assert.True(roundTrip.SpellRange3x);
         Assert.True(roundTrip.ProjectileArcHeight);
         Assert.True(roundTrip.RomanEndless);
+        Assert.True(roundTrip.NativeWidescreen1920x1080);
+        Assert.True(roundTrip.CameraZoomOut1);
         Assert.Equal(4, roundTrip.GameSpeed);
     }
 }

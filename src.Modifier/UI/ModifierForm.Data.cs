@@ -702,16 +702,20 @@ namespace AgainstRomeModifier {
 
                 if (syncUIWithFile) {
                     chkBalance.CheckedChanged -= ChkBalance_CheckedChanged;
+                    chkAllUnitsEntireMapVision.CheckedChanged -= ChkAllUnitsEntireMapVision_CheckedChanged;
                     chkRangedRange3x.CheckedChanged -= ChkRangedRange3x_CheckedChanged;
                     chkUnitMovementSpeed2x.CheckedChanged -= ChkUnitMovementSpeed2x_CheckedChanged;
+                    chkVillagerMovementSpeed5x.CheckedChanged -= ChkVillagerMovementSpeed5x_CheckedChanged;
                     chkSpellEntireMap.CheckedChanged -= ChkSpellEntireMap_CheckedChanged;
                     chkSpellRange3x.CheckedChanged -= ChkSpellRange3x_CheckedChanged;
 
                     foreach (var (id, toggle) in featureToggles) toggle.Checked = profile.GetBool(id);
 
                     chkBalance.CheckedChanged += ChkBalance_CheckedChanged;
+                    chkAllUnitsEntireMapVision.CheckedChanged += ChkAllUnitsEntireMapVision_CheckedChanged;
                     chkRangedRange3x.CheckedChanged += ChkRangedRange3x_CheckedChanged;
                     chkUnitMovementSpeed2x.CheckedChanged += ChkUnitMovementSpeed2x_CheckedChanged;
+                    chkVillagerMovementSpeed5x.CheckedChanged += ChkVillagerMovementSpeed5x_CheckedChanged;
                     chkSpellEntireMap.CheckedChanged += ChkSpellEntireMap_CheckedChanged;
                     chkSpellRange3x.CheckedChanged += ChkSpellRange3x_CheckedChanged;
                     chkGameSpeed.Checked = profile.GameSpeed > 1;
@@ -905,10 +909,23 @@ namespace AgainstRomeModifier {
             string status = chkRangedRange3x.Checked ? (Loc.CurrentLanguage == Language.English ? "enabled" : "啟用") : (Loc.CurrentLanguage == Language.English ? "disabled" : "停用");
             Log(string.Format(Loc.Get("LogRangedRange3xToggled"), status));
         }
+
+        private void ChkAllUnitsEntireMapVision_CheckedChanged(object? sender, EventArgs e) {
+            LoadDefaultStatsData();
+            string status = chkAllUnitsEntireMapVision.Checked ? (Loc.CurrentLanguage == Language.English ? "enabled" : "啟用") : (Loc.CurrentLanguage == Language.English ? "disabled" : "停用");
+            Log(string.Format(Loc.Get("LogAllUnitsEntireMapVisionToggled"), status));
+        }
+
         private void ChkUnitMovementSpeed2x_CheckedChanged(object? sender, EventArgs e) {
             LoadDefaultStatsData();
             string status = chkUnitMovementSpeed2x.Checked ? (Loc.CurrentLanguage == Language.English ? "enabled" : "啟用") : (Loc.CurrentLanguage == Language.English ? "disabled" : "停用");
             Log(string.Format(Loc.Get("LogUnitMovementSpeed2xToggled"), status));
+        }
+
+        private void ChkVillagerMovementSpeed5x_CheckedChanged(object? sender, EventArgs e) {
+            LoadDefaultStatsData();
+            string status = chkVillagerMovementSpeed5x.Checked ? (Loc.CurrentLanguage == Language.English ? "enabled" : "啟用") : (Loc.CurrentLanguage == Language.English ? "disabled" : "停用");
+            Log(string.Format(Loc.Get("LogVillagerMovementSpeed5xToggled"), status));
         }
 
         private void ChkSpellEntireMap_CheckedChanged(object? sender, EventArgs e) {

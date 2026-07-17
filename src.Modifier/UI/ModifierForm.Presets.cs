@@ -22,10 +22,9 @@ namespace AgainstRomeModifier {
             chkFoodHealing10x.Checked = true;
             chkCiviProduce20.Checked = true;
             chkUnitRecruit20.Checked = true;
+            chkIdleSelect999.Checked = true;
             chkAiM1.Checked = true;
-            chkAiM2.Checked = true;
-            chkAiM3.Checked = true;
-            chkAiM4.Checked = true;
+            chkAiCore.Checked = true;
             chkAiM5.Checked = true;
             chkAiM6.Checked = true;
             chkVillageBuildRange.Checked = true;
@@ -33,6 +32,7 @@ namespace AgainstRomeModifier {
             chkSpellDamage5x.Checked = true;
             chkRangedRange3x.Checked = true;
             chkUnitMovementSpeed2x.Checked = true;
+            chkVillagerMovementSpeed5x.Checked = true;
             // 兩者各自獨立：全地圖 = 施法距離 (objdef Sirad)、3 倍 = 法術效果半徑 (cl_script Radius)。
             chkSpellEntireMap.Checked = true;
             chkSpellRange3x.Checked = true;
@@ -63,10 +63,9 @@ namespace AgainstRomeModifier {
             chkFoodHealing10x.Checked = false;
             chkCiviProduce20.Checked = false;
             chkUnitRecruit20.Checked = false;
+            chkIdleSelect999.Checked = false;
             chkAiM1.Checked = false;
-            chkAiM2.Checked = false;
-            chkAiM3.Checked = false;
-            chkAiM4.Checked = false;
+            chkAiCore.Checked = false;
             chkAiM5.Checked = false;
             chkAiM6.Checked = false;
             chkVillageBuildRange.Checked = false;
@@ -79,8 +78,12 @@ namespace AgainstRomeModifier {
             chkGeneralSkills.Checked = false;
             chkLeaderGlory.Checked = false;
             chkBalance.Checked = false;
+            chkAllUnitsEntireMapVision.Checked = false;
+            chkNativeWidescreen1920x1080.Checked = false;
+            chkCameraZoomOut1.Checked = false;
             chkRangedRange3x.Checked = false;
             chkUnitMovementSpeed2x.Checked = false;
+            chkVillagerMovementSpeed5x.Checked = false;
             chkSpellEntireMap.Checked = false;
             chkSpellRange3x.Checked = false;
             chkProjectileArcHeight.Checked = false;

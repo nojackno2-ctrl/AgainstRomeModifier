@@ -144,112 +144,228 @@ namespace AgainstRomeModifier
         private const int UltimateLoopDelayLowerMs = 30000;
         private const int LegacyLoopDelayUpperMs = 2000;
         private const int LegacyLoopDelayLowerMs = 1000;
-        private const int AcceleratedLoopCount = 6;
+        private const int NonSchedulerLoopCount = 4;
+
+        // Saves serialize absolute script deadlines separately from the script clock. In late
+        // games the restored v16 deadline can be millions of milliseconds ahead of s_getTime(),
+        // preventing the outer settlement scheduler from reaching the accelerated branch at all.
+        // The normal Ultimate deadline is 30 seconds, so only a gap greater than 60 seconds is
+        // treated as a load-time rollback. This preserves ordinary throttling and the bounded
+        // active-party/job-slot protections.
+        internal const int DeadlineRollbackThresholdMs = 60000;
+
+        // Code-stream range 0x1bc44..0x1bd48 in all five stock ENDL ak_level scripts.
+        // The four delay literals are wildcarded when locating the original/legacy shape.
+        private static readonly int[] OriginalSchedulerBlock = {
+            66, 0, 128, 72, 86, 102, 117, 48,
+            128, 83, 86, 81, 16, 96, 101, 117,
+            12, 71, 66, 1, 117, 172, 66, 0,
+            91, 19, 81, 71, 102, 117, 52, 66,
+            120000, 66, 60000, 128, 16, 73, -2, 86,
+            91, 19, 112, 44, 66, 240000, 66, 120000,
+            128, 16, 73, -2, 86, 91, 19, 128,
+            83, 86, 90, 19, 32, 82, 16, 120,
+            -9748
+        };
+
+        // Equivalent Ultimate scheduler with a bounded rollback guard:
+        //   due = now >= v16 || v16 > now + 60000
+        //   if (due) { v16 = now + 30000; spawnSettlement(); }
+        // The second outer dispatcher call remains at the original following offset. Branch
+        // operands use the VM's verified target rule: opcode + 8 + displacement.
+        private static readonly int[] UltimateSchedulerBlock = BuildUltimateSchedulerBlock();
+        private static readonly int?[] OriginalSchedulerSignature = BuildOriginalSchedulerSignature();
+        private static readonly int?[] UltimateSchedulerSignature = ToPattern(UltimateSchedulerBlock);
+
+        internal static ReadOnlySpan<int> OriginalSchedulerBlockWords => OriginalSchedulerBlock;
+        internal static ReadOnlySpan<int> UltimateSchedulerBlockWords => UltimateSchedulerBlock;
 
         public PatchState Detect(byte[] decompressed)
         {
-            int expectedIndex = 0;
-            bool allOriginal = true;
-            bool allUltimate = true;
-
-            for (int offset = 0; offset <= decompressed.Length - 24 && expectedIndex < LoopDelayRanges.Length; offset += 4)
-            {
-                if (BitConverter.ToInt32(decompressed, offset) != 0x42 ||
-                    BitConverter.ToInt32(decompressed, offset + 8) != 0x42 ||
-                    BitConverter.ToInt32(decompressed, offset + 16) != 0x80 ||
-                    BitConverter.ToInt32(decompressed, offset + 20) != 16)
-                {
-                    continue;
-                }
-
-                (int originalUpperMs, int originalLowerMs) = LoopDelayRanges[expectedIndex];
-                int currentUpperMs = BitConverter.ToInt32(decompressed, offset + 4);
-                int currentLowerMs = BitConverter.ToInt32(decompressed, offset + 12);
-
-                bool matchesOriginal = currentUpperMs == originalUpperMs && currentLowerMs == originalLowerMs;
-                bool matchesUltimate = currentUpperMs == UltimateLoopDelayUpperMs && currentLowerMs == UltimateLoopDelayLowerMs;
-                bool matchesLegacy = currentUpperMs == LegacyLoopDelayUpperMs && currentLowerMs == LegacyLoopDelayLowerMs;
-
-                if (matchesOriginal)
-                {
-                    allUltimate = false;
-                    expectedIndex++;
-                }
-                else if (matchesUltimate)
-                {
-                    allOriginal = false;
-                    expectedIndex++;
-                }
-                else if (matchesLegacy)
-                {
-                    allOriginal = false;
-                    allUltimate = false;
-                    expectedIndex++;
-                }
-            }
-
-            if (expectedIndex != LoopDelayRanges.Length)
-            {
+            if (!TryFindSchedulerBlock(decompressed, out int schedulerOffset, out bool repaired))
                 return PatchState.Unknown;
-            }
 
-            if (allOriginal) return PatchState.Original;
-            if (allUltimate) return PatchState.Ultimate;
+            List<int> loopSites = FindNonSchedulerLoopSites(decompressed, schedulerOffset);
+            if (loopSites.Count != NonSchedulerLoopCount) return PatchState.Unknown;
+
+            PatchState loopState = DetectNonSchedulerLoops(decompressed, loopSites);
+            PatchState schedulerState = repaired
+                ? PatchState.Ultimate
+                : DetectOriginalShapeScheduler(decompressed, schedulerOffset);
+
+            if (loopState == PatchState.Original && schedulerState == PatchState.Original)
+                return PatchState.Original;
+            if (loopState == PatchState.Ultimate && schedulerState == PatchState.Ultimate)
+                return PatchState.Ultimate;
             return PatchState.Legacy;
         }
 
         public bool Apply(ref byte[] decompressed, bool enabled)
         {
-            bool changed = false;
-            int delaySiteIndex = 0;
-
-            for (int offset = 0; offset <= decompressed.Length - 24; offset += 4)
+            PatchState state = Detect(decompressed);
+            if (state == PatchState.Unknown)
             {
+                if (!enabled) return false;
+                throw new InvalidOperationException("P6 scheduler bytes do not match a supported original, legacy, or repaired pattern.");
+            }
+            if ((enabled && state == PatchState.Ultimate) || (!enabled && state == PatchState.Original))
+                return false;
+
+            if (!TryFindSchedulerBlock(decompressed, out int schedulerOffset, out bool repaired))
+                throw new InvalidOperationException("P6 scheduler block signature count mismatch during Apply.");
+
+            List<int> loopSites = FindNonSchedulerLoopSites(decompressed, schedulerOffset);
+            if (loopSites.Count != NonSchedulerLoopCount)
+                throw new InvalidOperationException("P6 non-scheduler loop count mismatch during Apply.");
+
+            bool changed = false;
+            for (int i = 0; i < loopSites.Count; i++)
+            {
+                int site = loopSites[i];
+                (int originalUpperMs, int originalLowerMs) = LoopDelayRanges[i];
+                int targetUpperMs = enabled ? UltimateLoopDelayUpperMs : originalUpperMs;
+                int targetLowerMs = enabled ? UltimateLoopDelayLowerMs : originalLowerMs;
+                changed |= WriteIfDifferent(ref decompressed, site + 4, targetUpperMs, "P6 scheduler upper delay");
+                changed |= WriteIfDifferent(ref decompressed, site + 12, targetLowerMs, "P6 scheduler lower delay");
+            }
+
+            int[] targetBlock = enabled ? UltimateSchedulerBlock : OriginalSchedulerBlock;
+            if ((enabled && !repaired) || (!enabled && repaired) || state == PatchState.Legacy)
+                changed |= ReplaceSchedulerBlock(ref decompressed, schedulerOffset, targetBlock);
+
+            return changed;
+        }
+
+        private static PatchState DetectNonSchedulerLoops(byte[] decompressed, IReadOnlyList<int> sites)
+        {
+            bool allOriginal = true;
+            bool allUltimate = true;
+            for (int i = 0; i < sites.Count; i++)
+            {
+                int upper = BitConverter.ToInt32(decompressed, sites[i] + 4);
+                int lower = BitConverter.ToInt32(decompressed, sites[i] + 12);
+                (int originalUpper, int originalLower) = LoopDelayRanges[i];
+                bool original = upper == originalUpper && lower == originalLower;
+                bool ultimate = upper == UltimateLoopDelayUpperMs && lower == UltimateLoopDelayLowerMs;
+                bool legacy = upper == LegacyLoopDelayUpperMs && lower == LegacyLoopDelayLowerMs;
+                if (!original && !ultimate && !legacy) return PatchState.Unknown;
+                allOriginal &= original;
+                allUltimate &= ultimate;
+            }
+            if (allOriginal) return PatchState.Original;
+            if (allUltimate) return PatchState.Ultimate;
+            return PatchState.Legacy;
+        }
+
+        private static PatchState DetectOriginalShapeScheduler(byte[] decompressed, int offset)
+        {
+            int upperA = BitConverter.ToInt32(decompressed, offset + (32 * 4));
+            int lowerA = BitConverter.ToInt32(decompressed, offset + (34 * 4));
+            int upperB = BitConverter.ToInt32(decompressed, offset + (45 * 4));
+            int lowerB = BitConverter.ToInt32(decompressed, offset + (47 * 4));
+            if (upperA == LoopDelayRanges[4].OriginalUpperMs && lowerA == LoopDelayRanges[4].OriginalLowerMs &&
+                upperB == LoopDelayRanges[5].OriginalUpperMs && lowerB == LoopDelayRanges[5].OriginalLowerMs)
+                return PatchState.Original;
+            return PatchState.Legacy;
+        }
+
+        private static List<int> FindNonSchedulerLoopSites(byte[] decompressed, int schedulerOffset)
+        {
+            var sites = new List<int>();
+            int schedulerEnd = schedulerOffset + (OriginalSchedulerBlock.Length * 4);
+            for (int offset = 0; offset <= decompressed.Length - 24 && sites.Count < NonSchedulerLoopCount; offset += 4)
+            {
+                if (offset >= schedulerOffset && offset < schedulerEnd) continue;
                 if (BitConverter.ToInt32(decompressed, offset) != 0x42 ||
                     BitConverter.ToInt32(decompressed, offset + 8) != 0x42 ||
                     BitConverter.ToInt32(decompressed, offset + 16) != 0x80 ||
                     BitConverter.ToInt32(decompressed, offset + 20) != 16)
-                {
                     continue;
-                }
 
-                if (delaySiteIndex >= LoopDelayRanges.Length)
-                {
-                    continue;
-                }
-
-                (int originalUpperMs, int originalLowerMs) = LoopDelayRanges[delaySiteIndex];
-                int currentUpperMs = BitConverter.ToInt32(decompressed, offset + 4);
-                int currentLowerMs = BitConverter.ToInt32(decompressed, offset + 12);
-
-                bool matchesOriginal = currentUpperMs == originalUpperMs && currentLowerMs == originalLowerMs;
-                bool matchesUltimate = currentUpperMs == UltimateLoopDelayUpperMs && currentLowerMs == UltimateLoopDelayLowerMs;
-                bool matchesLegacy = currentUpperMs == LegacyLoopDelayUpperMs && currentLowerMs == LegacyLoopDelayLowerMs;
-
-                if (!matchesOriginal && !matchesUltimate && !matchesLegacy)
-                {
-                    continue;
-                }
-
-                bool accelerateSchedulerLoop = enabled && delaySiteIndex < AcceleratedLoopCount;
-                int targetUpperMs = accelerateSchedulerLoop ? UltimateLoopDelayUpperMs : originalUpperMs;
-                int targetLowerMs = accelerateSchedulerLoop ? UltimateLoopDelayLowerMs : originalLowerMs;
-
-                if (currentUpperMs != targetUpperMs || currentLowerMs != targetLowerMs)
-                {
-                    BciPattern.WriteBciInt32(decompressed, offset + 4, currentUpperMs, targetUpperMs, "P6 scheduler upper delay");
-                    BciPattern.WriteBciInt32(decompressed, offset + 12, currentLowerMs, targetLowerMs, "P6 scheduler lower delay");
-                    changed = true;
-                }
-                delaySiteIndex++;
+                int index = sites.Count;
+                int upper = BitConverter.ToInt32(decompressed, offset + 4);
+                int lower = BitConverter.ToInt32(decompressed, offset + 12);
+                (int originalUpper, int originalLower) = LoopDelayRanges[index];
+                bool supported = (upper == originalUpper && lower == originalLower) ||
+                                 (upper == UltimateLoopDelayUpperMs && lower == UltimateLoopDelayLowerMs) ||
+                                 (upper == LegacyLoopDelayUpperMs && lower == LegacyLoopDelayLowerMs);
+                if (supported) sites.Add(offset);
             }
+            return sites;
+        }
 
-            if (delaySiteIndex != LoopDelayRanges.Length)
+        private static bool TryFindSchedulerBlock(byte[] decompressed, out int offset, out bool repaired)
+        {
+            List<int> originalSites = BciPattern.FindAllBciWordPatternSites(decompressed, OriginalSchedulerSignature);
+            List<int> repairedSites = BciPattern.FindAllBciWordPatternSites(decompressed, UltimateSchedulerSignature);
+            if (originalSites.Count + repairedSites.Count != 1)
             {
-                throw new InvalidOperationException("P6 site count mismatch during Apply.");
+                offset = -1;
+                repaired = false;
+                return false;
             }
+            repaired = repairedSites.Count == 1;
+            offset = repaired ? repairedSites[0] : originalSites[0];
+            return true;
+        }
 
+        private static bool ReplaceSchedulerBlock(ref byte[] decompressed, int offset, IReadOnlyList<int> target)
+        {
+            bool changed = false;
+            for (int i = 0; i < target.Count; i++)
+                changed |= WriteIfDifferent(ref decompressed, offset + (i * 4), target[i], "P6 save/load deadline repair");
             return changed;
+        }
+
+        private static bool WriteIfDifferent(ref byte[] decompressed, int offset, int target, string name)
+        {
+            int current = BitConverter.ToInt32(decompressed, offset);
+            if (current == target) return false;
+            BciPattern.WriteBciInt32(decompressed, offset, current, target, name);
+            return true;
+        }
+
+        private static int?[] BuildOriginalSchedulerSignature()
+        {
+            int?[] signature = ToPattern(OriginalSchedulerBlock);
+            foreach (int index in new[] { 32, 34, 45, 47 }) signature[index] = null;
+            return signature;
+        }
+
+        private static int?[] ToPattern(IReadOnlyList<int> words)
+        {
+            var result = new int?[words.Count];
+            for (int i = 0; i < words.Count; i++) result[i] = words[i];
+            return result;
+        }
+
+        private static int[] BuildUltimateSchedulerBlock()
+        {
+            var words = new List<int> {
+                // Single-player guard; skip the settlement spawner in net games.
+                66, 0, 128, 72, 86, 102, 117, 228,
+                // Normal due check: s_getTime() >= v16 -> reset/spawn.
+                128, 83, 86, 81, 16, 96, 101, 118, 56,
+                // Rollback check: v16 > s_getTime() + 60000 -> reset/spawn.
+                81, 16, 128, 83, 86, 66, DeadlineRollbackThresholdMs, 32, 96, 100, 118, 8,
+                // Otherwise preserve the normal pending deadline and skip this spawner.
+                112, 136,
+                // Reset to the normal accelerated interval.
+                128, 83, 86, 66, UltimateLoopDelayUpperMs, 32, 82, 16
+            };
+
+            // Preserve the original call offset so downstream internal-call displacements and
+            // the second dispatcher call remain byte-for-byte stable.
+            while (words.Count < 63)
+            {
+                words.Add(112);
+                words.Add(0);
+            }
+            words.Add(120);
+            words.Add(-9748);
+            if (words.Count != OriginalSchedulerBlock.Length)
+                throw new InvalidOperationException("P6 repaired scheduler block length mismatch.");
+            return words.ToArray();
         }
     }
 
@@ -328,14 +444,19 @@ namespace AgainstRomeModifier
     // ==========================================
     // P8: 增援單位數門檻
     // ==========================================
-    public class P8_ActiveLimitPatch : IEndlessPatch
+    public class P8_ReinforcementUnitThresholdPatch : IEndlessPatch
     {
         public string Id => "P8";
         public string TargetPattern => "MAPS/ENDL_*/SCRIPT/ak_level.bci";
 
-        private const int OriginalActivePartyLimit = 4;
-        private const int LegacyActivePartyLimit = 8;
-        private const int UltimateActivePartyLimit = 40;
+        private const int OriginalUnitThreshold = 4;
+        // 歷代出貨過的 Ultimate 門檻（8 → 40 → 30 → 40），全部視為 Legacy，
+        // 下次套用時自動遷移到現行值。
+        private static readonly int[] LegacyUnitThresholds = { 8, 30, 40 };
+        // 2026-07-17 應使用者要求改為 70。上界試算：70 隊 × 20 人 = 1400，
+        // 仍低於 EXE 全圖 1600 人口上限，但已相當接近——若含玩家人口爆滿
+        // 導致增援停擺，優先檢查這裡。
+        private const int UltimateUnitThreshold = 70;
 
         // Original gate: 5× pushlit 0 (66,0) + pushsym 6 (90,6) + cmp (102) + jmp (117) + done (32)
         // Total 15 words at offset +32 from sequence start.
@@ -344,59 +465,75 @@ namespace AgainstRomeModifier
             66, 0, 66, 0, 66, 0, 66, 0, 66, 0, 90, 6, 102, 117, 32
         };
 
-        // Legacy BoundedGate variants introduced in experimental builds.
-        // All share this shape: pushsym,X, jmp,Y repeated 3× then jmprel,Z, done.
-        // We recognize them generically by checking the first word is 90 (pushsym).
-        private const int BoundedGateLeadOpcode = 90;
+        // Exact legacy gates written by earlier experimental builds. Do not loosen
+        // these signatures: unknown BCI control flow must never be rewritten.
+        private static readonly int[] LegacyUnboundedGateWords = {
+            112, 272, 66, 0, 66, 0, 66, 0, 66, 0, 90, 6, 102, 117, 32
+        };
+
+        private static readonly int[] LegacyBoundedGateWords = {
+            90, 11, 117, 252, 90, 11, 117, 236, 90, 11, 117, 220, 112, 224, 32
+        };
+
+        private static readonly int[] LegacyBoundedGateWordsV3 = {
+            90, 11, 117, 252, 90, 11, 117, 236, 90, 11, 117, 220, 112, 232, 32
+        };
 
         public PatchState Detect(byte[] decompressed)
         {
-            int sequenceOffset = FindActiveLimitSequenceOffset(decompressed);
+            int sequenceOffset = FindReinforcementThresholdSequenceOffset(decompressed);
             if (sequenceOffset < 0) return PatchState.Unknown;
 
             int currentLimit = BitConverter.ToInt32(decompressed, sequenceOffset + 12);
 
-            // Check gate region: starts at offset +32, first word indicates gate type
             int gateStart = sequenceOffset + 32;
-            int firstGateWord = BitConverter.ToInt32(decompressed, gateStart);
-
             bool isOriginalGate = IsOriginalGate(decompressed, gateStart);
-            bool isBoundedGate = firstGateWord == BoundedGateLeadOpcode && !isOriginalGate;
 
-            if (currentLimit == OriginalActivePartyLimit && isOriginalGate)
+            if (isOriginalGate && currentLimit == OriginalUnitThreshold)
             {
                 return PatchState.Original;
             }
-            if (currentLimit == UltimateActivePartyLimit && isOriginalGate)
+            if (isOriginalGate && currentLimit == UltimateUnitThreshold)
             {
                 return PatchState.Ultimate;
             }
-            // Any non-original gate or legacy limit values → Legacy (can be migrated)
-            if (isBoundedGate || currentLimit == LegacyActivePartyLimit)
+            if (isOriginalGate && IsLegacyUnitThreshold(currentLimit))
             {
                 return PatchState.Legacy;
             }
-            // Any other limit value with any gate — treat as Legacy to allow migration
-            return PatchState.Legacy;
+
+            bool isKnownLegacyGate =
+                HasGateWords(decompressed, gateStart, LegacyUnboundedGateWords) ||
+                HasGateWords(decompressed, gateStart, LegacyBoundedGateWords) ||
+                HasGateWords(decompressed, gateStart, LegacyBoundedGateWordsV3);
+            if (isKnownLegacyGate && IsRecognizedUnitThreshold(currentLimit))
+            {
+                return PatchState.Legacy;
+            }
+
+            return PatchState.Unknown;
         }
 
         public bool Apply(ref byte[] decompressed, bool enabled)
         {
-            int sequenceOffset = FindActiveLimitSequenceOffset(decompressed);
-            if (sequenceOffset < 0)
+            PatchState state = Detect(decompressed);
+            if (state == PatchState.Unknown)
             {
                 if (!enabled) return false;
-                throw new InvalidOperationException("P8 active limit sequence not found.");
+                throw new InvalidOperationException("P8 reinforcement unit threshold bytes do not match a supported original, legacy, or current pattern.");
             }
+            if ((enabled && state == PatchState.Ultimate) || (!enabled && state == PatchState.Original))
+                return false;
 
+            int sequenceOffset = FindReinforcementThresholdSequenceOffset(decompressed);
             bool changed = false;
-            int targetLimit = enabled ? UltimateActivePartyLimit : OriginalActivePartyLimit;
+            int targetLimit = enabled ? UltimateUnitThreshold : OriginalUnitThreshold;
             int limitOffset = sequenceOffset + 12;
 
             int currentLimit = BitConverter.ToInt32(decompressed, limitOffset);
             if (currentLimit != targetLimit)
             {
-                BciPattern.WriteBciInt32(decompressed, limitOffset, currentLimit, targetLimit, "P8 active party limit");
+                BciPattern.WriteBciInt32(decompressed, limitOffset, currentLimit, targetLimit, "P8 reinforcement unit threshold");
                 changed = true;
             }
 
@@ -420,22 +557,31 @@ namespace AgainstRomeModifier
         /// Checks whether the gate region matches the original 5×pushlit_0 pattern.
         /// </summary>
         private static bool IsOriginalGate(byte[] data, int gateOffset)
+            => HasGateWords(data, gateOffset, OriginalGateWords);
+
+        private static bool HasGateWords(byte[] data, int gateOffset, int[] expectedWords)
         {
-            if (gateOffset + OriginalGateWords.Length * 4 > data.Length) return false;
-            for (int i = 0; i < OriginalGateWords.Length; i++)
+            if (gateOffset + expectedWords.Length * 4 > data.Length) return false;
+            for (int i = 0; i < expectedWords.Length; i++)
             {
-                if (BitConverter.ToInt32(data, gateOffset + i * 4) != OriginalGateWords[i])
+                if (BitConverter.ToInt32(data, gateOffset + i * 4) != expectedWords[i])
                     return false;
             }
             return true;
         }
 
-        private static int FindActiveLimitSequenceOffset(byte[] decompressedBci)
+        private static bool IsLegacyUnitThreshold(int value) =>
+            Array.IndexOf(LegacyUnitThresholds, value) >= 0;
+
+        private static bool IsRecognizedUnitThreshold(int value) =>
+            value == OriginalUnitThreshold ||
+            value == UltimateUnitThreshold ||
+            IsLegacyUnitThreshold(value);
+
+        private static int FindReinforcementThresholdSequenceOffset(byte[] decompressedBci)
         {
-            // Use null wildcards for the entire gate region (15 words at offset 8..22)
-            // so we can match both the original gate (66,0 series) and any legacy
-            // BoundedGate variant (90,11,117,... jump instructions).
-            // This 23-word pattern is unique in all ak_level.bci files, so no tail anchor is required.
+            // The prefix identifies the P8 block; Detect then validates the complete
+            // 15-word gate against exact original/current/legacy signatures.
             int?[] pattern = new int?[] {
                 0x5A, 0, 0x42, null, 96, 98, 0x5B, 11,
                 null, null, null, null, null, null, null,
@@ -474,16 +620,26 @@ namespace AgainstRomeModifier
 
         // 第三控制點：狀態 49 捐贈走訪的單位型別過濾（0x1825C 附近，全檔唯一的
         // s_getUnitType 呼叫）。原版 `if (s_getUnitType(obj) == 1)` 只讓型別 1
-        // （單人單位）進入配額/捐贈分支，士兵小隊（squad，型別 != 1）一律留在
-        // 撤退陣列走回地圖出口——這就是「配額歸零後士兵仍撤退」的原因。
-        // 把 jz 的跳躍位移 92 改為 0（跳到下一條指令，等同吃掉條件不跳），
-        // 所有單位都進入配額判斷；配額 0 → 全部 s_setObjMark 捐給 type-4 隊伍。
+        // 單位（平民、駄馬等單體單位）進入配額/捐贈分支，士兵小隊（type != 1）
+        // 一律留在撤退陣列走回地圖出口。
+        //
+        // 2026-07-17 最終實機確認（使用者兩次觀察，第一次誤判後更正）：
+        // 反轉版 jnz(118)+92 的實際行為正確——士兵小隊留在村裡駐守、
+        // 駄馬與平民照原版撤退離場。這與 2026-07-08 的型別語意記錄一致
+        // （士兵小隊 type != 1；駄馬/平民 type 1）。
+        // - Legacy：jz+0（吃掉條件，2026-07-08 出貨）→ 所有單位含駄馬都被
+        //   捐贈，駄馬每波堆積（ESAVE_001 實測）。
+        // 簽章的跳躍 opcode 字（index 9）與位移字（index 10）都是萬用碼，
+        // 否則已套用檔（118）或 Legacy 檔（位移 0）會比對不到。
         private static readonly int?[] DonationTypeFilterSignature = new int?[] {
-            128, 214, 73, -2, 86, 66, 1, 96, 102, 117, null
+            128, 214, 73, -2, 86, 66, 1, 96, 102, null, null
         };
+        private const int DonationTypeFilterJzOpcodeWordIndex = 9;
         private const int DonationTypeFilterJzOperandWordIndex = 10;
+        private const int DonationTypeFilterOriginalOpcode = 117;  // jz
         private const int DonationTypeFilterOriginalOperand = 92;
-        private const int DonationTypeFilterPatchedOperand = 0;
+        private const int DonationTypeFilterPatchedOpcode = 118;   // jnz（條件反轉）
+        private const int DonationTypeFilterPatchedOperand = 92;
 
         public PatchState Detect(byte[] decompressed)
         {
@@ -508,9 +664,10 @@ namespace AgainstRomeModifier
             int opcode9 = BitConverter.ToInt32(decompressed, opcodeOffset9);
             int value9 = BitConverter.ToInt32(decompressed, opcodeOffset9 + 4);
 
-            // 第三控制點：狀態 49 的單位型別過濾 jz 位移。
+            // 第三控制點：狀態 49 的單位型別過濾 jz/jnz opcode 與位移。
             int filterOffset = BciPattern.FindBciWordPattern(decompressed, DonationTypeFilterSignature);
             if (filterOffset < 0) return PatchState.Unknown;
+            int jzOpcode = BitConverter.ToInt32(decompressed, filterOffset + DonationTypeFilterJzOpcodeWordIndex * 4);
             int jzOperand = BitConverter.ToInt32(decompressed, filterOffset + DonationTypeFilterJzOperandWordIndex * 4);
 
             // 舊版 P9 曾把 site 8 也改成 [66,0]（導致增援只有村民）——判為 Legacy，
@@ -520,13 +677,13 @@ namespace AgainstRomeModifier
             bool site9Ultimate = opcode9 == RetreatQuotaPatchedOpcode && value9 == RetreatQuotaPatchedValue;
             bool site9Original = opcode9 == RetreatQuotaOriginalOpcode && value9 == RetreatQuotaOriginalValue;
 
-            if (site9Ultimate && jzOperand == DonationTypeFilterPatchedOperand)
+            if (site9Ultimate && jzOpcode == DonationTypeFilterPatchedOpcode && jzOperand == DonationTypeFilterPatchedOperand)
                 return PatchState.Ultimate;
-            if (site9Original && jzOperand == DonationTypeFilterOriginalOperand)
+            if (site9Original && jzOpcode == DonationTypeFilterOriginalOpcode && jzOperand == DonationTypeFilterOriginalOperand)
                 return PatchState.Original;
 
-            // 例如 2026-07-08 出貨的中間狀態：site9 已歸零但型別過濾仍為原版
-            // （士兵小隊照樣撤退）——判為 Legacy，Apply 時補上過濾修改。
+            // Legacy 涵蓋出貨過的中間狀態（site9 歸零但過濾原版；jz+0 全捐贈；
+            // 2026-07-17 短暫出貨的「過濾恢復原版」組合），Apply 時自動遷移。
             return PatchState.Legacy;
         }
 
@@ -578,9 +735,13 @@ namespace AgainstRomeModifier
                 }
             }
 
-            // State-49 donation type filter: with the filter active, soldier squads
-            // (unit type != 1) bypass the quota branch and always retreat; operand 0
-            // makes the jz fall through so every unit is subject to the (zeroed) quota.
+            // State-49 donation type filter, INVERTED (jz->jnz, offset kept at 92):
+            // soldier squads (unit type != 1) fall into the quota branch and get
+            // donated (quota 0 => all stay in the village); type-1 units (pack
+            // horses / civilians) take the jump and follow the vanilla retreat
+            // path off the map. In-game confirmed 2026-07-17: soldiers garrison,
+            // pack horses leave. (The legacy operand-0 variant donated EVERYTHING,
+            // so pack horses accumulated every wave.)
             {
                 int filterOffset = BciPattern.FindBciWordPattern(decompressed, DonationTypeFilterSignature);
                 if (filterOffset < 0)
@@ -589,13 +750,21 @@ namespace AgainstRomeModifier
                 }
                 else
                 {
+                    int opcodeOffset = filterOffset + DonationTypeFilterJzOpcodeWordIndex * 4;
                     int operandOffset = filterOffset + DonationTypeFilterJzOperandWordIndex * 4;
+                    int currentOpcode = BitConverter.ToInt32(decompressed, opcodeOffset);
                     int currentOperand = BitConverter.ToInt32(decompressed, operandOffset);
+                    int targetOpcode = enabled ? DonationTypeFilterPatchedOpcode : DonationTypeFilterOriginalOpcode;
                     int targetOperand = enabled ? DonationTypeFilterPatchedOperand : DonationTypeFilterOriginalOperand;
 
+                    if (currentOpcode != targetOpcode)
+                    {
+                        BciPattern.WriteBciInt32(decompressed, opcodeOffset, currentOpcode, targetOpcode, "P9 donation type filter jump opcode");
+                        changed = true;
+                    }
                     if (currentOperand != targetOperand)
                     {
-                        BciPattern.WriteBciInt32(decompressed, operandOffset, currentOperand, targetOperand, "P9 donation type filter jz operand");
+                        BciPattern.WriteBciInt32(decompressed, operandOffset, currentOperand, targetOperand, "P9 donation type filter jump operand");
                         changed = true;
                     }
                 }

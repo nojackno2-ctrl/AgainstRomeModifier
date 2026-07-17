@@ -27,6 +27,9 @@ and patch code.
   (Berserker/marksmanship/shield/thunder/charge) and their `cl_epara.ini`
   factors, glory earn/loss rules, and the combat upgrade icons.
 - `known-patches.md`: implemented, legacy, candidate, and rejected patches.
+- `feature-verification-matrix.md`: all 44 `FeatureRegistry` entries mapped to
+  their actual write targets, reverse-engineering evidence, and separately
+  recorded runtime status.
 - `projectile-ballistics.md` and `priest-spells.md`: experimental projectile,
   ranged-distance, spell-radius, and priest casting-distance evidence.
 - `decompilation-workflow.md`: local Ghidra/JDK workflow and generated EXE
@@ -52,7 +55,9 @@ and patch code.
 - `MAPS/ENDL_*/SCRIPT/ak_level.bci`: bounded AI Ultimate Mode patch.
 - `MAPS/ENDL_*/Endlos_*_Siedlung*.sdl`: read-only endless settlement templates.
 - `Against_Rome.exe`: focus-loss patch, synchronized village-range setter,
-  runtime-verified Roman Endless `dlg_volk` setter patch, restore-only legacy signatures, and local full-function inventory.
+  runtime-verified Roman Endless `dlg_volk` setter patch, experimental native
+  1920x1080 mode replacement, restore-only legacy signatures, and local
+  full-function inventory.
 - `apt.dat`: ZIP-like candidate, not integrated into the modifier.
 
 ## Evidence Rules

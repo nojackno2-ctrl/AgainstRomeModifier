@@ -305,7 +305,9 @@ Phase 1 編輯操作:改 `team`/`nation`、整體平移(改 `refpos`,物件 `pos
 - 材質(可作為 Phase 1.5):64×64 網格檢視(每格填色或縮寫),點格子從材質調色盤替換。
 - **原廠圖(ENDL_000–004)一律唯讀**,只能「另存為新地圖」;要改原廠圖 = 先複製再編輯。
 
-> 實作狀態（2026-07-14）：屬性面板已支援 `briefing_titel_1/2`、可串接／多行的 `briefing_text`、`briefing_text_teamname0..7`，以及 Waterlevel、WaterColor、DayStartTime、DayEndTime、RainDropsOnWater、WaterWarpShift、WaterBumpAmplitude、WaterBumpFrequency、FlashPropability。寫入仍只允許 marker-backed 自製地圖，並沿用 CP1251、PFIL header 保留與 `FileRollbackScope` 交易。SDL 文件層已通過合成與八個真實聚落檔的 no-op round-trip；場景檢查器現提供受控驗證用的既有物件 `team`／相對 `pos` 暫存編輯與「還原到本次開啟時」，儲存服務會再次驗證 custom marker、`ENDL_005–999`、來源檔名及索引。此功能仍屬遊戲內驗證階段，尚未開放物件增刪、拖曳或宣稱 runtime verified。
+> 實作狀態（2026-07-14）：屬性面板已支援 `briefing_titel_1/2`、可串接／多行的 `briefing_text`、`briefing_text_teamname0..7`，以及 Waterlevel、WaterColor、DayStartTime、DayEndTime、RainDropsOnWater、WaterWarpShift、WaterBumpAmplitude、WaterBumpFrequency、FlashPropability。寫入仍只允許 marker-backed 自製地圖，並沿用 CP1251、PFIL header 保留與 `FileRollbackScope` 交易。SDL 文件層已通過合成與八個真實聚落檔的 no-op round-trip；場景檢查器現提供受控驗證用的既有物件 `team`／相對 `pos` 暫存編輯與「還原到本次開啟時」，儲存服務會再次驗證 custom marker、`ENDL_005–999`、來源檔名及索引。此功能仍屬遊戲內驗證階段，尚未開放拖曳或宣稱 runtime verified。
+>
+> 實作狀態補充（2026-07-16）：場景檢查器新增暫存式**物件複製與刪除**。複製以既有物件為模板（`SdlSceneObjectAddition` 沿用模板全部欄位、只覆寫 `team`/`pos`），是唯一安全的新增路徑；刪除寫回時由 `RemoveObject` 重新連續編號。`SdlSceneEditService.SaveChanges` 的寫入順序為：值編輯（原始索引）→ 複製（模板欄位在任何刪除前讀取，複製後刪原件等同移動）→ 依索引遞減刪除。結構性儲存後檔內索引已重編，編輯器會從磁碟重讀並重定「還原到本次開啟時」基準。自由新增（從 objdef 清單挑選）與拖曳仍為後續工作；複製/刪除後的地圖進遊戲載入驗證是使用者 runtime gate。
 
 **存檔紀律:** 所有寫入經 `SafeFileWriter`;一次「儲存變更」內的多檔寫入包在 `FileRollbackScope`(全部 `TrackFile` → 寫入 → `Commit`)。PFIL 檔回寫必用原始 64-byte header。
 

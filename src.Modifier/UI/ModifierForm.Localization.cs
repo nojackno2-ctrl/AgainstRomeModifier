@@ -41,9 +41,7 @@ namespace AgainstRomeModifier {
             chkFocusLoss.Text = Loc.Get("FocusLoss");
             chkToEng.Text = Loc.Get("ToEng");
             chkAiM1.Text = Loc.Get("AiM1");
-            chkAiM2.Text = Loc.Get("AiM2");
-            chkAiM3.Text = Loc.Get("AiM3");
-            chkAiM4.Text = Loc.Get("AiM4");
+            chkAiCore.Text = Loc.Get("AiCore");
             chkAiM5.Text = Loc.Get("AiM5");
             chkAiM6.Text = Loc.Get("AiM6");
             chkHousingCapacity20x.Text = Loc.Get("HousingCapacity20x");
@@ -53,10 +51,12 @@ namespace AgainstRomeModifier {
             chkFoodHealing10x.Text = Loc.Get("FoodHealing10x");
             chkCiviProduce20.Text = Loc.Get("CiviProduce20");
             chkUnitRecruit20.Text = Loc.Get("UnitRecruit20");
+            chkIdleSelect999.Text = Loc.Get("IdleSelect999");
             chkDgVoodoo.Text = Loc.Get("DgVoodoo");
             chkGameSpeed.Text = Loc.Get("GameSpeedLabel");
             chkVillageBuildRange.Text = Loc.Get("VillageBuildRange");
-            lblExperimentalTitle.Text = Loc.Get("ExperimentalTitle");
+            lblSpellTitle.Text = Loc.Get("SpellTitle");
+            lblVillagerTitle.Text = Loc.Get("VillagerTitle");
             chkSpellDamage5x.Text = Loc.Get("SpellDamage5x");
             chkSpellHealing10x.Text = Loc.Get("SpellHealing10x");
             chkSpellResurrection.Text = Loc.Get("SpellResurrection");
@@ -64,7 +64,7 @@ namespace AgainstRomeModifier {
             chkLeaderGlory.Text = Loc.Get("LeaderGlory");
             btnEnableAll.Text = Loc.Get("EnableAll");
             btnDisableAll.Text = Loc.Get("DisableAll");
-            lblSwitchesTitle.Text = Loc.Get("SwitchesTitle");
+            lblCombatTitle.Text = Loc.Get("CombatTitle");
             lblBuildTitle.Text = Loc.Get("BuildTitle");
             lblAiTitle.Text = Loc.Get("AiCardTitle");
             chkMaxPopulation.Text = Loc.Get("MaxPopulation");
@@ -103,8 +103,12 @@ namespace AgainstRomeModifier {
 
             lblDefaultStatsTitle.Text = Loc.Get("DefaultStatsTitle");
             chkBalance.Text = Loc.Get("EnableBalance");
+            chkAllUnitsEntireMapVision.Text = Loc.Get("AllUnitsEntireMapVision");
+            chkNativeWidescreen1920x1080.Text = Loc.Get("NativeWidescreen1920x1080");
+            chkCameraZoomOut1.Text = Loc.Get("CameraZoomOut1");
             chkRangedRange3x.Text = Loc.Get("RangedRange3x");
             chkUnitMovementSpeed2x.Text = Loc.Get("UnitMovementSpeed2x");
+            chkVillagerMovementSpeed5x.Text = Loc.Get("VillagerMovementSpeed5x");
             chkSpellEntireMap.Text = Loc.Get("SpellEntireMap");
             chkSpellRange3x.Text = Loc.Get("SpellRange3x");
             chkProjectileArcHeight.Text = Loc.Get("ProjectileArcHeight");
@@ -142,8 +146,12 @@ namespace AgainstRomeModifier {
                 myToolTip.SetToolTip(chkNoSpellCost, Loc.Get("NoSpellCostTip"));
                 myToolTip.SetToolTip(chkInfiniteMorale, Loc.Get("InfiniteMoraleTip"));
                 myToolTip.SetToolTip(chkBalance, Loc.Get("BalanceTip"));
+                myToolTip.SetToolTip(chkAllUnitsEntireMapVision, Loc.Get("AllUnitsEntireMapVisionTip"));
+                myToolTip.SetToolTip(chkNativeWidescreen1920x1080, Loc.Get("NativeWidescreen1920x1080Tip"));
+                myToolTip.SetToolTip(chkCameraZoomOut1, Loc.Get("CameraZoomOut1Tip"));
                 myToolTip.SetToolTip(chkRangedRange3x, Loc.Get("RangedRange3xTip"));
                 myToolTip.SetToolTip(chkUnitMovementSpeed2x, Loc.Get("UnitMovementSpeed2xTip"));
+                myToolTip.SetToolTip(chkVillagerMovementSpeed5x, Loc.Get("VillagerMovementSpeed5xTip"));
                 myToolTip.SetToolTip(chkSpellEntireMap, Loc.Get("SpellEntireMapTip"));
                 myToolTip.SetToolTip(chkSpellRange3x, Loc.Get("SpellRange3xTip"));
                 myToolTip.SetToolTip(chkProjectileArcHeight, Loc.Get("ProjectileArcHeightTip"));
@@ -158,11 +166,10 @@ namespace AgainstRomeModifier {
                 myToolTip.SetToolTip(chkFoodHealing10x, Loc.Get("FoodHealing10xTip"));
                 myToolTip.SetToolTip(chkCiviProduce20, Loc.Get("CiviProduce20Tip"));
                 myToolTip.SetToolTip(chkUnitRecruit20, Loc.Get("UnitRecruit20Tip"));
+                myToolTip.SetToolTip(chkIdleSelect999, Loc.Get("IdleSelect999Tip"));
                 myToolTip.SetToolTip(chkVillageBuildRange, Loc.Get("VillageBuildRangeTip"));
                 myToolTip.SetToolTip(chkAiM1, Loc.Get("AiM1Tip"));
-                myToolTip.SetToolTip(chkAiM2, Loc.Get("AiM2Tip"));
-                myToolTip.SetToolTip(chkAiM3, Loc.Get("AiM3Tip"));
-                myToolTip.SetToolTip(chkAiM4, Loc.Get("AiM4Tip"));
+                myToolTip.SetToolTip(chkAiCore, Loc.Get("AiCoreTip"));
                 myToolTip.SetToolTip(chkAiM5, Loc.Get("AiM5Tip"));
                 myToolTip.SetToolTip(chkAiM6, Loc.Get("AiM6Tip"));
             }

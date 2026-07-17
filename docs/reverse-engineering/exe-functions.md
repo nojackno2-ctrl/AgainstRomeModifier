@@ -20,14 +20,14 @@ runtime evidence.
 
 ## BCI Virtual Machine Dispatcher (decoded 2026-07-03, no Ghidra)
 
-The Temp Ghidra install (`C:\Users\nojac\AppData\Local\Temp\AgainstRome_RE\ghidra`)
-lost its `Framework/Utility` module partway through this session and
-`analyzeHeadless.bat` now fails with `Failed to find the 'Utility' module!`
-before loading the existing project. This session's disassembly work used
-`pip install capstone pefile` (into the harness's isolated user Python) instead
-— a linear x86 disassembler plus direct EXE byte scanning is sufficient for
-opcode-table and call-site work; only a fresh Ghidra project/reinstall would
-be needed for broader whole-program analysis again.
+Historical method note: this dispatcher decode was completed with Capstone and
+direct EXE byte scanning after the former Temp Ghidra tree lost required
+modules. That incomplete tree is no longer the active toolchain. On 2026-07-17
+an official SHA-256-verified Ghidra 12.1.2 distribution was installed at the
+clean path documented in `decompilation-workflow.md`, and fresh disposable
+headless imports plus focused decompilation scripts completed successfully.
+The original opcode-table conclusions remain byte-derived; broader
+whole-program analysis is available again through the clean one-shot workflow.
 
 - Interpreter entry: `005B1C62` (frame setup, `EBX` = VM context pointer).
   Opcode fetch at `005B1C72`: read 32-bit opcode word at `[EBX+8]` (PC,
@@ -90,6 +90,42 @@ patch itself and the exact heal gate conditions.
   compiled template), and 3 unit scripts (`ak_geisterreiter`,
   `ak_kundschafterwolf`, `ak_verbandswolf`) additionally call `s_addLP` with
   literal `-1` at a second site (an LP-decay tick, unrelated to healing).
+
+## Unit Selection Subsystem (decoded 2026-07-16)
+
+Traced while implementing the `IdleSelect999` feature (see `known-patches.md`);
+done with capstone byte scanning plus the local pseudocode inventory because
+the Temp Ghidra install is still broken. `tools/re/GhidraSelectIdleAnalysis.java`
+records the same trace for a future working Ghidra project.
+
+- IGM button registration block `00442a80..` binds UI strings (`igm_but_*`,
+  `igm_select_idle`) to widget handles via `FUN_004e8f80`; all use the shared
+  button callback `004410b0`, which dispatches by comparing the clicked widget
+  against each handle global (select-idle: `cmp ebx,[0x68b568]` at `0044138b`).
+- `0044d110` deselect-all: iterates the master selection and clears it.
+- `00451dc0` select-idle handler: filter descriptor from
+  `FUN_0044cef0(1,0,1,1,3)`, gatherer `FUN_00421820(bufA, bufB, max, ...)`
+  (max = `0x28` in the stock EXE), resolver `FUN_00421130(a,b) -> object index
+  or -1`, adder `FUN_0044d5a0`, feedback sound `FUN_0043db40(0x7c)`.
+- `FUN_00421820 -> FUN_00538320 -> FUN_005388a0`: object search over the
+  per-team per-category unit lists at `DAT_026af93c + team*0x15180` (rows of
+  `0x640` = 1600 shorts, matching the global population cap). Matches are
+  written to the scratch pair `DAT_0064d65c` (indexes) / `DAT_0064f59c`
+  (sort keys) guarded by `DAT_0064d654 < 1000`. The scratch block is two
+  1000-entry banks plus two parallel arrays, all adjacent; ~405 code
+  references across the EXE.
+- `FUN_00419e00`: copies up to `max` scratch entries into the caller's buffer
+  pair as handle pairs via `FUN_00518db0`.
+- `FUN_0044d5a0` add-to-selection: rejects duplicates (`FUN_0044cdd0`), dead
+  (`0x2000` flag) and in-building (`0x200` flag) objects, then appends to the
+  master selection array `0x727744 + count*4` (1-based; data starts
+  `0x727748`) guarded by `cmp [0x7286e8], 0x3E7` — the engine-wide selection
+  maximum is 999, and the count dword sits immediately after the 1000-entry
+  array, so the capacity is structural.
+- All master-selection references (`0x727744/0x727748` array, `0x7286e8`
+  count) are confined to the `0x44cd00..0x44daff` module (`mk_sel.c` per the
+  allocator tag string `CLMK_mk_sel_c`); access elsewhere goes through
+  accessors `FUN_0044cff0` (count) and `FUN_0044d000` (i-th entry).
 
 ## Ress Parser
 
@@ -277,7 +313,42 @@ applies these bytes and retains them only for detection and restoration. See
 - `00547650` → `005465e0` → `005245d0`: `s_specialEffektCreateUnit` handler
   chain (summon/resurrect spawn loop, attaches `DEFSCRIPT`).
 
-Focus-loss pause patch:
+## Unit Member Capacity / Trupp Size (static-verified 2026-07-16)
+
+Decoded from the local pseudocode inventory while evaluating a "raise the
+20-man unit size" request. No write patch exists; see `known-patches.md`
+"Unit Member Cap Above 20" for the feasibility verdict.
+
+- Runtime per-unit member table: `short[14000][20]` at `025A1B00`.
+  Ghidra renders reads through the byte-offset alias
+  `*(int *)(&DAT_025a1afe + id * 0x28) >> 0x10` (about 41 read sites);
+  the 0x28-byte stride per unit is exactly 20 two-byte member handles.
+- Member-count byte array at `0259E450`, one byte per object id. Reads
+  appear as `*(int *)((int)&DAT_0259e44c + id + 1) >> 0x18`; getter
+  `00527090`, script-exposed via `00527050`.
+- Member-to-unit back-map (`short`, indexed by member object id) at
+  `0262A680` = `025A1B00 + 14000 * 40`. The two arrays are immediately
+  adjacent, so the member table has zero slack bytes.
+- Add-member write site in `00526ea0`: bounds check
+  `count < 0x14`, then `(&DAT_025a1b00)[unit * 0x14 + count] = memberId`
+  and `(&DAT_0259e450)[unit] += 1` — the indexing multiplier itself is 20.
+- Unit-creation (gather) job table: 200 records x 0x208 bytes at
+  `026313E0` (`00529360` scans with end bound `0x19640` = 200 * 0x208).
+  Each record = 0x28-byte header + 20 member slots x 0x18 bytes.
+  Accessors `00529390`, `005294e0`, `00529550`, `005296a0`, `00529770`,
+  `005297c0` all hard-code `< 0x14` member and `< 200` record bounds;
+  `00523ed0` iterates member slots with a `0x13 <` guard.
+- Gather/creation clamps: `00523a00` (unit builder: type 0 civilians max
+  4 members, all other types max 0x14; running total also clamped to
+  0x14), `005249d0` (`s_createBattleUnitsMax` implementation clamps its
+  count argument to 0x14), `00547f50` (NPC create-unit jobs: arg2 == 0
+  max 4, otherwise max 20 — previously documented above).
+- Verdict: 20 is a structural array capacity baked into data layout and
+  index multipliers, not a tunable clamp. Values <= 20 on individual
+  paths (the civilian 4-member clamps) are single-constant patch
+  candidates; values above 20 are not reachable by byte patching.
+
+## Focus-Loss Pause Patch
 
 - File offset: `0x161a88`
 - Original bytes: `89 15 C4 7D 9E 02`

@@ -104,6 +104,48 @@
 - Status: implemented, apply/detect/restore tested, and runtime verified in
   game on 2026-07-15.
 
+### Idle-Villager Select 999 (`IdleSelect999`)
+
+- File: `Against_Rome.exe`; patch offset `0x51DC0` (VA `0x451DC0`), length
+  `0xB0` — the entire select-idle handler function plus its `0x10`-byte
+  alignment padding before the next function at `0x451E70`.
+- Decompilation path (2026-07-16, capstone + the local Ghidra pseudocode
+  inventory; the Temp Ghidra install remains broken): UI string
+  `igm_select_idle` → widget handle global `0x68B568` → generic IGM button
+  callback `0x4410B0` dispatches on the handle at `0x44138B` and calls
+  `0x44D110` (deselect all) then `0x451DC0` (the select-idle handler).
+  `0x451DC0` has exactly two callers (`0x42347A` hotkey path, `0x441398`
+  button path), both to the function entry — no jumps into the body.
+- Original behavior: two 40-entry stack arrays and a literal `push 0x28` are
+  passed to gatherer `0x421820` (filter from `0x44CEF0(1,0,1,1,3)` →
+  `0x538320` → search `0x5388A0` which fills the global scratch list at
+  `0x64D65C`, capped at 1000), then each result resolves through `0x421130`
+  and is added to the master selection via `0x44D5A0`.
+- Cap chain (why 999, not 1600): the button's own cap is 40; the search
+  scratch list is a fixed 1000-entry global with ~405 code references
+  (cannot be relocated safely); the master selection list `0x727748` is a
+  fixed 1000-entry array whose count word `0x7286E8` sits immediately after
+  it, and `0x44D5A0` guards with `cmp [0x7286E8], 0x3E7` (999). 999 is the
+  engine's structural maximum for any selection; reaching 1600 would require
+  relocating both packed global arrays and rewriting hundreds of absolute
+  references, which is beyond safe fixed-offset patching.
+- Patch: rewrites the whole function region in place with an
+  instruction-for-instruction equivalent using N=999 — stack frame
+  `0x140 → 0x1F38`, per-buffer size `0xA0 → 0xF9C`, `push 0x28 → push 0x3E7`,
+  the buffer-B init loop reversed to descend from the top of the buffer so the
+  first touch is within one page of the old ESP (stack guard-page probing for
+  the 8 KB frame), and the five `call rel32` targets recomputed for the ±3-byte
+  layout shift. New code is `0x9F` bytes, NOP-padded to `0xB0`.
+- Scope: player UI only (the idle-select button and its hotkey); the AI does
+  not use this path. With more than 999 idle villagers, one click selects the
+  first 999 found by the category-list scan.
+- Safety: full-region original/patched byte match required; unknown signatures
+  are refused. Disable and Stats Restore return the exact original bytes.
+- Status: implemented, apply/detect/restore covered by unit tests and the
+  local full-round-trip integration test, and runtime verified in game on
+  2026-07-16 (user confirmed the select-idle button now selects more than 40
+  villagers).
+
 ### 10x Building Speed (Construction, Upgrade, Repair)
 
 - File: `SYSTEM/DATA_MP/DEFAULTS/objdef.dau`.
@@ -155,7 +197,12 @@
   still the only remaining open item.
 - File: `MAPS/ENDL_*/SCRIPT/ak_level.bci`.
 - Format: `PFIL@` compressed `BCI0` compiled script.
-- Modifier UI: five active independent AI Ultimate modules (M1-M5, with M6 rejected and disabled); rejected global CLAK edits are restored by mandatory repair R0.
+- Modifier UI (2026-07-16 integration): legacy modules M2 (reinforcement scheduling),
+  M3 (defeat cleanup), and M4 (settlement respawn) are exposed and applied as one
+  atomic `EndlessAi.Core` lifecycle toggle. A partial legacy M2/M3/M4 selection
+  migrates to the complete core. M1 (reinforcement size), M5 (starting resources),
+  and M6 remain separate controls; rejected global CLAK edits are restored by
+  mandatory repair R0.
 - Create-unit call: decompressed BCI offset `0x17B60`,
   `s_addNPCJob_createUnit(local7, 3, 8, 0, 0, 4, 4, 1, 0)` after reversing
   BCI stack argument order.
@@ -164,9 +211,9 @@
   at `0x17B1C`, `0 -> 1`. This lets completed military reinforcement jobs free
   their per-team NPC-job slots for later waves.
 - EXE path `0054aa80 -> 00547f50` clamps the count to `1..20`.
-- Military reinforcement cooldown at `0x178E0`: `180000 -> 5000` ms.
+- Military reinforcement cooldown at `0x178E0`: `180000 -> 30000` ms.
 - Party retreat/cleanup deadlines use a mixed target. Non-settlement sites
-  `0x119C0`, `0x12FFC`, `0x13FE8`, and `0x17F38` change `600000 -> 5000` ms.
+  `0x119C0`, `0x12FFC`, `0x13FE8`, and `0x17F38` change `600000 -> 60000` ms.
   Settled-handler sites `0x10700` and `0x160EC` stay at `600000` because states
   51/52 normally wait for old-village/palisade cleanup; the deadline is only a
   fallback. The previous all-six-at-5000 state could force DELETE_PARTY before
@@ -194,7 +241,7 @@
   which presents as a frozen simulation rather than a process crash. Detection
   treats all-256 as Original, all-257 or mixed 256/257 as Legacy, and both
   Apply paths restore 256. P15 is no longer part of user-toggleable M3.
-- Settle-place eligibility fix (`P18`/`P19`, module M4, 2026-07-08,
+- Settle-place eligibility fix (`P18`/`P19`, integrated Core; legacy module M4, 2026-07-08,
   **RUNTIME-CONFIRMED**: applied to the live install, user confirmed defeated
   CPUs resume respawning in-game; independent byte check found all five maps
   at the exact Ultimate values with clean PFIL round-trips): the root
@@ -210,32 +257,38 @@
   `2500 -> 800` (anchor: the only `callint -36800`, site `0x9A10`). Full decode
   and save evidence in `endless-mode-ai.md`. Saves embed `ak_level`, so the fix
   only affects newly started endless games.
-- Roman founder gate (`P17`, module M4, **RUNTIME-CONFIRMED** with P18/P19
+- Roman founder gate (`P17`, integrated Core; legacy module M4, **RUNTIME-CONFIRMED** with P18/P19
   above): `60 -> 100` at the type-4 spawner's
   probability gate (site `0x18E10`). Designed and unit-tested 2026-07-06 but
   never wired into a module until 2026-07-08 — installed files still had 60.
-- All six scheduler delay sites change to `5000..10000` ms. The first three
+- All six scheduler delay sites change to `30000..30000` ms. The first three
   are inner raider timers; the remaining `60000..120000`, `60000..120000`, and
   `120000..240000` sites initialize and refresh the outer action scheduler that
   gates the settlement/military dispatcher. Leaving those outer sites original
   caused AI arrival checks to occur only every 1-4 minutes.
   REJECTED runtime state: `1000..2000` ms caused computer respawns to stop;
-  Apply accepts that interim state and migrates it back to `5000..10000` ms.
+  Apply accepts that interim state and migrates it to the bounded 30-second
+  scheduler.
+- Save/load deadline repair (P6, 2026-07-16): the outer block at code-stream
+  `0x1BC44..0x1BD48` now treats `v16 > s_getTime() + 60000` as a rolled-back
+  saved clock, alongside the ordinary `s_getTime() >= v16` due condition. It
+  then refreshes `v16` to `s_getTime() + 30000`; normal 30-second throttling is
+  preserved. The old literal-only 30-second state is Legacy and migrates on
+  Apply. Save Manager can apply the identical repair to a selected save's
+  embedded `ak_level` only after creating a full backup.
 - Military-reinforcement unit-count threshold at decompressed `0x195F8`:
-  `4 -> 40` (2026-07-03 update; the previous `8` is accepted as legacy-enabled
+  `4 -> 30` (the previous `8` and `40` values are accepted as legacy-enabled
   and migrated on the next apply). The spawner only sends the next type-5
   reinforcement wave while `s_searchTeamUnits(team) < threshold`, so with the
-  retreat quota zeroed (below) the team's army accumulates up to ~40 units
-  (40 x 20 members = 800, under the EXE global population cap of 1600) and
+  retreat quota zeroed (below) the team's army accumulates up to ~30 units
+  (30 x 20 members = 600, under the EXE global population cap of 1600) and
   then stops growing — a natural upper bound below the population limit.
-- Bounded reinforcement condition tail at decompressed `0x1960C`: AI Ultimate
-  replaces the original resource/leader/civilian/unit conjunction with three
-  equivalent branches enforcing `s_searchTeamUnits(team) < 40`. This removes
-  the resource checks and transient leader/civilian predicates that could stop
-  Roman reinforcement at about nine units in the 2026-07-05 `ESAVE_000`
-  snapshot. The one-type-5-party gate and the existing type-4 settlement/building checks remain earlier
-  in the function. The former `jmp +272` is still rejected because it skips the
-  unit threshold too.
+- Reinforcement condition tail at decompressed `0x1960C`: current AI Ultimate
+  preserves the complete original resource/leader/civilian/unit conjunction
+  and changes only the threshold literal at `0x195F8` to `70`. Earlier
+  experimental builds installed two bounded, unit-count-only tails; those are
+  migration inputs, not the current output. Applying the current version
+  restores either exact historical tail to the original condition words.
 - Reinforcement no-retreat (RE-ENABLED 2026-07-03 with the missing piece):
   the type-5 retreat quota write `v56[party] <- pushloc 15` at decompressed
   `0x17888` region (unique signature
@@ -247,15 +300,18 @@
   retreating them. The 2026-07-03 failure of this exact edit is now explained:
   the threshold was still `8`, so donated units pushed `s_searchTeamUnits`
   over the spawner condition after roughly one wave and reinforcements
-  stopped — the quota patch MUST ship together with the `40` threshold, and
+  stopped — the quota patch MUST ship together with the bounded threshold, and
   both are driven by the same toggle. Handed-over units are not inserted into
   the type-4 party's `v52` object array, so the settled handler's dead-party
   check (leader + civilians + tracked members) is not blocked by them. The
   donation formula literals at `0x17788` (`4,2,2`) stay vanilla — with the
   quota forced to 0 the formula only shapes the civilian-recreate quota
   (`v57`), not the retreat set.
-- The gate at `0x1960C` uses the unit-count-only bounded sequence
-  above; disabling restores the original condition words exactly.
+- The current gate at `0x1960C` uses the original condition words exactly.
+  Detection accepts only the complete original gate, the exact old
+  `112,272` gate, or either exact historical bounded-gate sequence together
+  with a recognized threshold (`4`, `8`, `30`, `40`, or `70`). Any other combination
+  is `Unknown`; Apply leaves it byte-identical and refuses to enable P8.
 - The Siedler spawner's default and 0/1/2/3-live-party probability literals change from `0,0,80,60,40,20` to `101,101,101,101,101,101`. The single-player occupied mask reserves player team 0, and `pickTeam` selects only unoccupied CPU teams 1-7, so this fills at most seven simultaneous computer opponents and reuses a defeated team's slot after cleanup.
 - M8 changes the new-game type-1 settlement limit initialization from
   `s_randRange(4, 2) -> v70` to `s_randRange(4, 4) -> v70`. The unique BCI
@@ -272,12 +328,12 @@
   (`(TH,CAP,DIV)` `4,2,2 -> 8,4,1`). Both broke reinforcement arrivals in
   runtime testing (reported: Roman reinforcements stopped, active-party
   limit also appeared to have no effect). The root cause was the still-low
-  threshold of 8. Current AI Ultimate uses quota 0 together with threshold 40;
+  threshold of 8. Current AI Ultimate uses quota 0 together with threshold 70;
   the widened donation formula remains rejected and vanilla. See
   `endless-mode-ai.md` for full detail.
 - Older builds wrote `112,272` at `0x1960C` and shortened every action loop to
-  `5000..10000` ms. Applying this version restores the gate and all unrelated
-  loops; only the three bounded reinforcement polling loops remain accelerated.
+  `5000..10000` ms. Applying this version restores the gate and migrates all six
+  recognized scheduler loops to the bounded 30-second target.
 - Roman-founder guaranteed spawn (`P17`, mandatory SafetyModule repair, not a
   user toggle): the type-4 `RoemischeGruender` military settlement is the ONLY
   settled party reinforcement (type-5 `RoemischerNachschub`) serves, and it is
@@ -459,6 +515,152 @@
 - Behavior: Modifies the hardcoded altar count constants (1, 2, 3, 4) in the spell button logic in `Against_Rome.exe`. Setting these imm8 values to `00` removes the altar count requirement entirely.
 - Safety: The modifier checks all 12 patterns before writing. Setting values from `0x00` to `0x7F` is safe.
 
+### Native 1920x1080 Widescreen (NativeWidescreen1920x1080)
+
+- Final disposition: the native EXE experiment is runtime-rejected. Both
+  fullscreen and windowed testing retained a legacy top-left internal surface.
+  The retained profile key now restores all six EXE sites and applies a stock
+  1600x1200 centered dgVoodoo fallback (`FullScreenMode=true`,
+  `ScalingMode=stretched_ar`, `CenterAppWindow=true`, normal stock windowed
+  attributes, and fake fullscreen). Forced `fullscreensize` windowed output was
+  runtime-rejected because it compressed the image inside a 1280x1024 window.
+  The historical patch details
+  below remain documentation only and are no longer emitted on enable.
+- Runtime verification: user confirmed the final split looks normal in both
+  modes—centered 4:3 fake fullscreen and correctly proportioned stock-sized
+  windowed output. Native 16:9 expansion remains rejected.
+- File: `Against_Rome.exe`; feature remains Experimental.
+- Goal: replace native mode ID `0x22` (1600x1200 32-bit) with 1920x1080 so
+  the renderer and UI refresh path receive an actual 1920x1080 framebuffer,
+  rather than asking dgVoodoo2 to scale a fixed 4:3 image.
+- Static call path: `FUN_00424760` calls the display-mode create/check function
+  and the display refresh function with the selected width/height, then passes
+  the queried dimensions into the render/UI refresh path. `FUN_00424590`
+  identifies the active dimensions and maps them back to mode ID `0x22`.
+- Verified file-offset sites:
+  - `0x246B3`: the 32-bit mode-identification block changes width
+    `1600 (40 06 00 00)` to `1920 (80 07 00 00)` and height
+    `1200 (B0 04 00 00)` to `1080 (38 04 00 00)`.
+  - `0x249AA`: both width/height argument pairs used to create and refresh the
+    32-bit mode receive the same replacements. The complete surrounding block
+    is signature-checked, not just the four immediate values.
+  - `0x24B80`: `FUN_00424b80` originally returns persisted mode
+    `DAT_006580b0` (`A1 B0 80 65 00 C3`). It now returns active mode
+    `DAT_006580bc` (`A1 BC 80 65 00 C3`) so IGM callers see forced `0x22`.
+  - `0x24BD0`: startup originally loads the saved mode ID and pushes it into
+    `FUN_00424760` (`8B 15 B0 80 65 00 52`). The patch pushes `0x22` directly
+    (`6A 22` plus five NOPs), so the experiment actually runs on next launch.
+  - `0x41E25`: the IGM dialog selector's final comparison changes mode `0x21`
+    to `0x22`, routing the forced mode to stock layout `dlg_igm12_10`.
+  - `0x1DCC76`: same-length mode text `Modus 1600x1200 32bit\n\0` becomes
+    `Modus 1920x1080 32bit\n\0`.
+- Runtime failure and correction: the first three-site build produced no visible
+  effect. `LAB_00427d60` proves the stock resolution dialog sends only mode IDs
+  `0..3`; it never exposes `0x22`. The fourth startup site bypasses that dead UI
+  route. The three-site state is detected as `LegacyUnforced` and can be safely
+  migrated by writing only the verified startup site.
+- UI boundary: the EXE still selects `igm16001200`; no native `igm19201080`
+  resource exists. Mode `0x22` now reuses `dlg_igm12_10`, the stock
+  highest-resolution layout. This is an original-size UI fallback, not proof
+  that the layout is centered or correctly anchored inside 1920x1080.
+- Window-presentation correction: the second runtime screenshot showed the
+  internal wide route rendering inside a 1024x768 client with a black lower
+  band, and the user confirmed that the resizable window cannot exceed
+  1600x1200 on a 2560x1440 desktop. When both this feature and `DgVoodoo` are
+  enabled, the modifier-managed config now uses `ScalingMode=stretched_ar` and
+  `WindowedAttributes=borderless, fullscreensize`. This bypasses the old outer
+  window ceiling with an aspect-preserving borderless desktop-sized window;
+  it does not replace the patched 1920x1080 framebuffer with a fixed 4:3
+  source. For a user-modified `dgVoodoo.conf`, unrelated settings are retained
+  while the two required presentation keys are updated surgically.
+- Fourth runtime result and correction: both fullscreen and windowed occupied
+  the output, but only a left-aligned legacy region was drawn. The black right
+  area still accepted movement orders, proving that framebuffer/input were
+  wide while IGM rendering used the persisted old mode. The active-mode getter
+  and dialog-selector sites above address that exact split.
+- Safety/detection: all six sites must be Original, Patched, or one of two
+  exact migration states. `LegacyUnforced` writes the startup and two IGM
+  sites; `LegacyForcedStaleUi` writes only the two IGM sites. Other mixed or
+  unknown bytes refuse enable writes. Restore verifies every active site.
+- Status: the first runtime experiment failed because `0x22` was unreachable;
+  the second reached the wide rendering path but exposed the outer-window
+  mismatch. Focused Ghidra evidence covers the startup route and dialog
+  callback, while automated tests cover the new managed dgVoodoo profile.
+  Desktop-sized presentation and wide input were observed, but the new IGM
+  correction, expanded world draw extent, UI alignment/centering, mouse
+  hit-testing, edge scrolling, dialogs, and minimap are not runtime verified.
+- Fifth runtime result: on a 2560x1440 screenshot, coherent game/HUD output is
+  centered at x=320..2239, a 1920x1440 4:3 region with symmetric 320 px side
+  bars. The stale left-aligned IGM problem is corrected and the stock-UI
+  fallback is runtime-observed. This is not a native 16:9 expanded viewport;
+  input boundaries, edge scrolling, dialogs, and minimap remain pending.
+
+### Camera Zoom Out +1 (CameraZoomOut1)
+
+- File: `Against_Rome.exe`; UI status is Experimental.
+- Runtime history: native zoom `1` genuinely shows much more battlefield, but
+  units, health bars, and information also become smaller/dense. A later
+  `0.5` experiment had no visible effect in game, proving that +1 is the first
+  effective step. The current experiment therefore uses `1.0` again.
+- Static evidence: `FUN_00498a30` owns scalar `DAT_00771800`, clamps the stock
+  range to `0..9`, and is used by projection as `1 / (zoom + 1)`. Terrain and
+  object coordinate paths also use `1 << zoom`. Save loading calls the same
+  setter, and mission scripts expose it as `lgcSetEngineZoom`.
+- Persistent call redirects:
+  - startup at file offset `0x81388`: `E8 A3 76 01 00` becomes
+    `E8 33 12 0E 00`;
+  - save load at `0x8D880`: `E8 AB B1 00 00` becomes
+    `E8 3B 4D 0D 00`;
+  - mission wrapper at `0x14C1FA`: `E8 31 C8 F4 FF` becomes
+    `E8 C1 63 01 00`.
+- Shared cave: 28 zero bytes at file offset `0x1625C0` become
+  `8B 44 24 04 85 C0 78 07 3D 00 00 80 3F 73 08 C7 44 24 04 00 00 80 3F E9 54 64 F3 FF`.
+  The stub replaces negative or sub-`1.0f` input with `1.0f`, then tail-jumps
+  to the stock setter at VA `0x00498A30`.
+- Rejected fractional hypothesis: static references suggested projection could
+  consume `0.5` while integer information/LOD paths stayed at zoom 0, but the
+  user observed no visible pullback at 0.5. Runtime evidence takes precedence;
+  do not retry fractional minimums without a new explanation for that result.
+- Scope decision: the universal setter is deliberately not hooked. Engine
+  cache-generation functions temporarily request zoom 0/1; intercepting them
+  could corrupt internal caches. Only the three persistent paths above are
+  redirected.
+- Safety/detection: Original, `LegacyZoomHalf`, and current Patched are exact
+  states. The rejected `0.5f` cave migrates to `1.0f` with one write; it can also be
+  restored directly. Enable installs a new cave before redirects, while
+  restore removes every redirect before clearing it. Other mixed/unknown
+  states refuse enable writes.
+- Status: zoom 1 mechanics are runtime-proven with the documented readability
+  tradeoff. Automated
+  tests cover current apply/detect/idempotence/category restore/full-byte
+  round-trip plus legacy migration/direct restore. Zoom +1 still needs runtime
+  testing for selection/picking, edge scrolling,
+  fog, map bounds, save/load, mission compatibility, and performance.
+
+### All Units Entire-Map Vision (AllUnitsEntireMapVision)
+
+- File: `SYSTEM/DATA_MP/DEFAULTS/objdef.dau`.
+- Patch: writes `Sirad` (zero-based column 24) to `30000` for all 43 rows in
+  `TroopConfig.UnitMeta`, plus `FigZivMan00_Zivilist`,
+  `FigZivWei00_Zivilistin`, and `FigTiePac00_Packpferd`. Buildings and unknown
+  rows are deliberately preserved.
+- Scope: `objdef.dau` is shared across factions, so both player and AI units use
+  the value. Weapon range is unchanged. Existing evidence shows `Sirad` is also
+  a target-acquisition gate and the priest casting-distance gate, so the feature
+  can change AI target selection and implicitly gives priests entire-map casting
+  distance.
+- Precedence: shared `objdef.dau` composition applies `RangedRange3x` and
+  `SpellEntireMap` first, then `AllUnitsEntireMapVision` owns `Sirad` last. The
+  final override does not revert the ranged weapon columns, so 3x weapon range
+  remains active while sight becomes 30000.
+- Detection: every supported row present in the original baseline must be at
+  30000. This intended sight change is excluded from `Balance` detection. The
+  overlapping priest field also satisfies `SpellEntireMap`, so all three toggles
+  read back as enabled after a combined apply.
+- Status: reversible implementation and synthetic/full-baseline detector tests
+  are complete. Runtime fog-of-war, AI behavior, and performance remain
+  unverified, so the UI keeps this feature in Experimental.
+
 ### Projectile Arc Height (ProjectileArcHeight)
 
 - Files: `SYSTEM/DATA_MP/DEFAULTS/objdef.dau` + `SYSTEM/DATA_MP/DEFAULTS/partgeo.dau`
@@ -531,6 +733,26 @@ Observed case:
 - Risk: high until runtime behavior and checksums are confirmed.
 
 ## Disabled / Rejected
+
+### Unit Member Cap Above 20 (structurally infeasible)
+
+- Request: raise the 20-man unit (Trupp) size to a larger value such as 100.
+- The cap is a structural array capacity, not a clamp constant. Evidence in
+  `exe-functions.md` "Unit Member Capacity": runtime member table
+  `short[14000][20]` at `025A1B00` with the member-to-unit back-map starting
+  immediately after it at `0262A680` (zero slack), an add-member write that
+  indexes with a literal `* 0x14` multiplier, 0x208-byte creation-job records
+  holding exactly 20 member slots, and dozens of hard-coded `0x14` bounds in
+  accessors and loops.
+- A byte patch cannot grow the arrays in place. Any increase would require
+  relocating the tables (about 2.8 MB for 100 members), rewriting every
+  stride/index multiplier (`0x14`, `0x28`, `0x208`) across dozens of sites,
+  and re-auditing save serialization and the unit UI. Rejected as a modifier
+  feature under the project patch-safety contract.
+- Feasible alternatives: raising per-path member values that are currently
+  below 20 (the civilian max-4 clamps in `00523a00` and `00547f50`), the
+  already-shipped AI military job counts `4..4 -> 20..20`, or scaling unit
+  strength through existing objdef stat features.
 
 ### Legacy Village Range And Red-Frame Sites
 

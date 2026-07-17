@@ -22,7 +22,10 @@ internal sealed class InstallFeatureDetector
 
         try
         {
-            profile.DgVoodoo = new DgVoodooFeature(_logger).IsInstalled(gamePath);
+            var dgVoodoo = new DgVoodooFeature(_logger);
+            profile.DgVoodoo = dgVoodoo.IsInstalled(gamePath);
+            if (profile.DgVoodoo && dgVoodoo.IsCenteredPresentationConfigured(gamePath))
+                profile.NativeWidescreen1920x1080 = true;
         }
         catch (Exception ex)
         {
