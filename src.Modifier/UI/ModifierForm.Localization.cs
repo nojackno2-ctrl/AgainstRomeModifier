@@ -55,8 +55,8 @@ namespace AgainstRomeModifier {
             chkDgVoodoo.Text = Loc.Get("DgVoodoo");
             chkGameSpeed.Text = Loc.Get("GameSpeedLabel");
             chkVillageBuildRange.Text = Loc.Get("VillageBuildRange");
-            lblExperimentalTitle.Text = Loc.Get("ExperimentalTitle");
-            lblOptionalTitle.Text = Loc.Get("OptionalTitle");
+            lblSpellTitle.Text = Loc.Get("SpellTitle");
+            lblVillagerTitle.Text = Loc.Get("VillagerTitle");
             chkSpellDamage5x.Text = Loc.Get("SpellDamage5x");
             chkSpellHealing10x.Text = Loc.Get("SpellHealing10x");
             chkSpellResurrection.Text = Loc.Get("SpellResurrection");
@@ -64,7 +64,7 @@ namespace AgainstRomeModifier {
             chkLeaderGlory.Text = Loc.Get("LeaderGlory");
             btnEnableAll.Text = Loc.Get("EnableAll");
             btnDisableAll.Text = Loc.Get("DisableAll");
-            lblSwitchesTitle.Text = Loc.Get("SwitchesTitle");
+            lblCombatTitle.Text = Loc.Get("CombatTitle");
             lblBuildTitle.Text = Loc.Get("BuildTitle");
             lblAiTitle.Text = Loc.Get("AiCardTitle");
             chkMaxPopulation.Text = Loc.Get("MaxPopulation");

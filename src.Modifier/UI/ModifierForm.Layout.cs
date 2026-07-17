@@ -156,70 +156,71 @@ namespace AgainstRomeModifier {
                 AutoScroll = true
             };
 
-            ConfigureSettingsCard(pnlNumericCard, lblNumericTitle, 206,
+            // 依功能語意分為六張卡片：系統相容、建設經濟、村民操作、法術祭司、戰鬥部隊、無盡模式。
+            ConfigureSettingsCard(pnlNumericCard, lblNumericTitle, 350,
                 chkFocusLoss,
                 chkToEng,
-                chkDgVoodoo);
-            ConfigureSettingsCard(pnlExperimentalCard, lblExperimentalTitle, 446,
-                chkSpellHealing10x,
-                chkSpellResurrection,
-                chkGeneralSkills,
-                chkLeaderGlory,
-                chkBalance,
-                chkAllUnitsEntireMapVision,
+                chkDgVoodoo,
+                chkGameSpeed,
                 chkNativeWidescreen1920x1080,
                 chkCameraZoomOut1);
-            ConfigureSettingsCard(pnlOptionalCard, lblOptionalTitle, 110,
-                chkGameSpeed);
-            ConfigureSettingsCard(pnlSwitchesCard, lblSwitchesTitle, 830,
+            ConfigureSettingsCard(pnlBuildCard, lblBuildTitle, 446,
                 chkFreeProd,
                 chkFreeUpgrade,
-                chkNoSpellCost,
-                chkInfiniteMorale,
-                chkNoSpellAltar,
-                chkSpellDamage5x,
-                chkRangedRange3x,
-                chkUnitMovementSpeed2x,
-                chkVillagerMovementSpeed5x,
-                chkSpellEntireMap,
-                chkSpellRange3x,
-                chkProjectileArcHeight,
-                chkCiviProduce20,
-                chkUnitRecruit20,
-                chkIdleSelect999,
-                chkRomanEndless);
-            ConfigureSettingsCard(pnlBuildCard, lblBuildTitle, 446,
                 chkMaxPopulation,
                 chkHousingCapacity20x,
                 chkStorageCapacity10x,
                 chkHqHp10x,
-                chkFastCiviProduction,
                 chkFastBuildUpgradeRepair,
-                chkFoodHealing10x,
                 chkVillageBuildRange);
-            ConfigureSettingsCard(pnlAiCard, lblAiTitle, 252,
+            ConfigureSettingsCard(pnlVillagerCard, lblVillagerTitle, 302,
+                chkFastCiviProduction,
+                chkCiviProduce20,
+                chkUnitRecruit20,
+                chkIdleSelect999,
+                chkVillagerMovementSpeed5x);
+            ConfigureSettingsCard(pnlSpellCard, lblSpellTitle, 398,
+                chkNoSpellCost,
+                chkNoSpellAltar,
+                chkSpellDamage5x,
+                chkSpellHealing10x,
+                chkSpellResurrection,
+                chkSpellEntireMap,
+                chkSpellRange3x);
+            ConfigureSettingsCard(pnlCombatCard, lblCombatTitle, 494,
+                chkInfiniteMorale,
+                chkFoodHealing10x,
+                chkGeneralSkills,
+                chkLeaderGlory,
+                chkBalance,
+                chkRangedRange3x,
+                chkProjectileArcHeight,
+                chkUnitMovementSpeed2x,
+                chkAllUnitsEntireMapVision);
+            ConfigureSettingsCard(pnlAiCard, lblAiTitle, 302,
+                chkRomanEndless,
                 chkAiM1, chkAiCore, chkAiM5, chkAiM6);
 
             // 每組設定以同一層卡片底色收攏，讓長短不一的功能群組仍有清楚邊界。
             Color cardBackColor = Color.FromArgb(14, 18, 26);
             pnlNumericCard.BackColor = cardBackColor;
-            pnlExperimentalCard.BackColor = cardBackColor;
-            pnlOptionalCard.BackColor = cardBackColor;
-            pnlSwitchesCard.BackColor = cardBackColor;
+            pnlSpellCard.BackColor = cardBackColor;
+            pnlVillagerCard.BackColor = cardBackColor;
+            pnlCombatCard.BackColor = cardBackColor;
             pnlBuildCard.BackColor = cardBackColor;
             pnlAiCard.BackColor = cardBackColor;
 
             pnlNumericCard.Dock = DockStyle.None;
-            pnlExperimentalCard.Dock = DockStyle.None;
-            pnlOptionalCard.Dock = DockStyle.None;
-            pnlSwitchesCard.Dock = DockStyle.None;
+            pnlSpellCard.Dock = DockStyle.None;
+            pnlVillagerCard.Dock = DockStyle.None;
+            pnlCombatCard.Dock = DockStyle.None;
             pnlBuildCard.Dock = DockStyle.None;
             pnlAiCard.Dock = DockStyle.None;
 
             pnlContent.Controls.Add(pnlNumericCard);
-            pnlContent.Controls.Add(pnlExperimentalCard);
-            pnlContent.Controls.Add(pnlOptionalCard);
-            pnlContent.Controls.Add(pnlSwitchesCard);
+            pnlContent.Controls.Add(pnlSpellCard);
+            pnlContent.Controls.Add(pnlVillagerCard);
+            pnlContent.Controls.Add(pnlCombatCard);
             pnlContent.Controls.Add(pnlBuildCard);
             pnlContent.Controls.Add(pnlAiCard);
 
@@ -251,10 +252,10 @@ namespace AgainstRomeModifier {
             Panel[] cards = {
                 pnlNumericCard,
                 pnlBuildCard,
-                pnlSwitchesCard,
-                pnlAiCard,
-                pnlExperimentalCard,
-                pnlOptionalCard
+                pnlCombatCard,
+                pnlSpellCard,
+                pnlVillagerCard,
+                pnlAiCard
             };
             foreach (Panel card in cards) {
                 int column = Array.IndexOf(columnBottoms, columnBottoms.Min());
