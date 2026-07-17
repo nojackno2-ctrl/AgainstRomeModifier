@@ -46,13 +46,13 @@ namespace AgainstRomeModifier {
 
         // 介面上的卡片式群組容器
         private Panel pnlNumericCard = null!;
-        private Panel pnlSwitchesCard = null!;
+        private Panel pnlCombatCard = null!;
         private Panel pnlBuildCard = null!;
         private Panel pnlAiCard = null!;
-        private Panel pnlExperimentalCard = null!;
-        private Label lblExperimentalTitle = null!;
-        private Panel pnlOptionalCard = null!;
-        private Label lblOptionalTitle = null!;
+        private Panel pnlSpellCard = null!;
+        private Label lblSpellTitle = null!;
+        private Panel pnlVillagerCard = null!;
+        private Label lblVillagerTitle = null!;
 
         // 數值控制項 (NumericUpDown) 的宣告
         private ModernToggle chkMaxPopulation = null!;
@@ -142,7 +142,7 @@ namespace AgainstRomeModifier {
         private Button btnLangZH = null!;
         private Button btnLangEN = null!;
         private Label lblNumericTitle = null!;
-        private Label lblSwitchesTitle = null!;
+        private Label lblCombatTitle = null!;
         private Label lblSystemHeading = null!;
         private Label lblSystemSubtitle = null!;
         private ToolTip myToolTip = null!;
@@ -685,6 +685,7 @@ namespace AgainstRomeModifier {
                 BackColor = Color.Transparent,
                 Font = fontJhengHei10B
             };
+            pnlNumericCard.Controls.Add(chkGameSpeed);
 
             btnEnableAll = new Button {
                 Text = "所有功能開啟",
@@ -704,21 +705,21 @@ namespace AgainstRomeModifier {
             pnlNumericCard.Controls.Add(btnEnableAll);
             pnlNumericCard.Controls.Add(btnDisableAll);
 
-            pnlSwitchesCard = new Panel {
+            pnlCombatCard = new Panel {
                 Location = new Point(402, 0),
                 Size = new Size(386, 790)
             };
-            // pnlSwitchesCard.Paint += CardPanel_Paint;
+            // pnlCombatCard.Paint += CardPanel_Paint;
 
-            lblSwitchesTitle = new Label {
-                Text = "資源與戰鬥修改",
+            lblCombatTitle = new Label {
+                Text = Loc.Get("CombatTitle"),
                 Location = new Point(25, 20),
                 Size = new Size(250, 25),
                 Font = fontJhengHei105B,
                 ForeColor = Color.FromArgb(0, 220, 255),
                 BackColor = Color.Transparent
             };
-            pnlSwitchesCard.Controls.Add(lblSwitchesTitle);
+            pnlCombatCard.Controls.Add(lblCombatTitle);
 
             chkFreeProd = new ModernToggle {
                 Text = "建造、修復與所有單位生產完全免費",
@@ -728,7 +729,6 @@ namespace AgainstRomeModifier {
                 BackColor = Color.Transparent,
                 Font = fontJhengHei10B
             };
-            pnlSwitchesCard.Controls.Add(chkFreeProd);
 
             chkFreeUpgrade = new ModernToggle {
                 Text = "陣型、研發、屬性解鎖升級免費",
@@ -738,7 +738,6 @@ namespace AgainstRomeModifier {
                 BackColor = Color.Transparent,
                 Font = fontJhengHei10B
             };
-            pnlSwitchesCard.Controls.Add(chkFreeUpgrade);
 
             chkNoSpellCost = new ModernToggle {
                 Text = "祭司與賢者法術無消耗 (MP 零消耗)",
@@ -748,7 +747,6 @@ namespace AgainstRomeModifier {
                 BackColor = Color.Transparent,
                 Font = fontJhengHei10B
             };
-            pnlSwitchesCard.Controls.Add(chkNoSpellCost);
 
             chkInfiniteMorale = new ModernToggle {
                 Text = "部隊無限士氣 (士氣不減且極速恢復)",
@@ -758,7 +756,7 @@ namespace AgainstRomeModifier {
                 BackColor = Color.Transparent,
                 Font = fontJhengHei10B
             };
-            pnlSwitchesCard.Controls.Add(chkInfiniteMorale);
+            pnlCombatCard.Controls.Add(chkInfiniteMorale);
 
             chkBalance = new ModernToggle {
                 Text = Loc.Get("EnableBalance"),
@@ -778,7 +776,6 @@ namespace AgainstRomeModifier {
                 BackColor = Color.Transparent,
                 Font = fontJhengHei10B
             };
-            pnlSwitchesCard.Controls.Add(chkNoSpellAltar);
 
             // 新增：建設與人口修改卡片
             pnlBuildCard = new Panel {
@@ -845,7 +842,6 @@ namespace AgainstRomeModifier {
                 BackColor = Color.Transparent,
                 Font = fontJhengHei10B
             };
-            pnlBuildCard.Controls.Add(chkFastCiviProduction);
 
             chkFastBuildUpgradeRepair = new ModernToggle {
                 Text = Loc.Get("FastBuildUpgradeRepair"),
@@ -865,7 +861,7 @@ namespace AgainstRomeModifier {
                 BackColor = Color.Transparent,
                 Font = fontJhengHei10B
             };
-            pnlBuildCard.Controls.Add(chkFoodHealing10x);
+            pnlCombatCard.Controls.Add(chkFoodHealing10x);
 
             chkVillageBuildRange = new ModernToggle {
                 Text = Loc.Get("VillageBuildRange"),
@@ -905,35 +901,35 @@ namespace AgainstRomeModifier {
             pnlAiCard.Controls.Add(chkAiM5);
             pnlAiCard.Controls.Add(chkAiM6);
 
-            pnlOptionalCard = new Panel {
+            pnlVillagerCard = new Panel {
                 Location = new Point(0, 0),
                 Size = new Size(385, 200)
             };
 
-            lblOptionalTitle = new Label {
-                Text = Loc.Get("OptionalTitle"),
+            lblVillagerTitle = new Label {
+                Text = Loc.Get("VillagerTitle"),
                 Location = new Point(25, 20),
                 Size = new Size(250, 25),
                 Font = fontJhengHei105B,
                 ForeColor = Color.FromArgb(0, 220, 255),
                 BackColor = Color.Transparent
             };
-            pnlOptionalCard.Controls.Add(lblOptionalTitle);
+            pnlVillagerCard.Controls.Add(lblVillagerTitle);
 
-            pnlExperimentalCard = new Panel {
+            pnlSpellCard = new Panel {
                 Location = new Point(0, 0),
                 Size = new Size(385, 790)
             };
 
-            lblExperimentalTitle = new Label {
-                Text = Loc.Get("ExperimentalTitle"),
+            lblSpellTitle = new Label {
+                Text = Loc.Get("SpellTitle"),
                 Location = new Point(25, 20),
                 Size = new Size(250, 25),
                 Font = fontJhengHei105B,
                 ForeColor = Color.FromArgb(0, 220, 255),
                 BackColor = Color.Transparent
             };
-            pnlExperimentalCard.Controls.Add(lblExperimentalTitle);
+            pnlSpellCard.Controls.Add(lblSpellTitle);
 
             chkSpellDamage5x = new ModernToggle {
                 Text = Loc.Get("SpellDamage5x"),
@@ -943,7 +939,7 @@ namespace AgainstRomeModifier {
                 BackColor = Color.Transparent,
                 Font = fontJhengHei10B
             };
-            pnlSwitchesCard.Controls.Add(chkSpellDamage5x);
+            pnlSpellCard.Controls.Add(chkSpellDamage5x);
 
             chkSpellHealing10x = new ModernToggle {
                 Text = Loc.Get("SpellHealing10x"),
@@ -953,7 +949,7 @@ namespace AgainstRomeModifier {
                 BackColor = Color.Transparent,
                 Font = fontJhengHei10B
             };
-            pnlExperimentalCard.Controls.Add(chkSpellHealing10x);
+            pnlSpellCard.Controls.Add(chkSpellHealing10x);
 
             chkSpellResurrection = new ModernToggle {
                 Text = Loc.Get("SpellResurrection"),
@@ -963,7 +959,7 @@ namespace AgainstRomeModifier {
                 BackColor = Color.Transparent,
                 Font = fontJhengHei10B
             };
-            pnlExperimentalCard.Controls.Add(chkSpellResurrection);
+            pnlSpellCard.Controls.Add(chkSpellResurrection);
 
             chkGeneralSkills = new ModernToggle {
                 Text = Loc.Get("GeneralSkills"),
@@ -973,7 +969,7 @@ namespace AgainstRomeModifier {
                 BackColor = Color.Transparent,
                 Font = fontJhengHei10B
             };
-            pnlExperimentalCard.Controls.Add(chkGeneralSkills);
+            pnlCombatCard.Controls.Add(chkGeneralSkills);
 
             chkLeaderGlory = new ModernToggle {
                 Text = Loc.Get("LeaderGlory"),
@@ -983,9 +979,8 @@ namespace AgainstRomeModifier {
                 BackColor = Color.Transparent,
                 Font = fontJhengHei10B
             };
-            pnlExperimentalCard.Controls.Add(chkLeaderGlory);
-            pnlOptionalCard.Controls.Add(chkGameSpeed);
-            pnlExperimentalCard.Controls.Add(chkBalance);
+            pnlCombatCard.Controls.Add(chkLeaderGlory);
+            pnlCombatCard.Controls.Add(chkBalance);
 
             chkAllUnitsEntireMapVision = new ModernToggle {
                 Text = Loc.Get("AllUnitsEntireMapVision"),
@@ -996,7 +991,7 @@ namespace AgainstRomeModifier {
                 Font = fontJhengHei10B
             };
             chkAllUnitsEntireMapVision.CheckedChanged += new EventHandler(ChkAllUnitsEntireMapVision_CheckedChanged);
-            pnlExperimentalCard.Controls.Add(chkAllUnitsEntireMapVision);
+            pnlCombatCard.Controls.Add(chkAllUnitsEntireMapVision);
 
             chkNativeWidescreen1920x1080 = new ModernToggle {
                 Text = Loc.Get("NativeWidescreen1920x1080"),
@@ -1006,7 +1001,7 @@ namespace AgainstRomeModifier {
                 BackColor = Color.Transparent,
                 Font = fontJhengHei10B
             };
-            pnlExperimentalCard.Controls.Add(chkNativeWidescreen1920x1080);
+            pnlNumericCard.Controls.Add(chkNativeWidescreen1920x1080);
 
             chkCameraZoomOut1 = new ModernToggle {
                 Text = Loc.Get("CameraZoomOut1"),
@@ -1016,7 +1011,7 @@ namespace AgainstRomeModifier {
                 BackColor = Color.Transparent,
                 Font = fontJhengHei10B
             };
-            pnlExperimentalCard.Controls.Add(chkCameraZoomOut1);
+            pnlNumericCard.Controls.Add(chkCameraZoomOut1);
 
             chkRangedRange3x = new ModernToggle {
                 Text = Loc.Get("RangedRange3x"),
@@ -1027,7 +1022,7 @@ namespace AgainstRomeModifier {
                 Font = fontJhengHei10B
             };
             chkRangedRange3x.CheckedChanged += new EventHandler(ChkRangedRange3x_CheckedChanged);
-            pnlSwitchesCard.Controls.Add(chkRangedRange3x);
+            pnlCombatCard.Controls.Add(chkRangedRange3x);
 
             chkUnitMovementSpeed2x = new ModernToggle {
                 Text = Loc.Get("UnitMovementSpeed2x"),
@@ -1038,7 +1033,7 @@ namespace AgainstRomeModifier {
                 Font = fontJhengHei10B
             };
             chkUnitMovementSpeed2x.CheckedChanged += new EventHandler(ChkUnitMovementSpeed2x_CheckedChanged);
-            pnlSwitchesCard.Controls.Add(chkUnitMovementSpeed2x);
+            pnlCombatCard.Controls.Add(chkUnitMovementSpeed2x);
 
             chkVillagerMovementSpeed5x = new ModernToggle {
                 Text = Loc.Get("VillagerMovementSpeed5x"),
@@ -1049,7 +1044,7 @@ namespace AgainstRomeModifier {
                 Font = fontJhengHei10B
             };
             chkVillagerMovementSpeed5x.CheckedChanged += new EventHandler(ChkVillagerMovementSpeed5x_CheckedChanged);
-            pnlSwitchesCard.Controls.Add(chkVillagerMovementSpeed5x);
+            pnlVillagerCard.Controls.Add(chkVillagerMovementSpeed5x);
 
             chkSpellEntireMap = new ModernToggle {
                 Text = Loc.Get("SpellEntireMap"),
@@ -1060,7 +1055,7 @@ namespace AgainstRomeModifier {
                 Font = fontJhengHei10B
             };
             chkSpellEntireMap.CheckedChanged += new EventHandler(ChkSpellEntireMap_CheckedChanged);
-            pnlSwitchesCard.Controls.Add(chkSpellEntireMap);
+            pnlSpellCard.Controls.Add(chkSpellEntireMap);
 
             chkSpellRange3x = new ModernToggle {
                 Text = Loc.Get("SpellRange3x"),
@@ -1071,7 +1066,7 @@ namespace AgainstRomeModifier {
                 Font = fontJhengHei10B
             };
             chkSpellRange3x.CheckedChanged += new EventHandler(ChkSpellRange3x_CheckedChanged);
-            pnlSwitchesCard.Controls.Add(chkSpellRange3x);
+            pnlSpellCard.Controls.Add(chkSpellRange3x);
 
             chkProjectileArcHeight = new ModernToggle {
                 Text = Loc.Get("ProjectileArcHeight"),
@@ -1081,7 +1076,7 @@ namespace AgainstRomeModifier {
                 BackColor = Color.Transparent,
                 Font = fontJhengHei10B
             };
-            pnlSwitchesCard.Controls.Add(chkProjectileArcHeight);
+            pnlCombatCard.Controls.Add(chkProjectileArcHeight);
 
             chkCiviProduce20 = new ModernToggle {
                 Text = Loc.Get("CiviProduce20"),
@@ -1091,7 +1086,7 @@ namespace AgainstRomeModifier {
                 BackColor = Color.Transparent,
                 Font = fontJhengHei10B
             };
-            pnlSwitchesCard.Controls.Add(chkCiviProduce20);
+            pnlVillagerCard.Controls.Add(chkCiviProduce20);
 
             chkUnitRecruit20 = new ModernToggle {
                 Text = Loc.Get("UnitRecruit20"),
@@ -1101,7 +1096,7 @@ namespace AgainstRomeModifier {
                 BackColor = Color.Transparent,
                 Font = fontJhengHei10B
             };
-            pnlSwitchesCard.Controls.Add(chkUnitRecruit20);
+            pnlVillagerCard.Controls.Add(chkUnitRecruit20);
 
             chkIdleSelect999 = new ModernToggle {
                 Text = Loc.Get("IdleSelect999"),
@@ -1111,7 +1106,7 @@ namespace AgainstRomeModifier {
                 BackColor = Color.Transparent,
                 Font = fontJhengHei10B
             };
-            pnlSwitchesCard.Controls.Add(chkIdleSelect999);
+            pnlVillagerCard.Controls.Add(chkIdleSelect999);
 
             chkRomanEndless = new ModernToggle {
                 Text = Loc.Get("RomanEndless"),
@@ -1121,10 +1116,17 @@ namespace AgainstRomeModifier {
                 BackColor = Color.Transparent,
                 Font = fontJhengHei10B
             };
-            pnlSwitchesCard.Controls.Add(chkRomanEndless);
+            pnlAiCard.Controls.Add(chkRomanEndless);
+
+            // 依功能語意重新分組：以下開關的所屬卡片在其建構之後才建立，統一在此掛載。
+            pnlBuildCard.Controls.Add(chkFreeProd);
+            pnlBuildCard.Controls.Add(chkFreeUpgrade);
+            pnlSpellCard.Controls.Add(chkNoSpellCost);
+            pnlSpellCard.Controls.Add(chkNoSpellAltar);
+            pnlVillagerCard.Controls.Add(chkFastCiviProduction);
 
             tabSystem.Controls.Add(pnlNumericCard);
-            tabSystem.Controls.Add(pnlSwitchesCard);
+            tabSystem.Controls.Add(pnlCombatCard);
             tabSystem.Controls.Add(pnlBuildCard);
 
             lblGamePath = new Label {
