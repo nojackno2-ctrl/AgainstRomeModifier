@@ -8,14 +8,22 @@ one conversation or one decompiler view as the source of truth.
 ## Repository And Local Toolchain
 
 - Authoritative repository: `C:\離線儲存\程式設計\Against_Rome_Modifier`
-- Ghidra: `C:\Users\nojac\AppData\Local\Temp\AgainstRome_RE\ghidra`
-- JDK: `C:\Users\nojac\AppData\Local\Temp\AgainstRome_RE\jdk21`
-- Ghidra project: `C:\Users\nojac\AppData\Local\Temp\AgainstRome_RE\AgainstRomeVillageBuildArea`
-- Imported program: `Against_Rome.exe`
+- Ghidra: `C:\Users\nojac\AppData\Local\Temp\AgainstRome_RE\ghidra-12.1.2-clean\ghidra_12.1.2_PUBLIC`
+- JDK: `C:\Users\nojac\AppData\Local\Temp\AgainstRome_RE\jdk21-full`
+- Preferred project mode: one-shot headless import under `%TEMP%`, followed by
+  `-deleteProject`; stale persistent project markers are not authoritative.
+- Imported program: repository-local `re_workspace\Against_Rome.exe`
 
 The Ghidra, JDK, and project paths are machine-local observations, not stable
 repository contracts. Verify them with `Test-Path` before use. Older OneDrive
 repository paths are historical only and must never receive new output.
+
+Repair status (2026-07-17): the former `AgainstRome_RE\ghidra` tree was an
+incomplete/mixed 12.1.2 installation. It is retained for forensic comparison
+but must not be used. A clean official 12.1.2 distribution was downloaded from
+the NSA GitHub release, verified against SHA-256
+`b62e81a0390618466c019c60d8c2f796ced2509c4c1aea4a37644a77272cf99d`, and
+extracted to the path above. Fresh one-shot imports now complete successfully.
 
 `java`, `ghidraRun`, and `analyzeHeadless` do not need to be on PATH. Set
 `JAVA_HOME` to the local JDK and invoke `analyzeHeadless.bat` directly.
@@ -25,16 +33,26 @@ repository paths are historical only and must never receive new output.
 ```powershell
 $repo = 'C:\離線儲存\程式設計\Against_Rome_Modifier'
 $root = 'C:\Users\nojac\AppData\Local\Temp\AgainstRome_RE'
+$ghidra = Join-Path $root 'ghidra-12.1.2-clean\ghidra_12.1.2_PUBLIC'
 $out = Join-Path $repo 're_workspace\ghidra_inventory'
-$env:JAVA_HOME = Join-Path $root 'jdk21'
+$env:JAVA_HOME = Join-Path $root 'jdk21-full'
 $env:PATH = (Join-Path $env:JAVA_HOME 'bin') + ';' + $env:PATH
 
-& (Join-Path $root 'ghidra\support\analyzeHeadless.bat') `
-  $root 'AgainstRomeVillageBuildArea' `
-  -process 'Against_Rome.exe' `
+& (Join-Path $ghidra 'support\analyzeHeadless.bat') `
+  $env:TEMP 'AgainstRomeInventory' `
+  -import (Join-Path $repo 're_workspace\Against_Rome.exe') `
   -scriptPath (Join-Path $repo 'tools\re') `
-  -postScript 'GhidraFunctionInventory.java' $out decompile
+  -postScript 'GhidraFunctionInventory.java' $out decompile `
+  -deleteProject
 ```
+
+Repair verification used the same one-shot form and completed three focused
+scripts with exit code 0: `GhidraUnitRangeSpeedAnalysis.java` resolved the
+`moves`, `w1_rad1`, and `w1_rad2` consumers; `GhidraScriptIniAnalysis.java`
+resolved the `[TribeData]`, `[Spells]`, and `[SpecialAbilities]` parser at
+`0x41BCE0`; and `GhidraRessAnalysis.java` resolved `SYSTEM/ress.ini`,
+`[objres]`, `[volkres]`, and their stored cost groups. Both runs reported
+`Analysis succeeded`, `Post-analysis succeeded`, and `Import succeeded`.
 
 Current generated artifacts:
 

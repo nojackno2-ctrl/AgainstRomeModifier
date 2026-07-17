@@ -528,7 +528,7 @@ namespace AgainstRomeModifier {
             { "AiM3Tip", "無盡模式：電腦 AI 聚落被摧毀或敗亡時，加快舊村莊與殘破城牆的背景逐筆確認與清除，並將非定居點的撤退剩餘期限縮短為 1 分鐘，防止地圖卡死殘留。" },
             { "AiM4Tip", "無盡模式：打破原版重生機率逐次遞減的限制，將野外電腦部落的重生率鎖定在 100%。只要部落被消滅，很快就會有新的部落聚落前來建營。" },
             { "AiM5Tip", "無盡模式：給予新生成的電腦 AI 聚落額外的主堡儲備資源。這能幫助電腦 AI 在開局時快速發展起步，提早招兵買馬。僅影響電腦，不會影響玩家。" },
-            { "AiM6Tip", "無盡模式：將電腦 AI 軍事聚落派出下一波增援的部隊數門檻從原版 4 隊提高到 30 隊；這不是同時活躍隊伍上限。搭配完整移交增援部隊，充實野外守軍。" },
+            { "AiM6Tip", "無盡模式：將電腦 AI 軍事聚落派出下一波增援的部隊數門檻從原版 4 隊提高到 70 隊；這不是同時活躍隊伍上限。搭配完整移交增援部隊，充實野外守軍。" },
 
             // 服務層 (PatchEngine / BackupManager) 日誌訊息
             { "SvcLogPreApplyRestore", "正在套用前將相關檔案復原為乾淨狀態，以清除殘留修改..." },
@@ -895,7 +895,7 @@ namespace AgainstRomeModifier {
             { "AiM3Tip", "Endless mode: accelerates confirmed per-object cleanup of defeated AI villages and palisades, death detection, and retreat while preserving the vanilla safe terminal order." },
             { "AiM4Tip", "Endless mode: settle spots always found new settlements (respawn probability raised from a decaying chance to 101%)." },
             { "AiM5Tip", "Endless mode: AI settlements start with main-hall stockpiles to speed up their economy and army. Affects AI settlements only, never the player." },
-            { "AiM6Tip", "Endless mode: raises the AI military settlement's reinforcement-wave unit threshold from 4 to 30; this is not the simultaneous active-party cap. Combined with full reinforcement handoff, it increases fielded defenders." },
+            { "AiM6Tip", "Endless mode: raises the AI military settlement's reinforcement-wave unit threshold from 4 to 70; this is not the simultaneous active-party cap. Combined with full reinforcement handoff, it increases fielded defenders." },
 
             // Service-layer (PatchEngine / BackupManager) log messages
             { "SvcLogPreApplyRestore", "Restoring affected files to a clean state before applying, to clear leftover modifications..." },

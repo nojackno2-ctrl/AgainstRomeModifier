@@ -3,8 +3,8 @@ namespace AgainstRomeModifier.Tests;
 /// <summary>
 /// Tests for P8_ReinforcementUnitThresholdPatch, which controls the
 /// s_searchTeamUnits(team) threshold for sending another reinforcement wave.
-/// The current P8 uses threshold=30 with the original condition tail as Ultimate state.
-/// The former limit=40 state remains recognized as Legacy and migrates on apply.
+/// The current P8 uses threshold=70 with the original condition tail as Ultimate state.
+/// The former limit=8/30/40 states remain recognized as Legacy and migrate on apply.
 /// The search pattern expects: 90,0,66,{limit},96,98,91,11, {2 gate words}, 66,0,66,0,66,0,66,0, 90,6,102,117,32
 /// So the full original gate is: 66,0, 66,0, 66,0, 66,0, 66,0, 90,6, 102,117,32 (5×pushlit_0 + pushsym_6 + ...)
 /// </summary>
@@ -27,7 +27,7 @@ public sealed class ReinforcementGatePatchTests
         Assert.Equal(PatchState.Original, patch.Detect(data));
         Assert.True(patch.Apply(ref data, enabled: true));
         Assert.Equal(PatchState.Ultimate, patch.Detect(data));
-        Assert.Equal(30, ReadWord(data, 3));
+        Assert.Equal(70, ReadWord(data, 3));
         // Gate remains original (66,0 series) in this version of P8
         Assert.Equal(OriginalGate, ReadWords(data, 8, OriginalGate.Length));
 
@@ -39,23 +39,23 @@ public sealed class ReinforcementGatePatchTests
     }
 
     [Fact]
-    public void P8_migrates_limit40_original_gate_and_old_unbounded_gate()
+    public void P8_migrates_limit30_original_gate_and_old_unbounded_gate()
     {
         var patch = new P8_ReinforcementUnitThresholdPatch();
 
-        // The former limit=40 with original gate is Legacy and migrates to 30.
-        byte[] current = BuildFixture(limit: 40, legacyUnbounded: false);
+        // The former limit=30 with original gate is Legacy and migrates to 40.
+        byte[] current = BuildFixture(limit: 30, legacyUnbounded: false);
         Assert.Equal(PatchState.Legacy, patch.Detect(current));
         Assert.True(patch.Apply(ref current, enabled: true));
         Assert.Equal(PatchState.Ultimate, patch.Detect(current));
-        Assert.Equal(30, ReadWord(current, 3));
+        Assert.Equal(70, ReadWord(current, 3));
 
         // Old unbounded gate (112,272) is Legacy; Apply migrates it to Ultimate
         byte[] unbounded = BuildFixture(limit: 8, legacyUnbounded: true);
         Assert.Equal(PatchState.Legacy, patch.Detect(unbounded));
         Assert.True(patch.Apply(ref unbounded, enabled: true));
         Assert.Equal(PatchState.Ultimate, patch.Detect(unbounded));
-        Assert.Equal(30, ReadWord(unbounded, 3));
+        Assert.Equal(70, ReadWord(unbounded, 3));
         // Gate is restored to original (66,0 series)
         Assert.Equal(OriginalGate, ReadWords(unbounded, 8, OriginalGate.Length));
     }
@@ -78,7 +78,7 @@ public sealed class ReinforcementGatePatchTests
         Assert.Equal(PatchState.Legacy, patch.Detect(data));
         Assert.True(patch.Apply(ref data, enabled: true));
         Assert.Equal(PatchState.Ultimate, patch.Detect(data));
-        Assert.Equal(30, ReadWord(data, 3));
+        Assert.Equal(70, ReadWord(data, 3));
         Assert.Equal(OriginalGate, ReadWords(data, 8, OriginalGate.Length));
 
         // Also test restore to original
@@ -102,7 +102,7 @@ public sealed class ReinforcementGatePatchTests
             Assert.Equal(PatchState.Legacy, patch.Detect(data));
             Assert.True(patch.Apply(ref data, enabled: true));
             Assert.Equal(PatchState.Ultimate, patch.Detect(data));
-            Assert.Equal(30, ReadWord(data, 3));
+            Assert.Equal(70, ReadWord(data, 3));
             Assert.Equal(OriginalGate, ReadWords(data, 8, OriginalGate.Length));
         }
     }

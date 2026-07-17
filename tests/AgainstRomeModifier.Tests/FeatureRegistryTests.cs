@@ -5,6 +5,32 @@ namespace AgainstRomeModifier.Tests;
 public sealed class FeatureRegistryTests
 {
     [Fact]
+    public void Decompilation_matrix_covers_every_registered_feature_once()
+    {
+        string root = GetRepositoryRoot();
+
+        string matrix = File.ReadAllText(Path.Combine(
+            root, "docs", "reverse-engineering", "feature-verification-matrix.md"));
+        string[] documentedIds = System.Text.RegularExpressions.Regex.Matches(
+                matrix,
+                @"^\| `(?<id>[^`]+)` \|",
+                System.Text.RegularExpressions.RegexOptions.Multiline)
+            .Select(match => match.Groups["id"].Value)
+            .ToArray();
+        string[] registeredIds = FeatureRegistry.All.Select(feature => feature.Id).ToArray();
+
+        Assert.Equal(registeredIds.Length, documentedIds.Length);
+        Assert.Equal(
+            registeredIds.OrderBy(id => id, StringComparer.OrdinalIgnoreCase),
+            documentedIds.OrderBy(id => id, StringComparer.OrdinalIgnoreCase),
+            StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static string GetRepositoryRoot(
+        [System.Runtime.CompilerServices.CallerFilePath] string sourceFile = "") =>
+        Path.GetFullPath(Path.Combine(Path.GetDirectoryName(sourceFile)!, "..", ".."));
+
+    [Fact]
     public void Registry_ids_are_unique_and_game_speed_disables_to_one()
     {
         Assert.Equal(FeatureRegistry.All.Count, FeatureRegistry.All.Select(x => x.Id).Distinct(StringComparer.OrdinalIgnoreCase).Count());

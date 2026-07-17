@@ -370,12 +370,12 @@ namespace AgainstRomeModifierTests {
                         if (I32(d, sp + rel) != 101) Fail($"{name}: P7 生成機率(+{rel})應為 101，實為 {I32(d, sp + rel)}");
                 }
 
-                // P8 增援門檻 30，gate 保持 66,0
+                // P8 增援門檻 70（2026-07-17 應使用者要求調整），gate 保持 66,0
                 int?[] limitSig = { 0x5A, 0, 0x42, null, 96, 98, 0x5B, 11, null, null, 0x42, 0, 0x42, 0, 0x42, 0, 0x42, 0, 0x5A, 6, 102, 117, 32 };
                 int lim = BciPattern.FindBciWordPattern(d, limitSig);
                 if (lim < 0) Fail($"{name}: 找不到 P8 門檻簽章");
                 else {
-                    if (I32(d, lim + 12) != 30) Fail($"{name}: P8 增援門檻應為 30，實為 {I32(d, lim + 12)}");
+                    if (I32(d, lim + 12) != 70) Fail($"{name}: P8 增援門檻應為 70，實為 {I32(d, lim + 12)}");
                     if (I32(d, lim + 32) != 66 || I32(d, lim + 36) != 0) Fail($"{name}: P8 gate 應保持 66,0，實為 {I32(d, lim + 32)},{I32(d, lim + 36)}");
                 }
 
@@ -394,10 +394,9 @@ namespace AgainstRomeModifierTests {
                 }
 
                 // P9 第三控制點：狀態 49 捐贈走訪的 s_getUnitType 型別過濾應為
-                // 反轉版 jnz(118)+92：士兵小隊(type!=1)落入捐贈分支留村，
-                // 駄馬/平民(type==1)照原版撤退離場。
-                // （原版 jz(117)+92 = 士兵一律撤退；舊版 Ultimate jz+0 = 全部
-                //  捐贈 → 駄馬每波堆積。）
+                // 反轉版 jnz(118)+92（2026-07-17 實機確認：士兵小隊 type!=1
+                // 落入捐贈分支留村駐守，駄馬/平民 type=1 照原版撤退離場）。
+                // （原版 jz+92 = 士兵一律撤退；Legacy jz+0 = 全捐贈 → 駄馬堆積。）
                 int?[] typeFilterSig = { 128, 214, 73, -2, 86, 66, 1, 96, 102, null, null };
                 int tf = BciPattern.FindBciWordPattern(d, typeFilterSig);
                 if (tf < 0) Fail($"{name}: 找不到 P9 捐贈型別過濾簽章");
