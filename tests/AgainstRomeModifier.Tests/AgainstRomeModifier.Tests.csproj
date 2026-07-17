@@ -20,7 +20,6 @@
     <ProjectReference Include="../../src.Core/AgainstRome.Core.csproj" />
     <ProjectReference Include="../../src.Modifier/AgainstRomeModifier.csproj" />
     <ProjectReference Include="../../src.SaveManager/AgainstRomeSaveManager.csproj" />
-    <ProjectReference Include="../../src.Launcher/AgainstRomeLauncher.csproj" />
     <ProjectReference Include="../../src.MapEditor/AgainstRomeMapEditor.csproj" />
   </ItemGroup>
 </Project>

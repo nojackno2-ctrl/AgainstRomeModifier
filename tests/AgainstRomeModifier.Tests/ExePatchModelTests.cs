@@ -45,13 +45,13 @@ public sealed class ExePatchModelTests {
     }
 
     private static void PlaceCameraZoomOut(byte[] exe, ExeCameraZoomOutPatchState state) {
-        bool patched = state is ExeCameraZoomOutPatchState.LegacyZoom1 or ExeCameraZoomOutPatchState.Patched;
+        bool patched = state is ExeCameraZoomOutPatchState.LegacyZoomHalf or ExeCameraZoomOutPatchState.Patched;
         Place(exe, ExePatchModel.CameraZoomInitCallOffset, patched ? ExePatchModel.CameraZoomInitCallPatchedBytes : ExePatchModel.CameraZoomInitCallOriginalBytes);
         Place(exe, ExePatchModel.CameraZoomLoadCallOffset, patched ? ExePatchModel.CameraZoomLoadCallPatchedBytes : ExePatchModel.CameraZoomLoadCallOriginalBytes);
         Place(exe, ExePatchModel.CameraZoomScriptCallOffset, patched ? ExePatchModel.CameraZoomScriptCallPatchedBytes : ExePatchModel.CameraZoomScriptCallOriginalBytes);
         byte[] cave = state switch {
             ExeCameraZoomOutPatchState.Original => ExePatchModel.CameraZoomCaveOriginalBytes,
-            ExeCameraZoomOutPatchState.LegacyZoom1 => ExePatchModel.CameraZoomCaveLegacyZoom1Bytes,
+            ExeCameraZoomOutPatchState.LegacyZoomHalf => ExePatchModel.CameraZoomCaveLegacyZoomHalfBytes,
             ExeCameraZoomOutPatchState.Patched => ExePatchModel.CameraZoomCavePatchedBytes,
             _ => throw new ArgumentOutOfRangeException(nameof(state)),
         };
@@ -212,7 +212,7 @@ public sealed class ExePatchModelTests {
 
     [Theory]
     [InlineData(ExeCameraZoomOutPatchState.Original)]
-    [InlineData(ExeCameraZoomOutPatchState.LegacyZoom1)]
+    [InlineData(ExeCameraZoomOutPatchState.LegacyZoomHalf)]
     [InlineData(ExeCameraZoomOutPatchState.Patched)]
     public void Camera_zoom_out_state_is_detected(ExeCameraZoomOutPatchState state) {
         byte[] exe = NewExe();
@@ -221,11 +221,11 @@ public sealed class ExePatchModelTests {
     }
 
     [Fact]
-    public void Camera_zoom_out_current_cave_clamps_to_half_while_legacy_clamps_to_one() {
-        Assert.Equal(0.5f, BitConverter.ToSingle(ExePatchModel.CameraZoomCavePatchedBytes, 9));
-        Assert.Equal(0.5f, BitConverter.ToSingle(ExePatchModel.CameraZoomCavePatchedBytes, 19));
-        Assert.Equal(1.0f, BitConverter.ToSingle(ExePatchModel.CameraZoomCaveLegacyZoom1Bytes, 9));
-        Assert.Equal(1.0f, BitConverter.ToSingle(ExePatchModel.CameraZoomCaveLegacyZoom1Bytes, 19));
+    public void Camera_zoom_out_current_cave_clamps_to_one_while_legacy_clamps_to_half() {
+        Assert.Equal(1.0f, BitConverter.ToSingle(ExePatchModel.CameraZoomCavePatchedBytes, 9));
+        Assert.Equal(1.0f, BitConverter.ToSingle(ExePatchModel.CameraZoomCavePatchedBytes, 19));
+        Assert.Equal(0.5f, BitConverter.ToSingle(ExePatchModel.CameraZoomCaveLegacyZoomHalfBytes, 9));
+        Assert.Equal(0.5f, BitConverter.ToSingle(ExePatchModel.CameraZoomCaveLegacyZoomHalfBytes, 19));
     }
 
     [Fact]
@@ -263,9 +263,9 @@ public sealed class ExePatchModelTests {
     }
 
     [Fact]
-    public void Camera_zoom_out_legacy_zoom_one_migrates_by_replacing_only_the_cave() {
+    public void Camera_zoom_out_legacy_zoom_half_migrates_by_replacing_only_the_cave() {
         byte[] exe = NewExe();
-        PlaceCameraZoomOut(exe, ExeCameraZoomOutPatchState.LegacyZoom1);
+        PlaceCameraZoomOut(exe, ExeCameraZoomOutPatchState.LegacyZoomHalf);
 
         IReadOnlyList<ExeWriteOp> migration = ExePatchModel.PlanCameraZoomOut(
             true, ExePatchModel.GetCameraZoomOutPatchState(exe));
@@ -282,9 +282,9 @@ public sealed class ExePatchModelTests {
     }
 
     [Fact]
-    public void Camera_zoom_out_legacy_zoom_one_can_restore_without_migration() {
+    public void Camera_zoom_out_legacy_zoom_half_can_restore_without_migration() {
         byte[] exe = NewExe();
-        PlaceCameraZoomOut(exe, ExeCameraZoomOutPatchState.LegacyZoom1);
+        PlaceCameraZoomOut(exe, ExeCameraZoomOutPatchState.LegacyZoomHalf);
 
         ExePatchModel.Apply(exe, ExePatchModel.PlanCameraZoomOut(
             false, ExePatchModel.GetCameraZoomOutPatchState(exe)));

@@ -160,8 +160,7 @@ namespace AgainstRomeModifier {
                 chkFocusLoss,
                 chkToEng,
                 chkDgVoodoo);
-            ConfigureSettingsCard(pnlExperimentalCard, lblExperimentalTitle, 494,
-                chkGameSpeed,
+            ConfigureSettingsCard(pnlExperimentalCard, lblExperimentalTitle, 446,
                 chkSpellHealing10x,
                 chkSpellResurrection,
                 chkGeneralSkills,
@@ -170,7 +169,9 @@ namespace AgainstRomeModifier {
                 chkAllUnitsEntireMapVision,
                 chkNativeWidescreen1920x1080,
                 chkCameraZoomOut1);
-            ConfigureSettingsCard(pnlSwitchesCard, lblSwitchesTitle, 782,
+            ConfigureSettingsCard(pnlOptionalCard, lblOptionalTitle, 110,
+                chkGameSpeed);
+            ConfigureSettingsCard(pnlSwitchesCard, lblSwitchesTitle, 830,
                 chkFreeProd,
                 chkFreeUpgrade,
                 chkNoSpellCost,
@@ -179,6 +180,7 @@ namespace AgainstRomeModifier {
                 chkSpellDamage5x,
                 chkRangedRange3x,
                 chkUnitMovementSpeed2x,
+                chkVillagerMovementSpeed5x,
                 chkSpellEntireMap,
                 chkSpellRange3x,
                 chkProjectileArcHeight,
@@ -202,18 +204,21 @@ namespace AgainstRomeModifier {
             Color cardBackColor = Color.FromArgb(14, 18, 26);
             pnlNumericCard.BackColor = cardBackColor;
             pnlExperimentalCard.BackColor = cardBackColor;
+            pnlOptionalCard.BackColor = cardBackColor;
             pnlSwitchesCard.BackColor = cardBackColor;
             pnlBuildCard.BackColor = cardBackColor;
             pnlAiCard.BackColor = cardBackColor;
 
             pnlNumericCard.Dock = DockStyle.None;
             pnlExperimentalCard.Dock = DockStyle.None;
+            pnlOptionalCard.Dock = DockStyle.None;
             pnlSwitchesCard.Dock = DockStyle.None;
             pnlBuildCard.Dock = DockStyle.None;
             pnlAiCard.Dock = DockStyle.None;
 
             pnlContent.Controls.Add(pnlNumericCard);
             pnlContent.Controls.Add(pnlExperimentalCard);
+            pnlContent.Controls.Add(pnlOptionalCard);
             pnlContent.Controls.Add(pnlSwitchesCard);
             pnlContent.Controls.Add(pnlBuildCard);
             pnlContent.Controls.Add(pnlAiCard);
@@ -248,7 +253,8 @@ namespace AgainstRomeModifier {
                 pnlBuildCard,
                 pnlSwitchesCard,
                 pnlAiCard,
-                pnlExperimentalCard
+                pnlExperimentalCard,
+                pnlOptionalCard
             };
             foreach (Panel card in cards) {
                 int column = Array.IndexOf(columnBottoms, columnBottoms.Min());

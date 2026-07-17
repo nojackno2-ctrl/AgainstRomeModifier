@@ -31,6 +31,7 @@ public static class FeatureRegistry
         Bool(FeatureKeys.SpellResurrection, FeatureCategory.Stats), Bool(FeatureKeys.GeneralSkills, FeatureCategory.Stats),
         Bool(FeatureKeys.LeaderGlory, FeatureCategory.Stats),
         Bool(FeatureKeys.RangedRange3x, FeatureCategory.Stats), Bool(FeatureKeys.UnitMovementSpeed2x, FeatureCategory.Stats),
+        Bool(FeatureKeys.VillagerMovementSpeed5x, FeatureCategory.Stats),
         Bool(FeatureKeys.SpellEntireMap, FeatureCategory.Stats), Bool(FeatureKeys.SpellRange3x, FeatureCategory.Stats),
         Bool(FeatureKeys.ProjectileArcHeight, FeatureCategory.Stats),
         Bool(FeatureKeys.AllUnitsEntireMapVision, FeatureCategory.Stats),

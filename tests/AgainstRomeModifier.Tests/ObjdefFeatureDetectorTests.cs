@@ -15,6 +15,7 @@ public sealed class ObjdefFeatureDetectorTests
             AllUnitsEntireMapVision = true,
             RangedRange3x = true,
             UnitMovementSpeed2x = true,
+            VillagerMovementSpeed5x = true,
             SpellEntireMap = true,
             ProjectileArcHeight = true,
             HousingCapacity20x = true,
@@ -33,6 +34,7 @@ public sealed class ObjdefFeatureDetectorTests
         Assert.True(detected.AllUnitsEntireMapVision);
         Assert.True(detected.RangedRange3x);
         Assert.True(detected.UnitMovementSpeed2x);
+        Assert.True(detected.VillagerMovementSpeed5x);
         Assert.True(detected.SpellEntireMap);
         Assert.True(detected.ProjectileArcHeight);
         Assert.True(detected.HousingCapacity20x);

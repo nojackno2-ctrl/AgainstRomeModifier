@@ -35,6 +35,7 @@ public sealed class CharacterizationTests
         Balance = true,
         RangedRange3x = true,
         UnitMovementSpeed2x = true,
+        VillagerMovementSpeed5x = true,
         SpellEntireMap = false,
         SpellRange3x = true,
         HousingCapacity20x = true,
@@ -92,6 +93,7 @@ public sealed class CharacterizationTests
         Assert.False(detected.Balance); // 平衡表已等同原版；未套用自訂屬性時不會產生可偵測差異。
         Assert.True(detected.RangedRange3x);
         Assert.True(detected.UnitMovementSpeed2x);
+        Assert.True(detected.VillagerMovementSpeed5x);
         Assert.False(detected.SpellEntireMap);
         Assert.True(detected.SpellRange3x);
         Assert.True(detected.HousingCapacity20x);
@@ -234,6 +236,7 @@ public sealed class CharacterizationTests
         Assert.False(afterStats.Balance);
         Assert.False(afterStats.RangedRange3x);
         Assert.False(afterStats.UnitMovementSpeed2x);
+        Assert.False(afterStats.VillagerMovementSpeed5x);
         Assert.False(afterStats.SpellEntireMap);
         Assert.False(afterStats.SpellRange3x);
         Assert.False(afterStats.MaxPopulation);
@@ -262,6 +265,7 @@ public sealed class CharacterizationTests
         Assert.False(afterCompat.Balance); // 固定平衡表已是原版數值。
         Assert.True(afterCompat.RangedRange3x);
         Assert.True(afterCompat.UnitMovementSpeed2x);
+        Assert.True(afterCompat.VillagerMovementSpeed5x);
         Assert.False(afterCompat.SpellEntireMap);
         Assert.True(afterCompat.SpellRange3x);
         Assert.True(afterCompat.MaxPopulation);
@@ -385,15 +389,61 @@ public sealed class CharacterizationTests
                     civilianSpeed = double.Parse(cols[(int)ObjdefIndex.Moves].Trim(), System.Globalization.CultureInfo.InvariantCulture);
                 }
             }
-            // 驗證速度變為 2 倍速 (羅馬輕裝步兵=3.20, 平民=2.60)
+            // 驗證速度變為 2 倍速 (羅馬輕裝步兵=3.20, 平民=1.30)
             Assert.NotNull(romInfSpeed);
             Assert.Equal(3.20, romInfSpeed.Value, 2);
             Assert.NotNull(civilianSpeed);
-            Assert.Equal(2.60, civilianSpeed.Value, 2);
+            Assert.Equal(1.30, civilianSpeed.Value, 2);
 
             var detected = engine.DetectCurrentPatchState(fixture.RootPath, fixture.Backup);
             Assert.False(detected.Balance); // 固定平衡表已是原版數值。
             Assert.True(detected.UnitMovementSpeed2x);
+            Assert.False(detected.VillagerMovementSpeed5x);
+        }
+
+        // 情境 3: Balance = true, VillagerMovementSpeed5x = true
+        {
+            using var fixture = BackupZipGameFixture.Create();
+            var engine = new PatchEngine(new NullLogger());
+            var profile = new PatchProfile { Balance = true, VillagerMovementSpeed5x = true };
+            using (var rollback = new FileRollbackScope())
+            {
+                engine.ApplyPatches(fixture.RootPath, profile, fixture.Backup, rollback);
+                rollback.Commit();
+            }
+
+            string objdefPath = Path.Combine(fixture.RootPath, "SYSTEM", "DATA_MP", "DEFAULTS", "objdef.dau");
+            byte[] fileBytes = File.ReadAllBytes(objdefPath);
+            byte[] decomp = GameLZSS.DecompressPfil(fileBytes);
+            string text = System.Text.Encoding.GetEncoding(1251).GetString(decomp);
+            string lineEnding = text.Contains("\r\n") ? "\r\n" : "\n";
+            string[] lines = text.Split(new string[] { lineEnding }, StringSplitOptions.None);
+            
+            double? romInfSpeed = null;
+            double? civilianSpeed = null;
+            for (int idx = 2; idx < lines.Length; idx++) {
+                string line = lines[idx];
+                if (line.Length < 100) continue;
+                string[] cols = line.Split(',');
+                if (cols.Length < 192) continue;
+                string name = cols[52].Trim();
+                if (name == "FigRomInf00_Lanze_Schild") {
+                    romInfSpeed = double.Parse(cols[(int)ObjdefIndex.Moves].Trim(), System.Globalization.CultureInfo.InvariantCulture);
+                }
+                if (name == "FigZivMan00_Zivilist") {
+                    civilianSpeed = double.Parse(cols[(int)ObjdefIndex.Moves].Trim(), System.Globalization.CultureInfo.InvariantCulture);
+                }
+            }
+            // 驗證速度變為平民 5 倍速 (羅馬輕裝步兵=1.60, 平民=6.50)
+            Assert.NotNull(romInfSpeed);
+            Assert.Equal(1.60, romInfSpeed.Value, 2);
+            Assert.NotNull(civilianSpeed);
+            Assert.Equal(6.50, civilianSpeed.Value, 2);
+
+            var detected = engine.DetectCurrentPatchState(fixture.RootPath, fixture.Backup);
+            Assert.False(detected.Balance); // 固定平衡表已是原版數值。
+            Assert.False(detected.UnitMovementSpeed2x);
+            Assert.True(detected.VillagerMovementSpeed5x);
         }
     }
 }

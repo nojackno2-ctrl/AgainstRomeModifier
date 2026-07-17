@@ -13,5 +13,11 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\src.Core\AgainstRome.Core.csproj" />
+    <ProjectReference Include="..\src.MapEditor\AgainstRomeMapEditor.csproj" />
+    <ProjectReference Include="..\src.SaveManager\AgainstRomeSaveManager.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="..\TechDoc.md" LogicalName="TechDoc.md" />
+    <EmbeddedResource Include="..\TechDoc_EN.md" LogicalName="TechDoc_EN.md" />
   </ItemGroup>
 </Project>

@@ -54,7 +54,7 @@ internal sealed class ExeFeatureDetector
                     ExeNativeWidescreenPatchState.Patched;
             profile.CameraZoomOut1 =
                 ExePatchModel.GetCameraZoomOutPatchState(exeBytes) is
-                    ExeCameraZoomOutPatchState.LegacyZoom1 or ExeCameraZoomOutPatchState.Patched;
+                    ExeCameraZoomOutPatchState.LegacyZoomHalf or ExeCameraZoomOutPatchState.Patched;
         }
         catch (Exception ex)
         {

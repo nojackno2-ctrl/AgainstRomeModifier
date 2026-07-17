@@ -594,13 +594,13 @@
   fallback is runtime-observed. This is not a native 16:9 expanded viewport;
   input boundaries, edge scrolling, dialogs, and minimap remain pending.
 
-### Camera Zoom Out 0.5 (CameraZoomOut1)
+### Camera Zoom Out +1 (CameraZoomOut1)
 
 - File: `Against_Rome.exe`; UI status is Experimental.
-- Runtime history: the first build enforced native zoom `1`. It genuinely
-  showed much more battlefield, but the user reported that units and
-  information became too small/dense. The current experiment enforces `0.5`
-  for a milder pullback and retains the old profile key for compatibility.
+- Runtime history: native zoom `1` genuinely shows much more battlefield, but
+  units, health bars, and information also become smaller/dense. A later
+  `0.5` experiment had no visible effect in game, proving that +1 is the first
+  effective step. The current experiment therefore uses `1.0` again.
 - Static evidence: `FUN_00498a30` owns scalar `DAT_00771800`, clamps the stock
   range to `0..9`, and is used by projection as `1 / (zoom + 1)`. Terrain and
   object coordinate paths also use `1 << zoom`. Save loading calls the same
@@ -613,28 +613,27 @@
   - mission wrapper at `0x14C1FA`: `E8 31 C8 F4 FF` becomes
     `E8 C1 63 01 00`.
 - Shared cave: 28 zero bytes at file offset `0x1625C0` become
-  `8B 44 24 04 85 C0 78 07 3D 00 00 00 3F 73 08 C7 44 24 04 00 00 00 3F E9 54 64 F3 FF`.
-  The stub replaces negative or sub-`0.5f` input with `0.5f`, then tail-jumps
+  `8B 44 24 04 85 C0 78 07 3D 00 00 80 3F 73 08 C7 44 24 04 00 00 80 3F E9 54 64 F3 FF`.
+  The stub replaces negative or sub-`1.0f` input with `1.0f`, then tail-jumps
   to the stock setter at VA `0x00498A30`.
-- Fractional-zoom evidence: projection consumes the raw float as
-  `1/(zoom+1)`, so `0.5` renders at 2/3 stock scale. Information placement,
-  picking extents, and LOD consumers convert zoom to an integer.
-  `FUN_00419cc0` subtracts `0x3efffffd` (bytes `FD FF FF 3E`, just below 0.5)
-  before `FISTP`; direct consumers also round `0.5` to zero. Thus the revised
-  projection pulls back while those integer consumers retain stock zoom 0.
+- Rejected fractional hypothesis: static references suggested projection could
+  consume `0.5` while integer information/LOD paths stayed at zoom 0, but the
+  user observed no visible pullback at 0.5. Runtime evidence takes precedence;
+  do not retry fractional minimums without a new explanation for that result.
 - Scope decision: the universal setter is deliberately not hooked. Engine
   cache-generation functions temporarily request zoom 0/1; intercepting them
   could corrupt internal caches. Only the three persistent paths above are
   redirected.
-- Safety/detection: Original, `LegacyZoom1`, and current Patched are exact
-  states. The old `1.0f` cave migrates to `0.5f` with one write; it can also be
+- Safety/detection: Original, `LegacyZoomHalf`, and current Patched are exact
+  states. The rejected `0.5f` cave migrates to `1.0f` with one write; it can also be
   restored directly. Enable installs a new cave before redirects, while
   restore removes every redirect before clearing it. Other mixed/unknown
   states refuse enable writes.
-- Status: zoom 1 mechanics are runtime-proven but usability failed. Automated
+- Status: zoom 1 mechanics are runtime-proven with the documented readability
+  tradeoff. Automated
   tests cover current apply/detect/idempotence/category restore/full-byte
-  round-trip plus legacy migration/direct restore. Zoom 0.5 needs runtime
-  retesting for information readability, selection/picking, edge scrolling,
+  round-trip plus legacy migration/direct restore. Zoom +1 still needs runtime
+  testing for selection/picking, edge scrolling,
   fog, map bounds, save/load, mission compatibility, and performance.
 
 ### All Units Entire-Map Vision (AllUnitsEntireMapVision)

@@ -115,7 +115,7 @@ public sealed class ExeFeatureDetectorTests
     }
 
     [Fact]
-    public void Detector_keeps_legacy_camera_zoom_one_enabled_for_migration()
+    public void Detector_keeps_legacy_camera_zoom_half_enabled_for_migration()
     {
         string root = Path.Combine(Path.GetTempPath(), "arm-exe-detector-camera-legacy-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
@@ -125,7 +125,7 @@ public sealed class ExeFeatureDetectorTests
             Place(exe, ExePatchModel.CameraZoomInitCallOffset, ExePatchModel.CameraZoomInitCallPatchedBytes);
             Place(exe, ExePatchModel.CameraZoomLoadCallOffset, ExePatchModel.CameraZoomLoadCallPatchedBytes);
             Place(exe, ExePatchModel.CameraZoomScriptCallOffset, ExePatchModel.CameraZoomScriptCallPatchedBytes);
-            Place(exe, ExePatchModel.CameraZoomCaveOffset, ExePatchModel.CameraZoomCaveLegacyZoom1Bytes);
+            Place(exe, ExePatchModel.CameraZoomCaveOffset, ExePatchModel.CameraZoomCaveLegacyZoomHalfBytes);
             File.WriteAllBytes(Path.Combine(root, "Against_Rome.exe"), exe);
 
             var profile = new PatchProfile();
