@@ -156,6 +156,21 @@ internal sealed class ObjdefFeatureDetector
                 options.UnitMovementSpeed2x = speed2x;
                 options.RangedRange3x = range3x;
 
+                // 使用村民 FigZivMan00_Zivilist 偵測村民移動速度 5 倍
+                bool villagerSpeed5x = false;
+                if (unitRows.TryGetValue("FigZivMan00_Zivilist", out var testCivMovesCols) &&
+                    origUnitRows.TryGetValue("FigZivMan00_Zivilist", out var origCivMovesCols))
+                {
+                    double curMoves = 0;
+                    double.TryParse(testCivMovesCols[(int)ObjdefIndex.Moves].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out curMoves);
+                    double.TryParse(origCivMovesCols[(int)ObjdefIndex.Moves].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out double origMoves);
+                    if (curMoves > 0 && Math.Abs(curMoves - origMoves * 5.0) < 0.05)
+                    {
+                        villagerSpeed5x = true;
+                    }
+                }
+                options.VillagerMovementSpeed5x = villagerSpeed5x;
+
                 // 使用塞爾特祭司 FigKelPri00_Priester 偵測法師施法距離
                 bool spellEntireMap = false;
                 if (unitRows.TryGetValue("FigKelPri00_Priester", out var testSpellCols) &&

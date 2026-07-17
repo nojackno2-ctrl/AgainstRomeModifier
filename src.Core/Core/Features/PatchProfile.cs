@@ -48,6 +48,7 @@ public sealed class PatchProfile
     public bool AllUnitsEntireMapVision { get => Get(FeatureKeys.AllUnitsEntireMapVision); set => Set(FeatureKeys.AllUnitsEntireMapVision, value); }
     public bool RangedRange3x { get => Get(FeatureKeys.RangedRange3x); set => Set(FeatureKeys.RangedRange3x, value); }
     public bool UnitMovementSpeed2x { get => Get(FeatureKeys.UnitMovementSpeed2x); set => Set(FeatureKeys.UnitMovementSpeed2x, value); }
+    public bool VillagerMovementSpeed5x { get => Get(FeatureKeys.VillagerMovementSpeed5x); set => Set(FeatureKeys.VillagerMovementSpeed5x, value); }
     public bool SpellEntireMap { get => Get(FeatureKeys.SpellEntireMap); set => Set(FeatureKeys.SpellEntireMap, value); }
     public bool SpellRange3x { get => Get(FeatureKeys.SpellRange3x); set => Set(FeatureKeys.SpellRange3x, value); }
     public bool ProjectileArcHeight { get => Get(FeatureKeys.ProjectileArcHeight); set => Set(FeatureKeys.ProjectileArcHeight, value); }

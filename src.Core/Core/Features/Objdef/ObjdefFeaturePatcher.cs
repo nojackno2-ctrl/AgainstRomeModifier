@@ -20,6 +20,6 @@ internal static class ObjdefFeaturePatcher
             options.RangedRange3x, options.UnitMovementSpeed2x,
             options.SpellEntireMap, options.SpellRange3x,
             options.ProjectileArcHeight, unitStats,
-            options.AllUnitsEntireMapVision));
+            options.AllUnitsEntireMapVision, options.VillagerMovementSpeed5x));
     }
 }

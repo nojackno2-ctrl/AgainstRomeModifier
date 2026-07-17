@@ -32,6 +32,7 @@ namespace AgainstRomeModifier {
             chkSpellDamage5x.Checked = true;
             chkRangedRange3x.Checked = true;
             chkUnitMovementSpeed2x.Checked = true;
+            chkVillagerMovementSpeed5x.Checked = true;
             // 兩者各自獨立：全地圖 = 施法距離 (objdef Sirad)、3 倍 = 法術效果半徑 (cl_script Radius)。
             chkSpellEntireMap.Checked = true;
             chkSpellRange3x.Checked = true;
@@ -82,6 +83,7 @@ namespace AgainstRomeModifier {
             chkCameraZoomOut1.Checked = false;
             chkRangedRange3x.Checked = false;
             chkUnitMovementSpeed2x.Checked = false;
+            chkVillagerMovementSpeed5x.Checked = false;
             chkSpellEntireMap.Checked = false;
             chkSpellRange3x.Checked = false;
             chkProjectileArcHeight.Checked = false;

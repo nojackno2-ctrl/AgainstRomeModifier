@@ -62,6 +62,7 @@ public static class FeatureKeys
     public static readonly FeatureKey<bool> AllUnitsEntireMapVision = FeatureKey<bool>.Bool("AllUnitsEntireMapVision");
     public static readonly FeatureKey<bool> RangedRange3x = FeatureKey<bool>.Bool("RangedRange3x");
     public static readonly FeatureKey<bool> UnitMovementSpeed2x = FeatureKey<bool>.Bool("UnitMovementSpeed2x");
+    public static readonly FeatureKey<bool> VillagerMovementSpeed5x = FeatureKey<bool>.Bool("VillagerMovementSpeed5x");
     public static readonly FeatureKey<bool> SpellEntireMap = FeatureKey<bool>.Bool("SpellEntireMap");
     public static readonly FeatureKey<bool> SpellRange3x = FeatureKey<bool>.Bool("SpellRange3x");
     public static readonly FeatureKey<bool> ProjectileArcHeight = FeatureKey<bool>.Bool("ProjectileArcHeight");

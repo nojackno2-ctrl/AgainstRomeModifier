@@ -141,8 +141,8 @@
     "cameraZoomOut1": {
       "path": "Against_Rome.exe",
       "featureKey": "CameraZoomOut1",
-      "status": "zoom-1-runtime-successful-but-information-too-small-zoom-0.5-retest-pending",
-      "behavior": "Clamp persistent native camera zoom requests to a minimum of 0.5. Raw-float projection pulls back to 2/3 scale while integer information, picking, and LOD consumers remain at stock zoom 0.",
+      "status": "zoom-1-runtime-effective-zoom-0.5-runtime-rejected-information-smaller",
+      "behavior": "Clamp persistent native camera zoom requests to the first visibly effective step, 1.0. This genuinely expands the battlefield but also makes world units, health bars, and information smaller.",
       "nativeSetter": { "virtualAddress": "0x00498A30", "scalar": "DAT_00771800", "stockRange": "0..9" },
       "sites": [
         { "fileOffset": "0x81388", "purpose": "startup persistent zoom setter call" },
@@ -150,9 +150,9 @@
         { "fileOffset": "0x14C1FA", "purpose": "lgcSetEngineZoom mission-script wrapper call" },
         { "fileOffset": "0x1625C0", "purpose": "28-byte shared clamp-and-tail-jump code cave" }
       ],
-      "legacyState": "LegacyZoom1 recognizes the runtime-tested 1.0 cave; enable migrates only the cave and disable can restore it directly.",
-      "integerConversion": { "function": "FUN_00419cc0", "biasAddress": "0x00612C70", "biasBytes": "FD FF FF 3E", "zoom0_5Result": 0 },
-      "safety": "All three call sites and the cave must form Original, LegacyZoom1, or current Patched. Enable writes the cave first; restore removes all redirects before clearing the cave. Other mixed or unknown signatures are preserved.",
+      "legacyState": "LegacyZoomHalf recognizes the runtime-rejected 0.5 cave; enable migrates only the cave to 1.0 and disable can restore it directly.",
+      "runtimeEvidence": "Zoom 0.5 had no visible effect; zoom 1 is the first effective native step.",
+      "safety": "All three call sites and the cave must form Original, LegacyZoomHalf, or current Patched. Enable writes the cave first; restore removes all redirects before clearing the cave. Other mixed or unknown signatures are preserved.",
       "runtimePending": ["unit selection and picking", "edge scrolling", "fog of war", "map bounds", "save-load persistence", "mission-script compatibility", "performance"]
     },
     "teamDat": {

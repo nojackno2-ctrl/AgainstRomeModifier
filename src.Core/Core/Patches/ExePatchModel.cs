@@ -51,11 +51,11 @@ public enum ExeNativeWidescreenPatchState {
     Patched
 }
 
-/// <summary>Persistent camera zoom setters clamped to a fractional minimum zoom.</summary>
+/// <summary>Persistent camera zoom setters clamped to the first effective native zoom step.</summary>
 public enum ExeCameraZoomOutPatchState {
     Unknown,
     Original,
-    LegacyZoom1,
+    LegacyZoomHalf,
     Patched
 }
 
@@ -222,7 +222,7 @@ public static class ExePatchModel {
         0x83, 0xF8, 0x22, 0x74, 0xD4
     };
 
-    // === Camera zoom-out 0.5 (fractional projection, stock integer LOD/information scale) ===
+    // === Camera zoom-out +1 (first runtime-effective native zoom step) ===
     // Redirect only persistent setters (startup, save-load and mission script) through
     // a shared code cave. Internal temporary zoom calls remain untouched.
     public const long CameraZoomInitCallOffset = 0x81388;
@@ -236,22 +236,22 @@ public static class ExePatchModel {
     public static readonly byte[] CameraZoomScriptCallOriginalBytes = { 0xE8, 0x31, 0xC8, 0xF4, 0xFF };
     public static readonly byte[] CameraZoomScriptCallPatchedBytes = { 0xE8, 0xC1, 0x63, 0x01, 0x00 };
     public static readonly byte[] CameraZoomCaveOriginalBytes = new byte[28];
-    public static readonly byte[] CameraZoomCaveLegacyZoom1Bytes = {
-        0x8B, 0x44, 0x24, 0x04,                         // mov eax,[esp+4]
-        0x85, 0xC0,                                     // test eax,eax
-        0x78, 0x07,                                     // js set_one
-        0x3D, 0x00, 0x00, 0x80, 0x3F,                   // cmp eax,1.0f
-        0x73, 0x08,                                     // jae jump_setter
-        0xC7, 0x44, 0x24, 0x04, 0x00, 0x00, 0x80, 0x3F, // mov [esp+4],1.0f
-        0xE9, 0x54, 0x64, 0xF3, 0xFF                    // jmp native setter
-    };
-    public static readonly byte[] CameraZoomCavePatchedBytes = {
+    public static readonly byte[] CameraZoomCaveLegacyZoomHalfBytes = {
         0x8B, 0x44, 0x24, 0x04,                         // mov eax,[esp+4]
         0x85, 0xC0,                                     // test eax,eax
         0x78, 0x07,                                     // js set_half
         0x3D, 0x00, 0x00, 0x00, 0x3F,                   // cmp eax,0.5f
         0x73, 0x08,                                     // jae jump_setter
         0xC7, 0x44, 0x24, 0x04, 0x00, 0x00, 0x00, 0x3F, // mov [esp+4],0.5f
+        0xE9, 0x54, 0x64, 0xF3, 0xFF                    // jmp native setter
+    };
+    public static readonly byte[] CameraZoomCavePatchedBytes = {
+        0x8B, 0x44, 0x24, 0x04,                         // mov eax,[esp+4]
+        0x85, 0xC0,                                     // test eax,eax
+        0x78, 0x07,                                     // js set_one
+        0x3D, 0x00, 0x00, 0x80, 0x3F,                   // cmp eax,1.0f
+        0x73, 0x08,                                     // jae jump_setter
+        0xC7, 0x44, 0x24, 0x04, 0x00, 0x00, 0x80, 0x3F, // mov [esp+4],1.0f
         0xE9, 0x54, 0x64, 0xF3, 0xFF                    // jmp native setter
     };
 
@@ -537,8 +537,8 @@ public static class ExePatchModel {
         byte[] cave = ReadSpan(exeBytes, CameraZoomCaveOffset, CameraZoomCaveOriginalBytes.Length);
         if (callsOriginal && cave.SequenceEqual(CameraZoomCaveOriginalBytes))
             return ExeCameraZoomOutPatchState.Original;
-        if (callsPatched && cave.SequenceEqual(CameraZoomCaveLegacyZoom1Bytes))
-            return ExeCameraZoomOutPatchState.LegacyZoom1;
+        if (callsPatched && cave.SequenceEqual(CameraZoomCaveLegacyZoomHalfBytes))
+            return ExeCameraZoomOutPatchState.LegacyZoomHalf;
         if (callsPatched && cave.SequenceEqual(CameraZoomCavePatchedBytes))
             return ExeCameraZoomOutPatchState.Patched;
         return ExeCameraZoomOutPatchState.Unknown;
@@ -722,15 +722,15 @@ public static class ExePatchModel {
         if (enabled && state == ExeCameraZoomOutPatchState.Original) {
             return new[] {
                 // Install the target before redirecting any call site.
-                new ExeWriteOp(CameraZoomCaveOffset, CameraZoomCaveOriginalBytes, CameraZoomCavePatchedBytes, "攝影機拉遠 0.5 code cave"),
+                new ExeWriteOp(CameraZoomCaveOffset, CameraZoomCaveOriginalBytes, CameraZoomCavePatchedBytes, "攝影機拉遠 +1 code cave"),
                 new ExeWriteOp(CameraZoomInitCallOffset, CameraZoomInitCallOriginalBytes, CameraZoomInitCallPatchedBytes, "攝影機初始縮放下限"),
                 new ExeWriteOp(CameraZoomLoadCallOffset, CameraZoomLoadCallOriginalBytes, CameraZoomLoadCallPatchedBytes, "讀檔攝影機縮放下限"),
                 new ExeWriteOp(CameraZoomScriptCallOffset, CameraZoomScriptCallOriginalBytes, CameraZoomScriptCallPatchedBytes, "任務腳本攝影機縮放下限"),
             };
         }
-        if (enabled && state == ExeCameraZoomOutPatchState.LegacyZoom1) {
+        if (enabled && state == ExeCameraZoomOutPatchState.LegacyZoomHalf) {
             return new[] {
-                new ExeWriteOp(CameraZoomCaveOffset, CameraZoomCaveLegacyZoom1Bytes, CameraZoomCavePatchedBytes, "攝影機拉遠 +1 遷移為 0.5"),
+                new ExeWriteOp(CameraZoomCaveOffset, CameraZoomCaveLegacyZoomHalfBytes, CameraZoomCavePatchedBytes, "攝影機拉遠 0.5 遷移為 +1"),
             };
         }
         if (!enabled && state == ExeCameraZoomOutPatchState.Patched) {
@@ -742,12 +742,12 @@ public static class ExePatchModel {
                 new ExeWriteOp(CameraZoomCaveOffset, CameraZoomCavePatchedBytes, CameraZoomCaveOriginalBytes, "攝影機拉遠 code cave 還原"),
             };
         }
-        if (!enabled && state == ExeCameraZoomOutPatchState.LegacyZoom1) {
+        if (!enabled && state == ExeCameraZoomOutPatchState.LegacyZoomHalf) {
             return new[] {
                 new ExeWriteOp(CameraZoomInitCallOffset, CameraZoomInitCallPatchedBytes, CameraZoomInitCallOriginalBytes, "攝影機初始縮放還原"),
                 new ExeWriteOp(CameraZoomLoadCallOffset, CameraZoomLoadCallPatchedBytes, CameraZoomLoadCallOriginalBytes, "讀檔攝影機縮放還原"),
                 new ExeWriteOp(CameraZoomScriptCallOffset, CameraZoomScriptCallPatchedBytes, CameraZoomScriptCallOriginalBytes, "任務腳本攝影機縮放還原"),
-                new ExeWriteOp(CameraZoomCaveOffset, CameraZoomCaveLegacyZoom1Bytes, CameraZoomCaveOriginalBytes, "舊版攝影機拉遠 code cave 還原"),
+                new ExeWriteOp(CameraZoomCaveOffset, CameraZoomCaveLegacyZoomHalfBytes, CameraZoomCaveOriginalBytes, "舊版攝影機拉遠 0.5 code cave 還原"),
             };
         }
         return Array.Empty<ExeWriteOp>();

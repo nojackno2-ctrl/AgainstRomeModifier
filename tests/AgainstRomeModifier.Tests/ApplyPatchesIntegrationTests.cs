@@ -87,6 +87,7 @@ namespace AgainstRomeModifier.Tests
                     Balance = true,
                     RangedRange3x = true,
                     UnitMovementSpeed2x = true,
+                    VillagerMovementSpeed5x = true,
                     SpellEntireMap = false,
                     SpellRange3x = true,
                     ProjectileArcHeight = true,
@@ -127,6 +128,7 @@ namespace AgainstRomeModifier.Tests
                 Assert.False(detected.Balance, "原版平衡表不應產生 Balance 檔案差異");
                 Assert.True(detected.RangedRange3x, "RangedRange3x 未回讀為 true");
                 Assert.True(detected.UnitMovementSpeed2x, "UnitMovementSpeed2x 未回讀為 true");
+                Assert.True(detected.VillagerMovementSpeed5x, "VillagerMovementSpeed5x 未回讀為 true");
                 Assert.False(detected.SpellEntireMap, "SpellEntireMap 應回讀為 false");
                 Assert.True(detected.SpellRange3x, "SpellRange3x 未回讀為 true");
                 Assert.True(detected.ProjectileArcHeight, "ProjectileArcHeight 未回讀為 true");
@@ -162,6 +164,7 @@ namespace AgainstRomeModifier.Tests
                 Assert.False(restored.Balance, "還原後 Balance 仍為 true");
                 Assert.False(restored.RangedRange3x, "還原後 RangedRange3x 仍為 true");
                 Assert.False(restored.UnitMovementSpeed2x, "還原後 UnitMovementSpeed2x 仍為 true");
+                Assert.False(restored.VillagerMovementSpeed5x, "還原後 VillagerMovementSpeed5x 仍為 true");
                 Assert.False(restored.SpellEntireMap, "還原後 SpellEntireMap 仍為 true");
                 Assert.False(restored.SpellRange3x, "還原後 SpellRange3x 仍為 true");
                 Assert.False(restored.ProjectileArcHeight, "還原後 ProjectileArcHeight 仍為 true");

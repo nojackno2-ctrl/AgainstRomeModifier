@@ -51,6 +51,8 @@ namespace AgainstRomeModifier {
         private Panel pnlAiCard = null!;
         private Panel pnlExperimentalCard = null!;
         private Label lblExperimentalTitle = null!;
+        private Panel pnlOptionalCard = null!;
+        private Label lblOptionalTitle = null!;
 
         // 數值控制項 (NumericUpDown) 的宣告
         private ModernToggle chkMaxPopulation = null!;
@@ -97,6 +99,7 @@ namespace AgainstRomeModifier {
         private ModernToggle chkCameraZoomOut1 = null!;
         private ModernToggle chkRangedRange3x = null!;
         private ModernToggle chkUnitMovementSpeed2x = null!;
+        private ModernToggle chkVillagerMovementSpeed5x = null!;
         private ModernToggle chkSpellEntireMap = null!;
         private ModernToggle chkSpellRange3x = null!;
         private ModernToggle chkProjectileArcHeight = null!;
@@ -483,7 +486,7 @@ namespace AgainstRomeModifier {
             };
             btnClose.FlatAppearance.BorderSize = 0;
             btnClose.Cursor = Cursors.Hand;
-            btnClose.Click += (s, e) => Application.Exit();
+            btnClose.Click += (s, e) => this.Close();
             btnClose.MouseEnter += (s, e) => {
                 btnClose.BackColor = Color.FromArgb(232, 17, 35);
                 btnClose.ForeColor = Color.White;
@@ -902,6 +905,21 @@ namespace AgainstRomeModifier {
             pnlAiCard.Controls.Add(chkAiM5);
             pnlAiCard.Controls.Add(chkAiM6);
 
+            pnlOptionalCard = new Panel {
+                Location = new Point(0, 0),
+                Size = new Size(385, 200)
+            };
+
+            lblOptionalTitle = new Label {
+                Text = Loc.Get("OptionalTitle"),
+                Location = new Point(25, 20),
+                Size = new Size(250, 25),
+                Font = fontJhengHei105B,
+                ForeColor = Color.FromArgb(0, 220, 255),
+                BackColor = Color.Transparent
+            };
+            pnlOptionalCard.Controls.Add(lblOptionalTitle);
+
             pnlExperimentalCard = new Panel {
                 Location = new Point(0, 0),
                 Size = new Size(385, 790)
@@ -966,7 +984,7 @@ namespace AgainstRomeModifier {
                 Font = fontJhengHei10B
             };
             pnlExperimentalCard.Controls.Add(chkLeaderGlory);
-            pnlExperimentalCard.Controls.Add(chkGameSpeed);
+            pnlOptionalCard.Controls.Add(chkGameSpeed);
             pnlExperimentalCard.Controls.Add(chkBalance);
 
             chkAllUnitsEntireMapVision = new ModernToggle {
@@ -1021,6 +1039,17 @@ namespace AgainstRomeModifier {
             };
             chkUnitMovementSpeed2x.CheckedChanged += new EventHandler(ChkUnitMovementSpeed2x_CheckedChanged);
             pnlSwitchesCard.Controls.Add(chkUnitMovementSpeed2x);
+
+            chkVillagerMovementSpeed5x = new ModernToggle {
+                Text = Loc.Get("VillagerMovementSpeed5x"),
+                Location = new Point(25, 240),
+                Size = new Size(310, 25),
+                Checked = false,
+                BackColor = Color.Transparent,
+                Font = fontJhengHei10B
+            };
+            chkVillagerMovementSpeed5x.CheckedChanged += new EventHandler(ChkVillagerMovementSpeed5x_CheckedChanged);
+            pnlSwitchesCard.Controls.Add(chkVillagerMovementSpeed5x);
 
             chkSpellEntireMap = new ModernToggle {
                 Text = Loc.Get("SpellEntireMap"),

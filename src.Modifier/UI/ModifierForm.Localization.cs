@@ -56,6 +56,7 @@ namespace AgainstRomeModifier {
             chkGameSpeed.Text = Loc.Get("GameSpeedLabel");
             chkVillageBuildRange.Text = Loc.Get("VillageBuildRange");
             lblExperimentalTitle.Text = Loc.Get("ExperimentalTitle");
+            lblOptionalTitle.Text = Loc.Get("OptionalTitle");
             chkSpellDamage5x.Text = Loc.Get("SpellDamage5x");
             chkSpellHealing10x.Text = Loc.Get("SpellHealing10x");
             chkSpellResurrection.Text = Loc.Get("SpellResurrection");
@@ -107,6 +108,7 @@ namespace AgainstRomeModifier {
             chkCameraZoomOut1.Text = Loc.Get("CameraZoomOut1");
             chkRangedRange3x.Text = Loc.Get("RangedRange3x");
             chkUnitMovementSpeed2x.Text = Loc.Get("UnitMovementSpeed2x");
+            chkVillagerMovementSpeed5x.Text = Loc.Get("VillagerMovementSpeed5x");
             chkSpellEntireMap.Text = Loc.Get("SpellEntireMap");
             chkSpellRange3x.Text = Loc.Get("SpellRange3x");
             chkProjectileArcHeight.Text = Loc.Get("ProjectileArcHeight");
@@ -149,6 +151,7 @@ namespace AgainstRomeModifier {
                 myToolTip.SetToolTip(chkCameraZoomOut1, Loc.Get("CameraZoomOut1Tip"));
                 myToolTip.SetToolTip(chkRangedRange3x, Loc.Get("RangedRange3xTip"));
                 myToolTip.SetToolTip(chkUnitMovementSpeed2x, Loc.Get("UnitMovementSpeed2xTip"));
+                myToolTip.SetToolTip(chkVillagerMovementSpeed5x, Loc.Get("VillagerMovementSpeed5xTip"));
                 myToolTip.SetToolTip(chkSpellEntireMap, Loc.Get("SpellEntireMapTip"));
                 myToolTip.SetToolTip(chkSpellRange3x, Loc.Get("SpellRange3xTip"));
                 myToolTip.SetToolTip(chkProjectileArcHeight, Loc.Get("ProjectileArcHeightTip"));

@@ -1,5 +1,4 @@
 <Solution>
-  <Project Path="src.Launcher/AgainstRomeLauncher.csproj" />
   <Project Path="src.Modifier/AgainstRomeModifier.csproj" />
   <Project Path="src.SaveManager/AgainstRomeSaveManager.csproj" />
   <Project Path="src.Core/AgainstRome.Core.csproj" />
