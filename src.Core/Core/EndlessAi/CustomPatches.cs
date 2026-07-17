@@ -444,14 +444,15 @@ namespace AgainstRomeModifier
     // ==========================================
     // P8: 增援單位數門檻
     // ==========================================
-    public class P8_ActiveLimitPatch : IEndlessPatch
+    public class P8_ReinforcementUnitThresholdPatch : IEndlessPatch
     {
         public string Id => "P8";
         public string TargetPattern => "MAPS/ENDL_*/SCRIPT/ak_level.bci";
 
-        private const int OriginalActivePartyLimit = 4;
-        private const int LegacyActivePartyLimit = 8;
-        private const int UltimateActivePartyLimit = 40;
+        private const int OriginalUnitThreshold = 4;
+        private const int LegacyLowUnitThreshold = 8;
+        private const int LegacyHighUnitThreshold = 40;
+        private const int UltimateUnitThreshold = 30;
 
         // Original gate: 5× pushlit 0 (66,0) + pushsym 6 (90,6) + cmp (102) + jmp (117) + done (32)
         // Total 15 words at offset +32 from sequence start.
@@ -460,59 +461,75 @@ namespace AgainstRomeModifier
             66, 0, 66, 0, 66, 0, 66, 0, 66, 0, 90, 6, 102, 117, 32
         };
 
-        // Legacy BoundedGate variants introduced in experimental builds.
-        // All share this shape: pushsym,X, jmp,Y repeated 3× then jmprel,Z, done.
-        // We recognize them generically by checking the first word is 90 (pushsym).
-        private const int BoundedGateLeadOpcode = 90;
+        // Exact legacy gates written by earlier experimental builds. Do not loosen
+        // these signatures: unknown BCI control flow must never be rewritten.
+        private static readonly int[] LegacyUnboundedGateWords = {
+            112, 272, 66, 0, 66, 0, 66, 0, 66, 0, 90, 6, 102, 117, 32
+        };
+
+        private static readonly int[] LegacyBoundedGateWords = {
+            90, 11, 117, 252, 90, 11, 117, 236, 90, 11, 117, 220, 112, 224, 32
+        };
+
+        private static readonly int[] LegacyBoundedGateWordsV3 = {
+            90, 11, 117, 252, 90, 11, 117, 236, 90, 11, 117, 220, 112, 232, 32
+        };
 
         public PatchState Detect(byte[] decompressed)
         {
-            int sequenceOffset = FindActiveLimitSequenceOffset(decompressed);
+            int sequenceOffset = FindReinforcementThresholdSequenceOffset(decompressed);
             if (sequenceOffset < 0) return PatchState.Unknown;
 
             int currentLimit = BitConverter.ToInt32(decompressed, sequenceOffset + 12);
 
-            // Check gate region: starts at offset +32, first word indicates gate type
             int gateStart = sequenceOffset + 32;
-            int firstGateWord = BitConverter.ToInt32(decompressed, gateStart);
-
             bool isOriginalGate = IsOriginalGate(decompressed, gateStart);
-            bool isBoundedGate = firstGateWord == BoundedGateLeadOpcode && !isOriginalGate;
 
-            if (currentLimit == OriginalActivePartyLimit && isOriginalGate)
+            if (isOriginalGate && currentLimit == OriginalUnitThreshold)
             {
                 return PatchState.Original;
             }
-            if (currentLimit == UltimateActivePartyLimit && isOriginalGate)
+            if (isOriginalGate && currentLimit == UltimateUnitThreshold)
             {
                 return PatchState.Ultimate;
             }
-            // Any non-original gate or legacy limit values → Legacy (can be migrated)
-            if (isBoundedGate || currentLimit == LegacyActivePartyLimit)
+            if (isOriginalGate && IsLegacyUnitThreshold(currentLimit))
             {
                 return PatchState.Legacy;
             }
-            // Any other limit value with any gate — treat as Legacy to allow migration
-            return PatchState.Legacy;
+
+            bool isKnownLegacyGate =
+                HasGateWords(decompressed, gateStart, LegacyUnboundedGateWords) ||
+                HasGateWords(decompressed, gateStart, LegacyBoundedGateWords) ||
+                HasGateWords(decompressed, gateStart, LegacyBoundedGateWordsV3);
+            if (isKnownLegacyGate && IsRecognizedUnitThreshold(currentLimit))
+            {
+                return PatchState.Legacy;
+            }
+
+            return PatchState.Unknown;
         }
 
         public bool Apply(ref byte[] decompressed, bool enabled)
         {
-            int sequenceOffset = FindActiveLimitSequenceOffset(decompressed);
-            if (sequenceOffset < 0)
+            PatchState state = Detect(decompressed);
+            if (state == PatchState.Unknown)
             {
                 if (!enabled) return false;
-                throw new InvalidOperationException("P8 active limit sequence not found.");
+                throw new InvalidOperationException("P8 reinforcement unit threshold bytes do not match a supported original, legacy, or current pattern.");
             }
+            if ((enabled && state == PatchState.Ultimate) || (!enabled && state == PatchState.Original))
+                return false;
 
+            int sequenceOffset = FindReinforcementThresholdSequenceOffset(decompressed);
             bool changed = false;
-            int targetLimit = enabled ? UltimateActivePartyLimit : OriginalActivePartyLimit;
+            int targetLimit = enabled ? UltimateUnitThreshold : OriginalUnitThreshold;
             int limitOffset = sequenceOffset + 12;
 
             int currentLimit = BitConverter.ToInt32(decompressed, limitOffset);
             if (currentLimit != targetLimit)
             {
-                BciPattern.WriteBciInt32(decompressed, limitOffset, currentLimit, targetLimit, "P8 active party limit");
+                BciPattern.WriteBciInt32(decompressed, limitOffset, currentLimit, targetLimit, "P8 reinforcement unit threshold");
                 changed = true;
             }
 
@@ -536,22 +553,32 @@ namespace AgainstRomeModifier
         /// Checks whether the gate region matches the original 5×pushlit_0 pattern.
         /// </summary>
         private static bool IsOriginalGate(byte[] data, int gateOffset)
+            => HasGateWords(data, gateOffset, OriginalGateWords);
+
+        private static bool HasGateWords(byte[] data, int gateOffset, int[] expectedWords)
         {
-            if (gateOffset + OriginalGateWords.Length * 4 > data.Length) return false;
-            for (int i = 0; i < OriginalGateWords.Length; i++)
+            if (gateOffset + expectedWords.Length * 4 > data.Length) return false;
+            for (int i = 0; i < expectedWords.Length; i++)
             {
-                if (BitConverter.ToInt32(data, gateOffset + i * 4) != OriginalGateWords[i])
+                if (BitConverter.ToInt32(data, gateOffset + i * 4) != expectedWords[i])
                     return false;
             }
             return true;
         }
 
-        private static int FindActiveLimitSequenceOffset(byte[] decompressedBci)
+        private static bool IsLegacyUnitThreshold(int value) =>
+            value == LegacyLowUnitThreshold || value == LegacyHighUnitThreshold;
+
+        private static bool IsRecognizedUnitThreshold(int value) =>
+            value == OriginalUnitThreshold ||
+            value == LegacyLowUnitThreshold ||
+            value == UltimateUnitThreshold ||
+            value == LegacyHighUnitThreshold;
+
+        private static int FindReinforcementThresholdSequenceOffset(byte[] decompressedBci)
         {
-            // Use null wildcards for the entire gate region (15 words at offset 8..22)
-            // so we can match both the original gate (66,0 series) and any legacy
-            // BoundedGate variant (90,11,117,... jump instructions).
-            // This 23-word pattern is unique in all ak_level.bci files, so no tail anchor is required.
+            // The prefix identifies the P8 block; Detect then validates the complete
+            // 15-word gate against exact original/current/legacy signatures.
             int?[] pattern = new int?[] {
                 0x5A, 0, 0x42, null, 96, 98, 0x5B, 11,
                 null, null, null, null, null, null, null,
@@ -590,16 +617,30 @@ namespace AgainstRomeModifier
 
         // 第三控制點：狀態 49 捐贈走訪的單位型別過濾（0x1825C 附近，全檔唯一的
         // s_getUnitType 呼叫）。原版 `if (s_getUnitType(obj) == 1)` 只讓型別 1
-        // （單人單位）進入配額/捐贈分支，士兵小隊（squad，型別 != 1）一律留在
-        // 撤退陣列走回地圖出口——這就是「配額歸零後士兵仍撤退」的原因。
-        // 把 jz 的跳躍位移 92 改為 0（跳到下一條指令，等同吃掉條件不跳），
-        // 所有單位都進入配額判斷；配額 0 → 全部 s_setObjMark 捐給 type-4 隊伍。
+        // （單人單位：平民、駄馬、首領）進入配額/捐贈分支，士兵小隊（squad，
+        // 型別 != 1）一律留在撤退陣列走回地圖出口——這就是「配額歸零後士兵
+        // 仍撤退」的原因。
+        //
+        // 2026-07-17 修正：舊版 Ultimate 把 jz 位移 92 改 0（吃掉條件），所有
+        // 單位都被捐贈留村——結果 type-5 增援隨隊的駄馬/平民也留下，每波堆積
+        // （ESAVE_001 實測羅馬營地駄馬爆量）。新版改為「反轉」條件：jz(117)
+        // → jnz(118)、位移保留 92。型別 1（駄馬/平民/首領）跳過捐贈分支、
+        // 照原版走撤退離場；士兵小隊落入配額分支，配額 0 → 全部 s_setObjMark
+        // 捐給 type-4 隊伍留村。士兵留下、駄馬撤退，兩者兼得（代價：原版
+        // 會捐 2~3 個平民給村莊的行為不再發生，可接受）。
+        // 簽章的 jz/jnz opcode 字（index 9）與位移字（index 10）都是萬用碼，
+        // 否則已套用檔（118）會比對不到。
         private static readonly int?[] DonationTypeFilterSignature = new int?[] {
-            128, 214, 73, -2, 86, 66, 1, 96, 102, 117, null
+            128, 214, 73, -2, 86, 66, 1, 96, 102, null, null
         };
+        private const int DonationTypeFilterJzOpcodeWordIndex = 9;
         private const int DonationTypeFilterJzOperandWordIndex = 10;
+        private const int DonationTypeFilterOriginalOpcode = 117;  // jz
         private const int DonationTypeFilterOriginalOperand = 92;
-        private const int DonationTypeFilterPatchedOperand = 0;
+        private const int DonationTypeFilterPatchedOpcode = 118;   // jnz（條件反轉）
+        private const int DonationTypeFilterPatchedOperand = 92;
+        // （2026-07-08 出貨的舊版 Ultimate 為 jz 位移 92→0：全部捐贈、駄馬堆積；
+        //  Detect 時落入 Legacy，Apply 自動遷移。）
 
         public PatchState Detect(byte[] decompressed)
         {
@@ -624,9 +665,10 @@ namespace AgainstRomeModifier
             int opcode9 = BitConverter.ToInt32(decompressed, opcodeOffset9);
             int value9 = BitConverter.ToInt32(decompressed, opcodeOffset9 + 4);
 
-            // 第三控制點：狀態 49 的單位型別過濾 jz 位移。
+            // 第三控制點：狀態 49 的單位型別過濾 jz/jnz opcode 與位移。
             int filterOffset = BciPattern.FindBciWordPattern(decompressed, DonationTypeFilterSignature);
             if (filterOffset < 0) return PatchState.Unknown;
+            int jzOpcode = BitConverter.ToInt32(decompressed, filterOffset + DonationTypeFilterJzOpcodeWordIndex * 4);
             int jzOperand = BitConverter.ToInt32(decompressed, filterOffset + DonationTypeFilterJzOperandWordIndex * 4);
 
             // 舊版 P9 曾把 site 8 也改成 [66,0]（導致增援只有村民）——判為 Legacy，
@@ -636,13 +678,15 @@ namespace AgainstRomeModifier
             bool site9Ultimate = opcode9 == RetreatQuotaPatchedOpcode && value9 == RetreatQuotaPatchedValue;
             bool site9Original = opcode9 == RetreatQuotaOriginalOpcode && value9 == RetreatQuotaOriginalValue;
 
-            if (site9Ultimate && jzOperand == DonationTypeFilterPatchedOperand)
+            if (site9Ultimate && jzOpcode == DonationTypeFilterPatchedOpcode && jzOperand == DonationTypeFilterPatchedOperand)
                 return PatchState.Ultimate;
-            if (site9Original && jzOperand == DonationTypeFilterOriginalOperand)
+            if (site9Original && jzOpcode == DonationTypeFilterOriginalOpcode && jzOperand == DonationTypeFilterOriginalOperand)
                 return PatchState.Original;
 
-            // 例如 2026-07-08 出貨的中間狀態：site9 已歸零但型別過濾仍為原版
-            // （士兵小隊照樣撤退）——判為 Legacy，Apply 時補上過濾修改。
+            // Legacy 涵蓋兩種出貨過的中間狀態：
+            // 1. 2026-07-08 前期：site9 已歸零但型別過濾仍為原版（士兵小隊照樣撤退）。
+            // 2. 2026-07-08 後期：jz 位移 92→0（全部捐贈，駄馬/平民堆積在羅馬營地）。
+            // Apply 時自動遷移到 jnz 反轉版。
             return PatchState.Legacy;
         }
 
@@ -694,9 +738,13 @@ namespace AgainstRomeModifier
                 }
             }
 
-            // State-49 donation type filter: with the filter active, soldier squads
-            // (unit type != 1) bypass the quota branch and always retreat; operand 0
-            // makes the jz fall through so every unit is subject to the (zeroed) quota.
+            // State-49 donation type filter, INVERTED (jz->jnz, offset kept at 92):
+            // soldier squads (unit type != 1) fall into the quota branch and get
+            // donated (quota 0 => all stay in the village); single units (type 1:
+            // pack horses / civilians / leader) take the jump and follow the
+            // vanilla retreat path off the map. This keeps reinforcements while
+            // preventing pack-horse pileup (legacy operand-0 variant donated
+            // EVERYTHING, so pack horses accumulated every wave).
             {
                 int filterOffset = BciPattern.FindBciWordPattern(decompressed, DonationTypeFilterSignature);
                 if (filterOffset < 0)
@@ -705,13 +753,21 @@ namespace AgainstRomeModifier
                 }
                 else
                 {
+                    int opcodeOffset = filterOffset + DonationTypeFilterJzOpcodeWordIndex * 4;
                     int operandOffset = filterOffset + DonationTypeFilterJzOperandWordIndex * 4;
+                    int currentOpcode = BitConverter.ToInt32(decompressed, opcodeOffset);
                     int currentOperand = BitConverter.ToInt32(decompressed, operandOffset);
+                    int targetOpcode = enabled ? DonationTypeFilterPatchedOpcode : DonationTypeFilterOriginalOpcode;
                     int targetOperand = enabled ? DonationTypeFilterPatchedOperand : DonationTypeFilterOriginalOperand;
 
+                    if (currentOpcode != targetOpcode)
+                    {
+                        BciPattern.WriteBciInt32(decompressed, opcodeOffset, currentOpcode, targetOpcode, "P9 donation type filter jump opcode");
+                        changed = true;
+                    }
                     if (currentOperand != targetOperand)
                     {
-                        BciPattern.WriteBciInt32(decompressed, operandOffset, currentOperand, targetOperand, "P9 donation type filter jz operand");
+                        BciPattern.WriteBciInt32(decompressed, operandOffset, currentOperand, targetOperand, "P9 donation type filter jump operand");
                         changed = true;
                     }
                 }

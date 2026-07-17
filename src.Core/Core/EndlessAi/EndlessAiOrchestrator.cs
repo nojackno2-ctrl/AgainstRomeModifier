@@ -84,7 +84,7 @@ namespace AgainstRomeModifier
             var p7 = new P7_SpawnProbabilitiesPatch();
 
             // P8: 增援單位數門檻
-            var p8 = new P8_ActiveLimitPatch();
+            var p8 = new P8_ReinforcementUnitThresholdPatch();
 
             // P9: 撤退配額歸零
             var p9 = new P9_RetreatQuotaPatch();

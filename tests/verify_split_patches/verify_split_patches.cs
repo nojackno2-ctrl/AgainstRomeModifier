@@ -370,12 +370,12 @@ namespace AgainstRomeModifierTests {
                         if (I32(d, sp + rel) != 101) Fail($"{name}: P7 生成機率(+{rel})應為 101，實為 {I32(d, sp + rel)}");
                 }
 
-                // P8 增援門檻 40，gate 保持 66,0
+                // P8 增援門檻 30，gate 保持 66,0
                 int?[] limitSig = { 0x5A, 0, 0x42, null, 96, 98, 0x5B, 11, null, null, 0x42, 0, 0x42, 0, 0x42, 0, 0x42, 0, 0x5A, 6, 102, 117, 32 };
                 int lim = BciPattern.FindBciWordPattern(d, limitSig);
                 if (lim < 0) Fail($"{name}: 找不到 P8 門檻簽章");
                 else {
-                    if (I32(d, lim + 12) != 40) Fail($"{name}: P8 增援門檻應為 40，實為 {I32(d, lim + 12)}");
+                    if (I32(d, lim + 12) != 30) Fail($"{name}: P8 增援門檻應為 30，實為 {I32(d, lim + 12)}");
                     if (I32(d, lim + 32) != 66 || I32(d, lim + 36) != 0) Fail($"{name}: P8 gate 應保持 66,0，實為 {I32(d, lim + 32)},{I32(d, lim + 36)}");
                 }
 
@@ -393,13 +393,16 @@ namespace AgainstRomeModifierTests {
                         Fail($"{name}: P9 撤退配額(索引 9，偏移 0x{q9:X})應為 66,0，實為 {I32(d, q9 + 16)},{I32(d, q9 + 20)}");
                 }
 
-                // P9 第三控制點：狀態 49 捐贈走訪的 s_getUnitType 型別過濾 jz 位移應為 0
-                // （原版 92 會讓士兵小隊繞過捐贈、一律撤退）
-                int?[] typeFilterSig = { 128, 214, 73, -2, 86, 66, 1, 96, 102, 117, null };
+                // P9 第三控制點：狀態 49 捐贈走訪的 s_getUnitType 型別過濾應為
+                // 反轉版 jnz(118)+92：士兵小隊(type!=1)落入捐贈分支留村，
+                // 駄馬/平民(type==1)照原版撤退離場。
+                // （原版 jz(117)+92 = 士兵一律撤退；舊版 Ultimate jz+0 = 全部
+                //  捐贈 → 駄馬每波堆積。）
+                int?[] typeFilterSig = { 128, 214, 73, -2, 86, 66, 1, 96, 102, null, null };
                 int tf = BciPattern.FindBciWordPattern(d, typeFilterSig);
                 if (tf < 0) Fail($"{name}: 找不到 P9 捐贈型別過濾簽章");
-                else if (I32(d, tf + 40) != 0)
-                    Fail($"{name}: P9 捐贈型別過濾 jz 位移應為 0，實為 {I32(d, tf + 40)}");
+                else if (I32(d, tf + 36) != 118 || I32(d, tf + 40) != 92)
+                    Fail($"{name}: P9 捐贈型別過濾應為 jnz(118)+92，實為 {I32(d, tf + 36)},{I32(d, tf + 40)}");
             }
 
             // ---- ak_haupthaus.bci ----

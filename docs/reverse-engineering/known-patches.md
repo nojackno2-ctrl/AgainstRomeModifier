@@ -277,20 +277,18 @@
   Apply. Save Manager can apply the identical repair to a selected save's
   embedded `ak_level` only after creating a full backup.
 - Military-reinforcement unit-count threshold at decompressed `0x195F8`:
-  `4 -> 40` (2026-07-03 update; the previous `8` is accepted as legacy-enabled
+  `4 -> 30` (the previous `8` and `40` values are accepted as legacy-enabled
   and migrated on the next apply). The spawner only sends the next type-5
   reinforcement wave while `s_searchTeamUnits(team) < threshold`, so with the
-  retreat quota zeroed (below) the team's army accumulates up to ~40 units
-  (40 x 20 members = 800, under the EXE global population cap of 1600) and
+  retreat quota zeroed (below) the team's army accumulates up to ~30 units
+  (30 x 20 members = 600, under the EXE global population cap of 1600) and
   then stops growing — a natural upper bound below the population limit.
-- Bounded reinforcement condition tail at decompressed `0x1960C`: AI Ultimate
-  replaces the original resource/leader/civilian/unit conjunction with three
-  equivalent branches enforcing `s_searchTeamUnits(team) < 40`. This removes
-  the resource checks and transient leader/civilian predicates that could stop
-  Roman reinforcement at about nine units in the 2026-07-05 `ESAVE_000`
-  snapshot. The one-type-5-party gate and the existing type-4 settlement/building checks remain earlier
-  in the function. The former `jmp +272` is still rejected because it skips the
-  unit threshold too.
+- Reinforcement condition tail at decompressed `0x1960C`: current AI Ultimate
+  preserves the complete original resource/leader/civilian/unit conjunction
+  and changes only the threshold literal at `0x195F8` to `30`. Earlier
+  experimental builds installed two bounded, unit-count-only tails; those are
+  migration inputs, not the current output. Applying the current version
+  restores either exact historical tail to the original condition words.
 - Reinforcement no-retreat (RE-ENABLED 2026-07-03 with the missing piece):
   the type-5 retreat quota write `v56[party] <- pushloc 15` at decompressed
   `0x17888` region (unique signature
@@ -302,15 +300,18 @@
   retreating them. The 2026-07-03 failure of this exact edit is now explained:
   the threshold was still `8`, so donated units pushed `s_searchTeamUnits`
   over the spawner condition after roughly one wave and reinforcements
-  stopped — the quota patch MUST ship together with the `40` threshold, and
+  stopped — the quota patch MUST ship together with the bounded threshold, and
   both are driven by the same toggle. Handed-over units are not inserted into
   the type-4 party's `v52` object array, so the settled handler's dead-party
   check (leader + civilians + tracked members) is not blocked by them. The
   donation formula literals at `0x17788` (`4,2,2`) stay vanilla — with the
   quota forced to 0 the formula only shapes the civilian-recreate quota
   (`v57`), not the retreat set.
-- The gate at `0x1960C` uses the unit-count-only bounded sequence
-  above; disabling restores the original condition words exactly.
+- The current gate at `0x1960C` uses the original condition words exactly.
+  Detection accepts only the complete original gate, the exact old
+  `112,272` gate, or either exact historical bounded-gate sequence together
+  with a recognized threshold (`4`, `8`, `30`, or `40`). Any other combination
+  is `Unknown`; Apply leaves it byte-identical and refuses to enable P8.
 - The Siedler spawner's default and 0/1/2/3-live-party probability literals change from `0,0,80,60,40,20` to `101,101,101,101,101,101`. The single-player occupied mask reserves player team 0, and `pickTeam` selects only unoccupied CPU teams 1-7, so this fills at most seven simultaneous computer opponents and reuses a defeated team's slot after cleanup.
 - M8 changes the new-game type-1 settlement limit initialization from
   `s_randRange(4, 2) -> v70` to `s_randRange(4, 4) -> v70`. The unique BCI
@@ -327,7 +328,7 @@
   (`(TH,CAP,DIV)` `4,2,2 -> 8,4,1`). Both broke reinforcement arrivals in
   runtime testing (reported: Roman reinforcements stopped, active-party
   limit also appeared to have no effect). The root cause was the still-low
-  threshold of 8. Current AI Ultimate uses quota 0 together with threshold 40;
+  threshold of 8. Current AI Ultimate uses quota 0 together with threshold 30;
   the widened donation formula remains rejected and vanilla. See
   `endless-mode-ai.md` for full detail.
 - Older builds wrote `112,272` at `0x1960C` and shortened every action loop to
