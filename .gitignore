@@ -2,6 +2,11 @@
 .vs/
 [Bb]in/
 [Oo]bj/
+
+# CMake build output (e.g. native/argm-trace)
+/build/
+CMakeCache.txt
+CMakeFiles/
 *.csproj.user
 *.user
 *.suo
