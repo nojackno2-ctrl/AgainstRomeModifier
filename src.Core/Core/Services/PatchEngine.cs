@@ -14,6 +14,9 @@ public class PatchEngine
     public bool IsDgVoodooInstalled(string gamePath) =>
         new DgVoodooFeature(_logger).IsInstalled(gamePath);
 
+    public bool IsArgmTraceInstalled(string gamePath) =>
+        new ArgmTraceFeature(_logger).IsInstalled(gamePath);
+
     public PatchProfile DetectCurrentPatchState(string gamePath, BackupManager backupManager)
     {
         PatchProfile detected = new FeatureDetector(_logger).Detect(gamePath, backupManager);
@@ -94,6 +97,7 @@ public class PatchEngine
             options.DgVoodoo,
             rollback,
             nativeWidescreenWindow: options.NativeWidescreen1920x1080);
+        new ArgmTraceFeature(_logger).Apply(gamePath, options.ArgmTrace, rollback);
     }
 
     public void RunStartupSafeMigrations(
