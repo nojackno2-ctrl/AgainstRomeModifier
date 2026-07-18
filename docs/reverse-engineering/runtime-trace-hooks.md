@@ -33,6 +33,9 @@ rebased at load time for ASLR. Sources are `exe-functions.md` and
 | `ai.active` | `0x00548CE0` | `s_setNPCActive` impl (`FUN_00548ce0`) | A defeated AI team marked eligible to respawn (`DAT_029e6000[team]`). |
 | `ai.village` | `0x00549500` | `s_setVillageTemplate` impl | Settlement-style AI arrival. |
 | `ai.unit` | `0x0052A020` | `s_createUnitAndMems` callback | Unit-and-members creation. |
+| `ai.query` | `0x00548D20` | `s_NPCActive` getter (`FUN_00548d20`) | Snapshots **all eight** teams' respawn-eligibility flags (`DAT_029e6000[0..7]`) every time the AI queries one. The getter has no side effects, so at hook entry the array already holds the value it returns. The single most direct "why isn't team N reinforcing" datum — the party state machine gates type-4 reinforcement on this flag. |
+| `ai.level` | `0x0054A070` | level-init sweep | Zeroes the per-team NPC arrays once per level load. Logged as a **NEW SESSION BOUNDARY** so one run's events are separable from the next inside a single log file (endless behavior reports must come from a fresh session). |
+| `ai.unitmax` | `0x005249D0` / `0x00524D70` | `s_createBattleUnitsMax` / `s_createCiviUnitsMax` impls | Requested unit count before the `<=20` clamp, so "AI wanted N but got 20" or "requested 0" is visible. |
 | `game.faction` | `0x0045BD60` | Endless Roman faction selector setter | The faction chosen in `dlg_volk`. Two 21-byte signatures are attempted: the stock prologue and the force-Roman-patched prologue (`53 6A 03 5B 90`, see known-patches.md), so tracing works on modified installs too. Signature-verified, so safe even on an unrecognized build. |
 | `bci.op` | `0x005B1C60` | BCI VM dispatcher entry | Full opcode stream. VERY high volume; off by default. **Byte-verified correction:** the true function entry is `0x005B1C60` (`53 56 57 55 89 E5 ...`), and the VM context is stack **argument 1** — `mov ebx,[ebp+0x14]` only happens at `0x005B1C6F`, so at entry `EBX` still holds the caller's value. The hook reads the context from the caller stack. PC at ctx`+0x08`, code length at ctx`+0x28`, code base at ctx`+0x2C`. |
 
@@ -96,6 +99,25 @@ so raw offset = VA − 0x400000 for code):
 - **`0x0045BD60`** on this install is already force-Roman-patched
   (`53 6A 03 5B 90 ...`), which is why the trace tool now ships both signature
   variants.
+- **`0x00548D20`** (`s_NPCActive` getter) prologue
+  `8B 44 24 04 85 C0 7C 14 83 F8 08 7D 0F 80 B8 00 60 9E 02`: arg1 team at
+  `[esp+4]`, reads `byte [team+0x029E6000]`, returns 0/1. Confirms the
+  `DAT_029e6000` array base and that the flag can be snapshotted read-only at
+  entry. 6-byte relocatable prologue.
+- **`0x0054A070`** (level-init sweep) prologue
+  `53 56 57 55 83 EC 24 BB 38 91 9C 02 ...`: `mov ebx, 0x029C9138` is the first
+  of several per-team arrays it zeroes; no arguments needed for the boundary
+  marker. 7-byte relocatable prologue.
+- **`0x005249D0`** / **`0x00524D70`** (`s_createBattleUnitsMax` /
+  `s_createCiviUnitsMax` impls) prologues `53 56 57 55 83 EC 0C 8B 54 24 24` and
+  `53 56 57 55 83 EC 08 8B 6C 24 24`: 4 pushes then a `sub esp` then argument
+  loads; the count argument is read at the documented `<=20` clamp. Args are
+  read from the caller stack at entry (`cs[1..3]`). 7-byte relocatable
+  prologues.
+- These four `ai.query`/`ai.level`/`ai.unitmax` targets are the endless-AI
+  decision-context deepening (2026-07-18): the action hooks record what the AI
+  *did*, and these record the *inputs and boundaries* so "why didn't it act"
+  is answerable from the log alone.
 - All six targets' prologues decode to ≥5 relocatable bytes with no relative
   branches (covered by `tests/lde_test.cpp` prologue cases).
 - Installed build fingerprint: `TimeDateStamp = 0x404D1710` (also noted in

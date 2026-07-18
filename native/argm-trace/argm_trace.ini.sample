@@ -32,6 +32,15 @@ traceNpcActive=1
 traceVillage=1
 traceCreateUnit=1
 
+; Endless-AI decision-context hooks (also low frequency, safe to leave on).
+; traceNpcQuery snapshots all 8 teams' respawn-eligibility flags every time the
+; AI queries one -- the most direct "why isn't team N reinforcing" evidence.
+; traceLevelInit marks each new session boundary in the log.
+; traceUnitMax records requested unit counts before the <=20 clamp.
+traceNpcQuery=1
+traceLevelInit=1
+traceUnitMax=1
+
 ; Full BCI opcode stream. VERY high volume (can be hundreds of MB/min). Only
 ; enable for short, targeted captures.
 traceOpcodes=0

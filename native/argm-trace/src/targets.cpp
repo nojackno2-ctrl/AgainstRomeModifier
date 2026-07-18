@@ -31,6 +31,15 @@ uint32_t SafeRead32(uintptr_t addr, uint32_t fallback) {
     }
 }
 
+// __try-guarded byte read; returns fallback on access violation.
+uint8_t SafeRead8(uintptr_t addr, uint8_t fallback) {
+    __try {
+        return *reinterpret_cast<volatile uint8_t*>(addr);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return fallback;
+    }
+}
+
 // __try-guarded best-effort C-string copy out of game memory. Non-printable
 // bytes become '.'; returns "?" if the pointer faults immediately.
 const char* SafeReadStr(uint32_t addr, char* buf, size_t cap) {
@@ -79,6 +88,53 @@ void FmtVillage(const HookDescriptor&, const RegBank&, const uint32_t* cs) {
 // s_createUnitAndMems callback (0052A020).
 void FmtCreateUnit(const HookDescriptor&, const RegBank&, const uint32_t* cs) {
     LogLine("ai.unit", "createUnitAndMems a1=%08X a2=%08X a3=%08X ret=%08X",
+            cs[1], cs[2], cs[3], cs[0]);
+}
+
+// Per-team respawn-eligibility flag array DAT_029e6000 (8 bytes, one per team).
+// Documented in exe-functions.md / endless-mode-ai.md; rebased for ASLR.
+constexpr uintptr_t kNpcActiveArrayVa = 0x029E6000;
+
+// s_NPCActive getter (00548D20): reads DAT_029e6000[team] and returns it. The
+// getter has no side effects, so at hook entry the array already holds the
+// value it will return -- we snapshot ALL eight teams at once. This is the
+// single most useful "why isn't team N reinforcing" datum: the endless party
+// state machine gates type-4 reinforcement on this flag.
+void FmtNpcActiveGet(const HookDescriptor&, const RegBank&, const uint32_t* cs) {
+    uint32_t team = cs[1];
+    uintptr_t arr = kNpcActiveArrayVa + g_loadDelta;
+    uint8_t s[8];
+    for (int i = 0; i < 8; i++) s[i] = SafeRead8(arr + i, 0xFF);
+    unsigned active = team < 8 ? s[team] : 0xFF;
+    LogLine("ai.query",
+            "NPCActive team=%u -> active=%u | all[t0=%u t1=%u t2=%u t3=%u "
+            "t4=%u t5=%u t6=%u t7=%u] ret=%08X",
+            team, active, s[0], s[1], s[2], s[3], s[4], s[5], s[6], s[7], cs[0]);
+}
+
+// Level-init sweep (0054A070): zeroes DAT_029e6000[0..7] and other per-team
+// arrays once per level load. Logged as a fresh-session boundary -- every
+// endless behavior report must come from a new session, so this line is the
+// anchor that separates one run's events from the next in a single log file.
+void FmtLevelInit(const HookDescriptor&, const RegBank&, const uint32_t* cs) {
+    LogLine("ai.level",
+            "===== level-init: per-team NPC state reset (NEW SESSION BOUNDARY) "
+            "ret=%08X =====", cs[0]);
+}
+
+// s_createBattleUnitsMax impl (005249D0): the count argument is clamped to
+// <=20. Records the requested count before the clamp so an "AI wanted N but got
+// 20" or "requested 0" situation is visible.
+void FmtBattleMax(const HookDescriptor&, const RegBank&, const uint32_t* cs) {
+    LogLine("ai.unitmax",
+            "createBattleUnitsMax req a1=%u a2=%u a3=%u (clamp<=20) ret=%08X",
+            cs[1], cs[2], cs[3], cs[0]);
+}
+
+// s_createCiviUnitsMax impl (00524D70): civilian variant of the above.
+void FmtCiviMax(const HookDescriptor&, const RegBank&, const uint32_t* cs) {
+    LogLine("ai.unitmax",
+            "createCiviUnitsMax req a1=%u a2=%u a3=%u (clamp<=20) ret=%08X",
             cs[1], cs[2], cs[3], cs[0]);
 }
 
@@ -159,7 +215,27 @@ const uint8_t kBciSig[] = {0x53, 0x56, 0x57, 0x55, 0x89, 0xE5, 0x81, 0xEC,
                            0x5D, 0x14, 0x8B, 0x53, 0x08, 0x8B, 0x4B, 0x28};
 const char kBciMask[] = "xxxxxxxxxxxxxxxxxxxxxxxx";
 
-HookDescriptor g_targets[8];
+// s_NPCActive getter 00548D20: arg1 team at [esp+4], reads DAT_029e6000[team].
+const uint8_t kNpcQuerySig[] = {0x8B, 0x44, 0x24, 0x04, 0x85, 0xC0, 0x7C, 0x14,
+                                0x83, 0xF8, 0x08, 0x7D, 0x0F, 0x80, 0xB8};
+const char kNpcQueryMask[] = "xxxxxxxxxxxxxxx";
+
+// Level-init sweep 0054A070: 4 pushes, sub esp,0x24, mov ebx,<npc array>.
+const uint8_t kLevelInitSig[] = {0x53, 0x56, 0x57, 0x55, 0x83, 0xEC, 0x24,
+                                 0xBB, 0x38, 0x91, 0x9C, 0x02};
+const char kLevelInitMask[] = "xxxxxxxxxxxx";
+
+// s_createBattleUnitsMax impl 005249D0: 4 pushes, sub esp,0x0C, arg loads.
+const uint8_t kBattleMaxSig[] = {0x53, 0x56, 0x57, 0x55, 0x83, 0xEC, 0x0C,
+                                 0x8B, 0x54, 0x24, 0x24};
+const char kBattleMaxMask[] = "xxxxxxxxxxx";
+
+// s_createCiviUnitsMax impl 00524D70: 4 pushes, sub esp,0x08, arg loads.
+const uint8_t kCiviMaxSig[] = {0x53, 0x56, 0x57, 0x55, 0x83, 0xEC, 0x08,
+                               0x8B, 0x6C, 0x24, 0x24};
+const char kCiviMaxMask[] = "xxxxxxxxxxx";
+
+HookDescriptor g_targets[16];
 int g_targetCount = 0;
 
 void Add(const char* name, uintptr_t va, HitFormatter fmt, int argc,
@@ -274,6 +350,17 @@ void InstallAllHooks(const Config& cfg) {
         if (cfg.traceCreateUnit)
             Add("createunit", 0x0052A020, FmtCreateUnit, 3, kCreateUnitSig,
                 kCreateUnitMask);
+        if (cfg.traceNpcQuery)
+            Add("npcquery", 0x00548D20, FmtNpcActiveGet, 1, kNpcQuerySig,
+                kNpcQueryMask);
+        if (cfg.traceLevelInit)
+            Add("levelinit", 0x0054A070, FmtLevelInit, 0, kLevelInitSig,
+                kLevelInitMask);
+        if (cfg.traceUnitMax) {
+            Add("battlemax", 0x005249D0, FmtBattleMax, 3, kBattleMaxSig,
+                kBattleMaxMask);
+            Add("civimax", 0x00524D70, FmtCiviMax, 3, kCiviMaxSig, kCiviMaxMask);
+        }
         if (cfg.traceOpcodes)
             Add("bciop", 0x005B1C60, FmtOpcode, 0, kBciSig, kBciMask);
     } else {

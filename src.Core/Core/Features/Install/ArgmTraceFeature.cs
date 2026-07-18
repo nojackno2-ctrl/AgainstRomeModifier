@@ -185,6 +185,10 @@ internal sealed class ArgmTraceFeature
         sb.Append("traceNpcActive=1\r\n");
         sb.Append("traceVillage=1\r\n");
         sb.Append("traceCreateUnit=1\r\n");
+        sb.Append("; 無盡 AI 決策脈絡：復活資格快照、新局邊界、單位數量上限。\r\n");
+        sb.Append("traceNpcQuery=1\r\n");
+        sb.Append("traceLevelInit=1\r\n");
+        sb.Append("traceUnitMax=1\r\n");
         sb.Append("traceOpcodes=0\r\n");
         return sb.ToString();
     }
