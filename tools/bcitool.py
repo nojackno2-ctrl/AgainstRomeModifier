@@ -117,7 +117,7 @@ class Bci:
 OP1 = {64, 65, 66, 68, 69, 70, 73, 76, 77, 78, 80, 81, 82, 83, 84, 90, 91, 92, 93,
        112, 113, 114, 115, 116, 117, 118, 120, 128, 129, 160}
 OP2 = {67}
-OPNAME = {32: "add", 37: "sub/bit", 40: "or", 41: "or2", 44: "and/comb",
+OPNAME = {32: "add", 33: "sub", 34: "mul", 35: "div", 37: "bitop", 40: "or", 41: "or2", 44: "and/comb",
           66: "pushlit", 71: "pop", 73: "argc", 74: "p74", 75: "p75",
           80: "pushsym80", 81: "pushvar", 82: "storevar", 86: "call",
           90: "arrbase", 91: "arrstore", 94: "p94", 95: "p95", 96: "cmp0",

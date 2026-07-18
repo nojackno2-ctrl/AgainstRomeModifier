@@ -460,6 +460,28 @@
   Runtime verified 2026-07-03: in-game the village AI now converts 20
   villagers per squad with the patch applied.
 
+### Village Garrison Quota 3x (`VillageGarrisonQuota3x`, Experimental)
+
+- File: `SYSTEM/CLAK/SCRIPT/Dorfverteidigung.bci`.
+- Vanilla quota source: four `s_searchImportantPos` calls for ImportantPos
+  types 1..4 at code-stream offsets `0xD350/0xD37C/0xD3A8/0xD3D4`; their
+  results feed per-type quota variables 60/62/64/66. The total squad target is
+  their sum and is runtime/map dependent, not a single literal.
+- P20 replaces each exact external `[128,151,73,-2,86]` call with a same-size
+  opcode-120 internal call to one appended 22-word (88-byte) helper. The helper
+  calls original symbol #151 and calculates `result * 3` with VM opcode 34;
+  native dispatcher case `0x22` confirms signed integer multiplication.
+- The feature is independent of AI Ultimate M1's `6..6 -> 20..20`
+  members-per-squad patch. It triples the number of squads requested for every
+  existing ImportantPos type, preserving ratios and zero values.
+- Original/Ultimate detection requires all four exact sites and, for Ultimate,
+  the exact helper bytes and resolved target at code end. Mixed, malformed, or
+  duplicated states are Unknown and refused. Disable restores the four calls,
+  removes the helper, updates `codeSize`, and returns recognized inputs exactly.
+- Static/apply/idempotence/restore tests are verified. Fresh-game runtime and
+  performance are pending, so the UI marks the option Experimental and Enable
+  All deliberately leaves it off.
+
 ### 10x Idle HP Regeneration (amount, not interval)
 
 - Files: 12 `SYSTEM/CLAK/SCRIPT/<name>.bci` unit AI scripts (`ak_anfuehrer`,

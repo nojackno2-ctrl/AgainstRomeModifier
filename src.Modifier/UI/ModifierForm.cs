@@ -77,6 +77,7 @@ namespace AgainstRomeModifier {
         private ModernToggle chkAiCore = null!;
         private ModernToggle chkAiM5 = null!;
         private ModernToggle chkRomanReinforcementGarrison = null!;
+        private ModernToggle chkVillageGarrisonQuota3x = null!;
         private ModernToggle chkDgVoodoo = null!;
         private ModernToggle chkArgmTrace = null!;
         private ModernToggle chkVillageBuildRange = null!;
@@ -907,10 +908,12 @@ namespace AgainstRomeModifier {
             chkAiCore = new ModernToggle { Text = Loc.Get("AiCore"), Size = new Size(260, 26), Checked = false, BackColor = Color.Transparent, Font = fontJhengHei10B };
             chkAiM5 = new ModernToggle { Text = Loc.Get("AiM5"), Size = new Size(260, 26), Checked = false, BackColor = Color.Transparent, Font = fontJhengHei10B };
             chkRomanReinforcementGarrison = new ModernToggle { Text = Loc.Get("RomanReinforcementGarrison"), Size = new Size(310, 26), Checked = false, BackColor = Color.Transparent, Font = fontJhengHei10B };
+            chkVillageGarrisonQuota3x = new ModernToggle { Text = Loc.Get("VillageGarrisonQuota3x"), Size = new Size(310, 26), Checked = false, BackColor = Color.Transparent, Font = fontJhengHei10B };
             pnlAiCard.Controls.Add(chkAiM1);
             pnlAiCard.Controls.Add(chkAiCore);
             pnlAiCard.Controls.Add(chkAiM5);
             pnlAiCard.Controls.Add(chkRomanReinforcementGarrison);
+            pnlAiCard.Controls.Add(chkVillageGarrisonQuota3x);
 
             pnlVillagerCard = new Panel {
                 Location = new Point(0, 0),

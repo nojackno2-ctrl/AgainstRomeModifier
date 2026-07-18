@@ -568,6 +568,40 @@ civilian-to-battle-unit conversion is driven by `Dorfverteidigung.bci`
   village AI converts 20 villagers into a single squad in-game, confirming
   both the root-cause analysis and the members-per-unit interpretation.
 
+### Village-garrison quota 3x (P20, Experimental)
+
+The squad-size patch above does not change how many squads the village keeps.
+The actual four per-type quotas are dynamic:
+
+- At code-stream offsets `0xD350`, `0xD37C`, `0xD3A8`, and `0xD3D4`, the
+  script calls `s_searchImportantPos` (symbol #151) for ImportantPos types
+  1..4. The returned counts are later copied into quota variables
+  60/62/64/66 at `0xD7DC..0xD814`.
+- Each of the four recruitment paths counts existing squads of its figure type
+  and creates a replacement job only while that count is below its own quota.
+  The vanilla total is therefore
+  `count(IPOS01)+count(IPOS02)+count(IPOS03)+count(IPOS04)`, not one fixed
+  global literal. A read-only scan of all 42 original settlement SDL templates
+  found no serialized `OD_IPOS01..04` object text, so the exact total remains
+  runtime/map dependent.
+- Standalone feature `VillageGarrisonQuota3x` redirects only those four exact
+  calls, using same-size opcode-120 internal-call instructions, to one 22-word
+  (88-byte) helper appended at the BCI code-section end. The helper calls the
+  original symbol and applies opcode 34 with literal 3. Native VM dispatcher
+  case `0x22` confirms signed integer multiplication.
+- The multiplier preserves relative per-type quotas and zero values. It is
+  deliberately bounded at 3x rather than removing the guard entirely: more
+  squads consume civilians, population, simulation time, and save space.
+- Detection requires all four original calls, or all four exact helper targets
+  plus the exact helper bytes at code end. Mixed, duplicated, malformed, or
+  foreign targets are `Unknown` and are never written. Disable restores all
+  four external calls, removes the helper, updates `codeSize`, and is covered
+  by a byte-exact round trip.
+- Static signatures and automated integration are verified. Fresh endless-game
+  behavior, whether all extra squads receive useful defensive positions, and
+  long-run performance are still pending; the feature remains Experimental
+  and outside Enable All.
+
 ### Village AI is defense-only — attacks come from separate party scripts
 
 Question investigated 2026-07-04: "can an AI village-type Roman team sortie and

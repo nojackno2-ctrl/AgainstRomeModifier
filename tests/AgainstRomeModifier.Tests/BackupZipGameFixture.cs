@@ -86,6 +86,15 @@ internal sealed class BackupZipGameFixture : IDisposable
             66, 1500, 66, 25, 66, -25, 128, 34, 73, -2, 86, 32, 82, 14, 81, 14, 82, 15));
 
         var villageDefense = new List<int>();
+        int[] quotaTypes = { 1, 2, 3, 4 };
+        int[] quotaArrayVars = { 8, 10, 12, 14 };
+        int[] quotaStores = { 59, 61, 63, 65 };
+        for (int i = 0; i < quotaTypes.Length; i++)
+        {
+            Append(villageDefense,
+                66, quotaTypes[i], 81, quotaArrayVars[i],
+                128, 151, 73, -2, 86, 91, quotaStores[i], Gap);
+        }
         for (int i = 0; i < 4; i++)
         {
             Append(villageDefense, 66, 0, 66, 1, 66, 6, 66, 6, 66, 0, 66, 0, 66, 0, 66, 1, 90, 8, 128, 157, 73, -9, 86, Gap);

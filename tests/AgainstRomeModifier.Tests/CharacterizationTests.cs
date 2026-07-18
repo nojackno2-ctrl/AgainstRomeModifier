@@ -48,6 +48,7 @@ public sealed class CharacterizationTests
         GameSpeed = 2,
         ToEnglish = true,
         DgVoodoo = true,
+        VillageGarrisonQuota3x = true,
         EndlessAiModules = new(StringComparer.OrdinalIgnoreCase)
         {
             ["M1"] = true, ["M2"] = true, ["M3"] = true,
@@ -105,6 +106,7 @@ public sealed class CharacterizationTests
         Assert.True(detected.NoSpellAltar);
         Assert.True(detected.ToEnglish);
         Assert.True(detected.DgVoodoo);
+        Assert.True(detected.VillageGarrisonQuota3x);
         Assert.Equal(2, detected.GameSpeed);
         foreach (string id in AllEnabled().EndlessAiModules.Keys)
         {

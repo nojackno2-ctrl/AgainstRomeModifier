@@ -70,6 +70,7 @@ namespace AgainstRomeModifier {
             chkAiCore.Checked = false;
             chkAiM5.Checked = false;
             chkRomanReinforcementGarrison.Checked = false;
+            chkVillageGarrisonQuota3x.Checked = false;
             chkVillageBuildRange.Checked = false;
             chkDgVoodoo.Checked = false; // 相容性層關閉，以達到最乾淨的還原
             chkArgmTrace.Checked = false; // 除錯記錄器一併關閉，套用時會移除 version.dll
