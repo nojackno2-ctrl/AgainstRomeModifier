@@ -17,6 +17,7 @@ public sealed class ModifierFormPresetTests
 
         Assert.True(GetToggle(form, "chkNativeWidescreen1920x1080").Checked);
         Assert.True(GetToggle(form, "chkAllUnitsEntireMapVision").Checked);
+        Assert.False(GetToggle(form, "chkVillageGarrisonQuota3x").Checked);
     }
 
     private static void Invoke(ModifierForm form, string methodName)

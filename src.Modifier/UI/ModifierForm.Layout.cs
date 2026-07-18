@@ -198,9 +198,10 @@ namespace AgainstRomeModifier {
                 chkProjectileArcHeight,
                 chkUnitMovementSpeed2x,
                 chkAllUnitsEntireMapVision);
-            ConfigureSettingsCard(pnlAiCard, lblAiTitle, 302,
+            ConfigureSettingsCard(pnlAiCard, lblAiTitle, 350,
                 chkRomanEndless,
-                chkAiM1, chkAiCore, chkAiM5, chkRomanReinforcementGarrison);
+                chkAiM1, chkAiCore, chkAiM5, chkRomanReinforcementGarrison,
+                chkVillageGarrisonQuota3x);
 
             // 每組設定以同一層卡片底色收攏，讓長短不一的功能群組仍有清楚邊界。
             Color cardBackColor = Color.FromArgb(14, 18, 26);

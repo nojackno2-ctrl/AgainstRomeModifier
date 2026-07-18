@@ -1031,6 +1031,242 @@ namespace AgainstRomeModifier
     }
 
     // ==========================================
+    // P20: village garrison quota multiplier
+    // ==========================================
+    public sealed class P20_VillageGarrisonQuota3xPatch : IEndlessPatch
+    {
+        public string Id => "P20";
+        public string TargetPattern => "SYSTEM/CLAK/SCRIPT/Dorfverteidigung.bci";
+
+        private const int ExternalSymbolOpcode = 128;
+        private const int InternalCallOpcode = 120;
+        private const int SearchImportantPosSymbol = 151;
+        private const int CallOpcodeWordIndex = 4;
+        private const int CallOperandWordIndex = 5;
+
+        private static readonly int?[][] CallSiteSignatures =
+        {
+            new int?[] { 66, 1, 81, 8, null, null, 73, -2, 86, 91, 59 },
+            new int?[] { 66, 2, 81, 10, null, null, 73, -2, 86, 91, 61 },
+            new int?[] { 66, 3, 81, 12, null, null, 73, -2, 86, 91, 63 },
+            new int?[] { 66, 4, 81, 14, null, null, 73, -2, 86, 91, 65 },
+        };
+
+        // int quota3x(int importantPosType, int outputArray) {
+        //     return s_searchImportantPos(importantPosType, outputArray) * 3;
+        // }
+        // Opcode 34 is the VM's signed int multiplication handler. The helper
+        // is appended to the code section and all four same-size call sites are
+        // redirected to it, so no existing branch offsets move.
+        internal static readonly int[] Quota3xHelperWords =
+        {
+            74, 94, 73, 2,
+            90, -4, 90, -3,
+            128, SearchImportantPosSymbol, 73, -2, 86,
+            66, 3, 34,
+            87, 112, 0,
+            95, 75, 121,
+        };
+
+        public PatchState Detect(byte[] decompressed)
+        {
+            if (!TryFindCallSites(decompressed, out int[] sites))
+                return PatchState.Unknown;
+
+            bool hasHelper = TryLocateHelper(decompressed, out int helperOffset, out _);
+            bool allOriginal = true;
+            bool allUltimate = hasHelper;
+
+            foreach (int site in sites)
+            {
+                int callOpcodeOffset = site + CallOpcodeWordIndex * sizeof(int);
+                int callOpcode = BitConverter.ToInt32(decompressed, callOpcodeOffset);
+                int callOperand = BitConverter.ToInt32(
+                    decompressed,
+                    site + CallOperandWordIndex * sizeof(int));
+
+                bool original = callOpcode == ExternalSymbolOpcode &&
+                                callOperand == SearchImportantPosSymbol;
+                bool ultimate = hasHelper &&
+                                callOpcode == InternalCallOpcode &&
+                                callOperand == CalculateInternalCallOperand(callOpcodeOffset, helperOffset);
+                if (!original && !ultimate) return PatchState.Unknown;
+
+                allOriginal &= original;
+                allUltimate &= ultimate;
+            }
+
+            if (allOriginal && !hasHelper) return PatchState.Original;
+            if (allUltimate) return PatchState.Ultimate;
+            return PatchState.Unknown;
+        }
+
+        public bool Apply(ref byte[] decompressed, bool enabled)
+        {
+            PatchState state = Detect(decompressed);
+            if (state == PatchState.Unknown)
+                throw new InvalidOperationException("P20 village-garrison quota state is unknown; refusing to rewrite Dorfverteidigung control flow.");
+            if (enabled && state == PatchState.Ultimate) return false;
+            if (!enabled && state == PatchState.Original) return false;
+
+            if (!TryFindCallSites(decompressed, out int[] sites))
+                throw new InvalidOperationException("P20 village-garrison quota call sites are not unique.");
+
+            if (enabled)
+            {
+                int helperOffset = InsertHelper(ref decompressed);
+                foreach (int site in sites)
+                {
+                    int callOpcodeOffset = site + CallOpcodeWordIndex * sizeof(int);
+                    int callOperandOffset = site + CallOperandWordIndex * sizeof(int);
+                    BciPattern.WriteBciInt32(
+                        decompressed, callOpcodeOffset, ExternalSymbolOpcode, InternalCallOpcode,
+                        "P20 village quota helper call opcode");
+                    BciPattern.WriteBciInt32(
+                        decompressed, callOperandOffset, SearchImportantPosSymbol,
+                        CalculateInternalCallOperand(callOpcodeOffset, helperOffset),
+                        "P20 village quota helper call target");
+                }
+                return true;
+            }
+
+            if (!TryLocateHelper(decompressed, out int existingHelperOffset, out bool hasBciHeader))
+                throw new InvalidOperationException("P20 village-garrison quota helper is missing.");
+
+            foreach (int site in sites)
+            {
+                int callOpcodeOffset = site + CallOpcodeWordIndex * sizeof(int);
+                int callOperandOffset = site + CallOperandWordIndex * sizeof(int);
+                int expectedOperand = CalculateInternalCallOperand(callOpcodeOffset, existingHelperOffset);
+                BciPattern.WriteBciInt32(
+                    decompressed, callOpcodeOffset, InternalCallOpcode, ExternalSymbolOpcode,
+                    "P20 restore s_searchImportantPos call opcode");
+                BciPattern.WriteBciInt32(
+                    decompressed, callOperandOffset, expectedOperand, SearchImportantPosSymbol,
+                    "P20 restore s_searchImportantPos symbol");
+            }
+            RemoveBytes(ref decompressed, existingHelperOffset, Quota3xHelperWords.Length * sizeof(int), hasBciHeader);
+            return true;
+        }
+
+        private static bool TryFindCallSites(byte[] decompressed, out int[] sites)
+        {
+            sites = new int[CallSiteSignatures.Length];
+            int codeStart = HasBciHeader(decompressed) ? 0x24 : 0;
+            int codeEnd = TryGetBciCodeEnd(decompressed, out int parsedCodeEnd)
+                ? parsedCodeEnd
+                : decompressed.Length;
+
+            for (int i = 0; i < CallSiteSignatures.Length; i++)
+            {
+                List<int> matches = FindPatternSitesInRange(
+                    decompressed, CallSiteSignatures[i], codeStart, codeEnd);
+                if (matches.Count != 1) return false;
+                sites[i] = matches[0];
+            }
+            return true;
+        }
+
+        private static List<int> FindPatternSitesInRange(
+            byte[] data, int?[] pattern, int start, int end)
+        {
+            var sites = new List<int>();
+            int byteLength = pattern.Length * sizeof(int);
+            for (int offset = start; offset <= end - byteLength; offset += sizeof(int))
+            {
+                bool match = true;
+                for (int i = 0; i < pattern.Length; i++)
+                {
+                    int? expected = pattern[i];
+                    if (expected.HasValue &&
+                        BitConverter.ToInt32(data, offset + i * sizeof(int)) != expected.Value)
+                    {
+                        match = false;
+                        break;
+                    }
+                }
+                if (match) sites.Add(offset);
+            }
+            return sites;
+        }
+
+        private static int InsertHelper(ref byte[] decompressed)
+        {
+            bool hasBciHeader = TryGetBciCodeEnd(decompressed, out int codeEnd);
+            if (!hasBciHeader) codeEnd = decompressed.Length;
+
+            byte[] helper = WordsToBytes(Quota3xHelperWords);
+            byte[] expanded = new byte[decompressed.Length + helper.Length];
+            Buffer.BlockCopy(decompressed, 0, expanded, 0, codeEnd);
+            Buffer.BlockCopy(helper, 0, expanded, codeEnd, helper.Length);
+            Buffer.BlockCopy(decompressed, codeEnd, expanded, codeEnd + helper.Length, decompressed.Length - codeEnd);
+            if (hasBciHeader)
+            {
+                int oldCodeSize = BitConverter.ToInt32(decompressed, 8);
+                BitConverter.GetBytes(oldCodeSize + helper.Length).CopyTo(expanded, 8);
+            }
+            decompressed = expanded;
+            return codeEnd;
+        }
+
+        private static bool TryLocateHelper(byte[] decompressed, out int helperOffset, out bool hasBciHeader)
+        {
+            hasBciHeader = TryGetBciCodeEnd(decompressed, out int codeEnd);
+            if (!hasBciHeader) codeEnd = decompressed.Length;
+
+            int helperLength = Quota3xHelperWords.Length * sizeof(int);
+            helperOffset = codeEnd - helperLength;
+            if (helperOffset < 0) return false;
+            for (int i = 0; i < Quota3xHelperWords.Length; i++)
+            {
+                if (BitConverter.ToInt32(decompressed, helperOffset + i * sizeof(int)) != Quota3xHelperWords[i])
+                    return false;
+            }
+            return true;
+        }
+
+        private static bool HasBciHeader(byte[] decompressed) =>
+            decompressed.Length >= 4 &&
+            decompressed[0] == (byte)'B' && decompressed[1] == (byte)'C' &&
+            decompressed[2] == (byte)'I' && decompressed[3] == (byte)'0';
+
+        private static bool TryGetBciCodeEnd(byte[] decompressed, out int codeEnd)
+        {
+            codeEnd = 0;
+            if (!HasBciHeader(decompressed) || decompressed.Length < 44) return false;
+            int codeSize = BitConverter.ToInt32(decompressed, 8);
+            if (codeSize <= 0) return false;
+            codeEnd = 0x24 + codeSize;
+            return codeEnd >= 0x24 && codeEnd + 8 <= decompressed.Length &&
+                   decompressed.AsSpan(codeEnd, 8).SequenceEqual("SYMBCONS"u8);
+        }
+
+        private static void RemoveBytes(ref byte[] decompressed, int offset, int count, bool hasBciHeader)
+        {
+            byte[] reduced = new byte[decompressed.Length - count];
+            Buffer.BlockCopy(decompressed, 0, reduced, 0, offset);
+            Buffer.BlockCopy(decompressed, offset + count, reduced, offset, decompressed.Length - offset - count);
+            if (hasBciHeader)
+            {
+                int oldCodeSize = BitConverter.ToInt32(decompressed, 8);
+                BitConverter.GetBytes(oldCodeSize - count).CopyTo(reduced, 8);
+            }
+            decompressed = reduced;
+        }
+
+        private static int CalculateInternalCallOperand(int callOpcodeOffset, int helperOffset) =>
+            helperOffset - callOpcodeOffset - 8;
+
+        private static byte[] WordsToBytes(IReadOnlyList<int> words)
+        {
+            byte[] bytes = new byte[words.Count * sizeof(int)];
+            for (int i = 0; i < words.Count; i++)
+                BitConverter.GetBytes(words[i]).CopyTo(bytes, i * sizeof(int));
+            return bytes;
+        }
+    }
+
+    // ==========================================
     // P15: restore safe settled-party terminal cleanup
     // ==========================================
     // A previous build changed these transitions to DELETE_TEAM. That can

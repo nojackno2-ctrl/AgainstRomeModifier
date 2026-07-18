@@ -28,6 +28,7 @@ public static class FeatureRegistry
         Bool(FeatureKeys.IdleSelect999, FeatureCategory.Stats),
         Bool(FeatureKeys.RomanEndless, FeatureCategory.Stats),
         Bool(FeatureKeys.RomanReinforcementGarrison, FeatureCategory.Compat),
+        Bool(FeatureKeys.VillageGarrisonQuota3x, FeatureCategory.Compat),
         Bool(FeatureKeys.SpellDamage5x, FeatureCategory.Stats), Bool(FeatureKeys.SpellHealing10x, FeatureCategory.Stats),
         Bool(FeatureKeys.SpellResurrection, FeatureCategory.Stats), Bool(FeatureKeys.GeneralSkills, FeatureCategory.Stats),
         Bool(FeatureKeys.LeaderGlory, FeatureCategory.Stats),

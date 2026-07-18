@@ -14,6 +14,7 @@ namespace AgainstRomeModifier
         public EndlessAiModule M4 { get; }
         public EndlessAiModule M5 { get; }
         public EndlessAiModule M6 { get; }
+        public EndlessAiModule VillageGarrisonQuota3x { get; }
         public EndlessAiModule R0 { get; }
 
         public List<EndlessAiModule> UserModules { get; }
@@ -174,6 +175,7 @@ namespace AgainstRomeModifier
 
             // P14: 強制還原已被否決的修補
             var p14 = new P14_ForcedRestorePatch();
+            var p20 = new P20_VillageGarrisonQuota3xPatch();
 
             M1 = new EndlessAiModule("M1", "增援規模", new List<IEndlessPatch> { p1, p10, p12 });
             M2 = new EndlessAiModule("M2", "增援節奏", new List<IEndlessPatch> { p3, p6, p2 });
@@ -184,6 +186,10 @@ namespace AgainstRomeModifier
             // user-facing feature is RomanReinforcementGarrison; P8 and P9 stay
             // atomic because retained squads require the raised unit threshold.
             M6 = new EndlessAiModule("M6", "羅馬增援士兵留守", new List<IEndlessPatch> { p8, p9 });
+            VillageGarrisonQuota3x = new EndlessAiModule(
+                "VillageGarrisonQuota3x",
+                "村莊 AI 駐軍配額 3 倍",
+                new List<IEndlessPatch> { p20 });
             R0 = new EndlessAiModule("R0", "常駐修復", new List<IEndlessPatch> { p14, p15 });
 
             RespawnCore = new EndlessAiModule(
@@ -191,7 +197,7 @@ namespace AgainstRomeModifier
                 "無盡重生核心",
                 M2.Patches.Concat(M3.Patches).Concat(M4.Patches).ToList());
 
-            UserModules = new List<EndlessAiModule> { M1, RespawnCore, M5, M6 };
+            UserModules = new List<EndlessAiModule> { M1, RespawnCore, M5, M6, VillageGarrisonQuota3x };
         }
 
         public void ClearCache()

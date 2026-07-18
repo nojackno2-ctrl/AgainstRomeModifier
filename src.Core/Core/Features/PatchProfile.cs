@@ -26,6 +26,7 @@ public sealed class PatchProfile
     public bool MaxPopulation { get => Get(FeatureKeys.MaxPopulation); set => Set(FeatureKeys.MaxPopulation, value); }
     public bool RomanEndless { get => Get(FeatureKeys.RomanEndless); set => Set(FeatureKeys.RomanEndless, value); }
     public bool RomanReinforcementGarrison { get => Get(FeatureKeys.RomanReinforcementGarrison); set => Set(FeatureKeys.RomanReinforcementGarrison, value); }
+    public bool VillageGarrisonQuota3x { get => Get(FeatureKeys.VillageGarrisonQuota3x); set => Set(FeatureKeys.VillageGarrisonQuota3x, value); }
     public bool Balance { get => Get(FeatureKeys.Balance); set => Set(FeatureKeys.Balance, value); }
     public bool HousingCapacity20x { get => Get(FeatureKeys.HousingCapacity20x); set => Set(FeatureKeys.HousingCapacity20x, value); }
     public bool StorageCapacity10x { get => Get(FeatureKeys.StorageCapacity10x); set => Set(FeatureKeys.StorageCapacity10x, value); }

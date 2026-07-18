@@ -123,8 +123,11 @@ the corrected table above.
 | 103 | 0x67 | compare: `!=` | — |
 | 118 | 0x76 | logical AND chain marker (precedes a `jz`) | — |
 | 32 | 0x20 | add (`+`) | — |
+| 33 | 0x21 | subtract (`-`) | — |
+| 34 | 0x22 | signed integer multiply (`*`) | — |
+| 35 | 0x23 | signed integer divide (`/`) | — |
 | 44 | 0x2C | logical AND / conditional combine (seen chained with `164` for `deadline := getTime() + delay`) | — |
-| 37 | 0x25 | subtract or bitwise op (context-dependent; seen in mask arithmetic) | — |
+| 37 | 0x25 | bitwise op (seen in mask arithmetic) | — |
 | 40, 41 | 0x28, 0x29 | bitwise OR / assignment-combine variants (seen in `v18 |= 1<<team`-style mask updates) | — |
 | 83 (as `pushsym` target) | — | `s_getTime` symbol call, ubiquitous for deadline arithmetic | — |
 

@@ -45,6 +45,7 @@ namespace AgainstRomeModifier {
                 [FeatureKeys.EndlessAiM1.Id] = chkAiM1, [FeatureKeys.EndlessAiCore.Id] = chkAiCore,
                 [FeatureKeys.EndlessAiM5.Id] = chkAiM5,
                 [FeatureKeys.RomanReinforcementGarrison.Id] = chkRomanReinforcementGarrison,
+                [FeatureKeys.VillageGarrisonQuota3x.Id] = chkVillageGarrisonQuota3x,
             };
             FeatureRegistry.ValidateToggleIds(featureToggles.Keys);
         }

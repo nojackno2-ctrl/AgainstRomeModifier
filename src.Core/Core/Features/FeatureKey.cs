@@ -55,6 +55,7 @@ public static class FeatureKeys
     public static readonly FeatureKey<bool> IdleSelect999 = FeatureKey<bool>.Bool("IdleSelect999");
     public static readonly FeatureKey<bool> RomanEndless = FeatureKey<bool>.Bool("RomanEndless");
     public static readonly FeatureKey<bool> RomanReinforcementGarrison = FeatureKey<bool>.Bool("RomanReinforcementGarrison");
+    public static readonly FeatureKey<bool> VillageGarrisonQuota3x = FeatureKey<bool>.Bool("VillageGarrisonQuota3x");
     public static readonly FeatureKey<bool> SpellDamage5x = FeatureKey<bool>.Bool("SpellDamage5x");
     public static readonly FeatureKey<bool> SpellHealing10x = FeatureKey<bool>.Bool("SpellHealing10x");
     public static readonly FeatureKey<bool> SpellResurrection = FeatureKey<bool>.Bool("SpellResurrection");
@@ -94,6 +95,7 @@ public static class FeatureKeys
         "M4" => EndlessAiM4,
         "M5" => EndlessAiM5,
         "M6" => EndlessAiM6,
+        "VILLAGEGARRISONQUOTA3X" => VillageGarrisonQuota3x,
         _ => throw new ArgumentOutOfRangeException(nameof(moduleId), moduleId, "Unknown Endless AI module id."),
     };
 }

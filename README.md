@@ -33,6 +33,7 @@ The author of this project is a devoted player who loved *Against Rome* many yea
 - **10x Storage Capacity**: Reversible switch to scale storage capacities of Town Halls (`Hau` structures) and Warehouses (`Lag` structures) in `objdef.dau` by 10x (successfully runtime-verified in-game).
 - **10x Town Hall HP**: Reversible switch to multiply hit-points (HP) of all Town Halls (`Hau` structures) in `objdef.dau` by 10x (successfully runtime-verified in-game).
 - **Endless-Mode AI Ultimate Mode**: Reversible, bounded BCI patches for the five `ENDL_*` maps. The UI applies reinforcement scheduling, defeat cleanup, and settlement respawn atomically as one **Endless Respawn Core**, preventing partial lifecycle configurations; reinforcement size and AI starting resources remain independent difficulty choices. It never uses the previously rejected unconditional gate bypass. See [`endless-mode-ai.md`](docs/reverse-engineering/endless-mode-ai.md) for evidence, legacy migration, and runtime limits.
+- **Village Garrison Quota 3x (Experimental)**: A standalone reversible patch for `Dorfverteidigung.bci`. It multiplies the four dynamic ImportantPos-derived squad quotas by three while preserving their ratios and zero values. This is independent of AI Ultimate M1's 20 members per newly produced squad. Static signatures and exact restore are verified; fresh-game runtime and performance verification remain pending, so it is excluded from **Enable All**.
 - **Free Construction & Production**: Free construction, production, upgrades, and spell costs through `ress.ini` modification.
 - **5x Spell Damage**: Reversible `cl_script.ini` patch for six configured active-spell values; successfully runtime-verified in-game.
 - **Unit Stat Editing**: Adjust only HP, damage, VW, AW, sight, and cooldown through `objdef.dau`. Movement speed, attack range, spell radius, and priest sight/casting distance are deliberately owned by the independent experimental modifiers, not by custom troop layers.
@@ -92,6 +93,7 @@ Current coverage:
 - `SYSTEM/cl_script.ini`: Villager delay, spell radius, and morale parameters.
 - `MAPS/**/team.dat`: Population limits, player faction, and banner version semantics; Roman Endless changes only team 0 in `ENDL_*` maps to `ROM`.
 - `MAPS/ENDL_*/SCRIPT/ak_level.bci`: Bounded AI Ultimate Mode patch; the active-party limit is 8 because the runtime has 20 NPC-job slots.
+- `SYSTEM/CLAK/SCRIPT/Dorfverteidigung.bci`: AI Ultimate M1 squad-size patch and the independent Experimental village-garrison quota multiplier.
 - `Against_Rome.exe`: Focus-loss patch, runtime-verified village construction-range expansion and Roman Endless selector patch, restore-only handling for the rejected legacy four-site range/red-frame candidate, and a full local Ghidra function inventory.
 
 The generated Ghidra output is local research material, not original source. Unknown `FUN_*` functions are not treated as understood until the call path or runtime evidence is documented.
