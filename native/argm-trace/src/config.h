@@ -18,6 +18,13 @@ struct Config {
     // game build) the individual hook is skipped instead of corrupting code.
     bool verifySignatures = true;
 
+    // Master gate for ALL inline-hook installation. When false (the safe default
+    // for a first bring-up), the DLL loads, forwards winmm, opens the log and
+    // records the build banner, but installs NO hooks at all -- it never touches
+    // game code, so it cannot destabilize startup. Set to true only after the
+    // log-only mode is confirmed to load and run the game cleanly.
+    bool enableHooks = false;
+
     // --- Event hooks (low frequency, safe defaults ON) ---
     bool traceNpcJobs = true;      // s_addNPCJob_createUnit implementation
     bool traceNpcActive = true;    // s_setNPCActive (respawn eligibility writes)

@@ -38,6 +38,7 @@ Config LoadConfig(const wchar_t* directory) {
     c.enabled = ReadBool(L"general", L"enabled", c.enabled, file);
     c.verifySignatures =
         ReadBool(L"general", L"verifySignatures", c.verifySignatures, file);
+    c.enableHooks = ReadBool(L"general", L"enableHooks", c.enableHooks, file);
     c.maxLogMegabytes = ReadInt(L"general", L"maxLogMegabytes", c.maxLogMegabytes, file);
     c.argDumpCount = ReadInt(L"general", L"argDumpCount", c.argDumpCount, file);
     if (c.argDumpCount < 0) c.argDumpCount = 0;

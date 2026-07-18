@@ -310,23 +310,28 @@ AI Ultimate M1:
 
 ### Reinforcement-party retreat quota (v56) — units handed over instead of retreating
 
-**RESOLVED & RUNTIME-CONFIRMED 2026-07-08.** The complete fix for "Roman
-reinforcements" needs THREE P9 control points working together, established over
-two sessions of disassembly and two rounds of in-game testing. Final confirmed
-result: reinforcements arrive **with soldiers** (not villagers only), **stay in
-the village as garrison instead of retreating**, military (type-4) AI still
-spawns normally, and destroyed ordinary villages still respawn. The three points:
+**CORRECTED 2026-07-18.** The complete fix for Roman reinforcements needs FOUR
+P9 control points. The earlier three-point direct-mark output was disproved by
+runtime observation: pack horses entered the dissolve/civilian-recreate path,
+while soldiers disappeared immediately at the village. The fourth point releases
+donated squads from reinforcement-party script mode before re-marking them.
 
 | Control point | Offset | Vanilla | Ultimate | Role |
 | --- | --- | --- | --- | --- |
 | Site 8 (spawn budget) | `0x16A44` | `[90,6]` | `[90,6]` (kept) | `v56` soldier spawn budget — must stay vanilla or reinforcements have no soldiers |
 | Site 9 (retreat quota) | `0x17880` | `[90,15]` | `[66,0]` | zero retreat quota → over-quota units donated, not retreated |
-| Type filter (state 49) | `0x1825C` | jz `92` | jnz `92` (opcode `117 -> 118`) | inverted condition, in-game confirmed 2026-07-17: squads (type != 1) enter the zeroed quota and are donated (garrison); type-1 units (pack horses / civilians) take the vanilla retreat path off-map. The former jz `0` fall-through donated EVERYTHING and made supply pack horses pile up every wave (ESAVE_001); it is Legacy and auto-migrates. See the 2026-07-17 update below |
+| Type filter (state 49) | `0x1825C` | jz `92` | jz `0` | consumes the type branch so squads, pack horses, and civilians all enter donation; the former jnz `92` split is Legacy |
+| Donation action (state 49) | `0x18304` | direct `s_setObjMark` | opcode 120 internal call to appended `s_setScriptMode(0)` then `s_setObjMark` helper | releases every donated object from reinforcement-party script mode before assigning the recipient mark; direct-mark and broken opcode-160 outputs are Legacy |
 
-The "donated squads may stand passively" caveat noted below during static
-analysis **did not materialize** — in-game the garrison behaves correctly, so no
-further release/dissolve rework was needed. Detailed decode of each point
-follows.
+Re-decompilation after the next runtime failure found that the first helper-backed
+build accidentally emitted opcode 160 at `0x18304`. EXE dispatcher case `0xA0`
+is typed-array creation (`arrCreate`), not an internal-function reference, so
+the helper was never invoked with valid VM semantics. The corrected output uses
+opcode 120; all five generated ENDL scripts independently resolve
+`0x18304 + 8 + 16160` to helper entry `0x1C22C`. The exact broken opcode-160
+state is Legacy and auto-migrates. The corrected helper is byte-verified and
+exactly reversible. The later `jz+0` complete-handoff output using this helper
+was runtime-verified in a fresh endless game on 2026-07-18.
 
 **UPDATE 2026-07-08 (second session): the state-49 donation walk has a UNIT-TYPE
 FILTER that exempts soldier squads from donation.** Runtime report after the
@@ -379,22 +384,47 @@ prints jump targets 8 bytes short; real target = printed + 8):
    take the jump to the else branch (`local35 += 1`, no donate flag), stay in
    the retreat array, and leave via the vanilla state-50 exit walk
    (`s_sendMsg(8, exit)` + `s_destroyObj` within 100).
-3. In-game confirmed on a new endless game: **soldiers garrison, pack horses
-   retreat off-map**. (An initial user report claimed the mirror image —
-   soldiers retreating, horses staying — which briefly led to a
-   restore-the-vanilla-filter build the same day; the user then corrected the
-   observation and the jnz inversion was reinstated as final.)
+3. The 2026-07-17 observation was initially recorded as soldiers garrisoning and
+   pack horses leaving, but a closer 2026-07-18 runtime observation disproved
+   the persistence claim: pack horses became ordinary villagers through the
+   delivery lifecycle and soldiers disappeared immediately at the village.
+4. The direct mark left soldier squads in script mode 1. P9 added an appended
+   helper that performs `s_setScriptMode(0)` followed by the same recipient
+   `s_setObjMark`, but its first implementation used opcode 160 at the call site.
+   Re-decompilation of the VM dispatcher proved 160 is `arrCreate`, so that build
+   never made a valid internal call.
+5. Corrected output uses opcode 120 (`call internal`). Across all five generated
+   scripts, the relative operand resolves exactly to helper entry `0x1C22C`.
+   The subsequent `jz+0` complete-handoff output retained this corrected helper
+   and was runtime-verified in a fresh endless game on 2026-07-18.
+
+**UPDATE 2026-07-18 (complete-handoff policy, runtime-verified):** a subsequent fresh-game report
+still observed Roman reinforcements retreating. The requested target is now
+unambiguous: every reinforcement object must be handed to the village. Ultimate
+therefore returns the type filter to `jz(117)+0`, but retains the corrected
+opcode-120 helper. Soldiers, pack horses, and civilians all fall through into
+the zero-quota donation path, are released to script mode 0, and receive the
+recipient village mark. The former `jnz(118)+92` split is Legacy. P8 remains 70:
+reaching that team-unit threshold suppresses a later spawn; it does not command
+an already spawned party to retreat. After applying this output, the user
+confirmed in a new endless game that soldiers, pack horses, and civilians were
+all handed to the village and no longer retreated. This closes the visible
+complete-handoff runtime gate; long-duration behavior near P8=70 remains a
+separate capacity boundary.
 
 EXE decode of `s_getUnitType` for reference: callback `0x52a190` →
 `0x5256d0` → `0x525700`, returns 0 if flags byte bit `0x10` is set, 1 if bit
 `0x20`, else -1 (flags at `0x2146086 + 312*idx`, classifier at `~0x513d40`).
 
-Trade-off: the vanilla behavior of donating 2–3 civilians per wave to the
-village no longer happens (village population growth still comes from the
-`Dorfverteidigung`/`ak_npc` conversion paths). The signature wildcards both
-the jump opcode and operand words (`[128,214, 73,-2, 86, 66,1, 96,102, ?, ?]`).
-Detection: filter `jz 92` = Original, `jnz 92` = Ultimate, anything else
-(including the shipped `jz 0`) = Legacy, auto-migrated on the next apply.
+Trade-off: type-1 pack horses/civilians no longer use the vanilla delivery and
+dissolve/recreate path; they are deliberately retained by the complete-handoff
+policy and therefore contribute to the P8 team-unit threshold. The signature
+wildcards both jump words (`[128,214, 73,-2, 86, 66,1, 96,102, ?, ?]`).
+Detection now covers quota, filter, donation call target, and exact helper bytes.
+Original is `jz 92` plus direct mark; Ultimate is `jz 0` plus opcode 120 and
+the exact helper. The former `jnz 92` split, recognized direct-mark states, and
+exact broken opcode-160 helper outputs are Legacy and auto-migrate. Unknown
+filter/helper bytes or call targets are refused.
 Saves created with a legacy script keep the old behavior — the script lives
 inside the save (`CLAK/scr.dat`), so a new game is required.
 

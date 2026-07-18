@@ -2,7 +2,7 @@
 
 #include "config.h"
 #include "detour.h"
-#include "proxy_version.h"
+#include "proxy_winmm.h"
 #include "targets.h"
 #include "tracelog.h"
 
@@ -28,16 +28,30 @@ DWORD WINAPI InitThread(LPVOID) {
 
     if (!argm::LogOpen(dir)) return 0;
 
-    argm::LogRaw("==== argm-trace: Against Rome runtime flight recorder ====");
-    argm::LogLine("init", "log opened, verifySignatures=%d",
-                  cfg.verifySignatures ? 1 : 0);
+    argm::LogRaw("==== argm-trace: Against Rome runtime flight recorder (winmm proxy) ====");
+    argm::LogLine("init", "log opened, verifySignatures=%d enableHooks=%d",
+                  cfg.verifySignatures ? 1 : 0, cfg.enableHooks ? 1 : 0);
 
-    // A wrong build must never be patched: fingerprint gate first.
-    bool proceed = argm::CheckBuildFingerprint(cfg);
-    if (proceed) {
+    // Always record the build fingerprint banner -- it is pure logging and never
+    // touches game code.
+    bool fingerprintOk = argm::CheckBuildFingerprint(cfg);
+
+    // Master hook gate. Log-only mode (enableHooks=0) never installs any hook,
+    // so it cannot destabilize the game -- this is the safe first bring-up that
+    // proves the winmm proxy loads and the log works. Only once that is
+    // confirmed does enabling hooks become worthwhile.
+    if (!cfg.enableHooks) {
+        argm::LogLine("init",
+                      "LOG-ONLY MODE: hook installation disabled (enableHooks=0). "
+                      "The proxy loaded and the log works; set [general] enableHooks=1 "
+                      "to install AI-event hooks once startup is confirmed stable.");
+        return 0;
+    }
+
+    if (fingerprintOk) {
         argm::InstallAllHooks(cfg);
     } else {
-        argm::LogLine("init", "hooks disabled for this build");
+        argm::LogLine("init", "hooks disabled for this build (fingerprint mismatch)");
     }
     return 0;
 }
@@ -48,8 +62,9 @@ BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID) {
     switch (reason) {
         case DLL_PROCESS_ATTACH:
             DisableThreadLibraryCalls(module);
-            // Forward version.dll immediately so early callers work.
-            argm::LoadRealVersionDll();
+            // Forward winmm immediately so the game's early audio/timer calls
+            // work. Must happen before any thunk is hit.
+            argm::LoadRealWinmmDll();
             // Do the heavy lifting off the loader lock.
             CreateThread(nullptr, 0, InitThread, nullptr, 0, nullptr);
             break;

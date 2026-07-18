@@ -33,9 +33,8 @@ A decompressed `BCI0` script has this layout (all integers are little-endian
 - After `CIDX`: a `"VAR "` block and a `"VIDX"` block (local/global variable
   metadata; not decoded in detail — not needed for the party-state work).
 
-`bcitool` (ad hoc helper written for this investigation, not checked into the
-repo) implements this layout in its `ReadSymbols` helper; reimplement from
-this spec if the tool is not available.
+The checked-in `tools/bcitool.py` helper implements this layout and uses the
+dispatcher-verified operand widths below.
 
 ## VM Dispatcher (decoded 2026-07-03 — AUTHORITATIVE)
 
@@ -72,6 +71,11 @@ pattern heuristics. Corrections to the earlier empirical table:
   not on themselves.
 - **120 = call internal**: pushes the return address (PC after operand) onto
   the VM stack, then `PC = opcode_addr + 8 + operand`. 121 is its return.
+- **160 = typed array creation (`arrCreate`)**: reads the immediate element
+  type, pops the element count, calls `FUN_005BC830 -> FUN_005BC740`, and pushes
+  the resulting array handle. The common `[pushlit count, 160, 105, storevar]`
+  shape creates an integer (`'i'` = 105) array. It is not a forward internal
+  function reference.
 - **96..103 comparison family**: each handler is standalone (0 operands).
   Compiled code emits `push a; push b; op96; op102; jz` for `if (a == b)`
   and a bare `op102` after a call for `if (0 == result)`; 96/97 peek at
@@ -105,8 +109,9 @@ the corrected table above.
 | 73 | 0x49 | set pending call argument count | negative count (e.g. `-2` = 2 arguments) |
 | 128 | 0x80 | push external symbol reference | symbol table index (see `CIDX`) |
 | 86 | 0x56 | call external symbol (consumes the pending `pushsym`+`argc`) | — |
-| 120 | 0x78 | call internal script function (unconfirmed target arithmetic; see "Jump Target Arithmetic" below) | relative displacement to a script-internal function, followed by an `argc`/`86`-style call sequence |
-| 112 | 0x70 | unconditional jump | `target = off + operand` (see "Jump Target Arithmetic" below) |
+| 120 | 0x78 | push/call internal script function | relative displacement; `target = off + 8 + operand`, followed by an `argc`/`86`-style call sequence |
+| 160 | 0xA0 | create a typed array | immediate element type; pops element count and pushes array handle |
+| 112 | 0x70 | unconditional jump | `target = off + 8 + operand` (see "Jump Target Arithmetic" below) |
 | 117 | 0x75 | conditional jump if top-of-stack is zero (`jz`) | same target arithmetic as `112` |
 | 71 | 0x47 | pop/discard (statement terminator) | — |
 | 96 | 0x60 | begin comparison (pushes marker consumed by 98-103) | — |
@@ -139,24 +144,15 @@ For a 2-word instruction at byte offset `off` (the opcode word) with opcode
 displacement measured from the instruction's own start:
 
 ```
-target = off + operand
+target = off + 8 + operand
 ```
 
-This was verified mechanically (the disassembler tool computed targets this
-way) and cross-checked against dozens of `jmp 0 -> <self>` infinite-loop
-terminators, which require `operand == 0` under this convention — consistent
-with every sample observed. Do not assume `off + 8 + operand` (relative to
-the instruction end) — that alternative was considered but not what the
-verified tool output used.
-
-Opcode `120` (seen immediately before an `argc`/`86` external-call-shaped
-sequence, e.g. `pushvar ... ; op120 ; op<large-negative> ; argc N`) behaves
-like an internal-function call whose second word is a call-target reference,
-but its exact target arithmetic was **not** independently verified in this
-session — the disassembler treated it as an unrecognized single-word opcode
-and printed its operand word as a separate line rather than pairing them.
-Treat `120`'s semantics as a plausible-but-unconfirmed internal-call opcode,
-not a verified instruction shape.
+This is verified in the VM dispatcher and in script control flow. Branch and
+opcode-120 handlers read the operand after advancing past both words. For
+example, state-49 opcode 120 at `0x17FAC` with operand `-54204` resolves exactly
+to internal function `0xABF8`. Operand 0 advances to the next instruction; old
+notes and old `bcitool` output that displayed `off + operand` were eight bytes
+short.
 
 ## Party State Numbers (`ak_level.bci`, `s_writeToConfArray`/debug-name switch at `0x8C8C`)
 
