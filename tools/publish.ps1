@@ -32,7 +32,6 @@ if ($SelfContained) {
 
 # 3. Publish every app in the suite
 $apps = @(
-    @{ Name = "AgainstRomeLauncher";    Project = "src.Launcher\AgainstRomeLauncher.csproj" },
     @{ Name = "AgainstRomeModifier";    Project = "src.Modifier\AgainstRomeModifier.csproj" },
     @{ Name = "AgainstRomeSaveManager"; Project = "src.SaveManager\AgainstRomeSaveManager.csproj" },
     @{ Name = "AgainstRomeMapEditor";   Project = "src.MapEditor\AgainstRomeMapEditor.csproj" }
@@ -48,9 +47,8 @@ foreach ($app in $apps) {
 }
 
 # 4. Copy outputs to staging.
-# The Launcher publish output is copied wholesale (it is the entry point and, for
-# framework-dependent builds, carries the shared runtime config layout); the other
-# apps contribute their executables (plus dll/runtimeconfig when not single-file).
+# The Modifier is the suite entry point (the launcher UI now lives inside it);
+# each app contributes its executable (plus dll/runtimeconfig when not single-file).
 Write-Host "Copying files to staging: $stagingDir"
 
 foreach ($app in $apps) {

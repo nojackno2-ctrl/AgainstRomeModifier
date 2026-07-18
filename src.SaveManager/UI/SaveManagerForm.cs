@@ -53,14 +53,6 @@ namespace AgainstRomeModifier {
         private bool dragging = false;
         private Point dragStart = new Point(0, 0);
 
-        private class SimpleLogger : ILogger {
-            private readonly SaveManagerForm _form;
-            public SimpleLogger(SaveManagerForm form) => _form = form;
-            public void Log(string message) {
-                System.Diagnostics.Debug.WriteLine(message);
-            }
-        }
-
         public SaveManagerForm(string? initialGamePath = null) {
             InitializeComponent();
             saveBackupService = new SaveBackupService(Path.Combine(AppContext.BaseDirectory, "SavesBackup"));
@@ -86,29 +78,7 @@ namespace AgainstRomeModifier {
             ApplyLanguageToUI();
         }
 
-        private string DetectGamePathFromRegistry() {
-            try {
-                using (var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Against Rome")) {
-                    if (key != null) {
-                        var val = key.GetValue("Path");
-                        if (val != null) return val.ToString() ?? "";
-                    }
-                }
-                using (var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Against Rome")) {
-                    if (key != null) {
-                        var val = key.GetValue("Path");
-                        if (val != null) return val.ToString() ?? "";
-                    }
-                }
-                using (var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SOFTWARE\WOW6432Node\Against Rome")) {
-                    if (key != null) {
-                        var val = key.GetValue("Path");
-                        if (val != null) return val.ToString() ?? "";
-                    }
-                }
-            } catch (Exception) { }
-            return "";
-        }
+        private string DetectGamePathFromRegistry() => GameDirectoryLocator.DetectFromRegistry();
 
         private string GetGamePath() {
             return txtGamePath.Text.Trim();

@@ -149,7 +149,9 @@ namespace AgainstRomeModifier {
                 btnEnableAll.Location = new Point(Math.Max(0, header.Width - 284), 12);
             };
 
-            Panel pnlContent = new Panel {
+            // 指派到欄位（勿宣告區域變數遮蔽）：UpdateExperimentalLayout 依賴此欄位
+            // 在推廣/降級後重新排列主控台卡片。
+            pnlContent = new Panel {
                 Location = new Point(0, 72),
                 Size = new Size(tabSystem.ClientSize.Width, tabSystem.ClientSize.Height - 72),
                 Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,

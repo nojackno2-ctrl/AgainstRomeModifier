@@ -1519,7 +1519,6 @@ namespace AgainstRomeModifier {
             experimentalToggleOriginalParents[chkGameSpeed] = pnlNumericCard;
             experimentalToggleOriginalParents[chkArgmTrace] = pnlNumericCard;
 
-            bool isEn = Loc.CurrentLanguage == Language.English;
             foreach (var toggle in experimentalToggleOriginalParents.Keys) {
                 var btn = new Button {
                     FlatStyle = FlatStyle.Flat,

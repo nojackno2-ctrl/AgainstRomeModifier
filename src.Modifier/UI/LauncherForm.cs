@@ -303,29 +303,8 @@ namespace AgainstRomeModifier {
             }
         }
 
-        private string DetectGamePathFromRegistry() {
-            try {
-                using (var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Against Rome")) {
-                    if (key != null) {
-                        var val = key.GetValue("Path");
-                        if (val != null) return val.ToString() ?? "";
-                    }
-                }
-                using (var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Against Rome")) {
-                    if (key != null) {
-                        var val = key.GetValue("Path");
-                        if (val != null) return val.ToString() ?? "";
-                    }
-                }
-                using (var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SOFTWARE\WOW6432Node\Against Rome")) {
-                    if (key != null) {
-                        var val = key.GetValue("Path");
-                        if (val != null) return val.ToString() ?? "";
-                    }
-                }
-            } catch (Exception) { }
-            return "";
-        }
+        private string DetectGamePathFromRegistry() =>
+            AgainstRomeModifier.Core.Services.GameDirectoryLocator.DetectFromRegistry();
 
         private GraphicsPath GetRoundPath(Rectangle r, int radius) {
             GraphicsPath path = new GraphicsPath();

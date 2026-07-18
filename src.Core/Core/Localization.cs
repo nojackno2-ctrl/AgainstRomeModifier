@@ -58,49 +58,53 @@ namespace AgainstRomeModifier {
         }
 
         private static void LoadLanguagePreference() {
+            bool languageLoaded = false;
             try {
                 string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-                string configDir = Path.Combine(appData, "AgainstRomeModifier");
-                string configFile = Path.Combine(configDir, "settings.json");
+                string configFile = Path.Combine(appData, "AgainstRomeModifier", "settings.json");
                 if (File.Exists(configFile)) {
-                    string json = File.ReadAllText(configFile);
-                    if (json.Contains("\"Language\":1") || json.Contains("\"Language\":\"English\"") || json.ToLower().Contains("english")) {
-                        _currentLanguage = Language.English;
-                    } else if (json.Contains("\"Language\":0") || json.Contains("\"Language\":\"TraditionalChinese\"") || json.ToLower().Contains("traditionalchinese")) {
-                        _currentLanguage = Language.TraditionalChinese;
-                    }
-
-                    try {
-                        var settings = System.Text.Json.JsonSerializer.Deserialize<AppSettings>(json);
-                        if (settings != null) {
-                            if (settings.Language == "English") _currentLanguage = Language.English;
-                            else if (settings.Language == "TraditionalChinese") _currentLanguage = Language.TraditionalChinese;
-
-                            _promotedFeatures.Clear();
-                            if (settings.PromotedFeatures != null) {
-                                foreach (var f in settings.PromotedFeatures) {
-                                    _promotedFeatures.Add(f);
+                    using var doc = System.Text.Json.JsonDocument.Parse(File.ReadAllText(configFile));
+                    if (doc.RootElement.ValueKind == System.Text.Json.JsonValueKind.Object) {
+                        if (doc.RootElement.TryGetProperty("Language", out var lang)) {
+                            // 舊版曾以列舉數字（0/1）儲存語言，現行為字串；兩種格式皆接受。
+                            if (lang.ValueKind == System.Text.Json.JsonValueKind.Number) {
+                                _currentLanguage = lang.GetInt32() == 1 ? Language.English : Language.TraditionalChinese;
+                                languageLoaded = true;
+                            } else if (lang.ValueKind == System.Text.Json.JsonValueKind.String) {
+                                string value = lang.GetString() ?? "";
+                                if (value.Equals("English", StringComparison.OrdinalIgnoreCase)) {
+                                    _currentLanguage = Language.English;
+                                    languageLoaded = true;
+                                } else if (value.Equals("TraditionalChinese", StringComparison.OrdinalIgnoreCase)) {
+                                    _currentLanguage = Language.TraditionalChinese;
+                                    languageLoaded = true;
+                                }
+                            }
+                        }
+                        _promotedFeatures.Clear();
+                        if (doc.RootElement.TryGetProperty("PromotedFeatures", out var promoted) &&
+                            promoted.ValueKind == System.Text.Json.JsonValueKind.Array) {
+                            foreach (var feature in promoted.EnumerateArray()) {
+                                if (feature.ValueKind == System.Text.Json.JsonValueKind.String &&
+                                    feature.GetString() is string id && id.Length > 0) {
+                                    _promotedFeatures.Add(id);
                                 }
                             }
                         }
                     }
-                    catch {
-                        // ignore deserialization error
-                    }
                 }
             }
             catch {
-                // ignore
+                // 設定檔損毀或無法讀取時視同不存在，改用系統語言。
             }
 
-            // Fallback to system language
-            if (!_promotedFeatures.Any()) {
+            // 只有在完全讀不到已儲存的語言偏好時才回退到系統語言；
+            // 不可用「推廣清單是否為空」判斷（清單為空是常態，會蓋掉使用者選擇）。
+            if (!languageLoaded) {
                 string sysLang = System.Globalization.CultureInfo.CurrentUICulture.Name;
-                if (sysLang.StartsWith("en", StringComparison.OrdinalIgnoreCase)) {
-                    _currentLanguage = Language.English;
-                } else {
-                    _currentLanguage = Language.TraditionalChinese;
-                }
+                _currentLanguage = sysLang.StartsWith("en", StringComparison.OrdinalIgnoreCase)
+                    ? Language.English
+                    : Language.TraditionalChinese;
             }
         }
 
@@ -270,11 +274,6 @@ namespace AgainstRomeModifier {
 
         private static readonly Dictionary<string, string> Zh = new Dictionary<string, string> {
             // Launcher elements
-            { "BtnModifier", "啟動修改器" },
-            { "BtnMapEditor", "地圖編輯器" },
-            { "BtnSaveManager", "存檔管理器" },
-            { "BtnTechDoc", "修改技術文件" },
-            { "LauncherTitle", "AGAINST ROME 啟動器" },
             { "GamePathLabel", "遊戲目錄：" },
             { "BrowseButton", "瀏覽..." },
 
@@ -283,24 +282,6 @@ namespace AgainstRomeModifier {
             { "NavExperimental", "實驗性修改" },
             { "NavDefaultStats", "自訂兵種屬性" },
             { "NavCurrentStats", "當前兵種數值" },
-            { "NavSaveManager", "遊戲存檔管理" },
-            { "NavMapManager", "地圖管理" },
-            { "NavDoc", "修改技術文件" },
-            { "NavSkills", "技能屬性修改" },
-            { "SkillsHeading", "技能與首領榮譽屬性設定" },
-            { "SkillsSubtitle", "自訂部隊主動技能倍率、首領被動特殊技能，以及首領榮譽成長與光環屬性。" },
-            { "ColSkillName", "技能與項目" },
-            { "ColSkillValue", "當前數值" },
-            { "ColSkillDefault", "原版預設值" },
-            { "ColGloryLeader", "首領" },
-            { "ColGloryAwStuf", "攻擊成長" },
-            { "ColGloryVwStuf", "防禦成長" },
-            { "ColGloryDamStuf", "傷害成長" },
-            { "ColGloryMoraleBonus", "士氣光環" },
-            { "ColGloryMoraleTime", "光環時間(ms)" },
-            { "ColGloryMaxRuhm", "滿級榮耀" },
-            { "GrpGeneralSkills", "部隊與首領特殊技能 (cl_epara.ini & cl_script.ini)" },
-            { "GrpLeaderGlory", "首領榮譽升級與士氣光環屬性 (objdef.dau)" },
             { "MainTitle", "AGAINST ROME MODIFIER PRO" },
             { "SystemHeading", "修改器控制中心" },
             { "SystemSubtitle", "選擇要啟用的功能，確認遊戲路徑後再執行修改。" },
@@ -315,9 +296,6 @@ namespace AgainstRomeModifier {
             { "FastCiviProduction", "村民生產速度最快" },
             { "FocusLoss", "視窗失焦不自動暫停" },
             { "GameSpeedLabel", "整體遊戲運行 10 倍加速（實驗性）" },
-            { "GameSpeedOff", "原版（不加速）" },
-            { "GameSpeedItem", "{0}× 加速" },
-            { "ModSkillsAndGlory", "套用自訂首領與單位技能" },
             { "ToEng", "強制英文語系" },
             { "VillagerTitle", "村民與操作便利" },
             { "SpellTitle", "法術與祭司" },
@@ -346,11 +324,7 @@ namespace AgainstRomeModifier {
             { "AiCardTitle", "無盡模式 (AI 終極戰爭)" },
             { "AiM1", "增援兵團擴軍" },
             { "AiCore", "AI 無盡重生核心" },
-            { "AiM2", "加速電腦增援" },
-            { "AiM3", "加速敗亡清理" },
-            { "AiM4", "必定建立聚落" },
             { "AiM5", "提供開局資源" },
-            { "AiM6", "提升守軍數量" },
             { "DgVoodoo", "啟用圖形相容修補" },
             { "ArgmTrace", "啟用遊戲運作記錄（除錯）（實驗性）" },
             { "VillageBuildRange", "全地圖自由建設" },
@@ -375,14 +349,7 @@ namespace AgainstRomeModifier {
             { "TroopPresetFile", "屬性檔案：{0}" },
             { "TroopPresetLoaded", "屬性檔案：設定檔載入 ({0})" },
             { "CurrentStatsTitle", "當前兵種數值 (原版與當前對比)" },
-            { "GameSavesTitle", "遊戲中存檔列表" },
-            { "BackupsTitle", "備份歷史列表" },
-            { "DetailTitle", "存檔詳細與預覽" },
-            { "BackupSave", "備份此存檔" },
-            { "DeleteSave", "刪除此存檔" },
             { "Refresh", "重新整理" },
-            { "RestoreBackup", "還原此備份" },
-            { "DeleteBackup", "刪除此備份" },
             { "LanguageLabel", "修改器語系 / Language" },
             { "LangZhButton", "繁體中文" },
             { "LangEnButton", "English" },
@@ -439,7 +406,6 @@ namespace AgainstRomeModifier {
             { "TitleSuccess", "成功" },
             { "TitleError", "錯誤" },
             { "TitleWarning", "確認覆蓋" },
-            { "TitleConfirmDelete", "確認刪除" },
             { "TitleTips", "提示" },
 
             // Dialog / Log / Message strings
@@ -480,24 +446,17 @@ namespace AgainstRomeModifier {
             { "LogIconIniNotFound", "記憶體備份中找不到 icon.ini，無法載入兵種圖示。" },
             { "LogObjdefNotFound", "記憶體備份中找不到 objdef.dau，無法載入自訂兵種屬性。" },
             { "LogNoObjdefForRead", "找不到任何 objdef.dau 檔案，無法讀取設定。" },
-            { "LogSavePathNotSet", "遊戲路徑未設定，無法載入存檔。" },
-            { "LogRefreshSavesFailed", "重新整理存檔列表失敗: " },
             { "SaveDetailGameSave", "存檔類型: 遊戲存檔\n\n資料夾: {0}\n\n存檔標題: {1}\n\n原版關卡: {2}\n\n存檔時間: {3}" },
             { "SaveDetailBackup", "存檔類型: 備份檔案\n\n備份檔名: {0}\n\n原資料夾: {1}\n\n存檔標題: {2}\n\n原版關卡: {3}\n\n備份時間: {4}" },
             { "MsgSelectBackup", "請先選擇要還原的備份。" },
-            { "MsgCannotResolveOrigFolder", "無法判斷該備份的原資料夾，無法還原。" },
             { "MsgGamePathNotSet", "遊戲路徑未設定，無法還原。" },
             { "MsgConfirmOverwriteSave", "目標存檔資料夾 [{0}] 已存在，是否覆蓋？" },
             { "MsgRestoreBackupSuccess", "還原備份成功！" },
             { "MsgRestoreBackupFailed", "還原備份失敗: " },
-            { "MsgSelectSaveToDelete", "請先選擇要刪除的存檔。" },
             { "MsgInvalidSaveDir", "無效的存檔目錄，操作已取消。" },
             { "MsgConfirmDeleteSave", "確定要永久刪除遊戲存檔 [{0}] 嗎？此操作不可還原！" },
-            { "MsgDeleteSaveSuccess", "已刪除存檔！" },
             { "MsgDeleteSaveFailed", "刪除存檔失敗: " },
-            { "MsgSelectBackupToDelete", "請先選擇要刪除的備份。" },
             { "MsgConfirmDeleteBackup", "確定要永久刪除備份檔案 [{0}] 嗎？" },
-            { "MsgDeleteBackupSuccess", "已刪除備份！" },
             { "MsgDeleteBackupFailed", "刪除備份失敗: " },
             { "MsgSelectSaveToBackup", "請先選擇要備份的存檔。" },
             { "MsgNoOrigFolderToBackup", "找不到該存檔的原始資料夾。" },
@@ -509,20 +468,9 @@ namespace AgainstRomeModifier {
             { "MsgRepairEndlessAiSuccess", "無盡 AI 排程與增援規則已修復，並已建立修復前備份。已堆積的馱馬不會自動移除；若仍阻斷增援，請還原堆積前備份或新開無盡局。" },
             { "MsgRepairEndlessAiAlready", "這份存檔已包含目前的無盡 AI 排程與增援修復。" },
             { "MsgRepairEndlessAiFailed", "修復無盡 AI 失敗: " },
-            { "LogLoadTechDocFailed", "載入技術文件資源失敗: " },
             { "Unparsable", "無法解析" },
             { "Unknown", "未知" },
-            { "LogBackupSaveSuccessDetail", "備份存檔成功: {0} -> {1}" },
-            { "LogBackupSaveFailedDetail", "備份存檔失敗: " },
-            { "LogRestoreBackupSuccessDetail", "還原備份成功: {0} -> {1}" },
-            { "LogRestoreBackupCleanupFailed", "存檔已還原，但舊存檔暫存資料夾無法清除: " },
-            { "LogRestoreBackupFailedDetail", "還原備份失敗: " },
-            { "LogDeleteSaveSuccessDetail", "已刪除遊戲存檔: {0}" },
-            { "LogDeleteSaveFailedDetail", "刪除存檔失敗: " },
-            { "LogDeleteBackupSuccessDetail", "已刪除備份檔案: {0}" },
-            { "LogDeleteBackupFailedDetail", "刪除備份失敗: " },
             { "FocusLossTip", "當你切換到桌面、瀏覽器或其他程式（Alt+Tab）時，遊戲不會強制暫停，而是繼續在背景流暢運行，非常適合掛網等待生產與建造！" },
-            { "ModSkillsAndGloryTip", "啟用此選項以套用在「技能屬性修改」分頁中所設定的部隊技能、首領被動特殊技能，以及首領榮譽成長與光環數值。若未啟用，則寫入原版預設值。" },
             { "ToEngTip", "將遊戲內的介面、按鈕、地圖與核心文字切換為英文版。能有效解決老遊戲在現代 Windows 系統上的字型亂碼或切換語系時造成的遊戲卡死問題。" },
             { "DgVoodooTip", "安裝 dgVoodoo2 相容層（Direct3D8 轉換器）。能完美修復老遊戲在 Windows 10/11 上常見的畫面卡頓、幀率（FPS）極低、視窗化失敗或啟動黑屏等圖形相容性問題。" },
             { "ArgmTraceTip", "安裝執行期飛行紀錄器（version.dll 代理），把電腦 AI 的實際動作（增援生成、聚落抵達、隊伍復活等）寫入遊戲目錄的 argm_trace.log。純除錯記錄、不改遊戲檔案；套用時會自動辨識遊戲組建以解鎖對應的追蹤項目。用於診斷無盡模式 AI 增援等問題後，可把 log 交給分析。與 dgVoodoo2 併用不衝突。" },
@@ -578,11 +526,7 @@ namespace AgainstRomeModifier {
             { "VillageBuildRangeTip", "將各個村莊大本營的建造邊界（原版在地圖上限制建設的紅框限制）擴充至全地圖！您現在可以在地圖的任何角落、任何敵軍腹地前哨自由地建造防禦塔、民房或營房！" },
             { "AiM1Tip", "無盡模式：電腦 AI 的每波增援部隊規模、增援重建以及村莊日常招募的兵團，由原版少數人提升至每隊 20 人！大幅增強戰鬥張力。" },
             { "AiCoreTip", "無盡模式核心：整合加速增援、敗亡清理與聚落重生。三段流程會一起套用或還原，並包含讀檔計時回復保護，避免半套設定造成後期不再重生。" },
-            { "AiM2Tip", "無盡模式：縮短電腦的增援等待時間至 30 秒，並加速其召喚兵團的排程判定。電腦 AI 將如同蜂湧般源源不絕地派兵進攻，打造無盡攻防戰！" },
-            { "AiM3Tip", "無盡模式：電腦 AI 聚落被摧毀或敗亡時，加快舊村莊與殘破城牆的背景逐筆確認與清除，並將非定居點的撤退剩餘期限縮短為 1 分鐘，防止地圖卡死殘留。" },
-            { "AiM4Tip", "無盡模式：打破原版重生機率逐次遞減的限制，將野外電腦部落的重生率鎖定在 100%。只要部落被消滅，很快就會有新的部落聚落前來建營。" },
             { "AiM5Tip", "無盡模式：給予新生成的電腦 AI 聚落額外的主堡儲備資源。這能幫助電腦 AI 在開局時快速發展起步，提早招兵買馬。僅影響電腦，不會影響玩家。" },
-            { "AiM6Tip", "無盡模式：將電腦 AI 軍事聚落派出下一波增援的部隊數門檻從原版 4 隊提高到 70 隊；這不是同時活躍隊伍上限。搭配完整移交增援部隊，充實野外守軍。" },
 
             // 服務層 (PatchEngine / BackupManager) 日誌訊息
             { "SvcLogPreApplyRestore", "正在套用前將相關檔案復原為乾淨狀態，以清除殘留修改..." },
@@ -657,11 +601,6 @@ namespace AgainstRomeModifier {
 
         private static readonly Dictionary<string, string> En = new Dictionary<string, string> {
             // Launcher elements
-            { "BtnModifier", "Launch Modifier" },
-            { "BtnMapEditor", "Map Editor" },
-            { "BtnSaveManager", "Save Manager" },
-            { "BtnTechDoc", "Technical Document" },
-            { "LauncherTitle", "AGAINST ROME LAUNCHER" },
             { "GamePathLabel", "Game Path:" },
             { "BrowseButton", "Browse..." },
 
@@ -670,24 +609,6 @@ namespace AgainstRomeModifier {
             { "NavExperimental", "Experimental Features" },
             { "NavDefaultStats", "Custom Unit Stats" },
             { "NavCurrentStats", "Current Unit Stats" },
-            { "NavSaveManager", "Save Manager" },
-            { "NavMapManager", "Map Manager" },
-            { "NavDoc", "Technical Doc" },
-            { "NavSkills", "Skill Modifiers" },
-            { "SkillsHeading", "Skill & Leader Glory Settings" },
-            { "SkillsSubtitle", "Customize combat skill multipliers, chief special abilities, and leaders' glory scaling stats." },
-            { "ColSkillName", "Skill / Attribute Item" },
-            { "ColSkillValue", "Current Value" },
-            { "ColSkillDefault", "Default Value" },
-            { "ColGloryLeader", "Leader" },
-            { "ColGloryAwStuf", "ATK Grow" },
-            { "ColGloryVwStuf", "DEF Grow" },
-            { "ColGloryDamStuf", "DMG Grow" },
-            { "ColGloryMoraleBonus", "Aura Morale" },
-            { "ColGloryMoraleTime", "Aura Time(ms)" },
-            { "ColGloryMaxRuhm", "Max Glory" },
-            { "GrpGeneralSkills", "Combat Skill & Tribe Ability Factors (cl_epara.ini & cl_script.ini)" },
-            { "GrpLeaderGlory", "Chief Glory Scaling & Morale Aura (objdef.dau)" },
             { "MainTitle", "AGAINST ROME MODIFIER PRO" },
             { "SystemHeading", "Modifier Control Center" },
             { "SystemSubtitle", "Choose the features to enable, verify the game path, then apply the changes." },
@@ -702,9 +623,6 @@ namespace AgainstRomeModifier {
             { "FastCiviProduction", "Fastest Villager Production (10x)" },
             { "FocusLoss", "Run in Background (No Auto-Pause)" },
             { "GameSpeedLabel", "Overall Game Speed (10x Acceleration) (Experimental)" },
-            { "GameSpeedOff", "Original (1x)" },
-            { "GameSpeedItem", "{0}x Speed" },
-            { "ModSkillsAndGlory", "Apply Custom Leader & Unit Skills" },
             { "ToEng", "Force English Language" },
             { "VillagerTitle", "Villagers & Convenience" },
             { "SpellTitle", "Spells & Priests" },
@@ -733,11 +651,7 @@ namespace AgainstRomeModifier {
             { "AiCardTitle", "Endless Mode (AI Ultimate)" },
             { "AiM1", "Reinf. Size (20/unit)" },
             { "AiCore", "Endless Respawn Core" },
-            { "AiM2", "Accelerated Reinf." },
-            { "AiM3", "Fast Defeat Recovery" },
-            { "AiM4", "Guaranteed Spawn" },
             { "AiM5", "AI Starting Resources" },
-            { "AiM6", "Increase Garrison Size" },
             { "DgVoodoo", "Enable dgVoodoo2 Wrapper" },
             { "ArgmTrace", "Enable Gameplay Trace Logger (Debug) (Experimental)" },
             { "VillageBuildRange", "Village Build / Red-Frame Range (Entire Map)" },
@@ -762,14 +676,7 @@ namespace AgainstRomeModifier {
             { "TroopPresetFile", "Stats File: {0}" },
             { "TroopPresetLoaded", "Stats File: Loaded from Preset ({0})" },
             { "CurrentStatsTitle", "Current Unit Stats (Original vs. Current)" },
-            { "GameSavesTitle", "In-Game Save List" },
-            { "BackupsTitle", "Backup History List" },
-            { "DetailTitle", "Save Details & Preview" },
-            { "BackupSave", "Backup Save" },
-            { "DeleteSave", "Delete Save" },
             { "Refresh", "Refresh" },
-            { "RestoreBackup", "Restore Backup" },
-            { "DeleteBackup", "Delete Backup" },
             { "LanguageLabel", "Language" },
             { "LangZhButton", "繁體中文" },
             { "LangEnButton", "English" },
@@ -826,7 +733,6 @@ namespace AgainstRomeModifier {
             { "TitleSuccess", "Success" },
             { "TitleError", "Error" },
             { "TitleWarning", "Confirm Overwrite" },
-            { "TitleConfirmDelete", "Confirm Deletion" },
             { "TitleTips", "Tips" },
 
             // Dialog / Log / Message strings
@@ -867,24 +773,17 @@ namespace AgainstRomeModifier {
             { "LogIconIniNotFound", "icon.ini not found in backup memory. Cannot load unit icons." },
             { "LogObjdefNotFound", "objdef.dau not found in backup memory. Cannot load custom unit stats." },
             { "LogNoObjdefForRead", "No objdef.dau file found to read." },
-            { "LogSavePathNotSet", "Game path not set. Cannot load saves." },
-            { "LogRefreshSavesFailed", "Failed to refresh save list: " },
             { "SaveDetailGameSave", "Save Type: Game Save\n\nFolder: {0}\n\nSave Title: {1}\n\nOriginal Level: {2}\n\nSave Time: {3}" },
             { "SaveDetailBackup", "Save Type: Backup File\n\nBackup File: {0}\n\nOriginal Folder: {1}\n\nSave Title: {2}\n\nOriginal Level: {3}\n\nBackup Time: {4}" },
             { "MsgSelectBackup", "Please select a backup to restore first." },
-            { "MsgCannotResolveOrigFolder", "Cannot resolve the original folder for this backup. Cannot restore." },
             { "MsgGamePathNotSet", "Game path not set first. Cannot restore." },
             { "MsgConfirmOverwriteSave", "The target save folder [{0}] already exists. Overwrite?" },
             { "MsgRestoreBackupSuccess", "Backup restored successfully!" },
             { "MsgRestoreBackupFailed", "Failed to restore backup: " },
-            { "MsgSelectSaveToDelete", "Please select a save to delete first." },
             { "MsgInvalidSaveDir", "Invalid save directory. Operation cancelled." },
             { "MsgConfirmDeleteSave", "Are you sure you want to permanently delete the save [{0}]? This action cannot be undone!" },
-            { "MsgDeleteSaveSuccess", "Save deleted successfully!" },
             { "MsgDeleteSaveFailed", "Failed to delete save: " },
-            { "MsgSelectBackupToDelete", "Please select a backup to delete first." },
             { "MsgConfirmDeleteBackup", "Are you sure you want to permanently delete the backup file [{0}]?" },
-            { "MsgDeleteBackupSuccess", "Backup deleted successfully!" },
             { "MsgDeleteBackupFailed", "Failed to delete backup: " },
             { "MsgSelectSaveToBackup", "Please select a save to backup first." },
             { "MsgNoOrigFolderToBackup", "Cannot find the original folder for this save." },
@@ -896,20 +795,9 @@ namespace AgainstRomeModifier {
             { "MsgRepairEndlessAiSuccess", "The endless AI scheduler and reinforcement rules were repaired and a pre-repair backup was created. Existing pack horses were not removed; if they still block reinforcements, restore a backup from before the pileup or start a new endless game." },
             { "MsgRepairEndlessAiAlready", "This save already contains the current endless AI scheduler and reinforcement repairs." },
             { "MsgRepairEndlessAiFailed", "Failed to repair endless AI: " },
-            { "LogLoadTechDocFailed", "Failed to load technical document resource: " },
             { "Unparsable", "Unparsable" },
             { "Unknown", "Unknown" },
-            { "LogBackupSaveSuccessDetail", "Save backup successful: {0} -> {1}" },
-            { "LogBackupSaveFailedDetail", "Failed to backup save: " },
-            { "LogRestoreBackupSuccessDetail", "Backup restore successful: {0} -> {1}" },
-            { "LogRestoreBackupCleanupFailed", "The save was restored, but the old-save staging folder could not be removed: " },
-            { "LogRestoreBackupFailedDetail", "Failed to restore backup: " },
-            { "LogDeleteSaveSuccessDetail", "Deleted game save: {0}" },
-            { "LogDeleteSaveFailedDetail", "Failed to delete save: " },
-            { "LogDeleteBackupSuccessDetail", "Deleted backup file: {0}" },
-            { "LogDeleteBackupFailedDetail", "Failed to delete backup: " },
             { "FocusLossTip", "Prevents the game from automatically pausing when the game window loses focus (runs in background)." },
-            { "ModSkillsAndGloryTip", "Enable to apply the custom unit active skills, chief passive special abilities, leader glory growth, and aura settings configured in the Skill tab. Otherwise, standard default game values are written." },
             { "ToEngTip", "Forces the game interface and core text to English to avoid encoding issues." },
             { "DgVoodooTip", "Installs and enables dgVoodoo2 to fix graphics lag, low FPS, or black screens on Windows 10/11." },
             { "ArgmTraceTip", "Installs a runtime flight-recorder (a version.dll proxy) that logs what the computer AI actually does (reinforcement spawns, settlement arrivals, team respawns) to argm_trace.log in the game folder. Log-only, never edits game files; it auto-detects the game build to unlock the matching trace hooks. Use it to diagnose endless-mode AI reinforcement issues, then hand the log over for analysis. Coexists with dgVoodoo2." },
@@ -965,11 +853,7 @@ namespace AgainstRomeModifier {
             { "VillageBuildRangeTip", "Sets the village construction/red-frame boundary radius to a very large value, allowing construction anywhere on the map." },
             { "AiM1Tip", "Endless mode: raises AI unit size from 6 to 20 members across all three paths (reinforcement units, reinforcement rebuild, and village day-to-day civilian conversion)." },
             { "AiCoreTip", "Endless-mode core: atomically combines accelerated reinforcement, defeat cleanup, and settlement respawn, including the save/load timer recovery guard. The three lifecycle stages are always applied or restored together." },
-            { "AiM2Tip", "Endless mode: shortens reinforcement wait and scheduler loop delays and recycles completed NPC job slots so AI reinforcement waves arrive quickly and continuously." },
-            { "AiM3Tip", "Endless mode: accelerates confirmed per-object cleanup of defeated AI villages and palisades, death detection, and retreat while preserving the vanilla safe terminal order." },
-            { "AiM4Tip", "Endless mode: settle spots always found new settlements (respawn probability raised from a decaying chance to 101%)." },
             { "AiM5Tip", "Endless mode: AI settlements start with main-hall stockpiles to speed up their economy and army. Affects AI settlements only, never the player." },
-            { "AiM6Tip", "Endless mode: raises the AI military settlement's reinforcement-wave unit threshold from 4 to 70; this is not the simultaneous active-party cap. Combined with full reinforcement handoff, it increases fielded defenders." },
 
             // Service-layer (PatchEngine / BackupManager) log messages
             { "SvcLogPreApplyRestore", "Restoring affected files to a clean state before applying, to clear leftover modifications..." },

@@ -36,29 +36,8 @@ namespace AgainstRomeModifier {
         /// <summary>
         /// 從系統登錄檔中自動偵測《Against Rome》的安裝路徑。
         /// </summary>
-        private string DetectGamePathFromRegistry() {
-            try {
-                using (var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Against Rome")) {
-                    if (key != null) {
-                        var val = key.GetValue("Path");
-                        if (val != null) return val.ToString() ?? "";
-                    }
-                }
-                using (var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Against Rome")) {
-                    if (key != null) {
-                        var val = key.GetValue("Path");
-                        if (val != null) return val.ToString() ?? "";
-                    }
-                }
-                using (var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SOFTWARE\WOW6432Node\Against Rome")) {
-                    if (key != null) {
-                        var val = key.GetValue("Path");
-                        if (val != null) return val.ToString() ?? "";
-                    }
-                }
-            } catch (Exception ex) { System.Diagnostics.Debug.WriteLine("讀取登錄檔遊戲路徑失敗: " + ex.Message); }
-            return "";
-        }
+        private string DetectGamePathFromRegistry() =>
+            AgainstRomeModifier.Core.Services.GameDirectoryLocator.DetectFromRegistry();
 
         /// <summary>
         /// 解析 TGA 圖像位元組資料，並將其轉換成 GDI+ 的 Bitmap 物件。
@@ -830,7 +809,7 @@ namespace AgainstRomeModifier {
                     double origSpellRadius = 0;
                     double curSpellRadius = 0;
                     // 只有 KEL/HUN 祭司的法術半徑是可設定項；GER 祭司顯示變動值會造成假象。
-                    if (utype == "priest" && SupportsConfigurableSpellRadius(key)) {
+                    if (utype == "priest" && UnitStatParser.SupportsConfigurableSpellRadius(key)) {
                         origSpellRadius = 500;
                         curSpellRadius = 500 * spellRadMultVal;
                     }
