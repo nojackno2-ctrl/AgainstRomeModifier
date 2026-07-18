@@ -1,6 +1,6 @@
 # argm-trace — Against Rome 執行期飛行紀錄器 / Runtime Flight Recorder
 
-> 狀態 / Status: **未在真實遊戲上驗證 (unverified against the live game).** 本子專案是完整、可編譯的原生實作,但尚未在 Windows 上以 MSVC 編譯、也尚未對實際的 `Against_Rome.exe` 執行測試。位址來自 `docs/reverse-engineering/`,屬於「版本專屬證據」,因此所有以位址為基礎的 hook 預設鎖定,必須先確認遊戲組建指紋後才啟用。
+> 狀態 / Status: **未在真實遊戲上驗證 (unverified against the live game).** 本子專案是完整、可編譯的原生實作,但尚未在 Windows 上以 MSVC 編譯、也尚未對實際的 `Against_Rome.exe` 執行測試。不過所有 hook 目標的序言與參數慣例已於 2026-07-18 直接從安裝版 EXE(`TimeDateStamp=0x404D1710`)逐位元組驗證,且每個 hook(含 build-lock 後的位址型 hook)現在都帶有從該 EXE 擷取的位元組簽章,雙重把關。
 
 ## 這是什麼 / What it is
 
@@ -10,8 +10,8 @@
 - **AI 復活啟用** (`s_setNPCActive` `0x00548CE0`):被擊敗的隊伍何時重新變成可重生。
 - **聚落式抵達** (`s_setVillageTemplate` `0x00549500`)。
 - **單位建立** (`s_createUnitAndMems` `0x0052A020`)。
-- **陣營選擇** (無盡羅馬陣營 setter `0x0045BD60`,有完整 21-byte 簽章驗證)。
-- **完整 BCI opcode 串流** (VM dispatcher `0x005B1C62`):逐指令追蹤,音量極大,預設關閉。
+- **陣營選擇** (無盡羅馬陣營 setter `0x0045BD60`,有完整 21-byte 簽章驗證;同時附「強制羅馬補丁後」的第二組簽章,已套用 Modifier 補丁的安裝一樣能追蹤)。
+- **完整 BCI opcode 串流** (VM dispatcher 真正入口 `0x005B1C60`;VM context 是第 1 個堆疊參數):逐指令追蹤,音量極大,預設關閉。
 
 搭配 `docs/reverse-engineering/endless-mode-ai.md` 的 party 狀態機說明,這份 log 可以回答「AI 增援為什麼停了」「隊伍槽是不是耗盡」「party 卡在哪個狀態」這類問題。
 

@@ -39,11 +39,13 @@ this spec if the tool is not available.
 
 ## VM Dispatcher (decoded 2026-07-03 — AUTHORITATIVE)
 
-The runtime interpreter lives in the EXE at `005B1C62` (frame setup) with the
-opcode fetch at `005B1C72`: it reads the 32-bit opcode word at PC, advances PC
+The runtime interpreter's true entry is `005B1C60` (`53 56 57 55 89 E5 ...`,
+byte-verified 2026-07-18; the VM context is stack argument 1, loaded into
+`EBX` at `005B1C6F`) with the opcode fetch just after: it reads the 32-bit
+opcode word at PC, advances PC
 by 4, computes `index = opcode - 1`, bounds-checks `index <= 0xB0`, and
 dispatches through the jump table at `005B199C` (unknown opcodes go to the
-default handler `005B972C`). VM context (EBX): `+0x08` PC (byte offset into
+default handler `005B972C`). VM context (`EBX` inside the body): `+0x08` PC (byte offset into
 the code stream), `+0x28` code size, `+0x2C` code base, `+0x0C` stack index,
 `+0x3C` stack base (cells grow by realloc), `+0x04` script object (its
 `+0x38` is the global-variable slot table used by opcode 77).

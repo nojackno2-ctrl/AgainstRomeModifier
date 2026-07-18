@@ -1,11 +1,13 @@
 # Runtime Trace Hooks (`native/argm-trace`)
 
-> Status 2026-07-17: implementation complete and the instruction-length decoder
-> is host-unit-tested, but the DLL has **not** been compiled with MSVC nor run
-> against the live game. Addresses below are version-specific evidence from the
-> analyzed `Against_Rome.exe`; the tool refuses to install address-based hooks
-> unless the running build's PE `TimeDateStamp` is confirmed via
-> `argm_trace.ini`.
+> Status 2026-07-18: implementation complete; every hook target's prologue and
+> argument convention has been byte-verified against the installed
+> `Against_Rome.exe` (PE `TimeDateStamp = 0x404D1710`, sections parsed from the
+> real binary), and all hooks now carry byte signatures dumped from that
+> binary. The DLL has **not** yet been compiled with MSVC nor run against the
+> live game (the local machine has no C++ toolchain). The tool refuses to
+> install address-based hooks unless the running build's PE `TimeDateStamp` is
+> confirmed via `argm_trace.ini`.
 
 ## Purpose
 
@@ -28,8 +30,8 @@ rebased at load time for ASLR. Sources are `exe-functions.md` and
 | `ai.active` | `0x00548CE0` | `s_setNPCActive` impl (`FUN_00548ce0`) | A defeated AI team marked eligible to respawn (`DAT_029e6000[team]`). |
 | `ai.village` | `0x00549500` | `s_setVillageTemplate` impl | Settlement-style AI arrival. |
 | `ai.unit` | `0x0052A020` | `s_createUnitAndMems` callback | Unit-and-members creation. |
-| `game.faction` | `0x0045BD60` | Endless Roman faction selector setter | The faction chosen in `dlg_volk`. Installed with the full verified 21-byte signature, so it is safe even on an unrecognized build. |
-| `bci.op` | `0x005B1C62` | BCI VM dispatcher entry | Full opcode stream (`EBX` = VM context, PC at `+0x08`, code base at `+0x2C`). VERY high volume; off by default. |
+| `game.faction` | `0x0045BD60` | Endless Roman faction selector setter | The faction chosen in `dlg_volk`. Two 21-byte signatures are attempted: the stock prologue and the force-Roman-patched prologue (`53 6A 03 5B 90`, see known-patches.md), so tracing works on modified installs too. Signature-verified, so safe even on an unrecognized build. |
+| `bci.op` | `0x005B1C60` | BCI VM dispatcher entry | Full opcode stream. VERY high volume; off by default. **Byte-verified correction:** the true function entry is `0x005B1C60` (`53 56 57 55 89 E5 ...`), and the VM context is stack **argument 1** — `mov ebx,[ebp+0x14]` only happens at `0x005B1C6F`, so at entry `EBX` still holds the caller's value. The hook reads the context from the caller stack. PC at ctx`+0x08`, code length at ctx`+0x28`, code base at ctx`+0x2C`. |
 
 The `ai.spawn` argument meanings map directly onto the party state machine in
 `endless-mode-ai.md`: cross-referencing the spawn log with the documented party
@@ -65,11 +67,41 @@ See `native/argm-trace/README.md`. Summary:
    into `argm_trace.ini` `expectedTimeDateStamp` to unlock the AI-event hooks.
 4. Reproduce the endless-mode problem, then analyze `argm_trace.log`.
 
+## Byte-verified conventions (2026-07-18)
+
+Resolved by dumping the hook targets straight out of the installed
+`Against_Rome.exe` via its PE section table (`AUTO` VA `0x1000` → raw `0x1000`,
+so raw offset = VA − 0x400000 for code):
+
+- **`0x00547F50`** prologue `53 56 57 55 8B 5C 24 14 8B 7C 24 30 8B 6C 24 34`:
+  pushes 4 registers, then reads arg1 (team, validated `0..7`) from
+  `[esp+0x14]`, arg8/arg9 from `[esp+0x30]/[esp+0x34]`, arg3 from `[esp+0x1C]`
+  (validated `0..9`). Args are plain dwords at `[esp+4+4·(n−1)]` at function
+  entry — the hook's `cs[1..9]` column labels are correct.
+- **`0x00549500`** prologue `53 56 57 55 8B 5C 24 14 8B 6C 24 18 31 FF 85 ED`:
+  arg1 → `EBX` is the team (validated `0..7`), arg2 → `EBP` is a pointer
+  checked non-null (template name). Early-out returns `-1` with a plain `C3`
+  ret, i.e. caller-cleaned stack — the log-only stub is safe.
+- **`0x005B1C60`** is the true dispatcher entry (the previously documented
+  `0x005B1C62` is two one-byte pushes in). VM context = stack argument 1;
+  `EBX` is only loaded from it at `0x005B1C6F`. Dispatcher reads PC
+  `[ctx+0x08]`, code length `[ctx+0x28]`, code base `[ctx+0x2C]`, opcode
+  `[base+pc]` — matching `bci0-opcodes.md`.
+- **`0x00548CE0`** starts `8B 54 24 04 85 D2` (no saved registers; arg1 team at
+  `[esp+4]`, arg2 flag at `[esp+8]`, writes `[edx+0x29E6000]`) — confirms the
+  documented `DAT_029e6000` semantics and gives a 6-byte relocatable prologue.
+- **`0x0045BD60`** on this install is already force-Roman-patched
+  (`53 6A 03 5B 90 ...`), which is why the trace tool now ships both signature
+  variants.
+- All six targets' prologues decode to ≥5 relocatable bytes with no relative
+  branches (covered by `tests/lde_test.cpp` prologue cases).
+- Installed build fingerprint: `TimeDateStamp = 0x404D1710` (also noted in
+  `argm_trace.ini.sample`).
+
 ## Open items before claiming it works
 
-- Compile with MSVC (Win32) — never yet built on a real toolchain.
-- Confirm the calling convention/arg order of `0x00547F50` and `0x00549500` on
-  the live build; the generic stack-arg dump is convention-agnostic for logging
-  but the column labels assume the documented argument order.
-- Confirm `EBX` is the VM context at `0x005B1C62` at hook entry before trusting
-  the `bci.op` decode (the dispatcher frame setup is at that address).
+- Compile with MSVC (Win32) — never yet built on a real toolchain. Blocked
+  locally: the machine has VS 18 Community but no C++ workload, and no other
+  C/C++ compiler; the host-side `tests/` also need a toolchain to run.
+- Live-game smoke run: confirm `argm_trace.log` events appear and the game is
+  stable with hooks installed.
