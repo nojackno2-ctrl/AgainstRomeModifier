@@ -623,12 +623,11 @@ namespace AgainstRomeModifier
         // 單位（平民、駄馬等單體單位）進入配額/捐贈分支，士兵小隊（type != 1）
         // 一律留在撤退陣列走回地圖出口。
         //
-        // 2026-07-17 最終實機確認（使用者兩次觀察，第一次誤判後更正）：
-        // 反轉版 jnz(118)+92 的實際行為正確——士兵小隊留在村裡駐守、
-        // 駄馬與平民照原版撤退離場。這與 2026-07-08 的型別語意記錄一致
-        // （士兵小隊 type != 1；駄馬/平民 type 1）。
-        // - Legacy：jz+0（吃掉條件，2026-07-08 出貨）→ 所有單位含駄馬都被
-        //   捐贈，駄馬每波堆積（ESAVE_001 實測）。
+        // 2026-07-18 新局實測仍見士兵撤退，因此依使用者要求改為完全移交：
+        // Ultimate 使用 jz(117)+0 吃掉型別分流，讓士兵、駄馬、平民全部進入
+        // quota=0 的 donation 分支，再由第四控制點先切回 script mode 0，
+        // 最後套用 recipient mark。舊 jz+0 的問題是 direct s_setObjMark，並非
+        // 全單位 fall-through 本身；加上 release helper 後才是現行 Ultimate。
         // 簽章的跳躍 opcode 字（index 9）與位移字（index 10）都是萬用碼，
         // 否則已套用檔（118）或 Legacy 檔（位移 0）會比對不到。
         private static readonly int?[] DonationTypeFilterSignature = new int?[] {
@@ -638,8 +637,44 @@ namespace AgainstRomeModifier
         private const int DonationTypeFilterJzOperandWordIndex = 10;
         private const int DonationTypeFilterOriginalOpcode = 117;  // jz
         private const int DonationTypeFilterOriginalOperand = 92;
-        private const int DonationTypeFilterPatchedOpcode = 118;   // jnz（條件反轉）
-        private const int DonationTypeFilterPatchedOperand = 92;
+        private const int DonationTypeFilterPatchedOpcode = 117;   // jz
+        private const int DonationTypeFilterPatchedOperand = 0;    // fall through: donate every unit
+        private const int DonationTypeFilterLegacySplitOpcode = 118;
+        private const int DonationTypeFilterLegacySplitOperand = 92;
+
+        // Runtime testing on 2026-07-18 proved that a direct s_setObjMark leaves
+        // donated soldier squads in reinforcement-party script mode and they
+        // disappear at the village. Replace that external call with an internal
+        // three-argument helper of the same call-site size. The helper releases
+        // the squad (script mode 0) before applying the recipient mark.
+        private static readonly int?[] DonationActionSignature = new int?[] {
+            90, 42, 117, 56,
+            90, 41, 90, 4, 90, 3,
+            null, null, null, null, 86, 71,
+            112, 116
+        };
+        private const int DonationActionCallOpcodeWordIndex = 10;
+        private const int DonationActionCallOperandWordIndex = 11;
+        private const int ExternalSymbolOpcode = 128;
+        private const int InternalCallOpcode = 120;
+        // The first helper-backed build accidentally emitted opcode 160 here.
+        // VM dispatcher case 0xA0 is arrCreate(type, count), not an internal
+        // function reference. Recognize that exact broken output only so Apply
+        // can migrate installed maps and embedded saves to opcode 120.
+        private const int BrokenArrayCreateOpcode = 160;
+        private const int SetObjMarkSymbol = 141;
+
+        internal static readonly int[] ReleaseAndRemarkHelperWords = new int[]
+        {
+            74, 94, 73, 3,
+            66, 0,
+            90, -4, 90, -3,
+            128, 86, 73, -3, 86, 71,
+            90, -5, 90, -4, 90, -3,
+            128, 141, 73, -3, 86, 71,
+            66, 1, 87, 112, 0,
+            95, 75, 121
+        };
 
         public PatchState Detect(byte[] decompressed)
         {
@@ -648,7 +683,7 @@ namespace AgainstRomeModifier
 
             if (sites.Count != ExpectedQuotaSitesCount)
             {
-                return PatchState.Legacy;
+                return PatchState.Unknown;
             }
 
             // Site 8 (type-5 init: soldier spawn budget) must ALWAYS be vanilla [90,6].
@@ -670,20 +705,47 @@ namespace AgainstRomeModifier
             int jzOpcode = BitConverter.ToInt32(decompressed, filterOffset + DonationTypeFilterJzOpcodeWordIndex * 4);
             int jzOperand = BitConverter.ToInt32(decompressed, filterOffset + DonationTypeFilterJzOperandWordIndex * 4);
 
-            // 舊版 P9 曾把 site 8 也改成 [66,0]（導致增援只有村民）——判為 Legacy，
-            // Apply 時會自動把 site 8 遷回原版。
-            if (!site8Vanilla) return PatchState.Legacy;
+            bool site8LegacyZeroed = opcode8 == RetreatQuotaPatchedOpcode && value8 == RetreatQuotaPatchedValue;
+            if (!site8Vanilla && !site8LegacyZeroed) return PatchState.Unknown;
 
             bool site9Ultimate = opcode9 == RetreatQuotaPatchedOpcode && value9 == RetreatQuotaPatchedValue;
             bool site9Original = opcode9 == RetreatQuotaOriginalOpcode && value9 == RetreatQuotaOriginalValue;
+            if (!site9Ultimate && !site9Original) return PatchState.Unknown;
 
-            if (site9Ultimate && jzOpcode == DonationTypeFilterPatchedOpcode && jzOperand == DonationTypeFilterPatchedOperand)
+            bool filterOriginal = jzOpcode == DonationTypeFilterOriginalOpcode &&
+                                  jzOperand == DonationTypeFilterOriginalOperand;
+            bool filterUltimate = jzOpcode == DonationTypeFilterPatchedOpcode &&
+                                  jzOperand == DonationTypeFilterPatchedOperand;
+            bool filterLegacySplit = jzOpcode == DonationTypeFilterLegacySplitOpcode &&
+                                     jzOperand == DonationTypeFilterLegacySplitOperand;
+            if (!filterOriginal && !filterUltimate && !filterLegacySplit) return PatchState.Unknown;
+
+            int actionOffset = FindDonationActionOffset(decompressed);
+            if (actionOffset < 0) return PatchState.Unknown;
+            int callOpcodeOffset = actionOffset + DonationActionCallOpcodeWordIndex * sizeof(int);
+            int callOpcode = BitConverter.ToInt32(decompressed, callOpcodeOffset);
+            int callOperand = BitConverter.ToInt32(
+                decompressed,
+                actionOffset + DonationActionCallOperandWordIndex * sizeof(int));
+
+            bool hasHelper = TryLocateReleaseHelper(decompressed, out int helperOffset, out _);
+            bool directRemark = callOpcode == ExternalSymbolOpcode && callOperand == SetObjMarkSymbol;
+            bool releaseAndRemark = hasHelper &&
+                                    callOpcode == InternalCallOpcode &&
+                                    callOperand == CalculateInternalCallOperand(callOpcodeOffset, helperOffset);
+            bool brokenArrayCreate = hasHelper &&
+                                     callOpcode == BrokenArrayCreateOpcode &&
+                                     callOperand == CalculateInternalCallOperand(callOpcodeOffset, helperOffset);
+            if (!directRemark && !releaseAndRemark && !brokenArrayCreate) return PatchState.Unknown;
+            if (directRemark && hasHelper) return PatchState.Unknown;
+
+            if (site8Vanilla && site9Ultimate && filterUltimate && releaseAndRemark)
                 return PatchState.Ultimate;
-            if (site9Original && jzOpcode == DonationTypeFilterOriginalOpcode && jzOperand == DonationTypeFilterOriginalOperand)
+            if (site8Vanilla && site9Original && filterOriginal && directRemark && !hasHelper)
                 return PatchState.Original;
 
-            // Legacy 涵蓋出貨過的中間狀態（site9 歸零但過濾原版；jz+0 全捐贈；
-            // 2026-07-17 短暫出貨的「過濾恢復原版」組合），Apply 時自動遷移。
+            // Recognized shipped combinations converge on complete handoff with
+            // the release helper, including old jz+0 direct-mark and jnz split states.
             return PatchState.Legacy;
         }
 
@@ -695,6 +757,9 @@ namespace AgainstRomeModifier
                 if (!enabled) return false;
                 throw new InvalidOperationException("P9 retreat quota signature not found.");
             }
+
+            if (Detect(decompressed) == PatchState.Unknown)
+                throw new InvalidOperationException("P9 state is unknown; refusing to rewrite reinforcement control flow.");
 
             bool changed = false;
 
@@ -735,13 +800,9 @@ namespace AgainstRomeModifier
                 }
             }
 
-            // State-49 donation type filter, INVERTED (jz->jnz, offset kept at 92):
-            // soldier squads (unit type != 1) fall into the quota branch and get
-            // donated (quota 0 => all stay in the village); type-1 units (pack
-            // horses / civilians) take the jump and follow the vanilla retreat
-            // path off the map. In-game confirmed 2026-07-17: soldiers garrison,
-            // pack horses leave. (The legacy operand-0 variant donated EVERYTHING,
-            // so pack horses accumulated every wave.)
+            // Eat the type-filter jump so every reinforcement object enters the
+            // donation branch. The action below releases party script mode before
+            // applying the recipient mark; direct mark alone made squads disappear.
             {
                 int filterOffset = BciPattern.FindBciWordPattern(decompressed, DonationTypeFilterSignature);
                 if (filterOffset < 0)
@@ -770,7 +831,202 @@ namespace AgainstRomeModifier
                 }
             }
 
+            changed |= enabled
+                ? InstallReleaseHelper(ref decompressed)
+                : RemoveReleaseHelper(ref decompressed);
+
             return changed;
+        }
+
+        private static bool InstallReleaseHelper(ref byte[] decompressed)
+        {
+            int actionOffset = FindDonationActionOffset(decompressed);
+            if (actionOffset < 0)
+                throw new InvalidOperationException("P9 donation action signature not found.");
+
+            int callOpcodeOffset = actionOffset + DonationActionCallOpcodeWordIndex * sizeof(int);
+            int callOperandOffset = actionOffset + DonationActionCallOperandWordIndex * sizeof(int);
+            int callOpcode = BitConverter.ToInt32(decompressed, callOpcodeOffset);
+            int callOperand = BitConverter.ToInt32(decompressed, callOperandOffset);
+
+            bool changed = false;
+
+            if (TryLocateReleaseHelper(decompressed, out int existingHelperOffset, out _))
+            {
+                int expectedOperand = CalculateInternalCallOperand(callOpcodeOffset, existingHelperOffset);
+                if (callOperand != expectedOperand ||
+                    (callOpcode != InternalCallOpcode && callOpcode != BrokenArrayCreateOpcode))
+                    throw new InvalidOperationException("P9 release helper exists but its call target is inconsistent.");
+
+                if (callOpcode != InternalCallOpcode)
+                {
+                    BciPattern.WriteBciInt32(
+                        decompressed, callOpcodeOffset, callOpcode, InternalCallOpcode,
+                        "P9 migrate broken arrCreate opcode to internal call");
+                    changed = true;
+                }
+            }
+            else
+            {
+                if (callOpcode != ExternalSymbolOpcode || callOperand != SetObjMarkSymbol)
+                    throw new InvalidOperationException("P9 donation action is not the recognized direct-mark legacy state.");
+
+                int helperOffset = InsertReleaseHelper(ref decompressed);
+                int internalOperand = CalculateInternalCallOperand(callOpcodeOffset, helperOffset);
+                BciPattern.WriteBciInt32(
+                    decompressed, callOpcodeOffset, callOpcode, InternalCallOpcode,
+                    "P9 donation release helper call opcode");
+                BciPattern.WriteBciInt32(
+                    decompressed, callOperandOffset, callOperand, internalOperand,
+                    "P9 donation release helper call target");
+                changed = true;
+            }
+
+            int bypassOpcodeOffset = callOpcodeOffset + 2 * sizeof(int);
+            int bypassOperandOffset = callOpcodeOffset + 3 * sizeof(int);
+            int currentBypassOpcode = BitConverter.ToInt32(decompressed, bypassOpcodeOffset);
+            int currentBypassOperand = BitConverter.ToInt32(decompressed, bypassOperandOffset);
+
+            if (currentBypassOpcode != 112 || currentBypassOperand != 4)
+            {
+                BciPattern.WriteBciInt32(
+                    decompressed, bypassOpcodeOffset, currentBypassOpcode, 112,
+                    "P9 bypass trailing external call opcode");
+                BciPattern.WriteBciInt32(
+                    decompressed, bypassOperandOffset, currentBypassOperand, 4,
+                    "P9 bypass trailing external call operand");
+                changed = true;
+            }
+
+            return changed;
+        }
+
+        private static bool RemoveReleaseHelper(ref byte[] decompressed)
+        {
+            int actionOffset = FindDonationActionOffset(decompressed);
+            if (actionOffset < 0)
+                throw new InvalidOperationException("P9 donation action signature not found.");
+
+            int callOpcodeOffset = actionOffset + DonationActionCallOpcodeWordIndex * sizeof(int);
+            int callOperandOffset = actionOffset + DonationActionCallOperandWordIndex * sizeof(int);
+            int callOpcode = BitConverter.ToInt32(decompressed, callOpcodeOffset);
+            int callOperand = BitConverter.ToInt32(decompressed, callOperandOffset);
+
+            if (!TryLocateReleaseHelper(decompressed, out int helperOffset, out bool hasBciHeader))
+            {
+                int currentBypassOpcode = BitConverter.ToInt32(decompressed, callOpcodeOffset + 2 * sizeof(int));
+                int currentBypassOperand = BitConverter.ToInt32(decompressed, callOpcodeOffset + 3 * sizeof(int));
+                if (callOpcode == ExternalSymbolOpcode && callOperand == SetObjMarkSymbol &&
+                    currentBypassOpcode == 73 && currentBypassOperand == -3)
+                    return false;
+                throw new InvalidOperationException("P9 donation call references an unknown helper state.");
+            }
+
+            int expectedOperand = CalculateInternalCallOperand(callOpcodeOffset, helperOffset);
+            if (callOperand != expectedOperand ||
+                (callOpcode != InternalCallOpcode && callOpcode != BrokenArrayCreateOpcode))
+                throw new InvalidOperationException("P9 release helper call target is inconsistent.");
+
+            BciPattern.WriteBciInt32(
+                decompressed, callOpcodeOffset, callOpcode, ExternalSymbolOpcode,
+                "P9 restore direct s_setObjMark opcode");
+            BciPattern.WriteBciInt32(
+                decompressed, callOperandOffset, callOperand, SetObjMarkSymbol,
+                "P9 restore direct s_setObjMark symbol");
+
+            int bypassOpcodeOffset = callOpcodeOffset + 2 * sizeof(int);
+            int bypassOperandOffset = callOpcodeOffset + 3 * sizeof(int);
+            int currentBypassOpcodeVal = BitConverter.ToInt32(decompressed, bypassOpcodeOffset);
+            int currentBypassOperandVal = BitConverter.ToInt32(decompressed, bypassOperandOffset);
+            BciPattern.WriteBciInt32(
+                decompressed, bypassOpcodeOffset, currentBypassOpcodeVal, 73,
+                "P9 restore trailing external call opcode");
+            BciPattern.WriteBciInt32(
+                decompressed, bypassOperandOffset, currentBypassOperandVal, -3,
+                "P9 restore trailing external call operand");
+
+            RemoveBytes(ref decompressed, helperOffset, ReleaseAndRemarkHelperWords.Length * sizeof(int), hasBciHeader);
+            return true;
+        }
+
+        private static int FindDonationActionOffset(byte[] decompressed)
+        {
+            List<int> sites = BciPattern.FindAllBciWordPatternSites(decompressed, DonationActionSignature);
+            return sites.Count == 1 ? sites[0] : -1;
+        }
+
+        private static int InsertReleaseHelper(ref byte[] decompressed)
+        {
+            bool hasBciHeader = TryGetBciCodeEnd(decompressed, out int codeEnd);
+            if (!hasBciHeader) codeEnd = decompressed.Length;
+
+            byte[] helper = WordsToBytes(ReleaseAndRemarkHelperWords);
+            byte[] expanded = new byte[decompressed.Length + helper.Length];
+            Buffer.BlockCopy(decompressed, 0, expanded, 0, codeEnd);
+            Buffer.BlockCopy(helper, 0, expanded, codeEnd, helper.Length);
+            Buffer.BlockCopy(decompressed, codeEnd, expanded, codeEnd + helper.Length, decompressed.Length - codeEnd);
+            if (hasBciHeader)
+            {
+                int oldCodeSize = BitConverter.ToInt32(decompressed, 8);
+                BitConverter.GetBytes(oldCodeSize + helper.Length).CopyTo(expanded, 8);
+            }
+            decompressed = expanded;
+            return codeEnd;
+        }
+
+        private static void RemoveBytes(ref byte[] decompressed, int offset, int count, bool hasBciHeader)
+        {
+            byte[] reduced = new byte[decompressed.Length - count];
+            Buffer.BlockCopy(decompressed, 0, reduced, 0, offset);
+            Buffer.BlockCopy(decompressed, offset + count, reduced, offset, decompressed.Length - offset - count);
+            if (hasBciHeader)
+            {
+                int oldCodeSize = BitConverter.ToInt32(decompressed, 8);
+                BitConverter.GetBytes(oldCodeSize - count).CopyTo(reduced, 8);
+            }
+            decompressed = reduced;
+        }
+
+        private static bool TryLocateReleaseHelper(byte[] decompressed, out int helperOffset, out bool hasBciHeader)
+        {
+            hasBciHeader = TryGetBciCodeEnd(decompressed, out int codeEnd);
+            if (!hasBciHeader) codeEnd = decompressed.Length;
+
+            int helperLength = ReleaseAndRemarkHelperWords.Length * sizeof(int);
+            helperOffset = codeEnd - helperLength;
+            if (helperOffset < 0) return false;
+            for (int i = 0; i < ReleaseAndRemarkHelperWords.Length; i++)
+            {
+                if (BitConverter.ToInt32(decompressed, helperOffset + i * sizeof(int)) != ReleaseAndRemarkHelperWords[i])
+                    return false;
+            }
+            return true;
+        }
+
+        private static bool TryGetBciCodeEnd(byte[] decompressed, out int codeEnd)
+        {
+            codeEnd = 0;
+            if (decompressed.Length < 44 ||
+                decompressed[0] != (byte)'B' || decompressed[1] != (byte)'C' ||
+                decompressed[2] != (byte)'I' || decompressed[3] != (byte)'0')
+                return false;
+
+            int codeSize = BitConverter.ToInt32(decompressed, 8);
+            if (codeSize <= 0) return false;
+            codeEnd = 0x24 + codeSize;
+            if (codeEnd < 0x24 || codeEnd + 8 > decompressed.Length) return false;
+            return decompressed.AsSpan(codeEnd, 8).SequenceEqual("SYMBCONS"u8);
+        }
+
+        private static int CalculateInternalCallOperand(int callOpcodeOffset, int helperOffset) =>
+            helperOffset - callOpcodeOffset - 8;
+
+        private static byte[] WordsToBytes(IReadOnlyList<int> words)
+        {
+            byte[] bytes = new byte[words.Count * sizeof(int)];
+            for (int i = 0; i < words.Count; i++)
+                BitConverter.GetBytes(words[i]).CopyTo(bytes, i * sizeof(int));
+            return bytes;
         }
     }
 

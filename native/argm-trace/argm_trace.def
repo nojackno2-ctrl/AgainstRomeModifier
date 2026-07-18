@@ -1,20 +1,24 @@
-; Export table for the version.dll proxy. The LIBRARY name intentionally
-; matches the DLL's runtime file name (version.dll). Every entry is a naked
-; thunk (see proxy_version.cpp) that forwards to the genuine system version.dll.
-LIBRARY version
+; Export table for the winmm.dll proxy. LIBRARY name matches the DLL's runtime
+; file name (winmm.dll). Each entry is a naked thunk (see proxy_winmm.cpp) that
+; forwards to the genuine system winmm.dll. These are exactly the winmm exports
+; Against_Rome.exe imports: 17 by name plus Ordinal 2 (a NONAME export).
+LIBRARY winmm
 EXPORTS
-    GetFileVersionInfoA = Thunk_GetFileVersionInfoA
-    GetFileVersionInfoByHandle = Thunk_GetFileVersionInfoByHandle
-    GetFileVersionInfoExA = Thunk_GetFileVersionInfoExA
-    GetFileVersionInfoExW = Thunk_GetFileVersionInfoExW
-    GetFileVersionInfoSizeA = Thunk_GetFileVersionInfoSizeA
-    GetFileVersionInfoSizeExA = Thunk_GetFileVersionInfoSizeExA
-    GetFileVersionInfoSizeExW = Thunk_GetFileVersionInfoSizeExW
-    GetFileVersionInfoSizeW = Thunk_GetFileVersionInfoSizeW
-    GetFileVersionInfoW = Thunk_GetFileVersionInfoW
-    VerFindFileA = Thunk_VerFindFileA
-    VerFindFileW = Thunk_VerFindFileW
-    VerInstallFileA = Thunk_VerInstallFileA
-    VerInstallFileW = Thunk_VerInstallFileW
-    VerQueryValueA = Thunk_VerQueryValueA
-    VerQueryValueW = Thunk_VerQueryValueW
+    auxGetDevCapsA = Thunk_auxGetDevCapsA
+    auxGetNumDevs = Thunk_auxGetNumDevs
+    auxSetVolume = Thunk_auxSetVolume
+    joyGetDevCapsA = Thunk_joyGetDevCapsA
+    joyGetNumDevs = Thunk_joyGetNumDevs
+    joyGetPosEx = Thunk_joyGetPosEx
+    mciGetErrorStringA = Thunk_mciGetErrorStringA
+    mciSendCommandA = Thunk_mciSendCommandA
+    mixerClose = Thunk_mixerClose
+    mixerGetControlDetailsA = Thunk_mixerGetControlDetailsA
+    mixerGetDevCapsA = Thunk_mixerGetDevCapsA
+    mixerGetLineControlsA = Thunk_mixerGetLineControlsA
+    mixerGetLineInfoA = Thunk_mixerGetLineInfoA
+    mixerGetNumDevs = Thunk_mixerGetNumDevs
+    mixerOpen = Thunk_mixerOpen
+    mixerSetControlDetails = Thunk_mixerSetControlDetails
+    timeGetTime = Thunk_timeGetTime
+    Thunk_Ordinal2 @2 NONAME

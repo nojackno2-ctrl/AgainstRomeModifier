@@ -27,16 +27,19 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
 add_library(argm_trace SHARED
     src/dllmain.cpp
-    src/proxy_version.cpp
+    src/proxy_winmm.cpp
     src/config.cpp
     src/detour.cpp
     src/targets.cpp
     src/tracelog.cpp
 )
 
-# Ship as version.dll (drop-in proxy loader) using the export list in the .def.
+# Ship as winmm.dll (drop-in proxy loader) using the export list in the .def.
+# The game statically imports WINMM.dll and winmm is not a KnownDLL, so our copy
+# in the game folder is loaded at startup. (version.dll was the wrong target --
+# the game never imports it.)
 set_target_properties(argm_trace PROPERTIES
-    OUTPUT_NAME "version"
+    OUTPUT_NAME "winmm"
     PREFIX ""
 )
 

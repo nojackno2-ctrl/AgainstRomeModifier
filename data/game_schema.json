@@ -256,6 +256,22 @@
             "meaning": "Set v56[party] to zero so the complete type-5 reinforcement party is handed to the village instead of retreating.",
             "coupling": "Must be applied and restored atomically with militaryReinforcementUnitThreshold=70; the rejected threshold-8 plus quota-0 combination stopped later arrivals."
           },
+          "reinforcementDonationFilter": {
+            "featureKey": "RomanReinforcementGarrison",
+            "decompressedOffset": "0x1825C",
+            "originalJump": [117, 92],
+            "ultimateJump": [117, 0],
+            "legacySplitJump": [118, 92],
+            "meaning": "Consume the s_getUnitType branch so soldiers, pack horses, and civilians all enter the zero-quota donation path instead of any unit type remaining in the retreat array."
+          },
+          "reinforcementDonationRelease": {
+            "featureKey": "RomanReinforcementGarrison",
+            "donationCallOffset": "0x18304",
+            "legacyAction": "Direct s_setObjMark left soldier squads in reinforcement-party script mode; 2026-07-18 runtime observation showed them disappearing at the village.",
+            "ultimateAction": "At 0x18304, opcode 120 calls an appended three-argument helper that runs s_setScriptMode(0) before s_setObjMark(recipientMark) for every reinforcement object admitted by the jz+0 fall-through.",
+            "migration": "The previous jnz(118)+92 split, all recognized direct-mark states, and the exact broken opcode-160 arrCreate/helper/target state are Legacy and automatically migrate to jz+0 plus opcode 120. Unknown filter/helper bytes, call targets, or opcodes are refused.",
+            "verification": "Exact apply/idempotence/restore across ENDL_000..004 and integrated save repair pass; user runtime verification in a fresh endless game confirmed that soldiers, pack horses, and civilians are handed to the village and no longer retreat."
+          },
           "settlementSpawnerProbabilities": {
             "decompressedPatternOffset": "0x1888C",
             "originalValues": [0, 0, 80, 60, 40, 20],

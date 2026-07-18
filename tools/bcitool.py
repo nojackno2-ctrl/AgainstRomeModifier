@@ -124,7 +124,7 @@ OPNAME = {32: "add", 37: "sub/bit", 40: "or", 41: "or2", 44: "and/comb",
           98: "lt", 99: "le", 100: "gt", 101: "ge", 102: "eq", 103: "ne",
           112: "jmp", 113: "jlt", 114: "jle", 115: "jgt", 116: "jge",
           117: "jz", 118: "jnz", 120: "callint", 121: "ret", 128: "pushsym",
-          163: "arrrd", 164: "arrwr", 77: "pushglobref"}
+          160: "arrcreate", 163: "arrrd", 164: "arrwr", 77: "pushglobref"}
 PROLOGUE = [95, 75, 121, 74, 94]
 
 def disasm(bci, start_word, end_word):
@@ -143,7 +143,9 @@ def disasm(bci, start_word, end_word):
                 nm = bci.names[a] if 0 <= a < len(bci.names) else "??"
                 txt = f"pushsym #{a} <{nm}>"
             elif op in (112, 113, 114, 115, 116, 117, 118):
-                txt = f"{OPNAME.get(op)} ->{off + a:#06x} (op {a})"
+                txt = f"{OPNAME.get(op)} ->{off + 8 + a:#06x} (op {a})"
+            elif op == 120:
+                txt = f"callint ->{off + 8 + a:#06x} (op {a})"
             elif op == 66:
                 txt = f"pushlit {a}"
             elif op == 81:

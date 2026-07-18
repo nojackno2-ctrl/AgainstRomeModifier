@@ -309,6 +309,36 @@
   donation formula literals at `0x17788` (`4,2,2`) stay vanilla — with the
   quota forced to 0 the formula only shapes the civilian-recreate quota
   (`v57`), not the retreat set.
+- Runtime correction (2026-07-18): `jnz(118)+92` correctly routes soldier
+  squads into donation, but the previously shipped direct `s_setObjMark` call
+  left those squads in script mode 1. In-game they disappeared immediately at
+  the village while pack horses followed the dissolve/civilian-recreate path.
+  P9 now replaces that same-size call site with an opcode-120 internal call to a helper
+  appended at the end of the BCI code section. The helper executes
+  `s_setScriptMode(0, x, y)` and then `s_setObjMark(recipientMark, x, y)`.
+  Type-1 pack horses/civilians deliberately stay on the vanilla delivery path;
+  pack horses are dissolved and recreated as ordinary villagers, so horse
+  objects do not accumulate at the camp.
+  Re-decompilation after a further runtime failure found that the first helper
+  build used opcode 160, whose VM dispatcher case is typed-array creation
+  (`arrCreate`), not an internal call. Current output uses opcode 120; the exact
+  broken 160/helper/target state is Legacy and auto-migrates. Existing instruction
+  offsets remain unchanged; `codeSize` and the following
+  container sections are shifted safely. The old `jnz+92` direct-mark output is
+  also Legacy and auto-migrates. Helper target/bytes are signature-verified;
+  mismatches are Unknown and refused. Static round-trip is verified on all five
+  ENDL scripts. The later `jz+0` complete-handoff output retained the corrected
+  helper and was runtime-verified in a fresh endless game on 2026-07-18.
+- Fresh-game policy change (2026-07-18): the player still observed Roman
+  reinforcements retreating and explicitly requested complete village handoff.
+  P9 Ultimate therefore uses `jz(117)+0` so soldiers, pack horses, and civilians
+  all enter the zero-quota donation path. Unlike the old direct-mark `jz+0`
+  output, every object then passes through the opcode-120 release-and-remark
+  helper. The former `jnz(118)+92` type split is now Legacy and auto-migrates.
+  The user confirmed in a new endless game that soldiers, pack horses, and
+  civilians are all handed to the village and no longer retreat. P8 remains 70:
+  reaching it stops a later wave from spawning but does not order an already
+  spawned reinforcement party to retreat.
 - The current gate at `0x1960C` uses the original condition words exactly.
   Detection accepts only the complete original gate, the exact old
   `112,272` gate, or either exact historical bounded-gate sequence together

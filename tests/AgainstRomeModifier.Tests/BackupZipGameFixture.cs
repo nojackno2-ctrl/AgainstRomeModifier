@@ -148,6 +148,7 @@ internal sealed class BackupZipGameFixture : IDisposable
             Section(words, 81, 56, 90, -3, opcode, value, 164);
         }
         Section(words, 128, 214, 73, -2, 86, 66, 1, 96, 102, 117, 92); // P9 filter
+        Section(words, 90, 42, 117, 56, 90, 41, 90, 4, 90, 3, 128, 141, 73, -3, 86, 71, 112, 116); // P9 donation action
 
         Section(words, 66, 60, 66, 100, 66, 1, 128, 16, 73, -2, 86, 96, 101, 117); // P17
         Section(words, 120, -636, 73, -3, 86, 66, 0, 96, 101, 117, 20, 66, 0, 87); // P18
