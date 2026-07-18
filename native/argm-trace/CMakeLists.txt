@@ -17,6 +17,14 @@ endif()
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Statically link the CRT (/MT). version.dll is loaded into a 2004 game whose
+# environment (and any end user's machine) may not have the VC++ redistributable
+# / Universal CRT. A dynamic-CRT proxy DLL fails to load -- the loader can't
+# resolve VCRUNTIME140.dll / api-ms-win-crt-*.dll -- and the game refuses to
+# start. Static linking makes the DLL self-contained (only KERNEL32 remains).
+cmake_policy(SET CMP0091 NEW)
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+
 add_library(argm_trace SHARED
     src/dllmain.cpp
     src/proxy_version.cpp
