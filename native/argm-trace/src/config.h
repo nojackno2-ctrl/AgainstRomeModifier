@@ -20,9 +20,17 @@ struct Config {
 
     // --- Event hooks (low frequency, safe defaults ON) ---
     bool traceNpcJobs = true;      // s_addNPCJob_createUnit implementation
-    bool traceNpcActive = true;    // s_setNPCActive / s_NPCActive
+    bool traceNpcActive = true;    // s_setNPCActive (respawn eligibility writes)
     bool traceVillage = true;      // s_setVillageTemplate
     bool traceCreateUnit = true;   // s_createUnitAndMems
+
+    // --- Endless-AI decision-context hooks (low frequency, safe defaults ON) ---
+    // These record the *inputs* and *boundaries* of the AI reinforcement logic,
+    // complementing the action hooks above so a "why didn't the AI act" question
+    // can be answered from the log alone.
+    bool traceNpcQuery = true;     // s_NPCActive getter: snapshots all 8 teams' respawn flags
+    bool traceLevelInit = true;    // level-init sweep: marks a fresh session boundary
+    bool traceUnitMax = true;      // s_createBattleUnitsMax / s_createCiviUnitsMax count clamps
 
     // --- Full BCI opcode stream (VERY high volume, OFF by default) ---
     // Logs every interpreted script instruction. Only enable for short,

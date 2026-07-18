@@ -10,6 +10,9 @@
 - **AI 復活啟用** (`s_setNPCActive` `0x00548CE0`):被擊敗的隊伍何時重新變成可重生。
 - **聚落式抵達** (`s_setVillageTemplate` `0x00549500`)。
 - **單位建立** (`s_createUnitAndMems` `0x0052A020`)。
+- **復活資格查詢** (`s_NPCActive` getter `0x00548D20`):每次 AI 查詢隊伍復活資格時,一次快照全部 8 隊的 `DAT_029e6000` 旗標。這是「為什麼某隊不增援」最直接的證據。
+- **新局邊界** (level-init sweep `0x0054A070`):每次載入關卡清零隊伍狀態時記一條分隔線,把不同局的事件在同一 log 檔裡分開。
+- **單位數量上限** (`s_createBattleUnitsMax`/`s_createCiviUnitsMax` `0x005249D0`/`0x00524D70`):記錄 clamp(≤20) 前的請求數量。
 - **陣營選擇** (無盡羅馬陣營 setter `0x0045BD60`,有完整 21-byte 簽章驗證;同時附「強制羅馬補丁後」的第二組簽章,已套用 Modifier 補丁的安裝一樣能追蹤)。
 - **完整 BCI opcode 串流** (VM dispatcher 真正入口 `0x005B1C60`;VM context 是第 1 個堆疊參數):逐指令追蹤,音量極大,預設關閉。
 

@@ -47,6 +47,9 @@ Config LoadConfig(const wchar_t* directory) {
     c.traceNpcActive = ReadBool(L"hooks", L"traceNpcActive", c.traceNpcActive, file);
     c.traceVillage = ReadBool(L"hooks", L"traceVillage", c.traceVillage, file);
     c.traceCreateUnit = ReadBool(L"hooks", L"traceCreateUnit", c.traceCreateUnit, file);
+    c.traceNpcQuery = ReadBool(L"hooks", L"traceNpcQuery", c.traceNpcQuery, file);
+    c.traceLevelInit = ReadBool(L"hooks", L"traceLevelInit", c.traceLevelInit, file);
+    c.traceUnitMax = ReadBool(L"hooks", L"traceUnitMax", c.traceUnitMax, file);
     c.traceOpcodes = ReadBool(L"hooks", L"traceOpcodes", c.traceOpcodes, file);
 
     // TimeDateStamp is stored as a hex string (e.g. "3F1A2B3C"); parse manually
