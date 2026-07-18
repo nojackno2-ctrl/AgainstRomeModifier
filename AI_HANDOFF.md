@@ -1,11 +1,12 @@
 ﻿# AI Handoff - Live Project Memory
 
-## GitHub branch consolidation into `主要開發` (2026-07-18, in progress)
+## GitHub branch consolidation into `主要開發` (2026-07-18, complete)
 
 - User authorized merging every GitHub branch into `主要開發`, then deleting each successfully integrated source branch.
 - After `git fetch origin --prune`, `claude/github-error-resolution-9ifcdy` was already fully contained in `主要開發`, and `claude/village-ai-rome-reinforcement-pbdktk` pointed at the same commit as `主要開發`.
 - `claude/game-operation-logging-4hs36b` contained five commits not on `主要開發`; its code and documentation merged automatically. The only conflict was this append-only handoff, resolved by preserving both the village-AI diagnosis and the branch's 2026-07-18 runtime-promotion, Roman-reinforcement, and argm-trace records.
-- Pending before remote deletion: complete the merge commit, run the documented Release build/tests and diff checks, push `主要開發`, verify remote ancestry, then delete all three integrated remote branches. Preserve the user's untracked `build/` directory.
+- Merge commit `1a189b8` passed the documented Release solution build with 0 warnings/errors and the full xUnit suite with 247/247 passing; `git diff --check` was clean and this file retained its UTF-8 BOM.
+- Pushed `主要開發`, verified every source tip was an ancestor and the GitHub main tip matched locally, then deleted all three integrated remote branches. A final `git ls-remote --heads origin` showed only `主要開發`; the merged local tracking branch was also removed with safe `git branch -d`. The user's `build/` directory was preserved and is ignored by the merged `.gitignore`.
 
 ## Village-AI Rome reinforcement report: diagnosis session, no code change (2026-07-17)
 
