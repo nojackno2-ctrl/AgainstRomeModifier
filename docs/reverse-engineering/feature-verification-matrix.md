@@ -1,6 +1,6 @@
 # Modifier Feature Decompilation Verification Matrix
 
-> Reviewed 2026-07-17 against all 44 entries in `FeatureRegistry.All`. This is
+> Reviewed 2026-07-18 against all 46 entries in `FeatureRegistry.All`. This is
 > a static reverse-engineering audit, not a claim that every combination has
 > been exercised in a live game. Runtime evidence is called out separately.
 

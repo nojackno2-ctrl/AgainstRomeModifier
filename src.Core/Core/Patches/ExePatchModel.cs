@@ -42,6 +42,13 @@ public enum ExeIdleSelect999PatchState {
     Patched
 }
 
+/// <summary>已被實機否定、僅供遷移還原的 getter-only v1 狀態。</summary>
+public enum ExeDefaultSpecialArrowsPatchState {
+    Unknown,
+    Original,
+    Patched
+}
+
 /// <summary>1600x1200 32-bit 原生顯示模式替換為 1920x1080 的狀態。</summary>
 public enum ExeNativeWidescreenPatchState {
     Unknown,
@@ -163,6 +170,36 @@ public static class ExePatchModel {
         "FF751983C30481FB9C0F000075DC85F6751A81C4381F00005F5E5BC350BE010000" +
         "00E85AB7FFFF83C404EBD76A7CE8EEBCFEFF83C40481C4381F00005F5E5BC3" +
         "9090909090909090909090909090909090");
+
+    // === 已解鎖特殊箭矢預設（runtime-rejected getter-only v1；restore-only）===
+    // 原版把遠程模式放在 BSS 0x00736A58：0=普通、1=火箭/毒箭、2=掠奪。
+    // 舊設計因 BSS 無檔案內容而把 getter 導向相鄰的 22-byte 對齊區：
+    // raw 0（從未選擇）=> 1，raw 3（普通箭按鈕 sentinel）=> 0，raw 1/2 原樣回傳。
+    // 使用者實測仍發射普通箭；現只保留 bytes 以辨識舊安裝並還原。
+    public const long DefaultSpecialArrowsNormalButtonOffset = 0x413FC;
+    public const long DefaultSpecialArrowsGetterOffset = 0x4E980;
+    public const long DefaultSpecialArrowsCaveOffset = 0x4E96A;
+    public static readonly byte[] DefaultSpecialArrowsNormalButtonOriginalBytes = { 0x00 };
+    public static readonly byte[] DefaultSpecialArrowsNormalButtonPatchedBytes = { 0x03 };
+    public static readonly byte[] DefaultSpecialArrowsGetterOriginalBytes = { 0xA1, 0x58, 0x6A, 0x73, 0x00, 0xC3 };
+    public static readonly byte[] DefaultSpecialArrowsGetterPatchedBytes = { 0xE9, 0xE5, 0xFF, 0xFF, 0xFF, 0xC3 };
+    public static readonly byte[] DefaultSpecialArrowsCaveOriginalBytes = {
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x8D, 0x80, 0x00, 0x00, 0x00, 0x00,
+        0x8D, 0x92, 0x00, 0x00, 0x00, 0x00,
+        0x8D, 0x44, 0x20, 0x00
+    };
+    public static readonly byte[] DefaultSpecialArrowsCavePatchedBytes = {
+        0xA1, 0x58, 0x6A, 0x73, 0x00, // mov eax,[0x00736A58]
+        0x83, 0xF8, 0x03,             // cmp eax,3
+        0x75, 0x03,                   // jne test_default
+        0x31, 0xC0, 0xC3,             // xor eax,eax; ret
+        0x85, 0xC0,                   // test eax,eax
+        0x75, 0x01,                   // jne return
+        0x40,                         // inc eax
+        0xC3,                         // ret
+        0x90, 0x90, 0x90
+    };
 
     // === 原生 1920x1080 viewport（取代 1600x1200 32-bit mode 0x22）===
     // VA 0x424590 會把目前顯示寬高辨識回 mode ID；VA 0x424760 建立並刷新顯示模式。
@@ -478,6 +515,25 @@ public static class ExePatchModel {
         return ExeIdleSelect999PatchState.Unknown;
     }
 
+    public static ExeDefaultSpecialArrowsPatchState GetDefaultSpecialArrowsPatchState(byte[] exeBytes) {
+        var sites = new[] {
+            (DefaultSpecialArrowsNormalButtonOffset, DefaultSpecialArrowsNormalButtonOriginalBytes, DefaultSpecialArrowsNormalButtonPatchedBytes),
+            (DefaultSpecialArrowsGetterOffset, DefaultSpecialArrowsGetterOriginalBytes, DefaultSpecialArrowsGetterPatchedBytes),
+            (DefaultSpecialArrowsCaveOffset, DefaultSpecialArrowsCaveOriginalBytes, DefaultSpecialArrowsCavePatchedBytes),
+        };
+        bool allOriginal = true;
+        bool allPatched = true;
+        foreach (var (offset, original, patched) in sites) {
+            if (exeBytes.Length < offset + original.Length) return ExeDefaultSpecialArrowsPatchState.Unknown;
+            byte[] current = ReadSpan(exeBytes, offset, original.Length);
+            allOriginal &= current.SequenceEqual(original);
+            allPatched &= current.SequenceEqual(patched);
+        }
+        if (allOriginal) return ExeDefaultSpecialArrowsPatchState.Original;
+        if (allPatched) return ExeDefaultSpecialArrowsPatchState.Patched;
+        return ExeDefaultSpecialArrowsPatchState.Unknown;
+    }
+
     public static ExeNativeWidescreenPatchState GetNativeWidescreenPatchState(byte[] exeBytes) {
         var modeSites = new[] {
             (NativeWidescreenIdentifyOffset, NativeWidescreenIdentifyOriginalBytes, NativeWidescreenIdentifyPatchedBytes),
@@ -662,6 +718,18 @@ public static class ExePatchModel {
         }
         if (!enabled && state == ExeIdleSelect999PatchState.Patched) {
             return new[] { new ExeWriteOp(IdleSelect999PatchOffset, IdleSelect999PatchedBytes, IdleSelect999OriginalBytes, "閒置村民一次全選 999 還原") };
+        }
+        return Array.Empty<ExeWriteOp>();
+    }
+
+    public static IReadOnlyList<ExeWriteOp> PlanRetiredDefaultSpecialArrowsRestore(ExeDefaultSpecialArrowsPatchState state) {
+        if (state == ExeDefaultSpecialArrowsPatchState.Patched) {
+            return new[] {
+                // Restore the getter before clearing its target.
+                new ExeWriteOp(DefaultSpecialArrowsGetterOffset, DefaultSpecialArrowsGetterPatchedBytes, DefaultSpecialArrowsGetterOriginalBytes, "特殊箭矢預設 getter 還原"),
+                new ExeWriteOp(DefaultSpecialArrowsNormalButtonOffset, DefaultSpecialArrowsNormalButtonPatchedBytes, DefaultSpecialArrowsNormalButtonOriginalBytes, "普通箭模式 sentinel 還原"),
+                new ExeWriteOp(DefaultSpecialArrowsCaveOffset, DefaultSpecialArrowsCavePatchedBytes, DefaultSpecialArrowsCaveOriginalBytes, "特殊箭矢預設程式碼洞還原"),
+            };
         }
         return Array.Empty<ExeWriteOp>();
     }

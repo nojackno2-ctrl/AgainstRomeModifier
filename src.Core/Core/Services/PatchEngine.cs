@@ -85,6 +85,7 @@ public class PatchEngine
         orchestrator.ApplyMandatoryRepair(gamePath);
         FoodHealingFeature.Apply(
             gamePath, options.FoodHealing10x, backupManager, orchestrator, _logger);
+        RetiredDefaultSpecialArrowsMigration.RestoreIfPresent(gamePath, orchestrator, _logger);
         CiviProduce20Feature.RestoreAkNpcOriginal(gamePath, orchestrator);
 
         foreach ((string path, byte[] bytes) in filePlan.Files)
@@ -112,6 +113,7 @@ public class PatchEngine
             foodHealingEnabled = false;
         FoodHealingFeature.Apply(
             gamePath, foodHealingEnabled, backupManager, orchestrator, _logger);
+        RetiredDefaultSpecialArrowsMigration.RestoreIfPresent(gamePath, orchestrator, _logger);
         CiviProduce20Feature.RestoreAkNpcOriginal(gamePath, orchestrator);
         orchestrator.SaveAll(gamePath, rollback);
     }

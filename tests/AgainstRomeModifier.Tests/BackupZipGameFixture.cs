@@ -167,7 +167,17 @@ internal sealed class BackupZipGameFixture : IDisposable
         Directory.CreateDirectory(scriptRoot);
         foreach (var (name, symbolIndex) in FoodHealingScripts)
         {
-            WritePfil(Path.Combine(scriptRoot, name + ".bci"), Words(66, 1, 81, 10, 81, 98, 128, symbolIndex, 73, -3, 86));
+            var words = new List<int> { 66, 1, 81, 10, 81, 98, 128, symbolIndex, 73, -3, 86 };
+            if (name == "ak_krieger")
+            {
+                Append(words, Gap);
+                Append(words,
+                    66, 1000001, 87, 130,
+                    66, 1, 66, 0,
+                    81, 10, 81, 98,
+                    128, 106, 73, -4, 86);
+            }
+            WritePfil(Path.Combine(scriptRoot, name + ".bci"), Words(words));
         }
     }
 

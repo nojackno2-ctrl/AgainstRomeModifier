@@ -146,6 +146,31 @@
   2026-07-16 (user confirmed the select-idle button now selects more than 40
   villagers).
 
+### Retired Default Fire/Poison Arrow Experiments
+
+- File: `SYSTEM/CLAK/SCRIPT/ak_krieger.bci`.
+- Static chain: the warrior initialization contains exactly one
+  `s_setObjActWeapon(currentObj, weaponIndex=0, update=1)` call. Native callback
+  `LAB_00546bb0` reaches `FUN_005424a0`/`FUN_005424f0`; the latter validates the
+  requested weapon through `FUN_00542630`, `FUN_00542690`, and
+  `FUN_004c0de0(unit, weapon)` before writing the active-weapon byte.
+- Retired BCI attempt: changed the call's weapon literal from 0 (normal) to 1
+  (special). A second Roman runtime test still produced ordinary arrows, so this
+  output can no longer be installed.
+- Safety: restore runs only when the complete 17-word call signature has exactly
+  one retired Patched occurrence and no Original occurrence. Original, zero,
+  duplicate, or mixed matches are left untouched. Apply and restore share the BCI
+  cache, and cleanup returns the compressed file byte-identically in the synthetic
+  round-trip test.
+- Rejected legacy: the earlier EXE getter patch at `0x413FC`, `0x4E980`, and
+  `0x4E96A` changed only command-mode selection and produced ordinary arrows in
+  the user's Roman runtime test. It can no longer be installed; exact legacy
+  sites remain recognized so Apply/Restore can migrate them back to Original.
+- Status: removed from FeatureKey, profile, UI, presets, detection, and normal
+  patch planning after both runtime approaches failed. Normal Apply, startup-safe
+  migration, and Stats Restore retain only exact restore paths for BCI weapon
+  literal 1 and the earlier three-site EXE output. Unknown states remain untouched.
+
 ### 10x Building Speed (Construction, Upgrade, Repair)
 
 - File: `SYSTEM/DATA_MP/DEFAULTS/objdef.dau`.
