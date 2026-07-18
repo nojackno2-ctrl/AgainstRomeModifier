@@ -7,6 +7,8 @@ namespace AgainstRomeModifier.Tests;
 public sealed class ArgmTraceFeatureTests
 {
     private const uint KnownAnalyzedTimeDateStamp = 0x404D1710;
+    private const string Dll = "winmm.dll";
+    private const string Marker = ".against-rome-modifier-argmtrace.json";
 
     private sealed class NullLogger : ILogger
     {
@@ -44,7 +46,7 @@ public sealed class ArgmTraceFeatureTests
     private static ArgmTraceFeature NewFeature() => new(new NullLogger());
 
     [Fact]
-    public void Apply_installs_dll_ini_and_marker_and_is_detected()
+    public void Apply_installs_winmm_ini_and_marker_and_is_detected()
     {
         using var dir = new TempDir();
         WriteFakeExe(dir.File("Against_Rome.exe"), KnownAnalyzedTimeDateStamp);
@@ -54,19 +56,32 @@ public sealed class ArgmTraceFeatureTests
 
         feature.Apply(dir.Path, enabled: true);
 
-        Assert.True(File.Exists(dir.File("version.dll")));
+        Assert.True(File.Exists(dir.File(Dll)));
         Assert.True(File.Exists(dir.File("argm_trace.ini")));
-        Assert.True(File.Exists(dir.File(".against-rome-modifier-argmtrace.json")));
+        Assert.True(File.Exists(dir.File(Marker)));
         Assert.True(feature.IsInstalled(dir.Path));
 
-        // The embedded version.dll is the real 32-bit build, so it must be a
-        // valid PE that starts with "MZ".
-        byte[] dll = File.ReadAllBytes(dir.File("version.dll"));
+        // The embedded winmm.dll is the real 32-bit build: a valid PE ("MZ").
+        byte[] dll = File.ReadAllBytes(dir.File(Dll));
         Assert.True(dll.Length > 0 && dll[0] == (byte)'M' && dll[1] == (byte)'Z');
     }
 
     [Fact]
-    public void Apply_on_known_build_unlocks_hooks_in_ini()
+    public void Apply_deploys_in_log_only_mode_by_default()
+    {
+        using var dir = new TempDir();
+        WriteFakeExe(dir.File("Against_Rome.exe"), KnownAnalyzedTimeDateStamp);
+
+        NewFeature().Apply(dir.Path, enabled: true);
+
+        string ini = File.ReadAllText(dir.File("argm_trace.ini"), Encoding.UTF8);
+        // Safe default: proxy loads and logs, but installs no hooks until the
+        // user flips enableHooks=1 after confirming the game is stable.
+        Assert.Contains("enableHooks=0", ini);
+    }
+
+    [Fact]
+    public void Apply_on_known_build_records_unlock_stamp_in_ini()
     {
         using var dir = new TempDir();
         WriteFakeExe(dir.File("Against_Rome.exe"), KnownAnalyzedTimeDateStamp);
@@ -78,7 +93,7 @@ public sealed class ArgmTraceFeatureTests
     }
 
     [Fact]
-    public void Apply_on_unknown_build_keeps_hooks_locked_in_ini()
+    public void Apply_on_unknown_build_keeps_stamp_zero_in_ini()
     {
         using var dir = new TempDir();
         WriteFakeExe(dir.File("Against_Rome.exe"), 0x11223344);
@@ -91,14 +106,29 @@ public sealed class ArgmTraceFeatureTests
     }
 
     [Fact]
-    public void Apply_without_game_exe_keeps_hooks_locked()
+    public void Apply_migrates_away_a_legacy_version_dll()
     {
         using var dir = new TempDir();
-        // No Against_Rome.exe present -> TimeDateStamp unreadable -> locked.
+        WriteFakeExe(dir.File("Against_Rome.exe"), KnownAnalyzedTimeDateStamp);
+
+        // Reconstruct the superseded proxy's on-disk state: a version.dll plus a
+        // marker recording it as our managed DLL (as the old ArgmTraceFeature did).
+        // No winmm.dll yet.
+        byte[] legacy = { 1, 2, 3, 4 };
+        File.WriteAllBytes(dir.File("version.dll"), legacy);
+        string legacyHash = Convert.ToHexString(
+            System.Security.Cryptography.SHA256.HashData(legacy)).ToLowerInvariant();
+        // The superseded build's marker had NO DllName field — exactly the
+        // format this migration must still recognize as a legacy version.dll.
+        File.WriteAllText(dir.File(Marker),
+            "{\"DllSha256\":\"" + legacyHash +
+            "\",\"IniSha256\":\"\",\"ExpectedTimeDateStamp\":0}");
+
         NewFeature().Apply(dir.Path, enabled: true);
 
-        string ini = File.ReadAllText(dir.File("argm_trace.ini"), Encoding.UTF8);
-        Assert.Contains("expectedTimeDateStamp=0", ini);
+        // Legacy version.dll must be gone; winmm.dll is the managed proxy now.
+        Assert.False(File.Exists(dir.File("version.dll")));
+        Assert.True(File.Exists(dir.File(Dll)));
     }
 
     [Fact]
@@ -109,47 +139,26 @@ public sealed class ArgmTraceFeatureTests
         var feature = NewFeature();
         feature.Apply(dir.Path, enabled: true);
 
-        // Simulate a capture the user would want to keep.
         File.WriteAllText(dir.File("argm_trace.log"), "captured events");
 
         feature.Apply(dir.Path, enabled: false);
 
-        Assert.False(File.Exists(dir.File("version.dll")));
+        Assert.False(File.Exists(dir.File(Dll)));
         Assert.False(File.Exists(dir.File("argm_trace.ini")));
-        Assert.False(File.Exists(dir.File(".against-rome-modifier-argmtrace.json")));
+        Assert.False(File.Exists(dir.File(Marker)));
         Assert.False(feature.IsInstalled(dir.Path));
         Assert.True(File.Exists(dir.File("argm_trace.log")));
     }
 
     [Fact]
-    public void Apply_aborts_when_unmanaged_version_dll_present()
+    public void Apply_aborts_when_unmanaged_winmm_present()
     {
         using var dir = new TempDir();
         WriteFakeExe(dir.File("Against_Rome.exe"), KnownAnalyzedTimeDateStamp);
-        // A version.dll from some other program, with no modifier marker.
-        File.WriteAllBytes(dir.File("version.dll"), new byte[] { 1, 2, 3, 4 });
+        File.WriteAllBytes(dir.File(Dll), new byte[] { 1, 2, 3, 4 });
 
         Assert.Throws<IOException>(() => NewFeature().Apply(dir.Path, enabled: true));
-
-        // The foreign file must be left untouched.
-        Assert.Equal(new byte[] { 1, 2, 3, 4 }, File.ReadAllBytes(dir.File("version.dll")));
-    }
-
-    [Fact]
-    public void Remove_preserves_user_modified_managed_dll()
-    {
-        using var dir = new TempDir();
-        WriteFakeExe(dir.File("Against_Rome.exe"), KnownAnalyzedTimeDateStamp);
-        var feature = NewFeature();
-        feature.Apply(dir.Path, enabled: true);
-
-        // User tampered with the managed DLL; hash no longer matches the manifest.
-        File.WriteAllBytes(dir.File("version.dll"), new byte[] { 9, 9, 9 });
-
-        feature.Apply(dir.Path, enabled: false);
-
-        // The modified file is kept, not deleted.
-        Assert.True(File.Exists(dir.File("version.dll")));
+        Assert.Equal(new byte[] { 1, 2, 3, 4 }, File.ReadAllBytes(dir.File(Dll)));
     }
 
     [Fact]
@@ -160,11 +169,11 @@ public sealed class ArgmTraceFeatureTests
         var feature = NewFeature();
 
         feature.Apply(dir.Path, enabled: true);
-        byte[] firstDll = File.ReadAllBytes(dir.File("version.dll"));
+        byte[] first = File.ReadAllBytes(dir.File(Dll));
         feature.Apply(dir.Path, enabled: true);
-        byte[] secondDll = File.ReadAllBytes(dir.File("version.dll"));
+        byte[] second = File.ReadAllBytes(dir.File(Dll));
 
         Assert.True(feature.IsInstalled(dir.Path));
-        Assert.Equal(firstDll, secondDll);
+        Assert.Equal(first, second);
     }
 }
