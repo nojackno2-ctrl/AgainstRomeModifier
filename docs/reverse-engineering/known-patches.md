@@ -201,8 +201,10 @@
   M3 (defeat cleanup), and M4 (settlement respawn) are exposed and applied as one
   atomic `EndlessAi.Core` lifecycle toggle. A partial legacy M2/M3/M4 selection
   migrates to the complete core. M1 (reinforcement size), M5 (starting resources),
-  and M6 remain separate controls; rejected global CLAK edits are restored by
-  mandatory repair R0.
+  and M5 remain separate AI controls. Former M6 is now the standalone
+  `RomanReinforcementGarrison` feature; `EndlessAi.M6` remains only as a
+  profile-migration alias. Rejected global CLAK edits are restored by mandatory
+  repair R0.
 - Create-unit call: decompressed BCI offset `0x17B60`,
   `s_addNPCJob_createUnit(local7, 3, 8, 0, 0, 4, 4, 1, 0)` after reversing
   BCI stack argument order.
@@ -658,8 +660,10 @@
   overlapping priest field also satisfies `SpellEntireMap`, so all three toggles
   read back as enabled after a combined apply.
 - Status: reversible implementation and synthetic/full-baseline detector tests
-  are complete. Runtime fog-of-war, AI behavior, and performance remain
-  unverified, so the UI keeps this feature in Experimental.
+  are complete. The user verified the intended entire-map vision effect in game
+  on 2026-07-18, so the UI no longer labels this feature Experimental.
+  Long-running AI targeting behavior and performance remain separately
+  unverified.
 
 ### Projectile Arc Height (ProjectileArcHeight)
 

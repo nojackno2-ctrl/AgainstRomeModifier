@@ -74,7 +74,7 @@ public sealed class FeatureRegistryTests
     [Fact]
     public void PatchProfile_supports_named_and_registry_values()
     {
-        var profile = new PatchProfile { FocusLoss = true, GameSpeed = 3, Balance = true, SpellDamage5x = true, SpellHealing10x = true, SpellResurrection = true, GeneralSkills = true, LeaderGlory = true, AllUnitsEntireMapVision = true, RangedRange3x = true, UnitMovementSpeed2x = true, VillagerMovementSpeed5x = true, SpellEntireMap = true, SpellRange3x = true, ProjectileArcHeight = true, RomanEndless = true, NativeWidescreen1920x1080 = true, CameraZoomOut1 = true };
+        var profile = new PatchProfile { FocusLoss = true, GameSpeed = 3, Balance = true, SpellDamage5x = true, SpellHealing10x = true, SpellResurrection = true, GeneralSkills = true, LeaderGlory = true, AllUnitsEntireMapVision = true, RangedRange3x = true, UnitMovementSpeed2x = true, VillagerMovementSpeed5x = true, SpellEntireMap = true, SpellRange3x = true, ProjectileArcHeight = true, RomanEndless = true, RomanReinforcementGarrison = true, NativeWidescreen1920x1080 = true, CameraZoomOut1 = true };
         profile.EndlessAiModules["M4"] = true;
         profile.NormalizeCompositeValues();
 
@@ -95,6 +95,7 @@ public sealed class FeatureRegistryTests
         Assert.True(profile.GetBool("SpellRange3x"));
         Assert.True(profile.GetBool("ProjectileArcHeight"));
         Assert.True(profile.GetBool("RomanEndless"));
+        Assert.True(profile.GetBool("RomanReinforcementGarrison"));
         Assert.True(profile.GetBool("NativeWidescreen1920x1080"));
         Assert.True(profile.GetBool("CameraZoomOut1"));
         Assert.True(profile.GetBool("EndlessAi.M4"));
@@ -104,7 +105,7 @@ public sealed class FeatureRegistryTests
     }
 
     [Fact]
-    public void Legacy_endless_core_keys_are_specialized_and_the_core_is_toggleable()
+    public void Legacy_endless_keys_are_specialized_and_replacements_are_toggleable()
     {
         string[] toggleIds = FeatureRegistry.ToggleFeatures.Select(feature => feature.Id).ToArray();
 
@@ -112,12 +113,27 @@ public sealed class FeatureRegistryTests
         Assert.DoesNotContain(FeatureKeys.EndlessAiM2.Id, toggleIds);
         Assert.DoesNotContain(FeatureKeys.EndlessAiM3.Id, toggleIds);
         Assert.DoesNotContain(FeatureKeys.EndlessAiM4.Id, toggleIds);
+        Assert.DoesNotContain(FeatureKeys.EndlessAiM6.Id, toggleIds);
+        Assert.Contains(FeatureKeys.RomanReinforcementGarrison.Id, toggleIds);
+    }
+
+    [Fact]
+    public void Legacy_m6_profile_migrates_to_standalone_roman_garrison_feature()
+    {
+        var profile = new PatchProfile();
+        profile.EndlessAiModules["M6"] = true;
+
+        profile.NormalizeCompositeValues();
+
+        Assert.True(profile.RomanReinforcementGarrison);
+        Assert.True(profile.Get(FeatureKeys.EndlessAiM6));
+        Assert.True(profile.GetEndlessAiModule("M6"));
     }
 
     [Fact]
     public void Registry_plan_and_detect_round_trip_profile_values()
     {
-        var source = new PatchProfile { FocusLoss = true, GameSpeed = 4, Balance = true, SpellDamage5x = true, SpellHealing10x = true, SpellResurrection = true, GeneralSkills = true, LeaderGlory = true, AllUnitsEntireMapVision = true, RangedRange3x = true, UnitMovementSpeed2x = true, VillagerMovementSpeed5x = true, SpellEntireMap = true, SpellRange3x = true, ProjectileArcHeight = true, RomanEndless = true, NativeWidescreen1920x1080 = true, CameraZoomOut1 = true };
+        var source = new PatchProfile { FocusLoss = true, GameSpeed = 4, Balance = true, SpellDamage5x = true, SpellHealing10x = true, SpellResurrection = true, GeneralSkills = true, LeaderGlory = true, AllUnitsEntireMapVision = true, RangedRange3x = true, UnitMovementSpeed2x = true, VillagerMovementSpeed5x = true, SpellEntireMap = true, SpellRange3x = true, ProjectileArcHeight = true, RomanEndless = true, RomanReinforcementGarrison = true, NativeWidescreen1920x1080 = true, CameraZoomOut1 = true };
         var plan = new PatchContext();
         foreach (IFeatureModule module in FeatureRegistry.All) module.Plan(plan, source.Get(module.Id));
 
@@ -140,6 +156,7 @@ public sealed class FeatureRegistryTests
         Assert.True(roundTrip.SpellRange3x);
         Assert.True(roundTrip.ProjectileArcHeight);
         Assert.True(roundTrip.RomanEndless);
+        Assert.True(roundTrip.RomanReinforcementGarrison);
         Assert.True(roundTrip.NativeWidescreen1920x1080);
         Assert.True(roundTrip.CameraZoomOut1);
         Assert.Equal(4, roundTrip.GameSpeed);

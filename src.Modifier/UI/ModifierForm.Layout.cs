@@ -157,10 +157,11 @@ namespace AgainstRomeModifier {
             };
 
             // 依功能語意分為六張卡片：系統相容、建設經濟、村民操作、法術祭司、戰鬥部隊、無盡模式。
-            ConfigureSettingsCard(pnlNumericCard, lblNumericTitle, 350,
+            ConfigureSettingsCard(pnlNumericCard, lblNumericTitle, 398,
                 chkFocusLoss,
                 chkToEng,
                 chkDgVoodoo,
+                chkArgmTrace,
                 chkGameSpeed,
                 chkNativeWidescreen1920x1080,
                 chkCameraZoomOut1);
@@ -199,7 +200,7 @@ namespace AgainstRomeModifier {
                 chkAllUnitsEntireMapVision);
             ConfigureSettingsCard(pnlAiCard, lblAiTitle, 302,
                 chkRomanEndless,
-                chkAiM1, chkAiCore, chkAiM5, chkAiM6);
+                chkAiM1, chkAiCore, chkAiM5, chkRomanReinforcementGarrison);
 
             // 每組設定以同一層卡片底色收攏，讓長短不一的功能群組仍有清楚邊界。
             Color cardBackColor = Color.FromArgb(14, 18, 26);

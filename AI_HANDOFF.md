@@ -1,5 +1,23 @@
 ﻿# AI Handoff - Live Project Memory
 
+## Runtime promotion: centered high resolution + entire-map unit vision (2026-07-18, complete)
+
+- User confirmed in-game that `高解析度置中（4:3）` and `所有單位全地圖視野` both work as intended.
+- Removed the stale Experimental labels from both localized toggle names. `AllUnitsEntireMapVision` documentation now records its primary gameplay effect as runtime-verified; long-running AI targeting behavior and performance remain explicitly unverified.
+- Follow-up: both toggles are now explicitly enabled by `BtnEnableAll_Click`; Disable All already cleared them. Added a UI regression that invokes the Enable All handler and asserts both toggles are checked.
+- No patch, detection, restore, profile, or installed-game behavior changed. This milestone promotes the already-wired Stats/Compat toggles, updates the one-click preset, and synchronizes README zh/en, TechDoc zh/en, known-patches, the feature verification matrix, localization, and this handoff.
+- Validation complete for the Enable All follow-up: focused UI regression passed 1/1, full Release solution build succeeded with 0 warnings/errors, and full xUnit passed 247/247. Preserve the concurrent `argm-trace` and `RomanReinforcementGarrison` work already present in the shared working tree.
+
+## Standalone Roman reinforcement garrison feature (2026-07-18, complete)
+
+- Current objective: promote the existing atomic P8 + P9 behavior out of the user-facing `EndlessAi.M6` identity into a standalone `RomanReinforcementGarrison` feature and toggle named 「羅馬增援士兵留守」.
+- Safety boundary: do not split P8 from P9. P8 keeps the reinforcement unit threshold high enough for retained squads, while P9 donates soldier squads and sends type-1 pack horses/civilians away. The old `EndlessAi.M6` ID must remain a migration alias so existing detected/profile state is not silently disabled.
+- Preserve the unrelated uncommitted `argm-trace` feature work in shared registry/UI files. Runtime verification still applies only to the already-confirmed P8/P9 byte behavior; this UI/identity promotion needs build/tests before completion.
+- First focused test attempt stopped at compile with `CS0136` because the new M6 migration branch reused the later `out bool enabled` local name in `GetEndlessAiModule`; renamed the first variable to `legacyModuleEnabled`. No test body ran in that attempt.
+- Implementation milestone: `RomanReinforcementGarrison` is now a registered Compat toggle wired through PatchProfile, BCI detection, apply/restore, localization, UI layout, and Enable/Disable All. `EndlessAi.M6` is specialized (no UI toggle) and normalizes into the new key; the orchestrator still applies P8 + P9 together. Focused registry/core/integration tests passed 14/14 after the compile-name fix.
+- Canonical docs updated so README zh/en, TechDoc zh/en, feature verification matrix, known-patches, and `data/game_schema.json` describe the standalone feature and migration alias.
+- Verification complete: focused registry/core/integration tests 14/14; full Release solution build 0 warnings/errors; full xUnit 246/246; schema JSON parses; `git diff --check` clean. No installed game directory or save was accessed. The identity/UI migration is statically verified; the underlying P8/P9 runtime behavior retains the 2026-07-17 in-game confirmation.
+
 ## argm-trace MSVC build + host tests green (2026-07-18)
 
 - User installed the VS 18 Community "Desktop development with C++" workload. Built `version.dll` with the VS-bundled CMake: `cmake -S native/argm-trace -B build/argm-trace -A Win32` then `--build --config Release`. Output: 20,992-byte Win32 DLL, machine 14C/x86, export table undecorated and matching the genuine version.dll (verified with dumpbin /exports).
