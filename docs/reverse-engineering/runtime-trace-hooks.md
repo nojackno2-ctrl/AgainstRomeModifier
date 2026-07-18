@@ -1,13 +1,16 @@
 # Runtime Trace Hooks (`native/argm-trace`)
 
-> Status 2026-07-18: implementation complete; every hook target's prologue and
-> argument convention has been byte-verified against the installed
+> Status 2026-07-18: implementation complete and **compiled with MSVC**
+> (Win32 `version.dll`, correct undecorated export table). Every hook target's
+> prologue and argument convention has been byte-verified against the installed
 > `Against_Rome.exe` (PE `TimeDateStamp = 0x404D1710`, sections parsed from the
-> real binary), and all hooks now carry byte signatures dumped from that
-> binary. The DLL has **not** yet been compiled with MSVC nor run against the
-> live game (the local machine has no C++ toolchain). The tool refuses to
-> install address-based hooks unless the running build's PE `TimeDateStamp` is
-> confirmed via `argm_trace.ini`.
+> real binary), and all hooks carry byte signatures dumped from that binary.
+> The host tests (instruction-length decoder + full inline-hook mechanism
+> against genuine Win32 APIs) build and pass via CTest on the same toolchain.
+> The DLL has **not** yet been run against the live game — dropping
+> `version.dll` into the game folder and playing endless mode is the remaining
+> user step. The tool refuses to install address-based hooks unless the running
+> build's PE `TimeDateStamp` is confirmed via `argm_trace.ini`.
 
 ## Purpose
 
@@ -100,8 +103,13 @@ so raw offset = VA − 0x400000 for code):
 
 ## Open items before claiming it works
 
-- Compile with MSVC (Win32) — never yet built on a real toolchain. Blocked
-  locally: the machine has VS 18 Community but no C++ workload, and no other
-  C/C++ compiler; the host-side `tests/` also need a toolchain to run.
-- Live-game smoke run: confirm `argm_trace.log` events appear and the game is
-  stable with hooks installed.
+- ~~Compile with MSVC (Win32).~~ Done 2026-07-18 with VS 18 Community's C++
+  workload: `cmake -A Win32 && cmake --build --config Release` produces
+  `version.dll` (20,992 bytes, machine 14C/x86, undecorated exports matching
+  the genuine version.dll). Host tests pass via `-DARGM_BUILD_TESTS=ON` + CTest.
+- **Live-game smoke run (remaining):** drop the built `version.dll` next to
+  `Against_Rome.exe`, launch once, read the `[build]` banner in
+  `argm_trace.log`, set `expectedTimeDateStamp=404D1710`, then reproduce an
+  endless-mode session and confirm `ai.spawn` / `ai.village` / `ai.active`
+  events appear and the game stays stable. This writes into the game install
+  directory, so it is performed by the user, not the tooling.

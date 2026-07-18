@@ -1,6 +1,6 @@
 # argm-trace — Against Rome 執行期飛行紀錄器 / Runtime Flight Recorder
 
-> 狀態 / Status: **未在真實遊戲上驗證 (unverified against the live game).** 本子專案是完整、可編譯的原生實作,但尚未在 Windows 上以 MSVC 編譯、也尚未對實際的 `Against_Rome.exe` 執行測試。不過所有 hook 目標的序言與參數慣例已於 2026-07-18 直接從安裝版 EXE(`TimeDateStamp=0x404D1710`)逐位元組驗證,且每個 hook(含 build-lock 後的位址型 hook)現在都帶有從該 EXE 擷取的位元組簽章,雙重把關。
+> 狀態 / Status: **已用 MSVC 編譯成功,但尚未在真實遊戲上實測 (compiles; not yet run against the live game).** 2026-07-18 以 VS 18 Community 的 C++ 工作負載編出 Win32 `version.dll`(machine x86、導出表無修飾且與真正的 version.dll 相符),host 測試(指令長度解碼器 + 對真 Win32 API 的完整 inline-hook 機制)透過 `-DARGM_BUILD_TESTS=ON` + CTest 全數通過。所有 hook 目標的序言與參數慣例已直接從安裝版 EXE(`TimeDateStamp=0x404D1710`)逐位元組驗證,每個 hook(含 build-lock 後的位址型 hook)都帶有從該 EXE 擷取的位元組簽章。剩下的只有把 `version.dll` 放進遊戲目錄實跑一次無盡模式確認事件有出現、遊戲穩定——這一步會寫入遊戲安裝目錄,由使用者執行。
 
 ## 這是什麼 / What it is
 

@@ -49,12 +49,13 @@ bool LoadRealVersionDll() {
 
 }  // namespace argm
 
-// Naked forwarding thunks. The export names are supplied by argm_trace.def so
-// they match the genuine version.dll exactly (undecorated), independent of the
-// compiler's default name decoration.
+// Naked forwarding thunks. They carry a `Thunk_` prefix so they cannot collide
+// with the SDK's own winver.h prototypes (C2733); argm_trace.def maps each
+// export name back to its thunk, so the DLL's export table matches the genuine
+// version.dll exactly.
 extern "C" {
 #define THUNK(name)                               \
-    __declspec(naked) void name() {               \
+    __declspec(naked) void Thunk_##name() {       \
         __asm { jmp dword ptr [g_real_##name] }   \
     }
 VERSION_EXPORTS(THUNK)

@@ -47,3 +47,33 @@ endif()
 # Do NOT link version.lib: the genuine version.dll is loaded at runtime via
 # LoadLibrary + GetProcAddress (see proxy_version.cpp). Linking the import
 # library here would make this proxy depend on itself.
+
+# --- Host tests (opt-in) --------------------------------------------------
+# Configure with -DARGM_BUILD_TESTS=ON to build and register the host tests as
+# CTest tests on the same MSVC x86 toolchain that builds version.dll:
+#   cmake -S native/argm-trace -B build/argm-trace -A Win32 -DARGM_BUILD_TESTS=ON
+#   cmake --build build/argm-trace --config Release
+#   ctest --test-dir build/argm-trace -C Release --output-on-failure
+option(ARGM_BUILD_TESTS "Build the argm-trace host tests" OFF)
+if(ARGM_BUILD_TESTS)
+    enable_testing()
+
+    # Instruction-length decoder: pure, portable, no <windows.h>.
+    add_executable(lde_test tests/lde_test.cpp)
+    add_test(NAME lde_test COMMAND lde_test)
+
+    # Full inline-hook mechanism against the real detour.cpp + genuine Win32
+    # APIs (the *_win variant; the plain detour_mechanism_test.cpp targets
+    # Linux/g++ with the mmap shim and is not built here).
+    add_executable(detour_mechanism_test
+        tests/detour_mechanism_test_win.cpp
+        src/detour.cpp
+    )
+    target_include_directories(detour_mechanism_test PRIVATE src)
+    if(MSVC)
+        target_compile_definitions(detour_mechanism_test PRIVATE
+            WIN32_LEAN_AND_MEAN _CRT_SECURE_NO_WARNINGS NOMINMAX)
+        target_link_options(detour_mechanism_test PRIVATE /SAFESEH:NO)
+    endif()
+    add_test(NAME detour_mechanism_test COMMAND detour_mechanism_test)
+endif()

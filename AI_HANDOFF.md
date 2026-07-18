@@ -1,6 +1,13 @@
 ﻿# AI Handoff - Live Project Memory
 
-## argm-trace byte-verification pass (2026-07-18, conventions verified from installed EXE; still NOT compiled/run)
+## argm-trace MSVC build + host tests green (2026-07-18)
+
+- User installed the VS 18 Community "Desktop development with C++" workload. Built `version.dll` with the VS-bundled CMake: `cmake -S native/argm-trace -B build/argm-trace -A Win32` then `--build --config Release`. Output: 20,992-byte Win32 DLL, machine 14C/x86, export table undecorated and matching the genuine version.dll (verified with dumpbin /exports).
+- Two compile fixes were needed: (1) the naked forwarding thunks in `proxy_version.cpp` collided with winver.h's own `extern "C"` prototypes (C2733) — renamed the thunks to `Thunk_<name>` and mapped them back to the real export names via `EXPORTS name = Thunk_name` in `argm_trace.def`. (2) Nothing else; detour/targets/tracelog compiled clean under /W4 /permissive-.
+- Host tests are now wired into CMake behind `-DARGM_BUILD_TESTS=ON` and run via CTest on the SAME MSVC x86 toolchain. Added `tests/detour_mechanism_test_win.cpp` (native Win32 variant of the mmap-shim Linux test; exercises real `src/detour.cpp` against genuine VirtualAlloc/VirtualProtect). Both `lde_test` and `detour_mechanism_test` pass (2/2, 100%). lde_test now covers all seven real hook-target prologues (all decode to >=5 relocatable bytes, no relative branches). detour test confirms stub arg capture `[5 1 4 0 0 20 20 8 3]` / `[3 3 9 1 2 15 40 0 0]`, trampoline behavior preservation, and clean RemoveAllDetours.
+- ONLY remaining open item: live-game smoke run. This writes `version.dll` into the game install dir, so per project policy it is the USER's step: drop the DLL beside Against_Rome.exe, run once, copy the `[build]` TimeDateStamp (expect 404D1710) into `argm_trace.ini`, then reproduce an endless session and confirm ai.spawn/ai.village/ai.active events + stability. Do NOT deploy into the install dir automatically.
+
+## argm-trace byte-verification pass (2026-07-18, conventions verified from installed EXE)
 
 - Parsed the installed `Against_Rome.exe` PE (read-only) with a scratch Python script: `TimeDateStamp=0x404D1710`, ImageBase `0x00400000`, code section `AUTO` VA 0x1000 = raw 0x1000, so raw offset = VA − 0x400000. Dumped all six hook targets' real bytes.
 - Resolved all three RE open items from `runtime-trace-hooks.md`:
