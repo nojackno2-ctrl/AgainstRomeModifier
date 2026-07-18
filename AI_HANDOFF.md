@@ -1,4 +1,14 @@
-﻿# AI Handoff - Live Project Memory
+# AI Handoff - Live Project Memory
+
+## Experimental features tab and dynamic promotion (2026-07-18, complete & verified)
+
+- Implementation complete: added an "Experimental Features" tab to contain all 6 active experimental settings (`Balance`, `SpellHealing10x`, `SpellResurrection`, `GeneralSkills`, `LeaderGlory`, `VillageGarrisonQuota3x`), excluding the verified centring resolution and camera zoom.
+- Designed a dynamic WinForms Parent-switching mechanism: when a user clicks "Promote/移至主控制台", the toggle's `Parent` is updated to its original panel, and its button changes to "Demote/移回實驗性" (and vice versa). Card heights are dynamically calculated and trigger a layout flow update, providing instant visual alignment.
+- Configuration persistence is integrated into `%APPDATA%\AgainstRomeModifier\settings.json` via a new `PromotedFeatures` list in `AppSettings`, ensuring state survives app restarts.
+- Built-order dependency resolved: moved `InitializeExperimentalFeatures()` out of `InitializeComponent()` to run after `BuildFeatureToggleMap()` in the constructor to prevent `NullReferenceException` on `featureToggles`.
+- Verification complete: added `ExperimentalFeaturesTests.cs` covering default states, promotion/demotion serialization, and settings round-trip. Full build succeeded with 0 errors and all 265/265 unit tests passed.
+- Fixed layout visibility propagation bug: removed `!toggle.Visible` check from `LayoutRows` in `ConfigureSettingsCard` since WinForms `Control.Visible` returns `false` recursively when the parent tab page is not yet rendered or selected during initialization, which previously caused all settings cards to collapse to 60px height. Layout now correctly targets items by `toggle.Parent == card` only.
+- Adjusted configurations: 'ArgmTrace' (gameplay trace logging) remains disabled by default (`Checked = false`), and both 'ArgmTrace' and 'GameSpeed' (10x clock) have been moved to the experimental features list (starting on the Experimental tab, supporting dynamic promotion). Label suffixes for these two have been appended with '（實驗性）' / '(Experimental)' while 'CameraZoomOut1' (camera zoom) had its experimental suffix removed.
 
 ## Endless spectator mode feasibility (2026-07-18, static design evidence only)
 

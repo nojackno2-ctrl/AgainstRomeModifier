@@ -8,6 +8,7 @@ using System.Windows.Forms;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Runtime.InteropServices;
+using AgainstRomeModifier.Core.Features;
 
 namespace AgainstRomeModifier {
     // 修改器的主表單類別，繼承自 Windows Form
@@ -31,12 +32,14 @@ namespace AgainstRomeModifier {
         private Button btnNavSystem = null!;
         private Button btnNavDefaultStats = null!;
         private Button btnNavCurrentStats = null!;
+        private Button btnNavExperimental = null!;
 
         // 主要分頁控制項與分頁
         private TabControl mainTabControl = null!;
         private TabPage tabSystem = null!;
         private TabPage tabDefaultStats = null!;
         private TabPage tabCurrentStats = null!;
+        private TabPage tabExperimental = null!;
         
         // 兵種屬性分頁與網格
         private TabControl defaultStatsTabControl = null!;
@@ -53,6 +56,12 @@ namespace AgainstRomeModifier {
         private Label lblSpellTitle = null!;
         private Panel pnlVillagerCard = null!;
         private Label lblVillagerTitle = null!;
+        private Panel pnlExperimentalCard = null!;
+        private Label lblExperimentalCardTitle = null!;
+        private Label lblExperimentalHeading = null!;
+        private Label lblExperimentalSubtitle = null!;
+        private Panel pnlExperimentalContent = null!;
+        private Panel pnlContent = null!;
 
         // 數值控制項 (NumericUpDown) 的宣告
         private ModernToggle chkMaxPopulation = null!;
@@ -107,6 +116,18 @@ namespace AgainstRomeModifier {
         private ModernToggle chkProjectileArcHeight = null!;
         private ModernToggle chkRomanEndless = null!;
         private Dictionary<string, ModernToggle> featureToggles = null!;
+        private static readonly HashSet<string> ExperimentalFeatureIds = new(StringComparer.OrdinalIgnoreCase) {
+            FeatureKeys.Balance.Id,
+            FeatureKeys.SpellHealing10x.Id,
+            FeatureKeys.SpellResurrection.Id,
+            FeatureKeys.GeneralSkills.Id,
+            FeatureKeys.LeaderGlory.Id,
+            FeatureKeys.VillageGarrisonQuota3x.Id,
+            FeatureKeys.GameSpeed.Id,
+            FeatureKeys.ArgmTrace.Id
+        };
+        private readonly Dictionary<ModernToggle, Panel> experimentalToggleOriginalParents = new();
+        private readonly Dictionary<ModernToggle, Button> promoteDemoteButtons = new();
 
         // 所有功能開啟/關閉按鈕
         private Button btnEnableAll = null!;
@@ -204,6 +225,7 @@ namespace AgainstRomeModifier {
 
             InitializeComponent();
             BuildFeatureToggleMap();
+            InitializeExperimentalFeatures();
 
             // 更新語系按鈕視覺狀態與套用語系
             UpdateLanguageButtonStyles();
@@ -554,6 +576,13 @@ namespace AgainstRomeModifier {
                 RefreshNavButtons();
             };
 
+            btnNavExperimental = new Button { Location = new Point(10, 195) };
+            StyleNavButton(btnNavExperimental, "NavExperimental", tabExperimental);
+            btnNavExperimental.Click += (s, e) => {
+                ShowTabPage(tabExperimental);
+                RefreshNavButtons();
+            };
+
             // 語系切換元件初始化與事件綁定
             lblSidebarLang = new Label {
                 Text = Loc.Get("LanguageLabel"),
@@ -599,6 +628,7 @@ namespace AgainstRomeModifier {
             };
 
             pnlSidebar.Controls.Add(btnNavSystem);
+            pnlSidebar.Controls.Add(btnNavExperimental);
             pnlSidebar.Controls.Add(btnNavDefaultStats);
             pnlSidebar.Controls.Add(btnNavCurrentStats);
 
@@ -629,9 +659,30 @@ namespace AgainstRomeModifier {
                 UseVisualStyleBackColor = false
             };
 
+            tabExperimental = new TabPage {
+                BackColor = Color.FromArgb(10, 11, 16),
+                UseVisualStyleBackColor = false
+            };
+
             mainTabControl.TabPages.Add(tabSystem);
+            mainTabControl.TabPages.Add(tabExperimental);
             mainTabControl.TabPages.Add(tabDefaultStats);
             mainTabControl.TabPages.Add(tabCurrentStats);
+
+            pnlExperimentalCard = new Panel {
+                Location = new Point(0, 0),
+                Size = new Size(385, 790)
+            };
+
+            lblExperimentalCardTitle = new Label {
+                Text = "實驗性功能",
+                Location = new Point(25, 20),
+                Size = new Size(250, 25),
+                Font = fontJhengHei105B,
+                ForeColor = Color.FromArgb(0, 220, 255),
+                BackColor = Color.Transparent
+            };
+            pnlExperimentalCard.Controls.Add(lblExperimentalCardTitle);
 
             pnlNumericCard = new Panel {
                 Location = new Point(0, 0),
@@ -1397,6 +1448,7 @@ namespace AgainstRomeModifier {
                 g.SmoothingMode = SmoothingMode.AntiAlias;
                 bool isSelected = key switch {
                     "NavSystem" => mainTabControl.SelectedTab == tabSystem,
+                    "NavExperimental" => mainTabControl.SelectedTab == tabExperimental,
                     "NavDefaultStats" => mainTabControl.SelectedTab == tabDefaultStats,
                     "NavCurrentStats" => mainTabControl.SelectedTab == tabCurrentStats,
                     _ => mainTabControl.SelectedTab == associatedPage
@@ -1447,8 +1499,94 @@ namespace AgainstRomeModifier {
         /// </summary>
         private void RefreshNavButtons() {
             btnNavSystem.Invalidate();
+            btnNavExperimental.Invalidate();
             btnNavDefaultStats.Invalidate();
             btnNavCurrentStats.Invalidate();
+        }
+
+        private string GetFeatureIdForToggle(ModernToggle toggle) {
+            if (toggle == chkGameSpeed) return FeatureKeys.GameSpeed.Id;
+            return featureToggles.First(x => x.Value == toggle).Key;
+        }
+
+        private void InitializeExperimentalFeatures() {
+            experimentalToggleOriginalParents[chkBalance] = pnlCombatCard;
+            experimentalToggleOriginalParents[chkSpellHealing10x] = pnlSpellCard;
+            experimentalToggleOriginalParents[chkSpellResurrection] = pnlSpellCard;
+            experimentalToggleOriginalParents[chkGeneralSkills] = pnlCombatCard;
+            experimentalToggleOriginalParents[chkLeaderGlory] = pnlCombatCard;
+            experimentalToggleOriginalParents[chkVillageGarrisonQuota3x] = pnlAiCard;
+            experimentalToggleOriginalParents[chkGameSpeed] = pnlNumericCard;
+            experimentalToggleOriginalParents[chkArgmTrace] = pnlNumericCard;
+
+            bool isEn = Loc.CurrentLanguage == Language.English;
+            foreach (var toggle in experimentalToggleOriginalParents.Keys) {
+                var btn = new Button {
+                    FlatStyle = FlatStyle.Flat,
+                    Size = new Size(110, 24),
+                    Cursor = Cursors.Hand,
+                    Font = fontJhengHei9R
+                };
+                btn.FlatAppearance.BorderSize = 1;
+                btn.FlatAppearance.BorderColor = Color.FromArgb(62, 203, 255);
+                btn.ForeColor = Color.FromArgb(62, 203, 255);
+                btn.BackColor = Color.Transparent;
+
+                btn.Click += (s, e) => {
+                    string featId = GetFeatureIdForToggle(toggle);
+                    if (Loc.IsPromoted(featId)) {
+                        Loc.DemoteFeature(featId);
+                        Log($"已將功能 {featId} 移回實驗性頁面。");
+                    } else {
+                        Loc.PromoteFeature(featId);
+                        Log($"已將功能 {featId} 移至主控制台。");
+                    }
+                    UpdateExperimentalLayout();
+                };
+
+                promoteDemoteButtons[toggle] = btn;
+            }
+
+            ConfigureSettingsCard(pnlExperimentalCard, lblExperimentalCardTitle, 400,
+                experimentalToggleOriginalParents.Keys.ToArray());
+
+            UpdateExperimentalLayout();
+        }
+
+        private void UpdateExperimentalLayout() {
+            SuspendLayout();
+            
+            bool isEn = Loc.CurrentLanguage == Language.English;
+            
+            foreach (var (toggle, origParent) in experimentalToggleOriginalParents) {
+                string featId = GetFeatureIdForToggle(toggle);
+                Button btn = promoteDemoteButtons[toggle];
+                
+                if (Loc.IsPromoted(featId)) {
+                    toggle.Parent = origParent;
+                    btn.Parent = origParent;
+                    btn.Text = isEn ? "Demote" : "移回實驗性";
+                } else {
+                    toggle.Parent = pnlExperimentalCard;
+                    btn.Parent = pnlExperimentalCard;
+                    btn.Text = isEn ? "Promote" : "移至主控制台";
+                }
+            }
+            
+            foreach (var card in new[] { pnlNumericCard, pnlBuildCard, pnlCombatCard, pnlSpellCard, pnlVillagerCard, pnlAiCard, pnlExperimentalCard }) {
+                if (card != null && card.Tag is Action layoutAction) {
+                    layoutAction();
+                }
+            }
+            
+            if (pnlContent != null) {
+                LayoutSystemCardsFlat(pnlContent);
+            }
+            if (pnlExperimentalContent != null) {
+                LayoutExperimentalCardFlat(pnlExperimentalContent);
+            }
+            
+            ResumeLayout(true);
         }
 
     }

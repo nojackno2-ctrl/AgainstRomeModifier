@@ -36,6 +36,7 @@ namespace AgainstRomeModifier {
 
             ConfigureSidebarLayout();
             ConfigureSystemDashboard();
+            ConfigureExperimentalDashboard();
             ConfigureStatsPages();
 
 
@@ -74,6 +75,7 @@ namespace AgainstRomeModifier {
         private void ConfigureSidebarLayout() {
             Button[] navButtons = {
                 btnNavSystem,
+                btnNavExperimental,
                 btnNavDefaultStats,
                 btnNavCurrentStats
             };
@@ -278,8 +280,6 @@ namespace AgainstRomeModifier {
             Label title,
             int height,
             params ModernToggle[] toggles) {
-            card.Height = height;
-            card.MinimumSize = new Size(0, height);
             card.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             card.Margin = new Padding(6, 0, 6, 0);
             card.BackColor = Color.FromArgb(14, 18, 26);
@@ -289,16 +289,41 @@ namespace AgainstRomeModifier {
             title.ForeColor = Color.FromArgb(105, 205, 255);
 
             void LayoutRows() {
+                int visibleCount = 0;
                 for (int i = 0; i < toggles.Length; i++) {
                     ModernToggle toggle = toggles[i];
-                    int y = 60 + i * 48;
-                    toggle.Location = new Point(20, y);
-                    toggle.Size = new Size(Math.Max(120, card.Width - 40), 26);
-                    toggle.Font = fontJhengHei95R;
-                    toggle.BackColor = card.BackColor;
+                    if (toggle.Parent != card) {
+                        if (promoteDemoteButtons.TryGetValue(toggle, out Button? b)) {
+                            b.Visible = false;
+                        }
+                        continue;
+                    }
+                    
+                    int y = 60 + visibleCount * 48;
+                    if (promoteDemoteButtons.TryGetValue(toggle, out Button? btn) && btn.Parent == card) {
+                        toggle.Location = new Point(20, y);
+                        toggle.Size = new Size(Math.Max(120, card.Width - 160), 26);
+                        toggle.Font = fontJhengHei95R;
+                        toggle.BackColor = card.BackColor;
+                        
+                        btn.Location = new Point(card.Width - 130, y + 1);
+                        btn.Visible = true;
+                    } else {
+                        toggle.Location = new Point(20, y);
+                        toggle.Size = new Size(Math.Max(120, card.Width - 40), 26);
+                        toggle.Font = fontJhengHei95R;
+                        toggle.BackColor = card.BackColor;
+                    }
+                    
+                    visibleCount++;
                 }
+                int calculatedHeight = 60 + visibleCount * 48 + 12;
+                if (calculatedHeight < 60) calculatedHeight = 60;
+                card.Height = calculatedHeight;
+                card.MinimumSize = new Size(0, calculatedHeight);
             }
 
+            card.Tag = (Action)LayoutRows;
             card.Resize += (s, e) => LayoutRows();
             LayoutRows();
         }
@@ -428,6 +453,79 @@ namespace AgainstRomeModifier {
             };
             p.Paint += InputPanel_Paint;
             return p;
+        }
+
+        private void ConfigureExperimentalDashboard() {
+            tabExperimental.BackColor = Color.FromArgb(9, 12, 18);
+
+            Panel header = new Panel {
+                Dock = DockStyle.Top,
+                Height = 72,
+                BackColor = Color.FromArgb(9, 12, 18)
+            };
+            lblExperimentalHeading = new Label {
+                Text = Loc.Get("ExperimentalHeading"),
+                Location = new Point(4, 4),
+                Size = new Size(430, 28),
+                Font = fontJhengHei115B,
+                ForeColor = Color.FromArgb(235, 242, 250),
+                BackColor = Color.Transparent
+            };
+            lblExperimentalSubtitle = new Label {
+                Text = Loc.Get("ExperimentalSubtitle"),
+                Location = new Point(4, 35),
+                Size = new Size(620, 22),
+                Font = fontJhengHei9R,
+                ForeColor = Color.FromArgb(128, 143, 163),
+                BackColor = Color.Transparent
+            };
+            header.Controls.Add(lblExperimentalHeading);
+            header.Controls.Add(lblExperimentalSubtitle);
+
+            pnlExperimentalContent = new Panel {
+                Location = new Point(0, 72),
+                Size = new Size(tabExperimental.ClientSize.Width, tabExperimental.ClientSize.Height - 72),
+                Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
+                BackColor = Color.FromArgb(9, 12, 18),
+                AutoScroll = true
+            };
+
+            pnlExperimentalCard.BackColor = Color.FromArgb(14, 18, 26);
+            pnlExperimentalCard.Dock = DockStyle.None;
+            pnlExperimentalCard.Paint += CardPanel_Paint;
+
+            lblExperimentalCardTitle.Text = Loc.Get("ExperimentalCardTitle");
+            lblExperimentalCardTitle.ForeColor = Color.FromArgb(105, 205, 255);
+
+            pnlExperimentalContent.Controls.Add(pnlExperimentalCard);
+
+            tabExperimental.Controls.Clear();
+            tabExperimental.Controls.Add(pnlExperimentalContent);
+            tabExperimental.Controls.Add(header);
+            header.BringToFront();
+
+            pnlExperimentalContent.Resize += (s, e) => LayoutExperimentalCardFlat(pnlExperimentalContent);
+            LayoutExperimentalCardFlat(pnlExperimentalContent);
+        }
+
+        private void LayoutExperimentalCardFlat(Panel container) {
+            container.SuspendLayout();
+
+            int paddingX = 20;
+            int paddingY = 20;
+            
+            pnlExperimentalCard.Location = new Point(paddingX, paddingY);
+            pnlExperimentalCard.Width = container.ClientSize.Width - (paddingX * 2);
+            if (pnlExperimentalCard.Width < 260) pnlExperimentalCard.Width = 260;
+
+            if (pnlExperimentalCard.Tag is Action layoutAction) {
+                layoutAction();
+            }
+
+            int contentHeight = pnlExperimentalCard.Bottom + paddingY;
+            container.AutoScrollMinSize = new Size(container.ClientSize.Width, contentHeight);
+
+            container.ResumeLayout(true);
         }
     }
 }

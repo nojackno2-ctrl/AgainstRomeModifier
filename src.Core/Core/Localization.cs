@@ -8,8 +8,14 @@ namespace AgainstRomeModifier {
         English
     }
 
+    public class AppSettings {
+        public string Language { get; set; } = "TraditionalChinese";
+        public List<string> PromotedFeatures { get; set; } = new();
+    }
+
     public static class Loc {
         private static Language _currentLanguage = Language.TraditionalChinese;
+        private static readonly HashSet<string> _promotedFeatures = new(StringComparer.OrdinalIgnoreCase);
 
         static Loc() {
             LoadLanguagePreference();
@@ -20,8 +26,24 @@ namespace AgainstRomeModifier {
             set {
                 if (_currentLanguage != value) {
                     _currentLanguage = value;
-                    SaveLanguagePreference(value);
+                    SaveSettings();
                 }
+            }
+        }
+
+        public static IReadOnlyCollection<string> PromotedFeatures => _promotedFeatures;
+
+        public static bool IsPromoted(string featureId) => _promotedFeatures.Contains(featureId);
+
+        public static void PromoteFeature(string featureId) {
+            if (_promotedFeatures.Add(featureId)) {
+                SaveSettings();
+            }
+        }
+
+        public static void DemoteFeature(string featureId) {
+            if (_promotedFeatures.Remove(featureId)) {
+                SaveSettings();
             }
         }
 
@@ -44,10 +66,26 @@ namespace AgainstRomeModifier {
                     string json = File.ReadAllText(configFile);
                     if (json.Contains("\"Language\":1") || json.Contains("\"Language\":\"English\"") || json.ToLower().Contains("english")) {
                         _currentLanguage = Language.English;
-                        return;
                     } else if (json.Contains("\"Language\":0") || json.Contains("\"Language\":\"TraditionalChinese\"") || json.ToLower().Contains("traditionalchinese")) {
                         _currentLanguage = Language.TraditionalChinese;
-                        return;
+                    }
+
+                    try {
+                        var settings = System.Text.Json.JsonSerializer.Deserialize<AppSettings>(json);
+                        if (settings != null) {
+                            if (settings.Language == "English") _currentLanguage = Language.English;
+                            else if (settings.Language == "TraditionalChinese") _currentLanguage = Language.TraditionalChinese;
+
+                            _promotedFeatures.Clear();
+                            if (settings.PromotedFeatures != null) {
+                                foreach (var f in settings.PromotedFeatures) {
+                                    _promotedFeatures.Add(f);
+                                }
+                            }
+                        }
+                    }
+                    catch {
+                        // ignore deserialization error
                     }
                 }
             }
@@ -56,15 +94,17 @@ namespace AgainstRomeModifier {
             }
 
             // Fallback to system language
-            string sysLang = System.Globalization.CultureInfo.CurrentUICulture.Name;
-            if (sysLang.StartsWith("en", StringComparison.OrdinalIgnoreCase)) {
-                _currentLanguage = Language.English;
-            } else {
-                _currentLanguage = Language.TraditionalChinese;
+            if (!_promotedFeatures.Any()) {
+                string sysLang = System.Globalization.CultureInfo.CurrentUICulture.Name;
+                if (sysLang.StartsWith("en", StringComparison.OrdinalIgnoreCase)) {
+                    _currentLanguage = Language.English;
+                } else {
+                    _currentLanguage = Language.TraditionalChinese;
+                }
             }
         }
 
-        private static void SaveLanguagePreference(Language lang) {
+        public static void SaveSettings() {
             try {
                 string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
                 string configDir = Path.Combine(appData, "AgainstRomeModifier");
@@ -72,7 +112,11 @@ namespace AgainstRomeModifier {
                     Directory.CreateDirectory(configDir);
                 }
                 string configFile = Path.Combine(configDir, "settings.json");
-                string json = $"{{\"Language\":\"{lang}\"}}";
+                var settings = new AppSettings {
+                    Language = _currentLanguage.ToString(),
+                    PromotedFeatures = _promotedFeatures.ToList()
+                };
+                string json = System.Text.Json.JsonSerializer.Serialize(settings, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
                 File.WriteAllText(configFile, json);
             }
             catch {
@@ -236,6 +280,7 @@ namespace AgainstRomeModifier {
 
             // UI elements
             { "NavSystem", "主控制台" },
+            { "NavExperimental", "實驗性修改" },
             { "NavDefaultStats", "自訂兵種屬性" },
             { "NavCurrentStats", "當前兵種數值" },
             { "NavSaveManager", "遊戲存檔管理" },
@@ -259,6 +304,9 @@ namespace AgainstRomeModifier {
             { "MainTitle", "AGAINST ROME MODIFIER PRO" },
             { "SystemHeading", "修改器控制中心" },
             { "SystemSubtitle", "選擇要啟用的功能，確認遊戲路徑後再執行修改。" },
+            { "ExperimentalHeading", "實驗性修改控制中心" },
+            { "ExperimentalSubtitle", "測試中的實驗性功能。確認測試成功後，可將其移至主控制台。" },
+            { "ExperimentalCardTitle", "實驗性修改選項" },
             { "NumericTitle", "系統與相容性設定" },
             { "MaxPopulation", "最大人口上限 (1600)" },
             { "RomanEndless", "無盡模式羅馬陣營" },
@@ -266,7 +314,7 @@ namespace AgainstRomeModifier {
             { "VillageGarrisonQuota3x", "村莊駐軍配額 3 倍（實驗）" },
             { "FastCiviProduction", "村民生產速度最快" },
             { "FocusLoss", "視窗失焦不自動暫停" },
-            { "GameSpeedLabel", "整體遊戲運行 10 倍加速" },
+            { "GameSpeedLabel", "整體遊戲運行 10 倍加速（實驗性）" },
             { "GameSpeedOff", "原版（不加速）" },
             { "GameSpeedItem", "{0}× 加速" },
             { "ModSkillsAndGlory", "套用自訂首領與單位技能" },
@@ -304,7 +352,7 @@ namespace AgainstRomeModifier {
             { "AiM5", "提供開局資源" },
             { "AiM6", "提升守軍數量" },
             { "DgVoodoo", "啟用圖形相容修補" },
-            { "ArgmTrace", "啟用遊戲運作記錄（除錯）" },
+            { "ArgmTrace", "啟用遊戲運作記錄（除錯）（實驗性）" },
             { "VillageBuildRange", "全地圖自由建設" },
             { "GamePath", "遊戲路徑:" },
             { "Browse", "瀏覽..." },
@@ -486,7 +534,7 @@ namespace AgainstRomeModifier {
             { "LogAllUnitsEntireMapVisionToggled", "所有單位全地圖視野已{0}。" },
             { "NativeWidescreen1920x1080", "高解析度置中（4:3）" },
             { "NativeWidescreen1920x1080Tip", "還原已證實失敗的原生 1920×1080 EXE 實驗並保留遊戲支援的 1600×1200。全螢幕由 dgVoodoo 以 fake fullscreen 置中；視窗化維持原版正常視窗大小並置中，不再強制桌面尺寸。畫面不會拉伸，也不會增加 16:9 世界視野。" },
-            { "CameraZoomOut1", "攝影機拉遠 0.5（實驗性）" },
+            { "CameraZoomOut1", "攝影機拉遠 0.5" },
             { "CameraZoomOut1Tip", "把遊戲原生攝影機縮放下限由 0 提高到 0.5，讓戰場溫和拉遠，同時讓整數資訊／LOD 層維持原版 zoom 0 的尺寸。這是針對 +1 實測時單位與資訊過小的修正版；選取、邊緣捲動、霧區、地圖邊界、存讀檔與任務相容性仍需遊戲內驗證。" },
             { "RangedRange3x", "遠程單位射程提升 3 倍" },
             { "RangedRange3xTip", "將所有遠程步兵、遠程騎兵以及攻城武器的攻擊/射擊射程提升 3 倍，並內建命中修正：拋射物落點的傷害判定半徑加倍（近失彈也算命中）、對移動目標預判的隨機散布歸零，避免拉遠射程後打不中。敵我全陣營一體適用。" },
@@ -619,6 +667,7 @@ namespace AgainstRomeModifier {
 
             // UI elements
             { "NavSystem", "Main Console" },
+            { "NavExperimental", "Experimental Features" },
             { "NavDefaultStats", "Custom Unit Stats" },
             { "NavCurrentStats", "Current Unit Stats" },
             { "NavSaveManager", "Save Manager" },
@@ -642,6 +691,9 @@ namespace AgainstRomeModifier {
             { "MainTitle", "AGAINST ROME MODIFIER PRO" },
             { "SystemHeading", "Modifier Control Center" },
             { "SystemSubtitle", "Choose the features to enable, verify the game path, then apply the changes." },
+            { "ExperimentalHeading", "Experimental Control Center" },
+            { "ExperimentalSubtitle", "Features currently in testing. Promote to Main Control Center once validated." },
+            { "ExperimentalCardTitle", "Experimental Options" },
             { "NumericTitle", "System & Compatibility Settings" },
             { "MaxPopulation", "Maximum Population Limit (1600)" },
             { "RomanEndless", "Play as Romans in Endless Mode" },
@@ -649,7 +701,7 @@ namespace AgainstRomeModifier {
             { "VillageGarrisonQuota3x", "Village Garrison Quota 3x (Experimental)" },
             { "FastCiviProduction", "Fastest Villager Production (10x)" },
             { "FocusLoss", "Run in Background (No Auto-Pause)" },
-            { "GameSpeedLabel", "Overall Game Speed (10x Acceleration)" },
+            { "GameSpeedLabel", "Overall Game Speed (10x Acceleration) (Experimental)" },
             { "GameSpeedOff", "Original (1x)" },
             { "GameSpeedItem", "{0}x Speed" },
             { "ModSkillsAndGlory", "Apply Custom Leader & Unit Skills" },
@@ -687,7 +739,7 @@ namespace AgainstRomeModifier {
             { "AiM5", "AI Starting Resources" },
             { "AiM6", "Increase Garrison Size" },
             { "DgVoodoo", "Enable dgVoodoo2 Wrapper" },
-            { "ArgmTrace", "Enable Gameplay Trace Logger (Debug)" },
+            { "ArgmTrace", "Enable Gameplay Trace Logger (Debug) (Experimental)" },
             { "VillageBuildRange", "Village Build / Red-Frame Range (Entire Map)" },
             { "GamePath", "Game Path:" },
             { "Browse", "Browse..." },
@@ -869,7 +921,7 @@ namespace AgainstRomeModifier {
             { "LogAllUnitsEntireMapVisionToggled", "Entire-Map Vision for All Units {0}." },
             { "NativeWidescreen1920x1080", "Centered High Resolution (4:3)" },
             { "NativeWidescreen1920x1080Tip", "Restores the runtime-rejected native 1920x1080 EXE experiment and keeps supported 1600x1200. dgVoodoo centers fullscreen through fake fullscreen; windowed mode keeps the normal stock window size and is centered instead of being forced to desktop size. It is not stretched and does not expand the world to 16:9." },
-            { "CameraZoomOut1", "Camera Zoom Out 0.5 (Experimental)" },
+            { "CameraZoomOut1", "Camera Zoom Out 0.5" },
             { "CameraZoomOut1Tip", "Raises the native camera minimum from 0 to 0.5 for a milder pullback while integer information/LOD consumers retain the stock zoom-0 scale. This revises the +1 build after runtime testing made units and information too small. Selection, edge scrolling, fog, map bounds, save/load, and mission compatibility still require in-game verification." },
             { "RangedRange3x", "3x Range for Ranged Units" },
             { "RangedRange3xTip", "Triples the attack and firing range of all ranged infantry, ranged cavalry, and siege weapons. Includes a built-in accuracy fix: the projectile impact damage radius is doubled (near misses now hit) and the random lead-aim scatter against moving targets is removed, so shots still connect at the longer range. Applies to all factions." },
