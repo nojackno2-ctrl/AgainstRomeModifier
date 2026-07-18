@@ -35,6 +35,7 @@ namespace AgainstRomeModifier {
                 [FeatureKeys.IdleSelect999.Id] = chkIdleSelect999,
                 [FeatureKeys.VillageBuildRange.Id] = chkVillageBuildRange,
                 [FeatureKeys.NoSpellAltar.Id] = chkNoSpellAltar, [FeatureKeys.DgVoodoo.Id] = chkDgVoodoo,
+                [FeatureKeys.ArgmTrace.Id] = chkArgmTrace,
                 [FeatureKeys.ToEnglish.Id] = chkToEng,
                 [FeatureKeys.SpellDamage5x.Id] = chkSpellDamage5x,
                 [FeatureKeys.SpellHealing10x.Id] = chkSpellHealing10x,
@@ -42,7 +43,8 @@ namespace AgainstRomeModifier {
                 [FeatureKeys.GeneralSkills.Id] = chkGeneralSkills,
                 [FeatureKeys.LeaderGlory.Id] = chkLeaderGlory,
                 [FeatureKeys.EndlessAiM1.Id] = chkAiM1, [FeatureKeys.EndlessAiCore.Id] = chkAiCore,
-                [FeatureKeys.EndlessAiM5.Id] = chkAiM5, [FeatureKeys.EndlessAiM6.Id] = chkAiM6,
+                [FeatureKeys.EndlessAiM5.Id] = chkAiM5,
+                [FeatureKeys.RomanReinforcementGarrison.Id] = chkRomanReinforcementGarrison,
             };
             FeatureRegistry.ValidateToggleIds(featureToggles.Keys);
         }
@@ -54,6 +56,7 @@ namespace AgainstRomeModifier {
             if (category == FeatureCategory.Compat) {
                 chkGameSpeed.Checked = false;
                 chkDgVoodoo.Checked = patchEngine.IsDgVoodooInstalled(gamePath);
+                chkArgmTrace.Checked = patchEngine.IsArgmTraceInstalled(gamePath);
             }
         }
 
@@ -138,6 +141,7 @@ namespace AgainstRomeModifier {
                     txtGamePath.Text = fbd.SelectedPath;
                     TryEnsureBackupLoadedForGamePath(fbd.SelectedPath);
                     chkDgVoodoo.Checked = patchEngine.IsDgVoodooInstalled(fbd.SelectedPath);
+                    chkArgmTrace.Checked = patchEngine.IsArgmTraceInstalled(fbd.SelectedPath);
                     LoadIcons();
                     LoadDefaultStatsData();
                 }

@@ -90,7 +90,7 @@ public sealed class EndlessAiCoreIntegrationTests
     }
 
     [RequiresBackupZipFact]
-    public void Detecting_a_legacy_m6_state_keeps_m6_selected_for_next_apply_migration()
+    public void Detecting_a_legacy_m6_state_selects_standalone_garrison_for_next_apply_migration()
     {
         using var fixture = BackupZipGameFixture.Create();
         var orchestrator = new EndlessAiOrchestrator();
@@ -109,6 +109,7 @@ public sealed class EndlessAiCoreIntegrationTests
 
         var engine = new PatchEngine(new NullLogger());
         PatchProfile detected = engine.DetectCurrentPatchState(fixture.RootPath, fixture.Backup);
+        Assert.True(detected.RomanReinforcementGarrison);
         Assert.True(detected.Get(FeatureKeys.EndlessAiM6));
 
         using (var rollback = new FileRollbackScope())

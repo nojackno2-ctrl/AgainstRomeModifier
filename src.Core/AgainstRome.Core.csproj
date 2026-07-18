@@ -21,5 +21,6 @@
     <EmbeddedResource Include="..\ThirdParty\dgVoodoo2\DDraw.dll" LogicalName="dgVoodoo2.DDraw.dll" />
     <EmbeddedResource Include="..\ThirdParty\dgVoodoo2\dgVoodooCpl.exe" LogicalName="dgVoodoo2.dgVoodooCpl.exe" />
     <EmbeddedResource Include="..\ThirdParty\dgVoodoo2\dgVoodoo.conf" LogicalName="dgVoodoo2.dgVoodoo.conf" />
+    <EmbeddedResource Include="..\ThirdParty\argm-trace\version.dll" LogicalName="argm-trace.version.dll" />
   </ItemGroup>
 </Project>

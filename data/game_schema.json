@@ -183,7 +183,7 @@
         "featureKey": "EndlessAi.Core",
         "legacyModuleIds": ["M2", "M3", "M4"],
         "behavior": "Reinforcement scheduling, defeat cleanup, and settlement respawn are detected, applied, and restored as one atomic lifecycle. Any enabled legacy M2/M3/M4 selection migrates to the complete core.",
-        "independentOptions": ["M1 reinforcement size", "M5 settlement starting resources"],
+        "independentOptions": ["M1 reinforcement size", "M5 settlement starting resources", "RomanReinforcementGarrison (legacy alias: EndlessAi.M6)"],
         "existingSaveBoundary": "Normal Apply changes map scripts for new games only; embedded save scripts require the explicit backed-up Save Manager timer repair."
       },
       "spawnJobs": {
@@ -239,6 +239,8 @@
             "saveMigration": "Opt-in Save Manager action; creates a full backup before atomically updating the embedded ak_level BCI in CLAK/scr.dat."
           },
           "militaryReinforcementUnitThreshold": {
+            "featureKey": "RomanReinforcementGarrison",
+            "legacyFeatureKey": "EndlessAi.M6",
             "decompressedLiteralOffset": "0x195F8",
             "originalValue": 4,
             "ultimateValue": 70,
@@ -247,6 +249,7 @@
             "unknownPolicy": "Only exact original/current gates and the three documented legacy gate variants with recognized thresholds 4, 8, 30, 40, or 70 are writable; every other combination is Unknown."
           },
           "reinforcementRetreatQuota": {
+            "featureKey": "RomanReinforcementGarrison",
             "decompressedSignatureRegion": "0x17888",
             "originalWords": [90, 15],
             "ultimateWords": [66, 0],
