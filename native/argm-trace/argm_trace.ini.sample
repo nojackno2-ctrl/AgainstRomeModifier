@@ -20,7 +20,10 @@ maxLogMegabytes=256
 ; is set, only the signature-verified faction hook is installed. Run the game
 ; once, open argm_trace.log, copy the TimeDateStamp printed in the [build]
 ; banner, and paste it here to unlock the AI-event hooks for that exact build.
+; The analyzed build (all documented VAs) has TimeDateStamp=404D1710; if your
+; log banner shows that value, uncomment the second line below.
 expectedTimeDateStamp=0
+;expectedTimeDateStamp=404D1710
 
 [hooks]
 ; Low-frequency AI events (safe to leave on). Require expectedTimeDateStamp set.

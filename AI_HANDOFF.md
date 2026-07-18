@@ -1,5 +1,16 @@
 ﻿# AI Handoff - Live Project Memory
 
+## argm-trace byte-verification pass (2026-07-18, conventions verified from installed EXE; still NOT compiled/run)
+
+- Parsed the installed `Against_Rome.exe` PE (read-only) with a scratch Python script: `TimeDateStamp=0x404D1710`, ImageBase `0x00400000`, code section `AUTO` VA 0x1000 = raw 0x1000, so raw offset = VA − 0x400000. Dumped all six hook targets' real bytes.
+- Resolved all three RE open items from `runtime-trace-hooks.md`:
+  (1) `0x00547F50` / `0x00549500` argument order and stack convention confirmed from prologues (args are plain dwords at `[esp+4+4(n−1)]`; village arg1=team 0..7, arg2=non-null template ptr; early-out `C3` ret = caller-cleaned) — existing log column labels were correct.
+  (2) **`bci.op` hook was wrong**: true dispatcher entry is `0x005B1C60` (`53 56 57 55 89 E5 ...`), and the VM context is stack argument 1 — `EBX` is only loaded at `0x005B1C6F`, so the old `FmtOpcode` reading `rb.ebx` at `0x005B1C62` would have logged the caller's stale EBX. Fixed: hook moved to `0x005B1C60`, context read from `cs[1]`. `exe-functions.md` and `bci0-opcodes.md` corrected too.
+  (3) This machine's install already carries the force-Roman patch (`0x45BD60` starts `53 6A 03 5B 90`), so the stock faction signature can never match there. Added a second signature/formatter (`factionF`) for the patched prologue; both variants are attempted, at most one matches.
+- Also fixed a real bug: `kFactionMask` was 22 chars vs a 21-byte signature (out-of-bounds compare in `VerifySignature`); mask now keys on the instruction skeleton with rel32/abs32 wildcarded.
+- Hardened: every build-locked address hook now ALSO carries a byte signature dumped from the analyzed EXE (npcjob/npcactive/village/createunit/bciop), so a wrong address inside a matching build gets refused. `FmtVillage` now logs the template name string (SEH-guarded `SafeReadStr`). `argm_trace.ini.sample` documents `expectedTimeDateStamp=404D1710` for the analyzed build. `lde_test.cpp` extended with all seven real prologues + 3 opcode cases.
+- Toolchain blocker: this Windows machine has NO C++ compiler (VS 18 Community without the C++ workload; no gcc/clang). The DLL and the host tests could not be compiled here; the 2026-07-17 host-test pass ran on a Linux host with `g++ -m32`. Next actions: install the VS C++ workload (or run tests on a host with g++), build Win32 `version.dll`, then live-capture.
+
 ## Runtime flight-recorder DLL `native/argm-trace` (2026-07-17, implementation complete; NOT built/run yet)
 
 - New native subproject answering the user request "完全記錄遊戲中所有運作,包括增援電腦AI的動作,以便定位問題". It is a 32-bit `version.dll` proxy that loads into `Against_Rome.exe` and installs **log-only** inline hooks on the reverse-engineered AI callbacks, writing a time-stamped `argm_trace.log`. This is the runtime "flight recorder" complementing the offline save/BCI editing.

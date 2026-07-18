@@ -80,6 +80,9 @@ int main() {
         {"cmovz eax,ecx", {0x0F, 0x44, 0xC1}, 3},
         {"imul eax,ecx,imm8", {0x6B, 0xC1, 0x04}, 3},
         {"and esp,-16(83)", {0x83, 0xE4, 0xF0}, 3},
+        {"mov ebp,esp(89E5)", {0x89, 0xE5}, 2},
+        {"pop ebx", {0x5B}, 1},
+        {"xor edi,edi(31FF)", {0x31, 0xFF}, 2},
     };
 
     int fail = 0;
@@ -91,23 +94,44 @@ int main() {
                c.expect, got);
     }
 
-    // The faction-selector prologue (exe-functions.md) must yield >= 5 stolen
-    // bytes from whole instructions with no relative branch in that region.
-    const uint8_t faction[] = {0x53, 0x8B, 0x5C, 0x24, 0x08,
-                               0x53, 0xE8, 0x25, 0x3B, 0xFE, 0xFF};
-    size_t stolen = 0;
-    bool rel = false;
-    while (stolen < 5) {
-        const uint8_t* h = faction + stolen;
-        if (IsRelative(h)) { rel = true; break; }
-        size_t l = DecodeLength(h);
-        if (l == 0) { printf("[FAIL] faction prologue undecodable\n"); fail++; break; }
-        stolen += l;
+    // Every hook-target prologue (bytes dumped from the analyzed EXE,
+    // TimeDateStamp 404D1710) must yield >= 5 stolen bytes from whole
+    // instructions with no relative branch in that region.
+    struct Prologue {
+        const char* name;
+        uint8_t bytes[24];
+    };
+    const Prologue prologues[] = {
+        {"faction@45BD60", {0x53, 0x8B, 0x5C, 0x24, 0x08, 0x53, 0xE8,
+                            0x25, 0x3B, 0xFE, 0xFF}},
+        {"factionForced@45BD60", {0x53, 0x6A, 0x03, 0x5B, 0x90, 0x53, 0xE8,
+                                  0x25, 0x3B, 0xFE, 0xFF}},
+        {"npcjob@547F50", {0x53, 0x56, 0x57, 0x55, 0x8B, 0x5C, 0x24, 0x14,
+                           0x8B, 0x7C, 0x24, 0x30}},
+        {"npcactive@548CE0", {0x8B, 0x54, 0x24, 0x04, 0x85, 0xD2, 0x7C, 0x05}},
+        {"village@549500", {0x53, 0x56, 0x57, 0x55, 0x8B, 0x5C, 0x24, 0x14,
+                            0x8B, 0x6C, 0x24, 0x18}},
+        {"createunit@52A020", {0x53, 0x56, 0x57, 0x55, 0x83, 0xEC, 0x30,
+                               0x8B, 0x44, 0x24, 0x44}},
+        {"bciop@5B1C60", {0x53, 0x56, 0x57, 0x55, 0x89, 0xE5, 0x81, 0xEC,
+                          0xA8, 0x06, 0x00, 0x00}},
+    };
+    for (const auto& p : prologues) {
+        size_t stolen = 0;
+        bool rel = false;
+        bool undec = false;
+        while (stolen < 5) {
+            const uint8_t* h = p.bytes + stolen;
+            if (IsRelative(h)) { rel = true; break; }
+            size_t l = DecodeLength(h);
+            if (l == 0) { undec = true; break; }
+            stolen += l;
+        }
+        bool ok = stolen >= 5 && !rel && !undec;
+        printf("[%s] prologue %-22s stolen=%zu rel=%d undec=%d\n",
+               ok ? "ok " : "FAIL", p.name, stolen, rel ? 1 : 0, undec ? 1 : 0);
+        if (!ok) fail++;
     }
-    bool factionOk = stolen >= 5 && !rel;
-    printf("[%s] faction prologue stolen=%zu relInStolen=%d\n",
-           factionOk ? "ok " : "FAIL", stolen, rel ? 1 : 0);
-    if (!factionOk) fail++;
 
     printf("\n%s (%d failures)\n", fail ? "FAILURES" : "ALL PASS", fail);
     return fail ? 1 : 0;

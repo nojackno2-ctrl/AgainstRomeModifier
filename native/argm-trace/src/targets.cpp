@@ -31,6 +31,22 @@ uint32_t SafeRead32(uintptr_t addr, uint32_t fallback) {
     }
 }
 
+// __try-guarded best-effort C-string copy out of game memory. Non-printable
+// bytes become '.'; returns "?" if the pointer faults immediately.
+const char* SafeReadStr(uint32_t addr, char* buf, size_t cap) {
+    __try {
+        const char* s = reinterpret_cast<const char*>(addr);
+        size_t i = 0;
+        for (; i + 1 < cap && s[i]; i++) {
+            buf[i] = (s[i] >= 0x20 && s[i] < 0x7F) ? s[i] : '.';
+        }
+        buf[i] = 0;
+        return buf;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return "?";
+    }
+}
+
 // ---- Per-target log formatters -----------------------------------------
 
 // s_addNPCJob_createUnit implementation (00547F50): the AI reinforcement
@@ -51,10 +67,13 @@ void FmtNpcActive(const HookDescriptor&, const RegBank&, const uint32_t* cs) {
 }
 
 // s_setVillageTemplate implementation (00549500): settlement-style arrival.
-void FmtVillage(const HookDescriptor& d, const RegBank&, const uint32_t* cs) {
-    LogLine("ai.village", "setVillageTemplate a1=%08X a2=%08X a3=%08X ret=%08X",
-            cs[1], cs[2], cs[3], cs[0]);
-    (void)d;
+// Byte-verified prologue: arg1 -> EBX is the team (validated 0..7), arg2 -> EBP
+// is a pointer checked non-null (the template name per exe-functions.md).
+void FmtVillage(const HookDescriptor&, const RegBank&, const uint32_t* cs) {
+    char name[64];
+    LogLine("ai.village",
+            "setVillageTemplate team=%u tmpl=%08X \"%s\" a3=%08X ret=%08X",
+            cs[1], cs[2], SafeReadStr(cs[2], name, sizeof(name)), cs[3], cs[0]);
 }
 
 // s_createUnitAndMems callback (0052A020).
@@ -69,20 +88,76 @@ void FmtFaction(const HookDescriptor&, const RegBank&, const uint32_t* cs) {
     LogLine("game.faction", "factionSelect requested=%u ret=%08X", cs[1], cs[0]);
 }
 
-// BCI VM dispatcher (005B1C62). EBX = VM context; PC at +0x08, code base at
-// +0x2C. Logs one line per interpreted instruction -- VERY high volume.
-void FmtOpcode(const HookDescriptor&, const RegBank& rb, const uint32_t*) {
-    uint32_t pc = SafeRead32(rb.ebx + 0x08, 0xFFFFFFFF);
-    uint32_t codeBase = SafeRead32(rb.ebx + 0x2C, 0);
-    uint32_t opcode = codeBase ? SafeRead32(codeBase + pc, 0xFFFFFFFF) : 0xFFFFFFFF;
-    LogLine("bci.op", "ctx=%08X pc=%05X op=%u", rb.ebx, pc, opcode);
+// Same setter on an install carrying the modifier's force-Roman EXE patch
+// (`8B5C2408` -> `6A035B90`): the function ignores its argument and uses 3.
+// cs[1] still shows what dlg_volk actually requested.
+void FmtFactionForced(const HookDescriptor&, const RegBank&, const uint32_t* cs) {
+    LogLine("game.faction",
+            "factionSelect requested=%u effective=3 (force-Roman patch) ret=%08X",
+            cs[1], cs[0]);
 }
 
-// Verified original bytes for the faction selector (exe-functions.md).
+// BCI VM dispatcher, true function entry 005B1C60 (`53 56 57 55 89 E5 ...`).
+// Byte-verified: the VM context is stack ARGUMENT 1 (`mov ebx,[ebp+0x14]`
+// happens only later, at 005B1C6F), so at entry EBX still holds the caller's
+// value and must NOT be used. PC at ctx+0x08, code length at ctx+0x28, code
+// base at ctx+0x2C. Logs one line per interpreted instruction -- VERY high
+// volume.
+void FmtOpcode(const HookDescriptor&, const RegBank&, const uint32_t* cs) {
+    uint32_t ctx = cs[1];
+    uint32_t pc = SafeRead32(ctx + 0x08, 0xFFFFFFFF);
+    uint32_t codeBase = SafeRead32(ctx + 0x2C, 0);
+    uint32_t opcode = codeBase ? SafeRead32(codeBase + pc, 0xFFFFFFFF) : 0xFFFFFFFF;
+    LogLine("bci.op", "ctx=%08X pc=%05X op=%u", ctx, pc, opcode);
+}
+
+// ---- Byte signatures (dumped from the analyzed EXE, TimeDateStamp 404D1710,
+// via the PE section table; see runtime-trace-hooks.md) --------------------
+
+// Stock faction selector prologue (exe-functions.md). rel32 of the E8 and the
+// abs32 of the `mov ds:[..],ebx` are wildcarded so the signature keys on the
+// instruction skeleton, not on link-time addresses.
 const uint8_t kFactionSig[] = {0x53, 0x8B, 0x5C, 0x24, 0x08, 0x53, 0xE8,
                                0x25, 0x3B, 0xFE, 0xFF, 0x83, 0xC4, 0x04,
                                0x53, 0x89, 0x1D, 0x78, 0x74, 0x73, 0x00};
-const char kFactionMask[] = "xxxxxx?????xxxxxxx?xxx";  // wildcard the E8 rel32
+const char kFactionMask[] = "xxxxxxx????xxxxxx????";
+
+// Faction selector with the force-Roman patch applied (known-patches.md:
+// `53 8B5C2408` -> `53 6A03 5B 90`). Tail is identical to stock.
+const uint8_t kFactionForcedSig[] = {0x53, 0x6A, 0x03, 0x5B, 0x90, 0x53, 0xE8,
+                                     0x25, 0x3B, 0xFE, 0xFF, 0x83, 0xC4, 0x04,
+                                     0x53, 0x89, 0x1D, 0x78, 0x74, 0x73, 0x00};
+const char kFactionForcedMask[] = "xxxxxxx????xxxxxx????";
+
+// s_addNPCJob_createUnit impl 00547F50: push ebx/esi/edi/ebp then load
+// arg1 (team), arg8, arg9 from the caller stack.
+const uint8_t kNpcJobSig[] = {0x53, 0x56, 0x57, 0x55, 0x8B, 0x5C, 0x24, 0x14,
+                              0x8B, 0x7C, 0x24, 0x30, 0x8B, 0x6C, 0x24, 0x34};
+const char kNpcJobMask[] = "xxxxxxxxxxxxxxxx";
+
+// s_setNPCActive impl 00548CE0: no pushed regs; validates team then writes
+// DAT_029e6000[team]. Includes the early-out tail (fixed rel8s, same build).
+const uint8_t kNpcActiveSig[] = {0x8B, 0x54, 0x24, 0x04, 0x85, 0xD2, 0x7C,
+                                 0x05, 0x83, 0xFA, 0x08, 0x7C, 0x06, 0xB8,
+                                 0xFF, 0xFF, 0xFF, 0xFF, 0xC3};
+const char kNpcActiveMask[] = "xxxxxxxxxxxxxxxxxxx";
+
+// s_setVillageTemplate impl 00549500: team -> EBX, template ptr -> EBP.
+const uint8_t kVillageSig[] = {0x53, 0x56, 0x57, 0x55, 0x8B, 0x5C, 0x24, 0x14,
+                               0x8B, 0x6C, 0x24, 0x18, 0x31, 0xFF, 0x85, 0xED};
+const char kVillageMask[] = "xxxxxxxxxxxxxxxx";
+
+// s_createUnitAndMems callback 0052A020: reads its 9-int arg block off arg1.
+const uint8_t kCreateUnitSig[] = {0x53, 0x56, 0x57, 0x55, 0x83, 0xEC, 0x30,
+                                  0x8B, 0x44, 0x24, 0x44, 0x8B, 0x70, 0x08};
+const char kCreateUnitMask[] = "xxxxxxxxxxxxxx";
+
+// BCI dispatcher entry 005B1C60: pushes, mov ebp,esp, sub esp,0x6A8,
+// and esp,-8, then ctx/PC/limit loads.
+const uint8_t kBciSig[] = {0x53, 0x56, 0x57, 0x55, 0x89, 0xE5, 0x81, 0xEC,
+                           0xA8, 0x06, 0x00, 0x00, 0x83, 0xE4, 0xF8, 0x8B,
+                           0x5D, 0x14, 0x8B, 0x53, 0x08, 0x8B, 0x4B, 0x28};
+const char kBciMask[] = "xxxxxxxxxxxxxxxxxxxxxxxx";
 
 HookDescriptor g_targets[8];
 int g_targetCount = 0;
@@ -180,15 +255,27 @@ void InstallAllHooks(const Config& cfg) {
     g_targetCount = 0;
 
     // Signature-verified: always safe to attempt regardless of build lock,
-    // because a wrong build fails the signature check and is skipped.
+    // because a wrong build fails the signature check and is skipped. Two
+    // variants cover both a stock install and one carrying the modifier's
+    // force-Roman patch; at most one signature can match.
     Add("faction", 0x0045BD60, FmtFaction, 1, kFactionSig, kFactionMask);
+    Add("factionF", 0x0045BD60, FmtFactionForced, 1, kFactionForcedSig,
+        kFactionForcedMask);
 
     if (buildLocked) {
-        if (cfg.traceNpcJobs) Add("npcjob", 0x00547F50, FmtNpcJob, 9);
-        if (cfg.traceNpcActive) Add("npcactive", 0x00548CE0, FmtNpcActive, 2);
-        if (cfg.traceVillage) Add("village", 0x00549500, FmtVillage, 3);
-        if (cfg.traceCreateUnit) Add("createunit", 0x0052A020, FmtCreateUnit, 3);
-        if (cfg.traceOpcodes) Add("bciop", 0x005B1C62, FmtOpcode, 0);
+        // Build-locked AND byte-signature-verified: both checks must pass.
+        if (cfg.traceNpcJobs)
+            Add("npcjob", 0x00547F50, FmtNpcJob, 9, kNpcJobSig, kNpcJobMask);
+        if (cfg.traceNpcActive)
+            Add("npcactive", 0x00548CE0, FmtNpcActive, 2, kNpcActiveSig,
+                kNpcActiveMask);
+        if (cfg.traceVillage)
+            Add("village", 0x00549500, FmtVillage, 3, kVillageSig, kVillageMask);
+        if (cfg.traceCreateUnit)
+            Add("createunit", 0x0052A020, FmtCreateUnit, 3, kCreateUnitSig,
+                kCreateUnitMask);
+        if (cfg.traceOpcodes)
+            Add("bciop", 0x005B1C60, FmtOpcode, 0, kBciSig, kBciMask);
     } else {
         LogLine("hook",
                 "Build not locked: installing only signature-verified hooks. "
