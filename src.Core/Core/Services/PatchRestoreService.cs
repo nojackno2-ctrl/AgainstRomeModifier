@@ -63,6 +63,7 @@ internal sealed class PatchRestoreService
             exeChanged |= ExeFeaturePatcher.ApplyCiviProduce20(exeBytes, false, _logger);
             exeChanged |= ExeFeaturePatcher.ApplyUnitRecruit20(exeBytes, false, _logger);
             exeChanged |= ExeFeaturePatcher.ApplyIdleSelect999(exeBytes, false, _logger);
+            exeChanged |= ExeFeaturePatcher.RestoreRetiredDefaultSpecialArrows(exeBytes, _logger);
             if (exeChanged)
                 patchedFiles[exePath] = exeBytes;
 
@@ -71,6 +72,7 @@ internal sealed class PatchRestoreService
 
             orchestrator ??= sharedOrchestrator ?? new EndlessAiOrchestrator();
             FoodHealingFeature.Apply(gamePath, false, backupManager, orchestrator, _logger);
+            RetiredDefaultSpecialArrowsMigration.RestoreIfPresent(gamePath, orchestrator, _logger);
             CiviProduce20Feature.RestoreAkNpcOriginal(gamePath, orchestrator);
         }
 

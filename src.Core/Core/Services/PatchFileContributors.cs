@@ -63,6 +63,9 @@ internal sealed class ExePatchFileContributor : IPatchFileContributor
         modified |= ExeFeaturePatcher.ApplyCiviProduce20(bytes, profile.CiviProduce20, context.Logger);
         modified |= ExeFeaturePatcher.ApplyUnitRecruit20(bytes, profile.UnitRecruit20, context.Logger);
         modified |= ExeFeaturePatcher.ApplyIdleSelect999(bytes, profile.IdleSelect999, context.Logger);
+        // Getter-only EXE v1 was runtime-rejected. Always migrate those exact legacy
+        // bytes back to Original; ak_krieger.bci now owns the feature.
+        modified |= ExeFeaturePatcher.RestoreRetiredDefaultSpecialArrows(bytes, context.Logger);
         // The native 1920x1080 EXE experiment is runtime-rejected: both fullscreen and
         // windowed modes retained a legacy internal viewport. Always migrate it back to
         // the verified stock mode; the profile now controls centered dgVoodoo presentation.

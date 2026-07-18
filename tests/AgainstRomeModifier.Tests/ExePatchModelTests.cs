@@ -64,6 +64,16 @@ public sealed class ExePatchModelTests {
                 ? ExePatchModel.IdleSelect999PatchedBytes
                 : ExePatchModel.IdleSelect999OriginalBytes);
 
+    private static void PlaceDefaultSpecialArrows(byte[] exe, ExeDefaultSpecialArrowsPatchState state) {
+        bool patched = state == ExeDefaultSpecialArrowsPatchState.Patched;
+        Place(exe, ExePatchModel.DefaultSpecialArrowsNormalButtonOffset,
+            patched ? ExePatchModel.DefaultSpecialArrowsNormalButtonPatchedBytes : ExePatchModel.DefaultSpecialArrowsNormalButtonOriginalBytes);
+        Place(exe, ExePatchModel.DefaultSpecialArrowsGetterOffset,
+            patched ? ExePatchModel.DefaultSpecialArrowsGetterPatchedBytes : ExePatchModel.DefaultSpecialArrowsGetterOriginalBytes);
+        Place(exe, ExePatchModel.DefaultSpecialArrowsCaveOffset,
+            patched ? ExePatchModel.DefaultSpecialArrowsCavePatchedBytes : ExePatchModel.DefaultSpecialArrowsCaveOriginalBytes);
+    }
+
     private static void PlaceVillageRange(byte[] exe, ExeVillageRangePatchState state) {
         bool rangePatched = state is ExeVillageRangePatchState.LegacyLogicOnly or ExeVillageRangePatchState.Expanded;
         bool framePatched = state == ExeVillageRangePatchState.Expanded;
@@ -364,6 +374,45 @@ public sealed class ExePatchModelTests {
             ExePatchModel.GetIdleSelect999PatchState(new byte[8]));
         Assert.Empty(ExePatchModel.PlanIdleSelect999(true, ExeIdleSelect999PatchState.Unknown));
         Assert.Empty(ExePatchModel.PlanIdleSelect999(false, ExeIdleSelect999PatchState.Unknown));
+    }
+
+    [Theory]
+    [InlineData(ExeDefaultSpecialArrowsPatchState.Original)]
+    [InlineData(ExeDefaultSpecialArrowsPatchState.Patched)]
+    public void Default_special_arrows_state_is_detected(ExeDefaultSpecialArrowsPatchState state) {
+        byte[] exe = NewExe();
+        PlaceDefaultSpecialArrows(exe, state);
+        Assert.Equal(state, ExePatchModel.GetDefaultSpecialArrowsPatchState(exe));
+    }
+
+    [Fact]
+    public void Legacy_default_special_arrows_patch_is_restore_only() {
+        byte[] exe = NewExe();
+        PlaceDefaultSpecialArrows(exe, ExeDefaultSpecialArrowsPatchState.Original);
+        Assert.Empty(ExePatchModel.PlanRetiredDefaultSpecialArrowsRestore(
+            ExePatchModel.GetDefaultSpecialArrowsPatchState(exe)));
+
+        PlaceDefaultSpecialArrows(exe, ExeDefaultSpecialArrowsPatchState.Patched);
+        IReadOnlyList<ExeWriteOp> disable = ExePatchModel.PlanRetiredDefaultSpecialArrowsRestore(
+            ExePatchModel.GetDefaultSpecialArrowsPatchState(exe));
+        Assert.Equal(3, disable.Count);
+        ExePatchModel.Apply(exe, disable);
+        Assert.Equal(ExeDefaultSpecialArrowsPatchState.Original,
+            ExePatchModel.GetDefaultSpecialArrowsPatchState(exe));
+    }
+
+    [Fact]
+    public void Default_special_arrows_mixed_or_short_state_is_unknown_and_not_planned() {
+        byte[] exe = NewExe();
+        PlaceDefaultSpecialArrows(exe, ExeDefaultSpecialArrowsPatchState.Original);
+        Place(exe, ExePatchModel.DefaultSpecialArrowsGetterOffset,
+            ExePatchModel.DefaultSpecialArrowsGetterPatchedBytes);
+
+        Assert.Equal(ExeDefaultSpecialArrowsPatchState.Unknown,
+            ExePatchModel.GetDefaultSpecialArrowsPatchState(exe));
+        Assert.Equal(ExeDefaultSpecialArrowsPatchState.Unknown,
+            ExePatchModel.GetDefaultSpecialArrowsPatchState(new byte[8]));
+        Assert.Empty(ExePatchModel.PlanRetiredDefaultSpecialArrowsRestore(ExeDefaultSpecialArrowsPatchState.Unknown));
     }
 
     [Theory]
