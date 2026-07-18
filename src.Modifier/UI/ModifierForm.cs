@@ -76,8 +76,9 @@ namespace AgainstRomeModifier {
         private ModernToggle chkAiM1 = null!;
         private ModernToggle chkAiCore = null!;
         private ModernToggle chkAiM5 = null!;
-        private ModernToggle chkAiM6 = null!;
+        private ModernToggle chkRomanReinforcementGarrison = null!;
         private ModernToggle chkDgVoodoo = null!;
+        private ModernToggle chkArgmTrace = null!;
         private ModernToggle chkVillageBuildRange = null!;
         private ModernToggle chkGameSpeed = null!;
         private Button btnTroopPreset = null!;
@@ -677,6 +678,16 @@ namespace AgainstRomeModifier {
             };
             pnlNumericCard.Controls.Add(chkDgVoodoo);
 
+            chkArgmTrace = new ModernToggle {
+                Text = Loc.Get("ArgmTrace"),
+                Location = new Point(25, 270),
+                Size = new Size(310, 25),
+                Checked = false,
+                BackColor = Color.Transparent,
+                Font = fontJhengHei10B
+            };
+            pnlNumericCard.Controls.Add(chkArgmTrace);
+
             chkGameSpeed = new ModernToggle {
                 Text = Loc.Get("GameSpeedLabel"),
                 Location = new Point(25, 200),
@@ -895,11 +906,11 @@ namespace AgainstRomeModifier {
             chkAiM1 = new ModernToggle { Text = Loc.Get("AiM1"), Size = new Size(260, 26), Checked = false, BackColor = Color.Transparent, Font = fontJhengHei10B };
             chkAiCore = new ModernToggle { Text = Loc.Get("AiCore"), Size = new Size(260, 26), Checked = false, BackColor = Color.Transparent, Font = fontJhengHei10B };
             chkAiM5 = new ModernToggle { Text = Loc.Get("AiM5"), Size = new Size(260, 26), Checked = false, BackColor = Color.Transparent, Font = fontJhengHei10B };
-            chkAiM6 = new ModernToggle { Text = Loc.Get("AiM6"), Size = new Size(260, 26), Checked = false, BackColor = Color.Transparent, Font = fontJhengHei10B };
+            chkRomanReinforcementGarrison = new ModernToggle { Text = Loc.Get("RomanReinforcementGarrison"), Size = new Size(310, 26), Checked = false, BackColor = Color.Transparent, Font = fontJhengHei10B };
             pnlAiCard.Controls.Add(chkAiM1);
             pnlAiCard.Controls.Add(chkAiCore);
             pnlAiCard.Controls.Add(chkAiM5);
-            pnlAiCard.Controls.Add(chkAiM6);
+            pnlAiCard.Controls.Add(chkRomanReinforcementGarrison);
 
             pnlVillagerCard = new Panel {
                 Location = new Point(0, 0),

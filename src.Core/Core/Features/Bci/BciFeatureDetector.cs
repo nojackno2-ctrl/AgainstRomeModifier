@@ -17,8 +17,17 @@ internal sealed class BciFeatureDetector
             {
                 PatchState state = orchestrator.DetectModule(gamePath, module);
                 bool migrateLegacyWhenSelected = module.Id is "Core" or "M6";
-                profile.EndlessAiModules[module.Id] = state == PatchState.Ultimate ||
+                bool selected = state == PatchState.Ultimate ||
                     (migrateLegacyWhenSelected && state == PatchState.Legacy);
+                if (module.Id == "M6")
+                {
+                    profile.RomanReinforcementGarrison = selected;
+                    profile.Set(FeatureKeys.EndlessAiM6, selected);
+                }
+                else
+                {
+                    profile.EndlessAiModules[module.Id] = selected;
+                }
             }
         }
         catch (Exception ex)

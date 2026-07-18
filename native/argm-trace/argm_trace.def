@@ -1,0 +1,20 @@
+; Export table for the version.dll proxy. The LIBRARY name intentionally
+; matches the DLL's runtime file name (version.dll). Every entry is a naked
+; thunk (see proxy_version.cpp) that forwards to the genuine system version.dll.
+LIBRARY version
+EXPORTS
+    GetFileVersionInfoA = Thunk_GetFileVersionInfoA
+    GetFileVersionInfoByHandle = Thunk_GetFileVersionInfoByHandle
+    GetFileVersionInfoExA = Thunk_GetFileVersionInfoExA
+    GetFileVersionInfoExW = Thunk_GetFileVersionInfoExW
+    GetFileVersionInfoSizeA = Thunk_GetFileVersionInfoSizeA
+    GetFileVersionInfoSizeExA = Thunk_GetFileVersionInfoSizeExA
+    GetFileVersionInfoSizeExW = Thunk_GetFileVersionInfoSizeExW
+    GetFileVersionInfoSizeW = Thunk_GetFileVersionInfoSizeW
+    GetFileVersionInfoW = Thunk_GetFileVersionInfoW
+    VerFindFileA = Thunk_VerFindFileA
+    VerFindFileW = Thunk_VerFindFileW
+    VerInstallFileA = Thunk_VerInstallFileA
+    VerInstallFileW = Thunk_VerInstallFileW
+    VerQueryValueA = Thunk_VerQueryValueA
+    VerQueryValueW = Thunk_VerQueryValueW

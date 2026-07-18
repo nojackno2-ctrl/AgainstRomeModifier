@@ -82,7 +82,10 @@ internal sealed class PatchRestoreService
         if (restoreLanguage)
             new LanguagePackFeature(_logger).Apply(gamePath, false, rollback);
         if (restoreCompat)
+        {
             new DgVoodooFeature(_logger).Apply(gamePath, false, rollback);
+            new ArgmTraceFeature(_logger).Apply(gamePath, false, rollback);
+        }
     }
 
     private void RestoreStatsFiles(string gamePath, BackupManager backupManager, FileRollbackScope rollback)

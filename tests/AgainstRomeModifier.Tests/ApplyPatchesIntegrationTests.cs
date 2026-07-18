@@ -147,6 +147,7 @@ namespace AgainstRomeModifier.Tests
                 {
                     Assert.True(detected.GetEndlessAiModule(id), $"Endless AI 模組 {id} 未回讀為 true");
                 }
+                Assert.True(detected.RomanReinforcementGarrison, "羅馬增援士兵留守未回讀為 true");
 
                 // 3) 全部還原
                 using (var rollback = new FileRollbackScope())
@@ -179,6 +180,7 @@ namespace AgainstRomeModifier.Tests
                 {
                     Assert.False(restored.GetEndlessAiModule(id), $"還原後 Endless AI 模組 {id} 仍為 true");
                 }
+                Assert.False(restored.RomanReinforcementGarrison, "還原後羅馬增援士兵留守仍為 true");
 
                 // 4) 位元組層驗證：還原後的每個複製檔（解壓後）必須與來源 100% 相同
                 foreach (string relPath in copiedFiles)

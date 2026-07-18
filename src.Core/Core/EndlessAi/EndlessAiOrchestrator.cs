@@ -180,7 +180,10 @@ namespace AgainstRomeModifier
             M3 = new EndlessAiModule("M3", "敗亡快速回收", new List<IEndlessPatch> { p4, p5, p11 });
             M4 = new EndlessAiModule("M4", "強制部落生成", new List<IEndlessPatch> { p7, p17, p18, p19 });
             M5 = new EndlessAiModule("M5", "開局資源", new List<IEndlessPatch> { p13 });
-            M6 = new EndlessAiModule("M6", "提升守軍數量", new List<IEndlessPatch> { p8, p9 });
+            // Legacy module id M6 remains internal for profile migration. The
+            // user-facing feature is RomanReinforcementGarrison; P8 and P9 stay
+            // atomic because retained squads require the raised unit threshold.
+            M6 = new EndlessAiModule("M6", "羅馬增援士兵留守", new List<IEndlessPatch> { p8, p9 });
             R0 = new EndlessAiModule("R0", "常駐修復", new List<IEndlessPatch> { p14, p15 });
 
             RespawnCore = new EndlessAiModule(

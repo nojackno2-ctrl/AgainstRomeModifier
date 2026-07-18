@@ -26,9 +26,10 @@ namespace AgainstRomeModifier {
             chkAiM1.Checked = true;
             chkAiCore.Checked = true;
             chkAiM5.Checked = true;
-            chkAiM6.Checked = true;
+            chkRomanReinforcementGarrison.Checked = true;
             chkVillageBuildRange.Checked = true;
             chkDgVoodoo.Checked = true;
+            chkNativeWidescreen1920x1080.Checked = true;
             chkSpellDamage5x.Checked = true;
             chkRangedRange3x.Checked = true;
             chkUnitMovementSpeed2x.Checked = true;
@@ -37,8 +38,9 @@ namespace AgainstRomeModifier {
             chkSpellEntireMap.Checked = true;
             chkSpellRange3x.Checked = true;
             chkProjectileArcHeight.Checked = true;
+            chkAllUnitsEntireMapVision.Checked = true;
             chkRomanEndless.Checked = true;
-            // 實驗性功能 (含 10 倍遊戲加速等) 排除在一鍵全開之外，保持原樣不變。
+            // 仍需個別評估的功能（含 10 倍遊戲加速等）排除在一鍵全開之外，保持原樣不變。
 
             Log(Loc.CurrentLanguage == Language.English ? "All features enabled." : "已開啟所有功能。");
         }
@@ -67,9 +69,10 @@ namespace AgainstRomeModifier {
             chkAiM1.Checked = false;
             chkAiCore.Checked = false;
             chkAiM5.Checked = false;
-            chkAiM6.Checked = false;
+            chkRomanReinforcementGarrison.Checked = false;
             chkVillageBuildRange.Checked = false;
             chkDgVoodoo.Checked = false; // 相容性層關閉，以達到最乾淨的還原
+            chkArgmTrace.Checked = false; // 除錯記錄器一併關閉，套用時會移除 version.dll
 
             // 關閉所有實驗性功能開關
             chkSpellDamage5x.Checked = false;

@@ -54,6 +54,7 @@ public static class FeatureKeys
     public static readonly FeatureKey<bool> UnitRecruit20 = FeatureKey<bool>.Bool("UnitRecruit20");
     public static readonly FeatureKey<bool> IdleSelect999 = FeatureKey<bool>.Bool("IdleSelect999");
     public static readonly FeatureKey<bool> RomanEndless = FeatureKey<bool>.Bool("RomanEndless");
+    public static readonly FeatureKey<bool> RomanReinforcementGarrison = FeatureKey<bool>.Bool("RomanReinforcementGarrison");
     public static readonly FeatureKey<bool> SpellDamage5x = FeatureKey<bool>.Bool("SpellDamage5x");
     public static readonly FeatureKey<bool> SpellHealing10x = FeatureKey<bool>.Bool("SpellHealing10x");
     public static readonly FeatureKey<bool> SpellResurrection = FeatureKey<bool>.Bool("SpellResurrection");
@@ -72,6 +73,7 @@ public static class FeatureKeys
     public static readonly FeatureKey<bool> NoSpellAltar = FeatureKey<bool>.Bool("NoSpellAltar");
     public static readonly FeatureKey<int> GameSpeed = FeatureKey<int>.Int("GameSpeed", 1);
     public static readonly FeatureKey<bool> DgVoodoo = FeatureKey<bool>.Bool("DgVoodoo");
+    public static readonly FeatureKey<bool> ArgmTrace = FeatureKey<bool>.Bool("ArgmTrace");
     public static readonly FeatureKey<bool> NativeWidescreen1920x1080 = FeatureKey<bool>.Bool("NativeWidescreen1920x1080");
     public static readonly FeatureKey<bool> CameraZoomOut1 = FeatureKey<bool>.Bool("CameraZoomOut1");
     public static readonly FeatureKey<bool> EndlessAiM1 = FeatureKey<bool>.Bool("EndlessAi.M1");
