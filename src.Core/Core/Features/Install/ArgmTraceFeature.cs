@@ -32,7 +32,10 @@ internal sealed class ArgmTraceFeature
 
     private sealed class ArgmTraceManifest
     {
-        public string DllName { get; set; } = WinmmDllName;
+        // Empty by default so a marker written by the superseded version.dll
+        // build (which had no DllName field) reads back as "unknown/legacy"
+        // rather than being mistaken for a managed winmm deployment.
+        public string DllName { get; set; } = "";
         public string DllSha256 { get; set; } = "";
         public string IniSha256 { get; set; } = "";
         public uint ExpectedTimeDateStamp { get; set; }
@@ -174,9 +177,13 @@ internal sealed class ArgmTraceFeature
     private void RemoveLegacyVersionDll(string gamePath, ArgmTraceManifest? manifest,
                                         FileRollbackScope? rollback)
     {
-        if (manifest == null ||
-            !string.Equals(manifest.DllName, LegacyVersionDllName, StringComparison.OrdinalIgnoreCase))
-            return;
+        // A marker with DllName == "version.dll" or with no DllName at all (the
+        // superseded build never wrote the field) is treated as a legacy
+        // version.dll deployment eligible for cleanup.
+        bool looksLegacy = manifest != null &&
+            (string.IsNullOrEmpty(manifest.DllName) ||
+             string.Equals(manifest.DllName, LegacyVersionDllName, StringComparison.OrdinalIgnoreCase));
+        if (!looksLegacy) return;
 
         string legacyPath = Path.Combine(gamePath, LegacyVersionDllName);
         if (!File.Exists(legacyPath)) return;
