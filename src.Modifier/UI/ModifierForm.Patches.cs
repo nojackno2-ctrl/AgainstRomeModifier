@@ -115,6 +115,7 @@ namespace AgainstRomeModifier {
             btnApply.Enabled = enabled;
             btnStartGame.Enabled = enabled;
             btnNavSystem.Enabled = enabled;
+            btnNavExperimental.Enabled = enabled;
             btnNavDefaultStats.Enabled = enabled;
             btnNavCurrentStats.Enabled = enabled;
         }

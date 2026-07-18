@@ -227,9 +227,6 @@ internal sealed class FloorMaterialCatalog
     private static bool HasMaterial(IReadOnlyList<string?> materials, int dimension, int x, int y, string expected)
         => x >= 0 && y >= 0 && x < dimension && y < dimension && StringComparer.OrdinalIgnoreCase.Equals(materials[y * dimension + x], expected);
 
-    private static bool CornersEqual(IReadOnlyList<string> actual, IReadOnlyList<string> expected)
-        => Enumerable.Range(0, 4).All(index => StringComparer.OrdinalIgnoreCase.Equals(actual[index], expected[index]));
-
     private static string CornerKey(IReadOnlyList<string> corners)
         => string.Join("|", corners.Select(value => value.ToUpperInvariant()));
 

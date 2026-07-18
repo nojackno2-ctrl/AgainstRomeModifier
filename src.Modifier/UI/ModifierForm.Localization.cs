@@ -37,6 +37,9 @@ namespace AgainstRomeModifier {
             lblMainTitle.Text = Loc.Get("MainTitle");
             lblSystemHeading.Text = Loc.Get("SystemHeading");
             lblSystemSubtitle.Text = Loc.Get("SystemSubtitle");
+            if (lblExperimentalHeading != null) lblExperimentalHeading.Text = Loc.Get("ExperimentalHeading");
+            if (lblExperimentalSubtitle != null) lblExperimentalSubtitle.Text = Loc.Get("ExperimentalSubtitle");
+            if (lblExperimentalCardTitle != null) lblExperimentalCardTitle.Text = Loc.Get("ExperimentalCardTitle");
             lblNumericTitle.Text = Loc.Get("NumericTitle");
             chkFocusLoss.Text = Loc.Get("FocusLoss");
             chkToEng.Text = Loc.Get("ToEng");
@@ -124,6 +127,9 @@ namespace AgainstRomeModifier {
 
             // 重新整理側邊導覽列按鈕
             RefreshNavButtons();
+
+            // 依目前語言更新實驗性功能的推廣/降級按鈕文字（按鈕已建立時才需要）
+            if (promoteDemoteButtons.Count > 0) UpdateExperimentalLayout();
 
 
             // 重新載入表格數據

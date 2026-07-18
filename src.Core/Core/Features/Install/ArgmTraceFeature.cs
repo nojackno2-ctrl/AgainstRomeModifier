@@ -180,9 +180,9 @@ internal sealed class ArgmTraceFeature
         // A marker with DllName == "version.dll" or with no DllName at all (the
         // superseded build never wrote the field) is treated as a legacy
         // version.dll deployment eligible for cleanup.
-        bool looksLegacy = manifest != null &&
-            (string.IsNullOrEmpty(manifest.DllName) ||
-             string.Equals(manifest.DllName, LegacyVersionDllName, StringComparison.OrdinalIgnoreCase));
+        if (manifest == null) return;
+        bool looksLegacy = string.IsNullOrEmpty(manifest.DllName) ||
+            string.Equals(manifest.DllName, LegacyVersionDllName, StringComparison.OrdinalIgnoreCase);
         if (!looksLegacy) return;
 
         string legacyPath = Path.Combine(gamePath, LegacyVersionDllName);
