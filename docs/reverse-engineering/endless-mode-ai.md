@@ -568,7 +568,7 @@ civilian-to-battle-unit conversion is driven by `Dorfverteidigung.bci`
   village AI converts 20 villagers into a single squad in-game, confirming
   both the root-cause analysis and the members-per-unit interpretation.
 
-### Village-garrison quota 3x (P20, Experimental)
+### Village-garrison quota multiplier (P20, Experimental)
 
 The squad-size patch above does not change how many squads the village keeps.
 The actual four per-type quotas are dynamic:
@@ -584,19 +584,25 @@ The actual four per-type quotas are dynamic:
   global literal. A read-only scan of all 42 original settlement SDL templates
   found no serialized `OD_IPOS01..04` object text, so the exact total remains
   runtime/map dependent.
-- Standalone feature `VillageGarrisonQuota3x` redirects only those four exact
-  calls, using same-size opcode-120 internal-call instructions, to one 22-word
-  (88-byte) helper appended at the BCI code-section end. The helper calls the
-  original symbol and applies opcode 34 with literal 3. Native VM dispatcher
-  case `0x22` confirms signed integer multiplication.
+- Standalone feature `VillageGarrisonQuota3x` (historical id; since 2026-07-19
+  the feature value is the multiplier itself, selectable x2/x3/x5/x10 in the
+  UI, 1 = disabled) redirects only those four exact calls, using same-size
+  opcode-120 internal-call instructions, to one 22-word (88-byte) helper
+  appended at the BCI code-section end. The helper calls the original symbol
+  and applies opcode 34 with the selected multiplier literal at helper word 14;
+  switching multipliers rewrites that literal in place without moving code.
+  Native VM dispatcher case `0x22` confirms signed integer multiplication.
 - The multiplier preserves relative per-type quotas and zero values. It is
-  deliberately bounded at 3x rather than removing the guard entirely: more
-  squads consume civilians, population, simulation time, and save space.
+  deliberately bounded (supported set 2/3/5/10) rather than removing the guard
+  entirely: more squads consume civilians, population, simulation time, and
+  save space, and the cost grows with the chosen multiplier.
 - Detection requires all four original calls, or all four exact helper targets
-  plus the exact helper bytes at code end. Mixed, duplicated, malformed, or
-  foreign targets are `Unknown` and are never written. Disable restores all
-  four external calls, removes the helper, updates `codeSize`, and is covered
-  by a byte-exact round trip.
+  plus the exact helper bytes (any supported literal at word 14) at code end.
+  A supported literal differing from the current selection is `Legacy` and is
+  migrated by the in-place rewrite. Unsupported literals and mixed, duplicated,
+  malformed, or foreign targets are `Unknown` and are never written. Disable
+  restores all four external calls, removes the helper, updates `codeSize`,
+  and is covered by a byte-exact round trip.
 - Static signatures and automated integration are verified. Fresh endless-game
   behavior, whether all extra squads receive useful defensive positions, and
   long-run performance are still pending; the feature remains Experimental

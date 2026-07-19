@@ -80,6 +80,7 @@ public class PatchEngine
         PatchFilePlan filePlan = new PatchFileComposer(_logger).Compose(
             gamePath, backupManager, options);
 
+        orchestrator.SetVillageGarrisonQuotaMultiplier(options.VillageGarrisonQuotaMultiplier);
         foreach (var module in orchestrator.UserModules)
             orchestrator.ApplyModule(gamePath, module, options.GetEndlessAiModule(module.Id));
         orchestrator.ApplyMandatoryRepair(gamePath);

@@ -24,6 +24,16 @@ internal sealed class BciFeatureDetector
                     profile.RomanReinforcementGarrison = selected;
                     profile.Set(FeatureKeys.EndlessAiM6, selected);
                 }
+                else if (module.Id == "VillageGarrisonQuota3x")
+                {
+                    // Ultimate = installed at the orchestrator default; Legacy =
+                    // installed at another supported multiplier. Read the actual
+                    // literal back so the UI shows what is really installed.
+                    profile.VillageGarrisonQuotaMultiplier =
+                        state == PatchState.Ultimate || state == PatchState.Legacy
+                            ? orchestrator.DetectVillageGarrisonQuotaMultiplier(gamePath)
+                            : 1;
+                }
                 else
                 {
                     profile.EndlessAiModules[module.Id] = selected;

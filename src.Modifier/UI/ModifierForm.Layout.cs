@@ -194,6 +194,7 @@ namespace AgainstRomeModifier {
                 chkSpellRange3x);
             ConfigureSettingsCard(pnlCombatCard, lblCombatTitle, 494,
                 chkInfiniteMorale,
+                chkNoRunHpLoss,
                 chkFoodHealing10x,
                 chkGeneralSkills,
                 chkLeaderGlory,
@@ -302,21 +303,25 @@ namespace AgainstRomeModifier {
                     }
                     
                     int y = 60 + visibleCount * 48;
-                    if (promoteDemoteButtons.TryGetValue(toggle, out Button? btn) && btn.Parent == card) {
-                        toggle.Location = new Point(20, y);
-                        toggle.Size = new Size(Math.Max(120, card.Width - 160), 26);
-                        toggle.Font = fontJhengHei95R;
-                        toggle.BackColor = card.BackColor;
-                        
-                        btn.Location = new Point(card.Width - 130, y + 1);
-                        btn.Visible = true;
-                    } else {
-                        toggle.Location = new Point(20, y);
-                        toggle.Size = new Size(Math.Max(120, card.Width - 40), 26);
-                        toggle.Font = fontJhengHei95R;
-                        toggle.BackColor = card.BackColor;
+                    bool hasButton = promoteDemoteButtons.TryGetValue(toggle, out Button? btn) && btn!.Parent == card;
+                    bool hasCompanion = toggleCompanions.TryGetValue(toggle, out Control? companion);
+                    int rightReserve = hasButton ? 160 : 40;
+                    if (hasCompanion) rightReserve += companion!.Width + 8;
+
+                    toggle.Location = new Point(20, y);
+                    toggle.Size = new Size(Math.Max(120, card.Width - rightReserve), 26);
+                    toggle.Font = fontJhengHei95R;
+                    toggle.BackColor = card.BackColor;
+
+                    if (hasCompanion) {
+                        if (companion!.Parent != card) companion.Parent = card;
+                        companion.Location = new Point(toggle.Right + 8, y);
                     }
-                    
+                    if (hasButton) {
+                        btn!.Location = new Point(card.Width - 130, y + 1);
+                        btn.Visible = true;
+                    }
+
                     visibleCount++;
                 }
                 int calculatedHeight = 60 + visibleCount * 48 + 12;

@@ -20,13 +20,16 @@ public sealed class PatchProfile
     public bool FocusLoss { get => Get(FeatureKeys.FocusLoss); set => Set(FeatureKeys.FocusLoss, value); }
     public bool FastCiviProduction { get => Get(FeatureKeys.FastCiviProduction); set => Set(FeatureKeys.FastCiviProduction, value); }
     public bool InfiniteMorale { get => Get(FeatureKeys.InfiniteMorale); set => Set(FeatureKeys.InfiniteMorale, value); }
+    public bool NoRunHpLoss { get => Get(FeatureKeys.NoRunHpLoss); set => Set(FeatureKeys.NoRunHpLoss, value); }
     public bool FreeProduction { get => Get(FeatureKeys.FreeProduction); set => Set(FeatureKeys.FreeProduction, value); }
     public bool FreeUpgrade { get => Get(FeatureKeys.FreeUpgrade); set => Set(FeatureKeys.FreeUpgrade, value); }
     public bool NoSpellCost { get => Get(FeatureKeys.NoSpellCost); set => Set(FeatureKeys.NoSpellCost, value); }
     public bool MaxPopulation { get => Get(FeatureKeys.MaxPopulation); set => Set(FeatureKeys.MaxPopulation, value); }
     public bool RomanEndless { get => Get(FeatureKeys.RomanEndless); set => Set(FeatureKeys.RomanEndless, value); }
     public bool RomanReinforcementGarrison { get => Get(FeatureKeys.RomanReinforcementGarrison); set => Set(FeatureKeys.RomanReinforcementGarrison, value); }
-    public bool VillageGarrisonQuota3x { get => Get(FeatureKeys.VillageGarrisonQuota3x); set => Set(FeatureKeys.VillageGarrisonQuota3x, value); }
+    public int VillageGarrisonQuotaMultiplier { get => Get(FeatureKeys.VillageGarrisonQuotaMultiplier); set => Set(FeatureKeys.VillageGarrisonQuotaMultiplier, value); }
+    // Legacy bool view: true means "enabled at the original ×3"; reading is true for any active multiplier.
+    public bool VillageGarrisonQuota3x { get => VillageGarrisonQuotaMultiplier > 1; set => VillageGarrisonQuotaMultiplier = value ? 3 : 1; }
     public bool Balance { get => Get(FeatureKeys.Balance); set => Set(FeatureKeys.Balance, value); }
     public bool HousingCapacity20x { get => Get(FeatureKeys.HousingCapacity20x); set => Set(FeatureKeys.HousingCapacity20x, value); }
     public bool StorageCapacity10x { get => Get(FeatureKeys.StorageCapacity10x); set => Set(FeatureKeys.StorageCapacity10x, value); }
@@ -66,6 +69,12 @@ public sealed class PatchProfile
                 : Get(FeatureKeys.EndlessAiM6);
             return RomanReinforcementGarrison || legacyEnabled;
         }
+        if (moduleId.Equals("VillageGarrisonQuota3x", StringComparison.OrdinalIgnoreCase))
+        {
+            bool legacyQuotaEnabled = EndlessAiModules.TryGetValue(moduleId, out bool legacyQuotaModuleEnabled)
+                && legacyQuotaModuleEnabled;
+            return VillageGarrisonQuotaMultiplier > 1 || legacyQuotaEnabled;
+        }
         if (EndlessAiModules.TryGetValue(moduleId, out bool enabled)) return enabled;
         if (IsLegacyCoreModule(moduleId)) return Get(FeatureKeys.EndlessAiCore);
         return Get(FeatureKeys.EndlessAi(moduleId));
@@ -83,6 +92,13 @@ public sealed class PatchProfile
             if (id.Equals("M6", StringComparison.OrdinalIgnoreCase))
             {
                 RomanReinforcementGarrison |= enabled;
+                continue;
+            }
+            if (id.Equals("VillageGarrisonQuota3x", StringComparison.OrdinalIgnoreCase))
+            {
+                // Old profiles carried a bool module selection; migrate "enabled"
+                // to the original ×3 unless a multiplier is already chosen.
+                if (enabled && VillageGarrisonQuotaMultiplier <= 1) VillageGarrisonQuotaMultiplier = 3;
                 continue;
             }
             Set(FeatureKeys.EndlessAi(id), enabled);

@@ -38,6 +38,7 @@ internal sealed class ObjdefFeatureDetector
                     options.HqHp10x = HasHqHpMultiplier(currentRows, originalRows, 10);
                     options.FastBuildUpgradeRepair = HasFastBuildUpgradeRepair(currentRows, originalRows);
                     options.ProjectileArcHeight = HasProjectileWeaponScale(currentRows, originalRows, useDrad: false);
+                    options.NoRunHpLoss = HasNoRunHpLoss(currentRows, originalRows);
                 }
 
                 // 偵測是否已套用 Balance (若有任何一個兵種屬性被修改)
@@ -429,5 +430,40 @@ internal sealed class ObjdefFeatureDetector
             }
         }
         return foundBuilding;
+    }
+
+    private static bool HasNoRunHpLoss(List<string[]> currentRows, List<string[]> originalRows)
+    {
+        var currentByName = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
+        foreach (string[] columns in currentRows)
+        {
+            if (columns.Length <= (int)ObjdefIndex.Name) continue;
+            string name = columns[(int)ObjdefIndex.Name].Trim();
+            currentByName[name] = columns;
+        }
+
+        var originalByName = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
+        foreach (string[] columns in originalRows)
+        {
+            if (columns.Length <= (int)ObjdefIndex.Name) continue;
+            string name = columns[(int)ObjdefIndex.Name].Trim();
+            originalByName[name] = columns;
+        }
+
+        string probeName = "FigRomInf00_Lanze_Schild";
+        if (currentByName.TryGetValue(probeName, out var curCols) &&
+            originalByName.TryGetValue(probeName, out var origCols))
+        {
+            if (curCols.Length > (int)ObjdefIndex.Lpsub && origCols.Length > (int)ObjdefIndex.Lpsub)
+            {
+                double curLpsub = 0, origLpsub = 0;
+                if (double.TryParse(curCols[(int)ObjdefIndex.Lpsub].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out curLpsub) &&
+                    double.TryParse(origCols[(int)ObjdefIndex.Lpsub].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out origLpsub))
+                {
+                    return origLpsub > 0 && Math.Abs(curLpsub) < 0.01;
+                }
+            }
+        }
+        return false;
     }
 }

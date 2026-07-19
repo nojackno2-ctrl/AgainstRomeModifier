@@ -1,6 +1,6 @@
 # Modifier Feature Decompilation Verification Matrix
 
-> Reviewed 2026-07-18 against all 47 entries in `FeatureRegistry.All`. This is
+> Reviewed 2026-07-19 against all 48 entries in `FeatureRegistry.All`. This is
 > a static reverse-engineering audit, not a claim that every combination has
 > been exercised in a live game. Runtime evidence is called out separately.
 
@@ -9,7 +9,7 @@
 - Every registered feature has an identified apply target and a corresponding
   detection/restore path, or is explicitly an external installation feature
   for which original-game decompilation is not applicable.
-- 43 feature IDs have an original-game EXE, data-loader, BCI, or decoded-script
+- 44 feature IDs have an original-game EXE, data-loader, BCI, or decoded-script
   evidence chain. `DgVoodoo`, `ArgmTrace`, and `ToEnglish` are external
   deployment features (`ArgmTrace` deploys the log-only argm-trace flight
   recorder; its hook targets are byte-verified in `runtime-trace-hooks.md`).
@@ -24,12 +24,15 @@
   outcome. The last column therefore never promotes static evidence to runtime
   evidence.
 
+## Verdict Details
+
 ## Stats Features
 
 | Feature ID | Actual write target | Decompilation / decoded-script evidence | Static verdict | Recorded runtime evidence |
 |---|---|---|---|---|
 | `FastCiviProduction` | `cl_script.ini` `CiviDelay` -> 500 ms | `[TribeData]` key parser, tribe storage, and runtime getter chain; `GhidraScriptIniAnalysis.java` | verified | not separately recorded |
 | `InfiniteMorale` | four `MoralsDec*` / `MoralsIncIdle` records | `cl_script.ini` key parser and tribe-value consumers | verified | not separately recorded |
+| `NoRunHpLoss` | `objdef.dau` column 208 `lpsub` -> 0.00 | objdef field table and lpsub consumer | verified | not separately recorded |
 | `Balance` | composed `objdef.dau` HP, damage, reload, VW, AW, sight, and range values | objdef field-name table, loader callbacks, weapon and movement consumers; see `objdef-fields.csv` | verified as a composition of verified fields | preset as a whole not separately recorded |
 | `FreeProduction` | `ress.ini` build/training/siege cost fields; pack horse exception preserved | `[objres]` parser and construction/training consumers in `GhidraRessAnalysis.java` and `exe-functions.md` | verified | mixed mounted-civilian quota side effect documented |
 | `FreeUpgrade` | `ress.ini` building and `[volkres]` upgrade groups | parser names the four eight-level groups and consumers | verified | not separately recorded |
@@ -45,7 +48,7 @@
 | `IdleSelect999` | EXE `0x451DC0` handler rewritten in place | UI dispatch, 1000-entry scratch list, 999-entry master selection cap, and all callers decoded | verified | verified in game 2026-07-16 |
 | `RomanEndless` | ENDL `team.dat` team 0 faction + EXE `dlg_volk` setter | team loader plus faction-selector call/data flow | verified | verified in game 2026-07-13 |
 | `RomanReinforcementGarrison` | BCI P8 threshold + P9 zero quota + `jz+0` all-unit fall-through + appended release-and-remark helper | decoded state-49/50 flow, native `s_getUnitType`, existing `s_setScriptMode(0)` release semantics, VM opcode 120 internal-call and opcode 160 arrCreate handlers | runtime verified in a fresh endless game; exact apply/idempotence/restore and opcode/target resolution on all five ENDL scripts | user confirmed soldiers, pack horses, and civilians are handed to the village and no longer retreat; long-duration behavior at P8=70 remains a separate capacity boundary |
-| `VillageGarrisonQuota3x` | four `s_searchImportantPos` calls in `Dorfverteidigung.bci` redirected to one appended x3 helper | decoded per-type quota flow and native VM opcode 34 signed multiplication | verified; exact apply/idempotence/Unknown refusal/restore covered | fresh-game runtime verification pending; deliberately Experimental and excluded from Enable All |
+| `VillageGarrisonQuota3x` | four `s_searchImportantPos` calls in `Dorfverteidigung.bci` redirected to one appended xN helper (multiplier-valued feature: 1=off, x2/x3/x5/x10 selectable; literal at helper word 14 rewrites in place) | decoded per-type quota flow and native VM opcode 34 signed multiplication | verified; exact apply/idempotence/multiplier-switch/Unknown refusal/restore covered | fresh-game runtime verification pending; deliberately Experimental and excluded from Enable All |
 | `SpellDamage5x` | six `cl_script.ini [Spells] Value` records | spell parser -> runtime table -> `s_getSpecialEffectValue` -> damage consumers | verified | verified in game 2026-07-13 |
 | `SpellHealing10x` | `KEL, Spell1, Value` 65 -> 650 | same runtime table; heal effect consumes field 5 | verified | not separately recorded |
 | `SpellResurrection` | `KEL, Spell3, Value/Value2` -> 100/100 | decoded `ak_priester.bci` passes both fields to `s_specialEffektCreateUnit` | verified | not separately recorded |
