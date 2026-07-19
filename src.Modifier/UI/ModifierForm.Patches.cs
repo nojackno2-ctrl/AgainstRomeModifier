@@ -16,7 +16,7 @@ namespace AgainstRomeModifier {
         private void BuildFeatureToggleMap() {
             featureToggles = new Dictionary<string, ModernToggle>(StringComparer.OrdinalIgnoreCase) {
                 [FeatureKeys.FocusLoss.Id] = chkFocusLoss, [FeatureKeys.FastCiviProduction.Id] = chkFastCiviProduction,
-                [FeatureKeys.InfiniteMorale.Id] = chkInfiniteMorale, [FeatureKeys.FreeProduction.Id] = chkFreeProd,
+                [FeatureKeys.InfiniteMorale.Id] = chkInfiniteMorale, [FeatureKeys.NoRunHpLoss.Id] = chkNoRunHpLoss, [FeatureKeys.FreeProduction.Id] = chkFreeProd,
                 [FeatureKeys.FreeUpgrade.Id] = chkFreeUpgrade, [FeatureKeys.NoSpellCost.Id] = chkNoSpellCost,
                 [FeatureKeys.MaxPopulation.Id] = chkMaxPopulation, [FeatureKeys.Balance.Id] = chkBalance,
                 [FeatureKeys.AllUnitsEntireMapVision.Id] = chkAllUnitsEntireMapVision,
@@ -45,7 +45,6 @@ namespace AgainstRomeModifier {
                 [FeatureKeys.EndlessAiM1.Id] = chkAiM1, [FeatureKeys.EndlessAiCore.Id] = chkAiCore,
                 [FeatureKeys.EndlessAiM5.Id] = chkAiM5,
                 [FeatureKeys.RomanReinforcementGarrison.Id] = chkRomanReinforcementGarrison,
-                [FeatureKeys.VillageGarrisonQuota3x.Id] = chkVillageGarrisonQuota3x,
             };
             FeatureRegistry.ValidateToggleIds(featureToggles.Keys);
         }
@@ -56,6 +55,7 @@ namespace AgainstRomeModifier {
             }
             if (category == FeatureCategory.Compat) {
                 chkGameSpeed.Checked = false;
+                chkVillageGarrisonQuota3x.Checked = false;
                 chkDgVoodoo.Checked = patchEngine.IsDgVoodooInstalled(gamePath);
                 chkArgmTrace.Checked = patchEngine.IsArgmTraceInstalled(gamePath);
             }
@@ -66,6 +66,9 @@ namespace AgainstRomeModifier {
             foreach (var (id, toggle) in featureToggles) profile.Set(id, FeatureValue.Of(toggle.Checked));
             if (forceBalance) profile.Balance = true;
             profile.Set(FeatureKeys.GameSpeed, chkGameSpeed.Checked ? 10 : 1);
+            profile.Set(
+                FeatureKeys.VillageGarrisonQuotaMultiplier,
+                chkVillageGarrisonQuota3x.Checked ? SelectedVillageGarrisonQuotaMultiplier() : 1);
             profile.Set(FeatureKeys.CustomUnitStats, customUnitStats);
             return profile;
         }
@@ -262,6 +265,20 @@ namespace AgainstRomeModifier {
         /// <summary>設定遊戲 10 倍加速開關的狀態。</summary>
         private void SetGameSpeedSelection(int multiplier) {
             chkGameSpeed.Checked = multiplier > 1;
+        }
+
+        /// <summary>取得下拉選單目前選擇的村莊駐軍配額倍率。</summary>
+        private int SelectedVillageGarrisonQuotaMultiplier() {
+            int index = cboVillageGarrisonQuotaMultiplier.SelectedIndex;
+            if (index < 0 || index >= VillageGarrisonQuotaMultiplierChoices.Length) return 3;
+            return VillageGarrisonQuotaMultiplierChoices[index];
+        }
+
+        /// <summary>依偵測到的倍率同步駐軍配額開關與下拉選單（1 = 停用，僅取消勾選、保留選擇）。</summary>
+        private void SetVillageGarrisonQuotaSelection(int multiplier) {
+            chkVillageGarrisonQuota3x.Checked = multiplier > 1;
+            int index = Array.IndexOf(VillageGarrisonQuotaMultiplierChoices, multiplier);
+            if (index >= 0) cboVillageGarrisonQuotaMultiplier.SelectedIndex = index;
         }
 
         private async void RestoreStatsOnly() {

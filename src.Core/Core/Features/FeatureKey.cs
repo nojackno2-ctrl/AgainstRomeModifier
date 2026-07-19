@@ -40,6 +40,7 @@ public static class FeatureKeys
 {
     public static readonly FeatureKey<bool> FastCiviProduction = FeatureKey<bool>.Bool("FastCiviProduction");
     public static readonly FeatureKey<bool> InfiniteMorale = FeatureKey<bool>.Bool("InfiniteMorale");
+    public static readonly FeatureKey<bool> NoRunHpLoss = FeatureKey<bool>.Bool("NoRunHpLoss");
     public static readonly FeatureKey<bool> Balance = FeatureKey<bool>.Bool("Balance");
     public static readonly FeatureKey<bool> FreeProduction = FeatureKey<bool>.Bool("FreeProduction");
     public static readonly FeatureKey<bool> FreeUpgrade = FeatureKey<bool>.Bool("FreeUpgrade");
@@ -55,7 +56,9 @@ public static class FeatureKeys
     public static readonly FeatureKey<bool> IdleSelect999 = FeatureKey<bool>.Bool("IdleSelect999");
     public static readonly FeatureKey<bool> RomanEndless = FeatureKey<bool>.Bool("RomanEndless");
     public static readonly FeatureKey<bool> RomanReinforcementGarrison = FeatureKey<bool>.Bool("RomanReinforcementGarrison");
-    public static readonly FeatureKey<bool> VillageGarrisonQuota3x = FeatureKey<bool>.Bool("VillageGarrisonQuota3x");
+    // Historical id kept for module/profile migration; the value is now the
+    // quota multiplier itself (1 = disabled, supported values 2/3/5/10).
+    public static readonly FeatureKey<int> VillageGarrisonQuotaMultiplier = FeatureKey<int>.Int("VillageGarrisonQuota3x", 1);
     public static readonly FeatureKey<bool> SpellDamage5x = FeatureKey<bool>.Bool("SpellDamage5x");
     public static readonly FeatureKey<bool> SpellHealing10x = FeatureKey<bool>.Bool("SpellHealing10x");
     public static readonly FeatureKey<bool> SpellResurrection = FeatureKey<bool>.Bool("SpellResurrection");
@@ -95,7 +98,6 @@ public static class FeatureKeys
         "M4" => EndlessAiM4,
         "M5" => EndlessAiM5,
         "M6" => EndlessAiM6,
-        "VILLAGEGARRISONQUOTA3X" => VillageGarrisonQuota3x,
         _ => throw new ArgumentOutOfRangeException(nameof(moduleId), moduleId, "Unknown Endless AI module id."),
     };
 }

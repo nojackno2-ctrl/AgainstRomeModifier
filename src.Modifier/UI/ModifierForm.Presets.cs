@@ -15,6 +15,7 @@ namespace AgainstRomeModifier {
             chkNoSpellCost.Checked = true;
             chkNoSpellAltar.Checked = true;
             chkInfiniteMorale.Checked = true;
+            chkNoRunHpLoss.Checked = true;
             chkHousingCapacity20x.Checked = true;
             chkStorageCapacity10x.Checked = true;
             chkHqHp10x.Checked = true;
@@ -58,6 +59,7 @@ namespace AgainstRomeModifier {
             chkNoSpellCost.Checked = false;
             chkNoSpellAltar.Checked = false;
             chkInfiniteMorale.Checked = false;
+            chkNoRunHpLoss.Checked = false;
             chkHousingCapacity20x.Checked = false;
             chkStorageCapacity10x.Checked = false;
             chkHqHp10x.Checked = false;
@@ -70,7 +72,7 @@ namespace AgainstRomeModifier {
             chkAiCore.Checked = false;
             chkAiM5.Checked = false;
             chkRomanReinforcementGarrison.Checked = false;
-            chkVillageGarrisonQuota3x.Checked = false;
+            SetVillageGarrisonQuotaSelection(1);
             chkVillageBuildRange.Checked = false;
             chkDgVoodoo.Checked = false; // 相容性層關閉，以達到最乾淨的還原
             chkArgmTrace.Checked = false; // 除錯記錄器一併關閉，套用時會移除 version.dll

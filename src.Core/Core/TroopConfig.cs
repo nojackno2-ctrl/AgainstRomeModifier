@@ -31,7 +31,8 @@ namespace AgainstRomeModifier {
         HousingCapacity = 156,
         Bmovs = 191,
         Weapon1Dtyp = 199,
-        StorageCapacity = 42
+        StorageCapacity = 42,
+        Lpsub = 208
     }
 
     /// <summary>

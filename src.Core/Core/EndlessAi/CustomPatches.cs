@@ -1033,16 +1033,31 @@ namespace AgainstRomeModifier
     // ==========================================
     // P20: village garrison quota multiplier
     // ==========================================
-    public sealed class P20_VillageGarrisonQuota3xPatch : IEndlessPatch
+    public sealed class P20_VillageGarrisonQuotaPatch : IEndlessPatch
     {
         public string Id => "P20";
         public string TargetPattern => "SYSTEM/CLAK/SCRIPT/Dorfverteidigung.bci";
+
+        public static readonly int[] SupportedMultipliers = { 2, 3, 5, 10 };
+
+        private int _multiplier = 3;
+        public int Multiplier
+        {
+            get => _multiplier;
+            set
+            {
+                if (Array.IndexOf(SupportedMultipliers, value) < 0)
+                    throw new ArgumentOutOfRangeException(nameof(value), value, "Unsupported village-garrison quota multiplier.");
+                _multiplier = value;
+            }
+        }
 
         private const int ExternalSymbolOpcode = 128;
         private const int InternalCallOpcode = 120;
         private const int SearchImportantPosSymbol = 151;
         private const int CallOpcodeWordIndex = 4;
         private const int CallOperandWordIndex = 5;
+        private const int MultiplierWordIndex = 14;
 
         private static readonly int?[][] CallSiteSignatures =
         {
@@ -1052,21 +1067,38 @@ namespace AgainstRomeModifier
             new int?[] { 66, 4, 81, 14, null, null, 73, -2, 86, 91, 65 },
         };
 
-        // int quota3x(int importantPosType, int outputArray) {
-        //     return s_searchImportantPos(importantPosType, outputArray) * 3;
+        // int quotaXn(int importantPosType, int outputArray) {
+        //     return s_searchImportantPos(importantPosType, outputArray) * N;
         // }
         // Opcode 34 is the VM's signed int multiplication handler. The helper
         // is appended to the code section and all four same-size call sites are
-        // redirected to it, so no existing branch offsets move.
-        internal static readonly int[] Quota3xHelperWords =
+        // redirected to it, so no existing branch offsets move. The multiplier
+        // literal sits at MultiplierWordIndex, so switching multipliers is an
+        // in-place literal rewrite that never moves code.
+        private static readonly int[] HelperWordsTemplate =
         {
             74, 94, 73, 2,
             90, -4, 90, -3,
             128, SearchImportantPosSymbol, 73, -2, 86,
-            66, 3, 34,
+            66, 3 /* multiplier literal */, 34,
             87, 112, 0,
             95, 75, 121,
         };
+
+        internal static int[] HelperWords(int multiplier)
+        {
+            int[] words = (int[])HelperWordsTemplate.Clone();
+            words[MultiplierWordIndex] = multiplier;
+            return words;
+        }
+
+        internal static bool TryReadInstalledMultiplier(byte[] decompressed, out int multiplier)
+        {
+            multiplier = 1;
+            if (!TryLocateHelper(decompressed, out int helperOffset, out _)) return false;
+            multiplier = BitConverter.ToInt32(decompressed, helperOffset + MultiplierWordIndex * sizeof(int));
+            return true;
+        }
 
         public PatchState Detect(byte[] decompressed)
         {
@@ -1074,8 +1106,14 @@ namespace AgainstRomeModifier
                 return PatchState.Unknown;
 
             bool hasHelper = TryLocateHelper(decompressed, out int helperOffset, out _);
+            int installedMultiplier = hasHelper
+                ? BitConverter.ToInt32(decompressed, helperOffset + MultiplierWordIndex * sizeof(int))
+                : 0;
+            if (hasHelper && Array.IndexOf(SupportedMultipliers, installedMultiplier) < 0)
+                return PatchState.Unknown;
+
             bool allOriginal = true;
-            bool allUltimate = hasHelper;
+            bool allRedirected = hasHelper;
 
             foreach (int site in sites)
             {
@@ -1087,17 +1125,18 @@ namespace AgainstRomeModifier
 
                 bool original = callOpcode == ExternalSymbolOpcode &&
                                 callOperand == SearchImportantPosSymbol;
-                bool ultimate = hasHelper &&
+                bool redirected = hasHelper &&
                                 callOpcode == InternalCallOpcode &&
                                 callOperand == CalculateInternalCallOperand(callOpcodeOffset, helperOffset);
-                if (!original && !ultimate) return PatchState.Unknown;
+                if (!original && !redirected) return PatchState.Unknown;
 
                 allOriginal &= original;
-                allUltimate &= ultimate;
+                allRedirected &= redirected;
             }
 
             if (allOriginal && !hasHelper) return PatchState.Original;
-            if (allUltimate) return PatchState.Ultimate;
+            if (allRedirected)
+                return installedMultiplier == Multiplier ? PatchState.Ultimate : PatchState.Legacy;
             return PatchState.Unknown;
         }
 
@@ -1114,7 +1153,21 @@ namespace AgainstRomeModifier
 
             if (enabled)
             {
-                int helperOffset = InsertHelper(ref decompressed);
+                if (state == PatchState.Legacy)
+                {
+                    // A different supported multiplier is installed: switch the
+                    // helper's literal in place without moving any code.
+                    if (!TryLocateHelper(decompressed, out int installedHelperOffset, out _))
+                        throw new InvalidOperationException("P20 village-garrison quota helper is missing.");
+                    int literalOffset = installedHelperOffset + MultiplierWordIndex * sizeof(int);
+                    int installed = BitConverter.ToInt32(decompressed, literalOffset);
+                    BciPattern.WriteBciInt32(
+                        decompressed, literalOffset, installed, Multiplier,
+                        "P20 village quota multiplier literal");
+                    return true;
+                }
+
+                int helperOffset = InsertHelper(ref decompressed, Multiplier);
                 foreach (int site in sites)
                 {
                     int callOpcodeOffset = site + CallOpcodeWordIndex * sizeof(int);
@@ -1145,7 +1198,7 @@ namespace AgainstRomeModifier
                     decompressed, callOperandOffset, expectedOperand, SearchImportantPosSymbol,
                     "P20 restore s_searchImportantPos symbol");
             }
-            RemoveBytes(ref decompressed, existingHelperOffset, Quota3xHelperWords.Length * sizeof(int), hasBciHeader);
+            RemoveBytes(ref decompressed, existingHelperOffset, HelperWordsTemplate.Length * sizeof(int), hasBciHeader);
             return true;
         }
 
@@ -1190,12 +1243,12 @@ namespace AgainstRomeModifier
             return sites;
         }
 
-        private static int InsertHelper(ref byte[] decompressed)
+        private static int InsertHelper(ref byte[] decompressed, int multiplier)
         {
             bool hasBciHeader = TryGetBciCodeEnd(decompressed, out int codeEnd);
             if (!hasBciHeader) codeEnd = decompressed.Length;
 
-            byte[] helper = WordsToBytes(Quota3xHelperWords);
+            byte[] helper = WordsToBytes(HelperWords(multiplier));
             byte[] expanded = new byte[decompressed.Length + helper.Length];
             Buffer.BlockCopy(decompressed, 0, expanded, 0, codeEnd);
             Buffer.BlockCopy(helper, 0, expanded, codeEnd, helper.Length);
@@ -1214,12 +1267,13 @@ namespace AgainstRomeModifier
             hasBciHeader = TryGetBciCodeEnd(decompressed, out int codeEnd);
             if (!hasBciHeader) codeEnd = decompressed.Length;
 
-            int helperLength = Quota3xHelperWords.Length * sizeof(int);
+            int helperLength = HelperWordsTemplate.Length * sizeof(int);
             helperOffset = codeEnd - helperLength;
             if (helperOffset < 0) return false;
-            for (int i = 0; i < Quota3xHelperWords.Length; i++)
+            for (int i = 0; i < HelperWordsTemplate.Length; i++)
             {
-                if (BitConverter.ToInt32(decompressed, helperOffset + i * sizeof(int)) != Quota3xHelperWords[i])
+                if (i == MultiplierWordIndex) continue; // any multiplier literal; validated by Detect
+                if (BitConverter.ToInt32(decompressed, helperOffset + i * sizeof(int)) != HelperWordsTemplate[i])
                     return false;
             }
             return true;

@@ -1,4 +1,4 @@
-# AI Handoff - Live Project Memory
+﻿# AI Handoff - Live Project Memory
 
 ## Experimental features tab and dynamic promotion (2026-07-18, complete & verified)
 
@@ -271,6 +271,14 @@
 - Final modifier-side validation succeeded in isolated Release artifacts: `AgainstRomeModifier.slnx` built with 0 warnings/errors and full xUnit passed 209/209 with no skips. `data/game_schema.json` parses, `git diff --check` is clean apart from expected line-ending notices, and UTF-8 BOM remains on `AI_HANDOFF.md`, `TechDoc.md`, and `README.zh-TW.md`. Static patch/apply/detect/restore/UI/docs work is complete. The installed game was not accessed or modified; actual expanded viewport, IGM fallback layout, mouse hit-testing, edge scrolling, dialogs, and minimap still require user in-game verification before the feature can be called runtime-verified.
 - A project-only standard Release build of `src.Modifier/AgainstRomeModifier.csproj` also succeeded with 0 warnings/errors, so the normal `src.Modifier/bin/Release/net8.0-windows` modifier output now contains the feature despite the separately running Map Editor locking its own output directory.
 
+## Unit running no HP loss feature (2026-07-19)
+
+- User requested a feature to prevent units from losing HP when running (Force Marching / Rennen).
+- Analysis: in Against Rome, military units and civilians lose HP when running or at zero morale. This depletion is governed by the `lpsub` (LP Subtract) field (column 208) in `objdef.dau`.
+- Implementation: added `NoRunHpLoss` toggle. When enabled, it patches `lpsub` from `1.00` to `0.00` for all military and civilian figures (e.g. `FigZivMan00_Zivilist`, `FigRomInf00_Lanze_Schild`).
+- Detector: verifies `NoRunHpLoss` status by checking if `FigRomInf00_Lanze_Schild`'s `lpsub` has been patched from `1.00` to `0.00`.
+- UI & Test: fully wired into WinForms `pnlCombatCard` UI and bilingual resource tables. Added/updated tests in `FeatureRegistryTests.cs` and `ObjdefFeatureDetectorTests.cs`. All 268 tests pass successfully.
+
 ## All-units entire-map vision feature (2026-07-16)
 
 - User requested a new all-unit full-map vision option. Modifier-side implementation and automated validation are complete; actual in-game behavior remains unverified.
@@ -513,14 +521,14 @@ Build a dedicated map editor that can eventually provide an Age-of-Empires-II-li
 - Endless military mode: safe values are party count `20..20`, reinforcement wait and scheduler interval `30000 ms`, bounded active-party limit `8`, and the 60-second save/load deadline-rollback guard. The runtime has only 20 NPC-job slots. Do not restore the rejected unconditional gate bypass. Village/settlement mode remains separate unless explicitly requested.
 - CI: `.github/workflows/ci.yml` builds all three projects on Windows and runs xUnit. `EnableWindowsTargeting` is set for cross-platform restore. The optional GitHub automatic dependency-submission setting may still emit an external opaque `HttpError`; this is not a project build/test failure.
 
-## Latest Local Verification (2026-07-15)
+## Latest Local Verification (2026-07-19)
 
 ```powershell
 dotnet build
 # Result: 0 warnings, 0 errors
 
 dotnet test
-# Result: 186 passed, 0 failed, 0 skipped
+# Result: 268 passed, 0 failed, 0 skipped
 ```
 
 ## Active Constraints

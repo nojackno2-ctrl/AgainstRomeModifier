@@ -19,6 +19,7 @@ public static class FeatureRegistry
     public static IReadOnlyList<FeatureDefinition> All { get; } = new FeatureDefinition[]
     {
         Bool(FeatureKeys.FastCiviProduction, FeatureCategory.Stats), Bool(FeatureKeys.InfiniteMorale, FeatureCategory.Stats),
+        Bool(FeatureKeys.NoRunHpLoss, FeatureCategory.Stats),
         Bool(FeatureKeys.Balance, FeatureCategory.Stats), Bool(FeatureKeys.FreeProduction, FeatureCategory.Stats),
         Bool(FeatureKeys.FreeUpgrade, FeatureCategory.Stats), Bool(FeatureKeys.NoSpellCost, FeatureCategory.Stats),
         Bool(FeatureKeys.HousingCapacity20x, FeatureCategory.Stats), Bool(FeatureKeys.StorageCapacity10x, FeatureCategory.Stats),
@@ -28,7 +29,7 @@ public static class FeatureRegistry
         Bool(FeatureKeys.IdleSelect999, FeatureCategory.Stats),
         Bool(FeatureKeys.RomanEndless, FeatureCategory.Stats),
         Bool(FeatureKeys.RomanReinforcementGarrison, FeatureCategory.Compat),
-        Bool(FeatureKeys.VillageGarrisonQuota3x, FeatureCategory.Compat),
+        new(FeatureKeys.VillageGarrisonQuotaMultiplier, FeatureCategory.Compat, FeatureControlKind.Specialized),
         Bool(FeatureKeys.SpellDamage5x, FeatureCategory.Stats), Bool(FeatureKeys.SpellHealing10x, FeatureCategory.Stats),
         Bool(FeatureKeys.SpellResurrection, FeatureCategory.Stats), Bool(FeatureKeys.GeneralSkills, FeatureCategory.Stats),
         Bool(FeatureKeys.LeaderGlory, FeatureCategory.Stats),

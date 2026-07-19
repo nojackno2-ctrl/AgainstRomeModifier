@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -100,6 +100,9 @@ namespace AgainstRomeModifier {
         private string presetFileName = "";
         private ModernToggle chkToEng = null!;
         private ModernToggle chkInfiniteMorale = null!;
+        private ModernToggle chkNoRunHpLoss = null!;
+        private ComboBox cboVillageGarrisonQuotaMultiplier = null!;
+        private static readonly int[] VillageGarrisonQuotaMultiplierChoices = { 2, 3, 5, 10 };
         private ModernToggle chkSpellDamage5x = null!;
         private ModernToggle chkSpellHealing10x = null!;
         private ModernToggle chkSpellResurrection = null!;
@@ -122,12 +125,13 @@ namespace AgainstRomeModifier {
             FeatureKeys.SpellResurrection.Id,
             FeatureKeys.GeneralSkills.Id,
             FeatureKeys.LeaderGlory.Id,
-            FeatureKeys.VillageGarrisonQuota3x.Id,
+            FeatureKeys.VillageGarrisonQuotaMultiplier.Id,
             FeatureKeys.GameSpeed.Id,
             FeatureKeys.ArgmTrace.Id
         };
         private readonly Dictionary<ModernToggle, Panel> experimentalToggleOriginalParents = new();
         private readonly Dictionary<ModernToggle, Button> promoteDemoteButtons = new();
+        private readonly Dictionary<ModernToggle, Control> toggleCompanions = new();
 
         // 所有功能開啟/關閉按鈕
         private Button btnEnableAll = null!;
@@ -821,6 +825,16 @@ namespace AgainstRomeModifier {
             };
             pnlCombatCard.Controls.Add(chkInfiniteMorale);
 
+            chkNoRunHpLoss = new ModernToggle {
+                Text = "單位跑步不扣血",
+                Location = new Point(25, 360),
+                Size = new Size(310, 25),
+                Checked = false,
+                BackColor = Color.Transparent,
+                Font = fontJhengHei10B
+            };
+            pnlCombatCard.Controls.Add(chkNoRunHpLoss);
+
             chkBalance = new ModernToggle {
                 Text = Loc.Get("EnableBalance"),
                 Location = new Point(25, 400),
@@ -960,11 +974,24 @@ namespace AgainstRomeModifier {
             chkAiM5 = new ModernToggle { Text = Loc.Get("AiM5"), Size = new Size(260, 26), Checked = false, BackColor = Color.Transparent, Font = fontJhengHei10B };
             chkRomanReinforcementGarrison = new ModernToggle { Text = Loc.Get("RomanReinforcementGarrison"), Size = new Size(310, 26), Checked = false, BackColor = Color.Transparent, Font = fontJhengHei10B };
             chkVillageGarrisonQuota3x = new ModernToggle { Text = Loc.Get("VillageGarrisonQuota3x"), Size = new Size(310, 26), Checked = false, BackColor = Color.Transparent, Font = fontJhengHei10B };
+            cboVillageGarrisonQuotaMultiplier = new ComboBox {
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                Size = new Size(64, 26),
+                FlatStyle = FlatStyle.Flat,
+                BackColor = Color.FromArgb(24, 30, 42),
+                ForeColor = Color.FromArgb(0, 220, 255),
+                Font = fontJhengHei10B
+            };
+            foreach (int choice in VillageGarrisonQuotaMultiplierChoices)
+                cboVillageGarrisonQuotaMultiplier.Items.Add("×" + choice);
+            cboVillageGarrisonQuotaMultiplier.SelectedIndex = Array.IndexOf(VillageGarrisonQuotaMultiplierChoices, 3);
+            toggleCompanions[chkVillageGarrisonQuota3x] = cboVillageGarrisonQuotaMultiplier;
             pnlAiCard.Controls.Add(chkAiM1);
             pnlAiCard.Controls.Add(chkAiCore);
             pnlAiCard.Controls.Add(chkAiM5);
             pnlAiCard.Controls.Add(chkRomanReinforcementGarrison);
             pnlAiCard.Controls.Add(chkVillageGarrisonQuota3x);
+            pnlAiCard.Controls.Add(cboVillageGarrisonQuotaMultiplier);
 
             pnlVillagerCard = new Panel {
                 Location = new Point(0, 0),
@@ -1506,6 +1533,7 @@ namespace AgainstRomeModifier {
 
         private string GetFeatureIdForToggle(ModernToggle toggle) {
             if (toggle == chkGameSpeed) return FeatureKeys.GameSpeed.Id;
+            if (toggle == chkVillageGarrisonQuota3x) return FeatureKeys.VillageGarrisonQuotaMultiplier.Id;
             return featureToggles.First(x => x.Value == toggle).Key;
         }
 

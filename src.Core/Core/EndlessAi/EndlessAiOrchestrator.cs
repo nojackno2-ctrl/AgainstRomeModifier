@@ -19,7 +19,31 @@ namespace AgainstRomeModifier
 
         public List<EndlessAiModule> UserModules { get; }
 
+        private readonly P20_VillageGarrisonQuotaPatch _p20;
         private readonly Dictionary<string, BciScriptFile> _fileCache = new Dictionary<string, BciScriptFile>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// 設定村莊駐軍配額倍率（P20 helper 的乘法字面值）。1 表示停用，不改變目前選擇；
+        /// 其餘值必須是 P20 支援的倍率（2/3/5/10）。
+        /// </summary>
+        public void SetVillageGarrisonQuotaMultiplier(int multiplier)
+        {
+            if (multiplier <= 1) return;
+            _p20.Multiplier = multiplier;
+        }
+
+        /// <summary>
+        /// 讀回目前安裝在 Dorfverteidigung.bci 中的駐軍配額倍率；未套用（或無法辨識）時回傳 1。
+        /// </summary>
+        public int DetectVillageGarrisonQuotaMultiplier(string gamePath)
+        {
+            var paths = ResolvePaths(gamePath, _p20.TargetPattern);
+            if (paths.Count != 1) return 1;
+            BciScriptFile file = GetOrCreateFile(paths[0]);
+            return P20_VillageGarrisonQuotaPatch.TryReadInstalledMultiplier(file.DecompressedBytes, out int multiplier)
+                ? multiplier
+                : 1;
+        }
 
         public EndlessAiOrchestrator()
         {
@@ -175,7 +199,7 @@ namespace AgainstRomeModifier
 
             // P14: 強制還原已被否決的修補
             var p14 = new P14_ForcedRestorePatch();
-            var p20 = new P20_VillageGarrisonQuota3xPatch();
+            _p20 = new P20_VillageGarrisonQuotaPatch();
 
             M1 = new EndlessAiModule("M1", "增援規模", new List<IEndlessPatch> { p1, p10, p12 });
             M2 = new EndlessAiModule("M2", "增援節奏", new List<IEndlessPatch> { p3, p6, p2 });
@@ -188,8 +212,8 @@ namespace AgainstRomeModifier
             M6 = new EndlessAiModule("M6", "羅馬增援士兵留守", new List<IEndlessPatch> { p8, p9 });
             VillageGarrisonQuota3x = new EndlessAiModule(
                 "VillageGarrisonQuota3x",
-                "村莊 AI 駐軍配額 3 倍",
-                new List<IEndlessPatch> { p20 });
+                "村莊 AI 駐軍配額倍率",
+                new List<IEndlessPatch> { _p20 });
             R0 = new EndlessAiModule("R0", "常駐修復", new List<IEndlessPatch> { p14, p15 });
 
             RespawnCore = new EndlessAiModule(

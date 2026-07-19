@@ -78,6 +78,7 @@ namespace AgainstRomeModifier {
             chkNoSpellCost.Text = Loc.Get("NoSpellCost");
             chkNoSpellAltar.Text = Loc.Get("NoSpellAltar");
             chkInfiniteMorale.Text = Loc.Get("InfiniteMorale");
+            chkNoRunHpLoss.Text = Loc.Get("NoRunHpLoss");
             lblGamePath.Text = Loc.Get("GamePath");
             btnBrowseGamePath.Text = Loc.Get("Browse");
             btnLoadCurrent.Text = Loc.Get("LoadCurrent");
@@ -154,6 +155,7 @@ namespace AgainstRomeModifier {
                 myToolTip.SetToolTip(chkFreeUpgrade, Loc.Get("FreeUpgradeTip"));
                 myToolTip.SetToolTip(chkNoSpellCost, Loc.Get("NoSpellCostTip"));
                 myToolTip.SetToolTip(chkInfiniteMorale, Loc.Get("InfiniteMoraleTip"));
+                myToolTip.SetToolTip(chkNoRunHpLoss, Loc.Get("NoRunHpLossTip"));
                 myToolTip.SetToolTip(chkBalance, Loc.Get("BalanceTip"));
                 myToolTip.SetToolTip(chkAllUnitsEntireMapVision, Loc.Get("AllUnitsEntireMapVisionTip"));
                 myToolTip.SetToolTip(chkNativeWidescreen1920x1080, Loc.Get("NativeWidescreen1920x1080Tip"));
@@ -167,6 +169,7 @@ namespace AgainstRomeModifier {
                 myToolTip.SetToolTip(chkRomanEndless, Loc.Get("RomanEndlessTip"));
                 myToolTip.SetToolTip(chkRomanReinforcementGarrison, Loc.Get("RomanReinforcementGarrisonTip"));
                 myToolTip.SetToolTip(chkVillageGarrisonQuota3x, Loc.Get("VillageGarrisonQuota3xTip"));
+                myToolTip.SetToolTip(cboVillageGarrisonQuotaMultiplier, Loc.Get("VillageGarrisonQuota3xTip"));
                 myToolTip.SetToolTip(chkNoSpellAltar, Loc.Get("NoSpellAltarTip"));
                 myToolTip.SetToolTip(chkMaxPopulation, Loc.Get("MaxPopulationTip"));
                 myToolTip.SetToolTip(chkHousingCapacity20x, Loc.Get("HousingCapacity20xTip"));

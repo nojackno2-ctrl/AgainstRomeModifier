@@ -698,6 +698,7 @@ namespace AgainstRomeModifier {
                     chkSpellEntireMap.CheckedChanged += ChkSpellEntireMap_CheckedChanged;
                     chkSpellRange3x.CheckedChanged += ChkSpellRange3x_CheckedChanged;
                     chkGameSpeed.Checked = profile.GameSpeed > 1;
+                    SetVillageGarrisonQuotaSelection(profile.VillageGarrisonQuotaMultiplier);
 
                     LoadDefaultStatsData();
                 }

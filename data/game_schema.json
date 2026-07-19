@@ -188,16 +188,18 @@
       },
       "villageGarrisonQuota3x": {
         "featureKey": "VillageGarrisonQuota3x",
+        "featureValueSemantics": "The feature value is the quota multiplier itself: 1 = disabled; supported multipliers 2/3/5/10 (UI dropdown). The historical id spelling is kept for migration.",
         "patchId": "P20",
         "status": "static-and-automated-verified-runtime-pending",
         "target": "SYSTEM/CLAK/SCRIPT/Dorfverteidigung.bci",
         "callCodeOffsets": ["0xD350", "0xD37C", "0xD3A8", "0xD3D4"],
         "originalCalls": "s_searchImportantPos(symbol #151) for ImportantPos types 1..4",
         "originalQuota": "count(IPOS01)+count(IPOS02)+count(IPOS03)+count(IPOS04), maintained separately by unit type",
-        "ultimateBehavior": "All four exact calls redirect through opcode-120 internal calls to one appended helper that returns originalResult * 3 using native-confirmed signed multiply opcode 34.",
+        "ultimateBehavior": "All four exact calls redirect through opcode-120 internal calls to one appended helper that returns originalResult * N using native-confirmed signed multiply opcode 34. The multiplier literal is helper word 14; switching supported multipliers is an in-place literal rewrite that never moves code.",
+        "supportedMultipliers": [2, 3, 5, 10],
         "helperSizeBytes": 88,
-        "relationshipToM1": "Independent: M1 changes members per newly created squad from 6 to 20; this feature triples the dynamic squad-count quotas.",
-        "unknownPolicy": "Only all-original calls or all four exact helper targets plus the exact helper at code end are recognized; mixed, malformed, duplicated, or foreign targets are Unknown and are never written.",
+        "relationshipToM1": "Independent: M1 changes members per newly created squad from 6 to 20; this feature multiplies the dynamic squad-count quotas.",
+        "unknownPolicy": "Only all-original calls or all four exact helper targets plus the exact helper (any supported multiplier literal at word 14) at code end are recognized; a supported literal differing from the current selection is Legacy and migrates in place; unsupported literals, mixed, malformed, duplicated, or foreign targets are Unknown and are never written.",
         "runtimeBoundary": "Fresh-game behavior, useful placement of surplus squads, and long-run performance remain pending; excluded from Enable All."
       },
       "spawnJobs": {
