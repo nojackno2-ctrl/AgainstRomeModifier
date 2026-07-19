@@ -20,6 +20,7 @@ internal sealed class MapCanvasControl : Control
     private int _dimension;
     private int _hoverX = -1, _hoverY = -1;
     private bool _painting;
+    private bool _movingSceneObject;
     private bool _panning;
     private Point _panStart;
     private PointF _pan = PointF.Empty;
@@ -29,6 +30,7 @@ internal sealed class MapCanvasControl : Control
     public string? BrushTexture { get; set; }
     public int BrushSize { get; set; } = 1;
     public bool EditingEnabled { get; set; }
+    public bool SceneMoveEnabled { get; set; }
     public bool ShowGrid { get; set; } = true;
     public bool ShowObjects { get; set; } = true;
     public int SceneObjectCount => _sceneObjects.Count;
@@ -36,6 +38,7 @@ internal sealed class MapCanvasControl : Control
     public event EventHandler<TileHoverEventArgs>? TileHovered;
     public event EventHandler<TextureSampleEventArgs>? TextureSampled;
     public event EventHandler? StrokeEnded;
+    public event EventHandler<SceneObjectMoveEventArgs>? SceneObjectMoved;
 
     public MapCanvasControl()
     {
@@ -195,6 +198,11 @@ internal sealed class MapCanvasControl : Control
             return;
         }
         if (e.Button != MouseButtons.Left) return;
+        if (SceneMoveEnabled)
+        {
+            _movingSceneObject = TryMoveSceneObject(e.Location, completed: false);
+            return;
+        }
         _painting = true; _paintedInDrag.Clear(); TryPaint(e.Location);
     }
 
@@ -211,7 +219,8 @@ internal sealed class MapCanvasControl : Control
             TileHovered?.Invoke(this, new TileHoverEventArgs(x, y, _textures?[y * _dimension + x]));
         }
         else if (_hoverX != -1) { _hoverX = _hoverY = -1; if (EditingEnabled) Invalidate(); }
-        if (_painting && e.Button == MouseButtons.Left) TryPaint(e.Location);
+        if (_movingSceneObject && e.Button == MouseButtons.Left) TryMoveSceneObject(e.Location, completed: false);
+        else if (_painting && e.Button == MouseButtons.Left) TryPaint(e.Location);
     }
 
     protected override void OnMouseLeave(EventArgs e)
@@ -225,7 +234,8 @@ internal sealed class MapCanvasControl : Control
     {
         base.OnMouseUp(e);
         bool wasPainting = _painting;
-        _painting = false; _panning = false; Cursor = Cursors.Cross; _paintedInDrag.Clear();
+        if (_movingSceneObject && e.Button == MouseButtons.Left) TryMoveSceneObject(e.Location, completed: true);
+        _painting = false; _movingSceneObject = false; _panning = false; Cursor = Cursors.Cross; _paintedInDrag.Clear();
         if (wasPainting) StrokeEnded?.Invoke(this, EventArgs.Empty);
     }
 
@@ -247,6 +257,12 @@ internal sealed class MapCanvasControl : Control
         _pan = new PointF(
             centerX - fitted.X - (fitted.Width - width) / 2f - (tileX + .5f) / _dimension * width,
             centerY - fitted.Y - (fitted.Height - height) / 2f - (tileY + .5f) / _dimension * height);
+        Invalidate();
+    }
+
+    public void UpdateSceneObjects(IReadOnlyList<MapSceneObject> sceneObjects)
+    {
+        _sceneObjects = sceneObjects;
         Invalidate();
     }
 
@@ -278,6 +294,14 @@ internal sealed class MapCanvasControl : Control
         if (!_paintedInDrag.Add(index)) return;
         TexturePainted?.Invoke(this, new TexturePaintEventArgs(x, y, _textures[index], BrushTexture));
         Invalidate();
+    }
+
+    private bool TryMoveSceneObject(Point location, bool completed)
+    {
+        if (!EditingEnabled || !SceneMoveEnabled || !TryGetTile(location, out int x, out int y)) return false;
+        float worldUnitsPerTile = SdlSceneCatalog.WorldUnitsPerMapPixel * (SdlSceneCatalog.MapPixelSize / (float)_dimension);
+        SceneObjectMoved?.Invoke(this, new SceneObjectMoveEventArgs((x + .5f) * worldUnitsPerTile, (y + .5f) * worldUnitsPerTile, completed));
+        return true;
     }
 
     private bool TryGetTile(Point location, out int x, out int y)
@@ -489,4 +513,12 @@ internal sealed class TextureSampleEventArgs : EventArgs
     public int X { get; }
     public int Y { get; }
     public string Texture { get; }
+}
+
+internal sealed class SceneObjectMoveEventArgs : EventArgs
+{
+    public SceneObjectMoveEventArgs(float worldX, float worldZ, bool completed) { WorldX = worldX; WorldZ = worldZ; Completed = completed; }
+    public float WorldX { get; }
+    public float WorldZ { get; }
+    public bool Completed { get; }
 }
