@@ -9,6 +9,51 @@ namespace AgainstRomeModifier.Tests;
 public sealed class MapEditor3DTests
 {
     [Fact]
+    public void Unified_entrypoint_parses_direct_map_editor_arguments()
+    {
+        AgainstRomeModifier.Program.StartupOptions options = AgainstRomeModifier.Program.ParseStartupOptions(
+            ["--game", "C:\\fixture", "--map", "ENDL_005"]);
+
+        Assert.Equal("C:\\fixture", options.GamePath);
+        Assert.Equal("ENDL_005", options.MapId);
+        Assert.Throws<ArgumentException>(() => AgainstRomeModifier.Program.ParseStartupOptions(["--game"]));
+        Assert.Throws<ArgumentException>(() => AgainstRomeModifier.Program.ParseStartupOptions(["--map"]));
+    }
+
+    [Fact]
+    public void Scene_object_drag_updates_local_coordinates_and_preserves_non_horizontal_fields()
+    {
+        var source = new MapSceneObject("BauRomHau00_Haupthaus", WorldX: 1600, WorldY: 12, WorldZ: 5800,
+            Team: 3, SourceFile: "Endlos_Rom_Siedlung1.sdl", ObjectIndex: 7, LocalX: -32, LocalY: 2, LocalZ: 64);
+
+        MapSceneObject moved = SceneObjectPositioning.MoveToWorldPosition(source, worldX: 1856, worldZ: 5544);
+
+        Assert.Equal(1856, moved.WorldX);
+        Assert.Equal(5544, moved.WorldZ);
+        Assert.Equal(224, moved.LocalX);
+        Assert.Equal(-192, moved.LocalZ);
+        Assert.Equal(source.WorldY, moved.WorldY);
+        Assert.Equal(source.LocalY, moved.LocalY);
+        Assert.Equal(source.Team, moved.Team);
+        Assert.Equal(source.SourceFile, moved.SourceFile);
+        Assert.Equal(source.ObjectIndex, moved.ObjectIndex);
+    }
+
+    [Fact]
+    public void Scene_object_drag_clamps_to_map_and_rejects_non_finite_coordinates()
+    {
+        var source = new MapSceneObject("FigRomInf00", WorldX: 1024, WorldY: 0, WorldZ: 2048,
+            Team: 1, SourceFile: "scene.sdl", ObjectIndex: 0, LocalX: 10, LocalY: 0, LocalZ: 20);
+
+        MapSceneObject moved = SceneObjectPositioning.MoveToWorldPosition(source, worldX: -500, worldZ: 50_000);
+
+        Assert.Equal(0, moved.WorldX);
+        Assert.Equal(SdlSceneCatalog.WorldUnitsPerMapPixel * SdlSceneCatalog.MapPixelSize, moved.WorldZ);
+        Assert.Throws<ArgumentOutOfRangeException>(() => SceneObjectPositioning.MoveToWorldPosition(source, float.NaN, 0));
+        Assert.Throws<ArgumentOutOfRangeException>(() => SceneObjectPositioning.MoveToWorldPosition(source, 0, float.PositiveInfinity));
+    }
+
+    [Fact]
     public void MapSelection_form_constructs_with_preview_layout()
     {
         // CI 與部分開發機是英文系統，Loc 會退回系統語系；固定為繁體中文讓斷言與環境無關。
@@ -52,6 +97,8 @@ public sealed class MapEditor3DTests
         using var form = new MapEditorForm(gamePath, map);
 
         Assert.Equal("Against Rome 地圖編輯器", form.Text);
+        string[] toolTexts = Descendants(form).OfType<ToolStrip>().SelectMany(strip => strip.Items.Cast<ToolStripItem>()).Select(item => item.Text ?? string.Empty).ToArray();
+        Assert.Contains("移動選取物件", toolTexts);
     }
 
     [Fact]

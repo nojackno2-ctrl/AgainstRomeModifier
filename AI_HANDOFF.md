@@ -233,6 +233,16 @@
 - Removed the deprecated `src.Launcher` project from the solution file `AgainstRomeModifier.slnx` and from testing dependencies.
 - Re-validated the entire suite under xUnit, ensuring all integration and logic tests pass against the new single-process setup.
 
+## Map editor SDL object drag editing (2026-07-19)
+
+- Continued the still-open controlled SDL workflow without widening the file-write surface: custom maps now expose an explicit bilingual `移動選取物件` / `Move Selected Object` toolbar mode. The user selects an existing or pending-copy item in the Scene Objects tab, then left-drags on either the 2D or 3D terrain; original maps, pending deletions, and no-selection states cannot move anything. Texture painting remains a separate mutually exclusive mode.
+- Both canvases convert the picked 64×64 tile center to the established 16,384-world-unit map plane. `SceneObjectPositioning.MoveToWorldPosition` clamps X/Z to the map, rejects non-finite coordinates, preserves team/Y/source identity, and derives the SDL-local X/Z delta from the object's current world/local pair. Precise non-grid positions remain available through the numeric SDL fields.
+- Dragging updates only the in-memory existing-object or `StagedSceneAddition` model and refreshes the 2D markers / 3D marker VBO; it does not rebuild terrain/atlas and does not write on mouse movement. The normal Save path remains the only writer and still uses `SdlSceneEditService`, custom-marker/slot validation, and `FileRollbackScope`.
+- Visual-QA setup exposed a separate regression from the earlier single-executable merge: `Program` still parsed `--game` but silently lost the map editor spec's optional `--map ENDL_NNN` direct-open contract. The unified entrypoint now parses both; explicit `--game <path> --map <id>` resolves the map through `GameMapCatalog.Require` and opens `MapEditorForm` directly, while no `--map` preserves the normal launcher flow. Missing argument values and unknown/unsafe map IDs fail before opening a map. Parser coverage was added.
+- First focused rerun after adding parser coverage failed during test compilation only: the test assembly does not have internal visibility into `src.Modifier`, producing `CS0122`/`CS0117` for `Program.StartupOptions` and `ParseStartupOptions`. The pure parser contract and immutable options record were made public so the cross-project regression can exercise the actual entrypoint; this result did not execute tests and is not evidence of a product-code failure. Rerun pending.
+- Focused rerun then passed 28/28. Computer-use visual QA launched the Release build directly against the repository's read-only `遊戲原始檔案` fixture with `--map ENDL_000`: 3D terrain rendered, the new toolbar command fit without clipping, activating it switched to the Scene Objects inspector, and original-map edit controls correctly remained disabled. The first screenshot exposed the scene-summary first line pressed into/clipped by the inspector's top edge; after increasing `_sceneSummary` to 64px with 16px top padding, a rebuilt visual rerun confirmed the complete summary, list, coordinate fields, and bottom action buttons are visible. The user then interacted with the QA window during cleanup, so computer-use stopped immediately and did not close or further manipulate it. No installed-game directory was accessed or modified.
+- Final automated verification: focused Release `MapEditor3DTests` passed 28/28, the full Release solution build passed with 0 warnings / 0 errors, and full xUnit passed 276/276 with no skips. The earlier test-only `CS8619` warning was corrected by normalizing nullable `ToolStripItem.Text` in the assertion. In-game load, observed object position, and `還原到本次開啟時` restoration remain the runtime gate; do not call SDL dragging game-runtime verified yet.
+
 ## Map editor SDL object copy/delete staged editing (2026-07-16)
 
 - Continued the map editor per the spec's remaining Phase 1 SDL scope: the scene inspector now supports staged **object duplication and deletion** on marker-backed custom maps, in addition to the existing team/relative-position edits. Duplication is deliberately template-based (`SdlSceneObjectAddition` copies every field from an existing `[objectNNNN]` block and overrides only `team`/`pos`), because it is the only add path that cannot invent invalid objdef/resource field combinations; free-form object creation from an objdef list remains future work.
@@ -533,11 +543,11 @@ Build a dedicated map editor that can eventually provide an Age-of-Empires-II-li
 ## Latest Local Verification (2026-07-19)
 
 ```powershell
-dotnet build
+dotnet build AgainstRomeModifier.slnx -c Release
 # Result: 0 warnings, 0 errors
 
-dotnet test
-# Result: 268 passed, 0 failed, 0 skipped
+dotnet test tests/AgainstRomeModifier.Tests/AgainstRomeModifier.Tests.csproj -c Release --no-build
+# Result: 276 passed, 0 failed, 0 skipped
 ```
 
 ## Active Constraints

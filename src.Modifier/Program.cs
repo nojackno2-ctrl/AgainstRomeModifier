@@ -43,15 +43,34 @@ namespace AgainstRomeModifier {
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
 
-            string? gamePath = null;
-            for (int i = 0; i < args.Length; i++) {
-                if (args[i].Equals("--game", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length) {
-                    gamePath = args[++i];
-                }
+            StartupOptions options = ParseStartupOptions(args);
+            if (!string.IsNullOrWhiteSpace(options.MapId)) {
+                if (string.IsNullOrWhiteSpace(options.GamePath))
+                    throw new ArgumentException("使用 --map 直接開啟地圖時必須同時指定 --game <path>。");
+                var selectedMap = new AgainstRomeModifier.Maps.GameMapCatalog().Require(options.GamePath, options.MapId);
+                Application.Run(new AgainstRomeMapEditor.MapEditorForm(options.GamePath, selectedMap));
+                return;
             }
 
-            // 啟動主啟動器介面
-            Application.Run(new LauncherForm(gamePath));
+            // 一般啟動仍進入統一啟動器；只有明確的 --game + --map 會直達地圖編輯器。
+            Application.Run(new LauncherForm(options.GamePath));
         }
+
+        public static StartupOptions ParseStartupOptions(string[] args) {
+            string? gamePath = null;
+            string? mapId = null;
+            for (int i = 0; i < args.Length; i++) {
+                if (args[i].Equals("--game", StringComparison.OrdinalIgnoreCase)) {
+                    if (i + 1 >= args.Length) throw new ArgumentException("--game 缺少路徑參數。");
+                    gamePath = args[++i];
+                } else if (args[i].Equals("--map", StringComparison.OrdinalIgnoreCase)) {
+                    if (i + 1 >= args.Length) throw new ArgumentException("--map 缺少地圖代號。");
+                    mapId = args[++i];
+                }
+            }
+            return new StartupOptions(gamePath, mapId);
+        }
+
+        public readonly record struct StartupOptions(string? GamePath, string? MapId);
     }
 }
