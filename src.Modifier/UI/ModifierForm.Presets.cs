@@ -41,7 +41,8 @@ namespace AgainstRomeModifier {
             chkProjectileArcHeight.Checked = true;
             chkAllUnitsEntireMapVision.Checked = true;
             chkRomanEndless.Checked = true;
-            // 仍需個別評估的功能（含 10 倍遊戲加速等）排除在一鍵全開之外，保持原樣不變。
+            // 「已驗證功能（需手動開啟）」卡片（遊戲加速、攝影機拉遠）與仍需個別評估的
+            // 實驗性功能刻意排除在一鍵全開之外，保持原樣不變。
 
             Log(Loc.CurrentLanguage == Language.English ? "All features enabled." : "已開啟所有功能。");
         }

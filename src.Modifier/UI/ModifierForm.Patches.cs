@@ -22,6 +22,7 @@ namespace AgainstRomeModifier {
                 [FeatureKeys.AllUnitsEntireMapVision.Id] = chkAllUnitsEntireMapVision,
                 [FeatureKeys.NativeWidescreen1920x1080.Id] = chkNativeWidescreen1920x1080,
                 [FeatureKeys.CameraZoomOut1.Id] = chkCameraZoomOut1,
+                [FeatureKeys.CorpseRetention.Id] = chkCorpseRetention,
                 [FeatureKeys.RangedRange3x.Id] = chkRangedRange3x,
                 [FeatureKeys.UnitMovementSpeed2x.Id] = chkUnitMovementSpeed2x,
                 [FeatureKeys.VillagerMovementSpeed5x.Id] = chkVillagerMovementSpeed5x,
@@ -54,7 +55,7 @@ namespace AgainstRomeModifier {
                 if (featureToggles.TryGetValue(feature.Id, out ModernToggle? toggle)) toggle.Checked = false;
             }
             if (category == FeatureCategory.Compat) {
-                chkGameSpeed.Checked = false;
+                SetGameSpeedSelection(1);
                 chkVillageGarrisonQuota3x.Checked = false;
                 chkDgVoodoo.Checked = patchEngine.IsDgVoodooInstalled(gamePath);
                 chkArgmTrace.Checked = patchEngine.IsArgmTraceInstalled(gamePath);
@@ -65,7 +66,7 @@ namespace AgainstRomeModifier {
             var profile = new PatchProfile();
             foreach (var (id, toggle) in featureToggles) profile.Set(id, FeatureValue.Of(toggle.Checked));
             if (forceBalance) profile.Balance = true;
-            profile.Set(FeatureKeys.GameSpeed, chkGameSpeed.Checked ? 10 : 1);
+            profile.Set(FeatureKeys.GameSpeed, chkGameSpeed.Checked ? SelectedGameSpeedMultiplier() : 1);
             profile.Set(
                 FeatureKeys.VillageGarrisonQuotaMultiplier,
                 chkVillageGarrisonQuota3x.Checked ? SelectedVillageGarrisonQuotaMultiplier() : 1);
@@ -262,9 +263,18 @@ namespace AgainstRomeModifier {
             }
         }
 
-        /// <summary>設定遊戲 10 倍加速開關的狀態。</summary>
+        /// <summary>取得下拉選單目前選擇的遊戲加速倍率。</summary>
+        private int SelectedGameSpeedMultiplier() {
+            int index = cboGameSpeedMultiplier.SelectedIndex;
+            if (index < 0 || index >= GameSpeedMultiplierChoices.Length) return 10;
+            return GameSpeedMultiplierChoices[index];
+        }
+
+        /// <summary>依偵測到的倍率同步遊戲加速開關與下拉選單（1 = 停用，僅取消勾選、保留選擇）。</summary>
         private void SetGameSpeedSelection(int multiplier) {
             chkGameSpeed.Checked = multiplier > 1;
+            int index = Array.IndexOf(GameSpeedMultiplierChoices, multiplier);
+            if (index >= 0) cboGameSpeedMultiplier.SelectedIndex = index;
         }
 
         /// <summary>取得下拉選單目前選擇的村莊駐軍配額倍率。</summary>

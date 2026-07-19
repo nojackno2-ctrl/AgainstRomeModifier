@@ -41,6 +41,7 @@ namespace AgainstRomeModifier {
             if (lblExperimentalSubtitle != null) lblExperimentalSubtitle.Text = Loc.Get("ExperimentalSubtitle");
             if (lblExperimentalCardTitle != null) lblExperimentalCardTitle.Text = Loc.Get("ExperimentalCardTitle");
             lblNumericTitle.Text = Loc.Get("NumericTitle");
+            lblVerifiedTitle.Text = Loc.Get("VerifiedTitle");
             chkFocusLoss.Text = Loc.Get("FocusLoss");
             chkToEng.Text = Loc.Get("ToEng");
             chkAiM1.Text = Loc.Get("AiM1");
@@ -111,6 +112,7 @@ namespace AgainstRomeModifier {
             chkAllUnitsEntireMapVision.Text = Loc.Get("AllUnitsEntireMapVision");
             chkNativeWidescreen1920x1080.Text = Loc.Get("NativeWidescreen1920x1080");
             chkCameraZoomOut1.Text = Loc.Get("CameraZoomOut1");
+            chkCorpseRetention.Text = Loc.Get("CorpseRetention");
             chkRangedRange3x.Text = Loc.Get("RangedRange3x");
             chkUnitMovementSpeed2x.Text = Loc.Get("UnitMovementSpeed2x");
             chkVillagerMovementSpeed5x.Text = Loc.Get("VillagerMovementSpeed5x");
@@ -146,6 +148,8 @@ namespace AgainstRomeModifier {
                 myToolTip.SetToolTip(chkDgVoodoo, Loc.Get("DgVoodooTip"));
                 myToolTip.SetToolTip(chkArgmTrace, Loc.Get("ArgmTraceTip"));
                 myToolTip.SetToolTip(chkGameSpeed, Loc.Get("GameSpeedTip"));
+                myToolTip.SetToolTip(cboGameSpeedMultiplier, Loc.Get("GameSpeedTip"));
+                myToolTip.SetToolTip(lblVerifiedTitle, Loc.Get("VerifiedTitleTip"));
                 myToolTip.SetToolTip(chkSpellDamage5x, Loc.Get("SpellDamage5xTip"));
                 myToolTip.SetToolTip(chkSpellHealing10x, Loc.Get("SpellHealing10xTip"));
                 myToolTip.SetToolTip(chkSpellResurrection, Loc.Get("SpellResurrectionTip"));
@@ -160,6 +164,7 @@ namespace AgainstRomeModifier {
                 myToolTip.SetToolTip(chkAllUnitsEntireMapVision, Loc.Get("AllUnitsEntireMapVisionTip"));
                 myToolTip.SetToolTip(chkNativeWidescreen1920x1080, Loc.Get("NativeWidescreen1920x1080Tip"));
                 myToolTip.SetToolTip(chkCameraZoomOut1, Loc.Get("CameraZoomOut1Tip"));
+                myToolTip.SetToolTip(chkCorpseRetention, Loc.Get("CorpseRetentionTip"));
                 myToolTip.SetToolTip(chkRangedRange3x, Loc.Get("RangedRange3xTip"));
                 myToolTip.SetToolTip(chkUnitMovementSpeed2x, Loc.Get("UnitMovementSpeed2xTip"));
                 myToolTip.SetToolTip(chkVillagerMovementSpeed5x, Loc.Get("VillagerMovementSpeed5xTip"));

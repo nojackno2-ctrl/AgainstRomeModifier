@@ -160,14 +160,17 @@ namespace AgainstRomeModifier {
                 AutoScroll = true
             };
 
-            // 依功能語意分為六張卡片：系統相容、建設經濟、村民操作、法術祭司、戰鬥部隊、無盡模式。
+            // 依功能語意分為七張卡片：系統相容、已驗證選用、建設經濟、村民操作、法術祭司、戰鬥部隊、無盡模式。
             ConfigureSettingsCard(pnlNumericCard, lblNumericTitle, 398,
                 chkFocusLoss,
                 chkToEng,
                 chkDgVoodoo,
                 chkArgmTrace,
-                chkGameSpeed,
                 chkNativeWidescreen1920x1080,
+                chkCorpseRetention);
+            // 已驗證功能：實測成功但刻意排除在「所有功能開啟」之外，需使用者手動開啟。
+            ConfigureSettingsCard(pnlVerifiedCard, lblVerifiedTitle, 158,
+                chkGameSpeed,
                 chkCameraZoomOut1);
             ConfigureSettingsCard(pnlBuildCard, lblBuildTitle, 446,
                 chkFreeProd,
@@ -211,6 +214,7 @@ namespace AgainstRomeModifier {
             // 每組設定以同一層卡片底色收攏，讓長短不一的功能群組仍有清楚邊界。
             Color cardBackColor = Color.FromArgb(14, 18, 26);
             pnlNumericCard.BackColor = cardBackColor;
+            pnlVerifiedCard.BackColor = cardBackColor;
             pnlSpellCard.BackColor = cardBackColor;
             pnlVillagerCard.BackColor = cardBackColor;
             pnlCombatCard.BackColor = cardBackColor;
@@ -218,6 +222,7 @@ namespace AgainstRomeModifier {
             pnlAiCard.BackColor = cardBackColor;
 
             pnlNumericCard.Dock = DockStyle.None;
+            pnlVerifiedCard.Dock = DockStyle.None;
             pnlSpellCard.Dock = DockStyle.None;
             pnlVillagerCard.Dock = DockStyle.None;
             pnlCombatCard.Dock = DockStyle.None;
@@ -225,6 +230,7 @@ namespace AgainstRomeModifier {
             pnlAiCard.Dock = DockStyle.None;
 
             pnlContent.Controls.Add(pnlNumericCard);
+            pnlContent.Controls.Add(pnlVerifiedCard);
             pnlContent.Controls.Add(pnlSpellCard);
             pnlContent.Controls.Add(pnlVillagerCard);
             pnlContent.Controls.Add(pnlCombatCard);
@@ -258,6 +264,7 @@ namespace AgainstRomeModifier {
             int[] columnBottoms = Enumerable.Repeat(paddingY, columnCount).ToArray();
             Panel[] cards = {
                 pnlNumericCard,
+                pnlVerifiedCard,
                 pnlBuildCard,
                 pnlCombatCard,
                 pnlSpellCard,

@@ -54,6 +54,7 @@ public static class FeatureKeys
     public static readonly FeatureKey<bool> CiviProduce20 = FeatureKey<bool>.Bool("CiviProduce20");
     public static readonly FeatureKey<bool> UnitRecruit20 = FeatureKey<bool>.Bool("UnitRecruit20");
     public static readonly FeatureKey<bool> IdleSelect999 = FeatureKey<bool>.Bool("IdleSelect999");
+    public static readonly FeatureKey<bool> CorpseRetention = FeatureKey<bool>.Bool("CorpseRetention");
     public static readonly FeatureKey<bool> RomanEndless = FeatureKey<bool>.Bool("RomanEndless");
     public static readonly FeatureKey<bool> RomanReinforcementGarrison = FeatureKey<bool>.Bool("RomanReinforcementGarrison");
     // Historical id kept for module/profile migration; the value is now the
