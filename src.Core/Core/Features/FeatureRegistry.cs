@@ -27,6 +27,7 @@ public static class FeatureRegistry
         Bool(FeatureKeys.FoodHealing10x, FeatureCategory.Stats), Bool(FeatureKeys.MaxPopulation, FeatureCategory.Stats),
         Bool(FeatureKeys.CiviProduce20, FeatureCategory.Stats), Bool(FeatureKeys.UnitRecruit20, FeatureCategory.Stats),
         Bool(FeatureKeys.IdleSelect999, FeatureCategory.Stats),
+        Bool(FeatureKeys.CorpseRetention, FeatureCategory.Stats),
         Bool(FeatureKeys.RomanEndless, FeatureCategory.Stats),
         Bool(FeatureKeys.RomanReinforcementGarrison, FeatureCategory.Compat),
         new(FeatureKeys.VillageGarrisonQuotaMultiplier, FeatureCategory.Compat, FeatureControlKind.Specialized),

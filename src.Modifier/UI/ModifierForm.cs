@@ -56,6 +56,8 @@ namespace AgainstRomeModifier {
         private Label lblSpellTitle = null!;
         private Panel pnlVillagerCard = null!;
         private Label lblVillagerTitle = null!;
+        private Panel pnlVerifiedCard = null!;
+        private Label lblVerifiedTitle = null!;
         private Panel pnlExperimentalCard = null!;
         private Label lblExperimentalCardTitle = null!;
         private Label lblExperimentalHeading = null!;
@@ -82,6 +84,7 @@ namespace AgainstRomeModifier {
         private ModernToggle chkCiviProduce20 = null!;
         private ModernToggle chkUnitRecruit20 = null!;
         private ModernToggle chkIdleSelect999 = null!;
+        private ModernToggle chkCorpseRetention = null!;
         private ModernToggle chkAiM1 = null!;
         private ModernToggle chkAiCore = null!;
         private ModernToggle chkAiM5 = null!;
@@ -103,6 +106,9 @@ namespace AgainstRomeModifier {
         private ModernToggle chkNoRunHpLoss = null!;
         private ComboBox cboVillageGarrisonQuotaMultiplier = null!;
         private static readonly int[] VillageGarrisonQuotaMultiplierChoices = { 2, 3, 5, 10 };
+        // 與 ExePatchModel.GameSpeedSupportedMultipliers 的可加速區間一致（預設上限 10 倍）。
+        private ComboBox cboGameSpeedMultiplier = null!;
+        private static readonly int[] GameSpeedMultiplierChoices = { 2, 3, 4, 5, 6, 7, 8, 9, 10 };
         private ModernToggle chkSpellDamage5x = null!;
         private ModernToggle chkSpellHealing10x = null!;
         private ModernToggle chkSpellResurrection = null!;
@@ -126,8 +132,8 @@ namespace AgainstRomeModifier {
             FeatureKeys.GeneralSkills.Id,
             FeatureKeys.LeaderGlory.Id,
             FeatureKeys.VillageGarrisonQuotaMultiplier.Id,
-            FeatureKeys.GameSpeed.Id,
-            FeatureKeys.ArgmTrace.Id
+            FeatureKeys.ArgmTrace.Id,
+            FeatureKeys.CorpseRetention.Id
         };
         private readonly Dictionary<ModernToggle, Panel> experimentalToggleOriginalParents = new();
         private readonly Dictionary<ModernToggle, Button> promoteDemoteButtons = new();
@@ -694,6 +700,22 @@ namespace AgainstRomeModifier {
             };
             // pnlNumericCard.Paint += CardPanel_Paint;
 
+            // 已驗證功能卡片：實測修改成功、但不納入「所有功能開啟」的選用功能。
+            pnlVerifiedCard = new Panel {
+                Location = new Point(0, 0),
+                Size = new Size(385, 200)
+            };
+
+            lblVerifiedTitle = new Label {
+                Text = Loc.Get("VerifiedTitle"),
+                Location = new Point(25, 20),
+                Size = new Size(250, 25),
+                Font = fontJhengHei105B,
+                ForeColor = Color.FromArgb(0, 220, 255),
+                BackColor = Color.Transparent
+            };
+            pnlVerifiedCard.Controls.Add(lblVerifiedTitle);
+
             lblNumericTitle = new Label {
                 Text = "系統與相容性設定",
                 Location = new Point(25, 20),
@@ -752,7 +774,20 @@ namespace AgainstRomeModifier {
                 BackColor = Color.Transparent,
                 Font = fontJhengHei10B
             };
-            pnlNumericCard.Controls.Add(chkGameSpeed);
+            pnlVerifiedCard.Controls.Add(chkGameSpeed);
+            cboGameSpeedMultiplier = new ComboBox {
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                Size = new Size(64, 26),
+                FlatStyle = FlatStyle.Flat,
+                BackColor = Color.FromArgb(24, 30, 42),
+                ForeColor = Color.FromArgb(0, 220, 255),
+                Font = fontJhengHei10B
+            };
+            foreach (int choice in GameSpeedMultiplierChoices)
+                cboGameSpeedMultiplier.Items.Add("×" + choice);
+            cboGameSpeedMultiplier.SelectedIndex = Array.IndexOf(GameSpeedMultiplierChoices, 10);
+            toggleCompanions[chkGameSpeed] = cboGameSpeedMultiplier;
+            pnlVerifiedCard.Controls.Add(cboGameSpeedMultiplier);
 
             btnEnableAll = new Button {
                 Text = "所有功能開啟",
@@ -1103,7 +1138,17 @@ namespace AgainstRomeModifier {
                 BackColor = Color.Transparent,
                 Font = fontJhengHei10B
             };
-            pnlNumericCard.Controls.Add(chkCameraZoomOut1);
+            pnlVerifiedCard.Controls.Add(chkCameraZoomOut1);
+
+            chkCorpseRetention = new ModernToggle {
+                Text = Loc.Get("CorpseRetention"),
+                Location = new Point(25, 320),
+                Size = new Size(310, 25),
+                Checked = false,
+                BackColor = Color.Transparent,
+                Font = fontJhengHei10B
+            };
+            pnlNumericCard.Controls.Add(chkCorpseRetention);
 
             chkRangedRange3x = new ModernToggle {
                 Text = Loc.Get("RangedRange3x"),
@@ -1544,8 +1589,8 @@ namespace AgainstRomeModifier {
             experimentalToggleOriginalParents[chkGeneralSkills] = pnlCombatCard;
             experimentalToggleOriginalParents[chkLeaderGlory] = pnlCombatCard;
             experimentalToggleOriginalParents[chkVillageGarrisonQuota3x] = pnlAiCard;
-            experimentalToggleOriginalParents[chkGameSpeed] = pnlNumericCard;
             experimentalToggleOriginalParents[chkArgmTrace] = pnlNumericCard;
+            experimentalToggleOriginalParents[chkCorpseRetention] = pnlNumericCard;
 
             foreach (var toggle in experimentalToggleOriginalParents.Keys) {
                 var btn = new Button {
@@ -1600,7 +1645,7 @@ namespace AgainstRomeModifier {
                 }
             }
             
-            foreach (var card in new[] { pnlNumericCard, pnlBuildCard, pnlCombatCard, pnlSpellCard, pnlVillagerCard, pnlAiCard, pnlExperimentalCard }) {
+            foreach (var card in new[] { pnlNumericCard, pnlVerifiedCard, pnlBuildCard, pnlCombatCard, pnlSpellCard, pnlVillagerCard, pnlAiCard, pnlExperimentalCard }) {
                 if (card != null && card.Tag is Action layoutAction) {
                     layoutAction();
                 }

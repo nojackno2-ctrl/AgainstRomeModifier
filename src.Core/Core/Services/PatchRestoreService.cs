@@ -63,6 +63,7 @@ internal sealed class PatchRestoreService
             exeChanged |= ExeFeaturePatcher.ApplyCiviProduce20(exeBytes, false, _logger);
             exeChanged |= ExeFeaturePatcher.ApplyUnitRecruit20(exeBytes, false, _logger);
             exeChanged |= ExeFeaturePatcher.ApplyIdleSelect999(exeBytes, false, _logger);
+            exeChanged |= ExeFeaturePatcher.ApplyCorpseRetention(exeBytes, false, _logger);
             exeChanged |= ExeFeaturePatcher.RestoreRetiredDefaultSpecialArrows(exeBytes, _logger);
             if (exeChanged)
                 patchedFiles[exePath] = exeBytes;

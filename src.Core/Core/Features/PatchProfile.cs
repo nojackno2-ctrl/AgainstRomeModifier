@@ -39,6 +39,7 @@ public sealed class PatchProfile
     public bool CiviProduce20 { get => Get(FeatureKeys.CiviProduce20); set => Set(FeatureKeys.CiviProduce20, value); }
     public bool UnitRecruit20 { get => Get(FeatureKeys.UnitRecruit20); set => Set(FeatureKeys.UnitRecruit20, value); }
     public bool IdleSelect999 { get => Get(FeatureKeys.IdleSelect999); set => Set(FeatureKeys.IdleSelect999, value); }
+    public bool CorpseRetention { get => Get(FeatureKeys.CorpseRetention); set => Set(FeatureKeys.CorpseRetention, value); }
     public bool VillageBuildRange { get => Get(FeatureKeys.VillageBuildRange); set => Set(FeatureKeys.VillageBuildRange, value); }
     public bool DgVoodoo { get => Get(FeatureKeys.DgVoodoo); set => Set(FeatureKeys.DgVoodoo, value); }
     public bool ArgmTrace { get => Get(FeatureKeys.ArgmTrace); set => Set(FeatureKeys.ArgmTrace, value); }

@@ -63,6 +63,7 @@ internal sealed class ExePatchFileContributor : IPatchFileContributor
         modified |= ExeFeaturePatcher.ApplyCiviProduce20(bytes, profile.CiviProduce20, context.Logger);
         modified |= ExeFeaturePatcher.ApplyUnitRecruit20(bytes, profile.UnitRecruit20, context.Logger);
         modified |= ExeFeaturePatcher.ApplyIdleSelect999(bytes, profile.IdleSelect999, context.Logger);
+        modified |= ExeFeaturePatcher.ApplyCorpseRetention(bytes, profile.CorpseRetention, context.Logger);
         // Getter-only EXE v1 was runtime-rejected. Always migrate those exact legacy
         // bytes back to Original; ak_krieger.bci now owns the feature.
         modified |= ExeFeaturePatcher.RestoreRetiredDefaultSpecialArrows(bytes, context.Logger);

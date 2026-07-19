@@ -64,6 +64,12 @@ public sealed class ExePatchModelTests {
                 ? ExePatchModel.IdleSelect999PatchedBytes
                 : ExePatchModel.IdleSelect999OriginalBytes);
 
+    private static void PlaceCorpseRetention(byte[] exe, ExeCorpseRetentionPatchState state) =>
+        Place(exe, ExePatchModel.CorpseRetentionPatchOffset,
+            state == ExeCorpseRetentionPatchState.Patched
+                ? ExePatchModel.CorpseRetentionPatchedBytes
+                : ExePatchModel.CorpseRetentionOriginalBytes);
+
     private static void PlaceDefaultSpecialArrows(byte[] exe, ExeDefaultSpecialArrowsPatchState state) {
         bool patched = state == ExeDefaultSpecialArrowsPatchState.Patched;
         Place(exe, ExePatchModel.DefaultSpecialArrowsNormalButtonOffset,
@@ -324,6 +330,45 @@ public sealed class ExePatchModelTests {
         byte[] exe = NewExe();
         PlaceIdleSelect999(exe, state);
         Assert.Equal(state, ExePatchModel.GetIdleSelect999PatchState(exe));
+    }
+
+    [Theory]
+    [InlineData(ExeCorpseRetentionPatchState.Original)]
+    [InlineData(ExeCorpseRetentionPatchState.Patched)]
+    public void Corpse_retention_state_is_detected(ExeCorpseRetentionPatchState state) {
+        byte[] exe = NewExe();
+        PlaceCorpseRetention(exe, state);
+        Assert.Equal(state, ExePatchModel.GetCorpseRetentionPatchState(exe));
+    }
+
+    [Fact]
+    public void Corpse_retention_round_trip_changes_only_the_verified_reserve_immediate() {
+        byte[] exe = NewExe();
+        PlaceCorpseRetention(exe, ExeCorpseRetentionPatchState.Original);
+        byte[] pristine = exe.ToArray();
+
+        IReadOnlyList<ExeWriteOp> enable = ExePatchModel.PlanCorpseRetention(
+            true, ExePatchModel.GetCorpseRetentionPatchState(exe));
+        Assert.Single(enable);
+        Assert.Equal(ExePatchModel.CorpseRetentionPatchOffset, enable[0].Offset);
+        ExePatchModel.Apply(exe, enable);
+        Assert.Equal(ExeCorpseRetentionPatchState.Patched, ExePatchModel.GetCorpseRetentionPatchState(exe));
+
+        IReadOnlyList<ExeWriteOp> disable = ExePatchModel.PlanCorpseRetention(
+            false, ExePatchModel.GetCorpseRetentionPatchState(exe));
+        ExePatchModel.Apply(exe, disable);
+        Assert.Equal(pristine, exe);
+    }
+
+    [Fact]
+    public void Corpse_retention_unknown_state_is_not_planned() {
+        byte[] exe = NewExe();
+        PlaceCorpseRetention(exe, ExeCorpseRetentionPatchState.Original);
+        exe[ExePatchModel.CorpseRetentionPatchOffset + 1] = 0xCC;
+
+        Assert.Equal(ExeCorpseRetentionPatchState.Unknown, ExePatchModel.GetCorpseRetentionPatchState(exe));
+        Assert.Empty(ExePatchModel.PlanCorpseRetention(true, ExeCorpseRetentionPatchState.Unknown));
+        Assert.Empty(ExePatchModel.PlanCorpseRetention(false, ExeCorpseRetentionPatchState.Unknown));
     }
 
     [Fact]

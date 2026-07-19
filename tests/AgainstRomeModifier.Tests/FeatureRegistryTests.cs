@@ -74,7 +74,7 @@ public sealed class FeatureRegistryTests
     [Fact]
     public void PatchProfile_supports_named_and_registry_values()
     {
-        var profile = new PatchProfile { FocusLoss = true, GameSpeed = 3, Balance = true, SpellDamage5x = true, SpellHealing10x = true, SpellResurrection = true, GeneralSkills = true, LeaderGlory = true, AllUnitsEntireMapVision = true, RangedRange3x = true, UnitMovementSpeed2x = true, VillagerMovementSpeed5x = true, SpellEntireMap = true, SpellRange3x = true, ProjectileArcHeight = true, RomanEndless = true, RomanReinforcementGarrison = true, VillageGarrisonQuota3x = true, NativeWidescreen1920x1080 = true, CameraZoomOut1 = true, NoRunHpLoss = true };
+        var profile = new PatchProfile { FocusLoss = true, GameSpeed = 3, Balance = true, SpellDamage5x = true, SpellHealing10x = true, SpellResurrection = true, GeneralSkills = true, LeaderGlory = true, AllUnitsEntireMapVision = true, RangedRange3x = true, UnitMovementSpeed2x = true, VillagerMovementSpeed5x = true, SpellEntireMap = true, SpellRange3x = true, ProjectileArcHeight = true, RomanEndless = true, RomanReinforcementGarrison = true, VillageGarrisonQuota3x = true, NativeWidescreen1920x1080 = true, CameraZoomOut1 = true, CorpseRetention = true, NoRunHpLoss = true };
         profile.EndlessAiModules["M4"] = true;
         profile.NormalizeCompositeValues();
 
@@ -101,6 +101,7 @@ public sealed class FeatureRegistryTests
         Assert.True(profile.VillageGarrisonQuota3x);
         Assert.True(profile.GetBool("NativeWidescreen1920x1080"));
         Assert.True(profile.GetBool("CameraZoomOut1"));
+        Assert.True(profile.GetBool("CorpseRetention"));
         Assert.True(profile.GetBool("EndlessAi.M4"));
         Assert.Equal(3, profile.GetInt("GameSpeed"));
         Assert.True(profile.Get(FeatureKeys.UnitRecruit20));
@@ -139,7 +140,7 @@ public sealed class FeatureRegistryTests
     [Fact]
     public void Registry_plan_and_detect_round_trip_profile_values()
     {
-        var source = new PatchProfile { FocusLoss = true, GameSpeed = 4, Balance = true, SpellDamage5x = true, SpellHealing10x = true, SpellResurrection = true, GeneralSkills = true, LeaderGlory = true, AllUnitsEntireMapVision = true, RangedRange3x = true, UnitMovementSpeed2x = true, VillagerMovementSpeed5x = true, SpellEntireMap = true, SpellRange3x = true, ProjectileArcHeight = true, RomanEndless = true, RomanReinforcementGarrison = true, VillageGarrisonQuota3x = true, NativeWidescreen1920x1080 = true, CameraZoomOut1 = true, NoRunHpLoss = true };
+        var source = new PatchProfile { FocusLoss = true, GameSpeed = 4, Balance = true, SpellDamage5x = true, SpellHealing10x = true, SpellResurrection = true, GeneralSkills = true, LeaderGlory = true, AllUnitsEntireMapVision = true, RangedRange3x = true, UnitMovementSpeed2x = true, VillagerMovementSpeed5x = true, SpellEntireMap = true, SpellRange3x = true, ProjectileArcHeight = true, RomanEndless = true, RomanReinforcementGarrison = true, VillageGarrisonQuota3x = true, NativeWidescreen1920x1080 = true, CameraZoomOut1 = true, CorpseRetention = true, NoRunHpLoss = true };
         var plan = new PatchContext();
         foreach (IFeatureModule module in FeatureRegistry.All) module.Plan(plan, source.Get(module.Id));
 
@@ -167,6 +168,7 @@ public sealed class FeatureRegistryTests
         Assert.True(roundTrip.VillageGarrisonQuota3x);
         Assert.True(roundTrip.NativeWidescreen1920x1080);
         Assert.True(roundTrip.CameraZoomOut1);
+        Assert.True(roundTrip.CorpseRetention);
         Assert.Equal(4, roundTrip.GameSpeed);
     }
 }

@@ -42,6 +42,13 @@ public enum ExeIdleSelect999PatchState {
     Patched
 }
 
+/// <summary>Controls the object-pool reserve that triggers oldest-dead-object eviction.</summary>
+public enum ExeCorpseRetentionPatchState {
+    Unknown,
+    Original,
+    Patched
+}
+
 /// <summary>已被實機否定、僅供遷移還原的 getter-only v1 狀態。</summary>
 public enum ExeDefaultSpecialArrowsPatchState {
     Unknown,
@@ -170,6 +177,14 @@ public static class ExePatchModel {
         "FF751983C30481FB9C0F000075DC85F6751A81C4381F00005F5E5BC350BE010000" +
         "00E85AB7FFFF83C404EBD76A7CE8EEBCFEFF83C40481C4381F00005F5E5BC3" +
         "9090909090909090909090909090909090");
+
+    // The global object-pool maintenance routine at VA 0x005108F0 starts
+    // evicting the oldest dead candidates once fewer than 500 slots remain.
+    // Keep a 50-slot reserve rather than removing the safeguard altogether:
+    // the pool is fixed at 14,000 slots and needs headroom for new objects.
+    public const long CorpseRetentionPatchOffset = 0x110907;
+    public static readonly byte[] CorpseRetentionOriginalBytes = { 0xBB, 0xF4, 0x01, 0x00, 0x00 };
+    public static readonly byte[] CorpseRetentionPatchedBytes = { 0xBB, 0x32, 0x00, 0x00, 0x00 };
 
     // === 已解鎖特殊箭矢預設（runtime-rejected getter-only v1；restore-only）===
     // 原版把遠程模式放在 BSS 0x00736A58：0=普通、1=火箭/毒箭、2=掠奪。
@@ -515,6 +530,16 @@ public static class ExePatchModel {
         return ExeIdleSelect999PatchState.Unknown;
     }
 
+    public static ExeCorpseRetentionPatchState GetCorpseRetentionPatchState(byte[] exeBytes) {
+        if (exeBytes.Length < CorpseRetentionPatchOffset + CorpseRetentionOriginalBytes.Length) {
+            return ExeCorpseRetentionPatchState.Unknown;
+        }
+        byte[] bytes = ReadSpan(exeBytes, CorpseRetentionPatchOffset, CorpseRetentionOriginalBytes.Length);
+        if (bytes.SequenceEqual(CorpseRetentionOriginalBytes)) return ExeCorpseRetentionPatchState.Original;
+        if (bytes.SequenceEqual(CorpseRetentionPatchedBytes)) return ExeCorpseRetentionPatchState.Patched;
+        return ExeCorpseRetentionPatchState.Unknown;
+    }
+
     public static ExeDefaultSpecialArrowsPatchState GetDefaultSpecialArrowsPatchState(byte[] exeBytes) {
         var sites = new[] {
             (DefaultSpecialArrowsNormalButtonOffset, DefaultSpecialArrowsNormalButtonOriginalBytes, DefaultSpecialArrowsNormalButtonPatchedBytes),
@@ -718,6 +743,16 @@ public static class ExePatchModel {
         }
         if (!enabled && state == ExeIdleSelect999PatchState.Patched) {
             return new[] { new ExeWriteOp(IdleSelect999PatchOffset, IdleSelect999PatchedBytes, IdleSelect999OriginalBytes, "閒置村民一次全選 999 還原") };
+        }
+        return Array.Empty<ExeWriteOp>();
+    }
+
+    public static IReadOnlyList<ExeWriteOp> PlanCorpseRetention(bool enabled, ExeCorpseRetentionPatchState state) {
+        if (enabled && state == ExeCorpseRetentionPatchState.Original) {
+            return new[] { new ExeWriteOp(CorpseRetentionPatchOffset, CorpseRetentionOriginalBytes, CorpseRetentionPatchedBytes, "屍體保留量提高") };
+        }
+        if (!enabled && state == ExeCorpseRetentionPatchState.Patched) {
+            return new[] { new ExeWriteOp(CorpseRetentionPatchOffset, CorpseRetentionPatchedBytes, CorpseRetentionOriginalBytes, "屍體保留量提高還原") };
         }
         return Array.Empty<ExeWriteOp>();
     }

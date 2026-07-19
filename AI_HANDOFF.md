@@ -1,5 +1,14 @@
 ﻿# AI Handoff - Live Project Memory
 
+## Corpse auto-removal investigation (2026-07-19, static analysis in progress)
+
+- User reports that the game removes corpses after their number grows and asks to prevent it. No modifier feature or game-file mutation has been made.
+- Read-only analysis of the repository baseline `遊戲原始檔案/Against_Rome.exe` establishes that `DeadZone`/`oe_deadzoneradius` is a rendering/object-definition setting, not a corpse-count or corpse-lifetime control. The existing only script-side corpse handling is Celtic resurrection's explicit consumption of selected dead humans.
+- Dead objects remain allocated in the engine-wide object pool (`0..13,999`); death is the object flag `0x2000` at per-object offset `0x88`, while `FUN_004abb80` performs the full release that clears the object's live slot and dependent handles. Therefore an unconditional "never release corpses" patch is unsafe: it can exhaust the fixed pool and break later object creation, save/load, or simulation stability.
+- Existing full decompiler inventory also shows `FUN_004ae4c0` immediately removes duplicate active objects at identical position/type; it is not currently proven to be the reported corpse-limit path. Do not patch it as a corpse workaround.
+- Added reusable read-only helper `tools/re/GhidraCorpseCleanupAnalysis.java` and replaced the incomplete local tool with a SHA-256-verified official Ghidra 12.1.2 copy in Temp; fresh headless analysis completed against the repository baseline only. `s_setDeadTime` only records the current game time at per-object offset `0x8C`; global `FUN_005108F0` starts candidate eviction when its fixed 14,000-slot object pool falls below a 500-slot reserve, sorts candidates by that timestamp, and sends the oldest through the deferred release path.
+- Implementation complete, pending runtime proof: `CorpseRetention` is an Experimental Stats toggle. It changes only the exact `mov ebx,500` immediate at file offset `0x110907` to 50, retaining a safety reserve while allowing about 450 additional objects. Apply/Detect/Restore use strict Original/Patched/Unknown signatures; unknown EXEs are refused when enabling. Model, detector, registry, UI, and full Apply/Detect/Restore coverage passed; full Release build completed with 0 warnings/errors and all 273 xUnit tests passed. Actual large-battle performance, save/load, and gameplay behavior remain unverified and must not be claimed fixed until tested in game.
+
 ## Experimental features tab and dynamic promotion (2026-07-18, complete & verified)
 
 - Implementation complete: added an "Experimental Features" tab to contain all 6 active experimental settings (`Balance`, `SpellHealing10x`, `SpellResurrection`, `GeneralSkills`, `LeaderGlory`, `VillageGarrisonQuota3x`), excluding the verified centring resolution and camera zoom.
