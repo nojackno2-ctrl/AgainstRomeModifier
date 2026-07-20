@@ -11,7 +11,7 @@ public sealed class CharacterizationTests
         double[] fallback = { 100, 20, 10, 10, 4, 1000, 5, 2000, 500 };
         double[] custom = { 150, 30, 15, 15, 99, 1200, 9, 9999, 9999 };
 
-        double[] merged = BackupManager.MergeUnitStatsLayers(
+        double[] merged = UnitStatParser.MergeLayers(
             fallback, custom, supportsSpellRadius: true);
 
         Assert.Equal(150, merged[0]);

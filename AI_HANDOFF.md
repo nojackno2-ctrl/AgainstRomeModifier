@@ -1,4 +1,10 @@
-﻿# AI Handoff - Live Project Memory
+# AI Handoff - Live Project Memory
+
+## User-centric feature text description audit (2026-07-20, complete & verified)
+
+- Reviewed and audited all modifier feature descriptions from a non-technical player's perspective.
+- Streamlined all feature tooltips in `src.Core/Core/Localization.cs` (`Zh` dictionary) into clear, concise, direct player-oriented explanations without technical jargon (removing offset/opcode/PE/hex references).
+- Verification complete: solution build succeeded with 0 warnings/errors (`dotnet build`) and all 278 xUnit unit tests passed (`dotnet test`).
 
 ## Corpse auto-removal investigation (2026-07-19, static analysis in progress)
 

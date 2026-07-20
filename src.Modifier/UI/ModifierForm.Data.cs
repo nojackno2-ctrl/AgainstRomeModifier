@@ -34,12 +34,6 @@ namespace AgainstRomeModifier {
         }
 
         /// <summary>
-        /// 從系統登錄檔中自動偵測《Against Rome》的安裝路徑。
-        /// </summary>
-        private string DetectGamePathFromRegistry() =>
-            AgainstRomeModifier.Core.Services.GameDirectoryLocator.DetectFromRegistry();
-
-        /// <summary>
         /// 解析 TGA 圖像位元組資料，並將其轉換成 GDI+ 的 Bitmap 物件。
         /// 支援 8 位元索引彩色（附 24 位元調色盤）以及 24/32 位元真彩色 TGA 圖檔。
         /// </summary>
@@ -230,9 +224,6 @@ namespace AgainstRomeModifier {
             }
         }
 
-        /// <summary>
-        /// 將裝備分類代碼轉換為易懂的中文文字說明。
-        /// </summary>
         /// <summary>
         /// 建立並設定用於顯示當前屬性（原版對比修改後）的 DataGridView 表格。
         /// </summary>
@@ -498,14 +489,9 @@ namespace AgainstRomeModifier {
                     if (!unitRows.ContainsKey(key)) continue;
                     string[] cols = unitRows[key];
 
-                    double hp = 0;
-                    double.TryParse(cols[(int)ObjdefIndex.Hp].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out hp);
-
-                    double vw = 0;
-                    double.TryParse(cols[(int)ObjdefIndex.Vw].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out vw);
-
-                    double aw = 0;
-                    double.TryParse(cols[(int)ObjdefIndex.Aw].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out aw);
+                    double hp = PatchText.ParseDouble(cols, (int)ObjdefIndex.Hp);
+                    double vw = PatchText.ParseDouble(cols, (int)ObjdefIndex.Vw);
+                    double aw = PatchText.ParseDouble(cols, (int)ObjdefIndex.Aw);
 
                     double meleeDam = 0;
                     double rangedDam = 0;
@@ -515,50 +501,9 @@ namespace AgainstRomeModifier {
                     double rangedRelt = 0;
                     UnitStatParser.GetMeleeAndRangedReload(cols, utype, out meleeRelt, out rangedRelt);
 
-                    double origMoves = 0;
-                    double.TryParse(cols[(int)ObjdefIndex.Moves].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out origMoves);
-
-                    double origSight = 0;
-                    double.TryParse(cols[(int)ObjdefIndex.Sirad].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out origSight);
-
-                    double origRange = UnitStatParser.GetMaximumRange(cols, utype);
-
-                    double defaultSpeed = 0;
-                    if (origMoves > 0) {
-                        defaultSpeed = Math.Round(origMoves * 2.0, 1);
-                    }
-
-                    double defaultSight = 0;
-                    if (origSight > 0) {
-                        if (utype == "priest") {
-                            defaultSight = Math.Round(origSight * 30.0);
-                        } else if (utype == "ranged_inf" || utype == "ranged_cav" || utype == "hybrid_inf") {
-                            defaultSight = Math.Round(origSight * 3.0);
-                        } else if (utype == "siege") {
-                            defaultSight = Math.Round(origSight * 3.0);
-                        } else {
-                            defaultSight = origSight;
-                        }
-                    }
-
-                    double defaultRange = 0;
-                    if (origRange > 0) {
-                        if (utype == "priest") {
-                            defaultRange = Math.Round(origRange * 30.0);
-                        } else if (utype == "ranged_inf" || utype == "ranged_cav" || utype == "hybrid_inf") {
-                            defaultRange = Math.Round(origRange * 3.0);
-                        } else if (utype == "siege") {
-                            defaultRange = Math.Round(origRange * 3.0);
-                        } else {
-                            defaultRange = origRange;
-                        }
-                    }
-
-                    double defaultSpellRadius = 0;
-                    if (utype == "priest") {
-                        defaultSpellRadius = 500 * 2.5;
-                    }
-
+                    // 遠程/近戰主武器傷害基準值，供下方 scale 比例計算使用。
+                    // 速度/視野/射程/法術半徑的最終值一律取自 unitStatsProjection.Project()
+                    // 的 bases[]（見下方），故此處不再重複計算。
                     double origPrimaryDam = 1.0;
                     if (utype == "ranged_inf" || utype == "ranged_cav") {
                         origPrimaryDam = rangedDam;
@@ -567,9 +512,6 @@ namespace AgainstRomeModifier {
                     } else {
                         origPrimaryDam = meleeDam;
                     }
-
-                    double defHpMult = 1.0;
-
 
                     string displayName = Loc.GetUnitName(key);
                     string typeText = Loc.GetUnitType(utype);
@@ -620,10 +562,10 @@ namespace AgainstRomeModifier {
 
                     double finalDefVw = bases[2];
                     double finalDefAw = bases[3];
-                    defaultSpeed = bases[4];
-                    defaultSight = bases[5];
-                    defaultRange = bases[7];
-                    defaultSpellRadius = bases[8];
+                    double defaultSpeed = bases[4];
+                    double defaultSight = bases[5];
+                    double defaultRange = bases[7];
+                    double defaultSpellRadius = bases[8];
 
                     string meleeReltText = FormatVal(displayMeleeRelt, "F0");
                     string rangedReltText = FormatVal(displayRangedRelt, "F0");
@@ -635,7 +577,7 @@ namespace AgainstRomeModifier {
                     var dgvTarget = defaultStatsGrids[faction];
                     dgvTarget.Rows.Add(
                         displayName, iconImage, typeText, styleText,
-                        Math.Round(bases[0] * defHpMult, 1),
+                        Math.Round(bases[0], 1),
                         meleeDmgText,
                         rangedDmgText,
                         meleeReltText,
@@ -764,19 +706,13 @@ namespace AgainstRomeModifier {
                     string utype = TroopConfig.UnitMeta[key].UnitType;
                     string style = TroopConfig.UnitMeta[key].Style;
 
-                    double curHp;
-                    double.TryParse(cols[(int)ObjdefIndex.Hp].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out curHp);
-                    double curVw;
-                    double.TryParse(cols[(int)ObjdefIndex.Vw].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out curVw);
-                    double curAw;
-                    double.TryParse(cols[(int)ObjdefIndex.Aw].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out curAw);
+                    double curHp = PatchText.ParseDouble(cols, (int)ObjdefIndex.Hp);
+                    double curVw = PatchText.ParseDouble(cols, (int)ObjdefIndex.Vw);
+                    double curAw = PatchText.ParseDouble(cols, (int)ObjdefIndex.Aw);
 
-                    double origHp;
-                    double.TryParse(origCols[(int)ObjdefIndex.Hp].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out origHp);
-                    double origVw;
-                    double.TryParse(origCols[(int)ObjdefIndex.Vw].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out origVw);
-                    double origAw;
-                    double.TryParse(origCols[(int)ObjdefIndex.Aw].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out origAw);
+                    double origHp = PatchText.ParseDouble(origCols, (int)ObjdefIndex.Hp);
+                    double origVw = PatchText.ParseDouble(origCols, (int)ObjdefIndex.Vw);
+                    double origAw = PatchText.ParseDouble(origCols, (int)ObjdefIndex.Aw);
 
                     double origMeleeDmg = 0;
                     double origRangedDmg = 0;
@@ -794,15 +730,11 @@ namespace AgainstRomeModifier {
                     double tempCurRangedRelt = 0;
                     UnitStatParser.GetMeleeAndRangedReload(cols, utype, out tempCurMeleeRelt, out tempCurRangedRelt);
 
-                    double origMoves = 0;
-                    double.TryParse(origCols[(int)ObjdefIndex.Moves].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out origMoves);
-                    double curMoves = 0;
-                    double.TryParse(cols[(int)ObjdefIndex.Moves].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out curMoves);
+                    double origMoves = PatchText.ParseDouble(origCols, (int)ObjdefIndex.Moves);
+                    double curMoves = PatchText.ParseDouble(cols, (int)ObjdefIndex.Moves);
 
-                    double origSight = 0;
-                    double.TryParse(origCols[(int)ObjdefIndex.Sirad].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out origSight);
-                    double curSight = 0;
-                    double.TryParse(cols[(int)ObjdefIndex.Sirad].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out curSight);
+                    double origSight = PatchText.ParseDouble(origCols, (int)ObjdefIndex.Sirad);
+                    double curSight = PatchText.ParseDouble(cols, (int)ObjdefIndex.Sirad);
 
                     double origRange = UnitStatParser.GetMaximumRange(origCols, utype);
                     double curRange = UnitStatParser.GetMaximumRange(cols, utype);

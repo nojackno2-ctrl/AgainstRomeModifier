@@ -125,16 +125,6 @@ namespace AgainstRomeModifier {
         private ModernToggle chkProjectileArcHeight = null!;
         private ModernToggle chkRomanEndless = null!;
         private Dictionary<string, ModernToggle> featureToggles = null!;
-        private static readonly HashSet<string> ExperimentalFeatureIds = new(StringComparer.OrdinalIgnoreCase) {
-            FeatureKeys.Balance.Id,
-            FeatureKeys.SpellHealing10x.Id,
-            FeatureKeys.SpellResurrection.Id,
-            FeatureKeys.GeneralSkills.Id,
-            FeatureKeys.LeaderGlory.Id,
-            FeatureKeys.VillageGarrisonQuotaMultiplier.Id,
-            FeatureKeys.ArgmTrace.Id,
-            FeatureKeys.CorpseRetention.Id
-        };
         private readonly Dictionary<ModernToggle, Panel> experimentalToggleOriginalParents = new();
         private readonly Dictionary<ModernToggle, Button> promoteDemoteButtons = new();
         private readonly Dictionary<ModernToggle, Control> toggleCompanions = new();
@@ -225,13 +215,9 @@ namespace AgainstRomeModifier {
         // 建構函式：初始化 UI 元件，載入備份檔並初始化現有設定
         public ModifierForm(string? initialGamePath = null) {
             _initialGamePath = initialGamePath;
-            // 開啟時讀取系統語言
-            string sysLang = System.Globalization.CultureInfo.CurrentUICulture.Name;
-            if (sysLang.StartsWith("en", StringComparison.OrdinalIgnoreCase)) {
-                Loc.CurrentLanguage = Language.English;
-            } else {
-                Loc.CurrentLanguage = Language.TraditionalChinese;
-            }
+            // 語言偏好已由 Loc 靜態建構式載入（settings.json 優先，否則跟隨系統語系），
+            // 啟動器也會在開啟前 ReloadLanguage()。此處不可再以系統語系覆寫，
+            // 否則 CurrentLanguage 的 setter 會立即存檔、把使用者已選的語言蓋掉。
 
             InitializeComponent();
             BuildFeatureToggleMap();
@@ -698,7 +684,6 @@ namespace AgainstRomeModifier {
                 Location = new Point(0, 0),
                 Size = new Size(385, 790)
             };
-            // pnlNumericCard.Paint += CardPanel_Paint;
 
             // 已驗證功能卡片：實測修改成功、但不納入「所有功能開啟」的選用功能。
             pnlVerifiedCard = new Panel {
@@ -811,7 +796,6 @@ namespace AgainstRomeModifier {
                 Location = new Point(402, 0),
                 Size = new Size(386, 790)
             };
-            // pnlCombatCard.Paint += CardPanel_Paint;
 
             lblCombatTitle = new Label {
                 Text = Loc.Get("CombatTitle"),
@@ -894,7 +878,6 @@ namespace AgainstRomeModifier {
                 Location = new Point(805, 0),
                 Size = new Size(385, 790)
             };
-            // pnlBuildCard.Paint += CardPanel_Paint;
 
             lblBuildTitle = new Label {
                 Text = Loc.Get("BuildTitle"),
@@ -992,7 +975,6 @@ namespace AgainstRomeModifier {
                 Location = new Point(0, 0),
                 Size = new Size(1180, 150)
             };
-            // pnlAiCard.Paint += CardPanel_Paint;
 
             lblAiTitle = new Label {
                 Text = Loc.Get("AiCardTitle"),
@@ -1296,16 +1278,7 @@ namespace AgainstRomeModifier {
             btnBrowseGamePath.Click += new EventHandler(BtnBrowseGamePath_Click);
             pnlRightSidebar.Controls.Add(btnBrowseGamePath);
 
-            string detectedPath = DetectGamePathFromRegistry();
-            if (!string.IsNullOrWhiteSpace(_initialGamePath) && Directory.Exists(_initialGamePath)) {
-                txtGamePath.Text = _initialGamePath;
-            } else if (File.Exists(Path.Combine(AppContext.BaseDirectory, "Against_Rome.exe"))) {
-                txtGamePath.Text = AppContext.BaseDirectory;
-            } else if (!string.IsNullOrEmpty(detectedPath)) {
-                txtGamePath.Text = detectedPath;
-            } else if (Directory.Exists(@"C:\Program Files (x86)\Against Rome")) {
-                txtGamePath.Text = @"C:\Program Files (x86)\Against Rome";
-            }
+            txtGamePath.Text = AgainstRomeModifier.Core.Services.GameDirectoryLocator.ResolveInitialGamePath(_initialGamePath);
 
             menuRestore = new ContextMenuStrip { Renderer = new DarkContextMenuRenderer() };
             itemRestoreAll = new ToolStripMenuItem("全部還原");
