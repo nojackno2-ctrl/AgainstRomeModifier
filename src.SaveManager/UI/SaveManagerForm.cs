@@ -57,28 +57,12 @@ namespace AgainstRomeModifier {
             InitializeComponent();
             saveBackupService = new SaveBackupService(Path.Combine(AppContext.BaseDirectory, "SavesBackup"));
             
-            // Try to set initial game path
-            if (!string.IsNullOrWhiteSpace(initialGamePath) && Directory.Exists(initialGamePath)) {
-                txtGamePath.Text = initialGamePath;
-            } else {
-                string detectedPath = DetectGamePathFromRegistry();
-                if (File.Exists(Path.Combine(AppContext.BaseDirectory, "Against_Rome.exe"))) {
-                    txtGamePath.Text = AppContext.BaseDirectory;
-                } else if (!string.IsNullOrEmpty(detectedPath)) {
-                    txtGamePath.Text = detectedPath;
-                } else if (Directory.Exists(@"C:\Program Files (x86)\Against Rome")) {
-                    txtGamePath.Text = @"C:\Program Files (x86)\Against Rome";
-                }
-            }
+            // 初始遊戲路徑解析與 Modifier 共用同一順序（明確路徑→同目錄可攜→登錄檔→預設）。
+            txtGamePath.Text = GameDirectoryLocator.ResolveInitialGamePath(initialGamePath);
 
-            if (!string.IsNullOrWhiteSpace(txtGamePath.Text)) {
-                // Initial refresh will be triggered by ApplyLanguageToUI
-            }
             UpdateLanguageButtonStyles();
             ApplyLanguageToUI();
         }
-
-        private string DetectGamePathFromRegistry() => GameDirectoryLocator.DetectFromRegistry();
 
         private string GetGamePath() {
             return txtGamePath.Text.Trim();

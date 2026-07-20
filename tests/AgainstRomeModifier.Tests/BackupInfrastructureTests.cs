@@ -74,7 +74,7 @@ public sealed class BackupInfrastructureTests
         byte[] decompressed = GameLZSS.DecompressPfil(CleanEparaBaseline.CreateBytes());
         string text = Encoding.GetEncoding(1251).GetString(decompressed);
 
-        Assert.Equal(BackupManager.GetCleanEparaText(), text);
+        Assert.Equal(CleanEparaBaseline.Text, text);
         string normalized = text.Replace("\r\n", "\n", StringComparison.Ordinal);
         Assert.Contains("[ProjectileInitSpeedFactor]\n1.5", normalized, StringComparison.Ordinal);
         Assert.Contains("[ProjectileVarianceOnMove]\n0.5", normalized, StringComparison.Ordinal);

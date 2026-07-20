@@ -31,28 +31,9 @@ public class PatchEngine
     public PatchProfile DetectCurrentPatchProfile(string gamePath, BackupManager backupManager) =>
         DetectCurrentPatchState(gamePath, backupManager);
 
-    // These public helpers are retained as compatibility endpoints; SafeFileWriter owns the implementation.
+    // Retained as a compatibility endpoint; SafeFileWriter owns the implementation.
     public void SafeWriteAllBytes(string destination, byte[] bytes, FileRollbackScope? rollback = null) =>
         SafeFileWriter.WriteAllBytes(destination, bytes, rollback);
-
-    public void SafeCopyFile(
-        string source,
-        string destination,
-        bool overwrite,
-        FileRollbackScope? rollback = null)
-    {
-        if (!overwrite && File.Exists(destination))
-            throw new IOException("目標檔案已存在: " + destination);
-        SafeWriteAllBytes(destination, File.ReadAllBytes(source), rollback);
-    }
-
-    public void SafeDeleteFile(string path, FileRollbackScope? rollback = null)
-    {
-        if (!File.Exists(path)) return;
-        rollback?.TrackFile(path);
-        File.SetAttributes(path, FileAttributes.Normal);
-        File.Delete(path);
-    }
 
     public void ApplyPatches(
         string gamePath,

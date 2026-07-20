@@ -62,7 +62,7 @@ internal sealed class ObjdefFeatureDetector
                 bool range3x = false;
                 if (unitRows.TryGetValue("FigRomSch01_Bogen", out var rangeProbeCols))
                 {
-                    double currentRange = BackupManager.GetUnitMaxRange(rangeProbeCols, "ranged_inf");
+                    double currentRange = UnitStatParser.GetMaximumRange(rangeProbeCols, "ranged_inf");
                     double originalRange = backupManager.GetOriginalStats("FigRomSch01_Bogen")[7];
                     range3x = currentRange > 0 && Math.Abs(currentRange - originalRange * 3.0) < 5.0;
                 }
@@ -76,38 +76,29 @@ internal sealed class ObjdefFeatureDetector
                     string[] cols = unitRows[key];
                     string[] origCols = origUnitRows[key];
 
-                    double curHp = 0, origHp = 0;
-                    double.TryParse(cols[(int)ObjdefIndex.Hp].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out curHp);
-                    double.TryParse(origCols[(int)ObjdefIndex.Hp].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out origHp);
+                    double curHp = PatchText.ParseDouble(cols, (int)ObjdefIndex.Hp);
+                    double origHp = PatchText.ParseDouble(origCols, (int)ObjdefIndex.Hp);
 
-                    double curVw = 0, origVw = 0;
-                    double.TryParse(cols[(int)ObjdefIndex.Vw].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out curVw);
-                    double.TryParse(origCols[(int)ObjdefIndex.Vw].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out origVw);
+                    double curVw = PatchText.ParseDouble(cols, (int)ObjdefIndex.Vw);
+                    double origVw = PatchText.ParseDouble(origCols, (int)ObjdefIndex.Vw);
 
-                    double curAw = 0, origAw = 0;
-                    double.TryParse(cols[(int)ObjdefIndex.Aw].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out curAw);
-                    double.TryParse(origCols[(int)ObjdefIndex.Aw].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out origAw);
+                    double curAw = PatchText.ParseDouble(cols, (int)ObjdefIndex.Aw);
+                    double origAw = PatchText.ParseDouble(origCols, (int)ObjdefIndex.Aw);
 
-                    double curMoves = 0, origMoves = 0;
-                    double.TryParse(cols[(int)ObjdefIndex.Moves].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out curMoves);
-                    double.TryParse(origCols[(int)ObjdefIndex.Moves].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out origMoves);
+                    double curMoves = PatchText.ParseDouble(cols, (int)ObjdefIndex.Moves);
+                    double origMoves = PatchText.ParseDouble(origCols, (int)ObjdefIndex.Moves);
 
-                    double curSight = 0, origSight = 0;
-                    double.TryParse(cols[(int)ObjdefIndex.Sirad].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out curSight);
-                    double.TryParse(origCols[(int)ObjdefIndex.Sirad].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out origSight);
+                    double curSight = PatchText.ParseDouble(cols, (int)ObjdefIndex.Sirad);
+                    double origSight = PatchText.ParseDouble(origCols, (int)ObjdefIndex.Sirad);
 
-                    double curMeleeDmg = 0, curRangedDmg = 0;
-                    BackupManager.GetMeleeAndRangedDmg(cols, utype, out curMeleeDmg, out curRangedDmg);
-                    double origMeleeDmg = 0, origRangedDmg = 0;
-                    BackupManager.GetMeleeAndRangedDmg(origCols, utype, out origMeleeDmg, out origRangedDmg);
+                    UnitStatParser.GetMeleeAndRangedDamage(cols, utype, out double curMeleeDmg, out double curRangedDmg);
+                    UnitStatParser.GetMeleeAndRangedDamage(origCols, utype, out double origMeleeDmg, out double origRangedDmg);
 
-                    double curMeleeRelt = 0, curRangedRelt = 0;
-                    BackupManager.GetMeleeAndRangedRelt(cols, utype, out curMeleeRelt, out curRangedRelt);
-                    double origMeleeRelt = 0, origRangedRelt = 0;
-                    BackupManager.GetMeleeAndRangedRelt(origCols, utype, out origMeleeRelt, out origRangedRelt);
+                    UnitStatParser.GetMeleeAndRangedReload(cols, utype, out double curMeleeRelt, out double curRangedRelt);
+                    UnitStatParser.GetMeleeAndRangedReload(origCols, utype, out double origMeleeRelt, out double origRangedRelt);
 
-                    double curRange = BackupManager.GetUnitMaxRange(cols, utype);
-                    double origRange = BackupManager.GetUnitMaxRange(origCols, utype);
+                    double curRange = UnitStatParser.GetMaximumRange(cols, utype);
+                    double origRange = UnitStatParser.GetMaximumRange(origCols, utype);
 
                     // 排除領袖以防 LeaderGlory 的干擾，且只比對不受 Range3x/Speed2x 影響的屬性 (Hp, Vw, Aw, Sight)
                     if (TroopConfig.UnitMeta[key].Tier != "leader")
@@ -134,8 +125,7 @@ internal sealed class ObjdefFeatureDetector
                 // 使用羅馬輕裝步兵 FigRomInf00_Lanze_Schild 偵測速度 2 倍
                 if (unitRows.TryGetValue("FigRomInf00_Lanze_Schild", out var testMovesCols))
                 {
-                    double curMoves = 0;
-                    double.TryParse(testMovesCols[(int)ObjdefIndex.Moves].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out curMoves);
+                    double curMoves = PatchText.ParseDouble(testMovesCols, (int)ObjdefIndex.Moves);
                     double expectedBaseMoves = backupManager.GetBaseStatsForUnit("FigRomInf00_Lanze_Schild", options)[4] / 2.0;
                     if (curMoves > 0 && Math.Abs(curMoves - expectedBaseMoves * 2.0) < 0.05)
                     {
@@ -146,7 +136,7 @@ internal sealed class ObjdefFeatureDetector
                 // 使用羅馬弓箭手 FigRomSch01_Bogen 偵測射程 3 倍
                 if (unitRows.TryGetValue("FigRomSch01_Bogen", out var testRangeCols))
                 {
-                    double curRange = BackupManager.GetUnitMaxRange(testRangeCols, "ranged_inf");
+                    double curRange = UnitStatParser.GetMaximumRange(testRangeCols, "ranged_inf");
                     double expectedBaseRange = backupManager.GetBaseStatsForUnit("FigRomSch01_Bogen", options)[7];
                     if (curRange > 0 && Math.Abs(curRange - expectedBaseRange * 3.0) < 5.0)
                     {
@@ -162,9 +152,8 @@ internal sealed class ObjdefFeatureDetector
                 if (unitRows.TryGetValue("FigZivMan00_Zivilist", out var testCivMovesCols) &&
                     origUnitRows.TryGetValue("FigZivMan00_Zivilist", out var origCivMovesCols))
                 {
-                    double curMoves = 0;
-                    double.TryParse(testCivMovesCols[(int)ObjdefIndex.Moves].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out curMoves);
-                    double.TryParse(origCivMovesCols[(int)ObjdefIndex.Moves].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out double origMoves);
+                    double curMoves = PatchText.ParseDouble(testCivMovesCols, (int)ObjdefIndex.Moves);
+                    double origMoves = PatchText.ParseDouble(origCivMovesCols, (int)ObjdefIndex.Moves);
                     if (curMoves > 0 && Math.Abs(curMoves - origMoves * 5.0) < 0.05)
                     {
                         villagerSpeed5x = true;
@@ -177,7 +166,7 @@ internal sealed class ObjdefFeatureDetector
                 if (unitRows.TryGetValue("FigKelPri00_Priester", out var testSpellCols) &&
                     origUnitRows.ContainsKey("FigKelPri00_Priester"))
                 {
-                    double curRange = BackupManager.GetUnitMaxRange(testSpellCols, "priest");
+                    double curRange = UnitStatParser.GetMaximumRange(testSpellCols, "priest");
                     if (curRange > 0)
                     {
                         if (Math.Abs(curRange - ObjdefPatcher.EntireMapSight) < 100.0)
