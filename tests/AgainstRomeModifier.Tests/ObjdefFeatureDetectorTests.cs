@@ -23,6 +23,7 @@ public sealed class ObjdefFeatureDetectorTests
             HqHp10x = true,
             FastBuildUpgradeRepair = true,
             LeaderGlory = true,
+            NoRunHpLoss = true,
         };
         byte[] patched = ObjdefFeaturePatcher.Build(fixture.Backup, enabled);
         string path = Path.Combine(fixture.RootPath, "SYSTEM", "DATA_MP", "DEFAULTS", "objdef.dau");
@@ -42,6 +43,7 @@ public sealed class ObjdefFeatureDetectorTests
         Assert.True(detected.HqHp10x);
         Assert.True(detected.FastBuildUpgradeRepair);
         Assert.True(detected.LeaderGlory);
+        Assert.True(detected.NoRunHpLoss);
         Assert.False(detected.Balance);
     }
 

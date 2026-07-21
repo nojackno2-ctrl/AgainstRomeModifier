@@ -393,15 +393,39 @@ namespace AgainstRomeModifierTests {
                         Fail($"{name}: P9 撤退配額(索引 9，偏移 0x{q9:X})應為 66,0，實為 {I32(d, q9 + 16)},{I32(d, q9 + 20)}");
                 }
 
-                // P9 第三控制點：狀態 49 捐贈走訪的 s_getUnitType 型別過濾應為
-                // 反轉版 jnz(118)+92（2026-07-17 實機確認：士兵小隊 type!=1
-                // 落入捐贈分支留村駐守，駄馬/平民 type=1 照原版撤退離場）。
-                // （原版 jz+92 = 士兵一律撤退；Legacy jz+0 = 全捐贈 → 駄馬堆積。）
+                // P9 第三控制點：jz(117)+0 吃掉型別分流，讓士兵、駄馬與平民
+                // 全部進入 donation；第四控制點負責解除 party mode 後再移交。
+                // 原版 jz+92 與舊版 jnz+92 都不是現行完全移交輸出。
                 int?[] typeFilterSig = { 128, 214, 73, -2, 86, 66, 1, 96, 102, null, null };
                 int tf = BciPattern.FindBciWordPattern(d, typeFilterSig);
                 if (tf < 0) Fail($"{name}: 找不到 P9 捐贈型別過濾簽章");
-                else if (I32(d, tf + 36) != 118 || I32(d, tf + 40) != 92)
-                    Fail($"{name}: P9 捐贈型別過濾應為 jnz(118)+92，實為 {I32(d, tf + 36)},{I32(d, tf + 40)}");
+                else if (I32(d, tf + 36) != 117 || I32(d, tf + 40) != 0)
+                    Fail($"{name}: P9 完全移交過濾應為 jz(117)+0，實為 {I32(d, tf + 36)},{I32(d, tf + 40)}");
+
+                // P9 第四控制點：舊 direct s_setObjMark 會讓士兵保留 party
+                // script mode 並在村莊消失。新輸出必須呼叫尾端 helper，先
+                // s_setScriptMode(0)，再 s_setObjMark。
+                int?[] donationActionSig = { 90,42,117,56, 90,41,90,4,90,3, null,null,null,null,86,71,112,116 };
+                int da = BciPattern.FindBciWordPattern(d, donationActionSig);
+                if (da < 0) Fail($"{name}: 找不到 P9 donation action 簽章");
+                else if (I32(d, da + 40) != 120) Fail($"{name}: P9 donation action 應以 callint(120) 呼叫 release helper");
+                else if (I32(d, da + 48) != 112 || I32(d, da + 52) != 4) Fail($"{name}: P9 donation action 尾端外部呼叫應以 jmp 4(112, 4) 繞過，實為 {I32(d, da + 48)},{I32(d, da + 52)}");
+                else {
+                    int callOffset = da + 40;
+                    int helperOffset = callOffset + 8 + I32(d, da + 44);
+                    int[] helper = {
+                        74,94,73,3, 66,0, 90,-4,90,-3, 128,86,73,-3,86,71,
+                        90,-5,90,-4,90,-3, 128,141,73,-3,86,71,
+                        66,1,87,112,0, 95,75,121
+                    };
+                    if (helperOffset < 0 || helperOffset + helper.Length * 4 > d.Length)
+                        Fail($"{name}: P9 release helper target 超出 BCI 範圍");
+                    else for (int i = 0; i < helper.Length; i++)
+                        if (I32(d, helperOffset + i * 4) != helper[i]) {
+                            Fail($"{name}: P9 release helper word {i} 不符");
+                            break;
+                        }
+                }
             }
 
             // ---- ak_haupthaus.bci ----

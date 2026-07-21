@@ -19,6 +19,9 @@ and patch code.
 - `objdef-fields.csv`: known `objdef.dau` indexes.
 - `ress-fields.csv`: known `ress.ini` indexes.
 - `exe-functions.md`: executable functions and anchors found with Ghidra.
+- `runtime-trace-hooks.md`: design and hooked-function reference for the
+  `native/argm-trace` runtime flight-recorder DLL (log-only inline hooks on the
+  AI callbacks; signature/fingerprint gated).
 - `../feature-spec-roman-endless.md`: runtime-verified Roman Endless design, its ENDL `team.dat` default layer, and the `dlg_volk` EXE setter patch.
 - `priest-spells.md`: priest spell effect values, summon/resurrect unit
   types (`SpellODef`), and the decoded resurrection logic.

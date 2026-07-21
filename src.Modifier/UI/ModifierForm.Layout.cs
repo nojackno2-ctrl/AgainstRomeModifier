@@ -36,6 +36,7 @@ namespace AgainstRomeModifier {
 
             ConfigureSidebarLayout();
             ConfigureSystemDashboard();
+            ConfigureExperimentalDashboard();
             ConfigureStatsPages();
 
 
@@ -74,6 +75,7 @@ namespace AgainstRomeModifier {
         private void ConfigureSidebarLayout() {
             Button[] navButtons = {
                 btnNavSystem,
+                btnNavExperimental,
                 btnNavDefaultStats,
                 btnNavCurrentStats
             };
@@ -147,7 +149,9 @@ namespace AgainstRomeModifier {
                 btnEnableAll.Location = new Point(Math.Max(0, header.Width - 284), 12);
             };
 
-            Panel pnlContent = new Panel {
+            // 指派到欄位（勿宣告區域變數遮蔽）：UpdateExperimentalLayout 依賴此欄位
+            // 在推廣/降級後重新排列主控台卡片。
+            pnlContent = new Panel {
                 Location = new Point(0, 72),
                 Size = new Size(tabSystem.ClientSize.Width, tabSystem.ClientSize.Height - 72),
                 Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
@@ -156,13 +160,17 @@ namespace AgainstRomeModifier {
                 AutoScroll = true
             };
 
-            // 依功能語意分為六張卡片：系統相容、建設經濟、村民操作、法術祭司、戰鬥部隊、無盡模式。
-            ConfigureSettingsCard(pnlNumericCard, lblNumericTitle, 350,
+            // 依功能語意分為七張卡片：系統相容、已驗證選用、建設經濟、村民操作、法術祭司、戰鬥部隊、無盡模式。
+            ConfigureSettingsCard(pnlNumericCard, lblNumericTitle, 398,
                 chkFocusLoss,
                 chkToEng,
                 chkDgVoodoo,
-                chkGameSpeed,
+                chkArgmTrace,
                 chkNativeWidescreen1920x1080,
+                chkCorpseRetention);
+            // 已驗證功能：實測成功但刻意排除在「所有功能開啟」之外，需使用者手動開啟。
+            ConfigureSettingsCard(pnlVerifiedCard, lblVerifiedTitle, 158,
+                chkGameSpeed,
                 chkCameraZoomOut1);
             ConfigureSettingsCard(pnlBuildCard, lblBuildTitle, 446,
                 chkFreeProd,
@@ -189,6 +197,7 @@ namespace AgainstRomeModifier {
                 chkSpellRange3x);
             ConfigureSettingsCard(pnlCombatCard, lblCombatTitle, 494,
                 chkInfiniteMorale,
+                chkNoRunHpLoss,
                 chkFoodHealing10x,
                 chkGeneralSkills,
                 chkLeaderGlory,
@@ -197,13 +206,15 @@ namespace AgainstRomeModifier {
                 chkProjectileArcHeight,
                 chkUnitMovementSpeed2x,
                 chkAllUnitsEntireMapVision);
-            ConfigureSettingsCard(pnlAiCard, lblAiTitle, 302,
+            ConfigureSettingsCard(pnlAiCard, lblAiTitle, 350,
                 chkRomanEndless,
-                chkAiM1, chkAiCore, chkAiM5, chkAiM6);
+                chkAiM1, chkAiCore, chkAiM5, chkRomanReinforcementGarrison,
+                chkVillageGarrisonQuota3x);
 
             // 每組設定以同一層卡片底色收攏，讓長短不一的功能群組仍有清楚邊界。
             Color cardBackColor = Color.FromArgb(14, 18, 26);
             pnlNumericCard.BackColor = cardBackColor;
+            pnlVerifiedCard.BackColor = cardBackColor;
             pnlSpellCard.BackColor = cardBackColor;
             pnlVillagerCard.BackColor = cardBackColor;
             pnlCombatCard.BackColor = cardBackColor;
@@ -211,6 +222,7 @@ namespace AgainstRomeModifier {
             pnlAiCard.BackColor = cardBackColor;
 
             pnlNumericCard.Dock = DockStyle.None;
+            pnlVerifiedCard.Dock = DockStyle.None;
             pnlSpellCard.Dock = DockStyle.None;
             pnlVillagerCard.Dock = DockStyle.None;
             pnlCombatCard.Dock = DockStyle.None;
@@ -218,6 +230,7 @@ namespace AgainstRomeModifier {
             pnlAiCard.Dock = DockStyle.None;
 
             pnlContent.Controls.Add(pnlNumericCard);
+            pnlContent.Controls.Add(pnlVerifiedCard);
             pnlContent.Controls.Add(pnlSpellCard);
             pnlContent.Controls.Add(pnlVillagerCard);
             pnlContent.Controls.Add(pnlCombatCard);
@@ -251,6 +264,7 @@ namespace AgainstRomeModifier {
             int[] columnBottoms = Enumerable.Repeat(paddingY, columnCount).ToArray();
             Panel[] cards = {
                 pnlNumericCard,
+                pnlVerifiedCard,
                 pnlBuildCard,
                 pnlCombatCard,
                 pnlSpellCard,
@@ -276,8 +290,6 @@ namespace AgainstRomeModifier {
             Label title,
             int height,
             params ModernToggle[] toggles) {
-            card.Height = height;
-            card.MinimumSize = new Size(0, height);
             card.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             card.Margin = new Padding(6, 0, 6, 0);
             card.BackColor = Color.FromArgb(14, 18, 26);
@@ -287,16 +299,45 @@ namespace AgainstRomeModifier {
             title.ForeColor = Color.FromArgb(105, 205, 255);
 
             void LayoutRows() {
+                int visibleCount = 0;
                 for (int i = 0; i < toggles.Length; i++) {
                     ModernToggle toggle = toggles[i];
-                    int y = 60 + i * 48;
+                    if (toggle.Parent != card) {
+                        if (promoteDemoteButtons.TryGetValue(toggle, out Button? b)) {
+                            b.Visible = false;
+                        }
+                        continue;
+                    }
+                    
+                    int y = 60 + visibleCount * 48;
+                    bool hasButton = promoteDemoteButtons.TryGetValue(toggle, out Button? btn) && btn!.Parent == card;
+                    bool hasCompanion = toggleCompanions.TryGetValue(toggle, out Control? companion);
+                    int rightReserve = hasButton ? 160 : 40;
+                    if (hasCompanion) rightReserve += companion!.Width + 8;
+
                     toggle.Location = new Point(20, y);
-                    toggle.Size = new Size(Math.Max(120, card.Width - 40), 26);
+                    toggle.Size = new Size(Math.Max(120, card.Width - rightReserve), 26);
                     toggle.Font = fontJhengHei95R;
                     toggle.BackColor = card.BackColor;
+
+                    if (hasCompanion) {
+                        if (companion!.Parent != card) companion.Parent = card;
+                        companion.Location = new Point(toggle.Right + 8, y);
+                    }
+                    if (hasButton) {
+                        btn!.Location = new Point(card.Width - 130, y + 1);
+                        btn.Visible = true;
+                    }
+
+                    visibleCount++;
                 }
+                int calculatedHeight = 60 + visibleCount * 48 + 12;
+                if (calculatedHeight < 60) calculatedHeight = 60;
+                card.Height = calculatedHeight;
+                card.MinimumSize = new Size(0, calculatedHeight);
             }
 
+            card.Tag = (Action)LayoutRows;
             card.Resize += (s, e) => LayoutRows();
             LayoutRows();
         }
@@ -426,6 +467,79 @@ namespace AgainstRomeModifier {
             };
             p.Paint += InputPanel_Paint;
             return p;
+        }
+
+        private void ConfigureExperimentalDashboard() {
+            tabExperimental.BackColor = Color.FromArgb(9, 12, 18);
+
+            Panel header = new Panel {
+                Dock = DockStyle.Top,
+                Height = 72,
+                BackColor = Color.FromArgb(9, 12, 18)
+            };
+            lblExperimentalHeading = new Label {
+                Text = Loc.Get("ExperimentalHeading"),
+                Location = new Point(4, 4),
+                Size = new Size(430, 28),
+                Font = fontJhengHei115B,
+                ForeColor = Color.FromArgb(235, 242, 250),
+                BackColor = Color.Transparent
+            };
+            lblExperimentalSubtitle = new Label {
+                Text = Loc.Get("ExperimentalSubtitle"),
+                Location = new Point(4, 35),
+                Size = new Size(620, 22),
+                Font = fontJhengHei9R,
+                ForeColor = Color.FromArgb(128, 143, 163),
+                BackColor = Color.Transparent
+            };
+            header.Controls.Add(lblExperimentalHeading);
+            header.Controls.Add(lblExperimentalSubtitle);
+
+            pnlExperimentalContent = new Panel {
+                Location = new Point(0, 72),
+                Size = new Size(tabExperimental.ClientSize.Width, tabExperimental.ClientSize.Height - 72),
+                Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
+                BackColor = Color.FromArgb(9, 12, 18),
+                AutoScroll = true
+            };
+
+            pnlExperimentalCard.BackColor = Color.FromArgb(14, 18, 26);
+            pnlExperimentalCard.Dock = DockStyle.None;
+            pnlExperimentalCard.Paint += CardPanel_Paint;
+
+            lblExperimentalCardTitle.Text = Loc.Get("ExperimentalCardTitle");
+            lblExperimentalCardTitle.ForeColor = Color.FromArgb(105, 205, 255);
+
+            pnlExperimentalContent.Controls.Add(pnlExperimentalCard);
+
+            tabExperimental.Controls.Clear();
+            tabExperimental.Controls.Add(pnlExperimentalContent);
+            tabExperimental.Controls.Add(header);
+            header.BringToFront();
+
+            pnlExperimentalContent.Resize += (s, e) => LayoutExperimentalCardFlat(pnlExperimentalContent);
+            LayoutExperimentalCardFlat(pnlExperimentalContent);
+        }
+
+        private void LayoutExperimentalCardFlat(Panel container) {
+            container.SuspendLayout();
+
+            int paddingX = 20;
+            int paddingY = 20;
+            
+            pnlExperimentalCard.Location = new Point(paddingX, paddingY);
+            pnlExperimentalCard.Width = container.ClientSize.Width - (paddingX * 2);
+            if (pnlExperimentalCard.Width < 260) pnlExperimentalCard.Width = 260;
+
+            if (pnlExperimentalCard.Tag is Action layoutAction) {
+                layoutAction();
+            }
+
+            int contentHeight = pnlExperimentalCard.Bottom + paddingY;
+            container.AutoScrollMinSize = new Size(container.ClientSize.Width, contentHeight);
+
+            container.ResumeLayout(true);
         }
     }
 }

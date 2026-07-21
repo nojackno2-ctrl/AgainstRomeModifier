@@ -24,6 +24,23 @@ internal static class PatchText {
     internal static string[] ParseCsvLine(string line) => line?.Split(',') ?? Array.Empty<string>();
     internal static string ToCsvString(IEnumerable<string> columns) => string.Join(",", columns);
 
+    /// <summary>
+    /// 以遊戲資料一致的解析規則（Trim + InvariantCulture）讀取欄位為 double；
+    /// 索引越界或無法解析時回傳 0。收斂原本散落各處的 double.TryParse 樣板。
+    /// </summary>
+    internal static double ParseDouble(string[] columns, int index) =>
+        columns != null && index >= 0 && index < columns.Length
+            ? ParseDouble(columns[index])
+            : 0;
+
+    internal static double ParseDouble(string value) =>
+        double.TryParse(
+            value?.Trim(),
+            System.Globalization.NumberStyles.Any,
+            System.Globalization.CultureInfo.InvariantCulture,
+            out double result)
+            ? result : 0;
+
     internal static bool CheckLength(string value, int targetLength, out string finalValue) {
         value = value.Trim();
         finalValue = value;

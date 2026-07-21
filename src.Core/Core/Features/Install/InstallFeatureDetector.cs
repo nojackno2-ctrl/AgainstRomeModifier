@@ -31,5 +31,14 @@ internal sealed class InstallFeatureDetector
         {
             _logger.Log(string.Format(Loc.Get("SvcLogDetectFailed"), "dgVoodoo2", ex.Message));
         }
+
+        try
+        {
+            profile.ArgmTrace = new ArgmTraceFeature(_logger).IsInstalled(gamePath);
+        }
+        catch (Exception ex)
+        {
+            _logger.Log(string.Format(Loc.Get("SvcLogDetectFailed"), "argm-trace", ex.Message));
+        }
     }
 }

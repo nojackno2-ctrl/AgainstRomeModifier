@@ -16,7 +16,8 @@ public sealed record ObjdefOptions(
     bool ProjectileArcHeight,
     IReadOnlyDictionary<string, double[]> UnitStats,
     bool AllUnitsEntireMapVision = false,
-    bool VillagerMovementSpeed5x = false);
+    bool VillagerMovementSpeed5x = false,
+    bool NoRunHpLoss = false);
 
 public static class ObjdefPatcher {
     /// <summary>LeaderGlory5x 影響的首領列與欄位（攻擊成長、防禦成長、傷害成長、士氣光環），偵測邏輯（FeatureDetector）共用同一份清單。</summary>
@@ -68,6 +69,12 @@ public static class ObjdefPatcher {
                 double civMult = 1.0;
                 if (options.VillagerMovementSpeed5x) civMult *= 5.0;
                 PatchCivilianSpeed(cols, source, name, civMult);
+            }
+            if (options.NoRunHpLoss && (TroopConfig.UnitMeta.ContainsKey(name) || name is "FigZivMan00_Zivilist" or "FigZivWei00_Zivilistin" or "FigTiePac00_Packpferd")) {
+                double originalLpsub = Read(source, (int)ObjdefIndex.Lpsub);
+                if (Math.Abs(originalLpsub - 1.00) < 0.01) {
+                    SetValue(cols, (int)ObjdefIndex.Lpsub, "0.00", name, "lpsub");
+                }
             }
             // Final shared-field override. RangedRange3x and SpellEntireMap are
             // composed first; when this feature is selected, it owns Sirad last.

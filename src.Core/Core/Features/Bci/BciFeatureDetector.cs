@@ -17,8 +17,27 @@ internal sealed class BciFeatureDetector
             {
                 PatchState state = orchestrator.DetectModule(gamePath, module);
                 bool migrateLegacyWhenSelected = module.Id is "Core" or "M6";
-                profile.EndlessAiModules[module.Id] = state == PatchState.Ultimate ||
+                bool selected = state == PatchState.Ultimate ||
                     (migrateLegacyWhenSelected && state == PatchState.Legacy);
+                if (module.Id == "M6")
+                {
+                    profile.RomanReinforcementGarrison = selected;
+                    profile.Set(FeatureKeys.EndlessAiM6, selected);
+                }
+                else if (module.Id == "VillageGarrisonQuota3x")
+                {
+                    // Ultimate = installed at the orchestrator default; Legacy =
+                    // installed at another supported multiplier. Read the actual
+                    // literal back so the UI shows what is really installed.
+                    profile.VillageGarrisonQuotaMultiplier =
+                        state == PatchState.Ultimate || state == PatchState.Legacy
+                            ? orchestrator.DetectVillageGarrisonQuotaMultiplier(gamePath)
+                            : 1;
+                }
+                else
+                {
+                    profile.EndlessAiModules[module.Id] = selected;
+                }
             }
         }
         catch (Exception ex)

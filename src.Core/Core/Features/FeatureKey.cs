@@ -40,6 +40,7 @@ public static class FeatureKeys
 {
     public static readonly FeatureKey<bool> FastCiviProduction = FeatureKey<bool>.Bool("FastCiviProduction");
     public static readonly FeatureKey<bool> InfiniteMorale = FeatureKey<bool>.Bool("InfiniteMorale");
+    public static readonly FeatureKey<bool> NoRunHpLoss = FeatureKey<bool>.Bool("NoRunHpLoss");
     public static readonly FeatureKey<bool> Balance = FeatureKey<bool>.Bool("Balance");
     public static readonly FeatureKey<bool> FreeProduction = FeatureKey<bool>.Bool("FreeProduction");
     public static readonly FeatureKey<bool> FreeUpgrade = FeatureKey<bool>.Bool("FreeUpgrade");
@@ -53,7 +54,12 @@ public static class FeatureKeys
     public static readonly FeatureKey<bool> CiviProduce20 = FeatureKey<bool>.Bool("CiviProduce20");
     public static readonly FeatureKey<bool> UnitRecruit20 = FeatureKey<bool>.Bool("UnitRecruit20");
     public static readonly FeatureKey<bool> IdleSelect999 = FeatureKey<bool>.Bool("IdleSelect999");
+    public static readonly FeatureKey<bool> CorpseRetention = FeatureKey<bool>.Bool("CorpseRetention");
     public static readonly FeatureKey<bool> RomanEndless = FeatureKey<bool>.Bool("RomanEndless");
+    public static readonly FeatureKey<bool> RomanReinforcementGarrison = FeatureKey<bool>.Bool("RomanReinforcementGarrison");
+    // Historical id kept for module/profile migration; the value is now the
+    // quota multiplier itself (1 = disabled, supported values 2/3/5/10).
+    public static readonly FeatureKey<int> VillageGarrisonQuotaMultiplier = FeatureKey<int>.Int("VillageGarrisonQuota3x", 1);
     public static readonly FeatureKey<bool> SpellDamage5x = FeatureKey<bool>.Bool("SpellDamage5x");
     public static readonly FeatureKey<bool> SpellHealing10x = FeatureKey<bool>.Bool("SpellHealing10x");
     public static readonly FeatureKey<bool> SpellResurrection = FeatureKey<bool>.Bool("SpellResurrection");
@@ -72,6 +78,7 @@ public static class FeatureKeys
     public static readonly FeatureKey<bool> NoSpellAltar = FeatureKey<bool>.Bool("NoSpellAltar");
     public static readonly FeatureKey<int> GameSpeed = FeatureKey<int>.Int("GameSpeed", 1);
     public static readonly FeatureKey<bool> DgVoodoo = FeatureKey<bool>.Bool("DgVoodoo");
+    public static readonly FeatureKey<bool> ArgmTrace = FeatureKey<bool>.Bool("ArgmTrace");
     public static readonly FeatureKey<bool> NativeWidescreen1920x1080 = FeatureKey<bool>.Bool("NativeWidescreen1920x1080");
     public static readonly FeatureKey<bool> CameraZoomOut1 = FeatureKey<bool>.Bool("CameraZoomOut1");
     public static readonly FeatureKey<bool> EndlessAiM1 = FeatureKey<bool>.Bool("EndlessAi.M1");

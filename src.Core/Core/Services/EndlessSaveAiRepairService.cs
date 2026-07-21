@@ -63,7 +63,10 @@ internal sealed class EndlessSaveAiRepairService
         if (!changed)
             return EndlessSaveAiRepairResult.AlreadyRepaired;
 
-        Buffer.BlockCopy(bciTail, 0, decompressed, bciOffset, bciTail.Length);
+        byte[] repairedDecompressed = new byte[bciOffset + bciTail.Length];
+        Buffer.BlockCopy(decompressed, 0, repairedDecompressed, 0, bciOffset);
+        Buffer.BlockCopy(bciTail, 0, repairedDecompressed, bciOffset, bciTail.Length);
+        decompressed = repairedDecompressed;
         byte[] repairedRaw = GameLZSS.CompressPfil(decompressed, raw);
         byte[] verified = GameLZSS.DecompressPfil(repairedRaw);
         if (!verified.AsSpan().SequenceEqual(decompressed))

@@ -37,13 +37,17 @@ namespace AgainstRomeModifier {
             lblMainTitle.Text = Loc.Get("MainTitle");
             lblSystemHeading.Text = Loc.Get("SystemHeading");
             lblSystemSubtitle.Text = Loc.Get("SystemSubtitle");
+            if (lblExperimentalHeading != null) lblExperimentalHeading.Text = Loc.Get("ExperimentalHeading");
+            if (lblExperimentalSubtitle != null) lblExperimentalSubtitle.Text = Loc.Get("ExperimentalSubtitle");
+            if (lblExperimentalCardTitle != null) lblExperimentalCardTitle.Text = Loc.Get("ExperimentalCardTitle");
             lblNumericTitle.Text = Loc.Get("NumericTitle");
+            lblVerifiedTitle.Text = Loc.Get("VerifiedTitle");
             chkFocusLoss.Text = Loc.Get("FocusLoss");
             chkToEng.Text = Loc.Get("ToEng");
             chkAiM1.Text = Loc.Get("AiM1");
             chkAiCore.Text = Loc.Get("AiCore");
             chkAiM5.Text = Loc.Get("AiM5");
-            chkAiM6.Text = Loc.Get("AiM6");
+            chkVillageGarrisonQuota3x.Text = Loc.Get("VillageGarrisonQuota3x");
             chkHousingCapacity20x.Text = Loc.Get("HousingCapacity20x");
             chkStorageCapacity10x.Text = Loc.Get("StorageCapacity10x");
             chkHqHp10x.Text = Loc.Get("HqHp10x");
@@ -53,6 +57,7 @@ namespace AgainstRomeModifier {
             chkUnitRecruit20.Text = Loc.Get("UnitRecruit20");
             chkIdleSelect999.Text = Loc.Get("IdleSelect999");
             chkDgVoodoo.Text = Loc.Get("DgVoodoo");
+            chkArgmTrace.Text = Loc.Get("ArgmTrace");
             chkGameSpeed.Text = Loc.Get("GameSpeedLabel");
             chkVillageBuildRange.Text = Loc.Get("VillageBuildRange");
             lblSpellTitle.Text = Loc.Get("SpellTitle");
@@ -74,6 +79,7 @@ namespace AgainstRomeModifier {
             chkNoSpellCost.Text = Loc.Get("NoSpellCost");
             chkNoSpellAltar.Text = Loc.Get("NoSpellAltar");
             chkInfiniteMorale.Text = Loc.Get("InfiniteMorale");
+            chkNoRunHpLoss.Text = Loc.Get("NoRunHpLoss");
             lblGamePath.Text = Loc.Get("GamePath");
             btnBrowseGamePath.Text = Loc.Get("Browse");
             btnLoadCurrent.Text = Loc.Get("LoadCurrent");
@@ -106,6 +112,7 @@ namespace AgainstRomeModifier {
             chkAllUnitsEntireMapVision.Text = Loc.Get("AllUnitsEntireMapVision");
             chkNativeWidescreen1920x1080.Text = Loc.Get("NativeWidescreen1920x1080");
             chkCameraZoomOut1.Text = Loc.Get("CameraZoomOut1");
+            chkCorpseRetention.Text = Loc.Get("CorpseRetention");
             chkRangedRange3x.Text = Loc.Get("RangedRange3x");
             chkUnitMovementSpeed2x.Text = Loc.Get("UnitMovementSpeed2x");
             chkVillagerMovementSpeed5x.Text = Loc.Get("VillagerMovementSpeed5x");
@@ -113,6 +120,7 @@ namespace AgainstRomeModifier {
             chkSpellRange3x.Text = Loc.Get("SpellRange3x");
             chkProjectileArcHeight.Text = Loc.Get("ProjectileArcHeight");
             chkRomanEndless.Text = Loc.Get("RomanEndless");
+            chkRomanReinforcementGarrison.Text = Loc.Get("RomanReinforcementGarrison");
             lblTroopTemplate.Text = Loc.Get("TroopTemplateLabel");
             RefreshTroopTemplateItems();
             lblCurrentStatsTitle.Text = Loc.Get("CurrentStatsTitle");
@@ -122,6 +130,9 @@ namespace AgainstRomeModifier {
 
             // 重新整理側邊導覽列按鈕
             RefreshNavButtons();
+
+            // 依目前語言更新實驗性功能的推廣/降級按鈕文字（按鈕已建立時才需要）
+            if (promoteDemoteButtons.Count > 0) UpdateExperimentalLayout();
 
 
             // 重新載入表格數據
@@ -135,7 +146,10 @@ namespace AgainstRomeModifier {
                 myToolTip.SetToolTip(chkFocusLoss, Loc.Get("FocusLossTip"));
                 myToolTip.SetToolTip(chkToEng, Loc.Get("ToEngTip"));
                 myToolTip.SetToolTip(chkDgVoodoo, Loc.Get("DgVoodooTip"));
+                myToolTip.SetToolTip(chkArgmTrace, Loc.Get("ArgmTraceTip"));
                 myToolTip.SetToolTip(chkGameSpeed, Loc.Get("GameSpeedTip"));
+                myToolTip.SetToolTip(cboGameSpeedMultiplier, Loc.Get("GameSpeedTip"));
+                myToolTip.SetToolTip(lblVerifiedTitle, Loc.Get("VerifiedTitleTip"));
                 myToolTip.SetToolTip(chkSpellDamage5x, Loc.Get("SpellDamage5xTip"));
                 myToolTip.SetToolTip(chkSpellHealing10x, Loc.Get("SpellHealing10xTip"));
                 myToolTip.SetToolTip(chkSpellResurrection, Loc.Get("SpellResurrectionTip"));
@@ -145,10 +159,12 @@ namespace AgainstRomeModifier {
                 myToolTip.SetToolTip(chkFreeUpgrade, Loc.Get("FreeUpgradeTip"));
                 myToolTip.SetToolTip(chkNoSpellCost, Loc.Get("NoSpellCostTip"));
                 myToolTip.SetToolTip(chkInfiniteMorale, Loc.Get("InfiniteMoraleTip"));
+                myToolTip.SetToolTip(chkNoRunHpLoss, Loc.Get("NoRunHpLossTip"));
                 myToolTip.SetToolTip(chkBalance, Loc.Get("BalanceTip"));
                 myToolTip.SetToolTip(chkAllUnitsEntireMapVision, Loc.Get("AllUnitsEntireMapVisionTip"));
                 myToolTip.SetToolTip(chkNativeWidescreen1920x1080, Loc.Get("NativeWidescreen1920x1080Tip"));
                 myToolTip.SetToolTip(chkCameraZoomOut1, Loc.Get("CameraZoomOut1Tip"));
+                myToolTip.SetToolTip(chkCorpseRetention, Loc.Get("CorpseRetentionTip"));
                 myToolTip.SetToolTip(chkRangedRange3x, Loc.Get("RangedRange3xTip"));
                 myToolTip.SetToolTip(chkUnitMovementSpeed2x, Loc.Get("UnitMovementSpeed2xTip"));
                 myToolTip.SetToolTip(chkVillagerMovementSpeed5x, Loc.Get("VillagerMovementSpeed5xTip"));
@@ -156,6 +172,9 @@ namespace AgainstRomeModifier {
                 myToolTip.SetToolTip(chkSpellRange3x, Loc.Get("SpellRange3xTip"));
                 myToolTip.SetToolTip(chkProjectileArcHeight, Loc.Get("ProjectileArcHeightTip"));
                 myToolTip.SetToolTip(chkRomanEndless, Loc.Get("RomanEndlessTip"));
+                myToolTip.SetToolTip(chkRomanReinforcementGarrison, Loc.Get("RomanReinforcementGarrisonTip"));
+                myToolTip.SetToolTip(chkVillageGarrisonQuota3x, Loc.Get("VillageGarrisonQuota3xTip"));
+                myToolTip.SetToolTip(cboVillageGarrisonQuotaMultiplier, Loc.Get("VillageGarrisonQuota3xTip"));
                 myToolTip.SetToolTip(chkNoSpellAltar, Loc.Get("NoSpellAltarTip"));
                 myToolTip.SetToolTip(chkMaxPopulation, Loc.Get("MaxPopulationTip"));
                 myToolTip.SetToolTip(chkHousingCapacity20x, Loc.Get("HousingCapacity20xTip"));
@@ -171,7 +190,6 @@ namespace AgainstRomeModifier {
                 myToolTip.SetToolTip(chkAiM1, Loc.Get("AiM1Tip"));
                 myToolTip.SetToolTip(chkAiCore, Loc.Get("AiCoreTip"));
                 myToolTip.SetToolTip(chkAiM5, Loc.Get("AiM5Tip"));
-                myToolTip.SetToolTip(chkAiM6, Loc.Get("AiM6Tip"));
             }
         }
 

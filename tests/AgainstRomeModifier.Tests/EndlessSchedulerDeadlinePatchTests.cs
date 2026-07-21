@@ -64,6 +64,111 @@ public sealed class EndlessSchedulerDeadlinePatchTests
     }
 
     [Fact]
+    public void P9_round_trips_release_helper_on_all_five_local_endless_re_samples_when_available()
+    {
+        DirectoryInfo? root = new(AppContext.BaseDirectory);
+        while (root != null && !Directory.Exists(Path.Combine(root.FullName, "re_workspace", "endless_bci")))
+            root = root.Parent;
+        if (root == null) return;
+
+        string sampleRoot = Path.Combine(root.FullName, "re_workspace", "endless_bci");
+        string[] samples = Directory.GetFiles(sampleRoot, "ENDL_*_ak_level.dec.bci");
+        Assert.Equal(5, samples.Length);
+
+        var patch = new P9_RetreatQuotaPatch();
+        foreach (string sample in samples)
+        {
+            byte[] original = File.ReadAllBytes(sample);
+            int originalCodeSize = BitConverter.ToInt32(original, 8);
+            byte[] current = (byte[])original.Clone();
+
+            Assert.Equal(PatchState.Original, patch.Detect(current));
+            Assert.True(patch.Apply(ref current, enabled: true));
+            Assert.Equal(PatchState.Ultimate, patch.Detect(current));
+            Assert.False(patch.Apply(ref current, enabled: true));
+
+            int filterOffset = BciPattern.FindBciWordPattern(current, new int?[]
+            {
+                128, 214, 73, -2, 86, 66, 1, 96, 102, null, null
+            });
+            Assert.True(filterOffset >= 0);
+            Assert.Equal(117, BitConverter.ToInt32(current, filterOffset + 9 * sizeof(int)));
+            Assert.Equal(0, BitConverter.ToInt32(current, filterOffset + 10 * sizeof(int)));
+
+            int helperByteLength = P9_RetreatQuotaPatch.ReleaseAndRemarkHelperWords.Length * sizeof(int);
+            Assert.Equal(original.Length + helperByteLength, current.Length);
+            Assert.Equal(originalCodeSize + helperByteLength, BitConverter.ToInt32(current, 8));
+
+            int actionOffset = BciPattern.FindBciWordPattern(current, new int?[]
+            {
+                90, 42, 117, 56, 90, 41, 90, 4, 90, 3, 120, null, null, null, 86, 71, 112, 116
+            });
+            Assert.True(actionOffset >= 0);
+            Assert.Equal(112, BitConverter.ToInt32(current, actionOffset + 12 * sizeof(int)));
+            Assert.Equal(4, BitConverter.ToInt32(current, actionOffset + 13 * sizeof(int)));
+            int callOffset = actionOffset + 10 * sizeof(int);
+            int helperOffset = callOffset + 8 + BitConverter.ToInt32(current, callOffset + sizeof(int));
+            Assert.Equal(
+                P9_RetreatQuotaPatch.ReleaseAndRemarkHelperWords,
+                ReadWords(current, helperOffset, P9_RetreatQuotaPatch.ReleaseAndRemarkHelperWords.Length));
+
+            Assert.True(patch.Apply(ref current, enabled: false));
+            Assert.Equal(PatchState.Original, patch.Detect(current));
+            Assert.Equal(original, current);
+        }
+    }
+
+    [Fact]
+    public void P9_migrates_previous_jnz_direct_mark_and_rejects_tampered_helper_target()
+    {
+        DirectoryInfo? root = new(AppContext.BaseDirectory);
+        while (root != null && !Directory.Exists(Path.Combine(root.FullName, "re_workspace", "endless_bci")))
+            root = root.Parent;
+        if (root == null) return;
+
+        string sample = Directory.GetFiles(Path.Combine(root.FullName, "re_workspace", "endless_bci"), "ENDL_*_ak_level.dec.bci")[0];
+        byte[] current = File.ReadAllBytes(sample);
+
+        List<int> quotas = BciPattern.FindAllBciWordPatternSites(current, new int?[] { 81, 56, 90, -3, null, null, 164 });
+        Assert.Equal(10, quotas.Count);
+        WriteInt32(current, quotas[9] + 4 * sizeof(int), 66);
+        WriteInt32(current, quotas[9] + 5 * sizeof(int), 0);
+        int filter = BciPattern.FindBciWordPattern(current, new int?[] { 128, 214, 73, -2, 86, 66, 1, 96, 102, null, null });
+        Assert.True(filter >= 0);
+        WriteInt32(current, filter + 9 * sizeof(int), 118);
+        WriteInt32(current, filter + 10 * sizeof(int), 92);
+
+        var patch = new P9_RetreatQuotaPatch();
+        Assert.Equal(PatchState.Legacy, patch.Detect(current));
+        Assert.True(patch.Apply(ref current, enabled: true));
+        Assert.Equal(PatchState.Ultimate, patch.Detect(current));
+        Assert.Equal(117, BitConverter.ToInt32(current, filter + 9 * sizeof(int)));
+        Assert.Equal(0, BitConverter.ToInt32(current, filter + 10 * sizeof(int)));
+
+        int action = BciPattern.FindBciWordPattern(current, new int?[]
+        {
+            90, 42, 117, 56, 90, 41, 90, 4, 90, 3, null, null, null, null, 86, 71, 112, 116
+        });
+        int opcodeOffset = action + 10 * sizeof(int);
+        int operandOffset = action + 11 * sizeof(int);
+
+        // The first helper-backed build used VM opcode 160 (arrCreate) instead
+        // of opcode 120 (internal call). It must remain a safe migration input.
+        WriteInt32(current, opcodeOffset, 160);
+        Assert.Equal(PatchState.Legacy, patch.Detect(current));
+        Assert.True(patch.Apply(ref current, enabled: true));
+        Assert.Equal(120, BitConverter.ToInt32(current, opcodeOffset));
+        Assert.Equal(PatchState.Ultimate, patch.Detect(current));
+
+        WriteInt32(current, operandOffset, BitConverter.ToInt32(current, operandOffset) + sizeof(int));
+        byte[] unknown = (byte[])current.Clone();
+
+        Assert.Equal(PatchState.Unknown, patch.Detect(current));
+        Assert.Throws<InvalidOperationException>(() => patch.Apply(ref current, enabled: true));
+        Assert.Equal(unknown, current);
+    }
+
+    [Fact]
     public void P6_round_trip_adds_bounded_save_load_deadline_repair()
     {
         byte[] original = CreateOriginalFixture(out int schedulerOffset, out _);
@@ -155,9 +260,11 @@ public sealed class EndlessSchedulerDeadlinePatchTests
         byte[] fixture = new byte[scheduler.Length + reinforcement.Length];
         Buffer.BlockCopy(scheduler, 0, fixture, 0, scheduler.Length);
         Buffer.BlockCopy(reinforcement, 0, fixture, scheduler.Length, reinforcement.Length);
-        byte[] bci = new byte[36 + fixture.Length];
+        byte[] bci = new byte[36 + fixture.Length + 8];
         "BCI0"u8.CopyTo(bci);
+        WriteInt32(bci, 8, fixture.Length);
         Buffer.BlockCopy(fixture, 0, bci, 36, fixture.Length);
+        "SYMBCONS"u8.CopyTo(bci.AsSpan(36 + fixture.Length));
 
         byte[] path = System.Text.Encoding.ASCII.GetBytes("MAPS/ENDL_002/SCRIPT/ak_level\0");
         byte[] decompressed = new byte[64 + path.Length + bci.Length + 32];
@@ -190,6 +297,7 @@ public sealed class EndlessSchedulerDeadlinePatchTests
             words.AddRange(new[] { 81, 56, 90, -3, opcode, value, 164, gap, gap });
         }
         words.AddRange(new[] { 128, 214, 73, -2, 86, 66, 1, 96, 102, 117, 0 });
+        words.AddRange(new[] { 90, 42, 117, 56, 90, 41, 90, 4, 90, 3, 128, 141, 73, -3, 86, 71, 112, 116 });
 
         byte[] result = new byte[words.Count * sizeof(int)];
         for (int i = 0; i < words.Count; i++) WriteInt32(result, i * sizeof(int), words[i]);

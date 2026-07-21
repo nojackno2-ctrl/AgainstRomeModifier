@@ -86,6 +86,15 @@ internal sealed class BackupZipGameFixture : IDisposable
             66, 1500, 66, 25, 66, -25, 128, 34, 73, -2, 86, 32, 82, 14, 81, 14, 82, 15));
 
         var villageDefense = new List<int>();
+        int[] quotaTypes = { 1, 2, 3, 4 };
+        int[] quotaArrayVars = { 8, 10, 12, 14 };
+        int[] quotaStores = { 59, 61, 63, 65 };
+        for (int i = 0; i < quotaTypes.Length; i++)
+        {
+            Append(villageDefense,
+                66, quotaTypes[i], 81, quotaArrayVars[i],
+                128, 151, 73, -2, 86, 91, quotaStores[i], Gap);
+        }
         for (int i = 0; i < 4; i++)
         {
             Append(villageDefense, 66, 0, 66, 1, 66, 6, 66, 6, 66, 0, 66, 0, 66, 0, 66, 1, 90, 8, 128, 157, 73, -9, 86, Gap);
@@ -148,6 +157,7 @@ internal sealed class BackupZipGameFixture : IDisposable
             Section(words, 81, 56, 90, -3, opcode, value, 164);
         }
         Section(words, 128, 214, 73, -2, 86, 66, 1, 96, 102, 117, 92); // P9 filter
+        Section(words, 90, 42, 117, 56, 90, 41, 90, 4, 90, 3, 128, 141, 73, -3, 86, 71, 112, 116); // P9 donation action
 
         Section(words, 66, 60, 66, 100, 66, 1, 128, 16, 73, -2, 86, 96, 101, 117); // P17
         Section(words, 120, -636, 73, -3, 86, 66, 0, 96, 101, 117, 20, 66, 0, 87); // P18
@@ -166,7 +176,17 @@ internal sealed class BackupZipGameFixture : IDisposable
         Directory.CreateDirectory(scriptRoot);
         foreach (var (name, symbolIndex) in FoodHealingScripts)
         {
-            WritePfil(Path.Combine(scriptRoot, name + ".bci"), Words(66, 1, 81, 10, 81, 98, 128, symbolIndex, 73, -3, 86));
+            var words = new List<int> { 66, 1, 81, 10, 81, 98, 128, symbolIndex, 73, -3, 86 };
+            if (name == "ak_krieger")
+            {
+                Append(words, Gap);
+                Append(words,
+                    66, 1000001, 87, 130,
+                    66, 1, 66, 0,
+                    81, 10, 81, 98,
+                    128, 106, 73, -4, 86);
+            }
+            WritePfil(Path.Combine(scriptRoot, name + ".bci"), Words(words));
         }
     }
 

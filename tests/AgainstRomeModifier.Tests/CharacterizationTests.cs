@@ -11,7 +11,7 @@ public sealed class CharacterizationTests
         double[] fallback = { 100, 20, 10, 10, 4, 1000, 5, 2000, 500 };
         double[] custom = { 150, 30, 15, 15, 99, 1200, 9, 9999, 9999 };
 
-        double[] merged = BackupManager.MergeUnitStatsLayers(
+        double[] merged = UnitStatParser.MergeLayers(
             fallback, custom, supportsSpellRadius: true);
 
         Assert.Equal(150, merged[0]);
@@ -48,6 +48,7 @@ public sealed class CharacterizationTests
         GameSpeed = 2,
         ToEnglish = true,
         DgVoodoo = true,
+        VillageGarrisonQuota3x = true,
         EndlessAiModules = new(StringComparer.OrdinalIgnoreCase)
         {
             ["M1"] = true, ["M2"] = true, ["M3"] = true,
@@ -105,6 +106,7 @@ public sealed class CharacterizationTests
         Assert.True(detected.NoSpellAltar);
         Assert.True(detected.ToEnglish);
         Assert.True(detected.DgVoodoo);
+        Assert.True(detected.VillageGarrisonQuota3x);
         Assert.Equal(2, detected.GameSpeed);
         foreach (string id in AllEnabled().EndlessAiModules.Keys)
         {

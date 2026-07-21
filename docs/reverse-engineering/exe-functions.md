@@ -29,7 +29,10 @@ headless imports plus focused decompilation scripts completed successfully.
 The original opcode-table conclusions remain byte-derived; broader
 whole-program analysis is available again through the clean one-shot workflow.
 
-- Interpreter entry: `005B1C62` (frame setup, `EBX` = VM context pointer).
+- Interpreter entry: `005B1C60` (byte-verified 2026-07-18: `53 56 57 55 89 E5
+  ...`; the VM context arrives as stack argument 1 and is loaded into `EBX`
+  only at `005B1C6F` via `mov ebx,[ebp+0x14]` — `EBX` is not yet the context
+  at entry).
   Opcode fetch at `005B1C72`: read 32-bit opcode word at `[EBX+8]` (PC,
   byte offset into the code stream), advance PC by 4, `index = opcode - 1`,
   bounds-check `index <= 0xB0`, dispatch via jump table `005B199C[index]`

@@ -20,11 +20,16 @@ public sealed class PatchProfile
     public bool FocusLoss { get => Get(FeatureKeys.FocusLoss); set => Set(FeatureKeys.FocusLoss, value); }
     public bool FastCiviProduction { get => Get(FeatureKeys.FastCiviProduction); set => Set(FeatureKeys.FastCiviProduction, value); }
     public bool InfiniteMorale { get => Get(FeatureKeys.InfiniteMorale); set => Set(FeatureKeys.InfiniteMorale, value); }
+    public bool NoRunHpLoss { get => Get(FeatureKeys.NoRunHpLoss); set => Set(FeatureKeys.NoRunHpLoss, value); }
     public bool FreeProduction { get => Get(FeatureKeys.FreeProduction); set => Set(FeatureKeys.FreeProduction, value); }
     public bool FreeUpgrade { get => Get(FeatureKeys.FreeUpgrade); set => Set(FeatureKeys.FreeUpgrade, value); }
     public bool NoSpellCost { get => Get(FeatureKeys.NoSpellCost); set => Set(FeatureKeys.NoSpellCost, value); }
     public bool MaxPopulation { get => Get(FeatureKeys.MaxPopulation); set => Set(FeatureKeys.MaxPopulation, value); }
     public bool RomanEndless { get => Get(FeatureKeys.RomanEndless); set => Set(FeatureKeys.RomanEndless, value); }
+    public bool RomanReinforcementGarrison { get => Get(FeatureKeys.RomanReinforcementGarrison); set => Set(FeatureKeys.RomanReinforcementGarrison, value); }
+    public int VillageGarrisonQuotaMultiplier { get => Get(FeatureKeys.VillageGarrisonQuotaMultiplier); set => Set(FeatureKeys.VillageGarrisonQuotaMultiplier, value); }
+    // Legacy bool view: true means "enabled at the original ×3"; reading is true for any active multiplier.
+    public bool VillageGarrisonQuota3x { get => VillageGarrisonQuotaMultiplier > 1; set => VillageGarrisonQuotaMultiplier = value ? 3 : 1; }
     public bool Balance { get => Get(FeatureKeys.Balance); set => Set(FeatureKeys.Balance, value); }
     public bool HousingCapacity20x { get => Get(FeatureKeys.HousingCapacity20x); set => Set(FeatureKeys.HousingCapacity20x, value); }
     public bool StorageCapacity10x { get => Get(FeatureKeys.StorageCapacity10x); set => Set(FeatureKeys.StorageCapacity10x, value); }
@@ -34,8 +39,10 @@ public sealed class PatchProfile
     public bool CiviProduce20 { get => Get(FeatureKeys.CiviProduce20); set => Set(FeatureKeys.CiviProduce20, value); }
     public bool UnitRecruit20 { get => Get(FeatureKeys.UnitRecruit20); set => Set(FeatureKeys.UnitRecruit20, value); }
     public bool IdleSelect999 { get => Get(FeatureKeys.IdleSelect999); set => Set(FeatureKeys.IdleSelect999, value); }
+    public bool CorpseRetention { get => Get(FeatureKeys.CorpseRetention); set => Set(FeatureKeys.CorpseRetention, value); }
     public bool VillageBuildRange { get => Get(FeatureKeys.VillageBuildRange); set => Set(FeatureKeys.VillageBuildRange, value); }
     public bool DgVoodoo { get => Get(FeatureKeys.DgVoodoo); set => Set(FeatureKeys.DgVoodoo, value); }
+    public bool ArgmTrace { get => Get(FeatureKeys.ArgmTrace); set => Set(FeatureKeys.ArgmTrace, value); }
     public bool NativeWidescreen1920x1080 { get => Get(FeatureKeys.NativeWidescreen1920x1080); set => Set(FeatureKeys.NativeWidescreen1920x1080, value); }
     public bool CameraZoomOut1 { get => Get(FeatureKeys.CameraZoomOut1); set => Set(FeatureKeys.CameraZoomOut1, value); }
     public bool ToEnglish { get => Get(FeatureKeys.ToEnglish); set => Set(FeatureKeys.ToEnglish, value); }
@@ -56,6 +63,19 @@ public sealed class PatchProfile
     public Dictionary<string, bool> EndlessAiModules { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public bool GetEndlessAiModule(string moduleId)
     {
+        if (moduleId.Equals("M6", StringComparison.OrdinalIgnoreCase))
+        {
+            bool legacyEnabled = EndlessAiModules.TryGetValue(moduleId, out bool legacyModuleEnabled)
+                ? legacyModuleEnabled
+                : Get(FeatureKeys.EndlessAiM6);
+            return RomanReinforcementGarrison || legacyEnabled;
+        }
+        if (moduleId.Equals("VillageGarrisonQuota3x", StringComparison.OrdinalIgnoreCase))
+        {
+            bool legacyQuotaEnabled = EndlessAiModules.TryGetValue(moduleId, out bool legacyQuotaModuleEnabled)
+                && legacyQuotaModuleEnabled;
+            return VillageGarrisonQuotaMultiplier > 1 || legacyQuotaEnabled;
+        }
         if (EndlessAiModules.TryGetValue(moduleId, out bool enabled)) return enabled;
         if (IsLegacyCoreModule(moduleId)) return Get(FeatureKeys.EndlessAiCore);
         return Get(FeatureKeys.EndlessAi(moduleId));
@@ -68,7 +88,28 @@ public sealed class PatchProfile
 
     public void NormalizeCompositeValues()
     {
-        foreach (var (id, enabled) in EndlessAiModules) Set(FeatureKeys.EndlessAi(id), enabled);
+        foreach (var (id, enabled) in EndlessAiModules)
+        {
+            if (id.Equals("M6", StringComparison.OrdinalIgnoreCase))
+            {
+                RomanReinforcementGarrison |= enabled;
+                continue;
+            }
+            if (id.Equals("VillageGarrisonQuota3x", StringComparison.OrdinalIgnoreCase))
+            {
+                // Old profiles carried a bool module selection; migrate "enabled"
+                // to the original ×3 unless a multiplier is already chosen.
+                if (enabled && VillageGarrisonQuotaMultiplier <= 1) VillageGarrisonQuotaMultiplier = 3;
+                continue;
+            }
+            Set(FeatureKeys.EndlessAi(id), enabled);
+        }
+
+        // M6 was the old user-facing identity for the atomic P8 + P9 behavior.
+        // Mirror it into the standalone feature so old profiles and detected
+        // installations migrate without silently disabling Roman garrisons.
+        RomanReinforcementGarrison |= Get(FeatureKeys.EndlessAiM6);
+        Set(FeatureKeys.EndlessAiM6, RomanReinforcementGarrison);
 
         bool coreEnabled = Get(FeatureKeys.EndlessAiCore);
         bool hasLegacyCoreSelection = false;

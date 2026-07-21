@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -8,6 +8,7 @@ using System.Windows.Forms;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Runtime.InteropServices;
+using AgainstRomeModifier.Core.Features;
 
 namespace AgainstRomeModifier {
     // 修改器的主表單類別，繼承自 Windows Form
@@ -31,12 +32,14 @@ namespace AgainstRomeModifier {
         private Button btnNavSystem = null!;
         private Button btnNavDefaultStats = null!;
         private Button btnNavCurrentStats = null!;
+        private Button btnNavExperimental = null!;
 
         // 主要分頁控制項與分頁
         private TabControl mainTabControl = null!;
         private TabPage tabSystem = null!;
         private TabPage tabDefaultStats = null!;
         private TabPage tabCurrentStats = null!;
+        private TabPage tabExperimental = null!;
         
         // 兵種屬性分頁與網格
         private TabControl defaultStatsTabControl = null!;
@@ -53,6 +56,14 @@ namespace AgainstRomeModifier {
         private Label lblSpellTitle = null!;
         private Panel pnlVillagerCard = null!;
         private Label lblVillagerTitle = null!;
+        private Panel pnlVerifiedCard = null!;
+        private Label lblVerifiedTitle = null!;
+        private Panel pnlExperimentalCard = null!;
+        private Label lblExperimentalCardTitle = null!;
+        private Label lblExperimentalHeading = null!;
+        private Label lblExperimentalSubtitle = null!;
+        private Panel pnlExperimentalContent = null!;
+        private Panel pnlContent = null!;
 
         // 數值控制項 (NumericUpDown) 的宣告
         private ModernToggle chkMaxPopulation = null!;
@@ -73,11 +84,14 @@ namespace AgainstRomeModifier {
         private ModernToggle chkCiviProduce20 = null!;
         private ModernToggle chkUnitRecruit20 = null!;
         private ModernToggle chkIdleSelect999 = null!;
+        private ModernToggle chkCorpseRetention = null!;
         private ModernToggle chkAiM1 = null!;
         private ModernToggle chkAiCore = null!;
         private ModernToggle chkAiM5 = null!;
-        private ModernToggle chkAiM6 = null!;
+        private ModernToggle chkRomanReinforcementGarrison = null!;
+        private ModernToggle chkVillageGarrisonQuota3x = null!;
         private ModernToggle chkDgVoodoo = null!;
+        private ModernToggle chkArgmTrace = null!;
         private ModernToggle chkVillageBuildRange = null!;
         private ModernToggle chkGameSpeed = null!;
         private Button btnTroopPreset = null!;
@@ -89,6 +103,12 @@ namespace AgainstRomeModifier {
         private string presetFileName = "";
         private ModernToggle chkToEng = null!;
         private ModernToggle chkInfiniteMorale = null!;
+        private ModernToggle chkNoRunHpLoss = null!;
+        private ComboBox cboVillageGarrisonQuotaMultiplier = null!;
+        private static readonly int[] VillageGarrisonQuotaMultiplierChoices = { 2, 3, 5, 10 };
+        // 與 ExePatchModel.GameSpeedSupportedMultipliers 的可加速區間一致（預設上限 10 倍）。
+        private ComboBox cboGameSpeedMultiplier = null!;
+        private static readonly int[] GameSpeedMultiplierChoices = { 2, 3, 4, 5, 6, 7, 8, 9, 10 };
         private ModernToggle chkSpellDamage5x = null!;
         private ModernToggle chkSpellHealing10x = null!;
         private ModernToggle chkSpellResurrection = null!;
@@ -105,6 +125,9 @@ namespace AgainstRomeModifier {
         private ModernToggle chkProjectileArcHeight = null!;
         private ModernToggle chkRomanEndless = null!;
         private Dictionary<string, ModernToggle> featureToggles = null!;
+        private readonly Dictionary<ModernToggle, Panel> experimentalToggleOriginalParents = new();
+        private readonly Dictionary<ModernToggle, Button> promoteDemoteButtons = new();
+        private readonly Dictionary<ModernToggle, Control> toggleCompanions = new();
 
         // 所有功能開啟/關閉按鈕
         private Button btnEnableAll = null!;
@@ -192,16 +215,13 @@ namespace AgainstRomeModifier {
         // 建構函式：初始化 UI 元件，載入備份檔並初始化現有設定
         public ModifierForm(string? initialGamePath = null) {
             _initialGamePath = initialGamePath;
-            // 開啟時讀取系統語言
-            string sysLang = System.Globalization.CultureInfo.CurrentUICulture.Name;
-            if (sysLang.StartsWith("en", StringComparison.OrdinalIgnoreCase)) {
-                Loc.CurrentLanguage = Language.English;
-            } else {
-                Loc.CurrentLanguage = Language.TraditionalChinese;
-            }
+            // 語言偏好已由 Loc 靜態建構式載入（settings.json 優先，否則跟隨系統語系），
+            // 啟動器也會在開啟前 ReloadLanguage()。此處不可再以系統語系覆寫，
+            // 否則 CurrentLanguage 的 setter 會立即存檔、把使用者已選的語言蓋掉。
 
             InitializeComponent();
             BuildFeatureToggleMap();
+            InitializeExperimentalFeatures();
 
             // 更新語系按鈕視覺狀態與套用語系
             UpdateLanguageButtonStyles();
@@ -552,6 +572,13 @@ namespace AgainstRomeModifier {
                 RefreshNavButtons();
             };
 
+            btnNavExperimental = new Button { Location = new Point(10, 195) };
+            StyleNavButton(btnNavExperimental, "NavExperimental", tabExperimental);
+            btnNavExperimental.Click += (s, e) => {
+                ShowTabPage(tabExperimental);
+                RefreshNavButtons();
+            };
+
             // 語系切換元件初始化與事件綁定
             lblSidebarLang = new Label {
                 Text = Loc.Get("LanguageLabel"),
@@ -597,6 +624,7 @@ namespace AgainstRomeModifier {
             };
 
             pnlSidebar.Controls.Add(btnNavSystem);
+            pnlSidebar.Controls.Add(btnNavExperimental);
             pnlSidebar.Controls.Add(btnNavDefaultStats);
             pnlSidebar.Controls.Add(btnNavCurrentStats);
 
@@ -627,15 +655,51 @@ namespace AgainstRomeModifier {
                 UseVisualStyleBackColor = false
             };
 
+            tabExperimental = new TabPage {
+                BackColor = Color.FromArgb(10, 11, 16),
+                UseVisualStyleBackColor = false
+            };
+
             mainTabControl.TabPages.Add(tabSystem);
+            mainTabControl.TabPages.Add(tabExperimental);
             mainTabControl.TabPages.Add(tabDefaultStats);
             mainTabControl.TabPages.Add(tabCurrentStats);
+
+            pnlExperimentalCard = new Panel {
+                Location = new Point(0, 0),
+                Size = new Size(385, 790)
+            };
+
+            lblExperimentalCardTitle = new Label {
+                Text = "實驗性功能",
+                Location = new Point(25, 20),
+                Size = new Size(250, 25),
+                Font = fontJhengHei105B,
+                ForeColor = Color.FromArgb(0, 220, 255),
+                BackColor = Color.Transparent
+            };
+            pnlExperimentalCard.Controls.Add(lblExperimentalCardTitle);
 
             pnlNumericCard = new Panel {
                 Location = new Point(0, 0),
                 Size = new Size(385, 790)
             };
-            // pnlNumericCard.Paint += CardPanel_Paint;
+
+            // 已驗證功能卡片：實測修改成功、但不納入「所有功能開啟」的選用功能。
+            pnlVerifiedCard = new Panel {
+                Location = new Point(0, 0),
+                Size = new Size(385, 200)
+            };
+
+            lblVerifiedTitle = new Label {
+                Text = Loc.Get("VerifiedTitle"),
+                Location = new Point(25, 20),
+                Size = new Size(250, 25),
+                Font = fontJhengHei105B,
+                ForeColor = Color.FromArgb(0, 220, 255),
+                BackColor = Color.Transparent
+            };
+            pnlVerifiedCard.Controls.Add(lblVerifiedTitle);
 
             lblNumericTitle = new Label {
                 Text = "系統與相容性設定",
@@ -677,6 +741,16 @@ namespace AgainstRomeModifier {
             };
             pnlNumericCard.Controls.Add(chkDgVoodoo);
 
+            chkArgmTrace = new ModernToggle {
+                Text = Loc.Get("ArgmTrace"),
+                Location = new Point(25, 270),
+                Size = new Size(310, 25),
+                Checked = false,
+                BackColor = Color.Transparent,
+                Font = fontJhengHei10B
+            };
+            pnlNumericCard.Controls.Add(chkArgmTrace);
+
             chkGameSpeed = new ModernToggle {
                 Text = Loc.Get("GameSpeedLabel"),
                 Location = new Point(25, 200),
@@ -685,7 +759,20 @@ namespace AgainstRomeModifier {
                 BackColor = Color.Transparent,
                 Font = fontJhengHei10B
             };
-            pnlNumericCard.Controls.Add(chkGameSpeed);
+            pnlVerifiedCard.Controls.Add(chkGameSpeed);
+            cboGameSpeedMultiplier = new ComboBox {
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                Size = new Size(64, 26),
+                FlatStyle = FlatStyle.Flat,
+                BackColor = Color.FromArgb(24, 30, 42),
+                ForeColor = Color.FromArgb(0, 220, 255),
+                Font = fontJhengHei10B
+            };
+            foreach (int choice in GameSpeedMultiplierChoices)
+                cboGameSpeedMultiplier.Items.Add("×" + choice);
+            cboGameSpeedMultiplier.SelectedIndex = Array.IndexOf(GameSpeedMultiplierChoices, 10);
+            toggleCompanions[chkGameSpeed] = cboGameSpeedMultiplier;
+            pnlVerifiedCard.Controls.Add(cboGameSpeedMultiplier);
 
             btnEnableAll = new Button {
                 Text = "所有功能開啟",
@@ -709,7 +796,6 @@ namespace AgainstRomeModifier {
                 Location = new Point(402, 0),
                 Size = new Size(386, 790)
             };
-            // pnlCombatCard.Paint += CardPanel_Paint;
 
             lblCombatTitle = new Label {
                 Text = Loc.Get("CombatTitle"),
@@ -758,6 +844,16 @@ namespace AgainstRomeModifier {
             };
             pnlCombatCard.Controls.Add(chkInfiniteMorale);
 
+            chkNoRunHpLoss = new ModernToggle {
+                Text = "單位跑步不扣血",
+                Location = new Point(25, 360),
+                Size = new Size(310, 25),
+                Checked = false,
+                BackColor = Color.Transparent,
+                Font = fontJhengHei10B
+            };
+            pnlCombatCard.Controls.Add(chkNoRunHpLoss);
+
             chkBalance = new ModernToggle {
                 Text = Loc.Get("EnableBalance"),
                 Location = new Point(25, 400),
@@ -782,7 +878,6 @@ namespace AgainstRomeModifier {
                 Location = new Point(805, 0),
                 Size = new Size(385, 790)
             };
-            // pnlBuildCard.Paint += CardPanel_Paint;
 
             lblBuildTitle = new Label {
                 Text = Loc.Get("BuildTitle"),
@@ -880,7 +975,6 @@ namespace AgainstRomeModifier {
                 Location = new Point(0, 0),
                 Size = new Size(1180, 150)
             };
-            // pnlAiCard.Paint += CardPanel_Paint;
 
             lblAiTitle = new Label {
                 Text = Loc.Get("AiCardTitle"),
@@ -895,11 +989,26 @@ namespace AgainstRomeModifier {
             chkAiM1 = new ModernToggle { Text = Loc.Get("AiM1"), Size = new Size(260, 26), Checked = false, BackColor = Color.Transparent, Font = fontJhengHei10B };
             chkAiCore = new ModernToggle { Text = Loc.Get("AiCore"), Size = new Size(260, 26), Checked = false, BackColor = Color.Transparent, Font = fontJhengHei10B };
             chkAiM5 = new ModernToggle { Text = Loc.Get("AiM5"), Size = new Size(260, 26), Checked = false, BackColor = Color.Transparent, Font = fontJhengHei10B };
-            chkAiM6 = new ModernToggle { Text = Loc.Get("AiM6"), Size = new Size(260, 26), Checked = false, BackColor = Color.Transparent, Font = fontJhengHei10B };
+            chkRomanReinforcementGarrison = new ModernToggle { Text = Loc.Get("RomanReinforcementGarrison"), Size = new Size(310, 26), Checked = false, BackColor = Color.Transparent, Font = fontJhengHei10B };
+            chkVillageGarrisonQuota3x = new ModernToggle { Text = Loc.Get("VillageGarrisonQuota3x"), Size = new Size(310, 26), Checked = false, BackColor = Color.Transparent, Font = fontJhengHei10B };
+            cboVillageGarrisonQuotaMultiplier = new ComboBox {
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                Size = new Size(64, 26),
+                FlatStyle = FlatStyle.Flat,
+                BackColor = Color.FromArgb(24, 30, 42),
+                ForeColor = Color.FromArgb(0, 220, 255),
+                Font = fontJhengHei10B
+            };
+            foreach (int choice in VillageGarrisonQuotaMultiplierChoices)
+                cboVillageGarrisonQuotaMultiplier.Items.Add("×" + choice);
+            cboVillageGarrisonQuotaMultiplier.SelectedIndex = Array.IndexOf(VillageGarrisonQuotaMultiplierChoices, 3);
+            toggleCompanions[chkVillageGarrisonQuota3x] = cboVillageGarrisonQuotaMultiplier;
             pnlAiCard.Controls.Add(chkAiM1);
             pnlAiCard.Controls.Add(chkAiCore);
             pnlAiCard.Controls.Add(chkAiM5);
-            pnlAiCard.Controls.Add(chkAiM6);
+            pnlAiCard.Controls.Add(chkRomanReinforcementGarrison);
+            pnlAiCard.Controls.Add(chkVillageGarrisonQuota3x);
+            pnlAiCard.Controls.Add(cboVillageGarrisonQuotaMultiplier);
 
             pnlVillagerCard = new Panel {
                 Location = new Point(0, 0),
@@ -1011,7 +1120,17 @@ namespace AgainstRomeModifier {
                 BackColor = Color.Transparent,
                 Font = fontJhengHei10B
             };
-            pnlNumericCard.Controls.Add(chkCameraZoomOut1);
+            pnlVerifiedCard.Controls.Add(chkCameraZoomOut1);
+
+            chkCorpseRetention = new ModernToggle {
+                Text = Loc.Get("CorpseRetention"),
+                Location = new Point(25, 320),
+                Size = new Size(310, 25),
+                Checked = false,
+                BackColor = Color.Transparent,
+                Font = fontJhengHei10B
+            };
+            pnlNumericCard.Controls.Add(chkCorpseRetention);
 
             chkRangedRange3x = new ModernToggle {
                 Text = Loc.Get("RangedRange3x"),
@@ -1159,16 +1278,7 @@ namespace AgainstRomeModifier {
             btnBrowseGamePath.Click += new EventHandler(BtnBrowseGamePath_Click);
             pnlRightSidebar.Controls.Add(btnBrowseGamePath);
 
-            string detectedPath = DetectGamePathFromRegistry();
-            if (!string.IsNullOrWhiteSpace(_initialGamePath) && Directory.Exists(_initialGamePath)) {
-                txtGamePath.Text = _initialGamePath;
-            } else if (File.Exists(Path.Combine(AppContext.BaseDirectory, "Against_Rome.exe"))) {
-                txtGamePath.Text = AppContext.BaseDirectory;
-            } else if (!string.IsNullOrEmpty(detectedPath)) {
-                txtGamePath.Text = detectedPath;
-            } else if (Directory.Exists(@"C:\Program Files (x86)\Against Rome")) {
-                txtGamePath.Text = @"C:\Program Files (x86)\Against Rome";
-            }
+            txtGamePath.Text = AgainstRomeModifier.Core.Services.GameDirectoryLocator.ResolveInitialGamePath(_initialGamePath);
 
             menuRestore = new ContextMenuStrip { Renderer = new DarkContextMenuRenderer() };
             itemRestoreAll = new ToolStripMenuItem("全部還原");
@@ -1383,6 +1493,7 @@ namespace AgainstRomeModifier {
                 g.SmoothingMode = SmoothingMode.AntiAlias;
                 bool isSelected = key switch {
                     "NavSystem" => mainTabControl.SelectedTab == tabSystem,
+                    "NavExperimental" => mainTabControl.SelectedTab == tabExperimental,
                     "NavDefaultStats" => mainTabControl.SelectedTab == tabDefaultStats,
                     "NavCurrentStats" => mainTabControl.SelectedTab == tabCurrentStats,
                     _ => mainTabControl.SelectedTab == associatedPage
@@ -1433,8 +1544,94 @@ namespace AgainstRomeModifier {
         /// </summary>
         private void RefreshNavButtons() {
             btnNavSystem.Invalidate();
+            btnNavExperimental.Invalidate();
             btnNavDefaultStats.Invalidate();
             btnNavCurrentStats.Invalidate();
+        }
+
+        private string GetFeatureIdForToggle(ModernToggle toggle) {
+            if (toggle == chkGameSpeed) return FeatureKeys.GameSpeed.Id;
+            if (toggle == chkVillageGarrisonQuota3x) return FeatureKeys.VillageGarrisonQuotaMultiplier.Id;
+            return featureToggles.First(x => x.Value == toggle).Key;
+        }
+
+        private void InitializeExperimentalFeatures() {
+            experimentalToggleOriginalParents[chkBalance] = pnlCombatCard;
+            experimentalToggleOriginalParents[chkSpellHealing10x] = pnlSpellCard;
+            experimentalToggleOriginalParents[chkSpellResurrection] = pnlSpellCard;
+            experimentalToggleOriginalParents[chkGeneralSkills] = pnlCombatCard;
+            experimentalToggleOriginalParents[chkLeaderGlory] = pnlCombatCard;
+            experimentalToggleOriginalParents[chkVillageGarrisonQuota3x] = pnlAiCard;
+            experimentalToggleOriginalParents[chkArgmTrace] = pnlNumericCard;
+            experimentalToggleOriginalParents[chkCorpseRetention] = pnlNumericCard;
+
+            foreach (var toggle in experimentalToggleOriginalParents.Keys) {
+                var btn = new Button {
+                    FlatStyle = FlatStyle.Flat,
+                    Size = new Size(110, 24),
+                    Cursor = Cursors.Hand,
+                    Font = fontJhengHei9R
+                };
+                btn.FlatAppearance.BorderSize = 1;
+                btn.FlatAppearance.BorderColor = Color.FromArgb(62, 203, 255);
+                btn.ForeColor = Color.FromArgb(62, 203, 255);
+                btn.BackColor = Color.Transparent;
+
+                btn.Click += (s, e) => {
+                    string featId = GetFeatureIdForToggle(toggle);
+                    if (Loc.IsPromoted(featId)) {
+                        Loc.DemoteFeature(featId);
+                        Log($"已將功能 {featId} 移回實驗性頁面。");
+                    } else {
+                        Loc.PromoteFeature(featId);
+                        Log($"已將功能 {featId} 移至主控制台。");
+                    }
+                    UpdateExperimentalLayout();
+                };
+
+                promoteDemoteButtons[toggle] = btn;
+            }
+
+            ConfigureSettingsCard(pnlExperimentalCard, lblExperimentalCardTitle, 400,
+                experimentalToggleOriginalParents.Keys.ToArray());
+
+            UpdateExperimentalLayout();
+        }
+
+        private void UpdateExperimentalLayout() {
+            SuspendLayout();
+            
+            bool isEn = Loc.CurrentLanguage == Language.English;
+            
+            foreach (var (toggle, origParent) in experimentalToggleOriginalParents) {
+                string featId = GetFeatureIdForToggle(toggle);
+                Button btn = promoteDemoteButtons[toggle];
+                
+                if (Loc.IsPromoted(featId)) {
+                    toggle.Parent = origParent;
+                    btn.Parent = origParent;
+                    btn.Text = isEn ? "Demote" : "移回實驗性";
+                } else {
+                    toggle.Parent = pnlExperimentalCard;
+                    btn.Parent = pnlExperimentalCard;
+                    btn.Text = isEn ? "Promote" : "移至主控制台";
+                }
+            }
+            
+            foreach (var card in new[] { pnlNumericCard, pnlVerifiedCard, pnlBuildCard, pnlCombatCard, pnlSpellCard, pnlVillagerCard, pnlAiCard, pnlExperimentalCard }) {
+                if (card != null && card.Tag is Action layoutAction) {
+                    layoutAction();
+                }
+            }
+            
+            if (pnlContent != null) {
+                LayoutSystemCardsFlat(pnlContent);
+            }
+            if (pnlExperimentalContent != null) {
+                LayoutExperimentalCardFlat(pnlExperimentalContent);
+            }
+            
+            ResumeLayout(true);
         }
 
     }

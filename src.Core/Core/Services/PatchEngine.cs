@@ -14,6 +14,9 @@ public class PatchEngine
     public bool IsDgVoodooInstalled(string gamePath) =>
         new DgVoodooFeature(_logger).IsInstalled(gamePath);
 
+    public bool IsArgmTraceInstalled(string gamePath) =>
+        new ArgmTraceFeature(_logger).IsInstalled(gamePath);
+
     public PatchProfile DetectCurrentPatchState(string gamePath, BackupManager backupManager)
     {
         PatchProfile detected = new FeatureDetector(_logger).Detect(gamePath, backupManager);
@@ -25,31 +28,9 @@ public class PatchEngine
         return result;
     }
 
-    public PatchProfile DetectCurrentPatchProfile(string gamePath, BackupManager backupManager) =>
-        DetectCurrentPatchState(gamePath, backupManager);
-
-    // These public helpers are retained as compatibility endpoints; SafeFileWriter owns the implementation.
+    // Retained as a compatibility endpoint; SafeFileWriter owns the implementation.
     public void SafeWriteAllBytes(string destination, byte[] bytes, FileRollbackScope? rollback = null) =>
         SafeFileWriter.WriteAllBytes(destination, bytes, rollback);
-
-    public void SafeCopyFile(
-        string source,
-        string destination,
-        bool overwrite,
-        FileRollbackScope? rollback = null)
-    {
-        if (!overwrite && File.Exists(destination))
-            throw new IOException("目標檔案已存在: " + destination);
-        SafeWriteAllBytes(destination, File.ReadAllBytes(source), rollback);
-    }
-
-    public void SafeDeleteFile(string path, FileRollbackScope? rollback = null)
-    {
-        if (!File.Exists(path)) return;
-        rollback?.TrackFile(path);
-        File.SetAttributes(path, FileAttributes.Normal);
-        File.Delete(path);
-    }
 
     public void ApplyPatches(
         string gamePath,
@@ -77,11 +58,13 @@ public class PatchEngine
         PatchFilePlan filePlan = new PatchFileComposer(_logger).Compose(
             gamePath, backupManager, options);
 
+        orchestrator.SetVillageGarrisonQuotaMultiplier(options.VillageGarrisonQuotaMultiplier);
         foreach (var module in orchestrator.UserModules)
             orchestrator.ApplyModule(gamePath, module, options.GetEndlessAiModule(module.Id));
         orchestrator.ApplyMandatoryRepair(gamePath);
         FoodHealingFeature.Apply(
             gamePath, options.FoodHealing10x, backupManager, orchestrator, _logger);
+        RetiredDefaultSpecialArrowsMigration.RestoreIfPresent(gamePath, orchestrator, _logger);
         CiviProduce20Feature.RestoreAkNpcOriginal(gamePath, orchestrator);
 
         foreach ((string path, byte[] bytes) in filePlan.Files)
@@ -94,6 +77,7 @@ public class PatchEngine
             options.DgVoodoo,
             rollback,
             nativeWidescreenWindow: options.NativeWidescreen1920x1080);
+        new ArgmTraceFeature(_logger).Apply(gamePath, options.ArgmTrace, rollback);
     }
 
     public void RunStartupSafeMigrations(
@@ -108,6 +92,7 @@ public class PatchEngine
             foodHealingEnabled = false;
         FoodHealingFeature.Apply(
             gamePath, foodHealingEnabled, backupManager, orchestrator, _logger);
+        RetiredDefaultSpecialArrowsMigration.RestoreIfPresent(gamePath, orchestrator, _logger);
         CiviProduce20Feature.RestoreAkNpcOriginal(gamePath, orchestrator);
         orchestrator.SaveAll(gamePath, rollback);
     }

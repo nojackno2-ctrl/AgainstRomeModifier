@@ -146,6 +146,31 @@
   2026-07-16 (user confirmed the select-idle button now selects more than 40
   villagers).
 
+### Retired Default Fire/Poison Arrow Experiments
+
+- File: `SYSTEM/CLAK/SCRIPT/ak_krieger.bci`.
+- Static chain: the warrior initialization contains exactly one
+  `s_setObjActWeapon(currentObj, weaponIndex=0, update=1)` call. Native callback
+  `LAB_00546bb0` reaches `FUN_005424a0`/`FUN_005424f0`; the latter validates the
+  requested weapon through `FUN_00542630`, `FUN_00542690`, and
+  `FUN_004c0de0(unit, weapon)` before writing the active-weapon byte.
+- Retired BCI attempt: changed the call's weapon literal from 0 (normal) to 1
+  (special). A second Roman runtime test still produced ordinary arrows, so this
+  output can no longer be installed.
+- Safety: restore runs only when the complete 17-word call signature has exactly
+  one retired Patched occurrence and no Original occurrence. Original, zero,
+  duplicate, or mixed matches are left untouched. Apply and restore share the BCI
+  cache, and cleanup returns the compressed file byte-identically in the synthetic
+  round-trip test.
+- Rejected legacy: the earlier EXE getter patch at `0x413FC`, `0x4E980`, and
+  `0x4E96A` changed only command-mode selection and produced ordinary arrows in
+  the user's Roman runtime test. It can no longer be installed; exact legacy
+  sites remain recognized so Apply/Restore can migrate them back to Original.
+- Status: removed from FeatureKey, profile, UI, presets, detection, and normal
+  patch planning after both runtime approaches failed. Normal Apply, startup-safe
+  migration, and Stats Restore retain only exact restore paths for BCI weapon
+  literal 1 and the earlier three-site EXE output. Unknown states remain untouched.
+
 ### 10x Building Speed (Construction, Upgrade, Repair)
 
 - File: `SYSTEM/DATA_MP/DEFAULTS/objdef.dau`.
@@ -201,8 +226,10 @@
   M3 (defeat cleanup), and M4 (settlement respawn) are exposed and applied as one
   atomic `EndlessAi.Core` lifecycle toggle. A partial legacy M2/M3/M4 selection
   migrates to the complete core. M1 (reinforcement size), M5 (starting resources),
-  and M6 remain separate controls; rejected global CLAK edits are restored by
-  mandatory repair R0.
+  and M5 remain separate AI controls. Former M6 is now the standalone
+  `RomanReinforcementGarrison` feature; `EndlessAi.M6` remains only as a
+  profile-migration alias. Rejected global CLAK edits are restored by mandatory
+  repair R0.
 - Create-unit call: decompressed BCI offset `0x17B60`,
   `s_addNPCJob_createUnit(local7, 3, 8, 0, 0, 4, 4, 1, 0)` after reversing
   BCI stack argument order.
@@ -307,6 +334,36 @@
   donation formula literals at `0x17788` (`4,2,2`) stay vanilla — with the
   quota forced to 0 the formula only shapes the civilian-recreate quota
   (`v57`), not the retreat set.
+- Runtime correction (2026-07-18): `jnz(118)+92` correctly routes soldier
+  squads into donation, but the previously shipped direct `s_setObjMark` call
+  left those squads in script mode 1. In-game they disappeared immediately at
+  the village while pack horses followed the dissolve/civilian-recreate path.
+  P9 now replaces that same-size call site with an opcode-120 internal call to a helper
+  appended at the end of the BCI code section. The helper executes
+  `s_setScriptMode(0, x, y)` and then `s_setObjMark(recipientMark, x, y)`.
+  Type-1 pack horses/civilians deliberately stay on the vanilla delivery path;
+  pack horses are dissolved and recreated as ordinary villagers, so horse
+  objects do not accumulate at the camp.
+  Re-decompilation after a further runtime failure found that the first helper
+  build used opcode 160, whose VM dispatcher case is typed-array creation
+  (`arrCreate`), not an internal call. Current output uses opcode 120; the exact
+  broken 160/helper/target state is Legacy and auto-migrates. Existing instruction
+  offsets remain unchanged; `codeSize` and the following
+  container sections are shifted safely. The old `jnz+92` direct-mark output is
+  also Legacy and auto-migrates. Helper target/bytes are signature-verified;
+  mismatches are Unknown and refused. Static round-trip is verified on all five
+  ENDL scripts. The later `jz+0` complete-handoff output retained the corrected
+  helper and was runtime-verified in a fresh endless game on 2026-07-18.
+- Fresh-game policy change (2026-07-18): the player still observed Roman
+  reinforcements retreating and explicitly requested complete village handoff.
+  P9 Ultimate therefore uses `jz(117)+0` so soldiers, pack horses, and civilians
+  all enter the zero-quota donation path. Unlike the old direct-mark `jz+0`
+  output, every object then passes through the opcode-120 release-and-remark
+  helper. The former `jnz(118)+92` type split is now Legacy and auto-migrates.
+  The user confirmed in a new endless game that soldiers, pack horses, and
+  civilians are all handed to the village and no longer retreat. P8 remains 70:
+  reaching it stops a later wave from spawning but does not order an already
+  spawned reinforcement party to retreat.
 - The current gate at `0x1960C` uses the original condition words exactly.
   Detection accepts only the complete original gate, the exact old
   `112,272` gate, or either exact historical bounded-gate sequence together
@@ -402,6 +459,35 @@
   `ak_level.bci` military job counts (`4..4 -> 20..20`) are members-per-unit.
   Runtime verified 2026-07-03: in-game the village AI now converts 20
   villagers per squad with the patch applied.
+
+### Village Garrison Quota Multiplier (`VillageGarrisonQuota3x`, Experimental)
+
+- File: `SYSTEM/CLAK/SCRIPT/Dorfverteidigung.bci`. The feature id keeps the
+  historical `VillageGarrisonQuota3x` spelling for migration, but since
+  2026-07-19 the feature value is the multiplier itself (1 = disabled; the UI
+  dropdown offers x2/x3/x5/x10, the original fixed x3 being one choice).
+- Vanilla quota source: four `s_searchImportantPos` calls for ImportantPos
+  types 1..4 at code-stream offsets `0xD350/0xD37C/0xD3A8/0xD3D4`; their
+  results feed per-type quota variables 60/62/64/66. The total squad target is
+  their sum and is runtime/map dependent, not a single literal.
+- P20 replaces each exact external `[128,151,73,-2,86]` call with a same-size
+  opcode-120 internal call to one appended 22-word (88-byte) helper. The helper
+  calls original symbol #151 and calculates `result * N` with VM opcode 34;
+  native dispatcher case `0x22` confirms signed integer multiplication. The
+  multiplier literal is helper word 14, so switching between supported
+  multipliers is an in-place literal rewrite that never moves code.
+- The feature is independent of AI Ultimate M1's `6..6 -> 20..20`
+  members-per-squad patch. It multiplies the number of squads requested for
+  every existing ImportantPos type, preserving ratios and zero values.
+- Detection requires all four exact sites and the exact helper (any supported
+  literal at word 14) with resolved targets at code end. A supported literal
+  that differs from the currently selected multiplier reports Legacy and is
+  migrated by the in-place rewrite; unsupported literals, mixed, malformed, or
+  duplicated states are Unknown and refused. Disable restores the four calls,
+  removes the helper, updates `codeSize`, and returns recognized inputs exactly.
+- Static/apply/idempotence/multiplier-switch/restore tests are verified.
+  Fresh-game runtime and performance are pending, so the UI marks the option
+  Experimental and Enable All deliberately leaves it off.
 
 ### 10x Idle HP Regeneration (amount, not interval)
 
@@ -658,8 +744,10 @@
   overlapping priest field also satisfies `SpellEntireMap`, so all three toggles
   read back as enabled after a combined apply.
 - Status: reversible implementation and synthetic/full-baseline detector tests
-  are complete. Runtime fog-of-war, AI behavior, and performance remain
-  unverified, so the UI keeps this feature in Experimental.
+  are complete. The user verified the intended entire-map vision effect in game
+  on 2026-07-18, so the UI no longer labels this feature Experimental.
+  Long-running AI targeting behavior and performance remain separately
+  unverified.
 
 ### Projectile Arc Height (ProjectileArcHeight)
 

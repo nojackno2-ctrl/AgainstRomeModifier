@@ -1,6 +1,6 @@
 # Modifier Feature Decompilation Verification Matrix
 
-> Reviewed 2026-07-17 against all 44 entries in `FeatureRegistry.All`. This is
+> Reviewed 2026-07-19 against all 49 entries in `FeatureRegistry.All`. This is
 > a static reverse-engineering audit, not a claim that every combination has
 > been exercised in a live game. Runtime evidence is called out separately.
 
@@ -9,8 +9,10 @@
 - Every registered feature has an identified apply target and a corresponding
   detection/restore path, or is explicitly an external installation feature
   for which original-game decompilation is not applicable.
-- 42 feature IDs have an original-game EXE, data-loader, BCI, or decoded-script
-  evidence chain. `DgVoodoo` and `ToEnglish` are external deployment features.
+- 45 feature IDs have an original-game EXE, data-loader, BCI, or decoded-script
+  evidence chain. `DgVoodoo`, `ArgmTrace`, and `ToEnglish` are external
+  deployment features (`ArgmTrace` deploys the log-only argm-trace flight
+  recorder; its hook targets are byte-verified in `runtime-trace-hooks.md`).
   `NativeWidescreen1920x1080` retains a statically decoded native EXE experiment,
   but that experiment was runtime-rejected; the active implementation restores
   the EXE and uses dgVoodoo presentation instead.
@@ -22,12 +24,15 @@
   outcome. The last column therefore never promotes static evidence to runtime
   evidence.
 
+## Verdict Details
+
 ## Stats Features
 
 | Feature ID | Actual write target | Decompilation / decoded-script evidence | Static verdict | Recorded runtime evidence |
 |---|---|---|---|---|
 | `FastCiviProduction` | `cl_script.ini` `CiviDelay` -> 500 ms | `[TribeData]` key parser, tribe storage, and runtime getter chain; `GhidraScriptIniAnalysis.java` | verified | not separately recorded |
 | `InfiniteMorale` | four `MoralsDec*` / `MoralsIncIdle` records | `cl_script.ini` key parser and tribe-value consumers | verified | not separately recorded |
+| `NoRunHpLoss` | `objdef.dau` column 208 `lpsub` -> 0.00 | objdef field table and lpsub consumer | verified | not separately recorded |
 | `Balance` | composed `objdef.dau` HP, damage, reload, VW, AW, sight, and range values | objdef field-name table, loader callbacks, weapon and movement consumers; see `objdef-fields.csv` | verified as a composition of verified fields | preset as a whole not separately recorded |
 | `FreeProduction` | `ress.ini` build/training/siege cost fields; pack horse exception preserved | `[objres]` parser and construction/training consumers in `GhidraRessAnalysis.java` and `exe-functions.md` | verified | mixed mounted-civilian quota side effect documented |
 | `FreeUpgrade` | `ress.ini` building and `[volkres]` upgrade groups | parser names the four eight-level groups and consumers | verified | not separately recorded |
@@ -41,7 +46,10 @@
 | `CiviProduce20` | EXE file `0x4FC00`, production literal 1 -> 20 | player residential-tent click handler and housing clamp | verified | verified in game 2026-07-15 |
 | `UnitRecruit20` | EXE file `0x4C7DD`, selected conversion count -> 20 | equipment/conversion click handler with the original cap retained | verified | verified in game 2026-07-15 |
 | `IdleSelect999` | EXE `0x451DC0` handler rewritten in place | UI dispatch, 1000-entry scratch list, 999-entry master selection cap, and all callers decoded | verified | verified in game 2026-07-16 |
+| `CorpseRetention` | EXE `0x110907`, object-pool reserve immediate 500 -> 50 | global `0x005108F0` maintenance computes the shortage against a 500-slot reserve, sorts candidates by their dead-time stamp, and schedules their release; the fixed pool is 14,000 slots | verified static patch and exact Original/Patched/Unknown handling | gameplay performance/stability pending; Experimental and excluded from Enable All |
 | `RomanEndless` | ENDL `team.dat` team 0 faction + EXE `dlg_volk` setter | team loader plus faction-selector call/data flow | verified | verified in game 2026-07-13 |
+| `RomanReinforcementGarrison` | BCI P8 threshold + P9 zero quota + `jz+0` all-unit fall-through + appended release-and-remark helper | decoded state-49/50 flow, native `s_getUnitType`, existing `s_setScriptMode(0)` release semantics, VM opcode 120 internal-call and opcode 160 arrCreate handlers | runtime verified in a fresh endless game; exact apply/idempotence/restore and opcode/target resolution on all five ENDL scripts | user confirmed soldiers, pack horses, and civilians are handed to the village and no longer retreat; long-duration behavior at P8=70 remains a separate capacity boundary |
+| `VillageGarrisonQuota3x` | four `s_searchImportantPos` calls in `Dorfverteidigung.bci` redirected to one appended xN helper (multiplier-valued feature: 1=off, x2/x3/x5/x10 selectable; literal at helper word 14 rewrites in place) | decoded per-type quota flow and native VM opcode 34 signed multiplication | verified; exact apply/idempotence/multiplier-switch/Unknown refusal/restore covered | fresh-game runtime verification pending; deliberately Experimental and excluded from Enable All |
 | `SpellDamage5x` | six `cl_script.ini [Spells] Value` records | spell parser -> runtime table -> `s_getSpecialEffectValue` -> damage consumers | verified | verified in game 2026-07-13 |
 | `SpellHealing10x` | `KEL, Spell1, Value` 65 -> 650 | same runtime table; heal effect consumes field 5 | verified | not separately recorded |
 | `SpellResurrection` | `KEL, Spell3, Value/Value2` -> 100/100 | decoded `ak_priester.bci` passes both fields to `s_specialEffektCreateUnit` | verified | not separately recorded |
@@ -53,7 +61,7 @@
 | `SpellEntireMap` | priest objdef `Sirad` -> 30000 | priest target acquisition/casting-distance gate; distinct from effect `Radius` | verified | not separately recorded |
 | `SpellRange3x` | `cl_script.ini [Spells] Radius` x3 | parser field 4 -> `s_getSpecialEffectValue` -> area searches/effects | verified | not separately recorded |
 | `ProjectileArcHeight` | projectile `w*_emit` x2 and seven `partgeo.dau ysub` values x2 | launch vertical velocity and particle-gravity integrator traced end to end | verified | mechanism verified with 10x experiment; shipped multiplier is 2x |
-| `AllUnitsEntireMapVision` | supported unit/civilian objdef `Sirad` -> 30000 | shared sight/target-acquisition radius consumer | verified | not separately recorded |
+| `AllUnitsEntireMapVision` | supported unit/civilian objdef `Sirad` -> 30000 | shared sight/target-acquisition radius consumer | verified | entire-map vision effect verified in game 2026-07-18; long-running AI/performance not separately assessed |
 | `CustomUnitStats` | composed objdef HP, damage, reload, VW, AW, sight, and ranged-distance fields | same verified objdef field and consumer chains as `Balance` | verified as a specialized composition | arbitrary combinations are user-defined and not globally runtime-certifiable |
 
 ## Compatibility And Installation Features
@@ -65,7 +73,8 @@
 | `NoSpellAltar` | 12 EXE altar-count comparisons -> 0 | three faction spell-button branches and their hard-coded altar thresholds | verified | not separately recorded |
 | `GameSpeed` | EXE doubles at `0x204214` and `0x20424C` | QPC and `timeGetTime` clock paths each have a single scale-constant xref | verified | not separately recorded |
 | `DgVoodoo` | managed dgVoodoo DLL/EXE/config deployment | external wrapper; no original-game semantic patch | not applicable to original-game decompilation | install/detect/restore covered by tests |
-| `NativeWidescreen1920x1080` | active path restores six native EXE sites and updates dgVoodoo centered presentation | native resolution identify/create/getter/dialog chains were decoded | native experiment statically verified but runtime-rejected | legacy viewport persisted; dgVoodoo fallback is the retained behavior |
+| `ArgmTrace` | managed `version.dll` (argm-trace flight recorder) + auto-generated `argm_trace.ini` deployment | log-only inline hooks over byte-verified AI callbacks; no original-game patch, see `runtime-trace-hooks.md` | hook targets byte-verified against the analyzed EXE; live-game capture pending | install/detect/restore covered by tests; ini auto-locks to build TimeDateStamp |
+| `NativeWidescreen1920x1080` | active path restores six native EXE sites and updates dgVoodoo centered presentation | native resolution identify/create/getter/dialog chains were decoded | native experiment statically verified but runtime-rejected | retained centered 4:3 fullscreen and correctly proportioned windowed fallback verified in game 2026-07-18 |
 | `CameraZoomOut1` | three persistent setter calls redirected through EXE cave, minimum zoom step 1.0 | startup, save-load, mission-script setters and native `0x498A30` clamp decoded | verified | first runtime-effective native step recorded |
 | `EndlessAi.M1` | BCI P1/P10/P12 reinforcement and conversion-size literals | decoded `ak_level.bci` state machine, native BCI callbacks, and exact signatures | verified | multiple reinforcement follow-ups recorded; see `endless-mode-ai.md` |
 | `EndlessAi.Core` | integrated lifecycle/respawn patches formerly exposed as M2/M3/M4, plus mandatory safety repairs | decoded BCI states, scheduler, deletion handshake, settle-place native checks, and save evidence | verified; some latest sub-fixes remain runtime-pending as documented | respawn recovery verified; deadline repair remains explicitly pending |
@@ -73,7 +82,7 @@
 | `EndlessAi.M3` | compatibility alias normalized to `EndlessAi.Core` | no independent target after normalization | verified alias, not an independent patch | inherits Core evidence |
 | `EndlessAi.M4` | compatibility alias normalized to `EndlessAi.Core` | no independent target after normalization | verified alias, not an independent patch | inherits Core evidence |
 | `EndlessAi.M5` | settlement SDL `resv` 0s -> `614,300,372,250,460,288` | decoded settlement template resource fields and exact PFIL rewrite | verified | not separately recorded |
-| `EndlessAi.M6` | BCI reinforcement threshold, retreat quota, and type-filter control points | decoded state-49/50 donation flow plus native `s_getUnitType` callback semantics | verified | final `jnz 92` behavior verified in a new endless game 2026-07-17 |
+| `EndlessAi.M6` | compatibility alias normalized to `RomanReinforcementGarrison` | no independent target after normalization | verified alias, not an independent patch | inherits standalone feature evidence |
 | `ToEnglish` | managed language overlay files | file deployment/rollback only; no original-game semantic patch | not applicable to original-game decompilation | install/detect/restore covered by tests |
 
 ## Evidence Sources And Limits

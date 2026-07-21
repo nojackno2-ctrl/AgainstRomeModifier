@@ -15,18 +15,6 @@ internal sealed class LanguagePackFeature
     }
     private readonly ILogger _logger;
     internal LanguagePackFeature(ILogger logger) => _logger = logger;
-    private static void SafeCopyFile(string src, string dest, bool overwrite, FileRollbackScope? rollback)
-    {
-        if (!overwrite && File.Exists(dest)) throw new IOException("目標檔案已存在: " + dest);
-        SafeFileWriter.WriteAllBytes(dest, File.ReadAllBytes(src), rollback);
-    }
-    private static void SafeDeleteFile(string path, FileRollbackScope? rollback)
-    {
-        if (!File.Exists(path)) return;
-        rollback?.TrackFile(path);
-        File.SetAttributes(path, FileAttributes.Normal);
-        File.Delete(path);
-    }
         internal void Apply(string gamePath, bool toEnglish, FileRollbackScope? rollback = null)
         {
             string localToEngDir = Path.Combine(gamePath, "ToEng");
@@ -48,7 +36,7 @@ internal sealed class LanguagePackFeature
                 {
                     string relPath = Path.GetRelativePath(localToEngDir, file);
                     string destPath = GetSafeLanguagePath(gamePath, relPath);
-                    SafeCopyFile(file, destPath, true, rollback);
+                    SafeFileWriter.CopyFile(file, destPath, true, rollback);
                 }
                 _logger.Log(Loc.Get("SvcLogLangApplied"));
                 return;
@@ -176,13 +164,13 @@ internal sealed class LanguagePackFeature
             {
                 string backupPath = GetSafeLanguagePath(Path.Combine(backupRoot, "files"), relativePath);
                 if (!File.Exists(backupPath)) throw new InvalidDataException("語言還原資訊 manifest.json 格式損毀。");
-                SafeCopyFile(backupPath, GetSafeLanguagePath(gamePath, relativePath), true, rollback);
+                SafeFileWriter.CopyFile(backupPath, GetSafeLanguagePath(gamePath, relativePath), true, rollback);
             }
             foreach (string relativePath in manifest.MissingFiles)
             {
                 string destinationPath = GetSafeLanguagePath(gamePath, relativePath);
                 if (!File.Exists(destinationPath)) continue;
-                SafeDeleteFile(destinationPath, rollback);
+                SafeFileWriter.DeleteFile(destinationPath, rollback);
             }
         }
 

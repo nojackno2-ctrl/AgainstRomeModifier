@@ -14,11 +14,36 @@ namespace AgainstRomeModifier
         public EndlessAiModule M4 { get; }
         public EndlessAiModule M5 { get; }
         public EndlessAiModule M6 { get; }
+        public EndlessAiModule VillageGarrisonQuota3x { get; }
         public EndlessAiModule R0 { get; }
 
         public List<EndlessAiModule> UserModules { get; }
 
+        private readonly P20_VillageGarrisonQuotaPatch _p20;
         private readonly Dictionary<string, BciScriptFile> _fileCache = new Dictionary<string, BciScriptFile>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// 設定村莊駐軍配額倍率（P20 helper 的乘法字面值）。1 表示停用，不改變目前選擇；
+        /// 其餘值必須是 P20 支援的倍率（2/3/5/10）。
+        /// </summary>
+        public void SetVillageGarrisonQuotaMultiplier(int multiplier)
+        {
+            if (multiplier <= 1) return;
+            _p20.Multiplier = multiplier;
+        }
+
+        /// <summary>
+        /// 讀回目前安裝在 Dorfverteidigung.bci 中的駐軍配額倍率；未套用（或無法辨識）時回傳 1。
+        /// </summary>
+        public int DetectVillageGarrisonQuotaMultiplier(string gamePath)
+        {
+            var paths = ResolvePaths(gamePath, _p20.TargetPattern);
+            if (paths.Count != 1) return 1;
+            BciScriptFile file = GetOrCreateFile(paths[0]);
+            return P20_VillageGarrisonQuotaPatch.TryReadInstalledMultiplier(file.DecompressedBytes, out int multiplier)
+                ? multiplier
+                : 1;
+        }
 
         public EndlessAiOrchestrator()
         {
@@ -174,13 +199,21 @@ namespace AgainstRomeModifier
 
             // P14: 強制還原已被否決的修補
             var p14 = new P14_ForcedRestorePatch();
+            _p20 = new P20_VillageGarrisonQuotaPatch();
 
             M1 = new EndlessAiModule("M1", "增援規模", new List<IEndlessPatch> { p1, p10, p12 });
             M2 = new EndlessAiModule("M2", "增援節奏", new List<IEndlessPatch> { p3, p6, p2 });
             M3 = new EndlessAiModule("M3", "敗亡快速回收", new List<IEndlessPatch> { p4, p5, p11 });
             M4 = new EndlessAiModule("M4", "強制部落生成", new List<IEndlessPatch> { p7, p17, p18, p19 });
             M5 = new EndlessAiModule("M5", "開局資源", new List<IEndlessPatch> { p13 });
-            M6 = new EndlessAiModule("M6", "提升守軍數量", new List<IEndlessPatch> { p8, p9 });
+            // Legacy module id M6 remains internal for profile migration. The
+            // user-facing feature is RomanReinforcementGarrison; P8 and P9 stay
+            // atomic because retained squads require the raised unit threshold.
+            M6 = new EndlessAiModule("M6", "羅馬增援士兵留守", new List<IEndlessPatch> { p8, p9 });
+            VillageGarrisonQuota3x = new EndlessAiModule(
+                "VillageGarrisonQuota3x",
+                "村莊 AI 駐軍配額倍率",
+                new List<IEndlessPatch> { _p20 });
             R0 = new EndlessAiModule("R0", "常駐修復", new List<IEndlessPatch> { p14, p15 });
 
             RespawnCore = new EndlessAiModule(
@@ -188,7 +221,7 @@ namespace AgainstRomeModifier
                 "無盡重生核心",
                 M2.Patches.Concat(M3.Patches).Concat(M4.Patches).ToList());
 
-            UserModules = new List<EndlessAiModule> { M1, RespawnCore, M5, M6 };
+            UserModules = new List<EndlessAiModule> { M1, RespawnCore, M5, M6, VillageGarrisonQuota3x };
         }
 
         public void ClearCache()
@@ -274,10 +307,35 @@ namespace AgainstRomeModifier
             return ResolvePaths(gamePath, pattern).Count;
         }
 
+        /// <summary>
+        /// 將多個 <see cref="PatchState"/> 合併為單一總狀態的聚合器：任一為 Legacy 則排除
+        /// Original 與 Ultimate；Original 排除 Ultimate；Ultimate 排除 Original。Unknown 不由此
+        /// 處理（呼叫端負責短路 return Unknown）。<see cref="Result"/> 依「全為原版 / 全為終極 /
+        /// 其餘皆 Legacy」判定，與原本 DetectModule / DetectGlobalState 的旗標邏輯完全一致。
+        /// </summary>
+        private struct PatchStateAggregator
+        {
+            private bool _allOriginal = true;
+            private bool _allUltimate = true;
+
+            public PatchStateAggregator() { }
+
+            public void Combine(PatchState state)
+            {
+                if (state == PatchState.Legacy) { _allOriginal = false; _allUltimate = false; }
+                else if (state == PatchState.Original) { _allUltimate = false; }
+                else if (state == PatchState.Ultimate) { _allOriginal = false; }
+            }
+
+            public readonly PatchState Result =>
+                _allOriginal ? PatchState.Original
+                : _allUltimate ? PatchState.Ultimate
+                : PatchState.Legacy;
+        }
+
         public PatchState DetectModule(string gamePath, EndlessAiModule module)
         {
-            bool allOriginal = true;
-            bool allUltimate = true;
+            var aggregator = new PatchStateAggregator();
             bool anyFileFound = false;
 
             foreach (var patch in module.Patches)
@@ -292,12 +350,12 @@ namespace AgainstRomeModifier
                 {
                     if (paths.Count == 0)
                     {
-                        allUltimate = false;
+                        // 該 pattern 完全缺檔：不可能是完整套用（僅排除 Ultimate），等同 Combine(Original)。
+                        aggregator.Combine(PatchState.Original);
                         continue;
                     }
-                    // 檔案數量不符預期但仍有找到檔案，視為不完整套用的 Legacy 狀態，而不應直接阻斷為 Unknown
-                    allOriginal = false;
-                    allUltimate = false;
+                    // 檔案數量不符預期但仍有找到檔案，視為不完整套用的 Legacy 狀態，而不應直接阻斷為 Unknown。
+                    aggregator.Combine(PatchState.Legacy);
                 }
 
                 foreach (string path in paths)
@@ -305,67 +363,34 @@ namespace AgainstRomeModifier
                     BciScriptFile file = GetOrCreateFile(path);
                     PatchState state = patch.Detect(file.DecompressedBytes);
                     if (state == PatchState.Unknown) return PatchState.Unknown;
-                    if (state == PatchState.Legacy)
-                    {
-                        allOriginal = false;
-                        allUltimate = false;
-                    }
-                    else if (state == PatchState.Original)
-                    {
-                        allUltimate = false;
-                    }
-                    else if (state == PatchState.Ultimate)
-                    {
-                        allOriginal = false;
-                    }
+                    aggregator.Combine(state);
                 }
             }
 
             // 一個檔案都找不到（路徑錯誤、MAPS 缺失）時不能宣稱「原版」——那是「無法判定」。
             if (!anyFileFound) return PatchState.Unknown;
 
-            if (allOriginal) return PatchState.Original;
-            if (allUltimate) return PatchState.Ultimate;
-            return PatchState.Legacy;
+            return aggregator.Result;
         }
 
         public PatchState DetectGlobalState(string gamePath)
         {
-            bool allOriginal = true;
-            bool allUltimate = true;
+            var aggregator = new PatchStateAggregator();
 
             foreach (var module in UserModules)
             {
                 PatchState state = DetectModule(gamePath, module);
                 if (state == PatchState.Unknown) return PatchState.Unknown;
-                if (state == PatchState.Legacy)
-                {
-                    allOriginal = false;
-                    allUltimate = false;
-                }
-                else if (state == PatchState.Original)
-                {
-                    allUltimate = false;
-                }
-                else if (state == PatchState.Ultimate)
-                {
-                    allOriginal = false;
-                }
+                aggregator.Combine(state);
             }
 
-            // Also check mandatory repair pass (R0). It should be strictly clean (Original).
-            // If R0 is legacy, it needs repair, so we report legacy overall.
+            // R0 為必修 pass：Unknown 直接無法判定；Legacy 代表需要修復，整體視為 Legacy。
+            // R0 為 Original/Ultimate 時不影響使用者模組的聚合結果，故刻意不 Combine。
             PatchState r0State = DetectModule(gamePath, R0);
             if (r0State == PatchState.Unknown) return PatchState.Unknown;
-            if (r0State == PatchState.Legacy)
-            {
-                allOriginal = false;
-                allUltimate = false;
-            }
+            if (r0State == PatchState.Legacy) aggregator.Combine(PatchState.Legacy);
 
-            if (allOriginal) return PatchState.Original;
-            if (allUltimate) return PatchState.Ultimate;
-            return PatchState.Legacy;
+            return aggregator.Result;
         }
 
         public bool ApplyModule(string gamePath, EndlessAiModule module, bool enabled)

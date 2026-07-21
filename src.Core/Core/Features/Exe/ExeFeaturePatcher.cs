@@ -96,6 +96,35 @@ internal static class ExeFeaturePatcher
         return true;
     }
 
+    internal static bool ApplyCorpseRetention(byte[] bytes, bool enabled, ILogger logger)
+    {
+        ExeCorpseRetentionPatchState state = ExePatchModel.GetCorpseRetentionPatchState(bytes);
+        if (state == ExeCorpseRetentionPatchState.Unknown)
+        {
+            if (enabled)
+                throw new InvalidDataException(Loc.Get("SvcLogCorpseRetentionUnknown"));
+            return false;
+        }
+
+        IReadOnlyList<ExeWriteOp> ops = ExePatchModel.PlanCorpseRetention(enabled, state);
+        if (ops.Count == 0) return false;
+        ExePatchModel.Apply(bytes, ops);
+        logger.Log(Loc.Get(enabled ? "SvcLogCorpseRetentionApplied" : "SvcLogCorpseRetentionRestored"));
+        return true;
+    }
+
+    internal static bool RestoreRetiredDefaultSpecialArrows(byte[] bytes, ILogger logger)
+    {
+        ExeDefaultSpecialArrowsPatchState state = ExePatchModel.GetDefaultSpecialArrowsPatchState(bytes);
+        if (state == ExeDefaultSpecialArrowsPatchState.Unknown) return false;
+
+        IReadOnlyList<ExeWriteOp> ops = ExePatchModel.PlanRetiredDefaultSpecialArrowsRestore(state);
+        if (ops.Count == 0) return false;
+        ExePatchModel.Apply(bytes, ops);
+        logger.Log(Loc.Get("SvcLogRetiredSpecialArrowsRestored"));
+        return true;
+    }
+
     internal static bool ApplyNativeWidescreen(byte[] bytes, bool enabled, ILogger logger)
     {
         ExeNativeWidescreenPatchState state = ExePatchModel.GetNativeWidescreenPatchState(bytes);

@@ -131,13 +131,8 @@ namespace AgainstRomeModifier.Core.Services
             return _unitBaselines.GetUnitRows();
         }
 
-        // --- 屬性解析核心方法（原本寫在 UI 裡的） ---
-
-        public static bool SupportsConfigurableSpellRadius(string key)
-        {
-            return UnitStatParser.SupportsConfigurableSpellRadius(key);
-        }
-
+        // 兵種基準屬性（依賴 _unitBaselines 實例狀態）。
+        // 無狀態的欄位解析請直接使用 UnitStatParser / CleanEparaBaseline。
         public double[] GetOriginalStats(string key)
         {
             return _unitBaselines.GetOriginalStats(key);
@@ -151,34 +146,6 @@ namespace AgainstRomeModifier.Core.Services
         public double[] GetBaseStatsForUnit(string key, PatchProfile options)
         {
             return _unitBaselines.GetBaseStatsForUnit(key, options);
-        }
-
-        public static double[] MergeUnitStatsLayers(double[] fallback, double[] custom, bool supportsSpellRadius,
-            bool ignoreMovementSpeed = false, bool ignoreRange = false, bool ignoreSpellRadius = false,
-            bool removePriestSight = false)
-        {
-            return UnitStatParser.MergeLayers(fallback, custom, supportsSpellRadius,
-                ignoreMovementSpeed, ignoreRange, ignoreSpellRadius, removePriestSight);
-        }
-
-        public static void GetMeleeAndRangedDmg(string[] cols, string utype, out double meleeDmg, out double rangedDmg)
-        {
-            UnitStatParser.GetMeleeAndRangedDamage(cols, utype, out meleeDmg, out rangedDmg);
-        }
-
-        public static void GetMeleeAndRangedRelt(string[] cols, string utype, out double meleeRelt, out double rangedRelt)
-        {
-            UnitStatParser.GetMeleeAndRangedReload(cols, utype, out meleeRelt, out rangedRelt);
-        }
-
-        public static double GetUnitMaxRange(string[] cols, string utype)
-        {
-            return UnitStatParser.GetMaximumRange(cols, utype);
-        }
-
-        public static string GetCleanEparaText()
-        {
-            return CleanEparaBaseline.Text;
         }
     }
 }

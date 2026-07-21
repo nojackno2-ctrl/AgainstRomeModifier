@@ -53,61 +53,15 @@ namespace AgainstRomeModifier {
         private bool dragging = false;
         private Point dragStart = new Point(0, 0);
 
-        private class SimpleLogger : ILogger {
-            private readonly SaveManagerForm _form;
-            public SimpleLogger(SaveManagerForm form) => _form = form;
-            public void Log(string message) {
-                System.Diagnostics.Debug.WriteLine(message);
-            }
-        }
-
         public SaveManagerForm(string? initialGamePath = null) {
             InitializeComponent();
             saveBackupService = new SaveBackupService(Path.Combine(AppContext.BaseDirectory, "SavesBackup"));
             
-            // Try to set initial game path
-            if (!string.IsNullOrWhiteSpace(initialGamePath) && Directory.Exists(initialGamePath)) {
-                txtGamePath.Text = initialGamePath;
-            } else {
-                string detectedPath = DetectGamePathFromRegistry();
-                if (File.Exists(Path.Combine(AppContext.BaseDirectory, "Against_Rome.exe"))) {
-                    txtGamePath.Text = AppContext.BaseDirectory;
-                } else if (!string.IsNullOrEmpty(detectedPath)) {
-                    txtGamePath.Text = detectedPath;
-                } else if (Directory.Exists(@"C:\Program Files (x86)\Against Rome")) {
-                    txtGamePath.Text = @"C:\Program Files (x86)\Against Rome";
-                }
-            }
+            // 初始遊戲路徑解析與 Modifier 共用同一順序（明確路徑→同目錄可攜→登錄檔→預設）。
+            txtGamePath.Text = GameDirectoryLocator.ResolveInitialGamePath(initialGamePath);
 
-            if (!string.IsNullOrWhiteSpace(txtGamePath.Text)) {
-                // Initial refresh will be triggered by ApplyLanguageToUI
-            }
             UpdateLanguageButtonStyles();
             ApplyLanguageToUI();
-        }
-
-        private string DetectGamePathFromRegistry() {
-            try {
-                using (var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Against Rome")) {
-                    if (key != null) {
-                        var val = key.GetValue("Path");
-                        if (val != null) return val.ToString() ?? "";
-                    }
-                }
-                using (var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Against Rome")) {
-                    if (key != null) {
-                        var val = key.GetValue("Path");
-                        if (val != null) return val.ToString() ?? "";
-                    }
-                }
-                using (var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SOFTWARE\WOW6432Node\Against Rome")) {
-                    if (key != null) {
-                        var val = key.GetValue("Path");
-                        if (val != null) return val.ToString() ?? "";
-                    }
-                }
-            } catch (Exception) { }
-            return "";
         }
 
         private string GetGamePath() {
@@ -246,7 +200,7 @@ namespace AgainstRomeModifier {
             };
             
             lblGamePath = new Label {
-                Text = Loc.Get("GamePathLabel") ?? "遊戲目錄：",
+                Text = Loc.Get("GamePathLabel"),
                 Location = new Point(16, 20),
                 Size = new Size(80, 20),
                 Font = fontJhengHei95B,
@@ -276,7 +230,7 @@ namespace AgainstRomeModifier {
             pathWrapper.Controls.Add(txtGamePath);
             
             btnBrowseGamePath = new Button {
-                Text = Loc.Get("BrowseButton") ?? "瀏覽...",
+                Text = Loc.Get("BrowseButton"),
                 Location = new Point(510, 14),
                 Size = new Size(100, 32)
             };
@@ -489,16 +443,16 @@ namespace AgainstRomeModifier {
             dgv.DefaultCellStyle.Font = fontJhengHei9R;
             dgv.AlternatingRowsDefaultCellStyle.BackColor = Color.FromArgb(24, 25, 35);
             if (!isBackup) {
-                dgv.Columns.Add("Folder", Loc.Get("HeaderFolder") ?? "資料夾"); dgv.Columns["Folder"].FillWeight = 16;
-                dgv.Columns.Add("Title", Loc.Get("HeaderSaveTitle") ?? "標題"); dgv.Columns["Title"].FillWeight = 40;
-                dgv.Columns.Add("Level", Loc.Get("HeaderLevel") ?? "關卡"); dgv.Columns["Level"].FillWeight = 18;
-                dgv.Columns.Add("Time", Loc.Get("HeaderTime") ?? "時間"); dgv.Columns["Time"].FillWeight = 26;
+                dgv.Columns.Add("Folder", Loc.Get("HeaderFolder")); dgv.Columns["Folder"].FillWeight = 16;
+                dgv.Columns.Add("Title", Loc.Get("HeaderSaveTitle")); dgv.Columns["Title"].FillWeight = 40;
+                dgv.Columns.Add("Level", Loc.Get("HeaderLevel")); dgv.Columns["Level"].FillWeight = 18;
+                dgv.Columns.Add("Time", Loc.Get("HeaderTime")); dgv.Columns["Time"].FillWeight = 26;
             } else {
-                dgv.Columns.Add("File", Loc.Get("HeaderBackupFile") ?? "檔案"); dgv.Columns["File"].FillWeight = 18;
-                dgv.Columns.Add("Title", Loc.Get("HeaderSaveTitle") ?? "標題"); dgv.Columns["Title"].FillWeight = 30;
-                dgv.Columns.Add("Level", Loc.Get("HeaderLevel") ?? "關卡"); dgv.Columns["Level"].FillWeight = 16;
-                dgv.Columns.Add("Time", Loc.Get("HeaderBackupTime") ?? "備份時間"); dgv.Columns["Time"].FillWeight = 22;
-                dgv.Columns.Add("Folder", Loc.Get("HeaderOrigFolder") ?? "原資料夾"); dgv.Columns["Folder"].FillWeight = 14;
+                dgv.Columns.Add("File", Loc.Get("HeaderBackupFile")); dgv.Columns["File"].FillWeight = 18;
+                dgv.Columns.Add("Title", Loc.Get("HeaderSaveTitle")); dgv.Columns["Title"].FillWeight = 30;
+                dgv.Columns.Add("Level", Loc.Get("HeaderLevel")); dgv.Columns["Level"].FillWeight = 16;
+                dgv.Columns.Add("Time", Loc.Get("HeaderBackupTime")); dgv.Columns["Time"].FillWeight = 22;
+                dgv.Columns.Add("Folder", Loc.Get("HeaderOrigFolder")); dgv.Columns["Folder"].FillWeight = 14;
             }
             dgv.SelectionChanged += isBackup ? DgvBackups_SelectionChanged : DgvGameSaves_SelectionChanged;
             return dgv;
@@ -522,17 +476,17 @@ namespace AgainstRomeModifier {
                 foreach (GameSaveInfo save in catalog.Saves) {
                     dgvGameSaves.Rows.Add(
                         save.Folder,
-                        save.Parsed ? save.Title : (Loc.Get("Unparsable") ?? "無法解析"),
-                        save.Parsed ? save.Level : (Loc.Get("Unknown") ?? "未知"),
+                        save.Parsed ? save.Title : (Loc.Get("Unparsable")),
+                        save.Parsed ? save.Level : (Loc.Get("Unknown")),
                         save.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss"));
                 }
                 foreach (SaveBackupInfo backup in catalog.Backups) {
                     dgvBackups.Rows.Add(
                         backup.FileName,
-                        backup.Parsed ? backup.Title : (Loc.Get("Unparsable") ?? "無法解析"),
-                        backup.Parsed ? backup.Level : (Loc.Get("Unknown") ?? "未知"),
+                        backup.Parsed ? backup.Title : (Loc.Get("Unparsable")),
+                        backup.Parsed ? backup.Level : (Loc.Get("Unknown")),
                         backup.BackupTime,
-                        string.IsNullOrEmpty(backup.OrigFolder) ? (Loc.Get("Unknown") ?? "未知") : backup.OrigFolder);
+                        string.IsNullOrEmpty(backup.OrigFolder) ? (Loc.Get("Unknown")) : backup.OrigFolder);
                 }
             } catch (Exception) {
             } finally {
@@ -545,13 +499,15 @@ namespace AgainstRomeModifier {
             try {
                 DataGridViewRow row = dgvGameSaves.SelectedRows[0];
                 string folder = Cell(row, 0);
-                lblSaveDetail.Text = string.Format(Loc.Get("SaveDetailGameSave") ?? "資料夾：{0}\n標題：{1}\n關卡：{2}\n時間：{3}",
+                lblSaveDetail.Text = string.Format(Loc.Get("SaveDetailGameSave"),
                     folder, Cell(row, 1), Cell(row, 2), Cell(row, 3));
                 string gamePath = GetGamePath();
                 ReplaceSavePreview(string.IsNullOrEmpty(gamePath) || !Directory.Exists(gamePath)
                     ? null
                     : saveBackupService.ReadSavePreview(gamePath, folder));
-            } catch (Exception) { }
+            } catch (Exception ex) {
+                System.Diagnostics.Debug.WriteLine("更新存檔選取預覽失敗: " + ex.Message);
+            }
         }
 
         private void DgvBackups_SelectionChanged(object? sender, EventArgs e) {
@@ -559,37 +515,39 @@ namespace AgainstRomeModifier {
             try {
                 DataGridViewRow row = dgvBackups.SelectedRows[0];
                 string file = Cell(row, 0);
-                lblSaveDetail.Text = string.Format(Loc.Get("SaveDetailBackup") ?? "檔案：{0}\n原資料夾：{1}\n標題：{2}\n關卡：{3}\n備份時間：{4}",
+                lblSaveDetail.Text = string.Format(Loc.Get("SaveDetailBackup"),
                     file, Cell(row, 4), Cell(row, 1), Cell(row, 2), Cell(row, 3));
                 ReplaceSavePreview(saveBackupService.ReadBackupPreview(file));
-            } catch (Exception) { }
+            } catch (Exception ex) {
+                System.Diagnostics.Debug.WriteLine("更新備份選取預覽失敗: " + ex.Message);
+            }
         }
 
         private void BtnBackupSave_Click(object? sender, EventArgs e) {
             if (dgvGameSaves.SelectedRows.Count == 0) {
-                MessageBox.Show(Loc.Get("MsgSelectSaveToBackup") ?? "請先選擇存檔。", Loc.Get("TitleTips") ?? "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show(Loc.Get("MsgSelectSaveToBackup"), Loc.Get("TitleTips"), MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
             try {
                 DataGridViewRow row = dgvGameSaves.SelectedRows[0];
                 string folder = Cell(row, 0).Trim();
                 if (!SaveBackupService.IsSimpleName(folder)) {
-                    MessageBox.Show(Loc.Get("MsgInvalidSaveDir") ?? "無效的存檔目錄。", Loc.Get("TitleError") ?? "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    MessageBox.Show(Loc.Get("MsgInvalidSaveDir"), Loc.Get("TitleError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
                     return;
                 }
                 saveBackupService.CreateBackup(GetGamePath(), folder, Cell(row, 1), Cell(row, 2));
                 RefreshSavesAndBackups();
-                MessageBox.Show(Loc.Get("MsgBackupSaveSuccess") ?? "備份成功。", Loc.Get("TitleSuccess") ?? "成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show(Loc.Get("MsgBackupSaveSuccess"), Loc.Get("TitleSuccess"), MessageBoxButtons.OK, MessageBoxIcon.Information);
             } catch (DirectoryNotFoundException) {
-                MessageBox.Show(Loc.Get("MsgNoOrigFolderToBackup") ?? "找不到原始資料夾。", Loc.Get("TitleError") ?? "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show(Loc.Get("MsgNoOrigFolderToBackup"), Loc.Get("TitleError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
             } catch (Exception ex) {
-                MessageBox.Show((Loc.Get("MsgBackupSaveFailed") ?? "備份失敗：") + ex.Message, Loc.Get("TitleError") ?? "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show((Loc.Get("MsgBackupSaveFailed")) + ex.Message, Loc.Get("TitleError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
         private void BtnRestoreBackup_Click(object? sender, EventArgs e) {
             if (dgvBackups.SelectedRows.Count == 0) {
-                MessageBox.Show(Loc.Get("MsgSelectBackup") ?? "請先選擇備份。", Loc.Get("TitleTips") ?? "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show(Loc.Get("MsgSelectBackup"), Loc.Get("TitleTips"), MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
             try {
@@ -597,29 +555,29 @@ namespace AgainstRomeModifier {
                 string file = Cell(row, 0);
                 string folder = Cell(row, 4);
                 if (!SaveBackupService.IsSimpleName(file)) return;
-                if (!SaveBackupService.IsSimpleName(folder) || folder == (Loc.Get("Unknown") ?? "未知")) return;
+                if (!SaveBackupService.IsSimpleName(folder) || folder == (Loc.Get("Unknown"))) return;
                 string gamePath = GetGamePath();
                 if (string.IsNullOrEmpty(gamePath) || !Directory.Exists(gamePath)) {
-                    MessageBox.Show(Loc.Get("MsgGamePathNotSet") ?? "請先設定遊戲路徑。", Loc.Get("TitleError") ?? "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    MessageBox.Show(Loc.Get("MsgGamePathNotSet"), Loc.Get("TitleError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
                     return;
                 }
                 if (Directory.Exists(Path.Combine(gamePath, "SAVE", folder)) &&
-                    MessageBox.Show(string.Format(Loc.Get("MsgConfirmOverwriteSave") ?? "確定覆蓋 {0} 嗎？", folder), Loc.Get("TitleWarning") ?? "警告",
+                    MessageBox.Show(string.Format(Loc.Get("MsgConfirmOverwriteSave"), folder), Loc.Get("TitleWarning"),
                         MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes) return;
 
                 saveBackupService.RestoreBackup(gamePath, file, folder, msg => System.Diagnostics.Debug.WriteLine(msg));
                 RefreshSavesAndBackups();
-                MessageBox.Show(Loc.Get("MsgRestoreBackupSuccess") ?? "還原成功。", Loc.Get("TitleSuccess") ?? "成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show(Loc.Get("MsgRestoreBackupSuccess"), Loc.Get("TitleSuccess"), MessageBoxButtons.OK, MessageBoxIcon.Information);
             } catch (Exception ex) {
-                MessageBox.Show((Loc.Get("MsgRestoreBackupFailed") ?? "還原失敗：") + ex.Message, Loc.Get("TitleError") ?? "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show((Loc.Get("MsgRestoreBackupFailed")) + ex.Message, Loc.Get("TitleError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
         private async void BtnRepairEndlessAi_Click(object? sender, EventArgs e) {
             if (_repairInFlight) return;
             if (dgvGameSaves.SelectedRows.Count == 0) {
-                MessageBox.Show(Loc.Get("MsgSelectSaveToRepairAi") ?? "請先選擇要修復的無盡模式存檔。",
-                    Loc.Get("TitleTips") ?? "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show(Loc.Get("MsgSelectSaveToRepairAi"),
+                    Loc.Get("TitleTips"), MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
 
@@ -628,9 +586,8 @@ namespace AgainstRomeModifier {
             string title = Cell(row, 1);
                 string level = Cell(row, 2);
                 if (!SaveBackupService.IsSimpleName(folder)) return;
-                if (MessageBox.Show(Loc.Get("MsgConfirmRepairEndlessAi") ??
-                    "修復前會先建立完整備份，再更新存檔內嵌的無盡 AI 排程與增援規則。已堆積的馱馬不會自動移除。是否繼續？",
-                    Loc.Get("TitleWarning") ?? "警告", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
+                if (MessageBox.Show(Loc.Get("MsgConfirmRepairEndlessAi"),
+                    Loc.Get("TitleWarning"), MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
                 return;
 
             _repairInFlight = true;
@@ -638,7 +595,7 @@ namespace AgainstRomeModifier {
             try {
                 string gamePath = GetGamePath();
                 if (string.IsNullOrEmpty(gamePath) || !Directory.Exists(gamePath))
-                    throw new DirectoryNotFoundException(Loc.Get("MsgGamePathNotSet") ?? "遊戲路徑未設定。");
+                    throw new DirectoryNotFoundException(Loc.Get("MsgGamePathNotSet"));
 
                 EndlessSaveAiRepairResult result = await Task.Run(() => {
                     saveBackupService.CreateBackup(gamePath, folder, title, level);
@@ -646,12 +603,12 @@ namespace AgainstRomeModifier {
                 });
                 RefreshSavesAndBackups();
                 string message = result == EndlessSaveAiRepairResult.Changed
-                    ? (Loc.Get("MsgRepairEndlessAiSuccess") ?? "無盡 AI 排程與增援規則已修復，並已建立修復前備份。已堆積的馱馬不會自動移除；若仍阻斷增援，請還原堆積前備份或新開無盡局。")
-                    : (Loc.Get("MsgRepairEndlessAiAlready") ?? "這份存檔已包含目前的無盡 AI 排程與增援修復。");
-                MessageBox.Show(message, Loc.Get("TitleSuccess") ?? "成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    ? (Loc.Get("MsgRepairEndlessAiSuccess"))
+                    : (Loc.Get("MsgRepairEndlessAiAlready"));
+                MessageBox.Show(message, Loc.Get("TitleSuccess"), MessageBoxButtons.OK, MessageBoxIcon.Information);
             } catch (Exception ex) {
-                MessageBox.Show((Loc.Get("MsgRepairEndlessAiFailed") ?? "修復無盡 AI 失敗: ") + ex.Message,
-                    Loc.Get("TitleError") ?? "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show((Loc.Get("MsgRepairEndlessAiFailed")) + ex.Message,
+                    Loc.Get("TitleError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
             } finally {
                 _repairInFlight = false;
                 btnRepairEndlessAi.Enabled = true;
@@ -663,12 +620,12 @@ namespace AgainstRomeModifier {
             try {
                 string folder = Cell(dgvGameSaves.SelectedRows[0], 0).Trim();
                 if (!SaveBackupService.IsSimpleName(folder)) return;
-                if (MessageBox.Show(string.Format(Loc.Get("MsgConfirmDeleteSave") ?? "確定刪除 {0} 嗎？", folder), Loc.Get("TitleConfirm") ?? "確認",
+                if (MessageBox.Show(string.Format(Loc.Get("MsgConfirmDeleteSave"), folder), Loc.Get("TitleConfirm"),
                         MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes) return;
                 saveBackupService.DeleteSave(GetGamePath(), folder);
                 RefreshSavesAndBackups();
             } catch (Exception ex) {
-                MessageBox.Show((Loc.Get("MsgDeleteSaveFailed") ?? "刪除失敗：") + ex.Message, Loc.Get("TitleError") ?? "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show((Loc.Get("MsgDeleteSaveFailed")) + ex.Message, Loc.Get("TitleError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
@@ -677,12 +634,12 @@ namespace AgainstRomeModifier {
             try {
                 string file = Cell(dgvBackups.SelectedRows[0], 0);
                 if (!SaveBackupService.IsSimpleName(file)) return;
-                if (MessageBox.Show(string.Format(Loc.Get("MsgConfirmDeleteBackup") ?? "確定刪除備份 {0} 嗎？", file), Loc.Get("TitleConfirm") ?? "確認",
+                if (MessageBox.Show(string.Format(Loc.Get("MsgConfirmDeleteBackup"), file), Loc.Get("TitleConfirm"),
                         MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes) return;
                 saveBackupService.DeleteBackup(file);
                 RefreshSavesAndBackups();
             } catch (Exception ex) {
-                MessageBox.Show((Loc.Get("MsgDeleteBackupFailed") ?? "刪除失敗：") + ex.Message, Loc.Get("TitleError") ?? "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show((Loc.Get("MsgDeleteBackupFailed")) + ex.Message, Loc.Get("TitleError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
@@ -692,109 +649,26 @@ namespace AgainstRomeModifier {
         }
 
         public static Bitmap? LoadTga(byte[] tgaBytes) {
-            if (tgaBytes.Length < 18) return null;
-            int idLength = tgaBytes[0];
-            int colorMapType = tgaBytes[1];
-            int imageType = tgaBytes[2];
-            int width = BitConverter.ToUInt16(tgaBytes, 12);
-            int height = BitConverter.ToUInt16(tgaBytes, 14);
-            int pixelDepth = tgaBytes[16];
-            int descriptor = tgaBytes[17];
-
-            if (width <= 0 || height <= 0) return null;
-
-            if (imageType == 1) {
-                if (colorMapType != 1 || pixelDepth != 8) return null;
-                int colorMapLength = BitConverter.ToUInt16(tgaBytes, 5);
-                int colorMapEntrySize = tgaBytes[7];
-                if (colorMapEntrySize != 24) return null;
-                int colorMapOffset = 18 + idLength;
-                int pixelDataOffset = colorMapOffset + colorMapLength * 3;
-
-                if (pixelDataOffset + width * height > tgaBytes.Length) return null;
-
-                Color[] palette = new Color[colorMapLength];
-                for (int i = 0; i < colorMapLength; i++) {
-                    int entryOffset = colorMapOffset + i * 3;
-                    if (entryOffset + 2 >= tgaBytes.Length) break;
-                    byte b = tgaBytes[entryOffset];
-                    byte g = tgaBytes[entryOffset + 1];
-                    byte r = tgaBytes[entryOffset + 2];
-                    if (r == 0 && g == 0 && b == 0) {
-                        palette[i] = Color.FromArgb(0, 0, 0, 0);
-                    } else {
-                        palette[i] = Color.FromArgb(255, r, g, b);
-                    }
+            // 解析下沉至 Core.TgaDecoder（無 System.Drawing 依賴）；此處僅把緊密排列的
+            // BGRA 緩衝包成 32bpp ARGB Bitmap。ModifierForm 亦有相同薄殼。
+            TgaImage? image = TgaDecoder.Decode(tgaBytes);
+            if (image == null) return null;
+            var bmp = new Bitmap(image.Width, image.Height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+            var bmpData = bmp.LockBits(new Rectangle(0, 0, image.Width, image.Height),
+                System.Drawing.Imaging.ImageLockMode.WriteOnly, bmp.PixelFormat);
+            try {
+                int rowBytes = image.Width * 4;
+                if (bmpData.Stride == rowBytes) {
+                    System.Runtime.InteropServices.Marshal.Copy(image.Bgra, 0, bmpData.Scan0, image.Bgra.Length);
+                } else {
+                    for (int y = 0; y < image.Height; y++)
+                        System.Runtime.InteropServices.Marshal.Copy(
+                            image.Bgra, y * rowBytes, bmpData.Scan0 + y * bmpData.Stride, rowBytes);
                 }
-
-                Bitmap bmp = new Bitmap(width, height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
-                var bmpData = bmp.LockBits(new Rectangle(0, 0, width, height), System.Drawing.Imaging.ImageLockMode.WriteOnly, bmp.PixelFormat);
-                try {
-                    bool topToBottom = (descriptor & 0x20) != 0;
-                    int stride = bmpData.Stride;
-                    byte[] argbBuffer = new byte[stride * height];
-                    for (int y = 0; y < height; y++) {
-                        int targetY = topToBottom ? y : (height - 1 - y);
-                        int targetOffset = targetY * stride;
-                        int rowDataOffset = pixelDataOffset + y * width;
-                        for (int x = 0; x < width; x++) {
-                            int pixelOffset = rowDataOffset + x;
-                            if (pixelOffset >= tgaBytes.Length) break;
-                            byte index = tgaBytes[pixelOffset];
-                            Color c = (index < palette.Length) ? palette[index] : Color.Transparent;
-                            int pixel = targetOffset + x * 4;
-                            argbBuffer[pixel] = c.B;
-                            argbBuffer[pixel + 1] = c.G;
-                            argbBuffer[pixel + 2] = c.R;
-                            argbBuffer[pixel + 3] = c.A;
-                        }
-                    }
-                    System.Runtime.InteropServices.Marshal.Copy(argbBuffer, 0, bmpData.Scan0, argbBuffer.Length);
-                } finally {
-                    bmp.UnlockBits(bmpData);
-                }
-                return bmp;
-            } else if (imageType == 2) {
-                if (pixelDepth != 24 && pixelDepth != 32) return null;
-                int pixelDataOffset = 18 + idLength;
-                int bytesPerPixel = pixelDepth / 8;
-
-                if (pixelDataOffset + width * height * bytesPerPixel > tgaBytes.Length) return null;
-
-                Bitmap bmp = new Bitmap(width, height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
-                var bmpData = bmp.LockBits(new Rectangle(0, 0, width, height), System.Drawing.Imaging.ImageLockMode.WriteOnly, bmp.PixelFormat);
-                try {
-                    bool topToBottom = (descriptor & 0x20) != 0;
-                    int stride = bmpData.Stride;
-                    byte[] argbBuffer = new byte[stride * height];
-                    for (int y = 0; y < height; y++) {
-                        int targetY = topToBottom ? y : (height - 1 - y);
-                        int targetOffset = targetY * stride;
-                        int rowDataOffset = pixelDataOffset + y * width * bytesPerPixel;
-                        for (int x = 0; x < width; x++) {
-                            int pixelOffset = rowDataOffset + x * bytesPerPixel;
-                            if (pixelOffset + 2 >= tgaBytes.Length) break;
-                            byte b = tgaBytes[pixelOffset];
-                            byte g = tgaBytes[pixelOffset + 1];
-                            byte r = tgaBytes[pixelOffset + 2];
-                            byte a = 255;
-                            if (bytesPerPixel == 4 && pixelOffset + 3 < tgaBytes.Length) {
-                                a = tgaBytes[pixelOffset + 3];
-                            }
-                            int pixel = targetOffset + x * 4;
-                            argbBuffer[pixel] = b;
-                            argbBuffer[pixel + 1] = g;
-                            argbBuffer[pixel + 2] = r;
-                            argbBuffer[pixel + 3] = a;
-                        }
-                    }
-                    System.Runtime.InteropServices.Marshal.Copy(argbBuffer, 0, bmpData.Scan0, argbBuffer.Length);
-                } finally {
-                    bmp.UnlockBits(bmpData);
-                }
-                return bmp;
+            } finally {
+                bmp.UnlockBits(bmpData);
             }
-            return null;
+            return bmp;
         }
 
         private static string Cell(DataGridViewRow row, int index) => row.Cells[index].Value?.ToString() ?? "";

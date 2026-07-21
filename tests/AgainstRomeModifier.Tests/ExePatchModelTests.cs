@@ -64,6 +64,22 @@ public sealed class ExePatchModelTests {
                 ? ExePatchModel.IdleSelect999PatchedBytes
                 : ExePatchModel.IdleSelect999OriginalBytes);
 
+    private static void PlaceCorpseRetention(byte[] exe, ExeCorpseRetentionPatchState state) =>
+        Place(exe, ExePatchModel.CorpseRetentionPatchOffset,
+            state == ExeCorpseRetentionPatchState.Patched
+                ? ExePatchModel.CorpseRetentionPatchedBytes
+                : ExePatchModel.CorpseRetentionOriginalBytes);
+
+    private static void PlaceDefaultSpecialArrows(byte[] exe, ExeDefaultSpecialArrowsPatchState state) {
+        bool patched = state == ExeDefaultSpecialArrowsPatchState.Patched;
+        Place(exe, ExePatchModel.DefaultSpecialArrowsNormalButtonOffset,
+            patched ? ExePatchModel.DefaultSpecialArrowsNormalButtonPatchedBytes : ExePatchModel.DefaultSpecialArrowsNormalButtonOriginalBytes);
+        Place(exe, ExePatchModel.DefaultSpecialArrowsGetterOffset,
+            patched ? ExePatchModel.DefaultSpecialArrowsGetterPatchedBytes : ExePatchModel.DefaultSpecialArrowsGetterOriginalBytes);
+        Place(exe, ExePatchModel.DefaultSpecialArrowsCaveOffset,
+            patched ? ExePatchModel.DefaultSpecialArrowsCavePatchedBytes : ExePatchModel.DefaultSpecialArrowsCaveOriginalBytes);
+    }
+
     private static void PlaceVillageRange(byte[] exe, ExeVillageRangePatchState state) {
         bool rangePatched = state is ExeVillageRangePatchState.LegacyLogicOnly or ExeVillageRangePatchState.Expanded;
         bool framePatched = state == ExeVillageRangePatchState.Expanded;
@@ -316,6 +332,45 @@ public sealed class ExePatchModelTests {
         Assert.Equal(state, ExePatchModel.GetIdleSelect999PatchState(exe));
     }
 
+    [Theory]
+    [InlineData(ExeCorpseRetentionPatchState.Original)]
+    [InlineData(ExeCorpseRetentionPatchState.Patched)]
+    public void Corpse_retention_state_is_detected(ExeCorpseRetentionPatchState state) {
+        byte[] exe = NewExe();
+        PlaceCorpseRetention(exe, state);
+        Assert.Equal(state, ExePatchModel.GetCorpseRetentionPatchState(exe));
+    }
+
+    [Fact]
+    public void Corpse_retention_round_trip_changes_only_the_verified_reserve_immediate() {
+        byte[] exe = NewExe();
+        PlaceCorpseRetention(exe, ExeCorpseRetentionPatchState.Original);
+        byte[] pristine = exe.ToArray();
+
+        IReadOnlyList<ExeWriteOp> enable = ExePatchModel.PlanCorpseRetention(
+            true, ExePatchModel.GetCorpseRetentionPatchState(exe));
+        Assert.Single(enable);
+        Assert.Equal(ExePatchModel.CorpseRetentionPatchOffset, enable[0].Offset);
+        ExePatchModel.Apply(exe, enable);
+        Assert.Equal(ExeCorpseRetentionPatchState.Patched, ExePatchModel.GetCorpseRetentionPatchState(exe));
+
+        IReadOnlyList<ExeWriteOp> disable = ExePatchModel.PlanCorpseRetention(
+            false, ExePatchModel.GetCorpseRetentionPatchState(exe));
+        ExePatchModel.Apply(exe, disable);
+        Assert.Equal(pristine, exe);
+    }
+
+    [Fact]
+    public void Corpse_retention_unknown_state_is_not_planned() {
+        byte[] exe = NewExe();
+        PlaceCorpseRetention(exe, ExeCorpseRetentionPatchState.Original);
+        exe[ExePatchModel.CorpseRetentionPatchOffset + 1] = 0xCC;
+
+        Assert.Equal(ExeCorpseRetentionPatchState.Unknown, ExePatchModel.GetCorpseRetentionPatchState(exe));
+        Assert.Empty(ExePatchModel.PlanCorpseRetention(true, ExeCorpseRetentionPatchState.Unknown));
+        Assert.Empty(ExePatchModel.PlanCorpseRetention(false, ExeCorpseRetentionPatchState.Unknown));
+    }
+
     [Fact]
     public void Idle_select_999_bytes_rewrite_the_whole_function_region_in_place() {
         // 原版函式 0xA0 位元組 + 0x10 對齊填充；補丁版 0x9F + NOP 填充。
@@ -364,6 +419,45 @@ public sealed class ExePatchModelTests {
             ExePatchModel.GetIdleSelect999PatchState(new byte[8]));
         Assert.Empty(ExePatchModel.PlanIdleSelect999(true, ExeIdleSelect999PatchState.Unknown));
         Assert.Empty(ExePatchModel.PlanIdleSelect999(false, ExeIdleSelect999PatchState.Unknown));
+    }
+
+    [Theory]
+    [InlineData(ExeDefaultSpecialArrowsPatchState.Original)]
+    [InlineData(ExeDefaultSpecialArrowsPatchState.Patched)]
+    public void Default_special_arrows_state_is_detected(ExeDefaultSpecialArrowsPatchState state) {
+        byte[] exe = NewExe();
+        PlaceDefaultSpecialArrows(exe, state);
+        Assert.Equal(state, ExePatchModel.GetDefaultSpecialArrowsPatchState(exe));
+    }
+
+    [Fact]
+    public void Legacy_default_special_arrows_patch_is_restore_only() {
+        byte[] exe = NewExe();
+        PlaceDefaultSpecialArrows(exe, ExeDefaultSpecialArrowsPatchState.Original);
+        Assert.Empty(ExePatchModel.PlanRetiredDefaultSpecialArrowsRestore(
+            ExePatchModel.GetDefaultSpecialArrowsPatchState(exe)));
+
+        PlaceDefaultSpecialArrows(exe, ExeDefaultSpecialArrowsPatchState.Patched);
+        IReadOnlyList<ExeWriteOp> disable = ExePatchModel.PlanRetiredDefaultSpecialArrowsRestore(
+            ExePatchModel.GetDefaultSpecialArrowsPatchState(exe));
+        Assert.Equal(3, disable.Count);
+        ExePatchModel.Apply(exe, disable);
+        Assert.Equal(ExeDefaultSpecialArrowsPatchState.Original,
+            ExePatchModel.GetDefaultSpecialArrowsPatchState(exe));
+    }
+
+    [Fact]
+    public void Default_special_arrows_mixed_or_short_state_is_unknown_and_not_planned() {
+        byte[] exe = NewExe();
+        PlaceDefaultSpecialArrows(exe, ExeDefaultSpecialArrowsPatchState.Original);
+        Place(exe, ExePatchModel.DefaultSpecialArrowsGetterOffset,
+            ExePatchModel.DefaultSpecialArrowsGetterPatchedBytes);
+
+        Assert.Equal(ExeDefaultSpecialArrowsPatchState.Unknown,
+            ExePatchModel.GetDefaultSpecialArrowsPatchState(exe));
+        Assert.Equal(ExeDefaultSpecialArrowsPatchState.Unknown,
+            ExePatchModel.GetDefaultSpecialArrowsPatchState(new byte[8]));
+        Assert.Empty(ExePatchModel.PlanRetiredDefaultSpecialArrowsRestore(ExeDefaultSpecialArrowsPatchState.Unknown));
     }
 
     [Theory]

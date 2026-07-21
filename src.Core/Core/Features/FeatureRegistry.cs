@@ -19,6 +19,7 @@ public static class FeatureRegistry
     public static IReadOnlyList<FeatureDefinition> All { get; } = new FeatureDefinition[]
     {
         Bool(FeatureKeys.FastCiviProduction, FeatureCategory.Stats), Bool(FeatureKeys.InfiniteMorale, FeatureCategory.Stats),
+        Bool(FeatureKeys.NoRunHpLoss, FeatureCategory.Stats),
         Bool(FeatureKeys.Balance, FeatureCategory.Stats), Bool(FeatureKeys.FreeProduction, FeatureCategory.Stats),
         Bool(FeatureKeys.FreeUpgrade, FeatureCategory.Stats), Bool(FeatureKeys.NoSpellCost, FeatureCategory.Stats),
         Bool(FeatureKeys.HousingCapacity20x, FeatureCategory.Stats), Bool(FeatureKeys.StorageCapacity10x, FeatureCategory.Stats),
@@ -26,7 +27,10 @@ public static class FeatureRegistry
         Bool(FeatureKeys.FoodHealing10x, FeatureCategory.Stats), Bool(FeatureKeys.MaxPopulation, FeatureCategory.Stats),
         Bool(FeatureKeys.CiviProduce20, FeatureCategory.Stats), Bool(FeatureKeys.UnitRecruit20, FeatureCategory.Stats),
         Bool(FeatureKeys.IdleSelect999, FeatureCategory.Stats),
+        Bool(FeatureKeys.CorpseRetention, FeatureCategory.Stats),
         Bool(FeatureKeys.RomanEndless, FeatureCategory.Stats),
+        Bool(FeatureKeys.RomanReinforcementGarrison, FeatureCategory.Compat),
+        new(FeatureKeys.VillageGarrisonQuotaMultiplier, FeatureCategory.Compat, FeatureControlKind.Specialized),
         Bool(FeatureKeys.SpellDamage5x, FeatureCategory.Stats), Bool(FeatureKeys.SpellHealing10x, FeatureCategory.Stats),
         Bool(FeatureKeys.SpellResurrection, FeatureCategory.Stats), Bool(FeatureKeys.GeneralSkills, FeatureCategory.Stats),
         Bool(FeatureKeys.LeaderGlory, FeatureCategory.Stats),
@@ -39,13 +43,15 @@ public static class FeatureRegistry
         Bool(FeatureKeys.FocusLoss, FeatureCategory.Compat), Bool(FeatureKeys.VillageBuildRange, FeatureCategory.Compat),
         Bool(FeatureKeys.NoSpellAltar, FeatureCategory.Compat), new(FeatureKeys.GameSpeed, FeatureCategory.Compat, FeatureControlKind.Specialized),
         Bool(FeatureKeys.DgVoodoo, FeatureCategory.Compat),
+        Bool(FeatureKeys.ArgmTrace, FeatureCategory.Compat),
         Bool(FeatureKeys.NativeWidescreen1920x1080, FeatureCategory.Compat),
         Bool(FeatureKeys.CameraZoomOut1, FeatureCategory.Compat),
         Bool(FeatureKeys.EndlessAiM1, FeatureCategory.Compat), Bool(FeatureKeys.EndlessAiCore, FeatureCategory.Compat),
         new(FeatureKeys.EndlessAiM2, FeatureCategory.Compat, FeatureControlKind.Specialized),
         new(FeatureKeys.EndlessAiM3, FeatureCategory.Compat, FeatureControlKind.Specialized),
         new(FeatureKeys.EndlessAiM4, FeatureCategory.Compat, FeatureControlKind.Specialized),
-        Bool(FeatureKeys.EndlessAiM5, FeatureCategory.Compat), Bool(FeatureKeys.EndlessAiM6, FeatureCategory.Compat),
+        Bool(FeatureKeys.EndlessAiM5, FeatureCategory.Compat),
+        new(FeatureKeys.EndlessAiM6, FeatureCategory.Compat, FeatureControlKind.Specialized),
         Bool(FeatureKeys.ToEnglish, FeatureCategory.Language),
     };
 

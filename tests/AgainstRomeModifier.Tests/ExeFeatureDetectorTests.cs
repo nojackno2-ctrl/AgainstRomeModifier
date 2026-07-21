@@ -28,6 +28,7 @@ public sealed class ExeFeatureDetectorTests
             Place(exe, ExePatchModel.CiviProduce20PatchOffset, ExePatchModel.CiviProduce20PatchedBytes);
             Place(exe, ExePatchModel.UnitRecruit20PatchOffset, ExePatchModel.UnitRecruit20PatchedBytes);
             Place(exe, ExePatchModel.IdleSelect999PatchOffset, ExePatchModel.IdleSelect999PatchedBytes);
+            Place(exe, ExePatchModel.CorpseRetentionPatchOffset, ExePatchModel.CorpseRetentionPatchedBytes);
             Place(exe, ExePatchModel.NativeWidescreenIdentifyOffset, ExePatchModel.NativeWidescreenIdentifyPatchedBytes);
             Place(exe, ExePatchModel.NativeWidescreenCreateOffset, ExePatchModel.NativeWidescreenCreatePatchedBytes);
             Place(exe, ExePatchModel.NativeWidescreenModeTextOffset, ExePatchModel.NativeWidescreenModeTextPatchedBytes);
@@ -50,6 +51,7 @@ public sealed class ExeFeatureDetectorTests
             Assert.True(profile.CiviProduce20);
             Assert.True(profile.UnitRecruit20);
             Assert.True(profile.IdleSelect999);
+            Assert.True(profile.CorpseRetention);
             Assert.True(profile.NativeWidescreen1920x1080);
             Assert.True(profile.CameraZoomOut1);
             Assert.Equal(ExeRomanEndlessPatchState.Patched, detection.RomanEndlessState);

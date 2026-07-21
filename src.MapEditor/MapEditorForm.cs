@@ -34,7 +34,7 @@ internal sealed class MapEditorForm : Form
     private readonly CheckBox _showObjects = new() { Dock = DockStyle.Top, Height = 30, Text = "顯示建築與場景物件", Checked = true };
     private readonly TrackBar _reliefScale = new() { Dock = DockStyle.Top, Minimum = 0, Maximum = 200, Value = 100, TickFrequency = 25 };
     private readonly ListView _sceneList = new() { Dock = DockStyle.Fill, View = View.Details, FullRowSelect = true, HeaderStyle = ColumnHeaderStyle.Nonclickable };
-    private readonly Label _sceneSummary = new() { Dock = DockStyle.Top, Height = 54, Padding = new Padding(8), ForeColor = Color.Gainsboro };
+    private readonly Label _sceneSummary = new() { Dock = DockStyle.Top, Height = 64, Padding = new Padding(8, 16, 8, 8), ForeColor = Color.Gainsboro };
     private readonly NumericUpDown _sceneTeam = new() { Dock = DockStyle.Fill, Minimum = -1, Maximum = 15 };
     private readonly NumericUpDown _sceneX = SceneCoordinateInput();
     private readonly NumericUpDown _sceneY = SceneCoordinateInput();
@@ -50,6 +50,7 @@ internal sealed class MapEditorForm : Form
     private readonly ToolStripButton _undoButton = new("復原") { Enabled = false };
     private readonly ToolStripButton _redoButton = new("重做") { Enabled = false };
     private readonly ToolStripButton _textureTool = new("材質筆刷") { CheckOnClick = true, Checked = true };
+    private readonly ToolStripButton _sceneMoveTool = new("移動場景物件") { CheckOnClick = true };
     private readonly ToolStripButton _resetTerrainButton = new("還原地表") { Enabled = false };
     private readonly ToolStripButton _view2dButton = new("2D 俯視") { CheckOnClick = true };
     private readonly ToolStripButton _view3dButton = new("3D 場景") { CheckOnClick = true, Checked = true };
@@ -158,7 +159,7 @@ internal sealed class MapEditorForm : Form
         });
 
         var tools = new ToolStrip { GripStyle = ToolStripGripStyle.Hidden, Dock = DockStyle.Top, Padding = new Padding(8, 4, 8, 4), BackColor = Color.FromArgb(36, 40, 49), ForeColor = Color.White };
-        tools.Items.AddRange(new ToolStripItem[] { _lblTerrainGroup, _textureTool, _resetTerrainButton, new ToolStripSeparator(), _view2dButton, _view3dButton, _3dDiagnosticsButton });
+        tools.Items.AddRange(new ToolStripItem[] { _lblTerrainGroup, _textureTool, _sceneMoveTool, _resetTerrainButton, new ToolStripSeparator(), _view2dButton, _view3dButton, _3dDiagnosticsButton });
 
         _paletteHeader = SectionHeader("地表繪製");
         var palettePanel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(8), BackColor = Color.FromArgb(34, 38, 47) };
@@ -265,6 +266,7 @@ internal sealed class MapEditorForm : Form
         _canvas.TextureSampled += (_, e) => SelectSampledTexture(e.Texture);
         _canvas.StrokeEnded += (_, _) => CommitStroke();
         _canvas.TileHovered += (_, e) => ShowTerrainHover(e);
+        _canvas.SceneObjectMoved += (_, e) => MoveSelectedSceneObject(e);
         if (_view3d is not null)
         {
             Map3DViewControl view3d = _view3d;
@@ -272,13 +274,15 @@ internal sealed class MapEditorForm : Form
             _view3d.TextureSampled += (_, e) => SelectSampledTexture(e.Texture);
             _view3d.StrokeEnded += (_, _) => CommitStroke();
             _view3d.TileHovered += (_, e) => ShowTerrainHover(e);
+            _view3d.SceneObjectMoved += (_, e) => MoveSelectedSceneObject(e);
             _view3d.InitializationFailed += (_, ex) => BeginInvoke(() => Disable3DView(view3d.LastFailureReason ?? (AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English ? "OpenGL 3.3 initialization failed." : "OpenGL 3.3 初始化失敗。"), ex));
         }
         _view2dButton.Click += (_, _) => SetActiveView(use3D: false);
         _view3dButton.Click += (_, _) => SetActiveView(use3D: true);
         _3dDiagnosticsButton.Click += (_, _) => Show3DDiagnostics();
         _mapMenuButton.Click += (_, _) => ReturnToMenu();
-        _textureTool.Click += (_, _) => LoadEditingScene();
+        _textureTool.Click += (_, _) => SetSceneMoveMode(false);
+        _sceneMoveTool.Click += (_, _) => SetSceneMoveMode(true);
         _resetTerrainButton.Click += (_, _) => ResetTerrain();
         _saveButton.Click += (_, _) => SaveMap(showSuccess: true);
         _gamePreviewButton.Click += (_, _) => PreviewInGame();
@@ -328,6 +332,10 @@ internal sealed class MapEditorForm : Form
 
         _lblTerrainGroup.Text = isEn ? "Terrain:" : "地表：";
         _textureTool.Text = isEn ? "Texture Brush" : "材質筆刷";
+        _sceneMoveTool.Text = isEn ? "Move Selected Object" : "移動選取物件";
+        _sceneMoveTool.ToolTipText = isEn
+            ? "Select an SDL object in the Scene Objects tab, then drag on the 2D or 3D terrain. Movement stays pending until Save."
+            : "先在「場景物件」分頁選取 SDL 物件，再於 2D 或 3D 地表拖曳；移動會暫存到按下「儲存」為止。";
         _resetTerrainButton.Text = isEn ? "Reset Terrain" : "還原地表";
         _view2dButton.Text = isEn ? "2D View" : "2D 俯視";
         _view3dButton.Text = isEn ? "3D View" : "3D 場景";
@@ -388,8 +396,8 @@ internal sealed class MapEditorForm : Form
         }
 
         _sceneWarningLabel.Text = isEn
-            ? "SDL Validation: Edit team/coordinates, copy an existing object, or delete objects on custom maps. Select an object first."
-            : "SDL 驗證功能：可修改自製地圖物件的隊伍與相對座標、複製既有物件或刪除物件。請先選取物件。";
+            ? "SDL Validation: Edit or drag positions, change teams, copy an existing object, or delete objects on custom maps. Select an object first."
+            : "SDL 驗證功能：可拖曳或輸入座標、修改隊伍、複製既有物件或刪除物件。請先選取物件。";
         _lblSceneTeam.Text = isEn ? "Team" : "隊伍";
         _lblSceneX.Text = isEn ? "Rel X" : "相對 X";
         _lblSceneY.Text = isEn ? "Rel Y" : "相對 Y";
@@ -402,8 +410,8 @@ internal sealed class MapEditorForm : Form
 
         _lblOverviewTitle.Text = isEn ? "Map Overview" : "地圖概覽";
         _lblStatusInstructions.Text = isEn 
-            ? "  Scroll: Zoom | Mid-Drag: Pan | Right-Click: Sample | Left-Click: Draw | Ctrl+S: Save"
-            : "  滾輪縮放　中鍵平移　右鍵取樣　左鍵繪製　Ctrl+S 儲存";
+            ? "  Scroll: Zoom | Mid-Drag: Pan | Brush: Draw | Move Object: Drag selected SDL object | Ctrl+S: Save"
+            : "  滾輪縮放　中鍵平移　材質筆刷：繪製　移動物件：拖曳選取的 SDL 物件　Ctrl+S 儲存";
 
         UpdateStatus();
         UpdateEditorState();
@@ -455,7 +463,7 @@ internal sealed class MapEditorForm : Form
     {
         if (_selected is null) return;
         bool isEn = AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English;
-        _textureTool.Checked = true;
+        _textureTool.Checked = !_sceneMoveTool.Checked;
         string minimapPath = Path.Combine(_selected.DirectoryPath, "minimap.bmp");
         LoadSceneList(_sceneObjects);
         IReadOnlyList<MapSceneObject> effectiveObjects = EffectiveSceneObjects();
@@ -593,6 +601,56 @@ internal sealed class MapEditorForm : Form
         FocusSelectedSceneObject();
     }
 
+    private void SetSceneMoveMode(bool enabled)
+    {
+        _sceneMoveTool.Checked = enabled;
+        _textureTool.Checked = !enabled;
+        if (enabled && _inspectorTabs.TabPages.Count >= 3) _inspectorTabs.SelectedIndex = 2;
+        UpdateSceneEditButtons();
+        bool isEn = AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English;
+        _status.Text = enabled
+            ? (isEn ? "Move mode: select an SDL object, then drag on the terrain. Changes remain pending until Save." : "物件移動模式：選取 SDL 物件後在地表拖曳；按下「儲存」前只會暫存在記憶體。")
+            : (isEn ? "Texture brush mode." : "材質筆刷模式：右鍵取樣，左鍵拖曳繪製。");
+    }
+
+    private void MoveSelectedSceneObject(SceneObjectMoveEventArgs e)
+    {
+        if (_selected?.IsCustom != true || _sceneList.SelectedItems.Count != 1 || SelectedSceneDisplay() is not { } source) return;
+        if (_sceneList.SelectedItems[0].Tag is MapSceneObject pending && _sceneRemovals.Any(removal =>
+            removal.SourceFile.Equals(pending.SourceFile, StringComparison.OrdinalIgnoreCase) && removal.ObjectIndex == pending.ObjectIndex)) return;
+
+        MapSceneObject moved = SceneObjectPositioning.MoveToWorldPosition(source, e.WorldX, e.WorldZ);
+        if (_sceneList.SelectedItems[0].Tag is StagedSceneAddition addition)
+        {
+            addition.Display = moved;
+        }
+        else if (_sceneList.SelectedItems[0].Tag is MapSceneObject selected)
+        {
+            int index = _sceneObjects.ToList().FindIndex(item => SceneKey(item) == SceneKey(selected));
+            if (index < 0) return;
+            MapSceneObject[] objects = _sceneObjects.ToArray();
+            objects[index] = moved;
+            _sceneObjects = objects;
+            _sceneList.SelectedItems[0].Tag = moved;
+        }
+        else return;
+
+        _sceneX.Value = ClampSceneCoordinate(moved.LocalX, _sceneX);
+        _sceneY.Value = ClampSceneCoordinate(moved.LocalY, _sceneY);
+        _sceneZ.Value = ClampSceneCoordinate(moved.LocalZ, _sceneZ);
+        IReadOnlyList<MapSceneObject> effective = EffectiveSceneObjects();
+        _canvas.UpdateSceneObjects(effective);
+        _view3d?.UpdateSceneObjects(effective);
+        UpdateEditorState();
+        if (e.Completed)
+        {
+            bool isEn = AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English;
+            _status.Text = isEn
+                ? $"Object moved to world ({moved.WorldX:0}, {moved.WorldZ:0}); click Save to write the SDL change."
+                : $"物件已移到世界座標 ({moved.WorldX:0}, {moved.WorldZ:0})；按「儲存」才會寫入 SDL。";
+        }
+    }
+
     private void ApplySelectedSceneObjectEdit()
     {
         if (_selected?.IsCustom != true || _sceneList.SelectedItems.Count != 1) return;
@@ -714,6 +772,9 @@ internal sealed class MapEditorForm : Form
         bool isEn = AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English;
         bool pendingRemoval = selected && _sceneList.SelectedItems[0].Tag is MapSceneObject item && _sceneRemovals.Any(removal =>
             removal.SourceFile.Equals(item.SourceFile, StringComparison.OrdinalIgnoreCase) && removal.ObjectIndex == item.ObjectIndex);
+        bool canMove = editable && selected && !pendingRemoval && _sceneMoveTool.Checked;
+        _canvas.SceneMoveEnabled = canMove;
+        if (_view3d is not null) _view3d.SceneMoveEnabled = canMove;
         _sceneDeleteButton.Text = pendingRemoval
             ? (isEn ? "Undo Delete" : "取消刪除")
             : (isEn ? "Delete Object" : "刪除物件");
@@ -1128,8 +1189,8 @@ internal sealed class MapEditorForm : Form
             ? $"  Pending: {_sceneAdditions.Count} copies, {_sceneRemovals.Count} deletions."
             : $"　待儲存：複製 {_sceneAdditions.Count}、刪除 {_sceneRemovals.Count}。";
         _sceneSummary.Text = isEn
-            ? $"Buildings: {buildingIndex} | Units: {unitIndex} | Others: {objectIndex}{pendingSuffix}\nClick an item to jump to its location."
-            : $"建築 {buildingIndex}　單位 {unitIndex}　其他 {objectIndex}{pendingSuffix}\n點清單項目可跳到該物件位置。";
+            ? $"Buildings: {buildingIndex} | Units: {unitIndex} | Others: {objectIndex}{pendingSuffix}\nSelect an item to focus it; Move Selected Object lets you drag it on 2D/3D terrain."
+            : $"建築 {buildingIndex}　單位 {unitIndex}　其他 {objectIndex}{pendingSuffix}\n選取項目可定位；啟用「移動選取物件」後可在 2D／3D 地表拖曳。";
     }
 
     private void ChooseWaterColor()

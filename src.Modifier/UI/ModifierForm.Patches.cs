@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 using AgainstRomeModifier.Core.Services;
 using AgainstRomeModifier.Core.Features;
@@ -16,12 +17,13 @@ namespace AgainstRomeModifier {
         private void BuildFeatureToggleMap() {
             featureToggles = new Dictionary<string, ModernToggle>(StringComparer.OrdinalIgnoreCase) {
                 [FeatureKeys.FocusLoss.Id] = chkFocusLoss, [FeatureKeys.FastCiviProduction.Id] = chkFastCiviProduction,
-                [FeatureKeys.InfiniteMorale.Id] = chkInfiniteMorale, [FeatureKeys.FreeProduction.Id] = chkFreeProd,
+                [FeatureKeys.InfiniteMorale.Id] = chkInfiniteMorale, [FeatureKeys.NoRunHpLoss.Id] = chkNoRunHpLoss, [FeatureKeys.FreeProduction.Id] = chkFreeProd,
                 [FeatureKeys.FreeUpgrade.Id] = chkFreeUpgrade, [FeatureKeys.NoSpellCost.Id] = chkNoSpellCost,
                 [FeatureKeys.MaxPopulation.Id] = chkMaxPopulation, [FeatureKeys.Balance.Id] = chkBalance,
                 [FeatureKeys.AllUnitsEntireMapVision.Id] = chkAllUnitsEntireMapVision,
                 [FeatureKeys.NativeWidescreen1920x1080.Id] = chkNativeWidescreen1920x1080,
                 [FeatureKeys.CameraZoomOut1.Id] = chkCameraZoomOut1,
+                [FeatureKeys.CorpseRetention.Id] = chkCorpseRetention,
                 [FeatureKeys.RangedRange3x.Id] = chkRangedRange3x,
                 [FeatureKeys.UnitMovementSpeed2x.Id] = chkUnitMovementSpeed2x,
                 [FeatureKeys.VillagerMovementSpeed5x.Id] = chkVillagerMovementSpeed5x,
@@ -35,6 +37,7 @@ namespace AgainstRomeModifier {
                 [FeatureKeys.IdleSelect999.Id] = chkIdleSelect999,
                 [FeatureKeys.VillageBuildRange.Id] = chkVillageBuildRange,
                 [FeatureKeys.NoSpellAltar.Id] = chkNoSpellAltar, [FeatureKeys.DgVoodoo.Id] = chkDgVoodoo,
+                [FeatureKeys.ArgmTrace.Id] = chkArgmTrace,
                 [FeatureKeys.ToEnglish.Id] = chkToEng,
                 [FeatureKeys.SpellDamage5x.Id] = chkSpellDamage5x,
                 [FeatureKeys.SpellHealing10x.Id] = chkSpellHealing10x,
@@ -42,7 +45,8 @@ namespace AgainstRomeModifier {
                 [FeatureKeys.GeneralSkills.Id] = chkGeneralSkills,
                 [FeatureKeys.LeaderGlory.Id] = chkLeaderGlory,
                 [FeatureKeys.EndlessAiM1.Id] = chkAiM1, [FeatureKeys.EndlessAiCore.Id] = chkAiCore,
-                [FeatureKeys.EndlessAiM5.Id] = chkAiM5, [FeatureKeys.EndlessAiM6.Id] = chkAiM6,
+                [FeatureKeys.EndlessAiM5.Id] = chkAiM5,
+                [FeatureKeys.RomanReinforcementGarrison.Id] = chkRomanReinforcementGarrison,
             };
             FeatureRegistry.ValidateToggleIds(featureToggles.Keys);
         }
@@ -52,8 +56,10 @@ namespace AgainstRomeModifier {
                 if (featureToggles.TryGetValue(feature.Id, out ModernToggle? toggle)) toggle.Checked = false;
             }
             if (category == FeatureCategory.Compat) {
-                chkGameSpeed.Checked = false;
+                SetGameSpeedSelection(1);
+                chkVillageGarrisonQuota3x.Checked = false;
                 chkDgVoodoo.Checked = patchEngine.IsDgVoodooInstalled(gamePath);
+                chkArgmTrace.Checked = patchEngine.IsArgmTraceInstalled(gamePath);
             }
         }
 
@@ -61,7 +67,10 @@ namespace AgainstRomeModifier {
             var profile = new PatchProfile();
             foreach (var (id, toggle) in featureToggles) profile.Set(id, FeatureValue.Of(toggle.Checked));
             if (forceBalance) profile.Balance = true;
-            profile.Set(FeatureKeys.GameSpeed, chkGameSpeed.Checked ? 10 : 1);
+            profile.Set(FeatureKeys.GameSpeed, chkGameSpeed.Checked ? SelectedGameSpeedMultiplier() : 1);
+            profile.Set(
+                FeatureKeys.VillageGarrisonQuotaMultiplier,
+                chkVillageGarrisonQuota3x.Checked ? SelectedVillageGarrisonQuotaMultiplier() : 1);
             profile.Set(FeatureKeys.CustomUnitStats, customUnitStats);
             return profile;
         }
@@ -111,6 +120,7 @@ namespace AgainstRomeModifier {
             btnApply.Enabled = enabled;
             btnStartGame.Enabled = enabled;
             btnNavSystem.Enabled = enabled;
+            btnNavExperimental.Enabled = enabled;
             btnNavDefaultStats.Enabled = enabled;
             btnNavCurrentStats.Enabled = enabled;
         }
@@ -138,6 +148,7 @@ namespace AgainstRomeModifier {
                     txtGamePath.Text = fbd.SelectedPath;
                     TryEnsureBackupLoadedForGamePath(fbd.SelectedPath);
                     chkDgVoodoo.Checked = patchEngine.IsDgVoodooInstalled(fbd.SelectedPath);
+                    chkArgmTrace.Checked = patchEngine.IsArgmTraceInstalled(fbd.SelectedPath);
                     LoadIcons();
                     LoadDefaultStatsData();
                 }
@@ -187,32 +198,46 @@ namespace AgainstRomeModifier {
         }
 
         /// <summary>
-        /// 將所有遊戲設定（屬性、相容性、語言包）恢復為官方原版初始設定。
+        /// 還原類操作的共用骨架：路徑/備份檢查 → 鎖定操作按鈕 → 於回復點內執行 →
+        /// 重設對應分類的開關 → 回報結果 → 重新讀取現況。RestoreAll/Stats/Compat/Language
+        /// 僅差在檢查條件、操作內容、重設分類與訊息鍵，一律由參數帶入。
         /// </summary>
-        private async void RestoreAll() {
+        private async Task RunGuardedRestore(
+            bool requireExe,
+            bool requireBackup,
+            Action<string, FileRollbackScope> operation,
+            FeatureCategory[] resetCategories,
+            string checkpointMessage,
+            string logStartKey,
+            string logDoneKey,
+            string successMessageKey) {
             string gamePath = GetGamePath();
-            if (string.IsNullOrEmpty(gamePath) || !Directory.Exists(gamePath) || !File.Exists(Path.Combine(gamePath, "Against_Rome.exe"))) {
-                MessageBox.Show(Loc.Get("MsgWrongGameDir"), Loc.Get("TitlePathError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
+            if (string.IsNullOrEmpty(gamePath) || !Directory.Exists(gamePath) ||
+                (requireExe && !File.Exists(Path.Combine(gamePath, "Against_Rome.exe")))) {
+                MessageBox.Show(
+                    Loc.Get(requireExe ? "MsgWrongGameDir" : "MsgSelectGameDir"),
+                    Loc.Get(requireExe ? "TitlePathError" : "TitleError"),
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
-            if (!TryEnsureBackupLoadedForGamePath(gamePath)) {
+            if (requireBackup && !TryEnsureBackupLoadedForGamePath(gamePath)) {
                 return;
             }
             SetActionButtonsEnabled(false);
             try {
-                Log(Loc.Get("LogStartRestoreAll"));
+                Log(Loc.Get(logStartKey));
                 await patchOperationRunner.ExecuteAsync(
-                    rollback => patchEngine.RestoreOriginalFiles(gamePath, backupManager, rollback),
-                    "已建立還原前檔案回復點。",
+                    rollback => operation(gamePath, rollback),
+                    checkpointMessage,
                     "還原失敗，開始回復變更。",
                     "還原失敗後的回復流程已完成。");
-                
-                ResetTogglesForCategory(FeatureCategory.Stats, gamePath);
-                ResetTogglesForCategory(FeatureCategory.Compat, gamePath);
-                ResetTogglesForCategory(FeatureCategory.Language, gamePath);
 
-                Log(Loc.Get("LogRestoreAllDone"));
-                MessageBox.Show(Loc.Get("MsgRestoreAllSuccess"), Loc.Get("TitleTips"), MessageBoxButtons.OK, MessageBoxIcon.Information);
+                foreach (FeatureCategory category in resetCategories) {
+                    ResetTogglesForCategory(category, gamePath);
+                }
+
+                Log(Loc.Get(logDoneKey));
+                MessageBox.Show(Loc.Get(successMessageKey), Loc.Get("TitleTips"), MessageBoxButtons.OK, MessageBoxIcon.Information);
                 try {
                     LoadCurrentData();
                 } catch (Exception uiEx) {
@@ -225,6 +250,16 @@ namespace AgainstRomeModifier {
                 SetActionButtonsEnabled(true);
             }
         }
+
+        /// <summary>
+        /// 將所有遊戲設定（屬性、相容性、語言包）恢復為官方原版初始設定。
+        /// </summary>
+        private void RestoreAll() => _ = RunGuardedRestore(
+            requireExe: true, requireBackup: true,
+            (gamePath, rollback) => patchEngine.RestoreOriginalFiles(gamePath, backupManager, rollback),
+            new[] { FeatureCategory.Stats, FeatureCategory.Compat, FeatureCategory.Language },
+            "已建立還原前檔案回復點。",
+            "LogStartRestoreAll", "LogRestoreAllDone", "MsgRestoreAllSuccess");
 
         /// <summary>
         /// 當使用者點擊「啟動遊戲」按鈕時觸發，於後台啟動遊戲主程式。
@@ -253,108 +288,53 @@ namespace AgainstRomeModifier {
             }
         }
 
-        /// <summary>設定遊戲 10 倍加速開關的狀態。</summary>
+        /// <summary>取得下拉選單目前選擇的遊戲加速倍率。</summary>
+        private int SelectedGameSpeedMultiplier() {
+            int index = cboGameSpeedMultiplier.SelectedIndex;
+            if (index < 0 || index >= GameSpeedMultiplierChoices.Length) return 10;
+            return GameSpeedMultiplierChoices[index];
+        }
+
+        /// <summary>依偵測到的倍率同步遊戲加速開關與下拉選單（1 = 停用，僅取消勾選、保留選擇）。</summary>
         private void SetGameSpeedSelection(int multiplier) {
             chkGameSpeed.Checked = multiplier > 1;
+            int index = Array.IndexOf(GameSpeedMultiplierChoices, multiplier);
+            if (index >= 0) cboGameSpeedMultiplier.SelectedIndex = index;
         }
 
-        private async void RestoreStatsOnly() {
-            string gamePath = GetGamePath();
-            if (string.IsNullOrEmpty(gamePath) || !Directory.Exists(gamePath)) {
-                MessageBox.Show(Loc.Get("MsgSelectGameDir"), Loc.Get("TitleError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
-                return;
-            }
-            if (!TryEnsureBackupLoadedForGamePath(gamePath)) {
-                return;
-            }
-            SetActionButtonsEnabled(false);
-            try {
-                Log(Loc.Get("LogStartRestoreStats"));
-                await patchOperationRunner.ExecuteAsync(
-                    rollback => patchEngine.RestoreStatsOnly(gamePath, backupManager, rollback),
-                    "已建立屬性檔案回復點。",
-                    "還原失敗，開始回復變更。",
-                    "還原失敗後的回復流程已完成。");
-
-                ResetTogglesForCategory(FeatureCategory.Stats, gamePath);
-
-                Log(Loc.Get("LogRestoreStatsDone"));
-                MessageBox.Show(Loc.Get("MsgRestoreStatsSuccess"), Loc.Get("TitleTips"), MessageBoxButtons.OK, MessageBoxIcon.Information);
-                try {
-                    LoadCurrentData();
-                } catch (Exception uiEx) {
-                    Log("Reload current data failed after successful stats restore: " + uiEx.Message);
-                }
-            } catch (Exception ex) {
-                Log(Loc.Get("MsgRestoreFailed") + ex.Message + "\r\n" + ex.StackTrace);
-                MessageBox.Show(Loc.Get("MsgRestoreFailed") + ex.Message, Loc.Get("TitleError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
-            } finally {
-                SetActionButtonsEnabled(true);
-            }
+        /// <summary>取得下拉選單目前選擇的村莊駐軍配額倍率。</summary>
+        private int SelectedVillageGarrisonQuotaMultiplier() {
+            int index = cboVillageGarrisonQuotaMultiplier.SelectedIndex;
+            if (index < 0 || index >= VillageGarrisonQuotaMultiplierChoices.Length) return 3;
+            return VillageGarrisonQuotaMultiplierChoices[index];
         }
 
-        private async void RestoreCompatOnly() {
-            string gamePath = GetGamePath();
-            if (string.IsNullOrEmpty(gamePath) || !Directory.Exists(gamePath)) {
-                MessageBox.Show(Loc.Get("MsgSelectGameDir"), Loc.Get("TitleError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
-                return;
-            }
-            SetActionButtonsEnabled(false);
-            try {
-                Log(Loc.Get("LogStartRestoreCompat"));
-                await patchOperationRunner.ExecuteAsync(
-                    rollback => patchEngine.RestoreCompatOnly(gamePath, backupManager, rollback),
-                    "已建立相容性檔案回復點。",
-                    "還原失敗，開始回復變更。",
-                    "還原失敗後的回復流程已完成。");
-
-                ResetTogglesForCategory(FeatureCategory.Compat, gamePath);
-
-                Log(Loc.Get("LogRestoreCompatDone"));
-                MessageBox.Show(Loc.Get("MsgRestoreCompatSuccess"), Loc.Get("TitleTips"), MessageBoxButtons.OK, MessageBoxIcon.Information);
-                try {
-                    LoadCurrentData();
-                } catch (Exception uiEx) {
-                    Log("Reload current data failed after successful compat restore: " + uiEx.Message);
-                }
-            } catch (Exception ex) {
-                Log(Loc.Get("MsgRestoreFailed") + ex.Message + "\r\n" + ex.StackTrace);
-                MessageBox.Show(Loc.Get("MsgRestoreFailed") + ex.Message, Loc.Get("TitleError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
-            } finally {
-                SetActionButtonsEnabled(true);
-            }
+        /// <summary>依偵測到的倍率同步駐軍配額開關與下拉選單（1 = 停用，僅取消勾選、保留選擇）。</summary>
+        private void SetVillageGarrisonQuotaSelection(int multiplier) {
+            chkVillageGarrisonQuota3x.Checked = multiplier > 1;
+            int index = Array.IndexOf(VillageGarrisonQuotaMultiplierChoices, multiplier);
+            if (index >= 0) cboVillageGarrisonQuotaMultiplier.SelectedIndex = index;
         }
 
-        private async void RestoreLanguageOnly() {
-            string gamePath = GetGamePath();
-            if (string.IsNullOrEmpty(gamePath) || !Directory.Exists(gamePath)) {
-                MessageBox.Show(Loc.Get("MsgSelectGameDir"), Loc.Get("TitleError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
-                return;
-            }
-            SetActionButtonsEnabled(false);
-            try {
-                Log(Loc.Get("LogStartRestoreLang"));
-                await patchOperationRunner.ExecuteAsync(
-                    rollback => patchEngine.RestoreLanguageOnly(gamePath, rollback),
-                    "已建立語言檔案回復點。",
-                    "還原失敗，開始回復變更。",
-                    "還原失敗後的回復流程已完成。");
+        private void RestoreStatsOnly() => _ = RunGuardedRestore(
+            requireExe: false, requireBackup: true,
+            (gamePath, rollback) => patchEngine.RestoreStatsOnly(gamePath, backupManager, rollback),
+            new[] { FeatureCategory.Stats },
+            "已建立屬性檔案回復點。",
+            "LogStartRestoreStats", "LogRestoreStatsDone", "MsgRestoreStatsSuccess");
 
-                ResetTogglesForCategory(FeatureCategory.Language, gamePath);
+        private void RestoreCompatOnly() => _ = RunGuardedRestore(
+            requireExe: false, requireBackup: false,
+            (gamePath, rollback) => patchEngine.RestoreCompatOnly(gamePath, backupManager, rollback),
+            new[] { FeatureCategory.Compat },
+            "已建立相容性檔案回復點。",
+            "LogStartRestoreCompat", "LogRestoreCompatDone", "MsgRestoreCompatSuccess");
 
-                Log(Loc.Get("LogRestoreLangDone"));
-                MessageBox.Show(Loc.Get("MsgRestoreLangSuccess"), Loc.Get("TitleTips"), MessageBoxButtons.OK, MessageBoxIcon.Information);
-                try {
-                    LoadCurrentData();
-                } catch (Exception uiEx) {
-                    Log("Reload current data failed after successful language restore: " + uiEx.Message);
-                }
-            } catch (Exception ex) {
-                Log(Loc.Get("MsgRestoreFailed") + ex.Message + "\r\n" + ex.StackTrace);
-                MessageBox.Show(Loc.Get("MsgRestoreFailed") + ex.Message, Loc.Get("TitleError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
-            } finally {
-                SetActionButtonsEnabled(true);
-            }
-        }
+        private void RestoreLanguageOnly() => _ = RunGuardedRestore(
+            requireExe: false, requireBackup: false,
+            (gamePath, rollback) => patchEngine.RestoreLanguageOnly(gamePath, rollback),
+            new[] { FeatureCategory.Language },
+            "已建立語言檔案回復點。",
+            "LogStartRestoreLang", "LogRestoreLangDone", "MsgRestoreLangSuccess");
     }
 }

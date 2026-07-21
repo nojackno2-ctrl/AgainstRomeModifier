@@ -63,6 +63,8 @@ internal sealed class PatchRestoreService
             exeChanged |= ExeFeaturePatcher.ApplyCiviProduce20(exeBytes, false, _logger);
             exeChanged |= ExeFeaturePatcher.ApplyUnitRecruit20(exeBytes, false, _logger);
             exeChanged |= ExeFeaturePatcher.ApplyIdleSelect999(exeBytes, false, _logger);
+            exeChanged |= ExeFeaturePatcher.ApplyCorpseRetention(exeBytes, false, _logger);
+            exeChanged |= ExeFeaturePatcher.RestoreRetiredDefaultSpecialArrows(exeBytes, _logger);
             if (exeChanged)
                 patchedFiles[exePath] = exeBytes;
 
@@ -71,6 +73,7 @@ internal sealed class PatchRestoreService
 
             orchestrator ??= sharedOrchestrator ?? new EndlessAiOrchestrator();
             FoodHealingFeature.Apply(gamePath, false, backupManager, orchestrator, _logger);
+            RetiredDefaultSpecialArrowsMigration.RestoreIfPresent(gamePath, orchestrator, _logger);
             CiviProduce20Feature.RestoreAkNpcOriginal(gamePath, orchestrator);
         }
 
@@ -82,7 +85,10 @@ internal sealed class PatchRestoreService
         if (restoreLanguage)
             new LanguagePackFeature(_logger).Apply(gamePath, false, rollback);
         if (restoreCompat)
+        {
             new DgVoodooFeature(_logger).Apply(gamePath, false, rollback);
+            new ArgmTraceFeature(_logger).Apply(gamePath, false, rollback);
+        }
     }
 
     private void RestoreStatsFiles(string gamePath, BackupManager backupManager, FileRollbackScope rollback)

@@ -23,7 +23,7 @@ internal sealed class Map3DViewControl : GLControl
     private int _hoverX = -1, _hoverY = -1;
     private float _waterLevel, _heightMapStep;
     private Color _waterSourceColor = Color.SteelBlue;
-    private bool _initialized, _painting, _panning, _rotating, _rightClick;
+    private bool _initialized, _painting, _movingSceneObject, _panning, _rotating, _rightClick;
     private Point _lastPointer, _rightStart;
     private int _terrainProgram, _colorProgram, _vao, _vbo, _ebo, _atlasTexture, _waterVao, _waterVbo, _markerVao, _markerVbo, _cursorVao, _cursorVbo;
     private int _cursorVertexCount;
@@ -38,6 +38,7 @@ internal sealed class Map3DViewControl : GLControl
     public string? BrushTexture { get; set; }
     public int BrushSize { get; set; } = 1;
     public bool EditingEnabled { get; set; }
+    public bool SceneMoveEnabled { get; set; }
     public bool ShowGrid { get; set; } = true;
     public bool ShowObjects { get; set; } = true;
     public float ReliefScale { get; private set; } = 1f;
@@ -48,6 +49,7 @@ internal sealed class Map3DViewControl : GLControl
     public event EventHandler<TileHoverEventArgs>? TileHovered;
     public event EventHandler<TextureSampleEventArgs>? TextureSampled;
     public event EventHandler? StrokeEnded;
+    public event EventHandler<SceneObjectMoveEventArgs>? SceneObjectMoved;
 
     public bool LoadTextures(int dimension, IReadOnlyList<string> textures, IReadOnlyList<string> baselineTextures, string mapDirectory, FloorTextureLibrary floorTextures, IReadOnlyList<MapSceneObject> sceneObjects, float waterLevel, float heightMapStep, Color waterColor)
     {
@@ -188,7 +190,11 @@ internal sealed class Map3DViewControl : GLControl
         base.OnMouseDown(e); Focus(); _lastPointer = e.Location;
         if (e.Button == MouseButtons.Middle) { _panning = true; return; }
         if (e.Button == MouseButtons.Right) { _rightClick = true; _rightStart = e.Location; return; }
-        if (e.Button == MouseButtons.Left) { _painting = true; _paintedInDrag.Clear(); TryPaint(e.Location); }
+        if (e.Button == MouseButtons.Left)
+        {
+            if (SceneMoveEnabled) _movingSceneObject = TryMoveSceneObject(e.Location, completed: false);
+            else { _painting = true; _paintedInDrag.Clear(); TryPaint(e.Location); }
+        }
     }
 
     protected override void OnMouseMove(MouseEventArgs e)
@@ -197,6 +203,7 @@ internal sealed class Map3DViewControl : GLControl
         Point delta = new(e.X - _lastPointer.X, e.Y - _lastPointer.Y);
         if (_panning && e.Button == MouseButtons.Middle) { _camera.Pan(-delta.X * .08f, delta.Y * .08f); Invalidate(); }
         else if (_rightClick && e.Button == MouseButtons.Right && Math.Abs(e.X - _rightStart.X) + Math.Abs(e.Y - _rightStart.Y) >= 4) { _rotating = true; _camera.Rotate(delta.X * .35f, -delta.Y * .35f); Invalidate(); }
+        else if (_movingSceneObject && e.Button == MouseButtons.Left) TryMoveSceneObject(e.Location, completed: false);
         else if (_painting && e.Button == MouseButtons.Left) TryPaint(e.Location);
         if (TryGetTile(e.Location, out int x, out int y))
         {
@@ -220,7 +227,8 @@ internal sealed class Map3DViewControl : GLControl
         if (e.Button == MouseButtons.Right && _rightClick && !_rotating && TryGetTile(e.Location, out int x, out int y) && _textures is not null)
             TextureSampled?.Invoke(this, new TextureSampleEventArgs(x, y, _textures[y * _dimension + x]));
         bool wasPainting = _painting;
-        _painting = _panning = _rotating = _rightClick = false; _paintedInDrag.Clear();
+        if (_movingSceneObject && e.Button == MouseButtons.Left) TryMoveSceneObject(e.Location, completed: true);
+        _painting = _movingSceneObject = _panning = _rotating = _rightClick = false; _paintedInDrag.Clear();
         if (wasPainting) StrokeEnded?.Invoke(this, EventArgs.Empty);
     }
 
@@ -238,6 +246,17 @@ internal sealed class Map3DViewControl : GLControl
         Invalidate();
     }
 
+    public void UpdateSceneObjects(IReadOnlyList<MapSceneObject> sceneObjects)
+    {
+        _objects = sceneObjects;
+        if (_initialized && _heights is not null)
+        {
+            MakeCurrent();
+            UploadColoredGeometry(_markerVao, _markerVbo, SceneObjectRenderer.BuildMarkerPoints(_objects, _heights));
+        }
+        Invalidate();
+    }
+
     protected override void OnMouseWheel(MouseEventArgs e) { base.OnMouseWheel(e); _camera.Zoom(e.Delta > 0 ? .84f : 1.19f); Invalidate(); }
 
     private void TryPaint(Point point)
@@ -246,6 +265,14 @@ internal sealed class Map3DViewControl : GLControl
         int offset = y * _dimension + x;
         if (!_paintedInDrag.Add(offset)) return;
         TexturePainted?.Invoke(this, new TexturePaintEventArgs(x, y, _textures[offset], BrushTexture));
+    }
+
+    private bool TryMoveSceneObject(Point point, bool completed)
+    {
+        if (!EditingEnabled || !SceneMoveEnabled || !TryGetTile(point, out int x, out int y)) return false;
+        float worldUnitsPerTile = SdlSceneCatalog.WorldUnitsPerMapPixel * (SdlSceneCatalog.MapPixelSize / (float)_dimension);
+        SceneObjectMoved?.Invoke(this, new SceneObjectMoveEventArgs((x + .5f) * worldUnitsPerTile, (y + .5f) * worldUnitsPerTile, completed));
+        return true;
     }
 
     private bool TryGetTile(Point point, out int x, out int y)

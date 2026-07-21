@@ -58,6 +58,23 @@ namespace AgainstRomeModifier.Core.Services
             }
         }
 
+        /// <summary>刪除檔案（先登記回復點、清除唯讀屬性）；檔案不存在時無動作。</summary>
+        public static void DeleteFile(string path, FileRollbackScope? rollback = null)
+        {
+            if (!File.Exists(path)) return;
+            rollback?.TrackFile(path);
+            File.SetAttributes(path, FileAttributes.Normal);
+            File.Delete(path);
+        }
+
+        /// <summary>以交易式寫入複製檔案；overwrite 為 false 且目標已存在時拋出。</summary>
+        public static void CopyFile(string source, string destination, bool overwrite, FileRollbackScope? rollback = null)
+        {
+            if (!overwrite && File.Exists(destination))
+                throw new IOException("目標檔案已存在: " + destination);
+            WriteAllBytes(destination, File.ReadAllBytes(source), rollback);
+        }
+
         private static bool ContentAlreadyMatches(string dest, byte[] bytes)
         {
             try

@@ -47,6 +47,8 @@ internal sealed class ExeFeatureDetector
                 ExePatchModel.GetUnitRecruit20PatchState(exeBytes) == ExeUnitRecruit20PatchState.Patched;
             profile.IdleSelect999 =
                 ExePatchModel.GetIdleSelect999PatchState(exeBytes) == ExeIdleSelect999PatchState.Patched;
+            profile.CorpseRetention =
+                ExePatchModel.GetCorpseRetentionPatchState(exeBytes) == ExeCorpseRetentionPatchState.Patched;
             profile.NativeWidescreen1920x1080 =
                 ExePatchModel.GetNativeWidescreenPatchState(exeBytes) is
                     ExeNativeWidescreenPatchState.LegacyUnforced or

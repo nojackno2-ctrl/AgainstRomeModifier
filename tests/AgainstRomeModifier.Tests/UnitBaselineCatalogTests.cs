@@ -1,4 +1,5 @@
 using AgainstRomeModifier.Core.Services;
+using AgainstRomeModifier.Core.Patches;
 
 namespace AgainstRomeModifier.Tests;
 
@@ -33,4 +34,31 @@ public sealed class UnitBaselineCatalogTests
         Assert.True(fixture.Backup.HasFile("SYSTEM/DATA_MP/DEFAULTS/objdef.dau"));
         Assert.Contains(unitKey, fixture.Backup.GetBackupUnitRows().Keys);
     }
+    [RequiresBackupZipFact]
+    public void Temp_PrintObjdefHeader()
+    {
+        string path = @"c:\離線儲存\程式設計\Against_Rome_Modifier\遊戲原始檔案\SYSTEM\DATA_MP\DEFAULTS\objdef.dau";
+        byte[] bytes = System.IO.File.ReadAllBytes(path);
+        byte[] decompressed = GameLZSS.DecompressPfil(bytes);
+        string text = PatchText.GameEncoding.GetString(decompressed);
+        string lineEnding = text.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
+        string[] lines = text.Split(new[] { lineEnding }, StringSplitOptions.None);
+        
+        var sb = new System.Text.StringBuilder();
+        string[] headers = PatchText.ParseCsvLine(lines[0]);
+        for (int i = 0; i < headers.Length; i++)
+        {
+            sb.AppendLine($"Index {i}: {headers[i]}");
+        }
+        System.IO.File.WriteAllText(@"c:\離線儲存\程式設計\Against_Rome_Modifier\scratch\objdef_headers.txt", sb.ToString());
+    }
 }
+
+
+
+
+
+
+
+
+
