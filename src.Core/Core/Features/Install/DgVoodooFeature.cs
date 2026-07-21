@@ -22,13 +22,6 @@ internal sealed class DgVoodooFeature
     }
     private readonly ILogger _logger;
     internal DgVoodooFeature(ILogger logger) => _logger = logger;
-    private static void SafeDeleteFile(string path, FileRollbackScope? rollback)
-    {
-        if (!File.Exists(path)) return;
-        rollback?.TrackFile(path);
-        File.SetAttributes(path, FileAttributes.Normal);
-        File.Delete(path);
-    }
         internal void Apply(
             string gamePath,
             bool enabled,
@@ -130,13 +123,13 @@ internal sealed class DgVoodooFeature
                     continue;
                 }
 
-                SafeDeleteFile(path, rollback);
+                SafeFileWriter.DeleteFile(path, rollback);
             }
 
             string markerPath = GetDgVoodooMarkerPath(gamePath);
             if (preserved.Count == 0)
             {
-                SafeDeleteFile(markerPath, rollback);
+                SafeFileWriter.DeleteFile(markerPath, rollback);
                 _logger.Log(Loc.Get("SvcLogDgvRemoved"));
             }
             else

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 using AgainstRomeModifier.Core.Services;
 using AgainstRomeModifier.Core.Features;
@@ -197,32 +198,46 @@ namespace AgainstRomeModifier {
         }
 
         /// <summary>
-        /// 將所有遊戲設定（屬性、相容性、語言包）恢復為官方原版初始設定。
+        /// 還原類操作的共用骨架：路徑/備份檢查 → 鎖定操作按鈕 → 於回復點內執行 →
+        /// 重設對應分類的開關 → 回報結果 → 重新讀取現況。RestoreAll/Stats/Compat/Language
+        /// 僅差在檢查條件、操作內容、重設分類與訊息鍵，一律由參數帶入。
         /// </summary>
-        private async void RestoreAll() {
+        private async Task RunGuardedRestore(
+            bool requireExe,
+            bool requireBackup,
+            Action<string, FileRollbackScope> operation,
+            FeatureCategory[] resetCategories,
+            string checkpointMessage,
+            string logStartKey,
+            string logDoneKey,
+            string successMessageKey) {
             string gamePath = GetGamePath();
-            if (string.IsNullOrEmpty(gamePath) || !Directory.Exists(gamePath) || !File.Exists(Path.Combine(gamePath, "Against_Rome.exe"))) {
-                MessageBox.Show(Loc.Get("MsgWrongGameDir"), Loc.Get("TitlePathError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
+            if (string.IsNullOrEmpty(gamePath) || !Directory.Exists(gamePath) ||
+                (requireExe && !File.Exists(Path.Combine(gamePath, "Against_Rome.exe")))) {
+                MessageBox.Show(
+                    Loc.Get(requireExe ? "MsgWrongGameDir" : "MsgSelectGameDir"),
+                    Loc.Get(requireExe ? "TitlePathError" : "TitleError"),
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
-            if (!TryEnsureBackupLoadedForGamePath(gamePath)) {
+            if (requireBackup && !TryEnsureBackupLoadedForGamePath(gamePath)) {
                 return;
             }
             SetActionButtonsEnabled(false);
             try {
-                Log(Loc.Get("LogStartRestoreAll"));
+                Log(Loc.Get(logStartKey));
                 await patchOperationRunner.ExecuteAsync(
-                    rollback => patchEngine.RestoreOriginalFiles(gamePath, backupManager, rollback),
-                    "已建立還原前檔案回復點。",
+                    rollback => operation(gamePath, rollback),
+                    checkpointMessage,
                     "還原失敗，開始回復變更。",
                     "還原失敗後的回復流程已完成。");
-                
-                ResetTogglesForCategory(FeatureCategory.Stats, gamePath);
-                ResetTogglesForCategory(FeatureCategory.Compat, gamePath);
-                ResetTogglesForCategory(FeatureCategory.Language, gamePath);
 
-                Log(Loc.Get("LogRestoreAllDone"));
-                MessageBox.Show(Loc.Get("MsgRestoreAllSuccess"), Loc.Get("TitleTips"), MessageBoxButtons.OK, MessageBoxIcon.Information);
+                foreach (FeatureCategory category in resetCategories) {
+                    ResetTogglesForCategory(category, gamePath);
+                }
+
+                Log(Loc.Get(logDoneKey));
+                MessageBox.Show(Loc.Get(successMessageKey), Loc.Get("TitleTips"), MessageBoxButtons.OK, MessageBoxIcon.Information);
                 try {
                     LoadCurrentData();
                 } catch (Exception uiEx) {
@@ -235,6 +250,16 @@ namespace AgainstRomeModifier {
                 SetActionButtonsEnabled(true);
             }
         }
+
+        /// <summary>
+        /// 將所有遊戲設定（屬性、相容性、語言包）恢復為官方原版初始設定。
+        /// </summary>
+        private void RestoreAll() => _ = RunGuardedRestore(
+            requireExe: true, requireBackup: true,
+            (gamePath, rollback) => patchEngine.RestoreOriginalFiles(gamePath, backupManager, rollback),
+            new[] { FeatureCategory.Stats, FeatureCategory.Compat, FeatureCategory.Language },
+            "已建立還原前檔案回復點。",
+            "LogStartRestoreAll", "LogRestoreAllDone", "MsgRestoreAllSuccess");
 
         /// <summary>
         /// 當使用者點擊「啟動遊戲」按鈕時觸發，於後台啟動遊戲主程式。
@@ -291,103 +316,25 @@ namespace AgainstRomeModifier {
             if (index >= 0) cboVillageGarrisonQuotaMultiplier.SelectedIndex = index;
         }
 
-        private async void RestoreStatsOnly() {
-            string gamePath = GetGamePath();
-            if (string.IsNullOrEmpty(gamePath) || !Directory.Exists(gamePath)) {
-                MessageBox.Show(Loc.Get("MsgSelectGameDir"), Loc.Get("TitleError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
-                return;
-            }
-            if (!TryEnsureBackupLoadedForGamePath(gamePath)) {
-                return;
-            }
-            SetActionButtonsEnabled(false);
-            try {
-                Log(Loc.Get("LogStartRestoreStats"));
-                await patchOperationRunner.ExecuteAsync(
-                    rollback => patchEngine.RestoreStatsOnly(gamePath, backupManager, rollback),
-                    "已建立屬性檔案回復點。",
-                    "還原失敗，開始回復變更。",
-                    "還原失敗後的回復流程已完成。");
+        private void RestoreStatsOnly() => _ = RunGuardedRestore(
+            requireExe: false, requireBackup: true,
+            (gamePath, rollback) => patchEngine.RestoreStatsOnly(gamePath, backupManager, rollback),
+            new[] { FeatureCategory.Stats },
+            "已建立屬性檔案回復點。",
+            "LogStartRestoreStats", "LogRestoreStatsDone", "MsgRestoreStatsSuccess");
 
-                ResetTogglesForCategory(FeatureCategory.Stats, gamePath);
+        private void RestoreCompatOnly() => _ = RunGuardedRestore(
+            requireExe: false, requireBackup: false,
+            (gamePath, rollback) => patchEngine.RestoreCompatOnly(gamePath, backupManager, rollback),
+            new[] { FeatureCategory.Compat },
+            "已建立相容性檔案回復點。",
+            "LogStartRestoreCompat", "LogRestoreCompatDone", "MsgRestoreCompatSuccess");
 
-                Log(Loc.Get("LogRestoreStatsDone"));
-                MessageBox.Show(Loc.Get("MsgRestoreStatsSuccess"), Loc.Get("TitleTips"), MessageBoxButtons.OK, MessageBoxIcon.Information);
-                try {
-                    LoadCurrentData();
-                } catch (Exception uiEx) {
-                    Log("Reload current data failed after successful stats restore: " + uiEx.Message);
-                }
-            } catch (Exception ex) {
-                Log(Loc.Get("MsgRestoreFailed") + ex.Message + "\r\n" + ex.StackTrace);
-                MessageBox.Show(Loc.Get("MsgRestoreFailed") + ex.Message, Loc.Get("TitleError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
-            } finally {
-                SetActionButtonsEnabled(true);
-            }
-        }
-
-        private async void RestoreCompatOnly() {
-            string gamePath = GetGamePath();
-            if (string.IsNullOrEmpty(gamePath) || !Directory.Exists(gamePath)) {
-                MessageBox.Show(Loc.Get("MsgSelectGameDir"), Loc.Get("TitleError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
-                return;
-            }
-            SetActionButtonsEnabled(false);
-            try {
-                Log(Loc.Get("LogStartRestoreCompat"));
-                await patchOperationRunner.ExecuteAsync(
-                    rollback => patchEngine.RestoreCompatOnly(gamePath, backupManager, rollback),
-                    "已建立相容性檔案回復點。",
-                    "還原失敗，開始回復變更。",
-                    "還原失敗後的回復流程已完成。");
-
-                ResetTogglesForCategory(FeatureCategory.Compat, gamePath);
-
-                Log(Loc.Get("LogRestoreCompatDone"));
-                MessageBox.Show(Loc.Get("MsgRestoreCompatSuccess"), Loc.Get("TitleTips"), MessageBoxButtons.OK, MessageBoxIcon.Information);
-                try {
-                    LoadCurrentData();
-                } catch (Exception uiEx) {
-                    Log("Reload current data failed after successful compat restore: " + uiEx.Message);
-                }
-            } catch (Exception ex) {
-                Log(Loc.Get("MsgRestoreFailed") + ex.Message + "\r\n" + ex.StackTrace);
-                MessageBox.Show(Loc.Get("MsgRestoreFailed") + ex.Message, Loc.Get("TitleError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
-            } finally {
-                SetActionButtonsEnabled(true);
-            }
-        }
-
-        private async void RestoreLanguageOnly() {
-            string gamePath = GetGamePath();
-            if (string.IsNullOrEmpty(gamePath) || !Directory.Exists(gamePath)) {
-                MessageBox.Show(Loc.Get("MsgSelectGameDir"), Loc.Get("TitleError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
-                return;
-            }
-            SetActionButtonsEnabled(false);
-            try {
-                Log(Loc.Get("LogStartRestoreLang"));
-                await patchOperationRunner.ExecuteAsync(
-                    rollback => patchEngine.RestoreLanguageOnly(gamePath, rollback),
-                    "已建立語言檔案回復點。",
-                    "還原失敗，開始回復變更。",
-                    "還原失敗後的回復流程已完成。");
-
-                ResetTogglesForCategory(FeatureCategory.Language, gamePath);
-
-                Log(Loc.Get("LogRestoreLangDone"));
-                MessageBox.Show(Loc.Get("MsgRestoreLangSuccess"), Loc.Get("TitleTips"), MessageBoxButtons.OK, MessageBoxIcon.Information);
-                try {
-                    LoadCurrentData();
-                } catch (Exception uiEx) {
-                    Log("Reload current data failed after successful language restore: " + uiEx.Message);
-                }
-            } catch (Exception ex) {
-                Log(Loc.Get("MsgRestoreFailed") + ex.Message + "\r\n" + ex.StackTrace);
-                MessageBox.Show(Loc.Get("MsgRestoreFailed") + ex.Message, Loc.Get("TitleError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
-            } finally {
-                SetActionButtonsEnabled(true);
-            }
-        }
+        private void RestoreLanguageOnly() => _ = RunGuardedRestore(
+            requireExe: false, requireBackup: false,
+            (gamePath, rollback) => patchEngine.RestoreLanguageOnly(gamePath, rollback),
+            new[] { FeatureCategory.Language },
+            "已建立語言檔案回復點。",
+            "LogStartRestoreLang", "LogRestoreLangDone", "MsgRestoreLangSuccess");
     }
 }

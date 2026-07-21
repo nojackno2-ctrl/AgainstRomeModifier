@@ -215,7 +215,11 @@ namespace AgainstRomeModifier {
             btnTechDoc.Text = isEn ? "Technical Document" : "修改技術文件";
         }
 
-        private void BtnModifier_Click(object? sender, EventArgs e) {
+        /// <summary>
+        /// 啟動子表單（修改器 / 存檔管理器）的共用流程：解析遊戲路徑 → 隱藏啟動器 →
+        /// ShowDialog → 無論成敗都重載語系並復原啟動器視窗。兩個入口僅差在建立的表單與錯誤前綴。
+        /// </summary>
+        private void LaunchChildForm(Func<string, Form> childFactory, string launchErrorPrefix) {
             string gamePath = _initialGamePath ?? DetectGamePathFromRegistry();
             if (string.IsNullOrWhiteSpace(gamePath) || !Directory.Exists(gamePath)) {
                 if (File.Exists(Path.Combine(AppContext.BaseDirectory, "Against_Rome.exe"))) {
@@ -225,12 +229,11 @@ namespace AgainstRomeModifier {
 
             try {
                 this.Hide();
-                using (var modifier = new AgainstRomeModifier.ModifierForm(gamePath)) {
-                    modifier.ShowDialog(this);
-                }
+                using var child = childFactory(gamePath);
+                child.ShowDialog(this);
             }
             catch (Exception ex) {
-                MessageBox.Show("無法啟動修改器: " + ex.Message, "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show(launchErrorPrefix + ex.Message, "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
             finally {
                 Loc.ReloadLanguage();
@@ -240,30 +243,11 @@ namespace AgainstRomeModifier {
             }
         }
 
-        private void BtnSaveManager_Click(object? sender, EventArgs e) {
-            string gamePath = _initialGamePath ?? DetectGamePathFromRegistry();
-            if (string.IsNullOrWhiteSpace(gamePath) || !Directory.Exists(gamePath)) {
-                if (File.Exists(Path.Combine(AppContext.BaseDirectory, "Against_Rome.exe"))) {
-                    gamePath = AppContext.BaseDirectory;
-                }
-            }
+        private void BtnModifier_Click(object? sender, EventArgs e) =>
+            LaunchChildForm(gamePath => new AgainstRomeModifier.ModifierForm(gamePath), "無法啟動修改器: ");
 
-            try {
-                this.Hide();
-                using (var saveManager = new AgainstRomeModifier.SaveManagerForm(gamePath)) {
-                    saveManager.ShowDialog(this);
-                }
-            }
-            catch (Exception ex) {
-                MessageBox.Show("無法啟動存檔管理器: " + ex.Message, "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-            finally {
-                Loc.ReloadLanguage();
-                UpdateLanguageButtonStyles();
-                ApplyLanguageToUI();
-                this.Show();
-            }
-        }
+        private void BtnSaveManager_Click(object? sender, EventArgs e) =>
+            LaunchChildForm(gamePath => new AgainstRomeModifier.SaveManagerForm(gamePath), "無法啟動存檔管理器: ");
 
         private void BtnMapEditor_Click(object? sender, EventArgs e) {
             string gamePath = _initialGamePath ?? DetectGamePathFromRegistry();

@@ -28,9 +28,6 @@ public class PatchEngine
         return result;
     }
 
-    public PatchProfile DetectCurrentPatchProfile(string gamePath, BackupManager backupManager) =>
-        DetectCurrentPatchState(gamePath, backupManager);
-
     // Retained as a compatibility endpoint; SafeFileWriter owns the implementation.
     public void SafeWriteAllBytes(string destination, byte[] bytes, FileRollbackScope? rollback = null) =>
         SafeFileWriter.WriteAllBytes(destination, bytes, rollback);

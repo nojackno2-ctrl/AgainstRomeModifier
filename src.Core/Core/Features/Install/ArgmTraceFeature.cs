@@ -152,7 +152,7 @@ internal sealed class ArgmTraceFeature
         {
             string currentHash = ComputeSha256(File.ReadAllBytes(dllPath));
             if (string.Equals(currentHash, manifest.DllSha256, StringComparison.OrdinalIgnoreCase))
-                SafeDeleteFile(dllPath, rollback);
+                SafeFileWriter.DeleteFile(dllPath, rollback);
             else
                 _logger.Log(string.Format(Loc.Get("SvcLogArgmPreserved"), WinmmDllName));
         }
@@ -162,12 +162,12 @@ internal sealed class ArgmTraceFeature
         {
             string currentHash = ComputeSha256(File.ReadAllBytes(iniPath));
             if (string.Equals(currentHash, manifest.IniSha256, StringComparison.OrdinalIgnoreCase))
-                SafeDeleteFile(iniPath, rollback);
+                SafeFileWriter.DeleteFile(iniPath, rollback);
             else
                 _logger.Log(string.Format(Loc.Get("SvcLogArgmPreserved"), IniName));
         }
 
-        SafeDeleteFile(GetMarkerPath(gamePath), rollback);
+        SafeFileWriter.DeleteFile(GetMarkerPath(gamePath), rollback);
         _logger.Log(Loc.Get("SvcLogArgmRemoved"));
     }
 
@@ -191,7 +191,7 @@ internal sealed class ArgmTraceFeature
         string currentHash = ComputeSha256(File.ReadAllBytes(legacyPath));
         if (string.Equals(currentHash, manifest.DllSha256, StringComparison.OrdinalIgnoreCase))
         {
-            SafeDeleteFile(legacyPath, rollback);
+            SafeFileWriter.DeleteFile(legacyPath, rollback);
             _logger.Log(Loc.Get("SvcLogArgmLegacyRemoved"));
         }
     }
@@ -264,14 +264,6 @@ internal sealed class ArgmTraceFeature
         {
             return 0;
         }
-    }
-
-    private static void SafeDeleteFile(string path, FileRollbackScope? rollback)
-    {
-        if (!File.Exists(path)) return;
-        rollback?.TrackFile(path);
-        File.SetAttributes(path, FileAttributes.Normal);
-        File.Delete(path);
     }
 
     private static string GetMarkerPath(string gamePath) => Path.Combine(gamePath, MarkerFileName);
