@@ -51,6 +51,9 @@ public sealed class GameMapCatalog
         string path = Path.Combine(mapDirectory, "TEXT", "US", "briefing.put");
         if (!File.Exists(path)) return null;
         try { return PutTextDocument.Load(path).GetValue("briefing_titel_1"); }
-        catch { return null; }
+        catch (Exception ex) {
+            System.Diagnostics.Debug.WriteLine($"讀取地圖標題失敗 ({path}): {ex.Message}");
+            return null;
+        }
     }
 }

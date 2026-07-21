@@ -341,7 +341,10 @@ internal sealed class MapSelectionForm : Form
         if (map is not null)
         {
             try { _preview.Image = LoadPreviewImage(map.DirectoryPath); }
-            catch { _preview.Image = null; }
+            catch (Exception ex) {
+                System.Diagnostics.Debug.WriteLine($"載入地圖預覽失敗 ({map.DirectoryPath}): {ex.Message}");
+                _preview.Image = null;
+            }
         }
         _previewPlaceholder.Text = map is null 
             ? (isEn ? "Select a map to view preview" : "選取地圖以顯示預覽") 

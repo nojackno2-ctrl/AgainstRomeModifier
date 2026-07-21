@@ -15,8 +15,25 @@
 - **§8.2 拆門面**：刪除 `BackupManager` 六個 static 轉呼叫，呼叫端（含 2 個測試）改用 `UnitStatParser` / `CleanEparaBaseline`。
 - **§1.3 語言覆寫 bug** ⚠️：移除 `ModifierForm` 建構式每次以系統語系覆寫並存檔的區塊。
 - **§9.2 初始路徑去重**：新增 `GameDirectoryLocator.ResolveInitialGamePath()`，`ModifierForm` / `SaveManager` 共用（兩者原 fallback 順序完全相同）；連帶刪除兩處變成死碼的 `DetectGamePathFromRegistry` 私有包裝。
+- **§3.5 還原流程去重**：抽 `RunGuardedRestore()`，把 `RestoreAll/Stats/Compat/Language` 四個近 40 行的重複骨架各縮為一行呼叫（`BtnApply_Click` 因有確認對話框與不同訊息鍵，維持獨立）。
+- **§5.3 靜默 catch**：`SaveManagerForm`（2 處預覽選取）、`GameMapCatalog`、`EndlessMapCatalog`、`MapSelectionForm` 的空/靜默 catch 補上 `Debug.WriteLine` 診斷線索（行為不變）。
+- **§3.2 LoadTga 去重**：兩份完全相同的 TGA 解碼器（各 ~100 行）之解析邏輯下沉到新的 `Core.Services.TgaDecoder`（不依賴 System.Drawing，回傳緊密 BGRA），兩個 UI 各留 ~15 行把緩衝包成 `Bitmap` 的薄殼；新增 `TgaDecoderTests`（5 例，含垂直翻轉、純黑透明特例、無效輸入）鎖住行為。
+- **§3.3 Stats grid 工廠合併**：`CreateCurrentStatsGrid` / `CreateDefaultStatsGrid`（各 ~90 行、90% 相同）合併為表驅動的 `CreateStatsGrid(bool isComparison)`；欄位標題/欄寬以一張表分流，Tier 可見性與 CellFormatting 依頁別套用；兩個原方法名保留為單行薄殼，8 處呼叫端不動。
+- **§3.6 LauncherForm 啟動去重**：`BtnModifier_Click` / `BtnSaveManager_Click` 的「解析路徑→隱藏→ShowDialog→finally 重載語系並復原」骨架抽成 `LaunchChildForm(childFactory, errorPrefix)`（`BtnMapEditor_Click` 因多一段 ProgramFilesX86 fallback、且有地圖選單迴圈，維持獨立）。
+- **§1.8 SafeFile 併入**：`ArgmTraceFeature` / `DgVoodooFeature` / `LanguagePackFeature` 各自的 `SafeDeleteFile` / `SafeCopyFile` 私有副本刪除，統一改用 `SafeFileWriter.DeleteFile` / `CopyFile`（src.Shared）。
+- **§1.6 三態聚合**：`DetectModule` / `DetectGlobalState` 重複三次的 allOriginal/allUltimate 旗標合併邏輯抽成私有 `PatchStateAggregator`；R0 只在 Legacy 時併入的差異行為刻意保留。
+- **§1.7 別名收斂**：刪除 `PatchEngine.DetectCurrentPatchProfile`（僅是 `DetectCurrentPatchState` 的別名），唯一產品呼叫端改直接呼叫本尊。
+- **§1.4 前置**：刪除 `ModifierForm.Data` 的私有 `ParseCsvLine`，改用 `PatchText.ParseCsvLine`（行為相同）。
 
-淨變動約 −136 行。**尚未執行**的高價值項目：§3（UI 樣板去重 / `DarkFormBase`）、§3.4（功能開關描述表）、§3.5（還原流程樣板）、§1.4（UI 解析下沉 + `CurrentStatsReader`）、§9.3（MapEditor 在地化統一）、§7.1（Directory.Build.props + 分析器）。
+### ⚠️ §3.4 執行前必須先決策（發現潛藏不一致，未擅自更動）
+
+盤點 `BtnDisableAll_Click` / `BtnEnableAll_Click` 時發現：`chkCorpseRetention`（屍體保留量）在**兩個方法裡都完全沒出現**——`featureToggles` 有 42 個開關，但「所有功能關閉」只重設 41 個，漏掉屍體保留。因此若把 §3.4 直接改成「迴圈遍歷 `featureToggles`」會**順手改變行為**（讓 DisableAll 也重設 CorpseRetention），這不是純行為保留重構。
+
+此外 `ApplyLanguageToUI` 的 Loc 鍵**並非**都等於 feature id（例：toggle id `ToEnglish` 對應 Loc 鍵 `ToEng`；`EndlessAi.M1` 對應 `AiM1`），所以表驅動需要一張明確的 `id → LocKey` 對照，任何一筆錯就是可見的錯誤標籤，且無自動化測試覆蓋。
+
+**建議**：§3.4 執行前，先請使用者確認「DisableAll/EnableAll 是否應涵蓋 CorpseRetention」等既有涵蓋範圍（這是功能決策），再連同 UI 目視驗證一起做。切勿當成無腦機械替換。
+
+**其餘尚未執行**的高價值項目：§3.1（UI 樣板去重 / `DarkFormBase`，需 UI 目視驗證）、§1.4（UI 解析下沉 + `CurrentStatsReader`）、§9.3（MapEditor 在地化統一）、§7.1（Directory.Build.props + 分析器）。
 
 ---
 

@@ -26,122 +26,30 @@ namespace AgainstRomeModifier {
         }
 
         /// <summary>
-        /// 解析遊戲資料列。遊戲資料使用單純逗號分隔，不支援 RFC 4180 引號跳脫。
-        /// </summary>
-        private static string[] ParseCsvLine(string line) {
-            if (line == null) return Array.Empty<string>();
-            return line.Split(',');
-        }
-
-        /// <summary>
         /// 解析 TGA 圖像位元組資料，並將其轉換成 GDI+ 的 Bitmap 物件。
         /// 支援 8 位元索引彩色（附 24 位元調色盤）以及 24/32 位元真彩色 TGA 圖檔。
         /// </summary>
         public static Bitmap? LoadTga(byte[] tgaBytes) {
-            if (tgaBytes.Length < 18) return null;
-            int idLength = tgaBytes[0];
-            int colorMapType = tgaBytes[1];
-            int imageType = tgaBytes[2];
-            int width = BitConverter.ToUInt16(tgaBytes, 12);
-            int height = BitConverter.ToUInt16(tgaBytes, 14);
-            int pixelDepth = tgaBytes[16];
-            int descriptor = tgaBytes[17];
-
-            if (width <= 0 || height <= 0) return null;
-
-            if (imageType == 1) {
-                if (colorMapType != 1 || pixelDepth != 8) return null;
-                int colorMapLength = BitConverter.ToUInt16(tgaBytes, 5);
-                int colorMapEntrySize = tgaBytes[7];
-                if (colorMapEntrySize != 24) return null;
-                int colorMapOffset = 18 + idLength;
-                int pixelDataOffset = colorMapOffset + colorMapLength * 3;
-
-                if (pixelDataOffset + width * height > tgaBytes.Length) return null;
-
-                Color[] palette = new Color[colorMapLength];
-                for (int i = 0; i < colorMapLength; i++) {
-                    int entryOffset = colorMapOffset + i * 3;
-                    if (entryOffset + 2 >= tgaBytes.Length) break;
-                    byte b = tgaBytes[entryOffset];
-                    byte g = tgaBytes[entryOffset + 1];
-                    byte r = tgaBytes[entryOffset + 2];
-                    // Against Rome indexed UI sprites use pure black palette entries as transparent.
-                    if (r == 0 && g == 0 && b == 0) {
-                        palette[i] = Color.FromArgb(0, 0, 0, 0);
-                    } else {
-                        palette[i] = Color.FromArgb(255, r, g, b);
-                    }
+            // 解析下沉至 Core.TgaDecoder（無 System.Drawing 依賴）；此處僅把緊密排列的
+            // BGRA 緩衝包成 32bpp ARGB Bitmap。SaveManagerForm 亦有相同薄殼。
+            TgaImage? image = TgaDecoder.Decode(tgaBytes);
+            if (image == null) return null;
+            var bmp = new Bitmap(image.Width, image.Height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+            var bmpData = bmp.LockBits(new Rectangle(0, 0, image.Width, image.Height),
+                System.Drawing.Imaging.ImageLockMode.WriteOnly, bmp.PixelFormat);
+            try {
+                int rowBytes = image.Width * 4;
+                if (bmpData.Stride == rowBytes) {
+                    System.Runtime.InteropServices.Marshal.Copy(image.Bgra, 0, bmpData.Scan0, image.Bgra.Length);
+                } else {
+                    for (int y = 0; y < image.Height; y++)
+                        System.Runtime.InteropServices.Marshal.Copy(
+                            image.Bgra, y * rowBytes, bmpData.Scan0 + y * bmpData.Stride, rowBytes);
                 }
-
-                Bitmap bmp = new Bitmap(width, height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
-                var bmpData = bmp.LockBits(new Rectangle(0, 0, width, height), System.Drawing.Imaging.ImageLockMode.WriteOnly, bmp.PixelFormat);
-                try {
-                    bool topToBottom = (descriptor & 0x20) != 0;
-                    int stride = bmpData.Stride;
-                    byte[] argbBuffer = new byte[stride * height];
-                    for (int y = 0; y < height; y++) {
-                        int targetY = topToBottom ? y : (height - 1 - y);
-                        int targetOffset = targetY * stride;
-                        int rowDataOffset = pixelDataOffset + y * width;
-                        for (int x = 0; x < width; x++) {
-                            int pixelOffset = rowDataOffset + x;
-                            if (pixelOffset >= tgaBytes.Length) break;
-                            byte index = tgaBytes[pixelOffset];
-                            Color c = (index < palette.Length) ? palette[index] : Color.Transparent;
-                            int pixel = targetOffset + x * 4;
-                            argbBuffer[pixel] = c.B;
-                            argbBuffer[pixel + 1] = c.G;
-                            argbBuffer[pixel + 2] = c.R;
-                            argbBuffer[pixel + 3] = c.A;
-                        }
-                    }
-                    System.Runtime.InteropServices.Marshal.Copy(argbBuffer, 0, bmpData.Scan0, argbBuffer.Length);
-                } finally {
-                    bmp.UnlockBits(bmpData);
-                }
-                return bmp;
-            } else if (imageType == 2) {
-                if (pixelDepth != 24 && pixelDepth != 32) return null;
-                int pixelDataOffset = 18 + idLength;
-                int bytesPerPixel = pixelDepth / 8;
-
-                if (pixelDataOffset + width * height * bytesPerPixel > tgaBytes.Length) return null;
-
-                Bitmap bmp = new Bitmap(width, height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
-                var bmpData = bmp.LockBits(new Rectangle(0, 0, width, height), System.Drawing.Imaging.ImageLockMode.WriteOnly, bmp.PixelFormat);
-                try {
-                    bool topToBottom = (descriptor & 0x20) != 0;
-                    int stride = bmpData.Stride;
-                    byte[] argbBuffer = new byte[stride * height];
-                    for (int y = 0; y < height; y++) {
-                        int targetY = topToBottom ? y : (height - 1 - y);
-                        int targetOffset = targetY * stride;
-                        int rowDataOffset = pixelDataOffset + y * width * bytesPerPixel;
-                        for (int x = 0; x < width; x++) {
-                            int pixelOffset = rowDataOffset + x * bytesPerPixel;
-                            if (pixelOffset + 2 >= tgaBytes.Length) break;
-                            byte b = tgaBytes[pixelOffset];
-                            byte g = tgaBytes[pixelOffset + 1];
-                            byte r = tgaBytes[pixelOffset + 2];
-                            byte a = 255;
-                            if (bytesPerPixel == 4 && pixelOffset + 3 < tgaBytes.Length) {
-                                a = tgaBytes[pixelOffset + 3];
-                            }
-                            int pixel = targetOffset + x * 4;
-                            argbBuffer[pixel] = b;
-                            argbBuffer[pixel + 1] = g;
-                            argbBuffer[pixel + 2] = r;
-                            argbBuffer[pixel + 3] = a;
-                        }
-                    }
-                    System.Runtime.InteropServices.Marshal.Copy(argbBuffer, 0, bmpData.Scan0, argbBuffer.Length);
-                } finally {
-                    bmp.UnlockBits(bmpData);
-                }
-                return bmp;
+            } finally {
+                bmp.UnlockBits(bmpData);
             }
-            return null;
+            return bmp;
         }
 
 
@@ -181,7 +89,7 @@ namespace AgainstRomeModifier {
                 Dictionary<string, string> unitToTga = new Dictionary<string, string>();
                 foreach (string line in lines) {
                     if (line.StartsWith("Fig") && line.Contains(",")) {
-                        string[] parts = ParseCsvLine(line);
+                        string[] parts = PatchText.ParseCsvLine(line);
                         if (parts.Length >= 2) {
                             string key = parts[0].Trim();
                             string tgaName = parts[1].Trim();
@@ -224,10 +132,17 @@ namespace AgainstRomeModifier {
             }
         }
 
+        /// <summary>顯示「當前屬性（原版對比修改後）」的表格。</summary>
+        private DataGridView CreateCurrentStatsGrid() => CreateStatsGrid(isComparison: true);
+
+        /// <summary>顯示「預設屬性（平衡模式則為平衡後數值）」的表格。</summary>
+        private DataGridView CreateDefaultStatsGrid() => CreateStatsGrid(isComparison: false);
+
         /// <summary>
-        /// 建立並設定用於顯示當前屬性（原版對比修改後）的 DataGridView 表格。
+        /// 建立兵種屬性 DataGridView。當前頁與預設頁共用同一結構，僅差在欄位標題（是否帶「對比」）、
+        /// 少數欄寬、Tier 欄的可見性/位置，以及當前頁專有的「a -> b」增減上色（CellFormatting）。
         /// </summary>
-        private DataGridView CreateCurrentStatsGrid() {
+        private DataGridView CreateStatsGrid(bool isComparison) {
             var dgv = new DataGridView {
                 Dock = DockStyle.Fill,
                 AllowUserToAddRows = false,
@@ -259,16 +174,16 @@ namespace AgainstRomeModifier {
             dgv.DefaultCellStyle.Font = fontJhengHei9R;
 
             dgv.AlternatingRowsDefaultCellStyle.BackColor = Color.FromArgb(24, 25, 35);
+
             dgv.Columns.Add("Name", "兵種名稱");
             dgv.Columns["Name"].Width = 110;
 
-            var imgColC = new DataGridViewImageColumn {
+            dgv.Columns.Add(new DataGridViewImageColumn {
                 Name = "Icon",
                 HeaderText = "圖示",
                 ImageLayout = DataGridViewImageCellLayout.Zoom,
                 Width = 40
-            };
-            dgv.Columns.Add(imgColC);
+            });
 
             dgv.Columns.Add("Type", "部隊類型");
             dgv.Columns["Type"].Visible = false;
@@ -276,160 +191,58 @@ namespace AgainstRomeModifier {
             dgv.Columns.Add("Style", "裝備分類");
             dgv.Columns["Style"].Visible = false;
 
-            dgv.Columns.Add("Hp", "生命值對比");
-            dgv.Columns["Hp"].Width = 85;
-
-            dgv.Columns.Add("MeleeDmg", "近戰傷害對比");
-            dgv.Columns["MeleeDmg"].Width = 85;
-
-            dgv.Columns.Add("RangedDmg", "遠程傷害對比");
-            dgv.Columns["RangedDmg"].Width = 85;
-
-            dgv.Columns.Add("MeleeRelt", "近戰冷卻對比");
-            dgv.Columns["MeleeRelt"].Width = 85;
-
-            dgv.Columns.Add("RangedRelt", "遠程冷卻對比");
-            dgv.Columns["RangedRelt"].Width = 85;
-
-            dgv.Columns.Add("Vw", "防禦對比");
-            dgv.Columns["Vw"].Width = 85;
-
-            dgv.Columns.Add("Aw", "戰鬥對比");
-            dgv.Columns["Aw"].Width = 85;
-
-            dgv.Columns.Add("Speed", "移動速度對比");
-            dgv.Columns["Speed"].Width = 85;
-
-            dgv.Columns.Add("Sight", "視野對比");
-            dgv.Columns["Sight"].Width = 85;
-
-            dgv.Columns.Add("Range", "射程對比");
-            dgv.Columns["Range"].Width = 85;
-
-            dgv.Columns.Add("SpellRadius", "法術半徑對比");
-            dgv.Columns["SpellRadius"].Width = 85;
+            // 每欄：欄位鍵、對比頁標題/欄寬、預設頁標題/欄寬。
+            (string Name, string CompareHeader, int CompareWidth, string PlainHeader, int PlainWidth)[] dataColumns = {
+                ("Hp", "生命值對比", 85, "生命值", 85),
+                ("MeleeDmg", "近戰傷害對比", 85, "近戰傷害", 85),
+                ("RangedDmg", "遠程傷害對比", 85, "遠程傷害", 85),
+                ("MeleeRelt", "近戰冷卻對比", 85, "近戰冷卻", 85),
+                ("RangedRelt", "遠程冷卻對比", 85, "遠程冷卻", 90),
+                ("Vw", "防禦對比", 85, "防禦力", 80),
+                ("Aw", "戰鬥對比", 85, "戰鬥力", 80),
+                ("Speed", "移動速度對比", 85, "移動速度", 80),
+                ("Sight", "視野對比", 85, "視野", 80),
+                ("Range", "射程對比", 85, "射程/技能距離", 100),
+                ("SpellRadius", "法術半徑對比", 85, "法術半徑", 80),
+            };
+            foreach (var column in dataColumns) {
+                dgv.Columns.Add(column.Name, isComparison ? column.CompareHeader : column.PlainHeader);
+                dgv.Columns[column.Name].Width = isComparison ? column.CompareWidth : column.PlainWidth;
+            }
 
             dgv.Columns.Add("Tier", "階級");
-            dgv.Columns["Tier"].Visible = false;
+            if (isComparison) {
+                dgv.Columns["Tier"].Visible = false;
+            } else {
+                dgv.Columns["Tier"].Width = 75;
+                dgv.Columns["Tier"].DisplayIndex = 4;
+            }
 
-            dgv.CellFormatting += (s, e) => {
-                if (e.Value != null) {
-                    string valStr = e.Value.ToString() ?? "";
-                    if (valStr.Contains(" -> ")) {
-                        string[] parts = valStr.Split(new string[] { " -> " }, StringSplitOptions.None);
-                        if (parts.Length == 2) {
-                            double origVal, curVal;
-                            if (double.TryParse(parts[0], NumberStyles.Any, CultureInfo.InvariantCulture, out origVal) &&
-                                double.TryParse(parts[1], NumberStyles.Any, CultureInfo.InvariantCulture, out curVal)) {
-                                if (e.CellStyle != null) {
-                                    if (curVal > origVal) {
-                                        e.CellStyle.ForeColor = Color.FromArgb(0, 255, 128); // 增強：亮綠色
-                                        e.CellStyle.SelectionForeColor = Color.FromArgb(0, 255, 128);
-                                    } else if (curVal < origVal) {
-                                        e.CellStyle.ForeColor = Color.FromArgb(255, 75, 75); // 減弱：亮紅色
-                                        e.CellStyle.SelectionForeColor = Color.FromArgb(255, 75, 75);
+            if (isComparison) {
+                dgv.CellFormatting += (s, e) => {
+                    if (e.Value != null) {
+                        string valStr = e.Value.ToString() ?? "";
+                        if (valStr.Contains(" -> ")) {
+                            string[] parts = valStr.Split(new string[] { " -> " }, StringSplitOptions.None);
+                            if (parts.Length == 2) {
+                                double origVal, curVal;
+                                if (double.TryParse(parts[0], NumberStyles.Any, CultureInfo.InvariantCulture, out origVal) &&
+                                    double.TryParse(parts[1], NumberStyles.Any, CultureInfo.InvariantCulture, out curVal)) {
+                                    if (e.CellStyle != null) {
+                                        if (curVal > origVal) {
+                                            e.CellStyle.ForeColor = Color.FromArgb(0, 255, 128); // 增強：亮綠色
+                                            e.CellStyle.SelectionForeColor = Color.FromArgb(0, 255, 128);
+                                        } else if (curVal < origVal) {
+                                            e.CellStyle.ForeColor = Color.FromArgb(255, 75, 75); // 減弱：亮紅色
+                                            e.CellStyle.SelectionForeColor = Color.FromArgb(255, 75, 75);
+                                        }
                                     }
                                 }
                             }
                         }
                     }
-                }
-            };
-
-            ConfigureStatsGridColumnsToFit(dgv);
-
-            return dgv;
-        }
-
-        /// <summary>
-        /// 建立並設定用於顯示預設屬性（若是平衡模式則為平衡後數值）的 DataGridView 表格。
-        /// </summary>
-        private DataGridView CreateDefaultStatsGrid() {
-            var dgv = new DataGridView {
-                Dock = DockStyle.Fill,
-                AllowUserToAddRows = false,
-                AllowUserToDeleteRows = false,
-                RowHeadersVisible = false,
-                BackgroundColor = Color.FromArgb(10, 11, 16),
-                ForeColor = Color.FromArgb(230, 235, 240),
-                GridColor = Color.FromArgb(28, 30, 42),
-                BorderStyle = BorderStyle.None,
-                EnableHeadersVisualStyles = false,
-                RowTemplate = { Height = 46 },
-                SelectionMode = DataGridViewSelectionMode.FullRowSelect,
-                MultiSelect = false,
-                ReadOnly = true,
-                ScrollBars = ScrollBars.Vertical
-            };
-
-            dgv.ColumnHeadersDefaultCellStyle.BackColor = Color.FromArgb(26, 27, 37);
-            dgv.ColumnHeadersDefaultCellStyle.ForeColor = Color.FromArgb(0, 230, 255);
-            dgv.ColumnHeadersDefaultCellStyle.SelectionBackColor = Color.FromArgb(26, 27, 37);
-            dgv.ColumnHeadersDefaultCellStyle.Font = fontJhengHei95B;
-            dgv.ColumnHeadersHeight = 40;
-            dgv.ColumnHeadersBorderStyle = DataGridViewHeaderBorderStyle.Single;
-
-            dgv.DefaultCellStyle.BackColor = Color.FromArgb(20, 21, 31);
-            dgv.DefaultCellStyle.ForeColor = Color.FromArgb(230, 235, 240);
-            dgv.DefaultCellStyle.SelectionBackColor = Color.FromArgb(35, 37, 54);
-            dgv.DefaultCellStyle.SelectionForeColor = Color.White;
-            dgv.DefaultCellStyle.Font = fontJhengHei9R;
-
-            dgv.AlternatingRowsDefaultCellStyle.BackColor = Color.FromArgb(24, 25, 35);
-
-            dgv.Columns.Add("Name", "兵種名稱");
-            dgv.Columns["Name"].Width = 110;
-
-            var imgColD = new DataGridViewImageColumn {
-                Name = "Icon",
-                HeaderText = "圖示",
-                ImageLayout = DataGridViewImageCellLayout.Zoom,
-                Width = 40
-            };
-            dgv.Columns.Add(imgColD);
-
-            dgv.Columns.Add("Type", "部隊類型");
-            dgv.Columns["Type"].Visible = false;
-
-            dgv.Columns.Add("Style", "裝備分類");
-            dgv.Columns["Style"].Visible = false;
-
-            dgv.Columns.Add("Hp", "生命值");
-            dgv.Columns["Hp"].Width = 85;
-
-            dgv.Columns.Add("MeleeDmg", "近戰傷害");
-            dgv.Columns["MeleeDmg"].Width = 85;
-
-            dgv.Columns.Add("RangedDmg", "遠程傷害");
-            dgv.Columns["RangedDmg"].Width = 85;
-
-            dgv.Columns.Add("MeleeRelt", "近戰冷卻");
-            dgv.Columns["MeleeRelt"].Width = 85;
-
-            dgv.Columns.Add("RangedRelt", "遠程冷卻");
-            dgv.Columns["RangedRelt"].Width = 90;
-
-            dgv.Columns.Add("Vw", "防禦力");
-            dgv.Columns["Vw"].Width = 80;
-
-            dgv.Columns.Add("Aw", "戰鬥力");
-            dgv.Columns["Aw"].Width = 80;
-
-            dgv.Columns.Add("Speed", "移動速度");
-            dgv.Columns["Speed"].Width = 80;
-
-            dgv.Columns.Add("Sight", "視野");
-            dgv.Columns["Sight"].Width = 80;
-
-            dgv.Columns.Add("Range", "射程/技能距離");
-            dgv.Columns["Range"].Width = 100;
-
-            dgv.Columns.Add("SpellRadius", "法術半徑");
-            dgv.Columns["SpellRadius"].Width = 80;
-
-            dgv.Columns.Add("Tier", "階級");
-            dgv.Columns["Tier"].Width = 75;
-            dgv.Columns["Tier"].DisplayIndex = 4;
+                };
+            }
 
             ConfigureStatsGridColumnsToFit(dgv);
 
@@ -619,7 +432,7 @@ namespace AgainstRomeModifier {
                 }
 
                 // 呼叫解耦的 patchEngine 進行全方位修改狀態偵測
-                PatchProfile profile = patchEngine.DetectCurrentPatchProfile(gamePath, backupManager);
+                PatchProfile profile = patchEngine.DetectCurrentPatchState(gamePath, backupManager);
 
                 if (syncUIWithFile) {
                     chkBalance.CheckedChanged -= ChkBalance_CheckedChanged;
@@ -682,7 +495,7 @@ namespace AgainstRomeModifier {
                 for (int idx = 2; idx < lines.Length; idx++) {
                     string line = lines[idx];
                     if (line.Length < 100) continue;
-                    string[] cols = ParseCsvLine(line);
+                    string[] cols = PatchText.ParseCsvLine(line);
                     if (cols.Length < 192) continue;
                     string name = cols[(int)ObjdefIndex.Name].Trim();
                     if (TroopConfig.UnitMeta.ContainsKey(name) || name == "FigZivMan00_Zivilist") {

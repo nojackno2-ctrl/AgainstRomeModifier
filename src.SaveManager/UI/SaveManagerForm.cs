@@ -505,7 +505,9 @@ namespace AgainstRomeModifier {
                 ReplaceSavePreview(string.IsNullOrEmpty(gamePath) || !Directory.Exists(gamePath)
                     ? null
                     : saveBackupService.ReadSavePreview(gamePath, folder));
-            } catch (Exception) { }
+            } catch (Exception ex) {
+                System.Diagnostics.Debug.WriteLine("更新存檔選取預覽失敗: " + ex.Message);
+            }
         }
 
         private void DgvBackups_SelectionChanged(object? sender, EventArgs e) {
@@ -516,7 +518,9 @@ namespace AgainstRomeModifier {
                 lblSaveDetail.Text = string.Format(Loc.Get("SaveDetailBackup"),
                     file, Cell(row, 4), Cell(row, 1), Cell(row, 2), Cell(row, 3));
                 ReplaceSavePreview(saveBackupService.ReadBackupPreview(file));
-            } catch (Exception) { }
+            } catch (Exception ex) {
+                System.Diagnostics.Debug.WriteLine("更新備份選取預覽失敗: " + ex.Message);
+            }
         }
 
         private void BtnBackupSave_Click(object? sender, EventArgs e) {
@@ -645,109 +649,26 @@ namespace AgainstRomeModifier {
         }
 
         public static Bitmap? LoadTga(byte[] tgaBytes) {
-            if (tgaBytes.Length < 18) return null;
-            int idLength = tgaBytes[0];
-            int colorMapType = tgaBytes[1];
-            int imageType = tgaBytes[2];
-            int width = BitConverter.ToUInt16(tgaBytes, 12);
-            int height = BitConverter.ToUInt16(tgaBytes, 14);
-            int pixelDepth = tgaBytes[16];
-            int descriptor = tgaBytes[17];
-
-            if (width <= 0 || height <= 0) return null;
-
-            if (imageType == 1) {
-                if (colorMapType != 1 || pixelDepth != 8) return null;
-                int colorMapLength = BitConverter.ToUInt16(tgaBytes, 5);
-                int colorMapEntrySize = tgaBytes[7];
-                if (colorMapEntrySize != 24) return null;
-                int colorMapOffset = 18 + idLength;
-                int pixelDataOffset = colorMapOffset + colorMapLength * 3;
-
-                if (pixelDataOffset + width * height > tgaBytes.Length) return null;
-
-                Color[] palette = new Color[colorMapLength];
-                for (int i = 0; i < colorMapLength; i++) {
-                    int entryOffset = colorMapOffset + i * 3;
-                    if (entryOffset + 2 >= tgaBytes.Length) break;
-                    byte b = tgaBytes[entryOffset];
-                    byte g = tgaBytes[entryOffset + 1];
-                    byte r = tgaBytes[entryOffset + 2];
-                    if (r == 0 && g == 0 && b == 0) {
-                        palette[i] = Color.FromArgb(0, 0, 0, 0);
-                    } else {
-                        palette[i] = Color.FromArgb(255, r, g, b);
-                    }
+            // 解析下沉至 Core.TgaDecoder（無 System.Drawing 依賴）；此處僅把緊密排列的
+            // BGRA 緩衝包成 32bpp ARGB Bitmap。ModifierForm 亦有相同薄殼。
+            TgaImage? image = TgaDecoder.Decode(tgaBytes);
+            if (image == null) return null;
+            var bmp = new Bitmap(image.Width, image.Height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+            var bmpData = bmp.LockBits(new Rectangle(0, 0, image.Width, image.Height),
+                System.Drawing.Imaging.ImageLockMode.WriteOnly, bmp.PixelFormat);
+            try {
+                int rowBytes = image.Width * 4;
+                if (bmpData.Stride == rowBytes) {
+                    System.Runtime.InteropServices.Marshal.Copy(image.Bgra, 0, bmpData.Scan0, image.Bgra.Length);
+                } else {
+                    for (int y = 0; y < image.Height; y++)
+                        System.Runtime.InteropServices.Marshal.Copy(
+                            image.Bgra, y * rowBytes, bmpData.Scan0 + y * bmpData.Stride, rowBytes);
                 }
-
-                Bitmap bmp = new Bitmap(width, height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
-                var bmpData = bmp.LockBits(new Rectangle(0, 0, width, height), System.Drawing.Imaging.ImageLockMode.WriteOnly, bmp.PixelFormat);
-                try {
-                    bool topToBottom = (descriptor & 0x20) != 0;
-                    int stride = bmpData.Stride;
-                    byte[] argbBuffer = new byte[stride * height];
-                    for (int y = 0; y < height; y++) {
-                        int targetY = topToBottom ? y : (height - 1 - y);
-                        int targetOffset = targetY * stride;
-                        int rowDataOffset = pixelDataOffset + y * width;
-                        for (int x = 0; x < width; x++) {
-                            int pixelOffset = rowDataOffset + x;
-                            if (pixelOffset >= tgaBytes.Length) break;
-                            byte index = tgaBytes[pixelOffset];
-                            Color c = (index < palette.Length) ? palette[index] : Color.Transparent;
-                            int pixel = targetOffset + x * 4;
-                            argbBuffer[pixel] = c.B;
-                            argbBuffer[pixel + 1] = c.G;
-                            argbBuffer[pixel + 2] = c.R;
-                            argbBuffer[pixel + 3] = c.A;
-                        }
-                    }
-                    System.Runtime.InteropServices.Marshal.Copy(argbBuffer, 0, bmpData.Scan0, argbBuffer.Length);
-                } finally {
-                    bmp.UnlockBits(bmpData);
-                }
-                return bmp;
-            } else if (imageType == 2) {
-                if (pixelDepth != 24 && pixelDepth != 32) return null;
-                int pixelDataOffset = 18 + idLength;
-                int bytesPerPixel = pixelDepth / 8;
-
-                if (pixelDataOffset + width * height * bytesPerPixel > tgaBytes.Length) return null;
-
-                Bitmap bmp = new Bitmap(width, height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
-                var bmpData = bmp.LockBits(new Rectangle(0, 0, width, height), System.Drawing.Imaging.ImageLockMode.WriteOnly, bmp.PixelFormat);
-                try {
-                    bool topToBottom = (descriptor & 0x20) != 0;
-                    int stride = bmpData.Stride;
-                    byte[] argbBuffer = new byte[stride * height];
-                    for (int y = 0; y < height; y++) {
-                        int targetY = topToBottom ? y : (height - 1 - y);
-                        int targetOffset = targetY * stride;
-                        int rowDataOffset = pixelDataOffset + y * width * bytesPerPixel;
-                        for (int x = 0; x < width; x++) {
-                            int pixelOffset = rowDataOffset + x * bytesPerPixel;
-                            if (pixelOffset + 2 >= tgaBytes.Length) break;
-                            byte b = tgaBytes[pixelOffset];
-                            byte g = tgaBytes[pixelOffset + 1];
-                            byte r = tgaBytes[pixelOffset + 2];
-                            byte a = 255;
-                            if (bytesPerPixel == 4 && pixelOffset + 3 < tgaBytes.Length) {
-                                a = tgaBytes[pixelOffset + 3];
-                            }
-                            int pixel = targetOffset + x * 4;
-                            argbBuffer[pixel] = b;
-                            argbBuffer[pixel + 1] = g;
-                            argbBuffer[pixel + 2] = r;
-                            argbBuffer[pixel + 3] = a;
-                        }
-                    }
-                    System.Runtime.InteropServices.Marshal.Copy(argbBuffer, 0, bmpData.Scan0, argbBuffer.Length);
-                } finally {
-                    bmp.UnlockBits(bmpData);
-                }
-                return bmp;
+            } finally {
+                bmp.UnlockBits(bmpData);
             }
-            return null;
+            return bmp;
         }
 
         private static string Cell(DataGridViewRow row, int index) => row.Cells[index].Value?.ToString() ?? "";
