@@ -65,7 +65,9 @@ internal static class TroopPresetCodec
     {
         var builder = new StringBuilder();
         builder.AppendLine("# Against Rome Modifier - Custom Troop Preset File (independent modifiers removed)");
-        builder.AppendLine($"# Generated on: {generatedAt:yyyy-MM-dd HH:mm:ss}");
+        // 以不變文化輸出時間戳：使用者若在泰國曆／回曆等地區設定下匯出，
+        // 目前文化會把年份寫成 2569 之類的值，讓檔頭無法互相比對。
+        builder.AppendLine(CultureInfo.InvariantCulture, $"# Generated on: {generatedAt:yyyy-MM-dd HH:mm:ss}");
         builder.AppendLine("# Format: UnitKey=HP,Dmg,VW,AW,Sight,Relt");
         builder.AppendLine();
         foreach ((string key, double[] values) in stats)

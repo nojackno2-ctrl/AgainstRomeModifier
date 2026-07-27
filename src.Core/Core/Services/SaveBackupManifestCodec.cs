@@ -24,7 +24,7 @@ internal static class SaveBackupManifestCodec
         JsonSerializer.Serialize(
             new SaveBackupManifest(folder, title, level,
                 backupTime.ToString("o", CultureInfo.InvariantCulture)),
-            new JsonSerializerOptions { WriteIndented = true });
+            JsonDefaults.Indented);
 
     internal static string FormatTime(string value)
     {

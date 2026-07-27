@@ -2,10 +2,8 @@ using System;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.IO;
-using System.Linq;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
-using System.Collections.Generic;
 
 namespace AgainstRomeModifier {
     public class LauncherForm : Form {
@@ -30,7 +28,7 @@ namespace AgainstRomeModifier {
         private Font fontJhengHei115B = new Font("Microsoft JhengHei", 11.5F, FontStyle.Bold);
         private Font fontJhengHei10B = new Font("Microsoft JhengHei", 10F, FontStyle.Bold);
 
-        private bool dragging = false;
+        private bool dragging;
         private Point dragStart = new Point(0, 0);
 
         private string? _initialGamePath;

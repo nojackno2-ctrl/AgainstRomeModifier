@@ -8,13 +8,25 @@ namespace AgainstRomeModifier {
     /// 自訂現代科技感 TabControl，徹底移除預設白邊/灰色框線，並支援 OwnerDraw 繪製頁籤
     /// </summary>
     public class ModernTabControl : TabControl {
-        public bool HideTabs { get; set; } = false;
+        public bool HideTabs { get; set; }
+
+        // 選中頁籤的粗體字型。過去每次 OnDrawItem 都 new 一次，等於每張重繪都配置／
+        // 釋放一個 GDI 字型控制代碼；改為隨 Font 變更才重建的快取。
+        private Font? _selectedTabFont;
 
         public ModernTabControl() {
             this.DrawMode = TabDrawMode.OwnerDrawFixed;
             this.SizeMode = TabSizeMode.Fixed;
             this.Padding = new Point(18, 6);
         }
+
+        protected override void OnFontChanged(EventArgs e) {
+            _selectedTabFont?.Dispose();
+            _selectedTabFont = null;
+            base.OnFontChanged(e);
+        }
+
+        private Font SelectedTabFont => _selectedTabFont ??= new Font(this.Font, FontStyle.Bold);
 
         protected override void WndProc(ref Message m) {
             // 0x1328 是 TCM_ADJUSTRECT。當不顯示頁籤 (HideTabs = true) 時，
@@ -48,16 +60,22 @@ namespace AgainstRomeModifier {
             }
 
             if (isSelected) {
-                using (Font selectedFont = new Font(this.Font, FontStyle.Bold)) {
-                    TextRenderer.DrawText(g, this.TabPages[e.Index].Text, selectedFont, rect,
-                        Color.FromArgb(235, 248, 255),
-                        TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
-                }
+                TextRenderer.DrawText(g, this.TabPages[e.Index].Text, SelectedTabFont, rect,
+                    Color.FromArgb(235, 248, 255),
+                    TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
             } else {
                 TextRenderer.DrawText(g, this.TabPages[e.Index].Text, this.Font, rect,
                     Color.FromArgb(145, 155, 172),
                     TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
             }
+        }
+
+        protected override void Dispose(bool disposing) {
+            if (disposing) {
+                _selectedTabFont?.Dispose();
+                _selectedTabFont = null;
+            }
+            base.Dispose(disposing);
         }
     }
 
@@ -68,8 +86,8 @@ namespace AgainstRomeModifier {
         private int _toggleWidth = 40;
         private int _toggleHeight = 20;
         private System.Windows.Forms.Timer _animationTimer;
-        private float _animPosition = 0f; // 0 = 關閉, 1 = 開啟
-        private float _targetPosition = 0f;
+        private float _animPosition; // 0 = 關閉, 1 = 開啟
+        private float _targetPosition;
 
         public ModernToggle() {
             this.SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);

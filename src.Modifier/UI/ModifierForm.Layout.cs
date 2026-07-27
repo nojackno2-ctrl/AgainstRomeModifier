@@ -1,13 +1,8 @@
 using System;
-using System.IO;
 using System.Linq;
-using System.Text;
 using System.Collections.Generic;
-using System.Globalization;
 using System.Windows.Forms;
 using System.Drawing;
-using System.Drawing.Drawing2D;
-using System.Runtime.InteropServices;
 
 namespace AgainstRomeModifier {
     // 主表單的版面配置：現代化外殼、側邊欄、設定卡片、統計頁與存檔管理頁的響應式排版。
@@ -161,7 +156,7 @@ namespace AgainstRomeModifier {
             };
 
             // 依功能語意分為七張卡片：系統相容、已驗證選用、建設經濟、村民操作、法術祭司、戰鬥部隊、無盡模式。
-            ConfigureSettingsCard(pnlNumericCard, lblNumericTitle, 398,
+            ConfigureSettingsCard(pnlNumericCard, lblNumericTitle,
                 chkFocusLoss,
                 chkToEng,
                 chkDgVoodoo,
@@ -169,10 +164,10 @@ namespace AgainstRomeModifier {
                 chkNativeWidescreen1920x1080,
                 chkCorpseRetention);
             // 已驗證功能：實測成功但刻意排除在「所有功能開啟」之外，需使用者手動開啟。
-            ConfigureSettingsCard(pnlVerifiedCard, lblVerifiedTitle, 158,
+            ConfigureSettingsCard(pnlVerifiedCard, lblVerifiedTitle,
                 chkGameSpeed,
                 chkCameraZoomOut1);
-            ConfigureSettingsCard(pnlBuildCard, lblBuildTitle, 446,
+            ConfigureSettingsCard(pnlBuildCard, lblBuildTitle,
                 chkFreeProd,
                 chkFreeUpgrade,
                 chkMaxPopulation,
@@ -181,13 +176,13 @@ namespace AgainstRomeModifier {
                 chkHqHp10x,
                 chkFastBuildUpgradeRepair,
                 chkVillageBuildRange);
-            ConfigureSettingsCard(pnlVillagerCard, lblVillagerTitle, 302,
+            ConfigureSettingsCard(pnlVillagerCard, lblVillagerTitle,
                 chkFastCiviProduction,
                 chkCiviProduce20,
                 chkUnitRecruit20,
                 chkIdleSelect999,
                 chkVillagerMovementSpeed5x);
-            ConfigureSettingsCard(pnlSpellCard, lblSpellTitle, 398,
+            ConfigureSettingsCard(pnlSpellCard, lblSpellTitle,
                 chkNoSpellCost,
                 chkNoSpellAltar,
                 chkSpellDamage5x,
@@ -195,7 +190,7 @@ namespace AgainstRomeModifier {
                 chkSpellResurrection,
                 chkSpellEntireMap,
                 chkSpellRange3x);
-            ConfigureSettingsCard(pnlCombatCard, lblCombatTitle, 494,
+            ConfigureSettingsCard(pnlCombatCard, lblCombatTitle,
                 chkInfiniteMorale,
                 chkNoRunHpLoss,
                 chkFoodHealing10x,
@@ -206,7 +201,7 @@ namespace AgainstRomeModifier {
                 chkProjectileArcHeight,
                 chkUnitMovementSpeed2x,
                 chkAllUnitsEntireMapVision);
-            ConfigureSettingsCard(pnlAiCard, lblAiTitle, 350,
+            ConfigureSettingsCard(pnlAiCard, lblAiTitle,
                 chkRomanEndless,
                 chkAiM1, chkAiCore, chkAiM5, chkRomanReinforcementGarrison,
                 chkVillageGarrisonQuota3x);
@@ -285,10 +280,13 @@ namespace AgainstRomeModifier {
             container.ResumeLayout(true);
         }
 
+        /// <summary>
+        /// 設定一張功能卡片：標題位置、開關逐列排版、推廣按鈕與伴隨控制項對齊，
+        /// 並依實際可見列數算出卡片高度（呼叫端不需要、也不該預估高度）。
+        /// </summary>
         private void ConfigureSettingsCard(
             Panel card,
             Label title,
-            int height,
             params ModernToggle[] toggles) {
             card.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             card.Margin = new Padding(6, 0, 6, 0);

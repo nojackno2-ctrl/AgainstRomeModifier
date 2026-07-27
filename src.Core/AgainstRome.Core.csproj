@@ -2,15 +2,11 @@
   <PropertyGroup>
     <!-- net8.0-windows 保留供 GameDirectoryLocator 讀取登錄檔；本專案不使用 WinForms。 -->
     <TargetFramework>net8.0-windows</TargetFramework>
-    <LangVersion>latest</LangVersion>
-    <Nullable>enable</Nullable>
-    <PlatformTarget>x64</PlatformTarget>
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="AgainstRomeModifier" />
     <InternalsVisibleTo Include="AgainstRomeSaveManager" />
     <InternalsVisibleTo Include="AgainstRomeMapEditor" />
-    <InternalsVisibleTo Include="AgainstRomeModifier.Tests" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\src.Shared\AgainstRome.Shared.csproj" />

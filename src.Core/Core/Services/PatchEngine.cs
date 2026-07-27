@@ -1,4 +1,3 @@
-using System.IO;
 using AgainstRomeModifier.Core.Features;
 using AgainstRomeModifier.Core.Features.Bci;
 using AgainstRomeModifier.Core.Features.Install;
@@ -27,10 +26,6 @@ public class PatchEngine
             result.Set(module.Id, module.Detect(context));
         return result;
     }
-
-    // Retained as a compatibility endpoint; SafeFileWriter owns the implementation.
-    public void SafeWriteAllBytes(string destination, byte[] bytes, FileRollbackScope? rollback = null) =>
-        SafeFileWriter.WriteAllBytes(destination, bytes, rollback);
 
     public void ApplyPatches(
         string gamePath,
@@ -68,7 +63,7 @@ public class PatchEngine
         CiviProduce20Feature.RestoreAkNpcOriginal(gamePath, orchestrator);
 
         foreach ((string path, byte[] bytes) in filePlan.Files)
-            SafeWriteAllBytes(path, bytes, rollback);
+            SafeFileWriter.WriteAllBytes(path, bytes, rollback);
         orchestrator.SaveAll(gamePath, rollback);
 
         new LanguagePackFeature(_logger).Apply(gamePath, options.ToEnglish, rollback);

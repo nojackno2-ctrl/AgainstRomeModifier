@@ -129,7 +129,6 @@ Small reproducible analysis scripts under `tools/re/` are source material and ar
 
 - [`tools/Repair-LanguageBackup.ps1`](tools/Repair-LanguageBackup.ps1) — Out-of-band repair for the English language overlay's backup baseline (`.against-rome-modifier-language-backup` inside the game folder). Use it only when the modifier reports a missing or corrupted language backup manifest: it rebuilds the baseline by hashing the active overlay against a clean original game tree. It writes directly into the game install directory, so read the script's validation steps before running. Defaults: `-GamePath 'C:\Program Files (x86)\Against Rome'`; the clean original tree is auto-detected under the repository root.
 - `tools/bcitool.py` — Python reader/disassembler for `BCI0` script bytecode. Its PFIL LZSS decompressor is a port of `GameLZSS`; keep the two in sync if the C# algorithm ever changes.
-- `tests/verify_split_patches/` — Manual golden-value verification harness for the Endless AI patches. Requires a local `遊戲原始檔案/` tree. Run it before and after changing any P1–P19 patch constant.
 
 ## dgVoodoo2 Integration
 

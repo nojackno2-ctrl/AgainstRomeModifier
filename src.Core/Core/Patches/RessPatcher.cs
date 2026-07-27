@@ -11,7 +11,7 @@ public static class RessPatcher {
 
         foreach (string line in lines) {
             string stripped = line.Trim();
-            if (stripped.StartsWith("[", StringComparison.Ordinal)) {
+            if (stripped.StartsWith('[')) {
                 inObjres = stripped == "[objres]";
                 inVolkres = stripped == "[volkres]";
                 output.Add(line);

@@ -1,4 +1,3 @@
-using System;
 
 namespace AgainstRomeModifier.Core.Services;
 
@@ -27,6 +26,9 @@ public static class TgaDecoder
         int descriptor = tgaBytes[17];
 
         if (width <= 0 || height <= 0) return null;
+        // 標頭的寬高各可到 65535，(long)w*h*4 會溢位 int，導致 new byte[負數]。
+        // 損毀或惡意的 savepic.tga 不該讓解碼器以奇怪的例外收場。
+        if ((long)width * height * 4 > int.MaxValue) return null;
         bool topToBottom = (descriptor & 0x20) != 0;
         int rowBytes = width * 4;
         byte[] bgra = new byte[rowBytes * height];

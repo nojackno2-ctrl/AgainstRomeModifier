@@ -470,7 +470,7 @@ Get-Content .\data\game_schema.json -Raw | ConvertFrom-Json | Out-Null
 git diff --check
 ```
 
-`tests/AgainstRomeModifier.Tests`（xUnit）以合成 fixture 取代真實遊戲檔案，因此在乾淨 clone、無 `Backup.zip`／遊戲目錄的 CI 環境下也能執行（見 `.github/workflows/ci.yml`）。舊的 `tests/verify_split_patches` console 專案依賴本機 `遊戲原始檔案/`，僅供本機手動比對使用，不在 CI 內執行。
+`tests/AgainstRomeModifier.Tests`（xUnit）以合成 fixture 取代真實遊戲檔案，因此在乾淨 clone、無 `Backup.zip`／遊戲目錄的 CI 環境下也能執行（見 `.github/workflows/ci.yml`）。P1–P19 補丁的黃金值驗證已全數併入這個 xUnit 專案（`EndlessAiCoreIntegrationTests` 等）；舊的 `tests/verify_split_patches` 手動 console 專案已於 2026-07-26 移除。
 
 依修改類型追加：
 

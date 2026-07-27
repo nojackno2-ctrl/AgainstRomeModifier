@@ -33,11 +33,11 @@ public sealed class GameMapCatalog
 
     private static string Category(string id) => id.ToUpperInvariant() switch
     {
-        string value when value.StartsWith("KAMP_") => "劇情戰役",
-        string value when value.StartsWith("HIST_") => "歷史戰役",
-        string value when value.StartsWith("TUTOR_") => "教學",
-        string value when value.StartsWith("MP_") => "多人地圖",
-        string value when value.StartsWith("ENDL_") => "無盡模式",
+        string value when value.StartsWith("KAMP_", StringComparison.Ordinal) => "劇情戰役",
+        string value when value.StartsWith("HIST_", StringComparison.Ordinal) => "歷史戰役",
+        string value when value.StartsWith("TUTOR_", StringComparison.Ordinal) => "教學",
+        string value when value.StartsWith("MP_", StringComparison.Ordinal) => "多人地圖",
+        string value when value.StartsWith("ENDL_", StringComparison.Ordinal) => "無盡模式",
         _ => "其他地圖"
     };
 

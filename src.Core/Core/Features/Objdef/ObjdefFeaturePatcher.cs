@@ -1,8 +1,5 @@
-using System;
-using System.Collections.Generic;
 using AgainstRomeModifier.Core.Patches;
 using AgainstRomeModifier.Core.Services;
-using AgainstRomeModifier.Core.Features;
 
 namespace AgainstRomeModifier.Core.Features.Objdef;
 

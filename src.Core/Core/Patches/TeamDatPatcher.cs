@@ -17,7 +17,7 @@ public static class TeamDatPatcher {
         bool inTeamData = false;
         for (int i = 0; i < lines.Length; i++) {
             string stripped = lines[i].Trim();
-            if (stripped.StartsWith("[", StringComparison.Ordinal)) { inTeamData = stripped == "[teamdata]"; continue; }
+            if (stripped.StartsWith('[')) { inTeamData = stripped == "[teamdata]"; continue; }
             if (!inTeamData || !lines[i].Contains(',', StringComparison.Ordinal)) continue;
             string[] cols = PatchText.ParseCsvLine(lines[i]);
             bool changed = false;
