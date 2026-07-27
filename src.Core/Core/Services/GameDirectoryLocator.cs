@@ -1,4 +1,3 @@
-using System;
 
 namespace AgainstRomeModifier.Core.Services {
     /// <summary>

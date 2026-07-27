@@ -1,5 +1,3 @@
-using System;
-using System.Collections.Generic;
 using System.Globalization;
 using AgainstRomeModifier.Core.Features;
 using AgainstRomeModifier.Core.Patches;

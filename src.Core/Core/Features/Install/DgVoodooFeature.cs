@@ -80,7 +80,7 @@ internal sealed class DgVoodooFeature
                 newManifest.Files[fileName] = ComputeSha256(bytes);
             }
 
-            byte[] markerBytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(newManifest, new JsonSerializerOptions { WriteIndented = true }));
+            byte[] markerBytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(newManifest, JsonDefaults.Indented));
             SafeFileWriter.WriteAllBytes(GetDgVoodooMarkerPath(gamePath), markerBytes, rollback);
             _logger.Log(string.Format(Loc.Get("SvcLogDgvInstalled"), DgVoodooEmbeddedVersion));
             if (nativeWidescreenWindow && preservedCustomConfig)
@@ -135,7 +135,7 @@ internal sealed class DgVoodooFeature
             else
             {
                 manifest.Files = preserved;
-                byte[] markerBytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(manifest, new JsonSerializerOptions { WriteIndented = true }));
+                byte[] markerBytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(manifest, JsonDefaults.Indented));
                 SafeFileWriter.WriteAllBytes(markerPath, markerBytes, rollback);
             }
         }

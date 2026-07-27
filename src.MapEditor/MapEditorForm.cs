@@ -477,7 +477,7 @@ internal sealed class MapEditorForm : Form
             _view3d.ShowGrid = _showGrid.Checked;
             _view3d.ShowObjects = _showObjects.Checked;
             _view3d.EditingEnabled = _selected.IsCustom;
-            try { has3DScene = _view3d.LoadTextures(_texturesDocument.Dimension, _texturesDocument.Textures, _savedTextures, _selected.DirectoryPath, _floorTextures, effectiveObjects, (float)_waterLevel.Value, _heightMapStep, sceneWaterColor); _view3d.SetReliefScale(_reliefScale.Value / 100f); }
+            try { has3DScene = _view3d.LoadTextures(_texturesDocument.Dimension, _texturesDocument.Textures, _selected.DirectoryPath, _floorTextures, effectiveObjects, (float)_waterLevel.Value, _heightMapStep, sceneWaterColor); _view3d.SetReliefScale(_reliefScale.Value / 100f); }
             catch (Exception ex) { Disable3DView(isEn ? "Failed to load 3D map resources." : "載入 3D 地圖資源失敗。", ex); }
         }
         Image? oldOverview = _overview.Image; _overview.Image = null; oldOverview?.Dispose();
@@ -816,7 +816,7 @@ internal sealed class MapEditorForm : Form
                 LoadEditingScene(preserveView: true);
             }
             else _sceneSavedObjects = _sceneObjects.ToArray();
-            _canvas.CommitBaseline(); _view3d?.CommitBaseline();
+            _canvas.CommitBaseline(); // 變更高亮只存在於 2D 檢視，3D 無對應狀態
             RefreshOverview();
             UpdateEditorState();
             if (showSuccess)

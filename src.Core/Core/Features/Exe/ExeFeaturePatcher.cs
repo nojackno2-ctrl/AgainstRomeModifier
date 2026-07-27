@@ -1,5 +1,3 @@
-using System.Collections.Generic;
-using System.IO;
 using AgainstRomeModifier.Core.Patches;
 using AgainstRomeModifier.Core.Services;
 

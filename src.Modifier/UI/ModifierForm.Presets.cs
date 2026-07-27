@@ -1,101 +1,53 @@
 using System;
+using System.Collections.Generic;
+using AgainstRomeModifier.Core.Features;
 
 namespace AgainstRomeModifier {
     public partial class ModifierForm {
         /// <summary>
-        /// 當使用者點擊「所有功能開啟」時觸發，一次性勾選所有修改功能開關。
+        /// 「所有功能開啟」刻意不涵蓋的開關。分兩類：
+        /// 1. 已驗證但需手動開啟（攝影機拉遠、除錯記錄器）——預設不該被一鍵打開。
+        /// 2. 會改寫兵種數值或仍待個別評估的實驗性項目（平衡、屍體保留、法術治療/復活、
+        ///    將領技能、首領榮耀）——一鍵全開若順手改動它們會覆蓋使用者的自訂配置。
+        /// 「所有功能關閉」則一律涵蓋全部開關，沒有例外。
+        /// </summary>
+        internal static readonly IReadOnlyList<string> EnableAllExcludedFeatureIds = new[] {
+            FeatureKeys.Balance.Id,
+            FeatureKeys.CameraZoomOut1.Id,
+            FeatureKeys.CorpseRetention.Id,
+            FeatureKeys.ArgmTrace.Id,
+            FeatureKeys.SpellHealing10x.Id,
+            FeatureKeys.SpellResurrection.Id,
+            FeatureKeys.GeneralSkills.Id,
+            FeatureKeys.LeaderGlory.Id,
+        };
+
+        private static readonly HashSet<string> EnableAllExcluded =
+            new(EnableAllExcludedFeatureIds, StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// 當使用者點擊「所有功能開啟」時觸發，勾選 <see cref="EnableAllExcludedFeatureIds"/>
+        /// 以外的所有修改功能開關。遊戲加速與駐軍配額倍率屬需手動選擇的倍率項，同樣不動。
         /// </summary>
         private void BtnEnableAll_Click(object? sender, EventArgs e) {
-            chkFocusLoss.Checked = true;
-            chkToEng.Checked = true;
-            chkMaxPopulation.Checked = true;
-            chkFastCiviProduction.Checked = true;
-            chkFreeProd.Checked = true;
-            chkFreeUpgrade.Checked = true;
-            chkNoSpellCost.Checked = true;
-            chkNoSpellAltar.Checked = true;
-            chkInfiniteMorale.Checked = true;
-            chkNoRunHpLoss.Checked = true;
-            chkHousingCapacity20x.Checked = true;
-            chkStorageCapacity10x.Checked = true;
-            chkHqHp10x.Checked = true;
-            chkFastBuildUpgradeRepair.Checked = true;
-            chkFoodHealing10x.Checked = true;
-            chkCiviProduce20.Checked = true;
-            chkUnitRecruit20.Checked = true;
-            chkIdleSelect999.Checked = true;
-            chkAiM1.Checked = true;
-            chkAiCore.Checked = true;
-            chkAiM5.Checked = true;
-            chkRomanReinforcementGarrison.Checked = true;
-            chkVillageBuildRange.Checked = true;
-            chkDgVoodoo.Checked = true;
-            chkNativeWidescreen1920x1080.Checked = true;
-            chkSpellDamage5x.Checked = true;
-            chkRangedRange3x.Checked = true;
-            chkUnitMovementSpeed2x.Checked = true;
-            chkVillagerMovementSpeed5x.Checked = true;
-            // 兩者各自獨立：全地圖 = 施法距離 (objdef Sirad)、3 倍 = 法術效果半徑 (cl_script Radius)。
-            chkSpellEntireMap.Checked = true;
-            chkSpellRange3x.Checked = true;
-            chkProjectileArcHeight.Checked = true;
-            chkAllUnitsEntireMapVision.Checked = true;
-            chkRomanEndless.Checked = true;
-            // 「已驗證功能（需手動開啟）」卡片（遊戲加速、攝影機拉遠）與仍需個別評估的
-            // 實驗性功能刻意排除在一鍵全開之外，保持原樣不變。
+            foreach (var (id, toggle) in featureToggles) {
+                if (EnableAllExcluded.Contains(id)) continue;
+                toggle.Checked = true;
+            }
 
             Log(Loc.CurrentLanguage == Language.English ? "All features enabled." : "已開啟所有功能。");
         }
 
         /// <summary>
-        /// 當使用者點擊「所有功能關閉」時觸發，一次性取消勾選所有修改功能與相容性開關。
+        /// 當使用者點擊「所有功能關閉」時觸發，取消勾選全部修改與相容性開關，
+        /// 並把兩個倍率下拉選單還原為原版（1 倍）。
         /// </summary>
         private void BtnDisableAll_Click(object? sender, EventArgs e) {
-            chkFocusLoss.Checked = false;
-            chkToEng.Checked = false;
-            chkMaxPopulation.Checked = false;
-            chkFastCiviProduction.Checked = false;
-            chkFreeProd.Checked = false;
-            chkFreeUpgrade.Checked = false;
-            chkNoSpellCost.Checked = false;
-            chkNoSpellAltar.Checked = false;
-            chkInfiniteMorale.Checked = false;
-            chkNoRunHpLoss.Checked = false;
-            chkHousingCapacity20x.Checked = false;
-            chkStorageCapacity10x.Checked = false;
-            chkHqHp10x.Checked = false;
-            chkFastBuildUpgradeRepair.Checked = false;
-            chkFoodHealing10x.Checked = false;
-            chkCiviProduce20.Checked = false;
-            chkUnitRecruit20.Checked = false;
-            chkIdleSelect999.Checked = false;
-            chkAiM1.Checked = false;
-            chkAiCore.Checked = false;
-            chkAiM5.Checked = false;
-            chkRomanReinforcementGarrison.Checked = false;
-            SetVillageGarrisonQuotaSelection(1);
-            chkVillageBuildRange.Checked = false;
-            chkDgVoodoo.Checked = false; // 相容性層關閉，以達到最乾淨的還原
-            chkArgmTrace.Checked = false; // 除錯記錄器一併關閉，套用時會移除 version.dll
-
-            // 關閉所有實驗性功能開關
-            chkSpellDamage5x.Checked = false;
-            chkSpellHealing10x.Checked = false;
-            chkSpellResurrection.Checked = false;
-            chkGeneralSkills.Checked = false;
-            chkLeaderGlory.Checked = false;
-            chkBalance.Checked = false;
-            chkAllUnitsEntireMapVision.Checked = false;
-            chkNativeWidescreen1920x1080.Checked = false;
-            chkCameraZoomOut1.Checked = false;
-            chkRangedRange3x.Checked = false;
-            chkUnitMovementSpeed2x.Checked = false;
-            chkVillagerMovementSpeed5x.Checked = false;
-            chkSpellEntireMap.Checked = false;
-            chkSpellRange3x.Checked = false;
-            chkProjectileArcHeight.Checked = false;
-            chkRomanEndless.Checked = false;
-            SetGameSpeedSelection(1); // 還原為原版速度
+            foreach (var toggle in featureToggles.Values) {
+                toggle.Checked = false;
+            }
+            SetGameSpeedSelection(1);            // 還原為原版速度
+            SetVillageGarrisonQuotaSelection(1); // 還原為原版駐軍配額
 
             Log(Loc.CurrentLanguage == Language.English ? "All features disabled." : "已關閉所有功能。");
         }

@@ -40,7 +40,7 @@ public sealed class EndlessMapCloner
             VerifyCopy(sourceDirectory, temporary);
             RewriteKnownFiles(temporary, sourceMapId, mapId, newName);
             var marker = new CustomMapEntry(newSlot, sourceSlot, DateTimeOffset.UtcNow, ToolVersion());
-            Core.Services.SafeFileWriter.WriteAllBytes(Path.Combine(temporary, CustomMapManifest.MarkerFileName), JsonSerializer.SerializeToUtf8Bytes(marker, new JsonSerializerOptions { WriteIndented = true }));
+            Core.Services.SafeFileWriter.WriteAllBytes(Path.Combine(temporary, CustomMapManifest.MarkerFileName), JsonSerializer.SerializeToUtf8Bytes(marker, Core.Services.JsonDefaults.Indented));
             Directory.Move(temporary, destination);
             CustomMapManifest manifest = CustomMapManifest.Load(normalizedGamePath);
             manifest.Register(marker);

@@ -50,7 +50,7 @@ namespace AgainstRomeModifier {
         private Font fontJhengHei10R = new Font("Microsoft JhengHei", 10F, FontStyle.Regular);
         private Font fontJhengHei105B = new Font("Microsoft JhengHei", 10.5F, FontStyle.Bold);
 
-        private bool dragging = false;
+        private bool dragging;
         private Point dragStart = new Point(0, 0);
 
         public SaveManagerForm(string? initialGamePath = null) {
@@ -488,7 +488,11 @@ namespace AgainstRomeModifier {
                         backup.BackupTime,
                         string.IsNullOrEmpty(backup.OrigFolder) ? (Loc.Get("Unknown")) : backup.OrigFolder);
                 }
-            } catch (Exception) {
+            } catch (Exception ex) {
+                // 過去這裡完全靜默：掃描失敗時清單留空、使用者看不出原因。
+                // 至少把錯誤顯示在詳細資訊區並留下診斷線索。
+                System.Diagnostics.Debug.WriteLine("掃描存檔與備份失敗: " + ex);
+                lblSaveDetail.Text = ex.Message;
             } finally {
                 _savesRefreshInFlight = false;
             }
@@ -800,6 +804,11 @@ namespace AgainstRomeModifier {
 
         protected override void Dispose(bool disposing) {
             if (disposing) {
+                // 預覽圖是本表單自行解碼的 Bitmap（PictureBox 不會代為釋放），
+                // 不在這裡放掉就得等 finalizer 才會還回 GDI 資源。
+                Image? preview = picSavePreview?.Image;
+                if (picSavePreview != null) picSavePreview.Image = null;
+                preview?.Dispose();
                 fontJhengHei115B.Dispose();
                 fontJhengHei95B.Dispose();
                 fontJhengHei9R.Dispose();

@@ -1,12 +1,7 @@
 using System;
-using System.IO;
-using System.Linq;
-using System.Text;
 using System.Collections.Generic;
-using System.Globalization;
 using System.Windows.Forms;
 using System.Drawing;
-using System.Drawing.Drawing2D;
 
 namespace AgainstRomeModifier {
     // 主表單的語系套用與文字更新：語系按鈕樣式、全 UI 文字在地化、表頭在地化、
@@ -299,7 +294,7 @@ namespace AgainstRomeModifier {
                 if (form.ShowDialog() == DialogResult.OK) {
                     customUnitStats = form.CustomStats;
                     LoadDefaultStatsData(); // 重新整理預設屬性表格
-                    Log("已套用自訂兵種屬性配置。");
+                    Log(Loc.Get("LogCustomTroopStatsApplied"));
  
                     if (!string.IsNullOrEmpty(form.LoadedFileName)) {
                         presetFileSourceType = "file";

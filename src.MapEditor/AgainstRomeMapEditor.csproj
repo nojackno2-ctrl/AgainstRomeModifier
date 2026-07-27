@@ -4,11 +4,7 @@
     <DisableWinExeValidation>true</DisableWinExeValidation>
     <TargetFramework>net8.0-windows</TargetFramework>
     <UseWindowsForms>true</UseWindowsForms>
-    <EnableWindowsTargeting>true</EnableWindowsTargeting>
-    <Nullable>enable</Nullable>
-    <LangVersion>latest</LangVersion>
     <ImplicitUsings>enable</ImplicitUsings>
-    <PlatformTarget>x64</PlatformTarget>
     <AssemblyName>AgainstRomeMapEditor</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
@@ -20,7 +16,6 @@
     <PackageReference Include="OpenTK.GLControl" Version="4.0.2" />
   </ItemGroup>
   <ItemGroup>
-    <InternalsVisibleTo Include="AgainstRomeModifier.Tests" />
     <InternalsVisibleTo Include="AgainstRomeModifier" />
   </ItemGroup>
 </Project>

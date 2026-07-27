@@ -118,7 +118,7 @@ internal sealed class ArgmTraceFeature
             ExpectedTimeDateStamp = expected,
         };
         byte[] markerBytes = Encoding.UTF8.GetBytes(
-            JsonSerializer.Serialize(manifest, new JsonSerializerOptions { WriteIndented = true }));
+            JsonSerializer.Serialize(manifest, JsonDefaults.Indented));
         SafeFileWriter.WriteAllBytes(GetMarkerPath(gamePath), markerBytes, rollback);
 
         _logger.Log(Loc.Get("SvcLogArgmInstalled"));

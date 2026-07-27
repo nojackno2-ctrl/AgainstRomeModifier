@@ -34,7 +34,7 @@ public sealed class CustomMapManifest
     {
         string mapsPath = Path.Combine(EndlessMapCatalog.ValidateGamePath(gamePath), "MAPS");
         Directory.CreateDirectory(mapsPath);
-        string json = JsonSerializer.Serialize(_entries.OrderBy(x => x.Slot), new JsonSerializerOptions { WriteIndented = true });
+        string json = JsonSerializer.Serialize(_entries.OrderBy(x => x.Slot), Core.Services.JsonDefaults.Indented);
         Core.Services.SafeFileWriter.WriteAllBytes(Path.Combine(mapsPath, FileName), System.Text.Encoding.UTF8.GetBytes(json), rollback);
     }
 

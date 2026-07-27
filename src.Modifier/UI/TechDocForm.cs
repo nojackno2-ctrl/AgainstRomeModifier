@@ -19,7 +19,7 @@ namespace AgainstRomeModifier {
         private Button btnClose = null!;
         private TextBox txtDoc = null!;
 
-        private bool dragging = false;
+        private bool dragging;
         private Point dragStart = new Point(0, 0);
         private Font fontJhengHei115B = new Font("Microsoft JhengHei", 11.5F, FontStyle.Bold);
         private Font fontJhengHei105R = new Font("Microsoft JhengHei", 10.5F, FontStyle.Regular);
@@ -123,7 +123,7 @@ namespace AgainstRomeModifier {
                         }
                     } else {
                         foreach (string name in typeof(TechDocForm).Assembly.GetManifestResourceNames()) {
-                            if (name.EndsWith(resourceKey)) {
+                            if (name.EndsWith(resourceKey, StringComparison.Ordinal)) {
                                 using (Stream? s = typeof(TechDocForm).Assembly.GetManifestResourceStream(name)) {
                                     if (s != null) {
                                         using (StreamReader r = new StreamReader(s, Encoding.UTF8)) {

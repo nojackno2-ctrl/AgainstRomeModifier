@@ -17,16 +17,12 @@ jobs:
           dotnet-version: 10.0.x
 
       - name: Restore
-        run: |
-          dotnet restore AgainstRomeModifier.slnx
-          dotnet restore tests/verify_split_patches/verify_split_patches.csproj
+        run: dotnet restore AgainstRomeModifier.slnx
 
+      # -warnaserror 讓分析器警告（含 IDE0005 多餘 using、IDE0051/0052 死碼）
+      # 直接擋下 CI。規則嚴重度見根目錄 .editorconfig，分析器開關見 Directory.Build.props。
       - name: Build Release x64
-        run: |
-          dotnet build AgainstRomeModifier.slnx --configuration Release -p:PlatformTarget=x64 --no-restore
-          # verify_split_patches 是手動 golden 值驗證程式（需要本機的遊戲原始檔案才能執行）。
-          # CI 至少驗證它可編譯，避免與產品程式碼漂移後無聲腐化。
-          dotnet build tests/verify_split_patches/verify_split_patches.csproj --configuration Release -p:PlatformTarget=x64 --no-restore
+        run: dotnet build AgainstRomeModifier.slnx --configuration Release -p:PlatformTarget=x64 --no-restore -warnaserror
 
       - name: Test
         run: dotnet test tests/AgainstRomeModifier.Tests/AgainstRomeModifier.Tests.csproj --configuration Release -p:PlatformTarget=x64 --no-build --no-restore

@@ -128,7 +128,6 @@
 
 - [`tools/Repair-LanguageBackup.ps1`](tools/Repair-LanguageBackup.ps1)：針對英文語言包覆蓋的備份基準（遊戲資料夾內的 `.against-rome-modifier-language-backup`）進行離線修復。僅在修改器回報語言備份指令清單遺失或損壞時使用。它藉由比對乾淨的原始遊戲樹來重新建立該基準。由於此腳本會直接寫入遊戲安裝目錄，執行前請詳閱腳本內的驗證步驟。預設參數：`-GamePath 'C:\Program Files (x86)\Against Rome'`；原始的乾淨檔案樹會自動在倉庫根目錄下偵測。
 - `tools/bcitool.py`：用於讀取與反組譯 `BCI0` 腳本位元組碼的 Python 工具。其內建的 PFIL LZSS 解壓縮器是從 `GameLZSS` 移植而來；若 C# 的壓縮演算法有任何變更，請同步更新此 Python 演算法。
-- `tests/verify_split_patches/`：針對無盡模式 AI 補丁的黃金值（Golden values）手動驗證套件。執行此驗證需要本地的 `遊戲原始檔案/` 目錄。在修改任何 P1–P19 補丁常數前後，請務必執行此驗證。
 
 ## dgVoodoo2 整合說明
 

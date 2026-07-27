@@ -1,6 +1,3 @@
-using System;
-using System.Collections.Generic;
-
 namespace AgainstRomeModifier {
     /// <summary>
     /// 兵種元數據：具名欄位取代先前的 Tuple&lt;string,string,string,string&gt;。
@@ -49,9 +46,15 @@ namespace AgainstRomeModifier {
         FigProdCostEnd = 18,
         FigPriestSpellCostStart = 25,
         FigPriestSpellCostEnd = 28,
-        // objres 攻城武器建造費
+        // objres 攻城武器建造費。
+        // 攻城武器與建築共用 objres 的第 1~6 欄（六種資源的 resv_res0..5_bau），
+        // 與 BauBuildCost* 同值是逆向工程確認的事實，見
+        // docs/reverse-engineering/ress-fields.csv 與 data/game_schema.json。
+        // 兩組名稱刻意並存，讓 RessPatcher 的兩個判斷各自讀得懂自己在做什麼。
+#pragma warning disable CA1069 // 列舉值重複：如上所述為刻意的語意別名
         FigSiegeBuildCostStart = 1,
         FigSiegeBuildCostEnd = 6
+#pragma warning restore CA1069
         // volkres 單位升級費範圍
     }
 
@@ -266,10 +269,10 @@ namespace AgainstRomeModifier {
 
             var sorted = new List<string>(UnitOrder);
             sorted.Sort((a, b) => {
-                string tierA = UnitMeta.ContainsKey(a) ? UnitMeta[a].Tier : "low";
-                string tierB = UnitMeta.ContainsKey(b) ? UnitMeta[b].Tier : "low";
-                int pA = tierPriority.ContainsKey(tierA) ? tierPriority[tierA] : 99;
-                int pB = tierPriority.ContainsKey(tierB) ? tierPriority[tierB] : 99;
+                string tierA = UnitMeta.TryGetValue(a, out var metaA) ? metaA.Tier : "low";
+                string tierB = UnitMeta.TryGetValue(b, out var metaB) ? metaB.Tier : "low";
+                int pA = tierPriority.TryGetValue(tierA, out int priorityA) ? priorityA : 99;
+                int pB = tierPriority.TryGetValue(tierB, out int priorityB) ? priorityB : 99;
                 if (pA != pB) return pA.CompareTo(pB);
                 return originalIndex[a].CompareTo(originalIndex[b]);
             });

@@ -1,8 +1,4 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
 using System.IO.Compression;
-using System.Linq;
 using System.Reflection;
 
 namespace AgainstRomeModifier.Core.Services;
@@ -58,7 +54,7 @@ internal sealed class BackupSourceLoader
         {
             if (entry.Name.Length == 0) continue;
             string key = entry.FullName.Replace('\\', '/');
-            if (Path.IsPathRooted(key) || key.StartsWith("/", StringComparison.Ordinal) ||
+            if (Path.IsPathRooted(key) || key.StartsWith('/') ||
                 key.Split('/').Any(part => part == ".."))
                 throw new InvalidDataException("Backup.zip contains an unsafe entry path: " + entry.FullName);
 
