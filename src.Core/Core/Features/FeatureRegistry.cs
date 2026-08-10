@@ -55,11 +55,16 @@ public static class FeatureRegistry
         Bool(FeatureKeys.ToEnglish, FeatureCategory.Language),
     };
 
+    // PatchProfile.Get 在偵測／套用路徑上會呼叫上千次，每次 miss 都線性掃描 50 個定義
+    // 太浪費；以 id 建索引讓查表變成 O(1)。
+    private static readonly Dictionary<string, FeatureDefinition> ById =
+        All.ToDictionary(x => x.Id, StringComparer.OrdinalIgnoreCase);
+
     public static IEnumerable<FeatureDefinition> ByCategory(FeatureCategory category) => All.Where(x => x.Category == category);
     public static IEnumerable<FeatureDefinition> ToggleFeatures => All.Where(x => x.ControlKind == FeatureControlKind.Toggle);
 
     public static FeatureValue GetDisabledValue(string id) =>
-        All.FirstOrDefault(x => x.Id.Equals(id, StringComparison.OrdinalIgnoreCase))?.DisabledValue ?? FeatureValue.Of(false);
+        ById.TryGetValue(id, out FeatureDefinition? definition) ? definition.DisabledValue : FeatureValue.Of(false);
 
     public static void ValidateToggleIds(IEnumerable<string> ids)
     {

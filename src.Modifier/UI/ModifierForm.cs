@@ -1,9 +1,7 @@
 ﻿using System;
 using System.IO;
 using System.Linq;
-using System.Text;
 using System.Collections.Generic;
-using System.Globalization;
 using System.Windows.Forms;
 using System.Drawing;
 using System.Drawing.Drawing2D;
@@ -98,7 +96,7 @@ namespace AgainstRomeModifier {
         private Label lblTroopTemplate = null!;
         private ComboBox cbTroopTemplate = null!;
         private Label lblTroopPresetFile = null!;
-        private Dictionary<string, double[]>? customUnitStats = null;
+        private Dictionary<string, double[]>? customUnitStats;
         private string presetFileSourceType = "default";
         private string presetFileName = "";
         private ModernToggle chkToEng = null!;
@@ -193,7 +191,7 @@ namespace AgainstRomeModifier {
         private TabPage tabCurrentHun = null!;
 
         // 視窗拖曳狀態變數
-        private bool dragging = false;
+        private bool dragging;
         private Point dragStart = new Point(0, 0);
         
         // 統一風格的字型物件宣告
@@ -250,7 +248,7 @@ namespace AgainstRomeModifier {
                     }
                 }
             } catch (Exception ex) {
-                Log("舊版腳本安全遷移失敗: " + ex.Message);
+                Log(Loc.Get("LogStartupMigrationFailed") + ex.Message);
             }
 
             // 初始化資料與讀取自訂兵種資訊
@@ -278,6 +276,9 @@ namespace AgainstRomeModifier {
                     fontJhengHei10R.Dispose();
                     fontConsolas85.Dispose();
                     myToolTip?.Dispose();
+                    // menuRestore 只是 Show() 的目標、未加入 Controls，
+                    // 不會被 base.Dispose 連帶釋放。
+                    menuRestore?.Dispose();
                 } catch (Exception ex) {
                     System.Diagnostics.Debug.WriteLine("釋放資源失敗: " + ex.Message);
                 }
@@ -1592,7 +1593,7 @@ namespace AgainstRomeModifier {
                 promoteDemoteButtons[toggle] = btn;
             }
 
-            ConfigureSettingsCard(pnlExperimentalCard, lblExperimentalCardTitle, 400,
+            ConfigureSettingsCard(pnlExperimentalCard, lblExperimentalCardTitle,
                 experimentalToggleOriginalParents.Keys.ToArray());
 
             UpdateExperimentalLayout();

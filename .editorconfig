@@ -1,0 +1,69 @@
+# Against Rome Modifier — 分析器規則嚴重度的單一真相來源（REFACTOR_PLAN §7.1）
+#
+# 目的：讓「死程式碼／多餘 using」這類 REFACTOR_PLAN §2 靠人工 grep 找出來的東西，
+# 從一次性清理變成每次編譯自動攔截。分析器本身在 Directory.Build.props 開啟。
+#
+# 政策：
+#   * 有正確性或維護價值的規則 → warning，且必須維持 0 筆。
+#   * 純風格／微效能且會傷害可讀性的規則 → none，並在下方寫明關閉理由
+#     （REFACTOR_PLAN §4：「此工具是桌面工具，無熱路徑瓶頸，不要為效能犧牲可讀性」）。
+
+root = true
+
+[*]
+end_of_line = crlf
+insert_final_newline = true
+
+[*.{cs,csproj,props,targets,editorconfig}]
+indent_style = space
+indent_size = 4
+
+[*.{json,yml,yaml,md}]
+indent_style = space
+indent_size = 2
+
+[*.cs]
+
+# ── 死程式碼偵測：§7.1 的主要目的 ─────────────────────────────────────
+# IDE0005 需要 GenerateDocumentationFile（見 Directory.Build.props）才會在編譯期回報。
+dotnet_diagnostic.IDE0005.severity = warning   # 多餘的 using
+dotnet_diagnostic.IDE0051.severity = warning   # 未使用的私有成員
+dotnet_diagnostic.IDE0052.severity = warning   # 只寫不讀的私有成員
+
+# ── 正確性 ────────────────────────────────────────────────────────────
+dotnet_diagnostic.CA1069.severity = warning    # 列舉常數值重複
+dotnet_diagnostic.CA1310.severity = warning    # 字串比較受地區設定影響
+dotnet_diagnostic.CA1816.severity = warning    # Dispose 應呼叫 GC.SuppressFinalize
+dotnet_diagnostic.CA2249.severity = warning    # 以 Contains 取代 IndexOf == -1
+
+# ── 低成本且不傷可讀性的改善 ──────────────────────────────────────────
+dotnet_diagnostic.CA1805.severity = warning    # 不必要的預設值初始化
+dotnet_diagnostic.CA1845.severity = warning    # span 版 string.Concat
+dotnet_diagnostic.CA1847.severity = warning    # Contains(char)
+dotnet_diagnostic.CA1854.severity = warning    # ContainsKey + 索引子 → TryGetValue
+dotnet_diagnostic.CA1865.severity = warning    # StartsWith/EndsWith(char)
+dotnet_diagnostic.CA1866.severity = warning    # 同上
+dotnet_diagnostic.CA1869.severity = warning    # 快取 JsonSerializerOptions
+
+# ── 刻意關閉（附理由）────────────────────────────────────────────────
+# 測試方法沿用 xUnit 的 Method_Should_Xxx 命名；src.Core 的 P4_/P13_/P20_ 類別名
+# 是逆向工程編號，REFACTOR_PLAN §0.6 明訂不得改動。
+dotnet_diagnostic.CA1707.severity = none       # 識別項不應包含底線
+
+# 絕大多數命中是給使用者看的 log／UI 字串，本來就該跟隨 UI 文化；
+# 真正寫入遊戲檔／使用者檔的路徑一律顯式使用 CultureInfo.InvariantCulture。
+dotnet_diagnostic.CA1305.severity = none       # 應指定 IFormatProvider
+
+# 以下皆為微效能建議，收益在桌面工具上量不到，但會把可讀的字面值
+# 推成散落的 static readonly 欄位。依 REFACTOR_PLAN §4 取捨關閉。
+dotnet_diagnostic.CA1861.severity = none       # 避免常數陣列作為引數
+dotnet_diagnostic.CA1863.severity = none       # 使用 CompositeFormat
+dotnet_diagnostic.CA1859.severity = none       # 改用具象型別以提升效能
+dotnet_diagnostic.CA1870.severity = none       # 使用 SearchValues
+
+# CA1822（可標為 static）在本專案多半落在 WinForms 事件處理與薄殼方法上，
+# 改了只是製造 diff。CA1000/CA1720 為命名與泛型設計偏好，
+# FeatureKey<T> 的靜態工廠是刻意設計。
+dotnet_diagnostic.CA1822.severity = none
+dotnet_diagnostic.CA1000.severity = none
+dotnet_diagnostic.CA1720.severity = none

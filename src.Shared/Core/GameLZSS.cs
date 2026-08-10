@@ -1,6 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Buffers;
+﻿using System.Buffers;
 
 namespace AgainstRomeModifier {
     // 遊戲特化的 LZSS 壓縮與解壓縮演算法實作類別

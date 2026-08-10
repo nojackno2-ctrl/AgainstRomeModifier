@@ -287,7 +287,7 @@ internal sealed class ObjdefFeatureDetector
         {
             if (cols.Length <= (int)ObjdefIndex.StorageCapacity || cols.Length <= (int)ObjdefIndex.Name) continue;
             string name = cols[(int)ObjdefIndex.Name].Trim();
-            if (!name.StartsWith("Bau") || !(name.Contains("Hau") || name.Contains("Lag"))) continue;
+            if (!name.StartsWith("Bau", StringComparison.Ordinal) || !(name.Contains("Hau") || name.Contains("Lag"))) continue;
             if (!int.TryParse(cols[(int)ObjdefIndex.StorageCapacity].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int originalValue) || originalValue <= 0) continue;
 
             foundStorage = true;
@@ -316,7 +316,7 @@ internal sealed class ObjdefFeatureDetector
         {
             if (cols.Length <= (int)ObjdefIndex.Hp || cols.Length <= (int)ObjdefIndex.Name) continue;
             string name = cols[(int)ObjdefIndex.Name].Trim();
-            if (!name.StartsWith("Bau") || !name.Contains("Hau")) continue;
+            if (!name.StartsWith("Bau", StringComparison.Ordinal) || !name.Contains("Hau")) continue;
             if (!int.TryParse(cols[(int)ObjdefIndex.Hp].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int originalValue) || originalValue <= 0) continue;
 
             foundHq = true;
@@ -374,7 +374,7 @@ internal sealed class ObjdefFeatureDetector
         {
             if (cols.Length < 192) continue;
             string name = cols[52].Trim();
-            if (!name.StartsWith("Bau")) continue;
+            if (!name.StartsWith("Bau", StringComparison.Ordinal)) continue;
 
             if (int.TryParse(cols[73].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int buildVal))
             {
@@ -391,7 +391,7 @@ internal sealed class ObjdefFeatureDetector
         {
             if (cols.Length < 192) continue;
             string name = cols[52].Trim();
-            if (!name.StartsWith("Bau")) continue;
+            if (!name.StartsWith("Bau", StringComparison.Ordinal)) continue;
 
             bool hasBuild = int.TryParse(cols[73].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int origBuildVal) && origBuildVal > 0;
             bool hasUpg = int.TryParse(cols[74].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int origUpgVal) && origUpgVal > 0;

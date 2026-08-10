@@ -51,7 +51,7 @@ public static class ClScriptPatcher {
                 double value = GetOriginal(originalRadius, $"{faction}_{spell}", match.Groups[3].Value);
                 double multiplier = faction == "GER" ? options.GermanSpellRadiusMultiplier : faction == "KEL" ? options.CeltSpellRadiusMultiplier : faction == "HUN" ? options.HunSpellRadiusMultiplier : 1.0;
                 if (options.SpellRange3x) multiplier *= 3.0;
-                processed = string.Format("Radius     ={0}, {1}, {2,-10}{3}", match.Groups[1].Value, match.Groups[2].Value, (int)(value * multiplier), match.Groups[4].Value);
+                processed = string.Format(CultureInfo.InvariantCulture, "Radius     ={0}, {1}, {2,-10}{3}", match.Groups[1].Value, match.Groups[2].Value, (int)(value * multiplier), match.Groups[4].Value);
             }
             match = SpellValue.Match(line);
             if (match.Success) {
@@ -67,24 +67,24 @@ public static class ClScriptPatcher {
                 if (options.SpellResurrection) {
                     if (faction == "KEL" && spell == "Spell3" && (key == "Value" || key == "Value2")) value = 100;
                 }
-                processed = string.Format("{0,-10} ={1}, {2}, {3,-10}{4}", key, faction, spell, value, match.Groups[5].Value);
+                processed = string.Format(CultureInfo.InvariantCulture, "{0,-10} ={1}, {2}, {3,-10}{4}", key, faction, spell, value, match.Groups[5].Value);
             }
             match = AbilityValue.Match(line);
             if (match.Success) {
                 string key = match.Groups[1].Value.Trim(), faction = match.Groups[2].Value.Trim(), ability = match.Groups[3].Value.Trim();
                 double value = GetOriginal(originalAbilities, $"{key}_{faction}_{ability}", match.Groups[4].Value);
                 if (options.GeneralSkills5x) value *= 5;
-                processed = string.Format("{0,-10} ={1}, {2}, {3,-10}{4}", key, faction, ability, (int)value, match.Groups[5].Value);
+                processed = string.Format(CultureInfo.InvariantCulture, "{0,-10} ={1}, {2}, {3,-10}{4}", key, faction, ability, (int)value, match.Groups[5].Value);
             }
             match = Civi.Match(line);
             if (match.Success) {
                 double value = options.FastCivilianProduction ? 500 : FindFactionValue(originalLines, Civi, match.Groups[1].Value.Trim(), 5000);
-                processed = string.Format("CiviDelay  ={0}, {1,-10}{2}", match.Groups[1].Value, (int)value, match.Groups[3].Value);
+                processed = string.Format(CultureInfo.InvariantCulture, "CiviDelay  ={0}, {1,-10}{2}", match.Groups[1].Value, (int)value, match.Groups[3].Value);
             }
             match = LpIdle.Match(line);
             if (match.Success) {
                 double value = FindFactionValue(originalLines, LpIdle, match.Groups[1].Value.Trim(), 15000);
-                processed = string.Format("LPIncIdle       ={0}, {1,-10}{2}", match.Groups[1].Value, (int)value, match.Groups[3].Value);
+                processed = string.Format(CultureInfo.InvariantCulture, "LPIncIdle       ={0}, {1,-10}{2}", match.Groups[1].Value, (int)value, match.Groups[3].Value);
             }
             if (options.InfiniteMorale) {
                 processed = ReplaceMorale(processed, line, "MoralsDecLostMem", MoraleLost, "0");

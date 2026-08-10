@@ -1,11 +1,5 @@
-using System;
-using System.IO;
 using System.Text;
-using System.Text.RegularExpressions;
-using System.Globalization;
-using Xunit;
 using AgainstRomeModifier.Core.Services;
-using AgainstRomeModifier.Core.Patches;
 
 namespace AgainstRomeModifier.Tests
 {

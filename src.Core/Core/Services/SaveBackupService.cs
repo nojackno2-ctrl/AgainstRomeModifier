@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.IO.Compression;
 using System.Text;
 using AgainstRomeModifier.Core.Patches;

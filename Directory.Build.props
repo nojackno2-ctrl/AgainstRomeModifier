@@ -1,0 +1,39 @@
+<Project>
+
+  <!--
+    共通建置設定的單一真相來源（REFACTOR_PLAN §7.1）。
+    僅作用於 .csproj：build/argm-trace 的 CMake 產生檔為 .vcxproj，
+    不應被這裡的 .NET 屬性干擾。
+    TargetFramework 刻意不收斂——src.Shared 是 net8.0，其餘為 net8.0-windows。
+  -->
+  <PropertyGroup Condition="'$(MSBuildProjectExtension)' == '.csproj'">
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <PlatformTarget>x64</PlatformTarget>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <WarningsAsErrors>nullable</WarningsAsErrors>
+
+    <!--
+      讓「死碼／多餘 using」從一次性人工掃描變成每次編譯自動執行。
+      規則嚴重度集中在根目錄 .editorconfig。
+    -->
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <!--
+      IDE0005（多餘 using）在編譯期只有在產生文件檔時才會回報，這是
+      Roslyn 的已知限制。本專案不對外發佈 API 文件，故一併關閉 CS1591。
+    -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+  <!--
+    五個 src 專案原本各自宣告一次「測試組件看得到 internal」。
+    測試專案自己不需要（會變成指向自身）。
+  -->
+  <ItemGroup Condition="'$(MSBuildProjectExtension)' == '.csproj' and '$(MSBuildProjectName)' != 'AgainstRomeModifier.Tests'">
+    <InternalsVisibleTo Include="AgainstRomeModifier.Tests" />
+  </ItemGroup>
+
+</Project>

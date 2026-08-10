@@ -42,8 +42,8 @@ public static class EparaPatcher {
             if (!lines[i].Trim().Equals(section, StringComparison.OrdinalIgnoreCase)) continue;
             for (int j = i + 1; j < lines.Length; j++) {
                 string trimmed = lines[j].Trim();
-                if (trimmed.Length == 0 || trimmed.StartsWith(";", StringComparison.Ordinal)) continue;
-                if (trimmed.StartsWith("[", StringComparison.Ordinal)) break; // 區段內沒有值行
+                if (trimmed.Length == 0 || trimmed.StartsWith(';')) continue;
+                if (trimmed.StartsWith('[')) break; // 區段內沒有值行
                 if (!double.TryParse(trimmed, NumberStyles.Any, CultureInfo.InvariantCulture, out double value))
                     throw new InvalidDataException($"cl_epara.ini {section} 的值行無法解析: '{trimmed}'，已取消整次套用。");
                 lines[j] = lines[j].Replace(trimmed, transform(value));

@@ -1,6 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
 using System.Text;
 
 namespace AgainstRomeModifier
@@ -1443,15 +1440,15 @@ namespace AgainstRomeModifier
             foreach (string line in lines)
             {
                 string trimmed = line.TrimEnd('\r').Trim();
-                if (trimmed.StartsWith("["))
+                if (trimmed.StartsWith('['))
                 {
                     inHaupthausSection = false;
                 }
-                else if (trimmed.StartsWith("namedef") && trimmed.Contains("_Haupt"))
+                else if (trimmed.StartsWith("namedef", StringComparison.Ordinal) && trimmed.Contains("_Haupt"))
                 {
                     inHaupthausSection = true;
                 }
-                else if (inHaupthausSection && trimmed.StartsWith("resv"))
+                else if (inHaupthausSection && trimmed.StartsWith("resv", StringComparison.Ordinal))
                 {
                     inHaupthausSection = false;
                     int eq = line.IndexOf('=');
@@ -1490,15 +1487,15 @@ namespace AgainstRomeModifier
             for (int i = 0; i < lines.Length; i++)
             {
                 string trimmed = lines[i].TrimEnd('\r').Trim();
-                if (trimmed.StartsWith("["))
+                if (trimmed.StartsWith('['))
                 {
                     inHaupthausSection = false;
                 }
-                else if (trimmed.StartsWith("namedef") && trimmed.Contains("_Haupt"))
+                else if (trimmed.StartsWith("namedef", StringComparison.Ordinal) && trimmed.Contains("_Haupt"))
                 {
                     inHaupthausSection = true;
                 }
-                else if (inHaupthausSection && trimmed.StartsWith("resv"))
+                else if (inHaupthausSection && trimmed.StartsWith("resv", StringComparison.Ordinal))
                 {
                     inHaupthausSection = false;
                     int eq = lines[i].IndexOf('=');
@@ -1506,7 +1503,7 @@ namespace AgainstRomeModifier
                     {
                         throw new InvalidDataException("Invalid SDL format on resv line.");
                     }
-                    string suffix = lines[i].EndsWith("\r") ? "\r" : "";
+                    string suffix = lines[i].EndsWith('\r') ? "\r" : "";
                     string currentResv = lines[i].Substring(eq + 1).TrimEnd('\r').Trim();
                     if (currentResv != OriginalResv && currentResv != UltimateResv)
                     {
@@ -1515,7 +1512,7 @@ namespace AgainstRomeModifier
                     foundHaupthausResv = true;
                     if (currentResv != targetResv)
                     {
-                        lines[i] = lines[i].Substring(0, eq + 1) + targetResv + suffix;
+                        lines[i] = string.Concat(lines[i].AsSpan(0, eq + 1), targetResv, suffix);
                         changed = true;
                     }
                 }

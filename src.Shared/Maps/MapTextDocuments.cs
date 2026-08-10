@@ -7,8 +7,8 @@ namespace AgainstRomeModifier.Maps;
 public abstract class MapTextDocument
 {
     private readonly byte[] _originalBytes;
-    protected readonly Encoding Encoding;
-    protected string Text;
+    protected Encoding Encoding { get; }
+    protected string Text { get; set; }
     protected MapTextDocument(string path, Encoding encoding)
     {
         Path = path;
@@ -156,7 +156,7 @@ public sealed class SdlDocument : MapTextDocument
         int index = Objects.Count;
         string newline = Text.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
         var block = new StringBuilder();
-        if (Text.Length > 0 && !Text.EndsWith("\n", StringComparison.Ordinal)) block.Append(newline);
+        if (Text.Length > 0 && !Text.EndsWith('\n')) block.Append(newline);
         block.Append('[').Append(ObjectName(index)).Append(']').Append(newline);
         foreach ((string key, string value) in fields)
         {

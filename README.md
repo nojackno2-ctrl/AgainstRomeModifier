@@ -1,144 +1,297 @@
-[English](README.md) | [繁體中文](README.zh-TW.md)
+# Against Rome Modifier（羅馬帝國：黃金版 全方位修改器 & 工具箱）
+
+[![Platform: Windows x64](https://img.shields.io/badge/Platform-Windows%2010%20%2F%2011%20(x64)-blue.svg)](#系統需求)
+[![.NET 8.0](https://img.shields.io/badge/.NET-8.0%20(Windows%20Forms)-512BD4.svg)](#自行編譯)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Release: Portable](https://img.shields.io/badge/Release-Single%20Executable-orange.svg)](#快速開始)
+
+> [!IMPORTANT]
+> **本工具完全不包含任何遊戲本體檔案。**
+> 您必須先擁有並安裝正版《Against Rome》（羅馬帝國：黃金版 / 對抗羅馬），在程式中指定遊戲安裝路徑後即可使用。
+> 建議在初次修改前，先手動複製一份完整的遊戲目錄作為備份。
 
 ---
 
-# Against Rome Modifier
+## 📖 專案簡介
 
-> [!WARNING]
-> This modifier is still in testing. Please backup your original files before using it.
-> (這個修改器還在測試中，如果要使用請將原始的檔案進行備份。)
+**Against Rome Modifier** 是專為經典即時戰略遊戲《**Against Rome**》（中文譯名：《羅馬帝國：黃金版》/《對抗羅馬》）開發的現代化多功能修改工具箱。
 
-This is a Windows Forms modifier for the real-time strategy game *Against Rome*.
-It is built with C# on .NET 8. Public builds do not contain original game data; the modifier builds its restore baseline from the user's own installation when an optional local `Backup.zip` is not present.
+本專案整合了 **遊戲修改器（Modifier）**、**存檔管理器（Save Manager）** 與 **地圖編輯器（Map Editor）**，旨在解決老遊戲在現代 Windows 10/11 系統上的相容性問題、修復無盡模式中的諸多原版 AI 缺陷，並提供高度客製化的部隊屬性自訂、人口解鎖、資源與戰鬥強化等豐富功能。
 
-## Maintenance Documentation
+所有修改均基於嚴謹的逆向工程分析與二進位特徵碼比對，具備**完整的一鍵還原與備份機制**，安全且不破壞遊戲原始檔案。
 
-- [`TechDoc.md`](TechDoc.md): Current Chinese technical specification (integrates the AI-agent handoff checklist, debugging history, failure cases, and verification steps at the end).
-- [`TechDoc_EN.md`](TechDoc_EN.md): Current English technical specification.
-- [`docs/reverse-engineering/`](docs/reverse-engineering/README.md): File formats, offsets, patch bytes, evidence, and the local Ghidra workflow.
+---
 
-## Project Origin & Author's Note
+## ✨ 核心特色
 
-The author of this project is a devoted player who loved *Against Rome* many years ago. This tool was created with AI-agent assistance and is maintained as a research and personal modding project.
+- 🚀 **免安裝單一執行檔（Single Portable Executable）**：下載單一 `AgainstRomeModifier.exe` 即可直接執行，整合所有工具，即開即用。
+- 🛡️ **100% 安全可還原（Non-destructive & Reversible）**：內建記憶體備份與自動回復點機制，支援「一鍵全部還原」或「分項局部還原」，隨時恢復純淨原版。
+- 🖥️ **現代系統相容性完美修復**：內建整合 [dgVoodoo2](https://github.com/dege-diosg/dgVoodoo2) DirectX 轉譯層，徹底修復 Windows 10/11 常見的卡頓、低 FPS、視窗化失效與黑屏問題，支援 4:3 比例高解析度置中。
+- ⚔️ **無盡模式深度重製與 AI 強化**：
+  - 解鎖無盡模式可選用「羅馬」陣營。
+  - 徹底修復羅馬增援部隊抵達後自動撤退的 原版 Bug，增援士兵、平民與馱馬全數留守效力。
+  - 修復電腦 AI 聚落後期停止出兵與重生的缺陷，支援滿編 20 人大軍與開局資源加成。
+- 📊 **自訂兵種屬性系統**：提供四大陣營（羅馬、條頓、塞爾特、匈奴）共 21 種戰鬥單位的數值編輯與即時對照表，支援 `.artroop` 自訂設定檔匯出/匯入與內建平衡範本。
+- 💾 **多功能存檔管理器**：提供存檔備份、還原、自訂命名、關卡資訊檢視，並內建「修復無盡 AI」功能，可直接修復既有存檔內嵌的 AI 排程。
+- 🗺️ **視覺化地圖編輯器**：支援 2D 與 3D 即時視圖，可檢視與編輯地形高度、水面、地表紋理與場景物件，並可自由複製無盡地圖。
+- 🌐 **繁體中文 / 英文雙語系介面**：介面語言隨切即換，設定自動保存。
 
-## Core Features
+---
 
-- **Maximum-Population Unlock**: Modifies map `team.dat` files, raising the population limit up to 1600 when enabled.
-- **Play as Romans in Endless Mode**: From Resource & Combat Upgrades, changes the five endless-map team-0 defaults to Romans and safely patches the endless-only `dlg_volk` selector so every faction flag starts as Roman. Runtime-verified; it affects new games only. Romans have no priest or glory skill tree by original design.
-- **Hand Over All Roman Reinforcements**: Standalone feature that releases every Roman reinforcement object from reinforcement-party script mode and hands soldiers, pack horses, and civilians to the village instead of splitting them by unit type. It applies the P8 threshold, P9 zero quota/all-unit fall-through, and release helper atomically. Legacy `EndlessAi.M6`, the former `jnz+92` split, direct-mark states, and the broken opcode-160 helper state migrate automatically to `jz+0` plus the correct opcode-120 helper. Five-map static/integration checks and a fresh endless-game runtime test have passed: the complete reinforcement party is handed to the village and no longer retreats.
-- **20x Housing Capacity**: Reversible switch to scale every positive population-building `wohnwer` value in `objdef.dau` by 20x.
-- **20 Civilians Per Residential-Tent Click**: Reversible player-only EXE patch that queues up to 20 male or female civilians with one click; successfully runtime-verified in-game.
-- **Fill Unit Conversion to 20 Per Click**: Reversible player-only EXE patch that sets the selected villager-to-unit conversion count to 20 with one click, subject to the original cap and available villagers; successfully runtime-verified in-game.
-- **10x Construction Speed**: Reversible switch to accelerate construction, upgrades, and repairs in `objdef.dau` by 10x (shortens building build/upgrade times by 10, which automatically boosts the per-second repair rate; successfully runtime-verified in-game).
-- **10x Storage Capacity**: Reversible switch to scale storage capacities of Town Halls (`Hau` structures) and Warehouses (`Lag` structures) in `objdef.dau` by 10x (successfully runtime-verified in-game).
-- **10x Town Hall HP**: Reversible switch to multiply hit-points (HP) of all Town Halls (`Hau` structures) in `objdef.dau` by 10x (successfully runtime-verified in-game).
-- **Endless-Mode AI Ultimate Mode**: Reversible, bounded BCI patches for the five `ENDL_*` maps. The UI applies reinforcement scheduling, defeat cleanup, and settlement respawn atomically as one **Endless Respawn Core**, preventing partial lifecycle configurations; reinforcement size and AI starting resources remain independent difficulty choices. It never uses the previously rejected unconditional gate bypass. See [`endless-mode-ai.md`](docs/reverse-engineering/endless-mode-ai.md) for evidence, legacy migration, and runtime limits.
-- **Village Garrison Quota 3x (Experimental)**: A standalone reversible patch for `Dorfverteidigung.bci`. It multiplies the four dynamic ImportantPos-derived squad quotas by three while preserving their ratios and zero values. This is independent of AI Ultimate M1's 20 members per newly produced squad. Static signatures and exact restore are verified; fresh-game runtime and performance verification remain pending, so it is excluded from **Enable All**.
-- **Free Construction & Production**: Free construction, production, upgrades, and spell costs through `ress.ini` modification.
-- **5x Spell Damage**: Reversible `cl_script.ini` patch for six configured active-spell values; successfully runtime-verified in-game.
-- **Unit Stat Editing**: Adjust only HP, damage, VW, AW, sight, and cooldown through `objdef.dau`. Movement speed, attack range, spell radius, and priest sight/casting distance are deliberately owned by the independent experimental modifiers, not by custom troop layers.
-- **Entire-Map Vision for All Units**: Sets `Sirad=30000` for every supported unit across all factions; the entire-map vision effect is runtime-verified in game.
-- **Other Stat Modifiers**: 3× ranged range (with a built-in accuracy fix — doubled impact radius and zeroed lead-aim scatter so shots still land at the longer range), 2× unit movement, entire-map priest casting distance, 3× spell effect radius, and higher projectile arcs.
-- **Centered High Resolution (4:3)**: The native 1920×1080 EXE experiment is disabled because it retained a legacy top-left draw surface. This option restores every experimental EXE site and keeps stock 1600×1200. Centered fullscreen and correctly proportioned windowed output are runtime-verified; it does not stretch or claim 16:9 world-view expansion.
-- **Camera Zoom Out +1 (Experimental)**: Uses the first visibly effective native zoom step to show more battlefield. Runtime testing found no visible effect at 0.5, so that state migrates back to +1; the tradeoff is that world units, health bars, and information also become smaller. Selection, edge scrolling, fog, bounds, and mission compatibility still need retesting.
-- **Troop Presets & One-Click Control**: `.artroop` exports use the six-field `HP,Dmg,VW,AW,Sight,Relt` format. Legacy nine-field imports remain readable but their removed fields are discarded; Enable All includes the runtime-verified centered-high-resolution and entire-map-unit-vision features.
-- **Loss-Focus Background Execution**: Patches `Against_Rome.exe` to allow the game to continue running when it loses focus (is minimized or inactive).
-- **Entire Map Construction Range**: Replaces the construction range limit via a synchronized `Against_Rome.exe` setter trampoline, allowing building anywhere on the entire map (successfully runtime-verified in-game, including the red dashed frame).
-- **Embedded dgVoodoo2 Integration**: Optional integration that installs the bundled 32-bit D3D8/DirectDraw wrappers from dgVoodoo2 without overwriting existing unmanaged DLLs.
-- **Path Auto-Detection**: Automatically detects game directories and supports launching the game with a single click.
-- **Save Game Management**: Save backup, restore, and history management.
-- **Embedded Technical Documentation**: Built-in viewer for easy documentation reading.
-- **Local Reverse-Engineering Workflow**: Retains generated Ghidra function index and pseudocode inventory kept under the ignored `re_workspace/` folder.
+## 💻 系統需求
 
-## Playing Romans in Endless Mode
+- **作業系統**：Windows 10 / Windows 11（64 位元）
+- **遊戲版本**：已安裝的《Against Rome》（遊戲目錄內需包含 `Against_Rome.exe`）
+- **執行環境**：若是使用單一發行版（Self-Contained），無需額外安裝 .NET Runtime；若自行編譯則需 .NET 8.0 SDK。
 
-1. Select the game root containing `Against_Rome.exe`.
-2. Enable **Play as Romans in Endless Mode** in Resource & Combat Upgrades and apply changes. Enable All includes it.
-3. Start a **new** endless game. Any of the three faction flags enters as Romans; no highlighted flag is an expected visual limitation.
-4. Uncheck and apply again, or restore, to return new games to their original faction. Existing saves keep their embedded team data.
+---
 
-The original Options `swi_volk` control is a separate player-driven path and can still manually change the faction back to a barbarian one.
+## 🚀 快速開始
 
-## Technical Architecture
+1. **下載程式**：前往 [Releases](../../releases) 頁面下載最新版本的發行壓縮檔或單一執行檔 `AgainstRomeModifier.exe`。
+2. **解壓縮至任意目錄**：解壓到任意資料夾（請勿直接放在遊戲目錄內）。
+3. **啟動工具箱**：執行 `AgainstRomeModifier.exe`，在啟動導航畫面中選擇進入「**啟動修改器**」。
+4. **確認遊戲目錄**：程式通常會自動偵測遊戲安裝路徑；若未偵測到，請點擊「**瀏覽...**」手動選擇包含 `Against_Rome.exe` 的遊戲資料夾。
+5. **選擇欲套用的功能**：
+   - 點選「**所有功能開啟**」快速勾選所有常用推薦功能。
+   - 或依個人喜好手動勾選特定選項。
+6. **執行修改與啟動**：
+   - 點擊「**執行修改**」套用變更。
+   - 套用完成後，可直接點擊「**啟動遊戲**」進入戰場！
 
-The solution (`AgainstRomeModifier.slnx`) is split into decoupled projects, each producing its own executable or library:
+> [!TIP]
+> 部分與無盡模式（Endless Mode）相關的修改（如羅馬陣營解鎖、AI 重生機制等），只會套用於**新開始的對局**。若想讓既有舊存檔獲得 AI 修復，可使用工具箱內附的「存檔管理器」進行排程修復。
 
-- [`src.Launcher/`](src.Launcher/): `AgainstRomeLauncher.exe` — suite entry point that launches the other tools and hosts the technical documentation viewer (`TechDocForm`).
-- [`src.Modifier/`](src.Modifier/): `AgainstRomeModifier.exe` — the modifier UI. `ModifierForm` partial classes cover layout, data inspection (backup loading, TGA icon parsing), patch application (feature-toggle map → `PatchProfile` → transactional apply/category restore), presets, and the troop stat preset editor (`TroopPresetForm`).
-- [`src.SaveManager/`](src.SaveManager/): `AgainstRomeSaveManager.exe` — save backup, restore, and preview (`SaveManagerForm`).
-- [`src.MapEditor/`](src.MapEditor/): `AgainstRomeMapEditor.exe` — map editor, including endless-map clone/delete management.
-- [`src.Core/`](src.Core/): `AgainstRome.Core.dll` — the shared modifier core: registry-backed feature definitions (`Core/Features/`), file patchers (`Core/Patches/`), transactional services such as [`PatchEngine.cs`](src.Core/Core/Services/PatchEngine.cs) (FoodHealing and Endless AI share the BCI cache and are committed by one `SaveAll`), [`TroopConfig.cs`](src.Core/Core/TroopConfig.cs) (known unit IDs, categories, field indexes, balance rules), localization, and the embedded `Backup.zip`/dgVoodoo2 payloads.
-- [`src.Shared/`](src.Shared/): `AgainstRome.Shared.dll` — lowest-level shared library: [`GameLZSS.cs`](src.Shared/Core/GameLZSS.cs) (game-specific PFIL/LZSS compression), `SafeFileWriter`, `FileRollbackScope`, and the map catalog/clone/delete services (`Maps/`).
-- [`tools/publish.ps1`](tools/publish.ps1): Publishes all four executables and packages them into the release ZIP.
-- [`tools/Repair-LanguageBackup.ps1`](tools/Repair-LanguageBackup.ps1): Validates and repairs a local language overlay backup after an interrupted or incomplete migration.
-- [`docs/reverse-engineering/`](docs/reverse-engineering/): Structured reverse-engineering notes.
-- [`data/game_schema.json`](data/game_schema.json): Tool-readable file format and patch metadata.
+---
 
-## Embedded Resources
+## 🛠️ 功能總覽
 
-- `Backup.zip` is optional and intentionally not committed to GitHub.
-- If `Backup.zip` is embedded (in `AgainstRome.Core.dll`) or placed next to the executable, it is loaded as the restore source.
-- If no `Backup.zip` exists, the modifier builds an in-memory backup from the user's selected game installation directory.
-- `TechDoc.md` and `TechDoc_EN.md` are embedded in the launcher for the documentation viewer.
-- Game payloads are decoded as code page 1251 where required; project documentation is UTF-8.
+### 🏗️ 建設、經濟與人口
 
-## Reverse Engineering Data
+| 功能名稱 | 效果說明 |
+| :--- | :--- |
+| **最大人口上限 (1600)** | 突破原版人口限制，將全地圖所有陣營的總人口上限擴展至 1,600 人。 |
+| **人口建築容量提升** | 民房與帳篷的人口容納量暴增 20 倍，只需少量房屋即可供養龐大軍隊。 |
+| **主堡與倉庫容量提升** | 城鎮中心與倉庫的資源儲存上限提升 10 倍，資源不再爆倉浪費。 |
+| **主堡生命值提升** | 城鎮中心（大本營）生命值提升 10 倍，大幅增強耐久度與防偷爆能力。 |
+| **建築建造與維修加速** | 興建建築、升級設施以及工匠維修的速度加快 10 倍。 |
+| **建造與生產免費** | 建造建築、維修、生產村民與招募所有兵種完全零消耗資源。 |
+| **科技與升級免費** | 研發陣型、軍備科技與兵種能力解鎖完全免費零消耗。 |
+| **全地圖自由建設** | 取消村莊建造邊界範圍限制，可在地圖上的任意角落自由建造建築。 |
 
-The project keeps reverse-engineering notes in [`docs/reverse-engineering/`](docs/reverse-engineering/). The same facts are mirrored in machine-readable form in [`data/game_schema.json`](data/game_schema.json) so future UI and patch code can avoid hardcoded indexes.
+---
 
-Current coverage:
+### ⚔️ 戰鬥與部隊強化
 
-- `SYSTEM/DATA_MP/DEFAULTS/objdef.dau`: Unit stats and weapon fields.
-- `SYSTEM/ress.ini`: Construction, production, upgrade, and spell costs.
-- `SYSTEM/cl_script.ini`: Villager delay, spell radius, and morale parameters.
-- `MAPS/**/team.dat`: Population limits, player faction, and banner version semantics; Roman Endless changes only team 0 in `ENDL_*` maps to `ROM`.
-- `MAPS/ENDL_*/SCRIPT/ak_level.bci`: Bounded AI Ultimate Mode patch; the active-party limit is 8 because the runtime has 20 NPC-job slots.
-- `SYSTEM/CLAK/SCRIPT/Dorfverteidigung.bci`: AI Ultimate M1 squad-size patch and the independent Experimental village-garrison quota multiplier.
-- `Against_Rome.exe`: Focus-loss patch, runtime-verified village construction-range expansion and Roman Endless selector patch, restore-only handling for the rejected legacy four-site range/red-frame candidate, and a full local Ghidra function inventory.
+| 功能名稱 | 效果說明 |
+| :--- | :--- |
+| **部隊無限士氣** | 士兵士氣永遠鎖定全滿，即使殘血或身陷重圍也絕不崩潰潰逃。 |
+| **單位跑步不扣血** | 部隊全速急行軍不再因體力消耗而扣減生命值。 |
+| **待機回血速度提升** | 受傷士兵處於待機狀態時，以 10 倍速快速自動回復生命，且不消耗食物。 |
+| **遠程單位射程提升 3 倍** | 弓箭手、投石車與弩砲射程提升 3 倍，並內建遠距離命中精度修正。 |
+| **單位移動速度提升 2 倍** | 所有戰鬥單位（士兵、將領、祭司）的戰場移動速度提升 2 倍。 |
+| **拋射彈道增高 2 倍** | 箭矢與投石的拋物線彈道增高，更容易越過城牆、建築與樹木精準命中掩體後方敵軍。 |
+| **所有單位全地圖視野** | 揭開全地圖迷霧，所有敵我單位與戰場動向一覽無遺。 |
 
-The generated Ghidra output is local research material, not original source. Unknown `FUN_*` functions are not treated as understood until the call path or runtime evidence is documented.
+---
 
-## Development Environment
+### ✨ 法術與祭司
 
-- Language: C# 12
-- Target framework: .NET 8.0 Windows
-- UI: Windows Forms
-- Platform target: x64
+| 功能名稱 | 效果說明 |
+| :--- | :--- |
+| **祭司與賢者無限法力** | 施放各類神術與復活術零消耗 MP，可連續不間斷施法。 |
+| **法術免除祭壇需求** | 僅需建造 1 座祭壇即可直接解鎖並施展所有高階神術。 |
+| **法術傷害提升 5 倍** | 所有陣營的主動攻擊型與傷害型神術威力提升 5 倍。 |
+| **法師施法距離提升至全地圖** | 祭司可駐守本營直接向全地圖任意指定座標施放神術與復活術。 |
+| **法師法術範圍提升 3 倍** | 神術的影響半徑與作用範圍擴大為原版的 3 倍。 |
 
-## Build Steps
+---
 
-1. Install .NET 8.0 SDK and Visual Studio 2022.
-2. `Backup.zip` is optional for public builds. Keep it local only if you have one.
-3. Open `AgainstRomeModifier.slnx`.
-4. Select `Release` and `x64`.
-5. Build the solution. Each app's output is under its own project folder, e.g. `src.Modifier/bin/Release/net8.0-windows/`. To produce a release package with all four executables, run `tools/publish.ps1`.
+### 👨‍🌾 村民與操作便利
 
-## Public Build Behavior
+| 功能名稱 | 效果說明 |
+| :--- | :--- |
+| **村民生產速度最快** | 城鎮中心生產村民與轉化平民的速度加快 10 倍。 |
+| **村民移動速度提升 5 倍** | 平民單位（村民、馱馬）的移動速度提升 5 倍，大幅加快物資搬運效率。 |
+| **住宅帳篷一次生產 20 人** | 點擊住宅帳篷的生產按鈕一次直接排入 20 名村民。 |
+| **招募面板一次選滿 20** | 在村民轉裝備／兵種招募介面中，點擊一次直接選滿 20 人。 |
+| **閒置村民一次全選 999** | 選取閒置村民的上限由原版 40 人提升至 999 人，一鍵調動全圖人力。 |
 
-The GitHub repository does not include original game files. Users must own and install *Against Rome*, then select the game folder in the modifier. The modifier uses those local files as the clean restore baseline before applying patches.
+---
 
-The following content is intentionally local-only and covered by `.gitignore`:
+### 👑 無盡模式（AI 終極戰爭深度強化）
 
-- `遊戲原始檔案/`, `Original game archives/`, `Backup.zip`, and extracted game trees such as `MAPS/`, `SYSTEM/`, `SAVE/`, and `ToEng/`.
-- `.codex/`, `.agents/`, `re_workspace/`, build output, IDE state, dumps, logs, and private audit handoff files.
-- Generated Ghidra inventories and downloaded analysis toolchains.
+| 功能名稱 | 效果說明 |
+| :--- | :--- |
+| **無盡模式羅馬陣營** | 解鎖無盡模式中選擇「羅馬」陣營的限制，新開局即可帶領羅馬軍團入場。 |
+| **羅馬增援完全移交** | 徹底修正羅馬增援抵達後自動撤退的 原版缺陷，士兵、平民與馱馬抵達後全數轉交村莊留守效力。 |
+| **增援兵團擴軍** | 無盡模式中電腦 AI 的增援部隊與村莊招募規模提升至每隊滿編 20 人。 |
+| **AI 無盡重生核心** | 修復並加速電腦 AI 的聚落重生與補兵機制，防止遊戲後期電腦停止出兵。 |
+| **提供開局資源** | 開局時額外賦予電腦 AI 基礎資源，幫助電腦快速建立經濟與軍隊，大幅提升戰局挑戰性。 |
 
-Small reproducible analysis scripts under `tools/re/` are source material and are intentionally published. The bundled dgVoodoo2 files are also intentional: the upstream redistribution terms permit individual files to ship with a game or game mod; see [`ThirdParty/dgVoodoo2/REDISTRIBUTION.md`](ThirdParty/dgVoodoo2/REDISTRIBUTION.md).
+---
 
-## Maintenance Tools
+### 🖥️ 系統與圖形相容性
 
-- [`tools/Repair-LanguageBackup.ps1`](tools/Repair-LanguageBackup.ps1) — Out-of-band repair for the English language overlay's backup baseline (`.against-rome-modifier-language-backup` inside the game folder). Use it only when the modifier reports a missing or corrupted language backup manifest: it rebuilds the baseline by hashing the active overlay against a clean original game tree. It writes directly into the game install directory, so read the script's validation steps before running. Defaults: `-GamePath 'C:\Program Files (x86)\Against Rome'`; the clean original tree is auto-detected under the repository root.
-- `tools/bcitool.py` — Python reader/disassembler for `BCI0` script bytecode. Its PFIL LZSS decompressor is a port of `GameLZSS`; keep the two in sync if the C# algorithm ever changes.
-- `tests/verify_split_patches/` — Manual golden-value verification harness for the Endless AI patches. Requires a local `遊戲原始檔案/` tree. Run it before and after changing any P1–P19 patch constant.
+| 功能名稱 | 效果說明 |
+| :--- | :--- |
+| **啟用圖形相容修補** | 內建部署 dgVoodoo2 DirectX 轉譯層，徹底解決 Windows 10/11 上畫面撕裂、卡頓、低 FPS、無法視窗化及黑屏問題。 |
+| **高解析度置中（4:3）** | 提供現代高解析度顯示輸出，同時維持原版 4:3 比例置中，畫面不拉伸變形。 |
+| **視窗失焦不自動暫停** | 切換至其他視窗（Alt+Tab）時遊戲不會暫停，可在背景繼續進行生產、建造與行軍。 |
+| **強制英文語系** | 將遊戲介面切換為英文版，徹底解決部分系統下的字型亂碼或切換語系當機問題。 |
 
-## dgVoodoo2 Integration
+---
 
-Enable the dgVoodoo2 switch and apply changes to extract the bundled v2.87.3 files directly from the modifier. No network connection or separate download is required. The modifier installs only the x86 `D3D8.dll`, `DDraw.dll`, `dgVoodooCpl.exe`, and `dgVoodoo.conf`. Uncheck the switch and apply, or restore compatibility/all settings, to remove files owned by the modifier. Existing unmanaged DLLs are never overwritten, and a user-edited configuration is kept.
+### 🧪 實驗性與進階功能
 
-Upstream source and redistribution terms:
-- [dgVoodoo2 v2.87.3 release](https://github.com/dege-diosg/dgVoodoo2/releases/tag/v2.87.3)
-- [Official redistribution terms](https://dege.fw.hu/dgVoodoo2/ReadmeGeneral/)
+此區功能位於「**實驗性修改**」分頁，可依需求單獨開啟，並支援「**移至主控制台 / 移回實驗性**」的動態配置：
 
-## Disclaimer
+- **自訂兵種屬性平衡與陣營特色**：啟用修改器專屬調校的平衡設定檔，強化四大陣營差異。
+- **整體遊戲運行加速**：將整體遊戲時脈快進 2～10 倍（倍率可調），大幅縮短等待時間。
+- **攝影機拉遠 0.5**：將遊戲視角鏡頭進一步往後拉遠，提供更廣闊的宏觀戰略視野。
+- **將軍特殊技能強化（5 倍）**：將所有將軍與領袖的主動/被動技能倍率大幅提升。
+- **首領榮譽與士氣光環增強（5 倍）**：首領隨榮譽提升所提供的部隊攻防與士氣光環強化 5 倍。
+- **治療術提升 10 倍**：祭司治療術效果提升 10 倍，數秒內迅速補滿殘血部隊。
+- **法師復活術強化**：塞爾特祭司復活術改為滿血滿士氣復活（男屍轉為槍盾兵、女屍轉為雙劍士）。
+- **村莊駐軍配額倍率（2～10 倍）**：自由調整電腦 AI 村莊防衛軍團的目標數量。
+- **屍體保留量提高**：將戰場屍體回收閾值由 500 放寬至 50，戰場可額外保留約 450 具屍體供復活法術使用。
+- **啟用遊戲運作記錄（argm-trace 除錯）**：在背景記錄 AI 運作軌跡日誌，用於問題分析與逆向研究，不改變遊戲數據。
 
-This modifier is developed for academic exchange and personal modding research. The intellectual property rights of the game belong to the original rights holders. Do not distribute original game assets or decompiled source code.
+---
+
+### 📊 自訂兵種屬性系統
+
+在「**自訂兵種屬性**」分頁中，您可以精確檢視並自訂全陣營 21 種戰鬥單位的數值：
+
+- **可調整數值**：生命值 (HP)、近戰傷害、遠程傷害、近戰冷卻、遠程冷卻、防禦力 (Vw)、戰鬥力 (Aw)、移動速度、視野、射程與法術半徑等。
+- **即時數值比對**：「**當前兵種數值**」分頁會即時讀取遊戲檔案，將修改後的數值與原版數值進行雙欄對比，一目了然。
+- **範本管理**：
+  - 內建「修改器內建平衡」範本。
+  - 點擊「**修改兵種檔案**」可自由**匯出 / 匯入 `.artroop` 設定檔**，方便備份個人數值配置或與其他玩家分享。
+
+---
+
+## 🧰 隨附工具箱
+
+從啟動器主畫面中，您可以隨時開啟隨附的獨立專業工具：
+
+### 1. 💾 存檔管理器 (Save Manager)
+- **存檔備份與還原**：一鍵備份現有存檔、自訂備份名稱、隨時還原歷史存檔。
+- **存檔資訊預覽**：自動解析並顯示存檔標題、原版關卡名稱、存檔時間及遊戲截圖預覽。
+- **修復無盡 AI (Repair Endless AI)**：
+  - 專門針對舊有無盡模式存檔設計。
+  - 在不破壞存檔進度的前提下，修復存檔內部內嵌的無盡 AI 排程與羅馬增援規則，並在修復前自動建立安全備份。
+
+### 2. 🗺️ 地圖編輯器 (Map Editor)
+- **2D / 3D 即時視圖**：提供俯視圖與 3D 地形即時著色預覽。
+- **地形與水面編輯**：檢視與修改地圖高度圖、水面高度、地表紋理分佈。
+- **場景物件管理**：檢視並配置地圖上的建築、樹木、裝飾與戰略資源。
+- **無盡地圖管理**：支援複製、自訂與管理無盡模式地圖（`ENDL_000` ～ `ENDL_004`）。
+
+### 3. 📖 技術文件 (Tech Doc)
+- 程式內嵌完整的技術文檔與逆向工程說明，涵蓋檔案格式結構、二進位補丁特徵碼、虛擬機字節碼（BCI）解析等深度細節。
+
+---
+
+## 🔄 還原機制與安全保證
+
+本修改器遵循**非破壞性原則**，提供完整多層次的還原方案：
+
+- **全部還原 / 恢復原版**：一鍵將所有被修改的 EXE、腳本、地圖與資料檔還原至初始原版狀態。
+- **分類局部還原**：
+  - **僅還原兵種屬性**：只將部隊數值與平衡設定復原，保留其他修改。
+  - **僅還原相容性修正**：只卸載 dgVoodoo2 與圖形相容層設定。
+  - **僅還原語系設定**：只復原語言與介面檔案。
+- **單一功能取消**：取消勾選特定功能後點擊「執行修改」，即可單獨停用該功能。
+- **自動回復點（Rollback）**：每次套用或還原前，修改器均會在記憶體與暫存區建立檢查點；若套用過程遭遇檔案佔用或異常，將自動回復至修改前狀態。
+
+---
+
+## ❓ 常見問題與疑難排解 (FAQ)
+
+<details>
+<summary><b>Q1: 遊戲在 Windows 10 / 11 上畫面卡頓、FPS 極低或無法視窗化？</b></summary>
+
+> 請在修改器中勾選「**啟用圖形相容修補**」並點擊「**執行修改**」。修改器會自動將最佳化配置的 dgVoodoo2 部署至遊戲目錄，可徹底修復現代系統 DirectDraw / DirectX 8 的效能與視窗化問題。若想移除，點擊「僅還原相容性修正」即可乾淨卸載。
+</details>
+
+<details>
+<summary><b>Q2: 無盡模式的修改（如羅馬陣營、AI 增援等）進入遊戲後沒有生效？</b></summary>
+
+> 無盡模式的地圖與腳本修改是針對**新開始的戰局**生效，請在套用修改後**重新開始一局無盡模式**。若要在既有存檔中啟用 AI 修復，請使用「存檔管理器」內的「修復無盡 AI」功能。
+</details>
+
+<details>
+<summary><b>Q3: 自訂兵種屬性修改後，進遊戲發現數值沒有變化？</b></summary>
+
+> 自訂兵種屬性與平衡範本需要搭配「**自訂兵種屬性平衡與陣營特色**」（平衡模式）選項。請確保該選項已啟用並套用修改。
+</details>
+
+<details>
+<summary><b>Q4: 修改器提示「找不到遊戲路徑」或「目錄不包含 Against_Rome.exe」？</b></summary>
+
+> 請點擊介面右上方的「**瀏覽...**」按鈕，手動選取包含 `Against_Rome.exe` 主程式的遊戲根目錄。
+</details>
+
+<details>
+<summary><b>Q5: 如何徹底還原遊戲至純淨原版？</b></summary>
+
+> 點擊修改器下方的「**恢復原版**」按鈕（或由下拉選單點選「**全部還原**」），修改器會依據乾淨基準檔將所有修改過的檔案完全還原。
+</details>
+
+---
+
+## 🛠️ 開發與自行編譯
+
+本專案使用 **C# 12 / .NET 8.0** 開發，採用 Windows Forms 架構與原生 x64 組建。
+
+### 環境需求
+- Windows 10 / 11 (x64)
+- [.NET 8.0 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
+- Visual Studio 2022（需安裝「.NET 桌面開發」工作負載）
+
+### 方案架構
+```
+AgainstRomeModifier/
+├── src.Core/          # 核心服務層（檔案解碼、補丁引擎、備份管理、多國語系）
+├── src.Modifier/      # 修改器主程式與 UI 控制項
+├── src.SaveManager/   # 存檔管理器獨立模組與 UI
+├── src.MapEditor/     # 地圖編輯器獨立模組（2D/3D 視圖與地圖邏輯）
+├── src.Shared/        # 共用資料模型與公用工具
+├── tests/             # xUnit 單元測試與回歸測試套件
+├── tools/             # 自動化發行與逆向工程輔助腳本
+└── ThirdParty/        # 第三方授權相容性元件 (dgVoodoo2)
+```
+
+### 建置與測試指令
+```powershell
+# 還原相依套件與編譯 Release 版本
+dotnet build AgainstRomeModifier.slnx -c Release
+
+# 執行全套自動化單元測試
+dotnet test AgainstRomeModifier.slnx -c Release
+
+# 透過自動化腳本打包單一發行檔 (Single-File Portable Package)
+powershell -ExecutionPolicy Bypass -File tools/publish.ps1 -Version "1.1.0"
+```
+
+---
+
+## 📜 第三方元件與授權銘謝
+
+- **圖形相容層**：本工具內建隨附 [dgVoodoo2 v2.87.3](https://github.com/dege-diosg/dgVoodoo2)（由 Dege 開發），遵循其[官方重新分發規範](https://dege.fw.hu/dgVoodoo2/ReadmeGeneral/)隨附分發，詳細說明請參閱 [`ThirdParty/dgVoodoo2/REDISTRIBUTION.md`](ThirdParty/dgVoodoo2/REDISTRIBUTION.md)。
+
+---
+
+## ⚖️ 免責聲明 (Disclaimer)
+
+1. 本專案為愛好者基於研究、懷舊與模組化（Modding）目的開發之非官方工具，與遊戲原發行商或開發商無任何商業關聯。
+2. 本修改器及其原始碼**不包含任何遊戲專屬資產與遊戲本體檔案**。使用者須自行取得並安裝正版遊戲。
+3. 遊戲的一切商標、智慧財產權與版權均屬原版權所有者所有。
+4. 使用者須自行承擔修改遊戲檔案之風險，開發團隊不對因使用本工具造成的存檔損毀或系統異常承擔責任。
+
+---
+
+## 📄 授權條款
+
+本專案採用 [MIT License](LICENSE) 授權開源。

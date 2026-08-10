@@ -1,11 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
-using AgainstRomeModifier.Core.Services;
 using AgainstRomeModifier.Core.Features;
 
 namespace AgainstRomeModifier {
@@ -132,7 +130,7 @@ namespace AgainstRomeModifier {
             try {
                 return backupManager.EnsureBackupLoadedForGamePath(gamePath);
             } catch (Exception ex) {
-                Log("EnsureBackupLoadedForGamePath 發生錯誤: " + ex.Message);
+                Log(Loc.Get("LogEnsureBackupFailed") + ex.Message);
                 MessageBox.Show(ex.Message, Loc.Get("TitleError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return false;
             }
@@ -179,15 +177,15 @@ namespace AgainstRomeModifier {
 
                 await patchOperationRunner.ExecuteAsync(
                     rollback => patchEngine.ApplyPatches(gamePath, profile, backupManager, rollback),
-                    "已建立修改前檔案回復點。",
-                    "套用失敗，開始回復已修改的檔案。",
-                    "檔案回復流程已完成。");
+                    Loc.Get("LogCheckpointApply"),
+                    Loc.Get("LogRollbackStartedApply"),
+                    Loc.Get("LogRollbackDoneApply"));
                 Log(Loc.Get("LogApplyAllSuccess"));
                 MessageBox.Show(Loc.Get("MsgApplySuccess"), Loc.Get("TitleTips"), MessageBoxButtons.OK, MessageBoxIcon.Information);
                 try {
                     LoadCurrentData();
                 } catch (Exception uiEx) {
-                    Log("Reload current data failed after successful apply: " + uiEx.Message);
+                    Log(Loc.Get("LogReloadAfterApplyFailed") + uiEx.Message);
                 }
             } catch (Exception ex) {
                 Log(Loc.Get("MsgApplyFailed") + ex.Message + "\r\n" + ex.StackTrace);
@@ -229,8 +227,8 @@ namespace AgainstRomeModifier {
                 await patchOperationRunner.ExecuteAsync(
                     rollback => operation(gamePath, rollback),
                     checkpointMessage,
-                    "還原失敗，開始回復變更。",
-                    "還原失敗後的回復流程已完成。");
+                    Loc.Get("LogRollbackStartedRestore"),
+                    Loc.Get("LogRollbackDoneRestore"));
 
                 foreach (FeatureCategory category in resetCategories) {
                     ResetTogglesForCategory(category, gamePath);
@@ -241,7 +239,7 @@ namespace AgainstRomeModifier {
                 try {
                     LoadCurrentData();
                 } catch (Exception uiEx) {
-                    Log("Reload current data failed after successful restore: " + uiEx.Message);
+                    Log(Loc.Get("LogReloadAfterRestoreFailed") + uiEx.Message);
                 }
             } catch (Exception ex) {
                 Log(Loc.Get("MsgRestoreFailed") + ex.Message + "\r\n" + ex.StackTrace);
@@ -258,7 +256,7 @@ namespace AgainstRomeModifier {
             requireExe: true, requireBackup: true,
             (gamePath, rollback) => patchEngine.RestoreOriginalFiles(gamePath, backupManager, rollback),
             new[] { FeatureCategory.Stats, FeatureCategory.Compat, FeatureCategory.Language },
-            "已建立還原前檔案回復點。",
+            Loc.Get("LogCheckpointRestoreAll"),
             "LogStartRestoreAll", "LogRestoreAllDone", "MsgRestoreAllSuccess");
 
         /// <summary>
@@ -320,21 +318,21 @@ namespace AgainstRomeModifier {
             requireExe: false, requireBackup: true,
             (gamePath, rollback) => patchEngine.RestoreStatsOnly(gamePath, backupManager, rollback),
             new[] { FeatureCategory.Stats },
-            "已建立屬性檔案回復點。",
+            Loc.Get("LogCheckpointRestoreStats"),
             "LogStartRestoreStats", "LogRestoreStatsDone", "MsgRestoreStatsSuccess");
 
         private void RestoreCompatOnly() => _ = RunGuardedRestore(
             requireExe: false, requireBackup: false,
             (gamePath, rollback) => patchEngine.RestoreCompatOnly(gamePath, backupManager, rollback),
             new[] { FeatureCategory.Compat },
-            "已建立相容性檔案回復點。",
+            Loc.Get("LogCheckpointRestoreCompat"),
             "LogStartRestoreCompat", "LogRestoreCompatDone", "MsgRestoreCompatSuccess");
 
         private void RestoreLanguageOnly() => _ = RunGuardedRestore(
             requireExe: false, requireBackup: false,
             (gamePath, rollback) => patchEngine.RestoreLanguageOnly(gamePath, rollback),
             new[] { FeatureCategory.Language },
-            "已建立語言檔案回復點。",
+            Loc.Get("LogCheckpointRestoreLang"),
             "LogStartRestoreLang", "LogRestoreLangDone", "MsgRestoreLangSuccess");
     }
 }

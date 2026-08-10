@@ -1,7 +1,6 @@
 using System;
 using System.IO;
 using System.IO.Compression;
-using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Collections.Generic;
@@ -9,10 +8,8 @@ using System.Globalization;
 using System.Windows.Forms;
 using System.Drawing;
 using AgainstRomeModifier.Core.Patches;
-using System.Drawing.Drawing2D;
 using AgainstRomeModifier.Core.Features;
 using AgainstRomeModifier.Core.Services;
-using System.Runtime.InteropServices;
 
 namespace AgainstRomeModifier {
     public partial class ModifierForm {
@@ -88,7 +85,7 @@ namespace AgainstRomeModifier {
                 string[] lines = iniText.Split(new string[] { "\r\n", "\n" }, System.StringSplitOptions.RemoveEmptyEntries);
                 Dictionary<string, string> unitToTga = new Dictionary<string, string>();
                 foreach (string line in lines) {
-                    if (line.StartsWith("Fig") && line.Contains(",")) {
+                    if (line.StartsWith("Fig", StringComparison.Ordinal) && line.Contains(',')) {
                         string[] parts = PatchText.ParseCsvLine(line);
                         if (parts.Length >= 2) {
                             string key = parts[0].Trim();
@@ -126,7 +123,7 @@ namespace AgainstRomeModifier {
                         }
                     }
                 }
-                Log(string.Format("成功載入 {0} 個兵種圖示。", unitIcons.Count));
+                Log(string.Format(Loc.Get("LogIconsLoaded"), unitIcons.Count));
             } catch (Exception ex) {
                 Log(Loc.Get("LogLoadIconFailed") + ex.Message + "\r\n" + ex.StackTrace);
             }
@@ -271,7 +268,7 @@ namespace AgainstRomeModifier {
             if (!string.IsNullOrEmpty(gamePath) && Directory.Exists(gamePath)) {
                 LoadDefaultStatsData();
             } else {
-                Log("請先在右上角設定遊戲路徑。");
+                Log(Loc.Get("LogSetGamePathFirst"));
             }
         }
 
@@ -330,7 +327,7 @@ namespace AgainstRomeModifier {
                     string typeText = Loc.GetUnitType(utype);
                     string styleText = Loc.GetStyleText(style);
 
-                    var iconImage = unitIcons.ContainsKey(key) ? unitIcons[key] : null;
+                    var iconImage = unitIcons.TryGetValue(key, out var icon) ? icon : null;
                     double[] bases = unitStatsProjection.Project(key, displayProfile);
 
                     double displayMeleeDam = 0;
@@ -431,10 +428,13 @@ namespace AgainstRomeModifier {
                     return;
                 }
 
-                // 呼叫解耦的 patchEngine 進行全方位修改狀態偵測
-                PatchProfile profile = patchEngine.DetectCurrentPatchState(gamePath, backupManager);
-
+                // 全方位修改狀態偵測只在要回寫 UI 開關時才做：那是整個流程最貴的一段
+                // （實測約 300 ms，會重讀並解壓 objdef.dau、5 張 ENDL 的 ak_level.bci 與
+                // 42 個聚落樣板）。syncUIWithFile = false 的呼叫端（切換語系重繪表格）
+                // 完全用不到偵測結果，過去卻照樣付這筆成本。
                 if (syncUIWithFile) {
+                    PatchProfile profile = patchEngine.DetectCurrentPatchState(gamePath, backupManager);
+
                     chkBalance.CheckedChanged -= ChkBalance_CheckedChanged;
                     chkAllUnitsEntireMapVision.CheckedChanged -= ChkAllUnitsEntireMapVision_CheckedChanged;
                     chkRangedRange3x.CheckedChanged -= ChkRangedRange3x_CheckedChanged;
@@ -472,7 +472,7 @@ namespace AgainstRomeModifier {
                                 spellRadMultVal = r / 500.0;
                             }
                         }
-                    } catch (Exception ex) { Log("讀取 cl_script.ini 法術半徑失敗，將以原版半徑顯示: " + ex.Message); }
+                    } catch (Exception ex) { Log(Loc.Get("LogSpellRadiusReadFailed") + ex.Message); }
                 }
                 string src = Path.Combine(gamePath, @"SYSTEM\DATA_MP\DEFAULTS\objdef.dau");
                 byte[]? dauBytes;
@@ -567,7 +567,7 @@ namespace AgainstRomeModifier {
                     string tier = TroopConfig.UnitMeta[key].Tier;
                     string tierText = Loc.GetTierText(tier);
 
-                    var iconImage = unitIcons.ContainsKey(key) ? unitIcons[key] : null;
+                    var iconImage = unitIcons.TryGetValue(key, out var icon) ? icon : null;
                     var dgvCurrent = currentStatsGrids[faction];
                     dgvCurrent.Rows.Add(
                         displayName,

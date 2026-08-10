@@ -1,9 +1,3 @@
-using System;
-using System.IO;
-using System.Linq;
-using Xunit;
-using AgainstRomeModifier;
-
 namespace AgainstRomeModifier.Tests
 {
     public class ExperimentalFeaturesTests : IDisposable
@@ -27,6 +21,7 @@ namespace AgainstRomeModifier.Tests
 
         public void Dispose()
         {
+            GC.SuppressFinalize(this);
             // 還原原有的設定檔
             try
             {

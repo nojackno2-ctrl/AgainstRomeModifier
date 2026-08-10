@@ -1,7 +1,4 @@
-using System;
-using Xunit;
 using Xunit.Abstractions;
-using AgainstRomeModifier;
 
 namespace AgainstRomeModifier.Tests
 {

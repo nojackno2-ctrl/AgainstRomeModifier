@@ -1,7 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-
 namespace AgainstRomeModifier {
     public enum Language {
         TraditionalChinese,
@@ -57,6 +53,9 @@ namespace AgainstRomeModifier {
             _currentLanguage = language;
         }
 
+        private static readonly System.Text.Json.JsonSerializerOptions IndentedJson =
+            new() { WriteIndented = true };
+
         private static void LoadLanguagePreference() {
             bool languageLoaded = false;
             try {
@@ -82,7 +81,7 @@ namespace AgainstRomeModifier {
                             }
                         }
                         _promotedFeatures.Clear();
-                        if (doc.RootElement.TryGetProperty("PromotedFeatures", out var promoted) &&
+                        if (doc.RootElement.TryGetProperty(nameof(AppSettings.PromotedFeatures), out var promoted) &&
                             promoted.ValueKind == System.Text.Json.JsonValueKind.Array) {
                             foreach (var feature in promoted.EnumerateArray()) {
                                 if (feature.ValueKind == System.Text.Json.JsonValueKind.String &&
@@ -120,7 +119,7 @@ namespace AgainstRomeModifier {
                     Language = _currentLanguage.ToString(),
                     PromotedFeatures = _promotedFeatures.ToList()
                 };
-                string json = System.Text.Json.JsonSerializer.Serialize(settings, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+                string json = System.Text.Json.JsonSerializer.Serialize(settings, IndentedJson);
                 File.WriteAllText(configFile, json);
             }
             catch {
@@ -450,6 +449,23 @@ namespace AgainstRomeModifier {
             { "LogIconIniNotFound", "記憶體備份中找不到 icon.ini，無法載入兵種圖示。" },
             { "LogObjdefNotFound", "記憶體備份中找不到 objdef.dau，無法載入自訂兵種屬性。" },
             { "LogNoObjdefForRead", "找不到任何 objdef.dau 檔案，無法讀取設定。" },
+            { "LogIconsLoaded", "成功載入 {0} 個兵種圖示。" },
+            { "LogStartupMigrationFailed", "舊版腳本安全遷移失敗: " },
+            { "LogSetGamePathFirst", "請先在右上角設定遊戲路徑。" },
+            { "LogSpellRadiusReadFailed", "讀取 cl_script.ini 法術半徑失敗，將以原版半徑顯示: " },
+            { "LogCustomTroopStatsApplied", "已套用自訂兵種屬性配置。" },
+            { "LogEnsureBackupFailed", "載入或建立遊戲備份時發生錯誤: " },
+            { "LogCheckpointApply", "已建立修改前檔案回復點。" },
+            { "LogCheckpointRestoreAll", "已建立還原前檔案回復點。" },
+            { "LogCheckpointRestoreStats", "已建立屬性檔案回復點。" },
+            { "LogCheckpointRestoreCompat", "已建立相容性檔案回復點。" },
+            { "LogCheckpointRestoreLang", "已建立語言檔案回復點。" },
+            { "LogRollbackStartedApply", "套用失敗，開始回復已修改的檔案。" },
+            { "LogRollbackDoneApply", "檔案回復流程已完成。" },
+            { "LogRollbackStartedRestore", "還原失敗，開始回復變更。" },
+            { "LogRollbackDoneRestore", "還原失敗後的回復流程已完成。" },
+            { "LogReloadAfterApplyFailed", "套用成功後重新讀取現況失敗: " },
+            { "LogReloadAfterRestoreFailed", "還原成功後重新讀取現況失敗: " },
             { "SaveDetailGameSave", "存檔類型: 遊戲存檔\n\n資料夾: {0}\n\n存檔標題: {1}\n\n原版關卡: {2}\n\n存檔時間: {3}" },
             { "SaveDetailBackup", "存檔類型: 備份檔案\n\n備份檔名: {0}\n\n原資料夾: {1}\n\n存檔標題: {2}\n\n原版關卡: {3}\n\n備份時間: {4}" },
             { "MsgSelectBackup", "請先選擇要還原的備份。" },
@@ -786,6 +802,23 @@ namespace AgainstRomeModifier {
             { "LogIconIniNotFound", "icon.ini not found in backup memory. Cannot load unit icons." },
             { "LogObjdefNotFound", "objdef.dau not found in backup memory. Cannot load custom unit stats." },
             { "LogNoObjdefForRead", "No objdef.dau file found to read." },
+            { "LogIconsLoaded", "Loaded {0} unit icons." },
+            { "LogStartupMigrationFailed", "Legacy script safe migration failed: " },
+            { "LogSetGamePathFirst", "Set the game path in the top-right corner first." },
+            { "LogSpellRadiusReadFailed", "Failed to read the spell radius from cl_script.ini; showing the original radius: " },
+            { "LogCustomTroopStatsApplied", "Custom unit stats applied." },
+            { "LogEnsureBackupFailed", "Failed to load or create the game backup: " },
+            { "LogCheckpointApply", "Created a restore point before applying." },
+            { "LogCheckpointRestoreAll", "Created a restore point before restoring." },
+            { "LogCheckpointRestoreStats", "Created a restore point for the stats files." },
+            { "LogCheckpointRestoreCompat", "Created a restore point for the compatibility files." },
+            { "LogCheckpointRestoreLang", "Created a restore point for the language files." },
+            { "LogRollbackStartedApply", "Apply failed; rolling back the modified files." },
+            { "LogRollbackDoneApply", "File rollback completed." },
+            { "LogRollbackStartedRestore", "Restore failed; rolling back the changes." },
+            { "LogRollbackDoneRestore", "Rollback after the failed restore completed." },
+            { "LogReloadAfterApplyFailed", "Reloading the current state after a successful apply failed: " },
+            { "LogReloadAfterRestoreFailed", "Reloading the current state after a successful restore failed: " },
             { "SaveDetailGameSave", "Save Type: Game Save\n\nFolder: {0}\n\nSave Title: {1}\n\nOriginal Level: {2}\n\nSave Time: {3}" },
             { "SaveDetailBackup", "Save Type: Backup File\n\nBackup File: {0}\n\nOriginal Folder: {1}\n\nSave Title: {2}\n\nOriginal Level: {3}\n\nBackup Time: {4}" },
             { "MsgSelectBackup", "Please select a backup to restore first." },

@@ -25,6 +25,20 @@
 - **§1.7 別名收斂**：刪除 `PatchEngine.DetectCurrentPatchProfile`（僅是 `DetectCurrentPatchState` 的別名），唯一產品呼叫端改直接呼叫本尊。
 - **§1.4 前置**：刪除 `ModifierForm.Data` 的私有 `ParseCsvLine`，改用 `PatchText.ParseCsvLine`（行為相同）。
 
+## ✅ 2026-07-26 結案前全面審查完成的項目（287 測試全綠、build 0 警告）
+
+- **§3.4（已決策並執行）**：使用者確認「所有功能關閉」應涵蓋全部開關。`BtnEnableAll_Click` / `BtnDisableAll_Click` 改以 `featureToggles` 表驅動，排除規則集中在 `ModifierForm.EnableAllExcludedFeatureIds`；`chkCorpseRetention` 漏網的 bug 修正。新增 2 個 `ModifierFormPresetTests` 鎖住雙向涵蓋範圍。（`ApplyLanguageToUI` 的 id→LocKey 對照仍為手寫，未一併表驅動。）
+- **§2.3（已決策並執行）**：`tests/verify_split_patches/` 與 `EndlessAiOrchestrator.DetectGlobalState` 整組刪除，`.github/workflows/ci.yml` 的 restore/build 兩行同步移除，README ×2 / TechDoc ×2 已更新。
+- **§2.5（已完成，結果為零）**：寫腳本交叉比對 `Loc` 字典 key 與全 repo 字串字面值——**沒有孤兒 key**，En/Zh key 集合也完全一致。改為新增 `LocalizationParityTests` 持續守住這件事，而不是一次性清理。
+- **§4.1 效能**：`FeatureRegistry.GetDisabledValue` 改為 `Dictionary` O(1) 查表。
+- **§4 新發現（比 §4.1~4.6 都重要）**：`LoadCurrentData(syncUIWithFile: false)` 會做整套 `DetectCurrentPatchState`（實測 315 ms）再把結果丟掉——切換語系每次都付這筆錢。偵測已移入 `syncUIWithFile` 分支。
+- **§1.7 / §2.1 殘餘死碼**：`PatchEngine.SafeWriteAllBytes` 轉呼叫、`Map3DViewControl._baselineTextures`（write-only）與其空殼 `CommitBaseline`、`ConfigureSettingsCard` 未使用的 `height` 參數（連帶 8 個死魔法數字）、50 個檔案共 73 條未使用 `using` 全數移除。
+- **§5.2 硬編碼中文**：修改器內 17 條 log / 回復點訊息改走 `Loc`。
+- **§5.3 靜默 catch**：`SaveManagerForm.RefreshSavesAndBackups` 最後一處全靜默 catch 補上錯誤顯示。
+- **記憶體**：`ModernTabControl` 每次重繪 new 一個粗體 `Font`（GDI handle）改為快取；`ModifierForm.menuRestore`、`SaveManagerForm` 最後一張預覽圖補上 Dispose；`TgaDecoder` 加上 `width*height*4` 溢位守衛。
+
+**實測結論（勿再盲目「優化啟動」）**：啟動總成本約 150 ms（Backup.zip 20–45 ms、啟動安全遷移 10–25 ms、gui.dat 圖示 60 ms）。真正的重頭戲是隨選的 `DetectCurrentPatchState` 315 ms（Objdef 150 ms + Endless AI BCI 100 ms）。
+
 ### ⚠️ §3.4 執行前必須先決策（發現潛藏不一致，未擅自更動）
 
 盤點 `BtnDisableAll_Click` / `BtnEnableAll_Click` 時發現：`chkCorpseRetention`（屍體保留量）在**兩個方法裡都完全沒出現**——`featureToggles` 有 42 個開關，但「所有功能關閉」只重設 41 個，漏掉屍體保留。因此若把 §3.4 直接改成「迴圈遍歷 `featureToggles`」會**順手改變行為**（讓 DisableAll 也重設 CorpseRetention），這不是純行為保留重構。
@@ -33,7 +47,22 @@
 
 **建議**：§3.4 執行前，先請使用者確認「DisableAll/EnableAll 是否應涵蓋 CorpseRetention」等既有涵蓋範圍（這是功能決策），再連同 UI 目視驗證一起做。切勿當成無腦機械替換。
 
-**其餘尚未執行**的高價值項目：§3.1（UI 樣板去重 / `DarkFormBase`，需 UI 目視驗證）、§1.4（UI 解析下沉 + `CurrentStatsReader`）、§9.3（MapEditor 在地化統一）、§7.1（Directory.Build.props + 分析器）。
+## ✅ 2026-07-27 完成 §7.1（建置基礎收斂 + 分析器常設化）
+
+驗證：Debug/Release build 皆 **0 警告 0 錯誤**（Release 另加 `-warnaserror` 通過）、xUnit **287/287**（與變更前基準線相同）。
+
+- **`Directory.Build.props`（新增）**：五個 csproj 重複的 `LangVersion` / `Nullable` / `PlatformTarget` / `EnableWindowsTargeting` / `WarningsAsErrors=nullable` 收斂到一處，並統一 `InternalsVisibleTo` 到測試組件。所有屬性以 `'$(MSBuildProjectExtension)' == '.csproj'` 設限，避免影響 `build/argm-trace` 的 CMake `.vcxproj`。`TargetFramework` 刻意不收斂（src.Shared 是 net8.0，其餘 net8.0-windows）。副作用：src.Shared 現在也是 x64（CI 本來就以 `-p:PlatformTarget=x64` 全域指定，行為一致）。
+- **`.editorconfig`（新增）**：分析器（`EnableNETAnalyzers` + `AnalysisLevel=latest-recommended` + `EnforceCodeStyleInBuild`）開啟後產生 **567 筆**警告，逐條分類後訂出政策——有正確性/維護價值的設 `warning` 並全數修掉，純風格與微效能的設 `none` 並在檔內寫明關閉理由（依 §4「不要為效能犧牲可讀性」）。關閉清單：CA1707（測試命名與 P4_/P13_ 逆向編號，§0.6 禁改）、CA1305、CA1861、CA1863、CA1859、CA1870、CA1822、CA1000、CA1720。
+- **IDE0005 的實際收穫**：上一輪已人工清掉 73 條多餘 using，分析器仍再抓出 **28 條**漏網（`dotnet format style --diagnostics IDE0005` 自動移除）。這正是把一次性清理換成常設守門的價值。`GenerateDocumentationFile=true` 是 IDE0005 在編譯期回報的前提（Roslyn 已知限制），連帶關閉 CS1591，並在 `tools/publish.ps1` 比照 pdb 一併剔除產生的 .xml。
+- **修掉的正確性問題**（非純風格）：
+  - CA1310 ×18：`P13_SettlementTemplatePatch`、`ObjdefFeatureDetector`、`GameMapCatalog` 等解析 ASCII 遊戲資料的 `StartsWith/EndsWith` 全部改 `StringComparison.Ordinal` 或 char 多載。
+  - **CA1305 兩處實質風險**（規則整體關閉，但這兩處手動修）：`ClScriptPatcher.GetPatchedBytes` 的 5 個 `string.Format` 是**寫入 cl_script.ini 的路徑**、`TroopPresetCodec.Write` 的時間戳在泰國曆等地區設定下會寫出錯誤年份。兩者改為顯式 `CultureInfo.InvariantCulture`。
+  - CA1854 ×9（`ContainsKey` + 索引子雙查表）、CA1869 ×8（每次序列化都 new `JsonSerializerOptions`，收斂為新的 `src.Shared` 共用 `JsonDefaults.Indented`）、CA1816/CA1845/CA1847/CA2249/CA1507/CA1512/CA1865/CA1866/CA1805 各數處。
+  - CA1051 ×2：`MapTextDocument` 的 `protected` 欄位改屬性（衍生型別全在同檔，變更封閉）。
+- **CA1069 為誤判、以 `#pragma` 局部抑制**：`RessIndex.FigSiegeBuildCost*` 與 `BauBuildCost*` 同為 1/6 是**刻意的語意別名**——攻城武器與建築共用 objres 第 1~6 欄，已載於 `docs/reverse-engineering/ress-fields.csv` 與 `data/game_schema.json`，兩組名稱讓 `RessPatcher` 的兩個判斷各自可讀。已在原處補上理由註解。
+- **CI**：改以 `dotnet build ... -warnaserror` 守門。⚠️ **刻意未採用**計畫原本建議的 `dotnet format --verify-no-changes`——實測它要求重排全 repo 空白（單行陣列初始化器全部拆行等，49+ 檔），本專案 Core 與其餘目錄本來就並存 K&R 與 Allman 兩種風格，導入等於一次無關的大規模 reformat。`-warnaserror` 已能達成「不再累積死碼／多餘 using」的原始目的，成本低得多。
+
+**其餘尚未執行**的高價值項目：§3.1（UI 樣板去重 / `DarkFormBase`，需 UI 目視驗證）、§1.4（UI 解析下沉 + `CurrentStatsReader`）、§9.3（MapEditor 在地化統一）。
 
 ---
 

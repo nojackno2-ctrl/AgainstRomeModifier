@@ -13,7 +13,6 @@ internal sealed class Map3DViewControl : GLControl
     private readonly EditorCamera _camera = new();
     private readonly HashSet<int> _paintedInDrag = new();
     private string[]? _textures;
-    private string[]? _baselineTextures;
     private TerrainHeightField? _heights;
     private FloorTextureLibrary? _library;
     private FloorTextureAtlas? _atlas;
@@ -51,7 +50,9 @@ internal sealed class Map3DViewControl : GLControl
     public event EventHandler? StrokeEnded;
     public event EventHandler<SceneObjectMoveEventArgs>? SceneObjectMoved;
 
-    public bool LoadTextures(int dimension, IReadOnlyList<string> textures, IReadOnlyList<string> baselineTextures, string mapDirectory, FloorTextureLibrary floorTextures, IReadOnlyList<MapSceneObject> sceneObjects, float waterLevel, float heightMapStep, Color waterColor)
+    // 3D 檢視不繪製「與已儲存基準的差異」高亮（那是 2D MapCanvasControl 的職責），
+    // 因此這裡不需要 baselineTextures。
+    public bool LoadTextures(int dimension, IReadOnlyList<string> textures, string mapDirectory, FloorTextureLibrary floorTextures, IReadOnlyList<MapSceneObject> sceneObjects, float waterLevel, float heightMapStep, Color waterColor)
     {
         LastFailureReason = null;
         string heightSource = Path.Combine(mapDirectory, "boden.bmp");
@@ -62,7 +63,7 @@ internal sealed class Map3DViewControl : GLControl
         byte[] samples = ReadSamples(bitmap);
         // A 257x257 source covers the complete 64x64 tile map (four height samples per tile).
         _heights = new TerrainHeightField(bitmap.Width, bitmap.Height, samples, tileWidth: dimension, tileHeight: dimension);
-        _dimension = dimension; _textures = textures.ToArray(); _baselineTextures = baselineTextures.ToArray(); _objects = sceneObjects; _waterLevel = waterLevel; _heightMapStep = heightMapStep; _waterSourceColor = waterColor;
+        _dimension = dimension; _textures = textures.ToArray(); _objects = sceneObjects; _waterLevel = waterLevel; _heightMapStep = heightMapStep; _waterSourceColor = waterColor;
         _atlas?.Dispose(); _atlas = FloorTextureAtlas.Create(_textures, _library);
         BuildMesh();
         if (_initialized) UploadResources();
@@ -230,12 +231,6 @@ internal sealed class Map3DViewControl : GLControl
         if (_movingSceneObject && e.Button == MouseButtons.Left) TryMoveSceneObject(e.Location, completed: true);
         _painting = _movingSceneObject = _panning = _rotating = _rightClick = false; _paintedInDrag.Clear();
         if (wasPainting) StrokeEnded?.Invoke(this, EventArgs.Empty);
-    }
-
-    /// <summary>把目前材質設為「已儲存基準」（3D 未渲染變更高亮，僅維持狀態一致）。</summary>
-    public void CommitBaseline()
-    {
-        if (_textures is not null) _baselineTextures = (string[])_textures.Clone();
     }
 
     /// <summary>將攝影機對焦到指定 tile，供場景物件清單跳轉使用。</summary>

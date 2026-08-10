@@ -38,7 +38,7 @@ namespace AgainstRomeModifier {
         private Button btnCancel = null!;
 
         // 狀態與拖曳變數
-        private bool dragging = false;
+        private bool dragging;
         private Point dragStart = new Point(0, 0);
 
         // 字型物件
@@ -345,14 +345,13 @@ namespace AgainstRomeModifier {
                 string factionText = Loc.GetFactionName(faction);
                 string tierText = Loc.GetTierText(tier);
 
-                var iconImage = unitIcons.ContainsKey(key) ? unitIcons[key] : null;
+                var iconImage = unitIcons.TryGetValue(key, out var icon) ? icon : null;
 
                 // 自訂功能只保留 HP、傷害、防禦、戰鬥、視野、攻擊冷卻；速度/射程/法術欄位已移除。
                 double hp, dmg, vw, aw, speed, sight, relt, range, spellRadius;
                 var baselineStats = statsService.GetBalanced(key);
                 var independentStats = statsService.GetOriginal(key);
-                if (CustomStats.ContainsKey(key)) {
-                    var stats = CustomStats[key];
+                if (CustomStats.TryGetValue(key, out var stats)) {
                     hp = stats[0];
                     dmg = stats[1];
                     vw = stats[2];
@@ -363,20 +362,20 @@ namespace AgainstRomeModifier {
                     range = independentStats.Length > 7 ? independentStats[7] : 0;
                     spellRadius = independentStats.Length > 8 ? independentStats[8] : 0;
                 } else {
-                    var stats = baselineStats;
-                    hp = stats.Length > 0 ? stats[0] : 0;
-                    dmg = stats.Length > 1 ? stats[1] : 0;
-                    vw = stats.Length > 2 ? stats[2] : 0;
-                    aw = stats.Length > 3 ? stats[3] : 0;
-                    speed = stats.Length > 4 ? stats[4] : 0;
-                    sight = stats.Length > 5 ? stats[5] : 0;
-                    relt = stats.Length > 6 ? stats[6] : 0;
-                    range = stats.Length > 7 ? stats[7] : 0;
-                    spellRadius = stats.Length > 8 ? stats[8] : 0;
+                    double[] fallback = baselineStats;
+                    hp = fallback.Length > 0 ? fallback[0] : 0;
+                    dmg = fallback.Length > 1 ? fallback[1] : 0;
+                    vw = fallback.Length > 2 ? fallback[2] : 0;
+                    aw = fallback.Length > 3 ? fallback[3] : 0;
+                    speed = fallback.Length > 4 ? fallback[4] : 0;
+                    sight = fallback.Length > 5 ? fallback[5] : 0;
+                    relt = fallback.Length > 6 ? fallback[6] : 0;
+                    range = fallback.Length > 7 ? fallback[7] : 0;
+                    spellRadius = fallback.Length > 8 ? fallback[8] : 0;
                 }
 
-                if (factionGrids.ContainsKey(faction)) {
-                    int rowIndex = factionGrids[faction].Rows.Add(
+                if (factionGrids.TryGetValue(faction, out var factionGrid)) {
+                    int rowIndex = factionGrid.Rows.Add(
                         iconImage,
                         key,
                         displayName,
@@ -390,7 +389,7 @@ namespace AgainstRomeModifier {
                         Math.Round(relt).ToString()
                     );
                     if (utype == "priest")
-                        factionGrids[faction].Rows[rowIndex].Cells["Sight"].ReadOnly = true;
+                        factionGrid.Rows[rowIndex].Cells["Sight"].ReadOnly = true;
                 }
             }
         }

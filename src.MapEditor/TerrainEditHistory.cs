@@ -19,7 +19,7 @@ internal sealed class TerrainEditHistory
 
     public TerrainEditHistory(int dimension, IReadOnlyList<string> textures)
     {
-        if (dimension <= 0) throw new ArgumentOutOfRangeException(nameof(dimension));
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(dimension);
         if (textures.Count != dimension * dimension) throw new ArgumentException("材質數量與地圖尺寸不符。", nameof(textures));
         _dimension = dimension;
         _current = textures.ToArray();

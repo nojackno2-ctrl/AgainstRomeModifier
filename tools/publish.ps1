@@ -68,6 +68,11 @@ foreach ($app in $apps) {
 # Remove pdb files
 Get-ChildItem -Path $stagingDir -Filter "*.pdb" -Recurse | Remove-Item -Force
 
+# Remove XML doc files. Directory.Build.props sets GenerateDocumentationFile=true
+# purely so IDE0005 (redundant using) is reported at build time; the docs are not
+# part of the shipped package.
+Get-ChildItem -Path $stagingDir -Filter "*.xml" -Recurse | Remove-Item -Force
+
 # 5. Create ZIP archive
 $zipName = "AgainstRomeModifier_v$Version`_win-x64.zip"
 $zipPath = Join-Path $repoRoot $zipName

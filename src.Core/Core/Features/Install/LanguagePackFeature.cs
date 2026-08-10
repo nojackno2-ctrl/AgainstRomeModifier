@@ -135,7 +135,7 @@ internal sealed class LanguagePackFeature
                 Directory.CreateDirectory(tempRoot);
                 File.WriteAllText(
                     Path.Combine(tempRoot, LanguageBackupManifestName),
-                    JsonSerializer.Serialize(manifest, new JsonSerializerOptions { WriteIndented = true }),
+                    JsonSerializer.Serialize(manifest, JsonDefaults.Indented),
                     Encoding.UTF8);
                 Directory.Move(tempRoot, backupRoot);
             }

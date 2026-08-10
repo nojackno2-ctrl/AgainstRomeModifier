@@ -24,7 +24,7 @@ internal sealed class TerrainBlendAuthoringMap
 
     public TerrainBlendAuthoringMap(int tileDimension, string initialMaterialId)
     {
-        if (tileDimension <= 0) throw new ArgumentOutOfRangeException(nameof(tileDimension));
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(tileDimension);
         if (string.IsNullOrWhiteSpace(initialMaterialId)) throw new ArgumentException("初始地表材質不可為空。", nameof(initialMaterialId));
         TileDimension = tileDimension;
         CornerDimension = tileDimension + 1;

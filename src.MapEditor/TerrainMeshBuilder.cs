@@ -10,7 +10,7 @@ internal static class TerrainMeshBuilder
     // Tiles intentionally own their four vertices: a shared 257x257 grid cannot address a distinct atlas UV per tile.
     public static TerrainMeshData Build(TerrainHeightField field, int dimension, Func<int, int, Vector2[]> uvForTile)
     {
-        if (dimension <= 0) throw new ArgumentOutOfRangeException(nameof(dimension));
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(dimension);
         var vertices = new TerrainVertex[dimension * dimension * 4];
         var indices = new uint[dimension * dimension * 6];
         int vertex = 0, index = 0;

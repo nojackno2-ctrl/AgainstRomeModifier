@@ -429,7 +429,7 @@ Use these before repeating whole-program analysis. Rebuild the inventory only fo
 
 ## 16. Verification Checklist
 
-- `dotnet test .\tests\AgainstRomeModifier.Tests\AgainstRomeModifier.Tests.csproj -c Release` passes (33 xUnit tests as of 2026-07-05). All fixtures are synthetic; no copyrighted game files are required, so this also runs in the `.github/workflows/ci.yml` CI job on a clean checkout. The legacy `tests/verify_split_patches` console project still depends on a local `遊戲原始檔案/` tree and is manual-only, not part of CI.
+- `dotnet test .\tests\AgainstRomeModifier.Tests\AgainstRomeModifier.Tests.csproj -c Release` passes (33 xUnit tests as of 2026-07-05). All fixtures are synthetic; no copyrighted game files are required, so this also runs in the `.github/workflows/ci.yml` CI job on a clean checkout. The legacy `tests/verify_split_patches` console project was removed on 2026-07-26; its golden-value coverage now lives in the xUnit suite (`EndlessAiCoreIntegrationTests` and friends).
 - `ExePatchModelTests` specifically covers the EXE fixed-offset patches (focus-loss, spell-altar, legacy village-range restore, village setter Legacy 2x/2.5x/3x/5x and EntireMap): state detection, enable/disable round-trips, migration from any legacy setter state to EntireMap and back, and abort-without-corruption when expected bytes don't match.
 - Build succeeds and JSON parses.
 - The current Chinese and English documents are included by the project as the
