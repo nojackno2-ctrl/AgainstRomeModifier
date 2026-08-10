@@ -1,4 +1,10 @@
-﻿# AI Handoff - Live Project Memory
+# AI Handoff - Live Project Memory
+
+## Public Traditional Chinese README update (2026-08-10, complete & verified)
+
+- Rewrote and updated `README.md` for external / public release in Traditional Chinese.
+- Included metadata badges, non-destructive safety notes, comprehensive feature matrices (Economy, Combat, Magic, Villagers/QoL, Endless AI Overhaul, Compatibility, Experimental features, Troop Stats customizer), bundled tools overview (Save Manager with Endless AI schedule repair, 2D/3D Map Editor, Tech Doc), restoration and rollback mechanism, collapsible FAQ, build & publish instructions, credits (dgVoodoo2), disclaimer, and MIT license.
+- Verification: Full Release build and xUnit test suite passed with 287/287 tests succeeding. No game installation directory was accessed or modified.
 
 ## REFACTOR_PLAN §7.1 build-infrastructure + analyzers (2026-07-27, complete & verified)
 
