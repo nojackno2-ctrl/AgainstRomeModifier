@@ -1,5 +1,11 @@
 # AI Handoff - Live Project Memory
 
+## v1.2.0 Official Release & GitHub Actions Automated Packaging (2026-08-10, complete & verified)
+
+- Released official `v1.2.0` on GitHub: includes self-contained single-file executable `AgainstRomeModifier.exe`, `AgainstRomeModifier_v1.2.0_win-x64.zip`, and `SHA256SUMS.txt`.
+- Added `.github/workflows/release.yml` for automated release packaging on `v*` tag push or manual workflow dispatch.
+- Verification: Full Release build and all 287/287 xUnit tests passing with `-warnaserror` (0 warnings, 0 errors).
+
 ## Public Traditional Chinese README update (2026-08-10, complete & verified)
 
 - Rewrote and updated `README.md` for external / public release in Traditional Chinese.
