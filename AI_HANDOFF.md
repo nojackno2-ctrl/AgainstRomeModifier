@@ -1,5 +1,12 @@
 # AI Handoff - Live Project Memory
 
+## Open-source sanitization & path cleanup (2026-08-11, complete & verified)
+
+- Sanitized machine-specific local paths in `docs/reverse-engineering/decompilation-workflow.md` to dynamic/relative paths.
+- Removed legacy scratch test `Temp_PrintObjdefHeader()` in `UnitBaselineCatalogTests.cs` that contained hardcoded machine-local paths.
+- Cleaned up personal user paths in `AI_HANDOFF.md`.
+- Verified with full xUnit test suite (240/240 passed) and Release solution build (0 warnings, 0 errors).
+
 ## v1.2.0 Official Release & GitHub Actions Automated Packaging (2026-08-10, complete & verified)
 
 - Released official `v1.2.0` on GitHub: includes self-contained single-file executable `AgainstRomeModifier.exe`, `AgainstRomeModifier_v1.2.0_win-x64.zip`, and `SHA256SUMS.txt`.
@@ -218,7 +225,7 @@
 
 - Diagnosed the old machine-local `AgainstRome_RE\ghidra` tree as an incomplete/mixed Ghidra 12.1.2 installation: recognizer classes and multiple processor `.pspec` files are missing. This is not safe to repair by copying isolated classes.
 - Downloaded the official NSA GitHub release `ghidra_12.1.2_PUBLIC_20260605.zip` and verified its SHA-256 exactly matches the release value `b62e81a0390618466c019c60d8c2f796ced2509c4c1aea4a37644a77272cf99d` before extraction.
-- Extracted without overwriting the old tree to `C:\Users\nojac\AppData\Local\Temp\AgainstRome_RE\ghidra-12.1.2-clean\ghidra_12.1.2_PUBLIC`; the old incomplete tree remains present but is explicitly deprecated.
+- Extracted without overwriting the old tree to `%TEMP%\AgainstRome_RE\ghidra-12.1.2-clean\ghidra_12.1.2_PUBLIC`; the old incomplete tree remains present but is explicitly deprecated.
 - Verification run 1: fresh one-shot PE import and 92-second auto-analysis completed; `GhidraUnitRangeSpeedAnalysis.java` resolved `moves`, `w1_rad1`, `w1_rad2`, their consumer functions/callers, and decompiled bodies; exit 0 with `Post-analysis succeeded` and `Import succeeded`.
 - Verification run 2: fresh one-shot import completed; `GhidraScriptIniAnalysis.java` resolved `SYSTEM/cl_script.ini` and parser sections at `0x41BCE0`, while `GhidraRessAnalysis.java` resolved `SYSTEM/ress.ini`, `[objres]`, `[volkres]`, and cost storage/consumer functions; exit 0 with post-analysis/import success.
 - Updated `decompilation-workflow.md` to use the clean Ghidra + `jdk21-full` and a disposable `%TEMP%` project, and updated the all-feature matrix to replace the obsolete toolchain-blocked caveat with fresh-run evidence.
@@ -394,7 +401,7 @@
 ## Runtime-verified Bilingual Localization (2026-07-15)
 
 - Added comprehensive Traditional Chinese and English bilingual capabilities to all modules in the repository: Core, Launcher, TechDoc viewer, Save Game Manager, and Map Editor.
-- Shared settings persistence was added to `Localization.cs`, storing configuration in `C:\Users\nojac\.gemini\antigravity-ide\settings.json`.
+- Shared settings persistence was added to `Localization.cs`, storing configuration in `%USERPROFILE%\.gemini\antigravity-ide\settings.json`.
 - The user can toggle between English and Traditional Chinese at runtime via UI buttons. All labels, menus, properties, columns, alerts, and diagnostic boxes update dynamically.
 - Verified compilation and correctness, successfully passing all 186 unit tests.
 

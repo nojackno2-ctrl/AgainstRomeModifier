@@ -7,9 +7,9 @@ one conversation or one decompiler view as the source of truth.
 
 ## Repository And Local Toolchain
 
-- Authoritative repository: `C:\離線儲存\程式設計\Against_Rome_Modifier`
-- Ghidra: `C:\Users\nojac\AppData\Local\Temp\AgainstRome_RE\ghidra-12.1.2-clean\ghidra_12.1.2_PUBLIC`
-- JDK: `C:\Users\nojac\AppData\Local\Temp\AgainstRome_RE\jdk21-full`
+- Authoritative repository: Repository root
+- Ghidra: `%TEMP%\AgainstRome_RE\ghidra-12.1.2-clean\ghidra_12.1.2_PUBLIC`
+- JDK: `%TEMP%\AgainstRome_RE\jdk21-full`
 - Preferred project mode: one-shot headless import under `%TEMP%`, followed by
   `-deleteProject`; stale persistent project markers are not authoritative.
 - Imported program: repository-local `re_workspace\Against_Rome.exe`
@@ -31,8 +31,8 @@ extracted to the path above. Fresh one-shot imports now complete successfully.
 ## Full EXE Inventory
 
 ```powershell
-$repo = 'C:\離線儲存\程式設計\Against_Rome_Modifier'
-$root = 'C:\Users\nojac\AppData\Local\Temp\AgainstRome_RE'
+$repo = (Get-Item $PSScriptRoot).Parent.Parent.FullName
+$root = Join-Path $env:TEMP 'AgainstRome_RE'
 $ghidra = Join-Path $root 'ghidra-12.1.2-clean\ghidra_12.1.2_PUBLIC'
 $out = Join-Path $repo 're_workspace\ghidra_inventory'
 $env:JAVA_HOME = Join-Path $root 'jdk21-full'
