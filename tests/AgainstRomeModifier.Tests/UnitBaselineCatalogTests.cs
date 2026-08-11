@@ -1,5 +1,3 @@
-using AgainstRomeModifier.Core.Patches;
-
 namespace AgainstRomeModifier.Tests;
 
 public sealed class UnitBaselineCatalogTests
