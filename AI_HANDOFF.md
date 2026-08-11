@@ -1,5 +1,12 @@
 # AI Handoff - Live Project Memory
 
+## Branch consolidation and obsolete branch cleanup (2026-08-12, complete & verified)
+
+- Inspected remote and local branch status: verified `origin/claude/readme-traditional-chinese-2qznug` was fully merged into `主要開發` (via PR #9, commit `1464ad3`).
+- Cleaned up obsolete remote branch `claude/readme-traditional-chinese-2qznug` on GitHub and pruned remote-tracking references.
+- Verified local and remote state: both have only the active main branch `主要開發`.
+- Verified solution build (`dotnet build -c Release -warnaserror`) and full xUnit test suite (`dotnet test -c Release --no-build`, 286/286 passed, 0 warnings, 0 errors).
+
 ## Open-source sanitization & path cleanup (2026-08-11, complete & verified)
 
 - Sanitized machine-specific local paths in `docs/reverse-engineering/decompilation-workflow.md` to dynamic/relative paths.
