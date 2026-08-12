@@ -56,11 +56,11 @@ For the detailed maintenance chronology, debugging failures, checklists, and wor
 | `src.Shared/Core/GameLZSS.cs` | LZSS and `PFIL@` wrapper decode/encode with bounds checks. |
 | `src.Shared/Maps/` | Map catalog, clone, delete, and SDL scene services. |
 
-The application targets `.NET 8`, `net8.0-windows`, WinForms, x64, nullable reference types, and `PerMonitorV2` DPI. `Backup.zip` is embedded only when present; both embedded technical documents are mandatory resources.
+The application targets `.NET 8`, `net8.0-windows`, WinForms, x64, nullable reference types, and `PerMonitorV2` DPI. `Backup.zip` is embedded only for an explicit non-Release developer build with `-p:IncludeBackupZip=true`; Release and publish commands force it off. Both embedded technical documents are mandatory resources.
 
 ## 3. Backup, Transactions, and Apply Order
 
-Original data is loaded from embedded `Backup.zip` when available. Public repositories must not publish original game assets. Without the archive, required originals are read from the selected game installation and retained in memory. `backupFiles` uses case-insensitive keys.
+Original data may be loaded from an embedded `Backup.zip` only in an explicitly opted-in developer build. Public repositories and release artifacts must not publish original game assets. Without the archive, required originals are read from the selected game installation and retained in memory. `backupFiles` uses case-insensitive keys.
 
 `FileRollbackScope` records every target before its first write. `SafeWriteAllBytes` writes through a temporary file in the target directory. Any exception restores all files to their state at the start of that operation. A successful operation calls `Commit()`, disposes the scope, and only then refreshes UI data. This is a per-operation transaction, not a persistent `.bak` system.
 

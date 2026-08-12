@@ -7,6 +7,15 @@ namespace AgainstRomeModifier.Tests;
 public sealed class BackupInfrastructureTests
 {
     [Fact]
+    public void Default_build_does_not_embed_proprietary_backup_archive()
+    {
+        string[] resources = typeof(BackupManager).Assembly.GetManifestResourceNames();
+
+        Assert.DoesNotContain(resources,
+            name => name.EndsWith("Backup.zip", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public void Zip_loader_reads_safe_entries_and_rejects_parent_segments()
     {
         using MemoryStream safeZip = CreateZip(("SYSTEM/test.ini", "value"));

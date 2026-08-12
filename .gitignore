@@ -2,6 +2,8 @@
 .vs/
 [Bb]in/
 [Oo]bj/
+dist/
+artifacts/
 
 # CMake build output (e.g. native/argm-trace)
 /build/

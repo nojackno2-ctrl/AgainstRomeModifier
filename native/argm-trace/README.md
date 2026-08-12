@@ -1,10 +1,10 @@
 # argm-trace — Against Rome 執行期飛行紀錄器 / Runtime Flight Recorder
 
-> 狀態 / Status: **已用 MSVC 編譯成功,但尚未在真實遊戲上實測 (compiles; not yet run against the live game).** 2026-07-18 以 VS 18 Community 的 C++ 工作負載編出 Win32 `version.dll`(machine x86、導出表無修飾且與真正的 version.dll 相符),host 測試(指令長度解碼器 + 對真 Win32 API 的完整 inline-hook 機制)透過 `-DARGM_BUILD_TESTS=ON` + CTest 全數通過。所有 hook 目標的序言與參數慣例已直接從安裝版 EXE(`TimeDateStamp=0x404D1710`)逐位元組驗證,每個 hook(含 build-lock 後的位址型 hook)都帶有從該 EXE 擷取的位元組簽章。剩下的只有把 `version.dll` 放進遊戲目錄實跑一次無盡模式確認事件有出現、遊戲穩定——這一步會寫入遊戲安裝目錄,由使用者執行。
+> 狀態 / Status: **已用 MSVC 編譯成功,但尚未在真實遊戲上實測 (compiles; not yet run against the live game).** 目前輸出為 Win32 `winmm.dll` 代理；host 測試（指令長度解碼器 + 對真 Win32 API 的完整 inline-hook 機制）透過 `-DARGM_BUILD_TESTS=ON` + CTest 執行。所有 hook 目標的序言與參數慣例已直接從安裝版 EXE（`TimeDateStamp=0x404D1710`）逐位元組驗證。剩下的遊戲安裝與無盡模式實跑會寫入遊戲目錄，必須由使用者透過修改器的 Apply／Restore 流程執行。
 
 ## 這是什麼 / What it is
 
-《Against Rome》(2004) 是閉源引擎,本身沒有 log 輸出。`argm-trace` 是一個 32 位元的 `version.dll` 代理 DLL,放進遊戲目錄後會被載入到遊戲行程內,對已逆向出來的關鍵函式安裝 **僅記錄、不改變行為** 的 inline hook,把電腦 AI 的實際動作寫進 `argm_trace.log`:
+《Against Rome》(2004) 是閉源引擎，本身沒有 log 輸出。`argm-trace` 是一個 32 位元的 `winmm.dll` 代理 DLL，由修改器部署後載入遊戲行程，對已逆向出的關鍵函式安裝 **僅記錄、不改變行為** 的 inline hook，把電腦 AI 的實際動作寫進 `argm_trace.log`：
 
 - **AI 增援生成** (`s_addNPCJob_createUnit` 實作 `0x00547F50`):每次增援的隊伍、模式、單位數量範圍。這是「電腦到底做了什麼」最直接的紀錄。
 - **AI 復活啟用** (`s_setNPCActive` `0x00548CE0`):被擊敗的隊伍何時重新變成可重生。
@@ -35,19 +35,19 @@ cmake -S native/argm-trace -B build/argm-trace -A Win32
 cmake --build build/argm-trace --config Release
 ```
 
-輸出為 `version.dll`。需要 Visual Studio 2019+ 的 C++ 桌面工作負載。
+輸出為 `winmm.dll`。需要 Visual Studio 2019+ 的 C++ 桌面工作負載。
 
 ## 使用 / Usage
 
 1. 先用 Modifier 的備份功能備份遊戲(本工具不改檔,但養成習慣)。
-2. 把 `version.dll` 複製到 `Against_Rome.exe` 同目錄。
+2. 由修改器的 ArgmTrace Apply／Restore 流程管理 `winmm.dll`，不要直接改寫遊戲安裝目錄。
 3. (可選) 複製 `argm_trace.ini.sample` 為 `argm_trace.ini` 調整選項。
 4. 啟動遊戲一次,打開產生的 `argm_trace.log`,把 `[build]` banner 裡的 `TimeDateStamp` 值填進 `argm_trace.ini` 的 `expectedTimeDateStamp`。這一步確認你的 EXE 就是被逆向的組建,之後 AI 事件 hook 才會啟用。
 5. 再次啟動遊戲、進入無盡模式重現問題,然後把 `argm_trace.log` 交給分析。
 
 ### 與 dgVoodoo2 併用
 
-`argm-trace` 用的是 `version.dll` 代理,與 dgVoodoo2 的 `DDraw.dll` / `D3D8.dll` 不衝突,可同時存在於遊戲目錄。
+`argm-trace` 使用 `winmm.dll` 代理，與 dgVoodoo2 的 `DDraw.dll` / `D3D8.dll` 不衝突。
 
 ## 日誌格式 / Log format
 

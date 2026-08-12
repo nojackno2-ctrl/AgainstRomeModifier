@@ -1,9 +1,9 @@
 ; argm-trace configuration. Rename to argm_trace.ini and place next to
-; Against_Rome.exe (same folder as version.dll). Every key is optional; the
+; Against_Rome.exe (same folder as winmm.dll). Every key is optional; the
 ; values shown are the built-in defaults.
 
 [general]
-; Master switch. 0 = load and forward version.dll but do nothing else.
+; Master switch. 0 = load and forward winmm.dll but do nothing else.
 enabled=1
 
 ; Verify each hook target's byte signature before patching. Keep this on.

@@ -4,38 +4,25 @@ namespace AgainstRomeModifier.Tests
     {
         private readonly string _configDir;
         private readonly string _configFile;
-        private readonly string _originalSettingsContent = null!;
 
         public ExperimentalFeaturesTests()
         {
-            // 備份原有的設定檔，確保測試不會破壞本機真正的修改器設定
-            string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-            _configDir = Path.Combine(appData, "AgainstRomeModifier");
+            // Redirect persistence to an isolated temporary file. Tests must never
+            // read or overwrite the user's real %APPDATA% settings.
+            _configDir = Path.Combine(Path.GetTempPath(), "AgainstRomeModifier.Tests", Guid.NewGuid().ToString("N"));
             _configFile = Path.Combine(_configDir, "settings.json");
-
-            if (File.Exists(_configFile))
-            {
-                _originalSettingsContent = File.ReadAllText(_configFile);
-            }
+            Loc.OverrideSettingsFileForTesting(_configFile);
         }
 
         public void Dispose()
         {
             GC.SuppressFinalize(this);
-            // 還原原有的設定檔
+            Loc.OverrideSettingsFileForTesting(null);
             try
             {
-                if (_originalSettingsContent != null)
+                if (Directory.Exists(_configDir))
                 {
-                    if (!Directory.Exists(_configDir))
-                    {
-                        Directory.CreateDirectory(_configDir);
-                    }
-                    File.WriteAllText(_configFile, _originalSettingsContent);
-                }
-                else if (File.Exists(_configFile))
-                {
-                    File.Delete(_configFile);
+                    Directory.Delete(_configDir, recursive: true);
                 }
             }
             catch

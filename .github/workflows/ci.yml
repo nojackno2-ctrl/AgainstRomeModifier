@@ -4,12 +4,17 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   build-and-test:
     runs-on: windows-latest
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v4
@@ -17,12 +22,29 @@ jobs:
           dotnet-version: 10.0.x
 
       - name: Restore
-        run: dotnet restore AgainstRomeModifier.slnx
+        run: dotnet restore AgainstRomeModifier.slnx --configfile NuGet.Config
 
       # -warnaserror 讓分析器警告（含 IDE0005 多餘 using、IDE0051/0052 死碼）
       # 直接擋下 CI。規則嚴重度見根目錄 .editorconfig，分析器開關見 Directory.Build.props。
       - name: Build Release x64
-        run: dotnet build AgainstRomeModifier.slnx --configuration Release -p:PlatformTarget=x64 --no-restore -warnaserror
+        run: dotnet build AgainstRomeModifier.slnx --configuration Release -p:PlatformTarget=x64 -p:IncludeBackupZip=false --no-restore -warnaserror
 
       - name: Test
-        run: dotnet test tests/AgainstRomeModifier.Tests/AgainstRomeModifier.Tests.csproj --configuration Release -p:PlatformTarget=x64 --no-build --no-restore
+        run: dotnet test tests/AgainstRomeModifier.Tests/AgainstRomeModifier.Tests.csproj --configuration Release -p:PlatformTarget=x64 -p:IncludeBackupZip=false --no-build --no-restore
+
+  native-argm-trace:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Configure MSVC Win32 host tests
+        run: cmake -S native/argm-trace -B build/argm-trace -A Win32 -DARGM_BUILD_TESTS=ON
+
+      - name: Build native recorder and tests
+        run: cmake --build build/argm-trace --config Release
+
+      - name: Run native host tests
+        run: ctest --test-dir build/argm-trace -C Release --output-on-failure

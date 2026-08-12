@@ -2,7 +2,7 @@
 //
 // Identical intent to detour_mechanism_test.cpp, but compiled natively against
 // the genuine <windows.h> (VirtualAlloc/VirtualProtect/FlushInstructionCache)
-// with the same MSVC x86 toolchain that builds the shipping version.dll. This
+// with the same MSVC x86 toolchain that builds the shipping winmm.dll. This
 // is the most faithful possible test of the stub/trampoline/rel32/RegBank
 // machine code the DLL runs inside Against_Rome.exe: no POSIX mmap shim stands
 // in for the OS. It installs an actual inline detour over a 9-argument __cdecl

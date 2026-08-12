@@ -6,7 +6,7 @@ there is caught before the DLL ever touches the game.
 ## Easiest: via CMake/CTest on the MSVC toolchain (Windows)
 
 Configuring argm-trace with `-DARGM_BUILD_TESTS=ON` builds both tests with the
-same MSVC x86 toolchain that builds the shipping `version.dll` and registers
+same MSVC x86 toolchain that builds the shipping `winmm.dll` and registers
 them as CTest tests:
 
 ```powershell
@@ -15,7 +15,7 @@ cmake --build build/argm-trace --config Release
 ctest --test-dir build/argm-trace -C Release --output-on-failure
 ```
 
-Verified 2026-07-18: `version.dll` builds clean (Win32, correct undecorated
+Verified 2026-07-18: the native proxy builds clean (Win32, correct undecorated
 export table) and both CTest tests pass. The mechanism test there uses
 `detour_mechanism_test_win.cpp` (real `<windows.h>`); the plain
 `detour_mechanism_test.cpp` below is the Linux/g++ equivalent.
@@ -60,8 +60,8 @@ Both exit 0 on success.
 
 ## What these do NOT cover
 
-The remaining Windows-only pieces — the `version.dll` proxy forwarding at
+The remaining Windows-only pieces — the `winmm.dll` proxy forwarding at
 runtime, the PE build-fingerprint gate, ASLR rebasing, and behavior against the
-live `Against_Rome.exe` — are only validated by dropping the built `version.dll`
+live `Against_Rome.exe` — require a user-controlled modifier Apply/Restore runtime check
 next to the game and playing. That deployment step is the user's, since it
 writes into the game install directory.

@@ -1,86 +1,91 @@
 param(
-    [string]$Version = "1.0.0",
-    [bool]$SelfContained = $true
+    [string]$Version = ''
 )
 
-$ErrorActionPreference = "Stop"
+$ErrorActionPreference = 'Stop'
 
-Write-Host "Starting publish for Against Rome Modifier suite, Version: $Version, SelfContained: $SelfContained..."
-
-# 1. Get Repo Root
 $scriptPath = $MyInvocation.MyCommand.Path
 $toolsDir = Split-Path -Parent $scriptPath
 $repoRoot = Split-Path -Parent $toolsDir
+$projectPath = Join-Path $repoRoot 'src.Modifier\AgainstRomeModifier.csproj'
 
-$stagingDir = Join-Path $repoRoot "bin\Release\publish_staging"
-if (Test-Path $stagingDir) {
-    Write-Host "Cleaning existing staging directory: $stagingDir"
-    Remove-Item -Recurse -Force $stagingDir
+if ([string]::IsNullOrWhiteSpace($Version)) {
+    $Version = (& dotnet msbuild $projectPath `
+        -getProperty:Version `
+        -p:Configuration=Release `
+        -p:IncludeBackupZip=false).Trim()
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($Version)) {
+        throw 'Unable to read the project version.'
+    }
+}
+
+if ($Version -notmatch '^\d+\.\d+\.\d+$') {
+    throw "Version must be MAJOR.MINOR.PATCH; got '$Version'."
+}
+
+$projectVersion = (& dotnet msbuild $projectPath `
+    -getProperty:Version `
+    -p:Configuration=Release `
+    -p:IncludeBackupZip=false).Trim()
+if ($LASTEXITCODE -ne 0) {
+    throw 'Unable to verify the project version.'
+}
+if ($Version -ne $projectVersion) {
+    throw "Requested version $Version does not match project version $projectVersion."
+}
+
+$stagingDir = Join-Path $repoRoot 'bin\Release\publish_staging'
+if (Test-Path -LiteralPath $stagingDir) {
+    Remove-Item -LiteralPath $stagingDir -Recurse -Force
 }
 New-Item -ItemType Directory -Path $stagingDir | Out-Null
 
-# 2. Define common publish parameters
-$configuration = "Release"
-$runtime = "win-x64"
-$selfContainedArg = $SelfContained.ToString().ToLower()
-
-$extraArgs = @()
-if ($SelfContained) {
-    $extraArgs += "-p:PublishSingleFile=true"
-    $extraArgs += "-p:PublishReadyToRun=true"
+Write-Host "Publishing Against Rome Modifier $Version without proprietary Backup.zip..."
+dotnet restore $projectPath `
+    -r win-x64 `
+    --configfile (Join-Path $repoRoot 'NuGet.Config') `
+    -p:IncludeBackupZip=false
+if ($LASTEXITCODE -ne 0) {
+    throw "dotnet restore for win-x64 failed with exit code $LASTEXITCODE."
 }
 
-# 3. Publish every app in the suite
-$apps = @(
-    @{ Name = "AgainstRomeModifier";    Project = "src.Modifier\AgainstRomeModifier.csproj" },
-    @{ Name = "AgainstRomeSaveManager"; Project = "src.SaveManager\AgainstRomeSaveManager.csproj" },
-    @{ Name = "AgainstRomeMapEditor";   Project = "src.MapEditor\AgainstRomeMapEditor.csproj" }
-)
-
-foreach ($app in $apps) {
-    Write-Host "Publishing $($app.Name)..."
-    $projPath = Join-Path $repoRoot $app.Project
-    dotnet publish $projPath -c $configuration -r $runtime --self-contained $selfContainedArg $extraArgs
-    if ($LASTEXITCODE -ne 0) {
-        throw "dotnet publish failed for $($app.Name) (exit code $LASTEXITCODE)."
-    }
+dotnet publish $projectPath `
+    -c Release `
+    -r win-x64 `
+    --self-contained true `
+    --no-restore `
+    -p:PublishSingleFile=true `
+    -p:PublishReadyToRun=true `
+    -p:IncludeNativeLibrariesForSelfExtract=true `
+    -p:IncludeBackupZip=false `
+    -p:DebugType=None `
+    -p:DebugSymbols=false `
+    -o $stagingDir
+if ($LASTEXITCODE -ne 0) {
+    throw "dotnet publish failed with exit code $LASTEXITCODE."
 }
 
-# 4. Copy outputs to staging.
-# The Modifier is the suite entry point (the launcher UI now lives inside it);
-# each app contributes its executable (plus dll/runtimeconfig when not single-file).
-Write-Host "Copying files to staging: $stagingDir"
+Get-ChildItem -LiteralPath $stagingDir -File -Recurse |
+    Where-Object { $_.Extension -in @('.pdb', '.xml') } |
+    Remove-Item -Force
 
-foreach ($app in $apps) {
-    $projDir = Split-Path -Parent (Join-Path $repoRoot $app.Project)
-    $publishDir = Join-Path $projDir "bin\$configuration\net8.0-windows\$runtime\publish"
-    if (-not (Test-Path $publishDir)) {
-        throw "Publish output not found for $($app.Name): $publishDir"
-    }
-
-    if ($SelfContained) {
-        Copy-Item -Path (Join-Path $publishDir "$($app.Name).exe") -Destination $stagingDir -Force
-    } else {
-        Copy-Item -Path "$publishDir\*" -Destination $stagingDir -Recurse -Force
-    }
-}
-
-# Remove pdb files
-Get-ChildItem -Path $stagingDir -Filter "*.pdb" -Recurse | Remove-Item -Force
-
-# Remove XML doc files. Directory.Build.props sets GenerateDocumentationFile=true
-# purely so IDE0005 (redundant using) is reported at build time; the docs are not
-# part of the shipped package.
-Get-ChildItem -Path $stagingDir -Filter "*.xml" -Recurse | Remove-Item -Force
-
-# 5. Create ZIP archive
-$zipName = "AgainstRomeModifier_v$Version`_win-x64.zip"
+$zipName = "AgainstRomeModifier_v${Version}_win-x64.zip"
 $zipPath = Join-Path $repoRoot $zipName
-if (Test-Path $zipPath) {
-    Remove-Item $zipPath -Force
+if (Test-Path -LiteralPath $zipPath) {
+    Remove-Item -LiteralPath $zipPath -Force
 }
+$publishedExe = (Get-Item -LiteralPath (Join-Path $stagingDir 'AgainstRomeModifier.exe')).FullName
+Compress-Archive `
+    -Path $publishedExe `
+    -DestinationPath $zipPath `
+    -Force
 
-Write-Host "Compressing staging directory to $zipName..."
-Compress-Archive -Path "$stagingDir\*" -DestinationPath $zipPath -Force
+& (Join-Path $toolsDir 'Test-ReleaseArtifacts.ps1') `
+    -ArtifactDirectory $stagingDir `
+    -ArchivePath $zipPath `
+    -AssemblyPath (Join-Path $repoRoot 'src.Core\bin\Release\net8.0-windows\AgainstRome.Core.dll') `
+    -ExpectedVersion $Version
 
-Write-Host "Publish complete! Package saved to: $zipPath"
+$hash = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash
+Write-Host "Publish complete: $zipPath"
+Write-Host "SHA256: $hash"
