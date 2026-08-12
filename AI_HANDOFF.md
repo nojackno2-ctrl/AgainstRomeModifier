@@ -1,6 +1,10 @@
 ﻿# AI Handoff - Live Project Memory
 
-## v1.2.1 release-safety hardening (2026-08-12, implementation complete; commit/push/release pending)
+## 2026-08-12 v1.2.1 publication
+
+- Published `v1.2.1` from `83c4cca5248bb54c8ff014bfdd6abe73e294bf92`; tag CI, Release, and CodeQL completed successfully. Downloaded hashes matched GitHub digests plus `SHA256SUMS.txt` (`EXE 19CD9D93...D5D5A`, `ZIP 9443A14D...B4620`). No game installation was modified.
+
+## v1.2.1 release-safety hardening (2026-08-12, implementation complete)
 
 - Scope is packaging/version/CI only; no gameplay behavior or installed-game file is being changed. The runtime-unverified boundaries documented below remain in force.
 - Starting tree was clean on `主要開發` at `dbb31b4`, matching `origin/主要開發`; recent history and the complete collaboration files were reviewed before editing.
