@@ -7,6 +7,16 @@
     TargetFramework 刻意不收斂——src.Shared 是 net8.0，其餘為 net8.0-windows。
   -->
   <PropertyGroup Condition="'$(MSBuildProjectExtension)' == '.csproj'">
+    <!-- v1.2.1 is the one source for package, assembly, file and product versions. -->
+    <VersionPrefix>1.2.1</VersionPrefix>
+    <Version>$(VersionPrefix)</Version>
+    <AssemblyVersion>$(VersionPrefix).0</AssemblyVersion>
+    <FileVersion>$(VersionPrefix).0</FileVersion>
+    <InformationalVersion>$(VersionPrefix)</InformationalVersion>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+
+    <!-- Proprietary local baselines are never embedded unless a developer opts in. -->
+    <IncludeBackupZip Condition="'$(IncludeBackupZip)' == ''">false</IncludeBackupZip>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <PlatformTarget>x64</PlatformTarget>
@@ -35,5 +45,11 @@
   <ItemGroup Condition="'$(MSBuildProjectExtension)' == '.csproj' and '$(MSBuildProjectName)' != 'AgainstRomeModifier.Tests'">
     <InternalsVisibleTo Include="AgainstRomeModifier.Tests" />
   </ItemGroup>
+
+  <Target Name="ForbidBackupZipInRelease"
+          BeforeTargets="PrepareForBuild"
+          Condition="'$(MSBuildProjectExtension)' == '.csproj' and '$(Configuration)' == 'Release' and '$(IncludeBackupZip)' == 'true'">
+    <Error Text="Release builds must use IncludeBackupZip=false; Backup.zip is proprietary and must never enter a published artifact." />
+  </Target>
 
 </Project>

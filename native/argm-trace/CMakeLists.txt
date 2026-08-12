@@ -6,7 +6,7 @@
 #   cmake -S native/argm-trace -B build/argm-trace -A Win32
 #   cmake --build build/argm-trace --config Release
 #
-# The output is version.dll; drop it next to Against_Rome.exe. See README.md.
+# The output is winmm.dll; see README.md for the user-controlled runtime step.
 cmake_minimum_required(VERSION 3.20)
 project(argm_trace CXX)
 
@@ -17,7 +17,7 @@ endif()
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Statically link the CRT (/MT). version.dll is loaded into a 2004 game whose
+# Statically link the CRT (/MT). winmm.dll is loaded into a 2004 game whose
 # environment (and any end user's machine) may not have the VC++ redistributable
 # / Universal CRT. A dynamic-CRT proxy DLL fails to load -- the loader can't
 # resolve VCRUNTIME140.dll / api-ms-win-crt-*.dll -- and the game refuses to
@@ -55,13 +55,12 @@ if(MSVC)
     target_link_options(argm_trace PRIVATE /SAFESEH:NO)
 endif()
 
-# Do NOT link version.lib: the genuine version.dll is loaded at runtime via
-# LoadLibrary + GetProcAddress (see proxy_version.cpp). Linking the import
-# library here would make this proxy depend on itself.
+# Do not link winmm.lib: the genuine system DLL is loaded at runtime via
+# LoadLibrary + GetProcAddress (see proxy_winmm.cpp).
 
 # --- Host tests (opt-in) --------------------------------------------------
 # Configure with -DARGM_BUILD_TESTS=ON to build and register the host tests as
-# CTest tests on the same MSVC x86 toolchain that builds version.dll:
+# CTest tests on the same MSVC x86 toolchain that builds winmm.dll:
 #   cmake -S native/argm-trace -B build/argm-trace -A Win32 -DARGM_BUILD_TESTS=ON
 #   cmake --build build/argm-trace --config Release
 #   ctest --test-dir build/argm-trace -C Release --output-on-failure

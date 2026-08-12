@@ -9,7 +9,7 @@
 //
 // This exercises the exact stub/trampoline/rel32/RegBank machine code the DLL
 // will use inside the game. It does NOT test the Windows-only pieces
-// (version.dll proxy, PE fingerprint, GetModuleHandle rebasing).
+// (winmm.dll proxy, PE fingerprint, GetModuleHandle rebasing).
 //
 // Build & run (from native/argm-trace/tests, needs gcc-multilib):
 //   g++ -m32 -std=c++17 -fno-pic -no-pie -fcf-protection=none \

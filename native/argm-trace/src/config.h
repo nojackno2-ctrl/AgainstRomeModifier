@@ -9,7 +9,7 @@
 namespace argm {
 
 struct Config {
-    // Master switch. When false the DLL loads, forwards version.dll, and does
+    // Master switch. When false the DLL loads, forwards winmm.dll, and does
     // nothing else.
     bool enabled = true;
 

@@ -1,4 +1,19 @@
-# AI Handoff - Live Project Memory
+﻿# AI Handoff - Live Project Memory
+
+## v1.2.1 release-safety hardening (2026-08-12, implementation complete; commit/push/release pending)
+
+- Scope is packaging/version/CI only; no gameplay behavior or installed-game file is being changed. The runtime-unverified boundaries documented below remain in force.
+- Starting tree was clean on `主要開發` at `dbb31b4`, matching `origin/主要開發`; recent history and the complete collaboration files were reviewed before editing.
+- Baseline `dotnet build AgainstRomeModifier.slnx -c Release --no-restore -warnaserror` passed with 0 warnings/errors. The immediately following full xUnit run passed 284/286 and failed only the two `ExperimentalFeaturesTests` that concurrently mutate the same real settings file (`Loc_PromoteAndDemote_StateChangesAndPersists`, `AppSettings_SerializationRoundTrip`); this is recorded as baseline evidence, not attributed to release work.
+- Restore without `--no-restore` is blocked in this sandbox by denied read access to the user NuGet.Config; use the already restored assets for local verification and let GitHub Actions perform a clean restore.
+- Active objective: make proprietary `Backup.zip` embedding explicit opt-in, forbid it in Release/publish, add automated package/resource auditing, establish v1.2.1 as the single version source with a tag guard, and add native MSVC/CMake/CTest CI if the existing native project remains buildable.
+- Implementation milestone: `Directory.Build.props` now owns `VersionPrefix=1.2.1` and derives package/assembly/file/product versions; default `IncludeBackupZip=false`, and Release fails before compilation if a caller tries `-p:IncludeBackupZip=true`. `AgainstRome.Core.csproj` embeds the archive only on exact explicit `true`.
+- Automated safety coverage: a new xUnit assertion requires the default Core assembly to have no `Backup.zip` resource; `tools/Test-ReleaseArtifacts.ps1` audits loose/ZIP paths, embedded resources, and all version surfaces. Both the local publish script and release workflow force `IncludeBackupZip=false`; tag `vMAJOR.MINOR.PATCH` must exactly equal the project version before publishing.
+- CI now has an independent Win32 MSVC CMake/CTest job for `argm-trace`; stale native documentation was corrected from the rejected `version.dll` design to current `winmm.dll`. This is build/host-test coverage only and does not change or claim live-game verification.
+- Verification so far: MSBuild reports `Version=1.2.1`; Release solution build with explicit `IncludeBackupZip=false` passes 0 warnings/errors; focused backup infrastructure tests pass 5 with 1 proprietary-fixture test skipped; a deliberate Release build with `IncludeBackupZip=true` fails with the intended proprietary-resource error.
+- Full verification after isolating the two pre-existing settings tests from real `%APPDATA%`: focused tests pass 3/3; full xUnit passes **266/287 with 21 skipped** because proprietary `Backup.zip` is now absent by default (0 failures); Release solution build passes with 0 warnings/errors. The test override is internal-only, points to a unique temp directory, and prevents the suite from racing over or overwriting the user's settings.
+- Native verification: local MSVC 19.51 Win32 configure/build succeeded, producing `winmm.dll`, `lde_test.exe`, and `detour_mechanism_test.exe`; CTest passed 2/2. The sandboxed attempt failed at Visual Studio FileTracker with `E_ACCESSDENIED`; the permitted out-of-sandbox rerun passed, so this was an environment restriction rather than a source failure.
+- Final local self-contained publish passed the release audit. Artifact: ignored `AgainstRomeModifier_v1.2.1_win-x64.zip`, SHA-256 `5F5D83FF81D246633941A85DF21183AEDA1B2240BB376E3FC230DE8B26E36817`. Audit confirmed no forbidden files/resources and assembly/file/product version consistency. No tag, GitHub release, branch, commit, or game installation change was made by this workstream.
 
 ## Branch consolidation and obsolete branch cleanup (2026-08-12, complete & verified)
 
@@ -637,3 +652,11 @@ dotnet test tests/AgainstRomeModifier.Tests/AgainstRomeModifier.Tests.csproj -c 
 2. Complete the remaining user-visible Phase C gates when requested: on a marker-backed custom map, confirm 3D/2D cell identity, Ctrl+Z/Ctrl+Y, saved terrain in-game, and water alignment on a water-bearing map. Mixed-material/`4T` validation is explicitly deferred and must not block other work.
 3. Keep optional Phase D (`shad.dat` billboards) closed until the user explicitly approves it; `.alr` model reverse engineering remains out of scope.
 4. Keep new proposals in the canonical technical document or a focused reverse-engineering note only when they contain actionable, current evidence; do not recreate completed-plan or historical-review documents.
+
+## 2026-08-12 v1.2.1 release hardening (uncommitted)
+
+- Centralized product, assembly, and file versions at `1.2.1`; Release builds now reject `IncludeBackupZip=true`, while CI/release/local publish explicitly force it off.
+- Added release-content and embedded-resource auditing plus Win32 MSVC CMake/CTest coverage. Release build completed with 0 warnings/errors; xUnit completed 266 passed, 21 proprietary-fixture skips, 0 failures; native CTest completed 2/2.
+- The audited self-contained ZIP contains only `AgainstRomeModifier.exe`, reports product `1.2.1` / file `1.2.1.0`, has zero embedded backup resources, and locally hashed to `5F5D83FF81D246633941A85DF21183AEDA1B2240BB376E3FC230DE8B26E36817` before the final commit.
+- Fixed GitHub Actions command-injection exposure by passing workflow-dispatch tags and repository identifiers through step environment variables instead of interpolating expressions inside PowerShell. Checkout no longer persists credentials.
+- No game installation or original game file was modified. Runtime gameplay claims remain outside this release verification.

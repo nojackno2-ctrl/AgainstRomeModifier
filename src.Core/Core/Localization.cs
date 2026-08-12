@@ -12,6 +12,7 @@ namespace AgainstRomeModifier {
     public static class Loc {
         private static Language _currentLanguage = Language.TraditionalChinese;
         private static readonly HashSet<string> _promotedFeatures = new(StringComparer.OrdinalIgnoreCase);
+        private static string? _settingsFileOverrideForTesting;
 
         static Loc() {
             LoadLanguagePreference();
@@ -53,14 +54,18 @@ namespace AgainstRomeModifier {
             _currentLanguage = language;
         }
 
+        internal static void OverrideSettingsFileForTesting(string? settingsFile) {
+            _settingsFileOverrideForTesting = settingsFile;
+            _promotedFeatures.Clear();
+        }
+
         private static readonly System.Text.Json.JsonSerializerOptions IndentedJson =
             new() { WriteIndented = true };
 
         private static void LoadLanguagePreference() {
             bool languageLoaded = false;
             try {
-                string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-                string configFile = Path.Combine(appData, "AgainstRomeModifier", "settings.json");
+                string configFile = GetSettingsFilePath();
                 if (File.Exists(configFile)) {
                     using var doc = System.Text.Json.JsonDocument.Parse(File.ReadAllText(configFile));
                     if (doc.RootElement.ValueKind == System.Text.Json.JsonValueKind.Object) {
@@ -109,12 +114,12 @@ namespace AgainstRomeModifier {
 
         public static void SaveSettings() {
             try {
-                string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-                string configDir = Path.Combine(appData, "AgainstRomeModifier");
+                string configFile = GetSettingsFilePath();
+                string configDir = Path.GetDirectoryName(configFile)
+                    ?? throw new InvalidOperationException("Settings file has no parent directory.");
                 if (!Directory.Exists(configDir)) {
                     Directory.CreateDirectory(configDir);
                 }
-                string configFile = Path.Combine(configDir, "settings.json");
                 var settings = new AppSettings {
                     Language = _currentLanguage.ToString(),
                     PromotedFeatures = _promotedFeatures.ToList()
@@ -125,6 +130,15 @@ namespace AgainstRomeModifier {
             catch {
                 // ignore
             }
+        }
+
+        private static string GetSettingsFilePath() {
+            if (_settingsFileOverrideForTesting is not null) {
+                return _settingsFileOverrideForTesting;
+            }
+
+            string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+            return Path.Combine(appData, "AgainstRomeModifier", "settings.json");
         }
 
         public static string Get(string key) {

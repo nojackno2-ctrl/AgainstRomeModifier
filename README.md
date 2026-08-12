@@ -272,7 +272,7 @@ dotnet build AgainstRomeModifier.slnx -c Release
 dotnet test AgainstRomeModifier.slnx -c Release
 
 # 透過自動化腳本打包單一發行檔 (Single-File Portable Package)
-powershell -ExecutionPolicy Bypass -File tools/publish.ps1 -Version "1.1.0"
+powershell -ExecutionPolicy Bypass -File tools/publish.ps1 -Version "1.2.1"
 ```
 
 ---

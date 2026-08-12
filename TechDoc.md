@@ -13,7 +13,7 @@
 ## 0. 2026-07-11 現況摘要（優先於下方歷史段落）
 
 - 架構已完成解耦：`PatchProfile`、`FeatureRegistry`、`IFeatureModule`、`PatchContext` 與 `DetectContext` 是唯一功能契約；`PatchOptions` 已移除。套用、偵測、分類還原與 UI 回填均以 registry 為主。
-- `Backup.zip` 是選用且不追蹤的本機基線。內嵌／程式旁沒有它時，修改器才從使用者選取且有效的遊戲根目錄建立**記憶體**基線。開發、測試與文件工作不得直接改寫遊戲安裝目錄。
+- `Backup.zip` 是選用且不追蹤的本機基線；只有非 Release 開發建置明確傳入 `-p:IncludeBackupZip=true` 才可內嵌，Release／publish 強制停用。內嵌／程式旁沒有它時，修改器才從使用者選取且有效的遊戲根目錄建立**記憶體**基線。開發、測試與文件工作不得直接改寫遊戲安裝目錄。
 - FoodHealing 與 Endless AI 共用 `BciScriptFile` 快取，最後只由 `SaveAll` 寫回；任何新 BCI 功能不得繞過此流程直接寫檔。
 - `CiviProduce20` 與 `UnitRecruit20` 已在遊戲內實機驗證，皆為可還原、僅作用於玩家端的 EXE 功能；現已列入正式的「資源與戰鬥升級」及「所有功能開啟」，不影響 AI 招募。
 - 自訂兵種新格式只保留 `HP,Dmg,VW,AW,Sight,Relt`。速度、遠程射程、法術半徑與祭司 `Sirad`（施法距離）不得由自訂層管理；啟用 `AllUnitsEntireMapVision` 時，所有支援單位的 Sight 會在最後統一覆寫為 30000。
