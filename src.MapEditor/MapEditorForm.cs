@@ -9,11 +9,11 @@ internal sealed class MapEditorForm : Form
     private readonly MapCanvasControl _canvas = new();
     private Map3DViewControl? _view3d;
     private Panel? _canvasHost;
-    private readonly PictureBox _overview = new() { Dock = DockStyle.Fill, SizeMode = PictureBoxSizeMode.Zoom, BackColor = Color.FromArgb(18, 21, 27) };
+    private readonly PictureBox _overview = new() { Dock = DockStyle.Fill, SizeMode = PictureBoxSizeMode.Zoom, BackColor = WinFormsTheme.Window };
     private readonly ListBox _palette = new() { Dock = DockStyle.Fill, IntegralHeight = false };
     private readonly TextBox _paletteSearch = new() { Dock = DockStyle.Top, PlaceholderText = "搜尋草地、沙地、泥土、岩地…" };
     private readonly PictureBox _currentMaterialSwatch = new() { Width = 54, Height = 54, BackColor = Color.DimGray, SizeMode = PictureBoxSizeMode.Zoom };
-    private readonly Label _currentMaterialLabel = new() { AutoSize = true, Text = "目前筆刷：尚未取樣", ForeColor = Color.White, Font = new Font("Microsoft JhengHei UI", 10F, FontStyle.Bold) };
+    private readonly Label _currentMaterialLabel = new() { AutoSize = true, Text = "目前筆刷：尚未取樣", ForeColor = WinFormsTheme.TextPrimary, Font = WinFormsTheme.CreateFont(10F, FontStyle.Bold) };
     private readonly string _gamePath;
     private readonly TextBox _title = new() { Dock = DockStyle.Top };
     private readonly TextBox _subtitle = new() { Dock = DockStyle.Top };
@@ -34,7 +34,7 @@ internal sealed class MapEditorForm : Form
     private readonly CheckBox _showObjects = new() { Dock = DockStyle.Top, Height = 30, Text = "顯示建築與場景物件", Checked = true };
     private readonly TrackBar _reliefScale = new() { Dock = DockStyle.Top, Minimum = 0, Maximum = 200, Value = 100, TickFrequency = 25 };
     private readonly ListView _sceneList = new() { Dock = DockStyle.Fill, View = View.Details, FullRowSelect = true, HeaderStyle = ColumnHeaderStyle.Nonclickable };
-    private readonly Label _sceneSummary = new() { Dock = DockStyle.Top, Height = 64, Padding = new Padding(8, 16, 8, 8), ForeColor = Color.Gainsboro };
+    private readonly Label _sceneSummary = new() { Dock = DockStyle.Top, Height = 64, Padding = new Padding(10, 16, 10, 8), ForeColor = WinFormsTheme.TextSecondary };
     private readonly NumericUpDown _sceneTeam = new() { Dock = DockStyle.Fill, Minimum = -1, Maximum = 15 };
     private readonly NumericUpDown _sceneX = SceneCoordinateInput();
     private readonly NumericUpDown _sceneY = SceneCoordinateInput();
@@ -61,10 +61,10 @@ internal sealed class MapEditorForm : Form
     private readonly ToolStripLabel _currentMapLabel = new();
     private readonly ToolStripLabel _lblTerrainGroup = new("地表：");
     private Label _paletteHeader = null!;
-    private readonly Label _lblBrushInstructions = new() { AutoSize = true, MaximumSize = new Size(200, 0), ForeColor = Color.Silver };
-    private readonly Label _lblBrushSizeTitle = new() { Dock = DockStyle.Top, Height = 22, ForeColor = Color.Gainsboro };
-    private readonly Label _lblReliefScaleTitle = new() { Dock = DockStyle.Top, Height = 22, ForeColor = Color.Gainsboro };
-    private readonly Label _lblOverviewTitle = new() { Dock = DockStyle.Top, Height = 25, TextAlign = ContentAlignment.MiddleCenter, ForeColor = Color.White, BackColor = Color.FromArgb(42, 47, 58) };
+    private readonly Label _lblBrushInstructions = new() { AutoSize = true, MaximumSize = new Size(200, 0), ForeColor = WinFormsTheme.TextSecondary };
+    private readonly Label _lblBrushSizeTitle = new() { Dock = DockStyle.Top, Height = 22, ForeColor = WinFormsTheme.TextSecondary };
+    private readonly Label _lblReliefScaleTitle = new() { Dock = DockStyle.Top, Height = 22, ForeColor = WinFormsTheme.TextSecondary };
+    private readonly Label _lblOverviewTitle = new() { Dock = DockStyle.Top, Height = 27, TextAlign = ContentAlignment.MiddleCenter, ForeColor = WinFormsTheme.TextPrimary, BackColor = WinFormsTheme.SurfaceRaised };
     private readonly ToolStripStatusLabel _lblStatusInstructions = new();
 
     private Label _lblTitle = null!;
@@ -133,12 +133,16 @@ internal sealed class MapEditorForm : Form
     public MapEditorForm(string gamePath, GameMapInfo selectedMap)
     {
         Width = 1440; Height = 900; MinimumSize = new Size(1100, 700); StartPosition = FormStartPosition.CenterScreen;
-        BackColor = Color.FromArgb(30, 34, 42); ForeColor = Color.Gainsboro;
+        BackColor = WinFormsTheme.Window; ForeColor = WinFormsTheme.TextPrimary; Font = WinFormsTheme.CreateFont(9F);
         _gamePath = gamePath;
         _selected = selectedMap;
         _floorTextures = new FloorTextureLibrary(Path.Combine(gamePath, "floortex.dat"));
         _floorMaterials = new FloorMaterialCatalog(_floorTextures);
-        BuildInterface(); WireEvents();
+        BuildInterface();
+        WinFormsTheme.Apply(this);
+        WinFormsTheme.StylePrimaryButton(_sceneApplyButton);
+        WinFormsTheme.StyleDangerButton(_sceneDeleteButton);
+        WireEvents();
         KeyPreview = true;
         Shown += (_, _) => LoadSelectedMap();
         FormClosing += (_, e) => { if (!_allowClose && !ConfirmDiscardOrSave()) e.Cancel = true; };
@@ -150,7 +154,7 @@ internal sealed class MapEditorForm : Form
 
     private void BuildInterface()
     {
-        var commands = new ToolStrip { GripStyle = ToolStripGripStyle.Hidden, Dock = DockStyle.Top, Padding = new Padding(8, 5, 8, 5), BackColor = Color.FromArgb(42, 47, 58), ForeColor = Color.White, RenderMode = ToolStripRenderMode.System };
+        var commands = new ToolStrip { GripStyle = ToolStripGripStyle.Hidden, Dock = DockStyle.Top, Padding = new Padding(10, 6, 10, 6), BackColor = WinFormsTheme.Surface, ForeColor = WinFormsTheme.TextPrimary };
         commands.Items.AddRange(new ToolStripItem[] {
             _mapMenuButton, new ToolStripSeparator(), _currentMapLabel, new ToolStripSeparator(),
             _saveButton, _gamePreviewButton, new ToolStripSeparator(), _undoButton, _redoButton,
@@ -158,11 +162,11 @@ internal sealed class MapEditorForm : Form
             _btnLangEN, _btnLangZH
         });
 
-        var tools = new ToolStrip { GripStyle = ToolStripGripStyle.Hidden, Dock = DockStyle.Top, Padding = new Padding(8, 4, 8, 4), BackColor = Color.FromArgb(36, 40, 49), ForeColor = Color.White };
+        var tools = new ToolStrip { GripStyle = ToolStripGripStyle.Hidden, Dock = DockStyle.Top, Padding = new Padding(10, 5, 10, 5), BackColor = WinFormsTheme.SurfaceRaised, ForeColor = WinFormsTheme.TextPrimary };
         tools.Items.AddRange(new ToolStripItem[] { _lblTerrainGroup, _textureTool, _sceneMoveTool, _resetTerrainButton, new ToolStripSeparator(), _view2dButton, _view3dButton, _3dDiagnosticsButton });
 
         _paletteHeader = SectionHeader("地表繪製");
-        var palettePanel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(8), BackColor = Color.FromArgb(34, 38, 47) };
+        var palettePanel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(10), BackColor = WinFormsTheme.Surface };
         var currentBrush = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 76, Padding = new Padding(4), FlowDirection = FlowDirection.LeftToRight };
         var currentText = new FlowLayoutPanel { Width = 205, Height = 66, FlowDirection = FlowDirection.TopDown, WrapContents = false };
         currentText.Controls.Add(_currentMaterialLabel); currentText.Controls.Add(_lblBrushInstructions);
@@ -174,13 +178,13 @@ internal sealed class MapEditorForm : Form
 
         var properties = BuildPropertiesPanel();
         _inspectorTabs = new TabControl { Dock = DockStyle.Fill };
-        _inspectorTabs.TabPages.Add(new TabPage("地表") { BackColor = Color.FromArgb(34, 38, 47) }); _inspectorTabs.TabPages[0].Controls.Add(palettePanel);
-        _inspectorTabs.TabPages.Add(new TabPage("地圖屬性") { BackColor = Color.FromArgb(34, 38, 47) }); _inspectorTabs.TabPages[1].Controls.Add(properties);
-        var scenePanel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(8), BackColor = Color.FromArgb(34, 38, 47) };
+        _inspectorTabs.TabPages.Add(new TabPage("地表") { BackColor = WinFormsTheme.Surface }); _inspectorTabs.TabPages[0].Controls.Add(palettePanel);
+        _inspectorTabs.TabPages.Add(new TabPage("地圖屬性") { BackColor = WinFormsTheme.Surface }); _inspectorTabs.TabPages[1].Controls.Add(properties);
+        var scenePanel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(10), BackColor = WinFormsTheme.Surface };
         _sceneList.Columns.Add("類型", 65); _sceneList.Columns.Add("物件", 170); _sceneList.Columns.Add("隊伍", 65); _sceneList.Columns.Add("來源", 120);
-        var sceneEditor = new TableLayoutPanel { Dock = DockStyle.Bottom, Height = 272, ColumnCount = 2, Padding = new Padding(4), BackColor = Color.FromArgb(40, 45, 55) };
+        var sceneEditor = new TableLayoutPanel { Dock = DockStyle.Bottom, Height = 276, ColumnCount = 2, Padding = new Padding(8), BackColor = WinFormsTheme.SurfaceRaised };
         sceneEditor.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 74)); sceneEditor.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        _sceneWarningLabel = new Label { AutoSize = true, MaximumSize = new Size(250, 0), ForeColor = Color.Khaki };
+        _sceneWarningLabel = new Label { AutoSize = true, MaximumSize = new Size(250, 0), ForeColor = WinFormsTheme.Warning };
         sceneEditor.Controls.Add(_sceneWarningLabel, 0, 0); sceneEditor.SetColumnSpan(_sceneWarningLabel, 2);
         _lblSceneTeam = AddSceneField(sceneEditor, 1, "隊伍", _sceneTeam); 
         _lblSceneX = AddSceneField(sceneEditor, 2, "相對 X", _sceneX); 
@@ -189,9 +193,9 @@ internal sealed class MapEditorForm : Form
         sceneEditor.Controls.Add(_sceneApplyButton, 0, 5); sceneEditor.Controls.Add(_sceneRestoreButton, 1, 5);
         sceneEditor.Controls.Add(_sceneDuplicateButton, 0, 6); sceneEditor.Controls.Add(_sceneDeleteButton, 1, 6);
         scenePanel.Controls.Add(_sceneList); scenePanel.Controls.Add(sceneEditor); scenePanel.Controls.Add(_sceneSummary);
-        _inspectorTabs.TabPages.Add(new TabPage("場景物件") { BackColor = Color.FromArgb(34, 38, 47) }); _inspectorTabs.TabPages[2].Controls.Add(scenePanel);
+        _inspectorTabs.TabPages.Add(new TabPage("場景物件") { BackColor = WinFormsTheme.Surface }); _inspectorTabs.TabPages[2].Controls.Add(scenePanel);
 
-        _canvasHost = new Panel { Dock = DockStyle.Fill, Padding = new Padding(8), BackColor = Color.FromArgb(20, 23, 29) };
+        _canvasHost = new Panel { Dock = DockStyle.Fill, Padding = new Padding(10), BackColor = WinFormsTheme.Window };
         _canvasHost.Controls.Add(_canvas); _canvasHost.Controls.Add(_modeBanner);
         try
         {
@@ -203,14 +207,14 @@ internal sealed class MapEditorForm : Form
         {
             Disable3DView("無法建立 OpenGL 3D 控制項。", ex);
         }
-        var overviewHost = new Panel { Width = 190, Height = 190, Anchor = AnchorStyles.Right | AnchorStyles.Bottom, Padding = new Padding(5), BackColor = Color.FromArgb(55, 61, 72) };
+        var overviewHost = new Panel { Width = 190, Height = 190, Anchor = AnchorStyles.Right | AnchorStyles.Bottom, Padding = new Padding(5), BackColor = WinFormsTheme.BorderStrong };
         overviewHost.Controls.Add(_overview); overviewHost.Controls.Add(_lblOverviewTitle);
         _canvasHost.Controls.Add(overviewHost); overviewHost.BringToFront();
         _canvasHost.Resize += (_, _) => overviewHost.Location = new Point(Math.Max(12, _canvasHost.ClientSize.Width - overviewHost.Width - 18), Math.Max(46, _canvasHost.ClientSize.Height - overviewHost.Height - 18));
 
         var centerRight = new SplitContainer { Dock = DockStyle.Fill, FixedPanel = FixedPanel.Panel2, Size = new Size(1140, 760), SplitterDistance = 820 };
         centerRight.Panel1.Controls.Add(_canvasHost); centerRight.Panel2.Controls.Add(_inspectorTabs); centerRight.Panel2MinSize = 280;
-        var statusStrip = new StatusStrip { BackColor = Color.FromArgb(42, 47, 58), ForeColor = Color.Gainsboro };
+        var statusStrip = new StatusStrip { BackColor = WinFormsTheme.Surface, ForeColor = WinFormsTheme.TextSecondary };
         statusStrip.Items.Add(_status); statusStrip.Items.Add(_lblStatusInstructions);
         Controls.Add(centerRight); Controls.Add(tools); Controls.Add(commands); Controls.Add(statusStrip);
         commands.BringToFront(); tools.BringToFront();
@@ -227,7 +231,7 @@ internal sealed class MapEditorForm : Form
         teams.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 60)); teams.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         for (int index = 0; index < _teamNames.Length; index++)
         {
-            var lbl = new Label { Text = $"隊伍 {index}", AutoSize = true, Anchor = AnchorStyles.Left, ForeColor = Color.Gainsboro };
+            var lbl = new Label { Text = $"隊伍 {index}", AutoSize = true, Anchor = AnchorStyles.Left, ForeColor = WinFormsTheme.TextSecondary };
             _teamLabels[index] = lbl;
             teams.Controls.Add(lbl, 0, index);
             teams.Controls.Add(_teamNames[index], 1, index);
@@ -242,7 +246,7 @@ internal sealed class MapEditorForm : Form
         _lblDayStart = AddField(table, "日出時間", _dayStart); 
         _lblDayEnd = AddField(table, "日落時間", _dayEnd); 
         AddField(table, "", _rain);
-        var panel = new Panel { Dock = DockStyle.Fill, AutoScroll = true, BackColor = Color.FromArgb(34, 38, 47) }; panel.Controls.Add(table); return panel;
+        var panel = new Panel { Dock = DockStyle.Fill, AutoScroll = true, BackColor = WinFormsTheme.Surface }; panel.Controls.Add(table); return panel;
     }
 
     private void WireEvents()
@@ -489,14 +493,14 @@ internal sealed class MapEditorForm : Form
             if (_view3dButton.Checked && has3DScene)
             {
                 _modeBanner.Text = _selected.IsCustom
-                    ? (isEn ? $"Offline 3D Scene (Approx. View) — Real terrain & {_canvas.SceneObjectCount} scene objects" : $"離線 3D 場景（近似顯示）— 真實地表、地勢與 {_canvas.SceneObjectCount} 個場景物件")
-                    : (isEn ? $"Offline 3D Scene (Approx. View) — Original map read-only, contains {_canvas.SceneObjectCount} scene objects" : $"離線 3D 場景（近似顯示）— 原廠地圖僅供瀏覽，含 {_canvas.SceneObjectCount} 個場景物件");
+                    ? (isEn ? $"Offline 3D Scene (Approx. View) - Real terrain & {_canvas.SceneObjectCount} scene objects" : $"離線 3D 場景（近似顯示）- 真實地表、地勢與 {_canvas.SceneObjectCount} 個場景物件")
+                    : (isEn ? $"Offline 3D Scene (Approx. View) - Original map read-only, contains {_canvas.SceneObjectCount} scene objects" : $"離線 3D 場景（近似顯示）- 原廠地圖僅供瀏覽，含 {_canvas.SceneObjectCount} 個場景物件");
             }
             else
             {
                 _modeBanner.Text = _selected.IsCustom
-                    ? (isEn ? $"Offline Map Scene — Real terrain & {_canvas.SceneObjectCount} scene objects; Wheel: Zoom, Middle Drag: Pan" : $"離線地圖場景 — 真實地表、地勢與 {_canvas.SceneObjectCount} 個場景物件；滾輪縮放，中鍵平移")
-                    : (isEn ? $"Offline Map Scene — Real terrain & {_canvas.SceneObjectCount} scene objects; Original map read-only" : $"離線地圖場景 — 真實地表、地勢與 {_canvas.SceneObjectCount} 個場景物件；原廠地圖僅供瀏覽");
+                    ? (isEn ? $"Offline Map Scene - Real terrain & {_canvas.SceneObjectCount} scene objects; Wheel: Zoom, Middle Drag: Pan" : $"離線地圖場景 - 真實地表、地勢與 {_canvas.SceneObjectCount} 個場景物件；滾輪縮放，中鍵平移")
+                    : (isEn ? $"Offline Map Scene - Real terrain & {_canvas.SceneObjectCount} scene objects; Original map read-only" : $"離線地圖場景 - 真實地表、地勢與 {_canvas.SceneObjectCount} 個場景物件；原廠地圖僅供瀏覽");
             }
         }
         else
@@ -1053,7 +1057,7 @@ internal sealed class MapEditorForm : Form
             : "";
         string notice = _terrainBlendNotice is null ? "" : "　" + _terrainBlendNotice;
 
-        _status.Text = $"{_selected.Id} — {mapType}{dirtyMark}{notice}";
+        _status.Text = $"{_selected.Id} - {mapType}{dirtyMark}{notice}";
     }
 
     private void SetActiveView(bool use3D)
@@ -1088,21 +1092,21 @@ internal sealed class MapEditorForm : Form
         string heightPath = _selected is null ? (isEn ? "(No map selected)" : "（尚未選擇地圖）") : Path.Combine(mapPath, "boden.bmp");
         return isEn 
             ? string.Join(Environment.NewLine,
-                "Against Rome Map Editor — 3D Diagnostics",
+                "Against Rome Map Editor - 3D Diagnostics",
                 $"Reason: {reason}",
                 $"Map: {_selected?.Id ?? "(None)"}",
-                $"floortex.dat: {(File.Exists(floorPath) ? "Present" : "Missing")} — {floorPath}",
-                $"boden.bmp: {(File.Exists(heightPath) ? "Present" : "Missing")} — {heightPath}",
+                $"floortex.dat: {(File.Exists(floorPath) ? "Present" : "Missing")} - {floorPath}",
+                $"boden.bmp: {(File.Exists(heightPath) ? "Present" : "Missing")} - {heightPath}",
                 $"OpenGL: {_view3d?.ContextDescription ?? "Context not created"}",
                 $"OS: {Environment.OSVersion}",
                 $"Arch: {System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture}",
                 exception is null ? "Exception: None" : "Exception: " + exception)
             : string.Join(Environment.NewLine,
-                "Against Rome Map Editor — 3D 診斷",
+                "Against Rome Map Editor - 3D 診斷",
                 $"原因：{reason}",
                 $"地圖：{_selected?.Id ?? "（無）"}",
-                $"floortex.dat：{(File.Exists(floorPath) ? "存在" : "缺少")} — {floorPath}",
-                $"boden.bmp：{(File.Exists(heightPath) ? "存在" : "缺少")} — {heightPath}",
+                $"floortex.dat：{(File.Exists(floorPath) ? "存在" : "缺少")} - {floorPath}",
+                $"boden.bmp：{(File.Exists(heightPath) ? "存在" : "缺少")} - {heightPath}",
                 $"OpenGL：{_view3d?.ContextDescription ?? "尚未建立 context"}",
                 $"作業系統：{Environment.OSVersion}",
                 $"程序架構：{System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture}",
@@ -1228,11 +1232,11 @@ internal sealed class MapEditorForm : Form
         e.SuppressKeyPress = true;
     }
 
-    private static Label SectionHeader(string text) => new() { Text = text, Dock = DockStyle.Top, Height = 34, Font = new Font("Microsoft JhengHei UI", 9F, FontStyle.Bold), Padding = new Padding(4, 8, 0, 0), ForeColor = Color.White };
+    private static Label SectionHeader(string text) => new() { Text = text, Dock = DockStyle.Top, Height = 38, Font = WinFormsTheme.CreateDisplayFont(10F), Padding = new Padding(4, 10, 0, 0), ForeColor = WinFormsTheme.TextPrimary };
 
     private static Label AddField(TableLayoutPanel table, string label, Control control)
     {
-        var lbl = new Label { Text = label, AutoSize = true, Margin = new Padding(3, 10, 3, 3), ForeColor = Color.Gainsboro };
+        var lbl = new Label { Text = label, AutoSize = true, Margin = new Padding(3, 11, 3, 4), ForeColor = WinFormsTheme.TextSecondary };
         table.Controls.Add(lbl);
         table.Controls.Add(control);
         return lbl;
@@ -1240,7 +1244,7 @@ internal sealed class MapEditorForm : Form
 
     private static Label AddSceneField(TableLayoutPanel table, int row, string label, Control control)
     {
-        var lbl = new Label { Text = label, AutoSize = true, Anchor = AnchorStyles.Left, ForeColor = Color.Gainsboro };
+        var lbl = new Label { Text = label, AutoSize = true, Anchor = AnchorStyles.Left, ForeColor = WinFormsTheme.TextSecondary };
         table.Controls.Add(lbl, 0, row);
         table.Controls.Add(control, 1, row);
         return lbl;

@@ -44,17 +44,22 @@ namespace AgainstRomeModifier {
         private bool _repairInFlight;
         private SaveBackupService saveBackupService = null!;
 
-        private Font fontJhengHei115B = new Font("Microsoft JhengHei", 11.5F, FontStyle.Bold);
-        private Font fontJhengHei95B = new Font("Microsoft JhengHei", 9.5F, FontStyle.Bold);
-        private Font fontJhengHei9R = new Font("Microsoft JhengHei", 9F, FontStyle.Regular);
-        private Font fontJhengHei10R = new Font("Microsoft JhengHei", 10F, FontStyle.Regular);
-        private Font fontJhengHei105B = new Font("Microsoft JhengHei", 10.5F, FontStyle.Bold);
+        private Font fontJhengHei115B = WinFormsTheme.CreateDisplayFont(11.5F);
+        private Font fontJhengHei95B = WinFormsTheme.CreateFont(9.5F, FontStyle.Bold);
+        private Font fontJhengHei9R = WinFormsTheme.CreateFont(9F);
+        private Font fontJhengHei10R = WinFormsTheme.CreateFont(10F);
+        private Font fontJhengHei105B = WinFormsTheme.CreateFont(10.5F, FontStyle.Bold);
 
         private bool dragging;
         private Point dragStart = new Point(0, 0);
 
         public SaveManagerForm(string? initialGamePath = null) {
             InitializeComponent();
+            WinFormsTheme.Apply(this);
+            WinFormsTheme.StylePrimaryButton(btnBackupSave);
+            WinFormsTheme.StylePrimaryButton(btnRestoreBackup);
+            WinFormsTheme.StyleDangerButton(btnDeleteSave);
+            WinFormsTheme.StyleDangerButton(btnDeleteBackup);
             saveBackupService = new SaveBackupService(Path.Combine(AppContext.BaseDirectory, "SavesBackup"));
             
             // 初始遊戲路徑解析與 Modifier 共用同一順序（明確路徑→同目錄可攜→登錄檔→預設）。
@@ -74,8 +79,9 @@ namespace AgainstRomeModifier {
             this.ClientSize = new Size(1180, 780);
             this.MinimumSize = new Size(960, 640);
             this.StartPosition = FormStartPosition.CenterScreen;
-            this.BackColor = Color.FromArgb(9, 12, 18);
-            this.ForeColor = Color.FromArgb(230, 235, 240);
+            this.BackColor = WinFormsTheme.Window;
+            this.ForeColor = WinFormsTheme.TextPrimary;
+            this.Font = WinFormsTheme.CreateFont(9F);
             this.DoubleBuffered = true;
 
             void UpdateRoundedRegion() {
@@ -91,8 +97,8 @@ namespace AgainstRomeModifier {
 
             this.Paint += (s, e) => {
                 e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-                using (Pen p = new Pen(Color.FromArgb(0, 230, 255), 2)) {
-                    using (GraphicsPath path = GetRoundPath(new Rectangle(0, 0, this.Width, this.Height), 15)) {
+                using (Pen p = new Pen(WinFormsTheme.BorderStrong, 1)) {
+                    using (GraphicsPath path = GetRoundPath(new Rectangle(0, 0, this.Width - 1, this.Height - 1), WinFormsTheme.ContainerRadius)) {
                         e.Graphics.DrawPath(p, path);
                     }
                 }
@@ -101,7 +107,7 @@ namespace AgainstRomeModifier {
             pnlTitleBar = new Panel {
                 Location = new Point(0, 0),
                 Size = new Size(this.Width, 56),
-                BackColor = Color.FromArgb(13, 17, 25),
+                BackColor = WinFormsTheme.Surface,
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
             };
             pnlTitleBar.MouseDown += TitleBar_MouseDown;
@@ -113,7 +119,7 @@ namespace AgainstRomeModifier {
                 Location = new Point(24, 16),
                 Size = new Size(360, 26),
                 Font = fontJhengHei115B,
-                ForeColor = Color.FromArgb(226, 241, 252)
+                ForeColor = WinFormsTheme.TextPrimary
             };
             lblMainTitle.MouseDown += TitleBar_MouseDown;
             lblMainTitle.MouseMove += TitleBar_MouseMove;
@@ -137,7 +143,7 @@ namespace AgainstRomeModifier {
             pnlTitleBar.Controls.Add(btnClose);
 
             btnMinimize = new Button {
-                Text = "—",
+                Text = "−",
                 Location = new Point(this.Width - 86, 12),
                 Size = new Size(30, 30),
                 FlatStyle = FlatStyle.Flat,
@@ -195,7 +201,7 @@ namespace AgainstRomeModifier {
             Panel pnlTopBar = new Panel {
                 Location = new Point(0, 56),
                 Size = new Size(this.Width, 60),
-                BackColor = Color.FromArgb(12, 16, 24),
+                BackColor = WinFormsTheme.Surface,
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
             };
             
@@ -204,17 +210,17 @@ namespace AgainstRomeModifier {
                 Location = new Point(16, 20),
                 Size = new Size(80, 20),
                 Font = fontJhengHei95B,
-                ForeColor = Color.FromArgb(128, 143, 163)
+                ForeColor = WinFormsTheme.TextMuted
             };
             
             Panel pathWrapper = new Panel {
                 Location = new Point(100, 14),
                 Size = new Size(400, 32),
-                BackColor = Color.FromArgb(22, 28, 39)
+                BackColor = WinFormsTheme.SurfaceRaised
             };
             pathWrapper.Paint += (s, e) => {
                 e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-                using (Pen p = new Pen(Color.FromArgb(50, 52, 70), 1)) {
+                using (Pen p = new Pen(WinFormsTheme.Border, 1)) {
                     e.Graphics.DrawRectangle(p, 0, 0, pathWrapper.Width - 1, pathWrapper.Height - 1);
                 }
             };
@@ -223,7 +229,7 @@ namespace AgainstRomeModifier {
                 Location = new Point(9, 7),
                 Size = new Size(382, 20),
                 BackColor = pathWrapper.BackColor,
-                ForeColor = Color.FromArgb(222, 230, 240),
+                ForeColor = WinFormsTheme.TextPrimary,
                 BorderStyle = BorderStyle.None,
                 Font = fontJhengHei95B
             };
@@ -303,7 +309,7 @@ namespace AgainstRomeModifier {
             detailCard.Paint += CardPanel_Paint;
             pnlRightSave.Controls.Add(detailCard);
 
-            lblGameSavesTitle = new Label { Text = "遊戲中存檔列表", Location = new Point(16, 15), AutoSize = true, Font = fontJhengHei105B, ForeColor = Color.FromArgb(0, 220, 255), BackColor = Color.Transparent };
+            lblGameSavesTitle = new Label { Text = "遊戲中存檔列表", Location = new Point(16, 15), AutoSize = true, Font = fontJhengHei105B, ForeColor = WinFormsTheme.TextPrimary, BackColor = Color.Transparent };
             gameCard.Controls.Add(lblGameSavesTitle);
             dgvGameSaves = CreateSaveGrid(false);
             gameCard.Controls.Add(dgvGameSaves);
@@ -351,7 +357,7 @@ namespace AgainstRomeModifier {
                 button.Margin = new Padding(4, 4, 4, 4);
             }
 
-            lblBackupsTitle = new Label { Text = "備份歷史列表", Location = new Point(16, 15), AutoSize = true, Font = fontJhengHei105B, ForeColor = Color.FromArgb(0, 220, 255), BackColor = Color.Transparent };
+            lblBackupsTitle = new Label { Text = "備份歷史列表", Location = new Point(16, 15), AutoSize = true, Font = fontJhengHei105B, ForeColor = WinFormsTheme.TextPrimary, BackColor = Color.Transparent };
             backupsCard.Controls.Add(lblBackupsTitle);
             dgvBackups = CreateSaveGrid(true);
             backupsCard.Controls.Add(dgvBackups);
@@ -385,7 +391,7 @@ namespace AgainstRomeModifier {
                 button.Margin = new Padding(4, 4, 4, 4);
             }
 
-            lblDetailTitle = new Label { Text = "存檔詳細與預覽", Location = new Point(20, 20), AutoSize = true, Font = fontJhengHei105B, ForeColor = Color.FromArgb(0, 220, 255), BackColor = Color.Transparent };
+            lblDetailTitle = new Label { Text = "存檔詳細與預覽", Location = new Point(20, 20), AutoSize = true, Font = fontJhengHei105B, ForeColor = WinFormsTheme.TextPrimary, BackColor = Color.Transparent };
             detailCard.Controls.Add(lblDetailTitle);
             picSavePreview = new PictureBox { SizeMode = PictureBoxSizeMode.Zoom, BackColor = Color.FromArgb(12, 12, 16) };
             detailCard.Controls.Add(picSavePreview);
@@ -729,26 +735,30 @@ namespace AgainstRomeModifier {
                 int radius = 6;
 
                 using (GraphicsPath path = GetRoundPath(rect, radius)) {
-                    Color startColor, endColor;
-                    if (backColor == Color.FromArgb(98, 0, 238)) {
-                        startColor = isHovered ? Color.FromArgb(52, 151, 255) : Color.FromArgb(34, 124, 246);
-                        endColor = isHovered ? Color.FromArgb(66, 199, 255) : Color.FromArgb(43, 160, 255);
-                    } else {
-                        startColor = isHovered ? Color.FromArgb(47, 55, 70) : Color.FromArgb(31, 37, 49);
-                        endColor = isHovered ? Color.FromArgb(56, 66, 84) : Color.FromArgb(38, 45, 59);
-                    }
+                    bool isPrimary = backColor == Color.FromArgb(98, 0, 238);
+                    bool isDestructive = hoverBorderColor == Color.FromArgb(255, 75, 75);
+                    Color fillColor = isPrimary
+                        ? (isHovered ? WinFormsTheme.AccentHover : WinFormsTheme.Accent)
+                        : isDestructive
+                            ? (isHovered ? Color.FromArgb(60, 35, 38) : WinFormsTheme.SurfaceRaised)
+                            : (isHovered ? WinFormsTheme.SurfaceHover : WinFormsTheme.SurfaceRaised);
 
-                    using (LinearGradientBrush brush = new LinearGradientBrush(rect, startColor, endColor, 45F)) {
+                    using (SolidBrush brush = new SolidBrush(fillColor)) {
                         g.FillPath(brush, path);
                     }
 
-                    Color borderColor = isHovered ? hoverBorderColor : Color.FromArgb(50, 52, 70);
+                    Color borderColor = isHovered
+                        ? (isPrimary ? WinFormsTheme.AccentHover : isDestructive ? WinFormsTheme.Danger : WinFormsTheme.Accent)
+                        : (isPrimary ? WinFormsTheme.Accent : WinFormsTheme.Border);
                     using (Pen p = new Pen(borderColor, 1.2F)) {
                         g.DrawPath(p, path);
                     }
 
                     if (!string.IsNullOrEmpty(btn.Text)) {
-                        TextRenderer.DrawText(g, btn.Text, btn.Font, rect, foreColor,
+                        Color textColor = isPrimary
+                            ? Color.FromArgb(27, 20, 15)
+                            : isDestructive ? WinFormsTheme.Danger : WinFormsTheme.TextPrimary;
+                        TextRenderer.DrawText(g, btn.Text, btn.Font, rect, textColor,
                             TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.WordBreak);
                     }
                 }
@@ -757,14 +767,8 @@ namespace AgainstRomeModifier {
 
         private void UpdateLanguageButtonStyles() {
             bool isZh = Loc.CurrentLanguage == Language.TraditionalChinese;
-
-            btnLangZH.BackColor = isZh ? Color.FromArgb(30, 30, 42) : Color.Transparent;
-            btnLangZH.ForeColor = isZh ? Color.FromArgb(0, 220, 255) : Color.FromArgb(120, 125, 135);
-            btnLangZH.FlatAppearance.BorderColor = isZh ? Color.FromArgb(0, 220, 255) : Color.FromArgb(50, 50, 60);
-
-            btnLangEN.BackColor = !isZh ? Color.FromArgb(30, 30, 42) : Color.Transparent;
-            btnLangEN.ForeColor = !isZh ? Color.FromArgb(0, 220, 255) : Color.FromArgb(120, 125, 135);
-            btnLangEN.FlatAppearance.BorderColor = !isZh ? Color.FromArgb(0, 220, 255) : Color.FromArgb(50, 50, 60);
+            WinFormsTheme.StyleLanguageButton(btnLangZH, isZh);
+            WinFormsTheme.StyleLanguageButton(btnLangEN, !isZh);
         }
 
         private void ApplyLanguageToUI() {

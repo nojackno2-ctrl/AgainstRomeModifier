@@ -42,9 +42,9 @@ namespace AgainstRomeModifier {
         private Point dragStart = new Point(0, 0);
 
         // 字型物件
-        private Font fontJhengHei10B = new Font("Microsoft JhengHei", 10F, FontStyle.Bold);
-        private Font fontJhengHei95B = new Font("Microsoft JhengHei", 9.5F, FontStyle.Bold);
-        private Font fontJhengHei9R = new Font("Microsoft JhengHei", 9F, FontStyle.Regular);
+        private Font fontJhengHei10B = WinFormsTheme.CreateDisplayFont(10F);
+        private Font fontJhengHei95B = WinFormsTheme.CreateFont(9.5F, FontStyle.Bold);
+        private Font fontJhengHei9R = WinFormsTheme.CreateFont(9F);
         private bool fontsDisposed;
 
         internal TroopPresetForm(UnitStatsEditorService statsService, Dictionary<string, double[]>? currentCustomStats, Dictionary<string, Bitmap> unitIcons) {
@@ -58,6 +58,9 @@ namespace AgainstRomeModifier {
             }
 
             InitializeComponent();
+            WinFormsTheme.Apply(this);
+            WinFormsTheme.StylePrimaryButton(btnApply);
+            WinFormsTheme.StyleDangerButton(btnCancel);
             ApplyCustomStatsToGrid();
         }
 
@@ -66,8 +69,9 @@ namespace AgainstRomeModifier {
             this.Size = new Size(1250, 790); // 擴大寬度與高度以顯示 9 個屬性欄位且不要出現水平拉桿
             this.FormBorderStyle = FormBorderStyle.None;
             this.StartPosition = FormStartPosition.CenterParent;
-            this.BackColor = Color.FromArgb(10, 11, 16);
-            this.ForeColor = Color.FromArgb(230, 235, 240);
+            this.BackColor = WinFormsTheme.Window;
+            this.ForeColor = WinFormsTheme.TextPrimary;
+            this.Font = WinFormsTheme.CreateFont(9F);
             this.DoubleBuffered = true;
 
             // 設置圓角
@@ -79,7 +83,7 @@ namespace AgainstRomeModifier {
             pnlTitleBar = new Panel {
                 Location = new Point(0, 0),
                 Size = new Size(this.Width, 50),
-                BackColor = Color.FromArgb(18, 19, 29)
+                BackColor = WinFormsTheme.Surface
             };
             pnlTitleBar.MouseDown += TitleBar_MouseDown;
             pnlTitleBar.MouseMove += TitleBar_MouseMove;
@@ -87,12 +91,12 @@ namespace AgainstRomeModifier {
 
             lblTitle = new Label {
                 Text = isEn 
-                    ? "🛡️  Against Rome Troop Custom Preset Profile (6 Editable Stats)"
-                    : "🛡️  Against Rome 兵種自訂屬性設定檔案 (6 項可自訂屬性)",
+                    ? "Against Rome Troop Custom Preset Profile (6 Editable Stats)"
+                    : "Against Rome 兵種自訂屬性設定檔案 (6 項可自訂屬性)",
                 Location = new Point(20, 13),
                 Size = new Size(600, 25),
                 Font = fontJhengHei10B,
-                ForeColor = Color.FromArgb(0, 230, 255),
+                ForeColor = WinFormsTheme.TextPrimary,
                 BackColor = Color.Transparent
             };
             pnlTitleBar.Controls.Add(lblTitle);
@@ -134,7 +138,7 @@ namespace AgainstRomeModifier {
                 string facText = factionTexts[i];
 
                 TabPage tp = new TabPage(facText) {
-                    BackColor = Color.FromArgb(10, 11, 16),
+                    BackColor = WinFormsTheme.Window,
                     Padding = new Padding(3)
                 };
 
@@ -201,6 +205,7 @@ namespace AgainstRomeModifier {
             dgv.DefaultCellStyle.Font = fontJhengHei9R;
 
             dgv.AlternatingRowsDefaultCellStyle.BackColor = Color.FromArgb(24, 25, 35);
+            WinFormsTheme.StyleGrid(dgv);
 
             var imgCol = new DataGridViewImageColumn {
                 Name = "Icon",
@@ -294,22 +299,22 @@ namespace AgainstRomeModifier {
                 int radius = 6;
 
                 using (GraphicsPath path = GetRoundPath(rect, radius)) {
-                    // 根據顏色判定角色並套用漸層
-                    Color startColor, endColor;
-                    if (backColor == Color.FromArgb(98, 0, 238)) { // Apply 確定套用 (Primary 紫色)
-                        startColor = isHovered ? Color.FromArgb(120, 30, 255) : Color.FromArgb(98, 0, 238);
-                        endColor = isHovered ? Color.FromArgb(160, 60, 255) : Color.FromArgb(130, 40, 255);
-                    } else { // 預設按鈕 (卡片暗灰漸層)
-                        startColor = isHovered ? Color.FromArgb(40, 42, 54) : Color.FromArgb(28, 30, 40);
-                        endColor = isHovered ? Color.FromArgb(50, 52, 68) : Color.FromArgb(35, 37, 48);
-                    }
+                    bool isPrimary = backColor == Color.FromArgb(98, 0, 238);
+                    bool isDestructive = hoverBorderColor == Color.FromArgb(255, 75, 75);
+                    Color fillColor = isPrimary
+                        ? (isHovered ? WinFormsTheme.AccentHover : WinFormsTheme.Accent)
+                        : isDestructive
+                            ? (isHovered ? Color.FromArgb(60, 35, 38) : WinFormsTheme.SurfaceRaised)
+                            : (isHovered ? WinFormsTheme.SurfaceHover : WinFormsTheme.SurfaceRaised);
 
-                    using (LinearGradientBrush brush = new LinearGradientBrush(rect, startColor, endColor, 45F)) {
+                    using (SolidBrush brush = new SolidBrush(fillColor)) {
                         g.FillPath(brush, path);
                     }
 
                     // 繪製細線邊框
-                    Color borderColor = isHovered ? hoverBorderColor : Color.FromArgb(50, 52, 70);
+                    Color borderColor = isHovered
+                        ? (isPrimary ? WinFormsTheme.AccentHover : isDestructive ? WinFormsTheme.Danger : WinFormsTheme.Accent)
+                        : (isPrimary ? WinFormsTheme.Accent : WinFormsTheme.Border);
                     using (Pen p = new Pen(borderColor, 1.2F)) {
                         g.DrawPath(p, path);
                     }
@@ -321,7 +326,9 @@ namespace AgainstRomeModifier {
                             btn.Text,
                             btn.Font,
                             rect,
-                            foreColor,
+                            isPrimary
+                                ? Color.FromArgb(27, 20, 15)
+                                : isDestructive ? WinFormsTheme.Danger : WinFormsTheme.TextPrimary,
                             TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.WordBreak
                         );
                     }

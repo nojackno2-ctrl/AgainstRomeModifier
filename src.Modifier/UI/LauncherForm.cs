@@ -25,8 +25,8 @@ namespace AgainstRomeModifier {
         private Button btnLangZH = null!;
         private Button btnLangEN = null!;
         
-        private Font fontJhengHei115B = new Font("Microsoft JhengHei", 11.5F, FontStyle.Bold);
-        private Font fontJhengHei10B = new Font("Microsoft JhengHei", 10F, FontStyle.Bold);
+        private Font fontJhengHei115B = WinFormsTheme.CreateDisplayFont(11.5F);
+        private Font fontJhengHei10B = WinFormsTheme.CreateFont(10F, FontStyle.Bold);
 
         private bool dragging;
         private Point dragStart = new Point(0, 0);
@@ -43,11 +43,12 @@ namespace AgainstRomeModifier {
 
         private void InitializeComponent() {
             this.Text = "Against Rome Pro Launcher";
-            this.Size = new Size(600, 480);
+            this.ClientSize = new Size(720, 500);
             this.FormBorderStyle = FormBorderStyle.None;
             this.StartPosition = FormStartPosition.CenterScreen;
-            this.BackColor = Color.FromArgb(10, 11, 16);
-            this.ForeColor = Color.FromArgb(230, 235, 240);
+            this.BackColor = WinFormsTheme.Window;
+            this.ForeColor = WinFormsTheme.TextPrimary;
+            this.Font = WinFormsTheme.CreateFont(9F);
             this.DoubleBuffered = true;
 
             this.Load += (s, e) => {
@@ -58,8 +59,8 @@ namespace AgainstRomeModifier {
 
             this.Paint += (s, e) => {
                 e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-                using (Pen p = new Pen(Color.FromArgb(0, 230, 255), 2)) {
-                    using (GraphicsPath path = GetRoundPath(new Rectangle(0, 0, this.Width, this.Height), 15)) {
+                using (Pen p = new Pen(WinFormsTheme.BorderStrong, 1)) {
+                    using (GraphicsPath path = GetRoundPath(new Rectangle(0, 0, this.Width - 1, this.Height - 1), WinFormsTheme.ContainerRadius)) {
                         e.Graphics.DrawPath(p, path);
                     }
                 }
@@ -67,8 +68,8 @@ namespace AgainstRomeModifier {
 
             pnlTitleBar = new Panel {
                 Location = new Point(0, 0),
-                Size = new Size(this.Width, 50),
-                BackColor = Color.FromArgb(18, 19, 29)
+                Size = new Size(this.Width, 64),
+                BackColor = WinFormsTheme.Surface
             };
             pnlTitleBar.MouseDown += TitleBar_MouseDown;
             pnlTitleBar.MouseMove += TitleBar_MouseMove;
@@ -76,10 +77,10 @@ namespace AgainstRomeModifier {
 
             lblMainTitle = new Label {
                 Text = "AGAINST ROME PRO LAUNCHER",
-                Location = new Point(20, 14),
-                Size = new Size(300, 25),
+                Location = new Point(24, 19),
+                Size = new Size(330, 28),
                 Font = fontJhengHei115B,
-                ForeColor = Color.FromArgb(0, 230, 255)
+                ForeColor = WinFormsTheme.TextPrimary
             };
             lblMainTitle.MouseDown += TitleBar_MouseDown;
             lblMainTitle.MouseMove += TitleBar_MouseMove;
@@ -87,35 +88,37 @@ namespace AgainstRomeModifier {
 
             btnClose = new Button {
                 Text = "×",
-                Location = new Point(this.Width - 40, 10),
-                Size = new Size(30, 30),
+                Location = new Point(this.Width - 44, 16),
+                Size = new Size(28, 28),
                 FlatStyle = FlatStyle.Flat,
                 BackColor = Color.Transparent,
-                ForeColor = Color.White
+                ForeColor = WinFormsTheme.TextSecondary
             };
             btnClose.FlatAppearance.BorderSize = 0;
             btnClose.Cursor = Cursors.Hand;
             btnClose.Click += (s, e) => Application.Exit();
             btnClose.MouseEnter += (s, e) => {
-                btnClose.BackColor = Color.FromArgb(232, 17, 35);
+                btnClose.BackColor = Color.FromArgb(76, 34, 37);
+                btnClose.ForeColor = WinFormsTheme.Danger;
             };
             btnClose.MouseLeave += (s, e) => {
                 btnClose.BackColor = Color.Transparent;
+                btnClose.ForeColor = WinFormsTheme.TextSecondary;
             };
 
             btnMinimize = new Button {
-                Text = "—",
-                Location = new Point(this.Width - 80, 10),
-                Size = new Size(30, 30),
+                Text = "−",
+                Location = new Point(this.Width - 80, 16),
+                Size = new Size(28, 28),
                 FlatStyle = FlatStyle.Flat,
                 BackColor = Color.Transparent,
-                ForeColor = Color.White
+                ForeColor = WinFormsTheme.TextSecondary
             };
             btnMinimize.FlatAppearance.BorderSize = 0;
             btnMinimize.Cursor = Cursors.Hand;
             btnMinimize.Click += (s, e) => this.WindowState = FormWindowState.Minimized;
             btnMinimize.MouseEnter += (s, e) => {
-                btnMinimize.BackColor = Color.FromArgb(45, 45, 55);
+                btnMinimize.BackColor = WinFormsTheme.SurfaceHover;
             };
             btnMinimize.MouseLeave += (s, e) => {
                 btnMinimize.BackColor = Color.Transparent;
@@ -123,7 +126,7 @@ namespace AgainstRomeModifier {
 
             btnLangZH = new Button {
                 Text = "繁體中文",
-                Location = new Point(this.Width - 270, 10),
+                Location = new Point(this.Width - 282, 16),
                 Size = new Size(80, 30),
                 FlatStyle = FlatStyle.Flat,
                 Font = fontJhengHei10B,
@@ -140,7 +143,7 @@ namespace AgainstRomeModifier {
 
             btnLangEN = new Button {
                 Text = "English",
-                Location = new Point(this.Width - 180, 10),
+                Location = new Point(this.Width - 188, 16),
                 Size = new Size(80, 30),
                 FlatStyle = FlatStyle.Flat,
                 Font = fontJhengHei10B,
@@ -163,20 +166,20 @@ namespace AgainstRomeModifier {
             this.Controls.Add(pnlTitleBar);
 
             // Launcher Buttons
-            btnModifier = new Button { Text = "啟動修改器", Location = new Point(100, 100), Size = new Size(400, 60) };
-            StyleButton(btnModifier, Color.FromArgb(38, 132, 255), Color.White, Color.FromArgb(0, 230, 255));
+            btnModifier = new Button { Text = "啟動修改器", Location = new Point(36, 100), Size = new Size(310, 340) };
+            StyleButton(btnModifier, WinFormsTheme.Accent, Color.FromArgb(27, 20, 15), WinFormsTheme.AccentHover);
             btnModifier.Click += BtnModifier_Click;
 
-            btnMapEditor = new Button { Text = "地圖編輯器", Location = new Point(100, 190), Size = new Size(400, 60) };
-            StyleButton(btnMapEditor, Color.FromArgb(0, 180, 120), Color.White, Color.FromArgb(0, 255, 170));
+            btnMapEditor = new Button { Text = "地圖編輯器", Location = new Point(374, 100), Size = new Size(310, 100) };
+            StyleButton(btnMapEditor, WinFormsTheme.SurfaceRaised, WinFormsTheme.TextPrimary, WinFormsTheme.Accent);
             btnMapEditor.Click += BtnMapEditor_Click;
 
-            btnSaveManager = new Button { Text = "存檔管理器", Location = new Point(100, 280), Size = new Size(400, 60) };
-            StyleButton(btnSaveManager, Color.FromArgb(98, 0, 238), Color.White, Color.FromArgb(180, 100, 255));
+            btnSaveManager = new Button { Text = "存檔管理器", Location = new Point(374, 220), Size = new Size(310, 100) };
+            StyleButton(btnSaveManager, WinFormsTheme.SurfaceRaised, WinFormsTheme.TextPrimary, WinFormsTheme.Accent);
             btnSaveManager.Click += BtnSaveManager_Click;
 
-            btnTechDoc = new Button { Text = "技術文件", Location = new Point(100, 370), Size = new Size(400, 60) };
-            StyleButton(btnTechDoc, Color.FromArgb(40, 45, 55), Color.White, Color.FromArgb(100, 110, 130));
+            btnTechDoc = new Button { Text = "技術文件", Location = new Point(374, 340), Size = new Size(310, 100) };
+            StyleButton(btnTechDoc, WinFormsTheme.SurfaceRaised, WinFormsTheme.TextPrimary, WinFormsTheme.Accent);
             btnTechDoc.Click += (s, e) => {
                 var docForm = new TechDocForm();
                 docForm.ShowDialog(this);
@@ -194,13 +197,8 @@ namespace AgainstRomeModifier {
         private void UpdateLanguageButtonStyles() {
             bool isZh = Loc.CurrentLanguage == Language.TraditionalChinese;
 
-            btnLangZH.BackColor = isZh ? Color.FromArgb(30, 30, 42) : Color.Transparent;
-            btnLangZH.ForeColor = isZh ? Color.FromArgb(0, 220, 255) : Color.FromArgb(120, 125, 135);
-            btnLangZH.FlatAppearance.BorderColor = isZh ? Color.FromArgb(0, 220, 255) : Color.FromArgb(50, 50, 60);
-
-            btnLangEN.BackColor = !isZh ? Color.FromArgb(30, 30, 42) : Color.Transparent;
-            btnLangEN.ForeColor = !isZh ? Color.FromArgb(0, 220, 255) : Color.FromArgb(120, 125, 135);
-            btnLangEN.FlatAppearance.BorderColor = !isZh ? Color.FromArgb(0, 220, 255) : Color.FromArgb(50, 50, 60);
+            WinFormsTheme.StyleLanguageButton(btnLangZH, isZh);
+            WinFormsTheme.StyleLanguageButton(btnLangEN, !isZh);
         }
 
         private void ApplyLanguageToUI() {
@@ -336,22 +334,17 @@ namespace AgainstRomeModifier {
 
                 using (GraphicsPath path = GetRoundPath(rect, radius)) {
                     Color startColor, endColor;
-                    if (backColor == Color.FromArgb(98, 0, 238) || backColor == Color.FromArgb(38, 132, 255)) {
-                        startColor = isHovered ? Color.FromArgb(52, 151, 255) : backColor;
-                        endColor = isHovered ? Color.FromArgb(66, 199, 255) : Color.FromArgb(backColor.R, Math.Min(255, backColor.G + 30), Math.Min(255, backColor.B + 30));
-                    } else if (backColor == Color.FromArgb(0, 180, 120)) {
-                        startColor = isHovered ? Color.FromArgb(0, 200, 140) : backColor;
-                        endColor = isHovered ? Color.FromArgb(0, 240, 170) : Color.FromArgb(0, 210, 150);
-                    } else {
-                        startColor = isHovered ? Color.FromArgb(47, 55, 70) : backColor;
-                        endColor = isHovered ? Color.FromArgb(56, 66, 84) : Color.FromArgb(backColor.R + 20, backColor.G + 20, backColor.B + 20);
-                    }
+                    bool primary = backColor == WinFormsTheme.Accent;
+                    startColor = isHovered
+                        ? (primary ? WinFormsTheme.AccentHover : WinFormsTheme.SurfaceHover)
+                        : backColor;
+                    endColor = primary ? WinFormsTheme.AccentPressed : WinFormsTheme.Surface;
 
                     using (LinearGradientBrush brush = new LinearGradientBrush(rect, startColor, endColor, 45F)) {
                         g.FillPath(brush, path);
                     }
 
-                    Color borderColor = isHovered ? hoverBorderColor : Color.FromArgb(50, 52, 70);
+                    Color borderColor = isHovered ? hoverBorderColor : (primary ? WinFormsTheme.Accent : WinFormsTheme.Border);
                     using (Pen p = new Pen(borderColor, 1.2F)) {
                         g.DrawPath(p, path);
                     }

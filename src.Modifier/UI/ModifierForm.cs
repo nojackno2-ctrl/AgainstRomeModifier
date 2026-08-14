@@ -195,18 +195,18 @@ namespace AgainstRomeModifier {
         private Point dragStart = new Point(0, 0);
         
         // 統一風格的字型物件宣告
-        private Font fontJhengHei95B = new Font("Microsoft JhengHei", 9.5F, FontStyle.Bold);
-        private Font fontJhengHei95R = new Font("Microsoft JhengHei", 9.5F, FontStyle.Regular);
-        private Font fontJhengHei115B = new Font("Microsoft JhengHei", 11.5F, FontStyle.Bold);
-        private Font fontJhengHei105B = new Font("Microsoft JhengHei", 10.5F, FontStyle.Bold);
-        private Font fontJhengHei105R = new Font("Microsoft JhengHei", 10.5F, FontStyle.Regular);
-        private Font fontJhengHei10B = new Font("Microsoft JhengHei", 10F, FontStyle.Bold);
-        private Font fontJhengHei9R = new Font("Microsoft JhengHei", 9F, FontStyle.Regular);
-        private Font fontJhengHei10R = new Font("Microsoft JhengHei", 10F, FontStyle.Regular);
+        private Font fontJhengHei95B = WinFormsTheme.CreateFont(9.5F, FontStyle.Bold);
+        private Font fontJhengHei95R = WinFormsTheme.CreateFont(9.5F);
+        private Font fontJhengHei115B = WinFormsTheme.CreateDisplayFont(11.5F);
+        private Font fontJhengHei105B = WinFormsTheme.CreateFont(10.5F, FontStyle.Bold);
+        private Font fontJhengHei105R = WinFormsTheme.CreateFont(10.5F);
+        private Font fontJhengHei10B = WinFormsTheme.CreateFont(10F, FontStyle.Bold);
+        private Font fontJhengHei9R = WinFormsTheme.CreateFont(9F);
+        private Font fontJhengHei10R = WinFormsTheme.CreateFont(10F);
         private Font fontConsolas85 = new Font("Consolas", 8.5F, FontStyle.Regular);
         
         // 統一風格的按鈕基礎顏色
-        private static readonly Color ColorBtnPrimary = Color.FromArgb(38, 132, 255);
+        private static readonly Color ColorBtnPrimary = WinFormsTheme.Accent;
 
         private string? _initialGamePath;
 
@@ -218,6 +218,7 @@ namespace AgainstRomeModifier {
             // 否則 CurrentLanguage 的 setter 會立即存檔、把使用者已選的語言蓋掉。
 
             InitializeComponent();
+            WinFormsTheme.Apply(this);
             BuildFeatureToggleMap();
             InitializeExperimentalFeatures();
 
@@ -302,10 +303,10 @@ namespace AgainstRomeModifier {
         private void CardPanel_Paint(object? sender, PaintEventArgs e) {
             Panel pnl = (Panel)sender!;
             e.Graphics.SmoothingMode = SmoothingMode.AntiAlias; // 啟用抗鋸齒
-            using (SolidBrush sb = new SolidBrush(Color.FromArgb(18, 22, 31))) {
-                using (GraphicsPath path = GetRoundPath(new Rectangle(0, 0, pnl.Width, pnl.Height), 10)) {
+            using (SolidBrush sb = new SolidBrush(WinFormsTheme.Surface)) {
+                using (GraphicsPath path = GetRoundPath(new Rectangle(0, 0, pnl.Width, pnl.Height), WinFormsTheme.ContainerRadius)) {
                     e.Graphics.FillPath(sb, path); // 填滿背景色
-                    using (Pen p = new Pen(Color.FromArgb(45, 53, 69), 1)) {
+                    using (Pen p = new Pen(WinFormsTheme.Border, 1)) {
                         e.Graphics.DrawPath(p, path); // 繪製卡片細緻邊框
                     }
                 }
@@ -316,7 +317,7 @@ namespace AgainstRomeModifier {
         private void InputPanel_Paint(object? sender, PaintEventArgs e) {
             Panel pnl = (Panel)sender!;
             e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-            using (Pen p = new Pen(Color.FromArgb(50, 52, 70), 1)) {
+            using (Pen p = new Pen(WinFormsTheme.Border, 1)) {
                 e.Graphics.DrawRectangle(p, 0, 0, pnl.Width - 1, pnl.Height - 1);
             }
         }
@@ -339,28 +340,23 @@ namespace AgainstRomeModifier {
                 g.SmoothingMode = SmoothingMode.AntiAlias;
 
                 Rectangle rect = new Rectangle(0, 0, btn.Width, btn.Height);
-                int radius = 6;
+                int radius = WinFormsTheme.ControlRadius;
 
                 using (GraphicsPath path = GetRoundPath(rect, radius)) {
-                    // 根據 backColor 判斷按鈕角色並套用漸層
-                    Color startColor, endColor;
-                    if (backColor == Color.FromArgb(98, 0, 238) || backColor == ColorBtnPrimary) {
-                        startColor = isHovered ? Color.FromArgb(52, 151, 255) : Color.FromArgb(34, 124, 246);
-                        endColor = isHovered ? Color.FromArgb(66, 199, 255) : Color.FromArgb(43, 160, 255);
-                    } else if (backColor == Color.FromArgb(0, 180, 120)) {
-                        startColor = isHovered ? Color.FromArgb(0, 200, 140) : Color.FromArgb(0, 160, 100);
-                        endColor = isHovered ? Color.FromArgb(0, 240, 170) : Color.FromArgb(0, 190, 130);
-                    } else { // 預設按鈕 (如灰色 btnRestore、btnBrowse 等)
-                        startColor = isHovered ? Color.FromArgb(47, 55, 70) : Color.FromArgb(31, 37, 49);
-                        endColor = isHovered ? Color.FromArgb(56, 66, 84) : Color.FromArgb(38, 45, 59);
-                    }
+                    bool primary = backColor == ColorBtnPrimary
+                        || backColor == Color.FromArgb(98, 0, 238)
+                        || backColor == Color.FromArgb(0, 180, 120);
+                    Color startColor = isHovered
+                        ? (primary ? WinFormsTheme.AccentHover : WinFormsTheme.SurfaceHover)
+                        : (primary ? WinFormsTheme.Accent : WinFormsTheme.SurfaceRaised);
+                    Color endColor = primary ? WinFormsTheme.AccentPressed : WinFormsTheme.Surface;
 
                     using (LinearGradientBrush brush = new LinearGradientBrush(rect, startColor, endColor, 45F)) {
                         g.FillPath(brush, path);
                     }
 
                     // 繪製細緻邊框
-                    Color borderColor = isHovered ? hoverBorderColor : Color.FromArgb(50, 52, 70);
+                    Color borderColor = isHovered ? hoverBorderColor : (primary ? WinFormsTheme.Accent : WinFormsTheme.Border);
                     using (Pen p = new Pen(borderColor, 1.2F)) {
                         g.DrawPath(p, path);
                     }
@@ -417,8 +413,8 @@ namespace AgainstRomeModifier {
             this.AutoScrollMinSize = new Size(2000, 940);
             this.FormBorderStyle = FormBorderStyle.None; // 隱藏 Windows 預設視窗邊框
             this.StartPosition = FormStartPosition.CenterScreen; // 視窗預設居中
-            this.BackColor = Color.FromArgb(10, 11, 16); // 深色科技感背景
-            this.ForeColor = Color.FromArgb(230, 235, 240);
+            this.BackColor = WinFormsTheme.Window;
+            this.ForeColor = WinFormsTheme.TextPrimary;
             this.Font = fontJhengHei95R;
             this.DoubleBuffered = true; // 啟用雙緩衝防止繪圖閃爍
 
@@ -436,10 +432,10 @@ namespace AgainstRomeModifier {
             };
             myToolTip.Draw += (s, e) => {
                 e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-                using (SolidBrush bgBrush = new SolidBrush(Color.FromArgb(18, 19, 29))) {
+                using (SolidBrush bgBrush = new SolidBrush(WinFormsTheme.SurfaceRaised)) {
                     e.Graphics.FillRectangle(bgBrush, e.Bounds);
                 }
-                using (Pen borderPen = new Pen(Color.FromArgb(0, 230, 255), 1)) {
+                using (Pen borderPen = new Pen(WinFormsTheme.Accent, 1)) {
                     e.Graphics.DrawRectangle(borderPen, 0, 0, e.Bounds.Width - 1, e.Bounds.Height - 1);
                 }
                 TextRenderer.DrawText(
@@ -447,7 +443,7 @@ namespace AgainstRomeModifier {
                     e.ToolTipText,
                     fontJhengHei95R,
                     new Rectangle(9, 6, e.Bounds.Width - 18, e.Bounds.Height - 12),
-                    Color.FromArgb(220, 225, 235),
+                    WinFormsTheme.TextPrimary,
                     TextFormatFlags.WordBreak | TextFormatFlags.VerticalCenter | TextFormatFlags.HorizontalCenter
                 );
             };
@@ -467,11 +463,11 @@ namespace AgainstRomeModifier {
                 DeleteObject(ptr);
             };
 
-            // 表單 Paint 事件：動態繪製霓虹青色外框線
+            // 表單 Paint 事件：繪製低對比外框線
             this.Paint += (s, e) => {
                 e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-                using (Pen p = new Pen(Color.FromArgb(0, 230, 255), 2)) {
-                    using (GraphicsPath path = GetRoundPath(new Rectangle(0, 0, this.Width, this.Height), 15)) {
+                using (Pen p = new Pen(WinFormsTheme.BorderStrong, 1)) {
+                    using (GraphicsPath path = GetRoundPath(new Rectangle(0, 0, this.Width - 1, this.Height - 1), WinFormsTheme.ContainerRadius)) {
                         e.Graphics.DrawPath(p, path);
                     }
                 }
@@ -480,7 +476,7 @@ namespace AgainstRomeModifier {
             pnlTitleBar = new Panel {
                 Location = new Point(0, 0),
                 Size = new Size(1450, 50),
-                BackColor = Color.FromArgb(18, 19, 29)
+                BackColor = WinFormsTheme.Surface
             };
             pnlTitleBar.MouseDown += TitleBar_MouseDown;
             pnlTitleBar.MouseMove += TitleBar_MouseMove;
@@ -491,7 +487,7 @@ namespace AgainstRomeModifier {
                 Location = new Point(20, 14),
                 Size = new Size(300, 25),
                 Font = fontJhengHei115B,
-                ForeColor = Color.FromArgb(0, 230, 255)
+                ForeColor = WinFormsTheme.TextPrimary
             };
             lblMainTitle.MouseDown += TitleBar_MouseDown;
             lblMainTitle.MouseMove += TitleBar_MouseMove;
@@ -518,7 +514,7 @@ namespace AgainstRomeModifier {
             };
 
             btnMinimize = new Button {
-                Text = "—",
+                Text = "−",
                 Location = new Point(1370, 10),
                 Size = new Size(30, 30),
                 FlatStyle = FlatStyle.Flat,
