@@ -21,8 +21,8 @@ namespace AgainstRomeModifier {
 
         private bool dragging;
         private Point dragStart = new Point(0, 0);
-        private Font fontJhengHei115B = new Font("Microsoft JhengHei", 11.5F, FontStyle.Bold);
-        private Font fontJhengHei105R = new Font("Microsoft JhengHei", 10.5F, FontStyle.Regular);
+        private Font fontJhengHei115B = WinFormsTheme.CreateDisplayFont(11.5F);
+        private Font fontJhengHei105R = WinFormsTheme.CreateFont(10.5F);
 
         public TechDocForm() {
             InitializeComponent();
@@ -34,8 +34,8 @@ namespace AgainstRomeModifier {
             this.Size = new Size(800, 600);
             this.FormBorderStyle = FormBorderStyle.None;
             this.StartPosition = FormStartPosition.CenterScreen;
-            this.BackColor = Color.FromArgb(10, 11, 16);
-            this.ForeColor = Color.FromArgb(230, 235, 240);
+            this.BackColor = WinFormsTheme.Window;
+            this.ForeColor = WinFormsTheme.TextPrimary;
 
             this.Load += (s, e) => {
                 IntPtr ptr = CreateRoundRectRgn(0, 0, Width, Height, 15, 15);
@@ -45,8 +45,8 @@ namespace AgainstRomeModifier {
 
             this.Paint += (s, e) => {
                 e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-                using (Pen p = new Pen(Color.FromArgb(100, 110, 130), 2)) {
-                    using (GraphicsPath path = GetRoundPath(new Rectangle(0, 0, this.Width, this.Height), 15)) {
+                using (Pen p = new Pen(WinFormsTheme.BorderStrong, 1)) {
+                    using (GraphicsPath path = GetRoundPath(new Rectangle(0, 0, this.Width - 1, this.Height - 1), WinFormsTheme.ContainerRadius)) {
                         e.Graphics.DrawPath(p, path);
                     }
                 }
@@ -55,7 +55,7 @@ namespace AgainstRomeModifier {
             pnlTitleBar = new Panel {
                 Location = new Point(0, 0),
                 Size = new Size(this.Width, 50),
-                BackColor = Color.FromArgb(18, 19, 29)
+                BackColor = WinFormsTheme.Surface
             };
             pnlTitleBar.MouseDown += TitleBar_MouseDown;
             pnlTitleBar.MouseMove += TitleBar_MouseMove;
@@ -66,7 +66,7 @@ namespace AgainstRomeModifier {
                 Location = new Point(20, 14),
                 Size = new Size(300, 25),
                 Font = fontJhengHei115B,
-                ForeColor = Color.FromArgb(210, 218, 230)
+                ForeColor = WinFormsTheme.TextPrimary
             };
             lblMainTitle.MouseDown += TitleBar_MouseDown;
             lblMainTitle.MouseMove += TitleBar_MouseMove;
@@ -93,8 +93,8 @@ namespace AgainstRomeModifier {
             Panel pnlContent = new Panel {
                 Location = new Point(20, 70),
                 Size = new Size(this.Width - 40, this.Height - 90),
-                BackColor = Color.FromArgb(16, 20, 29),
-                Padding = new Padding(10)
+                BackColor = WinFormsTheme.Surface,
+                Padding = new Padding(16)
             };
 
             txtDoc = new TextBox {
@@ -102,8 +102,8 @@ namespace AgainstRomeModifier {
                 Multiline = true,
                 ReadOnly = true,
                 ScrollBars = ScrollBars.Vertical,
-                BackColor = Color.FromArgb(16, 20, 29),
-                ForeColor = Color.FromArgb(210, 218, 230),
+                BackColor = WinFormsTheme.Surface,
+                ForeColor = WinFormsTheme.TextSecondary,
                 Font = fontJhengHei105R,
                 BorderStyle = BorderStyle.None
             };

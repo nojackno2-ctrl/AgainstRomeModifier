@@ -48,24 +48,24 @@ namespace AgainstRomeModifier {
 
             Rectangle rect = this.GetTabRect(e.Index);
             bool isSelected = this.SelectedIndex == e.Index;
-            Color tabBg = isSelected ? Color.FromArgb(26, 31, 43) : Color.FromArgb(14, 17, 24);
+            Color tabBg = isSelected ? WinFormsTheme.SurfaceRaised : WinFormsTheme.Surface;
             using (SolidBrush tabBrush = new SolidBrush(tabBg)) {
                 g.FillRectangle(tabBrush, rect);
             }
 
             if (isSelected) {
-                using (SolidBrush indicatorBrush = new SolidBrush(Color.FromArgb(62, 203, 255))) {
-                    g.FillRectangle(indicatorBrush, rect.X + 10, rect.Bottom - 3, rect.Width - 20, 3);
+                using (SolidBrush indicatorBrush = new SolidBrush(WinFormsTheme.Accent)) {
+                    g.FillRectangle(indicatorBrush, rect.X + 12, rect.Bottom - 3, rect.Width - 24, 3);
                 }
             }
 
             if (isSelected) {
                 TextRenderer.DrawText(g, this.TabPages[e.Index].Text, SelectedTabFont, rect,
-                    Color.FromArgb(235, 248, 255),
+                    WinFormsTheme.TextPrimary,
                     TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
             } else {
                 TextRenderer.DrawText(g, this.TabPages[e.Index].Text, this.Font, rect,
-                    Color.FromArgb(145, 155, 172),
+                    WinFormsTheme.TextMuted,
                     TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
             }
         }
@@ -85,7 +85,6 @@ namespace AgainstRomeModifier {
     public class ModernToggle : CheckBox {
         private int _toggleWidth = 40;
         private int _toggleHeight = 20;
-        private System.Windows.Forms.Timer _animationTimer;
         private float _animPosition; // 0 = 關閉, 1 = 開啟
         private float _targetPosition;
 
@@ -94,28 +93,17 @@ namespace AgainstRomeModifier {
             this.Cursor = Cursors.Hand;
             this.Size = new Size(180, 25);
             
-            _animationTimer = new System.Windows.Forms.Timer { Interval = 15 };
-            _animationTimer.Tick += (s, e) => {
-                float step = 0.15f;
-                if (Math.Abs(_animPosition - _targetPosition) < step) {
-                    _animPosition = _targetPosition;
-                    _animationTimer.Stop();
-                } else {
-                    _animPosition += (_targetPosition > _animPosition) ? step : -step;
-                }
-                this.Invalidate();
-            };
-            
             this.CheckedChanged += (s, e) => {
                 _targetPosition = this.Checked ? 1.0f : 0.0f;
-                _animationTimer.Start();
+                _animPosition = _targetPosition;
+                this.Invalidate();
             };
         }
 
         protected override void OnPaint(PaintEventArgs pevent) {
             Graphics g = pevent.Graphics;
             g.SmoothingMode = SmoothingMode.AntiAlias;
-            Color clearColor = this.Parent?.BackColor ?? Color.FromArgb(11, 14, 20);
+            Color clearColor = this.Parent?.BackColor ?? WinFormsTheme.Window;
             g.Clear(clearColor);
 
             // 計算 Toggle 膠囊的繪製範圍
@@ -123,8 +111,8 @@ namespace AgainstRomeModifier {
             Rectangle toggleRect = new Rectangle(0, toggleY, _toggleWidth, _toggleHeight);
 
             // 根據動畫位置插值顏色
-            Color startColor = Color.FromArgb(42, 48, 62);
-            Color endColor = Color.FromArgb(38, 166, 255);
+            Color startColor = WinFormsTheme.BorderStrong;
+            Color endColor = WinFormsTheme.Accent;
 
             int r = (int)(startColor.R + (endColor.R - startColor.R) * _animPosition);
             int gr = (int)(startColor.G + (endColor.G - startColor.G) * _animPosition);
@@ -137,7 +125,7 @@ namespace AgainstRomeModifier {
                     g.FillPath(brush, path);
                 }
                 // 繪製軌道細緻框線
-                using (Pen p = new Pen(this.Checked ? Color.FromArgb(82, 193, 255) : Color.FromArgb(66, 74, 92), 1)) {
+                using (Pen p = new Pen(this.Checked ? WinFormsTheme.AccentHover : WinFormsTheme.Border, 1)) {
                     g.DrawPath(p, path);
                 }
             }
@@ -148,15 +136,15 @@ namespace AgainstRomeModifier {
             int thumbDiameter = 14;
 
             // 繪製圓鈕 (白色，加入微微的立體感)
-            Color thumbColor = this.Checked ? Color.White : Color.FromArgb(160, 170, 185);
+            Color thumbColor = this.Checked ? Color.FromArgb(31, 24, 19) : WinFormsTheme.TextSecondary;
             using (SolidBrush brush = new SolidBrush(thumbColor)) {
                 g.FillEllipse(brush, thumbX, thumbY, thumbDiameter, thumbDiameter);
             }
 
             // 繪製開關文字
             Color textColor = !this.Enabled
-                ? Color.FromArgb(100, 108, 122)
-                : (this.Checked ? Color.FromArgb(234, 247, 255) : Color.FromArgb(194, 201, 214));
+                ? WinFormsTheme.TextMuted
+                : (this.Checked ? WinFormsTheme.TextPrimary : WinFormsTheme.TextSecondary);
             Rectangle textRect = new Rectangle(_toggleWidth + 10, 0, Math.Max(0, this.Width - _toggleWidth - 10), this.Height);
             TextRenderer.DrawText(g, this.Text, this.Font, textRect, textColor,
                 TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis);
@@ -182,30 +170,25 @@ namespace AgainstRomeModifier {
             return path;
         }
 
-        protected override void Dispose(bool disposing) {
-            if (disposing) {
-                _animationTimer.Dispose();
-            }
-            base.Dispose(disposing);
-        }
+        protected override void Dispose(bool disposing) => base.Dispose(disposing);
     }
 
     /// <summary>
     /// 自訂深色選單顏色對照表，用於 ContextMenuStrip 美化。
     /// </summary>
     public class DarkColorTable : ProfessionalColorTable {
-        public override Color ToolStripDropDownBackground => Color.FromArgb(24, 24, 30);
-        public override Color ImageMarginGradientBegin => Color.FromArgb(24, 24, 30);
-        public override Color ImageMarginGradientMiddle => Color.FromArgb(24, 24, 30);
-        public override Color ImageMarginGradientEnd => Color.FromArgb(24, 24, 30);
-        public override Color MenuBorder => Color.FromArgb(0, 220, 255);
-        public override Color MenuItemSelected => Color.FromArgb(45, 45, 60);
-        public override Color MenuItemSelectedGradientBegin => Color.FromArgb(45, 45, 60);
-        public override Color MenuItemSelectedGradientEnd => Color.FromArgb(45, 45, 60);
-        public override Color MenuItemBorder => Color.FromArgb(0, 220, 255);
-        public override Color CheckBackground => Color.FromArgb(0, 220, 255);
-        public override Color CheckSelectedBackground => Color.FromArgb(0, 220, 255);
-        public override Color CheckPressedBackground => Color.FromArgb(0, 180, 220);
+        public override Color ToolStripDropDownBackground => WinFormsTheme.SurfaceRaised;
+        public override Color ImageMarginGradientBegin => WinFormsTheme.SurfaceRaised;
+        public override Color ImageMarginGradientMiddle => WinFormsTheme.SurfaceRaised;
+        public override Color ImageMarginGradientEnd => WinFormsTheme.SurfaceRaised;
+        public override Color MenuBorder => WinFormsTheme.BorderStrong;
+        public override Color MenuItemSelected => WinFormsTheme.AccentSoft;
+        public override Color MenuItemSelectedGradientBegin => WinFormsTheme.AccentSoft;
+        public override Color MenuItemSelectedGradientEnd => WinFormsTheme.AccentSoft;
+        public override Color MenuItemBorder => WinFormsTheme.Accent;
+        public override Color CheckBackground => WinFormsTheme.Accent;
+        public override Color CheckSelectedBackground => WinFormsTheme.AccentHover;
+        public override Color CheckPressedBackground => WinFormsTheme.AccentPressed;
     }
 
     /// <summary>
@@ -215,7 +198,7 @@ namespace AgainstRomeModifier {
         public DarkContextMenuRenderer() : base(new DarkColorTable()) { }
 
         protected override void OnRenderItemText(ToolStripItemTextRenderEventArgs e) {
-            e.TextColor = Color.FromArgb(230, 235, 240); // 項目文字使用淡灰色
+            e.TextColor = WinFormsTheme.TextPrimary;
             base.OnRenderItemText(e);
         }
     }

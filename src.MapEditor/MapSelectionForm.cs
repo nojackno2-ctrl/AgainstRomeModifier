@@ -1,4 +1,5 @@
 using AgainstRomeModifier.Maps;
+using AgainstRomeModifier;
 
 namespace AgainstRomeMapEditor;
 
@@ -12,17 +13,17 @@ internal sealed class MapSelectionForm : Form
     private readonly ListView _customMaps = CreateMapList();
     private readonly ListView _originalMaps = CreateMapList();
     private readonly TabControl _mapTabs = new() { Dock = DockStyle.Fill };
-    private readonly PictureBox _preview = new() { Dock = DockStyle.Fill, SizeMode = PictureBoxSizeMode.Zoom, BackColor = Color.FromArgb(18, 21, 27) };
-    private readonly Label _previewPlaceholder = new() { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleCenter, ForeColor = Color.Gray };
-    private readonly Label _previewTitle = new() { Dock = DockStyle.Top, Height = 58, Padding = new Padding(8, 12, 8, 4), Font = new Font("Microsoft JhengHei UI", 10F, FontStyle.Bold), ForeColor = Color.White };
-    private readonly Label _previewDetails = new() { Dock = DockStyle.Bottom, Height = 72, Padding = new Padding(8), ForeColor = Color.Silver };
+    private readonly PictureBox _preview = new() { Dock = DockStyle.Fill, SizeMode = PictureBoxSizeMode.Zoom, BackColor = WinFormsTheme.Window };
+    private readonly Label _previewPlaceholder = new() { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleCenter, ForeColor = WinFormsTheme.TextMuted };
+    private readonly Label _previewTitle = new() { Dock = DockStyle.Top, Height = 62, Padding = new Padding(12, 14, 12, 4), Font = WinFormsTheme.CreateDisplayFont(11F), ForeColor = WinFormsTheme.TextPrimary };
+    private readonly Label _previewDetails = new() { Dock = DockStyle.Bottom, Height = 76, Padding = new Padding(12), ForeColor = WinFormsTheme.TextSecondary };
     private readonly Button _loadButton = new() { Width = 120, Height = 38, Enabled = false };
     private readonly Button _newButton = new() { Width = 170, Height = 38 };
     private readonly Button _blankButton = new() { Width = 145, Height = 38 };
     private readonly Button _copyButton = new() { Width = 150, Height = 38, Enabled = false };
     private readonly Button _deleteButton = new() { Width = 130, Height = 38, Enabled = false };
-    private readonly Label _hint = new() { Dock = DockStyle.Bottom, Height = 42, TextAlign = ContentAlignment.MiddleLeft, ForeColor = Color.Silver };
-    private readonly Label _header = new() { Dock = DockStyle.Top, Height = 58, Padding = new Padding(14, 18, 0, 0), Font = new Font("Microsoft JhengHei UI", 12F, FontStyle.Bold), ForeColor = Color.White };
+    private readonly Label _hint = new() { Dock = DockStyle.Bottom, Height = 46, Padding = new Padding(4, 0, 0, 0), TextAlign = ContentAlignment.MiddleLeft, ForeColor = WinFormsTheme.TextSecondary };
+    private readonly Label _header = new() { Dock = DockStyle.Top, Height = 64, Padding = new Padding(18, 20, 0, 0), Font = WinFormsTheme.CreateDisplayFont(13F), ForeColor = WinFormsTheme.TextPrimary };
     private readonly Label _lblGamePath = new() { AutoSize = true, Anchor = AnchorStyles.Left };
     private readonly Button _browse = new() { AutoSize = true, Dock = DockStyle.Fill };
     private readonly Button _refresh = new() { AutoSize = true, Dock = DockStyle.Fill };
@@ -37,9 +38,13 @@ internal sealed class MapSelectionForm : Form
     public MapSelectionForm(string gamePath, string? preferredMapId = null)
     {
         Width = 1080; Height = 660; MinimumSize = new Size(840, 520); StartPosition = FormStartPosition.CenterScreen;
-        BackColor = Color.FromArgb(30, 34, 42); ForeColor = Color.Gainsboro;
+        BackColor = WinFormsTheme.Window; ForeColor = WinFormsTheme.TextPrimary; Font = WinFormsTheme.CreateFont(9F);
         _gamePath.Text = gamePath; _preferredMapId = preferredMapId;
-        BuildInterface(); WireEvents();
+        BuildInterface();
+        WinFormsTheme.Apply(this);
+        WinFormsTheme.StylePrimaryButton(_loadButton);
+        WinFormsTheme.StyleDangerButton(_deleteButton);
+        WireEvents();
         Shown += (_, _) => RefreshMaps();
     }
 
@@ -64,26 +69,26 @@ internal sealed class MapSelectionForm : Form
 
         _customMaps.Columns.Add("地圖", 120); _customMaps.Columns.Add("名稱", 300); _customMaps.Columns.Add("類型", 110);
         _originalMaps.Columns.Add("地圖", 120); _originalMaps.Columns.Add("名稱", 270); _originalMaps.Columns.Add("類型", 140);
-        var customPage = new TabPage("自製地圖") { BackColor = Color.FromArgb(34, 38, 47), Padding = new Padding(4) };
-        var originalPage = new TabPage("原版地圖（不含劇情）") { BackColor = Color.FromArgb(34, 38, 47), Padding = new Padding(4) };
+        var customPage = new TabPage("自製地圖") { BackColor = WinFormsTheme.Surface, Padding = new Padding(6) };
+        var originalPage = new TabPage("原版地圖（不含劇情）") { BackColor = WinFormsTheme.Surface, Padding = new Padding(6) };
         customPage.Controls.Add(_customMaps); originalPage.Controls.Add(_originalMaps); _mapTabs.TabPages.Add(customPage); _mapTabs.TabPages.Add(originalPage);
-        var previewImageHost = new Panel { Dock = DockStyle.Fill, Padding = new Padding(8), BackColor = Color.FromArgb(26, 30, 38) };
+        var previewImageHost = new Panel { Dock = DockStyle.Fill, Padding = new Padding(12), BackColor = WinFormsTheme.Surface };
         previewImageHost.Controls.Add(_previewPlaceholder); previewImageHost.Controls.Add(_preview);
         _previewPlaceholder.BringToFront();
-        var previewPanel = new Panel { Dock = DockStyle.Fill, BackColor = Color.FromArgb(26, 30, 38) };
+        var previewPanel = new Panel { Dock = DockStyle.Fill, BackColor = WinFormsTheme.Surface };
         previewPanel.Controls.Add(previewImageHost); previewPanel.Controls.Add(_previewTitle); previewPanel.Controls.Add(_previewDetails);
-        var contentSplit = new SplitContainer { Dock = DockStyle.Fill, FixedPanel = FixedPanel.Panel2, Size = new Size(1030, 480), SplitterDistance = 680, Panel1MinSize = 480, Panel2MinSize = 280, BackColor = Color.FromArgb(30, 34, 42) };
+        var contentSplit = new SplitContainer { Dock = DockStyle.Fill, FixedPanel = FixedPanel.Panel2, Size = new Size(1030, 480), SplitterDistance = 680, Panel1MinSize = 480, Panel2MinSize = 280, BackColor = WinFormsTheme.Window };
         contentSplit.Panel1.Controls.Add(_mapTabs); contentSplit.Panel2.Controls.Add(previewPanel);
-        var listHost = new Panel { Dock = DockStyle.Fill, Padding = new Padding(12), BackColor = Color.FromArgb(34, 38, 47) };
+        var listHost = new Panel { Dock = DockStyle.Fill, Padding = new Padding(16), BackColor = WinFormsTheme.Surface };
         listHost.Controls.Add(contentSplit); listHost.Controls.Add(_hint);
-        var actions = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 64, Padding = new Padding(12), FlowDirection = FlowDirection.RightToLeft, BackColor = Color.FromArgb(42, 47, 58) };
+        var actions = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 70, Padding = new Padding(14, 16, 14, 10), FlowDirection = FlowDirection.RightToLeft, BackColor = WinFormsTheme.Surface };
         actions.Controls.Add(_exit); actions.Controls.Add(_loadButton); actions.Controls.Add(_newButton); actions.Controls.Add(_blankButton); actions.Controls.Add(_copyButton); actions.Controls.Add(_deleteButton);
 
         btnLangZH = new Button {
             Text = "繁體中文",
             Size = new Size(90, 30),
             FlatStyle = FlatStyle.Flat,
-            Font = new Font("Microsoft JhengHei UI", 9F, FontStyle.Regular),
+            Font = WinFormsTheme.CreateFont(9F),
             Cursor = Cursors.Hand,
             Anchor = AnchorStyles.Top | AnchorStyles.Right
         };
@@ -99,7 +104,7 @@ internal sealed class MapSelectionForm : Form
             Text = "English",
             Size = new Size(90, 30),
             FlatStyle = FlatStyle.Flat,
-            Font = new Font("Microsoft JhengHei UI", 9F, FontStyle.Regular),
+            Font = WinFormsTheme.CreateFont(9F),
             Cursor = Cursors.Hand,
             Anchor = AnchorStyles.Top | AnchorStyles.Right
         };
@@ -150,14 +155,8 @@ internal sealed class MapSelectionForm : Form
     private void UpdateLanguageButtonStyles()
     {
         bool isZh = AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.TraditionalChinese;
-
-        btnLangZH.BackColor = isZh ? Color.FromArgb(42, 47, 58) : Color.Transparent;
-        btnLangZH.ForeColor = isZh ? Color.FromArgb(0, 220, 255) : Color.FromArgb(120, 125, 135);
-        btnLangZH.FlatAppearance.BorderColor = isZh ? Color.FromArgb(0, 220, 255) : Color.FromArgb(50, 50, 60);
-
-        btnLangEN.BackColor = !isZh ? Color.FromArgb(42, 47, 58) : Color.Transparent;
-        btnLangEN.ForeColor = !isZh ? Color.FromArgb(0, 220, 255) : Color.FromArgb(120, 125, 135);
-        btnLangEN.FlatAppearance.BorderColor = !isZh ? Color.FromArgb(0, 220, 255) : Color.FromArgb(50, 50, 60);
+        WinFormsTheme.StyleLanguageButton(btnLangZH, isZh);
+        WinFormsTheme.StyleLanguageButton(btnLangEN, !isZh);
     }
 
     private void ApplyLanguageToUI()

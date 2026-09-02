@@ -1,7 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <!-- net8.0-windows 保留供 GameDirectoryLocator 讀取登錄檔；本專案不使用 WinForms。 -->
+    <!-- net8.0-windows 供 GameDirectoryLocator 讀取登錄檔，並供應所有原生 WinForms 模組共用的視覺 tokens。 -->
     <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="AgainstRomeModifier" />
