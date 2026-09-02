@@ -7,8 +7,8 @@
     TargetFramework 刻意不收斂——src.Shared 是 net8.0，其餘為 net8.0-windows。
   -->
   <PropertyGroup Condition="'$(MSBuildProjectExtension)' == '.csproj'">
-    <!-- v1.2.1 is the one source for package, assembly, file and product versions. -->
-    <VersionPrefix>1.2.1</VersionPrefix>
+    <!-- v1.2.2 is the one source for package, assembly, file and product versions. -->
+    <VersionPrefix>1.2.2</VersionPrefix>
     <Version>$(VersionPrefix)</Version>
     <AssemblyVersion>$(VersionPrefix).0</AssemblyVersion>
     <FileVersion>$(VersionPrefix).0</FileVersion>
