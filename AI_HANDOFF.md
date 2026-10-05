@@ -1,4 +1,12 @@
-﻿# AI Handoff - Live Project Memory
+# AI Handoff - Live Project Memory
+
+## 2026-10-05 Codex: automatic local commit policy
+
+- User authorized automatic local commits without further confirmation; AGENTS.md now records the standing policy. Push/release/history changes require separate authorization.
+- Evidence: inspected branch, git status, git diff, and git log; reviewed collaboration rules and handoff. The initial working tree was clean; this task changes collaboration documentation only.
+- Verification: full staged git diff --cached --check passed; automatic commit wording and remaining authorization limits were checked. Documentation-only work; no build/runtime validation was needed.
+- Status: automatic commit policy established; this record accompanies the authorized local snapshot. No build/test or runtime behavior is claimed by this snapshot task.
+
 
 ## 2026-08-13 native WinForms UI redesign (implementation complete)
 
