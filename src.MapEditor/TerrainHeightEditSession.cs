@@ -287,3 +287,21 @@ internal readonly record struct EmbossLightModel(float Intercept, float SlopeX, 
         - m[0, 1] * (m[1, 0] * m[2, 2] - m[1, 2] * m[2, 0])
         + m[0, 2] * (m[1, 0] * m[2, 1] - m[1, 1] * m[2, 0]);
 }
+
+/// <summary>筆畫路徑補點：回傳兩個 tile 之間（不含起點、含終點）的 Bresenham 直線。</summary>
+internal static class TerrainStrokePath
+{
+    public static IEnumerable<(int X, int Y)> Between(int fromX, int fromY, int toX, int toY)
+    {
+        int dx = Math.Abs(toX - fromX), dy = -Math.Abs(toY - fromY);
+        int sx = fromX < toX ? 1 : -1, sy = fromY < toY ? 1 : -1, error = dx + dy;
+        int x = fromX, y = fromY;
+        while (x != toX || y != toY)
+        {
+            int twice = 2 * error;
+            if (twice >= dy) { error += dy; x += sx; }
+            if (twice <= dx) { error += dx; y += sy; }
+            yield return (x, y);
+        }
+    }
+}

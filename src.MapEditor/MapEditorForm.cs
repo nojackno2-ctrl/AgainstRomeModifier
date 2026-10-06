@@ -119,6 +119,8 @@ internal sealed class MapEditorForm : Form
     private TerrainHeightEditSession? _terrainLayers;
     private TerrainLayer? _bodenLayer, _embossLayer, _collisionLayer;
     private int _flattenTarget = -1;
+    private (int X, int Y)? _lastTerrainTile;
+    private readonly HashSet<int> _terrainStrokeTiles = new();
 
     private bool TextureDirty() => _terrainBlendSession?.IsDirty == true;
 
@@ -586,7 +588,7 @@ internal sealed class MapEditorForm : Form
     // 一次筆畫（滑鼠按下到放開）內觸及的所有格子合併為單一 undo 項目。
     private void CommitStroke()
     {
-        _flattenTarget = -1;
+        _flattenTarget = -1; _lastTerrainTile = null; _terrainStrokeTiles.Clear();
         if (_terrainLayers?.CommitStroke() == true) UpdateEditorState();
         if (_terrainBlendSession?.CommitStroke() != true) return;
         UpdateEditorState();
@@ -738,30 +740,45 @@ internal sealed class MapEditorForm : Form
     private void PaintTerrainLayer(TexturePaintEventArgs e)
     {
         if (_selected?.IsCustom != true || _terrainLayers is null || _texturesDocument is null) return;
-        int dimension = _texturesDocument.Dimension;
+        // 視圖只在滑鼠移動時回報 tile；快速拖曳會跳格，因此在同一筆畫內補齊上一點到目前點之間的 tile。
+        IEnumerable<(int X, int Y)> tiles = _lastTerrainTile is { } last
+            ? TerrainStrokePath.Between(last.X, last.Y, e.X, e.Y)
+            : new[] { (e.X, e.Y) };
+        _lastTerrainTile = (e.X, e.Y);
+        bool heightsChanged = false, collisionChanged = false;
+        foreach ((int x, int y) in tiles)
+        {
+            if (!_terrainStrokeTiles.Add(y * _texturesDocument.Dimension + x)) continue; // 同一筆畫不重複套用同一格。
+            (bool height, bool collision) = PaintTerrainTile(x, y);
+            heightsChanged |= height; collisionChanged |= collision;
+        }
+        if (heightsChanged) ApplyHeightsToViews();
+        if (collisionChanged) _canvas.SetCollisionOverlay(_terrainLayers.CollisionSize, _terrainLayers.Collision);
+        UpdateEditorState();
+    }
+
+    private (bool Heights, bool Collision) PaintTerrainTile(int tileX, int tileY)
+    {
+        int dimension = _texturesDocument!.Dimension;
         float radiusTiles = _canvas.BrushSize / 2f + .26f;
-        bool isEn = AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English;
         if (_editMode == EditMode.Height)
         {
-            float step = (_terrainLayers.VertexSize - 1) / (float)dimension;
-            float centerX = (e.X + .5f) * step, centerY = (e.Y + .5f) * step;
+            float step = (_terrainLayers!.VertexSize - 1) / (float)dimension;
+            float centerX = (tileX + .5f) * step, centerY = (tileY + .5f) * step;
             var operation = (TerrainHeightOperation)Math.Clamp(_terrainOperation.SelectedIndex, 0, 3);
             if (operation == TerrainHeightOperation.Flatten && _flattenTarget < 0)
                 _flattenTarget = _terrainLayers.Heights[Math.Clamp((int)MathF.Round(centerY), 0, _terrainLayers.VertexSize - 1) * _terrainLayers.VertexSize + Math.Clamp((int)MathF.Round(centerX), 0, _terrainLayers.VertexSize - 1)];
-            if (_terrainLayers.PaintHeight(centerX, centerY, radiusTiles * step + 1, operation, TerrainStrength, _flattenTarget).Count > 0) ApplyHeightsToViews();
+            return (_terrainLayers.PaintHeight(centerX, centerY, radiusTiles * step + 1, operation, TerrainStrength, _flattenTarget).Count > 0, false);
         }
-        else if (_terrainLayers.HasCollision)
+        if (_terrainLayers!.HasCollision)
         {
             float step = _terrainLayers.CollisionSize / (float)dimension;
             var operation = _terrainOperation.SelectedIndex == 1 ? TerrainCollisionOperation.Clear : TerrainCollisionOperation.Block;
-            if (_terrainLayers.PaintCollision((e.X + .5f) * step, (e.Y + .5f) * step, radiusTiles * step, operation).Count > 0)
-                _canvas.SetCollisionOverlay(_terrainLayers.CollisionSize, _terrainLayers.Collision);
+            return (false, _terrainLayers.PaintCollision((tileX + .5f) * step, (tileY + .5f) * step, radiusTiles * step, operation).Count > 0);
         }
-        else
-        {
-            _terrainBlendNotice = isEn ? "This map has no collision.bmp to edit." : "此地圖沒有可編輯的 collision.bmp。";
-        }
-        UpdateEditorState();
+        bool isEn = AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English;
+        _terrainBlendNotice = isEn ? "This map has no collision.bmp to edit." : "此地圖沒有可編輯的 collision.bmp。";
+        return (false, false);
     }
 
     private void ApplyHeightsToViews()
