@@ -1,5 +1,13 @@
 # AI Handoff - Live Project Memory
 
+## 2026-10-06 Claude: AoE2-style scenario editing — feasibility research (WIP, placement code NOT committed)
+
+- User request: 「地圖編輯器要跟世紀帝國2一樣，可以放建築、建立事件等地圖製作功能」.
+- Findings (details in docs/reverse-engineering/map-formats.md 2026-10-06 section): SDL `onload=1` objects are NOT auto-built (dev console buttons only) — in-game test with ENDL_005 `ARM_Placed.sdl` (Ger main house + Hun unit group, team 0) showed nothing spawned, no crash. Pre-placed world objects live in DATA/objects.dat/position.dat/objdata.dat (layout decoded by Agy; static trees/rocks addable via free slots, buildings/units unverified). The EXE embeds the IPR C-like script compiler (.ics→.ias→.bci) but global `CompileScripts` would require sources for all standard scripts. Dev in-game editor key handler is stubbed (Codex).
+- Uncommitted WIP in working tree: `src.Shared/Maps/SdlObjectCatalog.cs` (catalog of 99 object types from all original SDLs + ARM_Placed.sdl writer/reader), MapEditorForm `放置物件` tool/tab, SdlSceneCatalog ignores ARM_Placed.sdl, `MapEditorObjectPlacementTests.cs` (Codex, 14 tests). Tests 326 pass. The tool writes a file the game ignores — do not ship as-is. Known UI issue: placement option rows overlap the type list at high DPI (fixed Height=170 table).
+- Game folder side effect: ENDL_005 now contains `ARM_Placed.sdl` (ignored by the game). Research tools: scratchpad agy_work/*.py (objects.dat parser), ProcDump, minidump.
+- Proposed roadmap (awaiting user choice): (1) static world objects (trees/rocks) via DATA/*.dat slots — also lets blank maps remove template forests; (2) level-script injection (BCI codegen: on-start s_createObj/s_createUnitAndMems for buildings/units, then AoE2-style triggers → s_showTextBox/s_timeReached/victory); (3) buildings directly in objects.dat (needs hirarchy/anim/action research).
+
 ## 2026-10-06 Claude: in-game verified playable custom map; fixed .put overflow crash, blank map, inspector layout
 
 - User goal: test the editor myself, add a test map to the game folder only through the editor, and make the produced map playable. User installed .NET 8 desktop runtime and ran the session elevated; computer-use access to the game was granted.

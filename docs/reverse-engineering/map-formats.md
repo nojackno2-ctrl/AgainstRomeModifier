@@ -52,6 +52,13 @@
 - **碰撞筆刷（Collision brush）**：寫入 0 / 255。
 - **快取刪除**：在儲存交易（`FileRollbackScope`）內一併刪除上述四個快取檔案。
 
+## 2026-10-06 場景編輯（放置物件／事件）可行性證據
+
+- **SDL `onload` 不會自動建造**：EXE 會列舉地圖目錄 `*.sdl`（`%s%s/*.sdl`），但 `tcon_build`／`tcon_buildall`／`tcon_buildonload`／`tcon_delobj` 是開發用聚落主控台 UI 的按鈕名稱（`0x473600` 起依名稱分派到 `0x472ad0` 模式 1/2/3）。實機測試：在 ENDL_005 寫入 `ARM_Placed.sdl`（`onload=1` 的日耳曼主屋與匈人部隊、隊伍 0），進遊戲後未出現、「前往主屋」無效、人口不變；地圖仍正常載入且未當機。SDL 聚落是 AI 建村藍圖，由地圖腳本（`s_setVillageTemplate`、`Endlos_*_Siedlung*` 符號）使用。
+- **預放世界物件存放在 `DATA/*.dat`（關卡存檔格式，由 `mp_lsave.c` 讀寫，`FUN_00487F70` 寫出）**。Agy 靜態解析（ENDL_000，PFIL 解壓後）：`objects.dat` 標頭 16 B（ver=1, count=14000, 字串長 30/30），14,000 筆固定 79 B 紀錄（+0x00 active、+0x01 team u16〔8=中立〕、+0x03 uid u32、+0x07 name[30]、+0x25 idname[30]、+0x43/+0x45 位置索引、+0x4B type_id u16），其後 18 個平行欄位陣列；`position.dat` 標頭 8 B（ver=1, count=33000），每筆 17 B（valid u8, x/y/z/rot float32）；`objdata.dat` 14,000 槽的執行期數值（HP、lprel、mprel…）。ENDL_000 有 6,618 個啟用物件，全為 team 8 的樹木／岩石／植被（160 種 type_id）。新增靜態物件可用空槽完成；建築與單位可能牽涉 `hirarchy/anim/action.dat`，尚未證實。
+- **遊戲內建 IPR 腳本編譯器**（「IPR - Copyright (C) 2000-2003 by Uwe Schmelich」）：類 C 文法（yacc/flex；int/double/string/object、if/while/switch/for、#include/#define、陣列、wait/exit、`SYSTEM` 外部函式宣告），流程 `.ics` → `.ias` → `.bci`。`SYSTEM/CLAK/cl_scint.ini`（PFIL）`[General] CompileScripts=0`；開啟後 `0x52FA91` 會把所有腳本副檔名改為 `ics`，而遊戲未附任何 `.ics` 原始碼，因此不能直接全域開啟。事件系統可行路線：自行產生 BCI（或 IAS）並注入地圖的 `ak_level` 腳本，呼叫既有 API（`s_createObj`、`s_createUnitAndMems`、`s_showTextBox`、`s_timeReached`、`s_setTeamHostile`、`GLOBAL_MISSION_RESULT`…）。
+- 開發者內建編輯器的說明 overlay（`FUN_0047AE20`）由全域 `0x771D8C` 控制，唯一設定點寫 0；按鍵回呼 `0x47ABE0` 已是 `xor eax,eax; ret` 空殼，無法完整啟用（Codex 靜態分析）。
+
 ## 已靜態驗證
 
 以工作區的五張原版 `MAPS/ENDL_000` 至 `ENDL_004` 為唯讀樣本：
