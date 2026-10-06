@@ -91,6 +91,70 @@ public sealed class MapEditorPhase1Tests : IDisposable
     }
 
     [Fact]
+    public void PutTextDocument_Keeps_unchanged_multi_literal_text_byte_identical()
+    {
+        string path = Path.Combine(_root, "briefing.put");
+        Directory.CreateDirectory(_root);
+        string text = "var:briefing_titel_1 =\"Original\";\r\n" +
+            "var:briefing_text =\"First line\\n\\n\"\r\n\"Second part of the briefing.\"\r\n\"Third part.\";\r\n";
+        File.WriteAllBytes(path, SyntheticFixture.Pfil(text));
+
+        var document = PutTextDocument.Load(path);
+        document.SetCompositeValue("briefing_text", document.GetCompositeValue("briefing_text")!);
+        document.SetValue("briefing_titel_1", "Original");
+        document.Save();
+
+        Assert.Equal(text, ReadPfil(path));
+    }
+
+    [Fact]
+    public void PutTextDocument_Splits_long_briefing_into_game_safe_literals_and_repairs_oversized_ones()
+    {
+        string path = Path.Combine(_root, "briefing.put");
+        Directory.CreateDirectory(_root);
+        string longText = string.Join(" ", Enumerable.Range(0, 120).Select(index => $"word{index}")) + "\n\nEnd \"quoted\" \\ path";
+        // 先前版本寫出的壞檔：整段簡報是一個超長常值。
+        File.WriteAllBytes(path, SyntheticFixture.Pfil("var:briefing_text =\"" + longText.Replace("\\", "\\\\").Replace("\n", "\\n").Replace("\"", "\\\"") + "\";\r\n"));
+
+        var document = PutTextDocument.Load(path);
+        Assert.Equal(longText, document.GetCompositeValue("briefing_text"));
+        document.SetCompositeValue("briefing_text", longText); // 內容相同，但常值過長 → 必須修復
+        document.Save();
+
+        string saved = ReadPfil(path);
+        string[] literals = System.Text.RegularExpressions.Regex.Matches(saved, @"""((?:\\.|[^""\\])*)""").Select(match => match.Groups[1].Value).ToArray();
+        Assert.True(literals.Length > 5);
+        Assert.All(literals, literal => Assert.InRange(literal.Length, 1, PutTextDocument.MaxLiteralBytes));
+        Assert.All(literals, literal => Assert.False(literal.EndsWith('\\') && !literal.EndsWith("\\\\", StringComparison.Ordinal), "不可切斷跳脫序列：" + literal));
+        Assert.Equal(longText, PutTextDocument.Load(path).GetCompositeValue("briefing_text"));
+    }
+
+    [Fact]
+    public void PutTextDocument_SplitLiterals_never_breaks_escape_sequences()
+    {
+        string escaped = string.Concat(Enumerable.Repeat("\\n\\\"", 80));
+        IReadOnlyList<string> chunks = PutTextDocument.SplitLiterals(escaped);
+        Assert.Equal(escaped, string.Concat(chunks));
+        Assert.All(chunks, chunk =>
+        {
+            Assert.InRange(chunk.Length, 1, PutTextDocument.MaxLiteralBytes);
+            int backslashes = chunk.Reverse().TakeWhile(character => character == '\\').Count();
+            Assert.True(backslashes % 2 == 0, "段落結尾不可留下未完成的跳脫：" + chunk);
+        });
+    }
+
+    [Fact]
+    public void PutTextDocument_Rejects_single_values_longer_than_the_game_buffer()
+    {
+        string path = Path.Combine(_root, "briefing.put");
+        Directory.CreateDirectory(_root);
+        File.WriteAllBytes(path, SyntheticFixture.Pfil("var:briefing_titel_1 =\"Original\";\r\n"));
+        var document = PutTextDocument.Load(path);
+        Assert.Throws<ArgumentException>(() => document.SetValue("briefing_titel_1", new string('x', PutTextDocument.MaxLiteralBytes + 1)));
+        document.SetValue("briefing_titel_1", new string('x', PutTextDocument.MaxLiteralBytes));
+    }
+
+    [Fact]
     public void BodenTexturesDocument_Changes_exactly_one_tile_and_round_trips()
     {
         string path = Path.Combine(_root, "boden.txt");

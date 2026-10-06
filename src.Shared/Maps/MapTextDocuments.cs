@@ -66,6 +66,7 @@ public sealed class PutTextDocument : MapTextDocument
     public void SetValue(string key, string value)
     {
         if (value.Contains('"') || value.Contains('\r') || value.Contains('\n')) throw new ArgumentException("地圖文字不可含引號或換行。", nameof(value));
+        if (GameEncoding.GetByteCount(value) > MaxLiteralBytes) throw new ArgumentException($"地圖文字最多 {MaxLiteralBytes} 個字元（遊戲的文字緩衝區限制）。", nameof(value));
         var match = Find(key);
         if (!match.Success) throw new KeyNotFoundException("找不到 .put 變數: " + key);
         Group existing = match.Groups["value"];
@@ -80,14 +81,52 @@ public sealed class PutTextDocument : MapTextDocument
         return fragments.Count == 0 ? null : string.Concat(fragments.Select(fragment => Unescape(fragment.Groups["value"].Value)));
     }
 
+    /// <summary>
+    /// 遊戲解析 .put 時每個 "…" 字串常值使用固定大小緩衝區；原版最長的常值不到 150 位元組。
+    /// 把整段簡報合併成一個近 900 位元組的常值會溢位並損毀堆積（進入無盡模式即當機，2026-10-06 實機證實）。
+    /// </summary>
+    public const int MaxLiteralBytes = 100;
+
     public void SetCompositeValue(string key, string value)
     {
         if (value.Contains('\0')) throw new ArgumentException("地圖文字不可包含 NUL 字元。", nameof(value));
         Match assignment = FindAssignment(key);
         if (!assignment.Success) throw new KeyNotFoundException("找不到 .put 變數: " + key);
         Group expression = assignment.Groups["expression"];
-        string replacement = "\"" + Escape(value) + "\"";
+        bool unchanged = GetCompositeValue(key) == value;
+        bool safe = Regex.Matches(expression.Value, @"""(?<value>(?:\\.|[^""\\])*)""")
+            .All(fragment => GameEncoding.GetByteCount(fragment.Groups["value"].Value) <= MaxLiteralBytes);
+        if (unchanged && safe) return; // 不必要的重寫會改變原版排版，保持原檔不動。
+        string newline = Text.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
+        string replacement = string.Join(newline, SplitLiterals(Escape(value)).Select(chunk => "\"" + chunk + "\""));
         Text = Text[..expression.Index] + replacement + Text[(expression.Index + expression.Length)..];
+    }
+
+    /// <summary>
+    /// 把已跳脫的文字切成多段，每段不超過 <see cref="MaxLiteralBytes"/>（CP1251 單位元組字元），
+    /// 不切斷跳脫序列，優先在空白或 \n 之後換段。
+    /// </summary>
+    internal static IReadOnlyList<string> SplitLiterals(string escaped)
+    {
+        var chunks = new List<string>();
+        int start = 0;
+        while (escaped.Length - start > MaxLiteralBytes)
+        {
+            int limit = start + MaxLiteralBytes, position = start, lastBreak = -1;
+            while (position < limit)
+            {
+                int length = escaped[position] == '\\' && position + 1 < escaped.Length ? 2 : 1;
+                if (position + length > limit) break;
+                position += length;
+                if (escaped[position - 1] == ' ' || (length == 2 && escaped[position - 1] == 'n')) lastBreak = position;
+            }
+            // 斷點太靠前（少於半段）時直接填滿，避免產生大量短段。
+            int cut = lastBreak - start >= MaxLiteralBytes / 2 ? lastBreak : position;
+            chunks.Add(escaped[start..cut]);
+            start = cut;
+        }
+        chunks.Add(escaped[start..]);
+        return chunks;
     }
 
     private Match Find(string key) => Regex.Match(Text, $@"(?im)^\s*var:\s*{Regex.Escape(key)}\s*=\s*""(?<value>[^""]*)""");

@@ -65,6 +65,81 @@ public sealed class MapEditorFormTerrainIntegrationTests : IDisposable
     }
 
     [Fact]
+    public void Blank_terrain_flattens_repaints_clears_and_resets_auxiliary_layers_on_save()
+    {
+        string map = CreateFixture();
+        WriteGray(Path.Combine(map, "collision.bmp"), 256, Grid(256, (x, y) => x is >= 40 and < 60 ? 255 : 0));
+        WriteGray(Path.Combine(map, "smooth.bmp"), 257, Enumerable.Repeat((byte)3, 257 * 257).ToArray());
+        WriteGray(Path.Combine(map, "vertex.bmp"), 257, Enumerable.Repeat((byte)180, 257 * 257).ToArray());
+        File.WriteAllText(Path.Combine(map, "boden.txt"), "[Dimension]\r\n64\r\n[Texturen]\r\n" +
+            string.Join("\r\n", Enumerable.Range(0, 64 * 64).Select(index => index % 64 < 20 ? "4BC___51" : "4BB___51")) + "\r\n");
+        using (ZipArchive zip = ZipFile.Open(Path.Combine(_root, "floortex.dat"), ZipArchiveMode.Update))
+        using (Stream stream = zip.CreateEntry("SYSTEM/DATA/FLOORTEXTURE/4BC___51.bmp").Open())
+            stream.Write(Encode(128, Enumerable.Repeat((byte)170, 128 * 128).ToArray()));
+        Exception? failure = null;
+        bool saved = false, dirtyBeforeSave = false;
+        var thread = new Thread(() =>
+        {
+            try
+            {
+                using var form = new MapEditorForm(_root, new GameMapInfo("ENDL_005", map, true, "Blank", "無盡模式"), startWithBlankTerrain: true);
+                _ = form.Handle;
+                Invoke(form, "LoadSelectedMap");
+                form.ApplyBlankTerrain(confirm: false);
+                dirtyBeforeSave = (bool)typeof(MapEditorForm).GetProperty("IsDirty", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(form)!;
+                saved = (bool)Invoke(form, "SaveMap", false)!;
+            }
+            catch (Exception ex) { failure = ex; }
+        });
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        Assert.True(thread.Join(TimeSpan.FromMinutes(2)), "表單整合測試逾時（可能跳出了錯誤對話框）。");
+        Assert.Null(failure);
+        Assert.True(dirtyBeforeSave);
+        Assert.True(saved);
+
+        // Waterlevel 120 ÷ Heightmapstep 4 = 30；空白地形高 30 + 20 = 50。
+        Assert.All(TerrainLayerFiles.Read(Path.Combine(map, "boden.bmp"))!.Green, value => Assert.Equal(50, value));
+        Assert.All(TerrainLayerFiles.Read(Path.Combine(map, "collision.bmp"))!.Green, value => Assert.Equal(0, value));
+        Assert.All(TerrainLayerFiles.Read(Path.Combine(map, "vertex.bmp"))!.Green, value => Assert.Equal(255, value));
+        Assert.All(TerrainLayerFiles.Read(Path.Combine(map, "smooth.bmp"))!.Green, value => Assert.Equal(0, value));
+        byte[] emboss = TerrainLayerFiles.Read(Path.Combine(map, "emboss.bmp"))!.Green;
+        Assert.Single(emboss.Distinct()); // 平地光照一致（擬合截距約 150）
+        Assert.InRange(emboss[0], 140, 160);
+        string[] textures = File.ReadAllLines(Path.Combine(map, "boden.txt")).SkipWhile(line => line != "[Texturen]").Skip(1).Where(line => line.Length > 0).ToArray();
+        Assert.Equal(64 * 64, textures.Length);
+        Assert.All(textures, texture => Assert.StartsWith("4BB", texture)); // 最常見的基礎材質（草地 B）鋪滿
+        foreach (string cache in TerrainLayerFiles.HeightDependentCaches) Assert.False(File.Exists(Path.Combine(map, cache)));
+        Assert.True(File.Exists(Path.Combine(map, "Endlos_Rom_Siedlung1.sdl"))); // 聚落保留
+    }
+
+    [Fact]
+    public void Inspector_tabs_are_not_covered_by_the_toolbars()
+    {
+        string map = CreateFixture();
+        Exception? failure = null;
+        int tabsTop = 0, toolbarsBottom = 0;
+        var thread = new Thread(() =>
+        {
+            try
+            {
+                using var form = new MapEditorForm(_root, new GameMapInfo("ENDL_005", map, true, "Layout", "無盡模式")) { Size = new System.Drawing.Size(1440, 900) };
+                _ = form.Handle;
+                form.PerformLayout();
+                var tabs = (System.Windows.Forms.TabControl)typeof(MapEditorForm).GetField("_inspectorTabs", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(form)!;
+                for (System.Windows.Forms.Control? control = tabs; control is not null && control != form; control = control.Parent) tabsTop += control.Top;
+                toolbarsBottom = form.Controls.OfType<System.Windows.Forms.ToolStrip>().Where(strip => strip.Dock == System.Windows.Forms.DockStyle.Top).Max(strip => strip.Bottom);
+            }
+            catch (Exception ex) { failure = ex; }
+        });
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        Assert.True(thread.Join(TimeSpan.FromMinutes(1)));
+        Assert.Null(failure);
+        Assert.True(tabsTop >= toolbarsBottom, $"分頁標籤（top={tabsTop}）被工具列（bottom={toolbarsBottom}）遮住");
+    }
+
+    [Fact]
     public void Stroke_path_fills_every_tile_between_sparse_mouse_samples()
     {
         Assert.Equal(new[] { (1, 0), (2, 0), (3, 0) }, TerrainStrokePath.Between(0, 0, 3, 0));

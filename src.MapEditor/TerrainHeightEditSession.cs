@@ -33,6 +33,7 @@ internal sealed class TerrainHeightEditSession
     private readonly Dictionary<int, TerrainSampleChange> _pendingHeights = new();
     private readonly Dictionary<int, TerrainSampleChange> _pendingCollision = new();
     private EmbossLightModel _light;
+    private int? _flatEmbossBase;
 
     public TerrainHeightEditSession(int vertexSize, byte[] heights, byte[]? emboss, int collisionSize, byte[]? collision)
     {
@@ -59,7 +60,7 @@ internal sealed class TerrainHeightEditSession
     public bool HasEmboss => _savedEmboss is not null;
     public bool HeightsDirty => !_heights.AsSpan().SequenceEqual(_baselineHeights);
     public bool CollisionDirty => _collision is not null && !_collision.AsSpan().SequenceEqual(_baselineCollision);
-    public bool IsDirty => HeightsDirty || CollisionDirty;
+    public bool IsDirty => HeightsDirty || CollisionDirty || EmbossRelightPending;
     public bool CanUndo => _undo.Count > 0 || _pendingHeights.Count > 0 || _pendingCollision.Count > 0;
     public bool CanRedo => _redo.Count > 0;
     /// <summary>光照擬合的決定係數；供診斷顯示，0 表示無法由原圖推得光照（emboss 為常數或缺檔）。</summary>
@@ -182,6 +183,7 @@ internal sealed class TerrainHeightEditSession
     /// <summary>放棄所有未儲存的高度與通行變更，回到上次儲存（或開啟）時的狀態。</summary>
     public void ResetToBaseline()
     {
+        _flatEmbossBase = null;
         _baselineHeights.CopyTo(_heights, 0);
         _baselineCollision?.CopyTo(_collision!, 0);
         _undo.Clear(); _redo.Clear(); _pendingHeights.Clear(); _pendingCollision.Clear();
@@ -194,9 +196,22 @@ internal sealed class TerrainHeightEditSession
     public byte[]? BuildEmboss()
     {
         if (_savedEmboss is null) return null;
+        int size = VertexSize;
+        if (_flatEmbossBase is int flat)
+        {
+            // 空白地形：原版烘焙的光影（含投影）屬於舊地勢，改以「平地亮度 + 擬合係數 × 目前坡度」重新產生整張光照。
+            var lit = new byte[_savedEmboss.Length];
+            for (int y = 0; y < size; y++)
+            for (int x = 0; x < size; x++)
+            {
+                (float gx, float gy) = Gradient(_heights, size, x, y);
+                float value = _light.IsUsable ? flat + _light.SlopeX * gx + _light.SlopeY * gy : flat;
+                lit[y * size + x] = (byte)Math.Clamp((int)MathF.Round(value), 0, 255);
+            }
+            return lit;
+        }
         byte[] result = _savedEmboss.ToArray();
         if (!HeightsDirty || !_light.IsUsable) return result;
-        int size = VertexSize;
         for (int y = 0; y < size; y++)
         for (int x = 0; x < size; x++)
         {
@@ -216,7 +231,24 @@ internal sealed class TerrainHeightEditSession
         _baselineHeights = _heights.ToArray();
         _baselineCollision = _collision?.ToArray();
         if (savedEmboss is not null) _savedEmboss = savedEmboss.ToArray();
+        _flatEmbossBase = null;
         _undo.Clear(); _redo.Clear();
+    }
+
+    /// <summary>是否在下次儲存時整張重新產生光照（空白地形）。</summary>
+    public bool EmbossRelightPending => _flatEmbossBase is not null;
+
+    /// <summary>
+    /// 套用空白地形：整張高度設為 <paramref name="height"/>、清除所有阻擋，並讓下次儲存整張重新產生光照。
+    /// 變更記入待提交筆畫（呼叫端 CommitStroke 後成為單一復原步驟；復原不會撤銷光照重算旗標，直到 ResetToBaseline）。
+    /// </summary>
+    public void ApplyBlankTerrain(byte height)
+    {
+        TransformHeights((_, _, _) => height);
+        if (_collision is not null) PaintCollision(CollisionSize / 2f, CollisionSize / 2f, CollisionSize, TerrainCollisionOperation.Clear);
+        // 平地亮度：擬合截距（坡度為 0 時的光照）；無法擬合時用原圖平均亮度，再退回遊戲缺檔預設 255。
+        _flatEmbossBase = _light.IsUsable ? Math.Clamp((int)MathF.Round(_light.Intercept), 0, 255)
+            : _savedEmboss is { Length: > 0 } emboss ? (int)Math.Round(emboss.Average(value => (double)value)) : 255;
     }
 
     private static void Track(Dictionary<int, TerrainSampleChange> pending, int index, byte before, byte after)

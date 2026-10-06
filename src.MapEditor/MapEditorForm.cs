@@ -57,6 +57,7 @@ internal sealed class MapEditorForm : Form
     private readonly ToolStripButton _sceneMoveTool = new("移動場景物件") { CheckOnClick = true };
     private readonly ToolStripButton _resetTerrainButton = new("還原地表") { Enabled = false };
     private readonly ToolStripButton _heightTool = new("地形高度") { CheckOnClick = true };
+    private readonly ToolStripButton _blankTerrainButton = new("空白地形…") { Enabled = false };
     private readonly ToolStripButton _collisionTool = new("通行區域") { CheckOnClick = true };
     private readonly ToolStripComboBox _terrainOperation = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 96, Visible = false };
     private readonly ToolStripComboBox _terrainStrength = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 72, Visible = false };
@@ -120,6 +121,9 @@ internal sealed class MapEditorForm : Form
     private TerrainHeightEditSession? _terrainLayers;
     private TerrainLayer? _bodenLayer, _embossLayer, _collisionLayer;
     private int _flattenTarget = -1;
+    private readonly bool _startWithBlankTerrain;
+    /// <summary>空白地形：儲存時把 vertex.bmp 重設為白色（無色調）、smooth.bmp 重設為 0（不額外平滑）。</summary>
+    private bool _resetAuxiliaryLayers;
     private (int X, int Y)? _lastTerrainTile;
     private readonly HashSet<int> _terrainStrokeTiles = new();
 
@@ -152,10 +156,11 @@ internal sealed class MapEditorForm : Form
             Display.Angle, Display.SourceFile.Equals(TemplateFile, StringComparison.OrdinalIgnoreCase) ? null : Display.SourceFile);
     }
 
-    private bool IsDirty => _propertyDirty || TextureDirty() || SceneDirty() || _terrainLayers?.IsDirty == true;
+    private bool IsDirty => _propertyDirty || TextureDirty() || SceneDirty() || _terrainLayers?.IsDirty == true || _resetAuxiliaryLayers;
 
-    public MapEditorForm(string gamePath, GameMapInfo selectedMap)
+    public MapEditorForm(string gamePath, GameMapInfo selectedMap, bool startWithBlankTerrain = false)
     {
+        _startWithBlankTerrain = startWithBlankTerrain;
         Width = 1440; Height = 900; MinimumSize = new Size(1100, 700); StartPosition = FormStartPosition.CenterScreen;
         BackColor = WinFormsTheme.Window; ForeColor = WinFormsTheme.TextPrimary; Font = WinFormsTheme.CreateFont(9F);
         _gamePath = gamePath;
@@ -168,7 +173,11 @@ internal sealed class MapEditorForm : Form
         WinFormsTheme.StyleDangerButton(_sceneDeleteButton);
         WireEvents();
         KeyPreview = true;
-        Shown += (_, _) => LoadSelectedMap();
+        Shown += (_, _) =>
+        {
+            LoadSelectedMap();
+            if (_startWithBlankTerrain && _selected?.IsCustom == true) ApplyBlankTerrain(confirm: false);
+        };
         FormClosing += (_, e) => { if (!_allowClose && !ConfirmDiscardOrSave()) e.Cancel = true; };
         UpdateLanguageButtonStyles();
         ApplyLanguageToUI();
@@ -187,7 +196,7 @@ internal sealed class MapEditorForm : Form
         });
 
         var tools = new ToolStrip { GripStyle = ToolStripGripStyle.Hidden, Dock = DockStyle.Top, Padding = new Padding(10, 5, 10, 5), BackColor = WinFormsTheme.SurfaceRaised, ForeColor = WinFormsTheme.TextPrimary };
-        tools.Items.AddRange(new ToolStripItem[] { _lblTerrainGroup, _textureTool, _heightTool, _collisionTool, _sceneMoveTool, _terrainOperation, _terrainStrength, _resetTerrainButton, new ToolStripSeparator(), _view2dButton, _view3dButton, _3dDiagnosticsButton });
+        tools.Items.AddRange(new ToolStripItem[] { _lblTerrainGroup, _textureTool, _heightTool, _collisionTool, _sceneMoveTool, _terrainOperation, _terrainStrength, _resetTerrainButton, _blankTerrainButton, new ToolStripSeparator(), _view2dButton, _view3dButton, _3dDiagnosticsButton });
 
         _paletteHeader = SectionHeader("地表繪製");
         var palettePanel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(10), BackColor = WinFormsTheme.Surface };
@@ -243,7 +252,8 @@ internal sealed class MapEditorForm : Form
         var statusStrip = new StatusStrip { BackColor = WinFormsTheme.Surface, ForeColor = WinFormsTheme.TextSecondary };
         statusStrip.Items.Add(_status); statusStrip.Items.Add(_lblStatusInstructions);
         Controls.Add(centerRight); Controls.Add(tools); Controls.Add(commands); Controls.Add(statusStrip);
-        commands.BringToFront(); tools.BringToFront();
+        // WinForms 依 z-order 由後往前配置 Dock；Fill 必須最後配置（位於最前），否則上方工具列會蓋住分頁標籤與畫布頂端。
+        centerRight.BringToFront();
         SetActiveView(_view3d is not null);
     }
 
@@ -322,6 +332,7 @@ internal sealed class MapEditorForm : Form
         _gamePreviewButton.Click += (_, _) => PreviewInGame();
         _undoButton.Click += (_, _) => Undo(); _redoButton.Click += (_, _) => Redo();
         _aiMapButton.Click += (_, _) => OpenAiMapDialog();
+        _blankTerrainButton.Click += (_, _) => ApplyBlankTerrain(confirm: true);
         
         _btnLangZH.Click += (s, e) => {
             if (AgainstRomeModifier.Loc.CurrentLanguage != AgainstRomeModifier.Language.TraditionalChinese) {
@@ -374,6 +385,10 @@ internal sealed class MapEditorForm : Form
         _resetTerrainButton.Text = isEn ? "Reset Terrain" : "還原地表";
         _heightTool.Text = isEn ? "Terrain Height" : "地形高度";
         _aiMapButton.Text = isEn ? "AI Map Maker…" : "AI 製圖…";
+        _blankTerrainButton.Text = isEn ? "Blank Terrain…" : "空白地形…";
+        _blankTerrainButton.ToolTipText = isEn
+            ? "Flatten the whole map just above the water level, paint one base material, clear blocked ground, and reset vertex colors / smoothing / lighting on Save. Settlements are kept."
+            : "整張地圖整平到略高於水面、鋪單一基礎材質、清除阻擋區，儲存時重設頂點色、平滑遮罩與光照；聚落保留。";
         _aiMapButton.ToolTipText = isEn
             ? "Describe the map in words; a local Ollama model plans hills, rivers, lakes, materials and blocked areas, then the editor applies them (undoable, not saved until you Save)."
             : "用文字描述地圖，由本機 Ollama 模型規劃山丘、河流、湖泊、材質與阻擋區，再由編輯器套用（可復原，按「儲存」才寫入）。";
@@ -872,6 +887,46 @@ internal sealed class MapEditorForm : Form
         dialog.ShowDialog(this);
     }
 
+    /// <summary>
+    /// 空白地形：整平到水面上方、鋪最常見的基礎材質、清除阻擋，並在儲存時重設頂點色／平滑遮罩／光照。
+    /// 全部為待儲存變更（可用「還原地表」放棄），SDL 聚落保留以維持無盡模式可玩。
+    /// </summary>
+    internal void ApplyBlankTerrain(bool confirm)
+    {
+        if (_selected?.IsCustom != true || _terrainLayers is null || _texturesDocument is null) return;
+        bool isEn = AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English;
+        if (confirm && MessageBox.Show(this,
+                isEn ? "Replace the whole terrain with a flat blank map?\nHeights, ground material, blocked areas, vertex colors, smoothing and lighting are reset when you Save. Settlements are kept. You can still undo with \"Reset Terrain\" before saving."
+                     : "要把整張地形換成平坦的空白地圖嗎？\n高度、地表材質、阻擋區、頂點色、平滑遮罩與光照會在儲存時重設；聚落保留。儲存前仍可用「還原地表」放棄。",
+                isEn ? "Blank Terrain" : "空白地形", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+        CommitStroke();
+        float water = _heightMapStep > 0 ? (float)_waterLevel.Value / _heightMapStep : 0;
+        _terrainLayers.ApplyBlankTerrain((byte)Math.Clamp((int)MathF.Round(water) + 20, 0, 255));
+        _terrainLayers.CommitStroke();
+        string? material = BlankBaseMaterial();
+        if (material is not null && _terrainBlendSession is not null)
+        {
+            int dimension = _texturesDocument.Dimension;
+            TerrainBlendPaintResult paint = _terrainBlendSession.PaintCircle(dimension / 2f, dimension / 2f, dimension, material);
+            foreach (TerrainTextureChange change in paint.TextureChanges) ApplyTexture(change.X, change.Y, change.After);
+            _terrainBlendSession.CommitStroke();
+        }
+        _resetAuxiliaryLayers = true;
+        ApplyHeightsToViews();
+        if (_editMode == EditMode.Collision) _canvas.SetCollisionOverlay(_terrainLayers.CollisionSize, _terrainLayers.Collision);
+        UpdateEditorState();
+        _status.Text = isEn ? "Blank terrain prepared. Shape it with the tools or AI Map Maker, then Save." : "已準備空白地形；可用工具或 AI 製圖塑形，完成後按「儲存」。";
+    }
+
+    /// <summary>空白地形的基礎材質：目前地圖最常見的基礎材質（通常是草地），找不到時用材質庫第一項。</summary>
+    private string? BlankBaseMaterial()
+    {
+        if (_floorMaterials is null || _floorMaterials.Materials.Count == 0 || _texturesDocument is null) return null;
+        return _texturesDocument.Textures.Select(texture => _floorMaterials.FindByTexture(texture)?.Id).OfType<string>()
+            .GroupBy(id => id, StringComparer.OrdinalIgnoreCase).OrderByDescending(group => group.Count()).Select(group => group.Key).FirstOrDefault()
+            ?? _floorMaterials.Materials[0].Id;
+    }
+
     /// <summary>把 AI 計畫套用到目前的高度／材質／通行狀態（每類各成一個可復原步驟），並更新 2D／3D 預覽。</summary>
     internal AiMapApplyResult ApplyAiMapPlan(AiMapPlan plan)
     {
@@ -1237,6 +1292,16 @@ internal sealed class MapEditorForm : Form
                 // skydens／visible／cliprect／shadows.dat 以高度總和為鍵；刪除後由遊戲在載入時重算。
                 TerrainLayerFiles.InvalidateHeightCaches(map, rollback);
             }
+            bool auxiliaryReset = _resetAuxiliaryLayers;
+            if (auxiliaryReset)
+            {
+                foreach ((string name, byte value) in new[] { ("vertex.bmp", (byte)255), ("smooth.bmp", (byte)0) })
+                {
+                    string path = Path.Combine(map, name);
+                    if (TerrainLayerFiles.Read(path) is not { } layer) continue;
+                    TerrainLayerFiles.Write(path, layer, Enumerable.Repeat(value, layer.Width * layer.Height).ToArray(), rollback);
+                }
+            }
             if (collisionChanged) TerrainLayerFiles.Write(Path.Combine(map, "collision.bmp"), _collisionLayer!, _terrainLayers!.Collision!, rollback);
             // 只有地表確實被繪製過才重生小地圖，避免僅改標題／水面等屬性時用近似圖覆蓋原始 minimap.bmp。
             if (TextureDirty() || heightsChanged)
@@ -1245,6 +1310,7 @@ internal sealed class MapEditorForm : Form
                 if (minimap is not null) AgainstRomeModifier.Core.Services.SafeFileWriter.WriteAllBytes(Path.Combine(map, "minimap.bmp"), minimap, rollback);
             }
             rollback.Commit();
+            if (auxiliaryReset) _resetAuxiliaryLayers = false;
             if (heightsChanged || collisionChanged)
             {
                 // 以寫回後的檔案作為下一次保留原像素的基準；光照係數沿用開圖時由原版資料擬合的值。
@@ -1464,8 +1530,8 @@ internal sealed class MapEditorForm : Form
 
     private void UpdateEditorState()
     {
-        bool editable = _selected?.IsCustom == true; _saveButton.Enabled = editable && IsDirty; _gamePreviewButton.Enabled = _selected is not null; _undoButton.Enabled = editable && (TerrainLayerMode ? _terrainLayers?.CanUndo == true : _terrainBlendSession?.CanUndo == true); _redoButton.Enabled = editable && (TerrainLayerMode ? _terrainLayers?.CanRedo == true : _terrainBlendSession?.CanRedo == true); _resetTerrainButton.Enabled = editable && ((_texturesDocument is not null && TextureDirty()) || _terrainLayers?.IsDirty == true);
-        _heightTool.Enabled = editable && _terrainLayers is not null; _aiMapButton.Enabled = editable && _terrainLayers is not null; _collisionTool.Enabled = editable && _terrainLayers?.HasCollision == true;
+        bool editable = _selected?.IsCustom == true; _saveButton.Enabled = editable && IsDirty; _gamePreviewButton.Enabled = _selected is not null; _undoButton.Enabled = editable && (TerrainLayerMode ? _terrainLayers?.CanUndo == true : _terrainBlendSession?.CanUndo == true); _redoButton.Enabled = editable && (TerrainLayerMode ? _terrainLayers?.CanRedo == true : _terrainBlendSession?.CanRedo == true); _resetTerrainButton.Enabled = editable && ((_texturesDocument is not null && TextureDirty()) || _terrainLayers?.IsDirty == true || _resetAuxiliaryLayers);
+        _heightTool.Enabled = editable && _terrainLayers is not null; _aiMapButton.Enabled = editable && _terrainLayers is not null; _blankTerrainButton.Enabled = editable && _terrainLayers is not null; _collisionTool.Enabled = editable && _terrainLayers?.HasCollision == true;
         UpdateSceneEditButtons();
         _sceneRestoreButton.Enabled = editable && _sceneLoaded && (_sceneRemovals.Count > 0 || _sceneAdditions.Count > 0 || SdlSceneEditService.HasChanges(_sceneOriginalObjects, _sceneObjects));
         foreach (Control control in EditablePropertyControls()) control.Enabled = editable;
@@ -1578,11 +1644,19 @@ internal sealed class MapEditorForm : Form
         if (_texturesDocument is null || _savedTextures.Length != _texturesDocument.Textures.Count) return;
         bool isEn = AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English;
         string msg = isEn
-            ? "Do you want to discard unsaved terrain drawing changes?\nMap metadata and environment settings will not be affected."
-            : "要放棄這次尚未儲存的地表繪製嗎？\n地圖名稱與環境設定不會受影響。";
+            ? "Do you want to discard unsaved terrain changes (textures, heights, passability)?\nMap metadata, environment settings and scene objects will not be affected."
+            : "要放棄這次尚未儲存的地表變更（材質、高度、通行區域）嗎？\n地圖名稱、環境設定與場景物件不會受影響。";
         string title = isEn ? "Reset Terrain" : "還原地表";
         if (MessageBox.Show(this, msg, title, MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
-        if (_terrainBlendSession is null) return;
+        CommitStroke();
+        if (_terrainLayers is not null)
+        {
+            _terrainLayers.ResetToBaseline();
+            ApplyHeightsToViews();
+            if (_editMode == EditMode.Collision) _canvas.SetCollisionOverlay(_terrainLayers.CollisionSize, _terrainLayers.Collision);
+        }
+        _resetAuxiliaryLayers = false;
+        if (_terrainBlendSession is null) { UpdateEditorState(); return; }
         IReadOnlyList<TerrainTextureChange> changes = _terrainBlendSession.ResetToBaseline();
         _texturesDocument.SetTextures(_terrainBlendSession.CurrentTextures); // 批次寫回，避免逐格重新解析整份 boden.txt。
         foreach (TerrainTextureChange change in changes)
