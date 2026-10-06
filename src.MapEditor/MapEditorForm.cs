@@ -55,6 +55,10 @@ internal sealed class MapEditorForm : Form
     private readonly ToolStripButton _textureTool = new("材質筆刷") { CheckOnClick = true, Checked = true };
     private readonly ToolStripButton _sceneMoveTool = new("移動場景物件") { CheckOnClick = true };
     private readonly ToolStripButton _resetTerrainButton = new("還原地表") { Enabled = false };
+    private readonly ToolStripButton _heightTool = new("地形高度") { CheckOnClick = true };
+    private readonly ToolStripButton _collisionTool = new("通行區域") { CheckOnClick = true };
+    private readonly ToolStripComboBox _terrainOperation = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 96, Visible = false };
+    private readonly ToolStripComboBox _terrainStrength = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 72, Visible = false };
     private readonly ToolStripButton _view2dButton = new("2D 俯視") { CheckOnClick = true };
     private readonly ToolStripButton _view3dButton = new("3D 場景") { CheckOnClick = true, Checked = true };
     private readonly ToolStripButton _3dDiagnosticsButton = new("3D 診斷") { Visible = false };
@@ -112,6 +116,9 @@ internal sealed class MapEditorForm : Form
     private bool _sceneLoaded;
     private string? _last3DDiagnostic;
     private string? _terrainBlendNotice;
+    private TerrainHeightEditSession? _terrainLayers;
+    private TerrainLayer? _bodenLayer, _embossLayer, _collisionLayer;
+    private int _flattenTarget = -1;
 
     private bool TextureDirty() => _terrainBlendSession?.IsDirty == true;
 
@@ -142,7 +149,7 @@ internal sealed class MapEditorForm : Form
             Display.Angle, Display.SourceFile.Equals(TemplateFile, StringComparison.OrdinalIgnoreCase) ? null : Display.SourceFile);
     }
 
-    private bool IsDirty => _propertyDirty || TextureDirty() || SceneDirty();
+    private bool IsDirty => _propertyDirty || TextureDirty() || SceneDirty() || _terrainLayers?.IsDirty == true;
 
     public MapEditorForm(string gamePath, GameMapInfo selectedMap)
     {
@@ -177,7 +184,7 @@ internal sealed class MapEditorForm : Form
         });
 
         var tools = new ToolStrip { GripStyle = ToolStripGripStyle.Hidden, Dock = DockStyle.Top, Padding = new Padding(10, 5, 10, 5), BackColor = WinFormsTheme.SurfaceRaised, ForeColor = WinFormsTheme.TextPrimary };
-        tools.Items.AddRange(new ToolStripItem[] { _lblTerrainGroup, _textureTool, _sceneMoveTool, _resetTerrainButton, new ToolStripSeparator(), _view2dButton, _view3dButton, _3dDiagnosticsButton });
+        tools.Items.AddRange(new ToolStripItem[] { _lblTerrainGroup, _textureTool, _heightTool, _collisionTool, _sceneMoveTool, _terrainOperation, _terrainStrength, _resetTerrainButton, new ToolStripSeparator(), _view2dButton, _view3dButton, _3dDiagnosticsButton });
 
         _paletteHeader = SectionHeader("地表繪製");
         var palettePanel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(10), BackColor = WinFormsTheme.Surface };
@@ -303,8 +310,10 @@ internal sealed class MapEditorForm : Form
         _view3dButton.Click += (_, _) => SetActiveView(use3D: true);
         _3dDiagnosticsButton.Click += (_, _) => Show3DDiagnostics();
         _mapMenuButton.Click += (_, _) => ReturnToMenu();
-        _textureTool.Click += (_, _) => SetSceneMoveMode(false);
-        _sceneMoveTool.Click += (_, _) => SetSceneMoveMode(true);
+        _textureTool.Click += (_, _) => SetEditMode(EditMode.Texture);
+        _sceneMoveTool.Click += (_, _) => SetEditMode(EditMode.SceneMove);
+        _heightTool.Click += (_, _) => SetEditMode(EditMode.Height);
+        _collisionTool.Click += (_, _) => SetEditMode(EditMode.Collision);
         _resetTerrainButton.Click += (_, _) => ResetTerrain();
         _saveButton.Click += (_, _) => SaveMap(showSuccess: true);
         _gamePreviewButton.Click += (_, _) => PreviewInGame();
@@ -359,6 +368,15 @@ internal sealed class MapEditorForm : Form
             ? "Select an SDL object in the Scene Objects tab, then drag on the 2D or 3D terrain. Movement stays pending until Save."
             : "先在「場景物件」分頁選取 SDL 物件，再於 2D 或 3D 地表拖曳；移動會暫存到按下「儲存」為止。";
         _resetTerrainButton.Text = isEn ? "Reset Terrain" : "還原地表";
+        _heightTool.Text = isEn ? "Terrain Height" : "地形高度";
+        _heightTool.ToolTipText = isEn
+            ? "Raise, lower, smooth or flatten the terrain (boden.bmp). Lighting is re-baked and height caches are rebuilt by the game."
+            : "升高、降低、平滑或整平地形（boden.bmp）；儲存時重烘光照並讓遊戲重建高度快取。";
+        _collisionTool.Text = isEn ? "Passability" : "通行區域";
+        _collisionTool.ToolTipText = isEn
+            ? "Paint blocked / passable ground (collision.bmp). Red overlay = blocked."
+            : "繪製阻擋／可通行地面（collision.bmp）；紅色疊圖為阻擋。";
+        PopulateTerrainToolOptions();
         _view2dButton.Text = isEn ? "2D View" : "2D 俯視";
         _view3dButton.Text = isEn ? "3D View" : "3D 場景";
         _3dDiagnosticsButton.Text = isEn ? "3D Diagnostics" : "3D 診斷";
@@ -470,7 +488,7 @@ internal sealed class MapEditorForm : Form
             _heightMapStep = float.TryParse(ini.GetValue("Heightmapstep"), out float heightStep) && heightStep > 0 ? heightStep : 4;
             if (TryParseGameColor(_waterColor.Text, out Color waterColor)) { _waterColorButton.BackColor = waterColor; _waterColorButton.ForeColor = waterColor.GetBrightness() < .45f ? Color.White : Color.Black; }
             _dayStart.Value = ParseDecimal(ini.GetValue("DayStartTime"), _dayStart); _dayEnd.Value = ParseDecimal(ini.GetValue("DayEndTime"), _dayEnd); _rain.Checked = ini.GetValue("RainDropsOnWater") == "1";
-            _texturesDocument = BodenTexturesDocument.Load(Path.Combine(map, "boden.txt")); _savedTextures = _texturesDocument.Textures.ToArray(); InitializeTerrainBlendSession(); _propertyDirty = false;
+            _texturesDocument = BodenTexturesDocument.Load(Path.Combine(map, "boden.txt")); _savedTextures = _texturesDocument.Textures.ToArray(); InitializeTerrainBlendSession(); InitializeTerrainLayers(map); _propertyDirty = false;
             _sceneObjects = SdlSceneCatalog.LoadDirectory(map); _sceneOriginalObjects = _sceneObjects.ToArray(); _sceneSavedObjects = _sceneObjects.ToArray(); _sceneLoaded = true;
             _sceneRemovals.Clear(); _sceneAdditions.Clear(); _settlementOffsets.Clear();
             _settlementOrigins = SdlSceneCatalog.LoadSettlementOrigins(map);
@@ -489,7 +507,6 @@ internal sealed class MapEditorForm : Form
     {
         if (_selected is null) return;
         bool isEn = AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English;
-        _textureTool.Checked = !_sceneMoveTool.Checked;
         string minimapPath = Path.Combine(_selected.DirectoryPath, "minimap.bmp");
         LoadSceneList(_sceneObjects);
         IReadOnlyList<MapSceneObject> effectiveObjects = EffectiveSceneObjects();
@@ -506,6 +523,8 @@ internal sealed class MapEditorForm : Form
             try { has3DScene = _view3d.LoadTextures(_texturesDocument.Dimension, _texturesDocument.Textures, _selected.DirectoryPath, _floorTextures, effectiveObjects, (float)_waterLevel.Value, _heightMapStep, sceneWaterColor); _view3d.SetReliefScale(_reliefScale.Value / 100f); }
             catch (Exception ex) { Disable3DView(isEn ? "Failed to load 3D map resources." : "載入 3D 地圖資源失敗。", ex); }
         }
+        if (_terrainLayers?.HeightsDirty == true) ApplyHeightsToViews();
+        if (_editMode == EditMode.Collision) _canvas.SetCollisionOverlay(_terrainLayers?.CollisionSize ?? 0, _terrainLayers?.Collision);
         Image? oldOverview = _overview.Image; _overview.Image = null; oldOverview?.Dispose();
         if (File.Exists(minimapPath)) using (var source = new Bitmap(minimapPath)) _overview.Image = new Bitmap(source);
         _canvas.EditingEnabled = _selected.IsCustom;
@@ -553,6 +572,7 @@ internal sealed class MapEditorForm : Form
 
     private void PaintTexture(TexturePaintEventArgs e)
     {
+        if (TerrainLayerMode) { PaintTerrainLayer(e); return; }
         if (_selected is null || !_selected.IsCustom || _texturesDocument is null || _terrainBlendSession is null || _activeMaterial is null) return;
         float radius = _canvas.BrushSize / 2f + .26f;
         TerrainBlendPaintResult result = _terrainBlendSession.PaintCircle(e.X + .5f, e.Y + .5f, radius, _activeMaterial.Id);
@@ -566,6 +586,8 @@ internal sealed class MapEditorForm : Form
     // 一次筆畫（滑鼠按下到放開）內觸及的所有格子合併為單一 undo 項目。
     private void CommitStroke()
     {
+        _flattenTarget = -1;
+        if (_terrainLayers?.CommitStroke() == true) UpdateEditorState();
         if (_terrainBlendSession?.CommitStroke() != true) return;
         UpdateEditorState();
     }
@@ -577,6 +599,11 @@ internal sealed class MapEditorForm : Form
 
     private void Undo()
     {
+        if (TerrainLayerMode)
+        {
+            if (_terrainLayers?.Undo() is { } undone) { ApplyTerrainLayerStroke(undone); UpdateEditorState(); }
+            return;
+        }
         if (_texturesDocument is null || _terrainBlendSession?.Undo() is not { } stroke) return;
         foreach (TerrainTextureChange change in stroke) ApplyTexture(change.X, change.Y, change.After);
         _terrainBlendNotice = null;
@@ -585,6 +612,11 @@ internal sealed class MapEditorForm : Form
 
     private void Redo()
     {
+        if (TerrainLayerMode)
+        {
+            if (_terrainLayers?.Redo() is { } redone) { ApplyTerrainLayerStroke(redone); UpdateEditorState(); }
+            return;
+        }
         if (_texturesDocument is null || _terrainBlendSession?.Redo() is not { } stroke) return;
         foreach (TerrainTextureChange change in stroke) ApplyTexture(change.X, change.Y, change.After);
         _terrainBlendNotice = null;
@@ -629,16 +661,121 @@ internal sealed class MapEditorForm : Form
         FocusSelectedSceneObject();
     }
 
-    private void SetSceneMoveMode(bool enabled)
+    private enum EditMode { Texture, SceneMove, Height, Collision }
+    private EditMode _editMode = EditMode.Texture;
+    private const string TerrainToolBrushToken = "\u0001terrain-tool"; // 讓視圖在未取樣材質時仍送出筆刷事件；不是材質名稱。
+    private bool TerrainLayerMode => _editMode is EditMode.Height or EditMode.Collision;
+
+    private void SetEditMode(EditMode mode)
     {
-        _sceneMoveTool.Checked = enabled;
-        _textureTool.Checked = !enabled;
-        if (enabled && _inspectorTabs.TabPages.Count >= 3) _inspectorTabs.SelectedIndex = 2;
+        CommitStroke();
+        _editMode = mode;
+        _textureTool.Checked = mode == EditMode.Texture;
+        _sceneMoveTool.Checked = mode == EditMode.SceneMove;
+        _heightTool.Checked = mode == EditMode.Height;
+        _collisionTool.Checked = mode == EditMode.Collision;
+        if (mode == EditMode.SceneMove && _inspectorTabs.TabPages.Count >= 3) _inspectorTabs.SelectedIndex = 2;
+        PopulateTerrainToolOptions();
+        if (TerrainLayerMode && string.IsNullOrWhiteSpace(_canvas.BrushTexture)) SetBrushToken(TerrainToolBrushToken);
+        else if (!TerrainLayerMode && _canvas.BrushTexture == TerrainToolBrushToken) SetBrushToken(null);
+        _canvas.SetCollisionOverlay(_terrainLayers?.CollisionSize ?? 0, mode == EditMode.Collision ? _terrainLayers?.Collision : null);
         UpdateSceneEditButtons();
+        UpdateEditorState();
         bool isEn = AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English;
-        _status.Text = enabled
-            ? (isEn ? "Move mode: select an SDL object, then drag on the terrain. Changes remain pending until Save." : "物件移動模式：選取 SDL 物件後在地表拖曳；按下「儲存」前只會暫存在記憶體。")
-            : (isEn ? "Texture brush mode." : "材質筆刷模式：右鍵取樣，左鍵拖曳繪製。");
+        _status.Text = mode switch
+        {
+            EditMode.SceneMove => isEn ? "Move mode: select an SDL object, then drag on the terrain. Changes remain pending until Save." : "物件移動模式：選取 SDL 物件後在地表拖曳；按下「儲存」前只會暫存在記憶體。",
+            EditMode.Height => _terrainLayers is null
+                ? (isEn ? "This map has no editable boden.bmp height map." : "此地圖沒有可編輯的 boden.bmp 高度圖。")
+                : (isEn ? "Height mode: left-drag to apply the selected operation; Ctrl+Z / Ctrl+Y undo and redo." : "地形高度模式：左鍵拖曳套用所選操作；Ctrl+Z／Ctrl+Y 復原與重做。"),
+            EditMode.Collision => _terrainLayers?.HasCollision != true
+                ? (isEn ? "This map has no editable collision.bmp." : "此地圖沒有可編輯的 collision.bmp。")
+                : (isEn ? "Passability mode: red = blocked. Left-drag to block or clear (2D view shows the overlay)." : "通行區域模式：紅色為阻擋；左鍵拖曳設定阻擋或可通行（2D 檢視顯示疊圖）。"),
+            _ => isEn ? "Texture brush mode." : "材質筆刷模式：右鍵取樣，左鍵拖曳繪製。",
+        };
+    }
+
+    private void SetBrushToken(string? token)
+    {
+        _canvas.BrushTexture = token;
+        if (_view3d is not null) _view3d.BrushTexture = token;
+    }
+
+    private void PopulateTerrainToolOptions()
+    {
+        bool isEn = AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English;
+        int operation = Math.Max(0, _terrainOperation.SelectedIndex), strength = _terrainStrength.SelectedIndex < 0 ? 1 : _terrainStrength.SelectedIndex;
+        _terrainOperation.Items.Clear();
+        if (_editMode == EditMode.Height)
+            _terrainOperation.Items.AddRange(isEn ? new object[] { "Raise", "Lower", "Smooth", "Flatten" } : new object[] { "升高", "降低", "平滑", "整平" });
+        else
+            _terrainOperation.Items.AddRange(isEn ? new object[] { "Block", "Passable" } : new object[] { "阻擋", "可通行" });
+        _terrainOperation.SelectedIndex = Math.Min(operation, _terrainOperation.Items.Count - 1);
+        _terrainStrength.Items.Clear();
+        _terrainStrength.Items.AddRange(isEn ? new object[] { "Gentle", "Medium", "Strong" } : new object[] { "輕", "中", "強" });
+        _terrainStrength.SelectedIndex = strength;
+        _terrainOperation.Visible = TerrainLayerMode;
+        _terrainStrength.Visible = _editMode == EditMode.Height;
+    }
+
+    private int TerrainStrength => _terrainStrength.SelectedIndex switch { 0 => 2, 2 => 14, _ => 6 };
+
+    private void InitializeTerrainLayers(string map)
+    {
+        _terrainLayers = null; _bodenLayer = _embossLayer = _collisionLayer = null; _flattenTarget = -1;
+        if (_texturesDocument is null) return;
+        int dimension = _texturesDocument.Dimension;
+        TerrainLayer? boden = TerrainLayerFiles.Read(Path.Combine(map, "boden.bmp"));
+        if (boden is null || boden.Width != boden.Height || boden.Width < 2 || (boden.Width - 1) % dimension != 0) return;
+        TerrainLayer? emboss = TerrainLayerFiles.Read(Path.Combine(map, "emboss.bmp"));
+        if (emboss is not null && (emboss.Width != boden.Width || emboss.Height != boden.Height)) emboss = null;
+        TerrainLayer? collision = TerrainLayerFiles.Read(Path.Combine(map, "collision.bmp"));
+        if (collision is not null && (collision.Width != collision.Height || collision.Width % dimension != 0)) collision = null;
+        _bodenLayer = boden; _embossLayer = emboss; _collisionLayer = collision;
+        _terrainLayers = new TerrainHeightEditSession(boden.Width, boden.Green, emboss?.Green, collision?.Width ?? 0, collision?.Green);
+    }
+
+    private void PaintTerrainLayer(TexturePaintEventArgs e)
+    {
+        if (_selected?.IsCustom != true || _terrainLayers is null || _texturesDocument is null) return;
+        int dimension = _texturesDocument.Dimension;
+        float radiusTiles = _canvas.BrushSize / 2f + .26f;
+        bool isEn = AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English;
+        if (_editMode == EditMode.Height)
+        {
+            float step = (_terrainLayers.VertexSize - 1) / (float)dimension;
+            float centerX = (e.X + .5f) * step, centerY = (e.Y + .5f) * step;
+            var operation = (TerrainHeightOperation)Math.Clamp(_terrainOperation.SelectedIndex, 0, 3);
+            if (operation == TerrainHeightOperation.Flatten && _flattenTarget < 0)
+                _flattenTarget = _terrainLayers.Heights[Math.Clamp((int)MathF.Round(centerY), 0, _terrainLayers.VertexSize - 1) * _terrainLayers.VertexSize + Math.Clamp((int)MathF.Round(centerX), 0, _terrainLayers.VertexSize - 1)];
+            if (_terrainLayers.PaintHeight(centerX, centerY, radiusTiles * step + 1, operation, TerrainStrength, _flattenTarget).Count > 0) ApplyHeightsToViews();
+        }
+        else if (_terrainLayers.HasCollision)
+        {
+            float step = _terrainLayers.CollisionSize / (float)dimension;
+            var operation = _terrainOperation.SelectedIndex == 1 ? TerrainCollisionOperation.Clear : TerrainCollisionOperation.Block;
+            if (_terrainLayers.PaintCollision((e.X + .5f) * step, (e.Y + .5f) * step, radiusTiles * step, operation).Count > 0)
+                _canvas.SetCollisionOverlay(_terrainLayers.CollisionSize, _terrainLayers.Collision);
+        }
+        else
+        {
+            _terrainBlendNotice = isEn ? "This map has no collision.bmp to edit." : "此地圖沒有可編輯的 collision.bmp。";
+        }
+        UpdateEditorState();
+    }
+
+    private void ApplyHeightsToViews()
+    {
+        if (_terrainLayers is null) return;
+        if (!TryParseGameColor(_waterColor.Text, out Color waterColor)) waterColor = Color.SteelBlue;
+        _canvas.SetHeightSamples(_terrainLayers.VertexSize, _terrainLayers.HeightsDirty ? _terrainLayers.Heights : null, (float)_waterLevel.Value, _heightMapStep, waterColor);
+        _view3d?.SetHeightSamples(_terrainLayers.Heights);
+    }
+
+    private void ApplyTerrainLayerStroke(TerrainLayerStroke stroke)
+    {
+        if (stroke.Heights.Count > 0) ApplyHeightsToViews();
+        if (stroke.Collision.Count > 0 && _editMode == EditMode.Collision) _canvas.SetCollisionOverlay(_terrainLayers!.CollisionSize, _terrainLayers.Collision);
     }
 
     private void MoveSelectedSceneObject(SceneObjectMoveEventArgs e)
@@ -960,13 +1097,32 @@ internal sealed class MapEditorForm : Form
                 _sceneRemovals, _sceneAdditions.Select(item => item.ToAddition()).ToArray(),
                 _settlementOffsets.Select(pair => new SdlSettlementTranslation(pair.Key, pair.Value.X, pair.Value.Y, pair.Value.Z)).ToArray());
             _texturesDocument?.Save(rollback);
+            bool heightsChanged = _terrainLayers?.HeightsDirty == true && _bodenLayer is not null;
+            bool collisionChanged = _terrainLayers?.CollisionDirty == true && _collisionLayer is not null;
+            byte[]? savedEmboss = null;
+            if (heightsChanged)
+            {
+                TerrainLayerFiles.Write(Path.Combine(map, "boden.bmp"), _bodenLayer!, _terrainLayers!.Heights, rollback);
+                savedEmboss = _terrainLayers.BuildEmboss();
+                if (savedEmboss is not null && _embossLayer is not null) TerrainLayerFiles.Write(Path.Combine(map, "emboss.bmp"), _embossLayer, savedEmboss, rollback);
+                // skydens／visible／cliprect／shadows.dat 以高度總和為鍵；刪除後由遊戲在載入時重算。
+                TerrainLayerFiles.InvalidateHeightCaches(map, rollback);
+            }
+            if (collisionChanged) TerrainLayerFiles.Write(Path.Combine(map, "collision.bmp"), _collisionLayer!, _terrainLayers!.Collision!, rollback);
             // 只有地表確實被繪製過才重生小地圖，避免僅改標題／水面等屬性時用近似圖覆蓋原始 minimap.bmp。
-            if (TextureDirty())
+            if (TextureDirty() || heightsChanged)
             {
                 byte[]? minimap = _canvas.RenderMinimapBmp();
                 if (minimap is not null) AgainstRomeModifier.Core.Services.SafeFileWriter.WriteAllBytes(Path.Combine(map, "minimap.bmp"), minimap, rollback);
             }
             rollback.Commit();
+            if (heightsChanged || collisionChanged)
+            {
+                // 以寫回後的檔案作為下一次保留原像素的基準；光照係數沿用開圖時由原版資料擬合的值。
+                if (heightsChanged) { _bodenLayer = TerrainLayerFiles.Read(Path.Combine(map, "boden.bmp")); if (_embossLayer is not null) _embossLayer = TerrainLayerFiles.Read(Path.Combine(map, "emboss.bmp")); }
+                if (collisionChanged) _collisionLayer = TerrainLayerFiles.Read(Path.Combine(map, "collision.bmp"));
+                _terrainLayers!.CommitBaseline(savedEmboss);
+            }
             _terrainBlendSession?.CommitBaseline(); _savedTextures = _terrainBlendSession?.CurrentTextures.ToArray() ?? _texturesDocument?.Textures.ToArray() ?? Array.Empty<string>(); _propertyDirty = false;
             if (sceneStructureChanged)
             {
@@ -1179,7 +1335,8 @@ internal sealed class MapEditorForm : Form
 
     private void UpdateEditorState()
     {
-        bool editable = _selected?.IsCustom == true; _saveButton.Enabled = editable && IsDirty; _gamePreviewButton.Enabled = _selected is not null; _undoButton.Enabled = editable && _terrainBlendSession?.CanUndo == true; _redoButton.Enabled = editable && _terrainBlendSession?.CanRedo == true; _resetTerrainButton.Enabled = editable && _texturesDocument is not null && TextureDirty();
+        bool editable = _selected?.IsCustom == true; _saveButton.Enabled = editable && IsDirty; _gamePreviewButton.Enabled = _selected is not null; _undoButton.Enabled = editable && (TerrainLayerMode ? _terrainLayers?.CanUndo == true : _terrainBlendSession?.CanUndo == true); _redoButton.Enabled = editable && (TerrainLayerMode ? _terrainLayers?.CanRedo == true : _terrainBlendSession?.CanRedo == true); _resetTerrainButton.Enabled = editable && ((_texturesDocument is not null && TextureDirty()) || _terrainLayers?.IsDirty == true);
+        _heightTool.Enabled = editable && _terrainLayers is not null; _collisionTool.Enabled = editable && _terrainLayers?.HasCollision == true;
         UpdateSceneEditButtons();
         _sceneRestoreButton.Enabled = editable && _sceneLoaded && (_sceneRemovals.Count > 0 || _sceneAdditions.Count > 0 || SdlSceneEditService.HasChanges(_sceneOriginalObjects, _sceneObjects));
         foreach (Control control in EditablePropertyControls()) control.Enabled = editable;

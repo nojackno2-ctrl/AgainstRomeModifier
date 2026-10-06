@@ -1,6 +1,56 @@
 ﻿# 地圖格式與 Phase 3 閘門
 
-> 狀態：靜態驗證與候選假設（2026-07-11）。本文件不是直接修改原始遊戲檔的授權；所有產品功能必須經修改器的受控寫入／還原流程。
+> 狀態：靜態驗證與候選假設（2026-07-11；2026-10-06 追加 EXE 靜態反組譯證據）。本文件不是直接修改原始遊戲檔的授權；所有產品功能必須經修改器的受控寫入／還原流程。
+
+## 2026-10-06 EXE 靜態證據：地圖圖層語意與快取重建
+
+依據對唯讀副本 `Against_Rome.exe`（SHA-256 `6ac85239ea3b87a4357ed8ce09a1818e68c09fe3c00e8d98831f473577b719bf`，置於 `re_workspace/`，已 gitignore）之 Capstone 反組譯靜態分析，釐清地圖載入管線、圖層語意與快取重建機制：
+
+### 地圖載入管線（Map Load Pipeline）
+
+由 `0x487180`–`0x4873e1` 附近的 timing labels 可完整還原地圖載入順序：
+`LDFLOORINI`（`boden.ini`，`0x481de0`）
+→ `LDFLOORTEX`（`boden.txt`）
+→ `LDFLOORHMAP` `boden.bmp`（`0x483410`）
+→ `LDFLOORCMAP` `collision.bmp`（`0x486ec0`）
+→ `LDFLOORSMAP` `smooth.bmp`（`0x4835f0`）
+→ `LDFLOORVMAP` `vertex.bmp`（`0x483bf0`）
+→ `LDFLOOREMBMAP` `emboss.bmp`（`0x4845b0`）
+→ `CALCWATERWARP`
+→ `LDSKYMAP` `skydens.dat`
+→ `LDVISMAP` `visible.dat`
+→ `LDCLIPMAP` `cliprect.dat`
+→ `LDSHADMESHES` `shadows.dat`
+→ 載入關卡存檔資料 `DATA`（經由 `mp_lsave.c` 載入 `way.dat`、`hirarchy.dat`、`particle.dat`；這些是關卡存檔資料，非高度衍生快取）。
+
+全域參數方面：`[Heightmapstep]` 存於全域 `0x771880`（setter 為 `0x498d70`）；`[Waterlevel]` 存於全域 `0x77187c`。
+
+### 各圖層語意分析
+
+- **`boden.bmp` = 高度圖（HEIGHT MAP）**：
+  尺寸必須為 `(W+1) × (H+1)` 頂點（64 tile 地圖對應 257×257），載入器轉換為 32bpp；高度 `height[y][x]` = GREEN channel × `Heightmapstep`，以 `int16` 網格（stride `0x202`）存放於 `0x16121e8`。
+- **`smooth.bmp` = 平滑遮罩（Smoothing mask）**：
+  GREEN 通道數值代表載入期對高度場進行疊代加權平均平滑（iterative weighted-average smoothing）的次數（當數值大於 pass index 時持續執行 passes；鄰居權重 2/3、中心權重 256）。
+- **`vertex.bmp` = 逐頂點 RGB 色彩調色（Per-vertex RGB color tint）**：
+  24-bit（遮罩 `0xffffff`）存放於 `0x16365e8`；若檔案缺失則預設為純白（white）。**不是高度圖**（更正了舊假設）。
+- **`emboss.bmp` = 逐頂點光照強度（Per-vertex lighting intensity）**：
+  GREEN 通道（0–255）存放於 `0x1676df0`，在光柵化器（rasterizer，約 `0x4907dc`）中跨地形多邊形進行內插；檔案缺失時預設為 255。字串 `GENEMBOSS`（`0x4a9330`）為貼圖凹凸生成（texture bump generation），而非地形光照。
+- **`collision.bmp` = 256×256 tile 像素地圖**：
+  在 `0x4d87a0` 先將陣列清為 0，非黑色像素以 `(R+G+B)/3` 作為 `int16` 存放於 `0x1e22c50`；`0` = 無碰撞（可通行），`>0` = 阻擋（不可通行；除錯覆蓋層將 `>0` 繪製為紅色）。此外，`0x4d8830` 會將所有 `visible.dat` bit0 未設定的 tile 強制設為 255。
+
+### 快取重建機制（skydens.dat, visible.dat, cliprect.dat, shadows.dat）
+
+- `skydens.dat`、`visible.dat`、`cliprect.dat` 與 `shadows.dat` 為高度場衍生的快取檔案。
+- 其標頭（header）包含地圖寬度、高度、**所有高度總和（SUM OF ALL HEIGHTS，函式 0x484e50）** 以及其他參數（如 `Waterlevel`）。
+- 若檔案缺失或標頭資訊不符，遊戲引擎會自動重新計算資料（例如 visible 於 `0x492830`、cliprect 於 `0x48fb70`）並以 `"wbp"` 模式寫回檔案。
+- **編輯器處理原則**：編輯地形高度後，編輯器應直接刪除這四個快取檔案（若高度編輯剛好維持總和不變，引擎可能誤用舊快取）。
+
+### 編輯器實作規劃（Editor Plan）
+
+- **高度筆刷（Height brush）**：寫入 `boden.bmp` 灰階（R=G=B）。
+- **地形打光（Emboss relighting）**：僅在坡度改變處重新計算 `emboss.bmp`，利用取自該地圖原始資料計算的最小二乘法擬合：`emboss ≈ c0 + cx * dh/dx + cy * dh/dy`。
+- **碰撞筆刷（Collision brush）**：寫入 0 / 255。
+- **快取刪除**：在儲存交易（`FileRollbackScope`）內一併刪除上述四個快取檔案。
 
 ## 已靜態驗證
 
@@ -27,15 +77,17 @@
 - 同日比對 `KAMP_000`、`ENDL_000`、`MP_000`、`HIST_000`：`Heightmapstep` 均為 4，`Waterlevel / Heightmapstep` 分別為 62、30、30、36，與各圖 `boden.bmp` 河谷低灰階區吻合。離線 renderer 因此以此門檻和 `WaterColor` 產生只讀水面遮罩；此證據仍只授權顯示，不授權直接改寫高度圖。
 - SDL 唯讀解析確認 `[settlement] refpos` 加上各 `[objectNNNN] pos` 得到物件世界座標；連續柵欄以 64 世界單位排列，而 16,384 世界單位對應 256 地圖像素，因此 `world / 64` 可直接落到地圖像素。`KAMP_000/TEAM_7.sdl` 解析出 138 個有效物件，`ENDL_000` 八個聚落 SDL 合計 613 個。離線 renderer 依此顯示建築／單位／其他物件。2026-07-14 已補齊純文件層的 settlement/object 欄位解析、`refpos` 平移、物件欄位修改、增刪與連續重編號；合成 PFIL round-trip 測試確認未知欄位、註解與空值不會遺失，另將 repo fixture 的八個真實 ENDL_000 聚落 SDL 複製到暫存目錄做 no-op 儲存，解壓文字也逐 byte 相同。場景檢查器目前只在 marker-backed `ENDL_005–999` 提供既有物件 `team`／相對 `pos` 的受控驗證編輯，並可還原到開啟時值；尚未取得遊戲內變更與還原證據，因此不得標記為 runtime verified，也不開放物件增刪。
 
-## 未證實，禁止寫入
+## 未證實，禁止寫入（與靜態證據釐清狀況）
 
-1. `vertex.bmp` 哪一個通道（或其組合）代表高度、其量尺與 `Heightmapstep` 的換算方式。
-2. `collision.bmp` 的黑、白、灰階是否分別代表可通行、不可通行或其他導航遮罩。
-3. `boden.bmp`、`emboss.bmp`、`smooth.bmp` 是否由遊戲重建，或必須與 vertex／材質資料同步修改。
-4. `DATA/*.dat`、`cliprect.dat`、`shadows.dat`、`skydens.dat`、`visible.dat` 的權威性及重建規則。
+> 依據 2026-10-06 EXE 靜態反組譯證據，下列第 1 至 4 項之底層格式與管線語意已由靜態分析釐清；但在修改器功能正式標記為 runtime-verified 之前，仍須由使用者透過遊戲內實機執行期驗證（in-game runtime verification）確認。
+
+1. ~~`vertex.bmp` 哪一個通道（或其組合）代表高度、其量尺與 `Heightmapstep` 的換算方式~~ → **靜態證據已釐清**：`vertex.bmp` 為頂點 RGB 色彩調色，**不是高度圖**；真實高度圖為 `boden.bmp`（GREEN channel × `Heightmapstep`，stride `0x202` 之 `int16`）。（仍待使用者遊戲內實機驗證）
+2. ~~`collision.bmp` 的黑、白、灰階是否分別代表可通行、不可通行或其他導航遮罩~~ → **靜態證據已釐清**：`0` = 可通行（無碰撞），`>0`（如 255）= 阻擋。（仍待使用者遊戲內實機驗證）
+3. ~~`boden.bmp`、`emboss.bmp`、`smooth.bmp` 是否由遊戲重建，或必須與 vertex／材質資料同步修改~~ → **靜態證據已釐清**：`boden.bmp` 是高度圖權威來源；`smooth.bmp` 為載入期平滑疊代次數遮罩；`emboss.bmp` 為逐頂點光照，遊戲不會在載入時自動從高度重新計算地形 emboss，須由編輯器在坡度變更處擬合重算。（仍待使用者遊戲內實機驗證）
+4. ~~`DATA/*.dat`、`cliprect.dat`、`shadows.dat`、`skydens.dat`、`visible.dat` 的權威性及重建規則~~ → **靜態證據已釐清**：`skydens.dat`、`visible.dat`、`cliprect.dat`、`shadows.dat` 為快取檔案，標頭含高度總和驗證碼，缺失或不符時由遊戲引擎自動重算並寫回；編輯高度後編輯器應直接刪除此四快取。`DATA/` 內存檔（`way.dat` 等）為關卡存檔資料，非高度衍生快取。（仍待使用者遊戲內實機驗證）
 5. SDL `refpos`／`pos` 與 256 像素 minimap 的座標轉換。Phase 2 不得疊加物件位置，避免製造誤導性視圖。
 
-因此目前的「從無盡範本建立」是完整複製已知可載入的 `ENDL` 範本，不是空白地圖生成器。只刪除 SDL 物件或將 `boden.txt` 鋪成單一材質，仍會保留範本的高度、碰撞與 `DATA/*.dat` cache，不能對玩家宣稱為真正空白；空白生成必須等上述圖層的權威來源與重建規則通過 modifier workflow 的遊戲內驗證。
+因此目前的「從無盡範本建立」是完整複製已知可載入的 `ENDL` 範本，不是空白地圖生成器。只刪除 SDL 物件或將 `boden.txt` 鋪成單一材質，仍會保留範本的高度、碰撞與 `DATA/*.dat` cache，不能對玩家宣稱為真正空白；空白生成與自由編輯必須在上述圖層之重建規則與寫入功能通過 modifier workflow 的遊戲內實機驗證後，方可正式開放。
 
 ## 原遊戲渲染與內部 TextureEditor
 
@@ -71,7 +123,7 @@
 
 ## 開放功能條件
 
-- 高度筆刷：須完成步驟 1–2、至少兩圖重現、提供安全值域與 rollback。
-- 碰撞筆刷：須完成步驟 3，並證實黑白方向及灰階行為。
-- minimap 自動重繪：須先確認哪個輸入圖層是權威來源及是否需更新快取。
+- 高度筆刷：靜態語意已確立（寫入 `boden.bmp` 灰階、`emboss.bmp` 坡度最小二乘法擬合重繪、交易內刪除四項快取），須完成 modifier workflow 實作，並經使用者在遊戲內實機驗證（in-game runtime verification）高度起伏與 `FileRollbackScope` 還原功能。
+- 碰撞筆刷：靜態語意已確立（0 為通行、255 為阻擋），須經使用者在遊戲內實機驗證單位阻擋與尋路行為。
+- minimap 自動重繪：權威圖層已由靜態載入管線確立（`boden.bmp` 高度、`boden.txt` 材質），四項快取重建規則已明確，完成離線重繪實作並經實機確認。
 - SDL 疊圖：須以至少三個明確地標校正並驗證世界到像素轉換。

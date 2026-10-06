@@ -329,6 +329,8 @@ Phase 1 編輯操作:改 `team`/`nation`、整體平移(改 `refpos`,物件 `pos
 4. 成果依序解鎖:高度筆刷(vertex.bmp + Heightmapstep 換算)→ 碰撞編輯 → minimap 自動重繪。
 5. 所有逆向成果寫入新文件 `docs/reverse-engineering/map-formats.md`。
 
+> 實作狀態（2026-10-06）：EXE 靜態反組譯確認 `boden.bmp` 綠通道 × `Heightmapstep` 為高度、`emboss.bmp` 為每頂點光照、`collision.bmp` 0／255 為可通行／阻擋，`skydens/visible/cliprect/shadows.dat` 為以高度總和為鍵、缺檔即由遊戲重算的快取（詳見 map-formats.md）。編輯器新增「地形高度」（升高／降低／平滑／整平，2D／3D 即時預覽、獨立 undo/redo）與「通行區域」（阻擋／可通行，2D 紅色疊圖）工具；儲存時以 `FileRollbackScope` 寫回 boden／emboss／collision.bmp（未修改像素保留原值），以該圖原始資料擬合的光照模型只重烘坡度改變處的 emboss，刪除四個高度快取並重生 minimap。進遊戲的地形、光照、水面與通行行為仍是使用者 runtime gate。
+
 ---
 
 ## 4. 安全與備份規範(硬性規則)
