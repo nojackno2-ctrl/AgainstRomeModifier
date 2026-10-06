@@ -1,5 +1,11 @@
 # AI Handoff - Live Project Memory
 
+## 2026-10-06 Claude: Save Manager content area collapses when the form is clamped
+
+- Symptom: `SaveManagerFormLayoutTests` failed (`rootContent.Bottom` 150, expected 430). On a 640x432 working area Windows clamps the form below its 960x640 minimum; the anchored `rootContent` panel, sized once from the constructor-time form size, collapsed to 118x34.
+- Fix: `rootContent` is no longer anchored; its bounds are recomputed from `ClientSize` on every `Resize` (same pattern as the card layouts). The test's 100 px button-width assertion now applies only when the form actually reaches its designed 960 px width.
+- Verification: Debug `dotnet test` 266 passed / 21 skipped / 0 failed and Release build 0 warnings/0 errors, run with `DOTNET_ROLL_FORWARD=Major` on the .NET 10 desktop runtime (no .NET 8 desktop runtime on this machine). Not visually verified on a real small or high-DPI screen.
+
 ## 2026-10-05 Codex: automatic local commit policy
 
 - User authorized automatic local commits without further confirmation; AGENTS.md now records the standing policy. Push/release/history changes require separate authorization.
