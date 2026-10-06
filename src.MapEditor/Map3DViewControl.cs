@@ -298,6 +298,22 @@ internal sealed class Map3DViewControl : GLControl
         catch (InvalidOperationException) { Invalidate(); }
     }
 
+    /// <summary>以記憶體中的高度（boden.bmp 綠通道）重建地形網格；只重傳頂點，不重傳材質圖集。</summary>
+    public void SetHeightSamples(IReadOnlyList<byte> samples)
+    {
+        if (_heights is null || samples.Count != _heights.Width * _heights.Height) return;
+        _heights = new TerrainHeightField(_heights.Width, _heights.Height, samples.ToArray(), _heights.HeightScale, _heights.TileWidth, _heights.TileHeight);
+        BuildMesh();
+        if (_initialized && _mesh is not null && _atlas is not null)
+        {
+            MakeCurrent();
+            GL.BindVertexArray(_vao); GL.BindBuffer(BufferTarget.ArrayBuffer, _vbo);
+            float[] vertices = FlattenVertices(_mesh.Vertices); GL.BufferData(BufferTarget.ArrayBuffer, vertices.Length * sizeof(float), vertices, BufferUsageHint.DynamicDraw);
+            UploadColoredGeometry(_markerVao, _markerVbo, SceneObjectRenderer.BuildMarkerPoints(_objects, _heights));
+        }
+        Invalidate();
+    }
+
     private void UploadResources()
     {
         if (_mesh is null || _atlas is null || _heights is null) return;

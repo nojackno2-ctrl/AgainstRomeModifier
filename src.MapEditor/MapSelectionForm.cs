@@ -32,8 +32,6 @@ internal sealed class MapSelectionForm : Form
     private Button btnLangEN = null!;
     private readonly string? _preferredMapId;
 
-    internal const string BlankMapUnavailableMessage = "真正的空白地圖目前尚未安全支援。\n\nAgainst Rome 地圖含有尚未解讀完成的高度、碰撞與 DATA cache。只清空物件或鋪滿單一材質，仍會殘留範本地勢，也可能讓遊戲無法載入。\n\n目前可以使用「從無盡範本建立」製作可載入的自製地圖；空白範本會在完成遊戲內驗證後開放。";
-    internal const string BlankMapUnavailableMessageEn = "True blank authored maps are not safely supported yet.\n\nAgainst Rome map files contain height, collision, and DATA cache layers that are not fully reverse-engineered. Flattening ground textures alone will leave corrupted remnants and cause the game to crash on load.\n\nCurrently, you can use \"Build from Endless\" to make a clean custom map. Genuinely blank templates will be unlocked once in-game integration tests pass.";
 
     public MapSelectionForm(string gamePath, string? preferredMapId = null)
     {
@@ -138,10 +136,7 @@ internal sealed class MapSelectionForm : Form
         _mapTabs.SelectedIndexChanged += (_, _) => UpdateSelectionState();
         _loadButton.Click += (_, _) => LoadSelected();
         _newButton.Click += (_, _) => CreateMap();
-        _blankButton.Click += (_, _) => {
-            bool isEn = AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English;
-            MessageBox.Show(this, isEn ? BlankMapUnavailableMessageEn : BlankMapUnavailableMessage, isEn ? "Blank Map Not Supported Yet" : "空白地圖尚未支援", MessageBoxButtons.OK, MessageBoxIcon.Information);
-        };
+        _blankButton.Click += (_, _) => CreateBlankMap();
         _copyButton.Click += (_, _) => CopySelectedMap();
         _deleteButton.Click += (_, _) => DeleteSelected();
     }
@@ -233,7 +228,7 @@ internal sealed class MapSelectionForm : Form
             }
             _hint.Text = maps.Length == 0 
                 ? (isEn ? "No valid non-campaign maps found. Please verify game path." : "找不到可用的非劇情地圖。請確認遊戲路徑。") 
-                : (isEn ? "\"Build from Endless\" keeps template content; blank maps require format verification. Original maps are read-only." : "「從無盡範本建立」會保留範本內容；真正空白地圖尚待格式驗證。原版地圖維持唯讀。");
+                : (isEn ? "\"Build from Endless\" keeps template terrain; \"New Blank Map\" starts from flat terrain with the template's settlements. Original maps are read-only." : "「從無盡範本建立」保留範本地形；「新建空白地圖」從平坦地形開始並保留範本聚落。原版地圖維持唯讀。");
         }
         catch (Exception ex) {
             bool isEn = AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English;
@@ -262,6 +257,26 @@ internal sealed class MapSelectionForm : Form
         if (string.IsNullOrWhiteSpace(name)) return;
         CloneAndOpen(source, name, isEn ? "Failed to create map" : "無法新建地圖");
     }
+
+    /// <summary>
+    /// 新建空白地圖：以無盡範本建立可載入的自製地圖（保留聚落、DATA 與快取規則），
+    /// 開啟後編輯器立即把地形設為待儲存的空白地形（整平、單一材質、清除阻擋、重設頂點色／平滑／光照）。
+    /// </summary>
+    private void CreateBlankMap()
+    {
+        bool isEn = AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English;
+        GameMapInfo? source = SelectNewMapTemplate(_catalog.List(GamePath));
+        if (source is null) { MessageBox.Show(this, isEn ? "No map available as a base for the new map." : "沒有可作為新地圖基礎的地圖。", Text); return; }
+        // 地圖名稱寫入遊戲的 CP1251 文字檔，中文無法編碼；預設名稱一律用英文。
+        string name = PromptName(isEn ? "New Blank Map" : "新建空白地圖", "Blank Map");
+        if (string.IsNullOrWhiteSpace(name)) return;
+        CreatedBlankMap = true;
+        CloneAndOpen(source, name, isEn ? "Failed to create map" : "無法新建地圖");
+        if (DialogResult != DialogResult.OK) CreatedBlankMap = false;
+    }
+
+    /// <summary>為 true 時，呼叫端應以空白地形開啟 <see cref="SelectedMap"/>。</summary>
+    public bool CreatedBlankMap { get; private set; }
 
     private void CopySelectedMap()
     {
@@ -381,7 +396,7 @@ internal sealed class MapSelectionForm : Form
     {
         bool isEn = AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English;
         using var form = new Form { Text = title, Width = 450, Height = 210, StartPosition = FormStartPosition.CenterParent, BackColor = BackColor, ForeColor = ForeColor, FormBorderStyle = FormBorderStyle.FixedDialog, MinimizeBox = false, MaximizeBox = false };
-        var label = new Label { Text = isEn ? "Map Name" : "地圖名稱", Dock = DockStyle.Top, Height = 34, Padding = new Padding(12, 10, 0, 0) };
+        var label = new Label { Text = isEn ? "Map Name (Latin letters and digits; the game cannot display Chinese)" : "地圖名稱（請用英文或數字，遊戲無法顯示中文）", Dock = DockStyle.Top, Height = 34, Padding = new Padding(12, 10, 0, 0) };
         var input = new TextBox { Text = value, Dock = DockStyle.Top, Margin = new Padding(12) };
         var buttons = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 52, Padding = new Padding(12, 8, 12, 8), FlowDirection = FlowDirection.RightToLeft };
         var ok = new Button { Text = isEn ? "Create & Open" : "建立並開啟", DialogResult = DialogResult.OK, Width = 130, Height = 34 };

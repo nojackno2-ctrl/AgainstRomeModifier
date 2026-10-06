@@ -12,6 +12,8 @@ internal sealed class MapCanvasControl : Control
     private Bitmap? _smooth;
     private Bitmap? _heightShade;
     private Bitmap? _waterOverlay;
+    private Bitmap? _heightOverride;
+    private Bitmap? _collisionOverlay;
     private FloorTextureLibrary? _floorTextures;
     private string[]? _textures;
     private string[]? _baselineTextures;
@@ -56,6 +58,7 @@ internal sealed class MapCanvasControl : Control
         if (File.Exists(minimapPath)) using (var source = new Bitmap(minimapPath)) _bitmap = new Bitmap(source);
         _emboss = LoadBitmap(Path.Combine(mapDirectory, "emboss.bmp"));
         _smooth = LoadBitmap(Path.Combine(mapDirectory, "smooth.bmp"));
+        _heightOverride?.Dispose(); _heightOverride = null; // 重新載入以磁碟為準；未儲存的高度由呼叫端再以 SetHeightSamples 套用。
         using (Bitmap? heightMap = LoadBitmap(Path.Combine(mapDirectory, "boden.bmp")))
         {
             _heightShade = heightMap is null ? null : BuildHeightShade(heightMap);
@@ -73,8 +76,35 @@ internal sealed class MapCanvasControl : Control
     public void UpdateWaterOverlay(string mapDirectory, float waterLevel, float heightMapStep, Color waterColor)
     {
         _waterOverlay?.Dispose(); _waterOverlay = null;
-        using Bitmap? heightMap = LoadBitmap(Path.Combine(mapDirectory, "boden.bmp"));
+        using Bitmap? diskHeightMap = _heightOverride is null ? LoadBitmap(Path.Combine(mapDirectory, "boden.bmp")) : null;
+        Bitmap? heightMap = _heightOverride ?? diskHeightMap;
         _waterOverlay = heightMap is null || heightMapStep <= 0 ? null : BuildWaterOverlay(heightMap, waterLevel / heightMapStep, waterColor);
+        Invalidate();
+    }
+
+    /// <summary>以記憶體中的高度（boden.bmp 綠通道）更新地勢陰影與水面預覽；傳 null 改回讀取磁碟上的 boden.bmp。</summary>
+    public void SetHeightSamples(int size, IReadOnlyList<byte>? samples, float waterLevel, float heightMapStep, Color waterColor)
+    {
+        _heightOverride?.Dispose(); _heightOverride = null;
+        if (samples is null || samples.Count != size * size) { Invalidate(); return; }
+        var argb = new int[samples.Count];
+        for (int index = 0; index < argb.Length; index++) { int value = samples[index]; argb[index] = unchecked((int)0xff000000) | (value << 16) | (value << 8) | value; }
+        _heightOverride = BitmapPixels.Write(size, size, argb);
+        _heightShade?.Dispose(); _heightShade = BuildHeightShade(_heightOverride);
+        _waterOverlay?.Dispose(); _waterOverlay = heightMapStep <= 0 ? null : BuildWaterOverlay(_heightOverride, waterLevel / heightMapStep, waterColor);
+        Invalidate();
+    }
+
+    /// <summary>顯示（或以 null 隱藏）通行區域：collision 非 0 的 tile-pixel 以紅色半透明標示。</summary>
+    public void SetCollisionOverlay(int size, IReadOnlyList<byte>? collision)
+    {
+        _collisionOverlay?.Dispose(); _collisionOverlay = null;
+        if (collision is not null && collision.Count == size * size)
+        {
+            var argb = new int[collision.Count];
+            for (int index = 0; index < argb.Length; index++) if (collision[index] != 0) argb[index] = unchecked((int)0x8cd23c3c);
+            _collisionOverlay = BitmapPixels.Write(size, size, argb);
+        }
         Invalidate();
     }
 
@@ -136,6 +166,15 @@ internal sealed class MapCanvasControl : Control
             graphics.DrawImage(_terrainScene, bounds);
             if (_heightShade is not null) graphics.DrawImage(_heightShade, bounds);
             if (_waterOverlay is not null) graphics.DrawImage(_waterOverlay, bounds);
+            if (_collisionOverlay is not null)
+            {
+                InterpolationMode previous = graphics.InterpolationMode;
+                graphics.InterpolationMode = InterpolationMode.NearestNeighbor;
+                graphics.PixelOffsetMode = PixelOffsetMode.Half;
+                graphics.DrawImage(_collisionOverlay, bounds);
+                graphics.PixelOffsetMode = PixelOffsetMode.Default;
+                graphics.InterpolationMode = previous;
+            }
             DrawMapOverlay(graphics, _smooth, bounds, .12f);
             DrawMapOverlay(graphics, _emboss, bounds, .22f);
         }
@@ -487,7 +526,7 @@ internal sealed class MapCanvasControl : Control
         return Color.FromArgb(90 + (hash & 0x4f), 90 + ((hash >> 8) & 0x4f), 90 + ((hash >> 16) & 0x4f));
     }
 
-    protected override void Dispose(bool disposing) { if (disposing) { _bitmap?.Dispose(); _terrainScene?.Dispose(); _emboss?.Dispose(); _smooth?.Dispose(); _heightShade?.Dispose(); _waterOverlay?.Dispose(); /* _floorTextures 由 MapEditorForm 擁有，不在此釋放 */ } base.Dispose(disposing); }
+    protected override void Dispose(bool disposing) { if (disposing) { _bitmap?.Dispose(); _terrainScene?.Dispose(); _emboss?.Dispose(); _smooth?.Dispose(); _heightShade?.Dispose(); _waterOverlay?.Dispose(); _heightOverride?.Dispose(); _collisionOverlay?.Dispose(); /* _floorTextures 由 MapEditorForm 擁有，不在此釋放 */ } base.Dispose(disposing); }
 }
 
 internal sealed class TexturePaintEventArgs : EventArgs

@@ -18,7 +18,7 @@ Treat `AI_HANDOFF.md` as live shared project memory. Update it immediately after
 
 Do not blindly overwrite another agent's information or repeat failed approaches without new evidence. Assume uncommitted changes may belong to the user or another agent; inspect them before editing and never discard them without explicit authorization.
 
-Never claim a fix, successful build, or working functionality without verification. Do not automatically commit, push, merge, rebase, reset, force-push, or delete branches unless explicitly authorized. Git and the repository are the source of truth. Keep collaboration files concise and current.
+Never claim a fix, successful build, or working functionality without verification. Do not automatically push, merge, rebase, reset, force-push, or delete branches unless explicitly authorized. Git and the repository are the source of truth. Keep collaboration files concise and current.
 
 ## Project rules
 
@@ -26,3 +26,10 @@ Never claim a fix, successful build, or working functionality without verificati
 - Keep behavior-preserving refactors separate from feature changes.
 - Validate with the documented `dotnet build` and `dotnet test` commands.
 - Communicate with the user in Traditional Chinese while preserving technical names, paths, APIs, and error messages.
+
+## Automatic commits (user authorization, 2026-10-05)
+
+- The user has authorized automatic local commits for all projects. After completing a task and appropriate verification, commit the task changes without asking for confirmation again; do not create empty commits.
+- Review the diff and preserve existing work. Include unrelated pre-existing changes only when the user explicitly requests committing them. Never commit secrets, credentials, or personal runtime data.
+- This standing authorization covers local commits only. Push, release, merge, rebase, reset, force-push, branch deletion, and destructive operations still require explicit authorization.
+- Record what was verified and any unverified behavior in `AI_HANDOFF.md`; never present a commit as proof that functionality works.

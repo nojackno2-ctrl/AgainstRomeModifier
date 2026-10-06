@@ -258,13 +258,15 @@ namespace AgainstRomeModifier {
             // Main Content Area
             Panel root = new Panel {
                 Name = "rootContent",
-                Location = new Point(0, 116),
-                Size = new Size(this.Width, this.Height - 116),
-                Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
                 BackColor = Color.Transparent,
                 Padding = new Padding(20)
             };
             this.Controls.Add(root);
+            // Anchors break once the form is clamped below its designed size (small or high-DPI screens),
+            // so the content area is recomputed from the client size on every resize instead.
+            void LayoutRootContent() => root.SetBounds(0, 116, ClientSize.Width, Math.Max(0, ClientSize.Height - 116));
+            LayoutRootContent();
+            this.Resize += (s, e) => LayoutRootContent();
 
             TableLayoutPanel contentLayout = new TableLayoutPanel {
                 Name = "contentLayout",

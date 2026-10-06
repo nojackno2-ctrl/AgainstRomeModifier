@@ -265,7 +265,7 @@ namespace AgainstRomeModifier {
                     }
                     gamePath = selection.GamePath;
                     preferredMapId = selection.SelectedMap.Id;
-                    using var editor = new AgainstRomeMapEditor.MapEditorForm(gamePath, selection.SelectedMap);
+                    using var editor = new AgainstRomeMapEditor.MapEditorForm(gamePath, selection.SelectedMap, selection.CreatedBlankMap);
                     editor.ShowDialog();
                     if (!editor.ReturnToMapMenu) {
                         break;

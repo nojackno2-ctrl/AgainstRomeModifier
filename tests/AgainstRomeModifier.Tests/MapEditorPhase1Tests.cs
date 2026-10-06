@@ -91,6 +91,70 @@ public sealed class MapEditorPhase1Tests : IDisposable
     }
 
     [Fact]
+    public void PutTextDocument_Keeps_unchanged_multi_literal_text_byte_identical()
+    {
+        string path = Path.Combine(_root, "briefing.put");
+        Directory.CreateDirectory(_root);
+        string text = "var:briefing_titel_1 =\"Original\";\r\n" +
+            "var:briefing_text =\"First line\\n\\n\"\r\n\"Second part of the briefing.\"\r\n\"Third part.\";\r\n";
+        File.WriteAllBytes(path, SyntheticFixture.Pfil(text));
+
+        var document = PutTextDocument.Load(path);
+        document.SetCompositeValue("briefing_text", document.GetCompositeValue("briefing_text")!);
+        document.SetValue("briefing_titel_1", "Original");
+        document.Save();
+
+        Assert.Equal(text, ReadPfil(path));
+    }
+
+    [Fact]
+    public void PutTextDocument_Splits_long_briefing_into_game_safe_literals_and_repairs_oversized_ones()
+    {
+        string path = Path.Combine(_root, "briefing.put");
+        Directory.CreateDirectory(_root);
+        string longText = string.Join(" ", Enumerable.Range(0, 120).Select(index => $"word{index}")) + "\n\nEnd \"quoted\" \\ path";
+        // 先前版本寫出的壞檔：整段簡報是一個超長常值。
+        File.WriteAllBytes(path, SyntheticFixture.Pfil("var:briefing_text =\"" + longText.Replace("\\", "\\\\").Replace("\n", "\\n").Replace("\"", "\\\"") + "\";\r\n"));
+
+        var document = PutTextDocument.Load(path);
+        Assert.Equal(longText, document.GetCompositeValue("briefing_text"));
+        document.SetCompositeValue("briefing_text", longText); // 內容相同，但常值過長 → 必須修復
+        document.Save();
+
+        string saved = ReadPfil(path);
+        string[] literals = System.Text.RegularExpressions.Regex.Matches(saved, @"""((?:\\.|[^""\\])*)""").Select(match => match.Groups[1].Value).ToArray();
+        Assert.True(literals.Length > 5);
+        Assert.All(literals, literal => Assert.InRange(literal.Length, 1, PutTextDocument.MaxLiteralBytes));
+        Assert.All(literals, literal => Assert.False(literal.EndsWith('\\') && !literal.EndsWith("\\\\", StringComparison.Ordinal), "不可切斷跳脫序列：" + literal));
+        Assert.Equal(longText, PutTextDocument.Load(path).GetCompositeValue("briefing_text"));
+    }
+
+    [Fact]
+    public void PutTextDocument_SplitLiterals_never_breaks_escape_sequences()
+    {
+        string escaped = string.Concat(Enumerable.Repeat("\\n\\\"", 80));
+        IReadOnlyList<string> chunks = PutTextDocument.SplitLiterals(escaped);
+        Assert.Equal(escaped, string.Concat(chunks));
+        Assert.All(chunks, chunk =>
+        {
+            Assert.InRange(chunk.Length, 1, PutTextDocument.MaxLiteralBytes);
+            int backslashes = chunk.Reverse().TakeWhile(character => character == '\\').Count();
+            Assert.True(backslashes % 2 == 0, "段落結尾不可留下未完成的跳脫：" + chunk);
+        });
+    }
+
+    [Fact]
+    public void PutTextDocument_Rejects_single_values_longer_than_the_game_buffer()
+    {
+        string path = Path.Combine(_root, "briefing.put");
+        Directory.CreateDirectory(_root);
+        File.WriteAllBytes(path, SyntheticFixture.Pfil("var:briefing_titel_1 =\"Original\";\r\n"));
+        var document = PutTextDocument.Load(path);
+        Assert.Throws<ArgumentException>(() => document.SetValue("briefing_titel_1", new string('x', PutTextDocument.MaxLiteralBytes + 1)));
+        document.SetValue("briefing_titel_1", new string('x', PutTextDocument.MaxLiteralBytes));
+    }
+
+    [Fact]
     public void BodenTexturesDocument_Changes_exactly_one_tile_and_round_trips()
     {
         string path = Path.Combine(_root, "boden.txt");
@@ -303,6 +367,67 @@ public sealed class MapEditorPhase1Tests : IDisposable
         // 原 object0001（Turm）已刪除且無殘留編號。
         Assert.DoesNotContain("BauRomTur00_Turm", ReadPfil(Path.Combine(map, sourceFile)));
         Assert.DoesNotContain("[object0002]", ReadPfil(Path.Combine(map, sourceFile)));
+    }
+
+    [Fact]
+    public void SdlSceneEditService_Writes_angle_cross_settlement_addition_and_settlement_translation()
+    {
+        string map = CreateCustomSceneMapWithTwoObjects(9);
+        string second = "Endlos_Gal_Siedlung2.sdl";
+        File.WriteAllBytes(Path.Combine(map, second), SyntheticFixture.Pfil(
+            "[settlement]\r\nrefpos=8000,100,8000\r\n" +
+            "[object0000]\r\nnamedef=BauGalHau00_Haupthaus\r\ndef=2000\r\npos=0.00,0.00,0.00\r\nteam=1\r\nangle=0.00\r\n"));
+        IReadOnlyList<MapSceneObject> baseline = SdlSceneCatalog.LoadDirectory(map);
+        MapSceneObject tower = baseline.Single(item => item.Name == "BauRomTur00_Turm");
+        Assert.Equal(90f, tower.Angle);
+        Assert.Equal(new SdlVector3(8000, 100, 8000), SdlSceneCatalog.LoadSettlementOrigins(map)[second]);
+        MapSceneObject[] current = baseline.Select(item => item == tower ? item with { Angle = 180f } : item).ToArray();
+
+        using (var rollback = new FileRollbackScope())
+        {
+            SdlSceneEditService.SaveChanges(map, baseline, current, rollback,
+                additions: [new SdlSceneObjectAddition(tower.SourceFile, tower.ObjectIndex, Team: 1, LocalX: 64, LocalY: 0, LocalZ: -64, Angle: 45f, TargetFile: second)],
+                translations: [new SdlSettlementTranslation(second, 256, 0, -128)]);
+            rollback.Commit();
+        }
+
+        SdlObjectSection savedTower = SdlDocument.Load(Path.Combine(map, tower.SourceFile)).Objects.Single(item => item.GetValue("namedef") == "BauRomTur00_Turm");
+        Assert.Equal("180.00", savedTower.GetValue("angle"));
+        var target = SdlDocument.Load(Path.Combine(map, second));
+        Assert.Equal("8256,100,7872", target.Settlement["refpos"]);
+        Assert.Equal(2, target.Objects.Count);
+        SdlObjectSection added = target.Objects[1];
+        Assert.Equal("BauRomTur00_Turm", added.GetValue("namedef"));
+        Assert.Equal("1700", added.GetValue("def"));
+        Assert.Equal("1", added.GetValue("team"));
+        Assert.Equal("45.00", added.GetValue("angle"));
+        Assert.Equal("64.00,0.00,-64.00", added.GetValue("pos"));
+        // 平移只改 refpos；原物件相對座標不變。
+        Assert.Equal("0.00,0.00,0.00", target.Objects[0].GetValue("pos"));
+        // 模板所在檔沒有新增區塊。
+        Assert.Equal(2, SdlDocument.Load(Path.Combine(map, tower.SourceFile)).Objects.Count);
+    }
+
+    [Fact]
+    public void SdlSceneEditService_Rejects_invalid_angle_target_and_translation()
+    {
+        string map = CreateCustomSceneMapWithTwoObjects(10);
+        IReadOnlyList<MapSceneObject> baseline = SdlSceneCatalog.LoadDirectory(map);
+        string sourceFile = baseline[0].SourceFile;
+        byte[] before = File.ReadAllBytes(Path.Combine(map, sourceFile));
+
+        void Save(IReadOnlyList<MapSceneObject> current, SdlSceneObjectAddition[]? additions = null, SdlSettlementTranslation[]? translations = null)
+        {
+            using var rollback = new FileRollbackScope();
+            SdlSceneEditService.SaveChanges(map, baseline, current, rollback, additions: additions, translations: translations);
+            rollback.Commit();
+        }
+
+        Assert.Throws<InvalidDataException>(() => Save(baseline.Select(item => item with { Angle = 720f }).ToArray()));
+        Assert.Throws<InvalidDataException>(() => Save(baseline, additions: [new SdlSceneObjectAddition(sourceFile, 0, 1, 0, 0, 0, TargetFile: "..\\evil.sdl")]));
+        Assert.Throws<InvalidDataException>(() => Save(baseline, translations: [new SdlSettlementTranslation(sourceFile, float.NaN, 0, 0)]));
+        Assert.Throws<InvalidDataException>(() => Save(baseline, translations: [new SdlSettlementTranslation(sourceFile, 1, 0, 0), new SdlSettlementTranslation(sourceFile, 2, 0, 0)]));
+        Assert.Equal(before, File.ReadAllBytes(Path.Combine(map, sourceFile)));
     }
 
     [Fact]
