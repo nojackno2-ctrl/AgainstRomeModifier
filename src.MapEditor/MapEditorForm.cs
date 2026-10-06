@@ -39,10 +39,13 @@ internal sealed class MapEditorForm : Form
     private readonly NumericUpDown _sceneX = SceneCoordinateInput();
     private readonly NumericUpDown _sceneY = SceneCoordinateInput();
     private readonly NumericUpDown _sceneZ = SceneCoordinateInput();
+    private readonly NumericUpDown _sceneAngle = new() { Dock = DockStyle.Fill, Minimum = -360, Maximum = 360, DecimalPlaces = 2, Increment = 15 };
     private readonly Button _sceneApplyButton = new() { Dock = DockStyle.Fill, Height = 32, Enabled = false };
     private readonly Button _sceneRestoreButton = new() { Dock = DockStyle.Fill, Height = 32, Enabled = false };
     private readonly Button _sceneDuplicateButton = new() { Dock = DockStyle.Fill, Height = 32, Enabled = false };
     private readonly Button _sceneDeleteButton = new() { Dock = DockStyle.Fill, Height = 32, Enabled = false };
+    private readonly Button _sceneAddButton = new() { Dock = DockStyle.Fill, Height = 32, Enabled = false };
+    private readonly Button _sceneTranslateButton = new() { Dock = DockStyle.Fill, Height = 32, Enabled = false };
     private readonly Label _modeBanner = new() { Dock = DockStyle.Top, Height = 34, TextAlign = ContentAlignment.MiddleCenter };
     private readonly ToolStripStatusLabel _status = new() { Spring = true, TextAlign = ContentAlignment.MiddleLeft };
     private readonly ToolStripButton _saveButton = new("儲存") { Enabled = false };
@@ -84,6 +87,7 @@ internal sealed class MapEditorForm : Form
     private Label _lblSceneX = null!;
     private Label _lblSceneY = null!;
     private Label _lblSceneZ = null!;
+    private Label _lblSceneAngle = null!;
     private TabControl _inspectorTabs = null!;
     private Label _sceneWarningLabel = null!;
     private GameMapInfo? _selected;
@@ -97,6 +101,8 @@ internal sealed class MapEditorForm : Form
     private IReadOnlyList<MapSceneObject> _sceneSavedObjects = Array.Empty<MapSceneObject>();
     private readonly List<SdlSceneObjectRemoval> _sceneRemovals = new();
     private readonly List<StagedSceneAddition> _sceneAdditions = new();
+    private readonly Dictionary<string, SdlVector3> _settlementOffsets = new(StringComparer.OrdinalIgnoreCase);
+    private IReadOnlyDictionary<string, SdlVector3> _settlementOrigins = new Dictionary<string, SdlVector3>();
     private int _nextSceneAdditionId;
     private string[] _savedTextures = Array.Empty<string>();
     private bool _propertyDirty;
@@ -109,23 +115,31 @@ internal sealed class MapEditorForm : Form
 
     private bool TextureDirty() => _terrainBlendSession?.IsDirty == true;
 
-    private bool SceneDirty() => _sceneLoaded && (_sceneRemovals.Count > 0 || _sceneAdditions.Count > 0 || SdlSceneEditService.HasChanges(_sceneSavedObjects, _sceneObjects));
+    private bool SceneDirty() => _sceneLoaded && (_sceneRemovals.Count > 0 || _sceneAdditions.Count > 0 || _settlementOffsets.Count > 0 || SdlSceneEditService.HasChanges(_sceneSavedObjects, _sceneObjects));
 
-    /// <summary>畫布／清單實際呈現的場景：排除暫存刪除、加入暫存複製出的新物件。</summary>
+    /// <summary>畫布／清單實際呈現的場景：排除暫存刪除、加入暫存新增物件，並套用暫存的聚落整體平移。</summary>
     private IReadOnlyList<MapSceneObject> EffectiveSceneObjects()
     {
-        if (_sceneRemovals.Count == 0 && _sceneAdditions.Count == 0) return _sceneObjects;
+        if (_sceneRemovals.Count == 0 && _sceneAdditions.Count == 0 && _settlementOffsets.Count == 0) return _sceneObjects;
         HashSet<string> removed = _sceneRemovals.Select(item => item.SourceFile.ToUpperInvariant() + "|" + item.ObjectIndex).ToHashSet();
-        return _sceneObjects.Where(item => !removed.Contains(SceneKey(item))).Concat(_sceneAdditions.Select(item => item.Display)).ToArray();
+        return _sceneObjects.Where(item => !removed.Contains(SceneKey(item))).Concat(_sceneAdditions.Select(item => item.Display)).Select(WithSettlementOffset).ToArray();
     }
+
+    /// <summary>記憶體中的物件世界座標以已存檔的 refpos 為準；暫存平移只在呈現時加上。</summary>
+    private MapSceneObject WithSettlementOffset(MapSceneObject item) => _settlementOffsets.TryGetValue(item.SourceFile, out SdlVector3 offset)
+        ? item with { WorldX = item.WorldX + offset.X, WorldY = item.WorldY + offset.Y, WorldZ = item.WorldZ + offset.Z }
+        : item;
 
     private sealed class StagedSceneAddition
     {
         public required int Id { get; init; }
         public required string TemplateFile { get; init; }
         public required int TemplateIndex { get; init; }
+        public required bool FromCatalog { get; init; }
+        /// <summary>Display.SourceFile 是寫入目標聚落檔；與模板檔不同時即為跨聚落的自由新增。</summary>
         public required MapSceneObject Display { get; set; }
-        public SdlSceneObjectAddition ToAddition() => new(TemplateFile, TemplateIndex, Display.Team, Display.LocalX, Display.LocalY, Display.LocalZ);
+        public SdlSceneObjectAddition ToAddition() => new(TemplateFile, TemplateIndex, Display.Team, Display.LocalX, Display.LocalY, Display.LocalZ,
+            Display.Angle, Display.SourceFile.Equals(TemplateFile, StringComparison.OrdinalIgnoreCase) ? null : Display.SourceFile);
     }
 
     private bool IsDirty => _propertyDirty || TextureDirty() || SceneDirty();
@@ -182,7 +196,7 @@ internal sealed class MapEditorForm : Form
         _inspectorTabs.TabPages.Add(new TabPage("地圖屬性") { BackColor = WinFormsTheme.Surface }); _inspectorTabs.TabPages[1].Controls.Add(properties);
         var scenePanel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(10), BackColor = WinFormsTheme.Surface };
         _sceneList.Columns.Add("類型", 65); _sceneList.Columns.Add("物件", 170); _sceneList.Columns.Add("隊伍", 65); _sceneList.Columns.Add("來源", 120);
-        var sceneEditor = new TableLayoutPanel { Dock = DockStyle.Bottom, Height = 276, ColumnCount = 2, Padding = new Padding(8), BackColor = WinFormsTheme.SurfaceRaised };
+        var sceneEditor = new TableLayoutPanel { Dock = DockStyle.Bottom, Height = 352, ColumnCount = 2, Padding = new Padding(8), BackColor = WinFormsTheme.SurfaceRaised };
         sceneEditor.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 74)); sceneEditor.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         _sceneWarningLabel = new Label { AutoSize = true, MaximumSize = new Size(250, 0), ForeColor = WinFormsTheme.Warning };
         sceneEditor.Controls.Add(_sceneWarningLabel, 0, 0); sceneEditor.SetColumnSpan(_sceneWarningLabel, 2);
@@ -190,8 +204,10 @@ internal sealed class MapEditorForm : Form
         _lblSceneX = AddSceneField(sceneEditor, 2, "相對 X", _sceneX); 
         _lblSceneY = AddSceneField(sceneEditor, 3, "相對 Y", _sceneY); 
         _lblSceneZ = AddSceneField(sceneEditor, 4, "相對 Z", _sceneZ);
-        sceneEditor.Controls.Add(_sceneApplyButton, 0, 5); sceneEditor.Controls.Add(_sceneRestoreButton, 1, 5);
-        sceneEditor.Controls.Add(_sceneDuplicateButton, 0, 6); sceneEditor.Controls.Add(_sceneDeleteButton, 1, 6);
+        _lblSceneAngle = AddSceneField(sceneEditor, 5, "角度", _sceneAngle);
+        sceneEditor.Controls.Add(_sceneApplyButton, 0, 6); sceneEditor.Controls.Add(_sceneRestoreButton, 1, 6);
+        sceneEditor.Controls.Add(_sceneDuplicateButton, 0, 7); sceneEditor.Controls.Add(_sceneDeleteButton, 1, 7);
+        sceneEditor.Controls.Add(_sceneAddButton, 0, 8); sceneEditor.Controls.Add(_sceneTranslateButton, 1, 8);
         scenePanel.Controls.Add(_sceneList); scenePanel.Controls.Add(sceneEditor); scenePanel.Controls.Add(_sceneSummary);
         _inspectorTabs.TabPages.Add(new TabPage("場景物件") { BackColor = WinFormsTheme.Surface }); _inspectorTabs.TabPages[2].Controls.Add(scenePanel);
 
@@ -266,6 +282,8 @@ internal sealed class MapEditorForm : Form
         _sceneRestoreButton.Click += (_, _) => RestoreOpeningSceneObjects();
         _sceneDuplicateButton.Click += (_, _) => DuplicateSelectedSceneObject();
         _sceneDeleteButton.Click += (_, _) => ToggleDeleteSelectedSceneObject();
+        _sceneAddButton.Click += (_, _) => AddSceneObjectFromCatalog();
+        _sceneTranslateButton.Click += (_, _) => TranslateSelectedSettlement();
         _canvas.TexturePainted += (_, e) => PaintTexture(e);
         _canvas.TextureSampled += (_, e) => SelectSampledTexture(e.Texture);
         _canvas.StrokeEnded += (_, _) => CommitStroke();
@@ -400,16 +418,19 @@ internal sealed class MapEditorForm : Form
         }
 
         _sceneWarningLabel.Text = isEn
-            ? "SDL Validation: Edit or drag positions, change teams, copy an existing object, or delete objects on custom maps. Select an object first."
-            : "SDL 驗證功能：可拖曳或輸入座標、修改隊伍、複製既有物件或刪除物件。請先選取物件。";
+            ? "SDL editing: drag or type positions, change team/angle, copy, add by type, delete objects, or move a whole settlement on custom maps."
+            : "SDL 編輯：可拖曳或輸入座標、修改隊伍與角度、複製、依類型新增、刪除物件，或整體平移聚落。";
         _lblSceneTeam.Text = isEn ? "Team" : "隊伍";
         _lblSceneX.Text = isEn ? "Rel X" : "相對 X";
         _lblSceneY.Text = isEn ? "Rel Y" : "相對 Y";
         _lblSceneZ.Text = isEn ? "Rel Z" : "相對 Z";
+        _lblSceneAngle.Text = isEn ? "Angle" : "角度";
 
         _sceneApplyButton.Text = isEn ? "Apply to Buffer" : "套用至待儲存";
         _sceneRestoreButton.Text = isEn ? "Restore to Initial" : "還原到本次開啟時";
         _sceneDuplicateButton.Text = isEn ? "Copy Object" : "複製物件";
+        _sceneAddButton.Text = isEn ? "Add Object…" : "新增物件…";
+        _sceneTranslateButton.Text = isEn ? "Move Settlement…" : "平移聚落…";
         UpdateSceneEditButtons();
 
         _lblOverviewTitle.Text = isEn ? "Map Overview" : "地圖概覽";
@@ -451,7 +472,8 @@ internal sealed class MapEditorForm : Form
             _dayStart.Value = ParseDecimal(ini.GetValue("DayStartTime"), _dayStart); _dayEnd.Value = ParseDecimal(ini.GetValue("DayEndTime"), _dayEnd); _rain.Checked = ini.GetValue("RainDropsOnWater") == "1";
             _texturesDocument = BodenTexturesDocument.Load(Path.Combine(map, "boden.txt")); _savedTextures = _texturesDocument.Textures.ToArray(); InitializeTerrainBlendSession(); _propertyDirty = false;
             _sceneObjects = SdlSceneCatalog.LoadDirectory(map); _sceneOriginalObjects = _sceneObjects.ToArray(); _sceneSavedObjects = _sceneObjects.ToArray(); _sceneLoaded = true;
-            _sceneRemovals.Clear(); _sceneAdditions.Clear();
+            _sceneRemovals.Clear(); _sceneAdditions.Clear(); _settlementOffsets.Clear();
+            _settlementOrigins = SdlSceneCatalog.LoadSettlementOrigins(map);
             LoadPalette(); LoadEditingScene(); UpdateEditorState();
             
             bool isEn = AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English;
@@ -586,7 +608,8 @@ internal sealed class MapEditorForm : Form
 
     private void FocusSelectedSceneObject()
     {
-        if (SelectedSceneDisplay() is not { } item) return;
+        if (SelectedSceneDisplay() is not { } selected) return;
+        MapSceneObject item = WithSettlementOffset(selected);
         float tileX = item.WorldX / (SdlSceneCatalog.WorldUnitsPerMapPixel * 4f);
         float tileZ = item.WorldZ / (SdlSceneCatalog.WorldUnitsPerMapPixel * 4f);
         _canvas.FocusTile(tileX, tileZ);
@@ -602,6 +625,7 @@ internal sealed class MapEditorForm : Form
         _sceneX.Value = ClampSceneCoordinate(item.LocalX, _sceneX);
         _sceneY.Value = ClampSceneCoordinate(item.LocalY, _sceneY);
         _sceneZ.Value = ClampSceneCoordinate(item.LocalZ, _sceneZ);
+        _sceneAngle.Value = Math.Clamp((decimal)(item.Angle ?? 0), _sceneAngle.Minimum, _sceneAngle.Maximum);
         FocusSelectedSceneObject();
     }
 
@@ -623,7 +647,14 @@ internal sealed class MapEditorForm : Form
         if (_sceneList.SelectedItems[0].Tag is MapSceneObject pending && _sceneRemovals.Any(removal =>
             removal.SourceFile.Equals(pending.SourceFile, StringComparison.OrdinalIgnoreCase) && removal.ObjectIndex == pending.ObjectIndex)) return;
 
-        MapSceneObject moved = SceneObjectPositioning.MoveToWorldPosition(source, e.WorldX, e.WorldZ);
+        // 拖曳落點是畫面上的有效座標（含暫存聚落平移）；換回以已存檔 refpos 為準的記憶體座標。
+        MapSceneObject effectiveSource = WithSettlementOffset(source);
+        MapSceneObject effectiveMoved = SceneObjectPositioning.MoveToWorldPosition(effectiveSource, e.WorldX, e.WorldZ);
+        MapSceneObject moved = effectiveMoved with
+        {
+            WorldX = source.WorldX + effectiveMoved.WorldX - effectiveSource.WorldX,
+            WorldZ = source.WorldZ + effectiveMoved.WorldZ - effectiveSource.WorldZ,
+        };
         if (_sceneList.SelectedItems[0].Tag is StagedSceneAddition addition)
         {
             addition.Display = moved;
@@ -650,8 +681,8 @@ internal sealed class MapEditorForm : Form
         {
             bool isEn = AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English;
             _status.Text = isEn
-                ? $"Object moved to world ({moved.WorldX:0}, {moved.WorldZ:0}); click Save to write the SDL change."
-                : $"物件已移到世界座標 ({moved.WorldX:0}, {moved.WorldZ:0})；按「儲存」才會寫入 SDL。";
+                ? $"Object moved to world ({effectiveMoved.WorldX:0}, {effectiveMoved.WorldZ:0}); click Save to write the SDL change."
+                : $"物件已移到世界座標 ({effectiveMoved.WorldX:0}, {effectiveMoved.WorldZ:0})；按「儲存」才會寫入 SDL。";
         }
     }
 
@@ -660,16 +691,17 @@ internal sealed class MapEditorForm : Form
         if (_selected?.IsCustom != true || _sceneList.SelectedItems.Count != 1) return;
         float localX = (float)_sceneX.Value, localY = (float)_sceneY.Value, localZ = (float)_sceneZ.Value;
         int team = (int)_sceneTeam.Value;
+        float angle = (float)_sceneAngle.Value;
         if (_sceneList.SelectedItems[0].Tag is StagedSceneAddition addition)
         {
-            addition.Display = MoveSceneObject(addition.Display, team, localX, localY, localZ);
+            addition.Display = MoveSceneObject(addition.Display, team, localX, localY, localZ, angle);
         }
         else if (_sceneList.SelectedItems[0].Tag is MapSceneObject selected)
         {
             int index = _sceneObjects.ToList().FindIndex(item => SceneKey(item) == SceneKey(selected));
             if (index < 0) return;
             MapSceneObject[] objects = _sceneObjects.ToArray();
-            objects[index] = MoveSceneObject(selected, team, localX, localY, localZ);
+            objects[index] = MoveSceneObject(selected, team, localX, localY, localZ, angle);
             _sceneObjects = objects;
         }
         else return;
@@ -677,9 +709,11 @@ internal sealed class MapEditorForm : Form
         UpdateEditorState();
     }
 
-    private static MapSceneObject MoveSceneObject(MapSceneObject source, int team, float localX, float localY, float localZ) => source with
+    // 原檔沒有 angle 欄位的物件維持 null：不新增遊戲未定義的欄位。
+    private static MapSceneObject MoveSceneObject(MapSceneObject source, int team, float localX, float localY, float localZ, float angle) => source with
     {
         Team = team,
+        Angle = source.Angle is null ? null : angle,
         WorldX = source.WorldX + localX - source.LocalX,
         WorldY = source.WorldY + localY - source.LocalY,
         WorldZ = source.WorldZ + localZ - source.LocalZ,
@@ -709,7 +743,7 @@ internal sealed class MapEditorForm : Form
             LocalX = source.LocalX + offset,
             LocalZ = source.LocalZ + offset,
         };
-        _sceneAdditions.Add(new StagedSceneAddition { Id = id, TemplateFile = templateFile, TemplateIndex = templateIndex, Display = display });
+        _sceneAdditions.Add(new StagedSceneAddition { Id = id, TemplateFile = templateFile, TemplateIndex = templateIndex, FromCatalog = false, Display = display });
         LoadEditingScene(preserveView: true);
         SelectSceneListItem(tag => tag is StagedSceneAddition added && added.Id == id);
         UpdateEditorState();
@@ -740,6 +774,127 @@ internal sealed class MapEditorForm : Form
         UpdateEditorState();
     }
 
+    /// <summary>
+    /// 依物件類型自由新增：從本地圖既有物件挑一個同類型模板（沿用其 def/namedef/nation 等全部欄位），
+    /// 放入使用者指定的聚落檔。新物件預設放在聚落原點附近，之後可拖曳或輸入座標調整。
+    /// </summary>
+    private void AddSceneObjectFromCatalog()
+    {
+        if (_selected?.IsCustom != true || _sceneObjects.Count == 0 || _settlementOrigins.Count == 0) return;
+        bool isEn = AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English;
+        MapSceneObject[] templates = _sceneObjects
+            .GroupBy(item => item.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First())
+            .OrderBy(item => item.Kind).ThenBy(item => item.Name, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        string[] settlements = _settlementOrigins.Keys.OrderBy(name => name, StringComparer.OrdinalIgnoreCase).ToArray();
+        string defaultSettlement = SelectedSceneDisplay() is { } current && _settlementOrigins.ContainsKey(current.SourceFile) ? current.SourceFile : settlements[0];
+
+        using var dialog = CreateSceneDialog(isEn ? "Add Scene Object" : "新增場景物件", 230);
+        var table = (TableLayoutPanel)dialog.Controls[0];
+        var typeBox = new ComboBox { Dock = DockStyle.Fill, DropDownStyle = ComboBoxStyle.DropDownList };
+        foreach (MapSceneObject template in templates) typeBox.Items.Add($"[{KindText(template.Kind, isEn)}] {template.Name}");
+        var settlementBox = new ComboBox { Dock = DockStyle.Fill, DropDownStyle = ComboBoxStyle.DropDownList };
+        settlementBox.Items.AddRange(settlements);
+        var teamBox = new NumericUpDown { Dock = DockStyle.Fill, Minimum = -1, Maximum = 15 };
+        AddSceneField(table, 0, isEn ? "Type" : "物件類型", typeBox);
+        AddSceneField(table, 1, isEn ? "Settlement" : "目標聚落", settlementBox);
+        AddSceneField(table, 2, isEn ? "Team" : "隊伍", teamBox);
+        settlementBox.SelectedIndexChanged += (_, _) =>
+        {
+            // 預設採用目標聚落中最常見的隊伍，讓新物件歸屬該聚落的勢力。
+            string file = (string)settlementBox.SelectedItem!;
+            int team = _sceneObjects.Where(item => item.SourceFile.Equals(file, StringComparison.OrdinalIgnoreCase))
+                .GroupBy(item => item.Team).OrderByDescending(group => group.Count()).Select(group => group.Key).DefaultIfEmpty(-1).First();
+            teamBox.Value = Math.Clamp(team, -1, 15);
+        };
+        typeBox.SelectedIndex = SelectedSceneDisplay() is { } selectedItem
+            ? Math.Max(0, Array.FindIndex(templates, item => item.Name.Equals(selectedItem.Name, StringComparison.OrdinalIgnoreCase)))
+            : 0;
+        settlementBox.SelectedItem = defaultSettlement;
+        if (dialog.ShowDialog(this) != DialogResult.OK || typeBox.SelectedIndex < 0 || settlementBox.SelectedItem is not string targetFile) return;
+
+        MapSceneObject source = templates[typeBox.SelectedIndex];
+        SdlVector3 origin = _settlementOrigins[targetFile];
+        int id = _nextSceneAdditionId++;
+        const float offset = 96f; // 避開聚落原點常見的主建築，方便選取。
+        const float mapSize = SdlSceneCatalog.WorldUnitsPerMapPixel * SdlSceneCatalog.MapPixelSize;
+        float worldX = Math.Clamp(origin.X + offset, 0, mapSize), worldZ = Math.Clamp(origin.Z + offset, 0, mapSize);
+        var display = source with
+        {
+            ObjectIndex = -1000 - id, // 負索引：畫布顯示用，絕不寫入檔案；儲存時由 AddObject 重新編號。
+            SourceFile = targetFile,
+            Team = (int)teamBox.Value,
+            WorldX = worldX,
+            WorldY = origin.Y,
+            WorldZ = worldZ,
+            LocalX = worldX - origin.X,
+            LocalY = 0,
+            LocalZ = worldZ - origin.Z,
+        };
+        _sceneAdditions.Add(new StagedSceneAddition { Id = id, TemplateFile = source.SourceFile, TemplateIndex = source.ObjectIndex, FromCatalog = true, Display = display });
+        LoadEditingScene(preserveView: true);
+        SelectSceneListItem(tag => tag is StagedSceneAddition added && added.Id == id);
+        UpdateEditorState();
+        _status.Text = isEn
+            ? $"Added {source.Name} to {targetFile}; drag it or type a position, then Save."
+            : $"已將 {source.Name} 暫存新增到 {targetFile}；可拖曳或輸入座標，按「儲存」才會寫入。";
+    }
+
+    /// <summary>整體平移選取物件所屬的聚落：只改 refpos，整個聚落（含待新增物件）一起移動。</summary>
+    private void TranslateSelectedSettlement()
+    {
+        if (_selected?.IsCustom != true || SelectedSceneDisplay() is not { } selected || !_settlementOrigins.ContainsKey(selected.SourceFile)) return;
+        bool isEn = AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English;
+        string file = selected.SourceFile;
+        _settlementOffsets.TryGetValue(file, out SdlVector3 currentOffset);
+
+        using var dialog = CreateSceneDialog(isEn ? $"Move Settlement - {file}" : $"平移聚落 - {file}", 230);
+        var table = (TableLayoutPanel)dialog.Controls[0];
+        NumericUpDown dx = SceneCoordinateInput(), dy = SceneCoordinateInput(), dz = SceneCoordinateInput();
+        dx.Value = ClampSceneCoordinate(currentOffset.X, dx); dy.Value = ClampSceneCoordinate(currentOffset.Y, dy); dz.Value = ClampSceneCoordinate(currentOffset.Z, dz);
+        AddSceneField(table, 0, isEn ? "Offset X" : "平移 X", dx);
+        AddSceneField(table, 1, isEn ? "Offset Y" : "平移 Y", dy);
+        AddSceneField(table, 2, isEn ? "Offset Z" : "平移 Z", dz);
+        if (dialog.ShowDialog(this) != DialogResult.OK) return;
+
+        var offset = new SdlVector3((float)dx.Value, (float)dy.Value, (float)dz.Value);
+        const float mapSize = SdlSceneCatalog.WorldUnitsPerMapPixel * SdlSceneCatalog.MapPixelSize;
+        bool outside = _sceneObjects.Concat(_sceneAdditions.Select(item => item.Display))
+            .Where(item => item.SourceFile.Equals(file, StringComparison.OrdinalIgnoreCase))
+            .Any(item => item.WorldX + offset.X is < 0 or > mapSize || item.WorldZ + offset.Z is < 0 or > mapSize);
+        if (outside)
+        {
+            MessageBox.Show(this, isEn ? "This offset would move part of the settlement outside the map." : "此平移量會讓部分聚落物件超出地圖範圍，已取消。",
+                Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+        if (offset == default) _settlementOffsets.Remove(file); else _settlementOffsets[file] = offset;
+        LoadEditingScene(preserveView: true);
+        SelectSceneListItem(tag => tag is MapSceneObject item && SceneKey(item) == SceneKey(selected)
+            || tag is StagedSceneAddition added && ReferenceEquals(added.Display, selected));
+        UpdateEditorState();
+    }
+
+    private Form CreateSceneDialog(string title, int height)
+    {
+        bool isEn = AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English;
+        var form = new Form { Text = title, Width = 460, Height = height, StartPosition = FormStartPosition.CenterParent, BackColor = BackColor, ForeColor = ForeColor, FormBorderStyle = FormBorderStyle.FixedDialog, MinimizeBox = false, MaximizeBox = false, ShowInTaskbar = false };
+        var table = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, Padding = new Padding(12) };
+        table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 96)); table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        var buttons = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 52, Padding = new Padding(12, 8, 12, 8), FlowDirection = FlowDirection.RightToLeft };
+        var ok = new Button { Text = isEn ? "OK" : "確定", DialogResult = DialogResult.OK, Width = 100, Height = 34 };
+        var cancel = new Button { Text = isEn ? "Cancel" : "取消", DialogResult = DialogResult.Cancel, Width = 90, Height = 34 };
+        buttons.Controls.Add(ok); buttons.Controls.Add(cancel);
+        form.Controls.Add(table); form.Controls.Add(buttons);
+        form.AcceptButton = ok; form.CancelButton = cancel;
+        WinFormsTheme.Apply(form);
+        WinFormsTheme.StylePrimaryButton(ok);
+        return form;
+    }
+
+    private static string KindText(string kind, bool isEn) => !isEn ? kind : kind switch { "建築" => "Building", "單位" => "Unit", _ => "Other" };
+
     private void SelectSceneListItem(Func<object?, bool> match)
     {
         foreach (ListViewItem row in _sceneList.Items)
@@ -753,15 +908,15 @@ internal sealed class MapEditorForm : Form
     private void RestoreOpeningSceneObjects()
     {
         if (_selected?.IsCustom != true) return;
-        if (_sceneRemovals.Count == 0 && _sceneAdditions.Count == 0 && !SdlSceneEditService.HasChanges(_sceneOriginalObjects, _sceneObjects)) return;
+        if (_sceneRemovals.Count == 0 && _sceneAdditions.Count == 0 && _settlementOffsets.Count == 0 && !SdlSceneEditService.HasChanges(_sceneOriginalObjects, _sceneObjects)) return;
         bool isEn = AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English;
         string msg = isEn
-            ? "Do you want to restore all unsaved SDL edits (teams, positions, pending copies and deletions) to the state when this map was opened?\nYou still need to click \"Save\" to write them back to the custom map."
-            : "要將所有待儲存的 SDL 變更（隊伍、位置、待複製與待刪除）還原到本次開啟地圖時的狀態嗎？\n還原後仍需按「儲存」才會寫回自製地圖。";
+            ? "Do you want to restore all unsaved SDL edits (teams, positions, angles, pending additions, deletions and settlement moves) to the state when this map was opened?\nYou still need to click \"Save\" to write them back to the custom map."
+            : "要將所有待儲存的 SDL 變更（隊伍、位置、角度、待新增、待刪除與聚落平移）還原到本次開啟地圖時的狀態嗎？\n還原後仍需按「儲存」才會寫回自製地圖。";
         string title = isEn ? "Restore SDL Verification Changes" : "還原 SDL 驗證變更";
         if (MessageBox.Show(this, msg, title, MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
         _sceneObjects = _sceneOriginalObjects.ToArray();
-        _sceneRemovals.Clear(); _sceneAdditions.Clear();
+        _sceneRemovals.Clear(); _sceneAdditions.Clear(); _settlementOffsets.Clear();
         LoadEditingScene(preserveView: true);
         UpdateEditorState();
     }
@@ -773,6 +928,9 @@ internal sealed class MapEditorForm : Form
         _sceneApplyButton.Enabled = editable && selected;
         _sceneDuplicateButton.Enabled = editable && selected;
         _sceneDeleteButton.Enabled = editable && selected;
+        _sceneAddButton.Enabled = editable && _sceneObjects.Count > 0 && _settlementOrigins.Count > 0;
+        _sceneTranslateButton.Enabled = editable && selected && SelectedSceneDisplay() is { } target && _settlementOrigins.ContainsKey(target.SourceFile);
+        _sceneAngle.Enabled = editable && selected && SelectedSceneDisplay()?.Angle is not null;
         bool isEn = AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English;
         bool pendingRemoval = selected && _sceneList.SelectedItems[0].Tag is MapSceneObject item && _sceneRemovals.Any(removal =>
             removal.SourceFile.Equals(item.SourceFile, StringComparison.OrdinalIgnoreCase) && removal.ObjectIndex == item.ObjectIndex);
@@ -797,9 +955,10 @@ internal sealed class MapEditorForm : Form
             var ini = BodenIniDocument.Load(Path.Combine(map, "boden.ini")); ini.SetValue("Waterlevel", _waterLevel.Value.ToString()); ini.SetValue("WaterColor", _waterColor.Text.Trim());
             ini.SetValue("WaterWarpShift", _waterWarpShift.Value.ToString()); ini.SetValue("WaterBumpAmplitude", _waterBumpAmplitude.Value.ToString()); ini.SetValue("WaterBumpFrequency", _waterBumpFrequency.Value.ToString()); ini.SetValue("FlashPropability", _flashProbability.Value.ToString());
             ini.SetValue("DayStartTime", _dayStart.Value.ToString()); ini.SetValue("DayEndTime", _dayEnd.Value.ToString()); ini.SetValue("RainDropsOnWater", _rain.Checked ? "1" : "0"); ini.Save(rollback);
-            bool sceneStructureChanged = _sceneRemovals.Count > 0 || _sceneAdditions.Count > 0;
+            bool sceneStructureChanged = _sceneRemovals.Count > 0 || _sceneAdditions.Count > 0 || _settlementOffsets.Count > 0;
             SdlSceneEditService.SaveChanges(map, _sceneSavedObjects, _sceneObjects, rollback,
-                _sceneRemovals, _sceneAdditions.Select(item => item.ToAddition()).ToArray());
+                _sceneRemovals, _sceneAdditions.Select(item => item.ToAddition()).ToArray(),
+                _settlementOffsets.Select(pair => new SdlSettlementTranslation(pair.Key, pair.Value.X, pair.Value.Y, pair.Value.Z)).ToArray());
             _texturesDocument?.Save(rollback);
             // 只有地表確實被繪製過才重生小地圖，避免僅改標題／水面等屬性時用近似圖覆蓋原始 minimap.bmp。
             if (TextureDirty())
@@ -813,8 +972,9 @@ internal sealed class MapEditorForm : Form
             {
                 // 複製／刪除已寫回並重新編號，記憶體中的 object 索引不再對應檔案；
                 // 從磁碟重讀並重定基準（「還原到本次開啟時」自此以本次儲存後狀態為起點）。
-                _sceneRemovals.Clear(); _sceneAdditions.Clear();
+                _sceneRemovals.Clear(); _sceneAdditions.Clear(); _settlementOffsets.Clear();
                 _sceneObjects = SdlSceneCatalog.LoadDirectory(map);
+                _settlementOrigins = SdlSceneCatalog.LoadSettlementOrigins(map);
                 _sceneOriginalObjects = _sceneObjects.ToArray();
                 _sceneSavedObjects = _sceneObjects.ToArray();
                 LoadEditingScene(preserveView: true);
@@ -1181,17 +1341,19 @@ internal sealed class MapEditorForm : Form
                 : item.Kind;
             if (item.Kind == "建築") buildingIndex++; else if (item.Kind == "單位") unitIndex++; else objectIndex++;
             var row = new ListViewItem(kindText) { Tag = addition, ForeColor = Color.MediumSpringGreen };
-            row.SubItems.Add(isEn ? $"{item.Name} (pending copy)" : $"{item.Name}（待複製）");
+            row.SubItems.Add(addition.FromCatalog
+                ? (isEn ? $"{item.Name} (pending add)" : $"{item.Name}（待新增）")
+                : (isEn ? $"{item.Name} (pending copy)" : $"{item.Name}（待複製）"));
             row.SubItems.Add(item.Team >= 0 ? item.Team.ToString() : "-");
             row.SubItems.Add(isEn ? $"{item.SourceFile} / new" : $"{item.SourceFile} / 新增");
             _sceneList.Items.Add(row);
         }
         _sceneList.EndUpdate();
 
-        int pendingText = _sceneRemovals.Count + _sceneAdditions.Count;
+        int pendingText = _sceneRemovals.Count + _sceneAdditions.Count + _settlementOffsets.Count;
         string pendingSuffix = pendingText == 0 ? "" : isEn
-            ? $"  Pending: {_sceneAdditions.Count} copies, {_sceneRemovals.Count} deletions."
-            : $"　待儲存：複製 {_sceneAdditions.Count}、刪除 {_sceneRemovals.Count}。";
+            ? $"  Pending: {_sceneAdditions.Count} additions, {_sceneRemovals.Count} deletions, {_settlementOffsets.Count} settlement moves."
+            : $"　待儲存：新增 {_sceneAdditions.Count}、刪除 {_sceneRemovals.Count}、聚落平移 {_settlementOffsets.Count}。";
         _sceneSummary.Text = isEn
             ? $"Buildings: {buildingIndex} | Units: {unitIndex} | Others: {objectIndex}{pendingSuffix}\nSelect an item to focus it; Move Selected Object lets you drag it on 2D/3D terrain."
             : $"建築 {buildingIndex}　單位 {unitIndex}　其他 {objectIndex}{pendingSuffix}\n選取項目可定位；啟用「移動選取物件」後可在 2D／3D 地表拖曳。";

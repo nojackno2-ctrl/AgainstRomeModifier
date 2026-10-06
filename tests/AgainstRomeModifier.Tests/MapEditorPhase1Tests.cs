@@ -306,6 +306,67 @@ public sealed class MapEditorPhase1Tests : IDisposable
     }
 
     [Fact]
+    public void SdlSceneEditService_Writes_angle_cross_settlement_addition_and_settlement_translation()
+    {
+        string map = CreateCustomSceneMapWithTwoObjects(9);
+        string second = "Endlos_Gal_Siedlung2.sdl";
+        File.WriteAllBytes(Path.Combine(map, second), SyntheticFixture.Pfil(
+            "[settlement]\r\nrefpos=8000,100,8000\r\n" +
+            "[object0000]\r\nnamedef=BauGalHau00_Haupthaus\r\ndef=2000\r\npos=0.00,0.00,0.00\r\nteam=1\r\nangle=0.00\r\n"));
+        IReadOnlyList<MapSceneObject> baseline = SdlSceneCatalog.LoadDirectory(map);
+        MapSceneObject tower = baseline.Single(item => item.Name == "BauRomTur00_Turm");
+        Assert.Equal(90f, tower.Angle);
+        Assert.Equal(new SdlVector3(8000, 100, 8000), SdlSceneCatalog.LoadSettlementOrigins(map)[second]);
+        MapSceneObject[] current = baseline.Select(item => item == tower ? item with { Angle = 180f } : item).ToArray();
+
+        using (var rollback = new FileRollbackScope())
+        {
+            SdlSceneEditService.SaveChanges(map, baseline, current, rollback,
+                additions: [new SdlSceneObjectAddition(tower.SourceFile, tower.ObjectIndex, Team: 1, LocalX: 64, LocalY: 0, LocalZ: -64, Angle: 45f, TargetFile: second)],
+                translations: [new SdlSettlementTranslation(second, 256, 0, -128)]);
+            rollback.Commit();
+        }
+
+        SdlObjectSection savedTower = SdlDocument.Load(Path.Combine(map, tower.SourceFile)).Objects.Single(item => item.GetValue("namedef") == "BauRomTur00_Turm");
+        Assert.Equal("180.00", savedTower.GetValue("angle"));
+        var target = SdlDocument.Load(Path.Combine(map, second));
+        Assert.Equal("8256,100,7872", target.Settlement["refpos"]);
+        Assert.Equal(2, target.Objects.Count);
+        SdlObjectSection added = target.Objects[1];
+        Assert.Equal("BauRomTur00_Turm", added.GetValue("namedef"));
+        Assert.Equal("1700", added.GetValue("def"));
+        Assert.Equal("1", added.GetValue("team"));
+        Assert.Equal("45.00", added.GetValue("angle"));
+        Assert.Equal("64.00,0.00,-64.00", added.GetValue("pos"));
+        // 平移只改 refpos；原物件相對座標不變。
+        Assert.Equal("0.00,0.00,0.00", target.Objects[0].GetValue("pos"));
+        // 模板所在檔沒有新增區塊。
+        Assert.Equal(2, SdlDocument.Load(Path.Combine(map, tower.SourceFile)).Objects.Count);
+    }
+
+    [Fact]
+    public void SdlSceneEditService_Rejects_invalid_angle_target_and_translation()
+    {
+        string map = CreateCustomSceneMapWithTwoObjects(10);
+        IReadOnlyList<MapSceneObject> baseline = SdlSceneCatalog.LoadDirectory(map);
+        string sourceFile = baseline[0].SourceFile;
+        byte[] before = File.ReadAllBytes(Path.Combine(map, sourceFile));
+
+        void Save(IReadOnlyList<MapSceneObject> current, SdlSceneObjectAddition[]? additions = null, SdlSettlementTranslation[]? translations = null)
+        {
+            using var rollback = new FileRollbackScope();
+            SdlSceneEditService.SaveChanges(map, baseline, current, rollback, additions: additions, translations: translations);
+            rollback.Commit();
+        }
+
+        Assert.Throws<InvalidDataException>(() => Save(baseline.Select(item => item with { Angle = 720f }).ToArray()));
+        Assert.Throws<InvalidDataException>(() => Save(baseline, additions: [new SdlSceneObjectAddition(sourceFile, 0, 1, 0, 0, 0, TargetFile: "..\\evil.sdl")]));
+        Assert.Throws<InvalidDataException>(() => Save(baseline, translations: [new SdlSettlementTranslation(sourceFile, float.NaN, 0, 0)]));
+        Assert.Throws<InvalidDataException>(() => Save(baseline, translations: [new SdlSettlementTranslation(sourceFile, 1, 0, 0), new SdlSettlementTranslation(sourceFile, 2, 0, 0)]));
+        Assert.Equal(before, File.ReadAllBytes(Path.Combine(map, sourceFile)));
+    }
+
+    [Fact]
     public void SdlSceneEditService_Copy_then_delete_original_acts_as_move()
     {
         string map = CreateCustomSceneMapWithTwoObjects(8);

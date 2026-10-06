@@ -14,7 +14,8 @@ public sealed record MapSceneObject(
     int ObjectIndex = -1,
     float LocalX = 0,
     float LocalY = 0,
-    float LocalZ = 0)
+    float LocalZ = 0,
+    float? Angle = null)
 {
     public string Kind => Name.StartsWith("Bau", StringComparison.OrdinalIgnoreCase) ? "建築"
         : Name.StartsWith("Fig", StringComparison.OrdinalIgnoreCase) ? "單位" : "物件";
@@ -55,9 +56,33 @@ public static class SdlSceneCatalog
             float[] position = Vector(Value(body, "pos"));
             string name = Value(body, "namedef")?.Trim() ?? "未命名物件";
             int.TryParse(Value(body, "team"), NumberStyles.Integer, CultureInfo.InvariantCulture, out int team);
+            float? angle = float.TryParse(Value(body, "angle"), NumberStyles.Float, CultureInfo.InvariantCulture, out float parsedAngle) && float.IsFinite(parsedAngle) ? parsedAngle : null;
             float x = reference[0] + position[0], y = reference[1] + position[1], z = reference[2] + position[2];
             if (x is >= 0 and <= WorldUnitsPerMapPixel * MapPixelSize && z is >= 0 and <= WorldUnitsPerMapPixel * MapPixelSize)
-                result.Add(new MapSceneObject(name, x, y, z, team, Path.GetFileName(path), objectIndex, position[0], position[1], position[2]));
+                result.Add(new MapSceneObject(name, x, y, z, team, Path.GetFileName(path), objectIndex, position[0], position[1], position[2], angle));
+        }
+        return result;
+    }
+
+    /// <summary>讀取地圖內每個 SDL 聚落的 refpos（檔名 → 世界座標原點），供新增物件與整體平移換算相對座標。</summary>
+    public static IReadOnlyDictionary<string, SdlVector3> LoadSettlementOrigins(string mapDirectory)
+    {
+        var result = new Dictionary<string, SdlVector3>(StringComparer.OrdinalIgnoreCase);
+        foreach (string path in Directory.GetFiles(mapDirectory, "*.sdl", SearchOption.TopDirectoryOnly))
+        {
+            try
+            {
+                byte[] bytes = File.ReadAllBytes(path);
+                if (bytes.Length >= 4 && bytes.AsSpan(0, 4).SequenceEqual("PFIL"u8)) bytes = GameLZSS.DecompressPfil(bytes);
+                Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+                string text = Encoding.GetEncoding(1251).GetString(bytes);
+                Match? settlement = Section.Matches(text).FirstOrDefault(match => match.Groups["name"].Value.Equals("settlement", StringComparison.OrdinalIgnoreCase));
+                string? refpos = settlement is null ? null : Value(settlement.Groups["body"].Value, "refpos");
+                if (refpos is null) continue;
+                float[] reference = Vector(refpos);
+                result[Path.GetFileName(path)] = new SdlVector3(reference[0], reference[1], reference[2]);
+            }
+            catch (InvalidDataException) { }
         }
         return result;
     }

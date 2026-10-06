@@ -1,5 +1,12 @@
 # AI Handoff - Live Project Memory
 
+## 2026-10-06 Claude: map editor Phase 1 SDL completion (angle / add-by-type / settlement move)
+
+- Objective from user: 「完成地圖編輯器」, clarified as 「要可以製作出跟官方一樣的地圖」. This step closes the remaining spec §3 Phase 1 聚落 gaps; terrain height (Phase 3) is the next blocker for official-quality maps.
+- `MapSceneObject` now carries nullable `Angle`; `SdlSceneCatalog.LoadSettlementOrigins` returns per-SDL `refpos`. `SdlSceneEditService.SaveChanges` gained angle write-back (only when the original block has `angle`), `SdlSceneObjectAddition(Angle, TargetFile)` for cross-settlement add-by-type (template fields read before any write), and `SdlSettlementTranslation` (rewrites only `[settlement] refpos`).
+- `MapEditorForm` scene tab: angle field, `新增物件…` (pick type from objects already in this map + target settlement + team), `平移聚落…` (offset dialog, rejects moves that leave the map). Pending translations are display-only offsets until Save; drag converts effective → stored coordinates. Settlement moves count as structural saves (reload + re-baseline).
+- Verification: Debug build 0 warnings/0 errors; `--filter MapEditor` 52/52 passed (2 new service tests). UI not visually verified; in-game load after add/translate/angle is a user runtime gate.
+
 ## 2026-10-06 Claude: Save Manager content area collapses when the form is clamped
 
 - Symptom: `SaveManagerFormLayoutTests` failed (`rootContent.Bottom` 150, expected 430). On a 640x432 working area Windows clamps the form below its 960x640 minimum; the anchored `rootContent` panel, sized once from the constructor-time form size, collapsed to 118x34.
