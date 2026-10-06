@@ -103,6 +103,31 @@ internal sealed class TerrainHeightEditSession
         return changes;
     }
 
+    /// <summary>
+    /// 對整張高度圖套用逐頂點轉換（AI 製圖等批次編輯用）；變更與筆刷相同地記入待提交筆畫，呼叫端再 CommitStroke 成為單一復原步驟。
+    /// </summary>
+    public IReadOnlyList<TerrainSampleChange> TransformHeights(Func<int, int, byte, float> transform)
+    {
+        ArgumentNullException.ThrowIfNull(transform);
+        int size = VertexSize;
+        var changes = new List<TerrainSampleChange>();
+        for (int y = 0; y < size; y++)
+        for (int x = 0; x < size; x++)
+        {
+            int index = y * size + x;
+            byte before = _heights[index];
+            float value = transform(x, y, before);
+            if (!float.IsFinite(value)) continue;
+            byte after = (byte)Math.Clamp((int)MathF.Round(value), 0, 255);
+            if (after == before) continue;
+            _heights[index] = after;
+            Track(_pendingHeights, index, before, after);
+            changes.Add(new TerrainSampleChange(index, before, after));
+        }
+        if (changes.Count > 0) _redo.Clear();
+        return changes;
+    }
+
     /// <summary>以 tile 為中心、tile 半徑的圓形範圍設定 collision tile-pixel。</summary>
     public IReadOnlyList<TerrainSampleChange> PaintCollision(float centerX, float centerY, float radius, TerrainCollisionOperation operation)
     {
