@@ -1,6 +1,15 @@
 # AI Handoff - Live Project Memory
 
-## 2026-10-06 Claude: AoE2-style scenario editing — feasibility research (WIP, placement code NOT committed)
+## 2026-10-07 Claude: scenario editor phase 1 — nature objects (in-game verified); building placement hidden
+
+- User chose: nature objects first, then script injection (buildings + events).
+- `src.Shared/Maps/LevelObjectStore.cs`: reads/writes DATA/objects.dat (16 B header + 14000×79 B records + 18 columns), objdata.dat (36 segments, 123 B/slot — full layout traced from loader 0x48c760 and validated), position.dat (33000×17 B). Add = copy a same-type unlinked template slot (record/columns/objdata/positions), new uid/positions/self indices; Remove = restore captured empty-slot bytes (unlinked only). `ObjDefNames` maps type_id → objdef.dau col 52 name; only `Lan*` landscape objects are editable (Skriptmark script markers, FX, linked objects untouched).
+- Editor: `自然物件` tool/tab (Plant/Remove, categories trees/grass/bushes/reeds/rocks/other, catalog of unlinked landscape templates from all original maps built in background, Bresenham stroke fill, nature-mode-only markers, undo stack, applied on Save inside FileRollbackScope). Blank terrain now also clears landscape objects. The SDL `放置物件` tool/tab is hidden (SDL onload is not auto-built in-game); `SdlObjectCatalog`/`SdlPlacedObjectsFile` kept for phase 2.
+- Runtime verification (2026-10-07): planted a line of deciduous trees across ENDL_005 center via the real editor → in Endless mode the map loads, an evenly spaced row of large trees stands at the map center, game stable ~1.5 min, no ProcDump dump, `crash.dmp` unchanged. Not verified: Remove in-game, other tree types, effects on pathing/collision.
+- Tests: 362 passed / 21 skipped (incl. Codex `LevelObjectStoreTests` 35 cases — found missing objdata/position version checks, fixed; Codex `MapEditorObjectPlacementTests`; `LevelObjectStoreGameTests` gated by ARM_GAME_PATH). Release 0 warnings/0 errors.
+- Next (phase 2): level-script injection for buildings/units at start + AoE2-style triggers (IPR/BCI), reusing the hidden placement UI.
+
+## 2026-10-06 Claude: AoE2-style scenario editing — feasibility research (superseded by 2026-10-07 entry)
 
 - User request: 「地圖編輯器要跟世紀帝國2一樣，可以放建築、建立事件等地圖製作功能」.
 - Findings (details in docs/reverse-engineering/map-formats.md 2026-10-06 section): SDL `onload=1` objects are NOT auto-built (dev console buttons only) — in-game test with ENDL_005 `ARM_Placed.sdl` (Ger main house + Hun unit group, team 0) showed nothing spawned, no crash. Pre-placed world objects live in DATA/objects.dat/position.dat/objdata.dat (layout decoded by Agy; static trees/rocks addable via free slots, buildings/units unverified). The EXE embeds the IPR C-like script compiler (.ics→.ias→.bci) but global `CompileScripts` would require sources for all standard scripts. Dev in-game editor key handler is stubbed (Codex).

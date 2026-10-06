@@ -30,7 +30,7 @@ public static class SdlSceneCatalog
     public static IReadOnlyList<MapSceneObject> LoadDirectory(string mapDirectory)
     {
         var objects = new List<MapSceneObject>();
-        foreach (string path in Directory.GetFiles(mapDirectory, "*.sdl", SearchOption.TopDirectoryOnly))
+        foreach (string path in SettlementFiles(mapDirectory))
         {
             try { objects.AddRange(Load(path)); }
             catch (InvalidDataException) { }
@@ -68,7 +68,7 @@ public static class SdlSceneCatalog
     public static IReadOnlyDictionary<string, SdlVector3> LoadSettlementOrigins(string mapDirectory)
     {
         var result = new Dictionary<string, SdlVector3>(StringComparer.OrdinalIgnoreCase);
-        foreach (string path in Directory.GetFiles(mapDirectory, "*.sdl", SearchOption.TopDirectoryOnly))
+        foreach (string path in SettlementFiles(mapDirectory))
         {
             try
             {
@@ -86,6 +86,10 @@ public static class SdlSceneCatalog
         }
         return result;
     }
+
+    /// <summary>聚落藍圖檔：排除編輯器自己的預放物件檔（由 <see cref="SdlPlacedObjectsFile"/> 另行管理）。</summary>
+    private static IEnumerable<string> SettlementFiles(string mapDirectory) => Directory.GetFiles(mapDirectory, "*.sdl", SearchOption.TopDirectoryOnly)
+        .Where(path => !Path.GetFileName(path).Equals(SdlPlacedObjectsFile.FileName, StringComparison.OrdinalIgnoreCase));
 
     private static string? Value(string body, string key)
     {

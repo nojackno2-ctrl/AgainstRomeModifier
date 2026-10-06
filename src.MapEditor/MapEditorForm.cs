@@ -59,6 +59,23 @@ internal sealed class MapEditorForm : Form
     private readonly ToolStripButton _heightTool = new("地形高度") { CheckOnClick = true };
     private readonly ToolStripButton _blankTerrainButton = new("空白地形…") { Enabled = false };
     private readonly ToolStripButton _collisionTool = new("通行區域") { CheckOnClick = true };
+    private readonly ToolStripButton _placeTool = new("放置物件") { CheckOnClick = true };
+    private readonly ToolStripButton _natureTool = new("自然物件") { CheckOnClick = true };
+    private readonly ComboBox _natureCategory = new() { Dock = DockStyle.Fill, DropDownStyle = ComboBoxStyle.DropDownList };
+    private readonly ComboBox _natureOperation = new() { Dock = DockStyle.Fill, DropDownStyle = ComboBoxStyle.DropDownList };
+    private readonly ListBox _natureTypes = new() { Dock = DockStyle.Fill, IntegralHeight = false };
+    private readonly Label _natureHint = new() { Dock = DockStyle.Top, Height = 70, Padding = new Padding(4, 6, 4, 4), ForeColor = WinFormsTheme.TextSecondary };
+    private Label _lblNatureCategory = null!, _lblNatureOperation = null!;
+    private readonly ComboBox _placeCategory = new() { Dock = DockStyle.Fill, DropDownStyle = ComboBoxStyle.DropDownList };
+    private readonly ComboBox _placeTribe = new() { Dock = DockStyle.Fill, DropDownStyle = ComboBoxStyle.DropDownList };
+    private readonly ListBox _placeTypes = new() { Dock = DockStyle.Fill, IntegralHeight = false };
+    private readonly NumericUpDown _placeTeam = new() { Dock = DockStyle.Fill, Minimum = -1, Maximum = 15, Value = 0 };
+    private readonly NumericUpDown _placeCount = new() { Dock = DockStyle.Fill, Minimum = 1, Maximum = 50, Value = 10 };
+    private readonly NumericUpDown _placeAngle = new() { Dock = DockStyle.Fill, Minimum = 0, Maximum = 359, Increment = 45 };
+    private readonly ListView _placedList = new() { Dock = DockStyle.Fill, View = View.Details, FullRowSelect = true, HeaderStyle = ColumnHeaderStyle.Nonclickable, MultiSelect = true };
+    private readonly Button _placedDeleteButton = new() { Dock = DockStyle.Bottom, Height = 32, Enabled = false };
+    private readonly Label _placeHint = new() { Dock = DockStyle.Top, Height = 54, Padding = new Padding(4, 6, 4, 4), ForeColor = WinFormsTheme.TextSecondary };
+    private Label _lblPlaceCategory = null!, _lblPlaceTribe = null!, _lblPlaceTeam = null!, _lblPlaceCount = null!, _lblPlaceAngle = null!;
     private readonly ToolStripComboBox _terrainOperation = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 96, Visible = false };
     private readonly ToolStripComboBox _terrainStrength = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 72, Visible = false };
     private readonly ToolStripButton _view2dButton = new("2D 俯視") { CheckOnClick = true };
@@ -122,6 +139,21 @@ internal sealed class MapEditorForm : Form
     private TerrainLayer? _bodenLayer, _embossLayer, _collisionLayer;
     private int _flattenTarget = -1;
     private readonly bool _startWithBlankTerrain;
+    private IReadOnlyList<SdlObjectType> _objectCatalog = Array.Empty<SdlObjectType>();
+    private readonly List<SdlPlacedObject> _placedObjects = new();
+    private IReadOnlyList<SdlPlacedObject> _placedBaseline = Array.Empty<SdlPlacedObject>();
+    private bool PlacedDirty() => !_placedObjects.SequenceEqual(_placedBaseline);
+    private IReadOnlyList<LevelWorldObject> _levelObjects = Array.Empty<LevelWorldObject>();
+    private IReadOnlyDictionary<int, string> _objdefNames = new Dictionary<int, string>();
+    private readonly HashSet<int> _natureRemovals = new();
+    private readonly List<NatureAddition> _natureAdditions = new();
+    private readonly Stack<NatureOperation> _natureUndo = new();
+    private Task<IReadOnlyDictionary<int, LevelObjectTemplate>>? _natureCatalogTask;
+    private IReadOnlyDictionary<int, LevelObjectTemplate> _natureTemplates = new Dictionary<int, LevelObjectTemplate>();
+    private readonly Random _natureRandom = new();
+    private bool NatureDirty() => _natureRemovals.Count > 0 || _natureAdditions.Count > 0;
+    private sealed record NatureAddition(LevelObjectTemplate Template, string Name, float X, float Y, float Z, float Rotation);
+    private sealed record NatureOperation(NatureAddition? Added, IReadOnlyList<int> Removed, IReadOnlyList<NatureAddition> RemovedAdditions);
     /// <summary>空白地形：儲存時把 vertex.bmp 重設為白色（無色調）、smooth.bmp 重設為 0（不額外平滑）。</summary>
     private bool _resetAuxiliaryLayers;
     private (int X, int Y)? _lastTerrainTile;
@@ -134,9 +166,12 @@ internal sealed class MapEditorForm : Form
     /// <summary>畫布／清單實際呈現的場景：排除暫存刪除、加入暫存新增物件，並套用暫存的聚落整體平移。</summary>
     private IReadOnlyList<MapSceneObject> EffectiveSceneObjects()
     {
-        if (_sceneRemovals.Count == 0 && _sceneAdditions.Count == 0 && _settlementOffsets.Count == 0) return _sceneObjects;
+        IEnumerable<MapSceneObject> placed = _placedObjects.Select((item, index) =>
+            new MapSceneObject(item.Type.NameDef, item.WorldX, item.WorldY, item.WorldZ, item.Team, SdlPlacedObjectsFile.FileName, -5000 - index));
+        if (_editMode == EditMode.Nature) placed = placed.Concat(NatureDisplayObjects());
+        if (_sceneRemovals.Count == 0 && _sceneAdditions.Count == 0 && _settlementOffsets.Count == 0) return _sceneObjects.Concat(placed).ToArray();
         HashSet<string> removed = _sceneRemovals.Select(item => item.SourceFile.ToUpperInvariant() + "|" + item.ObjectIndex).ToHashSet();
-        return _sceneObjects.Where(item => !removed.Contains(SceneKey(item))).Concat(_sceneAdditions.Select(item => item.Display)).Select(WithSettlementOffset).ToArray();
+        return _sceneObjects.Where(item => !removed.Contains(SceneKey(item))).Concat(_sceneAdditions.Select(item => item.Display)).Select(WithSettlementOffset).Concat(placed).ToArray();
     }
 
     /// <summary>記憶體中的物件世界座標以已存檔的 refpos 為準；暫存平移只在呈現時加上。</summary>
@@ -156,7 +191,7 @@ internal sealed class MapEditorForm : Form
             Display.Angle, Display.SourceFile.Equals(TemplateFile, StringComparison.OrdinalIgnoreCase) ? null : Display.SourceFile);
     }
 
-    private bool IsDirty => _propertyDirty || TextureDirty() || SceneDirty() || _terrainLayers?.IsDirty == true || _resetAuxiliaryLayers;
+    private bool IsDirty => _propertyDirty || TextureDirty() || SceneDirty() || _terrainLayers?.IsDirty == true || _resetAuxiliaryLayers || PlacedDirty() || NatureDirty();
 
     public MapEditorForm(string gamePath, GameMapInfo selectedMap, bool startWithBlankTerrain = false)
     {
@@ -196,7 +231,7 @@ internal sealed class MapEditorForm : Form
         });
 
         var tools = new ToolStrip { GripStyle = ToolStripGripStyle.Hidden, Dock = DockStyle.Top, Padding = new Padding(10, 5, 10, 5), BackColor = WinFormsTheme.SurfaceRaised, ForeColor = WinFormsTheme.TextPrimary };
-        tools.Items.AddRange(new ToolStripItem[] { _lblTerrainGroup, _textureTool, _heightTool, _collisionTool, _sceneMoveTool, _terrainOperation, _terrainStrength, _resetTerrainButton, _blankTerrainButton, new ToolStripSeparator(), _view2dButton, _view3dButton, _3dDiagnosticsButton });
+        tools.Items.AddRange(new ToolStripItem[] { _lblTerrainGroup, _textureTool, _heightTool, _collisionTool, _natureTool, _sceneMoveTool, _terrainOperation, _terrainStrength, _resetTerrainButton, _blankTerrainButton, new ToolStripSeparator(), _view2dButton, _view3dButton, _3dDiagnosticsButton });
 
         _paletteHeader = SectionHeader("地表繪製");
         var palettePanel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(10), BackColor = WinFormsTheme.Surface };
@@ -229,6 +264,9 @@ internal sealed class MapEditorForm : Form
         sceneEditor.Controls.Add(_sceneAddButton, 0, 8); sceneEditor.Controls.Add(_sceneTranslateButton, 1, 8);
         scenePanel.Controls.Add(_sceneList); scenePanel.Controls.Add(sceneEditor); scenePanel.Controls.Add(_sceneSummary);
         _inspectorTabs.TabPages.Add(new TabPage("場景物件") { BackColor = WinFormsTheme.Surface }); _inspectorTabs.TabPages[2].Controls.Add(scenePanel);
+        // 「放置物件」（建築／部隊）需要第二階段的地圖腳本注入才會在遊戲中生成（2026-10-06 實機證實 SDL onload 不會自動建造），先不顯示。
+        _ = BuildPlacementPanel();
+        _inspectorTabs.TabPages.Add(new TabPage("自然物件") { BackColor = WinFormsTheme.Surface }); _inspectorTabs.TabPages[3].Controls.Add(BuildNaturePanel());
 
         _canvasHost = new Panel { Dock = DockStyle.Fill, Padding = new Padding(10), BackColor = WinFormsTheme.Window };
         _canvasHost.Controls.Add(_canvas); _canvasHost.Controls.Add(_modeBanner);
@@ -327,6 +365,14 @@ internal sealed class MapEditorForm : Form
         _sceneMoveTool.Click += (_, _) => SetEditMode(EditMode.SceneMove);
         _heightTool.Click += (_, _) => SetEditMode(EditMode.Height);
         _collisionTool.Click += (_, _) => SetEditMode(EditMode.Collision);
+        _placeTool.Click += (_, _) => SetEditMode(EditMode.PlaceObject);
+        _natureTool.Click += (_, _) => SetEditMode(EditMode.Nature);
+        _natureCategory.SelectedIndexChanged += (_, _) => RefreshNatureTypes();
+        _placeCategory.SelectedIndexChanged += (_, _) => RefreshPlacementTypes();
+        _placeTribe.SelectedIndexChanged += (_, _) => RefreshPlacementTypes();
+        _placeTypes.SelectedIndexChanged += (_, _) => { _placeCount.Enabled = (_placeTypes.SelectedItem as PlacementTypeItem)?.Type.HasUnitCount == true; };
+        _placedList.SelectedIndexChanged += (_, _) => _placedDeleteButton.Enabled = _selected?.IsCustom == true && _placedList.SelectedItems.Count > 0;
+        _placedDeleteButton.Click += (_, _) => DeleteSelectedPlacedObjects();
         _resetTerrainButton.Click += (_, _) => ResetTerrain();
         _saveButton.Click += (_, _) => SaveMap(showSuccess: true);
         _gamePreviewButton.Click += (_, _) => PreviewInGame();
@@ -384,6 +430,14 @@ internal sealed class MapEditorForm : Form
             : "先在「場景物件」分頁選取 SDL 物件，再於 2D 或 3D 地表拖曳；移動會暫存到按下「儲存」為止。";
         _resetTerrainButton.Text = isEn ? "Reset Terrain" : "還原地表";
         _heightTool.Text = isEn ? "Terrain Height" : "地形高度";
+        _placeTool.Text = isEn ? "Place Objects" : "放置物件";
+        _natureTool.Text = isEn ? "Nature" : "自然物件";
+        _natureTool.ToolTipText = isEn ? "Plant or remove trees, grass, bushes and reeds (map world objects)." : "種植或移除樹木、草叢、灌木與蘆葦（地圖世界物件）。";
+        LocalizeNatureTab(isEn);
+        _placeTool.ToolTipText = isEn
+            ? "Place buildings, unit groups and characters that exist when the map loads (like a scenario editor)."
+            : "像場景編輯器一樣放置建築、部隊與人物，地圖載入時就會存在。";
+        LocalizePlacementTab(isEn);
         _aiMapButton.Text = isEn ? "AI Map Maker…" : "AI 製圖…";
         _blankTerrainButton.Text = isEn ? "Blank Terrain…" : "空白地形…";
         _blankTerrainButton.ToolTipText = isEn
@@ -427,6 +481,7 @@ internal sealed class MapEditorForm : Form
             _inspectorTabs.TabPages[0].Text = isEn ? "Terrain" : "地表";
             _inspectorTabs.TabPages[1].Text = isEn ? "Map Properties" : "地圖屬性";
             _inspectorTabs.TabPages[2].Text = isEn ? "Scene Objects" : "場景物件";
+            if (_inspectorTabs.TabPages.Count >= 4) _inspectorTabs.TabPages[3].Text = isEn ? "Nature" : "自然物件";
         }
 
         if (_lblTitle != null) _lblTitle.Text = isEn ? "Map Title" : "地圖名稱";
@@ -515,6 +570,11 @@ internal sealed class MapEditorForm : Form
             _sceneObjects = SdlSceneCatalog.LoadDirectory(map); _sceneOriginalObjects = _sceneObjects.ToArray(); _sceneSavedObjects = _sceneObjects.ToArray(); _sceneLoaded = true;
             _sceneRemovals.Clear(); _sceneAdditions.Clear(); _settlementOffsets.Clear();
             _settlementOrigins = SdlSceneCatalog.LoadSettlementOrigins(map);
+            if (_objectCatalog.Count == 0) _objectCatalog = SdlObjectCatalog.Build(_gamePath);
+            _placedObjects.Clear(); _placedObjects.AddRange(SdlPlacedObjectsFile.Load(map, _objectCatalog)); _placedBaseline = _placedObjects.ToArray();
+            PopulatePlacementFilters(); RefreshPlacedList();
+            if (_objdefNames.Count == 0) _objdefNames = ObjDefNames.Load(_gamePath);
+            LoadLevelObjects(map);
             LoadPalette(); LoadEditingScene(); UpdateEditorState();
             
             bool isEn = AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English;
@@ -596,6 +656,8 @@ internal sealed class MapEditorForm : Form
     private void PaintTexture(TexturePaintEventArgs e)
     {
         if (TerrainLayerMode) { PaintTerrainLayer(e); return; }
+        if (_editMode == EditMode.PlaceObject) { PlaceObjectAt(e); return; }
+        if (_editMode == EditMode.Nature) { PaintNature(e); return; }
         if (_selected is null || !_selected.IsCustom || _texturesDocument is null || _terrainBlendSession is null || _activeMaterial is null) return;
         float radius = _canvas.BrushSize / 2f + .26f;
         TerrainBlendPaintResult result = _terrainBlendSession.PaintCircle(e.X + .5f, e.Y + .5f, radius, _activeMaterial.Id);
@@ -622,6 +684,17 @@ internal sealed class MapEditorForm : Form
 
     private void Undo()
     {
+        if (_editMode == EditMode.Nature)
+        {
+            if (_natureUndo.TryPop(out NatureOperation? operation))
+            {
+                if (operation.Added is not null) _natureAdditions.Remove(operation.Added);
+                foreach (int slot in operation.Removed) _natureRemovals.Remove(slot);
+                _natureAdditions.AddRange(operation.RemovedAdditions);
+                RefreshSceneMarkers(); UpdateEditorState();
+            }
+            return;
+        }
         if (TerrainLayerMode)
         {
             if (_terrainLayers?.Undo() is { } undone) { ApplyTerrainLayerStroke(undone); UpdateEditorState(); }
@@ -684,7 +757,7 @@ internal sealed class MapEditorForm : Form
         FocusSelectedSceneObject();
     }
 
-    private enum EditMode { Texture, SceneMove, Height, Collision }
+    private enum EditMode { Texture, SceneMove, Height, Collision, PlaceObject, Nature }
     private EditMode _editMode = EditMode.Texture;
     private const string TerrainToolBrushToken = "\u0001terrain-tool"; // 讓視圖在未取樣材質時仍送出筆刷事件；不是材質名稱。
     private bool TerrainLayerMode => _editMode is EditMode.Height or EditMode.Collision;
@@ -697,11 +770,16 @@ internal sealed class MapEditorForm : Form
         _sceneMoveTool.Checked = mode == EditMode.SceneMove;
         _heightTool.Checked = mode == EditMode.Height;
         _collisionTool.Checked = mode == EditMode.Collision;
+        _placeTool.Checked = mode == EditMode.PlaceObject;
+        _natureTool.Checked = mode == EditMode.Nature;
+        if (mode == EditMode.Nature) { EnsureNatureCatalog(); if (_inspectorTabs.TabPages.Count >= 4) _inspectorTabs.SelectedIndex = 3; }
         if (mode == EditMode.SceneMove && _inspectorTabs.TabPages.Count >= 3) _inspectorTabs.SelectedIndex = 2;
         PopulateTerrainToolOptions();
-        if (TerrainLayerMode && string.IsNullOrWhiteSpace(_canvas.BrushTexture)) SetBrushToken(TerrainToolBrushToken);
-        else if (!TerrainLayerMode && _canvas.BrushTexture == TerrainToolBrushToken) SetBrushToken(null);
+        bool needsToken = TerrainLayerMode || mode is EditMode.PlaceObject or EditMode.Nature;
+        if (needsToken && string.IsNullOrWhiteSpace(_canvas.BrushTexture)) SetBrushToken(TerrainToolBrushToken);
+        else if (!needsToken && _canvas.BrushTexture == TerrainToolBrushToken) SetBrushToken(null);
         _canvas.SetCollisionOverlay(_terrainLayers?.CollisionSize ?? 0, mode == EditMode.Collision ? _terrainLayers?.Collision : null);
+        RefreshSceneMarkers(); // 自然物件標記只在自然物件模式顯示
         UpdateSceneEditButtons();
         UpdateEditorState();
         bool isEn = AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English;
@@ -714,6 +792,12 @@ internal sealed class MapEditorForm : Form
             EditMode.Collision => _terrainLayers?.HasCollision != true
                 ? (isEn ? "This map has no editable collision.bmp." : "此地圖沒有可編輯的 collision.bmp。")
                 : (isEn ? "Passability mode: red = blocked. Left-drag to block or clear (2D view shows the overlay)." : "通行區域模式：紅色為阻擋；左鍵拖曳設定阻擋或可通行（2D 檢視顯示疊圖）。"),
+            EditMode.Nature => isEn
+                ? "Nature mode: drag to plant the selected tree/grass/bush (one per tile), or switch to Remove and drag to clear landscape objects."
+                : "自然物件模式：拖曳以種植所選的樹木／草叢／灌木（每格一株），或切換為「移除」後拖曳清除地景物件。",
+            EditMode.PlaceObject => isEn
+                ? "Place mode: pick an object type in the Place Objects tab, then click the map. Placed objects exist when the map loads."
+                : "放置模式：在「放置物件」分頁選類型後點擊地圖；放置的物件會在地圖載入時直接存在。",
             _ => isEn ? "Texture brush mode." : "材質筆刷模式：右鍵取樣，左鍵拖曳繪製。",
         };
     }
@@ -912,6 +996,9 @@ internal sealed class MapEditorForm : Form
             _terrainBlendSession.CommitStroke();
         }
         _resetAuxiliaryLayers = true;
+        // 空白地形同時清除範本留下的地景物件（樹、草、灌木…）；腳本標記、特效與連結物件保留。
+        List<int> cleared = _levelObjects.Where(IsRemovableNature).Select(item => item.Slot).Where(slot => _natureRemovals.Add(slot)).ToList();
+        if (cleared.Count > 0) _natureUndo.Push(new NatureOperation(null, cleared, Array.Empty<NatureAddition>()));
         ApplyHeightsToViews();
         if (_editMode == EditMode.Collision) _canvas.SetCollisionOverlay(_terrainLayers.CollisionSize, _terrainLayers.Collision);
         UpdateEditorState();
@@ -946,6 +1033,353 @@ internal sealed class MapEditorForm : Form
         if (_editMode == EditMode.Collision) _canvas.SetCollisionOverlay(_terrainLayers.CollisionSize, _terrainLayers.Collision);
         UpdateEditorState();
         return result;
+    }
+
+    private Control BuildNaturePanel()
+    {
+        var panel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(8), BackColor = WinFormsTheme.Surface };
+        var options = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 2, BackColor = WinFormsTheme.SurfaceRaised, Padding = new Padding(6) };
+        options.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 70)); options.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        _lblNatureOperation = AddSceneField(options, 0, "操作", _natureOperation);
+        _lblNatureCategory = AddSceneField(options, 1, "類別", _natureCategory);
+        panel.Controls.Add(_natureTypes); panel.Controls.Add(options); panel.Controls.Add(_natureHint);
+        return panel;
+    }
+
+    private void LocalizeNatureTab(bool isEn)
+    {
+        if (_lblNatureCategory is null) return;
+        _lblNatureCategory.Text = isEn ? "Category" : "類別"; _lblNatureOperation.Text = isEn ? "Action" : "操作";
+        int operation = Math.Max(0, _natureOperation.SelectedIndex);
+        _natureOperation.Items.Clear();
+        _natureOperation.Items.AddRange(isEn ? new object[] { "Plant", "Remove" } : new object[] { "種植", "移除" });
+        _natureOperation.SelectedIndex = operation;
+        _natureHint.Text = isEn
+            ? "Drag on the map with \"Nature\" active. Plant uses the brush size (one object per tile); Remove clears trees, grass and bushes under the brush. Script markers and linked objects are never touched."
+            : "啟用「自然物件」後在地圖拖曳。種植：每格一株；移除：清除筆刷範圍內的樹木、草叢、灌木。腳本標記與連結物件不會被更動。";
+        PopulateNatureCategories();
+    }
+
+    private static string NatureCategory(string name)
+    {
+        string code = name.Length >= 9 ? name.Substring(6, 3) : "";
+        return code switch
+        {
+            "Nad" or "Lau" or "Bau" or "Pal" or "Bir" or "Eic" or "Buc" or "Kie" or "Tan" or "Fic" or "Obs" or "Zyp" or "Pin" => "tree",
+            "Gra" or "Bli" or "Blu" => "grass",
+            "Dor" or "Bod" or "Bus" or "Str" or "Ger" or "Hec" => "bush",
+            "Sch" or "Ent" or "Wei" or "Ser" => "water",
+            "Ste" or "Fel" or "Sto" or "Kie" => "rock",
+            _ => "other",
+        };
+    }
+
+    private static string NatureCategoryText(string key, bool isEn) => key switch
+    {
+        "tree" => isEn ? "Trees" : "樹木", "grass" => isEn ? "Grass & flowers" : "草叢與花", "bush" => isEn ? "Bushes" : "灌木",
+        "water" => isEn ? "Reeds & water plants" : "蘆葦與水生植物", "rock" => isEn ? "Rocks" : "岩石", "all" => isEn ? "All" : "全部",
+        _ => isEn ? "Other landscape" : "其他地景",
+    };
+
+    private void PopulateNatureCategories()
+    {
+        bool isEn = AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English;
+        int selected = Math.Max(0, _natureCategory.SelectedIndex);
+        _natureCategory.Items.Clear();
+        _natureCategory.Items.Add(new FilterItem("all", NatureCategoryText("all", isEn)));
+        foreach (string key in new[] { "tree", "grass", "bush", "water", "rock", "other" })
+            if (_natureTemplates.Keys.Any(id => _objdefNames.TryGetValue(id, out string? name) && NatureCategory(name) == key))
+                _natureCategory.Items.Add(new FilterItem(key, NatureCategoryText(key, isEn)));
+        _natureCategory.SelectedIndex = Math.Min(selected, _natureCategory.Items.Count - 1);
+        RefreshNatureTypes();
+    }
+
+    private sealed record NatureTypeItem(LevelObjectTemplate Template, string Name) { public override string ToString() => Name; }
+
+    private void RefreshNatureTypes()
+    {
+        string key = (_natureCategory.SelectedItem as FilterItem)?.Value as string ?? "all";
+        int? selected = (_natureTypes.SelectedItem as NatureTypeItem)?.Template.TypeId;
+        _natureTypes.BeginUpdate(); _natureTypes.Items.Clear();
+        foreach ((int id, LevelObjectTemplate template) in _natureTemplates.OrderBy(pair => _objdefNames.GetValueOrDefault(pair.Key), StringComparer.OrdinalIgnoreCase))
+        {
+            string name = _objdefNames.GetValueOrDefault(id) ?? id.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            if (key != "all" && NatureCategory(name) != key) continue;
+            _natureTypes.Items.Add(new NatureTypeItem(template, name));
+        }
+        _natureTypes.EndUpdate();
+        for (int index = 0; index < _natureTypes.Items.Count; index++)
+            if (((NatureTypeItem)_natureTypes.Items[index]).Template.TypeId == selected) { _natureTypes.SelectedIndex = index; break; }
+        if (_natureTypes.SelectedIndex < 0 && _natureTypes.Items.Count > 0) _natureTypes.SelectedIndex = 0;
+    }
+
+    /// <summary>從所有原版地圖收集可複製的地景物件範本（背景執行一次）。</summary>
+    private void EnsureNatureCatalog()
+    {
+        if (_natureCatalogTask is not null) return;
+        string gamePath = _gamePath;
+        IReadOnlyDictionary<int, string> names = _objdefNames;
+        _natureCatalogTask = Task.Run<IReadOnlyDictionary<int, LevelObjectTemplate>>(() =>
+        {
+            var templates = new Dictionary<int, LevelObjectTemplate>();
+            foreach (string map in Directory.GetDirectories(Path.Combine(gamePath, "MAPS")))
+            {
+                if (CustomMapManifest.IsCustomMapDirectory(map) || !File.Exists(Path.Combine(map, "DATA", "objects.dat"))) continue;
+                try
+                {
+                    foreach (LevelObjectTemplate template in LevelObjectStore.Load(map).Templates())
+                        if (names.TryGetValue(template.TypeId, out string? name) && ObjDefNames.IsLandscape(name)) templates.TryAdd(template.TypeId, template);
+                }
+                catch (Exception ex) when (ex is InvalidDataException or IOException) { }
+            }
+            return templates;
+        });
+        _natureCatalogTask.ContinueWith(task =>
+        {
+            if (task.IsCompletedSuccessfully && !IsDisposed)
+                BeginInvoke(() => { _natureTemplates = task.Result; PopulateNatureCategories(); });
+        }, TaskScheduler.Default);
+        bool isEn = AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English;
+        _natureTypes.Items.Clear(); _natureTypes.Items.Add(isEn ? "Loading landscape catalog from original maps…" : "正在從原版地圖讀取地景目錄…");
+    }
+
+    private void LoadLevelObjects(string map)
+    {
+        _natureRemovals.Clear(); _natureAdditions.Clear(); _natureUndo.Clear();
+        try { _levelObjects = File.Exists(Path.Combine(map, "DATA", "objects.dat")) ? LevelObjectStore.Load(map).Objects() : Array.Empty<LevelWorldObject>(); }
+        catch (Exception ex) when (ex is InvalidDataException or IOException) { _levelObjects = Array.Empty<LevelWorldObject>(); }
+    }
+
+    private bool IsRemovableNature(LevelWorldObject item) => !item.Linked && ObjDefNames.IsLandscape(_objdefNames.GetValueOrDefault(item.TypeId));
+
+    private IEnumerable<MapSceneObject> NatureDisplayObjects()
+    {
+        foreach (LevelWorldObject item in _levelObjects)
+            if (!_natureRemovals.Contains(item.Slot) && ObjDefNames.IsLandscape(_objdefNames.GetValueOrDefault(item.TypeId)))
+                yield return new MapSceneObject(_objdefNames.GetValueOrDefault(item.TypeId) ?? "", item.X, item.Y, item.Z, 8, "DATA/objects.dat", -100000 - item.Slot);
+        for (int index = 0; index < _natureAdditions.Count; index++)
+        {
+            NatureAddition addition = _natureAdditions[index];
+            yield return new MapSceneObject(addition.Name, addition.X, addition.Y, addition.Z, 8, "DATA/objects.dat", -200000 - index);
+        }
+    }
+
+    private void RefreshSceneMarkers()
+    {
+        IReadOnlyList<MapSceneObject> effective = EffectiveSceneObjects();
+        _canvas.UpdateSceneObjects(effective); _view3d?.UpdateSceneObjects(effective);
+    }
+
+    private void PaintNature(TexturePaintEventArgs e)
+    {
+        if (_selected?.IsCustom != true || _texturesDocument is null) return;
+        // 與地形筆刷相同：補齊快速拖曳時跳過的格子。
+        IEnumerable<(int X, int Y)> tiles = _lastTerrainTile is { } last ? TerrainStrokePath.Between(last.X, last.Y, e.X, e.Y) : new[] { (e.X, e.Y) };
+        _lastTerrainTile = (e.X, e.Y);
+        bool changed = false;
+        foreach ((int x, int y) in tiles)
+            if (_terrainStrokeTiles.Add(y * _texturesDocument.Dimension + x)) changed |= PaintNatureTile(x, y);
+        if (!changed) return;
+        RefreshSceneMarkers();
+        UpdateEditorState();
+    }
+
+    private bool PaintNatureTile(int tileX, int tileY)
+    {
+        var e = (X: tileX, Y: tileY);
+        const float tileWorld = SdlSceneCatalog.WorldUnitsPerMapPixel * 4f;
+        float radiusTiles = _canvas.BrushSize / 2f + .26f;
+        bool isEn = AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English;
+        if (_natureOperation.SelectedIndex == 1)
+        {
+            float cx = (e.X + .5f) * tileWorld, cz = (e.Y + .5f) * tileWorld, radius = radiusTiles * tileWorld;
+            List<int> removed = _levelObjects.Where(item => IsRemovableNature(item) && !_natureRemovals.Contains(item.Slot)
+                && (item.X - cx) * (item.X - cx) + (item.Z - cz) * (item.Z - cz) <= radius * radius).Select(item => item.Slot).ToList();
+            List<NatureAddition> removedAdditions = _natureAdditions.Where(item => (item.X - cx) * (item.X - cx) + (item.Z - cz) * (item.Z - cz) <= radius * radius).ToList();
+            if (removed.Count == 0 && removedAdditions.Count == 0) return false;
+            foreach (int slot in removed) _natureRemovals.Add(slot);
+            foreach (NatureAddition addition in removedAdditions) _natureAdditions.Remove(addition);
+            _natureUndo.Push(new NatureOperation(null, removed, removedAdditions));
+        }
+        else
+        {
+            if (_natureTypes.SelectedItem is not NatureTypeItem type)
+            {
+                _status.Text = isEn ? "Pick a landscape type in the Nature tab first (the catalog may still be loading)." : "請先在「自然物件」分頁選擇類型（目錄可能仍在載入）。";
+                return false;
+            }
+            // 每格一株，於格內隨機偏移與旋轉，避免整齊排列。
+            float x = (e.X + .2f + (float)_natureRandom.NextDouble() * .6f) * tileWorld, z = (e.Y + .2f + (float)_natureRandom.NextDouble() * .6f) * tileWorld;
+            float y = 0;
+            if (_terrainLayers is not null)
+            {
+                int step = (_terrainLayers.VertexSize - 1) / _texturesDocument!.Dimension;
+                int vx = Math.Clamp((int)MathF.Round(x / tileWorld * step), 0, _terrainLayers.VertexSize - 1), vy = Math.Clamp((int)MathF.Round(z / tileWorld * step), 0, _terrainLayers.VertexSize - 1);
+                y = _terrainLayers.Heights[vy * _terrainLayers.VertexSize + vx] * _heightMapStep;
+            }
+            var addition = new NatureAddition(type.Template, type.Name, x, y, z, (float)(_natureRandom.NextDouble() * Math.PI * 2));
+            _natureAdditions.Add(addition);
+            _natureUndo.Push(new NatureOperation(addition, Array.Empty<int>(), Array.Empty<NatureAddition>()));
+        }
+        return true;
+    }
+
+    private Control BuildPlacementPanel()
+    {
+        var panel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(8), BackColor = WinFormsTheme.Surface };
+        var options = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 2, BackColor = WinFormsTheme.SurfaceRaised, Padding = new Padding(6) };
+        options.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 70)); options.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        _lblPlaceCategory = AddSceneField(options, 0, "類別", _placeCategory);
+        _lblPlaceTribe = AddSceneField(options, 1, "部族", _placeTribe);
+        _lblPlaceTeam = AddSceneField(options, 2, "隊伍", _placeTeam);
+        _lblPlaceCount = AddSceneField(options, 3, "人數", _placeCount);
+        _lblPlaceAngle = AddSceneField(options, 4, "角度", _placeAngle);
+        var placedHost = new Panel { Dock = DockStyle.Bottom, Height = 230, Padding = new Padding(0, 8, 0, 0) };
+        _placedList.Columns.Add("物件", 150); _placedList.Columns.Add("隊伍", 50); _placedList.Columns.Add("位置", 90);
+        placedHost.Controls.Add(_placedList); placedHost.Controls.Add(_placedDeleteButton);
+        panel.Controls.Add(_placeTypes); panel.Controls.Add(placedHost); panel.Controls.Add(options); panel.Controls.Add(_placeHint);
+        WinFormsTheme.StyleDangerButton(_placedDeleteButton);
+        return panel;
+    }
+
+    private void LocalizePlacementTab(bool isEn)
+    {
+        if (_lblPlaceCategory is null) return;
+        _lblPlaceCategory.Text = isEn ? "Category" : "類別"; _lblPlaceTribe.Text = isEn ? "Tribe" : "部族"; _lblPlaceTeam.Text = isEn ? "Team" : "隊伍";
+        _lblPlaceCount.Text = isEn ? "Soldiers" : "人數"; _lblPlaceAngle.Text = isEn ? "Angle" : "角度";
+        _placedDeleteButton.Text = isEn ? "Delete Selected" : "刪除選取的物件";
+        _placeHint.Text = isEn
+            ? "Pick a type, then click the map with \"Place Objects\" active. Team 0 is the human player. Unit groups spawn the given number of soldiers."
+            : "選類型後啟用「放置物件」並點擊地圖。隊伍 0 為玩家；部隊會依人數生成士兵。";
+        if (_placedList.Columns.Count >= 3)
+        {
+            _placedList.Columns[0].Text = isEn ? "Object" : "物件"; _placedList.Columns[1].Text = isEn ? "Team" : "隊伍"; _placedList.Columns[2].Text = isEn ? "Tile" : "位置";
+        }
+        PopulatePlacementFilters();
+        RefreshPlacedList();
+    }
+
+    private sealed record PlacementTypeItem(SdlObjectType Type, string Text) { public override string ToString() => Text; }
+    private sealed record FilterItem(object? Value, string Text) { public override string ToString() => Text; }
+
+    private void PopulatePlacementFilters()
+    {
+        bool isEn = AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English;
+        int category = Math.Max(0, _placeCategory.SelectedIndex), tribe = Math.Max(0, _placeTribe.SelectedIndex);
+        _placeCategory.Items.Clear();
+        _placeCategory.Items.Add(new FilterItem(null, isEn ? "All" : "全部"));
+        foreach (SdlObjectCategory value in Enum.GetValues<SdlObjectCategory>())
+            if (_objectCatalog.Any(type => type.Category == value)) _placeCategory.Items.Add(new FilterItem(value, CategoryText(value, isEn)));
+        _placeTribe.Items.Clear();
+        _placeTribe.Items.Add(new FilterItem(null, isEn ? "All" : "全部"));
+        foreach (string code in new[] { "Ger", "Hun", "Kel", "Rom", "" })
+            if (_objectCatalog.Any(type => type.Tribe == code)) _placeTribe.Items.Add(new FilterItem(code, TribeText(code, isEn)));
+        _placeCategory.SelectedIndex = Math.Min(category, _placeCategory.Items.Count - 1);
+        _placeTribe.SelectedIndex = Math.Min(tribe, _placeTribe.Items.Count - 1);
+        RefreshPlacementTypes();
+    }
+
+    private void RefreshPlacementTypes()
+    {
+        bool isEn = AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English;
+        object? category = (_placeCategory.SelectedItem as FilterItem)?.Value, tribe = (_placeTribe.SelectedItem as FilterItem)?.Value;
+        string? selected = (_placeTypes.SelectedItem as PlacementTypeItem)?.Type.NameDef;
+        _placeTypes.BeginUpdate(); _placeTypes.Items.Clear();
+        foreach (SdlObjectType type in _objectCatalog.Where(type => (category is null || type.Category.Equals(category)) && (tribe is null || type.Tribe.Equals(tribe))))
+            _placeTypes.Items.Add(new PlacementTypeItem(type, ObjectDisplayName(type, isEn)));
+        _placeTypes.EndUpdate();
+        for (int index = 0; index < _placeTypes.Items.Count; index++)
+            if (((PlacementTypeItem)_placeTypes.Items[index]).Type.NameDef == selected) { _placeTypes.SelectedIndex = index; break; }
+        if (_placeTypes.SelectedIndex < 0 && _placeTypes.Items.Count > 0) _placeTypes.SelectedIndex = 0;
+    }
+
+    private void RefreshPlacedList()
+    {
+        bool isEn = AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English;
+        _placedList.BeginUpdate(); _placedList.Items.Clear();
+        for (int index = 0; index < _placedObjects.Count; index++)
+        {
+            SdlPlacedObject item = _placedObjects[index];
+            var row = new ListViewItem(ObjectDisplayName(item.Type, isEn) + (item.Type.HasUnitCount ? $" ×{item.UnitCount}" : "")) { Tag = index };
+            row.SubItems.Add(item.Team.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            row.SubItems.Add($"{(int)(item.WorldX / 256)},{(int)(item.WorldZ / 256)}");
+            _placedList.Items.Add(row);
+        }
+        _placedList.EndUpdate();
+        _placedDeleteButton.Enabled = false;
+    }
+
+    /// <summary>在點擊的 tile 中心放置一個物件（每次按下只放一個）；高度取自目前地形，世界座標為絕對值。</summary>
+    private void PlaceObjectAt(TexturePaintEventArgs e)
+    {
+        if (_selected?.IsCustom != true || _lastTerrainTile is not null) return; // 同一次按下（拖曳）只放一個
+        _lastTerrainTile = (e.X, e.Y);
+        bool isEn = AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English;
+        if (_placeTypes.SelectedItem is not PlacementTypeItem selection)
+        {
+            _status.Text = isEn ? "Pick an object type in the Place Objects tab first." : "請先在「放置物件」分頁選擇物件類型。";
+            return;
+        }
+        const float tileWorld = SdlSceneCatalog.WorldUnitsPerMapPixel * 4f;
+        float worldX = (e.X + .5f) * tileWorld, worldZ = (e.Y + .5f) * tileWorld, worldY = 0;
+        if (_terrainLayers is not null)
+        {
+            int step = (_terrainLayers.VertexSize - 1) / 64, vx = Math.Clamp(e.X * step + step / 2, 0, _terrainLayers.VertexSize - 1), vy = Math.Clamp(e.Y * step + step / 2, 0, _terrainLayers.VertexSize - 1);
+            worldY = _terrainLayers.Heights[vy * _terrainLayers.VertexSize + vx] * _heightMapStep; // 遊戲高度 = boden.bmp 綠通道 × Heightmapstep
+        }
+        _placedObjects.Add(new SdlPlacedObject(selection.Type, worldX, worldY, worldZ, (int)_placeTeam.Value, (float)_placeAngle.Value,
+            selection.Type.HasUnitCount ? (int)_placeCount.Value : 0));
+        RefreshPlacedList();
+        IReadOnlyList<MapSceneObject> effective = EffectiveSceneObjects();
+        _canvas.UpdateSceneObjects(effective); _view3d?.UpdateSceneObjects(effective);
+        UpdateEditorState();
+        _status.Text = isEn ? $"Placed {selection.Text} at tile ({e.X},{e.Y}); Save to write it." : $"已在格子 ({e.X},{e.Y}) 放置 {selection.Text}；按「儲存」才會寫入。";
+    }
+
+    private void DeleteSelectedPlacedObjects()
+    {
+        if (_selected?.IsCustom != true || _placedList.SelectedItems.Count == 0) return;
+        foreach (int index in _placedList.SelectedItems.Cast<ListViewItem>().Select(row => (int)row.Tag!).OrderByDescending(index => index)) _placedObjects.RemoveAt(index);
+        RefreshPlacedList();
+        IReadOnlyList<MapSceneObject> effective = EffectiveSceneObjects();
+        _canvas.UpdateSceneObjects(effective); _view3d?.UpdateSceneObjects(effective);
+        UpdateEditorState();
+    }
+
+    private static string CategoryText(SdlObjectCategory category, bool isEn) => category switch
+    {
+        SdlObjectCategory.Building => isEn ? "Buildings" : "建築",
+        SdlObjectCategory.UnitGroup => isEn ? "Unit groups" : "部隊",
+        SdlObjectCategory.Figure => isEn ? "Characters" : "人物",
+        SdlObjectCategory.Effect => isEn ? "Effects" : "特效",
+        _ => isEn ? "Other" : "其他",
+    };
+
+    private static string TribeText(string code, bool isEn) => code switch
+    {
+        "Ger" => isEn ? "Germans" : "日耳曼",
+        "Hun" => isEn ? "Huns" : "匈人",
+        "Kel" => isEn ? "Celts" : "凱爾特",
+        "Rom" => isEn ? "Romans" : "羅馬",
+        _ => isEn ? "Common" : "通用",
+    };
+
+    private static readonly Dictionary<string, string> GermanObjectWords = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["Haupthaus"] = "主屋", ["Wohnhaus"] = "住宅", ["Wohnzelt"] = "居住帳篷", ["Lagerhaus"] = "倉庫", ["Lagerzelt"] = "倉庫帳篷",
+        ["Bauernhof"] = "農場", ["Schlachterei"] = "屠宰場", ["Schreinerei"] = "木工坊", ["Mine"] = "礦場", ["Pferdestall"] = "馬廄",
+        ["Waffenschmiede"] = "兵器鋪", ["Goldschmiede"] = "金匠鋪", ["Mauer"] = "城牆", ["Mauerecke"] = "城牆轉角", ["Mauertor"] = "城門",
+        ["Tor"] = "城門", ["Turm"] = "塔樓", ["Palisade"] = "木柵", ["Palisadenecke"] = "木柵轉角", ["Palisadentor"] = "木柵門",
+        ["Opferstaette"] = "祭壇", ["Anfuehrer"] = "領主", ["Kampf_Icon"] = "戰鬥部隊", ["Zivil_Icon"] = "平民隊",
+    };
+
+    private static string ObjectDisplayName(SdlObjectType type, bool isEn)
+    {
+        string tail = type.NameDef.Contains('_') ? type.NameDef[(type.NameDef.IndexOf('_') + 1)..] : type.NameDef;
+        string tribe = type.Tribe.Length > 0 ? TribeText(type.Tribe, isEn) + " " : "";
+        if (isEn) return $"{tribe}{tail.Replace('_', ' ')}";
+        string? known = GermanObjectWords.FirstOrDefault(pair => tail.Equals(pair.Key, StringComparison.OrdinalIgnoreCase) || tail.EndsWith(pair.Key, StringComparison.OrdinalIgnoreCase)).Value;
+        return known is null ? $"{tribe}{tail.Replace('_', ' ')}" : $"{tribe}{known}（{tail}）";
     }
 
     private void ApplyHeightsToViews()
@@ -1292,6 +1726,18 @@ internal sealed class MapEditorForm : Form
                 // skydens／visible／cliprect／shadows.dat 以高度總和為鍵；刪除後由遊戲在載入時重算。
                 TerrainLayerFiles.InvalidateHeightCaches(map, rollback);
             }
+            bool natureChanged = NatureDirty();
+            if (natureChanged)
+            {
+                LevelObjectStore store = LevelObjectStore.Load(map);
+                foreach (int slot in _natureRemovals) store.Remove(slot);
+                foreach (NatureAddition addition in _natureAdditions)
+                    if (store.Add(addition.Template, addition.X, addition.Y, addition.Z, addition.Rotation) < 0)
+                        throw new InvalidOperationException("地圖的世界物件已達上限（14,000 個），無法再新增。");
+                store.Save(map, rollback);
+            }
+            bool placedChanged = PlacedDirty();
+            if (placedChanged) SdlPlacedObjectsFile.Save(map, _placedObjects, rollback);
             bool auxiliaryReset = _resetAuxiliaryLayers;
             if (auxiliaryReset)
             {
@@ -1311,6 +1757,8 @@ internal sealed class MapEditorForm : Form
             }
             rollback.Commit();
             if (auxiliaryReset) _resetAuxiliaryLayers = false;
+            if (placedChanged) _placedBaseline = _placedObjects.ToArray();
+            if (natureChanged) LoadLevelObjects(map);
             if (heightsChanged || collisionChanged)
             {
                 // 以寫回後的檔案作為下一次保留原像素的基準；光照係數沿用開圖時由原版資料擬合的值。
@@ -1531,7 +1979,8 @@ internal sealed class MapEditorForm : Form
     private void UpdateEditorState()
     {
         bool editable = _selected?.IsCustom == true; _saveButton.Enabled = editable && IsDirty; _gamePreviewButton.Enabled = _selected is not null; _undoButton.Enabled = editable && (TerrainLayerMode ? _terrainLayers?.CanUndo == true : _terrainBlendSession?.CanUndo == true); _redoButton.Enabled = editable && (TerrainLayerMode ? _terrainLayers?.CanRedo == true : _terrainBlendSession?.CanRedo == true); _resetTerrainButton.Enabled = editable && ((_texturesDocument is not null && TextureDirty()) || _terrainLayers?.IsDirty == true || _resetAuxiliaryLayers);
-        _heightTool.Enabled = editable && _terrainLayers is not null; _aiMapButton.Enabled = editable && _terrainLayers is not null; _blankTerrainButton.Enabled = editable && _terrainLayers is not null; _collisionTool.Enabled = editable && _terrainLayers?.HasCollision == true;
+        _heightTool.Enabled = editable && _terrainLayers is not null; _aiMapButton.Enabled = editable && _terrainLayers is not null; _blankTerrainButton.Enabled = editable && _terrainLayers is not null; _placeTool.Enabled = editable && _objectCatalog.Count > 0; _natureTool.Enabled = editable && _levelObjects.Count > 0;
+        _undoButton.Enabled |= editable && _editMode == EditMode.Nature && _natureUndo.Count > 0; _collisionTool.Enabled = editable && _terrainLayers?.HasCollision == true;
         UpdateSceneEditButtons();
         _sceneRestoreButton.Enabled = editable && _sceneLoaded && (_sceneRemovals.Count > 0 || _sceneAdditions.Count > 0 || SdlSceneEditService.HasChanges(_sceneOriginalObjects, _sceneObjects));
         foreach (Control control in EditablePropertyControls()) control.Enabled = editable;
@@ -1656,6 +2105,7 @@ internal sealed class MapEditorForm : Form
             if (_editMode == EditMode.Collision) _canvas.SetCollisionOverlay(_terrainLayers.CollisionSize, _terrainLayers.Collision);
         }
         _resetAuxiliaryLayers = false;
+        if (NatureDirty()) { _natureRemovals.Clear(); _natureAdditions.Clear(); _natureUndo.Clear(); RefreshSceneMarkers(); }
         if (_terrainBlendSession is null) { UpdateEditorState(); return; }
         IReadOnlyList<TerrainTextureChange> changes = _terrainBlendSession.ResetToBaseline();
         _texturesDocument.SetTextures(_terrainBlendSession.CurrentTextures); // 批次寫回，避免逐格重新解析整份 boden.txt。
