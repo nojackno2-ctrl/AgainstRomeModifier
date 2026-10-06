@@ -1,5 +1,6 @@
 using AgainstRomeModifier;
 using AgainstRomeModifier.Maps;
+using AgainstRomeModifier.Scripting;
 using System.Diagnostics;
 
 namespace AgainstRomeMapEditor;
@@ -231,7 +232,7 @@ internal sealed class MapEditorForm : Form
         });
 
         var tools = new ToolStrip { GripStyle = ToolStripGripStyle.Hidden, Dock = DockStyle.Top, Padding = new Padding(10, 5, 10, 5), BackColor = WinFormsTheme.SurfaceRaised, ForeColor = WinFormsTheme.TextPrimary };
-        tools.Items.AddRange(new ToolStripItem[] { _lblTerrainGroup, _textureTool, _heightTool, _collisionTool, _natureTool, _sceneMoveTool, _terrainOperation, _terrainStrength, _resetTerrainButton, _blankTerrainButton, new ToolStripSeparator(), _view2dButton, _view3dButton, _3dDiagnosticsButton });
+        tools.Items.AddRange(new ToolStripItem[] { _lblTerrainGroup, _textureTool, _heightTool, _collisionTool, _natureTool, _placeTool, _sceneMoveTool, _terrainOperation, _terrainStrength, _resetTerrainButton, _blankTerrainButton, new ToolStripSeparator(), _view2dButton, _view3dButton, _3dDiagnosticsButton });
 
         _paletteHeader = SectionHeader("地表繪製");
         var palettePanel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(10), BackColor = WinFormsTheme.Surface };
@@ -264,9 +265,8 @@ internal sealed class MapEditorForm : Form
         sceneEditor.Controls.Add(_sceneAddButton, 0, 8); sceneEditor.Controls.Add(_sceneTranslateButton, 1, 8);
         scenePanel.Controls.Add(_sceneList); scenePanel.Controls.Add(sceneEditor); scenePanel.Controls.Add(_sceneSummary);
         _inspectorTabs.TabPages.Add(new TabPage("場景物件") { BackColor = WinFormsTheme.Surface }); _inspectorTabs.TabPages[2].Controls.Add(scenePanel);
-        // 「放置物件」（建築／部隊）需要第二階段的地圖腳本注入才會在遊戲中生成（2026-10-06 實機證實 SDL onload 不會自動建造），先不顯示。
-        _ = BuildPlacementPanel();
-        _inspectorTabs.TabPages.Add(new TabPage("自然物件") { BackColor = WinFormsTheme.Surface }); _inspectorTabs.TabPages[3].Controls.Add(BuildNaturePanel());
+        _inspectorTabs.TabPages.Add(new TabPage("放置物件") { BackColor = WinFormsTheme.Surface }); _inspectorTabs.TabPages[3].Controls.Add(BuildPlacementPanel());
+        _inspectorTabs.TabPages.Add(new TabPage("自然物件") { BackColor = WinFormsTheme.Surface }); _inspectorTabs.TabPages[4].Controls.Add(BuildNaturePanel());
 
         _canvasHost = new Panel { Dock = DockStyle.Fill, Padding = new Padding(10), BackColor = WinFormsTheme.Window };
         _canvasHost.Controls.Add(_canvas); _canvasHost.Controls.Add(_modeBanner);
@@ -370,7 +370,7 @@ internal sealed class MapEditorForm : Form
         _natureCategory.SelectedIndexChanged += (_, _) => RefreshNatureTypes();
         _placeCategory.SelectedIndexChanged += (_, _) => RefreshPlacementTypes();
         _placeTribe.SelectedIndexChanged += (_, _) => RefreshPlacementTypes();
-        _placeTypes.SelectedIndexChanged += (_, _) => { _placeCount.Enabled = (_placeTypes.SelectedItem as PlacementTypeItem)?.Type.HasUnitCount == true; };
+        _placeTypes.SelectedIndexChanged += (_, _) => { _placeCount.Enabled = (_placeTypes.SelectedItem as PlacementTypeItem)?.Type.Category == SdlObjectCategory.Figure; };
         _placedList.SelectedIndexChanged += (_, _) => _placedDeleteButton.Enabled = _selected?.IsCustom == true && _placedList.SelectedItems.Count > 0;
         _placedDeleteButton.Click += (_, _) => DeleteSelectedPlacedObjects();
         _resetTerrainButton.Click += (_, _) => ResetTerrain();
@@ -481,7 +481,8 @@ internal sealed class MapEditorForm : Form
             _inspectorTabs.TabPages[0].Text = isEn ? "Terrain" : "地表";
             _inspectorTabs.TabPages[1].Text = isEn ? "Map Properties" : "地圖屬性";
             _inspectorTabs.TabPages[2].Text = isEn ? "Scene Objects" : "場景物件";
-            if (_inspectorTabs.TabPages.Count >= 4) _inspectorTabs.TabPages[3].Text = isEn ? "Nature" : "自然物件";
+            if (_inspectorTabs.TabPages.Count >= 4) _inspectorTabs.TabPages[3].Text = isEn ? "Place Objects" : "放置物件";
+            if (_inspectorTabs.TabPages.Count >= 5) _inspectorTabs.TabPages[4].Text = isEn ? "Nature" : "自然物件";
         }
 
         if (_lblTitle != null) _lblTitle.Text = isEn ? "Map Title" : "地圖名稱";
@@ -570,8 +571,8 @@ internal sealed class MapEditorForm : Form
             _sceneObjects = SdlSceneCatalog.LoadDirectory(map); _sceneOriginalObjects = _sceneObjects.ToArray(); _sceneSavedObjects = _sceneObjects.ToArray(); _sceneLoaded = true;
             _sceneRemovals.Clear(); _sceneAdditions.Clear(); _settlementOffsets.Clear();
             _settlementOrigins = SdlSceneCatalog.LoadSettlementOrigins(map);
-            if (_objectCatalog.Count == 0) _objectCatalog = SdlObjectCatalog.Build(_gamePath);
-            _placedObjects.Clear(); _placedObjects.AddRange(SdlPlacedObjectsFile.Load(map, _objectCatalog)); _placedBaseline = _placedObjects.ToArray();
+            if (_objectCatalog.Count == 0) _objectCatalog = BuildSpawnCatalog(_gamePath);
+            _placedObjects.Clear(); _placedObjects.AddRange(LoadScenarioPlacements(map)); _placedBaseline = _placedObjects.ToArray();
             PopulatePlacementFilters(); RefreshPlacedList();
             if (_objdefNames.Count == 0) _objdefNames = ObjDefNames.Load(_gamePath);
             LoadLevelObjects(map);
@@ -772,7 +773,8 @@ internal sealed class MapEditorForm : Form
         _collisionTool.Checked = mode == EditMode.Collision;
         _placeTool.Checked = mode == EditMode.PlaceObject;
         _natureTool.Checked = mode == EditMode.Nature;
-        if (mode == EditMode.Nature) { EnsureNatureCatalog(); if (_inspectorTabs.TabPages.Count >= 4) _inspectorTabs.SelectedIndex = 3; }
+        if (mode == EditMode.PlaceObject && _inspectorTabs.TabPages.Count >= 4) _inspectorTabs.SelectedIndex = 3;
+        if (mode == EditMode.Nature) { EnsureNatureCatalog(); if (_inspectorTabs.TabPages.Count >= 5) _inspectorTabs.SelectedIndex = 4; }
         if (mode == EditMode.SceneMove && _inspectorTabs.TabPages.Count >= 3) _inspectorTabs.SelectedIndex = 2;
         PopulateTerrainToolOptions();
         bool needsToken = TerrainLayerMode || mode is EditMode.PlaceObject or EditMode.Nature;
@@ -1119,21 +1121,8 @@ internal sealed class MapEditorForm : Form
         if (_natureCatalogTask is not null) return;
         string gamePath = _gamePath;
         IReadOnlyDictionary<int, string> names = _objdefNames;
-        _natureCatalogTask = Task.Run<IReadOnlyDictionary<int, LevelObjectTemplate>>(() =>
-        {
-            var templates = new Dictionary<int, LevelObjectTemplate>();
-            foreach (string map in Directory.GetDirectories(Path.Combine(gamePath, "MAPS")))
-            {
-                if (CustomMapManifest.IsCustomMapDirectory(map) || !File.Exists(Path.Combine(map, "DATA", "objects.dat"))) continue;
-                try
-                {
-                    foreach (LevelObjectTemplate template in LevelObjectStore.Load(map).Templates())
-                        if (names.TryGetValue(template.TypeId, out string? name) && ObjDefNames.IsLandscape(name)) templates.TryAdd(template.TypeId, template);
-                }
-                catch (Exception ex) when (ex is InvalidDataException or IOException) { }
-            }
-            return templates;
-        });
+        _natureCatalogTask = Task.Run(() => LevelObjectStore.LoadOfficialTemplates(gamePath,
+            id => names.TryGetValue(id, out string? name) && ObjDefNames.IsLandscape(name)));
         _natureCatalogTask.ContinueWith(task =>
         {
             if (task.IsCompletedSuccessfully && !IsDisposed)
@@ -1242,6 +1231,42 @@ internal sealed class MapEditorForm : Form
         return panel;
     }
 
+    /// <summary>放置目錄：cl_scint.ini [ObjDefName] 的別名（建築、人物…），TemplateFields["alias"] 保存別名。</summary>
+    private static IReadOnlyList<SdlObjectType> BuildSpawnCatalog(string gamePath)
+        => ScriptObjectAliases.Load(gamePath)
+            .Select(alias => new SdlObjectType(alias.NameDef, -1, alias.Category, alias.Tribe, 0, new Dictionary<string, string> { ["alias"] = alias.Alias }))
+            .OrderBy(type => type.Category).ThenBy(type => type.Tribe).ThenBy(type => type.NameDef, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+    private static string AliasOf(SdlObjectType type) => type.TemplateFields.TryGetValue("alias", out string? alias) ? alias : type.NameDef;
+
+    private IReadOnlyDictionary<int, LevelObjectTemplate>? _buildingTemplates;
+
+    /// <summary>以原版地圖 DATA 中同類型的完工建築作為範本（首次需要時同步讀取）。</summary>
+    private LevelObjectTemplate? BuildingTemplateFor(ScenarioSpawn spawn)
+    {
+        SdlObjectType? type = _objectCatalog.FirstOrDefault(item => AliasOf(item).Equals(spawn.Alias, StringComparison.OrdinalIgnoreCase));
+        if (type is null) return null;
+        int typeId = _objdefNames.FirstOrDefault(pair => pair.Value.Equals(type.NameDef, StringComparison.OrdinalIgnoreCase), new KeyValuePair<int, string>(-1, "")).Key;
+        if (typeId < 0) return null;
+        IReadOnlyDictionary<int, string> names = _objdefNames;
+        _buildingTemplates ??= LevelObjectStore.LoadOfficialTemplates(_gamePath, id => names.TryGetValue(id, out string? name) && name.StartsWith("Bau", StringComparison.OrdinalIgnoreCase));
+        return _buildingTemplates.GetValueOrDefault(typeId);
+    }
+
+    private IEnumerable<SdlPlacedObject> LoadScenarioPlacements(string map)
+    {
+        ScenarioDocument scenario;
+        try { scenario = ScenarioDocument.Load(map); }
+        catch (System.Text.Json.JsonException) { yield break; }
+        foreach (ScenarioSpawn spawn in scenario.Spawns)
+        {
+            SdlObjectType? type = _objectCatalog.FirstOrDefault(item => AliasOf(item).Equals(spawn.Alias, StringComparison.OrdinalIgnoreCase));
+            if (type is null) continue;
+            yield return new SdlPlacedObject(type, spawn.X, spawn.Y, spawn.Z, spawn.Team, spawn.Angle, spawn.Count > 1 ? spawn.Count : 1);
+        }
+    }
+
     private void LocalizePlacementTab(bool isEn)
     {
         if (_lblPlaceCategory is null) return;
@@ -1249,8 +1274,8 @@ internal sealed class MapEditorForm : Form
         _lblPlaceCount.Text = isEn ? "Soldiers" : "人數"; _lblPlaceAngle.Text = isEn ? "Angle" : "角度";
         _placedDeleteButton.Text = isEn ? "Delete Selected" : "刪除選取的物件";
         _placeHint.Text = isEn
-            ? "Pick a type, then click the map with \"Place Objects\" active. Team 0 is the human player. Unit groups spawn the given number of soldiers."
-            : "選類型後啟用「放置物件」並點擊地圖。隊伍 0 為玩家；部隊會依人數生成士兵。";
+            ? "Pick a type, then click the map with \"Place Objects\" active. Buildings are written into the map as finished buildings (team 8 = neutral); characters and units are created by the map script when the game starts. Team 0 is the human player; characters with a count above 1 spawn as a unit. Keep buildings clear of trees and water."
+            : "選類型後啟用「放置物件」並點擊地圖。建築會以完工狀態寫入地圖（隊伍 8＝中立）；人物與部隊在開局時由地圖腳本建立。隊伍 0 為玩家；人物的人數大於 1 時會生成一支部隊。建築請避開樹木與水域。";
         if (_placedList.Columns.Count >= 3)
         {
             _placedList.Columns[0].Text = isEn ? "Object" : "物件"; _placedList.Columns[1].Text = isEn ? "Team" : "隊伍"; _placedList.Columns[2].Text = isEn ? "Tile" : "位置";
@@ -1300,7 +1325,7 @@ internal sealed class MapEditorForm : Form
         for (int index = 0; index < _placedObjects.Count; index++)
         {
             SdlPlacedObject item = _placedObjects[index];
-            var row = new ListViewItem(ObjectDisplayName(item.Type, isEn) + (item.Type.HasUnitCount ? $" ×{item.UnitCount}" : "")) { Tag = index };
+            var row = new ListViewItem(ObjectDisplayName(item.Type, isEn) + (item.UnitCount > 1 ? $" ×{item.UnitCount}" : "")) { Tag = index };
             row.SubItems.Add(item.Team.ToString(System.Globalization.CultureInfo.InvariantCulture));
             row.SubItems.Add($"{(int)(item.WorldX / 256)},{(int)(item.WorldZ / 256)}");
             _placedList.Items.Add(row);
@@ -1327,13 +1352,23 @@ internal sealed class MapEditorForm : Form
             int step = (_terrainLayers.VertexSize - 1) / 64, vx = Math.Clamp(e.X * step + step / 2, 0, _terrainLayers.VertexSize - 1), vy = Math.Clamp(e.Y * step + step / 2, 0, _terrainLayers.VertexSize - 1);
             worldY = _terrainLayers.Heights[vy * _terrainLayers.VertexSize + vx] * _heightMapStep; // 遊戲高度 = boden.bmp 綠通道 × Heightmapstep
         }
+        bool figure = selection.Type.Category == SdlObjectCategory.Figure;
+        if (figure && _placeTeam.Value is < 0 or > 7)
+        {
+            _status.Text = isEn ? "Units need a team between 0 and 7." : "人物與部隊的隊伍必須介於 0 與 7。";
+            return;
+        }
         _placedObjects.Add(new SdlPlacedObject(selection.Type, worldX, worldY, worldZ, (int)_placeTeam.Value, (float)_placeAngle.Value,
-            selection.Type.HasUnitCount ? (int)_placeCount.Value : 0));
+            figure ? (int)_placeCount.Value : 0));
         RefreshPlacedList();
         IReadOnlyList<MapSceneObject> effective = EffectiveSceneObjects();
         _canvas.UpdateSceneObjects(effective); _view3d?.UpdateSceneObjects(effective);
         UpdateEditorState();
         _status.Text = isEn ? $"Placed {selection.Text} at tile ({e.X},{e.Y}); Save to write it." : $"已在格子 ({e.X},{e.Y}) 放置 {selection.Text}；按「儲存」才會寫入。";
+        // 建築與樹木／草叢重疊時，以腳本生成會被遊戲的放置檢查拒絕；寫入 DATA 則會穿模。
+        const float clearance = 384;
+        if (selection.Type.Category == SdlObjectCategory.Building && NatureDisplayObjects().Any(item => MathF.Abs(item.WorldX - worldX) < clearance && MathF.Abs(item.WorldZ - worldZ) < clearance))
+            _status.Text += isEn ? " Warning: trees or other landscape objects are very close; clear them with the Nature tool." : " 注意：附近有樹木或其他地景物件，建議用「自然物件 → 移除」清出空地。";
     }
 
     private void DeleteSelectedPlacedObjects()
@@ -1727,17 +1762,39 @@ internal sealed class MapEditorForm : Form
                 TerrainLayerFiles.InvalidateHeightCaches(map, rollback);
             }
             bool natureChanged = NatureDirty();
-            if (natureChanged)
+            bool placedChanged = PlacedDirty();
+            ScenarioDocument? scenario = null, previousScenario = null;
+            if (placedChanged)
+            {
+                previousScenario = ScenarioDocument.Load(map);
+                // 建築以官方完工範本寫入 DATA（開局即完工）；人物與部隊由地圖腳本生成。
+                scenario = new ScenarioDocument { Spawns = _placedObjects.Select(item => new ScenarioSpawn(AliasOf(item.Type), item.WorldX, item.WorldZ, item.Team,
+                    item.UnitCount > 1 ? item.UnitCount : 0, (int)MathF.Round(item.Angle), item.WorldY,
+                    Prebuilt: item.Type.Category == SdlObjectCategory.Building && item.Team is >= 0 and <= 8)).ToList() };
+            }
+            bool prebuiltChanged = scenario is not null && (scenario.Spawns.Any(spawn => spawn.Prebuilt) || previousScenario!.DataSlots.Count > 0);
+            if (natureChanged || prebuiltChanged)
             {
                 LevelObjectStore store = LevelObjectStore.Load(map);
                 foreach (int slot in _natureRemovals) store.Remove(slot);
                 foreach (NatureAddition addition in _natureAdditions)
                     if (store.Add(addition.Template, addition.X, addition.Y, addition.Z, addition.Rotation) < 0)
                         throw new InvalidOperationException("地圖的世界物件已達上限（14,000 個），無法再新增。");
+                if (prebuiltChanged)
+                {
+                    IReadOnlyList<ScenarioSpawn> skipped = ScenarioLevelObjects.Apply(store, previousScenario!, scenario!, BuildingTemplateFor);
+                    // 原版地圖沒有此建築的範本時改由腳本生成（開局為工地）。
+                    foreach (ScenarioSpawn spawn in skipped) scenario!.Spawns[scenario.Spawns.IndexOf(spawn)] = spawn with { Prebuilt = false };
+                }
                 store.Save(map, rollback);
             }
-            bool placedChanged = PlacedDirty();
-            if (placedChanged) SdlPlacedObjectsFile.Save(map, _placedObjects, rollback);
+            if (placedChanged)
+            {
+                scenario!.Save(map, rollback);
+                LevelScriptInjector.Apply(map, scenario, _objectCatalog.Select(AliasOf).ToArray(), rollback);
+                string legacy = Path.Combine(map, SdlPlacedObjectsFile.FileName); // 舊版（SDL onload，遊戲不會生成）實驗檔
+                if (File.Exists(legacy)) { rollback.TrackFile(legacy); File.Delete(legacy); }
+            }
             bool auxiliaryReset = _resetAuxiliaryLayers;
             if (auxiliaryReset)
             {
@@ -1758,7 +1815,7 @@ internal sealed class MapEditorForm : Form
             rollback.Commit();
             if (auxiliaryReset) _resetAuxiliaryLayers = false;
             if (placedChanged) _placedBaseline = _placedObjects.ToArray();
-            if (natureChanged) LoadLevelObjects(map);
+            if (natureChanged || prebuiltChanged) LoadLevelObjects(map);
             if (heightsChanged || collisionChanged)
             {
                 // 以寫回後的檔案作為下一次保留原像素的基準；光照係數沿用開圖時由原版資料擬合的值。

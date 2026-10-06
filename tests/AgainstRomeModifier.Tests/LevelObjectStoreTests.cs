@@ -270,6 +270,45 @@ public sealed class LevelObjectStoreTests
     public void IsLandscape_matches_only_case_insensitive_Lan_prefix(string? name, bool expected)
         => Assert.Equal(expected, ObjDefNames.IsLandscape(name));
 
+    [Fact]
+    public void Add_with_team_rewrites_only_the_team_field_and_remove_if_uid_checks_identity()
+    {
+        using var level = new LevelFixture(pfil: false);
+        LevelObjectStore store = level.Load();
+        LevelObjectTemplate template = Assert.Single(store.Templates());
+        int slot = store.Add(template, 1, 2, 3, 0, team: 0);
+        Assert.Equal(0, Assert.Single(store.Objects(), item => item.Slot == slot).Team);
+        Assert.Throws<ArgumentOutOfRangeException>(() => store.Add(template, 1, 2, 3, 0, team: 9));
+        uint uid = store.UidAt(slot)!.Value;
+        Assert.False(store.RemoveIfUid(slot, uid + 1));
+        Assert.True(store.RemoveIfUid(slot, uid));
+        Assert.Null(store.UidAt(slot));
+    }
+
+    [Fact]
+    public void Scenario_level_objects_replace_previous_slots_and_report_missing_templates()
+    {
+        using var level = new LevelFixture(pfil: false);
+        LevelObjectStore store = level.Load();
+        LevelObjectTemplate template = Assert.Single(store.Templates());
+        var first = new AgainstRomeModifier.Scripting.ScenarioDocument
+        {
+            Spawns = [new("HOUSE", 10, 20, 0, Y: 5, Prebuilt: true), new("UNIT", 0, 0, 0, Count: 5), new("UNKNOWN", 1, 1, 3, Prebuilt: true)],
+        };
+        IReadOnlyList<AgainstRomeModifier.Scripting.ScenarioSpawn> skipped = AgainstRomeModifier.Scripting.ScenarioLevelObjects.Apply(
+            store, new AgainstRomeModifier.Scripting.ScenarioDocument(), first, spawn => spawn.Alias == "HOUSE" ? template : null);
+        Assert.Equal("UNKNOWN", Assert.Single(skipped).Alias);
+        AgainstRomeModifier.Scripting.ScenarioDataSlot owned = Assert.Single(first.DataSlots);
+        LevelWorldObject house = Assert.Single(store.Objects(), item => item.Slot == owned.Slot);
+        Assert.Equal((0, 10f, 5f, 20f), (house.Team, house.X, house.Y, house.Z));
+        Assert.Single(first.ScriptSpawns, spawn => spawn.Alias == "UNIT");
+
+        var second = new AgainstRomeModifier.Scripting.ScenarioDocument();
+        AgainstRomeModifier.Scripting.ScenarioLevelObjects.Apply(store, first, second, _ => template);
+        Assert.Null(store.UidAt(owned.Slot));
+        Assert.Empty(second.DataSlots);
+    }
+
     private static int Record(int slot) => 16 + slot * LevelObjectStore.RecordSize;
     private static int Position(int index) => 8 + index * LevelObjectStore.PositionSize;
     private static int Column(int column, int slot) => 16 + LevelFixture.Count * LevelObjectStore.RecordSize

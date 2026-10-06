@@ -1,5 +1,19 @@
 # AI Handoff - Live Project Memory
 
+## 2026-10-07 Claude: scenario editor phase 2 — placed buildings + units (in-game verified)
+
+- `放置物件` tab is back. On Save, the editor writes `arm_scenario.json` (v2: `Spawns` with `Y`/`Prebuilt`, `DataSlots` (slot, uid) it owns) and:
+  - Buildings (`Prebuilt`): `ScenarioLevelObjects.Apply` removes the previously written slots (uid-checked `RemoveIfUid`) and adds finished buildings into `DATA/objects.dat` by cloning an unlinked same-type `Bau*` template from the original maps (`LevelObjectStore.LoadOfficialTemplates`), with `Add(..., team)` rewriting record byte +1 (team, u16; 8 = neutral). Evidence: same-type official buildings differ only in team/uid/positions/self index; all 912+ campaign building records are unlinked.
+  - Units/characters: `LevelScriptInjector` appends a shim to `SCRIPT/ak_level.bci` (original kept in `ak_level.arm_original`): `s_createUnitAndMems` for each unit, then (if any script-created building remains) `66 10, 131` wait and `s_createObj`. Buildings with no official template fall back to `s_createObj`, which creates a **0 % construction site** (verified).
+- In-game verification on ENDL_005 "Claude Test 1b" (Endless, Germans), all through the real editor:
+  - 10× `GER_INF01` team 0 → a selectable player unit with formation commands (team 0 = human in single player).
+  - `GER_HAU00`/`GER_WOH00`/`GER_BAU00` team 0 at tiles (41,39)/(44,39)/(38,40) → finished «Маленький главный дом», «Маленькое жилое здание», «Ферма», all selectable, 100 %; «go to main house» works; housing 0/17. No ProcDump dumps.
+  - Root cause of the first missing house: it was within 74 units of a planted tree → `s_createObj` placement check (`0x4a9d50` → `0x4c8a60` occupancy) rejected it. The editor now warns when a building is placed within 384 units of landscape objects.
+  - Not verified: buildings far from a main house (one at ~2.8k units was not found visually — inconclusive, minimap navigation unreliable), other tribes/teams 1–8, multiplayer, saving/loading a game with placed objects.
+- RE notes: `docs/reverse-engineering/script-natives.md` (726 native signatures from the EXE registration table). `s_createObj` → `0x50eaf0` → `0x50ecb0` (pop-cap check `0x5374b0`, create `0x4a9430`, script attach `0x518b80`); built = progress `[idx*0x90+0xf5ffc4]` ≥ objdef build points; `0x4bec30` sets progress to max (only reached from the dev-console SDL loader / cheat paths, not from scripts).
+- Automation note: the in-game/editor buttons need mouse down/up with a short pause; an instant `left_click` on the placement "刪除選取的物件" button is ignored (not an app bug).
+- Next: AoE2-style triggers/events compiled into the shim (conditions + actions using `script-natives.md`), e.g. timers (`s_getTime`), text (`s_showTextBox`), diplomacy (`s_setTeamHostile`), victory (`s_setScriptVarL GLOBAL_MISSION_RESULT` / `s_quitGame`).
+
 ## 2026-10-07 Claude: scenario editor phase 1 — nature objects (in-game verified); building placement hidden
 
 - User chose: nature objects first, then script injection (buildings + events).

@@ -117,6 +117,26 @@ public sealed class LevelObjectStore
         return list;
     }
 
+    /// <summary>從所有原版地圖（略過自製地圖）收集可複製範本，每個類型取第一個；<paramref name="include"/> 依類型編號過濾。</summary>
+    public static IReadOnlyDictionary<int, LevelObjectTemplate> LoadOfficialTemplates(string gamePath, Func<int, bool> include)
+    {
+        ArgumentNullException.ThrowIfNull(include);
+        var templates = new Dictionary<int, LevelObjectTemplate>();
+        string maps = Path.Combine(gamePath, "MAPS");
+        if (!Directory.Exists(maps)) return templates;
+        foreach (string map in Directory.GetDirectories(maps).OrderBy(path => path, StringComparer.OrdinalIgnoreCase))
+        {
+            if (CustomMapManifest.IsCustomMapDirectory(map) || !File.Exists(Path.Combine(map, "DATA", "objects.dat"))) continue;
+            try
+            {
+                foreach (LevelObjectTemplate template in Load(map).Templates())
+                    if (include(template.TypeId)) templates.TryAdd(template.TypeId, template);
+            }
+            catch (Exception ex) when (ex is InvalidDataException or IOException) { }
+        }
+        return templates;
+    }
+
     /// <summary>可安全複製的範本：未與其他物件連結、兩個位置索引都有效的同類型物件。</summary>
     public IEnumerable<LevelObjectTemplate> Templates()
     {
@@ -134,9 +154,13 @@ public sealed class LevelObjectStore
         }
     }
 
-    /// <summary>以範本在世界座標新增一個物件；回傳使用的槽位，沒有空間時回傳 -1。</summary>
-    public int Add(LevelObjectTemplate template, float x, float y, float z, float rotation)
+    /// <summary>
+    /// 以範本在世界座標新增一個物件；回傳使用的槽位，沒有空間時回傳 -1。
+    /// <paramref name="team"/> 改寫記錄的隊伍欄（+1，u16；8＝中立）。官方地圖同型建築在不同隊伍間只有此欄與 uid／位置／自身索引不同。
+    /// </summary>
+    public int Add(LevelObjectTemplate template, float x, float y, float z, float rotation, int? team = null)
     {
+        if (team is < 0 or > 8) throw new ArgumentOutOfRangeException(nameof(team), "隊伍必須介於 0 與 8。");
         ArgumentNullException.ThrowIfNull(template);
         if (!float.IsFinite(x) || !float.IsFinite(y) || !float.IsFinite(z) || !float.IsFinite(rotation)) throw new ArgumentOutOfRangeException(nameof(x), "物件座標必須是有限數值。");
         int slot = Enumerable.Range(0, _count).FirstOrDefault(index => !IsActive(index), -1);
@@ -147,6 +171,7 @@ public sealed class LevelObjectStore
         int record = RecordOffset(slot);
         template.Record.CopyTo(_objects, record);
         BinaryPrimitives.WriteUInt32LittleEndian(_objects.AsSpan(record + 3), uid);
+        if (team is { } owner) BinaryPrimitives.WriteUInt16LittleEndian(_objects.AsSpan(record + 1), checked((ushort)owner));
         ushort self = checked((ushort)slot);
         BinaryPrimitives.WriteUInt16LittleEndian(_objects.AsSpan(record + 67), checked((ushort)position));
         BinaryPrimitives.WriteUInt16LittleEndian(_objects.AsSpan(record + 69), checked((ushort)(position + 1)));
@@ -175,6 +200,13 @@ public sealed class LevelObjectStore
         for (int segment = 0; segment < ObjDataWidths.Length; segment++) _emptyObjData[segment].CopyTo(_objdata, SegmentOffset(segment, slot));
         return true;
     }
+
+    /// <summary>槽位目前物件的 uid；空槽或超出範圍時為 null。</summary>
+    public uint? UidAt(int slot)
+        => slot >= 0 && slot < _count && IsActive(slot) ? BinaryPrimitives.ReadUInt32LittleEndian(_objects.AsSpan(RecordOffset(slot) + 3)) : null;
+
+    /// <summary>只在槽位仍是指定 uid 的物件時移除（避免誤刪後來被其他編輯佔用的槽位）。</summary>
+    public bool RemoveIfUid(int slot, uint uid) => UidAt(slot) == uid && Remove(slot);
 
     /// <summary>在交易內寫回三個檔案（沿用原 PFIL 標頭）。</summary>
     public void Save(string mapDirectory, FileRollbackScope rollback)
