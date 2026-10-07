@@ -30,6 +30,7 @@
 
 ## 最新驗證與失敗紀錄
 
+- Codex（2026-10-07）：已提交核心修正 `b9b9965`；以git archive解出TEMP/ArmCoreCommitQA_e70f5f1a2802428abb9fd7546428d1a2/source，獨立restore約1.12分鐘後Release build 0警告/0錯誤，full --no-build test宿主491通過/21略過、modules45通過，共536通過/21略過/0失敗。未重啟還原程序；確認commit不依賴未提交AI預覽。驗收矩陣/roadmap更新，下一步按requirements-audit核對catalog與儲存前置防護。
 - Codex（2026-10-07）：按roadmap核對原spec建立/儲存流程。EndlessMapCloner在Move後manifest Load/Save失敗遺留正式槽位，兩項合成測試先失敗再修：manifest寫入FileRollbackScope，catch只刪本次成功Move的目標，同槽位retry成功；新增既有final/tmp內容保留2項。EndlessMapDeleter缺manifest登記/原廠slot拒絕，slots 0/4/5/999四項先實際刪除而失敗（僅TEMP），已补三重防護，在rename前拒絕。既有原廠拒刪測試初次僅錯誤文字「只能刪除」不符，已保留該訊息。完整Release build 0警告/0錯誤、test宿主491通過/21略過、modules45通過，共536通過/21略過/0失敗。docs/map-editor-requirements-audit.md列原規格與缺口，下一步catalog/SaveMap前置驗證、文字/環境/備份及空白語意。AI預覽WIP已被build涵蓋但功能未驗證，不納入本次提交。
 - Codex（2026-10-07）：先讀AGENTS/交接/Git，HEAD beca463、起始乾淨，無活躍代理。只讀Ollama api/tags確認laguna/nemotron/gemma/qwen目前可用，未送推論。澄清後剛新增TerrainBlendEditSession.Fork與AiMapPlanPreviewBuilder（独立高度/材質快照），使用者隨即要求先整理順序；停止程式實作，兩檔未接UI、未build/test、未提交，不能沿用528通過宣稱新檔已驗證。保留WIP不清除，roadmap/交接單獨本地提交。
 - Codex（2026-10-07）：AI材質拒絕修正與驗收矩陣已commit `572097e`。TEMP/ArmVisualQA_1c01f5e6b6e84fe490ec6339c257de49 的獨立.NET STA harness以合成fixture、2D模式DrawToBitmap核對main 1440x900/1100x700各tab、AI 880x740/640x580、事件中英560x420，DeviceDpi=96。發現Placement固定54px提示與36px三欄按鈕截字；改提示隨寬度自動換行，按鈕兩欄+整列delete、自動高度，重繪確認中英文最小視窗完整可見。harness初版ScenarioEvent List指定array的CS0029已改collection expression並重跑成功。版面修正後Release build 0警告/0錯誤、完整測試宿主483通過/21略過、modules45通過，共528通過/21略過/0失敗。高DPI/OpenGL/遊戲內仍未驗證。
@@ -58,6 +59,8 @@
 - AGY logs 在 TEMP/agent-delegation-logs：`540163f0-task-{0,1,2,3}-agy.log`、`4df64ac1-agy.log`；不納入 repository。
 
 ## 恢復時優先處理（尚未完成）
+
+目前優先順序以docs/map-editor-roadmap.md及requirements-audit.md為準：先核對catalog/SaveMap前置防護、文字/環境與備份/額外槽位證據；以下較早的UI優先順序已由新roadmap取代。
 
 1. Placement batch/邊界與STA host整合已驗證/提交；單兵與nature交易fail/retry/只套用一次/成功後dirty及markers已新增測試通過。程式碼整合已解決。
 2. Terrain blend純resolver邊界已實作並通過工作樹與committed snapshot全測試，已提交，已解決。
