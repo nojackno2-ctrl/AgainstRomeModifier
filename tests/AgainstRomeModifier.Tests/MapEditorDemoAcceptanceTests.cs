@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Windows.Forms;
 using AgainstRomeMapEditor;
 using AgainstRomeMapEditor.Modules.Nature;
+using AgainstRomeMapEditor.Modules.Placement;
 using AgainstRomeModifier.Maps;
 using AgainstRomeModifier.Scripting;
 
@@ -94,11 +95,33 @@ public sealed partial class MapEditorSaveTransactionTests
             Invoke(form, "PaintTexture", new TexturePaintEventArgs(28, 43, "", ""));
             Invoke(form, "CommitStroke");
             var nature = GetField<NatureEditSession>(form, "_natureSession");
-            int planted = nature.Additions.Count; Assert.True(planted > 0);
-            int removed = nature.RemovedSlots.Count;
+            int originalPlanted = nature.Additions.Count; Assert.True(originalPlanted > 0);
+            var forestLayout = form.CaptureNatureLayout(new Rectangle(26, 41, 5, 5));
+            string forestFile = Path.Combine(output, "forest.arm-layout.json");
+            File.WriteAllText(forestFile, MapLayoutPresets.Serialize(forestLayout));
+            // Import must resolve official species even when no Nature catalog is already loaded.
+            typeof(MapEditorForm).GetField("_layoutNativeTemplates", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(form, new Dictionary<int, LevelObjectTemplate>());
+            typeof(MapEditorForm).GetField("_natureTemplates", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(form, new Dictionary<int, LevelObjectTemplate>());
+            typeof(MapEditorForm).GetField("_natureCatalogTask", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(form, null);
+            form.ApplyLayout(MapLayoutPresets.Deserialize(File.ReadAllText(forestFile)), 13 * 256, 12 * 256, 90);
+            typeof(MapEditorForm).GetField("_layoutNativeTemplates", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(form, null);
+            Assert.Equal(originalPlanted + forestLayout.Entries.Count, nature.Additions.Count);
+            Invoke(form, "Undo"); Assert.Equal(originalPlanted, nature.Additions.Count);
+            Invoke(form, "Redo"); Assert.Equal(originalPlanted + forestLayout.Entries.Count, nature.Additions.Count);
+            int planted = nature.Additions.Count, removed = nature.RemovedSlots.Count;
             int worldBefore = LevelObjectStore.Load(map).Objects().Count;
 
             var placed = form.PlacementSession.Capture();
+            int buildingIndex = Enumerable.Range(0, placed.Count).First(index => placed[index].Type.Category == SdlObjectCategory.Building && placed[index].Team == 0);
+            var settlementLayout = form.CapturePlacementLayout([buildingIndex]);
+            string settlementFile = Path.Combine(output, "settlement.arm-layout.json");
+            File.WriteAllText(settlementFile, MapLayoutPresets.Serialize(settlementLayout));
+            form.ApplyLayout(MapLayoutPresets.Deserialize(File.ReadAllText(settlementFile)), 8 * 256, 8 * 256, 90, 0);
+            Assert.Equal(placed.Count + 1, form.PlacementSession.Count);
+            Invoke(form, "Undo"); Assert.Equal(placed.Count, form.PlacementSession.Count);
+            Invoke(form, "Redo"); Assert.Equal(placed.Count + 1, form.PlacementSession.Count);
+            placed = form.PlacementSession.Capture();
+            Guid copiedBuildingId = placed[^1].ScenarioId;
             int unitIndex = Enumerable.Range(0, placed.Count).First(index => placed[index].Team == 0 && placed[index].Type.Category == SdlObjectCategory.Figure);
             var unit = placed[unitIndex];
             form.PlacementSession.Edit(unitIndex, 0, unit.WorldX, unit.WorldY, unit.WorldZ, 90, 10);
@@ -113,14 +136,23 @@ public sealed partial class MapEditorSaveTransactionTests
             Invoke(form, "RefreshEventList", 0); Invoke(form, "UpdateEditorState");
             AssertSnapshotUnchanged(map, before);
             byte[] nextHeights = layers.Heights.ToArray(), nextCollision = layers.Collision!.ToArray();
+            NatureAddition[] expectedNature = nature.Additions.ToArray();
+            Assert.NotEmpty(expectedNature);
             Assert.True(form.TrySaveMap(false, out Exception? error), error?.ToString());
             Assert.False(GetProperty<bool>(form, "IsDirty"));
             var saved = ScenarioDocument.Load(map);
             Assert.Equal(2, saved.Events.Count);
             Assert.Equal(unit.ScenarioId, saved.Events[1].Conditions[0].TargetId);
             Assert.Equal(10, Assert.Single(saved.Spawns, item => item.Id == unit.ScenarioId).Count);
-            Assert.NotEmpty(saved.DataSlots);
-            Assert.Equal(worldBefore - removed + planted, LevelObjectStore.Load(map).Objects().Count);
+            Assert.Equal(4, saved.DataSlots.Count); // original three buildings plus one reusable settlement copy
+            var savedWorld = LevelObjectStore.Load(map).Objects();
+            Assert.Equal(worldBefore - removed + planted + 1, savedWorld.Count);
+            foreach (var addition in expectedNature)
+                Assert.Contains(savedWorld, item => item.TypeId == addition.Template.TypeId && item.X == addition.X && item.Y == addition.Y && item.Z == addition.Z && item.Rotation == addition.Rotation);
+            var copiedBinding = Assert.Single(saved.DataSlots, binding => binding.SpawnId == copiedBuildingId);
+            var copiedBuilding = Assert.Single(savedWorld, item => item.Uid == copiedBinding.Uid && item.Slot == copiedBinding.Slot);
+            Assert.Equal(8 * 256, copiedBuilding.X); Assert.Equal(8 * 256, copiedBuilding.Z); Assert.Equal(0, copiedBuilding.Team);
+            Assert.Equal(MathF.PI / 2, copiedBuilding.Rotation, 5);
             var savedBytes = SnapshotDirectory(map);
             Assert.True(form.TrySaveMap(false, out error), error?.ToString()); AssertSnapshotUnchanged(map, savedBytes);
 
@@ -131,6 +163,7 @@ public sealed partial class MapEditorSaveTransactionTests
             Assert.Equal(nextTextures, GetField<BodenTexturesDocument>(reopened, "_texturesDocument").Textures);
             Assert.Equal(placed.Select(item => item.ScenarioId), reopened.PlacementSession.Capture().Select(item => item.ScenarioId));
             Assert.Equal(unit.ScenarioId, GetField<List<ScenarioEvent>>(reopened, "_events")[1].Conditions[0].TargetId);
+            Assert.Equal(savedWorld, GetField<IReadOnlyList<LevelWorldObject>>(reopened, "_levelObjects"));
             Assert.False(GetProperty<bool>(reopened, "IsDirty")); Assert.False(fresh.CanUndo);
             Assert.True(reopened.TrySaveMap(false, out error), error?.ToString()); AssertSnapshotUnchanged(map, savedBytes);
             Invoke(form, "SetActiveView", true); Application.DoEvents();
@@ -141,7 +174,7 @@ public sealed partial class MapEditorSaveTransactionTests
             File.WriteAllText(Path.Combine(output, "result.json"), JsonSerializer.Serialize(new {
                 Map = map, Planted = planted, Spawns = saved.Spawns.Count, Buildings = saved.DataSlots.Count,
                 LakeHeight = nextHeights[lakeY * layers.VertexSize + lakeX], WaterLevel = water,
-                Verified = "native path undo/redo, hill, lake, forest, troop, event target, save, fresh reload, repeated save bytes, OpenGL capture",
+                Verified = "native path undo/redo, hill, lake, forest/settlement JSON layouts with batch undo/redo, troop, event target, save, fresh reload, repeated save bytes, OpenGL capture",
                 Pending = "gameplay, resource usability, pathfinding, building completion in game, victory execution"
             }));
         }, TimeSpan.FromMinutes(3));

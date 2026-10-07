@@ -14,6 +14,7 @@ internal sealed class TerrainRegionDialog : Form
     internal TerrainRegionOperation Operation { get => (TerrainRegionOperation)_operation.SelectedIndex; set => _operation.SelectedIndex = (int)value; }
     internal string VerticesText { get => _vertices.Text; set => _vertices.Text = value; }
     internal int RoadWidth { get => (int)_width.Value; set => _width.Value = value; }
+    internal void UseRectangleInput(string title) { Text = title; Operation = TerrainRegionOperation.Rectangle; _operation.Enabled = false; }
 
     internal (int X, int Y)[] ReadVertices() => _vertices.Text.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)
         .Select(line => line.Split(','))

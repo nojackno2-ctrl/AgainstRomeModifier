@@ -246,6 +246,7 @@ internal sealed partial class MapEditorForm : Form
         var tools = new ToolStrip { GripStyle = ToolStripGripStyle.Hidden, Dock = DockStyle.Top, Padding = new Padding(10, 5, 10, 5), BackColor = WinFormsTheme.SurfaceRaised, ForeColor = WinFormsTheme.TextPrimary };
         tools.Items.AddRange(new ToolStripItem[] { _lblTerrainGroup, _textureTool, _heightTool, _collisionTool, _natureTool, _placeTool, _sceneMoveTool, _terrainOperation, _terrainStrength, _resetTerrainButton, _blankTerrainButton, _regionToolsButton, _boxSelectButton, new ToolStripSeparator(), _view2dButton, _view3dButton, _3dDiagnosticsButton, _retryDisplayButton });
 
+        tools.Items.Insert(tools.Items.IndexOf(_boxSelectButton) + 1, _layoutMenu);
         _paletteHeader = SectionHeader("地表繪製");
         var palettePanel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(10), BackColor = WinFormsTheme.Surface };
         var currentBrush = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 76, Padding = new Padding(4), FlowDirection = FlowDirection.LeftToRight };
@@ -413,6 +414,7 @@ internal sealed partial class MapEditorForm : Form
         _aiMapButton.Click += (_, _) => OpenAiMapDialog();
         _blankTerrainButton.Click += (_, _) => ApplyBlankTerrain(confirm: true);
         _regionToolsButton.Click += (_, _) => RunRegionTool();
+        InitializeLayoutTools();
         _boxSelectButton.Click += (_, _) => BeginBoxSelection();
 
         _btnLangZH.Click += (s, e) => {
@@ -477,6 +479,10 @@ internal sealed partial class MapEditorForm : Form
         _aiMapButton.Text = isEn ? "AI Map Maker…" : "AI 製圖…";
         _blankTerrainButton.Text = isEn ? "Reset Flat Terrain…" : "重設平坦地形…";
         _regionToolsButton.Text = isEn ? "Region tools…" : "區域工具…";
+        _layoutMenu.Text = isEn ? "Layouts" : "配置";
+        _exportPlacementLayout.Text = isEn ? "Save selected settlement / objects…" : "保存選取的聚落／物件…";
+        _exportNatureLayout.Text = isEn ? "Save forest region…" : "保存森林區域…";
+        _importLayout.Text = isEn ? "Load and apply layout…" : "載入並套用配置…";
         _boxSelectButton.Text = isEn ? "Box select" : "框選";
         _boxSelectButton.ToolTipText = isEn ? "Drag a rectangle to select placed objects; Escape cancels." : "拖曳矩形選取放置物件；Escape 取消。";
         _blankTerrainButton.ToolTipText = isEn
@@ -1248,6 +1254,7 @@ internal sealed partial class MapEditorForm : Form
     private void UpdateEditorState()
     {
         _regionToolsButton.Enabled = _selected?.IsCustom == true && _terrainBlendSession is not null;
+        _layoutMenu.Enabled = _selected?.IsCustom == true;
         _boxSelectButton.Enabled = _selected?.IsCustom == true && _terrainBlendSession is not null;
         InvalidateMapDiagnostics();
         bool editable = _selected?.IsCustom == true; _saveButton.Enabled = editable && IsDirty; _gamePreviewButton.Enabled = _selected is not null; _undoButton.Enabled = editable && (TerrainLayerMode ? _terrainLayers?.CanUndo == true : _terrainBlendSession?.CanUndo == true); _redoButton.Enabled = editable && (TerrainLayerMode ? _terrainLayers?.CanRedo == true : _terrainBlendSession?.CanRedo == true); _resetTerrainButton.Enabled = editable && ((_texturesDocument is not null && TextureDirty()) || _terrainLayers?.IsDirty == true || _resetAuxiliaryLayers);

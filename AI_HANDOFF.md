@@ -2,6 +2,7 @@
 
 ## 六項建議總目標（2026-10-08 Codex，active）
 
+- 配置工具完成（2026-10-08 Codex）：可攜JSON名称／相對XZ／貼地高度偏移／角度／隊伍／數量（不存native records或GUID），選取物件／矩形森林保存、旋轉套用、全批預檢與一次undo。Release build零警告/零錯誤；mod3例、宿主取消／JSON／原事件目標／save-reload1例及真實示範通過。ARM_COMPARE_GAME=TEMP、ARM_OPENGL_REQUIRED=1、ARM_DEMO_ACCEPTANCE=1 full host657通過/22略過、modules289通過，0失敗；ArmDemoAcceptance_20261008_08有5spawns/4DATA buildings、新建築binding/team、fresh native objects一致、來源hash不變。未開Nature也能解析官方種類，重建零警告/零錯誤、宿主2例通過，_09含兩JSON與3D圖已目視；apply-layout.png已目視。Review發現逐株迴圈用儲存後已清空清單；改儲存前非空快照，重建零警告/零錯誤、真實示範1例通過，_10才證明每株native XYZ/rotation。首fixture空GUID拒存，改不同GUID與真事件後通過。新建築沿用本圖安全未連結同type模板，缺少仍工地警告；遊戲內未驗證。見docs/map-editor-layouts.md。
 - 區域工具完成：矩形／同材質四向連通區／有寬度土路折線，PaintTiles一次原生烘焙與一組undo，拒絕保留內容與redo；工具列對話框及2D/3D框選矩形提示。首build誤用X/Z，改WorldX/WorldZ後Release build零警告/零錯誤；mod3例、宿主save/reload1例及真實TEMP折線示範1例通過（ARM_DEMO_ACCEPTANCE=1，證據ArmDemoAcceptance_20261008_06，來源hash不變，3D圖已目視）。full test host655通過/22略過、modules286通過，0失敗；最後補取消時忽略未放開滑鼠、重載清框選與UI圖，重建仍零警告/零錯誤，宿主實際2D滑鼠框選／Escape／save-reload與dialog render2例通過。TEMP/ArmRegionTools_20261008/region-tools.png已目視可讀；3D滑鼠輸入未獨立實測，遊戲內仍未驗收。見docs/map-editor-region-tools.md。聚落／森林可保存配置、空白圖、AI局部／鎖定及效能尚待完成。
 - 使用者要求完成全部建議：示範地圖與遊戲內驗收、地圖檢查面板、道路／區域／框選／批次／配置工具、平坦與空白地圖區分、AI 局部重做與區域鎖定、真實大型地圖效能量測。上一階段提交1c90a20完成編輯器示範驗收，不能代表全部完成。
 - 已完成純 MapDiagnostics、地圖檢查分頁、雙擊定位物件／事件與儲存前檢查；碰撞／水位連通估計只作警告，持久ID／座標／事件錯誤才拒存。Release build零警告／零錯誤；ARM_COMPARE_GAME=TEMP副本、ARM_OPENGL_REQUIRED=1，完整test host652通過/22略過、modules280通過，0失敗。纯模組5例、宿主2例驗證；TEMP/ArmMapDiagnostics_20261008 中英1100×760畫面已目視，摘要換行與完整問題詳細區可讀。
@@ -9,7 +10,7 @@
 - 已解決宿主第一輪100例99通過/1失敗：新定位測試在隱藏表單的 native controls 逾時，改offscreen Show、允許測試關閉與STA GL設定後通過。初版DrawToBitmap空白，Show後截圖才有效；補摘要換行、詳細區與tooltip，編輯後停用舊定位。最終完整回歸通過。
 - 已解決完整回歸的event-only失敗：不完整catalog使既存spawn不在UI清單，檢查誤報刪除。當placement未改時補入仍會保留的previous.Spawns；event-only、真正刪除目標拒存與兩宿主新例共4例重跑通過，最終全套也通過。nullable _view3d CS8602 已加 null guard。
 - 檢查面板已提交eb1df96。製圖操作已加入 PlacementEditSession.EditMany（隊伍／方向）、AddMany（配置整批放置）、放置清單批次對話框；mod placement定向22例、宿主批次3例（含取消）、儲存→新表單重開→重存bytes1例通過。批次保留ID／位置／人數，invalid mixed team／越界／重複ID整批拒絕，undo為一組。最後Release build零警告／零錯誤；ARM_COMPARE_GAME、ARM_OPENGL_REQUIRED=1、ARM_DEMO_ACCEPTANCE=1，full test host654通過/22略過、modules283通過，0失敗；真實示範再跑成功，證據TEMP/ArmDemoAcceptance_20261008_05，來源hash不變。
-- 接著依 docs/map-editor-completion-plan.md 完成道路折線、矩形／區域填色、框選與可保存聚落／森林配置，再做空白圖、AI局部／鎖定與效能。這些功能尚未完成，整體goal保持active。
+- 製圖操作與可保存配置已完成；接著依 docs/map-editor-completion-plan.md 做平坦／真正空白建立、AI局部／鎖定、真實效能及遊戲內驗收。後四項仍不具備全部證據，整體goal保持active。
 
 ## 示範地圖整合驗收（2026-10-08 Codex，編輯器階段完成）
 

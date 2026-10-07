@@ -173,7 +173,7 @@ internal sealed partial class MapEditorForm
         if (typeId < 0) return null;
         IReadOnlyDictionary<int, string> names = _objdefNames;
         _buildingTemplates ??= LevelObjectStore.LoadOfficialTemplates(_gamePath, id => names.TryGetValue(id, out string? name) && name.StartsWith("Bau", StringComparison.OrdinalIgnoreCase));
-        return _buildingTemplates.GetValueOrDefault(typeId);
+        return _buildingTemplates.GetValueOrDefault(typeId) ?? CurrentLayoutTemplates().GetValueOrDefault(typeId);
     }
 
     private IEnumerable<SdlPlacedObject> LoadScenarioPlacements(string map)
