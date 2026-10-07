@@ -11,7 +11,8 @@ namespace AgainstRomeModifier.Tests;
 /// 僅在同時設定 ARM_GAME_PATH、ARM_INGAME_MAP（例如 ENDL_005）與 ARM_INGAME_SCENARIO 時執行；
 /// 會修改該自製地圖，執行前須先備份。案例：
 /// victory＝3 秒訊息＋第一支 team 0 部隊進入其東方矩形後訊息與勝利；
-/// defeat＝3 秒訊息＋45 秒後訊息與失敗（用於存讀檔後事件是否延續）。
+/// defeat＝3 秒訊息＋45 秒後訊息與失敗（用於存讀檔後事件是否延續）；
+/// terrain＝出生點北方示範區（自動過渡材質、粗糙化丘陵、茂密混合森林、印章道路）＋3 秒訊息。
 /// </summary>
 public sealed class InGameAcceptanceScenarioTests
 {
@@ -51,12 +52,92 @@ public sealed class InGameAcceptanceScenarioTests
                 events.Add(new("ARM timed defeat", 45) { Actions = [new(ScenarioActionKind.Message, "ARM test: timer elapsed - defeat."), new(ScenarioActionKind.Defeat)] });
                 report = "timed defeat at 45 s";
             }
+            else if (scenario == "terrain")
+            {
+                report = TerrainShowcase(form);
+                events.Add(new("ARM terrain", 3) { Actions = [new(ScenarioActionKind.Message, "ARM test: terrain showcase north of the start (materials, hills, forest, road).")] });
+            }
             else throw new ArgumentException("未知案例：" + scenario);
             Invoke(form, "RefreshEventList", 0);
             Invoke(form, "UpdateEditorState");
             Assert.True(form.TrySaveMap(false, out Exception? error), error?.ToString());
         });
         File.WriteAllText(Path.Combine(Path.GetTempPath(), "ArmInGameScenario.txt"), $"{DateTime.Now:O} {mapId} {scenario}: {report}");
+    }
+
+    /// <summary>以真正的表單工具在出生點附近做示範區：自動過渡材質、粗糙化丘陵、茂密混合森林、印章道路。回傳每一步結果。</summary>
+    private static string TerrainShowcase(MapEditorForm form)
+    {
+        var log = new List<string>();
+        T Field<T>(string name) => (T)typeof(MapEditorForm).GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(form)!;
+        void Set(string name, object? value) => typeof(MapEditorForm).GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(form, value);
+        Type mode = typeof(MapEditorForm).GetNestedType("EditMode", BindingFlags.NonPublic)!;
+        void Mode(string name) => Invoke(form, "SetEditMode", Enum.Parse(mode, name));
+        void Paint(int x, int y) => Invoke(form, "PaintTexture", new TexturePaintEventArgs(x, y, "", ""));
+        var brush = Field<System.Windows.Forms.ComboBox>("_brushSize");
+        var document = Field<BodenTexturesDocument>("_texturesDocument");
+
+        // 1. 自動過渡材質：取地圖最常見的三種材質之外、能與周圍銜接的材質，各塗一塊 5×5。
+        Mode("Texture");
+        Field<System.Windows.Forms.CheckBox>("_autoBridge").Checked = true;
+        brush.SelectedIndex = 2;
+        var catalog = Field<FloorMaterialCatalog>("_floorMaterials");
+        var session = Field<TerrainBlendEditSession>("_terrainBlendSession");
+        int painted = 0;
+        foreach ((int x, int y) in new[] { (33, 29), (39, 26), (45, 29) })
+        {
+            foreach (FloorMaterial material in catalog.Materials)
+            {
+                string textureBefore = document.GetTexture(x, y);
+                Set("_activeMaterial", material);
+                Paint(x, y); Invoke(form, "CommitStroke");
+                if (!string.Equals(document.GetTexture(x, y), textureBefore, StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(catalog.FindByTexture(document.GetTexture(x, y))?.Id, material.Id, StringComparison.OrdinalIgnoreCase))
+                {
+                    log.Add($"material {material.Id} at ({x},{y})"); painted++; break;
+                }
+            }
+        }
+        // 2. 粗糙化丘陵：9×9、強。
+        Mode("Height");
+        brush.SelectedIndex = 3;
+        Field<System.Windows.Forms.ToolStripComboBox>("_terrainOperation").SelectedIndex = (int)TerrainHeightOperation.Roughen;
+        Field<System.Windows.Forms.ToolStripComboBox>("_terrainStrength").SelectedIndex = 2;
+        var layers = Field<TerrainHeightEditSession>("_terrainLayers");
+        byte[] heightsBefore = layers.Heights.ToArray();
+        Paint(39, 20); Paint(39, 20); Invoke(form, "CommitStroke");
+        log.Add($"roughen changed {heightsBefore.Where((value, index) => value != layers.Heights[index]).Count()} vertices at (39,20)");
+        // 3. 茂密混合森林：9×9，樹木類。
+        Mode("Nature");
+        var catalogTask = (Task)typeof(MapEditorForm).GetField("_natureCatalogTask", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(form)!;
+        var deadline = DateTime.UtcNow.AddMinutes(2);
+        var types = Field<System.Windows.Forms.ListBox>("_natureTypes");
+        while ((!catalogTask.IsCompleted || types.Items.Count == 0 || types.Items[0] is string) && DateTime.UtcNow < deadline)
+        { System.Windows.Forms.Application.DoEvents(); Thread.Sleep(50); }
+        var category = Field<System.Windows.Forms.ComboBox>("_natureCategory");
+        for (int index = 0; index < category.Items.Count; index++)
+            if (category.Items[index]!.GetType().GetProperty("Value")!.GetValue(category.Items[index]) as string == "tree") { category.SelectedIndex = index; break; }
+        Field<System.Windows.Forms.ComboBox>("_natureDensity").SelectedIndex = 2;
+        Field<System.Windows.Forms.CheckBox>("_natureMix").Checked = true;
+        brush.SelectedIndex = 3;
+        var nature = Field<AgainstRomeMapEditor.Modules.Nature.NatureEditSession>("_natureSession");
+        int before = nature.Additions.Count;
+        Paint(29, 43); Invoke(form, "CommitStroke");
+        log.Add($"forest planted {nature.Additions.Count - before} ({string.Join(",", nature.Additions.Skip(before).Select(item => item.Name).Distinct())}) at (29,43)");
+        // 4. 印章道路：tile y=33、x 34–44。
+        Mode("Texture");
+        Field<System.Windows.Forms.CheckBox>("_stampMode").Checked = true;
+        string? road = Field<FloorTextureLibrary>("_floorTextures").Names.FirstOrDefault(name => name.Equals("weg1", StringComparison.OrdinalIgnoreCase));
+        if (road is not null)
+        {
+            Set("_stampTexture", road);
+            for (int x = 34; x <= 44; x++) Paint(x, 33);
+            Invoke(form, "CommitStroke");
+            log.Add($"road {road} x34-44 y33: {Enumerable.Range(34, 11).Count(x => document.GetTexture(x, 33) == road)} tiles");
+        }
+        Field<System.Windows.Forms.CheckBox>("_stampMode").Checked = false;
+        log.Add($"materials painted {painted}/3");
+        return string.Join("; ", log);
     }
 
     private static object? Invoke(MapEditorForm form, string name, params object[] args)
