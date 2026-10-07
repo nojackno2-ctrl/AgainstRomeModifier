@@ -38,7 +38,12 @@ internal sealed partial class MapEditorForm
                     item.Type.Category == SdlObjectCategory.Figure ? Math.Max(1, item.UnitCount) : 0, (int)MathF.Round(item.Angle), item.WorldY,
                     Prebuilt: item.Type.Category == SdlObjectCategory.Building && item.Team is >= 0 and <= 8) { Id = item.ScenarioId }).ToList() : previousScenario.Spawns.ToList() };
             }
+            var issues = RefreshMapDiagnostics();
+            if (issues.Any(issue => issue.Severity == AgainstRomeMapEditor.Modules.Diagnostics.MapIssueSeverity.Error) && _mapCheckTab is not null)
+                _inspectorTabs.SelectedTab = _mapCheckTab;
             if (scenario is not null) ScenarioSavePreflight.Validate(scenario, _objectCatalog.Select(AliasOf).ToArray());
+            if (issues.FirstOrDefault(issue => issue.Severity == AgainstRomeMapEditor.Modules.Diagnostics.MapIssueSeverity.Error) is { } blocking)
+                throw new InvalidDataException(blocking.Chinese);
             using var rollback = new FileRollbackScope();
             var put = PutTextDocument.Load(Path.Combine(map, "TEXT", "US", "briefing.put"));
             put.SetValue("briefing_titel_1", _title.Text.Trim()); put.SetValue("briefing_titel_2", _subtitle.Text.Trim()); put.SetCompositeValue("briefing_text", _briefing.Text);

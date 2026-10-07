@@ -1,5 +1,14 @@
 # AI Handoff - Live Project Memory
 
+## 六項建議總目標（2026-10-08 Codex，active）
+
+- 使用者要求完成全部建議：示範地圖與遊戲內驗收、地圖檢查面板、道路／區域／框選／批次／配置工具、平坦與空白地圖區分、AI 局部重做與區域鎖定、真實大型地圖效能量測。上一階段提交1c90a20完成編輯器示範驗收，不能代表全部完成。
+- 已完成純 MapDiagnostics、地圖檢查分頁、雙擊定位物件／事件與儲存前檢查；碰撞／水位連通估計只作警告，持久ID／座標／事件錯誤才拒存。Release build零警告／零錯誤；ARM_COMPARE_GAME=TEMP副本、ARM_OPENGL_REQUIRED=1，完整test host652通過/22略過、modules280通過，0失敗。纯模組5例、宿主2例驗證；TEMP/ArmMapDiagnostics_20261008 中英1100×760畫面已目視，摘要換行與完整問題詳細區可讀。
+- 已向使用者提出遊戲內驗收所需的安裝目錄例外授權（先備份自製槽位）；回覆前仍遵守 AGENTS 禁止存取安裝目錄。其餘開發繼續，不將整體目標縮小。
+- 宿主第一輪100例99通過/1失敗：新定位測試在隱藏未顯示表單的 native controls 逾時；改為offscreen Show、允許測試關閉與STA GL設定，兩新增案例重跑通過，舊99例已通過。初版DrawToBitmap空白，實際Show後截圖才有效；目視發現摘要截斷，補寬度換行、問題詳細區與tooltip；編輯後停用舊定位，避免使用過時事件索引，待最後回歸。
+- 已解決完整回歸的event-only失敗：不完整catalog使既存spawn不在UI清單，檢查誤報刪除。當placement未改時補入仍會保留的previous.Spawns；event-only、真正刪除目標拒存與兩宿主新例共4例重跑通過，最終全套也通過。nullable _view3d CS8602 已加 null guard。
+- 已開始製圖操作的獨立模組：PlacementEditSession.EditMany（隊伍／方向）、AddMany（配置整批放置）及PlacementAuthoringTests；尚未build/test／接UI，不包含在檢查面板提交的驗證範圍。接著接批次對話框、道路與區域工具，再依 docs/map-editor-completion-plan.md 完成其餘要求。
+
 ## 示範地圖整合驗收（2026-10-08 Codex，編輯器階段完成）
 
 - 使用者同意按建議開始，先完成 TEMP 示範地圖的編輯→儲存→新表單重開；遊戲內可玩性仍須獨立驗收，不存取安裝目錄。

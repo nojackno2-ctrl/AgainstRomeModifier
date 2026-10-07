@@ -285,6 +285,8 @@ internal sealed partial class MapEditorForm : Form
         _inspectorTabs.TabPages.Add(new TabPage("放置物件") { BackColor = WinFormsTheme.Surface }); _inspectorTabs.TabPages[3].Controls.Add(BuildPlacementPanel());
         _inspectorTabs.TabPages.Add(new TabPage("自然物件") { BackColor = WinFormsTheme.Surface }); _inspectorTabs.TabPages[4].Controls.Add(BuildNaturePanel());
         _inspectorTabs.TabPages.Add(new TabPage("事件") { BackColor = WinFormsTheme.Surface }); _inspectorTabs.TabPages[^1].Controls.Add(BuildEventsPanel());
+        _mapCheckTab = new TabPage("地圖檢查") { BackColor = WinFormsTheme.Surface };
+        _inspectorTabs.TabPages.Add(_mapCheckTab); _mapCheckTab.Controls.Add(BuildMapCheckPanel());
 
         _canvasHost = new Panel { Dock = DockStyle.Fill, Padding = new Padding(10), BackColor = WinFormsTheme.Window };
         _canvasHost.Controls.Add(_canvas); _canvasHost.Controls.Add(_modeBanner);
@@ -575,6 +577,7 @@ internal sealed partial class MapEditorForm : Form
         foreach (TextBox text in EditablePropertyControls().OfType<TextBox>()) UpdateGameTextWarning(text);
         UpdateEditorState();
         UpdatePaletteBrushLabel();
+        LocalizeMapDiagnostics(isEn);
 
         if (_selected is not null)
         {
@@ -1220,6 +1223,7 @@ internal sealed partial class MapEditorForm : Form
 
     private void UpdateEditorState()
     {
+        InvalidateMapDiagnostics();
         bool editable = _selected?.IsCustom == true; _saveButton.Enabled = editable && IsDirty; _gamePreviewButton.Enabled = _selected is not null; _undoButton.Enabled = editable && (TerrainLayerMode ? _terrainLayers?.CanUndo == true : _terrainBlendSession?.CanUndo == true); _redoButton.Enabled = editable && (TerrainLayerMode ? _terrainLayers?.CanRedo == true : _terrainBlendSession?.CanRedo == true); _resetTerrainButton.Enabled = editable && ((_texturesDocument is not null && TextureDirty()) || _terrainLayers?.IsDirty == true || _resetAuxiliaryLayers);
         _heightTool.Enabled = editable && _terrainLayers is not null; _aiMapButton.Enabled = editable && _terrainLayers is not null; _blankTerrainButton.Enabled = editable && _terrainLayers is not null; _placeTool.Enabled = editable && _objectCatalog.Count > 0; _natureTool.Enabled = editable && _natureStoreAvailable;
         if (_editMode == EditMode.Nature)
