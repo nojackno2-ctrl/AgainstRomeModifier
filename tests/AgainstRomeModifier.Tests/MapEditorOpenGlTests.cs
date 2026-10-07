@@ -90,6 +90,52 @@ public sealed partial class MapEditorSaveTransactionTests
         }, TimeSpan.FromMinutes(2));
     }
 
+    [Fact]
+    public void Real_opengl_pick_returns_the_tile_drawn_under_the_pointer()
+    {
+        string output = Environment.GetEnvironmentVariable("ARM_OPENGL_OUTPUT")
+            ?? Path.Combine(Path.GetTempPath(), "ArmOpenGl_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(output);
+        string map = CreateFixture();
+        RunInSta(() =>
+        {
+            Application.SetUnhandledExceptionMode(UnhandledExceptionMode.ThrowException, threadScope: true);
+            OpenTK.Windowing.Desktop.GLFWProvider.CheckForMainThread = false;
+            using var form = new MapEditorForm(_root, new GameMapInfo("ENDL_005", map, true, "Pick", "Test"));
+            typeof(MapEditorForm).GetField("_allowClose", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(form, true);
+            form.StartPosition = FormStartPosition.Manual; form.Location = new Point(-30000, -30000);
+            form.Show(); Application.DoEvents();
+            Invoke(form, "SetActiveView", true); Application.DoEvents();
+            var view = GetField<Map3DViewControl>(form, "_view3d");
+            if (!view.IsReady)
+            {
+                Assert.NotEqual("1", Environment.GetEnvironmentVariable("ARM_OPENGL_REQUIRED"));
+                return;
+            }
+            MethodInfo pick = typeof(Map3DViewControl).GetMethod("TryGetTile", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            for (int y = 0; y < 64; y++) for (int x = 0; x < 64; x++) view.SetTexture(x, y, "4BB___51");
+            Size size = view.ClientSize;
+            using Bitmap baseline = view.CaptureFrame(size.Width, size.Height)!;
+            var results = new List<string>();
+            foreach ((int tileX, int tileY) in new[] { (32, 32), (12, 50), (50, 12), (45, 45), (20, 20) })
+            {
+                view.SetTexture(tileX, tileY, "4BB___52");
+                using Bitmap marked = view.CaptureFrame(size.Width, size.Height)!;
+                view.SetTexture(tileX, tileY, "4BB___51");
+                long sumX = 0, sumY = 0; int count = 0;
+                for (int y = 0; y < size.Height; y++) for (int x = 0; x < size.Width; x++)
+                    if (Distance(baseline.GetPixel(x, y), marked.GetPixel(x, y)) > 6) { sumX += x; sumY += y; count++; }
+                Assert.True(count > 0, $"格子 ({tileX},{tileY}) 的材質變更沒有出現在畫面。");
+                var center = new Point((int)(sumX / count), (int)(sumY / count));
+                object?[] args = [center, 0, 0];
+                Assert.True((bool)pick.Invoke(view, args)!, $"像素 {center} 沒有選到地形。");
+                results.Add($"tile ({tileX},{tileY}) drawn at {center} ({count} px) -> picked ({args[1]},{args[2]})");
+                Assert.Equal((tileX, tileY), ((int)args[1]!, (int)args[2]!));
+            }
+            File.WriteAllLines(Path.Combine(output, "pick.txt"), results.Prepend($"{view.ContextDescription} {size}"));
+        }, TimeSpan.FromMinutes(2));
+    }
+
     private static Bitmap Capture(Map3DViewControl view, string output, string name)
     {
         Application.DoEvents();
