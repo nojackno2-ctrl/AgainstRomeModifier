@@ -38,6 +38,7 @@
 | 自然物件散佈 | 筆刷範圍內依密度散佈、最小間距、反覆塗抹只補空隙、混合同類物種、單一復原；1×1 維持每格一株 | `AgainstRomeMapEditor.Modules.Tests/NatureScatterTests.cs`、`AgainstRomeModifier.Tests/MapEditorNatureHistoryTests.cs` |
 | 圖塊印章 | 原版道路／河流／岩壁／地板等圖塊分類列出，單格精確放置、復原重做、存檔重開、印章取樣 | `AgainstRomeMapEditor.Modules.Tests/TerrainAutoBridgeTests.cs`（TerrainStampTests）、`AgainstRomeModifier.Tests/MapEditorStampTests.cs` |
 | 3D 資料計算 | 高度插值、網格、相機限制、射線選取、材質 atlas | `AgainstRomeModifier.Tests/MapEditor3DTests.cs` |
+| 原生 ALR 8-bit 行解碼核心（未接 UI） | 根據 native 指令的兩段像素／gap／各段 opacity；合成資料逐像素比較、快照隔離、損壞輸入拒絕。尚無實際 ALR 素材／遊戲外觀證據 | `AgainstRomeMapEditor.Modules.Tests/NativeAlrIndexedFrameTests.cs`、`docs/reverse-engineering/native-scene-rendering.md` |
 
 完整 solution 同時涵蓋 Modifier 與 SaveManager，總通過數不能當成地圖編輯器的功能數。部分測試在未提供原版資料或未啟用 live 環境時直接返回；通過總數也不能證明這些實機路徑已執行。
 

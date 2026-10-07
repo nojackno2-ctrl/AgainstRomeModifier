@@ -38,6 +38,28 @@ python tools/re/scan_native_scene.py re_workspace/Against_Rome.exe `
 
 ALR 附近存在 `CLUS\us_rdani.c` 字串，APT 附近為 `CLUS\us_rdpat.c`。ALR runtime 明確含逐格矩形與尺寸資料；因此舊文件將 `*.alr` 全數概稱為「模型」不能當作已確認的 3D mesh 格式。尚不能據此宣稱所有遊戲物件都是 sprites，或宣稱 APT 就是三角網格。
 
+## 8-bit ALR 行解碼（2026-10-07）
+
+繼續追蹤 runtime `+0x5C` 指標表，已找到 `0x4E48F0` 的 frame 資料 helper、`0x4E49C0` 的 row helper，以及 `0x4E4A60` 的逐行繪製。`0x4CA0CA`、`0x4CA41C` 等消費端呼叫 frame helper；不能把這些位置單獨視為可嵌入的完整 renderer。
+
+```powershell
+python tools/re/scan_native_scene.py re_workspace/Against_Rome.exe `
+  --target 0x4E48F0 --range 0x4E48F0:0x4E4A60 `
+  --range 0x4E4A60:0x4E4E2F --output "$env:TEMP/arm-native-alr-rows.txt"
+```
+
+`0x4E49C0..0x4E4A58` 直接顯示以下 row descriptor 語意：
+
+- bits 0–19 是資料 byte offset；下一個 descriptor 的低 20 bits 為終點，所以 height 列需 height+1 筆。
+- bits 21–30 是列首透明像素數。bit 31 控制第一段的 index 0 是否照 palette 寫入。
+- bit 20 未設時，整段為一段 indexed pixel bytes。
+- bit 20 設定時，payload 前兩個 bytes 是「第一段 pixel 數」、「中間透明 gap（低 7 bits）＋第二段 index 0 的不透明旗標（bit 7）」。餘下為兩段連續存放的 pixel bytes；第二段長度為整列 payload 長度減 2 減第一段長度。
+- `0x4E4C59` 分派第一段不透明路徑，`0x4E4CC3..0x4E4D1E` 再切到第二段；`0x4E4DAE..0x4E4DCF` 證實非不透明路徑的 index 0 略過 destination，不是固定 palette RGB 的 color key。
+
+`src.MapEditor.Modules/NativeAssets/NativeAlrIndexedFrame.cs` 現在把**已抽出的 8-bit 行資料與選定 palette**解碼成自有 ARGB pixels；gap 與透明 index 0 保留為 alpha 0，寫入的 palette RGB 為 alpha 255。兩段各自使用旗標，不能把零號色一律當透明。對不合法 offset、前綴、palette index 或超出 frame 的 run 拒絕解碼。
+
+`NativeAlrIndexedFrameTests.cs` 使用非對稱合成行資料驗證逐像素結果、兩段 opacity、palette 高 byte、快照隔離、對齊 padding 與損壞輸入。這是與上述指令相符的核心測試，**不是實際 ALR 素材解碼或遊戲外觀驗證**。完整 container 解析、palette／方向／動畫選取、非 8-bit 分支、真正場景渲染及 UI 接線仍未完成。
+
 ## 下一個實作與驗收點
 
 先取得允許分析的原始素材樣本，沿已定位載入器完成一種實際物件的解碼、動畫／方向映射、透明與錨點，對照同物件的原遊戲畫面。未有實際樣本前，不猜測像素編碼或以合成模型替代真實外觀。

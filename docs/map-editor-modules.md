@@ -12,6 +12,12 @@ clean; `AcceptChanges` is called only after the host's save transaction succeeds
 Modules do not open files, show dialogs, call another module or change renderer
 state. The host coordinates those operations.
 
+`NativeAssets/NativeAlrIndexedFrame` decodes extracted native 8-bit ALR scanlines
+and a selected palette into owned, read-only ARGB pixels. It does not open the
+game archives, select animation frames or update the renderer. Its current
+evidence is native x86 control flow plus synthetic pixel tests; actual asset
+and scene fidelity remain unverified. See [native scene evidence](reverse-engineering/native-scene-rendering.md).
+
 `Events/ScenarioEventSession` owns event commands, duplication limits, copied
 action/condition lists and the saved baseline. `MapEditorForm.Events.cs` is its
 UI adapter. The existing host's `_events` read interface and baseline setter
