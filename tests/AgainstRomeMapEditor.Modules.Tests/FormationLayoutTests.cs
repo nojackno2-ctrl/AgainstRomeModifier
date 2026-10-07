@@ -7,6 +7,49 @@ namespace AgainstRomeMapEditor.Modules.Tests;
 
 public sealed class FormationLayoutTests
 {
+    // 真實 id0 的有效幾何摘要；保留原表格 20 組結構，省略非幾何欄位。
+    private const string NativeGeometry = "0,1,9,.05,-.05,.20,.05,-.20,.15,-.05,.05,.20,-.20,.05,-.15,-.10,-.05,-.20,-.20,.30,-.15,.40,.10,-.25,.25,-.40,.05,.05,.30,.30,.20,.34,-.25,.10,-.34,-.20,-.34,-.40,-.15";
+    private static FormationLayoutDefinition ParsedNative() => FormationLayoutDefinition.FromFormDefText(
+        "[FormationDefault]\r\n;idx,activ,keys,...\r\n " + NativeGeometry + string.Concat(Enumerable.Repeat(",0", 44)) + ",0,180,All_Haufen;geometry excerpt\r\n");
+
+    [Fact]
+    public void Real_default_structural_excerpt_matches_embedded_geometry()
+        => Assert.Equal(FormationLayoutDefinition.NativeDefault.Segments, ParsedNative().Segments);
+
+    public static IEnumerable<object[]> NativeCounts => Enumerable.Range(1, 20).Select(n => new object[] { n });
+
+    [Theory]
+    [MemberData(nameof(NativeCounts))]
+    public void Native_counts_sample_the_correct_segment_stay_in_bounds_and_rotate_rigidly(int count)
+    {
+        var definition = ParsedNative();
+        var zero = FormationLayout.Create(count, 0, definition);
+        Assert.Equal(count, zero.Count);
+        Assert.Equal(count, zero.Distinct().Count());
+        for (int i = 0; i < count; i++)
+        {
+            double position = (i + .5) * 9 / count;
+            int j = (int)Math.Floor(position);
+            float t = (float)(position - j);
+            var segment = definition.Segments[j];
+            var point = Vector2.Lerp(segment.Start, segment.End, t);
+            Near(new(-point.Y * 320, -point.X * 320), zero[i]);
+            Assert.InRange(zero[i].X, -96, 108.81f);
+            Assert.InRange(zero[i].Y, -128, 128);
+        }
+        foreach (float angle in new[] { 22.5f, 45, 90, 180, 270, -45, 405 })
+        {
+            var rotated = FormationLayout.Create(count, angle, definition);
+            double theta = -angle * Math.PI / 180;
+            for (int i = 0; i < count; i++)
+            {
+                Near(new((float)(zero[i].X * Math.Cos(theta) - zero[i].Y * Math.Sin(theta)),
+                    (float)(zero[i].X * Math.Sin(theta) + zero[i].Y * Math.Cos(theta))), rotated[i]);
+                Assert.InRange(Math.Abs(zero[i].Length() - rotated[i].Length()), 0, .001f);
+            }
+        }
+    }
+
     private static FormationLayoutDefinition Line() => new([new(new(-1, 0), new(1, 0))]);
 
     [Fact]

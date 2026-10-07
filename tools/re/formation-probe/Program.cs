@@ -1,6 +1,20 @@
 using System.IO.Compression;
 using System.Text.Json;
 using AgainstRomeMapEditor.NativeAssets;
+using AgainstRomeMapEditor.Modules.Placement;
+using AgainstRomeModifier;
+if (args.Length == 2 && args[0] == "--layout") {
+ byte[] input=File.ReadAllBytes(args[1]);
+ string text=System.Text.Encoding.Latin1.GetString(GameLZSS.DecompressPfil(input));
+ var definition=FormationLayoutDefinition.FromFormDefText(text);
+ Console.WriteLine(JsonSerializer.Serialize(new {
+  sha256=Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(input)).ToLowerInvariant(),
+  segmentCount=definition.Segments.Count,
+  matchesEmbedded=definition.Segments.SequenceEqual(FormationLayoutDefinition.NativeDefault.Segments),
+  layouts=Enumerable.Range(1,20).Select(count=>new {count, offsets=FormationLayout.Create(count,0,definition).Select(p=>new {x=p.X,z=p.Y})})
+ }));
+ return;
+}
 if (args.Length is < 2 or > 3) throw new ArgumentException("Usage: <offline alr.dat> <NEW output directory> [ALR asset name]");
 if (Directory.Exists(args[1])) throw new IOException("Output must be new");
 Directory.CreateDirectory(args[1]);

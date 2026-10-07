@@ -1,5 +1,26 @@
 # AI Handoff - Live Project Memory
 
+## 局部光源真實定義與 APT 光源點逆向工程（2026-10-07 Antigravity；本次不提交／不推送／不改 Git 歷史）
+
+- 實作與解析：
+  1. `SYSTEM/DATA_MP/DEFAULTS/lightdef.dau`（PFIL-compressed，解壓後 4101 bytes，42 筆定義）解析確認：在 `NativeLightCatalog` 增加 `Open(string)` 與 `Parse(ReadOnlySpan<byte>)`，自動偵測 PFIL 魔數並調用 `GameLZSS.DecompressPfil` 解壓。
+  2. 提取出日耳曼主屋（`BauGerHau00/02`）真實光源定義為 `Kohleschale`（idx 1，半徑 350.0，RGB=(1.48, 1.22, 0.00)，擾動閃爍 1/0.05，高度偏移 30/80）；火堆為 `LD_Feuerstelle`（idx 7，半徑 300.0，RGB=(1.33, 0.61, 0.33)，閃爍 1/0.15）；火把為 `LD_Flamme_Fackel`（idx 18，半徑 150.0，RGB=(1.60, 1.33, 0.00)，閃爍 1/0.05）。
+  3. 新增 `src.MapEditor.Modules/NativeAssets/NativeAptLightPoints.cs`（純新檔案，不修改 `NativeAptDocument.cs`）：從原始 APT 二進位位元組中解析 extraA 光源點及相對 anchor 之位移，並實作 `GetBuildingWorldLightPositions`，以 2:1 等角逆幾何公式精確計算建築物所有光源點世界空間坐標 $(X, Y, Z)$。
+  4. 截圖比對（`game-house.png`）：對門前關鍵取樣點以真實 `Kohleschale`（idx 1, R=350）擬合，紅色通道 RMSE=7.52、Correlation=0.9970，全通道整體 RMSE=21.54、Correlation=0.9104；對照組若誤用單位火把 `Flamme_Fackel`（idx 18, R=150）則 RMSE=57.43、Correlation=0.3125，證實主屋確實使用 `Kohleschale`。藍色通道實測微幅上升為底層地形紋理相乘效果。
+- 驗證：
+  - `DOTNET_ROLL_FORWARD=Major dotnet build AgainstRomeModifier.slnx -c Release -p:UseAppHost=false`：0 警告、0 錯誤。
+  - `dotnet test tests/AgainstRomeMapEditor.Modules.Tests -c Release --no-build`：270 項測試全數通過（新增 3 項專屬測試，包含真實 lightdef 片段解析、PFIL 容器解碼、APT extraA 點位轉換與世界坐標斷言）。
+- 遵守規範：未修改其他代理之 formation 檔案，未存取遊戲安裝目錄，未提交／push。
+
+## 真實隊形與 3D 部隊顯示（2026-10-07 Codex；不提交／不推送／不改 Git 歷史）
+
+- 任務：使用指定 TEMP 唯讀 formdef.dau，完成 1..20 人幾何、3D 顯示士兵與旗幟、選取歸部隊及保存隔離。避開另一代理 local-lights／NativeLightSource／NativeAptLightPoints／NativeLightTests 四檔；不存取安裝遊戲目錄。
+- 新證據：C# probe 使用 `GameLZSS.DecompressPfil` + `FromFormDefText`，PFIL 2118 bytes→10856 bytes；SHA256 `221cafd844971acc7d175ba1a578d89af426ba71e9cab368b147865d5282a54f`。id0 `All_Haufen` 有9線段，與新增 NativeDefault 幾何摘要完全一致；parser 不需變更。
+- 已接：宿主優先讀所選資料來源的 formdef，缺表時用已核對的 id0 摘要；3D 投影才展開成員，Figure alias 與 Ver…Ico/objdefn0 均支援，共用原放置 SourceFile/ObjectIndex。2D 維持一圖示，保存來源仍是 placement session。
+- 新截圖結果：固定原點(512,245)、Angle0、spacing320，原生9線段直接預測十人；不擬合比例或平移，僅最佳一對一配對。九個清楚錨點 RMS45.653px／最大81.424px；含遮擋低信心候選十點 RMS44.149px。不等同「遊戲實際生成後位置已還原」，碰撞／移動未模擬。
+- 已解決：新測試CS8714／兩個xUnit2031修正後build零警告；GL選取斷言需建立隱藏分頁ListView handle，補上後通過。probe無apphost直接執行已建DLL；重新輸出ALR24幀與PNG配準，錨點／NCC／frame16與前次一致。
+- 最終驗證：`DOTNET_ROLL_FORWARD=Major`、`ARM_OPENGL_REQUIRED=1`；`dotnet build AgainstRomeModifier.slnx -c Release -p:UseAppHost=false` 0警告0錯誤；`dotnet test AgainstRomeModifier.slnx -c Release --no-build --no-restore --logger "console;verbosity=quiet"` host637通過／22略過、modules270通過，0失敗（含另一代理最新光源改動）。陣形共41例，新增1..20人幾何／旋轉與結構摘要21例；真GL宿主6士兵+旗幟、共用pick、objdefn0別名／id／namedef／alias-only範本、保存後單一spawn且SDL與DATA不增物件皆通過。本任務diff whitespace檢查通過。起始HEAD71e9e29；最後發現另一代理已提交光源為2d75435，本代理未執行任何commit/push或Git歷史操作，保留對方工作。
+
 ## 3D 待機動畫（2026-10-07 Codex；本次不提交、不改 Git 歷史）
 
 - 已實作：`GetAnimation` 快取 ALR 動畫 0 與 APT 完工無損序列；解析 objdef 欄2 alen、6 anadd、45 afram（hex）。ALR 保守判斷 palty=1 或 anadd>=0 且 afram非零，另排除 mltyp=2 樹木；每格使用原地面錨點 convention，`GetSprite` 選格不變。

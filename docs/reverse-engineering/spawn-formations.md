@@ -1,16 +1,17 @@
 # 部隊生成隊形：原生取樣算法與截圖證據
 
-2026-10-07 Codex。僅使用 repository EXE 與指定 TEMP 離線副本；未讀取遊戲安裝目錄、未提交或變更 Git 歷史。依本次「只新增指定檔案」限制，本文件兼記本次里程碑，未修改 AI_HANDOFF.md。
+2026-10-07 Codex。僅使用 repository EXE 與指定 TEMP 離線副本；未讀取遊戲安裝目錄、未提交或變更 Git 歷史。後續取得真實 formdef.dau，已更新 AI_HANDOFF.md 並接入 3D 顯示。
 
 ## 狀態與缺口
 
 - **static-verified**：ScenarioSpawn 生成參數、formDef=0、1–20 人上限；formatio.dat 保存格式；formdef.dau 幾何欄位；成員線段取樣、spacing 倍率、世界旋轉；旗幟額外建立。
 - **experimental**：game-units.png 的旗幟原點與九個清楚士兵錨點，以原 ALR 樣板配準；第十個被旗幟遮擋，只能保留低信心候選。
+- **data-verified**：真實 formdef.dau 的 id0 為 `All_Haufen`、9 線段；既有 parser 成功解析，NativeDefault 摘要與真實解析結果逐線段相同。1..20 人依 EXE 中點取樣與角度旋轉。
 - **candidate**：從同一截圖反推、量化的十人偏移（下表）。這是校準資料，**不是獨立驗證原生預設隊形**。
 - **rejected**：直接把 Count 10 畫成置中的四欄、128 間距、逐列填滿矩形；最佳一對一配對 RMS 仍為 52.093 px。
-- **尚未完成**：指定離線副本沒有 `SYSTEM/DATA_MP/DEFAULTS/formdef.dau`。因此不能確認 id 0 名稱、原始線段內容、任意 N 的實際列／欄數及固定相鄰間距，也不能提供獨立的原生十人座標預測誤差。已向使用者詢問離線副本路徑。
+- **尚未完成**：原生幾何目標仍不吻合十人截圖；九個清楚錨點最佳配對 RMS **45.653 px**（詳細下節）。尚未模擬生成時放置／碰撞、成員排序、移動到整數目標、runtime 隊形切換；不能宣稱實際遊戲開局畫面逐點重現。
 
-純函式實作接受外部定義，沒有硬編碼假定的平方根／四欄算法；尚未接到編輯器繪製流程。取得 formdef.dau 後，解析 id 0 即可沿已實作算法算出每個 N 的偏移，再以本截圖驗證。不得以測試通過宣稱缺失的 default 資料已解決。
+純函式接受外部定義，沒有平方根／四欄假設。宿主優先讀所選來源 `SYSTEM/DATA_MP/DEFAULTS/formdef.dau`（GameLZSS 解壓），缺表時用已核對的 id0 九線段摘要。3D 以目標陣形展示部隊；這是靜態幾何預覽，實際生成後碰撞位置尚未還原。2D 保留單一圖示。
 
 ## 證據來源
 
@@ -19,6 +20,7 @@
 - ENDL_000、ENDL_005 兩份 formatio.dat 解壓 payload 完全相同，皆為 350008 bytes，全部槽位 inactive。
 - `%TEMP%/ArmGameCompare_20261007/game-units.png`（1024×768）SHA256：`3dd98158f0787bc94e3ea756e31a3c5d8e1ec1d404fc0f0af1c79ecf296acc18`。
 - `%TEMP%/ArmNativeAssets_20261007/{alr.dat,objdef.txt,cl_alr.txt,cl_epara.txt}`。
+- `%TEMP%/ArmNativeAssets_20261007/formdef.dau`：2118 bytes PFIL→10856 bytes；SHA256 `221cafd844971acc7d175ba1a578d89af426ba71e9cab368b147865d5282a54f`。未修改此唯讀副本，測試只收錄有效幾何的短結構摘要。
 - `%TEMP%/ArmInGameEvidence_20261007/arm_scenario.json` 核對 GER_INF01、Count 10、Angle 0、(9856,9344)。未引用其中的個人 runtime ID。
 
 已讀 AGENTS.md、AI_HANDOFF.md、reverse-engineering/README.md；搜尋 docs、src.Shared、Modules、tools/re 的 `Formation|formatio|anzv|SpawnUnit`，參考 endless-mode-ai.md、exe-functions.md、native-scene-rendering.md、colors-detail-animation.md、map-editor-spec.md、map-editor-user-guide.md。Git 起始 HEAD `876e9d9`，分支「主要開發」，原有未追蹤 `.claude/`，沒有 tracked diff；保留既有及其他代理工作。
@@ -97,6 +99,43 @@ cl_epara：RotationFaktor=500.0、SpeedFaktor=0.7、PathDepth=2、CollisionWaitT
 
 ## 截圖校準與誤差
 
+### 真實 id0 與獨立預測（後續 2026-10-07 Codex）
+
+`FromFormDefText` 不需修正；真實 CSV 共96欄，幾何83欄符合既有結構。有效線段如下，剩餘11組全零：
+
+| j | startX,startZ | endX,endZ |
+|---|---|---|
+| 0 | .05,-.05 | .20,.05 |
+| 1 | -.20,.15 | -.05,.05 |
+| 2 | .20,-.20 | .05,-.15 |
+| 3 | -.10,-.05 | -.20,-.20 |
+| 4 | .30,-.15 | .40,.10 |
+| 5 | -.25,.25 | -.40,.05 |
+| 6 | .05,.30 | .30,.20 |
+| 7 | .34,-.25 | .10,-.34 |
+| 8 | -.20,-.34 | -.40,-.15 |
+
+重新從 ALR 輸出24幀對 game-units.png 配準，得到與下方舊量測相同的錨點／frame16／NCC；截圖 SHA256 亦相同。用 C# parser 的十人 offset、固定 Angle0／spacing320／原點(512,245)投影；**不擬合** spacing、平移或旋轉，只最佳配對未知成員識別。
+
+| 量測 px | 配對預測 px | 距離 px |
+|---|---|---|
+| 384,277 | 438.800,268.800 | 55.410 |
+| 448,245 | 470.000,247.600 | 22.153 |
+| 480,325 | 500.080,288.640 | 41.536 |
+| 512,277 | 505.200,260.000 | 18.310 |
+| 512,181（遮擋） | 514.000,208.000 | 27.074 |
+| 545,229 | 531.600,236.000 | 15.118 |
+| 576,181 | 561.200,206.400 | 29.397 |
+| 608,261 | 568.000,247.000 | 42.379 |
+| 640,213 | 582.800,231.600 | 60.148 |
+| 672,261 | 590.800,254.960 | 81.424 |
+
+含遮擋候選十點：RMS **44.149 px**、平均39.295、最大81.424；僅九個清楚錨點（允許一個預測不配對）：RMS **45.653 px**、平均40.653、最大81.424。結果排除「靜態中點目標就是此截圖最終位置」的宣稱；目前不能判定是碰撞、生成位置、移動階段或其他 runtime 定義。**沒有用截圖反推偏移替換原生算法**。
+
+3D 顯示：Figure alias 使用對應 NameDef；Ver…Ico 範本的 `objdefn0` 解析別名／NameDef／數字id，再查原 objdef 名稱。Figure 的旗幟優先取 SDL 部隊範本；缺範本時只用資產中存在的該民族 `KamIco00`。EXE 旗幟選擇實際經由成員 team 與派系／階段表（`0x5244C5→0x511F80→0x46A960`），不同 team 民族、時代變體與平民旗幟未完整模擬。旗幟在 spawn 點，成員不另存 SDL／DATA，所有顯示物件共用原 `ARM_Placed.sdl/-5000-index` 識別；點選選取同一 placed-list 列。
+
+### 舊截圖校準（非 default 算法驗證）
+
 ALR `gerinf01.alr`，動畫0、方向14、team palette0；逐一搜尋24格，最佳皆為 frame16。以下位置是 **ALR 地面錨點**，不是用陰影中心或武器尖端量測。投影：`screen=(512,245)+(0.5*(dx-dz),0.25*(dx+dz))`。
 
 | 士兵 | 校準候選世界 dx,dz | 預測 px | 量測 px | NCC | 距離誤差 px |
@@ -130,8 +169,14 @@ $env:DOTNET_ROLL_FORWARD='Major'
 dotnet run --project tools/re/formation-probe -c Release -p:UseAppHost=false -- "$env:TEMP/ArmNativeAssets_20261007/alr.dat" "$env:TEMP/ArmFormationScreenshot_NEW"
 python tools/re/formation-probe/match.py "$env:TEMP/ArmGameCompare_20261007/game-units.png" "$env:TEMP/ArmFormationScreenshot_NEW"
 python tools/re/formation-probe/compare_grid.py
+# 真實 parser／1..20人偏移與截圖殘差（無 apphost，直接執行 DLL）：
+dotnet build tools/re/formation-probe -c Release -p:UseAppHost=false
+dotnet tools/re/formation-probe/bin/Release/net8.0/formation-probe.dll --layout "$env:TEMP/ArmNativeAssets_20261007/formdef.dau" | Set-Content -Encoding UTF8 "$env:TEMP/ArmFormationLayout_20261007.json"
+python tools/re/formation-probe/compare_native.py "$env:TEMP/ArmFormationLayout_20261007.json"
 ```
 
-已驗證：`DOTNET_ROLL_FORWARD=Major`；`dotnet build AgainstRomeModifier.slnx -c Release -p:UseAppHost=false`：0警告／0錯誤；`dotnet test tests/AgainstRomeMapEditor.Modules.Tests -c Release --no-build`：246通過／0失敗／0略過，新增 FormationLayout 20 cases。其他代理在本次期間提交 local lights（HEAD變為 cac6c7e）；因此重新 build/test，以上為合併工作目錄的最後結果。本代理未執行任何 commit/push。測試涵蓋 midpoint、跨線段邊界、N=0/1/20、四方向與角度繞回、兩軸手性、spacing倍率、不可變 snapshot、InvariantCulture 解析及非法輸入。幾何 fixture 是合成定義，沒有偽裝為原版 id0。
+前一輪（未接3D時）的歷史驗證：`DOTNET_ROLL_FORWARD=Major`；solution Release build 0警告／0錯誤；Modules tests 246通過。當時其他代理提交 local lights（HEAD變為 cac6c7e），本代理未執行 commit/push。原有測試涵蓋 midpoint、跨線段邊界、N=0/1/20、四方向與角度繞回、兩軸手性、spacing倍率、不可變 snapshot、InvariantCulture 解析及非法輸入；當時幾何 fixture 為合成定義。
 
-下一步：取得離線 formdef.dau，核对 id0 的 S／20組線段，列出 N=1..20 的實際點分布；用同一旗幟原點投影並比較九個清楚錨點，第十點另取不遮擋截圖。再驗證不同角度、步兵／騎兵、不同人數與生成後穩定狀態，確認是否需要成員排序、整數目標或碰撞修正。補齊前不宣稱「預設隊形已還原」。
+下一步：追蹤生成時放置與碰撞，以及實際 runtime formDef／spacing／成員目標；取得十人穩定後及遮擋點可見的新截圖。驗證不同角度、步兵／騎兵、人數與 team 民族旗幟變體。純幾何目標與 host 展開／保存隔離測試通過，不代表遊戲生成位置已完全還原。
+
+後續最終驗證（2026-10-07 Codex）：設定 `DOTNET_ROLL_FORWARD=Major`、`ARM_OPENGL_REQUIRED=1`；`dotnet build AgainstRomeModifier.slnx -c Release -p:UseAppHost=false` 0警告／0錯誤；`dotnet test AgainstRomeModifier.slnx -c Release --no-build --no-restore --logger "console;verbosity=quiet"` host637通過／22略過、Modules270通過，0失敗，包含另一代理最新光源改動。本次新增Modules21例（真實結構摘要、1..20人界限／段落取樣／旋轉）與host1例：真正GL六士兵加旗幟、sprite picking共用部隊識別、三種objdefn0及alias-only範本解析、保存仍一筆Count6 spawn且SDL／DATA bytes不變。本代理未執行commit/push；起始HEAD71e9e29，最後另一代理已提交光源為2d75435。未改另一代理指定四檔，未存取安裝目錄。

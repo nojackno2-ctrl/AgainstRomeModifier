@@ -174,7 +174,7 @@ internal sealed partial class MapEditorForm : Form
             .Where(item => !ObjDefNames.IsLandscape(_objdefNames.GetValueOrDefault(item.TypeId)))
             .Select(item => new MapSceneObject(_objdefNames.GetValueOrDefault(item.TypeId) ?? "", item.X, item.Y, item.Z, item.Team, "DATA/objects.dat", -100000 - item.Slot));
         if (_editMode != EditMode.Nature) level = level.Concat(NatureDisplayObjects());
-        return effective.Concat(level).ToArray();
+        return ExpandTroopsFor3D(effective).Concat(level).ToArray();
     }
 
     /// <summary>記憶體中的物件世界座標以已存檔的 refpos 為準；暫存平移只在呈現時加上。</summary>
@@ -203,6 +203,7 @@ internal sealed partial class MapEditorForm : Form
         Width = 1440; Height = 900; MinimumSize = new Size(1100, 700); StartPosition = FormStartPosition.CenterScreen;
         BackColor = WinFormsTheme.Window; ForeColor = WinFormsTheme.TextPrimary; Font = WinFormsTheme.CreateFont(9F);
         _gamePath = gamePath;
+        _formationDefinition = LoadFormationDefinition(gamePath);
         _selected = selectedMap;
         _gameTextErrors.ContainerControl = this;
         _floorTextures = new FloorTextureLibrary(Path.Combine(gamePath, "floortex.dat"));

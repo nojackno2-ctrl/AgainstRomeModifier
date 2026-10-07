@@ -6,9 +6,25 @@ namespace AgainstRomeMapEditor.Modules.Placement;
 /// <summary>formdef.dau 的一組 (startX,startZ,endX,endZ)，座標尚未乘上 spacing。</summary>
 public readonly record struct FormationLayoutSegment(Vector2 Start, Vector2 End);
 
-/// <summary>不可變的原生線段定義；不含檔案存取，不內建未取得的遊戲隊形資料。</summary>
+/// <summary>不可變的原生線段定義；不含檔案存取。</summary>
 public sealed class FormationLayoutDefinition
 {
+    /// <summary>
+    /// 原版 id 0 All_Haufen 的九條有效線段（2026-10-07 離線 formdef.dau）。
+    /// 缺少外部表格時使用此幾何摘要；有表格時宿主優先解析它。不是截圖反推的座標。
+    /// </summary>
+    public static FormationLayoutDefinition NativeDefault { get; } = new([
+        new(new(.05f, -.05f), new(.20f, .05f)),
+        new(new(-.20f, .15f), new(-.05f, .05f)),
+        new(new(.20f, -.20f), new(.05f, -.15f)),
+        new(new(-.10f, -.05f), new(-.20f, -.20f)),
+        new(new(.30f, -.15f), new(.40f, .10f)),
+        new(new(-.25f, .25f), new(-.40f, .05f)),
+        new(new(.05f, .30f), new(.30f, .20f)),
+        new(new(.34f, -.25f), new(.10f, -.34f)),
+        new(new(-.20f, -.34f), new(-.40f, -.15f)),
+    ]);
+
     public FormationLayoutDefinition(IEnumerable<FormationLayoutSegment> segments)
     {
         ArgumentNullException.ThrowIfNull(segments);
