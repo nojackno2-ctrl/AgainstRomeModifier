@@ -491,6 +491,7 @@ internal sealed class Map3DViewControl : GLControl
         int radius = Math.Max(0, BrushSize / 2);
         int x0 = Math.Max(0, _hoverX - radius), y0 = Math.Max(0, _hoverY - radius);
         int x1 = Math.Min(_dimension - 1, _hoverX + radius) + 1, y1 = Math.Min(_dimension - 1, _hoverY + radius) + 1;
+        if (SelectionTiles is { } selection) { x0 = selection.Left; y0 = selection.Top; x1 = selection.Right; y1 = selection.Bottom; }
         var perimeter = new List<System.Numerics.Vector3>();
         for (int x = x0; x <= x1; x++) perimeter.Add(CursorPoint(x, y0));
         for (int y = y0 + 1; y <= y1; y++) perimeter.Add(CursorPoint(x1, y));
@@ -502,6 +503,8 @@ internal sealed class Map3DViewControl : GLControl
         DrawColorGeometry(_cursorVao, PrimitiveType.LineLoop, _cursorVertexCount, matrix, new System.Numerics.Vector4(1f, .94f, .47f, 1f), 1);
         GL.Enable(EnableCap.DepthTest);
     }
+
+    internal Rectangle? SelectionTiles { get; set; }
 
     private System.Numerics.Vector3 CursorPoint(int tileX, int tileY)
         => new(tileX, _heights!.SampleHeight(tileX, tileY) + .15f, tileY);

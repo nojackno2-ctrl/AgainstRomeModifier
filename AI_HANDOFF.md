@@ -2,6 +2,7 @@
 
 ## 六項建議總目標（2026-10-08 Codex，active）
 
+- 區域工具完成：矩形／同材質四向連通區／有寬度土路折線，PaintTiles一次原生烘焙與一組undo，拒絕保留內容與redo；工具列對話框及2D/3D框選矩形提示。首build誤用X/Z，改WorldX/WorldZ後Release build零警告/零錯誤；mod3例、宿主save/reload1例及真實TEMP折線示範1例通過（ARM_DEMO_ACCEPTANCE=1，證據ArmDemoAcceptance_20261008_06，來源hash不變，3D圖已目視）。full test host655通過/22略過、modules286通過，0失敗；最後補取消時忽略未放開滑鼠、重載清框選與UI圖，重建仍零警告/零錯誤，宿主實際2D滑鼠框選／Escape／save-reload與dialog render2例通過。TEMP/ArmRegionTools_20261008/region-tools.png已目視可讀；3D滑鼠輸入未獨立實測，遊戲內仍未驗收。見docs/map-editor-region-tools.md。聚落／森林可保存配置、空白圖、AI局部／鎖定及效能尚待完成。
 - 使用者要求完成全部建議：示範地圖與遊戲內驗收、地圖檢查面板、道路／區域／框選／批次／配置工具、平坦與空白地圖區分、AI 局部重做與區域鎖定、真實大型地圖效能量測。上一階段提交1c90a20完成編輯器示範驗收，不能代表全部完成。
 - 已完成純 MapDiagnostics、地圖檢查分頁、雙擊定位物件／事件與儲存前檢查；碰撞／水位連通估計只作警告，持久ID／座標／事件錯誤才拒存。Release build零警告／零錯誤；ARM_COMPARE_GAME=TEMP副本、ARM_OPENGL_REQUIRED=1，完整test host652通過/22略過、modules280通過，0失敗。纯模組5例、宿主2例驗證；TEMP/ArmMapDiagnostics_20261008 中英1100×760畫面已目視，摘要換行與完整問題詳細區可讀。
 - 已向使用者提出遊戲內驗收所需的安裝目錄例外授權（先備份自製槽位）；回覆前仍遵守 AGENTS 禁止存取安裝目錄。其餘開發繼續，不將整體目標縮小。

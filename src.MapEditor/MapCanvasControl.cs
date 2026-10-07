@@ -238,12 +238,15 @@ internal sealed class MapCanvasControl : Control
         int radius = Math.Max(0, BrushSize / 2);
         int x0 = Math.Max(0, _hoverX - radius), y0 = Math.Max(0, _hoverY - radius);
         int x1 = Math.Min(_dimension - 1, _hoverX + radius), y1 = Math.Min(_dimension - 1, _hoverY + radius);
+        if (SelectionTiles is { } selection) { x0 = selection.Left; y0 = selection.Top; x1 = selection.Right - 1; y1 = selection.Bottom - 1; }
         var rect = new RectangleF(bounds.X + x0 * cellWidth, bounds.Y + y0 * cellHeight, (x1 - x0 + 1) * cellWidth, (y1 - y0 + 1) * cellHeight);
         using var fill = new SolidBrush(Color.FromArgb(55, 255, 255, 255));
         using var pen = new Pen(Color.FromArgb(235, 255, 240, 120), 2);
         graphics.FillRectangle(fill, rect);
         graphics.DrawRectangle(pen, rect.X, rect.Y, rect.Width, rect.Height);
     }
+
+    internal Rectangle? SelectionTiles { get; set; }
 
     protected override void OnMouseDown(MouseEventArgs e)
     {

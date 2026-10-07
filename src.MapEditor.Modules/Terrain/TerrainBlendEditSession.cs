@@ -81,6 +81,31 @@ internal sealed class TerrainBlendEditSession
     {
         string[] cornerBefore = _map.CornerMaterials.ToArray();
         IReadOnlyList<int> changedCorners = _map.PaintCircle(centerX, centerY, radius, materialId);
+        return BakeChanges(cornerBefore, changedCorners, materialId, rollbackStrokeOnFailure, autoBridge);
+    }
+
+    /// <summary>Paint all four corners of each selected tile, then bake once as an atomic stroke.</summary>
+    public TerrainBlendPaintResult PaintTiles(IReadOnlyCollection<(int X, int Y)> tiles, string materialId, bool autoBridge = false)
+    {
+        ArgumentNullException.ThrowIfNull(tiles);
+        if (string.IsNullOrWhiteSpace(materialId)) throw new ArgumentException("Material is required.", nameof(materialId));
+        if (tiles.Any(tile => tile.X < 0 || tile.Y < 0 || tile.X >= _map.TileDimension || tile.Y >= _map.TileDimension))
+            throw new ArgumentOutOfRangeException(nameof(tiles));
+        string[] before = _map.CornerMaterials.ToArray();
+        var changed = new HashSet<int>();
+        foreach (var tile in tiles)
+            foreach (var corner in new[] { (tile.X, tile.Y), (tile.X + 1, tile.Y), (tile.X + 1, tile.Y + 1), (tile.X, tile.Y + 1) })
+            {
+                int index = corner.Item2 * _map.CornerDimension + corner.Item1;
+                if (StringComparer.OrdinalIgnoreCase.Equals(_map.GetCorner(corner.Item1, corner.Item2), materialId)) continue;
+                _map.SetCorner(corner.Item1, corner.Item2, materialId);
+                changed.Add(index);
+            }
+        return BakeChanges(before, changed.ToArray(), materialId, false, autoBridge);
+    }
+
+    private TerrainBlendPaintResult BakeChanges(string[] cornerBefore, IReadOnlyList<int> changedCorners, string materialId, bool rollbackStrokeOnFailure, bool autoBridge)
+    {
         if (changedCorners.Count == 0) return TerrainBlendPaintResult.Success(Array.Empty<TerrainTextureChange>());
 
         var touched = new HashSet<int>(changedCorners);

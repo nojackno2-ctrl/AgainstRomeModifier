@@ -244,7 +244,7 @@ internal sealed partial class MapEditorForm : Form
         });
 
         var tools = new ToolStrip { GripStyle = ToolStripGripStyle.Hidden, Dock = DockStyle.Top, Padding = new Padding(10, 5, 10, 5), BackColor = WinFormsTheme.SurfaceRaised, ForeColor = WinFormsTheme.TextPrimary };
-        tools.Items.AddRange(new ToolStripItem[] { _lblTerrainGroup, _textureTool, _heightTool, _collisionTool, _natureTool, _placeTool, _sceneMoveTool, _terrainOperation, _terrainStrength, _resetTerrainButton, _blankTerrainButton, new ToolStripSeparator(), _view2dButton, _view3dButton, _3dDiagnosticsButton, _retryDisplayButton });
+        tools.Items.AddRange(new ToolStripItem[] { _lblTerrainGroup, _textureTool, _heightTool, _collisionTool, _natureTool, _placeTool, _sceneMoveTool, _terrainOperation, _terrainStrength, _resetTerrainButton, _blankTerrainButton, _regionToolsButton, _boxSelectButton, new ToolStripSeparator(), _view2dButton, _view3dButton, _3dDiagnosticsButton, _retryDisplayButton });
 
         _paletteHeader = SectionHeader("地表繪製");
         var palettePanel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(10), BackColor = WinFormsTheme.Surface };
@@ -412,6 +412,8 @@ internal sealed partial class MapEditorForm : Form
         _undoButton.Click += (_, _) => Undo(); _redoButton.Click += (_, _) => Redo();
         _aiMapButton.Click += (_, _) => OpenAiMapDialog();
         _blankTerrainButton.Click += (_, _) => ApplyBlankTerrain(confirm: true);
+        _regionToolsButton.Click += (_, _) => RunRegionTool();
+        _boxSelectButton.Click += (_, _) => BeginBoxSelection();
 
         _btnLangZH.Click += (s, e) => {
             if (AgainstRomeModifier.Loc.CurrentLanguage != AgainstRomeModifier.Language.TraditionalChinese) {
@@ -474,6 +476,9 @@ internal sealed partial class MapEditorForm : Form
         LocalizeEvents(isEn);
         _aiMapButton.Text = isEn ? "AI Map Maker…" : "AI 製圖…";
         _blankTerrainButton.Text = isEn ? "Reset Flat Terrain…" : "重設平坦地形…";
+        _regionToolsButton.Text = isEn ? "Region tools…" : "區域工具…";
+        _boxSelectButton.Text = isEn ? "Box select" : "框選";
+        _boxSelectButton.ToolTipText = isEn ? "Drag a rectangle to select placed objects; Escape cancels." : "拖曳矩形選取放置物件；Escape 取消。";
         _blankTerrainButton.ToolTipText = isEn
             ? "Flatten the whole map just above the water level, paint one base material, clear blocked ground, and reset vertex colors / smoothing / lighting on Save. Settlements are kept."
             : "整張地圖整平到略高於水面、鋪單一基礎材質、清除阻擋區，儲存時重設頂點色、平滑遮罩與光照；聚落保留。";
@@ -593,6 +598,7 @@ internal sealed partial class MapEditorForm : Form
         try
         {
             _loading = true; string map = _selected.DirectoryPath;
+            _boxSelectButton.Checked = false; _boxStart = _boxEnd = null; ShowBoxSelection(null); UpdateContinuousStampPainting();
             _lastStampTile = null;
             var put = PutTextDocument.Load(Path.Combine(map, "TEXT", "US", "briefing.put"));
             _title.Text = put.GetValue("briefing_titel_1") ?? "";
@@ -712,6 +718,14 @@ internal sealed partial class MapEditorForm : Form
 
     private void PaintTexture(TexturePaintEventArgs e)
     {
+        if (_ignoreCancelledBoxStroke) return;
+        if (_boxSelectButton.Checked)
+        {
+            _boxStart ??= (e.X, e.Y); _boxEnd = (e.X, e.Y);
+            var start = _boxStart.Value;
+            ShowBoxSelection(Rectangle.FromLTRB(Math.Min(start.X, e.X), Math.Min(start.Y, e.Y), Math.Max(start.X, e.X) + 1, Math.Max(start.Y, e.Y) + 1));
+            return;
+        }
         if (TerrainLayerMode) { PaintTerrainLayer(e); return; }
         if (_editMode == EditMode.PlaceObject) { PlaceObjectAt(e); return; }
         if (_editMode == EditMode.Nature) { PaintNature(e); return; }
@@ -750,6 +764,12 @@ internal sealed partial class MapEditorForm : Form
     // 一次筆畫（滑鼠按下到放開）內觸及的所有格子合併為單一 undo 項目。
     private void CommitStroke()
     {
+        _ignoreCancelledBoxStroke = false;
+        if (_boxSelectButton.Checked && _boxStart is { } start && _boxEnd is { } end)
+        {
+            _boxStart = _boxEnd = null; _boxSelectButton.Checked = false;
+            ApplyRegionTool(TerrainRegionOperation.SelectObjects, [start, end], 1);
+        }
         _lastStampTile = null;
         _flattenTarget = -1; _roughnessSeed = Random.Shared.Next(); _lastTerrainTile = null; _terrainStrokeTiles.Clear();
         if (_natureSession.CommitStroke()) UpdateEditorState();
@@ -861,7 +881,11 @@ internal sealed partial class MapEditorForm : Form
 
     private void SetEditMode(EditMode mode)
     {
+        bool cancelledBox = _boxSelectButton.Checked && _boxStart.HasValue;
+        _boxSelectButton.Checked = false; _boxStart = _boxEnd = null;
+        ShowBoxSelection(null);
         CommitStroke();
+        _ignoreCancelledBoxStroke = cancelledBox;
         _editMode = mode;
         UpdateContinuousStampPainting();
         _textureTool.Checked = mode == EditMode.Texture;
@@ -1223,6 +1247,8 @@ internal sealed partial class MapEditorForm : Form
 
     private void UpdateEditorState()
     {
+        _regionToolsButton.Enabled = _selected?.IsCustom == true && _terrainBlendSession is not null;
+        _boxSelectButton.Enabled = _selected?.IsCustom == true && _terrainBlendSession is not null;
         InvalidateMapDiagnostics();
         bool editable = _selected?.IsCustom == true; _saveButton.Enabled = editable && IsDirty; _gamePreviewButton.Enabled = _selected is not null; _undoButton.Enabled = editable && (TerrainLayerMode ? _terrainLayers?.CanUndo == true : _terrainBlendSession?.CanUndo == true); _redoButton.Enabled = editable && (TerrainLayerMode ? _terrainLayers?.CanRedo == true : _terrainBlendSession?.CanRedo == true); _resetTerrainButton.Enabled = editable && ((_texturesDocument is not null && TextureDirty()) || _terrainLayers?.IsDirty == true || _resetAuxiliaryLayers);
         _heightTool.Enabled = editable && _terrainLayers is not null; _aiMapButton.Enabled = editable && _terrainLayers is not null; _blankTerrainButton.Enabled = editable && _terrainLayers is not null; _placeTool.Enabled = editable && _objectCatalog.Count > 0; _natureTool.Enabled = editable && _natureStoreAvailable;

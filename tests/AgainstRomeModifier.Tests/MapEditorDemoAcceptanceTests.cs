@@ -49,9 +49,13 @@ public sealed partial class MapEditorSaveTransactionTests
             SetWorkflowMode(form, "Texture");
             var palette = GetField<ListBox>(form, "_palette");
             palette.SelectedItem = palette.Items.Cast<object>().Single(item => item.ToString()!.Contains("土路") || item.ToString()!.Contains("Dirt Path"));
-            foreach (var (x, y) in Enumerable.Range(34, 11).Select(x => (x, 33)).Concat(Enumerable.Range(34, 4).Select(y => (44, y))))
-                Invoke(form, "PaintTexture", new TexturePaintEventArgs(x, y, "", ""));
-            Invoke(form, "CommitStroke");
+            form.RegionDialogRunner = dialog =>
+            {
+                dialog.Operation = TerrainRegionOperation.Road;
+                dialog.VerticesText = "34,33\r\n44,33\r\n44,37"; dialog.RoadWidth = 3;
+                return DialogResult.OK;
+            };
+            form.RunRegionTool();
             var textures = GetField<BodenTexturesDocument>(form, "_texturesDocument");
             Assert.Contains(textures.Textures, name => name.StartsWith("PFAD", StringComparison.OrdinalIgnoreCase));
             string[] nextTextures = textures.Textures.ToArray();
