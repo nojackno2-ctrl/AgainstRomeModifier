@@ -1,5 +1,32 @@
 # AI Handoff - Live Project Memory
 
+## 交接給下一位 AI（2026-10-07 Claude；地圖編輯器，已停止）
+
+使用者指示：「結束目前的進度後停止，寫交接，我要給其他 AI 繼續設計」。Claude 已停止，工作樹乾淨（僅使用者自建、未追蹤的 `.claude/settings.local.json`，不要提交）。所有提交只在本機分支 `主要開發`，未 push。
+
+**目前目標（使用者 /goal）**：先針對地圖編輯器本身開發，讓它能創造更豐富的地圖。**設計原則（使用者明示）**：地圖編輯器是方便玩家製作地圖，很多設定應由編輯器自己完成，不要要求玩家理解過渡圖塊、水面高度等底層規則；只有自動化無法處理時才提示。
+
+**使用者授權與環境**
+- 已授權存取遊戲目錄 `C:\Program Files (x86)\Against Rome`（取代 AGENTS.md 舊限制）；測試地圖只用 `MAPS\ENDL_005`「Claude Test 1b」，改動前備份在 `%TEMP%\ArmGameBackup_20261007_140419`，測完以備份覆蓋還原（目前已還原、雜湊 0 差異）。`SAVE\ESAVE_000` 是測試存檔（Remove-Item 被工具路徑保護擋下，未刪）。
+- 寫入遊戲目錄的指令必須以 `DOTNET_ROLL_FORWARD=Major ARM_GAME_PATH=` 開頭（使用者在 `.claude/settings.local.json` 允許此前綴；其他寫入會被 auto mode 擋）。修改／刪除權限設定會被判定為自我修改而拒絕，須由使用者自己改。
+- 遊戲已用修改器 CLI 套用英文介面：`dotnet AgainstRomeModifier.dll apply --enable ToEnglish --game <path>`（還原：`restore --language`）。
+- 遊戲操作（computer-use）：用 `open_application("Against Rome")` 啟動；**不要縮小再還原**（全螢幕畫面會錯亂，需重開）；輸入法 TextInputHost 擋在前景時畫面全黑，需使用者關閉。點擊須 mouse_move + down/up；選單載入前點擊會誤觸 EXIT GAME。主選單 OPEN-ENDED (503,398) → 部族 (190,380) → 下一步 (925,692) → (920,690) → 地圖清單 Claude Test 1b (292,342) → 開始 (920,690)；遊戲內選項 (755,16)、前往主屋 (905,668)；小地圖 tile→座標約 (828+x·94/64−y·83/64, 663+x·47/64+y·40/64)；捲動約 1470 px/s。
+- 遊戲內驗收輔助：`tests/AgainstRomeModifier.Tests/InGameAcceptanceScenarioTests.cs`（ARM_GAME_PATH＋ARM_INGAME_MAP＋ARM_INGAME_SCENARIO=victory|defeat|terrain，以真正 MapEditorForm 存檔寫入）。
+
+**本輪完成（Claude，`4e8c510..329cf81`，每項皆有測試）**
+- 編輯器：高 DPI（AutoScaleMode.Dpi，AI 對話框除外）、`--map` 直達範圍、GL 資源釋放修正（啟動器返回選單錯誤）、離屏 GL 擷取與真實 OpenGL/選取/效能測試、3D fallback、對話框截字。
+- 遊戲內已驗證：區域條件勝利、計時訊息、存讀檔後失敗事件、印章道路、散佈森林、16 單位深的湖（6 單位太淺幾乎看不到）。
+- 地形豐富化：9×9／15×15 筆刷、粗糙化、水域工具（自動水面＝全圖最低點−1、不淹沒既有地形）、L 系列地區材質 61 種（四角顏色推斷過渡配對）、4U 角點遮罩命名族（01–14，原被忽略 308 張）、自動過渡中介材質（最多 2 圈，預設開）、圖塊印章（道路/河流/岩壁/地板）、自然物件密度散佈＋同地區混合＋清單只列地圖地區（Ger/Hun/Kar/Ita/Bri）、材質調色盤依此地圖適用度排序並隱藏難以銜接者。
+- 真實素材報表（需 ARM_GAME_PATH，唯讀遊戲、寫 TEMP）：`tests/AgainstRomeModifier.Tests/MapEditorAllMaterialsTests.cs`（每種材質×筆刷、配對矩陣、隨機點成功率、原版硬邊統計、圖塊系列統計、L 推斷、調色盤適用度、地景地區）。
+- 驗證：Release build 0 警告/0 錯誤；`dotnet test` 宿主 593 通過/21 略過、modules 57 通過，共 650 通過/0 失敗。
+
+**建議下一步（依「編輯器自動完成」原則）**
+1. 圖塊印章自動化：印章圖塊（道路等）與周圍材質不檢查過渡；可依地圖地區篩選印章清單（隱藏其他地區 L 圖塊），並研究道路圖塊（WEG_H/V、PFAD 方向編號）自動依筆畫方向選片。
+2. 剩餘無法銜接材質 BS BU B4 B3 BG BR BO（原版族形狀不齊，如 4U13 缺形狀 8）：可在調色盤自動隱藏或改以整片填充工具處理；未支援 4S/4V/5T/4E/3T/2T 系列。
+3. 遊戲內尚未近看：地區材質/自動過渡邊界外觀、粗糙化丘陵、大量散佈的 DATA 槽位上限與效能。
+4. 讀檔後計時事件觸發時間（設定 45 秒、實際 0:58）語意未查；部隊死亡、重複事件、同 tick 多事件、其他部族、多人未實測。
+5. AI 製圖依使用者指示暫停（AiMapPlanningDialog 未做 DPI；river 缺 toLocation 被丟棄）。
+
 ## 最新指示與狀態（2026-10-07 Antigravity；遊戲修改器 CLI 模式完成）
 
 - 使用者要求「製作遊戲修改器CLI模式，讓AI代理人可以操作」。
@@ -96,14 +123,7 @@
 
 ## 恢復時優先處理（尚未完成）
 
-狀態（2026-10-07 Claude）：roadmap 第 1–3 階段完成；第 4 階段 AI 依使用者指示「先跳過」（真實生成→預覽→套用→儲存→重開已有一次 live 證據）；第 5 階段在 repository 內可做的已完成（高 DPI 模擬、真實 OpenGL 畫面／選取／效能、3D fallback、入口、關閉流程）。剩餘項目都需要使用者授權或決定：
-
-1. 遊戲內驗收（第 6 階段）：匯出地圖載入、原生材質/碰撞、物件/部隊、區域事件/勝敗、存讀檔、部族、多人、完整原版還原。AGENTS.md 禁止存取安裝目錄，必須由使用者另行授權或自行執行。
-2. AI 製圖：暫停中；恢復時處理 AiMapPlanningDialog 高 DPI（未改 AutoScaleMode）、水系 river 缺 toLocation 被丟棄的提示。
-3. 實體高 DPI 螢幕／跨螢幕 DPI 切換：本機 96 DPI，只有模擬證據。
-4. 空白地圖語意：目前「平坦範本」保留聚落/腳本；是否需要真正無聚落/無腳本地圖需使用者決定並經遊戲驗證。
-5. 已知小問題（未修）：Disable3DView 永久停用，同一表單內資源補齊後不會恢復 3D（每次開圖為新表單，影響小）；3D 不顯示通行覆蓋（僅 2D）。
-6. 整體目標未完成，不能標記 complete；push 需另行授權。
+以檔首「交接給下一位 AI」的「建議下一步」為準。舊條目更新：遊戲內驗收已取得使用者授權並部分完成（見上）；實體高 DPI 螢幕未驗證；空白地圖語意（平坦範本保留聚落/腳本）仍待使用者決定；Disable3DView 永久停用、3D 不顯示通行覆蓋為已知小問題；整體目標未完成，push 需另行授權。
 
 ## 文件與歷史
 
