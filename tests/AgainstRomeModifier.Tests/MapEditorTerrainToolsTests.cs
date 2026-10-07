@@ -25,7 +25,7 @@ public sealed partial class MapEditorSaveTransactionTests
             Type mode = typeof(MapEditorForm).GetNestedType("EditMode", BindingFlags.NonPublic)!;
             Invoke(form, "SetEditMode", Enum.Parse(mode, "Height"));
             var operation = GetField<ToolStripComboBox>(form, "_terrainOperation");
-            Assert.Equal(5, operation.Items.Count);
+            Assert.Equal(6, operation.Items.Count);
             operation.SelectedIndex = (int)TerrainHeightOperation.Roughen;
             var layers = GetField<TerrainHeightEditSession>(form, "_terrainLayers");
             byte[] before = layers.Heights.ToArray();
@@ -50,6 +50,40 @@ public sealed partial class MapEditorSaveTransactionTests
             _ = reopened.Handle;
             Invoke(reopened, "LoadSelectedMap");
             Assert.Equal(saved, GetField<TerrainHeightEditSession>(reopened, "_terrainLayers").Heights);
+        });
+    }
+
+    [Fact]
+    public void Water_operation_carves_below_the_water_surface_and_needs_a_water_level()
+    {
+        string map = CreateFixture(); // Waterlevel 120、Heightmapstep 4 → 水面 30、水底 24
+        RunInSta(() =>
+        {
+            using var form = new MapEditorForm(_root, new GameMapInfo("ENDL_005", map, true, "Water", "Test"));
+            _ = form.Handle;
+            Invoke(form, "LoadSelectedMap");
+            GetField<ComboBox>(form, "_brushSize").SelectedIndex = 2;
+            Type mode = typeof(MapEditorForm).GetNestedType("EditMode", BindingFlags.NonPublic)!;
+            Invoke(form, "SetEditMode", Enum.Parse(mode, "Height"));
+            var operation = GetField<ToolStripComboBox>(form, "_terrainOperation");
+            operation.SelectedIndex = 5;
+            GetField<ToolStripComboBox>(form, "_terrainStrength").SelectedIndex = 2;
+            var layers = GetField<TerrainHeightEditSession>(form, "_terrainLayers");
+            int size = layers.VertexSize, center = 130 * size + 130; // tile (32,32) 中心頂點
+            byte[] before = layers.Heights.ToArray();
+            Assert.True(before[center] > 30);
+            for (int pass = 0; pass < 8; pass++) { Invoke(form, "PaintTexture", new TexturePaintEventArgs(32, 32, "", "")); Invoke(form, "CommitStroke"); }
+            Assert.Equal(24, layers.Heights[center]);
+            Assert.Equal(before[0], layers.Heights[0]);
+            for (int pass = 0; pass < 8; pass++) Invoke(form, "Undo");
+            Assert.Equal(before, layers.Heights);
+
+            GetField<NumericUpDown>(form, "_waterLevel").Value = 0;
+            byte[] dry = layers.Heights.ToArray();
+            Invoke(form, "PaintTexture", new TexturePaintEventArgs(20, 20, "", ""));
+            Invoke(form, "CommitStroke");
+            Assert.Equal(dry, layers.Heights);
+            Assert.Contains("水面", GetField<ToolStripStatusLabel>(form, "_status").Text);
         });
     }
 }

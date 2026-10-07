@@ -9,7 +9,7 @@ internal sealed partial class MapEditorForm
         int operation = Math.Max(0, _terrainOperation.SelectedIndex), strength = _terrainStrength.SelectedIndex < 0 ? 1 : _terrainStrength.SelectedIndex;
         _terrainOperation.Items.Clear();
         if (_editMode == EditMode.Height)
-            _terrainOperation.Items.AddRange(isEn ? new object[] { "Raise", "Lower", "Smooth", "Flatten", "Roughen" } : new object[] { "升高", "降低", "平滑", "整平", "粗糙化" });
+            _terrainOperation.Items.AddRange(isEn ? new object[] { "Raise", "Lower", "Smooth", "Flatten", "Roughen", "Water (carve)" } : new object[] { "升高", "降低", "平滑", "整平", "粗糙化", "水域（挖到水面下）" });
         else
             _terrainOperation.Items.AddRange(isEn ? new object[] { "Block", "Passable" } : new object[] { "阻擋", "可通行" });
         _terrainOperation.SelectedIndex = Math.Min(operation, _terrainOperation.Items.Count - 1);
@@ -18,6 +18,18 @@ internal sealed partial class MapEditorForm
         _terrainStrength.SelectedIndex = strength;
         _terrainOperation.Visible = TerrainLayerMode;
         _terrainStrength.Visible = _editMode == EditMode.Height;
+    }
+
+    private const int WaterOperationIndex = (int)TerrainHeightOperation.Roughen + 1;
+    /// <summary>水域筆刷挖到水面下的深度（高度圖單位）。</summary>
+    internal const int WaterBedDepth = 6;
+
+    /// <summary>水面下 <see cref="WaterBedDepth"/> 的高度圖數值；水面太低（挖不出水）時回傳 -1。</summary>
+    private int WaterBedHeight()
+    {
+        if (_heightMapStep <= 0) return -1;
+        int surface = (int)MathF.Floor((float)_waterLevel.Value / _heightMapStep);
+        return surface - WaterBedDepth >= 0 ? Math.Min(255, surface - WaterBedDepth) : -1;
     }
 
     private int TerrainStrength => _terrainStrength.SelectedIndex switch { 0 => 2, 2 => 14, _ => 6 };
@@ -66,6 +78,16 @@ internal sealed partial class MapEditorForm
             float step = (_terrainLayers!.VertexSize - 1) / (float)dimension;
             float centerX = (tileX + .5f) * step, centerY = (tileY + .5f) * step;
             var operation = (TerrainHeightOperation)Math.Clamp(_terrainOperation.SelectedIndex, 0, (int)TerrainHeightOperation.Roughen);
+            if (_terrainOperation.SelectedIndex == WaterOperationIndex)
+            {
+                // 水域：整平到水面下固定深度；水面高度由 boden.ini 的 Waterlevel 與 Heightmapstep 換算為高度圖數值。
+                operation = TerrainHeightOperation.Flatten;
+                _flattenTarget = WaterBedHeight();
+                // 提示放在狀態列的持續通知（直接寫 _status 會被隨後的 UpdateEditorState 覆蓋）。
+                _terrainBlendNotice = _flattenTarget >= 0 ? null : AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English
+                    ? "Water level is too low to carve water; raise it in Map Properties." : "水面高度太低，無法挖出水域；請先在「地圖屬性」提高水面高度。";
+                if (_flattenTarget < 0) return (false, false);
+            }
             if (operation == TerrainHeightOperation.Flatten && _flattenTarget < 0)
                 _flattenTarget = _terrainLayers.Heights[Math.Clamp((int)MathF.Round(centerY), 0, _terrainLayers.VertexSize - 1) * _terrainLayers.VertexSize + Math.Clamp((int)MathF.Round(centerX), 0, _terrainLayers.VertexSize - 1)];
             return (_terrainLayers.PaintHeight(centerX, centerY, radiusTiles * step + 1, operation, TerrainStrength, _flattenTarget, _roughnessSeed).Count > 0, false);

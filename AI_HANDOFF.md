@@ -30,6 +30,7 @@
 
 ## 最新驗證與失敗紀錄
 
+- Claude（2026-10-07）：高度工具新增「水域（挖到水面下）」：整平到 floor(Waterlevel/Heightmapstep)−6；水面太低時以狀態列持續通知提示（初版直接寫 _status 會被 UpdateEditorState 覆蓋，測試抓到後修正）。表單測試（合成水面 30→水底 24、筆刷外不變、8 次復原回原狀、水面 0 不改地形且顯示提示）通過；full 宿主589/略過21、modules57，共646通過/0失敗。遊戲內水面顯示未驗證。另：4U13 等族形狀不齊（缺形狀 8），BS BU B4 B3 BG BR BO 仍無法以筆刷銜接，屬原版素材限制。
 - Claude（2026-10-07）：死路材質主因：原版 4U 有兩種命名，形狀式（89 族 10/11/20…）與角點遮罩式（JX/MX/WX 等 01–14，14 種四角組合）；舊 regex 只收形狀碼 1–4/6–9，876 張 4U 中 308 張被忽略、遮罩式 10–14 被誤判為形狀 1。修正：同族出現 0 開頭尾碼即視為遮罩式，四角以顏色推斷且須含兩材質；只給名稱模式（無貼圖）略過遮罩式。真實資料：4B 直接配對 44→80/756、ENDL_000 四角覆蓋 3065→3920、BJ 自動過渡 1×1 9→26、5×5 0→6。仍無任何過渡：BS BU B4 B3 BG BR BO。full 宿主588/略過21、modules57，共645通過/0失敗。
 - Claude（2026-10-07 15:55）：使用者要求用 CLI 把遊戲改成英文介面。`dotnet AgainstRomeModifier.dll features --category Language` → ID `ToEnglish`；`apply --enable ToEnglish --dry-run` 後正式套用成功（套用前修改器照常將相關檔案恢復為乾淨狀態，先前無其他已啟用修改）；`status` 顯示 ToEnglish=true、activeFeaturesCount=1、備份 missingCount=0；language.ini langpath=US/；遊戲主選單已為英文（OPEN-ENDED＝無盡模式，位置同前）。還原可用 `restore --language`。
 - Claude（2026-10-07 15:45）：使用者關閉輸入法面板後完成 terrain 示範區遊戲內檢視（夜晚）：地圖正常載入（遊戲重建快取約 60 秒）、示範訊息顯示；印章道路 weg1 呈現為自然泥土小路、未見方塊硬邊；茂密混合森林在遊戲中為不規則散佈的冷杉／灌木／松樹；粗糙化丘陵因夜晚且幅度小（約 56 世界單位）無法目視確認；自動過渡材質三塊皆為 BB 與周圍同色，無法目視區分。無當機。證據 `%TEMP%\ArmInGameEvidence_20261007\terrain`（森林截圖、測試時變更檔）。ENDL_005 13 個變更檔已以備份覆蓋，雜湊比對 0 差異；SAVE\ESAVE_000 仍為先前測試存檔。
