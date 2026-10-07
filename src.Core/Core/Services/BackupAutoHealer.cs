@@ -115,7 +115,7 @@ internal sealed class BackupAutoHealer
                 .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
             foreach (string file in Directory.GetFiles(mapsPath, "team.dat", SearchOption.AllDirectories))
             {
-                if (CustomMapManifest.IsCustomMapDirectory(Path.GetDirectoryName(file)!)) continue;
+                if (CustomMapManifest.IsCustomMapFile(mapsPath, file)) continue;
                 string relativePath = Path.GetRelativePath(normalizedGamePath, file).Replace('\\', '/');
                 string backupPath = file + ".bak";
                 string loadPath = File.Exists(backupPath) ? backupPath : file;

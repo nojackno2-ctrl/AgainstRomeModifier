@@ -23,7 +23,8 @@
 | CP1251、文字常值限制、多行簡報 | Phase1與新MapTextEscapingTests、真正表單MapEditorTextSaveTests | 單值引號/反斜線/tab安全round-trip、escaped bytes限制、NUL拒絕、原行保留；輸入CP1251即時提示，拒存保留bytes/dirty，修正可retry；遊戲內文字呈現仍待驗收 |
 | 環境參數與未知行保留 | 真正表單三地區（en-US/de-DE/fr-FR）七值、Heightmapstep、雨滴、dirty、儲存／重開與重存bytes相同測試 | 修正依Windows地區讀錯數值及寫出逗號問題；未知行保留。合成小數案例不證明遊戲接受所有小數參數 |
 | 聚落移動、複製、刪除、重新編號 | SdlSceneEditService／SdlDocument，Phase1 多項測試 | 合成路徑已有證據；遊戲內仍缺 |
-| 自製圖不進備份基準 | `GameDirectoryBackupLoader`、`BackupAutoHealer` 排除 marker-backed 目錄 | 有實作；核對測試及完整還原保留／刪除行為 |
+| 自製圖不進備份基準 | `CustomMapBackupTests` 鎖檔、005/999及nested案例；兩backup loader統一判定擁有者marker | 修正子目錄team.dat誤納入問題；不讀自製team、不產bak、已有bak保留；原版基準正常 |
+| 完整還原保留／刪除自製圖 | `ModifierForm.RestoreAll`直接呼叫`PatchEngine.RestoreOriginalFiles`，無選項 | 規格§1.5尚未實作；須補預設保留與受控刪除流程，並驗證失敗時的資料完整性 |
 | AI 修補涵蓋新 ENDL 圖 | `EndlessAiOrchestrator` 動態列舉 ENDL_??? | 有實作；需核對額外槽位 Detect／Apply 的專屬測試 |
 | 地形、材質、通行、歷史／儲存交易 | 驗收矩陣列出的 session、真正表單及 AI 跨模式測試 | 合成路徑已驗證；原版輸出仍有遊戲內 gate |
 | 自然物件／人物／部隊／建築與事件 | 已有單兵與 nature fail/retry、身份、VM／dialog 測試 | 補部族／隊伍與多功能共同儲存矩陣，不推定多人同步已支援 |
