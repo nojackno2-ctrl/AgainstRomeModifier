@@ -15,7 +15,7 @@
 | 需求 | 目前證據 | 判定／下一步 |
 | --- | --- | --- |
 | 啟動與直接開圖 | `src.Modifier/Program.cs` 的參數檢查與 MapEditorForm 入口 | 有實作；需補入口驗收證據 |
-| 原版唯讀、自製槽位 005–999 | `SdlSceneEditService.ValidateCustomMapDirectory`；SaveMap 使用它，但在文字／環境寫入之後才檢查 | 需核對 catalog 的 IsCustom 判定與儲存前置防護，不能只依賴回滾 |
+| 原版唯讀、自製槽位 005–999 | `CustomMapAccess` 統一兩個catalog、SDL service與Save；真正表單鎖briefing測試證明拒絕先於檔案開啟 | 已修：原廠帶marker仍唯讀；stale selection／移除marker／錯誤root拒存，bytes與dirty保留，合法marker恢復可retry |
 | 完整複製未知檔案、header、SDL 路徑 | `EndlessMapCloner`、Phase1 Clone / Documents 測試 | 合成測試涵蓋；遊戲內載入仍缺 |
 | 複製任何階段失敗無半成品 | 新 manifest Load／Save 失敗測試先重現正式槽位殘留 | 本輪修正：manifest 交易與本次目標回滾；成功可原槽位重試 |
 | 不覆蓋既有正式／暫存目錄 | Clone 在 copy 前檢查；新增 sentinel 測試 | 本輪測試涵蓋，既有內容不得刪除 |
@@ -36,7 +36,7 @@
 ## 下一批優先工作
 
 1. 本輪建立／刪除修正已提交 `b9b9965`；獨立 git archive 快照 build 0 警告/0 錯誤，完整測試 536 通過/21 略過/0 失敗，已確認不依賴 AI 預覽 WIP。
-2. 核對原廠圖的 catalog 與 SaveMap 寫入前驗證，補 stale selection／marker 變更案例。
+2. 原廠圖 catalog 與 SaveMap 前置驗證已補9項測試；最新完整build 0警告/0錯誤，545通過/21略過/0失敗。
 3. 核對地圖文字、環境、備份／完整還原與額外槽位 AI 修補的專屬證據。
 4. 收斂「空白地圖」命名與支援範圍，再進入第 3 階段物件／事件整合。
 

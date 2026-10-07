@@ -21,10 +21,10 @@ internal sealed partial class MapEditorForm
     {
         error = null;
         if (_selected is null || !_selected.IsCustom) return false;
-        CommitStroke();
         try
         {
-            string map = _selected.DirectoryPath;
+            string map = CustomMapAccess.RequireEditableDirectory(_selected.DirectoryPath, _gamePath);
+            CommitStroke();
             bool natureChanged = NatureDirty();
             bool placedChanged = PlacedDirty();
             bool eventsChanged = EventsDirty();

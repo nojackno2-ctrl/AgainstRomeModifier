@@ -28,7 +28,7 @@ public static class SdlSceneEditService
         IReadOnlyList<SdlSettlementTranslation>? translations = null)
     {
         ArgumentNullException.ThrowIfNull(rollback);
-        string mapPath = ValidateCustomMapDirectory(mapDirectory);
+        string mapPath = CustomMapAccess.RequireEditableDirectory(mapDirectory);
         Dictionary<SceneKey, MapSceneObject> saved = Index(savedObjects);
         Dictionary<SceneKey, MapSceneObject> current = Index(currentObjects);
         if (saved.Count != current.Count || saved.Keys.Any(key => !current.ContainsKey(key)))
@@ -175,20 +175,6 @@ public static class SdlSceneEditService
         if (!float.IsFinite(item.LocalX) || !float.IsFinite(item.LocalY) || !float.IsFinite(item.LocalZ))
             throw new InvalidDataException("SDL 場景物件座標必須是有限數值。");
         if (item.Angle is float angle && !IsValidAngle(angle)) throw new InvalidDataException("SDL 場景物件角度必須介於 -360 與 360。");
-    }
-
-    private static string ValidateCustomMapDirectory(string mapDirectory)
-    {
-        string fullPath = Path.GetFullPath(mapDirectory);
-        string name = Path.GetFileName(fullPath);
-        string? parentDirectory = Path.GetDirectoryName(fullPath);
-        string parent = parentDirectory is null ? string.Empty : Path.GetFileName(parentDirectory);
-        if (!CustomMapManifest.IsCustomMapDirectory(fullPath) ||
-            !parent.Equals("MAPS", StringComparison.OrdinalIgnoreCase) ||
-            !System.Text.RegularExpressions.Regex.IsMatch(name, @"^ENDL_(?<slot>\d{3})$", System.Text.RegularExpressions.RegexOptions.IgnoreCase) ||
-            !int.TryParse(name.AsSpan(5), out int slot) || slot < 5)
-            throw new InvalidOperationException("SDL 場景編輯只允許 marker-backed 的 ENDL_005–999 自製地圖。");
-        return fullPath;
     }
 
     private static string ResolveSdlPath(string mapPath, string sourceFile)
