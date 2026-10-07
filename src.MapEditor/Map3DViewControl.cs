@@ -28,6 +28,8 @@ internal sealed class Map3DViewControl : GLControl
     private int _terrainProgram, _colorProgram, _vao, _vbo, _ebo, _atlasTexture, _waterVao, _waterVbo, _markerVao, _markerVbo, _cursorVao, _cursorVbo;
     private int _cursorVertexCount;
     private bool _reinitializeOnHandleCreated;
+    private byte[]? _collisionMask;
+    private int _collisionSize, _collisionTexture;
 
     public Map3DViewControl() : base(new GLControlSettings { API = ContextAPI.OpenGL, APIVersion = new Version(3, 3), Profile = ContextProfile.Core, Flags = ContextFlags.ForwardCompatible })
     {
@@ -132,6 +134,8 @@ internal sealed class Map3DViewControl : GLControl
             _vao = GL.GenVertexArray(); _vbo = GL.GenBuffer(); _ebo = GL.GenBuffer(); _waterVao = GL.GenVertexArray(); _waterVbo = GL.GenBuffer(); _markerVao = GL.GenVertexArray(); _markerVbo = GL.GenBuffer(); _cursorVao = GL.GenVertexArray(); _cursorVbo = GL.GenBuffer();
             _initialized = true;
             LastFailureReason = null;
+            _collisionTexture = GL.GenTexture();
+            UploadCollisionMask();
             if (_mesh is not null) UploadResources();
         }
         catch (Exception ex)
@@ -143,6 +147,27 @@ internal sealed class Map3DViewControl : GLControl
     }
 
     public event EventHandler<Exception>? InitializationFailed;
+
+    public void SetCollisionOverlay(int size, IReadOnlyList<byte>? collision)
+    {
+        _collisionMask = size > 0 && collision is not null && collision.Count == (long)size * size ? collision.ToArray() : null;
+        _collisionSize = _collisionMask is null ? 0 : size;
+        if (_initialized) { MakeCurrent(); UploadCollisionMask(); }
+        Invalidate();
+    }
+
+    private void UploadCollisionMask()
+    {
+        GL.ActiveTexture(TextureUnit.Texture1); GL.BindTexture(TextureTarget.Texture2D, _collisionTexture);
+        GL.PixelStore(PixelStoreParameter.UnpackAlignment, 1);
+        int size = _collisionSize > 0 ? _collisionSize : 1;
+        GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.R8, size, size, 0, OpenTK.Graphics.OpenGL4.PixelFormat.Red, PixelType.UnsignedByte, _collisionMask ?? new byte[1]);
+        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Nearest);
+        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Nearest);
+        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.ClampToEdge);
+        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.ClampToEdge);
+        GL.ActiveTexture(TextureUnit.Texture0);
+    }
 
     public void SetReliefScale(float scale)
     {
@@ -404,6 +429,10 @@ internal sealed class Map3DViewControl : GLControl
     {
         GL.UseProgram(_terrainProgram); GL.UniformMatrix4(GL.GetUniformLocation(_terrainProgram, "uMvp"), false, ref matrix); var light = new OpenTK.Mathematics.Vector3(.4f, .85f, .3f); GL.Uniform3(GL.GetUniformLocation(_terrainProgram, "uLight"), ref light);
         GL.ActiveTexture(TextureUnit.Texture0); GL.BindTexture(TextureTarget.Texture2D, _atlasTexture); GL.Uniform1(GL.GetUniformLocation(_terrainProgram, "uAtlas"), 0);
+        GL.Uniform1(GL.GetUniformLocation(_terrainProgram, "uDimension"), (float)_dimension);
+        GL.Uniform1(GL.GetUniformLocation(_terrainProgram, "uShowCollision"), _collisionMask is null ? 0 : 1);
+        GL.ActiveTexture(TextureUnit.Texture1); GL.BindTexture(TextureTarget.Texture2D, _collisionTexture); GL.Uniform1(GL.GetUniformLocation(_terrainProgram, "uCollision"), 1);
+        GL.ActiveTexture(TextureUnit.Texture0);
         GL.BindVertexArray(_vao); GL.DrawElements(PrimitiveType.Triangles, _mesh!.Indices.Length, DrawElementsType.UnsignedInt, 0);
     }
 
@@ -505,10 +534,11 @@ internal sealed class Map3DViewControl : GLControl
         _initialized = false;
         MakeCurrent();
         GL.DeleteBuffer(_vbo); GL.DeleteBuffer(_ebo); GL.DeleteBuffer(_waterVbo); GL.DeleteBuffer(_markerVbo); GL.DeleteBuffer(_cursorVbo); GL.DeleteVertexArray(_vao); GL.DeleteVertexArray(_waterVao); GL.DeleteVertexArray(_markerVao); GL.DeleteVertexArray(_cursorVao); GL.DeleteTexture(_atlasTexture); GL.DeleteProgram(_terrainProgram); GL.DeleteProgram(_colorProgram);
+        GL.DeleteTexture(_collisionTexture); _collisionTexture = 0;
     }
 
-    private const string TerrainVertexShader = "#version 330 core\nlayout(location=0) in vec3 p; layout(location=1) in vec3 n; layout(location=2) in vec2 uv; uniform mat4 uMvp; out vec3 N; out vec2 UV; void main(){ N=n; UV=uv; gl_Position=uMvp*vec4(p,1.0);}";
-    private const string TerrainFragmentShader = "#version 330 core\nin vec3 N; in vec2 UV; uniform sampler2D uAtlas; uniform vec3 uLight; out vec4 c; void main(){float l=max(.28,dot(normalize(N),normalize(uLight))); c=vec4(texture(uAtlas,UV).rgb*l,1.0);}";
+    private const string TerrainVertexShader = "#version 330 core\nlayout(location=0) in vec3 p; layout(location=1) in vec3 n; layout(location=2) in vec2 uv; uniform mat4 uMvp; uniform float uDimension; out vec3 N; out vec2 UV; out vec2 mapUV; void main(){ N=n; UV=uv; mapUV=p.xz/uDimension; gl_Position=uMvp*vec4(p,1.0);}";
+    private const string TerrainFragmentShader = "#version 330 core\nin vec3 N; in vec2 UV; in vec2 mapUV; uniform sampler2D uAtlas; uniform sampler2D uCollision; uniform int uShowCollision; uniform vec3 uLight; out vec4 c; void main(){float l=max(.28,dot(normalize(N),normalize(uLight))); vec3 color=texture(uAtlas,UV).rgb*l; if(uShowCollision!=0 && texture(uCollision,mapUV).r>0.0) color=mix(color,vec3(.824,.235,.235),.55); c=vec4(color,1.0);}";
     private const string ColorVertexShader = "#version 330 core\nlayout(location=0) in vec3 p; uniform mat4 uMvp; void main(){gl_Position=uMvp*vec4(p,1.0);}";
     private const string ColorFragmentShader = "#version 330 core\nuniform vec4 uColor; out vec4 c; void main(){c=uColor;}";
 }

@@ -71,6 +71,14 @@ internal sealed partial class MapEditorForm
         _terrainLayers = new TerrainHeightEditSession(boden.Width, boden.Green, emboss?.Green, collision?.Width ?? 0, collision?.Green);
     }
 
+    private void UpdateCollisionOverlay()
+    {
+        int size = _terrainLayers?.CollisionSize ?? 0;
+        IReadOnlyList<byte>? collision = _editMode == EditMode.Collision ? _terrainLayers?.Collision : null;
+        _canvas.SetCollisionOverlay(size, collision);
+        _view3d?.SetCollisionOverlay(size, collision);
+    }
+
     private void PaintTerrainLayer(TexturePaintEventArgs e)
     {
         if (_selected?.IsCustom != true || _terrainLayers is null || _texturesDocument is null) return;
@@ -87,7 +95,7 @@ internal sealed partial class MapEditorForm
             heightsChanged |= height; collisionChanged |= collision;
         }
         if (heightsChanged) ApplyHeightsToViews();
-        if (collisionChanged) _canvas.SetCollisionOverlay(_terrainLayers.CollisionSize, _terrainLayers.Collision);
+        if (collisionChanged) UpdateCollisionOverlay();
         UpdateEditorState();
     }
 
@@ -150,7 +158,7 @@ internal sealed partial class MapEditorForm
         if (_natureSession.Remove(_levelObjects.Where(IsRemovableNature).Select(item => item.Slot), _natureSession.Additions)) CommitStroke();
         RefreshSceneMarkers();
         ApplyHeightsToViews();
-        if (_editMode == EditMode.Collision) _canvas.SetCollisionOverlay(_terrainLayers.CollisionSize, _terrainLayers.Collision);
+        UpdateCollisionOverlay();
         UpdateEditorState();
         _status.Text = isEn ? "Flat terrain prepared; settlements and scripts are kept. Shape the terrain, then Save." : "已準備平坦地形，聚落與腳本保留；完成地形編輯後按「儲存」。";
     }
@@ -176,7 +184,7 @@ internal sealed partial class MapEditorForm
     private void ApplyTerrainLayerStroke(TerrainLayerStroke stroke)
     {
         if (stroke.Heights.Count > 0) ApplyHeightsToViews();
-        if (stroke.Collision.Count > 0 && _editMode == EditMode.Collision) _canvas.SetCollisionOverlay(_terrainLayers!.CollisionSize, _terrainLayers.Collision);
+        if (stroke.Collision.Count > 0) UpdateCollisionOverlay();
     }
 
     private void ResetTerrain()
@@ -193,7 +201,7 @@ internal sealed partial class MapEditorForm
         {
             _terrainLayers.ResetToBaseline();
             ApplyHeightsToViews();
-            if (_editMode == EditMode.Collision) _canvas.SetCollisionOverlay(_terrainLayers.CollisionSize, _terrainLayers.Collision);
+            UpdateCollisionOverlay();
         }
         _resetAuxiliaryLayers = false;
         _natureSession.Clear(); RefreshSceneMarkers();

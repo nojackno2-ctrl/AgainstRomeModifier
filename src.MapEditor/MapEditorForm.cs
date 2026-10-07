@@ -590,8 +590,15 @@ internal sealed partial class MapEditorForm : Form
             try { has3DScene = _view3d.LoadTextures(_texturesDocument.Dimension, _texturesDocument.Textures, _selected.DirectoryPath, _floorTextures, effectiveObjects, (float)_waterLevel.Value, _heightMapStep, sceneWaterColor); _view3d.SetReliefScale(_reliefScale.Value / 100f); }
             catch (Exception ex) { Disable3DView(isEn ? "Failed to load 3D map resources." : "載入 3D 地圖資源失敗。", ex); }
         }
+        if (has3DScene && _view3d?.IsReady == true)
+        {
+            _view3dButton.Enabled = true;
+            _view3dButton.ToolTipText = "";
+            _3dDiagnosticsButton.Visible = false;
+            _last3DDiagnostic = null;
+        }
         if (_terrainLayers?.HeightsDirty == true) ApplyHeightsToViews();
-        if (_editMode == EditMode.Collision) _canvas.SetCollisionOverlay(_terrainLayers?.CollisionSize ?? 0, _terrainLayers?.Collision);
+        UpdateCollisionOverlay();
         Image? oldOverview = _overview.Image; _overview.Image = null; oldOverview?.Dispose();
         if (File.Exists(minimapPath)) using (var source = new Bitmap(minimapPath)) _overview.Image = new Bitmap(source);
         _canvas.EditingEnabled = _selected.IsCustom;
@@ -801,7 +808,7 @@ internal sealed partial class MapEditorForm : Form
         bool needsToken = TerrainLayerMode || mode is EditMode.PlaceObject or EditMode.Nature;
         if (needsToken && string.IsNullOrWhiteSpace(_canvas.BrushTexture)) SetBrushToken(TerrainToolBrushToken);
         else if (!needsToken && _canvas.BrushTexture == TerrainToolBrushToken) SetBrushToken(null);
-        _canvas.SetCollisionOverlay(_terrainLayers?.CollisionSize ?? 0, mode == EditMode.Collision ? _terrainLayers?.Collision : null);
+        UpdateCollisionOverlay();
         RefreshSceneMarkers(); // 自然物件標記只在自然物件模式顯示
         UpdateSceneEditButtons();
         UpdateEditorState();
@@ -814,7 +821,7 @@ internal sealed partial class MapEditorForm : Form
                 : (isEn ? "Height mode: left-drag to apply the selected operation; Ctrl+Z / Ctrl+Y undo and redo." : "地形高度模式：左鍵拖曳套用所選操作；Ctrl+Z／Ctrl+Y 復原與重做。"),
             EditMode.Collision => _terrainLayers?.HasCollision != true
                 ? (isEn ? "This map has no editable collision.bmp." : "此地圖沒有可編輯的 collision.bmp。")
-                : (isEn ? "Passability mode: red = blocked. Left-drag to block or clear (2D view shows the overlay)." : "通行區域模式：紅色為阻擋；左鍵拖曳設定阻擋或可通行（2D 檢視顯示疊圖）。"),
+                : (isEn ? "Passability mode: red = blocked. Left-drag to block or clear (2D and 3D views show the overlay)." : "通行區域模式：紅色為阻擋；左鍵拖曳設定阻擋或可通行（2D／3D 檢視顯示疊圖）。"),
             EditMode.Nature => isEn
                 ? "Nature mode: drag to plant the selected tree/grass/bush (one per tile), or switch to Remove and drag to clear landscape objects."
                 : "自然物件模式：拖曳以種植所選的樹木／草叢／灌木（每格一株），或切換為「移除」後拖曳清除地景物件。",
