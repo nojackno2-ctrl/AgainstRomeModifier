@@ -146,6 +146,9 @@ public static class LevelScriptInjector
     public static void Inject(BciImage image, IReadOnlyList<ScenarioSpawn> spawns)
     {
         ArgumentNullException.ThrowIfNull(image);
+        if (spawns.Where(spawn => spawn.Id != Guid.Empty).Select(spawn => spawn.Id).Distinct().Count()
+            != spawns.Count(spawn => spawn.Id != Guid.Empty))
+            throw new InvalidDataException("生成物件 ID 重複，無法安全保存 runtime 配對。");
         var code = new List<int>();
         void Op(int opcode) => code.Add(opcode);
         void Op1(int opcode, int operand) { code.Add(opcode); code.Add(operand); }
@@ -153,6 +156,7 @@ public static class LevelScriptInjector
         int defaultScript = image.AddConstant("DEFSCRIPT");
         int createObj = image.AddConstant("s_createObj");
         int createUnit = image.AddConstant("s_createUnitAndMems");
+        int setBinding = spawns.Any(spawn => spawn.Id != Guid.Empty) ? image.AddConstant("s_setScriptVarL") : -1;
         var aliasConstants = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         int AliasConstant(string alias) => aliasConstants.TryGetValue(alias, out int index) ? index : aliasConstants[alias] = image.AddConstant(alias);
 
@@ -164,6 +168,17 @@ public static class LevelScriptInjector
         {
             if (spawn.Count <= 0 && !waited) { Op1(OpPushLiteral, BuildingDelayTicks); Op(OpWait); waited = true; }
             if (!float.IsFinite(spawn.X) || !float.IsFinite(spawn.Z)) throw new InvalidDataException("生成座標必須是有限數值。");
+            int indexKey = -1, uidKey = -1;
+            void StoreBinding(int key) { Op1(OpConstRef, key); Op1(OpCallNative, setBinding); Op1(OpClear, -2); }
+            if (spawn.Id != Guid.Empty)
+            {
+                indexKey = image.AddConstant(ScenarioObjectIdentity.RuntimeIndexKey(spawn.Id));
+                uidKey = image.AddConstant(ScenarioObjectIdentity.RuntimeUidKey(spawn.Id));
+                Op1(OpPushLiteral, 0); StoreBinding(indexKey);
+                Op1(OpPushLiteral, -1); StoreBinding(uidKey);
+                // 91 才是寫入 frame local；建立失敗時不得沿用上個 native 的輸出。
+                Op1(OpPushLiteral, 0); Op1(91, 0); Op1(OpPushLiteral, -1); Op1(91, 1);
+            }
             int x = (int)MathF.Round(Math.Clamp(spawn.X, 0, 16383)), z = (int)MathF.Round(Math.Clamp(spawn.Z, 0, 16383));
             if (spawn.Count > 0)
             {
@@ -184,6 +199,14 @@ public static class LevelScriptInjector
                 Op1(OpConstRef, defaultScript); Op1(OpPushLiteral, spawn.Team); Op1(OpPushLiteral, z); Op1(OpPushLiteral, x);
                 Op1(OpConstRef, AliasConstant(spawn.Alias)); Op1(OpFrameRef, 1); Op1(OpFrameRef, 0);
                 Op1(OpCallNative, createObj); Op1(OpClear, -7);
+            }
+            if (spawn.Id != Guid.Empty)
+            {
+                // 兩個建立 API 成功回傳 1；只有成功才公布原生輸出的一開始索引/UID。
+                Op(86); Op1(OpPushLiteral, 1); Op(96);
+                int failed = code.Count; Op1(118, 0);
+                Op1(90, 1); StoreBinding(uidKey); Op1(90, 0); StoreBinding(indexKey);
+                code[failed + 1] = (code.Count - failed - 2) * 4;
             }
         }
         Op(OpDropFrame); Op(OpPopFp);

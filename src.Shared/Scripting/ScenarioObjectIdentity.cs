@@ -7,6 +7,12 @@ namespace AgainstRomeModifier.Scripting;
 /// <summary>編輯器物件身份與本次儲存的 DATA 配對；物件身份不依賴位置或遊戲 UID。</summary>
 public static class ScenarioObjectIdentity
 {
+    public static string RuntimeIndexKey(Guid id) => RuntimeKey(id, "INDEX");
+    public static string RuntimeUidKey(Guid id) => RuntimeKey(id, "UID");
+
+    private static string RuntimeKey(Guid id, string suffix) => id != Guid.Empty
+        ? $"ARM_OBJECT_{id:N}_{suffix}" : throw new ArgumentException("物件缺少持久 ID。", nameof(id));
+
     public static void Prepare(ScenarioDocument document, bool legacy = false, bool validateBindings = true)
     {
         var ids = new HashSet<Guid>();

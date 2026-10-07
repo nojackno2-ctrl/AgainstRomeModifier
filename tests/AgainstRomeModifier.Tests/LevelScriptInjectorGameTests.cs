@@ -17,11 +17,17 @@ public sealed class LevelScriptInjectorGameTests
         byte[] original = GameLZSS.DecompressPfil(File.ReadAllBytes(Path.Combine(game, "MAPS", map, "SCRIPT", "ak_level.bci")));
         BciImage image = BciImage.Parse(original);
         int originalMain = image.MainAddress;
+        Guid id = Guid.NewGuid();
+        LevelScriptInjector.Inject(image, [new ScenarioSpawn("GER_INF00", 8300, 8000, 0, Count: 10) { Id = id }]);
         ScenarioEventCompiler.Inject(image, [new ScenarioEvent("Runtime probe", 10)
             { Actions = [new ScenarioAction(ScenarioActionKind.Message, "ARM event OK")] }], originalMain);
         BciImage reparsed = BciImage.Parse(image.Serialize());
         Assert.True(reparsed.MainAddress >= BciImage.Parse(original).Code.Length);
         Assert.Equal(image.Code, reparsed.Code);
+        Assert.Contains(Enumerable.Range(0, reparsed.ConstOffsets.Count),
+            index => reparsed.Constant(index) == ScenarioObjectIdentity.RuntimeIndexKey(id));
+        Assert.Contains(Enumerable.Range(0, reparsed.ConstOffsets.Count),
+            index => reparsed.Constant(index) == ScenarioObjectIdentity.RuntimeUidKey(id));
     }
 
     [Fact]

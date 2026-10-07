@@ -15,6 +15,16 @@ The historical table below mislabels the native-call ABI. Dispatcher verificatio
 
 ## Container Layout
 
+### Frame-local load/store correction (2026-10-07)
+
+Repository-local dispatcher inspection confirms **90 loads one frame-local
+word** (`0x5b722a`, value read at `0x5b7265`) and **91 pops and stores one
+frame-local word** (`0x5b744b`, write at `0x5b74ff`). Opcode 81 instead loads
+a script-global word through the variable slot table (`0x5b6988`), and is
+not a local assignment. The historical empirical table below must not be used
+to generate local assignments. The computed-wait synthetic test was corrected
+from 81 to 91; production timer compilation did not use 81.
+
 A decompressed `BCI0` script has this layout (all integers are little-endian
 32-bit words unless noted):
 

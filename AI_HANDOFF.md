@@ -1,5 +1,15 @@
 ﻿# AI Handoff - Live Project Memory
 
+## 2026-10-07 Codex：腳本物件 runtime 綁定（程式與完整測試完成）
+
+- 核對 HEAD 0875aab、乾淨工作樹、AGENTS.md 與交接；上一輪是持久 ID 實作進展。這輪只改 repository，不操作安裝檔案。
+- 本地 EXE 靜態證據：s_createObj 0x5192e0→0x50eaf0 與 s_createUnitAndMems 0x52a020→0x524530 均以 0x518db0 填寫輸出；第一輸出＝runtime index+1，第二輸出＝UID（0x518d60），成功回傳 1，失敗 -1。unit 綁的是部隊容器，不是每個成員。
+- 生成 shim 新增 ARM_OBJECT_<Guid N>_INDEX/UID ScriptVarL；每物件先清空 key 與原生輸出，再生成，僅成功回傳 1 才公布配對。輸出失敗不沿用上一物件或舊 globals；重複 ID 於修改 image 前拒絕。無 ID 的低層舊呼叫維持原 bytecode。
+- 額外校正測試 VM：真正 91 handler 0x5b744b 才是 frame local store，81 handler 0x5b6988 是 global value load；先前 computed-wait 合成 fixture 誤用 81，現修正為 91。production 原計時 compiler 不使用 81，無對應程式缺陷。
+- 篩選 ScenarioEventsTests 23/23 通過：原生輸出、生成順序/建築等待、-1/0/2 回傳拒絕、無輸出/部分輸出、舊 key 清除、序列化、重複 ID 不修改 image、堆疊平衡。與事件 shim 共存測試也確認事件建立另一部隊不覆蓋放置物件配對。最終完整 Release tests（ARM_GAME_PATH 啟用，--artifacts-path TEMP/ArmEventEditingQA）405 通過／21 略過／0 失敗。
+- Release solution build 0 警告／0 錯誤，git diff --check 通過。五張原版 ENDL 的唯讀事件 hook 測試擴充同時注入帶 ID 的生成 shim，確認常數與 BCI 往返；不代表執行遊戲。
+- 下一步是使用這些綁定實作存在/死亡條件、DATA loader 配對及實機存讀檔驗證；整體目標未完成。
+
 ## 2026-10-07 Codex：持久物件 ID 與 DATA 綁定（程式與測試完成）
 
 - 開始核對 HEAD 63ef8e2、乾淨工作樹。前輪產出原版物件 API/身份證據，屬進展；整體事件條件仍待實作。

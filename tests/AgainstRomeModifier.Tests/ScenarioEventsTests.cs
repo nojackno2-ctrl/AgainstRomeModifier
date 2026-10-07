@@ -13,6 +13,64 @@ public sealed class ScenarioEventsTests : IDisposable
         { Actions = [new(ScenarioActionKind.Message, "Привет!")] };
 
     [Fact]
+    public void Spawn_bindings_preserve_native_pairs_across_unit_order_and_building_wait()
+    {
+        Guid building = Guid.NewGuid(), unit = Guid.NewGuid();
+        BciImage image = Fixture();
+        LevelScriptInjector.Inject(image, [new("HOUSE", 6000, 7000, 0) { Id = building },
+            new("GER_INF01", 4000, 5000, 0, Count: 3) { Id = unit }]);
+        var vm = new TestVm(BciImage.Parse(image.Serialize()));
+        vm.CreationResults.Enqueue((1, 42, 901, true));
+        vm.CreationResults.Enqueue((1, 7, 902, true));
+        vm.Tick(0); // 部隊已建立，建築仍在原生成等待。
+        Assert.Equal(42, vm.Variables[ScenarioObjectIdentity.RuntimeIndexKey(unit)]);
+        Assert.Equal(901, vm.Variables[ScenarioObjectIdentity.RuntimeUidKey(unit)]);
+        Assert.False(vm.Variables.ContainsKey(ScenarioObjectIdentity.RuntimeIndexKey(building)));
+        vm.Tick(1);
+        Assert.Equal(7, vm.Variables[ScenarioObjectIdentity.RuntimeIndexKey(building)]);
+        Assert.Equal(902, vm.Variables[ScenarioObjectIdentity.RuntimeUidKey(building)]);
+        Assert.Equal(new[] { "s_createUnitAndMems", "s_createObj" }, vm.Creations);
+        Assert.All(vm.CreationInputs, pair => Assert.Equal((0, -1), pair));
+        vm.Tick(1000);
+        Assert.Equal(2, vm.Creations.Count); Assert.Equal(1, vm.StackDepth);
+        Assert.Equal(new[] { 10, 10, 10 }, vm.Waits);
+    }
+
+    [Theory]
+    [InlineData(-1, false)]
+    [InlineData(-1, true)]
+    [InlineData(0, true)]
+    [InlineData(2, true)]
+    public void Failed_spawn_cannot_inherit_prior_pair_or_publish_partial_outputs(int result, bool writes)
+    {
+        Guid first = Guid.NewGuid(), failed = Guid.NewGuid();
+        BciImage image = Fixture();
+        LevelScriptInjector.Inject(image, [new("GER_INF01", 4000, 5000, 0, Count: 3) { Id = first },
+            new("GER_INF01", 4500, 5500, 0, Count: 3) { Id = failed }]);
+        var vm = new TestVm(image);
+        vm.Variables[ScenarioObjectIdentity.RuntimeIndexKey(failed)] = 999;
+        vm.Variables[ScenarioObjectIdentity.RuntimeUidKey(failed)] = 123;
+        vm.CreationResults.Enqueue((1, 42, 901, true));
+        vm.CreationResults.Enqueue((result, 43, 902, writes));
+        vm.Tick(0);
+        Assert.Equal(42, vm.Variables[ScenarioObjectIdentity.RuntimeIndexKey(first)]);
+        Assert.Equal(901, vm.Variables[ScenarioObjectIdentity.RuntimeUidKey(first)]);
+        Assert.Equal(0, vm.Variables[ScenarioObjectIdentity.RuntimeIndexKey(failed)]);
+        Assert.Equal(-1, vm.Variables[ScenarioObjectIdentity.RuntimeUidKey(failed)]);
+        Assert.All(vm.CreationInputs, pair => Assert.Equal((0, -1), pair));
+        Assert.Equal(1, vm.StackDepth);
+    }
+
+    [Fact]
+    public void Duplicate_spawn_identity_is_rejected_before_changing_image()
+    {
+        BciImage image = Fixture(); byte[] original = image.Serialize(); Guid id = Guid.NewGuid();
+        Assert.Throws<InvalidDataException>(() => LevelScriptInjector.Inject(image,
+            [new("GER_INF01", 4000, 5000, 0, Count: 3) { Id = id }, new("HOUSE", 6000, 7000, 0) { Id = id }]));
+        Assert.Equal(original, image.Serialize());
+    }
+
+    [Fact]
     public void Once_timer_preserves_main_wait_and_stack_and_fires_at_deadline()
     {
         BciImage image = Fixture(); byte[] before = image.Code.ToArray();
@@ -32,7 +90,7 @@ public sealed class ScenarioEventsTests : IDisposable
     public void Computed_wait_is_replayed_after_restoring_original_local_frame()
     {
         // The original endless loop computes its delay in a local before waiting.
-        BciImage image = Fixture([74, 94, 73, 1, 66, 7, 81, 0, 128, 0, 90, 0, 131, 112, -28]);
+        BciImage image = Fixture([74, 94, 73, 1, 66, 7, 91, 0, 128, 0, 90, 0, 131, 112, -28]);
         ScenarioEventCompiler.Inject(image, [Event()], 0);
         var vm = new TestVm(image); vm.Tick(0); vm.Tick(2000); vm.Tick(5000);
         Assert.Single(vm.Messages);
@@ -56,8 +114,8 @@ public sealed class ScenarioEventsTests : IDisposable
     [Fact]
     public void Multiple_actions_keep_argument_order_and_execute_original_spawn_shim()
     {
-        BciImage image = Fixture(); int originalMain = image.MainAddress;
-        LevelScriptInjector.Inject(image, [new("GER_INF01", 4000, 5000, 0, Count: 3)]);
+        BciImage image = Fixture(); int originalMain = image.MainAddress; Guid id = Guid.NewGuid();
+        LevelScriptInjector.Inject(image, [new("GER_INF01", 4000, 5000, 0, Count: 3) { Id = id }]);
         var item = new ScenarioEvent("Actions", 0)
         {
             Actions = [new(ScenarioActionKind.Diplomacy, Team: 0, OtherTeam: 2, Hostile: false),
@@ -66,13 +124,20 @@ public sealed class ScenarioEventsTests : IDisposable
         };
         ScenarioEventValidator.Validate([item], Aliases);
         ScenarioEventCompiler.Inject(image, [item], originalMain);
-        var vm = new TestVm(image); vm.Tick(0);
+        var vm = new TestVm(image);
+        vm.CreationResults.Enqueue((1, 42, 901, true));
+        vm.CreationResults.Enqueue((1, 43, 902, true));
+        vm.Tick(0);
         Assert.Equal(2, vm.Spawns.Count);
         Assert.Equal((0, 4000, 5000, "GER_INF01", 3), vm.Spawns[0]);
         Assert.Equal((3, 1000, 2000, "GER_INF01", 7), vm.Spawns[1]);
         Assert.Equal((0, 2, 0), Assert.Single(vm.Diplomacy));
         Assert.Equal("Ready", Assert.Single(vm.Messages));
         Assert.Equal(1, vm.StackDepth);
+        vm.Tick(1000);
+        Assert.Equal(42, vm.Variables[ScenarioObjectIdentity.RuntimeIndexKey(id)]);
+        Assert.Equal(901, vm.Variables[ScenarioObjectIdentity.RuntimeUidKey(id)]);
+        Assert.Equal(2, vm.Spawns.Count);
     }
 
     [Fact]
@@ -227,6 +292,9 @@ public sealed class ScenarioEventsTests : IDisposable
         public List<int> Waits { get; } = new();
         public List<(int, int, int)> Diplomacy { get; } = new();
         public List<(int, int, int, string, int)> Spawns { get; } = new();
+        public Queue<(int Result, int Index, int Uid, bool Writes)> CreationResults { get; } = new();
+        public List<string> Creations { get; } = new();
+        public List<(int, int)> CreationInputs { get; } = new();
         public int OriginalTicks { get; private set; }
         public int StackDepth => _stack.Count;
         private object Pop() { object value = _stack[^1]; _stack.RemoveAt(_stack.Count - 1); return value; }
@@ -247,7 +315,7 @@ public sealed class ScenarioEventsTests : IDisposable
                         int index = Word(), start = image.ConstOffsets[index], end = Array.IndexOf(image.ConstBlob, (byte)0, start);
                         _stack.Add(MapTextEncoding.Game.GetString(image.ConstBlob, start, end - start)); break;
                     case 78: _stack.Add(_fp + Word()); break;
-                    case 81: int local = Word(); _stack[_fp + local] = Pop(); break;
+                    case 91: int local = Word(); _stack[_fp + local] = Pop(); break;
                     case 90: _stack.Add(_stack[_fp + Word()]); break;
                     case 74: _stack.Add(_fp); break;
                     case 94: _fp = _stack.Count; break;
@@ -265,6 +333,7 @@ public sealed class ScenarioEventsTests : IDisposable
                     case 112: int jump = Word(); _pc += jump; break;
                     case 113: int negative = Word(); if (Int() < 0) _pc += negative; break;
                     case 117: int zero = Word(); if (Int() == 0) _pc += zero; break;
+                    case 118: int nonzero = Word(); if (Int() != 0) _pc += nonzero; break;
                     case 131: Waits.Add(Int()); return;
                     default: throw new InvalidOperationException($"Unsupported test VM opcode {op}");
                 }
@@ -285,10 +354,22 @@ public sealed class ScenarioEventsTests : IDisposable
                 case "s_createUnitAndMems":
                     Assert.Equal(1, Arg<int>(3)); Assert.Equal(0, Arg<int>(4)); Assert.Equal(1, Arg<int>(5));
                     Assert.Equal(100, Arg<int>(13)); Assert.Equal(100, Arg<int>(14));
-                    Spawns.Add((Arg<int>(2), Arg<int>(8), Arg<int>(9), Arg<string>(10), Arg<int>(11))); break;
+                    Spawns.Add((Arg<int>(2), Arg<int>(8), Arg<int>(9), Arg<string>(10), Arg<int>(11)));
+                    Created(name); break;
+                case "s_createObj": Created(name); break;
                 case "s_originalTick": OriginalTicks++; break;
                 default: throw new InvalidOperationException($"Unexpected native {name}");
             }
+        }
+
+        private void Created(string name)
+        {
+            Creations.Add(name);
+            int indexOutput = Arg<int>(0), uidOutput = Arg<int>(1);
+            CreationInputs.Add(((int)_stack[indexOutput], (int)_stack[uidOutput]));
+            if (CreationResults.Count == 0) return;
+            var creation = CreationResults.Dequeue(); _result = creation.Result;
+            if (creation.Writes) { _stack[indexOutput] = creation.Index; _stack[uidOutput] = creation.Uid; }
         }
     }
 

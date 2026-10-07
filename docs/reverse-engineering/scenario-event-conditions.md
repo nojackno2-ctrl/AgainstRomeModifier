@@ -66,16 +66,45 @@ bound to one physical slot are rejected before writing the scenario.
 Tests verify repeated legacy loads, a real form move/save/reload, unchanged IDs
 after DATA reorder despite changed slot/UID, and invalid-file rejection. This
 is an editor-side binding, not yet verified against the game's runtime loader.
-Script-created units still need bindings from native creation outputs. Before
-exposing object conditions, reject deleted or unresolved targets with a clear
-editor error and give copied placements new identities. Never retarget to an
-object occupying an old slot.
+Script-created placements now retain native creation outputs as described
+below. Before exposing object conditions, reject deleted or unresolved targets
+with a clear editor error and give copied placements new identities. Never
+retarget to an object occupying an old slot.
 
 Required regression coverage: unchanged target after reorder/move/save;
 separate identities after copying; failed spawn never counts as destruction;
 UID mismatch does not refer to a replacement object; corpse removal after a
 confirmed existence; event deadlines and identity/armed state survive game
 save/load. The last item requires real game evidence, not a synthetic VM alone.
+
+## Script-created placement bindings
+
+`s_createObj` handler `0x5192e0` resolves its first two arguments as output
+pointers and calls `0x50eaf0`. `s_createUnitAndMems` handler `0x52a020` similarly
+calls `0x524530`. Both implementations pass those output pointers and the
+created zero-based runtime index to `0x518db0`. That helper writes index+1
+to output 1 at `0x518df1`, and the UID returned by `0x518d60` to output 2 at
+`0x518df8`. An invalid index writes 0 and -1 to the outputs. The wrapper
+returns 1 on successful conversion and -1 on failure; it can also fail before
+writing either output. Unit output identifies the troop container, not each
+individual member.
+
+For placements with nonempty persistent IDs, the spawn shim initializes
+`ARM_OBJECT_<Guid N>_INDEX` to 0 and `_UID` to -1, resets its two output locals,
+then invokes the existing creation API. Only return value 1 publishes the
+native UID and index to those string-key ScriptVarL variables. No wait is
+introduced between the two stores. Other results retain the invalid sentinel
+pair, even if a native wrote partial outputs. Event-spawn actions have no
+placement ID and do not overwrite these bindings. Future object conditions
+must still validate existence with both values and separately arm any
+destroyed/removed condition; successful creation alone does not prove lifecycle
+or save/load behavior.
+
+Synthetic VM tests cover both APIs, unit-first order and the original building
+wait, failure without outputs and with partial outputs, stale global values,
+exact return-value gating, bytecode serialization, duplicate-ID rejection,
+balanced frames and coexistence with event-spawn actions. Full Release tests
+pass (405 passed, 21 skipped). This is static/VM validation, not live gameplay.
 
 ## Area-search investigation
 
