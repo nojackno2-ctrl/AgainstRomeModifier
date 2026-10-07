@@ -20,6 +20,9 @@ internal sealed class FloorMaterialCatalog : INativeTerrainMaterialResolver
     private static readonly Regex RegionalTileName = new("^L(?<set>[0-9]+)B(?<index>[0-9]{2})T(?<shape>[1-9])(?<variant>[A-Z])$", RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
     /// <summary>L 系列過渡配對可接受的平均角落色差（RGB 歐氏距離）；超過代表貼圖不是兩個已知材質的過渡，不採用以免錯配。</summary>
     internal const double RegionalTransitionMaxCornerDistance = 32;
+    // 4U 的第二種命名：尾碼為兩位數 01–14 的角點遮罩（兩種材質在四角的 14 種組合），例如 4UJX__05、4UMX__14。
+    // 同一族只要出現 0 開頭的尾碼就屬於此命名，整族不能用九宮格形狀解析（否則 10–14 會被誤判為形狀 1）。
+    private static readonly Regex MaskTransitionName = new("^4U(?<first>[0-9A-Z])(?<second>[0-9A-Z])__(?<mask>0[1-9]|1[0-4])$", RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
     private static readonly Regex ThreeMaterialTransitionName = new("^4T(?<first>[0-9A-Z])(?<second>[0-9A-Z])(?<third>[0-9A-Z])_(?<shape>[2468])(?<variant>[0-9A-Z])$", RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
     private static readonly IReadOnlyDictionary<string, (string Category, string Name, int Order)> PlayerNames =
         new Dictionary<string, (string, string, int)>(StringComparer.OrdinalIgnoreCase)
@@ -85,9 +88,15 @@ internal sealed class FloorMaterialCatalog : INativeTerrainMaterialResolver
             });
         Materials = Materials.Concat(regionalBases).ToArray();
         _byId = Materials.ToDictionary(material => material.Id, StringComparer.OrdinalIgnoreCase);
+        var maskFamilies = names
+            .Select(name => MaskTransitionName.Match(name))
+            .Where(match => match.Success && match.Groups["mask"].Value.StartsWith('0'))
+            .Select(match => "B" + match.Groups["first"].Value.ToUpperInvariant() + "|B" + match.Groups["second"].Value.ToUpperInvariant())
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
         _transitions = names
             .Select(name => (name, match: TwoMaterialTransitionName.Match(name)))
             .Where(item => item.match.Success)
+            .Where(item => !maskFamilies.Contains("B" + item.match.Groups["first"].Value.ToUpperInvariant() + "|B" + item.match.Groups["second"].Value.ToUpperInvariant()))
             .GroupBy(item => (First: "B" + item.match.Groups["first"].Value.ToUpperInvariant(), Second: "B" + item.match.Groups["second"].Value.ToUpperInvariant()))
             .Where(group => _byId.ContainsKey(group.Key.First) && _byId.ContainsKey(group.Key.Second))
             .Select(group => new FloorTransition(
@@ -144,7 +153,11 @@ internal sealed class FloorMaterialCatalog : INativeTerrainMaterialResolver
                 }
             }
         }
-        if (textureResolver is not null) RegisterRegionalTransitions(regionalTiles, textureResolver);
+        if (textureResolver is not null)
+        {
+            RegisterMaskTransitions(names, maskFamilies, textureResolver);
+            RegisterRegionalTransitions(regionalTiles, textureResolver);
+        }
         _nativeTexturesByCorners = _nativeCornersByTexture
             .GroupBy(item => CornerKey(item.Value), item => item.Key, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(group => group.Key, group => (IReadOnlyList<string>)group.OrderBy(value => value, StringComparer.OrdinalIgnoreCase).ToArray(), StringComparer.OrdinalIgnoreCase);
@@ -276,6 +289,29 @@ internal sealed class FloorMaterialCatalog : INativeTerrainMaterialResolver
             var sample = MeanColor(transitionPixels, transition.Width, transition.Height, sampleArea.X, sampleArea.Y, sampleArea.Width, sampleArea.Height);
             return references.MinBy(reference => ColorDistanceSquared(sample, reference.color)).id;
         }).ToArray();
+    }
+
+    /// <summary>角點遮罩命名的 4U 族已登記的 tile 數（診斷與測試用）。</summary>
+    internal int MaskTransitionTileCount { get; private set; }
+
+    /// <summary>
+    /// 角點遮罩命名的 4U 族：兩種材質已由名稱給定，每張 tile 的四角以顏色推斷（與形狀式相同的取樣），
+    /// 四角必須同時含兩種材質才登記；遮罩位元的方向未經證實，因此不從編號推導角點。
+    /// </summary>
+    private void RegisterMaskTransitions(IEnumerable<string> names, HashSet<string> maskFamilies, Func<string, Bitmap?> textureResolver)
+    {
+        foreach (string name in names)
+        {
+            Match match = MaskTransitionName.Match(name);
+            if (!match.Success) continue;
+            string first = "B" + match.Groups["first"].Value.ToUpperInvariant(), second = "B" + match.Groups["second"].Value.ToUpperInvariant();
+            if (!maskFamilies.Contains(first + "|" + second) || !_byId.ContainsKey(first) || !_byId.ContainsKey(second)) continue;
+            string[]? corners = InferCorners(textureResolver, name, [first, second]);
+            if (corners is null || corners.Distinct(StringComparer.OrdinalIgnoreCase).Count() != 2) continue;
+            _nativeCornersByTexture[name] = corners;
+            _byTexture[name] = _byId[first];
+            MaskTransitionTileCount++;
+        }
     }
 
     internal static string RegionalMaterialId(string set, string index) => $"L{set}:{index}";
