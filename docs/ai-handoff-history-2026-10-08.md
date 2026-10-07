@@ -76,4 +76,3 @@
 - 中途 MSB3027/3021 是本輪 PowerShell smoke 持有 DLL 導致 copy lock；smoke 結束後 build/test 正常。不必終止使用者程式或重試原失敗。
 - 已修早期 CS1579（陣列Reverse選到void）與 CS0841（map宣告位置）、prebuilt別名前置誤判、JSON v6舊斷言。
 - 移除 AGY 測試用 FindWindow('#32770',null) 自動關閉視窗機制，改呼叫 TrySaveMap，避免關閉無關視窗；歷史 AGY 關閉器描述已過時。
-
