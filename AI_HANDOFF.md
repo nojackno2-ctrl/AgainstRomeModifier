@@ -30,6 +30,7 @@
 
 ## 最新驗證與失敗紀錄
 
+- Codex（2026-10-07）：FileRollbackScope新增目錄快照/恢復（空目錄/未知檔，拒絕linked snapshot，復原失敗保留TEMP備份）。CustomMapRestoreService包住完整還原，預設保留；刪除先manifest/tmp前檢再走Deleter，外層交易保留目錄/manifest。新選項dialog預設勾選保留、取消不執行。15項合成TEMP定向通過：保留/005/999刪除、restore/後續/中途delete回滾、snapshot鎖檔拒絕、未登記拒絕、真正runner/engine拒絕與STA選項。檢查發現原restore仍解析custom腳本；僅完整還原啟用orchestrator排除custom與legacy custom team備份。鎖custom腳本證明不讀，而一般AI仍讀；實際engine合成EXE/12個回血腳本在兩選項成功。該fixture初次2失敗是缺法術祭壇原始bytes，補齊後2失敗是缺12個系統回血腳本；完善fixture後2通過，未放寬產品驗證。最終Release build 0警告/0錯誤，full --no-build宿主536通過/21略過、modules45通過，共581通過/21略過/0失敗。真實原版還原/新dialog視覺尚未驗證；AI預覽WIP保留不提交，下一步額外槽位AI證據/空白語意。
 - Codex（2026-10-07）：備份規格§1.5核對。CustomMapBackupTests合成TEMP初跑4例3通過/1失敗：loader只檢查team.dat直接parent，custom/Extra/team.dat仍讀取；autohealer catch吞失敗，補logger斷言再跑2通過/2失敗，確認兩路徑都漏。新增CustomMapManifest.IsCustomMapFile以MAPS第一層擁有者marker判定，兩loader接入，排除整個自製目錄且不擴及鄰近root/其他map。新增5案例與既有備份定向14通過/1略過，涵蓋custom005/999、鎖檔證明不讀、既有bak保留、不產新bak、原版team基準仍正確。Release build 0警告/0錯誤，full --no-build test宿主521通過/21略過、modules45通過，共566通過/21略過/0失敗。RestoreAll沒有規格要求的保留/刪除custom選項；下一步補這項功能（含與PatchOperationRunner回滾的整合），不能只補文件。AI預覽WIP保留不提交。
 - Codex（2026-10-07）：文字核對新增MapTextEscapingTests合成純文字/PFIL案例；基線 `dotnet test ... --filter FullyQualifiedName~MapTextEscapingTests` 2通過/7失敗：single讀不到escaped quote、反斜線沒有escape與正確常值長度計數、NUL接受、CP1251錯誤過晚/缺使用者提示。修Put單值escaped parse/Unescape/Escape、100 escaped bytes與NUL/CR/LF guard；單值/簡報CP1251寫入前驗證。新增STA表單拒存bytes/dirty保留/retry與標題/8team/簡報save/reopen/重存bytes相同；ErrorProvider輸入立即提示CP1251、合法輸入清提示。清除多餘using後，documents+Phase1定向43通過、最終文字/UI定向13通過。Release build 0警告/0錯誤，full --no-build test宿主516通過/21略過、modules45通過，共561通過/21略過/0失敗。只用TEMP，AI預覽WIP保留不提交；下一步備份排除/還原保留与額外槽位AI修補證據。
 - Codex（2026-10-07）：核心環境屬性核對新增真正STA表單三地區測試（en-US/de-DE/fr-FR）。基線 `dotnet test ... --filter FullyQualifiedName~Environment_values_load_save_and_reopen` 1通過/2失敗：12.5於法文讀成0、德文讀成125。ParseDecimal、Heightmapstep解析與七項環境數值寫入改InvariantCulture；定向重跑3通過，涵蓋七值/高度比例/雨滴、dirty、重開與再次儲存全部bytes相同、未知行保留。完整Release build 0警告/0錯誤，full --no-build test宿主503通過/21略過、modules45通過，共548通過/21略過/0失敗。只用合成TEMP，不證明遊戲支援小數；AI預覽WIP保留不提交，下一步文字特殊字元與備份流程。
@@ -64,7 +65,7 @@
 
 ## 恢復時優先處理（尚未完成）
 
-目前優先順序以docs/map-editor-roadmap.md及requirements-audit.md為準：catalog/SaveMap前置防護、環境跨地區格式、文字與備份排除已修且566測試通過；接著實作完整還原的自製圖保留/刪除選項、核對額外槽位證據與空白語意。以下較早的UI優先順序已由新roadmap取代。
+目前優先順序以docs/map-editor-roadmap.md及requirements-audit.md為準：catalog/SaveMap前置防護、環境、文字、備份及完整還原選項已實作且581測試通過；接著核對額外槽位AI證據與空白語意。完整原版還原/新dialog視覺仍待驗收。以下較早的UI優先順序已由新roadmap取代。
 
 1. Placement batch/邊界與STA host整合已驗證/提交；單兵與nature交易fail/retry/只套用一次/成功後dirty及markers已新增測試通過。程式碼整合已解決。
 2. Terrain blend純resolver邊界已實作並通過工作樹與committed snapshot全測試，已提交，已解決。

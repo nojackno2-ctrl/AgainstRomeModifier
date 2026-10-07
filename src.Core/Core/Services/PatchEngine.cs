@@ -95,12 +95,13 @@ public class PatchEngine
     public void RestoreOriginalFiles(
         string gamePath,
         BackupManager backupManager,
-        FileRollbackScope rollback) =>
-        new PatchRestoreService(_logger).RestoreCategories(
+        FileRollbackScope rollback,
+        bool preserveCustomMaps = true) =>
+        CustomMapRestoreService.Execute(gamePath, rollback, () => new PatchRestoreService(_logger).RestoreCategories(
             gamePath,
             backupManager,
             rollback,
-            new[] { FeatureCategory.Stats, FeatureCategory.Compat, FeatureCategory.Language });
+            new[] { FeatureCategory.Stats, FeatureCategory.Compat, FeatureCategory.Language }, excludeCustomMaps: true), preserveCustomMaps);
 
     public void RestoreStatsOnly(
         string gamePath,
