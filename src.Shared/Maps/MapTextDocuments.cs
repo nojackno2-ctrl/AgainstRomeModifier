@@ -61,16 +61,19 @@ public sealed class PutTextDocument : MapTextDocument
     public static PutTextDocument Load(string path) => new(path);
     public string? GetValue(string key)
     {
-        var match = Find(key); return match.Success ? match.Groups["value"].Value : null;
+        var match = Find(key); return match.Success ? Unescape(match.Groups["value"].Value) : null;
     }
     public void SetValue(string key, string value)
     {
-        if (value.Contains('"') || value.Contains('\r') || value.Contains('\n')) throw new ArgumentException("地圖文字不可含引號或換行。", nameof(value));
-        if (GameEncoding.GetByteCount(value) > MaxLiteralBytes) throw new ArgumentException($"地圖文字最多 {MaxLiteralBytes} 個字元（遊戲的文字緩衝區限制）。", nameof(value));
+        if (value.Contains('\0') || value.Contains('\r') || value.Contains('\n')) throw new ArgumentException("地圖標題與隊伍名稱不可含 NUL 或換行。", nameof(value));
+        ValidateGameText(value);
+        string escaped = Escape(value);
+        if (GameEncoding.GetByteCount(escaped) > MaxLiteralBytes) throw new ArgumentException($"地圖文字跳脫後最多 {MaxLiteralBytes} 位元組（遊戲的文字緩衝區限制）。", nameof(value));
         var match = Find(key);
         if (!match.Success) throw new KeyNotFoundException("找不到 .put 變數: " + key);
         Group existing = match.Groups["value"];
-        Text = Text[..existing.Index] + value + Text[(existing.Index + existing.Length)..];
+        if (Unescape(existing.Value) == value && GameEncoding.GetByteCount(existing.Value) <= MaxLiteralBytes) return;
+        Text = Text[..existing.Index] + escaped + Text[(existing.Index + existing.Length)..];
     }
 
     public string? GetCompositeValue(string key)
@@ -90,6 +93,7 @@ public sealed class PutTextDocument : MapTextDocument
     public void SetCompositeValue(string key, string value)
     {
         if (value.Contains('\0')) throw new ArgumentException("地圖文字不可包含 NUL 字元。", nameof(value));
+        ValidateGameText(value);
         Match assignment = FindAssignment(key);
         if (!assignment.Success) throw new KeyNotFoundException("找不到 .put 變數: " + key);
         Group expression = assignment.Groups["expression"];
@@ -129,7 +133,7 @@ public sealed class PutTextDocument : MapTextDocument
         return chunks;
     }
 
-    private Match Find(string key) => Regex.Match(Text, $@"(?im)^\s*var:\s*{Regex.Escape(key)}\s*=\s*""(?<value>[^""]*)""");
+    private Match Find(string key) => Regex.Match(Text, $@"(?im)^\s*var:\s*{Regex.Escape(key)}\s*=\s*""(?<value>(?:\\.|[^""\\])*)""");
     private Match FindAssignment(string key) => Regex.Match(Text,
         $@"(?ims)^(?<prefix>[ \t]*var:\s*{Regex.Escape(key)}\s*=\s*)(?<expression>.*?)(?<suffix>;[ \t]*(?:\r?\n|$))");
 
@@ -139,6 +143,15 @@ public sealed class PutTextDocument : MapTextDocument
         .Replace("\n", "\\n", StringComparison.Ordinal)
         .Replace("\t", "\\t", StringComparison.Ordinal)
         .Replace("\"", "\\\"", StringComparison.Ordinal);
+
+    private static void ValidateGameText(string value)
+    {
+        try { GameEncoding.GetByteCount(value); }
+        catch (EncoderFallbackException ex)
+        {
+            throw new ArgumentException("地圖文字需使用遊戲支援的 CP1251 字元（拉丁／西里爾字母）；中文或 emoji 無法儲存。", nameof(value), ex);
+        }
+    }
 
     private static string Unescape(string value)
     {

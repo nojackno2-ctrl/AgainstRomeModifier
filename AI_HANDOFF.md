@@ -30,6 +30,7 @@
 
 ## 最新驗證與失敗紀錄
 
+- Codex（2026-10-07）：文字核對新增MapTextEscapingTests合成純文字/PFIL案例；基線 `dotnet test ... --filter FullyQualifiedName~MapTextEscapingTests` 2通過/7失敗：single讀不到escaped quote、反斜線沒有escape與正確常值長度計數、NUL接受、CP1251錯誤過晚/缺使用者提示。修Put單值escaped parse/Unescape/Escape、100 escaped bytes與NUL/CR/LF guard；單值/簡報CP1251寫入前驗證。新增STA表單拒存bytes/dirty保留/retry與標題/8team/簡報save/reopen/重存bytes相同；ErrorProvider輸入立即提示CP1251、合法輸入清提示。清除多餘using後，documents+Phase1定向43通過、最終文字/UI定向13通過。Release build 0警告/0錯誤，full --no-build test宿主516通過/21略過、modules45通過，共561通過/21略過/0失敗。只用TEMP，AI預覽WIP保留不提交；下一步備份排除/還原保留与額外槽位AI修補證據。
 - Codex（2026-10-07）：核心環境屬性核對新增真正STA表單三地區測試（en-US/de-DE/fr-FR）。基線 `dotnet test ... --filter FullyQualifiedName~Environment_values_load_save_and_reopen` 1通過/2失敗：12.5於法文讀成0、德文讀成125。ParseDecimal、Heightmapstep解析與七項環境數值寫入改InvariantCulture；定向重跑3通過，涵蓋七值/高度比例/雨滴、dirty、重開與再次儲存全部bytes相同、未知行保留。完整Release build 0警告/0錯誤，full --no-build test宿主503通過/21略過、modules45通過，共548通過/21略過/0失敗。只用合成TEMP，不證明遊戲支援小數；AI預覽WIP保留不提交，下一步文字特殊字元與備份流程。
 - Codex（2026-10-07）：核對原廠readonly與stale selection：新增8項合成TEMP測試先6失敗（原廠000/004帶marker判custom；000/004與移除marker的005/999鎖briefing後Save先碰檔得到IOException）。新增CustomMapAccess統一005–999/MAPS/marker判定，兩catalog、SDL service與Save接入；Save在CommitStroke/任何地圖檔讀寫前驗證選取root。定向42通過；另一個合成root的marked map拒存、bytes/dirty保留測試1通過。marker恢復後retry成功。Release build 0警告/0錯誤，完整test宿主500通過/21略過、modules45通過，共545通過/21略過/0失敗；未存取安裝目錄。AI預覽WIP保留，未納入提交；下一步文字/環境/備份證據與空白語意。
 - Codex（2026-10-07）：已提交核心修正 `b9b9965`；以git archive解出TEMP/ArmCoreCommitQA_e70f5f1a2802428abb9fd7546428d1a2/source，獨立restore約1.12分鐘後Release build 0警告/0錯誤，full --no-build test宿主491通過/21略過、modules45通過，共536通過/21略過/0失敗。未重啟還原程序；確認commit不依賴未提交AI預覽。驗收矩陣/roadmap更新，下一步按requirements-audit核對catalog與儲存前置防護。
@@ -62,7 +63,7 @@
 
 ## 恢復時優先處理（尚未完成）
 
-目前優先順序以docs/map-editor-roadmap.md及requirements-audit.md為準：catalog/SaveMap前置防護及環境跨地區格式已修且548測試通過；接著核對文字特殊字元與備份/額外槽位證據、空白語意。以下較早的UI優先順序已由新roadmap取代。
+目前優先順序以docs/map-editor-roadmap.md及requirements-audit.md為準：catalog/SaveMap前置防護、環境跨地區格式與文字特殊字元/UI提示已修且561測試通過；接著核對備份/額外槽位證據、空白語意。以下較早的UI優先順序已由新roadmap取代。
 
 1. Placement batch/邊界與STA host整合已驗證/提交；單兵與nature交易fail/retry/只套用一次/成功後dirty及markers已新增測試通過。程式碼整合已解決。
 2. Terrain blend純resolver邊界已實作並通過工作樹與committed snapshot全測試，已提交，已解決。

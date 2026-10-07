@@ -20,7 +20,7 @@
 | 複製任何階段失敗無半成品 | 新 manifest Load／Save 失敗測試先重現正式槽位殘留 | 本輪修正：manifest 交易與本次目標回滾；成功可原槽位重試 |
 | 不覆蓋既有正式／暫存目錄 | Clone 在 copy 前檢查；新增 sentinel 測試 | 本輪測試涵蓋，既有內容不得刪除 |
 | 刪除三重防護與原廠槽位拒絕 | 原 Deleter 缺 manifest membership／slot guard；新 slots 0/4/5/999 測試重現 | 本輪補回登記＋marker＋受控槽位／路徑條件，在 rename 前拒絕 |
-| CP1251、文字常值限制、多行簡報 | `MapTextDocuments.cs` 與 Phase1 PutTextDocument 測試 | 有合成證據；需核對特殊字元與 UI 回饋 |
+| CP1251、文字常值限制、多行簡報 | Phase1與新MapTextEscapingTests、真正表單MapEditorTextSaveTests | 單值引號/反斜線/tab安全round-trip、escaped bytes限制、NUL拒絕、原行保留；輸入CP1251即時提示，拒存保留bytes/dirty，修正可retry；遊戲內文字呈現仍待驗收 |
 | 環境參數與未知行保留 | 真正表單三地區（en-US/de-DE/fr-FR）七值、Heightmapstep、雨滴、dirty、儲存／重開與重存bytes相同測試 | 修正依Windows地區讀錯數值及寫出逗號問題；未知行保留。合成小數案例不證明遊戲接受所有小數參數 |
 | 聚落移動、複製、刪除、重新編號 | SdlSceneEditService／SdlDocument，Phase1 多項測試 | 合成路徑已有證據；遊戲內仍缺 |
 | 自製圖不進備份基準 | `GameDirectoryBackupLoader`、`BackupAutoHealer` 排除 marker-backed 目錄 | 有實作；核對測試及完整還原保留／刪除行為 |

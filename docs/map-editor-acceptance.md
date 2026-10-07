@@ -9,6 +9,7 @@
 | 地圖建立／刪除 | manifest 失敗回滾新建正式槽位、保留來源、原槽位重試；拒絕覆蓋既有final/tmp；拒刪原廠與未登記地圖 | `AgainstRomeModifier.Tests/MapEditorPhase1Tests.cs` |
 | 原廠唯讀／儲存前置驗證 | 原廠帶marker仍唯讀；移除marker、原廠槽位、錯誤root在開啟briefing前拒存；保留dirty與bytes，恢復marker可retry | `AgainstRomeModifier.Tests/MapEditorSaveAccessTests.cs` |
 | 環境屬性 | en-US/de-DE/fr-FR下七值、Heightmapstep、雨滴儲存／重開一致；dirty清除、未知行保留、重存bytes相同 | `AgainstRomeModifier.Tests/MapEditorEnvironmentSaveTests.cs` |
+| 文字與輸入提示 | 單值跳脫/100 bytes/NUL/CP1251防護；純文字/PFIL保留其他行；輸入提示與拒存bytes/dirty保留、retry；標題/8team/簡報save/reopen/重存不變 | `AgainstRomeModifier.Tests/MapTextEscapingTests.cs`、`MapEditorTextSaveTests.cs` |
 | 高度、通行 | 筆畫、undo/redo、基準；真正表單儲存圖層與快取失效 | `AgainstRomeMapEditor.Modules.Tests/TerrainHeightEditSessionTests.cs`、`AgainstRomeModifier.Tests/MapEditorFormTerrainIntegrationTests.cs` |
 | 原版材質 | 四角烘焙、不支援接縫拒絕、滑鼠筆畫整筆回滾、undo/redo | `AgainstRomeMapEditor.Modules.Tests/TerrainBlendModuleTests.cs`、`AgainstRomeModifier.Tests/MapEditor3DTests.cs` |
 | AI 套用 | 材質區域拒絕保留先前接受區域；模式切換；材質獨立 undo，高度/通行共用 undo；儲存及重新開图 | `AgainstRomeModifier.Tests/MapEditorAiWorkflowIntegrationTests.cs` |
@@ -45,6 +46,6 @@ dotnet build AgainstRomeModifier.slnx -c Release -p:UseAppHost=false --artifacts
 dotnet test AgainstRomeModifier.slnx -c Release -p:UseAppHost=false --artifacts-path "$env:TEMP/ArmResumeQA" --no-restore --no-build --logger 'console;verbosity=quiet'
 ```
 
-最新工作樹結果：build 0 警告/0 錯誤；宿主 503 通過/21 略過，modules 45 通過，共 548 通過/21 略過/0 失敗。AI 預覽 WIP 已編譯但功能未驗證，不納入這批提交的功能成果。未設定 `ARM_GAME_PATH`、`ARM_OLLAMA_LIVE`。以上 `--no-restore` 命令須先有相同 artifacts 路徑的 restore；新環境先移除 build 的 `--no-restore`。
+最新工作樹結果：build 0 警告/0 錯誤；宿主 516 通過/21 略過，modules 45 通過，共 561 通過/21 略過/0 失敗。AI 預覽 WIP 已編譯但功能未驗證，不納入這批提交的功能成果。未設定 `ARM_GAME_PATH`、`ARM_OLLAMA_LIVE`。以上 `--no-restore` 命令須先有相同 artifacts 路徑的 restore；新環境先移除 build 的 `--no-restore`。
 
 `b9b9965` 的獨立 git archive 快照位於 `TEMP/ArmCoreCommitQA_e70f5f1a2802428abb9fd7546428d1a2/source`，不包含 AI 預覽 WIP；独立還原／建置／完整測試同樣為 0 警告/0 錯誤、536 通過/21 略過/0 失敗。

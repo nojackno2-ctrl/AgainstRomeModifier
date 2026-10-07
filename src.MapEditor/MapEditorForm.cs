@@ -16,6 +16,7 @@ internal sealed partial class MapEditorForm : Form
     private readonly Label _currentMaterialLabel = new() { AutoSize = true, Text = "目前筆刷：尚未取樣", ForeColor = WinFormsTheme.TextPrimary, Font = WinFormsTheme.CreateFont(10F, FontStyle.Bold) };
     private readonly string _gamePath;
     private readonly TextBox _title = new() { Dock = DockStyle.Top };
+    private readonly ErrorProvider _gameTextErrors = new() { BlinkStyle = ErrorBlinkStyle.NeverBlink };
     private readonly TextBox _subtitle = new() { Dock = DockStyle.Top };
     private readonly TextBox _briefing = new() { Dock = DockStyle.Top, Multiline = true, Height = 110, ScrollBars = ScrollBars.Vertical, AcceptsReturn = true };
     private readonly TextBox[] _teamNames = Enumerable.Range(0, 8).Select(_ => new TextBox { Dock = DockStyle.Top }).ToArray();
@@ -169,6 +170,7 @@ internal sealed partial class MapEditorForm : Form
         BackColor = WinFormsTheme.Window; ForeColor = WinFormsTheme.TextPrimary; Font = WinFormsTheme.CreateFont(9F);
         _gamePath = gamePath;
         _selected = selectedMap;
+        _gameTextErrors.ContainerControl = this;
         _floorTextures = new FloorTextureLibrary(Path.Combine(gamePath, "floortex.dat"));
         _floorMaterials = new FloorMaterialCatalog(_floorTextures);
         BuildInterface();
@@ -367,7 +369,7 @@ internal sealed partial class MapEditorForm : Form
         KeyDown += (_, e) => HandleShortcut(e);
         foreach (Control control in EditablePropertyControls())
         {
-            if (control is TextBox text) text.TextChanged += (_, _) => MarkDirty();
+            if (control is TextBox text) text.TextChanged += (_, _) => { UpdateGameTextWarning(text); MarkDirty(); };
             else if (control is NumericUpDown numeric) numeric.ValueChanged += (_, _) => MarkDirty();
             else if (control is CheckBox check) check.CheckedChanged += (_, _) => MarkDirty();
         }
@@ -506,6 +508,7 @@ internal sealed partial class MapEditorForm : Form
             : "  滾輪縮放　中鍵平移　材質筆刷：繪製　移動物件：拖曳選取的 SDL 物件　Ctrl+S 儲存";
 
         UpdateStatus();
+        foreach (TextBox text in EditablePropertyControls().OfType<TextBox>()) UpdateGameTextWarning(text);
         UpdateEditorState();
         UpdatePaletteBrushLabel();
 
@@ -1186,6 +1189,15 @@ internal sealed partial class MapEditorForm : Form
     }
     private static decimal ParseDecimal(string? value, NumericUpDown control) => decimal.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out decimal parsed) ? Math.Clamp(parsed, control.Minimum, control.Maximum) : control.Minimum;
 
+    private void UpdateGameTextWarning(TextBox text)
+    {
+        if (ReferenceEquals(text, _waterColor)) return;
+        bool en = Loc.CurrentLanguage == Language.English;
+        _gameTextErrors.SetError(text, MapTextDocument.CanEncodeGameText(text.Text) ? "" : en
+            ? "The game supports CP1251 text (Latin/Cyrillic). Chinese characters and emoji cannot be saved."
+            : "遊戲支援 CP1251 文字（拉丁／西里爾字母）；中文與 emoji 無法儲存。");
+    }
+
     private void ShowError(Exception ex)
     {
         bool isEn = AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English;
@@ -1194,7 +1206,7 @@ internal sealed partial class MapEditorForm : Form
 
     protected override void Dispose(bool disposing)
     {
-        if (disposing) { _floorTextures?.Dispose(); _floorTextures = null; Image? overview = _overview.Image; _overview.Image = null; overview?.Dispose(); }
+        if (disposing) { _gameTextErrors.Dispose(); _floorTextures?.Dispose(); _floorTextures = null; Image? overview = _overview.Image; _overview.Image = null; overview?.Dispose(); }
         base.Dispose(disposing);
     }
 
