@@ -1,6 +1,6 @@
 # 地圖編輯器驗收矩陣
 
-更新：2026-10-07，Codex。此表以目前 repository 程式碼與合成 TEMP 地圖測試為準。整體開發尚未完成。
+更新：2026-10-07，Codex；同日 Claude 補 3D 原遊戲畫面各列（含遊戲內樣板比對證據）。整體開發尚未完成。
 
 ## 已驗證的編輯與儲存流程
 
@@ -38,9 +38,16 @@
 | 自然物件散佈 | 筆刷範圍內依密度散佈、最小間距、反覆塗抹只補空隙、混合同類物種、單一復原；1×1 維持每格一株 | `AgainstRomeMapEditor.Modules.Tests/NatureScatterTests.cs`、`AgainstRomeModifier.Tests/MapEditorNatureHistoryTests.cs` |
 | 圖塊印章 | 原版道路／河流／岩壁／地板等圖塊分類列出，單格精確放置、復原重做、存檔重開、印章取樣 | `AgainstRomeMapEditor.Modules.Tests/TerrainAutoBridgeTests.cs`（TerrainStampTests）、`AgainstRomeModifier.Tests/MapEditorStampTests.cs` |
 | 3D 資料計算 | 高度插值、網格、相機限制、射線選取、材質 atlas | `AgainstRomeModifier.Tests/MapEditor3DTests.cs` |
-| 原生 ALR 8-bit 行解碼核心（未接 UI） | 兩段像素／gap／各段 opacity、快照隔離、損壞輸入拒絕；實際 alr.dat 全部 2,075 個文件與 palette 變體解碼成功。未驗證遊戲場景外觀 | `AgainstRomeMapEditor.Modules.Tests/NativeAlrIndexedFrameTests.cs`、`tools/re/alr-probe` |
-| ALRA v4–6 indexed 容器解析（未接 UI） | palette 選取、共用影格、截斷拒絕；實際素材修正 pixel-relative offsets 與零尺寸格，358,083 格解碼成功。動畫方向／場景仍未驗證 | `AgainstRomeMapEditor.Modules.Tests/NativeAlrDocumentTests.cs`、`docs/reverse-engineering/native-scene-rendering.md` |
-| APAT v2/v3 indexed diamond patches（未接 UI） | raw／compressed rows、row gap／skip／opacity、透明合成、變長群組列表與輸入拒絕；222文件／500507 tiles／103601 frames 全庫解碼成功，已檢視主屋兩格。色彩／方向／動畫／完整場景尚未遊戲驗收 | `AgainstRomeMapEditor.Modules.Tests/NativeAptDocumentTests.cs`、`tools/re/apt-probe` |
+| 原生 ALR 8-bit 行解碼核心 | 兩段像素／gap／各段 opacity、快照隔離、損壞輸入拒絕；實際 alr.dat 全部 2,075 個文件與 palette 變體解碼成功。未驗證遊戲場景外觀 | `AgainstRomeMapEditor.Modules.Tests/NativeAlrIndexedFrameTests.cs`、`tools/re/alr-probe` |
+| ALRA v4–6 indexed 容器解析 | palette 選取、共用影格、截斷拒絕；實際素材修正 pixel-relative offsets 與零尺寸格，358,083 格解碼成功。動畫方向／場景仍未驗證 | `AgainstRomeMapEditor.Modules.Tests/NativeAlrDocumentTests.cs`、`docs/reverse-engineering/native-scene-rendering.md` |
+| APAT v2/v3 indexed diamond patches | raw／compressed rows、row gap／skip／opacity、透明合成、變長群組列表與輸入拒絕；222文件／500507 tiles／103601 frames 全庫解碼成功，已檢視主屋兩格。色彩／方向／動畫／完整場景尚未遊戲驗收 | `AgainstRomeMapEditor.Modules.Tests/NativeAptDocumentTests.cs`、`tools/re/apt-probe` |
+| 原生素材 sprite（3D） | objdef 名稱→ALR/APT 靜態圖（單位方向列、APT 完工階段、樹幹＋樹冠雙層、錨點）；全 objdef 2159 筆中 1711 有圖；遊戲內 NCC 比對：住宅完工格 0.998、色序 0x00BBGGRR、隊伍 N=色盤變體 N。 | `AgainstRomeMapEditor.Modules.Tests/NativeSpriteCatalogTests.cs`、`NativeSpriteAtlasTests.cs`、`AgainstRomeModifier.Tests/MapEditorNativeSpriteTests.cs`（ARM_NATIVE_ASSETS／ARM_COMPARE_GAME 選用實素材測試） |
+| 遊戲等角視角 | 正交投影、俯角 30°、ZoomToGameScale；以同一地圖副本擷取，主屋與住宅錨點位移 (384,192) 與遊戲截圖一致、NCC 1.000。 | `MapEditorNativeSpriteTests.cs`（Real_game_copy_renders_test_map_for_side_by_side_comparison）、`MapEditor3DTests.cs`（正交射線拾取） |
+| 單位角度→方向列 | 遊戲內 0/45/90/135/180° = 列 14/12/10/8/6（NCC 0.96–0.99），公式 row = 14 − angle/22.5 mod 16；225° 以上與 32 方向騎兵未實測。 | `NativeSpriteCatalogTests.cs`（Scenario_angle_maps_to_direction_row）、`InGameAcceptanceScenarioTests.cs`（angles 案例） |
+| 3D 點選與拖曳 | 點選可見 sprite（alpha 命中、視圖深度最近者）選取 SDL 物件；單擊不位移、拖曳保持抓取偏移；Delete 切換刪除；自然物件點選後 Delete 移除且可復原。 | `MapEditorNativeSpriteTests.cs`（Real_opengl_click_selects_visible_sprite_and_drag_moves_it）、`MapEditorNatureHistoryTests.cs`（Picked_nature_objects_are_deleted_with_undo_in_move_mode_and_fixed_objects_are_kept） |
+| 放置預覽與物件面板縮圖 | 放置模式游標格半透明 sprite（跟隨類型、隊伍、角度）；放置／自然物件清單顯示原素材縮圖（DPI）。 | `MapEditorNativeSpriteTests.cs`（Real_opengl_place_mode_draws_translucent_preview_at_hovered_tile）、`MapEditorPaletteThumbnailTests.cs` |
+| 地圖 DATA 物件與光照 | 3D 顯示 DATA/objects.dat 全部物件（ENDL_000：6618 物件、7143 sprite）；無 sprite 的 DATA 物件不畫，腳本標記青點；地表乘 vertex.bmp 頂點色。 | `MapEditorNativeSpriteTests.cs`（Real_original_map_shows_level_objects_with_native_sprites）、`MapEditorVertexLightTests.cs` |
+| 2D 畫布 sprite 與鍵盤 | 2D 物件以原素材縮圖；3D 方向鍵捲動、PageUp/Down 縮放、Home 1:1。 | `MapCanvasSpriteTests.cs`、`MapEditorNativeSpriteTests.cs`（鍵盤相機斷言） |
 
 完整 solution 同時涵蓋 Modifier 與 SaveManager，總通過數不能當成地圖編輯器的功能數。部分測試在未提供原版資料或未啟用 live 環境時直接返回；通過總數也不能證明這些實機路徑已執行。
 

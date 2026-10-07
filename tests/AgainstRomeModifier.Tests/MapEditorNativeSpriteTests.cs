@@ -37,6 +37,83 @@ public sealed partial class MapEditorSaveTransactionTests
         Assert.Equal((uv.U0, uv.V1), (vertices[5], vertices[6]));
     }
 
+    // objdef row (shidx 0, shsiz 256 = one tile half extent, box, shacx 128, shacz 0) for the fixture house.
+    private const string ShadowObjdef = "0, 1, 1, 0, 0.0, -1, -1, 1, -1, 0, -1, 0, 256, 0, -1, 128, 0, 0, 0, 10, 0, 0, 0, 0.0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -1, 0, 0, 0, 0, 0, -1, -1, 1, 1, 0, 0, BauRomHau00_Haupthaus, 0, 0";
+
+    /// <summary>8-bit BI_RGB BMP whose every pixel index is <paramref name="strength"/>.</summary>
+    private static byte[] ShadowBmp(int size, byte strength)
+    {
+        int stride = (size + 3) & ~3, offset = 14 + 40 + 1024;
+        var bytes = new byte[offset + stride * size];
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian(bytes, 0x4D42);
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(2), (uint)bytes.Length);
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(10), (uint)offset);
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(14), 40);
+        System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(18), size);
+        System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(22), size);
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(26), 1);
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(28), 8);
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(34), (uint)(stride * size));
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(46), 256);
+        bytes.AsSpan(offset).Fill(strength);
+        return bytes;
+    }
+
+    [Fact]
+    public void Shadow_quad_is_centred_on_the_corrected_anchor_with_half_extent_shsiz()
+    {
+        var heights = new TerrainHeightField(257, 257, Enumerable.Repeat((byte)0, 257 * 257).ToArray(), tileWidth: 64, tileHeight: 64);
+        using var shadows = NativeShadowCatalog.FromText(ShadowObjdef, "[ShadowNames]\r\n0000,box.bmp\r\n", _ => ShadowBmp(4, 200));
+        NativeObjectShadow shadow = shadows.GetShadow("BauRomHau00_Haupthaus")!;
+        var mask = new NativeSprite(4, 4, new uint[16], 0, 0, "box.bmp");
+        var atlas = NativeSpriteAtlas.Pack([mask]);
+        var house = new MapSceneObject("BauRomHau00_Haupthaus", 10 * 256, 0, 20 * 256, 0, "a.sdl");
+        float[] v = SceneObjectRenderer.BuildShadowVertices([house, house with { Name = "None" }], [shadow, null], _ => mask, atlas, heights);
+        Assert.Equal(6 * SceneObjectRenderer.FloatsPerShadowVertex, v.Length);
+        // Centre (10*256+128, 20*256) world = tile (10.5, 20); half extent 256 world = 1 tile.
+        Assert.Equal((9.5f, 19f), (v[0], v[2]));                        // NW
+        Assert.Equal((11.5f, 21f), (v[2 * 5], v[2 * 5 + 2]));          // SE
+        Assert.True(atlas.TryGetUv(mask, out NativeSpriteUv uv));
+        Assert.Equal((uv.U0, uv.V0), (v[3], v[4]));
+        Assert.Equal((uv.U1, uv.V1), (v[2 * 5 + 3], v[2 * 5 + 4]));
+    }
+
+    [Fact]
+    public void Real_opengl_draws_native_object_shadows_on_the_ground()
+    {
+        string map = CreateFixture();
+        RunInSta(() =>
+        {
+            Application.SetUnhandledExceptionMode(UnhandledExceptionMode.ThrowException, threadScope: true);
+            OpenTK.Windowing.Desktop.GLFWProvider.CheckForMainThread = false;
+            using var form = new MapEditorForm(_root, new GameMapInfo("ENDL_005", map, true, "Shadows", "Test"));
+            typeof(MapEditorForm).GetField("_allowClose", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(form, true);
+            form.StartPosition = FormStartPosition.Manual; form.Location = new Point(-30000, -30000);
+            form.Show(); Application.DoEvents();
+            Invoke(form, "SetActiveView", true); Application.DoEvents();
+            var view = GetField<Map3DViewControl>(form, "_view3d");
+            if (!view.IsReady) { Assert.NotEqual("1", Environment.GetEnvironmentVariable("ARM_OPENGL_REQUIRED")); return; }
+            view.ShowGrid = false;
+            view.FocusTile(10000 / 256f + .5f, 6000 / 256f);
+            ((EditorCamera)typeof(Map3DViewControl).GetField("_camera", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(view)!).Zoom(.08f);
+            using Bitmap before = view.CaptureFrame(640, 480)!;
+            using var shadows = NativeShadowCatalog.FromText(ShadowObjdef, "[ShadowNames]\r\n0000,box.bmp\r\n", _ => ShadowBmp(8, 255));
+            view.ShadowCatalog = shadows;
+            Assert.Equal(1, view.ShadowObjectCount);
+            using Bitmap after = view.CaptureFrame(640, 480)!;
+            int darkened = 0;
+            for (int y = 0; y < 480; y += 2) for (int x = 0; x < 640; x += 2)
+            {
+                Color a = before.GetPixel(x, y), b = after.GetPixel(x, y);
+                if (b.R + b.G + b.B < (a.R + a.G + a.B) / 4) darkened++;
+            }
+            // A full-strength mask nearly blackens a 2x2-tile ground diamond around the house.
+            Assert.True(darkened > 2000, $"只有 {darkened} 個取樣像素被陰影壓暗。");
+            view.ShadowCatalog = null;
+            Assert.Equal(0, view.ShadowObjectCount);
+        }, TimeSpan.FromMinutes(2));
+    }
+
     [Fact]
     public void Orthographic_painter_order_uses_view_depth_not_eye_distance()
     {

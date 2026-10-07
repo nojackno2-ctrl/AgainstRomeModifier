@@ -37,20 +37,88 @@ internal sealed class Map3DViewControl : GLControl
     private byte[] _vertexLight = [255, 255, 255];
     private int _vertexLightWidth = 1, _vertexLightHeight = 1, _vertexLightTexture;
     private NativeSpriteCatalog? _spriteCatalog;
+    private NativeShadowCatalog? _shadowCatalog;
+    private NativeObjectShadow?[] _objectShadows = Array.Empty<NativeObjectShadow?>();
+    private readonly Dictionary<NativeShadowDocument, NativeSprite> _shadowMasks = new(ReferenceEqualityComparer.Instance);
+    private NativeSpriteAtlas? _shadowAtlas;
+    private int _shadowProgram, _shadowVao, _shadowVbo, _shadowTexture;
+    private bool _shadowTextureDirty;
     private NativeSpriteAtlas? _spriteAtlas;
     private NativeSprite?[] _objectSprites = Array.Empty<NativeSprite?>();
+    private NativeSprite?[] _stillObjectSprites = Array.Empty<NativeSprite?>();
+    private readonly System.Windows.Forms.Timer _animationTimer = new() { Interval = 33 };
+    private readonly System.Diagnostics.Stopwatch _animationClock = System.Diagnostics.Stopwatch.StartNew();
+    private readonly List<AnimationGroup> _animationGroups = new();
+    private HashSet<NativeSprite> _atlasSprites = new(ReferenceEqualityComparer.Instance);
+    private bool _animationsEnabled = true;
+    private double? _animationTimeMs;
+    private sealed record AnimationGroup(NativeSpriteAnimation Animation, int[] ObjectIndices);
     private int _spriteProgram, _spriteVao, _spriteVbo, _spriteTexture;
     private bool _spriteTextureDirty;
     private string? _previewName;
     private int _previewTeam;
     private float _previewAngle;
     private NativeSprite? _previewSprite;
+    private SceneLightingContext? _lightingContext;
+    private bool _gameLightingEnabled;
+    private float _gameHour = 12f;
+    private readonly List<NativeLightInstance> _sceneLights = new();
+    private int _lightCountLocTerrain, _ambientLocTerrain, _lightsLocTerrain, _lightColorsLocTerrain, _gameLightingEnabledLocTerrain;
+    private int _lightCountLocSprite, _ambientLocSprite, _lightsLocSprite, _lightColorsLocSprite, _gameLightingEnabledLocSprite;
+    internal const int MaximumGameLights = 64;
+    private readonly float[] _lightPositions = new float[MaximumGameLights * 4];
+    private readonly float[] _lightColors = new float[MaximumGameLights * 4];
+    private Vector3? _lightSelectionTarget;
+    private int _selectedLightCount;
+    internal int SceneLightCount => _sceneLights.Count;
 
     public Map3DViewControl() : base(new GLControlSettings { API = ContextAPI.OpenGL, APIVersion = new Version(3, 3), Profile = ContextProfile.Core, Flags = ContextFlags.ForwardCompatible })
     {
         Dock = DockStyle.Fill;
         BackColor = Color.FromArgb(24, 28, 36);
         Cursor = Cursors.Cross;
+        _animationTimer.Tick += (_, _) => { SelectAnimationFrames(_animationTimeMs ?? _animationClock.Elapsed.TotalMilliseconds); Invalidate(); };
+    }
+
+    public bool AnimationsEnabled
+    {
+        get => _animationsEnabled;
+        set
+        {
+            if (_animationsEnabled == value) return;
+            _animationsEnabled = value;
+            SelectAnimationFrames(_animationTimeMs ?? _animationClock.Elapsed.TotalMilliseconds);
+            UpdateAnimationTimer(); Invalidate();
+        }
+    }
+
+    /// <summary>測試固定時鐘；null 恢復單調實際時間，避免擷取受訊息迴圈時序影響。</summary>
+    internal double? AnimationTimeMs
+    {
+        get => _animationTimeMs;
+        set { _animationTimeMs = value; SelectAnimationFrames(value ?? _animationClock.Elapsed.TotalMilliseconds); UpdateAnimationTimer(); Invalidate(); }
+    }
+    internal bool AnimationTimerRunning => _animationTimer.Enabled;
+    internal int AnimatedObjectCount => _animationGroups.Sum(group => group.ObjectIndices.Length);
+
+    private void SelectAnimationFrames(double elapsedMs)
+    {
+        foreach (AnimationGroup group in _animationGroups)
+        {
+            NativeSprite frame = group.Animation.Frames[group.Animation.GetFrameIndex(elapsedMs)];
+            foreach (int index in group.ObjectIndices) _objectSprites[index] = _animationsEnabled ? frame : _stillObjectSprites[index];
+        }
+    }
+
+    private void UpdateAnimationTimer()
+        => _animationTimer.Enabled = !IsDisposed && !Disposing && IsHandleCreated && Visible &&
+            _animationsEnabled && _animationTimeMs is null && _animationGroups.Count > 0;
+
+    protected override void OnVisibleChanged(EventArgs e)
+    {
+        base.OnVisibleChanged(e);
+        // base 建構期間可能觸發；此時欄位尚未初始化。
+        if (_animationTimer is not null) UpdateAnimationTimer();
     }
 
     /// <summary>Original ALR/APT still sprites for scene objects; null keeps marker points. Borrowed, not disposed.</summary>
@@ -59,6 +127,54 @@ internal sealed class Map3DViewControl : GLControl
         get => _spriteCatalog;
         set { if (ReferenceEquals(_spriteCatalog, value)) return; _spriteCatalog = value; ResolveObjectSprites(); Invalidate(); }
     }
+
+    /// <summary>Original object shadow masks (shad.dat); null draws no shadows. Borrowed, not disposed.</summary>
+    public NativeShadowCatalog? ShadowCatalog
+    {
+        get => _shadowCatalog;
+        set { if (ReferenceEquals(_shadowCatalog, value)) return; _shadowCatalog = value; _shadowMasks.Clear(); ResolveObjectSprites(); Invalidate(); }
+    }
+
+    /// <summary>Scene lighting context for day/night ambient and local lights. Borrowed, not disposed.</summary>
+    public SceneLightingContext? LightingContext
+    {
+        get => _lightingContext;
+        set
+        {
+            if (ReferenceEquals(_lightingContext, value)) return;
+            _lightingContext = value;
+            RebuildSceneLights();
+            Invalidate();
+        }
+    }
+
+    /// <summary>Preview game lighting (day/night ambient + local point lights) in 3D view. Defaults to false.</summary>
+    public bool GameLightingEnabled
+    {
+        get => _gameLightingEnabled;
+        set
+        {
+            if (_gameLightingEnabled == value) return;
+            _gameLightingEnabled = value;
+            Invalidate();
+        }
+    }
+
+    /// <summary>Time of day hour (0..24 float) for daynight ambient interpolation. Defaults to 12.0 (noon).</summary>
+    public float GameHour
+    {
+        get => _gameHour;
+        set
+        {
+            float clamped = float.IsFinite(value) ? Math.Clamp(value, 0f, 24f) : 12f;
+            if (Math.Abs(_gameHour - clamped) < 1e-4f) return;
+            _gameHour = clamped;
+            Invalidate();
+        }
+    }
+
+    /// <summary>Number of scene objects currently drawn with a native ground shadow.</summary>
+    internal int ShadowObjectCount => _shadowAtlas is null ? 0 : _objectShadows.Count(shadow => shadow is not null && ShadowMask(shadow) is { } mask && _shadowAtlas.TryGetUv(mask, out _));
 
     /// <summary>Number of scene objects currently drawn with an original game sprite.</summary>
     internal int SpriteObjectCount => Enumerable.Range(0, _objectSprites.Length).Count(HasSprite);
@@ -82,6 +198,8 @@ internal sealed class Map3DViewControl : GLControl
     /// <summary>Left click on a visible object while <see cref="ScenePickEnabled"/>; handlers may enable moving it.</summary>
     public event EventHandler<SceneObjectPickEventArgs>? SceneObjectPicked;
     public bool ScenePickEnabled { get; set; }
+    internal Vector3 CameraTarget => _camera.Target;
+    public event EventHandler? CameraChanged;
 
     /// <summary>Index into the current scene objects of the object drawn under a client point, or -1.</summary>
     internal int PickSceneObject(Point point)
@@ -127,6 +245,7 @@ internal sealed class Map3DViewControl : GLControl
         // A 257x257 source covers the complete 64x64 tile map (four height samples per tile).
         _heights = new TerrainHeightField(bitmap.Width, bitmap.Height, samples, tileWidth: dimension, tileHeight: dimension);
         _dimension = dimension; _textures = textures.ToArray(); _objects = sceneObjects; _waterLevel = waterLevel; _heightMapStep = heightMapStep; _waterSourceColor = waterColor;
+        RebuildSceneLights();
         _atlas?.Dispose(); _atlas = FloorTextureAtlas.Create(_textures, _library);
         ResolveObjectSprites();
         BuildMesh();
@@ -178,6 +297,7 @@ internal sealed class Map3DViewControl : GLControl
         base.OnHandleCreated(e);
         // 控制項未釋放而 handle 被重建（例如重新指定父容器）時，原 context 已隨舊 handle 銷毀，需重新初始化。
         if (_reinitializeOnHandleCreated) { _reinitializeOnHandleCreated = false; InitializeGl(); }
+        UpdateAnimationTimer();
     }
 
     private void InitializeGl()
@@ -192,8 +312,20 @@ internal sealed class Map3DViewControl : GLControl
             _terrainProgram = CreateProgram(TerrainVertexShader, TerrainFragmentShader);
             _colorProgram = CreateProgram(ColorVertexShader, ColorFragmentShader);
             _spriteProgram = CreateProgram(SpriteVertexShader, SpriteFragmentShader);
+            _shadowProgram = CreateProgram(ShadowVertexShader, ShadowFragmentShader);
+            _shadowVao = GL.GenVertexArray(); _shadowVbo = GL.GenBuffer(); _shadowTexture = GL.GenTexture(); _shadowTextureDirty = true;
             _spriteVao = GL.GenVertexArray(); _spriteVbo = GL.GenBuffer(); _spriteTexture = GL.GenTexture(); _spriteTextureDirty = true;
             _vao = GL.GenVertexArray(); _vbo = GL.GenBuffer(); _ebo = GL.GenBuffer(); _waterVao = GL.GenVertexArray(); _waterVbo = GL.GenBuffer(); _markerVao = GL.GenVertexArray(); _markerVbo = GL.GenBuffer(); _cursorVao = GL.GenVertexArray(); _cursorVbo = GL.GenBuffer();
+            _gameLightingEnabledLocTerrain = GL.GetUniformLocation(_terrainProgram, "uGameLightingEnabled");
+            _ambientLocTerrain = GL.GetUniformLocation(_terrainProgram, "uAmbientColor");
+            _lightCountLocTerrain = GL.GetUniformLocation(_terrainProgram, "uLightCount");
+            _lightsLocTerrain = GL.GetUniformLocation(_terrainProgram, "uLightPosRadius");
+            _lightColorsLocTerrain = GL.GetUniformLocation(_terrainProgram, "uLightColor");
+            _gameLightingEnabledLocSprite = GL.GetUniformLocation(_spriteProgram, "uGameLightingEnabled");
+            _ambientLocSprite = GL.GetUniformLocation(_spriteProgram, "uAmbientColor");
+            _lightCountLocSprite = GL.GetUniformLocation(_spriteProgram, "uLightCount");
+            _lightsLocSprite = GL.GetUniformLocation(_spriteProgram, "uLightPosRadius");
+            _lightColorsLocSprite = GL.GetUniformLocation(_spriteProgram, "uLightColor");
             _initialized = true;
             LastFailureReason = null;
             _collisionTexture = GL.GenTexture();
@@ -269,6 +401,7 @@ internal sealed class Map3DViewControl : GLControl
         ReliefScale = Math.Clamp(scale, 0, 2);
         if (_heights is null) return;
         _heights.HeightScale = 6f * ReliefScale;
+        RebuildSceneLights();
         BuildMesh();
         if (_initialized) UploadResources();
         Invalidate();
@@ -340,13 +473,15 @@ internal sealed class Map3DViewControl : GLControl
     /// <summary>以目前繫結的 framebuffer 繪製整個場景；畫面與離屏擷取共用同一路徑。</summary>
     private void RenderScene(int width, int height)
     {
+        SelectAnimationFrames(_animationTimeMs ?? _animationClock.Elapsed.TotalMilliseconds);
+        if (_gameLightingEnabled) SelectNearestSceneLights();
         GL.Viewport(0, 0, width, height); GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
         Matrix4x4 view = _camera.GetViewMatrix(), projection = _camera.GetProjectionMatrix(width / (float)Math.Max(1, height));
         Matrix4 matrix = ToOpenTk(view * projection);
         DrawTerrain(matrix);
         if (ShowGrid) DrawGrid(matrix);
         DrawWater(matrix);
-        if (ShowObjects) { DrawMarkers(matrix); DrawSprites(ToOpenTk(view), ToOpenTk(projection)); }
+        if (ShowObjects) { DrawShadows(matrix); DrawMarkers(matrix); DrawSprites(ToOpenTk(view), ToOpenTk(projection)); }
         DrawBrushCursor(matrix);
     }
 
@@ -395,8 +530,8 @@ internal sealed class Map3DViewControl : GLControl
     {
         base.OnMouseMove(e);
         Point delta = new(e.X - _lastPointer.X, e.Y - _lastPointer.Y);
-        if (_panning && e.Button == MouseButtons.Middle) { _camera.Pan(-delta.X * .08f, delta.Y * .08f); Invalidate(); }
-        else if (_rightClick && e.Button == MouseButtons.Right && Math.Abs(e.X - _rightStart.X) + Math.Abs(e.Y - _rightStart.Y) >= 4) { _rotating = true; _camera.Rotate(delta.X * .35f, -delta.Y * .35f); Invalidate(); }
+        if (_panning && e.Button == MouseButtons.Middle) { _camera.Pan(-delta.X * .08f, delta.Y * .08f); Invalidate(); CameraChanged?.Invoke(this, EventArgs.Empty); }
+        else if (_rightClick && e.Button == MouseButtons.Right && Math.Abs(e.X - _rightStart.X) + Math.Abs(e.Y - _rightStart.Y) >= 4) { _rotating = true; _camera.Rotate(delta.X * .35f, -delta.Y * .35f); Invalidate(); CameraChanged?.Invoke(this, EventArgs.Empty); }
         else if (_pickedPendingDrag && e.Button == MouseButtons.Left && Math.Abs(e.X - _pickStart.X) + Math.Abs(e.Y - _pickStart.Y) >= 4) { _pickedPendingDrag = false; _movingSceneObject = MoveGrabbedOrPointed(e.Location, completed: false); }
         else if (_movingSceneObject && e.Button == MouseButtons.Left) MoveGrabbedOrPointed(e.Location, completed: false);
         else if (_painting && e.Button == MouseButtons.Left) TryPaint(e.Location);
@@ -434,11 +569,13 @@ internal sealed class Map3DViewControl : GLControl
         float y = _heights?.SampleHeight(tileX, tileY) ?? 0;
         _camera.Target = new Vector3(tileX, y, tileY);
         Invalidate();
+        CameraChanged?.Invoke(this, EventArgs.Empty);
     }
 
     public void UpdateSceneObjects(IReadOnlyList<MapSceneObject> sceneObjects)
     {
         _objects = sceneObjects;
+        RebuildSceneLights();
         ResolveObjectSprites();
         if (_initialized && _heights is not null)
         {
@@ -472,9 +609,10 @@ internal sealed class Map3DViewControl : GLControl
         }
         e.Handled = true;
         Invalidate();
+        CameraChanged?.Invoke(this, EventArgs.Empty);
     }
 
-    protected override void OnMouseWheel(MouseEventArgs e) { base.OnMouseWheel(e); _camera.Zoom(e.Delta > 0 ? .84f : 1.19f); Invalidate(); }
+    protected override void OnMouseWheel(MouseEventArgs e) { base.OnMouseWheel(e); _camera.Zoom(e.Delta > 0 ? .84f : 1.19f); Invalidate(); CameraChanged?.Invoke(this, EventArgs.Empty); }
 
     private void TryPaint(Point point)
     {
@@ -551,6 +689,7 @@ internal sealed class Map3DViewControl : GLControl
     {
         if (_heights is null || samples.Count != _heights.Width * _heights.Height) return;
         _heights = new TerrainHeightField(_heights.Width, _heights.Height, samples.ToArray(), _heights.HeightScale, _heights.TileWidth, _heights.TileHeight);
+        RebuildSceneLights();
         BuildMesh();
         if (_initialized && _mesh is not null && _atlas is not null)
         {
@@ -585,6 +724,7 @@ internal sealed class Map3DViewControl : GLControl
     private void DrawTerrain(Matrix4 matrix)
     {
         GL.UseProgram(_terrainProgram); GL.UniformMatrix4(GL.GetUniformLocation(_terrainProgram, "uMvp"), false, ref matrix); var light = new OpenTK.Mathematics.Vector3(.4f, .85f, .3f); GL.Uniform3(GL.GetUniformLocation(_terrainProgram, "uLight"), ref light);
+        UploadGameLighting(_gameLightingEnabledLocTerrain, _ambientLocTerrain, _lightCountLocTerrain, _lightsLocTerrain, _lightColorsLocTerrain);
         GL.ActiveTexture(TextureUnit.Texture0); GL.BindTexture(TextureTarget.Texture2D, _atlasTexture); GL.Uniform1(GL.GetUniformLocation(_terrainProgram, "uAtlas"), 0);
         GL.Uniform1(GL.GetUniformLocation(_terrainProgram, "uDimension"), (float)_dimension);
         GL.Uniform1(GL.GetUniformLocation(_terrainProgram, "uShowCollision"), _collisionMask is null ? 0 : 1);
@@ -630,13 +770,95 @@ internal sealed class Map3DViewControl : GLControl
     {
         NativeSpriteCatalog? catalog = _spriteCatalog;
         _objectSprites = catalog is null ? Array.Empty<NativeSprite?>() : _objects.Select(item => catalog.GetSprite(item.Name, item.Team, angleDegrees: item.Angle)).ToArray();
+        _stillObjectSprites = (NativeSprite?[])_objectSprites.Clone();
+        _animationGroups.Clear();
+        var groups = new Dictionary<NativeSpriteAnimation, List<int>>(ReferenceEqualityComparer.Instance);
+        if (catalog is not null)
+            for (int i = 0; i < _objects.Count; i++)
+            {
+                MapSceneObject item = _objects[i];
+                if (catalog.GetAnimation(item.Name, item.Team, item.Angle) is not { } animation) continue;
+                if (!groups.TryGetValue(animation, out List<int>? indices)) groups[animation] = indices = new();
+                indices.Add(i);
+            }
         _previewSprite = catalog is null || _previewName is null ? null : catalog.GetSprite(_previewName, _previewTeam, angleDegrees: _previewAngle);
+        ResolveObjectShadows();
         var distinct = new HashSet<NativeSprite>(_objectSprites.OfType<NativeSprite>(), ReferenceEqualityComparer.Instance);
         if (_previewSprite is not null) distinct.Add(_previewSprite);
-        if (distinct.Count == 0) { _spriteAtlas = null; return; }
-        if (_spriteAtlas is not null && distinct.Count == _spriteAtlas.Count && distinct.All(sprite => _spriteAtlas.TryGetUv(sprite, out _))) return;
-        _spriteAtlas = NativeSpriteAtlas.Pack(distinct);
-        _spriteTextureDirty = true;
+        var requested = new HashSet<NativeSprite>(distinct, ReferenceEqualityComparer.Instance);
+        foreach (NativeSpriteAnimation animation in groups.Keys) requested.UnionWith(animation.Frames);
+        if (!_atlasSprites.SetEquals(requested))
+        {
+            _atlasSprites = requested;
+            _spriteAtlas = distinct.Count == 0 ? null : NativeSpriteAtlas.PackAnimations(distinct, groups.Keys);
+            _spriteTextureDirty = true;
+        }
+        if (_spriteAtlas is not null)
+            foreach ((NativeSpriteAnimation animation, List<int> indices) in groups)
+                if (animation.Frames.All(frame => _spriteAtlas.TryGetUv(frame, out _)))
+                    _animationGroups.Add(new AnimationGroup(animation, indices.ToArray()));
+        SelectAnimationFrames(_animationTimeMs ?? _animationClock.Elapsed.TotalMilliseconds);
+        UpdateAnimationTimer();
+    }
+
+    private void ResolveObjectShadows()
+    {
+        NativeShadowCatalog? shadows = _shadowCatalog;
+        _objectShadows = shadows is null ? Array.Empty<NativeObjectShadow?>() : _objects.Select(item => SafeShadow(shadows, item.Name)).ToArray();
+        var masks = new HashSet<NativeSprite>(_objectShadows.OfType<NativeObjectShadow>().Select(ShadowMask).OfType<NativeSprite>(), ReferenceEqualityComparer.Instance);
+        if (masks.Count == 0) { _shadowAtlas = null; return; }
+        if (_shadowAtlas is not null && masks.Count == _shadowAtlas.Count && masks.All(mask => _shadowAtlas.TryGetUv(mask, out _))) return;
+        _shadowAtlas = NativeSpriteAtlas.Pack(masks);
+        _shadowTextureDirty = true;
+    }
+
+    private static NativeObjectShadow? SafeShadow(NativeShadowCatalog catalog, string name)
+    {
+        try { return catalog.GetShadow(name); }
+        catch (Exception error) when (error is InvalidDataException or NotSupportedException) { return null; }
+    }
+
+    /// <summary>Shadow mask as a black sprite whose alpha is the native darkening strength (index / 256).</summary>
+    private NativeSprite? ShadowMask(NativeObjectShadow shadow)
+    {
+        if (_shadowMasks.TryGetValue(shadow.Document, out NativeSprite? cached)) return cached;
+        NativeShadowFrame frame = shadow.Document.DecodeFrame();
+        ReadOnlySpan<byte> alpha = frame.AlphaMask;
+        var pixels = new uint[frame.Width * frame.Height];
+        for (int i = 0; i < pixels.Length; i++) pixels[i] = (uint)alpha[i] << 24;
+        return _shadowMasks[shadow.Document] = new NativeSprite(frame.Width, frame.Height, pixels, 0, 0, shadow.Definition.TextureFileName);
+    }
+
+    private void DrawShadows(Matrix4 matrix)
+    {
+        if (_shadowAtlas is null || _heights is null || _shadowProgram == 0) return;
+        if (_shadowTextureDirty)
+        {
+            GL.BindTexture(TextureTarget.Texture2D, _shadowTexture);
+            GL.PixelStore(PixelStoreParameter.UnpackAlignment, 4);
+            GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba, _shadowAtlas.Width, _shadowAtlas.Height, 0, OpenTK.Graphics.OpenGL4.PixelFormat.Bgra, PixelType.UnsignedByte, _shadowAtlas.ArgbPixels);
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Linear);
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.ClampToEdge);
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.ClampToEdge);
+            _shadowTextureDirty = false;
+        }
+        float[] vertices = SceneObjectRenderer.BuildShadowVertices(_objects, _objectShadows, ShadowMask, _shadowAtlas, _heights);
+        if (vertices.Length == 0) return;
+        GL.BindVertexArray(_shadowVao); GL.BindBuffer(BufferTarget.ArrayBuffer, _shadowVbo);
+        GL.BufferData(BufferTarget.ArrayBuffer, vertices.Length * sizeof(float), vertices, BufferUsageHint.StreamDraw);
+        int stride = SceneObjectRenderer.FloatsPerShadowVertex * sizeof(float);
+        GL.EnableVertexAttribArray(0); GL.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, stride, 0);
+        GL.EnableVertexAttribArray(1); GL.VertexAttribPointer(1, 2, VertexAttribPointerType.Float, false, stride, 3 * sizeof(float));
+        GL.UseProgram(_shadowProgram);
+        GL.UniformMatrix4(GL.GetUniformLocation(_shadowProgram, "uMvp"), false, ref matrix);
+        GL.ActiveTexture(TextureUnit.Texture0); GL.BindTexture(TextureTarget.Texture2D, _shadowTexture);
+        GL.Uniform1(GL.GetUniformLocation(_shadowProgram, "uMasks"), 0);
+        // Native blend RGB*(256-index)/256: black with alpha=index/256 over the ground. Like the game, shadows
+        // are painted on the terrain before the objects and are not clipped by it.
+        GL.Disable(EnableCap.DepthTest); GL.Disable(EnableCap.CullFace);
+        GL.DrawArrays(PrimitiveType.Triangles, 0, vertices.Length / SceneObjectRenderer.FloatsPerShadowVertex);
+        GL.Enable(EnableCap.DepthTest); GL.Enable(EnableCap.CullFace);
     }
 
     /// <summary>
@@ -668,6 +890,8 @@ internal sealed class Map3DViewControl : GLControl
             _spriteTextureDirty = false;
         }
         GL.UseProgram(_spriteProgram);
+        // 全張 sprite（含放置預覽）只取地面錨點光照；原生 APT 是每個 patch 四角取樣。
+        UploadGameLighting(_gameLightingEnabledLocSprite, _ambientLocSprite, _lightCountLocSprite, _lightsLocSprite, _lightColorsLocSprite);
         GL.UniformMatrix4(GL.GetUniformLocation(_spriteProgram, "uView"), false, ref view);
         GL.UniformMatrix4(GL.GetUniformLocation(_spriteProgram, "uProjection"), false, ref projection);
         GL.ActiveTexture(TextureUnit.Texture0); GL.BindTexture(TextureTarget.Texture2D, _spriteTexture);
@@ -683,6 +907,43 @@ internal sealed class Map3DViewControl : GLControl
             DrawSpriteBatch(SceneObjectRenderer.BuildSpriteVertices([ghost], [_previewSprite], _spriteAtlas, _heights, _camera.GetViewMatrix()), .6f);
         }
         GL.Enable(EnableCap.DepthTest); GL.Enable(EnableCap.CullFace);
+    }
+
+    private void RebuildSceneLights()
+    {
+        _sceneLights.Clear();
+        if (_lightingContext is not null && _heights is not null)
+            _sceneLights.AddRange(_lightingContext.CollectSceneLights(_objects,
+                (x, z) => _heights.SampleHeight(x / 256f, z / 256f) * 256f));
+        _lightSelectionTarget = null;
+    }
+
+    // 只有場景／地形／catalog 變更才建立光源；移動相機只重選最近的 64 個。
+    private void SelectNearestSceneLights()
+    {
+        if (_lightSelectionTarget == _camera.Target) return;
+        _lightSelectionTarget = _camera.Target;
+        Vector3 targetWorld = _camera.Target * 256f;
+        _selectedLightCount = 0;
+        foreach (NativeLightInstance light in _sceneLights.OrderBy(light => Vector3.DistanceSquared(light.WorldPosition, targetWorld)).Take(MaximumGameLights))
+        {
+            int offset = _selectedLightCount++ * 4;
+            _lightPositions[offset] = light.WorldPosition.X; _lightPositions[offset + 1] = light.WorldPosition.Y;
+            _lightPositions[offset + 2] = light.WorldPosition.Z; _lightPositions[offset + 3] = light.Radius;
+            _lightColors[offset] = light.Color.X; _lightColors[offset + 1] = light.Color.Y; _lightColors[offset + 2] = light.Color.Z;
+        }
+    }
+
+    private void UploadGameLighting(int enabled, int ambient, int count, int positions, int colors)
+    {
+        GL.Uniform1(enabled, _gameLightingEnabled ? 1 : 0);
+        if (!_gameLightingEnabled) return;
+        Vector3 rgb = _lightingContext?.GetAmbientColor(_gameHour) ?? Vector3.One;
+        GL.Uniform3(ambient, rgb.X, rgb.Y, rgb.Z);
+        GL.Uniform1(count, _selectedLightCount);
+        if (_selectedLightCount == 0) return;
+        GL.Uniform4(positions, _selectedLightCount, _lightPositions);
+        GL.Uniform4(colors, _selectedLightCount, _lightColors);
     }
 
     private void DrawSpriteBatch(float[] vertices, float alpha)
@@ -766,17 +1027,19 @@ internal sealed class Map3DViewControl : GLControl
     {
         // GL 資源已在 OnHandleDestroyed（context 仍有效時）釋放；此時 handle 可能已被父視窗銷毀，
         // 不能再 MakeCurrent，否則 GLControl 會重新建立 handle 並再次執行初始化。
-        if (disposing) { if (IsHandleCreated) ReleaseGlResources(); _atlas?.Dispose(); /* _library 由 MapEditorForm 擁有，不在此釋放 */ }
+        if (disposing) { _animationTimer.Dispose(); if (IsHandleCreated) ReleaseGlResources(); _atlas?.Dispose(); /* _library 由 MapEditorForm 擁有，不在此釋放 */ }
         base.Dispose(disposing);
     }
 
     protected override void OnHandleDestroyed(EventArgs e)
     {
+        _animationTimer.Stop();
         bool wasInitialized = _initialized;
         ReleaseGlResources(); // 在 GLControl 銷毀原生視窗與 context 之前執行
         // 舊 context 的 ID 不能用在新 context（可能剛好與新配置的 texture/buffer ID 相同）。
         _terrainProgram = _colorProgram = _vao = _vbo = _ebo = _atlasTexture = _waterVao = _waterVbo = _markerVao = _markerVbo = _cursorVao = _cursorVbo = _collisionTexture = 0;
         _spriteProgram = _spriteVao = _spriteVbo = _spriteTexture = 0;
+        _shadowProgram = _shadowVao = _shadowVbo = _shadowTexture = 0;
         _vertexLightTexture = 0;
         _reinitializeOnHandleCreated = wasInitialized && !Disposing && !IsDisposed && RecreatingHandle;
         base.OnHandleDestroyed(e);
@@ -792,12 +1055,87 @@ internal sealed class Map3DViewControl : GLControl
         GL.DeleteTexture(_vertexLightTexture); _vertexLightTexture = 0;
         GL.DeleteBuffer(_spriteVbo); GL.DeleteVertexArray(_spriteVao); GL.DeleteTexture(_spriteTexture); GL.DeleteProgram(_spriteProgram);
         _spriteVbo = _spriteVao = _spriteTexture = _spriteProgram = 0;
+        GL.DeleteBuffer(_shadowVbo); GL.DeleteVertexArray(_shadowVao); GL.DeleteTexture(_shadowTexture); GL.DeleteProgram(_shadowProgram);
+        _shadowVbo = _shadowVao = _shadowTexture = _shadowProgram = 0;
     }
 
-    private const string TerrainVertexShader = "#version 330 core\nlayout(location=0) in vec3 p; layout(location=1) in vec3 n; layout(location=2) in vec2 uv; uniform mat4 uMvp; uniform float uDimension; out vec3 N; out vec2 UV; out vec2 mapUV; void main(){ N=n; UV=uv; mapUV=p.xz/uDimension; gl_Position=uMvp*vec4(p,1.0);}";
-    private const string TerrainFragmentShader = "#version 330 core\nin vec3 N; in vec2 UV; in vec2 mapUV; uniform sampler2D uAtlas; uniform sampler2D uCollision; uniform sampler2D uVertexLight; uniform int uShowCollision; uniform vec3 uLight; out vec4 c; void main(){float l=max(.28,dot(normalize(N),normalize(uLight))); vec3 color=texture(uAtlas,UV).rgb*l; vec2 size=vec2(textureSize(uVertexLight,0)); vec2 uv=(mapUV*(size-1.0)+0.5)/size; vec3 vertexRgb=texture(uVertexLight,uv).rgb; color*=vertexRgb; if(uShowCollision!=0 && texture(uCollision,mapUV).r>0.0) color=mix(color,vec3(.824,.235,.235),.55); c=vec4(color,1.0);}";
-    private const string SpriteVertexShader = "#version 330 core\nlayout(location=0) in vec3 anchor; layout(location=1) in vec2 offset; layout(location=2) in vec2 uv; uniform mat4 uView; uniform mat4 uProjection; out vec2 UV; void main(){ vec4 v=uView*vec4(anchor,1.0); v.xy+=offset; UV=uv; gl_Position=uProjection*v;}";
-    private const string SpriteFragmentShader = "#version 330 core\nin vec2 UV; uniform sampler2D uSprites; uniform float uAlpha; out vec4 c; void main(){ vec4 t=texture(uSprites,UV); if(t.a<.5) discard; c=vec4(t.rgb,uAlpha);}";
+    // 0x49FFE0：共同以 world XYZ 計算二次衰減，每色道取 max，再截斷至 1。
+    private const string GameLightingShader = """
+        uniform int uGameLightingEnabled;
+        uniform vec3 uAmbientColor;
+        uniform int uLightCount;
+        uniform vec4 uLightPosRadius[64];
+        uniform vec4 uLightColor[64];
+        vec3 gameLight(vec3 tilePosition) {
+            if (uGameLightingEnabled == 0) return vec3(1.0);
+            vec3 lit = uAmbientColor;
+            vec3 position = tilePosition * 256.0;
+            for (int i = 0; i < uLightCount && i < 64; i++) {
+                float radius = uLightPosRadius[i].w;
+                vec3 delta = uLightPosRadius[i].xyz - position;
+                float d2 = dot(delta, delta);
+                if (radius > 0.0 && d2 < radius * radius)
+                    lit = max(lit, uLightColor[i].rgb * (1.0 - d2 / (radius * radius)));
+            }
+            return min(vec3(1.0), lit);
+        }
+        """;
+    private const string TerrainVertexShader = """
+        #version 330 core
+        layout(location=0) in vec3 p;
+        layout(location=1) in vec3 n;
+        layout(location=2) in vec2 uv;
+        uniform mat4 uMvp;
+        uniform float uDimension;
+        out vec3 N;
+        out vec2 UV;
+        out vec2 mapUV;
+        out vec3 worldPos;
+        void main() {
+            N=n; UV=uv; mapUV=p.xz/uDimension; worldPos=p;
+            gl_Position=uMvp*vec4(p,1.0);
+        }
+        """;
+    private const string TerrainFragmentShader = "#version 330 core\n" + GameLightingShader + "\n" + """
+        in vec3 N;
+        in vec2 UV;
+        in vec2 mapUV;
+        in vec3 worldPos;
+        uniform sampler2D uAtlas;
+        uniform sampler2D uCollision;
+        uniform sampler2D uVertexLight;
+        uniform int uShowCollision;
+        uniform vec3 uLight;
+        out vec4 c;
+        void main() {
+            float l=max(.28,dot(normalize(N),normalize(uLight)));
+            vec3 color=texture(uAtlas,UV).rgb*l;
+            vec2 size=vec2(textureSize(uVertexLight,0));
+            vec2 uv=(mapUV*(size-1.0)+0.5)/size;
+            color*=texture(uVertexLight,uv).rgb;
+            color*=gameLight(worldPos);
+            if(uShowCollision!=0 && texture(uCollision,mapUV).r>0.0)
+                color=mix(color,vec3(.824,.235,.235),.55);
+            c=vec4(color,1.0);
+        }
+        """;
+    private const string ShadowVertexShader = "#version 330 core\nlayout(location=0) in vec3 p; layout(location=1) in vec2 uv; uniform mat4 uMvp; out vec2 UV; void main(){ UV=uv; gl_Position=uMvp*vec4(p,1.0);}";
+    private const string ShadowFragmentShader = "#version 330 core\nin vec2 UV; uniform sampler2D uMasks; out vec4 c; void main(){ c=vec4(0.0,0.0,0.0,texture(uMasks,UV).a);}";
+    private const string SpriteVertexShader = "#version 330 core\n" + GameLightingShader + "\n" + """
+        layout(location=0) in vec3 anchor;
+        layout(location=1) in vec2 offset;
+        layout(location=2) in vec2 uv;
+        uniform mat4 uView;
+        uniform mat4 uProjection;
+        out vec2 UV;
+        out vec3 vLightColor;
+        void main() {
+            vec4 v=uView*vec4(anchor,1.0); v.xy+=offset; UV=uv;
+            vLightColor=gameLight(anchor);
+            gl_Position=uProjection*v;
+        }
+        """;
+    private const string SpriteFragmentShader = "#version 330 core\nin vec2 UV; in vec3 vLightColor; uniform sampler2D uSprites; uniform float uAlpha; out vec4 c; void main(){ vec4 t=texture(uSprites,UV); if(t.a<.5) discard; c=vec4(t.rgb*vLightColor,uAlpha);}";
     private const string ColorVertexShader = "#version 330 core\nlayout(location=0) in vec3 p; uniform mat4 uMvp; void main(){gl_Position=uMvp*vec4(p,1.0);}";
     private const string ColorFragmentShader = "#version 330 core\nuniform vec4 uColor; out vec4 c; void main(){c=uColor;}";
 }

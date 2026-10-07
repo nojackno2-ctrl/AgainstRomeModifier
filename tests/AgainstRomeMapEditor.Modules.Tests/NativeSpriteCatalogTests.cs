@@ -121,7 +121,7 @@ public sealed class NativeSpriteCatalogTests
         Assert.Null(catalog.GetSprite("BauTest"));
         Assert.Equal(2, reads); // broken and missing archives are read once and cached
         Assert.True(catalog.TryGetDefinition(" FigTest ", out NativeSpriteDefinition definition));
-        Assert.Equal(new NativeSpriteDefinition(10, "FigTest", 0, -1, 1), definition);
+        Assert.Equal(new NativeSpriteDefinition(10, "FigTest", 0, -1, 1, AnimationAdd: 0), definition);
     }
 
     [Fact]

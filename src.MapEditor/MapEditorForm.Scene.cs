@@ -261,6 +261,17 @@ internal sealed partial class MapEditorForm
     /// <summary>3D 畫面點選可見物件：選取對應的 SDL 場景清單列（其後拖曳即移動）。</summary>
     private void SelectPickedSceneObject(MapSceneObject picked)
     {
+        int placedIndex = -5000 - picked.ObjectIndex;
+        if (picked.SourceFile.Equals(SdlPlacedObjectsFile.FileName, StringComparison.OrdinalIgnoreCase)
+            && placedIndex >= 0 && placedIndex < _placedObjects.Count)
+        {
+            _pickedNature = null;
+            _sceneList.SelectedItems.Clear();
+            _placedList.SelectedItems.Clear();
+            if (placedIndex < _placedList.Items.Count) _placedList.Items[placedIndex].Selected = true;
+            UpdatePlacedButtonsState();
+            return;
+        }
         string key = SceneKey(picked);
         bool found = false;
         _pickedNature = null;

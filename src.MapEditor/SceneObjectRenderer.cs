@@ -24,6 +24,34 @@ internal static class SceneObjectRenderer
         return new Vector3(x, heights.SampleHeight(x, z) + lift, z);
     }
 
+    public const int FloatsPerShadowVertex = 5;
+
+    /// <summary>
+    /// Ground quads (world x, terrain y, z, u, v) for native object shadows. The quad is centred on
+    /// anchor + (shacx, shacz) with half extent shsiz world units (native 0x4C31D0); mask x runs along
+    /// world X and mask rows along world Z. Objects without a shadow or atlas entry are skipped.
+    /// </summary>
+    public static float[] BuildShadowVertices(IReadOnlyList<MapSceneObject> objects, IReadOnlyList<NativeObjectShadow?> shadows,
+        Func<NativeObjectShadow, NativeSprite?> maskSprite, NativeSpriteAtlas atlas, TerrainHeightField heights)
+    {
+        const float worldUnitsPerTile = SdlSceneCatalog.WorldUnitsPerMapPixel * 4f;
+        var vertices = new List<float>();
+        for (int index = 0; index < objects.Count && index < shadows.Count; index++)
+        {
+            if (shadows[index] is not { } shadow || maskSprite(shadow) is not { } mask || !atlas.TryGetUv(mask, out NativeSpriteUv uv)) continue;
+            NativeShadowWorldQuad quad = shadow.ComputeWorldQuad(objects[index].WorldX, objects[index].WorldZ);
+            void Vertex(double worldX, double worldZ, float u, float v)
+            {
+                float x = (float)(worldX / worldUnitsPerTile), z = (float)(worldZ / worldUnitsPerTile);
+                vertices.Add(x); vertices.Add(heights.SampleHeight(Math.Clamp(x, 0, heights.TileWidth), Math.Clamp(z, 0, heights.TileHeight)) + .03f); vertices.Add(z);
+                vertices.Add(u); vertices.Add(v);
+            }
+            Vertex(quad.CornerNW_X, quad.CornerNW_Z, uv.U0, uv.V0); Vertex(quad.CornerNE_X, quad.CornerNE_Z, uv.U1, uv.V0); Vertex(quad.CornerSE_X, quad.CornerSE_Z, uv.U1, uv.V1);
+            Vertex(quad.CornerNW_X, quad.CornerNW_Z, uv.U0, uv.V0); Vertex(quad.CornerSE_X, quad.CornerSE_Z, uv.U1, uv.V1); Vertex(quad.CornerSW_X, quad.CornerSW_Z, uv.U0, uv.V1);
+        }
+        return vertices.ToArray();
+    }
+
     /// <summary>
     /// Index of the object visible under a screen point, or -1. Sprites hit on opaque pixels of
     /// their projected quad, and the nearest hit wins because sprites are painted far to near.

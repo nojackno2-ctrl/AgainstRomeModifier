@@ -13,24 +13,7 @@
 // module imported a winmm function not listed here.
 namespace {
 
-#define WINMM_EXPORTS(X)             \
-    X(auxGetDevCapsA)                \
-    X(auxGetNumDevs)                 \
-    X(auxSetVolume)                  \
-    X(joyGetDevCapsA)                \
-    X(joyGetNumDevs)                 \
-    X(joyGetPosEx)                   \
-    X(mciGetErrorStringA)            \
-    X(mciSendCommandA)               \
-    X(mixerClose)                    \
-    X(mixerGetControlDetailsA)       \
-    X(mixerGetDevCapsA)              \
-    X(mixerGetLineControlsA)         \
-    X(mixerGetLineInfoA)             \
-    X(mixerGetNumDevs)               \
-    X(mixerOpen)                     \
-    X(mixerSetControlDetails)        \
-    X(timeGetTime)
+#include "winmm_exports.inc"
 
 #define DECLARE_PTR(name) void* g_real_##name = nullptr;
 WINMM_EXPORTS(DECLARE_PTR)

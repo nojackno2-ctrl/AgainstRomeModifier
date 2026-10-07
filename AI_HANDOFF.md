@@ -1,5 +1,75 @@
 # AI Handoff - Live Project Memory
 
+## 遊戲光照預覽（2026-10-08 Codex；依本輪要求不提交／push／改 Git 歷史）
+
+- 已完成中斷 WIP：SceneLightingContext 改 internal，以世界高度回呼取代宿主 TerrainHeightField；APT 地面高度取光源所在 X/Z 再加 aptlh，lidef 使用物件 WorldY+lihei。view XYZ×256，半徑維持 world units。
+- GameLightingEnabled 預設關閉，GameHour 0..24；地形逐 fragment 取樣，sprite／放置預覽整張只取地面錨點（原生為 APT patch 四角）。場景／高度／catalog 變更才重建光源，相機目標變更才重選最近 64 個；uniform arrays 共用逐色道 max／二次衰減 shader。不模擬閃爍；陰影原流程不變。
+- UI 新增雙語 checkbox／時刻選擇器，唯讀 catalog 隨 shadow 開啟及釋放，缺檔／損壞各自 fail-soft、APT 成敗快取。第一次真實副本全套測試只有 1 項失敗：cl_apt.ini 也是 PFIL，WIP 未解壓造成建築光源空；已修正並補 PFIL cl_apt fixture。測試 fixture 曾誤用 CompressPfil／預覽方法名，均已修正。
+- 最終驗證：DOTNET_ROLL_FORWARD=Major、ARM_OPENGL_REQUIRED=1；dotnet build AgainstRomeModifier.slnx -c Release -p:UseAppHost=false 0警告／0錯誤；dotnet test AgainstRomeModifier.slnx -c Release --no-build --no-restore --logger "console;verbosity=quiet" host640通過／22略過、modules275通過，0失敗。新增 modules5例、真GL2例、真實副本1例；高 DPI 中／英 100%／150%／200% 3例通過。GL涵蓋非零世界高度、半徑、71選64、光源移動／相機快取、sprite／預覽及 context 重建；git diff --check 通過。
+- ARM_COMPARE_GAME=TEMP/ArmGameCompare_20261007；缺少的 lightdef.dau 已從授權 TEMP/ArmNativeAssets_20261007 副本補入。主屋12:00擷取與並排圖：TEMP/ArmLightingPreview_20261008/editor-house-lighting-12.png、house-lighting-side-by-side.png，已目視檢查。實際 APT 光源載入成功；與未知時間的遊戲截圖仍有色調／patch局部變化差異，未宣稱同期／逐像素一致或完整原生 renderer。docs/reverse-engineering/map-lighting.md 已記載限制。
+- 未存取安裝遊戲目錄，未提交／push／變更Git歷史；HEAD維持00a9096，原有 .claude/ 未修改。預設 sandbox 執行器啟動失敗，經自動核准的 require_escalated shell 完成工作。
+
+## 局部光源真實定義與 APT 光源點逆向工程（2026-10-07 Antigravity；本次不提交／不推送／不改 Git 歷史）
+
+- 實作與解析：
+  1. `SYSTEM/DATA_MP/DEFAULTS/lightdef.dau`（PFIL-compressed，解壓後 4101 bytes，42 筆定義）解析確認：在 `NativeLightCatalog` 增加 `Open(string)` 與 `Parse(ReadOnlySpan<byte>)`，自動偵測 PFIL 魔數並調用 `GameLZSS.DecompressPfil` 解壓。
+  2. 提取出日耳曼主屋（`BauGerHau00/02`）真實光源定義為 `Kohleschale`（idx 1，半徑 350.0，RGB=(1.48, 1.22, 0.00)，擾動閃爍 1/0.05，高度偏移 30/80）；火堆為 `LD_Feuerstelle`（idx 7，半徑 300.0，RGB=(1.33, 0.61, 0.33)，閃爍 1/0.15）；火把為 `LD_Flamme_Fackel`（idx 18，半徑 150.0，RGB=(1.60, 1.33, 0.00)，閃爍 1/0.05）。
+  3. 新增 `src.MapEditor.Modules/NativeAssets/NativeAptLightPoints.cs`（純新檔案，不修改 `NativeAptDocument.cs`）：從原始 APT 二進位位元組中解析 extraA 光源點及相對 anchor 之位移，並實作 `GetBuildingWorldLightPositions`，以 2:1 等角逆幾何公式精確計算建築物所有光源點世界空間坐標 $(X, Y, Z)$。
+  4. 截圖比對（`game-house.png`）：對門前關鍵取樣點以真實 `Kohleschale`（idx 1, R=350）擬合，紅色通道 RMSE=7.52、Correlation=0.9970，全通道整體 RMSE=21.54、Correlation=0.9104；對照組若誤用單位火把 `Flamme_Fackel`（idx 18, R=150）則 RMSE=57.43、Correlation=0.3125，證實主屋確實使用 `Kohleschale`。藍色通道實測微幅上升為底層地形紋理相乘效果。
+- 驗證：
+  - `DOTNET_ROLL_FORWARD=Major dotnet build AgainstRomeModifier.slnx -c Release -p:UseAppHost=false`：0 警告、0 錯誤。
+  - `dotnet test tests/AgainstRomeMapEditor.Modules.Tests -c Release --no-build`：270 項測試全數通過（新增 3 項專屬測試，包含真實 lightdef 片段解析、PFIL 容器解碼、APT extraA 點位轉換與世界坐標斷言）。
+- 遵守規範：未修改其他代理之 formation 檔案，未存取遊戲安裝目錄，未提交／push。
+
+## 真實隊形與 3D 部隊顯示（2026-10-07 Codex；不提交／不推送／不改 Git 歷史）
+
+- 任務：使用指定 TEMP 唯讀 formdef.dau，完成 1..20 人幾何、3D 顯示士兵與旗幟、選取歸部隊及保存隔離。避開另一代理 local-lights／NativeLightSource／NativeAptLightPoints／NativeLightTests 四檔；不存取安裝遊戲目錄。
+- 新證據：C# probe 使用 `GameLZSS.DecompressPfil` + `FromFormDefText`，PFIL 2118 bytes→10856 bytes；SHA256 `221cafd844971acc7d175ba1a578d89af426ba71e9cab368b147865d5282a54f`。id0 `All_Haufen` 有9線段，與新增 NativeDefault 幾何摘要完全一致；parser 不需變更。
+- 已接：宿主優先讀所選資料來源的 formdef，缺表時用已核對的 id0 摘要；3D 投影才展開成員，Figure alias 與 Ver…Ico/objdefn0 均支援，共用原放置 SourceFile/ObjectIndex。2D 維持一圖示，保存來源仍是 placement session。
+- 新截圖結果：固定原點(512,245)、Angle0、spacing320，原生9線段直接預測十人；不擬合比例或平移，僅最佳一對一配對。九個清楚錨點 RMS45.653px／最大81.424px；含遮擋低信心候選十點 RMS44.149px。不等同「遊戲實際生成後位置已還原」，碰撞／移動未模擬。
+- 已解決：新測試CS8714／兩個xUnit2031修正後build零警告；GL選取斷言需建立隱藏分頁ListView handle，補上後通過。probe無apphost直接執行已建DLL；重新輸出ALR24幀與PNG配準，錨點／NCC／frame16與前次一致。
+- 最終驗證：`DOTNET_ROLL_FORWARD=Major`、`ARM_OPENGL_REQUIRED=1`；`dotnet build AgainstRomeModifier.slnx -c Release -p:UseAppHost=false` 0警告0錯誤；`dotnet test AgainstRomeModifier.slnx -c Release --no-build --no-restore --logger "console;verbosity=quiet"` host637通過／22略過、modules270通過，0失敗（含另一代理最新光源改動）。陣形共41例，新增1..20人幾何／旋轉與結構摘要21例；真GL宿主6士兵+旗幟、共用pick、objdefn0別名／id／namedef／alias-only範本、保存後單一spawn且SDL與DATA不增物件皆通過。本任務diff whitespace檢查通過。起始HEAD71e9e29；最後發現另一代理已提交光源為2d75435，本代理未執行任何commit/push或Git歷史操作，保留對方工作。
+
+## 3D 待機動畫（2026-10-07 Codex；本次不提交、不改 Git 歷史）
+
+- 已實作：`GetAnimation` 快取 ALR 動畫 0 與 APT 完工無損序列；解析 objdef 欄2 alen、6 anadd、45 afram（hex）。ALR 保守判斷 palty=1 或 anadd>=0 且 afram非零，另排除 mltyp=2 樹木；每格使用原地面錨點 convention，`GetSprite` 選格不變。
+- `Map3DViewControl` 預設啟用動畫，33ms WinForms Timer 僅在可見且有已放入 atlas 的動畫時執行；同序列共享相位／索引群組，tick 不配置物件。`AnimationTimeMs` 可固定測試時鐘。atlas 優先保留靜態圖，動畫整組試放，不足時回復靜態。
+- 已讀動畫／場景文件並核對 TEMP objdef 範例：步兵 alen1000/anadd0/afram00008008/palty1；冷杉 alen1/anadd-1/afram0/palty0。未存取安裝遊戲目錄，未改其他代理 local-lights/NativeLight 檔案；Git HEAD仍15a8558，未提交／推送。
+- 最終驗證（`DOTNET_ROLL_FORWARD=Major`、`ARM_OPENGL_REQUIRED=1`）：`dotnet build AgainstRomeModifier.slnx -c Release -p:UseAppHost=false` 0警告／0錯誤；`dotnet test AgainstRomeModifier.slnx -c Release --no-build --no-restore --logger "console;verbosity=quiet"` host636通過／22略過、modules212通過，0失敗。`git diff --check` 通過。
+- 真 GL 三例驗證動畫不同時鐘畫面不同、靜態／圖集不足畫面相同、1000ms循環、停用、可見性及移除物件。7000物件共享序列、300次選格暖身後0 bytes配置。早期容量 fixture 2047² raw ALR超過20-bit行offset而失敗，已改合法1023²×10格並通過（仍超過4096atlas的3×3容量）。
+- 未驗證：真實遊戲同期動畫外觀、原版7000物件地圖的整體渲染FPS／初次解碼記憶體。7000合成測試證明選格零配置，不代表整張真實地圖或遊戲視覺驗收；既有vertex rebuild仍由原繪製流程處理。atlas不合整套動畫即顯示原靜態圖；2D／放置預覽仍使用GetSprite。
+
+## 目前狀態總覽（2026-10-07 晚，Claude 統籌；goal「可以對外發布的地圖編輯器」，重點為完成度）
+
+- 本輪後半新增並提交：物件清單縮圖（Codex）、角度→方向（遊戲內驗證）、3D 點選刪除自然物件、小地圖導覽（Agy）、物件陰影解碼（Codex）與映射（Agy）、3D 地面陰影繪製（Claude，與遊戲截圖位置一致）、地圖光照模型研究（Codex，尚未接 UI）、隊伍色／動畫語意研究（Agy）、argm-trace winmm 代理修正與重建 ThirdParty 二進位（Agy+Claude，MSVC 編譯、CTest 2/2、193 匯出）。
+- 驗證：Release build 0 警告/0 錯誤；全測試 宿主632/22略過、modules189，0 失敗（ARM_OPENGL_REQUIRED=1）。測試主行程固定 DPI Unaware（`TestProcessDpiAwareness`），WinForms 測試同一 xUnit collection。
+- 子代理使用規則見使用者記憶：簡單工作給本地 AI（需複核）、困難／逆向給雲端，可平行派多個；Agy 用預設 gemini-3.8-flash；派工時檔案不可重疊、子代理不提交。
+- 下一步建議（完成度）：(1) 待機動畫（單位動畫 0 24 格≈24 FPS、APT 第 3 軸火把／煙霧），需處理圖集容量；(2) 局部光源（火把光暈）與時段環境色——依 map-lighting.md 先找光源定義來源；(3) 遊戲內驗收：用編輯器存出的地圖檢查陰影／放置／地形；(4) 225°+ 與 32 方向騎兵朝向實測；(5) 測試地圖 ENDL_005 已還原，備份 TEMP/ArmGameBackup_20261007_215746。
+
+## 小地圖點擊導航與視野指示器 (Age of Empires II 風格) (2026-10-07 Antigravity)
+
+- 核心功能：
+  - 新增純幾何計算類別 `src.MapEditor/MinimapNavigator.cs`，支援 `PictureBoxSizeMode.Zoom` 的寬高比黑邊裁切（letterboxing）計算、滑鼠點轉地圖格座標（`TryPointToTile`）、格座標轉小地圖點（`TileToPoint`）及 2D 畫布可見矩形換算（`CalculateCanvasVisibleMinimapRect`）。
+  - `Map3DViewControl`：公開 `internal Vector3 CameraTarget` 與 `public event EventHandler? CameraChanged`，在平移、旋轉、滾輪縮放、按鍵移動及 `FocusTile` 時觸發。
+  - `MapCanvasControl`：公開 `public event EventHandler? ViewChanged`、`SceneBoundsRectangle` 與 `MapDimension`，在平移、縮放、置中及載入時觸發。
+  - `MapEditorForm`：`_overview` 支援滑鼠左鍵點擊與拖曳導航至目標格（若當前為 3D 視圖則導航 `_view3d.FocusTile`，2D 則導航 `_canvas.FocusTile`，點擊黑邊忽略）；於 `Paint` 事件繪製視圖指示器（3D 為相機目標的十字線與雙層方框、2D 為可見區域半透明高亮矩形）。
+  - 座標方向確認：minimap.bmp (256×256) 與地形 boden.bmp / MapCanvasControl 座標系一致，影像 X 軸對應地圖 tileX (WorldX)，影像 Y 軸（列方向向下）對應地圖 tileY (WorldZ)，無須上下顛倒。
+- 測試與驗證：
+  - 新增單元與 STA 表單整合測試 `tests/AgainstRomeModifier.Tests/MapEditorMinimapTests.cs`（letterbox 雙向黑邊、邊界外點擊忽略、座標 round-trip、可見矩形計算、STA 點擊概覽圖確認 3D 相機移動到目標 tile）。
+  - `dotnet build AgainstRomeModifier.slnx -c Release -p:UseAppHost=false`：0 警告，0 錯誤。
+  - `dotnet test tests/AgainstRomeModifier.Tests -c Release --no-build --filter "FullyQualifiedName~Minimap|FullyQualifiedName~high_dpi"`（含 `ARM_OPENGL_REQUIRED=1` 與 `DOTNET_ROLL_FORWARD=Major`）：9 通過，0 失敗。
+- 未驗證：實際開啟遊戲時手動拖曳小地圖的視覺手感（已透過單元測試與 STA 控制項反射事件完整驗證幾何與連動）。
+
+## argm-trace winmm.dll 代理匯出修正 (2026-10-07 Antigravity)
+
+- 修正：`native/argm-trace/argm_trace.def` 與 `native/argm-trace/src/proxy_winmm.cpp`，改以腳本 `native/argm-trace/generate_exports.py` 從 `C:\Windows\SysWOW64\winmm.dll` 讀取並產生完整的匯出清單，解決遊戲載入 NVIDIA `NvMemMapStorage.dll` 時因缺少 `timeBeginPeriod` 導致無法找到輸入點的啟動失敗問題。保留了原先供 EXE 使用的 hook，ordinal-only 匯出亦保持原始 ordinal。
+- 驗證：
+  - 新增 C# 回歸測試 `tests/AgainstRomeModifier.Tests/WinmmExportTests.cs`，驗證產生之 `.def` 檔包含 SysWOW64 `winmm.dll` 所有的匯出。
+  - `dotnet build AgainstRomeModifier.slnx -c Release -p:UseAppHost=false`：0 警告，0 錯誤。
+  - `dotnet test ... --filter "FullyQualifiedName~WinmmExportTests"`：1 通過，0 失敗。
+- Claude 補驗：本機 VS 18（`Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/bin/cmake.exe`）`-A Win32 -DARGM_BUILD_TESTS=ON` 編譯成功，CTest 2/2 通過；dumpbin：193 functions／192 names，含 timeBeginPeriod(@90)、timeEndPeriod(@91)、序號 2 NONAME。
+- 未驗證：未部署到遊戲實測（ArgmTrace 目前已由使用者還原移除；重新啟用需使用者同意）。系統 winmm.dll 更新增加匯出時 `WinmmExportTests` 會失敗，需重跑 generate_exports.py。
+
 ## 單位角度→方向列（2026-10-07 Claude；遊戲內驗證）
 
 - 備份 MAPS/ENDL_005（TEMP/ArmGameBackup_20261007_215746，55 檔雜湊）→ `InGameAcceptanceScenarioTests` 新案例 `angles`（ARM_GAME_PATH／ARM_INGAME_MAP=ENDL_005／ARM_INGAME_SCENARIO=angles）以真正 MapEditorForm 存入 8 名 GER_INF01 單兵，角度 0..315 → 遊戲內下半身樣板比對（旗幟遮上半身）：0/45/90/135/180° = 方向列 14/12/10/8/6（NCC 0.96–0.99）。225° 以後被 HUD 擋住未測。之後關閉遊戲、以備份覆蓋還原，雜湊 55 檔完全相同。
@@ -32,10 +102,10 @@
 
 ## 遊戲內比對與正交相機（2026-10-07 Claude；使用者授權「啟動遊戲」）
 
-- 啟動失敗根因：修改器部署的 argm-trace `winmm.dll` 代理只匯出 EXE 用到的 18 個函式，NVIDIA `NvMemMapStorage.dll` 需要 `timeBeginPeriod` → 「無法找到輸入點」。依使用者指示以 CLI `restore --all --preserve-custom-maps true` 還原（dgVoodoo/ArgmTrace 已移除，介面回俄文）；status 仍顯示 EndlessAi.Core／RomanReinforcementGarrison，因保留的自製地圖 ENDL_005 的 ak_level.bci 仍是修改版。**argm-trace 代理需補齊 winmm 全部匯出或改轉送**（未修，native 專案範圍）。
+- 啟動失敗根因：修改器部署的 argm-trace `winmm.dll` 代理只匯出 EXE 用到的 18 個函式，NVIDIA `NvMemMapStorage.dll` 需要 `timeBeginPeriod` → 「無法找到輸入點」。依使用者指示以 CLI `restore --all --preserve-custom-maps true` 還原（dgVoodoo/ArgmTrace 已移除，介面回俄文）；status 仍顯示 EndlessAi.Core／RomanReinforcementGarrison，因保留的自製地圖 ENDL_005 的 ak_level.bci 仍是修改版。**argm-trace 代理已補齊 winmm 全部匯出轉送**（已修，見 2026-10-07 Antigravity）。
 - 遊戲內 NCC 比對結果見 native-scene-rendering.md「遊戲內同畫面驗證」：完工格、色道、錨點、2:1 比例、隊伍色=變體、Angle0=方向列14 皆驗證。編輯器改：正交投影（預設）、俯角30°、MinDistance 2、`ZoomToGameScale`、`DefaultDirection=14`；地形拾取改為先裁切到地圖範圍（正交射線起點很遠）；點選後拖曳改為保持抓取偏移的相對移動（對齊格中心）。通行覆蓋測試的整圖平均色差改為只比較變化像素。
 - 驗證：Release build 0警告/0錯誤；ARM_OPENGL_REQUIRED=1 全測試 宿主612/22略過、modules123，0失敗；`ARM_COMPARE_GAME=<TEMP/ArmGameCompare_20261007>` 選用測試以真實地圖副本擷取，與遊戲錨點位移一致（NCC 1.000）。遊戲已關閉；TEMP 副本只含唯讀複製。
-- 未完成：日夜光照色調、角度→方向公式、地形遮擋、陰影、動畫、2D 畫布 sprite、argm-trace winmm 匯出修正。
+- 未完成：日夜光照色調、角度→方向公式、地形遮擋、陰影、動畫、2D 畫布 sprite。
 
 ## 原生 sprite 接入 3D 場景（2026-10-07 Claude；goal「繼續完成地圖編輯器的開發」進行中）
 

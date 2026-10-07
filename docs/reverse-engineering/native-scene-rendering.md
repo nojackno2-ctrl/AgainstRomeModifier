@@ -153,3 +153,144 @@ apt.dat SHA256 `CB8656A5F74CEFB2588A89D1EB25566CB4493A22A4C52E30E37EC15CFCF917DF
 同時追蹤 ALR/APT 消費端、原引擎相機與地圖重建接口，評估原引擎中直接編輯的可行性。範圍函式不能代替場景渲染；單張遊戲截圖或「儲存後另開遊戲」也不能算即時編輯完成。原引擎模式入口、thread/context、座標拾取、物件新增刪除與高度／材質即時重建均未驗證。
 
 完整目標必須以地形、樹木、建築、單位的實際遊戲外觀與操作驗證：筆畫／放置／移動／刪除立即反映畫面，點選命中可見物件，undo/redo 還原場景，儲存重開與遊戲讀取一致。目前仍未完成這些驗收。
+
+## shad.dat 物件陰影（2026-10-07 Codex）
+
+本輪只讀 repository EXE 與使用者指定的 TEMP 素材副本，未存取安裝目錄、未啟動遊戲、未接 UI、未提交或修改 Git 歷史。依本輪允許路徑限制，不更新 AI_HANDOFF.md；本節記錄研究與驗證里程碑。
+
+### 容器與單張格式：已驗證
+
+shad.dat 為 ZIP，30,480,435 bytes，SHA256
+`C25FDCDB846A6FF6DEC6B4BF2C3B47EF46352841F1A7FF2A27A16ECA9DBF201D`。
+共 2674 項：3 個目錄、2671 張 BMP；其中 415 張位於
+`SYSTEM/DATA/SHADOWTEXTURE/<name>.bmp`（副檔名含大小寫）。
+**沒有 .sha、ALRA 或獨立 shadow name list**。其餘 2256 BMP 是 ICONGFX、
+ENGINEGFX 等資源，不能全當成陰影；2670 張為 8-bit、1 張為 24-bit。
+EXE 未找到 .sha / error.sha 字串，shadow 載入路徑明確使用 BMP 與 error.bmp。
+
+415 張陰影全為 128×128、正高度（bottom-up）、8-bit BI_RGB，沒有動畫 frame table；
+每張文件是一格。393 張有 2-byte trailer，22 張沒有；全部有 256 個 RGBQUAD。
+414 份 palette 為 0..255 的線性灰階；LakaDorn_shadow.bmp 全為 (1,1,1)。
+後者不應讓遮罩變成一片固定強度，因 native 直接取 pixel index。
+
+| 磁碟位置 | 欄位與驗證 |
+| --- | --- |
+| +0..13 | BITMAPFILEHEADER：BM（0x4D42）、bfSize、reserved、bfOffBits；bfSize 必須等於輸入長度，reserved=0 |
+| +14..53 | 40-byte BITMAPINFOHEADER：signed 寬高、planes=1、bpp=8、compression=0、biSizeImage、解析度、biClrUsed、biClrImportant |
+| +54 起 | biClrUsed 個 4-byte RGBQUAD；biClrUsed=0 表示 256；只驗證表範圍與 index，顏色不作陰影強度 |
+| bfOffBits 起 | 每列 stride=(width+3)&~3，height 列；正高度由下往上，負高度由上往下；padding 不解碼 |
+| pixel block 後 | bfSize 內的 trailer 保留長度，內容不賦予動畫／anchor 語意 |
+
+NativeShadowDocument 使用自有 top-down byte mask，不保留 caller 的可變記憶體，
+DecodeFrame(0) 回傳隔離的遮罩／ARGB；其他 frame index 拒絕。
+Parser 支援上述 BMP8 header 的一般尺寸與 top-down 合成 fixture；
+實際素材只驗證了 128×128 bottom-up。不支援其他 DIB、depth、compression。
+biSizeImage 只接受 0 或實際 stride×height，所有陰影符合；嚴格檢查 offsets、
+palettes、dims、index、extent／overflow 與截斷。Trailer 不必為零，但必須在 bfSize 內。
+
+### EXE 載入、遮罩與座標證據
+
+同一 EXE SHA256 與前節一致。地址皆為 VA；線性反組譯仍須由有效入口核對，
+不是可直接呼叫的 ABI。
+
+| 位置 | 直接證據 | 結論／限制 |
+| --- | --- | --- |
+| 0x5F61A1、0x5F61B6、0x5F61CD | @SYSTEM\\cl_shado.ini、SYSTEM\\cl_shado.i%02ld、[ShadowNames] | ID 映射來自外部清單，ZIP 排序沒有映射意義 |
+| 0x4C4410..0x4C4456 | 載入主清單，並迴圈載入 10 個分檔 | 同 ID 後載入可覆蓋；probe 的可選文字參數目前只接受一份合併／指定清單 |
+| 0x4C44EE..0x4C456A | 前四字元按十進位組 ID，限制 0..1999；從 +5 起複製檔名到 40-byte stride 名稱表 0x019C93B0 | 第五字元是分隔符；不能把 objdef shidx 當 ZIP ordinal |
+| 0x4C4706..0x4C4743 | 用 ID×40 取名，加 0x770EE8 路徑，呼叫 0x414AD0，存到 0x019DEB70[ID] | 一個 ID 對應一張 BMP，沒有方向／動畫 frame 選擇 |
+| 0x4C47AE..0x4C4823 | 失敗時改用 error.bmp；0x414C00 取得 palette+pixels 區塊 | +0x400 是 palette 後的 pixel data；不是 BMP 檔案 bfOffBits |
+| 0x4C38F3..0x4C3936 | 按 renderer mode 分派 0x40D8F0／0x40D380／0x40CE00 | 僅追蹤此路徑的 scalar 實作，不能聲稱全部 MMX/SSE 分支已逐指令驗證 |
+| 0x40CE8F..0x40CEA2、0x40D195 | pixel base=texture+0x400，呼叫 0x404350 | 128×128 地面紋理取樣，而非螢幕 sprite 直接貼圖 |
+| 0x410AAD..0x410B2C | 分派表指向 sampler 0x40FE80 及 blend 0x410380 | 可由兩者核對遮罩極性 |
+| 0x40FEB0..0x40FEBD | 直接 movzx 讀 pixel byte 成 DWORD 強度，不經 palette | AlphaMask 保留 index 0..255，不採 RGB luminance |
+| 0x410395..0x4103CD | 強度 0 略過；factor=256-strength，逐色道乘後 >>8 | RGB'=floor(RGB×(256-index)/256)，index 越大越暗 |
+| 0x4C4398..0x4C4404 | 取主要 shadow ID 或另一個 shadow ID，再回傳 | sh2idx 與物件狀態可改變選擇；仍不是同文件的動畫格 |
+| 0x4C42CE..0x4C42FB | signed word shsiz 作 float；shacz 加世界 Z，shacx 加世界 X，呼叫 0x4C31D0 | 修正量是世界 X/Z 單位，不能直接當畫面像素位移 |
+| 0x4C32E6..0x4C332D、0x4C3522..0x4C35E9 | type 0 固定 4 點且做 square normalization；type 1 使用角度旋轉的圓周取樣 | shtyp=0 box、1 circle；不是貼圖 frame index |
+| 0x4C3604..0x4C3664 | normalized X/Z 乘 shsiz，再加修正後中心 | shsiz 為世界空間 radius／box half extent；地形高度另參與投影 |
+
+objdef loader 的相鄰 signed words 也核對了讀取順序：
+0x4B1729→0xC648D8（shidx）、0x4B1761→0xC648DA（shsiz）、
+接續 +0xDC（shtyp）、+0xDE（aptix）、0x4B1809→+0xE0（shacx）、
+0x4B1841→+0xE2（shacz）；objdef runtime stride 為 0x2A4。
+shtyp 語意依幾何分支確認，並非僅依 SHADOWTYPE_CIRCLE/BOX 字串猜測。
+
+AlphaMask 的 native 分母為 **256**。黑色 ARGB 預覽用
+alpha=round(index×255/256) 換成一般 alpha/255，會有量化差異；
+NativeShadowFrame.DarkenArgb 才精確重現 scalar RGB 公式（保留 caller 的 alpha）。
+例如 index255 並非 native alpha=1，仍留 1/256 RGB（8-bit floor 後為 0）。
+
+### 三個物件：欄位與錨點已核對，檔名仍待清單
+
+| objdef ID／名稱 | shidx | shsiz | shtyp | shacx／shacz | 相對物件畫面錨點的中心修正（1:1 平地） | 匯出候選，未確認 ID |
+| --- | --- | --- | --- | --- | --- | --- |
+| 42 BauGerHau02_Haupthaus | 259 | 300 | 0 box | -45／61 | (-53,4) px | GerHau02_shadow.bmp |
+| 12 FigGerSch01_Axt_Schild | 1 | 25 | 1 circle | 0／0 | (0,0) px | round_small_shadow.bmp |
+| 46 LanGerNad00_Tanne_gross | 205 | 75 | 1 circle | -15／-7 | (-4,-5.5) px | GerNadelbaum_shadow.bmp |
+
+使用前節已核對的投影：ΔscreenX=(shacx-shacz)/2，
+ΔscreenY=(shacx+shacz)/4（平地、同 camera zoom）。中心相對 ALR 畫布中心／
+APT AnchorX,Y 所在的物件世界位置修正，**不是**相對 ALR 裁切矩形左上角。
+坡地、shadh、其他物件狀態與高度偏移仍須核對。BMP 本身沒有 anchor 欄位；
+不能把 128×128 遮罩當作 128×128 螢幕陰影。
+
+目前提供的 TEMP 只有 objdef、cl_alr、cl_apt，repository 也未找到 cl_shado 副本；
+ZIP 全項檢查確認沒有 name list。已向使用者詢問外部副本路徑，未存取安裝目錄。
+因此上述三張只是依名稱／外觀選出的候選，**沒有證實 259/1/205 對應它們**。
+sh2idx 選擇器的完整狀態語意、分檔覆蓋後的有效 ID 清單也未驗證。
+
+已匯出並檢視候選原始 mask、綠底 native 混色及平地投影示意：主屋可見屋頂／
+附屬結構長影，士兵為小圓影，冷杉為擴散影。紅十字是物件錨點，青十字為 shadow
+中心。投影示意的 UV 軸向／circle 裁切／旋轉是假設，沒有疊物件 sprite，
+未與原遊戲相同物件／角度畫面比較，不能算完整物件陰影驗收。
+
+### 全庫 probe 與測試
+
+```powershell
+$env:DOTNET_ROLL_FORWARD='Major'
+$output = Join-Path $env:TEMP ('ArmShadowProbe_' + [guid]::NewGuid().ToString('N'))
+dotnet run --project tools/re/shad-probe -c Release -p:UseAppHost=false -- `
+  "$env:TEMP/ArmNativeAssets_20261007/shad.dat" $output `
+  "$env:TEMP/ArmNativeAssets_20261007/objdef.txt"
+# 若已有授權的已解碼 cl_shado.txt，可加第四個參數，不能傳 PFIL bytes。
+```
+
+本輪報告與 PNG：TEMP/ArmShadowProbe_20261007_a。
+2674 entries／415 documents／415 frames／3 directories／2256 other BMPs／0 failures。
+所有 ZIP 項目皆打開檢查；非陰影 BMP 只驗證結構／palette index，沒有宣稱已解碼
+其產品語意。非陰影有 160 筆 biSizeImage=16386 而 row extent=16384，
+inventory 明列 imageSizeMatches=false；不套到全部陰影的嚴格 parser。
+既有 output／TEMP 外輸出拒絕 exit2，report SHA256 不變；PNG 已由視覺工具檢視。
+另以 Python 標準庫獨立驗證 13 張 PNG 的 CRC／inflate／尺寸，以及 81920 個 sample 像素；
+可選 ShadowNames 參數通過合成清單 smoke，合成 ID 不作真實映射證據。
+
+NativeShadowDocumentTests 新增 30 個案例，包含兩種列向、非4倍寬度的 padding、
+palette 內容不影響強度、owned snapshot、所有 truncated prefixes（包括改寫
+bfSize 以避開單純長度檢查）、壞 offsets／dims／extents／index、unsupported layouts、
+零 colors／image size、合法 trailer、frame bounds、native 256 分母與 ARGB。
+
+驗證：指定 Release solution build **0 errors／2 warnings**，兩者來自另一代理的
+tests/AgainstRomeModifier.Tests/WinmmExportTests.cs（IDE0005、xUnit2029），依使用者
+限制未修改。新 parser 的 CA1512 已改用 ThrowIfNotEqual；shad-probe 獨立 build
+0 warnings／0 errors。指定 modules --no-build tests：167 passed／0 failed／0 skipped。
+未達成整個 solution「0 warnings」要求，不隱藏或抑制其他代理警告。
+
+可重建靜態範圍（先自行建立新的 TEMP 目錄，每份輸出取未存在檔名）：
+
+```powershell
+$env:PYTHONPATH="$env:TEMP/arm-re-python"
+$reOut = Join-Path $env:TEMP ('ArmShadowRE_' + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory $reOut | Out-Null
+python tools/re/scan_native_scene.py re_workspace/Against_Rome.exe `
+  --target 0x5F61A1 --target 0x5F61CD --target 0x019DEB70 `
+  --range 0x4C4410:0x4C4457 --range 0x4C4470:0x4C45A4 `
+  --range 0x4C46D0:0x4C4833 --range 0x4C4360:0x4C4407 `
+  --range 0x4C4249:0x4C4303 --range 0x4C31D0:0x4C39BF `
+  --range 0x40FE80:0x40FED3 --range 0x410380:0x4103DE `
+  --output "$reOut/shadow-evidence.txt"
+```
+
+下一步需使用授權的 cl_shado.ini／分檔副本解 PFIL，再核對三個 ID 與 sh2idx，
+確定貼圖 UV 與物件角度的關係、原生取樣／高度投影及同畫面外觀。此次只提供純解碼
+與研究工具，沒有把陰影接到 2D／3D UI。

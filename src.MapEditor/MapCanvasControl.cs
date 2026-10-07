@@ -59,6 +59,9 @@ internal sealed class MapCanvasControl : Control
     public event EventHandler<TextureSampleEventArgs>? TextureSampled;
     public event EventHandler? StrokeEnded;
     public event EventHandler<SceneObjectMoveEventArgs>? SceneObjectMoved;
+    public event EventHandler? ViewChanged;
+    public Rectangle SceneBoundsRectangle => SceneBounds();
+    public int MapDimension => _dimension;
 
     public MapCanvasControl()
     {
@@ -87,6 +90,7 @@ internal sealed class MapCanvasControl : Control
         _floorTextures = floorTextures; // 由 MapEditorForm 擁有生命週期，此處僅借用，不負責釋放。
         _sceneObjects = sceneObjects;
         BuildTexturePreviewColors(); RenderTerrainScene(); Invalidate();
+        ViewChanged?.Invoke(this, EventArgs.Empty);
         return _floorTextures.IsAvailable;
     }
 
@@ -268,7 +272,7 @@ internal sealed class MapCanvasControl : Control
         base.OnMouseMove(e);
         if (_panning && e.Button == MouseButtons.Middle)
         {
-            _pan = new PointF(_pan.X + e.X - _panStart.X, _pan.Y + e.Y - _panStart.Y); _panStart = e.Location; Invalidate(); return;
+            _pan = new PointF(_pan.X + e.X - _panStart.X, _pan.Y + e.Y - _panStart.Y); _panStart = e.Location; Invalidate(); ViewChanged?.Invoke(this, EventArgs.Empty); return;
         }
         if (TryGetTile(e.Location, out int x, out int y))
         {
@@ -315,6 +319,7 @@ internal sealed class MapCanvasControl : Control
             centerX - fitted.X - (fitted.Width - width) / 2f - (tileX + .5f) / _dimension * width,
             centerY - fitted.Y - (fitted.Height - height) / 2f - (tileY + .5f) / _dimension * height);
         Invalidate();
+        ViewChanged?.Invoke(this, EventArgs.Empty);
     }
 
     public void UpdateSceneObjects(IReadOnlyList<MapSceneObject> sceneObjects)
@@ -341,6 +346,7 @@ internal sealed class MapCanvasControl : Control
             e.X - fractionX * width - fitted.X - (fitted.Width - width) / 2f,
             e.Y - fractionY * height - fitted.Y - (fitted.Height - height) / 2f);
         Invalidate();
+        ViewChanged?.Invoke(this, EventArgs.Empty);
     }
 
     private void TryPaint(Point location)
