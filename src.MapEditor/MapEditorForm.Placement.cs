@@ -17,7 +17,7 @@ internal sealed partial class MapEditorForm
     private readonly Button _placedEditButton = new() { Height = 32, Enabled = false };
     private readonly Button _placedDuplicateButton = new() { Height = 32, Enabled = false };
     private readonly Button _placedDeleteButton = new() { Height = 32, Enabled = false };
-    private readonly Label _placeHint = new() { Dock = DockStyle.Top, Height = 54, Padding = new Padding(4, 6, 4, 4), ForeColor = WinFormsTheme.TextSecondary };
+    private readonly Label _placeHint = new() { Dock = DockStyle.Top, AutoSize = true, MaximumSize = new Size(300, 0), Padding = new Padding(4, 6, 4, 4), ForeColor = WinFormsTheme.TextSecondary };
     private Label _lblPlaceCategory = null!, _lblPlaceTribe = null!, _lblPlaceTeam = null!, _lblPlaceCount = null!, _lblPlaceAngle = null!;
     private IReadOnlyList<SdlObjectType> _objectCatalog = Array.Empty<SdlObjectType>();
     private readonly PlacementEditSession _placementSession = new();
@@ -34,6 +34,7 @@ internal sealed partial class MapEditorForm
     private Control BuildPlacementPanel()
     {
         var panel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(8), BackColor = WinFormsTheme.Surface };
+        panel.SizeChanged += (_, _) => _placeHint.MaximumSize = new Size(Math.Max(1, panel.ClientSize.Width - panel.Padding.Horizontal), 0);
         var options = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 2, BackColor = WinFormsTheme.SurfaceRaised, Padding = new Padding(6) };
         options.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 70)); options.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         _lblPlaceCategory = AddSceneField(options, 0, "類別", _placeCategory);
@@ -51,14 +52,22 @@ internal sealed partial class MapEditorForm
         var buttonRow = new TableLayoutPanel
         {
             Dock = DockStyle.Bottom,
-            Height = 36,
-            ColumnCount = 3,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            ColumnCount = 2,
+            RowCount = 2,
             Padding = new Padding(0, 4, 0, 0),
             BackColor = WinFormsTheme.Surface
         };
-        buttonRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33.33f));
-        buttonRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33.33f));
-        buttonRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33.34f));
+        buttonRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        buttonRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        buttonRow.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        buttonRow.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        foreach (Button button in new[] { _placedEditButton, _placedDuplicateButton, _placedDeleteButton })
+        {
+            button.AutoSize = true;
+            button.MinimumSize = new Size(0, 32);
+        }
 
         _placedEditButton.Dock = DockStyle.Fill;
         _placedDuplicateButton.Dock = DockStyle.Fill;
@@ -66,7 +75,8 @@ internal sealed partial class MapEditorForm
 
         buttonRow.Controls.Add(_placedEditButton, 0, 0);
         buttonRow.Controls.Add(_placedDuplicateButton, 1, 0);
-        buttonRow.Controls.Add(_placedDeleteButton, 2, 0);
+        buttonRow.Controls.Add(_placedDeleteButton, 0, 1);
+        buttonRow.SetColumnSpan(_placedDeleteButton, 2);
 
         placedHost.Controls.Add(_placedList);
         placedHost.Controls.Add(buttonRow);

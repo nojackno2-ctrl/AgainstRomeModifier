@@ -28,6 +28,7 @@
 
 ## 最新驗證與失敗紀錄
 
+- Codex（2026-10-07）：AI材質拒絕修正與驗收矩陣已commit `572097e`。TEMP/ArmVisualQA_1c01f5e6b6e84fe490ec6339c257de49 的獨立.NET STA harness以合成fixture、2D模式DrawToBitmap核對main 1440x900/1100x700各tab、AI 880x740/640x580、事件中英560x420，DeviceDpi=96。發現Placement固定54px提示與36px三欄按鈕截字；改提示隨寬度自動換行，按鈕兩欄+整列delete、自動高度，重繪確認中英文最小視窗完整可見。harness初版ScenarioEvent List指定array的CS0029已改collection expression並重跑成功。版面修正後Release build 0警告/0錯誤、完整測試宿主483通過/21略過、modules45通過，共528通過/21略過/0失敗。高DPI/OpenGL/遊戲內仍未驗證。
 - Codex（2026-10-07）：AI材質各區域原共用pending stroke，後續拒絕會CancelStroke撤回先前成功區域但摘要仍計成功。PaintCircle新增可選rollbackStrokeOnFailure（預設維持滑鼠筆畫原行為）；AI設false，拒絕只還原當次區域，整份已接受材質仍一次undo。定向測試modules4項、STA host1項通過；合成fixture驗證拒絕後保留base材質、Texture undo/redo、Height/Collision共用undo、磁碟寫入前不變、Save/reload清dirty/history。XML註解初版4個CS1573已修；完整Release build 0警告/0錯誤，full --no-build test宿主483通過/21略過、modules45通過，共528通過/21略過/0失敗。指南修正歷史分組，新增docs/map-editor-acceptance.md列測試證據與未驗證項；未啟用live環境的提前return測試不算實機證據。
 - Codex 續作（2026-10-07）：發現單兵UnitCount=1存成Count=0，會走s_createObj而非部隊容器；Persistence改依Figure分類保留至少1人。新增STA交易測試：單兵區域目標失敗後重試/持久ID/再存同bytes/重新開圖；nature新增在其他檔已寫後BCI缺失rollback，再試只寫一次並清dirty/history。針對MapEditorSaveTransactionTests共5通過。nature新測試初次失敗是合成template active=0，不是rollback問題，補合法active/type字段後通過；未改LevelObjectStore。
 - 同一nature測試證實成功存檔後canvas標記仍為pending索引-200000而非DATA槽位-100000-slot；Persistence成功後RefreshSceneMarkers，標記更新、再存同bytes與再刪除皆通過。新增删除測試fixture需columns[10]=0xFFFF才是未linked物件，已修。最新工作樹build 0警告/0錯誤，full test宿主482通過/21略過、modules44通過，合計526通過/21略過/0失敗。
@@ -56,7 +57,7 @@
 
 1. Placement batch/邊界與STA host整合已驗證/提交；單兵與nature交易fail/retry/只套用一次/成功後dirty及markers已新增測試通過。程式碼整合已解決。
 2. Terrain blend純resolver邊界已實作並通過工作樹與committed snapshot全測試，已提交，已解決。
-3. TEMP/ArmIntegratedQA_c15e32ee907843aab7dba6dbfef56bb4/source由`git archive 63e0772`產生：完整committed solution Release build 0警告/0錯誤；full test宿主482通過/21略過、modules44通過，合計526通過/21略過/0失敗。後續AI跨模式/存檔fixture已通過，材質拒絕回滾bug已修；驗收矩陣已建立。下一步檢查UI視覺，以及部族/多人合成案例；不同部族/多人/遊戲存讀檔仍需另行驗收，不能以目前測試宣稱完整可玩。
+3. TEMP/ArmIntegratedQA_c15e32ee907843aab7dba6dbfef56bb4/source由`git archive 63e0772`產生：完整committed solution Release build 0警告/0錯誤；full test宿主482通過/21略過、modules44通過，合計526通過/21略過/0失敗。後續AI跨模式/存檔fixture已通過，材質拒絕回滾bug已修；驗收矩陣與96 DPI視覺已完成，Placement截字已修。下一步高DPI/OpenGL驗收及部族/多人合成案例；不同部族/多人/遊戲存讀檔仍需另行驗收，不能以目前測試宣稱完整可玩。
 4. 遊戲內事件區域/勝敗結算、存讀檔、不同部族、多人與AI方案可玩性仍未驗證。本輪禁止存取安裝目錄，恢復仍先遵守 AGENTS.md，不能自行沿用歷史實機授權。
 5. 完成以上後再評估整體目標；目前開發進行中，不能標記 complete。
 
