@@ -173,11 +173,11 @@ internal sealed partial class MapEditorForm
     }
 
     /// <summary>將高度更新至 2D／3D 預覽。</summary>
-    private void ApplyHeightsToViews()
+    private void ApplyHeightsToViews(bool useCurrentSamples = false)
     {
         if (_terrainLayers is null) return;
         if (!TryParseGameColor(_waterColor.Text, out Color waterColor)) waterColor = Color.SteelBlue;
-        _canvas.SetHeightSamples(_terrainLayers.VertexSize, _terrainLayers.HeightsDirty ? _terrainLayers.Heights : null, (float)_waterLevel.Value, _heightMapStep, waterColor);
+        _canvas.SetHeightSamples(_terrainLayers.VertexSize, useCurrentSamples || _terrainLayers.HeightsDirty ? _terrainLayers.Heights : null, (float)_waterLevel.Value, _heightMapStep, waterColor);
         _view3d?.SetHeightSamples(_terrainLayers.Heights);
     }
 

@@ -71,6 +71,7 @@ internal sealed partial class MapEditorForm : Form
     private readonly ToolStripButton _view2dButton = new("2D 俯視") { CheckOnClick = true };
     private readonly ToolStripButton _view3dButton = new("3D 場景") { CheckOnClick = true, Checked = true };
     private readonly ToolStripButton _3dDiagnosticsButton = new("3D 診斷") { Visible = false };
+    private readonly ToolStripButton _retryDisplayButton = new("重試顯示") { Visible = false };
     private readonly ToolStripButton _mapMenuButton = new("地圖選單");
     private readonly ToolStripButton _btnLangZH = new("繁體中文") { Alignment = ToolStripItemAlignment.Right };
     private readonly ToolStripButton _btnLangEN = new("English") { Alignment = ToolStripItemAlignment.Right };
@@ -209,7 +210,7 @@ internal sealed partial class MapEditorForm : Form
         });
 
         var tools = new ToolStrip { GripStyle = ToolStripGripStyle.Hidden, Dock = DockStyle.Top, Padding = new Padding(10, 5, 10, 5), BackColor = WinFormsTheme.SurfaceRaised, ForeColor = WinFormsTheme.TextPrimary };
-        tools.Items.AddRange(new ToolStripItem[] { _lblTerrainGroup, _textureTool, _heightTool, _collisionTool, _natureTool, _placeTool, _sceneMoveTool, _terrainOperation, _terrainStrength, _resetTerrainButton, _blankTerrainButton, new ToolStripSeparator(), _view2dButton, _view3dButton, _3dDiagnosticsButton });
+        tools.Items.AddRange(new ToolStripItem[] { _lblTerrainGroup, _textureTool, _heightTool, _collisionTool, _natureTool, _placeTool, _sceneMoveTool, _terrainOperation, _terrainStrength, _resetTerrainButton, _blankTerrainButton, new ToolStripSeparator(), _view2dButton, _view3dButton, _3dDiagnosticsButton, _retryDisplayButton });
 
         _paletteHeader = SectionHeader("地表繪製");
         var palettePanel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(10), BackColor = WinFormsTheme.Surface };
@@ -336,11 +337,12 @@ internal sealed partial class MapEditorForm : Form
             _view3d.StrokeEnded += (_, _) => CommitStroke();
             _view3d.TileHovered += (_, e) => ShowTerrainHover(e);
             _view3d.SceneObjectMoved += (_, e) => MoveSelectedSceneObject(e);
-            _view3d.InitializationFailed += (_, ex) => { if (!IsDisposed && !Disposing && IsHandleCreated) BeginInvoke(() => Disable3DView(view3d.LastFailureReason ?? (AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English ? "OpenGL 3.3 initialization failed." : "OpenGL 3.3 初始化失敗。"), ex)); };
+            _view3d.InitializationFailed += (_, ex) => { if (!IsDisposed && !Disposing && IsHandleCreated) BeginInvoke(() => { if (!view3d.IsReady) Disable3DView(view3d.LastFailureReason ?? (AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English ? "OpenGL 3.3 initialization failed." : "OpenGL 3.3 初始化失敗。"), ex); }); };
         }
         _view2dButton.Click += (_, _) => SetActiveView(use3D: false);
         _view3dButton.Click += (_, _) => SetActiveView(use3D: true);
         _3dDiagnosticsButton.Click += (_, _) => Show3DDiagnostics();
+        _retryDisplayButton.Click += (_, _) => TryReloadDisplayResources(out _);
         _mapMenuButton.Click += (_, _) => ReturnToMenu();
         _textureTool.Click += (_, _) => SetEditMode(EditMode.Texture);
         _sceneMoveTool.Click += (_, _) => SetEditMode(EditMode.SceneMove);
@@ -439,6 +441,8 @@ internal sealed partial class MapEditorForm : Form
         _view2dButton.Text = isEn ? "2D View" : "2D 俯視";
         _view3dButton.Text = isEn ? "3D View" : "3D 場景";
         _3dDiagnosticsButton.Text = isEn ? "3D Diagnostics" : "3D 診斷";
+        _retryDisplayButton.Text = isEn ? "Retry display" : "重試顯示";
+        _retryDisplayButton.ToolTipText = isEn ? "Reload display resources and keep unsaved edits." : "重新載入顯示素材，保留未儲存的編輯。";
 
         _paletteHeader.Text = isEn ? "Terrain Painting" : "地表繪製";
         _paletteSearch.PlaceholderText = isEn ? "Search grass, sand, mud, rock..." : "搜尋草地、沙地、泥土、岩地…";
@@ -595,6 +599,7 @@ internal sealed partial class MapEditorForm : Form
             _view3dButton.Enabled = true;
             _view3dButton.ToolTipText = "";
             _3dDiagnosticsButton.Visible = false;
+            _retryDisplayButton.Visible = false;
             _last3DDiagnostic = null;
         }
         if (_terrainLayers?.HeightsDirty == true) ApplyHeightsToViews();
@@ -1150,6 +1155,7 @@ internal sealed partial class MapEditorForm : Form
         _view3dButton.Enabled = false;
         _view3dButton.ToolTipText = reason;
         _3dDiagnosticsButton.Visible = true;
+        _retryDisplayButton.Visible = true;
         _3dDiagnosticsButton.ToolTipText = isEn ? "View 3D diagnostics" : "查看 3D 場景無法啟用的實際原因";
         SetActiveView(use3D: false);
         _modeBanner.Text = isEn

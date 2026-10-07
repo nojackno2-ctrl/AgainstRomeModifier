@@ -21,7 +21,7 @@ internal sealed record TerrainRoadPaintResult(bool Succeeded, IReadOnlyList<Terr
 /// </summary>
 internal sealed class TerrainBlendEditSession
 {
-    private readonly INativeTerrainMaterialResolver _catalog;
+    private INativeTerrainMaterialResolver _catalog;
     private readonly TerrainBlendAuthoringMap _map;
     private readonly string[] _currentTextures;
     private string[] _baselineTextures;
@@ -52,6 +52,13 @@ internal sealed class TerrainBlendEditSession
     public bool CanRedo => _redo.Count > 0;
     public bool IsDirty => !_currentTextures.SequenceEqual(_baselineTextures, StringComparer.OrdinalIgnoreCase) ||
                            !_map.CornerMaterials.SequenceEqual(_baselineCorners, StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Replace resource metadata while retaining authoring corners, textures, baseline and history.</summary>
+    public void RebindMaterialResolver(INativeTerrainMaterialResolver catalog)
+    {
+        ArgumentNullException.ThrowIfNull(catalog);
+        _catalog = catalog;
+    }
 
     /// <summary>Independent authoring snapshot for dry runs; history and baseline belong to the copy.</summary>
     internal TerrainBlendEditSession Fork()

@@ -16,6 +16,7 @@
 | 高度、通行 | 筆畫、undo/redo、基準；真正表單儲存圖層與快取失效 | `AgainstRomeMapEditor.Modules.Tests/TerrainHeightEditSessionTests.cs`、`AgainstRomeModifier.Tests/MapEditorFormTerrainIntegrationTests.cs` |
 | 3D 通行覆蓋 | 真正 GPU 擷取驗證非對稱遮罩與 picker 位置、非零值／快照隔離、paint/undo/redo、切換工具、save/reopen／清除；texture 隨 context 釋放 | `AgainstRomeModifier.Tests/MapEditorCollisionViewTests.cs`（本機強制 ARM_OPENGL_REQUIRED=1） |
 | 3D 資源恢復 | 缺高度圖退回 2D，恢復高度圖並重開後按鈕與診斷恢復，保留 fallback 時儲存的文字；未驗證 GPU 驅動故障後重試 | `AgainstRomeModifier.Tests/MapEditor3DFallbackTests.cs` |
+| 同表單顯示重試 | 補回素材庫、拒絕損壞 ZIP/BMP、替換素材後新印章可用，保留未存文字／高度／材質及 undo/redo，重試不寫地圖；實際釋放 GL 資源後重建 context，高度與通行覆蓋 framebuffer 完全相同。未模擬實體 GPU 驅動故障 | `AgainstRomeModifier.Tests/MapEditorResourceReloadTests.cs`（本機強制 ARM_OPENGL_REQUIRED=1）、`TerrainBlendModuleTests.cs` resolver 重綁 |
 | 原版材質 | 四角烘焙、不支援接縫拒絕、滑鼠筆畫整筆回滾、undo/redo | `AgainstRomeMapEditor.Modules.Tests/TerrainBlendModuleTests.cs`、`AgainstRomeModifier.Tests/MapEditor3DTests.cs` |
 | 圖塊印章連續繪製 | 漏格補點、分筆／換筆刷、undo/redo、save/reopen；2D/3D 真正滑鼠處理及 picker 折返回報（非遊戲內外觀證據） | `AgainstRomeModifier.Tests/MapEditorStampTests.cs` |
 | 圖塊印章地區篩選 | 依目前地圖 L 系列、無證據 fallback、混合系列、搜尋與手動顯示其他系列 | `AgainstRomeModifier.Tests/MapEditorStampTests.cs` |

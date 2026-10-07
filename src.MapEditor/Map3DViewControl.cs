@@ -123,6 +123,7 @@ internal sealed class Map3DViewControl : GLControl
 
     private void InitializeGl()
     {
+        if (_initialized) return;
         try
         {
             MakeCurrent();
@@ -147,6 +148,25 @@ internal sealed class Map3DViewControl : GLControl
     }
 
     public event EventHandler<Exception>? InitializationFailed;
+
+    /// <summary>Recreate a failed context while retaining CPU scene, camera and editing overlays.</summary>
+    internal bool RetryInitialization()
+    {
+        if (_initialized) return true;
+        if (!IsHandleCreated || IsDisposed || Disposing) return false;
+        try
+        {
+            RecreateHandle();
+            if (!_initialized) InitializeGl();
+            return _initialized;
+        }
+        catch (Exception ex)
+        {
+            LastFailureReason = $"OpenGL 3.3 重試失敗：{ex.GetType().Name}: {ex.Message}";
+            InitializationFailed?.Invoke(this, ex);
+            return false;
+        }
+    }
 
     public void SetCollisionOverlay(int size, IReadOnlyList<byte>? collision)
     {
@@ -524,6 +544,8 @@ internal sealed class Map3DViewControl : GLControl
     {
         bool wasInitialized = _initialized;
         ReleaseGlResources(); // 在 GLControl 銷毀原生視窗與 context 之前執行
+        // 舊 context 的 ID 不能用在新 context（可能剛好與新配置的 texture/buffer ID 相同）。
+        _terrainProgram = _colorProgram = _vao = _vbo = _ebo = _atlasTexture = _waterVao = _waterVbo = _markerVao = _markerVbo = _cursorVao = _cursorVbo = _collisionTexture = 0;
         _reinitializeOnHandleCreated = wasInitialized && !Disposing && !IsDisposed && RecreatingHandle;
         base.OnHandleDestroyed(e);
     }

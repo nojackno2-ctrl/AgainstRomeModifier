@@ -1,8 +1,15 @@
 # AI Handoff - Live Project Memory
 
+## 最新產品方向（2026-10-07 使用者／Codex）
+
+- 使用者明示：地圖編輯器要像《世紀帝國 II》，以真實遊戲畫面直接編輯地圖。此要求優先於既有離線 renderer 規劃；不能把目前自製 OpenGL 預覽視為目標完成。
+- 原始碼證據：SceneObjectRenderer.BuildMarkerPoints 只建立物件標記，Map3DViewControl 自行畫地形／水面／markers，尚無完整遊戲建築／單位場景。下一步先評估原引擎的場景載入、相機／拾取與地圖更新接口，或完整原生模型／動畫呈現能力；需以實際遊戲外觀核對，不能僅增加 marker 或 screenshot 當作即時編輯。
+- repo 靜態筆記的 TextureEditor 是程序貼圖工具，未找到完整地圖編輯入口或直接載入 ENDL 的命令列；這是既有分析結論，尚無新實機證據。最新版 AGENTS 仍禁止存取安裝目錄，使用者這次方向澄清未明示取消限制。
+
 ## 續作進度（2026-10-07 Codex；目標仍進行中）
 
-- `45e2d41` 後補 3D 通行覆蓋與資源恢復：原 3D 通行 paint 後 GPU 擷取 0 像素變更，新增碰撞遮罩 shader 依地圖 X/Z 取樣、非零值紅色覆蓋；2D/3D 共用更新，paint/undo/redo/模式/重開同步。原缺 boden.bmp 恢復後仍停用 3D 的 STA 測試先失敗，現在資源重載成功且 GL ready 才清診斷／啟用按鈕，保留 fallback 中儲存的標題。`ARM_OPENGL_REQUIRED=1` 定向通過，RTX 4080／OpenGL 3.3；非對稱遮罩／picker 內部位置、快照隔離、無效遮罩清除、GL texture 釋放皆已驗證。補強測試最初在地圖外緣取樣得到不同結果，改只核對內部且避開遮罩邊界；重開時原直接修改視圖旗標被 UI 設定覆蓋，改操作真正 checkboxes。最終 Release build 0 警告/0 錯誤；完整 `dotnet test ... --no-build --no-restore`（強制 ARM_OPENGL_REQUIRED=1）宿主 602 通過/22 略過、modules 67 通過，共 669 通過/0 失敗。本輪仍只用合成 TEMP，未讀遊戲目錄；道路素材授權尚無回覆。指南／驗收已更新，依既有授權本地提交；整體目標未完成，GPU 初始化重試仍未實作。
+- `90aa912` 後新增同表單「重試顯示」：預解碼候選素材、原地換 archive、重綁 resolver 保留 baseline/history；保留未存標題／地形／碰撞與 undo/redo，損壞 ZIP/BMP 不採用。初次 STA 失敗為缺按鈕與 archive 鎖定，改唯讀 FileShare.ReadWrite/Delete 並關閉損壞 stream；兩項 archive STA 與 resolver 測試已通過。GL 重試基線 IsReady 失敗，新增 handle/context 重建並清舊 GL IDs，防止新 texture ID 被誤刪；強制 ARM_OPENGL_REQUIRED=1 定向通過，釋放真實 GL 資源後高度＋通行覆蓋 framebuffer 差異 0，dirty/history/disk bytes 保留。補測 nullable CS8604 已修。完整 Release build 0 警告/0 錯誤；dotnet test solution --no-build --no-restore（ARM_OPENGL_REQUIRED=1）宿主 605 通過/22 略過、modules 68 通過，合計 673 通過/0 失敗。只用合成 TEMP，未存取安裝目錄，未模擬實體驅動故障。
+- `45e2d41` 後補 3D 通行覆蓋與資源恢復：原 3D 通行 paint 後 GPU 擷取 0 像素變更，新增碰撞遮罩 shader 依地圖 X/Z 取樣、非零值紅色覆蓋；2D/3D 共用更新，paint/undo/redo/模式/重開同步。原缺 boden.bmp 恢復後仍停用 3D 的 STA 測試先失敗，現在資源重載成功且 GL ready 才清診斷／啟用按鈕，保留 fallback 中儲存的標題。`ARM_OPENGL_REQUIRED=1` 定向通過，RTX 4080／OpenGL 3.3；非對稱遮罩／picker 內部位置、快照隔離、無效遮罩清除、GL texture 釋放皆已驗證。補強測試最初在地圖外緣取樣得到不同結果，改只核對內部且避開遮罩邊界；重開時原直接修改視圖旗標被 UI 設定覆蓋，改操作真正 checkboxes。最終 Release build 0 警告/0 錯誤；完整 `dotnet test ... --no-build --no-restore`（強制 ARM_OPENGL_REQUIRED=1）宿主 602 通過/22 略過、modules 67 通過，共 669 通過/0 失敗。本輪仍只用合成 TEMP，未讀遊戲目錄；道路素材授權尚無回覆。指南／驗收已更新，依既有授權本地提交；當時 GPU 初始化重試尚未實作；已由檔首續作解決，實體驅動故障仍未驗證。
 - `875cc0f` 後接續道路工具。TEMP/ArmClaudeQA/families.tsv 有 WEG_H/V ROM、PFAD 名稱證據，但已找到的素材庫是合成 fixture，無真實貼圖。最新版 AGENTS 禁止存取安裝目錄，已提出唯讀複製素材至 TEMP 的授權問題，尚未收到回覆；不以舊交接授權自行繞過。新增純 `RoadStrokePlanner`：稀疏路徑補成四向相連、轉彎／交叉／折返連接、原道路保留、原生片缺失整份拒絕。`TerrainBlendEditSession.PaintRoadPath` 接現有筆畫交易，缺片整筆撤回且保留先前已提交道路，重試／undo／redo／baseline 驗證；10 項純測試通過。`DOTNET_ROLL_FORWARD=Major dotnet build AgainstRomeModifier.slnx -c Release -p:UseAppHost=false --no-restore` 0 警告/0 錯誤；`dotnet test ... --no-build --no-restore --logger 'console;verbosity=quiet'` 宿主 600 通過/22 略過、modules 67 通過，共 667 通過/0 失敗。尚未接入 UI 或確認真實圖塊連接口，不能宣稱道路工具已可用；設計／下一步見 `docs/map-editor-road-tiles.md`。依既有授權提交道路核心，不 push，整體目標仍進行中。
 - 從 `88aa030`、分支 `主要開發` 接續；起始只有使用者未追蹤 `.claude/`，不修改／提交。遵守目前 AGENTS.md，本輪僅合成 TEMP 地圖，未存取安裝遊戲目錄；AI 製圖維持暫停。
 - 圖塊印章拖曳沿用 `TerrainStrokePath.Between` 補齊漏格，整段一次 undo；放開、換工具／筆刷、重開地圖會重設起點。L 印章依地圖實際使用系列篩選，無 L 證據時全部顯示，搜尋／「顯示其他地區圖塊」可取用全部。
@@ -141,7 +148,7 @@
 
 ## 恢復時優先處理（尚未完成）
 
-以檔首續作進度與「交接給下一位 AI」的「建議下一步」為準。舊條目更新：遊戲內驗收曾取得授權並部分完成（見上），目前最新 AGENTS 禁止存取安裝目錄，已待使用者釐清唯讀素材分析；實體高 DPI 螢幕未驗證；空白地圖語意（平坦範本保留聚落/腳本）仍待使用者決定。`9a1cb4f` 已解決 3D 通行覆蓋與高度圖恢复後停用，歷史紀錄的這兩項限制已過時；GPU 初始化重試、缺 floortex.dat 的同表單素材庫重新開啟仍未完成。整體目標未完成，push 需另行授權。
+以檔首續作進度與「交接給下一位 AI」的「建議下一步」為準。舊條目更新：遊戲內驗收曾取得授權並部分完成（見上），目前最新 AGENTS 禁止存取安裝目錄，已待使用者釐清唯讀素材分析；實體高 DPI 螢幕未驗證；空白地圖語意（平坦範本保留聚落/腳本）仍待使用者決定。`9a1cb4f` 已解決 3D 通行覆蓋與高度圖恢复後停用，歷史紀錄的這兩項限制已過時；本輪已驗證同表單素材庫重開與釋放 GL 資源後 context 重建；真實 GPU 驅動故障尚未驗證。整體目標未完成，push 需另行授權。
 
 ## 文件與歷史
 
