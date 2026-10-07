@@ -13,6 +13,122 @@ public sealed class ScenarioEventsTests : IDisposable
         { Actions = [new(ScenarioActionKind.Message, "Привет!")] };
 
     [Fact]
+    public void All_conditions_track_targets_before_timer_and_before_other_conditions_hold()
+    {
+        Guid dead = Guid.NewGuid(), exists = Guid.NewGuid();
+        var item = Event() with { Conditions = [new(ScenarioConditionKind.ObjectExists, exists), new(ScenarioConditionKind.ObjectDeadOrRemoved, dead)] };
+        var scenario = BuildingTargets(dead, exists); scenario.Events = [item];
+        BciImage image = Fixture(); ScenarioEventCompiler.Inject(image, [item], 0, scenario);
+        var vm = new TestVm(image); vm.Objects[43] = (123, false);
+        vm.Tick(0); Assert.Empty(vm.Messages);
+        // 前一條件為 false 時，後面的死亡目標仍必須被追蹤。
+        vm.Objects.Clear(); vm.Objects[44] = (124, false);
+        vm.Tick(1000); Assert.Empty(vm.Messages);
+        vm.Tick(2000); Assert.Single(vm.Messages);
+        vm.Tick(5000); Assert.Single(vm.Messages); Assert.Equal(1, vm.StackDepth);
+    }
+
+    [Fact]
+    public void Uid_reuse_does_not_retarget_exists_but_counts_as_removal_of_confirmed_target()
+    {
+        Guid id = Guid.NewGuid(); var scenario = BuildingTargets(id);
+        var exists = Event(0) with { Conditions = [new(ScenarioConditionKind.ObjectExists, id)] };
+        var removed = Event(2) with { Conditions = [new(ScenarioConditionKind.ObjectDeadOrRemoved, id)] };
+        BciImage image = Fixture(); ScenarioEventCompiler.Inject(image, [exists, removed], 0, scenario);
+        var vm = new TestVm(image); vm.Objects[43] = (999, false);
+        vm.Tick(0); Assert.Empty(vm.Messages); // 錯誤 UID 從未算存在。
+        vm.Objects[43] = (123, false); vm.Tick(1000); Assert.Single(vm.Messages);
+        vm.Objects[43] = (999, true); vm.Tick(2000); Assert.Equal(2, vm.Messages.Count);
+        Assert.Equal(1, vm.StackDepth);
+    }
+
+    [Fact]
+    public void Dead_flag_and_corpse_removal_fire_once_after_timer()
+    {
+        Guid id = Guid.NewGuid(); var scenario = BuildingTargets(id);
+        var item = Event() with { Conditions = [new(ScenarioConditionKind.ObjectDeadOrRemoved, id)] };
+        BciImage image = Fixture(); ScenarioEventCompiler.Inject(image, [item], 0, scenario);
+        var vm = new TestVm(image); vm.Objects[43] = (123, false); vm.Tick(0);
+        vm.Objects[43] = (123, true); vm.Tick(1000); Assert.Empty(vm.Messages);
+        vm.Tick(2000); Assert.Single(vm.Messages);
+        vm.Objects.Clear(); vm.Tick(5000); Assert.Single(vm.Messages);
+    }
+
+    [Fact]
+    public void Failed_script_spawn_never_arms_dead_or_removed_condition()
+    {
+        Guid id = Guid.NewGuid(); var item = Event(0) with { Conditions = [new(ScenarioConditionKind.ObjectDeadOrRemoved, id)] };
+        var scenario = new ScenarioDocument { Spawns = [new("GER_INF01", 4000, 5000, 0, Count: 3) { Id = id }], Events = [item] };
+        BciImage image = Fixture(); LevelScriptInjector.Inject(image, scenario.ScriptSpawns);
+        ScenarioEventCompiler.Inject(image, [item], 0, scenario);
+        var vm = new TestVm(image); vm.CreationResults.Enqueue((-1, 43, 123, true));
+        vm.Objects[43] = (123, true); vm.Tick(0); vm.Objects.Clear(); vm.Tick(10000);
+        Assert.Empty(vm.Messages); Assert.Equal(1, vm.StackDepth);
+    }
+
+    [Fact]
+    public void Script_spawn_binding_drives_existence_and_repeat_waits_for_conditions()
+    {
+        Guid id = Guid.NewGuid(); var item = Event(1, true) with { Conditions = [new(ScenarioConditionKind.ObjectExists, id)] };
+        var scenario = new ScenarioDocument { Spawns = [new("GER_INF01", 4000, 5000, 0, Count: 3) { Id = id }] };
+        BciImage image = Fixture(); LevelScriptInjector.Inject(image, scenario.ScriptSpawns);
+        ScenarioEventCompiler.Inject(image, [item], 0, scenario);
+        var vm = new TestVm(image); vm.CreationResults.Enqueue((1, 43, 123, true));
+        vm.Tick(0); vm.Tick(3000); Assert.Empty(vm.Messages);
+        vm.Objects[43] = (123, false); vm.Tick(4000); Assert.Single(vm.Messages);
+        Assert.Equal(5000, vm.Variables["ARM_EVENT_DEADLINE_0"]);
+        vm.Objects.Clear(); vm.Tick(5000); Assert.Single(vm.Messages);
+        vm.Objects[43] = (123, false); vm.Tick(5500); Assert.Equal(2, vm.Messages.Count);
+        Assert.Equal(6500, vm.Variables["ARM_EVENT_DEADLINE_0"]); Assert.Equal(1, vm.StackDepth);
+    }
+
+    [Fact]
+    public void Missing_target_binding_and_malformed_conditions_fail_before_image_or_file_mutation()
+    {
+        Guid id = Guid.NewGuid(); var item = Event() with { Conditions = [new(ScenarioConditionKind.ObjectExists, id)] };
+        BciImage image = Fixture(); byte[] original = image.Serialize();
+        foreach (ScenarioDocument? document in new ScenarioDocument?[] { null, new(), new() { Spawns = [new("HOUSE", 0, 0, 0, Prebuilt: true) { Id = id }] } })
+        {
+            Assert.Throws<InvalidDataException>(() => ScenarioEventCompiler.Inject(image, [item], 0, document));
+            Assert.Equal(original, image.Serialize());
+        }
+        var scenario = BuildingTargets(id); scenario.Events = [item];
+        Directory.CreateDirectory(_root);
+        using (var rollback = new FileRollbackScope()) { scenario.Save(_root, rollback); rollback.Commit(); }
+        ScenarioDocument loaded = ScenarioDocument.Load(_root); Assert.Equal(item.Conditions, loaded.Events[0].Conditions);
+        byte[] json = File.ReadAllBytes(Path.Combine(_root, ScenarioDocument.FileName));
+        scenario.Spawns.Clear(); scenario.DataSlots.Clear();
+        using (var rollback = new FileRollbackScope()) Assert.Throws<InvalidDataException>(() => scenario.Save(_root, rollback));
+        Assert.Equal(json, File.ReadAllBytes(Path.Combine(_root, ScenarioDocument.FileName)));
+        ScenarioEventCompiler.Inject(image, [item with { Enabled = false }], 0, scenario); Assert.Equal(original, image.Serialize());
+        Assert.Throws<InvalidDataException>(() => ScenarioEventValidator.ValidateConditions([item with { Conditions = null! }]));
+        Assert.Throws<InvalidDataException>(() => ScenarioEventValidator.ValidateConditions([item with { Conditions = [new((ScenarioConditionKind)99, id)] }]));
+        Assert.Throws<InvalidDataException>(() => ScenarioEventValidator.ValidateConditions([item with { Conditions = Enumerable.Repeat(item.Conditions[0], 33).ToList() }]));
+    }
+
+    private static ScenarioDocument BuildingTargets(params Guid[] ids) => new()
+    {
+        Spawns = ids.Select(id => new ScenarioSpawn("HOUSE", 4000, 5000, 0, Prebuilt: true) { Id = id }).ToList(),
+        DataSlots = ids.Select((id, index) => new ScenarioDataSlot(42 + index, (uint)(123 + index)) { SpawnId = id }).ToList()
+    };
+
+    [Fact]
+    public void Recompiling_after_data_rebinding_uses_new_pair_for_same_condition_target()
+    {
+        Guid id = Guid.NewGuid(); var scenario = BuildingTargets(id);
+        var item = Event(0) with { Conditions = [new(ScenarioConditionKind.ObjectExists, id)] };
+        BciImage first = Fixture(); ScenarioEventCompiler.Inject(first, [item], 0, scenario);
+        var originalVm = new TestVm(first); originalVm.Objects[43] = (123, false); originalVm.Tick(0);
+        Assert.Single(originalVm.Messages);
+        scenario.DataSlots[0] = new(8, 456) { SpawnId = id };
+        BciImage moved = Fixture(); ScenarioEventCompiler.Inject(moved, [item], 0, scenario);
+        var movedVm = new TestVm(moved); movedVm.Objects[43] = (123, false); movedVm.Tick(0);
+        Assert.Empty(movedVm.Messages);
+        movedVm.Objects[9] = (456, false); movedVm.Tick(1000); Assert.Single(movedVm.Messages);
+        Assert.Equal(id, item.Conditions[0].TargetId); Assert.Equal(1, movedVm.StackDepth);
+    }
+
+    [Fact]
     public void Spawn_bindings_preserve_native_pairs_across_unit_order_and_building_wait()
     {
         Guid building = Guid.NewGuid(), unit = Guid.NewGuid();
@@ -244,7 +360,7 @@ public sealed class ScenarioEventsTests : IDisposable
         document.Events.Add(Event());
         using (var rollback = new FileRollbackScope()) { document.Save(_root, rollback); rollback.Commit(); }
         ScenarioDocument loaded = ScenarioDocument.Load(_root);
-        Assert.Equal(4, loaded.Version);
+        Assert.Equal(5, loaded.Version);
         Assert.Equal(document.Spawns, loaded.Spawns); Assert.Equal(document.DataSlots, loaded.DataSlots);
         Assert.Equal("Timer", Assert.Single(loaded.Events).Name);
     }
@@ -295,6 +411,7 @@ public sealed class ScenarioEventsTests : IDisposable
         public Queue<(int Result, int Index, int Uid, bool Writes)> CreationResults { get; } = new();
         public List<string> Creations { get; } = new();
         public List<(int, int)> CreationInputs { get; } = new();
+        public Dictionary<int, (int Uid, bool Dead)> Objects { get; } = new();
         public int OriginalTicks { get; private set; }
         public int StackDepth => _stack.Count;
         private object Pop() { object value = _stack[^1]; _stack.RemoveAt(_stack.Count - 1); return value; }
@@ -349,6 +466,8 @@ public sealed class ScenarioEventsTests : IDisposable
                 case "s_getTime": _result = _now; break;
                 case "s_setScriptVarL": Variables[Arg<string>(0)] = Arg<int>(1); break;
                 case "s_getScriptVarL": _result = Variables.GetValueOrDefault(Arg<string>(0)); break;
+                case "s_objExists": _result = Objects.TryGetValue(Arg<int>(0), out var exists) && exists.Uid == Arg<int>(1) ? 1 : 0; break;
+                case "s_objDead": _result = Objects.TryGetValue(Arg<int>(0), out var dead) && dead.Uid == Arg<int>(1) && dead.Dead ? 1 : 0; break;
                 case "s_showTextBox": Assert.Equal(0, Arg<int>(0)); Messages.Add(Arg<string>(1)); break;
                 case "s_setTeamHostile": Diplomacy.Add((Arg<int>(0), Arg<int>(1), Arg<int>(2))); break;
                 case "s_createUnitAndMems":

@@ -189,7 +189,8 @@ public sealed class MapEditorFormTerrainIntegrationTests : IDisposable
         string map = CreateFixture(); Directory.CreateDirectory(Path.Combine(map, "SCRIPT"));
         string script = Path.Combine(map, "SCRIPT", LevelScriptInjector.ScriptFile);
         byte[] original = ScenarioEventsTests.Fixture().Serialize(); File.WriteAllBytes(script, original);
-        var baseline = new ScenarioDocument { Spawns = [new("HOUSE", 4000, 5000, 0, Prebuilt: true)], DataSlots = [new(42, 123)] };
+        Guid building = Guid.NewGuid();
+        var baseline = new ScenarioDocument { Spawns = [new("HOUSE", 4000, 5000, 0, Prebuilt: true) { Id = building }], DataSlots = [new(42, 123) { SpawnId = building }] };
         using (var rollback = new FileRollbackScope()) { baseline.Save(map, rollback); rollback.Commit(); }
         Exception? failure = null;
         var thread = new Thread(() =>
@@ -199,7 +200,7 @@ public sealed class MapEditorFormTerrainIntegrationTests : IDisposable
                 using var form = new MapEditorForm(_root, new GameMapInfo("ENDL_005", map, true, "Events", "無盡模式"));
                 _ = form.Handle; Invoke(form, "LoadSelectedMap");
                 var events = (List<ScenarioEvent>)typeof(MapEditorForm).GetField("_events", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(form)!;
-                events.Add(new ScenarioEvent(new string('T', 100), 2) { Actions = [new(ScenarioActionKind.Message, "Ready")] });
+                events.Add(new ScenarioEvent(new string('T', 100), 2) { Actions = [new(ScenarioActionKind.Message, "Ready")], Conditions = [new(ScenarioConditionKind.ObjectExists, building)] });
                 Invoke(form, "RefreshEventList", 0); Invoke(form, "UpdateEditorState");
                 Invoke(form, "DuplicateEvent");
                 Assert.Equal(2, events.Count);
@@ -208,6 +209,9 @@ public sealed class MapEditorFormTerrainIntegrationTests : IDisposable
                 Assert.Equal(events[0].Enabled, events[1].Enabled);
                 Assert.Equal(events[0].Repeat, events[1].Repeat);
                 Assert.NotSame(events[0].Actions, events[1].Actions);
+                Assert.NotSame(events[0].Conditions, events[1].Conditions);
+                events[1].Conditions.Add(new(ScenarioConditionKind.ObjectDeadOrRemoved, building));
+                Assert.Single(events[0].Conditions);
                 events[1].Actions.Add(new(ScenarioActionKind.Message, "Copy only"));
                 Assert.Single(events[0].Actions);
                 Assert.True((bool)typeof(MapEditorForm).GetProperty("IsDirty", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(form)!);
@@ -216,6 +220,8 @@ public sealed class MapEditorFormTerrainIntegrationTests : IDisposable
                 ScenarioDocument saved = ScenarioDocument.Load(map);
                 Assert.Equal(baseline.Spawns, saved.Spawns); Assert.Equal(baseline.DataSlots, saved.DataSlots); Assert.Equal(2, saved.Events.Count);
                 Assert.Single(saved.Events[0].Actions); Assert.Equal(2, saved.Events[1].Actions.Count);
+                Assert.Equal(events[0].Conditions, saved.Events[0].Conditions);
+                Assert.Equal(events[1].Conditions, saved.Events[1].Conditions);
                 Assert.NotEqual(original, File.ReadAllBytes(script));
                 while (events.Count < 256) events.Add(events[0]);
                 Invoke(form, "RefreshEventList", 0);

@@ -18,9 +18,11 @@ public sealed class LevelScriptInjectorGameTests
         BciImage image = BciImage.Parse(original);
         int originalMain = image.MainAddress;
         Guid id = Guid.NewGuid();
-        LevelScriptInjector.Inject(image, [new ScenarioSpawn("GER_INF00", 8300, 8000, 0, Count: 10) { Id = id }]);
-        ScenarioEventCompiler.Inject(image, [new ScenarioEvent("Runtime probe", 10)
-            { Actions = [new ScenarioAction(ScenarioActionKind.Message, "ARM event OK")] }], originalMain);
+        var scenario = new ScenarioDocument { Spawns = [new ScenarioSpawn("GER_INF00", 8300, 8000, 0, Count: 10) { Id = id }],
+            Events = [new ScenarioEvent("Runtime probe", 10) { Actions = [new ScenarioAction(ScenarioActionKind.Message, "ARM event OK")],
+                Conditions = [new(ScenarioConditionKind.ObjectExists, id)] }] };
+        LevelScriptInjector.Inject(image, scenario.ScriptSpawns);
+        ScenarioEventCompiler.Inject(image, scenario.Events, originalMain, scenario);
         BciImage reparsed = BciImage.Parse(image.Serialize());
         Assert.True(reparsed.MainAddress >= BciImage.Parse(original).Code.Length);
         Assert.Equal(image.Code, reparsed.Code);

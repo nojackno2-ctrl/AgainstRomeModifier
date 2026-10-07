@@ -9,6 +9,50 @@ namespace AgainstRomeModifier.Tests;
 public sealed class ScenarioEventDialogTests
 {
     [Fact]
+    public void Conditions_are_edited_without_mutating_seed_and_saved_with_persistent_target()
+    {
+        InSta(() =>
+        {
+            Guid id = Guid.NewGuid();
+            var seed = new ScenarioEvent("Conditions") { Actions = [new(ScenarioActionKind.Message, "Ready")],
+                Conditions = Enumerable.Repeat(new ScenarioCondition(ScenarioConditionKind.ObjectExists, id), 32).ToList() };
+            using var dialog = new ScenarioEventDialog(seed, [], true, targets: [new("HOUSE", 4000, 5000, 0) { Id = id }]);
+            _ = dialog.Handle;
+            Assert.False(Buttons(dialog).Single(button => button.Text == "Add condition").Enabled);
+            Field<ListBox>(dialog, "_conditionList").SelectedIndex = 0;
+            Click(Buttons(dialog).Single(button => button.Text == "Delete condition"));
+            Assert.True(Buttons(dialog).Single(button => button.Text == "Add condition").Enabled);
+            Assert.Equal(32, seed.Conditions.Count);
+            Click(Buttons(dialog).Single(button => button.Text == "OK"));
+            Assert.Equal(31, dialog.Result!.Conditions.Count);
+            Assert.All(dialog.Result.Conditions, condition => Assert.Equal(id, condition.TargetId));
+            Assert.NotSame(seed.Conditions, dialog.Result.Conditions);
+        });
+    }
+
+    [Fact]
+    public void Condition_selector_preserves_missing_target_until_user_selects_replacement()
+    {
+        InSta(() =>
+        {
+            Guid missing = Guid.NewGuid(), replacement = Guid.NewGuid();
+            using var dialog = new ScenarioConditionDialog(new(ScenarioConditionKind.ObjectDeadOrRemoved, missing),
+                [new("HOUSE", 4000, 5000, 0) { Id = replacement }], true);
+            _ = dialog.Handle;
+            ComboBox[] combos = ControlsOf<ComboBox>(dialog).ToArray();
+            ComboBox target = combos.Single(combo => combo.Items.Cast<object>().Any(item => item.ToString()!.Contains("Missing target")));
+            Assert.Contains("Missing target", target.SelectedItem!.ToString());
+            target.SelectedIndex = 0;
+            Click(Buttons(dialog).Single(button => button.Text == "OK"));
+            Assert.Equal(replacement, dialog.Result!.TargetId);
+            Assert.Equal(ScenarioConditionKind.ObjectDeadOrRemoved, dialog.Result.Kind);
+        });
+    }
+
+    private static IEnumerable<T> ControlsOf<T>(Control parent) where T : Control => parent.Controls.Cast<Control>()
+        .SelectMany(child => (child is T match ? new[] { match } : Array.Empty<T>()).Concat(ControlsOf<T>(child)));
+
+    [Fact]
     public void Reordering_actions_preserves_selection_and_seed_until_confirmed()
     {
         InSta(() =>

@@ -67,15 +67,50 @@ Tests verify repeated legacy loads, a real form move/save/reload, unchanged IDs
 after DATA reorder despite changed slot/UID, and invalid-file rejection. This
 is an editor-side binding, not yet verified against the game's runtime loader.
 Script-created placements now retain native creation outputs as described
-below. Before exposing object conditions, reject deleted or unresolved targets
-with a clear editor error and give copied placements new identities. Never
-retarget to an object occupying an old slot.
+below. Enabled events now reject deleted targets or missing building bindings
+before saving/compiling; the editor requires reselection or disabling the
+event. Future placement-copy tools must give copied placements new identities.
+Never retarget to an object occupying an old slot.
 
 Required regression coverage: unchanged target after reorder/move/save;
 separate identities after copying; failed spawn never counts as destruction;
 UID mismatch does not refer to a replacement object; corpse removal after a
 confirmed existence; event deadlines and identity/armed state survive game
 save/load. The last item requires real game evidence, not a synthetic VM alone.
+
+## DATA loader and implemented conditions (v5)
+
+At `0x48ec9e`, the objects.dat loading path passes runtime base `0xa14bfc`
+to `0x48bae0`. Its record loop starts with the supplied base (`0x48bb9c`),
+writes the active byte at `0x48bc08`, team at +2 and UID at +4 (`0x48bc5b`),
+then increments the record pointer by 76 (`0x48bbcd`). File slot order is
+preserved, so the script index for a DATA slot is slot+1. This corroborates
+the native resolver evidence above; actual game loading remains unverified.
+
+Scenario v5 adds up to 32 conditions per event, combined with AND, and a
+condition editor that selects a persistent placement ID. `ObjectExists`
+uses `s_objExists(index,uid)` and includes corpses still present.
+`ObjectDeadOrRemoved` marks a per-condition `ARM_EVENT_SEEN_<event>_<condition>`
+ScriptVarL only after existence is confirmed. While the same pair exists, it
+queries `s_objDead`; when the pair no longer exists, the condition is true
+only if previously seen. An object lost before ever being observed does not
+qualify. A reused slot cannot make the old existence condition true; after
+confirmation, a UID mismatch represents removal of the original object.
+
+Every condition is evaluated before checking the timer or the other condition
+results, so an unmet earlier condition cannot prevent later targets from
+being tracked. A due timer waits until all conditions hold. Repeats schedule
+from actual firing time; a persistent death/removal condition can fire again
+at each interval. DATA targets resolve the current saved slot/UID, and script
+targets resolve the native-output keys below. Moving/reordering and rebuilding
+DATA therefore does not bake an obsolete pair into a new compilation.
+
+VM tests cover those semantics, failed spawn, UID reuse, recompiled bindings,
+corpse removal, repeating timers, missing-target rejection and JSON v5
+round-trip. STA tests cover condition limits/editing, missing-target selection,
+independent copied lists and actual event-only form saving. Five original ENDL
+scripts accept the existence-condition injection in memory. Gameplay, death
+state flags, save/load state persistence, area and victory/defeat remain pending.
 
 ## Script-created placement bindings
 

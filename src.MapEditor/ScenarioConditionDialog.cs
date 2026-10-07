@@ -1,0 +1,53 @@
+using AgainstRomeModifier;
+using AgainstRomeModifier.Scripting;
+
+namespace AgainstRomeMapEditor;
+
+internal sealed class ScenarioConditionDialog : Form
+{
+    private sealed record Choice(Guid Id, string Label) { public override string ToString() => Label; }
+    internal ScenarioCondition? Result { get; private set; }
+
+    internal ScenarioConditionDialog(ScenarioCondition? item, IReadOnlyList<ScenarioSpawn> targets, bool en,
+        Func<string, string>? objectName = null)
+    {
+        Text = en ? "Object condition" : "物件條件"; Size = new Size(620, 280);
+        StartPosition = FormStartPosition.CenterParent; MinimumSize = Size;
+        var fields = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, Padding = new Padding(12) };
+        fields.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 105)); fields.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        var kind = new ComboBox { Dock = DockStyle.Fill, DropDownStyle = ComboBoxStyle.DropDownList };
+        kind.Items.AddRange(en ? ["Object exists", "Object dead or removed (previously seen)"] : ["物件存在", "物件死亡或移除（曾確認存在）"]);
+        kind.SelectedIndex = item is null ? 0 : (int)item.Kind;
+        var target = new ComboBox { Dock = DockStyle.Fill, DropDownStyle = ComboBoxStyle.DropDownList };
+        target.Items.AddRange(targets.Where(spawn => spawn.Id != Guid.Empty).Select(spawn => new Choice(spawn.Id,
+            $"{objectName?.Invoke(spawn.Alias) ?? spawn.Alias} — {(en ? "team" : "隊伍")} {spawn.Team} ({spawn.X:0}, {spawn.Z:0}) [{spawn.Id.ToString("N")[..8]}]")).Cast<object>().ToArray());
+        if (item is not null)
+        {
+            target.SelectedItem = target.Items.Cast<Choice>().FirstOrDefault(choice => choice.Id == item.TargetId);
+            if (target.SelectedIndex < 0)
+            {
+                var missing = new Choice(item.TargetId, en ? "Missing target — select another object" : "目標已刪除—請重新選擇物件");
+                target.Items.Add(missing); target.SelectedItem = missing;
+            }
+        }
+        else if (target.Items.Count > 0) target.SelectedIndex = 0;
+        ScenarioEventDialog.Field(fields, en ? "Condition" : "條件", kind);
+        ScenarioEventDialog.Field(fields, en ? "Placed object" : "放置物件", target);
+        ScenarioEventDialog.Field(fields, "", new Label { AutoSize = true, MaximumSize = new Size(430, 0), Text = en
+            ? "Existence includes corpses still present. Dead/removed requires confirmed existence; a failed spawn does not qualify. A troop target refers to its container, not each member."
+            : "存在包含尚未移除的屍體。死亡／移除需要先確認存在；建立失敗不算死亡。部隊目標指部隊容器，並非每個成員。" });
+        var commands = new FlowLayoutPanel { Dock = DockStyle.Bottom, AutoSize = true, Padding = new Padding(8) };
+        var save = new Button { Text = en ? "OK" : "確定", AutoSize = true };
+        var cancel = new Button { Text = en ? "Cancel" : "取消", AutoSize = true, DialogResult = DialogResult.Cancel };
+        save.Click += (_, _) =>
+        {
+            if (kind.SelectedIndex < 0 || target.SelectedItem is not Choice choice || !targets.Any(spawn => spawn.Id == choice.Id))
+            {
+                MessageBox.Show(this, en ? "Select an existing placed object." : "請選擇仍存在的放置物件。", Text); return;
+            }
+            Result = new((ScenarioConditionKind)kind.SelectedIndex, choice.Id); DialogResult = DialogResult.OK;
+        };
+        commands.Controls.AddRange([save, cancel]); Controls.Add(fields); Controls.Add(commands);
+        AcceptButton = save; CancelButton = cancel; WinFormsTheme.Apply(this);
+    }
+}

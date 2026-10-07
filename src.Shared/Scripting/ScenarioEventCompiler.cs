@@ -11,10 +11,13 @@ public static class ScenarioEventCompiler
         40, 41, 42, 43, 44, 45, 48, 49, 50, 51, 52, 53, 71, 72, 74, 75, 85, 86, 87, 88, 89,
         94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 121, 122, 123, 130, 131, 144, 145, 161, 162, 163, 164, 165, 166, 176, 177];
 
-    public static void Inject(BciImage image, IReadOnlyList<ScenarioEvent> events, int originalMain)
+    public static void Inject(BciImage image, IReadOnlyList<ScenarioEvent> events, int originalMain, ScenarioDocument? scenario = null)
     {
+        ScenarioEventValidator.ValidateConditions(events, scenario);
         ScenarioEvent[] active = events.Where(item => item.Enabled).ToArray();
         if (active.Length == 0) return;
+        if (scenario is null && active.Any(item => item.Conditions.Count > 0))
+            throw new InvalidDataException("物件條件需要場景物件與當次儲存的綁定。");
         int hook = FindWaitHook(image.Code, originalMain);
         int waitPush = BinaryPrimitives.ReadInt32LittleEndian(image.Code.AsSpan(hook));
         int waitOperand = BinaryPrimitives.ReadInt32LittleEndian(image.Code.AsSpan(hook + 4));
@@ -29,22 +32,63 @@ public static class ScenarioEventCompiler
         void Now(CodeBuilder b) => Call(b, "s_getTime", 0, true);
         void Deadline(CodeBuilder b, int index) { b.Emit(76, Constant(Key(index))); Call(b, "s_getScriptVarL", 1, true); }
         void Store(CodeBuilder b, int index) { b.Emit(76, Constant(Key(index))); Call(b, "s_setScriptVarL", 2); }
+        string ArmedKey(int index, int condition) => $"ARM_EVENT_SEEN_{index}_{condition}";
+        void ReadState(CodeBuilder b, string key) { b.Emit(76, Constant(key)); Call(b, "s_getScriptVarL", 1, true); }
+        void WriteState(CodeBuilder b, string key) { b.Emit(76, Constant(key)); Call(b, "s_setScriptVarL", 2); }
+        void ObjectCall(CodeBuilder b, ScenarioCondition condition, string native)
+        {
+            ScenarioSpawn target = scenario!.Spawns.Single(spawn => spawn.Id == condition.TargetId);
+            if (target.Prebuilt)
+            {
+                ScenarioDataSlot binding = ScenarioObjectIdentity.DataBinding(scenario, target.Id)!;
+                b.Emit(66, unchecked((int)binding.Uid)); b.Emit(66, checked(binding.Slot + 1));
+            }
+            else
+            {
+                ReadState(b, ScenarioObjectIdentity.RuntimeUidKey(target.Id));
+                ReadState(b, ScenarioObjectIdentity.RuntimeIndexKey(target.Id));
+            }
+            Call(b, native, 2, true);
+        }
 
         // 開局只初始化事件狀態，然後接回放置 shim（若有）或原 main。
         var entry = new CodeBuilder(image.Code.Length);
         for (int i = 0; i < active.Length; i++)
         {
             Now(entry); entry.Emit(66, checked(active[i].DelaySeconds * 1000)); entry.Emit(32); Store(entry, i);
+            for (int j = 0; j < active[i].Conditions.Count; j++)
+            {
+                entry.Emit(66, 0); WriteState(entry, ArmedKey(i, j));
+            }
         }
         entry.Jump(112, continuation);
         int entryAddress = image.AppendCode(entry.Bytes());
 
         var poll = new CodeBuilder(image.Code.Length);
-        poll.Emit(74); poll.Emit(94); poll.Emit(73, 2); // 專屬輸出參數框架，不使用原 main locals。
+        poll.Emit(74); poll.Emit(94); poll.Emit(73, 2 + active.Max(item => item.Conditions.Count));
         for (int i = 0; i < active.Length; i++)
         {
             ScenarioEvent item = active[i];
             Deadline(poll, i); int done = poll.Placeholder(113); // -1 代表單次事件已完成。
+            // 每個條件都先輪詢，不能讓未滿計時或前一條件不成立阻止追蹤目標。
+            for (int j = 0; j < item.Conditions.Count; j++)
+            {
+                ScenarioCondition condition = item.Conditions[j]; int local = 2 + j;
+                ObjectCall(poll, condition, "s_objExists"); poll.Emit(91, local);
+                if (condition.Kind == ScenarioConditionKind.ObjectExists) continue;
+                poll.Emit(90, local); int missing = poll.Placeholder(117);
+                poll.Emit(66, 1); WriteState(poll, ArmedKey(i, j));
+                ObjectCall(poll, condition, "s_objDead"); poll.Emit(91, local);
+                int evaluated = poll.Placeholder(112);
+                poll.Resolve(missing, poll.Address);
+                ReadState(poll, ArmedKey(i, j)); poll.Emit(91, local);
+                poll.Resolve(evaluated, poll.Address);
+            }
+            var unmet = new List<int>();
+            for (int j = 0; j < item.Conditions.Count; j++)
+            {
+                poll.Emit(90, 2 + j); unmet.Add(poll.Placeholder(117));
+            }
             Now(poll); Deadline(poll, i); poll.Emit(96); poll.Emit(101); int early = poll.Placeholder(117);
             if (item.Repeat) { Now(poll); poll.Emit(66, checked(item.DelaySeconds * 1000)); poll.Emit(32); }
             else poll.Emit(66, -1);
@@ -68,6 +112,7 @@ public static class ScenarioEventCompiler
                 }
             }
             poll.Resolve(done, poll.Address); poll.Resolve(early, poll.Address);
+            foreach (int branch in unmet) poll.Resolve(branch, poll.Address);
         }
         // 恢復原框架之後重播原等待參數；原版無盡模式用 local 20 計算等待值。
         poll.Emit(95); poll.Emit(75); poll.Emit(waitPush, waitOperand); poll.Jump(112, hook + 8);

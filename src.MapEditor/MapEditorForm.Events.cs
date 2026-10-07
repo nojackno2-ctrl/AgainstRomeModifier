@@ -47,8 +47,8 @@ internal sealed partial class MapEditorForm
         _eventAdd.Text = en ? "Add" : "新增"; _eventEdit.Text = en ? "Edit" : "編輯"; _eventDelete.Text = en ? "Delete" : "刪除";
         _eventCopy.Text = en ? "Duplicate" : "複製";
         _eventHint.Text = en
-            ? "Run actions after a timer: show a message, change diplomacy or spawn units. Repeat runs at the selected interval. Save to apply. In-game behavior still needs validation."
-            : "計時後顯示訊息、改變外交或生成部隊。可單次執行，或依相同間隔重複。按「儲存」套用；遊戲內效果仍待驗證。";
+            ? "Run actions when the timer is due and all object conditions hold. Conditions can check existence or death/removal of placed objects. Repeat uses the selected interval. Save to apply; in-game behavior still needs validation."
+            : "計時到期且所有物件條件成立時執行動作。條件可檢查放置物件存在、死亡或移除；可單次或依間隔重複。按「儲存」套用；遊戲內效果仍待驗證。";
         RefreshEventList(_eventList.SelectedIndex);
     }
 
@@ -57,7 +57,7 @@ internal sealed partial class MapEditorForm
         bool en = AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English;
         _eventList.BeginUpdate(); _eventList.Items.Clear();
         foreach (ScenarioEvent item in _events)
-            _eventList.Items.Add($"{(item.Enabled ? "●" : "○")} {item.Name} — {item.DelaySeconds}s {(item.Repeat ? (en ? "repeat" : "重複") : (en ? "once" : "單次"))}");
+            _eventList.Items.Add($"{(item.Enabled ? "●" : "○")} {item.Name} — {item.DelaySeconds}s {(item.Repeat ? (en ? "repeat" : "重複") : (en ? "once" : "單次"))}, {item.Conditions.Count} {(en ? "conditions" : "條件")}");
         if (selected >= 0 && selected < _eventList.Items.Count) _eventList.SelectedIndex = selected;
         _eventList.EndUpdate(); UpdateEventButtons();
     }
@@ -78,7 +78,7 @@ internal sealed partial class MapEditorForm
         bool en = AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English;
         string suffix = en ? " (copy)" : "（副本）";
         string name = source.Name[..Math.Min(source.Name.Length, 100 - suffix.Length)] + suffix;
-        _events.Insert(index + 1, source with { Name = name, Actions = source.Actions.ToList() });
+        _events.Insert(index + 1, source with { Name = name, Actions = source.Actions.ToList(), Conditions = source.Conditions.ToList() });
         RefreshEventList(index + 1); UpdateEditorState();
     }
 
@@ -91,7 +91,9 @@ internal sealed partial class MapEditorForm
             { Actions = [new ScenarioAction(ScenarioActionKind.Message, "Welcome!")] } : _events[index];
         var unitTypes = _objectCatalog.Where(item => item.Category == AgainstRomeModifier.Maps.SdlObjectCategory.Figure).ToArray();
         using var dialog = new ScenarioEventDialog(seed, unitTypes.Select(AliasOf).ToArray(), en,
-            alias => unitTypes.FirstOrDefault(item => AliasOf(item) == alias) is { } type ? ObjectDisplayName(type, en) : alias);
+            alias => _objectCatalog.FirstOrDefault(item => AliasOf(item) == alias) is { } type ? ObjectDisplayName(type, en) : alias,
+            _placedObjects.Select(item => new ScenarioSpawn(AliasOf(item.Type), item.WorldX, item.WorldZ, item.Team)
+                { Id = item.ScenarioId }).ToArray());
         if (dialog.ShowDialog(this) != DialogResult.OK) return;
         if (add) { _events.Add(dialog.Result!); index = _events.Count - 1; } else _events[index] = dialog.Result!;
         RefreshEventList(index); UpdateEditorState();

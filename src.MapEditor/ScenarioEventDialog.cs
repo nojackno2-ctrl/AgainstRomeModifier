@@ -14,9 +14,12 @@ internal sealed class ScenarioEventDialog : Form
     private readonly Button _moveDown = new() { AutoSize = true };
     private Button _addAction = null!;
     private readonly List<ScenarioAction> _actions;
+    private readonly List<ScenarioCondition> _conditions;
+    private readonly ListBox _conditionList = new() { Dock = DockStyle.Fill, IntegralHeight = false };
     internal ScenarioEvent? Result { get; private set; }
 
-    internal ScenarioEventDialog(ScenarioEvent item, IReadOnlyCollection<string> aliases, bool en, Func<string, string>? unitName = null)
+    internal ScenarioEventDialog(ScenarioEvent item, IReadOnlyCollection<string> aliases, bool en, Func<string, string>? unitName = null,
+        IReadOnlyList<ScenarioSpawn>? targets = null)
     {
         Text = en ? "Edit event" : "編輯事件"; StartPosition = FormStartPosition.CenterParent;
         Size = new Size(650, 480); MinimumSize = new Size(560, 420);
@@ -24,9 +27,10 @@ internal sealed class ScenarioEventDialog : Form
         _repeat.Text = en ? "Repeat" : "重複執行"; _repeat.Checked = item.Repeat;
         _enabled.Text = en ? "Enabled" : "啟用"; _enabled.Checked = item.Enabled;
         _actions = item.Actions.ToList();
+        _conditions = item.Conditions.ToList(); targets ??= Array.Empty<ScenarioSpawn>();
         var fields = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 2, Padding = new Padding(10) };
         fields.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 110)); fields.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        Field(fields, en ? "Name" : "名稱", _name); Field(fields, en ? "Timer (seconds)" : "計時（秒）", _delay);
+        Field(fields, en ? "Name" : "名稱", _name); Field(fields, en ? "Earliest / interval (s)" : "最早／間隔（秒）", _delay);
         Field(fields, "", _repeat); Field(fields, "", _enabled);
         var buttons = new FlowLayoutPanel { Dock = DockStyle.Bottom, AutoSize = true, Padding = new Padding(8) };
         void Edit(bool add)
@@ -56,7 +60,8 @@ internal sealed class ScenarioEventDialog : Form
         {
             try
             {
-                var result = new ScenarioEvent(_name.Text.Trim(), (int)_delay.Value, _repeat.Checked, _enabled.Checked) { Actions = _actions.ToList() };
+                var result = new ScenarioEvent(_name.Text.Trim(), (int)_delay.Value, _repeat.Checked, _enabled.Checked)
+                    { Actions = _actions.ToList(), Conditions = _conditions.ToList() };
                 ScenarioEventValidator.Validate([result], aliases); Result = result; DialogResult = DialogResult.OK;
             }
             catch (Exception ex) { MessageBox.Show(this, ex.Message, Text, MessageBoxButtons.OK, MessageBoxIcon.Warning); }
@@ -65,7 +70,42 @@ internal sealed class ScenarioEventDialog : Form
         AcceptButton = save; CancelButton = cancel;
         _list.DoubleClick += (_, _) => Edit(false);
         _list.SelectedIndexChanged += (_, _) => UpdateActionButtons();
-        Controls.Add(_list); Controls.Add(fields); Controls.Add(buttons); RefreshList(en); WinFormsTheme.Apply(this);
+        var tabs = new TabControl { Dock = DockStyle.Fill };
+        var actionsTab = new TabPage(en ? "Actions" : "動作"); actionsTab.Controls.Add(_list);
+        var conditionsTab = new TabPage(en ? "Conditions (all)" : "條件（全部成立）");
+        var conditionCommands = new FlowLayoutPanel { Dock = DockStyle.Bottom, AutoSize = true };
+        Button ConditionButton(string label, Action action) { var button = new Button { Text = label, AutoSize = true }; button.Click += (_, _) => action(); conditionCommands.Controls.Add(button); return button; }
+        Button? addCondition = null;
+        void RefreshConditions(int selected = -1)
+        {
+            _conditionList.Items.Clear();
+            foreach (ScenarioCondition condition in _conditions)
+            {
+                ScenarioSpawn? target = targets.FirstOrDefault(spawn => spawn.Id == condition.TargetId);
+                string label = target is null ? (en ? "Missing target" : "目標已刪除") : $"{unitName?.Invoke(target.Alias) ?? target.Alias} ({target.X:0}, {target.Z:0})";
+                _conditionList.Items.Add($"{(condition.Kind == ScenarioConditionKind.ObjectExists ? (en ? "Exists" : "存在") : (en ? "Dead/removed" : "死亡／移除"))}: {label}");
+            }
+            if (selected >= 0 && selected < _conditions.Count) _conditionList.SelectedIndex = selected;
+            if (addCondition is not null) addCondition.Enabled = _conditions.Count < 32 && targets.Count > 0;
+        }
+        void EditCondition(bool add)
+        {
+            int index = _conditionList.SelectedIndex;
+            if (add ? _conditions.Count >= 32 : index < 0) return;
+            using var dialog = new ScenarioConditionDialog(add ? null : _conditions[index], targets, en, unitName);
+            if (dialog.ShowDialog(this) != DialogResult.OK) return;
+            if (add) _conditions.Add(dialog.Result!); else _conditions[index] = dialog.Result!;
+            RefreshConditions(add ? _conditions.Count - 1 : index);
+        }
+        addCondition = ConditionButton(en ? "Add condition" : "新增條件", () => EditCondition(true));
+        ConditionButton(en ? "Edit condition" : "編輯條件", () => EditCondition(false));
+        ConditionButton(en ? "Delete condition" : "刪除條件", () => { int index = _conditionList.SelectedIndex; if (index < 0) return; _conditions.RemoveAt(index); RefreshConditions(Math.Min(index, _conditions.Count - 1)); });
+        _conditionList.DoubleClick += (_, _) => EditCondition(false);
+        conditionsTab.Controls.Add(_conditionList); conditionsTab.Controls.Add(new Label { Dock = DockStyle.Top, Height = 46, Text = en
+            ? "All conditions must hold when the timer is due. Empty conditions use only the timer. Dead/removed targets are tracked before the timer is due."
+            : "計時到期且所有條件成立才執行。沒有條件時只依計時。死亡／移除目標在計時到期前也持續追蹤。" });
+        conditionsTab.Controls.Add(conditionCommands); tabs.TabPages.AddRange([actionsTab, conditionsTab]);
+        Controls.Add(tabs); Controls.Add(fields); Controls.Add(buttons); RefreshList(en); RefreshConditions(); WinFormsTheme.Apply(this);
     }
 
     private void RefreshList(bool en, int selected = -1)

@@ -60,7 +60,7 @@ public sealed record ScenarioDataSlot(int Slot, uint Uid)
 public sealed class ScenarioDocument
 {
     public const string FileName = "arm_scenario.json";
-    public int Version { get; set; } = 4;
+    public int Version { get; set; } = 5;
     public List<ScenarioSpawn> Spawns { get; set; } = new();
     public List<ScenarioDataSlot> DataSlots { get; set; } = new();
     public List<ScenarioEvent> Events { get; set; } = new();
@@ -77,18 +77,20 @@ public sealed class ScenarioDocument
         if (!File.Exists(path)) return new ScenarioDocument();
         ScenarioDocument result = JsonSerializer.Deserialize<ScenarioDocument>(File.ReadAllText(path), Options)
             ?? throw new InvalidDataException("場景設定不能是 null。");
-        if (result.Version is < 1 or > 4 || result.Spawns is null || result.DataSlots is null || result.Events is null)
+        if (result.Version is < 1 or > 5 || result.Spawns is null || result.DataSlots is null || result.Events is null)
             throw new InvalidDataException("不支援或不完整的場景設定。");
-        if (result.Version == 4 && result.Spawns.Any(spawn => spawn is null || spawn.Id == Guid.Empty))
+        if (result.Version >= 4 && result.Spawns.Any(spawn => spawn is null || spawn.Id == Guid.Empty))
             throw new InvalidDataException("場景物件缺少持久 ID。");
         ScenarioObjectIdentity.Prepare(result, legacy: result.Version < 4);
+        ScenarioEventValidator.ValidateConditions(result.Events);
         return result;
     }
 
     public void Save(string mapDirectory, FileRollbackScope rollback)
     {
         ScenarioObjectIdentity.Prepare(this);
-        Version = 4;
+        ScenarioEventValidator.ValidateConditions(Events, this);
+        Version = 5;
         Core.Services.SafeFileWriter.WriteAllBytes(Path.Combine(mapDirectory, FileName), JsonSerializer.SerializeToUtf8Bytes(this, Options), rollback);
     }
 }
@@ -119,6 +121,7 @@ public static class LevelScriptInjector
     public static void Apply(string mapDirectory, ScenarioDocument scenario, IReadOnlyCollection<string> knownAliases, FileRollbackScope rollback)
     {
         ScenarioEventValidator.Validate(scenario.Events, knownAliases);
+        ScenarioEventValidator.ValidateConditions(scenario.Events, scenario);
         bool hasEvents = scenario.Events.Any(item => item.Enabled);
         string scriptDirectory = ScriptDirectory(mapDirectory);
         string script = Path.Combine(scriptDirectory, ScriptFile), backup = Path.Combine(scriptDirectory, OriginalBackupFile);
@@ -137,7 +140,7 @@ public static class LevelScriptInjector
         BciImage image = BciImage.Parse(pfil ? GameLZSS.DecompressPfil(original) : original);
         int originalMain = image.MainAddress;
         if (spawns.Count > 0) Inject(image, spawns);
-        if (hasEvents) ScenarioEventCompiler.Inject(image, scenario.Events, originalMain);
+        if (hasEvents) ScenarioEventCompiler.Inject(image, scenario.Events, originalMain, scenario);
         byte[] serialized = image.Serialize();
         Core.Services.SafeFileWriter.WriteAllBytes(script, pfil ? GameLZSS.CompressPfil(serialized, original.AsSpan(0, 64).ToArray()) : serialized, rollback);
     }
