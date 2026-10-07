@@ -83,13 +83,14 @@
 
 ## 恢復時優先處理（尚未完成）
 
-目前優先順序以docs/map-editor-roadmap.md及requirements-audit.md為準：catalog/SaveMap前置防護、環境、文字、備份及完整還原選項與額外槽位已實作且584測試通過；額外槽位AI證據與平坦範本語意已補，四部族/隊伍/事件共同儲存矩陣已補；缺建築範本的降級/提示與範本恢復整合已補；AI預覽與生成進度已接入並補合成驗證；接著新UI中英尺寸/真實生成預覽套用儲存完整驗收。完整原版還原/新dialog視覺仍待驗收。以下較早的UI優先順序已由新roadmap取代。
+狀態（2026-10-07 Claude）：roadmap 第 1–3 階段完成；第 4 階段 AI 依使用者指示「先跳過」（真實生成→預覽→套用→儲存→重開已有一次 live 證據）；第 5 階段在 repository 內可做的已完成（高 DPI 模擬、真實 OpenGL 畫面／選取／效能、3D fallback、入口、關閉流程）。剩餘項目都需要使用者授權或決定：
 
-1. Placement batch/邊界與STA host整合已驗證/提交；單兵與nature交易fail/retry/只套用一次/成功後dirty及markers已新增測試通過。程式碼整合已解決。
-2. Terrain blend純resolver邊界已實作並通過工作樹與committed snapshot全測試，已提交，已解決。
-3. TEMP/ArmIntegratedQA_c15e32ee907843aab7dba6dbfef56bb4/source由`git archive 63e0772`產生：完整committed solution Release build 0警告/0錯誤；full test宿主482通過/21略過、modules44通過，合計526通過/21略過/0失敗。後續AI跨模式/存檔fixture已通過，材質拒絕回滾bug已修；驗收矩陣與96 DPI視覺已完成，Placement截字已修。下一步高DPI/OpenGL驗收及部族/多人合成案例；不同部族/多人/遊戲存讀檔仍需另行驗收，不能以目前測試宣稱完整可玩。
-4. 遊戲內事件區域/勝敗結算、存讀檔、不同部族、多人與AI方案可玩性仍未驗證。本輪禁止存取安裝目錄，恢復仍先遵守 AGENTS.md，不能自行沿用歷史實機授權。
-5. 完成以上後再評估整體目標；目前開發進行中，不能標記 complete。
+1. 遊戲內驗收（第 6 階段）：匯出地圖載入、原生材質/碰撞、物件/部隊、區域事件/勝敗、存讀檔、部族、多人、完整原版還原。AGENTS.md 禁止存取安裝目錄，必須由使用者另行授權或自行執行。
+2. AI 製圖：暫停中；恢復時處理 AiMapPlanningDialog 高 DPI（未改 AutoScaleMode）、水系 river 缺 toLocation 被丟棄的提示。
+3. 實體高 DPI 螢幕／跨螢幕 DPI 切換：本機 96 DPI，只有模擬證據。
+4. 空白地圖語意：目前「平坦範本」保留聚落/腳本；是否需要真正無聚落/無腳本地圖需使用者決定並經遊戲驗證。
+5. 已知小問題（未修）：Disable3DView 永久停用，同一表單內資源補齊後不會恢復 3D（每次開圖為新表單，影響小）；3D 不顯示通行覆蓋（僅 2D）。
+6. 整體目標未完成，不能標記 complete；push 需另行授權。
 
 ## 文件與歷史
 
