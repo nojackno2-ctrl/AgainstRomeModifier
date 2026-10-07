@@ -4,7 +4,7 @@
 
 - 使用者已恢復「繼續完成地圖編輯器的開發」。Codex 2026-10-07 依現有工作樹續作，未委派；整體目標進行中，尚未完成。
 - 最新澄清（2026-10-07）：使用者的「本地AI」原指設計程式時呼叫的子代理，不是產品需求；既有AI製圖功能已明確授權保留並做好，不能再混淆產品模型與開發代理。
-- 最新指示「先重新整理開發順序」已完成docs/map-editor-roadmap.md，依序續作。順序為需求/證據核對→可靠手動編輯核心→物件/部隊/事件整合→AI正式功能→顯示/操作驗收→遊戲內驗收/交付。目前第一階段核對與第二階段修正已開始，不先做高DPI或擴充AI；整體goal仍active。
+- 最新指示「先重新整理開發順序」已完成docs/map-editor-roadmap.md，依序續作。順序為需求/證據核對→可靠手動編輯核心→物件/部隊/事件整合→AI正式功能→顯示/操作驗收→遊戲內驗收/交付。目前核心缺口修正與專屬驗證已補，正進行第3階段整合，不先做高DPI或擴充AI；整體goal仍active。
 - 目前產品實作預設 `laguna-xs-2.1:latest`（不能當作使用者指定的產品模型需求）；一次只呼叫一個推論的限制維持。三角色地形→水系→材質依序執行，所有 OllamaMapPlanner 實例共用 static SemaphoreSlim(1,1)。取消排隊請求不會發送 HTTP；鎖於 finally 釋放。
 - 外部子代理使用 AGY `gemini-3.8-flash` / medium，固定 AGY/no fallback。所有已派工作皆已終態，不再有活躍檔案所有者；AGY 回報外層成功不等於 CLI 內工作完整成功。
 - 本輪僅 repository / TEMP 操作；未存取、修改遊戲安裝目錄或執行遊戲。
@@ -29,6 +29,8 @@
 - README/user guide 已修正為 Laguna 序列推論、材質獨立而高度/通行共用撤銷歷史、建築空間提示非實機保證、自包含版本執行需求；本輪不沿用舊實機結果宣稱新版本可玩。
 
 ## 最新驗證與失敗紀錄
+
+- Codex（2026-10-07）：第3階段新增真正STA四部族Ger/Hun/Kel/Rom矩陣，各含建築team0–8、部隊team0–7與外交/生成/區域目標事件。初跑4通過，包含DATA/scenario先寫後BCI缺失的完整bytes/新檔回滾、retry、DATA slot/uid/team/座標/角度、fresh form/持久ID、刪除目標拒存/undo及重存bytes不變。5個xUnit2031警告已改predicate overload；四個非法隊伍案例初跑失敗是Add已有早期guard，不是產品缺陷；改先斷言Add拒絕且無mutation，再注入損壞pending快照驗證Save獨立guard，鎖briefing拒存已通過；再補fresh form移動中立建築/改team、部隊20改1，DATA重新綁定/無多餘物件/目標身份/重開與重存bytes一致。最終定向8通過；Release build 0警告/0錯誤，full --no-build宿主547通過/21略過、modules45通過，共592通過/21略過/0失敗。僅TEMP、不宣稱遊戲或多人同步已驗證。
 
 - Codex（2026-10-07）：額外ENDL槽位核對新增EndlessAiAdditionalMapTests合成TEMP，初跑3項1通過/2失敗。真正P1七槽位（000–004/005/999）detect/apply/buffer/save/fresh reload/restore已通過；兩ResolvePaths測試證實script納非數字ENDL_ABC、SDL遞迴含.tmp_arm/.deleting_arm/巢狀複本。已限制正式數字槽位与root SDL，額外槽位/還原定向17通過。平坦範本/地形重設中英名稱與指南改為實際保留聚落/腳本的語意；地形/nature/額外槽位定向42通過，Release build 0警告/0錯誤；full --no-build宿主539通過/21略過、modules45通過，共584通過/21略過/0失敗。AI預覽WIP保留不提交。
 - Codex（2026-10-07）：FileRollbackScope新增目錄快照/恢復（空目錄/未知檔，拒絕linked snapshot，復原失敗保留TEMP備份）。CustomMapRestoreService包住完整還原，預設保留；刪除先manifest/tmp前檢再走Deleter，外層交易保留目錄/manifest。新選項dialog預設勾選保留、取消不執行。15項合成TEMP定向通過：保留/005/999刪除、restore/後續/中途delete回滾、snapshot鎖檔拒絕、未登記拒絕、真正runner/engine拒絕與STA選項。檢查發現原restore仍解析custom腳本；僅完整還原啟用orchestrator排除custom與legacy custom team備份。鎖custom腳本證明不讀，而一般AI仍讀；實際engine合成EXE/12個回血腳本在兩選項成功。該fixture初次2失敗是缺法術祭壇原始bytes，補齊後2失敗是缺12個系統回血腳本；完善fixture後2通過，未放寬產品驗證。最終Release build 0警告/0錯誤，full --no-build宿主536通過/21略過、modules45通過，共581通過/21略過/0失敗。真實原版還原/新dialog視覺尚未驗證；AI預覽WIP保留不提交，下一步額外槽位AI證據/空白語意。
@@ -66,7 +68,7 @@
 
 ## 恢復時優先處理（尚未完成）
 
-目前優先順序以docs/map-editor-roadmap.md及requirements-audit.md為準：catalog/SaveMap前置防護、環境、文字、備份及完整還原選項與額外槽位已實作且584測試通過；額外槽位AI證據與平坦範本語意已補，接著第3階段部族/隊伍/事件共同儲存矩陣。完整原版還原/新dialog視覺仍待驗收。以下較早的UI優先順序已由新roadmap取代。
+目前優先順序以docs/map-editor-roadmap.md及requirements-audit.md為準：catalog/SaveMap前置防護、環境、文字、備份及完整還原選項與額外槽位已實作且584測試通過；額外槽位AI證據與平坦範本語意已補，四部族/隊伍/事件共同儲存矩陣已補；接著核對缺建築範本的降級與提示，再完成第4階段AI預覽。完整原版還原/新dialog視覺仍待驗收。以下較早的UI優先順序已由新roadmap取代。
 
 1. Placement batch/邊界與STA host整合已驗證/提交；單兵與nature交易fail/retry/只套用一次/成功後dirty及markers已新增測試通過。程式碼整合已解決。
 2. Terrain blend純resolver邊界已實作並通過工作樹與committed snapshot全測試，已提交，已解決。
