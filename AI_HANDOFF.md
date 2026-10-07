@@ -1,5 +1,13 @@
 # AI Handoff - Live Project Memory
 
+## 阻塞稽核（2026-10-07 Codex）
+
+- 最後進度提交 `57530b7`，分支 `主要開發`，工作樹只剩使用者未追蹤 .claude/。前一 goal turn 是進度（ALRA parser），不是等待行程；沒有測試或其他背景工作仍需等待。
+- 真實遊戲場景的完成證據不足：Map3DViewControl 三處仍呼叫 SceneObjectRenderer.BuildMarkerPoints；NativeAlrDocument 只在 modules，宿主未接；實際素材外觀、方向／動畫、即時場景編輯與新版本遊戲讀取驗收皆未完成。整體 goal 不能標 complete。
+- 本輪再次搜尋 repository 的 src.MapEditor／Modules／re_workspace／ThirdParty（含 ignored files），未找到 .alr／.apt 或 alr.dat／apt.dat／shad.dat 樣本。既有 TEMP RE／ClaudeQA 搜尋亦無樣本。安裝目錄受最新版 AGENTS 禁止，唯讀分析／TEMP複製的 async 問題未獲使用者回覆；預選答案與 goal 自動續跑不算授權。
+- 同一授權／素材驗證阻礙在 `2281dc8`、`2f1ee56`、`57530b7` 三個連續 goal turns 均存在；期間已完成可獨立驗證的靜態路徑、8-bit 行解碼與容器核心。下一個關鍵工作是實際樣本／遊戲畫面核對；此時再擴增未驗證格式或替代畫面不能推進所要求的可證實終態。因此標 goal blocked，等待明確唯讀授權或使用者提供可存取的原始素材副本路徑，目標不縮小。
+- 本輪僅稽核與交接文件，不重跑未變更的產品測試；最近 `57530b7` 的驗證為 Release 0警告/0錯誤、699通過/22略過/0失敗，屬前輪證據。未 push，未存取安裝目錄。
+
 ## 最新產品方向（2026-10-07 使用者／Codex）
 
 - 使用者明示：地圖編輯器要像《世紀帝國 II》，以真實遊戲畫面直接編輯地圖。此要求優先於既有離線 renderer 規劃；不能把目前自製 OpenGL 預覽視為目標完成。
