@@ -1,5 +1,14 @@
 # AI Handoff - Live Project Memory
 
+## 3D 待機動畫（2026-10-07 Codex；本次不提交、不改 Git 歷史）
+
+- 已實作：`GetAnimation` 快取 ALR 動畫 0 與 APT 完工無損序列；解析 objdef 欄2 alen、6 anadd、45 afram（hex）。ALR 保守判斷 palty=1 或 anadd>=0 且 afram非零，另排除 mltyp=2 樹木；每格使用原地面錨點 convention，`GetSprite` 選格不變。
+- `Map3DViewControl` 預設啟用動畫，33ms WinForms Timer 僅在可見且有已放入 atlas 的動畫時執行；同序列共享相位／索引群組，tick 不配置物件。`AnimationTimeMs` 可固定測試時鐘。atlas 優先保留靜態圖，動畫整組試放，不足時回復靜態。
+- 已讀動畫／場景文件並核對 TEMP objdef 範例：步兵 alen1000/anadd0/afram00008008/palty1；冷杉 alen1/anadd-1/afram0/palty0。未存取安裝遊戲目錄，未改其他代理 local-lights/NativeLight 檔案；Git HEAD仍15a8558，未提交／推送。
+- 最終驗證（`DOTNET_ROLL_FORWARD=Major`、`ARM_OPENGL_REQUIRED=1`）：`dotnet build AgainstRomeModifier.slnx -c Release -p:UseAppHost=false` 0警告／0錯誤；`dotnet test AgainstRomeModifier.slnx -c Release --no-build --no-restore --logger "console;verbosity=quiet"` host636通過／22略過、modules212通過，0失敗。`git diff --check` 通過。
+- 真 GL 三例驗證動畫不同時鐘畫面不同、靜態／圖集不足畫面相同、1000ms循環、停用、可見性及移除物件。7000物件共享序列、300次選格暖身後0 bytes配置。早期容量 fixture 2047² raw ALR超過20-bit行offset而失敗，已改合法1023²×10格並通過（仍超過4096atlas的3×3容量）。
+- 未驗證：真實遊戲同期動畫外觀、原版7000物件地圖的整體渲染FPS／初次解碼記憶體。7000合成測試證明選格零配置，不代表整張真實地圖或遊戲視覺驗收；既有vertex rebuild仍由原繪製流程處理。atlas不合整套動畫即顯示原靜態圖；2D／放置預覽仍使用GetSprite。
+
 ## 目前狀態總覽（2026-10-07 晚，Claude 統籌；goal「可以對外發布的地圖編輯器」，重點為完成度）
 
 - 本輪後半新增並提交：物件清單縮圖（Codex）、角度→方向（遊戲內驗證）、3D 點選刪除自然物件、小地圖導覽（Agy）、物件陰影解碼（Codex）與映射（Agy）、3D 地面陰影繪製（Claude，與遊戲截圖位置一致）、地圖光照模型研究（Codex，尚未接 UI）、隊伍色／動畫語意研究（Agy）、argm-trace winmm 代理修正與重建 ThirdParty 二進位（Agy+Claude，MSVC 編譯、CTest 2/2、193 匯出）。

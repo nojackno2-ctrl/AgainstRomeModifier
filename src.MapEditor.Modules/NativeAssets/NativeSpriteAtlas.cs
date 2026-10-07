@@ -26,24 +26,47 @@ internal sealed class NativeSpriteAtlas
     public bool TryGetUv(NativeSprite sprite, out NativeSpriteUv uv) => _uv.TryGetValue(sprite, out uv);
 
     public static NativeSpriteAtlas Pack(IEnumerable<NativeSprite> sprites, int maxSize = 4096)
+        => PackAnimations(sprites, [], maxSize);
+
+    /// <summary>先保留靜態圖，再整套加入動畫；無法完整容納的序列不占用額外空間。</summary>
+    public static NativeSpriteAtlas PackAnimations(IEnumerable<NativeSprite> sprites,
+        IEnumerable<NativeSpriteAnimation> animations, int maxSize = 4096)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(maxSize, 1);
         NativeSprite[] ordered = sprites.Distinct(ReferenceEqualityComparer.Instance).Cast<NativeSprite>()
             .OrderByDescending(sprite => sprite.Height).ThenByDescending(sprite => sprite.Width).ToArray();
         var placed = new List<(NativeSprite Sprite, int X, int Y)>();
+        var included = new HashSet<NativeSprite>(ReferenceEqualityComparer.Instance);
         int x = 0, y = 0, shelf = 0, usedWidth = 1, usedHeight = 1;
-        foreach (NativeSprite sprite in ordered)
+        bool Place(NativeSprite sprite)
         {
+            if (included.Contains(sprite)) return true;
             int w = sprite.Width + Gutter * 2, h = sprite.Height + Gutter * 2;
-            if (w > maxSize || h > maxSize) continue;
+            if (w > maxSize || h > maxSize) return false;
             int nextX = x, nextY = y, nextShelf = shelf;
             if (nextX + w > maxSize) { nextX = 0; nextY += nextShelf; nextShelf = 0; }
-            if (nextY + h > maxSize) continue; // the layout is unchanged, so a later, narrower sprite may still fit
+            if (nextY + h > maxSize) return false;
             placed.Add((sprite, nextX + Gutter, nextY + Gutter));
+            included.Add(sprite);
             x = nextX + w; y = nextY; shelf = Math.Max(nextShelf, h);
             usedWidth = Math.Max(usedWidth, x); usedHeight = Math.Max(usedHeight, y + shelf);
+            return true;
         }
-        int width = NextPowerOfTwo(usedWidth), height = NextPowerOfTwo(usedHeight);
+        foreach (NativeSprite sprite in ordered) Place(sprite);
+        foreach (NativeSpriteAnimation animation in animations)
+        {
+            // 試放失敗時只回復新格，原靜態 sprite 的位置與容量完全保留。
+            var state = (x, y, shelf, usedWidth, usedHeight);
+            int start = placed.Count;
+            bool fits = true;
+            foreach (NativeSprite frame in animation.Frames)
+                if (!Place(frame)) { fits = false; break; }
+            if (fits) continue;
+            for (int i = start; i < placed.Count; i++) included.Remove(placed[i].Sprite);
+            placed.RemoveRange(start, placed.Count - start);
+            (x, y, shelf, usedWidth, usedHeight) = state;
+        }
+        int width = Math.Min(maxSize, NextPowerOfTwo(usedWidth)), height = Math.Min(maxSize, NextPowerOfTwo(usedHeight));
         var pixels = new uint[width * height];
         var uv = new Dictionary<NativeSprite, NativeSpriteUv>(ReferenceEqualityComparer.Instance);
         foreach ((NativeSprite sprite, int left, int top) in placed)

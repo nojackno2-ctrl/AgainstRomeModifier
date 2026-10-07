@@ -45,6 +45,14 @@ internal sealed class Map3DViewControl : GLControl
     private bool _shadowTextureDirty;
     private NativeSpriteAtlas? _spriteAtlas;
     private NativeSprite?[] _objectSprites = Array.Empty<NativeSprite?>();
+    private NativeSprite?[] _stillObjectSprites = Array.Empty<NativeSprite?>();
+    private readonly System.Windows.Forms.Timer _animationTimer = new() { Interval = 33 };
+    private readonly System.Diagnostics.Stopwatch _animationClock = System.Diagnostics.Stopwatch.StartNew();
+    private readonly List<AnimationGroup> _animationGroups = new();
+    private HashSet<NativeSprite> _atlasSprites = new(ReferenceEqualityComparer.Instance);
+    private bool _animationsEnabled = true;
+    private double? _animationTimeMs;
+    private sealed record AnimationGroup(NativeSpriteAnimation Animation, int[] ObjectIndices);
     private int _spriteProgram, _spriteVao, _spriteVbo, _spriteTexture;
     private bool _spriteTextureDirty;
     private string? _previewName;
@@ -57,6 +65,48 @@ internal sealed class Map3DViewControl : GLControl
         Dock = DockStyle.Fill;
         BackColor = Color.FromArgb(24, 28, 36);
         Cursor = Cursors.Cross;
+        _animationTimer.Tick += (_, _) => { SelectAnimationFrames(_animationTimeMs ?? _animationClock.Elapsed.TotalMilliseconds); Invalidate(); };
+    }
+
+    public bool AnimationsEnabled
+    {
+        get => _animationsEnabled;
+        set
+        {
+            if (_animationsEnabled == value) return;
+            _animationsEnabled = value;
+            SelectAnimationFrames(_animationTimeMs ?? _animationClock.Elapsed.TotalMilliseconds);
+            UpdateAnimationTimer(); Invalidate();
+        }
+    }
+
+    /// <summary>測試固定時鐘；null 恢復單調實際時間，避免擷取受訊息迴圈時序影響。</summary>
+    internal double? AnimationTimeMs
+    {
+        get => _animationTimeMs;
+        set { _animationTimeMs = value; SelectAnimationFrames(value ?? _animationClock.Elapsed.TotalMilliseconds); UpdateAnimationTimer(); Invalidate(); }
+    }
+    internal bool AnimationTimerRunning => _animationTimer.Enabled;
+    internal int AnimatedObjectCount => _animationGroups.Sum(group => group.ObjectIndices.Length);
+
+    private void SelectAnimationFrames(double elapsedMs)
+    {
+        foreach (AnimationGroup group in _animationGroups)
+        {
+            NativeSprite frame = group.Animation.Frames[group.Animation.GetFrameIndex(elapsedMs)];
+            foreach (int index in group.ObjectIndices) _objectSprites[index] = _animationsEnabled ? frame : _stillObjectSprites[index];
+        }
+    }
+
+    private void UpdateAnimationTimer()
+        => _animationTimer.Enabled = !IsDisposed && !Disposing && IsHandleCreated && Visible &&
+            _animationsEnabled && _animationTimeMs is null && _animationGroups.Count > 0;
+
+    protected override void OnVisibleChanged(EventArgs e)
+    {
+        base.OnVisibleChanged(e);
+        // base 建構期間可能觸發；此時欄位尚未初始化。
+        if (_animationTimer is not null) UpdateAnimationTimer();
     }
 
     /// <summary>Original ALR/APT still sprites for scene objects; null keeps marker points. Borrowed, not disposed.</summary>
@@ -196,6 +246,7 @@ internal sealed class Map3DViewControl : GLControl
         base.OnHandleCreated(e);
         // 控制項未釋放而 handle 被重建（例如重新指定父容器）時，原 context 已隨舊 handle 銷毀，需重新初始化。
         if (_reinitializeOnHandleCreated) { _reinitializeOnHandleCreated = false; InitializeGl(); }
+        UpdateAnimationTimer();
     }
 
     private void InitializeGl()
@@ -360,6 +411,7 @@ internal sealed class Map3DViewControl : GLControl
     /// <summary>以目前繫結的 framebuffer 繪製整個場景；畫面與離屏擷取共用同一路徑。</summary>
     private void RenderScene(int width, int height)
     {
+        SelectAnimationFrames(_animationTimeMs ?? _animationClock.Elapsed.TotalMilliseconds);
         GL.Viewport(0, 0, width, height); GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
         Matrix4x4 view = _camera.GetViewMatrix(), projection = _camera.GetProjectionMatrix(width / (float)Math.Max(1, height));
         Matrix4 matrix = ToOpenTk(view * projection);
@@ -652,14 +704,35 @@ internal sealed class Map3DViewControl : GLControl
     {
         NativeSpriteCatalog? catalog = _spriteCatalog;
         _objectSprites = catalog is null ? Array.Empty<NativeSprite?>() : _objects.Select(item => catalog.GetSprite(item.Name, item.Team, angleDegrees: item.Angle)).ToArray();
+        _stillObjectSprites = (NativeSprite?[])_objectSprites.Clone();
+        _animationGroups.Clear();
+        var groups = new Dictionary<NativeSpriteAnimation, List<int>>(ReferenceEqualityComparer.Instance);
+        if (catalog is not null)
+            for (int i = 0; i < _objects.Count; i++)
+            {
+                MapSceneObject item = _objects[i];
+                if (catalog.GetAnimation(item.Name, item.Team, item.Angle) is not { } animation) continue;
+                if (!groups.TryGetValue(animation, out List<int>? indices)) groups[animation] = indices = new();
+                indices.Add(i);
+            }
         _previewSprite = catalog is null || _previewName is null ? null : catalog.GetSprite(_previewName, _previewTeam, angleDegrees: _previewAngle);
         ResolveObjectShadows();
         var distinct = new HashSet<NativeSprite>(_objectSprites.OfType<NativeSprite>(), ReferenceEqualityComparer.Instance);
         if (_previewSprite is not null) distinct.Add(_previewSprite);
-        if (distinct.Count == 0) { _spriteAtlas = null; return; }
-        if (_spriteAtlas is not null && distinct.Count == _spriteAtlas.Count && distinct.All(sprite => _spriteAtlas.TryGetUv(sprite, out _))) return;
-        _spriteAtlas = NativeSpriteAtlas.Pack(distinct);
-        _spriteTextureDirty = true;
+        var requested = new HashSet<NativeSprite>(distinct, ReferenceEqualityComparer.Instance);
+        foreach (NativeSpriteAnimation animation in groups.Keys) requested.UnionWith(animation.Frames);
+        if (!_atlasSprites.SetEquals(requested))
+        {
+            _atlasSprites = requested;
+            _spriteAtlas = distinct.Count == 0 ? null : NativeSpriteAtlas.PackAnimations(distinct, groups.Keys);
+            _spriteTextureDirty = true;
+        }
+        if (_spriteAtlas is not null)
+            foreach ((NativeSpriteAnimation animation, List<int> indices) in groups)
+                if (animation.Frames.All(frame => _spriteAtlas.TryGetUv(frame, out _)))
+                    _animationGroups.Add(new AnimationGroup(animation, indices.ToArray()));
+        SelectAnimationFrames(_animationTimeMs ?? _animationClock.Elapsed.TotalMilliseconds);
+        UpdateAnimationTimer();
     }
 
     private void ResolveObjectShadows()
@@ -849,12 +922,13 @@ internal sealed class Map3DViewControl : GLControl
     {
         // GL 資源已在 OnHandleDestroyed（context 仍有效時）釋放；此時 handle 可能已被父視窗銷毀，
         // 不能再 MakeCurrent，否則 GLControl 會重新建立 handle 並再次執行初始化。
-        if (disposing) { if (IsHandleCreated) ReleaseGlResources(); _atlas?.Dispose(); /* _library 由 MapEditorForm 擁有，不在此釋放 */ }
+        if (disposing) { _animationTimer.Dispose(); if (IsHandleCreated) ReleaseGlResources(); _atlas?.Dispose(); /* _library 由 MapEditorForm 擁有，不在此釋放 */ }
         base.Dispose(disposing);
     }
 
     protected override void OnHandleDestroyed(EventArgs e)
     {
+        _animationTimer.Stop();
         bool wasInitialized = _initialized;
         ReleaseGlResources(); // 在 GLControl 銷毀原生視窗與 context 之前執行
         // 舊 context 的 ID 不能用在新 context（可能剛好與新配置的 texture/buffer ID 相同）。

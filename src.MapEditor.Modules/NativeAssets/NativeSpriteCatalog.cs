@@ -10,7 +10,7 @@ namespace AgainstRomeMapEditor.NativeAssets;
 /// 10 mltyp (layer type), 14 aptix, 17 palty and 52 name.
 /// </summary>
 internal sealed record NativeSpriteDefinition(int TypeId, string Name, int AlrId, int AptIndex, int PaletteType,
-    int LayerAlrId = -1, int LayerType = -1);
+    int LayerAlrId = -1, int LayerType = -1, int AnimationLengthMs = 0, int AnimationAdd = -1, uint AnimationMask = 0);
 
 /// <summary>
 /// A cropped, straight-alpha ARGB still image. AnchorX/AnchorY is the ground contact
@@ -37,6 +37,7 @@ internal sealed class NativeSpriteCatalog : IDisposable
     private readonly Dictionary<string, NativeAlrDocument?> _alrDocuments = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, NativeAptDocument?> _aptDocuments = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<(string Name, int Variant, int Direction), NativeSprite?> _sprites = new();
+    private readonly Dictionary<(NativeSpriteDefinition Definition, int Variant, int Direction), NativeSpriteAnimation?> _animations = new();
     private readonly object _gate = new();
 
     private NativeSpriteCatalog(Dictionary<string, NativeSpriteDefinition> definitions,
@@ -144,6 +145,65 @@ internal sealed class NativeSpriteCatalog : IDisposable
         return frame < document.Frames.Count ? (int)frame : 0;
     }
 
+    /// <summary>快取待機序列；靜態、缺格或無法解碼的資產回傳 null，呼叫端保留 GetSprite。</summary>
+    public NativeSpriteAnimation? GetAnimation(string objectName, int team = 0, float? angleDegrees = null)
+    {
+        if (!TryGetDefinition(objectName, out NativeSpriteDefinition? definition)) return null;
+        lock (_gate)
+        {
+            NativeAlrDocument? alr = definition.AlrId >= 0 && _alrNames.TryGetValue(definition.AlrId, out string? alrName)
+                ? LoadAlr(alrName) : null;
+            int variant = alr is not null && definition.PaletteType == 1 ? Math.Clamp(team, 0, alr.PaletteVariantCount - 1) : 0;
+            int direction = alr is null ? 0 : angleDegrees is { } angle ? DirectionForAngle(angle, (int)Math.Max(1, alr.LayoutRows))
+                : DefaultDirection % (int)Math.Max(1, alr.LayoutRows);
+            var key = (definition, variant, direction);
+            if (_animations.TryGetValue(key, out NativeSpriteAnimation? cached)) return cached;
+            NativeSpriteAnimation? animation = null;
+            if (alr is not null)
+            {
+                // palty=1 是隊伍單位；非隊伍單位必須同時有 anadd>=0 與非零 afram（能力遮罩）。
+                // 單憑 LayoutColumns>1 會把樹木的 5 個生死階段當動畫；mltyp=2 永遠保留活樹首格。
+                bool unit = definition.LayerType != 2 && (definition.PaletteType == 1 ||
+                    (definition.AnimationAdd >= 0 && definition.AnimationMask != 0));
+                int count = (int)alr.LayoutColumns;
+                if (unit && definition.AnimationLengthMs > 1 && count > 1 &&
+                    (long)count * Math.Max(1, alr.LayoutRows) <= alr.Frames.Count)
+                {
+                    NativeAlrDocument? overlay = definition.LayerAlrId >= 0 && definition.LayerAlrId != definition.AlrId &&
+                        _alrNames.TryGetValue(definition.LayerAlrId, out string? layerName) ? LoadAlr(layerName) : null;
+                    string name = _alrNames[definition.AlrId];
+                    animation = DecodeAnimation(count, definition.AnimationLengthMs,
+                        GetSprite(objectName, team, angleDegrees: angleDegrees),
+                        frame => DecodeAlr(name, alr, overlay, variant, direction, frame));
+                }
+            }
+            else if (definition.AlrId < 0 && definition.LayerAlrId < 0 && definition.AptIndex >= 0 &&
+                _aptNames.TryGetValue(definition.AptIndex, out string? aptName) && LoadApt(aptName) is { } apt && apt.Layout.Count == 4)
+            {
+                int count = (int)apt.Layout[3];
+                int first = AptFinishedFrame(apt.Layout, apt.Frames.Count);
+                int cycle = definition.AnimationLengthMs > 1 ? definition.AnimationLengthMs : count == 50 ? 4500 : 3000;
+                if (count > 1 && (long)first + count <= apt.Frames.Count)
+                    animation = DecodeAnimation(count, cycle, GetSprite(objectName, team), frame => DecodeApt(aptName, apt, frame));
+            }
+            return _animations[key] = animation;
+        }
+    }
+
+    private static NativeSpriteAnimation? DecodeAnimation(int count, int cycle, NativeSprite? still, Func<int, NativeSprite?> decode)
+    {
+        if (still is null) return null;
+        var frames = new NativeSprite[count];
+        frames[0] = still; // 與靜態圖共用，不額外占用圖集；每格錨點都表示同一世界地面接觸點。
+        for (int i = 1; i < count; i++)
+        {
+            NativeSprite? frame = decode(i);
+            if (frame is null) return null; // 空白／損壞格整套退回靜態，不讓物件閃爍消失。
+            frames[i] = frame;
+        }
+        return new NativeSpriteAnimation(frames, cycle);
+    }
+
     internal static int AptFinishedFrame(IReadOnlyList<uint> layout, int frameCount)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(frameCount);
@@ -154,11 +214,12 @@ internal sealed class NativeSpriteCatalog : IDisposable
         return frame < frameCount ? (int)frame : frameCount - 1;
     }
 
-    private static NativeSprite? DecodeAlr(string name, NativeAlrDocument document, NativeAlrDocument? overlay, int variant, int direction)
+    private static NativeSprite? DecodeAlr(string name, NativeAlrDocument document, NativeAlrDocument? overlay, int variant, int direction, int frameOffset = 0)
     {
-        Layer? bottomLayer = DecodeAlrLayer(document, variant, direction);
+        Layer? bottomLayer = DecodeAlrLayer(document, variant, direction, frameOffset);
         if (bottomLayer is null) return null;
-        Layer? topLayer = overlay is null ? null : DecodeAlrLayer(overlay, variant, direction);
+        Layer? topLayer = overlay is null ? null : DecodeAlrLayer(overlay, variant, direction,
+            overlay.LayoutColumns == document.LayoutColumns && overlay.LayoutRows == document.LayoutRows ? frameOffset : 0);
         if (topLayer is null)
             return Crop(name.Split('+')[0], bottomLayer.Width, bottomLayer.Height, bottomLayer.Pixels, bottomLayer.AnchorX, bottomLayer.AnchorY);
         // Union of both layers in ground-anchored coordinates; the overlay's opaque pixels win.
@@ -182,11 +243,11 @@ internal sealed class NativeSpriteCatalog : IDisposable
 
     private sealed record Layer(int Width, int Height, IReadOnlyList<uint> Pixels, int AnchorX, int AnchorY);
 
-    private static Layer? DecodeAlrLayer(NativeAlrDocument document, int variant, int direction)
+    private static Layer? DecodeAlrLayer(NativeAlrDocument document, int variant, int direction, int frameOffset = 0)
     {
         try
         {
-            int index = AlrStillFrame(document, direction % (int)Math.Max(1, document.LayoutRows));
+            int index = AlrStillFrame(document, direction % (int)Math.Max(1, document.LayoutRows)) + frameOffset;
             NativeAlrFrameInfo info = document.Frames[index];
             NativeAlrIndexedFrame frame = document.DecodeFrame(index, Math.Min(variant, document.PaletteVariantCount - 1));
             // Ground contact is the anchor canvas centre; frame pixels are placed at their stored offset.
@@ -196,11 +257,11 @@ internal sealed class NativeSpriteCatalog : IDisposable
         catch (Exception error) when (error is InvalidDataException or NotSupportedException or ArgumentException) { return null; }
     }
 
-    private static NativeSprite? DecodeApt(string name, NativeAptDocument document)
+    private static NativeSprite? DecodeApt(string name, NativeAptDocument document, int frameOffset = 0)
     {
         try
         {
-            NativeAptIndexedImage image = document.DecodeFrame(AptFinishedFrame(document.Layout, document.Frames.Count));
+            NativeAptIndexedImage image = document.DecodeFrame(AptFinishedFrame(document.Layout, document.Frames.Count) + frameOffset);
             return Crop(name, image.Width, image.Height, image.ArgbPixels, document.AnchorX, document.AnchorY);
         }
         catch (Exception error) when (error is InvalidDataException or NotSupportedException or ArgumentException) { return null; }
@@ -252,8 +313,11 @@ internal sealed class NativeSpriteCatalog : IDisposable
                 !Int(columns[14], out int apt) || !Int(columns[17], out int palette)) continue;
             int layer = Int(columns[8], out int parsedLayer) ? parsedLayer : -1;
             int layerType = Int(columns[10], out int parsedType) ? parsedType : -1;
+            int cycle = Int(columns[2], out int parsedCycle) ? parsedCycle : 0;
+            int animationAdd = Int(columns[6], out int parsedAdd) ? parsedAdd : -1;
+            uint.TryParse(columns[45].Trim(), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out uint animationMask);
             string name = columns[52].Trim();
-            if (name.Length > 0) result.TryAdd(name, new NativeSpriteDefinition(id, name, alr, apt, palette, layer, layerType));
+            if (name.Length > 0) result.TryAdd(name, new NativeSpriteDefinition(id, name, alr, apt, palette, layer, layerType, cycle, animationAdd, animationMask));
         }
         return result;
     }
@@ -282,7 +346,7 @@ internal sealed class NativeSpriteCatalog : IDisposable
     private static ZipArchive OpenArchive(string path)
         => new(new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete), ZipArchiveMode.Read);
 
-    public void Dispose() { lock (_gate) { _owner?.Dispose(); _alrDocuments.Clear(); _aptDocuments.Clear(); _sprites.Clear(); } }
+    public void Dispose() { lock (_gate) { _owner?.Dispose(); _alrDocuments.Clear(); _aptDocuments.Clear(); _sprites.Clear(); _animations.Clear(); } }
 
     private sealed class ArchivePair(ZipArchive alr, ZipArchive apt) : IDisposable
     {
