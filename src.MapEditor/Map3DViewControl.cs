@@ -412,6 +412,32 @@ internal sealed class Map3DViewControl : GLControl
         Invalidate();
     }
 
+    protected override bool IsInputKey(Keys keyData)
+        => (keyData & Keys.KeyCode) is Keys.Left or Keys.Right or Keys.Up or Keys.Down || base.IsInputKey(keyData);
+
+    /// <summary>
+    /// Game-like keyboard camera: arrows scroll the view in screen directions (a tenth of the visible
+    /// height per press), PageUp/PageDown zoom and Home restores the game's 1:1 pixel scale.
+    /// </summary>
+    protected override void OnKeyDown(KeyEventArgs e)
+    {
+        base.OnKeyDown(e);
+        float step = _camera.Distance * .1f;
+        switch (e.KeyCode)
+        {
+            case Keys.Left: _camera.Pan(-step, 0); break;
+            case Keys.Right: _camera.Pan(step, 0); break;
+            case Keys.Up: _camera.Pan(0, -step); break;
+            case Keys.Down: _camera.Pan(0, step); break;
+            case Keys.PageUp: _camera.Zoom(.84f); break;
+            case Keys.PageDown: _camera.Zoom(1.19f); break;
+            case Keys.Home: _camera.ZoomToGameScale(Math.Max(1, ClientSize.Height)); break;
+            default: return;
+        }
+        e.Handled = true;
+        Invalidate();
+    }
+
     protected override void OnMouseWheel(MouseEventArgs e) { base.OnMouseWheel(e); _camera.Zoom(e.Delta > 0 ? .84f : 1.19f); Invalidate(); }
 
     private void TryPaint(Point point)

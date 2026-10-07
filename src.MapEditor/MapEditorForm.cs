@@ -847,7 +847,7 @@ internal sealed partial class MapEditorForm : Form
         bool isEn = AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English;
         _status.Text = mode switch
         {
-            EditMode.SceneMove => isEn ? "Move mode: select an SDL object, then drag on the terrain. Changes remain pending until Save." : "物件移動模式：選取 SDL 物件後在地表拖曳；按下「儲存」前只會暫存在記憶體。",
+            EditMode.SceneMove => isEn ? "Move mode: click an object in 3D (or pick it in the list) and drag it; Delete removes it. Arrow keys scroll, Home = game scale. Changes remain pending until Save." : "物件移動模式：在 3D 直接點選物件（或從清單選取）後拖曳，Delete 刪除；方向鍵捲動、Home 切回遊戲比例。按下「儲存」前只會暫存在記憶體。",
             EditMode.Height => _terrainLayers is null
                 ? (isEn ? "This map has no editable boden.bmp height map." : "此地圖沒有可編輯的 boden.bmp 高度圖。")
                 : (isEn ? "Height mode: left-drag to apply the selected operation; Ctrl+Z / Ctrl+Y undo and redo." : "地形高度模式：左鍵拖曳套用所選操作；Ctrl+Z／Ctrl+Y 復原與重做。"),
@@ -1305,6 +1305,13 @@ internal sealed partial class MapEditorForm : Form
 
     private void HandleShortcut(KeyEventArgs e)
     {
+        // 3D 場景取得焦點時，Delete 對選取的場景物件執行「刪除／取消刪除」（與按鈕相同，儲存前可還原）。
+        if (e.KeyCode == Keys.Delete && !e.Control && _view3d is { Focused: true } && _sceneDeleteButton.Enabled)
+        {
+            ToggleDeleteSelectedSceneObject();
+            e.SuppressKeyPress = true;
+            return;
+        }
         if (!e.Control) return;
         if (e.KeyCode == Keys.S) {
             if (_selected?.IsCustom == true) SaveMap(showSuccess: false);

@@ -5,6 +5,7 @@
 - `MapEditorForm.PushSceneObjects`／`SceneObjectsFor3D`：2D 維持原物件集；3D 另加 DATA/objects.dat 全部物件（非地景依原隊伍；地景依自然物件待刪／待增狀態），所有原先「畫布＋3D 同時更新」改走此函式。沒有 sprite 的 DATA 物件在遊戲中看不見：3D 不畫也不可點選，唯 `Skriptmark*` 以 5px 青點提示（`Map3DViewControl.MarkerVisible`）。
 - 原版 ENDL_000 唯讀副本實測（`ARM_COMPARE_GAME` 選用測試）：6618 DATA 物件、7143 sprite，全圖擷取 26 ms；聚落近景（主屋、鐵匠、柵欄、雕像）與森林目視接近遊戲。daynight.bmp 為 24×6 時段色表，與實測光照增益對不上，光照暫緩。
 - 驗證：build 0警告/0錯誤；全測試 宿主613/22略過、modules123，0失敗。
+- 後續：3D 鍵盤相機（方向鍵依畫面方向捲動、PageUp/Down 縮放、Home=遊戲1:1）；3D 取得焦點時 Delete 切換選取場景物件的待刪除（`HandleShortcut`→`ToggleDeleteSelectedSceneObject`）；移動模式提示文字更新。真 GL 表單測試涵蓋（含焦點斷言）；全測試同上 0 失敗。
 
 ## 遊戲內比對與正交相機（2026-10-07 Claude；使用者授權「啟動遊戲」）
 

@@ -119,6 +119,31 @@ public sealed partial class MapEditorSaveTransactionTests
             Assert.NotEqual((10000f, 6000f), (moved.WorldX, moved.WorldZ));
             Assert.True(moved.WorldX > 10000, $"往畫面右下拖曳應增加 X：{moved.WorldX},{moved.WorldZ}");
             Assert.InRange(moved.WorldZ, 5632f, 6400f); // screen (2,1) is pure +X: the grab offset keeps the row
+
+            // Delete with the 3D view focused toggles the pending removal of the picked object.
+            form.Activate(); view.Focus(); Application.DoEvents();
+            Assert.True(view.Focused, "3D 檢視應能取得焦點以接收 Delete。");
+            {
+                var removals = (System.Collections.IList)typeof(MapEditorForm).GetField("_sceneRemovals", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(form)!;
+                Invoke(form, "HandleShortcut", new KeyEventArgs(Keys.Delete));
+                Assert.Single(removals);
+                Assert.Equal(0, view.SpriteObjectCount); // the removed object leaves the 3D scene
+                Invoke(form, "HandleShortcut", new KeyEventArgs(Keys.Delete));
+                Assert.Empty(removals);
+            }
+
+            // Keyboard camera: arrows scroll in screen directions, Home restores the game's 1:1 scale.
+            var keyCamera = (EditorCamera)typeof(Map3DViewControl).GetField("_camera", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(view)!;
+            void Key(Keys key) => typeof(Control).GetMethod("OnKeyDown", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(view, [new KeyEventArgs(key)]);
+            Vector3 before = keyCamera.Target;
+            Key(Keys.Right); Vector3 right = keyCamera.Target - before; // screen right = map +X, -Z
+            Assert.True(right.X > 0 && right.Z < 0, $"→ 移動 {right}");
+            Key(Keys.Left); Assert.True(Vector3.Distance(before, keyCamera.Target) < 1e-4f);
+            Key(Keys.Up); Vector3 up = keyCamera.Target - before; // screen up = map -X, -Z
+            Assert.True(up.X < 0 && up.Z < 0, $"↑ 移動 {up}");
+            float zoomed = keyCamera.Distance; Key(Keys.PageDown); Assert.True(keyCamera.Distance > zoomed);
+            Key(Keys.Home);
+            Assert.Equal(view.ClientSize.Height / EditorCamera.GamePixelsPerTile / (2 * MathF.Tan(26 * MathF.PI / 180)), keyCamera.Distance, 3);
         }, TimeSpan.FromMinutes(2));
     }
 
