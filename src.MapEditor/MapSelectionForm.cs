@@ -256,7 +256,8 @@ internal sealed class MapSelectionForm : Form
         bool isEn = AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English;
         GameMapInfo? source = SelectNewMapTemplate(_catalog.List(GamePath));
         if (source is null) { MessageBox.Show(this, isEn ? "No map available as a base for the new map." : "沒有可作為新地圖基礎的地圖。", Text); return; }
-        string name = PromptName(isEn ? "Build from Endless" : "從無盡範本建立", source.DisplayName ?? "New Custom Map");
+        string name = PromptName(isEn ? "Build from Endless" : "從無盡範本建立", source.DisplayName ?? "New Custom Map",
+            MapTemplateInventory.Read(GamePath, source.DirectoryPath).Describe(source.Id, false, isEn));
         if (string.IsNullOrWhiteSpace(name)) return;
         CloneAndOpen(source, name, isEn ? "Failed to create map" : "無法新建地圖");
     }
@@ -271,7 +272,8 @@ internal sealed class MapSelectionForm : Form
         GameMapInfo? source = SelectNewMapTemplate(_catalog.List(GamePath));
         if (source is null) { MessageBox.Show(this, isEn ? "No map available as a base for the new map." : "沒有可作為新地圖基礎的地圖。", Text); return; }
         // 地圖名稱寫入遊戲的 CP1251 文字檔，中文無法編碼；預設名稱一律用英文。
-        string name = PromptName(isEn ? "Build Flat Template" : "建立平坦範本地圖", "Flat Template Map");
+        string name = PromptName(isEn ? "Build Flat Template" : "建立平坦範本地圖", "Flat Template Map",
+            MapTemplateInventory.Read(GamePath, source.DirectoryPath).Describe(source.Id, true, isEn));
         if (string.IsNullOrWhiteSpace(name)) return;
         CreatedBlankMap = true;
         CloneAndOpen(source, name, isEn ? "Failed to create map" : "無法新建地圖");
@@ -294,7 +296,8 @@ internal sealed class MapSelectionForm : Form
             return;
         }
         string suggestedName = SuggestedCopyName(source);
-        string name = PromptName(isEn ? "Copy to Custom Map" : "複製到自製地圖", suggestedName);
+        string name = PromptName(isEn ? "Copy to Custom Map" : "複製到自製地圖", suggestedName,
+            MapTemplateInventory.Read(GamePath, source.DirectoryPath).Describe(source.Id, false, isEn));
         if (string.IsNullOrWhiteSpace(name)) return;
         CloneAndOpen(source, name, isEn ? "Failed to copy map" : "無法複製地圖");
     }
@@ -395,19 +398,29 @@ internal sealed class MapSelectionForm : Form
         if (dialog.ShowDialog(this) != DialogResult.OK) return; _gamePath.Text = dialog.SelectedPath; RefreshMaps();
     }
 
-    private string PromptName(string title, string value)
+    private string PromptName(string title, string value, string? details = null)
     {
         bool isEn = AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English;
-        using var form = new Form { Text = title, Width = 450, Height = 210, StartPosition = FormStartPosition.CenterParent, BackColor = BackColor, ForeColor = ForeColor, FormBorderStyle = FormBorderStyle.FixedDialog, MinimizeBox = false, MaximizeBox = false };
+        using var form = BuildNameDialog(title, value, details, isEn, BackColor, ForeColor, out TextBox input);
+        return form.ShowDialog(this) == DialogResult.OK ? input.Text : "";
+    }
+
+    internal static Form BuildNameDialog(string title, string value, string? details, bool isEn, Color back, Color fore, out TextBox input)
+    {
+        var form = new Form { Text = title, Width = details is null ? 450 : 560, Height = details is null ? 210 : 420,
+            AutoScaleDimensions = new SizeF(96, 96), AutoScaleMode = AutoScaleMode.Dpi,
+            StartPosition = FormStartPosition.CenterParent, BackColor = back, ForeColor = fore, FormBorderStyle = FormBorderStyle.FixedDialog, MinimizeBox = false, MaximizeBox = false };
         var label = new Label { Text = isEn ? "Map Name (Latin letters and digits; the game cannot display Chinese)" : "地圖名稱（請用英文或數字，遊戲無法顯示中文）", Dock = DockStyle.Top, Height = 34, Padding = new Padding(12, 10, 0, 0) };
-        var input = new TextBox { Text = value, Dock = DockStyle.Top, Margin = new Padding(12) };
+        input = new TextBox { Text = value, Dock = DockStyle.Top, Margin = new Padding(12) };
         var buttons = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 52, Padding = new Padding(12, 8, 12, 8), FlowDirection = FlowDirection.RightToLeft };
         var ok = new Button { Text = isEn ? "Create & Open" : "建立並開啟", DialogResult = DialogResult.OK, Width = 130, Height = 34 };
         var cancel = new Button { Text = isEn ? "Cancel" : "取消", DialogResult = DialogResult.Cancel, Width = 90, Height = 34 };
         buttons.Controls.Add(ok); buttons.Controls.Add(cancel);
+        if (details is not null) form.Controls.Add(new TextBox { Text = details, Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, Dock = DockStyle.Fill, BorderStyle = BorderStyle.None, BackColor = back, ForeColor = fore });
         form.Controls.Add(input); form.Controls.Add(label); form.Controls.Add(buttons);
         form.AcceptButton = ok; form.CancelButton = cancel;
-        return form.ShowDialog(this) == DialogResult.OK ? input.Text : "";
+        form.ActiveControl = input;
+        return form;
     }
 
     protected override void Dispose(bool disposing)
