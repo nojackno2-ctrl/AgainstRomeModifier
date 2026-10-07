@@ -6,6 +6,7 @@
 
 | 項目 | 驗證內容 | 證據（tests 下的測試檔） |
 | --- | --- | --- |
+| 批次隊伍／方向與配置整批放置 | 整批驗證後修改、ID／位置／人數保留、混合非法隊伍／越界／重複ID拒絕且redo保留、一次undo；批次對話框取消、儲存／新表單重開／重存bytes | `PlacementAuthoringTests.cs`、`PlacementBatchUiTests.cs`、`MapEditorBatchSaveTests.cs`；AddMany是配置工具基礎，尚不代表可保存配置UI已完成 |
 | 地圖檢查與定位 | 純 collision／水位區域估計、出生／建築阻擋、工地／錨點重疊、無效事件目標；唯讀檢查、物件／事件定位、警告可存、錯誤拒存且bytes／dirty保留；中英最小視窗截圖 | `MapDiagnosticsTests.cs`、`MapEditorDiagnosticsTests.cs`；TEMP/ArmMapDiagnostics_20261008；連通估計不是遊戲尋路證據 |
 | 示範地圖整合 | 真實 TEMP 副本：土路 undo/redo、丘陵、小湖、森林、10人部隊、三棟 DATA 建築與區域勝利事件；儲存前隔離、新表單重開及重存 bytes 一致。遊戲內尋路／採集／勝利未驗證 | `MapEditorDemoAcceptanceTests.cs`，須 `ARM_DEMO_ACCEPTANCE=1`；重現與限制見 [示範驗收](map-editor-demo-acceptance.md) |
 | 地圖建立／刪除 | manifest 失敗回滾新建正式槽位、保留來源、原槽位重試；拒絕覆蓋既有final/tmp；拒刪原廠與未登記地圖 | `AgainstRomeModifier.Tests/MapEditorPhase1Tests.cs` |

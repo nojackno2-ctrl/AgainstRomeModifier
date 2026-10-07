@@ -17,6 +17,7 @@ internal sealed partial class MapEditorForm
     private readonly ListView _placedList = new() { Dock = DockStyle.Fill, View = View.Details, FullRowSelect = true, HeaderStyle = ColumnHeaderStyle.Nonclickable, MultiSelect = true };
     private readonly Button _placedEditButton = new() { Height = 32, Enabled = false };
     private readonly Button _placedDuplicateButton = new() { Height = 32, Enabled = false };
+    private readonly Button _placedBatchButton = new() { Height = 32, Enabled = false };
     private readonly Button _placedDeleteButton = new() { Height = 32, Enabled = false };
     private readonly Label _placeHint = new() { Dock = DockStyle.Top, AutoSize = true, MaximumSize = new Size(300, 0), Padding = new Padding(4, 6, 4, 4), ForeColor = WinFormsTheme.TextSecondary };
     private Label _lblPlaceCategory = null!, _lblPlaceTribe = null!, _lblPlaceTeam = null!, _lblPlaceCount = null!, _lblPlaceAngle = null!;
@@ -26,6 +27,7 @@ internal sealed partial class MapEditorForm
     private bool PlacedDirty() => _placementSession.IsDirty;
 
     internal Func<PlacedObjectEditDialog, DialogResult> EditDialogRunner { get; set; } = dialog => dialog.ShowDialog();
+    internal Func<PlacementBatchEditDialog, DialogResult> BatchEditDialogRunner { get; set; } = dialog => dialog.ShowDialog();
     internal Button PlacedEditButton => _placedEditButton;
     internal Button PlacedDuplicateButton => _placedDuplicateButton;
     internal Button PlacedDeleteButton => _placedDeleteButton;
@@ -104,7 +106,7 @@ internal sealed partial class MapEditorForm
         buttonRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
         buttonRow.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         buttonRow.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        foreach (Button button in new[] { _placedEditButton, _placedDuplicateButton, _placedDeleteButton })
+        foreach (Button button in new[] { _placedEditButton, _placedDuplicateButton, _placedDeleteButton, _placedBatchButton })
         {
             button.AutoSize = true;
             button.MinimumSize = new Size(0, 32);
@@ -113,11 +115,12 @@ internal sealed partial class MapEditorForm
         _placedEditButton.Dock = DockStyle.Fill;
         _placedDuplicateButton.Dock = DockStyle.Fill;
         _placedDeleteButton.Dock = DockStyle.Fill;
+        _placedBatchButton.Dock = DockStyle.Fill;
 
         buttonRow.Controls.Add(_placedEditButton, 0, 0);
         buttonRow.Controls.Add(_placedDuplicateButton, 1, 0);
         buttonRow.Controls.Add(_placedDeleteButton, 0, 1);
-        buttonRow.SetColumnSpan(_placedDeleteButton, 2);
+        buttonRow.Controls.Add(_placedBatchButton, 1, 1);
 
         placedHost.Controls.Add(_placedList);
         placedHost.Controls.Add(buttonRow);
@@ -135,6 +138,7 @@ internal sealed partial class MapEditorForm
         _placedList.DoubleClick += (_, _) => EditSelectedPlacedObject();
         _placedEditButton.Click += (_, _) => EditSelectedPlacedObject();
         _placedDuplicateButton.Click += (_, _) => DuplicateSelectedPlacedObjects();
+        _placedBatchButton.Click += (_, _) => EditSelectedPlacedObjectsBatch();
 
         return panel;
     }
@@ -146,6 +150,7 @@ internal sealed partial class MapEditorForm
         _placedDeleteButton.Enabled = isCustom && count > 0;
         _placedDuplicateButton.Enabled = isCustom && count > 0;
         _placedEditButton.Enabled = isCustom && count == 1;
+        _placedBatchButton.Enabled = isCustom && count > 0;
     }
 
     /// <summary>放置目錄：cl_scint.ini [ObjDefName] 的別名（建築、人物…），TemplateFields["alias"] 保存別名。</summary>
@@ -216,6 +221,7 @@ internal sealed partial class MapEditorForm
         _lblPlaceAngle.Text = isEn ? "Angle" : "角度";
         _placedEditButton.Text = isEn ? "Edit..." : "編輯...";
         _placedDuplicateButton.Text = isEn ? "Duplicate" : "複製選取";
+        _placedBatchButton.Text = isEn ? "Team / Direction..." : "隊伍／方向…";
         _placedDeleteButton.Text = isEn ? "Delete Selected" : "刪除選取的物件";
         _placeHint.Text = isEn
             ? "Pick a type, activate \"Place Objects\", then click the map. Buildings with a finished template are placed directly in the map (teams 0–8; 8 = neutral); others start as construction sites. Characters use units of 1–20 soldiers, teams 0–7. Team 0 is the human player. Keep buildings clear of trees and water."
