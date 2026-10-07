@@ -138,6 +138,31 @@ public sealed class MapEditorNatureHistoryTests
         finally { Directory.Delete(root, true); }
     }
 
+    [Fact]
+    public void Large_brush_scatters_mixed_species_with_spacing_as_one_undo_step()
+    {
+        Run(form =>
+        {
+            var types = Get<ListBox>(form, "_natureTypes");
+            object first = types.Items[0];
+            var template = first.GetType().GetProperty("Template")!.GetValue(first)!;
+            types.Items.Add(Activator.CreateInstance(first.GetType(), template, "LanGerBir00")!);
+            Get<MapCanvasControl>(form, "_canvas").BrushSize = 9;
+            Get<ComboBox>(form, "_natureDensity").SelectedIndex = 2;
+            Get<CheckBox>(form, "_natureMix").Checked = true;
+            Paint(form, 20, 20); Invoke(form, "CommitStroke");
+            var planted = Additions(form).Cast<AgainstRomeMapEditor.Modules.Nature.NatureAddition>().ToArray();
+            Assert.True(planted.Length > 10, $"9×9 茂密只種了 {planted.Length} 株");
+            Assert.Equal(2, planted.Select(item => item.Name).Distinct().Count());
+            float tile = AgainstRomeModifier.Maps.SdlSceneCatalog.WorldUnitsPerMapPixel * 4f;
+            for (int i = 0; i < planted.Length; i++)
+                for (int j = i + 1; j < planted.Length; j++)
+                    Assert.True(MathF.Sqrt(MathF.Pow(planted[i].X - planted[j].X, 2) + MathF.Pow(planted[i].Z - planted[j].Z, 2)) >= .45f * tile - .01f);
+            Invoke(form, "Undo");
+            Assert.Empty(Additions(form));
+        });
+    }
+
     private static IList Additions(MapEditorForm form) => (IList)Get<AgainstRomeMapEditor.Modules.Nature.NatureEditSession>(form, "_natureSession").Additions;
     private static ToolStripButton Button(MapEditorForm form, string name) => Get<ToolStripButton>(form, name);
     private static void Paint(MapEditorForm form, int x, int y) => Invoke(form, "PaintTexture", new TexturePaintEventArgs(x, y, "", ""));

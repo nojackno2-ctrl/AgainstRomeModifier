@@ -10,8 +10,10 @@ internal sealed partial class MapEditorForm
     private readonly ComboBox _natureCategory = new() { Dock = DockStyle.Fill, DropDownStyle = ComboBoxStyle.DropDownList };
     private readonly ComboBox _natureOperation = new() { Dock = DockStyle.Fill, DropDownStyle = ComboBoxStyle.DropDownList };
     private readonly ListBox _natureTypes = new() { Dock = DockStyle.Fill, IntegralHeight = false };
+    private readonly ComboBox _natureDensity = new() { Dock = DockStyle.Fill, DropDownStyle = ComboBoxStyle.DropDownList };
+    private readonly CheckBox _natureMix = new() { AutoSize = true, Anchor = AnchorStyles.Left, Text = "混合同類物種" };
     private readonly Label _natureHint = new() { Dock = DockStyle.Top, Height = 70, Padding = new Padding(4, 6, 4, 4), ForeColor = WinFormsTheme.TextSecondary };
-    private Label _lblNatureCategory = null!, _lblNatureOperation = null!;
+    private Label _lblNatureCategory = null!, _lblNatureOperation = null!, _lblNatureDensity = null!;
     private IReadOnlyList<LevelWorldObject> _levelObjects = Array.Empty<LevelWorldObject>();
     private IReadOnlyDictionary<int, string> _objdefNames = new Dictionary<int, string>();
     private readonly NatureEditSession _natureSession = new();
@@ -29,6 +31,8 @@ internal sealed partial class MapEditorForm
         options.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 70)); options.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         _lblNatureOperation = AddSceneField(options, 0, "操作", _natureOperation);
         _lblNatureCategory = AddSceneField(options, 1, "類別", _natureCategory);
+        _lblNatureDensity = AddSceneField(options, 2, "密度", _natureDensity);
+        options.Controls.Add(_natureMix, 1, 3);
         panel.Controls.Add(_natureTypes); panel.Controls.Add(options); panel.Controls.Add(_natureHint);
         FitWrappedLabelHeight(_natureHint);
         return panel;
@@ -42,6 +46,12 @@ internal sealed partial class MapEditorForm
         _natureOperation.Items.Clear();
         _natureOperation.Items.AddRange(isEn ? new object[] { "Plant", "Remove" } : new object[] { "種植", "移除" });
         _natureOperation.SelectedIndex = operation;
+        int density = _natureDensity.SelectedIndex < 0 ? (int)NatureDensity.Normal : _natureDensity.SelectedIndex;
+        _natureDensity.Items.Clear();
+        _natureDensity.Items.AddRange(isEn ? new object[] { "Sparse", "Normal", "Dense" } : new object[] { "稀疏", "普通", "茂密" });
+        _natureDensity.SelectedIndex = density;
+        _lblNatureDensity.Text = isEn ? "Density" : "密度";
+        _natureMix.Text = isEn ? "Mix species in category" : "混合同類物種";
         _natureHint.Text = isEn
             ? "Drag on the map with \"Nature\" active. Plant uses the brush size (one object per tile); Remove clears trees, grass and bushes under the brush. Script markers and linked objects are never touched."
             : "啟用「自然物件」後在地圖拖曳。種植：每格一株；移除：清除筆刷範圍內的樹木、草叢、灌木。腳本標記與連結物件不會被更動。";
@@ -191,17 +201,28 @@ internal sealed partial class MapEditorForm
                 _status.Text = isEn ? "Pick a landscape type in the Nature tab first (the catalog may still be loading)." : "請先在「自然物件」分頁選擇類型（目錄可能仍在載入）。";
                 return false;
             }
-            // 每格一株，於格內隨機偏移與旋轉，避免整齊排列。
-            float x = (e.X + .2f + (float)_natureRandom.NextDouble() * .6f) * tileWorld, z = (e.Y + .2f + (float)_natureRandom.NextDouble() * .6f) * tileWorld;
-            float y = 0;
-            if (_terrainLayers is not null)
+            // 單格筆刷每格一株；較大筆刷依密度在範圍內散佈，與既有物件保持間距，格內隨機偏移與旋轉。
+            var density = (NatureDensity)Math.Clamp(_natureDensity.SelectedIndex, 0, 2);
+            float near = (_canvas.BrushSize / 2f + 2) * tileWorld, ncx = (e.X + .5f) * tileWorld, ncz = (e.Y + .5f) * tileWorld;
+            var existing = _natureAdditions.Select(item => (item.X, item.Z))
+                .Concat(_levelObjects.Where(item => IsRemovableNature(item) && !_natureRemovals.Contains(item.Slot)).Select(item => (item.X, item.Z)))
+                .Where(item => MathF.Abs(item.Item1 - ncx) <= near && MathF.Abs(item.Item2 - ncz) <= near)
+                .Select(item => (item.Item1 / tileWorld, item.Item2 / tileWorld)).ToArray();
+            var points = NatureScatter.Plan(e.X, e.Y, _canvas.BrushSize, density, _texturesDocument!.Dimension, existing, _natureRandom);
+            if (points.Count == 0) return false;
+            NatureTypeItem[] species = _natureMix.Checked ? _natureTypes.Items.OfType<NatureTypeItem>().ToArray() : [type];
+            foreach ((float pointX, float pointZ) in points)
             {
-                int step = (_terrainLayers.VertexSize - 1) / _texturesDocument!.Dimension;
-                int vx = Math.Clamp((int)MathF.Round(x / tileWorld * step), 0, _terrainLayers.VertexSize - 1), vy = Math.Clamp((int)MathF.Round(z / tileWorld * step), 0, _terrainLayers.VertexSize - 1);
-                y = _terrainLayers.Heights[vy * _terrainLayers.VertexSize + vx] * _heightMapStep;
+                float x = pointX * tileWorld, z = pointZ * tileWorld, y = 0;
+                if (_terrainLayers is not null)
+                {
+                    int step = (_terrainLayers.VertexSize - 1) / _texturesDocument.Dimension;
+                    int vx = Math.Clamp((int)MathF.Round(pointX * step), 0, _terrainLayers.VertexSize - 1), vy = Math.Clamp((int)MathF.Round(pointZ * step), 0, _terrainLayers.VertexSize - 1);
+                    y = _terrainLayers.Heights[vy * _terrainLayers.VertexSize + vx] * _heightMapStep;
+                }
+                NatureTypeItem pick = species.Length == 0 ? type : species[_natureRandom.Next(species.Length)];
+                _natureSession.Plant(new NatureAddition(pick.Template, pick.Name, x, y, z, (float)(_natureRandom.NextDouble() * Math.PI * 2)));
             }
-            var addition = new NatureAddition(type.Template, type.Name, x, y, z, (float)(_natureRandom.NextDouble() * Math.PI * 2));
-            _natureSession.Plant(addition);
         }
         return true;
     }
