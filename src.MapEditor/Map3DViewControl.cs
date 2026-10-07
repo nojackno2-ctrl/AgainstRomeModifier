@@ -26,6 +26,7 @@ internal sealed class Map3DViewControl : GLControl
     private Point _lastPointer, _rightStart;
     private int _terrainProgram, _colorProgram, _vao, _vbo, _ebo, _atlasTexture, _waterVao, _waterVbo, _markerVao, _markerVbo, _cursorVao, _cursorVbo;
     private int _cursorVertexCount;
+    private bool _reinitializeOnHandleCreated;
 
     public Map3DViewControl() : base(new GLControlSettings { API = ContextAPI.OpenGL, APIVersion = new Version(3, 3), Profile = ContextProfile.Core, Flags = ContextFlags.ForwardCompatible })
     {
@@ -106,6 +107,18 @@ internal sealed class Map3DViewControl : GLControl
     protected override void OnLoad(EventArgs e)
     {
         base.OnLoad(e);
+        InitializeGl();
+    }
+
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        // 控制項未釋放而 handle 被重建（例如重新指定父容器）時，原 context 已隨舊 handle 銷毀，需重新初始化。
+        if (_reinitializeOnHandleCreated) { _reinitializeOnHandleCreated = false; InitializeGl(); }
+    }
+
+    private void InitializeGl()
+    {
         try
         {
             MakeCurrent();
@@ -157,6 +170,49 @@ internal sealed class Map3DViewControl : GLControl
         if (!_initialized || _mesh is null) return;
         MakeCurrent(); RenderScene(ClientSize.Width, ClientSize.Height);
         SwapBuffers();
+    }
+
+    /// <summary>
+    /// 以與畫面相同的繪製路徑渲染到離屏 framebuffer 並讀回像素；不受視窗被遮蔽或位於螢幕外影響。
+    /// 未初始化、尚無地形或 framebuffer 不完整時回傳 null。
+    /// </summary>
+    internal Bitmap? CaptureFrame(int width, int height)
+    {
+        if (!_initialized || _mesh is null || width <= 0 || height <= 0) return null;
+        MakeCurrent();
+        int framebuffer = GL.GenFramebuffer(), color = GL.GenRenderbuffer(), depth = GL.GenRenderbuffer();
+        try
+        {
+            GL.BindFramebuffer(FramebufferTarget.Framebuffer, framebuffer);
+            GL.BindRenderbuffer(RenderbufferTarget.Renderbuffer, color);
+            GL.RenderbufferStorage(RenderbufferTarget.Renderbuffer, RenderbufferStorage.Rgba8, width, height);
+            GL.FramebufferRenderbuffer(FramebufferTarget.Framebuffer, FramebufferAttachment.ColorAttachment0, RenderbufferTarget.Renderbuffer, color);
+            GL.BindRenderbuffer(RenderbufferTarget.Renderbuffer, depth);
+            GL.RenderbufferStorage(RenderbufferTarget.Renderbuffer, RenderbufferStorage.DepthComponent24, width, height);
+            GL.FramebufferRenderbuffer(FramebufferTarget.Framebuffer, FramebufferAttachment.DepthAttachment, RenderbufferTarget.Renderbuffer, depth);
+            if (GL.CheckFramebufferStatus(FramebufferTarget.Framebuffer) != FramebufferErrorCode.FramebufferComplete) return null;
+            RenderScene(width, height);
+            GL.Finish();
+            var pixels = new byte[width * height * 4];
+            GL.PixelStore(PixelStoreParameter.PackAlignment, 1);
+            GL.ReadPixels(0, 0, width, height, OpenTK.Graphics.OpenGL4.PixelFormat.Bgra, PixelType.UnsignedByte, pixels);
+            for (int index = 3; index < pixels.Length; index += 4) pixels[index] = 255; // 半透明水面會寫入 alpha，擷取結果應為不透明畫面。
+            var bitmap = new Bitmap(width, height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+            BitmapData data = bitmap.LockBits(new Rectangle(0, 0, width, height), ImageLockMode.WriteOnly, bitmap.PixelFormat);
+            try
+            {
+                for (int row = 0; row < height; row++) // OpenGL 原點在左下，Bitmap 在左上。
+                    System.Runtime.InteropServices.Marshal.Copy(pixels, (height - 1 - row) * width * 4, data.Scan0 + row * data.Stride, width * 4);
+            }
+            finally { bitmap.UnlockBits(data); }
+            return bitmap;
+        }
+        finally
+        {
+            GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
+            GL.DeleteRenderbuffer(color); GL.DeleteRenderbuffer(depth); GL.DeleteFramebuffer(framebuffer);
+            Invalidate();
+        }
     }
 
     /// <summary>以目前繫結的 framebuffer 繪製整個場景；畫面與離屏擷取共用同一路徑。</summary>
@@ -425,8 +481,26 @@ internal sealed class Map3DViewControl : GLControl
     }
     protected override void Dispose(bool disposing)
     {
-        if (disposing) { _atlas?.Dispose(); /* _library 由 MapEditorForm 擁有，不在此釋放 */ if (_initialized) { MakeCurrent(); GL.DeleteBuffer(_vbo); GL.DeleteBuffer(_ebo); GL.DeleteBuffer(_waterVbo); GL.DeleteBuffer(_markerVbo); GL.DeleteBuffer(_cursorVbo); GL.DeleteVertexArray(_vao); GL.DeleteVertexArray(_waterVao); GL.DeleteVertexArray(_markerVao); GL.DeleteVertexArray(_cursorVao); GL.DeleteTexture(_atlasTexture); GL.DeleteProgram(_terrainProgram); GL.DeleteProgram(_colorProgram); } }
+        // GL 資源已在 OnHandleDestroyed（context 仍有效時）釋放；此時 handle 可能已被父視窗銷毀，
+        // 不能再 MakeCurrent，否則 GLControl 會重新建立 handle 並再次執行初始化。
+        if (disposing) { if (IsHandleCreated) ReleaseGlResources(); _atlas?.Dispose(); /* _library 由 MapEditorForm 擁有，不在此釋放 */ }
         base.Dispose(disposing);
+    }
+
+    protected override void OnHandleDestroyed(EventArgs e)
+    {
+        bool wasInitialized = _initialized;
+        ReleaseGlResources(); // 在 GLControl 銷毀原生視窗與 context 之前執行
+        _reinitializeOnHandleCreated = wasInitialized && !Disposing && !IsDisposed && RecreatingHandle;
+        base.OnHandleDestroyed(e);
+    }
+
+    private void ReleaseGlResources()
+    {
+        if (!_initialized) return;
+        _initialized = false;
+        MakeCurrent();
+        GL.DeleteBuffer(_vbo); GL.DeleteBuffer(_ebo); GL.DeleteBuffer(_waterVbo); GL.DeleteBuffer(_markerVbo); GL.DeleteBuffer(_cursorVbo); GL.DeleteVertexArray(_vao); GL.DeleteVertexArray(_waterVao); GL.DeleteVertexArray(_markerVao); GL.DeleteVertexArray(_cursorVao); GL.DeleteTexture(_atlasTexture); GL.DeleteProgram(_terrainProgram); GL.DeleteProgram(_colorProgram);
     }
 
     private const string TerrainVertexShader = "#version 330 core\nlayout(location=0) in vec3 p; layout(location=1) in vec3 n; layout(location=2) in vec2 uv; uniform mat4 uMvp; out vec3 N; out vec2 UV; void main(){ N=n; UV=uv; gl_Position=uMvp*vec4(p,1.0);}";

@@ -328,7 +328,7 @@ internal sealed partial class MapEditorForm : Form
             _view3d.StrokeEnded += (_, _) => CommitStroke();
             _view3d.TileHovered += (_, e) => ShowTerrainHover(e);
             _view3d.SceneObjectMoved += (_, e) => MoveSelectedSceneObject(e);
-            _view3d.InitializationFailed += (_, ex) => BeginInvoke(() => Disable3DView(view3d.LastFailureReason ?? (AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English ? "OpenGL 3.3 initialization failed." : "OpenGL 3.3 初始化失敗。"), ex));
+            _view3d.InitializationFailed += (_, ex) => { if (!IsDisposed && !Disposing && IsHandleCreated) BeginInvoke(() => Disable3DView(view3d.LastFailureReason ?? (AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English ? "OpenGL 3.3 initialization failed." : "OpenGL 3.3 初始化失敗。"), ex)); };
         }
         _view2dButton.Click += (_, _) => SetActiveView(use3D: false);
         _view3dButton.Click += (_, _) => SetActiveView(use3D: true);
