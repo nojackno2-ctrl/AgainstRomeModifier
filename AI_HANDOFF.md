@@ -7,6 +7,7 @@
 - 本地 AI 審查排序：Claude 依其指出的問題把繪製／拾取順序改為視圖空間深度（正交遠端鏡頭下直線距離會隨側向偏移變大），新增 `Orthographic_painter_order_uses_view_depth_not_eye_distance`；其餘建議（除零、迴圈範圍、W=0）經評估不成立。
 - 測試順序問題：GLFW 首次初始化會把測試主行程改成 Per-Monitor DPI，使高 DPI 截字測試取決於是否有 OpenGL 測試先跑（新增測試改變順序後暴露）。`TestProcessDpiAwareness` 模組初始化時鎖定 Unaware；WinForms 測試類別加入同一 xUnit collection。
 - 驗證：build 0警告/0錯誤；全測試 宿主616/22略過、modules123，0失敗；原版地圖副本重新擷取正常。
+- 光照研究（未實作）：daynight.bmp 只有 row0（24 時段色）與 row4 有值；遊戲同一截圖中兩棟位於 vertex.bmp 全白處的建築增益不同（0.70/0.89/0.87 vs 0.48/0.82/0.83），row0 任一時段誤差 ≥0.06 → 不是單純全域時段色調，疑有空間陰影（shadows.dat）。需再以已知遊戲時間截圖驗證。本地 AI 計算表正確但誤差數值錯，須自行複核。
 
 ## 2D 畫布原生 Sprite 顯示（2026-10-07 Antigravity）
 
