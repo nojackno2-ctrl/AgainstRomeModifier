@@ -116,6 +116,62 @@ public sealed partial class MapEditorSaveTransactionTests
     }
 
     [Fact]
+    public void Real_opengl_place_mode_draws_translucent_preview_at_hovered_tile()
+    {
+        string map = CreateFixture();
+        RunInSta(() =>
+        {
+            Application.SetUnhandledExceptionMode(UnhandledExceptionMode.ThrowException, threadScope: true);
+            OpenTK.Windowing.Desktop.GLFWProvider.CheckForMainThread = false;
+            using var form = new MapEditorForm(_root, new GameMapInfo("ENDL_005", map, true, "SpritePreview", "Test"));
+            typeof(MapEditorForm).GetField("_allowClose", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(form, true);
+            form.StartPosition = FormStartPosition.Manual; form.Location = new Point(-30000, -30000);
+            form.Show(); Application.DoEvents();
+            Invoke(form, "SetActiveView", true); Application.DoEvents();
+            var view = GetField<Map3DViewControl>(form, "_view3d");
+            if (!view.IsReady) { Assert.NotEqual("1", Environment.GetEnvironmentVariable("ARM_OPENGL_REQUIRED")); return; }
+            var types = GetField<ListBox>(form, "_placeTypes");
+            typeof(MapEditorForm).GetField("_objectCatalog", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(form,
+                new[] { new SdlObjectType("BauGerTest00_Haus", 1, SdlObjectCategory.Building, "Ger", 1, new Dictionary<string, string>()) });
+            Invoke(form, "RefreshPlacementTypes");
+            Type mode = typeof(MapEditorForm).GetNestedType("EditMode", BindingFlags.NonPublic)!;
+            Invoke(form, "SetEditMode", Enum.Parse(mode, "PlaceObject"));
+            Assert.True(types.SelectedItem is not null, "fixture 應提供可放置的物件類型。");
+            string selectedName = ((SdlObjectType)types.SelectedItem!.GetType().GetProperty("Type")!.GetValue(types.SelectedItem)!).NameDef;
+            FieldInfo previewName = typeof(Map3DViewControl).GetField("_previewName", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            Assert.Equal(selectedName, previewName.GetValue(view)); // the form follows the selected placement type
+
+            using var catalog = NativeSpriteCatalog.FromText(
+                string.Join(",", Enumerable.Range(0, 60).Select(i => i switch { 0 => "42", 5 => "0", 8 => "-1", 14 => "-1", 17 => "0", 52 => selectedName, _ => "   0" })),
+                "0000,big.alr", "", name => name == "big.alr" ? SolidAlr(200, 240) : null, _ => null);
+            view.SpriteCatalog = catalog;
+            Assert.True(view.HasPlacementPreview);
+            view.FocusTile(32.5f, 32.5f);
+            ((EditorCamera)typeof(Map3DViewControl).GetField("_camera", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(view)!).Zoom(.05f);
+            Size size = view.ClientSize;
+            var centre = new Point(size.Width / 2, size.Height / 2);
+            typeof(Control).GetMethod("OnMouseMove", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .Invoke(view, [new MouseEventArgs(MouseButtons.None, 0, centre.X, centre.Y, 0)]);
+            static int Reddish(Bitmap frame)
+            {
+                int count = 0;
+                for (int y = 0; y < frame.Height; y += 2) for (int x = 0; x < frame.Width; x += 2)
+                    { Color c = frame.GetPixel(x, y); if (c.R - c.G > 80 && c.R - c.B > 80) count++; }
+                return count;
+            }
+            using Bitmap ghost = view.CaptureFrame(size.Width, size.Height)!;
+            int ghostPixels = Reddish(ghost);
+            Assert.True(ghostPixels > 200, $"放置預覽只畫出 {ghostPixels} 個取樣像素。");
+            Assert.DoesNotContain(Red(ghost), p => ghost.GetPixel(p.X, p.Y).R > 250); // translucent: never the fully opaque sprite red
+
+            Invoke(form, "SetEditMode", Enum.Parse(mode, "Texture"));
+            Assert.Null(previewName.GetValue(view));
+            using Bitmap cleared = view.CaptureFrame(size.Width, size.Height)!;
+            Assert.True(Reddish(cleared) < 20, "離開放置模式後預覽應消失。");
+        }, TimeSpan.FromMinutes(2));
+    }
+
+    [Fact]
     public void Real_opengl_frame_draws_native_sprites_that_follow_object_moves()
     {
         string output = Environment.GetEnvironmentVariable("ARM_OPENGL_OUTPUT")

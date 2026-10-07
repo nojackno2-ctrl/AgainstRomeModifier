@@ -357,7 +357,8 @@ internal sealed partial class MapEditorForm : Form
         _natureCategory.SelectedIndexChanged += (_, _) => RefreshNatureTypes();
         _placeCategory.SelectedIndexChanged += (_, _) => RefreshPlacementTypes();
         _placeTribe.SelectedIndexChanged += (_, _) => RefreshPlacementTypes();
-        _placeTypes.SelectedIndexChanged += (_, _) => { _placeCount.Enabled = (_placeTypes.SelectedItem as PlacementTypeItem)?.Type.Category == SdlObjectCategory.Figure; };
+        _placeTypes.SelectedIndexChanged += (_, _) => { _placeCount.Enabled = (_placeTypes.SelectedItem as PlacementTypeItem)?.Type.Category == SdlObjectCategory.Figure; UpdatePlacementPreview(); };
+        _placeTeam.ValueChanged += (_, _) => UpdatePlacementPreview();
         _placedList.SelectedIndexChanged += (_, _) => _placedDeleteButton.Enabled = _selected?.IsCustom == true && _placedList.SelectedItems.Count > 0;
         _placedDeleteButton.Click += (_, _) => DeleteSelectedPlacedObjects();
         _resetTerrainButton.Click += (_, _) => ResetTerrain();
@@ -820,6 +821,7 @@ internal sealed partial class MapEditorForm : Form
         else if (!needsToken && _canvas.BrushTexture == TerrainToolBrushToken) SetBrushToken(null);
         UpdateCollisionOverlay();
         RefreshSceneMarkers(); // 自然物件標記只在自然物件模式顯示
+        UpdatePlacementPreview();
         UpdateSceneEditButtons();
         UpdateEditorState();
         bool isEn = AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English;

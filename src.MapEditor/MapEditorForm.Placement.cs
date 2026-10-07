@@ -244,6 +244,14 @@ internal sealed partial class MapEditorForm
         UpdatePlacedButtonsState();
     }
 
+    /// <summary>放置模式下，在 3D 游標格顯示所選物件的原生 sprite 半透明預覽。</summary>
+    private void UpdatePlacementPreview()
+    {
+        if (_view3d is null) return;
+        string? name = _editMode == EditMode.PlaceObject && _selected?.IsCustom == true ? (_placeTypes.SelectedItem as PlacementTypeItem)?.Type.NameDef : null;
+        _view3d.SetPlacementPreview(name, (int)_placeTeam.Value);
+    }
+
     /// <summary>在點擊的 tile 中心放置一個物件（每次按下只放一個）；高度取自目前地形，世界座標為絕對值。</summary>
     private void PlaceObjectAt(TexturePaintEventArgs e)
     {

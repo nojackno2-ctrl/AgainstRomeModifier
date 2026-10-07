@@ -7,6 +7,7 @@
 - 新增 `NativeSpriteCatalog`（objdef 欄5/8/10/14/17/52 + cl_alr/cl_apt + alr.dat/apt.dat ZIP 唯讀共享開啟）、`NativeSpriteAtlas`、`SceneObjectRenderer.BuildSpriteVertices`；`Map3DViewControl.SpriteCatalog` 以原 sprite 取代標記點（無 sprite 者保留標記）；`MapEditorForm` 於 gamePath 開啟、Dispose 釋放。預設相機改 yaw45/pitch35 對齊遊戲等角方向。格式語意（方向列、APT 建造階段、樹幹＋樹冠雙層、錨點）見 docs/reverse-engineering/native-scene-rendering.md 新節。
 - 驗證：Release solution build 0警告/0錯誤；`ARM_OPENGL_REQUIRED=1` 全測試 宿主608通過/22略過、modules123通過，0失敗。新增真 GL 擷取測試（sprite 出現、隨物件移動往右下、移除 catalog 後消失）。`ARM_NATIVE_ASSETS=<TEMP副本>` 選用測試以真素材畫出主屋、士兵、冷杉，截圖 TEMP/ArmSpriteGl_real/real-assets.png 已目視：外觀正確、樹冠完整。全 objdef 2159：1711 有 sprite、391 無素材、57 FX 首格空白。
 - 後續提交：3D「移動選取物件」模式可直接點選可見 sprite（`SceneObjectRenderer.PickObject`：投影 quad＋alpha 命中，近者優先；無 sprite 以標記 8px），選取 SDL 清單列；單擊只選取，拖曳 ≥4px 才移動。放置／自然物件命中時只顯示狀態提示。純函式測試＋真 GL 表單測試（點選→選中主屋且不位移，拖曳往右下→X 增加）通過；完整測試 宿主610/22略過、modules123，0失敗。
+- 再後續：放置模式於 3D 游標格中心畫所選類型的半透明（α0.6）原生 sprite 預覽，跟隨類型／隊伍選擇，離開模式即清除（`Map3DViewControl.SetPlacementPreview`）。真 GL 測試通過；完整測試 宿主611/22略過、modules123，0失敗，build 0警告。
 - 未完成／未驗證：sprite 比例未對照遊戲截圖；地形不遮擋 sprite；隊伍色 variant、角度→方向、動畫、陰影未接；草地等 alrml-only 物件是否為多重散佈未驗證；2D 畫布仍是標記；放置／自然物件的 3D 點選編輯、手動 UI 操作驗收、遊戲同畫面比對皆未做。下一步建議：2D 畫布 sprite → 放置工具 3D 預覽（游標處半透明 sprite）→ 角度方向／隊伍色比對。
 
 ## 暫停交接（2026-10-07 Codex；使用者要求本項完成後交由其他 AI）

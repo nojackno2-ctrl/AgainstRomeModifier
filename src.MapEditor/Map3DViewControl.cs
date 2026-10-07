@@ -36,6 +36,9 @@ internal sealed class Map3DViewControl : GLControl
     private NativeSprite?[] _objectSprites = Array.Empty<NativeSprite?>();
     private int _spriteProgram, _spriteVao, _spriteVbo, _spriteTexture;
     private bool _spriteTextureDirty;
+    private string? _previewName;
+    private int _previewTeam;
+    private NativeSprite? _previewSprite;
 
     public Map3DViewControl() : base(new GLControlSettings { API = ContextAPI.OpenGL, APIVersion = new Version(3, 3), Profile = ContextProfile.Core, Flags = ContextFlags.ForwardCompatible })
     {
@@ -521,12 +524,28 @@ internal sealed class Map3DViewControl : GLControl
     {
         NativeSpriteCatalog? catalog = _spriteCatalog;
         _objectSprites = catalog is null ? Array.Empty<NativeSprite?>() : _objects.Select(item => catalog.GetSprite(item.Name, item.Team)).ToArray();
+        _previewSprite = catalog is null || _previewName is null ? null : catalog.GetSprite(_previewName, _previewTeam);
         var distinct = new HashSet<NativeSprite>(_objectSprites.OfType<NativeSprite>(), ReferenceEqualityComparer.Instance);
+        if (_previewSprite is not null) distinct.Add(_previewSprite);
         if (distinct.Count == 0) { _spriteAtlas = null; return; }
         if (_spriteAtlas is not null && distinct.Count == _spriteAtlas.Count && distinct.All(sprite => _spriteAtlas.TryGetUv(sprite, out _))) return;
         _spriteAtlas = NativeSpriteAtlas.Pack(distinct);
         _spriteTextureDirty = true;
     }
+
+    /// <summary>
+    /// Ghost of the object about to be placed, drawn translucent at the hovered tile centre
+    /// (where placement puts it). Null clears the preview.
+    /// </summary>
+    public void SetPlacementPreview(string? nameDef, int team)
+    {
+        if (_previewName == nameDef && _previewTeam == team) return;
+        _previewName = string.IsNullOrWhiteSpace(nameDef) ? null : nameDef; _previewTeam = team;
+        ResolveObjectSprites();
+        Invalidate();
+    }
+
+    internal bool HasPlacementPreview => _previewSprite is not null && _spriteAtlas?.TryGetUv(_previewSprite, out _) == true;
 
     private void DrawSprites(Matrix4 view, Matrix4 projection)
     {
@@ -542,14 +561,6 @@ internal sealed class Map3DViewControl : GLControl
             GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.ClampToEdge);
             _spriteTextureDirty = false;
         }
-        float[] vertices = SceneObjectRenderer.BuildSpriteVertices(_objects, _objectSprites, _spriteAtlas, _heights, _camera.Position);
-        if (vertices.Length == 0) return;
-        GL.BindVertexArray(_spriteVao); GL.BindBuffer(BufferTarget.ArrayBuffer, _spriteVbo);
-        GL.BufferData(BufferTarget.ArrayBuffer, vertices.Length * sizeof(float), vertices, BufferUsageHint.StreamDraw);
-        int stride = SceneObjectRenderer.FloatsPerSpriteVertex * sizeof(float);
-        GL.EnableVertexAttribArray(0); GL.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, stride, 0);
-        GL.EnableVertexAttribArray(1); GL.VertexAttribPointer(1, 2, VertexAttribPointerType.Float, false, stride, 3 * sizeof(float));
-        GL.EnableVertexAttribArray(2); GL.VertexAttribPointer(2, 2, VertexAttribPointerType.Float, false, stride, 5 * sizeof(float));
         GL.UseProgram(_spriteProgram);
         GL.UniformMatrix4(GL.GetUniformLocation(_spriteProgram, "uView"), false, ref view);
         GL.UniformMatrix4(GL.GetUniformLocation(_spriteProgram, "uProjection"), false, ref projection);
@@ -558,8 +569,27 @@ internal sealed class Map3DViewControl : GLControl
         // Pre-rendered isometric art is painted far-to-near like the original 2.5D renderer;
         // depth testing against the terrain would clip the parts drawn below the ground anchor.
         GL.Disable(EnableCap.DepthTest); GL.Disable(EnableCap.CullFace);
-        GL.DrawArrays(PrimitiveType.Triangles, 0, vertices.Length / SceneObjectRenderer.FloatsPerSpriteVertex);
+        DrawSpriteBatch(SceneObjectRenderer.BuildSpriteVertices(_objects, _objectSprites, _spriteAtlas, _heights, _camera.Position), 1f);
+        if (EditingEnabled && _previewSprite is not null && _hoverX >= 0 && _hoverY >= 0)
+        {
+            const float tileWorld = SdlSceneCatalog.WorldUnitsPerMapPixel * 4f;
+            var ghost = new MapSceneObject(_previewName!, (_hoverX + .5f) * tileWorld, 0, (_hoverY + .5f) * tileWorld, _previewTeam, "");
+            DrawSpriteBatch(SceneObjectRenderer.BuildSpriteVertices([ghost], [_previewSprite], _spriteAtlas, _heights, _camera.Position), .6f);
+        }
         GL.Enable(EnableCap.DepthTest); GL.Enable(EnableCap.CullFace);
+    }
+
+    private void DrawSpriteBatch(float[] vertices, float alpha)
+    {
+        if (vertices.Length == 0) return;
+        GL.BindVertexArray(_spriteVao); GL.BindBuffer(BufferTarget.ArrayBuffer, _spriteVbo);
+        GL.BufferData(BufferTarget.ArrayBuffer, vertices.Length * sizeof(float), vertices, BufferUsageHint.StreamDraw);
+        int stride = SceneObjectRenderer.FloatsPerSpriteVertex * sizeof(float);
+        GL.EnableVertexAttribArray(0); GL.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, stride, 0);
+        GL.EnableVertexAttribArray(1); GL.VertexAttribPointer(1, 2, VertexAttribPointerType.Float, false, stride, 3 * sizeof(float));
+        GL.EnableVertexAttribArray(2); GL.VertexAttribPointer(2, 2, VertexAttribPointerType.Float, false, stride, 5 * sizeof(float));
+        GL.Uniform1(GL.GetUniformLocation(_spriteProgram, "uAlpha"), alpha);
+        GL.DrawArrays(PrimitiveType.Triangles, 0, vertices.Length / SceneObjectRenderer.FloatsPerSpriteVertex);
     }
     private void DrawColorGeometry(int vao, PrimitiveType primitive, int count, Matrix4 matrix, System.Numerics.Vector4 color, float size, int first = 0)
     {
@@ -659,7 +689,7 @@ internal sealed class Map3DViewControl : GLControl
     private const string TerrainVertexShader = "#version 330 core\nlayout(location=0) in vec3 p; layout(location=1) in vec3 n; layout(location=2) in vec2 uv; uniform mat4 uMvp; uniform float uDimension; out vec3 N; out vec2 UV; out vec2 mapUV; void main(){ N=n; UV=uv; mapUV=p.xz/uDimension; gl_Position=uMvp*vec4(p,1.0);}";
     private const string TerrainFragmentShader = "#version 330 core\nin vec3 N; in vec2 UV; in vec2 mapUV; uniform sampler2D uAtlas; uniform sampler2D uCollision; uniform int uShowCollision; uniform vec3 uLight; out vec4 c; void main(){float l=max(.28,dot(normalize(N),normalize(uLight))); vec3 color=texture(uAtlas,UV).rgb*l; if(uShowCollision!=0 && texture(uCollision,mapUV).r>0.0) color=mix(color,vec3(.824,.235,.235),.55); c=vec4(color,1.0);}";
     private const string SpriteVertexShader = "#version 330 core\nlayout(location=0) in vec3 anchor; layout(location=1) in vec2 offset; layout(location=2) in vec2 uv; uniform mat4 uView; uniform mat4 uProjection; out vec2 UV; void main(){ vec4 v=uView*vec4(anchor,1.0); v.xy+=offset; UV=uv; gl_Position=uProjection*v;}";
-    private const string SpriteFragmentShader = "#version 330 core\nin vec2 UV; uniform sampler2D uSprites; out vec4 c; void main(){ vec4 t=texture(uSprites,UV); if(t.a<.5) discard; c=vec4(t.rgb,1.0);}";
+    private const string SpriteFragmentShader = "#version 330 core\nin vec2 UV; uniform sampler2D uSprites; uniform float uAlpha; out vec4 c; void main(){ vec4 t=texture(uSprites,UV); if(t.a<.5) discard; c=vec4(t.rgb,uAlpha);}";
     private const string ColorVertexShader = "#version 330 core\nlayout(location=0) in vec3 p; uniform mat4 uMvp; void main(){gl_Position=uMvp*vec4(p,1.0);}";
     private const string ColorFragmentShader = "#version 330 core\nuniform vec4 uColor; out vec4 c; void main(){c=uColor;}";
 }
