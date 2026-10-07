@@ -110,7 +110,7 @@ corpse removal, repeating timers, missing-target rejection and JSON v5
 round-trip. STA tests cover condition limits/editing, missing-target selection,
 independent copied lists and actual event-only form saving. Five original ENDL
 scripts accept the existence-condition injection in memory. Gameplay, death
-state flags, save/load state persistence, area and victory/defeat remain pending.
+state flags, save/load state persistence and gameplay remain pending. Scenario v6 object rectangle conditions and victory/defeat now have static, VM and UI coverage; see [scenario-area-mission-result.md](scenario-area-mission-result.md).
 
 ## Script-created placement bindings
 

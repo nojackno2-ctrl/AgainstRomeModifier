@@ -60,7 +60,7 @@ public sealed record ScenarioDataSlot(int Slot, uint Uid)
 public sealed class ScenarioDocument
 {
     public const string FileName = "arm_scenario.json";
-    public int Version { get; set; } = 5;
+    public int Version { get; set; } = 6;
     public List<ScenarioSpawn> Spawns { get; set; } = new();
     public List<ScenarioDataSlot> DataSlots { get; set; } = new();
     public List<ScenarioEvent> Events { get; set; } = new();
@@ -77,7 +77,7 @@ public sealed class ScenarioDocument
         if (!File.Exists(path)) return new ScenarioDocument();
         ScenarioDocument result = JsonSerializer.Deserialize<ScenarioDocument>(File.ReadAllText(path), Options)
             ?? throw new InvalidDataException("場景設定不能是 null。");
-        if (result.Version is < 1 or > 5 || result.Spawns is null || result.DataSlots is null || result.Events is null)
+        if (result.Version is < 1 or > 6 || result.Spawns is null || result.DataSlots is null || result.Events is null)
             throw new InvalidDataException("不支援或不完整的場景設定。");
         if (result.Version >= 4 && result.Spawns.Any(spawn => spawn is null || spawn.Id == Guid.Empty))
             throw new InvalidDataException("場景物件缺少持久 ID。");
@@ -90,7 +90,7 @@ public sealed class ScenarioDocument
     {
         ScenarioObjectIdentity.Prepare(this);
         ScenarioEventValidator.ValidateConditions(Events, this);
-        Version = 5;
+        Version = 6;
         Core.Services.SafeFileWriter.WriteAllBytes(Path.Combine(mapDirectory, FileName), JsonSerializer.SerializeToUtf8Bytes(this, Options), rollback);
     }
 }

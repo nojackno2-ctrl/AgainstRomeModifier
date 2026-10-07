@@ -20,7 +20,7 @@ public sealed class ScenarioObjectIdentityTests : IDisposable
         first.Spawns[0] = first.Spawns[0] with { X = 1234, Z = 4567 };
         using (var rollback = new FileRollbackScope()) { first.Save(_map, rollback); rollback.Commit(); }
         ScenarioDocument saved = ScenarioDocument.Load(_map);
-        Assert.Equal(5, saved.Version); Assert.Equal(id, saved.Spawns[0].Id);
+        Assert.Equal(6, saved.Version); Assert.Equal(id, saved.Spawns[0].Id);
         Assert.Equal(1234, saved.Spawns[0].X);
         Assert.Equal(first.DataSlots, saved.DataSlots);
         Assert.Null(ScenarioObjectIdentity.DataBinding(saved, Guid.NewGuid()));

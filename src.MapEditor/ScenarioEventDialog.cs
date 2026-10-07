@@ -83,7 +83,13 @@ internal sealed class ScenarioEventDialog : Form
             {
                 ScenarioSpawn? target = targets.FirstOrDefault(spawn => spawn.Id == condition.TargetId);
                 string label = target is null ? (en ? "Missing target" : "目標已刪除") : $"{unitName?.Invoke(target.Alias) ?? target.Alias} ({target.X:0}, {target.Z:0})";
-                _conditionList.Items.Add($"{(condition.Kind == ScenarioConditionKind.ObjectExists ? (en ? "Exists" : "存在") : (en ? "Dead/removed" : "死亡／移除"))}: {label}");
+                string kindLabel = condition.Kind switch
+                {
+                    ScenarioConditionKind.ObjectExists => en ? "Exists" : "存在",
+                    ScenarioConditionKind.ObjectDeadOrRemoved => en ? "Dead/removed" : "死亡／移除",
+                    _ => $"{(en ? "Inside area" : "位於區域")} [{condition.MinX}, {condition.MinZ}]–[{condition.MaxX}, {condition.MaxZ}]"
+                };
+                _conditionList.Items.Add($"{kindLabel}: {label}");
             }
             if (selected >= 0 && selected < _conditions.Count) _conditionList.SelectedIndex = selected;
             if (addCondition is not null) addCondition.Enabled = _conditions.Count < 32 && targets.Count > 0;
@@ -117,6 +123,8 @@ internal sealed class ScenarioEventDialog : Form
             {
                 ScenarioActionKind.Message => $"{(en ? "Message" : "訊息")}: {action.Text}",
                 ScenarioActionKind.Diplomacy => $"{(en ? "Diplomacy" : "外交")}: {action.Team} → {action.OtherTeam} {(action.Hostile ? (en ? "hostile" : "敵對") : (en ? "peace" : "和平"))}",
+                ScenarioActionKind.Victory => en ? "Victory (end mission)" : "勝利（結束任務）",
+                ScenarioActionKind.Defeat => en ? "Defeat (end mission)" : "失敗（結束任務）",
                 _ => $"{(en ? "Spawn" : "生成部隊")}: {action.Alias} × {action.Count}, {(en ? "team" : "隊伍")} {action.Team} ({action.X}, {action.Z})"
             });
         if (selected >= 0 && selected < _list.Items.Count) _list.SelectedIndex = selected;
@@ -151,7 +159,7 @@ internal sealed class ScenarioActionDialog : Form
         var fields = new TableLayoutPanel { Dock = DockStyle.Fill, AutoScroll = true, ColumnCount = 2, Padding = new Padding(12) };
         fields.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 110)); fields.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         var kind = new ComboBox { Dock = DockStyle.Fill, DropDownStyle = ComboBoxStyle.DropDownList };
-        kind.Items.AddRange(en ? ["Message", "Diplomacy", "Spawn units"] : ["顯示訊息", "改變外交", "生成部隊"]);
+        kind.Items.AddRange(en ? ["Message", "Diplomacy", "Spawn units", "Victory (end mission)", "Defeat (end mission)"] : ["顯示訊息", "改變外交", "生成部隊", "勝利（結束任務）", "失敗（結束任務）"]);
         kind.SelectedIndex = (int)item.Kind;
         var text = new TextBox { Dock = DockStyle.Fill, Multiline = true, Height = 70, ScrollBars = ScrollBars.Vertical, Text = item.Text };
         NumericUpDown Number(decimal maximum, decimal value, decimal minimum = 0) => new() { Dock = DockStyle.Fill, Minimum = minimum, Maximum = maximum, Value = Math.Clamp(value, minimum, maximum) };
@@ -171,8 +179,8 @@ internal sealed class ScenarioActionDialog : Form
         ScenarioEventDialog.Field(fields, en ? "Unit type" : "部隊種類", alias);
         ScenarioEventDialog.Field(fields, "X", x); ScenarioEventDialog.Field(fields, "Z", z);
         ScenarioEventDialog.Field(fields, en ? "Members" : "人數", count);
-        ScenarioEventDialog.Field(fields, "", new Label { AutoSize = true, MaximumSize = new Size(350, 0), Text = en ? "Messages use the game's CP1251 encoding. Unit positions are world coordinates." : "訊息需使用遊戲支援的 CP1251 文字。部隊位置使用世界座標。" });
-        void UpdateFields() { text.Enabled = kind.SelectedIndex == 0; team.Enabled = kind.SelectedIndex != 0; other.Enabled = hostile.Enabled = kind.SelectedIndex == 1; alias.Enabled = x.Enabled = z.Enabled = count.Enabled = kind.SelectedIndex == 2; }
+        ScenarioEventDialog.Field(fields, "", new Label { AutoSize = true, MaximumSize = new Size(350, 0), Text = en ? "Messages use the game's CP1251 encoding. Unit positions are world coordinates. Victory/defeat must be the last action of a nonrepeating event." : "訊息需使用遊戲支援的 CP1251 文字。部隊位置使用世界座標。勝敗必須是單次事件的最後一個動作。" });
+        void UpdateFields() { text.Enabled = kind.SelectedIndex == 0; team.Enabled = kind.SelectedIndex is 1 or 2; other.Enabled = hostile.Enabled = kind.SelectedIndex == 1; alias.Enabled = x.Enabled = z.Enabled = count.Enabled = kind.SelectedIndex == 2; }
         kind.SelectedIndexChanged += (_, _) => UpdateFields(); UpdateFields();
         var commands = new FlowLayoutPanel { Dock = DockStyle.Bottom, AutoSize = true, Padding = new Padding(8) };
         var save = new Button { Text = en ? "OK" : "確定", AutoSize = true };

@@ -12,6 +12,64 @@ public sealed class ScenarioEventsTests : IDisposable
     private static ScenarioEvent Event(int delay = 2, bool repeat = false) => new("Timer", delay, repeat)
         { Actions = [new(ScenarioActionKind.Message, "Привет!")] };
 
+    [Theory]
+    [InlineData(100, 200, true)]
+    [InlineData(300, 400, true)]
+    [InlineData(99, 200, false)]
+    [InlineData(301, 300, false)]
+    [InlineData(200, 199, false)]
+    [InlineData(200, 401, false)]
+    public void Rectangle_uses_inclusive_world_coordinates_and_native_outputs(int x, int z, bool inside)
+    {
+        Guid id = Guid.NewGuid(); var scenario = BuildingTargets(id);
+        var item = Event(0) with { Conditions = [new(ScenarioConditionKind.ObjectInArea, id, 100, 200, 300, 400)] };
+        BciImage image = Fixture(); ScenarioEventCompiler.Inject(image, [item], 0, scenario);
+        image = BciImage.Parse(image.Serialize()); var vm = new TestVm(image);
+        vm.Objects[43] = (123, false); vm.Positions[43] = (x, z); vm.Tick(0);
+        Assert.Equal(inside ? 1 : 0, vm.Messages.Count); Assert.Equal(1, vm.StackDepth);
+    }
+
+    [Fact]
+    public void Rectangle_does_not_reuse_outputs_when_uid_or_position_lookup_fails()
+    {
+        Guid id = Guid.NewGuid(); var scenario = BuildingTargets(id);
+        var item = Event(1, true) with { Conditions = [new(ScenarioConditionKind.ObjectInArea, id, 100, 200, 300, 400)] };
+        BciImage image = Fixture(); ScenarioEventCompiler.Inject(image, [item], 0, scenario);
+        var vm = new TestVm(image); vm.Objects[43] = (123, false); vm.Positions[43] = (200, 300);
+        vm.Tick(0); vm.Tick(1000); Assert.Single(vm.Messages);
+        vm.Objects[43] = (999, false); vm.Tick(2000); Assert.Single(vm.Messages);
+        vm.Objects[43] = (123, false); vm.Positions.Clear(); vm.Tick(3000); Assert.Single(vm.Messages);
+        vm.Positions[43] = (200, 300); vm.Tick(4000); Assert.Equal(2, vm.Messages.Count);
+        Assert.Equal(1, vm.StackDepth);
+    }
+
+    [Theory]
+    [InlineData(ScenarioActionKind.Victory, 1)]
+    [InlineData(ScenarioActionKind.Defeat, 0)]
+    public void Mission_result_is_written_before_quit_and_cannot_be_overwritten_by_other_events(ScenarioActionKind kind, int result)
+    {
+        var end = Event(0) with { Actions = [new(ScenarioActionKind.Message, "Before"), new(kind)] };
+        BciImage image = Fixture(); ScenarioEventCompiler.Inject(image, [end, Event(0)], 0);
+        var vm = new TestVm(image); vm.Tick(0); vm.Tick(1000);
+        Assert.Equal(new[] { "Before" }, vm.Messages); Assert.Equal(new[] { result }, vm.MissionResults);
+        Assert.Equal(result, vm.Variables["GLOBAL_MISSION_RESULT"]); Assert.Equal(1, vm.StackDepth);
+    }
+
+    [Fact]
+    public void Region_and_terminal_actions_validate_and_roundtrip()
+    {
+        Guid id = Guid.NewGuid(); var scenario = BuildingTargets(id);
+        scenario.Events = [Event() with { Conditions = [new(ScenarioConditionKind.ObjectInArea, id, 10, 20, 30, 40)], Actions = [new(ScenarioActionKind.Victory)] }];
+        Directory.CreateDirectory(_root);
+        using (var rollback = new FileRollbackScope()) { scenario.Save(_root, rollback); rollback.Commit(); }
+        ScenarioDocument loaded = ScenarioDocument.Load(_root);
+        Assert.Equal(scenario.Events[0].Conditions, loaded.Events[0].Conditions);
+        Assert.Equal(scenario.Events[0].Actions, loaded.Events[0].Actions);
+        Assert.Throws<InvalidDataException>(() => ScenarioEventValidator.Validate([scenario.Events[0] with { Repeat = true }], Aliases));
+        Assert.Throws<InvalidDataException>(() => ScenarioEventCompiler.Inject(Fixture(), [scenario.Events[0] with { Actions = [new(ScenarioActionKind.Victory), new(ScenarioActionKind.Defeat)] }], 0, scenario));
+        Assert.Throws<InvalidDataException>(() => ScenarioEventValidator.ValidateConditions([Event() with { Conditions = [new(ScenarioConditionKind.ObjectInArea, id, 30, 20, 10, 40)] }]));
+    }
+
     [Fact]
     public void All_conditions_track_targets_before_timer_and_before_other_conditions_hold()
     {
@@ -360,7 +418,7 @@ public sealed class ScenarioEventsTests : IDisposable
         document.Events.Add(Event());
         using (var rollback = new FileRollbackScope()) { document.Save(_root, rollback); rollback.Commit(); }
         ScenarioDocument loaded = ScenarioDocument.Load(_root);
-        Assert.Equal(5, loaded.Version);
+        Assert.Equal(6, loaded.Version);
         Assert.Equal(document.Spawns, loaded.Spawns); Assert.Equal(document.DataSlots, loaded.DataSlots);
         Assert.Equal("Timer", Assert.Single(loaded.Events).Name);
     }
@@ -412,6 +470,8 @@ public sealed class ScenarioEventsTests : IDisposable
         public List<string> Creations { get; } = new();
         public List<(int, int)> CreationInputs { get; } = new();
         public Dictionary<int, (int Uid, bool Dead)> Objects { get; } = new();
+        public Dictionary<int, (int X, int Z)> Positions { get; } = new();
+        public List<int> MissionResults { get; } = new();
         public int OriginalTicks { get; private set; }
         public int StackDepth => _stack.Count;
         private object Pop() { object value = _stack[^1]; _stack.RemoveAt(_stack.Count - 1); return value; }
@@ -467,6 +527,15 @@ public sealed class ScenarioEventsTests : IDisposable
                 case "s_setScriptVarL": Variables[Arg<string>(0)] = Arg<int>(1); break;
                 case "s_getScriptVarL": _result = Variables.GetValueOrDefault(Arg<string>(0)); break;
                 case "s_objExists": _result = Objects.TryGetValue(Arg<int>(0), out var exists) && exists.Uid == Arg<int>(1) ? 1 : 0; break;
+                case "s_getObjPos":
+                    _result = -1;
+                    if (Objects.TryGetValue(Arg<int>(0), out var positioned) && positioned.Uid == Arg<int>(1)
+                        && Positions.TryGetValue(Arg<int>(0), out var position))
+                    {
+                        _stack[Arg<int>(2)] = position.X; _stack[Arg<int>(3)] = position.Z; _result = 1;
+                    }
+                    break;
+                case "s_quitGame": MissionResults.Add(Variables["GLOBAL_MISSION_RESULT"]); break;
                 case "s_objDead": _result = Objects.TryGetValue(Arg<int>(0), out var dead) && dead.Uid == Arg<int>(1) && dead.Dead ? 1 : 0; break;
                 case "s_showTextBox": Assert.Equal(0, Arg<int>(0)); Messages.Add(Arg<string>(1)); break;
                 case "s_setTeamHostile": Diplomacy.Add((Arg<int>(0), Arg<int>(1), Arg<int>(2))); break;

@@ -14,6 +14,7 @@ public static class ScenarioEventCompiler
     public static void Inject(BciImage image, IReadOnlyList<ScenarioEvent> events, int originalMain, ScenarioDocument? scenario = null)
     {
         ScenarioEventValidator.ValidateConditions(events, scenario);
+        ScenarioEventValidator.ValidateTerminalActions(events);
         ScenarioEvent[] active = events.Where(item => item.Enabled).ToArray();
         if (active.Length == 0) return;
         if (scenario is null && active.Any(item => item.Conditions.Count > 0))
@@ -35,8 +36,9 @@ public static class ScenarioEventCompiler
         string ArmedKey(int index, int condition) => $"ARM_EVENT_SEEN_{index}_{condition}";
         void ReadState(CodeBuilder b, string key) { b.Emit(76, Constant(key)); Call(b, "s_getScriptVarL", 1, true); }
         void WriteState(CodeBuilder b, string key) { b.Emit(76, Constant(key)); Call(b, "s_setScriptVarL", 2); }
-        void ObjectCall(CodeBuilder b, ScenarioCondition condition, string native)
+        void ObjectCall(CodeBuilder b, ScenarioCondition condition, string native, bool position = false)
         {
+            if (position) { b.Emit(78, 1); b.Emit(78, 0); }
             ScenarioSpawn target = scenario!.Spawns.Single(spawn => spawn.Id == condition.TargetId);
             if (target.Prebuilt)
             {
@@ -48,7 +50,7 @@ public static class ScenarioEventCompiler
                 ReadState(b, ScenarioObjectIdentity.RuntimeUidKey(target.Id));
                 ReadState(b, ScenarioObjectIdentity.RuntimeIndexKey(target.Id));
             }
-            Call(b, native, 2, true);
+            Call(b, native, position ? 4 : 2, true);
         }
 
         // 開局只初始化事件狀態，然後接回放置 shim（若有）或原 main。
@@ -61,11 +63,14 @@ public static class ScenarioEventCompiler
                 entry.Emit(66, 0); WriteState(entry, ArmedKey(i, j));
             }
         }
+        entry.Emit(66, 0); WriteState(entry, "ARM_MISSION_ENDED");
         entry.Jump(112, continuation);
         int entryAddress = image.AppendCode(entry.Bytes());
 
         var poll = new CodeBuilder(image.Code.Length);
         poll.Emit(74); poll.Emit(94); poll.Emit(73, 2 + active.Max(item => item.Conditions.Count));
+        var terminalBranches = new List<int>();
+        ReadState(poll, "ARM_MISSION_ENDED"); terminalBranches.Add(poll.Placeholder(118));
         for (int i = 0; i < active.Length; i++)
         {
             ScenarioEvent item = active[i];
@@ -74,6 +79,26 @@ public static class ScenarioEventCompiler
             for (int j = 0; j < item.Conditions.Count; j++)
             {
                 ScenarioCondition condition = item.Conditions[j]; int local = 2 + j;
+                if (condition.Kind == ScenarioConditionKind.ObjectInArea)
+                {
+                    // Native outputs are frame locals 0/1, distinct from condition result locals.
+                    poll.Emit(66, 0); poll.Emit(91, local);
+                    ObjectCall(poll, condition, "s_getObjPos", position: true);
+                    poll.Emit(66, 1); poll.Emit(96); int failed = poll.Placeholder(118);
+                    var outside = new List<int>();
+                    void Bound(int coordinate, int limit, bool minimum)
+                    {
+                        if (minimum) { poll.Emit(90, coordinate); poll.Emit(66, limit); }
+                        else { poll.Emit(66, limit); poll.Emit(90, coordinate); }
+                        poll.Emit(96); outside.Add(poll.Placeholder(113));
+                    }
+                    Bound(0, condition.MinX, true); Bound(0, condition.MaxX, false);
+                    Bound(1, condition.MinZ, true); Bound(1, condition.MaxZ, false);
+                    poll.Emit(66, 1); poll.Emit(91, local);
+                    poll.Resolve(failed, poll.Address);
+                    foreach (int branch in outside) poll.Resolve(branch, poll.Address);
+                    continue;
+                }
                 ObjectCall(poll, condition, "s_objExists"); poll.Emit(91, local);
                 if (condition.Kind == ScenarioConditionKind.ObjectExists) continue;
                 poll.Emit(90, local); int missing = poll.Placeholder(117);
@@ -108,6 +133,12 @@ public static class ScenarioEventCompiler
                         poll.Emit(76, Constant(action.Alias)); poll.Emit(66, (int)MathF.Round(action.Z)); poll.Emit(66, (int)MathF.Round(action.X));
                         poll.Emit(66, 0); poll.Emit(16); poll.Emit(66, 1); poll.Emit(66, 0); poll.Emit(66, 1); poll.Emit(66, action.Team);
                         poll.Emit(78, 1); poll.Emit(78, 0); Call(poll, "s_createUnitAndMems", 15); break;
+                    case ScenarioActionKind.Victory:
+                    case ScenarioActionKind.Defeat:
+                        poll.Emit(66, 1); WriteState(poll, "ARM_MISSION_ENDED");
+                        poll.Emit(66, action.Kind == ScenarioActionKind.Victory ? 1 : 0);
+                        WriteState(poll, "GLOBAL_MISSION_RESULT"); Call(poll, "s_quitGame", 0);
+                        terminalBranches.Add(poll.Placeholder(112)); break;
                     default: throw new InvalidDataException("不支援的事件動作。");
                 }
             }
@@ -115,6 +146,7 @@ public static class ScenarioEventCompiler
             foreach (int branch in unmet) poll.Resolve(branch, poll.Address);
         }
         // 恢復原框架之後重播原等待參數；原版無盡模式用 local 20 計算等待值。
+        foreach (int branch in terminalBranches) poll.Resolve(branch, poll.Address);
         poll.Emit(95); poll.Emit(75); poll.Emit(waitPush, waitOperand); poll.Jump(112, hook + 8);
         int pollAddress = image.AppendCode(poll.Bytes());
         BinaryPrimitives.WriteInt32LittleEndian(image.Code.AsSpan(hook), 112);

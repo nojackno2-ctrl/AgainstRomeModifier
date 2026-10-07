@@ -2,9 +2,9 @@ using AgainstRomeModifier.Maps;
 
 namespace AgainstRomeModifier.Scripting;
 
-public enum ScenarioActionKind { Message, Diplomacy, SpawnUnit }
-public enum ScenarioConditionKind { ObjectExists, ObjectDeadOrRemoved }
-public sealed record ScenarioCondition(ScenarioConditionKind Kind, Guid TargetId);
+public enum ScenarioActionKind { Message, Diplomacy, SpawnUnit, Victory, Defeat }
+public enum ScenarioConditionKind { ObjectExists, ObjectDeadOrRemoved, ObjectInArea }
+public sealed record ScenarioCondition(ScenarioConditionKind Kind, Guid TargetId, int MinX = 0, int MinZ = 0, int MaxX = 16383, int MaxZ = 16383);
 
 public sealed record ScenarioAction(ScenarioActionKind Kind, string Text = "", int Team = 0, int OtherTeam = 1,
     bool Hostile = true, string Alias = "", float X = 8000, float Z = 8000, int Count = 10);
@@ -21,6 +21,7 @@ public static class ScenarioEventValidator
     {
         if (events.Count > 256) throw new InvalidDataException("事件上限為 256 個。");
         ValidateConditions(events);
+        ValidateTerminalActions(events);
         foreach (ScenarioEvent item in events)
         {
             if (item is null || string.IsNullOrWhiteSpace(item.Name) || item.Name.Length > 100)
@@ -53,6 +54,17 @@ public static class ScenarioEventValidator
         }
     }
 
+    public static void ValidateTerminalActions(IReadOnlyList<ScenarioEvent> events)
+    {
+        foreach (ScenarioEvent item in events)
+        {
+            if (item?.Actions is null) throw new InvalidDataException("事件動作不能為 null。");
+            int terminal = item.Actions.FindIndex(action => action?.Kind is ScenarioActionKind.Victory or ScenarioActionKind.Defeat);
+            if (terminal >= 0 && (item.Repeat || terminal != item.Actions.Count - 1))
+                throw new InvalidDataException("勝敗動作必須是單次事件的最後一個動作。");
+        }
+    }
+
     public static void ValidateConditions(IReadOnlyList<ScenarioEvent> events, ScenarioDocument? scenario = null)
     {
         foreach (ScenarioEvent item in events)
@@ -63,6 +75,9 @@ public static class ScenarioEventValidator
             {
                 if (condition is null || !Enum.IsDefined(condition.Kind) || condition.TargetId == Guid.Empty)
                     throw new InvalidDataException("物件條件需要有效種類與目標 ID。");
+                if (condition.Kind == ScenarioConditionKind.ObjectInArea && (condition.MinX < 0 || condition.MinZ < 0
+                    || condition.MaxX > 16383 || condition.MaxZ > 16383 || condition.MinX > condition.MaxX || condition.MinZ > condition.MaxZ))
+                    throw new InvalidDataException("區域需要有序且介於 0–16383 的 X/Z 邊界。");
                 if (scenario is null || !item.Enabled) continue;
                 ScenarioSpawn? target = scenario.Spawns.SingleOrDefault(spawn => spawn.Id == condition.TargetId);
                 if (target is null) throw new InvalidDataException($"事件「{item.Name}」的目標物件已刪除，請重新選擇或停用事件。");

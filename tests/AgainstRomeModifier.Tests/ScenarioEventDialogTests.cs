@@ -9,6 +9,41 @@ namespace AgainstRomeModifier.Tests;
 public sealed class ScenarioEventDialogTests
 {
     [Fact]
+    public void Rectangle_dialog_preserves_boundaries_and_event_summary()
+    {
+        InSta(() =>
+        {
+            Guid id = Guid.NewGuid(); var condition = new ScenarioCondition(ScenarioConditionKind.ObjectInArea, id, 100, 200, 300, 400);
+            using var dialog = new ScenarioConditionDialog(condition, [new("HOUSE", 4000, 5000, 0) { Id = id }], true);
+            _ = dialog.Handle;
+            Assert.Equal(new decimal[] { 100, 300, 200, 400 }, ControlsOf<NumericUpDown>(dialog).Select(number => number.Value));
+            Assert.All(ControlsOf<NumericUpDown>(dialog), number => Assert.True(number.Enabled));
+            Click(Buttons(dialog).Single(button => button.Text == "OK")); Assert.Equal(condition, dialog.Result);
+            using var eventDialog = new ScenarioEventDialog(new("Area") { Actions = [new(ScenarioActionKind.Victory)], Conditions = [condition] }, [], true,
+                targets: [new("HOUSE", 4000, 5000, 0) { Id = id }]);
+            _ = eventDialog.Handle;
+            Assert.Contains("Inside area [100, 200]", Field<ListBox>(eventDialog, "_conditionList").Items[0]!.ToString());
+            Assert.Equal("Victory (end mission)", Field<ListBox>(eventDialog, "_list").Items[0]);
+            Click(Buttons(eventDialog).Single(button => button.Text == "OK")); Assert.Equal(condition, eventDialog.Result!.Conditions[0]);
+        });
+    }
+
+    [Theory]
+    [InlineData(ScenarioActionKind.Victory)]
+    [InlineData(ScenarioActionKind.Defeat)]
+    public void Terminal_action_dialog_disables_unrelated_fields_and_keeps_kind(ScenarioActionKind kind)
+    {
+        InSta(() =>
+        {
+            using var dialog = new ScenarioActionDialog(new(kind), [], true);
+            _ = dialog.Handle;
+            Assert.All(ControlsOf<NumericUpDown>(dialog), number => Assert.False(number.Enabled));
+            Assert.False(ControlsOf<TextBox>(dialog).Single(text => text.Multiline).Enabled);
+            Click(Buttons(dialog).Single(button => button.Text == "OK")); Assert.Equal(kind, dialog.Result!.Kind);
+        });
+    }
+
+    [Fact]
     public void Conditions_are_edited_without_mutating_seed_and_saved_with_persistent_target()
     {
         InSta(() =>
