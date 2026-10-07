@@ -1,5 +1,14 @@
 # AI Handoff - Live Project Memory
 
+## 遊戲光照預覽（2026-10-08 Codex；依本輪要求不提交／push／改 Git 歷史）
+
+- 已完成中斷 WIP：SceneLightingContext 改 internal，以世界高度回呼取代宿主 TerrainHeightField；APT 地面高度取光源所在 X/Z 再加 aptlh，lidef 使用物件 WorldY+lihei。view XYZ×256，半徑維持 world units。
+- GameLightingEnabled 預設關閉，GameHour 0..24；地形逐 fragment 取樣，sprite／放置預覽整張只取地面錨點（原生為 APT patch 四角）。場景／高度／catalog 變更才重建光源，相機目標變更才重選最近 64 個；uniform arrays 共用逐色道 max／二次衰減 shader。不模擬閃爍；陰影原流程不變。
+- UI 新增雙語 checkbox／時刻選擇器，唯讀 catalog 隨 shadow 開啟及釋放，缺檔／損壞各自 fail-soft、APT 成敗快取。第一次真實副本全套測試只有 1 項失敗：cl_apt.ini 也是 PFIL，WIP 未解壓造成建築光源空；已修正並補 PFIL cl_apt fixture。測試 fixture 曾誤用 CompressPfil／預覽方法名，均已修正。
+- 最終驗證：DOTNET_ROLL_FORWARD=Major、ARM_OPENGL_REQUIRED=1；dotnet build AgainstRomeModifier.slnx -c Release -p:UseAppHost=false 0警告／0錯誤；dotnet test AgainstRomeModifier.slnx -c Release --no-build --no-restore --logger "console;verbosity=quiet" host640通過／22略過、modules275通過，0失敗。新增 modules5例、真GL2例、真實副本1例；高 DPI 中／英 100%／150%／200% 3例通過。GL涵蓋非零世界高度、半徑、71選64、光源移動／相機快取、sprite／預覽及 context 重建；git diff --check 通過。
+- ARM_COMPARE_GAME=TEMP/ArmGameCompare_20261007；缺少的 lightdef.dau 已從授權 TEMP/ArmNativeAssets_20261007 副本補入。主屋12:00擷取與並排圖：TEMP/ArmLightingPreview_20261008/editor-house-lighting-12.png、house-lighting-side-by-side.png，已目視檢查。實際 APT 光源載入成功；與未知時間的遊戲截圖仍有色調／patch局部變化差異，未宣稱同期／逐像素一致或完整原生 renderer。docs/reverse-engineering/map-lighting.md 已記載限制。
+- 未存取安裝遊戲目錄，未提交／push／變更Git歷史；HEAD維持00a9096，原有 .claude/ 未修改。預設 sandbox 執行器啟動失敗，經自動核准的 require_escalated shell 完成工作。
+
 ## 局部光源真實定義與 APT 光源點逆向工程（2026-10-07 Antigravity；本次不提交／不推送／不改 Git 歷史）
 
 - 實作與解析：

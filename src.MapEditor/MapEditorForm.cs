@@ -33,6 +33,9 @@ internal sealed partial class MapEditorForm : Form
     private readonly ComboBox _brushSize = new() { Dock = DockStyle.Top, DropDownStyle = ComboBoxStyle.DropDownList };
     private readonly CheckBox _showGrid = new() { Dock = DockStyle.Top, Height = 30, Text = "顯示格線", Checked = true };
     private readonly CheckBox _showObjects = new() { Dock = DockStyle.Top, Height = 30, Text = "顯示建築與場景物件", Checked = true };
+    private readonly CheckBox _gameLighting = new() { AutoSize = true, Text = "遊戲光照" };
+    private readonly NumericUpDown _gameHour = new() { Width = 76, DecimalPlaces = 2, Minimum = 0, Maximum = 24, Increment = .25m, Value = 12, Enabled = false };
+    private readonly Label _gameHourLabel = new() { AutoSize = true, Anchor = AnchorStyles.Left, Text = "時刻" };
     private readonly CheckBox _stampMode = new() { Dock = DockStyle.Top, Height = 30, Text = "圖塊印章（原版道路、河流、岩壁等）" };
     private readonly CheckBox _stampOtherRegions = new() { Dock = DockStyle.Top, Height = 30, Text = "顯示其他地區圖塊", Visible = false };
     private string? _stampTexture;
@@ -112,6 +115,7 @@ internal sealed partial class MapEditorForm : Form
     private AgainstRomeMapEditor.NativeAssets.NativeSpriteCatalog? _spriteCatalog;
     // 原遊戲物件陰影（shad.dat，唯讀）；缺檔或格式錯誤時為 null，不畫陰影。
     private AgainstRomeMapEditor.NativeAssets.NativeShadowCatalog? _shadowCatalog;
+    private AgainstRomeMapEditor.NativeAssets.SceneLightingContext? _lightingContext;
     // 3D 點選到的可移除自然物件（Delete 移除）；選取其他物件或場景變更時清除。
     private MapSceneObject? _pickedNature;
     private FloorMaterialCatalog? _floorMaterials;
@@ -210,6 +214,7 @@ internal sealed partial class MapEditorForm : Form
         _floorMaterials = new FloorMaterialCatalog(_floorTextures);
         _spriteCatalog = OpenSpriteCatalog(gamePath);
         _shadowCatalog = OpenShadowCatalog(gamePath);
+        _lightingContext = AgainstRomeMapEditor.NativeAssets.SceneLightingContext.TryCreate(selectedMap.DirectoryPath, gamePath);
         BuildInterface();
         WinFormsTheme.Apply(this);
         WinFormsTheme.StylePrimaryButton(_sceneApplyButton);
@@ -247,8 +252,12 @@ internal sealed partial class MapEditorForm : Form
         var currentText = new FlowLayoutPanel { Width = 205, Height = 66, FlowDirection = FlowDirection.TopDown, WrapContents = false };
         currentText.Controls.Add(_currentMaterialLabel); currentText.Controls.Add(_lblBrushInstructions);
         currentBrush.Controls.Add(_currentMaterialSwatch); currentBrush.Controls.Add(currentText);
-        var brushOptions = new Panel { Dock = DockStyle.Top, Height = 204 };
-        brushOptions.Controls.Add(_autoBridge); brushOptions.Controls.Add(_showObjects); brushOptions.Controls.Add(_showGrid); brushOptions.Controls.Add(_reliefScale);
+        var lightingOptions = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 3, Padding = new Padding(0, 2, 0, 2) };
+        lightingOptions.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        lightingOptions.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize)); lightingOptions.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        lightingOptions.Controls.Add(_gameLighting, 0, 0); lightingOptions.Controls.Add(_gameHourLabel, 1, 0); lightingOptions.Controls.Add(_gameHour, 2, 0);
+        var brushOptions = new Panel { Dock = DockStyle.Top, Height = 240 };
+        brushOptions.Controls.Add(_autoBridge); brushOptions.Controls.Add(lightingOptions); brushOptions.Controls.Add(_showObjects); brushOptions.Controls.Add(_showGrid); brushOptions.Controls.Add(_reliefScale);
         brushOptions.Controls.Add(_lblReliefScaleTitle); brushOptions.Controls.Add(_lblBrushSizeTitle); brushOptions.Controls.Add(_brushSize);
         palettePanel.Controls.Add(_palette); palettePanel.Controls.Add(_paletteSearch); palettePanel.Controls.Add(_stampOtherRegions); palettePanel.Controls.Add(_stampMode); palettePanel.Controls.Add(brushOptions); palettePanel.Controls.Add(currentBrush); palettePanel.Controls.Add(_paletteHeader);
 
@@ -346,6 +355,8 @@ internal sealed partial class MapEditorForm : Form
         _brushSize.SelectedIndexChanged += (_, _) => { if (_view3d is not null) _view3d.BrushSize = _canvas.BrushSize; };
         _showGrid.CheckedChanged += (_, _) => { _canvas.ShowGrid = _showGrid.Checked; _canvas.Invalidate(); if (_view3d is not null) { _view3d.ShowGrid = _showGrid.Checked; _view3d.Invalidate(); } };
         _showObjects.CheckedChanged += (_, _) => { _canvas.ShowObjects = _showObjects.Checked; _canvas.Invalidate(); if (_view3d is not null) { _view3d.ShowObjects = _showObjects.Checked; _view3d.Invalidate(); } };
+        _gameLighting.CheckedChanged += (_, _) => { _gameHour.Enabled = _gameLighting.Checked; if (_view3d is not null) _view3d.GameLightingEnabled = _gameLighting.Checked; };
+        _gameHour.ValueChanged += (_, _) => { if (_view3d is not null) _view3d.GameHour = (float)_gameHour.Value; };
         _reliefScale.ValueChanged += (_, _) => _view3d?.SetReliefScale(_reliefScale.Value / 100f);
         _waterColorButton.Click += (_, _) => ChooseWaterColor();
         _waterLevel.ValueChanged += (_, _) => UpdateWaterPreview();
@@ -486,6 +497,10 @@ internal sealed partial class MapEditorForm : Form
         _lblBrushInstructions.Text = isEn ? "Right-click: Sample | Left-click & drag: Draw." : "右鍵取樣，左鍵拖曳繪製。";
 
         _lblBrushSizeTitle.Text = isEn ? "Brush Size" : "筆刷大小";
+        _showGrid.Text = isEn ? "Show grid" : "顯示格線";
+        _showObjects.Text = isEn ? "Show buildings and objects" : "顯示建築與場景物件";
+        _gameLighting.Text = isEn ? "Game lighting" : "遊戲光照";
+        _gameHourLabel.Text = isEn ? "Hour" : "時刻";
         _autoBridge.Text = isEn ? "Auto transition (insert bridge materials)" : "自動過渡（插入中介材質）";
         _stampMode.Text = isEn ? "Tile stamp (original roads, rivers, cliffs...)" : "圖塊印章（原版道路、河流、岩壁等）";
         _stampOtherRegions.Text = isEn ? "Show other regions' tiles" : "顯示其他地區圖塊";
@@ -631,6 +646,9 @@ internal sealed partial class MapEditorForm : Form
             _view3d.EditingEnabled = _selected.IsCustom;
             _view3d.SpriteCatalog = _spriteCatalog;
             _view3d.ShadowCatalog = _shadowCatalog;
+            _view3d.LightingContext = _lightingContext;
+            _view3d.GameLightingEnabled = _gameLighting.Checked;
+            _view3d.GameHour = (float)_gameHour.Value;
             try { has3DScene = _view3d.LoadTextures(_texturesDocument.Dimension, _texturesDocument.Textures, _selected.DirectoryPath, _floorTextures, SceneObjectsFor3D(effectiveObjects), (float)_waterLevel.Value, _heightMapStep, sceneWaterColor); _view3d.SetReliefScale(_reliefScale.Value / 100f); }
             catch (Exception ex) { Disable3DView(isEn ? "Failed to load 3D map resources." : "載入 3D 地圖資源失敗。", ex); }
         }
@@ -1495,6 +1513,7 @@ internal sealed partial class MapEditorForm : Form
 
     protected override void Dispose(bool disposing)
     {
+        if (disposing) { _lightingContext?.Dispose(); _lightingContext = null; }
         if (disposing) { _gameTextErrors.Dispose(); _floorTextures?.Dispose(); _floorTextures = null; _spriteCatalog?.Dispose(); _spriteCatalog = null; _shadowCatalog?.Dispose(); _shadowCatalog = null; Image? overview = _overview.Image; _overview.Image = null; overview?.Dispose(); }
         base.Dispose(disposing);
     }

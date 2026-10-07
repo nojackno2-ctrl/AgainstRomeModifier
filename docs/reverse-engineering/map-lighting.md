@@ -148,3 +148,13 @@ Sprite的0x49A490路徑依序：
 驗證里程碑：首次指定build被另一代理當時的NativeShadowCatalog.cs三個CS0050／CS0051阻擋，未改其檔案；稍後該錯誤解除。最終指定`dotnet build AgainstRomeModifier.slnx -c Release -p:UseAppHost=false`為**0 warnings／0 errors**；指定modules `--no-build`為**188 passed／0 failed／0 skipped**，含本輪16個案例。探針曾因`--no-build`未附`-p:UseAppHost=false`尋找不存在exe而失敗；已修正後完整實際素材／像素probe exit0。未提交或改Git歷史；期間其他代理的commit不屬本輪操作。
 
 後續需要：完成emboss的各renderer分支及terrain最終RGB公式；追完V map寫入端；取得同拍照時刻的時間、light與weather snapshot；按APT patchXYZ取樣並重現fixed-point interpolation；建立原地面texture texel對照後再量化terrain RMSE。row4須找到直接consumer才賦予產品語意。現有合成測試與反證不等於完整遊戲畫面重現。
+
+## 選用 3D 遊戲光照預覽（2026-10-08 Codex）
+
+- 地表分頁的「遊戲光照／Game lighting」預設關閉，保留中性編輯視圖；旁邊「時刻／Hour」選擇 0..24（24 等於午夜），小數小時向下取整分鐘，再用 row0 原生 16.16 權重公式。此選項只影響顯示，不儲存地圖時間或光源資料。
+- `SceneLightingContext` 唯讀載入 `daynight.bmp`、PFIL `objdef.dau`／`lightdef.dau`／`cl_apt.ini`（或 `.txt`）與 `apt.dat`。缺少或損壞的來源各自 fail-soft；無日夜表用白光，無光源定義不產生局部光源。
+- 建築 `aptli` 指向 lightdef，APT extraA 以 `NativeAptLightPoints` 轉成世界 X/Z，再取該位置地面高度加 `aptlh`；獨立物件 `lidef` 使用位置 XYZ 加 `lihei`。不模擬閃爍、法術／天候動態光源。
+- 地形片段以自身世界位置套用 `min(1,max(ambient,max(lightRGB*(1-d²/r²))))`；**sprite 與放置預覽整張只在地面錨點取樣**，是原生 APT 每個 patch 四角取樣的簡化。因此主屋不會有原生沿 patch／高度變化的色彩。
+- view XYZ 全部乘 256 換成世界單位，半徑仍為世界單位。光源清單在物件／地形高度／catalog 更新時建立，僅相機目標改變時重選最近 64 個，透過 uniform arrays 傳入共同 shader 公式；陰影沿用既有流程。
+- 此模式是在編輯器既有坡度／vertex 色之上增加日夜與局部光，不是完整原生 terrain／emboss／cloud／visibility renderer。高 DPI 與真 GL 合成測試涵蓋夜色、世界高度／半徑、光源移動／相機選取、sprite／預覽及 context 重建。
+- 指定 TEMP 的 ENDL_005 主屋已以 12:00 擷取並與 `game-house.png` 並排；可確認實際 APT 光源載入及顯示。遊戲截圖時間未知、白天 ambient 高，視覺色調與局部變化仍不同；沒有宣稱逐像素或同期遊戲畫面一致。
