@@ -34,7 +34,7 @@
 
 | 範圍 | 必須取得的證據 | 目前狀態 |
 | --- | --- | --- |
-| UI 視覺 | 主畫面及 AI/事件對話框在常用視窗尺寸、DPI 下沒有遮擋，模式切換提示一致 | 96 DPI 已檢查主畫面 1440×900/1100×700、最小尺寸各分頁、AI 880×740/640×580、中英事件 560×420；修正放置提示與刪除按鈕截字。高 DPI 尚待驗收 |
+| UI 視覺 | 主畫面及 AI/事件對話框在常用視窗尺寸、DPI 下沒有遮擋，模式切換提示一致 | 96 DPI 已檢查主畫面 1440×900/1100×700、最小尺寸各分頁、AI 880×740/640×580、中英事件 560×420；修正放置提示與刪除按鈕截字。高 DPI：除 AI 對話框外的編輯器視窗改用 `AutoScaleMode.Dpi`，`MapEditorHighDpiTests.cs` 以 100/150/200% 模擬（字型放大＋真正 PerformAutoScale、最小尺寸）中英無截字/越界，並修正放置對話框最後一列錯位、場景摘要/自然物件說明固定高度截斷、地圖選擇最小寬度與語言按鈕定位。實體高 DPI 螢幕與跨螢幕 DPI 切換尚未驗證；AI 對話框依使用者指示暫不處理 |
 | OpenGL 顯示 | 真正渲染高度、通行覆蓋與材質更新，選取位置符合畫面 | 純計算與隱藏表單測試不驗證 OpenGL 畫面 |
 | 遊戲載入與存讀檔 | 匯出地圖能載入；儲存/讀檔後事件與永久目標仍正確 | 尚未驗證 |
 | 完整還原 | 真正原版還原成功、保留/刪除選項及新對話框視覺 | 已有合成callback流程、runner回滾與未知EXE拒絕證據；完整原版成功還原與新對話框視覺尚待驗收 |
@@ -54,6 +54,6 @@ dotnet build AgainstRomeModifier.slnx -c Release -p:UseAppHost=false --artifacts
 dotnet test AgainstRomeModifier.slnx -c Release -p:UseAppHost=false --artifacts-path "$env:TEMP/ArmResumeQA" --no-restore --no-build --logger 'console;verbosity=quiet'
 ```
 
-最新工作樹結果：build 0 警告/0 錯誤；宿主 555 通過/21 略過，modules 45 通過，共 600 通過/21 略過/0 失敗（未設 live 變數時 AI live 測試直接返回，不算實機證據）。真實生成→預覽→套用→復原/重做→儲存→重開已另以 live 變數執行通過。未設定 `ARM_GAME_PATH`、`ARM_OLLAMA_LIVE`。以上 `--no-restore` 命令須先有相同 artifacts 路徑的 restore；新環境先移除 build 的 `--no-restore`。
+最新工作樹結果：build 0 警告/0 錯誤；宿主 558 通過/21 略過，modules 45 通過，共 603 通過/21 略過/0 失敗（未設 live 變數時 AI live 測試直接返回，不算實機證據）。真實生成→預覽→套用→復原/重做→儲存→重開已另以 live 變數執行通過。未設定 `ARM_GAME_PATH`、`ARM_OLLAMA_LIVE`。以上 `--no-restore` 命令須先有相同 artifacts 路徑的 restore；新環境先移除 build 的 `--no-restore`。
 
 `b9b9965` 的獨立 git archive 快照位於 `TEMP/ArmCoreCommitQA_e70f5f1a2802428abb9fd7546428d1a2/source`，不包含 AI 預覽 WIP；独立還原／建置／完整測試同樣為 0 警告/0 錯誤、536 通過/21 略過/0 失敗。

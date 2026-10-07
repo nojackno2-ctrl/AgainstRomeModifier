@@ -30,6 +30,8 @@
 
 ## 最新驗證與失敗紀錄
 
+- 使用者指示（2026-10-07）：「AI 地圖生成先跳過」。AI 製圖功能（含 AiMapPlanningDialog 的 DPI）暫停，不再擴充；轉做其他編輯器缺口。
+- Claude（2026-10-07）：高 DPI。新增 `MapEditorHighDpiTests.cs`（100/150/200% 模擬：所有字型乘倍率、Dpi 視窗宣告 96/倍率 設計 DPI 走真正 PerformAutoScale、縮到 MinimumSize，中英全部模式與五個對話框；輸出 PNG 與 layout.txt 到 ARM_DPI_OUTPUT/TEMP）。修正前 150% 140 項截字/越界（場景物件按鈕被切、清單擠壓），套用 AutoScaleMode.Dpi 後剩真實問題並逐一修正：放置物件對話框無 RowStyles 使最後一列「人數」標籤錯位（100% 亦存在）、`_sceneSummary`/`_natureHint` 固定高度截第三行（新增 FitWrappedLabelHeight）、地圖選擇最小寬 840 放不下六按鈕（改 900）、語言按鈕固定像素定位（改依按鈕高度換算，96 DPI 位置不變）、路徑列 AutoSize。原檢查對 AutoSize 控制項與按鈕單行寬度有誤判已移除。DrawToBitmap 對重疊的語言按鈕 z-order 畫錯（截圖看不到），以 layout.txt 數值確認位置正確。最終三倍率通過；full --no-build 宿主558/略過21、modules45，共603通過/0失敗。實體高 DPI 螢幕未驗證（本機 96 DPI，不改系統設定）。
 - Claude（2026-10-07 13:20 起）：接手 Codex 留下的未提交 `MapEditorAiLiveAcceptanceTests.cs` 與 `RunInSta` timeout 參數。初次 build 有 CS8604（`layers.Collision.ToArray()`）與 CA1869，已修。設 `ARM_AI_ACCEPTANCE_LIVE=1` 實跑真實 Ollama laguna 三角色（約 17 秒，Terrain4/Water1/Materials1，水系河流缺 toLocation 被正規化移除）：預覽不改 bytes/dirty、套用一次且統計與預覽相同（高度14333/通行448/材質1）、undo/redo、儲存、新表單重開一致，通過。證據 `TEMP/ArmClaudeQA/ai-live-1`（result/progress/中英兩尺寸截圖，96 DPI）。完整 `--no-build` 測試宿主555通過/21略過、modules45，共600通過/0失敗。下一步：高 DPI（編輯器所有 Form 未設 AutoScaleMode，字型為點數而列高/欄寬為固定像素，PerMonitorV2 下 >96 DPI 可能截字）。
 
 - Codex（2026-10-07）：開始第4階段；AI預覽WIP接上正式host/dialog，獨立height/collision/material Fork走同Applier，加入橙色材質變更與圖例/變更統計/拒絕提示，圖片於失效/重試/關閉釋放，預覽失敗不能套用。Release build 0警告/0錯誤；UI/host隔離與實際套用一致定向19通過。角色進度UI/planner接入，35項定向通過；新增progress序列1通過，redo/pending初測2失敗因Redo本身CommitStroke會清redo，已分開合法redo與pending操作案例，再跑3通過。加入紫點拒絕區域、橙點材質變更保留底層水域/高度。只用repository/TEMP，不宣稱live/可玩性。角色生成進度已整合；新增紫點與正式套用一致定向1通過，full --no-build宿主554通過/21略過、modules45通過，共599通過/21略過/0失敗。新UI視覺/真實完整流程仍待驗證。

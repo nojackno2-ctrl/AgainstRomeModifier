@@ -11,6 +11,7 @@ internal sealed class ScenarioConditionDialog : Form
     internal ScenarioConditionDialog(ScenarioCondition? item, IReadOnlyList<ScenarioSpawn> targets, bool en,
         Func<string, string>? objectName = null)
     {
+        AutoScaleDimensions = new SizeF(96F, 96F); AutoScaleMode = AutoScaleMode.Dpi; // 以 96 DPI 設計，PerMonitorV2 下依實際 DPI 縮放固定像素版面
         Text = en ? "Object condition" : "物件條件"; Size = new Size(620, 440);
         StartPosition = FormStartPosition.CenterParent; MinimumSize = Size;
         var fields = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, Padding = new Padding(12) };

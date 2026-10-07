@@ -166,6 +166,7 @@ internal sealed partial class MapEditorForm : Form
     public MapEditorForm(string gamePath, GameMapInfo selectedMap, bool startWithBlankTerrain = false)
     {
         _startWithBlankTerrain = startWithBlankTerrain;
+        AutoScaleDimensions = new SizeF(96F, 96F); AutoScaleMode = AutoScaleMode.Dpi; // 以 96 DPI 設計，PerMonitorV2 下依實際 DPI 縮放固定像素版面
         Width = 1440; Height = 900; MinimumSize = new Size(1100, 700); StartPosition = FormStartPosition.CenterScreen;
         BackColor = WinFormsTheme.Window; ForeColor = WinFormsTheme.TextPrimary; Font = WinFormsTheme.CreateFont(9F);
         _gamePath = gamePath;
@@ -234,6 +235,7 @@ internal sealed partial class MapEditorForm : Form
         sceneEditor.Controls.Add(_sceneDuplicateButton, 0, 7); sceneEditor.Controls.Add(_sceneDeleteButton, 1, 7);
         sceneEditor.Controls.Add(_sceneAddButton, 0, 8); sceneEditor.Controls.Add(_sceneTranslateButton, 1, 8);
         scenePanel.Controls.Add(_sceneList); scenePanel.Controls.Add(sceneEditor); scenePanel.Controls.Add(_sceneSummary);
+        FitWrappedLabelHeight(_sceneSummary);
         _inspectorTabs.TabPages.Add(new TabPage("場景物件") { BackColor = WinFormsTheme.Surface }); _inspectorTabs.TabPages[2].Controls.Add(scenePanel);
         _inspectorTabs.TabPages.Add(new TabPage("放置物件") { BackColor = WinFormsTheme.Surface }); _inspectorTabs.TabPages[3].Controls.Add(BuildPlacementPanel());
         _inspectorTabs.TabPages.Add(new TabPage("自然物件") { BackColor = WinFormsTheme.Surface }); _inspectorTabs.TabPages[4].Controls.Add(BuildNaturePanel());
@@ -1157,6 +1159,21 @@ internal sealed partial class MapEditorForm : Form
         else if (e.KeyCode == Keys.Y) Redo();
         else return;
         e.SuppressKeyPress = true;
+    }
+
+    /// <summary>Dock=Top 的多行說明依目前寬度、字型與文字調整高度，避免換行（含高 DPI 字型）後被截斷。</summary>
+    private static void FitWrappedLabelHeight(Label label)
+    {
+        int width = -1;
+        void Fit(bool force)
+        {
+            if (label.Width <= 0 || (!force && label.Width == width)) return;
+            width = label.Width;
+            label.Height = label.GetPreferredSize(new Size(label.Width, 0)).Height;
+        }
+        label.SizeChanged += (_, _) => Fit(false);
+        label.TextChanged += (_, _) => Fit(true);
+        label.FontChanged += (_, _) => Fit(true);
     }
 
     private static Label SectionHeader(string text) => new() { Text = text, Dock = DockStyle.Top, Height = 38, Font = WinFormsTheme.CreateDisplayFont(10F), Padding = new Padding(4, 10, 0, 0), ForeColor = WinFormsTheme.TextPrimary };

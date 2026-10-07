@@ -30,6 +30,7 @@ internal sealed partial class MapEditorForm
         _lblNatureOperation = AddSceneField(options, 0, "操作", _natureOperation);
         _lblNatureCategory = AddSceneField(options, 1, "類別", _natureCategory);
         panel.Controls.Add(_natureTypes); panel.Controls.Add(options); panel.Controls.Add(_natureHint);
+        FitWrappedLabelHeight(_natureHint);
         return panel;
     }
 

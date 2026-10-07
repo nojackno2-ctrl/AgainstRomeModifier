@@ -21,6 +21,7 @@ internal sealed class ScenarioEventDialog : Form
     internal ScenarioEventDialog(ScenarioEvent item, IReadOnlyCollection<string> aliases, bool en, Func<string, string>? unitName = null,
         IReadOnlyList<ScenarioSpawn>? targets = null)
     {
+        AutoScaleDimensions = new SizeF(96F, 96F); AutoScaleMode = AutoScaleMode.Dpi; // 以 96 DPI 設計，PerMonitorV2 下依實際 DPI 縮放固定像素版面
         Text = en ? "Edit event" : "編輯事件"; StartPosition = FormStartPosition.CenterParent;
         Size = new Size(650, 480); MinimumSize = new Size(560, 420);
         _name.Text = item.Name; _delay.Value = Math.Clamp(item.DelaySeconds, 0, 86400);
@@ -154,6 +155,7 @@ internal sealed class ScenarioActionDialog : Form
 
     internal ScenarioActionDialog(ScenarioAction item, IReadOnlyCollection<string> aliases, bool en, Func<string, string>? unitName = null)
     {
+        AutoScaleDimensions = new SizeF(96F, 96F); AutoScaleMode = AutoScaleMode.Dpi; // 以 96 DPI 設計，PerMonitorV2 下依實際 DPI 縮放固定像素版面
         Text = en ? "Edit action" : "編輯動作"; StartPosition = FormStartPosition.CenterParent;
         Size = new Size(590, 500); MinimumSize = new Size(520, 470);
         var fields = new TableLayoutPanel { Dock = DockStyle.Fill, AutoScroll = true, ColumnCount = 2, Padding = new Padding(12) };

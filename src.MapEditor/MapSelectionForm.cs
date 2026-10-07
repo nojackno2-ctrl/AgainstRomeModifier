@@ -35,7 +35,8 @@ internal sealed class MapSelectionForm : Form
 
     public MapSelectionForm(string gamePath, string? preferredMapId = null)
     {
-        Width = 1080; Height = 660; MinimumSize = new Size(840, 520); StartPosition = FormStartPosition.CenterScreen;
+        AutoScaleDimensions = new SizeF(96F, 96F); AutoScaleMode = AutoScaleMode.Dpi; // 以 96 DPI 設計，PerMonitorV2 下依實際 DPI 縮放固定像素版面
+        Width = 1080; Height = 660; MinimumSize = new Size(900, 520); StartPosition = FormStartPosition.CenterScreen;
         BackColor = WinFormsTheme.Window; ForeColor = WinFormsTheme.TextPrimary; Font = WinFormsTheme.CreateFont(9F);
         _gamePath.Text = gamePath; _preferredMapId = preferredMapId;
         BuildInterface();
@@ -59,7 +60,7 @@ internal sealed class MapSelectionForm : Form
 
     private void BuildInterface()
     {
-        var pathRow = new TableLayoutPanel { Dock = DockStyle.Top, Height = 46, Padding = new Padding(12, 5, 12, 5), ColumnCount = 4 };
+        var pathRow = new TableLayoutPanel { Dock = DockStyle.Top, Height = 46, MinimumSize = new Size(0, 46), AutoSize = true, Padding = new Padding(12, 5, 12, 5), ColumnCount = 4 };
         pathRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize)); pathRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         pathRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize)); pathRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         pathRow.Controls.Add(_lblGamePath, 0, 0); pathRow.Controls.Add(_gamePath, 1, 0);
@@ -143,8 +144,10 @@ internal sealed class MapSelectionForm : Form
 
     private void LayoutLanguageButtons()
     {
-        btnLangZH.Location = new Point(this.ClientSize.Width - 210, 14);
-        btnLangEN.Location = new Point(this.ClientSize.Width - 110, 14);
+        // 間距以按鈕高度換算（96 DPI 時為右邊界 20、間隔 10、上緣 14），DPI 縮放後仍保持比例。
+        int unit = btnLangEN.Height;
+        btnLangEN.Location = new Point(ClientSize.Width - btnLangEN.Width - unit * 2 / 3, unit * 14 / 30);
+        btnLangZH.Location = new Point(btnLangEN.Left - btnLangZH.Width - unit / 3, btnLangEN.Top);
     }
 
     private void UpdateLanguageButtonStyles()

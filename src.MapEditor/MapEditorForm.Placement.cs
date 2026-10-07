@@ -416,6 +416,7 @@ internal sealed class PlacedObjectEditDialog : Form
         _isEn = isEn;
         _isFigure = original.Type.Category == SdlObjectCategory.Figure;
 
+        AutoScaleDimensions = new SizeF(96F, 96F); AutoScaleMode = AutoScaleMode.Dpi; // 以 96 DPI 設計，PerMonitorV2 下依實際 DPI 縮放固定像素版面
         Text = isEn ? "Edit Placed Object" : "編輯放置物件";
         Size = new Size(500, 440);
         StartPosition = FormStartPosition.CenterParent;
@@ -427,12 +428,15 @@ internal sealed class PlacedObjectEditDialog : Form
         {
             Dock = DockStyle.Fill,
             ColumnCount = 2,
-            RowCount = 8,
+            RowCount = 9,
             Padding = new Padding(12),
             BackColor = WinFormsTheme.Surface
         };
         panel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 95));
         panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        // 欄位列依內容高度排列；剩餘空間交給最後的空白列，避免最後一個標籤被拉伸而與輸入框錯位。
+        for (int row = 0; row < 8; row++) panel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        panel.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
         string name = MapEditorForm.ObjectDisplayName(original.Type, isEn);
         _lblInfo = new Label
@@ -551,7 +555,7 @@ internal sealed class PlacedObjectEditDialog : Form
 
     private static void AddField(TableLayoutPanel panel, int row, string label, Control control)
     {
-        panel.Controls.Add(new Label { Text = label, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, ForeColor = WinFormsTheme.TextSecondary }, 0, row);
+        panel.Controls.Add(new Label { Text = label, AutoSize = true, Anchor = AnchorStyles.Left, ForeColor = WinFormsTheme.TextSecondary }, 0, row);
         panel.Controls.Add(control, 1, row);
     }
 
