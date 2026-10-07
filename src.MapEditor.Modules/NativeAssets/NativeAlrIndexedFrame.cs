@@ -20,13 +20,13 @@ internal sealed class NativeAlrIndexedFrame
     /// Offsets occupy bits 0..19, bit 20 introduces two runs, bits 21..30 specify
     /// leading transparent pixels, and bit 31 makes palette index zero opaque.
     /// The final descriptor supplies the end offset; data is the native payload
-    /// including its palette prefix and possible alignment padding.
+    /// excluding serialized palettes and including possible alignment padding.
     /// </summary>
     public static NativeAlrIndexedFrame Decode(int width, int height, ReadOnlySpan<uint> rows,
         ReadOnlySpan<byte> data, ReadOnlySpan<uint> palette)
     {
-        if (width is < 1 or > 2047) throw new ArgumentOutOfRangeException(nameof(width));
-        if (height is < 1 or > 2047) throw new ArgumentOutOfRangeException(nameof(height));
+        if (width is < 0 or > 2047) throw new ArgumentOutOfRangeException(nameof(width));
+        if (height is < 0 or > 2047) throw new ArgumentOutOfRangeException(nameof(height));
         if (rows.Length != height + 1) throw new ArgumentException("ALR requires one descriptor per row plus an end descriptor.", nameof(rows));
         if (palette.Length is < 1 or > 511) throw new ArgumentException("ALR palette size must fit its native 9-bit field.", nameof(palette));
         var pixels = new uint[width * height];

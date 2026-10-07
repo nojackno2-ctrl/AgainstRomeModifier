@@ -1,6 +1,14 @@
 # AI Handoff - Live Project Memory
 
-## 阻塞稽核（2026-10-07 Codex）
+## 素材分析授權與進度（2026-10-07 Codex）
+
+- 使用者回覆「允許」，明確授權唯讀分析安裝目錄原始素材並複製至 TEMP；僅此讀取範圍覆蓋 AGENTS 原限制，不包含修改安裝檔或啟動遊戲。先前素材授權阻塞已解除，目標恢復進行中。
+- 已唯讀複製 alr.dat／apt.dat／shad.dat 至 TEMP/ArmNativeAssets_20261007，逐一 SHA256 與原檔一致；原檔大小分別 175311196／51598025／30480435 bytes。下一步驗證真實 ALR 解碼、物件素材對應與場景呈現；目前不能宣稱已完成真實遊戲畫面編輯。
+- 真實 ALR 首輪 C# probe：Parsed1889／Decoded15027／Failed1662；先前把 runtime data base 推導成磁碟 offset 是錯誤。磁碟 row offsets 相對本地 palettes 後 pixel bytes；另有合法零尺寸格。修正後 tools/re/alr-probe 唯讀全庫驗證：2075 documents／358083 frames／2921730 palette frames／2374 blank frames／0 failures，報告與 RGBA 在 TEMP/ArmNativeAssets_20261007/verified-1。已檢視 fialgesc00 首格 PNG，未與遊戲同格比較。新增合成 two-run/palette/blank 容器 regression；工具初次缺 ImplicitUsings 建置失敗已修。更新格式、模組與驗收文件。Release solution build 0警告/0錯誤；ARM_OPENGL_REQUIRED=1 full tests：宿主605／modules94通過，共699通過／22略過／0失敗。
+- 已唯讀複製 objdef.dau／SYSTEM/cl_alr.ini 到相同 TEMP，透過既有 GameLZSS.DecompressPfil 解成文字。objdef header 欄5 alrid、欄52 name 與 cl_alr 的 AlrNames 清單提供物件→素材橋接證據；宿主場景尚未接原始 sprite、方向／動畫／錨點與即時編輯驗收未完成，目標仍 active。不把完整素材或解碼文字加入 Git，不啟動遊戲、不 push。
+- 又唯讀複製／解碼 cl_apt.ini：objdef 欄14 aptix 指向 APT，type42 BauGerHau02（alrid=-1、aptix6）對应 gerhau02.apt；type175 LanGerNabu05 指向 ALR206 lagenabust05.alr。故 ALR 不能覆蓋所有建築。probe verified-2 重跑全 palette 結果相同；已檢視士兵 gersch01、植物 lagenabust05、石頭 lagestgr00 透明 PNG，尚非原遊戲畫面比較。Pillow 未安裝，改用標準庫 PNG 編碼，只写 TEMP。輸出目錄已存在時工具明確拒絕，exit2，未覆寫。下一步 APT 解碼／原引擎消費端與宿主接線。
+
+## 先前阻塞稽核（2026-10-07 Codex；授權已解除）
 
 - 最後進度提交 `57530b7`，分支 `主要開發`，工作樹只剩使用者未追蹤 .claude/。前一 goal turn 是進度（ALRA parser），不是等待行程；沒有測試或其他背景工作仍需等待。
 - 真實遊戲場景的完成證據不足：Map3DViewControl 三處仍呼叫 SceneObjectRenderer.BuildMarkerPoints；NativeAlrDocument 只在 modules，宿主未接；實際素材外觀、方向／動畫、即時場景編輯與新版本遊戲讀取驗收皆未完成。整體 goal 不能標 complete。

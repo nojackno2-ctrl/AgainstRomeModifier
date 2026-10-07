@@ -53,7 +53,6 @@ public sealed class NativeAlrDocumentTests
     [InlineData(32, uint.MaxValue)] // variant overflow
     [InlineData(92, 0u)] // first frame references itself
     [InlineData(96, uint.MaxValue)] // invalid row table position
-    [InlineData(104, 0u)] // empty frame extent
     [InlineData(108, uint.MaxValue)] // byte count overflow/truncation
     [InlineData(140, 3u)] // forward shared reference
     public void Invalid_header_or_frame_reference_is_rejected(int byteOffset, uint value)
@@ -75,7 +74,7 @@ public sealed class NativeAlrDocumentTests
         Assert.Throws<NotSupportedException>(() => NativeAlrDocument.Parse(source));
         source = Fixture(6); source[128] = 2; // Palette index outside the first frame palette.
         Assert.Throws<InvalidDataException>(() => NativeAlrDocument.Parse(source).DecodeFrame(0));
-        source = Fixture(6); WriteWord(source, 136, 15); // Backwards row end (starts at payload offset 16).
+        source = Fixture(6); WriteWord(source, 132, 2); WriteWord(source, 136, 1); // Backwards pixel offsets.
         Assert.Throws<InvalidDataException>(() => NativeAlrDocument.Parse(source).DecodeFrame(0));
     }
 
@@ -90,6 +89,21 @@ public sealed class NativeAlrDocumentTests
         Assert.Equal(new uint[] { 0xFF90A0B0, 0xFFC0D0E0 }, document.DecodeFrame(2, 1).ArgbPixels);
     }
 
+    [Fact]
+    public void Serialized_two_run_offsets_start_after_all_local_palettes_and_blank_frames_are_valid()
+    {
+        using var stream = new MemoryStream();
+        using var writer = new BinaryWriter(stream);
+        byte[] header = Fixture(6)[..92]; WriteWord(header, 12, 2);
+        writer.Write(header);
+        Record(writer, 0, 0, 6, [0, 0x102030, 0, 0x90A0B0], [1, 2, 1, 0, 1], [0x100000, 5]);
+        Record(writer, 0, 0, 0, [], [], [0, 0]);
+        var document = NativeAlrDocument.Parse(stream.ToArray());
+        Assert.Equal(new uint[] { 0xFF102030, 0, 0, 0, 0xFF102030, 0 }, document.DecodeFrame(0).ArgbPixels);
+        Assert.Equal(new uint[] { 0xFF90A0B0, 0, 0, 0, 0xFF90A0B0, 0 }, document.DecodeFrame(0, 1).ArgbPixels);
+        Assert.Empty(document.DecodeFrame(1).ArgbPixels);
+    }
+
     private static byte[] Fixture(uint version, bool secondFramePalette = true)
     {
         using var stream = new MemoryStream();
@@ -98,11 +112,10 @@ public sealed class NativeAlrDocumentTests
         foreach (uint word in new uint[] { 0x41524C41, version, 0x100, 4, 8, 0x200, 2, 2, 2, 0x300,
             0x401, 0x402, 0x403, 0x404, 0x405, 12, 18, 0x501, 0x502, 0x503, 0x504, 0x601, 0x602 }) writer.Write(word);
         Record(writer, 7, 11, 5, [0x405060, 0x102030, 0xC0D0E0, 0x90A0B0],
-            [1, 0, 1], [(1u << 21) | 16, 19]);
+            [1, 0, 1], [1u << 21, 3]);
         writer.Write(0); // shared first frame
-        uint secondOffset = secondFramePalette ? 16u : 0;
         Record(writer, 2, 3, 2, secondFramePalette ? [0, 0xFFFFFF, 0, 0xEEEEEE] : [],
-            [1, 0], [0x80000000 | secondOffset, secondOffset + 2]);
+            [1, 0], [0x80000000, 2]);
         writer.Write(1); // transitive shared frame
         return stream.ToArray();
     }

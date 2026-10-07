@@ -48,7 +48,9 @@ public sealed class NativeAlrIndexedFrameTests
         var frame = NativeAlrIndexedFrame.Decode(2, 2, [0, 0, 0], [], [0]);
         Assert.All(frame.ArgbPixels, pixel => Assert.Equal(0u, pixel));
         Assert.Throws<ArgumentOutOfRangeException>(() => NativeAlrIndexedFrame.Decode(2048, 1, [0, 0], [], [0]));
-        Assert.Throws<ArgumentOutOfRangeException>(() => NativeAlrIndexedFrame.Decode(1, 0, [0], [], [0]));
+        Assert.Empty(NativeAlrIndexedFrame.Decode(1, 0, [0], [], [0]).ArgbPixels);
+        Assert.Empty(NativeAlrIndexedFrame.Decode(0, 1, [0, 0], [], [0]).ArgbPixels);
+        Assert.Throws<ArgumentOutOfRangeException>(() => NativeAlrIndexedFrame.Decode(-1, 1, [0, 0], [], [0]));
         Assert.Throws<ArgumentException>(() => NativeAlrIndexedFrame.Decode(1, 1, [0], [], [0]));
         Assert.Throws<ArgumentException>(() => NativeAlrIndexedFrame.Decode(1, 1, [0, 0], [], []));
     }

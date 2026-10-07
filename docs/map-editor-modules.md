@@ -15,13 +15,15 @@ state. The host coordinates those operations.
 `NativeAssets/NativeAlrIndexedFrame` decodes extracted native 8-bit ALR scanlines
 and a selected palette into owned, read-only ARGB pixels. It does not open the
 game archives, select animation frames or update the renderer. Its current
-evidence is native x86 control flow plus synthetic pixel tests; actual asset
-and scene fidelity remain unverified. See [native scene evidence](reverse-engineering/native-scene-rendering.md).
+evidence includes native x86 control flow, synthetic tests and exhaustive decoding
+of the authorized alr.dat copy. Scene fidelity remains unverified.
+See [native scene evidence](reverse-engineering/native-scene-rendering.md).
 
 `NativeAssets/NativeAlrDocument` parses owned v4..v6 indexed container records
 from bytes, preserves shared frames and selects palettes as the native helper
-does. `DecodeFrame` supplies the scanline decoder with the entire frame payload,
-including its palette prefix. Archive I/O, object definitions, animation and
+does. Serialized row offsets start after all local palettes, so `DecodeFrame`
+strips that prefix before decoding. Zero-sized animation frames are valid.
+Archive I/O, object definitions, animation and
 direction mapping, trailing metadata and scene integration remain with the host
 or future format work.
 

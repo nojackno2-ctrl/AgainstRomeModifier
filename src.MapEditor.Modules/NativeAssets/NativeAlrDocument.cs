@@ -63,13 +63,13 @@ internal sealed class NativeAlrDocument
             uint storedPixelBytes = reader.UInt32();
             int width = (int)(size & 0x7FF), height = (int)((size >> 11) & 0x7FF);
             int colors = (int)((size >> 22) & 0x1FF);
-            if (width == 0 || height == 0) throw new InvalidDataException("ALR frame has an empty extent.");
             long paletteBytes = (long)variants * colors * 4;
             long payloadBytes = paletteBytes + (((long)storedPixelBytes + 3) & ~3L);
             long tableBytes = (height + 1L) * 4;
             if (tableOffset != payloadBytes || payloadBytes > int.MaxValue || payloadBytes + tableBytes > reader.Remaining)
                 throw new InvalidDataException("ALR frame has an invalid row table offset or truncated payload.");
-            // Native row offsets address the whole payload, including its palette prefix.
+            // Serialized row offsets address pixel bytes after the local palettes.
+            // Runtime frame pointer layout must not be confused with serialized offsets.
             byte[] payload = reader.Bytes((int)payloadBytes).ToArray();
             var descriptors = new uint[height + 1];
             for (int y = 0; y < descriptors.Length; y++) descriptors[y] = reader.UInt32();
@@ -91,7 +91,7 @@ internal sealed class NativeAlrDocument
         ReadOnlySpan<byte> paletteBytes = first.Payload.AsSpan(paletteVariant * colors * 4, colors * 4);
         for (int i = 0; i < colors; i++) palette[i] = BinaryPrimitives.ReadUInt32LittleEndian(paletteBytes[(i * 4)..]);
         return NativeAlrIndexedFrame.Decode(selected.Info.Width, selected.Info.Height,
-            selected.Rows, selected.Payload, palette);
+            selected.Rows, selected.Payload.AsSpan(PaletteVariantCount * selected.Info.PaletteColorCount * 4), palette);
     }
 
     private ref struct Reader(ReadOnlySpan<byte> source)
