@@ -1,13 +1,13 @@
 # AI Handoff - Live Project Memory
 
-## 最新指示與狀態（2026-10-07 Codex；Claude 續作中）
+## 最新指示與狀態（2026-10-07 Antigravity；遊戲修改器 CLI 模式完成）
 
-- 使用者已恢復「繼續完成地圖編輯器的開發」。Codex 2026-10-07 依現有工作樹續作，未委派；整體目標進行中，尚未完成。
-- 最新澄清（2026-10-07）：使用者的「本地AI」原指設計程式時呼叫的子代理，不是產品需求；既有AI製圖功能已明確授權保留並做好，不能再混淆產品模型與開發代理。
-- 最新指示「先重新整理開發順序」已完成docs/map-editor-roadmap.md，依序續作。順序為需求/證據核對→可靠手動編輯核心→物件/部隊/事件整合→AI正式功能→顯示/操作驗收→遊戲內驗收/交付。目前核心缺口修正與專屬驗證已補，已進行第4階段AI預覽/進度，不先做高DPI；整體goal仍active。
-- 目前產品實作預設 `laguna-xs-2.1:latest`（不能當作使用者指定的產品模型需求）；一次只呼叫一個推論的限制維持。三角色地形→水系→材質依序執行，所有 OllamaMapPlanner 實例共用 static SemaphoreSlim(1,1)。取消排隊請求不會發送 HTTP；鎖於 finally 釋放。
-- 外部子代理使用 AGY `gemini-3.8-flash` / medium，固定 AGY/no fallback。所有已派工作皆已終態，不再有活躍檔案所有者；AGY 回報外層成功不等於 CLI 內工作完整成功。
-- 本輪僅 repository / TEMP 操作；未存取、修改遊戲安裝目錄或執行遊戲。
+- 使用者要求「製作遊戲修改器CLI模式，讓AI代理人可以操作」。
+- Antigravity（2026-10-07）：完成遊戲修改器 CLI 模式，提供 AI 代理人專用命令列介面與結構化 JSON 輸出（`--json`），涵蓋偵測（detect-game/status）、功能清單（features）、套用修改（apply，支援個別開關/全開/全關/倍率/兵種預設/自訂設定檔/dry-run）、還原（restore）、備份（backup）、兵種屬性（stats list/get/export）、設定檔架構（profile schema/export）、存檔管理（saves）與地圖清單（maps）。
+- 既有 GUI 與 `--game/--map` 直達行為保持完全相容；無介面模式不觸發 MessageBox 或 UI 表單，Windows Console 下自動附著父行程終端並輸出 UTF-8。
+- 驗證：新增 `CliTests.cs` 14 項測試全數通過；完整方案測試 645 通過/21 略過/0 失敗。本輪僅 repository/TEMP 操作，未存取真實遊戲安裝目錄。
+
+## 歷史記錄與既有狀態（2026-10-07 Codex & Claude）
 
 ## Git 與保留工作
 

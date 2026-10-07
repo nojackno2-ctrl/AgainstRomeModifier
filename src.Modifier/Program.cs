@@ -7,12 +7,19 @@ namespace AgainstRomeModifier {
     // 程式入口類別
     public class Program {
         [STAThread]
-        public static void Main(string[] args) {
+        public static int Main(string[] args) {
             try {
                 // 註冊 CodePages 支援（例如 BIG5, CP1251 等編碼，以便解析遊戲資源檔）
                 Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
-                // 啟動主要的應用程式流程
+
+                // 若為 CLI 模式（供 AI 代理人或自動化腳本呼叫），走無介面主控台流程
+                if (AgainstRomeModifier.Cli.CliRunner.IsCliInvocation(args)) {
+                    return AgainstRomeModifier.Cli.CliRunner.Run(args);
+                }
+
+                // 啟動主要的應用程式流程 (GUI)
                 RunApplication(args);
+                return 0;
             } catch (Exception ex) {
                 try {
                     // 若發生未預期的崩潰，將異常寫入 crash_log.txt 中以利後續分析
@@ -31,6 +38,7 @@ namespace AgainstRomeModifier {
                 } catch (Exception msgEx) {
                     System.Diagnostics.Debug.WriteLine("錯誤對話框顯示失敗: " + msgEx.Message);
                 }
+                return 1;
             }
         }
 
