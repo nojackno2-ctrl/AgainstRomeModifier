@@ -30,6 +30,7 @@
 
 ## 最新驗證與失敗紀錄
 
+- Claude（2026-10-07）：3D fallback。`MapEditor3DFallbackTests.cs`：缺 floortex.dat 時 3D 按鈕停用、診斷按鈕可見且報告列出缺少 floortex.dat、2D 可見；要求 3D 仍維持 2D；2D 高度編輯→儲存→重開一致。通過；full 宿主561/略過21、modules45，共606通過/0失敗。已知限制（未修）：Disable3DView 永久停用，同一表單內資源後來補齊不會恢復 3D（每次開圖為新表單，影響小）。
 - Claude（2026-10-07）：OpenGL 實畫面。新增 `Map3DViewControl.CaptureFrame`（離屏 FBO，共用抽出的 RenderScene）與 `MapEditorOpenGlTests.cs`（ARM_OPENGL_REQUIRED=1 強制；無 GL 時只檢查失敗原因）。初跑卡 2 分鐘：測試 STA 非主執行緒 → GLFW 主執行緒檢查例外被 ThreadExceptionDialog 擋住；測試改 ThrowException 模式並關 `GLFWProvider.CheckForMainThread`（僅測試）。之後發現產品 bug：關閉表單時父視窗先銷毀 GL handle/context，Dispose 再 MakeCurrent 觸發重新建立與 OnLoad 初始化失敗，InitializationFailed 對已銷毀表單 BeginInvoke 拋例外。修正：OnHandleDestroyed 在 context 消失前釋放 GL 資源；handle 重建時重新初始化；表單 handler 檢查 IsDisposed/IsHandleCreated。RTX 4080 實測：高度改變3744像素、undo殘差0、材質亮度55.1→58.2、水面藍色5.9→50.8、重建殘差0、Close 無例外。證據 TEMP/ArmClaudeQA/opengl-9。正式 exe 關閉流程未實際執行。
 - Claude（2026-10-07）：入口驗收。`--game/--map` 直達編輯器原可開啟劇情戰役 KAMP_（選單排除），新增 `Program.ResolveDirectMap` 與選單同範圍；參數錯誤顯示用法、不寫 crash_log。`MapEditorEntryTests.cs` 通過；full 宿主559/略過21、modules45，共604通過/0失敗。未實際啟動 exe。
 - 使用者指示（2026-10-07）：「AI 地圖生成先跳過」。AI 製圖功能（含 AiMapPlanningDialog 的 DPI）暫停，不再擴充；轉做其他編輯器缺口。

@@ -26,6 +26,7 @@
 | 缺完工建築範本 | 工地生成保留目標ID、不留DATA配對；失敗回滾/retry；中英提示、重存/重開保留、範本恢復後改回DATA並清提示、刪除 | `AgainstRomeModifier.Tests/MapEditorBuildingFallbackTests.cs`（合成範本） |
 | 儲存交易 | 前置驗證拒絕不寫檔；缺失/損壞 BCI 後回滾 bytes、快取及新增檔案；保留 dirty 可重試 | `AgainstRomeModifier.Tests/MapEditorSaveTransactionTests.cs` |
 | 事件與目標 | 事件 session、永久目標身份、矩形包含邊界、勝敗 terminal guard、JSON v6、對話框編輯 | `AgainstRomeMapEditor.Modules.Tests/ScenarioEventSessionTests.cs`、`AgainstRomeModifier.Tests/ScenarioEventsTests.cs`、`ScenarioEventDialogTests.cs` |
+| 3D 無法使用時退回 2D | 缺 floortex.dat：3D 停用、診斷報告列出缺少項目、2D 可編輯並儲存／重開 | `AgainstRomeModifier.Tests/MapEditor3DFallbackTests.cs` |
 | 3D 資料計算 | 高度插值、網格、相機限制、射線選取、材質 atlas | `AgainstRomeModifier.Tests/MapEditor3DTests.cs` |
 
 完整 solution 同時涵蓋 Modifier 與 SaveManager，總通過數不能當成地圖編輯器的功能數。部分測試在未提供原版資料或未啟用 live 環境時直接返回；通過總數也不能證明這些實機路徑已執行。
@@ -54,6 +55,6 @@ dotnet build AgainstRomeModifier.slnx -c Release -p:UseAppHost=false --artifacts
 dotnet test AgainstRomeModifier.slnx -c Release -p:UseAppHost=false --artifacts-path "$env:TEMP/ArmResumeQA" --no-restore --no-build --logger 'console;verbosity=quiet'
 ```
 
-最新工作樹結果：build 0 警告/0 錯誤；宿主 558 通過/21 略過，modules 45 通過，共 603 通過/21 略過/0 失敗（未設 live 變數時 AI live 測試直接返回，不算實機證據）。真實生成→預覽→套用→復原/重做→儲存→重開已另以 live 變數執行通過。未設定 `ARM_GAME_PATH`、`ARM_OLLAMA_LIVE`。以上 `--no-restore` 命令須先有相同 artifacts 路徑的 restore；新環境先移除 build 的 `--no-restore`。
+最新工作樹結果：build 0 警告/0 錯誤；宿主 561 通過/21 略過，modules 45 通過，共 606 通過/21 略過/0 失敗（未設 live 變數時 AI live 測試直接返回，不算實機證據）。真實生成→預覽→套用→復原/重做→儲存→重開已另以 live 變數執行通過。未設定 `ARM_GAME_PATH`、`ARM_OLLAMA_LIVE`。以上 `--no-restore` 命令須先有相同 artifacts 路徑的 restore；新環境先移除 build 的 `--no-restore`。
 
 `b9b9965` 的獨立 git archive 快照位於 `TEMP/ArmCoreCommitQA_e70f5f1a2802428abb9fd7546428d1a2/source`，不包含 AI 預覽 WIP；独立還原／建置／完整測試同樣為 0 警告/0 錯誤、536 通過/21 略過/0 失敗。
