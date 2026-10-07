@@ -10,6 +10,9 @@ internal sealed class ScenarioEventDialog : Form
     private readonly CheckBox _repeat = new() { AutoSize = true };
     private readonly CheckBox _enabled = new() { AutoSize = true };
     private readonly ListBox _list = new() { Dock = DockStyle.Fill, IntegralHeight = false };
+    private readonly Button _moveUp = new() { AutoSize = true };
+    private readonly Button _moveDown = new() { AutoSize = true };
+    private Button _addAction = null!;
     private readonly List<ScenarioAction> _actions;
     internal ScenarioEvent? Result { get; private set; }
 
@@ -33,12 +36,22 @@ internal sealed class ScenarioEventDialog : Form
             using var dialog = new ScenarioActionDialog(add ? new ScenarioAction(ScenarioActionKind.Message, "Welcome!") : _actions[index], aliases, en, unitName);
             if (dialog.ShowDialog(this) != DialogResult.OK) return;
             if (add) _actions.Add(dialog.Result!); else _actions[index] = dialog.Result!;
-            RefreshList(en);
+            RefreshList(en, add ? _actions.Count - 1 : index);
         }
         Button AddButton(string label, Action click) { var button = new Button { Text = label, AutoSize = true }; button.Click += (_, _) => click(); buttons.Controls.Add(button); return button; }
-        AddButton(en ? "Add action" : "新增動作", () => Edit(true));
+        _addAction = AddButton(en ? "Add action" : "新增動作", () => { if (_actions.Count < 32) Edit(true); });
         AddButton(en ? "Edit action" : "編輯動作", () => Edit(false));
-        AddButton(en ? "Delete action" : "刪除動作", () => { if (_list.SelectedIndex < 0) return; _actions.RemoveAt(_list.SelectedIndex); RefreshList(en); });
+        AddButton(en ? "Delete action" : "刪除動作", () => { int index = _list.SelectedIndex; if (index < 0) return; _actions.RemoveAt(index); RefreshList(en, Math.Min(index, _actions.Count - 1)); });
+        _moveUp.Text = en ? "Move up" : "上移"; _moveDown.Text = en ? "Move down" : "下移";
+        void Move(int offset)
+        {
+            int index = _list.SelectedIndex, target = index + offset;
+            if (index < 0 || target < 0 || target >= _actions.Count) return;
+            (_actions[index], _actions[target]) = (_actions[target], _actions[index]);
+            RefreshList(en, target);
+        }
+        _moveUp.Click += (_, _) => Move(-1); _moveDown.Click += (_, _) => Move(1);
+        buttons.Controls.AddRange([_moveUp, _moveDown]);
         var save = AddButton(en ? "OK" : "確定", () =>
         {
             try
@@ -51,11 +64,13 @@ internal sealed class ScenarioEventDialog : Form
         var cancel = AddButton(en ? "Cancel" : "取消", () => DialogResult = DialogResult.Cancel);
         AcceptButton = save; CancelButton = cancel;
         _list.DoubleClick += (_, _) => Edit(false);
+        _list.SelectedIndexChanged += (_, _) => UpdateActionButtons();
         Controls.Add(_list); Controls.Add(fields); Controls.Add(buttons); RefreshList(en); WinFormsTheme.Apply(this);
     }
 
-    private void RefreshList(bool en)
+    private void RefreshList(bool en, int selected = -1)
     {
+        _list.BeginUpdate();
         _list.Items.Clear();
         foreach (ScenarioAction action in _actions)
             _list.Items.Add(action.Kind switch
@@ -64,6 +79,15 @@ internal sealed class ScenarioEventDialog : Form
                 ScenarioActionKind.Diplomacy => $"{(en ? "Diplomacy" : "外交")}: {action.Team} → {action.OtherTeam} {(action.Hostile ? (en ? "hostile" : "敵對") : (en ? "peace" : "和平"))}",
                 _ => $"{(en ? "Spawn" : "生成部隊")}: {action.Alias} × {action.Count}, {(en ? "team" : "隊伍")} {action.Team} ({action.X}, {action.Z})"
             });
+        if (selected >= 0 && selected < _list.Items.Count) _list.SelectedIndex = selected;
+        _list.EndUpdate(); UpdateActionButtons();
+    }
+
+    private void UpdateActionButtons()
+    {
+        _addAction.Enabled = _actions.Count < 32;
+        _moveUp.Enabled = _list.SelectedIndex > 0;
+        _moveDown.Enabled = _list.SelectedIndex >= 0 && _list.SelectedIndex < _actions.Count - 1;
     }
 
     internal static void Field(TableLayoutPanel table, string title, Control control)

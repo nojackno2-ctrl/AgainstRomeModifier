@@ -167,14 +167,30 @@ public sealed class MapEditorFormTerrainIntegrationTests : IDisposable
                 using var form = new MapEditorForm(_root, new GameMapInfo("ENDL_005", map, true, "Events", "無盡模式"));
                 _ = form.Handle; Invoke(form, "LoadSelectedMap");
                 var events = (List<ScenarioEvent>)typeof(MapEditorForm).GetField("_events", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(form)!;
-                events.Add(new ScenarioEvent("Timer", 2) { Actions = [new(ScenarioActionKind.Message, "Ready")] });
+                events.Add(new ScenarioEvent(new string('T', 100), 2) { Actions = [new(ScenarioActionKind.Message, "Ready")] });
                 Invoke(form, "RefreshEventList", 0); Invoke(form, "UpdateEditorState");
+                Invoke(form, "DuplicateEvent");
+                Assert.Equal(2, events.Count);
+                Assert.Equal(100, events[1].Name.Length);
+                Assert.Equal(events[0].DelaySeconds, events[1].DelaySeconds);
+                Assert.Equal(events[0].Enabled, events[1].Enabled);
+                Assert.Equal(events[0].Repeat, events[1].Repeat);
+                Assert.NotSame(events[0].Actions, events[1].Actions);
+                events[1].Actions.Add(new(ScenarioActionKind.Message, "Copy only"));
+                Assert.Single(events[0].Actions);
                 Assert.True((bool)typeof(MapEditorForm).GetProperty("IsDirty", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(form)!);
                 Assert.True((bool)Invoke(form, "SaveMap", false)!);
                 Assert.False((bool)typeof(MapEditorForm).GetProperty("IsDirty", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(form)!);
                 ScenarioDocument saved = ScenarioDocument.Load(map);
-                Assert.Equal(baseline.Spawns, saved.Spawns); Assert.Equal(baseline.DataSlots, saved.DataSlots); Assert.Single(saved.Events);
+                Assert.Equal(baseline.Spawns, saved.Spawns); Assert.Equal(baseline.DataSlots, saved.DataSlots); Assert.Equal(2, saved.Events.Count);
+                Assert.Single(saved.Events[0].Actions); Assert.Equal(2, saved.Events[1].Actions.Count);
                 Assert.NotEqual(original, File.ReadAllBytes(script));
+                while (events.Count < 256) events.Add(events[0]);
+                Invoke(form, "RefreshEventList", 0);
+                foreach (string name in new[] { "_eventAdd", "_eventCopy" })
+                    Assert.False(((System.Windows.Forms.Button)typeof(MapEditorForm).GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(form)!).Enabled);
+                Assert.True(((System.Windows.Forms.Button)typeof(MapEditorForm).GetField("_eventEdit", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(form)!).Enabled);
+                Invoke(form, "DuplicateEvent"); Assert.Equal(256, events.Count);
                 events.Clear(); Assert.True((bool)Invoke(form, "SaveMap", false)!);
                 Assert.Equal(original, File.ReadAllBytes(script)); Assert.Empty(ScenarioDocument.Load(map).Events);
                 Assert.Equal(baseline.DataSlots, ScenarioDocument.Load(map).DataSlots);
@@ -197,7 +213,7 @@ public sealed class MapEditorFormTerrainIntegrationTests : IDisposable
                 _ = form.Handle; Invoke(form, "LoadSelectedMap");
                 var tabs = (System.Windows.Forms.TabControl)typeof(MapEditorForm).GetField("_inspectorTabs", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(form)!;
                 Assert.Single(tabs.TabPages[4].Controls); Assert.Single(tabs.TabPages[5].Controls);
-                foreach (string name in new[] { "_eventAdd", "_eventEdit", "_eventDelete" })
+                foreach (string name in new[] { "_eventAdd", "_eventEdit", "_eventCopy", "_eventDelete" })
                     Assert.False(((System.Windows.Forms.Button)typeof(MapEditorForm).GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(form)!).Enabled);
                 using var dialog = new ScenarioEventDialog(new("Event") { Actions = [new(ScenarioActionKind.Message, "Ready")] }, ["GER_INF01"], false);
                 using var action = new ScenarioActionDialog(new(ScenarioActionKind.SpawnUnit, Alias: "GER_INF01"), ["GER_INF01"], true);

@@ -10,6 +10,7 @@ internal sealed partial class MapEditorForm
     private readonly Button _eventAdd = new() { AutoSize = true };
     private readonly Button _eventEdit = new() { AutoSize = true };
     private readonly Button _eventDelete = new() { AutoSize = true };
+    private readonly Button _eventCopy = new() { AutoSize = true };
     private readonly Label _eventHint = new() { Dock = DockStyle.Top, Height = 100, Padding = new Padding(8) };
 
     private bool EventsDirty() => !_events.SequenceEqual(_eventsBaseline);
@@ -18,12 +19,13 @@ internal sealed partial class MapEditorForm
     {
         var panel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(8) };
         var commands = new FlowLayoutPanel { Dock = DockStyle.Bottom, AutoSize = true };
-        commands.Controls.AddRange([_eventAdd, _eventEdit, _eventDelete]);
+        commands.Controls.AddRange([_eventAdd, _eventEdit, _eventCopy, _eventDelete]);
         panel.Controls.Add(_eventList); panel.Controls.Add(_eventHint); panel.Controls.Add(commands);
         _eventList.SelectedIndexChanged += (_, _) => UpdateEventButtons();
         _eventList.DoubleClick += (_, _) => EditEvent(false);
         _eventAdd.Click += (_, _) => EditEvent(true);
         _eventEdit.Click += (_, _) => EditEvent(false);
+        _eventCopy.Click += (_, _) => DuplicateEvent();
         _eventDelete.Click += (_, _) =>
         {
             if (_selected?.IsCustom != true || _eventList.SelectedIndex < 0) return;
@@ -43,6 +45,7 @@ internal sealed partial class MapEditorForm
     {
         if (_inspectorTabs.TabPages.Count > 5) _inspectorTabs.TabPages[5].Text = en ? "Events" : "事件";
         _eventAdd.Text = en ? "Add" : "新增"; _eventEdit.Text = en ? "Edit" : "編輯"; _eventDelete.Text = en ? "Delete" : "刪除";
+        _eventCopy.Text = en ? "Duplicate" : "複製";
         _eventHint.Text = en
             ? "Run actions after a timer: show a message, change diplomacy or spawn units. Repeat runs at the selected interval. Save to apply. In-game behavior still needs validation."
             : "計時後顯示訊息、改變外交或生成部隊。可單次執行，或依相同間隔重複。按「儲存」套用；遊戲內效果仍待驗證。";
@@ -61,13 +64,27 @@ internal sealed partial class MapEditorForm
 
     private void UpdateEventButtons()
     {
-        _eventAdd.Enabled = _selected?.IsCustom == true;
-        _eventEdit.Enabled = _eventDelete.Enabled = _eventAdd.Enabled && _eventList.SelectedIndex >= 0;
+        bool custom = _selected?.IsCustom == true, selected = _eventList.SelectedIndex >= 0;
+        _eventAdd.Enabled = custom && _events.Count < 256;
+        _eventCopy.Enabled = _eventAdd.Enabled && selected;
+        _eventEdit.Enabled = _eventDelete.Enabled = custom && selected;
+    }
+
+    private void DuplicateEvent()
+    {
+        if (_selected?.IsCustom != true || _eventList.SelectedIndex < 0 || _events.Count >= 256) return;
+        int index = _eventList.SelectedIndex;
+        ScenarioEvent source = _events[index];
+        bool en = AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English;
+        string suffix = en ? " (copy)" : "（副本）";
+        string name = source.Name[..Math.Min(source.Name.Length, 100 - suffix.Length)] + suffix;
+        _events.Insert(index + 1, source with { Name = name, Actions = source.Actions.ToList() });
+        RefreshEventList(index + 1); UpdateEditorState();
     }
 
     private void EditEvent(bool add)
     {
-        if (_selected?.IsCustom != true || !add && _eventList.SelectedIndex < 0) return;
+        if (_selected?.IsCustom != true || add && _events.Count >= 256 || !add && _eventList.SelectedIndex < 0) return;
         int index = _eventList.SelectedIndex;
         bool en = AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English;
         var seed = add ? new ScenarioEvent(en ? $"Event {_events.Count + 1}" : $"事件 {_events.Count + 1}")
