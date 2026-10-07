@@ -18,13 +18,24 @@ public static class ScenarioLevelObjects
         ArgumentNullException.ThrowIfNull(store); ArgumentNullException.ThrowIfNull(previous); ArgumentNullException.ThrowIfNull(next); ArgumentNullException.ThrowIfNull(templateFor);
         // next 暫時仍包含舊槽位；物件刪除/排序後要先重建配對，不能以舊配對驗證新物件。
         ScenarioObjectIdentity.Prepare(next, validateBindings: false);
+        // Preserve an existing completed building even when the external official-map catalog is incomplete.
+        // Capture before removing owned slots; never borrow a stale slot or another spawn's template.
+        var ownedTemplates = new Dictionary<Guid, LevelObjectTemplate>();
+        foreach (ScenarioDataSlot binding in previous.DataSlots.Where(binding => binding.SpawnId != Guid.Empty))
+        {
+            ScenarioSpawn? old = previous.Spawns.SingleOrDefault(spawn => spawn.Id == binding.SpawnId && spawn.Prebuilt);
+            ScenarioSpawn? current = next.Spawns.SingleOrDefault(spawn => spawn.Id == binding.SpawnId && spawn.Prebuilt);
+            if (old is not null && current is not null && old.Alias.Equals(current.Alias, StringComparison.OrdinalIgnoreCase)
+                && store.OwnedTemplate(binding.Slot, binding.Uid) is { } owned)
+                ownedTemplates.TryAdd(binding.SpawnId, owned);
+        }
         foreach (ScenarioDataSlot owned in previous.DataSlots) store.RemoveIfUid(owned.Slot, owned.Uid);
         var slots = new List<ScenarioDataSlot>();
         var skipped = new List<ScenarioSpawn>();
         foreach (ScenarioSpawn spawn in next.Spawns.Where(spawn => spawn.Prebuilt))
         {
             if (spawn.Team is < 0 or > 8) throw new InvalidDataException("預建物件的隊伍必須介於 0 與 8。");
-            if (templateFor(spawn) is not { } template) { skipped.Add(spawn); continue; }
+            if ((ownedTemplates.GetValueOrDefault(spawn.Id) ?? templateFor(spawn)) is not { } template) { skipped.Add(spawn); continue; }
             float rotation = (float)(((spawn.Angle % 360) + 360) % 360 * Math.PI / 180);
             int slot = store.Add(template, spawn.X, spawn.Y, spawn.Z, rotation, spawn.Team);
             if (slot < 0) throw new InvalidOperationException("地圖的世界物件已達上限（14,000 個），無法再新增。");

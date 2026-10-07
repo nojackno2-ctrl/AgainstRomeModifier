@@ -328,6 +328,50 @@ public sealed class LevelObjectStoreTests
         Assert.Empty(second.DataSlots);
     }
 
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    public void Existing_completed_building_uses_owned_template_only_for_matching_uid_and_alias(bool staleUid, bool changedAlias)
+    {
+        using var level = new LevelFixture(pfil: false);
+        var store = level.Load();
+        var template = Assert.Single(store.Templates());
+        var first = new AgainstRomeModifier.Scripting.ScenarioDocument
+        { Spawns = [new("HOUSE", 10, 20, 0, Prebuilt: true)] };
+        AgainstRomeModifier.Scripting.ScenarioLevelObjects.Apply(store, new(), first, _ => template);
+        var binding = Assert.Single(first.DataSlots);
+        if (staleUid) first.DataSlots[0] = binding with { Uid = binding.Uid + 1 };
+        var next = new AgainstRomeModifier.Scripting.ScenarioDocument
+        { Spawns = [first.Spawns[0] with { Alias = changedAlias ? "OTHER" : "HOUSE", X = 600, Team = 3, Angle = 90 }] };
+        var skipped = AgainstRomeModifier.Scripting.ScenarioLevelObjects.Apply(store, first, next, _ => null);
+        if (staleUid || changedAlias)
+        {
+            Assert.Single(skipped); Assert.Empty(next.DataSlots);
+            if (staleUid) Assert.Equal(binding.Uid, store.UidAt(binding.Slot));
+        }
+        else
+        {
+            Assert.Empty(skipped);
+            var saved = Assert.Single(next.DataSlots);
+            var building = Assert.Single(store.Objects(), item => item.Slot == saved.Slot);
+            Assert.Equal((600f, 3), (building.X, building.Team));
+            Assert.Equal(MathF.PI / 2, building.Rotation, 5);
+            Assert.Equal(first.Spawns[0].Id, saved.SpawnId);
+        }
+    }
+
+    [Fact]
+    public void Owned_template_rejects_linked_invalid_position_and_unowned_slots()
+    {
+        using var level = new LevelFixture(pfil: false);
+        var store = level.Load();
+        Assert.Null(store.OwnedTemplate(-1, 1));
+        Assert.Null(store.OwnedTemplate(0, 0));
+        foreach (int slot in new[] { 3, 4, 5, 6 })
+            Assert.Null(store.OwnedTemplate(slot, store.UidAt(slot)!.Value));
+    }
+
     private static int Record(int slot) => 16 + slot * LevelObjectStore.RecordSize;
     private static int Position(int index) => 8 + index * LevelObjectStore.PositionSize;
     private static int Column(int column, int slot) => 16 + LevelFixture.Count * LevelObjectStore.RecordSize

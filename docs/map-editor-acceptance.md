@@ -6,6 +6,7 @@
 
 | 項目 | 驗證內容 | 證據（tests 下的測試檔） |
 | --- | --- | --- |
+| 示範地圖整合 | 真實 TEMP 副本：土路 undo/redo、丘陵、小湖、森林、10人部隊、三棟 DATA 建築與區域勝利事件；儲存前隔離、新表單重開及重存 bytes 一致。遊戲內尋路／採集／勝利未驗證 | `MapEditorDemoAcceptanceTests.cs`，須 `ARM_DEMO_ACCEPTANCE=1`；重現與限制見 [示範驗收](map-editor-demo-acceptance.md) |
 | 地圖建立／刪除 | manifest 失敗回滾新建正式槽位、保留來源、原槽位重試；拒絕覆蓋既有final/tmp；拒刪原廠與未登記地圖 | `AgainstRomeModifier.Tests/MapEditorPhase1Tests.cs` |
 | 原廠唯讀／儲存前置驗證 | 原廠帶marker仍唯讀；移除marker、原廠槽位、錯誤root在開啟briefing前拒存；保留dirty與bytes，恢復marker可retry | `AgainstRomeModifier.Tests/MapEditorSaveAccessTests.cs` |
 | 備份排除 | 自製005/999含子目錄team.dat不進基準、不讀鎖檔、不產bak；保留既有bak，原版team/bak正常 | `AgainstRomeModifier.Tests/CustomMapBackupTests.cs` |

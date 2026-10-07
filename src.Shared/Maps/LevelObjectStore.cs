@@ -154,6 +154,19 @@ public sealed class LevelObjectStore
         }
     }
 
+    /// <summary>Capture an owned, unlinked object's template only while its runtime UID still matches.</summary>
+    public LevelObjectTemplate? OwnedTemplate(int slot, uint uid)
+    {
+        if (uid == 0 || UidAt(slot) != uid || IsLinked(slot)) return null;
+        int record = RecordOffset(slot);
+        int p0 = BinaryPrimitives.ReadUInt16LittleEndian(_objects.AsSpan(record + 67)), p1 = BinaryPrimitives.ReadUInt16LittleEndian(_objects.AsSpan(record + 69));
+        if (p0 >= _positionCount || p1 >= _positionCount) return null;
+        return new LevelObjectTemplate(TypeId(slot), _objects.AsSpan(record, RecordSize).ToArray(),
+            Enumerable.Range(0, ColumnWidths.Length).Select(column => ReadColumn(column, slot)).ToArray(),
+            Enumerable.Range(0, ObjDataWidths.Length).Select(segment => _objdata.AsSpan(SegmentOffset(segment, slot), ObjDataWidths[segment]).ToArray()).ToArray(),
+            _positions.AsSpan(8 + p0 * PositionSize, PositionSize).ToArray(), _positions.AsSpan(8 + p1 * PositionSize, PositionSize).ToArray());
+    }
+
     /// <summary>
     /// 以範本在世界座標新增一個物件；回傳使用的槽位，沒有空間時回傳 -1。
     /// <paramref name="team"/> 改寫記錄的隊伍欄（+1，u16；8＝中立）。官方地圖同型建築在不同隊伍間只有此欄與 uid／位置／自身索引不同。

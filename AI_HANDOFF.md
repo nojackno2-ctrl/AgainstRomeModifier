@@ -1,5 +1,14 @@
 # AI Handoff - Live Project Memory
 
+## 示範地圖整合驗收（2026-10-08 Codex，編輯器階段完成）
+
+- 使用者同意按建議開始，先完成 TEMP 示範地圖的編輯→儲存→新表單重開；遊戲內可玩性仍須獨立驗收，不存取安裝目錄。
+- 起始 HEAD f7f89ee，只有原有未追蹤 .claude/；新增 MapEditorDemoAcceptanceTests，以 ARM_DEMO_ACCEPTANCE=1 明確啟用，來源與全新輸出限 TEMP，拒絕 reparse points；使用真實副本製作土路、丘陵、小湖、森林、部隊與區域勝利事件，保留地圖與報告。
+- 首次真實副本驗收失敗：編輯部隊觸發建築重建，官方副本缺範本，原有三棟完工建築被降為腳本工地。ScenarioLevelObjects 在刪除舊槽前擷取同 ID／alias／UID 的安全未連結範本；新增三例確認正常沿用、stale UID／改 alias 不沿用，定向3例通過。第二次失敗於森林隨機散佈被既有樹木阻擋，改先用移除工具清示範區再種植。
+- 第三次明確啟用的真實副本整合驗收1例通過；最終全套再啟用一次，證據 TEMP/ArmDemoAcceptance_20261008_04：game/MAPS/ENDL_005、result.json、source-hashes.json、demo-3d.png（已目視，整張地圖概覽不證明接縫或遊戲內效果）。來源地圖 SHA256 全部未變、土路 undo/redo、丘陵／湖中心27×4低於水位120、16株森林、10人部隊、三棟 DATA 建築、區域勝利事件 ID、儲存前不寫檔、新表單重開與重存 bytes 均驗證。
+- 最終 DOTNET_ROLL_FORWARD=Major，Release build 0警告/0錯誤；ARM_COMPARE_GAME=TEMP副本、ARM_OPENGL_REQUIRED=1、ARM_DEMO_ACCEPTANCE=1，dotnet test AgainstRomeModifier.slnx -c Release --no-build --no-restore：host650通過/22略過、modules275通過，0失敗；git diff --check通過。補 OwnedTemplate linked／位置索引／未擁有槽位拒絕測試。曾在測試尚持 DLL 時重建造成 MSB3026 重試，待測試結束後重建恢復零警告。
+- 本階段不宣稱資源可採集、尋路、遊戲內建築完工或勝利腳本已實測；後續依整合結果補缺口，再做地圖檢查面板。
+
 ## 土路（PFAD）可繪製材質（2026-10-08 Claude；goal「繼續開發地圖編輯器」）
 
 - 道路圖塊分析（唯讀 TEMP `ArmGameCompare_20261007/floortex.dat`，未存取安裝目錄）：H_WEG1–5 只通東西、V_WEG1–3 只通南北，**無轉角／路口片**；PFAD 是九宮格 A/B 邊界組（與 4U 慣例一致，14/16 四角組合），原版用量最大。詳見 `docs/map-editor-road-tiles.md`。
