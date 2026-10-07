@@ -22,7 +22,7 @@ internal sealed partial class MapEditorForm
 
     private const int WaterOperationIndex = (int)TerrainHeightOperation.Roughen + 1;
     /// <summary>水域筆刷挖到水面下的深度（高度圖單位）。</summary>
-    internal const int WaterBedDepth = 6;
+    internal const int WaterBedDepth = 16; // 原版湖底約在水面下 18 單位；6 單位時遊戲中水太淺、近乎透明
 
     /// <summary>水面下 <see cref="WaterBedDepth"/> 的高度圖數值；水面太低（挖不出水）時回傳 -1。</summary>
     private int WaterBedHeight()

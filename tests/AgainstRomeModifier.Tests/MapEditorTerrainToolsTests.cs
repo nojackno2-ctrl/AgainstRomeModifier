@@ -56,7 +56,7 @@ public sealed partial class MapEditorSaveTransactionTests
     [Fact]
     public void Water_operation_carves_below_the_water_surface_and_needs_a_water_level()
     {
-        string map = CreateFixture(); // Waterlevel 120、Heightmapstep 4 → 水面 30、水底 24
+        string map = CreateFixture(); // Waterlevel 120、Heightmapstep 4 → 水面 30、水底 14
         RunInSta(() =>
         {
             using var form = new MapEditorForm(_root, new GameMapInfo("ENDL_005", map, true, "Water", "Test"));
@@ -72,10 +72,10 @@ public sealed partial class MapEditorSaveTransactionTests
             int size = layers.VertexSize, center = 130 * size + 130; // tile (32,32) 中心頂點
             byte[] before = layers.Heights.ToArray();
             Assert.True(before[center] > 30);
-            for (int pass = 0; pass < 8; pass++) { Invoke(form, "PaintTexture", new TexturePaintEventArgs(32, 32, "", "")); Invoke(form, "CommitStroke"); }
-            Assert.Equal(24, layers.Heights[center]);
+            for (int pass = 0; pass < 12; pass++) { Invoke(form, "PaintTexture", new TexturePaintEventArgs(32, 32, "", "")); Invoke(form, "CommitStroke"); }
+            Assert.Equal(14, layers.Heights[center]);
             Assert.Equal(before[0], layers.Heights[0]);
-            for (int pass = 0; pass < 8; pass++) Invoke(form, "Undo");
+            for (int pass = 0; pass < 12; pass++) Invoke(form, "Undo");
             Assert.Equal(before, layers.Heights);
 
             GetField<NumericUpDown>(form, "_waterLevel").Value = 0;

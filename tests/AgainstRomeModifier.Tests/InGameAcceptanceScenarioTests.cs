@@ -12,7 +12,7 @@ namespace AgainstRomeModifier.Tests;
 /// 會修改該自製地圖，執行前須先備份。案例：
 /// victory＝3 秒訊息＋第一支 team 0 部隊進入其東方矩形後訊息與勝利；
 /// defeat＝3 秒訊息＋45 秒後訊息與失敗（用於存讀檔後事件是否延續）；
-/// terrain＝出生點北方示範區（自動過渡材質、粗糙化丘陵、茂密混合森林、印章道路）＋3 秒訊息。
+/// terrain＝出生點附近示範區（不同材質自動過渡、粗糙化丘陵、5×5 小湖、茂密混合森林、印章道路）＋3 秒訊息。
 /// </summary>
 public sealed class InGameAcceptanceScenarioTests
 {
@@ -84,9 +84,11 @@ public sealed class InGameAcceptanceScenarioTests
         var catalog = Field<FloorMaterialCatalog>("_floorMaterials");
         var session = Field<TerrainBlendEditSession>("_terrainBlendSession");
         int painted = 0;
+        var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach ((int x, int y) in new[] { (33, 29), (39, 26), (45, 29) })
         {
-            foreach (FloorMaterial material in catalog.Materials)
+            string? here = catalog.FindByTexture(document.GetTexture(x, y))?.Id;
+            foreach (FloorMaterial material in catalog.Materials.Where(item => !used.Contains(item.Id) && !string.Equals(item.Id, here, StringComparison.OrdinalIgnoreCase)))
             {
                 string textureBefore = document.GetTexture(x, y);
                 Set("_activeMaterial", material);
@@ -94,7 +96,7 @@ public sealed class InGameAcceptanceScenarioTests
                 if (!string.Equals(document.GetTexture(x, y), textureBefore, StringComparison.OrdinalIgnoreCase)
                     && string.Equals(catalog.FindByTexture(document.GetTexture(x, y))?.Id, material.Id, StringComparison.OrdinalIgnoreCase))
                 {
-                    log.Add($"material {material.Id} at ({x},{y})"); painted++; break;
+                    log.Add($"material {material.Id} ({material.DisplayName}) over {here} at ({x},{y})"); used.Add(material.Id); painted++; break;
                 }
             }
         }
@@ -107,6 +109,12 @@ public sealed class InGameAcceptanceScenarioTests
         byte[] heightsBefore = layers.Heights.ToArray();
         Paint(39, 20); Paint(39, 20); Invoke(form, "CommitStroke");
         log.Add($"roughen changed {heightsBefore.Where((value, index) => value != layers.Heights[index]).Count()} vertices at (39,20)");
+        // 水域：5×5 小湖，多次塗抹直到挖到水面下。
+        brush.SelectedIndex = 2;
+        Field<System.Windows.Forms.ToolStripComboBox>("_terrainOperation").SelectedIndex = (int)TerrainHeightOperation.Roughen + 1;
+        for (int pass = 0; pass < 12; pass++) { Paint(32, 37); Invoke(form, "CommitStroke"); }
+        int lakeVertex = (int)(37.5f * (layers.VertexSize - 1) / 64) * layers.VertexSize + (int)(32.5f * (layers.VertexSize - 1) / 64);
+        log.Add($"lake at (32,37): center height {layers.Heights[lakeVertex]} (water level {Field<System.Windows.Forms.NumericUpDown>("_waterLevel").Value})");
         // 3. 茂密混合森林：9×9，樹木類。
         Mode("Nature");
         var catalogTask = (Task)typeof(MapEditorForm).GetField("_natureCatalogTask", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(form)!;
