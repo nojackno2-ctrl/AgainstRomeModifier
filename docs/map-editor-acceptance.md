@@ -18,6 +18,7 @@
 | AI 套用 | 材質區域拒絕保留先前接受區域；模式切換；材質獨立 undo，高度/通行共用 undo；儲存及重新開图 | `AgainstRomeModifier.Tests/MapEditorAiWorkflowIntegrationTests.cs` |
 | AI 生成 UI | 預設 Laguna；先生成/檢視再套用；取消、部分失敗、重試、舊方案失效；一次套用 | `AgainstRomeModifier.Tests/AiMapPlanningDialogTests.cs` |
 | AI 視覺預覽與角色進度 | 獨立快照、不改bytes/dirty/history；材質拒絕區域與變更量和正式套用一致；圖片失效/釋放、預覽失敗拒套用/重試；角色起訖/部分失敗順序，取消後晚到進度不覆蓋UI | `AiMapPlanningDialogTests.cs`、`MapEditorAiWorkflowIntegrationTests.cs`、`MultiAiMapPlannerTests.cs` |
+| AI 真實完整流程 | 真實 Ollama `laguna-xs-2.1:latest` 三角色依序生成→預覽（不改 bytes/dirty）→一次套用（統計與預覽相同）→材質與高度/通行分別 undo/redo→儲存→新表單重開一致；中英 880×740/640×580 截圖 | `AgainstRomeModifier.Tests/MapEditorAiLiveAcceptanceTests.cs`（須 `ARM_AI_ACCEPTANCE_LIVE=1`，否則直接返回）；2026-10-07 證據 `TEMP/ArmClaudeQA/ai-live-1` |
 | AI 序列推論 | 三角色依序執行；跨 planner 共用單一推論鎖；取消排隊不送出請求 | `AgainstRomeModifier.Tests/MultiAiMapPlannerTests.cs`、`OllamaSingleInferenceTests.cs` |
 | 放置物件 | 編輯/複製身份、快照隔離、批次原子性；多選 undo/redo、越界拒絕 | `AgainstRomeMapEditor.Modules.Tests/PlacementBatchRegressionTests.cs`、`AgainstRomeModifier.Tests/PlacementBatchUiTests.cs` |
 | 單兵與自然物件 | 儲存失敗後重試、保留部隊目標身份；自然物件只寫入一次、更新標記及再次刪除 | `AgainstRomeModifier.Tests/MapEditorSavePlacementRegressionTests.cs` |
@@ -53,6 +54,6 @@ dotnet build AgainstRomeModifier.slnx -c Release -p:UseAppHost=false --artifacts
 dotnet test AgainstRomeModifier.slnx -c Release -p:UseAppHost=false --artifacts-path "$env:TEMP/ArmResumeQA" --no-restore --no-build --logger 'console;verbosity=quiet'
 ```
 
-最新工作樹結果：build 0 警告/0 錯誤；宿主 554 通過/21 略過，modules 45 通過，共 599 通過/21 略過/0 失敗。AI 預覽與角色進度已補合成驗證；新UI視覺與真實生成完整流程仍待驗收。未設定 `ARM_GAME_PATH`、`ARM_OLLAMA_LIVE`。以上 `--no-restore` 命令須先有相同 artifacts 路徑的 restore；新環境先移除 build 的 `--no-restore`。
+最新工作樹結果：build 0 警告/0 錯誤；宿主 555 通過/21 略過，modules 45 通過，共 600 通過/21 略過/0 失敗（未設 live 變數時 AI live 測試直接返回，不算實機證據）。真實生成→預覽→套用→復原/重做→儲存→重開已另以 live 變數執行通過。未設定 `ARM_GAME_PATH`、`ARM_OLLAMA_LIVE`。以上 `--no-restore` 命令須先有相同 artifacts 路徑的 restore；新環境先移除 build 的 `--no-restore`。
 
 `b9b9965` 的獨立 git archive 快照位於 `TEMP/ArmCoreCommitQA_e70f5f1a2802428abb9fd7546428d1a2/source`，不包含 AI 預覽 WIP；独立還原／建置／完整測試同樣為 0 警告/0 錯誤、536 通過/21 略過/0 失敗。

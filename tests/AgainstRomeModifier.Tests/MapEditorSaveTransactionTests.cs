@@ -300,7 +300,7 @@ public sealed partial class MapEditorSaveTransactionTests : IDisposable
         });
     }
 
-    private static void RunInSta(Action action)
+    private static void RunInSta(Action action, TimeSpan? timeout = null)
     {
         Exception? failure = null;
         var thread = new Thread(() =>
@@ -310,7 +310,7 @@ public sealed partial class MapEditorSaveTransactionTests : IDisposable
         });
         thread.SetApartmentState(ApartmentState.STA);
         thread.Start();
-        Assert.True(thread.Join(TimeSpan.FromSeconds(60)), "STA 測試執行逾時（可能彈出模態對話框或死鎖）。");
+        Assert.True(thread.Join(timeout ?? TimeSpan.FromSeconds(60)), "STA 測試執行逾時（可能彈出模態對話框或死鎖）。");
         if (failure is not null)
         {
             ExceptionDispatchInfo.Capture(failure).Throw();

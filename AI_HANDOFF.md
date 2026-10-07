@@ -1,6 +1,6 @@
 # AI Handoff - Live Project Memory
 
-## 最新指示與狀態（2026-10-07 Codex）
+## 最新指示與狀態（2026-10-07 Codex；Claude 續作中）
 
 - 使用者已恢復「繼續完成地圖編輯器的開發」。Codex 2026-10-07 依現有工作樹續作，未委派；整體目標進行中，尚未完成。
 - 最新澄清（2026-10-07）：使用者的「本地AI」原指設計程式時呼叫的子代理，不是產品需求；既有AI製圖功能已明確授權保留並做好，不能再混淆產品模型與開發代理。
@@ -29,6 +29,8 @@
 - README/user guide 已修正為 Laguna 序列推論、材質獨立而高度/通行共用撤銷歷史、建築空間提示非實機保證、自包含版本執行需求；本輪不沿用舊實機結果宣稱新版本可玩。
 
 ## 最新驗證與失敗紀錄
+
+- Claude（2026-10-07 13:20 起）：接手 Codex 留下的未提交 `MapEditorAiLiveAcceptanceTests.cs` 與 `RunInSta` timeout 參數。初次 build 有 CS8604（`layers.Collision.ToArray()`）與 CA1869，已修。設 `ARM_AI_ACCEPTANCE_LIVE=1` 實跑真實 Ollama laguna 三角色（約 17 秒，Terrain4/Water1/Materials1，水系河流缺 toLocation 被正規化移除）：預覽不改 bytes/dirty、套用一次且統計與預覽相同（高度14333/通行448/材質1）、undo/redo、儲存、新表單重開一致，通過。證據 `TEMP/ArmClaudeQA/ai-live-1`（result/progress/中英兩尺寸截圖，96 DPI）。完整 `--no-build` 測試宿主555通過/21略過、modules45，共600通過/0失敗。下一步：高 DPI（編輯器所有 Form 未設 AutoScaleMode，字型為點數而列高/欄寬為固定像素，PerMonitorV2 下 >96 DPI 可能截字）。
 
 - Codex（2026-10-07）：開始第4階段；AI預覽WIP接上正式host/dialog，獨立height/collision/material Fork走同Applier，加入橙色材質變更與圖例/變更統計/拒絕提示，圖片於失效/重試/關閉釋放，預覽失敗不能套用。Release build 0警告/0錯誤；UI/host隔離與實際套用一致定向19通過。角色進度UI/planner接入，35項定向通過；新增progress序列1通過，redo/pending初測2失敗因Redo本身CommitStroke會清redo，已分開合法redo與pending操作案例，再跑3通過。加入紫點拒絕區域、橙點材質變更保留底層水域/高度。只用repository/TEMP，不宣稱live/可玩性。角色生成進度已整合；新增紫點與正式套用一致定向1通過，full --no-build宿主554通過/21略過、modules45通過，共599通過/21略過/0失敗。新UI視覺/真實完整流程仍待驗證。
 
