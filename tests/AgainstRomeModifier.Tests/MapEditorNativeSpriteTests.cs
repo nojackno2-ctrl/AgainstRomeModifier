@@ -64,6 +64,12 @@ public sealed partial class MapEditorSaveTransactionTests
         Assert.Equal(0, Pick(Screen(marker, 0) + new Vector2(5, 0), marker)); // marker radius
         Assert.Equal(-1, Pick(Screen(marker, 0) + new Vector2(12, 0), marker));
         Assert.Equal(-1, SceneObjectRenderer.PickObject([centre], [sprite], _ => false, heights, view, projection, viewport, body)); // not in the atlas => marker only
+        // Sprite-less map DATA objects are invisible in game and not pickable; script marks keep a pickable hint.
+        var hidden = marker with { Name = "ParFoo", SourceFile = "DATA/objects.dat" };
+        var script = marker with { Name = "Skriptmark00_Waypoint", SourceFile = "DATA/objects.dat" };
+        Vector2 near = Screen(marker, 0) + new Vector2(2, 0);
+        Assert.Equal(-1, SceneObjectRenderer.PickObject([hidden], [null], _ => true, heights, view, projection, viewport, near, markerVisible: Map3DViewControl.MarkerVisible));
+        Assert.Equal(0, SceneObjectRenderer.PickObject([script], [null], _ => true, heights, view, projection, viewport, near, markerVisible: Map3DViewControl.MarkerVisible));
     }
 
     [Fact]
@@ -310,6 +316,43 @@ public sealed partial class MapEditorSaveTransactionTests
             using Bitmap frame = view.CaptureFrame(1024, 610)!;
             frame.Save(Path.Combine(output, "editor-house.png"));
         }, TimeSpan.FromMinutes(2));
+    }
+
+    /// <summary>
+    /// 原版地圖完整場景（需 ARM_COMPARE_GAME 且其中有 ENDL_000 唯讀副本）：DATA 物件（樹木、岩石、建築）
+    /// 應以原生 sprite 出現在 3D 場景；擷取全圖與聚落近景供目視。
+    /// </summary>
+    [Fact]
+    public void Real_original_map_shows_level_objects_with_native_sprites()
+    {
+        string? game = Environment.GetEnvironmentVariable("ARM_COMPARE_GAME");
+        if (string.IsNullOrWhiteSpace(game) || !Directory.Exists(Path.Combine(game, "ENDL_000"))) return;
+        string output = Environment.GetEnvironmentVariable("ARM_OPENGL_OUTPUT") ?? game;
+        RunInSta(() =>
+        {
+            Application.SetUnhandledExceptionMode(UnhandledExceptionMode.ThrowException, threadScope: true);
+            OpenTK.Windowing.Desktop.GLFWProvider.CheckForMainThread = false;
+            using var form = new MapEditorForm(game, new GameMapInfo("ENDL_000", Path.Combine(game, "ENDL_000"), false, "Original", "Test"));
+            typeof(MapEditorForm).GetField("_allowClose", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(form, true);
+            form.StartPosition = FormStartPosition.Manual; form.Location = new Point(-30000, -30000);
+            form.Show(); Application.DoEvents();
+            Invoke(form, "SetActiveView", true); Application.DoEvents();
+            var view = GetField<Map3DViewControl>(form, "_view3d");
+            if (!view.IsReady) { Assert.NotEqual("1", Environment.GetEnvironmentVariable("ARM_OPENGL_REQUIRED")); return; }
+            var levelObjects = (IReadOnlyList<LevelWorldObject>)typeof(MapEditorForm).GetField("_levelObjects", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(form)!;
+            Assert.True(levelObjects.Count > 100, $"原版地圖只有 {levelObjects.Count} 個 DATA 物件。");
+            Assert.True(view.SpriteObjectCount > levelObjects.Count / 2, $"{view.SpriteObjectCount} 個 sprite／{levelObjects.Count} 個 DATA 物件。");
+            var timer = System.Diagnostics.Stopwatch.StartNew();
+            using (Bitmap overview = view.CaptureFrame(1280, 800)!) overview.Save(Path.Combine(output, "original-overview.png"));
+            File.WriteAllText(Path.Combine(output, "original-stats.txt"), $"level={levelObjects.Count} sprites={view.SpriteObjectCount} overviewMs={timer.ElapsedMilliseconds}");
+            var sdl = (IReadOnlyList<MapSceneObject>)typeof(MapEditorForm).GetField("_sceneObjects", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(form)!;
+            MapSceneObject? house = sdl.FirstOrDefault(item => item.Name.Contains("Haupthaus", StringComparison.Ordinal)) ?? (sdl.Count > 0 ? sdl[0] : null);
+            Assert.NotNull(house);
+            view.FocusTile(house.WorldX / 256f, house.WorldZ / 256f);
+            ((EditorCamera)typeof(Map3DViewControl).GetField("_camera", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(view)!).ZoomToGameScale(800);
+            using Bitmap close = view.CaptureFrame(1280, 800)!;
+            close.Save(Path.Combine(output, "original-settlement.png"));
+        }, TimeSpan.FromMinutes(3));
     }
 
     /// <summary>Minimal v6 8-bit ALR: one opaque frame of palette index 1 (pure red in the native 0x00BBGGRR order).</summary>

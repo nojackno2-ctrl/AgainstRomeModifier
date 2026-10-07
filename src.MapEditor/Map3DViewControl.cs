@@ -87,7 +87,8 @@ internal sealed class Map3DViewControl : GLControl
         Matrix4x4 projection = _camera.GetProjectionMatrix(ClientSize.Width / (float)ClientSize.Height);
         NativeSpriteAtlas? atlas = _spriteAtlas;
         return SceneObjectRenderer.PickObject(_objects, _objectSprites, sprite => atlas?.TryGetUv(sprite, out _) == true, _heights,
-            _camera.GetViewMatrix(), projection, new System.Numerics.Vector2(ClientSize.Width, ClientSize.Height), new System.Numerics.Vector2(point.X, point.Y));
+            _camera.GetViewMatrix(), projection, new System.Numerics.Vector2(ClientSize.Width, ClientSize.Height), new System.Numerics.Vector2(point.X, point.Y),
+            markerVisible: MarkerVisible);
     }
 
     // 3D 檢視不繪製「與已儲存基準的差異」高亮（那是 2D MapCanvasControl 的職責），
@@ -542,9 +543,21 @@ internal sealed class Map3DViewControl : GLControl
         for (int index = 0; index < _objects.Count; index++)
         {
             if (HasSprite(index)) continue; // drawn with its original game sprite
-            DrawColorGeometry(_markerVao, PrimitiveType.Points, 1, matrix, TeamColor(_objects[index].Team), 10, index);
+            MapSceneObject item = _objects[index];
+            if (!MarkerVisible(item)) continue; // map DATA objects without a sprite are invisible in game
+            if (IsLevelDataObject(item)) // script marks: a small editor-only hint
+            {
+                DrawColorGeometry(_markerVao, PrimitiveType.Points, 1, matrix, new System.Numerics.Vector4(.2f, .85f, .95f, 1), 5, index);
+                continue;
+            }
+            DrawColorGeometry(_markerVao, PrimitiveType.Points, 1, matrix, TeamColor(item.Team), 10, index);
         }
     }
+
+    /// <summary>Whether an object without a sprite gets a marker (and is pickable): not invisible map DATA objects.</summary>
+    internal static bool MarkerVisible(MapSceneObject item) => !IsLevelDataObject(item) || item.Name.StartsWith("Skriptmark", StringComparison.OrdinalIgnoreCase);
+
+    internal static bool IsLevelDataObject(MapSceneObject item) => item.SourceFile.Equals("DATA/objects.dat", StringComparison.OrdinalIgnoreCase);
 
     private bool HasSprite(int index)
         => _spriteAtlas is not null && index < _objectSprites.Length && _objectSprites[index] is { } sprite && _spriteAtlas.TryGetUv(sprite, out _);

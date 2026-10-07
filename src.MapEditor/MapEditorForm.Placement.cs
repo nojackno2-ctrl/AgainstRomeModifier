@@ -280,7 +280,7 @@ internal sealed partial class MapEditorForm
             figure ? (int)_placeCount.Value : 0) { ScenarioId = Guid.NewGuid() });
         RefreshPlacedList();
         IReadOnlyList<MapSceneObject> effective = EffectiveSceneObjects();
-        _canvas.UpdateSceneObjects(effective); _view3d?.UpdateSceneObjects(effective);
+        PushSceneObjects(effective);
         UpdateEditorState();
         _status.Text = isEn ? $"Placed {selection.Text} at tile ({e.X},{e.Y}); Save to write it." : $"已在格子 ({e.X},{e.Y}) 放置 {selection.Text}；按「儲存」才會寫入。";
         // 建築與樹木／草叢重疊時，以腳本生成會被遊戲的放置檢查拒絕；寫入 DATA 則會穿模。
@@ -312,7 +312,7 @@ internal sealed partial class MapEditorForm
 
         RefreshPlacedList();
         IReadOnlyList<MapSceneObject> effective = EffectiveSceneObjects();
-        _canvas.UpdateSceneObjects(effective); _view3d?.UpdateSceneObjects(effective);
+        PushSceneObjects(effective);
         UpdateEditorState();
         _status.Text = isEn
             ? $"Duplicated {selectedIndices.Count} placed object(s); Save to write."
@@ -335,7 +335,7 @@ internal sealed partial class MapEditorForm
             _placementSession.Edit(index, updated);
             RefreshPlacedList();
             IReadOnlyList<MapSceneObject> effective = EffectiveSceneObjects();
-            _canvas.UpdateSceneObjects(effective); _view3d?.UpdateSceneObjects(effective);
+            PushSceneObjects(effective);
             UpdateEditorState();
             _status.Text = isEn
                 ? $"Updated {ObjectDisplayName(updated.Type, isEn)}."
@@ -349,7 +349,7 @@ internal sealed partial class MapEditorForm
         _placementSession.RemoveMany(_placedList.SelectedItems.Cast<ListViewItem>().Select(row => (int)row.Tag!));
         RefreshPlacedList();
         IReadOnlyList<MapSceneObject> effective = EffectiveSceneObjects();
-        _canvas.UpdateSceneObjects(effective); _view3d?.UpdateSceneObjects(effective);
+        PushSceneObjects(effective);
         UpdateEditorState();
     }
 

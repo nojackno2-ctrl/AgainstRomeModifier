@@ -1,5 +1,11 @@
 # AI Handoff - Live Project Memory
 
+## 3D 場景含地圖 DATA 全部物件（2026-10-07 Claude；goal「繼續開發遊戲編輯器」）
+
+- `MapEditorForm.PushSceneObjects`／`SceneObjectsFor3D`：2D 維持原物件集；3D 另加 DATA/objects.dat 全部物件（非地景依原隊伍；地景依自然物件待刪／待增狀態），所有原先「畫布＋3D 同時更新」改走此函式。沒有 sprite 的 DATA 物件在遊戲中看不見：3D 不畫也不可點選，唯 `Skriptmark*` 以 5px 青點提示（`Map3DViewControl.MarkerVisible`）。
+- 原版 ENDL_000 唯讀副本實測（`ARM_COMPARE_GAME` 選用測試）：6618 DATA 物件、7143 sprite，全圖擷取 26 ms；聚落近景（主屋、鐵匠、柵欄、雕像）與森林目視接近遊戲。daynight.bmp 為 24×6 時段色表，與實測光照增益對不上，光照暫緩。
+- 驗證：build 0警告/0錯誤；全測試 宿主613/22略過、modules123，0失敗。
+
 ## 遊戲內比對與正交相機（2026-10-07 Claude；使用者授權「啟動遊戲」）
 
 - 啟動失敗根因：修改器部署的 argm-trace `winmm.dll` 代理只匯出 EXE 用到的 18 個函式，NVIDIA `NvMemMapStorage.dll` 需要 `timeBeginPeriod` → 「無法找到輸入點」。依使用者指示以 CLI `restore --all --preserve-custom-maps true` 還原（dgVoodoo/ArgmTrace 已移除，介面回俄文）；status 仍顯示 EndlessAi.Core／RomanReinforcementGarrison，因保留的自製地圖 ENDL_005 的 ak_level.bci 仍是修改版。**argm-trace 代理需補齊 winmm 全部匯出或改轉送**（未修，native 專案範圍）。

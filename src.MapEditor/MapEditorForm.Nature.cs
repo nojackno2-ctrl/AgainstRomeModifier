@@ -184,7 +184,7 @@ internal sealed partial class MapEditorForm
     private void RefreshSceneMarkers()
     {
         IReadOnlyList<MapSceneObject> effective = EffectiveSceneObjects();
-        _canvas.UpdateSceneObjects(effective); _view3d?.UpdateSceneObjects(effective);
+        PushSceneObjects(effective);
     }
 
     private void PaintNature(TexturePaintEventArgs e)

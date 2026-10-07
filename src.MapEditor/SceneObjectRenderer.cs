@@ -30,7 +30,8 @@ internal static class SceneObjectRenderer
     /// Objects without a sprite hit within <paramref name="markerRadius"/> pixels of their marker.
     /// </summary>
     public static int PickObject(IReadOnlyList<MapSceneObject> objects, IReadOnlyList<NativeSprite?> sprites, Func<NativeSprite, bool> drawn,
-        TerrainHeightField heights, Matrix4x4 view, Matrix4x4 projection, Vector2 viewport, Vector2 point, float markerRadius = 8)
+        TerrainHeightField heights, Matrix4x4 view, Matrix4x4 projection, Vector2 viewport, Vector2 point, float markerRadius = 8,
+        Func<MapSceneObject, bool>? markerVisible = null)
     {
         int best = -1;
         float bestDepth = float.MaxValue;
@@ -38,6 +39,7 @@ internal static class SceneObjectRenderer
         {
             NativeSprite? sprite = index < sprites.Count ? sprites[index] : null;
             bool hasSprite = sprite is not null && drawn(sprite);
+            if (!hasSprite && markerVisible?.Invoke(objects[index]) == false) continue;
             Vector3 anchor = GroundPoint(objects[index], heights, hasSprite ? 0 : .25f);
             Vector4 eye = Vector4.Transform(new Vector4(anchor, 1), view);
             if (eye.Z >= 0) continue; // behind the camera (right-handed view looks down -Z)

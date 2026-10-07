@@ -38,8 +38,7 @@ internal sealed partial class MapEditorForm
         _sceneY.Value = ClampSceneCoordinate(moved.LocalY, _sceneY);
         _sceneZ.Value = ClampSceneCoordinate(moved.LocalZ, _sceneZ);
         IReadOnlyList<MapSceneObject> effective = EffectiveSceneObjects();
-        _canvas.UpdateSceneObjects(effective);
-        _view3d?.UpdateSceneObjects(effective);
+        PushSceneObjects(effective);
         UpdateEditorState();
         if (e.Completed)
         {

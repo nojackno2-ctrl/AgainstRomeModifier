@@ -153,6 +153,26 @@ internal sealed partial class MapEditorForm : Form
         return _sceneObjects.Where(item => !removed.Contains(SceneKey(item))).Concat(_sceneAdditions.Select(item => item.Display)).Select(WithSettlementOffset).Concat(placed).ToArray();
     }
 
+    /// <summary>2D 畫布用 <paramref name="effective"/>；3D 場景另含地圖 DATA 的全部物件，呈現與遊戲相同的完整畫面。</summary>
+    private void PushSceneObjects(IReadOnlyList<MapSceneObject> effective)
+    {
+        _canvas.UpdateSceneObjects(effective);
+        _view3d?.UpdateSceneObjects(SceneObjectsFor3D(effective));
+    }
+
+    /// <summary>
+    /// 3D 場景：<paramref name="effective"/> 加上 DATA/objects.dat 的物件（樹木、岩石、原版建築等）。
+    /// 地景物件依自然物件編輯的待移除／待新增狀態呈現；自然模式下 effective 已含地景物件，不重複加入。
+    /// </summary>
+    private IReadOnlyList<MapSceneObject> SceneObjectsFor3D(IReadOnlyList<MapSceneObject> effective)
+    {
+        IEnumerable<MapSceneObject> level = _levelObjects
+            .Where(item => !ObjDefNames.IsLandscape(_objdefNames.GetValueOrDefault(item.TypeId)))
+            .Select(item => new MapSceneObject(_objdefNames.GetValueOrDefault(item.TypeId) ?? "", item.X, item.Y, item.Z, item.Team, "DATA/objects.dat", -100000 - item.Slot));
+        if (_editMode != EditMode.Nature) level = level.Concat(NatureDisplayObjects());
+        return effective.Concat(level).ToArray();
+    }
+
     /// <summary>記憶體中的物件世界座標以已存檔的 refpos 為準；暫存平移只在呈現時加上。</summary>
     private MapSceneObject WithSettlementOffset(MapSceneObject item) => _settlementOffsets.TryGetValue(item.SourceFile, out SdlVector3 offset)
         ? item with { WorldX = item.WorldX + offset.X, WorldY = item.WorldY + offset.Y, WorldZ = item.WorldZ + offset.Z }
@@ -597,7 +617,7 @@ internal sealed partial class MapEditorForm : Form
             _view3d.ShowObjects = _showObjects.Checked;
             _view3d.EditingEnabled = _selected.IsCustom;
             _view3d.SpriteCatalog = _spriteCatalog;
-            try { has3DScene = _view3d.LoadTextures(_texturesDocument.Dimension, _texturesDocument.Textures, _selected.DirectoryPath, _floorTextures, effectiveObjects, (float)_waterLevel.Value, _heightMapStep, sceneWaterColor); _view3d.SetReliefScale(_reliefScale.Value / 100f); }
+            try { has3DScene = _view3d.LoadTextures(_texturesDocument.Dimension, _texturesDocument.Textures, _selected.DirectoryPath, _floorTextures, SceneObjectsFor3D(effectiveObjects), (float)_waterLevel.Value, _heightMapStep, sceneWaterColor); _view3d.SetReliefScale(_reliefScale.Value / 100f); }
             catch (Exception ex) { Disable3DView(isEn ? "Failed to load 3D map resources." : "載入 3D 地圖資源失敗。", ex); }
         }
         if (has3DScene && _view3d?.IsReady == true)
