@@ -1,9 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using Xunit;
-
 namespace AgainstRomeModifier.Tests
 {
     public class WinmmExportTests
@@ -74,7 +68,7 @@ namespace AgainstRomeModifier.Tests
             Assert.True(File.Exists(binaryPath), "Prebuilt proxy not found at " + binaryPath);
             static string Key(ExportInfo exp) => exp.Name == "NONAME" || exp.Name == null ? $"Ordinal{exp.Ordinal}" : exp.Name;
             var proxy = GetExports(binaryPath).Select(Key).ToHashSet();
-            Assert.Empty(GetExports(systemWinmmPath).Select(Key).Where(key => !proxy.Contains(key)));
+            Assert.DoesNotContain(GetExports(systemWinmmPath).Select(Key), key => !proxy.Contains(key));
         }
 
         private sealed class ExportInfo
