@@ -64,11 +64,11 @@ public sealed class MapEditorNatureHistoryTests
             });
             Get<ComboBox>(form, "_natureOperation").SelectedIndex = 1;
             Paint(form, 10, 10); Invoke(form, "CommitStroke");
-            Assert.Equal(new[] { 0 }, Get<HashSet<int>>(form, "_natureRemovals"));
+            Assert.Equal(new[] { 0 }, Get<AgainstRomeMapEditor.Modules.Nature.NatureEditSession>(form, "_natureSession").RemovedSlots);
             Invoke(form, "Undo");
-            Assert.Empty(Get<HashSet<int>>(form, "_natureRemovals"));
+            Assert.Empty(Get<AgainstRomeMapEditor.Modules.Nature.NatureEditSession>(form, "_natureSession").RemovedSlots);
             Invoke(form, "Redo");
-            Assert.Equal(new[] { 0 }, Get<HashSet<int>>(form, "_natureRemovals"));
+            Assert.Equal(new[] { 0 }, Get<AgainstRomeMapEditor.Modules.Nature.NatureEditSession>(form, "_natureSession").RemovedSlots);
         });
     }
 
@@ -138,7 +138,7 @@ public sealed class MapEditorNatureHistoryTests
         finally { Directory.Delete(root, true); }
     }
 
-    private static IList Additions(MapEditorForm form) => Get<IList>(form, "_natureAdditions");
+    private static IList Additions(MapEditorForm form) => (IList)Get<AgainstRomeMapEditor.Modules.Nature.NatureEditSession>(form, "_natureSession").Additions;
     private static ToolStripButton Button(MapEditorForm form, string name) => Get<ToolStripButton>(form, name);
     private static void Paint(MapEditorForm form, int x, int y) => Invoke(form, "PaintTexture", new TexturePaintEventArgs(x, y, "", ""));
     private static T Get<T>(object target, string name) => (T)target.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(target)!;

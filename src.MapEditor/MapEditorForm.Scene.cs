@@ -5,7 +5,6 @@ namespace AgainstRomeMapEditor;
 
 internal sealed partial class MapEditorForm
 {
-
     private void MoveSelectedSceneObject(SceneObjectMoveEventArgs e)
     {
         if (_selected?.IsCustom != true || _sceneList.SelectedItems.Count != 1 || SelectedSceneDisplay() is not { } source) return;
@@ -306,4 +305,5 @@ internal sealed partial class MapEditorForm
             ? (isEn ? "Undo Delete" : "取消刪除")
             : (isEn ? "Delete Object" : "刪除物件");
     }
+
 }

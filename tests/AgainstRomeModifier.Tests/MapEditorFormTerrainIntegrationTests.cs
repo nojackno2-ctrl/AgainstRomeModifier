@@ -168,9 +168,10 @@ public sealed class MapEditorFormTerrainIntegrationTests : IDisposable
                 var type = new SdlObjectType("FigGerUnit", 1, SdlObjectCategory.Figure, "Ger", 1, new Dictionary<string, string> { ["alias"] = "UNIT" });
                 typeof(MapEditorForm).GetField("_objectCatalog", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(form, new[] { type });
                 _ = form.Handle; Invoke(form, "LoadSelectedMap");
-                var placements = (List<SdlPlacedObject>)typeof(MapEditorForm).GetField("_placedObjects", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(form)!;
+                var session = (AgainstRomeMapEditor.Modules.Placement.PlacementEditSession)typeof(MapEditorForm).GetField("_placementSession", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(form)!;
+                var placements = session.Capture();
                 Assert.Equal(id, Assert.Single(placements).ScenarioId);
-                placements[0] = placements[0] with { WorldX = 4500 };
+                session.Replace(0, placements[0] with { WorldX = 4500 });
                 Assert.True((bool)Invoke(form, "SaveMap", false)!);
                 ScenarioDocument saved = ScenarioDocument.Load(map);
                 Assert.Equal(id, Assert.Single(saved.Spawns).Id); Assert.Equal(4500, saved.Spawns[0].X);

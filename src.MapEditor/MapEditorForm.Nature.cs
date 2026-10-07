@@ -1,12 +1,27 @@
 using AgainstRomeModifier;
 using AgainstRomeModifier.Maps;
+using AgainstRomeMapEditor.Modules.Nature;
 
 namespace AgainstRomeMapEditor;
 
 internal sealed partial class MapEditorForm
 {
-    private bool NatureDirty() => _natureRemovals.Count > 0 || _natureAdditions.Count > 0;
-
+    private readonly ToolStripButton _natureTool = new("自然物件") { CheckOnClick = true };
+    private readonly ComboBox _natureCategory = new() { Dock = DockStyle.Fill, DropDownStyle = ComboBoxStyle.DropDownList };
+    private readonly ComboBox _natureOperation = new() { Dock = DockStyle.Fill, DropDownStyle = ComboBoxStyle.DropDownList };
+    private readonly ListBox _natureTypes = new() { Dock = DockStyle.Fill, IntegralHeight = false };
+    private readonly Label _natureHint = new() { Dock = DockStyle.Top, Height = 70, Padding = new Padding(4, 6, 4, 4), ForeColor = WinFormsTheme.TextSecondary };
+    private Label _lblNatureCategory = null!, _lblNatureOperation = null!;
+    private IReadOnlyList<LevelWorldObject> _levelObjects = Array.Empty<LevelWorldObject>();
+    private IReadOnlyDictionary<int, string> _objdefNames = new Dictionary<int, string>();
+    private readonly NatureEditSession _natureSession = new();
+    private IReadOnlySet<int> _natureRemovals => _natureSession.RemovedSlots;
+    private IReadOnlyList<NatureAddition> _natureAdditions => _natureSession.Additions;
+    private bool _natureStoreAvailable;
+    private Task<IReadOnlyDictionary<int, LevelObjectTemplate>>? _natureCatalogTask;
+    private IReadOnlyDictionary<int, LevelObjectTemplate> _natureTemplates = new Dictionary<int, LevelObjectTemplate>();
+    private readonly Random _natureRandom = new();
+    private bool NatureDirty() => _natureSession.IsDirty;
     private Control BuildNaturePanel()
     {
         var panel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(8), BackColor = WinFormsTheme.Surface };
@@ -66,6 +81,8 @@ internal sealed partial class MapEditorForm
         RefreshNatureTypes();
     }
 
+    private sealed record NatureTypeItem(LevelObjectTemplate Template, string Name) { public override string ToString() => Name; }
+
     private void RefreshNatureTypes()
     {
         string key = (_natureCategory.SelectedItem as FilterItem)?.Value as string ?? "all";
@@ -102,7 +119,7 @@ internal sealed partial class MapEditorForm
 
     private void LoadLevelObjects(string map)
     {
-        _natureRemovals.Clear(); _natureAdditions.Clear(); ClearNatureHistory();
+        _natureSession.Clear();
         _natureStoreAvailable = false;
         _levelObjects = Array.Empty<LevelWorldObject>();
         try
@@ -118,12 +135,14 @@ internal sealed partial class MapEditorForm
 
     private IEnumerable<MapSceneObject> NatureDisplayObjects()
     {
+        IReadOnlySet<int> removals = _natureSession.RemovedSlots;
+        IReadOnlyList<NatureAddition> additions = _natureSession.Additions;
         foreach (LevelWorldObject item in _levelObjects)
-            if (!_natureRemovals.Contains(item.Slot) && ObjDefNames.IsLandscape(_objdefNames.GetValueOrDefault(item.TypeId)))
+            if (!removals.Contains(item.Slot) && ObjDefNames.IsLandscape(_objdefNames.GetValueOrDefault(item.TypeId)))
                 yield return new MapSceneObject(_objdefNames.GetValueOrDefault(item.TypeId) ?? "", item.X, item.Y, item.Z, 8, "DATA/objects.dat", -100000 - item.Slot);
-        for (int index = 0; index < _natureAdditions.Count; index++)
+        for (int index = 0; index < additions.Count; index++)
         {
-            NatureAddition addition = _natureAdditions[index];
+            NatureAddition addition = additions[index];
             yield return new MapSceneObject(addition.Name, addition.X, addition.Y, addition.Z, 8, "DATA/objects.dat", -200000 - index);
         }
     }
@@ -157,13 +176,12 @@ internal sealed partial class MapEditorForm
         if (_natureOperation.SelectedIndex == 1)
         {
             float cx = (e.X + .5f) * tileWorld, cz = (e.Y + .5f) * tileWorld, radius = radiusTiles * tileWorld;
-            List<int> removed = _levelObjects.Where(item => IsRemovableNature(item) && !_natureRemovals.Contains(item.Slot)
+            IReadOnlySet<int> removals = _natureSession.RemovedSlots;
+            List<int> removed = _levelObjects.Where(item => IsRemovableNature(item) && !removals.Contains(item.Slot)
                 && (item.X - cx) * (item.X - cx) + (item.Z - cz) * (item.Z - cz) <= radius * radius).Select(item => item.Slot).ToList();
             List<NatureAddition> removedAdditions = _natureAdditions.Where(item => (item.X - cx) * (item.X - cx) + (item.Z - cz) * (item.Z - cz) <= radius * radius).ToList();
             if (removed.Count == 0 && removedAdditions.Count == 0) return false;
-            foreach (int slot in removed) _natureRemovals.Add(slot);
-            foreach (NatureAddition addition in removedAdditions) _natureAdditions.Remove(addition);
-            RecordNatureOperation(new NatureOperation(null, removed, removedAdditions));
+            _natureSession.Remove(removed, removedAdditions);
         }
         else
         {
@@ -182,9 +200,9 @@ internal sealed partial class MapEditorForm
                 y = _terrainLayers.Heights[vy * _terrainLayers.VertexSize + vx] * _heightMapStep;
             }
             var addition = new NatureAddition(type.Template, type.Name, x, y, z, (float)(_natureRandom.NextDouble() * Math.PI * 2));
-            _natureAdditions.Add(addition);
-            RecordNatureOperation(new NatureOperation(addition, Array.Empty<int>(), Array.Empty<NatureAddition>()));
+            _natureSession.Plant(addition);
         }
         return true;
     }
+
 }

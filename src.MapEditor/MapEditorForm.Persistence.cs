@@ -1,4 +1,6 @@
+using AgainstRomeMapEditor.Modules.Persistence;
 using AgainstRomeModifier;
+using AgainstRomeMapEditor.Modules.Nature;
 using AgainstRomeModifier.Maps;
 using AgainstRomeModifier.Scripting;
 using System.Diagnostics;
@@ -7,14 +9,36 @@ namespace AgainstRomeMapEditor;
 
 internal sealed partial class MapEditorForm
 {
-
     private bool SaveMap(bool showSuccess)
     {
+        bool saved = TrySaveMap(showSuccess, out Exception? error);
+        if (error is not null) ShowError(error);
+        return saved;
+    }
+
+    // 錯誤呈現與交易分離；可在不顯示模態視窗的情況驗證失敗後的資料與編輯狀態。
+    internal bool TrySaveMap(bool showSuccess, out Exception? error)
+    {
+        error = null;
         if (_selected is null || !_selected.IsCustom) return false;
         CommitStroke();
         try
         {
-            using var rollback = new FileRollbackScope(); string map = _selected.DirectoryPath;
+            string map = _selected.DirectoryPath;
+            bool natureChanged = NatureDirty();
+            bool placedChanged = PlacedDirty();
+            bool eventsChanged = EventsDirty();
+            ScenarioDocument? scenario = null, previousScenario = null;
+            if (placedChanged || eventsChanged)
+            {
+                previousScenario = ScenarioDocument.Load(map);
+                // 建築以官方完工範本寫入 DATA（開局即完工）；人物與部隊由地圖腳本生成。
+                scenario = new ScenarioDocument { Events = EventSession.Capture().ToList(), DataSlots = previousScenario.DataSlots.ToList(), Spawns = placedChanged ? _placedObjects.Select(item => new ScenarioSpawn(AliasOf(item.Type), item.WorldX, item.WorldZ, item.Team,
+                    item.Type.Category == SdlObjectCategory.Figure ? Math.Max(1, item.UnitCount) : 0, (int)MathF.Round(item.Angle), item.WorldY,
+                    Prebuilt: item.Type.Category == SdlObjectCategory.Building && item.Team is >= 0 and <= 8) { Id = item.ScenarioId }).ToList() : previousScenario.Spawns.ToList() };
+            }
+            if (scenario is not null) ScenarioSavePreflight.Validate(scenario, _objectCatalog.Select(AliasOf).ToArray());
+            using var rollback = new FileRollbackScope();
             var put = PutTextDocument.Load(Path.Combine(map, "TEXT", "US", "briefing.put"));
             put.SetValue("briefing_titel_1", _title.Text.Trim()); put.SetValue("briefing_titel_2", _subtitle.Text.Trim()); put.SetCompositeValue("briefing_text", _briefing.Text);
             for (int index = 0; index < _teamNames.Length; index++) put.SetValue($"briefing_text_teamname{index}", _teamNames[index].Text.Trim());
@@ -37,18 +61,6 @@ internal sealed partial class MapEditorForm
                 if (savedEmboss is not null && _embossLayer is not null) TerrainLayerFiles.Write(Path.Combine(map, "emboss.bmp"), _embossLayer, savedEmboss, rollback);
                 // skydens／visible／cliprect／shadows.dat 以高度總和為鍵；刪除後由遊戲在載入時重算。
                 TerrainLayerFiles.InvalidateHeightCaches(map, rollback);
-            }
-            bool natureChanged = NatureDirty();
-            bool placedChanged = PlacedDirty();
-            bool eventsChanged = EventsDirty();
-            ScenarioDocument? scenario = null, previousScenario = null;
-            if (placedChanged || eventsChanged)
-            {
-                previousScenario = ScenarioDocument.Load(map);
-                // 建築以官方完工範本寫入 DATA（開局即完工）；人物與部隊由地圖腳本生成。
-                scenario = new ScenarioDocument { Events = _events.ToList(), DataSlots = previousScenario.DataSlots.ToList(), Spawns = placedChanged ? _placedObjects.Select(item => new ScenarioSpawn(AliasOf(item.Type), item.WorldX, item.WorldZ, item.Team,
-                    item.UnitCount > 1 ? item.UnitCount : 0, (int)MathF.Round(item.Angle), item.WorldY,
-                    Prebuilt: item.Type.Category == SdlObjectCategory.Building && item.Team is >= 0 and <= 8) { Id = item.ScenarioId }).ToList() : previousScenario.Spawns.ToList() };
             }
             bool prebuiltChanged = placedChanged && scenario is not null && (scenario.Spawns.Any(spawn => spawn.Prebuilt) || previousScenario!.DataSlots.Count > 0);
             if (natureChanged || prebuiltChanged)
@@ -92,7 +104,7 @@ internal sealed partial class MapEditorForm
             }
             rollback.Commit();
             if (auxiliaryReset) _resetAuxiliaryLayers = false;
-            if (placedChanged) _placedBaseline = _placedObjects.ToArray();
+            if (placedChanged) _placementSession.AcceptChanges();
             if (eventsChanged) _eventsBaseline = _events.ToArray();
             if (natureChanged || prebuiltChanged) LoadLevelObjects(map);
             if (heightsChanged || collisionChanged)
@@ -115,6 +127,7 @@ internal sealed partial class MapEditorForm
                 LoadEditingScene(preserveView: true);
             }
             else _sceneSavedObjects = _sceneObjects.ToArray();
+            if (natureChanged || prebuiltChanged) RefreshSceneMarkers();
             _canvas.CommitBaseline(); // 變更高亮只存在於 2D 檢視，3D 無對應狀態
             RefreshOverview();
             UpdateEditorState();
@@ -125,7 +138,7 @@ internal sealed partial class MapEditorForm
             }
             return true;
         }
-        catch (Exception ex) { ShowError(ex); return false; }
+        catch (Exception ex) { error = ex; return false; }
     }
 
     private void PreviewInGame()
@@ -158,4 +171,5 @@ internal sealed partial class MapEditorForm
         DialogResult result = MessageBox.Show(this, msg, title, MessageBoxButtons.YesNoCancel, MessageBoxIcon.Warning);
         return result switch { DialogResult.Yes => SaveMap(showSuccess: false), DialogResult.No => true, _ => false };
     }
+
 }

@@ -59,22 +59,6 @@ internal sealed partial class MapEditorForm : Form
     private readonly ToolStripButton _blankTerrainButton = new("空白地形…") { Enabled = false };
     private readonly ToolStripButton _collisionTool = new("通行區域") { CheckOnClick = true };
     private readonly ToolStripButton _placeTool = new("放置物件") { CheckOnClick = true };
-    private readonly ToolStripButton _natureTool = new("自然物件") { CheckOnClick = true };
-    private readonly ComboBox _natureCategory = new() { Dock = DockStyle.Fill, DropDownStyle = ComboBoxStyle.DropDownList };
-    private readonly ComboBox _natureOperation = new() { Dock = DockStyle.Fill, DropDownStyle = ComboBoxStyle.DropDownList };
-    private readonly ListBox _natureTypes = new() { Dock = DockStyle.Fill, IntegralHeight = false };
-    private readonly Label _natureHint = new() { Dock = DockStyle.Top, Height = 70, Padding = new Padding(4, 6, 4, 4), ForeColor = WinFormsTheme.TextSecondary };
-    private Label _lblNatureCategory = null!, _lblNatureOperation = null!;
-    private readonly ComboBox _placeCategory = new() { Dock = DockStyle.Fill, DropDownStyle = ComboBoxStyle.DropDownList };
-    private readonly ComboBox _placeTribe = new() { Dock = DockStyle.Fill, DropDownStyle = ComboBoxStyle.DropDownList };
-    private readonly ListBox _placeTypes = new() { Dock = DockStyle.Fill, IntegralHeight = false };
-    private readonly NumericUpDown _placeTeam = new() { Dock = DockStyle.Fill, Minimum = -1, Maximum = 15, Value = 0 };
-    private readonly NumericUpDown _placeCount = new() { Dock = DockStyle.Fill, Minimum = 1, Maximum = 50, Value = 10 };
-    private readonly NumericUpDown _placeAngle = new() { Dock = DockStyle.Fill, Minimum = 0, Maximum = 359, Increment = 45 };
-    private readonly ListView _placedList = new() { Dock = DockStyle.Fill, View = View.Details, FullRowSelect = true, HeaderStyle = ColumnHeaderStyle.Nonclickable, MultiSelect = true };
-    private readonly Button _placedDeleteButton = new() { Dock = DockStyle.Bottom, Height = 32, Enabled = false };
-    private readonly Label _placeHint = new() { Dock = DockStyle.Top, Height = 54, Padding = new Padding(4, 6, 4, 4), ForeColor = WinFormsTheme.TextSecondary };
-    private Label _lblPlaceCategory = null!, _lblPlaceTribe = null!, _lblPlaceTeam = null!, _lblPlaceCount = null!, _lblPlaceAngle = null!;
     private readonly ToolStripComboBox _terrainOperation = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 96, Visible = false };
     private readonly ToolStripComboBox _terrainStrength = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 72, Visible = false };
     private readonly ToolStripButton _view2dButton = new("2D 俯視") { CheckOnClick = true };
@@ -138,22 +122,6 @@ internal sealed partial class MapEditorForm : Form
     private TerrainLayer? _bodenLayer, _embossLayer, _collisionLayer;
     private int _flattenTarget = -1;
     private readonly bool _startWithBlankTerrain;
-    private IReadOnlyList<SdlObjectType> _objectCatalog = Array.Empty<SdlObjectType>();
-    private readonly List<SdlPlacedObject> _placedObjects = new();
-    private IReadOnlyList<SdlPlacedObject> _placedBaseline = Array.Empty<SdlPlacedObject>();
-    private IReadOnlyList<LevelWorldObject> _levelObjects = Array.Empty<LevelWorldObject>();
-    private IReadOnlyDictionary<int, string> _objdefNames = new Dictionary<int, string>();
-    private readonly HashSet<int> _natureRemovals = new();
-    private readonly List<NatureAddition> _natureAdditions = new();
-    private readonly Stack<IReadOnlyList<NatureOperation>> _natureUndo = new();
-    private readonly Stack<IReadOnlyList<NatureOperation>> _natureRedo = new();
-    private readonly List<NatureOperation> _natureStroke = new();
-    private bool _natureStoreAvailable;
-    private Task<IReadOnlyDictionary<int, LevelObjectTemplate>>? _natureCatalogTask;
-    private IReadOnlyDictionary<int, LevelObjectTemplate> _natureTemplates = new Dictionary<int, LevelObjectTemplate>();
-    private readonly Random _natureRandom = new();
-    private sealed record NatureAddition(LevelObjectTemplate Template, string Name, float X, float Y, float Z, float Rotation);
-    private sealed record NatureOperation(NatureAddition? Added, IReadOnlyList<int> Removed, IReadOnlyList<NatureAddition> RemovedAdditions);
     /// <summary>空白地形：儲存時把 vertex.bmp 重設為白色（無色調）、smooth.bmp 重設為 0（不額外平滑）。</summary>
     private bool _resetAuxiliaryLayers;
     private (int X, int Y)? _lastTerrainTile;
@@ -573,7 +541,7 @@ internal sealed partial class MapEditorForm : Form
             _sceneRemovals.Clear(); _sceneAdditions.Clear(); _settlementOffsets.Clear();
             _settlementOrigins = SdlSceneCatalog.LoadSettlementOrigins(map);
             if (_objectCatalog.Count == 0) _objectCatalog = BuildSpawnCatalog(_gamePath);
-            _placedObjects.Clear(); _placedObjects.AddRange(LoadScenarioPlacements(map)); _placedBaseline = _placedObjects.ToArray();
+            _placementSession.Load(LoadScenarioPlacements(map).ToArray());
             PopulatePlacementFilters(); RefreshPlacedList();
             LoadEvents(map);
             if (_objdefNames.Count == 0) _objdefNames = ObjDefNames.Load(_gamePath);
@@ -675,12 +643,7 @@ internal sealed partial class MapEditorForm : Form
     private void CommitStroke()
     {
         _flattenTarget = -1; _lastTerrainTile = null; _terrainStrokeTiles.Clear();
-        if (_natureStroke.Count > 0)
-        {
-            _natureUndo.Push(_natureStroke.ToArray());
-            _natureStroke.Clear();
-            UpdateEditorState();
-        }
+        if (_natureSession.CommitStroke()) UpdateEditorState();
         if (_terrainLayers?.CommitStroke() == true) UpdateEditorState();
         if (_terrainBlendSession?.CommitStroke() != true) return;
         UpdateEditorState();
@@ -694,19 +657,14 @@ internal sealed partial class MapEditorForm : Form
     private void Undo()
     {
         CommitStroke();
+        if (_editMode == EditMode.PlaceObject)
+        {
+            if (_placementSession.Undo()) { RefreshPlacedList(); RefreshSceneMarkers(); UpdateEditorState(); }
+            return;
+        }
         if (_editMode == EditMode.Nature)
         {
-            if (_natureUndo.TryPop(out IReadOnlyList<NatureOperation>? natureStroke))
-            {
-                foreach (NatureOperation operation in natureStroke.Reverse())
-                {
-                    if (operation.Added is not null) _natureAdditions.Remove(operation.Added);
-                    foreach (int slot in operation.Removed) _natureRemovals.Remove(slot);
-                    _natureAdditions.AddRange(operation.RemovedAdditions);
-                }
-                _natureRedo.Push(natureStroke);
-                RefreshSceneMarkers(); UpdateEditorState();
-            }
+            if (_natureSession.Undo()) { RefreshSceneMarkers(); UpdateEditorState(); }
             return;
         }
         if (TerrainLayerMode)
@@ -723,19 +681,14 @@ internal sealed partial class MapEditorForm : Form
     private void Redo()
     {
         CommitStroke();
+        if (_editMode == EditMode.PlaceObject)
+        {
+            if (_placementSession.Redo()) { RefreshPlacedList(); RefreshSceneMarkers(); UpdateEditorState(); }
+            return;
+        }
         if (_editMode == EditMode.Nature)
         {
-            if (_natureRedo.TryPop(out IReadOnlyList<NatureOperation>? natureStroke))
-            {
-                foreach (NatureOperation operation in natureStroke)
-                {
-                    if (operation.Added is not null) _natureAdditions.Add(operation.Added);
-                    foreach (int slot in operation.Removed) _natureRemovals.Add(slot);
-                    foreach (NatureAddition addition in operation.RemovedAdditions) _natureAdditions.Remove(addition);
-                }
-                _natureUndo.Push(natureStroke);
-                RefreshSceneMarkers(); UpdateEditorState();
-            }
+            if (_natureSession.Redo()) { RefreshSceneMarkers(); UpdateEditorState(); }
             return;
         }
         if (TerrainLayerMode)
@@ -838,35 +791,6 @@ internal sealed partial class MapEditorForm : Form
         _canvas.BrushTexture = token;
         if (_view3d is not null) _view3d.BrushTexture = token;
     }
-
-    private int TerrainStrength => _terrainStrength.SelectedIndex switch { 0 => 2, 2 => 14, _ => 6 };
-
-    private sealed record NatureTypeItem(LevelObjectTemplate Template, string Name) { public override string ToString() => Name; }
-
-    private void ClearNatureHistory()
-    {
-        _natureUndo.Clear(); _natureRedo.Clear(); _natureStroke.Clear();
-    }
-
-    private void RecordNatureOperation(NatureOperation operation)
-    {
-        _natureRedo.Clear();
-        _natureStroke.Add(operation);
-    }
-
-    private IReadOnlyDictionary<int, LevelObjectTemplate>? _buildingTemplates;
-
-    private sealed record PlacementTypeItem(SdlObjectType Type, string Text) { public override string ToString() => Text; }
-    private sealed record FilterItem(object? Value, string Text) { public override string ToString() => Text; }
-
-    private static readonly Dictionary<string, string> GermanObjectWords = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ["Haupthaus"] = "主屋", ["Wohnhaus"] = "住宅", ["Wohnzelt"] = "居住帳篷", ["Lagerhaus"] = "倉庫", ["Lagerzelt"] = "倉庫帳篷",
-        ["Bauernhof"] = "農場", ["Schlachterei"] = "屠宰場", ["Schreinerei"] = "木工坊", ["Mine"] = "礦場", ["Pferdestall"] = "馬廄",
-        ["Waffenschmiede"] = "兵器鋪", ["Goldschmiede"] = "金匠鋪", ["Mauer"] = "城牆", ["Mauerecke"] = "城牆轉角", ["Mauertor"] = "城門",
-        ["Tor"] = "城門", ["Turm"] = "塔樓", ["Palisade"] = "木柵", ["Palisadenecke"] = "木柵轉角", ["Palisadentor"] = "木柵門",
-        ["Opferstaette"] = "祭壇", ["Anfuehrer"] = "領主", ["Kampf_Icon"] = "戰鬥部隊", ["Zivil_Icon"] = "平民隊",
-    };
 
     private void ReturnToMenu()
     {
@@ -1027,8 +951,13 @@ internal sealed partial class MapEditorForm : Form
         _heightTool.Enabled = editable && _terrainLayers is not null; _aiMapButton.Enabled = editable && _terrainLayers is not null; _blankTerrainButton.Enabled = editable && _terrainLayers is not null; _placeTool.Enabled = editable && _objectCatalog.Count > 0; _natureTool.Enabled = editable && _natureStoreAvailable;
         if (_editMode == EditMode.Nature)
         {
-            _undoButton.Enabled = editable && (_natureUndo.Count > 0 || _natureStroke.Count > 0);
-            _redoButton.Enabled = editable && _natureRedo.Count > 0;
+            _undoButton.Enabled = editable && _natureSession.CanUndo;
+            _redoButton.Enabled = editable && _natureSession.CanRedo;
+        }
+        if (_editMode == EditMode.PlaceObject)
+        {
+            _undoButton.Enabled = editable && _placementSession.CanUndo;
+            _redoButton.Enabled = editable && _placementSession.CanRedo;
         }
         _collisionTool.Enabled = editable && _terrainLayers?.HasCollision == true;
         UpdateSceneEditButtons();
@@ -1270,4 +1199,3 @@ internal sealed partial class MapEditorForm : Form
 
     private sealed record PaletteItem(string Key, string PreviewTexture, string Name, FloorMaterial? Material);
 }
-

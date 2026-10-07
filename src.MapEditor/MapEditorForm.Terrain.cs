@@ -1,8 +1,8 @@
+
 namespace AgainstRomeMapEditor;
 
 internal sealed partial class MapEditorForm
 {
-
     private void PopulateTerrainToolOptions()
     {
         bool isEn = AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English;
@@ -19,6 +19,8 @@ internal sealed partial class MapEditorForm
         _terrainOperation.Visible = TerrainLayerMode;
         _terrainStrength.Visible = _editMode == EditMode.Height;
     }
+
+    private int TerrainStrength => _terrainStrength.SelectedIndex switch { 0 => 2, 2 => 14, _ => 6 };
 
     private void InitializeTerrainLayers(string map)
     {
@@ -79,10 +81,7 @@ internal sealed partial class MapEditorForm
         return (false, false);
     }
 
-    /// <summary>
-    /// 空白地形：整平到水面上方、鋪最常見的基礎材質、清除阻擋，並在儲存時重設頂點色／平滑遮罩／光照。
-    /// 全部為待儲存變更（可用「還原地表」放棄），SDL 聚落保留以維持無盡模式可玩。
-    /// </summary>
+    /// <summary>整平至水面上方、鋪基礎材質、清除阻擋與可移除地景；SDL 聚落保留，儲存前不寫檔。</summary>
     internal void ApplyBlankTerrain(bool confirm)
     {
         if (_selected?.IsCustom != true || _terrainLayers is null || _texturesDocument is null) return;
@@ -105,12 +104,8 @@ internal sealed partial class MapEditorForm
         }
         _resetAuxiliaryLayers = true;
         // 空白地形同時清除範本留下的地景物件（樹、草、灌木…）；腳本標記、特效與連結物件保留。
-        List<int> cleared = _levelObjects.Where(IsRemovableNature).Select(item => item.Slot).Where(slot => _natureRemovals.Add(slot)).ToList();
-        if (cleared.Count > 0)
-        {
-            RecordNatureOperation(new NatureOperation(null, cleared, Array.Empty<NatureAddition>()));
-            CommitStroke();
-        }
+        if (_natureSession.Remove(_levelObjects.Where(IsRemovableNature).Select(item => item.Slot), _natureSession.Additions)) CommitStroke();
+        RefreshSceneMarkers();
         ApplyHeightsToViews();
         if (_editMode == EditMode.Collision) _canvas.SetCollisionOverlay(_terrainLayers.CollisionSize, _terrainLayers.Collision);
         UpdateEditorState();
@@ -126,6 +121,7 @@ internal sealed partial class MapEditorForm
             ?? _floorMaterials.Materials[0].Id;
     }
 
+    /// <summary>將高度更新至 2D／3D 預覽。</summary>
     private void ApplyHeightsToViews()
     {
         if (_terrainLayers is null) return;
@@ -157,7 +153,7 @@ internal sealed partial class MapEditorForm
             if (_editMode == EditMode.Collision) _canvas.SetCollisionOverlay(_terrainLayers.CollisionSize, _terrainLayers.Collision);
         }
         _resetAuxiliaryLayers = false;
-        _natureRemovals.Clear(); _natureAdditions.Clear(); ClearNatureHistory(); RefreshSceneMarkers();
+        _natureSession.Clear(); RefreshSceneMarkers();
         if (_terrainBlendSession is null) { UpdateEditorState(); return; }
         IReadOnlyList<TerrainTextureChange> changes = _terrainBlendSession.ResetToBaseline();
         _texturesDocument.SetTextures(_terrainBlendSession.CurrentTextures); // 批次寫回，避免逐格重新解析整份 boden.txt。
@@ -168,4 +164,5 @@ internal sealed partial class MapEditorForm
         _terrainBlendNotice = null;
         UpdateEditorState();
     }
+
 }
