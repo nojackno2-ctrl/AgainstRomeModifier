@@ -112,6 +112,7 @@ public sealed partial class MapEditorSaveTransactionTests
             var moved = (MapSceneObject)sceneList.SelectedItems[0].Tag!;
             Assert.NotEqual((10000f, 6000f), (moved.WorldX, moved.WorldZ));
             Assert.True(moved.WorldX > 10000, $"往畫面右下拖曳應增加 X：{moved.WorldX},{moved.WorldZ}");
+            Assert.InRange(moved.WorldZ, 5632f, 6400f); // screen (2,1) is pure +X: the grab offset keeps the row
         }, TimeSpan.FromMinutes(2));
     }
 
@@ -277,6 +278,37 @@ public sealed partial class MapEditorSaveTransactionTests
             using Bitmap frame = view.CaptureFrame(1280, 800)!;
             frame.Save(Path.Combine(output, "real-assets.png"));
             view.SpriteCatalog = null;
+        }, TimeSpan.FromMinutes(2));
+    }
+
+    /// <summary>
+    /// 與遊戲同畫面比對（需 ARM_COMPARE_GAME 指向含 MAPS 子目錄或 ENDL_005 的唯讀遊戲資料副本）：
+    /// 以真正 MapEditorForm 開啟 ENDL_005，聚焦主屋並擷取 1024x768，供與遊戲截圖並排檢視。
+    /// </summary>
+    [Fact]
+    public void Real_game_copy_renders_test_map_for_side_by_side_comparison()
+    {
+        string? game = Environment.GetEnvironmentVariable("ARM_COMPARE_GAME");
+        if (string.IsNullOrWhiteSpace(game) || !Directory.Exists(Path.Combine(game, "ENDL_005"))) return;
+        string output = Environment.GetEnvironmentVariable("ARM_OPENGL_OUTPUT") ?? game;
+        RunInSta(() =>
+        {
+            Application.SetUnhandledExceptionMode(UnhandledExceptionMode.ThrowException, threadScope: true);
+            OpenTK.Windowing.Desktop.GLFWProvider.CheckForMainThread = false;
+            using var form = new MapEditorForm(game, new GameMapInfo("ENDL_005", Path.Combine(game, "ENDL_005"), false, "Compare", "Test"));
+            typeof(MapEditorForm).GetField("_allowClose", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(form, true);
+            form.StartPosition = FormStartPosition.Manual; form.Location = new Point(-30000, -30000);
+            form.Show(); Application.DoEvents();
+            Invoke(form, "SetActiveView", true); Application.DoEvents();
+            var view = GetField<Map3DViewControl>(form, "_view3d");
+            if (!view.IsReady) { Assert.NotEqual("1", Environment.GetEnvironmentVariable("ARM_OPENGL_REQUIRED")); return; }
+            Assert.NotNull(view.SpriteCatalog); // opened read-only from the game copy
+            Assert.True(view.SpriteObjectCount >= 4, $"只有 {view.SpriteObjectCount} 個物件使用原生 sprite。");
+            view.FocusTile(10624 / 256f, 10112 / 256f);
+            var camera = (EditorCamera)typeof(Map3DViewControl).GetField("_camera", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(view)!;
+            camera.ZoomToGameScale(610);
+            using Bitmap frame = view.CaptureFrame(1024, 610)!;
+            frame.Save(Path.Combine(output, "editor-house.png"));
         }, TimeSpan.FromMinutes(2));
     }
 

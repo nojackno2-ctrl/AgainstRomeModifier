@@ -67,7 +67,14 @@ public sealed partial class MapEditorSaveTransactionTests
             using Bitmap blocked = Capture(view, output, "2-blocked");
             int delta = Changed(baseline, blocked);
             Assert.True(delta > 500, $"3D blocked overlay changed only {delta} pixels.");
-            Assert.True(Average(blocked, c => c.R - c.G) > Average(baseline, c => c.R - c.G) + 1);
+            // Pixels the overlay changed must turn red; whole-frame averages depend on how much of the map the camera shows.
+            var changedRedness = new List<(int Before, int After)>();
+            for (int y = 0; y < blocked.Height; y += 2) for (int x = 0; x < blocked.Width; x += 2)
+            {
+                Color before = baseline.GetPixel(x, y), after = blocked.GetPixel(x, y);
+                if (Distance(before, after) > 12) changedRedness.Add((before.R - before.G, after.R - after.G));
+            }
+            Assert.True(changedRedness.Average(p => p.After) > changedRedness.Average(p => p.Before) + 40);
             Invoke(form, "Undo");
             using Bitmap undone = Capture(view, output, "3-undo");
             Assert.Equal(0, Changed(baseline, undone));

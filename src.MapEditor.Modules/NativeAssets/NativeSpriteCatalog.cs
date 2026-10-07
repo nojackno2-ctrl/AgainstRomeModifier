@@ -24,7 +24,9 @@ internal sealed record NativeSprite(int Width, int Height, uint[] ArgbPixels, in
 /// ALR frames are ((animation * directions) + direction) * LayoutColumns + frame with the
 /// ground point at the anchor canvas centre; APT layout axis 0 is the construction stage,
 /// so the last stage with all other axes 0 is the intact, finished building.
-/// Team palette selection and direction-to-angle mapping are not yet verified in game.
+/// In-game template matching (ENDL_005, 2026-10-07) confirmed the finished APT frame, the
+/// palette channel order, team N = palette variant N and the ground anchor; the general
+/// scenario-angle to direction-row mapping is still unknown beyond Angle 0 = row 14.
 /// </summary>
 internal sealed class NativeSpriteCatalog : IDisposable
 {
@@ -74,8 +76,14 @@ internal sealed class NativeSpriteCatalog : IDisposable
     public bool TryGetDefinition(string name, out NativeSpriteDefinition definition)
         => _definitions.TryGetValue(name.Trim(), out definition!);
 
+    /// <summary>
+    /// Direction row a unit spawned with scenario Angle 0 shows in game (template-matched against
+    /// gerinf01 in-game, 2026-10-07). Taken modulo each asset's row count, so single-row assets use row 0.
+    /// </summary>
+    public const int DefaultDirection = 14;
+
     /// <summary>Still sprite for a map object name; null when the object has no decodable native asset.</summary>
-    public NativeSprite? GetSprite(string objectName, int team = 0, int direction = 0)
+    public NativeSprite? GetSprite(string objectName, int team = 0, int direction = DefaultDirection)
     {
         if (!TryGetDefinition(objectName, out NativeSpriteDefinition? definition)) return null;
         lock (_gate)

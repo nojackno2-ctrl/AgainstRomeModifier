@@ -26,6 +26,9 @@ internal sealed class Map3DViewControl : GLControl
     private Color _waterSourceColor = Color.SteelBlue;
     private bool _initialized, _painting, _movingSceneObject, _pickedPendingDrag, _panning, _rotating, _rightClick;
     private Point _lastPointer, _rightStart, _pickStart;
+    private MapSceneObject? _grabObject;
+    private System.Numerics.Vector3 _grabGround;
+    private bool _hasGrabGround;
     private int _terrainProgram, _colorProgram, _vao, _vbo, _ebo, _atlasTexture, _waterVao, _waterVbo, _markerVao, _markerVbo, _cursorVao, _cursorVbo;
     private int _cursorVertexCount;
     private bool _reinitializeOnHandleCreated;
@@ -343,6 +346,8 @@ internal sealed class Map3DViewControl : GLControl
                 // Selecting a visible object starts dragging it once the handler enables moving.
                 SceneObjectPicked?.Invoke(this, new SceneObjectPickEventArgs(_objects[picked]));
                 _pickedPendingDrag = SceneMoveEnabled; _pickStart = e.Location; // a plain click only selects; dragging moves
+                _grabObject = _objects[picked];
+                _hasGrabGround = TryGetGroundPoint(e.Location, out _grabGround);
             }
             else if (SceneMoveEnabled) _movingSceneObject = TryMoveSceneObject(e.Location, completed: false);
             else { _painting = true; _paintedInDrag.Clear(); _lastPaintedTile = -1; TryPaint(e.Location); }
@@ -355,8 +360,8 @@ internal sealed class Map3DViewControl : GLControl
         Point delta = new(e.X - _lastPointer.X, e.Y - _lastPointer.Y);
         if (_panning && e.Button == MouseButtons.Middle) { _camera.Pan(-delta.X * .08f, delta.Y * .08f); Invalidate(); }
         else if (_rightClick && e.Button == MouseButtons.Right && Math.Abs(e.X - _rightStart.X) + Math.Abs(e.Y - _rightStart.Y) >= 4) { _rotating = true; _camera.Rotate(delta.X * .35f, -delta.Y * .35f); Invalidate(); }
-        else if (_pickedPendingDrag && e.Button == MouseButtons.Left && Math.Abs(e.X - _pickStart.X) + Math.Abs(e.Y - _pickStart.Y) >= 4) { _pickedPendingDrag = false; _movingSceneObject = TryMoveSceneObject(e.Location, completed: false); }
-        else if (_movingSceneObject && e.Button == MouseButtons.Left) TryMoveSceneObject(e.Location, completed: false);
+        else if (_pickedPendingDrag && e.Button == MouseButtons.Left && Math.Abs(e.X - _pickStart.X) + Math.Abs(e.Y - _pickStart.Y) >= 4) { _pickedPendingDrag = false; _movingSceneObject = MoveGrabbedOrPointed(e.Location, completed: false); }
+        else if (_movingSceneObject && e.Button == MouseButtons.Left) MoveGrabbedOrPointed(e.Location, completed: false);
         else if (_painting && e.Button == MouseButtons.Left) TryPaint(e.Location);
         if (TryGetTile(e.Location, out int x, out int y))
         {
@@ -380,7 +385,8 @@ internal sealed class Map3DViewControl : GLControl
         if (e.Button == MouseButtons.Right && _rightClick && !_rotating && TryGetTile(e.Location, out int x, out int y) && _textures is not null)
             TextureSampled?.Invoke(this, new TextureSampleEventArgs(x, y, _textures[y * _dimension + x]));
         bool wasPainting = _painting;
-        if (_movingSceneObject && e.Button == MouseButtons.Left) TryMoveSceneObject(e.Location, completed: true);
+        if (_movingSceneObject && e.Button == MouseButtons.Left) MoveGrabbedOrPointed(e.Location, completed: true);
+        _grabObject = null;
         _painting = _movingSceneObject = _pickedPendingDrag = _panning = _rotating = _rightClick = false; _paintedInDrag.Clear(); _lastPaintedTile = -1;
         if (wasPainting) StrokeEnded?.Invoke(this, EventArgs.Empty);
     }
@@ -415,6 +421,30 @@ internal sealed class Map3DViewControl : GLControl
         if (ContinuousPaint ? _lastPaintedTile == offset : !firstVisit) return;
         _lastPaintedTile = offset;
         TexturePainted?.Invoke(this, new TexturePaintEventArgs(x, y, _textures[offset], BrushTexture));
+    }
+
+    /// <summary>
+    /// A picked object follows the pointer by the ground distance dragged (keeping the grab offset),
+    /// snapped to tile centres like placement; otherwise the selected object jumps to the pointed tile.
+    /// </summary>
+    private bool MoveGrabbedOrPointed(Point point, bool completed)
+    {
+        if (_grabObject is null || !_hasGrabGround) return TryMoveSceneObject(point, completed);
+        if (!EditingEnabled || !SceneMoveEnabled || !TryGetGroundPoint(point, out System.Numerics.Vector3 ground)) return false;
+        float worldUnitsPerTile = SdlSceneCatalog.WorldUnitsPerMapPixel * (SdlSceneCatalog.MapPixelSize / (float)_dimension);
+        float tileX = _grabObject.WorldX / worldUnitsPerTile + ground.X - _grabGround.X;
+        float tileZ = _grabObject.WorldZ / worldUnitsPerTile + ground.Z - _grabGround.Z;
+        tileX = Math.Clamp(MathF.Floor(tileX), 0, _dimension - 1) + .5f;
+        tileZ = Math.Clamp(MathF.Floor(tileZ), 0, _dimension - 1) + .5f;
+        SceneObjectMoved?.Invoke(this, new SceneObjectMoveEventArgs(tileX * worldUnitsPerTile, tileZ * worldUnitsPerTile, completed));
+        return true;
+    }
+
+    private bool TryGetGroundPoint(Point point, out System.Numerics.Vector3 ground)
+    {
+        ground = default;
+        if (_heights is null || ClientSize.Width <= 0 || ClientSize.Height <= 0) return false;
+        return TerrainRayPicker.TryPickPoint(_heights, _camera.CreateRay(point.X, point.Y, ClientSize.Width, ClientSize.Height), out ground);
     }
 
     private bool TryMoveSceneObject(Point point, bool completed)
