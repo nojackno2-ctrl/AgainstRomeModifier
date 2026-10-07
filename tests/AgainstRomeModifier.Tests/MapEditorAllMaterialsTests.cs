@@ -277,6 +277,26 @@ public sealed partial class MapEditorSaveTransactionTests
         Assert.Contains(catalog.RegionalTransitionFits.Values, fit => fit.First is not null);
     }
 
+    /// <summary>真實地圖調色盤排序報表：每張無盡地圖各等級（已使用／可直接銜接／可自動過渡／難以銜接）的材質，輸出到 ARM_PALETTE_REPORT。</summary>
+    [Fact]
+    public void Real_map_palette_suitability_report()
+    {
+        string? game = Environment.GetEnvironmentVariable("ARM_GAME_PATH");
+        if (string.IsNullOrWhiteSpace(game) || !File.Exists(Path.Combine(game, "floortex.dat"))) return;
+        using var library = new FloorTextureLibrary(Path.Combine(game, "floortex.dat"));
+        var catalog = new FloorMaterialCatalog(library);
+        var lines = new List<string>();
+        foreach (string mapId in new[] { "ENDL_000", "ENDL_001", "ENDL_002", "ENDL_003", "ENDL_004" })
+        {
+            var textures = BodenTexturesDocument.Load(Path.Combine(game, "MAPS", mapId, "boden.txt")).Textures;
+            var used = textures.SelectMany(texture => catalog.TryResolveNativeCorners(texture, out var corners) ? corners : Array.Empty<string>())
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var tiers = catalog.Materials.GroupBy(material => catalog.MapSuitability(material.Id, used)).OrderBy(group => group.Key);
+            lines.Add($"{mapId}: " + string.Join(" | ", tiers.Select(group => $"T{group.Key}({group.Count()}): {string.Join(",", group.Select(material => material.Id))}")));
+        }
+        File.WriteAllLines(Environment.GetEnvironmentVariable("ARM_PALETTE_REPORT") ?? Path.Combine(Path.GetTempPath(), "ArmPaletteReport.txt"), lines);
+    }
+
     private string CopyRealMap(string game, string mapId)
     {
         string source = Path.Combine(game, "MAPS", mapId), map = Path.Combine(_root, "MAPS", "ENDL_005");

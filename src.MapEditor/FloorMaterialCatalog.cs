@@ -165,6 +165,33 @@ internal sealed class FloorMaterialCatalog : INativeTerrainMaterialResolver
 
     public IReadOnlyList<FloorMaterial> Materials { get; }
     public IReadOnlyList<string> MaterialIds => _materialIds ??= Materials.Select(material => material.Id).ToArray();
+    private readonly Dictionary<string, bool> _transitionCache = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>兩種材質之間是否至少有一張原版過渡 tile（任一種兩材質四角組合可解析）；結果快取。</summary>
+    public bool HasTransition(string first, string second)
+    {
+        if (StringComparer.OrdinalIgnoreCase.Equals(first, second)) return true;
+        string key = string.CompareOrdinal(first.ToUpperInvariant(), second.ToUpperInvariant()) < 0 ? first + "|" + second : second + "|" + first;
+        if (_transitionCache.TryGetValue(key, out bool cached)) return cached;
+        bool found = false;
+        for (int mask = 1; mask < 15 && !found; mask++)
+        {
+            string[] corners = Enumerable.Range(0, 4).Select(bit => (mask >> bit & 1) == 1 ? second : first).ToArray();
+            found = ResolveNativeTile(corners, 0, 0) is not null;
+        }
+        return _transitionCache[key] = found;
+    }
+
+    /// <summary>
+    /// 材質在指定地圖上的可用程度：0＝地圖已使用；1＝能直接與地圖上的材質過渡；2＝能透過一種中介材質過渡（自動過渡）；3＝難以銜接。
+    /// </summary>
+    public int MapSuitability(string materialId, IReadOnlyCollection<string> mapMaterials)
+    {
+        if (mapMaterials.Contains(materialId, StringComparer.OrdinalIgnoreCase)) return 0;
+        if (mapMaterials.Any(present => HasTransition(materialId, present))) return 1;
+        if (Materials.Any(bridge => HasTransition(materialId, bridge.Id) && mapMaterials.Any(present => HasTransition(bridge.Id, present)))) return 2;
+        return 3;
+    }
     private string[]? _materialIds;
     internal int TwoMaterialTransitionFamilyCount => _transitions.Count;
     internal int ThreeMaterialTransitionFamilyCount => _threeMaterialTransitions.Count;

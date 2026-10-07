@@ -78,12 +78,30 @@ public sealed partial class MapEditorSaveTransactionTests
             for (int pass = 0; pass < 12; pass++) Invoke(form, "Undo");
             Assert.Equal(before, layers.Heights);
 
-            GetField<NumericUpDown>(form, "_waterLevel").Value = 0;
+            // 水面為 0：編輯器自動把水面設在全圖最低點之下，照樣挖出湖，且筆刷外沒有任何地形被淹沒。
+            var water = GetField<NumericUpDown>(form, "_waterLevel");
+            water.Value = 0;
             byte[] dry = layers.Heights.ToArray();
-            Invoke(form, "PaintTexture", new TexturePaintEventArgs(20, 20, "", ""));
+            for (int pass = 0; pass < 12; pass++) { Invoke(form, "PaintTexture", new TexturePaintEventArgs(20, 20, "", "")); Invoke(form, "CommitStroke"); }
+            int surface = (int)(water.Value / 4);
+            Assert.Equal(dry.Min() - 1, surface);
+            int lake = 82 * size + 82; // tile (20,20) 中心
+            Assert.True(layers.Heights[lake] < surface);
+            for (int index = 0; index < dry.Length; index++)
+                if (layers.Heights[index] == dry[index]) Assert.True(layers.Heights[index] > surface, "未編輯的地形不得被淹沒");
+            Assert.Contains("自動", GetField<ToolStripStatusLabel>(form, "_status").Text);
+
+            // 全圖最低點接近 0：無法自動設定水面，不改地形並提示。
+            for (int pass = 0; pass < 12; pass++) Invoke(form, "Undo");
+            water.Value = 0;
+            layers.TransformHeights((x, y, value) => x == 0 && y == 0 ? 2 : value);
             Invoke(form, "CommitStroke");
-            Assert.Equal(dry, layers.Heights);
-            Assert.Contains("水面", GetField<ToolStripStatusLabel>(form, "_status").Text);
+            byte[] low = layers.Heights.ToArray();
+            Invoke(form, "PaintTexture", new TexturePaintEventArgs(40, 40, "", ""));
+            Invoke(form, "CommitStroke");
+            Assert.Equal(low, layers.Heights);
+            Assert.Equal(0, water.Value);
+            Assert.Contains("地勢太低", GetField<ToolStripStatusLabel>(form, "_status").Text);
         });
     }
 }

@@ -884,7 +884,18 @@ internal sealed partial class MapEditorForm : Form
         if (!string.IsNullOrWhiteSpace(filter)) materials = materials.Where(material =>
             GetLocalizedMaterialName(material).Contains(filter, StringComparison.CurrentCultureIgnoreCase) ||
             GetLocalizedCategory(material.Category).Contains(filter, StringComparison.CurrentCultureIgnoreCase));
-        PaletteItem[] items = materials.Select(material => new PaletteItem(material.Id, material.RepresentativeTexture, GetLocalizedMaterialName(material), material)).ToArray();
+        // 依「在這張地圖上能不能用」排序：已使用 → 可直接銜接 → 可自動過渡 → 難以銜接（加註），玩家不必逐一試。
+        bool isEn = AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English;
+        IReadOnlyCollection<string> mapMaterials = MapMaterialIds();
+        var ranked = materials
+            .Select((material, order) => (material, order, tier: _floorMaterials is null ? 0 : _floorMaterials.MapSuitability(material.Id, mapMaterials)))
+            .OrderBy(item => item.tier).ThenBy(item => item.order).ToArray();
+        // 未搜尋時隱藏難以銜接的材質（多為其他地區的地表），搜尋時仍全部列出；整張圖都無法辨識時不隱藏，避免調色盤變空。
+        if (string.IsNullOrWhiteSpace(filter) && ranked.Any(item => item.tier < 3)) ranked = ranked.Where(item => item.tier < 3).ToArray();
+        PaletteItem[] items = ranked
+            .Select(item => new PaletteItem(item.material.Id, item.material.RepresentativeTexture,
+                GetLocalizedMaterialName(item.material) + (item.tier == 3 ? (isEn ? " (hard to blend on this map)" : "（此地圖難以銜接）") : ""), item.material))
+            .ToArray();
         _palette.BeginUpdate();
         _palette.Items.AddRange(items.Cast<object>().ToArray());
         int index = selected is null ? -1 : Array.FindIndex(items, item => StringComparer.OrdinalIgnoreCase.Equals(item.Key, selected));
@@ -920,6 +931,15 @@ internal sealed partial class MapEditorForm : Form
             ? $"Tile ({e.X}, {e.Y})  {FriendlyTextureName(e.Texture)}"
             : $"格子 ({e.X}, {e.Y})　{FriendlyTextureName(e.Texture)}";
         _status.Text = _terrainBlendNotice is null ? hover : _terrainBlendNotice + "　" + hover;
+    }
+
+    /// <summary>目前地圖實際使用的材質（依 tile 解析；每次重排調色盤時重算，塗上新材質後排序隨之更新）。</summary>
+    private IReadOnlyCollection<string> MapMaterialIds()
+    {
+        if (_texturesDocument is null || _floorMaterials is null) return Array.Empty<string>();
+        return _texturesDocument.Textures
+            .SelectMany(texture => _floorMaterials.TryResolveNativeCorners(texture, out var corners) ? corners : Array.Empty<string>())
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
     }
 
     private void LoadStampPalette(string? filter, string? selected)
