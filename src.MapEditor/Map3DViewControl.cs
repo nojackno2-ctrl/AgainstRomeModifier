@@ -82,6 +82,8 @@ internal sealed class Map3DViewControl : GLControl
     /// <summary>Left click on a visible object while <see cref="ScenePickEnabled"/>; handlers may enable moving it.</summary>
     public event EventHandler<SceneObjectPickEventArgs>? SceneObjectPicked;
     public bool ScenePickEnabled { get; set; }
+    internal Vector3 CameraTarget => _camera.Target;
+    public event EventHandler? CameraChanged;
 
     /// <summary>Index into the current scene objects of the object drawn under a client point, or -1.</summary>
     internal int PickSceneObject(Point point)
@@ -395,8 +397,8 @@ internal sealed class Map3DViewControl : GLControl
     {
         base.OnMouseMove(e);
         Point delta = new(e.X - _lastPointer.X, e.Y - _lastPointer.Y);
-        if (_panning && e.Button == MouseButtons.Middle) { _camera.Pan(-delta.X * .08f, delta.Y * .08f); Invalidate(); }
-        else if (_rightClick && e.Button == MouseButtons.Right && Math.Abs(e.X - _rightStart.X) + Math.Abs(e.Y - _rightStart.Y) >= 4) { _rotating = true; _camera.Rotate(delta.X * .35f, -delta.Y * .35f); Invalidate(); }
+        if (_panning && e.Button == MouseButtons.Middle) { _camera.Pan(-delta.X * .08f, delta.Y * .08f); Invalidate(); CameraChanged?.Invoke(this, EventArgs.Empty); }
+        else if (_rightClick && e.Button == MouseButtons.Right && Math.Abs(e.X - _rightStart.X) + Math.Abs(e.Y - _rightStart.Y) >= 4) { _rotating = true; _camera.Rotate(delta.X * .35f, -delta.Y * .35f); Invalidate(); CameraChanged?.Invoke(this, EventArgs.Empty); }
         else if (_pickedPendingDrag && e.Button == MouseButtons.Left && Math.Abs(e.X - _pickStart.X) + Math.Abs(e.Y - _pickStart.Y) >= 4) { _pickedPendingDrag = false; _movingSceneObject = MoveGrabbedOrPointed(e.Location, completed: false); }
         else if (_movingSceneObject && e.Button == MouseButtons.Left) MoveGrabbedOrPointed(e.Location, completed: false);
         else if (_painting && e.Button == MouseButtons.Left) TryPaint(e.Location);
@@ -434,6 +436,7 @@ internal sealed class Map3DViewControl : GLControl
         float y = _heights?.SampleHeight(tileX, tileY) ?? 0;
         _camera.Target = new Vector3(tileX, y, tileY);
         Invalidate();
+        CameraChanged?.Invoke(this, EventArgs.Empty);
     }
 
     public void UpdateSceneObjects(IReadOnlyList<MapSceneObject> sceneObjects)
@@ -472,9 +475,10 @@ internal sealed class Map3DViewControl : GLControl
         }
         e.Handled = true;
         Invalidate();
+        CameraChanged?.Invoke(this, EventArgs.Empty);
     }
 
-    protected override void OnMouseWheel(MouseEventArgs e) { base.OnMouseWheel(e); _camera.Zoom(e.Delta > 0 ? .84f : 1.19f); Invalidate(); }
+    protected override void OnMouseWheel(MouseEventArgs e) { base.OnMouseWheel(e); _camera.Zoom(e.Delta > 0 ? .84f : 1.19f); Invalidate(); CameraChanged?.Invoke(this, EventArgs.Empty); }
 
     private void TryPaint(Point point)
     {

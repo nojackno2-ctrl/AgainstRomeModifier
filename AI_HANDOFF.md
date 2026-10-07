@@ -1,5 +1,19 @@
 # AI Handoff - Live Project Memory
 
+## 小地圖點擊導航與視野指示器 (Age of Empires II 風格) (2026-10-07 Antigravity)
+
+- 核心功能：
+  - 新增純幾何計算類別 `src.MapEditor/MinimapNavigator.cs`，支援 `PictureBoxSizeMode.Zoom` 的寬高比黑邊裁切（letterboxing）計算、滑鼠點轉地圖格座標（`TryPointToTile`）、格座標轉小地圖點（`TileToPoint`）及 2D 畫布可見矩形換算（`CalculateCanvasVisibleMinimapRect`）。
+  - `Map3DViewControl`：公開 `internal Vector3 CameraTarget` 與 `public event EventHandler? CameraChanged`，在平移、旋轉、滾輪縮放、按鍵移動及 `FocusTile` 時觸發。
+  - `MapCanvasControl`：公開 `public event EventHandler? ViewChanged`、`SceneBoundsRectangle` 與 `MapDimension`，在平移、縮放、置中及載入時觸發。
+  - `MapEditorForm`：`_overview` 支援滑鼠左鍵點擊與拖曳導航至目標格（若當前為 3D 視圖則導航 `_view3d.FocusTile`，2D 則導航 `_canvas.FocusTile`，點擊黑邊忽略）；於 `Paint` 事件繪製視圖指示器（3D 為相機目標的十字線與雙層方框、2D 為可見區域半透明高亮矩形）。
+  - 座標方向確認：minimap.bmp (256×256) 與地形 boden.bmp / MapCanvasControl 座標系一致，影像 X 軸對應地圖 tileX (WorldX)，影像 Y 軸（列方向向下）對應地圖 tileY (WorldZ)，無須上下顛倒。
+- 測試與驗證：
+  - 新增單元與 STA 表單整合測試 `tests/AgainstRomeModifier.Tests/MapEditorMinimapTests.cs`（letterbox 雙向黑邊、邊界外點擊忽略、座標 round-trip、可見矩形計算、STA 點擊概覽圖確認 3D 相機移動到目標 tile）。
+  - `dotnet build AgainstRomeModifier.slnx -c Release -p:UseAppHost=false`：0 警告，0 錯誤。
+  - `dotnet test tests/AgainstRomeModifier.Tests -c Release --no-build --filter "FullyQualifiedName~Minimap|FullyQualifiedName~high_dpi"`（含 `ARM_OPENGL_REQUIRED=1` 與 `DOTNET_ROLL_FORWARD=Major`）：9 通過，0 失敗。
+- 未驗證：實際開啟遊戲時手動拖曳小地圖的視覺手感（已透過單元測試與 STA 控制項反射事件完整驗證幾何與連動）。
+
 ## argm-trace winmm.dll 代理匯出修正 (2026-10-07 Antigravity)
 
 - 修正：`native/argm-trace/argm_trace.def` 與 `native/argm-trace/src/proxy_winmm.cpp`，改以腳本 `native/argm-trace/generate_exports.py` 從 `C:\Windows\SysWOW64\winmm.dll` 讀取並產生完整的匯出清單，解決遊戲載入 NVIDIA `NvMemMapStorage.dll` 時因缺少 `timeBeginPeriod` 導致無法找到輸入點的啟動失敗問題。保留了原先供 EXE 使用的 hook，ordinal-only 匯出亦保持原始 ordinal。

@@ -289,6 +289,9 @@ internal sealed partial class MapEditorForm : Form
         overviewHost.Controls.Add(_overview); overviewHost.Controls.Add(_lblOverviewTitle);
         _canvasHost.Controls.Add(overviewHost); overviewHost.BringToFront();
         _canvasHost.Resize += (_, _) => overviewHost.Location = new Point(Math.Max(12, _canvasHost.ClientSize.Width - overviewHost.Width - 18), Math.Max(46, _canvasHost.ClientSize.Height - overviewHost.Height - 18));
+        _overview.MouseDown += (_, e) => NavigateMinimap(e);
+        _overview.MouseMove += (_, e) => NavigateMinimap(e);
+        _overview.Paint += (_, e) => DrawMinimapIndicator(e.Graphics);
 
         var centerRight = new SplitContainer { Dock = DockStyle.Fill, FixedPanel = FixedPanel.Panel2, Size = new Size(1140, 760), SplitterDistance = 820 };
         centerRight.Panel1.Controls.Add(_canvasHost); centerRight.Panel2.Controls.Add(_inspectorTabs); centerRight.Panel2MinSize = 280;
@@ -354,6 +357,7 @@ internal sealed partial class MapEditorForm : Form
         _canvas.StrokeEnded += (_, _) => CommitStroke();
         _canvas.TileHovered += (_, e) => ShowTerrainHover(e);
         _canvas.SceneObjectMoved += (_, e) => MoveSelectedSceneObject(e);
+        _canvas.ViewChanged += (_, _) => _overview.Invalidate();
         if (_view3d is not null)
         {
             Map3DViewControl view3d = _view3d;
@@ -363,6 +367,7 @@ internal sealed partial class MapEditorForm : Form
             _view3d.TileHovered += (_, e) => ShowTerrainHover(e);
             _view3d.SceneObjectMoved += (_, e) => MoveSelectedSceneObject(e);
             _view3d.SceneObjectPicked += (_, e) => SelectPickedSceneObject(e.SceneObject);
+            _view3d.CameraChanged += (_, _) => _overview.Invalidate();
             _view3d.InitializationFailed += (_, ex) => { if (!IsDisposed && !Disposing && IsHandleCreated) BeginInvoke(() => { if (!view3d.IsReady) Disable3DView(view3d.LastFailureReason ?? (AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English ? "OpenGL 3.3 initialization failed." : "OpenGL 3.3 初始化失敗。"), ex); }); };
         }
         _view2dButton.Click += (_, _) => SetActiveView(use3D: false);
@@ -1099,6 +1104,77 @@ internal sealed partial class MapEditorForm : Form
         if (File.Exists(minimapPath)) using (var source = new Bitmap(minimapPath)) _overview.Image = new Bitmap(source);
     }
 
+    private void NavigateMinimap(MouseEventArgs e)
+    {
+        if (e.Button != MouseButtons.Left || _overview.Image is null || _selected is null) return;
+        int dimension = _texturesDocument?.Dimension ?? _canvas.MapDimension;
+        if (dimension <= 0) dimension = 64;
+
+        Rectangle imageBounds = MinimapNavigator.CalculateZoomedImageBounds(_overview.ClientSize, _overview.Image.Size);
+        if (!MinimapNavigator.TryPointToTile(e.Location, imageBounds, dimension, out System.Numerics.Vector2 tilePosition)) return;
+
+        if (_view3dButton.Checked && _view3d is not null && _view3d.Visible)
+        {
+            _view3d.FocusTile(tilePosition.X, tilePosition.Y);
+        }
+        else
+        {
+            _canvas.FocusTile(tilePosition.X, tilePosition.Y);
+        }
+        _overview.Invalidate();
+    }
+
+    private void DrawMinimapIndicator(Graphics graphics)
+    {
+        if (_overview.Image is null || _selected is null) return;
+        int dimension = _texturesDocument?.Dimension ?? _canvas.MapDimension;
+        if (dimension <= 0) dimension = 64;
+
+        Rectangle imageBounds = MinimapNavigator.CalculateZoomedImageBounds(_overview.ClientSize, _overview.Image.Size);
+        if (imageBounds.Width <= 0 || imageBounds.Height <= 0) return;
+
+        graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+
+        if (_view3dButton.Checked && _view3d is not null && _view3d.Visible)
+        {
+            // 3D 視圖：以攝影機目標 tile (CameraTarget.X, CameraTarget.Z) 為中心繪製十字標記與小框
+            System.Numerics.Vector3 target = _view3d.CameraTarget;
+            PointF center = MinimapNavigator.TileToPoint(new System.Numerics.Vector2(target.X, target.Z), imageBounds, dimension);
+
+            using var shadowPen = new Pen(Color.FromArgb(180, 0, 0, 0), 3f);
+            using var indicatorPen = new Pen(Color.FromArgb(255, 255, 230, 40), 1.5f);
+
+            // 十字線
+            const float crossArm = 6f;
+            graphics.DrawLine(shadowPen, center.X - crossArm, center.Y, center.X + crossArm, center.Y);
+            graphics.DrawLine(shadowPen, center.X, center.Y - crossArm, center.X, center.Y + crossArm);
+            graphics.DrawLine(indicatorPen, center.X - crossArm, center.Y, center.X + crossArm, center.Y);
+            graphics.DrawLine(indicatorPen, center.X, center.Y - crossArm, center.X, center.Y + crossArm);
+
+            // 中心外圍小方框
+            const float boxHalf = 4f;
+            var boxRect = new RectangleF(center.X - boxHalf, center.Y - boxHalf, boxHalf * 2, boxHalf * 2);
+            graphics.DrawRectangle(shadowPen, boxRect.X, boxRect.Y, boxRect.Width, boxRect.Height);
+            graphics.DrawRectangle(indicatorPen, boxRect.X, boxRect.Y, boxRect.Width, boxRect.Height);
+        }
+        else
+        {
+            // 2D 畫布：繪製目前可視區域矩形
+            Rectangle sceneBounds = _canvas.SceneBoundsRectangle;
+            RectangleF viewRect = MinimapNavigator.CalculateCanvasVisibleMinimapRect(sceneBounds, _canvas.ClientSize, imageBounds, dimension);
+            if (viewRect.Width > 0 && viewRect.Height > 0)
+            {
+                using var shadowPen = new Pen(Color.FromArgb(180, 0, 0, 0), 3f);
+                using var indicatorPen = new Pen(Color.FromArgb(255, 255, 230, 40), 1.5f);
+                using var fillBrush = new SolidBrush(Color.FromArgb(35, 255, 255, 255));
+
+                graphics.FillRectangle(fillBrush, viewRect);
+                graphics.DrawRectangle(shadowPen, viewRect.X, viewRect.Y, viewRect.Width, viewRect.Height);
+                graphics.DrawRectangle(indicatorPen, viewRect.X, viewRect.Y, viewRect.Width, viewRect.Height);
+            }
+        }
+    }
+
     private void InitializeTerrainBlendSession()
     {
         _terrainBlendSession = null;
@@ -1185,6 +1261,7 @@ internal sealed partial class MapEditorForm : Form
         _canvas.Visible = !use3D;
         if (_view3d is not null) _view3d.Visible = use3D;
         _modeBanner.BringToFront();
+        _overview.Invalidate();
     }
 
     private void Disable3DView(string reason, Exception? exception = null)
