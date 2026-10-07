@@ -77,9 +77,15 @@ public sealed class BciImage
 
     /// <summary>新增一個常數字串並回傳其索引（不重用既有項目，與原編譯器每次引用各自登錄的作法一致）。</summary>
     public int AddConstant(string value)
+        => AddConstantBytes(value, Latin);
+
+    public int AddGameConstant(string value)
+        => AddConstantBytes(value, Maps.MapTextEncoding.Game);
+
+    private int AddConstantBytes(string value, Encoding encoding)
     {
         if (value.Contains('\0')) throw new ArgumentException("常數不可含 NUL。", nameof(value));
-        byte[] bytes = Latin.GetBytes(value + "\0");
+        byte[] bytes = encoding.GetBytes(value + "\0");
         int offset = ConstBlob.Length;
         ConstBlob = [.. ConstBlob, .. bytes];
         _constOffsets.Add(offset);

@@ -5,7 +5,7 @@ using System.Diagnostics;
 
 namespace AgainstRomeMapEditor;
 
-internal sealed class MapEditorForm : Form
+internal sealed partial class MapEditorForm : Form
 {
     private readonly MapCanvasControl _canvas = new();
     private Map3DViewControl? _view3d;
@@ -192,7 +192,7 @@ internal sealed class MapEditorForm : Form
             Display.Angle, Display.SourceFile.Equals(TemplateFile, StringComparison.OrdinalIgnoreCase) ? null : Display.SourceFile);
     }
 
-    private bool IsDirty => _propertyDirty || TextureDirty() || SceneDirty() || _terrainLayers?.IsDirty == true || _resetAuxiliaryLayers || PlacedDirty() || NatureDirty();
+    private bool IsDirty => _propertyDirty || TextureDirty() || SceneDirty() || _terrainLayers?.IsDirty == true || _resetAuxiliaryLayers || PlacedDirty() || NatureDirty() || EventsDirty();
 
     public MapEditorForm(string gamePath, GameMapInfo selectedMap, bool startWithBlankTerrain = false)
     {
@@ -267,6 +267,7 @@ internal sealed class MapEditorForm : Form
         _inspectorTabs.TabPages.Add(new TabPage("場景物件") { BackColor = WinFormsTheme.Surface }); _inspectorTabs.TabPages[2].Controls.Add(scenePanel);
         _inspectorTabs.TabPages.Add(new TabPage("放置物件") { BackColor = WinFormsTheme.Surface }); _inspectorTabs.TabPages[3].Controls.Add(BuildPlacementPanel());
         _inspectorTabs.TabPages.Add(new TabPage("自然物件") { BackColor = WinFormsTheme.Surface }); _inspectorTabs.TabPages[4].Controls.Add(BuildNaturePanel());
+        _inspectorTabs.TabPages.Add(new TabPage("事件") { BackColor = WinFormsTheme.Surface }); _inspectorTabs.TabPages[^1].Controls.Add(BuildEventsPanel());
 
         _canvasHost = new Panel { Dock = DockStyle.Fill, Padding = new Padding(10), BackColor = WinFormsTheme.Window };
         _canvasHost.Controls.Add(_canvas); _canvasHost.Controls.Add(_modeBanner);
@@ -438,6 +439,7 @@ internal sealed class MapEditorForm : Form
             ? "Place buildings, unit groups and characters that exist when the map loads (like a scenario editor)."
             : "像場景編輯器一樣放置建築、部隊與人物，地圖載入時就會存在。";
         LocalizePlacementTab(isEn);
+        LocalizeEvents(isEn);
         _aiMapButton.Text = isEn ? "AI Map Maker…" : "AI 製圖…";
         _blankTerrainButton.Text = isEn ? "Blank Terrain…" : "空白地形…";
         _blankTerrainButton.ToolTipText = isEn
@@ -574,6 +576,7 @@ internal sealed class MapEditorForm : Form
             if (_objectCatalog.Count == 0) _objectCatalog = BuildSpawnCatalog(_gamePath);
             _placedObjects.Clear(); _placedObjects.AddRange(LoadScenarioPlacements(map)); _placedBaseline = _placedObjects.ToArray();
             PopulatePlacementFilters(); RefreshPlacedList();
+            LoadEvents(map);
             if (_objdefNames.Count == 0) _objdefNames = ObjDefNames.Load(_gamePath);
             LoadLevelObjects(map);
             LoadPalette(); LoadEditingScene(); UpdateEditorState();
@@ -1763,16 +1766,17 @@ internal sealed class MapEditorForm : Form
             }
             bool natureChanged = NatureDirty();
             bool placedChanged = PlacedDirty();
+            bool eventsChanged = EventsDirty();
             ScenarioDocument? scenario = null, previousScenario = null;
-            if (placedChanged)
+            if (placedChanged || eventsChanged)
             {
                 previousScenario = ScenarioDocument.Load(map);
                 // 建築以官方完工範本寫入 DATA（開局即完工）；人物與部隊由地圖腳本生成。
-                scenario = new ScenarioDocument { Spawns = _placedObjects.Select(item => new ScenarioSpawn(AliasOf(item.Type), item.WorldX, item.WorldZ, item.Team,
+                scenario = new ScenarioDocument { Events = _events.ToList(), DataSlots = previousScenario.DataSlots.ToList(), Spawns = placedChanged ? _placedObjects.Select(item => new ScenarioSpawn(AliasOf(item.Type), item.WorldX, item.WorldZ, item.Team,
                     item.UnitCount > 1 ? item.UnitCount : 0, (int)MathF.Round(item.Angle), item.WorldY,
-                    Prebuilt: item.Type.Category == SdlObjectCategory.Building && item.Team is >= 0 and <= 8)).ToList() };
+                    Prebuilt: item.Type.Category == SdlObjectCategory.Building && item.Team is >= 0 and <= 8)).ToList() : previousScenario.Spawns.ToList() };
             }
-            bool prebuiltChanged = scenario is not null && (scenario.Spawns.Any(spawn => spawn.Prebuilt) || previousScenario!.DataSlots.Count > 0);
+            bool prebuiltChanged = placedChanged && scenario is not null && (scenario.Spawns.Any(spawn => spawn.Prebuilt) || previousScenario!.DataSlots.Count > 0);
             if (natureChanged || prebuiltChanged)
             {
                 LevelObjectStore store = LevelObjectStore.Load(map);
@@ -1788,7 +1792,7 @@ internal sealed class MapEditorForm : Form
                 }
                 store.Save(map, rollback);
             }
-            if (placedChanged)
+            if (placedChanged || eventsChanged)
             {
                 scenario!.Save(map, rollback);
                 LevelScriptInjector.Apply(map, scenario, _objectCatalog.Select(AliasOf).ToArray(), rollback);
@@ -1815,6 +1819,7 @@ internal sealed class MapEditorForm : Form
             rollback.Commit();
             if (auxiliaryReset) _resetAuxiliaryLayers = false;
             if (placedChanged) _placedBaseline = _placedObjects.ToArray();
+            if (eventsChanged) _eventsBaseline = _events.ToArray();
             if (natureChanged || prebuiltChanged) LoadLevelObjects(map);
             if (heightsChanged || collisionChanged)
             {
@@ -2039,6 +2044,7 @@ internal sealed class MapEditorForm : Form
         _heightTool.Enabled = editable && _terrainLayers is not null; _aiMapButton.Enabled = editable && _terrainLayers is not null; _blankTerrainButton.Enabled = editable && _terrainLayers is not null; _placeTool.Enabled = editable && _objectCatalog.Count > 0; _natureTool.Enabled = editable && _levelObjects.Count > 0;
         _undoButton.Enabled |= editable && _editMode == EditMode.Nature && _natureUndo.Count > 0; _collisionTool.Enabled = editable && _terrainLayers?.HasCollision == true;
         UpdateSceneEditButtons();
+        UpdateEventButtons();
         _sceneRestoreButton.Enabled = editable && _sceneLoaded && (_sceneRemovals.Count > 0 || _sceneAdditions.Count > 0 || SdlSceneEditService.HasChanges(_sceneOriginalObjects, _sceneObjects));
         foreach (Control control in EditablePropertyControls()) control.Enabled = editable;
         _palette.Enabled = editable; UpdateStatus();

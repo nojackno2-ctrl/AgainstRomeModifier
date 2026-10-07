@@ -2,6 +2,7 @@ using System.IO.Compression;
 using System.Reflection;
 using AgainstRomeMapEditor;
 using AgainstRomeModifier.Maps;
+using AgainstRomeModifier.Scripting;
 
 namespace AgainstRomeModifier.Tests;
 
@@ -148,6 +149,64 @@ public sealed class MapEditorFormTerrainIntegrationTests : IDisposable
         var steep = TerrainStrokePath.Between(10, 10, 12, 4).ToArray();
         Assert.Equal((12, 4), steep[^1]);
         Assert.All(steep.Zip(steep.Skip(1)), pair => Assert.True(Math.Abs(pair.First.Item1 - pair.Second.Item1) <= 1 && Math.Abs(pair.First.Item2 - pair.Second.Item2) <= 1));
+    }
+
+    [Fact]
+    public void Event_only_form_save_preserves_building_slots_and_removal_restores_original_script()
+    {
+        string map = CreateFixture(); Directory.CreateDirectory(Path.Combine(map, "SCRIPT"));
+        string script = Path.Combine(map, "SCRIPT", LevelScriptInjector.ScriptFile);
+        byte[] original = ScenarioEventsTests.Fixture().Serialize(); File.WriteAllBytes(script, original);
+        var baseline = new ScenarioDocument { Spawns = [new("HOUSE", 4000, 5000, 0, Prebuilt: true)], DataSlots = [new(42, 123)] };
+        using (var rollback = new FileRollbackScope()) { baseline.Save(map, rollback); rollback.Commit(); }
+        Exception? failure = null;
+        var thread = new Thread(() =>
+        {
+            try
+            {
+                using var form = new MapEditorForm(_root, new GameMapInfo("ENDL_005", map, true, "Events", "無盡模式"));
+                _ = form.Handle; Invoke(form, "LoadSelectedMap");
+                var events = (List<ScenarioEvent>)typeof(MapEditorForm).GetField("_events", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(form)!;
+                events.Add(new ScenarioEvent("Timer", 2) { Actions = [new(ScenarioActionKind.Message, "Ready")] });
+                Invoke(form, "RefreshEventList", 0); Invoke(form, "UpdateEditorState");
+                Assert.True((bool)typeof(MapEditorForm).GetProperty("IsDirty", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(form)!);
+                Assert.True((bool)Invoke(form, "SaveMap", false)!);
+                Assert.False((bool)typeof(MapEditorForm).GetProperty("IsDirty", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(form)!);
+                ScenarioDocument saved = ScenarioDocument.Load(map);
+                Assert.Equal(baseline.Spawns, saved.Spawns); Assert.Equal(baseline.DataSlots, saved.DataSlots); Assert.Single(saved.Events);
+                Assert.NotEqual(original, File.ReadAllBytes(script));
+                events.Clear(); Assert.True((bool)Invoke(form, "SaveMap", false)!);
+                Assert.Equal(original, File.ReadAllBytes(script)); Assert.Empty(ScenarioDocument.Load(map).Events);
+                Assert.Equal(baseline.DataSlots, ScenarioDocument.Load(map).DataSlots);
+            }
+            catch (Exception ex) { failure = ex; }
+        });
+        thread.SetApartmentState(ApartmentState.STA); thread.Start();
+        Assert.True(thread.Join(TimeSpan.FromSeconds(60))); Assert.Null(failure);
+    }
+
+    [Fact]
+    public void Original_map_disables_event_commands_and_event_dialogs_construct()
+    {
+        string map = CreateFixture(); Exception? failure = null;
+        var thread = new Thread(() =>
+        {
+            try
+            {
+                using var form = new MapEditorForm(_root, new GameMapInfo("ENDL_000", map, false, "Original", "無盡模式"));
+                _ = form.Handle; Invoke(form, "LoadSelectedMap");
+                var tabs = (System.Windows.Forms.TabControl)typeof(MapEditorForm).GetField("_inspectorTabs", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(form)!;
+                Assert.Single(tabs.TabPages[4].Controls); Assert.Single(tabs.TabPages[5].Controls);
+                foreach (string name in new[] { "_eventAdd", "_eventEdit", "_eventDelete" })
+                    Assert.False(((System.Windows.Forms.Button)typeof(MapEditorForm).GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(form)!).Enabled);
+                using var dialog = new ScenarioEventDialog(new("Event") { Actions = [new(ScenarioActionKind.Message, "Ready")] }, ["GER_INF01"], false);
+                using var action = new ScenarioActionDialog(new(ScenarioActionKind.SpawnUnit, Alias: "GER_INF01"), ["GER_INF01"], true);
+                _ = dialog.Handle; _ = action.Handle;
+            }
+            catch (Exception ex) { failure = ex; }
+        });
+        thread.SetApartmentState(ApartmentState.STA); thread.Start();
+        Assert.True(thread.Join(TimeSpan.FromSeconds(60))); Assert.Null(failure);
     }
 
     private static object? Invoke(MapEditorForm form, string name, params object[] args)

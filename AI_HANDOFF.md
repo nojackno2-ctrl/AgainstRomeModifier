@@ -1,13 +1,27 @@
-# AI Handoff - Live Project Memory
+﻿# AI Handoff - Live Project Memory
+
+## 2026-10-07 Codex：接續事件／觸發器（初版實作完成，遊戲內驗證待許可）
+
+- 開始狀態：分支 `主要開發`，HEAD `2ff4f0c`，工作樹乾淨。依最新交接，事件／觸發器是下一個主要缺口。
+- 已由使用者授權呼叫 AGY 與本地 AI。本地 AI 提供資料保留檢查；程式碼草稿因違反 32-bit ABI 被拒絕。AGY 大型與小型檔案任務未產出變更，已取消／逾時；純程式碼任務也僅回傳不完整草稿。Codex 已接手完成實作，沒有並行編輯衝突。
+- 本地 AI 審查提醒：事件獨立儲存須保留 Spawns/DataSlots、JSON/BCI 同交易、CP1251 嚴格編碼、全域 ScriptVarL 字串 key 避免衝突、原 main 迴圈不可被阻塞。
+- 本次遵守 AGENTS.md：不存取安裝遊戲目錄；遊戲內事件效果與存讀檔目前未驗證。計畫以合成腳本／VM 與建置測試驗證。
+- 基準測試：`DOTNET_ROLL_FORWARD=Major dotnet test tests/AgainstRomeModifier.Tests/AgainstRomeModifier.Tests.csproj -c Release -p:UseAppHost=false`：366 通過、21 略過、0 失敗；未啟用 ARM_GAME_PATH。
+- 新靜態證據：128 執行 native，86 推入回傳值；ScriptVarL 第一參數為字串指標。舊 glory-upgrade-combat.md 的整數 key 建議不安全，已在 `docs/reverse-engineering/scenario-events.md` 更正；第一個 AGY 委派取消後以正確 ABI 重新派工。
+
+- 實作里程碑：新增事件分頁與多動作編輯器，ScenarioDocument v3 保留 v1/v2，計時單次／重複、訊息／外交／部隊；BCI 主迴圈等待點 trampoline、專屬字串 deadline key、CP1251 訊息、未知注入點拒絕與交易回滾。只改事件不重寫 DATA 槽位。
+- 驗證里程碑：Release solution build 0 警告／0 錯誤；事件 VM、rollback 與真正 MapEditorForm fixture 整合篩選測試 19 通過。VM 驗證原迴圈與 wait 值保留、堆疊平衡；表單驗證原版地圖按鈕禁用、僅事件存檔保留建築、刪除最後事件還原原腳本。最終完整 Release 測試 381 通過、21 略過、0 失敗；最終 Release solution build 0 警告／0 錯誤；git diff --check 通過。
+
+- 下一步：使用者已收到例外許可問題；因 AGENTS.md「never access or modify the installed game directory」，本次未存取安裝目錄。須獲准讀取及僅透過編輯器寫入既有測試地圖後，驗證真實原腳本注入點、單次／重複、三種動作與存讀檔。目標尚未標為完成。
 
 ## 2026-10-07 HANDOFF SUMMARY（給接手的 AI，先讀這段）
 
 **目標**：地圖編輯器要能做出與官方一樣、可玩的地圖，並像世紀帝國2一樣能放建築、建立事件。使用者以繁體中文溝通（技術名詞保留英文）。
 
-**目前狀態（commit `46e1390`，分支 `主要開發`，未推送）**
+**目前狀態（分支 `主要開發`，事件初版見本日 Codex 條目；本機提交以 Git 為準，未推送）**
 - 已完成並實機驗證：地表／高度／通行、AI 製圖（本機 Ollama）、自然物件（DATA）、放置建築（DATA 完工範本）、放置部隊（腳本注入）。細節見下方各日期條目。
-- 未開始：**事件／觸發器**（下一步）。
-- 測試：`dotnet test tests/AgainstRomeModifier.Tests`（366 通過／21 略過；`ARM_GAME_PATH=C:\Program Files (x86)\Against Rome` 會啟用依賴遊戲目錄的測試）。Release 建置 0 警告 0 錯誤。
+- **事件／觸發器初版已完成程式與合成 VM／表單驗證**；支援計時、單次／重複、訊息／外交／部隊。尚未實機確認，也尚無區域、物件死亡或勝敗條件。
+- 測試：`dotnet test tests/AgainstRomeModifier.Tests`（381 通過／21 略過；`ARM_GAME_PATH=C:\Program Files (x86)\Against Rome` 會啟用依賴遊戲目錄的測試）。Release 建置 0 警告 0 錯誤。
 
 **建置與執行**
 - 環境變數 `DOTNET_ROLL_FORWARD=Major`；exe 被鎖時加 `-p:UseAppHost=false`。

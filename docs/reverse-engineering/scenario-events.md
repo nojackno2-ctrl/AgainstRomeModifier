@@ -1,0 +1,19 @@
+# Scenario event VM evidence (2026-10-07)
+
+Codex inspected only the repository-local read-only `re_workspace/Against_Rome.exe` using Python pefile/Capstone. No installed game directory was accessed. This is static evidence, not an in-game test.
+
+- Opcode 128: dispatcher `0x5b8aeb` resolves a constant by native name and invokes `0x5b1700` at `0x5b8c05`. It executes the native; it does not push its return value onto the VM stack.
+- Opcode 86: handler `0x5b6f07` pushes the return register `[VM+0x14]` to the stack (`0x5b6f80..0x5b6f87`). For native expressions, emit the native call, argument cleanup, then 86. Statement calls can omit 86.
+- Opcode 96: `0x5b76d7` consumes two values and produces a signed three-way comparison; 101 (`0x5b7f57`, `test eax,eax; setge`) maps that result to >=. Do not assume 101 directly compares two stack values.
+- `s_setScriptVarL` (`0x5220d0`) resolves the first argument with `0x5b1680`, then passes it as a pointer through `0x520fb0` -> `0x4285f0` -> `0x4285c0` -> `0x58a500`. The value is formatted with `%ld`; the key is a string. `s_getScriptVarL` is the matching string-key lookup. Use constant references for names such as `ARM_EVENT_...`, never literal integer keys.
+- The older `glory-upgrade-combat.md` suggestion of keys `700000 + team` is unsafe unless those numbers are represented as string constants. Its statement that the key is an integer index is superseded by the pointer-resolution evidence above.
+- `s_showTextBox` (`0x521f10`) similarly resolves its second argument with `0x5b1680`; message text must be a constant reference with exact game-encoding bytes.
+
+Event injection must preserve the existing main-loop scheduling. A timer loop that never returns from the entry shim blocks the original map logic. Any trampoline must keep instruction boundaries, original wait values, relative jump targets, and balanced frames/stack. Unknown hook signatures must fail inside the existing save transaction rather than partially write a map.
+## Implemented first version
+
+`ScenarioDocument` writes version 3 and reads versions 1–3. An event contains a name, enabled flag, delay in seconds, repeat flag, and ordered actions (message, diplomacy, unit spawn). Limits: 256 events, 32 actions per event, 0–86400 seconds; repeating timers require at least one second. Game text is strict CP1251; editor-only event names may use Unicode.
+
+The compiler accepts exactly one boundary-decoded `66 10; 131` wait in the original main region with a later unconditional back edge targeting the literal-push instruction. Unknown opcodes, malformed branch targets, absent hooks and ambiguous hooks are rejected. It replaces only the eight-byte push with a trampoline, preserves the original wait and loop, and returns to the existing spawn shim after initializing `ARM_EVENT_DEADLINE_<index>` string keys. Repeats schedule from the actual firing time and do not run a burst of catch-up actions. Once-only events use deadline -1 after firing.
+
+Verified: Release build (0 warnings/errors), 381 tests passed and 21 proprietary-fixture skips; synthetic VM timing, native argument order, original-loop execution and balanced stack; real WinForms fixture event-only saves preserve building slot ownership and removal restores the original script; transaction rollback and byte-identical reinjection. Not verified: matching the hook against installed original scripts, game loading, live action effects, multiplayer, save/load event-state persistence. No installed game directory was accessed. Area, destroyed-object and victory/defeat conditions are not implemented in this version.

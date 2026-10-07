@@ -9,6 +9,10 @@ machine and external-call sites; it is not a complete disassembler
 specification. Treat opcode meanings below as evidence-backed for the
 sequences observed, not as a verified exhaustive VM reference.
 
+## 2026-10-07 native-call correction
+
+The historical table below mislabels the native-call ABI. Dispatcher verification against the repository-local EXE confirms **128 executes a native call** (resolving its constant by name), **73 -N discards N argument words**, and **86 pushes the native return register** onto the VM stack. Thus a statement can omit 86; an expression needs it. Opcode 96 is a three-way comparison of two values; 98..103 test that signed result. See [scenario-events.md](scenario-events.md) for handler addresses and the string-key `ScriptVarL` correction. These corrections supersede conflicting historical labels below.
+
 ## Container Layout
 
 A decompressed `BCI0` script has this layout (all integers are little-endian

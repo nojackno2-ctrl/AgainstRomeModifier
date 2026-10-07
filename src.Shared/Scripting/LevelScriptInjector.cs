@@ -54,9 +54,10 @@ public sealed record ScenarioDataSlot(int Slot, uint Uid);
 public sealed class ScenarioDocument
 {
     public const string FileName = "arm_scenario.json";
-    public int Version { get; set; } = 2;
+    public int Version { get; set; } = 3;
     public List<ScenarioSpawn> Spawns { get; set; } = new();
     public List<ScenarioDataSlot> DataSlots { get; set; } = new();
+    public List<ScenarioEvent> Events { get; set; } = new();
 
     /// <summary>需由地圖腳本生成的項目（非預建）。</summary>
     [System.Text.Json.Serialization.JsonIgnore]
@@ -68,11 +69,18 @@ public sealed class ScenarioDocument
     {
         string path = Path.Combine(mapDirectory, FileName);
         if (!File.Exists(path)) return new ScenarioDocument();
-        return JsonSerializer.Deserialize<ScenarioDocument>(File.ReadAllText(path), Options) ?? new ScenarioDocument();
+        ScenarioDocument result = JsonSerializer.Deserialize<ScenarioDocument>(File.ReadAllText(path), Options)
+            ?? throw new InvalidDataException("場景設定不能是 null。");
+        if (result.Version is < 1 or > 3 || result.Spawns is null || result.DataSlots is null || result.Events is null)
+            throw new InvalidDataException("不支援或不完整的場景設定。");
+        return result;
     }
 
     public void Save(string mapDirectory, FileRollbackScope rollback)
-        => Core.Services.SafeFileWriter.WriteAllBytes(Path.Combine(mapDirectory, FileName), JsonSerializer.SerializeToUtf8Bytes(this, Options), rollback);
+    {
+        Version = 3;
+        Core.Services.SafeFileWriter.WriteAllBytes(Path.Combine(mapDirectory, FileName), JsonSerializer.SerializeToUtf8Bytes(this, Options), rollback);
+    }
 }
 
 /// <summary>
@@ -100,22 +108,26 @@ public static class LevelScriptInjector
     /// <summary>依場景設定寫出注入後的腳本；沒有任何生成項目時還原原版腳本。全部在呼叫端交易內完成。</summary>
     public static void Apply(string mapDirectory, ScenarioDocument scenario, IReadOnlyCollection<string> knownAliases, FileRollbackScope rollback)
     {
+        ScenarioEventValidator.Validate(scenario.Events, knownAliases);
+        bool hasEvents = scenario.Events.Any(item => item.Enabled);
         string scriptDirectory = ScriptDirectory(mapDirectory);
         string script = Path.Combine(scriptDirectory, ScriptFile), backup = Path.Combine(scriptDirectory, OriginalBackupFile);
         if (!File.Exists(backup))
         {
-            if (scenario.ScriptSpawns.Count == 0) return; // 從未注入且沒有內容：保持原檔
+            if (scenario.ScriptSpawns.Count == 0 && !hasEvents) return; // 從未注入且沒有內容：保持原檔
             if (!File.Exists(script)) throw new FileNotFoundException("地圖缺少 ak_level.bci，無法加入場景物件。", script);
             Core.Services.SafeFileWriter.WriteAllBytes(backup, File.ReadAllBytes(script), rollback);
         }
         byte[] original = File.ReadAllBytes(backup);
         IReadOnlyList<ScenarioSpawn> spawns = scenario.ScriptSpawns;
-        if (spawns.Count == 0) { Core.Services.SafeFileWriter.WriteAllBytes(script, original, rollback); return; }
+        if (spawns.Count == 0 && !hasEvents) { Core.Services.SafeFileWriter.WriteAllBytes(script, original, rollback); return; }
         foreach (ScenarioSpawn spawn in spawns)
             if (!knownAliases.Contains(spawn.Alias, StringComparer.OrdinalIgnoreCase)) throw new InvalidDataException($"未知的物件別名：{spawn.Alias}");
         bool pfil = original.Length >= 64 && original.AsSpan(0, 4).SequenceEqual("PFIL"u8);
         BciImage image = BciImage.Parse(pfil ? GameLZSS.DecompressPfil(original) : original);
-        Inject(image, spawns);
+        int originalMain = image.MainAddress;
+        if (spawns.Count > 0) Inject(image, spawns);
+        if (hasEvents) ScenarioEventCompiler.Inject(image, scenario.Events, originalMain);
         byte[] serialized = image.Serialize();
         Core.Services.SafeFileWriter.WriteAllBytes(script, pfil ? GameLZSS.CompressPfil(serialized, original.AsSpan(0, 64).ToArray()) : serialized, rollback);
     }
