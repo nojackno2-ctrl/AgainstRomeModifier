@@ -1,5 +1,15 @@
 ﻿# AI Handoff - Live Project Memory
 
+## 2026-10-07 Codex：事件條件靜態查核（證據已整理）
+
+- 開始核對 d52ecb6 / 乾淨工作樹；測試地圖仍 v2 / 無 Events。前一輪完成複製及動作排序，屬進展；管理員 UI 寫入限制尚未解除。
+- 本輪唯讀 EXE 查核：s_objExists 0x5194f0→0x50f270 的第一參數先減 1，第二參數核對 UID（0x50f2a0→0x518d60）；s_objDead 0x519540→0x50f3a0 使用同一物件配對，不存在/UID 不符回傳 0，不可用 !s_objDead 表示存活。
+- 原版 ak_priester.bci 0xa9e8/0xa9f0/0xa9f8 證實先 UID、後物件索引入棧，再呼叫 s_objExists；原 s_readFromObjArray 提供物件配對。編輯器 DATA slot 為零起始，腳本物件索引為一開始（依減 1 thunk）；需載入器及實機配對交叉驗證。
+- 程式識別風險：ScenarioLevelObjects.Apply 移除舊 DataSlots 並重建建築，LevelObjectStore.Add 以目前最大 UID+1 分配；排序/新增自然物件可改變 UID。條件不能把舊 slot/uid 固定當成永久身份。需要持久編輯器 ID、當次儲存的 runtime binding，以及建立成功/曾存在狀態。
+- AGY 已收到唯讀區域 API 查核，job 7d065654ae11（180 秒上限）；已終止，工具標記 succeeded / exit 0 但實際只回傳 print timeout，沒有可用報告或變更，不能當成研究成功。s_searchTeamUnits=10 參數，0x53c460→0x5384e0；參數完整語意待證據，不猜測中心座標/半徑。原 ENDL_000 0x934 交叉核對十參數，0x3ba8 核對十一參數 s_searchTeamFigures。
+
+- 證據與必要實作/驗證已記錄 docs/reverse-engineering/scenario-event-conditions.md。下一步先做持久物件 ID 與同交易 runtime binding，才可安全讓事件選擇放置物件；同時追查位置型區域搜尋的完整參數。尚無條件功能或實機結果。這輪只有文件變更，不重跑無關 build/test。
+
 ## 2026-10-07 Codex：事件編輯操作補齊（程式與表單測試完成）
 
 - 開始核對 HEAD c065293、乾淨工作樹；ENDL_005 JSON 仍 Version 2 / 無 Events，Windows 實機儲存限制仍存在。前一輪有實際程式修正及原版腳本證據，屬進展。
