@@ -7,10 +7,14 @@ public sealed class EndlessMapDeleter
 
     public void Delete(string gamePath, int slot)
     {
+        if (slot is >= 0 and < 5) throw new InvalidOperationException("只能刪除自製地圖；原廠地圖 ENDL_000–004 不可刪除。");
         string normalizedGamePath = EndlessMapCatalog.ValidateGamePath(gamePath);
         EndlessMapInfo map = _catalog.Require(normalizedGamePath, slot);
         if (!map.IsCustom || !CustomMapManifest.IsCustomMapDirectory(map.DirectoryPath))
             throw new InvalidOperationException("只能刪除由地圖編輯器建立的自製地圖。");
+        CustomMapManifest manifest = CustomMapManifest.Load(normalizedGamePath);
+        if (!manifest.Entries.Any(entry => entry.Slot == slot))
+            throw new InvalidOperationException("地圖未登記在自製地圖 manifest，已取消刪除。");
 
         string mapsPath = Path.GetFullPath(Path.Combine(normalizedGamePath, "MAPS"));
         string mapPath = Path.GetFullPath(map.DirectoryPath);
@@ -23,7 +27,6 @@ public sealed class EndlessMapDeleter
         try
         {
             using var rollback = new FileRollbackScope();
-            CustomMapManifest manifest = CustomMapManifest.Load(normalizedGamePath);
             manifest.Remove(slot);
             manifest.Save(normalizedGamePath, rollback);
             Directory.Delete(temporary, recursive: true);
