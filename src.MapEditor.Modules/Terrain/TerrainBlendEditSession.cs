@@ -116,6 +116,24 @@ internal sealed class TerrainBlendEditSession
         return TerrainBlendPaintResult.Success(changes);
     }
 
+    /// <summary>
+    /// 圖塊印章：把單一 tile 直接設為指定的原版圖塊（道路、河流、岩壁等不屬於材質過渡系統的裝飾圖塊），
+    /// 不改角點材質也不做過渡烘焙；與筆刷相同地記入待提交筆畫，可復原／重做。之後在相鄰處塗材質會依角點重新烘焙並覆蓋。
+    /// </summary>
+    public TerrainTextureChange? StampTexture(int x, int y, string texture)
+    {
+        if (x < 0 || y < 0 || x >= _map.TileDimension || y >= _map.TileDimension || string.IsNullOrWhiteSpace(texture)) return null;
+        int index = TextureIndex(x, y);
+        string before = _currentTextures[index];
+        if (StringComparer.OrdinalIgnoreCase.Equals(before, texture)) return null;
+        var change = new TerrainTextureChange(x, y, before, texture);
+        _currentTextures[index] = texture;
+        if (_pendingTextures.TryGetValue(index, out TerrainTextureChange? pending)) _pendingTextures[index] = pending with { After = texture };
+        else _pendingTextures[index] = change;
+        _redo.Clear();
+        return change;
+    }
+
     public bool CommitStroke()
     {
         TerrainCornerChange[] corners = _pendingCorners.Values.Where(change => !StringComparer.OrdinalIgnoreCase.Equals(change.Before, change.After)).OrderBy(change => change.Index).ToArray();

@@ -75,3 +75,39 @@ public sealed class TerrainAutoBridgeTests
         Assert.All(isolated.CurrentTextures, texture => Assert.Equal("grass/grass/grass/grass", texture));
     }
 }
+
+public sealed class TerrainStampTests
+{
+    private sealed class Resolver : INativeTerrainMaterialResolver
+    {
+        public bool TryResolveNativeCorners(string texture, out IReadOnlyList<string> corners)
+        {
+            corners = texture.Split('/');
+            return corners.Count == 4;
+        }
+
+        public string? ResolveNativeTile(IReadOnlyList<string> corners, int x, int y) => string.Join('/', corners);
+    }
+
+    [Fact]
+    public void Stamp_sets_one_exact_tile_and_is_undoable_and_redoable()
+    {
+        var resolver = new Resolver();
+        string[] source = Enumerable.Repeat("grass/grass/grass/grass", 9).ToArray();
+        var session = new TerrainBlendEditSession(TerrainBlendAuthoringMap.Import(3, source, resolver, "grass"), source, resolver);
+        Assert.Null(session.StampTexture(5, 0, "weg1"));
+        var change = session.StampTexture(1, 1, "weg1");
+        Assert.NotNull(change);
+        Assert.Equal("weg1", session.CurrentTextures[4]);
+        Assert.Null(session.StampTexture(1, 1, "weg1"));
+        Assert.True(session.CommitStroke());
+        session.Undo();
+        Assert.Equal("grass/grass/grass/grass", session.CurrentTextures[4]);
+        Assert.False(session.IsDirty);
+        session.Redo();
+        Assert.Equal("weg1", session.CurrentTextures[4]);
+        // 之後在同一格塗材質會依角點重新烘焙並覆蓋印章。
+        Assert.True(session.PaintCircle(1, 1, 0, "sand").Succeeded);
+        Assert.NotEqual("weg1", session.CurrentTextures[4]);
+    }
+}

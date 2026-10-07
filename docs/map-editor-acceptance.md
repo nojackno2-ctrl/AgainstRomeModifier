@@ -30,6 +30,7 @@
 | 3D 無法使用時退回 2D | 缺 floortex.dat：3D 停用、診斷報告列出缺少項目、2D 可編輯並儲存／重開 | `AgainstRomeModifier.Tests/MapEditor3DFallbackTests.cs` |
 | 地形工具擴充 | 9×9／15×15 筆刷、粗糙化（決定性、可復原、15×15 表單筆畫儲存重開）；L 系列地區材質（61 種，真實素材庫推斷過渡）；自動過渡中介材質（單元測試：缺直接過渡時插入中介、兩圈鏈、無中介仍拒絕；真實地圖 5 張×5 材質×200 點，產生 tile 均在素材庫、復原逐字相同） | `AgainstRomeMapEditor.Modules.Tests/TerrainRoughenTests.cs`、`TerrainAutoBridgeTests.cs`、`AgainstRomeModifier.Tests/MapEditorTerrainToolsTests.cs`、`MapEditorAllMaterialsTests.cs`（ARM_GAME_PATH） |
 | 自然物件散佈 | 筆刷範圍內依密度散佈、最小間距、反覆塗抹只補空隙、混合同類物種、單一復原；1×1 維持每格一株 | `AgainstRomeMapEditor.Modules.Tests/NatureScatterTests.cs`、`AgainstRomeModifier.Tests/MapEditorNatureHistoryTests.cs` |
+| 圖塊印章 | 原版道路／河流／岩壁／地板等圖塊分類列出，單格精確放置、復原重做、存檔重開、印章取樣 | `AgainstRomeMapEditor.Modules.Tests/TerrainAutoBridgeTests.cs`（TerrainStampTests）、`AgainstRomeModifier.Tests/MapEditorStampTests.cs` |
 | 3D 資料計算 | 高度插值、網格、相機限制、射線選取、材質 atlas | `AgainstRomeModifier.Tests/MapEditor3DTests.cs` |
 
 完整 solution 同時涵蓋 Modifier 與 SaveManager，總通過數不能當成地圖編輯器的功能數。部分測試在未提供原版資料或未啟用 live 環境時直接返回；通過總數也不能證明這些實機路徑已執行。
@@ -58,6 +59,6 @@ dotnet build AgainstRomeModifier.slnx -c Release -p:UseAppHost=false --artifacts
 dotnet test AgainstRomeModifier.slnx -c Release -p:UseAppHost=false --artifacts-path "$env:TEMP/ArmResumeQA" --no-restore --no-build --logger 'console;verbosity=quiet'
 ```
 
-最新工作樹結果：build 0 警告/0 錯誤；宿主 573 通過/21 略過，modules 56 通過，共 629 通過/21 略過/0 失敗（未設 live 變數時 AI live 測試直接返回，不算實機證據）。真實生成→預覽→套用→復原/重做→儲存→重開已另以 live 變數執行通過。未設定 `ARM_GAME_PATH`、`ARM_OLLAMA_LIVE`。以上 `--no-restore` 命令須先有相同 artifacts 路徑的 restore；新環境先移除 build 的 `--no-restore`。
+最新工作樹結果：build 0 警告/0 錯誤；宿主 574 通過/21 略過，modules 57 通過，共 631 通過/21 略過/0 失敗（未設 live 變數時 AI live 測試直接返回，不算實機證據）。真實生成→預覽→套用→復原/重做→儲存→重開已另以 live 變數執行通過。未設定 `ARM_GAME_PATH`、`ARM_OLLAMA_LIVE`。以上 `--no-restore` 命令須先有相同 artifacts 路徑的 restore；新環境先移除 build 的 `--no-restore`。
 
 `b9b9965` 的獨立 git archive 快照位於 `TEMP/ArmCoreCommitQA_e70f5f1a2802428abb9fd7546428d1a2/source`，不包含 AI 預覽 WIP；独立還原／建置／完整測試同樣為 0 警告/0 錯誤、536 通過/21 略過/0 失敗。

@@ -33,6 +33,8 @@ internal sealed partial class MapEditorForm : Form
     private readonly ComboBox _brushSize = new() { Dock = DockStyle.Top, DropDownStyle = ComboBoxStyle.DropDownList };
     private readonly CheckBox _showGrid = new() { Dock = DockStyle.Top, Height = 30, Text = "顯示格線", Checked = true };
     private readonly CheckBox _showObjects = new() { Dock = DockStyle.Top, Height = 30, Text = "顯示建築與場景物件", Checked = true };
+    private readonly CheckBox _stampMode = new() { Dock = DockStyle.Top, Height = 30, Text = "圖塊印章（原版道路、河流、岩壁等）" };
+    private string? _stampTexture;
     private readonly CheckBox _autoBridge = new() { Dock = DockStyle.Top, Height = 30, Text = "自動過渡（插入中介材質）", Checked = true };
     private readonly TrackBar _reliefScale = new() { Dock = DockStyle.Top, Minimum = 0, Maximum = 200, Value = 100, TickFrequency = 25 };
     private readonly ListView _sceneList = new() { Dock = DockStyle.Fill, View = View.Details, FullRowSelect = true, HeaderStyle = ColumnHeaderStyle.Nonclickable };
@@ -216,7 +218,7 @@ internal sealed partial class MapEditorForm : Form
         var brushOptions = new Panel { Dock = DockStyle.Top, Height = 204 };
         brushOptions.Controls.Add(_autoBridge); brushOptions.Controls.Add(_showObjects); brushOptions.Controls.Add(_showGrid); brushOptions.Controls.Add(_reliefScale);
         brushOptions.Controls.Add(_lblReliefScaleTitle); brushOptions.Controls.Add(_lblBrushSizeTitle); brushOptions.Controls.Add(_brushSize);
-        palettePanel.Controls.Add(_palette); palettePanel.Controls.Add(_paletteSearch); palettePanel.Controls.Add(brushOptions); palettePanel.Controls.Add(currentBrush); palettePanel.Controls.Add(_paletteHeader);
+        palettePanel.Controls.Add(_palette); palettePanel.Controls.Add(_paletteSearch); palettePanel.Controls.Add(_stampMode); palettePanel.Controls.Add(brushOptions); palettePanel.Controls.Add(currentBrush); palettePanel.Controls.Add(_paletteHeader);
 
         var properties = BuildPropertiesPanel();
         _inspectorTabs = new TabControl { Dock = DockStyle.Fill };
@@ -303,6 +305,7 @@ internal sealed partial class MapEditorForm : Form
         _palette.SelectedIndexChanged += (_, _) => { if (_palette.SelectedItem is PaletteItem item) SelectBrush(item); };
         _palette.DrawMode = DrawMode.OwnerDrawFixed; _palette.ItemHeight = 36; _palette.DrawItem += DrawPaletteItem;
         _paletteSearch.TextChanged += (_, _) => LoadPalette(_paletteSearch.Text);
+        _stampMode.CheckedChanged += (_, _) => { _paletteSearch.Text = ""; LoadPalette(); };
         _brushSize.SelectedIndexChanged += (_, _) => _canvas.BrushSize = BrushSizes[Math.Clamp(_brushSize.SelectedIndex, 0, BrushSizes.Length - 1)];
         _brushSize.SelectedIndexChanged += (_, _) => { if (_view3d is not null) _view3d.BrushSize = _canvas.BrushSize; };
         _showGrid.CheckedChanged += (_, _) => { _canvas.ShowGrid = _showGrid.Checked; _canvas.Invalidate(); if (_view3d is not null) { _view3d.ShowGrid = _showGrid.Checked; _view3d.Invalidate(); } };
@@ -440,6 +443,7 @@ internal sealed partial class MapEditorForm : Form
 
         _lblBrushSizeTitle.Text = isEn ? "Brush Size" : "筆刷大小";
         _autoBridge.Text = isEn ? "Auto transition (insert bridge materials)" : "自動過渡（插入中介材質）";
+        _stampMode.Text = isEn ? "Tile stamp (original roads, rivers, cliffs...)" : "圖塊印章（原版道路、河流、岩壁等）";
         _lblReliefScaleTitle.Text = isEn ? "Relief Scaling (Approx)" : "地形起伏（近似顯示）";
 
         _brushSize.Items.Clear();
@@ -633,7 +637,15 @@ internal sealed partial class MapEditorForm : Form
         if (TerrainLayerMode) { PaintTerrainLayer(e); return; }
         if (_editMode == EditMode.PlaceObject) { PlaceObjectAt(e); return; }
         if (_editMode == EditMode.Nature) { PaintNature(e); return; }
-        if (_selected is null || !_selected.IsCustom || _texturesDocument is null || _terrainBlendSession is null || _activeMaterial is null) return;
+        if (_selected is null || !_selected.IsCustom || _texturesDocument is null || _terrainBlendSession is null) return;
+        if (_stampMode.Checked)
+        {
+            if (_stampTexture is null) return;
+            TerrainTextureChange? stamped = _terrainBlendSession.StampTexture(e.X, e.Y, _stampTexture);
+            if (stamped is not null) { ApplyTexture(stamped.X, stamped.Y, stamped.After); _terrainBlendNotice = null; UpdateEditorState(); }
+            return;
+        }
+        if (_activeMaterial is null) return;
         float radius = _canvas.BrushSize / 2f + .26f;
         TerrainBlendPaintResult result = _terrainBlendSession.PaintCircle(e.X + .5f, e.Y + .5f, radius, _activeMaterial.Id, autoBridge: _autoBridge.Checked);
         foreach (TerrainTextureChange change in result.TextureChanges) ApplyTexture(change.X, change.Y, change.After);
@@ -863,6 +875,11 @@ internal sealed partial class MapEditorForm : Form
     {
         string? selected = (_palette.SelectedItem as PaletteItem)?.Key ?? _activeMaterial?.Id ?? _canvas.BrushTexture; _palette.Items.Clear();
         if (_texturesDocument is null) return;
+        if (_stampMode.Checked)
+        {
+            LoadStampPalette(filter, selected);
+            return;
+        }
         IEnumerable<FloorMaterial> materials = _floorMaterials?.Materials ?? Array.Empty<FloorMaterial>();
         if (!string.IsNullOrWhiteSpace(filter)) materials = materials.Where(material =>
             GetLocalizedMaterialName(material).Contains(filter, StringComparison.CurrentCultureIgnoreCase) ||
@@ -905,8 +922,52 @@ internal sealed partial class MapEditorForm : Form
         _status.Text = _terrainBlendNotice is null ? hover : _terrainBlendNotice + "　" + hover;
     }
 
+    private void LoadStampPalette(string? filter, string? selected)
+    {
+        IEnumerable<string> names = _floorTextures?.Names ?? Array.Empty<string>();
+        bool isEn = AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English;
+        PaletteItem[] items = names
+            .Select(name => (Name: name, Category: StampCategory(name)))
+            .Where(item => string.IsNullOrWhiteSpace(filter) || item.Name.Contains(filter, StringComparison.OrdinalIgnoreCase)
+                || LocalizedStampCategory(item.Category, isEn).Contains(filter, StringComparison.CurrentCultureIgnoreCase))
+            .OrderBy(item => item.Category).ThenBy(item => item.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(item => new PaletteItem("tile:" + item.Name, item.Name, $"{LocalizedStampCategory(item.Category, isEn)}：{item.Name}", null))
+            .ToArray();
+        _palette.BeginUpdate();
+        _palette.Items.AddRange(items.Cast<object>().ToArray());
+        int index = selected is null ? -1 : Array.FindIndex(items, item => StringComparer.OrdinalIgnoreCase.Equals(item.Key, selected));
+        _palette.SelectedIndex = index >= 0 ? index : items.Length > 0 && string.IsNullOrWhiteSpace(filter) ? 0 : -1;
+        _palette.EndUpdate();
+    }
+
+    /// <summary>依原版 floortex 命名把圖塊分組；數字越小越常用於裝飾（排在前面）。</summary>
+    internal static int StampCategory(string name)
+    {
+        string upper = name.ToUpperInvariant();
+        bool Any(params string[] prefixes) => prefixes.Any(prefix => upper.StartsWith(prefix, StringComparison.Ordinal));
+        if (Any("WEG", "H_WEG", "V_WEG", "PFAD", "PFLASTER", "LUXUSWEG", "PLATZ")) return 0;
+        if (Any("FLUSS", "ERDEFLUSS")) return 1;
+        if (Any("FELS", "ITA_FELS")) return 2;
+        if (Any("MARMOR", "STEINBODEN", "STADT")) return 3;
+        if (upper.Length > 1 && upper[0] == 'L' && char.IsDigit(upper[1])) return 5;
+        if (upper.Length > 1 && char.IsDigit(upper[0])) return 6;
+        return 4;
+    }
+
+    private static string LocalizedStampCategory(int category, bool isEn) => category switch
+    {
+        0 => isEn ? "Roads & plazas" : "道路與廣場",
+        1 => isEn ? "Rivers" : "河流",
+        2 => isEn ? "Cliffs" : "岩壁",
+        3 => isEn ? "Paving" : "地板",
+        5 => isEn ? "Regional (L)" : "地區地表 L",
+        6 => isEn ? "Blend tiles" : "過渡圖塊",
+        _ => isEn ? "Other" : "其他",
+    };
+
     private void SelectBrush(PaletteItem item)
     {
+        _stampTexture = item.Material is null && item.Key.StartsWith("tile:", StringComparison.Ordinal) ? item.PreviewTexture : null;
         _activeMaterial = item.Material;
         _canvas.BrushTexture = item.PreviewTexture; if (_view3d is not null) _view3d.BrushTexture = item.PreviewTexture;
         _currentMaterialSwatch.Image = _floorTextures?.Get(item.PreviewTexture);
@@ -917,6 +978,12 @@ internal sealed partial class MapEditorForm : Form
 
     private void SelectSampledTexture(string texture)
     {
+        if (_stampMode.Checked)
+        {
+            // 印章模式取樣：直接選取游標下的原版圖塊，方便複製道路等片段。
+            SelectBrush(new PaletteItem("tile:" + texture, texture, texture, null));
+            return;
+        }
         FloorMaterial? material = _floorMaterials?.FindByTexture(texture);
         if (material is null) {
             _status.Text = AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English
