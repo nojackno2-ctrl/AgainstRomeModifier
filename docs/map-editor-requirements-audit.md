@@ -14,7 +14,7 @@
 
 | 需求 | 目前證據 | 判定／下一步 |
 | --- | --- | --- |
-| 啟動與直接開圖 | `src.Modifier/Program.cs` 的參數檢查與 MapEditorForm 入口 | 有實作；需補入口驗收證據 |
+| 啟動與直接開圖 | `Program.ResolveDirectMap`；`MapEditorEntryTests.cs` 合成 root：大小寫不敏感開啟自製、原版唯讀、缺 --game／不存在／不安全代號／缺遊戲目錄拒絕 | 2026-10-07 修正：直接開圖原可繞過選單開啟劇情戰役 KAMP_，現與選單同範圍拒絕；參數錯誤改為用法提示，不再當成崩潰寫 crash_log。實際 exe 啟動未執行 |
 | 原版唯讀、自製槽位 005–999 | `CustomMapAccess` 統一兩個catalog、SDL service與Save；真正表單鎖briefing測試證明拒絕先於檔案開啟 | 已修：原廠帶marker仍唯讀；stale selection／移除marker／錯誤root拒存，bytes與dirty保留，合法marker恢復可retry |
 | 完整複製未知檔案、header、SDL 路徑 | `EndlessMapCloner`、Phase1 Clone / Documents 測試 | 合成測試涵蓋；遊戲內載入仍缺 |
 | 複製任何階段失敗無半成品 | 新 manifest Load／Save 失敗測試先重現正式槽位殘留 | 本輪修正：manifest 交易與本次目標回滾；成功可原槽位重試 |
