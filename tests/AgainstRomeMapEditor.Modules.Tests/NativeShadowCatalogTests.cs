@@ -25,6 +25,26 @@ public sealed class NativeShadowCatalogTests
         """;
 
     [Fact]
+    public void Open_reads_the_game_install_layout()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "arm-shadow-layout-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(root, "SYSTEM", "DATA_MP", "DEFAULTS"));
+            File.WriteAllText(Path.Combine(root, "SYSTEM", "DATA_MP", "DEFAULTS", "objdef.dau"), SampleObjdef);
+            Assert.Null(NativeShadowCatalog.Open(root)); // no cl_shado.ini / shad.dat yet
+            File.WriteAllText(Path.Combine(root, "SYSTEM", "cl_shado.ini"), SampleShadowNames);
+            using (var zip = System.IO.Compression.ZipFile.Open(Path.Combine(root, "shad.dat"), System.IO.Compression.ZipArchiveMode.Create))
+            using (Stream entry = zip.CreateEntry("SYSTEM/DATA/SHADOWTEXTURE/shadowmap_wohnhaus_1.bmp").Open())
+                entry.Write(CreateSyntheticBmp8(2, 2));
+            using NativeShadowCatalog catalog = NativeShadowCatalog.Open(root)!;
+            Assert.NotNull(catalog.GetShadow("BauGerWoh00_Wohnhaus"));
+            Assert.Null(catalog.GetShadow("BauGerHau00_Haupthaus")); // mask missing from the archive
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
     public void ParseShadowNames_ParsesValidEntries()
     {
         var names = NativeShadowCatalog.ParseShadowNames(SampleShadowNames);

@@ -110,6 +110,8 @@ internal sealed partial class MapEditorForm : Form
     private FloorTextureLibrary? _floorTextures;
     // 原遊戲 ALR/APT 物件素材（唯讀）；缺檔或格式錯誤時為 null，場景退回標記點。
     private AgainstRomeMapEditor.NativeAssets.NativeSpriteCatalog? _spriteCatalog;
+    // 原遊戲物件陰影（shad.dat，唯讀）；缺檔或格式錯誤時為 null，不畫陰影。
+    private AgainstRomeMapEditor.NativeAssets.NativeShadowCatalog? _shadowCatalog;
     // 3D 點選到的可移除自然物件（Delete 移除）；選取其他物件或場景變更時清除。
     private MapSceneObject? _pickedNature;
     private FloorMaterialCatalog? _floorMaterials;
@@ -206,6 +208,7 @@ internal sealed partial class MapEditorForm : Form
         _floorTextures = new FloorTextureLibrary(Path.Combine(gamePath, "floortex.dat"));
         _floorMaterials = new FloorMaterialCatalog(_floorTextures);
         _spriteCatalog = OpenSpriteCatalog(gamePath);
+        _shadowCatalog = OpenShadowCatalog(gamePath);
         BuildInterface();
         WinFormsTheme.Apply(this);
         WinFormsTheme.StylePrimaryButton(_sceneApplyButton);
@@ -626,6 +629,7 @@ internal sealed partial class MapEditorForm : Form
             _view3d.ShowObjects = _showObjects.Checked;
             _view3d.EditingEnabled = _selected.IsCustom;
             _view3d.SpriteCatalog = _spriteCatalog;
+            _view3d.ShadowCatalog = _shadowCatalog;
             try { has3DScene = _view3d.LoadTextures(_texturesDocument.Dimension, _texturesDocument.Textures, _selected.DirectoryPath, _floorTextures, SceneObjectsFor3D(effectiveObjects), (float)_waterLevel.Value, _heightMapStep, sceneWaterColor); _view3d.SetReliefScale(_reliefScale.Value / 100f); }
             catch (Exception ex) { Disable3DView(isEn ? "Failed to load 3D map resources." : "載入 3D 地圖資源失敗。", ex); }
         }
@@ -1482,9 +1486,15 @@ internal sealed partial class MapEditorForm : Form
         catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException) { return null; }
     }
 
+    private static AgainstRomeMapEditor.NativeAssets.NativeShadowCatalog? OpenShadowCatalog(string gamePath)
+    {
+        try { return AgainstRomeMapEditor.NativeAssets.NativeShadowCatalog.Open(gamePath); }
+        catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException or NotSupportedException) { return null; }
+    }
+
     protected override void Dispose(bool disposing)
     {
-        if (disposing) { _gameTextErrors.Dispose(); _floorTextures?.Dispose(); _floorTextures = null; _spriteCatalog?.Dispose(); _spriteCatalog = null; Image? overview = _overview.Image; _overview.Image = null; overview?.Dispose(); }
+        if (disposing) { _gameTextErrors.Dispose(); _floorTextures?.Dispose(); _floorTextures = null; _spriteCatalog?.Dispose(); _spriteCatalog = null; _shadowCatalog?.Dispose(); _shadowCatalog = null; Image? overview = _overview.Image; _overview.Image = null; overview?.Dispose(); }
         base.Dispose(disposing);
     }
 

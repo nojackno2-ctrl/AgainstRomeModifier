@@ -37,6 +37,12 @@ internal sealed class Map3DViewControl : GLControl
     private byte[] _vertexLight = [255, 255, 255];
     private int _vertexLightWidth = 1, _vertexLightHeight = 1, _vertexLightTexture;
     private NativeSpriteCatalog? _spriteCatalog;
+    private NativeShadowCatalog? _shadowCatalog;
+    private NativeObjectShadow?[] _objectShadows = Array.Empty<NativeObjectShadow?>();
+    private readonly Dictionary<NativeShadowDocument, NativeSprite> _shadowMasks = new(ReferenceEqualityComparer.Instance);
+    private NativeSpriteAtlas? _shadowAtlas;
+    private int _shadowProgram, _shadowVao, _shadowVbo, _shadowTexture;
+    private bool _shadowTextureDirty;
     private NativeSpriteAtlas? _spriteAtlas;
     private NativeSprite?[] _objectSprites = Array.Empty<NativeSprite?>();
     private int _spriteProgram, _spriteVao, _spriteVbo, _spriteTexture;
@@ -59,6 +65,16 @@ internal sealed class Map3DViewControl : GLControl
         get => _spriteCatalog;
         set { if (ReferenceEquals(_spriteCatalog, value)) return; _spriteCatalog = value; ResolveObjectSprites(); Invalidate(); }
     }
+
+    /// <summary>Original object shadow masks (shad.dat); null draws no shadows. Borrowed, not disposed.</summary>
+    public NativeShadowCatalog? ShadowCatalog
+    {
+        get => _shadowCatalog;
+        set { if (ReferenceEquals(_shadowCatalog, value)) return; _shadowCatalog = value; _shadowMasks.Clear(); ResolveObjectSprites(); Invalidate(); }
+    }
+
+    /// <summary>Number of scene objects currently drawn with a native ground shadow.</summary>
+    internal int ShadowObjectCount => _shadowAtlas is null ? 0 : _objectShadows.Count(shadow => shadow is not null && ShadowMask(shadow) is { } mask && _shadowAtlas.TryGetUv(mask, out _));
 
     /// <summary>Number of scene objects currently drawn with an original game sprite.</summary>
     internal int SpriteObjectCount => Enumerable.Range(0, _objectSprites.Length).Count(HasSprite);
@@ -194,6 +210,8 @@ internal sealed class Map3DViewControl : GLControl
             _terrainProgram = CreateProgram(TerrainVertexShader, TerrainFragmentShader);
             _colorProgram = CreateProgram(ColorVertexShader, ColorFragmentShader);
             _spriteProgram = CreateProgram(SpriteVertexShader, SpriteFragmentShader);
+            _shadowProgram = CreateProgram(ShadowVertexShader, ShadowFragmentShader);
+            _shadowVao = GL.GenVertexArray(); _shadowVbo = GL.GenBuffer(); _shadowTexture = GL.GenTexture(); _shadowTextureDirty = true;
             _spriteVao = GL.GenVertexArray(); _spriteVbo = GL.GenBuffer(); _spriteTexture = GL.GenTexture(); _spriteTextureDirty = true;
             _vao = GL.GenVertexArray(); _vbo = GL.GenBuffer(); _ebo = GL.GenBuffer(); _waterVao = GL.GenVertexArray(); _waterVbo = GL.GenBuffer(); _markerVao = GL.GenVertexArray(); _markerVbo = GL.GenBuffer(); _cursorVao = GL.GenVertexArray(); _cursorVbo = GL.GenBuffer();
             _initialized = true;
@@ -348,7 +366,7 @@ internal sealed class Map3DViewControl : GLControl
         DrawTerrain(matrix);
         if (ShowGrid) DrawGrid(matrix);
         DrawWater(matrix);
-        if (ShowObjects) { DrawMarkers(matrix); DrawSprites(ToOpenTk(view), ToOpenTk(projection)); }
+        if (ShowObjects) { DrawShadows(matrix); DrawMarkers(matrix); DrawSprites(ToOpenTk(view), ToOpenTk(projection)); }
         DrawBrushCursor(matrix);
     }
 
@@ -635,12 +653,73 @@ internal sealed class Map3DViewControl : GLControl
         NativeSpriteCatalog? catalog = _spriteCatalog;
         _objectSprites = catalog is null ? Array.Empty<NativeSprite?>() : _objects.Select(item => catalog.GetSprite(item.Name, item.Team, angleDegrees: item.Angle)).ToArray();
         _previewSprite = catalog is null || _previewName is null ? null : catalog.GetSprite(_previewName, _previewTeam, angleDegrees: _previewAngle);
+        ResolveObjectShadows();
         var distinct = new HashSet<NativeSprite>(_objectSprites.OfType<NativeSprite>(), ReferenceEqualityComparer.Instance);
         if (_previewSprite is not null) distinct.Add(_previewSprite);
         if (distinct.Count == 0) { _spriteAtlas = null; return; }
         if (_spriteAtlas is not null && distinct.Count == _spriteAtlas.Count && distinct.All(sprite => _spriteAtlas.TryGetUv(sprite, out _))) return;
         _spriteAtlas = NativeSpriteAtlas.Pack(distinct);
         _spriteTextureDirty = true;
+    }
+
+    private void ResolveObjectShadows()
+    {
+        NativeShadowCatalog? shadows = _shadowCatalog;
+        _objectShadows = shadows is null ? Array.Empty<NativeObjectShadow?>() : _objects.Select(item => SafeShadow(shadows, item.Name)).ToArray();
+        var masks = new HashSet<NativeSprite>(_objectShadows.OfType<NativeObjectShadow>().Select(ShadowMask).OfType<NativeSprite>(), ReferenceEqualityComparer.Instance);
+        if (masks.Count == 0) { _shadowAtlas = null; return; }
+        if (_shadowAtlas is not null && masks.Count == _shadowAtlas.Count && masks.All(mask => _shadowAtlas.TryGetUv(mask, out _))) return;
+        _shadowAtlas = NativeSpriteAtlas.Pack(masks);
+        _shadowTextureDirty = true;
+    }
+
+    private static NativeObjectShadow? SafeShadow(NativeShadowCatalog catalog, string name)
+    {
+        try { return catalog.GetShadow(name); }
+        catch (Exception error) when (error is InvalidDataException or NotSupportedException) { return null; }
+    }
+
+    /// <summary>Shadow mask as a black sprite whose alpha is the native darkening strength (index / 256).</summary>
+    private NativeSprite? ShadowMask(NativeObjectShadow shadow)
+    {
+        if (_shadowMasks.TryGetValue(shadow.Document, out NativeSprite? cached)) return cached;
+        NativeShadowFrame frame = shadow.Document.DecodeFrame();
+        ReadOnlySpan<byte> alpha = frame.AlphaMask;
+        var pixels = new uint[frame.Width * frame.Height];
+        for (int i = 0; i < pixels.Length; i++) pixels[i] = (uint)alpha[i] << 24;
+        return _shadowMasks[shadow.Document] = new NativeSprite(frame.Width, frame.Height, pixels, 0, 0, shadow.Definition.TextureFileName);
+    }
+
+    private void DrawShadows(Matrix4 matrix)
+    {
+        if (_shadowAtlas is null || _heights is null || _shadowProgram == 0) return;
+        if (_shadowTextureDirty)
+        {
+            GL.BindTexture(TextureTarget.Texture2D, _shadowTexture);
+            GL.PixelStore(PixelStoreParameter.UnpackAlignment, 4);
+            GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba, _shadowAtlas.Width, _shadowAtlas.Height, 0, OpenTK.Graphics.OpenGL4.PixelFormat.Bgra, PixelType.UnsignedByte, _shadowAtlas.ArgbPixels);
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Linear);
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.ClampToEdge);
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.ClampToEdge);
+            _shadowTextureDirty = false;
+        }
+        float[] vertices = SceneObjectRenderer.BuildShadowVertices(_objects, _objectShadows, ShadowMask, _shadowAtlas, _heights);
+        if (vertices.Length == 0) return;
+        GL.BindVertexArray(_shadowVao); GL.BindBuffer(BufferTarget.ArrayBuffer, _shadowVbo);
+        GL.BufferData(BufferTarget.ArrayBuffer, vertices.Length * sizeof(float), vertices, BufferUsageHint.StreamDraw);
+        int stride = SceneObjectRenderer.FloatsPerShadowVertex * sizeof(float);
+        GL.EnableVertexAttribArray(0); GL.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, stride, 0);
+        GL.EnableVertexAttribArray(1); GL.VertexAttribPointer(1, 2, VertexAttribPointerType.Float, false, stride, 3 * sizeof(float));
+        GL.UseProgram(_shadowProgram);
+        GL.UniformMatrix4(GL.GetUniformLocation(_shadowProgram, "uMvp"), false, ref matrix);
+        GL.ActiveTexture(TextureUnit.Texture0); GL.BindTexture(TextureTarget.Texture2D, _shadowTexture);
+        GL.Uniform1(GL.GetUniformLocation(_shadowProgram, "uMasks"), 0);
+        // Native blend RGB*(256-index)/256: black with alpha=index/256 over the ground. Like the game, shadows
+        // are painted on the terrain before the objects and are not clipped by it.
+        GL.Disable(EnableCap.DepthTest); GL.Disable(EnableCap.CullFace);
+        GL.DrawArrays(PrimitiveType.Triangles, 0, vertices.Length / SceneObjectRenderer.FloatsPerShadowVertex);
+        GL.Enable(EnableCap.DepthTest); GL.Enable(EnableCap.CullFace);
     }
 
     /// <summary>
@@ -781,6 +860,7 @@ internal sealed class Map3DViewControl : GLControl
         // 舊 context 的 ID 不能用在新 context（可能剛好與新配置的 texture/buffer ID 相同）。
         _terrainProgram = _colorProgram = _vao = _vbo = _ebo = _atlasTexture = _waterVao = _waterVbo = _markerVao = _markerVbo = _cursorVao = _cursorVbo = _collisionTexture = 0;
         _spriteProgram = _spriteVao = _spriteVbo = _spriteTexture = 0;
+        _shadowProgram = _shadowVao = _shadowVbo = _shadowTexture = 0;
         _vertexLightTexture = 0;
         _reinitializeOnHandleCreated = wasInitialized && !Disposing && !IsDisposed && RecreatingHandle;
         base.OnHandleDestroyed(e);
@@ -796,10 +876,14 @@ internal sealed class Map3DViewControl : GLControl
         GL.DeleteTexture(_vertexLightTexture); _vertexLightTexture = 0;
         GL.DeleteBuffer(_spriteVbo); GL.DeleteVertexArray(_spriteVao); GL.DeleteTexture(_spriteTexture); GL.DeleteProgram(_spriteProgram);
         _spriteVbo = _spriteVao = _spriteTexture = _spriteProgram = 0;
+        GL.DeleteBuffer(_shadowVbo); GL.DeleteVertexArray(_shadowVao); GL.DeleteTexture(_shadowTexture); GL.DeleteProgram(_shadowProgram);
+        _shadowVbo = _shadowVao = _shadowTexture = _shadowProgram = 0;
     }
 
     private const string TerrainVertexShader = "#version 330 core\nlayout(location=0) in vec3 p; layout(location=1) in vec3 n; layout(location=2) in vec2 uv; uniform mat4 uMvp; uniform float uDimension; out vec3 N; out vec2 UV; out vec2 mapUV; void main(){ N=n; UV=uv; mapUV=p.xz/uDimension; gl_Position=uMvp*vec4(p,1.0);}";
     private const string TerrainFragmentShader = "#version 330 core\nin vec3 N; in vec2 UV; in vec2 mapUV; uniform sampler2D uAtlas; uniform sampler2D uCollision; uniform sampler2D uVertexLight; uniform int uShowCollision; uniform vec3 uLight; out vec4 c; void main(){float l=max(.28,dot(normalize(N),normalize(uLight))); vec3 color=texture(uAtlas,UV).rgb*l; vec2 size=vec2(textureSize(uVertexLight,0)); vec2 uv=(mapUV*(size-1.0)+0.5)/size; vec3 vertexRgb=texture(uVertexLight,uv).rgb; color*=vertexRgb; if(uShowCollision!=0 && texture(uCollision,mapUV).r>0.0) color=mix(color,vec3(.824,.235,.235),.55); c=vec4(color,1.0);}";
+    private const string ShadowVertexShader = "#version 330 core\nlayout(location=0) in vec3 p; layout(location=1) in vec2 uv; uniform mat4 uMvp; out vec2 UV; void main(){ UV=uv; gl_Position=uMvp*vec4(p,1.0);}";
+    private const string ShadowFragmentShader = "#version 330 core\nin vec2 UV; uniform sampler2D uMasks; out vec4 c; void main(){ c=vec4(0.0,0.0,0.0,texture(uMasks,UV).a);}";
     private const string SpriteVertexShader = "#version 330 core\nlayout(location=0) in vec3 anchor; layout(location=1) in vec2 offset; layout(location=2) in vec2 uv; uniform mat4 uView; uniform mat4 uProjection; out vec2 UV; void main(){ vec4 v=uView*vec4(anchor,1.0); v.xy+=offset; UV=uv; gl_Position=uProjection*v;}";
     private const string SpriteFragmentShader = "#version 330 core\nin vec2 UV; uniform sampler2D uSprites; uniform float uAlpha; out vec4 c; void main(){ vec4 t=texture(uSprites,UV); if(t.a<.5) discard; c=vec4(t.rgb,uAlpha);}";
     private const string ColorVertexShader = "#version 330 core\nlayout(location=0) in vec3 p; uniform mat4 uMvp; void main(){gl_Position=uMvp*vec4(p,1.0);}";

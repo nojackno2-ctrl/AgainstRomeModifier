@@ -140,6 +140,7 @@ internal sealed class NativeShadowCatalog : IDisposable
     /// <summary>
     /// 唯讀方式從遊戲素材路徑 (或暫存目錄) 開啟 NativeShadowCatalog。
     /// 若必要的檔案 (objdef.dau / objdef.txt, cl_shado.ini, shad.dat) 不存在則回傳 null。
+    /// 同時接受扁平的素材副本目錄與遊戲安裝目錄結構（SYSTEM/cl_shado.ini、SYSTEM/DATA_MP/DEFAULTS/objdef.dau）。
     /// </summary>
     public static NativeShadowCatalog? Open(string assetsPath)
     {
@@ -149,10 +150,10 @@ internal sealed class NativeShadowCatalog : IDisposable
         string shadPath = Path.Combine(assetsPath, "shad.dat");
         if (!File.Exists(shadPath)) return null;
 
-        string? clShadoPath = FindFile(assetsPath, "cl_shado.ini", "cl_shado.txt");
+        string? clShadoPath = FindFile(assetsPath, "cl_shado.ini", "cl_shado.txt", Path.Combine("SYSTEM", "cl_shado.ini"));
         if (clShadoPath is null) return null;
 
-        string? objdefPath = FindFile(assetsPath, "objdef.dau", "objdef.txt");
+        string? objdefPath = FindFile(assetsPath, "objdef.dau", "objdef.txt", Path.Combine("SYSTEM", "DATA_MP", "DEFAULTS", "objdef.dau"));
         if (objdefPath is null) return null;
 
         ZipArchive? zipArchive = null;
