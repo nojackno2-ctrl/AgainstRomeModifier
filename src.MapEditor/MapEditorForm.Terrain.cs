@@ -9,7 +9,7 @@ internal sealed partial class MapEditorForm
         int operation = Math.Max(0, _terrainOperation.SelectedIndex), strength = _terrainStrength.SelectedIndex < 0 ? 1 : _terrainStrength.SelectedIndex;
         _terrainOperation.Items.Clear();
         if (_editMode == EditMode.Height)
-            _terrainOperation.Items.AddRange(isEn ? new object[] { "Raise", "Lower", "Smooth", "Flatten" } : new object[] { "升高", "降低", "平滑", "整平" });
+            _terrainOperation.Items.AddRange(isEn ? new object[] { "Raise", "Lower", "Smooth", "Flatten", "Roughen" } : new object[] { "升高", "降低", "平滑", "整平", "粗糙化" });
         else
             _terrainOperation.Items.AddRange(isEn ? new object[] { "Block", "Passable" } : new object[] { "阻擋", "可通行" });
         _terrainOperation.SelectedIndex = Math.Min(operation, _terrainOperation.Items.Count - 1);
@@ -65,10 +65,10 @@ internal sealed partial class MapEditorForm
         {
             float step = (_terrainLayers!.VertexSize - 1) / (float)dimension;
             float centerX = (tileX + .5f) * step, centerY = (tileY + .5f) * step;
-            var operation = (TerrainHeightOperation)Math.Clamp(_terrainOperation.SelectedIndex, 0, 3);
+            var operation = (TerrainHeightOperation)Math.Clamp(_terrainOperation.SelectedIndex, 0, (int)TerrainHeightOperation.Roughen);
             if (operation == TerrainHeightOperation.Flatten && _flattenTarget < 0)
                 _flattenTarget = _terrainLayers.Heights[Math.Clamp((int)MathF.Round(centerY), 0, _terrainLayers.VertexSize - 1) * _terrainLayers.VertexSize + Math.Clamp((int)MathF.Round(centerX), 0, _terrainLayers.VertexSize - 1)];
-            return (_terrainLayers.PaintHeight(centerX, centerY, radiusTiles * step + 1, operation, TerrainStrength, _flattenTarget).Count > 0, false);
+            return (_terrainLayers.PaintHeight(centerX, centerY, radiusTiles * step + 1, operation, TerrainStrength, _flattenTarget, _roughnessSeed).Count > 0, false);
         }
         if (_terrainLayers!.HasCollision)
         {

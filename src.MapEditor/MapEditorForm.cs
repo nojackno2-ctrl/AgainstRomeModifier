@@ -33,6 +33,7 @@ internal sealed partial class MapEditorForm : Form
     private readonly ComboBox _brushSize = new() { Dock = DockStyle.Top, DropDownStyle = ComboBoxStyle.DropDownList };
     private readonly CheckBox _showGrid = new() { Dock = DockStyle.Top, Height = 30, Text = "顯示格線", Checked = true };
     private readonly CheckBox _showObjects = new() { Dock = DockStyle.Top, Height = 30, Text = "顯示建築與場景物件", Checked = true };
+    private readonly CheckBox _autoBridge = new() { Dock = DockStyle.Top, Height = 30, Text = "自動過渡（插入中介材質）", Checked = true };
     private readonly TrackBar _reliefScale = new() { Dock = DockStyle.Top, Minimum = 0, Maximum = 200, Value = 100, TickFrequency = 25 };
     private readonly ListView _sceneList = new() { Dock = DockStyle.Fill, View = View.Details, FullRowSelect = true, HeaderStyle = ColumnHeaderStyle.Nonclickable };
     private readonly Label _sceneSummary = new() { Dock = DockStyle.Top, Height = 64, Padding = new Padding(10, 16, 10, 8), ForeColor = WinFormsTheme.TextSecondary };
@@ -123,6 +124,7 @@ internal sealed partial class MapEditorForm : Form
     private TerrainHeightEditSession? _terrainLayers;
     private TerrainLayer? _bodenLayer, _embossLayer, _collisionLayer;
     private int _flattenTarget = -1;
+    private int _roughnessSeed = Random.Shared.Next(); // 每筆畫換一組粗糙化花紋
     private readonly bool _startWithBlankTerrain;
     /// <summary>空白地形：儲存時把 vertex.bmp 重設為白色（無色調）、smooth.bmp 重設為 0（不額外平滑）。</summary>
     private bool _resetAuxiliaryLayers;
@@ -211,8 +213,8 @@ internal sealed partial class MapEditorForm : Form
         var currentText = new FlowLayoutPanel { Width = 205, Height = 66, FlowDirection = FlowDirection.TopDown, WrapContents = false };
         currentText.Controls.Add(_currentMaterialLabel); currentText.Controls.Add(_lblBrushInstructions);
         currentBrush.Controls.Add(_currentMaterialSwatch); currentBrush.Controls.Add(currentText);
-        var brushOptions = new Panel { Dock = DockStyle.Top, Height = 174 };
-        brushOptions.Controls.Add(_showObjects); brushOptions.Controls.Add(_showGrid); brushOptions.Controls.Add(_reliefScale);
+        var brushOptions = new Panel { Dock = DockStyle.Top, Height = 204 };
+        brushOptions.Controls.Add(_autoBridge); brushOptions.Controls.Add(_showObjects); brushOptions.Controls.Add(_showGrid); brushOptions.Controls.Add(_reliefScale);
         brushOptions.Controls.Add(_lblReliefScaleTitle); brushOptions.Controls.Add(_lblBrushSizeTitle); brushOptions.Controls.Add(_brushSize);
         palettePanel.Controls.Add(_palette); palettePanel.Controls.Add(_paletteSearch); palettePanel.Controls.Add(brushOptions); palettePanel.Controls.Add(currentBrush); palettePanel.Controls.Add(_paletteHeader);
 
@@ -301,7 +303,7 @@ internal sealed partial class MapEditorForm : Form
         _palette.SelectedIndexChanged += (_, _) => { if (_palette.SelectedItem is PaletteItem item) SelectBrush(item); };
         _palette.DrawMode = DrawMode.OwnerDrawFixed; _palette.ItemHeight = 36; _palette.DrawItem += DrawPaletteItem;
         _paletteSearch.TextChanged += (_, _) => LoadPalette(_paletteSearch.Text);
-        _brushSize.SelectedIndexChanged += (_, _) => _canvas.BrushSize = _brushSize.SelectedIndex switch { 1 => 3, 2 => 5, _ => 1 };
+        _brushSize.SelectedIndexChanged += (_, _) => _canvas.BrushSize = BrushSizes[Math.Clamp(_brushSize.SelectedIndex, 0, BrushSizes.Length - 1)];
         _brushSize.SelectedIndexChanged += (_, _) => { if (_view3d is not null) _view3d.BrushSize = _canvas.BrushSize; };
         _showGrid.CheckedChanged += (_, _) => { _canvas.ShowGrid = _showGrid.Checked; _canvas.Invalidate(); if (_view3d is not null) { _view3d.ShowGrid = _showGrid.Checked; _view3d.Invalidate(); } };
         _showObjects.CheckedChanged += (_, _) => { _canvas.ShowObjects = _showObjects.Checked; _canvas.Invalidate(); if (_view3d is not null) { _view3d.ShowObjects = _showObjects.Checked; _view3d.Invalidate(); } };
@@ -437,18 +439,14 @@ internal sealed partial class MapEditorForm : Form
         _lblBrushInstructions.Text = isEn ? "Right-click: Sample | Left-click & drag: Draw." : "右鍵取樣，左鍵拖曳繪製。";
 
         _lblBrushSizeTitle.Text = isEn ? "Brush Size" : "筆刷大小";
+        _autoBridge.Text = isEn ? "Auto transition (insert bridge materials)" : "自動過渡（插入中介材質）";
         _lblReliefScaleTitle.Text = isEn ? "Relief Scaling (Approx)" : "地形起伏（近似顯示）";
 
         _brushSize.Items.Clear();
-        if (isEn)
-        {
-            _brushSize.Items.AddRange(new object[] { "Fine (1 tile)", "Medium (3 x 3)", "Large (5 x 5)" });
-        }
-        else
-        {
-            _brushSize.Items.AddRange(new object[] { "精細（1 格）", "中型（3 × 3）", "大型（5 × 5）" });
-        }
-        _brushSize.SelectedIndex = _canvas.BrushSize switch { 3 => 1, 5 => 2, _ => 0 };
+        _brushSize.Items.AddRange(isEn
+            ? new object[] { "Fine (1 tile)", "Medium (3 x 3)", "Large (5 x 5)", "Huge (9 x 9)", "Region (15 x 15)" }
+            : new object[] { "精細（1 格）", "中型（3 × 3）", "大型（5 × 5）", "特大（9 × 9）", "區域（15 × 15）" });
+        _brushSize.SelectedIndex = Math.Max(0, Array.IndexOf(BrushSizes, _canvas.BrushSize));
 
         if (_inspectorTabs.TabPages.Count >= 3)
         {
@@ -637,18 +635,20 @@ internal sealed partial class MapEditorForm : Form
         if (_editMode == EditMode.Nature) { PaintNature(e); return; }
         if (_selected is null || !_selected.IsCustom || _texturesDocument is null || _terrainBlendSession is null || _activeMaterial is null) return;
         float radius = _canvas.BrushSize / 2f + .26f;
-        TerrainBlendPaintResult result = _terrainBlendSession.PaintCircle(e.X + .5f, e.Y + .5f, radius, _activeMaterial.Id);
+        TerrainBlendPaintResult result = _terrainBlendSession.PaintCircle(e.X + .5f, e.Y + .5f, radius, _activeMaterial.Id, autoBridge: _autoBridge.Checked);
         foreach (TerrainTextureChange change in result.TextureChanges) ApplyTexture(change.X, change.Y, change.After);
         _terrainBlendNotice = result.Succeeded
             ? null
-            : $"此筆觸無法由原版 transition tile 完整表達，已整筆復原（{result.Issues.Count} 格）。";
+            : _autoBridge.Checked
+                ? $"此筆觸即使插入中介材質也無法由原版 transition tile 完整表達，已整筆復原（{result.Issues.Count} 格）。"
+                : $"此筆觸無法由原版 transition tile 完整表達，已整筆復原（{result.Issues.Count} 格）；可勾選「自動過渡」。";
         UpdateEditorState();
     }
 
     // 一次筆畫（滑鼠按下到放開）內觸及的所有格子合併為單一 undo 項目。
     private void CommitStroke()
     {
-        _flattenTarget = -1; _lastTerrainTile = null; _terrainStrokeTiles.Clear();
+        _flattenTarget = -1; _roughnessSeed = Random.Shared.Next(); _lastTerrainTile = null; _terrainStrokeTiles.Clear();
         if (_natureSession.CommitStroke()) UpdateEditorState();
         if (_terrainLayers?.CommitStroke() == true) UpdateEditorState();
         if (_terrainBlendSession?.CommitStroke() != true) return;
@@ -746,6 +746,8 @@ internal sealed partial class MapEditorForm : Form
         FocusSelectedSceneObject();
     }
 
+    /// <summary>筆刷邊長（tile）；9／15 供山丘、湖泊等大範圍地形與材質一次塗佈。</summary>
+    private static readonly int[] BrushSizes = [1, 3, 5, 9, 15];
     private enum EditMode { Texture, SceneMove, Height, Collision, PlaceObject, Nature }
     private EditMode _editMode = EditMode.Texture;
     private const string TerrainToolBrushToken = "\u0001terrain-tool"; // 讓視圖在未取樣材質時仍送出筆刷事件；不是材質名稱。
