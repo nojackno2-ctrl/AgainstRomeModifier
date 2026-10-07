@@ -1,11 +1,15 @@
 using AgainstRomeModifier.Scripting;
+using AgainstRomeMapEditor.Modules.Events;
 
 namespace AgainstRomeMapEditor;
 
 internal sealed partial class MapEditorForm
 {
     private readonly List<ScenarioEvent> _events = new();
-    private IReadOnlyList<ScenarioEvent> _eventsBaseline = Array.Empty<ScenarioEvent>();
+    private ScenarioEventSession? _eventSession;
+    private ScenarioEventSession EventSession => _eventSession ??= new(_events);
+    // MapEditorForm.cs 的存檔接口保留；主表單不用再管理 baseline 語意。
+    private IReadOnlyList<ScenarioEvent> _eventsBaseline { set => EventSession.AcceptBaseline(value); }
     private readonly ListBox _eventList = new() { Dock = DockStyle.Fill, IntegralHeight = false };
     private readonly Button _eventAdd = new() { AutoSize = true };
     private readonly Button _eventEdit = new() { AutoSize = true };
@@ -13,7 +17,7 @@ internal sealed partial class MapEditorForm
     private readonly Button _eventCopy = new() { AutoSize = true };
     private readonly Label _eventHint = new() { Dock = DockStyle.Top, Height = 100, Padding = new Padding(8) };
 
-    private bool EventsDirty() => !_events.SequenceEqual(_eventsBaseline);
+    private bool EventsDirty() => EventSession.IsDirty;
 
     private Control BuildEventsPanel()
     {
@@ -30,15 +34,14 @@ internal sealed partial class MapEditorForm
         {
             if (_selected?.IsCustom != true || _eventList.SelectedIndex < 0) return;
             int index = _eventList.SelectedIndex;
-            _events.RemoveAt(index); RefreshEventList(Math.Min(index, _events.Count - 1)); UpdateEditorState();
+            EventSession.RemoveAt(index); RefreshEventList(Math.Min(index, _events.Count - 1)); UpdateEditorState();
         };
         return panel;
     }
 
     private void LoadEvents(string map)
     {
-        _events.Clear(); _events.AddRange(ScenarioDocument.Load(map).Events);
-        _eventsBaseline = _events.ToArray(); RefreshEventList();
+        EventSession.Load(ScenarioDocument.Load(map).Events); RefreshEventList();
     }
 
     private void LocalizeEvents(bool en)
@@ -74,12 +77,10 @@ internal sealed partial class MapEditorForm
     {
         if (_selected?.IsCustom != true || _eventList.SelectedIndex < 0 || _events.Count >= 256) return;
         int index = _eventList.SelectedIndex;
-        ScenarioEvent source = _events[index];
         bool en = AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English;
         string suffix = en ? " (copy)" : "（副本）";
-        string name = source.Name[..Math.Min(source.Name.Length, 100 - suffix.Length)] + suffix;
-        _events.Insert(index + 1, source with { Name = name, Actions = source.Actions.ToList(), Conditions = source.Conditions.ToList() });
-        RefreshEventList(index + 1); UpdateEditorState();
+        int selected = EventSession.Duplicate(index, suffix);
+        RefreshEventList(selected); UpdateEditorState();
     }
 
     private void EditEvent(bool add)
@@ -95,7 +96,7 @@ internal sealed partial class MapEditorForm
             _placedObjects.Select(item => new ScenarioSpawn(AliasOf(item.Type), item.WorldX, item.WorldZ, item.Team)
                 { Id = item.ScenarioId }).ToArray());
         if (dialog.ShowDialog(this) != DialogResult.OK) return;
-        if (add) { _events.Add(dialog.Result!); index = _events.Count - 1; } else _events[index] = dialog.Result!;
+        if (add) index = EventSession.Add(dialog.Result!); else EventSession.Replace(index, dialog.Result!);
         RefreshEventList(index); UpdateEditorState();
     }
 }
