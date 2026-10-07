@@ -51,6 +51,6 @@
 
 完成條件：必要項目有遊戲內證據，Release build/test 與交付文件一致。目前 `AGENTS.md` 禁止存取遊戲安裝目錄；這項限制未變，不能自行執行此類實機驗收。
 
-## 本次保留的未驗證工作
+## AI 預覽草稿整合狀態
 
-整理順序前剛新增 `TerrainBlendEditSession.Fork()` 與 `AiMapPlanPreview.cs`，目前尚未接 UI、功能未驗證、未提交。後續核心測試建置曾編譯這兩檔，不代表預覽功能已驗證。保留於工作樹，之後進入第 4 階段時再審查與完成。
+整理順序前新增的 `TerrainBlendEditSession.Fork()` 與 `AiMapPlanPreview.cs` 已在第 4 階段接上 host/dialog。合成測試驗證預覽隔離、拒絕區域與正式套用統計、圖片釋放及角色進度。新的版面、中英文／DPI 與真實生成→預覽→套用完整流程仍需驗收，不能沿用較早的 96 DPI 或 live 證據。

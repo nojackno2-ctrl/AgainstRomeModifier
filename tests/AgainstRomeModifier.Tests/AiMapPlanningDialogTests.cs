@@ -141,6 +141,52 @@ public sealed class AiMapPlanningDialogTests
         if (!finishGenerationFirst) { generation.SetResult(Result()); Pump(generated); }
         Assert.True(dialog.ApplyButton.Enabled);
     });
+    [Fact]
+    public void Visual_preview_invalidates_disposes_and_preview_failure_blocks_apply_then_retry_succeeds() => Run(() =>
+    {
+        int previews = 0, applied = 0;
+        System.Drawing.Bitmap? first = null;
+        using var dialog = new AiMapPlanningDialog(_ => Task.FromResult<IReadOnlyList<string>>([]),
+            (_, _, _) => Task.FromResult(Result()), _ => { applied++; return new(0, 0, 0, 0); },
+            _ => {
+                if (++previews == 2) throw new InvalidOperationException("preview unavailable");
+                var bitmap = new System.Drawing.Bitmap(16, 16);
+                first ??= bitmap;
+                return new(bitmap, new(7, 2, 3, 1), true);
+            });
+        dialog.Show(); Pump(dialog.GenerateAsync());
+        Assert.Same(first, dialog.PreviewImage.Image);
+        Assert.True(dialog.ApplyButton.Enabled); Assert.Equal(0, applied);
+        Assert.Contains("7", dialog.PreviewBox.Text); Assert.Contains("1/2", dialog.PreviewBox.Text);
+        dialog.DescriptionBox.Text += " edited";
+        Assert.Null(dialog.PreviewImage.Image); Assert.False(dialog.ApplyButton.Enabled);
+        Assert.Throws<ArgumentException>(() => first!.GetPixel(0, 0));
+        Pump(dialog.GenerateAsync());
+        Assert.Null(dialog.PreviewImage.Image); Assert.False(dialog.ApplyButton.Enabled);
+        Assert.Contains("preview unavailable", dialog.StatusLabel.Text);
+        dialog.ApplyPlan(); Assert.Equal(0, applied);
+        Pump(dialog.GenerateAsync());
+        Assert.NotNull(dialog.PreviewImage.Image); dialog.ApplyPlan(); Assert.Equal(1, applied);
+        var last = (System.Drawing.Bitmap)dialog.PreviewImage.Image!;
+        dialog.Dispose(); Assert.Throws<ArgumentException>(() => last.GetPixel(0, 0));
+    });
+
+    [Fact]
+    public void Role_progress_updates_ui_and_late_reports_cannot_overwrite_cancelled_or_finished_status() => Run(() =>
+    {
+        IProgress<AiMapRoleProgress>? progress = null;
+        var pending = new TaskCompletionSource<MultiAiMapPlanResult>();
+        using var dialog = new AiMapPlanningDialog(_ => Task.FromResult<IReadOnlyList<string>>([]),
+            (_, _, _, updates) => { progress = updates; return pending.Task; }, _ => new(0, 0, 0, 0));
+        dialog.Show(); Task task = dialog.GenerateAsync();
+        progress!.Report(new(AiMapDesignRole.Water, "water-model", 1, false)); Application.DoEvents();
+        Assert.Equal(1, dialog.GenerationProgress.Value); Assert.Contains("water-model", dialog.StatusLabel.Text);
+        dialog.CancelGenerationButton.PerformClick(); pending.SetResult(Result()); Pump(task);
+        string status = dialog.StatusLabel.Text;
+        progress.Report(new(AiMapDesignRole.Materials, "late-model", 3, true)); Application.DoEvents();
+        Assert.Equal(status, dialog.StatusLabel.Text); Assert.False(dialog.ApplyButton.Enabled);
+    });
+
     private static AiMapPlanningDialog Dialog(Func<IReadOnlyList<MultiAiMapRoleRequest>, string, CancellationToken, Task<MultiAiMapPlanResult>> generate,
         Func<AiMapPlan, AiMapApplyResult> apply) => new(_ => Task.FromResult<IReadOnlyList<string>>(["available"]), generate, apply);
 

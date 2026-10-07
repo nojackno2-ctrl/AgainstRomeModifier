@@ -7,6 +7,38 @@ namespace AgainstRomeModifier.Tests;
 
 public sealed partial class MapEditorSaveTransactionTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Preview_keeps_existing_redo_and_pending_height_stroke(bool collision)
+    {
+        var source = new TerrainHeightEditSession(9, Enumerable.Repeat((byte)80, 81).ToArray(), null,
+            collision ? 8 : 0, collision ? new byte[64] : null);
+        source.PaintHeight(4, 4, 3, TerrainHeightOperation.Raise, 10); source.CommitStroke();
+        byte[] edited = source.Heights.ToArray();
+        Assert.NotNull(source.Undo());
+        byte[] pending = source.Heights.ToArray();
+        bool undo = source.CanUndo, redo = source.CanRedo;
+        var plan = new AiMapPlan { BaseHeight = 20, Features = [new() { Type = "blocked", X = 2, Y = 2, Radius = 1 }] };
+        var preview = AiMapPlanPreviewBuilder.Build(plan, source, null, 4, 30);
+        using (preview.Image)
+        {
+            Assert.Equal(pending, source.Heights); Assert.Equal(undo, source.CanUndo); Assert.Equal(redo, source.CanRedo);
+            Assert.Equal(collision, preview.HasCollision);
+        }
+        // Redo remains the user's prior edit, not the preview's whole-map flattening.
+        Assert.NotNull(source.Redo());
+        Assert.Equal(edited[4 * 9 + 4], source.Heights[4 * 9 + 4]);
+        Assert.NotEqual(20, source.Heights[4 * 9 + 4]);
+        source.PaintHeight(0, 0, 1, TerrainHeightOperation.Raise, 3);
+        pending = source.Heights.ToArray();
+        var second = AiMapPlanPreviewBuilder.Build(plan, source, null, 4, 30);
+        using (second.Image) Assert.Equal(pending, source.Heights);
+        Assert.True(source.CommitStroke());
+        Assert.NotNull(source.Undo());
+        Assert.Equal(80, source.Heights[0]);
+    }
+
     [Fact]
     public void Ai_plan_preserves_accepted_materials_and_supports_mode_undo_save_and_reload()
     {
@@ -31,7 +63,21 @@ public sealed partial class MapEditorSaveTransactionTests
                 Features = [new() { Type = "material", X = 20, Y = 20, Radius = 3, Material = "BB" },
                     new() { Type = "blocked", X = 32, Y = 32, Radius = 3 }]
             };
+            var preview = form.PreviewAiMapPlan(plan);
+            using (preview.Image)
+            {
+                Assert.Equal(originalHeights, layers.Heights);
+                Assert.Equal(originalCollision, layers.Collision);
+                Assert.Equal(originalTextures, textures.Textures);
+                Assert.False(GetProperty<bool>(form, "IsDirty"));
+                Assert.False(layers.CanUndo);
+                AssertSnapshotUnchanged(map, originalFiles);
+                Assert.Equal(System.Drawing.Color.FromArgb(215, 145, 45), preview.Image.GetPixel(0, 0));
+                Assert.Equal(System.Drawing.Color.FromArgb(180, 60, 200), preview.Image.GetPixel(80, 80));
+                Assert.Equal(195, preview.Image.GetPixel(128, 128).R);
+            }
             var applied = form.ApplyAiMapPlan(plan);
+            Assert.Equal(preview.Changes, applied);
             Assert.Equal(2, applied.MaterialStrokes);
             Assert.Equal(1, applied.RejectedMaterialStrokes); // Missing BB/BC transitions reject only this area.
             Assert.True(applied.HeightSamplesChanged > 0);

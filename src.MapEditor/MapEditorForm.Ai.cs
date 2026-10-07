@@ -10,9 +10,16 @@ internal sealed partial class MapEditorForm
         AiMaterialOption[] materials = _floorMaterials?.Materials.Select(material => new AiMaterialOption(material.Id, material.DisplayName + " / " + GetLocalizedMaterialName(material))).ToArray() ?? [];
         float water = _heightMapStep > 0 ? (float)_waterLevel.Value / _heightMapStep : 0;
         using var dialog = new AiMapPlanningDialog(planner.ListModelsAsync,
-            (requests, description, token) => team.GeneratePlanAsync(requests, description, materials, water, token),
-            ApplyAiMapPlan);
+            (requests, description, token, progress) => team.GeneratePlanAsync(requests, description, materials, water, token, progress),
+            ApplyAiMapPlan, PreviewAiMapPlan);
         dialog.ShowDialog(this);
+    }
+
+    internal AiMapPlanPreview PreviewAiMapPlan(AiMapPlan plan)
+    {
+        if (_terrainLayers is null || _texturesDocument is null) throw new InvalidOperationException("此地圖沒有可編輯的高度圖。");
+        float water = _heightMapStep > 0 ? (float)_waterLevel.Value / _heightMapStep : 0;
+        return AiMapPlanPreviewBuilder.Build(plan, _terrainLayers, _terrainBlendSession, _texturesDocument.Dimension, water);
     }
 
     internal AiMapApplyResult ApplyAiMapPlan(AiMapPlan plan)

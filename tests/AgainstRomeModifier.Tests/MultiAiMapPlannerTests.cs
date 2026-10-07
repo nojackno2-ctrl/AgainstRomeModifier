@@ -8,6 +8,33 @@ public sealed class MultiAiMapPlannerTests
     private static readonly AiMaterialOption[] Materials = [new("Grass", "草地"), new("Sand", "沙地")];
 
     [Fact]
+    public async Task Progress_reports_role_start_and_finish_in_order_including_partial_failure()
+    {
+        var updates = new List<AiMapRoleProgress>();
+        var progress = new CaptureProgress(updates.Add);
+        var planner = new MultiAiMapPlanner((model, prompt, _, _, _) =>
+        {
+            var role = Role(prompt);
+            Assert.Equal(role, updates[^1].Role); Assert.False(updates[^1].Finished);
+            Assert.Equal(model, updates[^1].Model);
+            return role == AiMapDesignRole.Water
+                ? Task.FromException<(AiMapPlan, string)>(new HttpRequestException("water failed"))
+                : Task.FromResult(Response(Plan(role)));
+        });
+        var requests = Enum.GetValues<AiMapDesignRole>().Select(role => new MultiAiMapRoleRequest(role, role + "-model")).ToArray();
+        var result = await planner.GeneratePlanAsync(requests, "test", Materials, 60, default, progress);
+        Assert.True(result.HasFailures);
+        Assert.Equal(new[] { 0, 1, 1, 2, 2, 3 }, updates.Select(update => update.CompletedRoles));
+        Assert.Equal(new[] { false, true, false, true, false, true }, updates.Select(update => update.Finished));
+        Assert.Equal(AiMapRoleStatus.Failed, updates[3].Status);
+    }
+
+    private sealed class CaptureProgress(Action<AiMapRoleProgress> report) : IProgress<AiMapRoleProgress>
+    {
+        public void Report(AiMapRoleProgress value) => report(value);
+    }
+
+    [Fact]
     public async Task Calls_are_serial_and_merge_in_role_order()
     {
         int active = 0, peak = 0;

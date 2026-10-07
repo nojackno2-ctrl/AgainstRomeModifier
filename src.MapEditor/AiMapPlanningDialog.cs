@@ -7,8 +7,9 @@ namespace AgainstRomeMapEditor;
 internal sealed class AiMapPlanningDialog : Form
 {
     private readonly Func<CancellationToken, Task<IReadOnlyList<string>>> _listModels;
-    private readonly Func<IReadOnlyList<MultiAiMapRoleRequest>, string, CancellationToken, Task<MultiAiMapPlanResult>> _generate;
+    private readonly Func<IReadOnlyList<MultiAiMapRoleRequest>, string, CancellationToken, IProgress<AiMapRoleProgress>, Task<MultiAiMapPlanResult>> _generate;
     private readonly Func<AiMapPlan, AiMapApplyResult> _apply;
+    private readonly Func<AiMapPlan, AiMapPlanPreview>? _preview;
     private readonly CancellationTokenSource _lifetime = new();
     private CancellationTokenSource? _operation;
     private AiMapPlan? _plan;
@@ -20,7 +21,9 @@ internal sealed class AiMapPlanningDialog : Form
     internal ComboBox[] ModelBoxes { get; } = Enumerable.Range(0, 3).Select(_ => new ComboBox { Dock = DockStyle.Fill, DropDownStyle = ComboBoxStyle.DropDown, Text = "laguna-xs-2.1:latest" }).ToArray();
     internal TextBox DescriptionBox { get; } = new() { Dock = DockStyle.Fill, Multiline = true, ScrollBars = ScrollBars.Vertical, AcceptsReturn = true };
     internal TextBox PreviewBox { get; } = new() { Dock = DockStyle.Fill, Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Both, WordWrap = false };
+    internal PictureBox PreviewImage { get; } = new() { Dock = DockStyle.Fill, SizeMode = PictureBoxSizeMode.Zoom, BackColor = Color.FromArgb(30, 30, 30) };
     internal Label StatusLabel { get; } = new() { Dock = DockStyle.Fill, AutoSize = false };
+    internal ProgressBar GenerationProgress { get; } = new() { Dock = DockStyle.Bottom, Height = 12, Maximum = 3 };
     internal Button GenerateButton { get; } = new() { AutoSize = true };
     internal Button ApplyButton { get; } = new() { AutoSize = true, Enabled = false };
     internal Button CancelGenerationButton { get; } = new() { AutoSize = true, Enabled = false };
@@ -29,9 +32,14 @@ internal sealed class AiMapPlanningDialog : Form
 
     internal AiMapPlanningDialog(Func<CancellationToken, Task<IReadOnlyList<string>>> listModels,
         Func<IReadOnlyList<MultiAiMapRoleRequest>, string, CancellationToken, Task<MultiAiMapPlanResult>> generate,
-        Func<AiMapPlan, AiMapApplyResult> apply)
+        Func<AiMapPlan, AiMapApplyResult> apply, Func<AiMapPlan, AiMapPlanPreview>? preview = null)
+        : this(listModels, (requests, description, token, _) => generate(requests, description, token), apply, preview) { }
+
+    internal AiMapPlanningDialog(Func<CancellationToken, Task<IReadOnlyList<string>>> listModels,
+        Func<IReadOnlyList<MultiAiMapRoleRequest>, string, CancellationToken, IProgress<AiMapRoleProgress>, Task<MultiAiMapPlanResult>> generate,
+        Func<AiMapPlan, AiMapApplyResult> apply, Func<AiMapPlan, AiMapPlanPreview>? preview = null)
     {
-        _listModels = listModels; _generate = generate; _apply = apply;
+        _listModels = listModels; _generate = generate; _apply = apply; _preview = preview;
         _isEn = Loc.CurrentLanguage == Language.English;
         Text = T("多 AI 製圖（本機 Ollama）", "Multi-AI Map Maker (local Ollama)");
         Size = new Size(880, 740); MinimumSize = new Size(640, 580); StartPosition = FormStartPosition.CenterParent;
@@ -51,9 +59,19 @@ internal sealed class AiMapPlanningDialog : Form
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 45));
         DescriptionBox.Text = T("一條從西北流向東南的河谷，東北方是山脈，西南有小湖；河岸是沙地，保留寬廣平坦的草地讓村莊發展。", "A river valley from north-west to south-east, mountains in the north-east, a small lake in the south-west, sandy riverbanks and wide flat dry meadows for villages.");
         layout.Controls.Add(new Label { Text = T("地圖描述", "Description"), AutoSize = true }, 0, 3); layout.Controls.Add(DescriptionBox, 1, 3);
-        layout.Controls.Add(new Label { Text = T("方案檢視", "Plan review"), AutoSize = true }, 0, 4); layout.Controls.Add(PreviewBox, 1, 4);
+        var reviewTabs = new TabControl { Dock = DockStyle.Fill };
+        if (_preview is not null)
+        {
+            var mapTab = new TabPage(T("地圖預覽", "Map preview"));
+            var legend = new Label { Dock = DockStyle.Bottom, AutoSize = true, Text = T("示意圖：藍＝水域、紅＝阻擋、橙點＝材質變更、紫點＝材質拒絕；非遊戲渲染。", "Schematic: blue = water, red = blocked; orange dots = material changes, purple dots = rejected material areas. Not game rendering.") };
+            mapTab.SizeChanged += (_, _) => legend.MaximumSize = new Size(Math.Max(1, mapTab.ClientSize.Width), 0);
+            mapTab.Controls.Add(PreviewImage); mapTab.Controls.Add(legend); reviewTabs.TabPages.Add(mapTab);
+        }
+        var detailsTab = new TabPage(T("方案與診斷", "Plan and diagnostics")); detailsTab.Controls.Add(PreviewBox); reviewTabs.TabPages.Add(detailsTab);
+        layout.Controls.Add(new Label { Text = T("方案檢視", "Plan review"), AutoSize = true }, 0, 4); layout.Controls.Add(reviewTabs, 1, 4);
         StatusLabel.Text = T("生成後先檢視方案，再按「套用方案」。可復原；按「儲存」前不會寫入檔案。", "Generate, review, then Apply. Changes are undoable and no files are written until Save.");
-        layout.Controls.Add(StatusLabel, 0, 5); layout.SetColumnSpan(StatusLabel, 2);
+        var statusHost = new Panel { Dock = DockStyle.Fill }; statusHost.Controls.Add(StatusLabel); statusHost.Controls.Add(GenerationProgress);
+        layout.Controls.Add(statusHost, 0, 5); layout.SetColumnSpan(statusHost, 2);
         var buttons = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.RightToLeft };
         var close = new Button { Text = T("關閉", "Close"), AutoSize = true, DialogResult = DialogResult.Cancel };
         GenerateButton.Text = T("生成／重試", "Generate / Retry"); ApplyButton.Text = T("套用方案", "Apply plan"); CancelGenerationButton.Text = T("取消生成", "Cancel generation");
@@ -93,15 +111,25 @@ internal sealed class AiMapPlanningDialog : Form
     internal async Task GenerateAsync()
     {
         if (_operation is not null || !CanUpdate) return;
-        _generationStarted = true; _plan = null; ApplyButton.Enabled = false; PreviewBox.Clear();
+        _generationStarted = true; _plan = null; ApplyButton.Enabled = false; PreviewBox.Clear(); ClearPreviewImage();
         using var operation = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
         _operation = operation; SetBusy(true);
+        GenerationProgress.Value = 0;
         StatusLabel.Text = T("地形、水系、材質依序規劃，一次只執行一個本機模型；可能需要數分鐘。", "Terrain, water and materials plan in order, with one local inference at a time; this may take several minutes.");
         try
         {
             var requests = ModelBoxes.Select((box, i) => new MultiAiMapRoleRequest((AiMapDesignRole)i, box.Text.Trim())).ToArray();
             int inputVersion = _inputVersion;
-            MultiAiMapPlanResult result = await _generate(requests, DescriptionBox.Text, operation.Token);
+            var progress = new Progress<AiMapRoleProgress>(update =>
+            {
+                if (!CanUpdate || _operation != operation || operation.IsCancellationRequested || inputVersion != _inputVersion) return;
+                GenerationProgress.Value = Math.Clamp(update.CompletedRoles, 0, 3);
+                string role = _isEn ? update.Role.ToString() : MultiAiMapPlanResult.RoleName(update.Role);
+                StatusLabel.Text = update.Finished
+                    ? T($"已完成 {update.CompletedRoles}/3：{role} / {update.Model}（{update.Status}）", $"Completed {update.CompletedRoles}/3: {role} / {update.Model} ({update.Status})")
+                    : T($"正在規劃 {role} / {update.Model}；已完成 {update.CompletedRoles}/3。", $"Planning {role} / {update.Model}; completed {update.CompletedRoles}/3.");
+            });
+            MultiAiMapPlanResult result = await _generate(requests, DescriptionBox.Text, operation.Token, progress);
             if (!CanUpdate) return;
             if (inputVersion != _inputVersion) { ShowInvalidatedPlan(); return; }
             // A provider can finish after Cancel; its result must still never become applicable.
@@ -109,14 +137,24 @@ internal sealed class AiMapPlanningDialog : Form
             {
                 StatusLabel.Text = T("已取消生成；可重試。", "Generation cancelled; you can retry."); return;
             }
-            _plan = result.Plan;
             PreviewBox.Text = FormatReview(result);
+            if (result.Plan is { } plan && _preview is not null)
+            {
+                AiMapPlanPreview preview = _preview(plan);
+                PreviewImage.Image = preview.Image;
+                var changes = preview.Changes;
+                PreviewBox.AppendText(T($"\r\n預計變更：高度 {changes.HeightSamplesChanged} 點、通行 {changes.CollisionPixelsChanged} 點；材質接受 {changes.MaterialStrokes - changes.RejectedMaterialStrokes}/{changes.MaterialStrokes} 區。\r\n",
+                    $"\r\nExpected changes: {changes.HeightSamplesChanged} height samples, {changes.CollisionPixelsChanged} passability pixels; {changes.MaterialStrokes - changes.RejectedMaterialStrokes}/{changes.MaterialStrokes} material areas accepted.\r\n"));
+                if (changes.RejectedMaterialStrokes > 0) PreviewBox.AppendText(T("部分材質區域無法表示，套用時會略過。", "Some material areas cannot be represented and will be skipped on Apply."));
+            }
+            _plan = result.Plan;
+            GenerationProgress.Value = Math.Clamp(result.Roles.Count, 0, 3);
             StatusLabel.Text = result.Plan is null ? T("全部角色失敗；請檢視診斷後重試。", "All specialists failed. Review diagnostics and retry.")
                 : result.HasFailures ? T("部分角色失敗：這是未完整的方案。請檢視診斷，再決定套用或重試。", "Some specialists failed: this is a partial plan. Review diagnostics before applying or retrying.")
                 : T("方案已生成，尚未套用。請先檢視，再按「套用方案」。", "Plan generated and awaiting review. Click Apply to change the map.");
         }
         catch (OperationCanceledException) { if (CanUpdate) StatusLabel.Text = T("已取消生成；可重試。", "Generation cancelled; you can retry."); }
-        catch (Exception ex) { if (CanUpdate) StatusLabel.Text = T("生成失敗；可重試：", "Generation failed; you can retry: ") + ex.Message; }
+        catch (Exception ex) { _plan = null; if (CanUpdate) { ClearPreviewImage(); StatusLabel.Text = T("生成或預覽失敗；可重試：", "Generation or preview failed; you can retry: ") + ex.Message; } }
         finally { _operation = null; if (CanUpdate) SetBusy(false); }
     }
 
@@ -131,7 +169,12 @@ internal sealed class AiMapPlanningDialog : Form
     private void ShowInvalidatedPlan()
     {
         PreviewBox.Clear();
+        ClearPreviewImage();
         StatusLabel.Text = T("描述或角色模型已變更，舊方案已失效。請重新生成。", "The description or specialist model changed; the old plan is invalid. Generate again.");
+    }
+    private void ClearPreviewImage()
+    {
+        Image? old = PreviewImage.Image; PreviewImage.Image = null; old?.Dispose();
     }
     private void SetBusy(bool busy)
     {
@@ -174,7 +217,7 @@ internal sealed class AiMapPlanningDialog : Form
     protected override void Dispose(bool disposing)
     {
         if (disposing && !_closing) { _closing = true; _lifetime.Cancel(); _operation?.Cancel(); }
-        if (disposing) _lifetime.Dispose();
+        if (disposing) { ClearPreviewImage(); _lifetime.Dispose(); }
         base.Dispose(disposing);
     }
 }

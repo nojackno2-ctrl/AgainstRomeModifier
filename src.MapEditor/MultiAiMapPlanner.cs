@@ -2,6 +2,8 @@ using System.Text.Json;
 
 namespace AgainstRomeMapEditor;
 
+internal sealed record AiMapRoleProgress(AiMapDesignRole Role, string Model, int CompletedRoles, bool Finished, AiMapRoleStatus? Status = null);
+
 internal enum AiMapDesignRole { Terrain, Water, Materials }
 internal enum AiMapRoleStatus { Succeeded, Failed, Cancelled }
 
@@ -42,7 +44,7 @@ internal sealed class MultiAiMapPlanner
     }
 
     public async Task<MultiAiMapPlanResult> GeneratePlanAsync(IReadOnlyList<MultiAiMapRoleRequest> requests, string description,
-        IReadOnlyList<AiMaterialOption> materials, float waterLevelSample, CancellationToken cancellationToken)
+        IReadOnlyList<AiMaterialOption> materials, float waterLevelSample, CancellationToken cancellationToken, IProgress<AiMapRoleProgress>? progress = null)
     {
         ArgumentNullException.ThrowIfNull(requests);
         if (requests.Count != RoleOrder.Length || RoleOrder.Any(role => requests.Count(request => request.Role == role) != 1))
@@ -57,8 +59,13 @@ internal sealed class MultiAiMapPlanner
         var results = new List<(AiMapPlan? Plan, AiMapRoleResult Report)>();
         // 本機硬體一次只處理一個推論；角色仍保留獨立模型、配額與診斷。
         foreach (AiMapDesignRole role in RoleOrder)
-            results.Add(await GenerateAsync(role, roleRequests.Single(request => request.Role == role).Model,
-                description, snapshot, waterLevelSample, cancellationToken).ConfigureAwait(false));
+        {
+            string model = roleRequests.Single(request => request.Role == role).Model;
+            if (!cancellationToken.IsCancellationRequested) progress?.Report(new(role, model, results.Count, false));
+            var result = await GenerateAsync(role, model, description, snapshot, waterLevelSample, cancellationToken).ConfigureAwait(false);
+            results.Add(result);
+            progress?.Report(new(role, model, results.Count, true, result.Report.Status));
+        }
         AiMapRoleResult[] reports = results.Select(result => result.Report).ToArray();
         if (cancellationToken.IsCancellationRequested) return new(null, reports, true);
         if (results.All(result => result.Plan is null)) return new(null, reports, false);
