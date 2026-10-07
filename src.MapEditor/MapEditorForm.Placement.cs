@@ -527,6 +527,7 @@ internal sealed class PlacedObjectEditDialog : Form
             Dock = DockStyle.Bottom,
             FlowDirection = FlowDirection.RightToLeft,
             Height = 44,
+            AutoSize = true, // 依按鈕實際高度（含字型與 DPI）加高，不壓縮按鈕
             Padding = new Padding(8),
             BackColor = WinFormsTheme.SurfaceRaised
         };

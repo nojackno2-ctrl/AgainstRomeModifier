@@ -55,6 +55,7 @@ public sealed partial class MapEditorSaveTransactionTests
                         new Dictionary<string, string> { ["alias"] = "LEADER" }), 100, 0, 200, 0, 45, 10) { ScenarioId = Guid.NewGuid() };
                     Check(new PlacedObjectEditDialog(placed, en), $"placed-{tag}", scale, output, problems);
                     Check(new MapSelectionForm(_root), $"select-{tag}", scale, output, problems);
+                    Check(new RestoreAllOptionsDialog(), $"restore-{tag}", scale, output, problems);
                 }
             }
             finally { Loc.OverrideLanguageForTesting(previous); }
@@ -106,6 +107,14 @@ public sealed partial class MapEditorSaveTransactionTests
 
     private static void Visit(Control control, string name, List<string> problems)
     {
+        if (control is TableLayoutPanel) // 儲存格內容超出所在列時會與相鄰儲存格重疊
+        {
+            Control[] cells = control.Controls.Cast<Control>().Where(child => child.Visible && child.Width > 0 && child.Height > 0).ToArray();
+            for (int i = 0; i < cells.Length; i++)
+            for (int j = i + 1; j < cells.Length; j++)
+                if (cells[i].Bounds.IntersectsWith(cells[j].Bounds))
+                    problems.Add($"{name}: {cells[i].GetType().Name} '{Short(cells[i].Text)}' {cells[i].Bounds} 與 {cells[j].GetType().Name} '{Short(cells[j].Text)}' {cells[j].Bounds} 重疊");
+        }
         foreach (Control child in control.Controls)
         {
             if (!child.Visible) continue;
@@ -117,6 +126,14 @@ public sealed partial class MapEditorSaveTransactionTests
                     TextFormatFlags.WordBreak | TextFormatFlags.TextBoxControl);
                 if (needed.Height > child.Height - child.Padding.Vertical + 2)
                     problems.Add($"{name}: {child.GetType().Name} '{Short(child.Text)}' {child.Size} 需要 {needed}");
+            }
+            if (child is Label or ButtonBase && child.AutoSize && !string.IsNullOrWhiteSpace(child.Text))
+            {
+                // 版面容器可能把 AutoSize 控制項壓在儲存格內；實際大小小於自身需要的大小即為截斷。
+                // Label 可換行：以實際寬度求需要的高度；按鈕類不換行，比較兩個方向。
+                Size preferred = child is Label ? child.GetPreferredSize(new Size(child.Width, 0)) : child.GetPreferredSize(Size.Empty);
+                if (preferred.Height > child.Height + 2 || (child is ButtonBase && preferred.Width > child.Width + 2))
+                    problems.Add($"{name}: {child.GetType().Name} '{Short(child.Text)}' {child.Size} 被壓縮，需要 {preferred}");
             }
             if (control is not ScrollableControl { AutoScroll: true } && control is not ToolStrip && child.Width > 0 && child.Height > 0
                 && (child.Right > control.ClientSize.Width + 1 || child.Bottom > control.ClientSize.Height + 1) && control.ClientSize.Width > 0)

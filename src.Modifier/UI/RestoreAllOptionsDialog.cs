@@ -12,7 +12,9 @@ internal sealed class RestoreAllOptionsDialog : Form
     {
         bool en = Loc.CurrentLanguage == Language.English;
         Text = en ? "Restore All" : "完整還原";
+        AutoScaleDimensions = new SizeF(96F, 96F); AutoScaleMode = AutoScaleMode.Dpi; // 以 96 DPI 設計，PerMonitorV2 下依實際 DPI 縮放
         ClientSize = new Size(500, 240);
+        AutoSize = true; AutoSizeMode = AutoSizeMode.GrowOnly; // 字型換行較預期多時加高，不截斷說明
         FormBorderStyle = FormBorderStyle.FixedDialog;
         StartPosition = FormStartPosition.CenterParent;
         MaximizeBox = false;
