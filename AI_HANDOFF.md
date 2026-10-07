@@ -30,6 +30,8 @@
 
 ## 最新驗證與失敗紀錄
 
+- Codex（2026-10-07）：缺建築範本STA中英基線2失敗，已證實fallback/事件ID/無DATA binding/rollback/retry正常，但提示仍聲稱完工且未列實際腳本工地。測試初版CS0117使用不存在Language.Chinese已修TraditionalChinese/OverrideLanguageForTesting；IDE0005已清。已補放置提示/狀態列/成功訊息的工地類型名單（最多5種加餘數），重新開圖讀回、無變更重存保留、移除清除。定向中英fallback與四部族6通過；範本恢復後改存DATA/清提示/刪除案例已通過2項；補using錯放CS1529後重跑通過。IDE0005已清。Release build 0警告/0錯誤，full --no-build宿主549通過/21略過、modules45通過，共594通過/21略過/0失敗；最後提示移除DATA術語後build與定向2通過。僅TEMP，長提示視覺/實機未驗證，AI預覽WIP保留不提交。
+
 - Codex（2026-10-07）：第3階段新增真正STA四部族Ger/Hun/Kel/Rom矩陣，各含建築team0–8、部隊team0–7與外交/生成/區域目標事件。初跑4通過，包含DATA/scenario先寫後BCI缺失的完整bytes/新檔回滾、retry、DATA slot/uid/team/座標/角度、fresh form/持久ID、刪除目標拒存/undo及重存bytes不變。5個xUnit2031警告已改predicate overload；四個非法隊伍案例初跑失敗是Add已有早期guard，不是產品缺陷；改先斷言Add拒絕且無mutation，再注入損壞pending快照驗證Save獨立guard，鎖briefing拒存已通過；再補fresh form移動中立建築/改team、部隊20改1，DATA重新綁定/無多餘物件/目標身份/重開與重存bytes一致。最終定向8通過；Release build 0警告/0錯誤，full --no-build宿主547通過/21略過、modules45通過，共592通過/21略過/0失敗。僅TEMP、不宣稱遊戲或多人同步已驗證。
 
 - Codex（2026-10-07）：額外ENDL槽位核對新增EndlessAiAdditionalMapTests合成TEMP，初跑3項1通過/2失敗。真正P1七槽位（000–004/005/999）detect/apply/buffer/save/fresh reload/restore已通過；兩ResolvePaths測試證實script納非數字ENDL_ABC、SDL遞迴含.tmp_arm/.deleting_arm/巢狀複本。已限制正式數字槽位与root SDL，額外槽位/還原定向17通過。平坦範本/地形重設中英名稱與指南改為實際保留聚落/腳本的語意；地形/nature/額外槽位定向42通過，Release build 0警告/0錯誤；full --no-build宿主539通過/21略過、modules45通過，共584通過/21略過/0失敗。AI預覽WIP保留不提交。
@@ -68,7 +70,7 @@
 
 ## 恢復時優先處理（尚未完成）
 
-目前優先順序以docs/map-editor-roadmap.md及requirements-audit.md為準：catalog/SaveMap前置防護、環境、文字、備份及完整還原選項與額外槽位已實作且584測試通過；額外槽位AI證據與平坦範本語意已補，四部族/隊伍/事件共同儲存矩陣已補；接著核對缺建築範本的降級與提示，再完成第4階段AI預覽。完整原版還原/新dialog視覺仍待驗收。以下較早的UI優先順序已由新roadmap取代。
+目前優先順序以docs/map-editor-roadmap.md及requirements-audit.md為準：catalog/SaveMap前置防護、環境、文字、備份及完整還原選項與額外槽位已實作且584測試通過；額外槽位AI證據與平坦範本語意已補，四部族/隊伍/事件共同儲存矩陣已補；缺建築範本的降級/提示與範本恢復整合已補；接著完成第4階段AI預覽與生成進度。完整原版還原/新dialog視覺仍待驗收。以下較早的UI優先順序已由新roadmap取代。
 
 1. Placement batch/邊界與STA host整合已驗證/提交；單兵與nature交易fail/retry/只套用一次/成功後dirty及markers已新增測試通過。程式碼整合已解決。
 2. Terrain blend純resolver邊界已實作並通過工作樹與committed snapshot全測試，已提交，已解決。

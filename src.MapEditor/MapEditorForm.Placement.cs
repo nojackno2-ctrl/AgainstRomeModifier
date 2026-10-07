@@ -132,15 +132,37 @@ internal sealed partial class MapEditorForm
 
     private IEnumerable<SdlPlacedObject> LoadScenarioPlacements(string map)
     {
+        UpdateScriptBuildingNotice(new ScenarioDocument());
         ScenarioDocument scenario;
         try { scenario = ScenarioDocument.Load(map); }
         catch (System.Text.Json.JsonException) { yield break; }
+        UpdateScriptBuildingNotice(scenario);
         foreach (ScenarioSpawn spawn in scenario.Spawns)
         {
             SdlObjectType? type = _objectCatalog.FirstOrDefault(item => AliasOf(item).Equals(spawn.Alias, StringComparison.OrdinalIgnoreCase));
             if (type is null) continue;
             yield return new SdlPlacedObject(type, spawn.X, spawn.Y, spawn.Z, spawn.Team, spawn.Angle, spawn.Count > 1 ? spawn.Count : 1) { ScenarioId = spawn.Id };
         }
+    }
+
+    private string[] _scriptBuildingAliases = [];
+
+    private void UpdateScriptBuildingNotice(ScenarioDocument scenario)
+    {
+        _scriptBuildingAliases = scenario.Spawns.Where(spawn => !spawn.Prebuilt && _objectCatalog.Any(type =>
+                type.Category == SdlObjectCategory.Building && AliasOf(type).Equals(spawn.Alias, StringComparison.OrdinalIgnoreCase)))
+            .Select(spawn => spawn.Alias).Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase).ToArray();
+        LocalizePlacementTab(AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English);
+    }
+
+    private string ScriptBuildingNotice(bool isEn)
+    {
+        if (_scriptBuildingAliases.Length == 0) return "";
+        string names = string.Join(", ", _scriptBuildingAliases.Take(5));
+        if (_scriptBuildingAliases.Length > 5) names += isEn ? $" (+{_scriptBuildingAliases.Length - 5} more)" : $"（另 {_scriptBuildingAliases.Length - 5} 種）";
+        return isEn
+            ? $"Saved buildings created by script as 0% construction sites at game start: {names}."
+            : $"已儲存建築中，以下類型會在開局由腳本建立為 0% 工地：{names}。";
     }
 
     private void LocalizePlacementTab(bool isEn)
@@ -155,8 +177,10 @@ internal sealed partial class MapEditorForm
         _placedDuplicateButton.Text = isEn ? "Duplicate" : "複製選取";
         _placedDeleteButton.Text = isEn ? "Delete Selected" : "刪除選取的物件";
         _placeHint.Text = isEn
-            ? "Pick a type, then click the map with \"Place Objects\" active. Buildings are written into the map as finished buildings (team 8 = neutral); characters and units are created by the map script when the game starts. Team 0 is the human player; characters with a count above 1 spawn as a unit. Keep buildings clear of trees and water."
-            : "選類型後啟用「放置物件」並點擊地圖。建築會以完工狀態寫入地圖（隊伍 8＝中立）；人物與部隊在開局時由地圖腳本建立。隊伍 0 為玩家；人物的人數大於 1 時會生成一支部隊。建築請避開樹木與水域。";
+            ? "Pick a type, activate \"Place Objects\", then click the map. Buildings with a finished template are placed directly in the map (teams 0–8; 8 = neutral); others start as construction sites. Characters use units of 1–20 soldiers, teams 0–7. Team 0 is the human player. Keep buildings clear of trees and water."
+            : "選類型後啟用「放置物件」並點擊地圖。有完工範本的建築直接放入地圖（隊伍 0–8；8＝中立），其他建築在開局生成工地。人物以部隊建立，人數 1–20、隊伍 0–7；隊伍 0 為玩家。建築請避開樹木與水域。";
+        string notice = ScriptBuildingNotice(isEn);
+        if (notice.Length > 0) _placeHint.Text += "\n\n" + notice;
         if (_placedList.Columns.Count >= 4)
         {
             _placedList.Columns[0].Text = isEn ? "Object" : "物件";

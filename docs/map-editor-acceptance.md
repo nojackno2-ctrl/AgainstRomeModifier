@@ -21,6 +21,7 @@
 | 放置物件 | 編輯/複製身份、快照隔離、批次原子性；多選 undo/redo、越界拒絕 | `AgainstRomeMapEditor.Modules.Tests/PlacementBatchRegressionTests.cs`、`AgainstRomeModifier.Tests/PlacementBatchUiTests.cs` |
 | 單兵與自然物件 | 儲存失敗後重試、保留部隊目標身份；自然物件只寫入一次、更新標記及再次刪除 | `AgainstRomeModifier.Tests/MapEditorSavePlacementRegressionTests.cs` |
 | 部族／隊伍共同儲存 | Ger/Hun/Kel/Rom 各含建築0–8、部隊0–7、外交/生成/區域目標；缺BCI完整回滾/retry、fresh form、DATA slot/uid、移動/改隊伍/人數、刪目標拒存與undo；非法隊伍Add/Save兩層拒絕 | `AgainstRomeModifier.Tests/MapEditorTribeTeamIntegrationTests.cs`（合成別名與注入建築範本） |
+| 缺完工建築範本 | 工地生成保留目標ID、不留DATA配對；失敗回滾/retry；中英提示、重存/重開保留、範本恢復後改回DATA並清提示、刪除 | `AgainstRomeModifier.Tests/MapEditorBuildingFallbackTests.cs`（合成範本） |
 | 儲存交易 | 前置驗證拒絕不寫檔；缺失/損壞 BCI 後回滾 bytes、快取及新增檔案；保留 dirty 可重試 | `AgainstRomeModifier.Tests/MapEditorSaveTransactionTests.cs` |
 | 事件與目標 | 事件 session、永久目標身份、矩形包含邊界、勝敗 terminal guard、JSON v6、對話框編輯 | `AgainstRomeMapEditor.Modules.Tests/ScenarioEventSessionTests.cs`、`AgainstRomeModifier.Tests/ScenarioEventsTests.cs`、`ScenarioEventDialogTests.cs` |
 | 3D 資料計算 | 高度插值、網格、相機限制、射線選取、材質 atlas | `AgainstRomeModifier.Tests/MapEditor3DTests.cs` |
@@ -39,7 +40,7 @@
 | 部族、多人 | 真實部族範本、放置、腳本、勝敗及多人同步 | 四部族/隊伍合成共同儲存矩陣已通過；不證明真實部族範本可用、腳本實機執行或多人同步 |
 | AI 地圖可玩性 | 通路、水域、起始位置、資源與建築空間在遊戲內可用 | 生成/套用通過不等於可玩性驗收 |
 
-本輪不得存取或修改遊戲安裝目錄。開發順序以 `map-editor-roadmap.md` 為準；`map-editor-requirements-audit.md` 列出原規格的實際缺口。核心專屬核對後，四部族／隊伍／事件共同儲存矩陣已補；接著核對缺建築範本的降級與提示。平坦範本仍保留聚落、腳本與連結物件，不代表真正空白地圖；合成小數案例不證明遊戲接受所有小數參數。
+本輪不得存取或修改遊戲安裝目錄。開發順序以 `map-editor-roadmap.md` 為準；`map-editor-requirements-audit.md` 列出原規格的實際缺口。核心專屬核對後，四部族／隊伍／事件共同儲存矩陣已補；缺建築範本提示已補；接著完成AI預覽與生成進度。平坦範本仍保留聚落、腳本與連結物件，不代表真正空白地圖；合成小數案例不證明遊戲接受所有小數參數。
 
 96 DPI 視覺證據位於 `TEMP/ArmVisualQA_1c01f5e6b6e84fe490ec6339c257de49`：獨立 STA harness 使用合成地圖、2D 畫布及 stub AI，透過 `DrawToBitmap` 產生 PNG 後檢視；中英放置分頁最小尺寸皆完整顯示提示與按鈕。這不驗證實際推論、OpenGL 或高 DPI。
 
@@ -51,6 +52,6 @@ dotnet build AgainstRomeModifier.slnx -c Release -p:UseAppHost=false --artifacts
 dotnet test AgainstRomeModifier.slnx -c Release -p:UseAppHost=false --artifacts-path "$env:TEMP/ArmResumeQA" --no-restore --no-build --logger 'console;verbosity=quiet'
 ```
 
-最新工作樹結果：build 0 警告/0 錯誤；宿主 547 通過/21 略過，modules 45 通過，共 592 通過/21 略過/0 失敗。AI 預覽 WIP 已編譯但功能未驗證，不納入這批提交的功能成果。未設定 `ARM_GAME_PATH`、`ARM_OLLAMA_LIVE`。以上 `--no-restore` 命令須先有相同 artifacts 路徑的 restore；新環境先移除 build 的 `--no-restore`。
+最新工作樹結果：build 0 警告/0 錯誤；宿主 549 通過/21 略過，modules 45 通過，共 594 通過/21 略過/0 失敗。AI 預覽 WIP 已編譯但功能未驗證，不納入這批提交的功能成果。未設定 `ARM_GAME_PATH`、`ARM_OLLAMA_LIVE`。以上 `--no-restore` 命令須先有相同 artifacts 路徑的 restore；新環境先移除 build 的 `--no-restore`。
 
 `b9b9965` 的獨立 git archive 快照位於 `TEMP/ArmCoreCommitQA_e70f5f1a2802428abb9fd7546428d1a2/source`，不包含 AI 預覽 WIP；独立還原／建置／完整測試同樣為 0 警告/0 錯誤、536 通過/21 略過/0 失敗。

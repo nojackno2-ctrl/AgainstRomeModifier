@@ -132,10 +132,15 @@ internal sealed partial class MapEditorForm
             _canvas.CommitBaseline(); // 變更高亮只存在於 2D 檢視，3D 無對應狀態
             RefreshOverview();
             UpdateEditorState();
+            if (scenario is not null) UpdateScriptBuildingNotice(scenario);
+            bool isEn = AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English;
+            string buildingNotice = ScriptBuildingNotice(isEn);
+            if (buildingNotice.Length > 0) _status.Text = buildingNotice;
             if (showSuccess)
             {
-                bool isEn = AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English;
-                MessageBox.Show(this, isEn ? "Map saved successfully." : "地圖已安全儲存。", Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
+                string message = isEn ? "Map saved successfully." : "地圖已安全儲存。";
+                if (buildingNotice.Length > 0) message += "\n\n" + buildingNotice;
+                MessageBox.Show(this, message, Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             return true;
         }

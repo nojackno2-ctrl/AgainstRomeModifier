@@ -27,7 +27,7 @@
 | 完整還原保留／刪除自製圖 | 新dialog→PatchEngine→CustomMapRestoreService；15項合成流程/STA/真正runner與engine測試 | 已實作預設保留、受控刪除、目錄/manifest回滾；僅完整還原跳過custom腳本/team基準，正常AI仍涵蓋custom；原版成功還原與新dialog視覺仍待驗收 |
 | AI 修補涵蓋新 ENDL 圖 | `EndlessAiAdditionalMapTests` 真正 P1 七槽位 Detect／Apply／Save／fresh reload／還原 | 已修正式數字槽位搜尋；排除非數字、暫存、刪除中與巢狀複本；SDL 僅搜尋地圖根目錄 |
 | 地形、材質、通行、歷史／儲存交易 | 驗收矩陣列出的 session、真正表單及 AI 跨模式測試 | 合成路徑已驗證；原版輸出仍有遊戲內 gate |
-| 自然物件／人物／部隊／建築與事件 | 單兵與nature fail/retry、身份、VM／dialog；四部族建築0–8/部隊0–7與事件的真正STA共同儲存/retry/fresh form矩陣 | 合成資料整合已補；接著核對缺建築範本時的腳本降級與提示，再完成AI預覽；不推定多人同步已支援 |
+| 自然物件／人物／部隊／建築與事件 | 單兵與nature fail/retry、身份、VM／dialog；四部族建築0–8/部隊0–7與事件的STA共同儲存矩陣；缺建築範本中英提示/目標/retry/重開/範本恢復 | 合成資料整合與工地提示已補；接著完成AI預覽；不推定多人同步或真實範本已驗證 |
 | 空白地圖語意 | 選單改稱 Flat Template／平坦範本地圖；工具改稱 Reset Flat Terrain／重設平坦地形 | 保留範本聚落、腳本與連結物件，整平與可移除地景清除仍走既有待儲存流程；真正無聚落／無腳本地圖尚未驗證 |
 | 3D 真貼圖、水面、光照、標記、筆刷與 fallback | 純計算測試與 2D DrawToBitmap 不證明 GL 畫面 | 真正 OpenGL、資源失敗診斷及互動效能尚待驗收 |
 | UI 中英／尺寸／DPI | 96 DPI 主畫面與 AI／事件預覽已有證據 | 高 DPI 尚缺；按 roadmap 排在核心整合後 |
