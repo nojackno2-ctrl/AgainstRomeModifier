@@ -58,6 +58,9 @@ internal sealed partial class MapEditorForm
         PopulateNatureCategories();
     }
 
+    /// <summary>地景物件名稱的地區代碼（LanGerNad18 → Ger）；名稱過短時為空字串。</summary>
+    internal static string NatureRegion(string name) => name.Length >= 6 ? name.Substring(3, 3) : "";
+
     private static string NatureCategory(string name)
     {
         string code = name.Length >= 9 ? name.Substring(6, 3) : "";
@@ -210,7 +213,10 @@ internal sealed partial class MapEditorForm
                 .Select(item => (item.Item1 / tileWorld, item.Item2 / tileWorld)).ToArray();
             var points = NatureScatter.Plan(e.X, e.Y, _canvas.BrushSize, density, _texturesDocument!.Dimension, existing, _natureRandom);
             if (points.Count == 0) return false;
-            NatureTypeItem[] species = _natureMix.Checked ? _natureTypes.Items.OfType<NatureTypeItem>().ToArray() : [type];
+            // 混合時只取與所選物種同地區（LanGer、LanIta…）的同類物件，避免日耳曼森林混進義大利柏樹。
+            NatureTypeItem[] species = _natureMix.Checked
+                ? _natureTypes.Items.OfType<NatureTypeItem>().Where(item => NatureRegion(item.Name) == NatureRegion(type.Name)).ToArray()
+                : [type];
             foreach ((float pointX, float pointZ) in points)
             {
                 float x = pointX * tileWorld, z = pointZ * tileWorld, y = 0;

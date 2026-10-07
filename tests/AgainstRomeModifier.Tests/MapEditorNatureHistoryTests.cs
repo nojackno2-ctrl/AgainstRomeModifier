@@ -147,13 +147,14 @@ public sealed class MapEditorNatureHistoryTests
             object first = types.Items[0];
             var template = first.GetType().GetProperty("Template")!.GetValue(first)!;
             types.Items.Add(Activator.CreateInstance(first.GetType(), template, "LanGerBir00")!);
+            types.Items.Add(Activator.CreateInstance(first.GetType(), template, "LanItaZyp06")!); // 不同地區，混合時不得選入
             Get<MapCanvasControl>(form, "_canvas").BrushSize = 9;
             Get<ComboBox>(form, "_natureDensity").SelectedIndex = 2;
             Get<CheckBox>(form, "_natureMix").Checked = true;
             Paint(form, 20, 20); Invoke(form, "CommitStroke");
             var planted = Additions(form).Cast<AgainstRomeMapEditor.Modules.Nature.NatureAddition>().ToArray();
             Assert.True(planted.Length > 10, $"9×9 茂密只種了 {planted.Length} 株");
-            Assert.Equal(2, planted.Select(item => item.Name).Distinct().Count());
+            Assert.Equal(["LanGerBir00", "LanGerLau00"], planted.Select(item => item.Name).Distinct().Order());
             float tile = AgainstRomeModifier.Maps.SdlSceneCatalog.WorldUnitsPerMapPixel * 4f;
             for (int i = 0; i < planted.Length; i++)
                 for (int j = i + 1; j < planted.Length; j++)
