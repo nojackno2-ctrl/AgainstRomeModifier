@@ -1,5 +1,14 @@
 # AI Handoff - Live Project Memory
 
+## 暫停交接（2026-10-07 Codex；使用者要求本項完成後交由其他 AI）
+
+- 使用者要求目前工作完成後暫停；本項範圍為 APT 解碼／驗證／交接，不再擴展 UI。整體「像世紀帝國 II，以真實遊戲畫面編輯地圖」仍未完成，不能標 goal complete。
+- 已完成 NativeAptDocument（純 bytes，APAT v2/v3、8-bit、64×31 diamond raster patches），不是一般 3D mesh。依原 EXE 0x4E5710／0x4E6B80／0x4E6CD0／0x4CC1F1 解析群組變長 metadata、frame ranges、色盤、tile table、PDAT；支援 raw／compressed rows、skip mask、zero-index opacity、四像素 gap 與透明 compositing。未解讀 IFOM／群組 metadata 語意。
+- tools/re/apt-probe 對授權 TEMP apt.dat 副本全庫成功：222 documents／500507 tiles／103601 frames／0 failures。報告及 gerhau02 frame0、frame1000 RGBA/PNG 在 TEMP/ArmNativeAssets_20261007/apt-verified-1；已檢視施工／完整主屋，色彩、方向與原遊戲同格仍未核對。17 項初次合成定向測試通過，補強錯誤類型後共18項。最後 Release solution build（DOTNET_ROLL_FORWARD=Major、-p:UseAppHost=false、--no-restore）0警告/0錯誤；full dotnet test --no-build --no-restore、ARM_OPENGL_REQUIRED=1：宿主605／modules112通過，共717通過／22略過／0失敗。既有輸出目錄拒絕 exit2，report SHA256不變。git diff --check通過；本項完成後依使用者要求暫停，不再自動續作。
+- 給接續 AI：先讀 docs/reverse-engineering/native-scene-rendering.md。TEMP 副本含 alr.dat、apt.dat、shad.dat、objdef.dau/txt、cl_alr.ini/txt、cl_apt.ini/txt；若 TEMP 消失，可在使用者既有唯讀授權範圍重建（不修改安裝、不啟動遊戲）。格式 probe 指令見該文件。靜態 disassembly 在 TEMP arm-native-apt-{layout,payload,tile,consumers,rows,render}.txt；RE 工具 tools/re/scan_native_scene.py，既有 Python deps 在 TEMP/arm-re-python。不要重试損壞 ghidra.zip。
+- 下一步實作：宿主唯讀資源庫與 objdef 欄5 alrid／欄14 aptix、cl_alr/cl_apt ID→檔名映射；依 native消費端確認 ALR 方向動畫與 APT四維索引各軸語意、palette／RGB色道、team色與錨點。Map3DViewControl 仍三處 BuildMarkerPoints，未使用原素材；需完整場景投影、遮擋／陰影、水面／地形外觀、可見物件拾取，然後 paint/放置/移動/刪除即時更新、undo/redo/save/reopen 與遊戲讀取一致性。APT目前全 canvas 解碼耗配置，UI應快取／裁切／atlas，不能每幀重解全部。
+- 保留使用者未追蹤 .claude/；不提交原遊戲素材／TEMP報告。不 push。AI製圖維持暫停。遊戲啟動及安裝寫入不在素材唯讀授權內。
+
 ## 素材分析授權與進度（2026-10-07 Codex）
 
 - 使用者回覆「允許」，明確授權唯讀分析安裝目錄原始素材並複製至 TEMP；僅此讀取範圍覆蓋 AGENTS 原限制，不包含修改安裝檔或啟動遊戲。先前素材授權阻塞已解除，目標恢復進行中。

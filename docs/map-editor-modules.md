@@ -27,6 +27,14 @@ Archive I/O, object definitions, animation and
 direction mapping, trailing metadata and scene integration remain with the host
 or future format work.
 
+`NativeAssets/NativeAptDocument` reads owned APAT v2/v3 indexed 64x31 diamond
+patches, validates frame ranges, decodes raw/compressed rows and composites a
+full canvas with transparent overlay semantics. Layout dimensions and renderer
+anchors are preserved; group metadata, axis meaning, IFOM and color fidelity
+remain unverified. `tools/re/apt-probe` decoded all 222 authorized APT documents,
+500507 tiles and 103601 frames; the host still needs archive/catalog integration,
+caching, projection and interaction. Neither native decoder performs I/O.
+
 `Events/ScenarioEventSession` owns event commands, duplication limits, copied
 action/condition lists and the saved baseline. `MapEditorForm.Events.cs` is its
 UI adapter. The existing host's `_events` read interface and baseline setter

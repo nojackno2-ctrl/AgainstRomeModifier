@@ -4,9 +4,9 @@
 
 ## 本輪證據範圍
 
-只讀 repository 既存 `re_workspace/Against_Rome.exe`，SHA-256：
+初始靜態分析只讀 repository 既存 `re_workspace/Against_Rome.exe`，SHA-256：
 `6ac85239ea3b87a4357ed8ce09a1818e68c09fe3c00e8d98831f473577b719bf`。
-未存取安裝目錄、未啟動或注入遊戲。以下是 x86 指令的靜態證據，尚非實機 API 契約。
+當時未存取安裝目錄；後續在使用者授權下唯讀複製素材（見下文），未啟動或注入遊戲。以下 x86 指令是靜態證據，尚非實機 API 契約。
 
 `tools/re/scan_native_scene.py` 可重現字串引用、指定地址引用及指定 VA 範圍的反組譯。需要 `pefile`、`capstone`；依賴路徑應由呼叫者設定。輸入檔必須明確指定，不預設讀取安裝目錄。線性反組譯與引用是候選，不能單憑掃描推定函式邊界或 ABI。
 
@@ -94,9 +94,34 @@ dotnet run --project tools/re/alr-probe -c Release -p:UseAppHost=false -- `
 
 低版本、非 8-bit、footer、APT 與場景 UI 仍需完成或確認。
 
+## APT v2/v3 diamond patch 解碼（2026-10-07）
+
+`NativeAptDocument` 以自有 bytes 讀 APAT，`DecodeTile` 產生 64×31 ARGB diamond，`DecodeFrame` 依索引表在原 canvas 合成。它是 raster patch 格式，不是將建築當成一般三角網格。222 個實際檔案均為 8-bit、64×31，221 個 v3、1 個 v2；其他布局明確拒絕。
+
+- Header 28 DWORDs／112 bytes；word2 是線性狀態數，word3 指向表格起點，word4 是 tile 數；word6／7 是 tile 寬高，word8..11 保留四維索引大小，word9 也是群組 variant slot 數，word13 是 depth；word20／21 是 palette colors／variants，word23／24 是 canvas 寬高，word27 是 pixel block byte 數。
+- `0x4E5951` seek header offset；接兩個 height 長 DWORD 表（raw row offsets、diamond row widths），兩對位置／anchor 值、兩個額外 pair counts、group count。目前保留 native renderer 使用的第二對 anchor（runtime +0x78/+0x7C）。群組有兩個位置值、兩個 count、每個 variant 的 count、最後兩個 count；v2 只存一份 variant count／list，native loader 複製其他 slots。
+- 額外 pair lists 後依各 group 讀／跳過 triples、pairs、per-variant pairs、pairs、quads；語意仍未命名，不當成頂點或任意忽略其長度。之後是狀態→(first tile,count) 表、palettes、tile metadata（offset、packed XY、四個 auxiliary bytes）、`PDAT`、pixel block。IFOM／footer 尚不解讀。
+- `0x4E6B40` 的線性索引為 `(((a * size1) + b) * size2 + c) * size3 + d`；`0x4E6B80` 使用狀態表取得連續 tile 範圍。各軸的建造／方向／光照／動畫產品語意仍須核對，不能把 frame1000 的觀察概括為全部資源的完成狀態。
+- Tile packed XY 的低11 bits／接續11 bits 是位置。Pixel block 每塊前8 bytes 是 row skip mask／index0 opacity mask；skip mask bit31 表示 compressed。Raw rows 使用 header 的 byte offsets／row widths；compressed 的32個 ushort 位於塊+8，start/end 低11 bits 是相對塊+8的 byte offset，`(start >> 9) & 0x3C` 是 row gap。Native `0x4E6CD0`／`0x4CC1F1..0x4CC319` 顯示 row skip、獨立 opacity 與 palette 寫入。
+- 1:1 合成 x 為 `packedX + gap + 2 - fullDiamondRowWidth/2`，y 為 `packedY + row`；index0 只在該 row opacity bit 設定時寫色，否則保持已合成的底層像素。解析檢查變長輸入／count／tile reference，解碼檢查 row table、palette index 與可見像素範圍。
+
+`NativeAptDocumentTests` 合成 v2/v3 容器涵蓋變長群組列表、raw／compressed／gap、兩個 palettes、透明覆疊、所有 truncated prefixes、錯誤引用／counts／offsets、unsupported formats、快照隔離。ARGB 目前沿 ALR 的低24 bits 慣例；色道、team palette 和原遊戲同格色彩未核對。
+
+唯讀全庫 probe（输出必須為新 TEMP 子目錄）：
+
+```powershell
+$env:DOTNET_ROLL_FORWARD='Major'
+dotnet run --project tools/re/apt-probe -c Release -p:UseAppHost=false -- `
+  "$env:TEMP/ArmNativeAssets_20261007/apt.dat" "$env:TEMP/ArmNativeAssets_20261007/new-apt-report"
+```
+
+apt.dat SHA256 `CB8656A5F74CEFB2588A89D1EB25566CB4493A22A4C52E30E37EC15CFCF917DF`；副本與原檔一致。全庫 222 documents／500507 palette tiles／103601 palette frames／0 failures。TEMP/ArmNativeAssets_20261007/apt-verified-1 存 JSON、gerhau02 frame0／1000 的 RGBA／PNG；已檢視施工框架和完整主屋，但未與原遊戲同方向／光照畫面比較，亦未接 UI。
+
+完整靜態範圍報告只存 TEMP，使用同一 EXE 可重建：`0x4E5560:0x4E5710`、`0x4E5BA8:0x4E6010`、`0x4E600A:0x4E6500`、`0x4E64CD:0x4E66B0`、`0x4E691D:0x4E6AA0`、`0x4E6B40:0x4E6D90`、`0x4CC080:0x4CC390`。用 `scan_native_scene.py --range ... --output <TEMP report>`；線性反組譯對齊須依有效函式入口核對。
+
 ## 下一個實作與驗收點
 
-已取得允許分析的素材副本；下一步完成物件定義與素材名稱對應、動畫／方向映射、透明與錨點，對照同物件的原遊戲畫面。啟動遊戲仍未包含在本次唯讀授權中。
+已取得允許分析的素材副本與 ALR/APT 解碼核心；下一步接宿主物件定義與素材名稱對應、動畫／方向映射、色彩與錨點，對照同物件的原遊戲畫面。啟動遊戲仍未包含在本次唯讀授權中。
 
 同時追蹤 ALR/APT 消費端、原引擎相機與地圖重建接口，評估原引擎中直接編輯的可行性。範圍函式不能代替場景渲染；單張遊戲截圖或「儲存後另開遊戲」也不能算即時編輯完成。原引擎模式入口、thread/context、座標拾取、物件新增刪除與高度／材質即時重建均未驗證。
 

@@ -40,6 +40,7 @@
 | 3D 資料計算 | 高度插值、網格、相機限制、射線選取、材質 atlas | `AgainstRomeModifier.Tests/MapEditor3DTests.cs` |
 | 原生 ALR 8-bit 行解碼核心（未接 UI） | 兩段像素／gap／各段 opacity、快照隔離、損壞輸入拒絕；實際 alr.dat 全部 2,075 個文件與 palette 變體解碼成功。未驗證遊戲場景外觀 | `AgainstRomeMapEditor.Modules.Tests/NativeAlrIndexedFrameTests.cs`、`tools/re/alr-probe` |
 | ALRA v4–6 indexed 容器解析（未接 UI） | palette 選取、共用影格、截斷拒絕；實際素材修正 pixel-relative offsets 與零尺寸格，358,083 格解碼成功。動畫方向／場景仍未驗證 | `AgainstRomeMapEditor.Modules.Tests/NativeAlrDocumentTests.cs`、`docs/reverse-engineering/native-scene-rendering.md` |
+| APAT v2/v3 indexed diamond patches（未接 UI） | raw／compressed rows、row gap／skip／opacity、透明合成、變長群組列表與輸入拒絕；222文件／500507 tiles／103601 frames 全庫解碼成功，已檢視主屋兩格。色彩／方向／動畫／完整場景尚未遊戲驗收 | `AgainstRomeMapEditor.Modules.Tests/NativeAptDocumentTests.cs`、`tools/re/apt-probe` |
 
 完整 solution 同時涵蓋 Modifier 與 SaveManager，總通過數不能當成地圖編輯器的功能數。部分測試在未提供原版資料或未啟用 live 環境時直接返回；通過總數也不能證明這些實機路徑已執行。
 
