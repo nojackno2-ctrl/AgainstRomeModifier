@@ -155,14 +155,20 @@ internal sealed class Map3DViewControl : GLControl
     {
         base.OnPaint(e);
         if (!_initialized || _mesh is null) return;
-        MakeCurrent(); GL.Viewport(0, 0, ClientSize.Width, ClientSize.Height); GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
-        Matrix4 matrix = ToOpenTk(_camera.GetViewMatrix() * _camera.GetProjectionMatrix(ClientSize.Width / (float)Math.Max(1, ClientSize.Height)));
+        MakeCurrent(); RenderScene(ClientSize.Width, ClientSize.Height);
+        SwapBuffers();
+    }
+
+    /// <summary>以目前繫結的 framebuffer 繪製整個場景；畫面與離屏擷取共用同一路徑。</summary>
+    private void RenderScene(int width, int height)
+    {
+        GL.Viewport(0, 0, width, height); GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
+        Matrix4 matrix = ToOpenTk(_camera.GetViewMatrix() * _camera.GetProjectionMatrix(width / (float)Math.Max(1, height)));
         DrawTerrain(matrix);
         if (ShowGrid) DrawGrid(matrix);
         DrawWater(matrix);
         if (ShowObjects) DrawMarkers(matrix);
         DrawBrushCursor(matrix);
-        SwapBuffers();
     }
 
     private void DrawBrushCursor(Matrix4 matrix)
