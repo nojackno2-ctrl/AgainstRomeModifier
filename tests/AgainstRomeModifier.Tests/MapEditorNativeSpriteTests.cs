@@ -34,6 +34,88 @@ public sealed partial class MapEditorSaveTransactionTests
     }
 
     [Fact]
+    public void Picking_hits_opaque_sprite_pixels_prefers_the_nearest_and_falls_back_to_markers()
+    {
+        var heights = new TerrainHeightField(257, 257, Enumerable.Repeat((byte)0, 257 * 257).ToArray(), tileWidth: 64, tileHeight: 64);
+        var camera = new EditorCamera { Target = new Vector3(32, 0, 32) };
+        camera.Zoom(.1f); // close-up: the sprite spans about 110 screen pixels
+        Matrix4x4 view = camera.GetViewMatrix(), projection = camera.GetProjectionMatrix(1);
+        var viewport = new Vector2(800, 800);
+        // 200x200 sprite whose left half is transparent; ground anchor at bottom centre.
+        uint[] pixels = Enumerable.Range(0, 200 * 200).Select(i => i % 200 < 100 ? 0u : 0xFFFFFFFFu).ToArray();
+        var sprite = new NativeSprite(200, 200, pixels, 100, 200, "x.alr");
+        var centre = new MapSceneObject("A", 32 * 256, 0, 32 * 256, 0, "a.sdl", 1);
+        var nearer = centre with { Name = "B", ObjectIndex = 2, WorldX = centre.WorldX + 30, WorldZ = centre.WorldZ + 30 }; // toward the camera
+        var marker = centre with { Name = "C", ObjectIndex = 3, WorldX = 20 * 256 };
+        Vector2 Screen(MapSceneObject item, float upPixels)
+        {
+            Vector4 eye = Vector4.Transform(new Vector4(SceneObjectRenderer.GroundPoint(item, heights, item.Name == "C" ? .25f : 0), 1), view);
+            Vector4 clip = Vector4.Transform(eye + new Vector4(0, upPixels * SceneObjectRenderer.TilesPerSpritePixel, 0, 0), projection);
+            return new Vector2((clip.X / clip.W * .5f + .5f) * viewport.X, (.5f - clip.Y / clip.W * .5f) * viewport.Y);
+        }
+        int Pick(Vector2 point, params MapSceneObject[] objects) => SceneObjectRenderer.PickObject(objects,
+            objects.Select(item => item.Name == "C" ? null : sprite).ToArray(), _ => true, heights, view, projection, viewport, point);
+        Vector2 body = Screen(centre, 100) + new Vector2(3, 0); // just right of centre: opaque half
+        Assert.Equal(0, Pick(body, centre));
+        Assert.Equal(-1, Pick(body - new Vector2(8, 0), centre)); // transparent half
+        Assert.Equal(-1, Pick(Screen(centre, 260), centre)); // above the quad
+        Assert.Equal(1, Pick(body, centre, nearer)); // overlapping: the nearer (drawn last) wins
+        Assert.Equal(0, Pick(body, nearer, centre)); // independent of list order
+        Assert.Equal(0, Pick(Screen(marker, 0) + new Vector2(5, 0), marker)); // marker radius
+        Assert.Equal(-1, Pick(Screen(marker, 0) + new Vector2(12, 0), marker));
+        Assert.Equal(-1, SceneObjectRenderer.PickObject([centre], [sprite], _ => false, heights, view, projection, viewport, body)); // not in the atlas => marker only
+    }
+
+    [Fact]
+    public void Real_opengl_click_selects_visible_sprite_and_drag_moves_it()
+    {
+        string map = CreateFixture();
+        RunInSta(() =>
+        {
+            Application.SetUnhandledExceptionMode(UnhandledExceptionMode.ThrowException, threadScope: true);
+            OpenTK.Windowing.Desktop.GLFWProvider.CheckForMainThread = false;
+            using var form = new MapEditorForm(_root, new GameMapInfo("ENDL_005", map, true, "SpritePick", "Test"));
+            typeof(MapEditorForm).GetField("_allowClose", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(form, true);
+            form.StartPosition = FormStartPosition.Manual; form.Location = new Point(-30000, -30000);
+            form.Show(); Application.DoEvents();
+            Invoke(form, "SetActiveView", true); Application.DoEvents();
+            var view = GetField<Map3DViewControl>(form, "_view3d");
+            if (!view.IsReady) { Assert.NotEqual("1", Environment.GetEnvironmentVariable("ARM_OPENGL_REQUIRED")); return; }
+            using var catalog = NativeSpriteCatalog.FromText(
+                string.Join(",", Enumerable.Range(0, 60).Select(i => i switch { 0 => "42", 5 => "0", 8 => "-1", 14 => "-1", 17 => "0", 52 => "BauRomHau00_Haupthaus", _ => "   0" })),
+                "0000,big.alr", "", name => name == "big.alr" ? SolidAlr(200, 240) : null, _ => null);
+            view.SpriteCatalog = catalog;
+            Type mode = typeof(MapEditorForm).GetNestedType("EditMode", BindingFlags.NonPublic)!;
+            Invoke(form, "SetEditMode", Enum.Parse(mode, "SceneMove"));
+            var sceneList = GetField<ListView>(form, "_sceneList");
+            sceneList.SelectedItems.Clear(); Application.DoEvents();
+            Assert.True(view.ScenePickEnabled);
+            view.FocusTile(10000 / 256f, 6000 / 256f);
+            ((EditorCamera)typeof(Map3DViewControl).GetField("_camera", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(view)!).Zoom(.05f);
+            Size size = view.ClientSize;
+            using Bitmap frame = view.CaptureFrame(size.Width, size.Height)!;
+            List<Point> red = Red(frame);
+            Assert.True(red.Count > 500, $"sprite 只畫出 {red.Count} 個像素。");
+            var target = Point.Round(Centroid(red));
+            Assert.Equal(0, view.PickSceneObject(target)); // the drawn pixels are what picking hits
+            void Mouse(string method, Point at) => typeof(Control).GetMethod(method, BindingFlags.Instance | BindingFlags.NonPublic)!
+                .Invoke(view, [new MouseEventArgs(MouseButtons.Left, 1, at.X, at.Y, 0)]);
+            Mouse("OnMouseDown", target); Mouse("OnMouseUp", target);
+            Assert.Single(sceneList.SelectedItems.Cast<ListViewItem>());
+            var selected = (MapSceneObject)sceneList.SelectedItems[0].Tag!;
+            Assert.Equal("BauRomHau00_Haupthaus", selected.Name);
+            Assert.Equal((10000f, 6000f), (selected.WorldX, selected.WorldZ)); // a plain click does not move the object
+            Assert.True(view.SceneMoveEnabled);
+
+            var away = new Point(target.X + 120, target.Y + 60);
+            Mouse("OnMouseDown", target); Mouse("OnMouseMove", away); Mouse("OnMouseUp", away);
+            var moved = (MapSceneObject)sceneList.SelectedItems[0].Tag!;
+            Assert.NotEqual((10000f, 6000f), (moved.WorldX, moved.WorldZ));
+            Assert.True(moved.WorldX > 10000, $"往畫面右下拖曳應增加 X：{moved.WorldX},{moved.WorldZ}");
+        }, TimeSpan.FromMinutes(2));
+    }
+
+    [Fact]
     public void Real_opengl_frame_draws_native_sprites_that_follow_object_moves()
     {
         string output = Environment.GetEnvironmentVariable("ARM_OPENGL_OUTPUT")

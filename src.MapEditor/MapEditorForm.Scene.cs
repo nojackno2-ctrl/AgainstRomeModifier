@@ -259,6 +259,25 @@ internal sealed partial class MapEditorForm
 
     private static string KindText(string kind, bool isEn) => !isEn ? kind : kind switch { "建築" => "Building", "單位" => "Unit", _ => "Other" };
 
+    /// <summary>3D 畫面點選可見物件：選取對應的 SDL 場景清單列（其後拖曳即移動）。</summary>
+    private void SelectPickedSceneObject(MapSceneObject picked)
+    {
+        string key = SceneKey(picked);
+        bool found = false;
+        _sceneList.SelectedItems.Clear(); // the list allows multi-select; a pick replaces the selection
+        SelectSceneListItem(tag =>
+        {
+            bool match = tag is MapSceneObject item && SceneKey(item) == key || tag is StagedSceneAddition added && SceneKey(added.Display) == key;
+            found |= match;
+            return match;
+        });
+        bool isEn = AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English;
+        string name = picked.Name;
+        _status.Text = found
+            ? (isEn ? $"Selected {name}; drag to move it." : $"已選取 {name}；拖曳即可移動。")
+            : (isEn ? $"{name} is a placed or nature object; edit it with the Place or Nature tool." : $"{name} 屬於放置或自然物件，請用「放置」或「自然」工具編輯。");
+    }
+
     private void SelectSceneListItem(Func<object?, bool> match)
     {
         foreach (ListViewItem row in _sceneList.Items)
@@ -300,7 +319,7 @@ internal sealed partial class MapEditorForm
             removal.SourceFile.Equals(item.SourceFile, StringComparison.OrdinalIgnoreCase) && removal.ObjectIndex == item.ObjectIndex);
         bool canMove = editable && selected && !pendingRemoval && _sceneMoveTool.Checked;
         _canvas.SceneMoveEnabled = canMove;
-        if (_view3d is not null) _view3d.SceneMoveEnabled = canMove;
+        if (_view3d is not null) { _view3d.SceneMoveEnabled = canMove; _view3d.ScenePickEnabled = editable && _sceneMoveTool.Checked; }
         _sceneDeleteButton.Text = pendingRemoval
             ? (isEn ? "Undo Delete" : "取消刪除")
             : (isEn ? "Delete Object" : "刪除物件");

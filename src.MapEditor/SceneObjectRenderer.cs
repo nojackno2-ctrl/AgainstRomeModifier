@@ -25,6 +25,46 @@ internal static class SceneObjectRenderer
     }
 
     /// <summary>
+    /// Index of the object visible under a screen point, or -1. Sprites hit on opaque pixels of
+    /// their projected quad, and the nearest hit wins because sprites are painted far to near.
+    /// Objects without a sprite hit within <paramref name="markerRadius"/> pixels of their marker.
+    /// </summary>
+    public static int PickObject(IReadOnlyList<MapSceneObject> objects, IReadOnlyList<NativeSprite?> sprites, Func<NativeSprite, bool> drawn,
+        TerrainHeightField heights, Matrix4x4 view, Matrix4x4 projection, Vector2 viewport, Vector2 point, float markerRadius = 8)
+    {
+        int best = -1;
+        float bestDepth = float.MaxValue;
+        for (int index = 0; index < objects.Count; index++)
+        {
+            NativeSprite? sprite = index < sprites.Count ? sprites[index] : null;
+            bool hasSprite = sprite is not null && drawn(sprite);
+            Vector3 anchor = GroundPoint(objects[index], heights, hasSprite ? 0 : .25f);
+            Vector4 eye = Vector4.Transform(new Vector4(anchor, 1), view);
+            if (eye.Z >= 0) continue; // behind the camera (right-handed view looks down -Z)
+            bool hit;
+            if (hasSprite)
+            {
+                Vector2 bottomLeft = Project(eye + new Vector4(-sprite!.AnchorX * TilesPerSpritePixel, (sprite.AnchorY - sprite.Height) * TilesPerSpritePixel, 0, 0), projection, viewport);
+                Vector2 topRight = Project(eye + new Vector4((sprite.Width - sprite.AnchorX) * TilesPerSpritePixel, sprite.AnchorY * TilesPerSpritePixel, 0, 0), projection, viewport);
+                if (point.X < bottomLeft.X || point.X >= topRight.X || point.Y < topRight.Y || point.Y >= bottomLeft.Y) continue;
+                int px = Math.Clamp((int)((point.X - bottomLeft.X) / (topRight.X - bottomLeft.X) * sprite.Width), 0, sprite.Width - 1);
+                int py = Math.Clamp((int)((point.Y - topRight.Y) / (bottomLeft.Y - topRight.Y) * sprite.Height), 0, sprite.Height - 1);
+                hit = sprite.ArgbPixels[py * sprite.Width + px] >> 24 != 0;
+            }
+            else hit = Vector2.Distance(Project(eye, projection, viewport), point) <= markerRadius;
+            float distance = new Vector3(eye.X, eye.Y, eye.Z).Length(); // same order as BuildSpriteVertices
+            if (hit && distance < bestDepth) { bestDepth = distance; best = index; }
+        }
+        return best;
+    }
+
+    private static Vector2 Project(Vector4 eye, Matrix4x4 projection, Vector2 viewport)
+    {
+        Vector4 clip = Vector4.Transform(eye, projection);
+        return new Vector2((clip.X / clip.W * .5f + .5f) * viewport.X, (.5f - clip.Y / clip.W * .5f) * viewport.Y);
+    }
+
+    /// <summary>
     /// Screen-aligned sprite quads (anchor xyz, view-space offset xy, uv) ordered far to near,
     /// as the original 2.5D renderer paints. Objects without an atlas entry are skipped.
     /// </summary>

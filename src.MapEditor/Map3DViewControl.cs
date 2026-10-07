@@ -24,8 +24,8 @@ internal sealed class Map3DViewControl : GLControl
     private int _hoverX = -1, _hoverY = -1;
     private float _waterLevel, _heightMapStep;
     private Color _waterSourceColor = Color.SteelBlue;
-    private bool _initialized, _painting, _movingSceneObject, _panning, _rotating, _rightClick;
-    private Point _lastPointer, _rightStart;
+    private bool _initialized, _painting, _movingSceneObject, _pickedPendingDrag, _panning, _rotating, _rightClick;
+    private Point _lastPointer, _rightStart, _pickStart;
     private int _terrainProgram, _colorProgram, _vao, _vbo, _ebo, _atlasTexture, _waterVao, _waterVbo, _markerVao, _markerVbo, _cursorVao, _cursorVbo;
     private int _cursorVertexCount;
     private bool _reinitializeOnHandleCreated;
@@ -70,6 +70,19 @@ internal sealed class Map3DViewControl : GLControl
     public event EventHandler<TextureSampleEventArgs>? TextureSampled;
     public event EventHandler? StrokeEnded;
     public event EventHandler<SceneObjectMoveEventArgs>? SceneObjectMoved;
+    /// <summary>Left click on a visible object while <see cref="ScenePickEnabled"/>; handlers may enable moving it.</summary>
+    public event EventHandler<SceneObjectPickEventArgs>? SceneObjectPicked;
+    public bool ScenePickEnabled { get; set; }
+
+    /// <summary>Index into the current scene objects of the object drawn under a client point, or -1.</summary>
+    internal int PickSceneObject(Point point)
+    {
+        if (!ShowObjects || _heights is null || ClientSize.Width <= 0 || ClientSize.Height <= 0) return -1;
+        Matrix4x4 projection = _camera.GetProjectionMatrix(ClientSize.Width / (float)ClientSize.Height);
+        NativeSpriteAtlas? atlas = _spriteAtlas;
+        return SceneObjectRenderer.PickObject(_objects, _objectSprites, sprite => atlas?.TryGetUv(sprite, out _) == true, _heights,
+            _camera.GetViewMatrix(), projection, new System.Numerics.Vector2(ClientSize.Width, ClientSize.Height), new System.Numerics.Vector2(point.X, point.Y));
+    }
 
     // 3D 檢視不繪製「與已儲存基準的差異」高亮（那是 2D MapCanvasControl 的職責），
     // 因此這裡不需要 baselineTextures。
@@ -322,7 +335,13 @@ internal sealed class Map3DViewControl : GLControl
         if (e.Button == MouseButtons.Right) { _rightClick = true; _rightStart = e.Location; return; }
         if (e.Button == MouseButtons.Left)
         {
-            if (SceneMoveEnabled) _movingSceneObject = TryMoveSceneObject(e.Location, completed: false);
+            if (ScenePickEnabled && PickSceneObject(e.Location) is int picked and >= 0)
+            {
+                // Selecting a visible object starts dragging it once the handler enables moving.
+                SceneObjectPicked?.Invoke(this, new SceneObjectPickEventArgs(_objects[picked]));
+                _pickedPendingDrag = SceneMoveEnabled; _pickStart = e.Location; // a plain click only selects; dragging moves
+            }
+            else if (SceneMoveEnabled) _movingSceneObject = TryMoveSceneObject(e.Location, completed: false);
             else { _painting = true; _paintedInDrag.Clear(); _lastPaintedTile = -1; TryPaint(e.Location); }
         }
     }
@@ -333,6 +352,7 @@ internal sealed class Map3DViewControl : GLControl
         Point delta = new(e.X - _lastPointer.X, e.Y - _lastPointer.Y);
         if (_panning && e.Button == MouseButtons.Middle) { _camera.Pan(-delta.X * .08f, delta.Y * .08f); Invalidate(); }
         else if (_rightClick && e.Button == MouseButtons.Right && Math.Abs(e.X - _rightStart.X) + Math.Abs(e.Y - _rightStart.Y) >= 4) { _rotating = true; _camera.Rotate(delta.X * .35f, -delta.Y * .35f); Invalidate(); }
+        else if (_pickedPendingDrag && e.Button == MouseButtons.Left && Math.Abs(e.X - _pickStart.X) + Math.Abs(e.Y - _pickStart.Y) >= 4) { _pickedPendingDrag = false; _movingSceneObject = TryMoveSceneObject(e.Location, completed: false); }
         else if (_movingSceneObject && e.Button == MouseButtons.Left) TryMoveSceneObject(e.Location, completed: false);
         else if (_painting && e.Button == MouseButtons.Left) TryPaint(e.Location);
         if (TryGetTile(e.Location, out int x, out int y))
@@ -358,7 +378,7 @@ internal sealed class Map3DViewControl : GLControl
             TextureSampled?.Invoke(this, new TextureSampleEventArgs(x, y, _textures[y * _dimension + x]));
         bool wasPainting = _painting;
         if (_movingSceneObject && e.Button == MouseButtons.Left) TryMoveSceneObject(e.Location, completed: true);
-        _painting = _movingSceneObject = _panning = _rotating = _rightClick = false; _paintedInDrag.Clear(); _lastPaintedTile = -1;
+        _painting = _movingSceneObject = _pickedPendingDrag = _panning = _rotating = _rightClick = false; _paintedInDrag.Clear(); _lastPaintedTile = -1;
         if (wasPainting) StrokeEnded?.Invoke(this, EventArgs.Empty);
     }
 

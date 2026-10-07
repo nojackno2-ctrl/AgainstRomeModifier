@@ -565,3 +565,8 @@ internal sealed class SceneObjectMoveEventArgs : EventArgs
     public float WorldZ { get; }
     public bool Completed { get; }
 }
+
+internal sealed class SceneObjectPickEventArgs(MapSceneObject sceneObject) : EventArgs
+{
+    public MapSceneObject SceneObject { get; } = sceneObject;
+}
