@@ -24,10 +24,11 @@
 - AI UI：三角色分別選模型，生成→檢視→明確套用；取消、部分失敗診斷、重試、描述/模型變更使舊方案失效、晚到模型列表不覆蓋狀態。只生成不寫地圖，套用後仍需儲存。
 - Events：ObjectInArea 為包含邊界、連續成立的 X/Z 矩形條件，使用部隊容器；Victory/Defeat 設 GLOBAL_MISSION_RESULT=1/0 後 s_quitGame，須為非重複事件的最後動作；terminal guard 防止同 tick 後續事件覆蓋。JSON 版本6。
 - `docs/reverse-engineering/scenario-area-mission-result.md` 記 repo EXE 靜態反組譯證據；VM/compiler/UI 測試通過不等於遊戲結算已實測。
-- README/user guide 已修正為 Laguna 序列推論、各模式分別撤銷、建築空間提示非實機保證、自包含版本執行需求；本輪不沿用舊實機結果宣稱新版本可玩。
+- README/user guide 已修正為 Laguna 序列推論、材質獨立而高度/通行共用撤銷歷史、建築空間提示非實機保證、自包含版本執行需求；本輪不沿用舊實機結果宣稱新版本可玩。
 
 ## 最新驗證與失敗紀錄
 
+- Codex（2026-10-07）：AI材質各區域原共用pending stroke，後續拒絕會CancelStroke撤回先前成功區域但摘要仍計成功。PaintCircle新增可選rollbackStrokeOnFailure（預設維持滑鼠筆畫原行為）；AI設false，拒絕只還原當次區域，整份已接受材質仍一次undo。定向測試modules4項、STA host1項通過；合成fixture驗證拒絕後保留base材質、Texture undo/redo、Height/Collision共用undo、磁碟寫入前不變、Save/reload清dirty/history。XML註解初版4個CS1573已修；完整Release build 0警告/0錯誤，full --no-build test宿主483通過/21略過、modules45通過，共528通過/21略過/0失敗。指南修正歷史分組，新增docs/map-editor-acceptance.md列測試證據與未驗證項；未啟用live環境的提前return測試不算實機證據。
 - Codex 續作（2026-10-07）：發現單兵UnitCount=1存成Count=0，會走s_createObj而非部隊容器；Persistence改依Figure分類保留至少1人。新增STA交易測試：單兵區域目標失敗後重試/持久ID/再存同bytes/重新開圖；nature新增在其他檔已寫後BCI缺失rollback，再試只寫一次並清dirty/history。針對MapEditorSaveTransactionTests共5通過。nature新測試初次失敗是合成template active=0，不是rollback問題，補合法active/type字段後通過；未改LevelObjectStore。
 - 同一nature測試證實成功存檔後canvas標記仍為pending索引-200000而非DATA槽位-100000-slot；Persistence成功後RefreshSceneMarkers，標記更新、再存同bytes與再刪除皆通過。新增删除測試fixture需columns[10]=0xFFFF才是未linked物件，已修。最新工作樹build 0警告/0錯誤，full test宿主482通過/21略過、modules44通過，合計526通過/21略過/0失敗。
 - 已審查/提交`c22dbbf`事件/nature純sessions與tests。為遵守refactor與feature分開，利用Roslyn擷取HEAD原方法至TEMP/ArmHostSplitQA_11296a2402534a5cb68362dcc3fd5730/source的六個partial adapters，沒有改方法內容/欄位初始化順序；IDE0005清理後build 0警告/0錯誤、modules38+宿主418通過/21略過。以獨立TEMP index提交，保留工作樹全部功能與原index；首次diff check攔下舊方法搬移的兩行trailing whitespace，僅修TEMP whitespace並確認token完全相同後再提交。
@@ -55,7 +56,7 @@
 
 1. Placement batch/邊界與STA host整合已驗證/提交；單兵與nature交易fail/retry/只套用一次/成功後dirty及markers已新增測試通過。程式碼整合已解決。
 2. Terrain blend純resolver邊界已實作並通過工作樹與committed snapshot全測試，已提交，已解決。
-3. TEMP/ArmIntegratedQA_c15e32ee907843aab7dba6dbfef56bb4/source由`git archive 63e0772`產生：完整committed solution Release build 0警告/0錯誤；full test宿主482通過/21略過、modules44通過，合計526通過/21略過/0失敗。已確認無需未提交程式碼。下一步建立完整驗收矩陣、檢查UI視覺/編輯模式切換與AI套用後跨模式復原/存檔的fixture整合；不同部族/多人/遊戲存讀檔仍需另行驗收，不能以目前測試宣稱完整可玩。
+3. TEMP/ArmIntegratedQA_c15e32ee907843aab7dba6dbfef56bb4/source由`git archive 63e0772`產生：完整committed solution Release build 0警告/0錯誤；full test宿主482通過/21略過、modules44通過，合計526通過/21略過/0失敗。後續AI跨模式/存檔fixture已通過，材質拒絕回滾bug已修；驗收矩陣已建立。下一步檢查UI視覺，以及部族/多人合成案例；不同部族/多人/遊戲存讀檔仍需另行驗收，不能以目前測試宣稱完整可玩。
 4. 遊戲內事件區域/勝敗結算、存讀檔、不同部族、多人與AI方案可玩性仍未驗證。本輪禁止存取安裝目錄，恢復仍先遵守 AGENTS.md，不能自行沿用歷史實機授權。
 5. 完成以上後再評估整體目標；目前開發進行中，不能標記 complete。
 

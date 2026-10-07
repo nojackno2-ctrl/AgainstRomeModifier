@@ -52,7 +52,8 @@ internal sealed class TerrainBlendEditSession
     public bool IsDirty => !_currentTextures.SequenceEqual(_baselineTextures, StringComparer.OrdinalIgnoreCase) ||
                            !_map.CornerMaterials.SequenceEqual(_baselineCorners, StringComparer.OrdinalIgnoreCase);
 
-    public TerrainBlendPaintResult PaintCircle(float centerX, float centerY, float radius, string materialId)
+    /// <summary>By default, a rejected area cancels the pending stroke. Set <paramref name="rollbackStrokeOnFailure"/> to false to preserve earlier accepted areas.</summary>
+    public TerrainBlendPaintResult PaintCircle(float centerX, float centerY, float radius, string materialId, bool rollbackStrokeOnFailure = true)
     {
         string[] cornerBefore = _map.CornerMaterials.ToArray();
         IReadOnlyList<int> changedCorners = _map.PaintCircle(centerX, centerY, radius, materialId);
@@ -72,7 +73,7 @@ internal sealed class TerrainBlendEditSession
         if (issues.Count > 0)
         {
             foreach (int index in changedCorners) SetCorner(index, cornerBefore[index]);
-            IReadOnlyList<TerrainTextureChange> rollback = CancelStroke();
+            IReadOnlyList<TerrainTextureChange> rollback = rollbackStrokeOnFailure ? CancelStroke() : Array.Empty<TerrainTextureChange>();
             return TerrainBlendPaintResult.Rejected(rollback, issues);
         }
 

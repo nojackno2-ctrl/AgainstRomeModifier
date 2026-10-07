@@ -4,6 +4,28 @@ namespace AgainstRomeMapEditor.Modules.Tests;
 
 public sealed class TerrainBlendModuleTests
 {
+    [Fact]
+    public void Rejected_independent_area_preserves_earlier_areas_in_one_undo_step()
+    {
+        var resolver = new Resolver();
+        string[] source = ["grass/grass/grass/grass"];
+        var import = TerrainBlendAuthoringMap.Import(1, source, resolver, "grass");
+        var session = new TerrainBlendEditSession(import, source, resolver);
+        Assert.True(session.PaintCircle(0, 0, 0, "sand", rollbackStrokeOnFailure: false).Succeeded);
+        var rejected = session.PaintCircle(0.5f, 0.5f, 2, "unsupported", rollbackStrokeOnFailure: false);
+        Assert.False(rejected.Succeeded);
+        Assert.Empty(rejected.TextureChanges);
+        Assert.Equal("sand/grass/grass/grass", session.CurrentTextures[0]);
+        Assert.True(session.PaintCircle(1, 1, 0, "water", rollbackStrokeOnFailure: false).Succeeded);
+        Assert.True(session.CommitStroke());
+        Assert.Equal("sand/grass/water/grass", session.CurrentTextures[0]);
+        session.Undo();
+        Assert.False(session.IsDirty);
+        Assert.False(session.CanUndo);
+        session.Redo();
+        Assert.Equal("sand/grass/water/grass", session.CurrentTextures[0]);
+    }
+
     private sealed class Resolver : INativeTerrainMaterialResolver
     {
         public bool TryResolveNativeCorners(string texture, out IReadOnlyList<string> corners)

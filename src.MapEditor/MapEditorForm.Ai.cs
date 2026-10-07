@@ -23,7 +23,7 @@ internal sealed partial class MapEditorForm
         AiMapApplyResult result = AiMapPlanApplier.Apply(plan, _terrainLayers, _texturesDocument.Dimension, water, (materialId, x, y, radius) =>
         {
             if (_terrainBlendSession is null) return false;
-            TerrainBlendPaintResult paint = _terrainBlendSession.PaintCircle(x, y, radius, materialId);
+            TerrainBlendPaintResult paint = _terrainBlendSession.PaintCircle(x, y, radius, materialId, rollbackStrokeOnFailure: false);
             foreach (TerrainTextureChange change in paint.TextureChanges) ApplyTexture(change.X, change.Y, change.After);
             return paint.Succeeded;
         });
