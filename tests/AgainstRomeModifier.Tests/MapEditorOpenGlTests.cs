@@ -47,13 +47,27 @@ public sealed partial class MapEditorSaveTransactionTests
             using Bitmap original = Capture(view, output, "1-original"); Trace("captured");
             Assert.True(Changed(original, Background(original)) > original.Width * original.Height / 10, "地形未繪製到畫面。");
 
+            var paintClock = System.Diagnostics.Stopwatch.StartNew();
+            for (int frame = 0; frame < 30; frame++) view.Refresh(); // 同步 OnPaint：繪製＋SwapBuffers
+            double paintMs = paintClock.Elapsed.TotalMilliseconds / 30;
+            Assert.True(paintMs < 50, $"3D 重繪平均 {paintMs:0.0} ms。");
+
             Type mode = typeof(MapEditorForm).GetNestedType("EditMode", BindingFlags.NonPublic)!;
             Invoke(form, "SetEditMode", Enum.Parse(mode, "Height"));
+            var strokeSamples = new List<double>();
             for (int pass = 0; pass < 6; pass++)
             {
-                for (int y = 24; y <= 40; y++) for (int x = 24; x <= 40; x++) Invoke(form, "PaintTexture", new TexturePaintEventArgs(x, y, "", ""));
+                for (int y = 24; y <= 40; y++) for (int x = 24; x <= 40; x++)
+                {
+                    var tick = System.Diagnostics.Stopwatch.StartNew(); // 單一筆刷事件：高度 session＋2D/3D 更新
+                    Invoke(form, "PaintTexture", new TexturePaintEventArgs(x, y, "", ""));
+                    strokeSamples.Add(tick.Elapsed.TotalMilliseconds);
+                }
                 Invoke(form, "CommitStroke");
             }
+            strokeSamples.Sort();
+            double strokeP95 = strokeSamples[(int)(strokeSamples.Count * .95)];
+            Assert.True(strokeP95 < 100, $"筆刷事件 p95 {strokeP95:0.0} ms。");
             using Bitmap raised = Capture(view, output, "2-height");
             int heightDelta = Changed(original, raised);
             Assert.True(heightDelta > 500, $"高度筆畫只改變 {heightDelta} 像素。");
@@ -82,7 +96,8 @@ public sealed partial class MapEditorSaveTransactionTests
             File.WriteAllText(Path.Combine(output, "opengl.json"), JsonSerializer.Serialize(new
             {
                 view.ContextDescription, Size = $"{original.Width}x{original.Height}", HeightChangedPixels = heightDelta, UndoResidualPixels = undoDelta,
-                BrightnessBefore = Brightness(undone), BrightnessAfter = Brightness(material), BlueBefore = Blueness(material), BlueAfter = Blueness(water), RecreatedResidualPixels = recreatedDelta
+                BrightnessBefore = Brightness(undone), BrightnessAfter = Brightness(material), BlueBefore = Blueness(material), BlueAfter = Blueness(water), RecreatedResidualPixels = recreatedDelta,
+                AveragePaintMs = paintMs, BrushEventMedianMs = strokeSamples[strokeSamples.Count / 2], BrushEventP95Ms = strokeP95, BrushEvents = strokeSamples.Count
             }));
             form.Close(); // 關閉時父視窗先銷毀子 handle；GL 資源須在 context 消失前釋放，且不得觸發重新初始化或例外。
             Application.DoEvents();
