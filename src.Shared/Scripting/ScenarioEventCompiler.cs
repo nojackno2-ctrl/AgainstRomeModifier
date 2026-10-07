@@ -94,12 +94,26 @@ public static class ScenarioEventCompiler
             if (target < 0 || target >= code.Length || target % 4 != 0 || target >= main && !boundaries.Contains((int)target))
                 throw new InvalidDataException("原腳本的跳躍目標無效，無法安全注入事件。");
         }
+        // main 後面可能還有其他函式。只接受 main 自身可走到的等待點，
+        // internal call 只沿呼叫返回後的指令繼續，不能借用被呼叫函式的等待迴圈。
+        var byAddress = instructions.ToDictionary(item => item.Address);
+        var reachable = new HashSet<int>();
+        var pending = new Stack<int>(); pending.Push(main);
+        while (pending.TryPop(out int address))
+        {
+            if (!byAddress.TryGetValue(address, out var instruction) || !reachable.Add(address)) continue;
+            if (instruction.Op is >= 112 and <= 118)
+                pending.Push(instruction.Address + 8 + instruction.Operand);
+            if (instruction.Op == 112 || instruction.Op is 121 or 122 or 123) continue;
+            int words = instruction.Op == 67 ? 3 : OneOperand.Contains(instruction.Op) ? 2 : 1;
+            pending.Push(instruction.Address + words * 4);
+        }
         var candidates = new List<int>();
         for (int i = 0; i + 1 < instructions.Count; i++)
         {
             var instruction = instructions[i];
-            if (instruction.Op != 66 || instruction.Operand != 10 || instructions[i + 1].Op != 131) continue;
-            if (instructions.Any(branch => branch.Op == 112 && branch.Address > instruction.Address
+            if (!reachable.Contains(instruction.Address) || instruction.Op != 66 || instruction.Operand != 10 || instructions[i + 1].Op != 131) continue;
+            if (instructions.Any(branch => reachable.Contains(branch.Address) && branch.Op == 112 && branch.Address > instruction.Address
                 && (long)branch.Address + 8 + branch.Operand == instruction.Address)) candidates.Add(instruction.Address);
         }
         if (candidates.Count != 1) throw new InvalidDataException("此地圖沒有唯一可辨識的主迴圈等待點，事件尚無法安全套用。");

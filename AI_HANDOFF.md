@@ -1,5 +1,11 @@
 ﻿# AI Handoff - Live Project Memory
 
+## 2026-10-07 Codex：事件主迴圈注入點可達性修正
+
+- 重新核對：HEAD `6b6f29a`，工作樹乾淨；遊戲安裝目錄例外許可尚未收到。
+- 新證據／修正：舊版只檢查 main 之後的位元碼與 back edge，可能選到 main 無法到達的另一個函式迴圈。新增 main 控制流程可達性篩選；internal call 不跟進函式體，return 停止沿本函式探索。
+- 測試：第一輪 14 通過／1 失敗；原「歧義」fixture 的第二迴圈其實不可達，因此舊預期過時，已改為兩條條件分支都可到達的歧義 fixture。修正後事件篩選測試 15 通過／0 失敗；再新增被呼叫函式等待點不能借用的迴歸測試。最終完整 Release 測試 384 通過／21 略過／0 失敗、Release solution build 0 警告／0 錯誤、git diff --check 通過。新增不可達函式拒絕、不可達額外迴圈不誤判為歧義，並以 VM 驗證真正 main 繼續執行。
+- 靜態核對 repository 唯讀 EXE 的 121 handler `0x5b85e2` 會從 VM stack 還原 PC；122／123 也分別於 `0x5b8820`／`0x5b8a6f` 改寫 PC，支持將函式 return 視為本函式探索終點。仍需使用者許可後才可執行遊戲內驗證；整體目標尚未完成。
 ## 2026-10-07 Codex：接續事件／觸發器（初版實作完成，遊戲內驗證待許可）
 
 - 開始狀態：分支 `主要開發`，HEAD `2ff4f0c`，工作樹乾淨。依最新交接，事件／觸發器是下一個主要缺口。
@@ -21,7 +27,7 @@
 **目前狀態（分支 `主要開發`，事件初版見本日 Codex 條目；本機提交以 Git 為準，未推送）**
 - 已完成並實機驗證：地表／高度／通行、AI 製圖（本機 Ollama）、自然物件（DATA）、放置建築（DATA 完工範本）、放置部隊（腳本注入）。細節見下方各日期條目。
 - **事件／觸發器初版已完成程式與合成 VM／表單驗證**；支援計時、單次／重複、訊息／外交／部隊。尚未實機確認，也尚無區域、物件死亡或勝敗條件。
-- 測試：`dotnet test tests/AgainstRomeModifier.Tests`（381 通過／21 略過；`ARM_GAME_PATH=C:\Program Files (x86)\Against Rome` 會啟用依賴遊戲目錄的測試）。Release 建置 0 警告 0 錯誤。
+- 測試：`dotnet test tests/AgainstRomeModifier.Tests`（384 通過／21 略過；`ARM_GAME_PATH=C:\Program Files (x86)\Against Rome` 會啟用依賴遊戲目錄的測試）。Release 建置 0 警告 0 錯誤。
 
 **建置與執行**
 - 環境變數 `DOTNET_ROLL_FORWARD=Major`；exe 被鎖時加 `-p:UseAppHost=false`。

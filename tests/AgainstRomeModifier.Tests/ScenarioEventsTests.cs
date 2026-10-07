@@ -74,7 +74,7 @@ public sealed class ScenarioEventsTests : IDisposable
     public void Unsupported_or_ambiguous_hooks_fail_before_modifying_the_image()
     {
         foreach (int[] words in new[] { new[] { 66, 10, 131, 123 }, new[] { 999, 66, 10, 131, 112, -20 },
-            new[] { 66, 10, 131, 112, -20, 66, 10, 131, 112, -20 }, new[] { 66, 10, 131, 112, -16 } })
+            new[] { 66, 0, 117, 20, 66, 10, 131, 112, -20, 66, 10, 131, 112, -20 }, new[] { 66, 10, 131, 112, -16 } })
         {
             BciImage image = Fixture(words); byte[] before = image.Serialize();
             Assert.Throws<InvalidDataException>(() => ScenarioEventCompiler.Inject(image, [Event()], 0));
@@ -87,6 +87,36 @@ public sealed class ScenarioEventsTests : IDisposable
     {
         BciImage image = Fixture([67, 66, 10, 131, 112, -24]);
         Assert.Throws<InvalidDataException>(() => ScenarioEventCompiler.Inject(image, [Event()], 0));
+    }
+
+    [Fact]
+    public void Unreachable_function_loop_is_not_used_as_the_main_hook()
+    {
+        BciImage image = Fixture([121, 66, 10, 131, 112, -20]);
+        byte[] before = image.Serialize();
+        Assert.Throws<InvalidDataException>(() => ScenarioEventCompiler.Inject(image, [Event()], 0));
+        Assert.Equal(before, image.Serialize());
+    }
+
+    [Fact]
+    public void Unreachable_extra_loop_does_not_make_the_real_main_hook_ambiguous()
+    {
+        BciImage image = Fixture([112, 20, 66, 10, 131, 112, -20, 66, 10, 131, 128, 0, 112, -28]);
+        byte[] before = image.Code.ToArray();
+        ScenarioEventCompiler.Inject(image, [Event()], 0);
+        Assert.Equal(before.AsSpan(0, 28).ToArray(), image.Code.AsSpan(0, 28).ToArray());
+        Assert.Equal(112, BitConverter.ToInt32(image.Code, 28));
+        var vm = new TestVm(image); vm.Tick(0); vm.Tick(2000);
+        Assert.Single(vm.Messages); Assert.Equal(1, vm.OriginalTicks); Assert.Equal(0, vm.StackDepth);
+    }
+
+    [Fact]
+    public void Called_function_wait_is_not_borrowed_when_main_has_no_wait_loop()
+    {
+        BciImage image = Fixture([120, 4, 121, 66, 10, 131, 112, -20]);
+        byte[] before = image.Serialize();
+        Assert.Throws<InvalidDataException>(() => ScenarioEventCompiler.Inject(image, [Event()], 0));
+        Assert.Equal(before, image.Serialize());
     }
 
     [Fact]
