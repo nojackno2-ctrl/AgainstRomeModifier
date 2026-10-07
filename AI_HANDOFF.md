@@ -1,5 +1,12 @@
 # AI Handoff - Live Project Memory
 
+## 土路（PFAD）可繪製材質（2026-10-08 Claude；goal「繼續開發地圖編輯器」）
+
+- 道路圖塊分析（唯讀 TEMP `ArmGameCompare_20261007/floortex.dat`，未存取安裝目錄）：H_WEG1–5 只通東西、V_WEG1–3 只通南北，**無轉角／路口片**；PFAD 是九宮格 A/B 邊界組（與 4U 慣例一致，14/16 四角組合），原版用量最大。詳見 `docs/map-editor-road-tiles.md`。
+- 實作：`FloorMaterialCatalog` 新增 `PFAD` 材質（分類「道路」、英文 Dirt Path）；角點由名稱決定，外側用顏色推得（草地組→L2:07、Erde→L2:08）；色差 ≤16 的其他材質為近似外側，每種只用最吻合的邊界組（容差2）。匯入仍以主要外側判讀。首版在 B8 上混用綠草邊界，拼貼目視發現後修正。
+- 驗證：Release build 0警告/0錯誤；全套（ARM_COMPARE_GAME、ARM_OPENGL_REQUIRED=1）host645通過/22略過、modules275，0失敗。新增 `FloorPathMaterialTests`（合成3例＋真實副本：所有邊界四角顏色與名稱一致、ENDL_005 36/36、ENDL_000 5/36）與表單真 GL 例（調色盤選土路→繪製 L 形→只用 Erde 邊界，截圖 TEMP/ArmPathMaterial_20261008/editor-dirt-path.png，與未繪製對照圖已目視）。
+- 未驗證：遊戲內外觀與近似外側的接縫；2D 畫布未截圖。下一步：H_WEG/V_WEG 直線工具需轉彎方案才能接 UI；可考慮 Pflaster／Marmor 等其他區域組。
+
 ## 遊戲光照預覽（2026-10-08 Codex；依本輪要求不提交／push／改 Git 歷史）
 
 - 已完成中斷 WIP：SceneLightingContext 改 internal，以世界高度回呼取代宿主 TerrainHeightField；APT 地面高度取光源所在 X/Z 再加 aptlh，lidef 使用物件 WorldY+lihei。view XYZ×256，半徑維持 world units。

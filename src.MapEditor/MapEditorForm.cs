@@ -917,6 +917,7 @@ internal sealed partial class MapEditorForm : Form
             return material.DisplayName;
 
         return material.Id.ToUpperInvariant() switch {
+            FloorMaterialCatalog.PathMaterialId => "Dirt Path",
             "BB" => "Grass",
             "BA" => "Dark Green Grass",
             "BC" => "Bright Green Grass",
@@ -960,6 +961,7 @@ internal sealed partial class MapEditorForm : Form
             "沙地" => "Sand",
             "土地" => "Dirt",
             "岩地" => "Rock",
+            "道路" => "Roads",
             _ => category
         };
     }
