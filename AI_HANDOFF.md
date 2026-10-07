@@ -3,7 +3,9 @@
 ## 最新指示與狀態（2026-10-07 Codex）
 
 - 使用者已恢復「繼續完成地圖編輯器的開發」。Codex 2026-10-07 依現有工作樹續作，未委派；整體目標進行中，尚未完成。
-- 本地 AI 固定預設 `laguna-xs-2.1:latest`；硬體限制一次只能呼叫一個。三角色地形→水系→材質依序執行，所有 OllamaMapPlanner 實例共用 static SemaphoreSlim(1,1)。取消排隊請求不會發送 HTTP；鎖於 finally 釋放。
+- 最新澄清（2026-10-07）：使用者的「本地AI」原指設計程式時呼叫的子代理，不是產品需求；既有AI製圖功能已明確授權保留並做好，不能再混淆產品模型與開發代理。
+- 最新指示「先重新整理開發順序」：暫停新增實作，已建立docs/map-editor-roadmap.md。順序為需求/證據核對→可靠手動編輯核心→物件/部隊/事件整合→AI正式功能→顯示/操作驗收→遊戲內驗收/交付。下一步從第一階段稽核缺口，不先做高DPI或擴充AI。整體goal仍active，未要求暫停整體目標。
+- 目前產品實作預設 `laguna-xs-2.1:latest`（不能當作使用者指定的產品模型需求）；一次只呼叫一個推論的限制維持。三角色地形→水系→材質依序執行，所有 OllamaMapPlanner 實例共用 static SemaphoreSlim(1,1)。取消排隊請求不會發送 HTTP；鎖於 finally 釋放。
 - 外部子代理使用 AGY `gemini-3.8-flash` / medium，固定 AGY/no fallback。所有已派工作皆已終態，不再有活躍檔案所有者；AGY 回報外層成功不等於 CLI 內工作完整成功。
 - 本輪僅 repository / TEMP 操作；未存取、修改遊戲安裝目錄或執行遊戲。
 
@@ -28,6 +30,7 @@
 
 ## 最新驗證與失敗紀錄
 
+- Codex（2026-10-07）：先讀AGENTS/交接/Git，HEAD beca463、起始乾淨，無活躍代理。只讀Ollama api/tags確認laguna/nemotron/gemma/qwen目前可用，未送推論。澄清後剛新增TerrainBlendEditSession.Fork與AiMapPlanPreviewBuilder（独立高度/材質快照），使用者隨即要求先整理順序；停止程式實作，兩檔未接UI、未build/test、未提交，不能沿用528通過宣稱新檔已驗證。保留WIP不清除，roadmap/交接單獨本地提交。
 - Codex（2026-10-07）：AI材質拒絕修正與驗收矩陣已commit `572097e`。TEMP/ArmVisualQA_1c01f5e6b6e84fe490ec6339c257de49 的獨立.NET STA harness以合成fixture、2D模式DrawToBitmap核對main 1440x900/1100x700各tab、AI 880x740/640x580、事件中英560x420，DeviceDpi=96。發現Placement固定54px提示與36px三欄按鈕截字；改提示隨寬度自動換行，按鈕兩欄+整列delete、自動高度，重繪確認中英文最小視窗完整可見。harness初版ScenarioEvent List指定array的CS0029已改collection expression並重跑成功。版面修正後Release build 0警告/0錯誤、完整測試宿主483通過/21略過、modules45通過，共528通過/21略過/0失敗。高DPI/OpenGL/遊戲內仍未驗證。
 - Codex（2026-10-07）：AI材質各區域原共用pending stroke，後續拒絕會CancelStroke撤回先前成功區域但摘要仍計成功。PaintCircle新增可選rollbackStrokeOnFailure（預設維持滑鼠筆畫原行為）；AI設false，拒絕只還原當次區域，整份已接受材質仍一次undo。定向測試modules4項、STA host1項通過；合成fixture驗證拒絕後保留base材質、Texture undo/redo、Height/Collision共用undo、磁碟寫入前不變、Save/reload清dirty/history。XML註解初版4個CS1573已修；完整Release build 0警告/0錯誤，full --no-build test宿主483通過/21略過、modules45通過，共528通過/21略過/0失敗。指南修正歷史分組，新增docs/map-editor-acceptance.md列測試證據與未驗證項；未啟用live環境的提前return測試不算實機證據。
 - Codex 續作（2026-10-07）：發現單兵UnitCount=1存成Count=0，會走s_createObj而非部隊容器；Persistence改依Figure分類保留至少1人。新增STA交易測試：單兵區域目標失敗後重試/持久ID/再存同bytes/重新開圖；nature新增在其他檔已寫後BCI缺失rollback，再試只寫一次並清dirty/history。針對MapEditorSaveTransactionTests共5通過。nature新測試初次失敗是合成template active=0，不是rollback問題，補合法active/type字段後通過；未改LevelObjectStore。
