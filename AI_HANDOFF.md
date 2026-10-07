@@ -30,6 +30,7 @@
 
 ## 最新驗證與失敗紀錄
 
+- Claude（2026-10-07）：真實行程煙霧測試。新增 `Export_synthetic_game_root_for_manual_smoke_runs`（設 ARM_FIXTURE_EXPORT 才匯出合成 root）。`dotnet AgainstRomeModifier.dll --game TEMP/ArmClaudeQA/smoke-root --map ENDL_005`：編輯器視窗開啟、無錯誤對話框、WM_CLOSE 後結束碼 0、無 crash_log。修正前 build（b940330）同流程也正常：Application.Run 主視窗結束時不 Dispose。但 LauncherForm 的 using+ShowDialog 路徑會 Dispose：新增 `Launcher_style_modal_editor_with_3d_closes_and_disposes_without_errors`，換回修正前兩個檔案時重現 InvalidOperationException（使用者會看到「無法啟動地圖編輯器」），修正後通過。full 宿主564/略過21、modules45，共609通過/0失敗。啟動器實際點擊流程未自動化（需遊戲路徑偵測）。
 - Claude（2026-10-07）：完整還原對話框納入 DPI/截圖檢查。150% 說明文字被 TableLayoutPanel 壓在儲存格內截斷（原檢查未抓到：AutoSize 控制項被壓縮時不越界也不重疊）。檢查新增 GetPreferredSize 比對（Label 以實際寬度求高、按鈕比兩向）與 TLP 重疊；以 HEAD 舊版對話框確認能抓到後換回修正。修正：RestoreAllOptionsDialog 改 AutoScaleMode.Dpi＋AutoSize GrowOnly；放置物件對話框按鈕列 AutoSize（固定 44 高壓縮按鈕）。full 宿主562/略過21、modules45，共607通過/0失敗。
 - Claude（2026-10-07）：GL 效能數據加入 opengl 測試（寬鬆門檻：重繪<50ms、筆刷p95<100ms）：RTX 4080 重繪 0.27ms、筆刷中位 1.9ms／p95 11.9ms（1734 事件）。證據 TEMP/ArmClaudeQA/opengl-perf/opengl.json。
 - Claude（2026-10-07）：GL 選取一致性 `Real_opengl_pick_returns_the_tile_drawn_under_the_pointer`：RTX 4080、1084x751，5 格（含起伏地形）畫面像素中心經 TryGetTile 選回同一格，5/5。證據 TEMP/ArmClaudeQA/opengl-pick/pick.txt。

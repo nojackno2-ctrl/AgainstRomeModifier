@@ -151,6 +151,31 @@ public sealed partial class MapEditorSaveTransactionTests
         }, TimeSpan.FromMinutes(2));
     }
 
+    [Fact]
+    public void Launcher_style_modal_editor_with_3d_closes_and_disposes_without_errors()
+    {
+        string map = CreateFixture();
+        RunInSta(() =>
+        {
+            Application.SetUnhandledExceptionMode(UnhandledExceptionMode.ThrowException, threadScope: true);
+            OpenTK.Windowing.Desktop.GLFWProvider.CheckForMainThread = false;
+            bool ready = false;
+            // 與 LauncherForm 相同：using + ShowDialog，關閉後才 Dispose。
+            using (var editor = new MapEditorForm(_root, new GameMapInfo("ENDL_005", map, true, "Modal", "Test")))
+            {
+                editor.StartPosition = FormStartPosition.Manual; editor.Location = new Point(-30000, -30000);
+                editor.Shown += (_, _) => editor.BeginInvoke(() =>
+                {
+                    ready = GetField<Map3DViewControl>(editor, "_view3d").IsReady;
+                    Invoke(editor, "ReturnToMenu"); // 回到地圖選單：與使用者操作相同的關閉路徑
+                });
+                editor.ShowDialog();
+                Assert.True(editor.ReturnToMapMenu);
+            }
+            if (!ready) Assert.NotEqual("1", Environment.GetEnvironmentVariable("ARM_OPENGL_REQUIRED"));
+        }, TimeSpan.FromMinutes(1));
+    }
+
     private static Bitmap Capture(Map3DViewControl view, string output, string name)
     {
         Application.DoEvents();
