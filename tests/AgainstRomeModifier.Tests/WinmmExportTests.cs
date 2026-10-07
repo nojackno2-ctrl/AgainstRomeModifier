@@ -64,6 +64,19 @@ namespace AgainstRomeModifier.Tests
             Assert.Empty(missing);
         }
 
+        /// <summary>The prebuilt proxy embedded into the modifier must be rebuilt whenever the .def changes.</summary>
+        [Fact]
+        public void PrebuiltProxyBinary_ShouldExportAllSystemWinmmExports()
+        {
+            var systemWinmmPath = @"C:\Windows\SysWOW64\winmm.dll";
+            Assert.True(File.Exists(systemWinmmPath), "System winmm.dll not found");
+            var binaryPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../ThirdParty/argm-trace/winmm.dll"));
+            Assert.True(File.Exists(binaryPath), "Prebuilt proxy not found at " + binaryPath);
+            static string Key(ExportInfo exp) => exp.Name == "NONAME" || exp.Name == null ? $"Ordinal{exp.Ordinal}" : exp.Name;
+            var proxy = GetExports(binaryPath).Select(Key).ToHashSet();
+            Assert.Empty(GetExports(systemWinmmPath).Select(Key).Where(key => !proxy.Contains(key)));
+        }
+
         private sealed class ExportInfo
         {
             public int Ordinal { get; set; }
