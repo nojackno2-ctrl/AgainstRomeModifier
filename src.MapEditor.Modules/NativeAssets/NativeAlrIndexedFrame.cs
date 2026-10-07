@@ -19,7 +19,8 @@ internal sealed class NativeAlrIndexedFrame
     /// Decode the row descriptors used by native functions 0x4E49C0 and 0x4E4A60.
     /// Offsets occupy bits 0..19, bit 20 introduces two runs, bits 21..30 specify
     /// leading transparent pixels, and bit 31 makes palette index zero opaque.
-    /// The final descriptor supplies the end offset; unused data may include alignment padding.
+    /// The final descriptor supplies the end offset; data is the native payload
+    /// including its palette prefix and possible alignment padding.
     /// </summary>
     public static NativeAlrIndexedFrame Decode(int width, int height, ReadOnlySpan<uint> rows,
         ReadOnlySpan<byte> data, ReadOnlySpan<uint> palette)

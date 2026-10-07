@@ -18,6 +18,13 @@ game archives, select animation frames or update the renderer. Its current
 evidence is native x86 control flow plus synthetic pixel tests; actual asset
 and scene fidelity remain unverified. See [native scene evidence](reverse-engineering/native-scene-rendering.md).
 
+`NativeAssets/NativeAlrDocument` parses owned v4..v6 indexed container records
+from bytes, preserves shared frames and selects palettes as the native helper
+does. `DecodeFrame` supplies the scanline decoder with the entire frame payload,
+including its palette prefix. Archive I/O, object definitions, animation and
+direction mapping, trailing metadata and scene integration remain with the host
+or future format work.
+
 `Events/ScenarioEventSession` owns event commands, duplication limits, copied
 action/condition lists and the saved baseline. `MapEditorForm.Events.cs` is its
 UI adapter. The existing host's `_events` read interface and baseline setter

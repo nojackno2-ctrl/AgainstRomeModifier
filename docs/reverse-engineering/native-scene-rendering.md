@@ -60,6 +60,28 @@ python tools/re/scan_native_scene.py re_workspace/Against_Rome.exe `
 
 `NativeAlrIndexedFrameTests.cs` 使用非對稱合成行資料驗證逐像素結果、兩段 opacity、palette 高 byte、快照隔離、對齊 padding 與損壞輸入。這是與上述指令相符的核心測試，**不是實際 ALR 素材解碼或遊戲外觀驗證**。完整 container 解析、palette／方向／動畫選取、非 8-bit 分支、真正場景渲染及 UI 接線仍未完成。
 
+## ALRA 容器的 v4–6 indexed 讀取
+
+`NativeAlrDocument.Parse` 現在讀取 v4–6、8-bit 的 header 與 frame table，接 `DecodeFrame` 產生 pixels。這些版本在 native loader 使用相同讀取順序；v4/v5 的 allocation 欄位有後處理，未將其誤用為檔案長度。
+
+```powershell
+python tools/re/scan_native_scene.py re_workspace/Against_Rome.exe `
+  --range 0x4E3AEB:0x4E3DA7 --range 0x4E402B:0x4E4145 `
+  --range 0x4E48F0:0x4E49B4 --output "$env:TEMP/arm-native-alr-container.txt"
+```
+
+header 共有 23 個 32-bit little-endian words：magic、version、unknown、frame count、bits per pixel、unknown、layout columns、layout rows、palette variant count、unknown、5 個 unknown、anchor width／height、4 個 allocation 欄位、2 個 pre-frame 欄位。Unknown 欄位尚未命名為方向／動畫語意。
+
+每個 frame 先讀 signed reference；非負值共享較早的記錄，負值讀新記錄。新記錄依序為 row table 相對 offset、packed X/Y、packed width/height/palette count、pixel byte count、各 variant 的 palette DWORDs、補齊至 4-byte 邊界的 pixel bytes，以及 height+1 個 row descriptors。
+
+- `0x4E4035..0x4E4052` 將 row table 指標設為記錄起點＋12＋stored offset；`0x4E40D4..0x4E4140` 證明 palette／padded pixel bytes 後緊接 row table。
+- `0x4E499F` 輸出的 data base 是**目前 frame 起點＋12**，因此 row descriptors 的 byte offsets 必須包含 palette prefix，不能把前綴剝除後仍使用原 offsets。
+- `0x4E48F7..0x4E4913` 從**第一筆 frame**取 palette，再依 variant index 偏移；選到其他 frame 時不改用該 frame 的本地 palette。Parser 保留共用記錄，不重複複製 payload。
+
+`NativeAlrDocumentTests.cs` 對 v4/v5/v6 合成容器驗證 pixels、palette 變體、不同／缺少本地 palette、直接／間接共用記錄、snapshot 隔離、每個 truncated prefix、錯誤 reference／offset／extent／byte count、明確拒絕不支援的版本與 bit depth。尾端 IFOM metadata 尚未解讀；layout 與 anchor 值只保留原值，未映射物件方向／動畫。
+
+**仍無實際 ALR 樣本驗證**：Parse 成功與合成測試不代表真實素材外觀已正確，也不代表原引擎場景已接入。低版本、非 8-bit、footer、ZIP 資源選取、物件定義關聯與場景 UI 仍需完成或確認。
+
 ## 下一個實作與驗收點
 
 先取得允許分析的原始素材樣本，沿已定位載入器完成一種實際物件的解碼、動畫／方向映射、透明與錨點，對照同物件的原遊戲畫面。未有實際樣本前，不猜測像素編碼或以合成模型替代真實外觀。
