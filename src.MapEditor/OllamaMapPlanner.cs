@@ -14,6 +14,7 @@ internal sealed record AiMaterialOption(string Id, string Name);
 internal sealed class OllamaMapPlanner : IDisposable
 {
     private readonly HttpClient _http;
+    private static readonly SemaphoreSlim InferenceGate = new(1, 1);
 
     public OllamaMapPlanner(string? baseUrl = null, HttpMessageHandler? handler = null)
     {
@@ -43,6 +44,7 @@ internal sealed class OllamaMapPlanner : IDisposable
         {
             ["model"] = model,
             ["stream"] = false,
+            ["think"] = false,
             ["format"] = AiMapPlan.JsonSchema(ids),
             ["options"] = new Dictionary<string, object> { ["temperature"] = 0.4, ["repeat_penalty"] = 1.15, ["num_predict"] = 2048 },
             ["messages"] = new object[]
@@ -51,12 +53,17 @@ internal sealed class OllamaMapPlanner : IDisposable
                 new Dictionary<string, string> { ["role"] = "user", ["content"] = description.Trim() },
             },
         };
-        using HttpResponseMessage response = await _http.PostAsJsonAsync("api/chat", request, cancellationToken);
-        string body = await response.Content.ReadAsStringAsync(cancellationToken);
-        if (!response.IsSuccessStatusCode) throw new HttpRequestException($"Ollama 回應錯誤 {(int)response.StatusCode}：{body}");
-        using JsonDocument document = JsonDocument.Parse(body);
-        string content = document.RootElement.GetProperty("message").GetProperty("content").GetString() ?? "";
-        return (AiMapPlan.Parse(content, ids), content);
+        await InferenceGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            using HttpResponseMessage response = await _http.PostAsJsonAsync("api/chat", request, cancellationToken);
+            string body = await response.Content.ReadAsStringAsync(cancellationToken);
+            if (!response.IsSuccessStatusCode) throw new HttpRequestException($"Ollama 回應錯誤 {(int)response.StatusCode}：{body}");
+            using JsonDocument document = JsonDocument.Parse(body);
+            string content = document.RootElement.GetProperty("message").GetProperty("content").GetString() ?? "";
+            return (AiMapPlan.Parse(content, ids), content);
+        }
+        finally { InferenceGate.Release(); }
     }
 
     internal static string BuildSystemPrompt(IReadOnlyList<AiMaterialOption> materials, float waterLevelSample)
