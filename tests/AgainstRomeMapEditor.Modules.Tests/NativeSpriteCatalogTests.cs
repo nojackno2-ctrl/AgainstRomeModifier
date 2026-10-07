@@ -30,6 +30,33 @@ public sealed class NativeSpriteCatalogTests
         Assert.Equal(front.ArgbPixels, catalog.GetSprite("LanTest", team: 1)!.ArgbPixels);
     }
 
+    [Theory]
+    // Verified in game for 16 rows: 0->14, 45->12, 90->10, 135->8, 180->6.
+    [InlineData(0f, 16, 14)]
+    [InlineData(45f, 16, 12)]
+    [InlineData(90f, 16, 10)]
+    [InlineData(135f, 16, 8)]
+    [InlineData(180f, 16, 6)]
+    [InlineData(315f, 16, 0)]
+    [InlineData(-45f, 16, 0)]
+    [InlineData(360f, 16, 14)]
+    [InlineData(22.5f, 16, 13)]
+    [InlineData(0f, 32, 28)]   // cavalry rows scale the same mapping (unverified in game)
+    [InlineData(90f, 32, 20)]
+    [InlineData(123f, 1, 0)]
+    [InlineData(float.NaN, 16, 0)]
+    public void Scenario_angle_maps_to_direction_row(float degrees, int rows, int expected)
+        => Assert.Equal(expected, NativeSpriteCatalog.DirectionForAngle(degrees, rows));
+
+    [Fact]
+    public void Angle_selects_the_direction_row_of_the_asset()
+    {
+        using var catalog = Catalog();
+        // The fixture has 2 rows: angle 0 maps to row 14*2/16 = 1, angle 180 to row 0.
+        Assert.Same(catalog.GetSprite("FigTest", direction: 1), catalog.GetSprite("FigTest", angleDegrees: 0));
+        Assert.Same(catalog.GetSprite("FigTest", direction: 0), catalog.GetSprite("FigTest", angleDegrees: 180));
+    }
+
     [Fact]
     public void Apt_still_uses_finished_stage_and_cropped_anchor()
     {

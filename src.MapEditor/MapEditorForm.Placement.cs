@@ -290,7 +290,7 @@ internal sealed partial class MapEditorForm
     {
         if (_view3d is null) return;
         string? name = _editMode == EditMode.PlaceObject && _selected?.IsCustom == true ? (_placeTypes.SelectedItem as PlacementTypeItem)?.Type.NameDef : null;
-        _view3d.SetPlacementPreview(name, (int)_placeTeam.Value);
+        _view3d.SetPlacementPreview(name, (int)_placeTeam.Value, (float)_placeAngle.Value);
     }
 
     /// <summary>在點擊的 tile 中心放置一個物件（每次按下只放一個）；高度取自目前地形，世界座標為絕對值。</summary>

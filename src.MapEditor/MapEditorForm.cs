@@ -146,7 +146,7 @@ internal sealed partial class MapEditorForm : Form
     private IReadOnlyList<MapSceneObject> EffectiveSceneObjects()
     {
         IEnumerable<MapSceneObject> placed = _placedObjects.Select((item, index) =>
-            new MapSceneObject(item.Type.NameDef, item.WorldX, item.WorldY, item.WorldZ, item.Team, SdlPlacedObjectsFile.FileName, -5000 - index));
+            new MapSceneObject(item.Type.NameDef, item.WorldX, item.WorldY, item.WorldZ, item.Team, SdlPlacedObjectsFile.FileName, -5000 - index, Angle: item.Angle));
         if (_editMode == EditMode.Nature) placed = placed.Concat(NatureDisplayObjects());
         if (_sceneRemovals.Count == 0 && _sceneAdditions.Count == 0 && _settlementOffsets.Count == 0) return _sceneObjects.Concat(placed).ToArray();
         HashSet<string> removed = _sceneRemovals.Select(item => item.SourceFile.ToUpperInvariant() + "|" + item.ObjectIndex).ToHashSet();
@@ -379,6 +379,7 @@ internal sealed partial class MapEditorForm : Form
         _placeTribe.SelectedIndexChanged += (_, _) => RefreshPlacementTypes();
         _placeTypes.SelectedIndexChanged += (_, _) => { _placeCount.Enabled = (_placeTypes.SelectedItem as PlacementTypeItem)?.Type.Category == SdlObjectCategory.Figure; UpdatePlacementPreview(); };
         _placeTeam.ValueChanged += (_, _) => UpdatePlacementPreview();
+        _placeAngle.ValueChanged += (_, _) => UpdatePlacementPreview();
         _placedList.SelectedIndexChanged += (_, _) => _placedDeleteButton.Enabled = _selected?.IsCustom == true && _placedList.SelectedItems.Count > 0;
         _placedDeleteButton.Click += (_, _) => DeleteSelectedPlacedObjects();
         _resetTerrainButton.Click += (_, _) => ResetTerrain();

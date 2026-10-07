@@ -43,6 +43,7 @@ internal sealed class Map3DViewControl : GLControl
     private bool _spriteTextureDirty;
     private string? _previewName;
     private int _previewTeam;
+    private float _previewAngle;
     private NativeSprite? _previewSprite;
 
     public Map3DViewControl() : base(new GLControlSettings { API = ContextAPI.OpenGL, APIVersion = new Version(3, 3), Profile = ContextProfile.Core, Flags = ContextFlags.ForwardCompatible })
@@ -628,8 +629,8 @@ internal sealed class Map3DViewControl : GLControl
     private void ResolveObjectSprites()
     {
         NativeSpriteCatalog? catalog = _spriteCatalog;
-        _objectSprites = catalog is null ? Array.Empty<NativeSprite?>() : _objects.Select(item => catalog.GetSprite(item.Name, item.Team)).ToArray();
-        _previewSprite = catalog is null || _previewName is null ? null : catalog.GetSprite(_previewName, _previewTeam);
+        _objectSprites = catalog is null ? Array.Empty<NativeSprite?>() : _objects.Select(item => catalog.GetSprite(item.Name, item.Team, angleDegrees: item.Angle)).ToArray();
+        _previewSprite = catalog is null || _previewName is null ? null : catalog.GetSprite(_previewName, _previewTeam, angleDegrees: _previewAngle);
         var distinct = new HashSet<NativeSprite>(_objectSprites.OfType<NativeSprite>(), ReferenceEqualityComparer.Instance);
         if (_previewSprite is not null) distinct.Add(_previewSprite);
         if (distinct.Count == 0) { _spriteAtlas = null; return; }
@@ -642,10 +643,10 @@ internal sealed class Map3DViewControl : GLControl
     /// Ghost of the object about to be placed, drawn translucent at the hovered tile centre
     /// (where placement puts it). Null clears the preview.
     /// </summary>
-    public void SetPlacementPreview(string? nameDef, int team)
+    public void SetPlacementPreview(string? nameDef, int team, float angleDegrees = 0)
     {
-        if (_previewName == nameDef && _previewTeam == team) return;
-        _previewName = string.IsNullOrWhiteSpace(nameDef) ? null : nameDef; _previewTeam = team;
+        if (_previewName == nameDef && _previewTeam == team && _previewAngle == angleDegrees) return;
+        _previewName = string.IsNullOrWhiteSpace(nameDef) ? null : nameDef; _previewTeam = team; _previewAngle = angleDegrees;
         ResolveObjectSprites();
         Invalidate();
     }

@@ -412,7 +412,7 @@ internal sealed class MapCanvasControl : Control
             float x = bounds.Left + item.WorldX / (SdlSceneCatalog.WorldUnitsPerMapPixel * SdlSceneCatalog.MapPixelSize) * bounds.Width;
             float y = bounds.Top + item.WorldZ / (SdlSceneCatalog.WorldUnitsPerMapPixel * SdlSceneCatalog.MapPixelSize) * bounds.Height;
 
-            NativeSprite? sprite = _spriteCatalog?.GetSprite(item.Name, item.Team);
+            NativeSprite? sprite = _spriteCatalog?.GetSprite(item.Name, item.Team, angleDegrees: item.Angle);
             if (sprite is not null && sprite.Width > 0 && sprite.Height > 0 && maxBox > 1f)
             {
                 Bitmap bitmap = GetOrCreateSpriteBitmap(sprite);

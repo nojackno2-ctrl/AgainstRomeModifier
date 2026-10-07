@@ -82,8 +82,25 @@ internal sealed class NativeSpriteCatalog : IDisposable
     /// </summary>
     public const int DefaultDirection = 14;
 
-    /// <summary>Still sprite for a map object name; null when the object has no decodable native asset.</summary>
-    public NativeSprite? GetSprite(string objectName, int team = 0, int direction = DefaultDirection)
+    /// <summary>
+    /// Direction row for a scenario angle in degrees. In game (ENDL_005, 2026-10-07) single soldiers placed
+    /// with angles 0, 45, 90, 135 and 180 showed gerinf01 rows 14, 12, 10, 8 and 6 (NCC 0.96-0.99): rows run
+    /// clockwise against the angle, one 16-row step per 22.5 degrees. Assets with another row count scale the
+    /// same mapping; that scaling is not verified in game.
+    /// </summary>
+    public static int DirectionForAngle(float degrees, int rows)
+    {
+        if (rows <= 1 || !float.IsFinite(degrees)) return 0;
+        int step = (int)MathF.Round(degrees / 360f * rows);
+        int row = DefaultDirection * rows / 16 - step;
+        return ((row % rows) + rows) % rows;
+    }
+
+    /// <summary>
+    /// Still sprite for a map object name; null when the object has no decodable native asset. A non-null
+    /// <paramref name="angleDegrees"/> selects the direction row via <see cref="DirectionForAngle"/>.
+    /// </summary>
+    public NativeSprite? GetSprite(string objectName, int team = 0, int direction = DefaultDirection, float? angleDegrees = null)
     {
         if (!TryGetDefinition(objectName, out NativeSpriteDefinition? definition)) return null;
         lock (_gate)
@@ -101,7 +118,7 @@ internal sealed class NativeSpriteCatalog : IDisposable
                 // palty 1 objects carry per-team palette variants; others use the first palette.
                 int variant = definition.PaletteType == 1 ? Math.Clamp(team, 0, document.PaletteVariantCount - 1) : 0;
                 int directions = (int)Math.Max(1, document.LayoutRows);
-                int dir = ((direction % directions) + directions) % directions;
+                int dir = angleDegrees is { } angle ? DirectionForAngle(angle, directions) : ((direction % directions) + directions) % directions;
                 string assetName = overlayDocument is null ? alrName : alrName + "+" + overlayName;
                 var key = (assetName, variant, dir);
                 if (!_sprites.TryGetValue(key, out NativeSprite? sprite))

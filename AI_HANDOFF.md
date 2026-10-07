@@ -1,5 +1,11 @@
 # AI Handoff - Live Project Memory
 
+## 單位角度→方向列（2026-10-07 Claude；遊戲內驗證）
+
+- 備份 MAPS/ENDL_005（TEMP/ArmGameBackup_20261007_215746，55 檔雜湊）→ `InGameAcceptanceScenarioTests` 新案例 `angles`（ARM_GAME_PATH／ARM_INGAME_MAP=ENDL_005／ARM_INGAME_SCENARIO=angles）以真正 MapEditorForm 存入 8 名 GER_INF01 單兵，角度 0..315 → 遊戲內下半身樣板比對（旗幟遮上半身）：0/45/90/135/180° = 方向列 14/12/10/8/6（NCC 0.96–0.99）。225° 以後被 HUD 擋住未測。之後關閉遊戲、以備份覆蓋還原，雜湊 55 檔完全相同。
+- `NativeSpriteCatalog.DirectionForAngle`：row = 14·rows/16 − round(angle/360·rows) mod rows；`GetSprite(..., angleDegrees)`。放置物件傳 Angle；3D、2D、放置預覽（跟隨 _placeAngle）皆使用。SDL 物件 angle 單位未驗證（原版 ENDL_000/005 全為 0，結果同預設）；32 方向騎兵的比例換算未驗證。
+- 驗證：build 0警告/0錯誤；全測試 宿主622/22略過、modules137，0失敗。
+
 ## 子代理協作輪（2026-10-07 Claude 統籌；Codex／Agy／本地 AI）
 
 - Codex：3D 地形乘上 `vertex.bmp` 頂點色（同 boden 列向、texel 中心、白色備援、context 重建），測試 `MapEditorVertexLightTests`。Claude 審查通過。
