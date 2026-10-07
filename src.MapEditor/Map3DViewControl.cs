@@ -1,5 +1,6 @@
 using System.Drawing.Imaging;
 using System.Numerics;
+using AgainstRomeMapEditor.NativeAssets;
 using AgainstRomeModifier.Maps;
 using OpenTK.GLControl;
 using OpenTK.Graphics.OpenGL4;
@@ -12,6 +13,7 @@ internal sealed class Map3DViewControl : GLControl
 {
     private readonly EditorCamera _camera = new();
     private readonly HashSet<int> _paintedInDrag = new();
+    private int _lastPaintedTile = -1;
     private string[]? _textures;
     private TerrainHeightField? _heights;
     private FloorTextureLibrary? _library;
@@ -22,11 +24,27 @@ internal sealed class Map3DViewControl : GLControl
     private int _hoverX = -1, _hoverY = -1;
     private float _waterLevel, _heightMapStep;
     private Color _waterSourceColor = Color.SteelBlue;
-    private bool _initialized, _painting, _movingSceneObject, _panning, _rotating, _rightClick;
-    private Point _lastPointer, _rightStart;
+    private bool _initialized, _painting, _movingSceneObject, _pickedPendingDrag, _panning, _rotating, _rightClick;
+    private Point _lastPointer, _rightStart, _pickStart;
+    private MapSceneObject? _grabObject;
+    private System.Numerics.Vector3 _grabGround;
+    private bool _hasGrabGround;
     private int _terrainProgram, _colorProgram, _vao, _vbo, _ebo, _atlasTexture, _waterVao, _waterVbo, _markerVao, _markerVbo, _cursorVao, _cursorVbo;
     private int _cursorVertexCount;
     private bool _reinitializeOnHandleCreated;
+    private byte[]? _collisionMask;
+    private int _collisionSize, _collisionTexture;
+    private byte[] _vertexLight = [255, 255, 255];
+    private int _vertexLightWidth = 1, _vertexLightHeight = 1, _vertexLightTexture;
+    private NativeSpriteCatalog? _spriteCatalog;
+    private NativeSpriteAtlas? _spriteAtlas;
+    private NativeSprite?[] _objectSprites = Array.Empty<NativeSprite?>();
+    private int _spriteProgram, _spriteVao, _spriteVbo, _spriteTexture;
+    private bool _spriteTextureDirty;
+    private string? _previewName;
+    private int _previewTeam;
+    private float _previewAngle;
+    private NativeSprite? _previewSprite;
 
     public Map3DViewControl() : base(new GLControlSettings { API = ContextAPI.OpenGL, APIVersion = new Version(3, 3), Profile = ContextProfile.Core, Flags = ContextFlags.ForwardCompatible })
     {
@@ -35,9 +53,20 @@ internal sealed class Map3DViewControl : GLControl
         Cursor = Cursors.Cross;
     }
 
+    /// <summary>Original ALR/APT still sprites for scene objects; null keeps marker points. Borrowed, not disposed.</summary>
+    public NativeSpriteCatalog? SpriteCatalog
+    {
+        get => _spriteCatalog;
+        set { if (ReferenceEquals(_spriteCatalog, value)) return; _spriteCatalog = value; ResolveObjectSprites(); Invalidate(); }
+    }
+
+    /// <summary>Number of scene objects currently drawn with an original game sprite.</summary>
+    internal int SpriteObjectCount => Enumerable.Range(0, _objectSprites.Length).Count(HasSprite);
+
     public string? BrushTexture { get; set; }
     public int BrushSize { get; set; } = 1;
     public bool EditingEnabled { get; set; }
+    public bool ContinuousPaint { get; set; }
     public bool SceneMoveEnabled { get; set; }
     public bool ShowGrid { get; set; } = true;
     public bool ShowObjects { get; set; } = true;
@@ -50,6 +79,20 @@ internal sealed class Map3DViewControl : GLControl
     public event EventHandler<TextureSampleEventArgs>? TextureSampled;
     public event EventHandler? StrokeEnded;
     public event EventHandler<SceneObjectMoveEventArgs>? SceneObjectMoved;
+    /// <summary>Left click on a visible object while <see cref="ScenePickEnabled"/>; handlers may enable moving it.</summary>
+    public event EventHandler<SceneObjectPickEventArgs>? SceneObjectPicked;
+    public bool ScenePickEnabled { get; set; }
+
+    /// <summary>Index into the current scene objects of the object drawn under a client point, or -1.</summary>
+    internal int PickSceneObject(Point point)
+    {
+        if (!ShowObjects || _heights is null || ClientSize.Width <= 0 || ClientSize.Height <= 0) return -1;
+        Matrix4x4 projection = _camera.GetProjectionMatrix(ClientSize.Width / (float)ClientSize.Height);
+        NativeSpriteAtlas? atlas = _spriteAtlas;
+        return SceneObjectRenderer.PickObject(_objects, _objectSprites, sprite => atlas?.TryGetUv(sprite, out _) == true, _heights,
+            _camera.GetViewMatrix(), projection, new System.Numerics.Vector2(ClientSize.Width, ClientSize.Height), new System.Numerics.Vector2(point.X, point.Y),
+            markerVisible: MarkerVisible);
+    }
 
     // 3D 檢視不繪製「與已儲存基準的差異」高亮（那是 2D MapCanvasControl 的職責），
     // 因此這裡不需要 baselineTextures。
@@ -62,12 +105,32 @@ internal sealed class Map3DViewControl : GLControl
         if (LastFailureReason is not null) return false;
         using var bitmap = new Bitmap(heightSource);
         byte[] samples = ReadSamples(bitmap);
+        _vertexLight = [255, 255, 255]; _vertexLightWidth = _vertexLightHeight = 1;
+        string vertexSource = Path.Combine(mapDirectory, "vertex.bmp");
+        if (File.Exists(vertexSource))
+        {
+            using var vertexBitmap = new Bitmap(vertexSource);
+            if (vertexBitmap.Size == bitmap.Size)
+            {
+                int[] pixels = BitmapPixels.Read(vertexBitmap);
+                _vertexLight = new byte[pixels.Length * 3];
+                // Like ReadSamples/TerrainHeightField, bitmap row 0 maps to tile Y (map Z) 0; do not flip rows.
+                for (int i = 0; i < pixels.Length; i++)
+                {
+                    _vertexLight[i * 3] = (byte)((pixels[i] >> 16) & 0xff);
+                    _vertexLight[i * 3 + 1] = (byte)((pixels[i] >> 8) & 0xff);
+                    _vertexLight[i * 3 + 2] = (byte)(pixels[i] & 0xff);
+                }
+                _vertexLightWidth = vertexBitmap.Width; _vertexLightHeight = vertexBitmap.Height;
+            }
+        }
         // A 257x257 source covers the complete 64x64 tile map (four height samples per tile).
         _heights = new TerrainHeightField(bitmap.Width, bitmap.Height, samples, tileWidth: dimension, tileHeight: dimension);
         _dimension = dimension; _textures = textures.ToArray(); _objects = sceneObjects; _waterLevel = waterLevel; _heightMapStep = heightMapStep; _waterSourceColor = waterColor;
         _atlas?.Dispose(); _atlas = FloorTextureAtlas.Create(_textures, _library);
+        ResolveObjectSprites();
         BuildMesh();
-        if (_initialized) UploadResources();
+        if (_initialized) { UploadResources(); UploadVertexLight(); }
         Invalidate();
         return true;
     }
@@ -119,6 +182,7 @@ internal sealed class Map3DViewControl : GLControl
 
     private void InitializeGl()
     {
+        if (_initialized) return;
         try
         {
             MakeCurrent();
@@ -127,9 +191,15 @@ internal sealed class Map3DViewControl : GLControl
             GL.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
             _terrainProgram = CreateProgram(TerrainVertexShader, TerrainFragmentShader);
             _colorProgram = CreateProgram(ColorVertexShader, ColorFragmentShader);
+            _spriteProgram = CreateProgram(SpriteVertexShader, SpriteFragmentShader);
+            _spriteVao = GL.GenVertexArray(); _spriteVbo = GL.GenBuffer(); _spriteTexture = GL.GenTexture(); _spriteTextureDirty = true;
             _vao = GL.GenVertexArray(); _vbo = GL.GenBuffer(); _ebo = GL.GenBuffer(); _waterVao = GL.GenVertexArray(); _waterVbo = GL.GenBuffer(); _markerVao = GL.GenVertexArray(); _markerVbo = GL.GenBuffer(); _cursorVao = GL.GenVertexArray(); _cursorVbo = GL.GenBuffer();
             _initialized = true;
             LastFailureReason = null;
+            _collisionTexture = GL.GenTexture();
+            UploadCollisionMask();
+            _vertexLightTexture = GL.GenTexture();
+            UploadVertexLight();
             if (_mesh is not null) UploadResources();
         }
         catch (Exception ex)
@@ -141,6 +211,58 @@ internal sealed class Map3DViewControl : GLControl
     }
 
     public event EventHandler<Exception>? InitializationFailed;
+
+    /// <summary>Recreate a failed context while retaining CPU scene, camera and editing overlays.</summary>
+    internal bool RetryInitialization()
+    {
+        if (_initialized) return true;
+        if (!IsHandleCreated || IsDisposed || Disposing) return false;
+        try
+        {
+            RecreateHandle();
+            if (!_initialized) InitializeGl();
+            return _initialized;
+        }
+        catch (Exception ex)
+        {
+            LastFailureReason = $"OpenGL 3.3 重試失敗：{ex.GetType().Name}: {ex.Message}";
+            InitializationFailed?.Invoke(this, ex);
+            return false;
+        }
+    }
+
+    public void SetCollisionOverlay(int size, IReadOnlyList<byte>? collision)
+    {
+        _collisionMask = size > 0 && collision is not null && collision.Count == (long)size * size ? collision.ToArray() : null;
+        _collisionSize = _collisionMask is null ? 0 : size;
+        if (_initialized) { MakeCurrent(); UploadCollisionMask(); }
+        Invalidate();
+    }
+
+    private void UploadCollisionMask()
+    {
+        GL.ActiveTexture(TextureUnit.Texture1); GL.BindTexture(TextureTarget.Texture2D, _collisionTexture);
+        GL.PixelStore(PixelStoreParameter.UnpackAlignment, 1);
+        int size = _collisionSize > 0 ? _collisionSize : 1;
+        GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.R8, size, size, 0, OpenTK.Graphics.OpenGL4.PixelFormat.Red, PixelType.UnsignedByte, _collisionMask ?? new byte[1]);
+        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Nearest);
+        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Nearest);
+        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.ClampToEdge);
+        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.ClampToEdge);
+        GL.ActiveTexture(TextureUnit.Texture0);
+    }
+
+    private void UploadVertexLight()
+    {
+        GL.ActiveTexture(TextureUnit.Texture2); GL.BindTexture(TextureTarget.Texture2D, _vertexLightTexture);
+        GL.PixelStore(PixelStoreParameter.UnpackAlignment, 1);
+        GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgb8, _vertexLightWidth, _vertexLightHeight, 0, OpenTK.Graphics.OpenGL4.PixelFormat.Rgb, PixelType.UnsignedByte, _vertexLight);
+        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Linear);
+        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
+        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.ClampToEdge);
+        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.ClampToEdge);
+        GL.ActiveTexture(TextureUnit.Texture0);
+    }
 
     public void SetReliefScale(float scale)
     {
@@ -219,11 +341,12 @@ internal sealed class Map3DViewControl : GLControl
     private void RenderScene(int width, int height)
     {
         GL.Viewport(0, 0, width, height); GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
-        Matrix4 matrix = ToOpenTk(_camera.GetViewMatrix() * _camera.GetProjectionMatrix(width / (float)Math.Max(1, height)));
+        Matrix4x4 view = _camera.GetViewMatrix(), projection = _camera.GetProjectionMatrix(width / (float)Math.Max(1, height));
+        Matrix4 matrix = ToOpenTk(view * projection);
         DrawTerrain(matrix);
         if (ShowGrid) DrawGrid(matrix);
         DrawWater(matrix);
-        if (ShowObjects) DrawMarkers(matrix);
+        if (ShowObjects) { DrawMarkers(matrix); DrawSprites(ToOpenTk(view), ToOpenTk(projection)); }
         DrawBrushCursor(matrix);
     }
 
@@ -255,8 +378,16 @@ internal sealed class Map3DViewControl : GLControl
         if (e.Button == MouseButtons.Right) { _rightClick = true; _rightStart = e.Location; return; }
         if (e.Button == MouseButtons.Left)
         {
-            if (SceneMoveEnabled) _movingSceneObject = TryMoveSceneObject(e.Location, completed: false);
-            else { _painting = true; _paintedInDrag.Clear(); TryPaint(e.Location); }
+            if (ScenePickEnabled && PickSceneObject(e.Location) is int picked and >= 0)
+            {
+                // Selecting a visible object starts dragging it once the handler enables moving.
+                SceneObjectPicked?.Invoke(this, new SceneObjectPickEventArgs(_objects[picked]));
+                _pickedPendingDrag = SceneMoveEnabled; _pickStart = e.Location; // a plain click only selects; dragging moves
+                _grabObject = _objects[picked];
+                _hasGrabGround = TryGetGroundPoint(e.Location, out _grabGround);
+            }
+            else if (SceneMoveEnabled) _movingSceneObject = TryMoveSceneObject(e.Location, completed: false);
+            else { _painting = true; _paintedInDrag.Clear(); _lastPaintedTile = -1; TryPaint(e.Location); }
         }
     }
 
@@ -266,7 +397,8 @@ internal sealed class Map3DViewControl : GLControl
         Point delta = new(e.X - _lastPointer.X, e.Y - _lastPointer.Y);
         if (_panning && e.Button == MouseButtons.Middle) { _camera.Pan(-delta.X * .08f, delta.Y * .08f); Invalidate(); }
         else if (_rightClick && e.Button == MouseButtons.Right && Math.Abs(e.X - _rightStart.X) + Math.Abs(e.Y - _rightStart.Y) >= 4) { _rotating = true; _camera.Rotate(delta.X * .35f, -delta.Y * .35f); Invalidate(); }
-        else if (_movingSceneObject && e.Button == MouseButtons.Left) TryMoveSceneObject(e.Location, completed: false);
+        else if (_pickedPendingDrag && e.Button == MouseButtons.Left && Math.Abs(e.X - _pickStart.X) + Math.Abs(e.Y - _pickStart.Y) >= 4) { _pickedPendingDrag = false; _movingSceneObject = MoveGrabbedOrPointed(e.Location, completed: false); }
+        else if (_movingSceneObject && e.Button == MouseButtons.Left) MoveGrabbedOrPointed(e.Location, completed: false);
         else if (_painting && e.Button == MouseButtons.Left) TryPaint(e.Location);
         if (TryGetTile(e.Location, out int x, out int y))
         {
@@ -290,8 +422,9 @@ internal sealed class Map3DViewControl : GLControl
         if (e.Button == MouseButtons.Right && _rightClick && !_rotating && TryGetTile(e.Location, out int x, out int y) && _textures is not null)
             TextureSampled?.Invoke(this, new TextureSampleEventArgs(x, y, _textures[y * _dimension + x]));
         bool wasPainting = _painting;
-        if (_movingSceneObject && e.Button == MouseButtons.Left) TryMoveSceneObject(e.Location, completed: true);
-        _painting = _movingSceneObject = _panning = _rotating = _rightClick = false; _paintedInDrag.Clear();
+        if (_movingSceneObject && e.Button == MouseButtons.Left) MoveGrabbedOrPointed(e.Location, completed: true);
+        _grabObject = null;
+        _painting = _movingSceneObject = _pickedPendingDrag = _panning = _rotating = _rightClick = false; _paintedInDrag.Clear(); _lastPaintedTile = -1;
         if (wasPainting) StrokeEnded?.Invoke(this, EventArgs.Empty);
     }
 
@@ -306,11 +439,38 @@ internal sealed class Map3DViewControl : GLControl
     public void UpdateSceneObjects(IReadOnlyList<MapSceneObject> sceneObjects)
     {
         _objects = sceneObjects;
+        ResolveObjectSprites();
         if (_initialized && _heights is not null)
         {
             MakeCurrent();
             UploadColoredGeometry(_markerVao, _markerVbo, SceneObjectRenderer.BuildMarkerPoints(_objects, _heights));
         }
+        Invalidate();
+    }
+
+    protected override bool IsInputKey(Keys keyData)
+        => (keyData & Keys.KeyCode) is Keys.Left or Keys.Right or Keys.Up or Keys.Down || base.IsInputKey(keyData);
+
+    /// <summary>
+    /// Game-like keyboard camera: arrows scroll the view in screen directions (a tenth of the visible
+    /// height per press), PageUp/PageDown zoom and Home restores the game's 1:1 pixel scale.
+    /// </summary>
+    protected override void OnKeyDown(KeyEventArgs e)
+    {
+        base.OnKeyDown(e);
+        float step = _camera.Distance * .1f;
+        switch (e.KeyCode)
+        {
+            case Keys.Left: _camera.Pan(-step, 0); break;
+            case Keys.Right: _camera.Pan(step, 0); break;
+            case Keys.Up: _camera.Pan(0, -step); break;
+            case Keys.Down: _camera.Pan(0, step); break;
+            case Keys.PageUp: _camera.Zoom(.84f); break;
+            case Keys.PageDown: _camera.Zoom(1.19f); break;
+            case Keys.Home: _camera.ZoomToGameScale(Math.Max(1, ClientSize.Height)); break;
+            default: return;
+        }
+        e.Handled = true;
         Invalidate();
     }
 
@@ -320,8 +480,34 @@ internal sealed class Map3DViewControl : GLControl
     {
         if (!EditingEnabled || string.IsNullOrWhiteSpace(BrushTexture) || !TryGetTile(point, out int x, out int y) || _textures is null) return;
         int offset = y * _dimension + x;
-        if (!_paintedInDrag.Add(offset)) return;
+        bool firstVisit = _paintedInDrag.Add(offset);
+        if (ContinuousPaint ? _lastPaintedTile == offset : !firstVisit) return;
+        _lastPaintedTile = offset;
         TexturePainted?.Invoke(this, new TexturePaintEventArgs(x, y, _textures[offset], BrushTexture));
+    }
+
+    /// <summary>
+    /// A picked object follows the pointer by the ground distance dragged (keeping the grab offset),
+    /// snapped to tile centres like placement; otherwise the selected object jumps to the pointed tile.
+    /// </summary>
+    private bool MoveGrabbedOrPointed(Point point, bool completed)
+    {
+        if (_grabObject is null || !_hasGrabGround) return TryMoveSceneObject(point, completed);
+        if (!EditingEnabled || !SceneMoveEnabled || !TryGetGroundPoint(point, out System.Numerics.Vector3 ground)) return false;
+        float worldUnitsPerTile = SdlSceneCatalog.WorldUnitsPerMapPixel * (SdlSceneCatalog.MapPixelSize / (float)_dimension);
+        float tileX = _grabObject.WorldX / worldUnitsPerTile + ground.X - _grabGround.X;
+        float tileZ = _grabObject.WorldZ / worldUnitsPerTile + ground.Z - _grabGround.Z;
+        tileX = Math.Clamp(MathF.Floor(tileX), 0, _dimension - 1) + .5f;
+        tileZ = Math.Clamp(MathF.Floor(tileZ), 0, _dimension - 1) + .5f;
+        SceneObjectMoved?.Invoke(this, new SceneObjectMoveEventArgs(tileX * worldUnitsPerTile, tileZ * worldUnitsPerTile, completed));
+        return true;
+    }
+
+    private bool TryGetGroundPoint(Point point, out System.Numerics.Vector3 ground)
+    {
+        ground = default;
+        if (_heights is null || ClientSize.Width <= 0 || ClientSize.Height <= 0) return false;
+        return TerrainRayPicker.TryPickPoint(_heights, _camera.CreateRay(point.X, point.Y, ClientSize.Width, ClientSize.Height), out ground);
     }
 
     private bool TryMoveSceneObject(Point point, bool completed)
@@ -400,6 +586,11 @@ internal sealed class Map3DViewControl : GLControl
     {
         GL.UseProgram(_terrainProgram); GL.UniformMatrix4(GL.GetUniformLocation(_terrainProgram, "uMvp"), false, ref matrix); var light = new OpenTK.Mathematics.Vector3(.4f, .85f, .3f); GL.Uniform3(GL.GetUniformLocation(_terrainProgram, "uLight"), ref light);
         GL.ActiveTexture(TextureUnit.Texture0); GL.BindTexture(TextureTarget.Texture2D, _atlasTexture); GL.Uniform1(GL.GetUniformLocation(_terrainProgram, "uAtlas"), 0);
+        GL.Uniform1(GL.GetUniformLocation(_terrainProgram, "uDimension"), (float)_dimension);
+        GL.Uniform1(GL.GetUniformLocation(_terrainProgram, "uShowCollision"), _collisionMask is null ? 0 : 1);
+        GL.ActiveTexture(TextureUnit.Texture1); GL.BindTexture(TextureTarget.Texture2D, _collisionTexture); GL.Uniform1(GL.GetUniformLocation(_terrainProgram, "uCollision"), 1);
+        GL.ActiveTexture(TextureUnit.Texture2); GL.BindTexture(TextureTarget.Texture2D, _vertexLightTexture); GL.Uniform1(GL.GetUniformLocation(_terrainProgram, "uVertexLight"), 2);
+        GL.ActiveTexture(TextureUnit.Texture0);
         GL.BindVertexArray(_vao); GL.DrawElements(PrimitiveType.Triangles, _mesh!.Indices.Length, DrawElementsType.UnsignedInt, 0);
     }
 
@@ -412,7 +603,99 @@ internal sealed class Map3DViewControl : GLControl
     private void DrawWater(Matrix4 matrix) { DrawColorGeometry(_waterVao, PrimitiveType.TriangleFan, 4, matrix, _waterColor, 1); }
     private void DrawMarkers(Matrix4 matrix)
     {
-        for (int index = 0; index < _objects.Count; index++) DrawColorGeometry(_markerVao, PrimitiveType.Points, 1, matrix, TeamColor(_objects[index].Team), 10, index);
+        for (int index = 0; index < _objects.Count; index++)
+        {
+            if (HasSprite(index)) continue; // drawn with its original game sprite
+            MapSceneObject item = _objects[index];
+            if (!MarkerVisible(item)) continue; // map DATA objects without a sprite are invisible in game
+            if (IsLevelDataObject(item)) // script marks: a small editor-only hint
+            {
+                DrawColorGeometry(_markerVao, PrimitiveType.Points, 1, matrix, new System.Numerics.Vector4(.2f, .85f, .95f, 1), 5, index);
+                continue;
+            }
+            DrawColorGeometry(_markerVao, PrimitiveType.Points, 1, matrix, TeamColor(item.Team), 10, index);
+        }
+    }
+
+    /// <summary>Whether an object without a sprite gets a marker (and is pickable): not invisible map DATA objects.</summary>
+    internal static bool MarkerVisible(MapSceneObject item) => !IsLevelDataObject(item) || item.Name.StartsWith("Skriptmark", StringComparison.OrdinalIgnoreCase);
+
+    internal static bool IsLevelDataObject(MapSceneObject item) => item.SourceFile.Equals("DATA/objects.dat", StringComparison.OrdinalIgnoreCase);
+
+    private bool HasSprite(int index)
+        => _spriteAtlas is not null && index < _objectSprites.Length && _objectSprites[index] is { } sprite && _spriteAtlas.TryGetUv(sprite, out _);
+
+    /// <summary>Look up each object's sprite and rebuild the atlas only when the distinct sprite set changes.</summary>
+    private void ResolveObjectSprites()
+    {
+        NativeSpriteCatalog? catalog = _spriteCatalog;
+        _objectSprites = catalog is null ? Array.Empty<NativeSprite?>() : _objects.Select(item => catalog.GetSprite(item.Name, item.Team, angleDegrees: item.Angle)).ToArray();
+        _previewSprite = catalog is null || _previewName is null ? null : catalog.GetSprite(_previewName, _previewTeam, angleDegrees: _previewAngle);
+        var distinct = new HashSet<NativeSprite>(_objectSprites.OfType<NativeSprite>(), ReferenceEqualityComparer.Instance);
+        if (_previewSprite is not null) distinct.Add(_previewSprite);
+        if (distinct.Count == 0) { _spriteAtlas = null; return; }
+        if (_spriteAtlas is not null && distinct.Count == _spriteAtlas.Count && distinct.All(sprite => _spriteAtlas.TryGetUv(sprite, out _))) return;
+        _spriteAtlas = NativeSpriteAtlas.Pack(distinct);
+        _spriteTextureDirty = true;
+    }
+
+    /// <summary>
+    /// Ghost of the object about to be placed, drawn translucent at the hovered tile centre
+    /// (where placement puts it). Null clears the preview.
+    /// </summary>
+    public void SetPlacementPreview(string? nameDef, int team, float angleDegrees = 0)
+    {
+        if (_previewName == nameDef && _previewTeam == team && _previewAngle == angleDegrees) return;
+        _previewName = string.IsNullOrWhiteSpace(nameDef) ? null : nameDef; _previewTeam = team; _previewAngle = angleDegrees;
+        ResolveObjectSprites();
+        Invalidate();
+    }
+
+    internal bool HasPlacementPreview => _previewSprite is not null && _spriteAtlas?.TryGetUv(_previewSprite, out _) == true;
+
+    private void DrawSprites(Matrix4 view, Matrix4 projection)
+    {
+        if (_spriteAtlas is null || _heights is null || _spriteProgram == 0) return;
+        if (_spriteTextureDirty)
+        {
+            GL.BindTexture(TextureTarget.Texture2D, _spriteTexture);
+            GL.PixelStore(PixelStoreParameter.UnpackAlignment, 4);
+            GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba, _spriteAtlas.Width, _spriteAtlas.Height, 0, OpenTK.Graphics.OpenGL4.PixelFormat.Bgra, PixelType.UnsignedByte, _spriteAtlas.ArgbPixels);
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Linear);
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.ClampToEdge);
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.ClampToEdge);
+            _spriteTextureDirty = false;
+        }
+        GL.UseProgram(_spriteProgram);
+        GL.UniformMatrix4(GL.GetUniformLocation(_spriteProgram, "uView"), false, ref view);
+        GL.UniformMatrix4(GL.GetUniformLocation(_spriteProgram, "uProjection"), false, ref projection);
+        GL.ActiveTexture(TextureUnit.Texture0); GL.BindTexture(TextureTarget.Texture2D, _spriteTexture);
+        GL.Uniform1(GL.GetUniformLocation(_spriteProgram, "uSprites"), 0);
+        // Pre-rendered isometric art is painted far-to-near like the original 2.5D renderer;
+        // depth testing against the terrain would clip the parts drawn below the ground anchor.
+        GL.Disable(EnableCap.DepthTest); GL.Disable(EnableCap.CullFace);
+        DrawSpriteBatch(SceneObjectRenderer.BuildSpriteVertices(_objects, _objectSprites, _spriteAtlas, _heights, _camera.GetViewMatrix()), 1f);
+        if (EditingEnabled && _previewSprite is not null && _hoverX >= 0 && _hoverY >= 0)
+        {
+            const float tileWorld = SdlSceneCatalog.WorldUnitsPerMapPixel * 4f;
+            var ghost = new MapSceneObject(_previewName!, (_hoverX + .5f) * tileWorld, 0, (_hoverY + .5f) * tileWorld, _previewTeam, "");
+            DrawSpriteBatch(SceneObjectRenderer.BuildSpriteVertices([ghost], [_previewSprite], _spriteAtlas, _heights, _camera.GetViewMatrix()), .6f);
+        }
+        GL.Enable(EnableCap.DepthTest); GL.Enable(EnableCap.CullFace);
+    }
+
+    private void DrawSpriteBatch(float[] vertices, float alpha)
+    {
+        if (vertices.Length == 0) return;
+        GL.BindVertexArray(_spriteVao); GL.BindBuffer(BufferTarget.ArrayBuffer, _spriteVbo);
+        GL.BufferData(BufferTarget.ArrayBuffer, vertices.Length * sizeof(float), vertices, BufferUsageHint.StreamDraw);
+        int stride = SceneObjectRenderer.FloatsPerSpriteVertex * sizeof(float);
+        GL.EnableVertexAttribArray(0); GL.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, stride, 0);
+        GL.EnableVertexAttribArray(1); GL.VertexAttribPointer(1, 2, VertexAttribPointerType.Float, false, stride, 3 * sizeof(float));
+        GL.EnableVertexAttribArray(2); GL.VertexAttribPointer(2, 2, VertexAttribPointerType.Float, false, stride, 5 * sizeof(float));
+        GL.Uniform1(GL.GetUniformLocation(_spriteProgram, "uAlpha"), alpha);
+        GL.DrawArrays(PrimitiveType.Triangles, 0, vertices.Length / SceneObjectRenderer.FloatsPerSpriteVertex);
     }
     private void DrawColorGeometry(int vao, PrimitiveType primitive, int count, Matrix4 matrix, System.Numerics.Vector4 color, float size, int first = 0)
     {
@@ -491,6 +774,10 @@ internal sealed class Map3DViewControl : GLControl
     {
         bool wasInitialized = _initialized;
         ReleaseGlResources(); // 在 GLControl 銷毀原生視窗與 context 之前執行
+        // 舊 context 的 ID 不能用在新 context（可能剛好與新配置的 texture/buffer ID 相同）。
+        _terrainProgram = _colorProgram = _vao = _vbo = _ebo = _atlasTexture = _waterVao = _waterVbo = _markerVao = _markerVbo = _cursorVao = _cursorVbo = _collisionTexture = 0;
+        _spriteProgram = _spriteVao = _spriteVbo = _spriteTexture = 0;
+        _vertexLightTexture = 0;
         _reinitializeOnHandleCreated = wasInitialized && !Disposing && !IsDisposed && RecreatingHandle;
         base.OnHandleDestroyed(e);
     }
@@ -501,10 +788,16 @@ internal sealed class Map3DViewControl : GLControl
         _initialized = false;
         MakeCurrent();
         GL.DeleteBuffer(_vbo); GL.DeleteBuffer(_ebo); GL.DeleteBuffer(_waterVbo); GL.DeleteBuffer(_markerVbo); GL.DeleteBuffer(_cursorVbo); GL.DeleteVertexArray(_vao); GL.DeleteVertexArray(_waterVao); GL.DeleteVertexArray(_markerVao); GL.DeleteVertexArray(_cursorVao); GL.DeleteTexture(_atlasTexture); GL.DeleteProgram(_terrainProgram); GL.DeleteProgram(_colorProgram);
+        GL.DeleteTexture(_collisionTexture); _collisionTexture = 0;
+        GL.DeleteTexture(_vertexLightTexture); _vertexLightTexture = 0;
+        GL.DeleteBuffer(_spriteVbo); GL.DeleteVertexArray(_spriteVao); GL.DeleteTexture(_spriteTexture); GL.DeleteProgram(_spriteProgram);
+        _spriteVbo = _spriteVao = _spriteTexture = _spriteProgram = 0;
     }
 
-    private const string TerrainVertexShader = "#version 330 core\nlayout(location=0) in vec3 p; layout(location=1) in vec3 n; layout(location=2) in vec2 uv; uniform mat4 uMvp; out vec3 N; out vec2 UV; void main(){ N=n; UV=uv; gl_Position=uMvp*vec4(p,1.0);}";
-    private const string TerrainFragmentShader = "#version 330 core\nin vec3 N; in vec2 UV; uniform sampler2D uAtlas; uniform vec3 uLight; out vec4 c; void main(){float l=max(.28,dot(normalize(N),normalize(uLight))); c=vec4(texture(uAtlas,UV).rgb*l,1.0);}";
+    private const string TerrainVertexShader = "#version 330 core\nlayout(location=0) in vec3 p; layout(location=1) in vec3 n; layout(location=2) in vec2 uv; uniform mat4 uMvp; uniform float uDimension; out vec3 N; out vec2 UV; out vec2 mapUV; void main(){ N=n; UV=uv; mapUV=p.xz/uDimension; gl_Position=uMvp*vec4(p,1.0);}";
+    private const string TerrainFragmentShader = "#version 330 core\nin vec3 N; in vec2 UV; in vec2 mapUV; uniform sampler2D uAtlas; uniform sampler2D uCollision; uniform sampler2D uVertexLight; uniform int uShowCollision; uniform vec3 uLight; out vec4 c; void main(){float l=max(.28,dot(normalize(N),normalize(uLight))); vec3 color=texture(uAtlas,UV).rgb*l; vec2 size=vec2(textureSize(uVertexLight,0)); vec2 uv=(mapUV*(size-1.0)+0.5)/size; vec3 vertexRgb=texture(uVertexLight,uv).rgb; color*=vertexRgb; if(uShowCollision!=0 && texture(uCollision,mapUV).r>0.0) color=mix(color,vec3(.824,.235,.235),.55); c=vec4(color,1.0);}";
+    private const string SpriteVertexShader = "#version 330 core\nlayout(location=0) in vec3 anchor; layout(location=1) in vec2 offset; layout(location=2) in vec2 uv; uniform mat4 uView; uniform mat4 uProjection; out vec2 UV; void main(){ vec4 v=uView*vec4(anchor,1.0); v.xy+=offset; UV=uv; gl_Position=uProjection*v;}";
+    private const string SpriteFragmentShader = "#version 330 core\nin vec2 UV; uniform sampler2D uSprites; uniform float uAlpha; out vec4 c; void main(){ vec4 t=texture(uSprites,UV); if(t.a<.5) discard; c=vec4(t.rgb,uAlpha);}";
     private const string ColorVertexShader = "#version 330 core\nlayout(location=0) in vec3 p; uniform mat4 uMvp; void main(){gl_Position=uMvp*vec4(p,1.0);}";
     private const string ColorFragmentShader = "#version 330 core\nuniform vec4 uColor; out vec4 c; void main(){c=uColor;}";
 }

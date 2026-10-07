@@ -9,7 +9,7 @@ internal sealed partial class MapEditorForm
         int operation = Math.Max(0, _terrainOperation.SelectedIndex), strength = _terrainStrength.SelectedIndex < 0 ? 1 : _terrainStrength.SelectedIndex;
         _terrainOperation.Items.Clear();
         if (_editMode == EditMode.Height)
-            _terrainOperation.Items.AddRange(isEn ? new object[] { "Raise", "Lower", "Smooth", "Flatten" } : new object[] { "升高", "降低", "平滑", "整平" });
+            _terrainOperation.Items.AddRange(isEn ? new object[] { "Raise", "Lower", "Smooth", "Flatten", "Roughen", "Water (carve)" } : new object[] { "升高", "降低", "平滑", "整平", "粗糙化", "水域（挖到水面下）" });
         else
             _terrainOperation.Items.AddRange(isEn ? new object[] { "Block", "Passable" } : new object[] { "阻擋", "可通行" });
         _terrainOperation.SelectedIndex = Math.Min(operation, _terrainOperation.Items.Count - 1);
@@ -18,6 +18,40 @@ internal sealed partial class MapEditorForm
         _terrainStrength.SelectedIndex = strength;
         _terrainOperation.Visible = TerrainLayerMode;
         _terrainStrength.Visible = _editMode == EditMode.Height;
+    }
+
+    private const int WaterOperationIndex = (int)TerrainHeightOperation.Roughen + 1;
+    /// <summary>水域筆刷挖到水面下的深度（高度圖單位）。</summary>
+    internal const int WaterBedDepth = 16; // 原版湖底約在水面下 18 單位；6 單位時遊戲中水太淺、近乎透明
+
+    /// <summary>水面上方至少要能挖出的深度（高度圖單位），太淺遊戲幾乎看不到水。</summary>
+    internal const int MinimumWaterDepth = 4;
+
+    /// <summary>
+    /// 水域筆刷的目標高度：水面下最多 <see cref="WaterBedDepth"/>（不低於 0）。水面太低挖不出水時，自動把水面設為
+    /// 「全圖最低點再低 1」——保證不會淹沒任何既有地形——並以 <paramref name="notice"/> 告知玩家；仍不可行時回傳 -1。
+    /// </summary>
+    private int WaterBedHeight(out string? notice)
+    {
+        notice = null;
+        bool isEn = AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English;
+        if (_heightMapStep <= 0 || _terrainLayers is null) return -1;
+        int surface = (int)MathF.Floor((float)_waterLevel.Value / _heightMapStep);
+        if (surface < MinimumWaterDepth)
+        {
+            int raised = _terrainLayers.Heights.Min() - 1;
+            decimal level = Math.Min(_waterLevel.Maximum, (decimal)(raised * _heightMapStep));
+            if (raised < MinimumWaterDepth || level <= _waterLevel.Value)
+            {
+                notice = isEn ? "The terrain is too low everywhere to add water automatically; raise the terrain first." : "整張地圖地勢太低，無法自動設定水面；請先把地形升高一些。";
+                return -1;
+            }
+            _waterLevel.Value = level;
+            surface = raised;
+            notice = isEn ? $"Water level set to {level} automatically (below all existing terrain, nothing is flooded)."
+                          : $"已自動把水面設為 {level}（低於所有既有地形，不會淹沒任何區域）。";
+        }
+        return surface - Math.Min(WaterBedDepth, surface);
     }
 
     private int TerrainStrength => _terrainStrength.SelectedIndex switch { 0 => 2, 2 => 14, _ => 6 };
@@ -37,6 +71,14 @@ internal sealed partial class MapEditorForm
         _terrainLayers = new TerrainHeightEditSession(boden.Width, boden.Green, emboss?.Green, collision?.Width ?? 0, collision?.Green);
     }
 
+    private void UpdateCollisionOverlay()
+    {
+        int size = _terrainLayers?.CollisionSize ?? 0;
+        IReadOnlyList<byte>? collision = _editMode == EditMode.Collision ? _terrainLayers?.Collision : null;
+        _canvas.SetCollisionOverlay(size, collision);
+        _view3d?.SetCollisionOverlay(size, collision);
+    }
+
     private void PaintTerrainLayer(TexturePaintEventArgs e)
     {
         if (_selected?.IsCustom != true || _terrainLayers is null || _texturesDocument is null) return;
@@ -53,7 +95,7 @@ internal sealed partial class MapEditorForm
             heightsChanged |= height; collisionChanged |= collision;
         }
         if (heightsChanged) ApplyHeightsToViews();
-        if (collisionChanged) _canvas.SetCollisionOverlay(_terrainLayers.CollisionSize, _terrainLayers.Collision);
+        if (collisionChanged) UpdateCollisionOverlay();
         UpdateEditorState();
     }
 
@@ -65,10 +107,19 @@ internal sealed partial class MapEditorForm
         {
             float step = (_terrainLayers!.VertexSize - 1) / (float)dimension;
             float centerX = (tileX + .5f) * step, centerY = (tileY + .5f) * step;
-            var operation = (TerrainHeightOperation)Math.Clamp(_terrainOperation.SelectedIndex, 0, 3);
+            var operation = (TerrainHeightOperation)Math.Clamp(_terrainOperation.SelectedIndex, 0, (int)TerrainHeightOperation.Roughen);
+            if (_terrainOperation.SelectedIndex == WaterOperationIndex)
+            {
+                // 水域：整平到水面下固定深度；水面高度由 boden.ini 的 Waterlevel 與 Heightmapstep 換算為高度圖數值。
+                operation = TerrainHeightOperation.Flatten;
+                _flattenTarget = WaterBedHeight(out string? waterNotice);
+                // 提示放在狀態列的持續通知（直接寫 _status 會被隨後的 UpdateEditorState 覆蓋）；自動調整水面的說明保留到下一筆。
+                if (waterNotice is not null || _flattenTarget < 0) _terrainBlendNotice = waterNotice;
+                if (_flattenTarget < 0) return (false, false);
+            }
             if (operation == TerrainHeightOperation.Flatten && _flattenTarget < 0)
                 _flattenTarget = _terrainLayers.Heights[Math.Clamp((int)MathF.Round(centerY), 0, _terrainLayers.VertexSize - 1) * _terrainLayers.VertexSize + Math.Clamp((int)MathF.Round(centerX), 0, _terrainLayers.VertexSize - 1)];
-            return (_terrainLayers.PaintHeight(centerX, centerY, radiusTiles * step + 1, operation, TerrainStrength, _flattenTarget).Count > 0, false);
+            return (_terrainLayers.PaintHeight(centerX, centerY, radiusTiles * step + 1, operation, TerrainStrength, _flattenTarget, _roughnessSeed).Count > 0, false);
         }
         if (_terrainLayers!.HasCollision)
         {
@@ -107,7 +158,7 @@ internal sealed partial class MapEditorForm
         if (_natureSession.Remove(_levelObjects.Where(IsRemovableNature).Select(item => item.Slot), _natureSession.Additions)) CommitStroke();
         RefreshSceneMarkers();
         ApplyHeightsToViews();
-        if (_editMode == EditMode.Collision) _canvas.SetCollisionOverlay(_terrainLayers.CollisionSize, _terrainLayers.Collision);
+        UpdateCollisionOverlay();
         UpdateEditorState();
         _status.Text = isEn ? "Flat terrain prepared; settlements and scripts are kept. Shape the terrain, then Save." : "已準備平坦地形，聚落與腳本保留；完成地形編輯後按「儲存」。";
     }
@@ -122,18 +173,18 @@ internal sealed partial class MapEditorForm
     }
 
     /// <summary>將高度更新至 2D／3D 預覽。</summary>
-    private void ApplyHeightsToViews()
+    private void ApplyHeightsToViews(bool useCurrentSamples = false)
     {
         if (_terrainLayers is null) return;
         if (!TryParseGameColor(_waterColor.Text, out Color waterColor)) waterColor = Color.SteelBlue;
-        _canvas.SetHeightSamples(_terrainLayers.VertexSize, _terrainLayers.HeightsDirty ? _terrainLayers.Heights : null, (float)_waterLevel.Value, _heightMapStep, waterColor);
+        _canvas.SetHeightSamples(_terrainLayers.VertexSize, useCurrentSamples || _terrainLayers.HeightsDirty ? _terrainLayers.Heights : null, (float)_waterLevel.Value, _heightMapStep, waterColor);
         _view3d?.SetHeightSamples(_terrainLayers.Heights);
     }
 
     private void ApplyTerrainLayerStroke(TerrainLayerStroke stroke)
     {
         if (stroke.Heights.Count > 0) ApplyHeightsToViews();
-        if (stroke.Collision.Count > 0 && _editMode == EditMode.Collision) _canvas.SetCollisionOverlay(_terrainLayers!.CollisionSize, _terrainLayers.Collision);
+        if (stroke.Collision.Count > 0) UpdateCollisionOverlay();
     }
 
     private void ResetTerrain()
@@ -150,7 +201,7 @@ internal sealed partial class MapEditorForm
         {
             _terrainLayers.ResetToBaseline();
             ApplyHeightsToViews();
-            if (_editMode == EditMode.Collision) _canvas.SetCollisionOverlay(_terrainLayers.CollisionSize, _terrainLayers.Collision);
+            UpdateCollisionOverlay();
         }
         _resetAuxiliaryLayers = false;
         _natureSession.Clear(); RefreshSceneMarkers();

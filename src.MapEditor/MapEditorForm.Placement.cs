@@ -1,3 +1,4 @@
+using AgainstRomeMapEditor.NativeAssets;
 using AgainstRomeMapEditor.Modules.Placement;
 using AgainstRomeModifier;
 using AgainstRomeModifier.Maps;
@@ -31,8 +32,48 @@ internal sealed partial class MapEditorForm
     internal ListView PlacedList => _placedList;
     internal PlacementEditSession PlacementSession => _placementSession;
 
+    private readonly SpriteThumbnailCache _spriteThumbnails = new();
+
+    // 兩個目錄共用縮圖尺寸、文字縮排與主題選取色。
+    private void ConfigureSpriteList(ListBox list, Func<int, NativeSprite?> spriteForItem)
+    {
+        list.DrawMode = DrawMode.OwnerDrawFixed;
+        void UpdateSize()
+        {
+            list.ItemHeight = Math.Max(LogicalToDeviceUnits(40), list.Font.Height) + LogicalToDeviceUnits(8);
+            list.Invalidate();
+        }
+        UpdateSize();
+        list.FontChanged += (_, _) => UpdateSize();
+        list.DpiChangedAfterParent += (_, _) => UpdateSize();
+        list.HandleCreated += (_, _) => UpdateSize();
+        list.DrawItem += (_, e) =>
+        {
+            bool selected = (e.State & DrawItemState.Selected) != 0;
+            using var background = new SolidBrush(selected ? WinFormsTheme.Selection : list.BackColor);
+            e.Graphics.FillRectangle(background, e.Bounds);
+            if (e.Index < 0 || e.Index >= list.Items.Count) return;
+            int size = LogicalToDeviceUnits(40), padding = LogicalToDeviceUnits(4);
+            NativeSprite? sprite = spriteForItem(e.Index);
+            if (sprite is not null)
+                e.Graphics.DrawImageUnscaled(_spriteThumbnails.Get(sprite, size),
+                    e.Bounds.Left + padding, e.Bounds.Top + (e.Bounds.Height - size) / 2);
+            var textBounds = new Rectangle(e.Bounds.Left + size + padding * 3, e.Bounds.Top,
+                Math.Max(0, e.Bounds.Width - size - padding * 4), e.Bounds.Height);
+            TextRenderer.DrawText(e.Graphics, list.Items[e.Index].ToString(), list.Font, textBounds,
+                list.Enabled ? WinFormsTheme.TextPrimary : WinFormsTheme.TextMuted,
+                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+            e.DrawFocusRectangle();
+        };
+    }
+
     private Control BuildPlacementPanel()
     {
+        ConfigureSpriteList(_placeTypes, index => _placeTypes.Items[index] is PlacementTypeItem item
+            ? _spriteCatalog?.GetSprite(item.Type.NameDef, item.Type.Category == SdlObjectCategory.Figure ? (int)_placeTeam.Value : 0)
+            : null);
+        _placeTeam.ValueChanged += (_, _) => _placeTypes.Invalidate();
+        Disposed += (_, _) => _spriteThumbnails.Dispose();
         var panel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(8), BackColor = WinFormsTheme.Surface };
         panel.SizeChanged += (_, _) => _placeHint.MaximumSize = new Size(Math.Max(1, panel.ClientSize.Width - panel.Padding.Horizontal), 0);
         var options = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 2, BackColor = WinFormsTheme.SurfaceRaised, Padding = new Padding(6) };
@@ -244,6 +285,14 @@ internal sealed partial class MapEditorForm
         UpdatePlacedButtonsState();
     }
 
+    /// <summary>放置模式下，在 3D 游標格顯示所選物件的原生 sprite 半透明預覽。</summary>
+    private void UpdatePlacementPreview()
+    {
+        if (_view3d is null) return;
+        string? name = _editMode == EditMode.PlaceObject && _selected?.IsCustom == true ? (_placeTypes.SelectedItem as PlacementTypeItem)?.Type.NameDef : null;
+        _view3d.SetPlacementPreview(name, (int)_placeTeam.Value, (float)_placeAngle.Value);
+    }
+
     /// <summary>在點擊的 tile 中心放置一個物件（每次按下只放一個）；高度取自目前地形，世界座標為絕對值。</summary>
     private void PlaceObjectAt(TexturePaintEventArgs e)
     {
@@ -272,7 +321,7 @@ internal sealed partial class MapEditorForm
             figure ? (int)_placeCount.Value : 0) { ScenarioId = Guid.NewGuid() });
         RefreshPlacedList();
         IReadOnlyList<MapSceneObject> effective = EffectiveSceneObjects();
-        _canvas.UpdateSceneObjects(effective); _view3d?.UpdateSceneObjects(effective);
+        PushSceneObjects(effective);
         UpdateEditorState();
         _status.Text = isEn ? $"Placed {selection.Text} at tile ({e.X},{e.Y}); Save to write it." : $"已在格子 ({e.X},{e.Y}) 放置 {selection.Text}；按「儲存」才會寫入。";
         // 建築與樹木／草叢重疊時，以腳本生成會被遊戲的放置檢查拒絕；寫入 DATA 則會穿模。
@@ -304,7 +353,7 @@ internal sealed partial class MapEditorForm
 
         RefreshPlacedList();
         IReadOnlyList<MapSceneObject> effective = EffectiveSceneObjects();
-        _canvas.UpdateSceneObjects(effective); _view3d?.UpdateSceneObjects(effective);
+        PushSceneObjects(effective);
         UpdateEditorState();
         _status.Text = isEn
             ? $"Duplicated {selectedIndices.Count} placed object(s); Save to write."
@@ -327,7 +376,7 @@ internal sealed partial class MapEditorForm
             _placementSession.Edit(index, updated);
             RefreshPlacedList();
             IReadOnlyList<MapSceneObject> effective = EffectiveSceneObjects();
-            _canvas.UpdateSceneObjects(effective); _view3d?.UpdateSceneObjects(effective);
+            PushSceneObjects(effective);
             UpdateEditorState();
             _status.Text = isEn
                 ? $"Updated {ObjectDisplayName(updated.Type, isEn)}."
@@ -341,7 +390,7 @@ internal sealed partial class MapEditorForm
         _placementSession.RemoveMany(_placedList.SelectedItems.Cast<ListViewItem>().Select(row => (int)row.Tag!));
         RefreshPlacedList();
         IReadOnlyList<MapSceneObject> effective = EffectiveSceneObjects();
-        _canvas.UpdateSceneObjects(effective); _view3d?.UpdateSceneObjects(effective);
+        PushSceneObjects(effective);
         UpdateEditorState();
     }
 

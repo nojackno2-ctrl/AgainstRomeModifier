@@ -12,6 +12,7 @@ internal sealed record TerrainBlendPaintResult(
 internal sealed record TerrainCornerChange(int Index, string Before, string After);
 
 internal sealed record TerrainBlendStroke(IReadOnlyList<TerrainCornerChange> Corners, IReadOnlyList<TerrainTextureChange> Textures);
+internal sealed record TerrainRoadPaintResult(bool Succeeded, IReadOnlyList<TerrainTextureChange> TextureChanges, IReadOnlyList<(int X, int Y)> Unsupported);
 
 /// <summary>
 /// Transactional authoring state for native terrain blending. A pointer stroke changes corner materials
@@ -20,7 +21,7 @@ internal sealed record TerrainBlendStroke(IReadOnlyList<TerrainCornerChange> Cor
 /// </summary>
 internal sealed class TerrainBlendEditSession
 {
-    private readonly INativeTerrainMaterialResolver _catalog;
+    private INativeTerrainMaterialResolver _catalog;
     private readonly TerrainBlendAuthoringMap _map;
     private readonly string[] _currentTextures;
     private string[] _baselineTextures;
@@ -52,6 +53,13 @@ internal sealed class TerrainBlendEditSession
     public bool IsDirty => !_currentTextures.SequenceEqual(_baselineTextures, StringComparer.OrdinalIgnoreCase) ||
                            !_map.CornerMaterials.SequenceEqual(_baselineCorners, StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>Replace resource metadata while retaining authoring corners, textures, baseline and history.</summary>
+    public void RebindMaterialResolver(INativeTerrainMaterialResolver catalog)
+    {
+        ArgumentNullException.ThrowIfNull(catalog);
+        _catalog = catalog;
+    }
+
     /// <summary>Independent authoring snapshot for dry runs; history and baseline belong to the copy.</summary>
     internal TerrainBlendEditSession Fork()
     {
@@ -61,23 +69,32 @@ internal sealed class TerrainBlendEditSession
         return new(new NativeTerrainImportResult(map, UnresolvedTileIndices, InitialCornerConflicts), _currentTextures, _catalog);
     }
 
-    /// <summary>By default, a rejected area cancels the pending stroke. Set <paramref name="rollbackStrokeOnFailure"/> to false to preserve earlier accepted areas.</summary>
-    public TerrainBlendPaintResult PaintCircle(float centerX, float centerY, float radius, string materialId, bool rollbackStrokeOnFailure = true)
+    /// <summary>自動過渡最多向外插入幾圈中介材質。</summary>
+    internal const int MaxBridgeRings = 2;
+
+    /// <summary>
+    /// By default, a rejected area cancels the pending stroke. Set <paramref name="rollbackStrokeOnFailure"/> to false to preserve earlier accepted areas.
+    /// <paramref name="autoBridge"/> 為 true 時，若筆刷邊緣找不到原版過渡 tile，會在外側一圈角點插入同時能銜接兩側的中介材質（最多 <see cref="MaxBridgeRings"/> 圈），
+    /// 結果仍全部是原版 tile；仍無法銜接才拒絕。
+    /// </summary>
+    public TerrainBlendPaintResult PaintCircle(float centerX, float centerY, float radius, string materialId, bool rollbackStrokeOnFailure = true, bool autoBridge = false)
     {
         string[] cornerBefore = _map.CornerMaterials.ToArray();
         IReadOnlyList<int> changedCorners = _map.PaintCircle(centerX, centerY, radius, materialId);
         if (changedCorners.Count == 0) return TerrainBlendPaintResult.Success(Array.Empty<TerrainTextureChange>());
 
-        int[] affectedTiles = AffectedTiles(changedCorners).ToArray();
-        var baked = new List<(int Index, string Texture)>();
-        var issues = new List<NativeTerrainBakeIssue>();
-        foreach (int tileIndex in affectedTiles)
+        var touched = new HashSet<int>(changedCorners);
+        List<NativeTerrainBakeIssue> issues = Resolve(touched, out List<(int Index, string Texture)> baked);
+        if (autoBridge && issues.Count > 0)
         {
-            int x = tileIndex % _map.TileDimension, y = tileIndex / _map.TileDimension;
-            string[] corners = [_map.GetCorner(x, y), _map.GetCorner(x + 1, y), _map.GetCorner(x + 1, y + 1), _map.GetCorner(x, y + 1)];
-            string? texture = _catalog.ResolveNativeTile(corners, x, y);
-            if (texture is null) issues.Add(new NativeTerrainBakeIssue(x, y, corners));
-            else baked.Add((tileIndex, texture));
+            var layer = new HashSet<int>(changedCorners);
+            for (int ring = 0; ring < MaxBridgeRings && issues.Count > 0; ring++)
+            {
+                if (!TryBridge(touched, layer, issues, materialId, out HashSet<int>? next)) break;
+                layer = next!;
+                issues = Resolve(touched, out baked);
+            }
+            changedCorners = touched.ToArray();
         }
         if (issues.Count > 0)
         {
@@ -105,6 +122,35 @@ internal sealed class TerrainBlendEditSession
             else _pendingTextures[index] = change;
         }
         return TerrainBlendPaintResult.Success(changes);
+    }
+
+    /// <summary>
+    /// 圖塊印章：把單一 tile 直接設為指定的原版圖塊（道路、河流、岩壁等不屬於材質過渡系統的裝飾圖塊），
+    /// 不改角點材質也不做過渡烘焙；與筆刷相同地記入待提交筆畫，可復原／重做。之後在相鄰處塗材質會依角點重新烘焙並覆蓋。
+    /// </summary>
+    public TerrainTextureChange? StampTexture(int x, int y, string texture)
+    {
+        if (x < 0 || y < 0 || x >= _map.TileDimension || y >= _map.TileDimension || string.IsNullOrWhiteSpace(texture)) return null;
+        int index = TextureIndex(x, y);
+        string before = _currentTextures[index];
+        if (StringComparer.OrdinalIgnoreCase.Equals(before, texture)) return null;
+        var change = new TerrainTextureChange(x, y, before, texture);
+        _currentTextures[index] = texture;
+        if (_pendingTextures.TryGetValue(index, out TerrainTextureChange? pending)) _pendingTextures[index] = pending with { After = texture };
+        else _pendingTextures[index] = change;
+        _redo.Clear();
+        return change;
+    }
+
+    /// <summary>Paints one connected road stroke using native pieces; rejection restores the complete pending stroke.</summary>
+    public TerrainRoadPaintResult PaintRoadPath(IReadOnlyList<(int X, int Y)> path, IReadOnlyList<RoadTile> available, string preferredTexture)
+    {
+        RoadStrokePlan plan = RoadStrokePlanner.Plan(_map.TileDimension, _currentTextures, path, available, preferredTexture);
+        if (!plan.Succeeded) return new(false, CancelStroke(), plan.Unsupported);
+        var changes = new List<TerrainTextureChange>();
+        foreach (RoadTilePlacement tile in plan.Tiles)
+            if (StampTexture(tile.X, tile.Y, tile.Texture) is { } change) changes.Add(change);
+        return new(true, changes, []);
     }
 
     public bool CommitStroke()
@@ -175,6 +221,60 @@ internal sealed class TerrainBlendEditSession
         _pendingCorners.Clear();
         _pendingTextures.Clear();
         return rollback;
+    }
+
+    private List<NativeTerrainBakeIssue> Resolve(IEnumerable<int> corners, out List<(int Index, string Texture)> baked)
+    {
+        baked = new List<(int Index, string Texture)>();
+        var issues = new List<NativeTerrainBakeIssue>();
+        foreach (int tileIndex in AffectedTiles(corners))
+        {
+            int x = tileIndex % _map.TileDimension, y = tileIndex / _map.TileDimension;
+            string[] tileCorners = TileCorners(x, y);
+            string? texture = _catalog.ResolveNativeTile(tileCorners, x, y);
+            if (texture is null) issues.Add(new NativeTerrainBakeIssue(x, y, tileCorners));
+            else baked.Add((tileIndex, texture));
+        }
+        return issues;
+    }
+
+    private string[] TileCorners(int x, int y) => [_map.GetCorner(x, y), _map.GetCorner(x + 1, y), _map.GetCorner(x + 1, y + 1), _map.GetCorner(x, y + 1)];
+
+    private int[] TileCornerIndices(int x, int y)
+        => [y * _map.CornerDimension + x, y * _map.CornerDimension + x + 1, (y + 1) * _map.CornerDimension + x + 1, (y + 1) * _map.CornerDimension + x];
+
+    /// <summary>
+    /// 對失敗 tile 中尚未屬於本筆畫的角點（下一圈）嘗試每一種中介材質：內側（含上一層角點的 tile）必須全部可解，
+    /// 外側失敗數最少者勝出，同分時改動角點較少者優先。成功時套用並回傳新的一圈角點。
+    /// </summary>
+    private bool TryBridge(HashSet<int> touched, HashSet<int> layer, List<NativeTerrainBakeIssue> issues, string paintedMaterial, out HashSet<int>? ring)
+    {
+        ring = new HashSet<int>();
+        foreach (NativeTerrainBakeIssue issue in issues)
+            foreach (int corner in TileCornerIndices(issue.TileX, issue.TileY))
+                if (!touched.Contains(corner)) ring.Add(corner);
+        if (ring.Count == 0) { ring = null; return false; }
+        var original = ring.ToDictionary(index => index, index => _map.CornerMaterials[index]);
+        int[] innerTiles = AffectedTiles(ring).Where(tile => TileCornerIndices(tile % _map.TileDimension, tile / _map.TileDimension).Any(layer.Contains)).ToArray();
+        int[] outerTiles = AffectedTiles(ring).Except(innerTiles).ToArray();
+        (string? Material, int Outer, int Changed) best = (null, int.MaxValue, int.MaxValue);
+        foreach (string candidate in _catalog.MaterialIds)
+        {
+            if (StringComparer.OrdinalIgnoreCase.Equals(candidate, paintedMaterial)) continue;
+            foreach (int index in ring) SetCorner(index, candidate);
+            bool innerOk = innerTiles.All(tile => _catalog.ResolveNativeTile(TileCorners(tile % _map.TileDimension, tile / _map.TileDimension), 0, 0) is not null);
+            if (innerOk)
+            {
+                int outer = outerTiles.Count(tile => _catalog.ResolveNativeTile(TileCorners(tile % _map.TileDimension, tile / _map.TileDimension), 0, 0) is null);
+                int changed = ring.Count(index => !StringComparer.OrdinalIgnoreCase.Equals(original[index], candidate));
+                if (outer < best.Outer || (outer == best.Outer && changed < best.Changed)) best = (candidate, outer, changed);
+            }
+            foreach ((int index, string material) in original) SetCorner(index, material);
+        }
+        if (best.Material is null) { ring = null; return false; }
+        foreach (int index in ring) SetCorner(index, best.Material);
+        touched.UnionWith(ring);
+        return true;
     }
 
     private IEnumerable<int> AffectedTiles(IEnumerable<int> cornerIndices)

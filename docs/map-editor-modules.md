@@ -12,6 +12,29 @@ clean; `AcceptChanges` is called only after the host's save transaction succeeds
 Modules do not open files, show dialogs, call another module or change renderer
 state. The host coordinates those operations.
 
+`NativeAssets/NativeAlrIndexedFrame` decodes extracted native 8-bit ALR scanlines
+and a selected palette into owned, read-only ARGB pixels. It does not open the
+game archives, select animation frames or update the renderer. Its current
+evidence includes native x86 control flow, synthetic tests and exhaustive decoding
+of the authorized alr.dat copy. Scene fidelity remains unverified.
+See [native scene evidence](reverse-engineering/native-scene-rendering.md).
+
+`NativeAssets/NativeAlrDocument` parses owned v4..v6 indexed container records
+from bytes, preserves shared frames and selects palettes as the native helper
+does. Serialized row offsets start after all local palettes, so `DecodeFrame`
+strips that prefix before decoding. Zero-sized animation frames are valid.
+Archive I/O, object definitions, animation and
+direction mapping, trailing metadata and scene integration remain with the host
+or future format work.
+
+`NativeAssets/NativeAptDocument` reads owned APAT v2/v3 indexed 64x31 diamond
+patches, validates frame ranges, decodes raw/compressed rows and composites a
+full canvas with transparent overlay semantics. Layout dimensions and renderer
+anchors are preserved; group metadata, axis meaning, IFOM and color fidelity
+remain unverified. `tools/re/apt-probe` decoded all 222 authorized APT documents,
+500507 tiles and 103601 frames; the host still needs archive/catalog integration,
+caching, projection and interaction. Neither native decoder performs I/O.
+
 `Events/ScenarioEventSession` owns event commands, duplication limits, copied
 action/condition lists and the saved baseline. `MapEditorForm.Events.cs` is its
 UI adapter. The existing host's `_events` read interface and baseline setter

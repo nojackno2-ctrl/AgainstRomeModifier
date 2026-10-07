@@ -16,6 +16,18 @@ internal sealed class FloorMaterialCatalog : INativeTerrainMaterialResolver
 {
     private static readonly Regex BaseMaterialName = new("^4B(?<code>[0-9A-Z])___5[0-9A-Z]$", RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
     private static readonly Regex TwoMaterialTransitionName = new("^4U(?<first>[0-9A-Z])(?<second>[0-9A-Z])__(?<shape>[1-46-9])(?<variant>[0-9A-Z])$", RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+    // L 系列（原版地區地表，如 L2B02T5A）：L<組>B<兩位編號>T<九宮格形狀><變體>；只有 T5 的編號是純材質，T1–T9（缺 T5）的編號是兩材質過渡，配對須由貼圖推斷。
+    private static readonly Regex RegionalTileName = new("^L(?<set>[0-9]+)B(?<index>[0-9]{2})T(?<shape>[1-9])(?<variant>[A-Z])$", RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+    /// <summary>L 系列過渡配對可接受的平均角落色差（RGB 歐氏距離）；超過代表貼圖不是兩個已知材質的過渡，不採用以免錯配。</summary>
+    internal const double RegionalTransitionMaxCornerDistance = 32;
+    internal static string? RegionalTileSet(string name)
+    {
+        Match match = RegionalTileName.Match(name);
+        return match.Success ? match.Groups["set"].Value : null;
+    }
+    // 4U 的第二種命名：尾碼為兩位數 01–14 的角點遮罩（兩種材質在四角的 14 種組合），例如 4UJX__05、4UMX__14。
+    // 同一族只要出現 0 開頭的尾碼就屬於此命名，整族不能用九宮格形狀解析（否則 10–14 會被誤判為形狀 1）。
+    private static readonly Regex MaskTransitionName = new("^4U(?<first>[0-9A-Z])(?<second>[0-9A-Z])__(?<mask>0[1-9]|1[0-4])$", RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
     private static readonly Regex ThreeMaterialTransitionName = new("^4T(?<first>[0-9A-Z])(?<second>[0-9A-Z])(?<third>[0-9A-Z])_(?<shape>[2468])(?<variant>[0-9A-Z])$", RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
     private static readonly IReadOnlyDictionary<string, (string Category, string Name, int Order)> PlayerNames =
         new Dictionary<string, (string, string, int)>(StringComparer.OrdinalIgnoreCase)
@@ -65,10 +77,31 @@ internal sealed class FloorMaterialCatalog : INativeTerrainMaterialResolver
             (string category, string name, _) = PlayerDefinition(group.Key);
             return new FloorMaterial(group.Key, category, name, representative, variants);
         }).ToArray();
+        var regionalTiles = names
+            .Select(name => (name, match: RegionalTileName.Match(name)))
+            .Where(item => item.match.Success)
+            .Select(item => (Name: item.name, Set: item.match.Groups["set"].Value, Index: item.match.Groups["index"].Value, Shape: int.Parse(item.match.Groups["shape"].Value)))
+            .ToArray();
+        var regionalBases = regionalTiles
+            .GroupBy(tile => (tile.Set, tile.Index))
+            .Where(group => group.All(tile => tile.Shape == 5))
+            .OrderBy(group => group.Key.Set, StringComparer.Ordinal).ThenBy(group => group.Key.Index, StringComparer.Ordinal)
+            .Select(group =>
+            {
+                string[] variants = group.Select(tile => tile.Name).OrderBy(name => name, StringComparer.OrdinalIgnoreCase).ToArray();
+                return new FloorMaterial(RegionalMaterialId(group.Key.Set, group.Key.Index), "地區地表 L" + group.Key.Set, $"L{group.Key.Set} 地表 {group.Key.Index}", variants[0], variants);
+            });
+        Materials = Materials.Concat(regionalBases).ToArray();
         _byId = Materials.ToDictionary(material => material.Id, StringComparer.OrdinalIgnoreCase);
+        var maskFamilies = names
+            .Select(name => MaskTransitionName.Match(name))
+            .Where(match => match.Success && match.Groups["mask"].Value.StartsWith('0'))
+            .Select(match => "B" + match.Groups["first"].Value.ToUpperInvariant() + "|B" + match.Groups["second"].Value.ToUpperInvariant())
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
         _transitions = names
             .Select(name => (name, match: TwoMaterialTransitionName.Match(name)))
             .Where(item => item.match.Success)
+            .Where(item => !maskFamilies.Contains("B" + item.match.Groups["first"].Value.ToUpperInvariant() + "|B" + item.match.Groups["second"].Value.ToUpperInvariant()))
             .GroupBy(item => (First: "B" + item.match.Groups["first"].Value.ToUpperInvariant(), Second: "B" + item.match.Groups["second"].Value.ToUpperInvariant()))
             .Where(group => _byId.ContainsKey(group.Key.First) && _byId.ContainsKey(group.Key.Second))
             .Select(group => new FloorTransition(
@@ -125,12 +158,46 @@ internal sealed class FloorMaterialCatalog : INativeTerrainMaterialResolver
                 }
             }
         }
+        if (textureResolver is not null)
+        {
+            RegisterMaskTransitions(names, maskFamilies, textureResolver);
+            RegisterRegionalTransitions(regionalTiles, textureResolver);
+        }
         _nativeTexturesByCorners = _nativeCornersByTexture
             .GroupBy(item => CornerKey(item.Value), item => item.Key, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(group => group.Key, group => (IReadOnlyList<string>)group.OrderBy(value => value, StringComparer.OrdinalIgnoreCase).ToArray(), StringComparer.OrdinalIgnoreCase);
     }
 
     public IReadOnlyList<FloorMaterial> Materials { get; }
+    public IReadOnlyList<string> MaterialIds => _materialIds ??= Materials.Select(material => material.Id).ToArray();
+    private readonly Dictionary<string, bool> _transitionCache = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>兩種材質之間是否至少有一張原版過渡 tile（任一種兩材質四角組合可解析）；結果快取。</summary>
+    public bool HasTransition(string first, string second)
+    {
+        if (StringComparer.OrdinalIgnoreCase.Equals(first, second)) return true;
+        string key = string.CompareOrdinal(first.ToUpperInvariant(), second.ToUpperInvariant()) < 0 ? first + "|" + second : second + "|" + first;
+        if (_transitionCache.TryGetValue(key, out bool cached)) return cached;
+        bool found = false;
+        for (int mask = 1; mask < 15 && !found; mask++)
+        {
+            string[] corners = Enumerable.Range(0, 4).Select(bit => (mask >> bit & 1) == 1 ? second : first).ToArray();
+            found = ResolveNativeTile(corners, 0, 0) is not null;
+        }
+        return _transitionCache[key] = found;
+    }
+
+    /// <summary>
+    /// 材質在指定地圖上的可用程度：0＝地圖已使用；1＝能直接與地圖上的材質過渡；2＝能透過一種中介材質過渡（自動過渡）；3＝難以銜接。
+    /// </summary>
+    public int MapSuitability(string materialId, IReadOnlyCollection<string> mapMaterials)
+    {
+        if (mapMaterials.Contains(materialId, StringComparer.OrdinalIgnoreCase)) return 0;
+        if (mapMaterials.Any(present => HasTransition(materialId, present))) return 1;
+        if (Materials.Any(bridge => HasTransition(materialId, bridge.Id) && mapMaterials.Any(present => HasTransition(bridge.Id, present)))) return 2;
+        return 3;
+    }
+    private string[]? _materialIds;
     internal int TwoMaterialTransitionFamilyCount => _transitions.Count;
     internal int ThreeMaterialTransitionFamilyCount => _threeMaterialTransitions.Count;
     public FloorMaterial? FindByTexture(string? texture)
@@ -254,6 +321,107 @@ internal sealed class FloorMaterialCatalog : INativeTerrainMaterialResolver
             var sample = MeanColor(transitionPixels, transition.Width, transition.Height, sampleArea.X, sampleArea.Y, sampleArea.Width, sampleArea.Height);
             return references.MinBy(reference => ColorDistanceSquared(sample, reference.color)).id;
         }).ToArray();
+    }
+
+    /// <summary>角點遮罩命名的 4U 族已登記的 tile 數（診斷與測試用）。</summary>
+    internal int MaskTransitionTileCount { get; private set; }
+
+    /// <summary>
+    /// 角點遮罩命名的 4U 族：兩種材質已由名稱給定，每張 tile 的四角以顏色推斷（與形狀式相同的取樣），
+    /// 四角必須同時含兩種材質才登記；遮罩位元的方向未經證實，因此不從編號推導角點。
+    /// </summary>
+    private void RegisterMaskTransitions(IEnumerable<string> names, HashSet<string> maskFamilies, Func<string, Bitmap?> textureResolver)
+    {
+        foreach (string name in names)
+        {
+            Match match = MaskTransitionName.Match(name);
+            if (!match.Success) continue;
+            string first = "B" + match.Groups["first"].Value.ToUpperInvariant(), second = "B" + match.Groups["second"].Value.ToUpperInvariant();
+            if (!maskFamilies.Contains(first + "|" + second) || !_byId.ContainsKey(first) || !_byId.ContainsKey(second)) continue;
+            string[]? corners = InferCorners(textureResolver, name, [first, second]);
+            if (corners is null || corners.Distinct(StringComparer.OrdinalIgnoreCase).Count() != 2) continue;
+            _nativeCornersByTexture[name] = corners;
+            _byTexture[name] = _byId[first];
+            MaskTransitionTileCount++;
+        }
+    }
+
+    internal static string RegionalMaterialId(string set, string index) => $"L{set}:{index}";
+
+    /// <summary>L 系列過渡編號的推斷結果（供診斷與測試）：鍵為 L{組}B{編號}，值為推得的兩種材質與平均角落色差；未採用者材質為 null。</summary>
+    internal IReadOnlyDictionary<string, (string? First, string? Second, double Distance)> RegionalTransitionFits => _regionalTransitionFits;
+    private readonly Dictionary<string, (string? First, string? Second, double Distance)> _regionalTransitionFits = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// 推斷 L 系列過渡編號連接的兩種材質：先取同組純材質（同組不足兩種時改用所有 L 組），對每一組候選配對，
+    /// 讓每張過渡圖塊的四個角各自取兩者中較近的顏色，總色差最小者勝出；每張圖塊的四角必須同時包含兩種材質，
+    /// 且平均角落色差不超過門檻，才登記為可烘焙的原生 tile。
+    /// </summary>
+    private void RegisterRegionalTransitions((string Name, string Set, string Index, int Shape)[] tiles, Func<string, Bitmap?> textureResolver)
+    {
+        var baseColors = Materials.Where(material => material.Id.StartsWith('L'))
+            .Select(material => (material.Id, Set: material.Id[1..material.Id.IndexOf(':')], Color: MeanTextureColor(textureResolver, material.RepresentativeTexture)))
+            .Where(item => item.Color is not null).Select(item => (item.Id, item.Set, Color: item.Color!.Value)).ToArray();
+        foreach (var group in tiles.Where(tile => tile.Shape != 5).GroupBy(tile => (tile.Set, tile.Index)))
+        {
+            if (_byId.ContainsKey(RegionalMaterialId(group.Key.Set, group.Key.Index))) continue;
+            var corners = group.Select(tile => (tile.Name, Corners: CornerColors(textureResolver, tile.Name))).Where(item => item.Corners is not null)
+                .Select(item => (item.Name, Corners: item.Corners!)).ToArray();
+            if (corners.Length == 0) continue;
+            var candidates = baseColors.Where(item => item.Set == group.Key.Set).ToArray();
+            if (candidates.Length < 2) candidates = baseColors;
+            (string First, string Second, double Total) best = ("", "", double.MaxValue);
+            for (int a = 0; a < candidates.Length; a++)
+            for (int b = a + 1; b < candidates.Length; b++)
+            {
+                double total = 0;
+                foreach (var tile in corners)
+                foreach (var corner in tile.Corners)
+                    total += Math.Sqrt(Math.Min(ColorDistanceSquared(corner, candidates[a].Color), ColorDistanceSquared(corner, candidates[b].Color)));
+                if (total < best.Total) best = (candidates[a].Id, candidates[b].Id, total);
+            }
+            string key = $"L{group.Key.Set}B{group.Key.Index}";
+            if (best.Total == double.MaxValue) { _regionalTransitionFits[key] = (null, null, double.NaN); continue; }
+            double average = best.Total / (corners.Length * 4);
+            if (average > RegionalTransitionMaxCornerDistance) { _regionalTransitionFits[key] = (null, null, average); continue; }
+            var first = baseColors.First(item => item.Id == best.First);
+            var second = baseColors.First(item => item.Id == best.Second);
+            var accepted = new List<(string Name, string[] Corners)>();
+            foreach (var tile in corners)
+            {
+                string[] assigned = tile.Corners.Select(corner => ColorDistanceSquared(corner, first.Color) <= ColorDistanceSquared(corner, second.Color) ? first.Id : second.Id).ToArray();
+                if (assigned.Distinct(StringComparer.OrdinalIgnoreCase).Count() == 2) accepted.Add((tile.Name, assigned));
+            }
+            if (accepted.Count == 0) { _regionalTransitionFits[key] = (null, null, average); continue; }
+            _regionalTransitionFits[key] = (first.Id, second.Id, average);
+            foreach (var (name, assigned) in accepted)
+            {
+                _nativeCornersByTexture[name] = assigned;
+                _byTexture[name] = _byId[assigned[0]];
+            }
+        }
+    }
+
+    private static (double R, double G, double B)? MeanTextureColor(Func<string, Bitmap?> textureResolver, string texture)
+    {
+        Bitmap? bitmap = textureResolver(texture);
+        return bitmap is null ? null : MeanColor(BitmapPixels.Read(bitmap), bitmap.Width, bitmap.Height, 0, 0, bitmap.Width, bitmap.Height);
+    }
+
+    // 與 InferCorners 相同的四角取樣：TL、TR、BR、BL 各 1/4×1/4 區塊。
+    private static (double R, double G, double B)[]? CornerColors(Func<string, Bitmap?> textureResolver, string texture)
+    {
+        Bitmap? bitmap = textureResolver(texture);
+        if (bitmap is null) return null;
+        int width = Math.Max(1, bitmap.Width / 4), height = Math.Max(1, bitmap.Height / 4);
+        int[] pixels = BitmapPixels.Read(bitmap);
+        return
+        [
+            MeanColor(pixels, bitmap.Width, bitmap.Height, 0, 0, width, height),
+            MeanColor(pixels, bitmap.Width, bitmap.Height, bitmap.Width - width, 0, width, height),
+            MeanColor(pixels, bitmap.Width, bitmap.Height, bitmap.Width - width, bitmap.Height - height, width, height),
+            MeanColor(pixels, bitmap.Width, bitmap.Height, 0, bitmap.Height - height, width, height)
+        ];
     }
 
     // 以單次 LockBits 讀到的 ARGB 陣列取樣，取代逐像素 GetPixel（開啟編輯器時對每個 transition tile 都會呼叫）。

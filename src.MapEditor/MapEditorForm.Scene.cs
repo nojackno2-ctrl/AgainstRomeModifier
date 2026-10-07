@@ -38,8 +38,7 @@ internal sealed partial class MapEditorForm
         _sceneY.Value = ClampSceneCoordinate(moved.LocalY, _sceneY);
         _sceneZ.Value = ClampSceneCoordinate(moved.LocalZ, _sceneZ);
         IReadOnlyList<MapSceneObject> effective = EffectiveSceneObjects();
-        _canvas.UpdateSceneObjects(effective);
-        _view3d?.UpdateSceneObjects(effective);
+        PushSceneObjects(effective);
         UpdateEditorState();
         if (e.Completed)
         {
@@ -259,6 +258,64 @@ internal sealed partial class MapEditorForm
 
     private static string KindText(string kind, bool isEn) => !isEn ? kind : kind switch { "建築" => "Building", "單位" => "Unit", _ => "Other" };
 
+    /// <summary>3D 畫面點選可見物件：選取對應的 SDL 場景清單列（其後拖曳即移動）。</summary>
+    private void SelectPickedSceneObject(MapSceneObject picked)
+    {
+        string key = SceneKey(picked);
+        bool found = false;
+        _pickedNature = null;
+        _sceneList.SelectedItems.Clear(); // the list allows multi-select; a pick replaces the selection
+        SelectSceneListItem(tag =>
+        {
+            bool match = tag is MapSceneObject item && SceneKey(item) == key || tag is StagedSceneAddition added && SceneKey(added.Display) == key;
+            found |= match;
+            return match;
+        });
+        bool isEn = AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English;
+        string name = picked.Name;
+        if (found) { _status.Text = isEn ? $"Selected {name}; drag to move it." : $"已選取 {name}；拖曳即可移動。"; return; }
+        if (_selected?.IsCustom == true && PickedNatureTarget(picked) is not null)
+        {
+            _pickedNature = picked;
+            _status.Text = isEn ? $"Selected {name}; press Delete to remove it (undo restores it)." : $"已選取 {name}；按 Delete 移除（可復原）。";
+            return;
+        }
+        _status.Text = isEn ? $"{name} is a placed or fixed map object; edit it with the Place tool." : $"{name} 屬於放置物件或地圖固定物件，請用「放置」工具編輯。";
+    }
+
+    /// <summary>
+    /// Removable nature object behind a 3D pick: an existing landscape DATA slot (ObjectIndex -100000 - slot)
+    /// or a pending planted addition (ObjectIndex -200000 - index), as produced by NatureDisplayObjects.
+    /// </summary>
+    private (int? Slot, AgainstRomeMapEditor.Modules.Nature.NatureAddition? Addition)? PickedNatureTarget(MapSceneObject picked)
+    {
+        if (!Map3DViewControl.IsLevelDataObject(picked)) return null;
+        if (picked.ObjectIndex <= -200000)
+        {
+            int index = -200000 - picked.ObjectIndex;
+            IReadOnlyList<AgainstRomeMapEditor.Modules.Nature.NatureAddition> additions = _natureSession.Additions;
+            return index < additions.Count ? (null, additions[index]) : null;
+        }
+        int slot = -100000 - picked.ObjectIndex;
+        LevelWorldObject? item = _levelObjects.FirstOrDefault(entry => entry.Slot == slot);
+        return item is not null && IsRemovableNature(item) && !_natureSession.RemovedSlots.Contains(slot) ? (slot, null) : null;
+    }
+
+    /// <summary>Remove the nature object picked in 3D as one undoable step; false when nothing removable is picked.</summary>
+    private bool DeletePickedNature()
+    {
+        if (_pickedNature is not { } picked || PickedNatureTarget(picked) is not { } target) { _pickedNature = null; return false; }
+        _pickedNature = null;
+        bool removed = _natureSession.Remove(target.Slot is { } slot ? [slot] : [], target.Addition is { } addition ? [addition] : []);
+        if (!removed) return false;
+        _natureSession.CommitStroke();
+        RefreshSceneMarkers();
+        UpdateEditorState();
+        bool isEn = AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English;
+        _status.Text = isEn ? $"Removed {picked.Name}; Undo restores it." : $"已移除 {picked.Name}；可用「復原」還原。";
+        return true;
+    }
+
     private void SelectSceneListItem(Func<object?, bool> match)
     {
         foreach (ListViewItem row in _sceneList.Items)
@@ -300,7 +357,7 @@ internal sealed partial class MapEditorForm
             removal.SourceFile.Equals(item.SourceFile, StringComparison.OrdinalIgnoreCase) && removal.ObjectIndex == item.ObjectIndex);
         bool canMove = editable && selected && !pendingRemoval && _sceneMoveTool.Checked;
         _canvas.SceneMoveEnabled = canMove;
-        if (_view3d is not null) _view3d.SceneMoveEnabled = canMove;
+        if (_view3d is not null) { _view3d.SceneMoveEnabled = canMove; _view3d.ScenePickEnabled = editable && _sceneMoveTool.Checked; }
         _sceneDeleteButton.Text = pendingRemoval
             ? (isEn ? "Undo Delete" : "取消刪除")
             : (isEn ? "Delete Object" : "刪除物件");

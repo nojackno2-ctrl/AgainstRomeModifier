@@ -482,6 +482,48 @@ public sealed class MapEditor3DTests
         }
     }
 
+    // Drafted with the local AI model, corrected and verified by hand.
+    [Fact]
+    public void RayPicker_hits_from_a_far_orthographic_eye_and_rejects_rays_that_miss_the_map()
+    {
+        var field = new TerrainHeightField(257, 257, new byte[257 * 257], heightScale: 6f, tileWidth: 64, tileHeight: 64);
+        // Game camera direction (yaw 45, pitch 30) aimed at the centre of tile (20, 30), from 300 units away.
+        Vector3 direction = Vector3.Normalize(new Vector3(-MathF.Cos(MathF.PI / 6) * .7071f, -.5f, -MathF.Cos(MathF.PI / 6) * .7071f));
+        var target = new Vector3(20.5f, 0, 30.5f);
+        Assert.True(TerrainRayPicker.TryPick(field, new TerrainRay(target - direction * 300, direction), out int x, out int y));
+        Assert.Equal((20, 30), (x, y));
+        Assert.False(TerrainRayPicker.TryPick(field, new TerrainRay(new Vector3(-10, 100, 32), Vector3.UnitX), out _, out _)); // parallel, above
+        Assert.False(TerrainRayPicker.TryPick(field, new TerrainRay(new Vector3(100, 50, 32), new Vector3(0, -1, 1)), out _, out _)); // beside the map
+        Assert.False(TerrainRayPicker.TryPick(field, new TerrainRay(new Vector3(32, 50, 32), Vector3.UnitY), out _, out _)); // pointing away
+    }
+
+    [Fact]
+    public void RayPicker_stops_at_a_plateau_in_front_of_the_ground_behind_it()
+    {
+        var samples = new byte[257 * 257];
+        // Plateau of full height (6) over samples x 160..200, z 120..140 = tiles x 40..50, z 30..35.
+        for (int z = 120; z <= 140; z++) for (int sx = 160; sx <= 200; sx++) samples[z * 257 + sx] = 255;
+        var field = new TerrainHeightField(257, 257, samples, heightScale: 6f, tileWidth: 64, tileHeight: 64);
+        // A shallow ray from +X aimed at ground tile (30, 32); at x = 50 it is only 2 units high, inside the plateau.
+        var origin = new Vector3(80, 5, 32.5f);
+        Assert.True(TerrainRayPicker.TryPickPoint(field, new TerrainRay(origin, new Vector3(30, 0, 32.5f) - origin), out Vector3 hit));
+        Assert.InRange(hit.X, 49f, 51f);
+        Assert.True(TerrainRayPicker.TryPick(field, new TerrainRay(origin, new Vector3(30, 0, 32.5f) - origin), out int x, out int y));
+        Assert.Equal(32, y);
+        Assert.InRange(x, 49, 50);
+    }
+
+    [Fact]
+    public void RayPicker_point_lies_on_sloped_terrain()
+    {
+        var samples = new byte[257 * 257];
+        for (int z = 0; z < 257; z++) for (int sx = 0; sx < 257; sx++) samples[z * 257 + sx] = (byte)sx; // ramp rising toward +X
+        var field = new TerrainHeightField(257, 257, samples, heightScale: 6f, tileWidth: 64, tileHeight: 64);
+        Vector3 direction = Vector3.Normalize(new Vector3(-.6f, -.5f, -.6f));
+        Assert.True(TerrainRayPicker.TryPickPoint(field, new TerrainRay(new Vector3(40, 3, 30) - direction * 200, direction), out Vector3 point));
+        Assert.InRange(point.Y - field.SampleHeight(point.X, point.Z), -.05f, .05f);
+    }
+
     [Fact]
     public void RayPicker_returns_nearest_tile_and_rejects_outside_ray()
     {

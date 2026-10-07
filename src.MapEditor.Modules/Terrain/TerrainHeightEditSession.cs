@@ -1,7 +1,7 @@
 namespace AgainstRomeMapEditor;
 
 /// <summary>地形高度筆刷的操作。</summary>
-internal enum TerrainHeightOperation { Raise, Lower, Smooth, Flatten }
+internal enum TerrainHeightOperation { Raise, Lower, Smooth, Flatten, Roughen }
 
 /// <summary>通行區域筆刷：阻擋（collision 255）或清除（collision 0）。</summary>
 internal enum TerrainCollisionOperation { Block, Clear }
@@ -67,7 +67,7 @@ internal sealed class TerrainHeightEditSession
     public double LightFitQuality => _light.RSquared;
 
     /// <summary>以圓形、平滑衰減的筆刷修改頂點高度（單位：boden.bmp 綠通道 0–255）。</summary>
-    public IReadOnlyList<TerrainSampleChange> PaintHeight(float centerX, float centerY, float radius, TerrainHeightOperation operation, int strength, int flattenTarget = -1)
+    public IReadOnlyList<TerrainSampleChange> PaintHeight(float centerX, float centerY, float radius, TerrainHeightOperation operation, int strength, int flattenTarget = -1, int roughnessSeed = 0)
     {
         if (!float.IsFinite(centerX) || !float.IsFinite(centerY) || !float.IsFinite(radius) || radius <= 0) throw new ArgumentOutOfRangeException(nameof(radius));
         strength = Math.Clamp(strength, 1, 64);
@@ -92,6 +92,7 @@ internal sealed class TerrainHeightEditSession
                 TerrainHeightOperation.Raise => before + strength * falloff,
                 TerrainHeightOperation.Lower => before - strength * falloff,
                 TerrainHeightOperation.Flatten => before + (flattenTarget - before) * Math.Min(1f, strength / 16f) * falloff,
+                TerrainHeightOperation.Roughen => before + strength * falloff * RoughnessNoise(x, y, roughnessSeed),
                 _ => before + (Average3x3(source!, x, y) - before) * Math.Min(1f, strength / 8f) * falloff,
             };
             byte after = (byte)Math.Clamp((int)MathF.Round(value), 0, 255);
@@ -103,6 +104,32 @@ internal sealed class TerrainHeightEditSession
         if (changes.Count > 0) _redo.Clear();
         return changes;
     }
+
+    /// <summary>
+    /// 粗糙化用的平滑值雜訊，範圍約 [-1, 1]：在每 <see cref="RoughnessCell"/> 個頂點的格點上取雜湊值，再以 smoothstep 雙線性內插，
+    /// 產生數個頂點寬的自然起伏而非逐點尖刺。同一 (x, y, seed) 結果固定，同一筆畫重複塗抹會沿同一方向加深起伏。
+    /// </summary>
+    internal static float RoughnessNoise(int x, int y, int seed)
+    {
+        float fx = x / (float)RoughnessCell, fy = y / (float)RoughnessCell;
+        int x0 = (int)MathF.Floor(fx), y0 = (int)MathF.Floor(fy);
+        float tx = Smooth(fx - x0), ty = Smooth(fy - y0);
+        float top = Lerp(Lattice(x0, y0, seed), Lattice(x0 + 1, y0, seed), tx);
+        float bottom = Lerp(Lattice(x0, y0 + 1, seed), Lattice(x0 + 1, y0 + 1, seed), tx);
+        return Lerp(top, bottom, ty);
+
+        static float Smooth(float t) => t * t * (3 - 2 * t);
+        static float Lerp(float a, float b, float t) => a + (b - a) * t;
+        static float Lattice(int lx, int ly, int s)
+        {
+            uint h = unchecked((uint)(lx * 374761393 + ly * 668265263 + s * 1442695041));
+            h = (h ^ (h >> 13)) * 1274126177u;
+            h ^= h >> 16;
+            return (h & 0xFFFF) / 32767.5f - 1f;
+        }
+    }
+
+    internal const int RoughnessCell = 4;
 
     /// <summary>
     /// 對整張高度圖套用逐頂點轉換（AI 製圖等批次編輯用）；變更與筆刷相同地記入待提交筆畫，呼叫端再 CommitStroke 成為單一復原步驟。

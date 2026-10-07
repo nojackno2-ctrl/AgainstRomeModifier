@@ -73,6 +73,43 @@ public sealed class MapEditorNatureHistoryTests
     }
 
     [Fact]
+    public void Picked_nature_objects_are_deleted_with_undo_in_move_mode_and_fixed_objects_are_kept()
+    {
+        Run(form =>
+        {
+            const float position = 10.5f * SdlSceneCatalog.WorldUnitsPerMapPixel * 4;
+            Set(form, "_levelObjects", new LevelWorldObject[]
+            {
+                new(0, 1, 8, 1, position, 0, position, 0, false),
+                new(1, 1, 8, 2, position, 0, position, 0, true), // linked: must stay
+            });
+            Paint(form, 20, 20); Invoke(form, "CommitStroke"); // one pending planted addition
+            Type mode = typeof(MapEditorForm).GetNestedType("EditMode", BindingFlags.NonPublic)!;
+            Invoke(form, "SetEditMode", Enum.Parse(mode, "SceneMove"));
+            var session = Get<AgainstRomeMapEditor.Modules.Nature.NatureEditSession>(form, "_natureSession");
+            MapSceneObject Data(int index) => new("LanGerLau00", position, 0, position, 8, "DATA/objects.dat", index);
+
+            Invoke(form, "SelectPickedSceneObject", Data(-100001)); // linked slot 1
+            Assert.False((bool)Invoke(form, "DeletePickedNature")!);
+            Invoke(form, "SelectPickedSceneObject", Data(-100000)); // removable slot 0
+            Assert.True((bool)Invoke(form, "DeletePickedNature")!);
+            Assert.Equal(new[] { 0 }, session.RemovedSlots);
+            Assert.False((bool)Invoke(form, "DeletePickedNature")!); // the pick is consumed
+            Assert.True(Button(form, "_undoButton").Enabled);
+            Invoke(form, "Undo");
+            Assert.Empty(session.RemovedSlots);
+            Invoke(form, "Redo");
+            Assert.Equal(new[] { 0 }, session.RemovedSlots);
+
+            Invoke(form, "SelectPickedSceneObject", Data(-200000)); // the pending planted addition
+            Assert.True((bool)Invoke(form, "DeletePickedNature")!);
+            Assert.Empty(Additions(form));
+            Invoke(form, "Undo");
+            Assert.Single(Additions(form).Cast<object>());
+        });
+    }
+
+    [Fact]
     public void Empty_valid_world_store_keeps_nature_tool_enabled_and_clears_old_history()
     {
         Run(form =>
@@ -136,6 +173,32 @@ public sealed class MapEditorNatureHistoryTests
         Assert.True(thread.Join(TimeSpan.FromSeconds(30)), "Nature history test timed out.");
         try { Assert.Null(failure); }
         finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
+    public void Large_brush_scatters_mixed_species_with_spacing_as_one_undo_step()
+    {
+        Run(form =>
+        {
+            var types = Get<ListBox>(form, "_natureTypes");
+            object first = types.Items[0];
+            var template = first.GetType().GetProperty("Template")!.GetValue(first)!;
+            types.Items.Add(Activator.CreateInstance(first.GetType(), template, "LanGerBir00")!);
+            types.Items.Add(Activator.CreateInstance(first.GetType(), template, "LanItaZyp06")!); // 不同地區，混合時不得選入
+            Get<MapCanvasControl>(form, "_canvas").BrushSize = 9;
+            Get<ComboBox>(form, "_natureDensity").SelectedIndex = 2;
+            Get<CheckBox>(form, "_natureMix").Checked = true;
+            Paint(form, 20, 20); Invoke(form, "CommitStroke");
+            var planted = Additions(form).Cast<AgainstRomeMapEditor.Modules.Nature.NatureAddition>().ToArray();
+            Assert.True(planted.Length > 10, $"9×9 茂密只種了 {planted.Length} 株");
+            Assert.Equal(["LanGerBir00", "LanGerLau00"], planted.Select(item => item.Name).Distinct().Order());
+            float tile = AgainstRomeModifier.Maps.SdlSceneCatalog.WorldUnitsPerMapPixel * 4f;
+            for (int i = 0; i < planted.Length; i++)
+                for (int j = i + 1; j < planted.Length; j++)
+                    Assert.True(MathF.Sqrt(MathF.Pow(planted[i].X - planted[j].X, 2) + MathF.Pow(planted[i].Z - planted[j].Z, 2)) >= .45f * tile - .01f);
+            Invoke(form, "Undo");
+            Assert.Empty(Additions(form));
+        });
     }
 
     private static IList Additions(MapEditorForm form) => (IList)Get<AgainstRomeMapEditor.Modules.Nature.NatureEditSession>(form, "_natureSession").Additions;

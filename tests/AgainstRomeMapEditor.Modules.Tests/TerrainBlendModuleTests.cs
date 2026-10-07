@@ -5,6 +5,39 @@ namespace AgainstRomeMapEditor.Modules.Tests;
 public sealed class TerrainBlendModuleTests
 {
     [Fact]
+    public void Rebinding_resource_resolver_keeps_saved_baseline_history_and_uses_new_resolver_for_future_strokes()
+    {
+        var resolver = new Resolver();
+        string[] source = ["grass/grass/grass/grass"];
+        var session = new TerrainBlendEditSession(TerrainBlendAuthoringMap.Import(1, source, resolver, "grass"), source, resolver);
+        Assert.True(session.PaintCircle(0, 0, 0, "sand").Succeeded);
+        Assert.True(session.CommitStroke());
+        string[] first = session.CurrentTextures.ToArray();
+        session.Undo();
+        session.RebindMaterialResolver(new ReloadedResolver());
+        Assert.False(session.IsDirty); Assert.True(session.CanRedo);
+        session.Redo(); Assert.Equal(first, session.CurrentTextures);
+        Assert.True(session.PaintCircle(1, 1, 0, "water").Succeeded);
+        Assert.True(session.CommitStroke());
+        string[] second = session.CurrentTextures.ToArray();
+        Assert.Equal("new:sand/grass/water/grass", second[0]);
+        session.Undo(); Assert.Equal(first, session.CurrentTextures);
+        session.Undo(); Assert.Equal(source, session.CurrentTextures); Assert.False(session.IsDirty);
+        session.Redo(); session.Redo(); Assert.Equal(second, session.CurrentTextures);
+        session.ResetToBaseline(); Assert.Equal(source, session.CurrentTextures);
+    }
+
+    private sealed class ReloadedResolver : INativeTerrainMaterialResolver
+    {
+        public bool TryResolveNativeCorners(string texture, out IReadOnlyList<string> corners)
+        {
+            corners = texture.Replace("new:", "", StringComparison.Ordinal).Split('/');
+            return corners.Count == 4;
+        }
+        public string? ResolveNativeTile(IReadOnlyList<string> cornerMaterialIds, int x, int y) => "new:" + string.Join('/', cornerMaterialIds);
+    }
+
+    [Fact]
     public void Rejected_independent_area_preserves_earlier_areas_in_one_undo_step()
     {
         var resolver = new Resolver();
