@@ -1,5 +1,7 @@
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
+using System.Runtime.InteropServices;
+using AgainstRomeMapEditor.NativeAssets;
 using AgainstRomeModifier.Maps;
 
 namespace AgainstRomeMapEditor;
@@ -27,8 +29,22 @@ internal sealed class MapCanvasControl : Control
     private Point _panStart;
     private PointF _pan = PointF.Empty;
     private float _zoom = 1f;
+    private NativeSpriteCatalog? _spriteCatalog;
+    private readonly Dictionary<NativeSprite, Bitmap> _spriteBitmaps = new(ReferenceEqualityComparer.Instance);
     private readonly HashSet<int> _paintedInDrag = new();
     private int _lastPaintedTile = -1;
+
+    public NativeSpriteCatalog? SpriteCatalog
+    {
+        get => _spriteCatalog;
+        set
+        {
+            if (ReferenceEquals(_spriteCatalog, value)) return;
+            _spriteCatalog = value;
+            ClearSpriteBitmaps();
+            Invalidate();
+        }
+    }
 
     public string? BrushTexture { get; set; }
     public int BrushSize { get; set; } = 1;
@@ -386,18 +402,79 @@ internal sealed class MapCanvasControl : Control
 
     private void DrawSceneObjects(Graphics graphics, Rectangle bounds)
     {
+        float tileSize = _dimension > 0 ? bounds.Width / (float)_dimension : 0f;
+        float maxBox = tileSize * 1.6f;
+        InterpolationMode prevInterpolation = graphics.InterpolationMode;
+        bool changedInterpolation = false;
+
         foreach (MapSceneObject item in _sceneObjects)
         {
             float x = bounds.Left + item.WorldX / (SdlSceneCatalog.WorldUnitsPerMapPixel * SdlSceneCatalog.MapPixelSize) * bounds.Width;
             float y = bounds.Top + item.WorldZ / (SdlSceneCatalog.WorldUnitsPerMapPixel * SdlSceneCatalog.MapPixelSize) * bounds.Height;
-            float size = Math.Clamp(bounds.Width / 180f, 3f, 11f);
-            Color color = TeamColor(item.Team);
-            using var fill = new SolidBrush(Color.FromArgb(215, color));
-            using var outline = new Pen(Color.FromArgb(235, 20, 20, 20), Math.Max(1, size / 5));
-            if (item.Kind == "建築") { graphics.FillRectangle(fill, x - size, y - size, size * 2, size * 2); graphics.DrawRectangle(outline, x - size, y - size, size * 2, size * 2); }
-            else if (item.Kind == "單位") { graphics.FillEllipse(fill, x - size / 2, y - size / 2, size, size); graphics.DrawEllipse(outline, x - size / 2, y - size / 2, size, size); }
-            else { PointF[] points = { new(x, y - size), new(x + size, y), new(x, y + size), new(x - size, y) }; graphics.FillPolygon(fill, points); graphics.DrawPolygon(outline, points); }
+
+            NativeSprite? sprite = _spriteCatalog?.GetSprite(item.Name, item.Team);
+            if (sprite is not null && sprite.Width > 0 && sprite.Height > 0 && maxBox > 1f)
+            {
+                Bitmap bitmap = GetOrCreateSpriteBitmap(sprite);
+                float scale = Math.Min(maxBox / sprite.Width, maxBox / sprite.Height);
+                float drawWidth = sprite.Width * scale;
+                float drawHeight = sprite.Height * scale;
+                float drawX = x - sprite.AnchorX * scale;
+                float drawY = y - sprite.AnchorY * scale;
+
+                InterpolationMode desired = scale >= 0.5f ? InterpolationMode.HighQualityBicubic : InterpolationMode.Bilinear;
+                if (graphics.InterpolationMode != desired)
+                {
+                    graphics.InterpolationMode = desired;
+                    changedInterpolation = true;
+                }
+                graphics.DrawImage(bitmap, drawX, drawY, drawWidth, drawHeight);
+            }
+            else
+            {
+                float size = Math.Clamp(bounds.Width / 180f, 3f, 11f);
+                Color color = TeamColor(item.Team);
+                using var fill = new SolidBrush(Color.FromArgb(215, color));
+                using var outline = new Pen(Color.FromArgb(235, 20, 20, 20), Math.Max(1, size / 5));
+                if (item.Kind == "建築") { graphics.FillRectangle(fill, x - size, y - size, size * 2, size * 2); graphics.DrawRectangle(outline, x - size, y - size, size * 2, size * 2); }
+                else if (item.Kind == "單位") { graphics.FillEllipse(fill, x - size / 2, y - size / 2, size, size); graphics.DrawEllipse(outline, x - size / 2, y - size / 2, size, size); }
+                else { PointF[] points = { new(x, y - size), new(x + size, y), new(x, y + size), new(x - size, y) }; graphics.FillPolygon(fill, points); graphics.DrawPolygon(outline, points); }
+            }
         }
+
+        if (changedInterpolation) graphics.InterpolationMode = prevInterpolation;
+    }
+
+    private Bitmap GetOrCreateSpriteBitmap(NativeSprite sprite)
+    {
+        if (_spriteBitmaps.TryGetValue(sprite, out Bitmap? cached)) return cached;
+        var bitmap = new Bitmap(sprite.Width, sprite.Height, PixelFormat.Format32bppArgb);
+        BitmapData data = bitmap.LockBits(new Rectangle(0, 0, sprite.Width, sprite.Height), ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
+        try
+        {
+            int[] pixels = unchecked((int[])(object)sprite.ArgbPixels);
+            if (data.Stride == sprite.Width * 4)
+            {
+                Marshal.Copy(pixels, 0, data.Scan0, pixels.Length);
+            }
+            else
+            {
+                for (int y = 0; y < sprite.Height; y++)
+                    Marshal.Copy(pixels, y * sprite.Width, IntPtr.Add(data.Scan0, y * data.Stride), sprite.Width);
+            }
+        }
+        finally
+        {
+            bitmap.UnlockBits(data);
+        }
+        _spriteBitmaps[sprite] = bitmap;
+        return bitmap;
+    }
+
+    private void ClearSpriteBitmaps()
+    {
+        foreach (Bitmap bitmap in _spriteBitmaps.Values) bitmap.Dispose();
+        _spriteBitmaps.Clear();
     }
 
     private static Color TeamColor(int team) => team switch
@@ -530,7 +607,7 @@ internal sealed class MapCanvasControl : Control
         return Color.FromArgb(90 + (hash & 0x4f), 90 + ((hash >> 8) & 0x4f), 90 + ((hash >> 16) & 0x4f));
     }
 
-    protected override void Dispose(bool disposing) { if (disposing) { _bitmap?.Dispose(); _terrainScene?.Dispose(); _emboss?.Dispose(); _smooth?.Dispose(); _heightShade?.Dispose(); _waterOverlay?.Dispose(); _heightOverride?.Dispose(); _collisionOverlay?.Dispose(); /* _floorTextures 由 MapEditorForm 擁有，不在此釋放 */ } base.Dispose(disposing); }
+    protected override void Dispose(bool disposing) { if (disposing) { _bitmap?.Dispose(); _terrainScene?.Dispose(); _emboss?.Dispose(); _smooth?.Dispose(); _heightShade?.Dispose(); _waterOverlay?.Dispose(); _heightOverride?.Dispose(); _collisionOverlay?.Dispose(); ClearSpriteBitmaps(); /* _floorTextures 由 MapEditorForm 擁有，不在此釋放 */ } base.Dispose(disposing); }
 }
 
 internal sealed class TexturePaintEventArgs : EventArgs

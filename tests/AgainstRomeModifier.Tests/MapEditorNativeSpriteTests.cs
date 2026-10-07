@@ -9,8 +9,12 @@ using AgainstRomeModifier.Maps;
 namespace AgainstRomeModifier.Tests;
 
 /// <summary>原生 ALR/APT sprite 接到 3D 場景：頂點排序／錨點，以及真正 OpenGL 畫面上的出現、移動與關閉。</summary>
+[Collection(WinFormsCollection)]
 public sealed partial class MapEditorSaveTransactionTests
 {
+    /// <summary>Other WinForms test classes join this collection so they never run in parallel with the editor form tests.</summary>
+    public const string WinFormsCollection = "Map editor WinForms";
+
     [Fact]
     public void Sprite_quads_are_painted_far_to_near_with_ground_anchor_offsets()
     {
@@ -19,7 +23,7 @@ public sealed partial class MapEditorSaveTransactionTests
         var far = new MapSceneObject("Far", 256 * 50, 0, 256 * 50, 0, "a.sdl");
         var sprite = new NativeSprite(4, 10, Enumerable.Repeat(0xFF0000FFu, 40).ToArray(), 1, 8, "x.alr");
         var atlas = NativeSpriteAtlas.Pack([sprite]);
-        float[] vertices = SceneObjectRenderer.BuildSpriteVertices([near, far, near], [sprite, sprite, null], atlas, heights, new Vector3(0, 10, 0));
+        float[] vertices = SceneObjectRenderer.BuildSpriteVertices([near, far, near], [sprite, sprite, null], atlas, heights, Matrix4x4.CreateLookAt(new Vector3(0, 10, 0), new Vector3(32, 0, 32), Vector3.UnitY));
         int stride = SceneObjectRenderer.FloatsPerSpriteVertex;
         Assert.Equal(2 * 6 * stride, vertices.Length); // the object without a sprite is skipped
         Assert.Equal(50f, vertices[0], 3); Assert.Equal(50f, vertices[2], 3); // far object first
@@ -31,6 +35,23 @@ public sealed partial class MapEditorSaveTransactionTests
         Assert.Equal(3 * s, vertices[2 * stride + 3], 6); Assert.Equal(8 * s, vertices[2 * stride + 4], 6);
         Assert.True(atlas.TryGetUv(sprite, out NativeSpriteUv uv));
         Assert.Equal((uv.U0, uv.V1), (vertices[5], vertices[6]));
+    }
+
+    [Fact]
+    public void Orthographic_painter_order_uses_view_depth_not_eye_distance()
+    {
+        var heights = new TerrainHeightField(257, 257, Enumerable.Repeat((byte)0, 257 * 257).ToArray(), tileWidth: 64, tileHeight: 64);
+        var camera = new EditorCamera { Target = new Vector3(32, 0, 32) }; // orthographic, yaw 45, pitch 30
+        var sprite = new NativeSprite(1, 1, [0xFFFFFFFFu], 0, 1, "x.alr");
+        var atlas = NativeSpriteAtlas.Pack([sprite]);
+        // A: 0.6 tile toward the camera (about 0.52 tile nearer in depth) but 25 tiles to the screen side,
+        // which makes it about 0.78 tile farther from the far orthographic eye than B at the target.
+        var b = new MapSceneObject("B", 32 * 256, 0, 32 * 256, 0, "a.sdl");
+        var a = b with { Name = "A", WorldX = (32 + .6f * .7071f + 25 * .7071f) * 256, WorldZ = (32 + .6f * .7071f - 25 * .7071f) * 256 };
+        Assert.True(Vector3.Distance(SceneObjectRenderer.GroundPoint(a, heights), camera.Position) > Vector3.Distance(SceneObjectRenderer.GroundPoint(b, heights), camera.Position));
+        float[] vertices = SceneObjectRenderer.BuildSpriteVertices([a, b], [sprite, sprite], atlas, heights, camera.GetViewMatrix());
+        Assert.Equal(32f, vertices[0], 3); // B (farther in depth) is painted first
+        Assert.True(vertices[6 * SceneObjectRenderer.FloatsPerSpriteVertex] > 49, "A (nearer in depth) must be painted last.");
     }
 
     [Fact]

@@ -34,6 +34,8 @@ internal sealed class Map3DViewControl : GLControl
     private bool _reinitializeOnHandleCreated;
     private byte[]? _collisionMask;
     private int _collisionSize, _collisionTexture;
+    private byte[] _vertexLight = [255, 255, 255];
+    private int _vertexLightWidth = 1, _vertexLightHeight = 1, _vertexLightTexture;
     private NativeSpriteCatalog? _spriteCatalog;
     private NativeSpriteAtlas? _spriteAtlas;
     private NativeSprite?[] _objectSprites = Array.Empty<NativeSprite?>();
@@ -102,13 +104,32 @@ internal sealed class Map3DViewControl : GLControl
         if (LastFailureReason is not null) return false;
         using var bitmap = new Bitmap(heightSource);
         byte[] samples = ReadSamples(bitmap);
+        _vertexLight = [255, 255, 255]; _vertexLightWidth = _vertexLightHeight = 1;
+        string vertexSource = Path.Combine(mapDirectory, "vertex.bmp");
+        if (File.Exists(vertexSource))
+        {
+            using var vertexBitmap = new Bitmap(vertexSource);
+            if (vertexBitmap.Size == bitmap.Size)
+            {
+                int[] pixels = BitmapPixels.Read(vertexBitmap);
+                _vertexLight = new byte[pixels.Length * 3];
+                // Like ReadSamples/TerrainHeightField, bitmap row 0 maps to tile Y (map Z) 0; do not flip rows.
+                for (int i = 0; i < pixels.Length; i++)
+                {
+                    _vertexLight[i * 3] = (byte)((pixels[i] >> 16) & 0xff);
+                    _vertexLight[i * 3 + 1] = (byte)((pixels[i] >> 8) & 0xff);
+                    _vertexLight[i * 3 + 2] = (byte)(pixels[i] & 0xff);
+                }
+                _vertexLightWidth = vertexBitmap.Width; _vertexLightHeight = vertexBitmap.Height;
+            }
+        }
         // A 257x257 source covers the complete 64x64 tile map (four height samples per tile).
         _heights = new TerrainHeightField(bitmap.Width, bitmap.Height, samples, tileWidth: dimension, tileHeight: dimension);
         _dimension = dimension; _textures = textures.ToArray(); _objects = sceneObjects; _waterLevel = waterLevel; _heightMapStep = heightMapStep; _waterSourceColor = waterColor;
         _atlas?.Dispose(); _atlas = FloorTextureAtlas.Create(_textures, _library);
         ResolveObjectSprites();
         BuildMesh();
-        if (_initialized) UploadResources();
+        if (_initialized) { UploadResources(); UploadVertexLight(); }
         Invalidate();
         return true;
     }
@@ -176,6 +197,8 @@ internal sealed class Map3DViewControl : GLControl
             LastFailureReason = null;
             _collisionTexture = GL.GenTexture();
             UploadCollisionMask();
+            _vertexLightTexture = GL.GenTexture();
+            UploadVertexLight();
             if (_mesh is not null) UploadResources();
         }
         catch (Exception ex)
@@ -223,6 +246,18 @@ internal sealed class Map3DViewControl : GLControl
         GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.R8, size, size, 0, OpenTK.Graphics.OpenGL4.PixelFormat.Red, PixelType.UnsignedByte, _collisionMask ?? new byte[1]);
         GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Nearest);
         GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Nearest);
+        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.ClampToEdge);
+        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.ClampToEdge);
+        GL.ActiveTexture(TextureUnit.Texture0);
+    }
+
+    private void UploadVertexLight()
+    {
+        GL.ActiveTexture(TextureUnit.Texture2); GL.BindTexture(TextureTarget.Texture2D, _vertexLightTexture);
+        GL.PixelStore(PixelStoreParameter.UnpackAlignment, 1);
+        GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgb8, _vertexLightWidth, _vertexLightHeight, 0, OpenTK.Graphics.OpenGL4.PixelFormat.Rgb, PixelType.UnsignedByte, _vertexLight);
+        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Linear);
+        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
         GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.ClampToEdge);
         GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.ClampToEdge);
         GL.ActiveTexture(TextureUnit.Texture0);
@@ -553,6 +588,7 @@ internal sealed class Map3DViewControl : GLControl
         GL.Uniform1(GL.GetUniformLocation(_terrainProgram, "uDimension"), (float)_dimension);
         GL.Uniform1(GL.GetUniformLocation(_terrainProgram, "uShowCollision"), _collisionMask is null ? 0 : 1);
         GL.ActiveTexture(TextureUnit.Texture1); GL.BindTexture(TextureTarget.Texture2D, _collisionTexture); GL.Uniform1(GL.GetUniformLocation(_terrainProgram, "uCollision"), 1);
+        GL.ActiveTexture(TextureUnit.Texture2); GL.BindTexture(TextureTarget.Texture2D, _vertexLightTexture); GL.Uniform1(GL.GetUniformLocation(_terrainProgram, "uVertexLight"), 2);
         GL.ActiveTexture(TextureUnit.Texture0);
         GL.BindVertexArray(_vao); GL.DrawElements(PrimitiveType.Triangles, _mesh!.Indices.Length, DrawElementsType.UnsignedInt, 0);
     }
@@ -638,12 +674,12 @@ internal sealed class Map3DViewControl : GLControl
         // Pre-rendered isometric art is painted far-to-near like the original 2.5D renderer;
         // depth testing against the terrain would clip the parts drawn below the ground anchor.
         GL.Disable(EnableCap.DepthTest); GL.Disable(EnableCap.CullFace);
-        DrawSpriteBatch(SceneObjectRenderer.BuildSpriteVertices(_objects, _objectSprites, _spriteAtlas, _heights, _camera.Position), 1f);
+        DrawSpriteBatch(SceneObjectRenderer.BuildSpriteVertices(_objects, _objectSprites, _spriteAtlas, _heights, _camera.GetViewMatrix()), 1f);
         if (EditingEnabled && _previewSprite is not null && _hoverX >= 0 && _hoverY >= 0)
         {
             const float tileWorld = SdlSceneCatalog.WorldUnitsPerMapPixel * 4f;
             var ghost = new MapSceneObject(_previewName!, (_hoverX + .5f) * tileWorld, 0, (_hoverY + .5f) * tileWorld, _previewTeam, "");
-            DrawSpriteBatch(SceneObjectRenderer.BuildSpriteVertices([ghost], [_previewSprite], _spriteAtlas, _heights, _camera.Position), .6f);
+            DrawSpriteBatch(SceneObjectRenderer.BuildSpriteVertices([ghost], [_previewSprite], _spriteAtlas, _heights, _camera.GetViewMatrix()), .6f);
         }
         GL.Enable(EnableCap.DepthTest); GL.Enable(EnableCap.CullFace);
     }
@@ -740,6 +776,7 @@ internal sealed class Map3DViewControl : GLControl
         // 舊 context 的 ID 不能用在新 context（可能剛好與新配置的 texture/buffer ID 相同）。
         _terrainProgram = _colorProgram = _vao = _vbo = _ebo = _atlasTexture = _waterVao = _waterVbo = _markerVao = _markerVbo = _cursorVao = _cursorVbo = _collisionTexture = 0;
         _spriteProgram = _spriteVao = _spriteVbo = _spriteTexture = 0;
+        _vertexLightTexture = 0;
         _reinitializeOnHandleCreated = wasInitialized && !Disposing && !IsDisposed && RecreatingHandle;
         base.OnHandleDestroyed(e);
     }
@@ -751,12 +788,13 @@ internal sealed class Map3DViewControl : GLControl
         MakeCurrent();
         GL.DeleteBuffer(_vbo); GL.DeleteBuffer(_ebo); GL.DeleteBuffer(_waterVbo); GL.DeleteBuffer(_markerVbo); GL.DeleteBuffer(_cursorVbo); GL.DeleteVertexArray(_vao); GL.DeleteVertexArray(_waterVao); GL.DeleteVertexArray(_markerVao); GL.DeleteVertexArray(_cursorVao); GL.DeleteTexture(_atlasTexture); GL.DeleteProgram(_terrainProgram); GL.DeleteProgram(_colorProgram);
         GL.DeleteTexture(_collisionTexture); _collisionTexture = 0;
+        GL.DeleteTexture(_vertexLightTexture); _vertexLightTexture = 0;
         GL.DeleteBuffer(_spriteVbo); GL.DeleteVertexArray(_spriteVao); GL.DeleteTexture(_spriteTexture); GL.DeleteProgram(_spriteProgram);
         _spriteVbo = _spriteVao = _spriteTexture = _spriteProgram = 0;
     }
 
     private const string TerrainVertexShader = "#version 330 core\nlayout(location=0) in vec3 p; layout(location=1) in vec3 n; layout(location=2) in vec2 uv; uniform mat4 uMvp; uniform float uDimension; out vec3 N; out vec2 UV; out vec2 mapUV; void main(){ N=n; UV=uv; mapUV=p.xz/uDimension; gl_Position=uMvp*vec4(p,1.0);}";
-    private const string TerrainFragmentShader = "#version 330 core\nin vec3 N; in vec2 UV; in vec2 mapUV; uniform sampler2D uAtlas; uniform sampler2D uCollision; uniform int uShowCollision; uniform vec3 uLight; out vec4 c; void main(){float l=max(.28,dot(normalize(N),normalize(uLight))); vec3 color=texture(uAtlas,UV).rgb*l; if(uShowCollision!=0 && texture(uCollision,mapUV).r>0.0) color=mix(color,vec3(.824,.235,.235),.55); c=vec4(color,1.0);}";
+    private const string TerrainFragmentShader = "#version 330 core\nin vec3 N; in vec2 UV; in vec2 mapUV; uniform sampler2D uAtlas; uniform sampler2D uCollision; uniform sampler2D uVertexLight; uniform int uShowCollision; uniform vec3 uLight; out vec4 c; void main(){float l=max(.28,dot(normalize(N),normalize(uLight))); vec3 color=texture(uAtlas,UV).rgb*l; vec2 size=vec2(textureSize(uVertexLight,0)); vec2 uv=(mapUV*(size-1.0)+0.5)/size; vec3 vertexRgb=texture(uVertexLight,uv).rgb; color*=vertexRgb; if(uShowCollision!=0 && texture(uCollision,mapUV).r>0.0) color=mix(color,vec3(.824,.235,.235),.55); c=vec4(color,1.0);}";
     private const string SpriteVertexShader = "#version 330 core\nlayout(location=0) in vec3 anchor; layout(location=1) in vec2 offset; layout(location=2) in vec2 uv; uniform mat4 uView; uniform mat4 uProjection; out vec2 UV; void main(){ vec4 v=uView*vec4(anchor,1.0); v.xy+=offset; UV=uv; gl_Position=uProjection*v;}";
     private const string SpriteFragmentShader = "#version 330 core\nin vec2 UV; uniform sampler2D uSprites; uniform float uAlpha; out vec4 c; void main(){ vec4 t=texture(uSprites,UV); if(t.a<.5) discard; c=vec4(t.rgb,uAlpha);}";
     private const string ColorVertexShader = "#version 330 core\nlayout(location=0) in vec3 p; uniform mat4 uMvp; void main(){gl_Position=uMvp*vec4(p,1.0);}";

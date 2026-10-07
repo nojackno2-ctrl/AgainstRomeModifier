@@ -8,8 +8,8 @@ internal static class SceneObjectRenderer
 {
     /// <summary>
     /// Sprite pixels per tile unit. An APT diamond is 64 px wide and spans the diagonal of one
-    /// map pixel (a quarter tile), matching the game's 2:1 isometric projection. Estimated from
-    /// asset geometry; not yet measured against an in-game screenshot.
+    /// map pixel (a quarter tile), matching the game's 2:1 isometric projection. Verified in game
+    /// (2026-10-07): APT anchors 768 world units apart along +X land (384, 192) px apart.
     /// </summary>
     public const float TilesPerSpritePixel = .25f * 1.41421356f / 64f;
     public const int FloatsPerSpriteVertex = 7;
@@ -54,8 +54,8 @@ internal static class SceneObjectRenderer
                 hit = sprite.ArgbPixels[py * sprite.Width + px] >> 24 != 0;
             }
             else hit = Vector2.Distance(Project(eye, projection, viewport), point) <= markerRadius;
-            float distance = new Vector3(eye.X, eye.Y, eye.Z).Length(); // same order as BuildSpriteVertices
-            if (hit && distance < bestDepth) { bestDepth = distance; best = index; }
+            float depth = -eye.Z; // view-space depth: the same painter's order as BuildSpriteVertices
+            if (hit && depth < bestDepth) { bestDepth = depth; best = index; }
         }
         return best;
     }
@@ -68,17 +68,19 @@ internal static class SceneObjectRenderer
 
     /// <summary>
     /// Screen-aligned sprite quads (anchor xyz, view-space offset xy, uv) ordered far to near,
-    /// as the original 2.5D renderer paints. Objects without an atlas entry are skipped.
+    /// as the original 2.5D renderer paints. Objects without an atlas entry are skipped. Ordering
+    /// uses view-space depth, not distance to the eye: with the far orthographic eye, distance would
+    /// also grow with screen-sideways offset and misorder objects at the same depth.
     /// </summary>
     public static float[] BuildSpriteVertices(IReadOnlyList<MapSceneObject> objects, IReadOnlyList<NativeSprite?> sprites,
-        NativeSpriteAtlas atlas, TerrainHeightField heights, Vector3 cameraPosition)
+        NativeSpriteAtlas atlas, TerrainHeightField heights, Matrix4x4 view)
     {
         var visible = new List<(float Distance, Vector3 Anchor, NativeSprite Sprite, NativeSpriteUv Uv)>();
         for (int index = 0; index < objects.Count && index < sprites.Count; index++)
         {
             if (sprites[index] is not { } sprite || !atlas.TryGetUv(sprite, out NativeSpriteUv uv)) continue;
             Vector3 anchor = GroundPoint(objects[index], heights);
-            visible.Add((Vector3.DistanceSquared(anchor, cameraPosition), anchor, sprite, uv));
+            visible.Add((-Vector3.Transform(anchor, view).Z, anchor, sprite, uv));
         }
         visible.Sort((a, b) => b.Distance.CompareTo(a.Distance));
         var vertices = new float[visible.Count * 6 * FloatsPerSpriteVertex];

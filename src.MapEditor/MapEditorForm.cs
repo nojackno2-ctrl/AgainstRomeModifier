@@ -607,6 +607,7 @@ internal sealed partial class MapEditorForm : Form
         LoadSceneList(_sceneObjects);
         IReadOnlyList<MapSceneObject> effectiveObjects = EffectiveSceneObjects();
         if (!TryParseGameColor(_waterColor.Text, out Color sceneWaterColor)) sceneWaterColor = Color.SteelBlue;
+        _canvas.SpriteCatalog = _spriteCatalog; // 2D 也顯示原生 sprite，3D 不可用時同樣有效
         bool hasRealTextures = _texturesDocument is not null && _floorTextures is not null && _canvas.LoadTextures(_texturesDocument.Dimension, _texturesDocument.Textures, _savedTextures, _selected.DirectoryPath, _floorTextures, effectiveObjects, (float)_waterLevel.Value, _heightMapStep, sceneWaterColor, preserveView);
         bool has3DScene = false;
         if (_view3d is not null && _texturesDocument is not null && _floorTextures is not null)

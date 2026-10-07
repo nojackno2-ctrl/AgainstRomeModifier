@@ -1,5 +1,21 @@
 # AI Handoff - Live Project Memory
 
+## 子代理協作輪（2026-10-07 Claude 統籌；Codex／Agy／本地 AI）
+
+- Codex：3D 地形乘上 `vertex.bmp` 頂點色（同 boden 列向、texel 中心、白色備援、context 重建），測試 `MapEditorVertexLightTests`。Claude 審查通過。
+- Agy：2D 畫布原生 sprite（見下節）；Claude 把 `_canvas.SpriteCatalog` 接線移出「3D 可用」區塊，3D 失敗時 2D 也有素材。
+- 本地 AI 審查排序：Claude 依其指出的問題把繪製／拾取順序改為視圖空間深度（正交遠端鏡頭下直線距離會隨側向偏移變大），新增 `Orthographic_painter_order_uses_view_depth_not_eye_distance`；其餘建議（除零、迴圈範圍、W=0）經評估不成立。
+- 測試順序問題：GLFW 首次初始化會把測試主行程改成 Per-Monitor DPI，使高 DPI 截字測試取決於是否有 OpenGL 測試先跑（新增測試改變順序後暴露）。`TestProcessDpiAwareness` 模組初始化時鎖定 Unaware；WinForms 測試類別加入同一 xUnit collection。
+- 驗證：build 0警告/0錯誤；全測試 宿主616/22略過、modules123，0失敗；原版地圖副本重新擷取正常。
+
+## 2D 畫布原生 Sprite 顯示（2026-10-07 Antigravity）
+
+- `MapCanvasControl`：新增 `SpriteCatalog` 屬性（變更時觸發清空快取與 `Invalidate()`）。將 `NativeSprite` 以單次 `LockBits` + `Marshal.Copy` 轉為 32bpp ARGB `System.Drawing.Bitmap` 並以 `ReferenceEqualityComparer` 快取於字典中；於 `Dispose(disposing)` 與更換 catalog 時釋放快取 Bitmap。
+- 繪圖邏輯：於 `DrawSceneObjects` 中，若物件在 catalog 中有對應 sprite 且可用尺寸大於 1px，計算縮放使其等比例容納於約 1.6 個地圖格（`tileSize * 1.6f`），並依其錨點（`AnchorX`, `AnchorY`）對齊場景座標放置；放大比例 ≥ 0.5 時使用 `InterpolationMode.HighQualityBicubic`，縮小時使用 `Bilinear`，無 sprite 則維持既有幾何形狀標記繪製。
+- `MapEditorForm.cs`：在 `_view3d.SpriteCatalog = _spriteCatalog;` 旁精確加入一行 `_canvas.SpriteCatalog = _spriteCatalog;`。
+- 測試：新增 [`MapCanvasSpriteTests.cs`](file:///D:/Github/AgainstRomeModifier/tests/AgainstRomeModifier.Tests/MapCanvasSpriteTests.cs)（STA 執行緒），驗證畫布在有無 `SpriteCatalog` 下的 `DrawToBitmap` 輸出，確保原版 sprite 顏色僅在載入 catalog 時出現。
+- 驗證：`dotnet build AgainstRomeModifier.slnx -c Release -p:UseAppHost=false`（0 警告、0 錯誤）；`dotnet test tests/AgainstRomeModifier.Tests -c Release --no-build --filter "FullyQualifiedName~Canvas"` 通過（1 通過、0 失敗）。
+
 ## 3D 場景含地圖 DATA 全部物件（2026-10-07 Claude；goal「繼續開發遊戲編輯器」）
 
 - `MapEditorForm.PushSceneObjects`／`SceneObjectsFor3D`：2D 維持原物件集；3D 另加 DATA/objects.dat 全部物件（非地景依原隊伍；地景依自然物件待刪／待增狀態），所有原先「畫布＋3D 同時更新」改走此函式。沒有 sprite 的 DATA 物件在遊戲中看不見：3D 不畫也不可點選，唯 `Skriptmark*` 以 5px 青點提示（`Map3DViewControl.MarkerVisible`）。
