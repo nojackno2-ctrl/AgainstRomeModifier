@@ -250,7 +250,7 @@ namespace AgainstRomeModifier
             {
                 if (Directory.Exists(mapsPath))
                 {
-                    foreach (string mapDirectory in Directory.GetDirectories(mapsPath, "ENDL_???", SearchOption.TopDirectoryOnly).OrderBy(x => x, StringComparer.OrdinalIgnoreCase))
+                    foreach (string mapDirectory in EnumerateEndlessMapDirectories(mapsPath))
                     {
                         string path = Path.Combine(mapDirectory, "SCRIPT", "ak_level.bci");
                         if (File.Exists(path))
@@ -274,10 +274,9 @@ namespace AgainstRomeModifier
             {
                 if (Directory.Exists(mapsPath))
                 {
-                    string[] templates = Directory.GetFiles(mapsPath, "Endlos_*_Siedlung*.sdl", SearchOption.AllDirectories)
-                        .Where(p => p.Contains(Path.DirectorySeparatorChar + "ENDL_", StringComparison.OrdinalIgnoreCase))
-                        .ToArray();
-                    paths.AddRange(templates);
+                    foreach (string mapDirectory in EnumerateEndlessMapDirectories(mapsPath))
+                        paths.AddRange(Directory.GetFiles(mapDirectory, "Endlos_*_Siedlung*.sdl", SearchOption.TopDirectoryOnly)
+                            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase));
                 }
             }
             else if (pattern == "SYSTEM/CLAK/SCRIPT/ak_npc.bci|SYSTEM/CLAK/SCRIPT/ak_produktion.bci")
@@ -289,6 +288,15 @@ namespace AgainstRomeModifier
             }
             return paths;
         }
+
+        private static IEnumerable<string> EnumerateEndlessMapDirectories(string mapsPath) => Directory.GetDirectories(mapsPath)
+            .Where(path =>
+            {
+                string name = Path.GetFileName(path);
+                return name.Length == 8 && name.StartsWith("ENDL_", StringComparison.OrdinalIgnoreCase)
+                    && name[5..].All(character => character is >= '0' and <= '9');
+            })
+            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase);
 
         public static int GetExpectedFileCount(string pattern)
         {

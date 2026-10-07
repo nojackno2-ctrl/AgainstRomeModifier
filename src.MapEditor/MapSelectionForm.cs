@@ -176,7 +176,7 @@ internal sealed class MapSelectionForm : Form
 
         _loadButton.Text = isEn ? "Load Map" : "讀取地圖";
         _newButton.Text = isEn ? "Build from Endless" : "從無盡範本建立";
-        _blankButton.Text = isEn ? "New Blank Map" : "新建空白地圖";
+        _blankButton.Text = isEn ? "Flat Template" : "平坦範本地圖";
         _copyButton.Text = isEn ? "Copy to Custom" : "複製到自製地圖";
         _deleteButton.Text = isEn ? "Delete Custom" : "刪除自製地圖";
         _exit.Text = isEn ? "Exit" : "離開";
@@ -228,7 +228,7 @@ internal sealed class MapSelectionForm : Form
             }
             _hint.Text = maps.Length == 0 
                 ? (isEn ? "No valid non-campaign maps found. Please verify game path." : "找不到可用的非劇情地圖。請確認遊戲路徑。") 
-                : (isEn ? "\"Build from Endless\" keeps template terrain; \"New Blank Map\" starts from flat terrain with the template's settlements. Original maps are read-only." : "「從無盡範本建立」保留範本地形；「新建空白地圖」從平坦地形開始並保留範本聚落。原版地圖維持唯讀。");
+                : (isEn ? "\"Build from Endless\" keeps template terrain; \"Flat Template\" flattens terrain and keeps the template's settlements and scripts. Original maps are read-only." : "「從無盡範本建立」保留範本地形；「平坦範本地圖」整平地形並保留範本聚落與腳本。原版地圖維持唯讀。");
         }
         catch (Exception ex) {
             bool isEn = AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English;
@@ -259,7 +259,7 @@ internal sealed class MapSelectionForm : Form
     }
 
     /// <summary>
-    /// 新建空白地圖：以無盡範本建立可載入的自製地圖（保留聚落、DATA 與快取規則），
+    /// 平坦範本地圖：複製無盡範本（保留聚落、腳本、DATA 與快取規則），
     /// 開啟後編輯器立即把地形設為待儲存的空白地形（整平、單一材質、清除阻擋、重設頂點色／平滑／光照）。
     /// </summary>
     private void CreateBlankMap()
@@ -268,7 +268,7 @@ internal sealed class MapSelectionForm : Form
         GameMapInfo? source = SelectNewMapTemplate(_catalog.List(GamePath));
         if (source is null) { MessageBox.Show(this, isEn ? "No map available as a base for the new map." : "沒有可作為新地圖基礎的地圖。", Text); return; }
         // 地圖名稱寫入遊戲的 CP1251 文字檔，中文無法編碼；預設名稱一律用英文。
-        string name = PromptName(isEn ? "New Blank Map" : "新建空白地圖", "Blank Map");
+        string name = PromptName(isEn ? "Build Flat Template" : "建立平坦範本地圖", "Flat Template Map");
         if (string.IsNullOrWhiteSpace(name)) return;
         CreatedBlankMap = true;
         CloneAndOpen(source, name, isEn ? "Failed to create map" : "無法新建地圖");

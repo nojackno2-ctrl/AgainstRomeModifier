@@ -9,6 +9,7 @@
 | 地圖建立／刪除 | manifest 失敗回滾新建正式槽位、保留來源、原槽位重試；拒絕覆蓋既有final/tmp；拒刪原廠與未登記地圖 | `AgainstRomeModifier.Tests/MapEditorPhase1Tests.cs` |
 | 原廠唯讀／儲存前置驗證 | 原廠帶marker仍唯讀；移除marker、原廠槽位、錯誤root在開啟briefing前拒存；保留dirty與bytes，恢復marker可retry | `AgainstRomeModifier.Tests/MapEditorSaveAccessTests.cs` |
 | 備份排除 | 自製005/999含子目錄team.dat不進基準、不讀鎖檔、不產bak；保留既有bak，原版team/bak正常 | `AgainstRomeModifier.Tests/CustomMapBackupTests.cs` |
+| 額外槽位 AI 修補 | 真正 P1 在 000–004／005／999 的 detect、buffered apply、save、fresh reload、還原；排除非數字／暫存／刪除中／巢狀路徑 | `AgainstRomeModifier.Tests/EndlessAiAdditionalMapTests.cs` |
 | 自製圖完整還原選項 | 預設保留，受控刪除；未知/空目錄保留；還原/後續/中途刪除失敗恢復目錄與manifest；真正runner/engine拒絕/STA dialog | `AgainstRomeModifier.Tests/CustomMapRestoreTests.cs`、`RestoreAllOptionsDialogTests.cs` |
 | 環境屬性 | en-US/de-DE/fr-FR下七值、Heightmapstep、雨滴儲存／重開一致；dirty清除、未知行保留、重存bytes相同 | `AgainstRomeModifier.Tests/MapEditorEnvironmentSaveTests.cs` |
 | 文字與輸入提示 | 單值跳脫/100 bytes/NUL/CP1251防護；純文字/PFIL保留其他行；輸入提示與拒存bytes/dirty保留、retry；標題/8team/簡報save/reopen/重存不變 | `AgainstRomeModifier.Tests/MapTextEscapingTests.cs`、`MapEditorTextSaveTests.cs` |
@@ -37,7 +38,7 @@
 | 部族、多人 | 不同部族與多人槽位的放置、腳本、勝敗及同步 | 尚未完成涵蓋矩陣與遊戲內驗證 |
 | AI 地圖可玩性 | 通路、水域、起始位置、資源與建築空間在遊戲內可用 | 生成/套用通過不等於可玩性驗收 |
 
-本輪不得存取或修改遊戲安裝目錄。開發順序以 `map-editor-roadmap.md` 為準；`map-editor-requirements-audit.md` 列出原規格的實際缺口。原廠圖判定／儲存前置驗證與環境跨地區資料流程已修；接著核對文字與備份流程。合成小數案例驗證編輯器的數值保存，不證明遊戲接受所有小數参数。
+本輪不得存取或修改遊戲安裝目錄。開發順序以 `map-editor-roadmap.md` 為準；`map-editor-requirements-audit.md` 列出原規格的實際缺口。核心專屬核對後，接著補物件／部隊／事件共同儲存矩陣。平坦範本仍保留聚落、腳本與連結物件，不代表真正空白地圖；合成小數案例不證明遊戲接受所有小數參數。
 
 96 DPI 視覺證據位於 `TEMP/ArmVisualQA_1c01f5e6b6e84fe490ec6339c257de49`：獨立 STA harness 使用合成地圖、2D 畫布及 stub AI，透過 `DrawToBitmap` 產生 PNG 後檢視；中英放置分頁最小尺寸皆完整顯示提示與按鈕。這不驗證實際推論、OpenGL 或高 DPI。
 
@@ -49,6 +50,6 @@ dotnet build AgainstRomeModifier.slnx -c Release -p:UseAppHost=false --artifacts
 dotnet test AgainstRomeModifier.slnx -c Release -p:UseAppHost=false --artifacts-path "$env:TEMP/ArmResumeQA" --no-restore --no-build --logger 'console;verbosity=quiet'
 ```
 
-最新工作樹結果：build 0 警告/0 錯誤；宿主 536 通過/21 略過，modules 45 通過，共 581 通過/21 略過/0 失敗。AI 預覽 WIP 已編譯但功能未驗證，不納入這批提交的功能成果。未設定 `ARM_GAME_PATH`、`ARM_OLLAMA_LIVE`。以上 `--no-restore` 命令須先有相同 artifacts 路徑的 restore；新環境先移除 build 的 `--no-restore`。
+最新工作樹結果：build 0 警告/0 錯誤；宿主 539 通過/21 略過，modules 45 通過，共 584 通過/21 略過/0 失敗。AI 預覽 WIP 已編譯但功能未驗證，不納入這批提交的功能成果。未設定 `ARM_GAME_PATH`、`ARM_OLLAMA_LIVE`。以上 `--no-restore` 命令須先有相同 artifacts 路徑的 restore；新環境先移除 build 的 `--no-restore`。
 
 `b9b9965` 的獨立 git archive 快照位於 `TEMP/ArmCoreCommitQA_e70f5f1a2802428abb9fd7546428d1a2/source`，不包含 AI 預覽 WIP；独立還原／建置／完整測試同樣為 0 警告/0 錯誤、536 通過/21 略過/0 失敗。

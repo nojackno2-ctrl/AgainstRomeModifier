@@ -87,9 +87,9 @@ internal sealed partial class MapEditorForm
         if (_selected?.IsCustom != true || _terrainLayers is null || _texturesDocument is null) return;
         bool isEn = AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English;
         if (confirm && MessageBox.Show(this,
-                isEn ? "Replace the whole terrain with a flat blank map?\nHeights, ground material, blocked areas, vertex colors, smoothing and lighting are reset when you Save. Settlements are kept. You can still undo with \"Reset Terrain\" before saving."
-                     : "要把整張地形換成平坦的空白地圖嗎？\n高度、地表材質、阻擋區、頂點色、平滑遮罩與光照會在儲存時重設；聚落保留。儲存前仍可用「還原地表」放棄。",
-                isEn ? "Blank Terrain" : "空白地形", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+                isEn ? "Flatten the whole terrain?\nHeights, ground material, blocked areas, vertex colors, smoothing and lighting are reset when you Save. Removable scenery is cleared; settlements and scripts are kept. You can still use \"Reset Terrain\" before saving."
+                     : "要整平整張地形嗎？\n高度、地表材質、阻擋區、頂點色、平滑遮罩與光照會在儲存時重設，可移除地景會清除；聚落與腳本保留。儲存前仍可用「還原地表」放棄。",
+                isEn ? "Reset Flat Terrain" : "重設平坦地形", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
         CommitStroke();
         float water = _heightMapStep > 0 ? (float)_waterLevel.Value / _heightMapStep : 0;
         _terrainLayers.ApplyBlankTerrain((byte)Math.Clamp((int)MathF.Round(water) + 20, 0, 255));
@@ -109,7 +109,7 @@ internal sealed partial class MapEditorForm
         ApplyHeightsToViews();
         if (_editMode == EditMode.Collision) _canvas.SetCollisionOverlay(_terrainLayers.CollisionSize, _terrainLayers.Collision);
         UpdateEditorState();
-        _status.Text = isEn ? "Blank terrain prepared. Shape it with the tools or AI Map Maker, then Save." : "已準備空白地形；可用工具或 AI 製圖塑形，完成後按「儲存」。";
+        _status.Text = isEn ? "Flat terrain prepared; settlements and scripts are kept. Shape the terrain, then Save." : "已準備平坦地形，聚落與腳本保留；完成地形編輯後按「儲存」。";
     }
 
     /// <summary>空白地形的基礎材質：目前地圖最常見的基礎材質（通常是草地），找不到時用材質庫第一項。</summary>

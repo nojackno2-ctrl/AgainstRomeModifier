@@ -25,10 +25,10 @@
 | 聚落移動、複製、刪除、重新編號 | SdlSceneEditService／SdlDocument，Phase1 多項測試 | 合成路徑已有證據；遊戲內仍缺 |
 | 自製圖不進備份基準 | `CustomMapBackupTests` 鎖檔、005/999及nested案例；兩backup loader統一判定擁有者marker | 修正子目錄team.dat誤納入問題；不讀自製team、不產bak、已有bak保留；原版基準正常 |
 | 完整還原保留／刪除自製圖 | 新dialog→PatchEngine→CustomMapRestoreService；15項合成流程/STA/真正runner與engine測試 | 已實作預設保留、受控刪除、目錄/manifest回滾；僅完整還原跳過custom腳本/team基準，正常AI仍涵蓋custom；原版成功還原與新dialog視覺仍待驗收 |
-| AI 修補涵蓋新 ENDL 圖 | `EndlessAiOrchestrator` 動態列舉 ENDL_??? | 有實作；需核對額外槽位 Detect／Apply 的專屬測試 |
+| AI 修補涵蓋新 ENDL 圖 | `EndlessAiAdditionalMapTests` 真正 P1 七槽位 Detect／Apply／Save／fresh reload／還原 | 已修正式數字槽位搜尋；排除非數字、暫存、刪除中與巢狀複本；SDL 僅搜尋地圖根目錄 |
 | 地形、材質、通行、歷史／儲存交易 | 驗收矩陣列出的 session、真正表單及 AI 跨模式測試 | 合成路徑已驗證；原版輸出仍有遊戲內 gate |
 | 自然物件／人物／部隊／建築與事件 | 已有單兵與 nature fail/retry、身份、VM／dialog 測試 | 補部族／隊伍與多功能共同儲存矩陣，不推定多人同步已支援 |
-| 空白地圖語意 | MapSelectionForm 仍標示 New Blank Map，實際複製範本並保留聚落；原 §0 要求驗證前不得宣稱真空白圖 | 名稱／支援邊界尚待收斂；不能沿用 UI 名稱證明需求完成 |
+| 空白地圖語意 | 選單改稱 Flat Template／平坦範本地圖；工具改稱 Reset Flat Terrain／重設平坦地形 | 保留範本聚落、腳本與連結物件，整平與可移除地景清除仍走既有待儲存流程；真正無聚落／無腳本地圖尚未驗證 |
 | 3D 真貼圖、水面、光照、標記、筆刷與 fallback | 純計算測試與 2D DrawToBitmap 不證明 GL 畫面 | 真正 OpenGL、資源失敗診斷及互動效能尚待驗收 |
 | UI 中英／尺寸／DPI | 96 DPI 主畫面與 AI／事件預覽已有證據 | 高 DPI 尚缺；按 roadmap 排在核心整合後 |
 | AI 正式生成／預覽／套用 | 已有序列鎖、取消、部分失敗、套用與儲存測試；預覽 WIP 尚未接 UI | 第 4 階段續作，不能以舊 live 結果當成本輪完整驗收 |
@@ -38,7 +38,7 @@
 
 1. 本輪建立／刪除修正已提交 `b9b9965`；獨立 git archive 快照 build 0 警告/0 錯誤，完整測試 536 通過/21 略過/0 失敗，已確認不依賴 AI 預覽 WIP。
 2. 原廠圖 catalog 與 SaveMap 前置驗證已補9項測試；最新完整build 0警告/0錯誤，545通過/21略過/0失敗。
-3. 核對地圖文字、環境、備份／完整還原與額外槽位 AI 修補的專屬證據。
-4. 收斂「空白地圖」命名與支援範圍，再進入第 3 階段物件／事件整合。
+3. 地圖文字、環境、備份／完整還原、額外槽位 AI 修補與平坦範本命名已補專屬合成證據；真實遊戲與新對話框視覺缺口仍保留。
+4. 接著進入第 3 階段物件／部隊／事件整合，補部族、隊伍槽位與共同儲存／重新載入矩陣；第 4 階段再完成 AI 預覽 WIP。
 
 尚未完成的項目保留在清單中，不以目前可通過的測試重新定義成功。所有執行驗證只使用 repository／TEMP 合成資料。

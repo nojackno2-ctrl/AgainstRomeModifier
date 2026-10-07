@@ -58,7 +58,7 @@ internal sealed partial class MapEditorForm : Form
     private readonly ToolStripButton _sceneMoveTool = new("移動場景物件") { CheckOnClick = true };
     private readonly ToolStripButton _resetTerrainButton = new("還原地表") { Enabled = false };
     private readonly ToolStripButton _heightTool = new("地形高度") { CheckOnClick = true };
-    private readonly ToolStripButton _blankTerrainButton = new("空白地形…") { Enabled = false };
+    private readonly ToolStripButton _blankTerrainButton = new("重設平坦地形…") { Enabled = false };
     private readonly ToolStripButton _collisionTool = new("通行區域") { CheckOnClick = true };
     private readonly ToolStripButton _placeTool = new("放置物件") { CheckOnClick = true };
     private readonly ToolStripComboBox _terrainOperation = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 96, Visible = false };
@@ -411,7 +411,7 @@ internal sealed partial class MapEditorForm : Form
         LocalizePlacementTab(isEn);
         LocalizeEvents(isEn);
         _aiMapButton.Text = isEn ? "AI Map Maker…" : "AI 製圖…";
-        _blankTerrainButton.Text = isEn ? "Blank Terrain…" : "空白地形…";
+        _blankTerrainButton.Text = isEn ? "Reset Flat Terrain…" : "重設平坦地形…";
         _blankTerrainButton.ToolTipText = isEn
             ? "Flatten the whole map just above the water level, paint one base material, clear blocked ground, and reset vertex colors / smoothing / lighting on Save. Settlements are kept."
             : "整張地圖整平到略高於水面、鋪單一基礎材質、清除阻擋區，儲存時重設頂點色、平滑遮罩與光照；聚落保留。";
