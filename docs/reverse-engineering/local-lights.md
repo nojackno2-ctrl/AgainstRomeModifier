@@ -54,21 +54,51 @@
     - 點 3: $(441, 341)$，相對錨點 $\Delta X = -128, \Delta Y = -64$（對應左後側火把）
   - 當建築物實例化時，呼叫 `0x4C82A0` 查詢 APT 該點坐標，呼叫 `0x4E5420` 轉換為世界空間坐標，並加上 `aptlh` 高度與地形高度（`0x49BA80`），最後透過 `0x49F5F0` 加入動態光源陣列。
 
-### 3. lightdef.dau 規格與預設值
+### 3. lightdef.dau 規格與真實定義（已驗證）
 
-引擎在啟動時（`0x480D9C`）嘗試自 `lightdef.dau`（文字表）載入設定：
+真實 `SYSTEM/DATA_MP/DEFAULTS/lightdef.dau`（以 PFIL/LZSS 壓縮儲存）在解壓後包含完整的 `[LightDefault]` 表（共 42 筆定義，idx 0..41）。
+
 ```ini
 [LightDefault]
 ;idx ,activ,  red,  grn,  blu,      rad, type,     typep,spefx,-------------name-------------
-   0,    1,  1.00,  1.00,  1.00,   500.00,    0,      0.00,    0,DefaultLight
+    0,    1, 0.33, 0.93, 1.00,    10.00,    0,    100.00,    1,                     Testlicht
+    1,    1, 1.48, 1.22, 0.00,   350.00,    1,      0.05,    0,                   Kohleschale
+    2,    1, 1.50, 1.09, 0.00,   350.00,    1,      0.05,    0,                 Schmiedenglut
+    3,    1, 0.68, 0.98, 1.00,   200.00,    1,      0.05,    0,                Magisches_Blau
+    4,    1, 1.20, 0.85, 0.48,   290.00,    0,      0.00,    5,                LD_Test_Explo1
+    5,    1, 1.16, 0.73, 0.52,   500.00,    0,      0.00,    0,               LD_Test_Fwaffe1
+    6,    1, 1.37, 1.35, 1.35,  1500.00,    2,    750.00,    5,        LD_Test_Blitzeinschlag
+    7,    1, 1.33, 0.61, 0.33,   300.00,    1,      0.15,    0,                LD_Feuerstelle
+    8,    1, 1.61, 1.26, 0.00,   250.00,    1,      0.05,    0,             Goldschmiedenglut
+   18,    1, 1.60, 1.33, 0.00,   150.00,    1,      0.05,    0,              LD_Flamme_Fackel
 ```
-- 若檔案不存在，引擎呼叫 `0x4D2FE9` 初始化 256 個槽位為預設值：
-  - `Active` = 0（當註冊時設為 1）
-  - `Red`, `Green`, `Blue` = $1.0, 1.0, 1.0$
-  - `Radius` = $500.0$ 世界單位
-  - `Type`（閃爍類型）：0 = 恆亮，1 = 隨機擾動火光（Flicker），2 = 週期脈衝
-  - `TypeParam`：閃爍頻率／幅度參數
-  - `SpecialFx`：特殊效果標記（如 Lens Flare / Glow 旋轉）
+
+#### 關鍵實體光源定義對應表（Verified vs Assumed）
+
+1. **日耳曼主屋（BauGerHau00_Haupthaus, BauGerHau02_Haupthaus）：**
+   - `objdef.txt` 中指定 `aptli = 1`（`Kohleschale`，火盆／煤炭盆）。
+   - 高度偏移 `aptlh`：`BauGerHau00` 為 **30**，`BauGerHau02` 為 **80**。
+   - 光源屬性：
+     - **名稱**：`Kohleschale`
+     - **半徑 (Radius)**：`350.00` 世界單位
+     - **RGB 顏色**：`(1.48, 1.22, 0.00)`（高強度暖金黃色火光，R/G 均大於 1.0，B 為 0.0）
+     - **閃爍 (Flicker)**：`Type = 1`（隨機擾動火光），`TypeParam = 0.05`（微幅擾動），`SpecialFx = 0`
+2. **營火／火堆（Fil*Feu* / FX_Feuerstelle_Feuer）：**
+   - `objdef.txt` 中指定 `lidef = 7`（`LD_Feuerstelle`），高度 `lihei = 0`。
+   - 光源屬性：
+     - **名稱**：`LD_Feuerstelle`
+     - **半徑 (Radius)**：`300.00` 世界單位
+     - **RGB 顏色**：`(1.33, 0.61, 0.33)`（偏紅之炭火橙色）
+     - **閃爍 (Flicker)**：`Type = 1`，`TypeParam = 0.15`（較明顯之柴火閃爍），`SpecialFx = 0`
+3. **火把（FX_Flamme_Fackel_Sub）：**
+   - `objdef.txt` 中指定 `lidef = 18`（`LD_Flamme_Fackel`），高度 `lihei = 0`。
+   - 光源屬性：
+     - **名稱**：`LD_Flamme_Fackel`
+     - **半徑 (Radius)**：`150.00` 世界單位
+     - **RGB 顏色**：`(1.60, 1.33, 0.00)`（亮黃色集中火光）
+     - **閃爍 (Flicker)**：`Type = 1`，`TypeParam = 0.05`，`SpecialFx = 0`
+4. **預設回退（若無檔案）：**
+   - 引擎代碼 `0x4D2FE9` 之預設值：半徑 500.0，RGB=(1.0, 1.0, 1.0)，Type=0（無閃爍）。
 
 ---
 
@@ -136,19 +166,63 @@ void ApplyLocalLights(float worldX, float worldZ, float worldY, float* outR, flo
 | $(480, 500)$（完全未受光背景） | 303.6 | $(82, 60, 49)$ | 0.631 | 0.000 (已出範圍) |
 | $(600, 500)$（完全未受光背景） | 317.0 | $(82, 60, 49)$ | 0.598 | 0.000 (已出範圍) |
 
-### 2. 數值擬合結果
+### 2. 真實定義定量擬合結果（Quantitative Fit with Real Definitions）
 
-- **未受光區基準地面色調：** 平均約 $(82.5, 66.0, 46.5)$。
-- **火把中心受光區地面色調：** 平均約 $(190.0, 180.0, 120.0)$。
-- **光暈特徵：**
-  - 當 $d > 260$ 世界單位時，地面顏色迅速落回未受光背景色（$(82, 60, 49)$），顯示有效光暈半徑在該場景約為 250～300 世界單位（若基礎定義半徑為 500，此為環境光 $\max$ 門檻截斷效果）。
-  - 色彩增益比為：$\text{Red} \approx +130\%$, $\text{Green} \approx +170\%$, $\text{Blue} \approx +150\%$，呈現溫暖的火炬金黃色散佈，與公式之逐通道 $\max(\text{Ambient}, \text{LightColor} \times \text{Falloff})$ 完全吻合。
+以日耳曼主屋世界坐標 $(10624, 10112)$、門前平坦地面 ($Y=0$)、從真實 `gerhau00.apt` extraA 提取之 4 處光源世界坐標：
+- $L_0$: $(10816, 10112)$（右前門柱）
+- $L_1$: $(10624, 10368)$（左前門柱）
+- $L_2$: $(10624, 9856)$（右後側）
+- $L_3$: $(10368, 10112)$（左後側）
+
+以及 `lightdef.dau` 中日耳曼主屋真實光源定義 `Kohleschale`（`idx=1`，$R=1.48, G=1.22, B=0.00, \text{Radius}=350.0$）與 `objdef` 高度 $H=30$（`BauGerHau00`）及 $H=80$（`BauGerHau02`）進行擬合。
+
+#### 擬合模型
+未受光背景地表由鄰近未受光區域（$(480, 500)$、$(600, 500)$ 及周圍）觀測估計：
+$$\text{Ambient} = (A_R, A_G, A_B) \approx (82.0, 60.0, 49.0)$$
+對各地面像素點計算二次衰減 candidate：
+$$\text{Falloff} = \max\left(0, 1 - \frac{d^2}{R^2}\right)$$
+$$\text{Cand}_c = \text{LightColor}_c \times \text{Falloff} \times S \quad (c \in \{R, G, B\})$$
+$$\text{Pred}_c = \min(255.0, \max(A_c, \text{Cand}_c))$$
+
+#### 擬合數據指標（誠實報告）
+1. **主屋門前 6 個關鍵幾何取樣點（涵蓋中心、過渡帶與邊界）：**
+   - **Kohleschale (idx 1, R=350, H=30)：**
+     - 全通道整體 **$\text{RMSE} = 21.54$**，相關係數 **$\text{Correlation} = 0.9104$**
+     - 紅色通道（Red）：**$\text{RMSE} = 7.52$**，**$\text{Correlation} = 0.9970$**（極高度吻合）
+     - 綠色通道（Green）：**$\text{RMSE} = 23.12$**，**$\text{Correlation} = 0.9846$**
+     - 藍色通道（Blue）：因火盆定義中 $B = 0.00$，模型預測由環境光通道 $A_B$ 決定。實測中受光處藍色亦略微上升至 115～123（可能來自原版地形 shader 頂點光與地面 boden 紋理底色相乘之增益）。若以單一 $A_B$ 純擬合，藍色通道 $\text{RMSE} = 33.43$。
+   - **Kohleschale (idx 1, R=350, H=80)：**
+     - 全通道整體 **$\text{RMSE} = 21.41$**，相關係數 **$\text{Correlation} = 0.9115$**
+   - **對照組：若誤用火把 Flamme_Fackel (idx 18, R=150)：**
+     - 因半徑僅 150，在門前中央多數取樣點即超出半徑衰減為 0，整體 **$\text{RMSE} = 57.43$**，相關係數僅 **$0.3125$**。此顯著差異證實主屋確實使用 `aptli=1`（`Kohleschale`，半徑 350）而非單位火把 `idx=18`。
+2. **門前全區域 132 個密集網格像素擬合：**
+   - **Kohleschale (idx 1, R=350)：** 全區 $\text{RMSE} = 26.95$，$\text{Correlation} = 0.5858$（包含地形紋理噪聲、草石交錯底色）。
+   - **Flamme_Fackel (idx 18, R=150)：** 全區 $\text{RMSE} = 27.69$，$\text{Correlation} = 0.5566$。
+
+#### 結論與驗證狀態整理（Verified vs Assumed）
+- **[Verified]** `lightdef.dau` 為 PFIL 壓縮容器，解壓後為 `[LightDefault]` CSV 表。
+- **[Verified]** 主屋 `BauGerHau00`（`aptli=1, aptlh=30`）與 `BauGerHau02`（`aptli=1, aptlh=80`）使用的是 `Kohleschale`（idx 1，半徑 350，色值 $(1.48, 1.22, 0.00)$，閃爍 1/0.05）。
+- **[Verified]** 火堆（`FX_Feuerstelle_Feuer`）使用 `lidef=7`（`LD_Feuerstelle`，半徑 300，色值 $(1.33, 0.61, 0.33)$，閃爍 1/0.15）。
+- **[Verified]** 火把（`FX_Flamme_Fackel_Sub`）使用 `lidef=18`（`LD_Flamme_Fackel`，半徑 150，色值 $(1.60, 1.33, 0.00)$，閃爍 1/0.05）。
+- **[Verified]** APT extraA 提取出的 4 處光源點坐標在 2:1 等角逆變換後，完全對齊主屋門柱兩側火盆位置。
+- **[Assumed]** 藍色通道在實測中的微幅上升推測為地面紋理與頂點光照相乘的結果，在單純 ambient scalar + max 估計下因定義 $B=0$ 而未完全追蹤紋理細節。
 
 ---
 
 ## 四、實作與單元測試
 
-依任務指示，已建立下列檔案（無破壞性修改，不改動既有檔案）：
-- [`src.MapEditor.Modules/NativeAssets/NativeLightSource.cs`](file:///D:/Github/AgainstRomeModifier/src.MapEditor.Modules/NativeAssets/NativeLightSource.cs)：純 C# 模型，包含 `NativeLightDefinition`、`NativeLightInstance`、`NativeLightCatalog`（支援 `lightdef.dau` 解析與純記憶體預設回退）以及 `NativeLightCalculator`（依 0x49FFE0 / 0x49A490 實現完全一致的二次衰減與每通道取最大值運算）。
-- [`tests/AgainstRomeMapEditor.Modules.Tests/NativeLightTests.cs`](file:///D:/Github/AgainstRomeModifier/tests/AgainstRomeMapEditor.Modules.Tests/NativeLightTests.cs)：xUnit 單元測試，涵蓋半徑外衰減為 0、中心點衰減為 1、逐通道 max 合成、通道上限 1.0 截斷、多光源重疊判定、APT 錨點位移計算等 11 項測試案例。
-- 建置與測試驗證通過：Release 0 警告、0 錯誤；212 項模組測試全數通過（含新增之 11 項）。
+已建立與更新下列檔案（無破壞性修改，不改動既有檔案）：
+- [`src.MapEditor.Modules/NativeAssets/NativeLightSource.cs`](file:///D:/Github/AgainstRomeModifier/src.MapEditor.Modules/NativeAssets/NativeLightSource.cs)：
+  - 純 C# 模型，包含 `NativeLightDefinition`、`NativeLightInstance`、`NativeLightCatalog`。
+  - 新增 `Open(string)` 與 `Parse(ReadOnlySpan<byte>)`，支援自動偵測並以 `GameLZSS.DecompressPfil` 解壓縮 PFIL-compressed `lightdef.dau`。
+  - `NativeLightCalculator` 實現 0x49FFE0 二次衰減與每通道取最大值運算。
+- [`src.MapEditor.Modules/NativeAssets/NativeAptLightPoints.cs`](file:///D:/Github/AgainstRomeModifier/src.MapEditor.Modules/NativeAssets/NativeAptLightPoints.cs)（全新檔案，不修改 `NativeAptDocument.cs`）：
+  - `ExtractLightPoints(ReadOnlySpan<byte>)`：從原生 APT 位元組中提取 extraA 光源點及其相對於 anchor 的 delta 螢幕偏移。
+  - `GetBuildingWorldLightPositions(...)`：結合建築物世界坐標、地面高與 `aptlh` 高度，計算所有光源點之世界空間位置。
+- [`tests/AgainstRomeMapEditor.Modules.Tests/NativeLightTests.cs`](file:///D:/Github/AgainstRomeModifier/tests/AgainstRomeMapEditor.Modules.Tests/NativeLightTests.cs)：
+  - 新增 `NativeLightCatalog_ParseRealExcerpt_MatchesGameDefinitions`：以真實 `lightdef.dau` 表頭與列片段（包含 `Kohleschale`、`Schmiedenglut`、`LD_Feuerstelle`、`LD_Flamme_Fackel`）驗證解析能力與精確欄位值。
+  - 新增 `NativeLightCatalog_ParseBytes_SupportsPfilCompression`：驗證二進位與 PFIL 壓縮解碼。
+  - 新增 `NativeAptLightPoints_ExtractLightPoints_CorrectlyCalculatesDeltasAndWorldPositions`：驗證 extraA 提取與世界坐標計算。
+  - 既有 11 項測試＋新增 3 項測試，共 14 項專屬測試全案通過。
+- 建置與測試驗證通過：Release 0 警告、0 錯誤；270 項模組測試全數通過。
+

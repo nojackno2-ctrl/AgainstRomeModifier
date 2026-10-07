@@ -201,4 +201,152 @@ public sealed class NativeLightTests
     {
         Assert.Throws<ArgumentNullException>(() => new NativeLightInstance(Vector3.Zero, null!));
     }
+
+    [Fact]
+    public void NativeLightCatalog_ParseRealExcerpt_MatchesGameDefinitions()
+    {
+        // 來自遊戲真實 lightdef.dau / [LightDefault] 之代表性片段（涵蓋主屋火光 Kohleschale、鐵匠 Schmiedenglut、火堆 Feuerstelle、火把 Flamme_Fackel）
+        const string excerpt = """
+            [LightDefault]
+            ;idx ,activ,  red,  grn,  blu,      rad, type,     typep,spefx,-------------name-------------
+                0,    1, 0.33, 0.93, 1.00,    10.00,    0,    100.00,    1,                     Testlicht
+                1,    1, 1.48, 1.22, 0.00,   350.00,    1,      0.05,    0,                   Kohleschale
+                2,    1, 1.50, 1.09, 0.00,   350.00,    1,      0.05,    0,                 Schmiedenglut
+                7,    1, 1.33, 0.61, 0.33,   300.00,    1,      0.15,    0,                LD_Feuerstelle
+               18,    1, 1.60, 1.33, 0.00,   150.00,    1,      0.05,    0,              LD_Flamme_Fackel
+            """;
+
+        var catalog = NativeLightCatalog.Parse(excerpt);
+        Assert.Equal(5, catalog.Count);
+
+        // 主屋火盆 (Kohleschale, idx 1)
+        Assert.True(catalog.TryGetDefinition(1, out var kohle));
+        Assert.Equal(1, kohle.Index);
+        Assert.True(kohle.IsActive);
+        Assert.Equal(new Vector3(1.48f, 1.22f, 0.00f), kohle.Color);
+        Assert.Equal(350.0f, kohle.Radius);
+        Assert.Equal(1, kohle.FlickerType);
+        Assert.Equal(0.05f, kohle.FlickerParam, precision: 3);
+        Assert.Equal("Kohleschale", kohle.Name);
+
+        // 火堆 (LD_Feuerstelle, idx 7)
+        Assert.True(catalog.TryGetDefinition(7, out var feuer));
+        Assert.Equal(7, feuer.Index);
+        Assert.Equal(new Vector3(1.33f, 0.61f, 0.33f), feuer.Color);
+        Assert.Equal(300.0f, feuer.Radius);
+        Assert.Equal(1, feuer.FlickerType);
+        Assert.Equal(0.15f, feuer.FlickerParam, precision: 3);
+        Assert.Equal("LD_Feuerstelle", feuer.Name);
+
+        // 火把 (LD_Flamme_Fackel, idx 18)
+        Assert.True(catalog.TryGetDefinition(18, out var fackel));
+        Assert.Equal(18, fackel.Index);
+        Assert.Equal(new Vector3(1.60f, 1.33f, 0.00f), fackel.Color);
+        Assert.Equal(150.0f, fackel.Radius);
+        Assert.Equal(1, fackel.FlickerType);
+        Assert.Equal(0.05f, fackel.FlickerParam, precision: 3);
+        Assert.Equal("LD_Flamme_Fackel", fackel.Name);
+    }
+
+    [Fact]
+    public void NativeLightCatalog_ParseBytes_SupportsPfilCompression()
+    {
+        const string excerpt = "[LightDefault]\n   1, 1, 1.48, 1.22, 0.00, 350.00, 1, 0.05, 0, Kohleschale\n";
+        byte[] rawBytes = AgainstRomeModifier.Maps.MapTextEncoding.Game.GetBytes(excerpt);
+
+        // 測試純文字 bytes
+        var catFromPlain = NativeLightCatalog.Parse(rawBytes);
+        Assert.True(catFromPlain.TryGetDefinition(1, out var plainDef));
+        Assert.Equal("Kohleschale", plainDef.Name);
+
+        // 建立假 PFIL 標頭測試壓縮容器
+        byte[] header = new byte[64];
+        header[0] = (byte)'P'; header[1] = (byte)'F'; header[2] = (byte)'I'; header[3] = (byte)'L';
+        byte[] pfilBytes = AgainstRomeModifier.GameLZSS.CompressPfil(rawBytes, header);
+        var catFromPfil = NativeLightCatalog.Parse(pfilBytes);
+        Assert.True(catFromPfil.TryGetDefinition(1, out var pfilDef));
+        Assert.Equal("Kohleschale", pfilDef.Name);
+        Assert.Equal(350.0f, pfilDef.Radius);
+    }
+
+    [Fact]
+    public void NativeAptLightPoints_ExtractLightPoints_CorrectlyCalculatesDeltasAndWorldPositions()
+    {
+        // 建立符合 APAT v3 規格之合成最小檔案結構：
+        // header: 28 words
+        // row offsets & widths: 62 words
+        // first anchor: 2 words
+        // anchor: 2 ints (569, 405)
+        // extraA, extraB: 2 ints (4, 0)
+        // groups: 1 int (0)
+        // extraA points: 4 pairs of ints
+        var stream = new MemoryStream();
+        using (var writer = new BinaryWriter(stream))
+        {
+            uint[] header = new uint[28];
+            header[0] = 0x54415041; // "APAT"
+            header[1] = 3;          // v3
+            header[3] = 112;        // tableOffset
+            header[6] = 64;
+            header[7] = 31;
+            header[9] = 1;          // groupVariants
+            header[13] = 8;
+            header[20] = 1;         // colors
+            header[21] = 1;         // variants
+            header[23] = 64;        // width
+            header[24] = 31;        // height
+            header[27] = 8;         // pdat bytes
+            foreach (uint w in header) writer.Write(w);
+
+            // rowOffsets (31 words) + rowWidths (31 words)
+            for (int i = 0; i < 62; i++) writer.Write(0u);
+
+            // First anchor pair (2 words)
+            writer.Write(0u); writer.Write(0u);
+
+            // AnchorX, AnchorY (569, 405)
+            writer.Write(569);
+            writer.Write(405);
+
+            // extraA = 4, extraB = 0
+            writer.Write(4u);
+            writer.Write(0u);
+
+            // groups = 0
+            writer.Write(0u);
+
+            // 4 light points (與日耳曼主屋 gerhau00.apt extraA 相同之螢幕坐標)
+            writer.Write(665); writer.Write(453); // delta = (96, 48)
+            writer.Write(441); writer.Write(469); // delta = (-128, 64)
+            writer.Write(697); writer.Write(341); // delta = (128, -64)
+            writer.Write(441); writer.Write(341); // delta = (-128, -64)
+        }
+
+        byte[] aptBytes = stream.ToArray();
+
+        var points = NativeAptLightPoints.ExtractLightPoints(aptBytes);
+        Assert.Equal(4, points.Count);
+        Assert.Equal(96, points[0].DeltaAnchorX);
+        Assert.Equal(48, points[0].DeltaAnchorY);
+        Assert.Equal(-128, points[1].DeltaAnchorX);
+        Assert.Equal(64, points[1].DeltaAnchorY);
+
+        // 測試計算世界空間坐標（建築物位於 10624, 10112，地面 0，高度偏移 80）
+        var worldPositions = NativeAptLightPoints.GetBuildingWorldLightPositions(
+            aptBytes,
+            buildingWorldX: 10624f,
+            buildingWorldZ: 10112f,
+            groundY: 0f,
+            aptHeightOffset: 80f);
+
+        Assert.Equal(4, worldPositions.Count);
+        // L0: 10624 + (96 + 2*48) = 10624 + 192 = 10816, Z = 10112 + (2*48 - 96) = 10112
+        Assert.Equal(new Vector3(10816f, 80f, 10112f), worldPositions[0]);
+        // L1: 10624 + (-128 + 2*64) = 10624 + 0 = 10624, Z = 10112 + (2*64 - (-128)) = 10112 + 256 = 10368
+        Assert.Equal(new Vector3(10624f, 80f, 10368f), worldPositions[1]);
+        // L2: 10624 + (128 - 128) = 10624, Z = 10112 + (-128 - 128) = 10112 - 256 = 9856
+        Assert.Equal(new Vector3(10624f, 80f, 9856f), worldPositions[2]);
+        // L3: 10624 + (-128 - 128) = 10624 - 256 = 10368, Z = 10112 + (-128 - (-128)) = 10112
+        Assert.Equal(new Vector3(10368f, 80f, 10112f), worldPositions[3]);
+    }
 }

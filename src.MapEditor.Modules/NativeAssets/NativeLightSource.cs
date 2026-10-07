@@ -79,6 +79,30 @@ public sealed class NativeLightCatalog
     }
 
     /// <summary>
+    /// 從檔案路徑載入 lightdef.dau（自動偵測並解壓縮 PFIL 容器，使用 GameLZSS）。
+    /// </summary>
+    public static NativeLightCatalog? Open(string filePath)
+    {
+        if (!File.Exists(filePath)) return null;
+        byte[] bytes = File.ReadAllBytes(filePath);
+        return Parse(bytes);
+    }
+
+    /// <summary>
+    /// 解析位元組陣列中的 lightdef.dau（支援 PFIL 壓縮或純文字）。
+    /// </summary>
+    public static NativeLightCatalog Parse(ReadOnlySpan<byte> bytes)
+    {
+        byte[] raw = bytes.ToArray();
+        if (raw.Length >= 4 && raw.AsSpan(0, 4).SequenceEqual("PFIL"u8))
+        {
+            raw = AgainstRomeModifier.GameLZSS.DecompressPfil(raw);
+        }
+        string text = AgainstRomeModifier.Maps.MapTextEncoding.Game.GetString(raw);
+        return Parse(text);
+    }
+
+    /// <summary>
     /// 解析 lightdef.dau 或 [LightDefault] 設定文字。
     /// 格式：;idx ,activ,  red,  grn,  blu,      rad, type,     typep,spefx,-------------name-------------
     /// </summary>
