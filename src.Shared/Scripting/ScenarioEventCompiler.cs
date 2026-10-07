@@ -16,6 +16,8 @@ public static class ScenarioEventCompiler
         ScenarioEvent[] active = events.Where(item => item.Enabled).ToArray();
         if (active.Length == 0) return;
         int hook = FindWaitHook(image.Code, originalMain);
+        int waitPush = BinaryPrimitives.ReadInt32LittleEndian(image.Code.AsSpan(hook));
+        int waitOperand = BinaryPrimitives.ReadInt32LittleEndian(image.Code.AsSpan(hook + 4));
         int continuation = image.MainAddress;
         var constants = new Dictionary<string, int>(StringComparer.Ordinal);
         int Constant(string value) => constants.TryGetValue(value, out int index) ? index : constants[value] = image.AddConstant(value);
@@ -67,7 +69,8 @@ public static class ScenarioEventCompiler
             }
             poll.Resolve(done, poll.Address); poll.Resolve(early, poll.Address);
         }
-        poll.Emit(95); poll.Emit(75); poll.Emit(66, 10); poll.Jump(112, hook + 8);
+        // 恢復原框架之後重播原等待參數；原版無盡模式用 local 20 計算等待值。
+        poll.Emit(95); poll.Emit(75); poll.Emit(waitPush, waitOperand); poll.Jump(112, hook + 8);
         int pollAddress = image.AppendCode(poll.Bytes());
         BinaryPrimitives.WriteInt32LittleEndian(image.Code.AsSpan(hook), 112);
         BinaryPrimitives.WriteInt32LittleEndian(image.Code.AsSpan(hook + 4), pollAddress - (hook + 8));
@@ -112,12 +115,30 @@ public static class ScenarioEventCompiler
         for (int i = 0; i + 1 < instructions.Count; i++)
         {
             var instruction = instructions[i];
-            if (!reachable.Contains(instruction.Address) || instruction.Op != 66 || instruction.Operand != 10 || instructions[i + 1].Op != 131) continue;
+            if (!reachable.Contains(instruction.Address) || !(instruction.Op == 66 && instruction.Operand == 10 || instruction.Op == 90 && instruction.Operand >= 0)
+                || instructions[i + 1].Op != 131) continue;
             if (instructions.Any(branch => reachable.Contains(branch.Address) && branch.Op == 112 && branch.Address > instruction.Address
-                && (long)branch.Address + 8 + branch.Operand == instruction.Address)) candidates.Add(instruction.Address);
+                && (long)branch.Address + 8 + branch.Operand >= main
+                && (long)branch.Address + 8 + branch.Operand <= instruction.Address
+                && ReachesWait(branch.Address + 8 + branch.Operand, instruction.Address))) candidates.Add(instruction.Address);
         }
         if (candidates.Count != 1) throw new InvalidDataException("此地圖沒有唯一可辨識的主迴圈等待點，事件尚無法安全套用。");
         return candidates[0];
+
+        bool ReachesWait(int start, int wait)
+        {
+            var visited = new HashSet<int>(); var work = new Stack<int>(); work.Push(start);
+            while (work.TryPop(out int address))
+            {
+                if (address == wait) return true;
+                if (!visited.Add(address) || !byAddress.TryGetValue(address, out var instruction)) continue;
+                if (instruction.Op is >= 112 and <= 118) work.Push(address + 8 + instruction.Operand);
+                if (instruction.Op == 112 || instruction.Op is 121 or 122 or 123) continue;
+                int words = instruction.Op == 67 ? 3 : OneOperand.Contains(instruction.Op) ? 2 : 1;
+                work.Push(address + words * 4);
+            }
+            return false;
+        }
     }
 
     private sealed class CodeBuilder(int start)

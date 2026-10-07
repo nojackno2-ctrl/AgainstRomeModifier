@@ -29,6 +29,19 @@ public sealed class ScenarioEventsTests : IDisposable
     }
 
     [Fact]
+    public void Computed_wait_is_replayed_after_restoring_original_local_frame()
+    {
+        // The original endless loop computes its delay in a local before waiting.
+        BciImage image = Fixture([74, 94, 73, 1, 66, 7, 81, 0, 128, 0, 90, 0, 131, 112, -28]);
+        ScenarioEventCompiler.Inject(image, [Event()], 0);
+        var vm = new TestVm(image); vm.Tick(0); vm.Tick(2000); vm.Tick(5000);
+        Assert.Single(vm.Messages);
+        Assert.Equal(3, vm.OriginalTicks);
+        Assert.All(vm.Waits, value => Assert.Equal(7, value));
+        Assert.Equal(2, vm.StackDepth);
+    }
+
+    [Fact]
     public void Repeating_timer_uses_interval_without_catching_up_multiple_actions()
     {
         BciImage image = Fixture(); ScenarioEventCompiler.Inject(image, [Event(repeat: true)], 0);
@@ -234,6 +247,8 @@ public sealed class ScenarioEventsTests : IDisposable
                         int index = Word(), start = image.ConstOffsets[index], end = Array.IndexOf(image.ConstBlob, (byte)0, start);
                         _stack.Add(MapTextEncoding.Game.GetString(image.ConstBlob, start, end - start)); break;
                     case 78: _stack.Add(_fp + Word()); break;
+                    case 81: int local = Word(); _stack[_fp + local] = Pop(); break;
+                    case 90: _stack.Add(_stack[_fp + Word()]); break;
                     case 74: _stack.Add(_fp); break;
                     case 94: _fp = _stack.Count; break;
                     case 95: _stack.RemoveRange(_fp, _stack.Count - _fp); break;

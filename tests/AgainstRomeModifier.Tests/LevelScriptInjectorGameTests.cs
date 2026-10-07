@@ -5,6 +5,25 @@ namespace AgainstRomeModifier.Tests;
 /// <summary>以本機原版 ENDL_000 腳本（唯讀）驗證注入結果；設定 ARM_GAME_PATH 才執行，ARM_DUMP_TARGET 時另存注入後映像供反組譯檢查。</summary>
 public sealed class LevelScriptInjectorGameTests
 {
+    [Theory]
+    [InlineData("ENDL_000")]
+    [InlineData("ENDL_001")]
+    [InlineData("ENDL_002")]
+    [InlineData("ENDL_003")]
+    [InlineData("ENDL_004")]
+    public void Timer_events_can_hook_original_endless_main_without_writing_game_files(string map)
+    {
+        if (Environment.GetEnvironmentVariable("ARM_GAME_PATH") is not { } game || !Directory.Exists(game)) return;
+        byte[] original = GameLZSS.DecompressPfil(File.ReadAllBytes(Path.Combine(game, "MAPS", map, "SCRIPT", "ak_level.bci")));
+        BciImage image = BciImage.Parse(original);
+        int originalMain = image.MainAddress;
+        ScenarioEventCompiler.Inject(image, [new ScenarioEvent("Runtime probe", 10)
+            { Actions = [new ScenarioAction(ScenarioActionKind.Message, "ARM event OK")] }], originalMain);
+        BciImage reparsed = BciImage.Parse(image.Serialize());
+        Assert.True(reparsed.MainAddress >= BciImage.Parse(original).Code.Length);
+        Assert.Equal(image.Code, reparsed.Code);
+    }
+
     [Fact]
     public void Injected_endless_script_keeps_original_sections_and_jumps_back_to_main()
     {

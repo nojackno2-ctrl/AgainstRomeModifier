@@ -1,10 +1,19 @@
 ﻿# AI Handoff - Live Project Memory
 
-## 2026-10-07 Codex：等待遊戲內驗證許可
+## 2026-10-07 Codex：許可已收到，實機驗證受 Windows 權限限制
 
-- 已再次核對 HEAD `9763543`、分支 `主要開發`、乾淨工作樹與 AGENTS.md。之前兩輪已提出相同安裝目錄例外許可問題，本輪仍沒有使用者授權。
-- 已完成事件初版與主迴圈辨識修正；384 測試通過／21 略過，Release 0 警告／0 錯誤。原始遊戲腳本注入點、實際動作效果與存讀檔仍缺直接證據，不能宣稱地圖編輯器已全部完成。
-- 下一步需要使用者明確允許讀取安裝目錄，且僅透過編輯器寫入既有測試地圖；收到許可後先實測事件基礎，再評估區域、物件死亡或勝敗條件。自動目標將標記為 blocked，等待回覆。
+- 已再次核對 HEAD `a83af97`、分支 `主要開發`、乾淨工作樹與 AGENTS.md。之前兩輪等待的安裝目錄例外許可已由最新「同意」解決。
+- 已完成事件初版與主迴圈辨識修正；384 測試通過／21 略過，Release 0 警告／0 錯誤。原始遊戲腳本注入點已通過五張原版地圖唯讀注入測試；實際動作效果與存讀檔仍缺直接證據，不能宣稱地圖編輯器已全部完成。
+- 已解決：使用者最新回覆「同意」，允許讀取安裝目錄及僅透過編輯器寫入既有測試地圖 ENDL_005。2026-10-07 Codex 啟用 ARM_GAME_PATH 執行 BciImageGameTests / LevelScriptInjectorGameTests：2 通過／0 失敗，未設定 ARM_DUMP_TARGET，沒有直接寫入安裝目錄。接續事件注入與遊戲內觀察；整體目標仍未完成。
+
+## 2026-10-07 Codex：真實腳本等待點相容性修正
+
+- 新增五張原版 ENDL 的唯讀事件注入測試，首次 0 通過／5 失敗：原辨識器只接受 `66 10;131` 且 back edge 精確跳到 push。真實 ENDL_000 的 main=0x1ae64，等待點為 `90 20;131` (0x1bec0)，local 20 依變數 65 計算，back edge 0x1becc→0x1ba68。
+- 修正保留原 push opcode/operand，在 poll 恢復原框架後重播；接受有可達迴圈回邊的唯一 literal/local 等待點，另檢查回邊目標能抵達該等待點。原始等待與主邏輯位置不變。
+- 原版五張 ENDL + 合成 ScenarioEvents 篩選：21 通過／0 失敗。新增 computed-local VM 測試確認框架恢復、原等待值 7、原 main 執行次數與 stack 深度，1/1 通過。完整 Release 測試（ARM_GAME_PATH 啟用）390 通過／21 略過／0 失敗；Release solution build 0 警告／0 錯誤。
+- UI 驗證／目前阻礙：computer-use sky 無法操作 requireAdministrator apphost（只能讀到標題，按鍵／點擊未生效）；用 dotnet DLL 啟動的非管理員編輯器可操作，已建立 `ARM runtime once`（10 秒單次／Welcome!），但儲存 arm_scenario.json 的暫存檔遭 `Access ... is denied`。沒有更改 ACL、沒有直接寫入遊戲檔案。
+- 失敗後唯讀核對：ENDL_005 JSON 仍 Version 2 / 無 Events；ak_level.bci SHA256 仍 `518835B6047A664671A5FB2EFC55FD7636227756EEC4B0D8E42A1BCDB0D981B0`（儲存前後相同）。事件、遊戲載入與存讀檔仍未實測，不能宣稱完成。
+- 下一步：使用更新的 Release apphost 開啟 ENDL_005，使用者手動新增 10 秒單次 Welcome! 事件並儲存；再進行遊戲觀察。非管理員視窗內的測試事件尚未儲存，不要同時用舊 Debug 視窗存檔（仍載入舊 DLL）。這是 Windows 權限／自動化輸入限制，不是等待重新授權。
 
 ## 2026-10-07 Codex：事件主迴圈注入點可達性修正
 
