@@ -1,4 +1,4 @@
-using AgainstRomeModifier;
+﻿using AgainstRomeModifier;
 using AgainstRomeModifier.Maps;
 using AgainstRomeModifier.Scripting;
 using System.Diagnostics;
@@ -148,7 +148,10 @@ internal sealed partial class MapEditorForm : Form
     private IReadOnlyDictionary<int, string> _objdefNames = new Dictionary<int, string>();
     private readonly HashSet<int> _natureRemovals = new();
     private readonly List<NatureAddition> _natureAdditions = new();
-    private readonly Stack<NatureOperation> _natureUndo = new();
+    private readonly Stack<IReadOnlyList<NatureOperation>> _natureUndo = new();
+    private readonly Stack<IReadOnlyList<NatureOperation>> _natureRedo = new();
+    private readonly List<NatureOperation> _natureStroke = new();
+    private bool _natureStoreAvailable;
     private Task<IReadOnlyDictionary<int, LevelObjectTemplate>>? _natureCatalogTask;
     private IReadOnlyDictionary<int, LevelObjectTemplate> _natureTemplates = new Dictionary<int, LevelObjectTemplate>();
     private readonly Random _natureRandom = new();
@@ -676,6 +679,12 @@ internal sealed partial class MapEditorForm : Form
     private void CommitStroke()
     {
         _flattenTarget = -1; _lastTerrainTile = null; _terrainStrokeTiles.Clear();
+        if (_natureStroke.Count > 0)
+        {
+            _natureUndo.Push(_natureStroke.ToArray());
+            _natureStroke.Clear();
+            UpdateEditorState();
+        }
         if (_terrainLayers?.CommitStroke() == true) UpdateEditorState();
         if (_terrainBlendSession?.CommitStroke() != true) return;
         UpdateEditorState();
@@ -688,13 +697,18 @@ internal sealed partial class MapEditorForm : Form
 
     private void Undo()
     {
+        CommitStroke();
         if (_editMode == EditMode.Nature)
         {
-            if (_natureUndo.TryPop(out NatureOperation? operation))
+            if (_natureUndo.TryPop(out IReadOnlyList<NatureOperation>? natureStroke))
             {
-                if (operation.Added is not null) _natureAdditions.Remove(operation.Added);
-                foreach (int slot in operation.Removed) _natureRemovals.Remove(slot);
-                _natureAdditions.AddRange(operation.RemovedAdditions);
+                foreach (NatureOperation operation in natureStroke.Reverse())
+                {
+                    if (operation.Added is not null) _natureAdditions.Remove(operation.Added);
+                    foreach (int slot in operation.Removed) _natureRemovals.Remove(slot);
+                    _natureAdditions.AddRange(operation.RemovedAdditions);
+                }
+                _natureRedo.Push(natureStroke);
                 RefreshSceneMarkers(); UpdateEditorState();
             }
             return;
@@ -712,6 +726,22 @@ internal sealed partial class MapEditorForm : Form
 
     private void Redo()
     {
+        CommitStroke();
+        if (_editMode == EditMode.Nature)
+        {
+            if (_natureRedo.TryPop(out IReadOnlyList<NatureOperation>? natureStroke))
+            {
+                foreach (NatureOperation operation in natureStroke)
+                {
+                    if (operation.Added is not null) _natureAdditions.Add(operation.Added);
+                    foreach (int slot in operation.Removed) _natureRemovals.Add(slot);
+                    foreach (NatureAddition addition in operation.RemovedAdditions) _natureAdditions.Remove(addition);
+                }
+                _natureUndo.Push(natureStroke);
+                RefreshSceneMarkers(); UpdateEditorState();
+            }
+            return;
+        }
         if (TerrainLayerMode)
         {
             if (_terrainLayers?.Redo() is { } redone) { ApplyTerrainLayerStroke(redone); UpdateEditorState(); }
@@ -1003,7 +1033,11 @@ internal sealed partial class MapEditorForm : Form
         _resetAuxiliaryLayers = true;
         // 空白地形同時清除範本留下的地景物件（樹、草、灌木…）；腳本標記、特效與連結物件保留。
         List<int> cleared = _levelObjects.Where(IsRemovableNature).Select(item => item.Slot).Where(slot => _natureRemovals.Add(slot)).ToList();
-        if (cleared.Count > 0) _natureUndo.Push(new NatureOperation(null, cleared, Array.Empty<NatureAddition>()));
+        if (cleared.Count > 0)
+        {
+            RecordNatureOperation(new NatureOperation(null, cleared, Array.Empty<NatureAddition>()));
+            CommitStroke();
+        }
         ApplyHeightsToViews();
         if (_editMode == EditMode.Collision) _canvas.SetCollisionOverlay(_terrainLayers.CollisionSize, _terrainLayers.Collision);
         UpdateEditorState();
@@ -1137,9 +1171,27 @@ internal sealed partial class MapEditorForm : Form
 
     private void LoadLevelObjects(string map)
     {
-        _natureRemovals.Clear(); _natureAdditions.Clear(); _natureUndo.Clear();
-        try { _levelObjects = File.Exists(Path.Combine(map, "DATA", "objects.dat")) ? LevelObjectStore.Load(map).Objects() : Array.Empty<LevelWorldObject>(); }
-        catch (Exception ex) when (ex is InvalidDataException or IOException) { _levelObjects = Array.Empty<LevelWorldObject>(); }
+        _natureRemovals.Clear(); _natureAdditions.Clear(); ClearNatureHistory();
+        _natureStoreAvailable = false;
+        _levelObjects = Array.Empty<LevelWorldObject>();
+        try
+        {
+            if (!File.Exists(Path.Combine(map, "DATA", "objects.dat"))) return;
+            _levelObjects = LevelObjectStore.Load(map).Objects();
+            _natureStoreAvailable = true;
+        }
+        catch (Exception ex) when (ex is InvalidDataException or IOException) { }
+    }
+
+    private void ClearNatureHistory()
+    {
+        _natureUndo.Clear(); _natureRedo.Clear(); _natureStroke.Clear();
+    }
+
+    private void RecordNatureOperation(NatureOperation operation)
+    {
+        _natureRedo.Clear();
+        _natureStroke.Add(operation);
     }
 
     private bool IsRemovableNature(LevelWorldObject item) => !item.Linked && ObjDefNames.IsLandscape(_objdefNames.GetValueOrDefault(item.TypeId));
@@ -1191,7 +1243,7 @@ internal sealed partial class MapEditorForm : Form
             if (removed.Count == 0 && removedAdditions.Count == 0) return false;
             foreach (int slot in removed) _natureRemovals.Add(slot);
             foreach (NatureAddition addition in removedAdditions) _natureAdditions.Remove(addition);
-            _natureUndo.Push(new NatureOperation(null, removed, removedAdditions));
+            RecordNatureOperation(new NatureOperation(null, removed, removedAdditions));
         }
         else
         {
@@ -1211,7 +1263,7 @@ internal sealed partial class MapEditorForm : Form
             }
             var addition = new NatureAddition(type.Template, type.Name, x, y, z, (float)(_natureRandom.NextDouble() * Math.PI * 2));
             _natureAdditions.Add(addition);
-            _natureUndo.Push(new NatureOperation(addition, Array.Empty<int>(), Array.Empty<NatureAddition>()));
+            RecordNatureOperation(new NatureOperation(addition, Array.Empty<int>(), Array.Empty<NatureAddition>()));
         }
         return true;
     }
@@ -1738,6 +1790,7 @@ internal sealed partial class MapEditorForm : Form
     private bool SaveMap(bool showSuccess)
     {
         if (_selected is null || !_selected.IsCustom) return false;
+        CommitStroke();
         try
         {
             using var rollback = new FileRollbackScope(); string map = _selected.DirectoryPath;
@@ -2041,8 +2094,13 @@ internal sealed partial class MapEditorForm : Form
     private void UpdateEditorState()
     {
         bool editable = _selected?.IsCustom == true; _saveButton.Enabled = editable && IsDirty; _gamePreviewButton.Enabled = _selected is not null; _undoButton.Enabled = editable && (TerrainLayerMode ? _terrainLayers?.CanUndo == true : _terrainBlendSession?.CanUndo == true); _redoButton.Enabled = editable && (TerrainLayerMode ? _terrainLayers?.CanRedo == true : _terrainBlendSession?.CanRedo == true); _resetTerrainButton.Enabled = editable && ((_texturesDocument is not null && TextureDirty()) || _terrainLayers?.IsDirty == true || _resetAuxiliaryLayers);
-        _heightTool.Enabled = editable && _terrainLayers is not null; _aiMapButton.Enabled = editable && _terrainLayers is not null; _blankTerrainButton.Enabled = editable && _terrainLayers is not null; _placeTool.Enabled = editable && _objectCatalog.Count > 0; _natureTool.Enabled = editable && _levelObjects.Count > 0;
-        _undoButton.Enabled |= editable && _editMode == EditMode.Nature && _natureUndo.Count > 0; _collisionTool.Enabled = editable && _terrainLayers?.HasCollision == true;
+        _heightTool.Enabled = editable && _terrainLayers is not null; _aiMapButton.Enabled = editable && _terrainLayers is not null; _blankTerrainButton.Enabled = editable && _terrainLayers is not null; _placeTool.Enabled = editable && _objectCatalog.Count > 0; _natureTool.Enabled = editable && _natureStoreAvailable;
+        if (_editMode == EditMode.Nature)
+        {
+            _undoButton.Enabled = editable && (_natureUndo.Count > 0 || _natureStroke.Count > 0);
+            _redoButton.Enabled = editable && _natureRedo.Count > 0;
+        }
+        _collisionTool.Enabled = editable && _terrainLayers?.HasCollision == true;
         UpdateSceneEditButtons();
         UpdateEventButtons();
         _sceneRestoreButton.Enabled = editable && _sceneLoaded && (_sceneRemovals.Count > 0 || _sceneAdditions.Count > 0 || SdlSceneEditService.HasChanges(_sceneOriginalObjects, _sceneObjects));
@@ -2168,7 +2226,7 @@ internal sealed partial class MapEditorForm : Form
             if (_editMode == EditMode.Collision) _canvas.SetCollisionOverlay(_terrainLayers.CollisionSize, _terrainLayers.Collision);
         }
         _resetAuxiliaryLayers = false;
-        if (NatureDirty()) { _natureRemovals.Clear(); _natureAdditions.Clear(); _natureUndo.Clear(); RefreshSceneMarkers(); }
+        _natureRemovals.Clear(); _natureAdditions.Clear(); ClearNatureHistory(); RefreshSceneMarkers();
         if (_terrainBlendSession is null) { UpdateEditorState(); return; }
         IReadOnlyList<TerrainTextureChange> changes = _terrainBlendSession.ResetToBaseline();
         _texturesDocument.SetTextures(_terrainBlendSession.CurrentTextures); // 批次寫回，避免逐格重新解析整份 boden.txt。
