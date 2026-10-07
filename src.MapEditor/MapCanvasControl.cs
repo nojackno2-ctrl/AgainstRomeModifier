@@ -28,10 +28,12 @@ internal sealed class MapCanvasControl : Control
     private PointF _pan = PointF.Empty;
     private float _zoom = 1f;
     private readonly HashSet<int> _paintedInDrag = new();
+    private int _lastPaintedTile = -1;
 
     public string? BrushTexture { get; set; }
     public int BrushSize { get; set; } = 1;
     public bool EditingEnabled { get; set; }
+    public bool ContinuousPaint { get; set; }
     public bool SceneMoveEnabled { get; set; }
     public bool ShowGrid { get; set; } = true;
     public bool ShowObjects { get; set; } = true;
@@ -242,7 +244,7 @@ internal sealed class MapCanvasControl : Control
             _movingSceneObject = TryMoveSceneObject(e.Location, completed: false);
             return;
         }
-        _painting = true; _paintedInDrag.Clear(); TryPaint(e.Location);
+        _painting = true; _paintedInDrag.Clear(); _lastPaintedTile = -1; TryPaint(e.Location);
     }
 
     protected override void OnMouseMove(MouseEventArgs e)
@@ -274,7 +276,7 @@ internal sealed class MapCanvasControl : Control
         base.OnMouseUp(e);
         bool wasPainting = _painting;
         if (_movingSceneObject && e.Button == MouseButtons.Left) TryMoveSceneObject(e.Location, completed: true);
-        _painting = false; _movingSceneObject = false; _panning = false; Cursor = Cursors.Cross; _paintedInDrag.Clear();
+        _painting = false; _movingSceneObject = false; _panning = false; Cursor = Cursors.Cross; _paintedInDrag.Clear(); _lastPaintedTile = -1;
         if (wasPainting) StrokeEnded?.Invoke(this, EventArgs.Empty);
     }
 
@@ -330,7 +332,9 @@ internal sealed class MapCanvasControl : Control
         if (!EditingEnabled || string.IsNullOrWhiteSpace(BrushTexture) || _textures is null) return;
         if (!TryGetTile(location, out int x, out int y)) return;
         int index = y * _dimension + x;
-        if (!_paintedInDrag.Add(index)) return;
+        bool firstVisit = _paintedInDrag.Add(index);
+        if (ContinuousPaint ? _lastPaintedTile == index : !firstVisit) return;
+        _lastPaintedTile = index;
         TexturePainted?.Invoke(this, new TexturePaintEventArgs(x, y, _textures[index], BrushTexture));
         Invalidate();
     }

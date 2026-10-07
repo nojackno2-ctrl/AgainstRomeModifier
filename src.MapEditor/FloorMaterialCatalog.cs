@@ -20,6 +20,11 @@ internal sealed class FloorMaterialCatalog : INativeTerrainMaterialResolver
     private static readonly Regex RegionalTileName = new("^L(?<set>[0-9]+)B(?<index>[0-9]{2})T(?<shape>[1-9])(?<variant>[A-Z])$", RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
     /// <summary>L 系列過渡配對可接受的平均角落色差（RGB 歐氏距離）；超過代表貼圖不是兩個已知材質的過渡，不採用以免錯配。</summary>
     internal const double RegionalTransitionMaxCornerDistance = 32;
+    internal static string? RegionalTileSet(string name)
+    {
+        Match match = RegionalTileName.Match(name);
+        return match.Success ? match.Groups["set"].Value : null;
+    }
     // 4U 的第二種命名：尾碼為兩位數 01–14 的角點遮罩（兩種材質在四角的 14 種組合），例如 4UJX__05、4UMX__14。
     // 同一族只要出現 0 開頭的尾碼就屬於此命名，整族不能用九宮格形狀解析（否則 10–14 會被誤判為形狀 1）。
     private static readonly Regex MaskTransitionName = new("^4U(?<first>[0-9A-Z])(?<second>[0-9A-Z])__(?<mask>0[1-9]|1[0-4])$", RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);

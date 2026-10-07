@@ -15,6 +15,8 @@
 | 文字與輸入提示 | 單值跳脫/100 bytes/NUL/CP1251防護；純文字/PFIL保留其他行；輸入提示與拒存bytes/dirty保留、retry；標題/8team/簡報save/reopen/重存不變 | `AgainstRomeModifier.Tests/MapTextEscapingTests.cs`、`MapEditorTextSaveTests.cs` |
 | 高度、通行 | 筆畫、undo/redo、基準；真正表單儲存圖層與快取失效 | `AgainstRomeMapEditor.Modules.Tests/TerrainHeightEditSessionTests.cs`、`AgainstRomeModifier.Tests/MapEditorFormTerrainIntegrationTests.cs` |
 | 原版材質 | 四角烘焙、不支援接縫拒絕、滑鼠筆畫整筆回滾、undo/redo | `AgainstRomeMapEditor.Modules.Tests/TerrainBlendModuleTests.cs`、`AgainstRomeModifier.Tests/MapEditor3DTests.cs` |
+| 圖塊印章連續繪製 | 漏格補點、分筆／換筆刷、undo/redo、save/reopen；2D/3D 真正滑鼠處理及 picker 折返回報（非遊戲內外觀證據） | `AgainstRomeModifier.Tests/MapEditorStampTests.cs` |
+| 圖塊印章地區篩選 | 依目前地圖 L 系列、無證據 fallback、混合系列、搜尋與手動顯示其他系列 | `AgainstRomeModifier.Tests/MapEditorStampTests.cs` |
 | AI 套用 | 材質區域拒絕保留先前接受區域；模式切換；材質獨立 undo，高度/通行共用 undo；儲存及重新開图 | `AgainstRomeModifier.Tests/MapEditorAiWorkflowIntegrationTests.cs` |
 | AI 生成 UI | 預設 Laguna；先生成/檢視再套用；取消、部分失敗、重試、舊方案失效；一次套用 | `AgainstRomeModifier.Tests/AiMapPlanningDialogTests.cs` |
 | AI 視覺預覽與角色進度 | 獨立快照、不改bytes/dirty/history；材質拒絕區域與變更量和正式套用一致；圖片失效/釋放、預覽失敗拒套用/重試；角色起訖/部分失敗順序，取消後晚到進度不覆蓋UI | `AiMapPlanningDialogTests.cs`、`MapEditorAiWorkflowIntegrationTests.cs`、`MultiAiMapPlannerTests.cs` |

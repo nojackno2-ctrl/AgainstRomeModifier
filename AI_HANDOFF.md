@@ -1,5 +1,13 @@
 # AI Handoff - Live Project Memory
 
+## 續作進度（2026-10-07 Codex；目標仍進行中）
+
+- 從 `88aa030`、分支 `主要開發` 接續；起始只有使用者未追蹤 `.claude/`，不修改／提交。遵守目前 AGENTS.md，本輪僅合成 TEMP 地圖，未存取安裝遊戲目錄；AI 製圖維持暫停。
+- 圖塊印章拖曳沿用 `TerrainStrokePath.Between` 補齊漏格，整段一次 undo；放開、換工具／筆刷、重開地圖會重設起點。L 印章依地圖實際使用系列篩選，無 L 證據時全部顯示，搜尋／「顯示其他地區圖塊」可取用全部。
+- 新測試最初 `Save(string)` 誤用造成 CS1503，改 `Save()` 後基線 2 失敗；補測 null 參數造成 CS8625，改空搜尋字串。最終 STA 定向 `MapEditorSaveTransactionTests.Stamp_|Tile_stamp` 7 通過，涵蓋補點、分筆、undo/redo、save/reopen、篩選／搜尋／override、未知／混合 L 系列。
+- 首次完整 Release build 0 警告/0 錯誤、test 宿主 598 通過/22 略過、modules 57 通過。其後檢查發現視圖 `_paintedInDrag` 跳過折返格，會讓補點誤連；2D/3D 新增僅印章開啟的 ContinuousPaint，重複格僅略過連續相同位置。兩項真正視圖 OnMouseDown/Move/Up＋picker 測試皆通過（未使用 rendered framebuffer 證明外觀）。最終 `DOTNET_ROLL_FORWARD=Major dotnet build AgainstRomeModifier.slnx -c Release -p:UseAppHost=false --no-restore` 0 警告/0 錯誤；`dotnet test ... --no-build --no-restore --logger 'console;verbosity=quiet'` 宿主 600 通過/22 略過、modules 57 通過，共 657 通過/0 失敗。已更新指南／驗收矩陣，依既有授權本地提交，不 push。
+- 未驗證新 UI 高 DPI 或遊戲內外觀。道路方向／彎角自動選片仍未完成；建議下一步先以 repository 素材確認方向命名／邊緣接縫，再實作可自動選片的道路工具。整體目標仍未完成。
+
 ## 交接給下一位 AI（2026-10-07 Claude；地圖編輯器，已停止）
 
 使用者指示：「結束目前的進度後停止，寫交接，我要給其他 AI 繼續設計」。Claude 已停止，工作樹乾淨（僅使用者自建、未追蹤的 `.claude/settings.local.json`，不要提交）。所有提交只在本機分支 `主要開發`，未 push。

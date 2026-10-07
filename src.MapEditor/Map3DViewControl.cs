@@ -12,6 +12,7 @@ internal sealed class Map3DViewControl : GLControl
 {
     private readonly EditorCamera _camera = new();
     private readonly HashSet<int> _paintedInDrag = new();
+    private int _lastPaintedTile = -1;
     private string[]? _textures;
     private TerrainHeightField? _heights;
     private FloorTextureLibrary? _library;
@@ -38,6 +39,7 @@ internal sealed class Map3DViewControl : GLControl
     public string? BrushTexture { get; set; }
     public int BrushSize { get; set; } = 1;
     public bool EditingEnabled { get; set; }
+    public bool ContinuousPaint { get; set; }
     public bool SceneMoveEnabled { get; set; }
     public bool ShowGrid { get; set; } = true;
     public bool ShowObjects { get; set; } = true;
@@ -256,7 +258,7 @@ internal sealed class Map3DViewControl : GLControl
         if (e.Button == MouseButtons.Left)
         {
             if (SceneMoveEnabled) _movingSceneObject = TryMoveSceneObject(e.Location, completed: false);
-            else { _painting = true; _paintedInDrag.Clear(); TryPaint(e.Location); }
+            else { _painting = true; _paintedInDrag.Clear(); _lastPaintedTile = -1; TryPaint(e.Location); }
         }
     }
 
@@ -291,7 +293,7 @@ internal sealed class Map3DViewControl : GLControl
             TextureSampled?.Invoke(this, new TextureSampleEventArgs(x, y, _textures[y * _dimension + x]));
         bool wasPainting = _painting;
         if (_movingSceneObject && e.Button == MouseButtons.Left) TryMoveSceneObject(e.Location, completed: true);
-        _painting = _movingSceneObject = _panning = _rotating = _rightClick = false; _paintedInDrag.Clear();
+        _painting = _movingSceneObject = _panning = _rotating = _rightClick = false; _paintedInDrag.Clear(); _lastPaintedTile = -1;
         if (wasPainting) StrokeEnded?.Invoke(this, EventArgs.Empty);
     }
 
@@ -320,7 +322,9 @@ internal sealed class Map3DViewControl : GLControl
     {
         if (!EditingEnabled || string.IsNullOrWhiteSpace(BrushTexture) || !TryGetTile(point, out int x, out int y) || _textures is null) return;
         int offset = y * _dimension + x;
-        if (!_paintedInDrag.Add(offset)) return;
+        bool firstVisit = _paintedInDrag.Add(offset);
+        if (ContinuousPaint ? _lastPaintedTile == offset : !firstVisit) return;
+        _lastPaintedTile = offset;
         TexturePainted?.Invoke(this, new TexturePaintEventArgs(x, y, _textures[offset], BrushTexture));
     }
 
