@@ -39,5 +39,16 @@ public sealed class CustomMapManifest
     }
 
     public static bool IsCustomMapDirectory(string path) => File.Exists(Path.Combine(path, MarkerFileName));
+
+    /// <summary>Checks the owning map's marker, including files in that map's subdirectories.</summary>
+    public static bool IsCustomMapFile(string mapsPath, string filePath)
+    {
+        string root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(mapsPath)) + Path.DirectorySeparatorChar;
+        string path = Path.GetFullPath(filePath);
+        if (!path.StartsWith(root, StringComparison.OrdinalIgnoreCase)) return false;
+        string relative = path[root.Length..];
+        int separator = relative.IndexOf(Path.DirectorySeparatorChar);
+        return separator > 0 && IsCustomMapDirectory(Path.Combine(root, relative[..separator]));
+    }
     private static bool IsValid(CustomMapEntry entry) => entry.Slot is >= 5 and <= 999 && entry.SourceSlot is >= 0 and <= 999 && !string.IsNullOrWhiteSpace(entry.ToolVersion);
 }

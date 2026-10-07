@@ -34,21 +34,28 @@ public sealed class EndlessMapCloner
         string temporary = destination + ".tmp_arm";
         if (Directory.Exists(destination) || Directory.Exists(temporary)) throw new IOException("目標地圖槽位已存在或有待清理暫存資料夾: " + mapId);
 
+        bool moved = false;
         try
         {
+            using var rollback = new FileRollbackScope();
             CopyDirectory(sourceDirectory, temporary);
             VerifyCopy(sourceDirectory, temporary);
             RewriteKnownFiles(temporary, sourceMapId, mapId, newName);
             var marker = new CustomMapEntry(newSlot, sourceSlot, DateTimeOffset.UtcNow, ToolVersion());
             Core.Services.SafeFileWriter.WriteAllBytes(Path.Combine(temporary, CustomMapManifest.MarkerFileName), JsonSerializer.SerializeToUtf8Bytes(marker, Core.Services.JsonDefaults.Indented));
             Directory.Move(temporary, destination);
+            moved = true;
             CustomMapManifest manifest = CustomMapManifest.Load(normalizedGamePath);
             manifest.Register(marker);
-            manifest.Save(normalizedGamePath);
-            return _catalog.Require(normalizedGamePath, newSlot);
+            manifest.Save(normalizedGamePath, rollback);
+            EndlessMapInfo created = _catalog.Require(normalizedGamePath, newSlot);
+            rollback.Commit();
+            return created;
         }
         catch
         {
+            // Only remove the directory this invocation successfully moved into a previously free slot.
+            if (moved && Directory.Exists(destination)) Directory.Delete(destination, true);
             if (Directory.Exists(temporary)) Directory.Delete(temporary, true);
             throw;
         }

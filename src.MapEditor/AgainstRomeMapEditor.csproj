@@ -9,6 +9,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../src.Shared/AgainstRome.Shared.csproj" />
+    <ProjectReference Include="../src.MapEditor.Modules/AgainstRome.MapEditor.Modules.csproj" />
     <ProjectReference Include="../src.Core/AgainstRome.Core.csproj" />
   </ItemGroup>
   <ItemGroup>

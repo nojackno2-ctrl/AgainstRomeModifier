@@ -9,7 +9,21 @@ machine and external-call sites; it is not a complete disassembler
 specification. Treat opcode meanings below as evidence-backed for the
 sequences observed, not as a verified exhaustive VM reference.
 
+## 2026-10-07 native-call correction
+
+The historical table below mislabels the native-call ABI. Dispatcher verification against the repository-local EXE confirms **128 executes a native call** (resolving its constant by name), **73 -N discards N argument words**, and **86 pushes the native return register** onto the VM stack. Thus a statement can omit 86; an expression needs it. Opcode 96 is a three-way comparison of two values; 98..103 test that signed result. See [scenario-events.md](scenario-events.md) for handler addresses and the string-key `ScriptVarL` correction. These corrections supersede conflicting historical labels below.
+
 ## Container Layout
+
+### Frame-local load/store correction (2026-10-07)
+
+Repository-local dispatcher inspection confirms **90 loads one frame-local
+word** (`0x5b722a`, value read at `0x5b7265`) and **91 pops and stores one
+frame-local word** (`0x5b744b`, write at `0x5b74ff`). Opcode 81 instead loads
+a script-global word through the variable slot table (`0x5b6988`), and is
+not a local assignment. The historical empirical table below must not be used
+to generate local assignments. The computed-wait synthetic test was corrected
+from 81 to 91; production timer compilation did not use 81.
 
 A decompressed `BCI0` script has this layout (all integers are little-endian
 32-bit words unless noted):

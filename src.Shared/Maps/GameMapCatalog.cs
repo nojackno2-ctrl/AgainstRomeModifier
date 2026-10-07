@@ -19,7 +19,7 @@ public sealed class GameMapCatalog
             .Where(path => SafeMapId.IsMatch(Path.GetFileName(path)))
             .Where(path => File.Exists(Path.Combine(path, "boden.txt")) && File.Exists(Path.Combine(path, "minimap.bmp")))
             .Select(path => new GameMapInfo(Path.GetFileName(path), path,
-                CustomMapManifest.IsCustomMapDirectory(path), TryReadTitle(path), Category(Path.GetFileName(path))))
+                CustomMapAccess.IsEditableDirectory(path), TryReadTitle(path), Category(Path.GetFileName(path))))
             .OrderBy(x => CategoryOrder(x.Category)).ThenBy(x => x.Id, StringComparer.OrdinalIgnoreCase)
             .ToArray();
     }

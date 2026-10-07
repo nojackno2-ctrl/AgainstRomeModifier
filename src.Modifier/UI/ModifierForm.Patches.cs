@@ -252,12 +252,17 @@ namespace AgainstRomeModifier {
         /// <summary>
         /// 將所有遊戲設定（屬性、相容性、語言包）恢復為官方原版初始設定。
         /// </summary>
-        private void RestoreAll() => _ = RunGuardedRestore(
+        private void RestoreAll() {
+            using var options = new RestoreAllOptionsDialog();
+            if (options.ShowDialog(this) != DialogResult.OK) return;
+            bool preserveCustomMaps = options.PreserveCustomMaps;
+            _ = RunGuardedRestore(
             requireExe: true, requireBackup: true,
-            (gamePath, rollback) => patchEngine.RestoreOriginalFiles(gamePath, backupManager, rollback),
+            (gamePath, rollback) => patchEngine.RestoreOriginalFiles(gamePath, backupManager, rollback, preserveCustomMaps),
             new[] { FeatureCategory.Stats, FeatureCategory.Compat, FeatureCategory.Language },
             Loc.Get("LogCheckpointRestoreAll"),
             "LogStartRestoreAll", "LogRestoreAllDone", "MsgRestoreAllSuccess");
+        }
 
         /// <summary>
         /// 當使用者點擊「啟動遊戲」按鈕時觸發，於後台啟動遊戲主程式。

@@ -35,7 +35,7 @@ internal sealed class TerrainBlendAuthoringMap
     public int CornerDimension { get; }
     public IReadOnlyList<string> CornerMaterials => _cornerMaterials;
 
-    public static NativeTerrainImportResult Import(int tileDimension, IReadOnlyList<string> textures, FloorMaterialCatalog catalog, string fallbackMaterialId)
+    public static NativeTerrainImportResult Import(int tileDimension, IReadOnlyList<string> textures, INativeTerrainMaterialResolver catalog, string fallbackMaterialId)
     {
         if (tileDimension <= 0 || textures.Count != tileDimension * tileDimension) throw new ArgumentException("Terrain texture dimensions do not match.", nameof(textures));
         ArgumentNullException.ThrowIfNull(catalog);
@@ -114,7 +114,7 @@ internal sealed class TerrainBlendAuthoringMap
         return changed;
     }
 
-    public NativeTerrainBakeResult Bake(FloorMaterialCatalog catalog)
+    public NativeTerrainBakeResult Bake(INativeTerrainMaterialResolver catalog)
     {
         ArgumentNullException.ThrowIfNull(catalog);
         var textures = new string?[TileDimension * TileDimension];

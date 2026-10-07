@@ -180,6 +180,8 @@ DEATH — final tally then respawn timer; save would go right before setDeadTime
   config. The only script-writable persistent primitive is `s_setScriptVarL` /
   `s_getScriptVarL` (read/write pair, sig `i_ii`).
 
+**2026-10-07 correction:** `ScriptVarL` uses a **string key**, passed as a VM constant reference; only its value is an integer. The earlier integer-index interpretation and literal `700000 + team` proposal below are superseded. A per-team key must instead be a dedicated string (for example `ARM_GLORY_TEAM_0`). See [scenario-events.md](scenario-events.md) for the native pointer-resolution chain. Global scope remains supported by the evidence below.
+
 **`ScriptVarL` scope — CONFIRMED global (EXE-verified).** The handlers at
 `0x5220d0`/`0x522110` marshal args and delegate to `0x520fb0`/`0x520ff0` →
 `FUN_004285f0` (store) / `FUN_00428630` (load). Both stringify the value with

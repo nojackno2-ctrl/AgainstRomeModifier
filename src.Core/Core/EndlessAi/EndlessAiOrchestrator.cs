@@ -16,6 +16,7 @@ namespace AgainstRomeModifier
 
         private readonly P20_VillageGarrisonQuotaPatch _p20;
         private readonly Dictionary<string, BciScriptFile> _fileCache = new Dictionary<string, BciScriptFile>(StringComparer.OrdinalIgnoreCase);
+        private readonly bool _excludeCustomMaps;
 
         /// <summary>
         /// 設定村莊駐軍配額倍率（P20 helper 的乘法字面值）。1 表示停用，不改變目前選擇；
@@ -40,8 +41,11 @@ namespace AgainstRomeModifier
                 : 1;
         }
 
-        public EndlessAiOrchestrator()
+        public EndlessAiOrchestrator() : this(false) { }
+
+        internal EndlessAiOrchestrator(bool excludeCustomMaps)
         {
+            _excludeCustomMaps = excludeCustomMaps;
             // P1: 軍事增援單位人數
             var p1 = new BciLiteralPatch(
                 "P1",
@@ -246,7 +250,7 @@ namespace AgainstRomeModifier
             {
                 if (Directory.Exists(mapsPath))
                 {
-                    foreach (string mapDirectory in Directory.GetDirectories(mapsPath, "ENDL_???", SearchOption.TopDirectoryOnly).OrderBy(x => x, StringComparer.OrdinalIgnoreCase))
+                    foreach (string mapDirectory in EnumerateEndlessMapDirectories(mapsPath))
                     {
                         string path = Path.Combine(mapDirectory, "SCRIPT", "ak_level.bci");
                         if (File.Exists(path))
@@ -270,10 +274,9 @@ namespace AgainstRomeModifier
             {
                 if (Directory.Exists(mapsPath))
                 {
-                    string[] templates = Directory.GetFiles(mapsPath, "Endlos_*_Siedlung*.sdl", SearchOption.AllDirectories)
-                        .Where(p => p.Contains(Path.DirectorySeparatorChar + "ENDL_", StringComparison.OrdinalIgnoreCase))
-                        .ToArray();
-                    paths.AddRange(templates);
+                    foreach (string mapDirectory in EnumerateEndlessMapDirectories(mapsPath))
+                        paths.AddRange(Directory.GetFiles(mapDirectory, "Endlos_*_Siedlung*.sdl", SearchOption.TopDirectoryOnly)
+                            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase));
                 }
             }
             else if (pattern == "SYSTEM/CLAK/SCRIPT/ak_npc.bci|SYSTEM/CLAK/SCRIPT/ak_produktion.bci")
@@ -285,6 +288,15 @@ namespace AgainstRomeModifier
             }
             return paths;
         }
+
+        private static IEnumerable<string> EnumerateEndlessMapDirectories(string mapsPath) => Directory.GetDirectories(mapsPath)
+            .Where(path =>
+            {
+                string name = Path.GetFileName(path);
+                return name.Length == 8 && name.StartsWith("ENDL_", StringComparison.OrdinalIgnoreCase)
+                    && name[5..].All(character => character is >= '0' and <= '9');
+            })
+            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase);
 
         public static int GetExpectedFileCount(string pattern)
         {
@@ -335,12 +347,13 @@ namespace AgainstRomeModifier
 
             foreach (var patch in module.Patches)
             {
-                var paths = ResolvePaths(gamePath, patch.TargetPattern);
+                var paths = ResolveOperationPaths(gamePath, patch.TargetPattern);
                 if (paths.Count > 0)
                 {
                     anyFileFound = true;
                 }
-                int expectedCount = GetExpectedFileCount(gamePath, patch.TargetPattern);
+                int expectedCount = _excludeCustomMaps && patch.TargetPattern.StartsWith("MAPS/", StringComparison.OrdinalIgnoreCase)
+                    ? paths.Count : GetExpectedFileCount(gamePath, patch.TargetPattern);
                 if (paths.Count != expectedCount)
                 {
                     if (paths.Count == 0)
@@ -383,7 +396,7 @@ namespace AgainstRomeModifier
             bool changed = false;
             foreach (var patch in module.Patches)
             {
-                var paths = ResolvePaths(gamePath, patch.TargetPattern);
+                var paths = ResolveOperationPaths(gamePath, patch.TargetPattern);
                 foreach (string path in paths)
                 {
                     BciScriptFile file = GetOrCreateFile(path);
@@ -404,7 +417,7 @@ namespace AgainstRomeModifier
             bool changed = false;
             foreach (var patch in R0.Patches)
             {
-                var paths = ResolvePaths(gamePath, patch.TargetPattern);
+                var paths = ResolveOperationPaths(gamePath, patch.TargetPattern);
                 foreach (string path in paths)
                 {
                     BciScriptFile file = GetOrCreateFile(path);
@@ -417,6 +430,13 @@ namespace AgainstRomeModifier
                 }
             }
             return changed;
+        }
+
+        private List<string> ResolveOperationPaths(string gamePath, string pattern)
+        {
+            var paths = ResolvePaths(gamePath, pattern);
+            if (_excludeCustomMaps) paths.RemoveAll(path => Maps.CustomMapManifest.IsCustomMapFile(Path.Combine(gamePath, "MAPS"), path));
+            return paths;
         }
 
         public void SaveAll(string gamePath, FileRollbackScope? rollback)

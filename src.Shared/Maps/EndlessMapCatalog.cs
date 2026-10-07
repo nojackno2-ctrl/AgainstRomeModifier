@@ -23,7 +23,7 @@ public sealed class EndlessMapCatalog
             .Select(x => new EndlessMapInfo(
                 int.Parse(x.match.Groups[1].Value, CultureInfo.InvariantCulture),
                 x.path,
-                File.Exists(Path.Combine(x.path, CustomMapManifest.MarkerFileName)),
+                CustomMapAccess.IsEditableDirectory(x.path),
                 TryReadTitle(x.path)))
             .OrderBy(x => x.Slot)
             .ToArray();

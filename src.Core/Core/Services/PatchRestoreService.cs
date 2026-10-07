@@ -3,6 +3,7 @@ using AgainstRomeModifier.Core.Features.Bci;
 using AgainstRomeModifier.Core.Features.Exe;
 using AgainstRomeModifier.Core.Features.Install;
 using AgainstRomeModifier.Core.Patches;
+using AgainstRomeModifier.Maps;
 
 namespace AgainstRomeModifier.Core.Services;
 
@@ -18,7 +19,8 @@ internal sealed class PatchRestoreService
         FileRollbackScope rollback,
         IEnumerable<FeatureCategory> categories,
         EndlessAiOrchestrator? sharedOrchestrator = null,
-        bool saveOrchestrator = true)
+        bool saveOrchestrator = true,
+        bool excludeCustomMaps = false)
     {
         HashSet<FeatureCategory> requested = categories.ToHashSet();
         bool restoreStats = requested.Contains(FeatureCategory.Stats);
@@ -40,7 +42,7 @@ internal sealed class PatchRestoreService
             if (exeChanged)
                 patchedFiles[exePath] = exeBytes;
 
-            orchestrator = sharedOrchestrator ?? new EndlessAiOrchestrator();
+            orchestrator = sharedOrchestrator ?? new EndlessAiOrchestrator(excludeCustomMaps);
             foreach (EndlessAiModule module in orchestrator.UserModules)
                 orchestrator.ApplyModule(gamePath, module, false);
             orchestrator.ApplyMandatoryRepair(gamePath);
@@ -64,9 +66,9 @@ internal sealed class PatchRestoreService
                 patchedFiles[exePath] = exeBytes;
 
             RestoreStatsFiles(gamePath,
-                backupManager ?? throw new ArgumentNullException(nameof(backupManager)), rollback);
+                backupManager ?? throw new ArgumentNullException(nameof(backupManager)), rollback, excludeCustomMaps);
 
-            orchestrator ??= sharedOrchestrator ?? new EndlessAiOrchestrator();
+            orchestrator ??= sharedOrchestrator ?? new EndlessAiOrchestrator(excludeCustomMaps);
             FoodHealingFeature.Apply(gamePath, false, backupManager, orchestrator, _logger);
             RetiredDefaultSpecialArrowsMigration.RestoreIfPresent(gamePath, orchestrator, _logger);
             CiviProduce20Feature.RestoreAkNpcOriginal(gamePath, orchestrator);
@@ -86,7 +88,7 @@ internal sealed class PatchRestoreService
         }
     }
 
-    private void RestoreStatsFiles(string gamePath, BackupManager backupManager, FileRollbackScope rollback)
+    private void RestoreStatsFiles(string gamePath, BackupManager backupManager, FileRollbackScope rollback, bool excludeCustomMaps)
     {
         RestoreMemoryFile(backupManager, "SYSTEM/cl_script.ini", Path.Combine(gamePath, @"SYSTEM\cl_script.ini"), rollback);
         RestoreMemoryFile(backupManager, "SYSTEM/cl_epara.ini", Path.Combine(gamePath, @"SYSTEM\cl_epara.ini"), rollback);
@@ -102,6 +104,7 @@ internal sealed class PatchRestoreService
                 continue;
 
             string destination = Path.Combine(gamePath, key.Replace('/', '\\'));
+            if (excludeCustomMaps && CustomMapManifest.IsCustomMapFile(Path.Combine(gamePath, "MAPS"), destination)) continue;
             if (!File.Exists(destination)) continue;
             byte[] restoredBytes = TeamDatPatcher.GetPatchedBytes(bytes, new TeamDatOptions(false));
             SafeFileWriter.WriteAllBytes(destination, restoredBytes, rollback);

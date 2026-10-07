@@ -43,12 +43,19 @@ namespace AgainstRomeModifier {
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
 
-            StartupOptions options = ParseStartupOptions(args);
-            if (!string.IsNullOrWhiteSpace(options.MapId)) {
-                if (string.IsNullOrWhiteSpace(options.GamePath))
-                    throw new ArgumentException("使用 --map 直接開啟地圖時必須同時指定 --game <path>。");
-                var selectedMap = new AgainstRomeModifier.Maps.GameMapCatalog().Require(options.GamePath, options.MapId);
-                Application.Run(new AgainstRomeMapEditor.MapEditorForm(options.GamePath, selectedMap));
+            StartupOptions options;
+            AgainstRomeModifier.Maps.GameMapInfo? selectedMap = null;
+            try {
+                options = ParseStartupOptions(args);
+                if (!string.IsNullOrWhiteSpace(options.MapId)) selectedMap = ResolveDirectMap(options);
+            } catch (Exception ex) when (ex is ArgumentException or DirectoryNotFoundException or InvalidOperationException) {
+                // 啟動參數錯誤是使用者輸入問題，不寫 crash_log；說明用法後結束。
+                MessageBox.Show(ex.Message + "\n\n用法：AgainstRomeModifier.exe [--game <遊戲目錄>] [--map <地圖代號>]",
+                    "Against Rome Modifier", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            if (selectedMap is not null) {
+                Application.Run(new AgainstRomeMapEditor.MapEditorForm(options.GamePath!, selectedMap));
                 return;
             }
 
@@ -69,6 +76,18 @@ namespace AgainstRomeModifier {
                 }
             }
             return new StartupOptions(gamePath, mapId);
+        }
+
+        // 直接開圖與地圖選單採同一範圍：劇情戰役（KAMP_）不提供編輯或瀏覽。
+        public static AgainstRomeModifier.Maps.GameMapInfo ResolveDirectMap(StartupOptions options) {
+            if (string.IsNullOrWhiteSpace(options.MapId))
+                throw new ArgumentException("未指定 --map 地圖代號。");
+            if (string.IsNullOrWhiteSpace(options.GamePath))
+                throw new ArgumentException("使用 --map 直接開啟地圖時必須同時指定 --game <path>。");
+            var map = new AgainstRomeModifier.Maps.GameMapCatalog().Require(options.GamePath, options.MapId);
+            if (!AgainstRomeMapEditor.MapSelectionForm.IsSelectableMap(map))
+                throw new ArgumentException("劇情戰役地圖不在地圖編輯器支援範圍：" + map.Id);
+            return map;
         }
 
         public readonly record struct StartupOptions(string? GamePath, string? MapId);

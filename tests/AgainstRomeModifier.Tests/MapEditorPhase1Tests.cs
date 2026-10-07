@@ -38,6 +38,75 @@ public sealed class MapEditorPhase1Tests : IDisposable
         Assert.False(Directory.Exists(Path.Combine(_root, "MAPS", "ENDL_005.tmp_arm")));
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Clone_manifest_failure_leaves_no_final_map_and_same_slot_can_be_retried(bool corruptManifest)
+    {
+        CreateSourceMap();
+        string source = Path.Combine(_root, "MAPS", "ENDL_000");
+        var original = Directory.GetFiles(source, "*", SearchOption.AllDirectories).ToDictionary(path => path, File.ReadAllBytes);
+        string manifest = Path.Combine(_root, "MAPS", CustomMapManifest.FileName);
+        if (corruptManifest) File.WriteAllText(manifest, "invalid manifest");
+        else Directory.CreateDirectory(manifest); // The manifest cannot be saved to a directory.
+
+        Exception? error = Record.Exception(() => new EndlessMapCloner().Clone(_root, 0, 5, "Retry map"));
+        Assert.NotNull(error);
+        if (corruptManifest) Assert.IsType<System.Text.Json.JsonException>(error);
+        else Assert.True(error is IOException or UnauthorizedAccessException, error.ToString());
+        Assert.False(Directory.Exists(Path.Combine(_root, "MAPS", "ENDL_005")));
+        Assert.False(Directory.Exists(Path.Combine(_root, "MAPS", "ENDL_005.tmp_arm")));
+        Assert.Equal(5, new EndlessMapCatalog().GetNextFreeSlot(_root));
+        foreach (var (path, bytes) in original) Assert.Equal(bytes, File.ReadAllBytes(path));
+
+        if (corruptManifest) Assert.Equal("invalid manifest", File.ReadAllText(manifest));
+        else Directory.Delete(manifest); // Only the empty synthetic obstruction created above.
+        File.WriteAllText(manifest, "[]");
+        var result = new EndlessMapCloner().Clone(_root, 0, 5, "Retry map");
+        Assert.True(result.IsCustom);
+        Assert.Equal(5, Assert.Single(CustomMapManifest.Load(_root).Entries).Slot);
+        Assert.Equal("Retry map", result.DisplayName);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Clone_refuses_existing_final_or_temporary_folder_without_changing_its_contents(bool temporary)
+    {
+        CreateSourceMap();
+        string folder = Path.Combine(_root, "MAPS", "ENDL_005" + (temporary ? ".tmp_arm" : ""));
+        Directory.CreateDirectory(folder);
+        string sentinel = Path.Combine(folder, "existing.bin");
+        byte[] bytes = [9, 8, 7];
+        File.WriteAllBytes(sentinel, bytes);
+        Assert.Throws<IOException>(() => new EndlessMapCloner().Clone(_root, 0, 5, "Occupied"));
+        Assert.Equal(bytes, File.ReadAllBytes(sentinel));
+        Assert.Single(Directory.GetFiles(folder));
+        Assert.False(File.Exists(Path.Combine(_root, "MAPS", CustomMapManifest.FileName)));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(4)]
+    [InlineData(5)]
+    [InlineData(999)]
+    public void Delete_refuses_marked_original_or_unregistered_custom_map_before_renaming(int slot)
+    {
+        string map = CreateCustomSceneMap(slot, includeMarker: true);
+        var manifest = new CustomMapManifest();
+        manifest.Register(new(6, 0, DateTimeOffset.UtcNow, "test"));
+        manifest.Save(_root);
+        string manifestPath = Path.Combine(_root, "MAPS", CustomMapManifest.FileName);
+        byte[] originalManifest = File.ReadAllBytes(manifestPath);
+        var original = Directory.GetFiles(map).ToDictionary(path => path, File.ReadAllBytes);
+
+        Assert.Throws<InvalidOperationException>(() => new EndlessMapDeleter().Delete(_root, slot));
+        Assert.True(Directory.Exists(map));
+        Assert.False(Directory.Exists(map + ".deleting_arm"));
+        Assert.Equal(originalManifest, File.ReadAllBytes(manifestPath));
+        foreach (var (path, bytes) in original) Assert.Equal(bytes, File.ReadAllBytes(path));
+    }
+
     [Fact]
     public void Documents_Keep_pfil_header_and_only_change_requested_values()
     {
