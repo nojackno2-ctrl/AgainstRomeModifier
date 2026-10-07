@@ -20,7 +20,7 @@ internal sealed record TerrainBlendStroke(IReadOnlyList<TerrainCornerChange> Cor
 /// </summary>
 internal sealed class TerrainBlendEditSession
 {
-    private readonly FloorMaterialCatalog _catalog;
+    private readonly INativeTerrainMaterialResolver _catalog;
     private readonly TerrainBlendAuthoringMap _map;
     private readonly string[] _currentTextures;
     private string[] _baselineTextures;
@@ -30,7 +30,7 @@ internal sealed class TerrainBlendEditSession
     private readonly Stack<TerrainBlendStroke> _undo = new();
     private readonly Stack<TerrainBlendStroke> _redo = new();
 
-    public TerrainBlendEditSession(NativeTerrainImportResult import, IReadOnlyList<string> sourceTextures, FloorMaterialCatalog catalog)
+    public TerrainBlendEditSession(NativeTerrainImportResult import, IReadOnlyList<string> sourceTextures, INativeTerrainMaterialResolver catalog)
     {
         ArgumentNullException.ThrowIfNull(import);
         ArgumentNullException.ThrowIfNull(catalog);

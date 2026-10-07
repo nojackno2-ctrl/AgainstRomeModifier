@@ -12,7 +12,7 @@ internal sealed record FloorMaterial(string Id, string Category, string DisplayN
 /// Converts low-level floortex transition tiles into the base materials used as painter-style terrain pigments.
 /// The verified 4B?___5? family contains solid material variants; 4T/4U/L… entries remain advanced splice tiles.
 /// </summary>
-internal sealed class FloorMaterialCatalog
+internal sealed class FloorMaterialCatalog : INativeTerrainMaterialResolver
 {
     private static readonly Regex BaseMaterialName = new("^4B(?<code>[0-9A-Z])___5[0-9A-Z]$", RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
     private static readonly Regex TwoMaterialTransitionName = new("^4U(?<first>[0-9A-Z])(?<second>[0-9A-Z])__(?<shape>[1-46-9])(?<variant>[0-9A-Z])$", RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
@@ -191,7 +191,7 @@ internal sealed class FloorMaterialCatalog
     /// into an existing native floor tile. Returning null is intentional: unsupported junctions must
     /// be surfaced to the authoring layer instead of silently degrading to a hard square.
     /// </summary>
-    internal string? ResolveNativeTile(IReadOnlyList<string> cornerMaterialIds, int x, int y)
+    public string? ResolveNativeTile(IReadOnlyList<string> cornerMaterialIds, int x, int y)
     {
         if (cornerMaterialIds.Count != 4) throw new ArgumentException("原生地表 tile 必須提供四個角的材質。", nameof(cornerMaterialIds));
         if (cornerMaterialIds.All(value => StringComparer.OrdinalIgnoreCase.Equals(value, cornerMaterialIds[0])))
@@ -203,7 +203,7 @@ internal sealed class FloorMaterialCatalog
             : null;
     }
 
-    internal bool TryResolveNativeCorners(string texture, out IReadOnlyList<string> corners)
+    public bool TryResolveNativeCorners(string texture, out IReadOnlyList<string> corners)
     {
         if (_nativeCornersByTexture.TryGetValue(texture, out string[]? resolved))
         {
