@@ -16,6 +16,8 @@ public static class ScenarioLevelObjects
         Func<ScenarioSpawn, LevelObjectTemplate?> templateFor)
     {
         ArgumentNullException.ThrowIfNull(store); ArgumentNullException.ThrowIfNull(previous); ArgumentNullException.ThrowIfNull(next); ArgumentNullException.ThrowIfNull(templateFor);
+        // next 暫時仍包含舊槽位；物件刪除/排序後要先重建配對，不能以舊配對驗證新物件。
+        ScenarioObjectIdentity.Prepare(next, validateBindings: false);
         foreach (ScenarioDataSlot owned in previous.DataSlots) store.RemoveIfUid(owned.Slot, owned.Uid);
         var slots = new List<ScenarioDataSlot>();
         var skipped = new List<ScenarioSpawn>();
@@ -26,7 +28,7 @@ public static class ScenarioLevelObjects
             float rotation = (float)(((spawn.Angle % 360) + 360) % 360 * Math.PI / 180);
             int slot = store.Add(template, spawn.X, spawn.Y, spawn.Z, rotation, spawn.Team);
             if (slot < 0) throw new InvalidOperationException("地圖的世界物件已達上限（14,000 個），無法再新增。");
-            slots.Add(new ScenarioDataSlot(slot, store.UidAt(slot)!.Value));
+            slots.Add(new ScenarioDataSlot(slot, store.UidAt(slot)!.Value) { SpawnId = spawn.Id });
         }
         next.DataSlots = slots;
         return skipped;

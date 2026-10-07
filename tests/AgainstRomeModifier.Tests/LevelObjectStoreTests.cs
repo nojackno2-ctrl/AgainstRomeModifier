@@ -286,6 +286,25 @@ public sealed class LevelObjectStoreTests
     }
 
     [Fact]
+    public void Scenario_identity_survives_reorder_while_runtime_slot_and_uid_change()
+    {
+        using var level = new LevelFixture(pfil: false);
+        LevelObjectStore store = level.Load(); LevelObjectTemplate template = Assert.Single(store.Templates());
+        var first = new AgainstRomeModifier.Scripting.ScenarioDocument
+        { Spawns = [new("A", 10, 20, 0, Prebuilt: true), new("B", 30, 40, 0, Prebuilt: true)] };
+        AgainstRomeModifier.Scripting.ScenarioLevelObjects.Apply(store, new(), first, _ => template);
+        Guid id = first.Spawns[0].Id;
+        var before = AgainstRomeModifier.Scripting.ScenarioObjectIdentity.DataBinding(first, id)!;
+        var next = new AgainstRomeModifier.Scripting.ScenarioDocument
+        { Spawns = first.Spawns.AsEnumerable().Reverse().Select(spawn => spawn with { X = spawn.X + 100 }).ToList(), DataSlots = first.DataSlots.ToList() };
+        AgainstRomeModifier.Scripting.ScenarioLevelObjects.Apply(store, first, next, _ => template);
+        var after = AgainstRomeModifier.Scripting.ScenarioObjectIdentity.DataBinding(next, id)!;
+        Assert.NotEqual(before.Slot, after.Slot); Assert.NotEqual(before.Uid, after.Uid);
+        Assert.Equal(110, store.Objects().Single(item => item.Slot == after.Slot).X);
+        Assert.Equal(first.Spawns[0].Id, next.Spawns[1].Id);
+    }
+
+    [Fact]
     public void Scenario_level_objects_replace_previous_slots_and_report_missing_templates()
     {
         using var level = new LevelFixture(pfil: false);

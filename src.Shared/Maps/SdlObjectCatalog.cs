@@ -74,7 +74,10 @@ public static class SdlObjectCatalog
 }
 
 /// <summary>編輯器暫存的一個預放物件（世界絕對座標）。</summary>
-public sealed record SdlPlacedObject(SdlObjectType Type, float WorldX, float WorldY, float WorldZ, int Team, float Angle = 0, int UnitCount = 0);
+public sealed record SdlPlacedObject(SdlObjectType Type, float WorldX, float WorldY, float WorldZ, int Team, float Angle = 0, int UnitCount = 0)
+{
+    public Guid ScenarioId { get; init; }
+}
 
 /// <summary>
 /// 把預放物件寫入地圖目錄中的專用 SDL（refpos 0、絕對座標、onload=1）。

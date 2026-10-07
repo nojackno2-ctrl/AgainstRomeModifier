@@ -1266,7 +1266,7 @@ internal sealed partial class MapEditorForm : Form
         {
             SdlObjectType? type = _objectCatalog.FirstOrDefault(item => AliasOf(item).Equals(spawn.Alias, StringComparison.OrdinalIgnoreCase));
             if (type is null) continue;
-            yield return new SdlPlacedObject(type, spawn.X, spawn.Y, spawn.Z, spawn.Team, spawn.Angle, spawn.Count > 1 ? spawn.Count : 1);
+            yield return new SdlPlacedObject(type, spawn.X, spawn.Y, spawn.Z, spawn.Team, spawn.Angle, spawn.Count > 1 ? spawn.Count : 1) { ScenarioId = spawn.Id };
         }
     }
 
@@ -1362,7 +1362,7 @@ internal sealed partial class MapEditorForm : Form
             return;
         }
         _placedObjects.Add(new SdlPlacedObject(selection.Type, worldX, worldY, worldZ, (int)_placeTeam.Value, (float)_placeAngle.Value,
-            figure ? (int)_placeCount.Value : 0));
+            figure ? (int)_placeCount.Value : 0) { ScenarioId = Guid.NewGuid() });
         RefreshPlacedList();
         IReadOnlyList<MapSceneObject> effective = EffectiveSceneObjects();
         _canvas.UpdateSceneObjects(effective); _view3d?.UpdateSceneObjects(effective);
@@ -1774,7 +1774,7 @@ internal sealed partial class MapEditorForm : Form
                 // 建築以官方完工範本寫入 DATA（開局即完工）；人物與部隊由地圖腳本生成。
                 scenario = new ScenarioDocument { Events = _events.ToList(), DataSlots = previousScenario.DataSlots.ToList(), Spawns = placedChanged ? _placedObjects.Select(item => new ScenarioSpawn(AliasOf(item.Type), item.WorldX, item.WorldZ, item.Team,
                     item.UnitCount > 1 ? item.UnitCount : 0, (int)MathF.Round(item.Angle), item.WorldY,
-                    Prebuilt: item.Type.Category == SdlObjectCategory.Building && item.Team is >= 0 and <= 8)).ToList() : previousScenario.Spawns.ToList() };
+                    Prebuilt: item.Type.Category == SdlObjectCategory.Building && item.Team is >= 0 and <= 8) { Id = item.ScenarioId }).ToList() : previousScenario.Spawns.ToList() };
             }
             bool prebuiltChanged = placedChanged && scenario is not null && (scenario.Spawns.Any(spawn => spawn.Prebuilt) || previousScenario!.DataSlots.Count > 0);
             if (natureChanged || prebuiltChanged)

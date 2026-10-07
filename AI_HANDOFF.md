@@ -1,5 +1,14 @@
 ﻿# AI Handoff - Live Project Memory
 
+## 2026-10-07 Codex：持久物件 ID 與 DATA 綁定（程式與測試完成）
+
+- 開始核對 HEAD 63ef8e2、乾淨工作樹。前輪產出原版物件 API/身份證據，屬進展；整體事件條件仍待實作。
+- ScenarioSpawn 新增持久 Guid Id，SdlPlacedObject 透過 ScenarioId 在載入、移動、儲存間保留；新放置物件使用新 ID。ScenarioDataSlot 綁定 SpawnId，重建 DATA 時記錄本次 slot/uid。
+- 場景格式 v4，讀取 v1–v4。舊版以地圖內序號產生可重複載入的確定 ID，完整舊 DATA 順序可遷移；不完整配對保留移除所有權，但不猜目標綁定。v4 缺失/重複 ID、失效綁定拒絕；儲存前先驗證，DATA 重建階段允許舊綁定暫時失效。
+- 首輪篩選測試 23 通過／1 失敗：舊測試仍預期場景 Version 3，已依新格式改為 4。新增舊檔重複載入、移動/存讀 ID、未完整 ownership、不合法 ID 保存前拒絕、真實 store fixture 重排後 slot/uid 變動但 ID 不變測試；真實 STA 表單測試也驗證移動並連續儲存保留 ID。v4 未綁定 ownership 不猜配對、兩個 ID 不可綁同一實體槽位。
+- 最終驗證：ARM_GAME_PATH 啟用的隔離 Release tests 399 通過／21 略過／0 失敗；Release solution build 0 警告／0 錯誤。使用 --artifacts-path TEMP/ArmEventEditingQA，避免仍開啟的編輯器鎖住標準輸出。本地 AI 審查建議經程式與測試核對，未發現需要採用的額外修正。
+- 目前完成 DATA 建築的身份基礎；下一步是腳本生成部隊的 native output 綁定、事件物件條件。實機 save/load 尚未完成，整體目標仍未完成。本輪只做 repository/暫存目錄寫入；遊戲目錄只供授權的唯讀測試。
+
 ## 2026-10-07 Codex：事件條件靜態查核（證據已整理）
 
 - 開始核對 d52ecb6 / 乾淨工作樹；測試地圖仍 v2 / 無 Events。前一輪完成複製及動作排序，屬進展；管理員 UI 寫入限制尚未解除。

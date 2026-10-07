@@ -53,13 +53,23 @@ Adding nature objects, changing placement order or deleting a placed building
 can therefore change the resulting pair. Event-only saves preserve DATA slots,
 but that does not make the pair stable across placement changes.
 
-Before exposing object conditions, implement persistent editor identities for
-placed objects and bind each identity to the newly assigned runtime pair in
-the same save transaction. Script-created units need bindings from the native
-creation outputs as well. Keep identity through move/edit, give copied objects
-new identities, migrate old scenarios, and reject a deleted or unresolved
-event target with a clear editor error. Do not silently retarget to another
-object occupying an old slot or guess identity from proximity.
+Persistent editor identities and DATA ownership bindings are now implemented
+in scenario format v4. `ScenarioSpawn.Id` survives editor load, move and save;
+new placements receive new IDs. `ScenarioDataSlot.SpawnId` associates each
+prebuilt object with its freshly assigned slot/UID during the existing save
+transaction. Legacy v1–v3 scenarios receive deterministic map-local identities;
+only complete legacy ordered ownership lists are paired automatically.
+Incomplete lists remain unbound, and v4 unbound lists are never guessed from
+order or proximity. Duplicate identities, invalid bindings and multiple IDs
+bound to one physical slot are rejected before writing the scenario.
+
+Tests verify repeated legacy loads, a real form move/save/reload, unchanged IDs
+after DATA reorder despite changed slot/UID, and invalid-file rejection. This
+is an editor-side binding, not yet verified against the game's runtime loader.
+Script-created units still need bindings from native creation outputs. Before
+exposing object conditions, reject deleted or unresolved targets with a clear
+editor error and give copied placements new identities. Never retarget to an
+object occupying an old slot.
 
 Required regression coverage: unchanged target after reorder/move/save;
 separate identities after copying; failed spawn never counts as destruction;

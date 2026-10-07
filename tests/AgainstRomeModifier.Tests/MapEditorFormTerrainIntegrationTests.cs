@@ -152,6 +152,38 @@ public sealed class MapEditorFormTerrainIntegrationTests : IDisposable
     }
 
     [Fact]
+    public void Loaded_placement_identity_is_retained_by_form_after_move_and_save()
+    {
+        string map = CreateFixture(); Directory.CreateDirectory(Path.Combine(map, "SCRIPT"));
+        File.WriteAllBytes(Path.Combine(map, "SCRIPT", LevelScriptInjector.ScriptFile), ScenarioEventsTests.Fixture().Serialize());
+        File.WriteAllText(Path.Combine(map, ScenarioDocument.FileName),
+            "{\"Version\":2,\"Spawns\":[{\"Alias\":\"UNIT\",\"X\":4000,\"Z\":5000,\"Team\":0,\"Count\":10}]}");
+        Guid id = ScenarioDocument.Load(map).Spawns[0].Id;
+        Exception? failure = null;
+        var thread = new Thread(() =>
+        {
+            try
+            {
+                using var form = new MapEditorForm(_root, new GameMapInfo("ENDL_005", map, true, "Identity", "無盡模式"));
+                var type = new SdlObjectType("FigGerUnit", 1, SdlObjectCategory.Figure, "Ger", 1, new Dictionary<string, string> { ["alias"] = "UNIT" });
+                typeof(MapEditorForm).GetField("_objectCatalog", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(form, new[] { type });
+                _ = form.Handle; Invoke(form, "LoadSelectedMap");
+                var placements = (List<SdlPlacedObject>)typeof(MapEditorForm).GetField("_placedObjects", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(form)!;
+                Assert.Equal(id, Assert.Single(placements).ScenarioId);
+                placements[0] = placements[0] with { WorldX = 4500 };
+                Assert.True((bool)Invoke(form, "SaveMap", false)!);
+                ScenarioDocument saved = ScenarioDocument.Load(map);
+                Assert.Equal(id, Assert.Single(saved.Spawns).Id); Assert.Equal(4500, saved.Spawns[0].X);
+                Assert.True((bool)Invoke(form, "SaveMap", false)!);
+                Assert.Equal(id, Assert.Single(ScenarioDocument.Load(map).Spawns).Id);
+            }
+            catch (Exception ex) { failure = ex; }
+        });
+        thread.SetApartmentState(ApartmentState.STA); thread.Start();
+        Assert.True(thread.Join(TimeSpan.FromSeconds(60))); Assert.Null(failure);
+    }
+
+    [Fact]
     public void Event_only_form_save_preserves_building_slots_and_removal_restores_original_script()
     {
         string map = CreateFixture(); Directory.CreateDirectory(Path.Combine(map, "SCRIPT"));

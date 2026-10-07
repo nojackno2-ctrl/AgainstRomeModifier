@@ -45,16 +45,22 @@ public static class ScriptObjectAliases
 /// <see cref="Prebuilt"/> 為 true 時以官方地圖的完工物件範本寫入 DATA（與官方地圖相同、開局即完工）；
 /// 否則由地圖腳本在開局生成（建築以 s_createObj 生成時是 0% 的工地）。
 /// </summary>
-public sealed record ScenarioSpawn(string Alias, float X, float Z, int Team, int Count = 0, int Angle = 0, float Y = 0, bool Prebuilt = false);
+public sealed record ScenarioSpawn(string Alias, float X, float Z, int Team, int Count = 0, int Angle = 0, float Y = 0, bool Prebuilt = false)
+{
+    public Guid Id { get; init; }
+}
 
 /// <summary>編輯器寫入 DATA 的物件槽位；以 uid 確認仍是同一物件後才在下次儲存時移除。</summary>
-public sealed record ScenarioDataSlot(int Slot, uint Uid);
+public sealed record ScenarioDataSlot(int Slot, uint Uid)
+{
+    public Guid SpawnId { get; init; }
+}
 
 /// <summary>地圖的場景設定（編輯器自有格式，存於地圖目錄；遊戲不讀取，儲存時編譯進 ak_level.bci 與 DATA）。</summary>
 public sealed class ScenarioDocument
 {
     public const string FileName = "arm_scenario.json";
-    public int Version { get; set; } = 3;
+    public int Version { get; set; } = 4;
     public List<ScenarioSpawn> Spawns { get; set; } = new();
     public List<ScenarioDataSlot> DataSlots { get; set; } = new();
     public List<ScenarioEvent> Events { get; set; } = new();
@@ -71,14 +77,18 @@ public sealed class ScenarioDocument
         if (!File.Exists(path)) return new ScenarioDocument();
         ScenarioDocument result = JsonSerializer.Deserialize<ScenarioDocument>(File.ReadAllText(path), Options)
             ?? throw new InvalidDataException("場景設定不能是 null。");
-        if (result.Version is < 1 or > 3 || result.Spawns is null || result.DataSlots is null || result.Events is null)
+        if (result.Version is < 1 or > 4 || result.Spawns is null || result.DataSlots is null || result.Events is null)
             throw new InvalidDataException("不支援或不完整的場景設定。");
+        if (result.Version == 4 && result.Spawns.Any(spawn => spawn is null || spawn.Id == Guid.Empty))
+            throw new InvalidDataException("場景物件缺少持久 ID。");
+        ScenarioObjectIdentity.Prepare(result, legacy: result.Version < 4);
         return result;
     }
 
     public void Save(string mapDirectory, FileRollbackScope rollback)
     {
-        Version = 3;
+        ScenarioObjectIdentity.Prepare(this);
+        Version = 4;
         Core.Services.SafeFileWriter.WriteAllBytes(Path.Combine(mapDirectory, FileName), JsonSerializer.SerializeToUtf8Bytes(this, Options), rollback);
     }
 }

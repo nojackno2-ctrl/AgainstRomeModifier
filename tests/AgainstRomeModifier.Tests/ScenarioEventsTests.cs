@@ -179,7 +179,7 @@ public sealed class ScenarioEventsTests : IDisposable
         document.Events.Add(Event());
         using (var rollback = new FileRollbackScope()) { document.Save(_root, rollback); rollback.Commit(); }
         ScenarioDocument loaded = ScenarioDocument.Load(_root);
-        Assert.Equal(3, loaded.Version);
+        Assert.Equal(4, loaded.Version);
         Assert.Equal(document.Spawns, loaded.Spawns); Assert.Equal(document.DataSlots, loaded.DataSlots);
         Assert.Equal("Timer", Assert.Single(loaded.Events).Name);
     }
