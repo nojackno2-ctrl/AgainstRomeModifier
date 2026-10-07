@@ -73,6 +73,43 @@ public sealed class MapEditorNatureHistoryTests
     }
 
     [Fact]
+    public void Picked_nature_objects_are_deleted_with_undo_in_move_mode_and_fixed_objects_are_kept()
+    {
+        Run(form =>
+        {
+            const float position = 10.5f * SdlSceneCatalog.WorldUnitsPerMapPixel * 4;
+            Set(form, "_levelObjects", new LevelWorldObject[]
+            {
+                new(0, 1, 8, 1, position, 0, position, 0, false),
+                new(1, 1, 8, 2, position, 0, position, 0, true), // linked: must stay
+            });
+            Paint(form, 20, 20); Invoke(form, "CommitStroke"); // one pending planted addition
+            Type mode = typeof(MapEditorForm).GetNestedType("EditMode", BindingFlags.NonPublic)!;
+            Invoke(form, "SetEditMode", Enum.Parse(mode, "SceneMove"));
+            var session = Get<AgainstRomeMapEditor.Modules.Nature.NatureEditSession>(form, "_natureSession");
+            MapSceneObject Data(int index) => new("LanGerLau00", position, 0, position, 8, "DATA/objects.dat", index);
+
+            Invoke(form, "SelectPickedSceneObject", Data(-100001)); // linked slot 1
+            Assert.False((bool)Invoke(form, "DeletePickedNature")!);
+            Invoke(form, "SelectPickedSceneObject", Data(-100000)); // removable slot 0
+            Assert.True((bool)Invoke(form, "DeletePickedNature")!);
+            Assert.Equal(new[] { 0 }, session.RemovedSlots);
+            Assert.False((bool)Invoke(form, "DeletePickedNature")!); // the pick is consumed
+            Assert.True(Button(form, "_undoButton").Enabled);
+            Invoke(form, "Undo");
+            Assert.Empty(session.RemovedSlots);
+            Invoke(form, "Redo");
+            Assert.Equal(new[] { 0 }, session.RemovedSlots);
+
+            Invoke(form, "SelectPickedSceneObject", Data(-200000)); // the pending planted addition
+            Assert.True((bool)Invoke(form, "DeletePickedNature")!);
+            Assert.Empty(Additions(form));
+            Invoke(form, "Undo");
+            Assert.Single(Additions(form).Cast<object>());
+        });
+    }
+
+    [Fact]
     public void Empty_valid_world_store_keeps_nature_tool_enabled_and_clears_old_history()
     {
         Run(form =>

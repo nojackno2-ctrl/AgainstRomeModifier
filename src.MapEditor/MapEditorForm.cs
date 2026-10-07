@@ -110,6 +110,8 @@ internal sealed partial class MapEditorForm : Form
     private FloorTextureLibrary? _floorTextures;
     // 原遊戲 ALR/APT 物件素材（唯讀）；缺檔或格式錯誤時為 null，場景退回標記點。
     private AgainstRomeMapEditor.NativeAssets.NativeSpriteCatalog? _spriteCatalog;
+    // 3D 點選到的可移除自然物件（Delete 移除）；選取其他物件或場景變更時清除。
+    private MapSceneObject? _pickedNature;
     private FloorMaterialCatalog? _floorMaterials;
     private FloorMaterial? _activeMaterial;
     private IReadOnlyList<MapSceneObject> _sceneObjects = Array.Empty<MapSceneObject>();
@@ -743,6 +745,8 @@ internal sealed partial class MapEditorForm : Form
             if (_natureSession.Undo()) { RefreshSceneMarkers(); UpdateEditorState(); }
             return;
         }
+        // 移動模式中可在 3D 點選刪除自然物件：先復原那類變更，沒有時才退回材質筆畫。
+        if (_editMode == EditMode.SceneMove && _natureSession.Undo()) { RefreshSceneMarkers(); UpdateEditorState(); return; }
         if (TerrainLayerMode)
         {
             if (_terrainLayers?.Undo() is { } undone) { ApplyTerrainLayerStroke(undone); UpdateEditorState(); }
@@ -767,6 +771,7 @@ internal sealed partial class MapEditorForm : Form
             if (_natureSession.Redo()) { RefreshSceneMarkers(); UpdateEditorState(); }
             return;
         }
+        if (_editMode == EditMode.SceneMove && _natureSession.Redo()) { RefreshSceneMarkers(); UpdateEditorState(); return; }
         if (TerrainLayerMode)
         {
             if (_terrainLayers?.Redo() is { } redone) { ApplyTerrainLayerStroke(redone); UpdateEditorState(); }
@@ -1126,6 +1131,11 @@ internal sealed partial class MapEditorForm : Form
             _undoButton.Enabled = editable && _placementSession.CanUndo;
             _redoButton.Enabled = editable && _placementSession.CanRedo;
         }
+        if (_editMode == EditMode.SceneMove)
+        {
+            _undoButton.Enabled |= editable && _natureSession.CanUndo;
+            _redoButton.Enabled |= editable && _natureSession.CanRedo;
+        }
         _collisionTool.Enabled = editable && _terrainLayers?.HasCollision == true;
         UpdateSceneEditButtons();
         UpdateEventButtons();
@@ -1308,11 +1318,10 @@ internal sealed partial class MapEditorForm : Form
     private void HandleShortcut(KeyEventArgs e)
     {
         // 3D 場景取得焦點時，Delete 對選取的場景物件執行「刪除／取消刪除」（與按鈕相同，儲存前可還原）。
-        if (e.KeyCode == Keys.Delete && !e.Control && _view3d is { Focused: true } && _sceneDeleteButton.Enabled)
+        if (e.KeyCode == Keys.Delete && !e.Control && _view3d is { Focused: true })
         {
-            ToggleDeleteSelectedSceneObject();
-            e.SuppressKeyPress = true;
-            return;
+            if (DeletePickedNature()) { e.SuppressKeyPress = true; return; }
+            if (_sceneDeleteButton.Enabled) { ToggleDeleteSelectedSceneObject(); e.SuppressKeyPress = true; return; }
         }
         if (!e.Control) return;
         if (e.KeyCode == Keys.S) {
