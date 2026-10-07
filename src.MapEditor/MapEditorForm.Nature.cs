@@ -27,6 +27,8 @@ internal sealed partial class MapEditorForm
     private bool NatureDirty() => _natureSession.IsDirty;
     private Control BuildNaturePanel()
     {
+        ConfigureSpriteList(_natureTypes, index => _natureTypes.Items[index] is NatureTypeItem item
+            ? _spriteCatalog?.GetSprite(item.Name) : null);
         var panel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(8), BackColor = WinFormsTheme.Surface };
         var options = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 2, BackColor = WinFormsTheme.SurfaceRaised, Padding = new Padding(6) };
         options.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 70)); options.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));

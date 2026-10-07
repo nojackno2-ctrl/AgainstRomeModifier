@@ -1,3 +1,4 @@
+using AgainstRomeMapEditor.NativeAssets;
 using AgainstRomeMapEditor.Modules.Placement;
 using AgainstRomeModifier;
 using AgainstRomeModifier.Maps;
@@ -31,8 +32,48 @@ internal sealed partial class MapEditorForm
     internal ListView PlacedList => _placedList;
     internal PlacementEditSession PlacementSession => _placementSession;
 
+    private readonly SpriteThumbnailCache _spriteThumbnails = new();
+
+    // 兩個目錄共用縮圖尺寸、文字縮排與主題選取色。
+    private void ConfigureSpriteList(ListBox list, Func<int, NativeSprite?> spriteForItem)
+    {
+        list.DrawMode = DrawMode.OwnerDrawFixed;
+        void UpdateSize()
+        {
+            list.ItemHeight = Math.Max(LogicalToDeviceUnits(40), list.Font.Height) + LogicalToDeviceUnits(8);
+            list.Invalidate();
+        }
+        UpdateSize();
+        list.FontChanged += (_, _) => UpdateSize();
+        list.DpiChangedAfterParent += (_, _) => UpdateSize();
+        list.HandleCreated += (_, _) => UpdateSize();
+        list.DrawItem += (_, e) =>
+        {
+            bool selected = (e.State & DrawItemState.Selected) != 0;
+            using var background = new SolidBrush(selected ? WinFormsTheme.Selection : list.BackColor);
+            e.Graphics.FillRectangle(background, e.Bounds);
+            if (e.Index < 0 || e.Index >= list.Items.Count) return;
+            int size = LogicalToDeviceUnits(40), padding = LogicalToDeviceUnits(4);
+            NativeSprite? sprite = spriteForItem(e.Index);
+            if (sprite is not null)
+                e.Graphics.DrawImageUnscaled(_spriteThumbnails.Get(sprite, size),
+                    e.Bounds.Left + padding, e.Bounds.Top + (e.Bounds.Height - size) / 2);
+            var textBounds = new Rectangle(e.Bounds.Left + size + padding * 3, e.Bounds.Top,
+                Math.Max(0, e.Bounds.Width - size - padding * 4), e.Bounds.Height);
+            TextRenderer.DrawText(e.Graphics, list.Items[e.Index].ToString(), list.Font, textBounds,
+                list.Enabled ? WinFormsTheme.TextPrimary : WinFormsTheme.TextMuted,
+                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+            e.DrawFocusRectangle();
+        };
+    }
+
     private Control BuildPlacementPanel()
     {
+        ConfigureSpriteList(_placeTypes, index => _placeTypes.Items[index] is PlacementTypeItem item
+            ? _spriteCatalog?.GetSprite(item.Type.NameDef, item.Type.Category == SdlObjectCategory.Figure ? (int)_placeTeam.Value : 0)
+            : null);
+        _placeTeam.ValueChanged += (_, _) => _placeTypes.Invalidate();
+        Disposed += (_, _) => _spriteThumbnails.Dispose();
         var panel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(8), BackColor = WinFormsTheme.Surface };
         panel.SizeChanged += (_, _) => _placeHint.MaximumSize = new Size(Math.Max(1, panel.ClientSize.Width - panel.Padding.Horizontal), 0);
         var options = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 2, BackColor = WinFormsTheme.SurfaceRaised, Padding = new Padding(6) };

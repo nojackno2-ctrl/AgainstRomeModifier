@@ -12,7 +12,8 @@ namespace AgainstRomeModifier.Tests;
 /// 會修改該自製地圖，執行前須先備份。案例：
 /// victory＝3 秒訊息＋第一支 team 0 部隊進入其東方矩形後訊息與勝利；
 /// defeat＝3 秒訊息＋45 秒後訊息與失敗（用於存讀檔後事件是否延續）；
-/// terrain＝出生點附近示範區（不同材質自動過渡、粗糙化丘陵、5×5 小湖、茂密混合森林、印章道路）＋3 秒訊息。
+/// terrain＝出生點附近示範區（不同材質自動過渡、粗糙化丘陵、5×5 小湖、茂密混合森林、印章道路）＋3 秒訊息；
+/// angles＝出生部隊東側一列 8 名同型單兵，角度 0、45…315，供遊戲內比對角度與 ALR 方向列。
 /// </summary>
 public sealed class InGameAcceptanceScenarioTests
 {
@@ -51,6 +52,21 @@ public sealed class InGameAcceptanceScenarioTests
             {
                 events.Add(new("ARM timed defeat", 45) { Actions = [new(ScenarioActionKind.Message, "ARM test: timer elapsed - defeat."), new(ScenarioActionKind.Defeat)] });
                 report = "timed defeat at 45 s";
+            }
+            else if (scenario == "angles")
+            {
+                // Eight single soldiers of the start unit's type in a row along +X (screen right-down), angles 0..315,
+                // so in-game sprite matching can map scenario angles to ALR direction rows.
+                var placed = new List<string>();
+                for (int index = 0; index < 8; index++)
+                {
+                    float x = unit.WorldX + 700 + index * 250, z = unit.WorldZ - 300;
+                    form.PlacementSession.Add(new SdlPlacedObject(unit.Type, x, unit.WorldY, z, 0, index * 45f, 1) { ScenarioId = Guid.NewGuid() });
+                    placed.Add($"{index * 45}deg@({x},{z})");
+                }
+                Invoke(form, "RefreshPlacedList");
+                events.Add(new("ARM angles", 3) { Actions = [new(ScenarioActionKind.Message, "ARM test: eight soldiers east of the start face angles 0..315.")] });
+                report = $"type {unit.Type.NameDef}: " + string.Join(", ", placed);
             }
             else if (scenario == "terrain")
             {
