@@ -1,5 +1,15 @@
 # AI Handoff - Live Project Memory
 
+## argm-trace winmm.dll 代理匯出修正 (2026-10-07 Antigravity)
+
+- 修正：`native/argm-trace/argm_trace.def` 與 `native/argm-trace/src/proxy_winmm.cpp`，改以腳本 `native/argm-trace/generate_exports.py` 從 `C:\Windows\SysWOW64\winmm.dll` 讀取並產生完整的匯出清單，解決遊戲載入 NVIDIA `NvMemMapStorage.dll` 時因缺少 `timeBeginPeriod` 導致無法找到輸入點的啟動失敗問題。保留了原先供 EXE 使用的 hook，ordinal-only 匯出亦保持原始 ordinal。
+- 驗證：
+  - 新增 C# 回歸測試 `tests/AgainstRomeModifier.Tests/WinmmExportTests.cs`，驗證產生之 `.def` 檔包含 SysWOW64 `winmm.dll` 所有的匯出。
+  - `dotnet build AgainstRomeModifier.slnx -c Release -p:UseAppHost=false`：0 警告，0 錯誤。
+  - `dotnet test ... --filter "FullyQualifiedName~WinmmExportTests"`：1 通過，0 失敗。
+- Claude 補驗：本機 VS 18（`Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/bin/cmake.exe`）`-A Win32 -DARGM_BUILD_TESTS=ON` 編譯成功，CTest 2/2 通過；dumpbin：193 functions／192 names，含 timeBeginPeriod(@90)、timeEndPeriod(@91)、序號 2 NONAME。
+- 未驗證：未部署到遊戲實測（ArgmTrace 目前已由使用者還原移除；重新啟用需使用者同意）。系統 winmm.dll 更新增加匯出時 `WinmmExportTests` 會失敗，需重跑 generate_exports.py。
+
 ## 單位角度→方向列（2026-10-07 Claude；遊戲內驗證）
 
 - 備份 MAPS/ENDL_005（TEMP/ArmGameBackup_20261007_215746，55 檔雜湊）→ `InGameAcceptanceScenarioTests` 新案例 `angles`（ARM_GAME_PATH／ARM_INGAME_MAP=ENDL_005／ARM_INGAME_SCENARIO=angles）以真正 MapEditorForm 存入 8 名 GER_INF01 單兵，角度 0..315 → 遊戲內下半身樣板比對（旗幟遮上半身）：0/45/90/135/180° = 方向列 14/12/10/8/6（NCC 0.96–0.99）。225° 以後被 HUD 擋住未測。之後關閉遊戲、以備份覆蓋還原，雜湊 55 檔完全相同。
@@ -32,10 +42,10 @@
 
 ## 遊戲內比對與正交相機（2026-10-07 Claude；使用者授權「啟動遊戲」）
 
-- 啟動失敗根因：修改器部署的 argm-trace `winmm.dll` 代理只匯出 EXE 用到的 18 個函式，NVIDIA `NvMemMapStorage.dll` 需要 `timeBeginPeriod` → 「無法找到輸入點」。依使用者指示以 CLI `restore --all --preserve-custom-maps true` 還原（dgVoodoo/ArgmTrace 已移除，介面回俄文）；status 仍顯示 EndlessAi.Core／RomanReinforcementGarrison，因保留的自製地圖 ENDL_005 的 ak_level.bci 仍是修改版。**argm-trace 代理需補齊 winmm 全部匯出或改轉送**（未修，native 專案範圍）。
+- 啟動失敗根因：修改器部署的 argm-trace `winmm.dll` 代理只匯出 EXE 用到的 18 個函式，NVIDIA `NvMemMapStorage.dll` 需要 `timeBeginPeriod` → 「無法找到輸入點」。依使用者指示以 CLI `restore --all --preserve-custom-maps true` 還原（dgVoodoo/ArgmTrace 已移除，介面回俄文）；status 仍顯示 EndlessAi.Core／RomanReinforcementGarrison，因保留的自製地圖 ENDL_005 的 ak_level.bci 仍是修改版。**argm-trace 代理已補齊 winmm 全部匯出轉送**（已修，見 2026-10-07 Antigravity）。
 - 遊戲內 NCC 比對結果見 native-scene-rendering.md「遊戲內同畫面驗證」：完工格、色道、錨點、2:1 比例、隊伍色=變體、Angle0=方向列14 皆驗證。編輯器改：正交投影（預設）、俯角30°、MinDistance 2、`ZoomToGameScale`、`DefaultDirection=14`；地形拾取改為先裁切到地圖範圍（正交射線起點很遠）；點選後拖曳改為保持抓取偏移的相對移動（對齊格中心）。通行覆蓋測試的整圖平均色差改為只比較變化像素。
 - 驗證：Release build 0警告/0錯誤；ARM_OPENGL_REQUIRED=1 全測試 宿主612/22略過、modules123，0失敗；`ARM_COMPARE_GAME=<TEMP/ArmGameCompare_20261007>` 選用測試以真實地圖副本擷取，與遊戲錨點位移一致（NCC 1.000）。遊戲已關閉；TEMP 副本只含唯讀複製。
-- 未完成：日夜光照色調、角度→方向公式、地形遮擋、陰影、動畫、2D 畫布 sprite、argm-trace winmm 匯出修正。
+- 未完成：日夜光照色調、角度→方向公式、地形遮擋、陰影、動畫、2D 畫布 sprite。
 
 ## 原生 sprite 接入 3D 場景（2026-10-07 Claude；goal「繼續完成地圖編輯器的開發」進行中）
 
