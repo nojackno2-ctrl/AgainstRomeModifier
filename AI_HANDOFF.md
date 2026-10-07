@@ -1,5 +1,12 @@
 # AI Handoff - Live Project Memory
 
+## 目前狀態總覽（2026-10-07 晚，Claude 統籌；goal「可以對外發布的地圖編輯器」，重點為完成度）
+
+- 本輪後半新增並提交：物件清單縮圖（Codex）、角度→方向（遊戲內驗證）、3D 點選刪除自然物件、小地圖導覽（Agy）、物件陰影解碼（Codex）與映射（Agy）、3D 地面陰影繪製（Claude，與遊戲截圖位置一致）、地圖光照模型研究（Codex，尚未接 UI）、隊伍色／動畫語意研究（Agy）、argm-trace winmm 代理修正與重建 ThirdParty 二進位（Agy+Claude，MSVC 編譯、CTest 2/2、193 匯出）。
+- 驗證：Release build 0 警告/0 錯誤；全測試 宿主632/22略過、modules189，0 失敗（ARM_OPENGL_REQUIRED=1）。測試主行程固定 DPI Unaware（`TestProcessDpiAwareness`），WinForms 測試同一 xUnit collection。
+- 子代理使用規則見使用者記憶：簡單工作給本地 AI（需複核）、困難／逆向給雲端，可平行派多個；Agy 用預設 gemini-3.8-flash；派工時檔案不可重疊、子代理不提交。
+- 下一步建議（完成度）：(1) 待機動畫（單位動畫 0 24 格≈24 FPS、APT 第 3 軸火把／煙霧），需處理圖集容量；(2) 局部光源（火把光暈）與時段環境色——依 map-lighting.md 先找光源定義來源；(3) 遊戲內驗收：用編輯器存出的地圖檢查陰影／放置／地形；(4) 225°+ 與 32 方向騎兵朝向實測；(5) 測試地圖 ENDL_005 已還原，備份 TEMP/ArmGameBackup_20261007_215746。
+
 ## 小地圖點擊導航與視野指示器 (Age of Empires II 風格) (2026-10-07 Antigravity)
 
 - 核心功能：
