@@ -167,6 +167,12 @@ public static class CliCommands
 
     public static async Task<ApplyModificationResult> ApplyAsync(CliOptions options, ILogger logger)
     {
+        if (!string.IsNullOrWhiteSpace(options.Category))
+        {
+            if (!Enum.TryParse<FeatureCategory>(options.Category, true, out _))
+                throw new ArgumentException($"未知的修改分類: '{options.Category}'。可用分類: Stats, Compat, Language。可使用 'AgainstRomeModifier.exe features' 查詢。");
+        }
+
         if (options.EnableFeatures != null)
         {
             foreach (string id in options.EnableFeatures)
@@ -241,7 +247,27 @@ public static class CliCommands
                 profile = patchEngine.DetectCurrentPatchState(gamePath, backupManager);
             }
 
-            if (options.EnableAll)
+            if (!string.IsNullOrWhiteSpace(options.Category) || options.Compat)
+            {
+                string catName = !string.IsNullOrWhiteSpace(options.Category) ? options.Category : "Compat";
+                if (!Enum.TryParse<FeatureCategory>(catName, true, out var targetCategory))
+                {
+                    throw new ArgumentException($"未知的分類: '{catName}'。可用分類: Stats, Compat, Language。");
+                }
+
+                var excludedSet = new HashSet<string>(ModifierForm.EnableAllExcludedFeatureIds, StringComparer.OrdinalIgnoreCase);
+                foreach (var def in FeatureRegistry.ByCategory(targetCategory))
+                {
+                    if (def.ControlKind == FeatureControlKind.Toggle)
+                    {
+                        if (options.EnableAll || !excludedSet.Contains(def.Id))
+                        {
+                            profile.Set(def.Id, FeatureValue.Of(true));
+                        }
+                    }
+                }
+            }
+            else if (options.EnableAll)
             {
                 var excludedSet = new HashSet<string>(ModifierForm.EnableAllExcludedFeatureIds, StringComparer.OrdinalIgnoreCase);
                 foreach (var def in FeatureRegistry.ToggleFeatures)
@@ -657,6 +683,8 @@ public static class CliCommands
                     Options = new()
                     {
                         "--game <path>",
+                        "--category <Stats|Compat|Language>",
+                        "--compat",
                         "--enable <ids>",
                         "--disable <ids>",
                         "--all",

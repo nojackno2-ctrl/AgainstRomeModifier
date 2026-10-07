@@ -24,6 +24,7 @@ public sealed class CliOptions
     public bool RestoreAll { get; set; }
     public bool RestoreStats { get; set; }
     public bool RestoreCompat { get; set; }
+    public bool Compat { get; set; }
     public bool RestoreLanguage { get; set; }
     public bool PreserveCustomMaps { get; set; } = true;
     public string? OutputFile { get; set; }
@@ -174,6 +175,7 @@ public sealed class CliOptions
 
             if (arg.Equals("--compat", StringComparison.OrdinalIgnoreCase))
             {
+                options.Compat = true;
                 options.RestoreCompat = true;
                 continue;
             }

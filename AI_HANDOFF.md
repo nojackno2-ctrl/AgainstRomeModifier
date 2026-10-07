@@ -27,14 +27,22 @@
 4. 讀檔後計時事件觸發時間（設定 45 秒、實際 0:58）語意未查；部隊死亡、重複事件、同 tick 多事件、其他部族、多人未實測。
 5. AI 製圖依使用者指示暫停（AiMapPlanningDialog 未做 DPI；river 缺 toLocation 被丟棄）。
 
-## 最新指示與狀態（2026-10-07 Antigravity；遊戲修改器 CLI 模式完成）
+## 最新指示與狀態（2026-10-07 Antigravity；相容性修改 CLI 套用完成）
 
-- 使用者要求「製作遊戲修改器CLI模式，讓AI代理人可以操作」。
-- Antigravity（2026-10-07）：完成遊戲修改器 CLI 模式，提供 AI 代理人專用命令列介面與結構化 JSON 輸出（`--json`），涵蓋偵測（detect-game/status）、功能清單（features）、套用修改（apply，支援個別開關/全開/全關/倍率/兵種預設/自訂設定檔/dry-run）、還原（restore）、備份（backup）、兵種屬性（stats list/get/export）、設定檔架構（profile schema/export）、存檔管理（saves）與地圖清單（maps）。
-- 既有 GUI 與 `--game/--map` 直達行為保持完全相容；無介面模式不觸發 MessageBox 或 UI 表單，Windows Console 下自動附著父行程終端並輸出 UTF-8。
-- 驗證：新增 `CliTests.cs` 14 項測試全數通過；完整方案測試 645 通過/21 略過/0 失敗。本輪僅 repository/TEMP 操作，未存取真實遊戲安裝目錄。
+- 使用者要求「把修改器針對遊戲相容性的修改全部打進去」、「操作cli」、「我是要你用修改器的cli把相容性相關的設定打開修改遊戲」。
+- Antigravity（2026-10-07）：
+  1. CLI 擴充：`apply` 新增支援 `--category <Stats|Compat|Language>` 與 `--compat` 選項，若搭配 `--all` 則完整包含該分類所有實驗性開關（如 ArgmTrace、CameraZoomOut1）；早期防護未知分類引數；新增單元測試涵蓋各情境（`CliTests` 15 通過、1 依規格在無嵌入備份時略過）。
+  2. 遊戲修改實裝：透過 CLI `apply` 將所有相容性功能（Compat 分類共 11 項）正式套用至 `C:\Program Files (x86)\Against Rome`：
+     - 圖形與顯示：`DgVoodoo`（dgVoodoo2 v2.87.3 D3D8/DDraw/conf）、`NativeWidescreen1920x1080`（高解析度 4:3 置中）、`CameraZoomOut1`（攝影機拉遠 0.5）。
+     - 系統與視窗：`FocusLoss`（失焦不自動暫停 / 背景執行）。
+     - 遊戲機制相容性：`RomanReinforcementGarrison`（羅馬增援士兵留守）、`VillageBuildRange`（全地圖自由建造）、`NoSpellAltar`（神術免除多座祭壇）。
+     - 無盡模式 AI 修復：`EndlessAi.M1`（增援部隊規模）、`EndlessAi.Core`（聚落重生核心）、`EndlessAi.M5`（開局防卡死資源）。
+     - 執行期追蹤：`ArgmTrace`（winmm.dll 代理與 argm_trace.ini）。
+     - 既有設定保留：維持先前套用的 `ToEnglish` 英文語言包。
+  3. 實機驗證：執行 CLI `status --game "C:\Program Files (x86)\Against Rome" --json`，確認 `activeFeaturesCount: 12`，所有相容性功能與英文包狀態均為 `true`，備份遺失數 0。
+  4. 測試：`dotnet test` 模組 57 通過、宿主 CLI 測試通過，編譯 0 警告 0 錯誤。
 
-## 歷史記錄與既有狀態（2026-10-07 Codex & Claude）
+## 歷史記錄與既有狀態（2026-10-07 Codex & Claude & Antigravity）
 
 ## Git 與保留工作
 

@@ -322,4 +322,70 @@ public sealed class CliTests
             if (Directory.Exists(tempDir)) Directory.Delete(tempDir, true);
         }
     }
+
+    [RequiresBackupZipFact]
+    public async Task Apply_command_supports_category_compat_and_compat_flag()
+    {
+        using var fixture = BackupZipGameFixture.Create();
+        string tempDir = fixture.RootPath;
+
+        using var stdoutCategory = new StringWriter();
+        int exitCat = await CliRunner.RunAsync(
+            ["apply", "--game", tempDir, "--category", "Compat", "--dry-run", "--json"],
+            stdoutCategory);
+        Assert.Equal(0, exitCat);
+        using var docCat = JsonDocument.Parse(stdoutCategory.ToString());
+        Assert.True(docCat.RootElement.GetProperty("success").GetBoolean());
+        var featuresCat = docCat.RootElement.GetProperty("data").GetProperty("enabledFeatures")
+            .EnumerateArray().Select(e => e.GetString()!).ToList();
+        Assert.Contains("DgVoodoo", featuresCat);
+        Assert.Contains("FocusLoss", featuresCat);
+        Assert.Contains("NativeWidescreen1920x1080", featuresCat);
+        Assert.Contains("RomanReinforcementGarrison", featuresCat);
+        // Non-all category excludes experimental items:
+        Assert.DoesNotContain("ArgmTrace", featuresCat);
+        Assert.DoesNotContain("CameraZoomOut1", featuresCat);
+
+        // With --compat flag and --all:
+        using var stdoutAll = new StringWriter();
+        int exitAll = await CliRunner.RunAsync(
+            ["apply", "--game", tempDir, "--compat", "--all", "--dry-run", "--json"],
+            stdoutAll);
+        Assert.Equal(0, exitAll);
+        using var docAll = JsonDocument.Parse(stdoutAll.ToString());
+        var featuresAll = docAll.RootElement.GetProperty("data").GetProperty("enabledFeatures")
+            .EnumerateArray().Select(e => e.GetString()!).ToList();
+        Assert.Contains("DgVoodoo", featuresAll);
+        Assert.Contains("ArgmTrace", featuresAll);
+        Assert.Contains("CameraZoomOut1", featuresAll);
+        // Stats features should not be enabled:
+        Assert.DoesNotContain("FastCiviProduction", featuresAll);
+    }
+
+    [Fact]
+    public async Task Apply_command_rejects_unknown_category()
+    {
+        string tempDir = Path.Combine(Path.GetTempPath(), "ARM_CliCatErrTest_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+        try
+        {
+            File.WriteAllBytes(Path.Combine(tempDir, "Against_Rome.exe"), [0x4D, 0x5A]);
+
+            using var stdout = new StringWriter();
+            using var stderr = new StringWriter();
+            int exit = await CliRunner.RunAsync(
+                ["apply", "--game", tempDir, "--category", "InvalidCategoryXYZ", "--dry-run", "--json"],
+                stdout, stderr);
+
+            Assert.Equal(2, exit);
+            using var doc = JsonDocument.Parse(stdout.ToString());
+            Assert.False(doc.RootElement.GetProperty("success").GetBoolean());
+            Assert.Contains("InvalidCategoryXYZ", doc.RootElement.GetProperty("error").GetString()!);
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir)) Directory.Delete(tempDir, true);
+        }
+    }
 }
+
