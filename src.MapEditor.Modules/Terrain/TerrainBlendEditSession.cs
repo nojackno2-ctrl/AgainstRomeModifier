@@ -12,6 +12,7 @@ internal sealed record TerrainBlendPaintResult(
 internal sealed record TerrainCornerChange(int Index, string Before, string After);
 
 internal sealed record TerrainBlendStroke(IReadOnlyList<TerrainCornerChange> Corners, IReadOnlyList<TerrainTextureChange> Textures);
+internal sealed record TerrainRoadPaintResult(bool Succeeded, IReadOnlyList<TerrainTextureChange> TextureChanges, IReadOnlyList<(int X, int Y)> Unsupported);
 
 /// <summary>
 /// Transactional authoring state for native terrain blending. A pointer stroke changes corner materials
@@ -132,6 +133,17 @@ internal sealed class TerrainBlendEditSession
         else _pendingTextures[index] = change;
         _redo.Clear();
         return change;
+    }
+
+    /// <summary>Paints one connected road stroke using native pieces; rejection restores the complete pending stroke.</summary>
+    public TerrainRoadPaintResult PaintRoadPath(IReadOnlyList<(int X, int Y)> path, IReadOnlyList<RoadTile> available, string preferredTexture)
+    {
+        RoadStrokePlan plan = RoadStrokePlanner.Plan(_map.TileDimension, _currentTextures, path, available, preferredTexture);
+        if (!plan.Succeeded) return new(false, CancelStroke(), plan.Unsupported);
+        var changes = new List<TerrainTextureChange>();
+        foreach (RoadTilePlacement tile in plan.Tiles)
+            if (StampTexture(tile.X, tile.Y, tile.Texture) is { } change) changes.Add(change);
+        return new(true, changes, []);
     }
 
     public bool CommitStroke()
