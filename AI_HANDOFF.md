@@ -1,5 +1,41 @@
 # AI Handoff - Live Project Memory
 
+## 2026-10-07 HANDOFF SUMMARY（給接手的 AI，先讀這段）
+
+**目標**：地圖編輯器要能做出與官方一樣、可玩的地圖，並像世紀帝國2一樣能放建築、建立事件。使用者以繁體中文溝通（技術名詞保留英文）。
+
+**目前狀態（commit `46e1390`，分支 `主要開發`，未推送）**
+- 已完成並實機驗證：地表／高度／通行、AI 製圖（本機 Ollama）、自然物件（DATA）、放置建築（DATA 完工範本）、放置部隊（腳本注入）。細節見下方各日期條目。
+- 未開始：**事件／觸發器**（下一步）。
+- 測試：`dotnet test tests/AgainstRomeModifier.Tests`（366 通過／21 略過；`ARM_GAME_PATH=C:\Program Files (x86)\Against Rome` 會啟用依賴遊戲目錄的測試）。Release 建置 0 警告 0 錯誤。
+
+**建置與執行**
+- 環境變數 `DOTNET_ROLL_FORWARD=Major`；exe 被鎖時加 `-p:UseAppHost=false`。
+- 編輯器宿主：`dotnet build src.Modifier`，執行 `src.Modifier\bin\Debug\net8.0-windows\AgainstRomeModifier.exe --game "C:\Program Files (x86)\Against Rome" --map ENDL_005`。
+- 編輯器 UI 自動化：用 UIA（`System.Windows.Automation`）取按鈕較可靠；螢幕座標點擊要 mouse_down／up 之間停頓。視窗最大化用 `ShowWindow(h,3)`。
+
+**限制（來自 AGENTS.md 與使用者）**
+- 不得直接修改遊戲目錄 `C:\Program Files (x86)\Against Rome`；只能透過「操作編輯器」存檔寫入測試地圖（ENDL_005＝「Claude Test 1b」）。讀取遊戲目錄可以。
+- 不得 push／merge／rebase／reset／刪分支；允許本機自動 commit（附 Co-Authored-By）。不得提交機密。
+- `re_workspace/Against_Rome.exe` 是唯讀複本（已 gitignore），僅供靜態反組譯。
+
+**關鍵檔案**
+- `src.MapEditor/MapEditorForm.cs`：UI 與儲存流程（儲存時依序：地表圖層 → 自然物件／預建建築寫 DATA → `ScenarioDocument` 存檔 → `LevelScriptInjector.Apply`）。
+- `src.Shared/Maps/LevelObjectStore.cs`：objects/objdata/position.dat 讀寫（`Add(template,…,team)`、`RemoveIfUid`、`LoadOfficialTemplates`）。
+- `src.Shared/Scripting/BciImage.cs`（BCI0 讀寫，110 個原版腳本位元組級往返）、`LevelScriptInjector.cs`（`ScenarioSpawn`／`ScenarioDocument`／shim 產生）、`ScenarioLevelObjects.cs`。
+- 地圖內：`arm_scenario.json`（編輯器自有，遊戲不讀）、`SCRIPT/ak_level.bci`（注入後）、`SCRIPT/ak_level.arm_original`（原版備份，永遠從它重新注入）。
+- 文件：`docs/reverse-engineering/{map-formats,bci0-opcodes,script-natives,endless-mode-ai}.md`；工具 `tools/bcitool.py`（`dec/syms/calls/find/funcs/dis`）。
+
+**事件系統設計提示（下一步）**
+- 注入點：shim 在原 `main`（byte offset 由 `MainAddress` 指定）前執行，結尾 `112` 跳回原 main。事件需要「輪詢」：可在 shim 內自建迴圈（`131` wait + `s_getTime`／`s_timeReached`），或用 `s_createNullObj` 帶腳本產生平行 VM 實例（未驗證）。注意原 main 本身是迴圈，shim 若不返回會卡住原邏輯。
+- 動作可用原生：`s_showTextBox(type,text)`、`s_setTeamHostile(a,b,h)`、`s_uncoverFOW(x,z,r,dur)`、`s_quitGame()`、`s_setScriptVarL("GLOBAL_MISSION_RESULT",v)`、`s_createObj`／`s_createUnitAndMems`。簽章見 `script-natives.md`。
+- ABI：參數反向入棧；`76 N`＝常數參照、`78 N`＝框架變數、`66 v`＝字面量、`128 N`＝呼叫原生、`73 −k`＝清除參數、`16`＝i2d（double 佔 2 字組）。
+- `.put` 字串每段 ≤100 bytes（地圖文字檔），過長會讓遊戲堆積損毀。
+
+**遊戲操作（1024×768 邏輯座標，需 mouse_move 後 down／up）**：啟動用 ProcDump（`%TEMP%\AgainstRome_RE\procdump\procdump.exe -e -ma -x <dumps> <exe>`）；主選單無盡模式 (503,398) → 部族 (190,380) → 下一步 (925,692) → 橫幅下一步 (920,690) → 地圖清單「Claude Test 1b」(292,342) → 開始 (920,690)；任務框關閉 (248,260)；「前往主屋」(905,668)。第一次點擊常失敗，需重試；遊戲須維持前景。
+
+**已知未驗證／風險**：隊伍 1–8、其他部族、多人、存讀檔含放置物件、遠離主屋的建築；建築與樹木距離過近會讓腳本生成失敗（編輯器已警告）。
+
 ## 2026-10-07 Claude: scenario editor phase 2 — placed buildings + units (in-game verified)
 
 - `放置物件` tab is back. On Save, the editor writes `arm_scenario.json` (v2: `Spawns` with `Y`/`Prebuilt`, `DataSlots` (slot, uid) it owns) and:
