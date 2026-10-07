@@ -297,6 +297,28 @@ public sealed partial class MapEditorSaveTransactionTests
         File.WriteAllLines(Environment.GetEnvironmentVariable("ARM_PALETTE_REPORT") ?? Path.Combine(Path.GetTempPath(), "ArmPaletteReport.txt"), lines);
     }
 
+    /// <summary>真實地圖的地景地區判斷報表（自然物件清單依此篩選），輸出到 ARM_REGION_REPORT。</summary>
+    [Fact]
+    public void Real_map_nature_region_report()
+    {
+        string? game = Environment.GetEnvironmentVariable("ARM_GAME_PATH");
+        if (string.IsNullOrWhiteSpace(game) || !File.Exists(Path.Combine(game, "floortex.dat"))) return;
+        var lines = new List<string>();
+        foreach (string mapId in new[] { "ENDL_000", "ENDL_001", "ENDL_002", "ENDL_003", "ENDL_004" })
+        {
+            string map = CopyRealMap(game, mapId);
+            RunInSta(() =>
+            {
+                using var form = new MapEditorForm(game, new GameMapInfo(mapId, Path.Combine(game, "MAPS", mapId), false, mapId, "Test"));
+                _ = form.Handle;
+                Invoke(form, "LoadSelectedMap");
+                var regions = (IReadOnlySet<string>)Invoke(form, "MapNatureRegions")!;
+                lines.Add($"{mapId}: {string.Join(",", regions.Order())}");
+            });
+        }
+        File.WriteAllLines(Environment.GetEnvironmentVariable("ARM_REGION_REPORT") ?? Path.Combine(Path.GetTempPath(), "ArmRegionReport.txt"), lines);
+    }
+
     private string CopyRealMap(string game, string mapId)
     {
         string source = Path.Combine(game, "MAPS", mapId), map = Path.Combine(_root, "MAPS", "ENDL_005");

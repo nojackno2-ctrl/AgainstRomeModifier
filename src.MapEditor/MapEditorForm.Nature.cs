@@ -12,6 +12,7 @@ internal sealed partial class MapEditorForm
     private readonly ListBox _natureTypes = new() { Dock = DockStyle.Fill, IntegralHeight = false };
     private readonly ComboBox _natureDensity = new() { Dock = DockStyle.Fill, DropDownStyle = ComboBoxStyle.DropDownList };
     private readonly CheckBox _natureMix = new() { AutoSize = true, Anchor = AnchorStyles.Left, Text = "混合同類物種" };
+    private readonly CheckBox _natureOtherRegions = new() { AutoSize = true, Anchor = AnchorStyles.Left, Text = "顯示其他地區物件" };
     private readonly Label _natureHint = new() { Dock = DockStyle.Top, Height = 70, Padding = new Padding(4, 6, 4, 4), ForeColor = WinFormsTheme.TextSecondary };
     private Label _lblNatureCategory = null!, _lblNatureOperation = null!, _lblNatureDensity = null!;
     private IReadOnlyList<LevelWorldObject> _levelObjects = Array.Empty<LevelWorldObject>();
@@ -33,6 +34,8 @@ internal sealed partial class MapEditorForm
         _lblNatureCategory = AddSceneField(options, 1, "類別", _natureCategory);
         _lblNatureDensity = AddSceneField(options, 2, "密度", _natureDensity);
         options.Controls.Add(_natureMix, 1, 3);
+        options.Controls.Add(_natureOtherRegions, 1, 4);
+        _natureOtherRegions.CheckedChanged += (_, _) => RefreshNatureTypes();
         panel.Controls.Add(_natureTypes); panel.Controls.Add(options); panel.Controls.Add(_natureHint);
         FitWrappedLabelHeight(_natureHint);
         return panel;
@@ -52,10 +55,24 @@ internal sealed partial class MapEditorForm
         _natureDensity.SelectedIndex = density;
         _lblNatureDensity.Text = isEn ? "Density" : "密度";
         _natureMix.Text = isEn ? "Mix species in category" : "混合同類物種";
+        _natureOtherRegions.Text = isEn ? "Show other regions' objects" : "顯示其他地區物件";
         _natureHint.Text = isEn
             ? "Drag on the map with \"Nature\" active. Plant uses the brush size (one object per tile); Remove clears trees, grass and bushes under the brush. Script markers and linked objects are never touched."
             : "啟用「自然物件」後在地圖拖曳。種植：每格一株；移除：清除筆刷範圍內的樹木、草叢、灌木。腳本標記與連結物件不會被更動。";
         PopulateNatureCategories();
+    }
+
+    /// <summary>
+    /// 地圖原有地景物件中佔多數的地區代碼（至少占 15% 的地區都算，涵蓋混合地區地圖）；地圖沒有地景物件時為空集合。
+    /// </summary>
+    private IReadOnlySet<string> MapNatureRegions()
+    {
+        var counts = _levelObjects.Select(item => _objdefNames.GetValueOrDefault(item.TypeId))
+            .Where(name => name is not null && ObjDefNames.IsLandscape(name)).Select(name => NatureRegion(name!))
+            .Where(region => region.Length == 3).GroupBy(region => region, StringComparer.OrdinalIgnoreCase)
+            .Select(group => (Region: group.Key, Count: group.Count())).ToArray();
+        int total = counts.Sum(item => item.Count);
+        return counts.Where(item => item.Count * 100 >= total * 15).Select(item => item.Region).ToHashSet(StringComparer.OrdinalIgnoreCase);
     }
 
     /// <summary>地景物件名稱的地區代碼（LanGerNad18 → Ger）；名稱過短時為空字串。</summary>
@@ -102,10 +119,13 @@ internal sealed partial class MapEditorForm
         string key = (_natureCategory.SelectedItem as FilterItem)?.Value as string ?? "all";
         int? selected = (_natureTypes.SelectedItem as NatureTypeItem)?.Template.TypeId;
         _natureTypes.BeginUpdate(); _natureTypes.Items.Clear();
+        // 預設只列出與地圖同地區的地景物件（日耳曼地圖不出現義大利柏樹）；無法判斷地區或玩家勾選時列出全部。
+        IReadOnlySet<string> regions = _natureOtherRegions.Checked ? new HashSet<string>() : MapNatureRegions();
         foreach ((int id, LevelObjectTemplate template) in _natureTemplates.OrderBy(pair => _objdefNames.GetValueOrDefault(pair.Key), StringComparer.OrdinalIgnoreCase))
         {
             string name = _objdefNames.GetValueOrDefault(id) ?? id.ToString(System.Globalization.CultureInfo.InvariantCulture);
             if (key != "all" && NatureCategory(name) != key) continue;
+            if (regions.Count > 0 && !regions.Contains(NatureRegion(name))) continue;
             _natureTypes.Items.Add(new NatureTypeItem(template, name));
         }
         _natureTypes.EndUpdate();
