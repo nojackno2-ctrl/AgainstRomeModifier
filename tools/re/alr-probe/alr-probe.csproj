@@ -8,5 +8,6 @@
   <ItemGroup>
     <Compile Include="Program.cs" />
     <Compile Include="../../../src.MapEditor.Modules/NativeAssets/NativeAlr*.cs" Link="%(Filename)%(Extension)" />
+    <Compile Include="../../../src.MapEditor.Modules/NativeAssets/NativePaletteColor.cs" Link="NativePaletteColor.cs" />
   </ItemGroup>
 </Project>

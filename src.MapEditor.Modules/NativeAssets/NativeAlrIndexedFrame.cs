@@ -63,7 +63,7 @@ internal sealed class NativeAlrIndexedFrame
         {
             int index = indices[i];
             if (index >= palette.Length) throw new InvalidDataException("ALR pixel references a missing palette color.");
-            if (index != 0 || zeroOpaque) destination[x + i] = 0xFF000000 | (palette[index] & 0xFFFFFF);
+            if (index != 0 || zeroOpaque) destination[x + i] = NativePaletteColor.ToArgb(palette[index]);
         }
     }
 }

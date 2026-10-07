@@ -1,5 +1,13 @@
 # AI Handoff - Live Project Memory
 
+## 原生 sprite 接入 3D 場景（2026-10-07 Claude；goal「繼續完成地圖編輯器的開發」進行中）
+
+- 從 `3cb6ab2`（分支 `主要開發`）接續；工作樹原只有使用者未追蹤 `.claude/`，不提交。僅唯讀列出安裝目錄根與 SYSTEM 檔名確認 alr.dat/apt.dat/cl_*.ini 位置；素材分析只用 TEMP/ArmNativeAssets_20261007 副本，未寫入安裝目錄、未啟動遊戲。
+- 修正：palette 為 0x00BBGGRR，舊解碼 R/B 顛倒（火把青色）；新增 `NativePaletteColor`，ALR/APT 測試期望值同步改。probe csproj 已連結此檔。
+- 新增 `NativeSpriteCatalog`（objdef 欄5/8/10/14/17/52 + cl_alr/cl_apt + alr.dat/apt.dat ZIP 唯讀共享開啟）、`NativeSpriteAtlas`、`SceneObjectRenderer.BuildSpriteVertices`；`Map3DViewControl.SpriteCatalog` 以原 sprite 取代標記點（無 sprite 者保留標記）；`MapEditorForm` 於 gamePath 開啟、Dispose 釋放。預設相機改 yaw45/pitch35 對齊遊戲等角方向。格式語意（方向列、APT 建造階段、樹幹＋樹冠雙層、錨點）見 docs/reverse-engineering/native-scene-rendering.md 新節。
+- 驗證：Release solution build 0警告/0錯誤；`ARM_OPENGL_REQUIRED=1` 全測試 宿主608通過/22略過、modules123通過，0失敗。新增真 GL 擷取測試（sprite 出現、隨物件移動往右下、移除 catalog 後消失）。`ARM_NATIVE_ASSETS=<TEMP副本>` 選用測試以真素材畫出主屋、士兵、冷杉，截圖 TEMP/ArmSpriteGl_real/real-assets.png 已目視：外觀正確、樹冠完整。全 objdef 2159：1711 有 sprite、391 無素材、57 FX 首格空白。
+- 未完成／未驗證：sprite 比例未對照遊戲截圖；地形不遮擋 sprite；隊伍色 variant、角度→方向、動畫、陰影未接；草地等 alrml-only 物件是否為多重散佈未驗證；2D 畫布仍是標記；點選可見 sprite 拾取、放置/移動/刪除即時預覽在 sprite 上的手動操作驗收、遊戲同畫面比對皆未做。下一步建議：sprite 拾取（以 quad 螢幕矩形 + alpha 命中）→ 2D 畫布 sprite → 角度方向／隊伍色比對。
+
 ## 暫停交接（2026-10-07 Codex；使用者要求本項完成後交由其他 AI）
 
 - 使用者要求目前工作完成後暫停；本項範圍為 APT 解碼／驗證／交接，不再擴展 UI。整體「像世紀帝國 II，以真實遊戲畫面編輯地圖」仍未完成，不能標 goal complete。

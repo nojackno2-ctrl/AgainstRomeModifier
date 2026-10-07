@@ -5,8 +5,9 @@ namespace AgainstRomeMapEditor;
 internal sealed class EditorCamera
 {
     public Vector3 Target { get; set; } = new(32, 0, 32);
-    public float YawDegrees { get; private set; } = -45;
-    public float PitchDegrees { get; private set; } = 55;
+    // 預設對齊原遊戲等角視角：地圖 +X 往右下、+Z（地圖 y）往左下，原生 sprite 以此方向預先繪製。
+    public float YawDegrees { get; private set; } = 45;
+    public float PitchDegrees { get; private set; } = 35;
     public float Distance { get; private set; } = 82;
     public float MinDistance { get; init; } = 8;
     public float MaxDistance { get; init; } = 180;

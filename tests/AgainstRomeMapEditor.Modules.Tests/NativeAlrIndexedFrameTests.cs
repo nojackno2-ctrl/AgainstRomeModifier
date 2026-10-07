@@ -15,10 +15,10 @@ public sealed class NativeAlrIndexedFrameTests
         uint[] palette = [0x123456, 0xCC1122, 0x3344EE];
         NativeAlrIndexedFrame frame = NativeAlrIndexedFrame.Decode(8, 2, rows, bytes, palette);
         Assert.Equal(8, frame.Width); Assert.Equal(2, frame.Height);
-        Assert.Equal(new uint[] { 0, 0xFF123456, 0xFFCC1122, 0, 0, 0, 0xFF3344EE, 0,
-            0, 0, 0xFF3344EE, 0, 0xFFCC1122, 0, 0, 0 }, frame.ArgbPixels);
+        Assert.Equal(new uint[] { 0, 0xFF563412, 0xFF2211CC, 0, 0, 0, 0xFFEE4433, 0,
+            0, 0, 0xFFEE4433, 0, 0xFF2211CC, 0, 0, 0 }, frame.ArgbPixels);
         Array.Fill(rows, 0u); Array.Fill(bytes, (byte)0); Array.Fill(palette, 0u);
-        Assert.Equal(0xFFCC1122u, frame.ArgbPixels[2]);
+        Assert.Equal(0xFF2211CCu, frame.ArgbPixels[2]);
         Assert.Throws<NotSupportedException>(() => ((IList<uint>)frame.ArgbPixels)[2] = 0);
     }
 

@@ -164,7 +164,7 @@ internal sealed class NativeAptDocument
                 int dx = x + index, dy = topY + y;
                 if ((uint)dx >= (uint)width || (uint)dy >= (uint)height)
                     throw new InvalidDataException("APT visible pixel extends outside its canvas.");
-                pixels[dy * width + dx] = 0xFF000000 | (_palettes[variant * PaletteColorCount + color] & 0xFFFFFF);
+                pixels[dy * width + dx] = NativePaletteColor.ToArgb(_palettes[variant * PaletteColorCount + color]);
             }
         }
     }

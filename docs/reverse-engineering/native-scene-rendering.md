@@ -119,6 +119,21 @@ apt.dat SHA256 `CB8656A5F74CEFB2588A89D1EB25566CB4493A22A4C52E30E37EC15CFCF917DF
 
 完整靜態範圍報告只存 TEMP，使用同一 EXE 可重建：`0x4E5560:0x4E5710`、`0x4E5BA8:0x4E6010`、`0x4E600A:0x4E6500`、`0x4E64CD:0x4E66B0`、`0x4E691D:0x4E6AA0`、`0x4E6B40:0x4E6D90`、`0x4CC080:0x4CC390`。用 `scan_native_scene.py --range ... --output <TEMP report>`；線性反組譯對齊須依有效函式入口核對。
 
+## 編輯器場景接線與素材語意（2026-10-07 Claude）
+
+以 TEMP 素材副本解碼後目視核對，得到以下可重現結論（scratch contact sheet，未提交素材）：
+
+- **色道**：palette DWORD 為 `0x00BBGGRR`（紅色在低 byte）。未交換時 gerhau02 火把為青色、茅草為藍色；交換後火光黃、茅草黃褐。`NativePaletteColor.ToArgb` 由 ALR/APT 共用。
+- **ALR 單位方向**：`LayoutColumns` 是每方向格數（步兵 24）、`LayoutRows` 是方向數（步兵 16、騎兵 32）。gersch01 的 frame 0,24,48… 依序旋轉一圈，frame 0..23 為同方向動畫，故 frame = `((動畫 × 方向數) + 方向) × LayoutColumns + 格`；方向 0 面向鏡頭。frame count / (rows × cols) = 動畫數（gersch01 為 17）。
+- **ALR 錨點**：`AnchorWidth/Height` 是畫布大小，地面接觸點為畫布中心；frame 以 OffsetX/Y 置於畫布中。
+- **雙層 ALR**：objdef 欄 8 `alrml` 是第二層 ALR、欄 10 `mltyp` 為類型。樹木（mltyp 2）alrid 是樹幹（lagenast）、alrml 是樹冠（lagenakr），兩者共用畫布錨點，樹冠疊在上層；樹冠 frame 0 為完整綠冠，1–3 為枯萎階段、4 為空白。只有 alrml 的物件（草、蘆葦等 mltyp 1/4–12）目前單獨顯示該層；這些「_M／_H」類型是否原生為多重散佈未驗證。
+- **APT 四軸**：gerhau02 layout 5×2×5×25。軸 0 是建造階段（0 為地基、4 為完工），軸 2 是損毀程度，軸 3 是動畫格；軸 1 目前看兩值外觀相同（語意未確認）。完工完整外觀 = `(L0−1) × L1 × L2 × L3`（gerhau02 為 1000）。
+- **palty**：欄 17 為 1 的單位有 9 個 palette variants，目前以隊伍編號直接當 variant（team 1 呈紅色系），未與遊戲內隊伍色比對。
+
+`NativeSpriteCatalog` 依上述規則把物件名稱解析為裁切後的靜態 sprite，對 objdef 全 2159 筆：1711 筆成功、391 筆本身無 ALR/APT、57 筆為首格空白的特效（FX）。`NativeSpriteAtlas` 打包為單一貼圖；`Map3DViewControl` 以螢幕對齊 quad、由遠到近不做深度測試繪製（與原 2.5D 畫法相同），沒有 sprite 的物件仍畫標記點。預設相機改為 yaw 45°、pitch 35°，使地圖 +X 往右下、+Z 往左下，與原遊戲等角方向一致。sprite 尺寸以「APT 菱形 64 px = 一個地圖像素格對角線」估算（`SceneObjectRenderer.TilesPerSpritePixel`），尚未用遊戲截圖量測。
+
+限制：地形不遮擋物件（山丘後的物件仍畫在前面）；動畫、角度→方向、陰影（shad.dat）、隊伍色、草地等多重散佈物件、2D 畫布 sprite、可見物件拾取尚未完成。
+
 ## 下一個實作與驗收點
 
 已取得允許分析的素材副本與 ALR/APT 解碼核心；下一步接宿主物件定義與素材名稱對應、動畫／方向映射、色彩與錨點，對照同物件的原遊戲畫面。啟動遊戲仍未包含在本次唯讀授權中。

@@ -22,11 +22,11 @@ public sealed class NativeAptDocumentTests
         Assert.Equal(30, document.Tiles[0].X); Assert.Equal(0, document.Tiles[0].Y);
         var raw = document.DecodeTile(0);
         Assert.Equal(64, raw.Width); Assert.Equal(31, raw.Height);
-        Assert.Equal(new uint[] { 0xFF112233, 0, 0xFF112233, 0 }, raw.ArgbPixels.Skip(30).Take(4));
+        Assert.Equal(new uint[] { 0xFF332211, 0, 0xFF332211, 0 }, raw.ArgbPixels.Skip(30).Take(4));
         Assert.All(raw.ArgbPixels.Skip(64), color => Assert.Equal(0u, color));
         var composed = document.DecodeFrame(1);
-        Assert.Equal(new uint[] { 0xFF556677, 0xFF112233, 0xFF112233, 0 }, composed.ArgbPixels.Skip(30).Take(4));
-        Assert.Equal(new uint[] { 0xFF778899, 0xFFABCDEF, 0xFFABCDEF, 0 }, document.DecodeFrame(1, 1).ArgbPixels.Skip(30).Take(4));
+        Assert.Equal(new uint[] { 0xFF776655, 0xFF332211, 0xFF332211, 0 }, composed.ArgbPixels.Skip(30).Take(4));
+        Assert.Equal(new uint[] { 0xFF998877, 0xFFEFCDAB, 0xFFEFCDAB, 0 }, document.DecodeFrame(1, 1).ArgbPixels.Skip(30).Take(4));
         Assert.Throws<NotSupportedException>(() => ((IList<uint>)composed.ArgbPixels)[0] = 1);
         Assert.Throws<NotSupportedException>(() => ((IList<NativeAptFrameRange>)document.Frames)[0] = new(0, 0));
         Assert.Throws<ArgumentOutOfRangeException>(() => document.DecodeTile(-1));
@@ -45,8 +45,8 @@ public sealed class NativeAptDocumentTests
         BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(blob + 1032 + 10), 0x800 | 64);
         var tile = NativeAptDocument.Parse(bytes).DecodeTile(1);
         Assert.Equal(0u, tile.ArgbPixels[64 + 31]);
-        Assert.Equal(0xFF556677u, tile.ArgbPixels[64 + 32]);
-        Assert.Equal(0xFF112233u, tile.ArgbPixels[64 + 33]);
+        Assert.Equal(0xFF776655u, tile.ArgbPixels[64 + 32]);
+        Assert.Equal(0xFF332211u, tile.ArgbPixels[64 + 33]);
     }
 
     [Theory]
@@ -97,7 +97,7 @@ public sealed class NativeAptDocumentTests
         Assert.Throws<NotSupportedException>(() => NativeAptDocument.Parse(bytes));
     }
 
-    private static byte[] Fixture(uint version)
+    internal static byte[] Fixture(uint version)
     {
         using var stream = new MemoryStream(); using var writer = new BinaryWriter(stream);
         uint[] header = new uint[28];

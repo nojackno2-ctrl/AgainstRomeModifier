@@ -23,13 +23,13 @@ public sealed class NativeAlrDocumentTests
         Assert.Same(document.Frames[0], document.Frames[3]);
         Assert.Throws<NotSupportedException>(() => ((IList<NativeAlrFrameInfo>)document.Frames)[0] = document.Frames[2]);
         Array.Fill(source, (byte)0); // Parsed records own their bytes.
-        Assert.Equal(new uint[] { 0, 0xFF102030, 0, 0xFF102030, 0 }, document.DecodeFrame(0).ArgbPixels);
+        Assert.Equal(new uint[] { 0, 0xFF302010, 0, 0xFF302010, 0 }, document.DecodeFrame(0).ArgbPixels);
         Assert.Equal(document.DecodeFrame(0).ArgbPixels, document.DecodeFrame(1).ArgbPixels);
         Assert.Equal(document.DecodeFrame(0).ArgbPixels, document.DecodeFrame(3).ArgbPixels);
-        Assert.Equal(new uint[] { 0, 0xFF90A0B0, 0, 0xFF90A0B0, 0 }, document.DecodeFrame(0, 1).ArgbPixels);
+        Assert.Equal(new uint[] { 0, 0xFFB0A090, 0, 0xFFB0A090, 0 }, document.DecodeFrame(0, 1).ArgbPixels);
         // Frame 2 contains a deliberately different palette; native helper still selects frame 0's palette.
-        Assert.Equal(new uint[] { 0xFF102030, 0xFF405060 }, document.DecodeFrame(2).ArgbPixels);
-        Assert.Equal(new uint[] { 0xFF90A0B0, 0xFFC0D0E0 }, document.DecodeFrame(2, 1).ArgbPixels);
+        Assert.Equal(new uint[] { 0xFF302010, 0xFF605040 }, document.DecodeFrame(2).ArgbPixels);
+        Assert.Equal(new uint[] { 0xFFB0A090, 0xFFE0D0C0 }, document.DecodeFrame(2, 1).ArgbPixels);
         Assert.Throws<ArgumentOutOfRangeException>(() => document.DecodeFrame(-1));
         Assert.Throws<ArgumentOutOfRangeException>(() => document.DecodeFrame(4));
         Assert.Throws<ArgumentOutOfRangeException>(() => document.DecodeFrame(0, -1));
@@ -85,8 +85,8 @@ public sealed class NativeAlrDocumentTests
         source = [.. source, 0x49, 0x46, 0x4F, 0x4D, 0, 0, 0, 0]; // opaque trailing IFOM block
         var document = NativeAlrDocument.Parse(source);
         Assert.Equal(0, document.Frames[2].PaletteColorCount);
-        Assert.Equal(new uint[] { 0xFF102030, 0xFF405060 }, document.DecodeFrame(2).ArgbPixels);
-        Assert.Equal(new uint[] { 0xFF90A0B0, 0xFFC0D0E0 }, document.DecodeFrame(2, 1).ArgbPixels);
+        Assert.Equal(new uint[] { 0xFF302010, 0xFF605040 }, document.DecodeFrame(2).ArgbPixels);
+        Assert.Equal(new uint[] { 0xFFB0A090, 0xFFE0D0C0 }, document.DecodeFrame(2, 1).ArgbPixels);
     }
 
     [Fact]
@@ -99,12 +99,12 @@ public sealed class NativeAlrDocumentTests
         Record(writer, 0, 0, 6, [0, 0x102030, 0, 0x90A0B0], [1, 2, 1, 0, 1], [0x100000, 5]);
         Record(writer, 0, 0, 0, [], [], [0, 0]);
         var document = NativeAlrDocument.Parse(stream.ToArray());
-        Assert.Equal(new uint[] { 0xFF102030, 0, 0, 0, 0xFF102030, 0 }, document.DecodeFrame(0).ArgbPixels);
-        Assert.Equal(new uint[] { 0xFF90A0B0, 0, 0, 0, 0xFF90A0B0, 0 }, document.DecodeFrame(0, 1).ArgbPixels);
+        Assert.Equal(new uint[] { 0xFF302010, 0, 0, 0, 0xFF302010, 0 }, document.DecodeFrame(0).ArgbPixels);
+        Assert.Equal(new uint[] { 0xFFB0A090, 0, 0, 0, 0xFFB0A090, 0 }, document.DecodeFrame(0, 1).ArgbPixels);
         Assert.Empty(document.DecodeFrame(1).ArgbPixels);
     }
 
-    private static byte[] Fixture(uint version, bool secondFramePalette = true)
+    internal static byte[] Fixture(uint version, bool secondFramePalette = true)
     {
         using var stream = new MemoryStream();
         using var writer = new BinaryWriter(stream);
