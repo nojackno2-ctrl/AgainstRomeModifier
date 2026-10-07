@@ -4,6 +4,7 @@ using AgainstRomeMapEditor.Modules.Nature;
 using AgainstRomeModifier.Maps;
 using AgainstRomeModifier.Scripting;
 using System.Diagnostics;
+using System.Globalization;
 
 namespace AgainstRomeMapEditor;
 
@@ -43,9 +44,9 @@ internal sealed partial class MapEditorForm
             put.SetValue("briefing_titel_1", _title.Text.Trim()); put.SetValue("briefing_titel_2", _subtitle.Text.Trim()); put.SetCompositeValue("briefing_text", _briefing.Text);
             for (int index = 0; index < _teamNames.Length; index++) put.SetValue($"briefing_text_teamname{index}", _teamNames[index].Text.Trim());
             put.Save(rollback);
-            var ini = BodenIniDocument.Load(Path.Combine(map, "boden.ini")); ini.SetValue("Waterlevel", _waterLevel.Value.ToString()); ini.SetValue("WaterColor", _waterColor.Text.Trim());
-            ini.SetValue("WaterWarpShift", _waterWarpShift.Value.ToString()); ini.SetValue("WaterBumpAmplitude", _waterBumpAmplitude.Value.ToString()); ini.SetValue("WaterBumpFrequency", _waterBumpFrequency.Value.ToString()); ini.SetValue("FlashPropability", _flashProbability.Value.ToString());
-            ini.SetValue("DayStartTime", _dayStart.Value.ToString()); ini.SetValue("DayEndTime", _dayEnd.Value.ToString()); ini.SetValue("RainDropsOnWater", _rain.Checked ? "1" : "0"); ini.Save(rollback);
+            var ini = BodenIniDocument.Load(Path.Combine(map, "boden.ini")); ini.SetValue("Waterlevel", _waterLevel.Value.ToString(CultureInfo.InvariantCulture)); ini.SetValue("WaterColor", _waterColor.Text.Trim());
+            ini.SetValue("WaterWarpShift", _waterWarpShift.Value.ToString(CultureInfo.InvariantCulture)); ini.SetValue("WaterBumpAmplitude", _waterBumpAmplitude.Value.ToString(CultureInfo.InvariantCulture)); ini.SetValue("WaterBumpFrequency", _waterBumpFrequency.Value.ToString(CultureInfo.InvariantCulture)); ini.SetValue("FlashPropability", _flashProbability.Value.ToString(CultureInfo.InvariantCulture));
+            ini.SetValue("DayStartTime", _dayStart.Value.ToString(CultureInfo.InvariantCulture)); ini.SetValue("DayEndTime", _dayEnd.Value.ToString(CultureInfo.InvariantCulture)); ini.SetValue("RainDropsOnWater", _rain.Checked ? "1" : "0"); ini.Save(rollback);
             bool sceneStructureChanged = _sceneRemovals.Count > 0 || _sceneAdditions.Count > 0 || _settlementOffsets.Count > 0;
             SdlSceneEditService.SaveChanges(map, _sceneSavedObjects, _sceneObjects, rollback,
                 _sceneRemovals, _sceneAdditions.Select(item => item.ToAddition()).ToArray(),

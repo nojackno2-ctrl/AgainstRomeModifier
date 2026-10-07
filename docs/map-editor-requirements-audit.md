@@ -21,7 +21,7 @@
 | 不覆蓋既有正式／暫存目錄 | Clone 在 copy 前檢查；新增 sentinel 測試 | 本輪測試涵蓋，既有內容不得刪除 |
 | 刪除三重防護與原廠槽位拒絕 | 原 Deleter 缺 manifest membership／slot guard；新 slots 0/4/5/999 測試重現 | 本輪補回登記＋marker＋受控槽位／路徑條件，在 rename 前拒絕 |
 | CP1251、文字常值限制、多行簡報 | `MapTextDocuments.cs` 與 Phase1 PutTextDocument 測試 | 有合成證據；需核對特殊字元與 UI 回饋 |
-| 環境參數與未知行保留 | BodenIniDocument，真正表單儲存流程；Phase1 header／欄位測試 | 有實作與部分整合證據；補跨屬性儲存／重開案例 |
+| 環境參數與未知行保留 | 真正表單三地區（en-US/de-DE/fr-FR）七值、Heightmapstep、雨滴、dirty、儲存／重開與重存bytes相同測試 | 修正依Windows地區讀錯數值及寫出逗號問題；未知行保留。合成小數案例不證明遊戲接受所有小數參數 |
 | 聚落移動、複製、刪除、重新編號 | SdlSceneEditService／SdlDocument，Phase1 多項測試 | 合成路徑已有證據；遊戲內仍缺 |
 | 自製圖不進備份基準 | `GameDirectoryBackupLoader`、`BackupAutoHealer` 排除 marker-backed 目錄 | 有實作；核對測試及完整還原保留／刪除行為 |
 | AI 修補涵蓋新 ENDL 圖 | `EndlessAiOrchestrator` 動態列舉 ENDL_??? | 有實作；需核對額外槽位 Detect／Apply 的專屬測試 |

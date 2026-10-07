@@ -1,5 +1,6 @@
 using AgainstRomeModifier;
 using AgainstRomeModifier.Maps;
+using System.Globalization;
 
 namespace AgainstRomeMapEditor;
 
@@ -533,7 +534,7 @@ internal sealed partial class MapEditorForm : Form
             _waterBumpAmplitude.Value = ParseDecimal(ini.GetValue("WaterBumpAmplitude"), _waterBumpAmplitude);
             _waterBumpFrequency.Value = ParseDecimal(ini.GetValue("WaterBumpFrequency"), _waterBumpFrequency);
             _flashProbability.Value = ParseDecimal(ini.GetValue("FlashPropability"), _flashProbability);
-            _heightMapStep = float.TryParse(ini.GetValue("Heightmapstep"), out float heightStep) && heightStep > 0 ? heightStep : 4;
+            _heightMapStep = float.TryParse(ini.GetValue("Heightmapstep"), NumberStyles.Float, CultureInfo.InvariantCulture, out float heightStep) && float.IsFinite(heightStep) && heightStep > 0 ? heightStep : 4;
             if (TryParseGameColor(_waterColor.Text, out Color waterColor)) { _waterColorButton.BackColor = waterColor; _waterColorButton.ForeColor = waterColor.GetBrightness() < .45f ? Color.White : Color.Black; }
             _dayStart.Value = ParseDecimal(ini.GetValue("DayStartTime"), _dayStart); _dayEnd.Value = ParseDecimal(ini.GetValue("DayEndTime"), _dayEnd); _rain.Checked = ini.GetValue("RainDropsOnWater") == "1";
             _texturesDocument = BodenTexturesDocument.Load(Path.Combine(map, "boden.txt")); _savedTextures = _texturesDocument.Textures.ToArray(); InitializeTerrainBlendSession(); InitializeTerrainLayers(map); _propertyDirty = false;
@@ -1183,7 +1184,7 @@ internal sealed partial class MapEditorForm : Form
         yield return _waterLevel; yield return _waterColor; yield return _waterWarpShift; yield return _waterBumpAmplitude; yield return _waterBumpFrequency; yield return _flashProbability;
         yield return _dayStart; yield return _dayEnd; yield return _rain;
     }
-    private static decimal ParseDecimal(string? value, NumericUpDown control) => decimal.TryParse(value, out decimal parsed) ? Math.Clamp(parsed, control.Minimum, control.Maximum) : control.Minimum;
+    private static decimal ParseDecimal(string? value, NumericUpDown control) => decimal.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out decimal parsed) ? Math.Clamp(parsed, control.Minimum, control.Maximum) : control.Minimum;
 
     private void ShowError(Exception ex)
     {
