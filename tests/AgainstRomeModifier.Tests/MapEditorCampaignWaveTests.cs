@@ -86,4 +86,26 @@ public sealed partial class MapEditorSaveTransactionTests
             Assert.Single(session.Capture());
         });
     }
+
+    [Fact]
+    public void Objective_and_wild_lair_menu_items_open_their_dialogs_and_cancel_leaves_events_untouched()
+    {
+        string map = CreateFixture("ENDL_005");
+        RunInSta(() =>
+        {
+            using var form = new MapEditorForm(_root, new GameMapInfo("ENDL_005", map, true, "Menus", "Test"));
+            _ = form.Handle;
+            Invoke(form, "LoadSelectedMap");
+            var session = (ScenarioEventSession)typeof(MapEditorForm).GetProperty("EventSession", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(form)!;
+            ToolStripMenuItem Item(string field) => (ToolStripMenuItem)typeof(MapEditorForm).GetField(field, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(form)!;
+            var objective = Item("_objectiveStudio"); var lair = Item("_wildLairs");
+            Assert.True(objective.Enabled); Assert.True(lair.Enabled);
+            int opened = 0;
+            form.ObjectiveStudioDialogRunner = _ => { opened++; return DialogResult.Cancel; };
+            form.WildLairDialogRunner = _ => { opened++; return DialogResult.Cancel; };
+            objective.PerformClick(); lair.PerformClick();
+            Assert.Equal(2, opened);
+            Assert.Equal(0, session.Count);
+        });
+    }
 }
