@@ -424,6 +424,7 @@ internal sealed partial class MapEditorForm : Form
         _placedList.SelectedIndexChanged += (_, _) => _placedDeleteButton.Enabled = _selected?.IsCustom == true && _placedList.SelectedItems.Count > 0;
         _placedDeleteButton.Click += (_, _) => DeleteSelectedPlacedObjects();
         _resetTerrainButton.Click += (_, _) => ResetTerrain();
+        _inspectorTabs.SelectedIndexChanged += (_, _) => UpdateUndoRedoButtons(_selected?.IsCustom == true);
         _saveButton.Click += (_, _) => SaveMap(showSuccess: true);
         _exportModButton.Click += (_, _) => ExportModPackage();
         _gamePreviewButton.Click += (_, _) => PreviewInGame();
@@ -495,6 +496,7 @@ internal sealed partial class MapEditorForm : Form
             : "像場景編輯器一樣放置建築、部隊與人物，地圖載入時就會存在。";
         LocalizePlacementTab(isEn);
         LocalizeEvents(isEn);
+        _campaignWaves.Text = isEn ? "AI Campaign Wave Planner…" : "AI 戰役波次企劃…";
         _aiMapButton.Text = isEn ? "AI Map Maker…" : "AI 製圖…";
         _blankTerrainButton.Text = isEn ? "Reset Flat Terrain…" : "重設平坦地形…";
         _regionToolsButton.Text = isEn ? "Region tools…" : "區域工具…";
@@ -878,6 +880,7 @@ internal sealed partial class MapEditorForm : Form
 
     private void Undo()
     {
+        if (EventHistoryActive) { if (_selected?.IsCustom == true && !_eventGraphDirty && EventSession.Undo()) { RefreshEventList(); UpdateEditorState(); } return; }
         CommitStroke();
         if (_lastActionWasPlacementTool)
         {
@@ -947,6 +950,7 @@ internal sealed partial class MapEditorForm : Form
 
     private void Redo()
     {
+        if (EventHistoryActive) { if (_selected?.IsCustom == true && !_eventGraphDirty && EventSession.Redo()) { RefreshEventList(); UpdateEditorState(); } return; }
         CommitStroke();
         if (_lastActionWasPlacementToolUndone)
         {
@@ -1447,8 +1451,21 @@ internal sealed partial class MapEditorForm : Form
         _weatherMenu.Enabled = _selected?.IsCustom == true;
         _boxSelectButton.Enabled = _selected?.IsCustom == true && _terrainBlendSession is not null;
         InvalidateMapDiagnostics();
-        bool editable = _selected?.IsCustom == true; _saveButton.Enabled = editable && IsDirty; _exportModButton.Enabled = _selected is not null; _gamePreviewButton.Enabled = _selected is not null; _undoButton.Enabled = editable && (TerrainLayerMode ? _terrainLayers?.CanUndo == true : _terrainBlendSession?.CanUndo == true); _redoButton.Enabled = editable && (TerrainLayerMode ? _terrainLayers?.CanRedo == true : _terrainBlendSession?.CanRedo == true); _resetTerrainButton.Enabled = editable && ((_texturesDocument is not null && TextureDirty()) || _terrainLayers?.IsDirty == true || _resetAuxiliaryLayers);
+        bool editable = _selected?.IsCustom == true; _saveButton.Enabled = editable && IsDirty; _exportModButton.Enabled = _selected is not null; _gamePreviewButton.Enabled = _selected is not null; _resetTerrainButton.Enabled = editable && ((_texturesDocument is not null && TextureDirty()) || _terrainLayers?.IsDirty == true || _resetAuxiliaryLayers);
         _heightTool.Enabled = editable && _terrainLayers is not null; _aiMapButton.Enabled = editable && _terrainLayers is not null; _blankTerrainButton.Enabled = editable && _terrainLayers is not null; _placeTool.Enabled = editable && _objectCatalog.Count > 0; _natureTool.Enabled = editable && _natureStoreAvailable;
+        UpdateUndoRedoButtons(editable);
+        _collisionTool.Enabled = editable && _terrainLayers?.HasCollision == true;
+        UpdateSceneEditButtons();
+        UpdateEventButtons();
+        _sceneRestoreButton.Enabled = editable && _sceneLoaded && (_sceneRemovals.Count > 0 || _sceneAdditions.Count > 0 || SdlSceneEditService.HasChanges(_sceneOriginalObjects, _sceneObjects));
+        foreach (Control control in EditablePropertyControls()) control.Enabled = editable;
+        _campaignWaves.Enabled = editable && !_eventGraphDirty && EventSession.Count < 256;
+        _palette.Enabled = editable; UpdateStatus();
+    }
+
+    private void UpdateUndoRedoButtons(bool editable)
+    {
+        _undoButton.Enabled = editable && (TerrainLayerMode ? _terrainLayers?.CanUndo == true : _terrainBlendSession?.CanUndo == true); _redoButton.Enabled = editable && (TerrainLayerMode ? _terrainLayers?.CanRedo == true : _terrainBlendSession?.CanRedo == true);
         if (_editMode == EditMode.Nature)
         {
             _undoButton.Enabled = editable && _natureSession.CanUndo;
@@ -1509,12 +1526,7 @@ internal sealed partial class MapEditorForm : Form
         {
             _redoButton.Enabled = editable && (_terrainBlendSession?.CanRedo == true || _terrainLayers?.CanRedo == true);
         }
-        _collisionTool.Enabled = editable && _terrainLayers?.HasCollision == true;
-        UpdateSceneEditButtons();
-        UpdateEventButtons();
-        _sceneRestoreButton.Enabled = editable && _sceneLoaded && (_sceneRemovals.Count > 0 || _sceneAdditions.Count > 0 || SdlSceneEditService.HasChanges(_sceneOriginalObjects, _sceneObjects));
-        foreach (Control control in EditablePropertyControls()) control.Enabled = editable;
-        _palette.Enabled = editable; UpdateStatus();
+        UpdateEventHistoryButtons();
     }
 
     private void UpdatePaletteBrushLabel()
