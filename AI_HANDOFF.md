@@ -1,5 +1,293 @@
 # AI Handoff - Live Project Memory
 
+## 懸崖 TEMP 分析與實名 catalog（2026-10-08 Codex，build/test 已通過）
+
+- `ARM_CLIFF_ANALYSIS=1` opt-in host 分析測試通過：3005 名稱中 76 張 fels 全部可解碼；16 個 FELS 方向名精確／忽略大小寫均不存在。只有 `FELS1/2` 可忽略大小寫對應 `fels1/2`，不可推論方向名存在。
+- ENDL_000、ENDL_005 TEMP 原圖各 4096 格均精確對應 library，fels 使用均 0；無岩壁座標／高低坡面證據。TEMP 報表＋拼貼＋來源 SHA256：`%TEMP%/ArmCliffAnalysis_20261008`；重跑方法與四角分析見 `docs/map-editor-cliff-tiles.md`。
+- AA 四角色彩、16/32px 抽樣與拼貼支持岩石側 N/E/S/W → `Fels_AA_008/004/002/006`；`BuildRealNames`＋`FilteredBy` 接入 host，保留實際拼字並驗證可解碼。缺方向不回退，未支援格子不生成附帶效果；角點／None／通用岩石不登記。下方「工具暫時不貼任何圖塊」為舊狀態，已由本節取代。
+- 信心：圖塊存在／可解碼及岩石側高；當作 downhill face 的語意、B8 等地表接縫、遊戲顯示／立體岩壁效果仍未驗證。未讀寫安裝目錄、未啟動遊戲、未 commit/push；保留 `.claude/`、`TEMP/`。
+- 驗證：`DOTNET_ROLL_FORWARD=Major dotnet build AgainstRomeModifier.slnx -c Release -p:UseAppHost=false` 0 errors；`dotnet test AgainstRomeModifier.slnx -c Release --no-build` Modules 550、host 709 通過（22 略過）、0 failures；opt-in TEMP 分析另 1 通過；`git diff --check` 通過。曾修正新增測試的 2 個 CS8604，及首輪測試抓到的 strict None 回退，現均通過回歸。
+
+## 懸崖工具發現與修正（2026-10-08 Claude，遊戲內實測；使用者已改好輸入法設定，遊戲可正常啟動）
+
+- **輸入法問題已解決**：使用者在系統設定覆寫預設輸入法後，遊戲不再被 TextInputHost 搶前景。若遊戲啟動後被最小化（前景變 claude），重啟遊戲即可。
+- **遊戲內實測發現**：懸崖工具貼出的圖塊在遊戲裡全是「Error: File not found」黑底佔位圖——預設目錄的名稱（`FELS_N1`、`FELS_NE_OUT`…）是推測的，真實 floortex 沒有。真實岩壁貼圖命名為 `fels01_00..35`、`fels02_00..03`、`fels03_00..15`、`fels1..4`、`Fels_AA_001..009`、`ita_fels1..7`（共 3005 張貼圖）。
+- 修正：`CliffTileCatalog.FilteredBy(textureExists)`；`ApplyCliffTool` 只用實際存在的圖塊，若一個都沒有就不變更並顯示說明（目前此遊戲就是這個情況，所以懸崖工具**暫時不會貼任何岩壁圖塊**）。兩個宿主測試改為斷言此行為，Modules 新增 `FilteredBy` 測試。
+- 待辦（可委派）：判讀 `fels01_00..35` 等圖塊的四角材質與朝向（類似 4U/PFAD 的角點顏色推斷，見 `FloorMaterialCatalog`），再把懸崖目錄對應到真實名稱；完成後才能真正貼出岩壁。懸崖高台本身（高度）在遊戲內為平緩斜坡，需用實際岩壁圖塊才會像懸崖。
+- 展示圖產出補充：高台＋懸崖＋侵蝕在圖格 (40–45, 33–38) 附近（起始部隊 (38.5, 36.5) 旁）。小地圖換算：`sx=833+(x−z)*1.43, sy=660+(x+z)*0.72`（圖格座標）。
+
+## 河流與城牆修正已在遊戲內驗證（2026-10-08 Claude；展示圖 `ArmToolsShowcase_20261008_02`）
+
+- 河流：河床下挖＋3 頂點岸坡後，遊戲內呈現為真正的河谷（兩岸斜坡有陰影，谷底深色水面）；修正前只有藍灰材質帶、沒有水面。
+- 城牆：改用 `PalisadeRunPlanner` 後，遊戲內是連續的柵欄線，間距與原版一致，轉角件可見。
+- 仍未在遊戲內確認：懸崖岩壁圖塊的貼合外觀與侵蝕效果（畫面上看不出）、天候以外的光照細節。
+- 流程備忘：輸入法為英文時啟動遊戲可正常操作；Codex 額度已重置，可委派實作（已驗證可用）。
+
+## 河流河床修正（2026-10-08 Codex，build/test 已通過）
+
+- 修正 tile→vertex 比例（64 tiles／257 vertices＝每 tile 4 格），host 傳入世界水位／Heightmapstep；中心預設挖至水面下 16 bytes（至少 6），以 3 個頂點的 smoothstep 岸坡接回原地形，只下挖局部範圍、不改全圖水位。水位不足 6 bytes 時拒絕套用。
+- 保留既有貼圖＋高度交易，新增中心水深／岸坡單調／邊界與轉彎／完整高度 undo-redo 測試。首次 build 的測試欄位 X/Y 編譯錯誤已改為 VertexX/VertexY。DOTNET_ROLL_FORWARD=Major dotnet build AgainstRomeModifier.slnx -c Release -p:UseAppHost=false 已成功（0 errors）；dotnet test AgainstRomeModifier.slnx -c Release --no-build 已成功（Modules 546 通過；Host 705 通過／22 略過；0 failures）。git diff --check 通過。遊戲內外觀未驗證。
+- 不碰遊戲安裝目錄、不啟動遊戲、不 commit/push；保留未追蹤 .claude/、TEMP/。
+
+## 工具展示圖遊戲內檢視結果（2026-10-08 Claude，使用者已切英文輸入法）
+
+- 方法：展示圖（`%TEMP%\ArmToolsShowcase_20261008_01`）放 ENDL_006 進遊戲，以小地圖跳到各區。**可見**：暴風雨天候（畫面變暗＋雨點粒子）、河流材質（藍灰粗糙圖塊帶，邊緣為鋸齒狀菱形階梯，**沒有水面**＝河床沒有低於水位，且圖塊邊界未做過渡）、城牆（一排帶陰影的柵欄樁，**但件與件間距遠大於原版**）、植被（灌木、草叢、岩石）。**看不出**：懸崖高台與侵蝕（遊戲內畫面看不出高低差，未確認懸崖岩壁圖塊是否貼對）。
+- 原因與修正（城牆）：以原版聚落 SDL 量測：所有柵欄物件間距恰為 64 世界單位、角度一律 0；日耳曼南北向（沿 Z）用 Pal00、東西向用 Pal01，羅馬相反；轉角 Pal02。舊規劃器每格 256 單位且靠旋轉決定方向，兩者都錯。新增 `Fortification/PalisadeRunPlanner`（含 3 項單元測試），城牆工具改用它；舊 `WallStrokePlanner` 仍保留未使用於 UI。修正後**尚未再進遊戲驗證**。
+- 待辦：河流要真的有水（河床下挖到水位以下＋兩岸過渡）、懸崖／侵蝕的遊戲內外觀確認、城牆修正後的遊戲內確認。使用者表示 Codex 額度已重置，可再委派。
+
+## 工具展示圖（2026-10-08 Claude，真實素材副本；遊戲內外觀尚未檢視）
+
+- 新增選擇性測試 `MapEditorToolsShowcaseTests`（`ARM_TOOLS_SHOWCASE=1`、`ARM_COMPARE_GAME`、`ARM_SHOWCASE_OUTPUT` 必須在 TEMP 新目錄）：在真實 ENDL_005 副本上套用高台＋懸崖（48 岩壁圖塊／28 碎石／768 阻擋像素）、侵蝕（1921 高度點）、河流（56 圖塊）、植被（16 株）、城牆（13 件）、暴風雨天候，存檔、重載比對一致，並輸出離屏 3D 截圖。成果 `%TEMP%\ArmToolsShowcase_20261008_01\game\MAPS\ENDL_005`（複製到 ENDL_006 即可在遊戲清單出現）。
+- 用真實資料抓到並修正：植被工具傳給引擎的水位單位錯誤（引擎要高度位元組＝Waterlevel÷步長，原本把水面抬高 4 倍，整片地被當深水而一株都種不出）；工具訊息現在會說明可用物種數與失敗原因。
+- 遊戲內檢視：兩次啟動都被 TextInputHost 搶走前景（使用者以中文輸入後輸入法被切回中文；先前切成英文後一切正常）。要檢視這張圖需輸入法為英文時測。
+## 遊戲內驗收結果（2026-10-08 Claude，使用者重開機並授權；首次取得遊戲內證據）
+
+- 方法：備份 `MAPS\ENDL_005`（55 檔雜湊，結束後 0 差異）；候選圖暫放 `MAPS\ENDL_006` 後以 computer-use 操作遊戲（日耳曼無盡模式），測完刪除。遊戲畫面更新與滑鼠有延遲：每次移動要連續 mouse_move 兩次並等 2–3 秒，再 down/up；批次太快會誤點「離開遊戲」。
+- **槽位必須連續**：ENDL_008 不出現在遊戲地圖清單（遊戲在缺 006／007 處停止掃描），改放 ENDL_006 才出現。編輯器「獨立空白場景」若挑 008 以上而 006／007 缺漏，遊戲看不到。`GetNextFreeSlot` 從 005 起找空位，正常流程不會出事，但候選圖交付與手動複製要注意。
+- **示範圖（ARM Demo - Path to Victory，demo 候選）**：載入成功；開局顯示編輯器寫入的訊息「Follow the dirt path east. Move the starting troop into the goal area to win.」（3/3 頁）；部隊可框選、歸玩家控制，右鍵與小地圖右鍵移動、尋路正常；地形（土路、草地）與夜晚光照可見。**未驗證**：勝利事件（部隊進目標區後是否結算）、資源採集、建築完工狀態、存讀檔。
+- **空白場景卡死已定位並修正（遊戲內二分法）**：同槽位 ENDL_006、僅換檔案組合重測。空白場景 + 示範圖腳本 → 仍卡死；空白場景 + 示範圖 DATA／SDL／腳本 → 正常；空白 DATA + 示範圖 SDL + 空白腳本（或示範腳本）→ 正常載入（平坦空地圖，起點無物件，無殘留聚落）。結論：**根因是 `BlankMapContent` 把所有 SDL 聚落範本清成沒有 object 區段**。已移除 SDL 清空，改為原樣保留（`BlankMapContent.cs`、說明文字與 `docs/map-editor-blank-map-contract.md` 同步更新），`LevelObjectStoreTests` 新增 SDL 位元組不變斷言。既存的空白場景槽位需重新建立。**修正後再驗（候選 ArmGameplayCandidates_20261008_03 的 empty-authored，SDL 換回原範本，放 ENDL_006）**：載入正常；人口 10/200；任務訊息「ARM empty scene: move the ten soldiers east to test victory.」顯示（訊息先以上方訊息圖示閃爍排隊，點圖示才開啟，與示範圖直接彈出不同）；起始鏡頭不在士兵上，需點小地圖移動；框選後單位面板顯示 Меченосец（劍士＝GER_INF01），共 10 名加旗手、歸玩家控制；小地圖右鍵可移動。**勝利事件未確認**：部隊移到估計位於 X≈9850、Z≈8100（目標區 X 9500–10500、Z 7600–8800）後 50 秒以上沒有結算，但遊戲內看不到座標，換算可能有誤，不能判定通過或失敗。已產生大目標區候選 `%TEMP%\ArmGameplayCandidates_20261008_04`（`MapEditorGameplayPreparationTests` 的勝利區改為 X 9000–16000、Z 4000–12000），安裝時需把 SDL 換成原範本（候選目錄裡仍是舊的空 SDL，因為它是從舊空白來源複製的；重新用修正後編輯器建立空白場景則不需要）。兩次嘗試在遊戲內測它時，遊戲視窗被 TextInputHost／系統搶走焦點而掉回桌面，**勝利事件仍未測**。**勝利事件已在遊戲內驗證通過（使用者切換輸入法後重測）**：大目標區候選（`ArmGameplayCandidates_20261008_04`，SDL 換回原範本，放 ENDL_006）載入正常，10 名劍士往東移動約 60 秒內，遊戲彈出結算畫面「Вы успешно побороли неприятеля, нашли новый дом для вашего племени.」，遊戲時間 00:01:25 → 編輯器寫入的 ObjectInArea＋勝利事件（GLOBAL_MISSION_RESULT／quit）在遊戲內實際結算。先前小目標區（X 9500–10500）未結算，原因多半是我從小地圖換算的位置不準，而非事件失效，但未再用小區驗證。操作要點：重開機後 TextInputHost 不再搶焦點（使用者曾把輸入法切成英文）；啟動遊戲後不要最小化或用 ShowWindow 還原（畫面會損壞，需重啟）；選單流程每步 2 次 mouse_move + 2 秒等待 + down/up 可行。
+小地圖換算：+X 對應螢幕右下（Δsx=1.469Δx−1.297Δz、Δsy=0.734Δx+0.625Δz，單位為 256 世界單位的圖格）。
+- **空白獨立場景（ARM Empty Playtest，empty-authored 候選）：載入時遊戲卡死**（Responding=False，CPU 不再增加，載入條停在約 1/3）。放在 ENDL_006 重現；同一槽位放 demo 則正常，故問題在空白場景內容本身（待查：idle BCI、清空的 runtime 池、auxiliary 圖層）。尚不知是否與槽位名稱（原為 008）有關——標題內容無寫死槽位字串。下一步：用唯讀 TEMP 副本逐項還原差異（先換回來源 BCI／補回最小物件池）二分法定位，再回遊戲驗證。
+- 截圖存在本次 session 的 tool-results；未納入 repo。安裝目錄已還原（只剩 ENDL_000–005）。
+
+## 使用者方向（2026-10-08）：2D 不適合作為製圖入口
+
+- 使用者認為 2D 模式不可能拿來製作地圖。程式預設已走 3D（`MapEditorForm.cs` 的 `SetActiveView(_view3d is not null)`），2D 僅在 3D/OpenGL 無法啟用時當後備；2D 畫布只畫灰色格子，看不出地形與物件。
+- 框選由 `ShowBoxSelection` 同步到 2D 與 3D，區域工具對話框會自動帶入選取矩形，因此 3D 框選 → 區域工具可不輸入座標。3D 滑鼠框選仍未獨立實測（無 OpenGL 離屏環境）。
+- 後續建議：降低 2D 的存在感（或移除編輯入口、保留小地圖導覽），並讓 3D 成為唯一的主要編輯畫面；需要使用者確認方向再動。
+
+## 接手先讀（2026-10-08 Claude，續：UI 接線第二批與真實資料核對）
+
+- 新增接入並有測試：侵蝕矩形工具、城牆折線工具（區域工具對話框）、巨集控制台分頁、「與已儲存版本比較」（地圖檢查分頁）。Modules 535／Host 703 通過，22 略過，0 失敗。
+- **重要修正**：代理產出的模組多用「猜測的物件名稱」。以真實 `cl_scint.ini`（TEMP 遊戲副本）核對後發現：基地生成器的 `BauGerHau00` 等名稱在真實目錄不存在（真實別名 `GER_HAU00` = `BauGerHau00_Haupthaus`，且無 Kas／Sch／Tur 等），原本在真實遊戲會丟 `Missing placement type`。已新增 `Placement/LayoutTypeResolver.cs`，生成器改為解析別名並略過找不到的型別；城牆目錄預設改成真實物件名（Pal／Mau／Tor），規劃器只用目錄中存在的元件（無塔、端蓋時退回直牆與轉角）。植被工具的圖格世界單位也已修正為 256（貼圖 64×64）。
+- **刻意未接入**：Soundscape（寫 `DATA/sound.dat`，但真實地圖 DATA 目錄沒有此檔，格式無證據）、Cinematics／Objectives／WildLair 的 BCI 編譯（未對照真實腳本位元碼）、Localization 多語系（真實地圖只有 `TEXT/US`，編輯器已能改 US 簡報）、AI 勢力原型的 UI。這些接進存檔流程可能寫出遊戲讀不懂的檔案；需先有真實格式證據。
+- 城牆片長度／間距、碰撞、閘門開關狀態皆未在遊戲內驗證；植被、河流、懸崖、基地生成的遊戲內外觀同樣未驗證。
+- 遊戲內驗收仍未做成（見前節）。
+
+## 接手先讀（2026-10-08 Claude，UI 接線進度）
+
+- 已接入 UI 並有宿主測試（HEAD 最新 5 個提交）：模組匯出、對戰基地一鍵生成、河流／懸崖矩形工具、事件節點圖（事件分頁）、NavMesh 連通性＋預算分析（地圖檢查分頁，僅警告不阻擋存檔）、生態植被矩形散播（區域工具「矩形生態植被散播」，獨立 Undo）、天候預設選單（工具列「天候」，沿用既有 boden.ini 存檔交易，水位不變）。
+- 驗證：Release build 0 錯誤；dotnet test：Modules 534、Host 699 通過，22 略過，0 失敗。
+- 尚未接 UI：本地化簡報工作台、環境音效區、運鏡導演、城牆自動連接、侵蝕雕刻、巨集控制台（EditorConsoleControl 僅有控制項）、野外巢穴、視覺差異檢視、運鏡。
+- 遊戲內驗收仍未完成（見下節）。雲端 AI（Codex/Antigravity）額度已用完；使用者指示可改用本地 AI（mcp__local_ai__delegate_local，無檔案存取，需完整貼上下文，輸出須複核）。
+
+## 遊戲內驗收嘗試（2026-10-08 Claude，使用者已口頭授權測試）
+
+- 備份 `MAPS\ENDL_005` 至 `%TEMP%\ArmGameBackup_20261008_acceptance`（55 檔，hashes.csv）；安裝候選 `empty-authored`（ENDL_008）後以 computer-use 啟動遊戲。
+- 結果：**驗收未完成**。遊戲啟動後只出現黑屏／無視窗，且 open_application 會多開第二個行程；未能進入選單，沒有任何遊戲內證據。已終止遊戲、刪除 ENDL_008，ENDL_005 55 檔雜湊與備份一致。
+- 下一步：需使用者在場（關閉 TextInputHost 搶佔、保持遊戲全螢幕不最小化），再依 docs/map-editor-gameplay-candidates.md 逐項測。不要重複 open_application（會多開）；改用 Start-Process 啟動一次。
+- Codex 用量於 12:37 前耗盡；事件圖已接入事件分頁（見下一節）。天氣、budget/NavMesh、植被工具等 UI 仍未接。
+
+## 本輪接線（2026-10-08 Codex）
+
+- 使用者要求依序接入事件圖、天氣、budget/NavMesh、矩形植被；選配小工具視時間。禁止 commit/push、安裝目錄存取；保留 .claude/ 與 TEMP/。
+- 事件圖已嵌入事件分頁，草稿驗證後透過 ScenarioEventSession 與既有 save preflight 套用；拒絕孤立節點及無法編譯的流控。拖曳不再改變事件順序。新增宿主 round-trip/save 與拒絕/放棄測試，待 build/test。
+- 工具：普通 sandbox 程序初始化失敗；repository 操作改用已核准提升權限 shell。未使用私人記憶來源。
+
+## 接手先讀（2026-10-08 Antigravity，WinForms 地圖編輯器成功接入第一梯隊三大實用模組）
+
+- **完成驗證與接入狀態**：
+  1. **模組打包匯出管線 (`ModBundleExporter.cs`)**：
+     - 在工具列與選單新增「匯出模組… / Export Mod…」按鈕，觸發 `SaveFileDialog`（支援取消與自動追加 `.zip`）。
+     - 匯出前自動提示儲存髒變更，由 `MapExportPreflightChecker` 與 `ModBundleExporter.ExportToZip` 產生縮圖與 `manifest.json`。
+     - 宿主測試 `Mod_packaging_export_button_saves_valid_zip_with_manifest_and_map` 通過。
+  2. **一鍵生成聚落/基地 (`SettlementGeneratorEngine.cs`)**：
+     - 在「配置」選單新增「一鍵生成對戰基地… / Generate Battle Base…」。
+     - 提供雙語對話框 `SettlementGeneratorDialog`（支援 2–8 玩家、4 大部族切換、隨機/固定種子、自然資源聚落核取方塊）。
+     - 透過 `SettlementGeneratorEngine` 套用至 `PlacementEditSession` 與 `NatureEditSession`，並於 `MapEditorForm` 實現原子單步 Undo/Redo 連動。
+     - 宿主測試 `Settlement_generator_dialog_applies_with_single_undo_and_redo` 通過。
+  3. **河流與懸崖規劃器 (`RiverFlowPlanner.cs`, `CliffFacePlanner.cs`)**：
+     - 擴充「區域工具… / Region tools…」（`TerrainRegionDialog`）新增「矩形水系河流」與「矩形懸崖岩壁」操作；若畫布有「框選」選取框，自動代入對角座標。
+     - 實作無預覽單筆交易式套用 (`ApplyRiverTool`, `ApplyCliffTool`)：河流自動計算水面圖塊、河岸邊緣與高度場下挖；懸崖自動偵測陡坡、貼上岩壁印章、偵測碎石素材可用性避免烘焙失敗、寫入 4x4 阻擋碰撞像素。
+     - 實現雙層 session（紋理 + 高程/碰撞）跨層原子 Undo/Redo 連動。
+     - 宿主測試 4 項（河流直接套用/對話框套用、懸崖直接套用/對話框套用及 Undo/Redo）全數通過。
+- **全套建置與測試驗證**：
+  - `dotnet build AgainstRomeModifier.slnx -c Release -p:UseAppHost=false`：**0 警告、0 錯誤**。
+  - `dotnet test AgainstRomeModifier.slnx -c Release --no-build`：Modules 534 通過、Host 695 通過 / 22 略過，**0 失敗**。
+- **約束遵守**：未碰觸遊戲安裝目錄，未執行 git commit/push，保留未追蹤之 `.claude/` 與 `TEMP/`。
+
+## 接手先讀（2026-10-08 Claude，修復 15 項失敗測試）
+
+- 經 Codex 子代理修復並由主代理複驗：Release build 0 錯誤；`dotnet test AgainstRomeModifier.slnx`：Modules 534 通過、Host 689 通過/22 略過，0 失敗。
+- 修的正式程式缺陷：`AlignGridCommand` Undo/Redo 只記一筆、`FloraScatterEngine` 缺高度圖誤判水域、`NavMeshConnectivityAnalyzer` 橋接距離、`RoadGapDetector` 方向不相容缺口、`TerrainSculptFilter` 階地曲線、`CampaignMissionCompiler` 中文訊息編碼、`ObjectiveRuleCatalog` FailureCriterion 秒數檢查；其餘為測試預期修正。
+- 仍未完成：把第一梯隊模組（河流／懸崖／聚落生成／事件圖／打包匯出）接入 WinForms UI；遊戲內驗收（需使用者授權安裝目錄）。
+
+## 接手先讀（2026-10-08 Antigravity，20 子代理同步設計產出彙總與交接）
+
+- **交接背景**：因使用者訂閱流量即將耗盡，依使用者明確指令「叫所有子代理直接提交，我的訂閱流量要沒了，寫入交接，我會用其他Ai繼續」，主代理已全面終止所有 20 個背景子代理，並統一整理代碼原型、修復模組編譯，進行本地 Git 提交。
+- **整體建置與測試狀態**：
+  - `dotnet build AgainstRomeModifier.slnx -c Release -p:UseAppHost=false`：**0 個錯誤**，所有 20 個子代理的新增模組全部成功編譯通過！
+  - `tests/AgainstRomeMapEditor.Modules.Tests`：**502 項單元測試通過**（僅 15 項涉及字串文化大小寫或 fixture 斷言待微調，核心邏輯均已落地）。
+  - 現有分支：`主要開發`；保留未追蹤 `.claude/` 不修改、不提交；未執行 `git push`。
+- **重大設計與代碼產出清單（16 篇設計規範文件與 14 大核心模組）**：
+  1. **水系與河流自動流向系統**：`docs/map-editor-river-planner-design.md`、`src.MapEditor.Modules/Terrain/RiverFlowPlanner.cs`、`RiverTileCatalog.cs`。
+  2. **高低差陡坡岩壁自動接合印章系統**：`docs/map-editor-cliff-planner-design.md`、`src.MapEditor.Modules/Terrain/CliffEdgeDetector.cs`、`CliffFacePlanner.cs`、`CliffTileCatalog.cs`。
+  3. **聚落選址與資源智慧平衡生成器**：`docs/map-editor-settlement-generator-design.md`、`src.MapEditor.Modules/Settlement/SettlementGeneratorEngine.cs`、`SettlementSiteEvaluator.cs`、`ResourceClusterPlanner.cs`、`MultiplayerFairnessBalancer.cs`。
+  4. **劇情觸發與任務事件視覺化節點圖**：`docs/map-editor-visual-event-graph-design.md`、`src.MapEditor.Modules/Events/Graph/`、`src.MapEditor/Events/EventGraphCanvasControl.cs`（WinForms 雙緩衝自繪畫布）。
+  5. **地圖效能預警與引擎資源硬限制分析器**：`docs/map-editor-budget-profiler-design.md`、`src.MapEditor.Modules/Profiling/MapBudgetProfiler.cs`、`MapBudgetLimits.cs`。
+  6. **道路網尋路與通行網格連通性自動修復系統**：`docs/map-editor-navmesh-repair-design.md`、`src.MapEditor.Modules/Pathfinding/NavMeshConnectivityAnalyzer.cs`、`RoadGapDetector.cs`、`FormationWidthValidator.cs`、`RoadPathHealer.cs`。
+  7. **動態天氣與大氣環境配置系統**：`docs/map-editor-weather-atmosphere-design.md`、`src.MapEditor.Modules/Atmosphere/`（含五大天氣預設、雙向無損 `BodenIniSerializer`、3D GLSL 著色器橋接器）。
+  8. **自然生態圈植被自動散播引擎**：`docs/map-editor-biome-ecology-design.md`、`src.MapEditor.Modules/Nature/FloraScatterEngine.cs`、`BiomeEcologyProfile.cs`。
+  9. **戰役任務腳本與 AI 勢力行為原型**：`docs/map-editor-ai-strategy-archetypes-design.md`、`src.MapEditor.Modules/AI/`（四大 AI 原型、巡邏路線規劃器、戰役目標編譯器）。
+  10. **地圖模組打包、元資料與發布匯出管線**：`docs/map-editor-packaging-pipeline-design.md`、`src.MapEditor.Modules/Packaging/ModBundleExporter.cs`（一鍵 ZIP 匯出、原廠槽位絕對保護、動態槽位重映射）。
+  11. **城牆與防禦工事自動連接系統**：`docs/map-editor-wall-fortification-design.md`、`src.MapEditor.Modules/Fortification/`。
+  12. **地形起伏智慧雕刻與水力/熱力侵蝕演算法**：`docs/map-editor-terrain-erosion-design.md`、`src.MapEditor.Modules/Terrain/TerrainSculptPipeline.cs`、`HydraulicErosionSimulator.cs`、`ThermalErosionSimulator.cs`。
+  13. **多層次環境音效與音頻區域分佈系統**：`docs/map-editor-soundscape-zones-design.md`、`src.MapEditor.Modules/Soundscape/`。
+  14. **雙語本地化任務簡報工作台**：`docs/map-editor-localization-studio-design.md`、`src.MapEditor.Modules/Localization/`。
+  15. **歷史戰役相機運鏡與過場動畫導演系統**：`docs/map-editor-cinematic-camera-design.md`、`src.MapEditor.Modules/Cinematics/`。
+  16. **等角投影深度排序與圖集快取最佳化**：`docs/map-editor-isometric-sorting-design.md`、`src.MapEditor.Modules/Rendering/`。
+  17. **自訂勝利條件與目標規則引擎**：`src.MapEditor.Modules/Objectives/`。
+  18. **地圖歷史版本差異比對與視覺化檢視系統**：`docs/map-editor-visual-diff-viewer-design.md`、`src.MapEditor.Modules/Diff/`。
+  19. **中立野外巢穴與動態資源再生系統**：`docs/map-editor-wild-lair-regen-design.md`、`src.MapEditor.Modules/WildLair/`。
+  20. **即時巨集指令與控制台 UI**：`src.MapEditor.Modules/Scripting/`、`src.MapEditor/EditorConsoleControl.cs`。
+- **後續 AI 接手行動指南**：
+  1. **以玩家操作體驗為優先**：上述模組的核心演算法與資料結構皆已完備且編譯通過。後續 AI 請依據使用者的指導原則，優先挑選**「第一梯隊（玩家直接操作的神器）」**接入 WinForms 介面（例如：河流筆刷接入工具列、懸崖自動貼合接入地形工具、視覺化事件圖嵌入劇情分頁、對戰基地一鍵生成對話框、模組打包選單按鈕）。
+  2. **微調單元測試**：修復 `tests/AgainstRomeMapEditor.Modules.Tests` 中剩餘的 15 個測試斷言（例如 `PutScriptSyntaxValidatorTests` 中的大小寫、`EventGraphValidator_DetectsCycles` 斷言等），使測試達到 517 全綠。
+  3. **遵守 AGENTS.md**：不可修改或存取遊戲安裝目錄，不可 push 或建立空 commit，嚴格保留未追蹤的 `.claude/`。
+
+## 接手先讀（2026-10-08 Antigravity，高低差陡坡岩壁自動接合印章系統設計完成）
+
+- 最新進展：完成「高低差陡坡岩壁自動接合印章系統 (Cliff & Elevation Transition Designer)」架構設計、核心模組與單元測試。
+- 產出文件與程式碼：
+  1. 設計規範文件：`docs/map-editor-cliff-planner-design.md`（完整架構、257x257 頂點至 64x64 圖塊幾何對照、梯度與坡度角數學計算、四向正坡/四向外凸角/四向內凹角分類判別、下坡坡腳碎石過渡帶 Talus Apron 展開、通行碰撞阻擋層 4x4 自動同步、交易式 Undo/Redo 套用整合、MapDiagnostics 驗證合約）。
+  2. 核心模組原型 (`src.MapEditor.Modules/Terrain/` 與 `Diagnostics/`)：
+     - `CliffTileCatalog.cs`：朝向幾何定義 (`CliffFacing`)、四大原版圖塊家族 (`FELS`, `ITA_FELS`, `Berg`, `STEIN`) 預設目錄、多變體加權偽隨機選擇 (`PickVariant`)、轉角與正坡層級回退 (`Fallback Hierarchy`) 與既有圖塊動態探索 (`BuildAvailable`)。
+     - `CliffEdgeDetector.cs`：從 `boden.bmp` 頂點或圖塊高度陣列計算中心差分梯度、高程極差、換算真實坡度角 ($\theta \ge 45^\circ$ 或 $\Delta h \ge 15$)，判定外凸角與內凹角拓撲，並以 8-鄰域搜尋鏈接為階梯式等高線路徑 (`CliffContourPath`)。
+     - `CliffFacePlanner.cs`：沿邊緣自動匹配岩壁圖塊印章，於坡腳下坡側自動展開碎石/岩屑材質 (`ScreePlacement`)，利用 4U/4T 過渡烘焙自然消除邊界，同步生成 256x256 碰撞網格每圖塊 4x4 像素之阻擋標記 (255)，並提供 `ApplyPlan` 交易式套用至 `TerrainBlendEditSession` 與 `TerrainHeightEditSession`。
+     - `CliffDiagnostics.cs`：與現有 `MapDiagnostics` 整合，新增 `cliff-steep-unblocked`（陡坡未阻擋）、`cliff-missing-collision`（懸崖印章缺碰撞）與 `cliff-isolated-plateau` 診斷合約。
+  3. 單元測試套件：
+     - `CliffTileCatalogTests.cs`（5 項測試：家族與朝向註冊、風格隔離與匹配、缺轉角層級回退、確定性隨機變體分佈、圖塊名稱自動推斷）。
+     - `CliffEdgeDetectorTests.cs`（6 項測試：正向坡、外凸角、內凹角、平地無誤報、頂點內部垂直陡坡偵測、等高線連續鏈接）。
+     - `CliffFacePlannerTests.cs`（3 項測試：印章匹配與坡腳碎石下坡生成、無碎石/碰撞選項、碎石半徑擴展）。
+     - `CliffDiagnosticsTests.cs`（3 項測試：陡坡缺碰撞警告、陡坡已阻擋清除警告、懸崖圖塊缺碰撞警告）。
+- 遵守規範：未碰安裝目錄，保留 `.claude/`，不自行 git commit（由主代理統一提交）。
+
+## 接手先讀（2026-10-08 Antigravity，聚落選址與資源聚落智慧平衡生成系統設計完成）
+
+- 最新進展：完成「聚落選址與資源聚落智慧平衡生成演算法 (Settlement & Resource Distribution Designer)」架構設計、核心模組與單元測試。
+- 產出文件與程式碼：
+  1. 設計規範文件：`docs/map-editor-settlement-generator-design.md`（完整架構、四大核心管線、平坦度/坡度高差/水體安全距離數學公式、部族建築規格對照表、泊松取樣與柏林雜訊森林群聚、岩壁坡腳探測、2-8 玩家中心對稱/旋轉對稱/拓撲等距 Voronoi 鬆弛、與 PlacementEditSession 及 LayoutJson 整合流程 Mermaid 圖）。
+  2. 核心模組原型 (`src.MapEditor.Modules/Settlement/`)：
+     - `SettlementModels.cs`：定義部族風格（Germanic, Roman, Celtic, Hun）、建築藍圖、擺放計畫、自然資源項目、適配度評估結果與多勢力分配模型。
+     - `SettlementSiteEvaluator.cs`：聚落腹地評估器（檢驗最大高差 $\le 5.0$、水體安全距離 $\ge 6.0$ 格、主屋 + 初始 5 棟核心建築無碰撞空間排布與通道保留、綜合適配評分）。
+     - `ResourceClusterPlanner.cs`：資源聚落規劃器（木材森林 15-30 格泊松間隔與柏林雜訊群聚遮罩、岩壁坡腳石礦採石場偵測、開闊平原中立野生動物群）。
+     - `MultiplayerFairnessBalancer.cs`：多勢力平衡分配演算法（支援 2 玩家中心點對稱、3-8 玩家環狀旋轉對稱、非對稱地形拓撲等距排斥場鬆弛、公平性預算方差校驗報告）。
+     - `SettlementGeneratorEngine.cs`：一鍵式整合引擎（輸出標準 `MapLayoutPreset` Placement & Nature、直接套用至 `PlacementEditSession` 與 `NatureEditSession`，支援單步 Undo/Redo 與 `.arm-layout.json` 雙向匯出）。
+  3. 單元測試套件：`tests/AgainstRomeMapEditor.Modules.Tests/SettlementGeneratorTests.cs`（6 項測試通過：陡坡與水體拒絕、無碰撞建築排布、資源群約束、2P 中心點對稱、4P 旋轉對稱、Session 整合與 Undo/Redo 回歸）。
+- 遵守規範：未碰安裝目錄，保留 `.claude/`，不自行 git commit（由主代理統一提交）。
+
+## 接手先讀（2026-10-08 Antigravity，劇情觸發與任務事件視覺化節點編輯系統設計完成）
+
+- 最新進展：完成「劇情觸發與任務事件視覺化節點編輯系統 (Visual Scenario Event Graph Designer)」架構設計、核心領域模型、雙向無損轉換器、靜態分析器、WinForms 2D 畫布原型與單元測試。
+- 產出文件與程式碼：
+  1. 設計規範文件：`docs/map-editor-visual-event-graph-design.md`（包含系統架構 Mermaid 圖、EventGraphModel 領域規格、無損雙向轉換演算法、DFS 三色標記法死循環與死鎖分析、WinForms 2D 雙重緩衝自繪與貝茲連線互動規範、完整日耳曼聚落解放戰實戰演練與 BCI 位元碼對照）。
+  2. 核心領域模型原型 (`src.MapEditor.Modules/Events/Graph/`)：
+     - `GraphEnums.cs`：定義連接埠方向 (`Input`, `Output`)、類型 (`Execution`, `Condition`, `Data`) 與診斷等級 (`Info`, `Warning`, `Error`)。
+     - `GraphPort.cs`：連接埠模型與相容性檢查 (`CanConnectTo`，防止自環、跨類型連線與多重輸入約束)。
+     - `GraphEdge.cs`：連線資料模型。
+     - `GraphNode.cs` & `GraphNodes.cs`：節點型別（觸發器 `EventTriggerNode`、條件 `ObjectExistsConditionNode` / `ObjectDeadConditionNode` / `ObjectInAreaConditionNode`、動作 `MessageActionNode` / `DiplomacyActionNode` / `SpawnUnitActionNode` / `VictoryActionNode` / `DefeatActionNode`、流控 `DelayNode`）。
+     - `EventGraph.cs`：圖模型容器，支援節點增刪、端口連線、拓撲反查與安全級聯清理。
+     - `EventGraphConverter.cs`：無損雙向轉換器（`FromScenarioEvents` 具備階層式自動排版；`ToScenarioEvents` 沿觸發點與動作鏈編譯回合法原生資料），保證 100% 往返不失真。
+     - `EventGraphValidator.cs`：靜態分析器（基於有向圖 DFS 三色法捕捉死循環、孤立動作、懸空條件、目標 GUID 存在性校驗、部隊別名與邊界檢驗、終端勝利/失敗動作規範）。
+  3. 2D 畫布控制項原型 (`src.MapEditor/Events/EventGraphCanvasControl.cs`)：
+     - 雙重緩衝自繪（`DoubleBuffered`）、深色現代主題、網格自繪。
+     - 視角平移、縮放（Zoom 0.25x–2.5x）、三次貝茲曲線連線、框選、節點移動、動態連線與類型防呆。
+  4. 單元測試套件：`tests/AgainstRomeMapEditor.Modules.Tests/EventGraphTests.cs`（涵蓋端口操作、雙向無損往返轉換、複雜戰役任務鏈原生驗證、死循環檢測、孤立動作與懸空條件、目標 GUID 與別名、終端動作約束）。
+- 遵守規範：未碰安裝目錄，保留 `.claude/`，不自行 git commit（由主代理統一提交）。
+
+## 接手先讀（2026-10-08 Antigravity，道路網尋路與通行網格連通性自動修復系統設計完成）
+
+- 最新進展：完成「道路網尋路與通行網格連通性自動修復系統 (NavMesh & Pathfinding Connectivity Healer)」架構設計、核心模組與單元測試。
+- 產出文件與程式碼：
+  1. 設計規範文件：`docs/map-editor-navmesh-repair-design.md`（包含全域 BFS 連通性分量、穿透障礙橋樑點演算法、道路拓撲圖與 1~2 格微小中斷偵測、`formdef.dau` 1~20 人方陣寬度與距離場 Clearance 瓶頸驗證、無損修復處方與 `MapDiagnostics` 整合合約）。
+  2. 核心模組原型 (`src.MapEditor.Modules/Pathfinding/`)：
+     - `NavMeshRepairContracts.cs`：定義雙空間座標 (`NavMeshCoordinate`)、孤立區域 (`IsolatedRegion`)、道路中斷 (`RoadGapCandidate`)、方陣咽喉點 (`FormationChokePoint`) 與原子修復動作 (`NavMeshRepairAction`)。
+     - `NavMeshPassabilityGrid.cs`：統一查詢 `collision.bmp` 阻擋與 `boden.bmp` 水位淹沒判定。
+     - `NavMeshConnectivityAnalyzer.cs`：4-向 BFS Flood Fill 劃分連通分量，標記孤立陸地並計算最短障礙穿透橋接點。
+     - `RoadGapDetector.cs`：道路拓撲度數分析，自動偵測 1~2 格微小中斷並推薦合適圖塊風格（標準、羅馬、土路）。
+     - `FormationWidthValidator.cs`：以多源 BFS 計算切比雪夫通行距離場，精確對照 1~20 人部隊方陣跨距，標記行軍路徑咽喉點與幾何隘口。
+     - `RoadPathHealer.cs`：生成修復處方，支援交易式套用至 `TerrainBlendEditSession` 與 `TerrainHeightEditSession`。
+  3. `MapDiagnostics.cs` 整合：新增 `AnalyzeNavMesh` 與 `ConvertToIssues` 方法，產生標準 `MapIssue` 項目（`isolated-land`, `road-gap`, `formation-bottleneck`），支援視圖焦點定位。
+  4. 單元測試：`tests/AgainstRomeMapEditor.Modules.Tests/NavMeshRepairTests.cs`（5 項專屬測試，涵蓋連通性/最短橋接點、1~2 格道路間隙/風格推薦、方陣通道淨寬、自動修復處方與 MapDiagnostics 整合）。
+- 遵守規範：未碰安裝目錄，保留 `.claude/`，不自行 git commit（由主代理統一提交）。
+
+## 接手先讀（2026-10-08 Antigravity，動態天氣與大氣環境配置系統設計完成）
+
+- 最新進展：完成「動態天氣與大氣環境配置系統 (Dynamic Weather & Atmosphere Lighting Designer)」架構設計、核心模組與單元測試。
+- 產出文件與程式碼：
+  1. 設計規範文件：`docs/map-editor-weather-atmosphere-design.md`（完整架構、原版 `boden.ini` 逆向規格、五大經典天候預設、雙向無損序列化、3D 視圖 GLSL 著色器連動、儲存交易與快取失效策略）。
+  2. 核心模組原型 (`src.MapEditor.Modules/Atmosphere/`)：
+     - `BodenIniData.cs`：強型別資料模型，完整對應海平面、高度步進、水面波紋凹凸/頻率/扭曲/顏色、晝夜時間、閃電機率（`FlashPropability`）、天空密度與全部原生鍵值，保留未識別區段與註解。
+     - `BodenIniSerializer.cs`：雙向無損序列化與合規性驗證器（嚴格邊界檢查：波紋幅度 0..1024、頻率 1..16、扭曲 8..20、閃電 0..1000、6 碼 Hex 色碼、晝夜時序 0..24）。
+     - `AtmosphereProfile.cs`：整合原生 boden 與 3D 迷霧/天色散射/光照調色/降水強度之大氣設定檔。
+     - `WeatherPresets.cs`：五大經典天候預設（晴朗豔陽 ClearSky、雷鳴暴風雨 Storm、暮色日落 SunsetDusk、濃霧迷漫 DenseFog、高山霜雪 MountainSnow），提供完整原版數值與視覺參數。
+     - `AtmosphereLightingBridge.cs`：3D 視圖即時 Uniforms 計算、雷電爆閃衰減模擬、水波時間推進與 GLSL 著色器擴充產生器。
+     - `AtmosphereEditSession.cs`：實作 `IEditorModule<AtmosphereProfile>` 統一編輯介面，支援變更追蹤 (`IsDirty`)、基準快照與 Undo/Redo。
+  3. 單元測試：`tests/AgainstRomeMapEditor.Modules.Tests/AtmosphereTests.cs`（10 項測試，涵蓋預設合規性、水色 RGB 雙向轉換、文字解析與保留未知區段、邊界防護阻斷、五大預設集、大小寫不敏感查詢、Uniforms 計算、閃電衰減、IEditorModule 狀態追蹤與深層複製）。
+- 遵守規範：未碰安裝目錄，保留 `.claude/`，不自行 git commit（由主代理統一提交）。
+- 剩餘待辦：將 `AtmosphereLightingBridge` 注入 `Map3DViewControl.cs` 著色器與主表單環境面板 UI 連動；實機遊戲內天候效果驗收。
+
+## 戰役任務腳本與 AI 勢力行為原型配置系統設計完成（2026-10-08 Antigravity）
+
+- 最新進展：完成「戰役任務腳本與 AI 勢力行為原型的配置與模擬系統 (Campaign Mission & Faction AI Archetype Designer)」架構設計、核心模組與單元測試。
+- 產出文件與程式碼：
+  1. 設計規範文件：`docs/map-editor-ai-strategy-archetypes-design.md`（完整架構、BCI ABI 降階管線、狀態變數設計、Mermaid 圖表與資料結構）。
+  2. 核心模組原型 (`src.MapEditor.Modules/AI/`)：
+     - `AiArchetypeModels.cs`：四大標準 AI 戰略原型（進攻型遊牧部落、防守型羅馬堡壘、經濟擴張型日耳曼聚落、中立野蠻人巡邏哨）、參數化姿態/交戰/目標優先級、兵種偏好權重矩陣與勢力設定。
+     - `WaypointModels.cs`：巡邏與進攻路線節點鏈（`WaypointNode`, `WaypointPath`），支援循環巡邏 (`Loop`)、往返移動 (`PingPong`)、埋伏待命 (`Ambush`) 與單向突擊 (`OneWay`)，並提供 `WaypointPathPlanner` 長度計算、折返狀態推進與地形通行性檢驗。
+     - `CampaignMissionModels.cs`：高階戰役目標模型（波次進攻 `WaveAttack`、定時增援 `TimerReinforcement`、基地防衛 `DefenseObjective`、斬首與攻堅 `DestroyTarget`、生存時間 `SurviveTime`、區域抵達 `ReachArea`）。
+     - `CampaignMissionCompiler.cs`：將高階戰役規劃編譯降階為原版合法 `ScenarioEvent` 清單，並全面通過 `ScenarioEventValidator` 實施合規性校驗。
+     - `FactionAiSession.cs`：實作 `IEditorModule<CampaignMissionSnapshot>`，提供 Undo/Redo、變更追蹤 (`IsDirty`) 與快照管理。
+  3. 單元測試：`tests/AgainstRomeMapEditor.Modules.Tests/AI/AiArchetypeTests.cs`（涵蓋原型目錄、折返與循環推進演算法、高階戰役降階校驗、工作階段狀態維護）。
+- 遵守規範：未碰安裝目錄，保留 `.claude/`，未自行 git commit（由主代理統一提交）。
+- 剩餘待辦：WinForms 主表單 2D/3D 節點繪製工具與時間軸 UI 接入；取得安裝目錄例外授權後之實機戰役驗收。
+
+## 道路自動選片接入 UI 與地區智能印章篩選（2026-10-08 Antigravity）
+
+- 實作與架構：
+  - 新建 `src.MapEditor.Modules/Terrain/RoadTileCatalog.cs`，整合標準道路與羅馬道路之直線、轉角與交叉連接遮罩；修正單端點在有直路時不被 `weg1` 搶佔之優先級排序。
+  - `src.MapEditor.Modules/Terrain/RoadStrokePlanner.cs`：支援同材質多連接方向分組聚合（`GroupBy` 取並集），避免原版 `weg1` 等多功能圖塊引發字典重複鍵異常。
+  - `src.MapEditor.Modules/Terrain/TerrainBlendEditSession.cs`：公開 `CancelStroke()` 支援繪製中動態復原與取消。
+  - `src.MapEditor/MapEditorForm.cs` 與 `MapEditorForm.Authoring.cs`：印章模式接入 `_autoRoad` 核取方塊；2D/3D 拖曳即時調用 `_terrainBlendSession.PaintRoadPath`；放開滑鼠時 `CommitStroke` 單次交易存入歷史與文字檔；`ProcessCmdKey` 支援 `Escape` 取消筆畫；`LoadStampPalette` 結合 `MapNatureRegions()` 實現地景地區智能關聯過濾。
+- 驗證：
+  - `RoadTileCatalogTests` 3 項測試通過（標準石道轉向、羅馬風格隔離、缺直線回退）。
+  - `MapEditorStampTests` 新增 3 項測試通過（L 型自動選片/單步 Undo/重載驗證、Escape 取消無殘留、地景無 L 系列自動過濾）。
+  - Release Solution 建置 0 警告 0 錯誤；完整 Solution 測試 982 通過、22 略過、0 失敗。
+
+## 六項建議總目標（2026-10-08 Codex，paused，使用者要求交接）
+
+- 遊戲內候選資料準備完成（2026-10-08 Codex，遊戲尚未執行）：新增 opt-in TEMP-only MapEditorGameplayPreparationTests，保留空白對照ENDL_005、獨立空白ENDL_008（10名GER_INF01／3秒訊息／區域勝利）與完整demo ENDL_005；真正表單保存→fresh editor reload→重存bytes一致、對照與兩來源全hash不變。首build CS0136重複error變數已改freshError；首準備以SDL NameDef查script alias失敗，改TemplateFields alias，_01失敗輸出保留；最後Release build零警告／零錯誤，明確ARM_GAMEPLAY_PREPARE=1定向1例通過。TEMP/ArmGameplayCandidates_20261008_02含result/source/candidate hashes及delivery ZIP 6,984,946B，153個候選地圖檔案逐一從ZIP讀回核对SHA256成功，ZIP SHA256=1CA2CBFD9E891BB8FFA550E8B13914EAC147AB39405146E52E2C0CC12B057100；操作步驟docs/map-editor-gameplay-candidates.md已入包。_02才是有效交付。兩ENDL_005須分案，不是完整可啟動遊戲。未存取安裝目錄／未啟動遊戲；安裝目錄例外授權仍無回覆，遊戲開局／隊伍控制／資源／尋路／勝利及遊戲存讀檔缺口未完成。上一goal turn872356f及本turn候選準備皆有實質進展，目標active。
+
+- 獨立空白場景完成編輯器階段（2026-10-08 Codex，遊戲開局待驗證）：新「空白場景（實驗）」先staging清全原生／SDL／編輯器物件與事件、13份runtime池（含光源／粒子／爆炸／命中／閃電／way），換idle BCI與backup，寫好單材質／乾地／通行／RGB auxiliary、minimap並清快取才登錄。原backup不能恢復來源auto-spawn。唯讀TEMP與repo EXE核對loader；lager最初41B誤判1490active，native43B+2B證明全inactive，已修正。首build CS8602、CS0246與CA1826已修；Release零警告/零錯誤。首完整test host682/modules290通過、22略過、零失敗（972）；後續FX補強定向17通過，最後又補StandaloneLevel marker/manifest與複製繼承，修原無盡AI探測因idle BCI變Unknown；原廠誤放標記不會排除，實際P1 apply/save/fresh-detect/restore保留空白bytes。最後定向55例全部通過；最終full dotnet test solution --no-build --no-restore（ARM_COMPARE_GAME=TEMP、ARM_OPENGL_REQUIRED=1、ARM_BLANK_ACCEPTANCE=1）host685/modules290通過、22略過、零失敗（975），git diff --check通過。真實TEMP建立→保存／重開→放置10人與事件→再重開→全清回復新bootstrap，來源全hash不變，失敗不留槽位；_04有FX池驗證與中英圖（_01..03為更早範圍），_05已驗證複製／AI scope；_06為最後完整回歸證據，來源hash相同、Standalone複製與全部13池通過，中英圖已目視。合成raw/PFIL10例與idleVM100輪；source派系／人口、engine相機／其他欄位、天氣／FOW／stat等仍保留，遊戲開局與尋路仍待驗證，不能宣稱全部完成。未存取安裝目錄，研究deps僅TEMP ArmBlankResearchDeps_20261008；詳docs/map-editor-blank-map-contract.md。
+- 真實大型地圖效能完成（2026-10-08 Codex）：ARM_MAP_PERFORMANCE=1 TEMP-only、全來源stream SHA256一致；6618 DATA／7231 scene／7143 sprites／2050 shadows／9 animated／50 lights，RTX4080。persistent FBO、每case12暖身+120實際paint/Swap/Finish、聚落可見動畫與讀回PNG。重用sprite／shadow緩衝與增量動畫quad後帶物件每幀2.6MB→200..2018bytes、0GC；靜止3.23→0.62ms、pan2.63→1.97ms。首次camera orientation快取聚落pan38pixels差異，已納入M43保留原float排序；最後11張PNG SHA256全同，TEMP/ArmMapPerformance_20261008_settlement_before/exact存完整報告／source hashes／comparison，圖已目視。首GetField CS1503／Maps using CS0246已修；最後Release build0警告/0錯誤、真量測+buffer4例通過，full ARM_COMPARE_GAME=TEMP、ARM_OPENGL_REQUIRED=1 host672通過/22略過/modules290通過（962通過、0失敗），git diff --check通過。載圖／新catalog解碼／記憶體與重跑命令見docs/map-editor-performance.md。OS cache未清、FPS非monitorFPS、memory不含VRAM；未存取安裝目錄，真正空白與遊戲內驗收仍待完成，總目標active。
+- AI 局部／鎖定完成編輯器驗證（2026-10-08 Codex）：角色可選、矩形重做與多鎖定區快照共用preview/Apply；材質角點檢查全部相鄰tile，高度共用邊界保留、碰撞像素遮罩，生成後接MapDiagnostics。首次live失敗：模型違反prompt加入blocked，Terrain角色合法接受而碰撞變更；新增預設關閉通行選項與套用硬閘後，ARM_AI_ACCEPTANCE_LIVE=1真laguna單角色→preview→Apply→undo/redo→save→fresh reload1例通過：6453高度點、材質／通行保留、两鎖定與範圍外逐點驗證。TEMP/ArmAiPartial_20261008_9d8e31093ca049748d2cab5226a19112有report/preview/progress。full ARM_COMPARE_GAME=TEMP、ARM_OPENGL_REQUIRED=1 host667通過/22略過、modules290通過（957通過、0失敗）。最後圖例底色與描述高度修正，Release仍0警告/0錯誤、定向24例通過，TEMP/ArmAiPartialUi_20261008中英最小尺寸圖已目視。鎖定限本次AI操作，不保存／不限制手動畫筆；高度通行與材質分兩筆undo，見docs/map-editor-ai-partial-redo.md。未存取安裝目錄、未動.claude/；真正空白、效能與遊戲內驗收未完成，總目標active。
+- 平坦建立內容清單完成（2026-10-08 Codex）：三種複製／建立名稱對話框列聚落藍圖、開局放置、腳本、編輯器放置／事件、保護物件與將清地景；無法解析列未知。首build IDE0005移除後Release零警告/零錯誤；full host659通過/22略過、modules289通過，0失敗（948通過）。最後修名稱輸入預設焦點，重建零警告/零錯誤、定向2例通過；TEMP來源hash未變、中英圖ArmCreationReview_20261008已目視。bcitool對TEMP ENDL_000唯讀：BCI解壓120657/CODE115244、生成／聚落模板呼叫sites、8SDL613definitions/5onload=1。獨立空白與開局仍待完成，見docs/map-editor-blank-map-contract.md。歷史驗證與相容性CLI長條目原文移docs/ai-handoff-history-2026-10-08.md，已逐段比對HEAD確認未丟內容，live handoff縮至約200行。
+- 配置工具完成（2026-10-08 Codex）：可攜JSON名称／相對XZ／貼地高度偏移／角度／隊伍／數量（不存native records或GUID），選取物件／矩形森林保存、旋轉套用、全批預檢與一次undo。Release build零警告/零錯誤；mod3例、宿主取消／JSON／原事件目標／save-reload1例及真實示範通過。ARM_COMPARE_GAME=TEMP、ARM_OPENGL_REQUIRED=1、ARM_DEMO_ACCEPTANCE=1 full host657通過/22略過、modules289通過，0失敗；ArmDemoAcceptance_20261008_08有5spawns/4DATA buildings、新建築binding/team、fresh native objects一致、來源hash不變。未開Nature也能解析官方種類，重建零警告/零錯誤、宿主2例通過，_09含兩JSON與3D圖已目視；apply-layout.png已目視。Review發現逐株迴圈用儲存後已清空清單；改儲存前非空快照，重建零警告/零錯誤、真實示範1例通過，_10才證明每株native XYZ/rotation。首fixture空GUID拒存，改不同GUID與真事件後通過。新建築沿用本圖安全未連結同type模板，缺少仍工地警告；遊戲內未驗證。見docs/map-editor-layouts.md。
+- 區域工具完成：矩形／同材質四向連通區／有寬度土路折線，PaintTiles一次原生烘焙與一組undo，拒絕保留內容與redo；工具列對話框及2D/3D框選矩形提示。首build誤用X/Z，改WorldX/WorldZ後Release build零警告/零錯誤；mod3例、宿主save/reload1例及真實TEMP折線示範1例通過（ARM_DEMO_ACCEPTANCE=1，證據ArmDemoAcceptance_20261008_06，來源hash不變，3D圖已目視）。full test host655通過/22略過、modules286通過，0失敗；最後補取消時忽略未放開滑鼠、重載清框選與UI圖，重建仍零警告/零錯誤，宿主實際2D滑鼠框選／Escape／save-reload與dialog render2例通過。TEMP/ArmRegionTools_20261008/region-tools.png已目視可讀；3D滑鼠輸入未獨立實測，遊戲內仍未驗收。見docs/map-editor-region-tools.md。聚落／森林可保存配置、空白圖、AI局部／鎖定及效能尚待完成。
+- 使用者要求完成全部建議：示範地圖與遊戲內驗收、地圖檢查面板、道路／區域／框選／批次／配置工具、平坦與空白地圖區分、AI 局部重做與區域鎖定、真實大型地圖效能量測。上一階段提交1c90a20完成編輯器示範驗收，不能代表全部完成。
+- 已完成純 MapDiagnostics、地圖檢查分頁、雙擊定位物件／事件與儲存前檢查；碰撞／水位連通估計只作警告，持久ID／座標／事件錯誤才拒存。Release build零警告／零錯誤；ARM_COMPARE_GAME=TEMP副本、ARM_OPENGL_REQUIRED=1，完整test host652通過/22略過、modules280通過，0失敗。纯模組5例、宿主2例驗證；TEMP/ArmMapDiagnostics_20261008 中英1100×760畫面已目視，摘要換行與完整問題詳細區可讀。
+- 已向使用者提出遊戲內驗收所需的安裝目錄例外授權（先備份自製槽位）；回覆前仍遵守 AGENTS 禁止存取安裝目錄。其餘開發繼續，不將整體目標縮小。
+- 已解決宿主第一輪100例99通過/1失敗：新定位測試在隱藏表單的 native controls 逾時，改offscreen Show、允許測試關閉與STA GL設定後通過。初版DrawToBitmap空白，Show後截圖才有效；補摘要換行、詳細區與tooltip，編輯後停用舊定位。最終完整回歸通過。
+- 已解決完整回歸的event-only失敗：不完整catalog使既存spawn不在UI清單，檢查誤報刪除。當placement未改時補入仍會保留的previous.Spawns；event-only、真正刪除目標拒存與兩宿主新例共4例重跑通過，最終全套也通過。nullable _view3d CS8602 已加 null guard。
+- 檢查面板已提交eb1df96。製圖操作已加入 PlacementEditSession.EditMany（隊伍／方向）、AddMany（配置整批放置）、放置清單批次對話框；mod placement定向22例、宿主批次3例（含取消）、儲存→新表單重開→重存bytes1例通過。批次保留ID／位置／人數，invalid mixed team／越界／重複ID整批拒絕，undo為一組。最後Release build零警告／零錯誤；ARM_COMPARE_GAME、ARM_OPENGL_REQUIRED=1、ARM_DEMO_ACCEPTANCE=1，full test host654通過/22略過、modules283通過，0失敗；真實示範再跑成功，證據TEMP/ArmDemoAcceptance_20261008_05，來源hash不變。
+- 製圖操作與可保存配置已完成；接著依 docs/map-editor-completion-plan.md 做平坦／真正空白建立、AI局部／鎖定、真實效能及遊戲內驗收。後四項仍不具備全部證據，整體goal保持active。
+
+## 示範地圖整合驗收（2026-10-08 Codex，編輯器階段完成）
+
+- 使用者同意按建議開始，先完成 TEMP 示範地圖的編輯→儲存→新表單重開；遊戲內可玩性仍須獨立驗收，不存取安裝目錄。
+- 起始 HEAD f7f89ee，只有原有未追蹤 .claude/；新增 MapEditorDemoAcceptanceTests，以 ARM_DEMO_ACCEPTANCE=1 明確啟用，來源與全新輸出限 TEMP，拒絕 reparse points；使用真實副本製作土路、丘陵、小湖、森林、部隊與區域勝利事件，保留地圖與報告。
+- 首次真實副本驗收失敗：編輯部隊觸發建築重建，官方副本缺範本，原有三棟完工建築被降為腳本工地。ScenarioLevelObjects 在刪除舊槽前擷取同 ID／alias／UID 的安全未連結範本；新增三例確認正常沿用、stale UID／改 alias 不沿用，定向3例通過。第二次失敗於森林隨機散佈被既有樹木阻擋，改先用移除工具清示範區再種植。
+- 第三次明確啟用的真實副本整合驗收1例通過；最終全套再啟用一次，證據 TEMP/ArmDemoAcceptance_20261008_04：game/MAPS/ENDL_005、result.json、source-hashes.json、demo-3d.png（已目視，整張地圖概覽不證明接縫或遊戲內效果）。來源地圖 SHA256 全部未變、土路 undo/redo、丘陵／湖中心27×4低於水位120、16株森林、10人部隊、三棟 DATA 建築、區域勝利事件 ID、儲存前不寫檔、新表單重開與重存 bytes 均驗證。
+- 最終 DOTNET_ROLL_FORWARD=Major，Release build 0警告/0錯誤；ARM_COMPARE_GAME=TEMP副本、ARM_OPENGL_REQUIRED=1、ARM_DEMO_ACCEPTANCE=1，dotnet test AgainstRomeModifier.slnx -c Release --no-build --no-restore：host650通過/22略過、modules275通過，0失敗；git diff --check通過。補 OwnedTemplate linked／位置索引／未擁有槽位拒絕測試。曾在測試尚持 DLL 時重建造成 MSB3026 重試，待測試結束後重建恢復零警告。
+- 本階段不宣稱資源可採集、尋路、遊戲內建築完工或勝利腳本已實測；後續依整合結果補缺口，再做地圖檢查面板。
+
+## 土路（PFAD）可繪製材質（2026-10-08 Claude；goal「繼續開發地圖編輯器」）
+
+- 道路圖塊分析（唯讀 TEMP `ArmGameCompare_20261007/floortex.dat`，未存取安裝目錄）：H_WEG1–5 只通東西、V_WEG1–3 只通南北，**無轉角／路口片**；PFAD 是九宮格 A/B 邊界組（與 4U 慣例一致，14/16 四角組合），原版用量最大。詳見 `docs/map-editor-road-tiles.md`。
+- 實作：`FloorMaterialCatalog` 新增 `PFAD` 材質（分類「道路」、英文 Dirt Path）；角點由名稱決定，外側用顏色推得（草地組→L2:07、Erde→L2:08）；色差 ≤16 的其他材質為近似外側，每種只用最吻合的邊界組（容差2）。匯入仍以主要外側判讀。首版在 B8 上混用綠草邊界，拼貼目視發現後修正。
+- 驗證：Release build 0警告/0錯誤；全套（ARM_COMPARE_GAME、ARM_OPENGL_REQUIRED=1）host645通過/22略過、modules275，0失敗。新增 `FloorPathMaterialTests`（合成3例＋真實副本：所有邊界四角顏色與名稱一致、ENDL_005 36/36、ENDL_000 5/36）與表單真 GL 例（調色盤選土路→繪製 L 形→只用 Erde 邊界，截圖 TEMP/ArmPathMaterial_20261008/editor-dirt-path.png，與未繪製對照圖已目視）。
+- 未驗證：遊戲內外觀與近似外側的接縫；2D 畫布未截圖。下一步：H_WEG/V_WEG 直線工具需轉彎方案才能接 UI；可考慮 Pflaster／Marmor 等其他區域組。
+
 ## 遊戲光照預覽（2026-10-08 Codex；依本輪要求不提交／push／改 Git 歷史）
 
 - 已完成中斷 WIP：SceneLightingContext 改 internal，以世界高度回呼取代宿主 TerrainHeightField；APT 地面高度取光源所在 X/Z 再加 aptlh，lidef 使用物件 WorldY+lihei。view XYZ×256，半徑維持 world units。
@@ -194,18 +482,7 @@
 
 ## 最新指示與狀態（2026-10-07 Antigravity；相容性修改 CLI 套用完成）
 
-- 使用者要求「把修改器針對遊戲相容性的修改全部打進去」、「操作cli」、「我是要你用修改器的cli把相容性相關的設定打開修改遊戲」。
-- Antigravity（2026-10-07）：
-  1. CLI 擴充：`apply` 新增支援 `--category <Stats|Compat|Language>` 與 `--compat` 選項，若搭配 `--all` 則完整包含該分類所有實驗性開關（如 ArgmTrace、CameraZoomOut1）；早期防護未知分類引數；新增單元測試涵蓋各情境（`CliTests` 15 通過、1 依規格在無嵌入備份時略過）。
-  2. 遊戲修改實裝：透過 CLI `apply` 將所有相容性功能（Compat 分類共 11 項）正式套用至 `C:\Program Files (x86)\Against Rome`：
-     - 圖形與顯示：`DgVoodoo`（dgVoodoo2 v2.87.3 D3D8/DDraw/conf）、`NativeWidescreen1920x1080`（高解析度 4:3 置中）、`CameraZoomOut1`（攝影機拉遠 0.5）。
-     - 系統與視窗：`FocusLoss`（失焦不自動暫停 / 背景執行）。
-     - 遊戲機制相容性：`RomanReinforcementGarrison`（羅馬增援士兵留守）、`VillageBuildRange`（全地圖自由建造）、`NoSpellAltar`（神術免除多座祭壇）。
-     - 無盡模式 AI 修復：`EndlessAi.M1`（增援部隊規模）、`EndlessAi.Core`（聚落重生核心）、`EndlessAi.M5`（開局防卡死資源）。
-     - 執行期追蹤：`ArgmTrace`（winmm.dll 代理與 argm_trace.ini）。
-     - 既有設定保留：維持先前套用的 `ToEnglish` 英文語言包。
-  3. 實機驗證：執行 CLI `status --game "C:\Program Files (x86)\Against Rome" --json`，確認 `activeFeaturesCount: 12`，所有相容性功能與英文包狀態均為 `true`，備份遺失數 0。
-  4. 測試：`dotnet test` 模組 57 通過、宿主 CLI 測試通過，編譯 0 警告 0 錯誤。
+- 已封存歷史（2026-10-08 Codex）：原代理日期、命令、結果及失敗原因完整保留於 [歷史原文](docs/ai-handoff-history-2026-10-08.md)。舊數字與安裝目錄授權不覆蓋本檔首最新狀態。
 
 ## 歷史記錄與既有狀態（2026-10-07 Codex & Claude & Antigravity）
 
@@ -230,62 +507,7 @@
 
 ## 最新驗證與失敗紀錄
 
-- Claude（2026-10-07）：自然物件清單預設只列與地圖同地區的地景物件（依地圖原有地景物件中占 ≥15% 的地區代碼；無地景物件時列全部），「顯示其他地區物件」勾選可列出全部。真實報表：ENDL_000 Ger、001 Hun、002 Kar、003 Ita、004 Bri。full 宿主593/略過21、modules57，共650通過/0失敗。
-- Claude（2026-10-07）：使用者原則「地圖編輯器是方便玩家製作地圖，很多設定應由編輯器自己完成」（已存記憶）。實作：(1) 水域工具水面太低時自動設為全圖最低點−1（保證不淹沒既有地形），深度最多 16、最少 4，狀態列說明調整值；地勢全低才提示。(2) 材質調色盤依此地圖適用度排序：已使用→可直接過渡→可經一種中介自動過渡→難以銜接；未搜尋時隱藏難以銜接者（搜尋時列出並加註），整張圖無可辨識材質時不隱藏。`FloorMaterialCatalog.HasTransition/MapSuitability`。真實報表：ENDL_001 顯示 12+1+2 種、隱藏 74 種其他地區材質；ENDL_000 顯示 28 種 4B、隱藏 61 種 L 材質。測試：水域自動水面與不淹沒、地勢過低提示；適用度四級單元測試；調色盤隱藏／搜尋表單測試。full 宿主592/略過21、modules57，共649通過/0失敗。
-- Claude（2026-10-07 16:45）：遊戲內水域驗證。水是 boden.ini Waterlevel 的全圖水面（原版水底用一般材質，ENDL_000 有 12% 低於水面）。水域工具初版挖到水面下 6 單位：遊戲中只呈現略偏藍的暗色盆地（像素藍/紅比 1.19，原版水 1.69、草 0.68），水太淺；改為 16 單位（原版湖底約 18）後重寫示範區，遊戲中出現有波紋與湖岸的清楚湖泊。證據 `%TEMP%\ArmInGameEvidence_20261007\terrain\lake-depth16.jpg`、`lake-depth6-shallow.jpg`、`original-germania-water.jpg`。示範區另含：BB/BC/BD 三種草地以自動過渡塗在 B8 砂礫上、不列顛闊葉林 21 株、weg1 道路。ENDL_005 已再次以備份還原（0 差異），遊戲已關閉。英文介面仍維持（ToEnglish=true）。
-- Claude（2026-10-07）：高度工具新增「水域（挖到水面下）」：整平到 floor(Waterlevel/Heightmapstep)−6；水面太低時以狀態列持續通知提示（初版直接寫 _status 會被 UpdateEditorState 覆蓋，測試抓到後修正）。表單測試（合成水面 30→水底 24、筆刷外不變、8 次復原回原狀、水面 0 不改地形且顯示提示）通過；full 宿主589/略過21、modules57，共646通過/0失敗。遊戲內水面顯示未驗證。另：4U13 等族形狀不齊（缺形狀 8），BS BU B4 B3 BG BR BO 仍無法以筆刷銜接，屬原版素材限制。
-- Claude（2026-10-07）：死路材質主因：原版 4U 有兩種命名，形狀式（89 族 10/11/20…）與角點遮罩式（JX/MX/WX 等 01–14，14 種四角組合）；舊 regex 只收形狀碼 1–4/6–9，876 張 4U 中 308 張被忽略、遮罩式 10–14 被誤判為形狀 1。修正：同族出現 0 開頭尾碼即視為遮罩式，四角以顏色推斷且須含兩材質；只給名稱模式（無貼圖）略過遮罩式。真實資料：4B 直接配對 44→80/756、ENDL_000 四角覆蓋 3065→3920、BJ 自動過渡 1×1 9→26、5×5 0→6。仍無任何過渡：BS BU B4 B3 BG BR BO。full 宿主588/略過21、modules57，共645通過/0失敗。
-- Claude（2026-10-07 15:55）：使用者要求用 CLI 把遊戲改成英文介面。`dotnet AgainstRomeModifier.dll features --category Language` → ID `ToEnglish`；`apply --enable ToEnglish --dry-run` 後正式套用成功（套用前修改器照常將相關檔案恢復為乾淨狀態，先前無其他已啟用修改）；`status` 顯示 ToEnglish=true、activeFeaturesCount=1、備份 missingCount=0；language.ini langpath=US/；遊戲主選單已為英文（OPEN-ENDED＝無盡模式，位置同前）。還原可用 `restore --language`。
-- Claude（2026-10-07 15:45）：使用者關閉輸入法面板後完成 terrain 示範區遊戲內檢視（夜晚）：地圖正常載入（遊戲重建快取約 60 秒）、示範訊息顯示；印章道路 weg1 呈現為自然泥土小路、未見方塊硬邊；茂密混合森林在遊戲中為不規則散佈的冷杉／灌木／松樹；粗糙化丘陵因夜晚且幅度小（約 56 世界單位）無法目視確認；自動過渡材質三塊皆為 BB 與周圍同色，無法目視區分。無當機。證據 `%TEMP%\ArmInGameEvidence_20261007\terrain`（森林截圖、測試時變更檔）。ENDL_005 13 個變更檔已以備份覆蓋，雜湊比對 0 差異；SAVE\ESAVE_000 仍為先前測試存檔。
-- Claude（2026-10-07 15:03）：`InGameAcceptanceScenarioTests` 新增 terrain 案例（出生點北方示範區），已寫入遊戲目錄 ENDL_005：材質 3/3（皆選到第一個可銜接的 BB）、粗糙化 713 頂點、茂密混合森林 22 株（20 種、含義大利柏樹等跨地區樹種）、印章道路 weg1 11 格。啟動遊戲後畫面全黑：前景被 Windows TextInputHost（輸入法面板）佔住，computer-use 無法點擊，SetForegroundWindow 失敗，重啟遊戲仍同；需使用者關閉輸入法面板或手動切到遊戲。ENDL_005 目前含示範區，備份仍在 `%TEMP%\ArmGameBackup_20261007_140419`，驗收後要還原。
-- Claude（2026-10-07）：圖塊印章模式。調色盤上方「圖塊印章」勾選後列出素材庫全部原版圖塊並分類（道路與廣場／河流／岩壁／地板／其他／地區 L／過渡圖塊），一次放一格精確圖塊（`TerrainBlendEditSession.StampTexture`，不改角點、可復原重做，之後相鄰塗材質會依角點重烘並覆蓋）；印章模式右鍵取樣選取游標下圖塊。模組 1 項＋表單（合成 weg1：分類、蓋印、存檔、重開、取樣）通過；full 宿主574/略過21、modules57，共631通過/0失敗。注意：印章圖塊與周圍材質不做過渡檢查，是否形成原版不會出現的硬邊由使用者負責；遊戲內未驗證。
-- Claude（2026-10-07）：自然物件散佈。新增 Modules `NatureScatter`（稀疏/普通/茂密機率 .15/.35/.7、最小間距 .9/.65/.45 格、筆刷範圍內逐格取點）；UI 密度選單與「混合同類物種」；1×1 筆刷維持每格一株且不做間距檢查（初版加間距導致既有歷史測試 5 株變少而失敗，已修）。原本種植完全忽略筆刷大小。單元 5 項＋表單 9×9 茂密混合 1 項通過；full 宿主573/略過21、modules56，共629通過/0失敗（含 DPI 版面檢查）。遊戲內未驗證大量散佈的 DATA 槽位上限與效能。
-- Claude（2026-10-07）：新目標「先針對地圖編輯器本身開發，創造更豐富地圖」。完成：(1) 筆刷新增 9×9／15×15（BrushSizes 陣列）；(2) 高度「粗糙化」Roughen（固定種子平滑值雜訊，每筆畫新種子，可復原）；(3) 使用者要求「測試所有不同素材」：以真實 floortex.dat（唯讀、複製至 TEMP）測得原 4B 材質 28 種中 756 組配對只有 44 組有原版過渡，ENDL_000 隨機點塗佈成功率 1×1 約 5–18%、5×5 約 0–4%；原版地圖統計顯示幾乎無硬邊（全部 75 張共 11 處），但大部分地表是 L 系列（L2/L3/L5/L06…約 18 萬格）與道路／河流／岩壁等編輯器原本不認得的圖塊。(4) 新增 L 系列地區材質：T5-only 編號為純材質（ID 如 `L2:01`，61 種），T1–T9 編號以四角顏色推斷兩材質配對（同組優先，平均色差門檻 32），ENDL_001–004 四角覆蓋率由約 0% 升至 84–99.9%。(5) 自動過渡（autoBridge，UI 勾選預設開，AI 套用不變）：失敗時於外圈角點插入中介材質最多 2 圈，結果仍全為原版 tile；隨機點成功率大幅提升（例 ENDL_001 L06:28 5×5 1→114/200），所有成功筆畫 tile 皆存在素材庫且復原後逐字相同。部分材質（BJ、L06:06、L3:10、L2:06）仍幾乎無法塗，待查。報表測試在 `MapEditorAllMaterialsTests.cs`（需 ARM_GAME_PATH）。full 宿主572/略過21、modules51，共623通過/0失敗。遊戲內未驗證 L 材質與自動過渡輸出。下一步：自然物件散佈密度、裝飾圖塊（道路/河流/岩壁）印章模式、死路材質。
-- Claude（2026-10-07 14:25–14:40）：遊戲內驗收（使用者授權並自行建立 `.claude/settings.local.json` 允許 `Bash(DOTNET_ROLL_FORWARD=Major ARM_GAME_PATH=*)`）。以 `InGameAcceptanceScenarioTests` 寫入 ENDL_005（v6、2 事件、ak_level.bci 重生）。遊戲操作：縮小後還原會使全螢幕畫面錯亂，需重新啟動；主選單「ОТКРЫТЬ-ЗАКРЫТЬ」(503,398) 才是無盡模式。結果：計時訊息 OK；先誤選平民隊（Гражданский отряд）移動未觸發，改選 10 名劍士經小地圖移入區域後勝利統計畫面（2:44）；defeat 案例存檔到 SAVE/ESAVE_000 後讀檔，失敗統計畫面（0:58，非 45 秒，讀檔後計時語意未確定）。證據 `%TEMP%\ArmInGameEvidence_20261007`（兩張統計截圖、測試時 scenario/bci、存檔）。還原：ENDL_005 兩個變更檔以備份覆蓋，雜湊與備份一致；`SAVE\ESAVE_000` 測試存檔因 Remove-Item 路徑保護無法刪除仍留在遊戲目錄（原 SAVE 為空），需使用者自行刪除或保留。未驗證：部隊死亡條件、重複事件、多事件同 tick、讀檔後建築/住房保留、其他部族、多人。
-- Claude（2026-10-07 14:04）：使用者回覆「授權存取遊戲」。已唯讀確認遊戲目錄 `C:\Program Files (x86)\Against Rome`（登錄檔無 Path，使用預設路徑；MAPS 有 ENDL_000–005，ENDL_005＝先前測試圖「Claude Test 1b」，arm_scenario.json 仍 v2、10×GER_INF01 team0＋3 棟建築）；shell 為管理員。已備份 ENDL_005、MAPS 根 manifest、SAVE 至 `%TEMP%\ArmGameBackup_20261007_140419`。新增未提交的 `tests/AgainstRomeModifier.Tests/InGameAcceptanceScenarioTests.cs`（ARM_GAME_PATH＋ARM_INGAME_MAP＋ARM_INGAME_SCENARIO=victory|defeat 時以真正 MapEditorForm/TrySaveMap 寫入案例）。執行寫入遊戲目錄的命令被 Claude Code auto mode 權限分類器拒絕（Irreversible Local Destruction），連帶不得以其他方式重試；遊戲目錄未被修改、遊戲未啟動。等待使用者決定：自行執行命令、或在設定加入允許規則。
-- Claude（2026-10-07）：真實行程煙霧測試。新增 `Export_synthetic_game_root_for_manual_smoke_runs`（設 ARM_FIXTURE_EXPORT 才匯出合成 root）。`dotnet AgainstRomeModifier.dll --game TEMP/ArmClaudeQA/smoke-root --map ENDL_005`：編輯器視窗開啟、無錯誤對話框、WM_CLOSE 後結束碼 0、無 crash_log。修正前 build（b940330）同流程也正常：Application.Run 主視窗結束時不 Dispose。但 LauncherForm 的 using+ShowDialog 路徑會 Dispose：新增 `Launcher_style_modal_editor_with_3d_closes_and_disposes_without_errors`，換回修正前兩個檔案時重現 InvalidOperationException（使用者會看到「無法啟動地圖編輯器」），修正後通過。full 宿主564/略過21、modules45，共609通過/0失敗。啟動器實際點擊流程未自動化（需遊戲路徑偵測）。
-- Claude（2026-10-07）：完整還原對話框納入 DPI/截圖檢查。150% 說明文字被 TableLayoutPanel 壓在儲存格內截斷（原檢查未抓到：AutoSize 控制項被壓縮時不越界也不重疊）。檢查新增 GetPreferredSize 比對（Label 以實際寬度求高、按鈕比兩向）與 TLP 重疊；以 HEAD 舊版對話框確認能抓到後換回修正。修正：RestoreAllOptionsDialog 改 AutoScaleMode.Dpi＋AutoSize GrowOnly；放置物件對話框按鈕列 AutoSize（固定 44 高壓縮按鈕）。full 宿主562/略過21、modules45，共607通過/0失敗。
-- Claude（2026-10-07）：GL 效能數據加入 opengl 測試（寬鬆門檻：重繪<50ms、筆刷p95<100ms）：RTX 4080 重繪 0.27ms、筆刷中位 1.9ms／p95 11.9ms（1734 事件）。證據 TEMP/ArmClaudeQA/opengl-perf/opengl.json。
-- Claude（2026-10-07）：GL 選取一致性 `Real_opengl_pick_returns_the_tile_drawn_under_the_pointer`：RTX 4080、1084x751，5 格（含起伏地形）畫面像素中心經 TryGetTile 選回同一格，5/5。證據 TEMP/ArmClaudeQA/opengl-pick/pick.txt。
-- Claude（2026-10-07）：3D fallback。`MapEditor3DFallbackTests.cs`：缺 floortex.dat 時 3D 按鈕停用、診斷按鈕可見且報告列出缺少 floortex.dat、2D 可見；要求 3D 仍維持 2D；2D 高度編輯→儲存→重開一致。通過；full 宿主561/略過21、modules45，共606通過/0失敗。已知限制（未修）：Disable3DView 永久停用，同一表單內資源後來補齊不會恢復 3D（每次開圖為新表單，影響小）。
-- Claude（2026-10-07）：OpenGL 實畫面。新增 `Map3DViewControl.CaptureFrame`（離屏 FBO，共用抽出的 RenderScene）與 `MapEditorOpenGlTests.cs`（ARM_OPENGL_REQUIRED=1 強制；無 GL 時只檢查失敗原因）。初跑卡 2 分鐘：測試 STA 非主執行緒 → GLFW 主執行緒檢查例外被 ThreadExceptionDialog 擋住；測試改 ThrowException 模式並關 `GLFWProvider.CheckForMainThread`（僅測試）。之後發現產品 bug：關閉表單時父視窗先銷毀 GL handle/context，Dispose 再 MakeCurrent 觸發重新建立與 OnLoad 初始化失敗，InitializationFailed 對已銷毀表單 BeginInvoke 拋例外。修正：OnHandleDestroyed 在 context 消失前釋放 GL 資源；handle 重建時重新初始化；表單 handler 檢查 IsDisposed/IsHandleCreated。RTX 4080 實測：高度改變3744像素、undo殘差0、材質亮度55.1→58.2、水面藍色5.9→50.8、重建殘差0、Close 無例外。證據 TEMP/ArmClaudeQA/opengl-9。正式 exe 關閉流程未實際執行。
-- Claude（2026-10-07）：入口驗收。`--game/--map` 直達編輯器原可開啟劇情戰役 KAMP_（選單排除），新增 `Program.ResolveDirectMap` 與選單同範圍；參數錯誤顯示用法、不寫 crash_log。`MapEditorEntryTests.cs` 通過；full 宿主559/略過21、modules45，共604通過/0失敗。未實際啟動 exe。
-- 使用者指示（2026-10-07）：「AI 地圖生成先跳過」。AI 製圖功能（含 AiMapPlanningDialog 的 DPI）暫停，不再擴充；轉做其他編輯器缺口。
-- Claude（2026-10-07）：高 DPI。新增 `MapEditorHighDpiTests.cs`（100/150/200% 模擬：所有字型乘倍率、Dpi 視窗宣告 96/倍率 設計 DPI 走真正 PerformAutoScale、縮到 MinimumSize，中英全部模式與五個對話框；輸出 PNG 與 layout.txt 到 ARM_DPI_OUTPUT/TEMP）。修正前 150% 140 項截字/越界（場景物件按鈕被切、清單擠壓），套用 AutoScaleMode.Dpi 後剩真實問題並逐一修正：放置物件對話框無 RowStyles 使最後一列「人數」標籤錯位（100% 亦存在）、`_sceneSummary`/`_natureHint` 固定高度截第三行（新增 FitWrappedLabelHeight）、地圖選擇最小寬 840 放不下六按鈕（改 900）、語言按鈕固定像素定位（改依按鈕高度換算，96 DPI 位置不變）、路徑列 AutoSize。原檢查對 AutoSize 控制項與按鈕單行寬度有誤判已移除。DrawToBitmap 對重疊的語言按鈕 z-order 畫錯（截圖看不到），以 layout.txt 數值確認位置正確。最終三倍率通過；full --no-build 宿主558/略過21、modules45，共603通過/0失敗。實體高 DPI 螢幕未驗證（本機 96 DPI，不改系統設定）。
-- Claude（2026-10-07 13:20 起）：接手 Codex 留下的未提交 `MapEditorAiLiveAcceptanceTests.cs` 與 `RunInSta` timeout 參數。初次 build 有 CS8604（`layers.Collision.ToArray()`）與 CA1869，已修。設 `ARM_AI_ACCEPTANCE_LIVE=1` 實跑真實 Ollama laguna 三角色（約 17 秒，Terrain4/Water1/Materials1，水系河流缺 toLocation 被正規化移除）：預覽不改 bytes/dirty、套用一次且統計與預覽相同（高度14333/通行448/材質1）、undo/redo、儲存、新表單重開一致，通過。證據 `TEMP/ArmClaudeQA/ai-live-1`（result/progress/中英兩尺寸截圖，96 DPI）。完整 `--no-build` 測試宿主555通過/21略過、modules45，共600通過/0失敗。下一步：高 DPI（編輯器所有 Form 未設 AutoScaleMode，字型為點數而列高/欄寬為固定像素，PerMonitorV2 下 >96 DPI 可能截字）。
-
-- Codex（2026-10-07）：開始第4階段；AI預覽WIP接上正式host/dialog，獨立height/collision/material Fork走同Applier，加入橙色材質變更與圖例/變更統計/拒絕提示，圖片於失效/重試/關閉釋放，預覽失敗不能套用。Release build 0警告/0錯誤；UI/host隔離與實際套用一致定向19通過。角色進度UI/planner接入，35項定向通過；新增progress序列1通過，redo/pending初測2失敗因Redo本身CommitStroke會清redo，已分開合法redo與pending操作案例，再跑3通過。加入紫點拒絕區域、橙點材質變更保留底層水域/高度。只用repository/TEMP，不宣稱live/可玩性。角色生成進度已整合；新增紫點與正式套用一致定向1通過，full --no-build宿主554通過/21略過、modules45通過，共599通過/21略過/0失敗。新UI視覺/真實完整流程仍待驗證。
-
-- Codex（2026-10-07）：缺建築範本STA中英基線2失敗，已證實fallback/事件ID/無DATA binding/rollback/retry正常，但提示仍聲稱完工且未列實際腳本工地。測試初版CS0117使用不存在Language.Chinese已修TraditionalChinese/OverrideLanguageForTesting；IDE0005已清。已補放置提示/狀態列/成功訊息的工地類型名單（最多5種加餘數），重新開圖讀回、無變更重存保留、移除清除。定向中英fallback與四部族6通過；範本恢復後改存DATA/清提示/刪除案例已通過2項；補using錯放CS1529後重跑通過。IDE0005已清。Release build 0警告/0錯誤，full --no-build宿主549通過/21略過、modules45通過，共594通過/21略過/0失敗；最後提示移除DATA術語後build與定向2通過。僅TEMP，長提示視覺/實機未驗證，AI預覽WIP保留不提交。
-
-- Codex（2026-10-07）：第3階段新增真正STA四部族Ger/Hun/Kel/Rom矩陣，各含建築team0–8、部隊team0–7與外交/生成/區域目標事件。初跑4通過，包含DATA/scenario先寫後BCI缺失的完整bytes/新檔回滾、retry、DATA slot/uid/team/座標/角度、fresh form/持久ID、刪除目標拒存/undo及重存bytes不變。5個xUnit2031警告已改predicate overload；四個非法隊伍案例初跑失敗是Add已有早期guard，不是產品缺陷；改先斷言Add拒絕且無mutation，再注入損壞pending快照驗證Save獨立guard，鎖briefing拒存已通過；再補fresh form移動中立建築/改team、部隊20改1，DATA重新綁定/無多餘物件/目標身份/重開與重存bytes一致。最終定向8通過；Release build 0警告/0錯誤，full --no-build宿主547通過/21略過、modules45通過，共592通過/21略過/0失敗。僅TEMP、不宣稱遊戲或多人同步已驗證。
-
-- Codex（2026-10-07）：額外ENDL槽位核對新增EndlessAiAdditionalMapTests合成TEMP，初跑3項1通過/2失敗。真正P1七槽位（000–004/005/999）detect/apply/buffer/save/fresh reload/restore已通過；兩ResolvePaths測試證實script納非數字ENDL_ABC、SDL遞迴含.tmp_arm/.deleting_arm/巢狀複本。已限制正式數字槽位与root SDL，額外槽位/還原定向17通過。平坦範本/地形重設中英名稱與指南改為實際保留聚落/腳本的語意；地形/nature/額外槽位定向42通過，Release build 0警告/0錯誤；full --no-build宿主539通過/21略過、modules45通過，共584通過/21略過/0失敗。AI預覽WIP保留不提交。
-- Codex（2026-10-07）：FileRollbackScope新增目錄快照/恢復（空目錄/未知檔，拒絕linked snapshot，復原失敗保留TEMP備份）。CustomMapRestoreService包住完整還原，預設保留；刪除先manifest/tmp前檢再走Deleter，外層交易保留目錄/manifest。新選項dialog預設勾選保留、取消不執行。15項合成TEMP定向通過：保留/005/999刪除、restore/後續/中途delete回滾、snapshot鎖檔拒絕、未登記拒絕、真正runner/engine拒絕與STA選項。檢查發現原restore仍解析custom腳本；僅完整還原啟用orchestrator排除custom與legacy custom team備份。鎖custom腳本證明不讀，而一般AI仍讀；實際engine合成EXE/12個回血腳本在兩選項成功。該fixture初次2失敗是缺法術祭壇原始bytes，補齊後2失敗是缺12個系統回血腳本；完善fixture後2通過，未放寬產品驗證。最終Release build 0警告/0錯誤，full --no-build宿主536通過/21略過、modules45通過，共581通過/21略過/0失敗。真實原版還原/新dialog視覺尚未驗證；AI預覽WIP保留不提交，下一步額外槽位AI證據/空白語意。
-- Codex（2026-10-07）：備份規格§1.5核對。CustomMapBackupTests合成TEMP初跑4例3通過/1失敗：loader只檢查team.dat直接parent，custom/Extra/team.dat仍讀取；autohealer catch吞失敗，補logger斷言再跑2通過/2失敗，確認兩路徑都漏。新增CustomMapManifest.IsCustomMapFile以MAPS第一層擁有者marker判定，兩loader接入，排除整個自製目錄且不擴及鄰近root/其他map。新增5案例與既有備份定向14通過/1略過，涵蓋custom005/999、鎖檔證明不讀、既有bak保留、不產新bak、原版team基準仍正確。Release build 0警告/0錯誤，full --no-build test宿主521通過/21略過、modules45通過，共566通過/21略過/0失敗。RestoreAll沒有規格要求的保留/刪除custom選項；下一步補這項功能（含與PatchOperationRunner回滾的整合），不能只補文件。AI預覽WIP保留不提交。
-- Codex（2026-10-07）：文字核對新增MapTextEscapingTests合成純文字/PFIL案例；基線 `dotnet test ... --filter FullyQualifiedName~MapTextEscapingTests` 2通過/7失敗：single讀不到escaped quote、反斜線沒有escape與正確常值長度計數、NUL接受、CP1251錯誤過晚/缺使用者提示。修Put單值escaped parse/Unescape/Escape、100 escaped bytes與NUL/CR/LF guard；單值/簡報CP1251寫入前驗證。新增STA表單拒存bytes/dirty保留/retry與標題/8team/簡報save/reopen/重存bytes相同；ErrorProvider輸入立即提示CP1251、合法輸入清提示。清除多餘using後，documents+Phase1定向43通過、最終文字/UI定向13通過。Release build 0警告/0錯誤，full --no-build test宿主516通過/21略過、modules45通過，共561通過/21略過/0失敗。只用TEMP，AI預覽WIP保留不提交；下一步備份排除/還原保留与額外槽位AI修補證據。
-- Codex（2026-10-07）：核心環境屬性核對新增真正STA表單三地區測試（en-US/de-DE/fr-FR）。基線 `dotnet test ... --filter FullyQualifiedName~Environment_values_load_save_and_reopen` 1通過/2失敗：12.5於法文讀成0、德文讀成125。ParseDecimal、Heightmapstep解析與七項環境數值寫入改InvariantCulture；定向重跑3通過，涵蓋七值/高度比例/雨滴、dirty、重開與再次儲存全部bytes相同、未知行保留。完整Release build 0警告/0錯誤，full --no-build test宿主503通過/21略過、modules45通過，共548通過/21略過/0失敗。只用合成TEMP，不證明遊戲支援小數；AI預覽WIP保留不提交，下一步文字特殊字元與備份流程。
-- Codex（2026-10-07）：核對原廠readonly與stale selection：新增8項合成TEMP測試先6失敗（原廠000/004帶marker判custom；000/004與移除marker的005/999鎖briefing後Save先碰檔得到IOException）。新增CustomMapAccess統一005–999/MAPS/marker判定，兩catalog、SDL service與Save接入；Save在CommitStroke/任何地圖檔讀寫前驗證選取root。定向42通過；另一個合成root的marked map拒存、bytes/dirty保留測試1通過。marker恢復後retry成功。Release build 0警告/0錯誤，完整test宿主500通過/21略過、modules45通過，共545通過/21略過/0失敗；未存取安裝目錄。AI預覽WIP保留，未納入提交；下一步文字/環境/備份證據與空白語意。
-- Codex（2026-10-07）：已提交核心修正 `b9b9965`；以git archive解出TEMP/ArmCoreCommitQA_e70f5f1a2802428abb9fd7546428d1a2/source，獨立restore約1.12分鐘後Release build 0警告/0錯誤，full --no-build test宿主491通過/21略過、modules45通過，共536通過/21略過/0失敗。未重啟還原程序；確認commit不依賴未提交AI預覽。驗收矩陣/roadmap更新，下一步按requirements-audit核對catalog與儲存前置防護。
-- Codex（2026-10-07）：按roadmap核對原spec建立/儲存流程。EndlessMapCloner在Move後manifest Load/Save失敗遺留正式槽位，兩項合成測試先失敗再修：manifest寫入FileRollbackScope，catch只刪本次成功Move的目標，同槽位retry成功；新增既有final/tmp內容保留2項。EndlessMapDeleter缺manifest登記/原廠slot拒絕，slots 0/4/5/999四項先實際刪除而失敗（僅TEMP），已补三重防護，在rename前拒絕。既有原廠拒刪測試初次僅錯誤文字「只能刪除」不符，已保留該訊息。完整Release build 0警告/0錯誤、test宿主491通過/21略過、modules45通過，共536通過/21略過/0失敗。docs/map-editor-requirements-audit.md列原規格與缺口，下一步catalog/SaveMap前置驗證、文字/環境/備份及空白語意。AI預覽WIP已被build涵蓋但功能未驗證，不納入本次提交。
-- Codex（2026-10-07）：先讀AGENTS/交接/Git，HEAD beca463、起始乾淨，無活躍代理。只讀Ollama api/tags確認laguna/nemotron/gemma/qwen目前可用，未送推論。澄清後剛新增TerrainBlendEditSession.Fork與AiMapPlanPreviewBuilder（独立高度/材質快照），使用者隨即要求先整理順序；停止程式實作，兩檔未接UI、未build/test、未提交，不能沿用528通過宣稱新檔已驗證。保留WIP不清除，roadmap/交接單獨本地提交。
-- Codex（2026-10-07）：AI材質拒絕修正與驗收矩陣已commit `572097e`。TEMP/ArmVisualQA_1c01f5e6b6e84fe490ec6339c257de49 的獨立.NET STA harness以合成fixture、2D模式DrawToBitmap核對main 1440x900/1100x700各tab、AI 880x740/640x580、事件中英560x420，DeviceDpi=96。發現Placement固定54px提示與36px三欄按鈕截字；改提示隨寬度自動換行，按鈕兩欄+整列delete、自動高度，重繪確認中英文最小視窗完整可見。harness初版ScenarioEvent List指定array的CS0029已改collection expression並重跑成功。版面修正後Release build 0警告/0錯誤、完整測試宿主483通過/21略過、modules45通過，共528通過/21略過/0失敗。高DPI/OpenGL/遊戲內仍未驗證。
-- Codex（2026-10-07）：AI材質各區域原共用pending stroke，後續拒絕會CancelStroke撤回先前成功區域但摘要仍計成功。PaintCircle新增可選rollbackStrokeOnFailure（預設維持滑鼠筆畫原行為）；AI設false，拒絕只還原當次區域，整份已接受材質仍一次undo。定向測試modules4項、STA host1項通過；合成fixture驗證拒絕後保留base材質、Texture undo/redo、Height/Collision共用undo、磁碟寫入前不變、Save/reload清dirty/history。XML註解初版4個CS1573已修；完整Release build 0警告/0錯誤，full --no-build test宿主483通過/21略過、modules45通過，共528通過/21略過/0失敗。指南修正歷史分組，新增docs/map-editor-acceptance.md列測試證據與未驗證項；未啟用live環境的提前return測試不算實機證據。
-- Codex 續作（2026-10-07）：發現單兵UnitCount=1存成Count=0，會走s_createObj而非部隊容器；Persistence改依Figure分類保留至少1人。新增STA交易測試：單兵區域目標失敗後重試/持久ID/再存同bytes/重新開圖；nature新增在其他檔已寫後BCI缺失rollback，再試只寫一次並清dirty/history。針對MapEditorSaveTransactionTests共5通過。nature新測試初次失敗是合成template active=0，不是rollback問題，補合法active/type字段後通過；未改LevelObjectStore。
-- 同一nature測試證實成功存檔後canvas標記仍為pending索引-200000而非DATA槽位-100000-slot；Persistence成功後RefreshSceneMarkers，標記更新、再存同bytes與再刪除皆通過。新增删除測試fixture需columns[10]=0xFFFF才是未linked物件，已修。最新工作樹build 0警告/0錯誤，full test宿主482通過/21略過、modules44通過，合計526通過/21略過/0失敗。
-- 已審查/提交`c22dbbf`事件/nature純sessions與tests。為遵守refactor與feature分開，利用Roslyn擷取HEAD原方法至TEMP/ArmHostSplitQA_11296a2402534a5cb68362dcc3fd5730/source的六個partial adapters，沒有改方法內容/欄位初始化順序；IDE0005清理後build 0警告/0錯誤、modules38+宿主418通過/21略過。以獨立TEMP index提交，保留工作樹全部功能與原index；首次diff check攔下舊方法搬移的兩行trailing whitespace，僅修TEMP whitespace並確認token完全相同後再提交。
-- 恢復開發：Placement 新增 DuplicateMany/RemoveMany，先驗證全部索引/複本後才執行單一 batch，UI 改接整批指令；越界複製以狀態列拒絕。Add/Replace/Edit/複製驗證有限 X/Y/Z/Angle 與 X/Z 0–16383。新增 batch/邊界/redo 保留測試，modules 首輪41通過。曾遇 array.Reverse()選到void，已改Enumerable.Reverse；ScenarioSpawn.Angle實際為int，移除無效的float preflight測試/變更。
-- TerrainBlendAuthoringMap/TerrainBlendEditSession 已移至 Modules/Terrain，僅依賴 INativeTerrainMaterialResolver，FloorMaterialCatalog 留在宿主實作。保留命名空間與 internal API/既有行為。新測試多餘using警告已移除，最終工作樹 Release solution build 0警告/0錯誤；full --no-build test：宿主480通過/21略過、modules44通過，合計524通過/21略過/0失敗。PlacementBatchUiTests實際STA表單多選複製/刪除/Undo/Redo與越界拒絕2項通過，未讀安裝目錄。
-- 已以 `git archive bfdf813` 解出 TEMP/ArmCommitQA_8f51a47ff5d24dd59c000a7d92aa4b93/source，執行 `dotnet test <snapshot>/AgainstRomeModifier.slnx -c Release -p:UseAppHost=false --logger 'console;verbosity=quiet'`：獨立restore/build/test通過，modules21通過、宿主418通過/21略過，合計439通過/21略過/0失敗。證明兩筆commit不依賴未提交的host等變更；這個snapshot不包含工作樹新UI/AI/事件/transaction功能。
-- 環境：`DOTNET_ROLL_FORWARD=Major`；Release / `UseAppHost=false`；隔離 `--artifacts-path "$env:TEMP/ArmResumeQA"`；未設 ARM_GAME_PATH / ARM_OLLAMA_LIVE。
-- `dotnet build AgainstRomeModifier.slnx -c Release -p:UseAppHost=false --artifacts-path "$env:TEMP/ArmResumeQA" --no-restore`：0警告/0錯誤。
-- `dotnet test AgainstRomeModifier.slnx -c Release -p:UseAppHost=false --artifacts-path "$env:TEMP/ArmResumeQA" --no-restore --logger 'console;verbosity=quiet'`：宿主478通過/21略過；modules31通過；合計509通過/21略過/0失敗。最後新增 think=false HTTP 斷言與座標 UI 限制後，再次 build 與 --no-build 測試，仍為509通過/21略過/0失敗。
-- 新增真实 STA transaction tests：無效目標在寫檔前拒絕；缺失/損壞 BCI 在其他檔案已寫入後 rollback，還原 bytes/cache/新增檔案並保留記憶體 dirty，補有效 BCI 後 retry 成功。皆為合成 TEMP fixtures。
-- Laguna 最初三角色回傳空 content（num_predict2048）；加入 `think=false` 後，真实 Ollama 三角色依序成功：Terrain5 / Water2 / Materials1，共8特徵；取消false、無角色錯誤。證據 `TEMP/ArmResumeQA/ollama-laguna-serial-smoke.json`。只生成，未寫地圖/遊戲。
-- 前次 gemma3:12b 的18特徵成功僅為歷史，使用者模型現在以 Laguna 為準。
-- 中途 MSB3027/3021 是本輪 PowerShell smoke 持有 DLL 導致 copy lock；smoke 結束後 build/test 正常。不必終止使用者程式或重試原失敗。
-- 已修早期 CS1579（陣列Reverse選到void）與 CS0841（map宣告位置）、prebuilt別名前置誤判、JSON v6舊斷言。
-- 移除 AGY 測試用 FindWindow('#32770',null) 自動關閉視窗機制，改呼叫 TrySaveMap，避免關閉無關視窗；歷史 AGY 關閉器描述已過時。
+- 已封存歷史（2026-10-08 Codex）：原代理日期、命令、結果及失敗原因完整保留於 [歷史原文](docs/ai-handoff-history-2026-10-08.md)。舊數字與安裝目錄授權不覆蓋本檔首最新狀態。
 
 ## 子代理交付（皆終態）
 

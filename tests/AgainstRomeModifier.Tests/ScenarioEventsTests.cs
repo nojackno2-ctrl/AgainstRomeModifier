@@ -261,6 +261,27 @@ public sealed class ScenarioEventsTests : IDisposable
     }
 
     [Fact]
+    public void Idle_level_has_no_source_calls_and_runs_editor_spawns_and_events_without_stack_growth()
+    {
+        BciImage image = BciImage.Parse(BciImage.CreateIdleLevel().Serialize());
+        Assert.Empty(image.ConstOffsets); Assert.Empty(image.Variables); Assert.Empty(image.Symbols);
+        Assert.Equal(24, image.MainAddress); Assert.Equal(0, image.DtorAddress);
+        var idle = new TestVm(image);
+        for (int tick = 0; tick < 100; tick++) idle.Tick(tick * 100);
+        Assert.Empty(idle.Creations); Assert.Empty(idle.Messages); Assert.Equal(1, idle.StackDepth);
+        Assert.All(idle.Waits, wait => Assert.Equal(10, wait));
+        int main = image.MainAddress;
+        LevelScriptInjector.Inject(image, [new("GER_INF01", 4000, 5000, 0, Count: 3) { Id = Guid.NewGuid() }]);
+        ScenarioEventCompiler.Inject(image, [Event()], main);
+        var vm = new TestVm(BciImage.Parse(image.Serialize()));
+        vm.Tick(0); vm.Tick(2000);
+        for (int tick = 3; tick < 100; tick++) vm.Tick(tick * 1000);
+        Assert.Equal((0, 4000, 5000, "GER_INF01", 3), Assert.Single(vm.Spawns));
+        Assert.Equal("Привет!", Assert.Single(vm.Messages)); Assert.Equal(1, vm.StackDepth);
+        Assert.All(vm.Waits, wait => Assert.Equal(10, wait)); Assert.Equal(0, vm.OriginalTicks);
+    }
+
+    [Fact]
     public void Computed_wait_is_replayed_after_restoring_original_local_frame()
     {
         // The original endless loop computes its delay in a local before waiting.

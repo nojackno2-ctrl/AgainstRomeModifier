@@ -328,7 +328,137 @@ public sealed class LevelObjectStoreTests
         Assert.Empty(second.DataSlots);
     }
 
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    public void Existing_completed_building_uses_owned_template_only_for_matching_uid_and_alias(bool staleUid, bool changedAlias)
+    {
+        using var level = new LevelFixture(pfil: false);
+        var store = level.Load();
+        var template = Assert.Single(store.Templates());
+        var first = new AgainstRomeModifier.Scripting.ScenarioDocument
+        { Spawns = [new("HOUSE", 10, 20, 0, Prebuilt: true)] };
+        AgainstRomeModifier.Scripting.ScenarioLevelObjects.Apply(store, new(), first, _ => template);
+        var binding = Assert.Single(first.DataSlots);
+        if (staleUid) first.DataSlots[0] = binding with { Uid = binding.Uid + 1 };
+        var next = new AgainstRomeModifier.Scripting.ScenarioDocument
+        { Spawns = [first.Spawns[0] with { Alias = changedAlias ? "OTHER" : "HOUSE", X = 600, Team = 3, Angle = 90 }] };
+        var skipped = AgainstRomeModifier.Scripting.ScenarioLevelObjects.Apply(store, first, next, _ => null);
+        if (staleUid || changedAlias)
+        {
+            Assert.Single(skipped); Assert.Empty(next.DataSlots);
+            if (staleUid) Assert.Equal(binding.Uid, store.UidAt(binding.Slot));
+        }
+        else
+        {
+            Assert.Empty(skipped);
+            var saved = Assert.Single(next.DataSlots);
+            var building = Assert.Single(store.Objects(), item => item.Slot == saved.Slot);
+            Assert.Equal((600f, 3), (building.X, building.Team));
+            Assert.Equal(MathF.PI / 2, building.Rotation, 5);
+            Assert.Equal(first.Spawns[0].Id, saved.SpawnId);
+        }
+    }
+
+    [Fact]
+    public void Owned_template_rejects_linked_invalid_position_and_unowned_slots()
+    {
+        using var level = new LevelFixture(pfil: false);
+        var store = level.Load();
+        Assert.Null(store.OwnedTemplate(-1, 1));
+        Assert.Null(store.OwnedTemplate(0, 0));
+        foreach (int slot in new[] { 3, 4, 5, 6 })
+            Assert.Null(store.OwnedTemplate(slot, store.UidAt(slot)!.Value));
+    }
+
     private static int Record(int slot) => 16 + slot * LevelObjectStore.RecordSize;
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Blank_initialization_clears_linked_objects_orphan_positions_and_runtime_then_is_idempotent(bool pfil)
+    {
+        using var level = new LevelFixture(pfil);
+        string stage = BlankStage(level, pfil);
+        Assert.Contains(LevelObjectStore.Load(stage).Objects(), obj => obj.Linked);
+        // 聚落 SDL 範本必須原樣保留：清成沒有 object 區段會讓遊戲載入時卡死（2026-10-08 遊戲內實測）。
+        string sdlPath = Path.Combine(stage, "Endlos_Ger_Siedlung1.sdl");
+        File.WriteAllText(sdlPath, "[settlement]\r\nname=Endlos_Ger_Siedlung1\r\nrefpos 1,2,3\r\n\r\n[object0]\r\nobjdef = BauGerHau00_Haupthaus\r\n");
+        byte[] sdlBefore = File.ReadAllBytes(sdlPath);
+        BlankMapContent.ResetStagingDirectory(stage);
+        Assert.Equal(sdlBefore, File.ReadAllBytes(sdlPath));
+        Assert.Empty(LevelObjectStore.Load(stage).Objects());
+        byte[] positions = GameLZSS.DecompressPfil(File.ReadAllBytes(Path.Combine(stage, "DATA", "position.dat")));
+        Assert.True(positions.AsSpan(8).IndexOfAnyExcept((byte)0) < 0); // also clears the invalid entry containing -999 and orphan 13
+        var before = StageFiles(stage); BlankMapContent.ResetStagingDirectory(stage); Assert.Equal(before, StageFiles(stage));
+        Assert.Contains(level.Load().Objects(), obj => obj.Linked);
+        Assert.Throws<InvalidOperationException>(() => BlankMapContent.ResetStagingDirectory(level.Map));
+    }
+
+    [Theory]
+    [InlineData(false, "version")]
+    [InlineData(true, "version")]
+    [InlineData(false, "full")]
+    [InlineData(true, "full")]
+    [InlineData(false, "missing-script")]
+    [InlineData(true, "missing-script")]
+    [InlineData(false, "full-light")]
+    [InlineData(true, "full-light")]
+    public void Blank_rejects_unknown_or_full_runtime_pools_and_rolls_back_failure_after_writes(bool pfil, string fault)
+    {
+        using var level = new LevelFixture(pfil);
+        string stage = BlankStage(level, pfil), animation = Path.Combine(stage, "DATA", "anim.dat");
+        byte[] raw = File.ReadAllBytes(animation), data = GameLZSS.DecompressPfil(raw);
+        if (fault == "version") { U32(data, 0, 2); File.WriteAllBytes(animation, pfil ? GameLZSS.CompressPfil(data, raw[..64]) : data); }
+        else if (fault == "full")
+        {
+            for (int slot = 0; slot < 8; slot++) data[8 + slot * 21] = 1;
+            File.WriteAllBytes(animation, pfil ? GameLZSS.CompressPfil(data, raw[..64]) : data);
+        }
+        else if (fault == "full-light")
+        {
+            string light = Path.Combine(stage, "DATA", "light.dat"); byte[] lighting = File.ReadAllBytes(light), values = GameLZSS.DecompressPfil(lighting);
+            // A nonzero high byte is active too; checking only the low byte would pick an occupied template.
+            for (int slot = 0; slot < 8; slot++) U32(values, 8 + slot * 4, 256);
+            File.WriteAllBytes(light, pfil ? GameLZSS.CompressPfil(values, lighting[..64]) : values);
+        }
+        else File.Delete(Path.Combine(stage, "SCRIPT", "ak_level.bci"));
+        var before = StageFiles(stage);
+        if (fault == "missing-script") Assert.Throws<FileNotFoundException>(() => BlankMapContent.ResetStagingDirectory(stage));
+        else Assert.Throws<InvalidDataException>(() => BlankMapContent.ResetStagingDirectory(stage));
+        Assert.Equal(before, StageFiles(stage)); Assert.NotEmpty(LevelObjectStore.Load(stage).Objects());
+    }
+
+    private static SortedDictionary<string, byte[]> StageFiles(string stage) => new(Directory.GetFiles(stage, "*", SearchOption.AllDirectories)
+        .ToDictionary(path => Path.GetRelativePath(stage, path), File.ReadAllBytes), StringComparer.Ordinal);
+
+    private static string BlankStage(LevelFixture level, bool pfil)
+    {
+        string stage = Path.Combine(level.Map, "MAPS", "ENDL_005.tmp_arm");
+        Directory.CreateDirectory(Path.Combine(stage, "DATA")); Directory.CreateDirectory(Path.Combine(stage, "SCRIPT"));
+        foreach (string file in LevelFixture.Files) File.Copy(Path.Combine(level.Map, "DATA", file), Path.Combine(stage, "DATA", file));
+        foreach (var (name, header, record, columns, extra, stateWidth) in new[] {
+            ("anim.dat", 8, 21, new[] { 2, 2 }, Array.Empty<int>(), 1), ("gfxtype.dat", 8, 15, new[] { 2 }, Array.Empty<int>(), 1),
+            ("action.dat", 12, 25, Array.Empty<int>(), new[] { 6 }, 1), ("hirarchy.dat", 12, 103, new[] { 2 }, new[] { 50 }, 1),
+            ("formatio.dat", 8, 15, new[] { 4, 2, 4 }, Array.Empty<int>(), 1), ("lager.dat", 16, 43, new[] { 2 }, new[] { 6, 10 }, 1),
+            ("biglager.dat", 12, 1601, Array.Empty<int>(), new[] { 800 }, 1), ("light.dat", 8, 4, Enumerable.Repeat(4, 13).ToArray(), Array.Empty<int>(), 4),
+            ("particle.dat", 12, 2252, new[] { 4, 4, 4, 4 }, new[] { 64 }, 2), ("explos.dat", 8, 46, new[] { 4, 4 }, Array.Empty<int>(), 2),
+            ("hitex.dat", 8, 28, new[] { 4, 4, 4 }, Array.Empty<int>(), 2), ("flash.dat", 12, 201, new[] { 32 }, new[] { 16 }, 1) })
+        {
+            var data = Enumerable.Repeat((byte)0xFF, header + 8 * (record + columns.Sum())).ToArray();
+            U32(data, 0, 1); U32(data, 4, 8);
+            for (int index = 0; index < extra.Length; index++) U32(data, 8 + index * 4, (uint)extra[index]);
+            for (int slot = 0; slot < 8; slot++) data[header + slot * record] = slot == 7 ? (byte)0 : (byte)1;
+            data.AsSpan(header + 7 * record, stateWidth).Clear();
+            byte[] h = new byte[64]; "PFIL"u8.CopyTo(h);
+            File.WriteAllBytes(Path.Combine(stage, "DATA", name), pfil ? GameLZSS.CompressPfil(data, h) : data);
+        }
+        var ways = new byte[12 + 2 * 1030]; U32(ways, 0, 1); U32(ways, 4, 2); U32(ways, 8, 256); ways[12] = 3;
+        File.WriteAllBytes(Path.Combine(stage, "DATA", "way.dat"), ways);
+        File.WriteAllBytes(Path.Combine(stage, "SCRIPT", "ak_level.bci"), AgainstRomeModifier.Scripting.BciImage.CreateIdleLevel().Serialize());
+        return stage;
+    }
     private static int Position(int index) => 8 + index * LevelObjectStore.PositionSize;
     private static int Column(int column, int slot) => 16 + LevelFixture.Count * LevelObjectStore.RecordSize
         + LevelFixture.Count * LevelObjectStore.ColumnWidths.Take(column).Sum() + slot * LevelObjectStore.ColumnWidths[column];

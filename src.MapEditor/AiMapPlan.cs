@@ -10,6 +10,7 @@ namespace AgainstRomeMapEditor;
 /// </summary>
 internal sealed class AiMapPlan
 {
+    [JsonIgnore] internal AiMapEditScope? EditScope { get; set; }
     [JsonPropertyName("summary")] public string? Summary { get; set; }
     /// <summary>若有值，先把整張地圖的地面整平到此高度，再疊加各特徵。</summary>
     [JsonPropertyName("baseHeight")] public int? BaseHeight { get; set; }
@@ -156,7 +157,8 @@ internal static class AiMapPlanApplier
         foreach (AiMapFeature feature in plan.Features)
             ApplyHeightFeature(feature, field, heights.VertexSize, step, waterLevelSample);
 
-        int heightChanges = heights.TransformHeights((x, y, _) => field[y * heights.VertexSize + x]).Count;
+        int heightChanges = heights.TransformHeights((x, y, before) => plan.EditScope is null || plan.EditScope.AllowsVertex(x / step, y / step, dimension)
+            ? field[y * heights.VertexSize + x] : before).Count;
 
         int strokes = 0, rejected = 0;
         if (plan.BaseMaterial is not null)
@@ -178,14 +180,15 @@ internal static class AiMapPlanApplier
         }
 
         int collision = 0;
-        if (heights.HasCollision)
+        if (heights.HasCollision && (plan.EditScope?.EditPassability ?? true))
         {
             float collisionStep = heights.CollisionSize / (float)dimension;
             foreach (AiMapFeature feature in plan.Features.Where(item => item.Type is "blocked" or "passable"))
             {
                 var operation = feature.Type == "blocked" ? TerrainCollisionOperation.Block : TerrainCollisionOperation.Clear;
                 foreach ((float x, float y) in SegmentPoints(feature))
-                    collision += heights.PaintCollision((x + .5f) * collisionStep, (y + .5f) * collisionStep, feature.Radius * collisionStep, operation).Count;
+                    collision += heights.PaintCollision((x + .5f) * collisionStep, (y + .5f) * collisionStep, feature.Radius * collisionStep, operation,
+                        (px, py) => plan.EditScope is null || plan.EditScope.AllowsTile((int)((px + .5f) / collisionStep), (int)((py + .5f) / collisionStep))).Count;
             }
         }
         return new AiMapApplyResult(heightChanges, strokes, rejected, collision);

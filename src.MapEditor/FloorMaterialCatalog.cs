@@ -29,6 +29,11 @@ internal sealed class FloorMaterialCatalog : INativeTerrainMaterialResolver
     // 同一族只要出現 0 開頭的尾碼就屬於此命名，整族不能用九宮格形狀解析（否則 10–14 會被誤判為形狀 1）。
     private static readonly Regex MaskTransitionName = new("^4U(?<first>[0-9A-Z])(?<second>[0-9A-Z])__(?<mask>0[1-9]|1[0-4])$", RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
     private static readonly Regex ThreeMaterialTransitionName = new("^4T(?<first>[0-9A-Z])(?<second>[0-9A-Z])(?<third>[0-9A-Z])_(?<shape>[2468])(?<variant>[0-9A-Z])$", RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+    // 原版土路（原版地圖最常用的道路，約 4266 格）：PFAD1–3 是純路面；PFAD<九宮格><A|B><變體> 與 PFAD_Erde… 是路面區域的邊界。
+    // 九宮格是該圖塊在路面區域外圈的位置（與 4U 相同）：A 的路面角點＝TwoMaterialCorners(路面, 外側, n)，B（內角）為其反相；外側材質由貼圖顏色決定。
+    private static readonly Regex PathBaseName = new("^PFAD[1-9]$", RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+    private static readonly Regex PathTransitionName = new("^PFAD(?<erde>_Erde)?(?<shape>[1-46-9])(?<kind>[AB])(?<variant>[0-9])$", RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+    internal const string PathMaterialId = "PFAD";
     private static readonly IReadOnlyDictionary<string, (string Category, string Name, int Order)> PlayerNames =
         new Dictionary<string, (string, string, int)>(StringComparer.OrdinalIgnoreCase)
         {
@@ -92,6 +97,8 @@ internal sealed class FloorMaterialCatalog : INativeTerrainMaterialResolver
                 return new FloorMaterial(RegionalMaterialId(group.Key.Set, group.Key.Index), "地區地表 L" + group.Key.Set, $"L{group.Key.Set} 地表 {group.Key.Index}", variants[0], variants);
             });
         Materials = Materials.Concat(regionalBases).ToArray();
+        string[] pathBases = names.Where(name => PathBaseName.IsMatch(name)).OrderBy(name => name, StringComparer.OrdinalIgnoreCase).ToArray();
+        if (pathBases.Length > 0) Materials = Materials.Append(new FloorMaterial(PathMaterialId, "道路", "土路", pathBases[0], pathBases)).ToArray();
         _byId = Materials.ToDictionary(material => material.Id, StringComparer.OrdinalIgnoreCase);
         var maskFamilies = names
             .Select(name => MaskTransitionName.Match(name))
@@ -162,9 +169,11 @@ internal sealed class FloorMaterialCatalog : INativeTerrainMaterialResolver
         {
             RegisterMaskTransitions(names, maskFamilies, textureResolver);
             RegisterRegionalTransitions(regionalTiles, textureResolver);
+            if (pathBases.Length > 0) RegisterPathTransitions(names, textureResolver);
         }
-        _nativeTexturesByCorners = _nativeCornersByTexture
-            .GroupBy(item => CornerKey(item.Value), item => item.Key, StringComparer.OrdinalIgnoreCase)
+        _nativeTexturesByCorners = _nativeCornersByTexture.Where(item => !_byTexture.TryGetValue(item.Key, out FloorMaterial? owner) || owner.Id != PathMaterialId)
+            .Select(item => (Texture: item.Key, Corners: item.Value)).Concat(_pathResolutionCorners)
+            .GroupBy(item => CornerKey(item.Corners), item => item.Texture, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(group => group.Key, group => (IReadOnlyList<string>)group.OrderBy(value => value, StringComparer.OrdinalIgnoreCase).ToArray(), StringComparer.OrdinalIgnoreCase);
     }
 
@@ -399,6 +408,83 @@ internal sealed class FloorMaterialCatalog : INativeTerrainMaterialResolver
                 _nativeCornersByTexture[name] = assigned;
                 _byTexture[name] = _byId[assigned[0]];
             }
+        }
+    }
+
+    /// <summary>土路邊界組的外側材質推斷（供診斷與測試）：鍵為 A1／A2／Erde2 等組名，值為外側材質與外側角落平均色差；未採用者材質為 null。</summary>
+    internal IReadOnlyDictionary<string, (string? Outer, double Distance)> PathTransitionFits => _pathTransitionFits;
+    private readonly Dictionary<string, (string? Outer, double Distance)> _pathTransitionFits = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>土路邊界組可近似銜接的其他外側材質（不含主要外側）；鍵同 <see cref="PathTransitionFits"/>。</summary>
+    internal IReadOnlyDictionary<string, IReadOnlyList<(string Outer, double Distance)>> PathApproximateOuters => _pathApproximateOuters;
+    private readonly Dictionary<string, IReadOnlyList<(string Outer, double Distance)>> _pathApproximateOuters = new(StringComparer.OrdinalIgnoreCase);
+    // 土路邊界供繪製解析的四角組合（主要＋近似外側）；匯入既有地圖（TryResolveNativeCorners）仍以主要外側判讀。
+    private readonly List<(string Texture, string[] Corners)> _pathResolutionCorners = [];
+    // 同一外側材質只採用色差最小的邊界組（及差距在此容差內的組），避免草地邊界與土地邊界在同一條路上混用。
+    private const double PathGroupTolerance = 2;
+    /// <summary>
+    /// 土路外側與其他材質的近似門檻：原版 PFAD 只為一種草地（L2）繪製邊界，其他顏色相近的草地／土地也允許使用同一組邊界，
+    /// 讓沒有 L2 的地圖（如 4B 系列的無盡模式地圖）也能畫土路；交界會有輕微色差，因此門檻比主要配對更嚴。
+    /// </summary>
+    internal const double PathApproximateMaxCornerDistance = 16;
+
+    /// <summary>
+    /// 登記 PFAD 土路邊界：四角的路面／外側位置由九宮格名稱決定，外側材質取外側角落色差最小的已知材質；
+    /// 路面角落或外側角落的平均色差超過門檻時整組不採用，以免和地圖上的材質錯配。
+    /// </summary>
+    private void RegisterPathTransitions(IEnumerable<string> names, Func<string, Bitmap?> textureResolver)
+    {
+        if (MeanTextureColor(textureResolver, _byId[PathMaterialId].RepresentativeTexture) is not { } pathColor) return;
+        var outerColors = Materials.Where(material => material.Id != PathMaterialId)
+            .Select(material => (material.Id, Color: MeanTextureColor(textureResolver, material.RepresentativeTexture)))
+            .Where(item => item.Color is not null).Select(item => (item.Id, Color: item.Color!.Value)).ToArray();
+        var groups = names
+            .Select(name => (Name: name, Match: PathTransitionName.Match(name)))
+            .Where(item => item.Match.Success)
+            .Select(item => (item.Name, Shape: int.Parse(item.Match.Groups["shape"].Value), Inner: item.Match.Groups["kind"].Value.Equals("B", StringComparison.OrdinalIgnoreCase),
+                Group: (item.Match.Groups["erde"].Success ? "Erde" : "") + item.Match.Groups["variant"].Value, Corners: CornerColors(textureResolver, item.Name)))
+            .Where(item => item.Corners is not null)
+            .GroupBy(item => item.Group, StringComparer.OrdinalIgnoreCase);
+        var accepted = new List<(string Group, (string Name, string[] Pattern)[] Tiles, (string Outer, double Average)[] Fits)>();
+        foreach (var group in groups)
+        {
+            // 以路面＝P、外側＝O 的名稱角點判定每個角落該比對哪一種顏色。
+            var tiles = group.Select(tile => (tile.Name, tile.Corners, Pattern: tile.Inner
+                ? TwoMaterialCorners("O", "P", tile.Shape)! : TwoMaterialCorners("P", "O", tile.Shape)!)).ToArray();
+            double pathTotal = 0; int pathCount = 0;
+            foreach (var tile in tiles)
+            for (int corner = 0; corner < 4; corner++)
+                if (tile.Pattern[corner] == "P") { pathTotal += Math.Sqrt(ColorDistanceSquared(tile.Corners![corner], pathColor)); pathCount++; }
+            var fits = outerColors.Select(candidate =>
+            {
+                double total = 0; int count = 0;
+                foreach (var tile in tiles)
+                for (int corner = 0; corner < 4; corner++)
+                    if (tile.Pattern[corner] == "O") { total += Math.Sqrt(ColorDistanceSquared(tile.Corners![corner], candidate.Color)); count++; }
+                return (Outer: candidate.Id, Average: count > 0 ? total / count : double.MaxValue);
+            }).OrderBy(fit => fit.Average).ToArray();
+            (string? Outer, double Average) best = fits.Length > 0 ? fits[0] : (null, double.MaxValue);
+            bool usable = best.Outer is not null && best.Average <= RegionalTransitionMaxCornerDistance
+                && pathCount > 0 && pathTotal / pathCount <= RegionalTransitionMaxCornerDistance;
+            _pathTransitionFits[group.Key] = (usable ? best.Outer : null, best.Average);
+            if (!usable) continue;
+            // 第一個是主要外側（必採用），其餘為門檻內的近似外側。
+            var outers = fits.Take(1).Concat(fits.Skip(1).Where(fit => fit.Average <= PathApproximateMaxCornerDistance)).ToArray();
+            accepted.Add((group.Key, tiles.Select(tile => (tile.Name, tile.Pattern)).ToArray(), outers));
+            foreach (var tile in tiles)
+            {
+                _nativeCornersByTexture[tile.Name] = tile.Pattern.Select(value => value == "P" ? PathMaterialId : best.Outer!).ToArray();
+                _byTexture[tile.Name] = _byId[PathMaterialId];
+            }
+        }
+        var bestByOuter = accepted.SelectMany(group => group.Fits).GroupBy(fit => fit.Outer, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(fits => fits.Key, fits => fits.Min(fit => fit.Average), StringComparer.OrdinalIgnoreCase);
+        foreach (var group in accepted)
+        {
+            var outers = group.Fits.Where(fit => fit.Average <= bestByOuter[fit.Outer] + PathGroupTolerance).ToArray();
+            _pathApproximateOuters[group.Group] = outers.Where(fit => fit.Outer != group.Fits[0].Outer).ToArray();
+            foreach (var tile in group.Tiles)
+            foreach (var fit in outers)
+                _pathResolutionCorners.Add((tile.Name, tile.Pattern.Select(value => value == "P" ? PathMaterialId : fit.Outer).ToArray()));
         }
     }
 

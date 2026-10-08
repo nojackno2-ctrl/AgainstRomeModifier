@@ -155,6 +155,7 @@ internal sealed partial class MapEditorForm
 
     private void LoadLevelObjects(string map)
     {
+        _layoutNativeTemplates = null;
         _natureSession.Clear();
         _natureStoreAvailable = false;
         _levelObjects = Array.Empty<LevelWorldObject>();

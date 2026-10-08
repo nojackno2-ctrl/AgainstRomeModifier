@@ -1,4 +1,5 @@
 using AgainstRomeMapEditor.Modules.Persistence;
+using AgainstRomeMapEditor.Modules.Packaging;
 using AgainstRomeModifier;
 using AgainstRomeMapEditor.Modules.Nature;
 using AgainstRomeModifier.Maps;
@@ -25,7 +26,7 @@ internal sealed partial class MapEditorForm
         try
         {
             string map = CustomMapAccess.RequireEditableDirectory(_selected.DirectoryPath, _gamePath);
-            CommitStroke();
+            CommitStroke(); ApplyEventGraph();
             bool natureChanged = NatureDirty();
             bool placedChanged = PlacedDirty();
             bool eventsChanged = EventsDirty();
@@ -38,7 +39,12 @@ internal sealed partial class MapEditorForm
                     item.Type.Category == SdlObjectCategory.Figure ? Math.Max(1, item.UnitCount) : 0, (int)MathF.Round(item.Angle), item.WorldY,
                     Prebuilt: item.Type.Category == SdlObjectCategory.Building && item.Team is >= 0 and <= 8) { Id = item.ScenarioId }).ToList() : previousScenario.Spawns.ToList() };
             }
+            var issues = RefreshMapDiagnostics();
+            if (issues.Any(issue => issue.Severity == AgainstRomeMapEditor.Modules.Diagnostics.MapIssueSeverity.Error) && _mapCheckTab is not null)
+                _inspectorTabs.SelectedTab = _mapCheckTab;
             if (scenario is not null) ScenarioSavePreflight.Validate(scenario, _objectCatalog.Select(AliasOf).ToArray());
+            if (issues.FirstOrDefault(issue => issue.Severity == AgainstRomeMapEditor.Modules.Diagnostics.MapIssueSeverity.Error) is { } blocking)
+                throw new InvalidDataException(blocking.Chinese);
             using var rollback = new FileRollbackScope();
             var put = PutTextDocument.Load(Path.Combine(map, "TEXT", "US", "briefing.put"));
             put.SetValue("briefing_titel_1", _title.Text.Trim()); put.SetValue("briefing_titel_2", _subtitle.Text.Trim()); put.SetCompositeValue("briefing_text", _briefing.Text);
@@ -176,6 +182,76 @@ internal sealed partial class MapEditorForm
         string title = isEn ? "Unsaved Changes" : "尚未儲存";
         DialogResult result = MessageBox.Show(this, msg, title, MessageBoxButtons.YesNoCancel, MessageBoxIcon.Warning);
         return result switch { DialogResult.Yes => SaveMap(showSuccess: false), DialogResult.No => true, _ => false };
+    }
+
+    internal Func<SaveFileDialog, DialogResult> ExportFileDialogRunner { get; set; } = dialog => dialog.ShowDialog();
+
+    internal bool ExportModPackage(string? targetZipPath = null, bool suppressMessage = false)
+    {
+        if (_selected is null) return false;
+        bool isEn = AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English;
+
+        if (_selected.IsCustom && IsDirty)
+        {
+            if (!SaveMap(showSuccess: false))
+            {
+                _status.Text = isEn ? "Export cancelled: could not save map changes." : "匯出已取消：無法儲存地圖變更。";
+                return false;
+            }
+        }
+
+        string zipPath;
+        if (!string.IsNullOrWhiteSpace(targetZipPath))
+        {
+            zipPath = targetZipPath;
+        }
+        else
+        {
+            using var dialog = new SaveFileDialog
+            {
+                Filter = isEn ? "Against Rome Mod (*.zip)|*.zip|All Files (*.*)|*.*" : "Against Rome 模組包 (*.zip)|*.zip|所有檔案 (*.*)|*.*",
+                Title = isEn ? "Export Mod Package" : "匯出地圖模組包",
+                FileName = $"{_selected.Id}_mod.zip"
+            };
+            if (ExportFileDialogRunner(dialog) != DialogResult.OK || string.IsNullOrWhiteSpace(dialog.FileName))
+            {
+                return false;
+            }
+            zipPath = dialog.FileName;
+        }
+
+        try
+        {
+            var options = new ModExportOptions
+            {
+                PackageId = _selected.Id.ToLowerInvariant(),
+                Author = _title.Text.Trim().Length > 0 ? _title.Text.Trim() : null,
+                CleanCaches = true,
+                GenerateThumbnail = true
+            };
+            var result = ModBundleExporter.ExportToZip(_selected.DirectoryPath, zipPath, options);
+            string msg = isEn
+                ? $"Map exported successfully to:\n{result.OutputZipPath}\n\nFiles: {result.FileCount}\nSize: {result.TotalSizeBytes:N0} bytes"
+                : $"地圖已成功打包匯出至：\n{result.OutputZipPath}\n\n檔案數：{result.FileCount}\n大小：{result.TotalSizeBytes:N0} 位元組";
+            _status.Text = isEn
+                ? $"Exported mod to {Path.GetFileName(result.OutputZipPath)} ({result.FileCount} files)"
+                : $"已匯出模組至 {Path.GetFileName(result.OutputZipPath)}（共 {result.FileCount} 個檔案）";
+            if (!suppressMessage)
+            {
+                MessageBox.Show(this, msg, isEn ? "Export Mod Package" : "匯出模組包", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            return true;
+        }
+        catch (Exception ex)
+        {
+            string err = (isEn ? "Failed to export mod: " : "匯出模組失敗：") + ex.Message;
+            _status.Text = err;
+            if (!suppressMessage)
+            {
+                MessageBox.Show(this, err, isEn ? "Export Error" : "匯出錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            return false;
+        }
     }
 
 }

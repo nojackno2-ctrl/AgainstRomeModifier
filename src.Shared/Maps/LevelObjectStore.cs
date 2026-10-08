@@ -81,6 +81,18 @@ public sealed class LevelObjectStore
 
     public int Capacity => _count;
 
+    /// <summary>僅供新空白地圖初始化；連結物件與所有位置也清除，呼叫端必須同時初始化原生執行期資料。</summary>
+    internal void ResetForBlankMap()
+    {
+        for (int slot = 0; slot < _count; slot++)
+        {
+            _emptyRecord.CopyTo(_objects, RecordOffset(slot));
+            for (int column = 0; column < ColumnWidths.Length; column++) WriteColumn(column, slot, _emptyColumns[column]);
+            for (int segment = 0; segment < ObjDataWidths.Length; segment++) _emptyObjData[segment].CopyTo(_objdata, SegmentOffset(segment, slot));
+        }
+        _positions.AsSpan(8).Clear();
+    }
+
     public static LevelObjectStore Load(string mapDirectory)
     {
         (byte[] objects, byte[]? h1) = Read(Path.Combine(mapDirectory, "DATA", "objects.dat"));
@@ -152,6 +164,19 @@ public sealed class LevelObjectStore
                 Enumerable.Range(0, ObjDataWidths.Length).Select(segment => _objdata.AsSpan(SegmentOffset(segment, slot), ObjDataWidths[segment]).ToArray()).ToArray(),
                 _positions.AsSpan(8 + p0 * PositionSize, PositionSize).ToArray(), _positions.AsSpan(8 + p1 * PositionSize, PositionSize).ToArray());
         }
+    }
+
+    /// <summary>Capture an owned, unlinked object's template only while its runtime UID still matches.</summary>
+    public LevelObjectTemplate? OwnedTemplate(int slot, uint uid)
+    {
+        if (uid == 0 || UidAt(slot) != uid || IsLinked(slot)) return null;
+        int record = RecordOffset(slot);
+        int p0 = BinaryPrimitives.ReadUInt16LittleEndian(_objects.AsSpan(record + 67)), p1 = BinaryPrimitives.ReadUInt16LittleEndian(_objects.AsSpan(record + 69));
+        if (p0 >= _positionCount || p1 >= _positionCount) return null;
+        return new LevelObjectTemplate(TypeId(slot), _objects.AsSpan(record, RecordSize).ToArray(),
+            Enumerable.Range(0, ColumnWidths.Length).Select(column => ReadColumn(column, slot)).ToArray(),
+            Enumerable.Range(0, ObjDataWidths.Length).Select(segment => _objdata.AsSpan(SegmentOffset(segment, slot), ObjDataWidths[segment]).ToArray()).ToArray(),
+            _positions.AsSpan(8 + p0 * PositionSize, PositionSize).ToArray(), _positions.AsSpan(8 + p1 * PositionSize, PositionSize).ToArray());
     }
 
     /// <summary>

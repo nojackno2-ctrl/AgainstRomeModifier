@@ -40,6 +40,21 @@ public sealed class NatureEditSession : IEditorModule<NatureSnapshot>
         var added = new IndexedAddition(_additions.Count, addition);
         _additions.Add(addition); Record(new(added, [], []));
     }
+    /// <summary>Validate all additions before recording a single layout stroke.</summary>
+    public bool PlantMany(IEnumerable<NatureAddition> additions)
+    {
+        ArgumentNullException.ThrowIfNull(additions);
+        NatureAddition[] prepared = additions.ToArray();
+        foreach (var item in prepared)
+            if (item is null || item.Template is null || string.IsNullOrWhiteSpace(item.Name) ||
+                !float.IsFinite(item.X) || !float.IsFinite(item.Y) || !float.IsFinite(item.Z) || !float.IsFinite(item.Rotation) ||
+                item.X is < 0 or > 16383 || item.Z is < 0 or > 16383)
+                throw new ArgumentException("Invalid nature layout object.", nameof(additions));
+        if (prepared.Length == 0) return false;
+        CommitStroke();
+        foreach (var item in prepared) Plant(item);
+        return CommitStroke();
+    }
     public bool Remove(IEnumerable<int> slots, IEnumerable<NatureAddition> additions)
     {
         int[] removed = slots.Distinct().Where(slot => !_removals.Contains(slot)).ToArray();

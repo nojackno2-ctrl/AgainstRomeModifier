@@ -46,6 +46,8 @@ internal sealed class Map3DViewControl : GLControl
     private NativeSpriteAtlas? _spriteAtlas;
     private NativeSprite?[] _objectSprites = Array.Empty<NativeSprite?>();
     private NativeSprite?[] _stillObjectSprites = Array.Empty<NativeSprite?>();
+    private readonly SceneSpriteGeometryBuffer _spriteGeometry = new();
+    private readonly SceneShadowGeometryCache _shadowGeometry = new();
     private readonly System.Windows.Forms.Timer _animationTimer = new() { Interval = 33 };
     private readonly System.Diagnostics.Stopwatch _animationClock = System.Diagnostics.Stopwatch.StartNew();
     private readonly List<AnimationGroup> _animationGroups = new();
@@ -190,6 +192,7 @@ internal sealed class Map3DViewControl : GLControl
     public bool IsReady => _initialized;
     public string? LastFailureReason { get; private set; }
     public string? ContextDescription { get; private set; }
+    internal long PaintFrameCount { get; private set; }
     public event EventHandler<TexturePaintEventArgs>? TexturePainted;
     public event EventHandler<TileHoverEventArgs>? TileHovered;
     public event EventHandler<TextureSampleEventArgs>? TextureSampled;
@@ -424,6 +427,7 @@ internal sealed class Map3DViewControl : GLControl
         base.OnPaint(e);
         if (!_initialized || _mesh is null) return;
         MakeCurrent(); RenderScene(ClientSize.Width, ClientSize.Height);
+        PaintFrameCount++;
         SwapBuffers();
     }
 
@@ -491,6 +495,7 @@ internal sealed class Map3DViewControl : GLControl
         int radius = Math.Max(0, BrushSize / 2);
         int x0 = Math.Max(0, _hoverX - radius), y0 = Math.Max(0, _hoverY - radius);
         int x1 = Math.Min(_dimension - 1, _hoverX + radius) + 1, y1 = Math.Min(_dimension - 1, _hoverY + radius) + 1;
+        if (SelectionTiles is { } selection) { x0 = selection.Left; y0 = selection.Top; x1 = selection.Right; y1 = selection.Bottom; }
         var perimeter = new List<System.Numerics.Vector3>();
         for (int x = x0; x <= x1; x++) perimeter.Add(CursorPoint(x, y0));
         for (int y = y0 + 1; y <= y1; y++) perimeter.Add(CursorPoint(x1, y));
@@ -502,6 +507,8 @@ internal sealed class Map3DViewControl : GLControl
         DrawColorGeometry(_cursorVao, PrimitiveType.LineLoop, _cursorVertexCount, matrix, new System.Numerics.Vector4(1f, .94f, .47f, 1f), 1);
         GL.Enable(EnableCap.DepthTest);
     }
+
+    internal Rectangle? SelectionTiles { get; set; }
 
     private System.Numerics.Vector3 CursorPoint(int tileX, int tileY)
         => new(tileX, _heights!.SampleHeight(tileX, tileY) + .15f, tileY);
@@ -843,7 +850,7 @@ internal sealed class Map3DViewControl : GLControl
             GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.ClampToEdge);
             _shadowTextureDirty = false;
         }
-        float[] vertices = SceneObjectRenderer.BuildShadowVertices(_objects, _objectShadows, ShadowMask, _shadowAtlas, _heights);
+        float[] vertices = _shadowGeometry.Build(_objects, _objectShadows, ShadowMask, _shadowAtlas, _heights);
         if (vertices.Length == 0) return;
         GL.BindVertexArray(_shadowVao); GL.BindBuffer(BufferTarget.ArrayBuffer, _shadowVbo);
         GL.BufferData(BufferTarget.ArrayBuffer, vertices.Length * sizeof(float), vertices, BufferUsageHint.StreamDraw);
@@ -899,7 +906,7 @@ internal sealed class Map3DViewControl : GLControl
         // Pre-rendered isometric art is painted far-to-near like the original 2.5D renderer;
         // depth testing against the terrain would clip the parts drawn below the ground anchor.
         GL.Disable(EnableCap.DepthTest); GL.Disable(EnableCap.CullFace);
-        DrawSpriteBatch(SceneObjectRenderer.BuildSpriteVertices(_objects, _objectSprites, _spriteAtlas, _heights, _camera.GetViewMatrix()), 1f);
+        DrawSpriteBatch(_spriteGeometry.Build(_objects, _objectSprites, _spriteAtlas, _heights, _camera.GetViewMatrix()), 1f);
         if (EditingEnabled && _previewSprite is not null && _hoverX >= 0 && _hoverY >= 0)
         {
             const float tileWorld = SdlSceneCatalog.WorldUnitsPerMapPixel * 4f;

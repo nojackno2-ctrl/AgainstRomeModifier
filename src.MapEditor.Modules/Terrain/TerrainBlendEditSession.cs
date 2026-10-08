@@ -46,6 +46,7 @@ internal sealed class TerrainBlendEditSession
     }
 
     public IReadOnlyList<string> CurrentTextures => _currentTextures;
+    public string GetTexture(int x, int y) => _currentTextures[TextureIndex(x, y)];
     public IReadOnlyList<int> UnresolvedTileIndices { get; }
     public IReadOnlyList<NativeTerrainCornerConflict> InitialCornerConflicts { get; }
     public bool CanUndo => _undo.Count > 0 || _pendingCorners.Count > 0 || _pendingTextures.Count > 0;
@@ -77,10 +78,46 @@ internal sealed class TerrainBlendEditSession
     /// <paramref name="autoBridge"/> 為 true 時，若筆刷邊緣找不到原版過渡 tile，會在外側一圈角點插入同時能銜接兩側的中介材質（最多 <see cref="MaxBridgeRings"/> 圈），
     /// 結果仍全部是原版 tile；仍無法銜接才拒絕。
     /// </summary>
-    public TerrainBlendPaintResult PaintCircle(float centerX, float centerY, float radius, string materialId, bool rollbackStrokeOnFailure = true, bool autoBridge = false)
+    public TerrainBlendPaintResult PaintCircle(float centerX, float centerY, float radius, string materialId, bool rollbackStrokeOnFailure = true, bool autoBridge = false, Func<int, int, bool>? allowsTile = null)
     {
+        if (allowsTile is not null && autoBridge) throw new ArgumentException("Protected painting cannot auto-bridge beyond its boundary.", nameof(autoBridge));
         string[] cornerBefore = _map.CornerMaterials.ToArray();
         IReadOnlyList<int> changedCorners = _map.PaintCircle(centerX, centerY, radius, materialId);
+        if (allowsTile is not null)
+        {
+            var allowed = new List<int>();
+            foreach (int corner in changedCorners)
+            {
+                if (AffectedTiles([corner]).All(tile => allowsTile(tile % _map.TileDimension, tile / _map.TileDimension))) allowed.Add(corner);
+                else SetCorner(corner, cornerBefore[corner]);
+            }
+            changedCorners = allowed;
+        }
+        return BakeChanges(cornerBefore, changedCorners, materialId, rollbackStrokeOnFailure, autoBridge);
+    }
+
+    /// <summary>Paint all four corners of each selected tile, then bake once as an atomic stroke.</summary>
+    public TerrainBlendPaintResult PaintTiles(IReadOnlyCollection<(int X, int Y)> tiles, string materialId, bool autoBridge = false)
+    {
+        ArgumentNullException.ThrowIfNull(tiles);
+        if (string.IsNullOrWhiteSpace(materialId)) throw new ArgumentException("Material is required.", nameof(materialId));
+        if (tiles.Any(tile => tile.X < 0 || tile.Y < 0 || tile.X >= _map.TileDimension || tile.Y >= _map.TileDimension))
+            throw new ArgumentOutOfRangeException(nameof(tiles));
+        string[] before = _map.CornerMaterials.ToArray();
+        var changed = new HashSet<int>();
+        foreach (var tile in tiles)
+            foreach (var corner in new[] { (tile.X, tile.Y), (tile.X + 1, tile.Y), (tile.X + 1, tile.Y + 1), (tile.X, tile.Y + 1) })
+            {
+                int index = corner.Item2 * _map.CornerDimension + corner.Item1;
+                if (StringComparer.OrdinalIgnoreCase.Equals(_map.GetCorner(corner.Item1, corner.Item2), materialId)) continue;
+                _map.SetCorner(corner.Item1, corner.Item2, materialId);
+                changed.Add(index);
+            }
+        return BakeChanges(before, changed.ToArray(), materialId, false, autoBridge);
+    }
+
+    private TerrainBlendPaintResult BakeChanges(string[] cornerBefore, IReadOnlyList<int> changedCorners, string materialId, bool rollbackStrokeOnFailure, bool autoBridge)
+    {
         if (changedCorners.Count == 0) return TerrainBlendPaintResult.Success(Array.Empty<TerrainTextureChange>());
 
         var touched = new HashSet<int>(changedCorners);
@@ -153,6 +190,68 @@ internal sealed class TerrainBlendEditSession
         return new(true, changes, []);
     }
 
+    /// <summary>
+    /// 繪製單段連續河流水系筆畫（包含河床水面選片、兩側 ErdeFlussR 河岸過渡圖塊與高度場落差自動微調）。
+    /// 若遇未支援圖塊或規劃失敗，自動撤銷並還原整筆待提交變更。
+    /// </summary>
+    public TerrainRiverPaintResult PaintRiverPath(
+        IReadOnlyList<(int X, int Y)> path,
+        RiverTileCatalog catalog,
+        RiverPlannerOptions? options = null,
+        TerrainHeightEditSession? heightSession = null)
+    {
+        options ??= new RiverPlannerOptions();
+        IReadOnlyList<byte>? heights = heightSession?.Heights;
+        int vertexSize = heightSession?.VertexSize ?? 0;
+
+        RiverStrokePlan plan = RiverFlowPlanner.Plan(
+            _map.TileDimension,
+            _currentTextures,
+            heights,
+            vertexSize,
+            path,
+            catalog,
+            options);
+
+        if (!plan.Succeeded)
+        {
+            var rollback = CancelStroke();
+            heightSession?.CancelStroke();
+            return new TerrainRiverPaintResult(false, rollback, [], plan.Warnings, plan.Unsupported);
+        }
+
+        var textureChanges = new List<TerrainTextureChange>();
+
+        // 1. 套用河道水面圖塊
+        foreach (var tile in plan.WaterTiles)
+        {
+            if (StampTexture(tile.X, tile.Y, tile.Texture) is { } change)
+            {
+                textureChanges.Add(change);
+            }
+        }
+
+        // 2. 套用兩側河岸過渡圖塊
+        foreach (var bank in plan.BankTiles)
+        {
+            if (StampTexture(bank.X, bank.Y, bank.Texture) is { } change)
+            {
+                textureChanges.Add(change);
+            }
+        }
+
+        // 3. 套用高度場調整
+        var heightChanges = new List<TerrainSampleChange>();
+        if (heightSession is not null && plan.HeightAdjustments.Count > 0)
+        {
+            var adjustments = plan.HeightAdjustments.Select(a => (a.Index, a.After)).ToArray();
+            var applied = heightSession.ApplyHeightAdjustments(adjustments);
+            heightChanges.AddRange(applied);
+        }
+
+        return new TerrainRiverPaintResult(true, textureChanges, heightChanges, plan.Warnings, []);
+    }
+
     public bool CommitStroke()
     {
         TerrainCornerChange[] corners = _pendingCorners.Values.Where(change => !StringComparer.OrdinalIgnoreCase.Equals(change.Before, change.After)).OrderBy(change => change.Index).ToArray();
@@ -207,7 +306,7 @@ internal sealed class TerrainBlendEditSession
         _baselineCorners = _map.CornerMaterials.ToArray();
     }
 
-    private IReadOnlyList<TerrainTextureChange> CancelStroke()
+    public IReadOnlyList<TerrainTextureChange> CancelStroke()
     {
         foreach (TerrainCornerChange change in _pendingCorners.Values) SetCorner(change.Index, change.Before);
         var rollback = new List<TerrainTextureChange>();

@@ -5,6 +5,25 @@ namespace AgainstRomeMapEditor.Modules.Tests;
 public sealed class TerrainBlendModuleTests
 {
     [Fact]
+    public void Protected_circle_preserves_adjacent_tiles_and_corners_through_bake_and_undo()
+    {
+        var resolver = new Resolver();
+        string[] source = Enumerable.Repeat("grass/grass/grass/grass", 64).ToArray();
+        var import = TerrainBlendAuthoringMap.Import(8, source, resolver, "grass");
+        var session = new TerrainBlendEditSession(import, source, resolver);
+        bool Allowed(int x, int y) => x >= 2 && y >= 2 && x < 7 && y < 7 && !(x == 4 && y == 4);
+        var result = session.PaintCircle(4, 4, 8, "sand", allowsTile: Allowed);
+        Assert.True(result.Succeeded); Assert.NotEmpty(result.TextureChanges);
+        Assert.All(result.TextureChanges, change => Assert.True(Allowed(change.X, change.Y)));
+        for (int y = 0; y < 8; y++) for (int x = 0; x < 8; x++)
+            if (!Allowed(x, y)) Assert.Equal(source[y * 8 + x], session.CurrentTextures[y * 8 + x]);
+        foreach (var corner in new[] { (4, 4), (5, 4), (4, 5), (5, 5), (2, 3), (7, 3) })
+            Assert.Equal("grass", import.Map.GetCorner(corner.Item1, corner.Item2));
+        var edited = session.CurrentTextures.ToArray(); session.CommitStroke(); session.Undo(); Assert.Equal(source, session.CurrentTextures);
+        session.Redo(); Assert.Equal(edited, session.CurrentTextures);
+        Assert.Throws<ArgumentException>(() => session.PaintCircle(4, 4, 8, "sand", autoBridge: true, allowsTile: Allowed));
+    }
+    [Fact]
     public void Rebinding_resource_resolver_keeps_saved_baseline_history_and_uses_new_resolver_for_future_strokes()
     {
         var resolver = new Resolver();

@@ -37,9 +37,11 @@ internal sealed partial class MapEditorForm : Form
     private readonly NumericUpDown _gameHour = new() { Width = 76, DecimalPlaces = 2, Minimum = 0, Maximum = 24, Increment = .25m, Value = 12, Enabled = false };
     private readonly Label _gameHourLabel = new() { AutoSize = true, Anchor = AnchorStyles.Left, Text = "時刻" };
     private readonly CheckBox _stampMode = new() { Dock = DockStyle.Top, Height = 30, Text = "圖塊印章（原版道路、河流、岩壁等）" };
+    private readonly CheckBox _autoRoad = new() { Dock = DockStyle.Top, Height = 30, Text = "自動選路（拖曳自動轉向與路口）", Visible = false };
     private readonly CheckBox _stampOtherRegions = new() { Dock = DockStyle.Top, Height = 30, Text = "顯示其他地區圖塊", Visible = false };
     private string? _stampTexture;
     private (int X, int Y)? _lastStampTile;
+    private readonly List<(int X, int Y)> _roadStrokePath = new();
     private readonly CheckBox _autoBridge = new() { Dock = DockStyle.Top, Height = 30, Text = "自動過渡（插入中介材質）", Checked = true };
     private readonly TrackBar _reliefScale = new() { Dock = DockStyle.Top, Minimum = 0, Maximum = 200, Value = 100, TickFrequency = 25 };
     private readonly ListView _sceneList = new() { Dock = DockStyle.Fill, View = View.Details, FullRowSelect = true, HeaderStyle = ColumnHeaderStyle.Nonclickable };
@@ -58,6 +60,7 @@ internal sealed partial class MapEditorForm : Form
     private readonly Label _modeBanner = new() { Dock = DockStyle.Top, Height = 34, TextAlign = ContentAlignment.MiddleCenter };
     private readonly ToolStripStatusLabel _status = new() { Spring = true, TextAlign = ContentAlignment.MiddleLeft };
     private readonly ToolStripButton _saveButton = new("儲存") { Enabled = false };
+    private readonly ToolStripButton _exportModButton = new("匯出模組…") { Enabled = false };
     private readonly ToolStripButton _gamePreviewButton = new("選用：啟動遊戲測試") { Enabled = false };
     private readonly ToolStripButton _undoButton = new("復原") { Enabled = false };
     private readonly ToolStripButton _aiMapButton = new("AI 製圖…") { Enabled = false };
@@ -145,6 +148,16 @@ internal sealed partial class MapEditorForm : Form
     private bool _resetAuxiliaryLayers;
     private (int X, int Y)? _lastTerrainTile;
     private readonly HashSet<int> _terrainStrokeTiles = new();
+    private bool _lastActionWasSettlementGeneration;
+    private bool _lastActionWasSettlementGenerationUndone;
+    private bool _lastActionWasFlora;
+    private bool _lastActionWasHeightTool;
+    private bool _lastActionWasPlacementTool;
+    private bool _lastActionWasPlacementToolUndone;
+    private bool _lastActionWasHeightToolUndone;
+    private bool _lastActionWasFloraUndone;
+    private bool _lastActionWasRiverOrCliff;
+    private bool _lastActionWasRiverOrCliffUndone;
 
     private bool TextureDirty() => _terrainBlendSession?.IsDirty == true;
 
@@ -238,14 +251,16 @@ internal sealed partial class MapEditorForm : Form
         var commands = new ToolStrip { GripStyle = ToolStripGripStyle.Hidden, Dock = DockStyle.Top, Padding = new Padding(10, 6, 10, 6), BackColor = WinFormsTheme.Surface, ForeColor = WinFormsTheme.TextPrimary };
         commands.Items.AddRange(new ToolStripItem[] {
             _mapMenuButton, new ToolStripSeparator(), _currentMapLabel, new ToolStripSeparator(),
-            _saveButton, _gamePreviewButton, new ToolStripSeparator(), _undoButton, _redoButton, new ToolStripSeparator(), _aiMapButton,
+            _saveButton, _exportModButton, _gamePreviewButton, new ToolStripSeparator(), _undoButton, _redoButton, new ToolStripSeparator(), _aiMapButton,
             new ToolStripSeparator { Alignment = ToolStripItemAlignment.Right },
             _btnLangEN, _btnLangZH
         });
 
         var tools = new ToolStrip { GripStyle = ToolStripGripStyle.Hidden, Dock = DockStyle.Top, Padding = new Padding(10, 5, 10, 5), BackColor = WinFormsTheme.SurfaceRaised, ForeColor = WinFormsTheme.TextPrimary };
-        tools.Items.AddRange(new ToolStripItem[] { _lblTerrainGroup, _textureTool, _heightTool, _collisionTool, _natureTool, _placeTool, _sceneMoveTool, _terrainOperation, _terrainStrength, _resetTerrainButton, _blankTerrainButton, new ToolStripSeparator(), _view2dButton, _view3dButton, _3dDiagnosticsButton, _retryDisplayButton });
+        tools.Items.AddRange(new ToolStripItem[] { _lblTerrainGroup, _textureTool, _heightTool, _collisionTool, _natureTool, _placeTool, _sceneMoveTool, _terrainOperation, _terrainStrength, _resetTerrainButton, _blankTerrainButton, _regionToolsButton, _boxSelectButton, new ToolStripSeparator(), _view2dButton, _view3dButton, _3dDiagnosticsButton, _retryDisplayButton });
 
+        tools.Items.Insert(tools.Items.IndexOf(_boxSelectButton) + 1, _layoutMenu);
+        InitializeWeatherMenu(tools);
         _paletteHeader = SectionHeader("地表繪製");
         var palettePanel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(10), BackColor = WinFormsTheme.Surface };
         var currentBrush = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 76, Padding = new Padding(4), FlowDirection = FlowDirection.LeftToRight };
@@ -259,7 +274,7 @@ internal sealed partial class MapEditorForm : Form
         var brushOptions = new Panel { Dock = DockStyle.Top, Height = 240 };
         brushOptions.Controls.Add(_autoBridge); brushOptions.Controls.Add(lightingOptions); brushOptions.Controls.Add(_showObjects); brushOptions.Controls.Add(_showGrid); brushOptions.Controls.Add(_reliefScale);
         brushOptions.Controls.Add(_lblReliefScaleTitle); brushOptions.Controls.Add(_lblBrushSizeTitle); brushOptions.Controls.Add(_brushSize);
-        palettePanel.Controls.Add(_palette); palettePanel.Controls.Add(_paletteSearch); palettePanel.Controls.Add(_stampOtherRegions); palettePanel.Controls.Add(_stampMode); palettePanel.Controls.Add(brushOptions); palettePanel.Controls.Add(currentBrush); palettePanel.Controls.Add(_paletteHeader);
+        palettePanel.Controls.Add(_palette); palettePanel.Controls.Add(_paletteSearch); palettePanel.Controls.Add(_stampOtherRegions); palettePanel.Controls.Add(_autoRoad); palettePanel.Controls.Add(_stampMode); palettePanel.Controls.Add(brushOptions); palettePanel.Controls.Add(currentBrush); palettePanel.Controls.Add(_paletteHeader);
 
         var properties = BuildPropertiesPanel();
         _inspectorTabs = new TabControl { Dock = DockStyle.Fill };
@@ -285,6 +300,9 @@ internal sealed partial class MapEditorForm : Form
         _inspectorTabs.TabPages.Add(new TabPage("放置物件") { BackColor = WinFormsTheme.Surface }); _inspectorTabs.TabPages[3].Controls.Add(BuildPlacementPanel());
         _inspectorTabs.TabPages.Add(new TabPage("自然物件") { BackColor = WinFormsTheme.Surface }); _inspectorTabs.TabPages[4].Controls.Add(BuildNaturePanel());
         _inspectorTabs.TabPages.Add(new TabPage("事件") { BackColor = WinFormsTheme.Surface }); _inspectorTabs.TabPages[^1].Controls.Add(BuildEventsPanel());
+        _mapCheckTab = new TabPage("地圖檢查") { BackColor = WinFormsTheme.Surface };
+        _inspectorTabs.TabPages.Add(_mapCheckTab); _mapCheckTab.Controls.Add(BuildMapCheckPanel());
+        AddConsoleTab();
 
         _canvasHost = new Panel { Dock = DockStyle.Fill, Padding = new Padding(10), BackColor = WinFormsTheme.Window };
         _canvasHost.Controls.Add(_canvas); _canvasHost.Controls.Add(_modeBanner);
@@ -349,7 +367,8 @@ internal sealed partial class MapEditorForm : Form
         _palette.SelectedIndexChanged += (_, _) => { if (_palette.SelectedItem is PaletteItem item) SelectBrush(item); };
         _palette.DrawMode = DrawMode.OwnerDrawFixed; _palette.ItemHeight = 36; _palette.DrawItem += DrawPaletteItem;
         _paletteSearch.TextChanged += (_, _) => LoadPalette(_paletteSearch.Text);
-        _stampMode.CheckedChanged += (_, _) => { CommitStroke(); UpdateContinuousStampPainting(); _stampOtherRegions.Visible = _stampMode.Checked; _paletteSearch.Text = ""; LoadPalette(); };
+        _stampMode.CheckedChanged += (_, _) => { CommitStroke(); UpdateContinuousStampPainting(); _stampOtherRegions.Visible = _stampMode.Checked; _autoRoad.Visible = _stampMode.Checked; _paletteSearch.Text = ""; LoadPalette(); };
+        _autoRoad.CheckedChanged += (_, _) => { CommitStroke(); UpdateContinuousStampPainting(); };
         _stampOtherRegions.CheckedChanged += (_, _) => LoadPalette(_paletteSearch.Text);
         _brushSize.SelectedIndexChanged += (_, _) => _canvas.BrushSize = BrushSizes[Math.Clamp(_brushSize.SelectedIndex, 0, BrushSizes.Length - 1)];
         _brushSize.SelectedIndexChanged += (_, _) => { if (_view3d is not null) _view3d.BrushSize = _canvas.BrushSize; };
@@ -406,10 +425,14 @@ internal sealed partial class MapEditorForm : Form
         _placedDeleteButton.Click += (_, _) => DeleteSelectedPlacedObjects();
         _resetTerrainButton.Click += (_, _) => ResetTerrain();
         _saveButton.Click += (_, _) => SaveMap(showSuccess: true);
+        _exportModButton.Click += (_, _) => ExportModPackage();
         _gamePreviewButton.Click += (_, _) => PreviewInGame();
         _undoButton.Click += (_, _) => Undo(); _redoButton.Click += (_, _) => Redo();
         _aiMapButton.Click += (_, _) => OpenAiMapDialog();
         _blankTerrainButton.Click += (_, _) => ApplyBlankTerrain(confirm: true);
+        _regionToolsButton.Click += (_, _) => RunRegionTool();
+        InitializeLayoutTools();
+        _boxSelectButton.Click += (_, _) => BeginBoxSelection();
 
         _btnLangZH.Click += (s, e) => {
             if (AgainstRomeModifier.Loc.CurrentLanguage != AgainstRomeModifier.Language.TraditionalChinese) {
@@ -449,6 +472,8 @@ internal sealed partial class MapEditorForm : Form
 
         _mapMenuButton.Text = isEn ? "Map Menu" : "地圖選單";
         _saveButton.Text = isEn ? "Save" : "儲存";
+        _exportModButton.Text = isEn ? "Export Mod…" : "匯出模組…";
+        _exportModButton.ToolTipText = isEn ? "Package and export the current map as a distributable mod ZIP file." : "將目前地圖打包匯出為可分發的模組 ZIP 檔案。";
         _gamePreviewButton.Text = isEn ? "Test in Game" : "選用：啟動遊戲測試";
         _undoButton.Text = isEn ? "Undo" : "復原";
         _redoButton.Text = isEn ? "Redo" : "重做";
@@ -472,6 +497,16 @@ internal sealed partial class MapEditorForm : Form
         LocalizeEvents(isEn);
         _aiMapButton.Text = isEn ? "AI Map Maker…" : "AI 製圖…";
         _blankTerrainButton.Text = isEn ? "Reset Flat Terrain…" : "重設平坦地形…";
+        _regionToolsButton.Text = isEn ? "Region tools…" : "區域工具…";
+        _layoutMenu.Text = isEn ? "Layouts" : "配置";
+        LocalizeWeatherMenu(isEn);
+        _generateSettlement.Text = isEn ? "One-Click Base Generator…" : "一鍵生成對戰基地…";
+        _generateSettlement.ToolTipText = isEn ? "Generate fair, symmetric bases and resources for 2-8 players." : "為 2-8 位玩家自動生成公平對稱的基地與資源配置。";
+        _exportPlacementLayout.Text = isEn ? "Save selected settlement / objects…" : "保存選取的聚落／物件…";
+        _exportNatureLayout.Text = isEn ? "Save forest region…" : "保存森林區域…";
+        _importLayout.Text = isEn ? "Load and apply layout…" : "載入並套用配置…";
+        _boxSelectButton.Text = isEn ? "Box select" : "框選";
+        _boxSelectButton.ToolTipText = isEn ? "Drag a rectangle to select placed objects; Escape cancels." : "拖曳矩形選取放置物件；Escape 取消。";
         _blankTerrainButton.ToolTipText = isEn
             ? "Flatten the whole map just above the water level, paint one base material, clear blocked ground, and reset vertex colors / smoothing / lighting on Save. Settlements are kept."
             : "整張地圖整平到略高於水面、鋪單一基礎材質、清除阻擋區，儲存時重設頂點色、平滑遮罩與光照；聚落保留。";
@@ -503,6 +538,7 @@ internal sealed partial class MapEditorForm : Form
         _gameHourLabel.Text = isEn ? "Hour" : "時刻";
         _autoBridge.Text = isEn ? "Auto transition (insert bridge materials)" : "自動過渡（插入中介材質）";
         _stampMode.Text = isEn ? "Tile stamp (original roads, rivers, cliffs...)" : "圖塊印章（原版道路、河流、岩壁等）";
+        _autoRoad.Text = isEn ? "Auto road (auto direction & junctions)" : "自動選路（拖曳自動轉向與路口）";
         _stampOtherRegions.Text = isEn ? "Show other regions' tiles" : "顯示其他地區圖塊";
         _lblReliefScaleTitle.Text = isEn ? "Relief Scaling (Approx)" : "地形起伏（近似顯示）";
 
@@ -575,6 +611,7 @@ internal sealed partial class MapEditorForm : Form
         foreach (TextBox text in EditablePropertyControls().OfType<TextBox>()) UpdateGameTextWarning(text);
         UpdateEditorState();
         UpdatePaletteBrushLabel();
+        LocalizeMapDiagnostics(isEn);
 
         if (_selected is not null)
         {
@@ -590,6 +627,7 @@ internal sealed partial class MapEditorForm : Form
         try
         {
             _loading = true; string map = _selected.DirectoryPath;
+            _boxSelectButton.Checked = false; _boxStart = _boxEnd = null; ShowBoxSelection(null); UpdateContinuousStampPainting();
             _lastStampTile = null;
             var put = PutTextDocument.Load(Path.Combine(map, "TEXT", "US", "briefing.put"));
             _title.Text = put.GetValue("briefing_titel_1") ?? "";
@@ -709,16 +747,30 @@ internal sealed partial class MapEditorForm : Form
 
     private void PaintTexture(TexturePaintEventArgs e)
     {
+        if (_ignoreCancelledBoxStroke) return;
+        if (_boxSelectButton.Checked)
+        {
+            _boxStart ??= (e.X, e.Y); _boxEnd = (e.X, e.Y);
+            var start = _boxStart.Value;
+            ShowBoxSelection(Rectangle.FromLTRB(Math.Min(start.X, e.X), Math.Min(start.Y, e.Y), Math.Max(start.X, e.X) + 1, Math.Max(start.Y, e.Y) + 1));
+            return;
+        }
         if (TerrainLayerMode) { PaintTerrainLayer(e); return; }
         if (_editMode == EditMode.PlaceObject) { PlaceObjectAt(e); return; }
         if (_editMode == EditMode.Nature) { PaintNature(e); return; }
         if (_selected is null || !_selected.IsCustom || _texturesDocument is null || _terrainBlendSession is null) return;
         if (_stampMode.Checked)
         {
-            if (_stampTexture is null) return;
+            if (_stampTexture is null && !_autoRoad.Checked) return;
             // 不把無效游標位置連回地圖；滑鼠兩次回報之間沿用地形工具的路徑補點。
             int dimension = _texturesDocument.Dimension;
             if (e.X < 0 || e.Y < 0 || e.X >= dimension || e.Y >= dimension) { _lastStampTile = null; return; }
+            if (_autoRoad.Checked)
+            {
+                PaintAutoRoad(e.X, e.Y);
+                return;
+            }
+            if (_stampTexture is null) return;
             IEnumerable<(int X, int Y)> tiles = _lastStampTile is { } last
                 ? TerrainStrokePath.Between(last.X, last.Y, e.X, e.Y) : new[] { (e.X, e.Y) };
             _lastStampTile = (e.X, e.Y);
@@ -744,9 +796,73 @@ internal sealed partial class MapEditorForm : Form
         UpdateEditorState();
     }
 
+    private void PaintAutoRoad(int x, int y)
+    {
+        if (_selected is null || !_selected.IsCustom || _texturesDocument is null || _terrainBlendSession is null) return;
+        int dimension = _texturesDocument.Dimension;
+        if (x < 0 || y < 0 || x >= dimension || y >= dimension) return;
+
+        if (_roadStrokePath.Count > 0 && _roadStrokePath[^1] == (x, y)) return;
+        _roadStrokePath.Add((x, y));
+
+        var available = RoadTileCatalog.BuildAvailable(_floorTextures?.Names, _stampTexture);
+        if (available.Count == 0)
+        {
+            bool isEn = AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English;
+            _status.Text = isEn ? "No road tiles found in floortex library." : "地表素材庫中找不到可用的道路圖塊。";
+            return;
+        }
+
+        string preferred = _stampTexture ?? available[0].Texture;
+        _terrainBlendSession.CancelStroke();
+        var result = _terrainBlendSession.PaintRoadPath(_roadStrokePath, available, preferred);
+        foreach (var change in result.TextureChanges)
+        {
+            ApplyTexture(change.X, change.Y, change.After);
+        }
+
+        bool en = AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English;
+        _terrainBlendNotice = result.Succeeded ? null
+            : en ? $"Road cannot connect at ({result.Unsupported[0].X},{result.Unsupported[0].Y}); missing native road piece."
+                 : $"道路在圖格 ({result.Unsupported[0].X},{result.Unsupported[0].Y}) 無法連接；缺少原版對應方向的圖塊。";
+        UpdateEditorState();
+    }
+
+    internal void CancelRoadStroke()
+    {
+        if (_roadStrokePath.Count == 0) return;
+        _terrainBlendSession?.CancelStroke();
+        _roadStrokePath.Clear();
+        _lastStampTile = null;
+        if (_texturesDocument is not null && _terrainBlendSession is not null)
+        {
+            for (int y = 0; y < _texturesDocument.Dimension; y++)
+            for (int x = 0; x < _texturesDocument.Dimension; x++)
+                ApplyTexture(x, y, _terrainBlendSession.CurrentTextures[y * _texturesDocument.Dimension + x]);
+        }
+        _terrainBlendNotice = null;
+        UpdateEditorState();
+    }
+
     // 一次筆畫（滑鼠按下到放開）內觸及的所有格子合併為單一 undo 項目。
     private void CommitStroke()
     {
+        _ignoreCancelledBoxStroke = false;
+        if (_boxSelectButton.Checked && _boxStart is { } start && _boxEnd is { } end)
+        {
+            _boxStart = _boxEnd = null; _boxSelectButton.Checked = false;
+            ApplyRegionTool(TerrainRegionOperation.SelectObjects, [start, end], 1);
+        }
+        if (_roadStrokePath.Count > 0)
+        {
+            if (_terrainBlendSession?.CommitStroke() == true)
+            {
+                if (_texturesDocument is not null && _terrainBlendSession is not null)
+                    _texturesDocument.SetTextures(_terrainBlendSession.CurrentTextures);
+                UpdateEditorState();
+            }
+            _roadStrokePath.Clear();
+        }
         _lastStampTile = null;
         _flattenTarget = -1; _roughnessSeed = Random.Shared.Next(); _lastTerrainTile = null; _terrainStrokeTiles.Clear();
         if (_natureSession.CommitStroke()) UpdateEditorState();
@@ -763,6 +879,49 @@ internal sealed partial class MapEditorForm : Form
     private void Undo()
     {
         CommitStroke();
+        if (_lastActionWasPlacementTool)
+        {
+            _lastActionWasPlacementTool = false;
+            _lastActionWasPlacementToolUndone = true;
+            if (_placementSession.Undo()) { RefreshPlacedList(); RefreshSceneMarkers(); UpdateEditorState(); return; }
+        }
+        if (_lastActionWasHeightTool)
+        {
+            _lastActionWasHeightTool = false;
+            _lastActionWasHeightToolUndone = true;
+            if (_terrainLayers?.Undo() is { } heightUndone) { ApplyTerrainLayerStroke(heightUndone); UpdateEditorState(); return; }
+        }
+        if (_lastActionWasFlora)
+        {
+            _lastActionWasFlora = false;
+            _lastActionWasFloraUndone = true;
+            if (_natureSession.Undo()) { RefreshSceneMarkers(); UpdateEditorState(); return; }
+        }
+        if (_lastActionWasSettlementGeneration)
+        {
+            _lastActionWasSettlementGeneration = false;
+            _lastActionWasSettlementGenerationUndone = true;
+            bool undone = false;
+            if (_placementSession.CanUndo) { _placementSession.Undo(); undone = true; }
+            if (_natureSession.CanUndo) { _natureSession.Undo(); undone = true; }
+            if (undone) { RefreshPlacedList(); RefreshSceneMarkers(); UpdateEditorState(); return; }
+        }
+        if (_lastActionWasRiverOrCliff)
+        {
+            _lastActionWasRiverOrCliff = false;
+            _lastActionWasRiverOrCliffUndone = true;
+            if (_terrainLayers?.CanUndo == true && _terrainLayers.Undo() is { } layersUndone)
+            {
+                ApplyTerrainLayerStroke(layersUndone);
+            }
+            if (_texturesDocument is not null && _terrainBlendSession?.Undo() is { } textureUndone)
+            {
+                foreach (TerrainTextureChange change in textureUndone) ApplyTexture(change.X, change.Y, change.After);
+            }
+            _terrainBlendNotice = null;
+            UpdateEditorState();
+            return;
+        }
         if (_editMode == EditMode.PlaceObject)
         {
             if (_placementSession.Undo()) { RefreshPlacedList(); RefreshSceneMarkers(); UpdateEditorState(); }
@@ -789,6 +948,49 @@ internal sealed partial class MapEditorForm : Form
     private void Redo()
     {
         CommitStroke();
+        if (_lastActionWasPlacementToolUndone)
+        {
+            _lastActionWasPlacementToolUndone = false;
+            _lastActionWasPlacementTool = true;
+            if (_placementSession.Redo()) { RefreshPlacedList(); RefreshSceneMarkers(); UpdateEditorState(); return; }
+        }
+        if (_lastActionWasHeightToolUndone)
+        {
+            _lastActionWasHeightToolUndone = false;
+            _lastActionWasHeightTool = true;
+            if (_terrainLayers?.Redo() is { } heightRedone) { ApplyTerrainLayerStroke(heightRedone); UpdateEditorState(); return; }
+        }
+        if (_lastActionWasFloraUndone)
+        {
+            _lastActionWasFloraUndone = false;
+            _lastActionWasFlora = true;
+            if (_natureSession.Redo()) { RefreshSceneMarkers(); UpdateEditorState(); return; }
+        }
+        if (_lastActionWasSettlementGenerationUndone)
+        {
+            _lastActionWasSettlementGenerationUndone = false;
+            _lastActionWasSettlementGeneration = true;
+            bool redone = false;
+            if (_placementSession.CanRedo) { _placementSession.Redo(); redone = true; }
+            if (_natureSession.CanRedo) { _natureSession.Redo(); redone = true; }
+            if (redone) { RefreshPlacedList(); RefreshSceneMarkers(); UpdateEditorState(); return; }
+        }
+        if (_lastActionWasRiverOrCliffUndone)
+        {
+            _lastActionWasRiverOrCliffUndone = false;
+            _lastActionWasRiverOrCliff = true;
+            if (_terrainLayers?.CanRedo == true && _terrainLayers.Redo() is { } layersRedone)
+            {
+                ApplyTerrainLayerStroke(layersRedone);
+            }
+            if (_texturesDocument is not null && _terrainBlendSession?.Redo() is { } textureRedone)
+            {
+                foreach (TerrainTextureChange change in textureRedone) ApplyTexture(change.X, change.Y, change.After);
+            }
+            _terrainBlendNotice = null;
+            UpdateEditorState();
+            return;
+        }
         if (_editMode == EditMode.PlaceObject)
         {
             if (_placementSession.Redo()) { RefreshPlacedList(); RefreshSceneMarkers(); UpdateEditorState(); }
@@ -858,7 +1060,11 @@ internal sealed partial class MapEditorForm : Form
 
     private void SetEditMode(EditMode mode)
     {
+        bool cancelledBox = _boxSelectButton.Checked && _boxStart.HasValue;
+        _boxSelectButton.Checked = false; _boxStart = _boxEnd = null;
+        ShowBoxSelection(null);
         CommitStroke();
+        _ignoreCancelledBoxStroke = cancelledBox;
         _editMode = mode;
         UpdateContinuousStampPainting();
         _textureTool.Checked = mode == EditMode.Texture;
@@ -917,6 +1123,7 @@ internal sealed partial class MapEditorForm : Form
             return material.DisplayName;
 
         return material.Id.ToUpperInvariant() switch {
+            FloorMaterialCatalog.PathMaterialId => "Dirt Path",
             "BB" => "Grass",
             "BA" => "Dark Green Grass",
             "BC" => "Bright Green Grass",
@@ -960,6 +1167,7 @@ internal sealed partial class MapEditorForm : Form
             "沙地" => "Sand",
             "土地" => "Dirt",
             "岩地" => "Rock",
+            "道路" => "Roads",
             _ => category
         };
     }
@@ -1041,7 +1249,23 @@ internal sealed partial class MapEditorForm : Form
         bool isEn = AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English;
         var sets = (_texturesDocument?.Textures ?? Array.Empty<string>())
             .Select(FloorMaterialCatalog.RegionalTileSet).OfType<string>().ToHashSet(StringComparer.OrdinalIgnoreCase);
-        // 只依實際圖塊系列判斷，沒有 L 系列證據時不猜測地區；搜尋及手動勾選仍可使用所有圖塊。
+        // 若地圖貼圖本身未包含 L 系列圖塊，檢查地圖上的地景物件地區（如 LanGer... -> L2）
+        if (sets.Count == 0)
+        {
+            var natureRegions = MapNatureRegions();
+            foreach (string region in natureRegions)
+            {
+                switch (region.ToUpperInvariant())
+                {
+                    case "GER": sets.Add("2"); break;
+                    case "HUN": sets.Add("3"); break;
+                    case "BRI": sets.Add("4"); sets.Add("04"); break;
+                    case "ITA": case "ROM": sets.Add("5"); sets.Add("05"); sets.Add("06"); break;
+                    case "KAR": sets.Add("13"); sets.Add("15"); break;
+                }
+            }
+        }
+        // 只依實際圖塊系列或地景地區判斷，沒有地區證據時不猜測地區；搜尋及手動勾選仍可使用所有圖塊。
         if (!_stampOtherRegions.Checked && string.IsNullOrWhiteSpace(filter) && sets.Count > 0)
             names = names.Where(name => FloorMaterialCatalog.RegionalTileSet(name) is not { } set || sets.Contains(set));
         PaletteItem[] items = names
@@ -1060,7 +1284,7 @@ internal sealed partial class MapEditorForm : Form
 
     private void UpdateContinuousStampPainting()
     {
-        _canvas.ContinuousPaint = _editMode == EditMode.Texture && _stampMode.Checked;
+        _canvas.ContinuousPaint = _editMode == EditMode.Texture && (_stampMode.Checked || _autoRoad.Checked);
         if (_view3d is not null) _view3d.ContinuousPaint = _canvas.ContinuousPaint;
     }
 
@@ -1218,7 +1442,12 @@ internal sealed partial class MapEditorForm : Form
 
     private void UpdateEditorState()
     {
-        bool editable = _selected?.IsCustom == true; _saveButton.Enabled = editable && IsDirty; _gamePreviewButton.Enabled = _selected is not null; _undoButton.Enabled = editable && (TerrainLayerMode ? _terrainLayers?.CanUndo == true : _terrainBlendSession?.CanUndo == true); _redoButton.Enabled = editable && (TerrainLayerMode ? _terrainLayers?.CanRedo == true : _terrainBlendSession?.CanRedo == true); _resetTerrainButton.Enabled = editable && ((_texturesDocument is not null && TextureDirty()) || _terrainLayers?.IsDirty == true || _resetAuxiliaryLayers);
+        _regionToolsButton.Enabled = _selected?.IsCustom == true && _terrainBlendSession is not null;
+        _layoutMenu.Enabled = _selected?.IsCustom == true;
+        _weatherMenu.Enabled = _selected?.IsCustom == true;
+        _boxSelectButton.Enabled = _selected?.IsCustom == true && _terrainBlendSession is not null;
+        InvalidateMapDiagnostics();
+        bool editable = _selected?.IsCustom == true; _saveButton.Enabled = editable && IsDirty; _exportModButton.Enabled = _selected is not null; _gamePreviewButton.Enabled = _selected is not null; _undoButton.Enabled = editable && (TerrainLayerMode ? _terrainLayers?.CanUndo == true : _terrainBlendSession?.CanUndo == true); _redoButton.Enabled = editable && (TerrainLayerMode ? _terrainLayers?.CanRedo == true : _terrainBlendSession?.CanRedo == true); _resetTerrainButton.Enabled = editable && ((_texturesDocument is not null && TextureDirty()) || _terrainLayers?.IsDirty == true || _resetAuxiliaryLayers);
         _heightTool.Enabled = editable && _terrainLayers is not null; _aiMapButton.Enabled = editable && _terrainLayers is not null; _blankTerrainButton.Enabled = editable && _terrainLayers is not null; _placeTool.Enabled = editable && _objectCatalog.Count > 0; _natureTool.Enabled = editable && _natureStoreAvailable;
         if (_editMode == EditMode.Nature)
         {
@@ -1234,6 +1463,51 @@ internal sealed partial class MapEditorForm : Form
         {
             _undoButton.Enabled |= editable && _natureSession.CanUndo;
             _redoButton.Enabled |= editable && _natureSession.CanRedo;
+        }
+        if (_lastActionWasPlacementTool)
+        {
+            _undoButton.Enabled = editable && _placementSession.CanUndo;
+            _redoButton.Enabled = editable && _lastActionWasPlacementToolUndone && _placementSession.CanRedo;
+        }
+        else if (_lastActionWasPlacementToolUndone)
+        {
+            _redoButton.Enabled = editable && _placementSession.CanRedo;
+        }
+        if (_lastActionWasHeightTool)
+        {
+            _undoButton.Enabled = editable && _terrainLayers?.CanUndo == true;
+            _redoButton.Enabled = editable && _lastActionWasHeightToolUndone && _terrainLayers?.CanRedo == true;
+        }
+        else if (_lastActionWasHeightToolUndone)
+        {
+            _redoButton.Enabled = editable && _terrainLayers?.CanRedo == true;
+        }
+        if (_lastActionWasFlora)
+        {
+            _undoButton.Enabled = editable && _natureSession.CanUndo;
+            _redoButton.Enabled = editable && _lastActionWasFloraUndone && _natureSession.CanRedo;
+        }
+        else if (_lastActionWasFloraUndone)
+        {
+            _redoButton.Enabled = editable && _natureSession.CanRedo;
+        }
+        if (_lastActionWasSettlementGeneration)
+        {
+            _undoButton.Enabled = editable && (_placementSession.CanUndo || _natureSession.CanUndo);
+            _redoButton.Enabled = editable && _lastActionWasSettlementGenerationUndone && (_placementSession.CanRedo || _natureSession.CanRedo);
+        }
+        else if (_lastActionWasSettlementGenerationUndone)
+        {
+            _redoButton.Enabled = editable && (_placementSession.CanRedo || _natureSession.CanRedo);
+        }
+        if (_lastActionWasRiverOrCliff)
+        {
+            _undoButton.Enabled = editable && (_terrainBlendSession?.CanUndo == true || _terrainLayers?.CanUndo == true);
+            _redoButton.Enabled = editable && _lastActionWasRiverOrCliffUndone && (_terrainBlendSession?.CanRedo == true || _terrainLayers?.CanRedo == true);
+        }
+        else if (_lastActionWasRiverOrCliffUndone)
+        {
+            _redoButton.Enabled = editable && (_terrainBlendSession?.CanRedo == true || _terrainLayers?.CanRedo == true);
         }
         _collisionTool.Enabled = editable && _terrainLayers?.HasCollision == true;
         UpdateSceneEditButtons();

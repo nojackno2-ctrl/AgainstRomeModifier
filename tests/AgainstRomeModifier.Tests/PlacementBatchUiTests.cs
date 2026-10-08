@@ -58,6 +58,24 @@ public sealed class PlacementBatchUiTests
         });
     }
 
+    [Fact]
+    public void Team_direction_dialog_cancel_and_apply_keep_identity_with_one_undo()
+    {
+        Run(form =>
+        {
+            SdlPlacedObject[] original = [Item(100), Item(200)];
+            form.PlacementSession.Load(original); Invoke(form, "RefreshPlacedList"); Select(form, 0, 1);
+            form.BatchEditDialogRunner = _ => DialogResult.Cancel;
+            form.EditSelectedPlacedObjectsBatch(); Assert.False(form.PlacementSession.CanUndo);
+            form.BatchEditDialogRunner = dialog => { dialog.Team = 3; dialog.Angle = 180; return DialogResult.OK; };
+            form.EditSelectedPlacedObjectsBatch();
+            Assert.All(form.PlacementSession.Capture(), item => { Assert.Equal(3, item.Team); Assert.Equal(180, item.Angle); });
+            Assert.Equal(original.Select(item => item.ScenarioId), form.PlacementSession.Capture().Select(item => item.ScenarioId));
+            Invoke(form, "Undo"); Assert.All(form.PlacementSession.Capture(), item => Assert.Equal(0, item.Team));
+            Assert.False(form.PlacementSession.CanUndo);
+        });
+    }
+
     private static void Select(MapEditorForm form, params int[] indices)
     {
         _ = form.PlacedList.Handle;

@@ -216,6 +216,45 @@ public sealed class PlacementEditSession : IEditorModule<IReadOnlyList<SdlPlaced
             .Select(index => (IPlacementCommand)new RemovePlacementCommand(index, _objects[index])).ToArray()));
     }
 
+    /// <summary>Validate every selected object before changing team/direction as one undoable batch.</summary>
+    public void EditMany(IEnumerable<int> indices, int? team = null, float? angle = null)
+    {
+        int[] selected = ValidateIndices(indices);
+        if (selected.Length == 0 || team is null && angle is null) return;
+        var commands = new List<IPlacementCommand>();
+        foreach (int index in selected)
+        {
+            SdlPlacedObject before = _objects[index];
+            SdlPlacedObject after = Clone(before with { Team = team ?? before.Team, Angle = angle ?? before.Angle });
+            ValidateBounds(after, strictUnitCount: true);
+            if (after.Team != before.Team || after.Angle != before.Angle)
+                commands.Add(new EditPlacementCommand(index, before, after));
+        }
+        if (commands.Count > 0) Execute(new BatchPlacementCommand("Set selected teams/directions", commands));
+    }
+
+    /// <summary>Validate a complete layout before inserting any objects. Missing IDs receive fresh identities.</summary>
+    public IReadOnlyList<int> AddMany(IEnumerable<SdlPlacedObject> items)
+    {
+        ArgumentNullException.ThrowIfNull(items);
+        var preparedItems = new List<SdlPlacedObject>();
+        foreach (SdlPlacedObject item in items)
+        {
+            ArgumentNullException.ThrowIfNull(item);
+            preparedItems.Add(Clone(item.ScenarioId == Guid.Empty ? item with { ScenarioId = Guid.NewGuid() } : item));
+        }
+        SdlPlacedObject[] prepared = preparedItems.ToArray();
+        var ids = _objects.Select(item => item.ScenarioId).ToHashSet();
+        foreach (SdlPlacedObject item in prepared)
+        {
+            ValidateBounds(item, strictUnitCount: true);
+            if (!ids.Add(item.ScenarioId)) throw new ArgumentException("Layout objects require distinct persistent IDs.", nameof(items));
+        }
+        int start = _objects.Count;
+        if (prepared.Length > 0) Execute(new BatchPlacementCommand("Place layout", prepared.Select(item => (IPlacementCommand)new AddPlacementCommand(item)).ToArray()));
+        return Enumerable.Range(start, prepared.Length).ToArray();
+    }
+
     private int[] ValidateIndices(IEnumerable<int> indices)
     {
         ArgumentNullException.ThrowIfNull(indices);

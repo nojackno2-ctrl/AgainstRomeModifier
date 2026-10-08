@@ -9,6 +9,56 @@ namespace AgainstRomeModifier.Tests;
 public sealed partial class MapEditorSaveTransactionTests
 {
     [Fact]
+    public void Live_ai_partial_redo_protects_locked_region_preview_undo_save_and_reload()
+    {
+        if (Environment.GetEnvironmentVariable("ARM_AI_ACCEPTANCE_LIVE") != "1") return;
+        string output = Environment.GetEnvironmentVariable("ARM_AI_ACCEPTANCE_OUTPUT") ?? Path.Combine(Path.GetTempPath(), "ArmAiPartial_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(output);
+        string map = CreateFixture();
+        RunInSta(() =>
+        {
+            using var form = new MapEditorForm(_root, new GameMapInfo("ENDL_005", map, true, "Partial AI", "Test"));
+            _ = form.Handle; Invoke(form, "LoadSelectedMap");
+            var layers = GetField<TerrainHeightEditSession>(form, "_terrainLayers");
+            var diskBefore = SnapshotDirectory(map);
+            byte[] before = layers.Heights.ToArray(), collision = layers.Collision!.ToArray();
+            string[] textures = GetField<BodenTexturesDocument>(form, "_texturesDocument").Textures.ToArray();
+            using var provider = new OllamaMapPlanner(); var planner = new MultiAiMapPlanner(provider);
+            var materials = GetField<FloorMaterialCatalog>(form, "_floorMaterials").Materials.Select(m => new AiMaterialOption(m.Id, m.DisplayName)).ToArray();
+            MultiAiMapPlanResult? generated = null; AiMapApplyResult? predicted = null, applied = null; AiMapEditScope? scope = null;
+            using var dialog = new AiMapPlanningDialog(provider.ListModelsAsync,
+                async (requests, description, token, progress) => generated = await planner.GeneratePlanAsync(requests, description, materials, 30, token, new LiveAcceptanceProgress(progress, output)),
+                plan => applied = form.ApplyAiMapPlan(plan),
+                plan => { scope = plan.EditScope; var preview = form.PreviewAiMapPlan(plan); predicted = preview.Changes; return preview; });
+            dialog.RoleChecks[1].Checked = false; dialog.RoleChecks[2].Checked = false;
+            dialog.BoundsBox.Text = "8,8,40,40"; dialog.LocksBox.Text = "20,20,8,8\r\n32,32,4,4";
+            dialog.DescriptionBox.Text = "Set baseHeight to 110 and add a broad hill at north-center. Preserve locked areas. No water, materials or passability changes.";
+            dialog.StartPosition = FormStartPosition.Manual; dialog.Location = new Point(-20000, -20000);
+            dialog.Show(); PumpLive(dialog.GenerateAsync());
+            Assert.NotNull(generated); Assert.False(generated.HasFailures, generated.RawResponse); Assert.Single(generated.Roles);
+            Assert.Equal(AiMapDesignRole.Terrain, generated.Roles[0].Role); Assert.True(dialog.ApplyButton.Enabled);
+            Assert.NotNull(predicted); Assert.True(predicted.HeightSamplesChanged > 0); Assert.False(GetProperty<bool>(form, "IsDirty"));
+            Assert.Equal(before, layers.Heights); AssertSnapshotUnchanged(map, diskBefore);
+            dialog.PreviewImage.Image!.Save(Path.Combine(output, "partial-preview.png")); CaptureLiveDialog(dialog, output, "partial");
+            dialog.ApplyPlan(); Assert.Equal(predicted, applied); Assert.Equal(textures, GetField<BodenTexturesDocument>(form, "_texturesDocument").Textures);
+            Assert.Equal(collision, layers.Collision);
+            float step = (layers.VertexSize - 1) / 64f;
+            for (int y = 0; y < layers.VertexSize; y++) for (int x = 0; x < layers.VertexSize; x++)
+                if (!scope!.AllowsVertex(x / step, y / step, 64)) Assert.Equal(before[y * layers.VertexSize + x], layers.Heights[y * layers.VertexSize + x]);
+            byte[] edited = layers.Heights.ToArray(); SetWorkflowMode(form, "Height"); Invoke(form, "Undo"); Assert.Equal(before, layers.Heights);
+            Invoke(form, "Redo"); Assert.Equal(edited, layers.Heights); AssertSnapshotUnchanged(map, diskBefore);
+            Assert.True(form.TrySaveMap(false, out Exception? error), error?.ToString());
+            using var fresh = new MapEditorForm(_root, new GameMapInfo("ENDL_005", map, true, "Fresh partial", "Test"));
+            _ = fresh.Handle; Invoke(fresh, "LoadSelectedMap");
+            Assert.Equal(edited, GetField<TerrainHeightEditSession>(fresh, "_terrainLayers").Heights);
+            Assert.Equal(collision, GetField<TerrainHeightEditSession>(fresh, "_terrainLayers").Collision);
+            Assert.Equal(textures, GetField<BodenTexturesDocument>(fresh, "_texturesDocument").Textures);
+            File.WriteAllText(Path.Combine(output, "partial-result.json"), JsonSerializer.Serialize(new { generated.Roles, generated.Plan, Preview = predicted, Applied = applied,
+                Bounds = scope!.Bounds, Locks = scope.Locked, Verified = "live single role / preview isolation / protected height and shared edges / other layers unchanged / undo redo / save / fresh reload" }, LiveJsonOptions));
+        }, TimeSpan.FromMinutes(12));
+    }
+
+    [Fact]
     public void Live_ai_dialog_preview_apply_undo_save_and_fresh_reload()
     {
         if (Environment.GetEnvironmentVariable("ARM_AI_ACCEPTANCE_LIVE") != "1") return;

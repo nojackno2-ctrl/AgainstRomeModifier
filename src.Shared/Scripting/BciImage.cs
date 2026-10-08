@@ -33,6 +33,17 @@ public sealed class BciImage
     public int DtorAddress { get; set; }
     public int MainAddress { get; set; }
 
+    /// <summary>沒有來源地圖初始化或自動生成內容的場景節拍；等待單位沿用原生 ak_level。</summary>
+    public static BciImage CreateIdleLevel()
+    {
+        // Destructor follows the original main-frame cleanup and exit sequence.
+        // Main owns one empty frame and repeatedly waits ten native ticks. 131 consumes an integer, not a double.
+        int[] words = [95, 75, 66, 0, 87, 130, 74, 94, 73, 0, 66, 10, 131, 112, -20];
+        var code = new byte[words.Length * 4];
+        for (int index = 0; index < words.Length; index++) BinaryPrimitives.WriteInt32LittleEndian(code.AsSpan(index * 4), words[index]);
+        return new BciImage(code, [], [], [], [], [], 0, 24);
+    }
+
     public static BciImage Parse(byte[] data)
     {
         if (data.Length < 0x24 || !data.AsSpan(0, 4).SequenceEqual("BCI0"u8)) throw new InvalidDataException("不是 BCI0 腳本映像。");

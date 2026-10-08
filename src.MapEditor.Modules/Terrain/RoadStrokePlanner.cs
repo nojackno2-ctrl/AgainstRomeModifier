@@ -24,7 +24,9 @@ internal static class RoadStrokePlanner
         if (dimension <= 0 || textures.Count != (long)dimension * dimension) throw new ArgumentException("Invalid road map dimensions.");
         if (path.Any(p => p.X < 0 || p.Y < 0 || p.X >= dimension || p.Y >= dimension))
             return new(false, [], path.Where(p => p.X < 0 || p.Y < 0 || p.X >= dimension || p.Y >= dimension).ToArray());
-        var byName = available.ToDictionary(t => t.Texture, StringComparer.OrdinalIgnoreCase);
+        var byName = available
+            .GroupBy(t => t.Texture, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => new RoadTile(g.Key, g.Aggregate(RoadConnections.None, (acc, item) => acc | item.Connections)), StringComparer.OrdinalIgnoreCase);
         var links = new Dictionary<(int X, int Y), RoadConnections>();
         void Add((int X, int Y) p, RoadConnections connection) => links[p] = links.GetValueOrDefault(p) | connection;
         if (path.Count > 0) Add(path[0], RoadConnections.None);

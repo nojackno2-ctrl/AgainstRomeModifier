@@ -296,6 +296,7 @@ namespace AgainstRomeModifier
                 return name.Length == 8 && name.StartsWith("ENDL_", StringComparison.OrdinalIgnoreCase)
                     && name[5..].All(character => character is >= '0' and <= '9');
             })
+            .Where(path => !Maps.CustomMapManifest.HasStandaloneLevel(path))
             .OrderBy(path => path, StringComparer.OrdinalIgnoreCase);
 
         public static int GetExpectedFileCount(string pattern)
