@@ -9,6 +9,7 @@ internal sealed partial class MapEditorForm
     private readonly ListView _mapIssues = new() { Dock = DockStyle.Fill, View = View.Details, FullRowSelect = true, MultiSelect = false, ShowItemToolTips = true };
     private readonly Button _checkMap = new() { AutoSize = true };
     private readonly Button _locateMapIssue = new() { AutoSize = true };
+    private readonly Button _compareSaved = new() { AutoSize = true };
     private readonly Label _mapCheckSummary = new() { Dock = DockStyle.Top, AutoSize = true, Padding = new Padding(4, 6, 4, 6) };
     private readonly TextBox _mapIssueDetails = new() { Dock = DockStyle.Bottom, Multiline = true, ReadOnly = true, WordWrap = true, ScrollBars = ScrollBars.Vertical, Height = 100 };
     private TabPage? _mapCheckTab;
@@ -19,7 +20,8 @@ internal sealed partial class MapEditorForm
     {
         var panel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(8) };
         var buttons = new FlowLayoutPanel { Dock = DockStyle.Bottom, AutoSize = true };
-        buttons.Controls.AddRange([_checkMap, _locateMapIssue]);
+        buttons.Controls.AddRange([_checkMap, _locateMapIssue, _compareSaved]);
+        _compareSaved.Click += (_, _) => { _mapIssueDetails.Text = BuildSavedDiffReport(); };
         _mapIssues.Columns.Add("", 72); _mapIssues.Columns.Add("", 250);
         _mapIssues.Resize += (_, _) => _mapIssues.Columns[1].Width = Math.Max(100, _mapIssues.ClientSize.Width - _mapIssues.Columns[0].Width - 8);
         _checkMap.Click += (_, _) => RefreshMapDiagnostics();
@@ -98,6 +100,7 @@ internal sealed partial class MapEditorForm
         if (_consoleTab is not null) _consoleTab.Text = en ? "Console" : "控制台";
         _checkMap.Text = en ? "Check now" : "立即檢查";
         _locateMapIssue.Text = en ? "Locate" : "定位";
+        _compareSaved.Text = en ? "Compare with saved" : "與已儲存版本比較";
         _mapIssues.Columns[0].Text = en ? "Severity" : "程度";
         _mapIssues.Columns[1].Text = en ? "Issue" : "問題";
         RenderMapIssues();

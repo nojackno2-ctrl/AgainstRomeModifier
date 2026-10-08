@@ -58,6 +58,10 @@ internal sealed class TerrainHeightEditSession
     public IReadOnlyList<byte>? Collision => _collision;
     public bool HasCollision => _collision is not null;
     public bool HasEmboss => _savedEmboss is not null;
+    /// <summary>上次載入／儲存時的高度與碰撞基準（唯讀），供版本差異比對使用。</summary>
+    public IReadOnlyList<byte> BaselineHeights => _baselineHeights;
+    public IReadOnlyList<byte>? BaselineCollision => _baselineCollision;
+
     public bool HeightsDirty => !_heights.AsSpan().SequenceEqual(_baselineHeights);
     public bool CollisionDirty => _collision is not null && !_collision.AsSpan().SequenceEqual(_baselineCollision);
     public bool IsDirty => HeightsDirty || CollisionDirty || EmbossRelightPending;
