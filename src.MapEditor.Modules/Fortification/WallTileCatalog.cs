@@ -14,6 +14,21 @@ public sealed class WallTileCatalog
         RegisterDefaults();
     }
 
+    private WallTileCatalog(bool empty) { }
+
+    /// <summary>
+    /// 只保留遊戲目錄中實際存在的元件（塔、端蓋等原版沒有的元件會被剔除，規劃器自動退回直牆／轉角）。
+    /// </summary>
+    public WallTileCatalog Filtered(Func<string, bool> exists)
+    {
+        ArgumentNullException.ThrowIfNull(exists);
+        var filtered = new WallTileCatalog(empty: true);
+        foreach (var (style, list) in _definitionsByStyle)
+            foreach (var definition in list.Where(item => exists(item.NameDef)))
+                filtered.Register(style, definition);
+        return filtered;
+    }
+
     /// <summary>
     /// 註冊自訂或擴充防禦工事元件。
     /// </summary>
@@ -213,7 +228,7 @@ public sealed class WallTileCatalog
     {
         // 1. 羅馬石牆風格 (RomanStoneWall)
         Register(FortificationStyle.RomanStoneWall, new WallComponentDefinition(
-            NameDef: "BauRomPal00",
+            NameDef: "BauRomMau00_Mauer",
             Kind: WallComponentKind.Straight,
             SupportedConnections: WallConnections.East | WallConnections.West,
             DefaultAngleDeg: 0f,
@@ -222,7 +237,7 @@ public sealed class WallTileCatalog
             FoundationTexture: "Pflaster_braun1"));
 
         Register(FortificationStyle.RomanStoneWall, new WallComponentDefinition(
-            NameDef: "BauRomPal02_Palisadenecke",
+            NameDef: "BauRomMau02_Mauerecke",
             Kind: WallComponentKind.Corner,
             SupportedConnections: WallConnections.North | WallConnections.East,
             DefaultAngleDeg: 0f,
@@ -240,7 +255,7 @@ public sealed class WallTileCatalog
             FoundationTexture: "Pflaster_braun2"));
 
         Register(FortificationStyle.RomanStoneWall, new WallComponentDefinition(
-            NameDef: "BauRomMauertor",
+            NameDef: "BauRomTor02_Mauertor_auf",
             Kind: WallComponentKind.Gate,
             SupportedConnections: WallConnections.East | WallConnections.West,
             DefaultAngleDeg: 0f,
@@ -259,7 +274,7 @@ public sealed class WallTileCatalog
 
         // 2. 日耳曼木質柵欄 (GermanicPalisade)
         Register(FortificationStyle.GermanicPalisade, new WallComponentDefinition(
-            NameDef: "BauGerPal00",
+            NameDef: "BauGerPal00_Palisade",
             Kind: WallComponentKind.Straight,
             SupportedConnections: WallConnections.East | WallConnections.West,
             DefaultAngleDeg: 0f,
@@ -286,7 +301,7 @@ public sealed class WallTileCatalog
             FoundationTexture: "Erde"));
 
         Register(FortificationStyle.GermanicPalisade, new WallComponentDefinition(
-            NameDef: "BauGerPalTor",
+            NameDef: "BauGerTor00_Palisadentor_auf",
             Kind: WallComponentKind.Gate,
             SupportedConnections: WallConnections.East | WallConnections.West,
             DefaultAngleDeg: 0f,
@@ -305,7 +320,7 @@ public sealed class WallTileCatalog
 
         // 3. 凱爾特木質防禦 (CelticPalisade)
         Register(FortificationStyle.CelticPalisade, new WallComponentDefinition(
-            NameDef: "BauKelPal00",
+            NameDef: "BauKelMau00_Mauer",
             Kind: WallComponentKind.Straight,
             SupportedConnections: WallConnections.East | WallConnections.West,
             DefaultAngleDeg: 0f,
@@ -314,7 +329,7 @@ public sealed class WallTileCatalog
             FoundationTexture: "Erde"));
 
         Register(FortificationStyle.CelticPalisade, new WallComponentDefinition(
-            NameDef: "BauKelPal02_Palisadenecke",
+            NameDef: "BauKelMau02_Mauerecke",
             Kind: WallComponentKind.Corner,
             SupportedConnections: WallConnections.North | WallConnections.East,
             DefaultAngleDeg: 0f,
@@ -332,7 +347,7 @@ public sealed class WallTileCatalog
             FoundationTexture: "Erde"));
 
         Register(FortificationStyle.CelticPalisade, new WallComponentDefinition(
-            NameDef: "BauKelPalTor",
+            NameDef: "BauKelTor00_Mauertor_auf",
             Kind: WallComponentKind.Gate,
             SupportedConnections: WallConnections.East | WallConnections.West,
             DefaultAngleDeg: 0f,

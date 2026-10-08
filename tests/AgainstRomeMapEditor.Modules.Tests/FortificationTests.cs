@@ -18,7 +18,7 @@ public sealed class FortificationTests
             preferTowerOnCorner: false);
         Assert.Equal(WallComponentKind.Straight, romanStraightEW.Kind);
         Assert.Equal(0f, angleEW);
-        Assert.Equal("BauRomPal00", romanStraightEW.NameDef);
+        Assert.Equal("BauRomMau00_Mauer", romanStraightEW.NameDef);
 
         // 羅馬南北直牆
         var (romanStraightNS, angleNS) = catalog.ResolveComponent(
@@ -35,7 +35,7 @@ public sealed class FortificationTests
             preferTowerOnCorner: false);
         Assert.Equal(WallComponentKind.Corner, corner.Kind);
         Assert.Equal(0f, cornerAngle);
-        Assert.Equal("BauRomPal02_Palisadenecke", corner.NameDef);
+        Assert.Equal("BauRomMau02_Mauerecke", corner.NameDef);
 
         // 轉角（啟用自動塔樓）：升級為防禦塔
         var (cornerTower, _) = catalog.ResolveComponent(

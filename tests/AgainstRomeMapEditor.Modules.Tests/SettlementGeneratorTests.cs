@@ -211,4 +211,33 @@ public sealed class SettlementGeneratorTests
         Assert.True(natureSession.Redo());
         Assert.Equal(additions.Count, natureSession.Additions.Count);
     }
+
+    [Fact]
+    public void Engine_resolves_short_type_names_against_real_game_catalog_and_skips_missing()
+    {
+        var evaluator = new SettlementSiteEvaluator(Dimension, (_, _) => 20f, (_, _) => false, 0f, TileSize);
+        var planner = new ResourceClusterPlanner(Dimension, (_, _) => 20f, (_, _) => false, 0f, TileSize);
+        var balancer = new MultiplayerFairnessBalancer(evaluator, planner, Dimension, TileSize);
+        var result = balancer.Generate(2, SymmetryMode.CentralSymmetry, baseSeed: 42);
+
+        // 真實 cl_scint.ini 命名：別名 GER_HAU00 對應 BauGerHau00_Haupthaus，且沒有 Kas／Tur 等猜測型別。
+        var catalog = new List<SdlObjectType>
+        {
+            new("BauGerHau00_Haupthaus", -1, SdlObjectCategory.Building, "Ger", 0, new Dictionary<string, string> { ["alias"] = "GER_HAU00" }),
+            new("BauGerLag00_Lagerhaus", -1, SdlObjectCategory.Building, "Ger", 0, new Dictionary<string, string> { ["alias"] = "GER_LAG00" }),
+            new("BauGerWoh00_Wohnhaus", -1, SdlObjectCategory.Building, "Ger", 0, new Dictionary<string, string> { ["alias"] = "GER_WOH00" }),
+        };
+        var session = new PlacementEditSession();
+        var placed = SettlementGeneratorEngine.ApplyToPlacementSession(result, catalog, session, (_, _) => 20f);
+
+        Assert.NotEmpty(placed);
+        Assert.All(Enumerable.Range(0, session.Count), index => Assert.Contains(session[index].Type.NameDef, catalog.Select(item => item.NameDef)));
+        Assert.True(session.Undo());
+        Assert.Equal(0, session.Count);
+
+        Assert.Equal("GER_HAU00", LayoutTypeResolver.ResolveAlias(catalog, "BauGerHau00"));
+        Assert.Null(LayoutTypeResolver.ResolveAlias(catalog, "BauGerKas00"));
+        var natureKeys = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase) { ["LanGerNad00_Tanne_gross"] = 1 };
+        Assert.Equal("LanGerNad00_Tanne_gross", LayoutTypeResolver.ResolveKey(natureKeys, "LanGerNad00"));
+    }
 }

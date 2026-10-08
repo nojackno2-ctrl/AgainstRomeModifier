@@ -52,11 +52,17 @@ internal sealed partial class MapEditorForm
         if (_selected?.IsCustom != true || _texturesDocument is null || _terrainBlendSession is null) return;
         int dimension = _texturesDocument.Dimension;
         int count = operation == TerrainRegionOperation.Connected ? 1 : 2;
-        if (vertices.Count < count || (operation != TerrainRegionOperation.Road && operation != TerrainRegionOperation.River && vertices.Count != count)) throw new ArgumentException("Invalid vertex count.");
+        if (vertices.Count < count || (operation != TerrainRegionOperation.Road && operation != TerrainRegionOperation.River && operation != TerrainRegionOperation.Wall && vertices.Count != count)) throw new ArgumentException("Invalid vertex count.");
 
         if (operation == TerrainRegionOperation.River)
         {
             ApplyRiverTool(vertices);
+            return;
+        }
+
+        if (operation == TerrainRegionOperation.Wall)
+        {
+            ApplyWallTool(vertices);
             return;
         }
 

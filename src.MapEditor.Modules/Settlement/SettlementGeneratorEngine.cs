@@ -113,6 +113,8 @@ public static class SettlementGeneratorEngine
         ArgumentNullException.ThrowIfNull(groundHeight);
 
         var preset = ToPlacementLayoutPreset(distribution);
+        // 規劃器用短型別名；解析成實際目錄別名，目錄沒有的型別略過而不是讓整批失敗。
+        preset = preset with { Entries = ResolveEntries(preset.Entries, name => LayoutTypeResolver.ResolveAlias(catalog, name)) };
 
         // 使用 (0, 0, 0) 錨點，因為 entries 已具備世界絕對座標
         var plannedPlacements = MapLayoutPresets.PlanPlacements(
@@ -141,6 +143,8 @@ public static class SettlementGeneratorEngine
         ArgumentNullException.ThrowIfNull(groundHeight);
 
         var preset = ToNatureLayoutPreset(distribution);
+        preset = preset with { Entries = ResolveEntries(preset.Entries, name => LayoutTypeResolver.ResolveKey(templates, name)) };
+        if (preset.Entries.Count == 0) return false;
 
         var additions = MapLayoutPresets.PlanNature(
             preset,
@@ -151,6 +155,14 @@ public static class SettlementGeneratorEngine
             groundHeight: groundHeight);
 
         return session.PlantMany(additions);
+    }
+
+    private static IReadOnlyList<MapLayoutEntry> ResolveEntries(IReadOnlyList<MapLayoutEntry> entries, Func<string, string?> resolve)
+    {
+        var resolved = new List<MapLayoutEntry>(entries.Count);
+        foreach (MapLayoutEntry entry in entries)
+            if (resolve(entry.Type) is { } type) resolved.Add(entry with { Type = type });
+        return resolved;
     }
 
     /// <summary>

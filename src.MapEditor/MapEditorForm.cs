@@ -152,6 +152,8 @@ internal sealed partial class MapEditorForm : Form
     private bool _lastActionWasSettlementGenerationUndone;
     private bool _lastActionWasFlora;
     private bool _lastActionWasHeightTool;
+    private bool _lastActionWasPlacementTool;
+    private bool _lastActionWasPlacementToolUndone;
     private bool _lastActionWasHeightToolUndone;
     private bool _lastActionWasFloraUndone;
     private bool _lastActionWasRiverOrCliff;
@@ -876,6 +878,12 @@ internal sealed partial class MapEditorForm : Form
     private void Undo()
     {
         CommitStroke();
+        if (_lastActionWasPlacementTool)
+        {
+            _lastActionWasPlacementTool = false;
+            _lastActionWasPlacementToolUndone = true;
+            if (_placementSession.Undo()) { RefreshPlacedList(); RefreshSceneMarkers(); UpdateEditorState(); return; }
+        }
         if (_lastActionWasHeightTool)
         {
             _lastActionWasHeightTool = false;
@@ -939,6 +947,12 @@ internal sealed partial class MapEditorForm : Form
     private void Redo()
     {
         CommitStroke();
+        if (_lastActionWasPlacementToolUndone)
+        {
+            _lastActionWasPlacementToolUndone = false;
+            _lastActionWasPlacementTool = true;
+            if (_placementSession.Redo()) { RefreshPlacedList(); RefreshSceneMarkers(); UpdateEditorState(); return; }
+        }
         if (_lastActionWasHeightToolUndone)
         {
             _lastActionWasHeightToolUndone = false;
@@ -1448,6 +1462,15 @@ internal sealed partial class MapEditorForm : Form
         {
             _undoButton.Enabled |= editable && _natureSession.CanUndo;
             _redoButton.Enabled |= editable && _natureSession.CanRedo;
+        }
+        if (_lastActionWasPlacementTool)
+        {
+            _undoButton.Enabled = editable && _placementSession.CanUndo;
+            _redoButton.Enabled = editable && _lastActionWasPlacementToolUndone && _placementSession.CanRedo;
+        }
+        else if (_lastActionWasPlacementToolUndone)
+        {
+            _redoButton.Enabled = editable && _placementSession.CanRedo;
         }
         if (_lastActionWasHeightTool)
         {
