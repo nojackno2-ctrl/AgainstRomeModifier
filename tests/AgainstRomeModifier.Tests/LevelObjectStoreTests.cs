@@ -382,7 +382,12 @@ public sealed class LevelObjectStoreTests
         using var level = new LevelFixture(pfil);
         string stage = BlankStage(level, pfil);
         Assert.Contains(LevelObjectStore.Load(stage).Objects(), obj => obj.Linked);
+        // 聚落 SDL 範本必須原樣保留：清成沒有 object 區段會讓遊戲載入時卡死（2026-10-08 遊戲內實測）。
+        string sdlPath = Path.Combine(stage, "Endlos_Ger_Siedlung1.sdl");
+        File.WriteAllText(sdlPath, "[settlement]\r\nname=Endlos_Ger_Siedlung1\r\nrefpos 1,2,3\r\n\r\n[object0]\r\nobjdef = BauGerHau00_Haupthaus\r\n");
+        byte[] sdlBefore = File.ReadAllBytes(sdlPath);
         BlankMapContent.ResetStagingDirectory(stage);
+        Assert.Equal(sdlBefore, File.ReadAllBytes(sdlPath));
         Assert.Empty(LevelObjectStore.Load(stage).Objects());
         byte[] positions = GameLZSS.DecompressPfil(File.ReadAllBytes(Path.Combine(stage, "DATA", "position.dat")));
         Assert.True(positions.AsSpan(8).IndexOfAnyExcept((byte)0) < 0); // also clears the invalid entry containing -999 and orphan 13

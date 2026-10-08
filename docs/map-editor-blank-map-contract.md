@@ -29,7 +29,7 @@
 
 `BlankMapBuilder` 透過 `EndlessMapCloner.ClonePrepared` 在尚未登錄的新 staging 目錄初始化。全部完成才移到正式槽位並寫 manifest；來源圖不寫入。失敗則回滾／移除本次新建目錄，保留既有槽位。
 
-- 全部原生 objects／objdata 槽位改用未啟用槽位範本；位置池除標頭外全清零，含 orphan 與無效位置。所有 SDL object 區段清除，保留聚落欄位與未知區段。編輯器放置、事件與 DATA 綁定清空。
+- 全部原生 objects／objdata 槽位改用未啟用槽位範本；位置池除標頭外全清零，含 orphan 與無效位置。SDL 聚落範本保留不動：2026-10-08 遊戲內實測，把 SDL 清成沒有 object 區段會讓遊戲載入時卡死；保留原範本搭配閒置腳本可正常載入（空白平坦場景，起點無物件）。編輯器放置、事件與 DATA 綁定清空。
 - anim／gfxtype／action／hirarchy／formatio／lager／biglager／light／particle／explos／hitex／flash 所有記錄與 parallel columns 改成各池的空槽範本；保留版本、容量、必要 sentinel 與 PFIL 標頭。way 路徑與狀態全部清零，保留標頭。共13份 runtime 資料池；版本、長度、欄寬不符或沒有空槽則拒絕建立。空槽狀態依格式讀完整1／2／4 bytes，不以低位元組為零誤判。
 - 刪除 staging 的舊 BCI 與原來源 backup，以新的 idle `ak_level` 及相同的 `ak_level.arm_original` 取代。新 CODE 只有 frame、10 tick 等待迴圈與 destructor cleanup，沒有來源初始化、聚落／NPC 生成或其他 native calls。未刪除引擎需要的關卡腳本入口。
 - 64×64 單一原生材質；257×257 高度固定為水面高度圖單位加20、vertex RGB 全白、smooth／emboss 全黑；256×256 collision 全黑。水面太高或尺寸不符則拒絕。新 minimap 與地表材質一致，四個高度快取清除。這些檔案在登錄前就已寫好，初次開圖不再執行舊平坦範本的待儲存流程。

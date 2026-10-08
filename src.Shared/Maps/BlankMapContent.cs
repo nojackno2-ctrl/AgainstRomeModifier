@@ -41,10 +41,8 @@ public static class BlankMapContent
         using var rollback = new FileRollbackScope();
         store.Save(full, rollback);
         foreach (var (name, bytes) in pending) SafeFileWriter.WriteAllBytes(Path.Combine(full, "DATA", name), bytes, rollback);
-        foreach (string path in Directory.GetFiles(full, "*.sdl", SearchOption.AllDirectories))
-        {
-            var document = SdlDocument.Load(path); document.ClearObjects(); document.Save(rollback);
-        }
+        // SDL 聚落範本必須保持原樣：2026-10-08 遊戲內實測，把 SDL 清成沒有任何 object 區段會讓遊戲在載入時卡死
+        // （Responding=False）；保留原範本且使用閒置腳本時可正常載入，且腳本不呼叫就不會生成聚落。
         new ScenarioDocument().Save(full, rollback);
         string scripts = LevelScriptInjector.ScriptDirectory(full);
         string level = Path.Combine(scripts, LevelScriptInjector.ScriptFile);
