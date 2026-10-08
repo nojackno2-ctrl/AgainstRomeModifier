@@ -226,6 +226,10 @@ public sealed class SdlDocument : MapTextDocument
         RenumberObjects();
     }
 
+    /// <summary>新空白地圖一次移除全部物件區段；保留聚落欄位、未知區段與檔案格式。</summary>
+    public void ClearObjects()
+        => Text = SectionPattern.Replace(Text, match => ObjectSectionName.IsMatch(match.Groups["name"].Value) ? "" : match.Value);
+
     private IReadOnlyDictionary<string, string> ReadSection(string name) => ReadFields(FindSection(name).Body);
 
     private void SetSectionValue(string sectionName, string key, string value)

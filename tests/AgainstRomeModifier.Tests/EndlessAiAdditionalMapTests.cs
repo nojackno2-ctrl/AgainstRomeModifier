@@ -60,5 +60,39 @@ public sealed class EndlessAiAdditionalMapTests : IDisposable
         File.WriteAllText(Path.Combine(map, "Endlos_Rom_Siedlung1.sdl"), "[object0000]\r\nteam=1\r\n");
         return map;
     }
+
+    [Fact]
+    public void Standalone_empty_level_does_not_make_real_P1_unknown_and_is_preserved_during_apply_and_restore()
+    {
+        var orchestrator = new EndlessAiOrchestrator();
+        var p1 = Assert.IsType<BciLiteralPatch>(orchestrator.M1.Patches.Single(patch => patch.Id == "P1"));
+        var module = new EndlessAiModule("P1-standalone", "Standalone scope", [p1]);
+        int[] words = p1.Signature.Select(word => word ?? 123456).ToArray();
+        for (int index = 0; index < p1.ValueWordIndices.Length; index++) words[p1.ValueWordIndices[index]] = p1.OriginalValues[index];
+        byte[] header = new byte[64]; "PFIL"u8.CopyTo(header);
+        byte[] original = GameLZSS.CompressPfil(words.SelectMany(BitConverter.GetBytes).ToArray(), header);
+        AddMap("ENDL_000", original); string template = AddMap("ENDL_005", original);
+        File.WriteAllText(Path.Combine(template, CustomMapManifest.MarkerFileName), "{}");
+        byte[] idle = GameLZSS.CompressPfil(Scripting.BciImage.CreateIdleLevel().Serialize(), header);
+        string empty = AddMap("ENDL_006", idle);
+        File.WriteAllText(Path.Combine(empty, CustomMapManifest.MarkerFileName), System.Text.Json.JsonSerializer.Serialize(
+            new CustomMapEntry(6, 0, DateTimeOffset.UtcNow, "Test") { StandaloneLevel = true }));
+        var before = Directory.GetFiles(empty, "*", SearchOption.AllDirectories).ToDictionary(path => path, File.ReadAllBytes);
+        Assert.True(CustomMapManifest.HasStandaloneLevel(empty)); Assert.False(CustomMapManifest.HasStandaloneLevel(template));
+        Assert.Equal(2, EndlessAiOrchestrator.GetExpectedFileCount(_root, ScriptPattern));
+        Assert.Equal(2, EndlessAiOrchestrator.GetExpectedFileCount(_root, SdlPattern));
+        Assert.Equal(PatchState.Original, orchestrator.DetectModule(_root, module));
+        Assert.True(orchestrator.ApplyModule(_root, module, true));
+        using (var rollback = new FileRollbackScope()) { orchestrator.SaveAll(_root, rollback); rollback.Commit(); }
+        var loaded = new EndlessAiOrchestrator(); Assert.Equal(PatchState.Ultimate, loaded.DetectModule(_root, module));
+        Assert.True(loaded.ApplyModule(_root, module, false));
+        using (var rollback = new FileRollbackScope()) { loaded.SaveAll(_root, rollback); rollback.Commit(); }
+        foreach (var (path, bytes) in before) Assert.Equal(bytes, File.ReadAllBytes(path));
+        // A misplaced marker must never hide an original slot from detection.
+        string official = Path.Combine(_root, "MAPS", "ENDL_000");
+        File.Copy(Path.Combine(empty, CustomMapManifest.MarkerFileName), Path.Combine(official, CustomMapManifest.MarkerFileName));
+        Assert.False(CustomMapManifest.HasStandaloneLevel(official));
+        Assert.Equal(2, EndlessAiOrchestrator.GetExpectedFileCount(_root, ScriptPattern));
+    }
     public void Dispose() { if (Directory.Exists(_root)) Directory.Delete(_root, true); }
 }

@@ -2,7 +2,10 @@ using System.Text.Json;
 
 namespace AgainstRomeModifier.Maps;
 
-public sealed record CustomMapEntry(int Slot, int SourceSlot, DateTimeOffset CreatedAt, string ToolVersion);
+public sealed record CustomMapEntry(int Slot, int SourceSlot, DateTimeOffset CreatedAt, string ToolVersion)
+{
+    public bool StandaloneLevel { get; init; }
+}
 
 public sealed class CustomMapManifest
 {
@@ -39,6 +42,15 @@ public sealed class CustomMapManifest
     }
 
     public static bool IsCustomMapDirectory(string path) => File.Exists(Path.Combine(path, MarkerFileName));
+
+    /// <summary>沒有原無盡 main 的自製場景；原廠槽位即使有誤放標記也不排除。</summary>
+    public static bool HasStandaloneLevel(string path)
+    {
+        if (!CustomMapAccess.IsEditableDirectory(path)) return false;
+        try { return JsonSerializer.Deserialize<CustomMapEntry>(File.ReadAllText(Path.Combine(path, MarkerFileName)))?.StandaloneLevel == true; }
+        catch (Exception ex) when (ex is IOException or JsonException)
+        { System.Diagnostics.Debug.WriteLine($"讀取地圖脚本種類失敗 ({path}): {ex.Message}"); return false; }
+    }
 
     /// <summary>Checks the owning map's marker, including files in that map's subdirectories.</summary>
     public static bool IsCustomMapFile(string mapsPath, string filePath)

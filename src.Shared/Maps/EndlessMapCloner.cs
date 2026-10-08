@@ -22,7 +22,16 @@ public sealed class EndlessMapCloner
         return CloneCore(normalizedGamePath, source.Id, source.DirectoryPath, source.EndlessSlot ?? 0, newSlot, newName);
     }
 
-    private EndlessMapInfo CloneCore(string normalizedGamePath, string sourceMapId, string sourceDirectory, int sourceSlot, int newSlot, string newName)
+    /// <summary>在新建且尚未登錄的暫存副本準備內容；準備失敗時不登錄槽位。</summary>
+    public EndlessMapInfo ClonePrepared(string gamePath, string sourceMapId, int newSlot, string newName, Action<string> prepare, bool? standaloneLevel = null)
+    {
+        ArgumentNullException.ThrowIfNull(prepare);
+        string normalized = EndlessMapCatalog.ValidateGamePath(gamePath);
+        GameMapInfo source = new GameMapCatalog().Require(normalized, sourceMapId);
+        return CloneCore(normalized, source.Id, source.DirectoryPath, source.EndlessSlot ?? 0, newSlot, newName, prepare, standaloneLevel);
+    }
+
+    private EndlessMapInfo CloneCore(string normalizedGamePath, string sourceMapId, string sourceDirectory, int sourceSlot, int newSlot, string newName, Action<string>? prepare = null, bool? standaloneLevel = null)
     {
         if (newSlot is < 5 or > 999) throw new ArgumentOutOfRangeException(nameof(newSlot), "自製地圖槽位必須在 ENDL_005 至 ENDL_999。");
         if (string.IsNullOrWhiteSpace(newName)) throw new ArgumentException("請輸入地圖名稱。", nameof(newName));
@@ -41,7 +50,9 @@ public sealed class EndlessMapCloner
             CopyDirectory(sourceDirectory, temporary);
             VerifyCopy(sourceDirectory, temporary);
             RewriteKnownFiles(temporary, sourceMapId, mapId, newName);
-            var marker = new CustomMapEntry(newSlot, sourceSlot, DateTimeOffset.UtcNow, ToolVersion());
+            prepare?.Invoke(temporary);
+            var marker = new CustomMapEntry(newSlot, sourceSlot, DateTimeOffset.UtcNow, ToolVersion())
+            { StandaloneLevel = standaloneLevel ?? CustomMapManifest.HasStandaloneLevel(sourceDirectory) };
             Core.Services.SafeFileWriter.WriteAllBytes(Path.Combine(temporary, CustomMapManifest.MarkerFileName), JsonSerializer.SerializeToUtf8Bytes(marker, Core.Services.JsonDefaults.Indented));
             Directory.Move(temporary, destination);
             moved = true;

@@ -64,6 +64,7 @@ public sealed class MapEditor3DTests
         string[] buttonTexts = Descendants(form).OfType<Button>().Select(button => button.Text).ToArray();
         Assert.Contains("從無盡範本建立", buttonTexts);
         Assert.Contains("平坦範本地圖", buttonTexts);
+        Assert.Contains("空白場景（實驗）", buttonTexts);
         Assert.DoesNotContain("新建空白地圖", buttonTexts);
         Assert.DoesNotContain("新建地圖", buttonTexts);
         Assert.False(form.CreatedBlankMap); // 只有實際建立空白地圖後才要求編輯器以空白地形開啟

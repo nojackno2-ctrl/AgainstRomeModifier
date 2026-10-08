@@ -7,7 +7,7 @@
 | 示範地圖完整驗收 | 編輯、儲存、新表單重開、遊戲內部隊／聚落／資源／尋路與勝利事件可用 | 編輯器整合完成，commit `1c90a20`；遊戲內驗收仍待執行，見 [示範驗收](map-editor-demo-acceptance.md) |
 | 地圖檢查面板 | 列出阻擋、連通、重疊、無效目標及工地回退；分級、可定位，儲存前錯誤拒存但警告可接受 | 完成；純模組5例、宿主2例通過，中英畫面已目視；完整回歸host652/modules280通過、22略過、零失敗 |
 | 常用製圖工具 | 道路折線、矩形／區域填色、框選、批次隊伍／方向、可重複套用的聚落與森林配置；支援取消、復原與儲存 | 完成；[區域工具](map-editor-region-tools.md)、[可攜配置](map-editor-layouts.md)具備UI、取消、一次undo與save/reload。真實TEMP配置逐株native座標、旋轉與新建築binding均通過；full host657/modules289通過、22略過，0失敗，最後目錄解析補強後定向2例通過。遊戲內效果另在第一項驗收 |
-| 平坦與空白地圖 | 建立時顯示保留內容；獨立真正空白選項、釐清遊戲必需資料並驗證能開局 | 建立前來源／保留／清除清單完成：fixture與真實TEMP唯讀2例、中英畫面已目視；full host659/modules289通過、22略過，0失敗。已核對原BCI生成與聚落模板依賴；[獨立空白契約](map-editor-blank-map-contract.md)與遊戲開局仍待完成 |
+| 平坦與空白地圖 | 建立時顯示保留內容；獨立真正空白選項、釐清遊戲必需資料並驗證能開局 | 編輯器階段完成：獨立「空白場景（實驗）」於staging清原生／SDL／編輯器物件與事件、13份runtime池（含光源與特效）、新idle BCI與backup、平坦圖層與快取；真實TEMP建立→save/reload→放置／事件→重開→清除後回復新bootstrap，來源hash不變，失敗不登錄，中英畫面已目視。合成raw/PFIL回滾與VM有驗證；其餘原生DATA與遊戲開局仍待完成，見[空白契約](map-editor-blank-map-contract.md) |
 | AI 局部重做 | 只重做指定地形／水域／材質，保留其他層；鎖定區域不被修改；生成後接檢查；仍依序推論、預覽後Apply | 編輯器驗證完成；[局部重做](map-editor-ai-partial-redo.md)角色選擇、矩形／多鎖定、共享邊界與通行硬閘、候選與套用後檢查。真laguna單角色→preview→Apply→undo/redo→save→fresh reload通過，6453高度點與保護區逐點驗證；full host667/modules290通過、22略過、0失敗，最後UI定向24例與中英圖通過。鎖定限本次AI操作，不持久化 |
 | 大型地圖效能 | 真實素材副本測量載入、初次解碼、記憶體、拖曳與動畫／光照成本，保存可重現報告並處理實際瓶頸 | 完成；[真實效能量測](map-editor-performance.md)實際6618 DATA／7143 sprites，persistent FBO 10組動靜／pan及native可見動畫。重用幾何／增量切格使每幀2.6MB→200..2018bytes、0GC，11圖逐SHA256一致、source hash不變；load/decode/memory/report與重跑命令已保存，full host672/modules290通過、22略過、0失敗。數字是本機completed render throughput，非monitorFPS |
 

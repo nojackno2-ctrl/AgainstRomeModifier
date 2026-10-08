@@ -81,6 +81,18 @@ public sealed class LevelObjectStore
 
     public int Capacity => _count;
 
+    /// <summary>僅供新空白地圖初始化；連結物件與所有位置也清除，呼叫端必須同時初始化原生執行期資料。</summary>
+    internal void ResetForBlankMap()
+    {
+        for (int slot = 0; slot < _count; slot++)
+        {
+            _emptyRecord.CopyTo(_objects, RecordOffset(slot));
+            for (int column = 0; column < ColumnWidths.Length; column++) WriteColumn(column, slot, _emptyColumns[column]);
+            for (int segment = 0; segment < ObjDataWidths.Length; segment++) _emptyObjData[segment].CopyTo(_objdata, SegmentOffset(segment, slot));
+        }
+        _positions.AsSpan(8).Clear();
+    }
+
     public static LevelObjectStore Load(string mapDirectory)
     {
         (byte[] objects, byte[]? h1) = Read(Path.Combine(mapDirectory, "DATA", "objects.dat"));

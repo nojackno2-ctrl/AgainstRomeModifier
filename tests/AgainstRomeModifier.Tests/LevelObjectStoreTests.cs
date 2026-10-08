@@ -373,6 +373,87 @@ public sealed class LevelObjectStoreTests
     }
 
     private static int Record(int slot) => 16 + slot * LevelObjectStore.RecordSize;
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Blank_initialization_clears_linked_objects_orphan_positions_and_runtime_then_is_idempotent(bool pfil)
+    {
+        using var level = new LevelFixture(pfil);
+        string stage = BlankStage(level, pfil);
+        Assert.Contains(LevelObjectStore.Load(stage).Objects(), obj => obj.Linked);
+        BlankMapContent.ResetStagingDirectory(stage);
+        Assert.Empty(LevelObjectStore.Load(stage).Objects());
+        byte[] positions = GameLZSS.DecompressPfil(File.ReadAllBytes(Path.Combine(stage, "DATA", "position.dat")));
+        Assert.True(positions.AsSpan(8).IndexOfAnyExcept((byte)0) < 0); // also clears the invalid entry containing -999 and orphan 13
+        var before = StageFiles(stage); BlankMapContent.ResetStagingDirectory(stage); Assert.Equal(before, StageFiles(stage));
+        Assert.Contains(level.Load().Objects(), obj => obj.Linked);
+        Assert.Throws<InvalidOperationException>(() => BlankMapContent.ResetStagingDirectory(level.Map));
+    }
+
+    [Theory]
+    [InlineData(false, "version")]
+    [InlineData(true, "version")]
+    [InlineData(false, "full")]
+    [InlineData(true, "full")]
+    [InlineData(false, "missing-script")]
+    [InlineData(true, "missing-script")]
+    [InlineData(false, "full-light")]
+    [InlineData(true, "full-light")]
+    public void Blank_rejects_unknown_or_full_runtime_pools_and_rolls_back_failure_after_writes(bool pfil, string fault)
+    {
+        using var level = new LevelFixture(pfil);
+        string stage = BlankStage(level, pfil), animation = Path.Combine(stage, "DATA", "anim.dat");
+        byte[] raw = File.ReadAllBytes(animation), data = GameLZSS.DecompressPfil(raw);
+        if (fault == "version") { U32(data, 0, 2); File.WriteAllBytes(animation, pfil ? GameLZSS.CompressPfil(data, raw[..64]) : data); }
+        else if (fault == "full")
+        {
+            for (int slot = 0; slot < 8; slot++) data[8 + slot * 21] = 1;
+            File.WriteAllBytes(animation, pfil ? GameLZSS.CompressPfil(data, raw[..64]) : data);
+        }
+        else if (fault == "full-light")
+        {
+            string light = Path.Combine(stage, "DATA", "light.dat"); byte[] lighting = File.ReadAllBytes(light), values = GameLZSS.DecompressPfil(lighting);
+            // A nonzero high byte is active too; checking only the low byte would pick an occupied template.
+            for (int slot = 0; slot < 8; slot++) U32(values, 8 + slot * 4, 256);
+            File.WriteAllBytes(light, pfil ? GameLZSS.CompressPfil(values, lighting[..64]) : values);
+        }
+        else File.Delete(Path.Combine(stage, "SCRIPT", "ak_level.bci"));
+        var before = StageFiles(stage);
+        if (fault == "missing-script") Assert.Throws<FileNotFoundException>(() => BlankMapContent.ResetStagingDirectory(stage));
+        else Assert.Throws<InvalidDataException>(() => BlankMapContent.ResetStagingDirectory(stage));
+        Assert.Equal(before, StageFiles(stage)); Assert.NotEmpty(LevelObjectStore.Load(stage).Objects());
+    }
+
+    private static SortedDictionary<string, byte[]> StageFiles(string stage) => new(Directory.GetFiles(stage, "*", SearchOption.AllDirectories)
+        .ToDictionary(path => Path.GetRelativePath(stage, path), File.ReadAllBytes), StringComparer.Ordinal);
+
+    private static string BlankStage(LevelFixture level, bool pfil)
+    {
+        string stage = Path.Combine(level.Map, "MAPS", "ENDL_005.tmp_arm");
+        Directory.CreateDirectory(Path.Combine(stage, "DATA")); Directory.CreateDirectory(Path.Combine(stage, "SCRIPT"));
+        foreach (string file in LevelFixture.Files) File.Copy(Path.Combine(level.Map, "DATA", file), Path.Combine(stage, "DATA", file));
+        foreach (var (name, header, record, columns, extra, stateWidth) in new[] {
+            ("anim.dat", 8, 21, new[] { 2, 2 }, Array.Empty<int>(), 1), ("gfxtype.dat", 8, 15, new[] { 2 }, Array.Empty<int>(), 1),
+            ("action.dat", 12, 25, Array.Empty<int>(), new[] { 6 }, 1), ("hirarchy.dat", 12, 103, new[] { 2 }, new[] { 50 }, 1),
+            ("formatio.dat", 8, 15, new[] { 4, 2, 4 }, Array.Empty<int>(), 1), ("lager.dat", 16, 43, new[] { 2 }, new[] { 6, 10 }, 1),
+            ("biglager.dat", 12, 1601, Array.Empty<int>(), new[] { 800 }, 1), ("light.dat", 8, 4, Enumerable.Repeat(4, 13).ToArray(), Array.Empty<int>(), 4),
+            ("particle.dat", 12, 2252, new[] { 4, 4, 4, 4 }, new[] { 64 }, 2), ("explos.dat", 8, 46, new[] { 4, 4 }, Array.Empty<int>(), 2),
+            ("hitex.dat", 8, 28, new[] { 4, 4, 4 }, Array.Empty<int>(), 2), ("flash.dat", 12, 201, new[] { 32 }, new[] { 16 }, 1) })
+        {
+            var data = Enumerable.Repeat((byte)0xFF, header + 8 * (record + columns.Sum())).ToArray();
+            U32(data, 0, 1); U32(data, 4, 8);
+            for (int index = 0; index < extra.Length; index++) U32(data, 8 + index * 4, (uint)extra[index]);
+            for (int slot = 0; slot < 8; slot++) data[header + slot * record] = slot == 7 ? (byte)0 : (byte)1;
+            data.AsSpan(header + 7 * record, stateWidth).Clear();
+            byte[] h = new byte[64]; "PFIL"u8.CopyTo(h);
+            File.WriteAllBytes(Path.Combine(stage, "DATA", name), pfil ? GameLZSS.CompressPfil(data, h) : data);
+        }
+        var ways = new byte[12 + 2 * 1030]; U32(ways, 0, 1); U32(ways, 4, 2); U32(ways, 8, 256); ways[12] = 3;
+        File.WriteAllBytes(Path.Combine(stage, "DATA", "way.dat"), ways);
+        File.WriteAllBytes(Path.Combine(stage, "SCRIPT", "ak_level.bci"), AgainstRomeModifier.Scripting.BciImage.CreateIdleLevel().Serialize());
+        return stage;
+    }
     private static int Position(int index) => 8 + index * LevelObjectStore.PositionSize;
     private static int Column(int column, int slot) => 16 + LevelFixture.Count * LevelObjectStore.RecordSize
         + LevelFixture.Count * LevelObjectStore.ColumnWidths.Take(column).Sum() + slot * LevelObjectStore.ColumnWidths[column];

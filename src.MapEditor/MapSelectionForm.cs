@@ -20,6 +20,7 @@ internal sealed class MapSelectionForm : Form
     private readonly Button _loadButton = new() { Width = 120, Height = 38, Enabled = false };
     private readonly Button _newButton = new() { Width = 170, Height = 38 };
     private readonly Button _blankButton = new() { Width = 145, Height = 38 };
+    private readonly Button _emptySceneButton = new() { Width = 170, Height = 38 };
     private readonly Button _copyButton = new() { Width = 150, Height = 38, Enabled = false };
     private readonly Button _deleteButton = new() { Width = 130, Height = 38, Enabled = false };
     private readonly Label _hint = new() { Dock = DockStyle.Bottom, Height = 46, Padding = new Padding(4, 0, 0, 0), TextAlign = ContentAlignment.MiddleLeft, ForeColor = WinFormsTheme.TextSecondary };
@@ -80,8 +81,8 @@ internal sealed class MapSelectionForm : Form
         contentSplit.Panel1.Controls.Add(_mapTabs); contentSplit.Panel2.Controls.Add(previewPanel);
         var listHost = new Panel { Dock = DockStyle.Fill, Padding = new Padding(16), BackColor = WinFormsTheme.Surface };
         listHost.Controls.Add(contentSplit); listHost.Controls.Add(_hint);
-        var actions = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 70, Padding = new Padding(14, 16, 14, 10), FlowDirection = FlowDirection.RightToLeft, BackColor = WinFormsTheme.Surface };
-        actions.Controls.Add(_exit); actions.Controls.Add(_loadButton); actions.Controls.Add(_newButton); actions.Controls.Add(_blankButton); actions.Controls.Add(_copyButton); actions.Controls.Add(_deleteButton);
+        var actions = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 118, Padding = new Padding(14, 16, 14, 10), FlowDirection = FlowDirection.RightToLeft, BackColor = WinFormsTheme.Surface };
+        actions.Controls.Add(_exit); actions.Controls.Add(_loadButton); actions.Controls.Add(_newButton); actions.Controls.Add(_blankButton); actions.Controls.Add(_emptySceneButton); actions.Controls.Add(_copyButton); actions.Controls.Add(_deleteButton);
 
         btnLangZH = new Button {
             Text = "繁體中文",
@@ -138,6 +139,7 @@ internal sealed class MapSelectionForm : Form
         _loadButton.Click += (_, _) => LoadSelected();
         _newButton.Click += (_, _) => CreateMap();
         _blankButton.Click += (_, _) => CreateBlankMap();
+        _emptySceneButton.Click += (_, _) => CreateEmptyScene();
         _copyButton.Click += (_, _) => CopySelectedMap();
         _deleteButton.Click += (_, _) => DeleteSelected();
     }
@@ -180,6 +182,7 @@ internal sealed class MapSelectionForm : Form
         _loadButton.Text = isEn ? "Load Map" : "讀取地圖";
         _newButton.Text = isEn ? "Build from Endless" : "從無盡範本建立";
         _blankButton.Text = isEn ? "Flat Template" : "平坦範本地圖";
+        _emptySceneButton.Text = isEn ? "Empty Scene (Exp.)" : "空白場景（實驗）";
         _copyButton.Text = isEn ? "Copy to Custom" : "複製到自製地圖";
         _deleteButton.Text = isEn ? "Delete Custom" : "刪除自製地圖";
         _exit.Text = isEn ? "Exit" : "離開";
@@ -231,7 +234,7 @@ internal sealed class MapSelectionForm : Form
             }
             _hint.Text = maps.Length == 0 
                 ? (isEn ? "No valid non-campaign maps found. Please verify game path." : "找不到可用的非劇情地圖。請確認遊戲路徑。") 
-                : (isEn ? "\"Build from Endless\" keeps template terrain; \"Flat Template\" flattens terrain and keeps the template's settlements and scripts. Original maps are read-only." : "「從無盡範本建立」保留範本地形；「平坦範本地圖」整平地形並保留範本聚落與腳本。原版地圖維持唯讀。");
+                : (isEn ? "Flat Template keeps settlements and scripts. Empty Scene clears source objects and generation scripts; game startup awaits validation. Original maps are read-only." : "平坦範本保留聚落與腳本；空白場景清除來源物件與生成腳本，遊戲開局待驗證。原版地圖維持唯讀。");
         }
         catch (Exception ex) {
             bool isEn = AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English;
@@ -282,6 +285,24 @@ internal sealed class MapSelectionForm : Form
 
     /// <summary>為 true 時，呼叫端應以空白地形開啟 <see cref="SelectedMap"/>。</summary>
     public bool CreatedBlankMap { get; private set; }
+
+    private void CreateEmptyScene()
+    {
+        bool en = AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English;
+        GameMapInfo? source = SelectNewMapTemplate(_catalog.List(GamePath));
+        if (source is null) { MessageBox.Show(this, en ? "No endless template available." : "找不到無盡範本。", Text); return; }
+        string name = PromptName(en ? "Create Empty Scene" : "建立空白場景", "Empty Scene", BlankMapBuilder.Describe(source.Id, en));
+        if (string.IsNullOrWhiteSpace(name)) return;
+        try
+        {
+            int slot = _endlessCatalog.GetNextFreeSlot(GamePath);
+            var created = BlankMapBuilder.Create(GamePath, source.Id, slot, name.Trim());
+            RefreshMaps(created.Id); SelectedMap = _catalog.Require(GamePath, created.Id);
+            // All layers are already saved in staging. Do not run the legacy flat-template reset on first open.
+            CreatedBlankMap = false; DialogResult = DialogResult.OK; Close();
+        }
+        catch (Exception ex) { MessageBox.Show(this, ex.Message, en ? "Failed to create empty scene" : "無法建立空白場景", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+    }
 
     private void CopySelectedMap()
     {
