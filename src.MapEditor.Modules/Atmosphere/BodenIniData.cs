@@ -5,7 +5,7 @@ namespace AgainstRomeMapEditor.Modules.Atmosphere;
 
 /// <summary>
 /// 原生 boden.ini 之強型別資料模型。
-/// 完整對應《反抗羅馬》(Against Rome) 遊戲引擎載入管線（0x481de0）之全部環境、水體、晝夜與天候粒子參數。
+/// 鍵名與預設值核對 TEMP 原版 ENDL_000/005；觀察範圍及原檔註解見 docs/reverse-engineering/boden-ini-values.md。
 /// </summary>
 public sealed class BodenIniData
 {
@@ -29,11 +29,11 @@ public sealed class BodenIniData
     /// <summary>水面波紋頻率 (1..16，原版預設 4)。[WaterBumpFrequency]</summary>
     public int WaterBumpFrequency { get; set; } = 4;
 
-    /// <summary>水面折射扭曲移位 (10=高扭曲..18=低扭曲，原版預設 14)。[WaterWarpShift]</summary>
-    public int WaterWarpShift { get; set; } = 14;
+    /// <summary>水面折射扭曲移位 (0=關閉；10=高扭曲..18=低扭曲，原檔註解預設14、樣本12)。[WaterWarpShift]</summary>
+    public int WaterWarpShift { get; set; } = 12;
 
     /// <summary>水面是否呈現雨滴漣漪效果 (0=否, 1=是)。[RainDropsOnWater]</summary>
-    public bool RainDropsOnWater { get; set; }
+    public bool RainDropsOnWater { get; set; } = true;
 
     /// <summary>水體著色 Hex 格式 (0xbbggrr，原版預設 0xffdfbf)。[WaterColor]</summary>
     public string WaterColor { get; set; } = "0xffdfbf";
@@ -51,39 +51,39 @@ public sealed class BodenIniData
     // 3. 天氣與閃電 (Weather & Lightning)
     // ==========================================
 
-    /// <summary>每秒閃電機率係數 (0..1000，原版原生拼字為 FlashPropability)。[FlashPropability]</summary>
-    public int FlashPropability { get; set; }
+    /// <summary>閃電參數 (0..1000，原檔註解為最大降雨強度時每秒閃電數；實際單位待確認)。[FlashPropability]</summary>
+    public int FlashPropability { get; set; } = 8;
 
-    /// <summary>閃電世界物件預設索引 1。[FlashObjectDefaultIndex]</summary>
-    public int FlashObjectDefaultIndex { get; set; } = -1;
+    /// <summary>閃電世界物件預設索引（樣本803）。[FlashObjectDefaultIndex]</summary>
+    public int FlashObjectDefaultIndex { get; set; } = 803;
 
-    /// <summary>閃電世界物件預設索引 2。[FlashObjectDefault2Index]</summary>
-    public int FlashObjectDefault2Index { get; set; } = -1;
+    /// <summary>閃電世界物件預設索引（樣本1099）。[FlashObjectDefault2Index]</summary>
+    public int FlashObjectDefault2Index { get; set; } = 1099;
 
     /// <summary>閃電局部光源預設定義索引 (對應 lightdef.dau)。[FlashLightDefaultIndex]</summary>
-    public int FlashLightDefaultIndex { get; set; } = -1;
+    public int FlashLightDefaultIndex { get; set; } = 6;
 
     // ==========================================
     // 4. 冰雪與粒子特效 (Snow & Particles)
     // ==========================================
 
-    /// <summary>飄雪 ALR 動畫素材索引 (-1 為關閉)。[SnowAlrIndex]</summary>
-    public int SnowAlrIndex { get; set; } = -1;
+    /// <summary>飄雪 ALR 動畫素材索引 (樣本837；-1 為模型未指定，不代表已確認的遊戲關閉值)。[SnowAlrIndex]</summary>
+    public int SnowAlrIndex { get; set; } = 837;
 
     /// <summary>雪花陰影索引。[SnowShadowIndex]</summary>
-    public int SnowShadowIndex { get; set; } = -1;
+    public int SnowShadowIndex { get; set; } = 152;
 
     /// <summary>雪花陰影尺寸。[SnowShadowSize]</summary>
-    public int SnowShadowSize { get; set; }
+    public int SnowShadowSize { get; set; } = 7;
 
     /// <summary>冰雹陰影索引。[HagelShadowIndex]</summary>
-    public int HagelShadowIndex { get; set; } = -1;
+    public int HagelShadowIndex { get; set; } = 152;
 
     /// <summary>冰雹陰影尺寸。[HagelShadowSize]</summary>
-    public int HagelShadowSize { get; set; }
+    public int HagelShadowSize { get; set; } = 7;
 
     /// <summary>動態物件搖曳幅度 (如樹木隨風擺動幅度)。[MoveListAmplitude]</summary>
-    public int MoveListAmplitude { get; set; }
+    public int MoveListAmplitude { get; set; } = 127;
 
     // ==========================================
     // 5. 晝夜時序與太陽光影 (Day/Night & Shadow)
@@ -112,10 +112,10 @@ public sealed class BodenIniData
     // ==========================================
 
     /// <summary>天空密度擴散參數。[Skydensspread]</summary>
-    public float Skydensspread { get; set; }
+    public float Skydensspread { get; set; } = 16f;
 
     /// <summary>天空密度精確度。[Skydensaccuracy]</summary>
-    public int Skydensaccuracy { get; set; }
+    public int Skydensaccuracy { get; set; } = 2;
 
     /// <summary>是否處理天空密度快取圖 skydens.dat (0/1)。[HandleSkyDensMap]</summary>
     public int HandleSkyDensMap { get; set; } = 1;

@@ -6,6 +6,7 @@ namespace AgainstRomeMapEditor.Modules.Atmosphere;
 /// 經典天候與大氣預設集 (Weather Presets Catalog)。
 /// 提供原版引擎參數與現代 3D 著色器之五大核心情境（晴朗豔陽、雷鳴暴風雨、暮色日落、濃霧迷漫、高山霜雪）。
 /// </summary>
+// 原生值採 ENDL_000/005 附近的保守變化；霧/風/降水等 profile 值僅供編輯器效果，並非 boden.ini 鍵。
 public static class WeatherPresets
 {
     public const string ClearSkyId = "clear_sky";
@@ -56,8 +57,8 @@ public static class WeatherPresets
             Description = "晴空萬里，陽光明媚。水面呈現柔和微瀾，遠山呈現自然的空氣透視淡藍微霞。",
             Boden = new BodenIniData
             {
-                WaterBumpAmplitude = 140,
-                WaterBumpFrequency = 3,
+                WaterBumpAmplitude = 224,
+                WaterBumpFrequency = 4,
                 WaterWarpShift = 14,
                 WaterColor = "0xffdfbf", // 蔚藍透亮水色
                 RainDropsOnWater = false,
@@ -96,15 +97,15 @@ public static class WeatherPresets
             Description = "烏雲蔽日，風雨交加。水面狂浪翻騰且泛起密集雨滴漣漪，天候伴隨頻繁雷鳴爆閃。",
             Boden = new BodenIniData
             {
-                WaterBumpAmplitude = 720,
-                WaterBumpFrequency = 9,
-                WaterWarpShift = 10,
-                WaterColor = "0x5a5040", // 幽暗渾濁墨青色
+                WaterBumpAmplitude = 320,
+                WaterBumpFrequency = 5,
+                WaterWarpShift = 12,
+                WaterColor = "0xe0c8aa", // 原版 BGR 水色附近的較暗色彩
                 RainDropsOnWater = true,
-                FlashPropability = 30,  // 高機率閃電
-                FlashLightDefaultIndex = 1,
-                DayStartTime = 5.5f,
-                DayEndTime = 19.5f,
+                FlashPropability = 8,  // 原版樣本值；此參數的引擎單位仍待確認
+                FlashLightDefaultIndex = 6,
+                DayStartTime = 6f,
+                DayEndTime = 20f,
                 ShadowMeshMode = 0
             },
             FogEnabled = true,
@@ -137,15 +138,15 @@ public static class WeatherPresets
             Description = "殘陽如血，暮靄四起。遠景瀰漫橘紅霞霧，水面反照深邃晚霞光斑，沉靜而蒼茫。",
             Boden = new BodenIniData
             {
-                WaterBumpAmplitude = 240,
+                WaterBumpAmplitude = 256,
                 WaterBumpFrequency = 4,
                 WaterWarpShift = 13,
-                WaterColor = "0x406090", // 暖琥珀晚霞反射水色
+                WaterColor = "0xe0d0d0", // 原版 BGR 水色附近的偏暖色彩
                 RainDropsOnWater = false,
                 FlashPropability = 0,
                 DayStartTime = 6f,
-                DayEndTime = 19f,
-                ShadowMeshMode = 1 // 太陽斜角度移動
+                DayEndTime = 20f,
+                ShadowMeshMode = 0
             },
             FogEnabled = true,
             FogStartDistance = 30f,
@@ -177,10 +178,10 @@ public static class WeatherPresets
             Description = "晨霧如幔，視線受限。近距離即被迷離白霧遮蔽，水波平緩，適合營造神秘森林或埋伏戰術。",
             Boden = new BodenIniData
             {
-                WaterBumpAmplitude = 80,
-                WaterBumpFrequency = 2,
-                WaterWarpShift = 15,
-                WaterColor = "0x788a80", // 迷霧灰綠平靜水色
+                WaterBumpAmplitude = 224,
+                WaterBumpFrequency = 4,
+                WaterWarpShift = 14,
+                WaterColor = "0xf0d8bf", // 原版 BGR 水色附近的淡灰藍
                 RainDropsOnWater = false,
                 FlashPropability = 0,
                 DayStartTime = 6f,
@@ -217,17 +218,17 @@ public static class WeatherPresets
             Description = "冰天雪地，寒風刺骨。大氣瀰漫晶瑩冰晶，水體泛起冰川碧藍，地面與遠山覆蓋霜雪清輝。",
             Boden = new BodenIniData
             {
-                WaterBumpAmplitude = 60,
-                WaterBumpFrequency = 2,
-                WaterWarpShift = 16,
-                WaterColor = "0xf0d8a0", // 冰川冰藍碧綠
+                WaterBumpAmplitude = 224,
+                WaterBumpFrequency = 4,
+                WaterWarpShift = 14,
+                WaterColor = "0xffe8cc", // 冰川冰藍碧綠
                 RainDropsOnWater = false,
                 FlashPropability = 0,
-                SnowAlrIndex = 1,        // 啟用原生飄雪粒子
-                SnowShadowIndex = 1,
-                SnowShadowSize = 2,
-                DayStartTime = 7f,
-                DayEndTime = 18f,
+                SnowAlrIndex = 837,        // 原版樣本的雪花素材索引；不是降雪開關
+                SnowShadowIndex = 152,
+                SnowShadowSize = 7,
+                DayStartTime = 6f,
+                DayEndTime = 20f,
                 ShadowMeshMode = 0
             },
             FogEnabled = true,

@@ -1,5 +1,12 @@
 # AI Handoff - Live Project Memory
 
+## Weather/boden.ini audit（2026-10-08 Codex，wt/weather 獨立 worktree）
+
+- 目標：核對 TEMP 原版 boden.ini、修正模型/預設、文件與 inline 測試；僅操作 D:\Github\ARM_wt_weather，禁止安裝目錄與遊戲啟動。
+- 新證據：GameLZSS 解包 ArmGameCompare_20261007 的 ENDL_000/005 及 ArmBlankAcceptance_20261008_01..06、ArmDemoAcceptance_20261008_01..10，共36檔，解包 SHA256 全為 B21DB65F91EF6846D43D51A6C98376552C348408477037AF2F6BC6FFC14D1044；33鍵完全一致。TEMP metadata 搜尋未找到 ENDL_001..004/KAMP/HIST boden.ini，不能宣稱涵蓋所有原版地圖。
+- 發現：WaterWarpShift=0 為原檔註解明示的關閉值；原validator拒絕，現已修正。預設的雪花/閃電索引1沒有依據（原版837/152、803/1099/6）。預設波幅、色彩、時段偏離有限樣本；fog/wind/precipitation 為 editor profile，不是原生 INI 鍵。
+- 稽核 scratch 程式首次遇到沒有 game/MAPS 的備份目錄，改為先確認目錄存在後成功；普通 sandbox 啟動失敗，使用已核准提升權限 shell。scratch 與 JSON 僅在 ignored obj/weather-audit，不提交素材。已完成33鍵defaults對齊、預設nearby政策、warp關閉值/註解範圍/非有限數值驗證、小寫鍵解析修正及inline/五種host存檔測試。指定Release build成功（0 errors；40 warnings，多為既存）。首次解包成功前的目錄不存在失敗已修正；首次完整test：Host709通過/22略過；Modules586通過/1失敗，新增case測試誤把貼圖值轉小寫（wassAW→wassaw），已改為只轉鍵名，補非預設值解析斷言；重新驗證中。文件見 docs/reverse-engineering/boden-ini-values.md；新預設遊戲外觀未驗證。
+
 ## 懸崖工具發現與修正（2026-10-08 Claude，遊戲內實測；使用者已改好輸入法設定，遊戲可正常啟動）
 
 - **輸入法問題已解決**：使用者在系統設定覆寫預設輸入法後，遊戲不再被 TextInputHost 搶前景。若遊戲啟動後被最小化（前景變 claude），重啟遊戲即可。
