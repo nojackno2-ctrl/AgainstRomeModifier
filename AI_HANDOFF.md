@@ -1,5 +1,26 @@
 # AI Handoff - Live Project Memory
 
+## AUDIT TASK 4：AI 勢力原型、戰役任務編譯器與實機原語審查（2026-10-08 Antigravity，wt/ai 分支，build/test 已通過）
+
+- **工作目錄與分支隔離**：遵照規則建立獨立 worktree `D:\Github\ARM_wt_ai`（分支 `wt/ai`），未觸碰主要工作目錄與遊戲安裝目錄。
+- **單位與建築真實別名替換**：
+  - 核對 `%TEMP%\ArmGameCompare_20261007\SYSTEM\CLAK\cl_scint.ini`（PFIL `[ObjDefName]` 區段）。
+  - 將 `AiArchetypeModels.cs` 四大戰略原型中的虛構名稱替換為遊戲實機存在的別名：匈人兵種改為 `HUN_KAVINF00`（近戰騎兵）與 `HUN_KAVSCH00`（騎射手）；羅馬兵種改為 `ROM_INF00`（槍盾）、`ROM_INF01`（劍盾）與 `ROM_SCH00`（標槍）；日耳曼兵種改為 `GER_INF00`、`GER_INF01`、`GER_KAVINF00`、`GER_SCH00`。
+  - 整理確認四大部族主要軍事部隊與野生動物別名表（`GER_INF00..03`, `GER_SCH00..01`, `GER_KAVINF00`, `ROM_INF00..01`, `ROM_SCH00..01`, `ROM_KAVINF00`, `HUN_INF00..01`, `HUN_SCH00`, `HUN_KAVINF00..02`, `HUN_KAVSCH00`, `KEL_INF00..02`, `KEL_SCH00..02`, `KEL_KAVINF00`, `ALL_BAE00`, `ALL_EBE00`, `ALL_WOL00`, `ALL_RAU00`, `ALL_PACKPF00`, `ALL_ZIVMAN00`, `ALL_ZIVWEI00`）。
+- **世界座標與支援動作檢查**：
+  - 確認世界座標範圍合約：$0 \le X, Z \le 16383$（1 editor tile = 256 world units，1 collision pixel = 64 world units）。
+  - 編譯後的 `ScenarioAction` 嚴格限制在 `ScenarioEventCompiler` 支援的合法種類（`Message`, `Diplomacy`, `SpawnUnit`, `Victory`, `Defeat`）且全部通過 `ScenarioEventValidator.Validate`。
+- **測試擴充與即時比對**：
+  - 更新 `AiArchetypeTests.cs`：內嵌真實別名清單 `KnownTestAliases`，新增 `AiArchetypeCatalog_AllProfiles_UseRealAliasesInKnownCatalog`、`CampaignMissionCompiler_ValidatesCoordinateBounds`、`CampaignMissionCompiler_CompiledActions_HaveValidCoordinatesAndSupportedKinds`，以及對比 TEMP `cl_scint.ini` 之 `TempGameCompare_AllInlineAliases_ExistInClScintIni` 測試。
+- **設計文件更新 (`docs/map-editor-ai-strategy-archetypes-design.md`)**：
+  - 新增章節詳細記載「已驗證原語 vs 未驗證 AI 行為」落差分析（說明部隊生成、訊息、勝敗判定為目前唯一可編譯原語；Waypoint 巡邏路徑、動態戰術姿態與擴張/經濟為企劃模型層，尚未由 ScenarioEvent ABI 支援）。
+- **驗證成果**：
+  - `DOTNET_ROLL_FORWARD=Major dotnet build AgainstRomeModifier.slnx -c Release -p:UseAppHost=false`：**0 errors, 29 warnings**。
+  - `dotnet test AgainstRomeModifier.slnx -c Release --no-build`：Modules 551 通過（0 失敗）、Modifier.Tests 705 通過 / 22 略過（0 失敗）。
+- **未驗證項目**：
+  - `s_conMoveTo` 等路徑巡邏命令尚未實作降階至 BCI 輪詢迴圈（目前部隊生成後依原生 AI 待命）。
+  - 實機戰役關卡在未受修改的遊戲安裝目錄下的載入表現尚未實機測試。
+
 ## 懸崖工具發現與修正（2026-10-08 Claude，遊戲內實測；使用者已改好輸入法設定，遊戲可正常啟動）
 
 - **輸入法問題已解決**：使用者在系統設定覆寫預設輸入法後，遊戲不再被 TextInputHost 搶前景。若遊戲啟動後被最小化（前景變 claude），重啟遊戲即可。
