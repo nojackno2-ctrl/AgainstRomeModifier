@@ -47,8 +47,8 @@ internal sealed class MultiAiMapPlanner
         IReadOnlyList<AiMaterialOption> materials, float waterLevelSample, CancellationToken cancellationToken, IProgress<AiMapRoleProgress>? progress = null)
     {
         ArgumentNullException.ThrowIfNull(requests);
-        if (requests.Count != RoleOrder.Length || RoleOrder.Any(role => requests.Count(request => request.Role == role) != 1))
-            throw new ArgumentException("請為地形、水系及材質各指定一個模型。", nameof(requests));
+        if (requests.Count == 0 || requests.Any(request => !RoleOrder.Contains(request.Role)) || requests.Select(r => r.Role).Distinct().Count() != requests.Count)
+            throw new ArgumentException("請選擇至少一個角色，每個角色只能指定一個模型。", nameof(requests));
         if (requests.Any(request => string.IsNullOrWhiteSpace(request.Model)))
             throw new ArgumentException("每個角色都必須選擇 AI 模型。", nameof(requests));
         if (string.IsNullOrWhiteSpace(description)) throw new ArgumentException("請輸入地圖描述。", nameof(description));
@@ -58,7 +58,7 @@ internal sealed class MultiAiMapPlanner
         MultiAiMapRoleRequest[] roleRequests = requests.ToArray();
         var results = new List<(AiMapPlan? Plan, AiMapRoleResult Report)>();
         // 本機硬體一次只處理一個推論；角色仍保留獨立模型、配額與診斷。
-        foreach (AiMapDesignRole role in RoleOrder)
+        foreach (AiMapDesignRole role in RoleOrder.Where(role => roleRequests.Any(request => request.Role == role)))
         {
             string model = roleRequests.Single(request => request.Role == role).Model;
             if (!cancellationToken.IsCancellationRequested) progress?.Report(new(role, model, results.Count, false));
@@ -71,11 +71,11 @@ internal sealed class MultiAiMapPlanner
         if (results.All(result => result.Plan is null)) return new(null, reports, false);
         var merged = new AiMapPlan
         {
-            BaseHeight = results[0].Plan?.BaseHeight,
-            BaseMaterial = results[2].Plan?.BaseMaterial,
+            BaseHeight = results.FirstOrDefault(result => result.Report.Role == AiMapDesignRole.Terrain).Plan?.BaseHeight,
+            BaseMaterial = results.FirstOrDefault(result => result.Report.Role == AiMapDesignRole.Materials).Plan?.BaseMaterial,
             Features = results.SelectMany(result => result.Plan?.Features ?? []).ToList(),
-            Summary = string.Join("；", results.Select((result, index) => result.Plan is null ? null :
-                $"{MultiAiMapPlanResult.RoleName(RoleOrder[index])}：{result.Plan.Summary ?? "完成"}").OfType<string>()),
+            Summary = string.Join("；", results.Select(result => result.Plan is null ? null :
+                $"{MultiAiMapPlanResult.RoleName(result.Report.Role)}：{result.Plan.Summary ?? "完成"}").OfType<string>()),
         };
         // Use the same normalization as the single-AI path. The disjoint scopes and per-role budget
         // guarantee this final pass cannot silently discard another role due to MaxFeatures.

@@ -38,7 +38,15 @@ internal sealed partial class MapEditorForm
 
     internal IReadOnlyList<MapIssue> RefreshMapDiagnostics()
     {
-        if (_selected is null) { _lastMapIssues = []; RenderMapIssues(); return _lastMapIssues; }
+        _lastMapIssues = CollectMapDiagnostics(_terrainLayers);
+        _mapDiagnosticsCurrent = true;
+        RenderMapIssues();
+        return _lastMapIssues;
+    }
+
+    private IReadOnlyList<MapIssue> CollectMapDiagnostics(TerrainHeightEditSession? layers)
+    {
+        if (_selected is null) return [];
         ScenarioDocument previous = ScenarioDocument.Load(_selected.DirectoryPath);
         LevelObjectStore? store = null;
         if (_placedObjects.Any(item => item.Type.Category == SdlObjectCategory.Building) && _natureStoreAvailable)
@@ -68,11 +76,9 @@ internal sealed partial class MapEditorForm
             foreach (ScenarioSpawn saved in previous.Spawns.Where(spawn => !visibleIds.Contains(spawn.Id)))
                 objects.Add(new(saved, saved.Prebuilt, false));
         }
-        _lastMapIssues = MapDiagnostics.Check(new(objects, EventSession.Capture(), _objectCatalog.Select(AliasOf).ToArray(),
-            _terrainLayers?.CollisionSize ?? 0, _terrainLayers?.Collision, _terrainLayers?.VertexSize ?? 0,
-            _terrainLayers?.Heights, _heightMapStep, (float)_waterLevel.Value));
-        _mapDiagnosticsCurrent = true; RenderMapIssues();
-        return _lastMapIssues;
+        return MapDiagnostics.Check(new(objects, EventSession.Capture(), _objectCatalog.Select(AliasOf).ToArray(),
+            layers?.CollisionSize ?? 0, layers?.Collision, layers?.VertexSize ?? 0,
+            layers?.Heights, _heightMapStep, (float)_waterLevel.Value));
     }
 
     private void LocalizeMapDiagnostics(bool en)

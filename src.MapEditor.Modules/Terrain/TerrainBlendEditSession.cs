@@ -77,10 +77,21 @@ internal sealed class TerrainBlendEditSession
     /// <paramref name="autoBridge"/> 為 true 時，若筆刷邊緣找不到原版過渡 tile，會在外側一圈角點插入同時能銜接兩側的中介材質（最多 <see cref="MaxBridgeRings"/> 圈），
     /// 結果仍全部是原版 tile；仍無法銜接才拒絕。
     /// </summary>
-    public TerrainBlendPaintResult PaintCircle(float centerX, float centerY, float radius, string materialId, bool rollbackStrokeOnFailure = true, bool autoBridge = false)
+    public TerrainBlendPaintResult PaintCircle(float centerX, float centerY, float radius, string materialId, bool rollbackStrokeOnFailure = true, bool autoBridge = false, Func<int, int, bool>? allowsTile = null)
     {
+        if (allowsTile is not null && autoBridge) throw new ArgumentException("Protected painting cannot auto-bridge beyond its boundary.", nameof(autoBridge));
         string[] cornerBefore = _map.CornerMaterials.ToArray();
         IReadOnlyList<int> changedCorners = _map.PaintCircle(centerX, centerY, radius, materialId);
+        if (allowsTile is not null)
+        {
+            var allowed = new List<int>();
+            foreach (int corner in changedCorners)
+            {
+                if (AffectedTiles([corner]).All(tile => allowsTile(tile % _map.TileDimension, tile / _map.TileDimension))) allowed.Add(corner);
+                else SetCorner(corner, cornerBefore[corner]);
+            }
+            changedCorners = allowed;
+        }
         return BakeChanges(cornerBefore, changedCorners, materialId, rollbackStrokeOnFailure, autoBridge);
     }
 

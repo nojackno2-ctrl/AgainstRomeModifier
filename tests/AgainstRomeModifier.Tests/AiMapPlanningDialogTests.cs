@@ -7,6 +7,48 @@ namespace AgainstRomeModifier.Tests;
 public sealed class AiMapPlanningDialogTests
 {
     [Fact]
+    public void Partial_redo_dialog_renders_readable_inputs_and_legend_in_both_languages() => Run(() =>
+    {
+        var previous = Loc.CurrentLanguage;
+        string output = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ArmAiPartialUi_20261008"); System.IO.Directory.CreateDirectory(output);
+        try
+        {
+            foreach (var language in new[] { Language.TraditionalChinese, Language.English })
+            {
+                Loc.OverrideLanguageForTesting(language);
+                using var dialog = new AiMapPlanningDialog(_ => Task.FromResult<IReadOnlyList<string>>([]), (_, _, _) => Task.FromResult(Result()), _ => new(0, 0, 0, 0),
+                    plan => AiMapPlanPreviewBuilder.Build(plan, new TerrainHeightEditSession(129, Enumerable.Repeat((byte)70, 129 * 129).ToArray(), null, 0, null), null, 64, 30));
+                dialog.StartPosition = FormStartPosition.Manual; dialog.Location = new System.Drawing.Point(-20000, -20000);
+                dialog.BoundsBox.Text = "8,8,40,40"; dialog.LocksBox.Text = "20,20,8,8\r\n32,32,4,4";
+                dialog.Show(); Pump(dialog.GenerateAsync()); dialog.Size = dialog.MinimumSize; dialog.PerformLayout(); Application.DoEvents();
+                Assert.True(dialog.DescriptionBox.ClientSize.Height >= 70);
+                Assert.True(dialog.BoundsBox.ClientSize.Width >= 100);
+                using var image = new System.Drawing.Bitmap(dialog.Width, dialog.Height); dialog.DrawToBitmap(image, new System.Drawing.Rectangle(System.Drawing.Point.Empty, dialog.Size));
+                image.Save(System.IO.Path.Combine(output, $"partial-{language}.png"));
+            }
+        }
+        finally { Loc.OverrideLanguageForTesting(previous); }
+    });
+    [Fact]
+    public void Role_scope_and_lock_changes_invalidate_preview_and_apply_uses_reviewed_snapshot() => Run(() =>
+    {
+        AiMapEditScope? reviewed = null, applied = null;
+        using var dialog = new AiMapPlanningDialog(_ => Task.FromResult<IReadOnlyList<string>>([]),
+            (requests, prompt, _) =>
+            {
+                Assert.Single(requests); Assert.Equal(AiMapDesignRole.Water, requests[0].Role);
+                Assert.Contains("X=8..31", prompt); return Task.FromResult(Result());
+            }, plan => { applied = plan.EditScope; return new(1, 0, 0, 0); },
+            plan => { reviewed = plan.EditScope; return new(new System.Drawing.Bitmap(8, 8), new(1, 0, 0, 0), true); });
+        dialog.RoleChecks[0].Checked = false; dialog.RoleChecks[2].Checked = false;
+        dialog.BoundsBox.Text = "8,8,24,24"; dialog.LocksBox.Text = "16,16,4,4";
+        dialog.Show(); Pump(dialog.GenerateAsync()); Assert.True(dialog.ApplyButton.Enabled);
+        dialog.LocksBox.Text = "16,16,5,4"; Assert.False(dialog.ApplyButton.Enabled); Assert.Null(dialog.PreviewImage.Image);
+        Pump(dialog.GenerateAsync()); dialog.ApplyPlan(); Assert.Same(reviewed, applied);
+        Assert.False(applied!.AllowsTile(20, 17)); Assert.True(applied.AllowsTile(21, 17));
+        dialog.BoundsBox.Text = "bad"; Pump(dialog.GenerateAsync()); Assert.False(dialog.ApplyButton.Enabled);
+    });
+    [Fact]
     public void All_roles_default_to_requested_laguna_model() => Run(() =>
     {
         using var dialog = new AiMapPlanningDialog(_ => Task.FromResult<IReadOnlyList<string>>(["gemma3:12b", "laguna-xs-2.1:latest"]),

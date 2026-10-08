@@ -19,6 +19,10 @@ internal sealed class AiMapPlanningDialog : Form
     private int _inputVersion;
     private readonly bool _isEn;
     internal ComboBox[] ModelBoxes { get; } = Enumerable.Range(0, 3).Select(_ => new ComboBox { Dock = DockStyle.Fill, DropDownStyle = ComboBoxStyle.DropDown, Text = "laguna-xs-2.1:latest" }).ToArray();
+    internal CheckBox[] RoleChecks { get; } = Enumerable.Range(0, 3).Select(_ => new CheckBox { Checked = true, AutoSize = true, Anchor = AnchorStyles.Left }).ToArray();
+    internal TextBox BoundsBox { get; } = new() { Dock = DockStyle.Fill, Text = "0,0,64,64" };
+    internal TextBox LocksBox { get; } = new() { Dock = DockStyle.Fill, Multiline = true, ScrollBars = ScrollBars.Vertical };
+    internal CheckBox PassabilityCheck { get; } = new() { AutoSize = true };
     internal TextBox DescriptionBox { get; } = new() { Dock = DockStyle.Fill, Multiline = true, ScrollBars = ScrollBars.Vertical, AcceptsReturn = true };
     internal TextBox PreviewBox { get; } = new() { Dock = DockStyle.Fill, Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Both, WordWrap = false };
     internal PictureBox PreviewImage { get; } = new() { Dock = DockStyle.Fill, SizeMode = PictureBoxSizeMode.Zoom, BackColor = Color.FromArgb(30, 30, 30) };
@@ -42,7 +46,7 @@ internal sealed class AiMapPlanningDialog : Form
         _listModels = listModels; _generate = generate; _apply = apply; _preview = preview;
         _isEn = Loc.CurrentLanguage == Language.English;
         Text = T("多 AI 製圖（本機 Ollama）", "Multi-AI Map Maker (local Ollama)");
-        Size = new Size(880, 740); MinimumSize = new Size(640, 580); StartPosition = FormStartPosition.CenterParent;
+        Size = new Size(940, 850); MinimumSize = new Size(740, 750); StartPosition = FormStartPosition.CenterParent;
         MinimizeBox = false; MaximizeBox = false; ShowInTaskbar = false;
         var layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, Padding = new Padding(12), RowCount = 7 };
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 110)); layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
@@ -50,20 +54,31 @@ internal sealed class AiMapPlanningDialog : Form
         {
             layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 36));
             string role = _isEn ? ((AiMapDesignRole)i).ToString() : MultiAiMapPlanResult.RoleName((AiMapDesignRole)i);
-            layout.Controls.Add(new Label { Text = role + T("模型", " model"), AutoSize = true, Anchor = AnchorStyles.Left }, 0, i);
+            RoleChecks[i].Text = role;
+            layout.Controls.Add(RoleChecks[i], 0, i);
             layout.Controls.Add(ModelBoxes[i], 1, i);
         }
-        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 28));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 190));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 72));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 70));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 45));
         DescriptionBox.Text = T("一條從西北流向東南的河谷，東北方是山脈，西南有小湖；河岸是沙地，保留寬廣平坦的草地讓村莊發展。", "A river valley from north-west to south-east, mountains in the north-east, a small lake in the south-west, sandy riverbanks and wide flat dry meadows for villages.");
-        layout.Controls.Add(new Label { Text = T("地圖描述", "Description"), AutoSize = true }, 0, 3); layout.Controls.Add(DescriptionBox, 1, 3);
+        var input = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 3 };
+        input.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 185)); input.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        input.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        input.RowStyles.Add(new RowStyle(SizeType.Absolute, 30)); input.RowStyles.Add(new RowStyle(SizeType.Absolute, 60)); input.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        input.Controls.Add(new Label { Text = T("範圍 X,Y,寬,高", "Area X,Y,width,height"), AutoSize = true }, 0, 0); input.Controls.Add(BoundsBox, 1, 0);
+        PassabilityCheck.Text = T("允許修改通行", "Edit passability"); input.Controls.Add(PassabilityCheck, 2, 0);
+        input.Controls.Add(new Label { Text = T("AI 鎖定區（每行一區）", "AI locks (one area per line)"), AutoSize = true }, 0, 1); input.Controls.Add(LocksBox, 1, 1);
+        input.SetColumnSpan(LocksBox, 2);
+        input.Controls.Add(new Label { Text = T("地圖描述", "Description"), AutoSize = true }, 0, 2); input.Controls.Add(DescriptionBox, 1, 2);
+        input.SetColumnSpan(DescriptionBox, 2);
+        layout.Controls.Add(new Label { Text = T("局部重做", "Partial redo"), AutoSize = true }, 0, 3); layout.Controls.Add(input, 1, 3);
         var reviewTabs = new TabControl { Dock = DockStyle.Fill };
         if (_preview is not null)
         {
-            var mapTab = new TabPage(T("地圖預覽", "Map preview"));
-            var legend = new Label { Dock = DockStyle.Bottom, AutoSize = true, Text = T("示意圖：藍＝水域、紅＝阻擋、橙點＝材質變更、紫點＝材質拒絕；非遊戲渲染。", "Schematic: blue = water, red = blocked; orange dots = material changes, purple dots = rejected material areas. Not game rendering.") };
+            var mapTab = new TabPage(T("地圖預覽", "Map preview")) { BackColor = Color.FromArgb(30, 30, 30), UseVisualStyleBackColor = false };
+            var legend = new Label { Dock = DockStyle.Bottom, AutoSize = true, Text = T("示意圖：藍＝水域、紅＝阻擋、橙點＝材質變更、紫點＝材質拒絕；灰暗＝範圍外／鎖定。非遊戲渲染。", "Schematic: blue = water, red = blocked; orange = material changes, purple = rejected; dimmed = outside area / locked. Not game rendering.") };
             mapTab.SizeChanged += (_, _) => legend.MaximumSize = new Size(Math.Max(1, mapTab.ClientSize.Width), 0);
             mapTab.Controls.Add(PreviewImage); mapTab.Controls.Add(legend); reviewTabs.TabPages.Add(mapTab);
         }
@@ -80,6 +95,9 @@ internal sealed class AiMapPlanningDialog : Form
         WinFormsTheme.Apply(this); WinFormsTheme.StylePrimaryButton(ApplyButton);
         DescriptionBox.TextChanged += (_, _) => InvalidatePlan();
         foreach (var box in ModelBoxes) box.TextChanged += (_, _) => InvalidatePlan();
+        foreach (var check in RoleChecks) check.CheckedChanged += (_, _) => InvalidatePlan();
+        BoundsBox.TextChanged += (_, _) => InvalidatePlan(); LocksBox.TextChanged += (_, _) => InvalidatePlan();
+        PassabilityCheck.CheckedChanged += (_, _) => InvalidatePlan();
         Shown += async (_, _) => await LoadModelsAsync();
         GenerateButton.Click += async (_, _) => await GenerateAsync();
         ApplyButton.Click += (_, _) => ApplyPlan();
@@ -118,18 +136,24 @@ internal sealed class AiMapPlanningDialog : Form
         StatusLabel.Text = T("地形、水系、材質依序規劃，一次只執行一個本機模型；可能需要數分鐘。", "Terrain, water and materials plan in order, with one local inference at a time; this may take several minutes.");
         try
         {
-            var requests = ModelBoxes.Select((box, i) => new MultiAiMapRoleRequest((AiMapDesignRole)i, box.Text.Trim())).ToArray();
+            var requests = ModelBoxes.Select((box, i) => new MultiAiMapRoleRequest((AiMapDesignRole)i, box.Text.Trim())).Where(request => RoleChecks[(int)request.Role].Checked).ToArray();
+            if (requests.Length == 0) throw new ArgumentException(T("請至少選擇一個角色。", "Select at least one specialist."));
+            AiMapEditScope scope = AiMapEditScope.Parse(BoundsBox.Text, LocksBox.Text, PassabilityCheck.Checked && RoleChecks[0].Checked);
+            GenerationProgress.Maximum = requests.Length;
             int inputVersion = _inputVersion;
             var progress = new Progress<AiMapRoleProgress>(update =>
             {
                 if (!CanUpdate || _operation != operation || operation.IsCancellationRequested || inputVersion != _inputVersion) return;
-                GenerationProgress.Value = Math.Clamp(update.CompletedRoles, 0, 3);
+                GenerationProgress.Value = Math.Clamp(update.CompletedRoles, 0, requests.Length);
                 string role = _isEn ? update.Role.ToString() : MultiAiMapPlanResult.RoleName(update.Role);
                 StatusLabel.Text = update.Finished
-                    ? T($"已完成 {update.CompletedRoles}/3：{role} / {update.Model}（{update.Status}）", $"Completed {update.CompletedRoles}/3: {role} / {update.Model} ({update.Status})")
-                    : T($"正在規劃 {role} / {update.Model}；已完成 {update.CompletedRoles}/3。", $"Planning {role} / {update.Model}; completed {update.CompletedRoles}/3.");
+                    ? T($"已完成 {update.CompletedRoles}/{requests.Length}：{role} / {update.Model}（{update.Status}）", $"Completed {update.CompletedRoles}/{requests.Length}: {role} / {update.Model} ({update.Status})")
+                    : T($"正在規劃 {role} / {update.Model}；已完成 {update.CompletedRoles}/{requests.Length}。", $"Planning {role} / {update.Model}; completed {update.CompletedRoles}/{requests.Length}.");
             });
-            MultiAiMapPlanResult result = await _generate(requests, DescriptionBox.Text, operation.Token, progress);
+            string description = DescriptionBox.Text + $"\nUse global tile coordinates inside X={scope.Bounds.X}..{scope.Bounds.Right - 1}, Y={scope.Bounds.Y}..{scope.Bounds.Bottom - 1}. Protected rectangles (X,Y,width,height): "
+                + string.Join("; ", scope.Locked.Select(r => $"{r.X},{r.Y},{r.Width},{r.Height}"));
+            if (!scope.EditPassability) description += "\nDo not create blocked or passable features; passability is protected.";
+            MultiAiMapPlanResult result = await _generate(requests, description, operation.Token, progress);
             if (!CanUpdate) return;
             if (inputVersion != _inputVersion) { ShowInvalidatedPlan(); return; }
             // A provider can finish after Cancel; its result must still never become applicable.
@@ -137,7 +161,10 @@ internal sealed class AiMapPlanningDialog : Form
             {
                 StatusLabel.Text = T("已取消生成；可重試。", "Generation cancelled; you can retry."); return;
             }
+            if (result.Plan is { } scopedPlan) scopedPlan.EditScope = scope;
             PreviewBox.Text = FormatReview(result);
+            PreviewBox.AppendText(T($"\r\n重做範圍：{BoundsBox.Text}；鎖定區 {scope.Locked.Count} 個。共用邊界頂點保留，鎖定僅保護本次 AI 套用。\r\n", $"\r\nEdit area: {BoundsBox.Text}; {scope.Locked.Count} locks. Shared boundary vertices are preserved; locks protect this AI operation only.\r\n"));
+            if (!scope.EditPassability) PreviewBox.AppendText(T("通行層保護中；方案內 blocked/passable 不會套用。\r\n", "Passability is protected; blocked/passable features will not be applied.\r\n"));
             if (result.Plan is { } plan && _preview is not null)
             {
                 AiMapPlanPreview preview = _preview(plan);
@@ -146,9 +173,11 @@ internal sealed class AiMapPlanningDialog : Form
                 PreviewBox.AppendText(T($"\r\n預計變更：高度 {changes.HeightSamplesChanged} 點、通行 {changes.CollisionPixelsChanged} 點；材質接受 {changes.MaterialStrokes - changes.RejectedMaterialStrokes}/{changes.MaterialStrokes} 區。\r\n",
                     $"\r\nExpected changes: {changes.HeightSamplesChanged} height samples, {changes.CollisionPixelsChanged} passability pixels; {changes.MaterialStrokes - changes.RejectedMaterialStrokes}/{changes.MaterialStrokes} material areas accepted.\r\n"));
                 if (changes.RejectedMaterialStrokes > 0) PreviewBox.AppendText(T("部分材質區域無法表示，套用時會略過。", "Some material areas cannot be represented and will be skipped on Apply."));
+                PreviewBox.AppendText(T($"\r\n生成後地圖檢查：{preview.Issues.Count} 項（含既有問題）。\r\n", $"\r\nPost-generation map check: {preview.Issues.Count} issues (including existing issues).\r\n"));
+                foreach (var issue in preview.Issues) PreviewBox.AppendText($"{issue.Severity}: {(_isEn ? issue.English : issue.Chinese)}\r\n");
             }
             _plan = result.Plan;
-            GenerationProgress.Value = Math.Clamp(result.Roles.Count, 0, 3);
+            GenerationProgress.Value = Math.Clamp(result.Roles.Count, 0, requests.Length);
             StatusLabel.Text = result.Plan is null ? T("全部角色失敗；請檢視診斷後重試。", "All specialists failed. Review diagnostics and retry.")
                 : result.HasFailures ? T("部分角色失敗：這是未完整的方案。請檢視診斷，再決定套用或重試。", "Some specialists failed: this is a partial plan. Review diagnostics before applying or retrying.")
                 : T("方案已生成，尚未套用。請先檢視，再按「套用方案」。", "Plan generated and awaiting review. Click Apply to change the map.");
@@ -170,7 +199,7 @@ internal sealed class AiMapPlanningDialog : Form
     {
         PreviewBox.Clear();
         ClearPreviewImage();
-        StatusLabel.Text = T("描述或角色模型已變更，舊方案已失效。請重新生成。", "The description or specialist model changed; the old plan is invalid. Generate again.");
+        StatusLabel.Text = T("角色、範圍、鎖定區或描述已變更，舊方案已失效。請重新生成。", "Roles, area, locks or description changed; the old plan is invalid. Generate again.");
     }
     private void ClearPreviewImage()
     {
@@ -180,6 +209,9 @@ internal sealed class AiMapPlanningDialog : Form
     {
         GenerateButton.Enabled = !busy; DescriptionBox.Enabled = !busy;
         foreach (var box in ModelBoxes) box.Enabled = !busy;
+        foreach (var check in RoleChecks) check.Enabled = !busy;
+        BoundsBox.Enabled = !busy; LocksBox.Enabled = !busy;
+        PassabilityCheck.Enabled = !busy;
         CancelGenerationButton.Enabled = busy; ApplyButton.Enabled = !busy && _plan is not null;
     }
 
@@ -207,8 +239,8 @@ internal sealed class AiMapPlanningDialog : Form
         }
         if (result.Plan is not { } plan) return text.ToString();
         text.AppendLine().AppendLine(plan.Summary);
-        if (plan.BaseHeight is not null) text.AppendLine(T("全圖基礎高度：", "Whole-map base height: ") + plan.BaseHeight);
-        if (plan.BaseMaterial is not null) text.AppendLine(T("全圖基礎材質：", "Whole-map base material: ") + plan.BaseMaterial);
+        if (plan.BaseHeight is not null) text.AppendLine(T("可編輯區基礎高度：", "Editable-area base height: ") + plan.BaseHeight);
+        if (plan.BaseMaterial is not null) text.AppendLine(T("可編輯區基礎材質：", "Editable-area base material: ") + plan.BaseMaterial);
         foreach (var feature in plan.Features)
             text.AppendLine($"{feature.Type}: {feature.Location ?? $"({feature.X},{feature.Y})"} → {feature.ToLocation ?? (feature.X2 is null ? "—" : $"({feature.X2},{feature.Y2})")}; radius={feature.Radius}; amount={feature.Amount}; material={feature.Material}");
         return text.ToString();

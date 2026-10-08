@@ -231,6 +231,23 @@ public sealed class MultiAiMapPlannerTests
     }
 
     [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    public async Task Single_role_redo_does_not_invoke_or_merge_other_roles(int role)
+    {
+        var selected = (AiMapDesignRole)role;
+        int calls = 0;
+        var planner = new MultiAiMapPlanner((_, prompt, _, _, _) =>
+        { calls++; Assert.Equal(selected, Role(prompt)); return Task.FromResult(Response(Plan(selected))); });
+        var result = await planner.GeneratePlanAsync([new(selected, "local")], "test", Materials, 60, default);
+        Assert.Equal(1, calls); Assert.Single(result.Roles); Assert.NotNull(result.Plan);
+        Assert.False(result.HasFailures); Assert.Equal(selected, result.Roles[0].Role);
+        if (selected != AiMapDesignRole.Terrain) Assert.Null(result.Plan.BaseHeight);
+        if (selected != AiMapDesignRole.Materials) Assert.Null(result.Plan.BaseMaterial);
+    }
+
+    [Theory]
     [InlineData("Terrain", "baseHeight", "Do not set baseMaterial")]
     [InlineData("Water", "lake and river", "Do not set baseHeight")]
     [InlineData("Materials", "material features", "Do not set baseHeight")]

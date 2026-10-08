@@ -1,12 +1,15 @@
 namespace AgainstRomeMapEditor;
 
-internal sealed record AiMapPlanPreview(Bitmap Image, AiMapApplyResult Changes, bool HasCollision);
+internal sealed record AiMapPlanPreview(Bitmap Image, AiMapApplyResult Changes, bool HasCollision)
+{
+    internal IReadOnlyList<AgainstRomeMapEditor.Modules.Diagnostics.MapIssue> Issues { get; init; } = [];
+}
 
 /// <summary>Runs the same applier against independent layer and corner snapshots without writing files.</summary>
 internal static class AiMapPlanPreviewBuilder
 {
     internal static AiMapPlanPreview Build(AiMapPlan plan, TerrainHeightEditSession source, TerrainBlendEditSession? materials,
-        int dimension, float water)
+        int dimension, float water, Func<TerrainHeightEditSession, IReadOnlyList<AgainstRomeMapEditor.Modules.Diagnostics.MapIssue>>? diagnose = null)
     {
         var heights = new TerrainHeightEditSession(source.VertexSize, source.Heights.ToArray(), null,
             source.CollisionSize, source.Collision?.ToArray());
@@ -15,7 +18,8 @@ internal static class AiMapPlanPreviewBuilder
         AiMapApplyResult changes = AiMapPlanApplier.Apply(plan, heights, dimension, water,
             (material, x, y, radius) =>
             {
-                bool accepted = blend?.PaintCircle(x, y, radius, material, rollbackStrokeOnFailure: false).Succeeded == true;
+                bool accepted = blend?.PaintCircle(x, y, radius, material, rollbackStrokeOnFailure: false,
+                    allowsTile: plan.EditScope is { } scope ? scope.AllowsTile : null).Succeeded == true;
                 if (!accepted) rejected.Add((x, y, radius));
                 return accepted;
             });
@@ -44,9 +48,11 @@ internal static class AiMapPlanPreviewBuilder
                         int cy = Math.Min(heights.CollisionSize - 1, y * heights.CollisionSize / image.Height);
                         if (heights.Collision![cy * heights.CollisionSize + cx] > 0) color = Color.FromArgb(195, color.G / 2, color.B / 2);
                     }
+                    if (plan.EditScope is { } scope && !scope.AllowsTile(Math.Min(dimension - 1, x * dimension / image.Width), Math.Min(dimension - 1, y * dimension / image.Height)))
+                        color = Color.FromArgb((color.R + 80) / 2, (color.G + 80) / 2, (color.B + 80) / 2);
                     image.SetPixel(x, y, color);
                 }
-            return new(image, changes, heights.HasCollision);
+            return new(image, changes, heights.HasCollision) { Issues = diagnose?.Invoke(heights) ?? [] };
         }
         catch { image.Dispose(); throw; }
     }

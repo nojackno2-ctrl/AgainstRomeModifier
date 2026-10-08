@@ -157,7 +157,7 @@ internal sealed class TerrainHeightEditSession
     }
 
     /// <summary>以 tile 為中心、tile 半徑的圓形範圍設定 collision tile-pixel。</summary>
-    public IReadOnlyList<TerrainSampleChange> PaintCollision(float centerX, float centerY, float radius, TerrainCollisionOperation operation)
+    public IReadOnlyList<TerrainSampleChange> PaintCollision(float centerX, float centerY, float radius, TerrainCollisionOperation operation, Func<int, int, bool>? allowsPixel = null)
     {
         if (_collision is null) return Array.Empty<TerrainSampleChange>();
         if (!float.IsFinite(centerX) || !float.IsFinite(centerY) || !float.IsFinite(radius) || radius <= 0) throw new ArgumentOutOfRangeException(nameof(radius));
@@ -169,6 +169,7 @@ internal sealed class TerrainHeightEditSession
         {
             float dx = x + .5f - centerX, dy = y + .5f - centerY;
             if (dx * dx + dy * dy > radius * radius) continue;
+            if (allowsPixel is not null && !allowsPixel(x, y)) continue;
             int index = y * size + x;
             byte before = _collision[index];
             if (before == target) continue;
