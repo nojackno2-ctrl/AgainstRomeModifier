@@ -49,7 +49,7 @@ public sealed partial class MapEditorSaveTransactionTests
                 events.Add(new("ARM empty start", 3) { Actions = [new(ScenarioActionKind.Message, "ARM empty scene: move the ten soldiers east to test victory.")] });
                 events.Add(new("ARM empty area win", 1)
                 {
-                    Conditions = [new(ScenarioConditionKind.ObjectInArea, unitId, 9500, 7600, 10500, 8800)],
+                    Conditions = [new(ScenarioConditionKind.ObjectInArea, unitId, 9000, 4000, 16000, 12000)],
                     Actions = [new(ScenarioActionKind.Message, "ARM empty scene: target reached."), new(ScenarioActionKind.Victory)]
                 });
                 Assert.True(form.TrySaveMap(false, out var error), error?.ToString());
@@ -84,7 +84,7 @@ public sealed partial class MapEditorSaveTransactionTests
             Status = "prepared-gameplay-not-run", SourceUnchanged = true, FreshEditorReload = true,
             Candidates = new[] { "empty-control/MAPS/ENDL_005", "empty-authored/MAPS/ENDL_008", "demo/MAPS/ENDL_005" },
             Unit = new { Id = unitId, Alias = "GER_INF01", Count = 10, Team = 0, X = 8192, Y = 200, Z = 8192 },
-            VictoryArea = new { X1 = 9500, Z1 = 7600, X2 = 10500, Z2 = 8800 },
+            VictoryArea = new { X1 = 9000, Z1 = 4000, X2 = 16000, Z2 = 12000 },
             Pending = "game startup, ownership and orders, resources and settlements, pathfinding, victory and game save/load"
         }, Core.Services.JsonDefaults.Indented));
     }
