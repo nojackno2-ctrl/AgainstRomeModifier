@@ -1,5 +1,11 @@
 # AI Handoff - Live Project Memory
 
+## Soundscape Task A (2026-10-08 Codex; isolated wt/sound)
+
+- Worktree `D:\Github\ARM_wt_sound`, baseline `080ebc9`. Main checkout and installed game untouched; no game launched.
+- TEMP ENDL_000/005: no sound.dat or active SFXmark objects. EXE confirms sfxenv/sfxobj/sfxexp DAU loaders, object/action selection and voice APIs. Missing native sound tables/catalog prevent a verified zone export contract.
+- Disabled fabricated native file/script export; retained editor draft serialization and preview. Added rejection/no-write regression tests. Release build: 0 errors / 40 analyzer warnings; test: Modules 548 passed, Host 705 passed / 22 skipped, 0 failures. Probe (stdlib and optional disassembly) and git diff --check passed. No in-game verification. Report: `docs/reverse-engineering/sound-zones.md`.
+
 ## 懸崖工具發現與修正（2026-10-08 Claude，遊戲內實測；使用者已改好輸入法設定，遊戲可正常啟動）
 
 - **輸入法問題已解決**：使用者在系統設定覆寫預設輸入法後，遊戲不再被 TextInputHost 搶前景。若遊戲啟動後被最小化（前景變 claude），重啟遊戲即可。
