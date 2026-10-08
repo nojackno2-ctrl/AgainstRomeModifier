@@ -36,7 +36,7 @@ public sealed record CameraWaypoint
     /// <summary>相機偏航角 (Yaw)，以度為單位 (原遊戲預設 45° 等角方向，0°..360°)。</summary>
     public float YawDegrees { get; init; } = 45f;
 
-    /// <summary>相機焦距 / 距離 (Zoom / Distance，預設 82f，對應遊戲 1:1 標準距離)。</summary>
+    /// <summary>相機焦距 / 距離 (Zoom / Distance，預設 82f，僅用於預覽；不等同原生 0..9 縮放)。</summary>
     public float Zoom { get; init; } = 82f;
 
     /// <summary>從前一個航點飛行到達此航點所需持續時間（秒）。第一個航點通常為 0。</summary>

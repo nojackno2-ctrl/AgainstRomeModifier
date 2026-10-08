@@ -4,6 +4,7 @@ using System.Text.Json.Serialization;
 namespace AgainstRomeMapEditor.Modules.Cinematics;
 
 /// <summary>
+/// 實驗性預覽／編輯器資料，尚未接入遊戲 BCI；姿態和預覽距離的原生對應未驗證。
 /// 歷史戰役過場動畫目錄模組 (Cutscene Sequence Catalog)。
 /// 負責管理地圖中所有的相機運鏡與過場導演序列，支援驗證、髒標記追蹤、複製與 JSON 序列化。
 /// </summary>

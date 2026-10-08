@@ -12,6 +12,11 @@
 - Worktree `D:\Github\ARM_wt_sound`, baseline `080ebc9`. Main checkout and installed game untouched; no game launched.
 - TEMP ENDL_000/005: no sound.dat or active SFXmark objects. EXE confirms sfxenv/sfxobj/sfxexp DAU loaders, object/action selection and voice APIs. Missing native sound tables/catalog prevent a verified zone export contract.
 - Disabled fabricated native file/script export; retained editor draft serialization and preview. Added rejection/no-write regression tests. Release build: 0 errors / 40 analyzer warnings; test: Modules 548 passed, Host 705 passed / 22 skipped, 0 failures. Probe (stdlib and optional disassembly) and git diff --check passed. No in-game verification. Report: `docs/reverse-engineering/sound-zones.md`.
+## Cinematics 逆向 Task B（2026-10-08 Codex，wt/cinematic 專用 worktree）
+
+- 唯讀分析 repo EXE 與 TEMP ArmGameCompare_20261007：確認 s_lgcSetEnginePos v(ddd)、s_lgcSetEngineZoom v(d)，double literal=67 + low/high words，statement=128 + 常數索引／73 -參數字數；位置清 6 字、縮放清 2 字。zoom setter 夾限 0..9，預覽 82 不能直接送入。兩個 ENDL 樣本均無 camera/fade 呼叫，也無 opcode 67。
+- 新增底層呼叫片段編碼；完整 timeline／Pitch/Yaw／預覽距離換算／控制權／黑邊／restore 仍 experimental/unwired。移除偽造的 s_disableGUI、錯誤 s_conWaitTime 和部隊呼叫預覽；字幕轉換改開局絕對延遲，移除假裝執行後續 trigger 的訊息。probe 可重現，未存取或啟動安裝目錄。
+- 驗證：指定 Release build 0 errors（39 warnings，含既有分析器警告）；指定全 solution test 0 failures（Modules 556 通過；Host 705 通過／22 略過）。TEMP 原版訊息字組與 repo EXE 簽章測試已實際執行通過，未提交素材。證據見 docs/reverse-engineering/cinematic-camera.md；遊戲內運鏡與排程未驗證。已完成 diff review；本次變更僅在 wt/cinematic 專用 worktree，本地提交，不 push／merge。
 
 ## 懸崖工具發現與修正（2026-10-08 Claude，遊戲內實測；使用者已改好輸入法設定，遊戲可正常啟動）
 
