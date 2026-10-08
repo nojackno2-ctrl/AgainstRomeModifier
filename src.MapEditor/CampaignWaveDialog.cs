@@ -58,6 +58,7 @@ internal sealed class CampaignWaveDialog : Form
         var hint = new Label { AutoSize = true, Dock = DockStyle.Fill, Text = T(
             "原型僅用於選擇兵種。只生成定時部隊；巡邏、指定攻擊目標、戰術、經濟與擴張尚不支援。時間為開局後的秒數，人數為每兵種每波的人數。套用後可復原，儲存才寫入；遊戲內行為尚未驗證。",
             "Archetypes select unit types only. Timed spawning is supported; patrol, attack targets, tactics, economy and expansion are unsupported. Times are seconds after mission start; count is per unit type per wave. Undo is available; Save writes the changes. In-game behavior is unverified.") };
+        hint.MaximumSize = new Size(LogicalToDeviceUnits(600), 0); // wrap at a bounded width so the auto-sized row grows with the text
         grid.Controls.Add(hint, 0, 0); grid.SetColumnSpan(hint, 2);
         _archetype.Items.AddRange(AiArchetypeCatalog.All.Cast<object>().ToArray());
         _archetype.FormattingEnabled = true;

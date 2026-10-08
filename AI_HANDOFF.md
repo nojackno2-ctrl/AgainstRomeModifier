@@ -728,3 +728,4 @@
 - 驗證：Release build 0 錯誤；Modules 789、Host 782 通過、0 失敗。無遊戲內驗證。
 
 - 2026-10-08 Claude：任務目標設計／野外巢穴守衛波次對話框已接入「配置」選單（RunObjectiveStudio／RunWildLairs，經 MergeScenarioEvents：單一 undo 步驟、256 上限、同名事件自動加 _2 後綴）。修正 undo/redo 後事件清單選取遺失。新增測試 Merging_scenario_events_*。驗證：Modules 789、Host 783 通過、0 失敗。兩個新選單未做 UI 實操或遊戲內驗證。仍未修：診斷訊息寫死中文、說明標籤高 DPI 折行。
+- 2026-10-08 Claude：CampaignWaveDialog 說明標籤改設 MaximumSize（高 DPI 折行修正，未在實體高 DPI 螢幕驗證）。
