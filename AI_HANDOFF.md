@@ -1,5 +1,12 @@
 ﻿# AI Handoff - Live Project Memory
 
+## 展示圖第 7 版：新版懸崖與基地生成（2026-10-08 Claude；遊戲內檢視被擋住）
+
+- 修正：真實岩壁圖塊（Fels_AA_002/004/006/008）貼上後，坡腳碎石自動過渡因缺少原版邊界而失敗，導致整個懸崖套用被判失敗（已貼的岩壁圖塊也沒登記 Undo）。`CliffFacePlanner.ApplyPlan` 現在把碎石失敗當警告：只要有任何岩壁／碎石／碰撞套用就算成功，工具訊息會提示略過的轉角朝向與碎石數。
+- 展示圖 `%TEMP%\ArmToolsShowcase_20261008_07`：懸崖 52 個真實岩壁圖塊（16 個轉角朝向略過、0 碎石）、832 阻擋像素；新版基地生成 2 人日耳曼 22 件（BauGerHau00_Haupthaus、Lag00、Woh00、Bau00、Waf00、Sta00、Schre00＋野豬 FigTieEbe00）；存檔重載一致。
+- 遊戲內檢視：兩次啟動都被 TextInputHost 擋住（前景為 TextInputHost、畫面全黑；使用者的「工作管理員」視窗也一直開著，可能相關）。下次請先關閉工作管理員並確認輸入法為英文再測。
+- 基地位置：第一位玩家主屋約在世界 (5715, 12438)；高台／懸崖在圖格 (40–45, 33–38)。
+
 ## 子代理成果整合（2026-10-08 Claude；Codex×5＋Agy×5，各自 worktree 後合併）
 
 - 已合併分支（皆本地、未 push）：`wt/sound`、`wt/cinematic`、`wt/objectives`、`wt/lair`（Codex 逆向）、`wt/settle`、`wt/weather`、`wt/pack`、`wt/ai`、`wt/macro`（Agy 稽核；settle／weather／pack 的代理收尾失敗，由我複驗後提交）。合併後 Release build 0 錯誤；Modules 662、Host 723 通過（22 略過）、0 失敗。

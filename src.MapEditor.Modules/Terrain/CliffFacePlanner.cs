@@ -222,7 +222,8 @@ public static class CliffFacePlanner
 
         blendSession.CommitStroke();
 
-        return new CliffApplyResult(errors.Count == 0, stampedCount, screeCount, collisionCount, errors);
+        // 坡腳碎石自動過渡失敗只是警告（岩壁圖塊與碰撞標記已套用）；全部都沒套用才算失敗。
+        return new CliffApplyResult(stampedCount > 0 || screeCount > 0 || collisionCount > 0, stampedCount, screeCount, collisionCount, errors);
     }
 
     private static (int Dx, int Dy)[] GetDownhillOffsets(CliffFacing facing) => facing switch
