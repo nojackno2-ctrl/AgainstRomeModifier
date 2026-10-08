@@ -17,7 +17,7 @@ internal sealed partial class MapEditorForm
     private readonly Button _eventCopy = new() { AutoSize = true };
     private readonly Label _eventHint = new() { Dock = DockStyle.Top, Height = 100, Padding = new Padding(8) };
 
-    private bool EventsDirty() => EventSession.IsDirty;
+    private bool EventsDirty() => EventSession.IsDirty || _eventGraphDirty;
 
     private Control BuildEventsPanel()
     {
@@ -36,12 +36,12 @@ internal sealed partial class MapEditorForm
             int index = _eventList.SelectedIndex;
             EventSession.RemoveAt(index); RefreshEventList(Math.Min(index, _events.Count - 1)); UpdateEditorState();
         };
-        return panel;
+        return BuildEventGraphTabs(panel);
     }
 
     private void LoadEvents(string map)
     {
-        EventSession.Load(ScenarioDocument.Load(map).Events); RefreshEventList();
+        EventSession.Load(ScenarioDocument.Load(map).Events); _eventGraphDirty = false; RefreshEventList();
     }
 
     private void LocalizeEvents(bool en)
@@ -52,7 +52,7 @@ internal sealed partial class MapEditorForm
         _eventHint.Text = en
             ? "Run actions when the timer is due and all object conditions hold. Conditions can check existence or death/removal of placed objects. Repeat uses the selected interval. Save to apply; in-game behavior still needs validation."
             : "計時到期且所有物件條件成立時執行動作。條件可檢查放置物件存在、死亡或移除；可單次或依間隔重複。按「儲存」套用；遊戲內效果仍待驗證。";
-        RefreshEventList(_eventList.SelectedIndex);
+        LocalizeEventGraph(en); RefreshEventList(_eventList.SelectedIndex);
     }
 
     private void RefreshEventList(int selected = -1)
@@ -62,12 +62,12 @@ internal sealed partial class MapEditorForm
         foreach (ScenarioEvent item in _events)
             _eventList.Items.Add($"{(item.Enabled ? "●" : "○")} {item.Name} — {item.DelaySeconds}s {(item.Repeat ? (en ? "repeat" : "重複") : (en ? "once" : "單次"))}, {item.Conditions.Count} {(en ? "conditions" : "條件")}");
         if (selected >= 0 && selected < _eventList.Items.Count) _eventList.SelectedIndex = selected;
-        _eventList.EndUpdate(); UpdateEventButtons();
+        _eventList.EndUpdate(); UpdateEventButtons(); if (!_eventGraphDirty) ReloadEventGraph();
     }
 
     private void UpdateEventButtons()
     {
-        bool custom = _selected?.IsCustom == true, selected = _eventList.SelectedIndex >= 0;
+        UpdateEventGraphButtons(); bool custom = _selected?.IsCustom == true && !_eventGraphDirty, selected = _eventList.SelectedIndex >= 0;
         _eventAdd.Enabled = custom && _events.Count < 256;
         _eventCopy.Enabled = _eventAdd.Enabled && selected;
         _eventEdit.Enabled = _eventDelete.Enabled = custom && selected;

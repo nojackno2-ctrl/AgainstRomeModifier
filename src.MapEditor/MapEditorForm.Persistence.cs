@@ -26,7 +26,7 @@ internal sealed partial class MapEditorForm
         try
         {
             string map = CustomMapAccess.RequireEditableDirectory(_selected.DirectoryPath, _gamePath);
-            CommitStroke();
+            CommitStroke(); ApplyEventGraph();
             bool natureChanged = NatureDirty();
             bool placedChanged = PlacedDirty();
             bool eventsChanged = EventsDirty();

@@ -1,5 +1,18 @@
 # AI Handoff - Live Project Memory
 
+## 遊戲內驗收嘗試（2026-10-08 Claude，使用者已口頭授權測試）
+
+- 備份 `MAPS\ENDL_005` 至 `%TEMP%\ArmGameBackup_20261008_acceptance`（55 檔，hashes.csv）；安裝候選 `empty-authored`（ENDL_008）後以 computer-use 啟動遊戲。
+- 結果：**驗收未完成**。遊戲啟動後只出現黑屏／無視窗，且 open_application 會多開第二個行程；未能進入選單，沒有任何遊戲內證據。已終止遊戲、刪除 ENDL_008，ENDL_005 55 檔雜湊與備份一致。
+- 下一步：需使用者在場（關閉 TextInputHost 搶佔、保持遊戲全螢幕不最小化），再依 docs/map-editor-gameplay-candidates.md 逐項測。不要重複 open_application（會多開）；改用 Start-Process 啟動一次。
+- Codex 用量於 12:37 前耗盡；事件圖已接入事件分頁（見下一節）。天氣、budget/NavMesh、植被工具等 UI 仍未接。
+
+## 本輪接線（2026-10-08 Codex）
+
+- 使用者要求依序接入事件圖、天氣、budget/NavMesh、矩形植被；選配小工具視時間。禁止 commit/push、安裝目錄存取；保留 .claude/ 與 TEMP/。
+- 事件圖已嵌入事件分頁，草稿驗證後透過 ScenarioEventSession 與既有 save preflight 套用；拒絕孤立節點及無法編譯的流控。拖曳不再改變事件順序。新增宿主 round-trip/save 與拒絕/放棄測試，待 build/test。
+- 工具：普通 sandbox 程序初始化失敗；repository 操作改用已核准提升權限 shell。未使用私人記憶來源。
+
 ## 接手先讀（2026-10-08 Antigravity，WinForms 地圖編輯器成功接入第一梯隊三大實用模組）
 
 - **完成驗證與接入狀態**：

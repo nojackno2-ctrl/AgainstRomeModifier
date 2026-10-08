@@ -107,7 +107,7 @@ public static class EventGraphConverter
         ArgumentNullException.ThrowIfNull(graph);
 
         var result = new List<ScenarioEvent>();
-        var triggerNodes = graph.Nodes.OfType<EventTriggerNode>().OrderBy(n => n.Y).ThenBy(n => n.X).ToList();
+        var triggerNodes = graph.Nodes.OfType<EventTriggerNode>().ToList();
 
         foreach (var trigger in triggerNodes)
         {
