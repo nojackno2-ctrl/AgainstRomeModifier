@@ -101,6 +101,8 @@ public sealed record FairnessScoreReport(
     bool IsBalanced);
 
 /// <summary>部族預設建築與生態配置調色盤。</summary>
+// 名稱以 TEMP 副本的 cl_scint.ini／objdef 核對：建築與動物用真實 alias，地景用完整 NameDef。
+// Hun 無農場，改用屠宰場；足跡大小是規劃估值，尚非遊戲碰撞資料。
 public static class SettlementTribalPresets
 {
     public static (BuildingBlueprint MainHouse, IReadOnlyList<BuildingBlueprint> CoreBuildings) GetBlueprints(SettlementTribe tribe)
@@ -108,44 +110,48 @@ public static class SettlementTribalPresets
         return tribe switch
         {
             SettlementTribe.Roman => (
-                new BuildingBlueprint("BauRomHau00", "MainHouse", 4.5f, 4.5f, 0f),
+                new BuildingBlueprint("ROM_HAU00", "MainHouse", 4.5f, 4.5f, 0f),
                 new BuildingBlueprint[]
                 {
-                    new("BauRomLag00", "Warehouse", 3.2f, 3.2f, 5.0f, 45f),
-                    new("BauRomWoh00", "House", 2.6f, 2.6f, 5.5f, 135f),
-                    new("BauRomKas00", "Barracks", 3.8f, 3.8f, 7.0f, 225f),
-                    new("BauRomSch00", "Blacksmith", 3.0f, 3.0f, 6.0f, 315f),
-                    new("BauRomTur00", "Tower", 2.2f, 2.2f, 8.5f, 90f)
+                    new("ROM_LAG00", "Warehouse", 3.2f, 3.2f, 5.0f, 45f),
+                    new("ROM_WOH00", "House", 2.6f, 2.6f, 5.5f, 105f),
+                    new("ROM_BAU00", "Farm", 3.8f, 3.8f, 7.0f, 165f),
+                    new("ROM_WAF00", "Blacksmith", 3.0f, 3.0f, 6.0f, 225f),
+                    new("ROM_STA00", "Stable", 2.2f, 2.2f, 8.5f, 285f),
+                    new("ROM_SCHRE00", "Workshop", 3.0f, 3.0f, 8.5f, 345f)
                 }),
             SettlementTribe.Celtic => (
-                new BuildingBlueprint("BauKelHau00", "MainHouse", 4.2f, 4.2f, 0f),
+                new BuildingBlueprint("KEL_HAU00", "MainHouse", 4.2f, 4.2f, 0f),
                 new BuildingBlueprint[]
                 {
-                    new("BauKelLag00", "Warehouse", 3.0f, 3.0f, 5.0f, 40f),
-                    new("BauKelWoh00", "House", 2.5f, 2.5f, 5.2f, 130f),
-                    new("BauKelKas00", "Barracks", 3.5f, 3.5f, 6.8f, 220f),
-                    new("BauKelSch00", "Blacksmith", 2.8f, 2.8f, 6.0f, 310f),
-                    new("BauKelTur00", "Tower", 2.0f, 2.0f, 8.2f, 85f)
+                    new("KEL_LAG00", "Warehouse", 3.0f, 3.0f, 5.0f, 40f),
+                    new("KEL_WOH00", "House", 2.5f, 2.5f, 5.2f, 105f),
+                    new("KEL_BAU00", "Farm", 3.5f, 3.5f, 6.8f, 165f),
+                    new("KEL_WAF00", "Blacksmith", 2.8f, 2.8f, 6.0f, 225f),
+                    new("KEL_STA00", "Stable", 2.0f, 2.0f, 8.2f, 285f),
+                    new("KEL_SCHRE00", "Workshop", 3.0f, 3.0f, 8.5f, 345f)
                 }),
             SettlementTribe.Hun => (
-                new BuildingBlueprint("BauHunHau00", "MainHouse", 4.2f, 4.2f, 0f),
+                new BuildingBlueprint("HUN_HAU00", "MainHouse", 4.2f, 4.2f, 0f),
                 new BuildingBlueprint[]
                 {
-                    new("BauHunLag00", "Warehouse", 3.0f, 3.0f, 5.0f, 45f),
-                    new("BauHunWoh00", "House", 2.5f, 2.5f, 5.0f, 140f),
-                    new("BauHunKas00", "Barracks", 3.6f, 3.6f, 7.0f, 230f),
-                    new("BauHunSch00", "Blacksmith", 2.8f, 2.8f, 6.2f, 315f),
-                    new("BauHunTur00", "Tower", 2.0f, 2.0f, 8.0f, 90f)
+                    new("HUN_LAG00", "Warehouse", 3.0f, 3.0f, 5.0f, 45f),
+                    new("HUN_WOH00", "House", 2.5f, 2.5f, 5.0f, 105f),
+                    new("HUN_SCHLA00", "Butcher", 3.6f, 3.6f, 7.0f, 165f),
+                    new("HUN_WAF00", "Blacksmith", 2.8f, 2.8f, 6.2f, 225f),
+                    new("HUN_STA00", "Stable", 2.0f, 2.0f, 8.0f, 285f),
+                    new("HUN_SCHRE00", "Workshop", 3.0f, 3.0f, 8.5f, 345f)
                 }),
             _ => ( // Germanic (Default)
-                new BuildingBlueprint("BauGerHau00", "MainHouse", 4.2f, 4.2f, 0f),
+                new BuildingBlueprint("GER_HAU00", "MainHouse", 4.2f, 4.2f, 0f),
                 new BuildingBlueprint[]
                 {
-                    new("BauGerLag00", "Warehouse", 3.0f, 3.0f, 5.2f, 45f),
-                    new("BauGerWoh00", "House", 2.6f, 2.6f, 5.5f, 135f),
-                    new("BauGerKas00", "Barracks", 3.6f, 3.6f, 7.2f, 225f),
-                    new("BauGerSch00", "Blacksmith", 3.0f, 3.0f, 6.0f, 315f),
-                    new("BauGerTur00", "Tower", 2.2f, 2.2f, 8.5f, 90f)
+                    new("GER_LAG00", "Warehouse", 3.0f, 3.0f, 5.2f, 45f),
+                    new("GER_WOH00", "House", 2.6f, 2.6f, 5.5f, 105f),
+                    new("GER_BAU00", "Farm", 3.6f, 3.6f, 7.2f, 165f),
+                    new("GER_WAF00", "Blacksmith", 3.0f, 3.0f, 6.0f, 225f),
+                    new("GER_STA00", "Stable", 2.2f, 2.2f, 8.5f, 285f),
+                    new("GER_SCHRE00", "Workshop", 3.0f, 3.0f, 8.5f, 345f)
                 })
         };
     }
@@ -154,8 +160,8 @@ public static class SettlementTribalPresets
     {
         return tribe switch
         {
-            SettlementTribe.Roman => new[] { "LanRomNad00", "LanRomNad01", "LanRomLau00", "LanRomLau01", "LanRomNabu00" },
-            _ => new[] { "LanGerNad00", "LanGerNad05", "LanGerNad18", "LanGerLau00", "LanGerNabu00" }
+            SettlementTribe.Roman => new[] { "LanItaPin00_Pinie", "LanItaPin01_Pinie", "LanItaZyp00_Zypresse", "LanItaZyp01_Zypresse", "LanItaBus08_Kleiner_Busch" },
+            _ => new[] { "LanGerNad00_Tanne_gross", "LanGerNad05_Tanne_gross", "LanGerNad18_Tanne_klein", "LanGerNad24_Tanne_mittel", "LanGerNabu00_Nadelbusch" }
         };
     }
 
@@ -163,13 +169,13 @@ public static class SettlementTribalPresets
     {
         return tribe switch
         {
-            SettlementTribe.Roman => new[] { "LanRomSte00", "LanRomSte01", "LanRomSte02" },
-            _ => new[] { "LanGerSte00", "LanGerSte01", "LanGerSte02", "LanGerSte05" }
+            SettlementTribe.Roman => new[] { "LanItaSte00_1Stein", "LanItaSte01_1Stein", "LanItaSte02_1Stein" },
+            _ => new[] { "LanGerSte00_1Stein", "LanGerSte01_1Stein", "LanGerSte02_1Stein", "LanGerSte05_1Stein" }
         };
     }
 
     public static IReadOnlyList<string> GetWildlifePalette()
     {
-        return new[] { "FigHir00", "FigSch00" }; // 鹿 (Hirsch), 野豬 (Schwein)
+        return new[] { "ALL_EBE00" }; // FigTieEbe00_Wildschwein；不以掠食者充當食物群。
     }
 }

@@ -58,7 +58,7 @@ internal sealed partial class MapEditorForm
         {
             bool building = item.Type.Category == SdlObjectCategory.Building;
             var spawn = new ScenarioSpawn(AliasOf(item.Type), item.WorldX, item.WorldZ, item.Team,
-                item.Type.Category == SdlObjectCategory.Figure ? Math.Max(1, item.UnitCount) : 0,
+                item.Type.Category == SdlObjectCategory.Figure && !item.Type.IsAnimal ? Math.Max(1, item.UnitCount) : 0,
                 (int)MathF.Round(item.Angle), item.WorldY, Prebuilt: building && item.Team is >= 0 and <= 8) { Id = item.ScenarioId };
             bool hasTemplate = false;
             if (building)
