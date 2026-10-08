@@ -86,6 +86,14 @@
 - 發現：WaterWarpShift=0 為原檔註解明示的關閉值；原validator拒絕，現已修正。預設的雪花/閃電索引1沒有依據（原版837/152、803/1099/6）。預設波幅、色彩、時段偏離有限樣本；fog/wind/precipitation 為 editor profile，不是原生 INI 鍵。
 - 稽核 scratch 程式首次遇到沒有 game/MAPS 的備份目錄，改為先確認目錄存在後成功；普通 sandbox 啟動失敗，使用已核准提升權限 shell。scratch 與 JSON 僅在 ignored obj/weather-audit，不提交素材。已完成33鍵defaults對齊、預設nearby政策、warp關閉值/註解範圍/非有限數值驗證、小寫鍵解析修正及inline/五種host存檔測試。指定Release build成功（0 errors；40 warnings，多為既存）。首次解包成功前的目錄不存在失敗已修正；首次完整test：Host709通過/22略過；Modules586通過/1失敗，新增case測試誤把貼圖值轉小寫（wassAW→wassaw），已改為只轉鍵名，補非預設值解析斷言；重新驗證中。文件見 docs/reverse-engineering/boden-ini-values.md；新預設遊戲外觀未驗證。
 
+## Settlement 真實名稱稽核（2026-10-08 Codex，AUDIT TASK 1）
+
+- 獨立 worktree `D:\Github\ARM_wt_settle`／分支 `wt/settle`，起點 `080ebc9`；初始 status/diff/cached diff 乾淨。主 checkout 不修改；禁止存取／啟動遊戲安裝目錄。
+- 證據：scratch console 以 `ScriptObjectAliases.Load(%TEMP%\ArmGameCompare_20261007)` 解出 235 個別名；唯讀 `%TEMP%\ArmNativeAssets_20261007\objdef.txt` 第 52 欄核對地景。四族有 HAU/LAG/WOH/WAF/STA/SCHRE；Hun 無 BAU，改用 SCHLA。動物採 ALL_EBE00（FigTieEbe00_Wildschwein）；Roman 地景為 LanItaPin/Zyp/Bus/Ste，無 LanRomNad/Ste。
+- 已實作：四族主屋＋6 核心角色（Warehouse/House/Farm 或 Butcher/Blacksmith/Stable/Workshop），真實 alias／完整地景名；測試使用獨立 fixture 檢查四族完整套用、JSON、碰撞、Undo/Redo，宿主檢查每種建築數。設計文件已更新。
+- 首次測試發現並修正：真實野豬分類 Figure 後 Team=-1 被拒絕（Modules 5 failures／Host 1 failure）；舊 fixture 把動物偽裝 Building 隱藏問題。依 LevelScriptInjector 原始碼，Count>0 呼叫 s_createUnitAndMems；已加入 FigTie 動物判別，生成／儲存／診斷使用 Count=0 走 s_createObj，保留人類部隊限制，宿主測試加入存檔驗證。
+- 驗證：修改後 Release build（指定命令）0 errors／40 warnings；唯讀 TEMP 對照測試 fixture 全部 29 alias mappings／17 完整地景名稱一致。`git diff --check` 通過。全套測試重跑中；遊戲外觀、完工狀態、採集與平衡未驗證。
+
 ## 懸崖工具發現與修正（2026-10-08 Claude，遊戲內實測；使用者已改好輸入法設定，遊戲可正常啟動）
 
 - **輸入法問題已解決**：使用者在系統設定覆寫預設輸入法後，遊戲不再被 TextInputHost 搶前景。若遊戲啟動後被最小化（前景變 claude），重啟遊戲即可。
