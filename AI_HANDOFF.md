@@ -94,6 +94,12 @@
 - 首次測試發現並修正：真實野豬分類 Figure 後 Team=-1 被拒絕（Modules 5 failures／Host 1 failure）；舊 fixture 把動物偽裝 Building 隱藏問題。依 LevelScriptInjector 原始碼，Count>0 呼叫 s_createUnitAndMems；已加入 FigTie 動物判別，生成／儲存／診斷使用 Count=0 走 s_createObj，保留人類部隊限制，宿主測試加入存檔驗證。
 - 驗證：修改後 Release build（指定命令）0 errors／40 warnings；唯讀 TEMP 對照測試 fixture 全部 29 alias mappings／17 完整地景名稱一致。`git diff --check` 通過。全套測試重跑中；遊戲外觀、完工狀態、採集與平衡未驗證。
 
+## Packaging audit 3（2026-10-08 Codex；wt/pack 獨立 worktree）
+
+- 起點 080ebc9；只修改 D:\Github\ARM_wt_pack，不存取或啟動遊戲安裝目錄。
+- 發現：既有 installer 可留下槽位空洞、未驗證 ZIP 路徑/雜湊、吞掉 SDL 改寫錯誤、README 指向未實作管理器；manifest 與 payload 清單不一致。
+- 已實作 schema 1.1 契約、共用 cloner 改寫、連續空位與不覆蓋安裝、CLI、測試與文件。第一輪 build 0 errors；test Modules 559 pass/4 fail（原 fixture 非遊戲 .put 語法），host 705 pass/22 skip。已修正 fixture；TEMP 匯出被假 alias 錯誤阻擋，改為缺少 alias catalog 時 warning，提供 catalog 時仍 error；待重跑。
+
 ## 懸崖工具發現與修正（2026-10-08 Claude，遊戲內實測；使用者已改好輸入法設定，遊戲可正常啟動）
 
 - **輸入法問題已解決**：使用者在系統設定覆寫預設輸入法後，遊戲不再被 TextInputHost 搶前景。若遊戲啟動後被最小化（前景變 claude），重啟遊戲即可。

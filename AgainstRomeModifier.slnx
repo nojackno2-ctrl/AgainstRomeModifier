@@ -7,4 +7,5 @@
   <Project Path="src.Shared/AgainstRome.Shared.csproj" />
   <Project Path="tests/AgainstRomeModifier.Tests/AgainstRomeModifier.Tests.csproj" />
   <Project Path="tests/AgainstRomeMapEditor.Modules.Tests/AgainstRomeMapEditor.Modules.Tests.csproj" />
+  <Project Path="tools/ArmMapPackage/ArmMapPackage.csproj" />
 </Solution>

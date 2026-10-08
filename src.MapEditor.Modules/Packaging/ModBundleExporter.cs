@@ -49,7 +49,10 @@ public sealed record ModInstallResult(
     string DirectoryPath,
     int? RemappedFromSlot,
     MapPackageManifest Manifest,
-    int ExtractedFileCount);
+    int ExtractedFileCount)
+{
+    public MapPreflightReport? PreflightReport { get; init; }
+}
 
 /// <summary>
 /// 模組發布封裝與匯出管線核心 (ModBundleExporter)。
@@ -74,6 +77,7 @@ public static class ModBundleExporter
         ArgumentException.ThrowIfNullOrWhiteSpace(outputZipPath);
 
         options ??= new ModExportOptions();
+        MapBundleContract.RejectLinks(mapDirectory);
 
         // 步驟 1：執行發布前預檢驗收
         MapPreflightReport preflight = MapExportPreflightChecker.Check(mapDirectory);
@@ -93,6 +97,11 @@ public static class ModBundleExporter
             packageId: pkgId,
             author: options.Author,
             version: options.Version);
+
+        // One authoritative list for both the archive and its manifest; never export the local marker.
+        manifest.Files = manifest.Files.Where(f => MapBundleContract.IsPayloadPath(f.RelativePath) &&
+            (!options.CleanCaches || preflight.FilesToPackage.Contains(f.RelativePath))).ToList();
+        if (!manifest.Validate(out var errors)) throw new InvalidDataException(string.Join("; ", errors));
 
         // 步驟 3：產生高質感發布縮圖
         byte[]? thumbnailBmp = null;
@@ -135,17 +144,12 @@ public static class ModBundleExporter
                     writer.WriteLine(manifest.Description);
                     writer.WriteLine();
                     writer.WriteLine($"[安裝方式]");
-                    writer.WriteLine($"1. 使用 Against Rome Modifier 模組管理器一鍵安裝（自動防覆蓋槽位）。");
-                    writer.WriteLine($"2. 或手動將 map/ 內所有檔案複製至遊戲 MAPS/ENDL_XXX 資料夾中。");
+                    writer.WriteLine("1. 先關閉遊戲，使用 tools/ArmMapPackage 安裝 CLI（詳見 docs/map-package-install.md）。");
+                    writer.WriteLine("2. map/ 是相對於槽位的內容；不可直接解壓到任意 ENDL_XXX。安裝器會選連續空位、重寫 SDL 並建立 marker。");
                 }
 
                 // 寫入地圖主體檔案 (純淨白名單)
-                var filesToInclude = options.CleanCaches
-                    ? preflight.FilesToPackage
-                    : Directory.GetFiles(mapDirectory, "*", SearchOption.AllDirectories)
-                               .Select(f => Path.GetRelativePath(mapDirectory, f).Replace('\\', '/'))
-                               .Where(r => !r.EndsWith(".tmp_arm", StringComparison.OrdinalIgnoreCase))
-                               .ToList();
+                var filesToInclude = manifest.Files.Select(f => f.RelativePath);
 
                 foreach (string relative in filesToInclude)
                 {
@@ -212,188 +216,100 @@ public static class ModBundleExporter
         using var zipStream = File.OpenRead(zipPath);
         using var archive = new ZipArchive(zipStream, ZipArchiveMode.Read);
 
-        // 讀取 manifest.json
-        ZipArchiveEntry? manifestEntry = archive.GetEntry(MapPackageManifest.ManifestFileName);
+        // Schema 1.1 is deliberately strict: legacy bundles must be re-exported.
+        var entries = new Dictionary<string, ZipArchiveEntry>(StringComparer.OrdinalIgnoreCase);
+        foreach (var entry in archive.Entries)
+        {
+            if (!entries.TryAdd(entry.FullName, entry)) throw new InvalidDataException("Duplicate ZIP entry.");
+            if (entry.FullName is "manifest.json" or "README.txt" or "thumbnail.bmp") continue;
+            if (!entry.FullName.StartsWith(MapSubdirectoryInZip, StringComparison.Ordinal) ||
+                !MapBundleContract.IsPayloadPath(entry.FullName[MapSubdirectoryInZip.Length..]))
+                throw new InvalidDataException("Unsupported ZIP path: " + entry.FullName);
+        }
+        if (!entries.TryGetValue(MapPackageManifest.ManifestFileName, out var manifestEntry) || manifestEntry.Length > 1024 * 1024)
+            throw new InvalidDataException("Missing or oversized manifest.json.");
         MapPackageManifest manifest;
-        if (manifestEntry != null)
-        {
-            using var reader = new StreamReader(manifestEntry.Open(), Encoding.UTF8);
+        using (var reader = new StreamReader(manifestEntry.Open(), Encoding.UTF8))
             manifest = MapPackageManifest.FromJson(reader.ReadToEnd());
-        }
-        else
+        if (manifest.Compatibility is null || manifest.Files is null || manifest.Players is null || manifest.Dimensions is null ||
+            !manifest.Validate(out _) || manifest.SchemaVersion != MapPackageManifest.CurrentSchemaVersion ||
+            manifest.PayloadLayout != "map-relative" || manifest.SourceMapId != $"ENDL_{manifest.Compatibility.PreferredSlot:000}" ||
+            manifest.PackageChecksum != manifest.ComputePackageChecksum())
+            throw new InvalidDataException("Invalid or unsupported package manifest; re-export with schema 1.1.");
+        var files = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        long totalSize = 0;
+        foreach (var file in manifest.Files)
         {
-            manifest = new MapPackageManifest
-            {
-                PackageId = Path.GetFileNameWithoutExtension(zipPath).ToLowerInvariant(),
-                Title = Path.GetFileNameWithoutExtension(zipPath)
-            };
+            if (!MapBundleContract.IsPayloadPath(file.RelativePath) || !files.Add(file.RelativePath) ||
+                !entries.TryGetValue(MapSubdirectoryInZip + file.RelativePath, out var entry) ||
+                file.SizeBytes != entry.Length || file.SizeBytes < 0 || file.SizeBytes > 128 * 1024 * 1024)
+                throw new InvalidDataException("Invalid payload inventory.");
+            totalSize += file.SizeBytes;
         }
+        if (totalSize > 512L * 1024 * 1024 || entries.Keys.Count(k => k.StartsWith(MapSubdirectoryInZip, StringComparison.Ordinal)) != files.Count)
+            throw new InvalidDataException("Payload inventory mismatch or size limit exceeded.");
 
-        int requestedSlot = policy.TargetSlot ?? manifest.Compatibility.PreferredSlot;
-
-        // 核心保護規則：嚴格禁止覆蓋原廠槽位 0..4
-        if (requestedSlot < MinCustomSlot)
-        {
-            throw new InvalidOperationException($"目標槽位 ENDL_{requestedSlot:000} 屬於原廠官方地圖 (ENDL_000 - ENDL_004)，系統嚴格保護，禁止覆蓋！");
-        }
-
-        // 槽位衝突檢測與分配策略
         int sourceSlot = manifest.Compatibility.PreferredSlot;
-        int targetSlot = requestedSlot;
+        if (policy.TargetSlot is < MinCustomSlot)
+            throw new InvalidOperationException("目標槽位屬於原廠官方地圖，禁止覆蓋！");
+        if (policy.TargetSlot is > MaxCustomSlot) throw new ArgumentOutOfRangeException(nameof(policy));
+        if (policy.CollisionStrategy == SlotCollisionStrategy.OverwriteCustom)
+            throw new NotSupportedException("Install never overwrites maps. Install into the first free slot instead.");
+        MapBundleContract.RejectLinks(mapsRoot);
+        int nextFree = AllocateNextFreeSlot(normalizedGamePath);
+        int targetSlot = policy.CollisionStrategy == SlotCollisionStrategy.AutoAllocateNextFree
+            ? nextFree : policy.TargetSlot ?? nextFree;
+        if (targetSlot != nextFree) throw new IOException("Target must be the first contiguous free slot: " + nextFree);
+        if (targetSlot != sourceSlot && !manifest.Compatibility.AllowDynamicSlotRemapping)
+            throw new InvalidOperationException("Package disallows slot remapping.");
         string targetDir = Path.Combine(mapsRoot, $"ENDL_{targetSlot:000}");
-
-        if (Directory.Exists(targetDir))
-        {
-            switch (policy.CollisionStrategy)
-            {
-                case SlotCollisionStrategy.FailIfOccupied:
-                    throw new IOException($"目標地圖槽位 ENDL_{targetSlot:000} 已被佔用。");
-
-                case SlotCollisionStrategy.OverwriteCustom:
-                    if (!CustomMapManifest.IsCustomMapDirectory(targetDir))
-                    {
-                        throw new InvalidOperationException($"目錄 ENDL_{targetSlot:000} 不是自訂地圖，禁止覆蓋原生地圖！");
-                    }
-                    break;
-
-                case SlotCollisionStrategy.AutoAllocateNextFree:
-                default:
-                    targetSlot = AllocateNextFreeSlot(normalizedGamePath);
-                    targetDir = Path.Combine(mapsRoot, $"ENDL_{targetSlot:000}");
-                    break;
-            }
-        }
-
-        // 解壓縮與動態重映射 (使用交易回滾保障)
+        if (File.Exists(targetDir) || Directory.Exists(targetDir)) throw new IOException("Slot is occupied.");
+        // Parse the registry before publishing anything. FileRollbackScope protects its update.
+        CustomMapManifest customManifest = CustomMapManifest.Load(normalizedGamePath);
         using var rollback = new FileRollbackScope();
-        string tempStaging = targetDir + ".tmp_arm_" + Guid.NewGuid().ToString("N");
+        string tempStaging = Path.Combine(mapsRoot, ".arm_install_" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tempStaging);
-
-        int extractedFiles = 0;
+        bool moved = false;
         try
         {
-            foreach (ZipArchiveEntry entry in archive.Entries)
+            foreach (var file in manifest.Files)
             {
-                if (entry.FullName.EndsWith('/') || entry.FullName.EndsWith('\\')) continue;
-                if (!entry.FullName.StartsWith(MapSubdirectoryInZip, StringComparison.OrdinalIgnoreCase)) continue;
-
-                string relativeInMap = entry.FullName[MapSubdirectoryInZip.Length..];
-                string destFile = Path.Combine(tempStaging, relativeInMap);
+                string destFile = Path.Combine(tempStaging, file.RelativePath);
                 Directory.CreateDirectory(Path.GetDirectoryName(destFile)!);
-
-                entry.ExtractToFile(destFile, overwrite: true);
-                extractedFiles++;
+                entries[MapSubdirectoryInZip + file.RelativePath].ExtractToFile(destFile, overwrite: false);
+                using var stream = File.OpenRead(destFile);
+                if (!Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(stream)).Equals(file.Sha256, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidDataException("Payload checksum mismatch: " + file.RelativePath);
             }
-
-            // 動態槽位重映射：若目標槽位與來源槽位不同，重寫 SDL 內部路徑
-            int? remappedFrom = null;
-            if (targetSlot != sourceSlot)
-            {
-                remappedFrom = sourceSlot;
-                RemapInternalSdlPaths(tempStaging, sourceSlot, targetSlot);
-            }
-
-            // 寫入/更新 .arm_custom_map 標記
-            var marker = new CustomMapEntry(
-                Slot: targetSlot,
-                SourceSlot: sourceSlot,
-                CreatedAt: DateTimeOffset.UtcNow,
-                ToolVersion: "AgainstRomeModifier.Packaging")
-            {
-                StandaloneLevel = manifest.Compatibility.StandaloneLevel
-            };
-
-            string markerPath = Path.Combine(tempStaging, CustomMapManifest.MarkerFileName);
-            SafeFileWriter.WriteAllBytes(markerPath, JsonSerializer.SerializeToUtf8Bytes(marker, JsonDefaults.Indented), rollback);
-
-            // 若目標資料夾已存在（例如 OverwriteCustom），先移除舊目錄
-            if (Directory.Exists(targetDir))
-            {
-                rollback.TrackDirectory(targetDir);
-                Directory.Delete(targetDir, recursive: true);
-            }
-
+            MapPreflightReport installedPreflight = MapExportPreflightChecker.Check(tempStaging);
+            if (installedPreflight.Issues.Any(i => i.Severity == PreflightSeverity.Error && i.Category == PreflightCategory.StructuralBinary))
+                throw new InvalidDataException("Installed payload failed map preflight.");
+            EndlessMapCloner.RewriteKnownFiles(tempStaging, manifest.SourceMapId, $"ENDL_{targetSlot:000}", manifest.Title);
+            var marker = new CustomMapEntry(targetSlot, sourceSlot, DateTimeOffset.UtcNow, "AgainstRomeModifier.Packaging")
+            { StandaloneLevel = manifest.Compatibility.StandaloneLevel };
+            SafeFileWriter.WriteAllBytes(Path.Combine(tempStaging, CustomMapManifest.MarkerFileName),
+                JsonSerializer.SerializeToUtf8Bytes(marker, JsonDefaults.Indented));
+            // Move cannot replace an occupied slot; a concurrent installer safely fails here.
             Directory.Move(tempStaging, targetDir);
-
-            // 登記至 arm_custom_maps.json 清單
-            CustomMapManifest customManifest = CustomMapManifest.Load(normalizedGamePath);
+            moved = true;
             customManifest.Register(marker);
             customManifest.Save(normalizedGamePath, rollback);
-
             rollback.Commit();
-
-            return new ModInstallResult(
-                InstalledSlot: targetSlot,
-                DirectoryPath: targetDir,
-                RemappedFromSlot: remappedFrom,
-                Manifest: manifest,
-                ExtractedFileCount: extractedFiles);
+            return new ModInstallResult(targetSlot, targetDir, targetSlot == sourceSlot ? null : sourceSlot, manifest, files.Count) { PreflightReport = installedPreflight };
         }
         catch
         {
-            if (Directory.Exists(tempStaging))
-            {
-                try { Directory.Delete(tempStaging, recursive: true); } catch { }
-            }
+            if (moved && Directory.Exists(targetDir)) Directory.Delete(targetDir, recursive: true);
             throw;
         }
-    }
-
-    /// <summary>尋找大於等於 5 且尚未被佔用的最小槽位。</summary>
-    public static int AllocateNextFreeSlot(string gamePath)
-    {
-        string mapsRoot = Path.Combine(NormalizeGamePath(gamePath), "MAPS");
-        var occupied = new HashSet<int>();
-
-        if (Directory.Exists(mapsRoot))
+        finally
         {
-            foreach (string dir in Directory.GetDirectories(mapsRoot))
-            {
-                string name = Path.GetFileName(dir);
-                if (name.StartsWith("ENDL_", StringComparison.OrdinalIgnoreCase) &&
-                    int.TryParse(name[5..], System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int s))
-                {
-                    occupied.Add(s);
-                }
-            }
-        }
-
-        for (int slot = MinCustomSlot; slot <= MaxCustomSlot; slot++)
-        {
-            if (!occupied.Contains(slot)) return slot;
-        }
-
-        throw new InvalidOperationException($"沒有可用的自訂地圖槽位 (ENDL_{MinCustomSlot:000} - ENDL_{MaxCustomSlot:000})。");
-    }
-
-    private static string NormalizeGamePath(string gamePath)
-    {
-        if (string.IsNullOrWhiteSpace(gamePath)) throw new ArgumentException("未提供遊戲路徑。", nameof(gamePath));
-        string fullPath = Path.GetFullPath(gamePath);
-        if (!Directory.Exists(fullPath)) throw new DirectoryNotFoundException("找不到遊戲路徑: " + fullPath);
-        return fullPath;
-    }
-
-    private static void RemapInternalSdlPaths(string mapDirectory, int oldSlot, int newSlot)
-    {
-        string oldMapId = $"ENDL_{oldSlot:000}";
-        string newMapId = $"ENDL_{newSlot:000}";
-
-        foreach (string sdlPath in Directory.GetFiles(mapDirectory, "*.sdl", SearchOption.TopDirectoryOnly))
-        {
-            try
-            {
-                var sdl = SdlDocument.Load(sdlPath);
-                sdl.RewriteMapPath(oldMapId, newMapId);
-                sdl.Save();
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"重寫 SDL 路徑失敗 ({sdlPath}): {ex.Message}");
-            }
+            if (Directory.Exists(tempStaging)) Directory.Delete(tempStaging, recursive: true);
         }
     }
 
+    /// <summary>The first gap from ENDL_005, shared with the editor catalog.</summary>
+    public static int AllocateNextFreeSlot(string gamePath) => new EndlessMapCatalog().GetNextFreeSlot(gamePath);
     private static byte[]? TryGenerateThumbnail(string mapDirectory, int resolution, MapPackageManifest manifest)
     {
         try

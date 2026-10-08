@@ -74,7 +74,7 @@ public sealed record MapCompatibilityPolicy(
 public sealed class MapPackageManifest
 {
     public const string ManifestFileName = "manifest.json";
-    public const string CurrentSchemaVersion = "1.0";
+    public const string CurrentSchemaVersion = "1.1";
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -85,6 +85,8 @@ public sealed class MapPackageManifest
     };
 
     public string SchemaVersion { get; set; } = CurrentSchemaVersion;
+    public string PayloadLayout { get; set; } = "map-relative";
+    public string SourceMapId { get; set; } = "ENDL_005";
     public string PackageId { get; set; } = string.Empty;
     public string Title { get; set; } = string.Empty;
     public string? Subtitle { get; set; }
@@ -127,7 +129,7 @@ public sealed class MapPackageManifest
     public string ComputePackageChecksum()
     {
         var builder = new StringBuilder();
-        builder.Append(PackageId).Append('|')
+        builder.Append(SchemaVersion).Append('|').Append(PayloadLayout).Append('|').Append(SourceMapId).Append('|').Append(Title).Append('|').Append(Compatibility.StandaloneLevel).Append('|').Append(Compatibility.AllowDynamicSlotRemapping).Append('|').Append(PackageId).Append('|')
                .Append(Version).Append('|')
                .Append(Dimensions.GridWidth).Append('x').Append(Dimensions.GridHeight).Append('|')
                .Append(Compatibility.PreferredSlot).Append('|');
@@ -220,9 +222,10 @@ public sealed class MapPackageManifest
         // 掃描槽位資訊
         int slot = preferredSlot ?? ExtractSlotFromDirectory(mapDirectory);
         manifest.Compatibility = new MapCompatibilityPolicy(
-            PreferredSlot: Math.Clamp(slot, 5, 999),
+            PreferredSlot: slot,
             StandaloneLevel: CustomMapManifest.HasStandaloneLevel(mapDirectory));
 
+        manifest.SourceMapId = $"ENDL_{slot:000}";
         // 掃描檔案清單
         manifest.ScanFiles(mapDirectory);
         manifest.PackageChecksum = manifest.ComputePackageChecksum();
