@@ -96,7 +96,7 @@ public sealed partial class MapEditorSaveTransactionTests
     }
 
     [Fact]
-    public void Cliff_tool_applies_on_steep_slope_region_with_single_transaction_and_supports_undo_redo()
+    public void Cliff_tool_does_not_stamp_tiles_missing_from_the_game_texture_library()
     {
         string map = CreateFixture("ENDL_005");
 
@@ -118,26 +118,19 @@ public sealed partial class MapEditorSaveTransactionTests
             string initialTex = texturesDoc.GetTexture(10, 8);
             Assert.False(initialTex.StartsWith("FELS", StringComparison.OrdinalIgnoreCase));
 
-            // Apply cliff tool to rectangle covering the slope (tiles y from 6 to 10)
+            // 測試素材庫沒有預設目錄預期的岩壁圖塊：工具不得貼上不存在的圖塊（遊戲內會顯示 File not found），而是不變更並說明。
             form.ApplyCliffTool(new Rectangle(5, 6, 15, 5));
 
             var status = (ToolStripStatusLabel)typeof(MapEditorForm)
                 .GetField("_status", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
                 .GetValue(form)!;
-            Assert.Contains("懸崖已套用", status.Text);
-
-            // Undo restores initial textures
-            Invoke(form, "Undo");
+            Assert.Contains("沒有可對應的岩壁圖塊", status.Text);
             Assert.Equal(initialTex, texturesDoc.GetTexture(10, 8));
-
-            // Redo reapplies cliff
-            Invoke(form, "Redo");
-            Assert.NotEqual(initialTex, texturesDoc.GetTexture(10, 8));
         });
     }
 
     [Fact]
-    public void Cliff_tool_via_region_dialog_applies_from_selection_rectangle()
+    public void Cliff_tool_via_region_dialog_leaves_map_unchanged_without_matching_tiles()
     {
         string map = CreateFixture("ENDL_005");
 
@@ -171,11 +164,7 @@ public sealed partial class MapEditorSaveTransactionTests
                 .GetField("_texturesDocument", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
                 .GetValue(form)!;
 
-            string textureAt10 = texturesDoc.GetTexture(10, 8);
-            Assert.StartsWith("FELS", textureAt10, StringComparison.OrdinalIgnoreCase);
-
-            // Single Undo rolls back
-            Invoke(form, "Undo");
+            // 沒有對應的真實岩壁圖塊時不貼任何東西。
             Assert.False(texturesDoc.GetTexture(10, 8).StartsWith("FELS", StringComparison.OrdinalIgnoreCase));
         });
     }

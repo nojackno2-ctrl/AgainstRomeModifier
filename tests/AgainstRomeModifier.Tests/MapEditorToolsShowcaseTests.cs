@@ -39,13 +39,13 @@ public sealed partial class MapEditorSaveTransactionTests
 
             // 高台：tile (36..42, 26..32) 抬高，邊緣形成陡坡供懸崖工具使用。
             var plateau = new List<TerrainSampleChange>();
-            for (int z = 26 * step; z <= 32 * step; z++)
-                for (int x = 36 * step; x <= 42 * step; x++)
+            for (int z = 33 * step; z <= 38 * step; z++)
+                for (int x = 40 * step; x <= 45 * step; x++)
                     plateau.Add(new TerrainSampleChange(z * size + x, layers.Heights[z * size + x], (byte)Math.Min(255, layers.Heights[z * size + x] + 110)));
             layers.ApplySampleChanges(plateau); layers.CommitStroke();
-            form.ApplyCliffTool(new Rectangle(34, 24, 11, 11));
+            form.ApplyCliffTool(new Rectangle(38, 31, 10, 10));
             report["cliff"] = Status();
-            form.ApplyErosionTool(new Rectangle(34, 24, 11, 11));
+            form.ApplyErosionTool(new Rectangle(38, 31, 10, 10));
             report["erosion"] = Status();
             form.ApplyRiverTool([(20, 22), (26, 28), (24, 36)]);
             report["river"] = Status();
@@ -60,6 +60,10 @@ public sealed partial class MapEditorSaveTransactionTests
 
             report["wallPieces"] = form.ApplyWallTool([(24, 18), (32, 18), (32, 22)], team: 0); report["wall"] = Status();
             report["weather"] = form.ApplyWeatherPreset("storm");
+            var lib = GetField<FloorTextureLibrary>(form, "_floorTextures");
+            report["cliffLikeTextures"] = lib.Names.Where(n => System.Text.RegularExpressions.Regex.IsMatch(n, "fels|berg|stein|klipp|rock|cliff", System.Text.RegularExpressions.RegexOptions.IgnoreCase)).ToArray();
+            report["textureCount"] = lib.Names.Count;
+            report["usedTextures"] = textures.Textures.Distinct().OrderBy(t => t).ToArray();
 
             Assert.True(form.TrySaveMap(false, out Exception? error), error?.ToString());
             report["saved"] = true;
@@ -70,7 +74,7 @@ public sealed partial class MapEditorSaveTransactionTests
             report["reloadMatches"] = true;
             Invoke(form, "SetActiveView", true); Application.DoEvents();
             var view = GetField<Map3DViewControl>(form, "_view3d");
-            if (view.IsReady) { view.FocusTile(32, 28); using var image = view.CaptureFrame(1280, 800)!; image.Save(Path.Combine(output, "showcase-3d.png")); report["screenshot"] = true; }
+            if (view.IsReady) { view.FocusTile(40, 36); using var image = view.CaptureFrame(1280, 800)!; image.Save(Path.Combine(output, "showcase-3d.png")); report["screenshot"] = true; }
         }, TimeSpan.FromMinutes(3));
         File.WriteAllText(Path.Combine(output, "result.json"), JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true }));
     }

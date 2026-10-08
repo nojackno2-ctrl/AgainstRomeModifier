@@ -49,6 +49,18 @@ public sealed class CliffTileCatalog
     public IReadOnlyList<CliffTileEntry> Entries => _entries;
     public IReadOnlyDictionary<string, CliffFamilyInfo> Families => _families;
 
+    /// <summary>
+    /// 只保留遊戲貼圖庫中實際存在的圖塊（預設目錄的名稱是推測的；2026-10-08 遊戲內實測貼了不存在的名稱會顯示 File not found）。
+    /// </summary>
+    public CliffTileCatalog FilteredBy(Func<string, bool> textureExists)
+    {
+        ArgumentNullException.ThrowIfNull(textureExists);
+        var filtered = new CliffTileCatalog();
+        foreach (CliffFamilyInfo family in _families.Values) filtered.RegisterFamily(family);
+        foreach (CliffTileEntry entry in _entries.Where(item => textureExists(item.Texture))) filtered.Register(entry);
+        return filtered;
+    }
+
     public void Register(CliffTileEntry entry)
     {
         ArgumentNullException.ThrowIfNull(entry);

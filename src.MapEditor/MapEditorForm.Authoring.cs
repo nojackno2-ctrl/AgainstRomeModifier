@@ -232,7 +232,14 @@ internal sealed partial class MapEditorForm
         }
 
         var filteredDetection = new CliffDetectionResult(dimension, cellsInRect, []);
-        var catalog = CliffTileCatalog.CreateDefault();
+        var existingTextures = _floorTextures?.Names.ToHashSet(StringComparer.OrdinalIgnoreCase) ?? [];
+        var catalog = CliffTileCatalog.CreateDefault().FilteredBy(existingTextures.Contains);
+        if (catalog.Entries.Count == 0)
+        {
+            // 遊戲貼圖庫沒有目錄預期的岩壁圖塊（真實名稱為 fels01_NN 等，角點對應尚未判讀）；不貼不存在的圖塊。
+            _status.Text = en ? "This game has no matching cliff tiles yet; nothing was changed." : "此遊戲目前沒有可對應的岩壁圖塊（真實貼圖命名不同，尚未判讀），未做任何變更。";
+            return;
+        }
         var plan = CliffFacePlanner.Plan(dimension, filteredDetection, catalog, options);
 
         CommitStroke();

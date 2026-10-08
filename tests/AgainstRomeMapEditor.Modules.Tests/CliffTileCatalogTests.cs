@@ -95,4 +95,19 @@ public sealed class CliffTileCatalogTests
         var northWestInnerEntries = catalog.GetEntries(CliffFacing.NorthWestInner);
         Assert.Contains(northWestInnerEntries, e => e.Texture == "ITA_FELS_NW_IN");
     }
+
+    [Fact]
+    public void FilteredBy_keeps_only_textures_that_exist_in_the_game_library()
+    {
+        var catalog = CliffTileCatalog.CreateDefault();
+        Assert.NotEmpty(catalog.Entries);
+        var none = catalog.FilteredBy(_ => false);
+        Assert.Empty(none.Entries);
+        Assert.NotEmpty(none.Families); // 家族資訊保留
+
+        string kept = catalog.Entries[0].Texture;
+        var one = catalog.FilteredBy(name => name.Equals(kept, StringComparison.OrdinalIgnoreCase));
+        Assert.All(one.Entries, entry => Assert.Equal(kept, entry.Texture, ignoreCase: true));
+        Assert.NotEmpty(one.Entries);
+    }
 }
