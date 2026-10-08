@@ -1,5 +1,11 @@
 # AI Handoff - Live Project Memory
 
+## Packaging audit 3（2026-10-08 Codex；wt/pack 獨立 worktree）
+
+- 起點 080ebc9；只修改 D:\Github\ARM_wt_pack，不存取或啟動遊戲安裝目錄。
+- 發現：既有 installer 可留下槽位空洞、未驗證 ZIP 路徑/雜湊、吞掉 SDL 改寫錯誤、README 指向未實作管理器；manifest 與 payload 清單不一致。
+- 已實作 schema 1.1 契約、共用 cloner 改寫、連續空位與不覆蓋安裝、CLI、測試與文件。第一輪 build 0 errors；test Modules 559 pass/4 fail（原 fixture 非遊戲 .put 語法），host 705 pass/22 skip。已修正 fixture；TEMP 匯出被假 alias 錯誤阻擋，改為缺少 alias catalog 時 warning，提供 catalog 時仍 error；待重跑。
+
 ## 懸崖工具發現與修正（2026-10-08 Claude，遊戲內實測；使用者已改好輸入法設定，遊戲可正常啟動）
 
 - **輸入法問題已解決**：使用者在系統設定覆寫預設輸入法後，遊戲不再被 TextInputHost 搶前景。若遊戲啟動後被最小化（前景變 claude），重啟遊戲即可。
