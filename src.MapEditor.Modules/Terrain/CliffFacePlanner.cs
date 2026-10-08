@@ -77,13 +77,18 @@ public static class CliffFacePlanner
             cliffPlacements.Add(new CliffTilePlacement(cell.X, cell.Y, texture, cell.Facing));
         }
 
+        var placedCoordinates = cliffPlacements.Select(p => (p.X, p.Y)).ToHashSet();
+        var effectCells = catalog.RequiresExactFacing
+            ? detection.CliffCells.Where(c => placedCoordinates.Contains((c.X, c.Y))).ToArray()
+            : detection.CliffCells;
+
         // 2. 坡腳碎石與岩屑過渡帶 (Talus / Scree Apron)
         var screePlacements = new List<ScreePlacement>();
         if (options.GenerateScree && !string.IsNullOrWhiteSpace(options.ScreeMaterialId))
         {
             var screeTiles = new HashSet<(int X, int Y)>();
 
-            foreach (CliffCell cell in detection.CliffCells)
+            foreach (CliffCell cell in effectCells)
             {
                 (int Dx, int Dy)[] downhillOffsets = GetDownhillOffsets(cell.Facing);
                 foreach (var (dx, dy) in downhillOffsets)
@@ -115,7 +120,7 @@ public static class CliffFacePlanner
         if (options.GenerateCrestTransition && !string.IsNullOrWhiteSpace(options.CrestMaterialId))
         {
             var crestTiles = new HashSet<(int X, int Y)>();
-            foreach (CliffCell cell in detection.CliffCells)
+            foreach (CliffCell cell in effectCells)
             {
                 (int Dx, int Dy)[] uphillOffsets = GetUphillOffsets(cell.Facing);
                 foreach (var (dx, dy) in uphillOffsets)
@@ -139,7 +144,7 @@ public static class CliffFacePlanner
         var blockedPixels = new List<(int X, int Y)>();
         if (options.AutoMarkCollision)
         {
-            foreach (CliffCell cell in detection.CliffCells)
+            foreach (CliffCell cell in effectCells)
             {
                 for (int py = 0; py < 4; py++)
                 {
@@ -151,7 +156,7 @@ public static class CliffFacePlanner
             }
         }
 
-        bool success = cliffPlacements.Count > 0 && issues.Count == 0;
+        bool success = cliffPlacements.Count > 0 && (issues.Count == 0 || catalog.RequiresExactFacing);
         return new CliffPlanResult(success, cliffPlacements, screePlacements, blockedPixels, issues);
     }
 

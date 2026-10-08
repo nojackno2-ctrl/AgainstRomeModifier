@@ -110,4 +110,50 @@ public sealed class CliffTileCatalogTests
         Assert.All(one.Entries, entry => Assert.Equal(kept, entry.Texture, ignoreCase: true));
         Assert.NotEmpty(one.Entries);
     }
-}
+    [Fact]
+    public void Real_catalog_uses_archive_spelling_and_only_verified_straight_faces()
+    {
+        string[] names = ["Fels_AA_008", "fels_aa_004", "Fels_AA_002", "Fels_AA_006", "fels01_00", "fels1", "FELS_N1", "FELS_NE_OUT", "Fels_AA_001"];
+        var catalog = CliffTileCatalog.BuildRealNames(names);
+        Assert.Equal(4, catalog.Entries.Count);
+        Assert.Equal("Fels_AA_008", catalog.PickTile(CliffFacing.North, 1, 1));
+        Assert.Equal("fels_aa_004", catalog.PickTile(CliffFacing.East, 1, 1));
+        Assert.Equal("Fels_AA_002", catalog.PickTile(CliffFacing.South, 1, 1));
+        Assert.Equal("Fels_AA_006", catalog.PickTile(CliffFacing.West, 1, 1));
+        foreach (CliffFacing facing in Enum.GetValues<CliffFacing>().Where(f => f == CliffFacing.None || (int)f >= 5))
+            Assert.Null(catalog.PickTile(facing, 1, 1));
+        Assert.All(catalog.Entries, e => Assert.Contains(e.Texture, names));
+        Assert.Empty(CliffTileCatalog.BuildRealNames(null).Entries);
+        Assert.Empty(CliffTileCatalog.BuildRealNames(["FELS_N1", "fels1", "fels01_00"]).Entries);
+    }
+
+    [Fact]
+    public void Filtered_real_catalog_does_not_fall_back_to_another_facing()
+    {
+        var catalog = CliffTileCatalog.BuildRealNames(["Fels_AA_008", "Fels_AA_002"])
+            .FilteredBy(name => name == "Fels_AA_008");
+        Assert.Single(catalog.Entries);
+        Assert.Null(catalog.PickTile(CliffFacing.South, 0, 0));
+        Assert.Null(catalog.PickTile(CliffFacing.NorthEastOuter, 0, 0));
+        Assert.Equal("Fels_AA_008", catalog.PickTile(CliffFacing.North, 0, 0));
+    }
+
+    [Fact]
+    public void Real_plan_skips_unverified_cells_and_limits_collision_and_scree_to_supported_cells()
+    {
+        var detection = new CliffDetectionResult(16,
+            [new CliffCell(3, 3, CliffFacing.North, 80, 100, 0, 0), new CliffCell(12, 12, CliffFacing.NorthEastOuter, 80, 100, 0, 0)], []);
+        var catalog = CliffTileCatalog.BuildRealNames(["Fels_AA_008"]);
+        var plan = CliffFacePlanner.Plan(16, detection, catalog);
+        Assert.True(plan.Succeeded);
+        Assert.Single(plan.Issues);
+        Assert.Equal("Fels_AA_008", Assert.Single(plan.CliffTiles).Texture);
+        Assert.Equal(16, plan.BlockedCollisionPixels.Count);
+        Assert.All(plan.BlockedCollisionPixels, p => Assert.True(p.X >= 12 && p.X < 16 && p.Y >= 12 && p.Y < 16));
+        Assert.Equal(new ScreePlacement(3, 2, "BK"), Assert.Single(plan.ScreePlacements));
+        var unsupported = CliffFacePlanner.Plan(16, new CliffDetectionResult(16, [detection.CliffCells[1]], []), catalog);
+        Assert.False(unsupported.Succeeded);
+        Assert.Empty(unsupported.CliffTiles);
+        Assert.Empty(unsupported.ScreePlacements);
+        Assert.Empty(unsupported.BlockedCollisionPixels);
+    }}

@@ -232,15 +232,20 @@ internal sealed partial class MapEditorForm
         }
 
         var filteredDetection = new CliffDetectionResult(dimension, cellsInRect, []);
-        var existingTextures = _floorTextures?.Names.ToHashSet(StringComparer.OrdinalIgnoreCase) ?? [];
-        var catalog = CliffTileCatalog.CreateDefault().FilteredBy(existingTextures.Contains);
+        var catalog = CliffTileCatalog.BuildRealNames(_floorTextures?.Names).FilteredBy(IsDecodableCliffTexture);
         if (catalog.Entries.Count == 0)
         {
-            // 遊戲貼圖庫沒有目錄預期的岩壁圖塊（真實名稱為 fels01_NN 等，角點對應尚未判讀）；不貼不存在的圖塊。
-            _status.Text = en ? "This game has no matching cliff tiles yet; nothing was changed." : "此遊戲目前沒有可對應的岩壁圖塊（真實貼圖命名不同，尚未判讀），未做任何變更。";
+            // No verified, decodable native straight-face tiles are available.
+            _status.Text = en ? "This game has no matching decodable cliff tiles; nothing was changed." : "此遊戲目前沒有可對應的岩壁圖塊（須為可解碼的原生圖塊），未做任何變更。";
             return;
         }
         var plan = CliffFacePlanner.Plan(dimension, filteredDetection, catalog, options);
+        if (!plan.Succeeded)
+        {
+            _status.Text = en ? "No verified tiles for the detected cliff facings; nothing was changed."
+                : "偵測到的懸崖朝向沒有已判讀圖塊，未做任何變更。";
+            return;
+        }
 
         CommitStroke();
         var applyResult = CliffFacePlanner.ApplyPlan(_terrainBlendSession, _terrainLayers, plan);
@@ -266,11 +271,21 @@ internal sealed partial class MapEditorForm
             _status.Text = en
                 ? $"Cliff applied: {applyResult.StampedCliffTiles} cliff tiles, {applyResult.PaintedScreeTiles} scree tiles, {applyResult.BlockedCollisionPixels} collision pixels."
                 : $"懸崖已套用：{applyResult.StampedCliffTiles} 個岩壁圖塊、{applyResult.PaintedScreeTiles} 個碎石圖塊、{applyResult.BlockedCollisionPixels} 個阻擋像素。";
+            if (plan.Issues.Count > 0)
+                _status.Text += en ? $" Skipped {plan.Issues.Count} unsupported facings."
+                    : $" 已略過 {plan.Issues.Count} 個尚未判讀的朝向。";
         }
         else
         {
             _status.Text = en ? "Cliff planning encountered issues." : "懸崖套用時發生問題。";
         }
+    }
+
+    private bool IsDecodableCliffTexture(string name)
+    {
+        try { return _floorTextures?.Get(name) is not null; }
+        catch (Exception ex) when (ex is ArgumentException or IOException or System.Runtime.InteropServices.ExternalException)
+        { return false; }
     }
 
     internal void EditSelectedPlacedObjectsBatch()

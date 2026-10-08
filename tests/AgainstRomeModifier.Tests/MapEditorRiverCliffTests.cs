@@ -168,4 +168,79 @@ public sealed partial class MapEditorSaveTransactionTests
             Assert.False(texturesDoc.GetTexture(10, 8).StartsWith("FELS", StringComparison.OrdinalIgnoreCase));
         });
     }
-}
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Cliff_tool_stamps_real_names_and_undoes_redoes_textures_and_collision(bool viaDialog)
+    {
+        string map = CreateFixture("ENDL_005");
+        WriteGray(Path.Combine(map, "boden.bmp"), 257, Grid(257, (x, y) => y <= 32 ? 140 : 20));
+        AddNativeCliffFixtures(corruptSouth: false);
+        RunInSta(() =>
+        {
+            using var form = new MapEditorForm(_root, new GameMapInfo("ENDL_005", map, true, "RealCliff", "Test"));
+            _ = form.Handle;
+            Invoke(form, "LoadSelectedMap");
+            var textures = GetField<BodenTexturesDocument>(form, "_texturesDocument");
+            var layers = GetField<TerrainHeightEditSession>(form, "_terrainLayers");
+            string[] before = textures.Textures.ToArray();
+            byte[] collisionBefore = layers.Collision!.ToArray();
+            byte[] heightsBefore = layers.Heights.ToArray();
+            var selection = new Rectangle(5, 6, 15, 5);
+            if (viaDialog)
+            {
+                GetField<MapCanvasControl>(form, "_canvas").SelectionTiles = selection;
+                form.RegionDialogRunner = dialog => { dialog.Operation = TerrainRegionOperation.Cliff; return DialogResult.OK; };
+                form.RunRegionTool();
+            }
+            else form.ApplyCliffTool(selection, new CliffPlannerOptions(GenerateScree: false));
+            string[] after = textures.Textures.ToArray();
+            byte[] collisionAfter = layers.Collision!.ToArray();
+            Assert.Contains("懸崖已套用", GetField<ToolStripStatusLabel>(form, "_status").Text);
+            Assert.Contains("Fels_AA_002", after);
+            using var library = new FloorTextureLibrary(Path.Combine(_root, "floortex.dat"));
+            Assert.All(after, name => Assert.Contains(name, library.Names));
+            Assert.DoesNotContain(after, name => name.StartsWith("FELS_", StringComparison.Ordinal));
+            Assert.NotEqual(collisionBefore, collisionAfter);
+            Assert.Equal(heightsBefore, layers.Heights);
+            Invoke(form, "Undo");
+            Assert.Equal(before, textures.Textures);
+            Assert.Equal(collisionBefore, layers.Collision);
+            Invoke(form, "Redo");
+            Assert.Equal(after, textures.Textures);
+            Assert.Equal(collisionAfter, layers.Collision);
+        });
+    }
+
+    [Fact]
+    public void Cliff_tool_rejects_undecodable_real_tiles_and_ignores_guessed_names()
+    {
+        string map = CreateFixture("ENDL_005");
+        WriteGray(Path.Combine(map, "boden.bmp"), 257, Grid(257, (x, y) => y <= 32 ? 140 : 20));
+        AddNativeCliffFixtures(corruptSouth: true);
+        RunInSta(() =>
+        {
+            using var form = new MapEditorForm(_root, new GameMapInfo("ENDL_005", map, true, "BadCliff", "Test"));
+            _ = form.Handle;
+            Invoke(form, "LoadSelectedMap");
+            var textures = GetField<BodenTexturesDocument>(form, "_texturesDocument");
+            var layers = GetField<TerrainHeightEditSession>(form, "_terrainLayers");
+            string[] before = textures.Textures.ToArray();
+            byte[] collision = layers.Collision!.ToArray();
+            form.ApplyCliffTool(new Rectangle(5, 6, 15, 5));
+            Assert.Equal(before, textures.Textures);
+            Assert.Equal(collision, layers.Collision);
+            Assert.Contains("沒有可對應的岩壁圖塊", GetField<ToolStripStatusLabel>(form, "_status").Text);
+        });
+    }
+
+    private void AddNativeCliffFixtures(bool corruptSouth)
+    {
+        using var zip = System.IO.Compression.ZipFile.Open(Path.Combine(_root, "floortex.dat"), System.IO.Compression.ZipArchiveMode.Update);
+        string[] names = corruptSouth ? ["Fels_AA_002", "FELS_S1"] : ["Fels_AA_002", "Fels_AA_004", "Fels_AA_006", "Fels_AA_008"];
+        foreach (string name in names)
+        {
+            using Stream stream = zip.CreateEntry($"SYSTEM/DATA/FLOORTEXTURE/{name}.bmp").Open();
+            stream.Write(corruptSouth && name == "Fels_AA_002" ? new byte[] { 1, 2, 3 } : Encode(128, Enumerable.Repeat((byte)180, 128 * 128).ToArray()));
+        }
+    }}

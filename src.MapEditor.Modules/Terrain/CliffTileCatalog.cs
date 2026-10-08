@@ -46,6 +46,9 @@ public sealed class CliffTileCatalog
     private readonly List<CliffTileEntry> _entries = [];
     private readonly Dictionary<string, CliffFamilyInfo> _families = new(StringComparer.OrdinalIgnoreCase);
 
+    // Real-name catalogs must never substitute a different or unverified facing.
+    internal bool RequiresExactFacing { get; private init; }
+
     public IReadOnlyList<CliffTileEntry> Entries => _entries;
     public IReadOnlyDictionary<string, CliffFamilyInfo> Families => _families;
 
@@ -55,7 +58,7 @@ public sealed class CliffTileCatalog
     public CliffTileCatalog FilteredBy(Func<string, bool> textureExists)
     {
         ArgumentNullException.ThrowIfNull(textureExists);
-        var filtered = new CliffTileCatalog();
+        var filtered = new CliffTileCatalog { RequiresExactFacing = RequiresExactFacing };
         foreach (CliffFamilyInfo family in _families.Values) filtered.RegisterFamily(family);
         foreach (CliffTileEntry entry in _entries.Where(item => textureExists(item.Texture))) filtered.Register(entry);
         return filtered;
@@ -100,7 +103,7 @@ public sealed class CliffTileCatalog
     /// </summary>
     public string? PickTile(CliffFacing facing, int x, int y, int seed = 0, string? preferredFamily = null)
     {
-        if (_entries.Count == 0) return null;
+        if (_entries.Count == 0 || (RequiresExactFacing && facing == CliffFacing.None)) return null;
 
         // 1. 嘗試完全匹配：指定家族 + 指定朝向
         IReadOnlyList<CliffTileEntry> candidates = GetEntries(facing, preferredFamily);
@@ -110,6 +113,8 @@ public sealed class CliffTileCatalog
         {
             candidates = GetEntries(facing, null);
         }
+
+        if (RequiresExactFacing) return candidates.Count == 0 ? null : PickVariant(candidates, x, y, seed);
 
         // 3. 回退 B：外凸角/內凹角回退至相鄰正向坡
         if (candidates.Count == 0 && facing != CliffFacing.None)
@@ -141,6 +146,30 @@ public sealed class CliffTileCatalog
 
         // 6. 依 (x, y, seed) 偽隨機挑選變體
         return PickVariant(candidates, x, y, seed);
+    }
+
+    /// <summary>
+    /// Native grass/rock transitions, verified from the authorized TEMP floortex pixels.
+    /// Rock lies on the named downhill side; original-map elevation usage and runtime appearance
+    /// are unverified. No corner, generic-rock, or guessed-name fallback is permitted.
+    /// See docs/map-editor-cliff-tiles.md and the opt-in CliffTextureAnalysisTests.
+    /// </summary>
+    public static CliffTileCatalog BuildRealNames(IEnumerable<string>? existingTextures)
+    {
+        var catalog = new CliffTileCatalog { RequiresExactFacing = true };
+        catalog.RegisterFamily(new CliffFamilyInfo("FELS", "Grass / rock cliffs", "BK", "BB"));
+        if (existingTextures is null) return catalog;
+        var verified = new Dictionary<string, CliffFacing>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Fels_AA_008"] = CliffFacing.North,
+            ["Fels_AA_004"] = CliffFacing.East,
+            ["Fels_AA_002"] = CliffFacing.South,
+            ["Fels_AA_006"] = CliffFacing.West
+        };
+        foreach (string name in existingTextures.Distinct(StringComparer.Ordinal))
+            if (verified.TryGetValue(name, out CliffFacing facing))
+                catalog.Register(new CliffTileEntry(name, facing, "FELS")); // Preserve the archive's exact spelling.
+        return catalog;
     }
 
     private static CliffFacing GetFallbackFacing(CliffFacing facing) => facing switch

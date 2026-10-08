@@ -1,5 +1,13 @@
 # AI Handoff - Live Project Memory
 
+## 懸崖 TEMP 分析與實名 catalog（2026-10-08 Codex，build/test 已通過）
+
+- `ARM_CLIFF_ANALYSIS=1` opt-in host 分析測試通過：3005 名稱中 76 張 fels 全部可解碼；16 個 FELS 方向名精確／忽略大小寫均不存在。只有 `FELS1/2` 可忽略大小寫對應 `fels1/2`，不可推論方向名存在。
+- ENDL_000、ENDL_005 TEMP 原圖各 4096 格均精確對應 library，fels 使用均 0；無岩壁座標／高低坡面證據。TEMP 報表＋拼貼＋來源 SHA256：`%TEMP%/ArmCliffAnalysis_20261008`；重跑方法與四角分析見 `docs/map-editor-cliff-tiles.md`。
+- AA 四角色彩、16/32px 抽樣與拼貼支持岩石側 N/E/S/W → `Fels_AA_008/004/002/006`；`BuildRealNames`＋`FilteredBy` 接入 host，保留實際拼字並驗證可解碼。缺方向不回退，未支援格子不生成附帶效果；角點／None／通用岩石不登記。下方「工具暫時不貼任何圖塊」為舊狀態，已由本節取代。
+- 信心：圖塊存在／可解碼及岩石側高；當作 downhill face 的語意、B8 等地表接縫、遊戲顯示／立體岩壁效果仍未驗證。未讀寫安裝目錄、未啟動遊戲、未 commit/push；保留 `.claude/`、`TEMP/`。
+- 驗證：`DOTNET_ROLL_FORWARD=Major dotnet build AgainstRomeModifier.slnx -c Release -p:UseAppHost=false` 0 errors；`dotnet test AgainstRomeModifier.slnx -c Release --no-build` Modules 550、host 709 通過（22 略過）、0 failures；opt-in TEMP 分析另 1 通過；`git diff --check` 通過。曾修正新增測試的 2 個 CS8604，及首輪測試抓到的 strict None 回退，現均通過回歸。
+
 ## 懸崖工具發現與修正（2026-10-08 Claude，遊戲內實測；使用者已改好輸入法設定，遊戲可正常啟動）
 
 - **輸入法問題已解決**：使用者在系統設定覆寫預設輸入法後，遊戲不再被 TextInputHost 搶前景。若遊戲啟動後被最小化（前景變 claude），重啟遊戲即可。
