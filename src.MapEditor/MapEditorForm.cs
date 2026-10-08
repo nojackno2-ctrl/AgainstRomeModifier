@@ -497,6 +497,8 @@ internal sealed partial class MapEditorForm : Form
         LocalizePlacementTab(isEn);
         LocalizeEvents(isEn);
         _campaignWaves.Text = isEn ? "AI Campaign Wave Planner…" : "AI 戰役波次企劃…";
+        _objectiveStudio.Text = isEn ? "Objective Studio…" : "任務目標設計…";
+        _wildLairs.Text = isEn ? "Neutral Lair Guard Waves…" : "野外巢穴守衛波次…";
         _aiMapButton.Text = isEn ? "AI Map Maker…" : "AI 製圖…";
         _blankTerrainButton.Text = isEn ? "Reset Flat Terrain…" : "重設平坦地形…";
         _regionToolsButton.Text = isEn ? "Region tools…" : "區域工具…";
@@ -880,7 +882,7 @@ internal sealed partial class MapEditorForm : Form
 
     private void Undo()
     {
-        if (EventHistoryActive) { if (_selected?.IsCustom == true && !_eventGraphDirty && EventSession.Undo()) { RefreshEventList(); UpdateEditorState(); } return; }
+        if (EventHistoryActive) { if (_selected?.IsCustom == true && !_eventGraphDirty && EventSession.Undo()) { RefreshEventList(Math.Min(_eventList.SelectedIndex, EventSession.Count - 1)); UpdateEditorState(); } return; }
         CommitStroke();
         if (_lastActionWasPlacementTool)
         {
@@ -950,7 +952,7 @@ internal sealed partial class MapEditorForm : Form
 
     private void Redo()
     {
-        if (EventHistoryActive) { if (_selected?.IsCustom == true && !_eventGraphDirty && EventSession.Redo()) { RefreshEventList(); UpdateEditorState(); } return; }
+        if (EventHistoryActive) { if (_selected?.IsCustom == true && !_eventGraphDirty && EventSession.Redo()) { RefreshEventList(Math.Min(_eventList.SelectedIndex, EventSession.Count - 1)); UpdateEditorState(); } return; }
         CommitStroke();
         if (_lastActionWasPlacementToolUndone)
         {
@@ -1459,7 +1461,7 @@ internal sealed partial class MapEditorForm : Form
         UpdateEventButtons();
         _sceneRestoreButton.Enabled = editable && _sceneLoaded && (_sceneRemovals.Count > 0 || _sceneAdditions.Count > 0 || SdlSceneEditService.HasChanges(_sceneOriginalObjects, _sceneObjects));
         foreach (Control control in EditablePropertyControls()) control.Enabled = editable;
-        _campaignWaves.Enabled = editable && !_eventGraphDirty && EventSession.Count < 256;
+        _campaignWaves.Enabled = _objectiveStudio.Enabled = _wildLairs.Enabled = editable && !_eventGraphDirty && EventSession.Count < 256;
         _palette.Enabled = editable; UpdateStatus();
     }
 

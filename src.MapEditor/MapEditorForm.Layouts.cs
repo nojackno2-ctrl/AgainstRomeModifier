@@ -18,7 +18,9 @@ internal sealed partial class MapEditorForm
 
     private void InitializeLayoutTools()
     {
-        _layoutMenu.DropDownItems.AddRange([_generateSettlement, _campaignWaves, new ToolStripSeparator(), _exportPlacementLayout, _exportNatureLayout, _importLayout]);
+        _layoutMenu.DropDownItems.AddRange([_generateSettlement, _campaignWaves, _objectiveStudio, _wildLairs, new ToolStripSeparator(), _exportPlacementLayout, _exportNatureLayout, _importLayout]);
+        _objectiveStudio.Click += (_, _) => WithLayoutErrors(RunObjectiveStudio);
+        _wildLairs.Click += (_, _) => WithLayoutErrors(RunWildLairs);
         _campaignWaves.Click += (_, _) => WithLayoutErrors(RunCampaignWaves);
         _generateSettlement.Click += (_, _) => WithLayoutErrors(RunSettlementGenerator);
         _exportPlacementLayout.Click += (_, _) => WithLayoutErrors(() => SaveLayoutFile(CapturePlacementLayout(

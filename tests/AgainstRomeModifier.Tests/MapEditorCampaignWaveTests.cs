@@ -64,4 +64,26 @@ public sealed partial class MapEditorSaveTransactionTests
             Assert.Empty(ScenarioDocument.Load(map).Events);
         });
     }
+
+    [Fact]
+    public void Merging_scenario_events_renames_collisions_and_respects_the_event_cap()
+    {
+        string map = CreateFixture("ENDL_005");
+        RunInSta(() =>
+        {
+            using var form = new MapEditorForm(_root, new GameMapInfo("ENDL_005", map, true, "Waves", "Test"));
+            _ = form.Handle;
+            Invoke(form, "LoadSelectedMap");
+            var session = (ScenarioEventSession)typeof(MapEditorForm).GetProperty("EventSession", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(form)!;
+            var batch = new[] { new ScenarioEvent("Wave_01") { Actions = [new(ScenarioActionKind.Message, Text: "A")] } };
+            Assert.True(form.MergeScenarioEvents(batch));
+            Assert.True(form.MergeScenarioEvents(batch));
+            Assert.Equal(new[] { "Wave_01", "Wave_01_2" }, session.Capture().Select(e => e.Name));
+            Invoke(form, "Undo");
+            Assert.Single(session.Capture());
+            var tooMany = Enumerable.Range(0, 256).Select(i => new ScenarioEvent($"E{i}") { Actions = [new(ScenarioActionKind.Message, Text: "x")] }).ToList();
+            Assert.False(form.MergeScenarioEvents(tooMany));
+            Assert.Single(session.Capture());
+        });
+    }
 }
