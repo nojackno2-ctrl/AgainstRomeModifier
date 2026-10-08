@@ -60,6 +60,7 @@ internal sealed partial class MapEditorForm : Form
     private readonly Label _modeBanner = new() { Dock = DockStyle.Top, Height = 34, TextAlign = ContentAlignment.MiddleCenter };
     private readonly ToolStripStatusLabel _status = new() { Spring = true, TextAlign = ContentAlignment.MiddleLeft };
     private readonly ToolStripButton _saveButton = new("儲存") { Enabled = false };
+    private readonly ToolStripButton _exportModButton = new("匯出模組…") { Enabled = false };
     private readonly ToolStripButton _gamePreviewButton = new("選用：啟動遊戲測試") { Enabled = false };
     private readonly ToolStripButton _undoButton = new("復原") { Enabled = false };
     private readonly ToolStripButton _aiMapButton = new("AI 製圖…") { Enabled = false };
@@ -147,6 +148,10 @@ internal sealed partial class MapEditorForm : Form
     private bool _resetAuxiliaryLayers;
     private (int X, int Y)? _lastTerrainTile;
     private readonly HashSet<int> _terrainStrokeTiles = new();
+    private bool _lastActionWasSettlementGeneration;
+    private bool _lastActionWasSettlementGenerationUndone;
+    private bool _lastActionWasRiverOrCliff;
+    private bool _lastActionWasRiverOrCliffUndone;
 
     private bool TextureDirty() => _terrainBlendSession?.IsDirty == true;
 
@@ -240,7 +245,7 @@ internal sealed partial class MapEditorForm : Form
         var commands = new ToolStrip { GripStyle = ToolStripGripStyle.Hidden, Dock = DockStyle.Top, Padding = new Padding(10, 6, 10, 6), BackColor = WinFormsTheme.Surface, ForeColor = WinFormsTheme.TextPrimary };
         commands.Items.AddRange(new ToolStripItem[] {
             _mapMenuButton, new ToolStripSeparator(), _currentMapLabel, new ToolStripSeparator(),
-            _saveButton, _gamePreviewButton, new ToolStripSeparator(), _undoButton, _redoButton, new ToolStripSeparator(), _aiMapButton,
+            _saveButton, _exportModButton, _gamePreviewButton, new ToolStripSeparator(), _undoButton, _redoButton, new ToolStripSeparator(), _aiMapButton,
             new ToolStripSeparator { Alignment = ToolStripItemAlignment.Right },
             _btnLangEN, _btnLangZH
         });
@@ -412,6 +417,7 @@ internal sealed partial class MapEditorForm : Form
         _placedDeleteButton.Click += (_, _) => DeleteSelectedPlacedObjects();
         _resetTerrainButton.Click += (_, _) => ResetTerrain();
         _saveButton.Click += (_, _) => SaveMap(showSuccess: true);
+        _exportModButton.Click += (_, _) => ExportModPackage();
         _gamePreviewButton.Click += (_, _) => PreviewInGame();
         _undoButton.Click += (_, _) => Undo(); _redoButton.Click += (_, _) => Redo();
         _aiMapButton.Click += (_, _) => OpenAiMapDialog();
@@ -458,6 +464,8 @@ internal sealed partial class MapEditorForm : Form
 
         _mapMenuButton.Text = isEn ? "Map Menu" : "地圖選單";
         _saveButton.Text = isEn ? "Save" : "儲存";
+        _exportModButton.Text = isEn ? "Export Mod…" : "匯出模組…";
+        _exportModButton.ToolTipText = isEn ? "Package and export the current map as a distributable mod ZIP file." : "將目前地圖打包匯出為可分發的模組 ZIP 檔案。";
         _gamePreviewButton.Text = isEn ? "Test in Game" : "選用：啟動遊戲測試";
         _undoButton.Text = isEn ? "Undo" : "復原";
         _redoButton.Text = isEn ? "Redo" : "重做";
@@ -483,6 +491,8 @@ internal sealed partial class MapEditorForm : Form
         _blankTerrainButton.Text = isEn ? "Reset Flat Terrain…" : "重設平坦地形…";
         _regionToolsButton.Text = isEn ? "Region tools…" : "區域工具…";
         _layoutMenu.Text = isEn ? "Layouts" : "配置";
+        _generateSettlement.Text = isEn ? "One-Click Base Generator…" : "一鍵生成對戰基地…";
+        _generateSettlement.ToolTipText = isEn ? "Generate fair, symmetric bases and resources for 2-8 players." : "為 2-8 位玩家自動生成公平對稱的基地與資源配置。";
         _exportPlacementLayout.Text = isEn ? "Save selected settlement / objects…" : "保存選取的聚落／物件…";
         _exportNatureLayout.Text = isEn ? "Save forest region…" : "保存森林區域…";
         _importLayout.Text = isEn ? "Load and apply layout…" : "載入並套用配置…";
@@ -860,6 +870,31 @@ internal sealed partial class MapEditorForm : Form
     private void Undo()
     {
         CommitStroke();
+        if (_lastActionWasSettlementGeneration)
+        {
+            _lastActionWasSettlementGeneration = false;
+            _lastActionWasSettlementGenerationUndone = true;
+            bool undone = false;
+            if (_placementSession.CanUndo) { _placementSession.Undo(); undone = true; }
+            if (_natureSession.CanUndo) { _natureSession.Undo(); undone = true; }
+            if (undone) { RefreshPlacedList(); RefreshSceneMarkers(); UpdateEditorState(); return; }
+        }
+        if (_lastActionWasRiverOrCliff)
+        {
+            _lastActionWasRiverOrCliff = false;
+            _lastActionWasRiverOrCliffUndone = true;
+            if (_terrainLayers?.CanUndo == true && _terrainLayers.Undo() is { } layersUndone)
+            {
+                ApplyTerrainLayerStroke(layersUndone);
+            }
+            if (_texturesDocument is not null && _terrainBlendSession?.Undo() is { } textureUndone)
+            {
+                foreach (TerrainTextureChange change in textureUndone) ApplyTexture(change.X, change.Y, change.After);
+            }
+            _terrainBlendNotice = null;
+            UpdateEditorState();
+            return;
+        }
         if (_editMode == EditMode.PlaceObject)
         {
             if (_placementSession.Undo()) { RefreshPlacedList(); RefreshSceneMarkers(); UpdateEditorState(); }
@@ -886,6 +921,31 @@ internal sealed partial class MapEditorForm : Form
     private void Redo()
     {
         CommitStroke();
+        if (_lastActionWasSettlementGenerationUndone)
+        {
+            _lastActionWasSettlementGenerationUndone = false;
+            _lastActionWasSettlementGeneration = true;
+            bool redone = false;
+            if (_placementSession.CanRedo) { _placementSession.Redo(); redone = true; }
+            if (_natureSession.CanRedo) { _natureSession.Redo(); redone = true; }
+            if (redone) { RefreshPlacedList(); RefreshSceneMarkers(); UpdateEditorState(); return; }
+        }
+        if (_lastActionWasRiverOrCliffUndone)
+        {
+            _lastActionWasRiverOrCliffUndone = false;
+            _lastActionWasRiverOrCliff = true;
+            if (_terrainLayers?.CanRedo == true && _terrainLayers.Redo() is { } layersRedone)
+            {
+                ApplyTerrainLayerStroke(layersRedone);
+            }
+            if (_texturesDocument is not null && _terrainBlendSession?.Redo() is { } textureRedone)
+            {
+                foreach (TerrainTextureChange change in textureRedone) ApplyTexture(change.X, change.Y, change.After);
+            }
+            _terrainBlendNotice = null;
+            UpdateEditorState();
+            return;
+        }
         if (_editMode == EditMode.PlaceObject)
         {
             if (_placementSession.Redo()) { RefreshPlacedList(); RefreshSceneMarkers(); UpdateEditorState(); }
@@ -1341,7 +1401,7 @@ internal sealed partial class MapEditorForm : Form
         _layoutMenu.Enabled = _selected?.IsCustom == true;
         _boxSelectButton.Enabled = _selected?.IsCustom == true && _terrainBlendSession is not null;
         InvalidateMapDiagnostics();
-        bool editable = _selected?.IsCustom == true; _saveButton.Enabled = editable && IsDirty; _gamePreviewButton.Enabled = _selected is not null; _undoButton.Enabled = editable && (TerrainLayerMode ? _terrainLayers?.CanUndo == true : _terrainBlendSession?.CanUndo == true); _redoButton.Enabled = editable && (TerrainLayerMode ? _terrainLayers?.CanRedo == true : _terrainBlendSession?.CanRedo == true); _resetTerrainButton.Enabled = editable && ((_texturesDocument is not null && TextureDirty()) || _terrainLayers?.IsDirty == true || _resetAuxiliaryLayers);
+        bool editable = _selected?.IsCustom == true; _saveButton.Enabled = editable && IsDirty; _exportModButton.Enabled = _selected is not null; _gamePreviewButton.Enabled = _selected is not null; _undoButton.Enabled = editable && (TerrainLayerMode ? _terrainLayers?.CanUndo == true : _terrainBlendSession?.CanUndo == true); _redoButton.Enabled = editable && (TerrainLayerMode ? _terrainLayers?.CanRedo == true : _terrainBlendSession?.CanRedo == true); _resetTerrainButton.Enabled = editable && ((_texturesDocument is not null && TextureDirty()) || _terrainLayers?.IsDirty == true || _resetAuxiliaryLayers);
         _heightTool.Enabled = editable && _terrainLayers is not null; _aiMapButton.Enabled = editable && _terrainLayers is not null; _blankTerrainButton.Enabled = editable && _terrainLayers is not null; _placeTool.Enabled = editable && _objectCatalog.Count > 0; _natureTool.Enabled = editable && _natureStoreAvailable;
         if (_editMode == EditMode.Nature)
         {
@@ -1357,6 +1417,24 @@ internal sealed partial class MapEditorForm : Form
         {
             _undoButton.Enabled |= editable && _natureSession.CanUndo;
             _redoButton.Enabled |= editable && _natureSession.CanRedo;
+        }
+        if (_lastActionWasSettlementGeneration)
+        {
+            _undoButton.Enabled = editable && (_placementSession.CanUndo || _natureSession.CanUndo);
+            _redoButton.Enabled = editable && _lastActionWasSettlementGenerationUndone && (_placementSession.CanRedo || _natureSession.CanRedo);
+        }
+        else if (_lastActionWasSettlementGenerationUndone)
+        {
+            _redoButton.Enabled = editable && (_placementSession.CanRedo || _natureSession.CanRedo);
+        }
+        if (_lastActionWasRiverOrCliff)
+        {
+            _undoButton.Enabled = editable && (_terrainBlendSession?.CanUndo == true || _terrainLayers?.CanUndo == true);
+            _redoButton.Enabled = editable && _lastActionWasRiverOrCliffUndone && (_terrainBlendSession?.CanRedo == true || _terrainLayers?.CanRedo == true);
+        }
+        else if (_lastActionWasRiverOrCliffUndone)
+        {
+            _redoButton.Enabled = editable && (_terrainBlendSession?.CanRedo == true || _terrainLayers?.CanRedo == true);
         }
         _collisionTool.Enabled = editable && _terrainLayers?.HasCollision == true;
         UpdateSceneEditButtons();

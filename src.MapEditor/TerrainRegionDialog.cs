@@ -3,7 +3,7 @@ using System.Globalization;
 
 namespace AgainstRomeMapEditor;
 
-internal enum TerrainRegionOperation { Rectangle, Connected, Road, SelectObjects }
+internal enum TerrainRegionOperation { Rectangle, Connected, Road, SelectObjects, River, Cliff }
 
 internal sealed class TerrainRegionDialog : Form
 {
@@ -28,8 +28,8 @@ internal sealed class TerrainRegionDialog : Form
         AutoScaleMode = AutoScaleMode.Dpi; AutoScaleDimensions = new SizeF(96, 96);
         StartPosition = FormStartPosition.CenterParent; ClientSize = new Size(440, 390);
         MinimizeBox = MaximizeBox = false; FormBorderStyle = FormBorderStyle.FixedDialog;
-        _operation.Items.AddRange(en ? new object[] { "Rectangle fill", "Connected material fill", "Dirt road polyline", "Select objects in rectangle" }
-            : new object[] { "矩形填色", "同材質連通區填色", "土路折線", "矩形選取物件" });
+        _operation.Items.AddRange(en ? new object[] { "Rectangle fill", "Connected material fill", "Dirt road polyline", "Select objects in rectangle", "River flow in rectangle", "Cliff face on slopes in rectangle" }
+            : new object[] { "矩形填色", "同材質連通區填色", "土路折線", "矩形選取物件", "矩形水系河流", "矩形懸崖岩壁" });
         _width.Maximum = dimension;
         var grid = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(12), ColumnCount = 1, RowCount = 6 };
         grid.RowStyles.Add(new RowStyle(SizeType.AutoSize)); grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 72));
@@ -37,8 +37,8 @@ internal sealed class TerrainRegionDialog : Form
         grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 48)); grid.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         grid.Controls.Add(_operation, 0, 0);
         grid.Controls.Add(new Label { Dock = DockStyle.Fill, Text = en
-            ? $"Tile coordinates: 0–{dimension - 1}. One X,Y per line. Rectangle: two opposite corners; fill: one seed; road: two or more vertices. Road width is in tiles."
-            : $"圖格座標：0–{dimension - 1}；每行 X,Y。矩形輸入兩個對角、連通填色輸入一個起點、折線輸入至少兩個轉折點。下方為土路寬度（格）。" }, 0, 1);
+            ? $"Tile coordinates: 0–{dimension - 1}. One X,Y per line. Rectangle/River/Cliff: two opposite corners (or road waypoints); fill: one seed. Road width is in tiles."
+            : $"圖格座標：0–{dimension - 1}；每行 X,Y。矩形填色/河流/懸崖輸入兩個對角（折線輸入轉折點）、連通填色輸入一個起點。下方為土路寬度（格）。" }, 0, 1);
         grid.Controls.Add(_vertices, 0, 2); grid.Controls.Add(_width, 0, 3); grid.Controls.Add(_summary, 0, 4);
         var buttons = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill, FlowDirection = FlowDirection.RightToLeft };
         var apply = new Button { AutoSize = true, Text = en ? "Apply" : "套用" };
@@ -49,7 +49,7 @@ internal sealed class TerrainRegionDialog : Form
             {
                 var vertices = ReadVertices();
                 int count = Operation == TerrainRegionOperation.Connected ? 1 : 2;
-                if (vertices.Length < count || (Operation != TerrainRegionOperation.Road && vertices.Length != count) ||
+                if (vertices.Length < count || (Operation != TerrainRegionOperation.Road && Operation != TerrainRegionOperation.River && vertices.Length != count) ||
                     vertices.Any(v => v.X < 0 || v.Y < 0 || v.X >= dimension || v.Y >= dimension)) throw new FormatException();
                 DialogResult = DialogResult.OK; Close();
             }

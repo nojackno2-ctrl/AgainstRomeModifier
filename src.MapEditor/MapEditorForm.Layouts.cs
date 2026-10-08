@@ -1,4 +1,5 @@
 using AgainstRomeMapEditor.Modules.Placement;
+using AgainstRomeMapEditor.Modules.Settlement;
 using AgainstRomeModifier;
 using AgainstRomeModifier.Maps;
 
@@ -7,15 +8,18 @@ namespace AgainstRomeMapEditor;
 internal sealed partial class MapEditorForm
 {
     private readonly ToolStripDropDownButton _layoutMenu = new("配置");
+    private readonly ToolStripMenuItem _generateSettlement = new("一鍵生成對戰基地…");
     private readonly ToolStripMenuItem _exportPlacementLayout = new("保存選取的聚落／物件…");
     private readonly ToolStripMenuItem _exportNatureLayout = new("保存森林區域…");
     private readonly ToolStripMenuItem _importLayout = new("載入並套用配置…");
     private IReadOnlyDictionary<int, LevelObjectTemplate>? _layoutNativeTemplates;
     internal Func<LayoutApplyDialog, DialogResult> LayoutDialogRunner { get; set; } = dialog => dialog.ShowDialog();
+    internal Func<SettlementGeneratorDialog, DialogResult> SettlementGeneratorDialogRunner { get; set; } = dialog => dialog.ShowDialog();
 
     private void InitializeLayoutTools()
     {
-        _layoutMenu.DropDownItems.AddRange([_exportPlacementLayout, _exportNatureLayout, _importLayout]);
+        _layoutMenu.DropDownItems.AddRange([_generateSettlement, new ToolStripSeparator(), _exportPlacementLayout, _exportNatureLayout, _importLayout]);
+        _generateSettlement.Click += (_, _) => WithLayoutErrors(RunSettlementGenerator);
         _exportPlacementLayout.Click += (_, _) => WithLayoutErrors(() => SaveLayoutFile(CapturePlacementLayout(
             _placedList.SelectedItems.Cast<ListViewItem>().Select(row => (int)row.Tag!).ToArray())));
         _exportNatureLayout.Click += (_, _) => WithLayoutErrors(() =>
@@ -43,6 +47,78 @@ internal sealed partial class MapEditorForm
         try { action(); }
         catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException or ArgumentException or System.Text.Json.JsonException)
         { _status.Text = (Loc.CurrentLanguage == Language.English ? "Layout failed: " : "配置操作失敗：") + ex.Message; }
+    }
+
+    internal void RunSettlementGenerator()
+    {
+        if (_selected?.IsCustom != true) return;
+        using var dialog = new SettlementGeneratorDialog();
+        if (SettlementGeneratorDialogRunner(dialog) != DialogResult.OK) return;
+        ApplySettlementGeneration(dialog.PlayerCount, dialog.SelectedTribe, dialog.Seed, dialog.IncludeNature);
+    }
+
+    internal void ApplySettlementGeneration(int playerCount, SettlementTribe tribe, int seed, bool includeNature = true)
+    {
+        if (_selected?.IsCustom != true) throw new InvalidOperationException("Select a custom map.");
+        bool isEn = Loc.CurrentLanguage == Language.English;
+
+        int dimension = 256;
+        float tileWorldSize = 64f;
+
+        var evaluator = new SettlementSiteEvaluator(
+            dimension: dimension,
+            sampleHeight: (wx, wz) => LayoutGroundHeight(wx, wz),
+            isBlocked: (tx, tz) => _terrainLayers?.Collision is { } c && tx >= 0 && tz >= 0 && tx < 256 && tz < 256 && c[tz * 256 + tx] > 128,
+            waterLevel: (float)_waterLevel.Value,
+            tileWorldSize: tileWorldSize);
+
+        var planner = new ResourceClusterPlanner(
+            dimension: dimension,
+            sampleHeight: (wx, wz) => LayoutGroundHeight(wx, wz),
+            isBlocked: (tx, tz) => _terrainLayers?.Collision is { } c && tx >= 0 && tz >= 0 && tx < 256 && tz < 256 && c[tz * 256 + tx] > 128,
+            waterLevel: (float)_waterLevel.Value,
+            tileWorldSize: tileWorldSize);
+
+        var balancer = new MultiplayerFairnessBalancer(evaluator, planner, dimension, tileWorldSize);
+        var tribes = Enumerable.Repeat(tribe, playerCount).ToArray();
+        var mode = playerCount == 2 ? SymmetryMode.CentralSymmetry : SymmetryMode.RotationalSymmetry;
+
+        MultiplayerDistributionResult distribution = balancer.Generate(playerCount, mode, tribes, baseSeed: seed);
+
+        CommitStroke();
+
+        var placedIndices = SettlementGeneratorEngine.ApplyToPlacementSession(
+            distribution,
+            _objectCatalog,
+            _placementSession,
+            (wx, wz) => LayoutGroundHeight(wx, wz));
+
+        bool natureApplied = false;
+        if (includeNature && _natureStoreAvailable)
+        {
+            var natureTemplates = NatureLayoutTemplates();
+            if (natureTemplates.Count > 0)
+            {
+                natureApplied = SettlementGeneratorEngine.ApplyToNatureSession(
+                    distribution,
+                    natureTemplates,
+                    _natureSession,
+                    (wx, wz) => LayoutGroundHeight(wx, wz));
+            }
+        }
+
+        _lastActionWasSettlementGeneration = true;
+        _lastActionWasSettlementGenerationUndone = false;
+
+        SetEditMode(EditMode.PlaceObject);
+        RefreshPlacedList();
+        RefreshSceneMarkers();
+        UpdateEditorState();
+
+        int totalResources = distribution.Players.Sum(p => p.ForestTrees.Count + p.StoneQuarries.Count);
+        _status.Text = isEn
+            ? $"Generated {playerCount}-player settlement: {placedIndices.Count} placed objects" + (natureApplied ? $", {totalResources} nature resources" : "") + " (single Undo available)"
+            : $"已生成 {playerCount} 人基地：{placedIndices.Count} 個放置物件" + (natureApplied ? $"、{totalResources} 個自然資源" : "") + "（可單步復原）";
     }
 
     internal void RunLayoutApply(MapLayoutPreset preset)

@@ -1,5 +1,27 @@
 # AI Handoff - Live Project Memory
 
+## 接手先讀（2026-10-08 Antigravity，WinForms 地圖編輯器成功接入第一梯隊三大實用模組）
+
+- **完成驗證與接入狀態**：
+  1. **模組打包匯出管線 (`ModBundleExporter.cs`)**：
+     - 在工具列與選單新增「匯出模組… / Export Mod…」按鈕，觸發 `SaveFileDialog`（支援取消與自動追加 `.zip`）。
+     - 匯出前自動提示儲存髒變更，由 `MapExportPreflightChecker` 與 `ModBundleExporter.ExportToZip` 產生縮圖與 `manifest.json`。
+     - 宿主測試 `Mod_packaging_export_button_saves_valid_zip_with_manifest_and_map` 通過。
+  2. **一鍵生成聚落/基地 (`SettlementGeneratorEngine.cs`)**：
+     - 在「配置」選單新增「一鍵生成對戰基地… / Generate Battle Base…」。
+     - 提供雙語對話框 `SettlementGeneratorDialog`（支援 2–8 玩家、4 大部族切換、隨機/固定種子、自然資源聚落核取方塊）。
+     - 透過 `SettlementGeneratorEngine` 套用至 `PlacementEditSession` 與 `NatureEditSession`，並於 `MapEditorForm` 實現原子單步 Undo/Redo 連動。
+     - 宿主測試 `Settlement_generator_dialog_applies_with_single_undo_and_redo` 通過。
+  3. **河流與懸崖規劃器 (`RiverFlowPlanner.cs`, `CliffFacePlanner.cs`)**：
+     - 擴充「區域工具… / Region tools…」（`TerrainRegionDialog`）新增「矩形水系河流」與「矩形懸崖岩壁」操作；若畫布有「框選」選取框，自動代入對角座標。
+     - 實作無預覽單筆交易式套用 (`ApplyRiverTool`, `ApplyCliffTool`)：河流自動計算水面圖塊、河岸邊緣與高度場下挖；懸崖自動偵測陡坡、貼上岩壁印章、偵測碎石素材可用性避免烘焙失敗、寫入 4x4 阻擋碰撞像素。
+     - 實現雙層 session（紋理 + 高程/碰撞）跨層原子 Undo/Redo 連動。
+     - 宿主測試 4 項（河流直接套用/對話框套用、懸崖直接套用/對話框套用及 Undo/Redo）全數通過。
+- **全套建置與測試驗證**：
+  - `dotnet build AgainstRomeModifier.slnx -c Release -p:UseAppHost=false`：**0 警告、0 錯誤**。
+  - `dotnet test AgainstRomeModifier.slnx -c Release --no-build`：Modules 534 通過、Host 695 通過 / 22 略過，**0 失敗**。
+- **約束遵守**：未碰觸遊戲安裝目錄，未執行 git commit/push，保留未追蹤之 `.claude/` 與 `TEMP/`。
+
 ## 接手先讀（2026-10-08 Claude，修復 15 項失敗測試）
 
 - 經 Codex 子代理修復並由主代理複驗：Release build 0 錯誤；`dotnet test AgainstRomeModifier.slnx`：Modules 534 通過、Host 689 通過/22 略過，0 失敗。
