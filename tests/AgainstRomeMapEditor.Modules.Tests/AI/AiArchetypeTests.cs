@@ -8,9 +8,11 @@ public class AiArchetypeTests
 {
     private static readonly HashSet<string> KnownTestAliases = new(StringComparer.OrdinalIgnoreCase)
     {
-        "GER_INF01", "GER_ARC01", "GER_CAV01",
-        "ROM_INF01", "ROM_INF02", "ROM_ARC01",
-        "HUN_CAV01", "HUN_ARC01", "BauGerHau00"
+        "GER_INF00", "GER_INF01", "GER_INF02", "GER_INF03", "GER_SCH00", "GER_SCH01", "GER_KAVINF00", "GER_HAU00",
+        "ROM_INF00", "ROM_INF01", "ROM_SCH00", "ROM_SCH01", "ROM_KAVINF00", "ROM_HAU00",
+        "HUN_INF00", "HUN_INF01", "HUN_SCH00", "HUN_KAVINF00", "HUN_KAVINF01", "HUN_KAVINF02", "HUN_KAVSCH00", "HUN_HAU00",
+        "KEL_INF00", "KEL_INF01", "KEL_INF02", "KEL_SCH00", "KEL_SCH01", "KEL_SCH02", "KEL_KAVINF00", "KEL_HAU00",
+        "ALL_BAE00", "ALL_EBE00", "ALL_WOL00", "ALL_RAU00", "ALL_PACKPF00", "ALL_ZIVMAN00", "ALL_ZIVWEI00"
     };
 
     [Fact]
@@ -128,14 +130,14 @@ public class AiArchetypeTests
                     Announcement: "Enemy vanguard approaching!",
                     SpawnX: 2000f,
                     SpawnZ: 2000f,
-                    Squads: [new WaveSquadDefinition("HUN_CAV01", Count: 10, Team: 2)]),
+                    Squads: [new WaveSquadDefinition("HUN_KAVINF00", Count: 10, Team: 2)]),
                 new WaveAttackDefinition(
                     WaveIndex: 2,
                     TriggerDelaySeconds: 180,
                     Announcement: "The second enemy wave is approaching!",
                     SpawnX: 2100f,
                     SpawnZ: 2100f,
-                    Squads: [new WaveSquadDefinition("HUN_ARC01", Count: 12, Team: 2)])
+                    Squads: [new WaveSquadDefinition("HUN_KAVSCH00", Count: 12, Team: 2)])
             ],
             Reinforcements:
             [
@@ -159,8 +161,8 @@ public class AiArchetypeTests
         {
             Spawns =
             [
-                new ScenarioSpawn("BauGerHau00", 5000f, 5000f, Team: 0, Count: 0, Prebuilt: true) { Id = targetBuildingId },
-                new ScenarioSpawn("HUN_CAV01", 3000f, 3000f, Team: 2, Count: 1, Prebuilt: false) { Id = targetGeneralId }
+                new ScenarioSpawn("GER_HAU00", 5000f, 5000f, Team: 0, Count: 0, Prebuilt: true) { Id = targetBuildingId },
+                new ScenarioSpawn("HUN_KAVINF00", 3000f, 3000f, Team: 2, Count: 1, Prebuilt: false) { Id = targetGeneralId }
             ],
             DataSlots =
             [
@@ -180,25 +182,25 @@ public class AiArchetypeTests
         ScenarioEventValidator.ValidateTerminalActions(result.CompiledEvents);
 
         // Verify Briefing event
-        Assert.Contains(result.CompiledEvents, e => e.Name.StartsWith("MissionBriefing"));
+        Assert.Contains(result.CompiledEvents, e => e.Name.StartsWith("MissionBriefing", StringComparison.Ordinal));
 
         // Verify Wave events
-        Assert.Contains(result.CompiledEvents, e => e.Name.StartsWith("Wave_01") && e.DelaySeconds == 60);
-        Assert.Contains(result.CompiledEvents, e => e.Name.StartsWith("Wave_02") && e.DelaySeconds == 180);
+        Assert.Contains(result.CompiledEvents, e => e.Name.StartsWith("Wave_01", StringComparison.Ordinal) && e.DelaySeconds == 60);
+        Assert.Contains(result.CompiledEvents, e => e.Name.StartsWith("Wave_02", StringComparison.Ordinal) && e.DelaySeconds == 180);
 
         // Verify Reinforcement event
-        Assert.Contains(result.CompiledEvents, e => e.Name.StartsWith("Reinf_") && e.DelaySeconds == 300);
+        Assert.Contains(result.CompiledEvents, e => e.Name.StartsWith("Reinf_", StringComparison.Ordinal) && e.DelaySeconds == 300);
 
         // Verify DefendFail event (Defeat action)
-        var defendFail = Assert.Single(result.CompiledEvents, e => e.Name.StartsWith("DefendFail_"));
+        var defendFail = Assert.Single(result.CompiledEvents, e => e.Name.StartsWith("DefendFail_", StringComparison.Ordinal));
         Assert.Contains(defendFail.Actions, a => a.Kind == ScenarioActionKind.Defeat);
 
         // Verify DestroyWin event (Victory action)
-        var destroyWin = Assert.Single(result.CompiledEvents, e => e.Name.StartsWith("DestroyWin_"));
+        var destroyWin = Assert.Single(result.CompiledEvents, e => e.Name.StartsWith("DestroyWin_", StringComparison.Ordinal));
         Assert.Contains(destroyWin.Actions, a => a.Kind == ScenarioActionKind.Victory);
 
         // Verify SurviveWin event (Victory action)
-        var surviveWin = Assert.Single(result.CompiledEvents, e => e.Name.StartsWith("SurviveWin_"));
+        var surviveWin = Assert.Single(result.CompiledEvents, e => e.Name.StartsWith("SurviveWin_", StringComparison.Ordinal));
         Assert.Equal(1200, surviveWin.DelaySeconds);
         Assert.Contains(surviveWin.Actions, a => a.Kind == ScenarioActionKind.Victory);
     }
@@ -258,5 +260,121 @@ public class AiArchetypeTests
         session.Reset();
         Assert.False(session.IsDirty);
         Assert.NotNull(session.FindPath(path.Id));
+    }
+
+    [Fact]
+    public void AiArchetypeCatalog_AllProfiles_UseRealAliasesInKnownCatalog()
+    {
+        var allProfiles = AiArchetypeCatalog.All;
+        Assert.NotEmpty(allProfiles);
+
+        foreach (var profile in allProfiles)
+        {
+            Assert.NotEmpty(profile.UnitPreferences);
+            foreach (var pref in profile.UnitPreferences)
+            {
+                Assert.True(pref.IsValid, $"Profile {profile.Id} has invalid preference: {pref.Alias}");
+                Assert.Contains(pref.Alias, KnownTestAliases);
+            }
+        }
+    }
+
+    [Fact]
+    public void CampaignMissionCompiler_ValidatesCoordinateBounds()
+    {
+        // 1 editor tile = 256 world units, 1 collision pixel = 64 world units. Max coordinate = 16383.
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new WaveAttackDefinition(
+                WaveIndex: 1,
+                TriggerDelaySeconds: 10,
+                Announcement: "Test",
+                SpawnX: 16384f,
+                SpawnZ: 1000f,
+                Squads: [new WaveSquadDefinition("GER_INF01", 10, 0)]).Validate());
+
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new WaveAttackDefinition(
+                WaveIndex: 1,
+                TriggerDelaySeconds: 10,
+                Announcement: "Test",
+                SpawnX: -1f,
+                SpawnZ: 1000f,
+                Squads: [new WaveSquadDefinition("GER_INF01", 10, 0)]).Validate());
+
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new ReinforcementDefinition(
+                Id: Guid.NewGuid(),
+                Name: "OutOfBounds",
+                TriggerDelaySeconds: 10,
+                Team: 0,
+                SpawnX: 500f,
+                SpawnZ: 16384f,
+                Squads: [new WaveSquadDefinition("GER_INF01", 10, 0)]).Validate());
+
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new WaypointNode(Guid.NewGuid(), 0, WorldX: 16384f, WorldZ: 0f).Validate());
+    }
+
+    [Fact]
+    public void CampaignMissionCompiler_CompiledActions_HaveValidCoordinatesAndSupportedKinds()
+    {
+        var plan = new CampaignMissionPlan(
+            Title: "BoundsTest",
+            Briefing: "Testing world units bounds.",
+            Objectives:
+            [
+                new CampaignObjective(Guid.NewGuid(), CampaignObjectiveType.ReachArea, "Reach", "",
+                    TargetId: Guid.NewGuid(),
+                    TargetMinX: 0, TargetMinZ: 0, TargetMaxX: 16383, TargetMaxZ: 16383)
+            ],
+            Waves:
+            [
+                new WaveAttackDefinition(1, 10, "Wave 1", SpawnX: 64f, SpawnZ: 256f,
+                    Squads: [new WaveSquadDefinition("GER_INF00", 10, 1)])
+            ],
+            Reinforcements:
+            [
+                new ReinforcementDefinition(Guid.NewGuid(), "Reinf 1", 20, 0, SpawnX: 16000f, SpawnZ: 16383f,
+                    Squads: [new WaveSquadDefinition("ROM_INF00", 15, 0)])
+            ],
+            FactionProfiles: []);
+
+        var result = CampaignMissionCompiler.Compile(plan, null, KnownTestAliases);
+        Assert.True(result.Success, string.Join(Environment.NewLine, result.Diagnostics));
+
+        foreach (var ev in result.CompiledEvents)
+        {
+            Assert.True(ev.DelaySeconds is >= 0 and <= 86400);
+            foreach (var action in ev.Actions)
+            {
+                Assert.True(Enum.IsDefined(action.Kind));
+                if (action.Kind == ScenarioActionKind.SpawnUnit)
+                {
+                    Assert.InRange(action.X, 0f, 16383f);
+                    Assert.InRange(action.Z, 0f, 16383f);
+                    Assert.Contains(action.Alias, KnownTestAliases);
+                    Assert.InRange(action.Count, 1, 20);
+                    Assert.InRange(action.Team, 0, 7);
+                }
+            }
+        }
+    }
+
+    [Fact]
+    public void TempGameCompare_AllInlineAliases_ExistInClScintIni()
+    {
+        string? tempPath = Environment.GetEnvironmentVariable("TEMP");
+        if (string.IsNullOrEmpty(tempPath)) return;
+        string gamePath = Path.Combine(tempPath, "ArmGameCompare_20261007");
+        if (!Directory.Exists(gamePath)) return;
+
+        var gameAliases = ScriptObjectAliases.Load(gamePath);
+        Assert.NotEmpty(gameAliases);
+        var aliasSet = gameAliases.Select(a => a.Alias).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var inlineAlias in KnownTestAliases)
+        {
+            Assert.Contains(inlineAlias, aliasSet);
+        }
     }
 }
