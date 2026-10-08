@@ -1,4 +1,12 @@
-# AI Handoff - Live Project Memory
+﻿# AI Handoff - Live Project Memory
+
+## Task D wild-object reverse engineering (2026-10-08 Codex, wt/lair)
+
+- Dedicated worktree `D:/Github/ARM_wt_lair`, branch `wt/lair`, base `080ebc9`. Only allowed TEMP copies read; no install access/launch or main-checkout edits.
+- Confirmed four ALL_* land-animal aliases / FigTie definitions, ak_landtier assignment; no native den mechanism recovered. ENDL SDL has 613 blueprint objects, teams 8/1, no animals. Neutral DATA ownership is team 8. ENDL_005 is already modified by earlier editor tests.
+- Replaced invented defaults and CA regeneration with observed identifiers and explicit requests. Binder produces only verified ScenarioEvents for authored infantry timers/core-message conditions, gates animal/resource/team-8 spawning, unsupported caps/AI/rewards; validates before session mutation and uses full GUIDs. Shared compiler unchanged.
+- Probe `tools/re/probe_wild_lairs.py`; evidence/confidence/API migration in `docs/reverse-engineering/wild-lairs.md`. All 64 resource names and 10 aliases cross-checked against TEMP. Identifier-only test fixture, no game assets.
+- First build exposed 4 new test property-name errors; corrected to NatureAddition.Name/X/Y/Z. First complete suite passed: Modules 560 / Host 705, 22 skipped, 0 failures. Final review removed unsupported threat coefficients and now requires editor templates to match observed TypeId. Final requested build: 0 errors (40 existing analyzer warnings). Final full-suite rerun passed: Modules 560 / Host 705, 22 skipped, 0 failures. git diff --check passed. Probe also verified all 12 fixture aliases. No in-game verification. Ready for local wt/lair commit only; no push/merge.
 
 ## 懸崖工具發現與修正（2026-10-08 Claude，遊戲內實測；使用者已改好輸入法設定，遊戲可正常啟動）
 

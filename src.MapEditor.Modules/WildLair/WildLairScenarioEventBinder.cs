@@ -1,234 +1,122 @@
-using AgainstRomeMapEditor.Modules.Events;
-using AgainstRomeModifier.Maps;
+﻿using AgainstRomeMapEditor.Modules.Events;
 using AgainstRomeModifier.Scripting;
 
 namespace AgainstRomeMapEditor.Modules.WildLair;
 
-/// <summary>
-/// 野外中立巢穴與關卡事件定時觸發器自動繫結合約（WildLairScenarioEventBinder）：
-/// 負責將中立巢穴之定期刷怪波次、守衛戒備與破滅清剿獎勵，
-/// 自動編譯並雙向繫結至原版關卡事件合約（<see cref="ScenarioEvent"/>、<see cref="ScenarioCondition"/>、<see cref="ScenarioAction"/>）。
-/// </summary>
+/// <summary>Adapts explicitly authored timers to the existing ScenarioEvent compiler.
+/// Does not generate bytecode, native animal AI, resource regeneration, loot or diplomacy.</summary>
 public static class WildLairScenarioEventBinder
 {
     public const string LairEventPrefix = "LAIR_";
+    private static string Prefix(Guid id) => $"{LairEventPrefix}{id:N}_";
 
-    /// <summary>
-    /// 為指定的野外中立巢穴實例生成完整的原版關卡事件清單。
-    /// </summary>
-    /// <param name="lair">已放置之巢穴實例。</param>
-    /// <param name="definition">巢穴目錄原型規格。</param>
-    /// <param name="playerTeam">玩家隊伍編號（預設 0）。</param>
-    /// <param name="tileWorldSize">世界格大小（預設 64.0）。</param>
     public static IReadOnlyList<ScenarioEvent> GenerateEventsForLair(
-        PlacedNeutralLair lair,
-        NeutralLairDefinition definition,
-        int playerTeam = 0,
-        float tileWorldSize = 64.0f)
+        PlacedNeutralLair lair, NeutralLairDefinition definition, int playerTeam = 0,
+        float tileWorldSize = 256f, IReadOnlyList<ScriptObjectAlias>? aliases = null)
     {
         ArgumentNullException.ThrowIfNull(lair);
-        ArgumentNullException.ThrowIfNull(definition);
+        NeutralLairCatalog.ValidateDefinition(definition);
+        if (lair.InstanceId == Guid.Empty || lair.DefinitionId != definition.Id)
+            throw new ArgumentException("A persistent instance ID and matching definition are required.");
+        if (definition.Category == LairCategory.WildAnimal)
+            throw new NotSupportedException("FigTie animals require single-object creation and neutral team 8. ScenarioEvent SpawnUnit only provides troop creation for teams 0-7.");
+        if (aliases is null) throw new ArgumentNullException(nameof(aliases), "Load ScriptObjectAliases from the actual game data before binding.");
+        if (!aliases.Any(a => a.NameDef.Equals(definition.NativeBuildingOrLandscapeType, StringComparison.OrdinalIgnoreCase)))
+            throw new NotSupportedException("The blueprint's core object is not in the loaded alias catalog.");
+        if (lair.Team is < 0 or > 7) throw new NotSupportedException("ScenarioEvent SpawnUnit cannot express neutral team 8.");
+        if (!float.IsFinite(tileWorldSize) || tileWorldSize <= 0 ||
+            !float.IsFinite(lair.WorldX) || !float.IsFinite(lair.WorldZ) || !float.IsFinite(lair.RotationDeg) ||
+            lair.WorldX is < 0 or > 16383 || lair.WorldZ is < 0 or > 16383)
+            throw new ArgumentOutOfRangeException(nameof(lair), "Use finite world coordinates and tile scale.");
+        if (definition.DefaultGuards.Count != 0 || lair.GuardSpawnIds?.Count > 0)
+            throw new NotSupportedException("Guard placement, patrol and death-triggered respawn are not supported by this timer adapter.");
+        if (definition.Loot.Wood != 0 || definition.Loot.Food != 0 || definition.Loot.Gold != 0 || definition.Loot.HonorPoints != 0)
+            throw new NotSupportedException("The verified event compiler has no resource or honor reward action.");
+        if (!string.IsNullOrEmpty(definition.Loot.CompletionMessage) && lair.CoreStructureSpawnId == Guid.Empty)
+            throw new NotSupportedException("A completion message requires a tracked ScenarioSpawn core ID.");
 
         var events = new List<ScenarioEvent>();
-        string idTag = lair.InstanceId.ToString("N")[..8];
-
-        // 1. 週期性刷怪波次定時觸發器（Repeat = true）
-        // 核心防呆：必須繫結 ObjectExists(CoreStructureSpawnId)。當巢穴本體被推平拆除時，自動停止刷怪！
         for (int i = 0; i < definition.WaveRules.Count; i++)
         {
-            var wave = definition.WaveRules[i];
-            string eventName = $"{LairEventPrefix}{idTag}_WAVE_{i}_{wave.WaveId}";
-            if (eventName.Length > 100) eventName = eventName[..100];
-
-            // 微幅徑向偏移生成坐標，避免多怪疊在同一物理點
-            float angleRad = (i * 1.57f + lair.RotationDeg * MathF.PI / 180f);
-            float spawnOffset = wave.SpawnRadiusTiles * tileWorldSize;
-            float spawnX = Math.Clamp(lair.WorldX + MathF.Cos(angleRad) * spawnOffset, 0f, 16383f);
-            float spawnZ = Math.Clamp(lair.WorldZ + MathF.Sin(angleRad) * spawnOffset, 0f, 16383f);
-
-            var spawnEvent = new ScenarioEvent(
-                Name: eventName,
-                DelaySeconds: Math.Max(1, wave.IntervalSeconds),
-                Repeat: true,
-                Enabled: lair.IsActive)
+            LairWaveSpawnRule wave = definition.WaveRules[i];
+            if (wave.InitialDelaySeconds != wave.IntervalSeconds || wave.MaxActiveWaves != 0 ||
+                !string.Equals(wave.AggroBehavior, "None", StringComparison.OrdinalIgnoreCase))
+                throw new NotSupportedException("A ScenarioEvent has one timer period; separate initial delays, active-wave caps and aggression orders cannot be expressed. Use MaxActiveWaves=0 (uncapped) and AggroBehavior=None.");
+            // SpawnUnit supplies an infantry unit container plus a faction figure member alias.
+            // Animal, civilian, building and landscape aliases are not interchangeable with members.
+            ScriptObjectAlias? alias = aliases.SingleOrDefault(a => a.Alias.Equals(wave.UnitAlias, StringComparison.OrdinalIgnoreCase));
+            if (alias is null || !IsTroopMember(alias.NameDef))
+                throw new NotSupportedException($"Alias {wave.UnitAlias} is not an observed faction infantry member for SpawnUnit.");
+            if (!float.IsFinite(wave.SpawnRadiusTiles) || wave.SpawnRadiusTiles < 0)
+                throw new ArgumentOutOfRangeException(nameof(definition), "Spawn radius must be finite and nonnegative.");
+            float angle = i * MathF.PI / 2 + lair.RotationDeg * MathF.PI / 180;
+            float x = lair.WorldX + MathF.Cos(angle) * wave.SpawnRadiusTiles * tileWorldSize;
+            float z = lair.WorldZ + MathF.Sin(angle) * wave.SpawnRadiusTiles * tileWorldSize;
+            var item = new ScenarioEvent($"{Prefix(lair.InstanceId)}WAVE_{i}", wave.IntervalSeconds, true, lair.IsActive)
             {
-                Actions = new List<ScenarioAction>
-                {
-                    new(
-                        Kind: ScenarioActionKind.SpawnUnit,
-                        Alias: wave.UnitAlias,
-                        Team: Math.Clamp(lair.Team, 0, 7),
-                        X: spawnX,
-                        Z: spawnZ,
-                        Count: Math.Clamp(wave.SpawnCount, 1, 20))
-                }
+                Actions = [new(ScenarioActionKind.SpawnUnit, Team: lair.Team, Alias: alias.Alias,
+                    X: x, Z: z, Count: wave.SpawnCount)]
             };
-
-            // 若已有核心建築 ID，附加建築存在條件
             if (lair.CoreStructureSpawnId != Guid.Empty)
-            {
-                spawnEvent.Conditions.Add(new ScenarioCondition(
-                    ScenarioConditionKind.ObjectExists,
-                    lair.CoreStructureSpawnId));
-            }
-
-            events.Add(spawnEvent);
+                item.Conditions.Add(new(ScenarioConditionKind.ObjectExists, lair.CoreStructureSpawnId));
+            events.Add(item);
         }
-
-        // 2. 巢穴破滅清剿事件（Repeat = false）
-        // 核心邏輯：當巢穴本體建築被摧毀或移除（ObjectDeadOrRemoved），觸發勝利/清除訊息
-        if (lair.CoreStructureSpawnId != Guid.Empty)
-        {
-            string destroyEventName = $"{LairEventPrefix}{idTag}_CLEARED";
-            if (destroyEventName.Length > 100) destroyEventName = destroyEventName[..100];
-
-            string rawMsg = string.IsNullOrWhiteSpace(definition.Loot.CompletionMessage)
-                ? $"Neutral lair {definition.DisplayNameEn} has been eradicated!"
-                : definition.Loot.CompletionMessage;
-
-            // 確保訊息編碼相容
-            string msg = SanitizeMessage(rawMsg);
-
-            var destroyEvent = new ScenarioEvent(
-                Name: destroyEventName,
-                DelaySeconds: 1,
-                Repeat: false,
-                Enabled: lair.IsActive)
+        if (!string.IsNullOrEmpty(definition.Loot.CompletionMessage))
+            events.Add(new ScenarioEvent($"{Prefix(lair.InstanceId)}CLEARED", 1, false, lair.IsActive)
             {
-                Conditions = new List<ScenarioCondition>
-                {
-                    new(ScenarioConditionKind.ObjectDeadOrRemoved, lair.CoreStructureSpawnId)
-                },
-                Actions = new List<ScenarioAction>
-                {
-                    new(ScenarioActionKind.Message, Text: msg)
-                }
-            };
-
-            events.Add(destroyEvent);
-        }
-
-        // 3. 初始敵對外交鎖定（確保中立敵對 Team 7 與玩家處於交戰狀態）
-        if (lair.Team != playerTeam)
-        {
-            string diploEventName = $"{LairEventPrefix}{idTag}_HOSTILE";
-            if (diploEventName.Length > 100) diploEventName = diploEventName[..100];
-
-            var diploEvent = new ScenarioEvent(
-                Name: diploEventName,
-                DelaySeconds: 0,
-                Repeat: false,
-                Enabled: lair.IsActive)
-            {
-                Actions = new List<ScenarioAction>
-                {
-                    new(
-                        Kind: ScenarioActionKind.Diplomacy,
-                        Team: Math.Clamp(lair.Team, 0, 7),
-                        OtherTeam: Math.Clamp(playerTeam, 0, 7),
-                        Hostile: true)
-                }
-            };
-
-            events.Add(diploEvent);
-        }
-
+                Conditions = [new(ScenarioConditionKind.ObjectDeadOrRemoved, lair.CoreStructureSpawnId)],
+                Actions = [new(ScenarioActionKind.Message, Text: definition.Loot.CompletionMessage)]
+            });
+        ScenarioEventValidator.Validate(events, aliases.Select(a => a.Alias).ToArray());
         return events;
     }
 
-    /// <summary>
-    /// 自動同步巢穴事件至 <see cref="ScenarioEventSession"/>：
-    /// 清除該巢穴原有的舊事件，重新注入最新生成的刷怪與清剿事件。
-    /// </summary>
-    public static void SyncLairEvents(
-        ScenarioEventSession session,
-        PlacedNeutralLair lair,
-        NeutralLairDefinition definition,
-        int playerTeam = 0)
+    private static bool IsTroopMember(string name) =>
+        new[] { "FigGerInf", "FigHunInf", "FigKelInf", "FigRomInf" }
+            .Any(prefix => name.StartsWith(prefix, StringComparison.Ordinal));
+
+    public static IReadOnlyList<ScenarioEvent> GenerateEventsForResource(TimedResourceReplacement request)
     {
-        ArgumentNullException.ThrowIfNull(session);
-        ArgumentNullException.ThrowIfNull(lair);
-        ArgumentNullException.ThrowIfNull(definition);
-
-        RemoveLairEvents(session, lair.InstanceId);
-
-        var newEvents = GenerateEventsForLair(lair, definition, playerTeam);
-        foreach (var ev in newEvents)
-        {
-            session.Add(ev);
-        }
+        ArgumentNullException.ThrowIfNull(request);
+        new ResourceRegenerationPlanner().PlanReplacement(request.NameDef, request.WorldX, request.WorldZ, request.DelaySeconds, request.Team);
+        throw new NotSupportedException("ScenarioEvent has no landscape/single-object spawn or depletion/replenishment action. Tree, stone, field, mine and goldsmith timers are gated; no bytecode is generated.");
     }
 
-    /// <summary>
-    /// 從 <see cref="ScenarioEventSession"/> 中安全移除該巢穴實例的所有關聯事件，絕不遺留無效 GUID。
-    /// </summary>
+    public static void SyncLairEvents(ScenarioEventSession session, PlacedNeutralLair lair,
+        NeutralLairDefinition definition, int playerTeam = 0, IReadOnlyList<ScriptObjectAlias>? aliases = null,
+        float tileWorldSize = 256f)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        var replacement = GenerateEventsForLair(lair, definition, playerTeam, tileWorldSize, aliases);
+        var current = session.Capture();
+        int retained = current.Count(e => !e.Name.StartsWith(Prefix(lair.InstanceId), StringComparison.Ordinal));
+        if (retained + replacement.Count > 256)
+            throw new InvalidOperationException("Event limit exceeded; existing session was preserved.");
+        RemoveLairEvents(session, lair.InstanceId);
+        foreach (var item in replacement) session.Add(item);
+    }
+
     public static int RemoveLairEvents(ScenarioEventSession session, Guid instanceId)
     {
         ArgumentNullException.ThrowIfNull(session);
-
-        string prefix = $"{LairEventPrefix}{instanceId:N}[..8]";
-        string fallbackPrefix = $"{LairEventPrefix}{instanceId.ToString("N")[..8]}";
-
-        var existing = session.Capture();
-        int removedCount = 0;
-
-        for (int i = existing.Count - 1; i >= 0; i--)
-        {
-            var item = existing[i];
-            if (item.Name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) ||
-                item.Name.StartsWith(fallbackPrefix, StringComparison.OrdinalIgnoreCase))
-            {
-                session.RemoveAt(i);
-                removedCount++;
-            }
-        }
-
-        return removedCount;
+        var events = session.Capture();
+        int removed = 0;
+        for (int i = events.Count - 1; i >= 0; i--)
+            if (events[i].Name.StartsWith(Prefix(instanceId), StringComparison.Ordinal))
+            { session.RemoveAt(i); removed++; }
+        return removed;
     }
 
-    /// <summary>
-    /// 驗證關卡事件中的巢穴綁定完整性（偵測是否有殘留或失效的巢穴參照）。
-    /// </summary>
-    public static IReadOnlyList<string> ValidateLairBindings(
-        IReadOnlyList<ScenarioEvent> events,
+    public static IReadOnlyList<string> ValidateLairBindings(IReadOnlyList<ScenarioEvent> events,
         IReadOnlyList<PlacedNeutralLair> activeLairs)
     {
         ArgumentNullException.ThrowIfNull(events);
         ArgumentNullException.ThrowIfNull(activeLairs);
-
-        var errors = new List<string>();
-        var activeIds = new HashSet<string>(activeLairs.Select(l => l.InstanceId.ToString("N")[..8]), StringComparer.OrdinalIgnoreCase);
-
-        foreach (var ev in events)
-        {
-            if (ev.Name.StartsWith(LairEventPrefix, StringComparison.OrdinalIgnoreCase))
-            {
-                string tag = ev.Name.Substring(LairEventPrefix.Length);
-                int underscore = tag.IndexOf('_');
-                if (underscore > 0) tag = tag[..underscore];
-
-                if (!activeIds.Contains(tag))
-                {
-                    errors.Add($"事件「{ev.Name}」指向已不存在之巢穴實例（Tag: {tag}）。");
-                }
-            }
-        }
-
-        return errors;
-    }
-
-    private static string SanitizeMessage(string message)
-    {
-        try
-        {
-            // 若為合法遊戲文字，直接返回
-            MapTextEncoding.Game.GetByteCount(message);
-            return message;
-        }
-        catch
-        {
-            // 若包含非法字元，安全回退至標準 ASCII 訊息
-            return "A neutral wild lair has been eradicated!";
-        }
+        var ids = activeLairs.Select(l => l.InstanceId).ToHashSet();
+        return events.Where(e => e.Name.StartsWith(LairEventPrefix, StringComparison.Ordinal))
+            .Where(e => e.Name.Length < LairEventPrefix.Length + 33 ||
+                e.Name[LairEventPrefix.Length + 32] != '_' ||
+                !Guid.TryParseExact(e.Name.Substring(LairEventPrefix.Length, 32), "N", out Guid id) || !ids.Contains(id))
+            .Select(e => $"Event {e.Name} has an unknown or legacy lair instance reference.").ToArray();
     }
 }
