@@ -1,5 +1,17 @@
 # AI Handoff - Live Project Memory
 
+## Task C Objectives（2026-10-08 Codex，隔離 worktree）
+
+- 僅在 `D:\Github\ARM_wt_objectives`／`wt/objectives` 工作，基底 `080ebc9`；主 checkout 未動，未存取／啟動安裝目錄。
+- 現有 compiler 已輸出 ScenarioEvents，但忽略依賴、多主線與區域持續語意；已改保守 lowering，BCI 只由 LevelScriptInjector／ScenarioEventCompiler 產生。
+- 新增匯出 gate：依賴、多主線、全殲、山丘／維持佔領、圓形、timeout、count/resource、bonus 生存／護送皆拒絕；沙盒不是 BCI 驗證。
+- 已核對 TEMP ENDL_000：`s_objExists` @0x18fc（128／73 -2／86），`s_getTime` @0x3d28（128／86，+60000 毫秒）。沿用既有 EXE ABI 證據，不新增 native。
+- 已驗證 TEMP ENDL_000／ENDL_005 original：CompileToBci 與 Apply／重複 Apply 一致；BCI round trip 與 bcitool 全分支邊界通過（16561 instructions、hook 0x1bec0、s_getObjPos 0x1c32c、quit 0x1c49c）；來源未變。完整 ABI／限制見 `docs/reverse-engineering/objective-rules.md`。
+- 初次 build 缺 GameLZSS namespace（2 errors）已修正；後續 build 0 errors。首次全套測試 Modules 563 通過；Host 713 通過／22 略過／1 新測試失敗（訊息數錯誤預期 3，實際應 2）已修正。
+
+- 最終審查補上場景副本的 ScenarioObjectIdentity.Prepare（拒絕重複身份／實體 slot），呼叫者不變；指定 `DOTNET_ROLL_FORWARD=Major dotnet build AgainstRomeModifier.slnx -c Release -p:UseAppHost=false` 0 errors／39 warnings；`dotnet test AgainstRomeModifier.slnx -c Release --no-build` Modules 565／Host 714 通過、22 略過、0 failures；git diff --check 通過。
+- 狀態：Task C 完成，僅提交 wt/objectives 本次修改；無 push／merge。主 checkout 不變。新 objective 組合、死亡生命週期、倒數／護送／獎勵、多人及存讀檔仍未進遊戲驗證；既有 ObjectInArea＋Victory 遊戲內結果沿用上節紀錄。
+
 ## 懸崖工具發現與修正（2026-10-08 Claude，遊戲內實測；使用者已改好輸入法設定，遊戲可正常啟動）
 
 - **輸入法問題已解決**：使用者在系統設定覆寫預設輸入法後，遊戲不再被 TextInputHost 搶前景。若遊戲啟動後被最小化（前景變 claude），重啟遊戲即可。
