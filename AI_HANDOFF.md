@@ -647,3 +647,5 @@
 - Codex：新增 `tests/AgainstRomeModifier.Tests/StampCategoryTests.cs`（26 案例，StampCategory 分類）；其回報完整 build/test 0 失敗（我先前自行跑：Modules 662、Host 723 通過）。
 - Agy 唯讀稽核（未驗證，僅建議）：音效／運鏡／目標圖／AI 戰役波次／野外巢穴模組皆未接 UI（實驗性、刻意未接線）；B3/BK/BR 與 L 系列↔4B 系列無原版過渡；懸崖碎石失敗已降為警告；PlacementBatchEditDialog、SettlementGeneratorDialog、EditorConsoleControl 鍵盤互動缺直接測試。
 - 建議下一步：補上述三個對話框／控制台測試；其餘待遊戲內驗證。
+
+- Codex 追加 15 個 STA 測試（PlacementBatchEditDialog／SettlementGeneratorDialog／EditorConsole 鍵盤）；我重跑驗證：Modules 662、Host 764 通過、0 失敗（22 略過）。仍未做：音效／運鏡／目標圖／AI 波次／巢穴 UI 接線（逆向證據不足，刻意不接）、B3/BK/BR 與 L↔4B 過渡、遊戲內驗證。
