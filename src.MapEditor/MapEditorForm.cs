@@ -150,6 +150,8 @@ internal sealed partial class MapEditorForm : Form
     private readonly HashSet<int> _terrainStrokeTiles = new();
     private bool _lastActionWasSettlementGeneration;
     private bool _lastActionWasSettlementGenerationUndone;
+    private bool _lastActionWasFlora;
+    private bool _lastActionWasFloraUndone;
     private bool _lastActionWasRiverOrCliff;
     private bool _lastActionWasRiverOrCliffUndone;
 
@@ -870,6 +872,12 @@ internal sealed partial class MapEditorForm : Form
     private void Undo()
     {
         CommitStroke();
+        if (_lastActionWasFlora)
+        {
+            _lastActionWasFlora = false;
+            _lastActionWasFloraUndone = true;
+            if (_natureSession.Undo()) { RefreshSceneMarkers(); UpdateEditorState(); return; }
+        }
         if (_lastActionWasSettlementGeneration)
         {
             _lastActionWasSettlementGeneration = false;
@@ -921,6 +929,12 @@ internal sealed partial class MapEditorForm : Form
     private void Redo()
     {
         CommitStroke();
+        if (_lastActionWasFloraUndone)
+        {
+            _lastActionWasFloraUndone = false;
+            _lastActionWasFlora = true;
+            if (_natureSession.Redo()) { RefreshSceneMarkers(); UpdateEditorState(); return; }
+        }
         if (_lastActionWasSettlementGenerationUndone)
         {
             _lastActionWasSettlementGenerationUndone = false;
@@ -1417,6 +1431,15 @@ internal sealed partial class MapEditorForm : Form
         {
             _undoButton.Enabled |= editable && _natureSession.CanUndo;
             _redoButton.Enabled |= editable && _natureSession.CanRedo;
+        }
+        if (_lastActionWasFlora)
+        {
+            _undoButton.Enabled = editable && _natureSession.CanUndo;
+            _redoButton.Enabled = editable && _lastActionWasFloraUndone && _natureSession.CanRedo;
+        }
+        else if (_lastActionWasFloraUndone)
+        {
+            _redoButton.Enabled = editable && _natureSession.CanRedo;
         }
         if (_lastActionWasSettlementGeneration)
         {
