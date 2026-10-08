@@ -17,28 +17,27 @@ internal sealed partial class MapEditorForm
             _status.Text = en ? "Object catalog is not available yet." : "物件目錄尚未可用。";
             return 0;
         }
-        var catalog = new WallTileCatalog().Filtered(name => LayoutTypeResolver.ResolveAlias(_objectCatalog, name) is not null);
-        FortificationStyle? style = new[] { FortificationStyle.GermanicPalisade, FortificationStyle.RomanStoneWall, FortificationStyle.CelticPalisade }
-            .Cast<FortificationStyle?>().FirstOrDefault(candidate =>
-            {
-                var parts = catalog.GetComponents(candidate!.Value);
-                return parts.Any(part => part.Kind == WallComponentKind.Straight) && parts.Any(part => part.Kind == WallComponentKind.Corner);
-            });
-        if (style is null)
+        // 原版聚落實測：柵欄間距 64、角度 0；日耳曼南北向 Pal00／東西向 Pal01，羅馬相反；轉角 Pal02。
+        (string AlongZ, string AlongX, string Corner)? variant = new[]
+        {
+            ("BauGerPal00_Palisade", "BauGerPal01_Palisade", "BauGerPal02_Palisadenecke"),
+            ("BauRomPal01_Palisade", "BauRomPal00_Palisade", "BauRomPal02_Palisadenecke"),
+        }.Cast<(string, string, string)?>().FirstOrDefault(set => LayoutTypeResolver.ResolveAlias(_objectCatalog, set!.Value.Item1) is not null
+            && LayoutTypeResolver.ResolveAlias(_objectCatalog, set.Value.Item2) is not null && LayoutTypeResolver.ResolveAlias(_objectCatalog, set.Value.Item3) is not null);
+        if (variant is null)
         {
             _status.Text = en ? "This game has no wall or palisade pieces available." : "此遊戲目錄找不到可用的城牆／柵欄物件。";
             return 0;
         }
-        var plan = WallStrokePlanner.Plan(_texturesDocument.Dimension, path.Select(point => (point.X, point.Y)).ToArray(),
-            new WallStrokeOptions { Style = style.Value, Team = team, StampFoundations = false }, catalog);
-        if (!plan.Succeeded || plan.Placements.Count == 0)
+        var pieces = PalisadeRunPlanner.Plan(path.Select(point => (point.X * WallTileWorld, point.Y * WallTileWorld)).ToArray(),
+            variant.Value.AlongZ, variant.Value.AlongX, variant.Value.Corner);
+        if (pieces.Count == 0)
         {
-            _status.Text = plan.FailureReason ?? (en ? "Wall planning failed." : "城牆規劃失敗。");
+            _status.Text = en ? "Wall planning failed." : "城牆規劃失敗。";
             return 0;
         }
-        var preset = new MapLayoutPreset(1, MapLayoutKind.Placement, plan.Placements
-            .Select(item => new MapLayoutEntry(item.NameDef, item.WorldX, item.WorldZ, 0, item.AngleDeg, team)).ToArray());
-        preset = preset with { Entries = preset.Entries.Select(entry => entry with { Type = LayoutTypeResolver.ResolveAlias(_objectCatalog, entry.Type)! }).ToArray() };
+        var preset = new MapLayoutPreset(1, MapLayoutKind.Placement, pieces
+            .Select(item => new MapLayoutEntry(LayoutTypeResolver.ResolveAlias(_objectCatalog, item.Name)!, item.X, item.Z, 0, 0, team)).ToArray());
         var planned = MapLayoutPresets.PlanPlacements(preset, _objectCatalog, 0, 0, 0, LayoutGroundHeight);
         CommitStroke();
         _placementSession.AddMany(planned);
