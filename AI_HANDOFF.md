@@ -1,5 +1,16 @@
 ﻿# AI Handoff - Live Project Memory
 
+## 子代理成果整合（2026-10-08 Claude；Codex×5＋Agy×5，各自 worktree 後合併）
+
+- 已合併分支（皆本地、未 push）：`wt/sound`、`wt/cinematic`、`wt/objectives`、`wt/lair`（Codex 逆向）、`wt/settle`、`wt/weather`、`wt/pack`、`wt/ai`、`wt/macro`（Agy 稽核；settle／weather／pack 的代理收尾失敗，由我複驗後提交）。合併後 Release build 0 錯誤；Modules 662、Host 723 通過（22 略過）、0 失敗。
+- 逆向結論（詳見 docs/reverse-engineering/sound-zones.md、cinematic-camera.md、objective-rules.md、wild-lairs.md）：
+  - 環境音效：真實地圖沒有 `sound.dat`；原生聲音來自 `sfxenv/sfxobj/sfxexp.dau` 與物件 action；契約不足，模組標為 experimental/unwired，已停用虛構匯出。
+  - 運鏡：EXE 有 `s_lgcSetEnginePos v(ddd)`、`s_lgcSetEngineZoom v(d)`（zoom 範圍 0–9）；已加入符合 VM ABI 的 BCI 呼叫片段，完整序列仍 experimental/unwired。
+  - 勝利條件：改為完全經既有已驗證的 ScenarioEvent 編譯路徑輸出；支援死亡／移除、開局生存倒數、矩形護送／到達、保護物件失敗等；依賴圖、多主線、隊伍全殲、持續佔領、擊殺／資源計數等明確拒絕。
+  - 野外巢穴：虛構巢穴／再生機制已移除；野獸別名 ALL_WOL00/BAE00/EBE00/RAU00；定時生成沿用 ScenarioEvent，其餘封鎖。
+- 稽核修正：基地生成器改用真實別名（野生動物 team -1）；天氣預設與 boden.ini 驗證依 36 份真實檔校準（原版兩張樣本間 33 個鍵完全不變）；模組匯出有安裝契約與 `tools/ArmMapPackage` 安裝工具；AI 戰役改用真實單位別名；巨集控制台與 NavMesh 的座標空間統一（`docs/map-editor-macro-console.md`）。
+- **這些新行為全部尚未在遊戲內驗證**（含新的勝利條件組合、運鏡 BCI、基地生成的實際單位）。
+
 ## Task D wild-object reverse engineering (2026-10-08 Codex, wt/lair)
 
 - Dedicated worktree `D:/Github/ARM_wt_lair`, branch `wt/lair`, base `080ebc9`. Only allowed TEMP copies read; no install access/launch or main-checkout edits.
