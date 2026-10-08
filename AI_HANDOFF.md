@@ -58,6 +58,27 @@
   - `s_conMoveTo` 等路徑巡邏命令尚未實作降階至 BCI 輪詢迴圈（目前部隊生成後依原生 AI 待命）。
   - 實機戰役關卡在未受修改的遊戲安裝目錄下的載入表現尚未實機測試。
 
+## 巨集控制台指令與 NavMesh/尋路單位空間審計與修復完成（2026-10-08 Antigravity，Audit Task 5，wt/macro 分支）
+
+- **任務背景與目標**：
+  針對 `src.MapEditor.Modules/Scripting` 控制台巨集指令（`/elevate`、`/flatten`、`/replace-texture`、`/scatter`、`/spawn-ring`、`/align-grid`、`/diagnose`、`/heal-navmesh`）、NavMesh/Pathfinding 通行性網格、道路修復系統與地圖診斷進行全方位坐標空間審計。建立統一坐標規格文件 `docs/map-editor-macro-console.md`，修復發現之單位/網格換算錯誤，並編寫全套單元與宿主 STA 測試驗證。
+- **審計發現之缺陷與修正**：
+  1. **`CommandExecutionContext` 預設維度錯誤**：`MapTileDimension` 原預設為 `256`（應為 `64`），且 `MapEditorForm.Console.cs` 的 `RefreshConsoleContext()` 漏傳 `MapTileDimension` 與 `WorldDimension`。導致 `/replace-texture` 與 `/heal-navmesh` 以 256 為步長跨距計算陣列索引，無法替換第 16 列以後的圖塊且坐標錯位。
+     - 修正：`MapTileDimension` 預設改為 `64`；`RefreshConsoleContext()` 自動填入 `_texturesDocument?.Dimension ?? 64` 與 `WorldDimension = Dimension * 256f`。`TerrainBlendEditSession` 公開 `TileDimension` 屬性供各指令安全取用。
+  2. **`RoadPathHealer.ApplyRepair` 碰撞阻擋清除坐標空間錯亂**：原程式直接將圖塊坐標傳入 `PaintCollision(TileX + 0.5f, TileZ + 0.5f, 0.5f, op)`。`TileX` 是 0..63 圖塊坐標，但 `PaintCollision` 接收的是 256×256 的碰撞像素坐標！導致修復只清除了左上角無關像素且半徑不足。
+     - 修正：依 `step = CollisionSize / tileDim`（4.0）精確映射，將該圖塊對應的全部 16 個碰撞像素 (`TileX*4..TileX*4+3`, `TileZ*4..TileZ*4+3`) 完整清除為 0，且支援 `/undo` 原子回滾。
+  3. **`RoadPathHealer.CreateBridgeAction` 孤立陸地橋接坐標單位錯誤**：橋接錨點坐標來自 256×256 的 `NavMeshPassabilityGrid`，原程式直接將其作為圖塊坐標傳給 `NavMeshTileChange`，導致印章圖塊嘗試貼在 (200, 200) 超界位置。
+     - 修正：新增 `tileDimension` 參數，根據世界坐標除以 `tileScale` 精確換算回圖塊坐標 (0..63) 與焦點位置。
+  4. **`MapDiagnostics.AnalyzeNavMesh` 紋理尺寸判斷錯誤導致道路間隙偵測全數失效**：原判斷式 `textures.Count == (long)grid.Size * grid.Size`，因 `grid.Size = 256`，要求紋理有 65536 筆；但真實地圖紋理為 64×64（4096 筆），條件永遠為 false，導致所有真實地圖診斷中 `RoadGapDetector` 完全被跳過。
+     - 修正：改由 `texDimension = Math.Round(Sqrt(textures.Count))` 計算紋理尺寸，以 64 驅動 `RoadGapDetector`，並在 `NavMeshPassabilityGrid` 新增 `IsTileBlockedByCollision` 與 `IsTileSubmerged` 支援跨解析度比例取樣。
+- **測試與驗證結果**：
+  - 新增設計與合約文件：`docs/map-editor-macro-console.md`（完整定義四大坐標空間矩陣、跨層公式、指令規格與 NavMesh 整合合約）。
+  - 單元測試：`NavMeshRepairTests.cs` 新增 3 項測試（4x4 完整圖塊碰撞像素清除與撤銷、64 紋理 + 256 碰撞道路缺口偵測、跨網格阻擋/淹沒查詢）；`MacroDomainCommandsTests.cs` 新增 2 項測試（64 網格紋理替換與 Undo、道路中斷修復與 Undo）。
+  - 宿主 STA 測試：`MapEditorConsoleTests.cs` 新增 `Console_tab_runs_multiple_macros_and_lands_on_intended_tiles`，驗證宿主表單上下文正確初始化 (64, 16384)、`/replace-texture` 精確落於目標圖塊 (10, 10)、`/spawn-ring` 精確按世界單位擺放並單步 Undo。
+  - 建置：`DOTNET_ROLL_FORWARD=Major dotnet build AgainstRomeModifier.slnx -c Release -p:UseAppHost=false`（**0 錯誤**）。
+  - 完整測試：`dotnet test AgainstRomeModifier.slnx -c Release --no-build`（Modules **552 通過，0 失敗**；Host **706 通過，22 略過，0 失敗**；總計 **1,258 項測試全綠**）。
+  - 未存取或修改遊戲安裝目錄；所有作業嚴格局限於 worktree `D:\Github\ARM_wt_macro` 之 `wt/macro` 分支。
+
 ## 懸崖工具發現與修正（2026-10-08 Claude，遊戲內實測；使用者已改好輸入法設定，遊戲可正常啟動）
 
 - **輸入法問題已解決**：使用者在系統設定覆寫預設輸入法後，遊戲不再被 TextInputHost 搶前景。若遊戲啟動後被最小化（前景變 claude），重啟遊戲即可。

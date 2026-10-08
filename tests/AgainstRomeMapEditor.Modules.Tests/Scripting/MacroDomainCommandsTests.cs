@@ -174,4 +174,93 @@ public sealed class MacroDomainCommandsTests
         Assert.Equal(1, placementSession[1].Team);
         Assert.Equal(1, placementSession[2].Team);
     }
+
+    [Fact]
+    public void ReplaceTexture_ReplacesInBoundingRect_AndUndoRestores()
+    {
+        const int dim = 64;
+        var textures = Enumerable.Repeat("Gras1", dim * dim).ToArray();
+        var map = new TerrainBlendAuthoringMap(dim, "Gras1");
+        var import = new NativeTerrainImportResult(map, [], []);
+        var blendSession = new TerrainBlendEditSession(import, textures, new MacroTestResolver());
+
+        var context = new CommandExecutionContext
+        {
+            BlendSession = blendSession,
+            MapTileDimension = dim,
+            WorldDimension = dim * 256f
+        };
+
+        var registry = CommandRegistry.CreateDefault();
+        var runner = new MacroScriptRunner(registry);
+
+        // Replace Gras1 with Sand1 in rect 10,10 to 12,12 (3x3 = 9 tiles)
+        var res = runner.ExecuteLine("/replace-texture Gras1 Sand1 --rect 10,10,12,12", context, recordSingleActionAsCompound: true);
+        Assert.True(res.Success);
+        Assert.Equal(9, res.AffectedCount);
+
+        // Check target tile is Sand1
+        Assert.Equal("Sand1", blendSession.CurrentTextures[10 * dim + 10]);
+        Assert.Equal("Sand1", blendSession.CurrentTextures[12 * dim + 12]);
+        // Tile outside rect is still Gras1
+        Assert.Equal("Gras1", blendSession.CurrentTextures[9 * dim + 10]);
+
+        // Undo
+        Assert.True(runner.CanUndo);
+        runner.Undo();
+        Assert.Equal("Gras1", blendSession.CurrentTextures[10 * dim + 10]);
+        Assert.Equal("Gras1", blendSession.CurrentTextures[12 * dim + 12]);
+    }
+
+    [Fact]
+    public void HealNavMesh_FindsAndHealsRoadGaps_On64TileGrid_AndUndoRestores()
+    {
+        const int dim = 64;
+        var textures = Enumerable.Repeat("Gras1", dim * dim).ToArray();
+        // Create road gap at tile (20, 15): endpoints at (19, 15) and (21, 15)
+        textures[15 * dim + 18] = "H_WEG1";
+        textures[15 * dim + 19] = "H_WEG1";
+        // gap at (20, 15)
+        textures[15 * dim + 21] = "H_WEG1";
+        textures[15 * dim + 22] = "H_WEG1";
+
+        var map = new TerrainBlendAuthoringMap(dim, "Gras1");
+        var import = new NativeTerrainImportResult(map, [], []);
+        var blendSession = new TerrainBlendEditSession(import, textures, new MacroTestResolver());
+
+        var context = new CommandExecutionContext
+        {
+            BlendSession = blendSession,
+            MapTileDimension = dim,
+            WorldDimension = dim * 256f
+        };
+
+        var registry = CommandRegistry.CreateDefault();
+        var runner = new MacroScriptRunner(registry);
+
+        var res = runner.ExecuteLine("/heal-navmesh", context, recordSingleActionAsCompound: true);
+        Assert.True(res.Success);
+        Assert.Equal(1, res.AffectedCount);
+
+        // The gap at (20, 15) should now be patched with H_WEG1
+        Assert.Equal("H_WEG1", blendSession.CurrentTextures[15 * dim + 20]);
+
+        // Undo
+        Assert.True(runner.CanUndo);
+        runner.Undo();
+        Assert.Equal("Gras1", blendSession.CurrentTextures[15 * dim + 20]);
+    }
+
+    private sealed class MacroTestResolver : INativeTerrainMaterialResolver
+    {
+        public bool TryResolveNativeCorners(string texture, out IReadOnlyList<string> corners)
+        {
+            corners = ["grass", "grass", "grass", "grass"];
+            return true;
+        }
+
+        public string? ResolveNativeTile(IReadOnlyList<string> corners, int tileX, int tileY) => corners[0];
+        public bool HasEdgeBake(string inner, string outer) => true;
+        public IReadOnlyList<string> IntermediateMaterials(string inner, string outer) => [];
+    }
 }
