@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using System.Text;
 using AgainstRomeMapEditor.Modules.Events;
 using AgainstRomeMapEditor.Modules.WildLair;
 using AgainstRomeModifier.Maps;
@@ -9,240 +10,184 @@ namespace AgainstRomeMapEditor.Modules.Tests;
 
 public sealed class NeutralLairAndRegenTests
 {
-    [Fact]
-    public void NeutralLairCatalog_Default_ContainsCanonicalLairsAndValidates()
-    {
-        var catalog = NeutralLairCatalog.Default;
-        Assert.NotNull(catalog);
-        Assert.True(catalog.AllDefinitions.Count >= 7);
+    // Identifier-only INI fixture, transcribed from TEMP cl_scint.ini [ObjDefName].
+    // No PFIL, original asset file, objdef row or game bytecode is committed.
+    private static IReadOnlyList<ScriptObjectAlias> Aliases => ScriptObjectAliases.Parse("""
+        [ObjDefName]
+        ALL_ZIVMAN00=FigZivMan00_Zivilist
+        ALL_ZIVWEI00=FigZivWei00_Zivilistin
+        ALL_PACKPF00=FigTiePac00_Packpferd
+        ALL_BAE00=FigTieBae00_Baer
+        ALL_RAU00=FigTieRau00_Raubkatze
+        ALL_WOL00=FigTieWol00_Wilder_Wolf
+        ALL_EBE00=FigTieEbe00_Wildschwein
+        GER_INF01=FigGerInf01_Schwert
+        ROM_INF01=FigRomInf01_Schwert_Schild
+        GER_HAU00=BauGerHau00_Haupthaus
+        GER_MIN00=BauGerMin00_Mine
+        GER_GOL00=BauGerGol00_Goldschmiede
+        [ObjDefScript]
+        ALL_WOL00=ak_landtier
+        """);
 
-        var wolf = catalog.GetById("LAIR_WOLF_DEN_SMALL");
-        Assert.NotNull(wolf);
-        Assert.Equal(LairCategory.BeastDen, wolf.Category);
-        Assert.Equal(LairDifficultyTier.Tier1Scout, wolf.Tier);
-        Assert.NotEmpty(wolf.DefaultGuards);
-        Assert.NotEmpty(wolf.WaveRules);
-
-        var bear = catalog.GetById("LAIR_BEAR_CAVE_FEROCIOUS");
-        Assert.NotNull(bear);
-        Assert.Equal("Alpine", bear.BiomeAffinity);
-
-        var raider = catalog.GetById("LAIR_BARBARIAN_RAIDER_CAMP");
-        Assert.NotNull(raider);
-        Assert.Equal(LairCategory.BarbarianCamp, raider.Category);
-
-        // 威脅度評估：大型掠奪者要塞威脅度應顯著高於小型狼穴
-        float wolfThreat = NeutralLairCatalog.CalculateThreatRating(wolf);
-        float raiderThreat = NeutralLairCatalog.CalculateThreatRating(raider);
-        Assert.True(raiderThreat > wolfThreat, $"Raider threat {raiderThreat} should be greater than wolf threat {wolfThreat}");
-    }
-
-    [Fact]
-    public void NeutralLairCatalog_FilteringAndQuerying_WorksAsExpected()
-    {
-        var catalog = NeutralLairCatalog.Default;
-
-        var beastDens = catalog.GetByCategory(LairCategory.BeastDen).ToList();
-        Assert.Contains(beastDens, d => d.Id == "LAIR_WOLF_DEN_SMALL");
-        Assert.Contains(beastDens, d => d.Id == "LAIR_BEAR_CAVE_FEROCIOUS");
-
-        var tier1Lairs = catalog.GetByTier(LairDifficultyTier.Tier1Scout).ToList();
-        Assert.All(tier1Lairs, d => Assert.Equal(LairDifficultyTier.Tier1Scout, d.Tier));
-
-        var filtered = catalog.Filter(category: LairCategory.BarbarianCamp, tier: LairDifficultyTier.Tier2Standard).ToList();
-        Assert.Contains(filtered, d => d.Id == "LAIR_BARBARIAN_RAIDER_CAMP");
-    }
+    private static NeutralLairDefinition Blueprint() => new("AUTHORED_OUTPOST", "Outpost", "Outpost",
+        LairCategory.BarbarianCamp, LairDifficultyTier.Unrated, "BauGerHau00_Haupthaus", 1,
+        [], [new("timer", "GER_INF01", 2, 60, 60, SpawnRadiusTiles: 1)], new());
+    private static PlacedNeutralLair Placed(NeutralLairDefinition d, Guid? id = null, Guid core = default) =>
+        new(id ?? Guid.NewGuid(), d.Id, 4000, 0, 6000, Team: 7, CoreStructureSpawnId: core);
+    private static IReadOnlyList<ScenarioEvent> Bind(NeutralLairDefinition d, PlacedNeutralLair? l = null) =>
+        WildLairScenarioEventBinder.GenerateEventsForLair(l ?? Placed(d), d, aliases: Aliases);
 
     [Fact]
-    public void NeutralLairCatalog_Validation_RejectsInvalidRules()
+    public void Catalog_contains_real_land_animals_without_invented_mechanics()
     {
-        // 週期過短 (< 10s)
-        Assert.Throws<ArgumentOutOfRangeException>(() =>
+        var catalog = NeutralLairCatalog.Default.FilteredBy(Aliases);
+        Assert.Equal(4, catalog.AllDefinitions.Count);
+        Assert.Equal("FigTieWol00_Wilder_Wolf", catalog.GetById("ALL_WOL00")!.NativeBuildingOrLandscapeType);
+        Assert.Null(catalog.GetById("LAIR_WOLF_DEN_SMALL"));
+        Assert.Throws<NotSupportedException>(() => NeutralLairCatalog.CalculateThreatRating(Blueprint()));
+        Assert.Empty(catalog.GetByCategory(LairCategory.BarbarianCamp));
+        Assert.Equal(4, catalog.Filter(category: LairCategory.WildAnimal, tier: LairDifficultyTier.Unrated).Count());
+        foreach (var animal in catalog.AllDefinitions)
         {
-            var invalid = new NeutralLairDefinition(
-                "TEST_BAD", "無效巢穴", "Bad Lair",
-                LairCategory.BeastDen, LairDifficultyTier.Tier1Scout,
-                "LanGerStein01", 2.0f,
-                [],
-                [new LairWaveSpawnRule("bad_wave", "GER_INF01", SpawnCount: 2, IntervalSeconds: 5)],
-                new LairLootReward());
-            NeutralLairCatalog.ValidateDefinition(invalid);
-        });
+            NeutralLairCatalog.ValidateDefinition(animal);
+            Assert.Empty(animal.DefaultGuards); Assert.Empty(animal.WaveRules);
+            Assert.Equal(new LairLootReward(), animal.Loot);
+            Assert.Equal(0, NeutralLairCatalog.CalculateThreatRating(animal));
+        }
+        Assert.Empty(NeutralLairCatalog.Default.FilteredBy([new("ALL_WOL00", "FigGerInf01_Schwert")]).AllDefinitions);
+    }
 
-        // 刷怪人數超出上限 (> 20)
-        Assert.Throws<ArgumentOutOfRangeException>(() =>
-        {
-            var invalid = new NeutralLairDefinition(
-                "TEST_BAD_COUNT", "無效人數", "Bad Count",
-                LairCategory.BeastDen, LairDifficultyTier.Tier1Scout,
-                "LanGerStein01", 2.0f,
-                [],
-                [new LairWaveSpawnRule("bad_wave", "GER_INF01", SpawnCount: 25, IntervalSeconds: 60)],
-                new LairLootReward());
-            NeutralLairCatalog.ValidateDefinition(invalid);
-        });
+    [Theory]
+    [InlineData("ALL_WOL00")]
+    [InlineData("ALL_BAE00")]
+    [InlineData("ALL_EBE00")]
+    [InlineData("ALL_RAU00")]
+    public void Animal_alias_existence_does_not_imply_timer_spawn_support(string id)
+    {
+        var d = NeutralLairCatalog.Default.GetById(id)!;
+        Assert.Throws<NotSupportedException>(() => Bind(d));
     }
 
     [Fact]
-    public void ResourceRegenerationPlanner_CellularAutomata_SimulatesStumpDecayAndSaplingGrowth()
+    public void Authored_timer_uses_real_alias_world_scale_core_condition_and_existing_compiler()
     {
-        int dim = 16;
-        var planner = new ResourceRegenerationPlanner(dim, tileWorldSize: 64f, seed: 42);
+        var d = Blueprint() with { Loot = new(CompletionMessage: "Core removed") };
+        Guid core = Guid.NewGuid(); var l = Placed(d, core: core);
+        var events = Bind(d, l);
+        var timer = Assert.Single(events, e => e.Repeat);
+        Assert.Equal(60, timer.DelaySeconds);
+        var action = Assert.Single(timer.Actions);
+        Assert.Equal(ScenarioActionKind.SpawnUnit, action.Kind);
+        Assert.Equal("GER_INF01", action.Alias);
+        Assert.Equal(4256f, action.X); Assert.Equal(6000f, action.Z); Assert.Equal(7, action.Team);
+        Assert.Equal(new ScenarioCondition(ScenarioConditionKind.ObjectExists, core), Assert.Single(timer.Conditions));
+        var cleared = Assert.Single(events, e => !e.Repeat);
+        Assert.Equal(new ScenarioCondition(ScenarioConditionKind.ObjectDeadOrRemoved, core), Assert.Single(cleared.Conditions));
+        Assert.DoesNotContain(events.SelectMany(e => e.Actions), a => a.Kind == ScenarioActionKind.Diplomacy);
+        var scenario = new ScenarioDocument { Spawns = [new("GER_HAU00", 4000, 6000, 7) { Id = core }], Events = events.ToList() };
+        ScenarioEventValidator.ValidateConditions(events, scenario);
+        var image = BciImage.CreateIdleLevel(); int originalMain = image.MainAddress;
+        ScenarioEventCompiler.Inject(image, events, originalMain, scenario);
+        var parsed = BciImage.Parse(image.Serialize());
+        string constants = Encoding.Latin1.GetString(parsed.ConstBlob);
+        Assert.Contains("s_createUnitAndMems", constants);
+        Assert.Contains("GER_INF01", constants);
+        Assert.Contains("s_showTextBox", constants);
+        Assert.DoesNotContain("s_createObj\0", constants);
+    }
 
-        // 初始化：在 (5, 5) 放置一株成熟喬木
-        planner.InitializeFromMap(new[] { (5.5f * 64f, 5.5f * 64f, "LanGerTanne01") });
-
-        var initialTree = planner.GetCell(5, 5);
-        Assert.Equal(ForestCellState.MatureTree, initialTree.State);
-
-        // 採伐 (5, 5) 成為殘樁
-        planner.MarkHarvestedStump(5, 5, "LanGerTanne01");
-        Assert.Equal(ForestCellState.Stump, planner.GetCell(5, 5).State);
-        Assert.Single(planner.ActiveStumps);
-
-        // 迭代 6 步，殘樁應風化轉為肥沃土地 Barren
-        var config = new RegenerationParameters { StumpDecayTicks = 5, SeedDispersalProbability = 0.5f };
-        planner.StepSimulation(steps: 6, parameters: config);
-
-        var decayedCell = planner.GetCell(5, 5);
-        Assert.Equal(ForestCellState.Barren, decayedCell.State);
-        Assert.True(decayedCell.Fertility > 0.6f);
-        Assert.Empty(planner.ActiveStumps);
+    [Theory]
+    [InlineData("ALL_WOL00")]
+    [InlineData("ALL_ZIVMAN00")]
+    [InlineData("GER_MIN00")]
+    [InlineData("LanGerNad00_Tanne_gross")]
+    [InlineData("MISSING")]
+    public void Non_troop_or_unknown_alias_is_gated(string alias)
+    {
+        var d = Blueprint(); d = d with { WaveRules = [d.WaveRules[0] with { UnitAlias = alias }] };
+        Assert.Throws<NotSupportedException>(() => Bind(d));
     }
 
     [Fact]
-    public void ResourceRegenerationPlanner_SeedDispersal_SpreadsForestCanopy()
+    public void Unsupported_mechanics_and_invalid_coordinates_do_not_get_silently_clamped()
     {
-        int dim = 12;
-        var planner = new ResourceRegenerationPlanner(dim, tileWorldSize: 64f, seed: 1234);
-
-        // 中心區域放置成片成樹 (4,4), (4,5), (5,4), (5,5)
-        var trees = new List<(float, float, string)>
-        {
-            (4.5f * 64f, 4.5f * 64f, "LanGerTanne01"),
-            (4.5f * 64f, 5.5f * 64f, "LanGerTanne01"),
-            (5.5f * 64f, 4.5f * 64f, "LanGerTanne01"),
-            (5.5f * 64f, 5.5f * 64f, "LanGerTanne01")
-        };
-        planner.InitializeFromMap(trees);
-
-        // 高機率擴散並迭代 15 步
-        var config = new RegenerationParameters
-        {
-            SeedDispersalProbability = 0.45f,
-            SaplingToYoungTicks = 2,
-            YoungToMatureTicks = 3
-        };
-
-        var statsBefore = planner.GetStatistics();
-        Assert.Equal(4, statsBefore.MatureTreeCount);
-
-        planner.StepSimulation(steps: 10, parameters: config);
-
-        var statsAfter = planner.GetStatistics();
-        // 經過 10 步，鄰域空地應長出新生幼苗、小樹或成樹，樹木總量應增加
-        int totalCanopyAfter = statsAfter.SaplingCount + statsAfter.YoungTreeCount + statsAfter.MatureTreeCount + statsAfter.AncientCanopyCount;
-        Assert.True(totalCanopyAfter > 4, $"Forest should expand from 4 trees, got {totalCanopyAfter}");
+        var d = Blueprint(); var w = d.WaveRules[0];
+        foreach (var bad in new[] { w with { InitialDelaySeconds = 30 }, w with { MaxActiveWaves = 2 }, w with { AggroBehavior = "PatrolHostile" } })
+            Assert.Throws<NotSupportedException>(() => Bind(d with { WaveRules = [bad] }));
+        Assert.Throws<NotSupportedException>(() => Bind(d with { DefaultGuards = [new("GER_INF01", 1)] }));
+        Assert.Throws<NotSupportedException>(() => Bind(d with { Loot = new(Gold: 1) }));
+        Assert.Throws<NotSupportedException>(() => Bind(d, Placed(d) with { Team = 8 }));
+        Assert.Throws<NotSupportedException>(() => Bind(d with { Loot = new(CompletionMessage: "Cleared") }));
+        Assert.Throws<ArgumentNullException>(() => WildLairScenarioEventBinder.GenerateEventsForLair(Placed(d), d));
+        Assert.Throws<ArgumentOutOfRangeException>(() => Bind(d, Placed(d) with { WorldX = float.NaN }));
+        Assert.Throws<InvalidDataException>(() => Bind(d, Placed(d) with { WorldX = 16300 }));
+        Assert.Throws<ArgumentOutOfRangeException>(() => Bind(d with { WaveRules = [w with { SpawnCount = 21 }] }));
+        Assert.Throws<ArgumentOutOfRangeException>(() => Bind(d with { WaveRules = [w with { IntervalSeconds = 5 }] }));
     }
 
     [Fact]
-    public void ResourceRegenerationPlanner_ExportRegeneratedNature_ProducesValidAdditions()
+    public void Session_sync_is_validated_before_mutation_and_uses_complete_instance_id()
     {
-        int dim = 8;
-        var planner = new ResourceRegenerationPlanner(dim, tileWorldSize: 64f, seed: 99);
-        planner.InitializeFromMap(new[] { (2.5f * 64f, 2.5f * 64f, "LanGerTanne01") });
-
-        var mockTemplate = (LevelObjectTemplate)RuntimeHelpers.GetUninitializedObject(typeof(LevelObjectTemplate));
-        var additions = planner.ExportRegeneratedNature(species => mockTemplate);
-
-        Assert.Single(additions);
-        var item = additions[0];
-        Assert.Equal("LanGerTanne01", item.Name);
-        Assert.Same(mockTemplate, item.Template);
-        Assert.True(item.X > 0 && item.Z > 0);
-    }
-
-    [Fact]
-    public void WildLairScenarioEventBinder_GeneratesSpawnAndDestructionEvents()
-    {
-        var lairDef = NeutralLairCatalog.Default.GetById("LAIR_WOLF_DEN_SMALL")!;
-        var coreSpawnId = Guid.NewGuid();
-        var lair = new PlacedNeutralLair(
-            InstanceId: Guid.NewGuid(),
-            DefinitionId: lairDef.Id,
-            WorldX: 4000f,
-            WorldY: 150f,
-            WorldZ: 6000f,
-            Team: 7,
-            CoreStructureSpawnId: coreSpawnId);
-
-        var events = WildLairScenarioEventBinder.GenerateEventsForLair(lair, lairDef, playerTeam: 0);
-
-        Assert.NotEmpty(events);
-
-        // 1. 週期刷怪事件
-        var spawnEvent = Assert.Single(events, e => e.Repeat);
-        Assert.Contains(WildLairScenarioEventBinder.LairEventPrefix, spawnEvent.Name);
-        Assert.Equal(lairDef.WaveRules[0].IntervalSeconds, spawnEvent.DelaySeconds);
-        Assert.True(spawnEvent.Repeat);
-        Assert.Single(spawnEvent.Conditions);
-        Assert.Equal(ScenarioConditionKind.ObjectExists, spawnEvent.Conditions[0].Kind);
-        Assert.Equal(coreSpawnId, spawnEvent.Conditions[0].TargetId);
-
-        var spawnAction = Assert.Single(spawnEvent.Actions);
-        Assert.Equal(ScenarioActionKind.SpawnUnit, spawnAction.Kind);
-        Assert.Equal("GER_INF01", spawnAction.Alias);
-        Assert.Equal(7, spawnAction.Team);
-
-        // 2. 巢穴殲滅獎勵事件
-        var destroyEvent = Assert.Single(events, e => !e.Repeat && e.Conditions.Count > 0);
-        Assert.Equal(ScenarioConditionKind.ObjectDeadOrRemoved, destroyEvent.Conditions[0].Kind);
-        Assert.Equal(coreSpawnId, destroyEvent.Conditions[0].TargetId);
-        Assert.Equal(ScenarioActionKind.Message, destroyEvent.Actions[0].Kind);
-
-        // 3. 敵對外交鎖定
-        var diploEvent = Assert.Single(events, e => e.DelaySeconds == 0 && e.Conditions.Count == 0);
-        Assert.Equal(ScenarioActionKind.Diplomacy, diploEvent.Actions[0].Kind);
-        Assert.Equal(7, diploEvent.Actions[0].Team);
-        Assert.Equal(0, diploEvent.Actions[0].OtherTeam);
-        Assert.True(diploEvent.Actions[0].Hostile);
-    }
-
-    [Fact]
-    public void WildLairScenarioEventBinder_SyncAndRemoveSessionEvents_LeavesNoOrphans()
-    {
-        var lairDef = NeutralLairCatalog.Default.GetById("LAIR_BARBARIAN_RAIDER_CAMP")!;
-        var coreSpawnId = Guid.NewGuid();
-        var lair = new PlacedNeutralLair(
-            InstanceId: Guid.NewGuid(),
-            DefinitionId: lairDef.Id,
-            WorldX: 5000f,
-            WorldY: 200f,
-            WorldZ: 5000f,
-            Team: 7,
-            CoreStructureSpawnId: coreSpawnId);
-
+        var d = Blueprint();
+        var one = Placed(d, Guid.Parse("12345678-0000-0000-0000-000000000001"));
+        var two = Placed(d, Guid.Parse("12345678-0000-0000-0000-000000000002"));
         var session = new ScenarioEventSession();
-        // 預先加入既有玩家事件
-        session.Add(new ScenarioEvent("PLAYER_VICTORY_CHECK", 10, Repeat: false)
-        {
-            Actions = [new ScenarioAction(ScenarioActionKind.Victory)]
-        });
+        session.Add(new("PLAYER", 10) { Actions = [new(ScenarioActionKind.Message, Text: "Hello")] });
+        WildLairScenarioEventBinder.SyncLairEvents(session, one, d, aliases: Aliases);
+        WildLairScenarioEventBinder.SyncLairEvents(session, two, d, aliases: Aliases);
+        WildLairScenarioEventBinder.SyncLairEvents(session, one, d, aliases: Aliases);
+        Assert.Equal(3, session.Count);
+        var before = session.Capture().Select(e => e.Name).ToArray();
+        Assert.Throws<NotSupportedException>(() => WildLairScenarioEventBinder.SyncLairEvents(session, one,
+            d with { Loot = new(Wood: 1) }, aliases: Aliases));
+        Assert.Equal(before, session.Capture().Select(e => e.Name));
+        Assert.Empty(WildLairScenarioEventBinder.ValidateLairBindings(session.Capture(), [one, two]));
+        Assert.Equal(1, WildLairScenarioEventBinder.RemoveLairEvents(session, one.InstanceId));
+        Assert.Equal(2, session.Count);
+        Assert.Single(WildLairScenarioEventBinder.ValidateLairBindings(session.Capture(), []));
+    }
 
-        // 同步巢穴事件
-        WildLairScenarioEventBinder.SyncLairEvents(session, lair, lairDef, playerTeam: 0);
-        Assert.True(session.Count > 1);
+    [Fact]
+    public void Capacity_failure_preserves_existing_events()
+    {
+        var d = Blueprint(); var l = Placed(d); var session = new ScenarioEventSession();
+        for (int i = 0; i < 256; i++) session.Add(new($"PLAYER_{i}") { Actions = [new(ScenarioActionKind.Message, Text: "Hello")] });
+        Assert.Throws<InvalidOperationException>(() => WildLairScenarioEventBinder.SyncLairEvents(session, l, d, aliases: Aliases));
+        Assert.Equal(256, session.Count);
+        Assert.All(session.Capture(), e => Assert.StartsWith("PLAYER_", e.Name));
+    }
 
-        // 驗證完整性
-        var validationErrors = WildLairScenarioEventBinder.ValidateLairBindings(session.Capture(), [lair]);
-        Assert.Empty(validationErrors);
+    [Theory]
+    [InlineData("LanGerNad00_Tanne_gross")]
+    [InlineData("LanBriLau00_Laubbaum_gross")]
+    [InlineData("LanGerSte00_1Stein")]
+    [InlineData("LanItaWei00_Weizenfeld")]
+    [InlineData("BauGerMin00_Mine")]
+    [InlineData("BauGerGol00_Goldschmiede")]
+    public void Real_resource_requests_are_explicit_and_timed_game_regeneration_is_gated(string name)
+    {
+        var planner = new ResourceRegenerationPlanner();
+        var request = planner.PlanReplacement(name, 4000, 6000, 120);
+        Assert.Equal(8, request.Team); Assert.Equal(120, request.DelaySeconds);
+        Assert.Throws<NotSupportedException>(() => WildLairScenarioEventBinder.GenerateEventsForResource(request));
+    }
 
-        // 移除該巢穴
-        int removed = WildLairScenarioEventBinder.RemoveLairEvents(session, lair.InstanceId);
-        Assert.True(removed >= 2);
-
-        // 原有玩家事件必須保留
-        Assert.Single(session.Capture());
-        Assert.Equal("PLAYER_VICTORY_CHECK", session.Capture()[0].Name);
+    [Fact]
+    public void Resource_planner_rejects_guessed_names_and_requires_real_editor_template()
+    {
+        var p = new ResourceRegenerationPlanner();
+        Assert.Throws<ArgumentException>(() => p.PlanReplacement("LanGerTanne01", 1, 1, 60));
+        Assert.Throws<ArgumentOutOfRangeException>(() => p.PlanReplacement("LanGerNad00_Tanne_gross", float.PositiveInfinity, 1, 60));
+        var r = p.PlanReplacement("LanGerNad00_Tanne_gross", 4000, 6000, 60);
+        Assert.Throws<InvalidOperationException>(() => p.CreateEditorAddition(r, _ => null));
+        var template = (LevelObjectTemplate)RuntimeHelpers.GetUninitializedObject(typeof(LevelObjectTemplate));
+        Assert.Throws<InvalidOperationException>(() => p.CreateEditorAddition(r, _ => template));
+        var stone = p.PlanReplacement("LanGerSte00_1Stein", 4000, 6000, 60);
+        var addition = p.CreateEditorAddition(stone, name => name == stone.NameDef ? template : null, 150);
+        Assert.Equal(stone.NameDef, addition.Name); Assert.Equal(4000, addition.X);
+        Assert.Equal(6000, addition.Z); Assert.Equal(150, addition.Y);
+        var mine = p.PlanReplacement("BauGerMin00_Mine", 1, 1, 60);
+        Assert.Throws<NotSupportedException>(() => p.CreateEditorAddition(mine, _ => template));
     }
 }
