@@ -41,7 +41,7 @@ public sealed partial class MapEditorSaveTransactionTests
             var plateau = new List<TerrainSampleChange>();
             for (int z = 26 * step; z <= 32 * step; z++)
                 for (int x = 36 * step; x <= 42 * step; x++)
-                    plateau.Add(new TerrainSampleChange(z * size + x, layers.Heights[z * size + x], (byte)Math.Min(255, layers.Heights[z * size + x] + 45)));
+                    plateau.Add(new TerrainSampleChange(z * size + x, layers.Heights[z * size + x], (byte)Math.Min(255, layers.Heights[z * size + x] + 110)));
             layers.ApplySampleChanges(plateau); layers.CommitStroke();
             form.ApplyCliffTool(new Rectangle(34, 24, 11, 11));
             report["cliff"] = Status();
