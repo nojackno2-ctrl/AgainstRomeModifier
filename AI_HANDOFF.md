@@ -1,5 +1,12 @@
 # AI Handoff - Live Project Memory
 
+## 接手先讀（2026-10-08 Claude，UI 接線進度）
+
+- 已接入 UI 並有宿主測試（HEAD 最新 5 個提交）：模組匯出、對戰基地一鍵生成、河流／懸崖矩形工具、事件節點圖（事件分頁）、NavMesh 連通性＋預算分析（地圖檢查分頁，僅警告不阻擋存檔）、生態植被矩形散播（區域工具「矩形生態植被散播」，獨立 Undo）、天候預設選單（工具列「天候」，沿用既有 boden.ini 存檔交易，水位不變）。
+- 驗證：Release build 0 錯誤；dotnet test：Modules 534、Host 699 通過，22 略過，0 失敗。
+- 尚未接 UI：本地化簡報工作台、環境音效區、運鏡導演、城牆自動連接、侵蝕雕刻、巨集控制台（EditorConsoleControl 僅有控制項）、野外巢穴、視覺差異檢視、運鏡。
+- 遊戲內驗收仍未完成（見下節）。雲端 AI（Codex/Antigravity）額度已用完；使用者指示可改用本地 AI（mcp__local_ai__delegate_local，無檔案存取，需完整貼上下文，輸出須複核）。
+
 ## 遊戲內驗收嘗試（2026-10-08 Claude，使用者已口頭授權測試）
 
 - 備份 `MAPS\ENDL_005` 至 `%TEMP%\ArmGameBackup_20261008_acceptance`（55 檔，hashes.csv）；安裝候選 `empty-authored`（ENDL_008）後以 computer-use 啟動遊戲。
