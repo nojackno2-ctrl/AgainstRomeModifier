@@ -46,6 +46,7 @@ internal sealed class TerrainBlendEditSession
     }
 
     public IReadOnlyList<string> CurrentTextures => _currentTextures;
+    public string GetTexture(int x, int y) => _currentTextures[TextureIndex(x, y)];
     public IReadOnlyList<int> UnresolvedTileIndices { get; }
     public IReadOnlyList<NativeTerrainCornerConflict> InitialCornerConflicts { get; }
     public bool CanUndo => _undo.Count > 0 || _pendingCorners.Count > 0 || _pendingTextures.Count > 0;
@@ -187,6 +188,68 @@ internal sealed class TerrainBlendEditSession
         foreach (RoadTilePlacement tile in plan.Tiles)
             if (StampTexture(tile.X, tile.Y, tile.Texture) is { } change) changes.Add(change);
         return new(true, changes, []);
+    }
+
+    /// <summary>
+    /// 繪製單段連續河流水系筆畫（包含河床水面選片、兩側 ErdeFlussR 河岸過渡圖塊與高度場落差自動微調）。
+    /// 若遇未支援圖塊或規劃失敗，自動撤銷並還原整筆待提交變更。
+    /// </summary>
+    public TerrainRiverPaintResult PaintRiverPath(
+        IReadOnlyList<(int X, int Y)> path,
+        RiverTileCatalog catalog,
+        RiverPlannerOptions? options = null,
+        TerrainHeightEditSession? heightSession = null)
+    {
+        options ??= new RiverPlannerOptions();
+        IReadOnlyList<byte>? heights = heightSession?.Heights;
+        int vertexSize = heightSession?.VertexSize ?? 0;
+
+        RiverStrokePlan plan = RiverFlowPlanner.Plan(
+            _map.TileDimension,
+            _currentTextures,
+            heights,
+            vertexSize,
+            path,
+            catalog,
+            options);
+
+        if (!plan.Succeeded)
+        {
+            var rollback = CancelStroke();
+            heightSession?.CancelStroke();
+            return new TerrainRiverPaintResult(false, rollback, [], plan.Warnings, plan.Unsupported);
+        }
+
+        var textureChanges = new List<TerrainTextureChange>();
+
+        // 1. 套用河道水面圖塊
+        foreach (var tile in plan.WaterTiles)
+        {
+            if (StampTexture(tile.X, tile.Y, tile.Texture) is { } change)
+            {
+                textureChanges.Add(change);
+            }
+        }
+
+        // 2. 套用兩側河岸過渡圖塊
+        foreach (var bank in plan.BankTiles)
+        {
+            if (StampTexture(bank.X, bank.Y, bank.Texture) is { } change)
+            {
+                textureChanges.Add(change);
+            }
+        }
+
+        // 3. 套用高度場調整
+        var heightChanges = new List<TerrainSampleChange>();
+        if (heightSession is not null && plan.HeightAdjustments.Count > 0)
+        {
+            var adjustments = plan.HeightAdjustments.Select(a => (a.Index, a.After)).ToArray();
+            var applied = heightSession.ApplyHeightAdjustments(adjustments);
+            heightChanges.AddRange(applied);
+        }
+
+        return new TerrainRiverPaintResult(true, textureChanges, heightChanges, plan.Warnings, []);
     }
 
     public bool CommitStroke()

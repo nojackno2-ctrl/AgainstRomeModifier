@@ -135,4 +135,121 @@ public static class MapDiagnostics
     }
 
     private static bool ValidPoint(float x, float z) => float.IsFinite(x) && float.IsFinite(z) && x is >= 0 and <= 16383 && z is >= 0 and <= 16383;
+
+    /// <summary>
+    /// 執行進階 NavMesh 連通性、道路間隙與部隊方陣通道評估，產生結構化分析報告與修復處方。
+    /// </summary>
+    public static AgainstRomeMapEditor.Modules.Pathfinding.NavMeshAnalysisResult AnalyzeNavMesh(
+        MapCheckSnapshot map,
+        IReadOnlyList<string>? textures = null,
+        int minIsolatedSize = 1)
+    {
+        ArgumentNullException.ThrowIfNull(map);
+        if (map.Collision is null || map.CollisionSize <= 0 || map.Collision.Count != (long)map.CollisionSize * map.CollisionSize)
+            return AgainstRomeMapEditor.Modules.Pathfinding.NavMeshAnalysisResult.Empty;
+
+        var grid = new AgainstRomeMapEditor.Modules.Pathfinding.NavMeshPassabilityGrid(
+            map.CollisionSize,
+            map.Collision,
+            map.HeightSize,
+            map.Heights,
+            map.HeightStep,
+            map.WaterLevel);
+
+        var primarySeeds = map.Objects
+            .Where(o => o.Spawn.Team == 0 && (o.Spawn.Count > 0 || o.IsBuilding))
+            .Where(o => ValidPoint(o.Spawn.X, o.Spawn.Z))
+            .Select(o => grid.ToCoordinate(grid.WorldToTile(o.Spawn.X, o.Spawn.Z).X, grid.WorldToTile(o.Spawn.X, o.Spawn.Z).Z))
+            .ToList();
+
+        var interestPoints = map.Objects
+            .Where(o => ValidPoint(o.Spawn.X, o.Spawn.Z))
+            .Select(o => grid.ToCoordinate(grid.WorldToTile(o.Spawn.X, o.Spawn.Z).X, grid.WorldToTile(o.Spawn.X, o.Spawn.Z).Z))
+            .ToList();
+
+        var isolated = AgainstRomeMapEditor.Modules.Pathfinding.NavMeshConnectivityAnalyzer.Analyze(
+            grid, primarySeeds, interestPoints, minIsolatedSize);
+
+        var gaps = textures is not null && textures.Count == (long)grid.Size * grid.Size
+            ? AgainstRomeMapEditor.Modules.Pathfinding.RoadGapDetector.DetectGaps(grid.Size, textures, grid)
+            : [];
+
+        var repairs = new List<AgainstRomeMapEditor.Modules.Pathfinding.NavMeshRepairAction>();
+        repairs.AddRange(AgainstRomeMapEditor.Modules.Pathfinding.RoadPathHealer.CreateRepairActions(gaps));
+
+        foreach (var region in isolated.Where(r => r.RecommendedBridgePoint is not null))
+        {
+            if (AgainstRomeMapEditor.Modules.Pathfinding.RoadPathHealer.CreateBridgeAction(region) is { } bridge)
+                repairs.Add(bridge);
+        }
+
+        var trips = new List<(AgainstRomeMapEditor.Modules.Pathfinding.NavMeshCoordinate, AgainstRomeMapEditor.Modules.Pathfinding.NavMeshCoordinate, int)>();
+        var squads = map.Objects.Where(o => o.Spawn.Count > 1 && ValidPoint(o.Spawn.X, o.Spawn.Z)).ToArray();
+        var enemyOrTargets = map.Objects.Where(o => o.Spawn.Team != 0 && ValidPoint(o.Spawn.X, o.Spawn.Z)).ToArray();
+
+        foreach (var squad in squads)
+        {
+            var start = grid.ToCoordinate(grid.WorldToTile(squad.Spawn.X, squad.Spawn.Z).X, grid.WorldToTile(squad.Spawn.X, squad.Spawn.Z).Z);
+            foreach (var target in enemyOrTargets.Take(3))
+            {
+                var end = grid.ToCoordinate(grid.WorldToTile(target.Spawn.X, target.Spawn.Z).X, grid.WorldToTile(target.Spawn.X, target.Spawn.Z).Z);
+                trips.Add((start, end, squad.Spawn.Count));
+            }
+        }
+
+        var chokes = AgainstRomeMapEditor.Modules.Pathfinding.FormationWidthValidator.EvaluateCorridors(grid, trips);
+        if (chokes.Count == 0 && squads.Length > 0)
+        {
+            chokes = AgainstRomeMapEditor.Modules.Pathfinding.FormationWidthValidator.DetectTopologicalChokePoints(grid, squads.Max(s => s.Spawn.Count));
+        }
+
+        return new AgainstRomeMapEditor.Modules.Pathfinding.NavMeshAnalysisResult(isolated, gaps, chokes, repairs);
+    }
+
+    /// <summary>
+    /// 將 NavMesh 分析報告轉為標準 MapIssue 項目，供地圖檢查面板顯示並支援座標定位。
+    /// </summary>
+    public static IReadOnlyList<MapIssue> ConvertToIssues(AgainstRomeMapEditor.Modules.Pathfinding.NavMeshAnalysisResult navResult)
+    {
+        ArgumentNullException.ThrowIfNull(navResult);
+        var issues = new List<MapIssue>();
+
+        foreach (var region in navResult.IsolatedRegions)
+        {
+            issues.Add(new MapIssue(
+                MapIssueSeverity.Warning,
+                "isolated-land",
+                $"發現孤立無法通達的陸地區域（共 {region.TileCount} 格），部隊無法前往。" +
+                (region.ContainsTroopOrBuilding ? " 區域內含有物件或建築！" : ""),
+                $"Isolated land region detected ({region.TileCount} tiles); troops cannot reach this area." +
+                (region.ContainsTroopOrBuilding ? " Area contains placed objects or buildings!" : ""),
+                WorldX: region.Centroid.WorldX,
+                WorldZ: region.Centroid.WorldZ));
+        }
+
+        foreach (var gap in navResult.RoadGaps)
+        {
+            var mid = gap.GapTiles.Count > 0 ? gap.GapTiles[0] : gap.Start;
+            issues.Add(new MapIssue(
+                MapIssueSeverity.Warning,
+                "road-gap",
+                $"偵測到道路中斷（間距 {gap.GapDistance} 格，{gap.Style} 風格），建議補齊圖塊「{gap.SuggestedTexture}」。",
+                $"Road gap detected ({gap.GapDistance} tiles, {gap.Style} style); recommend placing '{gap.SuggestedTexture}'.",
+                WorldX: mid.WorldX,
+                WorldZ: mid.WorldZ));
+        }
+
+        foreach (var choke in navResult.FormationChokePoints)
+        {
+            issues.Add(new MapIssue(
+                MapIssueSeverity.Warning,
+                "formation-bottleneck",
+                $"關鍵通道淨寬僅 {choke.MeasuredClearanceTiles} 格（約 {choke.MeasuredWidthUnits:F0} 單位），無法容納 {choke.BlockedTroopCount} 人方陣通行（需 {choke.RequiredClearanceTiles} 格，安全上限 {choke.MaxSafeUnitCount} 人）。",
+                $"Choke point clearance is only {choke.MeasuredClearanceTiles} tiles (~{choke.MeasuredWidthUnits:F0} units); cannot fit {choke.BlockedTroopCount}-man formation (requires {choke.RequiredClearanceTiles} tiles, safe max {choke.MaxSafeUnitCount}).",
+                WorldX: choke.Location.WorldX,
+                WorldZ: choke.Location.WorldZ));
+        }
+
+        return issues;
+    }
 }

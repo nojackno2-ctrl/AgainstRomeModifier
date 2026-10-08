@@ -181,6 +181,61 @@ internal sealed class TerrainHeightEditSession
         return changes;
     }
 
+    /// <summary>放棄本次尚未提交的待提交筆畫（包含頂點高度與通行區域變更），恢復至筆畫開始前狀態。</summary>
+    public IReadOnlyList<TerrainSampleChange> CancelStroke()
+    {
+        if (_pendingHeights.Count == 0 && _pendingCollision.Count == 0) return Array.Empty<TerrainSampleChange>();
+        var rollback = new List<TerrainSampleChange>();
+        foreach (var change in _pendingHeights.Values)
+        {
+            _heights[change.Index] = change.Before;
+            rollback.Add(change);
+        }
+        foreach (var change in _pendingCollision.Values)
+        {
+            if (_collision is not null) _collision[change.Index] = change.Before;
+        }
+        _pendingHeights.Clear();
+        _pendingCollision.Clear();
+        return rollback;
+    }
+
+    /// <summary>套用特定頂點之高度微調（如河流河床下挖），納入待提交筆畫。</summary>
+    public IReadOnlyList<TerrainSampleChange> ApplyHeightAdjustments(IReadOnlyCollection<(int Index, byte TargetHeight)> targets)
+    {
+        ArgumentNullException.ThrowIfNull(targets);
+        var changes = new List<TerrainSampleChange>();
+        foreach (var (index, target) in targets)
+        {
+            if (index < 0 || index >= _heights.Length) continue;
+            byte before = _heights[index];
+            if (before == target) continue;
+            _heights[index] = target;
+            Track(_pendingHeights, index, before, target);
+            changes.Add(new TerrainSampleChange(index, before, target));
+        }
+        if (changes.Count > 0) _redo.Clear();
+        return changes;
+    }
+
+    /// <summary>套用批次頂點高度樣本變更，納入待提交筆畫。</summary>
+    public IReadOnlyList<TerrainSampleChange> ApplySampleChanges(IReadOnlyCollection<TerrainSampleChange> sampleChanges)
+    {
+        ArgumentNullException.ThrowIfNull(sampleChanges);
+        var applied = new List<TerrainSampleChange>();
+        foreach (var change in sampleChanges)
+        {
+            if (change.Index < 0 || change.Index >= _heights.Length) continue;
+            byte before = _heights[change.Index];
+            if (before == change.After) continue;
+            _heights[change.Index] = change.After;
+            Track(_pendingHeights, change.Index, before, change.After);
+            applied.Add(new TerrainSampleChange(change.Index, before, change.After));
+        }
+        if (applied.Count > 0) _redo.Clear();
+        return applied;
+    }
+
     public bool CommitStroke()
     {
         if (_pendingHeights.Count == 0 && _pendingCollision.Count == 0) return false;
