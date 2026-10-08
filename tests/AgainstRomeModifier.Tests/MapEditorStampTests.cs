@@ -228,4 +228,132 @@ public sealed partial class MapEditorSaveTransactionTests
             Assert.Equal("weg1", GetField<BodenTexturesDocument>(reopened, "_texturesDocument").GetTexture(5, 6));
         });
     }
+
+    [Fact]
+    public void Auto_road_stroke_plans_straights_and_turns_in_views_and_undoes_as_one_step()
+    {
+        string map = CreateFixture();
+        AddStampTextures("H_WEG1", "V_WEG1", "weg1");
+        RunInSta(() =>
+        {
+            using var form = new MapEditorForm(_root, new GameMapInfo("ENDL_005", map, true, "AutoRoad", "Test"));
+            _ = form.Handle;
+            Invoke(form, "LoadSelectedMap");
+            GetField<CheckBox>(form, "_stampMode").Checked = true;
+            GetField<CheckBox>(form, "_autoRoad").Checked = true;
+            var document = GetField<BodenTexturesDocument>(form, "_texturesDocument");
+            string[] baseline = document.Textures.ToArray();
+
+            // 繪製 L 型路徑：(5, 6) -> (6, 6) -> (7, 6) [轉角] -> (7, 7) -> (7, 8)
+            Invoke(form, "PaintTexture", new TexturePaintEventArgs(5, 6, "", ""));
+            Invoke(form, "PaintTexture", new TexturePaintEventArgs(6, 6, "", ""));
+            Invoke(form, "PaintTexture", new TexturePaintEventArgs(7, 6, "", ""));
+            Invoke(form, "PaintTexture", new TexturePaintEventArgs(7, 7, "", ""));
+            Invoke(form, "PaintTexture", new TexturePaintEventArgs(7, 8, "", ""));
+
+            Invoke(form, "CommitStroke");
+
+            // 驗證材質自動挑選：東西向 H_WEG1、轉角 weg1、南北向 V_WEG1
+            Assert.Equal("H_WEG1", document.GetTexture(5, 6));
+            Assert.Equal("H_WEG1", document.GetTexture(6, 6));
+            Assert.Equal("weg1", document.GetTexture(7, 6));
+            Assert.Equal("V_WEG1", document.GetTexture(7, 7));
+            Assert.Equal("V_WEG1", document.GetTexture(7, 8));
+
+            string[] roadState = document.Textures.ToArray();
+
+            // 單步 Undo 還原
+            Invoke(form, "Undo");
+            Assert.Equal(baseline, document.Textures);
+
+            // Redo 恢復
+            Invoke(form, "Redo");
+            Assert.Equal(roadState, document.Textures);
+
+            // 儲存與重載驗證
+            Assert.True(form.TrySaveMap(false, out Exception? error), error?.ToString());
+            Invoke(form, "LoadSelectedMap");
+            Assert.Equal(roadState, GetField<BodenTexturesDocument>(form, "_texturesDocument").Textures);
+        });
+    }
+
+    [Fact]
+    public void Auto_road_escape_cancels_pending_stroke()
+    {
+        string map = CreateFixture();
+        AddStampTextures("H_WEG1", "V_WEG1", "weg1");
+        RunInSta(() =>
+        {
+            using var form = new MapEditorForm(_root, new GameMapInfo("ENDL_005", map, true, "AutoRoadEscape", "Test"));
+            _ = form.Handle;
+            Invoke(form, "LoadSelectedMap");
+            GetField<CheckBox>(form, "_stampMode").Checked = true;
+            GetField<CheckBox>(form, "_autoRoad").Checked = true;
+            var document = GetField<BodenTexturesDocument>(form, "_texturesDocument");
+            string[] baseline = document.Textures.ToArray();
+
+            Invoke(form, "PaintTexture", new TexturePaintEventArgs(5, 6, "", ""));
+            Invoke(form, "PaintTexture", new TexturePaintEventArgs(6, 6, "", ""));
+            Invoke(form, "PaintTexture", new TexturePaintEventArgs(7, 6, "", ""));
+
+            // 按下 Escape 鍵取消未提交的筆畫
+            object[] args = [new Message(), Keys.Escape];
+            bool handled = (bool)typeof(MapEditorForm)
+                .GetMethod("ProcessCmdKey", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .Invoke(form, args)!;
+
+            Assert.True(handled);
+            Assert.Equal(baseline, document.Textures);
+
+            // 放開滑鼠觸發 CommitStroke，不應殘留任何道路
+            Invoke(form, "CommitStroke");
+            Assert.Equal(baseline, document.Textures);
+        });
+    }
+
+    [Fact]
+    public void Stamp_palette_filters_by_nature_region_when_map_has_no_L_tiles()
+    {
+        string map = CreateFixture();
+        AddStampTextures("weg1", "L2B02T5A", "L3B02T5A", "L4B02T5A");
+        RunInSta(() =>
+        {
+            using var form = new MapEditorForm(_root, new GameMapInfo("ENDL_005", map, true, "StampNatureRegion", "Test"));
+            _ = form.Handle;
+            Invoke(form, "LoadSelectedMap");
+
+            // 模擬地圖上有日耳曼地景物件（LanGerNad18 -> "Ger" -> 關聯 L2 系列）
+            const float pos = 100f;
+            SetField(form, "_levelObjects", new LevelWorldObject[]
+            {
+                new(0, 101, 8, 1, pos, 0, pos, 0, false)
+            });
+            SetField(form, "_objdefNames", new Dictionary<int, string>
+            {
+                [101] = "LanGerNad18"
+            });
+
+            GetField<CheckBox>(form, "_stampMode").Checked = true;
+            Invoke(form, "LoadPalette", "");
+
+            var palette = GetField<ListBox>(form, "_palette");
+            string[] Keys() => palette.Items.Cast<object>().Select(item => (string)item.GetType().GetProperty("Key")!.GetValue(item)!).ToArray();
+
+            // 非 L 系列（道路）依然保留
+            Assert.Contains("tile:weg1", Keys());
+            // 日耳曼 L2 系列被自動包含
+            Assert.Contains("tile:L2B02T5A", Keys());
+            // 匈人 L3 與不列顛 L4 系列被過濾
+            Assert.DoesNotContain("tile:L3B02T5A", Keys());
+            Assert.DoesNotContain("tile:L4B02T5A", Keys());
+
+            // 勾選顯示其他地區圖塊後，全部顯示
+            GetField<CheckBox>(form, "_stampOtherRegions").Checked = true;
+            Assert.Contains("tile:L3B02T5A", Keys());
+            Assert.Contains("tile:L4B02T5A", Keys());
+        });
+    }
+
+    private static void SetField(MapEditorForm form, string name, object? value)
+        => typeof(MapEditorForm).GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(form, value);
 }

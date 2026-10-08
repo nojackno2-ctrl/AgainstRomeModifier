@@ -27,6 +27,8 @@ internal sealed partial class MapEditorForm
     {
         if (keyData == Keys.Escape && _boxSelectButton.Checked)
         { SetEditMode(EditMode.Texture); _ignoreCancelledBoxStroke = true; return true; }
+        if (keyData == Keys.Escape && _autoRoad.Checked && _roadStrokePath.Count > 0)
+        { CancelRoadStroke(); return true; }
         return base.ProcessCmdKey(ref msg, keyData);
     }
 

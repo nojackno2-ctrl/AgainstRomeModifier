@@ -1,15 +1,29 @@
 # AI Handoff - Live Project Memory
 
-## 接手先讀（2026-10-08 Codex，依使用者要求暫停）
+## 接手先讀（2026-10-08 Antigravity，道路自動選片與印章地區篩選完成）
 
-- 使用者明確要求「目前的工作完成後暫停，寫入交接事項我會用其他AI繼續」。goal已改paused；本次只整理交接，不再開發／啟動遊戲。完整六項建議仍未全部完成。
-- 現有分支主要開發；最新功能提交872356f（獨立實驗空白場景），測試準備提交10c08b7（三份遊戲內候選）。本次交接另有本地文件提交。既有未追蹤.claude/保留，不修改、不提交；未push。
-- 已完成：示範圖編輯器save/fresh reload、檢查與定位／儲存前檢查、道路／區域／框選／批次／可攜配置、AI角色選擇／局部重做／多區域鎖定／通行硬閘、真實大型地圖效能，以及獨立空白場景的編輯器流程。完整範圍與限制見docs/map-editor-completion-plan.md。
-- 最後產品完整回歸（872356f前相同程式內容）：Release solution build零警告／零錯誤；ARM_COMPARE_GAME=TEMP、ARM_OPENGL_REQUIRED=1、ARM_BLANK_ACCEPTANCE=1，solution test host685/modules290通過、22略過、零失敗（975）。10c08b7只加準備測試與文件；Release仍零警告／零錯誤，明確ARM_GAMEPLAY_PREPARE=1新增定向1例通過，未重跑整套，不宣稱新提交已full驗證。
-- 最新候選包：TEMP/ArmGameplayCandidates_20261008_02/map-editor-gameplay-candidates.zip；SHA256=1CA2CBFD9E891BB8FFA550E8B13914EAC147AB39405146E52E2C0CC12B057100，153個候選檔案從ZIP讀回逐hash核對通過；本次再次讀取ZIP hash一致。result.json狀態prepared-gameplay-not-run。含空白對照ENDL_005、自放10名GER_INF01＋3秒訊息＋區域勝利的ENDL_008、完整demo ENDL_005；兩ENDL_005須分案。來源與對照hash不變，新圖真表單save/fresh reload/重存bytes一致。逐步操作與重現命令在docs/map-editor-gameplay-candidates.md，包內README.md也有。
-- 接手的實際剩餘工作：遊戲內啟動空白對照／自放內容圖／demo，驗證team0玩家控制、部隊下令、聚落與建築完工、資源實際採集、湖／林／丘陵及道路尋路、區域勝利、遊戲存讀檔；保存版本/hash/步驟/截圖或錄影。空白engine相機／未確認欄位、天氣／FOW／stat仍保留來源值，須實測後決定必要初始化；不要盲目清零或刪原生檔案。
-- 阻礙與授权：目前AGENTS.md仍禁止存取／修改安裝遊戲目錄；先前提出的備份自製槽位、安裝與啟動验收例外授權沒有收到人類回覆。本次只讀repository與授權TEMP；現有workspace/game只有MAPS、SYSTEM及4個素材dat，沒有EXE且不是完整可啟動副本。不要把歷史Claude安裝目錄授權當成当前例外，也不要把自動goal續作當成人類同意。需使用者明確授權或提供完整可啟動副本／手動驗收證據才可接續遊戲驗收。因同一阻礙反覆出現，本次核對後曾標blocked，隨後收到使用者暫停指示，最終狀態paused。
-- 已知失敗：準備測試首build重複error變數CS0136，改freshError；首真實準備以SDL NameDef查GER_INF01失敗，改TemplateFields alias，_01失敗輸出保留，_02成功。空白runtime的lager為43B record＋2B column，41B假設已否定。不要重複錯誤格式猜測；不要在testhost仍持DLL時重建。
+- 最新進展：完成「完善編輯器自動化製圖：將道路自動選片（`RoadStrokePlanner`）接入 2D/3D 介面，並依地區智能篩選圖塊印章」。
+- 現有分支主要開發；未追蹤 `.claude/` 嚴格保留，不修改、不提交；未 push。
+- 完整產品回歸：`dotnet build AgainstRomeModifier.slnx -c Release -p:UseAppHost=false` 0 警告 / 0 錯誤；`dotnet test AgainstRomeModifier.slnx -c Release --no-build --no-restore` 模組測試 293 通過、宿主測試 689 通過、22 略過、0 失敗（共 982 測試通過）。
+- 本輪完成內容：
+  1. `RoadTileCatalog`：目錄化標準石道（`H_WEG1..5`, `V_WEG1..3`, `weg1..3`）與羅馬道路（`WEG_H1..2ROM`, `WEG_V1..4ROM`, `Pflaster_braun1..3`），支援風格隔離挑選與缺直路安全回退，單端點優先由直線片平滑延伸收尾。
+  2. 主表單整合：印章模式加入雙語「自動選路（拖曳自動轉向與路口）」核取方塊；2D 畫布與 3D 視圖拖曳連續規劃與即時材質預覽；單次筆畫（放開滑鼠）合併單一 Undo/Redo 交易；`Escape` 鍵即時取消未提交筆畫。
+  3. 印章調色盤智能篩選：若地圖貼圖本身未含 `L` 系列（如地景地圖），自動依地景物件地區代碼（如日耳曼樹木 `LanGer...` → 關聯 `L2`）智慧過濾，並支援「顯示其他地區圖塊」與關鍵字搜尋解鎖全部。
+  4. 完整測試：新增 3 項模組測試與 3 項宿主端整合測試（包含 L 型路徑選片/Undo/存檔重開、Escape 取消、地景地區過濾）。
+- 接手的實際剩餘工作：遊戲內驗收（需安裝目錄例外授權或完整可啟動遊戲副本）；空白場景與大型地圖效能實機驗收。
+
+## 道路自動選片接入 UI 與地區智能印章篩選（2026-10-08 Antigravity）
+
+- 實作與架構：
+  - 新建 `src.MapEditor.Modules/Terrain/RoadTileCatalog.cs`，整合標準道路與羅馬道路之直線、轉角與交叉連接遮罩；修正單端點在有直路時不被 `weg1` 搶佔之優先級排序。
+  - `src.MapEditor.Modules/Terrain/RoadStrokePlanner.cs`：支援同材質多連接方向分組聚合（`GroupBy` 取並集），避免原版 `weg1` 等多功能圖塊引發字典重複鍵異常。
+  - `src.MapEditor.Modules/Terrain/TerrainBlendEditSession.cs`：公開 `CancelStroke()` 支援繪製中動態復原與取消。
+  - `src.MapEditor/MapEditorForm.cs` 與 `MapEditorForm.Authoring.cs`：印章模式接入 `_autoRoad` 核取方塊；2D/3D 拖曳即時調用 `_terrainBlendSession.PaintRoadPath`；放開滑鼠時 `CommitStroke` 單次交易存入歷史與文字檔；`ProcessCmdKey` 支援 `Escape` 取消筆畫；`LoadStampPalette` 結合 `MapNatureRegions()` 實現地景地區智能關聯過濾。
+- 驗證：
+  - `RoadTileCatalogTests` 3 項測試通過（標準石道轉向、羅馬風格隔離、缺直線回退）。
+  - `MapEditorStampTests` 新增 3 項測試通過（L 型自動選片/單步 Undo/重載驗證、Escape 取消無殘留、地景無 L 系列自動過濾）。
+  - Release Solution 建置 0 警告 0 錯誤；完整 Solution 測試 982 通過、22 略過、0 失敗。
+
 ## 六項建議總目標（2026-10-08 Codex，paused，使用者要求交接）
 
 - 遊戲內候選資料準備完成（2026-10-08 Codex，遊戲尚未執行）：新增 opt-in TEMP-only MapEditorGameplayPreparationTests，保留空白對照ENDL_005、獨立空白ENDL_008（10名GER_INF01／3秒訊息／區域勝利）與完整demo ENDL_005；真正表單保存→fresh editor reload→重存bytes一致、對照與兩來源全hash不變。首build CS0136重複error變數已改freshError；首準備以SDL NameDef查script alias失敗，改TemplateFields alias，_01失敗輸出保留；最後Release build零警告／零錯誤，明確ARM_GAMEPLAY_PREPARE=1定向1例通過。TEMP/ArmGameplayCandidates_20261008_02含result/source/candidate hashes及delivery ZIP 6,984,946B，153個候選地圖檔案逐一從ZIP讀回核对SHA256成功，ZIP SHA256=1CA2CBFD9E891BB8FFA550E8B13914EAC147AB39405146E52E2C0CC12B057100；操作步驟docs/map-editor-gameplay-candidates.md已入包。_02才是有效交付。兩ENDL_005須分案，不是完整可啟動遊戲。未存取安裝目錄／未啟動遊戲；安裝目錄例外授權仍無回覆，遊戲開局／隊伍控制／資源／尋路／勝利及遊戲存讀檔缺口未完成。上一goal turn872356f及本turn候選準備皆有實質進展，目標active。

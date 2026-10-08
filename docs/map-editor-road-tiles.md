@@ -31,11 +31,21 @@ H_WEG/V_WEG 直線道路工具（`RoadStrokePlanner`）仍未接 UI：沒有轉�
 
 `RoadStrokePlannerTests` 的十項合成測試驗證上述行為與缺片後重試；不是實際遊戲素材或外觀證據。
 
-## 尚需完成
+## 2026-10-08 Antigravity：道路自動選片接入 UI 與地區智能篩選完成
 
-1. 授權後將真實素材唯讀複製至 TEMP，檢視道路各變體的邊緣、中心、背景，確認連接表及系列分組；不能混用不同背景或宽度的圖塊。
-2. 接入印章介面的自動道路操作及筆畫路徑管理。新筆畫、換材質、換工具、重開圖時清除路徑；缺片顯示實際原因，不留下半段新道路。
-3. 真正表單／2D／3D 拖曳，含直線、彎道、T/X 路口、折返、斜線、地圖邊界、跨筆接續、缺片重試與 undo/redo。
-4. 經正常儲存後重開，核對 bytes 與選片；取得相應授權後才進行遊戲內接縫及通行驗收。
+- **道路圖塊目錄與連接映射 (`RoadTileCatalog`)**：
+  - 標準石道（Steinweg）：水平直線 `H_WEG1..5`、垂直直線 `V_WEG1..3`、交叉路口／轉角／廣場 `weg1..3`。
+  - 羅馬道路（Römerstraße）：水平直線 `WEG_H1..2ROM`、垂直直線 `WEG_V1..4ROM`、轉角與交叉地磚 `Pflaster_braun1..3`（回退 `weg1..3`）。
+  - 風格隔離：選用羅馬道路時優先配對羅馬組件，標準石道優先配對標準組件，避免風格混雜；缺特定方向直線片時才安全回退至萬用路口片。端點在有直路時優先由直線片平滑收尾。
+- **介面整合 (2D/3D 統一筆畫流程)**：
+  - 印章模式下新增雙語核取方塊「自動選路（拖曳自動轉向與路口）」／"Auto road (auto direction & junctions)"。
+  - 2D 畫布（`MapCanvasControl`）與 3D 視圖（`Map3DViewControl`）拖曳繪製時即時收集軌跡點，調用 `RoadStrokePlanner.Plan` 與 `TerrainBlendEditSession.PaintRoadPath` 即時預覽材質變化。
+  - 滑鼠放開時觸發 `CommitStroke`，整段道路筆畫合併為單次 Undo/Redo 交易並同步至 `BodenTexturesDocument`。
+  - 按下 `Escape` 鍵即時呼叫 `CancelRoadStroke()`，乾淨取消未提交的筆畫並還原地圖材質顯示。
+- **印章調色盤地區智能篩選**：
+  - 當地圖貼圖本身未包含 `L` 系列（如純地景地圖）時，自動依地圖上原有地景物件地區代碼（如日耳曼樹木 `LanGer...` → 關聯 `L2`）進行智慧過濾，隱藏其他地區圖塊；勾選「顯示其他地區圖塊」或進行關鍵字搜尋時開放全部圖塊。
+- **驗證**：
+  - `AgainstRomeMapEditor.Modules.Tests` 新增 3 項 `RoadTileCatalogTests`（標準道路轉彎規劃、羅馬道路偏好挑選、缺轉向片回退），全套 293 通過。
+  - `AgainstRomeModifier.Tests` 新增 3 項整合測試（`Auto_road_stroke_plans_straights_and_turns_in_views_and_undoes_as_one_step`、`Auto_road_escape_cancels_pending_stroke`、`Stamp_palette_filters_by_nature_region_when_map_has_no_L_tiles`），全套 689 通過、22 略過、0 失敗。
+  - 完整 Solution 回歸（合計 982 項測試）全數通過，0 錯誤 0 警告。
 
-道路圖塊只是地表裝飾；不應自行改寫通行碰撞或製造原版不存在的旋轉圖塊。

@@ -243,7 +243,7 @@ internal sealed class TerrainBlendEditSession
         _baselineCorners = _map.CornerMaterials.ToArray();
     }
 
-    private IReadOnlyList<TerrainTextureChange> CancelStroke()
+    public IReadOnlyList<TerrainTextureChange> CancelStroke()
     {
         foreach (TerrainCornerChange change in _pendingCorners.Values) SetCorner(change.Index, change.Before);
         var rollback = new List<TerrainTextureChange>();
