@@ -95,6 +95,7 @@ internal sealed partial class MapEditorForm
     private void LocalizeMapDiagnostics(bool en)
     {
         if (_mapCheckTab is not null) _mapCheckTab.Text = en ? "Map Check" : "地圖檢查";
+        if (_consoleTab is not null) _consoleTab.Text = en ? "Console" : "控制台";
         _checkMap.Text = en ? "Check now" : "立即檢查";
         _locateMapIssue.Text = en ? "Locate" : "定位";
         _mapIssues.Columns[0].Text = en ? "Severity" : "程度";

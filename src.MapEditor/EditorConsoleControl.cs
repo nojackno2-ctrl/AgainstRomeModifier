@@ -38,6 +38,9 @@ public sealed class EditorConsoleControl : UserControl
 
     public event EventHandler<CommandResult>? CommandExecuted;
 
+    /// <summary>每次執行前由宿主刷新執行上下文（載入新地圖後各 Session 會是新實例）。</summary>
+    internal Action? BeforeExecute { get; set; }
+
     public EditorConsoleControl()
     {
         DoubleBuffered = true;
@@ -344,6 +347,7 @@ public sealed class EditorConsoleControl : UserControl
             return CommandResult.Fail("控制台未綁定執行環境。");
         }
 
+        BeforeExecute?.Invoke();
         SetBusyState(true, $"執行中: {line}...");
         AppendLog($"> {line}", LogLevel.Command);
 

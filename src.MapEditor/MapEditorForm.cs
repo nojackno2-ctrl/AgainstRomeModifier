@@ -302,6 +302,7 @@ internal sealed partial class MapEditorForm : Form
         _inspectorTabs.TabPages.Add(new TabPage("事件") { BackColor = WinFormsTheme.Surface }); _inspectorTabs.TabPages[^1].Controls.Add(BuildEventsPanel());
         _mapCheckTab = new TabPage("地圖檢查") { BackColor = WinFormsTheme.Surface };
         _inspectorTabs.TabPages.Add(_mapCheckTab); _mapCheckTab.Controls.Add(BuildMapCheckPanel());
+        AddConsoleTab();
 
         _canvasHost = new Panel { Dock = DockStyle.Fill, Padding = new Padding(10), BackColor = WinFormsTheme.Window };
         _canvasHost.Controls.Add(_canvas); _canvasHost.Controls.Add(_modeBanner);
