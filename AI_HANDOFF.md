@@ -642,3 +642,8 @@
 
 - 模組邊界：`docs/map-editor-modules.md`；使用指南：`docs/map-editor-user-guide.md`。
 - `docs/ai-handoff-history-2026-10-07.md` 保存之前全部記錄與本輪收尾前快照，含其他代理原文；舊 running、實機、暫停與版本敘述皆以本檔和Git新證據為準。
+## 子代理委派結果（2026-10-08 Claude 派 agy＋codex）
+
+- Codex：新增 `tests/AgainstRomeModifier.Tests/StampCategoryTests.cs`（26 案例，StampCategory 分類）；其回報完整 build/test 0 失敗（我先前自行跑：Modules 662、Host 723 通過）。
+- Agy 唯讀稽核（未驗證，僅建議）：音效／運鏡／目標圖／AI 戰役波次／野外巢穴模組皆未接 UI（實驗性、刻意未接線）；B3/BK/BR 與 L 系列↔4B 系列無原版過渡；懸崖碎石失敗已降為警告；PlacementBatchEditDialog、SettlementGeneratorDialog、EditorConsoleControl 鍵盤互動缺直接測試。
+- 建議下一步：補上述三個對話框／控制台測試；其餘待遊戲內驗證。
