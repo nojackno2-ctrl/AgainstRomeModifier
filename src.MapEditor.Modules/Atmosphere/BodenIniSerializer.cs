@@ -7,7 +7,7 @@ namespace AgainstRomeMapEditor.Modules.Atmosphere;
 
 /// <summary>
 /// 雙向序列化與解析原生 boden.ini 參數。
-/// 確保 100% 與原版遊戲引擎相容，並嚴格遵循無損回寫原則（保留註解、未知區段與原始格式）。
+/// UpdateDocument 保留既有註解、未知區段與原始格式；ParseText/GenerateDefaultIni 僅供值解析與新檔產生，並非無損文字往返。
 /// </summary>
 public static class BodenIniSerializer
 {
@@ -145,11 +145,11 @@ public static class BodenIniSerializer
         AppendKey("CausticTexturName", data.CausticTexturName);
         AppendKey("SkyTexturName", data.SkyTexturName);
         AppendKey("RainDropsOnWater", data.RainDropsOnWater ? "1" : "0", "0/1");
-        AppendKey("WaterWarpShift", data.WaterWarpShift, "18(低)..10(高), 14=default");
+        AppendKey("WaterWarpShift", data.WaterWarpShift, "0=關閉, 18(低)..10(高), 註解預設14、樣本12");
         AppendKey("WaterBumpAmplitude", data.WaterBumpAmplitude, "0..1024, 256=default");
         AppendKey("WaterBumpFrequency", data.WaterBumpFrequency, "1..16, 4=default");
-        AppendKey("FlashPropability", data.FlashPropability, "每秒閃電數 0..1000");
-        AppendKey("WaterColor", data.WaterColor, "水色 Hex (bgr), default=0xffbf7f");
+        AppendKey("FlashPropability", data.FlashPropability, "最大降雨強度時閃電參數 0..1000，實際單位待確認");
+        AppendKey("WaterColor", data.WaterColor, "水色 Hex (bgr), 註解預設0xffbf7f、樣本0xffdfbf");
         AppendKey("DayStartTime", data.DayStartTime, "白天開始(時)");
         AppendKey("DayEndTime", data.DayEndTime, "夜晚開始(時)");
 
@@ -188,7 +188,7 @@ public static class BodenIniSerializer
     }
 
     /// <summary>
-    /// 檢驗 boden.ini 參數值是否位於遊戲引擎安全合規範圍內。
+    /// 檢驗原檔註解支持的編輯範圍及基本數值格式；不宣稱已驗證引擎的完整安全範圍。
     /// </summary>
     public static bool Validate(BodenIniData data, out IReadOnlyList<string> validationErrors)
     {
@@ -201,23 +201,44 @@ public static class BodenIniSerializer
         if (data.WaterBumpFrequency is < 1 or > 16)
             errors.Add($"WaterBumpFrequency 數值 ({data.WaterBumpFrequency}) 超出安全範圍 1..16。");
 
-        if (data.WaterWarpShift is < 8 or > 20)
-            errors.Add($"WaterWarpShift 數值 ({data.WaterWarpShift}) 超出安全範圍 8..20 (標準為 10..18)。");
+        if (data.WaterWarpShift != 0 && data.WaterWarpShift is < 10 or > 18)
+            errors.Add($"WaterWarpShift 數值 ({data.WaterWarpShift}) 必須為 0 (關閉) 或 10..18。");
 
         if (data.FlashPropability is < 0 or > 1000)
             errors.Add($"FlashPropability 數值 ({data.FlashPropability}) 超出安全範圍 0..1000。");
 
-        if (data.DayStartTime is < 0f or > 24f)
+        if (!float.IsFinite(data.DayStartTime) || data.DayStartTime is < 0f or > 24f)
             errors.Add($"DayStartTime 數值 ({data.DayStartTime}) 必須介於 0..24 之間。");
 
-        if (data.DayEndTime is < 0f or > 24f)
+        if (!float.IsFinite(data.DayEndTime) || data.DayEndTime is < 0f or > 24f)
             errors.Add($"DayEndTime 數值 ({data.DayEndTime}) 必須介於 0..24 之間。");
 
-        if (data.Heightmapstep <= 0f)
-            errors.Add($"Heightmapstep 數值 ({data.Heightmapstep}) 必須大於 0。");
+        if (!float.IsFinite(data.Heightmapstep) || data.Heightmapstep < 1f)
+            errors.Add($"Heightmapstep 數值 ({data.Heightmapstep}) 必須為有限數值且至少為 1。");
 
         if (data.ShadowMeshMode is not (0 or 1))
             errors.Add($"ShadowMeshMode 數值 ({data.ShadowMeshMode}) 僅支援 0 或 1。");
+
+        if (!float.IsFinite(data.Waterlevel) || data.Waterlevel < 0f)
+            errors.Add($"Waterlevel 數值 ({data.Waterlevel}) 必須為有限的非負數值。");
+
+        if (data.ShadowMeshAccuracy is < 0 or > 7)
+            errors.Add("ShadowMeshAccuracy 必須介於 0..7。");
+        if (data.ShadowMeshXZsize is < 8192 or > 16384)
+            errors.Add("ShadowMeshXZsize 必須介於 8192..16384。");
+        if (data.ShadowMeshYsize is < 4000 or > 16000)
+            errors.Add("ShadowMeshYsize 必須介於 4000..16000。");
+        if (data.Skydensspread is not (4f or 8f or 16f or 32f or 64f or 128f or 256f or 512f or 1024f))
+            errors.Add("Skydensspread 必須為 4..1024 中的二次方值。");
+        if (data.Skydensaccuracy is < 0 or > 2)
+            errors.Add("Skydensaccuracy 必須介於 0..2。");
+        if (data.MoveListAmplitude is < 0 or > 127)
+            errors.Add("MoveListAmplitude 必須介於 0..127。");
+        if (data.HandleSkyDensMap is not (0 or 1)) errors.Add("HandleSkyDensMap 必須為 0 或 1。");
+        if (data.HandleVisibleMap is not (0 or 1)) errors.Add("HandleVisibleMap 必須為 0 或 1。");
+        if (data.HandleClipRectMap is not (0 or 1)) errors.Add("HandleClipRectMap 必須為 0 或 1。");
+        if (data.HandleShadowMeshes is not (0 or 1)) errors.Add("HandleShadowMeshes 必須為 0 或 1。");
+        if (data.ShowCollisionMesh is not (0 or 1)) errors.Add("ShowCollisionMesh 必須為 0 或 1。");
 
         string cleanHex = data.WaterColor.Trim().Replace("0x", "", StringComparison.OrdinalIgnoreCase);
         if (cleanHex.Length != 6 || !uint.TryParse(cleanHex, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out _))
@@ -274,41 +295,41 @@ public static class BodenIniSerializer
 
     private static void ApplyValue(BodenIniData data, string key, string value)
     {
-        switch (key)
+        switch (key.ToUpperInvariant())
         {
-            case "Waterlevel" when float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out float wl): data.Waterlevel = wl; break;
-            case "Heightmapstep" when float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out float hms): data.Heightmapstep = hms; break;
-            case "WaterBumpAmplitude" when int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int wba): data.WaterBumpAmplitude = wba; break;
-            case "WaterBumpFrequency" when int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int wbf): data.WaterBumpFrequency = wbf; break;
-            case "WaterWarpShift" when int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int wws): data.WaterWarpShift = wws; break;
-            case "RainDropsOnWater": data.RainDropsOnWater = value == "1"; break;
-            case "WaterColor": data.WaterColor = value; break;
-            case "WasserTexturName": data.WasserTexturName = value; break;
-            case "CausticTexturName": data.CausticTexturName = value; break;
-            case "SkyTexturName": data.SkyTexturName = value; break;
-            case "FlashPropability" when int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int fp): data.FlashPropability = fp; break;
-            case "FlashObjectDefaultIndex" when int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int fo): data.FlashObjectDefaultIndex = fo; break;
-            case "FlashObjectDefault2Index" when int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int fo2): data.FlashObjectDefault2Index = fo2; break;
-            case "FlashLightDefaultIndex" when int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int fl): data.FlashLightDefaultIndex = fl; break;
-            case "SnowAlrIndex" when int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int sa): data.SnowAlrIndex = sa; break;
-            case "SnowShadowIndex" when int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int ss): data.SnowShadowIndex = ss; break;
-            case "SnowShadowSize" when int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int sss): data.SnowShadowSize = sss; break;
-            case "HagelShadowIndex" when int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int hs): data.HagelShadowIndex = hs; break;
-            case "HagelShadowSize" when int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int hss): data.HagelShadowSize = hss; break;
-            case "MoveListAmplitude" when int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int mla): data.MoveListAmplitude = mla; break;
-            case "DayStartTime" when float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out float dst): data.DayStartTime = dst; break;
-            case "DayEndTime" when float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out float det): data.DayEndTime = det; break;
-            case "ShadowMeshMode" when int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int smm): data.ShadowMeshMode = smm; break;
-            case "ShadowMeshAccuracy" when int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int sma): data.ShadowMeshAccuracy = sma; break;
-            case "ShadowMeshXZsize" when int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int smxz): data.ShadowMeshXZsize = smxz; break;
-            case "ShadowMeshYsize" when int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int smy): data.ShadowMeshYsize = smy; break;
-            case "Skydensspread" when float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out float sds): data.Skydensspread = sds; break;
-            case "Skydensaccuracy" when int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int sda): data.Skydensaccuracy = sda; break;
-            case "HandleSkyDensMap" when int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int hsd): data.HandleSkyDensMap = hsd; break;
-            case "HandleVisibleMap" when int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int hvm): data.HandleVisibleMap = hvm; break;
-            case "HandleClipRectMap" when int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int hcr): data.HandleClipRectMap = hcr; break;
-            case "HandleShadowMeshes" when int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int hsm): data.HandleShadowMeshes = hsm; break;
-            case "ShowCollisionMesh" when int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int scm): data.ShowCollisionMesh = scm; break;
+            case "WATERLEVEL" when float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out float wl): data.Waterlevel = wl; break;
+            case "HEIGHTMAPSTEP" when float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out float hms): data.Heightmapstep = hms; break;
+            case "WATERBUMPAMPLITUDE" when int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int wba): data.WaterBumpAmplitude = wba; break;
+            case "WATERBUMPFREQUENCY" when int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int wbf): data.WaterBumpFrequency = wbf; break;
+            case "WATERWARPSHIFT" when int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int wws): data.WaterWarpShift = wws; break;
+            case "RAINDROPSONWATER": data.RainDropsOnWater = value == "1"; break;
+            case "WATERCOLOR": data.WaterColor = value; break;
+            case "WASSERTEXTURNAME": data.WasserTexturName = value; break;
+            case "CAUSTICTEXTURNAME": data.CausticTexturName = value; break;
+            case "SKYTEXTURNAME": data.SkyTexturName = value; break;
+            case "FLASHPROPABILITY" when int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int fp): data.FlashPropability = fp; break;
+            case "FLASHOBJECTDEFAULTINDEX" when int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int fo): data.FlashObjectDefaultIndex = fo; break;
+            case "FLASHOBJECTDEFAULT2INDEX" when int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int fo2): data.FlashObjectDefault2Index = fo2; break;
+            case "FLASHLIGHTDEFAULTINDEX" when int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int fl): data.FlashLightDefaultIndex = fl; break;
+            case "SNOWALRINDEX" when int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int sa): data.SnowAlrIndex = sa; break;
+            case "SNOWSHADOWINDEX" when int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int ss): data.SnowShadowIndex = ss; break;
+            case "SNOWSHADOWSIZE" when int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int sss): data.SnowShadowSize = sss; break;
+            case "HAGELSHADOWINDEX" when int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int hs): data.HagelShadowIndex = hs; break;
+            case "HAGELSHADOWSIZE" when int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int hss): data.HagelShadowSize = hss; break;
+            case "MOVELISTAMPLITUDE" when int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int mla): data.MoveListAmplitude = mla; break;
+            case "DAYSTARTTIME" when float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out float dst): data.DayStartTime = dst; break;
+            case "DAYENDTIME" when float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out float det): data.DayEndTime = det; break;
+            case "SHADOWMESHMODE" when int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int smm): data.ShadowMeshMode = smm; break;
+            case "SHADOWMESHACCURACY" when int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int sma): data.ShadowMeshAccuracy = sma; break;
+            case "SHADOWMESHXZSIZE" when int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int smxz): data.ShadowMeshXZsize = smxz; break;
+            case "SHADOWMESHYSIZE" when int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int smy): data.ShadowMeshYsize = smy; break;
+            case "SKYDENSSPREAD" when float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out float sds): data.Skydensspread = sds; break;
+            case "SKYDENSACCURACY" when int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int sda): data.Skydensaccuracy = sda; break;
+            case "HANDLESKYDENSMAP" when int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int hsd): data.HandleSkyDensMap = hsd; break;
+            case "HANDLEVISIBLEMAP" when int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int hvm): data.HandleVisibleMap = hvm; break;
+            case "HANDLECLIPRECTMAP" when int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int hcr): data.HandleClipRectMap = hcr; break;
+            case "HANDLESHADOWMESHES" when int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int hsm): data.HandleShadowMeshes = hsm; break;
+            case "SHOWCOLLISIONMESH" when int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int scm): data.ShowCollisionMesh = scm; break;
         }
     }
 
