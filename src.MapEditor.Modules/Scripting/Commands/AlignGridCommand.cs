@@ -63,13 +63,10 @@ internal sealed class AlignGridCommand : IEditorCommand
                 Math.Abs(newY - current.WorldY) > 0.01f)
             {
                 context.PlacementSession.Edit(idx, current.Team, newX, newY, newZ, current.Angle, current.UnitCount);
+                // Each Edit creates its own placement history entry.
+                context.RecordStep(() => context.PlacementSession.Undo(), () => context.PlacementSession.Redo());
                 alignedCount++;
             }
-        }
-
-        if (alignedCount > 0)
-        {
-            context.RecordStep(() => context.PlacementSession.Undo(), () => context.PlacementSession.Redo());
         }
 
         return CommandResult.Ok($"成功對齊 {alignedCount} 個物件至 {step:F0} 單位網格。", alignedCount);

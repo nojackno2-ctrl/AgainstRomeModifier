@@ -122,6 +122,17 @@ public sealed class MacroDomainCommandsTests
         runner.Undo();
         Assert.Equal(105f, placementSession[0].WorldX);
         Assert.Equal(215f, placementSession[0].WorldZ);
+        Assert.Equal(301f, placementSession[1].WorldX);
+        Assert.Equal(410f, placementSession[1].WorldZ);
+        Assert.Equal(2, placementSession.Count);
+        Assert.False(runner.CanUndo);
+
+        Assert.True(runner.CanRedo);
+        runner.Redo();
+        Assert.Equal(96f, placementSession[0].WorldX);
+        Assert.Equal(224f, placementSession[0].WorldZ);
+        Assert.Equal(288f, placementSession[1].WorldX);
+        Assert.Equal(416f, placementSession[1].WorldZ);
     }
 
     [Fact]

@@ -93,6 +93,9 @@ public static class RoadGapDetector
                 int dz = Math.Abs(e2.Z - e1.Z);
                 int manhattan = dx + dz;
 
+                string tex2 = textures[e2.Z * dimension + e2.X];
+                if (!SupportsDirection(tex1, dx, dz) || !SupportsDirection(tex2, dx, dz)) continue;
+
                 // 間隙為 1 格（manhattan == 2 或直線 dx==2 / dz==2）或 2 格（manhattan == 3 或 dx==3 / dz==3）
                 if (manhattan > maxGapDistance + 1 || (dx > maxGapDistance + 1) || (dz > maxGapDistance + 1)) continue;
 
@@ -117,7 +120,6 @@ public static class RoadGapDetector
                 string key = string.Join(";", gapPoints.OrderBy(p => p.Z).ThenBy(p => p.X).Select(p => $"{p.X},{p.Z}"));
                 if (!seenGaps.Add(key)) continue;
 
-                string tex2 = textures[e2.Z * dimension + e2.X];
                 string style = style1 == "Roman" || DetectStyle(tex2) == "Roman" ? "Roman"
                              : style1 == "Dirt" || DetectStyle(tex2) == "Dirt" ? "Dirt" : "Standard";
 
@@ -140,6 +142,18 @@ public static class RoadGapDetector
         }
 
         return results;
+    }
+
+    private static bool SupportsDirection(string texture, int dx, int dz)
+    {
+        // 明確標示 H/V 的直線圖塊只能沿自身方向延伸。
+        if (texture.StartsWith("H_WEG", StringComparison.OrdinalIgnoreCase) ||
+            texture.StartsWith("WEG_H", StringComparison.OrdinalIgnoreCase))
+            return dz == 0;
+        if (texture.StartsWith("V_WEG", StringComparison.OrdinalIgnoreCase) ||
+            texture.StartsWith("WEG_V", StringComparison.OrdinalIgnoreCase))
+            return dx == 0;
+        return true;
     }
 
     private static List<(int X, int Z)> GetGapTilesBetween(

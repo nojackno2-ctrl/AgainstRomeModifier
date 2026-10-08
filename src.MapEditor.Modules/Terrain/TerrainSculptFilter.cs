@@ -113,7 +113,7 @@ internal static class TerrainSculptFilter
     /// <param name="radius">筆刷半徑（小於等於 0 則套用全圖）</param>
     /// <param name="stepInterval">每階階梯高差間隔（如 16~32）</param>
     /// <param name="flatness">階面平坦度權重 (0.0=無變化, 1.0=完全平整台階)</param>
-    /// <param name="edgeSharpness">台階邊緣陡峭程度 (1.0=自然 smoothstep, 2.0+=急劇陡崖)</param>
+    /// <param name="edgeSharpness">台階邊緣陡峭程度 (1.0=中央平坦的三次曲線, 2.0+=冪次曲線)</param>
     /// <param name="strength">整體套用強度 (0.0~1.0)</param>
     /// <param name="baseOffset">階梯起算基準高度偏移</param>
     public static void Terrace(
@@ -155,19 +155,20 @@ internal static class TerrainSculptFilter
             float stepIndex = MathF.Floor(normalized);
             float frac = normalized - stepIndex; // [0, 1)
 
-            // S 型邊界曲線：階面中段平坦，兩端邊緣快速銜接
+            // 中央斜率趨近 0，兩端邊緣快速銜接；一般 smoothstep 會產生相反效果。
             float shapedFrac;
             if (edgeSharpness <= 1.0f)
             {
-                shapedFrac = frac * frac * (3f - 2f * frac);
+                float centered = 2f * frac - 1f;
+                shapedFrac = 0.5f + 0.5f * centered * centered * centered;
             }
             else
             {
                 // 高階多項式塑形
                 float p = edgeSharpness;
                 shapedFrac = frac < 0.5f
-                    ? 0.5f * MathF.Pow(2f * frac, p)
-                    : 1f - 0.5f * MathF.Pow(2f * (1f - frac), p);
+                    ? 0.5f - 0.5f * MathF.Pow(1f - 2f * frac, p)
+                    : 0.5f + 0.5f * MathF.Pow(2f * frac - 1f, p);
             }
 
             // 混合階梯平坦化效果

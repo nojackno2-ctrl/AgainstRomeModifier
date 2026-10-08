@@ -135,6 +135,8 @@ public static class FloraScatterEngine
         int maxY = Math.Clamp(parameters.MaxTileY, 0, context.Dimension - 1);
 
         float waterWorldY = context.WaterLevel * context.HeightMapStep;
+        // 缺少高度圖時，零高度僅供位置回傳；不能據此推定深水或水岸生境。
+        bool hasHeights = context.Heights is { Count: > 0 };
 
         for (int tz = minY; tz <= maxY; tz++)
         {
@@ -164,7 +166,7 @@ public static class FloraScatterEngine
 
                 // 4. 水位檢查：過深水域（水深超過 2.5 步長單位）禁止陸生植被生長
                 float waterDepth = waterWorldY - tileWorldY;
-                if (waterDepth > 2.5f * context.HeightMapStep)
+                if (hasHeights && waterDepth > 2.5f * context.HeightMapStep)
                 {
                     continue;
                 }
@@ -173,7 +175,7 @@ public static class FloraScatterEngine
                 VegetationLayer chosenLayer;
 
                 // 生境 A: 水岸濱水帶 (Riparian)
-                if (parameters.EnableRiparianFlora &&
+                if (hasHeights && parameters.EnableRiparianFlora &&
                     MathF.Abs(tileWorldY - waterWorldY) <= context.Profile.RiparianElevationDelta * context.HeightMapStep &&
                     roster.HasLayer(VegetationLayer.Riparian))
                 {

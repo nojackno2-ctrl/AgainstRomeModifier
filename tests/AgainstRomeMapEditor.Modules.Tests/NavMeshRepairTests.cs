@@ -41,6 +41,51 @@ public sealed class NavMeshRepairTests
         Assert.True(region.Centroid.TileX >= 9);
         Assert.NotNull(region.RecommendedBridgePoint);
         Assert.Equal(1, region.BridgeDistance); // wall thickness is 1 tile
+        Assert.Equal(8, region.RecommendedBridgePoint.Value.TileX);
+    }
+
+    [Theory]
+    [InlineData(2)]
+    [InlineData(12)]
+    [InlineData(13)]
+    public void ConnectivityAnalyzer_Counts_wall_thickness_and_respects_search_limit(int thickness)
+    {
+        const int size = 32;
+        var collision = new byte[size * size];
+        for (int z = 0; z < size; z++)
+        for (int x = 8; x < 8 + thickness; x++)
+            collision[z * size + x] = 255;
+        var grid = new NavMeshPassabilityGrid(size, collision);
+
+        var region = Assert.Single(NavMeshConnectivityAnalyzer.Analyze(grid, [grid.ToCoordinate(2, 2)]));
+
+        if (thickness <= 12)
+        {
+            Assert.Equal(thickness, region.BridgeDistance);
+            Assert.NotNull(region.RecommendedBridgePoint);
+            var bridge = region.RecommendedBridgePoint.Value;
+            Assert.True(grid.IsBlockedByCollision(bridge.TileX, bridge.TileZ));
+            Assert.InRange(bridge.TileX, 8 + (thickness - 1) / 2, 8 + thickness / 2);
+        }
+        else
+        {
+            Assert.Null(region.RecommendedBridgePoint);
+            Assert.Equal(0, region.BridgeDistance);
+        }
+    }
+
+    [Theory]
+    [InlineData("H_WEG1", "WEG_V1ROM", false)]
+    [InlineData("V_WEG1", "WEG_H1ROM", true)]
+    public void RoadGapDetector_Does_not_join_incompatible_straight_road_directions(
+        string startTexture, string endTexture, bool vertical)
+    {
+        const int size = 16;
+        var textures = Enumerable.Repeat("Gras1", size * size).ToArray();
+        textures[4 * size + 4] = startTexture;
+        textures[(vertical ? 7 : 4) * size + (vertical ? 4 : 7)] = endTexture;
+
+        Assert.Empty(RoadGapDetector.DetectGaps(size, textures));
     }
 
     [Fact]

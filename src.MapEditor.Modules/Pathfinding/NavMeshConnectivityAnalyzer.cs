@@ -153,6 +153,7 @@ public static class NavMeshConnectivityAnalyzer
 
         int size = grid.Size;
         var dist = new Dictionary<int, int>();
+        var previous = new Dictionary<int, int>();
         var queue = new Queue<int>();
 
         // 將孤立區域的邊界格子作為多源 BFS 起點
@@ -182,7 +183,6 @@ public static class NavMeshConnectivityAnalyzer
         {
             int current = queue.Dequeue();
             int curDist = dist[current];
-            if (curDist >= maxSearchDepth) continue;
 
             int cx = current % size, cz = current / size;
             foreach (var (dx, dz) in Directions)
@@ -195,14 +195,19 @@ public static class NavMeshConnectivityAnalyzer
                 if (primaryComponents.Contains(targetComp))
                 {
                     // 找到連接主要通達區的穿透點
-                    int bridgeTileX = (current % size + nx) / 2;
-                    int bridgeTileZ = (current / size + nz) / 2;
-                    return (grid.ToCoordinate(bridgeTileX, bridgeTileZ), curDist + 1);
+                    // 距離只計算阻擋格，不包含主要通達區的終點格。
+                    // 沿實際 BFS 路徑找中點，避免建議落在路徑之外。
+                    int midpoint = current;
+                    for (int step = 0; step < (curDist - 1) / 2; step++)
+                        midpoint = previous[midpoint];
+                    return (grid.ToCoordinate(midpoint % size, midpoint / size), curDist);
                 }
 
-                if (!dist.ContainsKey(neighbor))
+                // 僅穿越阻擋格；其他通行分量不是需要挖通的障礙。
+                if (curDist < maxSearchDepth && targetComp == -2 && !dist.ContainsKey(neighbor))
                 {
                     dist[neighbor] = curDist + 1;
+                    previous[neighbor] = current;
                     queue.Enqueue(neighbor);
                 }
             }

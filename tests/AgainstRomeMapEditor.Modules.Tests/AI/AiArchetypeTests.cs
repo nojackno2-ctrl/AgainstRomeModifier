@@ -113,7 +113,7 @@ public class AiArchetypeTests
 
         var plan = new CampaignMissionPlan(
             Title: "Siege of Aquileia",
-            Briefing: "守護我方城鎮中心，抵擋北方遊牧匈人的四波進攻！",
+            Briefing: "Protect our town center and withstand the Hun attacks!",
             Objectives:
             [
                 new CampaignObjective(Guid.NewGuid(), CampaignObjectiveType.DefendTarget, "保護城鎮中心", "城鎮中心不可被毀", TargetId: targetBuildingId),
@@ -125,14 +125,14 @@ public class AiArchetypeTests
                 new WaveAttackDefinition(
                     WaveIndex: 1,
                     TriggerDelaySeconds: 60,
-                    Announcement: "敵軍先鋒部隊出現！",
+                    Announcement: "Enemy vanguard approaching!",
                     SpawnX: 2000f,
                     SpawnZ: 2000f,
                     Squads: [new WaveSquadDefinition("HUN_CAV01", Count: 10, Team: 2)]),
                 new WaveAttackDefinition(
                     WaveIndex: 2,
                     TriggerDelaySeconds: 180,
-                    Announcement: "敵軍第二波大軍逼近！",
+                    Announcement: "The second enemy wave is approaching!",
                     SpawnX: 2100f,
                     SpawnZ: 2100f,
                     Squads: [new WaveSquadDefinition("HUN_ARC01", Count: 12, Team: 2)])
@@ -147,7 +147,7 @@ public class AiArchetypeTests
                     SpawnX: 500f,
                     SpawnZ: 500f,
                     Squads: [new WaveSquadDefinition("ROM_INF01", Count: 15, Team: 0)],
-                    NotificationText: "羅馬軍團援軍已抵達西南側！")
+                    NotificationText: "Roman reinforcements arrived in the southwest!")
             ],
             FactionProfiles:
             [
@@ -170,7 +170,7 @@ public class AiArchetypeTests
 
         var result = CampaignMissionCompiler.Compile(plan, null, KnownTestAliases, scenario);
 
-        Assert.True(result.Success);
+        Assert.True(result.Success, string.Join(Environment.NewLine, result.Diagnostics));
         Assert.NotNull(result.CompiledEvents);
         Assert.NotEmpty(result.CompiledEvents);
 
@@ -203,6 +203,32 @@ public class AiArchetypeTests
         Assert.Contains(surviveWin.Actions, a => a.Kind == ScenarioActionKind.Victory);
     }
 
+    [Theory]
+    [InlineData(CampaignObjectiveType.ReachArea)]
+    [InlineData(CampaignObjectiveType.WaveSurvival)]
+    public void CampaignMissionCompiler_GeneratedMessages_UseNativeSupportedText(CampaignObjectiveType type)
+    {
+        var targetId = Guid.NewGuid();
+        var plan = new CampaignMissionPlan("Campaign", "",
+            [new CampaignObjective(Guid.NewGuid(), type, "目標", "", TargetId: targetId, RequiredSeconds: 60)],
+            [], [], []);
+        var result = CampaignMissionCompiler.Compile(plan, null, KnownTestAliases);
+        Assert.True(result.Success, string.Join(Environment.NewLine, result.Diagnostics));
+        var compiledEvent = Assert.Single(result.CompiledEvents);
+        Assert.Contains(compiledEvent.Actions, a => a.Kind == ScenarioActionKind.Message);
+        Assert.Contains(compiledEvent.Actions, a => a.Kind == ScenarioActionKind.Victory);
+        ScenarioEventValidator.Validate(result.CompiledEvents, KnownTestAliases);
+    }
+
+    [Fact]
+    public void CampaignMissionCompiler_UnsupportedBriefing_ReturnsFailure()
+    {
+        var plan = new CampaignMissionPlan("Campaign", "中文簡報", [], [], [], []);
+        var result = CampaignMissionCompiler.Compile(plan, null, KnownTestAliases);
+        Assert.False(result.Success);
+        Assert.Contains(result.Diagnostics, d => d.StartsWith("[Error]", StringComparison.Ordinal));
+        Assert.Equal(plan.Briefing, Assert.Single(result.CompiledEvents).Actions[0].Text);
+    }
     [Fact]
     public void FactionAiSession_TracksDirtyAndMaintainsBaseline()
     {

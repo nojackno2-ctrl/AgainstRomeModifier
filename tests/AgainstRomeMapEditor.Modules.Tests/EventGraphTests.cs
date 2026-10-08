@@ -153,7 +153,7 @@ public sealed class EventGraphTests
                 ],
                 Actions =
                 [
-                    new ScenarioAction(ScenarioActionKind.Message, Text: "敵方先遣隊已全滅！日耳曼聚落決定加入我方盟約。"),
+                    new ScenarioAction(ScenarioActionKind.Message, Text: "Enemy vanguard eliminated! The Germanic village joins our alliance."),
                     new ScenarioAction(ScenarioActionKind.Diplomacy, Team: 0, OtherTeam: 2, Hostile: false),
                     new ScenarioAction(ScenarioActionKind.SpawnUnit, Alias: "GER_INF01", Team: 0, X: 4200, Z: 5100, Count: 10),
                     new ScenarioAction(ScenarioActionKind.Victory)
@@ -187,10 +187,10 @@ public sealed class EventGraphTests
         graph.AddNode(msg1);
         graph.AddNode(msg2);
 
-        graph.Connect(trigger.ExecOut, msg1.ExecIn, out _, out _);
-        graph.Connect(msg1.ExecOut!, msg2.ExecIn, out _, out _);
-        // 刻意建立環路：msg2 -> msg1
-        graph.Connect(msg2.ExecOut!, msg1.ExecIn, out _, out _);
+        // Single-input ports require this cycle to be separate from the trigger.
+        Assert.True(graph.Connect(msg1.ExecOut!, msg2.ExecIn, out _, out _));
+        Assert.DoesNotContain(EventGraphValidator.Validate(graph), d => d.Code == "EXECUTION_CYCLE_DETECTED");
+        Assert.True(graph.Connect(msg2.ExecOut!, msg1.ExecIn, out _, out _));
 
         var diagnostics = EventGraphValidator.Validate(graph);
         Assert.Contains(diagnostics, d => d.Code == "EXECUTION_CYCLE_DETECTED" && d.Severity == GraphDiagnosticSeverity.Error);

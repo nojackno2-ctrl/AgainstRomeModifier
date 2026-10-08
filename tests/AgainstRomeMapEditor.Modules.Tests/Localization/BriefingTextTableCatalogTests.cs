@@ -53,7 +53,7 @@ public sealed class BriefingTextTableCatalogTests
         Assert.Equal(expectedKey, key);
 
         Assert.True(BriefingTextTableCatalog.TryGetObjectiveIndex(key, out string parsedSlot, out int parsedIndex));
-        Assert.Equal("000", parsedSlot.PadLeft(3, '0'));
+        Assert.Equal(slot["ENDL_".Length..], parsedSlot);
         Assert.Equal(index, parsedIndex);
     }
 
@@ -71,7 +71,9 @@ public sealed class BriefingTextTableCatalogTests
             "    \"Line 2\";\r\n";
 
         var doc = PutScriptDocument.Parse(script);
-        Assert.Equal(6, doc.Nodes.Count);
+        // Two comments, a blank line, three variables, and the trailing newline.
+        Assert.Equal(7, doc.Nodes.Count);
+        Assert.IsType<PutWhitespaceNode>(doc.Nodes[^1]);
 
         Assert.Equal("Battle for Rome", doc.GetStringValue("briefing_titel_1"));
         Assert.Equal(3, doc.GetIntegerValue("briefing_video_nummmer"));

@@ -172,7 +172,7 @@ public static class ObjectiveRuleCatalog
         if (descriptor.SupportsTimeLimit && param.TimeLimitSeconds < 0)
             errors.Add("時限秒數不可為負數。");
 
-        if (definition.Kind == ObjectiveKind.Survival && param.HoldDurationSeconds <= 0)
+        if (definition.Kind == ObjectiveKind.Survival && definition.Category != ObjectiveCategory.FailureCriterion && param.HoldDurationSeconds <= 0)
             errors.Add("堅守陣地目標（Survival）必須指定大於 0 的堅守秒數。");
 
         if (definition.Kind == ObjectiveKind.CaptureArea && param.HoldDurationSeconds < 0)

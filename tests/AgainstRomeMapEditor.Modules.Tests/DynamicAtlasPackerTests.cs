@@ -60,12 +60,16 @@ public sealed class DynamicAtlasPackerTests
         Assert.True(packer.TryInsert(20, 20, out _, out _));
         int initialPlaced = packer.PlacedCount;
         int initialFree = packer.FreeRectanglesCount;
+        int initialWidth = packer.UsedWidth;
+        int initialHeight = packer.UsedHeight;
+        double initialEfficiency = packer.CalculateEfficiency(64, 64);
 
         // 開始事務：嘗試放置一組過大的動畫
         packer.BeginTransaction();
         Assert.True(packer.TryInsert(20, 20, out _, out _));
         Assert.True(packer.TryInsert(20, 20, out _, out _));
-        Assert.False(packer.TryInsert(40, 40, out _, out _)); // 超出剩餘容量
+        // 40x40 加上 gutter 恰好能放入剩餘的 42x42；43x43 才確實放不下。
+        Assert.False(packer.TryInsert(43, 43, out _, out _));
 
         // 執行回滾
         packer.RollbackTransaction();
@@ -73,6 +77,20 @@ public sealed class DynamicAtlasPackerTests
         // 狀態必須 100% 恢復至事務開始前
         Assert.Equal(initialPlaced, packer.PlacedCount);
         Assert.Equal(initialFree, packer.FreeRectanglesCount);
+        Assert.Equal(initialWidth, packer.UsedWidth);
+        Assert.Equal(initialHeight, packer.UsedHeight);
+        Assert.Equal(initialEfficiency, packer.CalculateEfficiency(64, 64));
+
+        // 後續配置也必須與未曾開始事務的 packer 一致。
+        var control = new DynamicAtlasPacker(maxSize: 64, gutter: 1);
+        Assert.True(control.TryInsert(20, 20, out _, out _));
+        foreach (var (width, height) in new[] { (40, 40), (20, 20), (20, 20), (1, 1) })
+        {
+            Assert.Equal(control.TryInsert(width, height, out var expectedRect, out var expectedUv),
+                packer.TryInsert(width, height, out var actualRect, out var actualUv));
+            Assert.Equal(expectedRect, actualRect);
+            Assert.Equal(expectedUv, actualUv);
+        }
     }
 
     [Fact]

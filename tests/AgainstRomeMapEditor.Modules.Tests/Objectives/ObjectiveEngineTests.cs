@@ -74,6 +74,18 @@ public sealed class ObjectiveEngineTests
 
     #endregion
 
+    [Theory]
+    [InlineData(ObjectiveCategory.Primary, 0, false)]
+    [InlineData(ObjectiveCategory.Primary, 1, true)]
+    [InlineData(ObjectiveCategory.FailureCriterion, 0, true)]
+    [InlineData(ObjectiveCategory.FailureCriterion, -1, false)]
+    public void Catalog_SurvivalDuration_RespectsFailureCriterion(
+        ObjectiveCategory category, int seconds, bool expectedValid)
+    {
+        var definition = ObjectiveRuleCatalog.CreateSurvival("Protect", "Protect target",
+            Guid.NewGuid(), seconds, category: category);
+        Assert.Equal(expectedValid, ObjectiveRuleCatalog.Validate(definition).IsValid);
+    }
     #region ObjectiveDependencyGraph Tests
 
     [Fact]

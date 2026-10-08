@@ -181,7 +181,7 @@ public static class CampaignMissionCompiler
                         ],
                         Actions =
                         [
-                            new ScenarioAction(ScenarioActionKind.Message, Text: $"防守失敗：{obj.Title} 遭到摧毀！"),
+                            new ScenarioAction(ScenarioActionKind.Message, Text: "Defense failed: the protected target was destroyed!"),
                             new ScenarioAction(ScenarioActionKind.Defeat)
                         ]
                     };
@@ -202,7 +202,7 @@ public static class CampaignMissionCompiler
                         ],
                         Actions =
                         [
-                            new ScenarioAction(ScenarioActionKind.Message, Text: $"目標達成：已成功摧毀 {obj.Title}！"),
+                            new ScenarioAction(ScenarioActionKind.Message, Text: "Objective achieved: the target was destroyed!"),
                             new ScenarioAction(ScenarioActionKind.Victory)
                         ]
                     };
@@ -219,7 +219,7 @@ public static class CampaignMissionCompiler
                     {
                         Actions =
                         [
-                            new ScenarioAction(ScenarioActionKind.Message, Text: $"防守成功：已堅守陣地 {obj.RequiredSeconds} 秒！"),
+                            new ScenarioAction(ScenarioActionKind.Message, Text: $"Defense successful: survived for {obj.RequiredSeconds} seconds!"),
                             new ScenarioAction(ScenarioActionKind.Victory)
                         ]
                     };
@@ -246,7 +246,7 @@ public static class CampaignMissionCompiler
                         ],
                         Actions =
                         [
-                            new ScenarioAction(ScenarioActionKind.Message, Text: $"任務完成：目標部隊已安全抵達指定區域！"),
+                            new ScenarioAction(ScenarioActionKind.Message, Text: "Mission complete: the target unit reached the designated area!"),
                             new ScenarioAction(ScenarioActionKind.Victory)
                         ]
                     };
@@ -265,7 +265,7 @@ public static class CampaignMissionCompiler
                     {
                         Actions =
                         [
-                            new ScenarioAction(ScenarioActionKind.Message, Text: "勝利！敵軍所有進攻波次已被全部擊退！"),
+                            new ScenarioAction(ScenarioActionKind.Message, Text: "Victory! All enemy attack waves have been repelled!"),
                             new ScenarioAction(ScenarioActionKind.Victory)
                         ]
                     };

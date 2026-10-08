@@ -69,8 +69,11 @@ public sealed class TerrainSculptErosionTests
         Assert.True(buffer[(int)cx, (int)cy] < 30f && buffer[(int)cx, (int)cy] > 0f);
     }
 
-    [Fact]
-    public void SculptFilter_Terrace_creates_stepped_flat_plateaus()
+    [Theory]
+    [InlineData(1.0f)]
+    [InlineData(2.0f)]
+    [InlineData(4.0f)]
+    public void SculptFilter_Terrace_creates_stepped_flat_plateaus(float edgeSharpness)
     {
         var buffer = new TerrainHeightWorkBuffer(TestSize);
         // 建立連續斜坡 0 ~ 80
@@ -81,13 +84,17 @@ public sealed class TerrainSculptErosionTests
         }
 
         // 套用全圖台階化，階梯間距 20
-        TerrainSculptFilter.Terrace(buffer, -1f, -1f, -1f, stepInterval: 20f, flatness: 0.95f, edgeSharpness: 2.0f);
+        TerrainSculptFilter.Terrace(buffer, -1f, -1f, -1f, stepInterval: 20f, flatness: 0.95f, edgeSharpness: edgeSharpness);
 
         // 驗證階梯中間區域斜率趨近於 0（形成平頂台地）
         // 例如原始高度 28~32 區間應被拉平收斂至該階中央
         float diff1 = MathF.Abs(buffer[11, 0] - buffer[12, 0]);
         float originalDiff = 2.5f;
         Assert.True(diff1 < originalDiff * 0.5f, "階面應被平坦化");
+        Assert.True(buffer[9, 0] - buffer[8, 0] > originalDiff, "階緣應比原始斜坡陡峭");
+        Assert.Equal(30f, buffer[12, 0]);
+        for (int x = 1; x < TestSize; x++)
+            Assert.True(buffer[x, 0] >= buffer[x - 1, 0], "階梯高度應保持單調");
     }
 
     [Fact]

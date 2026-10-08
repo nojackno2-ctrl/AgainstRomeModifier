@@ -51,7 +51,10 @@ $step = 10
         var report = runner.ExecuteScript(script, context, transactional: true);
 
         Assert.True(report.Success);
-        Assert.Equal(2, report.SucceededCommands);
+        // The variable assignment is also an executed statement.
+        Assert.Equal(3, report.TotalCommands);
+        Assert.Equal(3, report.SucceededCommands);
+        Assert.Equal(0, report.FailedCommands);
         Assert.False(report.WasRolledBack);
 
         // 頂點 (3,3) 原本 50，現在應為 60
@@ -63,6 +66,8 @@ $step = 10
         Assert.True(runner.CanUndo);
         var undone = runner.Undo();
         Assert.NotNull(undone);
+        Assert.Equal(2, undone.StepCount);
+        Assert.False(runner.CanUndo);
 
         Assert.Equal(50, heightSession.Heights[3 * 16 + 3]);
         Assert.Equal(50, heightSession.Heights[6 * 16 + 6]);

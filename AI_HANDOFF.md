@@ -1,5 +1,11 @@
 # AI Handoff - Live Project Memory
 
+## 接手先讀（2026-10-08 Claude，修復 15 項失敗測試）
+
+- 經 Codex 子代理修復並由主代理複驗：Release build 0 錯誤；`dotnet test AgainstRomeModifier.slnx`：Modules 534 通過、Host 689 通過/22 略過，0 失敗。
+- 修的正式程式缺陷：`AlignGridCommand` Undo/Redo 只記一筆、`FloraScatterEngine` 缺高度圖誤判水域、`NavMeshConnectivityAnalyzer` 橋接距離、`RoadGapDetector` 方向不相容缺口、`TerrainSculptFilter` 階地曲線、`CampaignMissionCompiler` 中文訊息編碼、`ObjectiveRuleCatalog` FailureCriterion 秒數檢查；其餘為測試預期修正。
+- 仍未完成：把第一梯隊模組（河流／懸崖／聚落生成／事件圖／打包匯出）接入 WinForms UI；遊戲內驗收（需使用者授權安裝目錄）。
+
 ## 接手先讀（2026-10-08 Antigravity，20 子代理同步設計產出彙總與交接）
 
 - **交接背景**：因使用者訂閱流量即將耗盡，依使用者明確指令「叫所有子代理直接提交，我的訂閱流量要沒了，寫入交接，我會用其他Ai繼續」，主代理已全面終止所有 20 個背景子代理，並統一整理代碼原型、修復模組編譯，進行本地 Git 提交。

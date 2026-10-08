@@ -153,6 +153,52 @@ public sealed class FloraScatterEngineTests
         Assert.True(result.Report.RiparianCount > 0);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Missing_height_data_does_not_imply_deep_water_or_shoreline(bool emptyHeights)
+    {
+        var (templates, names) = CreateTestCatalog();
+        foreach (byte waterLevel in new byte[] { 0, 120 })
+        {
+            var context = new FloraScatterContext
+            {
+                Dimension = 32,
+                VertexSize = 33,
+                Heights = emptyHeights ? Array.Empty<byte>() : null,
+                WaterLevel = waterLevel,
+                Profile = BiomeEcologyProfile.GermanicForest,
+                Templates = templates,
+                ObjDefNames = names,
+            };
+            var result = FloraScatterEngine.Generate(context, new FloraScatterParameters { Seed = 4242 });
+
+            Assert.NotEmpty(result.Additions);
+            Assert.Equal(0, result.Report.RiparianCount);
+            Assert.All(result.Additions, addition => Assert.Equal(0f, addition.Y));
+        }
+    }
+
+    [Fact]
+    public void Present_zero_height_data_is_still_treated_as_deep_water()
+    {
+        var (templates, names) = CreateTestCatalog();
+        var context = new FloraScatterContext
+        {
+            Dimension = 32,
+            VertexSize = 33,
+            Heights = new byte[33 * 33],
+            WaterLevel = 120,
+            Profile = BiomeEcologyProfile.GermanicForest,
+            Templates = templates,
+            ObjDefNames = names,
+        };
+
+        var result = FloraScatterEngine.Generate(context, new FloraScatterParameters());
+        Assert.Empty(result.Additions);
+        Assert.Equal(0, result.Report.TotalPlanted);
+    }
+
     [Fact]
     public void Cliff_steep_slope_excludes_canopy_trees_in_favor_of_rocks()
     {
@@ -251,6 +297,7 @@ public sealed class FloraScatterEngineTests
 
         var result = FloraScatterEngine.Generate(context, parameters);
 
+        Assert.NotEmpty(result.Additions);
         Assert.True(result.Report.AvoidedObstacles > 0);
 
         // 驗證沒有任何植物落在道路上 (tile 10: 640 <= X < 704)
