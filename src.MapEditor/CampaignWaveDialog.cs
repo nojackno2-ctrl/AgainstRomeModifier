@@ -28,6 +28,8 @@ internal sealed class CampaignWaveDialog : Form
     internal int WaveCount { get => (int)_waves.Value; set => _waves.Value = value; }
     internal int FirstDelaySeconds { get => (int)_firstDelay.Value; set => _firstDelay.Value = value; }
     internal int IntervalSeconds { get => (int)_interval.Value; set => _interval.Value = value; }
+    internal int SpawnX { get => (int)_x.Value; set => _x.Value = value; }
+    internal int SpawnZ { get => (int)_z.Value; set => _z.Value = value; }
     internal int SquadCount { get => (int)_count.Value; set => _count.Value = value; }
     internal CampaignCompilationResult PreviewResult { get; private set; } = new(false, [], []);
     internal string PreviewText => _preview.Text;

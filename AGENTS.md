@@ -22,7 +22,7 @@ Never claim a fix, successful build, or working functionality without verificati
 
 ## Project rules
 
-- Preserve uncommitted user changes and never access or modify the installed game directory.
+- Preserve uncommitted user changes. The user authorized (2026-10-08) access to the installed game directory `C:\Program Files (x86)\Against Rome` for in-game verification: only write to custom test maps (e.g. `MAPS\ENDL_005`), back them up to `%TEMP%` first, and restore after testing; never touch original game files.
 - Keep behavior-preserving refactors separate from feature changes.
 - Validate with the documented `dotnet build` and `dotnet test` commands.
 - Communicate with the user in Traditional Chinese while preserving technical names, paths, APIs, and error messages.

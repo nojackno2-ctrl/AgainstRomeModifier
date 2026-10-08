@@ -73,6 +73,17 @@ public sealed class InGameAcceptanceScenarioTests
                 report = TerrainShowcase(form);
                 events.Add(new("ARM terrain", 3) { Actions = [new(ScenarioActionKind.Message, "ARM test: terrain showcase north of the start (materials, hills, forest, road).")] });
             }
+            else if (scenario == "waves")
+            {
+                // Campaign wave planner path: two timed waves of enemy squads east of the start (team 1), merged through the real form API.
+                var aliases = (string[])typeof(MapEditorForm).GetMethod("CampaignAliases", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(form, null)!;
+                using var dialog = new CampaignWaveDialog(aliases, (ScenarioDocument)typeof(MapEditorForm).GetMethod("CampaignScenario", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(form, null)!)
+                { WaveCount = 2, FirstDelaySeconds = 15, IntervalSeconds = 20, SquadCount = 3, SpawnX = (int)unit.WorldX + 1500, SpawnZ = (int)unit.WorldZ };
+                var result = form.ApplyCampaignWaves(dialog.Plan);
+                Assert.True(result.Success, string.Join("; ", result.Diagnostics));
+                events.Add(new("ARM waves", 3) { Actions = [new(ScenarioActionKind.Message, "ARM test: enemy waves arrive at 15 s and 35 s east of the start.")] });
+                report = $"waves at ({unit.WorldX + 1500},{unit.WorldZ}): " + string.Join(", ", result.CompiledEvents.Select(e => $"{e.Name}@{e.DelaySeconds}s"));
+            }
             else throw new ArgumentException("未知案例：" + scenario);
             Invoke(form, "RefreshEventList", 0);
             Invoke(form, "UpdateEditorState");
