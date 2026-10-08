@@ -37,8 +37,8 @@ internal sealed class TerrainRegionDialog : Form
         grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 48)); grid.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         grid.Controls.Add(_operation, 0, 0);
         grid.Controls.Add(new Label { Dock = DockStyle.Fill, Text = en
-            ? $"Tile coordinates: 0–{dimension - 1}. One X,Y per line. Rectangle/River/Cliff: two opposite corners (or road waypoints); fill: one seed. Road width is in tiles."
-            : $"圖格座標：0–{dimension - 1}；每行 X,Y。矩形填色/河流/懸崖輸入兩個對角（折線輸入轉折點）、連通填色輸入一個起點。下方為土路寬度（格）。" }, 0, 1);
+            ? $"Tile coordinates: 0–{dimension - 1}. One X,Y per line. Rectangle/River/Cliff: two opposite corners (or road waypoints); fill: one seed. Road width is in tiles. Flora/Erosion: two opposite corners; Wall: waypoints (needs wall objects in the game catalog)."
+            : $"圖格座標：0–{dimension - 1}；每行 X,Y。矩形填色/河流/懸崖輸入兩個對角（折線輸入轉折點）、連通填色輸入一個起點。下方為土路寬度（格）。植被／侵蝕輸入兩個對角；城牆輸入折線轉折點（需遊戲目錄有城牆物件）。" }, 0, 1);
         grid.Controls.Add(_vertices, 0, 2); grid.Controls.Add(_width, 0, 3); grid.Controls.Add(_summary, 0, 4);
         var buttons = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill, FlowDirection = FlowDirection.RightToLeft };
         var apply = new Button { AutoSize = true, Text = en ? "Apply" : "套用" };
