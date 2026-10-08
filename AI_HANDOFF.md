@@ -1,5 +1,13 @@
 # AI Handoff - Live Project Memory
 
+## 遊戲內驗收結果（2026-10-08 Claude，使用者重開機並授權；首次取得遊戲內證據）
+
+- 方法：備份 `MAPS\ENDL_005`（55 檔雜湊，結束後 0 差異）；候選圖暫放 `MAPS\ENDL_006` 後以 computer-use 操作遊戲（日耳曼無盡模式），測完刪除。遊戲畫面更新與滑鼠有延遲：每次移動要連續 mouse_move 兩次並等 2–3 秒，再 down/up；批次太快會誤點「離開遊戲」。
+- **槽位必須連續**：ENDL_008 不出現在遊戲地圖清單（遊戲在缺 006／007 處停止掃描），改放 ENDL_006 才出現。編輯器「獨立空白場景」若挑 008 以上而 006／007 缺漏，遊戲看不到。`GetNextFreeSlot` 從 005 起找空位，正常流程不會出事，但候選圖交付與手動複製要注意。
+- **示範圖（ARM Demo - Path to Victory，demo 候選）**：載入成功；開局顯示編輯器寫入的訊息「Follow the dirt path east. Move the starting troop into the goal area to win.」（3/3 頁）；部隊可框選、歸玩家控制，右鍵與小地圖右鍵移動、尋路正常；地形（土路、草地）與夜晚光照可見。**未驗證**：勝利事件（部隊進目標區後是否結算）、資源採集、建築完工狀態、存讀檔。
+- **空白獨立場景（ARM Empty Playtest，empty-authored 候選）：載入時遊戲卡死**（Responding=False，CPU 不再增加，載入條停在約 1/3）。放在 ENDL_006 重現；同一槽位放 demo 則正常，故問題在空白場景內容本身（待查：idle BCI、清空的 runtime 池、auxiliary 圖層）。尚不知是否與槽位名稱（原為 008）有關——標題內容無寫死槽位字串。下一步：用唯讀 TEMP 副本逐項還原差異（先換回來源 BCI／補回最小物件池）二分法定位，再回遊戲驗證。
+- 截圖存在本次 session 的 tool-results；未納入 repo。安裝目錄已還原（只剩 ENDL_000–005）。
+
 ## 使用者方向（2026-10-08）：2D 不適合作為製圖入口
 
 - 使用者認為 2D 模式不可能拿來製作地圖。程式預設已走 3D（`MapEditorForm.cs` 的 `SetActiveView(_view3d is not null)`），2D 僅在 3D/OpenGL 無法啟用時當後備；2D 畫布只畫灰色格子，看不出地形與物件。
