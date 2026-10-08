@@ -149,7 +149,12 @@ public sealed record RiverPlannerOptions(
     int TrenchDepth = 2,
     int MinSlopeDrop = 1,
     string? PreferredRiverTexture = null,
-    string? PreferredBankTexture = null
+    string? PreferredBankTexture = null,
+    // World units from boden.ini; null preserves elevation-only planning for callers without map metadata.
+    float? WaterLevel = null,
+    float HeightmapStep = 4,
+    int WaterBedDepth = 16,
+    int BankSlopeVertices = 3
 );
 
 /// <summary>

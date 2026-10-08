@@ -35,6 +35,13 @@ public static class RiverFlowPlanner
         if (dimension <= 0 || textures.Count != (long)dimension * dimension)
             throw new ArgumentException("地圖圖塊尺寸與紋理陣列長度不符。");
 
+        if (heights is not null && (vertexSize < 2 || heights.Count != (long)vertexSize * vertexSize))
+            throw new ArgumentException("Height field dimensions do not match.");
+        if (options.WaterLevel is { } water && options.ElevationMode != RiverElevationMode.ValidateOnly &&
+            (!float.IsFinite(water) || !float.IsFinite(options.HeightmapStep) || options.HeightmapStep <= 0 ||
+             water / options.HeightmapStep < 6))
+            return new RiverStrokePlan(false, [], [], [], [], path?.ToArray() ?? []);
+
         if (path is null || path.Count == 0)
             return new RiverStrokePlan(true, [], [], [], [], []);
 
@@ -51,8 +58,8 @@ public static class RiverFlowPlanner
         // 2. 水流方向判定（起訖點高程分析）
         if (options.AutoDetectDownhillFlow && heights is not null && vertexSize > 0 && continuous.Count > 1)
         {
-            float startElevation = SampleTileAverageHeight(heights, vertexSize, continuous[0].X, continuous[0].Y);
-            float endElevation = SampleTileAverageHeight(heights, vertexSize, continuous[^1].X, continuous[^1].Y);
+            float startElevation = SampleTileAverageHeight(dimension, heights, vertexSize, continuous[0].X, continuous[0].Y);
+            float endElevation = SampleTileAverageHeight(dimension, heights, vertexSize, continuous[^1].X, continuous[^1].Y);
             if (startElevation < endElevation)
             {
                 // 使用者從低處往高處繪製，自動反轉流向以確保水往低處流
@@ -209,7 +216,7 @@ public static class RiverFlowPlanner
         float[] tileElevations = new float[count];
         for (int i = 0; i < count; i++)
         {
-            tileElevations[i] = SampleTileAverageHeight(heights, vertexSize, path[i].X, path[i].Y);
+            tileElevations[i] = SampleTileAverageHeight(dimension, heights, vertexSize, path[i].X, path[i].Y);
         }
 
         // 檢測逆流
@@ -232,7 +239,10 @@ public static class RiverFlowPlanner
         if (options.ElevationMode != RiverElevationMode.ValidateOnly)
         {
             int[] targetHeights = new int[count];
-            targetHeights[0] = (int)MathF.Round(tileElevations[0]);
+            int waterBed = options.WaterLevel is { } level
+                ? (int)Math.Clamp(MathF.Floor(level / options.HeightmapStep) - Math.Max(6, options.WaterBedDepth), 0, 255)
+                : 255;
+            targetHeights[0] = Math.Min(waterBed, (int)MathF.Round(tileElevations[0]));
 
             for (int i = 1; i < count; i++)
             {
@@ -249,6 +259,12 @@ public static class RiverFlowPlanner
                 }
             }
 
+            if (options.WaterLevel is not null)
+            {
+                PlanWaterChannel(dimension, heights, vertexSize, path, targetHeights, options, heightAdjustments);
+                return;
+            }
+
             // 針對河道途經的頂點計算高度修正
             var vertexTarget = new Dictionary<int, byte>();
             for (int i = 0; i < count; i++)
@@ -256,9 +272,9 @@ public static class RiverFlowPlanner
                 var pt = path[i];
                 byte target = (byte)Math.Clamp(targetHeights[i], 0, 255);
 
-                // 包含圍繞該圖塊的4個網格頂點 (vx, vy), (vx+1, vy), (vx, vy+1), (vx+1, vy+1)
-                for (int vy = pt.Y; vy <= pt.Y + 1 && vy < vertexSize; vy++)
-                for (int vx = pt.X; vx <= pt.X + 1 && vx < vertexSize; vx++)
+                double scale = (vertexSize - 1.0) / dimension;
+                for (int vy = (int)Math.Ceiling(pt.Y * scale); vy <= (pt.Y + 1) * scale && vy < vertexSize; vy++)
+                for (int vx = (int)Math.Ceiling(pt.X * scale); vx <= (pt.X + 1) * scale && vx < vertexSize; vx++)
                 {
                     int vIndex = vy * vertexSize + vx;
                     byte currentV = heights[vIndex];
@@ -288,15 +304,55 @@ public static class RiverFlowPlanner
         }
     }
 
-    private static float SampleTileAverageHeight(IReadOnlyList<byte> heights, int vertexSize, int tx, int ty)
+    private static void PlanWaterChannel(
+        int dimension, IReadOnlyList<byte> heights, int vertexSize,
+        List<(int X, int Y)> path, int[] beds, RiverPlannerOptions options,
+        List<RiverHeightAdjustment> adjustments)
     {
-        int v00 = ty * vertexSize + tx;
-        int v10 = ty * vertexSize + Math.Min(tx + 1, vertexSize - 1);
-        int v01 = Math.Min(ty + 1, vertexSize - 1) * vertexSize + tx;
-        int v11 = Math.Min(ty + 1, vertexSize - 1) * vertexSize + Math.Min(tx + 1, vertexSize - 1);
-        return (heights[v00] + heights[v10] + heights[v01] + heights[v11]) / 4f;
+        double scale = (vertexSize - 1.0) / dimension;
+        double core = Math.Max(0.75, scale / 4);
+        double bank = Math.Max(1, options.BankSlopeVertices);
+        double radius = core + bank;
+        var targets = new Dictionary<int, byte>();
+        // Distance to the continuous centreline gives rounded ends and connected turns.
+        // Interpolate to the original height only within the local bank footprint; never raise water.
+        for (int i = 0; i < path.Count; i++)
+        {
+            int next = Math.Min(i + 1, path.Count - 1);
+            double ax = (path[i].X + 0.5) * scale, ay = (path[i].Y + 0.5) * scale;
+            double bx = (path[next].X + 0.5) * scale, by = (path[next].Y + 0.5) * scale;
+            double dx = bx - ax, dy = by - ay, length2 = dx * dx + dy * dy;
+            int left = Math.Max(0, (int)Math.Ceiling(Math.Min(ax, bx) - radius));
+            int right = Math.Min(vertexSize - 1, (int)Math.Floor(Math.Max(ax, bx) + radius));
+            int top = Math.Max(0, (int)Math.Ceiling(Math.Min(ay, by) - radius));
+            int bottom = Math.Min(vertexSize - 1, (int)Math.Floor(Math.Max(ay, by) + radius));
+            for (int y = top; y <= bottom; y++)
+            for (int x = left; x <= right; x++)
+            {
+                double t = length2 == 0 ? 0 : Math.Clamp(((x - ax) * dx + (y - ay) * dy) / length2, 0, 1);
+                double distance = Math.Sqrt(Math.Pow(x - ax - t * dx, 2) + Math.Pow(y - ay - t * dy, 2));
+                if (distance >= radius) continue;
+                int index = y * vertexSize + x;
+                double bed = beds[i] + t * (beds[next] - beds[i]);
+                double slope = Math.Clamp((distance - core) / bank, 0, 1);
+                slope = slope * slope * (3 - 2 * slope);
+                byte target = (byte)Math.Clamp(Math.Floor(bed + (heights[index] - bed) * slope), 0, heights[index]);
+                if (target < heights[index])
+                    targets[index] = targets.TryGetValue(index, out byte existing) ? Math.Min(existing, target) : target;
+            }
+        }
+        foreach (var (index, target) in targets.OrderBy(pair => pair.Key))
+            adjustments.Add(new RiverHeightAdjustment(index, index % vertexSize, index / vertexSize, heights[index], target));
     }
 
+    private static float SampleTileAverageHeight(int dimension, IReadOnlyList<byte> heights, int vertexSize, int tx, int ty)
+    {
+        double scale = (vertexSize - 1.0) / dimension;
+        int left = (int)Math.Round(tx * scale), right = (int)Math.Round((tx + 1) * scale);
+        int top = (int)Math.Round(ty * scale), bottom = (int)Math.Round((ty + 1) * scale);
+        return (heights[top * vertexSize + left] + heights[top * vertexSize + right]
+            + heights[bottom * vertexSize + left] + heights[bottom * vertexSize + right]) / 4f;
+    }
     private static List<(int X, int Y)> RasterizeOrthogonalPath(IReadOnlyList<(int X, int Y)> rawPath)
     {
         var result = new List<(int X, int Y)>();

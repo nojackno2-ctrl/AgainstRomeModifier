@@ -18,6 +18,9 @@ public sealed partial class MapEditorSaveTransactionTests
             _ = form.Handle;
             Invoke(form, "LoadSelectedMap");
 
+            var layers = GetField<TerrainHeightEditSession>(form, "_terrainLayers");
+            byte[] beforeHeights = layers.Heights.ToArray();
+
             // Apply river from (10, 10) to (15, 10)
             form.ApplyRiverTool([(10, 10), (15, 10)]);
 
@@ -34,14 +37,21 @@ public sealed partial class MapEditorSaveTransactionTests
                 .GetValue(form)!;
             Assert.Contains("河流已套用", status.Text);
 
-            // Undo -> texture restored
+            byte[] carvedHeights = layers.Heights.ToArray();
+            Assert.True(carvedHeights[42 * 257 + 50] <= 24);
+            Assert.Equal(beforeHeights[100 * 257 + 100], carvedHeights[100 * 257 + 100]);
+            Assert.Equal(beforeHeights[10 * 257 + 12], carvedHeights[10 * 257 + 12]);
+
+            // Undo -> texture and entire height field restored
             Invoke(form, "Undo");
+            Assert.Equal(beforeHeights, layers.Heights);
             string restoredTexture = texturesDoc.GetTexture(12, 10);
             Assert.DoesNotContain("FLUSS", restoredTexture, StringComparison.OrdinalIgnoreCase);
 
             // Redo -> river reapplied
             Invoke(form, "Redo");
             Assert.Contains("FLUSS", texturesDoc.GetTexture(12, 10), StringComparison.OrdinalIgnoreCase);
+            Assert.Equal(carvedHeights, layers.Heights);
         });
     }
 

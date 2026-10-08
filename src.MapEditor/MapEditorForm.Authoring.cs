@@ -130,6 +130,7 @@ internal sealed partial class MapEditorForm
         if (_selected?.IsCustom != true || _texturesDocument is null || _terrainBlendSession is null) return;
         bool en = AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English;
         options ??= new RiverPlannerOptions { AutoDetectDownhillFlow = true };
+        options = options with { WaterLevel = (float)_waterLevel.Value, HeightmapStep = _heightMapStep };
 
         var available = _floorTextures?.Names ?? _texturesDocument.Textures;
         var catalog = RiverTileCatalog.BuildAvailable(available);
@@ -149,6 +150,7 @@ internal sealed partial class MapEditorForm
 
         if (result.HeightChanges.Count > 0)
         {
+            ApplyHeightsToViews(useCurrentSamples: true);
             _canvas.Invalidate();
             _view3d?.Invalidate();
         }
@@ -172,7 +174,7 @@ internal sealed partial class MapEditorForm
         }
         else
         {
-            _status.Text = en ? "River planning failed." : "河流規劃失敗。";
+            _status.Text = en ? "River planning failed; check that the water level allows at least 6 height bytes of depth." : "河流規劃失敗；請確認水位至少能容納 6 個高度單位的深度。";
         }
     }
 

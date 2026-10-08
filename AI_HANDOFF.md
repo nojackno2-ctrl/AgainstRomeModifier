@@ -1,5 +1,11 @@
 # AI Handoff - Live Project Memory
 
+## 河流河床修正（2026-10-08 Codex，build/test 已通過）
+
+- 修正 tile→vertex 比例（64 tiles／257 vertices＝每 tile 4 格），host 傳入世界水位／Heightmapstep；中心預設挖至水面下 16 bytes（至少 6），以 3 個頂點的 smoothstep 岸坡接回原地形，只下挖局部範圍、不改全圖水位。水位不足 6 bytes 時拒絕套用。
+- 保留既有貼圖＋高度交易，新增中心水深／岸坡單調／邊界與轉彎／完整高度 undo-redo 測試。首次 build 的測試欄位 X/Y 編譯錯誤已改為 VertexX/VertexY。DOTNET_ROLL_FORWARD=Major dotnet build AgainstRomeModifier.slnx -c Release -p:UseAppHost=false 已成功（0 errors）；dotnet test AgainstRomeModifier.slnx -c Release --no-build 已成功（Modules 546 通過；Host 705 通過／22 略過；0 failures）。git diff --check 通過。遊戲內外觀未驗證。
+- 不碰遊戲安裝目錄、不啟動遊戲、不 commit/push；保留未追蹤 .claude/、TEMP/。
+
 ## 工具展示圖遊戲內檢視結果（2026-10-08 Claude，使用者已切英文輸入法）
 
 - 方法：展示圖（`%TEMP%\ArmToolsShowcase_20261008_01`）放 ENDL_006 進遊戲，以小地圖跳到各區。**可見**：暴風雨天候（畫面變暗＋雨點粒子）、河流材質（藍灰粗糙圖塊帶，邊緣為鋸齒狀菱形階梯，**沒有水面**＝河床沒有低於水位，且圖塊邊界未做過渡）、城牆（一排帶陰影的柵欄樁，**但件與件間距遠大於原版**）、植被（灌木、草叢、岩石）。**看不出**：懸崖高台與侵蝕（遊戲內畫面看不出高低差，未確認懸崖岩壁圖塊是否貼對）。

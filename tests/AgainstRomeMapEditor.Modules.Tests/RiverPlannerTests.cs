@@ -239,6 +239,81 @@ public sealed class RiverPlannerTests
         Assert.Equal("grass", session.CurrentTextures[2 * 8 + 2]);
     }
 
+    [Theory]
+    [InlineData(2)]
+    [InlineData(4)]
+    [InlineData(8)]
+    public void Water_channel_uses_world_water_level_and_has_monotonic_local_banks(float step)
+    {
+        const int dimension = 64, size = 257;
+        byte[] original = Enumerable.Repeat((byte)80, size * size).ToArray();
+        var options = new RiverPlannerOptions(WaterLevel: 30.5f * step, HeightmapStep: step, MinSlopeDrop: 0);
+        var plan = RiverFlowPlanner.Plan(dimension, BlankTextures(dimension), original, size,
+            [(10, 10), (15, 10)], NativeCatalog(), options);
+        Assert.True(plan.Succeeded);
+        byte[] carved = original.ToArray();
+        foreach (var a in plan.HeightAdjustments)
+        {
+            Assert.True(a.After <= a.Before);
+            carved[a.Index] = a.After;
+        }
+        Assert.Equal(original, Enumerable.Repeat((byte)80, size * size).ToArray());
+        // Tile (12,10) is centred at vertex (50,42), not (12,10).
+        Assert.Equal((byte)14, carved[42 * size + 50]);
+        Assert.True(carved[42 * size + 50] * step <= options.WaterLevel - 6 * step);
+        for (int side = -1; side <= 1; side += 2)
+        {
+            byte previous = carved[42 * size + 50];
+            for (int offset = 1; offset <= 4; offset++)
+            {
+                byte current = carved[(42 + side * offset) * size + 50];
+                Assert.True(current >= previous);
+                previous = current;
+            }
+            Assert.Equal((byte)80, previous);
+            Assert.InRange(carved[(42 + side * 2) * size + 50], (byte)15, (byte)79);
+        }
+        Assert.All(plan.HeightAdjustments, a =>
+        {
+            Assert.InRange(a.VertexX, 39, 65);
+            Assert.InRange(a.VertexY, 39, 45);
+        });
+        Assert.Equal((byte)80, carved[10 * size + 12]);
+        Assert.Equal((byte)80, carved[100 * size + 100]);
+    }
+
+    [Theory]
+    [InlineData(0, 0, 5, 0)]
+    [InlineData(10, 10, 10, 10)]
+    [InlineData(10, 10, 15, 15)]
+    [InlineData(63, 60, 63, 63)]
+    public void Channel_centres_stay_submerged_at_ends_turns_and_map_edges(int x1, int y1, int x2, int y2)
+    {
+        const int size = 257;
+        byte[] heights = Enumerable.Repeat((byte)80, size * size).ToArray();
+        var plan = RiverFlowPlanner.Plan(64, BlankTextures(64), heights, size,
+            [(x1, y1), (x2, y2)], NativeCatalog(), new RiverPlannerOptions(WaterLevel: 120));
+        Assert.True(plan.Succeeded);
+        foreach (var a in plan.HeightAdjustments) heights[a.Index] = a.After;
+        foreach (var tile in plan.WaterTiles)
+            Assert.True(heights[(tile.Y * 4 + 2) * size + tile.X * 4 + 2] <= 24);
+        Assert.Equal(plan.HeightAdjustments.Count, plan.HeightAdjustments.Select(a => a.Index).Distinct().Count());
+    }
+
+    [Fact]
+    public void Insufficient_water_depth_fails_without_changes_and_validate_only_never_carves()
+    {
+        byte[] heights = Enumerable.Repeat((byte)80, 33 * 33).ToArray();
+        var plan = RiverFlowPlanner.Plan(8, BlankTextures(), heights, 33, [(1, 1), (5, 1)],
+            NativeCatalog(), new RiverPlannerOptions(WaterLevel: 20));
+        Assert.False(plan.Succeeded);
+        Assert.Empty(plan.HeightAdjustments);
+        Assert.Empty(plan.WaterTiles);
+        var validate = RiverFlowPlanner.Plan(8, BlankTextures(), heights, 33, [(1, 1), (5, 1)],
+            NativeCatalog(), new RiverPlannerOptions(RiverElevationMode.ValidateOnly, WaterLevel: 120));
+        Assert.True(validate.Succeeded);
+        Assert.Empty(validate.HeightAdjustments);
+    }
     private sealed class DummyResolver : INativeTerrainMaterialResolver
     {
         public bool TryResolveNativeCorners(string texture, out IReadOnlyList<string> corners)
