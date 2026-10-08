@@ -32,7 +32,7 @@ public sealed partial class MapEditorSaveTransactionTests
             var additions = GetField<AgainstRomeMapEditor.Modules.Nature.NatureEditSession>(form, "_natureSession").Additions;
             Assert.True(planted > 0, "應散播至少一株植被：" + GetField<System.Windows.Forms.ToolStripStatusLabel>(form, "_status").Text);
             Assert.Equal(planted, additions.Count);
-            Assert.All(additions, item => Assert.InRange(item.X / 64f, 20, 44));
+            Assert.All(additions, item => Assert.InRange(item.X / 256f, 20, 44));
 
             Invoke(form, "Undo");
             Assert.Empty(GetField<AgainstRomeMapEditor.Modules.Nature.NatureEditSession>(form, "_natureSession").Additions);

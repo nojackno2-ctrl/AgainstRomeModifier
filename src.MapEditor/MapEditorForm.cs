@@ -151,6 +151,8 @@ internal sealed partial class MapEditorForm : Form
     private bool _lastActionWasSettlementGeneration;
     private bool _lastActionWasSettlementGenerationUndone;
     private bool _lastActionWasFlora;
+    private bool _lastActionWasHeightTool;
+    private bool _lastActionWasHeightToolUndone;
     private bool _lastActionWasFloraUndone;
     private bool _lastActionWasRiverOrCliff;
     private bool _lastActionWasRiverOrCliffUndone;
@@ -874,6 +876,12 @@ internal sealed partial class MapEditorForm : Form
     private void Undo()
     {
         CommitStroke();
+        if (_lastActionWasHeightTool)
+        {
+            _lastActionWasHeightTool = false;
+            _lastActionWasHeightToolUndone = true;
+            if (_terrainLayers?.Undo() is { } heightUndone) { ApplyTerrainLayerStroke(heightUndone); UpdateEditorState(); return; }
+        }
         if (_lastActionWasFlora)
         {
             _lastActionWasFlora = false;
@@ -931,6 +939,12 @@ internal sealed partial class MapEditorForm : Form
     private void Redo()
     {
         CommitStroke();
+        if (_lastActionWasHeightToolUndone)
+        {
+            _lastActionWasHeightToolUndone = false;
+            _lastActionWasHeightTool = true;
+            if (_terrainLayers?.Redo() is { } heightRedone) { ApplyTerrainLayerStroke(heightRedone); UpdateEditorState(); return; }
+        }
         if (_lastActionWasFloraUndone)
         {
             _lastActionWasFloraUndone = false;
@@ -1434,6 +1448,15 @@ internal sealed partial class MapEditorForm : Form
         {
             _undoButton.Enabled |= editable && _natureSession.CanUndo;
             _redoButton.Enabled |= editable && _natureSession.CanRedo;
+        }
+        if (_lastActionWasHeightTool)
+        {
+            _undoButton.Enabled = editable && _terrainLayers?.CanUndo == true;
+            _redoButton.Enabled = editable && _lastActionWasHeightToolUndone && _terrainLayers?.CanRedo == true;
+        }
+        else if (_lastActionWasHeightToolUndone)
+        {
+            _redoButton.Enabled = editable && _terrainLayers?.CanRedo == true;
         }
         if (_lastActionWasFlora)
         {

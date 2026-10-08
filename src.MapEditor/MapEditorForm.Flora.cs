@@ -1,4 +1,5 @@
 using AgainstRomeMapEditor.Modules.Nature;
+using AgainstRomeModifier.Maps;
 
 namespace AgainstRomeMapEditor;
 
@@ -13,7 +14,7 @@ internal sealed partial class MapEditorForm
             _status.Text = en ? "Nature catalog is not available yet." : "自然物件目錄尚未可用。";
             return 0;
         }
-        float tileWorld = 64f;
+        const float tileWorld = SdlSceneCatalog.WorldUnitsPerMapPixel * 4f; // 貼圖格（64×64）= 4 個碰撞像素
         var layers = _terrainLayers;
         var context = new FloraScatterContext
         {
@@ -23,7 +24,7 @@ internal sealed partial class MapEditorForm
             VertexSize = layers?.VertexSize ?? 257,
             HeightMapStep = _heightMapStep,
             WaterLevel = (byte)Math.Clamp((int)_waterLevel.Value, 0, 255),
-            Collision = layers?.Collision,
+            // 碰撞圖是 256×256，與貼圖格索引不同；避障改由既有物件座標處理。
             ExistingAdditions = _natureAdditions.Select(item => (item.X, item.Z))
                 .Concat(_levelObjects.Where(item => IsRemovableNature(item) && !_natureRemovals.Contains(item.Slot)).Select(item => (item.X, item.Z))).ToArray(),
             Profile = BiomeEcologyProfile.GermanicForest,

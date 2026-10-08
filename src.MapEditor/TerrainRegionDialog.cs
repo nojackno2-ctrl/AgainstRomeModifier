@@ -3,7 +3,7 @@ using System.Globalization;
 
 namespace AgainstRomeMapEditor;
 
-internal enum TerrainRegionOperation { Rectangle, Connected, Road, SelectObjects, River, Cliff, Flora }
+internal enum TerrainRegionOperation { Rectangle, Connected, Road, SelectObjects, River, Cliff, Flora, Erosion }
 
 internal sealed class TerrainRegionDialog : Form
 {
@@ -28,8 +28,8 @@ internal sealed class TerrainRegionDialog : Form
         AutoScaleMode = AutoScaleMode.Dpi; AutoScaleDimensions = new SizeF(96, 96);
         StartPosition = FormStartPosition.CenterParent; ClientSize = new Size(440, 390);
         MinimizeBox = MaximizeBox = false; FormBorderStyle = FormBorderStyle.FixedDialog;
-        _operation.Items.AddRange(en ? new object[] { "Rectangle fill", "Connected material fill", "Dirt road polyline", "Select objects in rectangle", "River flow in rectangle", "Cliff face on slopes in rectangle", "Ecology flora scatter in rectangle" }
-            : new object[] { "矩形填色", "同材質連通區填色", "土路折線", "矩形選取物件", "矩形水系河流", "矩形懸崖岩壁", "矩形生態植被散播" });
+        _operation.Items.AddRange(en ? new object[] { "Rectangle fill", "Connected material fill", "Dirt road polyline", "Select objects in rectangle", "River flow in rectangle", "Cliff face on slopes in rectangle", "Ecology flora scatter in rectangle", "Hydraulic + thermal erosion in rectangle" }
+            : new object[] { "矩形填色", "同材質連通區填色", "土路折線", "矩形選取物件", "矩形水系河流", "矩形懸崖岩壁", "矩形生態植被散播", "矩形水力與熱力侵蝕" });
         _width.Maximum = dimension;
         var grid = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(12), ColumnCount = 1, RowCount = 6 };
         grid.RowStyles.Add(new RowStyle(SizeType.AutoSize)); grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 72));

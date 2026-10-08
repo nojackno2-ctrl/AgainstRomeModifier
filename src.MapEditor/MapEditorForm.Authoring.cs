@@ -60,6 +60,13 @@ internal sealed partial class MapEditorForm
             return;
         }
 
+        if (operation == TerrainRegionOperation.Erosion)
+        {
+            ApplyErosionTool(Rectangle.FromLTRB(Math.Min(vertices[0].X, vertices[1].X), Math.Min(vertices[0].Y, vertices[1].Y),
+                Math.Max(vertices[0].X, vertices[1].X) + 1, Math.Max(vertices[0].Y, vertices[1].Y) + 1));
+            return;
+        }
+
         if (operation == TerrainRegionOperation.Flora)
         {
             ApplyFloraScatter(Rectangle.FromLTRB(Math.Min(vertices[0].X, vertices[1].X), Math.Min(vertices[0].Y, vertices[1].Y),
