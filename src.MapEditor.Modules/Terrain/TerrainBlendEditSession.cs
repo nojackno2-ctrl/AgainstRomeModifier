@@ -46,6 +46,7 @@ internal sealed class TerrainBlendEditSession
     }
 
     public IReadOnlyList<string> CurrentTextures => _currentTextures;
+    public int TileDimension => _map.TileDimension;
     public string GetTexture(int x, int y) => _currentTextures[TextureIndex(x, y)];
     public IReadOnlyList<int> UnresolvedTileIndices { get; }
     public IReadOnlyList<NativeTerrainCornerConflict> InitialCornerConflicts { get; }

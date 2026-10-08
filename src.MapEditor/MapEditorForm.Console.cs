@@ -30,6 +30,9 @@ internal sealed partial class MapEditorForm
         context.BlendSession = _terrainBlendSession;
         context.PlacementSession = _placementSession;
         context.NatureSession = _natureSession;
+        int tileDim = _texturesDocument?.Dimension ?? _terrainBlendSession?.TileDimension ?? 64;
+        context.MapTileDimension = tileDim;
+        context.WorldDimension = tileDim * 256f;
         context.AvailableObjectTypes = _objectCatalog;
         context.AvailableNatureTemplates = NatureLayoutTemplates();
         context.WaterLevel = (float)_waterLevel.Value;
