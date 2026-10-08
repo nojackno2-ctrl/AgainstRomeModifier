@@ -23,7 +23,7 @@ internal sealed partial class MapEditorForm
             Heights = layers?.Heights,
             VertexSize = layers?.VertexSize ?? 257,
             HeightMapStep = _heightMapStep,
-            WaterLevel = (byte)Math.Clamp((int)_waterLevel.Value, 0, 255),
+            WaterLevel = (byte)Math.Clamp((int)Math.Round((float)_waterLevel.Value / _heightMapStep), 0, 255), // boden.ini 的 Waterlevel 是世界高度；引擎用高度位元組
             // 碰撞圖是 256×256，與貼圖格索引不同；避障改由既有物件座標處理。
             ExistingAdditions = _natureAdditions.Select(item => (item.X, item.Z))
                 .Concat(_levelObjects.Where(item => IsRemovableNature(item) && !_natureRemovals.Contains(item.Slot)).Select(item => (item.X, item.Z))).ToArray(),
@@ -38,7 +38,10 @@ internal sealed partial class MapEditorForm
         CommitStroke();
         if (result.Additions.Count == 0 || !_natureSession.PlantMany(result.Additions))
         {
-            _status.Text = en ? "No flora could be placed in the selected rectangle." : "選取矩形內無法散播植被。";
+            int species = context.Profile.ResolveTemplates(context.Templates, context.ObjDefNames).TotalSpeciesCount;
+            _status.Text = species == 0
+                ? (en ? "No flora species of this biome exist in the game catalog." : "遊戲目錄中找不到此生態圈的植被物種。")
+                : (en ? $"No flora could be placed in the selected rectangle ({species} species available; terrain may be water or too steep)." : $"選取矩形內無法散播植被（可用物種 {species} 種；可能是水域或坡度太陡）。");
             return 0;
         }
         _lastActionWasFlora = true;
