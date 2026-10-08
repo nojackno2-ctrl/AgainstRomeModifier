@@ -15,6 +15,8 @@ internal sealed partial class MapEditorForm
     internal Func<CampaignWaveDialog, DialogResult> CampaignWaveDialogRunner { get; set; } = dialog => dialog.ShowDialog();
 
     private string[] CampaignAliases() => _objectCatalog.Where(t => t.Category == SdlObjectCategory.Figure).Select(AliasOf).ToArray();
+    /// <summary>Figures and buildings: lair cores are buildings, so the wild-lair dialog needs the full catalog.</summary>
+    private string[] LairAliases() => _objectCatalog.Where(t => t.Category is SdlObjectCategory.Figure or SdlObjectCategory.Building).Select(AliasOf).Distinct().ToArray();
     private ScenarioDocument CampaignScenario()
     {
         var previous = ScenarioDocument.Load(_selected!.DirectoryPath);
@@ -50,7 +52,7 @@ internal sealed partial class MapEditorForm
     internal void RunWildLairs()
     {
         if (!CanMergeScenarioEvents()) return;
-        using var dialog = new WildLairDialog(CampaignAliases(), CampaignScenario());
+        using var dialog = new WildLairDialog(LairAliases(), CampaignScenario());
         if (WildLairDialogRunner(dialog) != DialogResult.OK || !dialog.CanApply) return;
         MergeScenarioEvents(dialog.ResultingEvents);
     }
