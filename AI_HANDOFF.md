@@ -732,3 +732,4 @@
 - 2026-10-08 Claude：CampaignMissionCompiler 診斷改為中英雙語（'中文 | English'）；抽查 agy 文件數值（波次 1–256、人數 1–20、隊伍 0–7、座標 0–16383、玩家 2–8、Fels_AA_002/004/006/008 朝向）與原始碼一致，其餘文字仍未逐條核對。驗證：Modules 789、Host 783 通過。
 - 2026-10-08 Claude：新增選單測試（PerformClick 開啟任務目標／野外巢穴對話框、取消不改事件）；MapEditorSaveTransactionTests 141 通過。
 - 2026-10-08 Claude：新增 ARM_INGAME_SCENARIO=waves（戰役波次）；已寫入 ENDL_005 但使用者拒絕遊戲操作授權，未啟動遊戲，地圖已從 %TEMP%\ArmGameBackup_20261008_ENDL_005 還原（diff 無差異）。AGENTS.md 已改為允許存取遊戲目錄（僅自製測試地圖、先備份、測完還原）。波次／巢穴／目標的遊戲內行為仍未驗證。
+- 2026-10-08 Claude：已再次把 waves 案例寫入遊戲 MAPS\ENDL_005（Claude Test 1b）供使用者自行遊玩驗證；原始備份在 %TEMP%\ArmGameBackup_20261008_ENDL_005，驗證後須還原。
