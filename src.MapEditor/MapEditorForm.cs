@@ -256,6 +256,7 @@ internal sealed partial class MapEditorForm : Form
         tools.Items.AddRange(new ToolStripItem[] { _lblTerrainGroup, _textureTool, _heightTool, _collisionTool, _natureTool, _placeTool, _sceneMoveTool, _terrainOperation, _terrainStrength, _resetTerrainButton, _blankTerrainButton, _regionToolsButton, _boxSelectButton, new ToolStripSeparator(), _view2dButton, _view3dButton, _3dDiagnosticsButton, _retryDisplayButton });
 
         tools.Items.Insert(tools.Items.IndexOf(_boxSelectButton) + 1, _layoutMenu);
+        InitializeWeatherMenu(tools);
         _paletteHeader = SectionHeader("地表繪製");
         var palettePanel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(10), BackColor = WinFormsTheme.Surface };
         var currentBrush = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 76, Padding = new Padding(4), FlowDirection = FlowDirection.LeftToRight };
@@ -493,6 +494,7 @@ internal sealed partial class MapEditorForm : Form
         _blankTerrainButton.Text = isEn ? "Reset Flat Terrain…" : "重設平坦地形…";
         _regionToolsButton.Text = isEn ? "Region tools…" : "區域工具…";
         _layoutMenu.Text = isEn ? "Layouts" : "配置";
+        LocalizeWeatherMenu(isEn);
         _generateSettlement.Text = isEn ? "One-Click Base Generator…" : "一鍵生成對戰基地…";
         _generateSettlement.ToolTipText = isEn ? "Generate fair, symmetric bases and resources for 2-8 players." : "為 2-8 位玩家自動生成公平對稱的基地與資源配置。";
         _exportPlacementLayout.Text = isEn ? "Save selected settlement / objects…" : "保存選取的聚落／物件…";
@@ -1413,6 +1415,7 @@ internal sealed partial class MapEditorForm : Form
     {
         _regionToolsButton.Enabled = _selected?.IsCustom == true && _terrainBlendSession is not null;
         _layoutMenu.Enabled = _selected?.IsCustom == true;
+        _weatherMenu.Enabled = _selected?.IsCustom == true;
         _boxSelectButton.Enabled = _selected?.IsCustom == true && _terrainBlendSession is not null;
         InvalidateMapDiagnostics();
         bool editable = _selected?.IsCustom == true; _saveButton.Enabled = editable && IsDirty; _exportModButton.Enabled = _selected is not null; _gamePreviewButton.Enabled = _selected is not null; _undoButton.Enabled = editable && (TerrainLayerMode ? _terrainLayers?.CanUndo == true : _terrainBlendSession?.CanUndo == true); _redoButton.Enabled = editable && (TerrainLayerMode ? _terrainLayers?.CanRedo == true : _terrainBlendSession?.CanRedo == true); _resetTerrainButton.Enabled = editable && ((_texturesDocument is not null && TextureDirty()) || _terrainLayers?.IsDirty == true || _resetAuxiliaryLayers);
