@@ -7,6 +7,11 @@
 - AA 四角色彩、16/32px 抽樣與拼貼支持岩石側 N/E/S/W → `Fels_AA_008/004/002/006`；`BuildRealNames`＋`FilteredBy` 接入 host，保留實際拼字並驗證可解碼。缺方向不回退，未支援格子不生成附帶效果；角點／None／通用岩石不登記。下方「工具暫時不貼任何圖塊」為舊狀態，已由本節取代。
 - 信心：圖塊存在／可解碼及岩石側高；當作 downhill face 的語意、B8 等地表接縫、遊戲顯示／立體岩壁效果仍未驗證。未讀寫安裝目錄、未啟動遊戲、未 commit/push；保留 `.claude/`、`TEMP/`。
 - 驗證：`DOTNET_ROLL_FORWARD=Major dotnet build AgainstRomeModifier.slnx -c Release -p:UseAppHost=false` 0 errors；`dotnet test AgainstRomeModifier.slnx -c Release --no-build` Modules 550、host 709 通過（22 略過）、0 failures；opt-in TEMP 分析另 1 通過；`git diff --check` 通過。曾修正新增測試的 2 個 CS8604，及首輪測試抓到的 strict None 回退，現均通過回歸。
+## Soundscape Task A (2026-10-08 Codex; isolated wt/sound)
+
+- Worktree `D:\Github\ARM_wt_sound`, baseline `080ebc9`. Main checkout and installed game untouched; no game launched.
+- TEMP ENDL_000/005: no sound.dat or active SFXmark objects. EXE confirms sfxenv/sfxobj/sfxexp DAU loaders, object/action selection and voice APIs. Missing native sound tables/catalog prevent a verified zone export contract.
+- Disabled fabricated native file/script export; retained editor draft serialization and preview. Added rejection/no-write regression tests. Release build: 0 errors / 40 analyzer warnings; test: Modules 548 passed, Host 705 passed / 22 skipped, 0 failures. Probe (stdlib and optional disassembly) and git diff --check passed. No in-game verification. Report: `docs/reverse-engineering/sound-zones.md`.
 
 ## 懸崖工具發現與修正（2026-10-08 Claude，遊戲內實測；使用者已改好輸入法設定，遊戲可正常啟動）
 
