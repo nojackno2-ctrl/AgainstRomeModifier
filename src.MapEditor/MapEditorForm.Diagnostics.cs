@@ -76,9 +76,20 @@ internal sealed partial class MapEditorForm
             foreach (ScenarioSpawn saved in previous.Spawns.Where(spawn => !visibleIds.Contains(spawn.Id)))
                 objects.Add(new(saved, saved.Prebuilt, false));
         }
-        return MapDiagnostics.Check(new(objects, EventSession.Capture(), _objectCatalog.Select(AliasOf).ToArray(),
+        var snapshot = new MapCheckSnapshot(objects, EventSession.Capture(), _objectCatalog.Select(AliasOf).ToArray(),
             layers?.CollisionSize ?? 0, layers?.Collision, layers?.VertexSize ?? 0,
-            layers?.Heights, _heightMapStep, (float)_waterLevel.Value));
+            layers?.Heights, _heightMapStep, (float)_waterLevel.Value);
+        var issues = new List<MapIssue>(MapDiagnostics.Check(snapshot));
+        // 進階檢查只作警告（連通性與預算皆為估計），不阻擋儲存。
+        issues.AddRange(MapDiagnostics.ConvertToIssues(MapDiagnostics.AnalyzeNavMesh(snapshot)));
+        var budget = AgainstRomeMapEditor.Modules.Profiling.MapBudgetProfiler.Analyze(new(
+            Spawns: objects.Select(item => item.Spawn).ToArray(),
+            CollisionSize: snapshot.CollisionSize, Collision: snapshot.Collision,
+            HeightSize: snapshot.HeightSize, Heights: snapshot.Heights,
+            HeightStep: snapshot.HeightStep, WaterLevel: snapshot.WaterLevel));
+        issues.AddRange(budget.Bottlenecks.Select(item => new MapIssue(MapIssueSeverity.Warning, item.Code,
+            item.ChineseDescription, item.EnglishDescription, WorldX: item.WorldX, WorldZ: item.WorldZ)));
+        return issues;
     }
 
     private void LocalizeMapDiagnostics(bool en)
