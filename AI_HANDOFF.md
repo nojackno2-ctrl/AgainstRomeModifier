@@ -735,3 +735,4 @@
 - 2026-10-08 Claude：已再次把 waves 案例寫入遊戲 MAPS\ENDL_005（Claude Test 1b）供使用者自行遊玩驗證；原始備份在 %TEMP%\ArmGameBackup_20261008_ENDL_005，驗證後須還原。
 - 2026-10-08 Claude：修正真實缺陷——選單「野外巢穴守衛波次…」原本只傳 Figure 別名，巢穴核心建築不在目錄而永遠無法套用；改傳 LairAliases（Figure+Building）。新增 in-game 案例 lair；遊戲 ENDL_005 現含 waves（15s/35s 於 (11356,9344)）與 lair（每 20 秒重複 3 名 GER_INF00 於 (11356,8144)）事件，待使用者遊玩驗證，之後以 %TEMP%\ArmGameBackup_20261008_ENDL_005 還原。
 - 2026-10-08 Claude：新增 in-game 案例 objective（Survival 40 秒，出生單位存活→OBJ_WIN@40s 勝利；單位死亡→OBJ_FAIL 失敗）。遊戲 ENDL_005 現含 waves（15s/35s）＋lair（每 20s）＋objective（40s 勝利）三組事件，待使用者遊玩驗證後以備份還原。
+- 2026-10-09 Claude：依 agy 稽核修正 user-guide／modules 14 處（Objectives／WildLair 已接入選單、類別名稱、控制台位置、高度操作 6 種等）；Soundscape／Cinematics 仍標未接入。

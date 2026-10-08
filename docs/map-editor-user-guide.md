@@ -53,7 +53,7 @@
 ### 2.1 地形與通行編輯 (Terrain & Passability)
 
 - **高度工具 (Height)**：
-  - 支援四種操作：**升高 (Raise)**、**降低 (Lower)**、**平滑 (Smooth)**、**整平 (Flatten)**。
+  - 支援六種操作：**升高 (Raise)**、**降低 (Lower)**、**平滑 (Smooth)**、**整平 (Flatten)**、**粗糙 (Roughen)** 與 **水面（下挖）**。
   - 提供三種強度：**輕 (Gentle)**、**中 (Medium)**、**強 (Strong)**。
   - **整平模式**：滑鼠點擊起點的頂點高度會自動鎖定為目標高度基準，拖曳時將範圍內地形平滑過渡至該高度。
   - **筆刷內插**：支援 Bresenham 軌跡補點，快速拖曳筆刷時不會產生間隙斷點。
@@ -67,7 +67,7 @@
   - 支援圓形筆刷繪製地表材質；編輯器會根據原版材質轉移規則進行混合。若材質組合超出原版過渡圖層支援範圍，系統會自動略過並給出提示。
   - **土路 (Dirt Path)**：調色盤「道路」分類的土路使用原版 `PFAD` 圖塊（原版地圖最常用的道路），用一般筆刷拖曳即可，邊緣與轉角由編輯器自動選用原版邊界片。原版邊界只為 L2 草地／土地繪製；其他顏色相近的地表也可使用（自動挑選草地或土地邊界組），交界處可能有輕微色差。兩條路斜向只碰到一個角時沒有原版片，會被略過並提示，請改用 3×3 以上筆刷。
 - **圖塊印章 (Tile stamp)**：
-  - 勾選「圖塊印章（原版道路、河流、岩壁等）」可直接選取原版圖塊印章，拖曳會補齊游標回報之間的格子。一次拖曳提交為一次單步 Undo 交易；切換筆刷會開始新筆畫。
+  - 勾選「圖塊印章（原版道路、河流、岩壁…）」可直接選取原版圖塊印章，拖曳會補齊游標回報之間的格子。一次拖曳提交為一次單步 Undo 交易；切換筆刷會開始新筆畫。
   - **地區圖塊篩選 (`_stampOtherRegions`)**：勾選「圖塊印章」後會顯示「顯示其他地區圖塊」核取方塊。系統預設會檢查地圖貼圖目前使用的 L 系列圖塊；若貼圖不含 L 圖塊，則檢查地圖上的地景物件地區（日耳曼 GER=L2、匈人 HUN=L3、不列顛 BRI=L4/04、義大利/羅馬 ITA/ROM=L5/05/06、喀爾巴阡 KAR=L13/15）。在未勾選且無搜尋關鍵字時，清單僅顯示符合地圖地區的 L 圖塊，防止誤用不相容氣候的圖塊；若輸入搜尋文字或勾選「顯示其他地區圖塊」，則顯示素材庫中的所有地區圖塊。
   - **自動選路 (`_autoRoad`)**：勾選「圖塊印章」後會顯示「自動選路（拖曳自動轉向與路口）」核取方塊。啟用後可在 2D 畫布與 3D 視圖中進行連續筆畫拖曳，系統會記錄拖曳軌跡（`_roadStrokePath`），並依據目前選取的印章偏好圖塊（如 `PFAD` 或道路圖塊），由 `RoadTileCatalog` 與 `TerrainBlendEditSession.PaintRoadPath` 自動匹配原版直路、轉向彎角、T 字路口、十字路口與端點片。若拓撲連接缺少對應方向的原版圖塊，狀態列會提示無法連接；放開滑鼠一次提交整條路徑，按 Escape 或取消會復原回繪製前的原始地表圖塊。
 - **區域工具與懸崖工具 (Region Tools & Cliff Tool)**：
@@ -75,8 +75,8 @@
     - **矩形懸崖岩壁 (Cliff Face)**：由 `CliffEdgeDetector` 讀取 257×257 頂點高程場 (`_terrainLayers.Heights`)，依高度落差與地圖步長偵測矩形範圍內的陡坡格與坡向。圖塊目錄（`CliffTileCatalog.BuildRealNames`）嚴格僅使用經原版圖塊像素分析驗證之真實岩壁圖塊（北坡 `Fels_AA_008`、東坡 `Fels_AA_004`、南坡 `Fels_AA_002`、西坡 `Fels_AA_006`），嚴格要求精確朝向，禁止猜測名稱或轉角回退（避免遊戲內出現「Error: File not found」錯誤圖塊）。目前 16 個轉角朝向會安全略過並在狀態列提示略過數量。套用時在 4×4 碰撞網格寫入阻擋像素（每格 16 阻擋像素，防止單位翻越懸崖），並自動嘗試銜接坡腳碎石過渡（碎石邊界缺失時發出警告但不阻擋懸崖套用）。支援紋理與碰撞雙層 session 單步原子 Undo/Redo。
     - **矩形水系河流 (River Flow)**：自動規劃水系流向，下挖河床至水面以下並保持 3 頂點平滑岸坡過渡。
     - **矩形生態植被散播 (Flora Scatter)**：依地形高程與生態圈規則自動散播適應當前氣候的植物。
-    - **矩形水力與熱侵蝕 (Erosion)**：模擬水力沖刷與熱風化侵蝕地形高程。
-    - **城牆柵欄折線 (Palisade / Wall)**：依據航點沿線以 64 世界單位間距排列真實城牆物件（Pal00/Pal01/Pal02 等）。
+    - **矩形水力與熱力侵蝕 (Erosion)**：模擬水力沖刷與熱風化侵蝕地形高程。
+    - **城牆／柵欄折線 (Wall / Palisade)**：依據航點沿線以 64 世界單位間距排列真實城牆物件（Pal00/Pal01/Pal02 等）。
 - **重設平坦地形 (Reset Flat Terrain)**：
   - 把地形整平到水位換算後的高度樣本 + 20，清除碰撞阻擋與可移除地景、重設基礎材質；聚落、腳本與連結物件保留。
   - 地圖選單的「平坦範本地圖」會完整複製無盡範本，再將這些地形變更放入待儲存狀態。它是保留範本內容的整平流程。
@@ -273,11 +273,11 @@
    - **現狀**：**未接入 UI 與關卡腳本 (Unwired / Experimental)**。
    - **逆向證據**：已於 EXE 中確認底層原生原語 `s_lgcSetEnginePos v(ddd)` 與 `s_lgcSetEngineZoom v(d)`（原生縮放夾限 0..9），且 `CinematicBciCompiler` 已實作底層 bytecode 呼叫片段編碼。但航點預覽距離換算、Pitch/Yaw 原生參數對應、相機控制權接管/釋放、黑邊效果及腳本時間軸排程仍無原生證據。模組宣告為 `IsExperimental = true; IsWiredToLevelScript = false;`，未接入主程式 UI。
 3. **戰役任務目標 (Objectives / Mission Goals - `src.MapEditor.Modules/Objectives`)**：
-   - **現狀**：**未接入編輯器 WinForms UI (Unwired to UI)**。
-   - **逆向證據**：`BciObjectiveCompiler` 嚴格保守降階至既有的 `ScenarioEvent`（僅支援單一主要目標、目標物件死亡/移除 `ObjectDeadOrRemoved`、開局生存倒數、護送至矩形區域、保護物件失敗等）。沙盒 `ObjectiveSandboxSession` 支援的依賴圖 (Prerequisites)、多主線目標、隊伍全殲、持續佔領 (King of the Hill)、擊殺/資源計數在編譯匯出時均會被嚴格阻擋；目前未在 WinForms 主表單接入介面。
+   - **現狀**：已接入編輯器 WinForms UI（配置選單「任務目標設計…」）與事件存檔流程；遊戲內行為尚未驗證。
+   - **逆向證據**：`BciObjectiveCompiler` 嚴格保守降階至既有的 `ScenarioEvent`（僅支援單一主要目標、目標物件死亡/移除 `ObjectDeadOrRemoved`、開局生存倒數、護送至矩形區域、保護物件失敗等）。沙盒 `ObjectiveSandboxSession` 支援的依賴圖 (Prerequisites)、多主線目標、隊伍全殲、持續佔領 (King of the Hill)、擊殺/資源計數在編譯匯出時均會被嚴格阻擋。
 4. **野外巢穴與生物 (Wild Lairs & Wildlife - `src.MapEditor.Modules/WildLair`)**：
-   - **現狀**：**未接入編輯器 WinForms UI (Unwired to UI)**。
-   - **逆向證據**：逆向分析確認原版引擎無野外巢穴 (den) 或定期再生 (spawn trigger) 機制；野生動物在 DATA 中為中立（隊伍 8）單一物件（`FigTie` 類別，如 `ALL_WOL00`, `ALL_BAE00`, `ALL_EBE00`, `ALL_RAU00`）。`WildLairScenarioEventBinder` 僅能將特定步兵的定時波次降階至 `ScenarioEvent`；動物單兵生成（`SpawnUnit` 不支援隊伍 8）、動態守衛、死亡重生、資源/榮譽獎勵等原生無支援而直接拋出例外；目前未在 WinForms 主表單接入介面。
+   - **現狀**：已接入編輯器 WinForms UI（配置選單「野外巢穴守衛波次…」）與事件存檔流程；遊戲內行為尚未驗證。
+   - **逆向證據**：逆向分析確認原版引擎無野外巢穴 (den) 或定期再生 (spawn trigger) 機制；野生動物在 DATA 中為中立（隊伍 8）單一物件（`FigTie` 類別，如 `ALL_WOL00`, `ALL_BAE00`, `ALL_EBE00`, `ALL_RAU00`）。`WildLairScenarioEventBinder` 僅能將特定步兵的定時波次降階至 `ScenarioEvent`；動物單兵生成（`SpawnUnit` 不支援隊伍 8）、動態守衛、死亡重生、資源/榮譽獎勵等原生無支援而直接拋出例外。
 
 > [!NOTE]
 > 本輪未存取遊戲安裝目錄，亦未啟動遊戲執行。所有新功能與修正均以原始碼分析、單元測試（Modules Tests）與宿主 STA 測試（Modifier.Tests）為準，切勿宣稱本輪版本已完成遊戲內驗收。

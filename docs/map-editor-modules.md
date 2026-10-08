@@ -30,22 +30,22 @@ dotnet test tests/AgainstRomeMapEditor.Modules.Tests -c Release
 
 | 模組領域 | 命名空間路徑 | 核心職責與規劃器 | WinForms UI 接入狀態 | 存檔／實機管線狀態 |
 | :--- | :--- | :--- | :--- | :--- |
-| **Terrain** | `Modules.Terrain` | 高度場、地表紋理、河流規劃 (`RiverFlowPlanner`)、懸崖規劃 (`CliffFacePlanner`)、圖塊印章、自動選路 | 已接入（材質工具列、區域工具對話框、印章連續筆刷） | 透過 `TerrainBlendEditSession` 與高度層交易寫入地圖 |
+| **Terrain** | `AgainstRomeMapEditor`（目錄 `Terrain/`） | 高度場、地表紋理、河流規劃 (`RiverFlowPlanner`)、懸崖規劃 (`CliffFacePlanner`)、圖塊印章、自動選路 | 已接入（材質工具列、區域工具對話框、印章連續筆刷） | 透過 `TerrainBlendEditSession` 與高度層交易寫入地圖 |
 | **Settlement** | `Modules.Settlement` | 基地選址 (`SettlementSiteEvaluator`)、資源叢集 (`ResourceClusterPlanner`)、多邊對稱平衡 (`MultiplayerFairnessBalancer`)、生成引擎 (`SettlementGeneratorEngine`) | 已接入（配置選單「一鍵生成對戰基地…」對話框） | 透過 `PlacementEditSession` 與 `NatureEditSession` 寫入 DATA |
 | **AI** | `Modules.AI` | 戰略原型清單 (`AiArchetypeCatalog`)、任務波次編譯器 (`CampaignMissionCompiler`) | 部分接入（配置選單「AI 戰役波次企劃…」對話框） | 透過 `ScenarioEventSession` 降階編譯為事件注入關卡腳本 |
 | **Events** | `Modules.Events` | 事件狀態管理 (`ScenarioEventSession`)、節點圖資料模型 (`Graph`)、編譯驗證器 | 已接入（右側事件分頁：清單檢視與視覺化事件節點圖） | 注入 `SCRIPT/ak_level.bci` 主程式迴圈 |
 | **Fortification**| `Modules.Fortification` | 柵欄規劃器 (`PalisadeRunPlanner`)、石牆規劃器 (`WallStrokePlanner`)、工事範本目錄 | 已接入（區域工具對話框「城牆柵欄折線」） | 生成真實城牆物件寫入 DATA |
-| **Atmosphere** | `Modules.Atmosphere` | 天氣預設目錄 (`WeatherPresetCatalog`)、INI 雙向序列化 (`BodenIniSerializer`) | 已接入（主工具列「天候」下拉選單） | 雙向寫入 `boden.ini`（對齊 33 個真實 INI 鍵） |
+| **Atmosphere** | `Modules.Atmosphere` | 天氣預設目錄 (`WeatherPresets`)、INI 雙向序列化 (`BodenIniSerializer`) | 已接入（主工具列「天候」下拉選單） | 雙向寫入 `boden.ini`（對齊 33 個真實 INI 鍵） |
 | **Pathfinding** | `Modules.Pathfinding` | 通行網格分析 (`NavMeshConnectivityAnalyzer`)、道路缺口偵測 (`RoadGapDetector`)、道路修復器 (`RoadPathHealer`) | 已接入（地圖檢查分頁連通性分析、巨集控制台 `/heal-navmesh`） | 檢測 collision 與高度層，修復時寫入印章與清除碰撞像素 |
 | **Profiling** | `Modules.Profiling` | 地圖資源硬限制檢測 (`MapBudgetLimits`)、預算分析器 (`MapBudgetProfiler`) | 已接入（地圖檢查分頁預算分析報告） | 唯讀分析地圖 DATA 物件數與記憶體指標 |
 | **Nature** | `Modules.Nature` | 自然景觀編輯 (`NatureEditSession`)、生態植被散播 (`FloraScatterEngine`)、生態圈配置 | 已接入（自然工具列、區域工具對話框「矩形生態植被散播」） | 寫入 `DATA/objects.dat` 等景觀槽位 |
-| **Packaging** | `Modules.Packaging` | 模組包 Manifest 1.1 規格、匯出前檢查 (`MapExportPreflightChecker`)、ZIP 匯出器 (`ModBundleExporter`) | 已接入（工具列與檔案選單「匯出模組…」按鈕） | 打包輸出包含縮圖、manifest 與地圖檔之獨立 `.zip` |
-| **Scripting** | `Modules.Scripting` | 巨集指令解析器 (`MacroCommandParser`)、空間座標轉換、指令執行器 | 已接入（下方分頁「巨集控制台」） | 提供 `/elevate`、`/replace-texture`、`/spawn-ring`、`/undo` 等命令 |
+| **Packaging** | `Modules.Packaging` | 模組包 Manifest 1.1 規格、匯出前檢查 (`MapExportPreflightChecker`)、ZIP 匯出器 (`ModBundleExporter`) | 已接入（頂端命令工具列「匯出模組…」按鈕） | 打包輸出包含縮圖、manifest 與地圖檔之獨立 `.zip` |
+| **Scripting** | `Modules.Scripting` | 編輯指令解析器 (`EditorCommandParser`)、空間座標轉換、指令執行器 | 已接入（右側檢查器分頁「控制台」） | 提供 `/elevate`、`/replace-texture`、`/spawn-ring`、`/undo` 等命令 |
 | **NativeAssets** | `Modules.NativeAssets` | 原始素材解碼（ALR 8-bit 動畫掃描線、APT 菱形圖塊） | 渲染層取用（3D/2D 檢視器直接讀取唯讀圖框） | 唯讀解碼遊戲安裝目錄之 `alr.dat`、`apt.dat` |
 | **Soundscape** | `Modules.Soundscape` | 環境音效區域規劃 (`SoundscapeZonePlanner`)、SNDZ 草稿序列化 | **未接入 UI** | **未接入存檔**（原生 `DATA/sound.dat` 匯出已阻斷停用） |
 | **Cinematics** | `Modules.Cinematics` | 航點規劃 (`CameraTrackSplinePlanner`)、ABI 呼叫片段編碼 (`CinematicBciCompiler`) | **未接入 UI** | **未接入存檔**（標記為 `IsExperimental = true; IsWiredToLevelScript = false;`） |
-| **Objectives** | `Modules.Objectives` | 目標依賴圖、測試沙盒 (`ObjectiveSandboxSession`)、保守編譯器 (`BciObjectiveCompiler`) | **未接入 UI** | **未接入存檔**（降階至 `ScenarioEvent`，沙盒進階規則於編譯時拒絕） |
-| **WildLair** | `Modules.WildLair` | 巢穴定義目錄 (`NeutralLairCatalog`)、事件適配器 (`WildLairScenarioEventBinder`) | **未接入 UI** | **未接入存檔**（無原生 den 機制，野獸為 team 8 物件，僅步兵定時波次可降階） |
+| **Objectives** | `Modules.Objectives` | 目標依賴圖、測試沙盒 (`ObjectiveSandboxSession`)、保守編譯器 (`BciObjectiveCompiler`) | 已接入（配置選單「任務目標設計…」對話框） | 經 `ScenarioEventSession` 降階為 `ScenarioEvent` 並隨地圖存檔（沙盒進階規則於編譯時拒絕；遊戲內行為待驗證） |
+| **WildLair** | `Modules.WildLair` | 巢穴定義目錄 (`NeutralLairCatalog`)、事件適配器 (`WildLairScenarioEventBinder`) | 已接入（配置選單「野外巢穴守衛波次…」對話框） | 經 `ScenarioEventSession` 將步兵定時波次降階並隨地圖存檔（無原生 den 機制，野獸為 team 8 物件，不支援；遊戲內行為待驗證） |
 
 ---
 
@@ -94,11 +94,11 @@ dotnet test tests/AgainstRomeMapEditor.Modules.Tests -c Release
 
 ### 4.3 戰役任務目標 (Objectives - `src.MapEditor.Modules/Objectives`)
 - **逆向分析結論**：`BciObjectiveCompiler` 嚴格保守降階至既有的 `ScenarioEvent`（僅支援單一主要目標、目標物件死亡/移除 `ObjectDeadOrRemoved`、開局生存倒數、護送至矩形區域、保護物件失敗等）。沙盒 `ObjectiveSandboxSession` 支援的依賴圖 (Prerequisites)、多主線目標、隊伍全殲、持續佔領 (King of the Hill)、擊殺/資源計數在編譯匯出時均會被嚴格阻擋並回報錯誤。
-- **目前現狀**：**未接入編輯器 WinForms UI**，未整合進地圖存檔流程。
+- **目前現狀**：已接入編輯器 WinForms UI（配置選單「任務目標設計…」），編譯成功之事件合併至 `ScenarioEventSession` 並隨地圖存檔；遊戲內行為尚未驗證。
 
 ### 4.4 野外巢穴與生物 (Wild Lairs - `src.MapEditor.Modules/WildLair`)
 - **逆向分析結論**：逆向分析確認原版引擎無野外巢穴 (den) 或定期再生 (spawn trigger) 機制；野生動物在 DATA 中為中立（隊伍 8）單一物件（`FigTie` 類別，如 `ALL_WOL00`, `ALL_BAE00`, `ALL_EBE00`, `ALL_RAU00`）。`WildLairScenarioEventBinder` 僅能將特定步兵的定時波次降階至 `ScenarioEvent`；動物單兵生成（`SpawnUnit` 不支援隊伍 8）、動態守衛、死亡重生、資源/榮譽獎勵等原生無支援而直接拋出例外。
-- **目前現狀**：**未接入編輯器 WinForms UI**。
+- **目前現狀**：已接入編輯器 WinForms UI（配置選單「野外巢穴守衛波次…」），所產生之守衛波次事件合併至 `ScenarioEventSession` 並隨地圖存檔；遊戲內行為尚未驗證。
 
 ---
 
