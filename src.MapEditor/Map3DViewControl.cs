@@ -46,6 +46,8 @@ internal sealed class Map3DViewControl : GLControl
     private NativeSpriteAtlas? _spriteAtlas;
     private NativeSprite?[] _objectSprites = Array.Empty<NativeSprite?>();
     private NativeSprite?[] _stillObjectSprites = Array.Empty<NativeSprite?>();
+    private readonly SceneSpriteGeometryBuffer _spriteGeometry = new();
+    private readonly SceneShadowGeometryCache _shadowGeometry = new();
     private readonly System.Windows.Forms.Timer _animationTimer = new() { Interval = 33 };
     private readonly System.Diagnostics.Stopwatch _animationClock = System.Diagnostics.Stopwatch.StartNew();
     private readonly List<AnimationGroup> _animationGroups = new();
@@ -190,6 +192,7 @@ internal sealed class Map3DViewControl : GLControl
     public bool IsReady => _initialized;
     public string? LastFailureReason { get; private set; }
     public string? ContextDescription { get; private set; }
+    internal long PaintFrameCount { get; private set; }
     public event EventHandler<TexturePaintEventArgs>? TexturePainted;
     public event EventHandler<TileHoverEventArgs>? TileHovered;
     public event EventHandler<TextureSampleEventArgs>? TextureSampled;
@@ -424,6 +427,7 @@ internal sealed class Map3DViewControl : GLControl
         base.OnPaint(e);
         if (!_initialized || _mesh is null) return;
         MakeCurrent(); RenderScene(ClientSize.Width, ClientSize.Height);
+        PaintFrameCount++;
         SwapBuffers();
     }
 
@@ -846,7 +850,7 @@ internal sealed class Map3DViewControl : GLControl
             GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.ClampToEdge);
             _shadowTextureDirty = false;
         }
-        float[] vertices = SceneObjectRenderer.BuildShadowVertices(_objects, _objectShadows, ShadowMask, _shadowAtlas, _heights);
+        float[] vertices = _shadowGeometry.Build(_objects, _objectShadows, ShadowMask, _shadowAtlas, _heights);
         if (vertices.Length == 0) return;
         GL.BindVertexArray(_shadowVao); GL.BindBuffer(BufferTarget.ArrayBuffer, _shadowVbo);
         GL.BufferData(BufferTarget.ArrayBuffer, vertices.Length * sizeof(float), vertices, BufferUsageHint.StreamDraw);
@@ -902,7 +906,7 @@ internal sealed class Map3DViewControl : GLControl
         // Pre-rendered isometric art is painted far-to-near like the original 2.5D renderer;
         // depth testing against the terrain would clip the parts drawn below the ground anchor.
         GL.Disable(EnableCap.DepthTest); GL.Disable(EnableCap.CullFace);
-        DrawSpriteBatch(SceneObjectRenderer.BuildSpriteVertices(_objects, _objectSprites, _spriteAtlas, _heights, _camera.GetViewMatrix()), 1f);
+        DrawSpriteBatch(_spriteGeometry.Build(_objects, _objectSprites, _spriteAtlas, _heights, _camera.GetViewMatrix()), 1f);
         if (EditingEnabled && _previewSprite is not null && _hoverX >= 0 && _hoverY >= 0)
         {
             const float tileWorld = SdlSceneCatalog.WorldUnitsPerMapPixel * 4f;
