@@ -62,6 +62,8 @@ synthetic valid layout、截斷／多餘尾端／version／容量拒絕、signed
 
 ## 載入流程及功能缺口
 
+2026-10-09 補充：[原生物件建立與 UID 契約](object-create-contract.md) 核對關聯池耗盡時的 copy guard、第三個 position 分配及 UID 計數器；原生建立公式不能當作現有 DATA 的通用 invariant。
+
 `CL_LoadLevelData`（`0x48e960`）依序 nested open：
 
 `light → gametime → rain → hagel → snow → flash → objects → position → anim → gfxtype → action → objdata → hirarchy → formatio → lager → engine → fow → fowreq → way → particle → explos → hitex → stat → biglager`。
