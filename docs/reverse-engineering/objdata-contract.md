@@ -92,4 +92,25 @@ getter **0x4c1290** 驗證object及其objdata link，再讀取+0x80的u16。原�
 
 證據：`re_workspace/objdata-hud-20261009-evidence.json`（14records，session已關閉）；getter `ev_9988a3d30813cfab1bbcca327bac5f6810cdda78680b0454c7bb6d1f498d0548`、caller `ev_25672e32e3ae2bbc4c40ba88efe310b8c6d44c6f7ec89e246adb7856c2dbc593`、renderer `ev_4a2f314db042c5ee753fb97127a11493b527515f1346eaededeef7b65b1acffd`、display dispatcher `ev_593ac53d1574cec561375a40b40173e090c91688320d94200805a7c8f1d0cefe`。Capstone `objdata-hud-instructions-20261009.txt`359行核對u16 getter及caller chain；`probe-objdata-tail.py`／`objdata-tail-20261009.json`保存74圖分布，兩個probe的py_compile及git diff --check通過，安裝EXE hash一致。未改C#、未寫或執行遊戲；此段未驗證實機顯示或初始化。
 
-使用者要求本輪完成後暫停；續作先讀AI_HANDOFF.md，優先確認0x4d50c0的0x23顯示條件、+0x80間接寫入／首次初始化，再回到獨立pool的新增移除與磁碟交易。不要以此比例條consumer證據宣稱跨池功能完成。
+## 0x4d50c0(0x23) 顯示條件與 +0x80 寫入審查（2026-10-09 續查）
+
+0x4d50c0 經反組譯確認為 **Object 狀態旗標查詢函式（QueryObjectBitFlag）**：
+- 若 bit index `< 0x20`（0..31）：測試 `object + 0x4`（低 32 位元 flags）的 `1 << (bit & 0x1f)`。
+- 若 bit index `>= 0x20`（32..63）：測試 `object + 0x30`（高 32 位元 flags）的 `1 << ((bit - 0x20) & 0x1f)`。
+- 當 `bit == 0x23`（35）時，測試的是 `object + 0x30` 的第 3 位元（`1 << 3` = 0x8）。
+
+成套 flags 操作函式族已全數定位：
+- `0x4d4fa0(object, bit)`：SetObjectBitFlag（OR 寫入 `object + 0x4` 或 `object + 0x30`）。
+- `0x4d5020(object, bit)`：ClearObjectBitFlag（AND NOT 清除 `object + 0x4` 或 `object + 0x30`）。
+- `0x4d50c0(object, bit)`：QueryObjectBitFlag。
+- `0x4d5140` / `0x4d5190`：取得 / 設定 `object + 0x4`（低 32 位元）。
+- `0x4d51d0` / `0x4d5220`：取得 / 設定 `object + 0x30`（高 32 位元）。
+- `0x535d60(object, bit, val)`：封裝判斷若 val 非零呼叫 0x4d4fa0，為 0 呼叫 0x4d5020。
+- `0x5260e0(parent, bit, val)`：階層式廣播旗標至所屬子物件。
+
+### +0x80 的寫入與初始化結論
+
+1. 原生物件建立 `0x4aa780` 在分配時，直接以 0 清空 `object + 0x4` 與 `object + 0x30`（指令 `0x4aac06` 與 `0x4aac0d`）。
+2. objdata copy `0x4ab060` 與 reset `0x4ac0c0` 均不寫入 +0x7c / +0x80 / +0x82。
+3. 全可執行檔二進位掃描確認：**不存在任何直接或靜態寫入 0xf60014（+0x80）的指令**；僅有 reader 載入、writer 0x489745 儲存、0x4ad41c 與 0x4b81fa 讀取高字組 +0x82、以及 0x4c12de 讀取 u16 +0x80。
+4. 74 張官方地圖的全部 392,344 個活躍物件中 +0x80 全為 0。這確認 +0x80 在地圖資料中為標準全零初值，且其比例條顯示受限於 `object + 0x30` 的 bit 3。

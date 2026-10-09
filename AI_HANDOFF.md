@@ -1,5 +1,13 @@
 # AI Handoff - Live Project Memory
 
+## 旗標系統、Action 範本殘餘與釋放鏈逆向（2026-10-09 Antigravity，完成並驗證，未修改 C#）
+
+- 0x4d50c0(0x23) 與 Object 旗標族（2026-10-09 Antigravity）：0x4d50c0 靜態確認為 `QueryObjectBitFlag(object, bit)`，`bit < 0x20` 查 `object + 0x4`（低32位元），`bit >= 0x20` 查 `object + 0x30`（高32位元）；0x23（35）即測試 `object + 0x30` 的第 3 位元（`1 << 3` = 0x8）。成套操作函式全數定位：`0x4d4fa0`（SetObjectBitFlag）、`0x4d5020`（ClearObjectBitFlag）、`0x4d5140`/`0x4d5190`（Low flags getter/setter）、`0x4d51d0`/`0x4d5220`（High flags getter/setter）、`0x535d60`（封裝 wrapper）、`0x5260e0`（階層式成員廣播）。原生物件建立 0x4aa780 時直接以 0 清空 `object + 0x4` 與 `object + 0x30`。
+- +0x80 初始化與寫入審查（2026-10-09 Antigravity）：全二進位掃描確認 EXE 中**不存在任何直接或靜態寫入 0xf60014（+0x80）的指令**；僅有 reader 載入、writer 0x489745 儲存、0x4ad41c 與 0x4b81fa 讀取高字組 +0x82、以及 0x4c12de 讀取 u16 +0x80。objdata copy 與 reset 皆不寫此欄。74 圖 392,344 個物件快照中 +0x80 全為 0。
+- action 範本堆疊未初始化成因（2026-10-09 Antigravity）：0x4a9740 入口 `sub esp, 0x178` 未清空堆疊；0x4a99b4 寫 active=1、0x4a9929/30/37 寫 word 0..2 為 0；後三個 words（word 3..5，flags 96..191）**未顯式寫入**，保留堆疊殘留值；copy helper 0x4aaff0 完整複製 28 bytes（active + 6 個 words）。這完全解釋了 74 圖中 392,218 筆 active action 具有非零後 96 bits 的現象。
+- action 重置與關聯池釋放鏈（2026-10-09 Antigravity）：與建立不同，action reset `0x4ac070` 明確將 active 清 0 並透過迴圈將全部 6 個 words（192 bits）**完整清零**，並回退 cursor 0x7718b0。`0x4abb80` 完整釋放鏈確認：+0x08/0a/0c 調用 position 釋放 0x4abec0、+0x0e anim 調用 0x4abf30、+0x10 gfxtype 調用 0x4abfc0、+0x14 action 調用 0x4ac070、+0x16 objdata 調用 0x4ac0c0、+0x1e 調用 particle 釋放 0x4db800，完成後 link 全設 0xffff。
+- 驗證成果：新增 `re_workspace/probe-flags-and-template.py`，Capstone 343 行指令斷言（query/set/clear flags、stack template writes、action reset loop、release chain）全數通過；更新 `objdata-contract.md` 與 `object-create-contract.md`。未修改 C#，未執行/寫入遊戲安裝目錄。
+
 ## 遊戲目錄逆向（2026-10-09 Codex，依使用者要求暫停，尚未完成）
 
 - 暫停交接（2026-10-09 Codex）：使用者要求「目前的工作完成後暫停，寫入交接」。已完成本輪objdata+80 consumer核對與文件；REA ledger匯出並關閉session，本輪沒有待完成的子代理或probe。本輪只提交AI_HANDOFF.md／objdata-contract.md，不push；不動既有`.claude/`及`TEMP/`。恢復時先重讀AGENTS／handoff、git status/diff/log；先追0x4d50c0(object,0x23)比例條顯示條件與+80間接寫入／首次初始化，再回到action後三words範本、獨立pool新增移除及磁碟交易。遊戲實機、空白圖載入、完整新增/移除仍未驗證，整體逆向勿標完成。十路Agy報告已複核且terminal，勿重派同工作。

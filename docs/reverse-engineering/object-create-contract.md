@@ -151,3 +151,30 @@ set／clear 成功回傳1；無效 object、無效 action、旗標越界分別�
 唯讀掃描74張地圖的392,311個 active action slots，其中 **392,218個** 至少設定一個後96 bits；全部74張都有此現象。74個 decoded SHA256 與前輪 action link manifest 一致，安裝 EXE fingerprint亦一致。這排除「後三words可忽略／一律零」的假設，但既有資料非零不證明每一 bit 均具遊戲語意，亦未解決新建物件範本的初值来源。產品新增仍須追 helper alias writes、完整初始化與跨池交易。
 
 證據：`re_workspace/action-flags-20261009-evidence.json`（16 records，session已關閉）；set `ev_8d26dc2abeecfbc8eab51f194286beb356aa759c2b7708f05430893f9eb0a278`、clear `ev_f843d154d16f15d2500fac5a39004cc438a848d9dca686e1283c05c84c714532`、query `ev_52088b1d0175657b8eadf0aee251c9153b656e494b3fb7a4a3eed6989c1488ab`、packed input `ev_eb106c25c994b8348c7167f135c566ecade7960f85defb3112f2c7e1dc1e1b18`。原指令 `action-flags-instructions-20261009.txt` 及分布 `action-flag-distribution-20261009.json` 保留於忽略的 research workspace。未修改或執行遊戲；本輪未改C#，未重跑.NET回歸，實機效果仍未驗證。
+
+## action 範本堆疊寫入與釋放/重置鏈（2026-10-09 續查）
+
+### 1. 建立時 action 範本的成因確認
+在 `0x4a9740` 建立 stack 範本時：
+- 入口 `sub esp, 0x178` 未進行全堆疊清零。
+- 指令 `0x4a99b4` 寫入 active byte = 1。
+- 指令 `0x4a9929`、`0x4a9930`、`0x4a9937` 僅將 word 0、word 1、word 2 寫為 0。
+- 後三個 words（word 3..5，即 flags 96..191）**未被顯式初始化**，直接保留先前的堆疊調用殘餘資料。
+- 複製器 `0x4aaff0` 依據 28 bytes 結構將 active byte 及全部 6 個 words（192 bits）完整拷貝至 action pool。
+- 這完全解釋了為何 74 張官方地圖的 active 物件中，高達 392,218 筆在後 96 bits 具有非零值。
+
+### 2. action 重置函式 0x4ac070 的行為
+與建立時不同，原生 action 重置函式 `0x4ac070`：
+- 將 active byte 設為 0（`0x4ac093`）。
+- 透過迴圈將全部 6 個 words（`0x4ac0a3`）**完整清零**。
+- 若釋放槽位小於分配游標 `0x7718b0`，則將游標回退至該槽位（`0x4ac0b7`）。
+
+### 3. 物件釋放鏈 0x4abb80
+`0x4abb80` 逐一釋放原生關聯池：
+- `+0x08` / `+0x0a` / `+0x0c`：position 槽位，呼叫 `0x4abec0`。
+- `+0x0e`：anim 槽位，呼叫 `0x4abf30`。
+- `+0x10`：gfxtype 槽位，呼叫 `0x4abfc0`。
+- `+0x14`：action 槽位，呼叫 `0x4ac070`。
+- `+0x16`：objdata 槽位，呼叫 `0x4ac0c0`。
+- `+0x1e`：particle 槽位，呼叫 `0x4db800`。
+- 釋放完成後將 object 中各 link 重設為 `0xffff`。
