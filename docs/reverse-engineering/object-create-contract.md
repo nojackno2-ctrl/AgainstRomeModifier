@@ -72,4 +72,24 @@ REA ledger `re_workspace/create-contract-20261009-evidence.json`（18 records）
 
 `create-contract-instructions-20261009.txt` 保存514條原指令，涵蓋 create 前段、完整 UID generator 及 copy guards；不是 create 全函式原始指令清單。主函式完整失敗分支依上述 REA ledger，後續可針對 caller 取得更強證據。
 
-下一步追場景初始化／載入入口先後順序、counter的其他間接consumer與各範本建構caller，並建立產品新增前的容量／範本／跨池交易要求。實機物件新增、移除、空白地圖與存讀檔仍未由本輪驗證。
+## 上層建立 caller 與隊伍變更（2026-10-09 續查）
+
+Ghidra 對底層 `0x4aa780` 找到一個直接 xref：`0x4a9c84`，所在函式 `0x4a9740`。這是已分析的直接引用結果，不排除間接 caller。上層 `0x4a9740` 另有12個直接 xrefs，尚未逐一定位遊戲操作入口。
+
+上層順序：座標轉換→`0x4a9d50` preflight→建立 stack 上的 runtime 範本→呼叫底層create→若回傳slot≥0，呼叫 `0x4f6260`、team setter `0x4bd970` 及其他後處理。反編譯的 param_4 是type候選、param_5是傳入隊伍候選；完整公開 ABI 仍需由上層caller確認，不能只據Ghidra的參數名稱建立API。
+
+### team 0 建立，再變更隊伍
+
+`0x4a9c41 push0` 對應底層create第10個參數（前輪確認為team）；`0x4a9c84 call0x4aa780`，之後 `0x4a9cad call0x4bd970(slot,param_5)`。team setter先經object validator `0x4ab7b0`，有效時只寫 runtime object +2（指令 `0x4bd9a6`／base0xa14bfe），不寫 +4 UID。
+
+因此這条原生路徑的UID生成高byte是0，即使完成後物件team為8也不變。這為74地圖觀測提供相容的原生解釋，但未證明全部歷史DATA都由此路徑生成。**不能把「UID高byte必須等於目前team」當新增後驗證規則。** 前輪磁碟反例不再只有未知假說；目前已確認一個team先後不同的具體路徑。
+
+### preflight 與範本邊界
+
+`0x4a9d50` 先以 `0x4afd80(type)` 驗證signed type0..2499且type table base0xc648bc、stride0x2a4首byte非零，再進行座標／type欄位與其他helper條件，最後有條件檢查 `0x4db770()` 是否回傳負值。這不是已確認的anim/gfxtype/action容量交易預檢；其helpers的完整語意與間接保護仍需追查，不能據此斷言引擎毫無容量防護。
+
+caller建構的position、anim、gfxtype、action及另外兩組資料是stack上的runtime布局，並非直接複製serialized磁碟record。gfxtype建立範本已知active=1、runtime+4/+a=ffff、尾端+0x10=99，但+0xc=0；前輪**inactive reset**的+0xc=0100。anim建立範本的+0x1c=0，inactive reset則為1。這些差異證明「把reset預設值改active=1」不能當作通用建立範本。action只能確認部分顯式初始化欄位；未把未解釋的stack資料臆測為全零。
+
+REA ledger `re_workspace/create-caller-20261009-evidence.json`（6records）已匯出/session關閉。caller evidence `ev_30a50d042942c4f41c7ac8ad4cd915a6585c6d78bf40731d87103b2876379c4f`；team setter `ev_c55bc20a46bd8fc439efaf650de721ab2112c89a411a9b08cf54c6a9198ef425`；preflight `ev_e7c55c01f5b69b4425ab924698da9b766c6ba8d199642cef2178f91811e2fb54`。Capstone `create-caller-instructions-complete-setter-20261009.txt` 553行（含region標記）核對push0／call／team write；初版setter視窗未覆蓋最末寫入，擴為64bytes後確認，舊短視窗不作完整setter證明。
+
+下一步追上層12個callers、preflight未知helpers、完整action/objdata範本及場景載入先後順序，並建立产品新增前的容量／範本／跨池交易要求。實機物件新增、移除、空白地圖與存讀檔仍未由本輪驗證。
