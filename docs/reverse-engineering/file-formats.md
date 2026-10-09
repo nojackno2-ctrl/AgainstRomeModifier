@@ -42,5 +42,9 @@ modifier. Project documentation is UTF-8.
 
 ## ZIP-Like Files
 
-`apt.dat` appears to be a ZIP-style container with files under
-`SYSTEM/DATA/APT/*.apt`. It is identified but not currently patched.
+The 2026-10-09 installed-directory probe verified readable ZIP central
+directories in `alr.dat`, `apt.dat`, `floortex.dat`, `gui.dat`, `mp.dat`,
+`sfx.dat`, `shad.dat`, and `voice.dat`. `apt.dat` contains 222 entries under
+`SYSTEM/DATA/APT/*.apt`; sampled payloads have APAT headers. Full counts and
+sampling limits are in `installed-game-directory.md`. A central-directory
+inventory is not a full member CRC or gameplay validation.

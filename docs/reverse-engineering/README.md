@@ -9,6 +9,25 @@ and patch code.
 
 ## Files
 
+- `agy-feature-review.md`: five Agy research scopes, parent review and rejected
+  claims; newly confirmed CorpseRetention source-offset mismatch.
+- `feature-research-targets.md`: current feature-oriented research priorities
+  for the map editor and modifier, including acceptance gaps.
+- `map-data-pools.md`: action/anim layouts, native load failure flow and
+  read-only structural validation across 74 maps.
+- `binary-boundaries.md`: main EXE dynamic stream loader, all 12 ds_andll.dll
+  exports and instruction-corrected playback ABI; ar.exe investigation boundary.
+- `engine-configuration.md`: encoded section prefixes, startup read order,
+  archive/directory list replacement and a static bounds-check finding.
+- `game-command-line.md`: 40 game option names/aliases, argv handling,
+  USER/clparam.ini to temporary-INI override flow and Registry-source correction.
+- `virtual-file-system.md`: native loose-file gate, ordered archive fallback,
+  ZIP/PUA backend registration and installed-path overlap evidence.
+- `pua-format.md`: ARCP headers/entries, LZSS/XOR read flow and full `cl.pua` CRC verification.
+- `installed-game-directory.md`: read-only installed-directory inventory, ZIP
+  package families/full CRC coverage, BCI/PFIL coverage and remaining game-wide investigation queue.
+- `script-clock.md`: fresh EXE clock capture/rebase and serialized-scalar data flow;
+  save/load rollback cause remains unresolved.
 - `../../TechDoc.md`: current Chinese technical specification, integrating the cross-feature maintenance chronology, failure cases, and safety contracts.
 - `file-formats.md`: compressed game files, wrappers, and encodings.
 - `map-formats.md`: static BMP-grid facts, explicitly unverified map-layer semantics, and the controlled experiments required before any terrain or collision write feature.
@@ -30,7 +49,7 @@ and patch code.
   (Berserker/marksmanship/shield/thunder/charge) and their `cl_epara.ini`
   factors, glory earn/loss rules, and the combat upgrade icons.
 - `known-patches.md`: implemented, legacy, candidate, and rejected patches.
-- `feature-verification-matrix.md`: all 44 `FeatureRegistry` entries mapped to
+- `feature-verification-matrix.md`: all 49 `FeatureRegistry` entries mapped to
   their actual write targets, reverse-engineering evidence, and separately
   recorded runtime status.
 - `projectile-ballistics.md` and `priest-spells.md`: experimental projectile,
@@ -61,7 +80,8 @@ and patch code.
   runtime-verified Roman Endless `dlg_volk` setter patch, experimental native
   1920x1080 mode replacement, restore-only legacy signatures, and local
   full-function inventory.
-- `apt.dat`: ZIP-like candidate, not integrated into the modifier.
+- `apt.dat`: verified ZIP central directory containing 222 APAT assets in the
+  inspected installation; see the installed-directory and native-scene notes.
 
 ## Evidence Rules
 
