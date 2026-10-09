@@ -83,6 +83,8 @@ are a priority for investigating the empty-map loader stall.
 
 1. Trace EXE file-open/lookup precedence between loose SYSTEM files and ZIP
    members, including locale-dependent paths and configuration registration.
+   Native conditional loose-first and ordered archive fallback are now traced
+   in `virtual-file-system.md`; active configuration and runtime attribution remain open.
 2. Classify remaining PFIL payload families by their consumers; trace map DATA,
    SDL/SDT and script lifecycle together to diagnose the empty-map load stall.
 3. Trace the `ar.exe` and `ds_andll.dll` boundaries without assuming their roles.
@@ -90,3 +92,8 @@ are a priority for investigating the empty-map loader stall.
    see `script-clock.md`. Controlled runtime evidence is still required.
 5. Preserve separate coverage for render assets, audio, scripts, AI, save state,
    GUI and network behavior. Directory inventory is not complete reverse engineering.
+
+Follow-up: `cl.pua` is a ninth root archive carrier of a different format,
+ARCP, containing 169 named resources. All decoded member CRCs now verify;
+see `pua-format.md`. The earlier eight-package ZIP count remains accurate but
+was not the count of every root archive format.

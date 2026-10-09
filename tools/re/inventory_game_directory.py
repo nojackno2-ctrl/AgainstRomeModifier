@@ -54,7 +54,7 @@ def pfil_prefix(data, limit=32):
 def signature(data):
     for prefix, name in [(b"PFIL@", "PFIL@"), (b"PK\x03\x04", "ZIP-local-header"),
                          (b"MZ", "DOS-MZ"), (b"BCI0", "BCI0"), (b"ALRA", "ALRA"),
-                         (b"APAT", "APAT"), (b"RIFF", "RIFF"), (b"BM", "BMP")]:
+                         (b"APAT", "APAT"), (b"ARCP", "ARCP"), (b"RIFF", "RIFF"), (b"BM", "BMP")]:
         if data.startswith(prefix):
             return name
     return "other"

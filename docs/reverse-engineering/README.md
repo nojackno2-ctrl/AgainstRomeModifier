@@ -9,6 +9,9 @@ and patch code.
 
 ## Files
 
+- `virtual-file-system.md`: native loose-file gate, ordered archive fallback,
+  ZIP/PUA backend registration and installed-path overlap evidence.
+- `pua-format.md`: ARCP headers/entries, LZSS/XOR read flow and full `cl.pua` CRC verification.
 - `installed-game-directory.md`: read-only installed-directory inventory, ZIP
   package families, BCI/PFIL coverage and remaining game-wide investigation queue.
 - `script-clock.md`: fresh EXE clock capture/rebase and serialized-scalar data flow;
