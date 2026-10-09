@@ -1,5 +1,17 @@
 # AI Handoff - Live Project Memory
 
+## 原生地圖載入管線、24池強約束與三段CHECK語意逆向（2026-10-09 Antigravity，完成並驗證）
+
+- 命令分派與管線進入點（2026-10-09 Antigravity）：`0x426980` 註冊 `0x0b`（`CMD_LOAD_LEVEL`）對應 `0x4310f0`、`0x0a`（`CMD_LOAD_GAME`）對應 `0x431410`。兩者經 `0x502e00`/`0x44e590` 呼叫核心地圖載入器 `CLMP_LoadLevel`（`0x4870e0`，內部檔名 `CLMP\mp_lsave.c`）。
+- 空白地圖卡死根因與 24 池強約束（2026-10-09 Antigravity）：`CL_LoadLevelData`（`0x48e960`）依序開啟 `DATA/` 下全部 24 個池檔案；**任何一檔 open 失敗即輸出 `err LoadLevelData: 1000` 並中斷退出**。然而呼叫端 `0x487180` **未檢查回傳值**，盲目進入後續三段 `CHECK` 及渲染陣列計算，造成未初始化指標崩潰或無限迴圈卡死。因此，可載入地圖之 `DATA/` 目錄**必須完整具備全部 24 個檔案**，不可直接精簡。
+- 三段 CHECK 語意確認（2026-10-09 Antigravity）：
+  - CHECK 1（`0x4acfe0`）：遍歷 14,000 物件槽位，驗證 `TypeId`（runtime +0x16，範圍 [0, 2499] 且 active）與 `objdata`（runtime +0x1a），以 `Archetype[TypeId].max_hp * objdata.hp_ratio` 計算寫入 `current_hp`；第二迴圈計算士氣比例。
+  - CHECK 2（`0x4ad110`）：以 `Archetype[TypeId].max_mp * objdata.mp_ratio` 計算寫入 `current_mp`。
+  - CHECK 3（`0x4adf40`）：驗證 `anim`（+0x12）、`position`（+0x0c）與 `TypeId`（+0x16），以 `(X_tile + Z_tile) % (Archetype.field_c0 + 1)` 計算動畫相位交錯偏移寫入 `anim[slot].offset4`；無效時清零。
+- CALCLOW 10 大池游標確認（2026-10-09 Antigravity）：`0x487503`–`0x487530` 依序掃描 10 大池（objects, objects scan, position, gfxtype, anim, action, objdata, hirarchy, formatio, lager），將最高啟用槽位存入全域游標 `0x77189c`–`0x7718c0`。
+- 腳本路徑解析與進入點（2026-10-09 Antigravity）：`0x41c1c0` 解析 `MAPS/%s/SCRIPT/ak_level.bci`；`0x5037d0` 觸發 `BEFORE_LEVEL_LOADED_OK0` 事件並進入關卡時鐘推進。
+- 驗證成果：新增 `re_workspace/probe-map-load-pipeline.py`（157 行 Capstone 斷言全數通過）與 `re_workspace/map-load-pipeline-instructions-20261009.txt`；新增文檔 `docs/reverse-engineering/map-load-pipeline.md`，更新 `docs/reverse-engineering/map-data-pools.md`。未修改 C#，未執行/寫入遊戲安裝目錄。
+
 ## 原生地圖二進位跨池一致性診斷器與 LevelObjectStore 跨池交易同步（2026-10-09 Antigravity，完成並驗證）
 
 - 二進位跨池一致性診斷器（2026-10-09 Antigravity）：新增 [src.Shared/Maps/NativePoolDiagnostics.cs](file:///d:/Github/AgainstRomeModifier/src.Shared/Maps/NativePoolDiagnostics.cs)，唯讀掃描地圖 DATA/ 目錄下的 8 個資料池檔案（objects.dat、nim.dat、gfxtype.dat、ction.dat、hirarchy.dat、objdata.dat、position.dat、engine.dat）。精確驗證各檔案版本/標頭/宣告槽位尺寸、跨池鏈結（anim/gfxtype/action/objdata/position links）、鏈結指向未啟用槽位（inactive target）、UID 重複、UID 低 24 位元超越 engine.dat 計數器、以及 hirarchy 群組成員雙向參照與越界。建立專屬單元測試 [	ests/AgainstRomeModifier.Tests/NativePoolDiagnosticsTests.cs](file:///d:/Github/AgainstRomeModifier/tests/AgainstRomeModifier.Tests/NativePoolDiagnosticsTests.cs)（13 項邊界與故障注入測試全數通過）。

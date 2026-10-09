@@ -68,9 +68,9 @@ synthetic valid layout、截斷／多餘尾端／version／容量拒絕、signed
 
 `light → gametime → rain → hagel → snow → flash → objects → position → anim → gfxtype → action → objdata → hirarchy → formatio → lager → engine → fow → fowreq → way → particle → explos → hitex → stat → biglager`。
 
-某檔 open 失敗會跳過後續 nested open，記錄 `err_LoadLevelData`。reader error 雖被保存，沒有立即阻止下一檔 open。呼叫端 `0x487180` 之後仍進入 CHECK，診斷應記錄第一個缺檔及 reader 結果，不能只檢查 objects.dat。
+某檔 open 失敗會跳過後續 open，記錄 `err LoadLevelData: 1000` 並直接退出；呼叫端 `0x487180`（`CLMP_LoadLevel`）未檢查回傳值即進入 CHECK，造成未初始化指標存取卡死（詳見 [地圖載入管線](map-load-pipeline.md)）。可載入原生地圖之 `DATA/` 必須完整保留全部 24 個檔案。
 
-CHECK `0x4acfe0`／`0x4ad110`／`0x4adf40` 走固定 14,000 objects；`0x4adf40` 取 packed object link 的 high16，經 slot 驗證取得 anim record 並修改 runtime offset 4。完整欄位語意及浮點公式尚未確認。下一步應追初始化、slot／UID、anim／action／hirarchy cross-reference，再做受控物件新增／清空測試。靜態流程尚未證明空白地圖卡死根因。
+CHECK `0x4acfe0`／`0x4ad110`／`0x4adf40` 走固定 14,000 objects：CHECK 1 計算 HP 初值與士氣、CHECK 2 計算 MP 初值、CHECK 3 以座標對 Archetype 週期取模計算 anim offset 4 相位偏移。`CALCLOW` 依序初始化 10 大池之全域分配游標（`0x77189c`–`0x7718c0`）。
 
 ## 驗證與限制
 
