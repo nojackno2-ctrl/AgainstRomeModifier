@@ -35,7 +35,7 @@ copy接受signed有效slot及非null範本，成功回傳1，無效回傳0。低
 | 32..33 | 4 each | +0x78/+0x7c |
 | 34..35 | 2 each | +0x80/+0x82 |
 
-reader `0x48c760` 對+0x24/+0x28/+0x2c的float讀值經helper0x5c5af2及整數轉換，再取signed16轉回float；原指令0x48caa2/0x48caa7/0x48cab6及後續同構序列確認轉換，helper的精確捨入語意本輪未辨識。因此不能承諾這三欄任意小數均由載入器原樣保留。
+reader `0x48c760` 對+0x24/+0x28/+0x2c的float讀值經helper0x5c5af2及整數轉換，再取signed16轉回float；原指令0x48caa2/0x48caa7/0x48cab6及後續同構序列確認轉換。helper完整原指令於下節補全，對有限且範圍內數值為朝零截斷。因此不能承諾這三欄任意小數均由載入器原樣保留。
 
 copy `0x4ab060` **不寫+0x7c/+0x80/+0x82**，卻會複製runtime **+0x84/+0x88**（0x4ab225..0x4ab237），後兩欄不在上述磁碟reader序列。reset也將+0x84/+0x88設ffffffff，另將+0x8c的u16設0。這些路徑的差別不等於檔案缺欄位或遊戲bug；尚需writer與其他consumer追查。
 
@@ -53,4 +53,27 @@ REA `re_workspace/objdata-create-20261009-evidence.json`（12records）已匯出
 
 本地唯讀probe／manifest `probe-objdata-create.py`、`objdata-links-20261009.json`及Capstone視窗`objdata-create-instructions-20261009.txt`保留於忽略的re_workspace。視窗包括函式後的padding／相鄰bytes，不能把linear decode的全部行都當成可到達指令。掃描對version1、容量及精確長度作assert，未驗證所有欄位語意。未改C#，本輪不重跑.NET測試。
 
-下一步確認writer的欄位對應、+0x7c/+0x80/+0x82及runtime尾端的初始化／consumer，並將各獨立pool納入產品新增與移除的交易設計；實機載入、生成與存讀檔仍待驗證。
+此階段提出的writer及尾端consumer問題已於下節補上部分證據；各獨立pool的產品新增與移除交易，以及實機載入、生成與存讀檔仍待完成。
+
+## writer 與尾端 consumer（2026-10-09 續查）
+
+總writer `0x487f70` 的objdata區段先寫version1/count14000，再逐段保存上表36個segments／44個實際欄位。抽取所有runtime欄位引用，與reader布局逐項比對全數一致；特別是0x489716保存+0x7c、0x489745保存+0x80、0x489775保存+0x82。**+0x84/+0x88/+0x8c不在此objdata writer區段**；不代表其他檔案或傳輸路徑一定不保存它們。
+
+| runtime 欄位 | 已觀察用途 | 證據範圍／限制 |
+|---|---|---|
+| +0x7c / 0xf60010 | 更新函式0x4b6f30減去param_1並將負結果夾0；0x4b8860在移動處理條件下讀取，必要時設為全域0x771c9c的值，並影響action flags0/1 | 可描述為移動相關倒數狀態，尚未確認時間單位、所有觸發入口或正式名稱 |
+| +0x80 / 0xf60014 | writer保存；0x4ad1e0讀從此位址開始的dword再sar16 | 後者實際消費高半部+0x82，不能誤稱為+0x80的獨立用途；其餘xref尚待分析 |
+| +0x82 / 0xf60016 | 0x4b6f30在type條件下減去signed16 param_1或設0；0x4ad1e0在HP≤0及definition/helper条件下設3000 | 存在倒數及死亡相關路徑，但不宣稱3000的單位或完整視聽效果名稱 |
+| +0x84/+0x88 / 0xf60018/1c | 0x4b6f30讀position X/Z，經0x419c80後sar6寫入；0x432280取兩欄交給0x49c270，再輸出兩值 | 位置衍生的粗格座標欄位；helper的完整座標系及何時首次重算仍未確認 |
+
+位置欄位原指令0x4b7b61／0x4b7b78的sar6、0x4b7b6a／0x4b7b7f的writes已核對。+0x84/+0x88從active範本ffffffff到更新時的衍生值，有明確寫入路徑，不再只是未知copy尾端。
+
+### 浮點載入的截斷
+
+0x5c5af2..0x5c5b0e先FNSTCW保存control word、複製它並把高byte改為0x1f，再FLDCW／FRNDINT，最後還原原control word及stack。RC bits10/11因此為11B，即朝零截斷，並非可由Ghidra的`ROUND`字樣直接判定四捨五入。RC編碼依 [Intel SDM Volume 1](https://cdrdv2-public.intel.com/874241/253665-090-sdm-vol-1.pdf) 的rounding-control定義。
+
+對有限、轉換範圍內的輸入，例如+1.75先成+1、-1.75先成-1，之後取signed16再轉float。這是由指令推導的例子，未執行遊戲測試；NaN、Infinity與溢位／例外處理尚未驗證。編輯器若未來公開這三欄，須反映原生載入時的轉換，不能以磁碟float可保存小數宣稱遊戲也保留小數。
+
+證據：`re_workspace/objdata-writer-20261009-evidence.json`（14records，session已關閉）；writer `ev_21598fc5b331dee75a9e9be1070e7f2210d827c8b25c544ba238e4f8ce1aca4d`、update `ev_edf32efef85971c5ba45f1ecfdac8fcf202fb0a952f7eec9638215d2f8ef96b8`、movement `ev_5f41072e7ced2fc131615d361e2c76369a82907a1ee480935ece313e7d0cc5ef`、HP path `ev_6376e6169478f1685e736b5a9398bf375ad3b7cadf2b54994baf21a5bfe6181c`、coordinate getter `ev_d37b85a53b34ddb42899562e5688d01c3623570259ba0bde05672022f2e909a2`。
+
+`objdata-writer-audit-20261009.json`保存44欄序列及assert結果；`objdata-writer-instructions-20261009.txt` 916行從已知入口解碼再篩選明示視窗，另以`objdata-round-helper-20261009.txt`補全初次過短的round helper視窗。window可能含padding，不能當作完整可到達CFG。EXE fingerprint重驗一致，未寫或執行遊戲；本輪未改C#，未重跑.NET。剩餘：+0x80真正consumer、建立前/後完整初值、各欄時間／座標語意及受控實機驗證。
