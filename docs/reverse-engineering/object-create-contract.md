@@ -120,8 +120,31 @@ REA ledger `re_workspace/create-preflight-20261009-evidence.json`（14records）
 
 此audit只涵蓋成功create路徑的直接stack stores，不模擬helper別名寫入、完整CFG或執行，因此**未證明後三words必為未初始化，也不能假定全零**。初版linear audit把早退epilogue混入ESP追蹤而assert失敗；排除後又因選到param_5的lea而失敗，核對推參順序改為param_4 lea0x4a9c64後assert frame+0x120通過。兩次失敗是分析腳本假設錯誤，不是遊戲缺陷。
 
-0x4f6260在本EXE反編譯為直接return0，不能只凭其在create後的呼叫位置就假定它初始化objdata。真正的objdata初值／action後三wordsconsumer仍待追查。
+0x4f6260在本EXE反編譯為直接return0，不能只凭其在create後的呼叫位置就假定它初始化objdata。真正的objdata初值仍待追查；action words的consumer見下節。
 
 證據：`re_workspace/delete-queue-20261009-evidence.json`（9records）已匯出/session關閉；queue evidence `ev_b5f583f93e767c33b5330a435f159241b44c064af01cf1c3a8fd128d7f1184bf`、drain `ev_652da68ee91d61875ad031ada911b2861c5f639a051608f1bbe4ee4fafaa229e`。`delete-queue-instructions-20261009.txt` 148行（含region標記）核對enqueue／release／drain caller。`action-stack-writes-20261009.json`保存四個直接stores、基準及明示限制；原完整caller指令見前輪檔案。
 
-下一步追action後三words的helper寫入／consumer、objdata實際初始化及佇列上層觸發順序，再建立產品新增前的容量／範本／跨池交易要求。實機物件新增、移除、空白地圖與存讀檔仍未由本輪驗證。
+此階段後續問題為action後三words的helper寫入／初值、objdata實際初始化及佇列上層觸發順序，再建立產品新增前的容量／範本／跨池交易要求；consumer已於下節補上。實機物件新增、移除、空白地圖與存讀檔仍未由本輪驗證。
+
+## action 的 192-bit 狀態旗標（2026-10-09 續查）
+
+原生 set `0x4bd780`、clear `0x4bd830`、query `0x4bd8d0` 以 object 的 action link 選取 pool slot，再依旗標編號 `n` 選取 word。合法範圍為 **0..191**，runtime 位址為 `0xf00454 + slot*0x1c + 4 + 4*(n >> 5)`，mask 為 `1 << (n & 31)`。因此六個 u32 是可索引的狀態旗標集合，後三個 words 也有消費端；對 `0xf00464/68/6c` 的 direct xrefs 為空不能證明它們未使用。
+
+| word | 旗標編號 | serialized record offset | runtime offset |
+|---|---|---|---|
+| 0 | 0..31 | 1 | 0x04 |
+| 1 | 32..63 | 5 | 0x08 |
+| 2 | 64..95 | 9 | 0x0c |
+| 3 | 96..127 | 13 | 0x10 |
+| 4 | 128..159 | 17 | 0x14 |
+| 5 | 160..191 | 21 | 0x18 |
+
+set／clear 成功回傳1；無效 object、無效 action、旗標越界分別回傳-1、-2、-3。query 回傳1或0，但無效輸入也回傳0，故0不能單獨當成有效物件的旗標未設定。clear 使用 `word -= word & mask`，等價於清除此 bit。Capstone 核對 set 的 OR `0x4bd806`、clear 的 word write `0x4bd8b8`、query 的 TEST `0x4bd947` 及範圍／shift 指令。
+
+已觀察兩組呼叫用途：`0x4bee90` 先清 flags `0x10..0x17`，mode0..7再設其中一個，mode-1全部清除；本輪不為各 mode 補上未證實名稱。`0x4bf0f0` 在 flags3或4存在時回傳-3，否則有效 anim link 才將 anim runtime+4 設0；死亡條件的既有證據見 [scenario-event-conditions.md](scenario-event-conditions.md)。
+
+`0x4fa8f0` 從一個 packed input 的 offset `0x1f/0x23/0x27` 複製 **前三個 u32** 到 action，前後比較 flags `0x2b/0x2c/0x2d`，改變時呼叫 `0x4bf0f0`。本輪未辨識其完整 caller／輸入協定，不能稱為已證實網路封包，也不能推出後96 bits的保存或初始化規則。
+
+唯讀掃描74張地圖的392,311個 active action slots，其中 **392,218個** 至少設定一個後96 bits；全部74張都有此現象。74個 decoded SHA256 與前輪 action link manifest 一致，安裝 EXE fingerprint亦一致。這排除「後三words可忽略／一律零」的假設，但既有資料非零不證明每一 bit 均具遊戲語意，亦未解決新建物件範本的初值来源。產品新增仍須追 helper alias writes、完整初始化與跨池交易。
+
+證據：`re_workspace/action-flags-20261009-evidence.json`（16 records，session已關閉）；set `ev_8d26dc2abeecfbc8eab51f194286beb356aa759c2b7708f05430893f9eb0a278`、clear `ev_f843d154d16f15d2500fac5a39004cc438a848d9dca686e1283c05c84c714532`、query `ev_52088b1d0175657b8eadf0aee251c9153b656e494b3fb7a4a3eed6989c1488ab`、packed input `ev_eb106c25c994b8348c7167f135c566ecade7960f85defb3112f2c7e1dc1e1b18`。原指令 `action-flags-instructions-20261009.txt` 及分布 `action-flag-distribution-20261009.json` 保留於忽略的 research workspace。未修改或執行遊戲；本輪未改C#，未重跑.NET回歸，實機效果仍未驗證。
