@@ -1,5 +1,23 @@
 # AI Handoff - Live Project Memory
 
+## 原生地圖二進位跨池一致性診斷器與 LevelObjectStore 跨池交易同步（2026-10-09 Antigravity，完成並驗證）
+
+- 二進位跨池一致性診斷器（2026-10-09 Antigravity）：新增 [src.Shared/Maps/NativePoolDiagnostics.cs](file:///d:/Github/AgainstRomeModifier/src.Shared/Maps/NativePoolDiagnostics.cs)，唯讀掃描地圖 DATA/ 目錄下的 8 個資料池檔案（objects.dat、nim.dat、gfxtype.dat、ction.dat、hirarchy.dat、objdata.dat、position.dat、engine.dat）。精確驗證各檔案版本/標頭/宣告槽位尺寸、跨池鏈結（anim/gfxtype/action/objdata/position links）、鏈結指向未啟用槽位（inactive target）、UID 重複、UID 低 24 位元超越 engine.dat 計數器、以及 hirarchy 群組成員雙向參照與越界。建立專屬單元測試 [	ests/AgainstRomeModifier.Tests/NativePoolDiagnosticsTests.cs](file:///d:/Github/AgainstRomeModifier/tests/AgainstRomeModifier.Tests/NativePoolDiagnosticsTests.cs)（13 項邊界與故障注入測試全數通過）。
+- LevelObjectStore 跨池交易同步與範本擴充（2026-10-09 Antigravity）：
+  - 擴充 [LevelObjectTemplate](file:///d:/Github/AgainstRomeModifier/src.Shared/Maps/LevelObjectStore.cs) 攜帶同型物件的 anim、gfxtype、action 槽位範本資料；提供 6 參數建構子以確保反射向後相容性。
+  - 在 LevelObjectStore.Load 中優雅偵測並載入存在之 nim.dat、gfxtype.dat、ction.dat、engine.dat；若檔案損毀或不存在則安全降階。
+  - LevelObjectStore.Add 在新增物件時，同步於 nim.dat、gfxtype.dat、ction.dat 建立並啟用對應槽位資料，並確保 engine.dat UID 計數器維持大於目前新產生的 UID。
+  - LevelObjectStore.Remove 刪除物件時，同步重置並清空對應的 nim、gfxtype、ction 槽位。
+  - LevelObjectStore.ResetForBlankMap 同步重置所有 7 個池槽位，並將 engine.dat 計數器重置為 1。
+  - LevelObjectStore.Save 在 FileRollbackScope 交易保護下同步寫回所有已載入之池檔案。
+  - 新增跨池整合測試 [	ests/AgainstRomeModifier.Tests/LevelObjectStoreCrossPoolTests.cs](file:///d:/Github/AgainstRomeModifier/tests/AgainstRomeModifier.Tests/LevelObjectStoreCrossPoolTests.cs)（4 項整合測試全數通過）。
+- 驗證成果：
+  - dotnet build -c Release：0 個錯誤，31 個既有警告。
+  - dotnet test AgainstRomeMapEditor.Modules.Tests.csproj -c Release：789 通過，2 略過，0 失敗。
+  - dotnet test AgainstRomeModifier.Tests.csproj -c Release：804 通過，22 略過，0 失敗。
+  - 全套解決方案總計 1,593 通過，0 失敗。
+  - 嚴格遵守 AGENTS.md：未修改或刪除 .claude/ 與 TEMP/，未存取或更動遊戲安裝目錄。
+
 ## 旗標系統、Action 範本殘餘與釋放鏈逆向（2026-10-09 Antigravity，完成並驗證，未修改 C#）
 
 - 0x4d50c0(0x23) 與 Object 旗標族（2026-10-09 Antigravity）：0x4d50c0 靜態確認為 `QueryObjectBitFlag(object, bit)`，`bit < 0x20` 查 `object + 0x4`（低32位元），`bit >= 0x20` 查 `object + 0x30`（高32位元）；0x23（35）即測試 `object + 0x30` 的第 3 位元（`1 << 3` = 0x8）。成套操作函式全數定位：`0x4d4fa0`（SetObjectBitFlag）、`0x4d5020`（ClearObjectBitFlag）、`0x4d5140`/`0x4d5190`（Low flags getter/setter）、`0x4d51d0`/`0x4d5220`（High flags getter/setter）、`0x535d60`（封裝 wrapper）、`0x5260e0`（階層式成員廣播）。原生物件建立 0x4aa780 時直接以 0 清空 `object + 0x4` 與 `object + 0x30`。

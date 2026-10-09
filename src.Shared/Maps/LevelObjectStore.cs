@@ -9,8 +9,34 @@ public sealed record LevelWorldObject(int Slot, int TypeId, int Team, uint Uid, 
 public sealed class LevelObjectTemplate
 {
     internal LevelObjectTemplate(int typeId, byte[] record, uint[] columns, byte[][] objdata, byte[] position0, byte[] position1)
+        : this(typeId, record, columns, objdata, position0, position1, null, 0, 0, null, 0, null) { }
+
+    public LevelObjectTemplate(
+        int typeId,
+        byte[] record,
+        uint[] columns,
+        byte[][] objdata,
+        byte[] position0,
+        byte[] position1,
+        byte[]? animRecord = null,
+        ushort animTail0 = 0,
+        ushort animTail1 = 0,
+        byte[]? gfxtypeRecord = null,
+        ushort gfxtypeTail = 0,
+        byte[]? actionRecord = null)
     {
-        TypeId = typeId; Record = record; Columns = columns; ObjData = objdata; Position0 = position0; Position1 = position1;
+        TypeId = typeId;
+        Record = record;
+        Columns = columns;
+        ObjData = objdata;
+        Position0 = position0;
+        Position1 = position1;
+        AnimRecord = animRecord;
+        AnimTail0 = animTail0;
+        AnimTail1 = animTail1;
+        GfxtypeRecord = gfxtypeRecord;
+        GfxtypeTail = gfxtypeTail;
+        ActionRecord = actionRecord;
     }
     public int TypeId { get; }
     internal byte[] Record { get; }
@@ -18,17 +44,17 @@ public sealed class LevelObjectTemplate
     internal byte[][] ObjData { get; }
     internal byte[] Position0 { get; }
     internal byte[] Position1 { get; }
+    internal byte[]? AnimRecord { get; }
+    internal ushort AnimTail0 { get; }
+    internal ushort AnimTail1 { get; }
+    internal byte[]? GfxtypeRecord { get; }
+    internal ushort GfxtypeTail { get; }
+    internal byte[]? ActionRecord { get; }
 }
 
 /// <summary>
-/// 地圖 <c>DATA/objects.dat</c>、<c>objdata.dat</c>、<c>position.dat</c>（遊戲關卡存檔格式，mp_lsave.c）的讀寫。
-///
-/// 格式（2026-10-06 由 EXE 載入器 0x48bae0／0x48c0c0／0x48c760 與 ENDL_000 資料交叉驗證）：
-/// - objects.dat：16 B 標頭（ver, count=14000, 30, 30）＋ count × 79 B 紀錄（active u8、team u16、uid u32、name[30]、idname[30]、
-///   pos0 u16、pos1 u16、self u16、self u16、typeId u16、self u16）＋ 18 個平行欄位陣列（寬度見 <see cref="ColumnWidths"/>；欄 1 為自身索引）。
-/// - objdata.dat：8 B 標頭（ver, count）＋ 36 段「count × 寬度」的平行陣列，每槽合計 123 B（見 <see cref="ObjDataWidths"/>）。
-/// - position.dat：8 B 標頭（ver, count=33000）＋ count × 17 B（valid u8, x, y, z, rot float32）；每個物件佔一對位置。
-/// 空槽：active 0、team 0x7FFF、尾端欄位 0xFFFF、欄 1 = 0xFFFF。新增時複製同類型物件的整個槽位，只改 UID、位置與自身索引。
+/// 地圖 <c>DATA/objects.dat</c>、<c>objdata.dat</c>、<c>position.dat</c> 以及跨池關聯
+/// （<c>anim.dat</c>、<c>gfxtype.dat</c>、<c>action.dat</c>、<c>engine.dat</c>）的讀寫與交易同步。
 /// </summary>
 public sealed class LevelObjectStore
 {
@@ -39,18 +65,44 @@ public sealed class LevelObjectStore
     private const int SelfColumn = 1, LinkColumn = 10, LinkSegment = 2;
 
     private readonly byte[] _objects, _objdata, _positions;
+    private readonly byte[]? _anim, _gfxtype, _action, _engine;
     private readonly byte[]? _objectsHeader, _objdataHeader, _positionsHeader;
+    private readonly byte[]? _animHeader, _gfxtypeHeader, _actionHeader, _engineHeader;
     private readonly int _count, _positionCount;
     private readonly int _columnsOffset;
     private readonly int[] _columnOffsets, _segmentOffsets;
     private readonly byte[] _emptyRecord, _emptyPosition;
     private readonly uint[] _emptyColumns;
     private readonly byte[][] _emptyObjData;
+    private readonly byte[]? _emptyAnimRecord;
+    private readonly ushort _emptyAnimTail0, _emptyAnimTail1;
+    private readonly byte[]? _emptyGfxtypeRecord;
+    private readonly ushort _emptyGfxtypeTail;
+    private readonly byte[]? _emptyActionRecord;
 
-    private LevelObjectStore(byte[] objects, byte[] objdata, byte[] positions, byte[]? objectsHeader, byte[]? objdataHeader, byte[]? positionsHeader)
+    private LevelObjectStore(
+        byte[] objects,
+        byte[] objdata,
+        byte[] positions,
+        byte[]? objectsHeader,
+        byte[]? objdataHeader,
+        byte[]? positionsHeader,
+        byte[]? anim = null,
+        byte[]? animHeader = null,
+        byte[]? gfxtype = null,
+        byte[]? gfxtypeHeader = null,
+        byte[]? action = null,
+        byte[]? actionHeader = null,
+        byte[]? engine = null,
+        byte[]? engineHeader = null)
     {
         _objects = objects; _objdata = objdata; _positions = positions;
         _objectsHeader = objectsHeader; _objdataHeader = objdataHeader; _positionsHeader = positionsHeader;
+        _anim = anim; _animHeader = animHeader;
+        _gfxtype = gfxtype; _gfxtypeHeader = gfxtypeHeader;
+        _action = action; _actionHeader = actionHeader;
+        _engine = engine; _engineHeader = engineHeader;
+
         if (objects.Length < 16 || BinaryPrimitives.ReadInt32LittleEndian(objects) != 1) throw new InvalidDataException("objects.dat 版本不符。");
         _count = BinaryPrimitives.ReadInt32LittleEndian(objects.AsSpan(4));
         if (BinaryPrimitives.ReadInt32LittleEndian(objects.AsSpan(8)) != 30 || BinaryPrimitives.ReadInt32LittleEndian(objects.AsSpan(12)) != 30)
@@ -77,9 +129,93 @@ public sealed class LevelObjectStore
         _emptyObjData = Enumerable.Range(0, ObjDataWidths.Length).Select(segment => objdata.AsSpan(SegmentOffset(segment, empty), ObjDataWidths[segment]).ToArray()).ToArray();
         int freePosition = Enumerable.Range(0, _positionCount).FirstOrDefault(index => positions[8 + index * PositionSize] == 0, -1);
         _emptyPosition = freePosition >= 0 ? positions.AsSpan(8 + freePosition * PositionSize, PositionSize).ToArray() : new byte[PositionSize];
+
+        if (anim is not null)
+        {
+            if (anim.Length < 8 || BinaryPrimitives.ReadInt32LittleEndian(anim) != 1)
+                throw new InvalidDataException("anim.dat 版本不符。");
+            int animCount = BinaryPrimitives.ReadInt32LittleEndian(anim.AsSpan(4));
+            if (animCount != _count)
+                throw new InvalidDataException("anim.dat 槽位數與 objects.dat 不符。");
+            if (anim.Length != 8 + _count * 25)
+                throw new InvalidDataException("anim.dat 長度不符。");
+            int emptySlot = Enumerable.Range(0, _count).FirstOrDefault(s => anim[8 + s * 21] == 0, -1);
+            if (emptySlot >= 0)
+            {
+                _emptyAnimRecord = anim.AsSpan(8 + emptySlot * 21, 21).ToArray();
+                _emptyAnimTail0 = BinaryPrimitives.ReadUInt16LittleEndian(anim.AsSpan(8 + _count * 21 + emptySlot * 2));
+                _emptyAnimTail1 = BinaryPrimitives.ReadUInt16LittleEndian(anim.AsSpan(8 + _count * 21 + _count * 2 + emptySlot * 2));
+            }
+            else
+            {
+                _emptyAnimRecord = new byte[21];
+                _emptyAnimTail0 = 0;
+                _emptyAnimTail1 = 1;
+            }
+        }
+
+        if (gfxtype is not null)
+        {
+            if (gfxtype.Length < 8 || BinaryPrimitives.ReadInt32LittleEndian(gfxtype) != 1)
+                throw new InvalidDataException("gfxtype.dat 版本不符。");
+            int gfxCount = BinaryPrimitives.ReadInt32LittleEndian(gfxtype.AsSpan(4));
+            if (gfxCount != _count)
+                throw new InvalidDataException("gfxtype.dat 槽位數與 objects.dat 不符。");
+            if (gfxtype.Length != 8 + _count * 17)
+                throw new InvalidDataException("gfxtype.dat 長度不符。");
+            int emptySlot = Enumerable.Range(0, _count).FirstOrDefault(s => gfxtype[8 + s * 15] == 0, -1);
+            if (emptySlot >= 0)
+            {
+                _emptyGfxtypeRecord = gfxtype.AsSpan(8 + emptySlot * 15, 15).ToArray();
+                _emptyGfxtypeTail = BinaryPrimitives.ReadUInt16LittleEndian(gfxtype.AsSpan(8 + _count * 15 + emptySlot * 2));
+            }
+            else
+            {
+                _emptyGfxtypeRecord = new byte[15];
+                BinaryPrimitives.WriteUInt16LittleEndian(_emptyGfxtypeRecord.AsSpan(1), 0);
+                BinaryPrimitives.WriteUInt16LittleEndian(_emptyGfxtypeRecord.AsSpan(3), 0xFFFF);
+                BinaryPrimitives.WriteUInt16LittleEndian(_emptyGfxtypeRecord.AsSpan(5), 0);
+                BinaryPrimitives.WriteUInt16LittleEndian(_emptyGfxtypeRecord.AsSpan(7), 0);
+                BinaryPrimitives.WriteUInt16LittleEndian(_emptyGfxtypeRecord.AsSpan(9), 0xFFFF);
+                BinaryPrimitives.WriteUInt16LittleEndian(_emptyGfxtypeRecord.AsSpan(11), 0x0100);
+                BinaryPrimitives.WriteUInt16LittleEndian(_emptyGfxtypeRecord.AsSpan(13), 0);
+                _emptyGfxtypeTail = 99;
+            }
+        }
+
+        if (action is not null)
+        {
+            if (action.Length < 12 || BinaryPrimitives.ReadInt32LittleEndian(action) != 1)
+                throw new InvalidDataException("action.dat 版本不符。");
+            int actCount = BinaryPrimitives.ReadInt32LittleEndian(action.AsSpan(4));
+            if (actCount != _count)
+                throw new InvalidDataException("action.dat 槽位數與 objects.dat 不符。");
+            int words = BinaryPrimitives.ReadInt32LittleEndian(action.AsSpan(8));
+            if (words != 6 || action.Length != 12 + _count * 25)
+                throw new InvalidDataException("action.dat 長度或欄位數不符。");
+            int emptySlot = Enumerable.Range(0, _count).FirstOrDefault(s => action[12 + s * 25] == 0, -1);
+            if (emptySlot >= 0)
+            {
+                _emptyActionRecord = action.AsSpan(12 + emptySlot * 25, 25).ToArray();
+            }
+            else
+            {
+                _emptyActionRecord = new byte[25];
+            }
+        }
+
+        if (engine is not null)
+        {
+            if (engine.Length < 38 || BinaryPrimitives.ReadInt32LittleEndian(engine) != 1)
+                throw new InvalidDataException("engine.dat 版本或長度不符。");
+        }
     }
 
     public int Capacity => _count;
+    public bool HasAnimPool => _anim is not null;
+    public bool HasGfxtypePool => _gfxtype is not null;
+    public bool HasActionPool => _action is not null;
+    public bool HasEngineData => _engine is not null;
 
     /// <summary>僅供新空白地圖初始化；連結物件與所有位置也清除，呼叫端必須同時初始化原生執行期資料。</summary>
     internal void ResetForBlankMap()
@@ -89,8 +225,30 @@ public sealed class LevelObjectStore
             _emptyRecord.CopyTo(_objects, RecordOffset(slot));
             for (int column = 0; column < ColumnWidths.Length; column++) WriteColumn(column, slot, _emptyColumns[column]);
             for (int segment = 0; segment < ObjDataWidths.Length; segment++) _emptyObjData[segment].CopyTo(_objdata, SegmentOffset(segment, slot));
+
+            if (_anim is not null && _emptyAnimRecord is not null)
+            {
+                _emptyAnimRecord.CopyTo(_anim, 8 + slot * 21);
+                BinaryPrimitives.WriteUInt16LittleEndian(_anim.AsSpan(8 + _count * 21 + slot * 2), _emptyAnimTail0);
+                BinaryPrimitives.WriteUInt16LittleEndian(_anim.AsSpan(8 + _count * 21 + _count * 2 + slot * 2), _emptyAnimTail1);
+            }
+
+            if (_gfxtype is not null && _emptyGfxtypeRecord is not null)
+            {
+                _emptyGfxtypeRecord.CopyTo(_gfxtype, 8 + slot * 15);
+                BinaryPrimitives.WriteUInt16LittleEndian(_gfxtype.AsSpan(8 + _count * 15 + slot * 2), _emptyGfxtypeTail);
+            }
+
+            if (_action is not null && _emptyActionRecord is not null)
+            {
+                _emptyActionRecord.CopyTo(_action, 12 + slot * 25);
+            }
         }
         _positions.AsSpan(8).Clear();
+        if (_engine is not null && _engine.Length >= 38)
+        {
+            BinaryPrimitives.WriteUInt32LittleEndian(_engine.AsSpan(34), 1);
+        }
     }
 
     public static LevelObjectStore Load(string mapDirectory)
@@ -98,7 +256,77 @@ public sealed class LevelObjectStore
         (byte[] objects, byte[]? h1) = Read(Path.Combine(mapDirectory, "DATA", "objects.dat"));
         (byte[] objdata, byte[]? h2) = Read(Path.Combine(mapDirectory, "DATA", "objdata.dat"));
         (byte[] positions, byte[]? h3) = Read(Path.Combine(mapDirectory, "DATA", "position.dat"));
-        return new LevelObjectStore(objects, objdata, positions, h1, h2, h3);
+
+        int objectCount = objects.Length >= 8 ? BinaryPrimitives.ReadInt32LittleEndian(objects.AsSpan(4)) : 0;
+
+        byte[]? anim = null, gfxtype = null, action = null, engine = null;
+        byte[]? hAnim = null, hGfx = null, hAct = null, hEng = null;
+
+        string animPath = Path.Combine(mapDirectory, "DATA", "anim.dat");
+        if (File.Exists(animPath))
+        {
+            try
+            {
+                (byte[] raw, byte[]? h) = Read(animPath);
+                if (raw.Length >= 8 && BinaryPrimitives.ReadInt32LittleEndian(raw) == 1
+                    && BinaryPrimitives.ReadInt32LittleEndian(raw.AsSpan(4)) == objectCount
+                    && raw.Length == 8 + objectCount * 25)
+                {
+                    anim = raw; hAnim = h;
+                }
+            }
+            catch (Exception ex) when (ex is InvalidDataException or IOException) { }
+        }
+
+        string gfxPath = Path.Combine(mapDirectory, "DATA", "gfxtype.dat");
+        if (File.Exists(gfxPath))
+        {
+            try
+            {
+                (byte[] raw, byte[]? h) = Read(gfxPath);
+                if (raw.Length >= 8 && BinaryPrimitives.ReadInt32LittleEndian(raw) == 1
+                    && BinaryPrimitives.ReadInt32LittleEndian(raw.AsSpan(4)) == objectCount
+                    && raw.Length == 8 + objectCount * 17)
+                {
+                    gfxtype = raw; hGfx = h;
+                }
+            }
+            catch (Exception ex) when (ex is InvalidDataException or IOException) { }
+        }
+
+        string actPath = Path.Combine(mapDirectory, "DATA", "action.dat");
+        if (File.Exists(actPath))
+        {
+            try
+            {
+                (byte[] raw, byte[]? h) = Read(actPath);
+                if (raw.Length >= 12 && BinaryPrimitives.ReadInt32LittleEndian(raw) == 1
+                    && BinaryPrimitives.ReadInt32LittleEndian(raw.AsSpan(4)) == objectCount
+                    && BinaryPrimitives.ReadInt32LittleEndian(raw.AsSpan(8)) == 6
+                    && raw.Length == 12 + objectCount * 25)
+                {
+                    action = raw; hAct = h;
+                }
+            }
+            catch (Exception ex) when (ex is InvalidDataException or IOException) { }
+        }
+
+        string engPath = Path.Combine(mapDirectory, "DATA", "engine.dat");
+        if (File.Exists(engPath))
+        {
+            try
+            {
+                (byte[] raw, byte[]? h) = Read(engPath);
+                if (raw.Length >= 38 && BinaryPrimitives.ReadInt32LittleEndian(raw) == 1)
+                {
+                    engine = raw; hEng = h;
+                }
+            }
+            catch (Exception ex) when (ex is InvalidDataException or IOException) { }
+        }
+
+        return new LevelObjectStore(objects, objdata, positions, h1, h2, h3,
+            anim, hAnim, gfxtype, hGfx, action, hAct, engine, hEng);
     }
 
     private static (byte[] Data, byte[]? Header) Read(string path)
@@ -159,10 +387,45 @@ public sealed class LevelObjectStore
             int record = RecordOffset(slot);
             int p0 = BinaryPrimitives.ReadUInt16LittleEndian(_objects.AsSpan(record + 67)), p1 = BinaryPrimitives.ReadUInt16LittleEndian(_objects.AsSpan(record + 69));
             if (p0 >= _positionCount || p1 >= _positionCount) { seen.Remove(TypeId(slot)); continue; }
+
+            byte[]? animRec = null; ushort animT0 = 0, animT1 = 0;
+            if (_anim is not null)
+            {
+                int aSlot = BinaryPrimitives.ReadUInt16LittleEndian(_objects.AsSpan(record + 71));
+                if (aSlot < _count && _anim[8 + aSlot * 21] != 0)
+                {
+                    animRec = _anim.AsSpan(8 + aSlot * 21, 21).ToArray();
+                    animT0 = BinaryPrimitives.ReadUInt16LittleEndian(_anim.AsSpan(8 + _count * 21 + aSlot * 2));
+                    animT1 = BinaryPrimitives.ReadUInt16LittleEndian(_anim.AsSpan(8 + _count * 21 + _count * 2 + aSlot * 2));
+                }
+            }
+
+            byte[]? gfxRec = null; ushort gfxT = 0;
+            if (_gfxtype is not null)
+            {
+                int gSlot = BinaryPrimitives.ReadUInt16LittleEndian(_objects.AsSpan(record + 73));
+                if (gSlot < _count && _gfxtype[8 + gSlot * 15] != 0)
+                {
+                    gfxRec = _gfxtype.AsSpan(8 + gSlot * 15, 15).ToArray();
+                    gfxT = BinaryPrimitives.ReadUInt16LittleEndian(_gfxtype.AsSpan(8 + _count * 15 + gSlot * 2));
+                }
+            }
+
+            byte[]? actRec = null;
+            if (_action is not null)
+            {
+                int actSlot = BinaryPrimitives.ReadUInt16LittleEndian(_objects.AsSpan(record + 77));
+                if (actSlot < _count && _action[12 + actSlot * 25] != 0)
+                {
+                    actRec = _action.AsSpan(12 + actSlot * 25, 25).ToArray();
+                }
+            }
+
             yield return new LevelObjectTemplate(TypeId(slot), _objects.AsSpan(record, RecordSize).ToArray(),
                 Enumerable.Range(0, ColumnWidths.Length).Select(column => ReadColumn(column, slot)).ToArray(),
                 Enumerable.Range(0, ObjDataWidths.Length).Select(segment => _objdata.AsSpan(SegmentOffset(segment, slot), ObjDataWidths[segment]).ToArray()).ToArray(),
-                _positions.AsSpan(8 + p0 * PositionSize, PositionSize).ToArray(), _positions.AsSpan(8 + p1 * PositionSize, PositionSize).ToArray());
+                _positions.AsSpan(8 + p0 * PositionSize, PositionSize).ToArray(), _positions.AsSpan(8 + p1 * PositionSize, PositionSize).ToArray(),
+                animRec, animT0, animT1, gfxRec, gfxT, actRec);
         }
     }
 
@@ -173,10 +436,45 @@ public sealed class LevelObjectStore
         int record = RecordOffset(slot);
         int p0 = BinaryPrimitives.ReadUInt16LittleEndian(_objects.AsSpan(record + 67)), p1 = BinaryPrimitives.ReadUInt16LittleEndian(_objects.AsSpan(record + 69));
         if (p0 >= _positionCount || p1 >= _positionCount) return null;
+
+        byte[]? animRec = null; ushort animT0 = 0, animT1 = 0;
+        if (_anim is not null)
+        {
+            int aSlot = BinaryPrimitives.ReadUInt16LittleEndian(_objects.AsSpan(record + 71));
+            if (aSlot < _count && _anim[8 + aSlot * 21] != 0)
+            {
+                animRec = _anim.AsSpan(8 + aSlot * 21, 21).ToArray();
+                animT0 = BinaryPrimitives.ReadUInt16LittleEndian(_anim.AsSpan(8 + _count * 21 + aSlot * 2));
+                animT1 = BinaryPrimitives.ReadUInt16LittleEndian(_anim.AsSpan(8 + _count * 21 + _count * 2 + aSlot * 2));
+            }
+        }
+
+        byte[]? gfxRec = null; ushort gfxT = 0;
+        if (_gfxtype is not null)
+        {
+            int gSlot = BinaryPrimitives.ReadUInt16LittleEndian(_objects.AsSpan(record + 73));
+            if (gSlot < _count && _gfxtype[8 + gSlot * 15] != 0)
+            {
+                gfxRec = _gfxtype.AsSpan(8 + gSlot * 15, 15).ToArray();
+                gfxT = BinaryPrimitives.ReadUInt16LittleEndian(_gfxtype.AsSpan(8 + _count * 15 + gSlot * 2));
+            }
+        }
+
+        byte[]? actRec = null;
+        if (_action is not null)
+        {
+            int actSlot = BinaryPrimitives.ReadUInt16LittleEndian(_objects.AsSpan(record + 77));
+            if (actSlot < _count && _action[12 + actSlot * 25] != 0)
+            {
+                actRec = _action.AsSpan(12 + actSlot * 25, 25).ToArray();
+            }
+        }
+
         return new LevelObjectTemplate(TypeId(slot), _objects.AsSpan(record, RecordSize).ToArray(),
             Enumerable.Range(0, ColumnWidths.Length).Select(column => ReadColumn(column, slot)).ToArray(),
             Enumerable.Range(0, ObjDataWidths.Length).Select(segment => _objdata.AsSpan(SegmentOffset(segment, slot), ObjDataWidths[segment]).ToArray()).ToArray(),
-            _positions.AsSpan(8 + p0 * PositionSize, PositionSize).ToArray(), _positions.AsSpan(8 + p1 * PositionSize, PositionSize).ToArray());
+            _positions.AsSpan(8 + p0 * PositionSize, PositionSize).ToArray(), _positions.AsSpan(8 + p1 * PositionSize, PositionSize).ToArray(),
+            animRec, animT0, animT1, gfxRec, gfxT, actRec);
     }
 
     /// <summary>
@@ -207,10 +505,73 @@ public sealed class LevelObjectStore
         for (int segment = 0; segment < ObjDataWidths.Length; segment++) template.ObjData[segment].CopyTo(_objdata, SegmentOffset(segment, slot));
         WritePosition(position, template.Position0, x, y, z, rotation);
         WritePosition(position + 1, template.Position1, x, y, z, rotation);
+
+        if (_anim is not null)
+        {
+            if (template.AnimRecord is not null)
+            {
+                template.AnimRecord.CopyTo(_anim, 8 + slot * 21);
+                _anim[8 + slot * 21] = 1;
+                BinaryPrimitives.WriteUInt16LittleEndian(_anim.AsSpan(8 + _count * 21 + slot * 2), template.AnimTail0);
+                BinaryPrimitives.WriteUInt16LittleEndian(_anim.AsSpan(8 + _count * 21 + _count * 2 + slot * 2), template.AnimTail1);
+            }
+            else
+            {
+                _anim[8 + slot * 21] = 1;
+                _anim.AsSpan(8 + slot * 21 + 1, 20).Clear();
+                BinaryPrimitives.WriteUInt16LittleEndian(_anim.AsSpan(8 + _count * 21 + slot * 2), 0);
+                BinaryPrimitives.WriteUInt16LittleEndian(_anim.AsSpan(8 + _count * 21 + _count * 2 + slot * 2), 0);
+            }
+        }
+
+        if (_gfxtype is not null)
+        {
+            if (template.GfxtypeRecord is not null)
+            {
+                template.GfxtypeRecord.CopyTo(_gfxtype, 8 + slot * 15);
+                _gfxtype[8 + slot * 15] = 1;
+                BinaryPrimitives.WriteUInt16LittleEndian(_gfxtype.AsSpan(8 + _count * 15 + slot * 2), template.GfxtypeTail);
+            }
+            else
+            {
+                _gfxtype[8 + slot * 15] = 1;
+                BinaryPrimitives.WriteUInt16LittleEndian(_gfxtype.AsSpan(8 + slot * 15 + 1), 0);
+                BinaryPrimitives.WriteUInt16LittleEndian(_gfxtype.AsSpan(8 + slot * 15 + 3), 0xFFFF);
+                BinaryPrimitives.WriteUInt16LittleEndian(_gfxtype.AsSpan(8 + slot * 15 + 5), 0);
+                BinaryPrimitives.WriteUInt16LittleEndian(_gfxtype.AsSpan(8 + slot * 15 + 7), 0);
+                BinaryPrimitives.WriteUInt16LittleEndian(_gfxtype.AsSpan(8 + slot * 15 + 9), 0xFFFF);
+                BinaryPrimitives.WriteUInt16LittleEndian(_gfxtype.AsSpan(8 + slot * 15 + 11), 0);
+                BinaryPrimitives.WriteUInt16LittleEndian(_gfxtype.AsSpan(8 + slot * 15 + 13), 0);
+                BinaryPrimitives.WriteUInt16LittleEndian(_gfxtype.AsSpan(8 + _count * 15 + slot * 2), 99);
+            }
+        }
+
+        if (_action is not null)
+        {
+            if (template.ActionRecord is not null)
+            {
+                template.ActionRecord.CopyTo(_action, 12 + slot * 25);
+                _action[12 + slot * 25] = 1;
+            }
+            else
+            {
+                _action[12 + slot * 25] = 1;
+                _action.AsSpan(12 + slot * 25 + 1, 24).Clear();
+            }
+        }
+
+        if (_engine is not null && _engine.Length >= 38)
+        {
+            uint currentCounter = BinaryPrimitives.ReadUInt32LittleEndian(_engine.AsSpan(34));
+            uint needed = (uid & 0x00FFFFFF) + 1;
+            if (needed > currentCounter)
+                BinaryPrimitives.WriteUInt32LittleEndian(_engine.AsSpan(34), needed);
+        }
+
         return slot;
     }
 
-    /// <summary>刪除一個未連結的物件：整個槽位改回空槽資料並釋放其兩個位置。</summary>
+    /// <summary>刪除一個未連結的物件：整個槽位改回空槽資料並釋放其兩個位置與關聯池槽位。</summary>
     public bool Remove(int slot)
     {
         if (slot < 0 || slot >= _count || !IsActive(slot) || IsLinked(slot)) return false;
@@ -223,6 +584,25 @@ public sealed class LevelObjectStore
         _emptyRecord.CopyTo(_objects, record);
         for (int column = 0; column < ColumnWidths.Length; column++) WriteColumn(column, slot, _emptyColumns[column]);
         for (int segment = 0; segment < ObjDataWidths.Length; segment++) _emptyObjData[segment].CopyTo(_objdata, SegmentOffset(segment, slot));
+
+        if (_anim is not null && _emptyAnimRecord is not null)
+        {
+            _emptyAnimRecord.CopyTo(_anim, 8 + slot * 21);
+            BinaryPrimitives.WriteUInt16LittleEndian(_anim.AsSpan(8 + _count * 21 + slot * 2), _emptyAnimTail0);
+            BinaryPrimitives.WriteUInt16LittleEndian(_anim.AsSpan(8 + _count * 21 + _count * 2 + slot * 2), _emptyAnimTail1);
+        }
+
+        if (_gfxtype is not null && _emptyGfxtypeRecord is not null)
+        {
+            _emptyGfxtypeRecord.CopyTo(_gfxtype, 8 + slot * 15);
+            BinaryPrimitives.WriteUInt16LittleEndian(_gfxtype.AsSpan(8 + _count * 15 + slot * 2), _emptyGfxtypeTail);
+        }
+
+        if (_action is not null && _emptyActionRecord is not null)
+        {
+            _emptyActionRecord.CopyTo(_action, 12 + slot * 25);
+        }
+
         return true;
     }
 
@@ -233,12 +613,16 @@ public sealed class LevelObjectStore
     /// <summary>只在槽位仍是指定 uid 的物件時移除（避免誤刪後來被其他編輯佔用的槽位）。</summary>
     public bool RemoveIfUid(int slot, uint uid) => UidAt(slot) == uid && Remove(slot);
 
-    /// <summary>在交易內寫回三個檔案（沿用原 PFIL 標頭）。</summary>
+    /// <summary>在交易內寫回所有已載入的池檔案（沿用原 PFIL 標頭）。</summary>
     public void Save(string mapDirectory, FileRollbackScope rollback)
     {
         Write(Path.Combine(mapDirectory, "DATA", "objects.dat"), _objects, _objectsHeader, rollback);
         Write(Path.Combine(mapDirectory, "DATA", "objdata.dat"), _objdata, _objdataHeader, rollback);
         Write(Path.Combine(mapDirectory, "DATA", "position.dat"), _positions, _positionsHeader, rollback);
+        if (_anim is not null) Write(Path.Combine(mapDirectory, "DATA", "anim.dat"), _anim, _animHeader, rollback);
+        if (_gfxtype is not null) Write(Path.Combine(mapDirectory, "DATA", "gfxtype.dat"), _gfxtype, _gfxtypeHeader, rollback);
+        if (_action is not null) Write(Path.Combine(mapDirectory, "DATA", "action.dat"), _action, _actionHeader, rollback);
+        if (_engine is not null) Write(Path.Combine(mapDirectory, "DATA", "engine.dat"), _engine, _engineHeader, rollback);
     }
 
     private static void Write(string path, byte[] data, byte[]? header, FileRollbackScope rollback)
