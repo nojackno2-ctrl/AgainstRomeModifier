@@ -27,7 +27,8 @@ The installed `Against_Rome.exe` is 2,486,272 bytes, SHA-256
 It exactly matches `re_workspace/Against_Rome.exe`, so the REA analysis of that
 immutable local copy applies to this installed EXE's bytes.
 Other carriers are `ar.exe`, `UNWISE.EXE`, and `ds_andll.dll`; their identities
-are recorded in the manifest, but their code and roles have not been traced.
+are recorded in the manifest. The main EXE / ds_andll.dll multimedia boundary
+is now traced in `binary-boundaries.md`; ar.exe and UNWISE roles remain separate work.
 
 All eight root `.dat` packages have ZIP local headers and readable ZIP central
 directories. Counts below include directory entries where present.

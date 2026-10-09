@@ -9,6 +9,8 @@ and patch code.
 
 ## Files
 
+- `binary-boundaries.md`: main EXE dynamic stream loader, all 12 ds_andll.dll
+  exports and instruction-corrected playback ABI; ar.exe investigation boundary.
 - `engine-configuration.md`: encoded section prefixes, startup read order,
   archive/directory list replacement and a static bounds-check finding.
 - `game-command-line.md`: 40 game option names/aliases, argv handling,
