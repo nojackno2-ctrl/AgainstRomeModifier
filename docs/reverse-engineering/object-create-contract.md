@@ -108,4 +108,20 @@ preflight只在三個type所引用的definition validators皆成功時要求part
 
 REA ledger `re_workspace/create-preflight-20261009-evidence.json`（14records）已匯出/session關閉。allocator evidence `ev_572f0de883c2fff9154679522839875a1b6f56442e09d080d6574ba8f0fa6657`、validator `ev_d192702e7f4f92c95660b6f9c621e9d014697791cb6059ab8edea316cb5efa7d`、上層建立 `ev_c0714319d6a6e3dd22a147129b1d3ae5ae93a5f13a7757fcead2a9aeaa7429e0`、清理dispatcher `ev_f61dfa980ad91a1b549b76bd118a1f30222fc9a5021d1d6a3ed6eb2a69632dc3`。Capstone `create-preflight-instructions-20261009.txt` 569行（含region標記）核對0x400上限、particle state位址、兩個create caller及清理call；各region只代表明示視窗，不是所有函式完整反組譯。
 
-下一步追其餘上層callers、位置／資源helpers、完整action/objdata範本及場景載入先後順序，並建立產品新增前的容量／範本／跨池交易要求。實機物件新增、移除、空白地圖與存讀檔仍未由本輪驗證。
+## 刪除佇列與 action 範本限制（2026-10-09 續查）
+
+`0x4acb00(slot)` 先驗證active object，視其他條件可能記錄相關操作，再搜尋count0x1e53450／array0x1e53454。尚未入列則追加slot並增加count、回傳1；重複slot回傳-2；無效物件回傳-1。**此函式不立即呼叫pool release**，不能把它的成功回傳當成物件已不存在或槽位已可重用。
+
+`0x4acab0` 處理佇列：逐slot呼叫 `0x4abb80`，將已處理項設為-1，最後count設0。已分析直接callers為0x47ae0a（函式0x47add0）、0x48798d（pool initialization0x487910）、0x4c9a52（函式0x4c9a20）。其中0x47add0在計時相關呼叫間處理佇列；其更高層frame入口／觸發週期本輪未確認，不能說固定每tick即時清理。另一0x4c9a20依mode條件才處理佇列。
+
+因此0x50f170→0x4acb00這條補償路徑包含**排程刪除**，前輪「存在補償清理」仍成立，但不能表示每次create失敗返回前已釋放全部關聯槽。磁碟編輯器需要自己的原子交易，不能模仿排入引擎執行期佇列就當儲存成功。
+
+另外，caller原指令的stack核對以0x4a9744 prologue後的ESP為frame基準，`0x4a9c64 lea` 傳入action範本frame+0x120。找到四個直接寫入：0x4a99b4將+0x120的byte設1；0x4a9929／30／37將+0x124/+0x128/+0x12c三個u32設0。這對應runtime action active及前三個words。copy0x4aaff0會讀六個words；對後三個words（+0x130/+0x134/+0x138）本次未找到直接ESP-relative初始化。
+
+此audit只涵蓋成功create路徑的直接stack stores，不模擬helper別名寫入、完整CFG或執行，因此**未證明後三words必為未初始化，也不能假定全零**。初版linear audit把早退epilogue混入ESP追蹤而assert失敗；排除後又因選到param_5的lea而失敗，核對推參順序改為param_4 lea0x4a9c64後assert frame+0x120通過。兩次失敗是分析腳本假設錯誤，不是遊戲缺陷。
+
+0x4f6260在本EXE反編譯為直接return0，不能只凭其在create後的呼叫位置就假定它初始化objdata。真正的objdata初值／action後三wordsconsumer仍待追查。
+
+證據：`re_workspace/delete-queue-20261009-evidence.json`（9records）已匯出/session關閉；queue evidence `ev_b5f583f93e767c33b5330a435f159241b44c064af01cf1c3a8fd128d7f1184bf`、drain `ev_652da68ee91d61875ad031ada911b2861c5f639a051608f1bbe4ee4fafaa229e`。`delete-queue-instructions-20261009.txt` 148行（含region標記）核對enqueue／release／drain caller。`action-stack-writes-20261009.json`保存四個直接stores、基準及明示限制；原完整caller指令見前輪檔案。
+
+下一步追action後三words的helper寫入／consumer、objdata實際初始化及佇列上層觸發順序，再建立產品新增前的容量／範本／跨池交易要求。實機物件新增、移除、空白地圖與存讀檔仍未由本輪驗證。
