@@ -11,6 +11,8 @@ and patch code.
 
 - `engine-configuration.md`: encoded section prefixes, startup read order,
   archive/directory list replacement and a static bounds-check finding.
+- `game-command-line.md`: 40 game option names/aliases, argv handling,
+  USER/clparam.ini to temporary-INI override flow and Registry-source correction.
 - `virtual-file-system.md`: native loose-file gate, ordered archive fallback,
   ZIP/PUA backend registration and installed-path overlap evidence.
 - `pua-format.md`: ARCP headers/entries, LZSS/XOR read flow and full `cl.pua` CRC verification.

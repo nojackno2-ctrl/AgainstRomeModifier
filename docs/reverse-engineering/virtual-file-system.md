@@ -96,6 +96,7 @@ Use fresh project/output names; verify the machine-local toolchain paths.
 The final run completed with Analysis/Post-analysis/Import succeeded and
 exit 0. Generated pseudocode stays local. Configuration startup order and
 list replacement are now documented in [engine-configuration.md](engine-configuration.md).
-Pending work: command-buffer construction and effective configuration,
+Registry and game CLI sources are separated in the linked note and
+[game-command-line.md](game-command-line.md). Pending work: effective configuration,
 full locale/path callbacks, PFIL wrapper and write-mode behavior,
 passive runtime source attribution, and map-loader failure diagnosis.

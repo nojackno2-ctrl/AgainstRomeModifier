@@ -14,20 +14,44 @@ unobserved. Installed files were read only.
 2. Read the filename held at `0x632eb0` directly through `FUN_00563e20`.
    Its initial string is `puse.ini`; the embedded `[ininame]` can change it
    before this read. If no embedded defaults exist, this call enables reset.
-3. Parse the command configuration buffer returned by `FUN_0055e760`, if
+3. Parse the Registry configuration buffer returned by `FUN_0055e760`, if
    nonempty. That helper returns globals `0x29e89ec` and `0x29e89f0`.
-   Conversion from the process command line to this buffer remains untraced.
+   It is populated by `FUN_0055e890` through resource-selected Registry reads,
+   not by the command line. The previous command-buffer label was incorrect.
 4. If the current filename differs from the literal `puse.ini`, read that
    filename again, with reset disabled. This comparison is not a check that
-   the command buffer changed the filename.
+   the Registry buffer changed the filename.
 
 The embedded defaults select `clsys.ini`; therefore a second attempt to read
-that file can occur even without a command filename override. A file that is
+that file can occur even without a Registry filename override. A file that is
 missing simply returns from the parser. Final scalar precedence depends on
-which files and sections exist, and is not universally command-buffer-last.
+which files and sections exist. Registry settings may be followed by a file read.
 The installed loose-file scan found no `clsys.ini`, `puse.ini`, or `edit.cfg`
 outside the excluded SAVE/ToEng trees. `USER/edit.cfg` exists in `cl.pua`, but
 that alone does not demonstrate that this direct-file parser reads it.
+
+### Registry source and actual command line
+
+`FUN_0055c9d0` invokes `FUN_0055e890` before engine configuration initialization.
+That helper allocates a 2,048-byte static buffer and calls `FUN_0055e790`:
+
+- `LoadStringA(instance, 9999, ..., 255)` selects the value name;
+  `LoadStringA(instance, 9998, ..., 255)` selects the key path.
+- Empty/missing key text returns -1, before `FUN_0055d340` can query Registry.
+- On success, `FUN_0055d340` calls `FUN_0055d120`, which splits a hive/key
+  string and uses `RegOpenKeyExA` and `RegQueryValueExA`. Its access string is
+  `all`; this maps to access mask `0xf003f`. No Registry write is observed in
+  this call chain. Success publishes the buffer pointer and length.
+- The two selector entries in this EXE's RT_STRING block 625, language 0,
+  are both empty. Their fallback 256-byte arrays at `0x62e0b0` and `0x62e1b0`
+  are also zero-filled. Thus this shipped path cannot supply a key string
+  through its checked resource or fallback. No live process modification or
+  alternate module-resource substitution was investigated.
+
+The real command line is tokenized later by `FUN_0055e9b0`, after engine
+configuration setup, and passed to the registered game callback at `0x401010`.
+That thunk calls `FUN_00413630`, then `FUN_00412750` loads game-specific
+configuration and processes options. See [game-command-line.md](game-command-line.md).
 
 ## Section recognition
 
@@ -96,11 +120,13 @@ python tools/re/probe_engine_config.py `
 ```
 
 The stdlib probe requires the exact fingerprint, reads file-backed PE bytes,
-checks all 36 encode/decode roundtrips and recognizes the 10 embedded-default
-headers. It exports metadata only, refuses existing output and output inside
+checks all 36 encode/decode roundtrips, recognizes the 10 embedded-default
+headers, and inventories the 40 game option records and Registry selector
+resources. It exports metadata only, refuses existing output and output inside
 the input directory, and does not execute the game or emulate the parser.
 REA evidence stays local in ignored `re_workspace/config-final-20261009-evidence.json`.
 
-Remaining: command-buffer construction, each option's consumer, game-specific
-`USER/clparam.ini` parsing, current process configuration and actual file-source
-attribution. Packaged configuration existence does not establish active use.
+Remaining: each option's full consumer chain, game defaults and normalization,
+current process configuration and actual file-source attribution. Game-specific
+`USER/clparam.ini`/CLI parsing is documented in the linked note; packaged
+configuration existence does not establish active use.
