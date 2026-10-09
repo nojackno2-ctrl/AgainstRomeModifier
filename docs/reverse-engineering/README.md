@@ -9,6 +9,8 @@ and patch code.
 
 ## Files
 
+- `agy-feature-review.md`: five Agy research scopes, parent review and rejected
+  claims; newly confirmed CorpseRetention source-offset mismatch.
 - `feature-research-targets.md`: current feature-oriented research priorities
   for the map editor and modifier, including acceptance gaps.
 - `map-data-pools.md`: action/anim layouts, native load failure flow and
