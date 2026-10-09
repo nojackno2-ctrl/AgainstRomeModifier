@@ -43,11 +43,33 @@ directories. Counts below include directory entries where present.
 | shad.dat | 2,674 | 2,671 `.bmp`, 3 extensionless entries | BMP |
 | voice.dat | 1,136 | 1,136 `.wav` | RIFF/WAVE |
 
-The script reads at most three member prefixes per extension. Counts are full
-central-directory observations; sampled headers do not establish every member's
-format, full CRC validity, or runtime use. In particular `shad.dat` contains
+The original inventory script reads at most three member prefixes per extension.
+The follow-up `tools/re/probe_zip_assets.py` streamed every member without
+extraction: all 14,191 entries passed ZIP CRC and declared-length checks,
+867,660,143 decoded bytes total. No normalized cross-package path collisions
+were found (casefold/slash normalization is a comparison convention).
+This verifies ZIP integrity, not every asset's internal format or runtime use.
+In particular `shad.dat` contains
 icon paths such as `SYSTEM/DATA_MP/ICONGFX/16/StArblos.bmp`; its name alone does
 not imply that every entry is an object shadow.
+
+Full prefix coverage: `alr.dat` has 2,038 ALRA word-at-offset-4 values of 6,
+36 of 5 and one of 4; `apt.dat` has 221 APAT values of 3 and one of 2.
+All 3,005 floortex members and 2,671 shad members begin `BM`; all 918 sfx
+and 1,136 voice members begin RIFF/WAVE. TGA has no fixed magic and was not
+inferred from extension. Methods are ZIP deflate (8) and stored (0);
+gui has 336 stored entries, mp 19, shad 3, and the other entries use deflate.
+Earlier sampled ALRA version 6 does not describe every ALR asset.
+
+```powershell
+python tools/re/probe_zip_assets.py `
+  'C:\Program Files (x86)\Against Rome' re_workspace/zip-assets-new.json
+```
+
+Output must be new and outside the source tree. The ignored local manifest
+`re_workspace/zip-assets-20261009.json` records package/member SHA256,
+CRC, byte counts and prefix families, with no payload bytes. No extraction
+is needed to perform these checks.
 
 ## Script and wrapper coverage
 

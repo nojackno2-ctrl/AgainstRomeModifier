@@ -2,6 +2,7 @@
 
 ## 遊戲目錄逆向（2026-10-09 Codex，目標持續進行）
 
+- 素材包完整性（2026-10-09 Codex）：新增 `probe_zip_assets.py`，8 ZIP的14,191項目CRC/decoded length全通過、867,660,143 decoded bytes，無casefold/slash normalized path collision。ALRA word4分布6=2038/5=36/4=1；APAT3=221/2=1。full prefix確認floortex/shad BMP與sfx/voice RIFF/WAVE，未把TGA extension當magic。本地manifest `zip-assets-20261009.json`；synthetic含directory/stored entries通過、CRC corruption拒絕、輸出防護、py_compile/diff check通過，8包hash重驗及與前輪inventory一致。未extract/execute，非完整資產schema或runtime證明；未改C#未重跑.NET。
 - 配置來源修正完成（2026-10-09 Codex）：0x55e760 buffer是Registry配置，並非command buffer；0x55e890→0x55e790 LoadStringA(9998/9999)選鍵/值，再0x55d340→0x55d120查Registry。本EXE兩resource均空、fallback陣列均0，路徑提早退出。0x55c9d0先engine config再CLI tokenizer；0x401010 thunk→0x413630→0x412750依序defaults→USER/clparam.ini→CLI寫tmpini.再讀/刪。40個long/short選項、大小寫與同token值規則、first duplicate section及初始值已定位；新增 `game-command-line.md`，修正文檔。probe新480bytes與REA一致、resource32bytes與REA一致、40唯一name/alias、舊metadata不變、fingerprint/輸出防護、py_compile、diff check通過，原EXE hash同。完整證據 `config-sources-20261009-evidence.json`（44 records），session已關閉。未讀寫Registry、未啟動遊戲，C#未改未重跑.NET。尚缺各field後續consumer與active來源。
 - 配置靜態階段：`probe_engine_config.py`／`engine-configuration.md`；36個encoded prefix roundtrip與10個內建header匹配。0x572b70 順序default→配置檔→Registry buffer→filename非puse.ini則再讀檔（前輪command buffer稱呼已修正）。0x571c80 archive section清空archive/目錄清單；specialdirs上限比較使用archive count、store使用directory count，0x57297c/0x5729ce指令確認（實機影響未驗證）。REA dossier超過transport上限但已完成，匯出retained evidence未重複分析；證據 `config-final-20261009-evidence.json`（14 records）。792 bytes與REA一致、metadata重跑一致、fingerprint/輸出防護、py_compile、diff check通過。active配置未觀測，不改原始檔。
 - 載入優先序續查完成靜態階段：0x5801e0 一般唯讀模式先嘗試 loose，失敗才依已掛載順序查 archive；0x57fa30 目錄策略2可跳過 loose、策略1僅允許啟動快取內檔名，故不能宣稱無條件 loose-first。0x57fb40 fileInit 註冊 backend 並依配置 mount；active 配置與實機 attribution 仍未觀測。詳 `virtual-file-system.md`。
@@ -11,7 +12,7 @@
 - 證據：目錄 probe exit 0，4,342 檔／8 個 ZIP 容器／2,690 PFIL 包装，0 讀取錯誤；存檔、截圖、備份等 808 檔排除。全部 110 BCI 容器由既有 bcitool 解析，109 個壓縮腳本的 prefix／長度與新 probe 一致。py_compile 通過；拒絕覆寫輸出與寫入遊戲目錄的防護已觸發。
 - 驗證收尾：12 個 EXE/DLL/根目錄素材包重新 SHA256 全數一致；PFIL prefix 分組找到 1,782 個 `01 00 00 00` 地圖池候選及 280 個 `00 01 00 00` cliprect/shadows 候選，尚未賦予欄位語意。Release solution build 31 個既有警告／0 錯誤；完整 dotnet test：Modules 789、Host 784 通過，共 1,573 通過／24 略過／0 失敗；git diff --check 通過。僅提交本輪工具與文件，不 push；不以回歸測試宣稱遊戲實機行為已驗證。
 - 安裝 EXE 與 repository 副本 SHA256 同為 `6ac85239ea3b87a4357ed8ce09a1818e68c09fe3c00e8d98831f473577b719bf`。REA Ghidra 12.1.4 已完成新分析；getter 0x5098d0、epoch setter 0x5098f0、capture/rebase 0x52f860/70、第三 scalar reader 0x52fd70 路徑確認；目前 EXE 時鐘常數為原版。不能把保存 scalar 視為持續推進的時鐘，回捲根因仍未確認。
-- 本地證據：忽略的 `re_workspace/game-directory-20261009.json`、`clock-20261009-evidence-final.json`（25 records）。尚缺：完整 ZIP CRC、未知 PFIL 消費端、active檔案配置與實機來源（lookup靜態順序見上方已補全）、ar.exe/DLL 邊界、clock 保存還原呼叫順序、空白地圖載入卡死根因、實機驗證。下一輪依新目錄報告的 queue 接續，整體遊戲逆向未完成。
+- 本地證據：忽略的 `re_workspace/game-directory-20261009.json`、`clock-20261009-evidence-final.json`（25 records）；完整ZIP CRC已補全（見上方）。尚缺：未知 PFIL 消費端、active檔案配置與實機來源（lookup靜態順序已補全）、ar.exe/DLL 邊界、clock 保存還原呼叫順序、空白地圖載入卡死根因、實機驗證。下一輪依目錄報告queue接續，整體遊戲逆向未完成。
 
 ## 野外巢穴與守衛波次對話框實作（2026-10-08 Antigravity，完成並驗證，未 commit）
 
