@@ -40,6 +40,22 @@ CHECK `0x4acfe0`／`0x4ad110`／`0x4adf40` 走固定 14,000 objects；`0x4adf40`
 
 ## 驗證與限制
 
+### objects → anim 關聯與清空（2026-10-09 續查）
+
+`0x4ab830` 以 signed index 0..13,999 加上 anim runtime offset 0 的 byte 非零判定 slot 有效；`0x4ab7b0` 對 objects 做相同範圍／active 檢查。這補足首 byte 的原生用途，不代表 byte 僅允許 0/1。
+
+objects reader `0x48bae0` 將 serialized record offset **71** 的 u16 寫入 runtime object offset **0x12**。object base `0xa14bfc`、stride `0x4c`；CHECK `0x4adf6c` 讀 `[base + slot*0x4c + 0x10]` 的 dword，再 `sar 16`，取得 offset 0x12 的 signed anim index，呼叫 `0x4ab830`。`0xffff` 對應 -1／無索引。
+
+native create `0x4aa780` 在 anim template 非 null 時呼叫 allocator `0x4ab500`、copy `0x4aaea0`，最後 `0x4aa9f1` 將 anim index 寫到 `0xa14c0e + slot*0x4c`。allocator 從 `0x7718ac` 的搜尋起點往後找第一個無效 slot，耗盡回傳 -1；不可假定 anim index 等於 object index。
+
+native object release `0x4abb80` 經 `0x4abd0d` 呼叫 anim reset `0x4abf30`，並將 object anim link 置為 `0xffff`，另外處理 position 及其他 pools／runtime 系統。anim reset 清除各有效欄位，但 runtime offset **0x1c = 1**，不是整筆全零；同時將 allocation search cursor 往較小的已釋放 slot 更新。`0x4aba40` 對全部 14,000 anim slots 呼叫 reset，由 pool initialization `0x487910` 使用；此處尚未追到所有入口的初始化呼叫順序。
+
+**修正過的嘗試：** 初版新 probe 錯將 objects 第 10 個平行欄位當成 anim link，產生 1,295 越界／8,603 inactive 統計。原始指令及 reader／create／release 三條路徑證明該欄位是 runtime offset 0x10，anim link 應是其高半部 offset 0x12／serialized offset 71。初版 manifest `object-anim-links-20261009.json` 保留作失敗紀錄，不能作結論；正式工具已修正。現有 `LevelObjectStore.IsLinked` 的 column 10 + objdata segment 2 是既有可編輯性 heuristic，不能單憑名稱將其解釋為 anim link；本輪未修改產品行為。
+
+`probe_object_anim_links.py` 唯讀掃描 74 對 objects／anim：0 parse errors、0 越界、0 shared slots、0 unreferenced active anim slots；**ENDL_005 有 33 inactive targets，其餘 73 張為 0**。抽看前三筆為 type 717／team 8，不據此宣稱全部同型或根因。ENDL_005 是既有自訂測試目錄，差異尚未歸因；不能把原生不一致觀測當成原版格式錯誤。有效性關聯僅涵蓋這一個欄位，不驗證 UID、其他 pools 或實機載入。
+
+正式 manifest `re_workspace/object-anim-links-corrected-20261009.json`；Capstone 原始指令 `object-anim-link-instructions-20261009.txt`；REA ledger `object-anim-links-20261009-evidence.json`。關鍵 evidence：validator `ev_7b3bcbd623ecc9309026a7aa8dcf001c60789087fd7c4fe9f2b21fdae2e7b669`、reader `ev_9d7d9efc7c46bae1d7dffbf42f732263ecc3ab24c05f488c9bc8e8f3a94306ce`、create `ev_fe134aa9ec9c7d8bd78038a5b76f8a405f2f833f961b98e342b5d823e03b56a0`、reset `ev_c6c8722858b2ad3f3415ce0e761b37a58be86208ed9ca69f09e8344815892c1b`。
+
 `python tools/re/probe_map_pools.py "C:\Program Files (x86)\Against Rome" re_workspace/map-pools-20261009.json`
 
 74 個 action + 74 個 anim 完整解壓到宣告長度，148 檔 header／精確長度全通過，0 errors；所有 N=14,000。ENDL_000 兩池首 byte 同有 7,382 個 0、6,618 個 1；分布相符不證明首 byte 用途或物件關聯。
