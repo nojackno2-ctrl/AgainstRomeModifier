@@ -92,4 +92,20 @@ caller建構的position、anim、gfxtype、action及另外兩組資料是stack�
 
 REA ledger `re_workspace/create-caller-20261009-evidence.json`（6records）已匯出/session關閉。caller evidence `ev_30a50d042942c4f41c7ac8ad4cd915a6585c6d78bf40731d87103b2876379c4f`；team setter `ev_c55bc20a46bd8fc439efaf650de721ab2112c89a411a9b08cf54c6a9198ef425`；preflight `ev_e7c55c01f5b69b4425ab924698da9b766c6ba8d199642cef2178f91811e2fb54`。Capstone `create-caller-instructions-complete-setter-20261009.txt` 553行（含region標記）核對push0／call／team write；初版setter視窗未覆蓋最末寫入，擴為64bytes後確認，舊短視窗不作完整setter證明。
 
-下一步追上層12個callers、preflight未知helpers、完整action/objdata範本及場景載入先後順序，並建立产品新增前的容量／範本／跨池交易要求。實機物件新增、移除、空白地圖與存讀檔仍未由本輪驗證。
+## Particle preflight 與更高層失敗清理（2026-10-09 續查）
+
+`0x4db770` 從slot0起掃0..1023，使用validator `0x4db7c0`，全部已占用則回傳-1。validator檢查 `0x12355d4 + slot*0x8e0` 的u16非零；與particle writer／reader的runtime布局相符。因此前輪preflight最後的capacity候選已確認是**1,024槽particle pool**，不是14,000槽anim/gfxtype/action，也不是全局objects數量。
+
+preflight只在三個type所引用的definition validators皆成功時要求particle空槽：`0x4dde40`、`0x4de540`、`0x4de9e0` 分別檢查signed index0..511與definition首dword非零。三組表base/stride為0x80efcc/0x58、0x819fcc/0x58、0x824fcc/0x3c。完整definition欄位命名未確認。`0x4db960` 再次搜尋同一particle空槽，成功後初始化runtime entry、寫owner object及type設定；最多64個子項，與已有[投射物證據](projectile-ballistics.md)相容。preflight搜尋不占用slot，不是建立時的保留交易。
+
+`0x4a9430` 是進一步的建立包裝：先preflight，再呼叫 `0x4a9740`（內部亦preflight），成功後以object slot／UID呼叫 `0x4a9590`。對它的direct xrefs為0x4307c2及0x50ed5a；前者位於0x430750，反編譯部分參數未恢復，不宣稱已完整辨識UI操作。
+
+0x50ed5a位於 `0x50ecb0`，它檢查team0..8（大於7夾8）、非空script/type條件及依mode取得的資源計數，再經0x4a9430建立物件。之後仍有script／狀態／隊伍相關後處理；當0x518b80失敗或後處理回傳錯誤bits，會呼叫 **0x50f0d0(slot,0)** 並回傳-1。刪除dispatcher又依物件種類選0x50f170或0x524830；已核對0x50f170會做多組清理並呼叫0x4acb00，且可能回傳失敗。因此確認的是「存在補償性清理路徑」，不是所有錯誤都能完整rollback、也不是磁碟交易。
+
+`s_createObj`既有註冊handler0x5192e0的原指令0x51934e呼叫0x50eaf0；該helper解析alias後呼叫0x50ecb0，再以0x518db0輸出身分。handler本次Ghidra pseudocode未成功返回函式本文，保留此限制，未將原指令片段宣稱為完整handler ABI證明。另一條0x50ef10路徑也呼叫0x50ecb0，涉及type/team/資源限制，仍待對應完整功能入口。
+
+**修正結論範圍：** 底層0x4aa780缺少關聯池失敗時的整體rollback仍成立，但不能推出所有腳本建立入口都沒有失敗清理。更高層另有資源、位置、particle檢查與補償刪除。產品DATA新增若要接近原生結果，仍需獨立確認objdata／action初值及磁碟跨池寫入契約，不可把高層script helper與磁碟pool操作視為等價。
+
+REA ledger `re_workspace/create-preflight-20261009-evidence.json`（14records）已匯出/session關閉。allocator evidence `ev_572f0de883c2fff9154679522839875a1b6f56442e09d080d6574ba8f0fa6657`、validator `ev_d192702e7f4f92c95660b6f9c621e9d014697791cb6059ab8edea316cb5efa7d`、上層建立 `ev_c0714319d6a6e3dd22a147129b1d3ae5ae93a5f13a7757fcead2a9aeaa7429e0`、清理dispatcher `ev_f61dfa980ad91a1b549b76bd118a1f30222fc9a5021d1d6a3ed6eb2a69632dc3`。Capstone `create-preflight-instructions-20261009.txt` 569行（含region標記）核對0x400上限、particle state位址、兩個create caller及清理call；各region只代表明示視窗，不是所有函式完整反組譯。
+
+下一步追其餘上層callers、位置／資源helpers、完整action/objdata範本及場景載入先後順序，並建立產品新增前的容量／範本／跨池交易要求。實機物件新增、移除、空白地圖與存讀檔仍未由本輪驗證。
