@@ -9,6 +9,10 @@ and patch code.
 
 ## Files
 
+- `feature-research-targets.md`: current feature-oriented research priorities
+  for the map editor and modifier, including acceptance gaps.
+- `map-data-pools.md`: action/anim layouts, native load failure flow and
+  read-only structural validation across 74 maps.
 - `binary-boundaries.md`: main EXE dynamic stream loader, all 12 ds_andll.dll
   exports and instruction-corrected playback ABI; ar.exe investigation boundary.
 - `engine-configuration.md`: encoded section prefixes, startup read order,
@@ -43,7 +47,7 @@ and patch code.
   (Berserker/marksmanship/shield/thunder/charge) and their `cl_epara.ini`
   factors, glory earn/loss rules, and the combat upgrade icons.
 - `known-patches.md`: implemented, legacy, candidate, and rejected patches.
-- `feature-verification-matrix.md`: all 44 `FeatureRegistry` entries mapped to
+- `feature-verification-matrix.md`: all 49 `FeatureRegistry` entries mapped to
   their actual write targets, reverse-engineering evidence, and separately
   recorded runtime status.
 - `projectile-ballistics.md` and `priest-spells.md`: experimental projectile,
