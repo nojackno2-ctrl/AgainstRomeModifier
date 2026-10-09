@@ -28,6 +28,26 @@ writer `0x487f70`、reader `0x48c250`。header 兩個 u32：version、N。接著
 
 兩個尾端陣列分別寫入各 runtime record offset `0x1a`、`0x1c`。總長 `8 + 21N + 2N + 2N = 8 + 25N`，N=14,000 時為 350,008 bytes。不能把尾端陣列當成每筆連續的 25-byte record。原生 version／容量檢查同樣需要與 probe 防護區分。
 
+## action 關聯與 hirarchy.dat（2026-10-09 續查）
+
+action link 為 objects serialized record **+77 → runtime +0x18**。create `0x4aa780` 使用 allocator `0x4ab5b0`／copy `0x4aaff0`，指令 `0x4aaaa6` 寫入 `0xa14c14 + objectSlot*0x4c`。validator `0x4ab8a0` 檢查 0..13,999 且 action 首 byte 非零；release `0x4abd31` 呼叫 reset `0x4ac070`，清首 byte 及六個 u32、回退 `0x7718b0` allocation cursor。與 anim 不同，action 沒有尾端預設為 1 的欄位。
+
+`hirarchy.dat` reader `0x48cf70`／writer `0x487f70` 的 version 1 格式：
+
+| 位置 | 編碼 | 內容 |
+| --- | --- | --- |
+| 0、4、8 | 三個 u32 | version、group count N、member width M（writer 1／3,200／50） |
+| 12 起，每筆 103 bytes | u8 + u16 + 50×u16 | active、member count、物件 slot 索引陣列 |
+| records 之後 | N×u16 | 平行尾端欄位，語意未確認 |
+
+runtime base `0x114c294`、stride `0x6a`：active +0，member count +2，50 個 slots 從 +4 起，尾端欄位 +0x68。writer 總長 `12 + 105N`，N=3,200 時為 336,012 bytes。reader 按 header M 讀取，未見 M≤50／N≤3,200 的明確防護；probe 採嚴格 writer 格式。
+
+validator `0x4ab910` 判斷 0..3,199 且 active 非零；create `0x4ad820`／copy `0x4ab250` 有最多 50 members 的檢查，並將 objects runtime **+0x28** 置為 group slot。objects reader 將第 **4 個平行欄位（zero-based）** 寫入 +0x28；這是群組 backlink。remove `0x4ad9c0` 對有效物件 member 做移除及重排，空群組呼叫 reset `0x4ac260`；reset 會處理物件端關聯、清 active/count、50 個 member 與尾端欄位置 `0xffff`，並回退 cursor `0x7718b8`。此處只確認群組／物件索引的用途，未完整解釋所有 side effects。
+
+新唯讀 `probe_object_pool_links.py` 掃 74 組 objects/action/hirarchy，0 parse errors；action 共 392,344 個有效範圍內物件 links，0 shared slots／0 unreferenced active slots。ENDL_005 同樣有 33 個 inactive action targets。hirarchy 合計 2,312 active groups，0 member/backlink 越界、0 inactive group/member、0雙向索引 mismatch；MP_016 的 group 21/22/23/28 在宣告的 20 members 內有重複索引，原始解碼 bytes 確認。重複可能有其他語意／歷史來源，不能僅此判為損毀或主張應自動去重。
+
+manifest `re_workspace/object-pool-links-20261009.json`；REA ledger `action-hirarchy-20261009-evidence.json`（15 records）；原始指令 `action-link-instructions-20261009.txt`。hirarchy reader evidence `ev_1bcf3845e8b01697503033f51d8771d45debcbe1f131c0c66cbc91c5a55ef8d4`、group create `ev_0d18580a3f1973014c162c6cda0d923ca648f96d3ea89038001e31dcff929e48`、reset `ev_bde6287b82c3d8c4eb888b6c305f70747d411dd91e81949e37f1b7fa5d9acb3c`、action validator `ev_cf8939954fabcad6a850d37c9f190eceb24cd2e5b7fb165219d36fdd25f932e5`。
+
 ## 載入流程及功能缺口
 
 `CL_LoadLevelData`（`0x48e960`）依序 nested open：
