@@ -5,7 +5,7 @@ using AgainstRomeModifier.Scripting;
 
 namespace AgainstRomeModifier.Tests;
 
-public sealed class ScenarioEventsTests : IDisposable
+public sealed partial class ScenarioEventsTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "ArmEvents_" + Guid.NewGuid().ToString("N"));
     private static readonly string[] Aliases = ["GER_INF01"];

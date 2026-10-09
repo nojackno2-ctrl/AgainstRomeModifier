@@ -207,4 +207,156 @@ public sealed class NavMeshRepairTests
         Assert.Contains(issues, i => i.Code == "isolated-land");
         Assert.All(issues, i => Assert.Equal(MapIssueSeverity.Warning, i.Severity));
     }
+
+    [Fact]
+    public void ApplyRepair_ClearsAllCollisionPixelsInTile_AndUndoRestores()
+    {
+        // 4x4 tile map with 16x16 collision grid (each tile has 4x4 collision pixels)
+        const int tileDim = 4;
+        const int collisionDim = 16;
+        const int step = collisionDim / tileDim; // 4
+
+        var resolver = new TestResolver();
+        var map = new TerrainBlendAuthoringMap(tileDim, "grass");
+        var import = new NativeTerrainImportResult(map, [], []);
+        var textures = Enumerable.Repeat("grass", tileDim * tileDim).ToArray();
+        var blendSession = new TerrainBlendEditSession(import, textures, resolver);
+
+        byte[] initialCollision = new byte[collisionDim * collisionDim];
+        Array.Fill(initialCollision, (byte)255); // all blocked
+        var heightSession = new TerrainHeightEditSession(5, new byte[25], null, collisionDim, initialCollision);
+
+        // Action repairing tile (2, 1)
+        int targetTileX = 2;
+        int targetTileZ = 1;
+        var action = new NavMeshRepairAction(
+            "test-heal",
+            NavMeshIssueKind.RoadGap,
+            "修復", "Heal", "說明", "Desc",
+            [new NavMeshTileChange(targetTileX, targetTileZ, "H_WEG1", (byte)0)],
+            NavMeshCoordinate.FromTile(targetTileX, targetTileZ, tileDim));
+
+        bool applied = RoadPathHealer.ApplyRepair(action, blendSession, heightSession);
+        Assert.True(applied);
+
+        // Verify texture was stamped
+        Assert.Equal("H_WEG1", blendSession.CurrentTextures[targetTileZ * tileDim + targetTileX]);
+
+        // Verify ALL 4x4 = 16 collision pixels in tile (2, 1) are cleared (0)
+        int minPx = targetTileX * step;
+        int maxPx = (targetTileX + 1) * step;
+        int minPz = targetTileZ * step;
+        int maxPz = (targetTileZ + 1) * step;
+
+        Assert.NotNull(heightSession.Collision);
+        for (int pz = 0; pz < collisionDim; pz++)
+        {
+            for (int px = 0; px < collisionDim; px++)
+            {
+                byte val = heightSession.Collision[pz * collisionDim + px];
+                bool inTargetTile = px >= minPx && px < maxPx && pz >= minPz && pz < maxPz;
+                if (inTargetTile)
+                {
+                    Assert.Equal((byte)0, val);
+                }
+                else
+                {
+                    Assert.Equal((byte)255, val);
+                }
+            }
+        }
+
+        // Test Undo restores all 16 collision pixels and the texture
+        blendSession.Undo();
+        heightSession.Undo();
+
+        Assert.Equal("grass", blendSession.CurrentTextures[targetTileZ * tileDim + targetTileX]);
+        Assert.NotNull(heightSession.Collision);
+        for (int i = 0; i < collisionDim * collisionDim; i++)
+        {
+            Assert.Equal((byte)255, heightSession.Collision[i]);
+        }
+    }
+
+    [Fact]
+    public void MapDiagnostics_AnalyzeNavMesh_With64TileTexturesAnd256Collision_DetectsRoadGaps()
+    {
+        const int texDim = 64;
+        const int collDim = 256;
+
+        var textures = Enumerable.Repeat("Gras1", texDim * texDim).ToArray();
+        // Create road gap at tile (30, 20): road at (29, 20) and (31, 20)
+        textures[20 * texDim + 28] = "H_WEG1";
+        textures[20 * texDim + 29] = "H_WEG1";
+        // gap at (30, 20)
+        textures[20 * texDim + 31] = "H_WEG1";
+        textures[20 * texDim + 32] = "H_WEG1";
+
+        byte[] collision = new byte[collDim * collDim];
+        // Block collision at the gap tile (30, 20) -> collision pixels [120..123, 80..83]
+        for (int pz = 80; pz < 84; pz++)
+            for (int px = 120; px < 124; px++)
+                collision[pz * collDim + px] = 255;
+
+        var snapshot = new MapCheckSnapshot(
+            [],
+            [],
+            [],
+            CollisionSize: collDim,
+            Collision: collision);
+
+        var navResult = MapDiagnostics.AnalyzeNavMesh(snapshot, textures);
+
+        Assert.NotEmpty(navResult.RoadGaps);
+        var gap = Assert.Single(navResult.RoadGaps);
+        Assert.Single(gap.GapTiles);
+        Assert.Equal(30, gap.GapTiles[0].TileX);
+        Assert.Equal(20, gap.GapTiles[0].TileZ);
+        Assert.True(gap.RequiresCollisionClear);
+
+        Assert.NotEmpty(navResult.RecommendedRepairs);
+        var repair = Assert.Single(navResult.RecommendedRepairs);
+        Assert.Equal(30, repair.Changes[0].TileX);
+        Assert.Equal(20, repair.Changes[0].TileZ);
+        Assert.Equal((byte)0, repair.Changes[0].NewCollision);
+    }
+
+    [Fact]
+    public void IsTileBlockedByCollision_And_IsTileSubmerged_MapsTileToCollisionGridCorrectly()
+    {
+        const int collDim = 256;
+        byte[] collision = new byte[collDim * collDim];
+        // Block only collision pixel at (42, 82), which is tile (42/4, 82/4) = (10, 20)
+        collision[82 * collDim + 42] = 255;
+
+        byte[] heights = new byte[257 * 257];
+        Array.Fill(heights, (byte)10); // height 10 * 4 = 40
+        // Set tile (10, 20) height to 2 * 4 = 8 (submerged when water level is 20)
+        // Vertex interval is 64 per tile, so tile (10, 20) vertices are around (40..44, 80..84)
+        for (int vz = 80; vz <= 84; vz++)
+            for (int vx = 40; vx <= 44; vx++)
+                heights[vz * 257 + vx] = 2; // world height 8
+
+        var grid = new NavMeshPassabilityGrid(collDim, collision, heightSize: 257, heights: heights, heightStep: 4f, waterLevel: 20f);
+
+        // Tile (10, 20) should be blocked by collision and submerged
+        Assert.True(grid.IsTileBlockedByCollision(10, 20, tileDimension: 64));
+        Assert.True(grid.IsTileSubmerged(10, 20, tileDimension: 64));
+
+        // Adjacent tile (11, 20) should NOT be blocked by collision
+        Assert.False(grid.IsTileBlockedByCollision(11, 20, tileDimension: 64));
+    }
+
+    private sealed class TestResolver : INativeTerrainMaterialResolver
+    {
+        public bool TryResolveNativeCorners(string texture, out IReadOnlyList<string> corners)
+        {
+            corners = ["grass", "grass", "grass", "grass"];
+            return true;
+        }
+
+        public string? ResolveNativeTile(IReadOnlyList<string> corners, int tileX, int tileY) => corners[0];
+        public bool HasEdgeBake(string inner, string outer) => true;
+        public IReadOnlyList<string> IntermediateMaterials(string inner, string outer) => [];
+    }
 }

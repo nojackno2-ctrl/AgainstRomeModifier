@@ -3,6 +3,7 @@ using System.Windows.Forms;
 using AgainstRomeMapEditor;
 using AgainstRomeMapEditor.Modules.Settlement;
 using AgainstRomeModifier.Maps;
+using AgainstRomeModifier.Scripting;
 
 namespace AgainstRomeModifier.Tests;
 
@@ -19,13 +20,19 @@ public sealed partial class MapEditorSaveTransactionTests
             _ = form.Handle;
             Invoke(form, "LoadSelectedMap");
 
-            // Setup mock catalog for Germanic buildings and wildlife
-            var catalog = new List<SdlObjectType>();
-            string[] requiredTypes = ["BauGerHau00", "BauGerLag00", "BauGerWoh00", "BauGerKas00", "BauGerSch00", "BauGerTur00", "FigHir00", "FigSch00"];
-            foreach (var typeName in requiredTypes)
-            {
-                catalog.Add(new SdlObjectType(typeName, 1, SdlObjectCategory.Building, "Ger", 1, new Dictionary<string, string> { ["alias"] = typeName }));
-            }
+            // Small real-alias fixture, independent of the generator and game assets.
+            var catalog = ScriptObjectAliases.Parse("""
+                [ObjDefName]
+                GER_HAU00 = BauGerHau00_Haupthaus
+                GER_LAG00 = BauGerLag00_Lagerhaus
+                GER_WOH00 = BauGerWoh00_Wohnhaus
+                GER_BAU00 = BauGerBau00_Bauernhof
+                GER_WAF00 = BauGerWaf00_Waffenschmiede
+                GER_STA00 = BauGerSta00_Pferdestall
+                GER_SCHRE00 = BauGerSchre00_Schreinerei
+                ALL_EBE00 = FigTieEbe00_Wildschwein
+                """).Select(alias => new SdlObjectType(alias.NameDef, -1, alias.Category, alias.Tribe, 0,
+                    new Dictionary<string, string> { ["alias"] = alias.Alias })).ToList();
             typeof(MapEditorForm).GetField("_objectCatalog", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(form, catalog);
 
             int initialPlaced = form.PlacementSession.Count;
@@ -49,7 +56,13 @@ public sealed partial class MapEditorSaveTransactionTests
             form.RunSettlementGenerator();
 
             int generatedCount = form.PlacementSession.Count;
-            Assert.True(generatedCount >= 12, $"Expected at least 12 placed objects for 2 players, but got {generatedCount}");
+            Assert.True(generatedCount > 14, $"Expected 14 buildings plus wildlife, but got {generatedCount}");
+            Assert.Equal(14, Enumerable.Range(0, generatedCount).Count(i => form.PlacementSession[i].Type.Category == SdlObjectCategory.Building));
+            foreach (var alias in catalog.Where(t => t.Category == SdlObjectCategory.Building))
+                Assert.Equal(2, Enumerable.Range(0, generatedCount).Count(i => form.PlacementSession[i].Type.NameDef == alias.NameDef));
+
+            Assert.All(Enumerable.Range(0, generatedCount).Select(i => form.PlacementSession[i]).Where(p => p.Type.IsAnimal),
+                animal => { Assert.Equal(-1, animal.Team); Assert.Equal(0, animal.UnitCount); });
 
             // 3. Single Undo -> all placements undone in 1 step
             Invoke(form, "Undo");

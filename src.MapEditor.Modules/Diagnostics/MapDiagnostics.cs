@@ -170,8 +170,12 @@ public static class MapDiagnostics
         var isolated = AgainstRomeMapEditor.Modules.Pathfinding.NavMeshConnectivityAnalyzer.Analyze(
             grid, primarySeeds, interestPoints, minIsolatedSize);
 
-        var gaps = textures is not null && textures.Count == (long)grid.Size * grid.Size
-            ? AgainstRomeMapEditor.Modules.Pathfinding.RoadGapDetector.DetectGaps(grid.Size, textures, grid)
+        int texDimension = textures is not null && textures.Count > 0
+            ? (int)MathF.Round(MathF.Sqrt(textures.Count))
+            : 0;
+
+        var gaps = texDimension > 0 && textures!.Count == texDimension * texDimension
+            ? AgainstRomeMapEditor.Modules.Pathfinding.RoadGapDetector.DetectGaps(texDimension, textures, grid)
             : [];
 
         var repairs = new List<AgainstRomeMapEditor.Modules.Pathfinding.NavMeshRepairAction>();
@@ -179,7 +183,7 @@ public static class MapDiagnostics
 
         foreach (var region in isolated.Where(r => r.RecommendedBridgePoint is not null))
         {
-            if (AgainstRomeMapEditor.Modules.Pathfinding.RoadPathHealer.CreateBridgeAction(region) is { } bridge)
+            if (AgainstRomeMapEditor.Modules.Pathfinding.RoadPathHealer.CreateBridgeAction(region, tileDimension: texDimension > 0 ? texDimension : 64) is { } bridge)
                 repairs.Add(bridge);
         }
 

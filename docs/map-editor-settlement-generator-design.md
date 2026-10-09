@@ -90,21 +90,32 @@ $$S_{total} = w_{flat} S_{flat} + w_{water} S_{water} + w_{space} S_{space} + w_
 - 若 $D_{water} < 6.0$ 格，判定為易淹水或水邊懸崖危險區，直接否決；
 - 當 $D_{water} \ge 18.0$ 格時給予飽和滿分 90 分；在 $[6, 18]$ 間採線性插值。
 
-#### 3. 初始核心 5 棟建築無碰撞空間排布 (Building Clearance Packing)
-- 聚落標配包含：**主屋（Haupthaus）+ 倉庫（Warehouse）+ 住宅（House）+ 兵營（Barracks）+ 鐵匠（Blacksmith）+ 哨塔（Tower）**。
+#### 3. 初始核心 6 棟建築無碰撞空間排布 (Building Clearance Packing)
+- 聚落標配包含：**主屋（MainHouse）+ 倉庫（Warehouse）+ 住宅（House）+ 食物設施（Farm／Hun 的 Butcher）+ 武器鍛造場（Blacksmith）+ 馬廄（Stable）+ 木工作坊（Workshop）**。
 - 空間排布檢驗條件：
   任意兩棟已排布建築 $A_i$ 與 $A_j$，其中心歐幾里得距離必須大於各自足跡半徑加上走廊緩衝間隙 $C_{corridor}$：
   $$\| P_i - P_j \| \ge R_{footprint, i} + R_{footprint, j} + C_{corridor} \quad (C_{corridor} \ge 1.2 \text{ tiles})$$
-- 演算法採用**自適應極座標發散搜尋**：以建築偏好距離與角度為基底，在角向 $\Delta \theta \in [0^\circ, \pm 15^\circ, \pm 30^\circ, \dots, \pm 90^\circ]$ 與徑向 $\Delta r \in [0, \pm 0.8, \pm 1.5]$ 空間尋找最近的平坦無障礙空位。若周圍無法容納全部 5 棟核心建築，則否決該腹地。
+- 演算法採用**自適應極座標發散搜尋**：以建築偏好距離與角度為基底，在角向 $\Delta \theta \in [0^\circ, \pm 15^\circ, \pm 30^\circ, \dots, \pm 90^\circ]$ 與徑向 $\Delta r \in [0, \pm 0.8, \pm 1.5]$ 空間尋找最近的平坦無障礙空位。若周圍無法容納全部 6 棟核心建築，則否決該腹地。
 
 ### 2.2 部族建築配置規格矩陣
 
-| 部族 (Tribe) | 主屋 (Haupthaus) | 倉庫 (Lager) | 民宅 (Wohnhaus) | 兵營 (Kaserne) | 鐵匠 (Schmiede) | 哨塔 (Turm) |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Germanic (日耳曼)** | `BauGerHau00` ($4.2 \times 4.2$) | `BauGerLag00` ($3.0 \times 3.0$) | `BauGerWoh00` ($2.6 \times 2.6$) | `BauGerKas00` ($3.6 \times 3.6$) | `BauGerSch00` ($3.0 \times 3.0$) | `BauGerTur00` ($2.2 \times 2.2$) |
-| **Roman (羅馬)** | `BauRomHau00` ($4.5 \times 4.5$) | `BauRomLag00` ($3.2 \times 3.2$) | `BauRomWoh00` ($2.6 \times 2.6$) | `BauRomKas00` ($3.8 \times 3.8$) | `BauRomSch00` ($3.0 \times 3.0$) | `BauRomTur00` ($2.2 \times 2.2$) |
-| **Celtic (凱爾特)** | `BauKelHau00` ($4.2 \times 4.2$) | `BauKelLag00` ($3.0 \times 3.0$) | `BauKelWoh00` ($2.5 \times 2.5$) | `BauKelKas00` ($3.5 \times 3.5$) | `BauKelSch00` ($2.8 \times 2.8$) | `BauKelTur00` ($2.0 \times 2.0$) |
-| **Hun (匈人)** | `BauHunHau00` ($4.2 \times 4.2$) | `BauHunLag00` ($3.0 \times 3.0$) | `BauHunWoh00` ($2.5 \times 2.5$) | `BauHunKas00` ($3.6 \times 3.6$) | `BauHunSch00` ($2.8 \times 2.8$) | `BauHunTur00` ($2.0 \times 2.0$) |
+名稱稽核（2026-10-08）：以 `ScriptObjectAliases.Load` 解讀唯讀 TEMP 副本
+`%TEMP%\ArmGameCompare_20261007\SYSTEM\CLAK\cl_scint.ini`（235 個別名），
+並以 `%TEMP%\ArmNativeAssets_20261007\objdef.txt` 第 52 欄核對地景。
+建築與動物直接使用 alias；地景使用完整 `NameDef`，不推測後綴或部族前綴。
+
+| 部族 | 主屋 | 倉庫 | 民宅 | 食物設施 | 武器鍛造場 | 馬廄 | 木工作坊 |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| Germanic | `GER_HAU00` | `GER_LAG00` | `GER_WOH00` | `GER_BAU00` 農場 | `GER_WAF00` | `GER_STA00` | `GER_SCHRE00` |
+| Roman | `ROM_HAU00` | `ROM_LAG00` | `ROM_WOH00` | `ROM_BAU00` 農場 | `ROM_WAF00` | `ROM_STA00` | `ROM_SCHRE00` |
+| Celtic | `KEL_HAU00` | `KEL_LAG00` | `KEL_WOH00` | `KEL_BAU00` 農場 | `KEL_WAF00` | `KEL_STA00` | `KEL_SCHRE00` |
+| Hun | `HUN_HAU00` | `HUN_LAG00` | `HUN_WOH00` | `HUN_SCHLA00` 屠宰場 | `HUN_WAF00` | `HUN_STA00` | `HUN_SCHRE00` |
+
+- Hun 目錄沒有 `HUN_BAU00`，不從其他部族複製不存在的農場。
+- `ROM_HAU00`／`ROM_LAG00`／`ROM_WOH00` 是 `Hauptzelt`／`Lagerzelt`／`Wohnzelt`。
+- 移除推測的 Kas／Sch／Tur，沒有宣稱這些設施等同兵營／哨塔。
+- 每座基地總共 7 棟。足跡尺寸（主屋 4.2–4.5 格，核心 2.0–3.8 格）與距離仍是規劃估值，尚未以遊戲碰撞／建築功能驗證。
+- Goldschmiede、Mine、Opferstaette 等雖存在於真實目錄，本次不納入初始核心。
 
 ---
 
@@ -118,8 +129,8 @@ $$S_{total} = w_{flat} S_{flat} + w_{water} S_{water} + w_{space} S_{space} + w_
 - **泊松碟盤取樣 (Poisson-Disk Sampling)**：
   在相鄰樹木間強制施加最小間距 $d_{min} \ge 0.85$ 格，並加入隨機小數抖動（Jitter $0.15 \sim 0.85$ 格），生成自然斑駁且不穿模重疊的林相。
 - **生態邊緣過渡 (Ecotone Transition)**：
-  - 核心林區：主幹高大喬木（針葉樹 `LanGerNad00`..`18`、闊葉樹 `LanGerLau00`..`15`）。
-  - 外圍低密度邊界（$D < 0.45$）：自動過渡為矮灌木（`LanGerNabu00`..`05`）與草叢。
+  - 核心林區：日耳曼／凱爾特／Hun 共用 `LanGerNad00_Tanne_gross`、`LanGerNad05_Tanne_gross`、`LanGerNad18_Tanne_klein`、`LanGerNad24_Tanne_mittel`；Roman 使用 `LanItaPin00_Pinie`、`LanItaPin01_Pinie`、`LanItaZyp00_Zypresse`、`LanItaZyp01_Zypresse`。
+  - 外圍低密度邊界（$D < 0.45$）：自動過渡為 `LanGerNabu00_Nadelbusch`；Roman 使用 `LanItaBus08_Kleiner_Busch`。
 
 ### 3.2 採石場與礦物露頭（岩壁坡腳探測）
 - **坡腳 (Cliff Foot) 地貌特徵演算法**：
@@ -127,11 +138,13 @@ $$S_{total} = w_{flat} S_{flat} + w_{water} S_{water} + w_{space} S_{space} + w_
   坡腳定義為：
   $$\text{IsCliffFoot}(x,z) \iff \left(|\nabla H(x,z)| \le 1.0\right) \land \left(\max_{d \le 2} H(x+dx, z+dz) - H(x,z) \ge 3.0\right)$$
   即本點平坦可供村民作業與放置採掘設施，但鄰近 2 格內存在 $\ge 3.0$ 單位高度的陡峭崖壁。
-- **資源點生成**：在探測到的坡腳錨點半徑 4.5 格內，以間距 $\ge 1.3$ 格聚攏生成 5–8 塊自然岩石（`LanGerSte00`..`05` 或羅馬 `LanRomSte*`）。在完全平原地形下，自動退化為地質露頭模式生成。
+- **資源點生成**：在探測到的坡腳錨點半徑 4.5 格內，以間距 $\ge 1.3$ 格聚攏生成 5–8 塊自然岩石（`LanGerSte00_1Stein`、`LanGerSte01_1Stein`、`LanGerSte02_1Stein`、`LanGerSte05_1Stein`；Roman 使用 `LanItaSte00_1Stein`、`LanItaSte01_1Stein`、`LanItaSte02_1Stein`）。在完全平原地形下，自動退化為地質露頭模式生成。
+
+岩石名稱存在僅證明可解析；一般石景不保證可採石。樹木的伐木產量、野豬的狩獵收益，以及資源點可達性仍需遊戲內驗證；公平性報告比較的是生成物件數量。
 
 ### 3.3 糧食與狩獵區（開闊平原野生動物群）
 - **方位互斥**：在聚落周圍選取與森林（偏好 $30^\circ$）和石礦（偏好 $150^\circ$）錯開之剩餘方位（偏好 $250^\circ$）之開闊平坦草地。
-- **野生動物群聚**：在半徑 5 格範圍內散佈 3–6 隻中立生物（隊伍代碼 `Team = -1`，`UnitCount = 1`），包含野鹿（`FigHir00`）或野豬（`FigSch00`），旋轉角度隨機，提供初期食物狩獵補給。
+- **野生動物群聚**：在半徑 5 格範圍內散佈 3–6 隻中立生物（隊伍代碼 `Team = -1`，`Count = 0`（單一動物以 `s_createObj` 建立，非部隊）），只使用真實別名 `ALL_EBE00`（`FigTieEbe00_Wildschwein`），旋轉角度隨機。不生成不存在的鹿型別，也不以狼／熊／大型貓科等掠食者當作食物群。
 
 ---
 
@@ -231,13 +244,25 @@ SettlementGeneratorEngine.ApplyToNatureSession(distribution, natureTemplates, fo
 
 ## 6. 驗證與測試覆蓋 (Verification & Testing Matrix)
 
+測試以程式內的小型真實 alias／NameDef fixture 驗證，不讀遊戲素材，也不從生成結果反造目錄。
+四族逐一驗證七種角色、所有 palette 項目、碰撞間距、JSON 往返、完整套用後的物件數與單步 Undo/Redo；
+宿主 UI 測試確認每種日耳曼建築各放置兩座，並儲存驗證中立動物仍為 Count=0。保留不完整目錄的略過行為與舊短名 resolver 相容測試。
+
+驗證命令（在獨立 worktree；PowerShell）：
+```powershell
+$env:DOTNET_ROLL_FORWARD = 'Major'
+dotnet build AgainstRomeModifier.slnx -c Release -p:UseAppHost=false
+dotnet test AgainstRomeModifier.slnx -c Release --no-build
+```
+遊戲內外觀、完工狀態、建築功能／招募、採集收益與實際對戰平衡未驗證；本稽核不存取或啟動安裝目錄。
+
 模組測試實作於 `tests/AgainstRomeMapEditor.Modules.Tests/SettlementGeneratorTests.cs`，涵蓋以下關鍵驗收項：
 
 1. **`Evaluator_rejects_steep_terrain_and_water_hazards`**：
    - 驗證陡坡高差超標時正確拒絕放置。
    - 驗證水體邊界過近（$< 6.0$ 格）或淹水時正確否決。
-2. **`Evaluator_places_main_house_and_five_core_buildings_without_collisions`**：
-   - 驗證成功規劃主屋與 5 棟核心建築。
+2. **`Evaluator_places_main_house_and_six_core_buildings_without_collisions`**：
+   - 驗證成功規劃主屋與 6 棟核心建築。
    - 驗證全部建築彼此距離嚴格大於足跡半徑和，走廊無阻擋。
 3. **`ResourcePlanner_generates_forest_quarry_and_wildlife_with_proper_constraints`**：
    - 驗證森林生成樹木位於基地外圍 $13.5 \sim 32$ 格。
@@ -256,5 +281,5 @@ SettlementGeneratorEngine.ApplyToNatureSession(distribution, natureTemplates, fo
 
 ## 7. 規範遵守宣告 (Compliance Statement)
 
-- **遵循 `AGENTS.md`**：全案以繁體中文撰寫，保留技術名詞、API、檔案路徑；未存取遊戲安裝目錄；未自行執行 git commit/push，交由主代理人統一提交。
+- **遵循 `AGENTS.md`**：全案以繁體中文撰寫，保留技術名詞、API、檔案路徑；未存取遊戲安裝目錄；本稽核僅在 `wt/settle` 提交本機 commit，不 push 或 merge。
 - **無依賴破壞**：完全遵循現有 `MapLayoutPreset` 規範與 `PlacementEditSession` 交易式原則，不修改原生資料結構簽名。

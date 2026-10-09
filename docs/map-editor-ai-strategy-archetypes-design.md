@@ -330,14 +330,91 @@ sequenceDiagram
 
 ---
 
-## 七、 核心 C# 資料結構與演算法程式碼骨架
+## 七、 原生已驗證原語 vs 未驗證 AI 行為之落差分析 (Verified Primitives vs Unverified Behaviors)
+
+### 7.1 原版遊戲與編輯器中真正可實作且已驗證的原語 (Verified Primitives)
+在 `src.Shared/Scripting`（`ScenarioEventCompiler`、`ScenarioEvents`、`ScenarioEventValidator`）以及遊戲實機驗收（`GLOBAL_MISSION_RESULT` 勝利判定、`s_createUnitAndMems` 部隊生成、`s_showTextBox` 訊息對話框）中，**唯一經過驗證且完全可行的行為原語如下**：
+
+1. **定時與波次部隊生成 (Timed Spawn / Wave Attack)**：
+   - 原生 Native：`s_createUnitAndMems(count, ..., alias, z, x, ..., team)`
+   - 語法與座標：世界座標 $X, Z \in [0, 16383]$（1 地圖圖格 = 256 世界單位，1 碰撞像素 = 64 世界單位）。
+   - 限制：部隊人數限制 1–20 人，隊伍編號 0–7，別名必須嚴格存在於 `SYSTEM/CLAK/cl_scint.ini`（`[ObjDefName]`）。
+2. **訊息提示與對話框 (Briefing & Notification)**：
+   - 原生 Native：`s_showTextBox(text, 0)`。
+   - 限制：字串必須使用遊戲支援的 Windows-1252 / 官方字集編碼，不得超過 1000 位元組。
+3. **外交狀態變更 (Diplomacy)**：
+   - 原生 Native：`s_setTeamHostile(team, otherTeam, hostile)`。
+4. **目標狀態監控與勝敗結算 (Object Conditions & Mission End)**：
+   - 原生 Native：`s_objExists`、`s_objDead`、`s_getObjPos`（支援矩形範圍 $MinX, MinZ, MaxX, MaxZ \in [0, 16383]$）。
+   - 勝敗結算：寫入 `GLOBAL_MISSION_RESULT`（1 勝利 / 0 失敗），並呼叫 `s_quitGame()` 終止戰役。
+   - 實機驗證狀態：已於 `ENDL_006` 實機測試中確認 `ObjectInArea` 勝利結算彈出「Вы успешно побороли неприятеля...」。
+
+### 7.2 企劃原型中目前「無法僅透過 ScenarioEvent 編譯」之行為 (Currently Unimplementable via ScenarioEvent)
+以下在 `AiArchetypeModels.cs` 與 `WaypointModels.cs` 中定義的高階屬性，**無法**直接由既有 `ScenarioEvent` 體系直接驅動，必須在企劃與設計文件中明確標記其邊界：
+
+1. **巡邏路徑移動 (`WaypointPath` / `WaypointNode`)**：
+   - 雖然原版遊戲二進位存在 `s_conMoveTo`（原生位址 `0x5345c0`），但現有 `ScenarioActionKind` 僅支援 `Message`、`Diplomacy`、`SpawnUnit`、`Victory`、`Defeat` 五種，**尚無 `MoveUnit` 或 `PatrolWaypoints` 動作種類**。
+   - 現況：波次與增援生成的部隊在生成點原地待命，或依遊戲原生 AI/自動交戰邏輯運作；自訂 Waypoint 節點鏈目前僅保存於編輯器設定模型中，尚未能注入 ak_level.bci。
+2. **動態戰術姿態 (`TacticalPosture`) 與交戰規則 (`EngagementRule`)**：
+   - `AggressiveRush`、`HitAndRun`、`DefensiveHold`、`AttackOnSight`、`RetaliateOnly` 等規則依賴於原生 NPC Job 排程器（如 `s_addNPCJob`、`Dorfverteidigung.bci` 聚落防衛腳本）。
+   - 單純的事件輪詢碼無法即時覆寫部隊底層 micro-AI 或尋敵決策機。
+3. **聚落經濟擴張與動態招募 (`ExpansionDesire`, `EconomicFocus`, `UnitPreferences`)**：
+   - 原版村莊自主招募與建築由 `.sdl` 模板和 `ak_level.bci` 的 NPC Job 循環（M1–M6）控制，而非由 `ScenarioEvents` 事件控制。
+   - 原型中的 `UnitPreferenceWeight` 僅能用於編輯器端隨機挑選生成波次的兵種組成，無法動態改變村民採集資源或主屋的兵種訓練行為。
+
+### 7.3 真實單位與建築別名對照表 (`cl_scint.ini` 實機驗證清單)
+所有在戰役企劃、波次編制與原型兵種偏好中使用的別名，均已與原廠 `SYSTEM/CLAK/cl_scint.ini` 核對確認：
+
+| 別名 (Alias) | 原生物件名稱 (NameDef) | 類別 | 部族 | 說明 |
+|---|---|---|---|---|
+| `GER_INF00` | `FigGerInf00_Hammer_Schild` | Figure | Ger | 日耳曼鐵錘盾兵 |
+| `GER_INF01` | `FigGerInf01_Schwert` | Figure | Ger | 日耳曼劍士 |
+| `GER_INF02` | `FigGerInf02_Zweihandaxt` | Figure | Ger | 日耳曼雙手斧兵 |
+| `GER_INF03` | `FigGerInf03_Doppelhammer` | Figure | Ger | 日耳曼雙錘兵 |
+| `GER_SCH00` | `FigGerSch00_Speer` | Figure | Ger | 日耳曼長矛兵 |
+| `GER_SCH01` | `FigGerSch01_Axt_Schild` | Figure | Ger | 日耳曼手斧盾兵 |
+| `GER_KAVINF00` | `FigGerKav00_Schwert_Schild` | Figure | Ger | 日耳曼騎兵 |
+| `GER_HAU00` | `BauGerHau00_Haupthaus` | Building | Ger | 日耳曼主屋（城鎮中心） |
+| `ROM_INF00` | `FigRomInf00_Lanze_Schild` | Figure | Rom | 羅馬長槍盾兵 |
+| `ROM_INF01` | `FigRomInf01_Schwert_Schild` | Figure | Rom | 羅馬軍團劍盾兵 |
+| `ROM_SCH00` | `FigRomSch00_Speer_Schild` | Figure | Rom | 羅馬標槍兵 |
+| `ROM_SCH01` | `FigRomSch01_Bogen` | Figure | Rom | 羅馬弓箭手 |
+| `ROM_KAVINF00` | `FigRomKav00_Schwert_Schild` | Figure | Rom | 羅馬重騎兵 |
+| `ROM_HAU00` | `BauRomHau00_Hauptzelt` | Building | Rom | 羅馬大軍帳 |
+| `HUN_INF00` | `FigHunInf00_Keule` | Figure | Hun | 匈人狼牙棒兵 |
+| `HUN_INF01` | `FigHunInf01_Schwert_Schild` | Figure | Hun | 匈人劍盾兵 |
+| `HUN_SCH00` | `FigHunSch00_Bogen` | Figure | Hun | 匈人步弓手 |
+| `HUN_KAVINF00` | `FigHunKav00_Schwert_Schild` | Figure | Hun | 匈人近戰輕騎兵 |
+| `HUN_KAVINF01` | `FigHunKav02_Lanze_Schild` | Figure | Hun | 匈人長矛槍騎兵 |
+| `HUN_KAVINF02` | `FigHunKav03_Geisterreiter` | Figure | Hun | 匈人幽靈突擊騎兵 |
+| `HUN_KAVSCH00` | `FigHunKav01_Bogen` | Figure | Hun | 匈人騎射手 |
+| `HUN_HAU00` | `BauHunHau00_Haupthaus` | Building | Hun | 匈人主帳 |
+| `KEL_INF00` | `FigKelInf00_Schwert` | Figure | Kel | 凱爾特劍士 |
+| `KEL_INF01` | `FigKelInf01_Lanze` | Figure | Kel | 凱爾特長矛兵 |
+| `KEL_INF02` | `FigKelInf02_Doppelschwert` | Figure | Kel | 凱爾特雙劍戰士 |
+| `KEL_SCH00` | `FigKelSch00_Bogen` | Figure | Kel | 凱爾特弓手 |
+| `KEL_SCH01` | `FigKelSch01_Schleuder` | Figure | Kel | 凱爾特投石手 |
+| `KEL_SCH02` | `FigKelSch02_Schwere_Schleuder` | Figure | Kel | 凱爾特重型投石手 |
+| `KEL_KAVINF00` | `FigKelKav00_Lanze_Schild` | Figure | Kel | 凱爾特騎兵 |
+| `KEL_HAU00` | `BauKelHau00_Haupthaus` | Building | Kel | 凱爾特主屋 |
+| `ALL_BAE00` | `FigTieBae00_Baer` | Figure | (中立) | 棕熊 |
+| `ALL_EBE00` | `FigTieEbe00_Wildschwein` | Figure | (中立) | 野豬 |
+| `ALL_WOL00` | `FigTieWol00_Wilder_Wolf` | Figure | (中立) | 野狼 |
+| `ALL_RAU00` | `FigTieRau00_Raubkatze` | Figure | (中立) | 肉食猛獸（豹/山貓） |
+| `ALL_PACKPF00` | `FigTiePac00_Packpferd` | Figure | (中立) | 馱馬 |
+| `ALL_ZIVMAN00` | `FigZivMan00_Zivilist` | Figure | (中立) | 男性平民 |
+| `ALL_ZIVWEI00` | `FigZivWei00_Zivilistin` | Figure | (中立) | 女性平民 |
+
+---
+
+## 八、 核心 C# 資料結構與演算法程式碼骨架
 
 核心程式碼已於 `src.MapEditor.Modules/AI/` 建立原型，主要包含以下檔案：
 
 1. **`AiArchetypeModels.cs`**：
    - `EngagementRule`、`TacticalPosture`、`TargetPriority` 列舉。
    - `UnitPreferenceWeight`、`AiArchetypeProfile`、`FactionAiProfile` 記錄。
-   - `AiArchetypeCatalog`：預載四大標準戰略原型與查詢 API。
+   - `AiArchetypeCatalog`：預載四大標準戰略原型與查詢 API（兵種均全面採用實機別名，如 `HUN_KAVINF00`、`HUN_KAVSCH00`、`ROM_INF00`、`ROM_SCH00`）。
 2. **`WaypointModels.cs`**：
    - `WaypointMovementMode`、`WaypointStance` 列舉。
    - `WaypointNode`、`WaypointPath` 記錄。

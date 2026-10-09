@@ -49,30 +49,37 @@ public static class RoadPathHealer
     /// <summary>
     /// 為孤立區域建立貫穿障礙的通行橋樑修復動作。
     /// </summary>
-    public static NavMeshRepairAction? CreateBridgeAction(IsolatedRegion region, string roadTexture = "H_WEG1")
+    public static NavMeshRepairAction? CreateBridgeAction(IsolatedRegion region, string roadTexture = "H_WEG1", int tileDimension = 64)
     {
         ArgumentNullException.ThrowIfNull(region);
         if (region.RecommendedBridgePoint is not { } bridge || region.BridgeDistance <= 0) return null;
 
+        int dim = tileDimension > 0 ? tileDimension : 64;
+        float tileScale = 16384f / dim;
+        int tileX = Math.Clamp((int)(bridge.WorldX / tileScale), 0, dim - 1);
+        int tileZ = Math.Clamp((int)(bridge.WorldZ / tileScale), 0, dim - 1);
+
         var changes = new List<NavMeshTileChange>
         {
-            new(bridge.TileX, bridge.TileZ, roadTexture, (byte)0)
+            new(tileX, tileZ, roadTexture, (byte)0)
         };
+
+        var focus = NavMeshCoordinate.FromTile(tileX, tileZ, dim);
 
         string titleZh = $"打通孤立區域過渡通道（跨度 {region.BridgeDistance} 格）";
         string titleEn = $"Open Passage to Isolated Region ({region.BridgeDistance} tiles)";
-        string descZh = $"在座標 ({bridge.TileX}, {bridge.TileZ}) 清除阻擋硬閘並鋪設過渡道路，連接包含 {region.TileCount} 格之孤立陸地。";
-        string descEn = $"Clear collision and place transition road at ({bridge.TileX}, {bridge.TileZ}) to reconnect {region.TileCount} isolated tiles.";
+        string descZh = $"在座標 ({tileX}, {tileZ}) 清除阻擋硬閘並鋪設過渡道路，連接包含 {region.TileCount} 格之孤立陸地。";
+        string descEn = $"Clear collision and place transition road at ({tileX}, {tileZ}) to reconnect {region.TileCount} isolated tiles.";
 
         return new NavMeshRepairAction(
-            $"bridge-{region.ComponentId}-{bridge.TileX}-{bridge.TileZ}",
+            $"bridge-{region.ComponentId}-{tileX}-{tileZ}",
             NavMeshIssueKind.IsolatedLand,
             titleZh,
             titleEn,
             descZh,
             descEn,
             changes,
-            bridge);
+            focus);
     }
 
     /// <summary>
@@ -88,6 +95,7 @@ public static class RoadPathHealer
 
         bool textureChanged = false;
         bool collisionChanged = false;
+        int tileDim = blendSession.TileDimension > 0 ? blendSession.TileDimension : 64;
 
         foreach (var change in action.Changes)
         {
@@ -102,10 +110,22 @@ public static class RoadPathHealer
             if (change.NewCollision.HasValue && heightSession is not null && heightSession.HasCollision)
             {
                 var op = change.NewCollision.Value == 0 ? TerrainCollisionOperation.Clear : TerrainCollisionOperation.Block;
-                var collisionRes = heightSession.PaintCollision(change.TileX + 0.5f, change.TileZ + 0.5f, 0.5f, op);
-                if (collisionRes.Count > 0)
+                int step = Math.Max(1, heightSession.CollisionSize / tileDim);
+                int minPx = change.TileX * step;
+                int maxPx = Math.Min(heightSession.CollisionSize, (change.TileX + 1) * step);
+                int minPz = change.TileZ * step;
+                int maxPz = Math.Min(heightSession.CollisionSize, (change.TileZ + 1) * step);
+
+                for (int pz = minPz; pz < maxPz; pz++)
                 {
-                    collisionChanged = true;
+                    for (int px = minPx; px < maxPx; px++)
+                    {
+                        var collisionRes = heightSession.PaintCollision(px + 0.5f, pz + 0.5f, 0.5f, op);
+                        if (collisionRes.Count > 0)
+                        {
+                            collisionChanged = true;
+                        }
+                    }
                 }
             }
         }

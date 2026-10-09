@@ -72,7 +72,7 @@ public sealed class EndlessMapCloner
         }
     }
 
-    private static void RewriteKnownFiles(string directory, string oldMapId, string newMapId, string newName)
+    public static void RewriteKnownFiles(string directory, string oldMapId, string newMapId, string newName)
     {
         string briefing = Path.Combine(directory, "TEXT", "US", "briefing.put");
         if (File.Exists(briefing)) { var put = PutTextDocument.Load(briefing); put.SetValue("briefing_titel_1", newName); put.Save(); }

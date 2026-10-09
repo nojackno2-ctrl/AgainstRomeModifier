@@ -1,7 +1,6 @@
 namespace AgainstRomeMapEditor.Modules.Tests.Objectives;
 
 using AgainstRomeMapEditor.Modules.Objectives;
-using AgainstRomeModifier.Scripting;
 using Xunit;
 
 public sealed class ObjectiveEngineTests
@@ -224,38 +223,18 @@ public sealed class ObjectiveEngineTests
     #region BciObjectiveCompiler Tests
 
     [Fact]
-    public void Compiler_CompilesDependencyGraphToValidScenarioEvents()
+    public void Compiler_RejectsDependencyGraphInsteadOfIgnoringPrerequisites()
     {
         var graph = new ObjectiveDependencyGraph();
-        var targetHero = Guid.NewGuid();
-        var defendGuid = Guid.NewGuid();
-
-        var assassinate = ObjectiveRuleCatalog.CreateAssassinateTarget("刺殺百夫長", "斬殺首領", targetHero,
-            reward: new ObjectiveReward("獲得日耳曼勇士增援！", [
-                new ScenarioAction(ScenarioActionKind.SpawnUnit, Alias: "GER_INF01", Count: 10)
-            ]));
-
-        var survival = ObjectiveRuleCatalog.CreateSurvival("堅守大本營", "堅守防線", defendGuid, 30);
-        survival = survival with { InitialState = ObjectiveState.Inactive };
-
-        graph.AddObjective(assassinate);
-        graph.AddObjective(survival);
-        graph.AddDependency(assassinate.Id, survival.Id, DependencyRelation.Prerequisite);
-
+        var a = ObjectiveRuleCatalog.CreateAssassinateTarget("First", "", Guid.NewGuid());
+        var b = ObjectiveRuleCatalog.CreateSurvival("Second", "", Guid.NewGuid(), 30)
+            with { InitialState = ObjectiveState.Inactive };
+        graph.AddObjective(a); graph.AddObjective(b);
+        graph.AddDependency(a.Id, b.Id);
         var result = BciObjectiveCompiler.Compile(graph);
-        Assert.True(result.Success, result.Summary);
-        Assert.NotEmpty(result.CompiledEvents);
-
-        // 檢查包含 Briefing 事件
-        Assert.Contains(result.CompiledEvents, e => e.Name == "OBJ_SYS_Briefing");
-
-        // 檢查包含暗殺事件
-        var assassinateEvent = result.CompiledEvents.First(e => e.Name.StartsWith($"OBJ_WIN_{assassinate.Id:N}"));
-        Assert.Contains(assassinateEvent.Conditions, c => c.Kind == ScenarioConditionKind.ObjectDeadOrRemoved && c.TargetId == targetHero);
-        Assert.Contains(assassinateEvent.Actions, a => a.Kind == ScenarioActionKind.SpawnUnit);
-
-        // 檢查最後具備 Victory 終結動作
-        Assert.Contains(result.CompiledEvents, e => e.Actions.Any(a => a.Kind == ScenarioActionKind.Victory));
+        Assert.False(result.Success);
+        Assert.Empty(result.CompiledEvents);
+        Assert.Contains(result.Diagnostics, d => d.Code == "OBJ_DEPENDENCY_UNSUPPORTED");
     }
 
     [Fact]

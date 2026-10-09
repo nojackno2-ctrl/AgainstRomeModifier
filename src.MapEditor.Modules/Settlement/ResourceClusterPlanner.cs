@@ -274,7 +274,7 @@ public sealed class ResourceClusterPlanner
             occupied.Add((candX, candZ));
             float rotDeg = (float)random.NextDouble() * 360f;
 
-            // 野生動物通常以 Figure 類別放置，中立隊伍 (-1)，UnitCount=1
+            // 真實 FigTie 動物以單一物件放置，中立隊伍 (-1)，Count=0 走 s_createObj
             herd.Add(new PlacedResourceItem(
                 animalType,
                 candX * _tileWorldSize,
@@ -282,7 +282,7 @@ public sealed class ResourceClusterPlanner
                 0f,
                 rotDeg,
                 Team: -1,
-                Count: 1));
+                Count: 0));
         }
 
         return herd;

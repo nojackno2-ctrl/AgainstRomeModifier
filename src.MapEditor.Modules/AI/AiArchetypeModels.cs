@@ -170,8 +170,8 @@ public static class AiArchetypeCatalog
         TargetPriority: TargetPriority.EconomicStructures,
         UnitPreferences:
         [
-            new("HUN_CAV01", Weight: 60, MinCount: 5, MaxCount: 15),
-            new("HUN_ARC01", Weight: 40, MinCount: 5, MaxCount: 10)
+            new("HUN_KAVINF00", Weight: 60, MinCount: 5, MaxCount: 15),
+            new("HUN_KAVSCH00", Weight: 40, MinCount: 5, MaxCount: 10)
         ]);
 
     private static AiArchetypeProfile CreateRomanFortress() => new(
@@ -193,9 +193,9 @@ public static class AiArchetypeCatalog
         TargetPriority: TargetPriority.MilitaryStructures,
         UnitPreferences:
         [
-            new("ROM_INF01", Weight: 50, MinCount: 10, MaxCount: 20),
-            new("ROM_INF02", Weight: 30, MinCount: 8, MaxCount: 15),
-            new("ROM_ARC01", Weight: 20, MinCount: 6, MaxCount: 12)
+            new("ROM_INF00", Weight: 50, MinCount: 10, MaxCount: 20),
+            new("ROM_INF01", Weight: 30, MinCount: 8, MaxCount: 15),
+            new("ROM_SCH00", Weight: 20, MinCount: 6, MaxCount: 12)
         ]);
 
     private static AiArchetypeProfile CreateGermanicSettlement() => new(
@@ -217,9 +217,9 @@ public static class AiArchetypeCatalog
         TargetPriority: TargetPriority.NearestEnemy,
         UnitPreferences:
         [
-            new("GER_INF01", Weight: 45, MinCount: 6, MaxCount: 16),
-            new("GER_ARC01", Weight: 35, MinCount: 6, MaxCount: 14),
-            new("GER_CAV01", Weight: 20, MinCount: 4, MaxCount: 10)
+            new("GER_INF00", Weight: 45, MinCount: 6, MaxCount: 16),
+            new("GER_INF01", Weight: 35, MinCount: 6, MaxCount: 14),
+            new("GER_KAVINF00", Weight: 20, MinCount: 4, MaxCount: 10)
         ]);
 
     private static AiArchetypeProfile CreateBarbarianOutpost() => new(
@@ -242,6 +242,6 @@ public static class AiArchetypeCatalog
         UnitPreferences:
         [
             new("GER_INF01", Weight: 60, MinCount: 4, MaxCount: 10),
-            new("GER_ARC01", Weight: 40, MinCount: 4, MaxCount: 8)
+            new("GER_SCH00", Weight: 40, MinCount: 4, MaxCount: 8)
         ]);
 }

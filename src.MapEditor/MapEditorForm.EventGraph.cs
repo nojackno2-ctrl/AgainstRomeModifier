@@ -95,8 +95,7 @@ internal sealed partial class MapEditorForm
         };
         ScenarioSavePreflight.Validate(scenario, _objectCatalog.Select(AliasOf).ToArray());
         // Replace through the session, retaining its save baseline.
-        while (EventSession.Count > 0) EventSession.RemoveAt(EventSession.Count - 1);
-        foreach (var item in events) EventSession.Add(item);
+        EventSession.ReplaceAll(events);
         _eventGraphDirty = false;
         RefreshEventList();
     }

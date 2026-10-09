@@ -5,6 +5,7 @@ namespace AgainstRomeMapEditor.Modules.Soundscape;
 /// 實作標準 IEditorModule 契約，管理音效區域的工作中狀態、快照捕捉、
 /// 交易基線確認、復原/重做歷史與變更重設。
 /// </summary>
+// Experimental editor state only; not connected to native map persistence.
 public sealed class SoundscapeEditorModule : IEditorModule<SoundscapeSnapshot>
 {
     private readonly List<SoundscapeZone> _zones = [];

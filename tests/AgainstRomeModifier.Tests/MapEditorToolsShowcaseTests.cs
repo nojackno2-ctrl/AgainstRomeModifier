@@ -43,6 +43,12 @@ public sealed partial class MapEditorSaveTransactionTests
                 for (int x = 40 * step; x <= 45 * step; x++)
                     plateau.Add(new TerrainSampleChange(z * size + x, layers.Heights[z * size + x], (byte)Math.Min(255, layers.Heights[z * size + x] + 110)));
             layers.ApplySampleChanges(plateau); layers.CommitStroke();
+            {
+                var detection = CliffEdgeDetector.DetectFromVertexHeights(layers.VertexSize, layers.Heights, 64, 4);
+                report["cliffFacings"] = detection.CliffCells.GroupBy(c => c.Facing.ToString()).ToDictionary(g => g.Key, g => g.Count());
+                var real = CliffTileCatalog.BuildRealNames(new[] { "Fels_AA_008", "Fels_AA_004", "Fels_AA_002", "Fels_AA_006" });
+                report["catalogDefaultEntries"] = real.Entries.Count;
+            }
             form.ApplyCliffTool(new Rectangle(38, 31, 10, 10));
             report["cliff"] = Status();
             form.ApplyErosionTool(new Rectangle(38, 31, 10, 10));
@@ -59,6 +65,13 @@ public sealed partial class MapEditorSaveTransactionTests
             report["floraPlanted"] = form.ApplyFloraScatter(new Rectangle(26, 36, 16, 12)); report["flora"] = Status();
 
             report["wallPieces"] = form.ApplyWallTool([(24, 18), (32, 18), (32, 22)], team: 0); report["wall"] = Status();
+            // 一鍵基地：2 人日耳曼，不含自然資源（避免與既有植被混在一起難辨認）。
+            int before = form.PlacementSession.Count;
+            form.ApplySettlementGeneration(2, AgainstRomeMapEditor.Modules.Settlement.SettlementTribe.Germanic, 42, includeNature: false);
+            report["settlementPlaced"] = form.PlacementSession.Count - before;
+            report["settlement"] = Status();
+            report["settlementTypes"] = Enumerable.Range(before, form.PlacementSession.Count - before).Select(i => form.PlacementSession[i].Type.NameDef).Distinct().ToArray();
+            report["settlementFirstPositions"] = Enumerable.Range(before, Math.Min(6, form.PlacementSession.Count - before)).Select(i => $"{form.PlacementSession[i].Type.NameDef}@{form.PlacementSession[i].WorldX:F0},{form.PlacementSession[i].WorldZ:F0}").ToArray();
             report["weather"] = form.ApplyWeatherPreset("storm");
             var lib = GetField<FloorTextureLibrary>(form, "_floorTextures");
             report["cliffLikeTextures"] = lib.Names.Where(n => System.Text.RegularExpressions.Regex.IsMatch(n, "fels|berg|stein|klipp|rock|cliff", System.Text.RegularExpressions.RegexOptions.IgnoreCase)).ToArray();

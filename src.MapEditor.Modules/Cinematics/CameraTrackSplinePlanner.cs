@@ -3,6 +3,7 @@ using System.Numerics;
 namespace AgainstRomeMapEditor.Modules.Cinematics;
 
 /// <summary>
+/// 實驗性預覽／編輯器資料，尚未接入遊戲 BCI；姿態和預覽距離的原生對應未驗證。
 /// 樣條相機軌跡規劃器 (Camera Track Spline Planner)。
 /// 基於向心 Catmull-Rom (Centripetal Catmull-Rom, α=0.5) 與弧長/時間參數化，
 /// 負責將離散航點平滑插值為連續的 3D 鏡頭飛行軌跡。

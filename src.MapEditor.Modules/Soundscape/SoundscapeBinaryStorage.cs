@@ -6,8 +6,9 @@ using AgainstRomeModifier;
 namespace AgainstRomeMapEditor.Modules.Soundscape;
 
 /// <summary>
-/// 音效區域二進位儲存檔案（DATA/sound.dat）與關卡腳本合約序列化器。
-/// 支援原生 SNDZ 二進位結構、PFIL 容器壓縮、無損 JSON 交換格式與 IPR 腳本片段匯出。
+/// Experimental editor draft serialization. SNDZ is a private prototype format,
+/// not an Against Rome map format. Native file/script export is deliberately disabled.
+/// See docs/reverse-engineering/sound-zones.md.
 /// </summary>
 public static class SoundscapeBinaryStorage
 {
@@ -176,36 +177,21 @@ public static class SoundscapeBinaryStorage
         return new SoundscapeSnapshot(globalAmbId, globalVol, zones);
     }
 
-    /// <summary>
-    /// 寫入到 DATA/sound.dat 檔案（可選 PFIL LZSS 壓縮）。
-    /// </summary>
+    /// <summary>Unsupported native export; no verified DATA/sound.dat contract exists.</summary>
     public static void SaveToSoundDat(string filePath, SoundscapeSnapshot snapshot, bool compressPfil = false, byte[]? origHeader = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(filePath);
         ArgumentNullException.ThrowIfNull(snapshot);
-
-        byte[] raw = SerializeToBinary(snapshot);
-        byte[] finalBytes = compressPfil ? GameLZSS.CompressPfil(raw, origHeader ?? new byte[64]) : raw;
-
-        string? dir = Path.GetDirectoryName(filePath);
-        if (!string.IsNullOrEmpty(dir))
-            Directory.CreateDirectory(dir);
-
-        File.WriteAllBytes(filePath, finalBytes);
+        throw new NotSupportedException("Native sound-zone export is unwired. SNDZ is an editor prototype, not DATA/sound.dat.");
     }
 
-    /// <summary>
-    /// 從 DATA/sound.dat 讀取快照。
-    /// </summary>
+    /// <summary>Reads legacy editor prototype data only; does not parse native sound tables.</summary>
     public static SoundscapeSnapshot LoadFromSoundDat(string filePath)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(filePath);
-
         if (!File.Exists(filePath))
-            throw new FileNotFoundException("找不到音效區域檔案", filePath);
-
-        byte[] data = File.ReadAllBytes(filePath);
-        return DeserializeFromBinary(data);
+            throw new FileNotFoundException("Editor soundscape prototype file not found", filePath);
+        return DeserializeFromBinary(File.ReadAllBytes(filePath));
     }
 
     /// <summary>
@@ -227,48 +213,11 @@ public static class SoundscapeBinaryStorage
             ?? throw new InvalidDataException("無法從 JSON 反序列化 SoundscapeSnapshot。");
     }
 
-    /// <summary>
-    /// 匯出為原版 IPR 腳本（ak_level.bci 相容）觸發輔助片段。
-    /// 可直接嵌入地圖腳本以在舊版引擎無二進位 sound.dat 讀取器時以腳本條件觸發。
-    /// </summary>
+    /// <summary>Unsupported native script export; the voice APIs are not spatial zone APIs.</summary>
     public static string ExportToScript(SoundscapeSnapshot snapshot)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
-
-        var sb = new StringBuilder();
-        sb.AppendLine("// ==========================================================================");
-        sb.AppendLine("// Against Rome - Generated Soundscape Script Trigger Contract");
-        sb.AppendLine($"// Global Ambience: {snapshot.GlobalAmbienceId} (Vol: {snapshot.GlobalAmbienceVolume:F2})");
-        sb.AppendLine($"// Total Zones: {snapshot.Zones.Count}");
-        sb.AppendLine("// ==========================================================================");
-        sb.AppendLine();
-        sb.AppendLine("void InitMapSoundscapes()");
-        sb.AppendLine("{");
-
-        int idx = 0;
-        foreach (var z in snapshot.Zones)
-        {
-            if (!z.Attributes.HasFlag(SoundscapeZoneAttributes.IsActive))
-                continue;
-
-            sb.AppendLine($"    // Zone #{++idx}: {z.Name} ({z.SoundDefId})");
-            sb.AppendLine($"    // Type: {z.ShapeType}, Center: ({z.CenterWorldX:F1}, {z.CenterWorldZ:F1}), InnerR: {z.InnerRadius:F1}, OuterR: {z.OuterRadius:F1}");
-
-            if (z.ShapeType == SoundscapeShapeType.Point)
-            {
-                sb.AppendLine($"    // Point Emitter: s_playVoiceSampleMP(\"{z.SoundDefId}\", {(int)z.CenterWorldX}, {(int)z.CenterWorldZ});");
-            }
-            else
-            {
-                sb.AppendLine($"    // Area Trigger: if (s_posInSightDist(listener, {(int)z.CenterWorldX}, {(int)z.CenterWorldZ}, {(int)z.OuterRadius})) {{");
-                sb.AppendLine($"    //     s_setVoiceSubGroup(\"{z.SoundDefId}\", {(int)(z.BaseVolume * 100)});");
-                sb.AppendLine("    // }");
-            }
-            sb.AppendLine();
-        }
-
-        sb.AppendLine("}");
-        return sb.ToString();
+        throw new NotSupportedException("Native sound-zone script export is unwired; no verified spatial playback contract exists.");
     }
 
     #region 私有輔助函式

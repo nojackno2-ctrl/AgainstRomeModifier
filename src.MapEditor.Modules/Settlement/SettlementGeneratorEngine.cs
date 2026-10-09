@@ -113,7 +113,7 @@ public static class SettlementGeneratorEngine
         ArgumentNullException.ThrowIfNull(groundHeight);
 
         var preset = ToPlacementLayoutPreset(distribution);
-        // 規劃器用短型別名；解析成實際目錄別名，目錄沒有的型別略過而不是讓整批失敗。
+        // 規劃器使用真實別名；仍相容舊短名配置，目錄缺少的型別略過而不是讓整批失敗。
         preset = preset with { Entries = ResolveEntries(preset.Entries, name => LayoutTypeResolver.ResolveAlias(catalog, name)) };
 
         // 使用 (0, 0, 0) 錨點，因為 entries 已具備世界絕對座標

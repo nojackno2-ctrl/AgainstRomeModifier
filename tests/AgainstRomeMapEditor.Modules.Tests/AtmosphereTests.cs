@@ -150,7 +150,7 @@ public sealed class AtmosphereTests
 
         Assert.True(WeatherPresets.TryGetPreset("mountain_snow", out var snow));
         Assert.Equal(PrecipitationType.Snow, snow.Precipitation);
-        Assert.Equal(1, snow.Boden.SnowAlrIndex);
+        Assert.Equal(837, snow.Boden.SnowAlrIndex);
 
         Assert.False(WeatherPresets.TryGetPreset("non_existent", out var fallback));
         Assert.Equal(WeatherPresets.ClearSkyId, fallback.PresetId);
@@ -219,7 +219,7 @@ public sealed class AtmosphereTests
         session.ApplyPreset(WeatherPresets.StormId);
         Assert.True(session.IsDirty);
         Assert.Equal("storm", session.Current.PresetId);
-        Assert.Equal(30, session.Current.Boden.FlashPropability);
+        Assert.Equal(8, session.Current.Boden.FlashPropability);
 
         // 放棄變更，重設回基準
         session.Reset();

@@ -31,7 +31,7 @@ public sealed class AtmosphereShaderUniforms
 
     /// <summary>
     /// 水體動態參數向量：
-    /// X: 凹凸幅度 (0..1024), Y: 凹凸頻率 (1..16), Z: 扭曲位移 (10..18), W: 雨滴漣漪開關 (0.0/1.0)。
+    /// X: 凹凸幅度 (0..1024), Y: 凹凸頻率 (1..16), Z: 扭曲位移 (0=關閉, 10..18), W: 雨滴漣漪開關 (0.0/1.0)。
     /// </summary>
     public Vector4 WaterDynamics { get; init; } = new(256f, 4f, 14f, 0f);
 
@@ -83,7 +83,8 @@ public sealed class AtmosphereLightingBridge
             _nextFlashTimer -= deltaTimeSeconds;
             if (_nextFlashTimer <= 0f)
             {
-                // 機率觸發：flashProb=1000 代表平均每秒 1 次閃電；flashProb=10 代表平均每 100 秒 1 次
+                // 編輯器預覽的啟發式間隔；不是原生引擎 FlashPropability 的已驗證單位。
+                // 原檔註解稱最大降雨時每秒閃電數，與此預覽算法不同，仍待引擎追蹤確認。
                 float averageInterval = MathF.Max(0.5f, 1000f / flashProb);
                 // 泊松隨機間隔偏移 (0.5 ~ 1.5 倍平均間隔)
                 _nextFlashTimer = averageInterval * (0.5f + (float)_random.NextDouble());

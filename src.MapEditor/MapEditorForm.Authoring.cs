@@ -274,6 +274,9 @@ internal sealed partial class MapEditorForm
             if (plan.Issues.Count > 0)
                 _status.Text += en ? $" Skipped {plan.Issues.Count} unsupported facings."
                     : $" 已略過 {plan.Issues.Count} 個尚未判讀的朝向。";
+            if (applyResult.Errors.Count > 0)
+                _status.Text += en ? $" {applyResult.Errors.Count} scree transitions skipped (missing native borders)."
+                    : $" {applyResult.Errors.Count} 處坡腳碎石過渡因缺少原版邊界而略過。";
         }
         else
         {

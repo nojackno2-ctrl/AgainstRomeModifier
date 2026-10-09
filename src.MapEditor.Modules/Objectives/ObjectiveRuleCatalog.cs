@@ -55,7 +55,7 @@ public static class ObjectiveRuleCatalog
         [ObjectiveKind.CaptureArea] = new(
             ObjectiveKind.CaptureArea,
             "佔領特定區域 (Capture Area)",
-            "派遣部隊進駐戰略據點、橋樑或聖地，並清除該區敵軍維持佔領達指定秒數。",
+            "匯出僅支援指定物件位於矩形區域（維持秒數為 0）；不檢查敵軍或隊伍佔領。",
             RequiresTargetGuid: false,
             RequiresArea: true,
             SupportsHoldDuration: true,
@@ -113,7 +113,7 @@ public static class ObjectiveRuleCatalog
             DefaultCategory: ObjectiveCategory.Bonus)
     };
 
-    /// <summary>取得所有支援的目標規則描述元。</summary>
+    /// <summary>所有設計／模擬規則；匯出須另通過 ValidateForCompilation。</summary>
     public static IReadOnlyCollection<ObjectiveRuleDescriptor> AllDescriptors => Descriptors.Values;
 
     /// <summary>依目標種類取得描述元。</summary>
@@ -135,7 +135,8 @@ public static class ObjectiveRuleCatalog
         if (definition.Title.Length > 120)
             errors.Add("目標標題長度上限為 120 字元。");
 
-        var descriptor = GetDescriptor(definition.Kind);
+        if (!Descriptors.TryGetValue(definition.Kind, out var descriptor))
+            return ObjectiveValidationResult.Failure("Unknown objective kind.");
         var param = definition.Parameters;
 
         if (param.PlayerTeam is < 0 or > 7)
@@ -178,6 +179,53 @@ public static class ObjectiveRuleCatalog
         if (definition.Kind == ObjectiveKind.CaptureArea && param.HoldDurationSeconds < 0)
             errors.Add("佔領目標維持秒數不可為負數。");
 
+        return errors.Count == 0 ? ObjectiveValidationResult.Success : ObjectiveValidationResult.Failure(errors);
+    }
+
+    /// <summary>Export eligibility, separate from the offline graph/sandbox parameter validation.</summary>
+    public static ObjectiveValidationResult ValidateForCompilation(ObjectiveDefinition definition)
+    {
+        ArgumentNullException.ThrowIfNull(definition);
+        var errors = new List<string>();
+        var p = definition.Parameters;
+        if (!Enum.IsDefined(definition.Kind) || !Enum.IsDefined(definition.Category))
+            errors.Add("Unknown objective kind or category.");
+        if (definition.Id == Guid.Empty || definition.InitialState != ObjectiveState.Active)
+            errors.Add("Export requires a persistent ID and an initially active objective.");
+        if (definition.Kind is ObjectiveKind.EliminateAllEnemies or ObjectiveKind.KingOfTheHill)
+            errors.Add("Team-wide elimination and accumulated area control have no verified ScenarioEvent mapping.");
+        if (p.TimeLimitSeconds != 0 || p.RequiredCount != 1 || !string.IsNullOrEmpty(p.CustomData))
+            errors.Add("Timeouts, kill/resource counts and custom data are simulation-only and cannot be silently ignored.");
+        if (p.Area?.IsCircle == true)
+            errors.Add("Only rectangular areas are supported; circles cannot be approximated by their bounding box.");
+        if (definition.Category == ObjectiveCategory.FailureCriterion && definition.Kind != ObjectiveKind.Survival)
+            errors.Add("Only protected-object loss is supported as a failure criterion.");
+        if (definition.Kind is ObjectiveKind.Survival or ObjectiveKind.EscortUnit && definition.Category == ObjectiveCategory.Bonus)
+            errors.Add("Bonus survival/escort needs a failed-state latch to suppress later rewards; unsupported.");
+        if (definition.Kind is ObjectiveKind.Survival or ObjectiveKind.EscortUnit or ObjectiveKind.CaptureArea)
+        {
+            if (p.TargetGuids.Count != 1 || p.TargetGuids.Any(id => id == Guid.Empty))
+                errors.Add("This rule requires exactly one explicit target GUID.");
+        }
+        if (p.TargetGuids.Count > 32 || p.TargetGuids.Any(id => id == Guid.Empty) || p.TargetGuids.Distinct().Count() != p.TargetGuids.Count)
+            errors.Add("Target lists must contain at most 32 distinct, nonempty GUIDs; no truncation is allowed.");
+        if (definition.Kind != ObjectiveKind.Survival && p.HoldDurationSeconds != 0)
+            errors.Add("Area dwell/accumulation and custom hold timers are unsupported; DelaySeconds is a level-start deadline, not time spent satisfying a condition.");
+        if (p.HoldDurationSeconds > 86400)
+            errors.Add("Survival duration cannot exceed the existing compiler limit of 86400 seconds.");
+        if (definition.Category == ObjectiveCategory.FailureCriterion && (p.HoldDurationSeconds != 0 || definition.Reward is not null))
+            errors.Add("A protected-object failure criterion cannot have a completion timer or reward.");
+        if (definition.Kind == ObjectiveKind.CustomScripted)
+        {
+            if (p.CustomConditions.Count is < 1 or > 32 || p.TargetGuids.Count != 0 || p.Area is not null)
+                errors.Add("Custom objectives require 1-32 explicit ScenarioConditions and no unused targets/area.");
+        }
+        else if (p.CustomConditions.Count != 0)
+            errors.Add("Custom conditions are only supported by CustomScripted objectives.");
+        if (p.Area is not null && definition.Kind is not (ObjectiveKind.EscortUnit or ObjectiveKind.CaptureArea))
+            errors.Add("This objective kind does not use an area.");
+        if (definition.Reward?.Actions.Any(a => a is null || a.Kind is AgainstRomeModifier.Scripting.ScenarioActionKind.Victory or AgainstRomeModifier.Scripting.ScenarioActionKind.Defeat) == true)
+            errors.Add("Reward actions cannot terminate the mission; terminal results are owned by the objective compiler.");
         return errors.Count == 0 ? ObjectiveValidationResult.Success : ObjectiveValidationResult.Failure(errors);
     }
 
@@ -238,11 +286,12 @@ public static class ObjectiveRuleCatalog
         string title,
         string description,
         ObjectiveAreaBounds area,
-        int holdDurationSeconds = 15,
+        int holdDurationSeconds = 0,
         int playerTeam = 0,
         int timeLimitSeconds = 0,
         ObjectiveCategory category = ObjectiveCategory.Primary,
-        ObjectiveReward? reward = null) =>
+        ObjectiveReward? reward = null,
+        Guid? targetGuid = null) =>
         new()
         {
             Title = title,
@@ -252,6 +301,7 @@ public static class ObjectiveRuleCatalog
             Reward = reward,
             Parameters = new()
             {
+                TargetGuids = targetGuid.HasValue ? [targetGuid.Value] : [],
                 Area = area,
                 HoldDurationSeconds = holdDurationSeconds,
                 PlayerTeam = playerTeam,

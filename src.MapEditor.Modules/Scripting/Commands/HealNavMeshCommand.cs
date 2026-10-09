@@ -24,13 +24,14 @@ internal sealed class HealNavMeshCommand : IEditorCommand
 
     public CommandResult Execute(ParsedCommand command, CommandExecutionContext context)
     {
-        if (context.BlendSession is null)
+        var blendSession = context.BlendSession;
+        if (blendSession is null)
         {
             return CommandResult.Fail("地形材質會話 (TerrainBlendEditSession) 未就緒。");
         }
 
-        int dim = context.MapTileDimension > 0 ? context.MapTileDimension : 256;
-        IReadOnlyList<string> textures = context.BlendSession.CurrentTextures;
+        int dim = blendSession.TileDimension > 0 ? blendSession.TileDimension : (context.MapTileDimension > 0 ? context.MapTileDimension : 64);
+        IReadOnlyList<string> textures = blendSession.CurrentTextures;
 
         int maxGap = 2;
         if (command.TryGetFlagInt("max-gap", out int mgVal) && mgVal > 0)
@@ -51,7 +52,7 @@ internal sealed class HealNavMeshCommand : IEditorCommand
 
         foreach (var act in actions)
         {
-            if (RoadPathHealer.ApplyRepair(act, context.BlendSession, context.HeightSession))
+            if (RoadPathHealer.ApplyRepair(act, blendSession, context.HeightSession))
             {
                 healedCount++;
             }
@@ -59,8 +60,8 @@ internal sealed class HealNavMeshCommand : IEditorCommand
 
         if (healedCount > 0)
         {
-            context.BlendSession.CommitStroke();
-            context.RecordStep(() => context.BlendSession.Undo(), () => context.BlendSession.Redo());
+            blendSession.CommitStroke();
+            context.RecordStep(() => blendSession.Undo(), () => blendSession.Redo());
         }
 
         return CommandResult.Ok($"成功自動修復 {healedCount} 處道路間隙 (候選總數: {gapCandidates.Count})。", healedCount);

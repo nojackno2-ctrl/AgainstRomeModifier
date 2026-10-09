@@ -110,8 +110,8 @@ public static class RoadGapDetector
                 {
                     foreach (var (gx, gz) in gapPoints)
                     {
-                        if (passability.IsSubmerged(gx, gz)) submerged = true;
-                        if (passability.IsBlockedByCollision(gx, gz)) needsCollisionClear = true;
+                        if (passability.IsTileSubmerged(gx, gz, dimension)) submerged = true;
+                        if (passability.IsTileBlockedByCollision(gx, gz, dimension)) needsCollisionClear = true;
                     }
                 }
                 if (submerged) continue;

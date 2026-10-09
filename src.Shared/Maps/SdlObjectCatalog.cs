@@ -10,6 +10,9 @@ public enum SdlObjectCategory { Building, UnitGroup, Figure, Effect, Other }
 public sealed record SdlObjectType(string NameDef, int Definition, SdlObjectCategory Category, string Tribe, int Occurrences,
     IReadOnlyDictionary<string, string> TemplateFields)
 {
+    /// <summary>FigTie 動物是單一物件，以 s_createObj 建立，不是部隊群。</summary>
+    public bool IsAnimal => Category == SdlObjectCategory.Figure && NameDef.StartsWith("FigTie", StringComparison.OrdinalIgnoreCase);
+
     /// <summary>部隊圖示（Ver…Ico）的 objdefn0 指向實際兵種；anzv 第一個值為人數。</summary>
     public bool HasUnitCount => Category == SdlObjectCategory.UnitGroup;
 }

@@ -77,6 +77,39 @@ public sealed class NavMeshPassabilityGrid
     }
 
     /// <summary>
+    /// 檢查特定圖塊空間坐標 (0..tileDimension-1) 是否覆蓋有碰撞阻擋硬閘。
+    /// </summary>
+    public bool IsTileBlockedByCollision(int tileX, int tileZ, int tileDimension)
+    {
+        if (tileDimension <= 0) return true;
+        if (tileDimension == Size) return IsBlockedByCollision(tileX, tileZ);
+        float scale = (float)Size / tileDimension;
+        int minX = Math.Clamp((int)MathF.Floor(tileX * scale), 0, Size - 1);
+        int maxX = Math.Clamp((int)MathF.Ceiling((tileX + 1) * scale) - 1, 0, Size - 1);
+        int minZ = Math.Clamp((int)MathF.Floor(tileZ * scale), 0, Size - 1);
+        int maxZ = Math.Clamp((int)MathF.Ceiling((tileZ + 1) * scale) - 1, 0, Size - 1);
+        for (int cz = minZ; cz <= maxZ; cz++)
+        for (int cx = minX; cx <= maxX; cx++)
+        {
+            if (IsBlockedByCollision(cx, cz)) return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// 檢查特定圖塊空間坐標 (0..tileDimension-1) 中心點是否沒入水下。
+    /// </summary>
+    public bool IsTileSubmerged(int tileX, int tileZ, int tileDimension)
+    {
+        if (tileDimension <= 0) return false;
+        if (tileDimension == Size) return IsSubmerged(tileX, tileZ);
+        float scale = (float)Size / tileDimension;
+        int cx = Math.Clamp((int)((tileX + 0.5f) * scale), 0, Size - 1);
+        int cz = Math.Clamp((int)((tileZ + 0.5f) * scale), 0, Size - 1);
+        return IsSubmerged(cx, cz);
+    }
+
+    /// <summary>
     /// 取得指定座標的碰撞位元組（若無碰撞層則回傳 0）。
     /// </summary>
     public byte GetCollisionByte(int x, int z)

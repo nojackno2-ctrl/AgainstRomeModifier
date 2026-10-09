@@ -37,6 +37,7 @@ public sealed class InGameAcceptanceScenarioTests
             events.RemoveAll(item => item.Name.StartsWith("ARM ", StringComparison.Ordinal));
             events.Add(new("ARM start", 3) { Actions = [new(ScenarioActionKind.Message, scenario == "victory"
                 ? "ARM test: move the soldiers east into the marked area."
+                : scenario is "waves" or "lair" or "objective" ? "ARM test: scenario started."
                 : "ARM test: defeat in 45 seconds. Save and load now.")] });
             if (scenario == "victory")
             {
@@ -72,6 +73,41 @@ public sealed class InGameAcceptanceScenarioTests
             {
                 report = TerrainShowcase(form);
                 events.Add(new("ARM terrain", 3) { Actions = [new(ScenarioActionKind.Message, "ARM test: terrain showcase north of the start (materials, hills, forest, road).")] });
+            }
+            else if (scenario == "waves")
+            {
+                // Campaign wave planner path: two timed waves of enemy squads east of the start (team 1), merged through the real form API.
+                var aliases = (string[])typeof(MapEditorForm).GetMethod("CampaignAliases", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(form, null)!;
+                using var dialog = new CampaignWaveDialog(aliases, (ScenarioDocument)typeof(MapEditorForm).GetMethod("CampaignScenario", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(form, null)!)
+                { WaveCount = 2, FirstDelaySeconds = 15, IntervalSeconds = 20, SquadCount = 3, SpawnX = (int)unit.WorldX + 1500, SpawnZ = (int)unit.WorldZ };
+                var result = form.ApplyCampaignWaves(dialog.Plan);
+                Assert.True(result.Success, string.Join("; ", result.Diagnostics));
+                events.Add(new("ARM waves", 3) { Actions = [new(ScenarioActionKind.Message, "ARM test: enemy waves arrive at 15 s and 35 s east of the start.")] });
+                report = $"waves at ({unit.WorldX + 1500},{unit.WorldZ}): " + string.Join(", ", result.CompiledEvents.Select(e => $"{e.Name}@{e.DelaySeconds}s"));
+            }
+            else if (scenario == "lair")
+            {
+                // Wild-lair guard-wave path: repeating infantry spawns every 20 s north-east of the start (team 1), merged via the real form API.
+                var aliases = (string[])typeof(MapEditorForm).GetMethod("CampaignAliases", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(form, null)!;
+                string alias = aliases.First(a => a.Contains("INF", StringComparison.OrdinalIgnoreCase));
+                var lairAliases = (string[])typeof(MapEditorForm).GetMethod("LairAliases", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(form, null)!;
+                using var dialog = new WildLairDialog(lairAliases, (ScenarioDocument)typeof(MapEditorForm).GetMethod("CampaignScenario", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(form, null)!)
+                { WaveCount = 1, IntervalSeconds = 20, SpawnCount = 3, UnitAlias = alias, Team = 1, WorldX = unit.WorldX + 1500, WorldZ = unit.WorldZ - 1200 };
+                dialog.SelectedDefinition = WildLairDialog.CreateAuthoredBlueprint();
+                Assert.True(dialog.CanApply, string.Join("; ", dialog.ValidationErrors));
+                Assert.True(form.MergeScenarioEvents(dialog.ResultingEvents));
+                report = $"lair spawns {alias} x3 every 20 s at ({unit.WorldX + 1500},{unit.WorldZ - 1200}): " + string.Join(", ", dialog.ResultingEvents.Select(e => $"{e.Name}@{e.DelaySeconds}s repeat={e.Repeat}"));
+            }
+            else if (scenario == "objective")
+            {
+                // Objective Studio path: primary Survival objective on the start unit; victory after 40 s alive, defeat if it dies/is removed.
+                var aliases = (string[])typeof(MapEditorForm).GetMethod("CampaignAliases", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(form, null)!;
+                using var dialog = new ObjectiveStudioDialog((ScenarioDocument)typeof(MapEditorForm).GetMethod("CampaignScenario", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(form, null)!, aliases)
+                { ObjectiveTitle = "ARM survive 40s", HoldDurationSeconds = 40, SelectedKind = AgainstRomeMapEditor.Modules.Objectives.ObjectiveKind.Survival, SelectedCategory = AgainstRomeMapEditor.Modules.Objectives.ObjectiveCategory.Primary };
+                dialog.SelectedTargetGuid = unit.ScenarioId;
+                Assert.True(dialog.CanApply, string.Join("; ", dialog.ValidationErrors));
+                Assert.True(form.MergeScenarioEvents(dialog.CompiledEvents));
+                report = "survival 40 s of " + unit.Type.NameDef + ": " + string.Join(", ", dialog.CompiledEvents.Select(e => $"{e.Name}@{e.DelaySeconds}s"));
             }
             else throw new ArgumentException("未知案例：" + scenario);
             Invoke(form, "RefreshEventList", 0);

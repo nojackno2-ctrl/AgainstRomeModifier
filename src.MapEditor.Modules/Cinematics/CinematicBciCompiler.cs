@@ -1,186 +1,97 @@
+﻿using System.Buffers.Binary;
 using System.Text;
 using AgainstRomeModifier.Scripting;
 
 namespace AgainstRomeMapEditor.Modules.Cinematics;
 
 /// <summary>
-/// 原生 BCI 鏡頭呼叫腳本與相容事件編譯器 (Cinematic BCI Compiler)。
-/// 負責將過場動畫序列編譯為：
-/// 1. 遊戲標準相容之 ScenarioEvent 集合（可直接被 ScenarioEventCompiler 注入 ak_level.bci）。
-/// 2. 原生 BCI0 虛擬機指令流規劃與 IPR 偽代碼清單（呼叫 s_lgcSetEnginePos, s_lgcSetEngineZoom, s_showTextBox）。
+/// 已核對 EXE ABI 的底層呼叫片段；完整序列仍為實驗性、未接入存檔。
+/// 不推測航點 Zoom、Pitch、Yaw 與原生引擎參數的對應。見 cinematic-camera.md。
 /// </summary>
 public static class CinematicBciCompiler
 {
+    public const bool IsExperimental = true;
+    public const bool IsWiredToLevelScript = false;
+
     /// <summary>
-    /// 將過場動畫序列編譯轉譯為標準 ScenarioEvent 列表。
-    /// 依時間軸依序切分事件與延遲，保證在現有遊戲引擎中 100% 安全運行無崩潰。
+    /// 產生位置與縮放 statement 的 CODE 片段，並登錄 image 常數；不附加 CODE、修改 main 或注入等待。
+    /// 三個位置參數沿用原生引擎順序，zoom 為原生 0..9，不是 CameraWaypoint 的預覽距離。
+    /// </summary>
+    public static byte[] CompileCameraCalls(BciImage image, double engineX, double engineY, double engineZ, double engineZoom)
+    {
+        ArgumentNullException.ThrowIfNull(image);
+        foreach (double value in new[] { engineX, engineY, engineZ })
+            if (!double.IsFinite(value) || Math.Abs(value) > float.MaxValue)
+                throw new ArgumentOutOfRangeException(nameof(engineX), "位置必須能以原生 float 表示。");
+        if (!double.IsFinite(engineZoom) || engineZoom < 0 || engineZoom > 9)
+            throw new ArgumentOutOfRangeException(nameof(engineZoom), "原生縮放範圍為 0..9；預覽距離尚無換算證據。");
+
+        using var code = new MemoryStream();
+        void Word(int value) { Span<byte> bytes = stackalloc byte[4]; BinaryPrimitives.WriteInt32LittleEndian(bytes, value); code.Write(bytes); }
+        void Double(double value)
+        {
+            long bits = BitConverter.DoubleToInt64Bits(value);
+            Word(67); Word(unchecked((int)bits)); Word(unchecked((int)(bits >> 32)));
+        }
+        // VM 0x5b1700 reads arguments from the stack top; each double occupies two words.
+        Double(engineZ); Double(engineY); Double(engineX);
+        Word(128); Word(NativeConstant(image, "s_lgcSetEnginePos")); Word(73); Word(-6);
+        Double(engineZoom);
+        Word(128); Word(NativeConstant(image, "s_lgcSetEngineZoom")); Word(73); Word(-2);
+        // Void statements do not emit opcode 86 (which reads the native return register).
+        return code.ToArray();
+    }
+
+    /// <summary>與原版 ENDL 的訊息 statement 相同；字串使用遊戲編碼，沒有字幕時長/語音/強制彈出語意。</summary>
+    public static byte[] CompileMessageCall(BciImage image, string text)
+    {
+        ArgumentNullException.ThrowIfNull(image);
+        ArgumentNullException.ThrowIfNull(text);
+        int textIndex = image.AddGameConstant(text);
+        int[] words = [76, textIndex, 66, 0, 128, NativeConstant(image, "s_showTextBox"), 73, -2];
+        var code = new byte[words.Length * 4];
+        for (int i = 0; i < words.Length; i++) BinaryPrimitives.WriteInt32LittleEndian(code.AsSpan(i * 4), words[i]);
+        return code;
+    }
+
+    private static int NativeConstant(BciImage image, string name)
+    {
+        for (int i = 0; i < image.ConstOffsets.Count; i++)
+            if (image.Constant(i) == name) return i;
+        return image.AddConstant(name);
+    }
+
+    /// <summary>
+    /// 僅把字幕轉為一次性 Message 事件。DelaySeconds 是從開局算起，非前一字幕的相對延遲。
+    /// 不執行相機、輸入鎖定、黑邊、語音、部隊或後續觸發；沒有字幕就沒有事件。
     /// </summary>
     public static IReadOnlyList<ScenarioEvent> CompileToScenarioEvents(CutsceneSequence sequence)
     {
         ArgumentNullException.ThrowIfNull(sequence);
-
-        var events = new List<ScenarioEvent>();
-        var planner = new CameraTrackSplinePlanner(sequence.CameraWaypoints);
-        float totalDuration = Math.Max(sequence.CalculateTotalDuration(), planner.TotalDuration);
-
-        // 1. 若有字幕對白，依時間生成有序訊息事件
-        if (sequence.Subtitles.Count > 0)
-        {
-            var sortedSubs = sequence.Subtitles.OrderBy(s => s.StartTimeSeconds).ToList();
-            float lastTime = 0f;
-
-            for (int i = 0; i < sortedSubs.Count; i++)
+        return sequence.Subtitles.OrderBy(s => s.StartTimeSeconds).Select((sub, index) =>
+            new ScenarioEvent($"{sequence.Name}_字幕_{index + 1}", checked((int)Math.Round(sub.StartTimeSeconds)), false, true)
             {
-                var sub = sortedSubs[i];
-                int delay = (int)Math.Round(Math.Max(0f, sub.StartTimeSeconds - lastTime));
-                lastTime = sub.StartTimeSeconds;
-
-                string speakerPrefix = !string.IsNullOrWhiteSpace(sub.Speaker) ? $"[{sub.Speaker}] " : "";
-                string fullText = $"{speakerPrefix}{sub.Text}";
-
-                var actions = new List<ScenarioAction>
-                {
-                    new(ScenarioActionKind.Message, Text: fullText)
-                };
-
-                // 若在該時間戳附近有相機航點，可藉由同事件關聯焦點
-                var cutsceneEvent = new ScenarioEvent(
-                    Name: $"{sequence.Name}_字幕_{i + 1}",
-                    DelaySeconds: delay,
-                    Repeat: false,
-                    Enabled: true)
-                {
-                    Actions = actions
-                };
-                events.Add(cutsceneEvent);
-            }
-        }
-        else
-        {
-            // 若無字幕，建立開場起點事件
-            events.Add(new ScenarioEvent(
-                Name: $"{sequence.Name}_開場",
-                DelaySeconds: 1,
-                Repeat: false,
-                Enabled: true)
-            {
-                Actions = new List<ScenarioAction>
-                {
-                    new(ScenarioActionKind.Message, Text: $"過場動畫：{sequence.Name}")
-                }
-            });
-        }
-
-        // 2. 結束收尾事件（恢復或解鎖）
-        if (!string.IsNullOrWhiteSpace(sequence.OnCompleteTriggerEvent))
-        {
-            events.Add(new ScenarioEvent(
-                Name: $"{sequence.Name}_完畢後續",
-                DelaySeconds: (int)Math.Ceiling(totalDuration),
-                Repeat: false,
-                Enabled: true)
-            {
-                Actions = new List<ScenarioAction>
-                {
-                    new(ScenarioActionKind.Message, Text: $"過場結束，觸發後續任務：{sequence.OnCompleteTriggerEvent}")
-                }
-            });
-        }
-
-        return events;
+                Actions = [new(ScenarioActionKind.Message, Text: string.IsNullOrWhiteSpace(sub.Speaker) ? sub.Text : $"[{sub.Speaker}] {sub.Text}")]
+            }).ToArray();
     }
 
-    /// <summary>
-    /// 編譯為人類可讀且精確對應 Against Rome 原生 BCI0 虛擬機指令碼的 IPR 腳本文字。
-    /// 詳細展示 s_lgcSetEnginePos (0x54c400), s_lgcSetEngineZoom (0x54c620), s_showTextBox (0x521f10) 之呼叫。
-    /// </summary>
+    /// <summary>人類可讀的預覽規劃，不是 IPR 原始碼或可執行 BCI；所有輸出皆為註解。</summary>
     public static string GenerateBciScriptText(CutsceneSequence sequence, int sampleSteps = 8)
     {
         ArgumentNullException.ThrowIfNull(sequence);
-
         var sb = new StringBuilder();
+        sb.AppendLine("// EXPERIMENTAL / UNWIRED: planning preview only; not executable IPR or BCI.");
+        sb.AppendLine($"// Sequence: {sequence.Name} ({sequence.Id})");
+        sb.AppendLine("// Verified ABI: s_lgcSetEnginePos v(ddd); s_lgcSetEngineZoom v(d), native zoom 0..9.");
+        sb.AppendLine("// Preview Zoom/Pitch/Yaw mapping, timing, letterbox, player control, restore, FX and orders are unverified.");
         var planner = new CameraTrackSplinePlanner(sequence.CameraWaypoints);
-        float totalDuration = Math.Max(sequence.CalculateTotalDuration(), planner.TotalDuration);
-
-        sb.AppendLine($"// ================================================================");
-        sb.AppendLine($"// Against Rome 歷史戰役運鏡過場原生腳本 (BCI / IPR Script)");
-        sb.AppendLine($"// 序列名稱: {sequence.Name} (ID: {sequence.Id})");
-        sb.AppendLine($"// 總長度: {totalDuration:F2} 秒 | 航點數: {sequence.CameraWaypoints.Count}");
-        sb.AppendLine($"// ================================================================");
-        sb.AppendLine();
-        sb.AppendLine($"void cutscene_{sequence.Id}_main()");
-        sb.AppendLine("{");
-        sb.AppendLine("    // 1. 初始化導演環境 (啟用黑邊與玩家鎖定)");
-        if (sequence.DisablePlayerControl)
-        {
-            sb.AppendLine("    call s_disableGUI(1); // 鎖定玩家輸入");
-        }
-        sb.AppendLine();
-
-        // 依時間順序取樣或插入關鍵影格
-        int steps = Math.Max(2, sampleSteps);
-        float timeStep = totalDuration / steps;
-
+        float duration = Math.Max(sequence.CalculateTotalDuration(), planner.TotalDuration);
+        int steps = Math.Clamp(sampleSteps, 2, 10000);
         for (int i = 0; i <= steps; i++)
         {
-            float t = i * timeStep;
-            CameraPose pose = planner.Evaluate(t);
-
-            sb.AppendLine($"    // --- [時間戳記 {t:F2}s] ---");
-            sb.AppendLine($"    // 相機樣條插值：坐標=({pose.Position.X:F1}, {pose.Position.Y:F1}, {pose.Position.Z:F1}), 俯仰={pose.PitchDegrees:F1}°, 偏航={pose.YawDegrees:F1}°, 縮放={pose.Zoom:F1}");
-            sb.AppendLine($"    pushd {pose.Position.Z:F2};");
-            sb.AppendLine($"    pushd {pose.Position.Y:F2};");
-            sb.AppendLine($"    pushd {pose.Position.X:F2};");
-            sb.AppendLine($"    call s_lgcSetEnginePos; // 原生 0x54c400 (v(ddd))");
-            sb.AppendLine($"    pushd {pose.Zoom:F2};");
-            sb.AppendLine($"    call s_lgcSetEngineZoom; // 原生 0x54c620 (v(d))");
-
-            // 比對是否有對應字幕
-            var activeSub = sequence.Subtitles.FirstOrDefault(s => Math.Abs(s.StartTimeSeconds - t) < (timeStep * 0.5f));
-            if (activeSub is not null)
-            {
-                string speaker = !string.IsNullOrWhiteSpace(activeSub.Speaker) ? $"[{activeSub.Speaker}] " : "";
-                sb.AppendLine($"    pushstr \"{speaker}{activeSub.Text}\";");
-                sb.AppendLine($"    push 0;");
-                sb.AppendLine($"    call s_showTextBox; // 原生 0x521f10 (i(ii))");
-
-                if (!string.IsNullOrWhiteSpace(activeSub.VoiceSampleAlias))
-                {
-                    sb.AppendLine($"    pushstr \"{activeSub.VoiceSampleAlias}\";");
-                    sb.AppendLine($"    call s_playVoiceSample; // 原生 0x521fb0");
-                }
-            }
-
-            // 比對是否有部隊指令
-            var orders = sequence.UnitOrders.Where(u => Math.Abs(u.TimeSeconds - t) < (timeStep * 0.5f)).ToList();
-            foreach (var order in orders)
-            {
-                sb.AppendLine($"    // 部隊演出指令: {order.UnitAlias} -> ({order.TargetX:F1}, {order.TargetZ:F1})");
-                sb.AppendLine($"    push {order.TargetZ:F0};");
-                sb.AppendLine($"    push {order.TargetX:F0};");
-                sb.AppendLine($"    push 100; // 預設速度");
-                sb.AppendLine($"    call s_conMoveTo; // 原生 0x5345c0");
-            }
-
-            if (i < steps)
-            {
-                sb.AppendLine($"    push {(int)Math.Round(timeStep * 1000f)};");
-                sb.AppendLine($"    call s_conWaitTime; // 等待下一影格");
-            }
-            sb.AppendLine();
+            CameraPose pose = planner.Evaluate(i * duration / steps);
+            sb.AppendLine(FormattableString.Invariant($"// t={pose.TimeSeconds:F2}s preview position=({pose.Position.X:F1}, {pose.Position.Y:F1}, {pose.Position.Z:F1}) pitch={pose.PitchDegrees:F1} yaw={pose.YawDegrees:F1} preview distance={pose.Zoom:F1}"));
         }
-
-        sb.AppendLine("    // 3. 完畢處理");
-        if (sequence.DisablePlayerControl)
-        {
-            sb.AppendLine("    call s_disableGUI(0); // 歸還玩家控制權");
-        }
-        if (!string.IsNullOrWhiteSpace(sequence.OnCompleteTriggerEvent))
-        {
-            sb.AppendLine($"    call trigger_{sequence.OnCompleteTriggerEvent}();");
-        }
-        sb.AppendLine("}");
-
         return sb.ToString();
     }
 }

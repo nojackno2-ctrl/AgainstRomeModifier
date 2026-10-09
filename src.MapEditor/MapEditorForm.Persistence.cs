@@ -36,7 +36,7 @@ internal sealed partial class MapEditorForm
                 previousScenario = ScenarioDocument.Load(map);
                 // 建築以官方完工範本寫入 DATA（開局即完工）；人物與部隊由地圖腳本生成。
                 scenario = new ScenarioDocument { Events = EventSession.Capture().ToList(), DataSlots = previousScenario.DataSlots.ToList(), Spawns = placedChanged ? _placedObjects.Select(item => new ScenarioSpawn(AliasOf(item.Type), item.WorldX, item.WorldZ, item.Team,
-                    item.Type.Category == SdlObjectCategory.Figure ? Math.Max(1, item.UnitCount) : 0, (int)MathF.Round(item.Angle), item.WorldY,
+                    item.Type.Category == SdlObjectCategory.Figure && !item.Type.IsAnimal ? Math.Max(1, item.UnitCount) : 0, (int)MathF.Round(item.Angle), item.WorldY,
                     Prebuilt: item.Type.Category == SdlObjectCategory.Building && item.Team is >= 0 and <= 8) { Id = item.ScenarioId }).ToList() : previousScenario.Spawns.ToList() };
             }
             var issues = RefreshMapDiagnostics();

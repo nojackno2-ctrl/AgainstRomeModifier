@@ -373,7 +373,7 @@ public sealed class SoundscapeTests
     }
 
     [Fact]
-    public void BinaryStorage_JsonAndScriptExport()
+    public void BinaryStorage_JsonDraftRoundTripAndNativeScriptRejection()
     {
         var snapshot = new SoundscapeSnapshot(
             "Amb_Plains_Wind", 0.5f,
@@ -394,9 +394,30 @@ public sealed class SoundscapeTests
         var fromJson = SoundscapeBinaryStorage.ImportFromJson(json);
         Assert.Single(fromJson.Zones);
 
-        string script = SoundscapeBinaryStorage.ExportToScript(snapshot);
-        Assert.Contains("InitMapSoundscapes", script);
-        Assert.Contains("Amb_River_Gentle", script);
+        Assert.Throws<NotSupportedException>(() => SoundscapeBinaryStorage.ExportToScript(snapshot));
+    }
+
+    [Fact]
+    public void BinaryStorage_NativeExportRejectsBeforeCreatingOrOverwritingFiles()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "ArmSoundExportGuard_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var snapshot = new SoundscapeSnapshot("", 0f, []);
+            string existing = Path.Combine(root, "existing.dat");
+            byte[] original = [1, 2, 3, 4];
+            File.WriteAllBytes(existing, original);
+            Assert.Throws<NotSupportedException>(() => SoundscapeBinaryStorage.SaveToSoundDat(existing, snapshot));
+            Assert.Equal(original, File.ReadAllBytes(existing));
+            string missing = Path.Combine(root, "DATA", "sound.dat");
+            Assert.Throws<NotSupportedException>(() => SoundscapeBinaryStorage.SaveToSoundDat(missing, snapshot, compressPfil: true));
+            Assert.False(Directory.Exists(Path.GetDirectoryName(missing)));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
     }
 
     #endregion

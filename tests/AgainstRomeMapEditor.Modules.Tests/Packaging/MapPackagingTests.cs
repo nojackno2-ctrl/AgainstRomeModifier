@@ -169,7 +169,7 @@ public sealed class MapPackagingTests : IDisposable
     public void ModBundleExporter_FullExportAndSlotRemappedInstall_Succeeds()
     {
         string sourceMap = Path.Combine(_tempDir, "SourceMap_ENDL_005");
-        CreateValidMockMap(sourceMap, slot: 5, mapTitle: "條頓之森");
+        CreateValidMockMap(sourceMap, slot: 5, mapTitle: "Teuton Forest");
 
         string zipOutput = Path.Combine(_tempDir, "TeutonForest_1.0.armpack");
 
@@ -235,7 +235,7 @@ public sealed class MapPackagingTests : IDisposable
     public void ModBundleExporter_Install_RejectsNativeSlotsStrictly()
     {
         string sourceMap = Path.Combine(_tempDir, "SourceMap_ENDL_005");
-        CreateValidMockMap(sourceMap, slot: 5, mapTitle: "原廠覆蓋測試");
+        CreateValidMockMap(sourceMap, slot: 5, mapTitle: "Native Slot Test");
 
         string zipOutput = Path.Combine(_tempDir, "NativeAttack.zip");
         ModBundleExporter.ExportToZip(sourceMap, zipOutput, new ModExportOptions { ForceExportOnErrors = true });
@@ -257,6 +257,184 @@ public sealed class MapPackagingTests : IDisposable
         }
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ExportInstall_FillsFirstGap_AndCatalogShowsTitle(bool occupyFive)
+    {
+        string source = Path.Combine(_tempDir, "ENDL_008");
+        CreateValidMockMap(source, 8, "Portable Forest");
+        File.WriteAllText(Path.Combine(source, "shadows.dat"), "cache");
+        Directory.CreateDirectory(Path.Combine(source, "TEXTURES"));
+        File.WriteAllText(Path.Combine(source, "TEXTURES", "game.apt"), "global asset");
+        File.WriteAllText(Path.Combine(source, "game.exe"), "global executable");
+        string zipPath = Path.Combine(_tempDir, "portable.zip");
+        var export = ModBundleExporter.ExportToZip(source, zipPath, new() { GenerateThumbnail = false, CleanCaches = false });
+        using (var zip = ZipFile.OpenRead(zipPath))
+        {
+            Assert.Null(zip.GetEntry("map/.arm_custom_map"));
+            Assert.Null(zip.GetEntry("map/TEXTURES/game.apt"));
+            Assert.Null(zip.GetEntry("map/game.exe"));
+            Assert.Equal(export.Manifest.Files.Select(f => "map/" + f.RelativePath).Order(),
+                zip.Entries.Where(e => e.FullName.StartsWith("map/", StringComparison.Ordinal)).Select(e => e.FullName).Order());
+        }
+        Assert.Equal("ENDL_008", export.Manifest.SourceMapId);
+        Assert.Equal("map-relative", export.Manifest.PayloadLayout);
+        string game = Path.Combine(_tempDir, "target");
+        Directory.CreateDirectory(Path.Combine(game, "MAPS", "ENDL_008"));
+        if (occupyFive) Directory.CreateDirectory(Path.Combine(game, "MAPS", "ENDL_005"));
+        var result = ModBundleExporter.InstallFromZip(zipPath, game);
+        int expected = occupyFive ? 6 : 5;
+        Assert.Equal(expected, result.InstalledSlot);
+        var info = new EndlessMapCatalog().Require(game, expected);
+        Assert.True(info.IsCustom);
+        Assert.Equal(export.Manifest.Title, info.DisplayName);
+        string sdl = File.ReadAllText(Path.Combine(info.DirectoryPath, "Endlos_005_Siedlung1.sdl"));
+        Assert.Contains($"MAPS/ENDL_{expected:000}/", sdl);
+        Assert.DoesNotContain("MAPS/ENDL_008/", sdl);
+        var marker = System.Text.Json.JsonSerializer.Deserialize<CustomMapEntry>(File.ReadAllText(Path.Combine(info.DirectoryPath, CustomMapManifest.MarkerFileName)))!;
+        Assert.Equal(expected, marker.Slot);
+        Assert.Equal(8, marker.SourceSlot);
+        Assert.False(marker.StandaloneLevel);
+        Assert.Contains(CustomMapManifest.Load(game).Entries, e => e.Slot == expected);
+    }
+
+    [Theory]
+    [InlineData("map/../escape.dat")]
+    [InlineData("map/DATA/../../escape.dat")]
+    [InlineData("map/C:/escape.dat")]
+    [InlineData("map/DATA/CON.dat")]
+    [InlineData("map/TEXTURES/game.apt")]
+    [InlineData("map/.arm_custom_map")]
+    [InlineData("map/BODEN.BMP")]
+    public void Install_RejectsUnsafeOrUnlistedZipEntries(string path)
+    {
+        var (zip, game) = CreateInstallFixture();
+        using (var archive = ZipFile.Open(zip, ZipArchiveMode.Update))
+        using (var writer = new StreamWriter(archive.CreateEntry(path).Open())) writer.Write("attack");
+        Assert.Throws<InvalidDataException>(() => ModBundleExporter.InstallFromZip(zip, game));
+        Assert.Empty(Directory.GetFileSystemEntries(Path.Combine(game, "MAPS")));
+    }
+
+    [Fact]
+    public void Install_RejectsCorruptPayload_WithoutPublishingOrChangingRegistry()
+    {
+        var (zip, game) = CreateInstallFixture();
+        string registry = Path.Combine(game, "MAPS", CustomMapManifest.FileName);
+        File.WriteAllText(registry, "[]");
+        using (var archive = ZipFile.Open(zip, ZipArchiveMode.Update))
+        {
+            var entry = archive.GetEntry("map/DATA/objects.dat")!;
+            entry.Delete();
+            using var stream = archive.CreateEntry("map/DATA/objects.dat").Open();
+            stream.Write(Enumerable.Repeat((byte)255, 64).ToArray());
+        }
+        Assert.Throws<InvalidDataException>(() => ModBundleExporter.InstallFromZip(zip, game));
+        Assert.Equal("[]", File.ReadAllText(registry));
+        Assert.Single(Directory.GetFileSystemEntries(Path.Combine(game, "MAPS")));
+    }
+
+    [Fact]
+    public void Install_RejectsGapOccupiedAndOverwritePolicies()
+    {
+        var (zip, game) = CreateInstallFixture();
+        Assert.Throws<IOException>(() => ModBundleExporter.InstallFromZip(zip, game, new(8, SlotCollisionStrategy.FailIfOccupied)));
+        Directory.CreateDirectory(Path.Combine(game, "MAPS", "ENDL_005"));
+        Assert.Throws<IOException>(() => ModBundleExporter.InstallFromZip(zip, game, new(5, SlotCollisionStrategy.FailIfOccupied)));
+        Assert.Throws<NotSupportedException>(() => ModBundleExporter.InstallFromZip(zip, game, new(5, SlotCollisionStrategy.OverwriteCustom)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => ModBundleExporter.InstallFromZip(zip, game, new(1000)));
+    }
+
+    [Fact]
+    public void Install_RegeneratesStandaloneMarker_AndRejectsMalformedRegistry()
+    {
+        var (zip, game) = CreateInstallFixture(standalone: true);
+        string registry = Path.Combine(game, "MAPS", CustomMapManifest.FileName);
+        File.WriteAllText(registry, "invalid JSON");
+        Assert.Throws<System.Text.Json.JsonException>(() => ModBundleExporter.InstallFromZip(zip, game));
+        Assert.Single(Directory.GetFileSystemEntries(Path.Combine(game, "MAPS")));
+        File.WriteAllText(registry, "[]");
+        var result = ModBundleExporter.InstallFromZip(zip, game);
+        Assert.True(CustomMapManifest.HasStandaloneLevel(result.DirectoryPath));
+    }
+
+    [Theory]
+    [InlineData("missing")]
+    [InlineData("schema")]
+    [InlineData("checksum")]
+    [InlineData("remapping")]
+    public void Install_RejectsInvalidOrNonPortableManifest(string mode)
+    {
+        var (zip, game) = CreateInstallFixture();
+        using (var archive = ZipFile.Open(zip, ZipArchiveMode.Update))
+        {
+            var entry = archive.GetEntry("manifest.json")!;
+            MapPackageManifest manifest;
+            using (var reader = new StreamReader(entry.Open())) manifest = MapPackageManifest.FromJson(reader.ReadToEnd());
+            entry.Delete();
+            if (mode != "missing")
+            {
+                if (mode == "schema") manifest.SchemaVersion = "1.0";
+                if (mode == "remapping")
+                {
+                    manifest.Compatibility = manifest.Compatibility with { AllowDynamicSlotRemapping = false };
+                    Directory.CreateDirectory(Path.Combine(game, "MAPS", "ENDL_005"));
+                }
+                string json = manifest.ToJson();
+                if (mode == "checksum") json = json.Replace(manifest.PackageChecksum, "BAD");
+                using var writer = new StreamWriter(archive.CreateEntry("manifest.json").Open());
+                writer.Write(json);
+            }
+        }
+        if (mode == "remapping") Assert.Throws<InvalidOperationException>(() => ModBundleExporter.InstallFromZip(zip, game));
+        else Assert.Throws<InvalidDataException>(() => ModBundleExporter.InstallFromZip(zip, game));
+        Assert.DoesNotContain(Directory.GetDirectories(Path.Combine(game, "MAPS")), p => Path.GetFileName(p).StartsWith(".arm_install", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Preflight_UnknownAliasIsUnverifiedWithoutCatalog_ButErrorWithCatalog()
+    {
+        string source = Path.Combine(_tempDir, "source", "MAPS", "ENDL_005");
+        CreateValidMockMap(source, 5, "Alias Test");
+        var scenario = new AgainstRomeModifier.Scripting.ScenarioDocument
+        {
+            Spawns = [new("UNIT", 4000, 5000, 0) { Id = Guid.NewGuid() }]
+        };
+        var unverified = MapExportPreflightChecker.Check(source, scenario);
+        Assert.Contains(unverified.Issues, i => i.Code == "alias" && i.Severity == PreflightSeverity.Warning);
+        var verified = MapExportPreflightChecker.Check(source, scenario, Array.Empty<string>());
+        Assert.Contains(verified.Issues, i => i.Code == "alias" && i.Severity == PreflightSeverity.Error);
+    }
+
+    [Fact]
+    public void Install_RegistryWriteFailureRemovesPublishedMap_AndPreservesExistingEntries()
+    {
+        var (zip, game) = CreateInstallFixture();
+        string registry = Path.Combine(game, "MAPS", CustomMapManifest.FileName);
+        Directory.CreateDirectory(registry); // Load sees no file, but registry publication must fail.
+        string sentinel = Path.Combine(registry, "keep.txt");
+        File.WriteAllText(sentinel, "existing");
+        Assert.ThrowsAny<IOException>(() => ModBundleExporter.InstallFromZip(zip, game));
+        Assert.Equal("existing", File.ReadAllText(sentinel));
+        Assert.Single(Directory.GetFileSystemEntries(Path.Combine(game, "MAPS")));
+    }
+
+    private (string Zip, string Game) CreateInstallFixture(bool standalone = false)
+    {
+        string source = Path.Combine(_tempDir, "source", "MAPS", "ENDL_005");
+        CreateValidMockMap(source, 5, "Test Forest");
+        if (standalone)
+        {
+            var marker = new CustomMapEntry(5, 1, DateTimeOffset.UtcNow, "test") { StandaloneLevel = true };
+            File.WriteAllText(Path.Combine(source, CustomMapManifest.MarkerFileName), System.Text.Json.JsonSerializer.Serialize(marker));
+        }
+        string zip = Path.Combine(_tempDir, "fixture.zip");
+        ModBundleExporter.ExportToZip(source, zip, new() { GenerateThumbnail = false });
+        string game = Path.Combine(_tempDir, "game");
+        Directory.CreateDirectory(Path.Combine(game, "MAPS"));
+        return (zip, game);
+    }
+
     private static void CreateValidMockMap(string directory, int slot, string mapTitle)
     {
         Directory.CreateDirectory(directory);
@@ -275,7 +453,7 @@ public sealed class MapPackagingTests : IDisposable
 
         // 4. briefing.put
         File.WriteAllText(Path.Combine(directory, "TEXT", "US", "briefing.put"),
-            $"[texts]\nbriefing_titel_1 = {mapTitle}\nbriefing_titel_2 = 示範副標題\nbriefing_text = 測試簡報內容\n");
+            $"var:briefing_titel_1 = \"{mapTitle}\";\nvar:briefing_titel_2 = \"Subtitle\";\nvar:briefing_text = \"Test briefing\";\n");
 
         // 5. DATA/objects.dat, objdata.dat, pos.dat
         File.WriteAllBytes(Path.Combine(directory, "DATA", "objects.dat"), new byte[64]);

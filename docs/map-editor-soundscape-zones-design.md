@@ -1,24 +1,26 @@
 # 多層次環境音效與音頻區域分佈系統 (Ambient Audio & Soundscape Zone Designer) 架構設計
 
+> **2026-10-08 status: experimental / unwired.** This is a prototype design, not a reverse-engineered game contract. See [real sound evidence](reverse-engineering/sound-zones.md). `SNDZ`, `DATA/sound.dat`, `Amb_*` / `Snd_*` IDs, attenuation curves and the script examples below are editor proposals only. Previous native-compatibility claims are withdrawn. `SaveToSoundDat` and `ExportToScript` now reject export; binary/JSON round trips preserve editor drafts only. No native map persistence or audio playback is connected.
+
 > **模組名稱**：`AgainstRomeMapEditor.Modules.Soundscape`  
 > **適用專案**：`AgainstRomeModifier.slnx`（核心實作位於 `src.MapEditor.Modules/Soundscape/`，整合測試位於 `tests/AgainstRomeMapEditor.Modules.Tests/SoundscapeTests.cs`）  
 > **語言標準**：C# 12 / .NET 8.0，遵守無裝載遊戲目錄依賴與沙盒解耦原則  
-> **狀態**：核心架構原型與單元測試已完備，符合原版 `Against_Rome.exe` 音訊空間衰減與關卡資料合約。
+> **狀態**：Experimental prototype only; native compatibility is unverified.
 
 ---
 
 ## 1. 背景與核心目標
 
-在《反抗羅馬》(Against Rome) 的古典戰場與荒野地圖中，環境聲景（Soundscape）是塑造沉浸感與歷史氛圍的關鍵維度。原生遊戲引擎在執行期透過 DirectSound/3D 音訊模組渲染多樣化的環境音效：
+在《反抗羅馬》(Against Rome) 的古典戰場與荒野地圖中，環境聲景（Soundscape）是塑造沉浸感與歷史氛圍的關鍵維度。本實驗性設計希望規劃下列音效；清單並非遊戲內播放行為或聲音素材的驗證結果：
 - **廣域地表伴生音**：森林深處微風拂過樹梢的沙沙聲、晨間啼鳥、夜間鳴蟬與遠方狼嚎。
 - **水體與地貌特徵音**：蜿蜒溪流潺潺流水、峽谷急流奔湧、斷崖瀑布萬鈞轟鳴、海平面開闊潮湧。
 - **聚落與微型發聲點**：部族營火柴薪劈啪燃燒、鐵匠鋪鐵錘敲擊鐵砧的回響、祭司神龕神聖呢喃。
 - **開闊地勢與天氣氛圍**：荒原平原長風呼嘯、阿爾卑斯雪山酷寒風暴、雷雨交加的電閃雷鳴。
 
 **現狀痛點**：
-先前地圖編輯器僅聚焦於地形高程（`boden.bmp`）、地表圖塊材質（`floortex.dat` / `boden.txt`）與世界物件擺放（`DATA/objects.dat`），缺乏對音效區域與點音源的管理、即時空間衰減預覽、水文/森林自動伴生聲場生成，以及向地圖資料庫（`DATA/sound.dat`）或腳本（`ak_level.bci` / IPR 觸發器）的讀寫合約。
+先前地圖編輯器僅聚焦於地形高程（`boden.bmp`）、地表圖塊材質（`floortex.dat` / `boden.txt`）與世界物件擺放（`DATA/objects.dat`），此原型探索音效區域規劃與幾何混音預覽；目前沒有經驗證的原生地圖或腳本讀寫合約。
 
-本系統旨在建立一套**高精確度、具備實時 3D 空間混音預覽能力、支援智慧生態伴生生成，並符合原版二進位與腳本讀寫合約的完整音效區域分佈架構**。
+本系統旨在建立一套**高精確度、具備實時 3D 空間混音預覽能力、支援智慧生態伴生生成，原生輸出仍待逆向證據支持的實驗性音效區域規劃架構**。
 
 ---
 
@@ -29,7 +31,7 @@
 ```mermaid
 flowchart TD
     subgraph Catalog ["1. 音效目錄與衰減模型 (SoundscapeZoneCatalog)"]
-        Presets["原生音效預設庫 (SoundDef)"]
+        Presets["提案（未驗證）音效預設庫 (SoundDef)"]
         Curves["衰減曲線 (Linear / SmoothStep / Log / Exp)"]
         DistAlgo["幾何最短距離計算 (Point / Circle / Rect / Polygon)"]
     end
@@ -51,10 +53,10 @@ flowchart TD
     end
 
     subgraph Storage ["4. 儲存檔案雙向合約 (SoundscapeBinaryStorage)"]
-        BinaryIO["DATA/sound.dat (SNDZ Magic, v1, 二進位讀寫)"]
+        BinaryIO["Editor draft (private SNDZ v1)"]
         PfilCodec["PFIL / GameLZSS 容器壓縮解壓相容"]
         JsonIO["無損 JSON 交換與版本控制"]
-        ScriptExport["IPR / BCI 關卡腳本條件觸發片段匯出"]
+        ScriptExport["Native script export disabled"]
     end
 
     subgraph SessionModule ["5. 編輯器模組整合 (SoundscapeEditorModule)"]
@@ -72,12 +74,12 @@ flowchart TD
 
 ---
 
-## 3. SoundscapeZoneCatalog：原生音效 ID 與空間衰減模型
+## 3. SoundscapeZoneCatalog：提案（未驗證）音效 ID 與空間衰減模型
 
-### 3.1 原生音效定義（SoundDef）
-原生環境音依據物理特質與生態維度分為七大類別（`AudioCategory`）：
+### 3.1 提案（未驗證）音效定義（SoundDef）
+提案（未驗證）環境音依據物理特質與生態維度分為七大類別（`AudioCategory`）：
 
-| 類別 (`AudioCategory`) | 範例原生 ID (`SoundId`) | 觸發模式 (`TriggerMode`) | 預設內半徑 ($R_{in}$) | 預設外半徑 ($R_{out}$) | 聲學特徵描述 |
+| 類別 (`AudioCategory`) | 範例提案（未驗證） ID (`SoundId`) | 觸發模式 (`TriggerMode`) | 預設內半徑 ($R_{in}$) | 預設外半徑 ($R_{out}$) | 聲學特徵描述 |
 | :--- | :--- | :--- | :---: | :---: | :--- |
 | **Vegetation** (植被) | `Amb_Forest_Dense_Day` | ContinuousLoop | 300 | 1000 | 茂密森林日間鳥鳴、清風搖動樹梢（僅日間生效） |
 | **Vegetation** (植被) | `Amb_Forest_Dense_Night` | ContinuousLoop | 300 | 1000 | 茂密森林夜間微風、蟋蟀唧唧與貓頭鷹啼（僅夜間生效） |
@@ -199,9 +201,9 @@ flowchart TD
 
 ---
 
-## 6. DATA/sound.dat 與腳本環境音雙向讀寫合約
+## 6. 編輯器私有草稿序列化（不屬於遊戲格式）
 
-### 6.1 DATA/sound.dat 二進位格式規範
+### 6.1 既有私有 SNDZ 草稿格式
 檔案結構具備固定 64 位元組標頭與連續可變長度區域記錄：
 
 ```
@@ -239,27 +241,11 @@ flowchart TD
 +-------------------------------------------------------------------------+
 ```
 
-### 6.2 PFIL / LZSS 壓縮容器無縫相容
-`SoundscapeBinaryStorage` 內建魔數偵測機制：
-- 若讀入前 4 位元組為 `"PFIL"`，自動透過 `GameLZSS.DecompressPfil` 解壓縮至純二進位流。
-- 寫出時可選擇是否調用 `GameLZSS.CompressPfil` 壓縮，確保與原版遊戲各類 `.dat` 檔案完全一致。
+### 6.2 舊草稿 PFIL 包裝讀取
+`DeserializeFromBinary` 可以解開既有 PFIL 包裝後的私有 SNDZ 草稿。使用真實壓縮容器不代表內容符合遊戲格式；`SaveToSoundDat` 一律拋出 `NotSupportedException`，不建立或覆寫檔案。
 
-### 6.3 關卡腳本（IPR / ak_level.bci）觸發器匯出合約
-針對缺少二進位 `sound.dat` 讀取模組的純腳本地圖，系統提供 `ExportToScript(SoundscapeSnapshot)`，生成原生腳本相容之環境音觸發韓式：
-```c
-void InitMapSoundscapes()
-{
-    // Zone #1: 萬鈞瀑布 (Amb_Waterfall_Roar)
-    // Type: Point, Center: (1280.0, 1600.0), InnerR: 350.0, OuterR: 1200.0
-    // Point Emitter: s_playVoiceSampleMP("Amb_Waterfall_Roar", 1280, 1600);
-
-    // Zone #2: 茂密森林 (Amb_Forest_Dense_Day)
-    // Type: ConvexPolygon, Center: (2400.0, 3100.0), InnerR: 250.0, OuterR: 850.0
-    // Area Trigger: if (s_posInSightDist(listener, 2400, 3100, 850)) {
-    //     s_setVoiceSubGroup("Amb_Forest_Dense_Day", 85);
-    // }
-}
-```
+### 6.3 原生腳本匯出停用
+`ExportToScript` 一律拋出 `NotSupportedException`。舊 `s_playVoiceSampleMP` 範例沒有實證；`s_setVoiceSubGroup` 也不是音效 ID 與音量的介面。移除誤導範例，正確證據及尚缺契約見逆向報告。
 
 ### 6.4 無損 JSON 交換合約
 提供 `ExportToJson` 與 `ImportFromJson`，使地圖製作者能透過 Git 等版本控制系統清晰比對音效區域與伴生配置的每一項參數。
@@ -273,7 +259,7 @@ void InitMapSoundscapes()
 - `ModuleId`：固定為 `"SoundscapeZones"`。
 - `IsDirty`：依據目前編輯狀態與前次儲存成功後之 `_baseline` 進行全深度欄位比對。
 - `Capture()`：深層複製目前全圖音效狀態產生不可變快照。
-- `AcceptChanges()`：在主編輯器完成磁碟交易（`FileRollbackScope`）後確認基線。
+- `AcceptChanges()`：確認實驗性編輯狀態的基線；目前未接入主編輯器磁碟交易。
 - `Reset()`：在使用者取消或交易回滾時復原至 `_baseline`。
 
 ### 7.2 歷史記錄（Undo / Redo）
@@ -288,7 +274,7 @@ void InitMapSoundscapes()
 單元測試套件 `tests/AgainstRomeMapEditor.Modules.Tests/SoundscapeTests.cs` 涵蓋全部 5 大維度：
 
 1. **Catalog 與衰減幾何測試**：
-   - 原生預設項目註冊完整性。
+   - 提案（未驗證）預設項目註冊完整性。
    - `Linear`, `SmoothStep`, `Logarithmic`, `Exponential` 內外門檻精確驗證。
    - 圓形、定向矩形、凸多邊形點內為 0、點外歐幾里得距離驗證。
 2. **規劃器與智慧伴生生成測試**：
@@ -302,7 +288,7 @@ void InitMapSoundscapes()
    - 超過 16 聲道之硬體預算溢出與優先級截斷驗證。
    - Gizmo 核心與衰減幾何圖元生成，以及聲學熱度圖矩陣數值檢驗。
 4. **二進位儲存與合約讀寫測試**：
-   - `DATA/sound.dat` 二進位序列化與反序列化 Round-Trip 欄位完整性驗證。
-   - 無損 JSON 交換與 IPR 關卡腳本程式碼匯出驗證。
+   - 私有 SNDZ 草稿二進位 Round-Trip 欄位驗證，不代表遊戲相容性。
+   - JSON 草稿交換及原生檔案／腳本匯出拒絕驗證（不覆寫既存檔案、不建立 DATA 目錄）。
 5. **EditorModule 契約與 Undo/Redo 測試**：
    - `IsDirty` 狀態轉換、`AcceptChanges`、`Reset` 回滾、單步 `Undo` / `Redo` 堆疊機制完整性。

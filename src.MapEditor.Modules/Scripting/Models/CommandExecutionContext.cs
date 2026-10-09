@@ -18,7 +18,7 @@ public sealed class CommandExecutionContext
     public IReadOnlyList<SdlObjectType>? AvailableObjectTypes { get; set; }
     public IReadOnlyDictionary<string, LevelObjectTemplate>? AvailableNatureTemplates { get; set; }
 
-    public int MapTileDimension { get; set; } = 256;
+    public int MapTileDimension { get; set; } = 64;
     public float WorldDimension { get; set; } = 16384f;
     public float WaterLevel { get; set; }
     public float HeightStep { get; set; } = 4f;

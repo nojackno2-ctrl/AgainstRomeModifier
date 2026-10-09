@@ -271,6 +271,8 @@ public static class MapExportPreflightChecker
                 _ => issue.Severity == MapIssueSeverity.Error ? PreflightSeverity.Error : PreflightSeverity.Warning
             };
 
+            // Without a recipient asset catalog, an empty alias set is not evidence of a missing asset.
+            if (issue.Code == "alias" && knownAliases is null) severity = PreflightSeverity.Warning;
             report.Issues.Add(new MapPreflightIssue(
                 Severity: severity,
                 Category: PreflightCategory.Diagnostics,
@@ -363,6 +365,13 @@ public static class MapExportPreflightChecker
                 continue;
             }
 
+            if (!MapBundleContract.IsPayloadPath(relative))
+            {
+                report.FilesToExclude.Add(relative);
+                report.Issues.Add(new(PreflightSeverity.Info, PreflightCategory.Sanitization, "non-payload-excluded",
+                    $"排除槽位外素材、marker 或不支援檔案：{relative}", $"Excluded non-payload file: {relative}"));
+                continue;
+            }
             report.FilesToPackage.Add(relative);
         }
     }

@@ -38,7 +38,7 @@ public static class CampaignMissionCompiler
         }
         catch (Exception ex)
         {
-            diagnostics.Add($"[Error] 企劃總綱驗證失敗：{ex.Message}");
+            diagnostics.Add($"[Error] 企劃總綱驗證失敗：{ex.Message} | Campaign plan validation failed: {ex.Message}");
             return new CampaignCompilationResult(false, compiledEvents, diagnostics);
         }
 
@@ -49,7 +49,7 @@ public static class CampaignMissionCompiler
             {
                 if (!knownAliases.Contains(squad.Alias, StringComparer.OrdinalIgnoreCase))
                 {
-                    diagnostics.Add($"[Error] 波次 {wave.WaveIndex} 的部隊別名未知：{squad.Alias}");
+                    diagnostics.Add($"[Error] 波次 {wave.WaveIndex} 的部隊別名未知：{squad.Alias} | Wave {wave.WaveIndex}: unknown unit alias {squad.Alias}");
                 }
             }
         }
@@ -60,7 +60,7 @@ public static class CampaignMissionCompiler
             {
                 if (!knownAliases.Contains(squad.Alias, StringComparer.OrdinalIgnoreCase))
                 {
-                    diagnostics.Add($"[Error] 增援「{reinf.Name}」的部隊別名未知：{squad.Alias}");
+                    diagnostics.Add($"[Error] 增援「{reinf.Name}」的部隊別名未知：{squad.Alias} | Reinforcement {reinf.Name}: unknown unit alias {squad.Alias}");
                 }
             }
         }
@@ -73,7 +73,7 @@ public static class CampaignMissionCompiler
             {
                 if (!knownSpawnIds.Contains(obj.TargetId.Value))
                 {
-                    diagnostics.Add($"[Error] 目標「{obj.Title}」指定的目標物件 ID ({obj.TargetId.Value}) 不存在於場景放置中。");
+                    diagnostics.Add($"[Error] 目標「{obj.Title}」指定的目標物件 ID ({obj.TargetId.Value}) 不存在於場景放置中。 | Objective {obj.Title}: target object ID ({obj.TargetId.Value}) is not in the scene placement.");
                 }
             }
         }
@@ -285,7 +285,7 @@ public static class CampaignMissionCompiler
         }
         catch (Exception ex)
         {
-            diagnostics.Add($"[Error] 編譯後之 ScenarioEvent 驗證失敗：{ex.Message}");
+            diagnostics.Add($"[Error] 編譯後之 ScenarioEvent 驗證失敗：{ex.Message} | Compiled ScenarioEvent validation failed: {ex.Message}");
             return new CampaignCompilationResult(false, compiledEvents, diagnostics);
         }
 

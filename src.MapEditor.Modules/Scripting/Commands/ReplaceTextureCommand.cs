@@ -24,7 +24,8 @@ internal sealed class ReplaceTextureCommand : IEditorCommand
 
     public CommandResult Execute(ParsedCommand command, CommandExecutionContext context)
     {
-        if (context.BlendSession is null)
+        var blendSession = context.BlendSession;
+        if (blendSession is null)
         {
             return CommandResult.Fail("地形材質會話 (TerrainBlendEditSession) 未就緒。");
         }
@@ -37,7 +38,7 @@ internal sealed class ReplaceTextureCommand : IEditorCommand
             return CommandResult.Fail("語法錯誤。用法: /replace-texture <oldTexture> <newTexture> [--rect x1,z1,x2,z2]");
         }
 
-        int dim = context.MapTileDimension > 0 ? context.MapTileDimension : 256;
+        int dim = blendSession.TileDimension > 0 ? blendSession.TileDimension : (context.MapTileDimension > 0 ? context.MapTileDimension : 64);
         int minX = 0, minZ = 0, maxX = dim - 1, maxZ = dim - 1;
 
         if (command.HasFlag("rect"))
@@ -71,11 +72,11 @@ internal sealed class ReplaceTextureCommand : IEditorCommand
             for (int x = minX; x <= maxX; x++)
             {
                 int idx = z * dim + x;
-                if (idx < 0 || idx >= context.BlendSession.CurrentTextures.Count) continue;
-                string cur = context.BlendSession.CurrentTextures[idx];
+                if (idx < 0 || idx >= blendSession.CurrentTextures.Count) continue;
+                string cur = blendSession.CurrentTextures[idx];
                 if (string.Equals(cur, oldTex, StringComparison.OrdinalIgnoreCase))
                 {
-                    if (context.BlendSession.StampTexture(x, z, newTex) is not null)
+                    if (blendSession.StampTexture(x, z, newTex) is not null)
                     {
                         replacedCount++;
                     }
@@ -88,10 +89,10 @@ internal sealed class ReplaceTextureCommand : IEditorCommand
             return CommandResult.Ok($"未找到相符之圖塊「{oldTex}」。", 0);
         }
 
-        bool committed = context.BlendSession.CommitStroke();
+        bool committed = blendSession.CommitStroke();
         if (committed)
         {
-            context.RecordStep(() => context.BlendSession.Undo(), () => context.BlendSession.Redo());
+            context.RecordStep(() => blendSession.Undo(), () => blendSession.Redo());
         }
 
         return CommandResult.Ok($"成功將 {replacedCount} 個圖塊從「{oldTex}」替換為「{newTex}」。", replacedCount);

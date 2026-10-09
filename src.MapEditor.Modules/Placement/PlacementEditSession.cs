@@ -275,7 +275,7 @@ public sealed class PlacementEditSession : IEditorModule<IReadOnlyList<SdlPlaced
             throw new ArgumentOutOfRangeException(nameof(item), "Position must be finite with X/Z between 0 and 16383.");
         if (!float.IsFinite(item.Angle))
             throw new ArgumentOutOfRangeException(nameof(item), "Angle must be finite.");
-        if (item.Type.Category == SdlObjectCategory.Figure)
+        if (item.Type.Category == SdlObjectCategory.Figure && !item.Type.IsAnimal)
         {
             if (item.Team is < 0 or > 7)
                 throw new ArgumentOutOfRangeException(nameof(item), $"Figure team must be between 0 and 7, got {item.Team}.");
@@ -286,6 +286,8 @@ public sealed class PlacementEditSession : IEditorModule<IReadOnlyList<SdlPlaced
         }
         else
         {
+            if (item.Type.IsAnimal && item.UnitCount != 0)
+                throw new ArgumentOutOfRangeException(nameof(item), "Animals are individual objects and must have unit count 0.");
             if (item.Team is < -1 or > 15)
                 throw new ArgumentOutOfRangeException(nameof(item), $"Object team must be between -1 and 15, got {item.Team}.");
         }

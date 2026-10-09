@@ -36,12 +36,15 @@ public sealed record ObjectiveSandboxSnapshot(
 /// <summary>
 /// 編輯器目標進度即時測試沙盒合約（IObjectiveSandboxSession）：
 /// 允許地圖作者在不啟動遊戲的情況下，於編輯器內部即時模擬時間流逝、
-/// 物件陣亡、部隊移動與佔領狀態變遷，秒級驗證戰役目標鏈與勝敗判定。
+/// 物件陣亡、部隊移動與佔領狀態變遷，離線預演戰役目標鏈與勝敗判定；不執行 BCI，也不證明可匯出或遊戲內可用。
 /// </summary>
 public interface IObjectiveSandboxSession
 {
     /// <summary>當前整體戰役狀態。</summary>
     CampaignResult CampaignStatus { get; }
+
+    /// <summary>Offline export diagnostics; a sandbox victory is not BCI or gameplay verification.</summary>
+    IReadOnlyList<ObjectiveDiagnostic> ExportDiagnostics { get; }
 
     /// <summary>累計模擬秒數。</summary>
     float TotalSimulatedSeconds { get; }
@@ -85,6 +88,10 @@ public interface IObjectiveSandboxSession
 /// </summary>
 public sealed class ObjectiveSandboxSession : IObjectiveSandboxSession
 {
+    /// <summary>Includes structural binding-unchecked warnings; actual BCI generation still needs current bindings.</summary>
+    public IReadOnlyList<ObjectiveDiagnostic> ExportDiagnostics => _graph is null
+        ? Array.Empty<ObjectiveDiagnostic>() : BciObjectiveCompiler.Compile(_graph).Diagnostics;
+
     private ObjectiveDependencyGraph? _graph;
     private readonly Dictionary<Guid, ObjectiveState> _states = new();
     private readonly Dictionary<Guid, float> _elapsedSeconds = new();
@@ -214,7 +221,7 @@ public sealed class ObjectiveSandboxSession : IObjectiveSandboxSession
             // 1. 刺殺/破壞關鍵目標
             if (obj.Kind is ObjectiveKind.AssassinateTarget or ObjectiveKind.DestroyBuilding)
             {
-                if (obj.Parameters.TargetGuids.Contains(targetId))
+                if (obj.Parameters.TargetGuids.Count > 0 && obj.Parameters.TargetGuids.All(id => _deadObjects.GetValueOrDefault(id)))
                 {
                     TransitionState(obj, ObjectiveState.Completed, $"關鍵目標 {targetId} 已被殲滅！");
                 }
