@@ -182,7 +182,8 @@ public static class ExePatchModel {
     // evicting the oldest dead candidates once fewer than 500 slots remain.
     // Keep a 50-slot reserve rather than removing the safeguard altogether:
     // the pool is fixed at 14,000 slots and needs headroom for new objects.
-    public const long CorpseRetentionPatchOffset = 0x110907;
+    // 偏移量為指令 opcode 起點 (0x110906, mov ebx = BB) 而非 immediate 起點 (0x110907)。
+    public const long CorpseRetentionPatchOffset = 0x110906;
     public static readonly byte[] CorpseRetentionOriginalBytes = { 0xBB, 0xF4, 0x01, 0x00, 0x00 };
     public static readonly byte[] CorpseRetentionPatchedBytes = { 0xBB, 0x32, 0x00, 0x00, 0x00 };
 
