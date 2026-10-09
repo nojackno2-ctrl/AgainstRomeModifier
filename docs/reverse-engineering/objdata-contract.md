@@ -62,7 +62,7 @@ REA `re_workspace/objdata-create-20261009-evidence.json`（12records）已匯出
 | runtime 欄位 | 已觀察用途 | 證據範圍／限制 |
 |---|---|---|
 | +0x7c / 0xf60010 | 更新函式0x4b6f30減去param_1並將負結果夾0；0x4b8860在移動處理條件下讀取，必要時設為全域0x771c9c的值，並影響action flags0/1 | 可描述為移動相關倒數狀態，尚未確認時間單位、所有觸發入口或正式名稱 |
-| +0x80 / 0xf60014 | writer保存；0x4ad1e0讀從此位址開始的dword再sar16 | 後者實際消費高半部+0x82，不能誤稱為+0x80的獨立用途；其餘xref尚待分析 |
+| +0x80 / 0xf60014 | writer保存；getter0x4c1290連到0x4d5700的0..100比例條顯示，詳下節 | 0x4ad1e0從此位址讀dword再sar16，實際消費高半部+0x82；正式欄位名稱及初始化仍未知 |
 | +0x82 / 0xf60016 | 0x4b6f30在type條件下減去signed16 param_1或設0；0x4ad1e0在HP≤0及definition/helper条件下設3000 | 存在倒數及死亡相關路徑，但不宣稱3000的單位或完整視聽效果名稱 |
 | +0x84/+0x88 / 0xf60018/1c | 0x4b6f30讀position X/Z，經0x419c80後sar6寫入；0x432280取兩欄交給0x49c270，再輸出兩值 | 位置衍生的粗格座標欄位；helper的完整座標系及何時首次重算仍未確認 |
 
@@ -77,3 +77,19 @@ REA `re_workspace/objdata-create-20261009-evidence.json`（12records）已匯出
 證據：`re_workspace/objdata-writer-20261009-evidence.json`（14records，session已關閉）；writer `ev_21598fc5b331dee75a9e9be1070e7f2210d827c8b25c544ba238e4f8ce1aca4d`、update `ev_edf32efef85971c5ba45f1ecfdac8fcf202fb0a952f7eec9638215d2f8ef96b8`、movement `ev_5f41072e7ced2fc131615d361e2c76369a82907a1ee480935ece313e7d0cc5ef`、HP path `ev_6376e6169478f1685e736b5a9398bf375ad3b7cadf2b54994baf21a5bfe6181c`、coordinate getter `ev_d37b85a53b34ddb42899562e5688d01c3623570259ba0bde05672022f2e909a2`。
 
 `objdata-writer-audit-20261009.json`保存44欄序列及assert結果；`objdata-writer-instructions-20261009.txt` 916行從已知入口解碼再篩選明示視窗，另以`objdata-round-helper-20261009.txt`補全初次過短的round helper視窗。window可能含padding，不能當作完整可到達CFG。EXE fingerprint重驗一致，未寫或執行遊戲；本輪未改C#，未重跑.NET。剩餘：+0x80真正consumer、建立前/後完整初值、各欄時間／座標語意及受控實機驗證。
+
+## +0x80 的比例條顯示路徑（2026-10-09 續查／交接）
+
+getter **0x4c1290** 驗證object及其objdata link，再讀取+0x80的u16。原指令0x4c1297先令EBX=ffffffff，0x4c12de僅改BX，最後返回EBX；成功時完整32-bit結果仍為 `0xffff0000 | value`，不能當成一般非負int使用。已分析direct caller **0x4d5700** 在0x4d573f呼叫後取signed16，接受0..100、轉float，傳給 **0x498520**，總量參數100.0、顏色來自全域0x771cd4。無效物件／池的ffffffff在此轉為-1並被拒絕。
+
+0x498520在全域畫面buffer中清除矩形背景，再按`param_5 / width`累加比例，當累加值小於param_4時填入顏色。它的反編譯寬度計算有extraout_EDX／浮點ABI恢復限制，故本輪僅確認「比例條顯示」資料流，不給出完整幾何公式。上層 **0x4d6ca0** 經`0x4d50c0(object,0x23)`判斷後呼叫0x4d5700，並調整後續顯示位置；判斷helper及對應遊戲介面名稱尚未確認。不能將此欄自行命名為HP、施工、經驗或其他特定百分比。
+
+先前另兩個0xf60014 refs中，0x4ad1e0及0x4b7e50讀dword再sar16，實際取的是+0x82；0x4b7e50亦在type／狀態變化條件下設+0x82=3000。因此+0x82的3000不是僅出現在死亡路徑，前節分類仍是局部觀察，不能升格為專用死亡timer。
+
+### 既有地圖值與限制
+
+唯讀74個objdata檔，392,344個active slots：+0x80全為0；+0x7c有390,455個0及1,889個非零（最大500）；+0x82有392,176個0、146個3000、2個768、20個26814。74個decoded SHA256與前輪objdata links manifest全部一致。這些是目前磁碟快照，不證明非零值異常，也不證明runtime不會更新+0x80。copy／reset未寫此欄、loader會載入它；新建前後其他間接初始化仍需追查，不能由樣本全零就宣稱已找到通用初始化契約。
+
+證據：`re_workspace/objdata-hud-20261009-evidence.json`（14records，session已關閉）；getter `ev_9988a3d30813cfab1bbcca327bac5f6810cdda78680b0454c7bb6d1f498d0548`、caller `ev_25672e32e3ae2bbc4c40ba88efe310b8c6d44c6f7ec89e246adb7856c2dbc593`、renderer `ev_4a2f314db042c5ee753fb97127a11493b527515f1346eaededeef7b65b1acffd`、display dispatcher `ev_593ac53d1574cec561375a40b40173e090c91688320d94200805a7c8f1d0cefe`。Capstone `objdata-hud-instructions-20261009.txt`359行核對u16 getter及caller chain；`probe-objdata-tail.py`／`objdata-tail-20261009.json`保存74圖分布，兩個probe的py_compile及git diff --check通過，安裝EXE hash一致。未改C#、未寫或執行遊戲；此段未驗證實機顯示或初始化。
+
+使用者要求本輪完成後暫停；續作先讀AI_HANDOFF.md，優先確認0x4d50c0的0x23顯示條件、+0x80間接寫入／首次初始化，再回到獨立pool的新增移除與磁碟交易。不要以此比例條consumer證據宣稱跨池功能完成。
