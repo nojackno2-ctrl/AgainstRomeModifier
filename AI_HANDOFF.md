@@ -1,6 +1,21 @@
 # AI Handoff - Live Project Memory
 
-## 原生地圖載入管線、24池強約束與三段CHECK語意逆向（2026-10-09 Antigravity，完成並驗證）
+## 全 24 資料池完整規格、formatio/lager 布局與 74 圖二進位不變量驗證（2026-10-09 Antigravity，完成並驗證）
+
+- 24 大資料池完整對應表與 Readers/Buffers（2026-10-09 Antigravity）：以二進位反組譯與字串池精確定位 `CL_LoadLevelData`（`0x48e960`）所載入之全部 24 個池的 reader 函式與目的地記憶體緩衝區：
+  - 天氣/環境：`light.dat`（57,352 bytes, `0x48ab70` -> `0x7f9ef0`）、`gametime.dat`（32 bytes, `0x48b0c0` -> `0x771d30`）、`rain.dat`（262,164 bytes, `0x48b230` -> `0x771ecc`）、`hagel.dat`（229,396 bytes, `0x48b440` -> `0x7b1ed8`）、`snow.dat`（65,556 bytes, `0x48b720` -> `0x7e9ee4`）、`flash.dat`（23,312 bytes, `0x48b910` -> `0x11a0574`）。
+  - 物件與關聯：`objects.dat`（1,694,016 bytes, `0x48bae0` -> `0xa14bfc`）、`position.dat`（561,008 bytes, `0x48c0c0` -> `0xb1883c`）、`anim.dat`（350,008 bytes, `0x48c250` -> `0xbb9a5c`）、`gfxtype.dat`（238,008 bytes, `0x48c460` -> `0xc2705c`）、`action.dat`（350,012 bytes, `0x48c630` -> `0xf00454`）、`objdata.dat`（1,722,008 bytes, `0x48c760` -> `0xf5ff94`）、`hirarchy.dat`（336,012 bytes, `0x48cf70` -> `0x114c294`）。
+  - 陣型與營地：`formatio.dat`（350,008 bytes, `0x48d0f0` -> `0x11b0294`）、`lager.dat`（144,016 bytes, `0x48d2d0` -> `0x120fdd4`）、`biglager.dat`（51,244 bytes, `0x48d590` -> `0x153a718`）。
+  - 引擎狀態：`engine.dat`（94 bytes, `0x48d6e0` -> `0x7717e8`）。
+  - 迷霧/路徑/特效/統計：`fow.dat`（66,053 bytes, `0x48d980` -> `0x199e228`）、`fowreq.dat`（4,616 bytes, `0x48da30` -> `0x19be62c`）、`way.dat`（791,052 bytes, `0x48dba0` -> `0x15488d8`）、`particle.dat`（2,322,444 bytes, `0x48dd90` -> `0x12355d4`）、`explos.dat`（54,008 bytes, `0x48e210` -> `0x9d29f4`）、`hitex.dat`（40,008 bytes, `0x48e4d0` -> `0x9e04b4`）、`stat.dat`（6,540 bytes, `0x48e720` -> `0x1546f58`）。
+- formatio 與 lager 二進位結構突破（2026-10-09 Antigravity）：
+  - `formatio.dat`：標頭 8 bytes（v=1, count=14,000）；主記錄區 14,000 筆 × 15 bytes（`active` u8, `target_slot` u16 [預設 0xffff], `spacing` f32 [預設 1.0f], `flags` u32, `interval` u32 [預設 1000]）；尾端接 3 個平行陣列：陣列 1 為 14,000×4 bytes（u32 預設 0），陣列 2 為 14,000×4 bytes（u32 預設 0xffffffff / -1 哨兵），陣列 3 為 14,000×2 bytes（u16）。$8 + 210,000 + 56,000 + 56,000 + 28,000 = 350,008$ bytes 精確吻合。
+  - `lager.dat`：標頭 16 bytes（v=1, count=3,200, extra1=6, extra2=10）；主記錄區 3,200 筆 × 45 bytes（`active` u8, `type` u32, `ratio` f32, `u16_c` u16, 14-byte 資料區塊, 10 個 u16 成員陣列）；$16 + 3,200 \times 45 = 144,016$ bytes 精確吻合。
+- 74 圖 1,776 池二進位不變量全體驗證（2026-10-09 Antigravity）：執行 `tools/re/probe_verify_all_24_pools.py`，唯讀檢驗安裝目錄下全部 74 張原生地圖的 24 個池檔案（共 1,776 個池檔案）：
+  - 版本符合率：1,776 / 1,776（100%）。
+  - 解密長度符合率：1,776 / 1,776（100%）。
+  - 異常數量：0。確認所有原生地圖的 24 池檔案具有固定且剛性的容量與解密長度。
+- 成果交付：新增 `tools/re/probe_all_24_pools.py`、`tools/re/probe_pool_reader_details.py`、`tools/re/probe_inspect_formatio_lager.py`、`tools/re/probe_formatio_layout.py`、`tools/re/probe_formatio_15b.py`、`tools/re/probe_formatio_tail_all_maps.py`、`tools/re/probe_formatio_arrays.py`、`tools/re/probe_lager_stride.py`、`tools/re/probe_verify_all_24_pools.py`；更新 `docs/reverse-engineering/map-data-pools.md`；產出 `re_workspace/all-24-pools-validation-report.json`。未修改 C#，未更動或寫入遊戲安裝目錄。
 
 - 命令分派與管線進入點（2026-10-09 Antigravity）：`0x426980` 註冊 `0x0b`（`CMD_LOAD_LEVEL`）對應 `0x4310f0`、`0x0a`（`CMD_LOAD_GAME`）對應 `0x431410`。兩者經 `0x502e00`/`0x44e590` 呼叫核心地圖載入器 `CLMP_LoadLevel`（`0x4870e0`，內部檔名 `CLMP\mp_lsave.c`）。
 - 空白地圖卡死根因與 24 池強約束（2026-10-09 Antigravity）：`CL_LoadLevelData`（`0x48e960`）依序開啟 `DATA/` 下全部 24 個池檔案；**任何一檔 open 失敗即輸出 `err LoadLevelData: 1000` 並中斷退出**。然而呼叫端 `0x487180` **未檢查回傳值**，盲目進入後續三段 `CHECK` 及渲染陣列計算，造成未初始化指標崩潰或無限迴圈卡死。因此，可載入地圖之 `DATA/` 目錄**必須完整具備全部 24 個檔案**，不可直接精簡。

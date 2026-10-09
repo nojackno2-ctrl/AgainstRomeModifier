@@ -60,6 +60,65 @@ reset 清 active，但七個 runtime words +2/+4/+6/+8/+a/+c/+e 分別是 `0 / 0
 
 synthetic valid layout、截斷／多餘尾端／version／容量拒絕、signed／sentinel／inactive／shared links、輸出覆寫及安裝路徑防護、py_compile 通過。manifest：`re_workspace/map-pools-gfx-20261009.json`、`gfxtype-links-20261009.json`。唯讀原指令：`gfxtype-link-instructions-20261009.txt`。REA ledger `gfxtype-20261009-evidence.json`（4 records）已匯出、session 關閉；reader evidence `ev_c26f4dde6bad999b2152e5cf5287d0ec727c9902081e375bbbfa1cec71cdbfed`，reset `ev_106337f4ba0163d5a3a3a6588448323f6c9d21cda61ee1b97f8fea28a5b9e2b1`。
 
+## 24 大資料池完整規格與解密長度不變量（2026-10-09 逆向與全圖驗證）
+
+唯讀掃描全部 74 張原生地圖之 `DATA/` 目錄，共 **1,776 個池檔案**（74 × 24）：
+- **版本符合率**：1,776 / 1,776（100%，全部為 Version 1）。
+- **長度符合率**：1,776 / 1,776（100%，解密尺寸全數精確吻合）。
+- **異常數量**：0（零異常）。
+
+| 池檔名 | 標頭 (bytes) | 宣告槽位 (Count) | 記錄結構 (bytes) | 平行陣列 / 尾端資料 | 解密長度 (bytes) | Reader VA | Buffer VA |
+|---|---|---|---|---|---|---|---|
+| `light.dat` | 8 | 1,024 | 56 (光源結構) | 無 | 57,352 | `0x48ab70` | `0x7f9ef0` |
+| `gametime.dat` | 32 (固定) | - | 環境時間與時鐘狀態 | 無 | 32 | `0x48b0c0` | `0x771d30` |
+| `rain.dat` | 20 | 16,384 | 16 (雨滴粒子/高度) | 無 | 262,164 | `0x48b230` | `0x771ecc` |
+| `hagel.dat` | 20 | 8,192 | 28 (冰雹粒子) | 無 | 229,396 | `0x48b440` | `0x7b1ed8` |
+| `snow.dat` | 20 | 4,096 | 16 (雪花粒子) | 無 | 65,556 | `0x48b720` | `0x7e9ee4` |
+| `flash.dat` | 16 | 100 | 232 (閃電光影) | 16 subslots | 23,312 | `0x48b910` | `0x11a0574` |
+| `objects.dat` | 16 | 14,000 | 121 (物件核心狀態) | 無 | 1,694,016 | `0x48bae0` | `0xa14bfc` |
+| `position.dat` | 8 | 33,000 | 17 (世界座標/導航點) | 無 | 561,008 | `0x48c0c0` | `0xb1883c` |
+| `anim.dat` | 8 | 14,000 | 21 (動畫狀態) | 14000×2 + 14000×2 (u16) | 350,008 | `0x48c250` | `0xbb9a5c` |
+| `gfxtype.dat` | 8 | 14,000 | 15 (渲染外觀定義) | 14000×2 (u16) | 238,008 | `0x48c460` | `0xc2705c` |
+| `action.dat` | 12 | 14,000 | 25 (1+6×4 旗標) | 無 | 350,012 | `0x48c630` | `0xf00454` |
+| `objdata.dat` | 8 | 14,000 | 123 (屬性/生命/精力) | 無 | 1,722,008 | `0x48c760` | `0xf5ff94` |
+| `hirarchy.dat` | 12 | 3,200 | 103 (部隊編制/成員) | 3200×2 (u16 backlink) | 336,012 | `0x48cf70` | `0x114c294` |
+| `formatio.dat` | 8 | 14,000 | 15 (陣型間距/關聯) | 14000×4 + 14000×4 + 14000×2 | 350,008 | `0x48d0f0` | `0x11b0294` |
+| `lager.dat` | 16 | 3,200 | 45 (營地/聚落槽位) | 無 | 144,016 | `0x48d2d0` | `0x120fdd4` |
+| `engine.dat` | 94 (固定) | - | 引擎全域計數器/狀態 | UID counter @ offset 34 | 94 | `0x48d6e0` | `0x7717e8` |
+| `fow.dat` | 5 | 256×256 | 1 byte 迷霧可見度網格 | 5 bytes 標頭 | 66,053 | `0x48d980` | `0x199e228` |
+| `fowreq.dat` | 8 | 256 | 18 (迷霧更新請求) | 無 | 4,616 | `0x48da30` | `0x19be62c` |
+| `way.dat` | 12 | 768 | 路徑節點拓撲網格 | 無 | 791,052 | `0x48dba0` | `0x15488d8` |
+| `particle.dat` | 12 | 1,024 | 2,268 (特效發射器) | 無 | 2,322,444 | `0x48dd90` | `0x12355d4` |
+| `explos.dat` | 8 | 1,000 | 54 (爆炸實體槽位) | 無 | 54,008 | `0x48e210` | `0x9d29f4` |
+| `hitex.dat` | 8 | 1,000 | 40 (命中粒子槽位) | 無 | 40,008 | `0x48e4d0` | `0x9e04b4` |
+| `stat.dat` | 12 | 8 | 816 (隊伍 0..7 統計) | 無 | 6,540 | `0x48e720` | `0x1546f58` |
+| `biglager.dat` | 16 | 32 | 1,600.875 (大營地/主城) | 無 | 51,244 | `0x48d590` | `0x153a718` |
+
+### formatio.dat 結構細節
+- reader `0x48d0f0`：標頭 8 bytes（u32 version 1, u32 count 14,000）。
+- 主記錄區：$14,000 \times 15 = 210,000$ bytes。
+  - `active`: uint8 (1 byte)
+  - `target_slot`: uint16 (2 bytes, 預設 0xffff)
+  - `formation_spacing`: float32 (4 bytes, 預設 1.0f = `0x3f800000`)
+  - `flags / group`: uint32 (4 bytes, 預設 0)
+  - `timer / interval`: uint32 (4 bytes, 預設 1000)
+- 平行尾陣列：總長 140,000 bytes。
+  - 陣列 1 (`0x48d19e` 讀取)：$14,000 \times 4 = 56,000$ bytes（uint32，預設 0）。
+  - 陣列 2 (`0x48d24c` 讀取)：$14,000 \times 4 = 56,000$ bytes（uint32，預設 0xffffffff / -1 哨兵）。
+  - 陣列 3 (`0x48d270` 讀取)：$14,000 \times 2 = 28,000$ bytes（uint16）。
+- 總長：$8 + 210,000 + 56,000 + 56,000 + 28,000 = 350,008$ bytes。
+
+### lager.dat 結構細節
+- reader `0x48d2d0`：標頭 16 bytes（u32 version 1, u32 count 3,200, u32 extra1 6, u32 extra2 10）。
+- 主記錄區：3,200 筆，每筆 45 bytes（$3,200 \times 45 = 144,000$ bytes）。
+  - `active`: uint8 (1 byte)
+  - `type / id`: uint32 (4 bytes)
+  - `ratio`: float32 (4 bytes)
+  - `u16_c`: uint16 (2 bytes)
+  - 字串/資料區塊：14 bytes
+  - 成員陣列（extra2 = 10）：10 個 uint16（20 bytes）
+- 總長：$16 + 144,000 = 144,016$ bytes。
+
 ## 載入流程及功能缺口
 
 2026-10-09 補充：[原生物件建立與 UID 契約](object-create-contract.md) 核對關聯池耗盡時的 copy guard、第三個 position 分配及 UID 計數器；原生建立公式不能當作現有 DATA 的通用 invariant。
