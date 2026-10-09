@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Read-only structural probe of native action/animation map pools."""
+"""Read-only structural probe of native action/animation/gfxtype map pools."""
 import argparse
 from collections import Counter
 import hashlib
@@ -34,6 +34,10 @@ def inspect(data, family):
         require(len(data) == 8 + count * 25, 'anim length does not match native layout')
         # 21-byte records, then two independent count * uint16 arrays.
         offset, stride = 8, 21
+    elif family == 'gfxtype':
+        require(len(data) == 8 + count * 17, 'gfxtype length does not match native layout')
+        # 15-byte records (byte + seven uint16), then one count * uint16 array.
+        offset, stride = 8, 15
     else:
         raise ValueError('unsupported family')
     leading = Counter(data[offset + i * stride] for i in range(count))
@@ -41,7 +45,7 @@ def inspect(data, family):
             'decoded_sha256': hashlib.sha256(data).hexdigest(), 'decoded_bytes': len(data),
             'version': version, 'slots': count, 'record_bytes': stride,
             'leading_byte_histogram': dict(sorted(leading.items())),
-            'trailing_array_bytes': count * 4 if family == 'anim' else 0}
+            'trailing_array_bytes': count * (4 if family == 'anim' else 2 if family == 'gfxtype' else 0)}
 
 
 def scan(root):
@@ -51,7 +55,7 @@ def scan(root):
     for directory in sorted(maps.iterdir()):
         if not directory.is_dir() or directory.is_symlink():
             continue
-        for family in ('action', 'anim'):
+        for family in ('action', 'anim', 'gfxtype'):
             path = directory / 'DATA' / (family + '.dat')
             if not path.is_file():
                 continue

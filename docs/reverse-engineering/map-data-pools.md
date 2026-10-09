@@ -48,6 +48,18 @@ validator `0x4ab910` 判斷 0..3,199 且 active 非零；create `0x4ad820`／cop
 
 manifest `re_workspace/object-pool-links-20261009.json`；REA ledger `action-hirarchy-20261009-evidence.json`（15 records）；原始指令 `action-link-instructions-20261009.txt`。hirarchy reader evidence `ev_1bcf3845e8b01697503033f51d8771d45debcbe1f131c0c66cbc91c5a55ef8d4`、group create `ev_0d18580a3f1973014c162c6cda0d923ca648f96d3ea89038001e31dcff929e48`、reset `ev_bde6287b82c3d8c4eb888b6c305f70747d411dd91e81949e37f1b7fa5d9acb3c`、action validator `ev_cf8939954fabcad6a850d37c9f190eceb24cd2e5b7fb165219d36fdd25f932e5`。
 
+## gfxtype.dat 與物件關聯（2026-10-09 續查）
+
+reader `0x48c460`、writer `0x487f70`：header 為 u32 version／slot count N，接 N 筆 **15-byte records（u8 + 七個 u16）**，再接一個獨立 N×u16 平行陣列。總長 `8 + 17N`；N=14,000 時 238,008 bytes。runtime base `0xc2705c`、stride `0x12`：serialized +0 寫 runtime +0，serialized +1/+3/+5/+7/+9/+11/+13 分別寫 +2/+4/+6/+8/+a/+c/+e；尾端陣列寫 +0x10。不能當成連續 17-byte records。reader 拒絕 version>1，未見容量上限；probe 的 version=1／N≤14,000 是分析防護。
+
+objects serialized record **+73 → runtime +0x14** 是 gfxtype link。create `0x4aaa00` 呼叫 allocator `0x4ab550`，`0x4aaa11` 呼叫 copy `0x4aaf50`，`0x4aaa4f` 寫入 `0xa14c10 + objectSlot*0x4c`。validator `0x4ab860` 檢查 signed 0..13,999 且 active byte 非零；allocator 有獨立 cursor `0x7718a8`，不可假定 pool slot 等於 object slot。release `0x4abd12` 讀 object runtime +0x12 的 dword，再取高半部 +0x14；`0x4abd1f` 呼叫 reset `0x4abfc0`。
+
+reset 清 active，但七個 runtime words +2/+4/+6/+8/+a/+c/+e 分別是 `0 / 0xffff / 0 / 0 / 0xffff / 0x0100 / 0`，尾端 +0x10 是 **99（decimal）**；同時回退 cursor 至較小的 released slot。因此原生清空不是整筆全零。各 word 的語意及所有 consumers 未確認，尚不能直接据此改產品的清空／新增策略。
+
+`probe_map_pools.py` 擴充 gfxtype：74 張地圖共 **222 檔 action／anim／gfxtype，0 errors**。`probe_gfxtype_links.py` 掃 74 對 objects／gfxtype，0 parse errors／0 越界／0 shared／0 unreferenced active slots；唯 ENDL_005 有 33 inactive targets，**物件 slot 集合與 anim／action 的 33 筆完全相同**。74 份 objects decoded hashes 與前輪 anim manifest 一致。這只證明三個關聯欄位的同組差異，未證明歷史來源、UID 正確性或實機卡死原因。
+
+synthetic valid layout、截斷／多餘尾端／version／容量拒絕、signed／sentinel／inactive／shared links、輸出覆寫及安裝路徑防護、py_compile 通過。manifest：`re_workspace/map-pools-gfx-20261009.json`、`gfxtype-links-20261009.json`。唯讀原指令：`gfxtype-link-instructions-20261009.txt`。REA ledger `gfxtype-20261009-evidence.json`（4 records）已匯出、session 關閉；reader evidence `ev_c26f4dde6bad999b2152e5cf5287d0ec727c9902081e375bbbfa1cec71cdbfed`，reset `ev_106337f4ba0163d5a3a3a6588448323f6c9d21cda61ee1b97f8fea28a5b9e2b1`。
+
 ## 載入流程及功能缺口
 
 `CL_LoadLevelData`（`0x48e960`）依序 nested open：
