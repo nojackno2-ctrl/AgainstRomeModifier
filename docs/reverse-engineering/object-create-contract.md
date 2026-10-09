@@ -13,6 +13,7 @@
 | param_2 anim | 0x4ab500／14,000 | 0x4aaea0 | 0x7718ac | runtime +0x12／serialized +71 |
 | param_3 gfxtype | 0x4ab550／14,000 | 0x4aaf50 | 0x7718a8 | runtime +0x14／serialized +73 |
 | param_4 action | 0x4ab5b0／14,000 | 0x4aaff0 | 0x7718b0 | runtime +0x18／serialized +77 |
+| param_5 objdata | 0x4ab600／14,000 | 0x4ab060 | 0x7718b4 | runtime +0x1a／平行欄位1 |
 
 allocator 從各自 cursor 向後尋找 validator 判定未使用的槽，抵達容量回傳 -1；此搜尋本身不回繞。釋放／初始化對 cursor 的維護另見 pool 文件。
 
@@ -21,6 +22,8 @@ allocator 從各自 cursor 向後尋找 validator 判定未使用的槽，抵達
 **觀察：** 此建立函式未見針對這些關聯池失敗的全體 rollback，不是所有 pool 成功才啟用 objects。**限制：** 不代表所有 caller 皆會允許容量耗盡、不代表必然崩潰；caller preflight、後續 consumer 的容錯及完整副作用仍需追查。position 可配置第三筆，不能將產品目前的兩個位置一概視為完整契約。
 
 copy 使用的是 runtime 結構布局（position stride20、anim32、gfxtype18、action28），與 serialized record＋尾端陣列不同；不能直接將磁碟整筆資料當 runtime 範本指標。現有產品 `LevelObjectTemplate` 也尚未持有這三個關聯池範本。
+
+objdata runtime stride144、磁碟每slot123bytes，並有型別依賴初值與copy／reader處理不同欄位的限制；最新獨立分配、column1關聯及74圖檢查見 [objdata-contract.md](objdata-contract.md)。
 
 ## UID 原生生成
 
