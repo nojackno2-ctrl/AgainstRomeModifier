@@ -2,8 +2,9 @@
 
 Status: static-verified, 2026-10-09. No installed module was loaded or executed.
 Parent analysis: Codex/REA Ghidra 12.1.4, disposable headless Ghidra, and
-Capstone instruction checks. Agy was delegated a separate read-only `ar.exe`
-investigation; its result must be reviewed separately before accepting claims.
+Capstone instruction checks. Agy completed a separate read-only `ar.exe`
+investigation (job `a8b2b787c76d`, exit 0); accepted and rejected claims are
+separated below after parent verification.
 
 | Carrier | SHA256 | Entry VA | Observed boundary |
 |---|---|---|---|
@@ -16,6 +17,42 @@ All three inspected images declare x86 machine `0x14c`. DLL image base is
 `.pgljft` and `.ksrwq`, and 51,977 bytes follow the final raw section extent.
 These are observed layout facts, not proof of a loader or protection mechanism.
 `UNWISE.EXE` was not analyzed in this pass.
+
+## ar.exe: reviewed Agy findings
+
+Parent read-only verification confirms these reported source bytes:
+
+- PE header offset `0x8f0`; entry file offset `0x44a07` starts with an x86
+  stack-frame/SEH setup. The entry belongs to `.pgljft`.
+- Raw-section extent ends at `0x106000`; the 51,977-byte tail begins `AddD`,
+  with ASCII `4.85.07` at offset `0x106008`. Tail SHA256:
+  `54baca1d316598d162e17a88daf59cc93ee0f788b96144386b39608e987969cf`.
+- File offsets `0x7030`, `0x7070`, `0x7078`, and `0x7134` contain respectively
+  an instruction to start the original executable, `EV_6666`, a prompt for
+  the original Against Rome CD1, and `AGROME_CD1`.
+- The installation log records both EXE copies, then an overwrite of
+  `Against_Rome.exe`; its two recorded game shortcut targets are
+  `Against_Rome.exe`. This is historical log evidence, not verification of
+  present shortcut files or proof of every startup path.
+
+Those bytes support a disc-check/protection-related role as an inference.
+They do not prove exact publisher history, decrypted code behavior, event
+communication partners, or a complete runtime dependency relationship.
+Neither EXE was launched for this investigation.
+
+**Rejected report claims:** Agy counted only 52 KERNEL32 symbols / 92 total
+imports and claimed no CreateProcess API, then inferred that `ar.exe` cannot
+launch another process. Parent PE-table traversal instead finds 106 KERNEL32
+symbols / 146 total imports across five libraries. `CreateProcessA` is
+explicitly present at IAT VA `0x504400`, import-by-name RVA `0x104ab0`;
+its raw hint/name bytes are `44 00 43 72 65 61 74 65 50 72 6f 63 65 73 73 41 00`.
+The absent-process-API premise is false, and the independence inference is
+not accepted. Its actual callers and targets remain untraced. Lack of an EXE
+name string would also not rule out dynamically constructed paths.
+
+The report's claim that the current main executable was historically
+unpacked/reconstructed is also not accepted as proven from the `.MyIData`
+section name alone. Preserve layout observations without inventing provenance.
 
 ## Main EXE loads ds_andll.dll
 
