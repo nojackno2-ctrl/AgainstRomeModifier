@@ -1,5 +1,13 @@
 # AI Handoff - Live Project Memory
 
+## 遊戲目錄逆向（2026-10-09 Codex，目標持續進行）
+
+- 最新使用者指示：對遊戲目錄逆向工程。唯讀分析 `C:\Program Files (x86)\Against Rome`；未啟動遊戲、未改原始檔、未碰既有 `.claude/`／`TEMP/` 工作。新增 `tools/re/inventory_game_directory.py` 與 `docs/reverse-engineering/installed-game-directory.md`／`script-clock.md`，修正舊 ZIP 候選描述。
+- 證據：目錄 probe exit 0，4,342 檔／8 個 ZIP 容器／2,690 PFIL 包装，0 讀取錯誤；存檔、截圖、備份等 808 檔排除。全部 110 BCI 容器由既有 bcitool 解析，109 個壓縮腳本的 prefix／長度與新 probe 一致。py_compile 通過；拒絕覆寫輸出與寫入遊戲目錄的防護已觸發。
+- 驗證收尾：12 個 EXE/DLL/根目錄素材包重新 SHA256 全數一致；PFIL prefix 分組找到 1,782 個 `01 00 00 00` 地圖池候選及 280 個 `00 01 00 00` cliprect/shadows 候選，尚未賦予欄位語意。Release solution build 31 個既有警告／0 錯誤；完整 dotnet test：Modules 789、Host 784 通過，共 1,573 通過／24 略過／0 失敗；git diff --check 通過。僅提交本輪工具與文件，不 push；不以回歸測試宣稱遊戲實機行為已驗證。
+- 安裝 EXE 與 repository 副本 SHA256 同為 `6ac85239ea3b87a4357ed8ce09a1818e68c09fe3c00e8d98831f473577b719bf`。REA Ghidra 12.1.4 已完成新分析；getter 0x5098d0、epoch setter 0x5098f0、capture/rebase 0x52f860/70、第三 scalar reader 0x52fd70 路徑確認；目前 EXE 時鐘常數為原版。不能把保存 scalar 視為持續推進的時鐘，回捲根因仍未確認。
+- 本地證據：忽略的 `re_workspace/game-directory-20261009.json`、`clock-20261009-evidence-final.json`（25 records）。尚缺：完整 ZIP CRC、未知 PFIL 消費端、loose/ZIP 查找優先序、ar.exe/DLL 邊界、clock 保存還原呼叫順序、空白地圖載入卡死根因、實機驗證。下一輪依新目錄報告的 queue 接續，整體遊戲逆向未完成。
+
 ## 野外巢穴與守衛波次對話框實作（2026-10-08 Antigravity，完成並驗證，未 commit）
 
 - 本次指示：不 commit、不存取遊戲安裝目錄，其他代理同時編輯其他檔案，故僅建立／編輯指定檔案：`src.MapEditor/WildLairDialog.cs`、`tests/AgainstRomeModifier.Tests/WildLairDialogTests.cs` 與更新 `AI_HANDOFF.md`。未修改 `MapEditorForm*.cs`。

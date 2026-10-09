@@ -9,6 +9,10 @@ and patch code.
 
 ## Files
 
+- `installed-game-directory.md`: read-only installed-directory inventory, ZIP
+  package families, BCI/PFIL coverage and remaining game-wide investigation queue.
+- `script-clock.md`: fresh EXE clock capture/rebase and serialized-scalar data flow;
+  save/load rollback cause remains unresolved.
 - `../../TechDoc.md`: current Chinese technical specification, integrating the cross-feature maintenance chronology, failure cases, and safety contracts.
 - `file-formats.md`: compressed game files, wrappers, and encodings.
 - `map-formats.md`: static BMP-grid facts, explicitly unverified map-layer semantics, and the controlled experiments required before any terrain or collision write feature.
@@ -61,7 +65,8 @@ and patch code.
   runtime-verified Roman Endless `dlg_volk` setter patch, experimental native
   1920x1080 mode replacement, restore-only legacy signatures, and local
   full-function inventory.
-- `apt.dat`: ZIP-like candidate, not integrated into the modifier.
+- `apt.dat`: verified ZIP central directory containing 222 APAT assets in the
+  inspected installation; see the installed-directory and native-scene notes.
 
 ## Evidence Rules
 
