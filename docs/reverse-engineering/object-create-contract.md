@@ -42,8 +42,34 @@ scan 對 version1、N≤14,000、name widths30/30及objects精確長度作防護
 
 ## 證據與後續
 
+### UID counter 的 engine.dat 保存／還原（2026-10-09 續查）
+
+writer `0x487f70` 的 engine.dat 區段在 `0x489d1a` 讀全域 `0x771c3c`，`0x489d22` 呼叫 u32 writer；loader `0x48e960` 傳 base `0x7717e8` 給 reader `0x48d6e0`。reader `0x48d8d4` 將讀到的 u32 寫入 `[base+0x454]`，恰為 `0x771c3c`。這是 indexed write，單查全域 xrefs 會漏掉 reader；不能據 direct xrefs 宣稱沒有還原路徑。
+
+| 解碼後 offset | 長度 | writer version1 欄位 |
+| --- | --- | --- |
+| 0 | 4 | version=1 |
+| 4 | 28 | 七個4-byte engine scalars（最後一個經zoom setter載入） |
+| 32 | 2 | 對應 runtime0x771c28 的 u16 |
+| **34（0x22）** | **4** | **UID counter0x771c3c** |
+| 38 | 16 | 八個u16，runtime0x771828起 |
+| 54 | 36 | 九個u32，runtime0x771804起 |
+| 90 | 4 | runtime0x771838欄位 |
+
+總長94bytes；版本及整數使用目前檔案的 little endian。整數 writer helper `0x580cc0`／`0x580c70` 可依全域 endian flag 選擇編碼，因此此 probe 是現有 writer version1 artifacts 的驗證，不是任意平台的通用格式。reader 第二個 scalar 讀取後將 runtime +4 強制為0，不能將整檔誤認成可直接 memcpy 的 runtime 狀態。
+
+初始化函式 `0x480850` 在 `0x480aac push 0`／`0x480aae call0x499220` 清 counter；getter／setter直接xrefs分別只有UID generator及這個初始化呼叫。但完整場景初始化、載入入口先後順序、其他存檔路徑及間接引用仍需追查，不代表每次讀檔都先清零。
+
+唯讀掃描74份 engine.dat：全部version1／94bytes；73張 counter 高於目前active UID低24bits最大值。ENDL_000為20224、最大active UID20222；ENDL_005的engine原bytes與ENDL_000相同（source SHA256相同），但objects最大UID已20255。ENDL_005的next team0候選UID為20224，現有slot1491／team8／type717已占用此UID。其餘73張沒有這個next team0精確UID重複候選。
+
+**推論與限制：** 現有 `LevelObjectStore.Save` 只寫objects／objdata／position，沒有更新engine counter；與自訂測試圖差異相符，但不能僅由現在快照證明所有歷史修改來源。候選重複UID也不是實機bug證明：事件查詢使用slot＋UID配對，caller可能在生成前處理counter，不同team前綴亦影響生成值。新增策略必須把engine counter納入研究與交易設計，不能只靠最大active UID＋1，也不能直接重寫既有UID。
+
+manifest `re_workspace/engine-uid-20261009.json`；74份objects decoded hashes與前輪anim manifest全同。REA ledger `engine-uid-20261009-evidence.json`（17records），已匯出/session關閉。writer evidence `ev_079078b34efa67e5a7b76a78d7795f98e911075d237f0d713c68c3813c1ee7bb`，reader `ev_51dd48b3a17a5d14c1f322613ed42499dc3ecaaee3eb3b1387f67b34ee52d353`，init `ev_a256b35e2696ccd5e8b36238e301239cec50fe5c98fcb3e8e6cdd35dc7e1c791`。
+
+Capstone `engine-uid-instructions-corrected-20261009.txt` 保存423行（含region標記）。初版從writer指令中段0x489c63起讀，已改從完整函式入口解碼再篩選；舊檔保留為失敗嘗試，不能引用其錯誤首條指令。以上關鍵writer／reader／init位址已用修正後原指令核對。
+
 REA ledger `re_workspace/create-contract-20261009-evidence.json`（18 records）已匯出、session 關閉。create evidence `ev_b3c1598a525224776467ee3cd83f4fd14dbb5eb105cf90bed75eb0842702253c`；UID generator `ev_f7a122e9f25dc7de645839a26ff5c1109aa82c75f4671f545e02609a4cd29e05`；counter getter／setter `ev_c9f6e164a33df59fb9c25291109d4f7a817a415cfc5be567e6104ebee7d4699f`／`ev_4364baf7a67d616297ed4c0167945b93800de8341509f498b928bffd238dd433`。
 
 `create-contract-instructions-20261009.txt` 保存514條原指令，涵蓋 create 前段、完整 UID generator 及 copy guards；不是 create 全函式原始指令清單。主函式完整失敗分支依上述 REA ledger，後續可針對 caller 取得更強證據。
 
-下一步追 `0x771c3c` 初始化／存讀檔 consumers、各範本建構 caller，並建立產品新增前的容量／範本／跨池交易要求。實機物件新增、移除、空白地圖與存讀檔仍未由本輪驗證。
+下一步追場景初始化／載入入口先後順序、counter的其他間接consumer與各範本建構caller，並建立產品新增前的容量／範本／跨池交易要求。實機物件新增、移除、空白地圖與存讀檔仍未由本輪驗證。
