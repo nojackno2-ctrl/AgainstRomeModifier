@@ -9,6 +9,8 @@ and patch code.
 
 ## Files
 
+- `engine-configuration.md`: encoded section prefixes, startup read order,
+  archive/directory list replacement and a static bounds-check finding.
 - `virtual-file-system.md`: native loose-file gate, ordered archive fallback,
   ZIP/PUA backend registration and installed-path overlap evidence.
 - `pua-format.md`: ARCP headers/entries, LZSS/XOR read flow and full `cl.pua` CRC verification.

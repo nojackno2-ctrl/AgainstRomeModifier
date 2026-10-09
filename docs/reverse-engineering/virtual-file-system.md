@@ -94,6 +94,8 @@ $env:JAVA_HOME = 'C:\Users\nojac\AppData\Local\Programs\REA\jdk-21.0.12.1+1'
 
 Use fresh project/output names; verify the machine-local toolchain paths.
 The final run completed with Analysis/Post-analysis/Import succeeded and
-exit 0. Generated pseudocode stays local. Pending work: configuration parsing
-and overrides, full locale/path callbacks, PFIL wrapper and write-mode behavior,
+exit 0. Generated pseudocode stays local. Configuration startup order and
+list replacement are now documented in [engine-configuration.md](engine-configuration.md).
+Pending work: command-buffer construction and effective configuration,
+full locale/path callbacks, PFIL wrapper and write-mode behavior,
 passive runtime source attribution, and map-loader failure diagnosis.
