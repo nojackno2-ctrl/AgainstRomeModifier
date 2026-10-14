@@ -1,4 +1,5 @@
 using AgainstRomeMapEditor.Modules.Diagnostics;
+using AgainstRomeMapEditor.Modules.Placement;
 using AgainstRomeModifier.Maps;
 using AgainstRomeModifier.Scripting;
 
@@ -53,20 +54,56 @@ internal sealed partial class MapEditorForm
         LevelObjectStore? store = null;
         if (_placedObjects.Any(item => item.Type.Category == SdlObjectCategory.Building) && _natureStoreAvailable)
             store = LevelObjectStore.Load(_selected.DirectoryPath);
+        IReadOnlyDictionary<Guid, ScenarioFamilyCopyRequest>? familyRequests = null;
+        if (store is not null && _placedObjects.Any(item => item.CopySourceScenarioId != Guid.Empty || item.NativeSourceIdentity.HasValue))
+        {
+            try
+            {
+                familyRequests = PlacementEditSession.BuildFamilyCopyRequests(_placedObjects, previous, store, ResolveNativeAlias);
+            }
+            catch (Exception ex) when (ex is InvalidDataException or InvalidOperationException)
+            {
+                // Stale or invalid copy intents must not crash overall diagnostics;
+                // they remain unhandled so normal construction-site warnings or preflights apply.
+                familyRequests = null;
+            }
+        }
         var objects = new List<MapCheckObject>();
         foreach (var item in _placedObjects)
         {
             bool building = item.Type.Category == SdlObjectCategory.Building;
+            bool isPrebuilt = building && item.Team is >= 0 and <= 8 || item.RawRotation.HasValue;
             var spawn = new ScenarioSpawn(AliasOf(item.Type), item.WorldX, item.WorldZ, item.Team,
-                item.Type.Category == SdlObjectCategory.Figure && !item.Type.IsAnimal ? Math.Max(1, item.UnitCount) : 0,
-                (int)MathF.Round(item.Angle), item.WorldY, Prebuilt: building && item.Team is >= 0 and <= 8) { Id = item.ScenarioId };
+                item.Type.Category == SdlObjectCategory.Figure && !item.Type.IsAnimal && !item.RawRotation.HasValue ? Math.Max(1, item.UnitCount) : 0,
+                item.RawRotation is { } raw ? ScenarioLevelObjects.RadiansToDisplayAngle(raw) : (int)MathF.Round(item.Angle),
+                item.WorldY,
+                Prebuilt: isPrebuilt) { Id = item.ScenarioId, RawRotation = item.RawRotation };
             bool hasTemplate = false;
             if (building)
             {
-                var old = previous.Spawns.FirstOrDefault(value => value.Id == spawn.Id && value.Prebuilt && value.Alias.Equals(spawn.Alias, StringComparison.OrdinalIgnoreCase));
-                var binding = old is null ? null : ScenarioObjectIdentity.DataBinding(previous, old.Id);
-                hasTemplate = binding is not null && store?.OwnedTemplate(binding.Slot, binding.Uid) is not null;
-                if (!hasTemplate) hasTemplate = BuildingTemplateFor(spawn) is not null;
+                if (familyRequests is not null && familyRequests.TryGetValue(item.ScenarioId, out var req))
+                {
+                    if (req.IsNativeSource)
+                    {
+                        hasTemplate = true;
+                    }
+                    else if (previous.Spawns.Any(source => source.Id == item.CopySourceScenarioId
+                        && source.Prebuilt && source.Alias.Equals(spawn.Alias, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        hasTemplate = true;
+                    }
+                }
+                else
+                {
+                    var old = previous.Spawns.FirstOrDefault(value => value.Id == spawn.Id && value.Prebuilt && value.Alias.Equals(spawn.Alias, StringComparison.OrdinalIgnoreCase));
+                    var binding = old is null ? null : ScenarioObjectIdentity.DataBinding(previous, old.Id);
+                    if (binding is not null)
+                    {
+                        hasTemplate = store?.OwnedTemplate(binding.Slot, binding.Uid) is not null
+                            || IsRetainedClosedFamily(store, previous, spawn, binding);
+                    }
+                    if (!hasTemplate) hasTemplate = BuildingTemplateFor(spawn) is not null;
+                }
             }
             objects.Add(new(spawn, building, hasTemplate));
         }
@@ -82,6 +119,27 @@ internal sealed partial class MapEditorForm
             layers?.CollisionSize ?? 0, layers?.Collision, layers?.VertexSize ?? 0,
             layers?.Heights, _heightMapStep, (float)_waterLevel.Value);
         var issues = new List<MapIssue>(MapDiagnostics.Check(snapshot));
+        var missingPools = NativeMapLoadContract.FindMissingDataFiles(_selected.DirectoryPath);
+        if (missingPools.Count > 0)
+        {
+            string files = string.Join(", ", missingPools);
+            issues.Add(new MapIssue(MapIssueSeverity.Warning, "native-data-missing",
+                $"地圖缺少必要的 DATA 檔案：{files}。缺檔可能導致遊戲資料池未完整載入。請從完整地圖範本重新建立，或從此地圖的備份還原缺檔；不要建立空檔。仍可編輯及儲存，補齊前無法使用遊戲預覽。",
+                $"Required DATA files are missing: {files}. Missing files may leave game data pools incompletely loaded. Recreate from a complete map template or restore missing files from this map's backup; do not create empty files. Editing and saving remain available; restore the files before game preview."));
+        }
+        IReadOnlyDictionary<int, NativeObjectDefinition>? definitions = null;
+        try { definitions = NativeObjectDefinitions.Load(_gamePath); }
+        catch (Exception ex) when (ex is IOException or InvalidDataException)
+        {
+            issues.Add(new MapIssue(MapIssueSeverity.Warning, "native-object-definitions-invalid",
+                $"無法讀取物件定義 objdef.dau：{ex.Message}。第三位置需求尚未驗證；請從備份還原定義檔。",
+                $"Cannot read objdef.dau: {ex.Message}. Third-position requirements have not been verified; restore the definition file from backup."));
+        }
+        // These are saved DATA diagnostics. Pending editor changes may repair them on save.
+        foreach (NativePoolIssue issue in NativePoolDiagnostics.DiagnoseDirectory(Path.Combine(_selected.DirectoryPath, "DATA"), definitions).Issues)
+            issues.Add(new MapIssue(MapIssueSeverity.Warning, "native-data-" + issue.Code,
+                $"已儲存的 DATA 資料：{issue.Message}。請檢查備份或修復資料；此結果尚未包含未儲存的編輯。",
+                $"Saved DATA: {issue.Code}; object slot {issue.ObjectSlot}, target {issue.TargetPool ?? "pool"} slot {issue.TargetSlot}. Check the map backup or repair the data. Pending edits are not included in this result."));
         // 進階檢查只作警告（連通性與預算皆為估計），不阻擋儲存。
         issues.AddRange(MapDiagnostics.ConvertToIssues(MapDiagnostics.AnalyzeNavMesh(snapshot)));
         var budget = AgainstRomeMapEditor.Modules.Profiling.MapBudgetProfiler.Analyze(new(
@@ -91,6 +149,22 @@ internal sealed partial class MapEditorForm
             HeightStep: snapshot.HeightStep, WaterLevel: snapshot.WaterLevel));
         issues.AddRange(budget.Bottlenecks.Select(item => new MapIssue(MapIssueSeverity.Warning, item.Code,
             item.ChineseDescription, item.EnglishDescription, WorldX: item.WorldX, WorldZ: item.WorldZ)));
+
+        var designRequest = new MapDesignValidationRequest(
+            Objects: objects.Select(item => item.Spawn).ToArray(),
+            Events: snapshot.Events,
+            Collision: snapshot.Collision,
+            CollisionSize: snapshot.CollisionSize,
+            Heights: snapshot.Heights,
+            HeightSize: snapshot.HeightSize,
+            HeightStep: snapshot.HeightStep,
+            WaterLevel: snapshot.WaterLevel);
+        foreach (var d in MapDesignValidator.Validate(designRequest))
+        {
+            issues.Add(new MapIssue(
+                d.Severity == DesignIssueSeverity.Error ? MapIssueSeverity.Error : MapIssueSeverity.Warning,
+                d.Code, d.Chinese, d.English, d.ObjectId, -1, d.WorldX, d.WorldZ));
+        }
         return issues;
     }
 
@@ -152,5 +226,39 @@ internal sealed partial class MapEditorForm
                 _placedList.SelectedItems.Clear(); _placedList.Items[index].Selected = true; _placedList.EnsureVisible(index);
             }
         }
+    }
+
+    private static bool IsRetainedClosedFamily(LevelObjectStore? store, ScenarioDocument previous, ScenarioSpawn spawn, ScenarioDataSlot binding)
+    {
+        if (store is null || binding.SpawnId == Guid.Empty) return false;
+        var old = previous.Spawns.FirstOrDefault(value => value.Id == binding.SpawnId && value.Prebuilt);
+        if (old is null || !old.Alias.Equals(spawn.Alias, StringComparison.OrdinalIgnoreCase)) return false;
+        if (store.UidAt(binding.Slot) != binding.Uid) return false;
+        var root = store.Objects().FirstOrDefault(obj => obj.Slot == binding.Slot);
+        if (root is null || root.Uid != binding.Uid) return false;
+        var family = store.FamilyAt(binding.Slot, binding.Uid);
+        if (family is null) return false;
+        if (old.Team != spawn.Team || root.Team != spawn.Team)
+            return false;
+
+        if (old.RawRotation is { } oldRaw || spawn.RawRotation is { } spawnRaw)
+        {
+            if (old.RawRotation is not { } oRaw || spawn.RawRotation is not { } sRaw
+                || !float.IsFinite(oRaw) || !float.IsFinite(sRaw)
+                || BitConverter.SingleToInt32Bits(oRaw) != BitConverter.SingleToInt32Bits(sRaw)
+                || BitConverter.SingleToInt32Bits(root.Rotation) != BitConverter.SingleToInt32Bits(sRaw)
+                || ScenarioLevelObjects.NormalizeAngle(old.Angle) != ScenarioLevelObjects.NormalizeAngle(spawn.Angle))
+                return false;
+        }
+        else
+        {
+            double actualAngle = root.Rotation * (180d / Math.PI);
+            double desiredAngle = ((spawn.Angle % 360d) + 360d) % 360d;
+            double angleDifference = Math.Abs(((actualAngle - desiredAngle + 540d) % 360d + 360d) % 360d - 180d);
+            double oldAngle = ((old.Angle % 360d) + 360d) % 360d;
+            if (oldAngle != desiredAngle || !double.IsFinite(actualAngle) || angleDifference > .001d)
+                return false;
+        }
+        return true;
     }
 }

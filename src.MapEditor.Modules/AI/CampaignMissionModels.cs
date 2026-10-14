@@ -78,7 +78,8 @@ public sealed record WaveAttackDefinition(
     float SpawnZ,
     IReadOnlyList<WaveSquadDefinition> Squads,
     Guid? AssignedPathId = null,
-    Guid? TargetObjectId = null)
+    Guid? TargetObjectId = null,
+    AgainstRomeModifier.Scripting.ScenarioWorldPosition? MoveDestination = null)
 {
     public void Validate()
     {

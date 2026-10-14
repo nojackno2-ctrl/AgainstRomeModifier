@@ -8,6 +8,7 @@
   <ItemGroup>
     <Compile Include="Program.cs" />
     <Compile Include="../../../src.MapEditor.Modules/NativeAssets/NativeAptDocument.cs" Link="NativeAptDocument.cs" />
+    <Compile Include="../../../src.MapEditor.Modules/NativeAssets/NativeAptAttachmentGeometry.cs" Link="NativeAptAttachmentGeometry.cs" />
     <Compile Include="../../../src.MapEditor.Modules/NativeAssets/NativePaletteColor.cs" Link="NativePaletteColor.cs" />
   </ItemGroup>
 </Project>

@@ -153,8 +153,36 @@ Sprite的0x49A490路徑依序：
 
 - 地表分頁的「遊戲光照／Game lighting」預設關閉，保留中性編輯視圖；旁邊「時刻／Hour」選擇 0..24（24 等於午夜），小數小時向下取整分鐘，再用 row0 原生 16.16 權重公式。此選項只影響顯示，不儲存地圖時間或光源資料。
 - `SceneLightingContext` 唯讀載入 `daynight.bmp`、PFIL `objdef.dau`／`lightdef.dau`／`cl_apt.ini`（或 `.txt`）與 `apt.dat`。缺少或損壞的來源各自 fail-soft；無日夜表用白光，無光源定義不產生局部光源。
-- 建築 `aptli` 指向 lightdef，APT extraA 以 `NativeAptLightPoints` 轉成世界 X/Z，再取該位置地面高度加 `aptlh`；獨立物件 `lidef` 使用位置 XYZ 加 `lihei`。不模擬閃爍、法術／天候動態光源。
+- 建築 `aptli` 指向 lightdef，`NativeAptLightPoints` 讀取 APT 完工 stage、axis1/2=0 的 frame 光源列表，最多 20 點，依原生預設投影換算格心，再取該位置地面高度加 `aptlh`（2026-10-10 更正：global extraA 是不同資料，舊解析已替換）；獨立物件 `lidef` 使用位置 XYZ 加 `lihei`。不模擬閃爍、法術／天候動態光源。
 - 地形片段以自身世界位置套用 `min(1,max(ambient,max(lightRGB*(1-d²/r²))))`；**sprite 與放置預覽整張只在地面錨點取樣**，是原生 APT 每個 patch 四角取樣的簡化。因此主屋不會有原生沿 patch／高度變化的色彩。
 - view XYZ 全部乘 256 換成世界單位，半徑仍為世界單位。光源清單在物件／地形高度／catalog 更新時建立，僅相機目標改變時重選最近 64 個，透過 uniform arrays 傳入共同 shader 公式；陰影沿用既有流程。
 - 此模式是在編輯器既有坡度／vertex 色之上增加日夜與局部光，不是完整原生 terrain／emboss／cloud／visibility renderer。高 DPI 與真 GL 合成測試涵蓋夜色、世界高度／半徑、光源移動／相機選取、sprite／預覽及 context 重建。
 - 指定 TEMP 的 ENDL_005 主屋已以 12:00 擷取並與 `game-house.png` 並排；可確認實際 APT 光源載入及顯示。遊戲截圖時間未知、白天 ambient 高，視覺色調與局部變化仍不同；沒有宣稱逐像素或同期遊戲畫面一致。
+
+## 光源 definition 共用載入（2026-10-10）
+
+原生初始化 `4d2f90 → 4d2fe0` 為256槽，active=0、RGB=(1,1,1)、radius=500、type/typep/spefx=0、name=`LD_NoNameEntered`。既有預覽用`CreateDefault`的active=true／DefaultLight是fallback，不能當原生建立初值。`480850`先初始化，載`lightdef.dau`再依序`lightdef.d00..d09`；`4d32a0`將DefaultPath literal prefix與檔名串接，以`[LightDefault]`及`4d3070` callback套用有出現的欄位，省略的欄保留前值。
+
+callback十欄為idx／activ signed32／RGB三float32／radius float32／type低16／typep float32／spefx32／name。name以`%s`取token並拷30bytes，浮點顏色可大於1，不能在loader夾值。產品`NativeLightDefinitions`採相同欄位與覆蓋順序，拒絕壞數字、非有限值與越界idx；原生無效scanner輸入與runtime VFS仍未重建。`NativeLightTypeDefinition.Create`驗active並產生池建立參數；完整跨池family尚未串接。
+
+`NativeLightCatalog.Parse/OpenGame`與`SceneLightingContext`已共用loader，預覽可反映d09覆蓋，缺來源保留fail-soft。最終定向45項及Modules807項通過（2 skip），包含空來源不標available；原版42個active definitions涵蓋74圖1415光源、23種definition，來源hash不變。指令／manifest為`tools/re/probe_native_light_definitions.py`、`re_workspace/native-light-definitions-20261010.json`、REA14records `native-light-definitions-20261010-evidence.json`。完整Host為952passed/22skip/26fail，26fail逐項均是Windows Smart App Control阻擋AgainstRomeModifier.dll（0x800711C7），CodeIntegrity event3077確認；不能宣稱全套通過，未改系統原則。遊戲內驗收未完成。
+
+## 保存光源與 Rust 接線（2026-10-12）
+
+`native/against-rome-data` 解碼 raw/PFIL light 池並保留 saved RGB、effective/baseline radius、XYZ 與全部56-byte欄位；C# `RustLightPool` 只負責 SafeHandle/ABI 薄接線。完整静態契約及未知項見 [saved-light-render-contract.md](saved-light-render-contract.md)。型別1／2的 baseline 不能代替保存時 effective；本預覽不模擬 updater/tick。
+
+群組直接光源由 Rust signed16.16 delta 投影；粒子連結光源從保存 emitter record 的指定 child 做 checked fixed 加法與算術右移16，inactive child原樣保留。兩種 batch 均先完整驗證，Form再與member候選一起採用／抑制；copy來源保留、copy-of-copy從原baseline重算，move/remove/undo與成功保存reload同步，late-save失敗保留baseline。這不表示 particle sprite/frame/blend 已還原。
+
+保存光的 shader 距離使用 native XYZ。地表以独立 R32F native-height texture查 Y，sprite帶native query Y attribute，relief=0不除以顯示高度倍率。只要完整saved pool成功載入，DATA物件不再合成APT/lidef重複光；legacy與未保存placement仍保留明確合成路徑。同座標光源不去重，最後逐channel max。低於全地圖native最低地勢的水面不在flat relief覆蓋地表。這是編輯器預覽，不是原生四角patch/FPU/pixel等價。
+
+驗證：Rust core32測試、真FFI43測試與75 installed檔bitwise differential通過；新功能＋相關GL回歸70pass/0fail/0skip，forced `ARM_OPENGL_REQUIRED=1`／`ARM_REQUIRE_NATIVE_DATA=1`，TRX在 `re_workspace/saved-light-complete-20261012-water`。全Host/Modules結果以AI_HANDOFF最新終態為準，不能以本專項冒稱完整驗收。曾定位GLSL非ASCII註解使NVIDIA fragment compiler報EOF，embedded GLSL改ASCII後實際GL通過；不要再加入非ASCII shader source。
+
+開發建置：先執行 `tools/build-native-data.ps1`（--locked、SHA/ABI驗證），再 `dotnet build AgainstRomeModifier.slnx -c Release -p:UseAppHost=false`。DLL部署至ignored `re_workspace/native-data-deploy`，`Directory.Build.targets`將已部署DLL複製至managed build/publish outputs。可用明確 `NativeDataDll` MSBuild property指定來源；Rust runtime與proprietary assets不進Git。尚未完成原遊戲runtime/tick、完整particle visuals與原遊戲內驗收。
+
+## APT frame 光源與原生格心（2026-10-10）
+
+`4E5710` 的 group 首 pair 是 marker（runtime `+2C/+30`），逐 variant 光源 counts/lists 為 `+34/+40`，倒數第二 list 是 smoke（`+0C/+24`）。`4E6EC0` 先以 axis0×Layout[2]+axis2 選 group，再以 axis1 選光源列表，寫入 `+08/+20`。v2 僅儲存一份 variant list，loader 複製到各 slot。global extraA/B 與 frame 列表不可混用；marker.X=-1000000 表示缺少 marker。
+
+`4E5420` 扣第一 anchor 後，在 binary 預設 `(32,32,16,16,1024,1)` 下對 `(32y+16x)/1024`、`(32y−16x)/1024` 分別取 floor。`4C82A0` 分別投影第二 anchor 和各光源點，將差加到 parent 格索引；不能先投影相對 delta，否則丟失量化相位。`49C270` 再以 grid×64+32 得格心。parent world→grid 經 `419C80` 的 signed 0.49999991059303284 bias 與 FISTP，再 SAR6；產品採 nearest-even x87 模式假設。
+
+解析器保留 light/smoke/marker，編輯器光源已接線。驗證包含 56 項定向測試、原版 222 APT 全 layout 選擇與投影、46 原指令及 matrix/bias 斷言，來源 hashes 不變；完整回歸 1732 passed/24 skipped/0 failed。證據在 `re_workspace/apt-attachments-original-20261010/report.json`、`apt-attachment-instructions-final-20261010.json`、`apt-attachment-projection-20261010-evidence.json`。這些證明靜態解析與預設投影；runtime 矩陣/FPU 模式、gfxtype 狀態同步、完整附屬物件建立及遊戲內畫面仍未驗證。前節截圖在這次修正前取得，不是新座標的遊戲內驗收。

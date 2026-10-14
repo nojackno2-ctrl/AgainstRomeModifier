@@ -60,7 +60,8 @@ public sealed partial class MapEditorSaveTransactionTests
                 // Once a finished template becomes available, an edited building returns to DATA and clears the notice.
                 byte[] record = new byte[LevelObjectStore.RecordSize]; record[0] = 1;
                 BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(75), 2);
-                uint[] columns = new uint[18]; columns[10] = 0xFFFF;
+                uint[] columns = new uint[18];
+                foreach (int column in new[] { 2, 3, 4, 5, 8, 10, 11, 12, 13 }) columns[column] = 0xFFFF;
                 var template = new LevelObjectTemplate(2, record, columns,
                     LevelObjectStore.ObjDataWidths.Select(width => new byte[width]).ToArray(), new byte[17], new byte[17]);
                 SetMatrixField(reopened, "_objdefNames", new Dictionary<int, string> { [2] = building.NameDef });

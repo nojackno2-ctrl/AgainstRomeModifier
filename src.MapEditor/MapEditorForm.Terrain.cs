@@ -116,6 +116,11 @@ internal sealed partial class MapEditorForm
                 // 提示放在狀態列的持續通知（直接寫 _status 會被隨後的 UpdateEditorState 覆蓋）；自動調整水面的說明保留到下一筆。
                 if (waterNotice is not null || _flattenTarget < 0) _terrainBlendNotice = waterNotice;
                 if (_flattenTarget < 0) return (false, false);
+                TerrainLayerStroke water = _terrainLayers.PaintWater(centerX, centerY, radiusTiles * step + 1,
+                    TerrainStrength, _flattenTarget, (float)_waterLevel.Value / _heightMapStep);
+                if (!_terrainLayers.HasCollision)
+                    _terrainBlendNotice = WaterCollisionNotice(waterNotice);
+                return (water.Heights.Count > 0, water.Collision.Count > 0);
             }
             if (operation == TerrainHeightOperation.Flatten && _flattenTarget < 0)
                 _flattenTarget = _terrainLayers.Heights[Math.Clamp((int)MathF.Round(centerY), 0, _terrainLayers.VertexSize - 1) * _terrainLayers.VertexSize + Math.Clamp((int)MathF.Round(centerX), 0, _terrainLayers.VertexSize - 1)];
@@ -130,6 +135,14 @@ internal sealed partial class MapEditorForm
         bool isEn = AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English;
         _terrainBlendNotice = isEn ? "This map has no collision.bmp to edit." : "此地圖沒有可編輯的 collision.bmp。";
         return (false, false);
+    }
+
+    private string WaterCollisionNotice(string? waterNotice)
+    {
+        bool isEn = AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English;
+        string missing = isEn ? "This map has no collision.bmp; water passability cannot be updated automatically."
+            : "此地圖沒有 collision.bmp；水域通行區域無法自動更新。";
+        return waterNotice is null ? missing : waterNotice + " " + missing;
     }
 
     /// <summary>整平至水面上方、鋪基礎材質、清除阻擋與可移除地景；SDL 聚落保留，儲存前不寫檔。</summary>

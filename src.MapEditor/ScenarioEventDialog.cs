@@ -127,6 +127,7 @@ internal sealed class ScenarioEventDialog : Form
                 ScenarioActionKind.Victory => en ? "Victory (end mission)" : "勝利（結束任務）",
                 ScenarioActionKind.Defeat => en ? "Defeat (end mission)" : "失敗（結束任務）",
                 _ => $"{(en ? "Spawn" : "生成部隊")}: {action.Alias} × {action.Count}, {(en ? "team" : "隊伍")} {action.Team} ({action.X}, {action.Z})"
+                    + (action.MoveDestination is { } d ? $" → ({d.X}, {d.Z})" : "")
             });
         if (selected >= 0 && selected < _list.Items.Count) _list.SelectedIndex = selected;
         _list.EndUpdate(); UpdateActionButtons();
@@ -192,7 +193,8 @@ internal sealed class ScenarioActionDialog : Form
             try
             {
                 var result = new ScenarioAction((ScenarioActionKind)kind.SelectedIndex, text.Text, (int)team.Value, (int)other.Value, hostile.Checked,
-                    (alias.SelectedItem as UnitChoice)?.Alias ?? "", (float)x.Value, (float)z.Value, (int)count.Value);
+                    (alias.SelectedItem as UnitChoice)?.Alias ?? "", (float)x.Value, (float)z.Value, (int)count.Value)
+                { MoveDestination = (ScenarioActionKind)kind.SelectedIndex == ScenarioActionKind.SpawnUnit ? item.MoveDestination : null };
                 ScenarioEventValidator.Validate([new ScenarioEvent("action") { Actions = [result] }], aliases);
                 Result = result; DialogResult = DialogResult.OK;
             }

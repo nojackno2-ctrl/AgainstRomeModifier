@@ -12,7 +12,10 @@ internal static class SceneObjectRenderer
     /// (2026-10-07): APT anchors 768 world units apart along +X land (384, 192) px apart.
     /// </summary>
     public const float TilesPerSpritePixel = .25f * 1.41421356f / 64f;
-    public const int FloatsPerSpriteVertex = 7;
+    /// <summary>anchor xyz, view-space offset xy, uv, nativeQueryY (native-unit Y used only for lighting).</summary>
+    public const int FloatsPerSpriteVertex = 8;
+    /// <summary>nativeQueryY sentinel: native Y is unknown, so native-space saved lights do not apply (no terrain substitute).</summary>
+    public const float UnknownNativeQueryY = float.MaxValue;
 
     public static Vector3[] BuildMarkerPoints(IEnumerable<MapSceneObject> objects, TerrainHeightField heights)
         => objects.Select(item => GroundPoint(item, heights, .25f)).ToArray();
@@ -21,7 +24,20 @@ internal static class SceneObjectRenderer
     {
         float x = item.WorldX / (SdlSceneCatalog.WorldUnitsPerMapPixel * 4f);
         float z = item.WorldZ / (SdlSceneCatalog.WorldUnitsPerMapPixel * 4f);
-        return new Vector3(x, heights.SampleHeight(x, z) + lift, z);
+        float y = item.HasNativeSavedPosition && heights.TryNativeHeight(item.WorldY, out float savedY)
+            ? savedY : heights.SampleHeight(x, z);
+        return new Vector3(x, y + lift, z);
+    }
+
+    /// <summary>
+    /// Native-unit Y for lighting a sprite: a saved native position uses its saved world Y; legacy objects use the raw
+    /// terrain sample * native step. Independent of relief (HeightScale); geometry/picking/sorting keep the preview anchor.
+    /// </summary>
+    public static float NativeQueryY(MapSceneObject item, TerrainHeightField heights)
+    {
+        if (item.HasNativeSavedPosition) return float.IsFinite(item.WorldY) ? item.WorldY : UnknownNativeQueryY;
+        const float worldUnitsPerTile = SdlSceneCatalog.WorldUnitsPerMapPixel * 4f;
+        return heights.TryNativeQueryHeight(item.WorldX / worldUnitsPerTile, item.WorldZ / worldUnitsPerTile, out float y) ? y : UnknownNativeQueryY;
     }
 
     public const int FloatsPerShadowVertex = 5;
@@ -103,17 +119,17 @@ internal static class SceneObjectRenderer
     public static float[] BuildSpriteVertices(IReadOnlyList<MapSceneObject> objects, IReadOnlyList<NativeSprite?> sprites,
         NativeSpriteAtlas atlas, TerrainHeightField heights, Matrix4x4 view)
     {
-        var visible = new List<(float Distance, Vector3 Anchor, NativeSprite Sprite, NativeSpriteUv Uv)>();
+        var visible = new List<(float Distance, Vector3 Anchor, NativeSprite Sprite, NativeSpriteUv Uv, float NativeY)>();
         for (int index = 0; index < objects.Count && index < sprites.Count; index++)
         {
             if (sprites[index] is not { } sprite || !atlas.TryGetUv(sprite, out NativeSpriteUv uv)) continue;
             Vector3 anchor = GroundPoint(objects[index], heights);
-            visible.Add((-Vector3.Transform(anchor, view).Z, anchor, sprite, uv));
+            visible.Add((-Vector3.Transform(anchor, view).Z, anchor, sprite, uv, NativeQueryY(objects[index], heights)));
         }
         visible.Sort((a, b) => b.Distance.CompareTo(a.Distance));
         var vertices = new float[visible.Count * 6 * FloatsPerSpriteVertex];
         int offset = 0;
-        foreach ((_, Vector3 anchor, NativeSprite sprite, NativeSpriteUv uv) in visible)
+        foreach ((_, Vector3 anchor, NativeSprite sprite, NativeSpriteUv uv, float nativeY) in visible)
         {
             float left = -sprite.AnchorX * TilesPerSpritePixel, right = (sprite.Width - sprite.AnchorX) * TilesPerSpritePixel;
             float top = sprite.AnchorY * TilesPerSpritePixel, bottom = (sprite.AnchorY - sprite.Height) * TilesPerSpritePixel;
@@ -121,6 +137,7 @@ internal static class SceneObjectRenderer
             {
                 vertices[offset++] = anchor.X; vertices[offset++] = anchor.Y; vertices[offset++] = anchor.Z;
                 vertices[offset++] = ox; vertices[offset++] = oy; vertices[offset++] = u; vertices[offset++] = v;
+                vertices[offset++] = nativeY;
             }
             Vertex(left, bottom, uv.U0, uv.V1); Vertex(right, bottom, uv.U1, uv.V1); Vertex(right, top, uv.U1, uv.V0);
             Vertex(left, bottom, uv.U0, uv.V1); Vertex(right, top, uv.U1, uv.V0); Vertex(left, top, uv.U0, uv.V0);

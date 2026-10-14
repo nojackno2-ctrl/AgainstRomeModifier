@@ -15,10 +15,6 @@ public static class BlankMapContent
         new("action.dat", 12, 25, [], [6]),
         new("hirarchy.dat", 12, 103, [2], [50]),
         new("formatio.dat", 8, 15, [4, 2, 4], []),
-        new("lager.dat", 16, 43, [2], [6, 10]),
-        new("biglager.dat", 12, 1601, [], [800]),
-        new("light.dat", 8, 4, [4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4], [], 4),
-        new("particle.dat", 12, 2252, [4, 4, 4, 4], [64], 2),
         new("explos.dat", 8, 46, [4, 4], [], 2),
         new("hitex.dat", 8, 28, [4, 4, 4], [], 2),
         new("flash.dat", 12, 201, [32], [16])
@@ -33,9 +29,17 @@ public static class BlankMapContent
         foreach (string path in Directory.EnumerateFileSystemEntries(full, "*", SearchOption.AllDirectories).Prepend(full))
             if (File.GetAttributes(path).HasFlag(FileAttributes.ReparsePoint)) throw new IOException("空白初始化不接受 reparse points。");
 
+        // Dedicated pools replace generic reset, but the staging contract still requires their files.
+        foreach (string name in new[] { "light.dat", "particle.dat", "lager.dat", "biglager.dat" })
+        {
+            string path = Path.Combine(full, "DATA", name);
+            if (!File.Exists(path)) throw new FileNotFoundException($"空白初始化缺少必要資料池 {name}。", path);
+        }
+
         // Prepare every binary in memory before writing. A full pool or unknown layout is a failure, never a guessed reset.
         var pending = Runtime.Select(layout => (layout.Name, Bytes: EmptySlots(Path.Combine(full, "DATA", layout.Name), layout))).ToList();
         pending.Add(("way.dat", EmptyWays(Path.Combine(full, "DATA", "way.dat"))));
+        // Dedicated native light/particle/camp reset does not rely on inactive templates.
         LevelObjectStore store = LevelObjectStore.Load(full);
         store.ResetForBlankMap();
         using var rollback = new FileRollbackScope();

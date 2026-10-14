@@ -56,3 +56,8 @@ __pycache__/
 changes_patch.diff
 changes_summary.md
 scratch/
+
+# Local runtime/build artifacts
+TEMP/
+native/against-rome-data/target/
+.claude/settings.local.json

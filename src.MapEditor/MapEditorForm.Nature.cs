@@ -16,6 +16,7 @@ internal sealed partial class MapEditorForm
     private readonly Label _natureHint = new() { Dock = DockStyle.Top, Height = 70, Padding = new Padding(4, 6, 4, 4), ForeColor = WinFormsTheme.TextSecondary };
     private Label _lblNatureCategory = null!, _lblNatureOperation = null!, _lblNatureDensity = null!;
     private IReadOnlyList<LevelWorldObject> _levelObjects = Array.Empty<LevelWorldObject>();
+    private readonly Dictionary<int, (uint Uid, NativeAnimationVisualState State)> _levelVisualStates = new();
     private IReadOnlyDictionary<int, string> _objdefNames = new Dictionary<int, string>();
     private readonly NatureEditSession _natureSession = new();
     private IReadOnlySet<int> _natureRemovals => _natureSession.RemovedSlots;
@@ -159,14 +160,27 @@ internal sealed partial class MapEditorForm
         _natureSession.Clear();
         _natureStoreAvailable = false;
         _levelObjects = Array.Empty<LevelWorldObject>();
+        _levelVisualStates.Clear();
+        ClearFamilyPreview();
         try
         {
             if (!File.Exists(Path.Combine(map, "DATA", "objects.dat"))) return;
-            _levelObjects = LevelObjectStore.Load(map).Objects();
+            var store = LevelObjectStore.Load(map);
+            IReadOnlyList<LevelWorldObject> objects = store.Objects();
+            var states = new Dictionary<int, (uint Uid, NativeAnimationVisualState State)>();
+            foreach (LevelWorldObject item in objects)
+                if (store.AnimationVisualStateAt(item.Slot, item.Uid) is { } state)
+                    states.Add(item.Slot, (item.Uid, state));
+            _levelObjects = objects;
+            foreach (var (slot, state) in states) _levelVisualStates.Add(slot, state);
+            LoadFamilyPreview(store, map);
             _natureStoreAvailable = true;
         }
         catch (Exception ex) when (ex is InvalidDataException or IOException) { }
     }
+
+    private NativeAnimationVisualState? LoadedVisualState(LevelWorldObject item)
+        => _levelVisualStates.TryGetValue(item.Slot, out var saved) && saved.Uid == item.Uid ? saved.State : null;
 
     private bool IsRemovableNature(LevelWorldObject item) => !item.Linked && ObjDefNames.IsLandscape(_objdefNames.GetValueOrDefault(item.TypeId));
 
@@ -176,7 +190,13 @@ internal sealed partial class MapEditorForm
         IReadOnlyList<NatureAddition> additions = _natureSession.Additions;
         foreach (LevelWorldObject item in _levelObjects)
             if (!removals.Contains(item.Slot) && ObjDefNames.IsLandscape(_objdefNames.GetValueOrDefault(item.TypeId)))
-                yield return new MapSceneObject(_objdefNames.GetValueOrDefault(item.TypeId) ?? "", item.X, item.Y, item.Z, 8, "DATA/objects.dat", -100000 - item.Slot);
+            {
+                NativeAnimationVisualState? state = LoadedVisualState(item);
+                yield return new MapSceneObject(_objdefNames.GetValueOrDefault(item.TypeId) ?? "", item.X, item.Y, item.Z,
+                    state is null ? 8 : item.Team, "DATA/objects.dat", -100000 - item.Slot,
+                    Angle: state is not null && float.IsFinite(item.Rotation) ? (float)((double)item.Rotation * (180d / Math.PI)) : null)
+                { NativeVisualState = state, HasNativeSavedPosition = true };
+            }
         for (int index = 0; index < additions.Count; index++)
         {
             NatureAddition addition = additions[index];

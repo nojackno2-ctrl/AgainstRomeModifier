@@ -20,7 +20,7 @@ internal sealed record NativeSprite(int Width, int Height, uint[] ArgbPixels, in
 
 /// <summary>
 /// Resolves map object names to still frames of the original ALR/APT assets.
-/// Frame choice follows layouts verified against decoded game assets (2026-10-07):
+/// Without an explicit saved state, frame choice follows layouts verified against decoded game assets (2026-10-07):
 /// ALR frames are ((animation * directions) + direction) * LayoutColumns + frame with the
 /// ground point at the anchor canvas centre; APT layout axis 0 is the construction stage,
 /// so the last stage with all other axes 0 is the intact, finished building.
@@ -36,8 +36,8 @@ internal sealed partial class NativeSpriteCatalog : IDisposable
     private readonly IDisposable? _owner;
     private readonly Dictionary<string, NativeAlrDocument?> _alrDocuments = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, NativeAptDocument?> _aptDocuments = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<(string Name, int Variant, int Direction), NativeSprite?> _sprites = new();
-    private readonly Dictionary<(NativeSpriteDefinition Definition, int Variant, int Direction), NativeSpriteAnimation?> _animations = new();
+    private readonly Dictionary<(string Name, int Variant, int Direction, NativeAnimationVisualState? State), NativeSprite?> _sprites = new();
+    private readonly Dictionary<(NativeSpriteDefinition Definition, int Variant, int Direction, NativeAnimationVisualState? State), NativeSpriteAnimation?> _animations = new();
     private readonly object _gate = new();
 
     private NativeSpriteCatalog(Dictionary<string, NativeSpriteDefinition> definitions,
@@ -100,9 +100,13 @@ internal sealed partial class NativeSpriteCatalog : IDisposable
     /// <summary>
     /// Still sprite for a map object name; null when the object has no decodable native asset. A non-null
     /// <paramref name="angleDegrees"/> selects the direction row via <see cref="DirectionForAngle"/>.
+    /// Explicit state selects the saved linear ALR frame or native-order APT axes, independently of angle.
+    /// Invalid explicit indices return null without substituting a plausible legacy frame.
     /// </summary>
-    public NativeSprite? GetSprite(string objectName, int team = 0, int direction = DefaultDirection, float? angleDegrees = null)
+    public NativeSprite? GetSprite(string objectName, int team = 0, int direction = DefaultDirection, float? angleDegrees = null,
+        NativeAnimationVisualState? visualState = null)
     {
+        NativeAnimationVisualState? state = visualState;
         if (!TryGetDefinition(objectName, out NativeSpriteDefinition? definition)) return null;
         lock (_gate)
         {
@@ -116,23 +120,31 @@ internal sealed partial class NativeSpriteCatalog : IDisposable
                 if (document is null) return null;
                 string? overlayName = overlay >= 0 && overlay != primary && _alrNames.TryGetValue(overlay, out string? layer) ? layer : null;
                 NativeAlrDocument? overlayDocument = overlayName is null ? null : LoadAlr(overlayName);
+                if (state is not null && (!ValidAlrFrame(document, state.AlrFrame) ||
+                    (overlayDocument is not null && !ValidAlrFrame(overlayDocument, state.AlrFrame)))) return null;
                 // palty 1 objects carry per-team palette variants; others use the first palette.
                 int variant = definition.PaletteType == 1 ? Math.Clamp(team, 0, document.PaletteVariantCount - 1) : 0;
                 int directions = (int)Math.Max(1, document.LayoutRows);
-                int dir = angleDegrees is { } angle ? DirectionForAngle(angle, directions) : ((direction % directions) + directions) % directions;
+                int dir = state is not null ? 0 : angleDegrees is { } angle ? DirectionForAngle(angle, directions) : ((direction % directions) + directions) % directions;
                 string assetName = overlayDocument is null ? alrName : alrName + "+" + overlayName;
-                var key = (assetName, variant, dir);
+                var key = (assetName, variant, dir, state);
                 if (!_sprites.TryGetValue(key, out NativeSprite? sprite))
-                    _sprites[key] = sprite = DecodeAlr(assetName, document, overlayDocument, variant, dir);
+                    _sprites[key] = sprite = DecodeAlr(assetName, document, overlayDocument, variant, dir, linearFrame: state?.AlrFrame);
                 return sprite;
             }
             if (definition.AptIndex >= 0 && _aptNames.TryGetValue(definition.AptIndex, out string? aptName))
             {
                 NativeAptDocument? document = LoadApt(aptName);
                 if (document is null) return null;
-                var key = (aptName, 0, 0);
+                int? linearFrame = null;
+                if (state is not null)
+                {
+                    if (!TryAptStateFrame(document.Layout, document.Frames.Count, state, out int index)) return null;
+                    linearFrame = index;
+                }
+                var key = (aptName, 0, 0, state);
                 if (!_sprites.TryGetValue(key, out NativeSprite? sprite))
-                    _sprites[key] = sprite = DecodeApt(aptName, document);
+                    _sprites[key] = sprite = DecodeApt(aptName, document, linearFrame: linearFrame);
                 return sprite;
             }
             return null;
@@ -145,46 +157,65 @@ internal sealed partial class NativeSpriteCatalog : IDisposable
         return frame < document.Frames.Count ? (int)frame : 0;
     }
 
-    /// <summary>快取待機序列；靜態、缺格或無法解碼的資產回傳 null，呼叫端保留 GetSprite。</summary>
-    public NativeSpriteAnimation? GetAnimation(string objectName, int team = 0, float? angleDegrees = null)
+    /// <summary>
+    /// 快取預覽序列；靜態、缺格或無法解碼的資產回傳 null，呼叫端保留 GetSprite。
+    /// Optional saved state seeds the same bank's preview cycle. Cadence remains a preview estimate, not native ticks.
+    /// </summary>
+    public NativeSpriteAnimation? GetAnimation(string objectName, int team = 0, float? angleDegrees = null,
+        NativeAnimationVisualState? visualState = null)
     {
+        NativeAnimationVisualState? state = visualState;
         if (!TryGetDefinition(objectName, out NativeSpriteDefinition? definition)) return null;
         lock (_gate)
         {
             NativeAlrDocument? alr = definition.AlrId >= 0 && _alrNames.TryGetValue(definition.AlrId, out string? alrName)
                 ? LoadAlr(alrName) : null;
             int variant = alr is not null && definition.PaletteType == 1 ? Math.Clamp(team, 0, alr.PaletteVariantCount - 1) : 0;
-            int direction = alr is null ? 0 : angleDegrees is { } angle ? DirectionForAngle(angle, (int)Math.Max(1, alr.LayoutRows))
+            if (state is not null && alr is not null && !ValidAlrFrame(alr, state.AlrFrame)) return null;
+            int direction = state is not null || alr is null ? 0 : angleDegrees is { } angle ? DirectionForAngle(angle, (int)Math.Max(1, alr.LayoutRows))
                 : DefaultDirection % (int)Math.Max(1, alr.LayoutRows);
-            var key = (definition, variant, direction);
+            var key = (definition, variant, direction, state);
             if (_animations.TryGetValue(key, out NativeSpriteAnimation? cached)) return cached;
             NativeSpriteAnimation? animation = null;
             if (alr is not null)
             {
                 // palty=1 是隊伍單位；非隊伍單位必須同時有 anadd>=0 與非零 afram（能力遮罩）。
-                // 單憑 LayoutColumns>1 會把樹木的 5 個生死階段當動畫；mltyp=2 永遠保留活樹首格。
+                // 單憑 LayoutColumns>1 會把樹木的 5 個生死階段當動畫；mltyp=2 不循環生死階段。
                 bool unit = definition.LayerType != 2 && (definition.PaletteType == 1 ||
                     (definition.AnimationAdd >= 0 && definition.AnimationMask != 0));
                 int count = (int)alr.LayoutColumns;
+                int bank = state is null || count <= 0 ? 0 : state.AlrFrame / count * count;
+                int step = state is null || count <= 0 ? 0 : state.AlrFrame % count;
                 if (unit && definition.AnimationLengthMs > 1 && count > 1 &&
-                    (long)count * Math.Max(1, alr.LayoutRows) <= alr.Frames.Count)
+                    (state is null ? (long)count * Math.Max(1, alr.LayoutRows) <= alr.Frames.Count
+                        : (long)bank + count <= alr.Frames.Count))
                 {
                     NativeAlrDocument? overlay = definition.LayerAlrId >= 0 && definition.LayerAlrId != definition.AlrId &&
                         _alrNames.TryGetValue(definition.LayerAlrId, out string? layerName) ? LoadAlr(layerName) : null;
                     string name = _alrNames[definition.AlrId];
                     animation = DecodeAnimation(count, definition.AnimationLengthMs,
-                        GetSprite(objectName, team, angleDegrees: angleDegrees),
-                        frame => DecodeAlr(name, alr, overlay, variant, direction, frame));
+                        GetSprite(objectName, team, angleDegrees: angleDegrees, visualState: state),
+                        frame => DecodeAlr(name, alr, overlay, variant, direction, frame,
+                            state is null ? null : bank + (int)(((long)step + frame) % count)));
                 }
             }
             else if (definition.AlrId < 0 && definition.LayerAlrId < 0 && definition.AptIndex >= 0 &&
                 _aptNames.TryGetValue(definition.AptIndex, out string? aptName) && LoadApt(aptName) is { } apt && apt.Layout.Count == 4)
             {
                 int count = (int)apt.Layout[3];
-                int first = AptFinishedFrame(apt.Layout, apt.Frames.Count);
+                int first;
+                int step = 0;
+                if (state is not null)
+                {
+                    if (!TryAptStateFrame(apt.Layout, apt.Frames.Count, state, out int current)) return _animations[key] = null;
+                    step = state.AptAxis3;
+                    first = current - step;
+                }
+                else first = AptFinishedFrame(apt.Layout, apt.Frames.Count);
                 int cycle = definition.AnimationLengthMs > 1 ? definition.AnimationLengthMs : count == 50 ? 4500 : 3000;
                 if (count > 1 && (long)first + count <= apt.Frames.Count)
-                    animation = DecodeAnimation(count, cycle, GetSprite(objectName, team), frame => DecodeApt(aptName, apt, frame));
+                    animation = DecodeAnimation(count, cycle, GetSprite(objectName, team, visualState: state),
+                        frame => DecodeApt(aptName, apt, frame, state is null ? null : first + (int)(((long)step + frame) % count)));
             }
             return _animations[key] = animation;
         }
@@ -214,12 +245,37 @@ internal sealed partial class NativeSpriteCatalog : IDisposable
         return frame < frameCount ? (int)frame : frameCount - 1;
     }
 
-    private static NativeSprite? DecodeAlr(string name, NativeAlrDocument document, NativeAlrDocument? overlay, int variant, int direction, int frameOffset = 0)
+    private static bool ValidAlrFrame(NativeAlrDocument document, int frame)
+        => frame >= 0 && frame < document.Frames.Count;
+
+    internal static bool TryAptStateFrame(IReadOnlyList<uint> layout, int frameCount,
+        NativeAnimationVisualState state, out int frame)
     {
-        Layer? bottomLayer = DecodeAlrLayer(document, variant, direction, frameOffset);
+        frame = 0;
+        if (layout.Count != 4 || frameCount <= 0) return false;
+        int[] axes = [state.AptAxis0, state.AptAxis1, state.AptAxis2, state.AptAxis3];
+        long index = 0;
+        for (int i = 0; i < axes.Length; i++)
+        {
+            if (axes[i] < 0 || (uint)axes[i] >= layout[i]) return false;
+            // Bound every intermediate value before the next multiply (uint layouts may be enormous).
+            index = index * layout[i] + axes[i];
+            if (index > int.MaxValue) return false;
+        }
+        if (index >= frameCount) return false;
+        frame = (int)index;
+        return true;
+    }
+
+    private static NativeSprite? DecodeAlr(string name, NativeAlrDocument document, NativeAlrDocument? overlay, int variant, int direction,
+        int frameOffset = 0, int? linearFrame = null)
+    {
+        if (linearFrame is { } explicitFrame && (!ValidAlrFrame(document, explicitFrame) ||
+            (overlay is not null && !ValidAlrFrame(overlay, explicitFrame)))) return null;
+        Layer? bottomLayer = DecodeAlrLayer(document, variant, direction, frameOffset, linearFrame);
         if (bottomLayer is null) return null;
         Layer? topLayer = overlay is null ? null : DecodeAlrLayer(overlay, variant, direction,
-            overlay.LayoutColumns == document.LayoutColumns && overlay.LayoutRows == document.LayoutRows ? frameOffset : 0);
+            overlay.LayoutColumns == document.LayoutColumns && overlay.LayoutRows == document.LayoutRows ? frameOffset : 0, linearFrame);
         if (topLayer is null)
             return Crop(name.Split('+')[0], bottomLayer.Width, bottomLayer.Height, bottomLayer.Pixels, bottomLayer.AnchorX, bottomLayer.AnchorY);
         // Union of both layers in ground-anchored coordinates; the overlay's opaque pixels win.
@@ -243,11 +299,11 @@ internal sealed partial class NativeSpriteCatalog : IDisposable
 
     private sealed record Layer(int Width, int Height, IReadOnlyList<uint> Pixels, int AnchorX, int AnchorY);
 
-    private static Layer? DecodeAlrLayer(NativeAlrDocument document, int variant, int direction, int frameOffset = 0)
+    private static Layer? DecodeAlrLayer(NativeAlrDocument document, int variant, int direction, int frameOffset = 0, int? linearFrame = null)
     {
         try
         {
-            int index = AlrStillFrame(document, direction % (int)Math.Max(1, document.LayoutRows)) + frameOffset;
+            int index = linearFrame ?? (AlrStillFrame(document, direction % (int)Math.Max(1, document.LayoutRows)) + frameOffset);
             NativeAlrFrameInfo info = document.Frames[index];
             NativeAlrIndexedFrame frame = document.DecodeFrame(index, Math.Min(variant, document.PaletteVariantCount - 1));
             // Ground contact is the anchor canvas centre; frame pixels are placed at their stored offset.
@@ -257,11 +313,11 @@ internal sealed partial class NativeSpriteCatalog : IDisposable
         catch (Exception error) when (error is InvalidDataException or NotSupportedException or ArgumentException) { return null; }
     }
 
-    private static NativeSprite? DecodeApt(string name, NativeAptDocument document, int frameOffset = 0)
+    private static NativeSprite? DecodeApt(string name, NativeAptDocument document, int frameOffset = 0, int? linearFrame = null)
     {
         try
         {
-            NativeAptIndexedImage image = document.DecodeFrame(AptFinishedFrame(document.Layout, document.Frames.Count) + frameOffset);
+            NativeAptIndexedImage image = document.DecodeFrame(linearFrame ?? (AptFinishedFrame(document.Layout, document.Frames.Count) + frameOffset));
             return Crop(name, image.Width, image.Height, image.ArgbPixels, document.AnchorX, document.AnchorY);
         }
         catch (Exception error) when (error is InvalidDataException or NotSupportedException or ArgumentException) { return null; }

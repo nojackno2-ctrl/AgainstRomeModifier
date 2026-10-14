@@ -136,6 +136,35 @@ internal sealed class TerrainHeightEditSession
     internal const int RoughnessCell = 4;
 
     /// <summary>
+    /// 水域筆刷：挖掘並將筆刷內水下的可通行像素設為阻擋，共用同一筆畫交易。
+    /// 以像素中心的雙線性高度判定水下區域，這是編輯器製圖規則，不是原生導航演算法。
+    /// 保留乾岸與既有非零碰撞，不自動清除人工阻擋；缺碰撞圖時只編輯高度。
+    /// </summary>
+    public TerrainLayerStroke PaintWater(float centerX, float centerY, float radius, int strength, int bedHeight, float surfaceHeight)
+    {
+        if (!float.IsFinite(surfaceHeight) || surfaceHeight <= 0 || bedHeight < 0 || bedHeight >= surfaceHeight || bedHeight > 255)
+            throw new ArgumentOutOfRangeException(nameof(surfaceHeight));
+        IReadOnlyList<TerrainSampleChange> heights = PaintHeight(centerX, centerY, radius, TerrainHeightOperation.Flatten, strength, bedHeight);
+        if (_collision is null) return new(heights, Array.Empty<TerrainSampleChange>());
+        float scale = CollisionSize / (float)(VertexSize - 1);
+        IReadOnlyList<TerrainSampleChange> collision = PaintCollision(centerX * scale, centerY * scale, radius * scale,
+            TerrainCollisionOperation.Block, (x, y) => _collision[y * CollisionSize + x] == 0 &&
+                SampleHeight((x + .5f) / scale, (y + .5f) / scale) < surfaceHeight);
+        return new(heights, collision);
+    }
+
+    private float SampleHeight(float x, float y)
+    {
+        x = Math.Clamp(x, 0, VertexSize - 1);
+        y = Math.Clamp(y, 0, VertexSize - 1);
+        int left = Math.Min((int)x, VertexSize - 2), top = Math.Min((int)y, VertexSize - 2);
+        float tx = x - left, ty = y - top;
+        float a = _heights[top * VertexSize + left], b = _heights[top * VertexSize + left + 1];
+        float c = _heights[(top + 1) * VertexSize + left], d = _heights[(top + 1) * VertexSize + left + 1];
+        return (a + (b - a) * tx) * (1 - ty) + (c + (d - c) * tx) * ty;
+    }
+
+    /// <summary>
     /// 對整張高度圖套用逐頂點轉換（AI 製圖等批次編輯用）；變更與筆刷相同地記入待提交筆畫，呼叫端再 CommitStroke 成為單一復原步驟。
     /// </summary>
     public IReadOnlyList<TerrainSampleChange> TransformHeights(Func<int, int, byte, float> transform)

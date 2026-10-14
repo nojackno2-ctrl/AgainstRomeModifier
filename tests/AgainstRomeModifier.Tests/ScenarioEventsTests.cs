@@ -487,6 +487,7 @@ public sealed partial class ScenarioEventsTests : IDisposable
         public List<int> Waits { get; } = new();
         public List<(int, int, int)> Diplomacy { get; } = new();
         public List<(int, int, int, string, int)> Spawns { get; } = new();
+        public List<int[]> GroupOrders { get; } = new();
         public Queue<(int Result, int Index, int Uid, bool Writes)> CreationResults { get; } = new();
         public List<string> Creations { get; } = new();
         public List<(int, int)> CreationInputs { get; } = new();
@@ -566,6 +567,7 @@ public sealed partial class ScenarioEventsTests : IDisposable
                     Spawns.Add((Arg<int>(2), Arg<int>(8), Arg<int>(9), Arg<string>(10), Arg<int>(11)));
                     Created(name); break;
                 case "s_createObj": Created(name); break;
+                case "s_sendMsg": GroupOrders.Add(Enumerable.Range(0, 10).Select(Arg<int>).ToArray()); break;
                 case "s_originalTick": OriginalTicks++; break;
                 default: throw new InvalidOperationException($"Unexpected native {name}");
             }

@@ -1,7 +1,7 @@
 # 原生地圖載入管線與 DATA 池載入契約
 
 > 狀態：靜態二進位驗證（2026-10-09 Antigravity）。
-> 逆向目標：解析地圖載入管線、`DATA/` 24 個池檔案強約束、三段 CHECK 函式語意、`CALCLOW` 游標初始化、以及空白地圖載入卡死之根本原因。
+> 逆向目標：解析地圖載入管線、`DATA/` 24 個池檔案強約束、三段 CHECK 函式語意、`CALCLOW` 游標初始化、以及空白地圖載入失敗的候選路徑（尚未重現卡死根因）。
 
 ---
 
@@ -59,7 +59,7 @@
 
 ---
 
-## 3. 重大發現：空白地圖卡死根因與 `DATA/` 24 池強約束
+## 3. 缺檔提早退出與 `DATA/` 24 池載入契約
 
 ### 3.1 `CL_LoadLevelData` (0x48e960) 快速失敗機制
 
@@ -77,17 +77,17 @@
 11. `action.dat` (`0x48c630` -> `0xf00454`)
 12. `objdata.dat` (`0x48c760` -> `0xf5ff94`)
 13. `hirarchy.dat` (`0x48cf70` -> `0x114c294`)
-14. `formatio.dat` (`0x48d210` -> `0x11ac5e0`)
-15. `lager.dat` (`0x48d5b0` -> `0x1232da0`)
-16. `engine.dat` (`0x48d6e0` -> `0x771c3c` offset 34)
-17. `fow.dat` (`0x48d7d0` -> `0x12330a4`)
-18. `fowreq.dat` (`0x48d940` -> `0x12330ac`)
-19. `way.dat` (`0x48dae0` -> `0x1233160`)
-20. `particle.dat` (`0x48dcf0` -> `0x12355d4`)
-21. `explos.dat` (`0x48de80` -> `0x146d644`)
-22. `hitex.dat` (`0x48e020` -> `0x14856b0`)
-23. `stat.dat` (`0x48e1b0` -> `0x148f430`)
-24. `biglager.dat` (`0x48e350` -> `0x14a38b8`)
+14. `formatio.dat` (`0x48d0f0` -> `0x11b0294`)
+15. `lager.dat` (`0x48d2d0` -> `0x120fdd4`)
+16. `engine.dat` (`0x48d6e0` -> `0x7717e8`)
+17. `fow.dat` (`0x48d980` -> `0x199e228`)
+18. `fowreq.dat` (`0x48da30` -> `0x19be62c`)
+19. `way.dat` (`0x48dba0` -> `0x15488d8`)
+20. `particle.dat` (`0x48dd90` -> `0x12355d4`)
+21. `explos.dat` (`0x48e210` -> `0x9d29f4`)
+22. `hitex.dat` (`0x48e4d0` -> `0x9e04b4`)
+23. `stat.dat` (`0x48e720` -> `0x1546f58`)
+24. `biglager.dat` (`0x48d590` -> `0x153a718`)
 
 在反組譯碼中，**每一個檔案開啟失敗時，皆跳轉至 `0x48ea00`**：
 ```asm
@@ -114,9 +114,18 @@
 0x487475: call 0x4adf40                 ; CHECK 3 直接執行！
 ```
 **呼叫端完全沒有對 `0x48e960` 的回傳值做任何檢查或錯誤處理閘門**。
-一旦 `DATA/` 目錄缺少 24 個池檔案中的任何一個（例如建立空白地圖時只放入 `objects.dat`、`objdata.dat`、`position.dat`），`0x48e960` 在遇到第一個缺失檔案時便提早返回，導致後續所有池指標均為未初始化或垃圾記憶體。接著 `CLMP_LoadLevel` 盲目進入後續的 CHECK 與渲染計算，造成無窮迴圈或記憶體存取違規（Access Violation），**這就是空白地圖載入卡死/崩潰的根本原因**。
+若虛擬檔案系統無法開啟某一池，後续池不會載入，呼叫端仍走入 CHECK。這是已確認的靜態錯誤傳遞缺口。目的地是固定全域緩衝區；此證據沒有證明其當時值是零、舊關卡狀態或未初始化資料，也沒有證明無窮迴圈或 Access Violation。舊版將此直接宣告為空白地圖卡死根因，已於 2026-10-09 Codex 複核撤回，仍需受控實機重現及失敗位置。
 
-**結論**：任何有效且可在遊戲中載入的原生地圖，其 `DATA/` 目錄**必須完整具備全部 24 個池檔案**。空白地圖必須基於既有合法地圖（如 `ENDL_000`）複製全部 24 個池檔案，並以安全的重置邏輯將物件池槽位標記為未啟用，而絕不可刪減池檔案。
+**編輯器契約**：保留完整 24 池，從合法範本建立地圖；不可任意刪池或用空檔補齊。磁碟缺檔檢查採保守策略，沒有解析遊戲當時掛載的 archives，因此不宣稱缺 loose file 必然代表虛擬檔案 lookup 失敗。檔案存在也不證明 payload、跨池關係或實機載入有效。
+
+### 3.3 可重跑證據與產品接線（2026-10-09 Codex）
+
+`python tools/re/probe_map_load_contract.py "C:\Program Files (x86)\Against Rome\Against_Rome.exe" re_workspace/map-load-contract-20261009.json`
+
+工具限定上述 EXE SHA256，直接從 filename 字串及 call site 抽取 24 筆 reader/buffer，核對全部 open failure branches、共用錯誤 epilogue 和 caller→CHECK 無分支路徑。REA ledger `re_workspace/map-load-contract-20261009-evidence.json`（2 records）；loader evidence `ev_47c2c76e8e966f30dfb2478700e29e67353583191de9da0764b6af62f9c6e5e1`、caller bytes evidence `ev_eb772e7ffac907d85d099ac70027f3e34314c0ca6aab86b4fb73f5c53f0f3ba3`。REA Ghidra 確認 loader 邊界 `0x48e960..0x48f3d1`；完整唯讀 manifest 保留每筆呼叫位址及原始 bytes。舊表第 14–24 項部分位址已修正；以此表與實際指令為準。
+
+`NativeMapLoadContract` 已接入 MapEditorForm 的「地圖檢查」：列出缺少的 DATA 檔案、完整範本/同圖備份恢復方法；允許繼續編輯及儲存。遊戲預覽會重新檢查磁碟，缺檔時取消啟動並切到檢查分頁，不自行建立空池。此檢查僅驗證存在性，不能代替 NativePoolDiagnostics 的 payload/關聯診斷或遊戲驗收。
+
 
 ---
 

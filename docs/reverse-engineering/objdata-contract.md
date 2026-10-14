@@ -20,7 +20,7 @@ copy接受signed有效slot及非null範本，成功回傳1，無效回傳0。低
 |---|---|---|
 | 0 | 9 | byte+0、float+4、float+8 |
 | 1 | 8 | float+0xc、float+0x10 |
-| 2 | 4 | +0x14 |
+| 2 | 4 | float+0x14（使用端0x4bb5d0／FLD0x4bb661確認；具體語意未命名） |
 | 3 | 4 | u16+0x18、u16+0x1a |
 | 4 | 2 | +0x1c |
 | 5 | 16 | u16+0x1e、u16+0x20、float+0x24/+0x28/+0x2c |
@@ -45,7 +45,7 @@ copy `0x4ab060` **不寫+0x7c/+0x80/+0x82**，卻會複製runtime **+0x84/+0x88*
 
 範本含u16預設+0x20/+0x38/+0x3a=ffff、+0x68/+0x6a=8001，以及多個尾端ffff；+0x84/+0x88=ffffffff。inactive reset0x4ac0c0同樣有ffff／8001等值，並清active，並非全零。active範本的型別依賴欄位與reset不同，不能只在空白reset資料上設active1就當作完整新增。
 
-產品`LevelObjectStore.Add`目前把36段範本複製到object相同slot，再覆寫column1=self；這對本輪同slot樣本相容，但尚未建立獨立objdata allocator與其他pool的完整交易。此文件不宣稱現有新增或刪除的實機效果已修復。
+當時產品`LevelObjectStore.Add`把36段範本複製到object相同slot，再覆寫column1=self；現已改獨立objdata分配及真正column1 link，與其他已載入pool一併交易保存。另已駁回將segment2非零視為物件連結的舊heuristic：它由type scalar初始化，使用端以float運算，不能據非零阻止編輯。最新原指令、三位置與TEMP驗收見[物件建立契約](object-create-contract.md)。仍不宣稱實機功能已驗收。
 
 ## 證據與待辦
 
@@ -94,23 +94,31 @@ getter **0x4c1290** 驗證object及其objdata link，再讀取+0x80的u16。原�
 
 ## 0x4d50c0(0x23) 顯示條件與 +0x80 寫入審查（2026-10-09 續查）
 
+2026-10-10 Codex 更正：舊紀錄由錯誤基準推成+4/+30，已作廢。validator4ab7ce確認object runtime base為a14bfc；flags指令的a14c04/a14c30分別是+8/+34，+4實為UID。重新核對getter/setter/query及create清零原指令10項通過，證據`re_workspace/flags-offset-recheck-20261009.json`；尚未執行遊戲。
+
 0x4d50c0 經反組譯確認為 **Object 狀態旗標查詢函式（QueryObjectBitFlag）**：
-- 若 bit index `< 0x20`（0..31）：測試 `object + 0x4`（低 32 位元 flags）的 `1 << (bit & 0x1f)`。
-- 若 bit index `>= 0x20`（32..63）：測試 `object + 0x30`（高 32 位元 flags）的 `1 << ((bit - 0x20) & 0x1f)`。
-- 當 `bit == 0x23`（35）時，測試的是 `object + 0x30` 的第 3 位元（`1 << 3` = 0x8）。
+- 若 bit index `< 0x20`（0..31）：測試 `object + 0x8`（低 32 位元 flags）的 `1 << (bit & 0x1f)`。
+- 若 bit index `>= 0x20`（32..63）：測試 `object + 0x34`（高 32 位元 flags）的 `1 << ((bit - 0x20) & 0x1f)`。
+- 當 `bit == 0x23`（35）時，測試的是 `object + 0x34` 的第 3 位元（`1 << 3` = 0x8）。
 
 成套 flags 操作函式族已全數定位：
-- `0x4d4fa0(object, bit)`：SetObjectBitFlag（OR 寫入 `object + 0x4` 或 `object + 0x30`）。
-- `0x4d5020(object, bit)`：ClearObjectBitFlag（AND NOT 清除 `object + 0x4` 或 `object + 0x30`）。
+- `0x4d4fa0(object, bit)`：SetObjectBitFlag（OR 寫入 `object + 0x8` 或 `object + 0x34`）。
+- `0x4d5020(object, bit)`：ClearObjectBitFlag（AND NOT 清除 `object + 0x8` 或 `object + 0x34`）。
 - `0x4d50c0(object, bit)`：QueryObjectBitFlag。
-- `0x4d5140` / `0x4d5190`：取得 / 設定 `object + 0x4`（低 32 位元）。
-- `0x4d51d0` / `0x4d5220`：取得 / 設定 `object + 0x30`（高 32 位元）。
+- `0x4d5140` / `0x4d5190`：取得 / 設定 `object + 0x8`（低 32 位元）。
+- `0x4d51d0` / `0x4d5220`：取得 / 設定 `object + 0x34`（高 32 位元）。
 - `0x535d60(object, bit, val)`：封裝判斷若 val 非零呼叫 0x4d4fa0，為 0 呼叫 0x4d5020。
 - `0x5260e0(parent, bit, val)`：階層式廣播旗標至所屬子物件。
 
 ### +0x80 的寫入與初始化結論
 
-1. 原生物件建立 `0x4aa780` 在分配時，直接以 0 清空 `object + 0x4` 與 `object + 0x30`（指令 `0x4aac06` 與 `0x4aac0d`）。
+1. 原生物件建立 `0x4aa780` 在分配時，直接以 0 清空 `object + 0x8` 與 `object + 0x34`（指令 `0x4aac06` 與 `0x4aac0d`）。
 2. objdata copy `0x4ab060` 與 reset `0x4ac0c0` 均不寫入 +0x7c / +0x80 / +0x82。
 3. 全可執行檔二進位掃描確認：**不存在任何直接或靜態寫入 0xf60014（+0x80）的指令**；僅有 reader 載入、writer 0x489745 儲存、0x4ad41c 與 0x4b81fa 讀取高字組 +0x82、以及 0x4c12de 讀取 u16 +0x80。
-4. 74 張官方地圖的全部 392,344 個活躍物件中 +0x80 全為 0。這確認 +0x80 在地圖資料中為標準全零初值，且其比例條顯示受限於 `object + 0x30` 的 bit 3。
+4. 74 張官方地圖的全部 392,344 個活躍物件中 +0x80 全為 0。這確認 +0x80 在地圖資料中為標準全零初值，且其比例條顯示受限於 `object + 0x34` 的 bit 3。
+
+## 已接入的新放置初值（2026-10-09 Codex）
+
+上述active範本的runtime+4/+c來源已對應到objdef欄19 lpmax／21 mpmax，兩者native parser為signed32 `%ld`，建立時才轉float；+8/+10為1.0。官方palette的新放置範本已在LevelObjectStore.Add套用save當下的共同definition；既有OwnedTemplate複製/還原仍保留原值。參見[新放置產品接線與驗證](object-create-contract.md#新放置的-hp第二數值初值2026-10-09-codex)。其餘type scalar、條件欄與完整aux初值仍未完成，不能將此次接線視為完整native create重建。
+
+後續已接入新放置的runtime+0x14/+0x4c（磁碟segment2/16）：分別來自objdef欄4 moves float32／152 maxruhm signed32，原bits複製；既有物件保留。來源、consumer及限制見[新放置欄位契約](object-create-contract.md#新放置的-movesmaxruhm-欄位2026-10-09-codex)。

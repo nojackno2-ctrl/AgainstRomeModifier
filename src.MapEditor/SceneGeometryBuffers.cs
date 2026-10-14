@@ -7,7 +7,7 @@ namespace AgainstRomeMapEditor;
 /// <summary>Reusable sprite geometry preserving the original float depth ordering, including translation ties.</summary>
 internal sealed class SceneSpriteGeometryBuffer
 {
-    private readonly List<(float Distance, Vector3 Anchor, NativeSprite Sprite, NativeSpriteUv Uv, int ObjectIndex)> _visible = new();
+    private readonly List<(float Distance, Vector3 Anchor, NativeSprite Sprite, NativeSpriteUv Uv, int ObjectIndex, float NativeY)> _visible = new();
     private float[] _vertices = [];
     private int[] _objectOffsets = [];
     private NativeSprite?[] _previousSprites = [];
@@ -38,7 +38,7 @@ internal sealed class SceneSpriteGeometryBuffer
                 NativeSpriteUv uv = default;
                 bool drawn = sprites[i] is { } sprite && atlas.TryGetUv(sprite, out uv);
                 if (wasDrawn != drawn) { same = false; break; }
-                if (drawn) WriteQuad(SceneObjectRenderer.GroundPoint(objects[i], heights), sprites[i]!, uv, _objectOffsets[i]);
+                if (drawn) WriteQuad(SceneObjectRenderer.GroundPoint(objects[i], heights), SceneObjectRenderer.NativeQueryY(objects[i], heights), sprites[i]!, uv, _objectOffsets[i]);
                 _previousSprites[i] = sprites[i];
             }
             if (same) return _vertices;
@@ -54,7 +54,7 @@ internal sealed class SceneSpriteGeometryBuffer
         {
             if (sprites[index] is not { } sprite || !atlas.TryGetUv(sprite, out NativeSpriteUv uv)) continue;
             Vector3 anchor = SceneObjectRenderer.GroundPoint(objects[index], heights);
-            _visible.Add((-Vector3.Transform(anchor, view).Z, anchor, sprite, uv, index));
+            _visible.Add((-Vector3.Transform(anchor, view).Z, anchor, sprite, uv, index, SceneObjectRenderer.NativeQueryY(objects[index], heights)));
         }
         _visible.Sort(static (a, b) => b.Distance.CompareTo(a.Distance));
         int length = _visible.Count * 6 * SceneObjectRenderer.FloatsPerSpriteVertex;
@@ -63,13 +63,13 @@ internal sealed class SceneSpriteGeometryBuffer
         foreach (var item in _visible)
         {
             _objectOffsets[item.ObjectIndex] = offset;
-            WriteQuad(item.Anchor, item.Sprite, item.Uv, offset);
+            WriteQuad(item.Anchor, item.NativeY, item.Sprite, item.Uv, offset);
             offset += 6 * SceneObjectRenderer.FloatsPerSpriteVertex;
         }
         _valid = true;
         return _vertices;
     }
-    private void WriteQuad(Vector3 anchor, NativeSprite sprite, NativeSpriteUv uv, int offset)
+    private void WriteQuad(Vector3 anchor, float nativeY, NativeSprite sprite, NativeSpriteUv uv, int offset)
     {
         float left = -sprite.AnchorX * SceneObjectRenderer.TilesPerSpritePixel, right = (sprite.Width - sprite.AnchorX) * SceneObjectRenderer.TilesPerSpritePixel;
         float top = sprite.AnchorY * SceneObjectRenderer.TilesPerSpritePixel, bottom = (sprite.AnchorY - sprite.Height) * SceneObjectRenderer.TilesPerSpritePixel;
@@ -77,6 +77,7 @@ internal sealed class SceneSpriteGeometryBuffer
         {
             _vertices[offset++] = anchor.X; _vertices[offset++] = anchor.Y; _vertices[offset++] = anchor.Z;
             _vertices[offset++] = ox; _vertices[offset++] = oy; _vertices[offset++] = u; _vertices[offset++] = v;
+            _vertices[offset++] = nativeY;
         }
         Vertex(left, bottom, uv.U0, uv.V1); Vertex(right, bottom, uv.U1, uv.V1); Vertex(right, top, uv.U1, uv.V0);
         Vertex(left, bottom, uv.U0, uv.V1); Vertex(right, top, uv.U1, uv.V0); Vertex(left, top, uv.U0, uv.V0);

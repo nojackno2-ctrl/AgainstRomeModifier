@@ -10,6 +10,15 @@ namespace AgainstRomeMapEditor.Modules.Tests;
 public sealed class SceneLightingContextTests
 {
     [Fact]
+    public void Existing_empty_directory_does_not_claim_available_lighting_sources()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "ArmEmptyLighting_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try { Assert.Null(SceneLightingContext.TryCreate(root, root)); }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
     public void Scene_lights_use_objdef_indices_APT_offsets_and_world_heights_without_flicker()
     {
         var objects = NativeObjectLightingCatalog.Parse(Objdef(42, "House", 3, 7, 15, 1, 30));
@@ -24,8 +33,8 @@ public sealed class SceneLightingContextTests
         float Ground(float x, float z) => (x - 10624) / 2 + (z - 10112) / 4;
         var scene = context.CollectSceneLights([house, house with { Name = "Unknown" }], Ground);
         Assert.Equal(3, scene.Count);
-        Assert.Equal(new Vector3(10816, 126, 10112), scene[0].WorldPosition);
-        Assert.Equal(new Vector3(10624, 94, 10368), scene[1].WorldPosition);
+        Assert.Equal(new Vector3(10848, 150, 10144), scene[0].WorldPosition);
+        Assert.Equal(new Vector3(10656, 118, 10400), scene[1].WorldPosition);
         Assert.Equal(new Vector3(10624, 90, 10112), scene[2].WorldPosition); // position.Y + lihei
         Assert.Equal(350, scene[0].Radius);
         Assert.Equal(new Vector3(1.48f, 1.22f, 0), scene[0].Color);
@@ -33,7 +42,7 @@ public sealed class SceneLightingContextTests
         Assert.Equal(1, reads);
         // 移動物件只重算位置；同 APT 不重新載入，不套用 FlickerType 的即時擾動。
         var moved = context.CollectSceneLights([house with { WorldX = 11000 }], Ground);
-        Assert.Equal(11192, moved[0].WorldPosition.X);
+        Assert.Equal(11168, moved[0].WorldPosition.X);
         Assert.Equal(scene[0].Color, moved[0].Color);
         Assert.Equal(1, reads);
     }
@@ -93,6 +102,7 @@ public sealed class SceneLightingContextTests
             byte[] objdef = Pfil(Objdef(1, "House", 3, -1, 0, 1, 30));
             File.WriteAllBytes(Path.Combine(defaults, "objdef.dau"), objdef);
             File.WriteAllBytes(Path.Combine(defaults, "lightdef.dau"), Pfil("[LightDefault]\n1,1,1.48,1.22,0,350"));
+            File.WriteAllBytes(Path.Combine(defaults, "lightdef.d09"), Pfil("[LightDefault]\n1,1,.25,.5,.75,600"));
             File.WriteAllBytes(Path.Combine(root, "SYSTEM", "cl_apt.ini"), Pfil("0003,house.apt"));
             File.WriteAllBytes(Path.Combine(root, "daynight.bmp"), Daynight());
             using (var zip = System.IO.Compression.ZipFile.Open(Path.Combine(root, "apt.dat"), System.IO.Compression.ZipArchiveMode.Create))
@@ -102,7 +112,9 @@ public sealed class SceneLightingContextTests
             {
                 Assert.NotNull(context);
                 Assert.True(context.IsDayNightAvailable); Assert.True(context.IsLightCatalogAvailable);
-                Assert.Single(context.CollectSceneLights([new("House", 100, 0, 200, 0, "test.sdl")], (_, _) => 0));
+                var light = Assert.Single(context.CollectSceneLights([new("House", 100, 0, 200, 0, "test.sdl")], (_, _) => 0));
+                Assert.Equal(new Vector3(.25f, .5f, .75f), light.Color);
+                Assert.Equal(600, light.Radius);
             }
             foreach (var file in before) Assert.Equal(file.Value, File.ReadAllBytes(file.Key));
             File.WriteAllText(Path.Combine(root, "daynight.bmp"), "broken");
@@ -127,17 +139,7 @@ public sealed class SceneLightingContextTests
     }
 
     private static byte[] Apt(params (int X, int Y)[] deltas)
-    {
-        using var buffer = new MemoryStream();
-        using var writer = new BinaryWriter(buffer);
-        uint[] header = new uint[28]; header[0] = 0x54415041; header[1] = 3; header[3] = 112; header[9] = 1;
-        foreach (uint value in header) writer.Write(value);
-        for (int i = 0; i < 62; i++) writer.Write(0);
-        writer.Write(0); writer.Write(0); writer.Write(569); writer.Write(405);
-        writer.Write(deltas.Length); writer.Write(0); writer.Write(0);
-        foreach (var point in deltas) { writer.Write(point.X + 569); writer.Write(point.Y + 405); }
-        return buffer.ToArray();
-    }
+        => NativeAptAttachmentTests.SingleLights(deltas);
 
     private static byte[] Daynight()
     {

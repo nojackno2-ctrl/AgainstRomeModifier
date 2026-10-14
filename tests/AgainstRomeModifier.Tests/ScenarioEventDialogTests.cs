@@ -9,6 +9,22 @@ namespace AgainstRomeModifier.Tests;
 public sealed class ScenarioEventDialogTests
 {
     [Fact]
+    public void Editing_spawn_action_preserves_wave_destination_and_summary()
+    {
+        InSta(() =>
+        {
+            var action = new ScenarioAction(ScenarioActionKind.SpawnUnit, Alias: "GER_INF01") { MoveDestination = new(123, 456) };
+            using var dialog = new ScenarioActionDialog(action, ["GER_INF01"], true);
+            _ = dialog.Handle;
+            Click(Buttons(dialog).Single(button => button.Text == "OK"));
+            Assert.Equal(action.MoveDestination, dialog.Result!.MoveDestination);
+            using var events = new ScenarioEventDialog(new("Wave") { Actions = [dialog.Result] }, ["GER_INF01"], true);
+            _ = events.Handle;
+            Assert.Contains("→ (123, 456)", Field<ListBox>(events, "_list").Items[0]!.ToString());
+        });
+    }
+
+    [Fact]
     public void Rectangle_dialog_preserves_boundaries_and_event_summary()
     {
         InSta(() =>

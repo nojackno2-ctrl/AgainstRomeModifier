@@ -1,3 +1,4 @@
+using AgainstRomeModifier.Scripting;
 using AgainstRomeModifier;
 using AgainstRomeModifier.Maps;
 using System.Globalization;
@@ -130,11 +131,13 @@ internal sealed partial class MapEditorForm : Form
     private readonly List<StagedSceneAddition> _sceneAdditions = new();
     private readonly Dictionary<string, SdlVector3> _settlementOffsets = new(StringComparer.OrdinalIgnoreCase);
     private IReadOnlyDictionary<string, SdlVector3> _settlementOrigins = new Dictionary<string, SdlVector3>();
+    private HashSet<int> _boundRootSlots = new();
     private int _nextSceneAdditionId;
     private string[] _savedTextures = Array.Empty<string>();
     private bool _propertyDirty;
     private bool _loading;
     private float _heightMapStep = 4;
+    private float _nativeHeightMapStep = float.NaN;
     private bool _allowClose;
     private bool _sceneLoaded;
     private string? _last3DDiagnostic;
@@ -178,8 +181,14 @@ internal sealed partial class MapEditorForm : Form
     private void PushSceneObjects(IReadOnlyList<MapSceneObject> effective)
     {
         _canvas.UpdateSceneObjects(effective);
-        _view3d?.UpdateSceneObjects(SceneObjectsFor3D(effective));
-        if (_view3d is not null) _view3d.UpdateSavedParticleImages(DecodeSavedParticlePreviewImages(0));
+        if (_view3d is not null)
+        {
+            var scene = SceneObjectsFor3D(effective);
+            _view3d.UpdateSceneObjects(scene);
+            _view3d.UpdateSavedSceneLights(_savedSceneLights);
+            _view3d.UpdateSavedParticleImages(DecodeSavedParticlePreviewImages(0));
+        }
+        if (SavedLightPreviewDiagnostic is { } diagnostic) _status.Text = diagnostic;
     }
 
     /// <summary>
@@ -192,7 +201,14 @@ internal sealed partial class MapEditorForm : Form
         IEnumerable<MapSceneObject> level = _levelObjects
             .Where(item => !ObjDefNames.IsLandscape(_objdefNames.GetValueOrDefault(item.TypeId)))
             .Where(item => !suppressed.Contains(item.Slot))
-            .Select(item => new MapSceneObject(_objdefNames.GetValueOrDefault(item.TypeId) ?? "", item.X, item.Y, item.Z, item.Team, "DATA/objects.dat", -100000 - item.Slot));
+            .Select(item => new MapSceneObject(
+                _objdefNames.GetValueOrDefault(item.TypeId) ?? "",
+                item.X, item.Y, item.Z,
+                item.Team,
+                "DATA/objects.dat",
+                -100000 - item.Slot,
+                Angle: float.IsFinite(item.Rotation) ? (float)((double)item.Rotation * (180d / Math.PI)) : null)
+            { NativeVisualState = LoadedVisualState(item), HasNativeSavedPosition = true });
         if (_editMode != EditMode.Nature) level = level.Concat(NatureDisplayObjects()
             .Where(item => !suppressed.Contains(-100000 - item.ObjectIndex)));
         return preview.Concat(level).ToArray();
@@ -215,7 +231,7 @@ internal sealed partial class MapEditorForm : Form
             Display.Angle, Display.SourceFile.Equals(TemplateFile, StringComparison.OrdinalIgnoreCase) ? null : Display.SourceFile);
     }
 
-    private bool IsDirty => _propertyDirty || TextureDirty() || SceneDirty() || _terrainLayers?.IsDirty == true || _resetAuxiliaryLayers || PlacedDirty() || NatureDirty() || EventsDirty();
+    private bool IsDirty => _propertyDirty || TextureDirty() || SceneDirty() || _terrainLayers?.IsDirty == true || _resetAuxiliaryLayers || PlacedDirty() || NatureDirty() || EventsDirty() || _startCameraDirty;
 
     public MapEditorForm(string gamePath, GameMapInfo selectedMap, bool startWithBlankTerrain = false)
     {
@@ -265,6 +281,9 @@ internal sealed partial class MapEditorForm : Form
 
         tools.Items.Insert(tools.Items.IndexOf(_boxSelectButton) + 1, _layoutMenu);
         InitializeWeatherMenu(tools);
+        InitializeStartCameraMenu(tools);
+        InitializeDesignCheck(tools);
+        InitializeRampTool(tools);
         _paletteHeader = SectionHeader("地表繪製");
         var palettePanel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(10), BackColor = WinFormsTheme.Surface };
         var currentBrush = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 76, Padding = new Padding(4), FlowDirection = FlowDirection.LeftToRight };
@@ -437,6 +456,7 @@ internal sealed partial class MapEditorForm : Form
         _blankTerrainButton.Click += (_, _) => ApplyBlankTerrain(confirm: true);
         _regionToolsButton.Click += (_, _) => RunRegionTool();
         InitializeLayoutTools();
+        InitializeStarterKitTools();
         _boxSelectButton.Click += (_, _) => BeginBoxSelection();
 
         _btnLangZH.Click += (s, e) => {
@@ -507,7 +527,9 @@ internal sealed partial class MapEditorForm : Form
         _blankTerrainButton.Text = isEn ? "Reset Flat Terrain…" : "重設平坦地形…";
         _regionToolsButton.Text = isEn ? "Region tools…" : "區域工具…";
         _layoutMenu.Text = isEn ? "Layouts" : "配置";
+        LocalizeStarterKit(isEn);
         LocalizeWeatherMenu(isEn);
+        LocalizeDesignCheck(isEn);
         _generateSettlement.Text = isEn ? "One-Click Base Generator…" : "一鍵生成對戰基地…";
         _generateSettlement.ToolTipText = isEn ? "Generate fair, symmetric bases and resources for 2-8 players." : "為 2-8 位玩家自動生成公平對稱的基地與資源配置。";
         _exportPlacementLayout.Text = isEn ? "Save selected settlement / objects…" : "保存選取的聚落／物件…";
@@ -636,6 +658,7 @@ internal sealed partial class MapEditorForm : Form
         {
             _loading = true; string map = _selected.DirectoryPath;
             LoadParticleDefinitionsForMap(map);
+            LoadStartCameraForMap(map);
             _boxSelectButton.Checked = false; _boxStart = _boxEnd = null; ShowBoxSelection(null); UpdateContinuousStampPainting();
             _lastStampTile = null;
             var put = PutTextDocument.Load(Path.Combine(map, "TEXT", "US", "briefing.put"));
@@ -649,7 +672,9 @@ internal sealed partial class MapEditorForm : Form
             _waterBumpAmplitude.Value = ParseDecimal(ini.GetValue("WaterBumpAmplitude"), _waterBumpAmplitude);
             _waterBumpFrequency.Value = ParseDecimal(ini.GetValue("WaterBumpFrequency"), _waterBumpFrequency);
             _flashProbability.Value = ParseDecimal(ini.GetValue("FlashPropability"), _flashProbability);
-            _heightMapStep = float.TryParse(ini.GetValue("Heightmapstep"), NumberStyles.Float, CultureInfo.InvariantCulture, out float heightStep) && float.IsFinite(heightStep) && heightStep > 0 ? heightStep : 4;
+            _nativeHeightMapStep = float.TryParse(ini.GetValue("Heightmapstep"), NumberStyles.Float, CultureInfo.InvariantCulture, out float heightStep) && float.IsFinite(heightStep) && heightStep > 0 ? heightStep : float.NaN;
+            // Keep the authoring/water default, but do not treat a missing/invalid native step as saved-Y evidence.
+            _heightMapStep = float.IsFinite(_nativeHeightMapStep) ? _nativeHeightMapStep : 4;
             if (TryParseGameColor(_waterColor.Text, out Color waterColor)) { _waterColorButton.BackColor = waterColor; _waterColorButton.ForeColor = waterColor.GetBrightness() < .45f ? Color.White : Color.Black; }
             _dayStart.Value = ParseDecimal(ini.GetValue("DayStartTime"), _dayStart); _dayEnd.Value = ParseDecimal(ini.GetValue("DayEndTime"), _dayEnd); _rain.Checked = ini.GetValue("RainDropsOnWater") == "1";
             _texturesDocument = BodenTexturesDocument.Load(Path.Combine(map, "boden.txt")); _savedTextures = _texturesDocument.Textures.ToArray(); InitializeTerrainBlendSession(); InitializeTerrainLayers(map); _propertyDirty = false;
@@ -658,6 +683,14 @@ internal sealed partial class MapEditorForm : Form
             _settlementOrigins = SdlSceneCatalog.LoadSettlementOrigins(map);
             if (_objectCatalog.Count == 0) _objectCatalog = BuildSpawnCatalog(_gamePath);
             _placementSession.Load(LoadScenarioPlacements(map).ToArray());
+            _pendingStarterKit = null;
+            try
+            {
+                var loadedScenario = ScenarioDocument.Load(map);
+                _boundRootSlots = loadedScenario.DataSlots.Where(b => b.SpawnId != Guid.Empty).Select(b => b.Slot).ToHashSet();
+            }
+            catch (Exception) { _boundRootSlots.Clear(); }
+            ResetNativeSelection();
             PopulatePlacementFilters(); RefreshPlacedList();
             LoadEvents(map);
             if (_objdefNames.Count == 0) _objdefNames = ObjDefNames.Load(_gamePath);
@@ -696,7 +729,7 @@ internal sealed partial class MapEditorForm : Form
             _view3d.LightingContext = _lightingContext;
             _view3d.GameLightingEnabled = _gameLighting.Checked;
             _view3d.GameHour = (float)_gameHour.Value;
-            try { has3DScene = _view3d.LoadTextures(_texturesDocument.Dimension, _texturesDocument.Textures, _selected.DirectoryPath, _floorTextures, SceneObjectsFor3D(effectiveObjects), (float)_waterLevel.Value, _heightMapStep, sceneWaterColor); _view3d.UpdateSavedParticleImages(DecodeSavedParticlePreviewImages(0)); _view3d.SetReliefScale(_reliefScale.Value / 100f); }
+            try { has3DScene = _view3d.LoadTextures(_texturesDocument.Dimension, _texturesDocument.Textures, _selected.DirectoryPath, _floorTextures, SceneObjectsFor3D(effectiveObjects), (float)_waterLevel.Value, _heightMapStep, sceneWaterColor, nativeHeightMapStep: _nativeHeightMapStep); _view3d.UpdateSavedSceneLights(_savedSceneLights); _view3d.UpdateSavedParticleImages(DecodeSavedParticlePreviewImages(0)); _view3d.SetReliefScale(_reliefScale.Value / 100f); }
             catch (Exception ex) { Disable3DView(isEn ? "Failed to load 3D map resources." : "載入 3D 地圖資源失敗。", ex); }
         }
         if (has3DScene && _view3d?.IsReady == true)
@@ -1568,6 +1601,7 @@ internal sealed partial class MapEditorForm : Form
         string notice = _terrainBlendNotice is null ? "" : "　" + _terrainBlendNotice;
 
         _status.Text = $"{_selected.Id} - {mapType}{dirtyMark}{notice}";
+        if (SavedLightPreviewDiagnostic is { } lightDiagnostic) _status.Text += "　" + lightDiagnostic;
     }
 
     private void SetActiveView(bool use3D)
@@ -1807,6 +1841,7 @@ internal sealed partial class MapEditorForm : Form
     protected override void Dispose(bool disposing)
     {
         if (disposing) ClearParticleDefinitions();
+        if (disposing) ClearSavedLights();
         if (disposing) { _lightingContext?.Dispose(); _lightingContext = null; }
         if (disposing) { _gameTextErrors.Dispose(); _floorTextures?.Dispose(); _floorTextures = null; _spriteCatalog?.Dispose(); _spriteCatalog = null; _shadowCatalog?.Dispose(); _shadowCatalog = null; Image? overview = _overview.Image; _overview.Image = null; overview?.Dispose(); }
         base.Dispose(disposing);

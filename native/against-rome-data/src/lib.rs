@@ -4,6 +4,7 @@
 //! snapshots of the *saved* fields. It does not simulate runtime ticks, derive +0x3C/+0x40, rebuild
 //! from definitions, or write files. See README.md for verification limits.
 
+pub mod alr_metadata;
 pub mod error;
 pub mod alr_scanlines;
 pub mod alr_scanline_ffi;

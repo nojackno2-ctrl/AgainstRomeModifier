@@ -17,6 +17,13 @@ public sealed record MapSceneObject(
     float LocalZ = 0,
     float? Angle = null)
 {
+    /// <summary>XYZ comes from a saved native position (including projected family members).
+    /// Independent of animation availability; legacy SDL and new canonical placements stay terrain-grounded.</summary>
+    public bool HasNativeSavedPosition { get; init; }
+
+    /// <summary>Saved native animation snapshot, only when the DATA object identity is proven.</summary>
+    public NativeAnimationVisualState? NativeVisualState { get; init; }
+
     public string Kind => Name.StartsWith("Bau", StringComparison.OrdinalIgnoreCase) ? "建築"
         : Name.StartsWith("Fig", StringComparison.OrdinalIgnoreCase) ? "單位" : "物件";
 }

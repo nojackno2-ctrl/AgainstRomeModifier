@@ -1,4 +1,4 @@
-﻿using System.Buffers.Binary;
+using System.Buffers.Binary;
 using System.Text;
 using AgainstRomeModifier.Scripting;
 
@@ -42,6 +42,57 @@ public static class CinematicBciCompiler
         return code.ToArray();
     }
 
+    /// <summary>
+    /// 編譯原版地圖開局使用的 s_centerToPos(x, z) 呼叫。
+    /// 參數順序：BCI 棧頂為 X (arg0)，次層為 Z (arg1)。
+    /// 單位為世界座標 (0..16383)，由引擎內部查詢地表高度並轉化為相機空間位置。
+    /// </summary>
+    public static byte[] CompileCenterToPosCall(BciImage image, int x, int z)
+    {
+        ArgumentNullException.ThrowIfNull(image);
+        if (x < 0 || x > 16383) throw new ArgumentOutOfRangeException(nameof(x), "X 必須在 0..16383 範圍內。");
+        if (z < 0 || z > 16383) throw new ArgumentOutOfRangeException(nameof(z), "Z 必須在 0..16383 範圍內。");
+
+        int[] words = [
+            66, z,
+            66, x,
+            128, NativeConstant(image, "s_centerToPos"),
+            73, -2
+        ];
+
+        var code = new byte[words.Length * 4];
+        for (int i = 0; i < words.Length; i++) BinaryPrimitives.WriteInt32LittleEndian(code.AsSpan(i * 4), words[i]);
+        return code;
+    }
+
+    /// <summary>
+    /// 依據 MapStartCamera 設定編譯開局相機 bytecode 片段。
+    /// 支援 s_centerToPos + s_lgcSetEngineZoom 或 s_lgcSetEnginePos + s_lgcSetEngineZoom。
+    /// </summary>
+    public static byte[] CompileStartCameraCalls(BciImage image, MapStartCamera camera)
+    {
+        ArgumentNullException.ThrowIfNull(image);
+        ArgumentNullException.ThrowIfNull(camera);
+        camera.Validate();
+
+        if (camera.Primitive == StartCameraPrimitive.CenterToPos)
+        {
+            using var ms = new MemoryStream();
+            byte[] centerCode = CompileCenterToPosCall(image, (int)Math.Round(camera.X), (int)Math.Round(camera.Z));
+            ms.Write(centerCode);
+
+            void Word(int value) { Span<byte> bytes = stackalloc byte[4]; BinaryPrimitives.WriteInt32LittleEndian(bytes, value); ms.Write(bytes); }
+            long bits = BitConverter.DoubleToInt64Bits(camera.Zoom);
+            Word(67); Word(unchecked((int)bits)); Word(unchecked((int)(bits >> 32)));
+            Word(128); Word(NativeConstant(image, "s_lgcSetEngineZoom")); Word(73); Word(-2);
+            return ms.ToArray();
+        }
+        else
+        {
+            return CompileCameraCalls(image, camera.X, camera.Y, camera.Z, camera.Zoom);
+        }
+    }
+
     /// <summary>與原版 ENDL 的訊息 statement 相同；字串使用遊戲編碼，沒有字幕時長/語音/強制彈出語意。</summary>
     public static byte[] CompileMessageCall(BciImage image, string text)
     {
@@ -54,7 +105,7 @@ public static class CinematicBciCompiler
         return code;
     }
 
-    private static int NativeConstant(BciImage image, string name)
+    internal static int NativeConstant(BciImage image, string name)
     {
         for (int i = 0; i < image.ConstOffsets.Count; i++)
             if (image.Constant(i) == name) return i;

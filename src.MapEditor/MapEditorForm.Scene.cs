@@ -272,6 +272,17 @@ internal sealed partial class MapEditorForm
             UpdatePlacedButtonsState();
             return;
         }
+
+        int dataSlot = -100000 - picked.ObjectIndex;
+        if (picked.SourceFile.Equals("DATA/objects.dat", StringComparison.OrdinalIgnoreCase)
+            && dataSlot >= 0 && dataSlot < 14000
+            && PickedNatureTarget(picked) is null)
+        {
+            _pickedNature = null;
+            _sceneList.SelectedItems.Clear();
+            SelectNativeSceneObject(dataSlot);
+            return;
+        }
         string key = SceneKey(picked);
         bool found = false;
         _pickedNature = null;

@@ -75,6 +75,8 @@ internal sealed partial class MapEditorForm
             ? _spriteCatalog?.GetSprite(item.Type.NameDef, item.Type.Category == SdlObjectCategory.Figure ? (int)_placeTeam.Value : 0)
             : null);
         _placeTeam.ValueChanged += (_, _) => _placeTypes.Invalidate();
+        _placeTypes.KeyDown += (_, e) => HandlePlacementRotationKey(e, selectedObjects: false);
+        _placedList.KeyDown += (_, e) => { HandlePlacementRotationKey(e, selectedObjects: true); HandlePlacementWorkflowKey(e); };
         Disposed += (_, _) => _spriteThumbnails.Dispose();
         var panel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(8), BackColor = WinFormsTheme.Surface };
         panel.SizeChanged += (_, _) => _placeHint.MaximumSize = new Size(Math.Max(1, panel.ClientSize.Width - panel.Padding.Horizontal), 0);
@@ -85,6 +87,7 @@ internal sealed partial class MapEditorForm
         _lblPlaceTeam = AddSceneField(options, 2, "隊伍", _placeTeam);
         _lblPlaceCount = AddSceneField(options, 3, "人數", _placeCount);
         _lblPlaceAngle = AddSceneField(options, 4, "角度", _placeAngle);
+        ConfigurePlacementWorkflow(options);
 
         var placedHost = new Panel { Dock = DockStyle.Bottom, Height = 230, Padding = new Padding(0, 8, 0, 0) };
         _placedList.Columns.Add("物件", 140);
@@ -98,12 +101,13 @@ internal sealed partial class MapEditorForm
             AutoSize = true,
             AutoSizeMode = AutoSizeMode.GrowAndShrink,
             ColumnCount = 2,
-            RowCount = 2,
+            RowCount = 3,
             Padding = new Padding(0, 4, 0, 0),
             BackColor = WinFormsTheme.Surface
         };
         buttonRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
         buttonRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        buttonRow.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         buttonRow.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         buttonRow.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         foreach (Button button in new[] { _placedEditButton, _placedDuplicateButton, _placedDeleteButton, _placedBatchButton })
@@ -121,12 +125,15 @@ internal sealed partial class MapEditorForm
         buttonRow.Controls.Add(_placedDuplicateButton, 1, 0);
         buttonRow.Controls.Add(_placedDeleteButton, 0, 1);
         buttonRow.Controls.Add(_placedBatchButton, 1, 1);
+        buttonRow.Controls.Add(_placedSnapButton, 0, 2);
+        buttonRow.SetColumnSpan(_placedSnapButton, 2);
 
         placedHost.Controls.Add(_placedList);
         placedHost.Controls.Add(buttonRow);
 
         panel.Controls.Add(_placeTypes);
         panel.Controls.Add(placedHost);
+        panel.Controls.Add(BuildNativeFamilyPanel());
         panel.Controls.Add(options);
         panel.Controls.Add(_placeHint);
 
@@ -151,6 +158,7 @@ internal sealed partial class MapEditorForm
         _placedDuplicateButton.Enabled = isCustom && count > 0;
         _placedEditButton.Enabled = isCustom && count == 1;
         _placedBatchButton.Enabled = isCustom && count > 0;
+        _placedSnapButton.Enabled = isCustom && count > 0;
     }
 
     /// <summary>放置目錄：cl_scint.ini [ObjDefName] 的別名（建築、人物…），TemplateFields["alias"] 保存別名。</summary>
@@ -187,7 +195,15 @@ internal sealed partial class MapEditorForm
         {
             SdlObjectType? type = _objectCatalog.FirstOrDefault(item => AliasOf(item).Equals(spawn.Alias, StringComparison.OrdinalIgnoreCase));
             if (type is null) continue;
-            yield return new SdlPlacedObject(type, spawn.X, spawn.Y, spawn.Z, spawn.Team, spawn.Angle, spawn.Count > 1 ? spawn.Count : 1) { ScenarioId = spawn.Id };
+            float angle = spawn.RawRotation is { } raw
+                ? (float)((double)raw * (180d / Math.PI))
+                : spawn.Angle;
+            yield return new SdlPlacedObject(type, spawn.X, spawn.Y, spawn.Z, spawn.Team, angle,
+                spawn.RawRotation.HasValue ? 0 : (spawn.Count > 1 ? spawn.Count : 1))
+            {
+                ScenarioId = spawn.Id,
+                RawRotation = spawn.RawRotation
+            };
         }
     }
 
@@ -226,6 +242,9 @@ internal sealed partial class MapEditorForm
         _placeHint.Text = isEn
             ? "Pick a type, activate \"Place Objects\", then click the map. Buildings with a finished template are placed directly in the map (teams 0–8; 8 = neutral); others start as construction sites. Characters use units of 1–20 soldiers, teams 0–7. Team 0 is the human player. Keep buildings clear of trees and water."
             : "選類型後啟用「放置物件」並點擊地圖。有完工範本的建築直接放入地圖（隊伍 0–8；8＝中立），其他建築在開局生成工地。人物以部隊建立，人數 1–20、隊伍 0–7；隊伍 0 為玩家。建築請避開樹木與水域。";
+        _placeHint.Text += isEn
+            ? "\nDirection: 0–359°. In the type list, R / Shift+R turns the next placement ±45°; in the placed list it turns selected objects. Undo/Redo applies to placed objects."
+            : "\n方向：0–359°。類型清單按 R／Shift+R 調整下次放置方向 ±45°；已放置清單則旋轉選取物件，可復原／重做。";
         string notice = ScriptBuildingNotice(isEn);
         if (notice.Length > 0) _placeHint.Text += "\n\n" + notice;
         if (_placedList.Columns.Count >= 4)
@@ -235,8 +254,10 @@ internal sealed partial class MapEditorForm
             _placedList.Columns[2].Text = isEn ? "Tile" : "位置";
             _placedList.Columns[3].Text = isEn ? "Angle" : "角度";
         }
+        LocalizePlacementWorkflow(isEn);
         PopulatePlacementFilters();
         RefreshPlacedList();
+        UpdateNativeSourceUi();
     }
 
     private sealed record PlacementTypeItem(SdlObjectType Type, string Text) { public override string ToString() => Text; }
@@ -265,7 +286,7 @@ internal sealed partial class MapEditorForm
         object? category = (_placeCategory.SelectedItem as FilterItem)?.Value, tribe = (_placeTribe.SelectedItem as FilterItem)?.Value;
         string? selected = (_placeTypes.SelectedItem as PlacementTypeItem)?.Type.NameDef;
         _placeTypes.BeginUpdate(); _placeTypes.Items.Clear();
-        foreach (SdlObjectType type in _objectCatalog.Where(type => (category is null || type.Category.Equals(category)) && (tribe is null || type.Tribe.Equals(tribe))))
+        foreach (SdlObjectType type in _objectCatalog.Where(type => (category is null || type.Category.Equals(category)) && (tribe is null || type.Tribe.Equals(tribe)) && MatchesPlacementSearch(type, _placeSearch.Text)))
             _placeTypes.Items.Add(new PlacementTypeItem(type, ObjectDisplayName(type, isEn)));
         _placeTypes.EndUpdate();
         for (int index = 0; index < _placeTypes.Items.Count; index++)
@@ -336,6 +357,26 @@ internal sealed partial class MapEditorForm
             _status.Text += isEn ? " Warning: trees or other landscape objects are very close; clear them with the Nature tool." : " 注意：附近有樹木或其他地景物件，建議用「自然物件 → 移除」清出空地。";
     }
 
+    internal void HandlePlacementRotationKey(KeyEventArgs e, bool selectedObjects)
+    {
+        if (e.KeyCode != Keys.R || e.Control || e.Alt || _selected?.IsCustom != true) return;
+        e.SuppressKeyPress = true;
+        int degrees = e.Shift ? -45 : 45;
+        if (!selectedObjects)
+        {
+            _placeAngle.Value = ScenarioLevelObjects.NormalizeAngle((int)_placeAngle.Value + degrees);
+            return;
+        }
+        int[] indices = _placedList.SelectedItems.Cast<ListViewItem>().Select(row => (int)row.Tag!).ToArray();
+        if (indices.Length == 0) return;
+        try { _placementSession.RotateMany(indices, degrees); }
+        catch (InvalidOperationException ex) { _status.Text = ex.Message; return; }
+        RefreshPlacedList();
+        foreach (int index in indices) _placedList.Items[index].Selected = true;
+        PushSceneObjects(EffectiveSceneObjects());
+        UpdateEditorState();
+    }
+
     internal void DuplicateSelectedPlacedObjects()
     {
         if (_selected?.IsCustom != true || _placedList.SelectedItems.Count == 0) return;
@@ -345,9 +386,11 @@ internal sealed partial class MapEditorForm
             .OrderByDescending(index => index)
             .ToList();
 
+        IReadOnlyList<int> copies;
         try
         {
-            _placementSession.DuplicateMany(selectedIndices, offsetX: 256f, offsetZ: 256f);
+            copies = _placementSession.DuplicateMany(selectedIndices, offsetX: 256f, offsetZ: 256f);
+
         }
         catch (ArgumentOutOfRangeException)
         {
@@ -358,6 +401,7 @@ internal sealed partial class MapEditorForm
         }
 
         RefreshPlacedList();
+        foreach (int index in copies) _placedList.Items[index].Selected = true;
         IReadOnlyList<MapSceneObject> effective = EffectiveSceneObjects();
         PushSceneObjects(effective);
         UpdateEditorState();
@@ -390,7 +434,7 @@ internal sealed partial class MapEditorForm
         }
     }
 
-    private void DeleteSelectedPlacedObjects()
+    internal void DeleteSelectedPlacedObjects()
     {
         if (_selected?.IsCustom != true || _placedList.SelectedItems.Count == 0) return;
         _placementSession.RemoveMany(_placedList.SelectedItems.Cast<ListViewItem>().Select(row => (int)row.Tag!));
@@ -559,6 +603,13 @@ internal sealed class PlacedObjectEditDialog : Form
             Enabled = _isFigure
         };
 
+        if (_original.RawRotation.HasValue || _original.NativeSourceIdentity.HasValue)
+        {
+            _teamInput.Enabled = false;
+            _angleInput.Enabled = false;
+            _countInput.Enabled = false;
+        }
+
         _lblHint = new Label
         {
             Dock = DockStyle.Fill,
@@ -653,6 +704,19 @@ internal sealed class PlacedObjectEditDialog : Form
                 return;
             }
         }
+        if (_original.RawRotation.HasValue || _original.NativeSourceIdentity.HasValue)
+        {
+            if (team != _original.Team)
+            {
+                MessageBox.Show(this, _isEn ? "Native group objects only support translation. Changing team is not supported." : "原生群組物件目前僅支援平移；變更隊伍尚未支援。", Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            if (ScenarioLevelObjects.NormalizeAngle((int)MathF.Round((float)_angleInput.Value)) != ScenarioLevelObjects.NormalizeAngle((int)MathF.Round(_original.Angle)))
+            {
+                MessageBox.Show(this, _isEn ? "Native group objects only support translation. Changing rotation is not supported." : "原生群組物件目前僅支援平移；變更旋轉角度尚未支援。", Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+        }
 
         Result = _original with
         {
@@ -660,8 +724,9 @@ internal sealed class PlacedObjectEditDialog : Form
             WorldX = (float)_posXInput.Value,
             WorldY = (float)_posYInput.Value,
             WorldZ = (float)_posZInput.Value,
-            Angle = (float)_angleInput.Value,
-            UnitCount = count,
+            Angle = _original.RawRotation.HasValue || _original.NativeSourceIdentity.HasValue
+                ? _original.Angle : (float)_angleInput.Value,
+            UnitCount = _original.RawRotation.HasValue ? 0 : count,
             ScenarioId = _original.ScenarioId // Preserves persistent ScenarioId!
         };
         DialogResult = DialogResult.OK;

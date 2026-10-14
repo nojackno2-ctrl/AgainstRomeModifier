@@ -15,12 +15,12 @@ public sealed class LevelObjectStoreTests
         Assert.Equal(8, store.Capacity);
         Assert.Equal(new[]
         {
-            new LevelWorldObject(0, 100, 2, 10, 1, 2, 3, .25f, false),
-            new LevelWorldObject(2, 100, 4, 30, 21, 22, 23, 2.25f, false),
-            new LevelWorldObject(3, 200, 5, 40, 31, 32, 33, 3.25f, true),
-            new LevelWorldObject(4, 300, 6, 50, 41, 42, 43, 4.25f, true),
+            new LevelWorldObject(0, 100, 2, 10, 1, 2, 3, (float)(.25 * Math.PI / 180), false),
+            new LevelWorldObject(2, 100, 4, 30, 21, 22, 23, (float)(2.25 * Math.PI / 180), false),
+            new LevelWorldObject(3, 200, 5, 40, 31, 32, 33, (float)(3.25 * Math.PI / 180), true),
+            new LevelWorldObject(4, 300, 6, 50, 41, 42, 43, (float)(4.25 * Math.PI / 180), true),
             new LevelWorldObject(5, 400, 7, 60, 0, 0, 0, 0, false),
-            new LevelWorldObject(6, 500, 8, 70, 61, 62, 63, 6.25f, false),
+            new LevelWorldObject(6, 500, 8, 70, 61, 62, 63, (float)(6.25 * Math.PI / 180), false),
         }, store.Objects());
     }
 
@@ -40,7 +40,7 @@ public sealed class LevelObjectStoreTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public void Add_uses_first_free_slot_and_even_pair_and_copies_template_bytes(bool pfil)
+    public void Add_uses_first_free_slot_and_independent_positions_and_copies_template_bytes(bool pfil)
     {
         using var level = new LevelFixture(pfil);
         LevelObjectStore store = level.Load();
@@ -55,8 +55,8 @@ public sealed class LevelObjectStoreTests
         byte[] positions = level.ReadPayload("position.dat");
         byte[] expectedRecord = Slice(level.Objects, Record(0), LevelObjectStore.RecordSize);
         U32(expectedRecord, 3, 71);
-        U16(expectedRecord, 67, 14); U16(expectedRecord, 69, 15);
-        foreach (int offset in new[] { 71, 73, 77 }) U16(expectedRecord, offset, 1);
+        U16(expectedRecord, 67, 12); U16(expectedRecord, 69, 14);
+        foreach (int offset in new[] { 71, 73, 77 }) U16(expectedRecord, offset, 0xFFFF);
         Assert.Equal(expectedRecord, Slice(objects, Record(1), LevelObjectStore.RecordSize));
         for (int column = 0; column < LevelObjectStore.ColumnWidths.Length; column++)
         {
@@ -68,23 +68,23 @@ public sealed class LevelObjectStoreTests
         for (int segment = 0; segment < LevelObjectStore.ObjDataWidths.Length; segment++)
             Assert.Equal(Slice(level.ObjData, Segment(segment, 0), LevelObjectStore.ObjDataWidths[segment]),
                 Slice(data, Segment(segment, 1), LevelObjectStore.ObjDataWidths[segment]));
-        foreach (int index in new[] { 14, 15 })
+        foreach (int index in new[] { 12, 14 })
         {
             int offset = Position(index);
             Assert.Equal(1, positions[offset]);
             Assert.Equal(101.5f, F32(positions, offset + 1));
             Assert.Equal(-2f, F32(positions, offset + 5));
             Assert.Equal(303f, F32(positions, offset + 9));
-            Assert.Equal(.75f, F32(positions, offset + 13));
+            Assert.Equal((float)(.75 * 180 / Math.PI), F32(positions, offset + 13));
         }
-        Assert.Equal(Slice(level.Positions, Position(12), 2 * LevelObjectStore.PositionSize),
-            Slice(positions, Position(12), 2 * LevelObjectStore.PositionSize));
+        Assert.Equal(Slice(level.Positions, Position(13), LevelObjectStore.PositionSize),
+            Slice(positions, Position(13), LevelObjectStore.PositionSize));
     }
 
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public void Add_returns_minus_one_when_slots_or_even_position_pairs_are_exhausted(bool pfil)
+    public void Add_returns_minus_one_when_slots_or_available_positions_are_exhausted(bool pfil)
     {
         using var level = new LevelFixture(pfil);
         LevelObjectStore store = level.Load();
@@ -94,9 +94,9 @@ public sealed class LevelObjectStoreTests
         var before = store.Objects().ToArray();
         Assert.Equal(-1, store.Add(template, 1, 2, 3, 4));
         Assert.Equal(before, store.Objects());
-        // There are free individual positions, but no completely free even pair.
+        // Only one position is available; two distinct free positions are required.
         for (int index = 0; index < LevelFixture.PositionCount; index++)
-            level.Positions[Position(index)] = (byte)(index % 2 == 0 ? 0 : 1);
+            level.Positions[Position(index)] = (byte)(index == 14 ? 0 : 1);
         level.Write();
         store = level.Load();
         before = store.Objects().ToArray();
@@ -211,7 +211,6 @@ public sealed class LevelObjectStoreTests
     [InlineData("objdata-length")]
     [InlineData("position-length")]
     [InlineData("objdata-count")]
-    [InlineData("no-empty-slot")]
     public void Constructor_rejects_invalid_layout(string corruption)
     {
         foreach (bool pfil in new[] { false, true })
@@ -226,9 +225,6 @@ public sealed class LevelObjectStoreTests
                 case "objdata-length": level.ObjData = level.ObjData[..^1]; break;
                 case "position-length": level.Positions = level.Positions[..^1]; break;
                 case "objdata-count": U32(level.ObjData, 4, 7); break;
-                case "no-empty-slot":
-                    for (int slot = 0; slot < LevelFixture.Count; slot++) level.Objects[Record(slot)] = 1;
-                    break;
             }
             level.Write();
             Assert.Throws<InvalidDataException>(() => level.Load());
@@ -389,6 +385,10 @@ public sealed class LevelObjectStoreTests
         BlankMapContent.ResetStagingDirectory(stage);
         Assert.Equal(sdlBefore, File.ReadAllBytes(sdlPath));
         Assert.Empty(LevelObjectStore.Load(stage).Objects());
+        var lightPool = NativeLightPool.Load(Path.Combine(stage, "DATA", "light.dat"));
+        Assert.Empty(lightPool.ActiveLights());
+        byte[] clearedLights = lightPool.ToPayload();
+        Assert.True(clearedLights.AsSpan(8 + NativeLightPool.Capacity * 50).IndexOfAnyExcept((byte)255) < 0);
         byte[] positions = GameLZSS.DecompressPfil(File.ReadAllBytes(Path.Combine(stage, "DATA", "position.dat")));
         Assert.True(positions.AsSpan(8).IndexOfAnyExcept((byte)0) < 0); // also clears the invalid entry containing -999 and orphan 13
         var before = StageFiles(stage); BlankMapContent.ResetStagingDirectory(stage); Assert.Equal(before, StageFiles(stage));
@@ -403,8 +403,6 @@ public sealed class LevelObjectStoreTests
     [InlineData(true, "full")]
     [InlineData(false, "missing-script")]
     [InlineData(true, "missing-script")]
-    [InlineData(false, "full-light")]
-    [InlineData(true, "full-light")]
     public void Blank_rejects_unknown_or_full_runtime_pools_and_rolls_back_failure_after_writes(bool pfil, string fault)
     {
         using var level = new LevelFixture(pfil);
@@ -416,13 +414,6 @@ public sealed class LevelObjectStoreTests
             for (int slot = 0; slot < 8; slot++) data[8 + slot * 21] = 1;
             File.WriteAllBytes(animation, pfil ? GameLZSS.CompressPfil(data, raw[..64]) : data);
         }
-        else if (fault == "full-light")
-        {
-            string light = Path.Combine(stage, "DATA", "light.dat"); byte[] lighting = File.ReadAllBytes(light), values = GameLZSS.DecompressPfil(lighting);
-            // A nonzero high byte is active too; checking only the low byte would pick an occupied template.
-            for (int slot = 0; slot < 8; slot++) U32(values, 8 + slot * 4, 256);
-            File.WriteAllBytes(light, pfil ? GameLZSS.CompressPfil(values, lighting[..64]) : values);
-        }
         else File.Delete(Path.Combine(stage, "SCRIPT", "ak_level.bci"));
         var before = StageFiles(stage);
         if (fault == "missing-script") Assert.Throws<FileNotFoundException>(() => BlankMapContent.ResetStagingDirectory(stage));
@@ -430,8 +421,55 @@ public sealed class LevelObjectStoreTests
         Assert.Equal(before, StageFiles(stage)); Assert.NotEmpty(LevelObjectStore.Load(stage).Objects());
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Blank_reset_clears_full_native_light_pool_without_needing_an_inactive_template(bool pfil)
+    {
+        using var level = new LevelFixture(pfil);
+        string stage = BlankStage(level, pfil), path = Path.Combine(stage, "DATA", "light.dat");
+        byte[] original = File.ReadAllBytes(path), values = GameLZSS.DecompressPfil(original);
+        for (int slot = 0; slot < NativeLightPool.Capacity; slot++) U32(values, 8 + slot * 4, 256);
+        File.WriteAllBytes(path, pfil ? GameLZSS.CompressPfil(values, original[..64]) : values);
+        Assert.Equal(1024, NativeLightPool.Load(path).ActiveLights().Count);
+        BlankMapContent.ResetStagingDirectory(stage);
+        Assert.Empty(NativeLightPool.Load(path).ActiveLights());
+        var before = StageFiles(stage); BlankMapContent.ResetStagingDirectory(stage); Assert.Equal(before, StageFiles(stage));
+    }
+
     private static SortedDictionary<string, byte[]> StageFiles(string stage) => new(Directory.GetFiles(stage, "*", SearchOption.AllDirectories)
         .ToDictionary(path => Path.GetRelativePath(stage, path), File.ReadAllBytes), StringComparer.Ordinal);
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Blank_reset_clears_full_lager_and_biglager_pools_without_empty_templates(bool pfil)
+    {
+        using var level = new LevelFixture(pfil); string stage = BlankStage(level, pfil);
+        foreach (var (name, capacity, header, stride) in new[] { ("lager.dat", 3200, 16, 43), ("biglager.dat", 32, 12, 1601) })
+        {
+            string path = Path.Combine(stage, "DATA", name); byte[] packed = File.ReadAllBytes(path), bytes = GameLZSS.DecompressPfil(packed);
+            for (int slot = 0; slot < capacity; slot++) bytes[header + slot * stride] = 1;
+            File.WriteAllBytes(path, pfil ? GameLZSS.CompressPfil(bytes, packed[..64]) : bytes);
+        }
+        BlankMapContent.ResetStagingDirectory(stage);
+        Assert.Empty(NativeLagerPool.Load(Path.Combine(stage, "DATA", "lager.dat")).ActiveLagers());
+        Assert.Empty(NativeBigLagerPool.Load(Path.Combine(stage, "DATA", "biglager.dat")).ActiveLagers());
+        var before = StageFiles(stage); BlankMapContent.ResetStagingDirectory(stage); Assert.Equal(before, StageFiles(stage));
+    }
+
+    [Theory]
+    [InlineData("light.dat")]
+    [InlineData("particle.dat")]
+    [InlineData("lager.dat")]
+    [InlineData("biglager.dat")]
+    public void Blank_missing_dedicated_pool_fails_before_changing_any_staged_files(string name)
+    {
+        using var level = new LevelFixture(false); string stage = BlankStage(level, false);
+        File.Delete(Path.Combine(stage, "DATA", name)); var before = StageFiles(stage);
+        Assert.Throws<FileNotFoundException>(() => BlankMapContent.ResetStagingDirectory(stage));
+        Assert.Equal(before, StageFiles(stage));
+    }
 
     private static string BlankStage(LevelFixture level, bool pfil)
     {
@@ -441,9 +479,8 @@ public sealed class LevelObjectStoreTests
         foreach (var (name, header, record, columns, extra, stateWidth) in new[] {
             ("anim.dat", 8, 21, new[] { 2, 2 }, Array.Empty<int>(), 1), ("gfxtype.dat", 8, 15, new[] { 2 }, Array.Empty<int>(), 1),
             ("action.dat", 12, 25, Array.Empty<int>(), new[] { 6 }, 1), ("hirarchy.dat", 12, 103, new[] { 2 }, new[] { 50 }, 1),
-            ("formatio.dat", 8, 15, new[] { 4, 2, 4 }, Array.Empty<int>(), 1), ("lager.dat", 16, 43, new[] { 2 }, new[] { 6, 10 }, 1),
-            ("biglager.dat", 12, 1601, Array.Empty<int>(), new[] { 800 }, 1), ("light.dat", 8, 4, Enumerable.Repeat(4, 13).ToArray(), Array.Empty<int>(), 4),
-            ("particle.dat", 12, 2252, new[] { 4, 4, 4, 4 }, new[] { 64 }, 2), ("explos.dat", 8, 46, new[] { 4, 4 }, Array.Empty<int>(), 2),
+            ("formatio.dat", 8, 15, new[] { 4, 2, 4 }, Array.Empty<int>(), 1),
+            ("explos.dat", 8, 46, new[] { 4, 4 }, Array.Empty<int>(), 2),
             ("hitex.dat", 8, 28, new[] { 4, 4, 4 }, Array.Empty<int>(), 2), ("flash.dat", 12, 201, new[] { 32 }, new[] { 16 }, 1) })
         {
             var data = Enumerable.Repeat((byte)0xFF, header + 8 * (record + columns.Sum())).ToArray();
@@ -454,6 +491,23 @@ public sealed class LevelObjectStoreTests
             byte[] h = new byte[64]; "PFIL"u8.CopyTo(h);
             File.WriteAllBytes(Path.Combine(stage, "DATA", name), pfil ? GameLZSS.CompressPfil(data, h) : data);
         }
+        byte[] lights = new byte[NativeLightPool.PayloadLength]; U32(lights, 0, 1); U32(lights, 4, NativeLightPool.Capacity);
+        lights.AsSpan(8 + NativeLightPool.Capacity * 50).Fill(255);
+        for (int slot = 0; slot < 7; slot++) U32(lights, 8 + slot * 4, 256);
+        byte[] lightHeader = new byte[64]; "PFIL"u8.CopyTo(lightHeader);
+        File.WriteAllBytes(Path.Combine(stage, "DATA", "light.dat"), pfil ? GameLZSS.CompressPfil(lights, lightHeader) : lights);
+        byte[] particle = new byte[NativeParticlePool.PayloadLength]; U32(particle, 0, 1); U32(particle, 4, 1024); U32(particle, 8, 64);
+        var particlePool = NativeParticlePool.ParsePayload(particle); particlePool.ReleaseBatch(Enumerable.Range(0, 1024).ToArray());
+        particle = particlePool.ToPayload();
+        File.WriteAllBytes(Path.Combine(stage, "DATA", "particle.dat"), pfil ? GameLZSS.CompressPfil(particle, lightHeader) : particle);
+        byte[] lager = new byte[NativeLagerPool.PayloadLength]; U32(lager, 0, 1); U32(lager, 4, 3200); U32(lager, 8, 6); U32(lager, 12, 10);
+        var campPool = NativeLagerPool.ParsePayload(lager); campPool.ReleaseBatch(Enumerable.Range(0, 3200).ToArray());
+        lager = campPool.ToPayload();
+        File.WriteAllBytes(Path.Combine(stage, "DATA", "lager.dat"), pfil ? GameLZSS.CompressPfil(lager, lightHeader) : lager);
+        byte[] big = new byte[NativeBigLagerPool.PayloadLength]; U32(big, 0, 1); U32(big, 4, 32); U32(big, 8, 800);
+        var bigPool = NativeBigLagerPool.ParsePayload(big); bigPool.ReleaseBatch(Enumerable.Range(0, 32).ToArray());
+        big = bigPool.ToPayload();
+        File.WriteAllBytes(Path.Combine(stage, "DATA", "biglager.dat"), pfil ? GameLZSS.CompressPfil(big, lightHeader) : big);
         var ways = new byte[12 + 2 * 1030]; U32(ways, 0, 1); U32(ways, 4, 2); U32(ways, 8, 256); ways[12] = 3;
         File.WriteAllBytes(Path.Combine(stage, "DATA", "way.dat"), ways);
         File.WriteAllBytes(Path.Combine(stage, "SCRIPT", "ak_level.bci"), AgainstRomeModifier.Scripting.BciImage.CreateIdleLevel().Serialize());
@@ -519,6 +573,9 @@ public sealed class LevelObjectStoreTests
                 for (int column = 0; column < LevelObjectStore.ColumnWidths.Length; column++)
                 {
                     uint value = column == 1 ? (uint)(active ? slot : 0xFFFF)
+                        : column == 4 ? (uint)(slot == 3 ? 0 : 0xFFFF)
+                        : column == 2 ? (uint)(slot == 4 ? 0 : 0xFFFF)
+                        : column is 3 or 5 or 8 or 11 or 12 or 13 ? 0xFFFFu
                         : column == 10 ? (uint)(slot == 3 ? 4 : 0xFFFF) : (uint)(100 + column * 11 + slot);
                     if (LevelObjectStore.ColumnWidths[column] == 2) U16(Objects, Column(column, slot), (int)value);
                     else U32(Objects, Column(column, slot), 0x12340000 + value);
@@ -527,8 +584,11 @@ public sealed class LevelObjectStoreTests
                     for (int i = 0; i < LevelObjectStore.ObjDataWidths[segment]; i++)
                         ObjData[Segment(segment, slot) + i] = segment == 2
                             ? (byte)(slot == 4 && i == 3 ? 1 : 0) : (byte)(20 + segment + slot + i);
+                // Native objdata validator uses segment 0's first byte as active.
+                // Keep the byte-pattern fixture while giving its empty slots valid state.
+                ObjData[Segment(0, slot)] = active ? (byte)1 : (byte)0;
             }
-            // Position 12 is free but 13 is occupied; 14,15 is the first free even pair.
+            // Position 12 is free but 13 is occupied; native independent allocation uses 12 and 14.
             Positions[Position(13)] = 1;
             BinaryPrimitives.WriteSingleLittleEndian(Positions.AsSpan(Position(12) + 1), -999);
             Write();

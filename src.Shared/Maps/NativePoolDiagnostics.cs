@@ -21,7 +21,11 @@ public sealed record NativePoolDiagnosticReport(
     int ActiveActionSlots,
     int ActiveGroups,
     int TotalObjectSlots,
-    uint? EngineUidCounter);
+    uint? EngineUidCounter)
+{
+    public int ActiveLights { get; init; }
+    public int ActiveEmitters { get; init; }
+}
 
 /// <summary>
 /// 針對遊戲原生地圖二進位資料池（DATA/objects.dat、anim.dat、gfxtype.dat、action.dat、hirarchy.dat、
@@ -32,7 +36,7 @@ public static class NativePoolDiagnostics
     private static readonly int[] ColumnWidths = [2, 2, 2, 2, 2, 2, 2, 4, 2, 2, 2, 2, 2, 2, 4, 2, 2, 4];
     private static readonly int[] ObjDataWidths = [9, 8, 4, 4, 2, 16, 4, 4, 2, 2, 2, 2, 4, 2, 2, 2, 4, 4, 4, 4, 2, 4, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 4, 4, 2, 2];
 
-    public static NativePoolDiagnosticReport DiagnoseDirectory(string dataDirectory)
+    public static NativePoolDiagnosticReport DiagnoseDirectory(string dataDirectory, IReadOnlyDictionary<int, NativeObjectDefinition>? definitions = null)
     {
         ArgumentNullException.ThrowIfNull(dataDirectory);
         var issues = new List<NativePoolIssue>();
@@ -191,14 +195,18 @@ public static class NativePoolDiagnostics
         // 讀取 position.dat
         byte[]? positions = ReadPayload(PathOf("position.dat"), out string? posErr);
         int posCount = 0;
+        HashSet<int> activePositions = [];
         if (positions is not null)
         {
             if (positions.Length >= 8 && BinaryPrimitives.ReadInt32LittleEndian(positions) == 1)
             {
                 posCount = BinaryPrimitives.ReadInt32LittleEndian(positions.AsSpan(4));
-                int expectedPosLen = 8 + posCount * 17;
-                if (positions.Length != expectedPosLen)
+                long expectedPosLen = 8L + posCount * 17L;
+                if (posCount < 1 || posCount > 33000 || positions.Length != expectedPosLen)
                     AddIssue(NativePoolIssueSeverity.Error, "position-length-mismatch", $"position.dat 長度不符（預期 {expectedPosLen}，實際 {positions.Length}）。");
+                else
+                    for (int i = 0; i < posCount; i++)
+                        if (positions[8 + i * 17] != 0) activePositions.Add(i);
             }
             else AddIssue(NativePoolIssueSeverity.Error, "invalid-position-header", "position.dat 標頭或版本無效。");
         }
@@ -206,23 +214,70 @@ public static class NativePoolDiagnostics
 
         // 讀取 engine.dat
         uint? engineCounter = null;
-        byte[]? engine = ReadPayload(PathOf("engine.dat"), out _);
-        if (engine is not null && engine.Length >= 38 && BinaryPrimitives.ReadInt32LittleEndian(engine) == 1)
+        byte[]? engine = ReadPayload(PathOf("engine.dat"), out string? engineError);
+        if (engine is not null && engine.Length == 94 && BinaryPrimitives.ReadInt32LittleEndian(engine) == 1)
         {
             engineCounter = BinaryPrimitives.ReadUInt32LittleEndian(engine.AsSpan(34));
         }
+        else if (File.Exists(PathOf("engine.dat")))
+            AddIssue(NativePoolIssueSeverity.Error, "invalid-engine", $"engine.dat 版本或長度無效，version1 必須完整94bytes。{engineError}");
 
         // 掃描活躍物件並進行跨池約束檢查
         int activeObjectCount = 0;
         var uidsSeen = new HashSet<uint>();
         int col1Offset = 16 + objectCount * 79 + objectCount * ColumnWidths[0];
         int col4Offset = 16 + objectCount * 79 + objectCount * ColumnWidths.Take(4).Sum();
+        int col10Offset = 16 + objectCount * 79 + objectCount * ColumnWidths.Take(10).Sum();
+        int parentOffset = 16 + objectCount * 79 + objectCount * ColumnWidths.Take(13).Sum();
 
+        Dictionary<int, NativeSavedLight>? lights = null;
+        if (File.Exists(PathOf("light.dat")))
+        {
+            try { lights = NativeLightPool.Load(PathOf("light.dat")).ActiveLights().ToDictionary(light => light.Slot); }
+            catch (Exception ex) when (ex is IOException or InvalidDataException)
+            { AddIssue(NativePoolIssueSeverity.Error, "invalid-light", $"light.dat 光源池無效：{ex.Message}", pool: "light"); }
+        }
+        int col12Offset = 16 + objectCount * (79 + ColumnWidths.Take(12).Sum());
+        int col11Offset = 16 + objectCount * (79 + ColumnWidths.Take(11).Sum());
+        Dictionary<int, NativeSavedEmitter>? emitters = null;
+        if (File.Exists(PathOf("particle.dat")))
+        {
+            try { emitters = NativeParticlePool.Load(PathOf("particle.dat")).ActiveEmitters().ToDictionary(emitter => emitter.Slot); }
+            catch (Exception ex) when (ex is IOException or InvalidDataException)
+            { AddIssue(NativePoolIssueSeverity.Error, "invalid-particle", $"particle.dat 粒子池無效：{ex.Message}", pool: "particle"); }
+        }
         for (int slot = 0; slot < objectCount; slot++)
         {
             int r = 16 + slot * 79;
             if (objects[r] == 0) continue;
             activeObjectCount++;
+
+            int particleTarget = BinaryPrimitives.ReadUInt16LittleEndian(objects.AsSpan(col11Offset + slot * 2));
+            if (particleTarget != ushort.MaxValue)
+            {
+                if (particleTarget >= NativeParticlePool.Capacity)
+                    AddIssue(NativePoolIssueSeverity.Error, "particle-target-out-of-range", $"物件 {slot} 的粒子索引越界：{particleTarget}", slot, particleTarget, "particle");
+                else if (emitters is null)
+                    AddIssue(NativePoolIssueSeverity.Error, "particle-pool-unavailable", $"物件 {slot} 引用粒子 {particleTarget}，但粒子池無法讀取。", slot, particleTarget, "particle");
+                else if (!emitters.TryGetValue(particleTarget, out var emitter))
+                    AddIssue(NativePoolIssueSeverity.Error, "particle-target-inactive", $"物件 {slot} 指向未啟用粒子 {particleTarget}", slot, particleTarget, "particle");
+                else if (emitter.OwnerObject != slot)
+                    AddIssue(NativePoolIssueSeverity.Error, "particle-owner-mismatch", $"物件 {slot} 的粒子 {particleTarget} owner={emitter.OwnerObject} 不相符", slot, particleTarget, "particle");
+            }
+
+            if (lights is not null)
+            {
+                short target = BinaryPrimitives.ReadInt16LittleEndian(objects.AsSpan(col12Offset + slot * 2));
+                if (target != -1)
+                {
+                    if (target is < 0 or >= NativeLightPool.Capacity)
+                        AddIssue(NativePoolIssueSeverity.Error, "light-target-out-of-range", $"物件 {slot} 的直接光源索引越界：{target}", slot, target, "light");
+                    else if (!lights.TryGetValue(target, out var light))
+                        AddIssue(NativePoolIssueSeverity.Error, "light-target-inactive", $"物件 {slot} 指向未啟用光源 {target}", slot, target, "light");
+                    else if (light.OwnerObject != slot)
+                        AddIssue(NativePoolIssueSeverity.Error, "light-owner-mismatch", $"物件 {slot} 的光源 {target} owner={light.OwnerObject} 不相符", slot, target, "light");
+                }
+            }
 
             uint uid = BinaryPrimitives.ReadUInt32LittleEndian(objects.AsSpan(r + 3));
             if (!uidsSeen.Add(uid))
@@ -283,15 +338,40 @@ public static class NativePoolDiagnostics
                 }
             }
 
+            // Native post-create child backlink: column13 -> runtime object+30.
+            int parent = BinaryPrimitives.ReadUInt16LittleEndian(objects.AsSpan(parentOffset + slot * 2));
+            if (parent != 0xFFFF)
+            {
+                if (parent >= objectCount)
+                    AddIssue(NativePoolIssueSeverity.Error, "object-parent-out-of-range", $"附屬物件槽位 {slot} 的 parent 索引越界: {parent}", slot, parent, "objects");
+                else if (parent == slot)
+                    AddIssue(NativePoolIssueSeverity.Error, "object-parent-self", $"附屬物件槽位 {slot} 的 parent 指向自身", slot, parent, "objects");
+                else if (objects[16 + parent * 79] == 0)
+                    AddIssue(NativePoolIssueSeverity.Error, "object-parent-inactive", $"附屬物件槽位 {slot} 的 parent 指向未啟用物件: {parent}", slot, parent, "objects");
+            }
+
             // 檢查 position links
             if (positions is not null)
             {
                 int p0 = BinaryPrimitives.ReadUInt16LittleEndian(objects.AsSpan(r + 67));
                 int p1 = BinaryPrimitives.ReadUInt16LittleEndian(objects.AsSpan(r + 69));
-                if (p0 >= posCount || positions[8 + p0 * 17] == 0)
+                int p2 = BinaryPrimitives.ReadUInt16LittleEndian(objects.AsSpan(col10Offset + slot * 2));
+                int type = BinaryPrimitives.ReadUInt16LittleEndian(objects.AsSpan(r + 75));
+                if (definitions is { Count: > 0 })
+                {
+                    if (!definitions.TryGetValue(type, out var definition) || !definition.Active)
+                        AddIssue(NativePoolIssueSeverity.Error, "invalid-object-type", $"物件槽位 {slot} 的類型 {type} 沒有有效 objdef 定義", slot);
+                    else if (definition.RequiresThirdPosition && p2 == 0xFFFF)
+                        AddIssue(NativePoolIssueSeverity.Error, "position-2-required", $"物件槽位 {slot} 的類型 {type}（afstr={definition.Afstr}）缺少必要第三位置", slot, p2, "position");
+                    else if (!definition.RequiresThirdPosition && p2 != 0xFFFF)
+                        AddIssue(NativePoolIssueSeverity.Warning, "position-2-unexpected", $"物件槽位 {slot} 的類型 {type}（afstr=0）帶有額外第三位置", slot, p2, "position");
+                }
+                if (!activePositions.Contains(p0))
                     AddIssue(NativePoolIssueSeverity.Error, "position-0-invalid", $"物件槽位 {slot} 的主要位置索引 {p0} 越界或無效", slot, p0, "position");
-                if (p1 >= posCount || positions[8 + p1 * 17] == 0)
+                if (!activePositions.Contains(p1))
                     AddIssue(NativePoolIssueSeverity.Error, "position-1-invalid", $"物件槽位 {slot} 的次要位置索引 {p1} 越界或無效", slot, p1, "position");
+                if (p2 != 0xFFFF && !activePositions.Contains(p2))
+                    AddIssue(NativePoolIssueSeverity.Error, "position-2-invalid", $"物件槽位 {slot} 的第三位置索引 {p2} 越界或無效", slot, p2, "position");
             }
 
             // 檢查 hirarchy backlink
@@ -306,6 +386,51 @@ public static class NativePoolDiagnostics
                         AddIssue(NativePoolIssueSeverity.Error, "hirarchy-group-inactive", $"物件槽位 {slot} 指向未啟用的 hirarchy 群組: {gLink}", slot, gLink, "hirarchy");
                     else if (!groupMembers.TryGetValue(gLink, out var members) || !members.Contains(slot))
                         AddIssue(NativePoolIssueSeverity.Error, "hirarchy-member-mismatch", $"物件槽位 {slot} 指向群組 {gLink}，但該群組成員清單不包含該物件", slot, gLink, "hirarchy");
+                }
+            }
+        }
+
+        if (emitters is not null)
+        {
+            var childLightOwners = new Dictionary<int, int>();
+            foreach (var emitter in emitters.Values)
+            {
+                int owner = emitter.OwnerObject;
+                if (owner != -1)
+                {
+                    if (owner < 0 || owner >= objectCount)
+                        AddIssue(NativePoolIssueSeverity.Error, "particle-owner-out-of-range", $"粒子 {emitter.Slot} 的 owner 物件索引越界：{owner}", owner, emitter.Slot, "particle");
+                    else if (objects[16 + owner * 79] == 0)
+                        AddIssue(NativePoolIssueSeverity.Error, "particle-owner-inactive", $"粒子 {emitter.Slot} 的 owner 指向未啟用物件 {owner}", owner, emitter.Slot, "particle");
+                    else if (BinaryPrimitives.ReadUInt16LittleEndian(objects.AsSpan(col11Offset + owner * 2)) != emitter.Slot)
+                        AddIssue(NativePoolIssueSeverity.Error, "particle-backlink-mismatch", $"粒子 {emitter.Slot} 的 owner 物件 {owner} 未回連此粒子", owner, emitter.Slot, "particle");
+                }
+                foreach (int target in emitter.LightSlots.Distinct())
+                {
+                    if (target is < 0 or >= NativeLightPool.Capacity)
+                        AddIssue(NativePoolIssueSeverity.Error, "particle-light-out-of-range", $"粒子 {emitter.Slot} 的子光源索引越界：{target}", owner, target, "particle");
+                    else if (lights is null || !lights.ContainsKey(target))
+                        AddIssue(NativePoolIssueSeverity.Error, "particle-light-unavailable", $"粒子 {emitter.Slot} 指向未啟用或無法讀取的光源 {target}", owner, target, "particle");
+                    if (childLightOwners.TryGetValue(target, out int previous) && previous != emitter.Slot)
+                        AddIssue(NativePoolIssueSeverity.Error, "particle-light-shared", $"粒子 {previous} 與 {emitter.Slot} 共用子光源 {target}", owner, target, "particle");
+                    else childLightOwners[target] = emitter.Slot;
+                }
+            }
+        }
+
+        if (lights is not null)
+        {
+            foreach (var light in lights.Values)
+            {
+                foreach (var (reference, field) in new[] { ((int)light.OwnerObject, "owner"), ((int)light.ParentObject, "parent") })
+                {
+                    if (reference == -1) continue;
+                    if (reference < 0 || reference >= objectCount)
+                        AddIssue(NativePoolIssueSeverity.Error, "light-" + field + "-out-of-range", $"光源 {light.Slot} 的 {field} 物件索引越界：{reference}", reference, light.Slot, "light");
+                    else if (objects[16 + reference * 79] == 0)
+                        AddIssue(NativePoolIssueSeverity.Error, "light-" + field + "-inactive", $"光源 {light.Slot} 的 {field} 指向未啟用物件 {reference}", reference, light.Slot, "light");
+                    else if (field == "owner" && BinaryPrimitives.ReadInt16LittleEndian(objects.AsSpan(col12Offset + reference * 2)) != light.Slot)
+                        AddIssue(NativePoolIssueSeverity.Error, "light-backlink-mismatch", $"光源 {light.Slot} 的 owner 物件 {reference} 未回連此光源", reference, light.Slot, "light");
                 }
             }
         }
@@ -344,7 +469,7 @@ public static class NativePoolDiagnostics
             activeAction.Count,
             activeGroups.Count,
             objectCount,
-            engineCounter);
+            engineCounter) { ActiveLights = lights?.Count ?? 0, ActiveEmitters = emitters?.Count ?? 0 };
     }
 
     private static NativePoolDiagnosticReport EmptyReport(IReadOnlyList<NativePoolIssue> issues)

@@ -47,7 +47,25 @@ public static class ScriptObjectAliases
 /// </summary>
 public sealed record ScenarioSpawn(string Alias, float X, float Z, int Team, int Count = 0, int Angle = 0, float Y = 0, bool Prebuilt = false)
 {
+    private readonly float? _rawRotation;
+
     public Guid Id { get; init; }
+
+    /// <summary>原生精確旋轉弧度（浮點數）；為 null 時維持舊有整數 Angle 語義。</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public float? RawRotation
+    {
+        get => _rawRotation;
+        init => _rawRotation = value;
+    }
+
+    /// <summary>RawRotation 的別名，供不同呼叫端一致存取。</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public float? RawNativeRotation
+    {
+        get => _rawRotation;
+        init => _rawRotation = value;
+    }
 }
 
 /// <summary>編輯器寫入 DATA 的物件槽位；以 uid 確認仍是同一物件後才在下次儲存時移除。</summary>
@@ -81,6 +99,7 @@ public sealed class ScenarioDocument
             throw new InvalidDataException("不支援或不完整的場景設定。");
         if (result.Version >= 4 && result.Spawns.Any(spawn => spawn is null || spawn.Id == Guid.Empty))
             throw new InvalidDataException("場景物件缺少持久 ID。");
+        ValidateSpawns(result.Spawns);
         ScenarioObjectIdentity.Prepare(result, legacy: result.Version < 4);
         ScenarioEventValidator.ValidateConditions(result.Events);
         return result;
@@ -88,11 +107,29 @@ public sealed class ScenarioDocument
 
     public void Save(string mapDirectory, FileRollbackScope rollback)
     {
+        ValidateSpawns(Spawns);
         ScenarioObjectIdentity.Prepare(this);
         ScenarioEventValidator.ValidateConditions(Events, this);
         Version = 6;
         Core.Services.SafeFileWriter.WriteAllBytes(Path.Combine(mapDirectory, FileName), JsonSerializer.SerializeToUtf8Bytes(this, Options), rollback);
     }
+
+    internal static void ValidateSpawns(IEnumerable<ScenarioSpawn?> spawns)
+    {
+        foreach (var spawn in spawns)
+        {
+            if (spawn is null) continue;
+            if (spawn.RawRotation is { } raw)
+            {
+                if (!float.IsFinite(raw))
+                    throw new InvalidDataException("原生旋轉弧度必須為有限浮點數。");
+                if (!spawn.Prebuilt || ScenarioLevelObjects.RadiansToDisplayAngle(raw) != NormalizeAngle(spawn.Angle))
+                    throw new InvalidDataException("場景物件的角度與原生旋轉弧度矛盾。");
+            }
+        }
+    }
+
+    private static int NormalizeAngle(int angle) => ((angle % 360) + 360) % 360;
 }
 
 /// <summary>
@@ -118,7 +155,9 @@ public static class LevelScriptInjector
            ?? Path.Combine(mapDirectory, "SCRIPT");
 
     /// <summary>依場景設定寫出注入後的腳本；沒有任何生成項目時還原原版腳本。全部在呼叫端交易內完成。</summary>
-    public static void Apply(string mapDirectory, ScenarioDocument scenario, IReadOnlyCollection<string> knownAliases, FileRollbackScope rollback)
+    /// <param name="mainPrologue">可選的開局前置注入（例如開局相機）；在事件之後套用，使其包住 main 並最先執行。每次都從原版備份重建，因此重複儲存不會重複注入。</param>
+    public static void Apply(string mapDirectory, ScenarioDocument scenario, IReadOnlyCollection<string> knownAliases, FileRollbackScope rollback,
+        Action<BciImage>? mainPrologue = null)
     {
         ScenarioEventValidator.Validate(scenario.Events, knownAliases);
         ScenarioEventValidator.ValidateConditions(scenario.Events, scenario);
@@ -127,13 +166,13 @@ public static class LevelScriptInjector
         string script = Path.Combine(scriptDirectory, ScriptFile), backup = Path.Combine(scriptDirectory, OriginalBackupFile);
         if (!File.Exists(backup))
         {
-            if (scenario.ScriptSpawns.Count == 0 && !hasEvents) return; // 從未注入且沒有內容：保持原檔
+            if (scenario.ScriptSpawns.Count == 0 && !hasEvents && mainPrologue is null) return; // 從未注入且沒有內容：保持原檔
             if (!File.Exists(script)) throw new FileNotFoundException("地圖缺少 ak_level.bci，無法加入場景物件。", script);
             Core.Services.SafeFileWriter.WriteAllBytes(backup, File.ReadAllBytes(script), rollback);
         }
         byte[] original = File.ReadAllBytes(backup);
         IReadOnlyList<ScenarioSpawn> spawns = scenario.ScriptSpawns;
-        if (spawns.Count == 0 && !hasEvents) { Core.Services.SafeFileWriter.WriteAllBytes(script, original, rollback); return; }
+        if (spawns.Count == 0 && !hasEvents && mainPrologue is null) { Core.Services.SafeFileWriter.WriteAllBytes(script, original, rollback); return; }
         foreach (ScenarioSpawn spawn in spawns)
             if (!knownAliases.Contains(spawn.Alias, StringComparer.OrdinalIgnoreCase)) throw new InvalidDataException($"未知的物件別名：{spawn.Alias}");
         bool pfil = original.Length >= 64 && original.AsSpan(0, 4).SequenceEqual("PFIL"u8);
@@ -141,6 +180,7 @@ public static class LevelScriptInjector
         int originalMain = image.MainAddress;
         if (spawns.Count > 0) Inject(image, spawns);
         if (hasEvents) ScenarioEventCompiler.Inject(image, scenario.Events, originalMain, scenario);
+        mainPrologue?.Invoke(image);
         byte[] serialized = image.Serialize();
         Core.Services.SafeFileWriter.WriteAllBytes(script, pfil ? GameLZSS.CompressPfil(serialized, original.AsSpan(0, 64).ToArray()) : serialized, rollback);
     }

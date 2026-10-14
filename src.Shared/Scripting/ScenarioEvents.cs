@@ -6,8 +6,13 @@ public enum ScenarioActionKind { Message, Diplomacy, SpawnUnit, Victory, Defeat 
 public enum ScenarioConditionKind { ObjectExists, ObjectDeadOrRemoved, ObjectInArea }
 public sealed record ScenarioCondition(ScenarioConditionKind Kind, Guid TargetId, int MinX = 0, int MinZ = 0, int MaxX = 16383, int MaxZ = 16383);
 
+public sealed record ScenarioWorldPosition(int X, int Z);
+
 public sealed record ScenarioAction(ScenarioActionKind Kind, string Text = "", int Team = 0, int OtherTeam = 1,
-    bool Hostile = true, string Alias = "", float X = 8000, float Z = 8000, int Count = 10);
+    bool Hostile = true, string Alias = "", float X = 8000, float Z = 8000, int Count = 10)
+{
+    public ScenarioWorldPosition? MoveDestination { get; init; }
+}
 
 public sealed record ScenarioEvent(string Name, int DelaySeconds = 10, bool Repeat = false, bool Enabled = true)
 {
@@ -22,6 +27,7 @@ public static class ScenarioEventValidator
         if (events.Count > 256) throw new InvalidDataException("事件上限為 256 個。");
         ValidateConditions(events);
         ValidateTerminalActions(events);
+        ValidateOrders(events);
         foreach (ScenarioEvent item in events)
         {
             if (item is null || string.IsNullOrWhiteSpace(item.Name) || item.Name.Length > 100)
@@ -63,6 +69,15 @@ public static class ScenarioEventValidator
             if (terminal >= 0 && (item.Repeat || terminal != item.Actions.Count - 1))
                 throw new InvalidDataException("勝敗動作必須是單次事件的最後一個動作。");
         }
+    }
+
+    public static void ValidateOrders(IReadOnlyList<ScenarioEvent> events)
+    {
+        foreach (var item in events)
+        foreach (var action in item.Actions)
+            if (action?.MoveDestination is { } destination && (action.Kind != ScenarioActionKind.SpawnUnit
+                || destination.X is < 0 or > 16383 || destination.Z is < 0 or > 16383))
+                throw new InvalidDataException("移動目的地僅適用於生成部隊，X/Z 必須介於 0 與 16383。");
     }
 
     public static void ValidateConditions(IReadOnlyList<ScenarioEvent> events, ScenarioDocument? scenario = null)

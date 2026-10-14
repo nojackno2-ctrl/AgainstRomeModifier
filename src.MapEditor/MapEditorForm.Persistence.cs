@@ -1,4 +1,5 @@
 using AgainstRomeMapEditor.Modules.Persistence;
+using AgainstRomeMapEditor.Modules.Placement;
 using AgainstRomeMapEditor.Modules.Packaging;
 using AgainstRomeModifier;
 using AgainstRomeMapEditor.Modules.Nature;
@@ -13,6 +14,7 @@ internal sealed partial class MapEditorForm
 {
     private bool SaveMap(bool showSuccess)
     {
+        if (!ConfirmDesignCheckBeforeSave(showSuccess)) return false;
         bool saved = TrySaveMap(showSuccess, out Exception? error);
         if (error is not null) ShowError(error);
         return saved;
@@ -30,14 +32,28 @@ internal sealed partial class MapEditorForm
             bool natureChanged = NatureDirty();
             bool placedChanged = PlacedDirty();
             bool eventsChanged = EventsDirty();
+            bool cameraChanged = _startCameraDirty;
             ScenarioDocument? scenario = null, previousScenario = null;
-            if (placedChanged || eventsChanged)
+            if (placedChanged || eventsChanged || cameraChanged)
             {
                 previousScenario = ScenarioDocument.Load(map);
-                // 建築以官方完工範本寫入 DATA（開局即完工）；人物與部隊由地圖腳本生成。
-                scenario = new ScenarioDocument { Events = EventSession.Capture().ToList(), DataSlots = previousScenario.DataSlots.ToList(), Spawns = placedChanged ? _placedObjects.Select(item => new ScenarioSpawn(AliasOf(item.Type), item.WorldX, item.WorldZ, item.Team,
-                    item.Type.Category == SdlObjectCategory.Figure && !item.Type.IsAnimal ? Math.Max(1, item.UnitCount) : 0, (int)MathF.Round(item.Angle), item.WorldY,
-                    Prebuilt: item.Type.Category == SdlObjectCategory.Building && item.Team is >= 0 and <= 8) { Id = item.ScenarioId }).ToList() : previousScenario.Spawns.ToList() };
+                scenario = new ScenarioDocument
+                {
+                    Events = EventSession.Capture().ToList(),
+                    DataSlots = previousScenario.DataSlots.ToList(),
+                    Spawns = placedChanged
+                        ? _placedObjects.Select(item => new ScenarioSpawn(
+                            AliasOf(item.Type),
+                            item.WorldX,
+                            item.WorldZ,
+                            item.Team,
+                            item.Type.Category == SdlObjectCategory.Figure && !item.Type.IsAnimal && !item.RawRotation.HasValue ? Math.Max(1, item.UnitCount) : 0,
+                            item.RawRotation is { } raw ? ScenarioLevelObjects.RadiansToDisplayAngle(raw) : (int)MathF.Round(item.Angle),
+                            item.WorldY,
+                            Prebuilt: (item.Type.Category == SdlObjectCategory.Building && item.Team is >= 0 and <= 8) || item.RawRotation.HasValue)
+                            { Id = item.ScenarioId, RawRotation = item.RawRotation }).ToList()
+                        : previousScenario.Spawns.ToList()
+                };
             }
             var issues = RefreshMapDiagnostics();
             if (issues.Any(issue => issue.Severity == AgainstRomeMapEditor.Modules.Diagnostics.MapIssueSeverity.Error) && _mapCheckTab is not null)
@@ -72,23 +88,35 @@ internal sealed partial class MapEditorForm
             bool prebuiltChanged = placedChanged && scenario is not null && (scenario.Spawns.Any(spawn => spawn.Prebuilt) || previousScenario!.DataSlots.Count > 0);
             if (natureChanged || prebuiltChanged)
             {
-                LevelObjectStore store = LevelObjectStore.Load(map);
-                foreach (int slot in _natureRemovals) store.Remove(slot);
+                LevelObjectStore store = LevelObjectStore.Load(map, NativeObjectDefinitions.Load(_gamePath), NativeLightDefinitions.Load(_gamePath));
+                if (prebuiltChanged) (store, previousScenario) = ImportPendingStarterKit(store, previousScenario!);
+                foreach (int slot in _natureRemovals)
+                    if (!store.Remove(slot))
+                        throw new InvalidDataException($"地景物件槽位 {slot} 已變更、含有連結或共用資料，無法安全移除；請重新載入地圖後檢查。");
                 foreach (NatureAddition addition in _natureAdditions)
                     if (store.Add(addition.Template, addition.X, addition.Y, addition.Z, addition.Rotation) < 0)
-                        throw new InvalidOperationException("地圖的世界物件已達上限（14,000 個），無法再新增。");
+                        throw new InvalidOperationException("地圖的物件、位置或關聯資料池空間不足，無法再新增。");
                 if (prebuiltChanged)
                 {
-                    IReadOnlyList<ScenarioSpawn> skipped = ScenarioLevelObjects.Apply(store, previousScenario!, scenario!, BuildingTemplateFor);
+                    var familyRequests = PlacementEditSession.BuildFamilyCopyRequests(_placedObjects, previousScenario!, store, ResolveNativeAlias);
+                    var candidateResult = ScenarioLevelObjects.ApplyToCandidate(store, previousScenario!, scenario!, StarterKitTemplateFor, familyRequests, ResolveNativeAlias);
+                    store = candidateResult.Store;
+                    scenario = candidateResult.Scenario;
+                    ValidateStarterKitCandidate(store, scenario, PendingStarterKitIds());
                     // 原版地圖沒有此建築的範本時改由腳本生成（開局為工地）。
-                    foreach (ScenarioSpawn spawn in skipped) scenario!.Spawns[scenario.Spawns.IndexOf(spawn)] = spawn with { Prebuilt = false };
+                    foreach (ScenarioSpawn spawn in candidateResult.Skipped)
+                    {
+                        int index = scenario.Spawns.FindIndex(s => s.Id == spawn.Id);
+                        if (index >= 0) scenario.Spawns[index] = scenario.Spawns[index] with { Prebuilt = false };
+                    }
                 }
                 store.Save(map, rollback);
             }
-            if (placedChanged || eventsChanged)
+            if (placedChanged || eventsChanged || cameraChanged)
             {
                 scenario!.Save(map, rollback);
-                LevelScriptInjector.Apply(map, scenario, _objectCatalog.Select(AliasOf).ToArray(), rollback);
+                LevelScriptInjector.Apply(map, scenario, _objectCatalog.Select(AliasOf).ToArray(), rollback, StartCameraPrologue());
+                if (cameraChanged) _startCamera.Save(map, rollback);
                 string legacy = Path.Combine(map, SdlPlacedObjectsFile.FileName); // 舊版（SDL onload，遊戲不會生成）實驗檔
                 if (File.Exists(legacy)) { rollback.TrackFile(legacy); File.Delete(legacy); }
             }
@@ -110,10 +138,19 @@ internal sealed partial class MapEditorForm
                 if (minimap is not null) AgainstRomeModifier.Core.Services.SafeFileWriter.WriteAllBytes(Path.Combine(map, "minimap.bmp"), minimap, rollback);
             }
             rollback.Commit();
+            if (cameraChanged) _startCameraDirty = false;
             if (auxiliaryReset) _resetAuxiliaryLayers = false;
-            if (placedChanged) _placementSession.AcceptChanges();
+            if (placedChanged)
+            {
+                _placementSession.AcceptSavedChanges();
+                _pendingStarterKit = null;
+                if (scenario is not null) _boundRootSlots = scenario.DataSlots.Where(b => b.SpawnId != Guid.Empty).Select(b => b.Slot).ToHashSet();
+                ResetNativeSelection();
+            }
             if (eventsChanged) _eventsBaseline = _events.ToArray();
-            if (natureChanged || prebuiltChanged) LoadLevelObjects(map);
+            // Refresh full-UID family/binding baseline only after rollback.Commit and placement acceptance.
+            // A late failure above leaves the previous preview cache and pending provenance intact.
+            if (natureChanged || prebuiltChanged || placedChanged) LoadLevelObjects(map);
             if (heightsChanged || collisionChanged)
             {
                 // 以寫回後的檔案作為下一次保留原像素的基準；光照係數沿用開圖時由原版資料擬合的值。
@@ -153,10 +190,31 @@ internal sealed partial class MapEditorForm
         catch (Exception ex) { error = ex; return false; }
     }
 
+    internal bool ValidateNativeMapForGamePreview(out string? error)
+    {
+        error = null;
+        if (_selected is null) return false;
+        var missing = NativeMapLoadContract.FindMissingDataFiles(_selected.DirectoryPath);
+        if (missing.Count == 0) return true;
+        bool en = Loc.CurrentLanguage == Language.English;
+        string files = string.Join(", ", missing);
+        error = en
+            ? $"Game preview cancelled: required DATA files are missing: {files}. Restore them from this map's backup or recreate from a complete template. See Map Check for details."
+            : $"已取消遊戲預覽：地圖缺少必要的 DATA 檔案：{files}。請從此地圖備份還原，或從完整範本重新建立；詳細內容請見「地圖檢查」。";
+        return false;
+    }
+
     private void PreviewInGame()
     {
         bool isEn = AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English;
         if (_selected is null) { MessageBox.Show(this, isEn ? "Please select a map to preview." : "請先選擇要預覽的地圖。", Text); return; }
+        if (!ValidateNativeMapForGamePreview(out string? nativeError))
+        {
+            RefreshMapDiagnostics();
+            if (_mapCheckTab is not null) _inspectorTabs.SelectedTab = _mapCheckTab;
+            MessageBox.Show(this, nativeError, Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
         if (_selected.IsCustom && IsDirty && !SaveMap(showSuccess: false)) return;
         string exePath = Path.Combine(_gamePath, "Against_Rome.exe");
         if (!File.Exists(exePath)) { MessageBox.Show(this, isEn ? "Against_Rome.exe not found in game folder." : "遊戲路徑中找不到 Against_Rome.exe。", Text, MessageBoxButtons.OK, MessageBoxIcon.Error); return; }

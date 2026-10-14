@@ -4,6 +4,36 @@
 
 ## 本輪證據範圍
 
+保存高度最終回歸：Release solution build 0 errors；Modules 1070 通過／2 略過；Host 1084 通過／29 略過，0 失敗，forced GL。TRX 在 `re_workspace/native-elevation-full-{modules,host}-20261011`；新增高度實際 26 cases 全通過，包含 focused 25 filter 未命中的 `Native_elevated_shadow`。因此陰影貼地結論依據完整回歸；略過項與原遊戲對照不算完成。
+
+2026-10-11 保存高度接線已驗：`MapSceneObject.HasNativeSavedPosition` 獨立於動畫狀態，原 DATA／nature／projected family 成員使用 absolute WorldY；sprite、marker、深度排序與 picker 共用 anchor。高度依編輯器既有水面／地形慣例 `WorldY / Heightmapstep / 255 * HeightScale` 換算，不再把地形高度重加一次；零／負 Y 合法，invalid step／非有限 Y 回退地形。`NativeHeightMapStep` constructor/get-only 與新 height-field identity 保證 step reload 的 geometry cache 失效，地形更新保留 step，陰影仍貼地。主代理 forced-GL 專項 25 通過，TRX `re_workspace/native-elevation-compiled-20261011`，包含實際 host framebuffer 的 root/child 不同高度與共用 placement picking，保持動畫開啟。前述「仍忽略 WorldY」已由本項更新；此為編輯器預覽，不是原生 FPU／像素投影等價證據。Particle/direct-light saved-state 接線、照明 world-Y 尺度及遊戲內驗收仍待。
+
+2026-10-11 全成員預覽：`MapEditorForm.FamilyPreview.cs` 使用同圖載入的唯讀 store／Scenario 快照，驗完整 UID、來源別名、隊伍與精確方向後，將支援群組的 `ObjectSlots` 逐成員平移。每個成員保留自己的 team／angle／saved visual state，共用根 placement 的選取身分；pending native source 保留原群組，retained 移動／移除則抑制原群組全部成員。連續副本以原來源 provenance 投影，成功存檔後重新載入新 binding／UID，rollback 保留原快照。不在 render path 重讀磁碟，也不把群組成員再次展開成估算部隊陣形。修復合法 degrees fixture 後，Host member／metadata／state 專項 27 通過，TRX 在 `re_workspace/family-preview-repaired-20261011`；完整宿主回歸另行記錄。Particle 與 direct light 效果尚未隨預覽投影，原生 Y 的畫面高度也仍需接線／驗證。
+
+高度投影靜態追查：同 EXE 的 `0x491B50..0x491BC1`（114 bytes）輸入 X/Y/Z，screenX 使用 `(X-Z)>>zoom`，screenY 使用 `(X+Z)>>(zoom+1)`，再扣 `Y>>(zoom-1)`（zoom 0 使用 `Y<<1`）。各運算受 x86 signed32 wrap 與 shift mask 限制；caller `0x4B4790` 先經 `0x419C80` 將 primary position 的三個 float 轉為 int，後者是 signed bias FSUB＋FISTP，取決於未觀察到的 runtime x87 環境。證據為 `re_workspace/native-family-height-20261011-evidence.json`（10 records），不能直接以 `Math.Round` 代替。現有 `SceneObjectRenderer.GroundPoint` 仍忽略物件 WorldY，不能以已傳遞 WorldY 冒充高度呈現完成。
+
+主代理已執行 `probe_native_scene_projection.py`：90 原始指令斷言、74 圖、505 有效 children，其中 76 個與 parent 的 primary position Y 不同；0 errors／missing pool pairs，150 來源 hash 前後一致。完整報告 `re_workspace/native-scene-projection-20261011-verified.json` 包含 signed32／shift-mask 邊界模型與 conditional x87 controls；這些 controls 是假設，不是 runtime 觀察。
+
+member preview 最終宿主回歸（`ARM_OPENGL_REQUIRED=1`）：1058 通過、0 失敗、29 略過，TRX `re_workspace/family-preview-full-host-20261011`；所有新 member／metadata／state cases 通過。略過項與尚缺的高度／effects／native timing／遊戲內驗收不列為完成。
+
+2026-10-11 原生群組預覽補查：同 SHA256 的 EXE 經 Ghidra 12.1.4 完整函式分析，證據保存在 `re_workspace/native-child-render-contract-20261011-evidence.json`（8 records）。`0x4CA010..0x4CA328` 是接收資源、格號、palette 與螢幕座標的 ALR row blit；不能把 `0x4CA000..0x4CA500` 概稱為物件遍歷。真正追到的遍歷為 `0x4B4790`，其呼叫 `0x4B53C0`；後者在格號參數為 -1 時，依該物件 runtime `+0x12` 的 signed anim 槽，取 anim runtime `+0x08` 的 signed 格號。父子關聯已知，不代表子物件跟隨父建築的動畫計時。
+
+`0x48C250` 的 anim reader 與 `0x4B4790`→`0x4CBF70`→`0x4E6B80` 的實際參數順序建立以下讀回契約：
+
+| 視覺狀態 | anim 磁碟 record offset | anim runtime offset |
+| --- | --- | --- |
+| ALR 線性格號 | 5 | 0x08 |
+| APT axis 0 | 13 | 0x12 |
+| APT axis 1 | 17 | 0x16 |
+| APT axis 2 | 15 | 0x14 |
+| APT axis 3 | 19 | 0x18 |
+
+這些 consumer 以 dword load＋SAR16 讀取 signed16，並非把 disk 11/13/15/17 四個連續 short 當四軸。讀回必須經 object 的 anim 槽關聯；object slot 與 anim slot 不一定相同。現有預覽以類型的完工／待機格作預設，尚未接入這些已保存狀態，也尚未完整展開待存群組副本的成員。上述為靜態 renderer／loader 證據；未驗 runtime tick 推進、父子顯隱同步、全場景排序或遊戲內相同畫面。
+
+2026-10-11 主代理執行 `probe_native_visual_state.py`：74 項指令斷言、74 張原始地圖、392344 個 active objects（含 505 children），0 errors／missing pool pairs；150 個來源檔案雜湊前後一致。可重現結果在 `re_workspace/native-visual-state-20261011-verified.json`。`NativeAnimationVisualState` 與 UID 驗證 accessor 已完成，專項 23 通過；完整 Modules 1045 通過／2 既有略過。測試涵蓋 raw/PFIL、非同槽 anim 關聯、四軸排列、signed 邊界、缺失／失效／共用關聯、截斷與 snapshot 隔離；預覽接線另外驗證，不能以解析測試代表 UI 或遊戲內成功。
+
+同日預覽接線已完成：既有原生 DATA／自然物件透過 `MapSceneObject.NativeVisualState` 傳遞同 store 讀取的 UID 驗證快照；重新載入／失效時清除。ALR 使用保存的完整線性格號，APT 依四軸計算；負數、越界與 overflow 拒絕，快取包含完整 state。動畫預覽從保存格開始，在同 ALR bank／固定 APT axes0..2 中循環，速度仍是既有估計值。主代理 Release solution build 0 errors；完整 Modules 1070 通過／2 既有略過；Host state／3D／Nature 34 通過，0 失敗／略過。TRX 在 `re_workspace/native-state-{modules,host}-20261011`。尚未完成 pending/bound family 全成員預覽，未執行原遊戲或驗證 native tick；前述「尚未接入已保存狀態」已由此項更新。
+
 初始靜態分析只讀 repository 既存 `re_workspace/Against_Rome.exe`，SHA-256：
 `6ac85239ea3b87a4357ed8ce09a1818e68c09fe3c00e8d98831f473577b719bf`。
 當時未存取安裝目錄；後續在使用者授權下唯讀複製素材（見下文），未啟動或注入遊戲。以下 x86 指令是靜態證據，尚非實機 API 契約。
@@ -95,6 +125,8 @@ dotnet run --project tools/re/alr-probe -c Release -p:UseAppHost=false -- `
 低版本、非 8-bit、footer、APT 與場景 UI 仍需完成或確認。
 
 ## APT v2/v3 diamond patch 解碼（2026-10-07）
+
+2026-10-10 補充：`NativeAptDocument` 現在保留第一 anchor 與每個 group 的逐 variant light points、smoke points、marker，v2 共用 serialized light list。`NativeAptAttachmentGeometry` 按原生預設矩陣獨立投影第二 anchor 與各點，再換算 parent 格索引及格心；已接光源預覽，替換舊 global extraA/連續 delta 推導。具體位址、驗證與 runtime 限制見 [map-lighting.md](map-lighting.md#apt-frame-光源與原生格心2026-10-10)。煙霧與 marker 的完整 child 建立流程尚未接線，raster 解碼保持既有行為。
 
 `NativeAptDocument` 以自有 bytes 讀 APAT，`DecodeTile` 產生 64×31 ARGB diamond，`DecodeFrame` 依索引表在原 canvas 合成。它是 raster patch 格式，不是將建築當成一般三角網格。222 個實際檔案均為 8-bit、64×31，221 個 v3、1 個 v2；其他布局明確拒絕。
 

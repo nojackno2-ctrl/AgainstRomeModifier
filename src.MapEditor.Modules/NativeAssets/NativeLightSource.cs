@@ -1,10 +1,9 @@
-using System.Globalization;
-using System.Numerics;
+﻿using System.Numerics;
 
 namespace AgainstRomeMapEditor.NativeAssets;
 
 /// <summary>
-/// 光源定義資料模型（對應 lightdef.dau 中的 [LightDefault] 表與記憶體 0x4D2FE9 預設值）。
+/// 光源預覽資料模型；原生定義初始化與合併由共用 NativeLightDefinitions 處理。
 /// </summary>
 public sealed class NativeLightDefinition
 {
@@ -21,7 +20,7 @@ public sealed class NativeLightDefinition
     public float InvRadiusSquared => Radius > 0 ? 1.0f / (Radius * Radius) : 0f;
 
     /// <summary>
-    /// 建立原生引擎預設光源定義（對應 0x4D2FE9：預設半徑 500.0，RGB 1.0，恆亮）。
+    /// 建立預覽用 fallback 光源；原生初始 definition 為 inactive，不使用此 fallback 建立資料池。
     /// </summary>
     public static NativeLightDefinition CreateDefault(int index = 0) => new()
     {
@@ -107,81 +106,155 @@ public sealed class NativeLightCatalog
     /// 格式：;idx ,activ,  red,  grn,  blu,      rad, type,     typep,spefx,-------------name-------------
     /// </summary>
     public static NativeLightCatalog Parse(string content)
-    {
-        ArgumentNullException.ThrowIfNull(content);
-        var dict = new Dictionary<int, NativeLightDefinition>();
+        => FromDefinitions(AgainstRomeModifier.Maps.NativeLightDefinitions.Parse(content));
 
-        using var reader = new StringReader(content);
-        string? line;
-        bool inLightSection = false;
+    public static NativeLightCatalog OpenGame(string gamePath)
+        => FromDefinitions(AgainstRomeModifier.Maps.NativeLightDefinitions.Load(gamePath));
 
-        while ((line = reader.ReadLine()) != null)
+    private static NativeLightCatalog FromDefinitions(IReadOnlyDictionary<int, AgainstRomeModifier.Maps.NativeLightTypeDefinition> definitions)
+        => new(definitions.Values.Select(value => new NativeLightDefinition
         {
-            line = line.Trim();
-            if (line.Length == 0) continue;
+            Index = value.Index, IsActive = value.Active != 0, Color = value.Color, Radius = value.Radius,
+            FlickerType = value.FlickerType, FlickerParam = value.FlickerParameter,
+            SpecialFx = unchecked((int)value.SpecialFx), Name = value.Name
+        }));
 
-            if (line.StartsWith('[') && line.EndsWith(']'))
-            {
-                inLightSection = line.Equals("[LightDefault]", StringComparison.OrdinalIgnoreCase);
-                continue;
-            }
-
-            if (line.StartsWith(';') || line.StartsWith('#')) continue;
-
-            // 若沒有明確 section 標頭但有 CSV 資料列，亦嘗試剖析
-            var parts = line.Split(',', StringSplitOptions.TrimEntries);
-            if (parts.Length < 6) continue;
-
-            if (int.TryParse(parts[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out int idx))
-            {
-                int activ = int.TryParse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out int a) ? a : 1;
-                float r = float.TryParse(parts[2], NumberStyles.Float, CultureInfo.InvariantCulture, out float red) ? red : 1.0f;
-                float g = float.TryParse(parts[3], NumberStyles.Float, CultureInfo.InvariantCulture, out float grn) ? grn : 1.0f;
-                float b = float.TryParse(parts[4], NumberStyles.Float, CultureInfo.InvariantCulture, out float blu) ? blu : 1.0f;
-                float rad = float.TryParse(parts[5], NumberStyles.Float, CultureInfo.InvariantCulture, out float radius) ? radius : 500.0f;
-                int type = (parts.Length > 6 && int.TryParse(parts[6], NumberStyles.Integer, CultureInfo.InvariantCulture, out int t)) ? t : 0;
-                float typep = (parts.Length > 7 && float.TryParse(parts[7], NumberStyles.Float, CultureInfo.InvariantCulture, out float tp)) ? tp : 0.0f;
-                int spefx = (parts.Length > 8 && int.TryParse(parts[8], NumberStyles.Integer, CultureInfo.InvariantCulture, out int fx)) ? fx : 0;
-                string name = parts.Length > 9 ? parts[9] : $"Light_{idx}";
-
-                dict[idx] = new NativeLightDefinition
-                {
-                    Index = idx,
-                    IsActive = activ != 0,
-                    Color = new Vector3(r, g, b),
-                    Radius = rad,
-                    FlickerType = type,
-                    FlickerParam = typep,
-                    SpecialFx = spefx,
-                    Name = name
-                };
-            }
-        }
-
-        return new NativeLightCatalog(dict.Values);
-    }
 }
 
 /// <summary>
 /// 執行期單一局部光源實例（對應 0x7F9EF0 陣列中步長 0x44 的物件）。
+/// 兩種來源：（1）舊預覽：由 <see cref="NativeLightDefinition"/> 合成，位置為 editor 預覽座標；
+/// （2）已保存快照（<see cref="CreateSaved"/>）：instance 自帶原生 XYZ／RGB／effective radius，不依 definition，
+/// 建立後不可變，RGB 不夾值，也不從 definition 重建。
 /// </summary>
 public sealed class NativeLightInstance
 {
-    public Vector3 WorldPosition { get; set; }
-    public NativeLightDefinition Definition { get; set; }
-    public bool IsActive { get; set; }
+    private Vector3 _worldPosition;
+    private NativeLightDefinition _definition;
+    private bool _isActive;
+    private readonly Vector3 _savedColor;
+    private readonly float _savedEffectiveRadius;
 
-    public float Radius => Definition.Radius;
-    public Vector3 Color => Definition.Color;
-    public float RadiusSquared => Definition.RadiusSquared;
-    public float InvRadiusSquared => Definition.InvRadiusSquared;
+    /// <summary>已保存快照沒有可用 definition 時的占位；不代表任何原生 definition。</summary>
+    public static NativeLightDefinition SavedInstanceOnlyDefinition { get; } = new()
+    {
+        Index = -1, IsActive = false, Color = Vector3.Zero, Radius = 0f, Name = "(saved instance, no definition)"
+    };
+
+    /// <summary>true＝原生保存快照（XYZ 為原生世界座標）；false＝舊 definition 合成的預覽光源。</summary>
+    public bool IsSaved { get; }
+    /// <summary>保存快照的 slot；舊預覽光源為 -1。僅供識別，不作去重鍵。</summary>
+    public int SavedSlot { get; } = -1;
+    /// <summary>保存的 baseline radius（column8）；僅資訊，渲染使用 effective radius。舊預覽光源回傳 definition 半徑。</summary>
+    public float BaselineRadius { get; }
+    public bool HasDefinition => !ReferenceEquals(_definition, SavedInstanceOnlyDefinition);
+
+    public Vector3 WorldPosition
+    {
+        get => _worldPosition;
+        set { ThrowIfSaved(); _worldPosition = value; }
+    }
+
+    public NativeLightDefinition Definition
+    {
+        get => _definition;
+        set { ThrowIfSaved(); _definition = value ?? throw new ArgumentNullException(nameof(value)); }
+    }
+
+    public bool IsActive
+    {
+        get => _isActive;
+        set { ThrowIfSaved(); _isActive = value; }
+    }
+
+    public float Radius => IsSaved ? _savedEffectiveRadius : Definition.Radius;
+    public Vector3 Color => IsSaved ? _savedColor : Definition.Color;
+    public float RadiusSquared => Radius * Radius;
+    public float InvRadiusSquared => Radius > 0 ? 1.0f / (Radius * Radius) : 0f;
+
+    /// <summary>保存光源可繪製：active、XYZ／RGB／radius 皆 finite 且 effective radius &gt; 0。</summary>
+    public bool IsRenderable => IsActive && float.IsFinite(_worldPosition.X) && float.IsFinite(_worldPosition.Y) && float.IsFinite(_worldPosition.Z)
+        && float.IsFinite(Color.X) && float.IsFinite(Color.Y) && float.IsFinite(Color.Z) && float.IsFinite(Radius) && Radius > 0;
 
     public NativeLightInstance(Vector3 worldPosition, NativeLightDefinition definition, bool isActive = true)
     {
-        WorldPosition = worldPosition;
-        Definition = definition ?? throw new ArgumentNullException(nameof(definition));
-        IsActive = isActive;
+        _worldPosition = worldPosition;
+        _definition = definition ?? throw new ArgumentNullException(nameof(definition));
+        _isActive = isActive;
+        BaselineRadius = definition.Radius;
     }
+
+    private NativeLightInstance(int slot, Vector3 nativePosition, Vector3 rgb, float effectiveRadius, float baselineRadius, bool isActive, NativeLightDefinition? definition)
+    {
+        IsSaved = true; SavedSlot = slot;
+        _worldPosition = nativePosition; _savedColor = rgb; _savedEffectiveRadius = effectiveRadius; BaselineRadius = baselineRadius;
+        _definition = definition ?? SavedInstanceOnlyDefinition; _isActive = isActive;
+    }
+
+    /// <summary>
+    /// 建立已保存的原生光源：位置是原生 XYZ（不可再乘 tile／relief），RGB 與 effective radius 為保存值。
+    /// 不驗證也不夾值（nonfinite／radius &lt;= 0 以 <see cref="IsRenderable"/> 在繪製時略過）；definition 只作 metadata。
+    /// </summary>
+    public static NativeLightInstance CreateSaved(int slot, Vector3 nativePosition, Vector3 rgb, float effectiveRadius,
+        float baselineRadius = float.NaN, bool isActive = true, NativeLightDefinition? definition = null)
+        => new(slot, nativePosition, rgb, effectiveRadius, baselineRadius, isActive, definition);
+
+    private void ThrowIfSaved()
+    {
+        if (IsSaved) throw new InvalidOperationException("已保存光源快照不可變。");
+    }
+}
+
+/// <summary>
+/// 明確的物件識別鍵（來源檔＋該檔內 ObjectIndex），由呼叫端指定哪些場景物件已有保存光源而不再由 APT／lidef 合成。
+/// 不從名稱或 family 推斷；只有 ObjectIndex == -1 沒有鍵。其餘包含負索引的鍵皆由 caller 明確提供。
+/// </summary>
+public readonly struct SceneLightSuppressionKey : IEquatable<SceneLightSuppressionKey>
+{
+    public string SourceFile { get; }
+    public int ObjectIndex { get; }
+
+    public SceneLightSuppressionKey(string sourceFile, int objectIndex)
+    {
+        ArgumentNullException.ThrowIfNull(sourceFile);
+        if (objectIndex == -1) throw new ArgumentOutOfRangeException(nameof(objectIndex));
+        SourceFile = sourceFile.Replace('\\', '/').ToUpperInvariant(); ObjectIndex = objectIndex;
+    }
+
+    public static bool TryFor(AgainstRomeModifier.Maps.MapSceneObject item, out SceneLightSuppressionKey key)
+    {
+        key = default;
+        if (item.ObjectIndex == -1) return false;
+        key = new SceneLightSuppressionKey(item.SourceFile ?? string.Empty, item.ObjectIndex);
+        return true;
+    }
+
+    public bool Equals(SceneLightSuppressionKey other) => ObjectIndex == other.ObjectIndex && string.Equals(SourceFile, other.SourceFile, StringComparison.Ordinal);
+    public override bool Equals(object? obj) => obj is SceneLightSuppressionKey other && Equals(other);
+    public override int GetHashCode() => HashCode.Combine(SourceFile, ObjectIndex);
+}
+
+/// <summary>
+/// 不可變的已保存光源快照輸入：instance 清單（同座標的不同 instance 全部保留，不去重）＋明確抑制鍵。
+/// 由呼叫端（Form／Rust projection）建立；view 不讀檔、不載入 native DLL。
+/// </summary>
+public sealed class SavedSceneLightSet
+{
+    public static SavedSceneLightSet Empty { get; } = new([], null);
+
+    public System.Collections.Immutable.ImmutableArray<NativeLightInstance> Instances { get; }
+    public System.Collections.Immutable.ImmutableHashSet<SceneLightSuppressionKey> SuppressedObjects { get; }
+
+    public SavedSceneLightSet(IEnumerable<NativeLightInstance> instances, IEnumerable<SceneLightSuppressionKey>? suppressedObjects)
+    {
+        ArgumentNullException.ThrowIfNull(instances);
+        Instances = System.Collections.Immutable.ImmutableArray.CreateRange(instances);
+        foreach (NativeLightInstance light in Instances)
+            if (light is null || !light.IsSaved) throw new ArgumentException("僅接受 NativeLightInstance.CreateSaved 建立的保存光源。", nameof(instances));
+        SuppressedObjects = System.Collections.Immutable.ImmutableHashSet.CreateRange(suppressedObjects ?? Array.Empty<SceneLightSuppressionKey>());
+    }
+
+    public bool HasData => Instances.Length > 0 || SuppressedObjects.Count > 0;
 }
 
 /// <summary>

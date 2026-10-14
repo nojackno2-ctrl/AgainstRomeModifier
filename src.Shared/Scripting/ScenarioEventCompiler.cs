@@ -15,6 +15,7 @@ public static class ScenarioEventCompiler
     {
         ScenarioEventValidator.ValidateConditions(events, scenario);
         ScenarioEventValidator.ValidateTerminalActions(events);
+        ScenarioEventValidator.ValidateOrders(events);
         ScenarioEvent[] active = events.Where(item => item.Enabled).ToArray();
         if (active.Length == 0) return;
         if (scenario is null && active.Any(item => item.Conditions.Count > 0))
@@ -129,10 +130,29 @@ public static class ScenarioEventCompiler
                         poll.Emit(66, action.Hostile ? 1 : 0); poll.Emit(66, action.OtherTeam); poll.Emit(66, action.Team);
                         Call(poll, "s_setTeamHostile", 3); break;
                     case ScenarioActionKind.SpawnUnit:
+                        // Do not reuse outputs left by another action or a failed creation.
+                        if (action.MoveDestination is not null)
+                        {
+                            poll.Emit(66, 0); poll.Emit(91, 0);
+                            poll.Emit(66, 0); poll.Emit(91, 1);
+                        }
                         poll.Emit(66, 100); poll.Emit(66, 100); poll.Emit(66, 0); poll.Emit(66, action.Count);
                         poll.Emit(76, Constant(action.Alias)); poll.Emit(66, (int)MathF.Round(action.Z)); poll.Emit(66, (int)MathF.Round(action.X));
                         poll.Emit(66, 0); poll.Emit(16); poll.Emit(66, 1); poll.Emit(66, 0); poll.Emit(66, 1); poll.Emit(66, action.Team);
-                        poll.Emit(78, 1); poll.Emit(78, 0); Call(poll, "s_createUnitAndMems", 15); break;
+                        poll.Emit(78, 1); poll.Emit(78, 0);
+                        Call(poll, "s_createUnitAndMems", 15, action.MoveDestination is not null);
+                        if (action.MoveDestination is { } destination)
+                        {
+                            poll.Emit(66, 1); poll.Emit(96); int failedCreation = poll.Placeholder(118);
+                            // ENDL_000 code 0xB374: message 8, x/z, two zero payloads, priority 2.
+                            // Use the new group as sender too; no original level-script globals are borrowed.
+                            poll.Emit(66, 2); poll.Emit(66, 0); poll.Emit(66, 0);
+                            poll.Emit(66, destination.Z); poll.Emit(66, destination.X); poll.Emit(66, 8);
+                            poll.Emit(90, 1); poll.Emit(90, 0); poll.Emit(90, 1); poll.Emit(90, 0);
+                            Call(poll, "s_sendMsg", 10);
+                            poll.Resolve(failedCreation, poll.Address);
+                        }
+                        break;
                     case ScenarioActionKind.Victory:
                     case ScenarioActionKind.Defeat:
                         poll.Emit(66, 1); WriteState(poll, "ARM_MISSION_ENDED");

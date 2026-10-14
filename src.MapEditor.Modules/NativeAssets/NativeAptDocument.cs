@@ -3,6 +3,9 @@ using System.Buffers.Binary;
 namespace AgainstRomeMapEditor.NativeAssets;
 
 internal sealed record NativeAptFrameRange(int FirstTile, int TileCount);
+internal readonly record struct NativeAptPoint(int X, int Y);
+internal sealed record NativeAptAttachmentGroup(NativeAptPoint Marker,
+    IReadOnlyList<IReadOnlyList<NativeAptPoint>> LightVariants, IReadOnlyList<NativeAptPoint> SmokePoints);
 internal sealed record NativeAptTileInfo(int DataOffset, uint PackedPosition, uint AuxiliaryBytes)
 {
     public int X => (int)(PackedPosition & 0x7FF);
@@ -19,21 +22,23 @@ internal sealed class NativeAptIndexedImage(int width, int height, uint[] pixels
 /// <summary>
 /// APAT v2/v3 indexed diamond patches following loader 0x4E5710 and row helper
 /// 0x4E6CD0. These are raster patches, not assumed triangle meshes. Parses owned
-/// bytes only; unknown group metadata and IFOM semantics are not interpreted.
+/// bytes only; frame light/smoke points and markers are retained. Other group
+/// metadata and IFOM semantics are not interpreted.
 /// </summary>
 internal sealed class NativeAptDocument
 {
     private readonly uint[] _rowOffsets, _rowWidths, _palettes;
     private readonly byte[] _data;
 
-    private NativeAptDocument(uint version, int width, int height, int anchorX, int anchorY,
+    private NativeAptDocument(uint version, int width, int height, int anchorX, int anchorY, NativeAptPoint projectionOrigin,
         uint[] layout, uint[] rowOffsets, uint[] rowWidths, uint[] palettes, int colors,
-        int variants, NativeAptFrameRange[] frames, NativeAptTileInfo[] tiles, byte[] data)
+        int variants, NativeAptFrameRange[] frames, NativeAptTileInfo[] tiles, byte[] data, NativeAptAttachmentGroup[] attachments)
     {
         Version = version; Width = width; Height = height; AnchorX = anchorX; AnchorY = anchorY;
         Layout = Array.AsReadOnly(layout); _rowOffsets = rowOffsets; _rowWidths = rowWidths;
         _palettes = palettes; PaletteColorCount = colors; PaletteVariantCount = variants;
         Frames = Array.AsReadOnly(frames); Tiles = Array.AsReadOnly(tiles); _data = data;
+        ProjectionOrigin = projectionOrigin; AttachmentGroups = Array.AsReadOnly(attachments);
     }
 
     public uint Version { get; }
@@ -41,6 +46,20 @@ internal sealed class NativeAptDocument
     public int Height { get; }
     public int AnchorX { get; }
     public int AnchorY { get; }
+    public NativeAptPoint ProjectionOrigin { get; }
+    public IReadOnlyList<NativeAptAttachmentGroup> AttachmentGroups { get; }
+
+    // Native 4e6ec0 selects group by axes0/2, then chooses the axis1 light list.
+    public (IReadOnlyList<NativeAptPoint> Lights, IReadOnlyList<NativeAptPoint> Smoke, NativeAptPoint? Marker)
+        GetAttachments(uint axis0, uint axis1, uint axis2)
+    {
+        if (Layout.Take(3).Any(size => size == 0)) throw new InvalidDataException("APT attachment layout has a zero axis.");
+        axis0 = Math.Min(axis0, Layout[0] - 1); axis1 = Math.Min(axis1, Layout[1] - 1); axis2 = Math.Min(axis2, Layout[2] - 1);
+        ulong index = (ulong)axis0 * Layout[2] + axis2;
+        if (index >= (ulong)AttachmentGroups.Count) throw new InvalidDataException("APT attachment group is missing.");
+        var group = AttachmentGroups[(int)index];
+        return (group.LightVariants[(int)axis1], group.SmokePoints, group.Marker.X == -1000000 ? null : group.Marker);
+    }
     public int PaletteColorCount { get; }
     public int PaletteVariantCount { get; }
     // Native linear index: (((a * Layout[1]) + b) * Layout[2] + c) * Layout[3] + d.
@@ -70,27 +89,33 @@ internal sealed class NativeAptDocument
         uint[] rowOffsets = reader.Words(31), rowWidths = reader.Words(31);
         for (int y = 0; y < 31; y++)
             if (rowWidths[y] > 64) throw new InvalidDataException("APT row width exceeds its diamond.");
-        _ = reader.Words(2); // First anchor pair has different native consumers.
+        var projectionOrigin = new NativeAptPoint(unchecked((int)reader.Word()), unchecked((int)reader.Word()));
         int anchorX = unchecked((int)reader.Word()), anchorY = unchecked((int)reader.Word());
         uint extraA = reader.Word(), extraB = reader.Word();
         int groups = Count(reader.Word());
         reader.Require((long)groups * (version == 3 ? 6 + groupVariants : 7) * 4);
         var groupCounts = new uint[groups][];
+        var markers = new NativeAptPoint[groups];
         for (int i = 0; i < groups; i++)
         {
-            _ = reader.Words(2); // Group bounds/position pair, not mesh vertices.
+            markers[i] = new(unchecked((int)reader.Word()), unchecked((int)reader.Word()));
             uint first = reader.Word(), second = reader.Word();
             uint[] perVariant = reader.Words(version == 3 ? groupVariants : 1);
             // v2 stores this list once and the loader replicates it into variant slots.
             groupCounts[i] = [first, second, .. perVariant, reader.Word(), reader.Word()];
         }
         reader.Skip(((long)extraA + extraB) * 8);
-        foreach (uint[] counts in groupCounts)
+        var attachments = new NativeAptAttachmentGroup[groups];
+        for (int group = 0; group < groups; group++)
         {
-            long bytes = (long)counts[0] * 12 + (long)counts[1] * 8;
-            for (int i = 2; i < counts.Length - 2; i++) bytes += (long)counts[i] * 8;
-            bytes += (long)counts[^2] * 8 + (long)counts[^1] * 16;
-            reader.Skip(bytes);
+            uint[] counts = groupCounts[group];
+            reader.Skip((long)counts[0] * 12 + (long)counts[1] * 8);
+            var lightVariants = new IReadOnlyList<NativeAptPoint>[groupVariants];
+            for (int i = 0; i < groupVariants; i++)
+                lightVariants[i] = version == 2 && i > 0 ? lightVariants[0] : Array.AsReadOnly(reader.Points(Count(counts[2 + i])));
+            var smoke = Array.AsReadOnly(reader.Points(Count(counts[^2])));
+            reader.Skip((long)counts[^1] * 16);
+            attachments[group] = new(markers[group], Array.AsReadOnly(lightVariants), smoke);
         }
         reader.Require((long)frameCount * 8);
         var frames = new NativeAptFrameRange[frameCount];
@@ -111,8 +136,8 @@ internal sealed class NativeAptDocument
         byte[] data = reader.Bytes(Count(header[27])).ToArray();
         foreach (var tile in tiles)
             if ((long)tile.DataOffset + 8 > data.Length) throw new InvalidDataException("APT tile points outside its pixel block.");
-        return new NativeAptDocument(version, width, height, anchorX, anchorY, header[8..12],
-            rowOffsets, rowWidths, palettes, colors, variants, frames, tiles, data);
+        return new NativeAptDocument(version, width, height, anchorX, anchorY, projectionOrigin, header[8..12],
+            rowOffsets, rowWidths, palettes, colors, variants, frames, tiles, data, attachments);
     }
 
     public NativeAptIndexedImage DecodeTile(int tileIndex, int paletteVariant = 0)
@@ -193,6 +218,12 @@ internal sealed class NativeAptDocument
             Require((long)count * 4); var words = new uint[count];
             for (int i = 0; i < count; i++) words[i] = Word();
             return words;
+        }
+        public NativeAptPoint[] Points(int count)
+        {
+            Require((long)count * 8); var points = new NativeAptPoint[count];
+            for (int i = 0; i < count; i++) points[i] = new(unchecked((int)Word()), unchecked((int)Word()));
+            return points;
         }
         public void Skip(long count) { Require(count); _position += (int)count; }
         public ReadOnlySpan<byte> Bytes(int count)

@@ -1,9 +1,10 @@
 index,name,type,status,used_by,notes
-4,Moves,float,stable,ModifierForm.Patches.cs,Primary movement speed multiplier target.
-19,Hp,float,stable,ModifierForm.Patches.cs,Unit hit points.
+4,Moves,float32,verified-static,NativeObjectDefinitions.cs;ModifierForm.Patches.cs,Parsed with %f into type+0c; copied to objdata+14 on creation; group helper uses minimum member value.
+19,Hp,int32,verified-static,NativeObjectDefinitions.cs;ObjdefPatcher.cs,lpmax parsed with %ld into type+2c; signed integer converted to objdata float on creation.
 23,Movsf,float,stable,ModifierForm.Patches.cs,Secondary movement speed field.
 24,Sirad,float,stable,ModifierForm.Patches.cs,Sight radius.
 52,Name,string,candidate,TroopConfig.cs,Unit display/name reference field.
+54,Typus,int16,verified-static,NativeObjectDefinitions.cs;LevelObjectStore.cs,Signed table index default -1; active typus low flags bit10 controls new objdata field1c initial 100 versus 0; gameplay purpose unverified.
 78,Weapon1Akti,int,stable,ModifierForm.Data.cs,Weapon 1 active flag.
 79,Weapon1Dam,float,stable,ModifierForm.Patches.cs,Weapon 1 damage.
 80,Weapon1RangeMin,float,stable,ObjdefPatcher.cs,w1_rad1; weapon minimum range.
@@ -25,3 +26,10 @@ index,name,type,status,used_by,notes
 156,HousingCapacity,int,stable,ModifierForm.Patches.cs,wohnwer value summed for all OD_WOHNRAUM objects; optional core switch multiplies positive original values by 20.
 191,Bmovs,float,stable,ModifierForm.Patches.cs,Building/alternate movement speed field.
 199,Weapon1Dtyp,int,candidate,ModifierForm.Data.cs,Weapon damage/type table base; values 1-4 are treated as ranged by current code.
+60,afstr,int16,verified-static,NativeObjectDefinitions.cs,Nonzero active type requires third position in native create; full gameplay semantics unknown.
+21,Morale,int32,verified-static,NativeObjectDefinitions.cs,mpmax parsed with %ld into type+34; signed integer converted to objdata float on creation.
+152,maxruhm,int32,verified-static,NativeObjectDefinitions.cs,Parsed with %ld into type+22c and copied as raw32 to objdata+4c; full gameplay semantics unconfirmed.
+66,lidef,int16,verified-static,NativeObjectDefinitions.cs;LevelObjectStore.cs,Direct light definition index; native create validates active lightdef and creates independent slot.
+67,lihei,int16,verified-static,NativeObjectDefinitions.cs;LevelObjectStore.cs,Low16 of signed32 parse; signed height added to owner light Y during update; reset zero.
+70,lightrad,float32,verified-static,NativeObjectDefinitions.cs;LevelObjectStore.cs,Horizontal offset distance for owner light transform; distinct from illumination radius; reset zero.
+71,lightang,float32,verified-static,NativeObjectDefinitions.cs;LevelObjectStore.cs,Degree offset subtracted from owner rotation minus90 before sin/cos transform; reset zero.

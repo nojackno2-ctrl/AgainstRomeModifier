@@ -5,6 +5,33 @@ namespace AgainstRomeModifier.Tests;
 
 public sealed class NativePoolDiagnosticsTests
 {
+    [Theory]
+    [InlineData("valid", null)]
+    [InlineData("owner-inactive", "light-owner-inactive")]
+    [InlineData("parent-inactive", "light-parent-inactive")]
+    [InlineData("owner-range", "light-owner-out-of-range")]
+    [InlineData("backlink", "light-backlink-mismatch")]
+    [InlineData("target", "light-target-inactive")]
+    public void Light_owner_parent_and_object_column12_are_checked(string fault, string? expected)
+    {
+        using var fixture = new TestDataPools();
+        int column12 = 16 + TestDataPools.Count * (79 + LevelObjectStore.ColumnWidths.Take(12).Sum());
+        for (int slot = 0; slot < TestDataPools.Count; slot++) U16(fixture.Objects, column12 + slot * 2, 0xFFFF);
+        var pool = NativeLightPool.ParsePayload(NativeLightPoolTests.EmptyPool());
+        pool.AddBatch(new[] { new NativeLightCreation(new(1, 2, 3), new(1, 1, 1), 500, 0, 0, 0, 0, 0, 1) });
+        byte[] lightBytes = pool.ToPayload(); U16(fixture.Objects, column12, 0);
+        if (fault == "owner-inactive") U16(lightBytes, 8 + 1024 * 50, 3);
+        if (fault == "parent-inactive") U16(lightBytes, 8 + 1024 * 52, 3);
+        if (fault == "owner-range") U16(lightBytes, 8 + 1024 * 50, 100);
+        if (fault == "backlink") U16(fixture.Objects, column12, 0xFFFF);
+        if (fault == "target") U16(fixture.Objects, column12, 1);
+        fixture.WriteAll(); File.WriteAllBytes(Path.Combine(fixture.DataPath, "light.dat"), lightBytes);
+        var report = NativePoolDiagnostics.DiagnoseDirectory(fixture.DataPath);
+        Assert.Equal(1, report.ActiveLights);
+        if (expected is null) Assert.DoesNotContain(report.Issues, issue => issue.TargetPool == "light");
+        else Assert.Contains(report.Issues, issue => issue.Code == expected);
+    }
+
     private static void U16(byte[] b, int offset, ushort val) => BinaryPrimitives.WriteUInt16LittleEndian(b.AsSpan(offset), val);
     private static void U32(byte[] b, int offset, uint val) => BinaryPrimitives.WriteUInt32LittleEndian(b.AsSpan(offset), val);
 
@@ -32,6 +59,10 @@ public sealed class NativePoolDiagnosticsTests
 
             // objects.dat header
             U32(Objects, 0, 1); U32(Objects, 4, Count); U32(Objects, 8, 30); U32(Objects, 12, 30);
+            int parentOffset = 16 + Count * (79 + LevelObjectStore.ColumnWidths.Take(13).Sum());
+            for (int slot = 0; slot < Count; slot++) U16(Objects, parentOffset + slot * 2, 0xFFFF);
+            int particleOffset = 16 + Count * (79 + LevelObjectStore.ColumnWidths.Take(11).Sum());
+            for (int slot = 0; slot < Count; slot++) U16(Objects, particleOffset + slot * 2, 0xFFFF);
             // anim.dat header
             U32(Anim, 0, 1); U32(Anim, 4, Count);
             // gfxtype.dat header
@@ -80,6 +111,8 @@ public sealed class NativePoolDiagnosticsTests
                 Position[8 + (s * 2) * 17] = 1;
                 Position[8 + (s * 2 + 1) * 17] = 1;
             }
+            int thirdColumn = 16 + Count * (79 + LevelObjectStore.ColumnWidths.Take(10).Sum());
+            for (int s = 0; s < Count; s++) U16(Objects, thirdColumn + s * 2, 0xFFFF);
 
             // hirarchy group 0 active with members [0, 1]
             int gOff = 12;
@@ -126,6 +159,48 @@ public sealed class NativePoolDiagnosticsTests
         {
             try { Directory.Delete(_dir, true); } catch { }
         }
+    }
+
+    [Theory]
+    [InlineData(0xFFFF, false, false)]
+    [InlineData(4, true, false)]
+    [InlineData(4, false, true)]
+    [InlineData(8, false, true)]
+    public void Optional_third_position_checks_sentinel_bounds_and_active_target(int target, bool active, bool error)
+    {
+        using var data = new TestDataPools();
+        int column = 16 + TestDataPools.Count * (79 + LevelObjectStore.ColumnWidths.Take(10).Sum());
+        U16(data.Objects, column, (ushort)target);
+        if (target < TestDataPools.PosCount) data.Position[8 + target * 17] = active ? (byte)1 : (byte)0;
+        data.WriteAll();
+        var report = NativePoolDiagnostics.DiagnoseDirectory(data.DataPath);
+        Assert.Equal(error, report.Issues.Any(i => i.Code == "position-2-invalid"));
+        if (error)
+        {
+            var issue = Assert.Single(report.Issues, i => i.Code == "position-2-invalid");
+            Assert.Equal(0, issue.ObjectSlot); Assert.Equal(target, issue.TargetSlot);
+        }
+    }
+
+    [Fact]
+    public void Truncated_position_payload_reports_error_without_indexing_missing_records()
+    {
+        using var data = new TestDataPools();
+        data.Position = data.Position[..8];
+        data.WriteAll();
+        var report = NativePoolDiagnostics.DiagnoseDirectory(data.DataPath);
+        Assert.Contains(report.Issues, i => i.Code == "position-length-mismatch");
+        Assert.False(report.IsHealthy);
+    }
+
+    [Fact]
+    public void Truncated_engine_is_reported_without_exposing_its_counter_as_valid()
+    {
+        using var data = new TestDataPools();
+        data.Engine = data.Engine[..38]; data.WriteAll();
+        var report = NativePoolDiagnostics.DiagnoseDirectory(data.DataPath);
+        Assert.Contains(report.Issues, i => i.Code == "invalid-engine");
+        Assert.Null(report.EngineUidCounter); Assert.False(report.IsHealthy);
     }
 
     [Fact]

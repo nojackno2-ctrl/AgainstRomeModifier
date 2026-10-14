@@ -53,8 +53,10 @@ public sealed partial class MapEditorSaveTransactionTests
         });
     }
 
-    [Fact]
-    public void Pending_nature_addition_rolls_back_then_is_written_once_on_retry()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Pending_nature_addition_rolls_back_then_is_written_once_on_retry(bool corruptEngine)
     {
         string map = CreateFixture("ENDL_009");
         WriteEmptyWorldStore(map, 8);
@@ -71,7 +73,7 @@ public sealed partial class MapEditorSaveTransactionTests
             record[0] = 1;
             BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(75), 1);
             uint[] columns = new uint[18];
-            columns[10] = 0xFFFF;
+            foreach (int column in new[] { 2, 3, 4, 5, 8, 10, 11, 12, 13 }) columns[column] = 0xFFFF;
             var template = new LevelObjectTemplate(1, record, columns,
                 LevelObjectStore.ObjDataWidths.Select(width => new byte[width]).ToArray(), new byte[17], new byte[17]);
             nature.Plant(new(template, "LanGerLau00", 4000, 0, 5000, 0.75f));
@@ -91,6 +93,20 @@ public sealed partial class MapEditorSaveTransactionTests
             Assert.True(nature.CanUndo);
             Directory.CreateDirectory(Path.Combine(map, "SCRIPT"));
             File.WriteAllBytes(Path.Combine(map, "SCRIPT", LevelScriptInjector.ScriptFile), ScenarioEventsTests.Fixture().Serialize());
+            if (corruptEngine)
+            {
+                string enginePath = Path.Combine(map, "DATA", "engine.dat");
+                byte[] engine = new byte[94]; BinaryPrimitives.WriteInt32LittleEndian(engine, 1);
+                BinaryPrimitives.WriteUInt32LittleEndian(engine.AsSpan(34), 200);
+                File.WriteAllBytes(enginePath, engine[..38]);
+                var withBrokenPool = SnapshotDirectory(map);
+                Assert.False(form.TrySaveMap(false, out error));
+                var poolError = Assert.IsType<InvalidDataException>(error); Assert.Contains("engine.dat", poolError.Message);
+                AssertSnapshotUnchanged(map, withBrokenPool);
+                Assert.Single(nature.Additions); Assert.True(nature.IsDirty); Assert.True(nature.CanUndo);
+                Assert.Contains(form.RefreshMapDiagnostics(), issue => issue.Code == "native-data-invalid-engine");
+                File.WriteAllBytes(enginePath, engine);
+            }
             Assert.True(form.TrySaveMap(false, out error), error?.ToString());
             var added = Assert.Single(LevelObjectStore.Load(map).Objects());
             Assert.Equal(4000, added.X);

@@ -76,10 +76,19 @@ public static class SdlObjectCatalog
     }
 }
 
+/// <summary>原生 DATA 根物件的暫存槽位與 UID 身份（用於尚未儲存的原圖群組副本）。</summary>
+public readonly record struct NativeObjectIdentity(int Slot, uint Uid)
+{
+    public override string ToString() => $"Slot {Slot}, Uid {Uid}";
+}
+
 /// <summary>編輯器暫存的一個預放物件（世界絕對座標）。</summary>
 public sealed record SdlPlacedObject(SdlObjectType Type, float WorldX, float WorldY, float WorldZ, int Team, float Angle = 0, int UnitCount = 0)
 {
     public Guid ScenarioId { get; init; }
+    public Guid CopySourceScenarioId { get; init; }
+    public NativeObjectIdentity? NativeSourceIdentity { get; init; }
+    public float? RawRotation { get; init; }
 }
 
 /// <summary>

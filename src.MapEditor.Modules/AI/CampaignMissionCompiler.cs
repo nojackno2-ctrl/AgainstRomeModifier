@@ -45,6 +45,8 @@ public static class CampaignMissionCompiler
         // 2. 驗證所有部隊別名是否合法
         foreach (var wave in plan.Waves)
         {
+            if (wave.AssignedPathId is not null || wave.TargetObjectId is not null || wave.Squads.Any(s => s.RelativeDelaySeconds != 0))
+                diagnostics.Add($"[Error] 波次 {wave.WaveIndex}：巡邏路徑、物件攻擊與部隊相對延遲尚未支援。 | Patrol paths, object attacks and relative delays are unsupported.");
             foreach (var squad in wave.Squads)
             {
                 if (!knownAliases.Contains(squad.Alias, StringComparer.OrdinalIgnoreCase))
@@ -148,7 +150,7 @@ public static class CampaignMissionCompiler
                     Team: squad.Team,
                     Count: squad.Count,
                     X: wave.SpawnX,
-                    Z: wave.SpawnZ));
+                    Z: wave.SpawnZ) { MoveDestination = wave.MoveDestination });
             }
 
             var waveEvent = new ScenarioEvent(

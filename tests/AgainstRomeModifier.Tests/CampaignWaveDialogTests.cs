@@ -9,6 +9,19 @@ namespace AgainstRomeModifier.Tests;
 
 public sealed class CampaignWaveDialogTests
 {
+    [Fact]
+    public void Destination_controls_compile_and_preview_optional_world_move() => InSta(() =>
+    {
+        using var dialog = new CampaignWaveDialog(Aliases, new ScenarioDocument());
+        Assert.All(dialog.PreviewResult.CompiledEvents.SelectMany(e => e.Actions), a => Assert.Null(a.MoveDestination));
+        dialog.DestinationX = 1234; dialog.DestinationZ = 5678; dialog.MoveAfterSpawn = true;
+        Assert.True(dialog.CanApply);
+        Assert.All(dialog.PreviewResult.CompiledEvents.SelectMany(e => e.Actions), a => Assert.Equal(new(1234, 5678), a.MoveDestination));
+        Assert.Contains("→ (1234, 5678)", dialog.PreviewText);
+        dialog.MoveAfterSpawn = false;
+        Assert.All(dialog.PreviewResult.CompiledEvents.SelectMany(e => e.Actions), a => Assert.Null(a.MoveDestination));
+    });
+
     private static string[] Aliases => AiArchetypeCatalog.All.SelectMany(p => p.UnitPreferences).Select(p => p.Alias).Distinct().ToArray();
 
     [Fact]

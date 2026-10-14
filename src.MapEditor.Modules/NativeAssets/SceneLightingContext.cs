@@ -62,13 +62,18 @@ internal sealed class SceneLightingContext : IDisposable
     /// </summary>
     public List<NativeLightInstance> CollectSceneLights(
         IReadOnlyList<MapSceneObject> objects,
-        Func<float, float, float> sampleWorldGroundHeight)
+        Func<float, float, float> sampleWorldGroundHeight,
+        IReadOnlySet<SceneLightSuppressionKey>? suppressedObjects = null)
     {
         var result = new List<NativeLightInstance>();
         if (_lightCatalog == null || _objectLightingCatalog == null) return result;
 
         foreach (var obj in objects)
         {
+            // 呼叫端明確指定已有保存光源的物件：不再由 APT／lidef 重複合成（其餘 legacy 物件照舊合成）。
+            if (suppressedObjects is { Count: > 0 } && SceneLightSuppressionKey.TryFor(obj, out var key) && suppressedObjects.Contains(key))
+                continue;
+
             if (!_objectLightingCatalog.TryGetDefinition(obj.Name, out var def))
                 continue;
 
@@ -84,7 +89,8 @@ internal sealed class SceneLightingContext : IDisposable
                         {
                             foreach (var delta in lightPoints)
                             {
-                                float x = obj.WorldX + delta.X, z = obj.WorldZ + delta.Z;
+                                float x = NativeAptAttachmentGeometry.WorldGridOrigin(obj.WorldX) + delta.X,
+                                    z = NativeAptAttachmentGeometry.WorldGridOrigin(obj.WorldZ) + delta.Z;
                                 Vector3 worldPos = new Vector3(
                                     x, sampleWorldGroundHeight(x, z) + def.AptLightHeightOffset, z);
 
@@ -175,15 +181,12 @@ internal sealed class SceneLightingContext : IDisposable
 
         if (!string.IsNullOrEmpty(gamePath) && Directory.Exists(gamePath))
         {
-            string lightDefPath = Path.Combine(gamePath, "SYSTEM", "DATA_MP", "DEFAULTS", "lightdef.dau");
-            if (File.Exists(lightDefPath))
+            try
             {
-                try
-                {
-                    lightCatalog = NativeLightCatalog.Open(lightDefPath);
-                }
-                catch { }
+                lightCatalog = NativeLightCatalog.OpenGame(gamePath);
+                if (lightCatalog.Count == 0) lightCatalog = null;
             }
+            catch { }
 
             objectCatalog = NativeObjectLightingCatalog.Open(gamePath);
 

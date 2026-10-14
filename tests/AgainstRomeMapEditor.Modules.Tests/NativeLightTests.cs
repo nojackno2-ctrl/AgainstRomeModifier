@@ -7,6 +7,18 @@ namespace AgainstRomeMapEditor.Modules.Tests;
 public sealed class NativeLightTests
 {
     [Fact]
+    public void Catalog_uses_native_inactive_initial_values_and_partial_layers()
+    {
+        var catalog = NativeLightCatalog.Parse("[Other]\n7,1\n[LightDefault]\n2\n1,1,.2,.4,.6,350,1,.05,0,Torch\n1,0\n1,-1,.8");
+        Assert.Equal(2, catalog.Count);
+        Assert.False(catalog.GetDefinition(2).IsActive);
+        Assert.Equal("LD_NoNameEntered", catalog.GetDefinition(2).Name);
+        Assert.True(catalog.GetDefinition(1).IsActive);
+        Assert.Equal(new Vector3(.8f, .4f, .6f), catalog.GetDefinition(1).Color);
+        Assert.Equal(350, catalog.GetDefinition(1).Radius);
+    }
+
+    [Fact]
     public void NativeLightDefinition_CreateDefault_ReturnsExpectedValues()
     {
         var def = NativeLightDefinition.CreateDefault(5);
@@ -270,83 +282,15 @@ public sealed class NativeLightTests
     }
 
     [Fact]
-    public void NativeAptLightPoints_ExtractLightPoints_CorrectlyCalculatesDeltasAndWorldPositions()
+    public void NativeAptLightPoints_Extracts_frame_points_and_places_them_at_native_grid_centers()
     {
-        // 建立符合 APAT v3 規格之合成最小檔案結構：
-        // header: 28 words
-        // row offsets & widths: 62 words
-        // first anchor: 2 words
-        // anchor: 2 ints (569, 405)
-        // extraA, extraB: 2 ints (4, 0)
-        // groups: 1 int (0)
-        // extraA points: 4 pairs of ints
-        var stream = new MemoryStream();
-        using (var writer = new BinaryWriter(stream))
-        {
-            uint[] header = new uint[28];
-            header[0] = 0x54415041; // "APAT"
-            header[1] = 3;          // v3
-            header[3] = 112;        // tableOffset
-            header[6] = 64;
-            header[7] = 31;
-            header[9] = 1;          // groupVariants
-            header[13] = 8;
-            header[20] = 1;         // colors
-            header[21] = 1;         // variants
-            header[23] = 64;        // width
-            header[24] = 31;        // height
-            header[27] = 8;         // pdat bytes
-            foreach (uint w in header) writer.Write(w);
-
-            // rowOffsets (31 words) + rowWidths (31 words)
-            for (int i = 0; i < 62; i++) writer.Write(0u);
-
-            // First anchor pair (2 words)
-            writer.Write(0u); writer.Write(0u);
-
-            // AnchorX, AnchorY (569, 405)
-            writer.Write(569);
-            writer.Write(405);
-
-            // extraA = 4, extraB = 0
-            writer.Write(4u);
-            writer.Write(0u);
-
-            // groups = 0
-            writer.Write(0u);
-
-            // 4 light points (與日耳曼主屋 gerhau00.apt extraA 相同之螢幕坐標)
-            writer.Write(665); writer.Write(453); // delta = (96, 48)
-            writer.Write(441); writer.Write(469); // delta = (-128, 64)
-            writer.Write(697); writer.Write(341); // delta = (128, -64)
-            writer.Write(441); writer.Write(341); // delta = (-128, -64)
-        }
-
-        byte[] aptBytes = stream.ToArray();
-
-        var points = NativeAptLightPoints.ExtractLightPoints(aptBytes);
+        byte[] bytes = NativeAptAttachmentTests.SingleLights((96, 48), (-128, 64), (128, -64), (-128, -64));
+        var points = NativeAptLightPoints.ExtractLightPoints(bytes);
         Assert.Equal(4, points.Count);
-        Assert.Equal(96, points[0].DeltaAnchorX);
-        Assert.Equal(48, points[0].DeltaAnchorY);
-        Assert.Equal(-128, points[1].DeltaAnchorX);
-        Assert.Equal(64, points[1].DeltaAnchorY);
-
-        // 測試計算世界空間坐標（建築物位於 10624, 10112，地面 0，高度偏移 80）
-        var worldPositions = NativeAptLightPoints.GetBuildingWorldLightPositions(
-            aptBytes,
-            buildingWorldX: 10624f,
-            buildingWorldZ: 10112f,
-            groundY: 0f,
-            aptHeightOffset: 80f);
-
-        Assert.Equal(4, worldPositions.Count);
-        // L0: 10624 + (96 + 2*48) = 10624 + 192 = 10816, Z = 10112 + (2*48 - 96) = 10112
-        Assert.Equal(new Vector3(10816f, 80f, 10112f), worldPositions[0]);
-        // L1: 10624 + (-128 + 2*64) = 10624 + 0 = 10624, Z = 10112 + (2*64 - (-128)) = 10112 + 256 = 10368
-        Assert.Equal(new Vector3(10624f, 80f, 10368f), worldPositions[1]);
-        // L2: 10624 + (128 - 128) = 10624, Z = 10112 + (-128 - 128) = 10112 - 256 = 9856
-        Assert.Equal(new Vector3(10624f, 80f, 9856f), worldPositions[2]);
-        // L3: 10624 + (-128 - 128) = 10624 - 256 = 10368, Z = 10112 + (-128 - (-128)) = 10112
-        Assert.Equal(new Vector3(10368f, 80f, 10112f), worldPositions[3]);
+        Assert.Equal((96, 48), (points[0].DeltaAnchorX, points[0].DeltaAnchorY));
+        Assert.Equal((-128, 64), (points[1].DeltaAnchorX, points[1].DeltaAnchorY));
+        var positions = NativeAptLightPoints.GetBuildingWorldLightPositions(bytes, 10624, 10112, 0, 80);
+        Assert.Equal(new Vector3[] { new(10848, 80, 10144), new(10656, 80, 10400),
+            new(10656, 80, 9888), new(10400, 80, 10144) }, positions);
     }
 }
