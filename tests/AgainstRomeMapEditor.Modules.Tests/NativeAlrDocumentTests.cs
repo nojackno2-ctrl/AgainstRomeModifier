@@ -5,6 +5,23 @@ namespace AgainstRomeMapEditor.Modules.Tests;
 
 public sealed class NativeAlrDocumentTests
 {
+    [Fact]
+    public void Raw_palette_retains_high_byte_and_owns_words_without_argb_conversion()
+    {
+        byte[] source = Fixture(6);
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(source.AsSpan(23 * 4 + 20), 0xab405060);
+        var document = NativeAlrDocument.Parse(source);
+        var raw = document.ReadRawPalette();
+        Assert.Equal(0xab405060u, raw[0]);
+        Assert.Equal(0x102030u, raw[1]);
+        Array.Fill(source, (byte)0);
+        Assert.Equal(0xab405060u, raw[0]);
+        Assert.Equal(0xC0D0E0u, document.ReadRawPalette(1)[0]);
+        Assert.Throws<ArgumentOutOfRangeException>(() => document.ReadRawPalette(-1));
+        Assert.Throws<ArgumentOutOfRangeException>(() => document.ReadRawPalette(2));
+        Assert.Throws<NotSupportedException>(() => ((IList<uint>)raw)[0] = 0);
+    }
+
     [Theory]
     [InlineData(4u)]
     [InlineData(5u)]

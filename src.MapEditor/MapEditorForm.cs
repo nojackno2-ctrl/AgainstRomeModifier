@@ -179,6 +179,7 @@ internal sealed partial class MapEditorForm : Form
     {
         _canvas.UpdateSceneObjects(effective);
         _view3d?.UpdateSceneObjects(SceneObjectsFor3D(effective));
+        if (_view3d is not null) _view3d.UpdateSavedParticleImages(DecodeSavedParticlePreviewImages(0));
     }
 
     /// <summary>
@@ -187,11 +188,14 @@ internal sealed partial class MapEditorForm : Form
     /// </summary>
     private IReadOnlyList<MapSceneObject> SceneObjectsFor3D(IReadOnlyList<MapSceneObject> effective)
     {
+        var preview = ProjectFamilyPreviewWithParticles(effective, out var suppressed);
         IEnumerable<MapSceneObject> level = _levelObjects
             .Where(item => !ObjDefNames.IsLandscape(_objdefNames.GetValueOrDefault(item.TypeId)))
+            .Where(item => !suppressed.Contains(item.Slot))
             .Select(item => new MapSceneObject(_objdefNames.GetValueOrDefault(item.TypeId) ?? "", item.X, item.Y, item.Z, item.Team, "DATA/objects.dat", -100000 - item.Slot));
-        if (_editMode != EditMode.Nature) level = level.Concat(NatureDisplayObjects());
-        return ExpandTroopsFor3D(effective).Concat(level).ToArray();
+        if (_editMode != EditMode.Nature) level = level.Concat(NatureDisplayObjects()
+            .Where(item => !suppressed.Contains(-100000 - item.ObjectIndex)));
+        return preview.Concat(level).ToArray();
     }
 
     /// <summary>記憶體中的物件世界座標以已存檔的 refpos 為準；暫存平移只在呈現時加上。</summary>
@@ -627,10 +631,11 @@ internal sealed partial class MapEditorForm : Form
 
     private void LoadSelectedMap()
     {
-        if (_selected is null) { UpdateEditorState(); return; }
+        if (_selected is null) { ClearParticleDefinitions(); UpdateEditorState(); return; }
         try
         {
             _loading = true; string map = _selected.DirectoryPath;
+            LoadParticleDefinitionsForMap(map);
             _boxSelectButton.Checked = false; _boxStart = _boxEnd = null; ShowBoxSelection(null); UpdateContinuousStampPainting();
             _lastStampTile = null;
             var put = PutTextDocument.Load(Path.Combine(map, "TEXT", "US", "briefing.put"));
@@ -691,7 +696,7 @@ internal sealed partial class MapEditorForm : Form
             _view3d.LightingContext = _lightingContext;
             _view3d.GameLightingEnabled = _gameLighting.Checked;
             _view3d.GameHour = (float)_gameHour.Value;
-            try { has3DScene = _view3d.LoadTextures(_texturesDocument.Dimension, _texturesDocument.Textures, _selected.DirectoryPath, _floorTextures, SceneObjectsFor3D(effectiveObjects), (float)_waterLevel.Value, _heightMapStep, sceneWaterColor); _view3d.SetReliefScale(_reliefScale.Value / 100f); }
+            try { has3DScene = _view3d.LoadTextures(_texturesDocument.Dimension, _texturesDocument.Textures, _selected.DirectoryPath, _floorTextures, SceneObjectsFor3D(effectiveObjects), (float)_waterLevel.Value, _heightMapStep, sceneWaterColor); _view3d.UpdateSavedParticleImages(DecodeSavedParticlePreviewImages(0)); _view3d.SetReliefScale(_reliefScale.Value / 100f); }
             catch (Exception ex) { Disable3DView(isEn ? "Failed to load 3D map resources." : "載入 3D 地圖資源失敗。", ex); }
         }
         if (has3DScene && _view3d?.IsReady == true)
@@ -1801,6 +1806,7 @@ internal sealed partial class MapEditorForm : Form
 
     protected override void Dispose(bool disposing)
     {
+        if (disposing) ClearParticleDefinitions();
         if (disposing) { _lightingContext?.Dispose(); _lightingContext = null; }
         if (disposing) { _gameTextErrors.Dispose(); _floorTextures?.Dispose(); _floorTextures = null; _spriteCatalog?.Dispose(); _spriteCatalog = null; _shadowCatalog?.Dispose(); _shadowCatalog = null; Image? overview = _overview.Image; _overview.Image = null; overview?.Dispose(); }
         base.Dispose(disposing);

@@ -7,5 +7,6 @@
     <ProjectReference Include="../src.Shared/AgainstRome.Shared.csproj" />
     <InternalsVisibleTo Include="AgainstRomeMapEditor" />
     <InternalsVisibleTo Include="AgainstRomeMapEditor.Modules.Tests" />
+    <InternalsVisibleTo Include="AlrScanlineDifferential" />
   </ItemGroup>
 </Project>

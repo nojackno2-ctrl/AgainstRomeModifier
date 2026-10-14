@@ -1,0 +1,10 @@
+[package]
+name = "particle-definition-probe"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+against-rome-data = { path = "../../../native/against-rome-data" }
+particle-render-contract = { path = "../particle-render-contract-rs" }
+serde_json = "1.0"

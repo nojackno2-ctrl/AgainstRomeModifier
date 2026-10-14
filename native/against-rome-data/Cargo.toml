@@ -1,0 +1,17 @@
+[package]
+name = "against-rome-data"
+version = "0.1.0"
+edition = "2021"
+description = "Read-only parser for Against Rome saved light.dat pools (typed immutable snapshots, strict PFIL/LZSS, C ABI)."
+publish = false
+
+[lib]
+name = "against_rome_data"
+crate-type = ["rlib", "cdylib"]
+
+[[bin]]
+name = "ar-light-json"
+path = "src/bin/ar-light-json.rs"
+
+[profile.release]
+panic = "unwind"

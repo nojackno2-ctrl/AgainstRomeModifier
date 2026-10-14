@@ -1,0 +1,22 @@
+[
+  {
+    "sha256": "b9f3f15a2eb5b4858688c4a34b28cdb4163b4f59f1e62191a17f0ce1c7c6b34e",
+    "path": "re_workspace/native-particle-audit-20261010.json"
+  },
+  {
+    "sha256": "f3f97d8366bc5b31987f13ed45592d3ff6824c30af22ad185aa9d098d49c75f7",
+    "path": "re_workspace/particle-layout-20261010-evidence.json"
+  },
+  {
+    "sha256": "c05f4e9b26e74a1922b125a9862f92b608fb371008b3af7ebc473d9f170a1dd0",
+    "path": "re_workspace/particle-creation-contract-20261010-evidence.json"
+  },
+  {
+    "sha256": "552f3f584a250da1cea7828e39c89f305824ff419e4d5b8fd79bb52d73b9b0d4",
+    "path": "re_workspace/particle-creation-contract-reviewed-20261010.json"
+  },
+  {
+    "sha256": "89aabf75e848b1354df168584a267b45355d8c5af2456a1cc54a9cbcbea04b20",
+    "path": "tools/re/probe_native_particle_pool.py"
+  }
+]

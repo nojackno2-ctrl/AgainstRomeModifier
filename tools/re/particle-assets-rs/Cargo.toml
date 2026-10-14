@@ -1,0 +1,12 @@
+[package]
+name = "particle-assets"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+against-rome-data = { path = "../../../native/against-rome-data" }
+serde_json = "=1.0.152"
+flate2 = "1.1"
+sha2 = "0.10"
+crc32fast = "1.5"

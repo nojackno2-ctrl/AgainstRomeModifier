@@ -28,7 +28,7 @@ internal sealed record NativeSprite(int Width, int Height, uint[] ArgbPixels, in
 /// palette channel order, team N = palette variant N and the ground anchor; the general
 /// scenario-angle to direction-row mapping is still unknown beyond Angle 0 = row 14.
 /// </summary>
-internal sealed class NativeSpriteCatalog : IDisposable
+internal sealed partial class NativeSpriteCatalog : IDisposable
 {
     private readonly Dictionary<string, NativeSpriteDefinition> _definitions;
     private readonly IReadOnlyDictionary<int, string> _alrNames, _aptNames;
@@ -346,7 +346,7 @@ internal sealed class NativeSpriteCatalog : IDisposable
     private static ZipArchive OpenArchive(string path)
         => new(new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete), ZipArchiveMode.Read);
 
-    public void Dispose() { lock (_gate) { _owner?.Dispose(); _alrDocuments.Clear(); _aptDocuments.Clear(); _sprites.Clear(); _animations.Clear(); } }
+    public void Dispose() { lock (_gate) { _particleAssetsDisposed = true; _owner?.Dispose(); _alrDocuments.Clear(); _aptDocuments.Clear(); _sprites.Clear(); _animations.Clear(); _particleAssetFrames.Clear(); } }
 
     private sealed class ArchivePair(ZipArchive alr, ZipArchive apt) : IDisposable
     {

@@ -59,6 +59,8 @@ public sealed class LevelObjectTemplate
 public sealed class LevelObjectStore
 {
     public const int RecordSize = 79;
+    /// <summary>Detached decoded gfxtype image; independent of mutable save candidates.</summary>
+    public byte[]? CopyGfxTypePayload() => _gfxtype?.ToArray();
     public const int PositionSize = 17;
     public static readonly int[] ColumnWidths = [2, 2, 2, 2, 2, 2, 2, 4, 2, 2, 2, 2, 2, 2, 4, 2, 2, 4];
     public static readonly int[] ObjDataWidths = [9, 8, 4, 4, 2, 16, 4, 4, 2, 2, 2, 2, 4, 2, 2, 2, 4, 4, 4, 4, 2, 4, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 4, 4, 2, 2];

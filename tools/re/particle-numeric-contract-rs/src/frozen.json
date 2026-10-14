@@ -1,0 +1,4427 @@
+{
+  "bounded_angle_callee": {
+    "instructions": [
+      {
+        "bytes": "d9c9",
+        "instruction": "fxch",
+        "va": "0x5c5f4b"
+      },
+      {
+        "bytes": "f60594c5630001",
+        "instruction": "test byte ptr [0x63c594],1",
+        "va": "0x5c5f4d"
+      },
+      {
+        "bytes": "7504",
+        "instruction": "jne short 0x005c5f5a",
+        "va": "0x5c5f54"
+      },
+      {
+        "bytes": "d9f3",
+        "instruction": "fpatan",
+        "va": "0x5c5f56"
+      },
+      {
+        "bytes": "eb05",
+        "instruction": "jmp short 0x005c5f5f",
+        "va": "0x5c5f58"
+      },
+      {
+        "bytes": "e875650000",
+        "instruction": "call 0x005cc4d4",
+        "va": "0x5c5f5a"
+      },
+      {
+        "bytes": "c3",
+        "instruction": "ret",
+        "va": "0x5c5f5f"
+      }
+    ],
+    "raw_hex": "d9c9f60594c56300017504d9f3eb05e875650000c3dd442404e8cdffffff83ec08dd1c249b585ac3dd44240cdd442404e8cbffffff83ec08dd1c249b585ac36650d9c0d8c8d9e8dee1d9e4dfe09e750fded9dfe09e7704d9eeeb02d9ebeb1ab001e847ffffff3c00750fd9c9e88fffffffdb2d34c16300dee16658c3dd442404",
+    "reason": "angle direct CALL 0x5c5f4b leaves CRT/fpatan boundary; no other callees followed",
+    "sha256": "fbe22f9da529fb5ee3844a7e2b4ce05547053ca11d6492bb40ffd803000bb402",
+    "size": 128,
+    "va": "0x5c5f4b"
+  },
+  "constant_operands": [
+    {
+      "assembly": "0x419c9a: OR EAX, dword ptr [0x00612c70]",
+      "constant_va": "0x612c70",
+      "declared_width": 4,
+      "instruction_va": "0x419c9a"
+    },
+    {
+      "assembly": "0x419cd1: FSUB float ptr [0x00612c70]",
+      "constant_va": "0x612c70",
+      "declared_width": 4,
+      "instruction_va": "0x419cd1"
+    },
+    {
+      "assembly": "0x49bef8: FMUL double ptr [0x005f4b98]",
+      "constant_va": "0x5f4b98",
+      "declared_width": 8,
+      "instruction_va": "0x49bef8"
+    },
+    {
+      "assembly": "0x49befe: FSUBR double ptr [0x005f4ba0]",
+      "constant_va": "0x5f4ba0",
+      "declared_width": 8,
+      "instruction_va": "0x49befe"
+    },
+    {
+      "assembly": "0x4dd41f: FLD float ptr [0x005f682a]",
+      "constant_va": "0x5f682a",
+      "declared_width": 4,
+      "instruction_va": "0x4dd41f"
+    },
+    {
+      "assembly": "0x4dd42f: FADD float ptr [0x005f682e]",
+      "constant_va": "0x5f682e",
+      "declared_width": 4,
+      "instruction_va": "0x4dd42f"
+    },
+    {
+      "assembly": "0x4dd44a: FADD float ptr [0x005f682a]",
+      "constant_va": "0x5f682a",
+      "declared_width": 4,
+      "instruction_va": "0x4dd44a"
+    },
+    {
+      "assembly": "0x4dd462: FADD float ptr [0x005f6832]",
+      "constant_va": "0x5f6832",
+      "declared_width": 4,
+      "instruction_va": "0x4dd462"
+    },
+    {
+      "assembly": "0x4dd47c: FMUL float ptr [0x005f6826]",
+      "constant_va": "0x5f6826",
+      "declared_width": 4,
+      "instruction_va": "0x4dd47c"
+    }
+  ],
+  "constants": [
+    {
+      "finite_value": 0.49999991059303284,
+      "raw_hex": "fdffff3e",
+      "sha256": "409c4f6f2c09cb8c76bce28bc3eb403198334ecaaeaff12d37da5c6751c615d4",
+      "size": 4,
+      "type": "f32",
+      "va": "0x612c70"
+    },
+    {
+      "finite_value": 180.0,
+      "raw_hex": "0000000000806640",
+      "sha256": "fab4c4415b50601e97f6b89f2f92021b61bf2dd3bdb9d1f5ffb6e8de92046e01",
+      "size": 8,
+      "type": "f64",
+      "va": "0x5f4ba0"
+    },
+    {
+      "finite_value": 57.2957795,
+      "raw_hex": "e3a9471adca54c40",
+      "sha256": "a926e2cb4b91157641a4cff1806eb1df711d79920a28348fd5114720e8887076",
+      "size": 8,
+      "type": "f64",
+      "va": "0x5f4b98"
+    },
+    {
+      "finite_value": 0.0027777778450399637,
+      "raw_hex": "610b363b",
+      "sha256": "3d47ff31041026af7fd4bd62824516df8ea55e06a2371e53e3eb9bdba208a0b0",
+      "size": 4,
+      "type": "f32",
+      "va": "0x5f6826"
+    },
+    {
+      "finite_value": 360.0,
+      "raw_hex": "0000b443",
+      "sha256": "82a72eeef4f720c75f627f5ccf9f2963cceb6210f66318ec6362722e29a564f9",
+      "size": 4,
+      "type": "f32",
+      "va": "0x5f682a"
+    },
+    {
+      "finite_value": -45.0,
+      "raw_hex": "000034c2",
+      "sha256": "4be682e8be02506cb8c55e1a850db407338bbf4613dad23ca6d62e70780bb187",
+      "size": 4,
+      "type": "f32",
+      "va": "0x5f682e"
+    },
+    {
+      "finite_value": -360.0,
+      "raw_hex": "0000b4c3",
+      "sha256": "172e0b30dbefc8bc91184fb1bf0b47029cf68e65396f991041ca5a26ef466a2a",
+      "size": 4,
+      "type": "f32",
+      "va": "0x5f6832"
+    }
+  ],
+  "default_pointers": [
+    {
+      "meaning": "on-disk default only; runtime dispatch unproven",
+      "raw_hex": "50fd4000",
+      "sha256": "8d4f29e52a7a263af31c98d6e2afcccbd7c7113985fe88834ecfc94b7658b901",
+      "size": 4,
+      "target": {
+        "raw_hex": "5356575583ec0c8b54242c89d025ff00000031db89042489d081e20000ff002500ff0000c1ea10c1e808895424048b5424208944240885d27e5b8b4c24288b54",
+        "sha256": "40350f2513f45c507fc18246e5a098595fc96caec01980f7753842788149ca25",
+        "size": 64,
+        "va": "0x40fd50"
+      },
+      "va": "0x618b54"
+    },
+    {
+      "meaning": "on-disk default only; runtime dispatch unproven",
+      "raw_hex": "60fc4000",
+      "sha256": "72936ec3f6f213d7a2c919f7954670b572369ec45c322d52683e0b96fadf74aa",
+      "size": 4,
+      "target": {
+        "raw_hex": "c30000000000000000000000000000005356575583ec088b7c24248b5c24288b74242c8b54241c31c085d20f8e990000008b4c24208b14855860610089d581e5",
+        "sha256": "4c6fe83ad8d7b59c150602e8537dd8513c2532db7d7ee4129541c2c939e087c4",
+        "size": 64,
+        "va": "0x40fc60"
+      },
+      "va": "0x618b44"
+    }
+  ],
+  "exe_sha256": "6ac85239ea3b87a4357ed8ce09a1818e68c09fe3c00e8d98831f473577b719bf",
+  "export_record_count": 22,
+  "export_sha256": "c4e18e979d184d81ce33551ee603a228e5c793482c7aea860306287f1077ed4f",
+  "frozen_instruction_count": 693,
+  "functions": [
+    {
+      "complete_record_canonical_sha256": "96add163361fb38186e43cca01f7bfc3456ffb864c2fecf800b135c894d2850b",
+      "evidence_id": "ev_bb5d151d065d6351deb2b18080424dd1d1ccfac14b6eb5722f971e542ddac9d3",
+      "instructions": [
+        {
+          "bytes": "8b1538d66400",
+          "export_assembly": "0x419c80: MOV EDX, dword ptr [0x0064d638]",
+          "instruction": "mov edx,[0x64d638]",
+          "va": "0x419c80"
+        },
+        {
+          "bytes": "42",
+          "export_assembly": "0x419c86: INC EDX",
+          "instruction": "inc edx",
+          "va": "0x419c86"
+        },
+        {
+          "bytes": "8d442404",
+          "export_assembly": "0x419c87: LEA EAX, [ESP + 0x4]",
+          "instruction": "lea eax,[esp+4]",
+          "va": "0x419c87"
+        },
+        {
+          "bytes": "891538d66400",
+          "export_assembly": "0x419c8b: MOV dword ptr [0x0064d638], EDX",
+          "instruction": "mov [0x64d638],edx",
+          "va": "0x419c8b"
+        },
+        {
+          "bytes": "d900",
+          "export_assembly": "0x419c91: FLD float ptr [EAX]",
+          "instruction": "fld st,dword ptr [eax]",
+          "va": "0x419c91"
+        },
+        {
+          "bytes": "8b00",
+          "export_assembly": "0x419c93: MOV EAX, dword ptr [EAX]",
+          "instruction": "mov eax,[eax]",
+          "va": "0x419c93"
+        },
+        {
+          "bytes": "2500000080",
+          "export_assembly": "0x419c95: AND EAX, 0x80000000",
+          "instruction": "and eax,0x80000000",
+          "va": "0x419c95"
+        },
+        {
+          "bytes": "0b05702c6100",
+          "export_assembly": "0x419c9a: OR EAX, dword ptr [0x00612c70]",
+          "instruction": "or eax,[0x612c70]",
+          "va": "0x419c9a"
+        },
+        {
+          "bytes": "a350d66400",
+          "export_assembly": "0x419ca0: MOV [0x0064d650], EAX",
+          "instruction": "mov [0x64d650],eax",
+          "va": "0x419ca0"
+        },
+        {
+          "bytes": "d82550d66400",
+          "export_assembly": "0x419ca5: FSUB float ptr [0x0064d650]",
+          "instruction": "fsub st,dword ptr [0x64d650]",
+          "va": "0x419ca5"
+        },
+        {
+          "bytes": "db1d50d66400",
+          "export_assembly": "0x419cab: FISTP dword ptr [0x0064d650]",
+          "instruction": "fistp dword ptr [0x64d650],st",
+          "va": "0x419cab"
+        },
+        {
+          "bytes": "a150d66400",
+          "export_assembly": "0x419cb1: MOV EAX, [0x0064d650]",
+          "instruction": "mov eax,[0x64d650]",
+          "va": "0x419cb1"
+        },
+        {
+          "bytes": "c3",
+          "export_assembly": "0x419cb6: RET",
+          "instruction": "ret",
+          "va": "0x419cb6"
+        }
+      ],
+      "pseudocode": "\r\n/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */\r\n\r\nint FUN_00419c80(float param_1)\r\n\r\n{\r\n  DAT_0064d638 = DAT_0064d638 + 1;\r\n  DAT_0064d650 = (int)ROUND(param_1 - (float)((uint)param_1 & 0x80000000 | _DAT_00612c70));\r\n  return DAT_0064d650;\r\n}\r\n\r\n",
+      "raw_hex": "8b1538d66400428d442404891538d66400d9008b0025000000800b05702c6100a350d66400d82550d66400db1d50d66400a150d66400c3",
+      "sha256": "b2bfaca9b9f489428e8170665b5e78c543bf51780d1590f7985b8a754de2331a",
+      "size": 55,
+      "va": "0x419c80"
+    },
+    {
+      "complete_record_canonical_sha256": "8d663695012fff5468446733aabb8d74158361bf3a27ba26521c6380a98bfc3c",
+      "evidence_id": "ev_3495f35eb01f218421d7f5b4e2b16e5391c32512059deee8e53f39c6fa5868b5",
+      "instructions": [
+        {
+          "bytes": "8b153cd66400",
+          "export_assembly": "0x419cc0: MOV EDX, dword ptr [0x0064d63c]",
+          "instruction": "mov edx,[0x64d63c]",
+          "va": "0x419cc0"
+        },
+        {
+          "bytes": "42",
+          "export_assembly": "0x419cc6: INC EDX",
+          "instruction": "inc edx",
+          "va": "0x419cc6"
+        },
+        {
+          "bytes": "d9442404",
+          "export_assembly": "0x419cc7: FLD float ptr [ESP + 0x4]",
+          "instruction": "fld st,dword ptr [esp+4]",
+          "va": "0x419cc7"
+        },
+        {
+          "bytes": "89153cd66400",
+          "export_assembly": "0x419ccb: MOV dword ptr [0x0064d63c], EDX",
+          "instruction": "mov [0x64d63c],edx",
+          "va": "0x419ccb"
+        },
+        {
+          "bytes": "d825702c6100",
+          "export_assembly": "0x419cd1: FSUB float ptr [0x00612c70]",
+          "instruction": "fsub st,dword ptr [0x612c70]",
+          "va": "0x419cd1"
+        },
+        {
+          "bytes": "db1d50d66400",
+          "export_assembly": "0x419cd7: FISTP dword ptr [0x0064d650]",
+          "instruction": "fistp dword ptr [0x64d650],st",
+          "va": "0x419cd7"
+        },
+        {
+          "bytes": "a150d66400",
+          "export_assembly": "0x419cdd: MOV EAX, [0x0064d650]",
+          "instruction": "mov eax,[0x64d650]",
+          "va": "0x419cdd"
+        },
+        {
+          "bytes": "c3",
+          "export_assembly": "0x419ce2: RET",
+          "instruction": "ret",
+          "va": "0x419ce2"
+        }
+      ],
+      "pseudocode": "\r\n/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */\r\n\r\nint FUN_00419cc0(float param_1)\r\n\r\n{\r\n  DAT_0064d63c = DAT_0064d63c + 1;\r\n  DAT_0064d650 = (int)ROUND(param_1 - _DAT_00612c70);\r\n  return DAT_0064d650;\r\n}\r\n\r\n",
+      "raw_hex": "8b153cd6640042d944240489153cd66400d825702c6100db1d50d66400a150d66400c3",
+      "sha256": "70430e2cb163325a45b71da21ab28548b3811d4cb64abab6099be37d4890f65b",
+      "size": 35,
+      "va": "0x419cc0"
+    },
+    {
+      "complete_record_canonical_sha256": "308dbb6bdc3c092db5d109a18ffe4d0d94f091924b1cac54b3f864fbc5b824ec",
+      "evidence_id": "ev_259c1fc2aa945f66364396b66b5376d1d28e6d46e8a0fdc9765ccac6707d60fb",
+      "instructions": [
+        {
+          "bytes": "83ec04",
+          "export_assembly": "0x49be90: SUB ESP, 0x4",
+          "instruction": "sub esp,4",
+          "va": "0x49be90"
+        },
+        {
+          "bytes": "31d2",
+          "export_assembly": "0x49be93: XOR EDX, EDX",
+          "instruction": "xor edx,edx",
+          "va": "0x49be93"
+        },
+        {
+          "bytes": "8b4c2408",
+          "export_assembly": "0x49be95: MOV ECX, dword ptr [ESP + 0x8]",
+          "instruction": "mov ecx,[esp+8]",
+          "va": "0x49be95"
+        },
+        {
+          "bytes": "891424",
+          "export_assembly": "0x49be99: MOV dword ptr [ESP], EDX",
+          "instruction": "mov [esp],edx",
+          "va": "0x49be99"
+        },
+        {
+          "bytes": "f7c1ffffff7f",
+          "export_assembly": "0x49be9c: TEST ECX, 0x7fffffff",
+          "instruction": "test ecx,0x7fffffff",
+          "va": "0x49be9c"
+        },
+        {
+          "bytes": "7524",
+          "export_assembly": "0x49bea2: JNZ 0x0049bec8",
+          "instruction": "jne short 0x0049bec8",
+          "va": "0x49bea2"
+        },
+        {
+          "bytes": "d9ee",
+          "export_assembly": "0x49bea4: FLDZ",
+          "instruction": "fldz",
+          "va": "0x49bea4"
+        },
+        {
+          "bytes": "d85c240c",
+          "export_assembly": "0x49bea6: FCOMP float ptr [ESP + 0xc]",
+          "instruction": "fcomp st,dword ptr [esp+0xc]",
+          "va": "0x49bea6"
+        },
+        {
+          "bytes": "dfe0",
+          "export_assembly": "0x49beaa: FNSTSW AX",
+          "instruction": "fnstsw ax",
+          "va": "0x49beaa"
+        },
+        {
+          "bytes": "9e",
+          "export_assembly": "0x49beac: SAHF",
+          "instruction": "sahf",
+          "va": "0x49beac"
+        },
+        {
+          "bytes": "7607",
+          "export_assembly": "0x49bead: JBE 0x0049beb6",
+          "instruction": "jbe short 0x0049beb6",
+          "va": "0x49bead"
+        },
+        {
+          "bytes": "c7042400008743",
+          "export_assembly": "0x49beaf: MOV dword ptr [ESP], 0x43870000",
+          "instruction": "mov dword ptr [esp],0x43870000",
+          "va": "0x49beaf"
+        },
+        {
+          "bytes": "7207",
+          "export_assembly": "0x49beb6: JC 0x0049bebf",
+          "instruction": "jb short 0x0049bebf",
+          "va": "0x49beb6"
+        },
+        {
+          "bytes": "8b0424",
+          "export_assembly": "0x49beb8: MOV EAX, dword ptr [ESP]",
+          "instruction": "mov eax,[esp]",
+          "va": "0x49beb8"
+        },
+        {
+          "bytes": "83c404",
+          "export_assembly": "0x49bebb: ADD ESP, 0x4",
+          "instruction": "add esp,4",
+          "va": "0x49bebb"
+        },
+        {
+          "bytes": "c3",
+          "export_assembly": "0x49bebe: RET",
+          "instruction": "ret",
+          "va": "0x49bebe"
+        },
+        {
+          "bytes": "c704240000b442",
+          "export_assembly": "0x49bebf: MOV dword ptr [ESP], 0x42b40000",
+          "instruction": "mov dword ptr [esp],0x42b40000",
+          "va": "0x49bebf"
+        },
+        {
+          "bytes": "ebf0",
+          "export_assembly": "0x49bec6: JMP 0x0049beb8",
+          "instruction": "jmp short 0x0049beb8",
+          "va": "0x49bec6"
+        },
+        {
+          "bytes": "f744240cffffff7f",
+          "export_assembly": "0x49bec8: TEST dword ptr [ESP + 0xc], 0x7fffffff",
+          "instruction": "test dword ptr [esp+0xc],0x7fffffff",
+          "va": "0x49bec8"
+        },
+        {
+          "bytes": "7519",
+          "export_assembly": "0x49bed0: JNZ 0x0049beeb",
+          "instruction": "jne short 0x0049beeb",
+          "va": "0x49bed0"
+        },
+        {
+          "bytes": "d9ee",
+          "export_assembly": "0x49bed2: FLDZ",
+          "instruction": "fldz",
+          "va": "0x49bed2"
+        },
+        {
+          "bytes": "d85c2408",
+          "export_assembly": "0x49bed4: FCOMP float ptr [ESP + 0x8]",
+          "instruction": "fcomp st,dword ptr [esp+8]",
+          "va": "0x49bed4"
+        },
+        {
+          "bytes": "dfe0",
+          "export_assembly": "0x49bed8: FNSTSW AX",
+          "instruction": "fnstsw ax",
+          "va": "0x49bed8"
+        },
+        {
+          "bytes": "9e",
+          "export_assembly": "0x49beda: SAHF",
+          "instruction": "sahf",
+          "va": "0x49beda"
+        },
+        {
+          "bytes": "73db",
+          "export_assembly": "0x49bedb: JNC 0x0049beb8",
+          "instruction": "jae short 0x0049beb8",
+          "va": "0x49bedb"
+        },
+        {
+          "bytes": "c7042400003443",
+          "export_assembly": "0x49bedd: MOV dword ptr [ESP], 0x43340000",
+          "instruction": "mov dword ptr [esp],0x43340000",
+          "va": "0x49bedd"
+        },
+        {
+          "bytes": "8b0424",
+          "export_assembly": "0x49bee4: MOV EAX, dword ptr [ESP]",
+          "instruction": "mov eax,[esp]",
+          "va": "0x49bee4"
+        },
+        {
+          "bytes": "83c404",
+          "export_assembly": "0x49bee7: ADD ESP, 0x4",
+          "instruction": "add esp,4",
+          "va": "0x49bee7"
+        },
+        {
+          "bytes": "c3",
+          "export_assembly": "0x49beea: RET",
+          "instruction": "ret",
+          "va": "0x49beea"
+        },
+        {
+          "bytes": "d9442408",
+          "export_assembly": "0x49beeb: FLD float ptr [ESP + 0x8]",
+          "instruction": "fld st,dword ptr [esp+8]",
+          "va": "0x49beeb"
+        },
+        {
+          "bytes": "d944240c",
+          "export_assembly": "0x49beef: FLD float ptr [ESP + 0xc]",
+          "instruction": "fld st,dword ptr [esp+0xc]",
+          "va": "0x49beef"
+        },
+        {
+          "bytes": "e853a01200",
+          "export_assembly": "0x49bef3: CALL 0x005c5f4b",
+          "instruction": "call 0x005c5f4b",
+          "va": "0x49bef3"
+        },
+        {
+          "bytes": "dc0d984b5f00",
+          "export_assembly": "0x49bef8: FMUL double ptr [0x005f4b98]",
+          "instruction": "fmul st,qword ptr [0x5f4b98]",
+          "va": "0x49bef8"
+        },
+        {
+          "bytes": "dc2da04b5f00",
+          "export_assembly": "0x49befe: FSUBR double ptr [0x005f4ba0]",
+          "instruction": "fsubr st,qword ptr [0x5f4ba0]",
+          "va": "0x49befe"
+        },
+        {
+          "bytes": "d91c24",
+          "export_assembly": "0x49bf04: FSTP float ptr [ESP]",
+          "instruction": "fstp dword ptr [esp],st",
+          "va": "0x49bf04"
+        },
+        {
+          "bytes": "8b0424",
+          "export_assembly": "0x49bf07: MOV EAX, dword ptr [ESP]",
+          "instruction": "mov eax,[esp]",
+          "va": "0x49bf07"
+        },
+        {
+          "bytes": "83c404",
+          "export_assembly": "0x49bf0a: ADD ESP, 0x4",
+          "instruction": "add esp,4",
+          "va": "0x49bf0a"
+        },
+        {
+          "bytes": "c3",
+          "export_assembly": "0x49bf0d: RET",
+          "instruction": "ret",
+          "va": "0x49bf0d"
+        }
+      ],
+      "pseudocode": "\r\n/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */\r\n\r\nfloat FUN_0049be90(float param_1,float param_2)\r\n\r\n{\r\n  float10 fVar1;\r\n  undefined4 local_4;\r\n  \r\n  local_4 = 0.0;\r\n  if (ABS(param_1) == 0.0) {\r\n    if (param_2 < 0.0) {\r\n      local_4 = 270.0;\r\n    }\r\n    if (0.0 < param_2) {\r\n      local_4 = 90.0;\r\n    }\r\n  }\r\n  else {\r\n    if (ABS(param_2) != 0.0) {\r\n      fVar1 = (float10)FUN_005c5f4b();\r\n      return (float)((float10)_DAT_005f4ba0 - fVar1 * (float10)_DAT_005f4b98);\r\n    }\r\n    if (0.0 < param_1) {\r\n      return 180.0;\r\n    }\r\n  }\r\n  return local_4;\r\n}\r\n\r\n",
+      "raw_hex": "83ec0431d28b4c2408891424f7c1ffffff7f7524d9eed85c240cdfe09e7607c704240000874372078b042483c404c3c704240000b442ebf0f744240cffffff7f7519d9eed85c2408dfe09e73dbc70424000034438b042483c404c3d9442408d944240ce853a01200dc0d984b5f00dc2da04b5f00d91c248b042483c404c3",
+      "sha256": "b8b848ea24360f67409daba635150bd1383470bdf208031d7b393971a48ff9cd",
+      "size": 126,
+      "va": "0x49be90"
+    },
+    {
+      "complete_record_canonical_sha256": "c05fbfc619d18644ba9e6b2ad5c8e0b37bbf62aa6878cccac4a57509068e1169",
+      "evidence_id": "ev_ce940eb7d9db0b5987b75af7ea5bb5235d8b8c459aed2c81b61fe1a16840151c",
+      "instructions": [
+        {
+          "bytes": "53",
+          "export_assembly": "0x40e4d0: PUSH EBX",
+          "instruction": "push ebx",
+          "va": "0x40e4d0"
+        },
+        {
+          "bytes": "56",
+          "export_assembly": "0x40e4d1: PUSH ESI",
+          "instruction": "push esi",
+          "va": "0x40e4d1"
+        },
+        {
+          "bytes": "57",
+          "export_assembly": "0x40e4d2: PUSH EDI",
+          "instruction": "push edi",
+          "va": "0x40e4d2"
+        },
+        {
+          "bytes": "55",
+          "export_assembly": "0x40e4d3: PUSH EBP",
+          "instruction": "push ebp",
+          "va": "0x40e4d3"
+        },
+        {
+          "bytes": "8b7c2414",
+          "export_assembly": "0x40e4d4: MOV EDI, dword ptr [ESP + 0x14]",
+          "instruction": "mov edi,[esp+0x14]",
+          "va": "0x40e4d4"
+        },
+        {
+          "bytes": "8b442418",
+          "export_assembly": "0x40e4d8: MOV EAX, dword ptr [ESP + 0x18]",
+          "instruction": "mov eax,[esp+0x18]",
+          "va": "0x40e4d8"
+        },
+        {
+          "bytes": "8b4c241c",
+          "export_assembly": "0x40e4dc: MOV ECX, dword ptr [ESP + 0x1c]",
+          "instruction": "mov ecx,[esp+0x1c]",
+          "va": "0x40e4dc"
+        },
+        {
+          "bytes": "8b5c2420",
+          "export_assembly": "0x40e4e0: MOV EBX, dword ptr [ESP + 0x20]",
+          "instruction": "mov ebx,[esp+0x20]",
+          "va": "0x40e4e0"
+        },
+        {
+          "bytes": "8b742430",
+          "export_assembly": "0x40e4e4: MOV ESI, dword ptr [ESP + 0x30]",
+          "instruction": "mov esi,[esp+0x30]",
+          "va": "0x40e4e4"
+        },
+        {
+          "bytes": "8b10",
+          "export_assembly": "0x40e4e8: MOV EDX, dword ptr [EAX]",
+          "instruction": "mov edx,[eax]",
+          "va": "0x40e4e8"
+        },
+        {
+          "bytes": "81e1ffffff00",
+          "export_assembly": "0x40e4ea: AND ECX, 0xffffff",
+          "instruction": "and ecx,0xffffff",
+          "va": "0x40e4ea"
+        },
+        {
+          "bytes": "81e2ffffff00",
+          "export_assembly": "0x40e4f0: AND EDX, 0xffffff",
+          "instruction": "and edx,0xffffff",
+          "va": "0x40e4f0"
+        },
+        {
+          "bytes": "39ca",
+          "export_assembly": "0x40e4f6: CMP EDX, ECX",
+          "instruction": "cmp edx,ecx",
+          "va": "0x40e4f6"
+        },
+        {
+          "bytes": "750c",
+          "export_assembly": "0x40e4f8: JNZ 0x0040e506",
+          "instruction": "jne short 0x0040e506",
+          "va": "0x40e4f8"
+        },
+        {
+          "bytes": "4b",
+          "export_assembly": "0x40e4fa: DEC EBX",
+          "instruction": "dec ebx",
+          "va": "0x40e4fa"
+        },
+        {
+          "bytes": "83c704",
+          "export_assembly": "0x40e4fb: ADD EDI, 0x4",
+          "instruction": "add edi,4",
+          "va": "0x40e4fb"
+        },
+        {
+          "bytes": "8b10",
+          "export_assembly": "0x40e4fe: MOV EDX, dword ptr [EAX]",
+          "instruction": "mov edx,[eax]",
+          "va": "0x40e4fe"
+        },
+        {
+          "bytes": "83c004",
+          "export_assembly": "0x40e500: ADD EAX, 0x4",
+          "instruction": "add eax,4",
+          "va": "0x40e500"
+        },
+        {
+          "bytes": "8957fc",
+          "export_assembly": "0x40e503: MOV dword ptr [EDI + -0x4], EDX",
+          "instruction": "mov [edi-4],edx",
+          "va": "0x40e503"
+        },
+        {
+          "bytes": "8b4c242c",
+          "export_assembly": "0x40e506: MOV ECX, dword ptr [ESP + 0x2c]",
+          "instruction": "mov ecx,[esp+0x2c]",
+          "va": "0x40e506"
+        },
+        {
+          "bytes": "8b542428",
+          "export_assembly": "0x40e50a: MOV EDX, dword ptr [ESP + 0x28]",
+          "instruction": "mov edx,[esp+0x28]",
+          "va": "0x40e50a"
+        },
+        {
+          "bytes": "c1e110",
+          "export_assembly": "0x40e50e: SHL ECX, 0x10",
+          "instruction": "shl ecx,0x10",
+          "va": "0x40e50e"
+        },
+        {
+          "bytes": "c1e208",
+          "export_assembly": "0x40e511: SHL EDX, 0x8",
+          "instruction": "shl edx,8",
+          "va": "0x40e511"
+        },
+        {
+          "bytes": "01ca",
+          "export_assembly": "0x40e514: ADD EDX, ECX",
+          "instruction": "add edx,ecx",
+          "va": "0x40e514"
+        },
+        {
+          "bytes": "03542424",
+          "export_assembly": "0x40e516: ADD EDX, dword ptr [ESP + 0x24]",
+          "instruction": "add edx,[esp+0x24]",
+          "va": "0x40e516"
+        },
+        {
+          "bytes": "52",
+          "export_assembly": "0x40e51a: PUSH EDX",
+          "instruction": "push edx",
+          "va": "0x40e51a"
+        },
+        {
+          "bytes": "50",
+          "export_assembly": "0x40e51b: PUSH EAX",
+          "instruction": "push eax",
+          "va": "0x40e51b"
+        },
+        {
+          "bytes": "57",
+          "export_assembly": "0x40e51c: PUSH EDI",
+          "instruction": "push edi",
+          "va": "0x40e51c"
+        },
+        {
+          "bytes": "53",
+          "export_assembly": "0x40e51d: PUSH EBX",
+          "instruction": "push ebx",
+          "va": "0x40e51d"
+        },
+        {
+          "bytes": "ff15548b6100",
+          "export_assembly": "0x40e51e: CALL dword ptr [0x00618b54]",
+          "instruction": "call dword ptr [0x618b54]",
+          "va": "0x40e51e"
+        },
+        {
+          "bytes": "83c410",
+          "export_assembly": "0x40e524: ADD ESP, 0x10",
+          "instruction": "add esp,0x10",
+          "va": "0x40e524"
+        },
+        {
+          "bytes": "85f6",
+          "export_assembly": "0x40e527: TEST ESI, ESI",
+          "instruction": "test esi,esi",
+          "va": "0x40e527"
+        },
+        {
+          "bytes": "7449",
+          "export_assembly": "0x40e529: JZ 0x0040e574",
+          "instruction": "je short 0x0040e574",
+          "va": "0x40e529"
+        },
+        {
+          "bytes": "89f2",
+          "export_assembly": "0x40e52b: MOV EDX, ESI",
+          "instruction": "mov edx,esi",
+          "va": "0x40e52b"
+        },
+        {
+          "bytes": "81e2fefefe00",
+          "export_assembly": "0x40e52d: AND EDX, 0xfefefe",
+          "instruction": "and edx,0xfefefe",
+          "va": "0x40e52d"
+        },
+        {
+          "bytes": "8b6c2434",
+          "export_assembly": "0x40e533: MOV EBP, dword ptr [ESP + 0x34]",
+          "instruction": "mov ebp,[esp+0x34]",
+          "va": "0x40e533"
+        },
+        {
+          "bytes": "d1fa",
+          "export_assembly": "0x40e537: SAR EDX, 0x1",
+          "instruction": "sar edx,1",
+          "va": "0x40e537"
+        },
+        {
+          "bytes": "85ed",
+          "export_assembly": "0x40e539: TEST EBP, EBP",
+          "instruction": "test ebp,ebp",
+          "va": "0x40e539"
+        },
+        {
+          "bytes": "7440",
+          "export_assembly": "0x40e53b: JZ 0x0040e57d",
+          "instruction": "je short 0x0040e57d",
+          "va": "0x40e53b"
+        },
+        {
+          "bytes": "31c9",
+          "export_assembly": "0x40e53d: XOR ECX, ECX",
+          "instruction": "xor ecx,ecx",
+          "va": "0x40e53d"
+        },
+        {
+          "bytes": "85db",
+          "export_assembly": "0x40e53f: TEST EBX, EBX",
+          "instruction": "test ebx,ebx",
+          "va": "0x40e53f"
+        },
+        {
+          "bytes": "7e1b",
+          "export_assembly": "0x40e541: JLE 0x0040e55e",
+          "instruction": "jle short 0x0040e55e",
+          "va": "0x40e541"
+        },
+        {
+          "bytes": "89f8",
+          "export_assembly": "0x40e543: MOV EAX, EDI",
+          "instruction": "mov eax,edi",
+          "va": "0x40e543"
+        },
+        {
+          "bytes": "89d6",
+          "export_assembly": "0x40e545: MOV ESI, EDX",
+          "instruction": "mov esi,edx",
+          "va": "0x40e545"
+        },
+        {
+          "bytes": "8b10",
+          "export_assembly": "0x40e547: MOV EDX, dword ptr [EAX]",
+          "instruction": "mov edx,[eax]",
+          "va": "0x40e547"
+        },
+        {
+          "bytes": "81e2fefefe00",
+          "export_assembly": "0x40e549: AND EDX, 0xfefefe",
+          "instruction": "and edx,0xfefefe",
+          "va": "0x40e549"
+        },
+        {
+          "bytes": "d1ea",
+          "export_assembly": "0x40e54f: SHR EDX, 0x1",
+          "instruction": "shr edx,1",
+          "va": "0x40e54f"
+        },
+        {
+          "bytes": "83c004",
+          "export_assembly": "0x40e551: ADD EAX, 0x4",
+          "instruction": "add eax,4",
+          "va": "0x40e551"
+        },
+        {
+          "bytes": "01f2",
+          "export_assembly": "0x40e554: ADD EDX, ESI",
+          "instruction": "add edx,esi",
+          "va": "0x40e554"
+        },
+        {
+          "bytes": "41",
+          "export_assembly": "0x40e556: INC ECX",
+          "instruction": "inc ecx",
+          "va": "0x40e556"
+        },
+        {
+          "bytes": "8950fc",
+          "export_assembly": "0x40e557: MOV dword ptr [EAX + -0x4], EDX",
+          "instruction": "mov [eax-4],edx",
+          "va": "0x40e557"
+        },
+        {
+          "bytes": "39d9",
+          "export_assembly": "0x40e55a: CMP ECX, EBX",
+          "instruction": "cmp ecx,ebx",
+          "va": "0x40e55a"
+        },
+        {
+          "bytes": "7ce9",
+          "export_assembly": "0x40e55c: JL 0x0040e547",
+          "instruction": "jl short 0x0040e547",
+          "va": "0x40e55c"
+        },
+        {
+          "bytes": "57",
+          "export_assembly": "0x40e55e: PUSH EDI",
+          "instruction": "push edi",
+          "va": "0x40e55e"
+        },
+        {
+          "bytes": "57",
+          "export_assembly": "0x40e55f: PUSH EDI",
+          "instruction": "push edi",
+          "va": "0x40e55f"
+        },
+        {
+          "bytes": "53",
+          "export_assembly": "0x40e560: PUSH EBX",
+          "instruction": "push ebx",
+          "va": "0x40e560"
+        },
+        {
+          "bytes": "e80433ffff",
+          "export_assembly": "0x40e561: CALL 0x0040186a",
+          "instruction": "call 0x0040186a",
+          "va": "0x40e561"
+        },
+        {
+          "bytes": "83c40c",
+          "export_assembly": "0x40e566: ADD ESP, 0xc",
+          "instruction": "add esp,0xc",
+          "va": "0x40e566"
+        },
+        {
+          "bytes": "ff15448b6100",
+          "export_assembly": "0x40e569: CALL dword ptr [0x00618b44]",
+          "instruction": "call dword ptr [0x618b44]",
+          "va": "0x40e569"
+        },
+        {
+          "bytes": "5d",
+          "export_assembly": "0x40e56f: POP EBP",
+          "instruction": "pop ebp",
+          "va": "0x40e56f"
+        },
+        {
+          "bytes": "5f",
+          "export_assembly": "0x40e570: POP EDI",
+          "instruction": "pop edi",
+          "va": "0x40e570"
+        },
+        {
+          "bytes": "5e",
+          "export_assembly": "0x40e571: POP ESI",
+          "instruction": "pop esi",
+          "va": "0x40e571"
+        },
+        {
+          "bytes": "5b",
+          "export_assembly": "0x40e572: POP EBX",
+          "instruction": "pop ebx",
+          "va": "0x40e572"
+        },
+        {
+          "bytes": "c3",
+          "export_assembly": "0x40e573: RET",
+          "instruction": "ret",
+          "va": "0x40e573"
+        },
+        {
+          "bytes": "837c243400",
+          "export_assembly": "0x40e574: CMP dword ptr [ESP + 0x34], 0x0",
+          "instruction": "cmp dword ptr [esp+0x34],0",
+          "va": "0x40e574"
+        },
+        {
+          "bytes": "74ee",
+          "export_assembly": "0x40e579: JZ 0x0040e569",
+          "instruction": "je short 0x0040e569",
+          "va": "0x40e579"
+        },
+        {
+          "bytes": "ebe1",
+          "export_assembly": "0x40e57b: JMP 0x0040e55e",
+          "instruction": "jmp short 0x0040e55e",
+          "va": "0x40e57b"
+        },
+        {
+          "bytes": "31c9",
+          "export_assembly": "0x40e57d: XOR ECX, ECX",
+          "instruction": "xor ecx,ecx",
+          "va": "0x40e57d"
+        },
+        {
+          "bytes": "85db",
+          "export_assembly": "0x40e57f: TEST EBX, EBX",
+          "instruction": "test ebx,ebx",
+          "va": "0x40e57f"
+        },
+        {
+          "bytes": "7ee6",
+          "export_assembly": "0x40e581: JLE 0x0040e569",
+          "instruction": "jle short 0x0040e569",
+          "va": "0x40e581"
+        },
+        {
+          "bytes": "89f8",
+          "export_assembly": "0x40e583: MOV EAX, EDI",
+          "instruction": "mov eax,edi",
+          "va": "0x40e583"
+        },
+        {
+          "bytes": "89d6",
+          "export_assembly": "0x40e585: MOV ESI, EDX",
+          "instruction": "mov esi,edx",
+          "va": "0x40e585"
+        },
+        {
+          "bytes": "8b10",
+          "export_assembly": "0x40e587: MOV EDX, dword ptr [EAX]",
+          "instruction": "mov edx,[eax]",
+          "va": "0x40e587"
+        },
+        {
+          "bytes": "81e2fefefe00",
+          "export_assembly": "0x40e589: AND EDX, 0xfefefe",
+          "instruction": "and edx,0xfefefe",
+          "va": "0x40e589"
+        },
+        {
+          "bytes": "d1ea",
+          "export_assembly": "0x40e58f: SHR EDX, 0x1",
+          "instruction": "shr edx,1",
+          "va": "0x40e58f"
+        },
+        {
+          "bytes": "83c004",
+          "export_assembly": "0x40e591: ADD EAX, 0x4",
+          "instruction": "add eax,4",
+          "va": "0x40e591"
+        },
+        {
+          "bytes": "01f2",
+          "export_assembly": "0x40e594: ADD EDX, ESI",
+          "instruction": "add edx,esi",
+          "va": "0x40e594"
+        },
+        {
+          "bytes": "41",
+          "export_assembly": "0x40e596: INC ECX",
+          "instruction": "inc ecx",
+          "va": "0x40e596"
+        },
+        {
+          "bytes": "8950fc",
+          "export_assembly": "0x40e597: MOV dword ptr [EAX + -0x4], EDX",
+          "instruction": "mov [eax-4],edx",
+          "va": "0x40e597"
+        },
+        {
+          "bytes": "39d9",
+          "export_assembly": "0x40e59a: CMP ECX, EBX",
+          "instruction": "cmp ecx,ebx",
+          "va": "0x40e59a"
+        },
+        {
+          "bytes": "7ce9",
+          "export_assembly": "0x40e59c: JL 0x0040e587",
+          "instruction": "jl short 0x0040e587",
+          "va": "0x40e59c"
+        },
+        {
+          "bytes": "ff15448b6100",
+          "export_assembly": "0x40e59e: CALL dword ptr [0x00618b44]",
+          "instruction": "call dword ptr [0x618b44]",
+          "va": "0x40e59e"
+        },
+        {
+          "bytes": "5d",
+          "export_assembly": "0x40e5a4: POP EBP",
+          "instruction": "pop ebp",
+          "va": "0x40e5a4"
+        },
+        {
+          "bytes": "5f",
+          "export_assembly": "0x40e5a5: POP EDI",
+          "instruction": "pop edi",
+          "va": "0x40e5a5"
+        },
+        {
+          "bytes": "5e",
+          "export_assembly": "0x40e5a6: POP ESI",
+          "instruction": "pop esi",
+          "va": "0x40e5a6"
+        },
+        {
+          "bytes": "5b",
+          "export_assembly": "0x40e5a7: POP EBX",
+          "instruction": "pop ebx",
+          "va": "0x40e5a7"
+        },
+        {
+          "bytes": "c3",
+          "export_assembly": "0x40e5a8: RET",
+          "instruction": "ret",
+          "va": "0x40e5a8"
+        }
+      ],
+      "pseudocode": "\r\nvoid FUN_0040e4d0(uint *param_1,uint *param_2,uint param_3,int param_4,int param_5,int param_6,\r\n                 int param_7,uint param_8,int param_9)\r\n\r\n{\r\n  uint uVar1;\r\n  uint *puVar2;\r\n  uint *puVar3;\r\n  int iVar4;\r\n  int iVar5;\r\n  \r\n  puVar3 = param_1;\r\n  if ((*param_2 & 0xffffff) == (param_3 & 0xffffff)) {\r\n    param_4 = param_4 + -1;\r\n    puVar3 = param_1 + 1;\r\n    uVar1 = *param_2;\r\n    param_2 = param_2 + 1;\r\n    *param_1 = uVar1;\r\n  }\r\n  (*(code *)PTR_FUN_00618b54)(param_4,puVar3,param_2,param_6 * 0x100 + param_7 * 0x10000 + param_5);\r\n  if (param_8 == 0) {\r\n    if (param_9 == 0) goto LAB_0040e569;\r\n  }\r\n  else {\r\n    iVar5 = (int)(param_8 & 0xfefefe) >> 1;\r\n    if (param_9 == 0) {\r\n      iVar4 = 0;\r\n      if (0 < param_4) {\r\n        do {\r\n          iVar4 = iVar4 + 1;\r\n          *puVar3 = ((*puVar3 & 0xfefefe) >> 1) + iVar5;\r\n          puVar3 = puVar3 + 1;\r\n        } while (iVar4 < param_4);\r\n        (*(code *)PTR_FUN_00618b44)();\r\n        return;\r\n      }\r\n      goto LAB_0040e569;\r\n    }\r\n    iVar4 = 0;\r\n    puVar2 = puVar3;\r\n    if (0 < param_4) {\r\n      do {\r\n        iVar4 = iVar4 + 1;\r\n        *puVar2 = ((*puVar2 & 0xfefefe) >> 1) + iVar5;\r\n        puVar2 = puVar2 + 1;\r\n      } while (iVar4 < param_4);\r\n    }\r\n  }\r\n  FUN_0040186a(param_4,puVar3,puVar3);\r\nLAB_0040e569:\r\n  (*(code *)PTR_FUN_00618b44)();\r\n  return;\r\n}\r\n\r\n",
+      "raw_hex": "535657558b7c24148b4424188b4c241c8b5c24208b7424308b1081e1ffffff0081e2ffffff0039ca750c4b83c7048b1083c0048957fc8b4c242c8b542428c1e110c1e20801ca0354242452505753ff15548b610083c41085f6744989f281e2fefefe008b6c2434d1fa85ed744031c985db7e1b89f889d68b1081e2fefefe00d1ea83c00401f2418950fc39d97ce9575753e80433ffff83c40cff15448b61005d5f5e5bc3837c24340074eeebe131c985db7ee689f889d68b1081e2fefefe00d1ea83c00401f2418950fc39d97ce9ff15448b61005d5f5e5bc3",
+      "sha256": "844017df77da743611aea62bcafdfa964cdaaa48f091dfed8a6fcaee9d64212e",
+      "size": 217,
+      "va": "0x40e4d0"
+    },
+    {
+      "complete_record_canonical_sha256": "c2a184dc0bc5ad9187bb2b3429ab5e7932c9465c24a70b1259ac16e175d02abf",
+      "evidence_id": "ev_2b8680ea046a1f4d2458f8cb767e804f56b474d73e72179dc398da1888c8f0d2",
+      "instructions": [
+        {
+          "bytes": "53",
+          "export_assembly": "0x40e5c0: PUSH EBX",
+          "instruction": "push ebx",
+          "va": "0x40e5c0"
+        },
+        {
+          "bytes": "56",
+          "export_assembly": "0x40e5c1: PUSH ESI",
+          "instruction": "push esi",
+          "va": "0x40e5c1"
+        },
+        {
+          "bytes": "57",
+          "export_assembly": "0x40e5c2: PUSH EDI",
+          "instruction": "push edi",
+          "va": "0x40e5c2"
+        },
+        {
+          "bytes": "55",
+          "export_assembly": "0x40e5c3: PUSH EBP",
+          "instruction": "push ebp",
+          "va": "0x40e5c3"
+        },
+        {
+          "bytes": "83ec18",
+          "export_assembly": "0x40e5c4: SUB ESP, 0x18",
+          "instruction": "sub esp,0x18",
+          "va": "0x40e5c4"
+        },
+        {
+          "bytes": "8b7c242c",
+          "export_assembly": "0x40e5c7: MOV EDI, dword ptr [ESP + 0x2c]",
+          "instruction": "mov edi,[esp+0x2c]",
+          "va": "0x40e5c7"
+        },
+        {
+          "bytes": "8b4c2430",
+          "export_assembly": "0x40e5cb: MOV ECX, dword ptr [ESP + 0x30]",
+          "instruction": "mov ecx,[esp+0x30]",
+          "va": "0x40e5cb"
+        },
+        {
+          "bytes": "8b542434",
+          "export_assembly": "0x40e5cf: MOV EDX, dword ptr [ESP + 0x34]",
+          "instruction": "mov edx,[esp+0x34]",
+          "va": "0x40e5cf"
+        },
+        {
+          "bytes": "8b742440",
+          "export_assembly": "0x40e5d3: MOV ESI, dword ptr [ESP + 0x40]",
+          "instruction": "mov esi,[esp+0x40]",
+          "va": "0x40e5d3"
+        },
+        {
+          "bytes": "83c104",
+          "export_assembly": "0x40e5d7: ADD ECX, 0x4",
+          "instruction": "add ecx,4",
+          "va": "0x40e5d7"
+        },
+        {
+          "bytes": "83c204",
+          "export_assembly": "0x40e5da: ADD EDX, 0x4",
+          "instruction": "add edx,4",
+          "va": "0x40e5da"
+        },
+        {
+          "bytes": "8b07",
+          "export_assembly": "0x40e5dd: MOV EAX, dword ptr [EDI]",
+          "instruction": "mov eax,[edi]",
+          "va": "0x40e5dd"
+        },
+        {
+          "bytes": "31db",
+          "export_assembly": "0x40e5df: XOR EBX, EBX",
+          "instruction": "xor ebx,ebx",
+          "va": "0x40e5df"
+        },
+        {
+          "bytes": "83c704",
+          "export_assembly": "0x40e5e1: ADD EDI, 0x4",
+          "instruction": "add edi,4",
+          "va": "0x40e5e1"
+        },
+        {
+          "bytes": "895c240c",
+          "export_assembly": "0x40e5e4: MOV dword ptr [ESP + 0xc], EBX",
+          "instruction": "mov [esp+0xc],ebx",
+          "va": "0x40e5e4"
+        },
+        {
+          "bytes": "4e",
+          "export_assembly": "0x40e5e8: DEC ESI",
+          "instruction": "dec esi",
+          "va": "0x40e5e8"
+        },
+        {
+          "bytes": "8942fc",
+          "export_assembly": "0x40e5e9: MOV dword ptr [EDX + -0x4], EAX",
+          "instruction": "mov [edx-4],eax",
+          "va": "0x40e5e9"
+        },
+        {
+          "bytes": "89742440",
+          "export_assembly": "0x40e5ec: MOV dword ptr [ESP + 0x40], ESI",
+          "instruction": "mov [esp+0x40],esi",
+          "va": "0x40e5ec"
+        },
+        {
+          "bytes": "85f6",
+          "export_assembly": "0x40e5f0: TEST ESI, ESI",
+          "instruction": "test esi,esi",
+          "va": "0x40e5f0"
+        },
+        {
+          "bytes": "0f8e49010000",
+          "export_assembly": "0x40e5f2: JLE 0x0040e741",
+          "instruction": "jle 0x0040e741",
+          "va": "0x40e5f2"
+        },
+        {
+          "bytes": "8b442450",
+          "export_assembly": "0x40e5f8: MOV EAX, dword ptr [ESP + 0x50]",
+          "instruction": "mov eax,[esp+0x50]",
+          "va": "0x40e5f8"
+        },
+        {
+          "bytes": "25fefefe00",
+          "export_assembly": "0x40e5fc: AND EAX, 0xfefefe",
+          "instruction": "and eax,0xfefefe",
+          "va": "0x40e5fc"
+        },
+        {
+          "bytes": "d1f8",
+          "export_assembly": "0x40e601: SAR EAX, 0x1",
+          "instruction": "sar eax,1",
+          "va": "0x40e601"
+        },
+        {
+          "bytes": "8b74243c",
+          "export_assembly": "0x40e603: MOV ESI, dword ptr [ESP + 0x3c]",
+          "instruction": "mov esi,[esp+0x3c]",
+          "va": "0x40e603"
+        },
+        {
+          "bytes": "89442404",
+          "export_assembly": "0x40e607: MOV dword ptr [ESP + 0x4], EAX",
+          "instruction": "mov [esp+4],eax",
+          "va": "0x40e607"
+        },
+        {
+          "bytes": "b800010000",
+          "export_assembly": "0x40e60b: MOV EAX, 0x100",
+          "instruction": "mov eax,0x100",
+          "va": "0x40e60b"
+        },
+        {
+          "bytes": "29f0",
+          "export_assembly": "0x40e610: SUB EAX, ESI",
+          "instruction": "sub eax,esi",
+          "va": "0x40e610"
+        },
+        {
+          "bytes": "894c2414",
+          "export_assembly": "0x40e612: MOV dword ptr [ESP + 0x14], ECX",
+          "instruction": "mov [esp+0x14],ecx",
+          "va": "0x40e612"
+        },
+        {
+          "bytes": "89442410",
+          "export_assembly": "0x40e616: MOV dword ptr [ESP + 0x10], EAX",
+          "instruction": "mov [esp+0x10],eax",
+          "va": "0x40e616"
+        },
+        {
+          "bytes": "8b07",
+          "export_assembly": "0x40e61a: MOV EAX, dword ptr [EDI]",
+          "instruction": "mov eax,[edi]",
+          "va": "0x40e61a"
+        },
+        {
+          "bytes": "89c1",
+          "export_assembly": "0x40e61c: MOV ECX, EAX",
+          "instruction": "mov ecx,eax",
+          "va": "0x40e61c"
+        },
+        {
+          "bytes": "8b5c2410",
+          "export_assembly": "0x40e61e: MOV EBX, dword ptr [ESP + 0x10]",
+          "instruction": "mov ebx,[esp+0x10]",
+          "va": "0x40e61e"
+        },
+        {
+          "bytes": "81e1ff000000",
+          "export_assembly": "0x40e622: AND ECX, 0xff",
+          "instruction": "and ecx,0xff",
+          "va": "0x40e622"
+        },
+        {
+          "bytes": "0fafd9",
+          "export_assembly": "0x40e628: IMUL EBX, ECX",
+          "instruction": "imul ebx,ecx",
+          "va": "0x40e628"
+        },
+        {
+          "bytes": "8b742414",
+          "export_assembly": "0x40e62b: MOV ESI, dword ptr [ESP + 0x14]",
+          "instruction": "mov esi,[esp+0x14]",
+          "va": "0x40e62b"
+        },
+        {
+          "bytes": "8b36",
+          "export_assembly": "0x40e62f: MOV ESI, dword ptr [ESI]",
+          "instruction": "mov esi,[esi]",
+          "va": "0x40e62f"
+        },
+        {
+          "bytes": "89f1",
+          "export_assembly": "0x40e631: MOV ECX, ESI",
+          "instruction": "mov ecx,esi",
+          "va": "0x40e631"
+        },
+        {
+          "bytes": "8b6c243c",
+          "export_assembly": "0x40e633: MOV EBP, dword ptr [ESP + 0x3c]",
+          "instruction": "mov ebp,[esp+0x3c]",
+          "va": "0x40e633"
+        },
+        {
+          "bytes": "81e1ff000000",
+          "export_assembly": "0x40e637: AND ECX, 0xff",
+          "instruction": "and ecx,0xff",
+          "va": "0x40e637"
+        },
+        {
+          "bytes": "0fafcd",
+          "export_assembly": "0x40e63d: IMUL ECX, EBP",
+          "instruction": "imul ecx,ebp",
+          "va": "0x40e63d"
+        },
+        {
+          "bytes": "01d9",
+          "export_assembly": "0x40e640: ADD ECX, EBX",
+          "instruction": "add ecx,ebx",
+          "va": "0x40e640"
+        },
+        {
+          "bytes": "89c3",
+          "export_assembly": "0x40e642: MOV EBX, EAX",
+          "instruction": "mov ebx,eax",
+          "va": "0x40e642"
+        },
+        {
+          "bytes": "81e300ff0000",
+          "export_assembly": "0x40e644: AND EBX, 0xff00",
+          "instruction": "and ebx,0xff00",
+          "va": "0x40e644"
+        },
+        {
+          "bytes": "8b6c2410",
+          "export_assembly": "0x40e64a: MOV EBP, dword ptr [ESP + 0x10]",
+          "instruction": "mov ebp,[esp+0x10]",
+          "va": "0x40e64a"
+        },
+        {
+          "bytes": "c1eb08",
+          "export_assembly": "0x40e64e: SHR EBX, 0x8",
+          "instruction": "shr ebx,8",
+          "va": "0x40e64e"
+        },
+        {
+          "bytes": "0fafeb",
+          "export_assembly": "0x40e651: IMUL EBP, EBX",
+          "instruction": "imul ebp,ebx",
+          "va": "0x40e651"
+        },
+        {
+          "bytes": "89f3",
+          "export_assembly": "0x40e654: MOV EBX, ESI",
+          "instruction": "mov ebx,esi",
+          "va": "0x40e654"
+        },
+        {
+          "bytes": "892c24",
+          "export_assembly": "0x40e656: MOV dword ptr [ESP], EBP",
+          "instruction": "mov [esp],ebp",
+          "va": "0x40e656"
+        },
+        {
+          "bytes": "81e300ff0000",
+          "export_assembly": "0x40e659: AND EBX, 0xff00",
+          "instruction": "and ebx,0xff00",
+          "va": "0x40e659"
+        },
+        {
+          "bytes": "8b6c243c",
+          "export_assembly": "0x40e65f: MOV EBP, dword ptr [ESP + 0x3c]",
+          "instruction": "mov ebp,[esp+0x3c]",
+          "va": "0x40e65f"
+        },
+        {
+          "bytes": "c1eb08",
+          "export_assembly": "0x40e663: SHR EBX, 0x8",
+          "instruction": "shr ebx,8",
+          "va": "0x40e663"
+        },
+        {
+          "bytes": "0fafdd",
+          "export_assembly": "0x40e666: IMUL EBX, EBP",
+          "instruction": "imul ebx,ebp",
+          "va": "0x40e666"
+        },
+        {
+          "bytes": "250000ff00",
+          "export_assembly": "0x40e669: AND EAX, 0xff0000",
+          "instruction": "and eax,0xff0000",
+          "va": "0x40e669"
+        },
+        {
+          "bytes": "8b2c24",
+          "export_assembly": "0x40e66e: MOV EBP, dword ptr [ESP]",
+          "instruction": "mov ebp,[esp]",
+          "va": "0x40e66e"
+        },
+        {
+          "bytes": "c1e810",
+          "export_assembly": "0x40e671: SHR EAX, 0x10",
+          "instruction": "shr eax,0x10",
+          "va": "0x40e671"
+        },
+        {
+          "bytes": "01eb",
+          "export_assembly": "0x40e674: ADD EBX, EBP",
+          "instruction": "add ebx,ebp",
+          "va": "0x40e674"
+        },
+        {
+          "bytes": "8b6c2410",
+          "export_assembly": "0x40e676: MOV EBP, dword ptr [ESP + 0x10]",
+          "instruction": "mov ebp,[esp+0x10]",
+          "va": "0x40e676"
+        },
+        {
+          "bytes": "0fafe8",
+          "export_assembly": "0x40e67a: IMUL EBP, EAX",
+          "instruction": "imul ebp,eax",
+          "va": "0x40e67a"
+        },
+        {
+          "bytes": "89f0",
+          "export_assembly": "0x40e67d: MOV EAX, ESI",
+          "instruction": "mov eax,esi",
+          "va": "0x40e67d"
+        },
+        {
+          "bytes": "250000ff00",
+          "export_assembly": "0x40e67f: AND EAX, 0xff0000",
+          "instruction": "and eax,0xff0000",
+          "va": "0x40e67f"
+        },
+        {
+          "bytes": "8b74243c",
+          "export_assembly": "0x40e684: MOV ESI, dword ptr [ESP + 0x3c]",
+          "instruction": "mov esi,[esp+0x3c]",
+          "va": "0x40e684"
+        },
+        {
+          "bytes": "c1e810",
+          "export_assembly": "0x40e688: SHR EAX, 0x10",
+          "instruction": "shr eax,0x10",
+          "va": "0x40e688"
+        },
+        {
+          "bytes": "0fafc6",
+          "export_assembly": "0x40e68b: IMUL EAX, ESI",
+          "instruction": "imul eax,esi",
+          "va": "0x40e68b"
+        },
+        {
+          "bytes": "c1e908",
+          "export_assembly": "0x40e68e: SHR ECX, 0x8",
+          "instruction": "shr ecx,8",
+          "va": "0x40e68e"
+        },
+        {
+          "bytes": "0faf4c2444",
+          "export_assembly": "0x40e691: IMUL ECX, dword ptr [ESP + 0x44]",
+          "instruction": "imul ecx,[esp+0x44]",
+          "va": "0x40e691"
+        },
+        {
+          "bytes": "81e300ff0000",
+          "export_assembly": "0x40e696: AND EBX, 0xff00",
+          "instruction": "and ebx,0xff00",
+          "va": "0x40e696"
+        },
+        {
+          "bytes": "01e8",
+          "export_assembly": "0x40e69c: ADD EAX, EBP",
+          "instruction": "add eax,ebp",
+          "va": "0x40e69c"
+        },
+        {
+          "bytes": "0faf5c2448",
+          "export_assembly": "0x40e69e: IMUL EBX, dword ptr [ESP + 0x48]",
+          "instruction": "imul ebx,[esp+0x48]",
+          "va": "0x40e69e"
+        },
+        {
+          "bytes": "2500ff0000",
+          "export_assembly": "0x40e6a3: AND EAX, 0xff00",
+          "instruction": "and eax,0xff00",
+          "va": "0x40e6a3"
+        },
+        {
+          "bytes": "0faf44244c",
+          "export_assembly": "0x40e6a8: IMUL EAX, dword ptr [ESP + 0x4c]",
+          "instruction": "imul eax,[esp+0x4c]",
+          "va": "0x40e6a8"
+        },
+        {
+          "bytes": "c1eb08",
+          "export_assembly": "0x40e6ad: SHR EBX, 0x8",
+          "instruction": "shr ebx,8",
+          "va": "0x40e6ad"
+        },
+        {
+          "bytes": "c1e908",
+          "export_assembly": "0x40e6b0: SHR ECX, 0x8",
+          "instruction": "shr ecx,8",
+          "va": "0x40e6b0"
+        },
+        {
+          "bytes": "81e300ff0000",
+          "export_assembly": "0x40e6b3: AND EBX, 0xff00",
+          "instruction": "and ebx,0xff00",
+          "va": "0x40e6b3"
+        },
+        {
+          "bytes": "01d9",
+          "export_assembly": "0x40e6b9: ADD ECX, EBX",
+          "instruction": "add ecx,ebx",
+          "va": "0x40e6b9"
+        },
+        {
+          "bytes": "250000ff00",
+          "export_assembly": "0x40e6bb: AND EAX, 0xff0000",
+          "instruction": "and eax,0xff0000",
+          "va": "0x40e6bb"
+        },
+        {
+          "bytes": "8b6c2450",
+          "export_assembly": "0x40e6c0: MOV EBP, dword ptr [ESP + 0x50]",
+          "instruction": "mov ebp,[esp+0x50]",
+          "va": "0x40e6c0"
+        },
+        {
+          "bytes": "01c8",
+          "export_assembly": "0x40e6c4: ADD EAX, ECX",
+          "instruction": "add eax,ecx",
+          "va": "0x40e6c4"
+        },
+        {
+          "bytes": "85ed",
+          "export_assembly": "0x40e6c6: TEST EBP, EBP",
+          "instruction": "test ebp,ebp",
+          "va": "0x40e6c6"
+        },
+        {
+          "bytes": "740d",
+          "export_assembly": "0x40e6c8: JZ 0x0040e6d7",
+          "instruction": "je short 0x0040e6d7",
+          "va": "0x40e6c8"
+        },
+        {
+          "bytes": "25fefefe00",
+          "export_assembly": "0x40e6ca: AND EAX, 0xfefefe",
+          "instruction": "and eax,0xfefefe",
+          "va": "0x40e6ca"
+        },
+        {
+          "bytes": "8b4c2404",
+          "export_assembly": "0x40e6cf: MOV ECX, dword ptr [ESP + 0x4]",
+          "instruction": "mov ecx,[esp+4]",
+          "va": "0x40e6cf"
+        },
+        {
+          "bytes": "d1e8",
+          "export_assembly": "0x40e6d3: SHR EAX, 0x1",
+          "instruction": "shr eax,1",
+          "va": "0x40e6d3"
+        },
+        {
+          "bytes": "01c8",
+          "export_assembly": "0x40e6d5: ADD EAX, ECX",
+          "instruction": "add eax,ecx",
+          "va": "0x40e6d5"
+        },
+        {
+          "bytes": "89c1",
+          "export_assembly": "0x40e6d7: MOV ECX, EAX",
+          "instruction": "mov ecx,eax",
+          "va": "0x40e6d7"
+        },
+        {
+          "bytes": "89c3",
+          "export_assembly": "0x40e6d9: MOV EBX, EAX",
+          "instruction": "mov ebx,eax",
+          "va": "0x40e6d9"
+        },
+        {
+          "bytes": "89c6",
+          "export_assembly": "0x40e6db: MOV ESI, EAX",
+          "instruction": "mov esi,eax",
+          "va": "0x40e6db"
+        },
+        {
+          "bytes": "c1eb10",
+          "export_assembly": "0x40e6dd: SHR EBX, 0x10",
+          "instruction": "shr ebx,0x10",
+          "va": "0x40e6dd"
+        },
+        {
+          "bytes": "c1e908",
+          "export_assembly": "0x40e6e0: SHR ECX, 0x8",
+          "instruction": "shr ecx,8",
+          "va": "0x40e6e0"
+        },
+        {
+          "bytes": "81e3ff000000",
+          "export_assembly": "0x40e6e3: AND EBX, 0xff",
+          "instruction": "and ebx,0xff",
+          "va": "0x40e6e3"
+        },
+        {
+          "bytes": "81e6ff000000",
+          "export_assembly": "0x40e6e9: AND ESI, 0xff",
+          "instruction": "and esi,0xff",
+          "va": "0x40e6e9"
+        },
+        {
+          "bytes": "895c2408",
+          "export_assembly": "0x40e6ef: MOV dword ptr [ESP + 0x8], EBX",
+          "instruction": "mov [esp+8],ebx",
+          "va": "0x40e6ef"
+        },
+        {
+          "bytes": "8b5c2454",
+          "export_assembly": "0x40e6f3: MOV EBX, dword ptr [ESP + 0x54]",
+          "instruction": "mov ebx,[esp+0x54]",
+          "va": "0x40e6f3"
+        },
+        {
+          "bytes": "81e1ff000000",
+          "export_assembly": "0x40e6f7: AND ECX, 0xff",
+          "instruction": "and ecx,0xff",
+          "va": "0x40e6f7"
+        },
+        {
+          "bytes": "85db",
+          "export_assembly": "0x40e6fd: TEST EBX, EBX",
+          "instruction": "test ebx,ebx",
+          "va": "0x40e6fd"
+        },
+        {
+          "bytes": "7418",
+          "export_assembly": "0x40e6ff: JZ 0x0040e719",
+          "instruction": "je short 0x0040e719",
+          "va": "0x40e6ff"
+        },
+        {
+          "bytes": "8d1c0e",
+          "export_assembly": "0x40e701: LEA EBX, [ESI + ECX*0x1]",
+          "instruction": "lea ebx,[esi+ecx]",
+          "va": "0x40e701"
+        },
+        {
+          "bytes": "8b742408",
+          "export_assembly": "0x40e704: MOV ESI, dword ptr [ESP + 0x8]",
+          "instruction": "mov esi,[esp+8]",
+          "va": "0x40e704"
+        },
+        {
+          "bytes": "01d9",
+          "export_assembly": "0x40e708: ADD ECX, EBX",
+          "instruction": "add ecx,ebx",
+          "va": "0x40e708"
+        },
+        {
+          "bytes": "01f1",
+          "export_assembly": "0x40e70a: ADD ECX, ESI",
+          "instruction": "add ecx,esi",
+          "va": "0x40e70a"
+        },
+        {
+          "bytes": "c1e902",
+          "export_assembly": "0x40e70c: SHR ECX, 0x2",
+          "instruction": "shr ecx,2",
+          "va": "0x40e70c"
+        },
+        {
+          "bytes": "25ffffff00",
+          "export_assembly": "0x40e70f: AND EAX, 0xffffff",
+          "instruction": "and eax,0xffffff",
+          "va": "0x40e70f"
+        },
+        {
+          "bytes": "c1e118",
+          "export_assembly": "0x40e714: SHL ECX, 0x18",
+          "instruction": "shl ecx,0x18",
+          "va": "0x40e714"
+        },
+        {
+          "bytes": "01c8",
+          "export_assembly": "0x40e717: ADD EAX, ECX",
+          "instruction": "add eax,ecx",
+          "va": "0x40e717"
+        },
+        {
+          "bytes": "8902",
+          "export_assembly": "0x40e719: MOV dword ptr [EDX], EAX",
+          "instruction": "mov [edx],eax",
+          "va": "0x40e719"
+        },
+        {
+          "bytes": "8b442414",
+          "export_assembly": "0x40e71b: MOV EAX, dword ptr [ESP + 0x14]",
+          "instruction": "mov eax,[esp+0x14]",
+          "va": "0x40e71b"
+        },
+        {
+          "bytes": "8b4c240c",
+          "export_assembly": "0x40e71f: MOV ECX, dword ptr [ESP + 0xc]",
+          "instruction": "mov ecx,[esp+0xc]",
+          "va": "0x40e71f"
+        },
+        {
+          "bytes": "8b5c2440",
+          "export_assembly": "0x40e723: MOV EBX, dword ptr [ESP + 0x40]",
+          "instruction": "mov ebx,[esp+0x40]",
+          "va": "0x40e723"
+        },
+        {
+          "bytes": "83c704",
+          "export_assembly": "0x40e727: ADD EDI, 0x4",
+          "instruction": "add edi,4",
+          "va": "0x40e727"
+        },
+        {
+          "bytes": "83c204",
+          "export_assembly": "0x40e72a: ADD EDX, 0x4",
+          "instruction": "add edx,4",
+          "va": "0x40e72a"
+        },
+        {
+          "bytes": "83c004",
+          "export_assembly": "0x40e72d: ADD EAX, 0x4",
+          "instruction": "add eax,4",
+          "va": "0x40e72d"
+        },
+        {
+          "bytes": "41",
+          "export_assembly": "0x40e730: INC ECX",
+          "instruction": "inc ecx",
+          "va": "0x40e730"
+        },
+        {
+          "bytes": "89442414",
+          "export_assembly": "0x40e731: MOV dword ptr [ESP + 0x14], EAX",
+          "instruction": "mov [esp+0x14],eax",
+          "va": "0x40e731"
+        },
+        {
+          "bytes": "894c240c",
+          "export_assembly": "0x40e735: MOV dword ptr [ESP + 0xc], ECX",
+          "instruction": "mov [esp+0xc],ecx",
+          "va": "0x40e735"
+        },
+        {
+          "bytes": "39d9",
+          "export_assembly": "0x40e739: CMP ECX, EBX",
+          "instruction": "cmp ecx,ebx",
+          "va": "0x40e739"
+        },
+        {
+          "bytes": "0f8cd9feffff",
+          "export_assembly": "0x40e73b: JL 0x0040e61a",
+          "instruction": "jl 0x0040e61a",
+          "va": "0x40e73b"
+        },
+        {
+          "bytes": "83c418",
+          "export_assembly": "0x40e741: ADD ESP, 0x18",
+          "instruction": "add esp,0x18",
+          "va": "0x40e741"
+        },
+        {
+          "bytes": "5d",
+          "export_assembly": "0x40e744: POP EBP",
+          "instruction": "pop ebp",
+          "va": "0x40e744"
+        },
+        {
+          "bytes": "5f",
+          "export_assembly": "0x40e745: POP EDI",
+          "instruction": "pop edi",
+          "va": "0x40e745"
+        },
+        {
+          "bytes": "5e",
+          "export_assembly": "0x40e746: POP ESI",
+          "instruction": "pop esi",
+          "va": "0x40e746"
+        },
+        {
+          "bytes": "5b",
+          "export_assembly": "0x40e747: POP EBX",
+          "instruction": "pop ebx",
+          "va": "0x40e747"
+        },
+        {
+          "bytes": "c3",
+          "export_assembly": "0x40e748: RET",
+          "instruction": "ret",
+          "va": "0x40e748"
+        }
+      ],
+      "pseudocode": "\r\nvoid FUN_0040e5c0(uint *param_1,uint *param_2,uint *param_3,undefined4 param_4,int param_5,\r\n                 int param_6,int param_7,int param_8,int param_9,uint param_10,int param_11)\r\n\r\n{\r\n  uint uVar1;\r\n  int iVar2;\r\n  uint uVar3;\r\n  int local_1c;\r\n  uint *local_14;\r\n  \r\n  local_1c = 0;\r\n  *param_3 = *param_1;\r\n  if (0 < param_6 + -1) {\r\n    iVar2 = 0x100 - param_5;\r\n    do {\r\n      local_14 = param_2 + 1;\r\n      param_1 = param_1 + 1;\r\n      param_3 = param_3 + 1;\r\n      uVar3 = *param_1;\r\n      uVar1 = *local_14;\r\n      uVar3 = ((((uVar1 & 0xff0000) >> 0x10) * param_5 + iVar2 * ((uVar3 & 0xff0000) >> 0x10) &\r\n               0xff00) * param_9 & 0xff0000) +\r\n              (((uVar1 & 0xff) * param_5 + iVar2 * (uVar3 & 0xff) >> 8) * param_7 >> 8) +\r\n              ((((uVar1 & 0xff00) >> 8) * param_5 + iVar2 * ((uVar3 & 0xff00) >> 8) & 0xff00) *\r\n               param_8 >> 8 & 0xff00);\r\n      if (param_10 != 0) {\r\n        uVar3 = ((uVar3 & 0xfefefe) >> 1) + ((int)(param_10 & 0xfefefe) >> 1);\r\n      }\r\n      if (param_11 != 0) {\r\n        uVar3 = (uVar3 & 0xffffff) +\r\n                ((uVar3 & 0xff) + (uVar3 >> 8 & 0xff) * 2 + (uVar3 >> 0x10 & 0xff) >> 2) * 0x1000000\r\n        ;\r\n      }\r\n      *param_3 = uVar3;\r\n      local_1c = local_1c + 1;\r\n      param_2 = local_14;\r\n    } while (local_1c < param_6 + -1);\r\n  }\r\n  return;\r\n}\r\n\r\n",
+      "raw_hex": "5356575583ec188b7c242c8b4c24308b5424348b74244083c10483c2048b0731db83c704895c240c4e8942fc8974244085f60f8e490100008b44245025fefefe00d1f88b74243c89442404b80001000029f0894c2414894424108b0789c18b5c241081e1ff0000000fafd98b7424148b3689f18b6c243c81e1ff0000000fafcd01d989c381e300ff00008b6c2410c1eb080fafeb89f3892c2481e300ff00008b6c243cc1eb080fafdd250000ff008b2c24c1e81001eb8b6c24100fafe889f0250000ff008b74243cc1e8100fafc6c1e9080faf4c244481e300ff000001e80faf5c24482500ff00000faf44244cc1eb08c1e90881e300ff000001d9250000ff008b6c245001c885ed740d25fefefe008b4c2404d1e801c889c189c389c6c1eb10c1e90881e3ff00000081e6ff000000895c24088b5c245481e1ff00000085db74188d1c0e8b74240801d901f1c1e90225ffffff00c1e11801c889028b4424148b4c240c8b5c244083c70483c20483c0044189442414894c240c39d90f8cd9feffff83c4185d5f5e5bc3",
+      "sha256": "4ceb01bd7a6ca461b0017ebab22233064e1600ad5693a7ccc758ab67f6c6b6b6",
+      "size": 393,
+      "va": "0x40e5c0"
+    },
+    {
+      "complete_record_canonical_sha256": "395a212a2b67d87f6b7643a06b8800eabe319050b0c4afe52740cef558101459",
+      "evidence_id": "ev_af0d6b826e20f7c857c52868bf473845cfb3a5bbdcbbcef3fcde4a64787a6963",
+      "instructions": [
+        {
+          "bytes": "53",
+          "export_assembly": "0x4dcfc0: PUSH EBX",
+          "instruction": "push ebx",
+          "va": "0x4dcfc0"
+        },
+        {
+          "bytes": "56",
+          "export_assembly": "0x4dcfc1: PUSH ESI",
+          "instruction": "push esi",
+          "va": "0x4dcfc1"
+        },
+        {
+          "bytes": "57",
+          "export_assembly": "0x4dcfc2: PUSH EDI",
+          "instruction": "push edi",
+          "va": "0x4dcfc2"
+        },
+        {
+          "bytes": "55",
+          "export_assembly": "0x4dcfc3: PUSH EBP",
+          "instruction": "push ebp",
+          "va": "0x4dcfc3"
+        },
+        {
+          "bytes": "83ec48",
+          "export_assembly": "0x4dcfc4: SUB ESP, 0x48",
+          "instruction": "sub esp,0x48",
+          "va": "0x4dcfc4"
+        },
+        {
+          "bytes": "31d2",
+          "export_assembly": "0x4dcfc7: XOR EDX, EDX",
+          "instruction": "xor edx,edx",
+          "va": "0x4dcfc7"
+        },
+        {
+          "bytes": "8954243c",
+          "export_assembly": "0x4dcfc9: MOV dword ptr [ESP + 0x3c], EDX",
+          "instruction": "mov [esp+0x3c],edx",
+          "va": "0x4dcfc9"
+        },
+        {
+          "bytes": "8b54245c",
+          "export_assembly": "0x4dcfcd: MOV EDX, dword ptr [ESP + 0x5c]",
+          "instruction": "mov edx,[esp+0x5c]",
+          "va": "0x4dcfcd"
+        },
+        {
+          "bytes": "8d3cd500000000",
+          "export_assembly": "0x4dcfd1: LEA EDI, [EDX*0x8 + 0x0]",
+          "instruction": "lea edi,[edx*8]",
+          "va": "0x4dcfd1"
+        },
+        {
+          "bytes": "01d7",
+          "export_assembly": "0x4dcfd8: ADD EDI, EDX",
+          "instruction": "add edi,edx",
+          "va": "0x4dcfd8"
+        },
+        {
+          "bytes": "c1e703",
+          "export_assembly": "0x4dcfda: SHL EDI, 0x3",
+          "instruction": "shl edi,3",
+          "va": "0x4dcfda"
+        },
+        {
+          "bytes": "29d7",
+          "export_assembly": "0x4dcfdd: SUB EDI, EDX",
+          "instruction": "sub edi,edx",
+          "va": "0x4dcfdd"
+        },
+        {
+          "bytes": "c1e705",
+          "export_assembly": "0x4dcfdf: SHL EDI, 0x5",
+          "instruction": "shl edi,5",
+          "va": "0x4dcfdf"
+        },
+        {
+          "bytes": "6683bfd455230100",
+          "export_assembly": "0x4dcfe2: CMP word ptr [EDI + 0x12355d4], 0x0",
+          "instruction": "cmp word ptr [edi+0x12355d4],0",
+          "va": "0x4dcfe2"
+        },
+        {
+          "bytes": "7508",
+          "export_assembly": "0x4dcfea: JNZ 0x004dcff4",
+          "instruction": "jne short 0x004dcff4",
+          "va": "0x4dcfea"
+        },
+        {
+          "bytes": "83c448",
+          "export_assembly": "0x4dcfec: ADD ESP, 0x48",
+          "instruction": "add esp,0x48",
+          "va": "0x4dcfec"
+        },
+        {
+          "bytes": "5d",
+          "export_assembly": "0x4dcfef: POP EBP",
+          "instruction": "pop ebp",
+          "va": "0x4dcfef"
+        },
+        {
+          "bytes": "5f",
+          "export_assembly": "0x4dcff0: POP EDI",
+          "instruction": "pop edi",
+          "va": "0x4dcff0"
+        },
+        {
+          "bytes": "5e",
+          "export_assembly": "0x4dcff1: POP ESI",
+          "instruction": "pop esi",
+          "va": "0x4dcff1"
+        },
+        {
+          "bytes": "5b",
+          "export_assembly": "0x4dcff2: POP EBX",
+          "instruction": "pop ebx",
+          "va": "0x4dcff2"
+        },
+        {
+          "bytes": "c3",
+          "export_assembly": "0x4dcff3: RET",
+          "instruction": "ret",
+          "va": "0x4dcff3"
+        },
+        {
+          "bytes": "8b97da552301",
+          "export_assembly": "0x4dcff4: MOV EDX, dword ptr [EDI + 0x12355da]",
+          "instruction": "mov edx,[edi+0x12355da]",
+          "va": "0x4dcff4"
+        },
+        {
+          "bytes": "c1fa10",
+          "export_assembly": "0x4dcffa: SAR EDX, 0x10",
+          "instruction": "sar edx,0x10",
+          "va": "0x4dcffa"
+        },
+        {
+          "bytes": "8d349500000000",
+          "export_assembly": "0x4dcffd: LEA ESI, [EDX*0x4 + 0x0]",
+          "instruction": "lea esi,[edx*4]",
+          "va": "0x4dcffd"
+        },
+        {
+          "bytes": "01d6",
+          "export_assembly": "0x4dd004: ADD ESI, EDX",
+          "instruction": "add esi,edx",
+          "va": "0x4dd004"
+        },
+        {
+          "bytes": "c1e602",
+          "export_assembly": "0x4dd006: SHL ESI, 0x2",
+          "instruction": "shl esi,2",
+          "va": "0x4dd006"
+        },
+        {
+          "bytes": "29d6",
+          "export_assembly": "0x4dd009: SUB ESI, EDX",
+          "instruction": "sub esi,edx",
+          "va": "0x4dd009"
+        },
+        {
+          "bytes": "c1e602",
+          "export_assembly": "0x4dd00b: SHL ESI, 0x2",
+          "instruction": "shl esi,2",
+          "va": "0x4dd00b"
+        },
+        {
+          "bytes": "8b9e104ca100",
+          "export_assembly": "0x4dd00e: MOV EBX, dword ptr [ESI + 0xa14c10]",
+          "instruction": "mov ebx,[esi+0xa14c10]",
+          "va": "0x4dd00e"
+        },
+        {
+          "bytes": "c1fb10",
+          "export_assembly": "0x4dd014: SAR EBX, 0x10",
+          "instruction": "sar ebx,0x10",
+          "va": "0x4dd014"
+        },
+        {
+          "bytes": "69dba4020000",
+          "export_assembly": "0x4dd017: IMUL EBX, EBX, 0x2a4",
+          "instruction": "imul ebx,0x2a4",
+          "va": "0x4dd017"
+        },
+        {
+          "bytes": "8b860e4ca100",
+          "export_assembly": "0x4dd01d: MOV EAX, dword ptr [ESI + 0xa14c0e]",
+          "instruction": "mov eax,[esi+0xa14c0e]",
+          "va": "0x4dd01d"
+        },
+        {
+          "bytes": "c1f810",
+          "export_assembly": "0x4dd023: SAR EAX, 0x10",
+          "instruction": "sar eax,0x10",
+          "va": "0x4dd023"
+        },
+        {
+          "bytes": "8944241c",
+          "export_assembly": "0x4dd026: MOV dword ptr [ESP + 0x1c], EAX",
+          "instruction": "mov [esp+0x1c],eax",
+          "va": "0x4dd026"
+        },
+        {
+          "bytes": "8b832649c600",
+          "export_assembly": "0x4dd02a: MOV EAX, dword ptr [EBX + 0xc64926]",
+          "instruction": "mov eax,[ebx+0xc64926]",
+          "va": "0x4dd02a"
+        },
+        {
+          "bytes": "c1f810",
+          "export_assembly": "0x4dd030: SAR EAX, 0x10",
+          "instruction": "sar eax,0x10",
+          "va": "0x4dd030"
+        },
+        {
+          "bytes": "50",
+          "export_assembly": "0x4dd033: PUSH EAX",
+          "instruction": "push eax",
+          "va": "0x4dd033"
+        },
+        {
+          "bytes": "89442410",
+          "export_assembly": "0x4dd034: MOV dword ptr [ESP + 0x10], EAX",
+          "instruction": "mov [esp+0x10],eax",
+          "va": "0x4dd034"
+        },
+        {
+          "bytes": "e8030e0000",
+          "export_assembly": "0x4dd038: CALL 0x004dde40",
+          "instruction": "call 0x004dde40",
+          "va": "0x4dd038"
+        },
+        {
+          "bytes": "83c404",
+          "export_assembly": "0x4dd03d: ADD ESP, 0x4",
+          "instruction": "add esp,4",
+          "va": "0x4dd03d"
+        },
+        {
+          "bytes": "85c0",
+          "export_assembly": "0x4dd040: TEST EAX, EAX",
+          "instruction": "test eax,eax",
+          "va": "0x4dd040"
+        },
+        {
+          "bytes": "74a8",
+          "export_assembly": "0x4dd042: JZ 0x004dcfec",
+          "instruction": "je short 0x004dcfec",
+          "va": "0x4dd042"
+        },
+        {
+          "bytes": "8b832849c600",
+          "export_assembly": "0x4dd044: MOV EAX, dword ptr [EBX + 0xc64928]",
+          "instruction": "mov eax,[ebx+0xc64928]",
+          "va": "0x4dd044"
+        },
+        {
+          "bytes": "c1f810",
+          "export_assembly": "0x4dd04a: SAR EAX, 0x10",
+          "instruction": "sar eax,0x10",
+          "va": "0x4dd04a"
+        },
+        {
+          "bytes": "50",
+          "export_assembly": "0x4dd04d: PUSH EAX",
+          "instruction": "push eax",
+          "va": "0x4dd04d"
+        },
+        {
+          "bytes": "e8ed140000",
+          "export_assembly": "0x4dd04e: CALL 0x004de540",
+          "instruction": "call 0x004de540",
+          "va": "0x4dd04e"
+        },
+        {
+          "bytes": "83c404",
+          "export_assembly": "0x4dd053: ADD ESP, 0x4",
+          "instruction": "add esp,4",
+          "va": "0x4dd053"
+        },
+        {
+          "bytes": "85c0",
+          "export_assembly": "0x4dd056: TEST EAX, EAX",
+          "instruction": "test eax,eax",
+          "va": "0x4dd056"
+        },
+        {
+          "bytes": "7492",
+          "export_assembly": "0x4dd058: JZ 0x004dcfec",
+          "instruction": "je short 0x004dcfec",
+          "va": "0x4dd058"
+        },
+        {
+          "bytes": "8b9b2a49c600",
+          "export_assembly": "0x4dd05a: MOV EBX, dword ptr [EBX + 0xc6492a]",
+          "instruction": "mov ebx,[ebx+0xc6492a]",
+          "va": "0x4dd05a"
+        },
+        {
+          "bytes": "c1fb10",
+          "export_assembly": "0x4dd060: SAR EBX, 0x10",
+          "instruction": "sar ebx,0x10",
+          "va": "0x4dd060"
+        },
+        {
+          "bytes": "53",
+          "export_assembly": "0x4dd063: PUSH EBX",
+          "instruction": "push ebx",
+          "va": "0x4dd063"
+        },
+        {
+          "bytes": "e877190000",
+          "export_assembly": "0x4dd064: CALL 0x004de9e0",
+          "instruction": "call 0x004de9e0",
+          "va": "0x4dd064"
+        },
+        {
+          "bytes": "83c404",
+          "export_assembly": "0x4dd069: ADD ESP, 0x4",
+          "instruction": "add esp,4",
+          "va": "0x4dd069"
+        },
+        {
+          "bytes": "85c0",
+          "export_assembly": "0x4dd06c: TEST EAX, EAX",
+          "instruction": "test eax,eax",
+          "va": "0x4dd06c"
+        },
+        {
+          "bytes": "0f8478ffffff",
+          "export_assembly": "0x4dd06e: JZ 0x004dcfec",
+          "instruction": "je 0x004dcfec",
+          "va": "0x4dd06e"
+        },
+        {
+          "bytes": "8b86064ca100",
+          "export_assembly": "0x4dd074: MOV EAX, dword ptr [ESI + 0xa14c06]",
+          "instruction": "mov eax,[esi+0xa14c06]",
+          "va": "0x4dd074"
+        },
+        {
+          "bytes": "c1f810",
+          "export_assembly": "0x4dd07a: SAR EAX, 0x10",
+          "instruction": "sar eax,0x10",
+          "va": "0x4dd07a"
+        },
+        {
+          "bytes": "50",
+          "export_assembly": "0x4dd07d: PUSH EAX",
+          "instruction": "push eax",
+          "va": "0x4dd07d"
+        },
+        {
+          "bytes": "e86de7fcff",
+          "export_assembly": "0x4dd07e: CALL 0x004ab7f0",
+          "instruction": "call 0x004ab7f0",
+          "va": "0x4dd07e"
+        },
+        {
+          "bytes": "83c404",
+          "export_assembly": "0x4dd083: ADD ESP, 0x4",
+          "instruction": "add esp,4",
+          "va": "0x4dd083"
+        },
+        {
+          "bytes": "85c0",
+          "export_assembly": "0x4dd086: TEST EAX, EAX",
+          "instruction": "test eax,eax",
+          "va": "0x4dd086"
+        },
+        {
+          "bytes": "0f845effffff",
+          "export_assembly": "0x4dd088: JZ 0x004dcfec",
+          "instruction": "je 0x004dcfec",
+          "va": "0x4dd088"
+        },
+        {
+          "bytes": "8d049d00000000",
+          "export_assembly": "0x4dd08e: LEA EAX, [EBX*0x4 + 0x0]",
+          "instruction": "lea eax,[ebx*4]",
+          "va": "0x4dd08e"
+        },
+        {
+          "bytes": "89c2",
+          "export_assembly": "0x4dd095: MOV EDX, EAX",
+          "instruction": "mov edx,eax",
+          "va": "0x4dd095"
+        },
+        {
+          "bytes": "c1e004",
+          "export_assembly": "0x4dd097: SHL EAX, 0x4",
+          "instruction": "shl eax,4",
+          "va": "0x4dd097"
+        },
+        {
+          "bytes": "29d0",
+          "export_assembly": "0x4dd09a: SUB EAX, EDX",
+          "instruction": "sub eax,edx",
+          "va": "0x4dd09a"
+        },
+        {
+          "bytes": "8b80d44f8200",
+          "export_assembly": "0x4dd09c: MOV EAX, dword ptr [EAX + 0x824fd4]",
+          "instruction": "mov eax,[eax+0x824fd4]",
+          "va": "0x4dd09c"
+        },
+        {
+          "bytes": "50",
+          "export_assembly": "0x4dd0a2: PUSH EAX",
+          "instruction": "push eax",
+          "va": "0x4dd0a2"
+        },
+        {
+          "bytes": "8944242c",
+          "export_assembly": "0x4dd0a3: MOV dword ptr [ESP + 0x2c], EAX",
+          "instruction": "mov [esp+0x2c],eax",
+          "va": "0x4dd0a3"
+        },
+        {
+          "bytes": "e8d42cfdff",
+          "export_assembly": "0x4dd0a7: CALL 0x004afd80",
+          "instruction": "call 0x004afd80",
+          "va": "0x4dd0a7"
+        },
+        {
+          "bytes": "83c404",
+          "export_assembly": "0x4dd0ac: ADD ESP, 0x4",
+          "instruction": "add esp,4",
+          "va": "0x4dd0ac"
+        },
+        {
+          "bytes": "85c0",
+          "export_assembly": "0x4dd0af: TEST EAX, EAX",
+          "instruction": "test eax,eax",
+          "va": "0x4dd0af"
+        },
+        {
+          "bytes": "0f8435ffffff",
+          "export_assembly": "0x4dd0b1: JZ 0x004dcfec",
+          "instruction": "je 0x004dcfec",
+          "va": "0x4dd0b1"
+        },
+        {
+          "bytes": "8b87d8552301",
+          "export_assembly": "0x4dd0b7: MOV EAX, dword ptr [EDI + 0x12355d8]",
+          "instruction": "mov eax,[edi+0x12355d8]",
+          "va": "0x4dd0b7"
+        },
+        {
+          "bytes": "8b54241c",
+          "export_assembly": "0x4dd0bd: MOV EDX, dword ptr [ESP + 0x1c]",
+          "instruction": "mov edx,[esp+0x1c]",
+          "va": "0x4dd0bd"
+        },
+        {
+          "bytes": "89442420",
+          "export_assembly": "0x4dd0c1: MOV dword ptr [ESP + 0x20], EAX",
+          "instruction": "mov [esp+0x20],eax",
+          "va": "0x4dd0c1"
+        },
+        {
+          "bytes": "8d04d500000000",
+          "export_assembly": "0x4dd0c5: LEA EAX, [EDX*0x8 + 0x0]",
+          "instruction": "lea eax,[edx*8]",
+          "va": "0x4dd0c5"
+        },
+        {
+          "bytes": "01d0",
+          "export_assembly": "0x4dd0cc: ADD EAX, EDX",
+          "instruction": "add eax,edx",
+          "va": "0x4dd0cc"
+        },
+        {
+          "bytes": "8b04456a70c200",
+          "export_assembly": "0x4dd0ce: MOV EAX, dword ptr [EAX*0x2 + 0xc2706a]",
+          "instruction": "mov eax,[eax*2+0xc2706a]",
+          "va": "0x4dd0ce"
+        },
+        {
+          "bytes": "c1f810",
+          "export_assembly": "0x4dd0d5: SAR EAX, 0x10",
+          "instruction": "sar eax,0x10",
+          "va": "0x4dd0d5"
+        },
+        {
+          "bytes": "89442424",
+          "export_assembly": "0x4dd0d8: MOV dword ptr [ESP + 0x24], EAX",
+          "instruction": "mov [esp+0x24],eax",
+          "va": "0x4dd0d8"
+        },
+        {
+          "bytes": "83f863",
+          "export_assembly": "0x4dd0dc: CMP EAX, 0x63",
+          "instruction": "cmp eax,0x63",
+          "va": "0x4dd0dc"
+        },
+        {
+          "bytes": "7515",
+          "export_assembly": "0x4dd0df: JNZ 0x004dd0f6",
+          "instruction": "jne short 0x004dd0f6",
+          "va": "0x4dd0df"
+        },
+        {
+          "bytes": "69442428a4020000",
+          "export_assembly": "0x4dd0e1: IMUL EAX, dword ptr [ESP + 0x28], 0x2a4",
+          "instruction": "imul eax,[esp+0x28],0x2a4",
+          "va": "0x4dd0e1"
+        },
+        {
+          "bytes": "8b80ce48c600",
+          "export_assembly": "0x4dd0e9: MOV EAX, dword ptr [EAX + 0xc648ce]",
+          "instruction": "mov eax,[eax+0xc648ce]",
+          "va": "0x4dd0e9"
+        },
+        {
+          "bytes": "c1f810",
+          "export_assembly": "0x4dd0ef: SAR EAX, 0x10",
+          "instruction": "sar eax,0x10",
+          "va": "0x4dd0ef"
+        },
+        {
+          "bytes": "89442424",
+          "export_assembly": "0x4dd0f2: MOV dword ptr [ESP + 0x24], EAX",
+          "instruction": "mov [esp+0x24],eax",
+          "va": "0x4dd0f2"
+        },
+        {
+          "bytes": "695c2428a4020000",
+          "export_assembly": "0x4dd0f6: IMUL EBX, dword ptr [ESP + 0x28], 0x2a4",
+          "instruction": "imul ebx,[esp+0x28],0x2a4",
+          "va": "0x4dd0f6"
+        },
+        {
+          "bytes": "8b9bca48c600",
+          "export_assembly": "0x4dd0fe: MOV EBX, dword ptr [EBX + 0xc648ca]",
+          "instruction": "mov ebx,[ebx+0xc648ca]",
+          "va": "0x4dd0fe"
+        },
+        {
+          "bytes": "c1fb10",
+          "export_assembly": "0x4dd104: SAR EBX, 0x10",
+          "instruction": "sar ebx,0x10",
+          "va": "0x4dd104"
+        },
+        {
+          "bytes": "85db",
+          "export_assembly": "0x4dd107: TEST EBX, EBX",
+          "instruction": "test ebx,ebx",
+          "va": "0x4dd107"
+        },
+        {
+          "bytes": "0f8c91010000",
+          "export_assembly": "0x4dd109: JL 0x004dd2a0",
+          "instruction": "jl 0x004dd2a0",
+          "va": "0x4dd109"
+        },
+        {
+          "bytes": "53",
+          "export_assembly": "0x4dd10f: PUSH EBX",
+          "instruction": "push ebx",
+          "va": "0x4dd10f"
+        },
+        {
+          "bytes": "e8eb20fdff",
+          "export_assembly": "0x4dd110: CALL 0x004af200",
+          "instruction": "call 0x004af200",
+          "va": "0x4dd110"
+        },
+        {
+          "bytes": "83c404",
+          "export_assembly": "0x4dd115: ADD ESP, 0x4",
+          "instruction": "add esp,4",
+          "va": "0x4dd115"
+        },
+        {
+          "bytes": "53",
+          "export_assembly": "0x4dd118: PUSH EBX",
+          "instruction": "push ebx",
+          "va": "0x4dd118"
+        },
+        {
+          "bytes": "89c5",
+          "export_assembly": "0x4dd119: MOV EBP, EAX",
+          "instruction": "mov ebp,eax",
+          "va": "0x4dd119"
+        },
+        {
+          "bytes": "e81021fdff",
+          "export_assembly": "0x4dd11b: CALL 0x004af230",
+          "instruction": "call 0x004af230",
+          "va": "0x4dd11b"
+        },
+        {
+          "bytes": "83c404",
+          "export_assembly": "0x4dd120: ADD ESP, 0x4",
+          "instruction": "add esp,4",
+          "va": "0x4dd120"
+        },
+        {
+          "bytes": "8944242c",
+          "export_assembly": "0x4dd123: MOV dword ptr [ESP + 0x2c], EAX",
+          "instruction": "mov [esp+0x2c],eax",
+          "va": "0x4dd123"
+        },
+        {
+          "bytes": "69442428a4020000",
+          "export_assembly": "0x4dd127: IMUL EAX, dword ptr [ESP + 0x28], 0x2a4",
+          "instruction": "imul eax,[esp+0x28],0x2a4",
+          "va": "0x4dd127"
+        },
+        {
+          "bytes": "8b80c048c600",
+          "export_assembly": "0x4dd12f: MOV EAX, dword ptr [EAX + 0xc648c0]",
+          "instruction": "mov eax,[eax+0xc648c0]",
+          "va": "0x4dd12f"
+        },
+        {
+          "bytes": "8b54240c",
+          "export_assembly": "0x4dd135: MOV EDX, dword ptr [ESP + 0xc]",
+          "instruction": "mov edx,[esp+0xc]",
+          "va": "0x4dd135"
+        },
+        {
+          "bytes": "89442414",
+          "export_assembly": "0x4dd139: MOV dword ptr [ESP + 0x14], EAX",
+          "instruction": "mov [esp+0x14],eax",
+          "va": "0x4dd139"
+        },
+        {
+          "bytes": "8d049500000000",
+          "export_assembly": "0x4dd13d: LEA EAX, [EDX*0x4 + 0x0]",
+          "instruction": "lea eax,[edx*4]",
+          "va": "0x4dd13d"
+        },
+        {
+          "bytes": "29d0",
+          "export_assembly": "0x4dd144: SUB EAX, EDX",
+          "instruction": "sub eax,edx",
+          "va": "0x4dd144"
+        },
+        {
+          "bytes": "c1e002",
+          "export_assembly": "0x4dd146: SHL EAX, 0x2",
+          "instruction": "shl eax,2",
+          "va": "0x4dd146"
+        },
+        {
+          "bytes": "31c9",
+          "export_assembly": "0x4dd149: XOR ECX, ECX",
+          "instruction": "xor ecx,ecx",
+          "va": "0x4dd149"
+        },
+        {
+          "bytes": "29d0",
+          "export_assembly": "0x4dd14b: SUB EAX, EDX",
+          "instruction": "sub eax,edx",
+          "va": "0x4dd14b"
+        },
+        {
+          "bytes": "31db",
+          "export_assembly": "0x4dd14d: XOR EBX, EBX",
+          "instruction": "xor ebx,ebx",
+          "va": "0x4dd14d"
+        },
+        {
+          "bytes": "890de0e70f02",
+          "export_assembly": "0x4dd14f: MOV dword ptr [0x020fe7e0], ECX",
+          "instruction": "mov [0x20fe7e0],ecx",
+          "va": "0x4dd14f"
+        },
+        {
+          "bytes": "8b14c5d4ef8000",
+          "export_assembly": "0x4dd155: MOV EDX, dword ptr [EAX*0x8 + 0x80efd4]",
+          "instruction": "mov edx,[eax*8+0x80efd4]",
+          "va": "0x4dd155"
+        },
+        {
+          "bytes": "8b34c5ecef8000",
+          "export_assembly": "0x4dd15c: MOV ESI, dword ptr [EAX*0x8 + 0x80efec]",
+          "instruction": "mov esi,[eax*8+0x80efec]",
+          "va": "0x4dd15c"
+        },
+        {
+          "bytes": "89542418",
+          "export_assembly": "0x4dd163: MOV dword ptr [ESP + 0x18], EDX",
+          "instruction": "mov [esp+0x18],edx",
+          "va": "0x4dd163"
+        },
+        {
+          "bytes": "85f6",
+          "export_assembly": "0x4dd167: TEST ESI, ESI",
+          "instruction": "test esi,esi",
+          "va": "0x4dd167"
+        },
+        {
+          "bytes": "7e05",
+          "export_assembly": "0x4dd169: JLE 0x004dd170",
+          "instruction": "jle short 0x004dd170",
+          "va": "0x4dd169"
+        },
+        {
+          "bytes": "bb01000000",
+          "export_assembly": "0x4dd16b: MOV EBX, 0x1",
+          "instruction": "mov ebx,1",
+          "va": "0x4dd16b"
+        },
+        {
+          "bytes": "8b7c2420",
+          "export_assembly": "0x4dd170: MOV EDI, dword ptr [ESP + 0x20]",
+          "instruction": "mov edi,[esp+0x20]",
+          "va": "0x4dd170"
+        },
+        {
+          "bytes": "89de",
+          "export_assembly": "0x4dd174: MOV ESI, EBX",
+          "instruction": "mov esi,ebx",
+          "va": "0x4dd174"
+        },
+        {
+          "bytes": "39fb",
+          "export_assembly": "0x4dd176: CMP EBX, EDI",
+          "instruction": "cmp ebx,edi",
+          "va": "0x4dd176"
+        },
+        {
+          "bytes": "0f8d7b000000",
+          "export_assembly": "0x4dd178: JGE 0x004dd1f9",
+          "instruction": "jge 0x004dd1f9",
+          "va": "0x4dd178"
+        },
+        {
+          "bytes": "8b54245c",
+          "export_assembly": "0x4dd17e: MOV EDX, dword ptr [ESP + 0x5c]",
+          "instruction": "mov edx,[esp+0x5c]",
+          "va": "0x4dd17e"
+        },
+        {
+          "bytes": "8d04d500000000",
+          "export_assembly": "0x4dd182: LEA EAX, [EDX*0x8 + 0x0]",
+          "instruction": "lea eax,[edx*8]",
+          "va": "0x4dd182"
+        },
+        {
+          "bytes": "01d0",
+          "export_assembly": "0x4dd189: ADD EAX, EDX",
+          "instruction": "add eax,edx",
+          "va": "0x4dd189"
+        },
+        {
+          "bytes": "c1e003",
+          "export_assembly": "0x4dd18b: SHL EAX, 0x3",
+          "instruction": "shl eax,3",
+          "va": "0x4dd18b"
+        },
+        {
+          "bytes": "29d0",
+          "export_assembly": "0x4dd18e: SUB EAX, EDX",
+          "instruction": "sub eax,edx",
+          "va": "0x4dd18e"
+        },
+        {
+          "bytes": "c1e005",
+          "export_assembly": "0x4dd190: SHL EAX, 0x5",
+          "instruction": "shl eax,5",
+          "va": "0x4dd190"
+        },
+        {
+          "bytes": "8d3c03",
+          "export_assembly": "0x4dd193: LEA EDI, [EBX + EAX*0x1]",
+          "instruction": "lea edi,[ebx+eax]",
+          "va": "0x4dd193"
+        },
+        {
+          "bytes": "c1e302",
+          "export_assembly": "0x4dd196: SHL EBX, 0x2",
+          "instruction": "shl ebx,2",
+          "va": "0x4dd196"
+        },
+        {
+          "bytes": "01c3",
+          "export_assembly": "0x4dd199: ADD EBX, EAX",
+          "instruction": "add ebx,eax",
+          "va": "0x4dd199"
+        },
+        {
+          "bytes": "80bff055230100",
+          "export_assembly": "0x4dd19b: CMP byte ptr [EDI + 0x12355f0], 0x0",
+          "instruction": "cmp byte ptr [edi+0x12355f0],0",
+          "va": "0x4dd19b"
+        },
+        {
+          "bytes": "7448",
+          "export_assembly": "0x4dd1a2: JZ 0x004dd1ec",
+          "instruction": "je short 0x004dd1ec",
+          "va": "0x4dd1a2"
+        },
+        {
+          "bytes": "8d442404",
+          "export_assembly": "0x4dd1a4: LEA EAX, [ESP + 0x4]",
+          "instruction": "lea eax,[esp+4]",
+          "va": "0x4dd1a4"
+        },
+        {
+          "bytes": "50",
+          "export_assembly": "0x4dd1a8: PUSH EAX",
+          "instruction": "push eax",
+          "va": "0x4dd1a8"
+        },
+        {
+          "bytes": "8d442404",
+          "export_assembly": "0x4dd1a9: LEA EAX, [ESP + 0x4]",
+          "instruction": "lea eax,[esp+4]",
+          "va": "0x4dd1a9"
+        },
+        {
+          "bytes": "50",
+          "export_assembly": "0x4dd1ad: PUSH EAX",
+          "instruction": "push eax",
+          "va": "0x4dd1ad"
+        },
+        {
+          "bytes": "8b8330582301",
+          "export_assembly": "0x4dd1ae: MOV EAX, dword ptr [EBX + 0x1235830]",
+          "instruction": "mov eax,[ebx+0x1235830]",
+          "va": "0x4dd1ae"
+        },
+        {
+          "bytes": "c1f810",
+          "export_assembly": "0x4dd1b4: SAR EAX, 0x10",
+          "instruction": "sar eax,0x10",
+          "va": "0x4dd1b4"
+        },
+        {
+          "bytes": "50",
+          "export_assembly": "0x4dd1b7: PUSH EAX",
+          "instruction": "push eax",
+          "va": "0x4dd1b7"
+        },
+        {
+          "bytes": "8b8330562301",
+          "export_assembly": "0x4dd1b8: MOV EAX, dword ptr [EBX + 0x1235630]",
+          "instruction": "mov eax,[ebx+0x1235630]",
+          "va": "0x4dd1b8"
+        },
+        {
+          "bytes": "6a00",
+          "export_assembly": "0x4dd1be: PUSH 0x0",
+          "instruction": "push 0",
+          "va": "0x4dd1be"
+        },
+        {
+          "bytes": "c1f810",
+          "export_assembly": "0x4dd1c0: SAR EAX, 0x10",
+          "instruction": "sar eax,0x10",
+          "va": "0x4dd1c0"
+        },
+        {
+          "bytes": "50",
+          "export_assembly": "0x4dd1c3: PUSH EAX",
+          "instruction": "push eax",
+          "va": "0x4dd1c3"
+        },
+        {
+          "bytes": "e88749fbff",
+          "export_assembly": "0x4dd1c4: CALL 0x00491b50",
+          "instruction": "call 0x00491b50",
+          "va": "0x4dd1c4"
+        },
+        {
+          "bytes": "a1e0e70f02",
+          "export_assembly": "0x4dd1c9: MOV EAX, [0x020fe7e0]",
+          "instruction": "mov eax,[0x20fe7e0]",
+          "va": "0x4dd1c9"
+        },
+        {
+          "bytes": "83c414",
+          "export_assembly": "0x4dd1ce: ADD ESP, 0x14",
+          "instruction": "add esp,0x14",
+          "va": "0x4dd1ce"
+        },
+        {
+          "bytes": "89c2",
+          "export_assembly": "0x4dd1d1: MOV EDX, EAX",
+          "instruction": "mov edx,eax",
+          "va": "0x4dd1d1"
+        },
+        {
+          "bytes": "893485e4e70f02",
+          "export_assembly": "0x4dd1d3: MOV dword ptr [EAX*0x4 + 0x20fe7e4], ESI",
+          "instruction": "mov [eax*4+0x20fe7e4],esi",
+          "va": "0x4dd1d3"
+        },
+        {
+          "bytes": "42",
+          "export_assembly": "0x4dd1da: INC EDX",
+          "instruction": "inc edx",
+          "va": "0x4dd1da"
+        },
+        {
+          "bytes": "8b442404",
+          "export_assembly": "0x4dd1db: MOV EAX, dword ptr [ESP + 0x4]",
+          "instruction": "mov eax,[esp+4]",
+          "va": "0x4dd1db"
+        },
+        {
+          "bytes": "8915e0e70f02",
+          "export_assembly": "0x4dd1df: MOV dword ptr [0x020fe7e0], EDX",
+          "instruction": "mov [0x20fe7e0],edx",
+          "va": "0x4dd1df"
+        },
+        {
+          "bytes": "890495e0e80f02",
+          "export_assembly": "0x4dd1e5: MOV dword ptr [EDX*0x4 + 0x20fe8e0], EAX",
+          "instruction": "mov [edx*4+0x20fe8e0],eax",
+          "va": "0x4dd1e5"
+        },
+        {
+          "bytes": "8b442420",
+          "export_assembly": "0x4dd1ec: MOV EAX, dword ptr [ESP + 0x20]",
+          "instruction": "mov eax,[esp+0x20]",
+          "va": "0x4dd1ec"
+        },
+        {
+          "bytes": "47",
+          "export_assembly": "0x4dd1f0: INC EDI",
+          "instruction": "inc edi",
+          "va": "0x4dd1f0"
+        },
+        {
+          "bytes": "46",
+          "export_assembly": "0x4dd1f1: INC ESI",
+          "instruction": "inc esi",
+          "va": "0x4dd1f1"
+        },
+        {
+          "bytes": "83c304",
+          "export_assembly": "0x4dd1f2: ADD EBX, 0x4",
+          "instruction": "add ebx,4",
+          "va": "0x4dd1f2"
+        },
+        {
+          "bytes": "39c6",
+          "export_assembly": "0x4dd1f5: CMP ESI, EAX",
+          "instruction": "cmp esi,eax",
+          "va": "0x4dd1f5"
+        },
+        {
+          "bytes": "7ca2",
+          "export_assembly": "0x4dd1f7: JL 0x004dd19b",
+          "instruction": "jl short 0x004dd19b",
+          "va": "0x4dd1f7"
+        },
+        {
+          "bytes": "6a00",
+          "export_assembly": "0x4dd1f9: PUSH 0x0",
+          "instruction": "push 0",
+          "va": "0x4dd1f9"
+        },
+        {
+          "bytes": "68187ae901",
+          "export_assembly": "0x4dd1fb: PUSH 0x1e97a18",
+          "instruction": "push 0x1e97a18",
+          "va": "0x4dd1fb"
+        },
+        {
+          "bytes": "68589fe801",
+          "export_assembly": "0x4dd200: PUSH 0x1e89f58",
+          "instruction": "push 0x1e89f58",
+          "va": "0x4dd200"
+        },
+        {
+          "bytes": "6a00",
+          "export_assembly": "0x4dd205: PUSH 0x0",
+          "instruction": "push 0",
+          "va": "0x4dd205"
+        },
+        {
+          "bytes": "68e4e80f02",
+          "export_assembly": "0x4dd207: PUSH 0x20fe8e4",
+          "instruction": "push 0x20fe8e4",
+          "va": "0x4dd207"
+        },
+        {
+          "bytes": "68e4e70f02",
+          "export_assembly": "0x4dd20c: PUSH 0x20fe7e4",
+          "instruction": "push 0x20fe7e4",
+          "va": "0x4dd20c"
+        },
+        {
+          "bytes": "8b15e0e70f02",
+          "export_assembly": "0x4dd211: MOV EDX, dword ptr [0x020fe7e0]",
+          "instruction": "mov edx,[0x20fe7e0]",
+          "va": "0x4dd211"
+        },
+        {
+          "bytes": "52",
+          "export_assembly": "0x4dd217: PUSH EDX",
+          "instruction": "push edx",
+          "va": "0x4dd217"
+        },
+        {
+          "bytes": "e8f3ecfbff",
+          "export_assembly": "0x4dd218: CALL 0x0049bf10",
+          "instruction": "call 0x0049bf10",
+          "va": "0x4dd218"
+        },
+        {
+          "bytes": "83c41c",
+          "export_assembly": "0x4dd21d: ADD ESP, 0x1c",
+          "instruction": "add esp,0x1c",
+          "va": "0x4dd21d"
+        },
+        {
+          "bytes": "31c9",
+          "export_assembly": "0x4dd220: XOR ECX, ECX",
+          "instruction": "xor ecx,ecx",
+          "va": "0x4dd220"
+        },
+        {
+          "bytes": "8b1de0e70f02",
+          "export_assembly": "0x4dd222: MOV EBX, dword ptr [0x020fe7e0]",
+          "instruction": "mov ebx,[0x20fe7e0]",
+          "va": "0x4dd222"
+        },
+        {
+          "bytes": "894c2430",
+          "export_assembly": "0x4dd228: MOV dword ptr [ESP + 0x30], ECX",
+          "instruction": "mov [esp+0x30],ecx",
+          "va": "0x4dd228"
+        },
+        {
+          "bytes": "85db",
+          "export_assembly": "0x4dd22c: TEST EBX, EBX",
+          "instruction": "test ebx,ebx",
+          "va": "0x4dd22c"
+        },
+        {
+          "bytes": "0f8eb8fdffff",
+          "export_assembly": "0x4dd22e: JLE 0x004dcfec",
+          "instruction": "jle 0x004dcfec",
+          "va": "0x4dd22e"
+        },
+        {
+          "bytes": "8b44245c",
+          "export_assembly": "0x4dd234: MOV EAX, dword ptr [ESP + 0x5c]",
+          "instruction": "mov eax,[esp+0x5c]",
+          "va": "0x4dd234"
+        },
+        {
+          "bytes": "8d3cc500000000",
+          "export_assembly": "0x4dd238: LEA EDI, [EAX*0x8 + 0x0]",
+          "instruction": "lea edi,[eax*8]",
+          "va": "0x4dd238"
+        },
+        {
+          "bytes": "01c7",
+          "export_assembly": "0x4dd23f: ADD EDI, EAX",
+          "instruction": "add edi,eax",
+          "va": "0x4dd23f"
+        },
+        {
+          "bytes": "c1e703",
+          "export_assembly": "0x4dd241: SHL EDI, 0x3",
+          "instruction": "shl edi,3",
+          "va": "0x4dd241"
+        },
+        {
+          "bytes": "8b54240c",
+          "export_assembly": "0x4dd244: MOV EDX, dword ptr [ESP + 0xc]",
+          "instruction": "mov edx,[esp+0xc]",
+          "va": "0x4dd244"
+        },
+        {
+          "bytes": "29c7",
+          "export_assembly": "0x4dd248: SUB EDI, EAX",
+          "instruction": "sub edi,eax",
+          "va": "0x4dd248"
+        },
+        {
+          "bytes": "8d049500000000",
+          "export_assembly": "0x4dd24a: LEA EAX, [EDX*0x4 + 0x0]",
+          "instruction": "lea eax,[edx*4]",
+          "va": "0x4dd24a"
+        },
+        {
+          "bytes": "29d0",
+          "export_assembly": "0x4dd251: SUB EAX, EDX",
+          "instruction": "sub eax,edx",
+          "va": "0x4dd251"
+        },
+        {
+          "bytes": "c1e002",
+          "export_assembly": "0x4dd253: SHL EAX, 0x2",
+          "instruction": "shl eax,2",
+          "va": "0x4dd253"
+        },
+        {
+          "bytes": "29d0",
+          "export_assembly": "0x4dd256: SUB EAX, EDX",
+          "instruction": "sub eax,edx",
+          "va": "0x4dd256"
+        },
+        {
+          "bytes": "894c2434",
+          "export_assembly": "0x4dd258: MOV dword ptr [ESP + 0x34], ECX",
+          "instruction": "mov [esp+0x34],ecx",
+          "va": "0x4dd258"
+        },
+        {
+          "bytes": "c1e003",
+          "export_assembly": "0x4dd25c: SHL EAX, 0x3",
+          "instruction": "shl eax,3",
+          "va": "0x4dd25c"
+        },
+        {
+          "bytes": "c1e705",
+          "export_assembly": "0x4dd25f: SHL EDI, 0x5",
+          "instruction": "shl edi,5",
+          "va": "0x4dd25f"
+        },
+        {
+          "bytes": "89442410",
+          "export_assembly": "0x4dd262: MOV dword ptr [ESP + 0x10], EAX",
+          "instruction": "mov [esp+0x10],eax",
+          "va": "0x4dd262"
+        },
+        {
+          "bytes": "8b742434",
+          "export_assembly": "0x4dd266: MOV ESI, dword ptr [ESP + 0x34]",
+          "instruction": "mov esi,[esp+0x34]",
+          "va": "0x4dd266"
+        },
+        {
+          "bytes": "8bb6e4e70f02",
+          "export_assembly": "0x4dd26a: MOV ESI, dword ptr [ESI + 0x20fe7e4]",
+          "instruction": "mov esi,[esi+0x20fe7e4]",
+          "va": "0x4dd26a"
+        },
+        {
+          "bytes": "8d0437",
+          "export_assembly": "0x4dd270: LEA EAX, [EDI + ESI*0x1]",
+          "instruction": "lea eax,[edi+esi]",
+          "va": "0x4dd270"
+        },
+        {
+          "bytes": "80b8f055230100",
+          "export_assembly": "0x4dd273: CMP byte ptr [EAX + 0x12355f0], 0x0",
+          "instruction": "cmp byte ptr [eax+0x12355f0],0",
+          "va": "0x4dd273"
+        },
+        {
+          "bytes": "7532",
+          "export_assembly": "0x4dd27a: JNZ 0x004dd2ae",
+          "instruction": "jne short 0x004dd2ae",
+          "va": "0x4dd27a"
+        },
+        {
+          "bytes": "8b742434",
+          "export_assembly": "0x4dd27c: MOV ESI, dword ptr [ESP + 0x34]",
+          "instruction": "mov esi,[esp+0x34]",
+          "va": "0x4dd27c"
+        },
+        {
+          "bytes": "8b442430",
+          "export_assembly": "0x4dd280: MOV EAX, dword ptr [ESP + 0x30]",
+          "instruction": "mov eax,[esp+0x30]",
+          "va": "0x4dd280"
+        },
+        {
+          "bytes": "8b15e0e70f02",
+          "export_assembly": "0x4dd284: MOV EDX, dword ptr [0x020fe7e0]",
+          "instruction": "mov edx,[0x20fe7e0]",
+          "va": "0x4dd284"
+        },
+        {
+          "bytes": "83c604",
+          "export_assembly": "0x4dd28a: ADD ESI, 0x4",
+          "instruction": "add esi,4",
+          "va": "0x4dd28a"
+        },
+        {
+          "bytes": "40",
+          "export_assembly": "0x4dd28d: INC EAX",
+          "instruction": "inc eax",
+          "va": "0x4dd28d"
+        },
+        {
+          "bytes": "89742434",
+          "export_assembly": "0x4dd28e: MOV dword ptr [ESP + 0x34], ESI",
+          "instruction": "mov [esp+0x34],esi",
+          "va": "0x4dd28e"
+        },
+        {
+          "bytes": "89442430",
+          "export_assembly": "0x4dd292: MOV dword ptr [ESP + 0x30], EAX",
+          "instruction": "mov [esp+0x30],eax",
+          "va": "0x4dd292"
+        },
+        {
+          "bytes": "39d0",
+          "export_assembly": "0x4dd296: CMP EAX, EDX",
+          "instruction": "cmp eax,edx",
+          "va": "0x4dd296"
+        },
+        {
+          "bytes": "0f8d4efdffff",
+          "export_assembly": "0x4dd298: JGE 0x004dcfec",
+          "instruction": "jge 0x004dcfec",
+          "va": "0x4dd298"
+        },
+        {
+          "bytes": "ebc6",
+          "export_assembly": "0x4dd29e: JMP 0x004dd266",
+          "instruction": "jmp short 0x004dd266",
+          "va": "0x4dd29e"
+        },
+        {
+          "bytes": "bd01000000",
+          "export_assembly": "0x4dd2a0: MOV EBP, 0x1",
+          "instruction": "mov ebp,1",
+          "va": "0x4dd2a0"
+        },
+        {
+          "bytes": "896c242c",
+          "export_assembly": "0x4dd2a5: MOV dword ptr [ESP + 0x2c], EBP",
+          "instruction": "mov [esp+0x2c],ebp",
+          "va": "0x4dd2a5"
+        },
+        {
+          "bytes": "e979feffff",
+          "export_assembly": "0x4dd2a9: JMP 0x004dd127",
+          "instruction": "jmp 0x004dd127",
+          "va": "0x4dd2a9"
+        },
+        {
+          "bytes": "8d442404",
+          "export_assembly": "0x4dd2ae: LEA EAX, [ESP + 0x4]",
+          "instruction": "lea eax,[esp+4]",
+          "va": "0x4dd2ae"
+        },
+        {
+          "bytes": "8d1cb500000000",
+          "export_assembly": "0x4dd2b2: LEA EBX, [ESI*0x4 + 0x0]",
+          "instruction": "lea ebx,[esi*4]",
+          "va": "0x4dd2b2"
+        },
+        {
+          "bytes": "50",
+          "export_assembly": "0x4dd2b9: PUSH EAX",
+          "instruction": "push eax",
+          "va": "0x4dd2b9"
+        },
+        {
+          "bytes": "8d442404",
+          "export_assembly": "0x4dd2ba: LEA EAX, [ESP + 0x4]",
+          "instruction": "lea eax,[esp+4]",
+          "va": "0x4dd2ba"
+        },
+        {
+          "bytes": "01fb",
+          "export_assembly": "0x4dd2be: ADD EBX, EDI",
+          "instruction": "add ebx,edi",
+          "va": "0x4dd2be"
+        },
+        {
+          "bytes": "50",
+          "export_assembly": "0x4dd2c0: PUSH EAX",
+          "instruction": "push eax",
+          "va": "0x4dd2c0"
+        },
+        {
+          "bytes": "8b8330582301",
+          "export_assembly": "0x4dd2c1: MOV EAX, dword ptr [EBX + 0x1235830]",
+          "instruction": "mov eax,[ebx+0x1235830]",
+          "va": "0x4dd2c1"
+        },
+        {
+          "bytes": "c1f810",
+          "export_assembly": "0x4dd2c7: SAR EAX, 0x10",
+          "instruction": "sar eax,0x10",
+          "va": "0x4dd2c7"
+        },
+        {
+          "bytes": "50",
+          "export_assembly": "0x4dd2ca: PUSH EAX",
+          "instruction": "push eax",
+          "va": "0x4dd2ca"
+        },
+        {
+          "bytes": "8b8330572301",
+          "export_assembly": "0x4dd2cb: MOV EAX, dword ptr [EBX + 0x1235730]",
+          "instruction": "mov eax,[ebx+0x1235730]",
+          "va": "0x4dd2cb"
+        },
+        {
+          "bytes": "c1f810",
+          "export_assembly": "0x4dd2d1: SAR EAX, 0x10",
+          "instruction": "sar eax,0x10",
+          "va": "0x4dd2d1"
+        },
+        {
+          "bytes": "50",
+          "export_assembly": "0x4dd2d4: PUSH EAX",
+          "instruction": "push eax",
+          "va": "0x4dd2d4"
+        },
+        {
+          "bytes": "8b8330562301",
+          "export_assembly": "0x4dd2d5: MOV EAX, dword ptr [EBX + 0x1235630]",
+          "instruction": "mov eax,[ebx+0x1235630]",
+          "va": "0x4dd2d5"
+        },
+        {
+          "bytes": "c1f810",
+          "export_assembly": "0x4dd2db: SAR EAX, 0x10",
+          "instruction": "sar eax,0x10",
+          "va": "0x4dd2db"
+        },
+        {
+          "bytes": "50",
+          "export_assembly": "0x4dd2de: PUSH EAX",
+          "instruction": "push eax",
+          "va": "0x4dd2de"
+        },
+        {
+          "bytes": "e86c48fbff",
+          "export_assembly": "0x4dd2df: CALL 0x00491b50",
+          "instruction": "call 0x00491b50",
+          "va": "0x4dd2df"
+        },
+        {
+          "bytes": "83c414",
+          "export_assembly": "0x4dd2e4: ADD ESP, 0x14",
+          "instruction": "add esp,0x14",
+          "va": "0x4dd2e4"
+        },
+        {
+          "bytes": "8b442410",
+          "export_assembly": "0x4dd2e7: MOV EAX, dword ptr [ESP + 0x10]",
+          "instruction": "mov eax,[esp+0x10]",
+          "va": "0x4dd2e7"
+        },
+        {
+          "bytes": "83b8fcef800000",
+          "export_assembly": "0x4dd2eb: CMP dword ptr [EAX + 0x80effc], 0x0",
+          "instruction": "cmp dword ptr [eax+0x80effc],0",
+          "va": "0x4dd2eb"
+        },
+        {
+          "bytes": "0f84f3020000",
+          "export_assembly": "0x4dd2f2: JZ 0x004dd5eb",
+          "instruction": "je 0x004dd5eb",
+          "va": "0x4dd2f2"
+        },
+        {
+          "bytes": "8b83305a2301",
+          "export_assembly": "0x4dd2f8: MOV EAX, dword ptr [EBX + 0x1235a30]",
+          "instruction": "mov eax,[ebx+0x1235a30]",
+          "va": "0x4dd2f8"
+        },
+        {
+          "bytes": "c1f810",
+          "export_assembly": "0x4dd2fe: SAR EAX, 0x10",
+          "instruction": "sar eax,0x10",
+          "va": "0x4dd2fe"
+        },
+        {
+          "bytes": "83f8f6",
+          "export_assembly": "0x4dd301: CMP EAX, -0xa",
+          "instruction": "cmp eax,0xfffffff6",
+          "va": "0x4dd301"
+        },
+        {
+          "bytes": "0f8d02020000",
+          "export_assembly": "0x4dd304: JGE 0x004dd50c",
+          "instruction": "jge 0x004dd50c",
+          "va": "0x4dd304"
+        },
+        {
+          "bytes": "3d3efeffff",
+          "export_assembly": "0x4dd30a: CMP EAX, 0xfffffe3e",
+          "instruction": "cmp eax,0xfffffe3e",
+          "va": "0x4dd30a"
+        },
+        {
+          "bytes": "7d08",
+          "export_assembly": "0x4dd30f: JGE 0x004dd319",
+          "instruction": "jge short 0x004dd319",
+          "va": "0x4dd30f"
+        },
+        {
+          "bytes": "c744243c3333733f",
+          "export_assembly": "0x4dd311: MOV dword ptr [ESP + 0x3c], 0x3f733333",
+          "instruction": "mov dword ptr [esp+0x3c],0x3f733333",
+          "va": "0x4dd311"
+        },
+        {
+          "bytes": "7c0f",
+          "export_assembly": "0x4dd319: JL 0x004dd32a",
+          "instruction": "jl short 0x004dd32a",
+          "va": "0x4dd319"
+        },
+        {
+          "bytes": "3d98feffff",
+          "export_assembly": "0x4dd31b: CMP EAX, 0xfffffe98",
+          "instruction": "cmp eax,0xfffffe98",
+          "va": "0x4dd31b"
+        },
+        {
+          "bytes": "7d08",
+          "export_assembly": "0x4dd320: JGE 0x004dd32a",
+          "instruction": "jge short 0x004dd32a",
+          "va": "0x4dd320"
+        },
+        {
+          "bytes": "c744243c6666663f",
+          "export_assembly": "0x4dd322: MOV dword ptr [ESP + 0x3c], 0x3f666666",
+          "instruction": "mov dword ptr [esp+0x3c],0x3f666666",
+          "va": "0x4dd322"
+        },
+        {
+          "bytes": "3d98feffff",
+          "export_assembly": "0x4dd32a: CMP EAX, 0xfffffe98",
+          "instruction": "cmp eax,0xfffffe98",
+          "va": "0x4dd32a"
+        },
+        {
+          "bytes": "7c0f",
+          "export_assembly": "0x4dd32f: JL 0x004dd340",
+          "instruction": "jl short 0x004dd340",
+          "va": "0x4dd32f"
+        },
+        {
+          "bytes": "3de8feffff",
+          "export_assembly": "0x4dd331: CMP EAX, 0xfffffee8",
+          "instruction": "cmp eax,0xfffffee8",
+          "va": "0x4dd331"
+        },
+        {
+          "bytes": "7d08",
+          "export_assembly": "0x4dd336: JGE 0x004dd340",
+          "instruction": "jge short 0x004dd340",
+          "va": "0x4dd336"
+        },
+        {
+          "bytes": "c744243c9a99593f",
+          "export_assembly": "0x4dd338: MOV dword ptr [ESP + 0x3c], 0x3f59999a",
+          "instruction": "mov dword ptr [esp+0x3c],0x3f59999a",
+          "va": "0x4dd338"
+        },
+        {
+          "bytes": "3de8feffff",
+          "export_assembly": "0x4dd340: CMP EAX, 0xfffffee8",
+          "instruction": "cmp eax,0xfffffee8",
+          "va": "0x4dd340"
+        },
+        {
+          "bytes": "7c0f",
+          "export_assembly": "0x4dd345: JL 0x004dd356",
+          "instruction": "jl short 0x004dd356",
+          "va": "0x4dd345"
+        },
+        {
+          "bytes": "3d2effffff",
+          "export_assembly": "0x4dd347: CMP EAX, 0xffffff2e",
+          "instruction": "cmp eax,0xffffff2e",
+          "va": "0x4dd347"
+        },
+        {
+          "bytes": "7d08",
+          "export_assembly": "0x4dd34c: JGE 0x004dd356",
+          "instruction": "jge short 0x004dd356",
+          "va": "0x4dd34c"
+        },
+        {
+          "bytes": "c744243ccdcc4c3f",
+          "export_assembly": "0x4dd34e: MOV dword ptr [ESP + 0x3c], 0x3f4ccccd",
+          "instruction": "mov dword ptr [esp+0x3c],0x3f4ccccd",
+          "va": "0x4dd34e"
+        },
+        {
+          "bytes": "3d2effffff",
+          "export_assembly": "0x4dd356: CMP EAX, 0xffffff2e",
+          "instruction": "cmp eax,0xffffff2e",
+          "va": "0x4dd356"
+        },
+        {
+          "bytes": "7c0f",
+          "export_assembly": "0x4dd35b: JL 0x004dd36c",
+          "instruction": "jl short 0x004dd36c",
+          "va": "0x4dd35b"
+        },
+        {
+          "bytes": "3d6affffff",
+          "export_assembly": "0x4dd35d: CMP EAX, 0xffffff6a",
+          "instruction": "cmp eax,0xffffff6a",
+          "va": "0x4dd35d"
+        },
+        {
+          "bytes": "7d08",
+          "export_assembly": "0x4dd362: JGE 0x004dd36c",
+          "instruction": "jge short 0x004dd36c",
+          "va": "0x4dd362"
+        },
+        {
+          "bytes": "c744243c0000403f",
+          "export_assembly": "0x4dd364: MOV dword ptr [ESP + 0x3c], 0x3f400000",
+          "instruction": "mov dword ptr [esp+0x3c],0x3f400000",
+          "va": "0x4dd364"
+        },
+        {
+          "bytes": "3d6affffff",
+          "export_assembly": "0x4dd36c: CMP EAX, 0xffffff6a",
+          "instruction": "cmp eax,0xffffff6a",
+          "va": "0x4dd36c"
+        },
+        {
+          "bytes": "7c0d",
+          "export_assembly": "0x4dd371: JL 0x004dd380",
+          "instruction": "jl short 0x004dd380",
+          "va": "0x4dd371"
+        },
+        {
+          "bytes": "83f89c",
+          "export_assembly": "0x4dd373: CMP EAX, -0x64",
+          "instruction": "cmp eax,0xffffff9c",
+          "va": "0x4dd373"
+        },
+        {
+          "bytes": "7d08",
+          "export_assembly": "0x4dd376: JGE 0x004dd380",
+          "instruction": "jge short 0x004dd380",
+          "va": "0x4dd376"
+        },
+        {
+          "bytes": "c744243c3333333f",
+          "export_assembly": "0x4dd378: MOV dword ptr [ESP + 0x3c], 0x3f333333",
+          "instruction": "mov dword ptr [esp+0x3c],0x3f333333",
+          "va": "0x4dd378"
+        },
+        {
+          "bytes": "83f89c",
+          "export_assembly": "0x4dd380: CMP EAX, -0x64",
+          "instruction": "cmp eax,0xffffff9c",
+          "va": "0x4dd380"
+        },
+        {
+          "bytes": "7c0d",
+          "export_assembly": "0x4dd383: JL 0x004dd392",
+          "instruction": "jl short 0x004dd392",
+          "va": "0x4dd383"
+        },
+        {
+          "bytes": "83f8c4",
+          "export_assembly": "0x4dd385: CMP EAX, -0x3c",
+          "instruction": "cmp eax,0xffffffc4",
+          "va": "0x4dd385"
+        },
+        {
+          "bytes": "7d08",
+          "export_assembly": "0x4dd388: JGE 0x004dd392",
+          "instruction": "jge short 0x004dd392",
+          "va": "0x4dd388"
+        },
+        {
+          "bytes": "c744243c6666263f",
+          "export_assembly": "0x4dd38a: MOV dword ptr [ESP + 0x3c], 0x3f266666",
+          "instruction": "mov dword ptr [esp+0x3c],0x3f266666",
+          "va": "0x4dd38a"
+        },
+        {
+          "bytes": "83f8c4",
+          "export_assembly": "0x4dd392: CMP EAX, -0x3c",
+          "instruction": "cmp eax,0xffffffc4",
+          "va": "0x4dd392"
+        },
+        {
+          "bytes": "7c0d",
+          "export_assembly": "0x4dd395: JL 0x004dd3a4",
+          "instruction": "jl short 0x004dd3a4",
+          "va": "0x4dd395"
+        },
+        {
+          "bytes": "83f8e2",
+          "export_assembly": "0x4dd397: CMP EAX, -0x1e",
+          "instruction": "cmp eax,0xffffffe2",
+          "va": "0x4dd397"
+        },
+        {
+          "bytes": "7d08",
+          "export_assembly": "0x4dd39a: JGE 0x004dd3a4",
+          "instruction": "jge short 0x004dd3a4",
+          "va": "0x4dd39a"
+        },
+        {
+          "bytes": "c744243c9a99193f",
+          "export_assembly": "0x4dd39c: MOV dword ptr [ESP + 0x3c], 0x3f19999a",
+          "instruction": "mov dword ptr [esp+0x3c],0x3f19999a",
+          "va": "0x4dd39c"
+        },
+        {
+          "bytes": "83f8e2",
+          "export_assembly": "0x4dd3a4: CMP EAX, -0x1e",
+          "instruction": "cmp eax,0xffffffe2",
+          "va": "0x4dd3a4"
+        },
+        {
+          "bytes": "7c0d",
+          "export_assembly": "0x4dd3a7: JL 0x004dd3b6",
+          "instruction": "jl short 0x004dd3b6",
+          "va": "0x4dd3a7"
+        },
+        {
+          "bytes": "83f8f6",
+          "export_assembly": "0x4dd3a9: CMP EAX, -0xa",
+          "instruction": "cmp eax,0xfffffff6",
+          "va": "0x4dd3a9"
+        },
+        {
+          "bytes": "7d08",
+          "export_assembly": "0x4dd3ac: JGE 0x004dd3b6",
+          "instruction": "jge short 0x004dd3b6",
+          "va": "0x4dd3ac"
+        },
+        {
+          "bytes": "c744243ccdcc0c3f",
+          "export_assembly": "0x4dd3ae: MOV dword ptr [ESP + 0x3c], 0x3f0ccccd",
+          "instruction": "mov dword ptr [esp+0x3c],0x3f0ccccd",
+          "va": "0x4dd3ae"
+        },
+        {
+          "bytes": "896c2440",
+          "export_assembly": "0x4dd3b6: MOV dword ptr [ESP + 0x40], EBP",
+          "instruction": "mov [esp+0x40],ebp",
+          "va": "0x4dd3b6"
+        },
+        {
+          "bytes": "db442440",
+          "export_assembly": "0x4dd3ba: FILD dword ptr [ESP + 0x40]",
+          "instruction": "fild st,dword ptr [esp+0x40]",
+          "va": "0x4dd3ba"
+        },
+        {
+          "bytes": "d84c243c",
+          "export_assembly": "0x4dd3be: FMUL float ptr [ESP + 0x3c]",
+          "instruction": "fmul st,dword ptr [esp+0x3c]",
+          "va": "0x4dd3be"
+        },
+        {
+          "bytes": "83ec04",
+          "export_assembly": "0x4dd3c2: SUB ESP, 0x4",
+          "instruction": "sub esp,4",
+          "va": "0x4dd3c2"
+        },
+        {
+          "bytes": "d91c24",
+          "export_assembly": "0x4dd3c5: FSTP float ptr [ESP]",
+          "instruction": "fstp dword ptr [esp],st",
+          "va": "0x4dd3c5"
+        },
+        {
+          "bytes": "e8f3c8f3ff",
+          "export_assembly": "0x4dd3c8: CALL 0x00419cc0",
+          "instruction": "call 0x00419cc0",
+          "va": "0x4dd3c8"
+        },
+        {
+          "bytes": "83c404",
+          "export_assembly": "0x4dd3cd: ADD ESP, 0x4",
+          "instruction": "add esp,4",
+          "va": "0x4dd3cd"
+        },
+        {
+          "bytes": "89c3",
+          "export_assembly": "0x4dd3d0: MOV EBX, EAX",
+          "instruction": "mov ebx,eax",
+          "va": "0x4dd3d0"
+        },
+        {
+          "bytes": "837c242c01",
+          "export_assembly": "0x4dd3d2: CMP dword ptr [ESP + 0x2c], 0x1",
+          "instruction": "cmp dword ptr [esp+0x2c],1",
+          "va": "0x4dd3d2"
+        },
+        {
+          "bytes": "0f8eb8000000",
+          "export_assembly": "0x4dd3d7: JLE 0x004dd495",
+          "instruction": "jle 0x004dd495",
+          "va": "0x4dd3d7"
+        },
+        {
+          "bytes": "8b94b730592301",
+          "export_assembly": "0x4dd3dd: MOV EDX, dword ptr [EDI + ESI*0x4 + 0x1235930]",
+          "instruction": "mov edx,[edi+esi*4+0x1235930]",
+          "va": "0x4dd3dd"
+        },
+        {
+          "bytes": "8b84b7305b2301",
+          "export_assembly": "0x4dd3e4: MOV EAX, dword ptr [EDI + ESI*0x4 + 0x1235b30]",
+          "instruction": "mov eax,[edi+esi*4+0x1235b30]",
+          "va": "0x4dd3e4"
+        },
+        {
+          "bytes": "c1fa10",
+          "export_assembly": "0x4dd3eb: SAR EDX, 0x10",
+          "instruction": "sar edx,0x10",
+          "va": "0x4dd3eb"
+        },
+        {
+          "bytes": "c1f810",
+          "export_assembly": "0x4dd3ee: SAR EAX, 0x10",
+          "instruction": "sar eax,0x10",
+          "va": "0x4dd3ee"
+        },
+        {
+          "bytes": "89542440",
+          "export_assembly": "0x4dd3f1: MOV dword ptr [ESP + 0x40], EDX",
+          "instruction": "mov [esp+0x40],edx",
+          "va": "0x4dd3f1"
+        },
+        {
+          "bytes": "89442444",
+          "export_assembly": "0x4dd3f5: MOV dword ptr [ESP + 0x44], EAX",
+          "instruction": "mov [esp+0x44],eax",
+          "va": "0x4dd3f5"
+        },
+        {
+          "bytes": "db442444",
+          "export_assembly": "0x4dd3f9: FILD dword ptr [ESP + 0x44]",
+          "instruction": "fild st,dword ptr [esp+0x44]",
+          "va": "0x4dd3f9"
+        },
+        {
+          "bytes": "db442440",
+          "export_assembly": "0x4dd3fd: FILD dword ptr [ESP + 0x40]",
+          "instruction": "fild st,dword ptr [esp+0x40]",
+          "va": "0x4dd3fd"
+        },
+        {
+          "bytes": "d95c2408",
+          "export_assembly": "0x4dd401: FSTP float ptr [ESP + 0x8]",
+          "instruction": "fstp dword ptr [esp+8],st",
+          "va": "0x4dd401"
+        },
+        {
+          "bytes": "83ec04",
+          "export_assembly": "0x4dd405: SUB ESP, 0x4",
+          "instruction": "sub esp,4",
+          "va": "0x4dd405"
+        },
+        {
+          "bytes": "d91c24",
+          "export_assembly": "0x4dd408: FSTP float ptr [ESP]",
+          "instruction": "fstp dword ptr [esp],st",
+          "va": "0x4dd408"
+        },
+        {
+          "bytes": "ff74240c",
+          "export_assembly": "0x4dd40b: PUSH dword ptr [ESP + 0xc]",
+          "instruction": "push dword ptr [esp+0xc]",
+          "va": "0x4dd40b"
+        },
+        {
+          "bytes": "e87ceafbff",
+          "export_assembly": "0x4dd40f: CALL 0x0049be90",
+          "instruction": "call 0x0049be90",
+          "va": "0x4dd40f"
+        },
+        {
+          "bytes": "8944244c",
+          "export_assembly": "0x4dd414: MOV dword ptr [ESP + 0x4c], EAX",
+          "instruction": "mov [esp+0x4c],eax",
+          "va": "0x4dd414"
+        },
+        {
+          "bytes": "d944244c",
+          "export_assembly": "0x4dd418: FLD float ptr [ESP + 0x4c]",
+          "instruction": "fld st,dword ptr [esp+0x4c]",
+          "va": "0x4dd418"
+        },
+        {
+          "bytes": "83c408",
+          "export_assembly": "0x4dd41c: ADD ESP, 0x8",
+          "instruction": "add esp,8",
+          "va": "0x4dd41c"
+        },
+        {
+          "bytes": "d9052a685f00",
+          "export_assembly": "0x4dd41f: FLD float ptr [0x005f682a]",
+          "instruction": "fld st,dword ptr [0x5f682a]",
+          "va": "0x4dd41f"
+        },
+        {
+          "bytes": "d9c9",
+          "export_assembly": "0x4dd425: FXCH",
+          "instruction": "fxch",
+          "va": "0x4dd425"
+        },
+        {
+          "bytes": "d95c2438",
+          "export_assembly": "0x4dd427: FSTP float ptr [ESP + 0x38]",
+          "instruction": "fstp dword ptr [esp+0x38],st",
+          "va": "0x4dd427"
+        },
+        {
+          "bytes": "d8642438",
+          "export_assembly": "0x4dd42b: FSUB float ptr [ESP + 0x38]",
+          "instruction": "fsub st,dword ptr [esp+0x38]",
+          "va": "0x4dd42b"
+        },
+        {
+          "bytes": "d8052e685f00",
+          "export_assembly": "0x4dd42f: FADD float ptr [0x005f682e]",
+          "instruction": "fadd st,dword ptr [0x5f682e]",
+          "va": "0x4dd42f"
+        },
+        {
+          "bytes": "d9ee",
+          "export_assembly": "0x4dd435: FLDZ",
+          "instruction": "fldz",
+          "va": "0x4dd435"
+        },
+        {
+          "bytes": "d9c9",
+          "export_assembly": "0x4dd437: FXCH",
+          "instruction": "fxch",
+          "va": "0x4dd437"
+        },
+        {
+          "bytes": "d95c2438",
+          "export_assembly": "0x4dd439: FSTP float ptr [ESP + 0x38]",
+          "instruction": "fstp dword ptr [esp+0x38],st",
+          "va": "0x4dd439"
+        },
+        {
+          "bytes": "d85c2438",
+          "export_assembly": "0x4dd43d: FCOMP float ptr [ESP + 0x38]",
+          "instruction": "fcomp st,dword ptr [esp+0x38]",
+          "va": "0x4dd43d"
+        },
+        {
+          "bytes": "dfe0",
+          "export_assembly": "0x4dd441: FNSTSW AX",
+          "instruction": "fnstsw ax",
+          "va": "0x4dd441"
+        },
+        {
+          "bytes": "9e",
+          "export_assembly": "0x4dd443: SAHF",
+          "instruction": "sahf",
+          "va": "0x4dd443"
+        },
+        {
+          "bytes": "760e",
+          "export_assembly": "0x4dd444: JBE 0x004dd454",
+          "instruction": "jbe short 0x004dd454",
+          "va": "0x4dd444"
+        },
+        {
+          "bytes": "d9442438",
+          "export_assembly": "0x4dd446: FLD float ptr [ESP + 0x38]",
+          "instruction": "fld st,dword ptr [esp+0x38]",
+          "va": "0x4dd446"
+        },
+        {
+          "bytes": "d8052a685f00",
+          "export_assembly": "0x4dd44a: FADD float ptr [0x005f682a]",
+          "instruction": "fadd st,dword ptr [0x5f682a]",
+          "va": "0x4dd44a"
+        },
+        {
+          "bytes": "d95c2438",
+          "export_assembly": "0x4dd450: FSTP float ptr [ESP + 0x38]",
+          "instruction": "fstp dword ptr [esp+0x38],st",
+          "va": "0x4dd450"
+        },
+        {
+          "bytes": "817c24380000b443",
+          "export_assembly": "0x4dd454: CMP dword ptr [ESP + 0x38], 0x43b40000",
+          "instruction": "cmp dword ptr [esp+0x38],0x43b40000",
+          "va": "0x4dd454"
+        },
+        {
+          "bytes": "7c0e",
+          "export_assembly": "0x4dd45c: JL 0x004dd46c",
+          "instruction": "jl short 0x004dd46c",
+          "va": "0x4dd45c"
+        },
+        {
+          "bytes": "d9442438",
+          "export_assembly": "0x4dd45e: FLD float ptr [ESP + 0x38]",
+          "instruction": "fld st,dword ptr [esp+0x38]",
+          "va": "0x4dd45e"
+        },
+        {
+          "bytes": "d80532685f00",
+          "export_assembly": "0x4dd462: FADD float ptr [0x005f6832]",
+          "instruction": "fadd st,dword ptr [0x5f6832]",
+          "va": "0x4dd462"
+        },
+        {
+          "bytes": "d95c2438",
+          "export_assembly": "0x4dd468: FSTP float ptr [ESP + 0x38]",
+          "instruction": "fstp dword ptr [esp+0x38],st",
+          "va": "0x4dd468"
+        },
+        {
+          "bytes": "8b44242c",
+          "export_assembly": "0x4dd46c: MOV EAX, dword ptr [ESP + 0x2c]",
+          "instruction": "mov eax,[esp+0x2c]",
+          "va": "0x4dd46c"
+        },
+        {
+          "bytes": "89442444",
+          "export_assembly": "0x4dd470: MOV dword ptr [ESP + 0x44], EAX",
+          "instruction": "mov [esp+0x44],eax",
+          "va": "0x4dd470"
+        },
+        {
+          "bytes": "db442444",
+          "export_assembly": "0x4dd474: FILD dword ptr [ESP + 0x44]",
+          "instruction": "fild st,dword ptr [esp+0x44]",
+          "va": "0x4dd474"
+        },
+        {
+          "bytes": "d84c2438",
+          "export_assembly": "0x4dd478: FMUL float ptr [ESP + 0x38]",
+          "instruction": "fmul st,dword ptr [esp+0x38]",
+          "va": "0x4dd478"
+        },
+        {
+          "bytes": "d80d26685f00",
+          "export_assembly": "0x4dd47c: FMUL float ptr [0x005f6826]",
+          "instruction": "fmul st,dword ptr [0x5f6826]",
+          "va": "0x4dd47c"
+        },
+        {
+          "bytes": "83ec04",
+          "export_assembly": "0x4dd482: SUB ESP, 0x4",
+          "instruction": "sub esp,4",
+          "va": "0x4dd482"
+        },
+        {
+          "bytes": "d91c24",
+          "export_assembly": "0x4dd485: FSTP float ptr [ESP]",
+          "instruction": "fstp dword ptr [esp],st",
+          "va": "0x4dd485"
+        },
+        {
+          "bytes": "e8f3c7f3ff",
+          "export_assembly": "0x4dd488: CALL 0x00419c80",
+          "instruction": "call 0x00419c80",
+          "va": "0x4dd488"
+        },
+        {
+          "bytes": "0fafc5",
+          "export_assembly": "0x4dd48d: IMUL EAX, EBP",
+          "instruction": "imul eax,ebp",
+          "va": "0x4dd48d"
+        },
+        {
+          "bytes": "83c404",
+          "export_assembly": "0x4dd490: ADD ESP, 0x4",
+          "instruction": "add esp,4",
+          "va": "0x4dd490"
+        },
+        {
+          "bytes": "01c3",
+          "export_assembly": "0x4dd493: ADD EBX, EAX",
+          "instruction": "add ebx,eax",
+          "va": "0x4dd493"
+        },
+        {
+          "bytes": "8b94b730582301",
+          "export_assembly": "0x4dd495: MOV EDX, dword ptr [EDI + ESI*0x4 + 0x1235830]",
+          "instruction": "mov edx,[edi+esi*4+0x1235830]",
+          "va": "0x4dd495"
+        },
+        {
+          "bytes": "c1fa10",
+          "export_assembly": "0x4dd49c: SAR EDX, 0x10",
+          "instruction": "sar edx,0x10",
+          "va": "0x4dd49c"
+        },
+        {
+          "bytes": "89542444",
+          "export_assembly": "0x4dd49f: MOV dword ptr [ESP + 0x44], EDX",
+          "instruction": "mov [esp+0x44],edx",
+          "va": "0x4dd49f"
+        },
+        {
+          "bytes": "db442444",
+          "export_assembly": "0x4dd4a3: FILD dword ptr [ESP + 0x44]",
+          "instruction": "fild st,dword ptr [esp+0x44]",
+          "va": "0x4dd4a3"
+        },
+        {
+          "bytes": "83ec04",
+          "export_assembly": "0x4dd4a7: SUB ESP, 0x4",
+          "instruction": "sub esp,4",
+          "va": "0x4dd4a7"
+        },
+        {
+          "bytes": "d91c24",
+          "export_assembly": "0x4dd4aa: FSTP float ptr [ESP]",
+          "instruction": "fstp dword ptr [esp],st",
+          "va": "0x4dd4aa"
+        },
+        {
+          "bytes": "8b94b730572301",
+          "export_assembly": "0x4dd4ad: MOV EDX, dword ptr [EDI + ESI*0x4 + 0x1235730]",
+          "instruction": "mov edx,[edi+esi*4+0x1235730]",
+          "va": "0x4dd4ad"
+        },
+        {
+          "bytes": "c1fa10",
+          "export_assembly": "0x4dd4b4: SAR EDX, 0x10",
+          "instruction": "sar edx,0x10",
+          "va": "0x4dd4b4"
+        },
+        {
+          "bytes": "89542448",
+          "export_assembly": "0x4dd4b7: MOV dword ptr [ESP + 0x48], EDX",
+          "instruction": "mov [esp+0x48],edx",
+          "va": "0x4dd4b7"
+        },
+        {
+          "bytes": "db442448",
+          "export_assembly": "0x4dd4bb: FILD dword ptr [ESP + 0x48]",
+          "instruction": "fild st,dword ptr [esp+0x48]",
+          "va": "0x4dd4bb"
+        },
+        {
+          "bytes": "83ec04",
+          "export_assembly": "0x4dd4bf: SUB ESP, 0x4",
+          "instruction": "sub esp,4",
+          "va": "0x4dd4bf"
+        },
+        {
+          "bytes": "d91c24",
+          "export_assembly": "0x4dd4c2: FSTP float ptr [ESP]",
+          "instruction": "fstp dword ptr [esp],st",
+          "va": "0x4dd4c2"
+        },
+        {
+          "bytes": "8b84b730562301",
+          "export_assembly": "0x4dd4c5: MOV EAX, dword ptr [EDI + ESI*0x4 + 0x1235630]",
+          "instruction": "mov eax,[edi+esi*4+0x1235630]",
+          "va": "0x4dd4c5"
+        },
+        {
+          "bytes": "c1f810",
+          "export_assembly": "0x4dd4cc: SAR EAX, 0x10",
+          "instruction": "sar eax,0x10",
+          "va": "0x4dd4cc"
+        },
+        {
+          "bytes": "8944244c",
+          "export_assembly": "0x4dd4cf: MOV dword ptr [ESP + 0x4c], EAX",
+          "instruction": "mov [esp+0x4c],eax",
+          "va": "0x4dd4cf"
+        },
+        {
+          "bytes": "db44244c",
+          "export_assembly": "0x4dd4d3: FILD dword ptr [ESP + 0x4c]",
+          "instruction": "fild st,dword ptr [esp+0x4c]",
+          "va": "0x4dd4d3"
+        },
+        {
+          "bytes": "83ec04",
+          "export_assembly": "0x4dd4d7: SUB ESP, 0x4",
+          "instruction": "sub esp,4",
+          "va": "0x4dd4d7"
+        },
+        {
+          "bytes": "d91c24",
+          "export_assembly": "0x4dd4da: FSTP float ptr [ESP]",
+          "instruction": "fstp dword ptr [esp],st",
+          "va": "0x4dd4da"
+        },
+        {
+          "bytes": "53",
+          "export_assembly": "0x4dd4dd: PUSH EBX",
+          "instruction": "push ebx",
+          "va": "0x4dd4dd"
+        },
+        {
+          "bytes": "8b4c2414",
+          "export_assembly": "0x4dd4de: MOV ECX, dword ptr [ESP + 0x14]",
+          "instruction": "mov ecx,[esp+0x14]",
+          "va": "0x4dd4de"
+        },
+        {
+          "bytes": "51",
+          "export_assembly": "0x4dd4e2: PUSH ECX",
+          "instruction": "push ecx",
+          "va": "0x4dd4e2"
+        },
+        {
+          "bytes": "8b5c2414",
+          "export_assembly": "0x4dd4e3: MOV EBX, dword ptr [ESP + 0x14]",
+          "instruction": "mov ebx,[esp+0x14]",
+          "va": "0x4dd4e3"
+        },
+        {
+          "bytes": "53",
+          "export_assembly": "0x4dd4e7: PUSH EBX",
+          "instruction": "push ebx",
+          "va": "0x4dd4e7"
+        },
+        {
+          "bytes": "8b742434",
+          "export_assembly": "0x4dd4e8: MOV ESI, dword ptr [ESP + 0x34]",
+          "instruction": "mov esi,[esp+0x34]",
+          "va": "0x4dd4e8"
+        },
+        {
+          "bytes": "56",
+          "export_assembly": "0x4dd4ec: PUSH ESI",
+          "instruction": "push esi",
+          "va": "0x4dd4ec"
+        },
+        {
+          "bytes": "8b442444",
+          "export_assembly": "0x4dd4ed: MOV EAX, dword ptr [ESP + 0x44]",
+          "instruction": "mov eax,[esp+0x44]",
+          "va": "0x4dd4ed"
+        },
+        {
+          "bytes": "50",
+          "export_assembly": "0x4dd4f1: PUSH EAX",
+          "instruction": "push eax",
+          "va": "0x4dd4f1"
+        },
+        {
+          "bytes": "8b542444",
+          "export_assembly": "0x4dd4f2: MOV EDX, dword ptr [ESP + 0x44]",
+          "instruction": "mov edx,[esp+0x44]",
+          "va": "0x4dd4f2"
+        },
+        {
+          "bytes": "52",
+          "export_assembly": "0x4dd4f6: PUSH EDX",
+          "instruction": "push edx",
+          "va": "0x4dd4f6"
+        },
+        {
+          "bytes": "8b8c2480000000",
+          "export_assembly": "0x4dd4f7: MOV ECX, dword ptr [ESP + 0x80]",
+          "instruction": "mov ecx,[esp+0x80]",
+          "va": "0x4dd4f7"
+        },
+        {
+          "bytes": "51",
+          "export_assembly": "0x4dd4fe: PUSH ECX",
+          "instruction": "push ecx",
+          "va": "0x4dd4fe"
+        },
+        {
+          "bytes": "e8bc7efdff",
+          "export_assembly": "0x4dd4ff: CALL 0x004b53c0",
+          "instruction": "call 0x004b53c0",
+          "va": "0x4dd4ff"
+        },
+        {
+          "bytes": "83c428",
+          "export_assembly": "0x4dd504: ADD ESP, 0x28",
+          "instruction": "add esp,0x28",
+          "va": "0x4dd504"
+        },
+        {
+          "bytes": "e970fdffff",
+          "export_assembly": "0x4dd507: JMP 0x004dd27c",
+          "instruction": "jmp 0x004dd27c",
+          "va": "0x4dd507"
+        },
+        {
+          "bytes": "83f80a",
+          "export_assembly": "0x4dd50c: CMP EAX, 0xa",
+          "instruction": "cmp eax,0xa",
+          "va": "0x4dd50c"
+        },
+        {
+          "bytes": "0f8cb7000000",
+          "export_assembly": "0x4dd50f: JL 0x004dd5cc",
+          "instruction": "jl 0x004dd5cc",
+          "va": "0x4dd50f"
+        },
+        {
+          "bytes": "7c0d",
+          "export_assembly": "0x4dd515: JL 0x004dd524",
+          "instruction": "jl short 0x004dd524",
+          "va": "0x4dd515"
+        },
+        {
+          "bytes": "83f81e",
+          "export_assembly": "0x4dd517: CMP EAX, 0x1e",
+          "instruction": "cmp eax,0x1e",
+          "va": "0x4dd517"
+        },
+        {
+          "bytes": "7d08",
+          "export_assembly": "0x4dd51a: JGE 0x004dd524",
+          "instruction": "jge short 0x004dd524",
+          "va": "0x4dd51a"
+        },
+        {
+          "bytes": "c744243c6666e63e",
+          "export_assembly": "0x4dd51c: MOV dword ptr [ESP + 0x3c], 0x3ee66666",
+          "instruction": "mov dword ptr [esp+0x3c],0x3ee66666",
+          "va": "0x4dd51c"
+        },
+        {
+          "bytes": "83f81e",
+          "export_assembly": "0x4dd524: CMP EAX, 0x1e",
+          "instruction": "cmp eax,0x1e",
+          "va": "0x4dd524"
+        },
+        {
+          "bytes": "7c0d",
+          "export_assembly": "0x4dd527: JL 0x004dd536",
+          "instruction": "jl short 0x004dd536",
+          "va": "0x4dd527"
+        },
+        {
+          "bytes": "83f83c",
+          "export_assembly": "0x4dd529: CMP EAX, 0x3c",
+          "instruction": "cmp eax,0x3c",
+          "va": "0x4dd529"
+        },
+        {
+          "bytes": "7d08",
+          "export_assembly": "0x4dd52c: JGE 0x004dd536",
+          "instruction": "jge short 0x004dd536",
+          "va": "0x4dd52c"
+        },
+        {
+          "bytes": "c744243ccdcccc3e",
+          "export_assembly": "0x4dd52e: MOV dword ptr [ESP + 0x3c], 0x3ecccccd",
+          "instruction": "mov dword ptr [esp+0x3c],0x3ecccccd",
+          "va": "0x4dd52e"
+        },
+        {
+          "bytes": "83f83c",
+          "export_assembly": "0x4dd536: CMP EAX, 0x3c",
+          "instruction": "cmp eax,0x3c",
+          "va": "0x4dd536"
+        },
+        {
+          "bytes": "7c0d",
+          "export_assembly": "0x4dd539: JL 0x004dd548",
+          "instruction": "jl short 0x004dd548",
+          "va": "0x4dd539"
+        },
+        {
+          "bytes": "83f864",
+          "export_assembly": "0x4dd53b: CMP EAX, 0x64",
+          "instruction": "cmp eax,0x64",
+          "va": "0x4dd53b"
+        },
+        {
+          "bytes": "7d08",
+          "export_assembly": "0x4dd53e: JGE 0x004dd548",
+          "instruction": "jge short 0x004dd548",
+          "va": "0x4dd53e"
+        },
+        {
+          "bytes": "c744243c3333b33e",
+          "export_assembly": "0x4dd540: MOV dword ptr [ESP + 0x3c], 0x3eb33333",
+          "instruction": "mov dword ptr [esp+0x3c],0x3eb33333",
+          "va": "0x4dd540"
+        },
+        {
+          "bytes": "83f864",
+          "export_assembly": "0x4dd548: CMP EAX, 0x64",
+          "instruction": "cmp eax,0x64",
+          "va": "0x4dd548"
+        },
+        {
+          "bytes": "7c0f",
+          "export_assembly": "0x4dd54b: JL 0x004dd55c",
+          "instruction": "jl short 0x004dd55c",
+          "va": "0x4dd54b"
+        },
+        {
+          "bytes": "3d96000000",
+          "export_assembly": "0x4dd54d: CMP EAX, 0x96",
+          "instruction": "cmp eax,0x96",
+          "va": "0x4dd54d"
+        },
+        {
+          "bytes": "7d08",
+          "export_assembly": "0x4dd552: JGE 0x004dd55c",
+          "instruction": "jge short 0x004dd55c",
+          "va": "0x4dd552"
+        },
+        {
+          "bytes": "c744243c9a99993e",
+          "export_assembly": "0x4dd554: MOV dword ptr [ESP + 0x3c], 0x3e99999a",
+          "instruction": "mov dword ptr [esp+0x3c],0x3e99999a",
+          "va": "0x4dd554"
+        },
+        {
+          "bytes": "3d96000000",
+          "export_assembly": "0x4dd55c: CMP EAX, 0x96",
+          "instruction": "cmp eax,0x96",
+          "va": "0x4dd55c"
+        },
+        {
+          "bytes": "7c0f",
+          "export_assembly": "0x4dd561: JL 0x004dd572",
+          "instruction": "jl short 0x004dd572",
+          "va": "0x4dd561"
+        },
+        {
+          "bytes": "3dd2000000",
+          "export_assembly": "0x4dd563: CMP EAX, 0xd2",
+          "instruction": "cmp eax,0xd2",
+          "va": "0x4dd563"
+        },
+        {
+          "bytes": "7d08",
+          "export_assembly": "0x4dd568: JGE 0x004dd572",
+          "instruction": "jge short 0x004dd572",
+          "va": "0x4dd568"
+        },
+        {
+          "bytes": "c744243c0000803e",
+          "export_assembly": "0x4dd56a: MOV dword ptr [ESP + 0x3c], 0x3e800000",
+          "instruction": "mov dword ptr [esp+0x3c],0x3e800000",
+          "va": "0x4dd56a"
+        },
+        {
+          "bytes": "3dd2000000",
+          "export_assembly": "0x4dd572: CMP EAX, 0xd2",
+          "instruction": "cmp eax,0xd2",
+          "va": "0x4dd572"
+        },
+        {
+          "bytes": "7c0f",
+          "export_assembly": "0x4dd577: JL 0x004dd588",
+          "instruction": "jl short 0x004dd588",
+          "va": "0x4dd577"
+        },
+        {
+          "bytes": "3d18010000",
+          "export_assembly": "0x4dd579: CMP EAX, 0x118",
+          "instruction": "cmp eax,0x118",
+          "va": "0x4dd579"
+        },
+        {
+          "bytes": "7d08",
+          "export_assembly": "0x4dd57e: JGE 0x004dd588",
+          "instruction": "jge short 0x004dd588",
+          "va": "0x4dd57e"
+        },
+        {
+          "bytes": "c744243ccdcc4c3e",
+          "export_assembly": "0x4dd580: MOV dword ptr [ESP + 0x3c], 0x3e4ccccd",
+          "instruction": "mov dword ptr [esp+0x3c],0x3e4ccccd",
+          "va": "0x4dd580"
+        },
+        {
+          "bytes": "3d18010000",
+          "export_assembly": "0x4dd588: CMP EAX, 0x118",
+          "instruction": "cmp eax,0x118",
+          "va": "0x4dd588"
+        },
+        {
+          "bytes": "7c0f",
+          "export_assembly": "0x4dd58d: JL 0x004dd59e",
+          "instruction": "jl short 0x004dd59e",
+          "va": "0x4dd58d"
+        },
+        {
+          "bytes": "3d68010000",
+          "export_assembly": "0x4dd58f: CMP EAX, 0x168",
+          "instruction": "cmp eax,0x168",
+          "va": "0x4dd58f"
+        },
+        {
+          "bytes": "7d08",
+          "export_assembly": "0x4dd594: JGE 0x004dd59e",
+          "instruction": "jge short 0x004dd59e",
+          "va": "0x4dd594"
+        },
+        {
+          "bytes": "c744243c9a99193e",
+          "export_assembly": "0x4dd596: MOV dword ptr [ESP + 0x3c], 0x3e19999a",
+          "instruction": "mov dword ptr [esp+0x3c],0x3e19999a",
+          "va": "0x4dd596"
+        },
+        {
+          "bytes": "3d68010000",
+          "export_assembly": "0x4dd59e: CMP EAX, 0x168",
+          "instruction": "cmp eax,0x168",
+          "va": "0x4dd59e"
+        },
+        {
+          "bytes": "7c0f",
+          "export_assembly": "0x4dd5a3: JL 0x004dd5b4",
+          "instruction": "jl short 0x004dd5b4",
+          "va": "0x4dd5a3"
+        },
+        {
+          "bytes": "3dc2010000",
+          "export_assembly": "0x4dd5a5: CMP EAX, 0x1c2",
+          "instruction": "cmp eax,0x1c2",
+          "va": "0x4dd5a5"
+        },
+        {
+          "bytes": "7d08",
+          "export_assembly": "0x4dd5aa: JGE 0x004dd5b4",
+          "instruction": "jge short 0x004dd5b4",
+          "va": "0x4dd5aa"
+        },
+        {
+          "bytes": "c744243ccdcccc3d",
+          "export_assembly": "0x4dd5ac: MOV dword ptr [ESP + 0x3c], 0x3dcccccd",
+          "instruction": "mov dword ptr [esp+0x3c],0x3dcccccd",
+          "va": "0x4dd5ac"
+        },
+        {
+          "bytes": "3dc2010000",
+          "export_assembly": "0x4dd5b4: CMP EAX, 0x1c2",
+          "instruction": "cmp eax,0x1c2",
+          "va": "0x4dd5b4"
+        },
+        {
+          "bytes": "0f8cf7fdffff",
+          "export_assembly": "0x4dd5b9: JL 0x004dd3b6",
+          "instruction": "jl 0x004dd3b6",
+          "va": "0x4dd5b9"
+        },
+        {
+          "bytes": "c744243ccdcc4c3d",
+          "export_assembly": "0x4dd5bf: MOV dword ptr [ESP + 0x3c], 0x3d4ccccd",
+          "instruction": "mov dword ptr [esp+0x3c],0x3d4ccccd",
+          "va": "0x4dd5bf"
+        },
+        {
+          "bytes": "e9eafdffff",
+          "export_assembly": "0x4dd5c7: JMP 0x004dd3b6",
+          "instruction": "jmp 0x004dd3b6",
+          "va": "0x4dd5c7"
+        },
+        {
+          "bytes": "83f8f6",
+          "export_assembly": "0x4dd5cc: CMP EAX, -0xa",
+          "instruction": "cmp eax,0xfffffff6",
+          "va": "0x4dd5cc"
+        },
+        {
+          "bytes": "0f8ce1fdffff",
+          "export_assembly": "0x4dd5cf: JL 0x004dd3b6",
+          "instruction": "jl 0x004dd3b6",
+          "va": "0x4dd5cf"
+        },
+        {
+          "bytes": "83f80a",
+          "export_assembly": "0x4dd5d5: CMP EAX, 0xa",
+          "instruction": "cmp eax,0xa",
+          "va": "0x4dd5d5"
+        },
+        {
+          "bytes": "0f8dd8fdffff",
+          "export_assembly": "0x4dd5d8: JGE 0x004dd3b6",
+          "instruction": "jge 0x004dd3b6",
+          "va": "0x4dd5d8"
+        },
+        {
+          "bytes": "c744243c0000003f",
+          "export_assembly": "0x4dd5de: MOV dword ptr [ESP + 0x3c], 0x3f000000",
+          "instruction": "mov dword ptr [esp+0x3c],0x3f000000",
+          "va": "0x4dd5de"
+        },
+        {
+          "bytes": "e9cbfdffff",
+          "export_assembly": "0x4dd5e6: JMP 0x004dd3b6",
+          "instruction": "jmp 0x004dd3b6",
+          "va": "0x4dd5e6"
+        },
+        {
+          "bytes": "8b542418",
+          "export_assembly": "0x4dd5eb: MOV EDX, dword ptr [ESP + 0x18]",
+          "instruction": "mov edx,[esp+0x18]",
+          "va": "0x4dd5eb"
+        },
+        {
+          "bytes": "2b93305c2301",
+          "export_assembly": "0x4dd5ef: SUB EDX, dword ptr [EBX + 0x1235c30]",
+          "instruction": "sub edx,[ebx+0x1235c30]",
+          "va": "0x4dd5ef"
+        },
+        {
+          "bytes": "0fafd5",
+          "export_assembly": "0x4dd5f5: IMUL EDX, EBP",
+          "instruction": "imul edx,ebp",
+          "va": "0x4dd5f5"
+        },
+        {
+          "bytes": "8b5c2414",
+          "export_assembly": "0x4dd5f8: MOV EBX, dword ptr [ESP + 0x14]",
+          "instruction": "mov ebx,[esp+0x14]",
+          "va": "0x4dd5f8"
+        },
+        {
+          "bytes": "89d0",
+          "export_assembly": "0x4dd5fc: MOV EAX, EDX",
+          "instruction": "mov eax,edx",
+          "va": "0x4dd5fc"
+        },
+        {
+          "bytes": "c1fa1f",
+          "export_assembly": "0x4dd5fe: SAR EDX, 0x1f",
+          "instruction": "sar edx,0x1f",
+          "va": "0x4dd5fe"
+        },
+        {
+          "bytes": "f7fb",
+          "export_assembly": "0x4dd601: IDIV EBX",
+          "instruction": "idiv ebx",
+          "va": "0x4dd601"
+        },
+        {
+          "bytes": "89c2",
+          "export_assembly": "0x4dd603: MOV EDX, EAX",
+          "instruction": "mov edx,eax",
+          "va": "0x4dd603"
+        },
+        {
+          "bytes": "c1fa1f",
+          "export_assembly": "0x4dd605: SAR EDX, 0x1f",
+          "instruction": "sar edx,0x1f",
+          "va": "0x4dd605"
+        },
+        {
+          "bytes": "f7fd",
+          "export_assembly": "0x4dd608: IDIV EBP",
+          "instruction": "idiv ebp",
+          "va": "0x4dd608"
+        },
+        {
+          "bytes": "89d3",
+          "export_assembly": "0x4dd60a: MOV EBX, EDX",
+          "instruction": "mov ebx,edx",
+          "va": "0x4dd60a"
+        },
+        {
+          "bytes": "e9c1fdffff",
+          "export_assembly": "0x4dd60c: JMP 0x004dd3d2",
+          "instruction": "jmp 0x004dd3d2",
+          "va": "0x4dd60c"
+        }
+      ],
+      "pseudocode": "\r\n/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */\r\n\r\nvoid FUN_004dcfc0(int param_1)\r\n\r\n{\r\n  int iVar1;\r\n  float fVar2;\r\n  int iVar3;\r\n  int iVar4;\r\n  int iVar5;\r\n  uint uVar6;\r\n  int iVar7;\r\n  undefined4 local_58;\r\n  undefined4 local_54;\r\n  float local_50;\r\n  int local_4c;\r\n  int local_48;\r\n  int local_44;\r\n  int local_40;\r\n  int local_3c;\r\n  int local_38;\r\n  int local_34;\r\n  int local_30;\r\n  int local_2c;\r\n  int local_28;\r\n  int local_24;\r\n  float local_20;\r\n  float local_1c;\r\n  int local_18;\r\n  int local_14;\r\n  \r\n  local_1c = 0.0;\r\n  iVar7 = param_1 * 0x8e0;\r\n  if (*(short *)((int)&DAT_012355d2 + iVar7 + 2) != 0) {\r\n    iVar5 = (*(int *)(&DAT_012355da + iVar7) >> 0x10) * 0x4c;\r\n    iVar4 = ((int)(&DAT_00a14c10)[(*(int *)(&DAT_012355da + iVar7) >> 0x10) * 0x13] >> 0x10) * 0x2a4\r\n    ;\r\n    local_3c = *(int *)((int)&DAT_00a14c0c + iVar5 + 2) >> 0x10;\r\n    local_4c = *(int *)(&DAT_00c64926 + iVar4) >> 0x10;\r\n    iVar1 = FUN_004dde40(local_4c);\r\n    if ((iVar1 != 0) && (iVar1 = FUN_004de540(*(int *)(&DAT_00c64928 + iVar4) >> 0x10), iVar1 != 0))\r\n    {\r\n      iVar1 = *(int *)(&DAT_00c6492a + iVar4);\r\n      iVar4 = FUN_004de9e0(iVar1 >> 0x10);\r\n      if ((iVar4 != 0) &&\r\n         (iVar4 = FUN_004ab7f0(*(int *)((int)&DAT_00a14c04 + iVar5 + 2) >> 0x10), iVar4 != 0)) {\r\n        local_30 = *(int *)(&DAT_00824fd4 + (iVar1 >> 0x10) * 0x3c);\r\n        iVar1 = FUN_004afd80(local_30);\r\n        if (iVar1 != 0) {\r\n          local_38 = *(int *)(&DAT_012355d8 + iVar7);\r\n          local_34 = *(int *)(&DAT_00c2706a + local_3c * 9) >> 0x10;\r\n          if (local_34 == 99) {\r\n            local_34 = *(int *)(&DAT_00c648ce + local_30 * 0x2a4) >> 0x10;\r\n          }\r\n          iVar7 = (int)(&DAT_00c648ca)[local_30 * 0xa9] >> 0x10;\r\n          if (iVar7 < 0) {\r\n            iVar1 = 1;\r\n            local_2c = 1;\r\n          }\r\n          else {\r\n            iVar1 = FUN_004af200(iVar7);\r\n            local_2c = FUN_004af230(iVar7);\r\n          }\r\n          local_44 = *(int *)(&DAT_00c648c0 + local_30 * 0x2a4);\r\n          DAT_020fe7e0 = 0;\r\n          local_40 = *(int *)(&DAT_0080efd4 + local_4c * 0x58);\r\n          uVar6 = (uint)(0 < *(int *)(&DAT_0080efec + local_4c * 0x58));\r\n          if ((int)uVar6 < local_38) {\r\n            iVar7 = uVar6 + param_1 * 0x8e0;\r\n            iVar4 = uVar6 * 4 + param_1 * 0x8e0;\r\n            do {\r\n              if ((&DAT_012355f0)[iVar7] != '\\0') {\r\n                FUN_00491b50(*(int *)(&DAT_01235630 + iVar4) >> 0x10,0,\r\n                             *(int *)(&DAT_01235830 + iVar4) >> 0x10,&local_58,&local_54);\r\n                (&DAT_020fe7e4)[DAT_020fe7e0] = uVar6;\r\n                DAT_020fe7e0 = DAT_020fe7e0 + 1;\r\n                *(undefined4 *)(DAT_020fe7e0 * 4 + 0x20fe8e0) = local_54;\r\n              }\r\n              iVar7 = iVar7 + 1;\r\n              uVar6 = uVar6 + 1;\r\n              iVar4 = iVar4 + 4;\r\n            } while ((int)uVar6 < local_38);\r\n          }\r\n          FUN_0049bf10(DAT_020fe7e0,&DAT_020fe7e4,&DAT_020fe8e4,0,&DAT_01e89f58,&DAT_01e97a18,0);\r\n          local_28 = 0;\r\n          if (0 < DAT_020fe7e0) {\r\n            local_24 = 0;\r\n            local_48 = local_4c * 0x58;\r\n            iVar7 = param_1 * 0x8e0;\r\n            do {\r\n              iVar4 = *(int *)((int)&DAT_020fe7e4 + local_24);\r\n              if ((&DAT_012355f0)[iVar7 + iVar4] != '\\0') {\r\n                iVar5 = iVar4 * 4 + iVar7;\r\n                FUN_00491b50(*(int *)(&DAT_01235630 + iVar5) >> 0x10,\r\n                             *(int *)(&DAT_01235730 + iVar5) >> 0x10,\r\n                             *(int *)(&DAT_01235830 + iVar5) >> 0x10,&local_58,&local_54);\r\n                if (*(int *)(&DAT_0080effc + local_48) == 0) {\r\n                  iVar5 = (((local_40 - *(int *)(&DAT_01235c30 + iVar5)) * iVar1) / local_44) %\r\n                          iVar1;\r\n                }\r\n                else {\r\n                  iVar5 = *(int *)(&DAT_01235a30 + iVar5) >> 0x10;\r\n                  if (iVar5 < -10) {\r\n                    if (iVar5 < -0x1c2) {\r\n                      local_1c = 0.95;\r\n                    }\r\n                    else if (iVar5 < -0x168) {\r\n                      local_1c = 0.9;\r\n                    }\r\n                    if ((-0x169 < iVar5) && (iVar5 < -0x118)) {\r\n                      local_1c = 0.85;\r\n                    }\r\n                    if ((-0x119 < iVar5) && (iVar5 < -0xd2)) {\r\n                      local_1c = 0.8;\r\n                    }\r\n                    if ((-0xd3 < iVar5) && (iVar5 < -0x96)) {\r\n                      local_1c = 0.75;\r\n                    }\r\n                    if ((-0x97 < iVar5) && (iVar5 < -100)) {\r\n                      local_1c = 0.7;\r\n                    }\r\n                    if ((-0x65 < iVar5) && (iVar5 < -0x3c)) {\r\n                      local_1c = 0.65;\r\n                    }\r\n                    if ((-0x3d < iVar5) && (iVar5 < -0x1e)) {\r\n                      local_1c = 0.6;\r\n                    }\r\n                    if ((-0x1f < iVar5) && (iVar5 < -10)) {\r\n                      local_1c = 0.55;\r\n                    }\r\n                  }\r\n                  else if (iVar5 < 10) {\r\n                    if ((-0xb < iVar5) && (iVar5 < 10)) {\r\n                      local_1c = 0.5;\r\n                    }\r\n                  }\r\n                  else {\r\n                    if ((9 < iVar5) && (iVar5 < 0x1e)) {\r\n                      local_1c = 0.45;\r\n                    }\r\n                    if ((0x1d < iVar5) && (iVar5 < 0x3c)) {\r\n                      local_1c = 0.4;\r\n                    }\r\n                    if ((0x3b < iVar5) && (iVar5 < 100)) {\r\n                      local_1c = 0.35;\r\n                    }\r\n                    if ((99 < iVar5) && (iVar5 < 0x96)) {\r\n                      local_1c = 0.3;\r\n                    }\r\n                    if ((0x95 < iVar5) && (iVar5 < 0xd2)) {\r\n                      local_1c = 0.25;\r\n                    }\r\n                    if ((0xd1 < iVar5) && (iVar5 < 0x118)) {\r\n                      local_1c = 0.2;\r\n                    }\r\n                    if ((0x117 < iVar5) && (iVar5 < 0x168)) {\r\n                      local_1c = 0.15;\r\n                    }\r\n                    if ((0x167 < iVar5) && (iVar5 < 0x1c2)) {\r\n                      local_1c = 0.1;\r\n                    }\r\n                    if (0x1c1 < iVar5) {\r\n                      local_1c = 0.05;\r\n                    }\r\n                  }\r\n                  local_18 = iVar1;\r\n                  iVar5 = FUN_00419cc0((float)iVar1 * local_1c);\r\n                }\r\n                if (1 < local_2c) {\r\n                  local_18 = *(int *)(&DAT_01235930 + iVar4 * 4 + iVar7) >> 0x10;\r\n                  local_14 = *(int *)(&DAT_01235b30 + iVar4 * 4 + iVar7) >> 0x10;\r\n                  local_50 = (float)local_18;\r\n                  fVar2 = (float)FUN_0049be90(local_50,(float)local_14);\r\n                  local_20 = (_DAT_005f682a - fVar2) + _DAT_005f682e;\r\n                  if (local_20 < 0.0) {\r\n                    local_20 = local_20 + _DAT_005f682a;\r\n                  }\r\n                  if (0x43b3ffff < (int)local_20) {\r\n                    local_20 = local_20 + _DAT_005f6832;\r\n                  }\r\n                  local_14 = local_2c;\r\n                  iVar3 = FUN_00419c80((float)local_2c * local_20 * _DAT_005f6826);\r\n                  iVar5 = iVar5 + iVar3 * iVar1;\r\n                }\r\n                local_14 = *(int *)(&DAT_01235630 + iVar4 * 4 + iVar7) >> 0x10;\r\n                FUN_004b53c0(param_1,local_34,local_30,local_3c,local_58,local_54,iVar5,\r\n                             (float)local_14,\r\n                             (float)(*(int *)(&DAT_01235730 + iVar4 * 4 + iVar7) >> 0x10),\r\n                             (float)(*(int *)(&DAT_01235830 + iVar4 * 4 + iVar7) >> 0x10));\r\n              }\r\n              local_24 = local_24 + 4;\r\n              local_28 = local_28 + 1;\r\n            } while (local_28 < DAT_020fe7e0);\r\n          }\r\n        }\r\n      }\r\n    }\r\n  }\r\n  return;\r\n}\r\n\r\n",
+      "raw_hex": "5356575583ec4831d28954243c8b54245c8d3cd50000000001d7c1e70329d7c1e7056683bfd455230100750883c4485d5f5e5bc38b97da552301c1fa108d34950000000001d6c1e60229d6c1e6028b9e104ca100c1fb1069dba40200008b860e4ca100c1f8108944241c8b832649c600c1f8105089442410e8030e000083c40485c074a88b832849c600c1f81050e8ed14000083c40485c074928b9b2a49c600c1fb1053e87719000083c40485c00f8478ffffff8b86064ca100c1f81050e86de7fcff83c40485c00f845effffff8d049d0000000089c2c1e00429d08b80d44f8200508944242ce8d42cfdff83c40485c00f8435ffffff8b87d85523018b54241c894424208d04d50000000001d08b04456a70c200c1f8108944242483f863751569442428a40200008b80ce48c600c1f81089442424695c2428a40200008b9bca48c600c1fb1085db0f8c9101000053e8eb20fdff83c4045389c5e81021fdff83c4048944242c69442428a40200008b80c048c6008b54240c894424148d04950000000029d0c1e00231c929d031db890de0e70f028b14c5d4ef80008b34c5ecef80008954241885f67e05bb010000008b7c242089de39fb0f8d7b0000008b54245c8d04d50000000001d0c1e00329d0c1e0058d3c03c1e30201c380bff05523010074488d442404508d442404508b8330582301c1f810508b83305623016a00c1f81050e88749fbffa1e0e70f0283c41489c2893485e4e70f02428b4424048915e0e70f02890495e0e80f028b442420474683c30439c67ca26a0068187ae90168589fe8016a0068e4e80f0268e4e70f028b15e0e70f0252e8f3ecfbff83c41c31c98b1de0e70f02894c243085db0f8eb8fdffff8b44245c8d3cc50000000001c7c1e7038b54240c29c78d04950000000029d0c1e00229d0894c2434c1e003c1e705894424108b7424348bb6e4e70f028d043780b8f05523010075328b7424348b4424308b15e0e70f0283c60440897424348944243039d00f8d4efdffffebc6bd01000000896c242ce979feffff8d4424048d1cb500000000508d44240401fb508b8330582301c1f810508b8330572301c1f810508b8330562301c1f81050e86c48fbff83c4148b44241083b8fcef8000000f84f30200008b83305a2301c1f81083f8f60f8d020200003d3efeffff7d08c744243c3333733f7c0f3d98feffff7d08c744243c6666663f3d98feffff7c0f3de8feffff7d08c744243c9a99593f3de8feffff7c0f3d2effffff7d08c744243ccdcc4c3f3d2effffff7c0f3d6affffff7d08c744243c0000403f3d6affffff7c0d83f89c7d08c744243c3333333f83f89c7c0d83f8c47d08c744243c6666263f83f8c47c0d83f8e27d08c744243c9a99193f83f8e27c0d83f8f67d08c744243ccdcc0c3f896c2440db442440d84c243c83ec04d91c24e8f3c8f3ff83c40489c3837c242c010f8eb80000008b94b7305923018b84b7305b2301c1fa10c1f8108954244089442444db442444db442440d95c240883ec04d91c24ff74240ce87ceafbff8944244cd944244c83c408d9052a685f00d9c9d95c2438d8642438d8052e685f00d9eed9c9d95c2438d85c2438dfe09e760ed9442438d8052a685f00d95c2438817c24380000b4437c0ed9442438d80532685f00d95c24388b44242c89442444db442444d84c2438d80d26685f0083ec04d91c24e8f3c7f3ff0fafc583c40401c38b94b730582301c1fa1089542444db44244483ec04d91c248b94b730572301c1fa1089542448db44244883ec04d91c248b84b730562301c1f8108944244cdb44244c83ec04d91c24538b4c2414518b5c2414538b742434568b442444508b542444528b8c248000000051e8bc7efdff83c428e970fdffff83f80a0f8cb70000007c0d83f81e7d08c744243c6666e63e83f81e7c0d83f83c7d08c744243ccdcccc3e83f83c7c0d83f8647d08c744243c3333b33e83f8647c0f3d960000007d08c744243c9a99993e3d960000007c0f3dd20000007d08c744243c0000803e3dd20000007c0f3d180100007d08c744243ccdcc4c3e3d180100007c0f3d680100007d08c744243c9a99193e3d680100007c0f3dc20100007d08c744243ccdcccc3d3dc20100000f8cf7fdffffc744243ccdcc4c3de9eafdffff83f8f60f8ce1fdffff83f80a0f8dd8fdffffc744243c0000003fe9cbfdffff8b5424182b93305c23010fafd58b5c241489d0c1fa1ff7fb89c2c1fa1ff7fd89d3e9c1fdffff",
+      "sha256": "685de7bb88f41bd8c42f5d568351ed3683ab4ddaec3e05927006a8ca3f783b1f",
+      "size": 1617,
+      "va": "0x4dcfc0"
+    }
+  ],
+  "selected_record_count": 6,
+  "source_unchanged": true,
+  "unknowns": [
+    "x87 control word, precision, exceptions and runtime rounding policy",
+    "general CRT atan result and quadrant boundary rounding",
+    "runtime dispatch chosen at 618b54/618b44",
+    "caller palette parameter ranges, aliasing and lifecycle",
+    "no product numerical API, native execution, game launch or pixel equivalence"
+  ]
+}

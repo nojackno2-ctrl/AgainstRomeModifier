@@ -9,7 +9,7 @@ using OpenTK.Windowing.Common;
 
 namespace AgainstRomeMapEditor;
 
-internal sealed class Map3DViewControl : GLControl
+internal sealed partial class Map3DViewControl : GLControl
 {
     private readonly EditorCamera _camera = new();
     private readonly HashSet<int> _paintedInDrag = new();
@@ -485,7 +485,7 @@ internal sealed class Map3DViewControl : GLControl
         DrawTerrain(matrix);
         if (ShowGrid) DrawGrid(matrix);
         DrawWater(matrix);
-        if (ShowObjects) { DrawShadows(matrix); DrawMarkers(matrix); DrawSprites(ToOpenTk(view), ToOpenTk(projection)); }
+        if (ShowObjects) { DrawShadows(matrix); DrawMarkers(matrix); DrawSprites(ToOpenTk(view), ToOpenTk(projection)); DrawParticleSprites(ToOpenTk(view), ToOpenTk(projection)); }
         DrawBrushCursor(matrix);
     }
 
@@ -884,6 +884,7 @@ internal sealed class Map3DViewControl : GLControl
 
     private void DrawSprites(Matrix4 view, Matrix4 projection)
     {
+        _particlesDrawnWithObjects = false;
         if (_spriteAtlas is null || _heights is null || _spriteProgram == 0) return;
         if (_spriteTextureDirty)
         {
@@ -906,7 +907,10 @@ internal sealed class Map3DViewControl : GLControl
         // Pre-rendered isometric art is painted far-to-near like the original 2.5D renderer;
         // depth testing against the terrain would clip the parts drawn below the ground anchor.
         GL.Disable(EnableCap.DepthTest); GL.Disable(EnableCap.CullFace);
-        DrawSpriteBatch(_spriteGeometry.Build(_objects, _objectSprites, _spriteAtlas, _heights, _camera.GetViewMatrix()), 1f);
+        var objectVertices = _spriteGeometry.Build(_objects, _objectSprites, _spriteAtlas, _heights, _camera.GetViewMatrix());
+        _particlesDrawnWithObjects = DrawParticleSprites(view, projection, objectVertices);
+        GL.UseProgram(_spriteProgram); GL.BindTexture(TextureTarget.Texture2D, _spriteTexture);
+        if (!_particlesDrawnWithObjects) DrawSpriteBatch(objectVertices, 1f);
         if (EditingEnabled && _previewSprite is not null && _hoverX >= 0 && _hoverY >= 0)
         {
             const float tileWorld = SdlSceneCatalog.WorldUnitsPerMapPixel * 4f;
@@ -1064,6 +1068,7 @@ internal sealed class Map3DViewControl : GLControl
         _spriteVbo = _spriteVao = _spriteTexture = _spriteProgram = 0;
         GL.DeleteBuffer(_shadowVbo); GL.DeleteVertexArray(_shadowVao); GL.DeleteTexture(_shadowTexture); GL.DeleteProgram(_shadowProgram);
         _shadowVbo = _shadowVao = _shadowTexture = _shadowProgram = 0;
+        ReleaseParticleGlResources();
     }
 
     // 0x49FFE0：共同以 world XYZ 計算二次衰減，每色道取 max，再截斷至 1。

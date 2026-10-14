@@ -1,0 +1,10 @@
+[package]
+name = "particle-numeric-contract"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+particle-render-contract = { path = "../particle-render-contract-rs" }
+iced-x86 = { version = "=1.21.0", default-features = false, features = ["std", "decoder", "intel", "instr_info"] }
+serde_json = { version = "1.0", features = ["float_roundtrip"] }

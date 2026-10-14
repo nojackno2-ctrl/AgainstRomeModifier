@@ -24,6 +24,7 @@ internal sealed class NativeAlrDocument
     }
 
     public uint Version { get; }
+    internal object IdentityToken { get; } = new();
     public uint LayoutColumns { get; }
     public uint LayoutRows { get; }
     public int PaletteVariantCount { get; }
@@ -83,15 +84,34 @@ internal sealed class NativeAlrDocument
     {
         if ((uint)frameIndex >= (uint)_frames.Length) throw new ArgumentOutOfRangeException(nameof(frameIndex));
         if ((uint)paletteVariant >= (uint)PaletteVariantCount) throw new ArgumentOutOfRangeException(nameof(paletteVariant));
+        uint[] palette = ReadRawPalette(paletteVariant).ToArray();
+        Frame selected = _frames[frameIndex];
+        return NativeAlrIndexedFrame.Decode(selected.Info.Width, selected.Info.Height,
+            selected.Rows, selected.Payload.AsSpan(PaletteVariantCount * selected.Info.PaletteColorCount * 4), palette);
+    }
+
+    public IReadOnlyList<ushort> ReadIndexedSamples(int frameIndex)
+    {
+        if ((uint)frameIndex >= (uint)_frames.Length) throw new ArgumentOutOfRangeException(nameof(frameIndex));
+        Frame selected = _frames[frameIndex];
+        return RustAlrFrameDecoder.DecodeIndexed(selected.Info.Width, selected.Info.Height, selected.Rows,
+            selected.Payload.AsSpan(PaletteVariantCount * selected.Info.PaletteColorCount * 4),
+            _frames[0].Info.PaletteColorCount);
+    }
+
+    /// <summary>Detached native words from the first frame palette. No RGB swap,
+    /// alpha synthesis, index0 policy, tint or native endpoint preparation.</summary>
+    public IReadOnlyList<uint> ReadRawPalette(int paletteVariant = 0)
+    {
+        if ((uint)paletteVariant >= (uint)PaletteVariantCount) throw new ArgumentOutOfRangeException(nameof(paletteVariant));
         // Native helper 0x4E48F0 obtains all frame palettes from the first frame record.
-        Frame first = _frames[0], selected = _frames[frameIndex];
+        Frame first = _frames[0];
         int colors = first.Info.PaletteColorCount;
         if (colors == 0) throw new NotSupportedException("Indexed ALR has no palette in its first frame.");
         var palette = new uint[colors];
         ReadOnlySpan<byte> paletteBytes = first.Payload.AsSpan(paletteVariant * colors * 4, colors * 4);
         for (int i = 0; i < colors; i++) palette[i] = BinaryPrimitives.ReadUInt32LittleEndian(paletteBytes[(i * 4)..]);
-        return NativeAlrIndexedFrame.Decode(selected.Info.Width, selected.Info.Height,
-            selected.Rows, selected.Payload.AsSpan(PaletteVariantCount * selected.Info.PaletteColorCount * 4), palette);
+        return Array.AsReadOnly(palette);
     }
 
     private ref struct Reader(ReadOnlySpan<byte> source)
