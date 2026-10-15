@@ -1,0 +1,17 @@
+[package]
+name = "against-rome-maps"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Pure Rust Against Rome maps catalog, cloner, deleter, manifest, text documents, SDL catalogs/editing, native markers/objdefs/pool diagnostics, map design validator, cliff and map diagnostics, scenario save preflight."
+
+[dependencies]
+against-rome-data = { path = "../against-rome-data" }
+against-rome-scenario = { path = "../against-rome-scenario" }
+against-rome-navigation = { path = "../against-rome-navigation" }
+against-rome-landscape = { path = "../against-rome-landscape" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+uuid = { version = "1", features = ["serde", "v4"] }
+chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
+encoding_rs = "0.8"
