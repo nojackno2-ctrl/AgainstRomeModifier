@@ -58,6 +58,7 @@ internal sealed class CommandRegistry
     public static CommandRegistry CreateDefault()
     {
         var registry = new CommandRegistry();
+        registry.Register(new Commands.BrushCommand());
         registry.Register(new Commands.ElevateCommand());
         registry.Register(new Commands.FlattenCommand());
         registry.Register(new Commands.ReplaceTextureCommand());

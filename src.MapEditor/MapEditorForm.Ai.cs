@@ -27,21 +27,13 @@ internal sealed partial class MapEditorForm
         if (_terrainLayers is null || _texturesDocument is null) throw new InvalidOperationException("此地圖沒有可編輯的高度圖。");
         CommitStroke();
         float water = _heightMapStep > 0 ? (float)_waterLevel.Value / _heightMapStep : 0;
-        AiMapApplyResult result = AiMapPlanApplier.Apply(plan, _terrainLayers, _texturesDocument.Dimension, water, (materialId, x, y, radius) =>
-        {
-            if (_terrainBlendSession is null) return false;
-            TerrainBlendPaintResult paint = _terrainBlendSession.PaintCircle(x, y, radius, materialId, rollbackStrokeOnFailure: false,
-                allowsTile: plan.EditScope is { } scope ? scope.AllowsTile : null);
-            foreach (TerrainTextureChange change in paint.TextureChanges) ApplyTexture(change.X, change.Y, change.After);
-            return paint.Succeeded;
-        });
-        _terrainLayers.CommitStroke();
-        _terrainBlendSession?.CommitStroke();
+        AiMapApplyResult result = AiEditorOperator.Apply(plan, _terrainLayers, _terrainBlendSession, _texturesDocument.Dimension, water,
+            commitPerStroke: true,
+            onTexture: change => ApplyTexture(change.X, change.Y, change.After));
         ApplyHeightsToViews();
         UpdateCollisionOverlay();
         UpdateEditorState();
         RefreshMapDiagnostics();
         return result;
     }
-
 }

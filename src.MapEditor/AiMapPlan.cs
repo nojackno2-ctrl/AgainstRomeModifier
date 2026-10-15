@@ -6,7 +6,7 @@ namespace AgainstRomeMapEditor;
 /// <summary>
 /// AI 產生的「地圖計畫」：只描述地形特徵，不含任何檔案內容。
 /// 座標一律為 0–63 的 tile 座標；高度單位為 boden.bmp 綠通道（0–255）。
-/// 實際寫入由 <see cref="AiMapPlanApplier"/> 以既有的高度／材質／通行編輯完成，因此可預覽、復原並走同一儲存交易。
+/// 實際寫入由 <see cref="AiEditorOperator"/> 以編輯器筆刷操作完成，因此可預覽、復原並走同一儲存交易。
 /// </summary>
 internal sealed class AiMapPlan
 {
@@ -134,149 +134,23 @@ internal sealed class AiMapFeature
     [JsonPropertyName("material")] public string? Material { get; set; }
 }
 
-internal sealed record AiMapApplyResult(int HeightSamplesChanged, int MaterialStrokes, int RejectedMaterialStrokes, int CollisionPixelsChanged);
+internal sealed record AiMapApplyResult(
+    int HeightSamplesChanged,
+    int MaterialStrokes,
+    int RejectedMaterialStrokes,
+    int CollisionPixelsChanged,
+    IReadOnlyList<string>? OperationLog = null)
+{
+    public int OperationCount => OperationLog?.Count ?? 0;
+    public IReadOnlyList<string> OperationLog { get; init; } = OperationLog ?? Array.Empty<string>();
+}
 
-/// <summary>把 <see cref="AiMapPlan"/> 確定性地轉成高度、材質與通行編輯（同一計畫永遠得到同一結果）。</summary>
+/// <summary>把 <see cref="AiMapPlan"/> 轉為編輯器筆刷操作套用至高度、材質與通行。</summary>
 internal static class AiMapPlanApplier
 {
-    /// <param name="plan">已正規化的 AI 地圖計畫。</param>
-    /// <param name="heights">要修改的高度／通行狀態（變更留在待提交筆畫，由呼叫端 CommitStroke）。</param>
-    /// <param name="dimension">地圖 tile 邊長（64）。</param>
-    /// <param name="waterLevelSample">水位換算成 boden.bmp 綠通道單位（Waterlevel ÷ Heightmapstep）。</param>
-    /// <param name="paintMaterial">以 tile 座標圓心與半徑塗材質；回傳是否成功（原版 transition 無法表達時會被拒絕並自動回滾）。</param>
     public static AiMapApplyResult Apply(AiMapPlan plan, TerrainHeightEditSession heights, int dimension, float waterLevelSample,
-        Func<string, float, float, float, bool> paintMaterial)
+        Func<string, float, float, float, bool>? paintMaterial = null)
     {
-        ArgumentNullException.ThrowIfNull(plan);
-        ArgumentNullException.ThrowIfNull(heights);
-        float step = (heights.VertexSize - 1) / (float)dimension;
-        var field = new float[heights.VertexSize * heights.VertexSize];
-        for (int index = 0; index < field.Length; index++) field[index] = heights.Heights[index];
-        if (plan.BaseHeight is int baseHeight) Array.Fill(field, baseHeight);
-
-        foreach (AiMapFeature feature in plan.Features)
-            ApplyHeightFeature(feature, field, heights.VertexSize, step, waterLevelSample);
-
-        int heightChanges = heights.TransformHeights((x, y, before) => plan.EditScope is null || plan.EditScope.AllowsVertex(x / step, y / step, dimension)
-            ? field[y * heights.VertexSize + x] : before).Count;
-
-        int strokes = 0, rejected = 0;
-        if (plan.BaseMaterial is not null)
-        {
-            strokes++;
-            if (!paintMaterial(plan.BaseMaterial, dimension / 2f, dimension / 2f, dimension)) rejected++;
-        }
-        foreach (AiMapFeature feature in plan.Features.Where(item => item.Material is not null))
-        {
-            // 「material」以圓形塗色；其他特徵附帶的材質沿特徵塗上（河岸沙地、山上岩地），線狀特徵逐點塗並略寬於地形變化。
-            bool linear = feature.Type is "river" or "ridge" or "blocked" or "passable";
-            float radius = linear ? feature.Radius + 1 : feature.Type == "material" ? feature.Radius : Math.Max(1, feature.Radius * .6f);
-            IEnumerable<(float X, float Y)> points = linear ? SegmentPoints(feature).Where((_, index) => index % 2 == 0) : [(feature.X, feature.Y)];
-            foreach ((float x, float y) in points)
-            {
-                strokes++;
-                if (!paintMaterial(feature.Material!, x + .5f, y + .5f, radius)) rejected++;
-            }
-        }
-
-        int collision = 0;
-        if (heights.HasCollision && (plan.EditScope?.EditPassability ?? true))
-        {
-            float collisionStep = heights.CollisionSize / (float)dimension;
-            foreach (AiMapFeature feature in plan.Features.Where(item => item.Type is "blocked" or "passable"))
-            {
-                var operation = feature.Type == "blocked" ? TerrainCollisionOperation.Block : TerrainCollisionOperation.Clear;
-                foreach ((float x, float y) in SegmentPoints(feature))
-                    collision += heights.PaintCollision((x + .5f) * collisionStep, (y + .5f) * collisionStep, feature.Radius * collisionStep, operation,
-                        (px, py) => plan.EditScope is null || plan.EditScope.AllowsTile((int)((px + .5f) / collisionStep), (int)((py + .5f) / collisionStep))).Count;
-            }
-        }
-        return new AiMapApplyResult(heightChanges, strokes, rejected, collision);
-    }
-
-    private static void ApplyHeightFeature(AiMapFeature feature, float[] field, int size, float step, float water)
-    {
-        float cx = (feature.X + .5f) * step, cy = (feature.Y + .5f) * step;
-        float radius = Math.Max(1, feature.Radius) * step;
-        switch (feature.Type)
-        {
-            case "hill":
-            case "mountain":
-            case "valley":
-            {
-                float amount = feature.Amount ?? (feature.Type == "mountain" ? 110 : feature.Type == "hill" ? 45 : 40);
-                float sign = feature.Type == "valley" ? -1 : 1;
-                ForEach(field, size, (x, y, value) =>
-                {
-                    float d2 = (x - cx) * (x - cx) + (y - cy) * (y - cy);
-                    return value + sign * amount * MathF.Exp(-d2 / (2 * (radius / 2) * (radius / 2)));
-                });
-                break;
-            }
-            case "plateau":
-            {
-                float target = feature.Amount ?? 150;
-                ForEach(field, size, (x, y, value) =>
-                {
-                    float t = SmoothFalloff(MathF.Sqrt((x - cx) * (x - cx) + (y - cy) * (y - cy)), radius);
-                    return value + (target - value) * t;
-                });
-                break;
-            }
-            case "lake":
-            {
-                // 湖底低於水位 amount（預設 12），邊緣以平滑曲線接回原地形，避免出現懸崖。
-                float bottom = water - (feature.Amount is int depth ? Math.Max(2, depth) : 12);
-                ForEach(field, size, (x, y, value) =>
-                {
-                    float t = SmoothFalloff(MathF.Sqrt((x - cx) * (x - cx) + (y - cy) * (y - cy)), radius);
-                    return t <= 0 ? value : Math.Min(value, value + (bottom - value) * t);
-                });
-                break;
-            }
-            case "ridge":
-            case "river":
-            {
-                float ex = ((feature.X2 ?? feature.X) + .5f) * step, ey = ((feature.Y2 ?? feature.Y) + .5f) * step;
-                float halfWidth = radius;
-                bool river = feature.Type == "river";
-                float amount = feature.Amount ?? (river ? 10 : 70);
-                ForEach(field, size, (x, y, value) =>
-                {
-                    float t = SmoothFalloff(DistanceToSegment(x, y, cx, cy, ex, ey), halfWidth);
-                    if (t <= 0) return value;
-                    return river ? Math.Min(value, value + (water - amount - value) * t) : value + amount * t;
-                });
-                break;
-            }
-        }
-    }
-
-    private static IEnumerable<(float X, float Y)> SegmentPoints(AiMapFeature feature)
-    {
-        if (feature.X2 is not int x2 || feature.Y2 is not int y2) { yield return (feature.X, feature.Y); yield break; }
-        yield return (feature.X, feature.Y);
-        foreach ((int x, int y) in TerrainStrokePath.Between(feature.X, feature.Y, x2, y2)) yield return (x, y);
-    }
-
-    private static void ForEach(float[] field, int size, Func<int, int, float, float> transform)
-    {
-        for (int y = 0; y < size; y++) for (int x = 0; x < size; x++) field[y * size + x] = transform(x, y, field[y * size + x]);
-    }
-
-    /// <summary>距離 0 為 1、達到半徑為 0 的平滑曲線（smoothstep）。</summary>
-    internal static float SmoothFalloff(float distance, float radius)
-    {
-        if (distance >= radius) return 0;
-        float t = 1 - distance / radius;
-        return t * t * (3 - 2 * t);
-    }
-
-    internal static float DistanceToSegment(float px, float py, float ax, float ay, float bx, float by)
-    {
-        float dx = bx - ax, dy = by - ay, lengthSquared = dx * dx + dy * dy;
-        float t = lengthSquared <= 0 ? 0 : Math.Clamp(((px - ax) * dx + (py - ay) * dy) / lengthSquared, 0, 1);
-        float nx = ax + t * dx - px, ny = ay + t * dy - py;
-        return MathF.Sqrt(nx * nx + ny * ny);
+        return AiEditorOperator.Apply(plan, heights, null, dimension, waterLevelSample, commitPerStroke: false, paintMaterial: paintMaterial);
     }
 }

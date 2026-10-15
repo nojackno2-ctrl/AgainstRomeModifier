@@ -77,42 +77,47 @@ public sealed partial class MapEditorSaveTransactionTests
                 Assert.Equal(195, preview.Image.GetPixel(128, 128).R);
             }
             var applied = form.ApplyAiMapPlan(plan);
-            Assert.Equal(preview.Changes, applied);
+            byte flat = layers.Heights[0]; // Brushes reach the base height within the editor's 2-unit gentle step.
+            Assert.InRange(flat, (byte)88, (byte)92);
+            Assert.Equal(preview.Changes with { OperationLog = applied.OperationLog }, applied);
+            Assert.Equal(preview.Changes.OperationLog, applied.OperationLog);
+            Assert.All(applied.OperationLog.Where(line => !line.Contains("區域工具")), line => Assert.Contains("/brush ", line));
             Assert.Equal(2, applied.MaterialStrokes);
             Assert.Equal(1, applied.RejectedMaterialStrokes); // Missing BB/BC transitions reject only this area.
             Assert.True(applied.HeightSamplesChanged > 0);
             Assert.True(applied.CollisionPixelsChanged > 0);
             Assert.All(textures.Textures, texture => Assert.Equal("4BC___51", texture));
-            Assert.All(layers.Heights, height => Assert.Equal(90, height));
+            Assert.All(layers.Heights, height => Assert.Equal(flat, height));
             foreach (var (path, bytes) in originalFiles) Assert.Equal(bytes, File.ReadAllBytes(Path.Combine(map, path)));
 
             SetWorkflowMode(form, "Texture");
             Invoke(form, "Undo");
             Assert.Equal(originalTextures, textures.Textures);
-            Assert.All(layers.Heights, height => Assert.Equal(90, height));
+            Assert.All(layers.Heights, height => Assert.Equal(flat, height));
             Invoke(form, "Redo");
             Assert.All(textures.Textures, texture => Assert.Equal("4BC___51", texture));
 
-            // Height and collision share one layer history; AI records their combined edit once.
+            // AI operates like a designer: every height/collision brush stroke is its own undo step in the shared layer history.
+            int layerSteps = applied.OperationLog.Count(line => line.Contains("/brush height") || line.Contains("/brush collision"));
             SetWorkflowMode(form, "Collision");
-            Invoke(form, "Undo");
+            for (int step = 0; step < layerSteps; step++) Invoke(form, "Undo");
             Assert.Equal(originalHeights, layers.Heights);
             Assert.Equal(originalCollision, layers.Collision);
             Assert.All(textures.Textures, texture => Assert.Equal("4BC___51", texture));
             SetWorkflowMode(form, "Height");
-            Invoke(form, "Redo");
-            Assert.All(layers.Heights, height => Assert.Equal(90, height));
+            for (int step = 0; step < layerSteps; step++) Invoke(form, "Redo");
+            Assert.All(layers.Heights, height => Assert.Equal(flat, height));
             Assert.Contains((byte)255, layers.Collision!);
 
             Assert.True(form.TrySaveMap(false, out Exception? error), error?.ToString());
             Assert.False(GetProperty<bool>(form, "IsDirty"));
-            Assert.All(TerrainLayerFiles.Read(Path.Combine(map, "boden.bmp"))!.Green, height => Assert.Equal(90, height));
+            Assert.All(TerrainLayerFiles.Read(Path.Combine(map, "boden.bmp"))!.Green, height => Assert.Equal(flat, height));
             Assert.All(BodenTexturesDocument.Load(Path.Combine(map, "boden.txt")).Textures, texture => Assert.Equal("4BC___51", texture));
             Assert.Equal(layers.Collision, TerrainLayerFiles.Read(Path.Combine(map, "collision.bmp"))!.Green);
             Invoke(form, "LoadSelectedMap");
             Assert.False(GetProperty<bool>(form, "IsDirty"));
             var reopened = GetField<TerrainHeightEditSession>(form, "_terrainLayers");
-            Assert.All(reopened.Heights, height => Assert.Equal(90, height));
+            Assert.All(reopened.Heights, height => Assert.Equal(flat, height));
             Assert.False(reopened.CanUndo);
             SetWorkflowMode(form, "Texture");
             Invoke(form, "Undo");

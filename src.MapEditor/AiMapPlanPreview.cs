@@ -5,7 +5,7 @@ internal sealed record AiMapPlanPreview(Bitmap Image, AiMapApplyResult Changes, 
     internal IReadOnlyList<AgainstRomeMapEditor.Modules.Diagnostics.MapIssue> Issues { get; init; } = [];
 }
 
-/// <summary>Runs the same applier against independent layer and corner snapshots without writing files.</summary>
+/// <summary>Runs the same operator against independent layer and corner snapshots without writing files.</summary>
 internal static class AiMapPlanPreviewBuilder
 {
     internal static AiMapPlanPreview Build(AiMapPlan plan, TerrainHeightEditSession source, TerrainBlendEditSession? materials,
@@ -15,14 +15,9 @@ internal static class AiMapPlanPreviewBuilder
             source.CollisionSize, source.Collision?.ToArray());
         var blend = materials?.Fork();
         var rejected = new List<(float X, float Y, float Radius)>();
-        AiMapApplyResult changes = AiMapPlanApplier.Apply(plan, heights, dimension, water,
-            (material, x, y, radius) =>
-            {
-                bool accepted = blend?.PaintCircle(x, y, radius, material, rollbackStrokeOnFailure: false,
-                    allowsTile: plan.EditScope is { } scope ? scope.AllowsTile : null).Succeeded == true;
-                if (!accepted) rejected.Add((x, y, radius));
-                return accepted;
-            });
+        AiMapApplyResult changes = AiEditorOperator.Apply(plan, heights, blend, dimension, water,
+            commitPerStroke: true,
+            onRejectedMaterial: (x, y, radius) => rejected.Add((x, y, radius)));
         var image = new Bitmap(heights.VertexSize, heights.VertexSize);
         try
         {

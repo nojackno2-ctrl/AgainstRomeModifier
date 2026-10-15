@@ -22,10 +22,10 @@ internal sealed partial class MapEditorForm
 
     private const int WaterOperationIndex = (int)TerrainHeightOperation.Roughen + 1;
     /// <summary>水域筆刷挖到水面下的深度（高度圖單位）。</summary>
-    internal const int WaterBedDepth = 16; // 原版湖底約在水面下 18 單位；6 單位時遊戲中水太淺、近乎透明
+    internal const int WaterBedDepth = EditorBrushExecutor.WaterBedDepth; // 原版湖底約在水面下 18 單位；6 單位時遊戲中水太淺、近乎透明
 
     /// <summary>水面上方至少要能挖出的深度（高度圖單位），太淺遊戲幾乎看不到水。</summary>
-    internal const int MinimumWaterDepth = 4;
+    internal const int MinimumWaterDepth = EditorBrushExecutor.MinimumWaterDepth;
 
     /// <summary>
     /// 水域筆刷的目標高度：水面下最多 <see cref="WaterBedDepth"/>（不低於 0）。水面太低挖不出水時，自動把水面設為
@@ -102,39 +102,31 @@ internal sealed partial class MapEditorForm
     private (bool Heights, bool Collision) PaintTerrainTile(int tileX, int tileY)
     {
         int dimension = _texturesDocument!.Dimension;
-        float radiusTiles = _canvas.BrushSize / 2f + .26f;
-        if (_editMode == EditMode.Height)
+        bool heightMode = _editMode == EditMode.Height;
+        var operation = (EditorHeightBrush)Math.Clamp(_terrainOperation.SelectedIndex, 0, WaterOperationIndex);
+        string? waterNotice = null;
+        if (heightMode && operation == EditorHeightBrush.Water)
         {
-            float step = (_terrainLayers!.VertexSize - 1) / (float)dimension;
-            float centerX = (tileX + .5f) * step, centerY = (tileY + .5f) * step;
-            var operation = (TerrainHeightOperation)Math.Clamp(_terrainOperation.SelectedIndex, 0, (int)TerrainHeightOperation.Roughen);
-            if (_terrainOperation.SelectedIndex == WaterOperationIndex)
-            {
-                // 水域：整平到水面下固定深度；水面高度由 boden.ini 的 Waterlevel 與 Heightmapstep 換算為高度圖數值。
-                operation = TerrainHeightOperation.Flatten;
-                _flattenTarget = WaterBedHeight(out string? waterNotice);
-                // 提示放在狀態列的持續通知（直接寫 _status 會被隨後的 UpdateEditorState 覆蓋）；自動調整水面的說明保留到下一筆。
-                if (waterNotice is not null || _flattenTarget < 0) _terrainBlendNotice = waterNotice;
-                if (_flattenTarget < 0) return (false, false);
-                TerrainLayerStroke water = _terrainLayers.PaintWater(centerX, centerY, radiusTiles * step + 1,
-                    TerrainStrength, _flattenTarget, (float)_waterLevel.Value / _heightMapStep);
-                if (!_terrainLayers.HasCollision)
-                    _terrainBlendNotice = WaterCollisionNotice(waterNotice);
-                return (water.Heights.Count > 0, water.Collision.Count > 0);
-            }
-            if (operation == TerrainHeightOperation.Flatten && _flattenTarget < 0)
-                _flattenTarget = _terrainLayers.Heights[Math.Clamp((int)MathF.Round(centerY), 0, _terrainLayers.VertexSize - 1) * _terrainLayers.VertexSize + Math.Clamp((int)MathF.Round(centerX), 0, _terrainLayers.VertexSize - 1)];
-            return (_terrainLayers.PaintHeight(centerX, centerY, radiusTiles * step + 1, operation, TerrainStrength, _flattenTarget, _roughnessSeed).Count > 0, false);
+            // UI retains its automatic water-level adjustment and localized persistent notices.
+            _flattenTarget = WaterBedHeight(out waterNotice);
+            if (waterNotice is not null || _flattenTarget < 0) _terrainBlendNotice = waterNotice;
+            if (_flattenTarget < 0) return (false, false);
         }
-        if (_terrainLayers!.HasCollision)
+        if (!heightMode && !_terrainLayers!.HasCollision)
         {
-            float step = _terrainLayers.CollisionSize / (float)dimension;
-            var operation = _terrainOperation.SelectedIndex == 1 ? TerrainCollisionOperation.Clear : TerrainCollisionOperation.Block;
-            return (false, _terrainLayers.PaintCollision((tileX + .5f) * step, (tileY + .5f) * step, radiusTiles * step, operation).Count > 0);
+            bool isEn = AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English;
+            _terrainBlendNotice = isEn ? "This map has no collision.bmp to edit." : "此地圖沒有可編輯的 collision.bmp。";
+            return (false, false);
         }
-        bool isEn = AgainstRomeModifier.Loc.CurrentLanguage == AgainstRomeModifier.Language.English;
-        _terrainBlendNotice = isEn ? "This map has no collision.bmp to edit." : "此地圖沒有可編輯的 collision.bmp。";
-        return (false, false);
+        var stroke = new EditorBrushStroke(heightMode ? EditorBrushTool.Height : EditorBrushTool.Collision,
+            new[] { (tileX, tileY) }, _canvas.BrushSize,
+            _terrainStrength.SelectedIndex < 0 ? 1 : _terrainStrength.SelectedIndex,
+            operation, Block: _terrainOperation.SelectedIndex != 1);
+        EditorBrushResult result = EditorBrushExecutor.Execute(stroke, _terrainLayers, null, dimension,
+            _heightMapStep > 0 ? (float)_waterLevel.Value / _heightMapStep : 0, ref _flattenTarget, _roughnessSeed);
+        if (heightMode && operation == EditorHeightBrush.Water && !_terrainLayers!.HasCollision)
+            _terrainBlendNotice = WaterCollisionNotice(waterNotice);
+        return (result.HeightSamplesChanged > 0, result.CollisionPixelsChanged > 0);
     }
 
     private string WaterCollisionNotice(string? waterNotice)

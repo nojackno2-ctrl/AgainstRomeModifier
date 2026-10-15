@@ -827,9 +827,13 @@ internal sealed partial class MapEditorForm : Form
             return;
         }
         if (_activeMaterial is null) return;
-        float radius = _canvas.BrushSize / 2f + .26f;
-        TerrainBlendPaintResult result = _terrainBlendSession.PaintCircle(e.X + .5f, e.Y + .5f, radius, _activeMaterial.Id, autoBridge: _autoBridge.Checked);
-        foreach (TerrainTextureChange change in result.TextureChanges) ApplyTexture(change.X, change.Y, change.After);
+        var stroke = new EditorBrushStroke(EditorBrushTool.Material, new[] { (e.X, e.Y) },
+            _canvas.BrushSize, Material: _activeMaterial.Id, AutoBridge: _autoBridge.Checked);
+        TerrainBlendPaintResult result = TerrainBlendPaintResult.Success(Array.Empty<TerrainTextureChange>());
+        int flattenTarget = -1;
+        EditorBrushExecutor.Execute(stroke, null, _terrainBlendSession, _texturesDocument!.Dimension, 0,
+            ref flattenTarget, onTexture: change => ApplyTexture(change.X, change.Y, change.After),
+            onMaterial: paint => result = paint);
         _terrainBlendNotice = result.Succeeded
             ? null
             : _autoBridge.Checked

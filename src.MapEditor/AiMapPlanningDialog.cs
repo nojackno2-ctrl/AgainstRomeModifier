@@ -25,6 +25,7 @@ internal sealed class AiMapPlanningDialog : Form
     internal CheckBox PassabilityCheck { get; } = new() { AutoSize = true };
     internal TextBox DescriptionBox { get; } = new() { Dock = DockStyle.Fill, Multiline = true, ScrollBars = ScrollBars.Vertical, AcceptsReturn = true };
     internal TextBox PreviewBox { get; } = new() { Dock = DockStyle.Fill, Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Both, WordWrap = false };
+    internal TextBox OperationsBox { get; } = new() { Dock = DockStyle.Fill, Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Both, WordWrap = false };
     internal PictureBox PreviewImage { get; } = new() { Dock = DockStyle.Fill, SizeMode = PictureBoxSizeMode.Zoom, BackColor = Color.FromArgb(30, 30, 30) };
     internal Label StatusLabel { get; } = new() { Dock = DockStyle.Fill, AutoSize = false };
     internal ProgressBar GenerationProgress { get; } = new() { Dock = DockStyle.Bottom, Height = 12, Maximum = 3 };
@@ -83,6 +84,7 @@ internal sealed class AiMapPlanningDialog : Form
             mapTab.Controls.Add(PreviewImage); mapTab.Controls.Add(legend); reviewTabs.TabPages.Add(mapTab);
         }
         var detailsTab = new TabPage(T("方案與診斷", "Plan and diagnostics")); detailsTab.Controls.Add(PreviewBox); reviewTabs.TabPages.Add(detailsTab);
+        var opsTab = new TabPage(T("AI 編輯操作步驟", "AI brush operations")); opsTab.Controls.Add(OperationsBox); reviewTabs.TabPages.Add(opsTab);
         layout.Controls.Add(new Label { Text = T("方案檢視", "Plan review"), AutoSize = true }, 0, 4); layout.Controls.Add(reviewTabs, 1, 4);
         StatusLabel.Text = T("生成後先檢視方案，再按「套用方案」。可復原；按「儲存」前不會寫入檔案。", "Generate, review, then Apply. Changes are undoable and no files are written until Save.");
         var statusHost = new Panel { Dock = DockStyle.Fill }; statusHost.Controls.Add(StatusLabel); statusHost.Controls.Add(GenerationProgress);
@@ -129,7 +131,7 @@ internal sealed class AiMapPlanningDialog : Form
     internal async Task GenerateAsync()
     {
         if (_operation is not null || !CanUpdate) return;
-        _generationStarted = true; _plan = null; ApplyButton.Enabled = false; PreviewBox.Clear(); ClearPreviewImage();
+        _generationStarted = true; _plan = null; ApplyButton.Enabled = false; PreviewBox.Clear(); OperationsBox.Clear(); ClearPreviewImage();
         using var operation = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
         _operation = operation; SetBusy(true);
         GenerationProgress.Value = 0;
@@ -170,6 +172,10 @@ internal sealed class AiMapPlanningDialog : Form
                 AiMapPlanPreview preview = _preview(plan);
                 PreviewImage.Image = preview.Image;
                 var changes = preview.Changes;
+                if (changes.OperationLog is { Count: > 0 } logs)
+                {
+                    OperationsBox.Text = string.Join("\r\n\r\n", logs);
+                }
                 PreviewBox.AppendText(T($"\r\n預計變更：高度 {changes.HeightSamplesChanged} 點、通行 {changes.CollisionPixelsChanged} 點；材質接受 {changes.MaterialStrokes - changes.RejectedMaterialStrokes}/{changes.MaterialStrokes} 區。\r\n",
                     $"\r\nExpected changes: {changes.HeightSamplesChanged} height samples, {changes.CollisionPixelsChanged} passability pixels; {changes.MaterialStrokes - changes.RejectedMaterialStrokes}/{changes.MaterialStrokes} material areas accepted.\r\n"));
                 if (changes.RejectedMaterialStrokes > 0) PreviewBox.AppendText(T("部分材質區域無法表示，套用時會略過。", "Some material areas cannot be represented and will be skipped on Apply."));
@@ -198,6 +204,7 @@ internal sealed class AiMapPlanningDialog : Form
     private void ShowInvalidatedPlan()
     {
         PreviewBox.Clear();
+        OperationsBox.Clear();
         ClearPreviewImage();
         StatusLabel.Text = T("角色、範圍、鎖定區或描述已變更，舊方案已失效。請重新生成。", "Roles, area, locks or description changed; the old plan is invalid. Generate again.");
     }
@@ -222,7 +229,11 @@ internal sealed class AiMapPlanningDialog : Form
         try
         {
             AiMapApplyResult result = _apply(plan);
-            StatusLabel.Text = T($"已套用：高度 {result.HeightSamplesChanged} 點、材質 {result.MaterialStrokes - result.RejectedMaterialStrokes}/{result.MaterialStrokes} 區、通行 {result.CollisionPixelsChanged} 點。請檢視地圖後儲存。", $"Applied: {result.HeightSamplesChanged} height samples, {result.MaterialStrokes - result.RejectedMaterialStrokes}/{result.MaterialStrokes} material areas, {result.CollisionPixelsChanged} passability pixels. Review the map, then Save.");
+            if (result.OperationLog is { Count: > 0 } logs)
+            {
+                OperationsBox.Text = string.Join("\r\n\r\n", logs);
+            }
+            StatusLabel.Text = T($"已套用（共 {result.OperationCount} 個操作）：高度 {result.HeightSamplesChanged} 點、材質 {result.MaterialStrokes - result.RejectedMaterialStrokes}/{result.MaterialStrokes} 區、通行 {result.CollisionPixelsChanged} 點。請檢視地圖後儲存。", $"Applied ({result.OperationCount} brush operations): {result.HeightSamplesChanged} height samples, {result.MaterialStrokes - result.RejectedMaterialStrokes}/{result.MaterialStrokes} material areas, {result.CollisionPixelsChanged} passability pixels. Review the map, then Save.");
             if (result.RejectedMaterialStrokes > 0) StatusLabel.Text += T(" 部分材質無法以原版 transition tile 表達，已略過。", " Some materials could not be represented with transition tiles and were skipped.");
         }
         catch (Exception ex) { StatusLabel.Text = T("套用失敗，請檢查地圖後重新生成：", "Apply failed; inspect the map before generating again: ") + ex.Message; }

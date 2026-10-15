@@ -69,11 +69,11 @@ internal sealed class OllamaMapPlanner : IDisposable
     internal static string BuildSystemPrompt(IReadOnlyList<AiMaterialOption> materials, float waterLevelSample)
     {
         var text = new StringBuilder();
-        text.AppendLine("You design terrain for a 64x64-tile map of the RTS game Against Rome. Reply ONLY with a JSON map plan matching the schema.");
+        text.AppendLine("You design terrain for a 64x64-tile map of the RTS game Against Rome. You are driving the editor's interactive brushes (height, water, material, collision) step by step like a human designer. Reply ONLY with a JSON map plan matching the schema.");
         text.AppendLine("Place every feature with \"location\" (one of: " + string.Join(", ", AiMapPlan.Locations.Keys) + "). Map north is the top edge, east is the right edge.");
         text.AppendLine("Linear features (river, ridge, blocked line) go from \"location\" to \"toLocation\". Do not output x/y numbers. Every river and ridge MUST have a toLocation different from its location. Never repeat a feature; use 4-16 features in total.");
         text.AppendLine("A feature's optional material is also painted over that feature (e.g. sand along a river, rock on a mountain).");
-        text.AppendLine($"Heights use a 0-255 scale. Ground below {waterLevelSample:0} becomes water; typical dry land is {waterLevelSample + 15:0}-{waterLevelSample + 90:0}.");
+        text.AppendLine($"Heights use a 0-255 scale reachable by brush strokes. Ground below {waterLevelSample:0} becomes water; water features are carved via the editor's water brush at the water level ({waterLevelSample:0}). Typical dry land is {waterLevelSample + 15:0}-{waterLevelSample + 90:0}.");
         text.AppendLine("Optional baseHeight flattens the whole map first (use it for a fresh map, e.g. a value a little above the water level). Optional baseMaterial repaints the whole ground first.");
         text.AppendLine("Feature types (radius in tiles, 1-32):");
         text.AppendLine("- hill / mountain: raise around the location; amount = height gain (hill ~30-60, mountain ~80-140).");
