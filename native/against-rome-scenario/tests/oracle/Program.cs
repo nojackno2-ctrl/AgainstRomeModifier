@@ -1,0 +1,12 @@
+using AgainstRomeModifier;
+using AgainstRomeModifier.Scripting;
+using AgainstRomeMapEditor.Modules.Cinematics;
+var original=File.ReadAllBytes(args[0]);
+var raw=original.AsSpan().StartsWith("PFIL"u8)?GameLZSS.DecompressPfil(original):original;
+var image=BciImage.Parse(raw);
+var scenario=ScenarioDocument.Load(args[1]);
+var main=image.MainAddress;
+if(scenario.ScriptSpawns.Count>0) LevelScriptInjector.Inject(image,scenario.ScriptSpawns);
+ScenarioEventCompiler.Inject(image,scenario.Events,main,scenario);
+if(args.Length>3) MapStartCameraInjector.Inject(image,MapStartCamera.Load(args[3]));
+File.WriteAllBytes(args[2],image.Serialize());

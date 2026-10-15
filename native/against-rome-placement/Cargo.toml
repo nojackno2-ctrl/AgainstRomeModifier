@@ -1,0 +1,12 @@
+[package]
+name = "against-rome-placement"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+against-rome-data = { path = "../against-rome-data" }
+
+[[bin]]
+name = "ar-placement"
+path = "src/main.rs"
