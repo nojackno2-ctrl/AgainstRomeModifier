@@ -9,6 +9,12 @@ pub mod placement_ui;
 pub mod scenario_ui;
 pub mod textures_ui;
 pub mod console;
+pub mod maps_ui;
+pub mod environment_ui;
+pub mod landscape_ui;
+pub mod packaging_ui;
+pub mod campaign_ui;
+pub mod ai_planner_ui;
 pub mod event_graph;
 pub mod macro_cmd;
 

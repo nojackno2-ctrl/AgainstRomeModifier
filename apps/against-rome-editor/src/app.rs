@@ -8,6 +8,7 @@ use crate::terrain::{BrushPath, CollisionBrushOp, HeightBrushOp, TerrainSession}
 use crate::{map_settings::MapSettings, navigation::NavigationUi, toolbox::ToolboxUi};
 use crate::{placement_ui::PlacementUi,scenario_ui::ScenarioUi};
 use crate::textures_ui::TexturesUi;
+use crate::{maps_ui::{MapsContext,MapsUi},environment_ui::EnvironmentUi,landscape_ui::LandscapeUi,packaging_ui::PackagingUi,campaign_ui::CampaignUi,ai_planner_ui::AiPlannerUi};
 use crate::{console::ConsoleUi, event_graph::EventGraphUi};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -71,6 +72,12 @@ pub struct EditorApp {
     textures: TexturesUi,
     event_graph: EventGraphUi,
     console: ConsoleUi,
+    maps: MapsUi,
+    environment: EnvironmentUi,
+    landscape: LandscapeUi,
+    packaging: PackagingUi,
+    campaign: CampaignUi,
+    ai_planner: AiPlannerUi,
 }
 
 impl EditorApp {
@@ -129,6 +136,12 @@ impl EditorApp {
             textures: TexturesUi::default(),
             event_graph: EventGraphUi::default(),
             console: ConsoleUi::default(),
+            maps: MapsUi::default(),
+            environment: EnvironmentUi::default(),
+            landscape: LandscapeUi::default(),
+            packaging: PackagingUi::default(),
+            campaign: CampaignUi::default(),
+            ai_planner: AiPlannerUi::default(),
         }
     }
 
@@ -217,8 +230,37 @@ impl EditorApp {
         }
     }
 
+    /// Designer panels backed by the native maps/environment/landscape/packaging/campaign/ai-planner crates.
+    fn show_studio_panels(&mut self, ctx: &egui::Context) {
+        let dim=self.session.as_ref().map_or(0,|s|s.vertex_size);
+        let water=self.water_surface;
+        let mut load_req:Option<PathBuf>=None;
+        {
+            let cx=MapsContext{
+                scenario:Some(self.scenario.document()),
+                aliases:self.scenario.known_aliases(),
+                heights:self.session.as_ref().map(|s|s.heights()),
+                height_size:dim,
+                collision:self.session.as_ref().map(|s|s.collision()),
+                height_step:self.height_step,
+                water_level:water,
+            };
+            let mut cb=|p:PathBuf|{load_req=Some(p);};
+            self.maps.show(ctx,&cx,Some(&mut cb));
+        }
+        if let Some(p)=load_req {self.pending_action=Some(PendingAction::Load(p));}
+        self.environment.show(ctx,dim,self.session.as_ref().map(|s|s.heights()),water);
+        self.landscape.show(ctx,dim,self.session.as_ref().map(|s|s.heights()));
+        self.packaging.show(ctx,dim,self.session.as_ref().map(|s|s.heights()),self.session.as_ref().map(|s|s.collision()),Some(&self.scenario.document().spawns));
+        self.campaign.show(ctx,Some(self.scenario.document()),self.scenario.known_aliases());
+        let had_session=self.session.is_some();
+        let before=self.session.as_ref().is_some_and(|s|s.is_dirty());
+        self.ai_planner.show(ctx,self.session.as_mut(),water);
+        if had_session && self.session.as_ref().is_some_and(|s|s.is_dirty()) && !before {self.texture_dirty=true;self.navigation.invalidate();}
+    }
+
     fn has_unsaved_changes(&self)->bool {
-        self.session.as_ref().is_some_and(|s|s.is_dirty()) || self.placement.is_dirty() || self.scenario.dirty() || self.textures.is_dirty() || self.event_graph.is_dirty()
+        self.session.as_ref().is_some_and(|s|s.is_dirty()) || self.placement.is_dirty() || self.scenario.dirty() || self.textures.is_dirty() || self.event_graph.is_dirty() || self.maps.is_dirty() || self.environment.is_dirty() || self.landscape.is_dirty() || self.packaging.is_dirty() || self.campaign.is_dirty() || self.ai_planner.is_dirty()
     }
 
     fn update_texture(&mut self, ctx: &egui::Context) {
@@ -319,6 +361,39 @@ mod tests {
         app.perform_action(action, &ctx);
         assert_eq!(app.session.as_ref().unwrap().vertex_size, 193);
     }
+
+    #[test]
+    fn studio_panels_render_and_guard_close() {
+        let mut app = EditorApp::initial_state();
+        let ctx = egui::Context::default();
+        app.maps.open = true;
+        app.environment.open = true;
+        app.landscape.open = true;
+        app.packaging.open = true;
+        app.campaign.open = true;
+        app.ai_planner.open = true;
+        let _ = ctx.run(Default::default(), |ctx| app.show_studio_panels(ctx));
+        assert!(!app.has_unsaved_changes());
+
+        type Mark = fn(&mut EditorApp);
+        let marks: [Mark; 6] = [
+            |a| a.maps.mark_dirty(),
+            |a| a.environment.mark_dirty(),
+            |a| a.landscape.mark_dirty(),
+            |a| a.packaging.mark_dirty(),
+            |a| a.campaign.mark_dirty(),
+            |a| a.ai_planner.mark_dirty(),
+        ];
+        for mark in marks {
+            let mut app = EditorApp::initial_state();
+            mark(&mut app);
+            assert!(app.has_unsaved_changes());
+            app.pending_action = Some(PendingAction::Close);
+            let _ = ctx.run(Default::default(), |ctx| app.handle_pending_action(ctx));
+            assert!(app.pending_action.is_some());
+            assert!(!app.close_allowed);
+        }
+    }
 }
 
 impl eframe::App for EditorApp {
@@ -374,6 +449,12 @@ impl eframe::App for EditorApp {
                 if ui.button("Materials").clicked() {self.textures.open=true;}
                 if ui.button("Event Graph").clicked() {self.event_graph.open=true;}
                 if ui.button("Console").clicked() {self.console.open=true;}
+                if ui.button("Maps").clicked() {self.maps.open=true;}
+                if ui.button("Environment").clicked() {self.environment.open=true;}
+                if ui.button("Landscape").clicked() {self.landscape.open=true;}
+                if ui.button("Packaging").clicked() {self.packaging.open=true;}
+                if ui.button("Campaign").clicked() {self.campaign.open=true;}
+                if ui.button("AI Planner").clicked() {self.ai_planner.open=true;}
 
                 ui.label("Map Folder:");
                 ui.text_edit_singleline(&mut self.map_path_input);
@@ -793,5 +874,6 @@ impl eframe::App for EditorApp {
         self.textures.show(ctx);
         self.event_graph.show(ctx);
         self.console.show(ctx);
+        self.show_studio_panels(ctx);
     }
 }

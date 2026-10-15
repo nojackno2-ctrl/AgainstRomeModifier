@@ -1,0 +1,8 @@
+﻿[package]
+name = "against-rome-scene"
+version = "0.1.0"
+edition = "2021"
+description = "Renderer-independent Against Rome editor scene data and math"
+license = "MIT"
+
+[dependencies]

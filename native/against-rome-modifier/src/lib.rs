@@ -17,6 +17,13 @@ pub mod partgeo;
 pub mod ress;
 pub mod team_dat;
 pub mod troops;
+pub mod cli;
+pub mod services;
+pub mod install;
+pub mod detectors;
+pub mod endless_ai;
+pub mod bci_features;
+pub mod exe_features;
 
 pub use cl_script::{ClScriptOptions, ClScriptPatcher};
 pub use epara::{CleanEparaBaseline, EparaPatcher};

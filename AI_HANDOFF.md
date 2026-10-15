@@ -81,4 +81,12 @@
 目前狀態：**恢復開發：placement 安全性修正與功能移植已完成並驗證通過。**
 - 2026-10-15 已提交推送：0a7d3a6（placement/scenario/textures + inventory，Claude 獨立重跑 20/17/24 pass）、527c4f1（WP-03..08，獨立重跑 modifier44/saves23/environment33/landscape40/packaging28/trace73 pass，0 fail；trace i686 DLL 未建置）。
 - app（apps/against-rome-editor）WP-09 已完成移植與驗證：event_graph（節點模型/無損雙向轉換/靜態診斷/egui畫布）、macro_cmd（指令解析/變數/歷史/回滾/地形/物件/材質/尋路修復）、console（互動控制台/自動補全/清屏/歷史），`cargo test --release` 75 pass / 0 fail；未 commit/push。
-- 第三波 job `7edf487115c7`：maps、modifier 剩餘(EndlessAi/Features/Services/CLI)、campaign(AI/Objectives/Cinematics)、ambience(Atmosphere/Soundscape/Localization)、ai-planner、scene(3D 場景邏輯)。之後還需：app 接線所有新 crate、3D viewport 繪製、Modifier GUI 對話框、最終移除/退役 C#。
+- 第三波 job `7edf487115c7`：maps、modifier 剩餘(EndlessAi/Features/Services/CLI)、campaign(AI/Objectives/Cinematics)、ambience(Atmosphere/Soundscape/Localization)、ai-planner、scene(3D 場景邏輯)。
+  - `native/against-rome-ai-planner` 已完成移植與驗證：
+    - 嚴格維持 commit `bdf3b57`「AI 驅動編輯器筆刷工具」（operations as `/brush` commands）閉環設計，非直接寫檔。
+    - 移植項目：`AiEditorOperator`, `AiMapEditScope`, `AiMapPlan`, `AiMapPlanPreview`, `MultiAiMapPlanner`, `OllamaMapPlanner`，以及 Placement 佈局組件 `FormationLayout`, `FormationLayoutDefinition`, `LayoutTypeResolver`。
+    - Ollama HTTP 用戶端抽象化為 `HttpTransport` trait，支援離線 `MockHttpTransport` 驗證。
+    - 測試：`cargo test --offline --manifest-path native/against-rome-ai-planner/Cargo.toml --target-dir re_workspace/target-ai-planner`，共 **37 passed, 0 failed, 0 ignored**。
+- 之後還需：app 接線所有新 crate、3D viewport 繪製、Modifier GUI 對話框、最終移除/退役 C#。
+- 2026-10-15 462ddf5 app(75 pass) 已推；新提交 maps25/campaign15/ai-planner37。Codex 額度用盡（重置 2026-10-16 00:12），modifier 剩餘/ambience/scene 由 Agy job `9178af553b57`（fallback claude）接續半成品。注意：新 target-dir 首次編譯常被 4551 擋 build script，驗證用既有 target-dir。
+- 13:58Z Agy Gemini 5h 也歸零（重置 17:00Z），Codex 重置 16:12Z。modifier剩餘/ambience/scene/app 整合四項改由 Claude CLI job `8a38c7e2542d` 接續。額度恢復後優先改回 Codex/Agy。

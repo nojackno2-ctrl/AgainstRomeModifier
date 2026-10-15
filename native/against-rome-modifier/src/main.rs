@@ -54,6 +54,13 @@ mod tests {
 }
 
 fn run() -> Result<(), String> {
+    let raw: Vec<String> = env::args().skip(1).collect();
+    if against_rome_modifier::cli::is_cli_invocation(&raw)
+        && !matches!(raw.first().map(String::as_str), Some("features" | "troops" | "inspect" | "apply") if !raw.iter().any(|a| a == "--cli" || a == "--json" || a == "--game"))
+    {
+        let code = against_rome_modifier::cli::run_cli(&raw, &mut std::io::stdout(), &mut std::io::stderr());
+        std::process::exit(code);
+    }
     let mut args = env::args_os().skip(1);
     let first = next(&mut args, "command or EXE path")?;
     if first == "--help" || first == "-h" {

@@ -89,6 +89,10 @@ impl TerrainSession {
             None,
         )
     }
+    /// Direct access to the core session for domain operators (AI planner). Callers must commit strokes themselves.
+    pub fn core_mut(&mut self) -> &mut CoreSession {
+        &mut self.core
+    }
     pub fn heights(&self) -> &[u8] {
         self.core.heights()
     }

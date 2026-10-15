@@ -96,6 +96,28 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
+name = "against-rome-ai-planner"
+version = "0.1.0"
+dependencies = [
+ "against-rome-editor",
+ "against-rome-textures",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "against-rome-campaign"
+version = "0.1.0"
+dependencies = [
+ "against-rome-data",
+ "against-rome-scenario",
+ "encoding_rs",
+ "serde",
+ "serde_json",
+ "uuid",
+]
+
+[[package]]
 name = "against-rome-data"
 version = "0.1.0"
 
@@ -107,10 +129,16 @@ version = "0.1.0"
 name = "against-rome-editor-app"
 version = "0.1.0"
 dependencies = [
+ "against-rome-ai-planner",
+ "against-rome-campaign",
  "against-rome-data",
  "against-rome-editor",
+ "against-rome-environment",
+ "against-rome-landscape",
+ "against-rome-maps",
  "against-rome-modifier",
  "against-rome-navigation",
+ "against-rome-packaging",
  "against-rome-placement",
  "against-rome-saves",
  "against-rome-scenario",
@@ -121,11 +149,41 @@ dependencies = [
 ]
 
 [[package]]
+name = "against-rome-environment"
+version = "0.1.0"
+dependencies = [
+ "against-rome-editor",
+ "serde",
+ "serde_json",
+ "uuid",
+]
+
+[[package]]
+name = "against-rome-landscape"
+version = "0.1.0"
+dependencies = [
+ "against-rome-navigation",
+]
+
+[[package]]
+name = "against-rome-maps"
+version = "0.1.0"
+dependencies = [
+ "against-rome-data",
+ "against-rome-landscape",
+ "against-rome-navigation",
+ "against-rome-scenario",
+ "chrono",
+ "encoding_rs",
+ "serde",
+ "serde_json",
+ "uuid",
+]
+
+[[package]]
 name = "against-rome-modifier"
 version = "0.1.0"
 dependencies = [
- "against-rome-saves",
- "regex",
  "serde_json",
  "sha2",
  "zip",
@@ -134,6 +192,20 @@ dependencies = [
 [[package]]
 name = "against-rome-navigation"
 version = "0.1.0"
+
+[[package]]
+name = "against-rome-packaging"
+version = "0.1.0"
+dependencies = [
+ "against-rome-data",
+ "against-rome-scenario",
+ "chrono",
+ "encoding_rs",
+ "serde",
+ "serde_json",
+ "uuid",
+ "zip",
+]
 
 [[package]]
 name = "against-rome-placement"

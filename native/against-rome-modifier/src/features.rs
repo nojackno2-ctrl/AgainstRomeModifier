@@ -398,6 +398,8 @@ impl FeatureRegistry {
 #[derive(Debug, Clone, Default)]
 pub struct PatchProfile {
     values: HashMap<String, FeatureValue>,
+    pub custom_unit_stats: Option<std::collections::BTreeMap<String, Vec<f64>>>,
+    pub endless_ai_modules: HashMap<String, bool>,
 }
 
 impl PatchProfile {
@@ -423,6 +425,9 @@ impl PatchProfile {
 
     pub fn set(&mut self, id: impl Into<String>, value: FeatureValue) {
         let key = id.into();
+        if let Some(existing) = self.values.keys().find(|k| k.eq_ignore_ascii_case(&key)).cloned() {
+            self.values.remove(&existing);
+        }
         self.values.insert(key, value);
     }
 

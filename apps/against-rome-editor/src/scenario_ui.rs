@@ -127,6 +127,14 @@ fn safe_parent(path: &Path) -> Result<PathBuf> {
     Ok(parent.join(absolute.file_name().ok_or("缺少輸出資料夾名稱")?))
 }
 impl ScenarioUi {
+    /// Live scenario document for read-only consumers (maps/campaign/packaging panels).
+    pub fn document(&self) -> &ScenarioDocument {
+        &self.document
+    }
+    /// Loaded game ObjDefName aliases; empty when no catalog was found.
+    pub fn known_aliases(&self) -> &[String] {
+        &self.aliases
+    }
     pub fn dirty(&self) -> bool {
         state_bytes(&self.document, &self.camera).map_or(true, |s| s != self.baseline)
     }

@@ -85,3 +85,17 @@ $env:CARGO_HOME='D:\Github\AgainstRomeModifier\re_workspace\rust-runtime\cargo';
 - `tests/epara_parity.rs`：針對 CleanEparaBaseline 與光碟零售 baseline 的比對測試。
 - `tests/patchers_roundtrip.rs`：全設定檔補丁往返與真實零售檔案測試。
 - `HANDOFF.md`：本工作包交接記錄。
+
+---
+
+## WP-03b 續作（Endless AI / BCI / Install / Detectors / Services / CLI）— 2026-10-15 (Claude 接手 Codex/Agy 半成品)
+
+**狀態**：crate 可編譯，全部測試通過。
+
+- 接上 `lib.rs` 的 `cli/services/install/detectors/endless_ai/bci_features/exe_features` 模組宣告。
+- 修正 4 個編譯錯誤：`compress_pfil` 缺第二參數；`EndlessAiOrchestrator` 對 module 的 immutable/mutable 借用衝突 → 新增 `detect_module_by_id` / `apply_module_by_id`（暫時取出 module 再放回），`apply_mandatory_repair`、`services.rs`、`bci_features.rs` 改用之。
+- `cli.rs` 新增 `is_cli_invocation`、`run_cli`（detect-game/status/features/maps/profile/apply/restore/help，含 `--json` 封套、`--dry-run`）與 `commit_plan`（temp+rename，失敗回滾）；`main.rs` 把 CLI 指令導到 `run_cli`，舊 `inspect/apply EXE --backup` 行為保留。
+- 新測試 `tests/services_install_detectors.rs`（14 項）+ cli.rs 單元測試 3 項。
+- **未完成/未驗證**：CLI `backup`/`stats`/`saves` 指令尚未移植（回傳「尚未移植」）；`PatchEngine::compose` 目前不含 EndlessAi/BCI 模組寫入（EndlessAiOrchestrator.save_all 以預設 PFIL header 壓縮，未與 C# 逐位元比對）；CustomPatches/BciLiteralPatch 無獨立 C# differential 測試，未對真實遊戲檔驗證；install 的 Resources 需由呼叫端提供。
+- 驗證指令：
+  `cargo test --offline --manifest-path native/against-rome-modifier/Cargo.toml --target-dir re_workspace/target-modifier`
