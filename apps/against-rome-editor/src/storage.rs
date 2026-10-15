@@ -30,13 +30,28 @@ fn resolved_path(path: &Path) -> io::Result<PathBuf> {
         match part {
             Component::CurDir => {}
             Component::ParentDir => {
+                // Resolve a junction before traversing its parent, but do not
+                // open unrelated ancestors (e.g. a restricted user profile).
+                if result.try_exists()? {
+                    result = fs::canonicalize(&result)?;
+                }
                 result.pop();
             }
             _ => result.push(part.as_os_str()),
         }
-        if result.exists() {
-            result = fs::canonicalize(&result)?;
-        }
+    }
+    // Canonicalize the deepest existing path; preserve any not-yet-created tail.
+    let mut tail = Vec::new();
+    while !result.try_exists()? {
+        let name = result
+            .file_name()
+            .ok_or_else(|| io::Error::other("path has no existing ancestor"))?;
+        tail.push(name.to_os_string());
+        result.pop();
+    }
+    result = fs::canonicalize(result)?;
+    for name in tail.into_iter().rev() {
+        result.push(name);
     }
     Ok(result)
 }

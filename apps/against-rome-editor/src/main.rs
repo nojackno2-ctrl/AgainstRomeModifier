@@ -74,9 +74,7 @@ fn run() -> Result<(), String> {
         Box::new(move |cc| {
             let mut editor = EditorApp::new(cc);
             if let Some(session) = loaded {
-                editor.session = Some(session);
-                editor.map_path_input = map.unwrap().to_string_lossy().into_owned();
-                editor.status_message = "Map loaded. No files have been written.".into();
+                editor.set_loaded_map(map.unwrap(),session);
             }
             Box::new(Desktop {
                 editor,

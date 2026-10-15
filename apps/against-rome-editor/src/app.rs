@@ -5,6 +5,10 @@ use std::path::PathBuf;
 
 use crate::storage::{load_map, safe_save_map};
 use crate::terrain::{BrushPath, CollisionBrushOp, HeightBrushOp, TerrainSession};
+use crate::{map_settings::MapSettings, navigation::NavigationUi, toolbox::ToolboxUi};
+use crate::{placement_ui::PlacementUi,scenario_ui::ScenarioUi};
+use crate::textures_ui::TexturesUi;
+use crate::{console::ConsoleUi, event_graph::EventGraphUi};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ViewMode {
@@ -59,10 +63,35 @@ pub struct EditorApp {
     stroke_path: BrushPath,
     pending_action: Option<PendingAction>,
     close_allowed: bool,
+    toolbox: ToolboxUi,
+    navigation: NavigationUi,
+    height_step: f32,
+    placement: PlacementUi,
+    scenario: ScenarioUi,
+    textures: TexturesUi,
+    event_graph: EventGraphUi,
+    console: ConsoleUi,
 }
 
 impl EditorApp {
-    pub fn new(_cc: &eframe::CreationContext<'_>) -> Self {
+    pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
+        // Load the user's installed CJK font, without redistributing font files.
+        #[cfg(windows)]
+        if let Some(windows) = std::env::var_os("WINDIR") {
+            for name in ["msjh.ttc", "msyh.ttc"] {
+                if let Ok(bytes) = std::fs::read(PathBuf::from(&windows).join("Fonts").join(name)) {
+                    let mut fonts=egui::FontDefinitions::default();
+                    fonts.font_data.insert("system-cjk".into(),egui::FontData::from_owned(bytes));
+                    for family in [egui::FontFamily::Proportional,egui::FontFamily::Monospace] {
+                        fonts.families.entry(family).or_default().push("system-cjk".into());
+                    }
+                    cc.egui_ctx.set_fonts(fonts);
+                    break;
+                }
+            }
+        }
+        #[cfg(not(windows))]
+        let _=cc;
         Self::initial_state()
     }
 
@@ -92,7 +121,30 @@ impl EditorApp {
             stroke_path: BrushPath::default(),
             pending_action: None,
             close_allowed: false,
+            toolbox: ToolboxUi::default(),
+            navigation: NavigationUi::default(),
+            height_step: 4.0,
+            placement: PlacementUi::default(),
+            scenario: ScenarioUi::default(),
+            textures: TexturesUi::default(),
+            event_graph: EventGraphUi::default(),
+            console: ConsoleUi::default(),
         }
+    }
+
+    pub fn set_loaded_map(&mut self,path:PathBuf,session:TerrainSession) {
+        self.session=Some(session);
+        self.map_path_input=path.to_string_lossy().into_owned();
+        self.status_is_error=false;
+        self.status_message=format!("Loaded {}",path.display());
+        let settings=match MapSettings::load(&path) {
+            Ok(s)=>s,
+            Err(e)=>{self.status_is_error=true;self.status_message=format!("Map loaded; water settings disabled: {e}");MapSettings::default()}
+        };
+        self.height_step=settings.height_step;
+        self.water_surface=settings.water_surface();
+        self.water_bed=settings.suggested_bed();
+        self.navigation.invalidate();self.texture_dirty=true;
     }
 
     fn perform_action(&mut self, action: PendingAction, ctx: &egui::Context) {
@@ -105,8 +157,7 @@ impl EditorApp {
                         loaded.vertex_size,
                         loaded.collision_size
                     );
-                    self.session = Some(loaded);
-                    self.status_is_error = false;
+                    self.set_loaded_map(path,loaded);
                 }
                 Err(error) => {
                     self.status_message = format!("Load failed: {error}");
@@ -119,6 +170,8 @@ impl EditorApp {
                 self.status_message = format!("Created blank {size}x{size} terrain");
                 self.status_is_error = false;
                 self.map_path_input.clear();
+                self.height_step=4.0;self.water_surface=0.0;self.water_bed=0;
+                self.navigation.invalidate();
             }
             PendingAction::Close => {
                 self.close_allowed = true;
@@ -135,7 +188,10 @@ impl EditorApp {
         if self.pending_action.is_none() {
             return;
         }
-        if !self.session.as_ref().is_some_and(|s| s.is_dirty()) {
+        let dirty=if matches!(self.pending_action,Some(PendingAction::Close)) {
+            self.has_unsaved_changes()
+        } else {self.session.as_ref().is_some_and(|s|s.is_dirty())};
+        if !dirty {
             let action = self.pending_action.take().unwrap();
             self.perform_action(action, ctx);
             return;
@@ -147,7 +203,7 @@ impl EditorApp {
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
             .show(ctx, |ui| {
-                ui.label("Discard unsaved changes to this map?");
+                ui.label("Discard unsaved changes? Closing also discards pending DATA and scenario edits.");
                 ui.horizontal(|ui| {
                     discard = ui.button("Discard unsaved changes").clicked();
                     cancel = ui.button("Keep editing").clicked();
@@ -159,6 +215,10 @@ impl EditorApp {
         } else if cancel {
             self.pending_action = None;
         }
+    }
+
+    fn has_unsaved_changes(&self)->bool {
+        self.session.as_ref().is_some_and(|s|s.is_dirty()) || self.placement.is_dirty() || self.scenario.dirty() || self.textures.is_dirty() || self.event_graph.is_dirty()
     }
 
     fn update_texture(&mut self, ctx: &egui::Context) {
@@ -265,7 +325,7 @@ impl eframe::App for EditorApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         if ctx.input(|i| i.viewport().close_requested())
             && !self.close_allowed
-            && self.session.as_ref().is_some_and(|s| s.is_dirty())
+            && self.has_unsaved_changes()
         {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
             self.pending_action = Some(PendingAction::Close);
@@ -304,9 +364,16 @@ impl eframe::App for EditorApp {
 
         // 頂部導覽列
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 ui.heading("Against Rome Map Editor (Rust)");
                 ui.separator();
+                if ui.button("Modifier / Saves").clicked() {self.toolbox.open=true;}
+                if ui.button("Navigation").clicked() {self.navigation.open=true;}
+                if ui.button("Objects").clicked() {self.placement.open=true;}
+                if ui.button("Scenario / Camera").clicked() {self.scenario.open=true;}
+                if ui.button("Materials").clicked() {self.textures.open=true;}
+                if ui.button("Event Graph").clicked() {self.event_graph.open=true;}
+                if ui.button("Console").clicked() {self.console.open=true;}
 
                 ui.label("Map Folder:");
                 ui.text_edit_singleline(&mut self.map_path_input);
@@ -393,6 +460,7 @@ impl eframe::App for EditorApp {
         egui::SidePanel::left("left_tools_panel")
             .min_width(220.0)
             .show(ctx, |ui| {
+                egui::ScrollArea::vertical().show(ui,|ui| {
                 ui.heading("Tools & Settings");
                 ui.separator();
 
@@ -478,11 +546,13 @@ impl eframe::App for EditorApp {
                 }
                 if self.active_tool == ActiveTool::Water {
                     ui.add(
-                        egui::Slider::new(&mut self.water_surface, 1.0..=255.0)
+                        egui::Slider::new(&mut self.water_surface, 0.0..=255.0)
                             .text("Water surface (G units)"),
                     );
                     ui.add(egui::Slider::new(&mut self.water_bed, 0..=254).text("Bed height"));
                     ui.label("Local excavation/blocking; set game water level separately.");
+                    ui.label(format!("World water: {:.2}; Heightmapstep: {}",self.water_surface*self.height_step,self.height_step));
+                    if self.water_surface<4.0 {ui.label("Water surface too low for the water brush (minimum 4).");}
                 }
                 if self.active_tool == ActiveTool::HeightRoughen {
                     ui.add(
@@ -529,6 +599,7 @@ impl eframe::App for EditorApp {
                 if ui.button("New Blank 193x193 (TUTOR_01)").clicked() {
                     self.pending_action = Some(PendingAction::Blank(193));
                 }
+                });
             });
 
         // 中央畫布檢視區
@@ -662,6 +733,7 @@ impl eframe::App for EditorApp {
                                         None,
                                         seed,
                                     ),
+                                    ActiveTool::Water if self.water_surface < 4.0 => Err(against_rome_editor::terrain::Error::InvalidParameters),
                                     ActiveTool::Water => session_mut
                                         .paint_water(
                                             grid_x,
@@ -714,5 +786,12 @@ impl eframe::App for EditorApp {
             }
         });
         self.handle_pending_action(ctx);
+        self.toolbox.show(ctx);
+        self.navigation.show(ctx,self.session.as_ref(),self.water_surface);
+        self.placement.show(ctx);
+        self.scenario.show(ctx);
+        self.textures.show(ctx);
+        self.event_graph.show(ctx);
+        self.console.show(ctx);
     }
 }

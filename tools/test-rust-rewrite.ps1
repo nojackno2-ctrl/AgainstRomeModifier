@@ -14,7 +14,8 @@ if (Test-Path -LiteralPath $localCargo) {
     $cargo = (Get-Command cargo -ErrorAction Stop).Source
 }
 $crates = @('native/against-rome-data', 'native/against-rome-editor',
-    'native/against-rome-navigation', 'native/against-rome-modifier', 'native/against-rome-saves')
+    'native/against-rome-navigation', 'native/against-rome-modifier', 'native/against-rome-saves',
+    'native/against-rome-placement', 'native/against-rome-scenario', 'native/against-rome-textures')
 if ($IncludeDesktop) { $crates += 'apps/against-rome-editor' }
 foreach ($crate in $crates) {
     $manifest = Join-Path $repo "$crate/Cargo.toml"
@@ -39,4 +40,18 @@ if ($Differential) {
     $arguments += @('--', '--ignored', '--nocapture')
     & $cargo @arguments
     if ($LASTEXITCODE -ne 0) { throw 'Live C# / Rust terrain differential failed.' }
+    $gates = @(
+        @{ Crate = 'against-rome-placement'; Filter = 'managed_family_light_auxiliary_differential'; Kind = '--lib' },
+        @{ Crate = 'against-rome-scenario'; Filter = 'csharp_synthetic_differential'; Kind = '--test' }
+    )
+    foreach ($gate in $gates) {
+        $arguments = @('test', '--locked', '--manifest-path',
+            (Join-Path $repo "native/$($gate.Crate)/Cargo.toml"), '--target-dir',
+            (Join-Path $repo "re_workspace/rust-rewrite-targets/native-$($gate.Crate)"), $gate.Kind)
+        if ($gate.Kind -eq '--test') { $arguments += 'compiler' }
+        if ($Release) { $arguments += '--release' }
+        $arguments += @($gate.Filter, '--', '--ignored', '--nocapture')
+        & $cargo @arguments
+        if ($LASTEXITCODE -ne 0) { throw "C# / Rust differential failed: $($gate.Crate)" }
+    }
 }

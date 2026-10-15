@@ -1,0 +1,41 @@
+name: Rust rewrite
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-rust:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+      - name: Rust toolchain
+        shell: pwsh
+        run: |
+          rustup toolchain install stable --profile minimal
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          rustup default stable
+      - name: Test native cores and desktop
+        shell: pwsh
+        run: ./tools/test-rust-rewrite.ps1 -IncludeDesktop -Differential
+      - name: Build native desktop
+        shell: pwsh
+        run: cargo build --locked --manifest-path apps/against-rome-editor/Cargo.toml --target-dir re_workspace/rust-editor-app-target
+      - name: Record desktop CLI
+        shell: pwsh
+        run: |
+          ./re_workspace/rust-editor-app-target/debug/against-rome-editor.exe --version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ./re_workspace/rust-editor-app-target/debug/against-rome-editor.exe --help
