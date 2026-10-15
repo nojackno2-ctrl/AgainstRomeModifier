@@ -1,5 +1,7 @@
 # Against Rome Modifier（羅馬帝國：黃金版 全方位修改器 & 工具箱）
 
+Rust 全程式改寫進行中，現有 C# 功能尚未全部替換。獨立 Rust 地形編輯入口位於 `apps/against-rome-editor`，可用 `powershell -NoProfile -ExecutionPolicy Bypass -File tools/run-rust-editor.ps1` 建置並啟動；加 `-Map "地圖工作副本路徑"` 載入圖層。功能與驗證缺口見 [Rust 改寫對照](docs/rust-rewrite.md)。
+
 [![Platform: Windows x64](https://img.shields.io/badge/Platform-Windows%2010%20%2F%2011%20(x64)-blue.svg)](#系統需求)
 [![.NET 8.0](https://img.shields.io/badge/.NET-8.0%20(Windows%20Forms)-512BD4.svg)](#自行編譯)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)

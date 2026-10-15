@@ -1,0 +1,8 @@
+[package]
+name = "against-rome-modifier"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Verified executable patch planning and atomic file transactions"
+
+[dependencies]

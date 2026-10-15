@@ -1,0 +1,17 @@
+[package]
+name = "against-rome-editor-app"
+version = "0.1.0"
+edition = "2021"
+description = "Against Rome Native Rust Desktop Map Editor"
+
+[lib]
+name = "against_rome_editor_app"
+path = "src/lib.rs"
+
+[[bin]]
+name = "against-rome-editor"
+path = "src/main.rs"
+
+[dependencies]
+against-rome-editor = { path = "../../native/against-rome-editor" }
+eframe = "0.27"

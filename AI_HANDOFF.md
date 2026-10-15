@@ -1,6 +1,6 @@
 # AI Handoff - Rust 整合續作
 
-更新：2026-10-14，Codex；使用者要求繼續製作地圖編輯器，goal active。
+更新：2026-10-15，Codex；使用者要求整個程式改寫為 Rust，goal active。
 
 ## 2026-10-14 Antigravity: automatic commit and push to GitHub policy
 
@@ -9,6 +9,15 @@
 - Verification: git status clean, post-commit hook configured and tested, collaboration rules updated.
 - Status: auto-push policy established and active.
 
+## 2026-10-15 Codex＋Agy：全程式 Rust 改寫（進行中）
+
+- 最新目標「整個程式改寫成 Rust 語言」涵蓋 Modifier／SaveManager／MapEditor／Shared／Core／Modules 與 C++ trace；不能以 Rust DLL 或部分 UI 宣稱完成。起點 bdf3b57、主要開發、工作樹乾淨；本輪未改安裝遊戲。完整缺口見 docs/rust-rewrite.md。
+- Agy job 76bcb7afedd4 terminal succeeded，交付原生 egui 桌面初稿；Codex 接回後改用已驗證 Rust terrain core、修 collision RGB平均值／量化／stroke歷史／BMP原bytes保留／雙檔失敗回滾，新增未存檔 New/Open/Close 確認；不宣稱多檔保存具斷電原子性。apps/against-rome-editor 與四個新 native crates 均為 Rust 實作，保留既有 C# 待逐功能替代。
+- 核心：terrain 8 tests＋獨立真C# differential（193/257、24 ramps、22 snapshots、3,502,254 bytes與289 noise一致）；navigation12；modifier15（3真補丁／CLI／C#bytes比對／Win32 1176/1177部分替換恢復）；saves8（真ZIP、PascalCase/BOM manifest、PFIL/CP1251、restore rollback、junction拒絕）；desktop22（含第二檔失敗rollback+retry／metadata/padding/RGB保留／dirty guard）。
+- Parent最終 powershell -NoProfile -ExecutionPolicy Bypass -File tools/test-rust-rewrite.ps1 -IncludeDesktop -Differential exit0：193 pass/0 fail；一般suite 2ignored其中terrain oracle另已跑pass，ALR inventory audit仍未跑。log re_workspace/rust-rewrite-final-tests.log。repo-local stable1.99；僅process環境。代理較早4551暫時封鎖最終parent未重現，未改安全policy；clippy不是本機全crate gate。
+- Parent dotnet build AgainstRomeModifier.slnx -c Release --nologo --no-restore：0errors/71warnings；Host1292pass/33skip/0fail，Modules1152pass/2skip/0fail；logs rust-rewrite-{dotnet-build,host-tests,modules-tests}.log。跳過項不算已驗。
+- 真圖：tools/run-rust-editor.ps1 -Map installed TUTOR_01 -ValidateMap、ENDL_000 --validate-map均成功（193/192、257/256）；TUTOR_01 -SmokeTest 實際原生視窗3次UI update後exit0，四來源BMP SHA256不變（re_workspace/rust-rewrite-retail-before.json）；不是完整滑鼠UI／遊戲內驗收。run/test腳本與README已提供入口。
+- 下一步：Rust物件／關聯池保存交易、材質、劇本事件／波次／鏡頭、3D素材視圖、AI工具、完整modifier與save GUI、C++ trace與發行替代仍未完成；不可移除對應C#功能。所有本輪代理均terminal、無活躍檔案所有權；goal active。本輪verified改動依AGENTS提交並由post-commit hook推送；實際revision以Git紀錄及遠端核對為準。
 ## 目標與狀態
 
 - 2026-10-15 Claude dispatcher＋Codex＋Agy：AI 製圖改為「AI 直接操作編輯器工具」（完成／自動測試已驗，未遊戲內驗收）。舊 AiMapPlanApplier 高斯高度場合成已刪除。新增共用 `src.MapEditor.Modules/Terrain/EditorBrushExecutor.cs`（UI 筆刷、控制台、AI 唯一執行路徑；UI PaintTerrainTile/材質筆刷已改呼叫它，行為保留）；新增控制台 `/brush height|collision|material ...`（BrushCommand，可 Format 往返）。`src.MapEditor/AiEditorOperator.cs` 把 LLM 的 feature 計畫以閉環方式轉成逐筆筆刷操作（山丘/山谷錐形升降→平滑、山脊沿路徑、高台/baseHeight 升降後整平、湖/河用水域筆刷、材質筆刷、通行筆刷），baseMaterial 用編輯器「區域工具→矩形填色」（逐點筆刷會因原版缺過渡被拒並整筆回滾）。每筆操作各自 commit＝一個復原步驟（材質筆刷失敗會 CancelStroke 待提交內容，因此必須逐筆 commit）；預覽於 fork 跑相同 operator，結果與套用完全一致；對話框顯示「AI 編輯操作步驟」與可重播 `/brush` 指令。限制：baseHeight 僅能以筆刷逼近（±2，溫和筆刷一步 2 單位）；水面過低時水域筆刷略過（AI 不自動改水位）。驗證：Release build 0 errors/0 warnings；Host 1292 pass/33 skip/0 fail；Modules 1152 pass/2 skip/0 fail。

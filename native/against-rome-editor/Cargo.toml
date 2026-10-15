@@ -1,0 +1,8 @@
+[package]
+name = "against-rome-editor"
+version = "0.1.0"
+edition = "2021"
+description = "Native Rust map editor domain and terrain transactions"
+license = "MIT"
+
+[dependencies]

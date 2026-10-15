@@ -1,0 +1,9 @@
+[package]
+name = "against-rome-navigation"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Pure Rust map editor passability and navigation diagnostics"
+
+[lib]
+path = "src/lib.rs"
