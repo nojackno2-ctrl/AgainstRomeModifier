@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../../../src.MapEditor.Modules/Terrain/RoadStrokePlanner.cs" Link="RoadStrokePlanner.cs" />
+    <Compile Include="../../../../src.MapEditor.Modules/Terrain/RoadTileCatalog.cs" Link="RoadTileCatalog.cs" />
+    <Compile Include="../../../../src.MapEditor.Modules/Terrain/RiverFlowPlanner.cs" Link="RiverFlowPlanner.cs" />
+    <Compile Include="../../../../src.MapEditor.Modules/Terrain/RiverTileCatalog.cs" Link="RiverTileCatalog.cs" />
+    <Compile Include="../../../../src.MapEditor.Modules/Terrain/RiverTypes.cs" Link="RiverTypes.cs" />
+    <Compile Include="../../../../src.MapEditor.Modules/Terrain/CliffEdgeDetector.cs" Link="CliffEdgeDetector.cs" />
+    <Compile Include="../../../../src.MapEditor.Modules/Terrain/CliffTileCatalog.cs" Link="CliffTileCatalog.cs" />
+    <Compile Include="../../../../src.MapEditor.Modules/Fortification/FortificationTypes.cs" Link="FortificationTypes.cs" />
+    <Compile Include="../../../../src.MapEditor.Modules/Fortification/WallTileCatalog.cs" Link="WallTileCatalog.cs" />
+    <Compile Include="../../../../src.MapEditor.Modules/Fortification/WallStrokePlanner.cs" Link="WallStrokePlanner.cs" />
+    <Compile Include="../../../../src.MapEditor.Modules/Fortification/PalisadeRunPlanner.cs" Link="PalisadeRunPlanner.cs" />
+    <Compile Include="../../../../src.MapEditor.Modules/Fortification/FortificationPassabilitySync.cs" Link="FortificationPassabilitySync.cs" />
+  </ItemGroup>
+</Project>

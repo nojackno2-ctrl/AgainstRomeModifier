@@ -64,6 +64,21 @@ fn run() -> Result<(), String> {
         return Ok(());
     }
     let apply = first == "apply";
+    let first_str = first.to_string_lossy();
+    if first_str == "features" {
+        for f in against_rome_modifier::FeatureRegistry::ALL {
+            println!("{}: {:?} ({:?})", f.id, f.category, f.control_kind);
+        }
+        return Ok(());
+    }
+    if first_str == "troops" {
+        for key in against_rome_modifier::TroopConfig::sorted_units() {
+            let meta = against_rome_modifier::TroopConfig::get_metadata(key).unwrap();
+            let name_zh = against_rome_modifier::TroopConfig::get_name_zh(key).unwrap_or("");
+            println!("{} ({}) - {} [{}/{}]", key, name_zh, meta.faction, meta.tier, meta.unit_type);
+        }
+        return Ok(());
+    }
     let path = if apply || first == "inspect" {
         PathBuf::from(next(&mut args, "EXE path")?)
     } else {

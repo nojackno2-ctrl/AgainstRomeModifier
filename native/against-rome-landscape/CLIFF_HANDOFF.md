@@ -1,0 +1,12 @@
+# WP-06 Cliff port handoff
+
+2026-10-15 — Codex `cliff_port`.
+
+- Owned files: `src/cliff.rs`, `CLIFF_HANDOFF.md`. Read full `CliffEdgeDetector.cs`, `CliffFacePlanner.cs`, `CliffTileCatalog.cs` and the three corresponding Modules test files. Parent retains shared handoff, Cargo, and git ownership.
+- Implemented std-only tile/vertex detection, facing precedence, deterministic contour traversal, catalog families/inference/filtering/fallbacks, exact verified real-name catalogs, wrapping weighted hash, scree/crest/collision planning, and session adapter application semantics.
+- Public entry points: `detect_from_tile_heights(dimension: usize, heights: &[f32], min_slope: f32, min_delta: f32)`, `detect_from_vertex_heights(vertex_size: usize, heights: &[u8], tile_dimension: usize, heightmap_step: usize, min_slope: f32, min_delta: f32)`, `plan_cliffs(dimension: usize, detection, catalog, options)`, returning `Result<_, String>`. Public records and `CliffTileCatalog` mirror C# names in snake_case. `apply_cliff_plan` uses `CliffBlendSession`/`CliffHeightSession` adapter traits; callers retain session lifecycle.
+- Verified: `cargo test --manifest-path native/against-rome-landscape/Cargo.toml --target-dir re_workspace/target-against-rome-landscape cliff::` → **11 passed / 0 failed**. `rustfmt --edition 2021` completed. Process-local toolchain uses the repo-local `re_workspace/rust-runtime/{cargo,rustup}`.
+- Initial hash fixture for `(i32::MAX, i32::MIN, 42)` was wrong; independent 32-bit JS multiplication confirmed hash `1822213287`, variant `FELS_N2`. Fixture corrected; Rust wrapping hash matches C# unchecked operations. Added NaN propagation parity because .NET Math.Max and Rust f32::max differ.
+- Validation intentionally rejects impossible/zero vertex sampling and overflowing dimensions instead of reproducing C# invalid-input indexing/allocation exceptions. Catalog weighted sums use u64 rather than overflowing an i32 for absurd custom weights. ASCII case folding covers all shipped catalog names; full Unicode OrdinalIgnoreCase equivalence is outside asset naming.
+- `create_default`/`build_available` preserve legacy guessed-name behavior; game-safe callers should use `build_real_names`, which admits only the four verified straight faces and never substitutes corner/other facing textures. Runtime appearance remains unverified.
+- No game files touched, no UI integration performed, no git mutations. Differential C# oracle remains parent-owned; these 11 tests are fixture and invariant tests, not an executed C# differential.

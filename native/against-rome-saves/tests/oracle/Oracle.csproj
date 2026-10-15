@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Program.cs" />
+    <Compile Include="../../../../src.Core/Core/EndlessAi/CustomPatches.cs" Link="CustomPatches.cs" />
+    <Compile Include="../../../../src.Core/Core/EndlessAi/IEndlessPatch.cs" Link="IEndlessPatch.cs" />
+    <Compile Include="../../../../src.Core/Core/EndlessAi/PatchState.cs" Link="PatchState.cs" />
+    <Compile Include="../../../../src.Core/Core/Bci/BciPattern.cs" Link="BciPattern.cs" />
+    <Compile Include="../../../../src.Core/Core/Patches/VerifiedBinaryWriter.cs" Link="VerifiedBinaryWriter.cs" />
+    <Compile Include="../../../../src.Shared/Core/GameLZSS.cs" Link="GameLZSS.cs" />
+  </ItemGroup>
+</Project>

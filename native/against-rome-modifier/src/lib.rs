@@ -6,6 +6,33 @@ use std::{
     path::{Path, PathBuf},
 };
 
+pub mod cl_script;
+pub mod epara;
+pub mod exe_patches;
+pub mod features;
+pub mod lzss;
+pub mod objdef;
+pub mod patch_text;
+pub mod partgeo;
+pub mod ress;
+pub mod team_dat;
+pub mod troops;
+
+pub use cl_script::{ClScriptOptions, ClScriptPatcher};
+pub use epara::{CleanEparaBaseline, EparaPatcher};
+pub use exe_patches::{ALL_EXE_PATCHES, CIVI_PRODUCE_20, CORPSE_RETENTION};
+pub use features::{
+    FeatureCategory, FeatureControlKind, FeatureDefinition, FeatureRegistry, FeatureValue,
+    PatchProfile,
+};
+pub use lzss::{compress_pfil, decompress_if_pfil, decompress_pfil, is_pfil};
+pub use objdef::{ObjdefOptions, ObjdefPatcher};
+pub use partgeo::{PartgeoOptions, PartgeoPatcher};
+pub use patch_text::{decode_cp1251, encode_cp1251, parse_csv_line, to_csv_string, TextDocument};
+pub use ress::{RessOptions, RessPatcher};
+pub use team_dat::{TeamDatOptions, TeamDatPatcher, DEFAULT_POPULATION_LIMIT};
+pub use troops::{ObjdefIndex, TroopConfig, UnitMetadata, UnitStatParser};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum State {
     Original,

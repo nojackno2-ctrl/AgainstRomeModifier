@@ -1,12 +1,12 @@
 use super::*;
-struct Temp(PathBuf);
+pub(crate) struct Temp(pub(crate) PathBuf);
 impl Temp {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         let p = unique(&std::env::temp_dir(), "ar_saves_test");
         fs::create_dir(&p).unwrap();
         Self(p)
     }
-    fn service(&self) -> SaveService {
+    pub(crate) fn service(&self) -> SaveService {
         SaveService::new(self.0.join("game"), self.0.join("backups")).unwrap()
     }
 }

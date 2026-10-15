@@ -1,0 +1,10 @@
+[package]
+name = "against-rome-landscape"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Faithful landscape stroke and fortification planners for the Against Rome editor"
+
+[dependencies]
+against-rome-navigation = { path = "../against-rome-navigation" }
+

@@ -1,0 +1,7 @@
+# River port handoff
+
+- 2026-10-15 Codex river_port: read full RiverFlowPlanner.cs, RiverTileCatalog.cs, RiverTypes.cs and WP-06 inventory. Implemented std-only river.rs with matching catalogue fallback, topology/flow, immediate-backtrack removal, bank placement order, elevation warnings, downhill reversal, descending/trench carving, and local water channel profile.
+- API: `river::plan(dimension: i32, textures: &[String], heights: Option<&[u8]>, vertex_size: i32, path: &[Point], catalog: &RiverTileCatalog, options: &RiverPlannerOptions) -> Result<RiverStrokePlan, String>`. Masks use u8 aliases/constants; public records retain C# names. `RiverTileCatalog::build_available`, `new`, `find_water_tile`, `find_bank_tile`, `is_water_texture`, `is_bank_texture` are available.
+- Ordering: bank catalogue vector preserves fallback insertion order; legacy elevation changes preserve dictionary insertion order; water-channel adjustments are sorted by index. f32/f64 ties round to even to match C#.
+- Validation pending parent crate tests. Ten in-module tests cover catalogue, rasterization, flow, water adjacency, atomic failure, invalid dimensions/water metadata, downhill reversal, legacy carving and water channel footprint.
+- Deliberate robustness difference: seed i32::MIN uses unsigned_abs instead of C# Math.Abs throwing. Registered names use ASCII case-insensitive matching; shipped river texture identifiers are ASCII. No terrain session mutation/UI integration in this module. Installed game directory untouched.

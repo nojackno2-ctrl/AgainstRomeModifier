@@ -8,6 +8,9 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
 };
 use zip::{write::FileOptions, ZipArchive, ZipWriter};
+pub mod ai_repair;
+pub mod backup_health;
+mod pfil;
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 const LIMIT: u64 = 512 * 1024 * 1024;
 static NEXT: AtomicU64 = AtomicU64::new(0);
@@ -47,6 +50,11 @@ pub struct Catalog {
 #[derive(Debug, Default, Serialize)]
 pub struct RestoreResult {
     pub cleanup_warnings: Vec<String>,
+}
+#[derive(Debug, Serialize, PartialEq)]
+pub enum AiRepairResult {
+    AlreadyRepaired,
+    Changed { backup: String },
 }
 pub fn simple_name(name: &str) -> bool {
     !name.trim().is_empty()
@@ -145,6 +153,43 @@ pub struct SaveService {
     backups: PathBuf,
 }
 impl SaveService {
+    /// Explicit migration; creates a full save ZIP before publishing changed scr.dat.
+    pub fn repair_endless_ai(&self, folder: &str) -> Result<AiRepairResult> {
+        let source = child(&self.root(), folder)?;
+        reject_tree(&source)?;
+        let scr = source.join("CLAK/scr.dat");
+        let raw = fs::read(&scr)?;
+        let Some(repaired) = ai_repair::repair_payload(&raw)? else {
+            return Ok(AiRepairResult::AlreadyRepaired);
+        };
+        let permissions = fs::metadata(&scr)?.permissions();
+        if permissions.readonly() {
+            return fail("scr.dat is read-only");
+        }
+        let backup = self.backup(folder, "", "")?;
+        let stage = unique(scr.parent().unwrap(), "ai_repair_tmp");
+        let result = (|| -> Result<()> {
+            let mut out = OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&stage)?;
+            out.write_all(&repaired)?;
+            out.sync_all()?;
+            drop(out);
+            fs::set_permissions(&stage, permissions)?;
+            reject_links(&scr)?;
+            if fs::read(&scr)? != raw {
+                return fail("scr.dat changed during repair; backup retained");
+            }
+            fs::rename(&stage, &scr)?;
+            Ok(())
+        })();
+        if result.is_err() {
+            let _ = fs::remove_file(&stage);
+        }
+        result?;
+        Ok(AiRepairResult::Changed { backup })
+    }
     pub fn new(game: impl AsRef<Path>, backups: impl AsRef<Path>) -> Result<Self> {
         Ok(Self {
             game: absolute(game.as_ref())?,
