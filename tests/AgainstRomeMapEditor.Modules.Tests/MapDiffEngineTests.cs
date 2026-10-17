@@ -215,12 +215,12 @@ public sealed class MapDiffEngineTests
         HeatmapMaskBuffer canvasMask = MapVisualDiffOverlay.GenerateHeatmapMask(report, 256, 256);
         Assert.Equal(256, canvasMask.Width);
         Assert.Equal(256, canvasMask.Height);
-        Assert.True(canvasMask.Pixels.Any(p => p != 0));
+        Assert.Contains(canvasMask.Pixels, p => p != 0);
 
         // 產出小地圖遮罩
         HeatmapMaskBuffer minimapMask = MapVisualDiffOverlay.GenerateMinimapOverlay(report, 256, 256);
         Assert.Equal(256, minimapMask.Width);
-        Assert.True(minimapMask.Pixels.Any(p => p != 0));
+        Assert.Contains(minimapMask.Pixels, p => p != 0);
 
         // 產出向量標記
         var markers = MapVisualDiffOverlay.GenerateVectorMarkers(report);
@@ -246,7 +246,7 @@ public sealed class MapDiffEngineTests
         // 框選矩形區域 (X: 2000..6000, Z: 2000..6000)
         var scope = new RollbackRegionScope(
             2000, 2000, 6000, 6000,
-            Layers: RollbackLayerFlags.Height,
+            Layers: RollbackLayers.Height,
             EnableEdgeBlend: true,
             EdgeBlendRadius: 2
         );
@@ -307,7 +307,7 @@ public sealed class MapDiffEngineTests
         // 只框選區域 (X: 1000..4000, Z: 1000..4000)
         var scope = new RollbackRegionScope(
             1000, 1000, 4000, 4000,
-            Layers: RollbackLayerFlags.Textures | RollbackLayerFlags.Objects
+            Layers: RollbackLayers.Textures | RollbackLayers.Objects
         );
 
         RollbackTransaction tx = SelectiveRollbackController.ComputeRollback(snapBase, snapCur, diff, scope);

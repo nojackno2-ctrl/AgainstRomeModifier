@@ -53,7 +53,7 @@ public sealed class PutScriptSyntaxValidatorTests
 
         var report = PutScriptSyntaxValidator.ValidateScriptText(script, "BIG5");
         Assert.True(report.IsValid);
-        Assert.Empty(report.Issues.Where(i => i.Severity == PutIssueSeverity.Error));
+        Assert.DoesNotContain(report.Issues, i => i.Severity == PutIssueSeverity.Error);
     }
 
     [Fact]

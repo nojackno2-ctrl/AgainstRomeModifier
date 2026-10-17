@@ -49,6 +49,13 @@ internal static class EditorBrushExecutor
         return surface < MinimumWaterDepth ? -1 : surface - Math.Min(WaterBedDepth, surface);
     }
 
+    /// <param name="stroke">本次筆畫的工具、路徑與設定。</param>
+    /// <param name="heights">高度與碰撞編輯工作階段。</param>
+    /// <param name="blend">材質混合編輯工作階段。</param>
+    /// <param name="dimension">地圖 tile 邊長。</param>
+    /// <param name="roughnessSeed">粗糙化的亂數種子。</param>
+    /// <param name="onTexture">材質變更通知。</param>
+    /// <param name="onRejectedDab">材質筆刷被拒絕時的通知。</param>
     /// <param name="surfaceHeight">水面高度（Waterlevel ÷ Heightmapstep）。</param>
     /// <param name="allowsTile">可選的 tile 保護（AI 範圍／鎖定）；高度變更會排除受保護 tile 周圍的頂點。</param>
     public static EditorBrushResult Execute(EditorBrushStroke stroke, TerrainHeightEditSession? heights, TerrainBlendEditSession? blend,
@@ -65,7 +72,7 @@ internal static class EditorBrushExecutor
         Action<TerrainTextureChange>? onTexture = null, Action<TerrainBlendPaintResult>? onMaterial = null, Action<int, int>? onRejectedDab = null)
     {
         ArgumentNullException.ThrowIfNull(stroke);
-        if (dimension <= 0) throw new ArgumentOutOfRangeException(nameof(dimension));
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(dimension);
         if (stroke.Path.Count == 0) return new(0, 0, 0, 0, null);
         var visited = new HashSet<int>();
         int heightCount = 0, collisionCount = 0, textureCount = 0, rejected = 0;

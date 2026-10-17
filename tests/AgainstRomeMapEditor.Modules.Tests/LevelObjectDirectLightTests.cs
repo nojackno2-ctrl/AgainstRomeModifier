@@ -55,7 +55,7 @@ public sealed class LevelObjectDirectLightTests
         var result = ScenarioLevelObjects.ApplyToCandidate(store, previous, next,
             _ => throw new InvalidOperationException("Saved copies must not need the catalogue"),
             new Dictionary<Guid, ScenarioFamilyCopyRequest> { [copyId] = new(0, 100) });
-        var binding = Assert.Single(result.Scenario.DataSlots.Where(item => item.SpawnId == copyId));
+        var binding = Assert.Single(result.Scenario.DataSlots, item => item.SpawnId == copyId);
         Assert.Equal(plan.Objects[0], binding.Slot);
         Assert.Equal(plan.Uids[0], binding.Uid);
         Assert.NotNull(result.Store.FamilyAt(binding.Slot, binding.Uid));
@@ -953,8 +953,8 @@ public sealed class LevelObjectDirectLightTests
 
         // Result documents have exactly 2 prebuilt bindings (source and copy root only, no children bindings)
         Assert.Equal(2, result.Scenario.DataSlots.Count);
-        var resultSourceBinding = Assert.Single(result.Scenario.DataSlots.Where(b => b.SpawnId == sourceId));
-        var resultCopyBinding = Assert.Single(result.Scenario.DataSlots.Where(b => b.SpawnId == copyTargetId));
+        var resultSourceBinding = Assert.Single(result.Scenario.DataSlots, b => b.SpawnId == sourceId);
+        var resultCopyBinding = Assert.Single(result.Scenario.DataSlots, b => b.SpawnId == copyTargetId);
 
         Assert.Equal(0, resultSourceBinding.Slot);
         Assert.Equal(100u, resultSourceBinding.Uid);
@@ -1060,7 +1060,7 @@ public sealed class LevelObjectDirectLightTests
         var result = ScenarioLevelObjects.ApplyToCandidate(store, previous, next, _ => null, requests);
         Assert.Empty(result.Skipped);
 
-        var copyBinding = Assert.Single(result.Scenario.DataSlots.Where(b => b.SpawnId == copyTargetId));
+        var copyBinding = Assert.Single(result.Scenario.DataSlots, b => b.SpawnId == copyTargetId);
         var copyFamily = result.Store.FamilyAt(copyBinding.Slot, copyBinding.Uid);
         Assert.NotNull(copyFamily);
 

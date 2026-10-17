@@ -29,15 +29,32 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@1.99.0
+        with:
+          toolchain: 1.99.0
+          targets: x86_64-pc-windows-msvc
+
+      - name: Build and verify native data helper
+        shell: pwsh
+        run: |
+          ./tools/build-native-data.ps1
+
       - name: Restore
         run: |
           dotnet restore AgainstRomeModifier.slnx --configfile NuGet.Config
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           dotnet restore src.Modifier\AgainstRomeModifier.csproj -r win-x64 --configfile NuGet.Config -p:IncludeBackupZip=false
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Build and Test
         run: |
           dotnet build AgainstRomeModifier.slnx --configuration Release -p:PlatformTarget=x64 -p:IncludeBackupZip=false --no-restore -warnaserror
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           dotnet test tests/AgainstRomeModifier.Tests/AgainstRomeModifier.Tests.csproj --configuration Release -p:PlatformTarget=x64 -p:IncludeBackupZip=false --no-build --no-restore
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dotnet test tests/AgainstRomeMapEditor.Modules.Tests/AgainstRomeMapEditor.Modules.Tests.csproj --configuration Release -p:PlatformTarget=x64 -p:IncludeBackupZip=false --no-build --no-restore
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Validate tag against project version
         shell: pwsh
@@ -114,6 +131,7 @@ jobs:
             -p:DebugType=None `
             -p:DebugSymbols=false `
             -o $distDir
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
           # Clean XML files
           Get-ChildItem -Path $distDir -Filter "*.xml" -Recurse | Remove-Item -Force
@@ -152,11 +170,20 @@ jobs:
           $zip = (Get-ChildItem -Path $dist -Filter "AgainstRomeModifier_*_win-x64.zip").FullName
           $sums = Join-Path $dist 'SHA256SUMS.txt'
 
-          gh release create $tag $exe $zip $sums `
-            --repo $env:RELEASE_REPOSITORY `
-            --target $env:GITHUB_SHA `
-            --title "Against Rome Modifier $tag" `
-            --generate-notes
+          $notes = "docs/RELEASE_$tag.md"
+          $releaseArgs = @('release', 'create', $tag, $exe, $zip, $sums,
+            '--repo', $env:RELEASE_REPOSITORY, '--target', $env:GITHUB_SHA,
+            '--title', "Against Rome Modifier $tag")
+          if (Test-Path -LiteralPath $notes) {
+            $finalNotes = Join-Path $env:RUNNER_TEMP 'arm-release-notes.md'
+            $nativeHash = (Get-FileHash -LiteralPath 're_workspace/native-data-deploy/against_rome_data.dll' -Algorithm SHA256).Hash.ToLowerInvariant()
+            $text = (Get-Content -LiteralPath $notes -Raw) + "`nSource commit: $env:GITHUB_SHA`nNative helper SHA256: $nativeHash`n"
+            [IO.File]::WriteAllText($finalNotes, $text, [Text.UTF8Encoding]::new($false))
+            $releaseArgs += @('--notes-file', $finalNotes)
+          } else {
+            $releaseArgs += '--generate-notes'
+          }
+          gh @releaseArgs
           if ($LASTEXITCODE -ne 0) {
             throw "gh release create failed with exit code $LASTEXITCODE."
           }

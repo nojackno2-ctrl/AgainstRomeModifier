@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using AgainstRomeMapEditor.Modules.Scripting.Execution;
 using AgainstRomeMapEditor.Modules.Scripting.Models;
 using AgainstRomeMapEditor.Modules.Scripting.Parsing;

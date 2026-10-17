@@ -32,6 +32,7 @@ internal sealed partial class Map3DViewControl : GLControl
     private int _terrainProgram, _colorProgram, _vao, _vbo, _ebo, _atlasTexture, _waterVao, _waterVbo, _markerVao, _markerVbo, _cursorVao, _cursorVbo;
     private int _cursorVertexCount;
     private bool _reinitializeOnHandleCreated;
+    private string? _contextCreationFailure;
     private byte[]? _collisionMask;
     private int _collisionSize, _collisionTexture;
     private byte[] _vertexLight = [255, 255, 255];
@@ -251,6 +252,7 @@ internal sealed partial class Map3DViewControl : GLControl
         _library = floorTextures; // 生命週期由 MapEditorForm 擁有，此處僅借用。
         LastFailureReason = ValidateResources(mapDirectory, _library.IsAvailable);
         if (LastFailureReason is not null) return false;
+        if (_contextCreationFailure is not null) { LastFailureReason = _contextCreationFailure; return false; }
         using var bitmap = new Bitmap(heightSource);
         byte[] samples = ReadSamples(bitmap);
         _vertexLight = [255, 255, 255]; _vertexLightWidth = _vertexLightHeight = 1;
@@ -325,6 +327,17 @@ internal sealed partial class Map3DViewControl : GLControl
 
     protected override void OnHandleCreated(EventArgs e)
     {
+        // GLFW may initialize successfully in a headless Windows session while exposing no monitors.
+        // GLControl then calls glfwGetVideoMode with a null monitor, which cannot be caught in managed code.
+        OpenTK.Windowing.Desktop.GLFWProvider.EnsureInitialized();
+        _contextCreationFailure = OpenTK.Windowing.Desktop.Monitors.GetMonitors().Count == 0
+            ? "OpenGL 3.3 初始化失敗：目前 Windows 工作階段沒有可用的顯示器。" : null;
+        if (_contextCreationFailure is not null)
+        {
+            LastFailureReason = _contextCreationFailure;
+            InitializationFailed?.Invoke(this, new InvalidOperationException(_contextCreationFailure));
+            return;
+        }
         base.OnHandleCreated(e);
         // 控制項未釋放而 handle 被重建（例如重新指定父容器）時，原 context 已隨舊 handle 銷毀，需重新初始化。
         if (_reinitializeOnHandleCreated) { _reinitializeOnHandleCreated = false; InitializeGl(); }
@@ -333,7 +346,7 @@ internal sealed partial class Map3DViewControl : GLControl
 
     private void InitializeGl()
     {
-        if (_initialized) return;
+        if (_initialized || !HasValidContext) return;
         try
         {
             MakeCurrent();
@@ -477,6 +490,7 @@ internal sealed partial class Map3DViewControl : GLControl
 
     protected override void OnPaint(PaintEventArgs e)
     {
+        if (!HasValidContext) return;
         base.OnPaint(e);
         if (!_initialized || _mesh is null) return;
         MakeCurrent(); RenderScene(ClientSize.Width, ClientSize.Height);

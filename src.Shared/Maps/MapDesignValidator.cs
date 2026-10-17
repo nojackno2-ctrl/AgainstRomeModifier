@@ -1,5 +1,3 @@
-using System.Collections.Generic;
-using System.Linq;
 using AgainstRomeModifier.Scripting;
 
 namespace AgainstRomeModifier.Maps;

@@ -114,7 +114,6 @@ public static class EventGraphValidator
         {
             // 沿動作鏈統計數量與終端動作
             int actionCount = 0;
-            bool hasTerminal = false;
             var currentPort = trigger.ExecOut;
             var visited = new HashSet<Guid>();
 
@@ -132,7 +131,6 @@ public static class EventGraphValidator
                     actionCount++;
                     if (act is VictoryActionNode or DefeatActionNode)
                     {
-                        hasTerminal = true;
                         // 檢查終端動作是否在重複事件中
                         if (trigger.Repeat)
                         {

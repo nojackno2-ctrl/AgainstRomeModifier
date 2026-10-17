@@ -12,6 +12,9 @@ public static class PalisadeRunPlanner
     public const float Spacing = 64f;
 
     /// <param name="vertices">折線頂點（世界座標）；非正交線段會拆成先 X 後 Z 兩段。</param>
+    /// <param name="alongZ">沿 Z 軸的物件變體。</param>
+    /// <param name="alongX">沿 X 軸的物件變體。</param>
+    /// <param name="corner">轉角的物件變體。</param>
     public static IReadOnlyList<PalisadePiece> Plan(IReadOnlyList<(float X, float Z)> vertices, string alongZ, string alongX, string corner)
     {
         ArgumentNullException.ThrowIfNull(vertices);

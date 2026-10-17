@@ -83,6 +83,8 @@ internal static class ThermalErosionSimulator
         // 雙緩衝：在當前高度上讀取，在 delta 陣列中累加轉移量，防止單向順序偏斜
         float[] deltaHeights = new float[size * size];
 
+        Span<float> excesses = stackalloc float[8];
+
         for (int it = 0; it < parameters.Iterations; it++)
         {
             Array.Clear(deltaHeights, 0, deltaHeights.Length);
@@ -101,8 +103,6 @@ internal static class ThermalErosionSimulator
                 float currentH = buffer[x, y];
                 float totalExcess = 0f;
                 float minNeighborH = currentH;
-
-                Span<float> excesses = stackalloc float[8];
 
                 for (int i = 0; i < 8; i++)
                 {

@@ -1,5 +1,4 @@
 using System.IO.Compression;
-using System.Text;
 using AgainstRomeMapEditor.Modules.Packaging;
 using AgainstRomeModifier.Maps;
 using Xunit;

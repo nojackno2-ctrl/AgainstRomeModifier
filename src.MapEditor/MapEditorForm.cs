@@ -778,8 +778,8 @@ internal sealed partial class MapEditorForm : Form
                 if (_last3DDiagnostic is not null)
                 {
                     _modeBanner.Text = isEn
-                        ? "3D unavailable; please click \"3D Diagnostics\" to view the actual reasons."
-                        : "3D 無法啟用；請按「3D 診斷」查看實際原因。";
+                        ? "3D unavailable: " + (_view3d?.LastFailureReason ?? _view3dButton.ToolTipText) + "  Please click \"3D Diagnostics\"."
+                        : "3D 無法啟用：" + (_view3d?.LastFailureReason ?? _view3dButton.ToolTipText) + "　請按「3D 診斷」。";
                     _modeBanner.BackColor = Color.FromArgb(86, 69, 40);
                 }
             }

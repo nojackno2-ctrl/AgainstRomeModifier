@@ -1,11 +1,8 @@
 using System.IO.Compression;
 using System.Reflection;
 using System.Runtime.ExceptionServices;
-using System.Windows.Forms;
 using AgainstRomeMapEditor;
 using AgainstRomeModifier.Maps;
-using AgainstRomeModifier.Scripting;
-using Xunit;
 
 namespace AgainstRomeModifier.Tests;
 

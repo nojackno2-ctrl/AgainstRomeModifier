@@ -1,4 +1,3 @@
-using AgainstRomeMapEditor;
 using AgainstRomeMapEditor.Modules.Diagnostics;
 using Xunit;
 

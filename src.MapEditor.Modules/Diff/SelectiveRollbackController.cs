@@ -8,7 +8,7 @@ public sealed record RollbackRegionScope(
     float MinWorldZ,
     float MaxWorldX,
     float MaxWorldZ,
-    RollbackLayerFlags Layers = RollbackLayerFlags.All,
+    RollbackLayers Layers = RollbackLayers.All,
     bool EnableEdgeBlend = true,
     int EdgeBlendRadius = 2,
     IReadOnlySet<Guid>? SelectedObjectIds = null
@@ -18,7 +18,7 @@ public sealed record RollbackRegionScope(
     /// 建立全圖範圍的還原定義。
     /// </summary>
     public static RollbackRegionScope EntireMap(
-        RollbackLayerFlags layers = RollbackLayerFlags.All,
+        RollbackLayers layers = RollbackLayers.All,
         IReadOnlySet<Guid>? selectedObjectIds = null)
         => new(0, 0, 16384, 16384, layers, EnableEdgeBlend: false, EdgeBlendRadius: 0, selectedObjectIds);
 
@@ -91,7 +91,7 @@ internal static class SelectiveRollbackController
         var objectsToRevert = new List<ObjectModification>();
 
         // 1. 地形高度局部還原 (支援邊界羽化平滑過渡)
-        if (scope.Layers.HasFlag(RollbackLayerFlags.Height) &&
+        if (scope.Layers.HasFlag(RollbackLayers.Height) &&
             baseline.Heights is not null && current.Heights is not null &&
             baseline.HeightDimension > 0 && current.HeightDimension > 0)
         {
@@ -99,7 +99,7 @@ internal static class SelectiveRollbackController
         }
 
         // 2. 地表材質局部還原
-        if (scope.Layers.HasFlag(RollbackLayerFlags.Textures) &&
+        if (scope.Layers.HasFlag(RollbackLayers.Textures) &&
             baseline.Textures is not null && current.Textures is not null &&
             diff.Textures.ChangedTiles.Count > 0)
         {
@@ -107,7 +107,7 @@ internal static class SelectiveRollbackController
         }
 
         // 3. 通行碰撞遮罩局部還原
-        if (scope.Layers.HasFlag(RollbackLayerFlags.Collision) &&
+        if (scope.Layers.HasFlag(RollbackLayers.Collision) &&
             baseline.Collision is not null && current.Collision is not null &&
             diff.Collision.Changes.Count > 0)
         {
@@ -115,7 +115,7 @@ internal static class SelectiveRollbackController
         }
 
         // 4. 場景物件局部還原
-        if (scope.Layers.HasFlag(RollbackLayerFlags.Objects))
+        if (scope.Layers.HasFlag(RollbackLayers.Objects))
         {
             ComputeObjectRollback(scope, diff.Objects, objectsToRestore, objectsToRemove, objectsToRevert);
         }

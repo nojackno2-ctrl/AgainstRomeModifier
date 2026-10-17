@@ -1,5 +1,4 @@
 using System.Globalization;
-using AgainstRomeModifier;
 using AgainstRomeModifier.Maps;
 
 namespace AgainstRomeMapEditor.NativeAssets;

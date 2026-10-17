@@ -1,6 +1,5 @@
 using AgainstRomeModifier;
 using AgainstRomeModifier.Maps;
-using AgainstRomeModifier.Scripting;
 
 namespace AgainstRomeMapEditor;
 

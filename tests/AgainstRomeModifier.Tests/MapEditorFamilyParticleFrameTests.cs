@@ -2,7 +2,6 @@ using System.Buffers.Binary;
 using System.Reflection;
 using AgainstRomeMapEditor;
 using AgainstRomeModifier.Maps;
-using Xunit;
 
 namespace AgainstRomeModifier.Tests;
 

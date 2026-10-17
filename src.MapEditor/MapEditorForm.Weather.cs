@@ -1,4 +1,3 @@
-using System.Globalization;
 using AgainstRomeMapEditor.Modules.Atmosphere;
 
 namespace AgainstRomeMapEditor;

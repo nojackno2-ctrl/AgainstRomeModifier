@@ -155,6 +155,10 @@ public static class LevelScriptInjector
            ?? Path.Combine(mapDirectory, "SCRIPT");
 
     /// <summary>依場景設定寫出注入後的腳本；沒有任何生成項目時還原原版腳本。全部在呼叫端交易內完成。</summary>
+    /// <param name="mapDirectory">目標地圖目錄。</param>
+    /// <param name="scenario">要編譯的場景設定。</param>
+    /// <param name="knownAliases">可用的物件別名集合。</param>
+    /// <param name="rollback">呼叫端的檔案回復交易。</param>
     /// <param name="mainPrologue">可選的開局前置注入（例如開局相機）；在事件之後套用，使其包住 main 並最先執行。每次都從原版備份重建，因此重複儲存不會重複注入。</param>
     public static void Apply(string mapDirectory, ScenarioDocument scenario, IReadOnlyCollection<string> knownAliases, FileRollbackScope rollback,
         Action<BciImage>? mainPrologue = null)

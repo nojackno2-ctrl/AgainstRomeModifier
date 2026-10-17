@@ -11,9 +11,6 @@ public sealed class NativeRootFamilyCopyIntentTests
     private static SdlObjectType SampleBuildingType(string name = "BauGerHouse", string alias = "HOUSE") =>
         new(name, 2, SdlObjectCategory.Building, "Ger", 1, new Dictionary<string, string> { ["alias"] = alias });
 
-    private static SdlObjectType SampleFigureType(string name = "FigGerLeader", string alias = "LEADER") =>
-        new(name, 1, SdlObjectCategory.Figure, "Ger", 1, new Dictionary<string, string> { ["alias"] = alias });
-
     [Fact]
     public void Staged_native_copy_has_transient_identity_and_empty_copy_source_guid()
     {

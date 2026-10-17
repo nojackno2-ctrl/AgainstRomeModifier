@@ -1,4 +1,3 @@
-using System.IO;
 using AgainstRomeMapEditor;
 using AgainstRomeModifier.Maps;
 using AgainstRomeModifier.Scripting;

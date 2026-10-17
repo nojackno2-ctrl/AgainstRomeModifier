@@ -2,6 +2,43 @@
 
 更新：2026-10-15，Antigravity；依照使用者指示恢復 placement crate 任務並完成驗證。
 
+## 2026-10-17 Codex 父代理：v1.3.0 審查與可重現發布流程
+
+- 已審查 scoped C# diff 與最終 TRX：Host 1292 pass/33 skip、Modules 1152 pass/2 skip，均 0 fail。原本 22 個 Rust／lock／封存檔 SHA256 逐項核對仍一致；既存 cancelled-work 不提交。
+- 原本 local candidate 使用舊部署 DLL，僅保留為證據；正式發布改由 GitHub Windows 從相同 source 建置 native data helper，驗證 ABI 後再完整 build/test/publish。Rust 獨立 app 的未完成遷移不因此變成完成。
+- 修正 release workflow：native helper + 兩套 tests、逐條檢查 native exit code（避免 host 失敗被後續 module 成功掩蓋）、讀取 docs/RELEASE_v1.3.0.md 並附完整 source/native hash。未更動既有 tag/404/no-clobber 保護。
+- 已以 git ls-remote 驗證 dtolnay/rust-toolchain 的 1.99.0 action ref 存在。本輪只更新/提交已審查的 C#、release workflow、最終 release notes 和本輪 handoff sections；原 handoff 的先前未提交尾端兩行留在工作樹。
+- 正式發布等待此提交的 Windows Release workflow；本段不是已發布宣告。未做遊戲內/GPU/提權安裝驗收；完整證據見 D:/Github/audit-arm-release-2026-10-17.md 與 audit-arm-pipeline-2026-10-17.md。
+## 2026-10-17 Antigravity：發布管線輔助建置與測試修復（僅 release.yml 與交接，完成）
+
+- 本輪嚴格限定範圍：僅修改 `.github/workflows/release.yml` 與更新交接；無 delegation/commit/push/tag/GitHub publish、無安全政策或 installed game 變更，未更動 Rust 原始碼/lock/dirty 檔。
+- Release 工作流修復：新增 `dtolnay/rust-toolchain@1.99.0`（toolchain 1.99.0，targets `x86_64-pc-windows-msvc`）；在 .NET restore/build/test/publish 前以 `shell: pwsh` 調用 `./tools/build-native-data.ps1`，維持完整匯出/ABI/SHA 檢查閘門，產出 `Directory.Build.targets` 必要之 `against_rome_data.dll`；在 `Build and Test` 步驟加入 `AgainstRomeMapEditor.Modules.Tests.csproj`。完整保留既有 tag identity/404 unused/no-clobber 防護。
+- YAML 驗證：經 `PyYAML 6.0.3` 解析驗證有效（10 steps，無語法/縮排錯誤）。
+- 依賴性與本機隔離驗證：`native/against-rome-data` 原始碼 100% tracked（41 檔）、0 ignored、Cargo.lock 無外源 crate。以 `pwsh` 隔離建置至全新輸出目錄 `D:/Github/release-audit-2026-10-17/ARM-native-data-verification` exit 0（1.65s），ABI probe 通過，前後 Cargo.lock SHA-256 一致（`15AA5F0A7797D346B82FCB5DE8980C7885485412B7A197A4FEA0ABEBF2198E0C`）。
+- Hash 差異分析：新產物 DLL SHA-256 為 `7689369B93D9A9475DD505F9F6ACA128BD40EB824298AD5335728D1ED3B97C2C`，與舊部署檔 `16C6D0...` 差異主因為 HEAD 包含 commit `6f066d8`（新增 `alr_metadata.rs`），舊 DLL 係 `4e08637` 之 stale input。未覆蓋 `re_workspace/native-data-deploy/against_rome_data.dll` 且未替換 `AgainstRomeModifier-v1.3.0` 候選資產。
+- 詳細報告：`D:/Github/audit-arm-pipeline-2026-10-17.md`。無自有殘留 live handles。
+
+## 2026-10-17 Codex：legacy Windows host v1.3.0 候選已備妥（待父任務審查）
+
+- 本輪僅 C# warning/實際測試失敗修正、VersionPrefix 1.2.2→1.3.0 與封裝；無 delegation/commit/push/tag/GitHub publish、無安全政策或 installed game 變更。Rust migration 仍 Partial，原 cancelled-work dirty Rust/lock/source 與下方 handoff 原文逐 byte 保留；未 track ignored binary、未執行 Cargo。
+- 最終 `dotnet build AgainstRomeModifier.slnx --configuration Release -p:PlatformTarget=x64 -p:IncludeBackupZip=false --no-restore -warnaserror -t:Rebuild` exit 0，0 warnings/0 errors；兩套完整 `dotnet test ... --no-build --no-restore`：Host **1292 pass/33 skip/0 fail**，Modules **1152 pass/2 skip/0 fail**（TRX 已核對）。
+- 修正 71 diagnostics（未降級/抑制）；侵蝕 stackalloc 移出迴圈。Host 初次 GLFW AccessViolation：probe init=1/primary=0/count=0，已加無 monitor 的既有 2D fallback；後續 DPI placement overflow/banner reason 兩項失敗，最小修正後針對性與完整 suite 均 pass。失敗命令與續修細節保留稽核，fallback pass 不是 GPU 驗證。
+- 產物：`D:/Github/release-audit-2026-10-17/AgainstRomeModifier-v1.3.0`（EXE/EXE-only ZIP/SHA256SUMS）；self-contained win-x64、既有 release workflow flags、IncludeBackupZip=false。Test-ReleaseArtifacts matching 1.3.0/Core assembly pass，ZIP/EXE hash 相符，bundled Core 與既有 native DLL exact bytes 已核對。EXE SHA256 `be5d971511921fb487e5a511355cd973cab47dd34fa6060bd329d4b5e02166d2`；ZIP `0f9ac9b9482947e3f784944ece4d379b3684f3ce9db572da6d554a60361845cd`。
+- `--version` packaged smoke 啟動前因既有 requireAdministrator 被 OS 拒絕（需提升權限）；未 runas/改 manifest/改 policy，`--help` 未啟動。無實際 GPU、實體 DPI、遊戲內、長期或完整真素材驗收；Rust DLL clean-checkout 重建本輪未做。所有本輪 build/test/tool sessions 已結束，無自有 live handles。
+- 報告／49 個精確 repo 變更檔與全部命令：`D:/Github/audit-arm-release-2026-10-17.md`；最終說明：`docs/RELEASE_v1.3.0.md`；證據：`re_workspace/legacy-release-2026-10-17/`。22 個保留檔 hash 與原 handoff byte 比對通過；初版候選/生成 XML 亦保留為證據。父任務需獨立審查，只提交本輪 paths/本段 handoff hunk，填最終 source commit 身分再發布（建置基準 412a2bb 不是最終來源）。
+
+## 2026-10-17 Codex：Rust／發布稽核（程式唯讀，完成）
+
+- 本輪僅稽核與交接更新；明確禁止 commit/push/merge/刪分支/tag/publish/改程式，保留 cancelled-job dirty work。
+- `fetch origin`（不 prune）成功；HEAD/origin/主要開發=`412a2bb02ee4aea01c54833c664e16f27c8333b9`，實際遠端只有此一分支。既有 16 modified／5 untracked（含原 handoff），無 staged。
+- gh：HEAD Rust rewrite run 38748547807 failure，`ar-textures` manifest 指向缺少的 `src/bin/ar-textures.rs`；CI 38748547717 failure（CS1573/IDE0005/CS0219 等 warnings-as-errors），CodeQL success。
+- 現場 repo-local Rust 1.99.0：app `cargo test` 及 `cargo build --release --locked --offline --manifest-path apps/against-rome-editor/Cargo.toml --target-dir re_workspace/rust-editor-app-target` 均 exit 101：Cargo.lock 需要更新。未移除 --locked、未更動 lock/source 或安全政策。尚不能發布 Rust 整合版。
+- 最新 release API=v1.2.2，target_commitish=e9c1f82…，但現存遠端 tag 實際指向 5a1d34c1538b5f4f9b49619e004e432366a37839（來源對應需另行核對）；不可聲稱既有資產由現 tag 重現。
+- 新證據：`dotnet build AgainstRomeModifier.slnx -c Release --nologo --no-restore -p:IncludeBackupZip=false` exit 0（71 warnings/0 errors，log `re_workspace/audit-2026-10-17-dotnet-build.log`）；未跑 .NET tests。Rust modifier `cargo test --release --locked --offline --manifest-path native/against-rome-modifier/Cargo.toml --target-dir re_workspace/target-against-rome-modifier` 70 pass/0 fail/0 ignored，12 warnings。這只證明此 dirty core 的測試，非完整 app/parity。
+- `ar-textures.rs` 現場存在但未追蹤，被 `.gitignore:3 [Bb]in/` 排除；需父任務另行修復追蹤再驗證。Rust app 未依賴 scene/ambience（ambience 僅 modifier 間接使用），scene crate 明確為 renderer-independent；placement 明拒 particle/garrison family，camera spline compiler 明標 unwired preview。repo-local rustup 僅 x64，trace i686 DLL 尚無建置證據。全 Rust 替代仍屬 Partial。
+- Release checksum 已下載並 hash=29c6d1b2838801364865ccbad966bc044e18ad35645768803c64b2c9637a774e，內文與 GitHub EXE/ZIP digest 相符；未下載兩個大型 binary。無額外遠端分支可合併/刪除；建議修復 CI/lock/追蹤後再考慮 v1.3.0 功能版，完整 Rust v2.0.0 暫不具發布證據。
+- 詳細稽核報告： `D:/Github/audit-rust-2026-10-17.md`；全程式 parity 仍未完成，舊段落中的歷史完成/失敗必須按當前 source/CI 分開判讀。
+
 ## 目標、Git 與安全界線
 
 - 原目標仍為「整個程式改寫成 Rust 語言」，不是僅加 Rust DLL／CLI／部分新視窗；Modifier、SaveManager、MapEditor、Shared/Core/Modules 及 C++ trace 都要替代。不可縮小完成條件。
@@ -68,7 +105,9 @@
 - Parent `dotnet build AgainstRomeModifier.slnx -c Release --nologo --no-restore`：0errors/71warnings；Modules完整1152pass/2skip/0fail。logs `re_workspace/rust-wave2-dotnet-{build,tests}.log`。本輪沒再跑全Host。
 - Debug app test反覆在serde build-script被 Windows應用程式控制原則 **4551** 擋；CodeIntegrity Operational事件3077已唯讀查證，尚未到app編譯。`rust-wave2-desktop-tests.log`。
 - 正常Release test `18385`也在parking_lot_core/paste build-scripts4551終止，`rust-wave2-desktop-release-tests.log`。未調整policy、未重命名/搬移binary或變更編譯設定繞過限制。遇同handle timeout要確認process終態，不能盲目重啟。
-- Rust工具鏈process-local：CARGO_HOME=`D:\Github\AgainstRomeModifiere_workspaceust-runtime\cargo`，RUSTUP_HOME同root的`rustup`，PATH前加cargo/bin；cargo.exe位於CARGO_HOME/bin，repo-local stable1.99。targets一律re_workspace；不要改全域環境。
+- Rust工具鏈process-local：CARGO_HOME=`D:\Github\AgainstRomeModifier
+e_workspace
+ust-runtime\cargo`，RUSTUP_HOME同root的`rustup`，PATH前加cargo/bin；cargo.exe位於CARGO_HOME/bin，repo-local stable1.99。targets一律re_workspace；不要改全域環境。
 
 ## 明確恢復後的先後順序
 

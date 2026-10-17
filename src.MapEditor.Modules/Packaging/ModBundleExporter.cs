@@ -1,7 +1,6 @@
 using System.IO.Compression;
 using System.Text;
 using System.Text.Json;
-using AgainstRomeModifier;
 using AgainstRomeModifier.Core.Services;
 using AgainstRomeModifier.Maps;
 using AgainstRomeModifier.Scripting;

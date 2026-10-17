@@ -3,13 +3,14 @@ using System.Reflection;
 using System.Text.Json;
 using System.Windows.Forms;
 using AgainstRomeMapEditor;
-using AgainstRomeMapEditor.Modules.Nature;
 using AgainstRomeModifier.Maps;
 
 namespace AgainstRomeModifier.Tests;
 
 public sealed partial class MapEditorSaveTransactionTests
 {
+    private static readonly JsonSerializerOptions ShowcaseJsonOptions = new() { WriteIndented = true };
+
     /// <summary>選擇性啟用（ARM_TOOLS_SHOWCASE=1）：在真實素材 TEMP 副本上套用河流／懸崖／植被／侵蝕／城牆／天候並存檔，保留成果供遊戲內檢視。</summary>
     [Fact]
     public void Tools_showcase_real_copy_applies_river_cliff_flora_erosion_wall_weather_and_saves()
@@ -89,6 +90,6 @@ public sealed partial class MapEditorSaveTransactionTests
             var view = GetField<Map3DViewControl>(form, "_view3d");
             if (view.IsReady) { view.FocusTile(40, 36); using var image = view.CaptureFrame(1280, 800)!; image.Save(Path.Combine(output, "showcase-3d.png")); report["screenshot"] = true; }
         }, TimeSpan.FromMinutes(3));
-        File.WriteAllText(Path.Combine(output, "result.json"), JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true }));
+        File.WriteAllText(Path.Combine(output, "result.json"), JsonSerializer.Serialize(report, ShowcaseJsonOptions));
     }
 }

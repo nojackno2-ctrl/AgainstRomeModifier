@@ -162,19 +162,19 @@ public sealed record ObjectiveRuleParameters
     public IReadOnlyList<Guid> TargetGuids { get; init; } = Array.Empty<Guid>();
 
     /// <summary>防守或維持佔領秒數（例如 Survival 需撐過 180 秒，或佔領需維持 30 秒）。</summary>
-    public int HoldDurationSeconds { get; init; } = 0;
+    public int HoldDurationSeconds { get; init; }
 
     /// <summary>目的區域或佔領區域範圍。</summary>
     public ObjectiveAreaBounds? Area { get; init; }
 
     /// <summary>玩家所屬隊伍編號（0–7，預設 0）。</summary>
-    public int PlayerTeam { get; init; } = 0;
+    public int PlayerTeam { get; init; }
 
     /// <summary>敵方或目標所屬隊伍編號（0–7，預設 1）。</summary>
     public int TargetTeam { get; init; } = 1;
 
     /// <summary>時限秒數（0 代表無限制，逾時將導致目標判定失敗）。</summary>
-    public int TimeLimitSeconds { get; init; } = 0;
+    public int TimeLimitSeconds { get; init; }
 
     /// <summary>需求數量（例如需消滅之小隊數、或佔領點數）。</summary>
     public int RequiredCount { get; init; } = 1;
@@ -207,5 +207,5 @@ public sealed record ObjectiveDefinition
     public ObjectiveRuleParameters Parameters { get; init; } = new();
     public ObjectiveReward? Reward { get; init; }
     public ObjectiveState InitialState { get; init; } = ObjectiveState.Active;
-    public float UiOrder { get; init; } = 0f;
+    public float UiOrder { get; init; }
 }

@@ -27,7 +27,7 @@ public enum DiffStatus
 /// 局部還原可選圖層旗標。
 /// </summary>
 [Flags]
-public enum RollbackLayerFlags
+public enum RollbackLayers
 {
     None = 0,
 

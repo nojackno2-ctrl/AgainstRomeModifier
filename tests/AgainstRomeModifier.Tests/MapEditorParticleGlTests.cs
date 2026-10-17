@@ -1,7 +1,6 @@
 using System.Reflection;
 using System.Windows.Forms;
 using AgainstRomeMapEditor;
-using Xunit;
 
 namespace AgainstRomeModifier.Tests;
 

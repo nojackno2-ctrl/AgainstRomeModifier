@@ -1,5 +1,3 @@
-using System.Buffers.Binary;
-using AgainstRomeModifier;
 using AgainstRomeModifier.Maps;
 using AgainstRomeModifier.Scripting;
 using Xunit;

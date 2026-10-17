@@ -1,6 +1,5 @@
 using System.Globalization;
 using System.IO.Compression;
-using AgainstRomeModifier;
 using AgainstRomeModifier.Maps;
 
 namespace AgainstRomeMapEditor.NativeAssets;

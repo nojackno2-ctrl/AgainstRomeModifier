@@ -1,6 +1,5 @@
 using AgainstRomeMapEditor.Modules.Diagnostics;
 using AgainstRomeMapEditor.Modules.Pathfinding;
-using AgainstRomeModifier.Scripting;
 using Xunit;
 
 namespace AgainstRomeMapEditor.Modules.Tests;

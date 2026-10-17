@@ -78,7 +78,7 @@ internal sealed partial class MapEditorForm
         _placeTypes.KeyDown += (_, e) => HandlePlacementRotationKey(e, selectedObjects: false);
         _placedList.KeyDown += (_, e) => { HandlePlacementRotationKey(e, selectedObjects: true); HandlePlacementWorkflowKey(e); };
         Disposed += (_, _) => _spriteThumbnails.Dispose();
-        var panel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(8), BackColor = WinFormsTheme.Surface };
+        var panel = new Panel { Dock = DockStyle.Fill, AutoScroll = true, Padding = new Padding(8), BackColor = WinFormsTheme.Surface };
         panel.SizeChanged += (_, _) => _placeHint.MaximumSize = new Size(Math.Max(1, panel.ClientSize.Width - panel.Padding.Horizontal), 0);
         var options = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 2, BackColor = WinFormsTheme.SurfaceRaised, Padding = new Padding(6) };
         options.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 70)); options.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));

@@ -3,7 +3,6 @@ using System.Reflection;
 using AgainstRomeMapEditor;
 using AgainstRomeModifier.Maps;
 using AgainstRomeModifier.Scripting;
-using Xunit;
 
 namespace AgainstRomeModifier.Tests;
 

@@ -217,7 +217,7 @@ public readonly struct SceneLightSuppressionKey : IEquatable<SceneLightSuppressi
     public SceneLightSuppressionKey(string sourceFile, int objectIndex)
     {
         ArgumentNullException.ThrowIfNull(sourceFile);
-        if (objectIndex == -1) throw new ArgumentOutOfRangeException(nameof(objectIndex));
+        ArgumentOutOfRangeException.ThrowIfEqual(objectIndex, -1);
         SourceFile = sourceFile.Replace('\\', '/').ToUpperInvariant(); ObjectIndex = objectIndex;
     }
 
@@ -232,6 +232,8 @@ public readonly struct SceneLightSuppressionKey : IEquatable<SceneLightSuppressi
     public bool Equals(SceneLightSuppressionKey other) => ObjectIndex == other.ObjectIndex && string.Equals(SourceFile, other.SourceFile, StringComparison.Ordinal);
     public override bool Equals(object? obj) => obj is SceneLightSuppressionKey other && Equals(other);
     public override int GetHashCode() => HashCode.Combine(SourceFile, ObjectIndex);
+    public static bool operator ==(SceneLightSuppressionKey left, SceneLightSuppressionKey right) => left.Equals(right);
+    public static bool operator !=(SceneLightSuppressionKey left, SceneLightSuppressionKey right) => !left.Equals(right);
 }
 
 /// <summary>

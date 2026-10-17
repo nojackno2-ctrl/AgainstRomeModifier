@@ -1,5 +1,4 @@
 using System.Text;
-using AgainstRomeModifier;
 using AgainstRomeModifier.Core.Services;
 
 namespace AgainstRomeMapEditor.Modules.Localization;

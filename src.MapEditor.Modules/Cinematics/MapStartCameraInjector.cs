@@ -1,7 +1,5 @@
 using System.Buffers.Binary;
-using AgainstRomeModifier;
 using AgainstRomeModifier.Core.Services;
-using AgainstRomeModifier.Maps;
 using AgainstRomeModifier.Scripting;
 
 namespace AgainstRomeMapEditor.Modules.Cinematics;

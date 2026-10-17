@@ -3,7 +3,7 @@ namespace AgainstRomeMapEditor.Modules.Objectives;
 /// <summary>
 /// 目標狀態變更事件引數。
 /// </summary>
-public sealed record ObjectiveStateChangedEventArgs(
+public sealed record ObjectiveStateChange(
     ObjectiveDefinition Objective,
     ObjectiveState PreviousState,
     ObjectiveState NewState,
@@ -74,7 +74,7 @@ public interface IObjectiveSandboxSession
     void Reset();
 
     /// <summary>目標狀態變更事件。</summary>
-    event EventHandler<ObjectiveStateChangedEventArgs>? StateChanged;
+    event EventHandler<ObjectiveStateChange>? StateChanged;
 
     /// <summary>戰役獲勝或失敗事件。</summary>
     event EventHandler<CampaignResult>? CampaignFinished;
@@ -102,9 +102,9 @@ public sealed class ObjectiveSandboxSession : IObjectiveSandboxSession
     private readonly List<string> _messageLog = new();
 
     public CampaignResult CampaignStatus { get; private set; } = CampaignResult.InProgress;
-    public float TotalSimulatedSeconds { get; private set; } = 0f;
+    public float TotalSimulatedSeconds { get; private set; }
 
-    public event EventHandler<ObjectiveStateChangedEventArgs>? StateChanged;
+    public event EventHandler<ObjectiveStateChange>? StateChanged;
     public event EventHandler<CampaignResult>? CampaignFinished;
     public event EventHandler<string>? MessageBroadcasted;
 
@@ -166,7 +166,7 @@ public sealed class ObjectiveSandboxSession : IObjectiveSandboxSession
             // 2. 堅守目標進度（Survival）
             if (obj.Kind == ObjectiveKind.Survival && obj.Category != ObjectiveCategory.FailureCriterion)
             {
-                var targetGuid = obj.Parameters.TargetGuids.FirstOrDefault();
+                var targetGuid = (obj.Parameters.TargetGuids.Count > 0 ? obj.Parameters.TargetGuids[0] : Guid.Empty);
                 bool isTargetDead = targetGuid != Guid.Empty && _deadObjects.GetValueOrDefault(targetGuid);
 
                 if (isTargetDead)
@@ -186,7 +186,7 @@ public sealed class ObjectiveSandboxSession : IObjectiveSandboxSession
             // 3. 佔領區域維持進度（CaptureArea / KingOfTheHill）
             if (obj.Kind is ObjectiveKind.CaptureArea or ObjectiveKind.KingOfTheHill)
             {
-                var targetGuid = obj.Parameters.TargetGuids.FirstOrDefault();
+                var targetGuid = (obj.Parameters.TargetGuids.Count > 0 ? obj.Parameters.TargetGuids[0] : Guid.Empty);
                 bool inArea = false;
 
                 if (targetGuid != Guid.Empty && _objectPositions.TryGetValue(targetGuid, out var pos))
@@ -303,7 +303,7 @@ public sealed class ObjectiveSandboxSession : IObjectiveSandboxSession
         string logMsg = $"[{TotalSimulatedSeconds:F1}s] 目標「{obj.Title}」狀態：{oldState} -> {newState} ({reason})";
         _messageLog.Add(logMsg);
 
-        StateChanged?.Invoke(this, new ObjectiveStateChangedEventArgs(obj, oldState, newState, reason));
+        StateChanged?.Invoke(this, new ObjectiveStateChange(obj, oldState, newState, reason));
         MessageBroadcasted?.Invoke(this, logMsg);
 
         // 發放獎勵提示
@@ -330,7 +330,7 @@ public sealed class ObjectiveSandboxSession : IObjectiveSandboxSession
                 var obj = _graph.FindObjective(id);
                 if (obj is not null)
                 {
-                    StateChanged?.Invoke(this, new ObjectiveStateChangedEventArgs(obj, oldState, state, "依賴圖動態解鎖/狀態傳遞"));
+                    StateChanged?.Invoke(this, new ObjectiveStateChange(obj, oldState, state, "依賴圖動態解鎖/狀態傳遞"));
                 }
             }
         }

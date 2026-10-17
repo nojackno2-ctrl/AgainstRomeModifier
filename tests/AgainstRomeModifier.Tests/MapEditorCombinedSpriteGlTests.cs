@@ -4,7 +4,6 @@ using System.Windows.Forms;
 using AgainstRomeMapEditor;
 using AgainstRomeMapEditor.NativeAssets;
 using AgainstRomeModifier.Maps;
-using Xunit;
 
 namespace AgainstRomeModifier.Tests;
 

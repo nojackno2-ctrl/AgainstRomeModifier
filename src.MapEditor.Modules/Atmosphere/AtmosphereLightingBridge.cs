@@ -109,13 +109,10 @@ public sealed class AtmosphereLightingBridge
     }
 
     /// <summary>
-    /// 計算用於 3D 著色器之全套即時 Uniform 數值。
-    /// </summary>
-    /// <param name="profile">大氣配置檔。</param>
-    /// <param name="gameHour">當前地圖時鐘小時 (0..24)。</param>
-    /// <summary>
     /// 計算包含自訂基礎環境光的主著色器 Uniforms（供測試與自訂光照使用）。
     /// </summary>
+    /// <param name="profile">大氣配置檔。</param>
+    /// <param name="baseAmbient">基礎環境光顏色。</param>
     internal AtmosphereShaderUniforms ComputeUniforms(
         AtmosphereProfile profile,
         Vector3 baseAmbient)
@@ -151,6 +148,9 @@ public sealed class AtmosphereLightingBridge
         };
     }
 
+    /// <summary>依地圖時鐘與原生光照計算即時著色器 Uniforms。</summary>
+    /// <param name="profile">大氣配置檔。</param>
+    /// <param name="gameHour">當前地圖時鐘小時 (0..24)。</param>
     /// <param name="lightingContext">場景原生光照上下文（載入 daynight.bmp 與 APT 光源）。</param>
     internal AtmosphereShaderUniforms ComputeUniforms(
         AtmosphereProfile profile,
