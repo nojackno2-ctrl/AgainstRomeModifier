@@ -2,9 +2,8 @@
 //! Replicates C# `AiMapPlanningDialog.cs` and integrates `native/against-rome-ai-planner`.
 
 use against_rome_ai_planner::{
-    AiEditorOperator, AiMapApplyResult, AiMapDesignRole, AiMapEditScope, AiMapFeature,
-    AiMapPlan, AiMaterialOption, HttpTransport, MockHttpTransport,
-    MultiAiMapPlanResult, MultiAiMapPlanner, MultiAiMapRoleRequest, OllamaMapPlanner, Rectangle,
+    AiEditorOperator, AiMapApplyResult, AiMapEditScope, AiMapPlan, AiMaterialOption, HttpTransport,
+    OllamaMapPlanner, Rectangle,
 };
 use crate::terrain::TerrainSession;
 use eframe::egui::{self, Color32, Vec2};
@@ -350,7 +349,7 @@ Features: {}", plan.features.len()));
 #[cfg(test)]
 mod tests {
     use super::*;
-    use against_rome_ai_planner::HttpResponse;
+    use against_rome_ai_planner::{HttpResponse, MockHttpTransport};
 
     #[test]
     fn test_ai_planner_ui_initial_state_and_dirty_guards() {

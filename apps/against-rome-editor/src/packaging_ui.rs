@@ -2,14 +2,14 @@
 //! Replicates C# MapEditor packaging & profiling tools and integrates `native/against-rome-packaging`.
 
 use against_rome_packaging::{
-    diff::{DiffObjectItem, MapDiffEngine, MapDiffOptions, MapDiffReport, MapVersionSnapshot},
+    diff::{DiffObjectItem, MapDiffEngine, MapDiffReport, MapVersionSnapshot},
     exporter::{ModBundleExporter, ModExportOptions, ModExportResult},
     preflight::{MapExportPreflightChecker, MapPreflightReport},
-    profiler::{MapBudgetLimits, MapBudgetProfiler, MapBudgetReport, MapBudgetSnapshot, MapHealthGrade, MapSceneObject, NativeLightInstance},
+    profiler::{MapBudgetLimits, MapBudgetProfiler, MapBudgetReport, MapBudgetSnapshot, MapHealthGrade},
 };
 use against_rome_scenario::model::Spawn;
 use eframe::egui::{self, Color32, Vec2};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PackagingTab {
