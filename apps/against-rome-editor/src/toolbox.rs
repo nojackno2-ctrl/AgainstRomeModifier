@@ -11,6 +11,15 @@ fn err(e: impl std::fmt::Display) -> String {
     e.to_string()
 }
 const PATCHES: [modifier::Patch; 3] = [FOCUS, ROMAN_ENDLESS, UNIT_RECRUIT_20];
+pub type GameFolderPicker = Box<dyn Fn() -> Option<PathBuf> + Send + Sync>;
+fn native_game_folder_dialog(current_path: &str) -> Option<PathBuf> {
+    let mut dialog = rfd::FileDialog::new().set_title("Select Against Rome Game Folder");
+    let current = Path::new(current_path.trim());
+    if current.is_dir() {
+        dialog = dialog.set_directory(current);
+    }
+    dialog.pick_folder()
+}
 fn explicit(s: &str) -> Result<PathBuf> {
     let p = PathBuf::from(s.trim());
     if s.trim().is_empty()
@@ -154,7 +163,6 @@ fn clone_verify_report(r: &VerifyReport) -> VerifyReport {
         warnings: r.warnings.clone(),
     }
 }
-
 #[derive(Default)]
 pub struct ToolboxUi {
     pub open: bool,
@@ -174,6 +182,8 @@ pub struct ToolboxUi {
     save_review: Option<SaveReview>,
     pub last_verify_report: Option<(String, VerifyReport)>,
     pub status: String,
+    /// Injectable for UI tests; the desktop default opens the native folder picker.
+    pub game_folder_picker: Option<GameFolderPicker>,
 }
 impl ToolboxUi {
     pub fn status(&self) -> &str {
@@ -238,6 +248,24 @@ impl ToolboxUi {
     }
     fn service(&self) -> Result<SaveService> {
         SaveService::new(explicit(&self.game)?, explicit(&self.backups)?).map_err(err)
+    }
+    /// Opens the native folder picker (C# `btnBrowseGamePath.Click`). Cancelling or an
+    /// invalid selection preserves the current path and catalog; a valid selection
+    /// updates the Game root and rescans saves and backups.
+    pub fn browse_game_folder(&mut self) {
+        let selected = if let Some(picker) = &self.game_folder_picker {
+            picker()
+        } else {
+            native_game_folder_dialog(&self.game)
+        };
+        let Some(path) = selected else { return };
+        if !path.is_dir() {
+            self.status = format!("Selected game folder does not exist: {}", path.display());
+            return;
+        }
+        self.game = path.to_string_lossy().into_owned();
+        let r = self.scan();
+        self.report(r);
     }
     fn scan(&mut self) -> Result<()> {
         self.catalog = None;
@@ -520,7 +548,15 @@ impl ToolboxUi {
                         ui.heading("Save Manager (存檔管理)");
                         ui.label("明確指定 game root（其下為 SAVE）與備份 root；還原與刪除只允許工作副本。");
                         ui.label("Game root");
-                        let a = ui.text_edit_singleline(&mut self.game).changed();
+                        let a = ui
+                            .horizontal(|ui| {
+                                let changed = ui.text_edit_singleline(&mut self.game).changed();
+                                if ui.button("Browse... (瀏覽)").clicked() {
+                                    self.browse_game_folder();
+                                }
+                                changed
+                            })
+                            .inner;
                         ui.label("Backups root");
                         let b = ui.text_edit_singleline(&mut self.backups).changed();
                         if a || b {
@@ -1208,5 +1244,78 @@ mod tests {
             "verification must not mutate backup bytes"
         );
         assert!(u.save_review.is_none(), "verification must not create a review/apply mutation flow");
+    }
+
+    fn make_game(root: &Path, folder: &str) {
+        let f = root.join("SAVE").join(folder);
+        fs::create_dir_all(&f).unwrap();
+        fs::write(f.join("save.ini"), b"[titel]\nPicked\n[orglevelname]\nENDL_000\n").unwrap();
+    }
+
+    #[test]
+    fn game_folder_picker_success_updates_path_and_rescans() {
+        let t = Temp::new();
+        let old_game = t.0.join("old");
+        let new_game = t.0.join("new");
+        make_game(&old_game, "SAVE_OLD");
+        make_game(&new_game, "SAVE_NEW");
+        let mut u = ToolboxUi {
+            game: old_game.display().to_string(),
+            backups: t.0.join("backups").display().to_string(),
+            ..Default::default()
+        };
+        u.scan().unwrap();
+        u.selected_save = Some("SAVE_OLD".into());
+        let picked = new_game.clone();
+        u.game_folder_picker = Some(Box::new(move || Some(picked.clone())));
+        u.browse_game_folder();
+        assert_eq!(u.game, new_game.to_string_lossy());
+        assert_eq!(u.status, "完成");
+        let c = u.catalog.as_ref().expect("catalog refreshed");
+        assert_eq!(c.saves.len(), 1);
+        assert_eq!(c.saves[0].folder, "SAVE_NEW");
+        assert!(u.selected_save.is_none());
+    }
+
+    #[test]
+    fn game_folder_picker_cancel_and_invalid_selection_preserve_state() {
+        let t = Temp::new();
+        let game = t.0.join("game");
+        make_game(&game, "SAVE_001");
+        let mut u = ToolboxUi {
+            game: game.display().to_string(),
+            backups: t.0.join("backups").display().to_string(),
+            ..Default::default()
+        };
+        u.scan().unwrap();
+        u.selected_save = Some("SAVE_001".into());
+        u.game_folder_picker = Some(Box::new(|| None));
+        u.browse_game_folder();
+        assert_eq!(u.game, game.to_string_lossy());
+        assert!(u.catalog.is_some());
+        assert_eq!(u.selected_save.as_deref(), Some("SAVE_001"));
+        assert!(u.status.is_empty());
+
+        let missing = t.0.join("missing-game-folder");
+        u.game_folder_picker = Some(Box::new(move || Some(missing.clone())));
+        u.browse_game_folder();
+        assert_eq!(u.game, game.to_string_lossy());
+        assert!(u.catalog.is_some());
+        assert_eq!(u.selected_save.as_deref(), Some("SAVE_001"));
+        assert!(u.status.contains("does not exist"));
+    }
+
+    #[test]
+    fn game_folder_picker_scan_failure_is_reported_in_status() {
+        let t = Temp::new();
+        let game = t.0.join("game");
+        fs::create_dir_all(&game).unwrap();
+        let mut u = ToolboxUi::default(); // empty backups root -> scan rejects it
+        let picked = game.clone();
+        u.game_folder_picker = Some(Box::new(move || Some(picked.clone())));
+        u.browse_game_folder();
+        assert_eq!(u.game, game.to_string_lossy());
+        assert!(u.catalog.is_none());
+        assert!(!u.status.is_empty() && u.status != "完成");
     }
 }
