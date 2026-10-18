@@ -1,6 +1,6 @@
 //! Native desktop tools. Reviews bind exact paths and source bytes to explicit confirmation.
 use against_rome_modifier::{self as modifier, State, FOCUS, ROMAN_ENDLESS, UNIT_RECRUIT_20};
-use against_rome_saves::{Catalog, SaveService};
+use against_rome_saves::{Catalog, SaveService, VerifyReport};
 use eframe::egui;
 use std::{
     fs,
@@ -117,6 +117,44 @@ pub enum ToolboxTab {
     SaveManager,
 }
 
+fn format_verify_report(target: &str, report: &VerifyReport) -> String {
+    let mut s = format!(
+        "驗證報告 [{}]: 狀態={}, 項目數(entries)={}, 總大小(total_bytes)={} bytes, 標題(title)='{}', 關卡(level)='{}', 錯誤(errors)={}, 警告(warnings)={}",
+        target,
+        if report.is_ok() { "通過 (OK)" } else { "異常 (FAIL)" },
+        report.entries,
+        report.total_bytes,
+        report.title,
+        report.level,
+        report.errors.len(),
+        report.warnings.len(),
+    );
+    if !report.errors.is_empty() {
+        s.push_str("\n錯誤列表 (errors):");
+        for (i, e) in report.errors.iter().enumerate() {
+            s.push_str(&format!("\n  [{}] {}", i + 1, e));
+        }
+    }
+    if !report.warnings.is_empty() {
+        s.push_str("\n警告列表 (warnings):");
+        for (i, w) in report.warnings.iter().enumerate() {
+            s.push_str(&format!("\n  [{}] {}", i + 1, w));
+        }
+    }
+    s
+}
+
+fn clone_verify_report(r: &VerifyReport) -> VerifyReport {
+    VerifyReport {
+        entries: r.entries,
+        total_bytes: r.total_bytes,
+        title: r.title.clone(),
+        level: r.level.clone(),
+        errors: r.errors.clone(),
+        warnings: r.warnings.clone(),
+    }
+}
+
 #[derive(Default)]
 pub struct ToolboxUi {
     pub open: bool,
@@ -134,6 +172,7 @@ pub struct ToolboxUi {
     title: String,
     restore_folder: String,
     save_review: Option<SaveReview>,
+    pub last_verify_report: Option<(String, VerifyReport)>,
     pub status: String,
 }
 impl ToolboxUi {
@@ -205,6 +244,7 @@ impl ToolboxUi {
         self.selected_save = None;
         self.selected_backup = None;
         self.save_review = None;
+        self.last_verify_report = None;
         self.title.clear();
         self.restore_folder.clear();
         writable(&explicit(&self.backups)?)?;
@@ -369,6 +409,50 @@ impl ToolboxUi {
             }
         }
     }
+    pub fn verify_selected_save(&mut self) -> Result<VerifyReport> {
+        let game = explicit(&self.game)?;
+        let _backups = explicit(&self.backups)?;
+        let name = self.selected_save.as_ref().ok_or("請選擇存檔")?.clone();
+        let catalog = self.catalog.as_ref().ok_or("尚未掃描存檔目錄，請先掃描")?;
+        if !catalog.saves.iter().any(|s| s.folder == name) {
+            return Err("存檔已消失，請重新掃描".into());
+        }
+        let save_path = game.join("SAVE").join(&name);
+        if !save_path.is_dir() {
+            return Err("存檔已消失，請重新掃描".into());
+        }
+        let service = self.service()?;
+        let report = service.verify_save(&name).map_err(err)?;
+        let msg = format_verify_report(&format!("存檔 {}", name), &report);
+        self.last_verify_report = Some((format!("存檔 {}", name), clone_verify_report(&report)));
+        self.status = msg;
+        Ok(report)
+    }
+    pub fn verify_selected_backup(&mut self) -> Result<VerifyReport> {
+        let _game = explicit(&self.game)?;
+        let backups = explicit(&self.backups)?;
+        let name = self.selected_backup.as_ref().ok_or("請選擇備份")?.clone();
+        let catalog = self.catalog.as_ref().ok_or("尚未掃描存檔目錄，請先掃描")?;
+        if !catalog.backups.iter().any(|b| b.file_name == name) {
+            return Err("備份已消失，請重新掃描".into());
+        }
+        let backup_path = backups.join(&name);
+        if !backup_path.is_file() {
+            return Err("備份已消失，請重新掃描".into());
+        }
+        let service = self.service()?;
+        let report = service.verify_backup(&name).map_err(err)?;
+        let msg = format_verify_report(&format!("備份 {}", name), &report);
+        self.last_verify_report = Some((format!("備份 {}", name), clone_verify_report(&report)));
+        self.status = msg;
+        Ok(report)
+    }
+    fn report_verify(&mut self, r: Result<VerifyReport>) {
+        if let Err(e) = r {
+            self.last_verify_report = None;
+            self.status = e;
+        }
+    }
     fn report(&mut self, r: Result<()>) {
         self.status = match r {
             Ok(()) => "完成".into(),
@@ -444,6 +528,7 @@ impl ToolboxUi {
                             self.selected_save = None;
                             self.selected_backup = None;
                             self.save_review = None;
+                            self.last_verify_report = None;
                             self.title.clear();
                             self.restore_folder.clear();
                         }
@@ -458,6 +543,7 @@ impl ToolboxUi {
                                     self.selected_save = Some(s.folder.clone());
                                     self.title = s.title.clone();
                                     self.save_review = None;
+                                    self.last_verify_report = None;
                                 }
                             }
                             ui.label("備份（archive / original folder / title / level / time）");
@@ -466,6 +552,7 @@ impl ToolboxUi {
                                     self.selected_backup = Some(b.file_name.clone());
                                     self.restore_folder = b.manifest.orig_folder.clone();
                                     self.save_review = None;
+                                    self.last_verify_report = None;
                                 }
                             }
                         }
@@ -476,6 +563,54 @@ impl ToolboxUi {
                         ui.label("還原目的資料夾名稱（SAVE 之下；會替換整個資料夾）");
                         if ui.text_edit_singleline(&mut self.restore_folder).changed() {
                             self.save_review = None;
+                        }
+                        ui.horizontal_wrapped(|ui| {
+                            if ui.button("Verify selected save (驗證選取存檔)").clicked() {
+                                let r = self.verify_selected_save();
+                                self.report_verify(r);
+                            }
+                            if ui.button("Verify selected backup (驗證選取備份)").clicked() {
+                                let r = self.verify_selected_backup();
+                                self.report_verify(r);
+                            }
+                        });
+                        if let Some((target, rep)) = &self.last_verify_report {
+                            ui.group(|ui| {
+                                ui.heading(format!("驗證報告: {}", target));
+                                ui.horizontal(|ui| {
+                                    if rep.is_ok() {
+                                        ui.colored_label(egui::Color32::GREEN, "狀態: 通過 (OK)");
+                                    } else {
+                                        ui.colored_label(egui::Color32::RED, "狀態: 異常 (FAIL)");
+                                    }
+                                    ui.label(format!("項目數 (entries): {}", rep.entries));
+                                    ui.label(format!("總大小 (total_bytes): {} bytes", rep.total_bytes));
+                                });
+                                ui.label(format!("標題 (title): {}", rep.title));
+                                ui.label(format!("關卡 (level): {}", rep.level));
+                                if !rep.errors.is_empty() {
+                                    ui.colored_label(
+                                        egui::Color32::RED,
+                                        format!("錯誤 (errors, {}):", rep.errors.len()),
+                                    );
+                                    for err in &rep.errors {
+                                        ui.label(format!("  - {}", err));
+                                    }
+                                } else {
+                                    ui.label("錯誤 (errors): 無");
+                                }
+                                if !rep.warnings.is_empty() {
+                                    ui.colored_label(
+                                        egui::Color32::YELLOW,
+                                        format!("警告 (warnings, {}):", rep.warnings.len()),
+                                    );
+                                    for warn in &rep.warnings {
+                                        ui.label(format!("  - {}", warn));
+                                    }
+                                } else {
+                                    ui.label("警告 (warnings): 無");
+                                }
+                            });
                         }
                         ui.horizontal_wrapped(|ui| {
                             for (label, action) in [
@@ -848,5 +983,230 @@ mod tests {
             ..Default::default()
         };
         assert!(u_backups_prog.review_save(SaveAction::RepairAi).is_err());
+    }
+
+    #[test]
+    fn save_and_backup_verification_success() {
+        let t = Temp::new();
+        let game = t.0.join("game");
+        let folder = game.join("SAVE/SAVE_001");
+        fs::create_dir_all(folder.join("CLAK")).unwrap();
+        fs::write(
+            folder.join("save.ini"),
+            b"[titel]\nHeroic Victory\n[orglevelname]\nENDL_002\n",
+        )
+        .unwrap();
+        fs::write(folder.join("CLAK/scr.dat"), b"script-content").unwrap();
+        fs::write(folder.join("data.bin"), b"data-content").unwrap();
+
+        let mut u = ToolboxUi {
+            game: game.display().to_string(),
+            backups: t.0.join("backups").display().to_string(),
+            ..Default::default()
+        };
+        u.scan().unwrap();
+        u.selected_save = Some("SAVE_001".into());
+
+        // 1. Verify live save
+        let rep = u.verify_selected_save().unwrap();
+        assert!(rep.is_ok());
+        assert_eq!(rep.entries, 3);
+        assert!(rep.total_bytes > 0);
+        assert_eq!(rep.title, "Heroic Victory");
+        assert_eq!(rep.level, "ENDL_002");
+        assert!(rep.errors.is_empty());
+        assert!(u.status.contains("Heroic Victory"));
+        assert!(u.status.contains("ENDL_002"));
+        assert!(u.status.contains("通過 (OK)"));
+        assert!(u.status.contains("entries"));
+        assert!(u.status.contains("total_bytes"));
+        assert!(u.last_verify_report.is_some());
+        assert!(u.save_review.is_none());
+
+        // Create backup
+        u.title = "Custom Backup Title".into();
+        u.review_save(SaveAction::Backup).unwrap();
+        u.apply_save().unwrap();
+        let archive = u.catalog.as_ref().unwrap().backups[0].file_name.clone();
+
+        // 2. Verify backup
+        u.selected_backup = Some(archive.clone());
+        let rep_b = u.verify_selected_backup().unwrap();
+        assert!(rep_b.is_ok());
+        assert!(rep_b.entries >= 3);
+        assert!(rep_b.total_bytes > 0);
+        assert_eq!(rep_b.title, "Heroic Victory");
+        assert_eq!(rep_b.level, "ENDL_002");
+        assert!(rep_b.errors.is_empty());
+        assert!(u.status.contains("Heroic Victory"));
+        assert!(u.status.contains("ENDL_002"));
+        assert!(u.status.contains("通過 (OK)"));
+        assert!(u.last_verify_report.is_some());
+        assert!(u.save_review.is_none());
+    }
+
+    #[test]
+    fn save_and_backup_corrupt_error_reporting() {
+        let t = Temp::new();
+        let game = t.0.join("game");
+        let folder = game.join("SAVE/SAVE_CORRUPT");
+        fs::create_dir_all(&folder).unwrap();
+        // Corrupt PFIL header that fails decompression
+        fs::write(folder.join("save.ini"), b"PFIL\x00\x00\x00\x00corrupt_payload").unwrap();
+
+        let mut u = ToolboxUi {
+            game: game.display().to_string(),
+            backups: t.0.join("backups").display().to_string(),
+            ..Default::default()
+        };
+        u.scan().unwrap();
+        u.selected_save = Some("SAVE_CORRUPT".into());
+
+        // 1. Live save with corrupt save.ini reports error
+        let rep = u.verify_selected_save().unwrap();
+        assert!(!rep.is_ok());
+        assert!(!rep.errors.is_empty());
+        assert!(rep.errors.iter().any(|e| e.contains("save.ini unreadable")));
+        assert!(u.status.contains("異常 (FAIL)"));
+        assert!(u.status.contains("save.ini unreadable"));
+        assert!(u.save_review.is_none());
+
+        // 2. Corrupt backup file (invalid ZIP) reports error
+        let corrupt_zip_path = Path::new(&u.backups).join("corrupt_backup.zip");
+        fs::write(&corrupt_zip_path, b"NOT_A_VALID_ZIP_HEADER").unwrap();
+        u.scan().unwrap();
+        u.selected_backup = Some("corrupt_backup.zip".into());
+
+        let rep_b = u.verify_selected_backup().unwrap();
+        assert!(!rep_b.is_ok());
+        assert!(!rep_b.errors.is_empty());
+        assert!(rep_b.errors.iter().any(|e| e.contains("not a readable ZIP")));
+        assert!(u.status.contains("異常 (FAIL)"));
+        assert!(u.status.contains("not a readable ZIP"));
+        assert!(u.save_review.is_none());
+    }
+
+    #[test]
+    fn save_and_backup_verify_rejects_missing_and_stale_selection() {
+        let t = Temp::new();
+        let game = t.0.join("game");
+        let folder = game.join("SAVE/SAVE_001");
+        fs::create_dir_all(&folder).unwrap();
+        fs::write(
+            folder.join("save.ini"),
+            b"[titel]\nTitle\n[orglevelname]\nENDL_001\n",
+        )
+        .unwrap();
+
+        let mut u = ToolboxUi {
+            game: game.display().to_string(),
+            backups: t.0.join("backups").display().to_string(),
+            ..Default::default()
+        };
+        u.scan().unwrap();
+        u.selected_save = Some("SAVE_001".into());
+        u.review_save(SaveAction::Backup).unwrap();
+        u.apply_save().unwrap();
+        let archive = u.catalog.as_ref().unwrap().backups[0].file_name.clone();
+
+        // 1. Missing selection
+        u.selected_save = None;
+        assert_eq!(u.verify_selected_save().unwrap_err(), "請選擇存檔");
+        u.selected_backup = None;
+        assert_eq!(u.verify_selected_backup().unwrap_err(), "請選擇備份");
+
+        // 2. Stale selection (not present in catalog)
+        u.selected_save = Some("SAVE_NONEXISTENT".into());
+        assert_eq!(u.verify_selected_save().unwrap_err(), "存檔已消失，請重新掃描");
+        u.selected_backup = Some("NONEXISTENT.zip".into());
+        assert_eq!(u.verify_selected_backup().unwrap_err(), "備份已消失，請重新掃描");
+
+        // 3. Stale selection (in catalog, but deleted from disk)
+        u.selected_save = Some("SAVE_001".into());
+        fs::remove_dir_all(&folder).unwrap();
+        assert_eq!(u.verify_selected_save().unwrap_err(), "存檔已消失，請重新掃描");
+
+        u.selected_backup = Some(archive.clone());
+        fs::remove_file(Path::new(&u.backups).join(&archive)).unwrap();
+        assert_eq!(u.verify_selected_backup().unwrap_err(), "備份已消失，請重新掃描");
+
+        // 4. Missing catalog
+        u.catalog = None;
+        u.selected_save = Some("SAVE_001".into());
+        u.selected_backup = Some(archive);
+        assert_eq!(
+            u.verify_selected_save().unwrap_err(),
+            "尚未掃描存檔目錄，請先掃描"
+        );
+        assert_eq!(
+            u.verify_selected_backup().unwrap_err(),
+            "尚未掃描存檔目錄，請先掃描"
+        );
+    }
+
+    #[test]
+    fn save_and_backup_verification_does_not_mutate_or_create_dirs() {
+        let t = Temp::new();
+        let game = t.0.join("game");
+        let folder = game.join("SAVE/SAVE_001");
+        fs::create_dir_all(folder.join("CLAK")).unwrap();
+        fs::write(
+            folder.join("save.ini"),
+            b"[titel]\nRead Only\n[orglevelname]\nENDL_001\n",
+        )
+        .unwrap();
+        fs::write(folder.join("CLAK/scr.dat"), b"untouched script").unwrap();
+        fs::write(folder.join("data.bin"), b"untouched data").unwrap();
+
+        let initial_ini = fs::read(folder.join("save.ini")).unwrap();
+        let initial_scr = fs::read(folder.join("CLAK/scr.dat")).unwrap();
+        let initial_dat = fs::read(folder.join("data.bin")).unwrap();
+
+        let mut u = ToolboxUi {
+            game: game.display().to_string(),
+            backups: t.0.join("backups").display().to_string(),
+            ..Default::default()
+        };
+        u.scan().unwrap();
+        u.selected_save = Some("SAVE_001".into());
+        u.review_save(SaveAction::Backup).unwrap();
+        u.apply_save().unwrap();
+        let archive = u.catalog.as_ref().unwrap().backups[0].file_name.clone();
+        let initial_zip = fs::read(Path::new(&u.backups).join(&archive)).unwrap();
+
+        // Target directory that should never be created
+        let never_create_dir = t.0.join("never_created_backups_dir");
+        assert!(!never_create_dir.exists());
+
+        // Verify live save pointing to a non-existent backups directory
+        u.backups = never_create_dir.display().to_string();
+        u.selected_save = Some("SAVE_001".into());
+        let rep = u.verify_selected_save().unwrap();
+        assert!(rep.is_ok());
+
+        // Prove no directory creation and no file byte mutation
+        assert!(!never_create_dir.exists(), "verification must not create directories");
+        assert_eq!(fs::read(folder.join("save.ini")).unwrap(), initial_ini);
+        assert_eq!(fs::read(folder.join("CLAK/scr.dat")).unwrap(), initial_scr);
+        assert_eq!(fs::read(folder.join("data.bin")).unwrap(), initial_dat);
+        assert!(u.save_review.is_none(), "verification must not create a review/apply mutation flow");
+
+        // Verify backup pointing to a non-existent game directory
+        let never_create_game = t.0.join("never_created_game_dir");
+        assert!(!never_create_game.exists());
+        u.game = never_create_game.display().to_string();
+        u.backups = t.0.join("backups").display().to_string();
+        u.selected_backup = Some(archive.clone());
+        let rep_b = u.verify_selected_backup().unwrap();
+        assert!(rep_b.is_ok());
+
+        // Prove no directory creation and no backup byte mutation
+        assert!(!never_create_game.exists(), "verification must not create directories");
+        assert_eq!(
+            fs::read(Path::new(&u.backups).join(&archive)).unwrap(),
+            initial_zip,
+            "verification must not mutate backup bytes"
+        );
+        assert!(u.save_review.is_none(), "verification must not create a review/apply mutation flow");
     }
 }
