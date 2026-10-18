@@ -12,6 +12,3 @@ crate-type = ["rlib", "cdylib"]
 [[bin]]
 name = "ar-light-json"
 path = "src/bin/ar-light-json.rs"
-
-[profile.release]
-panic = "unwind"

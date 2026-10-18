@@ -1,0 +1,30 @@
+[workspace]
+resolver = "2"
+members = [
+    "apps/against-rome-editor",
+    "native/against-rome-ai-planner",
+    "native/against-rome-ambience",
+    "native/against-rome-campaign",
+    "native/against-rome-data",
+    "native/against-rome-editor",
+    "native/against-rome-environment",
+    "native/against-rome-landscape",
+    "native/against-rome-maps",
+    "native/against-rome-modifier",
+    "native/against-rome-navigation",
+    "native/against-rome-packaging",
+    "native/against-rome-placement",
+    "native/against-rome-saves",
+    "native/against-rome-scenario",
+    "native/against-rome-scene",
+    "native/against-rome-textures",
+    "tools/re/particle-assets-rs",
+    "tools/re/particle-definition-probe-rs",
+    "tools/re/particle-numeric-contract-rs",
+    "tools/re/particle-render-contract-rs",
+    "tools/re/saved-light-contract-rs",
+]
+exclude = ["native/against-rome-trace"]
+
+[profile.release]
+panic = "unwind"
