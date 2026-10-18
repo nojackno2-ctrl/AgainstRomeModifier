@@ -368,12 +368,21 @@ fn write_bytes(output: &mut [u8], offset: usize, bytes: &[u8]) -> io::Result<()>
     Ok(())
 }
 
+/// Mirrors the C# patcher: an explicitly requested feature whose byte pattern is unknown is rejected.
+fn require_known(requested: bool, unknown: bool, feature: &str) -> io::Result<()> {
+    if requested && unknown {
+        return Err(error(format!("Against_Rome.exe byte pattern for {feature} is unknown; refusing to patch")));
+    }
+    Ok(())
+}
+
 pub fn apply_profile(bytes: &[u8], profile: &PatchProfile) -> io::Result<Vec<u8>> {
     let mut out = bytes.to_vec();
 
     // 1. Focus
     let focus = profile.get_bool("FocusLoss");
     let state = get_focus_patch_state(&out);
+    require_known(focus, state == ExePatchState::Unknown, "FocusLoss")?;
     if focus && state == ExePatchState::Original {
         write_bytes(&mut out, FOCUS_OFFSET, FOCUS_PATCHED)?;
     } else if !focus && state == ExePatchState::FocusPatched {
@@ -383,6 +392,7 @@ pub fn apply_profile(bytes: &[u8], profile: &PatchProfile) -> io::Result<Vec<u8>
     // 2. Spell Altar
     let no_altar = profile.get_bool("NoSpellAltar");
     let altar_state = get_spell_altar_patch_state(&out);
+    require_known(no_altar, altar_state == ExeSpellAltarPatchState::Unknown, "NoSpellAltar")?;
     if no_altar && altar_state == ExeSpellAltarPatchState::Original {
         for &(offset, _, patched) in SPELL_ALTAR_SITES {
             write_bytes(&mut out, offset, patched)?;
@@ -396,6 +406,7 @@ pub fn apply_profile(bytes: &[u8], profile: &PatchProfile) -> io::Result<Vec<u8>
     // 3. Roman Endless
     let roman = profile.get_bool("RomanEndless");
     let roman_state = get_roman_endless_patch_state(&out);
+    require_known(roman, roman_state == ExeRomanEndlessPatchState::Unknown, "RomanEndless")?;
     if roman && roman_state == ExeRomanEndlessPatchState::Original {
         write_bytes(&mut out, ROMAN_ENDLESS_OFFSET, ROMAN_ENDLESS_PATCHED)?;
     } else if !roman && roman_state == ExeRomanEndlessPatchState::Patched {
@@ -405,6 +416,7 @@ pub fn apply_profile(bytes: &[u8], profile: &PatchProfile) -> io::Result<Vec<u8>
     // 4. Civi produce 20
     let civi20 = profile.get_bool("CiviProduce20");
     let civi_state = get_civi_produce_20_patch_state(&out);
+    require_known(civi20, civi_state == ExeCiviProduce20PatchState::Unknown, "CiviProduce20")?;
     if civi20 && civi_state == ExeCiviProduce20PatchState::Original {
         write_bytes(&mut out, CIVI_PRODUCE_20_OFFSET, CIVI_PRODUCE_20_PATCHED)?;
     } else if !civi20 && civi_state == ExeCiviProduce20PatchState::Patched {
@@ -414,6 +426,7 @@ pub fn apply_profile(bytes: &[u8], profile: &PatchProfile) -> io::Result<Vec<u8>
     // 5. Unit recruit 20
     let recruit20 = profile.get_bool("UnitRecruit20");
     let recruit_state = get_unit_recruit_20_patch_state(&out);
+    require_known(recruit20, recruit_state == ExeUnitRecruit20PatchState::Unknown, "UnitRecruit20")?;
     if recruit20 && recruit_state == ExeUnitRecruit20PatchState::Original {
         write_bytes(&mut out, UNIT_RECRUIT_20_OFFSET, UNIT_RECRUIT_20_PATCHED)?;
     } else if !recruit20 && recruit_state == ExeUnitRecruit20PatchState::Patched {
@@ -423,6 +436,7 @@ pub fn apply_profile(bytes: &[u8], profile: &PatchProfile) -> io::Result<Vec<u8>
     // 6. Idle select 999
     let idle999 = profile.get_bool("IdleSelect999");
     let idle_state = get_idle_select_999_patch_state(&out);
+    require_known(idle999, idle_state == ExeIdleSelect999PatchState::Unknown, "IdleSelect999")?;
     if idle999 && idle_state == ExeIdleSelect999PatchState::Original {
         write_bytes(&mut out, IDLE_SELECT_999_OFFSET, IDLE_SELECT_999_PATCHED)?;
     } else if !idle999 && idle_state == ExeIdleSelect999PatchState::Patched {
@@ -432,6 +446,7 @@ pub fn apply_profile(bytes: &[u8], profile: &PatchProfile) -> io::Result<Vec<u8>
     // 7. Corpse retention
     let corpse = profile.get_bool("CorpseRetention");
     let corpse_state = get_corpse_retention_patch_state(&out);
+    require_known(corpse, corpse_state == ExeCorpseRetentionPatchState::Unknown, "CorpseRetention")?;
     if corpse && corpse_state == ExeCorpseRetentionPatchState::Original {
         write_bytes(&mut out, CORPSE_RETENTION_OFFSET, CORPSE_RETENTION_PATCHED)?;
     } else if !corpse && corpse_state == ExeCorpseRetentionPatchState::Patched {
@@ -452,6 +467,7 @@ pub fn apply_profile(bytes: &[u8], profile: &PatchProfile) -> io::Result<Vec<u8>
     // 9. Native widescreen
     let ws = profile.get_bool("NativeWidescreen1920x1080");
     let ws_state = get_native_widescreen_patch_state(&out);
+    require_known(ws, ws_state == ExeNativeWidescreenPatchState::Unknown, "NativeWidescreen1920x1080")?;
     if ws && ws_state != ExeNativeWidescreenPatchState::Patched && ws_state != ExeNativeWidescreenPatchState::Unknown {
         write_bytes(&mut out, WS_ID_OFFSET, WS_ID_PATCHED)?;
         write_bytes(&mut out, WS_CREATE_OFFSET, WS_CREATE_PATCHED)?;
@@ -471,6 +487,7 @@ pub fn apply_profile(bytes: &[u8], profile: &PatchProfile) -> io::Result<Vec<u8>
     // 10. Camera zoom out
     let zoom = profile.get_bool("CameraZoomOut1");
     let zoom_state = get_camera_zoom_out_patch_state(&out);
+    require_known(zoom, zoom_state == ExeCameraZoomOutPatchState::Unknown, "CameraZoomOut1")?;
     if zoom && zoom_state != ExeCameraZoomOutPatchState::Patched && zoom_state != ExeCameraZoomOutPatchState::Unknown {
         write_bytes(&mut out, ZOOM_INIT_OFFSET, ZOOM_INIT_PATCHED)?;
         write_bytes(&mut out, ZOOM_LOAD_OFFSET, ZOOM_LOAD_PATCHED)?;
@@ -486,6 +503,7 @@ pub fn apply_profile(bytes: &[u8], profile: &PatchProfile) -> io::Result<Vec<u8>
     // 11. Village build range setter
     let village = profile.get_bool("VillageBuildRange");
     let village_state = get_village_setter_patch_state(&out);
+    require_known(village, village_state == ExeVillageSetterPatchState::Unknown, "VillageBuildRange")?;
     if village && village_state != ExeVillageSetterPatchState::EntireMap && village_state != ExeVillageSetterPatchState::Unknown {
         write_bytes(&mut out, VILLAGE_HOOK_OFFSET, VILLAGE_HOOK_PATCHED)?;
         write_bytes(&mut out, VILLAGE_CAVE_OFFSET, VILLAGE_CAVE_PATCHED)?;
@@ -507,4 +525,97 @@ pub fn apply_profile(bytes: &[u8], profile: &PatchProfile) -> io::Result<Vec<u8>
     }
 
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::features::FeatureValue;
+
+    /// Synthetic exe where every known site holds its Original bytes (game speed 1x).
+    fn synthetic_original() -> Vec<u8> {
+        let mut b = vec![0u8; 0x210000];
+        let sites: Vec<(usize, &[u8])> = vec![
+            (FOCUS_OFFSET, FOCUS_ORIGINAL),
+            (ROMAN_ENDLESS_OFFSET, ROMAN_ENDLESS_ORIGINAL),
+            (CIVI_PRODUCE_20_OFFSET, CIVI_PRODUCE_20_ORIGINAL),
+            (UNIT_RECRUIT_20_OFFSET, UNIT_RECRUIT_20_ORIGINAL),
+            (IDLE_SELECT_999_OFFSET, IDLE_SELECT_999_ORIGINAL),
+            (CORPSE_RETENTION_OFFSET, CORPSE_RETENTION_ORIGINAL),
+        ];
+        for (o, s) in sites { b[o..o + s.len()].copy_from_slice(s); }
+        for &(o, orig, _) in SPELL_ALTAR_SITES { b[o..o + orig.len()].copy_from_slice(orig); }
+        b[GAME_SPEED_QPC_OFFSET..GAME_SPEED_QPC_OFFSET + 8].copy_from_slice(&GAME_SPEED_QPC_BASE.to_le_bytes());
+        b[GAME_SPEED_TGT_OFFSET..GAME_SPEED_TGT_OFFSET + 8].copy_from_slice(&GAME_SPEED_TGT_BASE.to_le_bytes());
+        b
+    }
+
+    fn profile(id: &str) -> PatchProfile {
+        let mut p = PatchProfile::new();
+        p.set(id, FeatureValue::Bool(true));
+        p
+    }
+
+    #[test]
+    fn requested_unknown_feature_errors_and_leaves_input_unchanged() {
+        let mut bytes = synthetic_original();
+        bytes[CORPSE_RETENTION_OFFSET] ^= 0xFF; // corpse retention -> Unknown
+        assert_eq!(get_corpse_retention_patch_state(&bytes), ExeCorpseRetentionPatchState::Unknown);
+        let before = bytes.clone();
+
+        let mut p = profile("CorpseRetention");
+        p.set("FocusLoss", FeatureValue::Bool(true)); // a valid request must not yield a partial result
+        let err = apply_profile(&bytes, &p).expect_err("unknown requested feature must fail");
+        assert!(err.to_string().contains("CorpseRetention"), "{err}");
+        assert_eq!(bytes, before, "input buffer must not change");
+    }
+
+    #[test]
+    fn unknown_feature_not_requested_is_ignored() {
+        let mut bytes = synthetic_original();
+        bytes[CORPSE_RETENTION_OFFSET] ^= 0xFF;
+        let out = apply_profile(&bytes, &profile("FocusLoss")).expect("unrequested unknown is fine");
+        assert_eq!(&out[FOCUS_OFFSET..FOCUS_OFFSET + 6], FOCUS_PATCHED);
+    }
+
+    #[test]
+    fn known_original_feature_applies() {
+        let bytes = synthetic_original();
+        let out = apply_profile(&bytes, &profile("CorpseRetention")).expect("original applies");
+        assert_eq!(
+            &out[CORPSE_RETENTION_OFFSET..CORPSE_RETENTION_OFFSET + 5],
+            CORPSE_RETENTION_PATCHED
+        );
+    }
+
+    #[test]
+    fn every_requested_unknown_exe_feature_fails_closed() {
+        let cases = [
+            ("FocusLoss", FOCUS_OFFSET),
+            ("NoSpellAltar", SPELL_ALTAR_SITES[0].0),
+            ("RomanEndless", ROMAN_ENDLESS_OFFSET),
+            ("CiviProduce20", CIVI_PRODUCE_20_OFFSET),
+            ("UnitRecruit20", UNIT_RECRUIT_20_OFFSET),
+            ("IdleSelect999", IDLE_SELECT_999_OFFSET),
+            ("CorpseRetention", CORPSE_RETENTION_OFFSET),
+            ("NativeWidescreen1920x1080", WS_ID_OFFSET),
+            ("CameraZoomOut1", ZOOM_INIT_OFFSET),
+            ("VillageBuildRange", VILLAGE_HOOK_OFFSET),
+        ];
+
+        for (id, offset) in cases {
+            let mut bytes = synthetic_original();
+            bytes[offset] ^= 0xFF;
+            let before = bytes.clone();
+            let mut requested = PatchProfile::new();
+            requested.set(id, FeatureValue::Bool(true));
+
+            let err = match apply_profile(&bytes, &requested) {
+                Err(err) => err,
+                Ok(_) => panic!("{id} must reject an unknown byte pattern"),
+            };
+            assert!(err.to_string().contains(id), "{id}: {err}");
+            assert_eq!(bytes, before, "{id} failure must preserve input bytes");
+        }
+    }
 }
