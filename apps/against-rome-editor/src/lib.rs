@@ -17,10 +17,12 @@ pub mod campaign_ui;
 pub mod ai_planner_ui;
 pub mod event_graph;
 pub mod macro_cmd;
+pub mod save_manager_ui;
 
 pub use app::EditorApp;
 pub use bmp::BmpImage;
 pub use console::ConsoleUi;
 pub use event_graph::EventGraphUi;
+pub use save_manager_ui::{Language as SaveManagerLanguage, SaveManagerApp, SaveManagerModel};
 pub use storage::{load_map, safe_save_map, SaveReport};
 pub use terrain::{CollisionBrushOp, HeightBrushOp, TerrainSession};
