@@ -39,6 +39,10 @@ pub enum ExeCameraZoomOutPatchState { Unknown, Original, LegacyZoomHalf, Patched
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExeVillageSetterPatchState { Unknown, Original, Legacy2x, Legacy2Point5x, Legacy3x, Legacy5x, EntireMap }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExeVillageRangePatchState { Unknown, Original, LegacyLogicOnly, Expanded }
+
+
 // Constants from ExePatchModel
 pub const FOCUS_OFFSET: usize = 0x161a88;
 pub const FOCUS_ORIGINAL: &[u8] = &[0x89, 0x15, 0xC4, 0x7D, 0x9E, 0x02];
@@ -212,6 +216,51 @@ pub const VILLAGE_CAVE_PATCHED: &[u8] = &[
     0xF5, 0xFF, 0xE9, 0x1B, 0x3F, 0xFD, 0xFF,
 ];
 
+// Exact 39-byte legacy caves from ExePatchModel, including the 2x zero padding.
+pub const VILLAGE_CAVE_LEGACY_2X: &[u8] = &[
+    0x85, 0xF6, 0x0F, 0x8C, 0xD4, 0x3E, 0xFD, 0xFF,
+    0x85, 0xFF, 0x0F, 0x8C, 0xCC, 0x3E, 0xFD, 0xFF,
+    0xD1, 0xE6, 0xD1, 0xE7, 0x57, 0x56, 0x50, 0xE8,
+    0x55, 0xE3, 0xF5, 0xFF, 0xE9, 0x21, 0x3F, 0xFD,
+    0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+];
+pub const VILLAGE_CAVE_LEGACY_2_POINT_5X: &[u8] = &[
+    0x85, 0xF6, 0x0F, 0x8C, 0xD4, 0x3E, 0xFD, 0xFF,
+    0x85, 0xFF, 0x0F, 0x8C, 0xCC, 0x3E, 0xFD, 0xFF,
+    0x8D, 0x34, 0xB6, 0xD1, 0xEE, 0x8D, 0x3C, 0xBF,
+    0xD1, 0xEF, 0x57, 0x56, 0x50, 0xE8, 0x4F, 0xE3,
+    0xF5, 0xFF, 0xE9, 0x1B, 0x3F, 0xFD, 0xFF,
+];
+pub const VILLAGE_CAVE_LEGACY_3X: &[u8] = &[
+    0x85, 0xF6, 0x0F, 0x8C, 0xD4, 0x3E, 0xFD, 0xFF,
+    0x85, 0xFF, 0x0F, 0x8C, 0xCC, 0x3E, 0xFD, 0xFF,
+    0x8D, 0x34, 0x76, 0x90, 0x90, 0x8D, 0x3C, 0x7F,
+    0x90, 0x90, 0x57, 0x56, 0x50, 0xE8, 0x4F, 0xE3,
+    0xF5, 0xFF, 0xE9, 0x1B, 0x3F, 0xFD, 0xFF,
+];
+pub const VILLAGE_CAVE_LEGACY_5X: &[u8] = &[
+    0x85, 0xF6, 0x0F, 0x8C, 0xD4, 0x3E, 0xFD, 0xFF,
+    0x85, 0xFF, 0x0F, 0x8C, 0xCC, 0x3E, 0xFD, 0xFF,
+    0x8D, 0x34, 0xB6, 0x90, 0x90, 0x8D, 0x3C, 0xBF,
+    0x90, 0x90, 0x57, 0x56, 0x50, 0xE8, 0x4F, 0xE3,
+    0xF5, 0xFF, 0xE9, 0x1B, 0x3F, 0xFD, 0xFF,
+];
+
+// Legacy village build range patches (ExePatchModel.VillageRange* / VillageFrame*)
+pub const VILLAGE_RANGE_X_OFFSET: usize = 0x1366c4;
+pub const VILLAGE_RANGE_Z_OFFSET: usize = 0x1366cd;
+pub const VILLAGE_FRAME_X_OFFSET: usize = 0x0d722c;
+pub const VILLAGE_FRAME_Z_OFFSET: usize = 0x0d723b;
+pub const VILLAGE_RANGE_PATCH_REQUIRED_LENGTH: usize = 0x1366d0;
+pub const VILLAGE_RANGE_X_ORIGINAL: &[u8] = &[0xC1, 0xE2, 0x06];
+pub const VILLAGE_RANGE_Z_ORIGINAL: &[u8] = &[0xC1, 0xE1, 0x06];
+pub const VILLAGE_RANGE_X_PATCHED: &[u8] = &[0xC1, 0xE2, 0x07];
+pub const VILLAGE_RANGE_Z_PATCHED: &[u8] = &[0xC1, 0xE1, 0x07];
+pub const VILLAGE_FRAME_X_ORIGINAL: &[u8] = &[0xC1, 0xE6, 0x06];
+pub const VILLAGE_FRAME_Z_ORIGINAL: &[u8] = &[0xC1, 0xE7, 0x06];
+pub const VILLAGE_FRAME_X_PATCHED: &[u8] = &[0xC1, 0xE6, 0x07];
+pub const VILLAGE_FRAME_Z_PATCHED: &[u8] = &[0xC1, 0xE7, 0x07];
+
 // Game speed constants
 pub const GAME_SPEED_QPC_OFFSET: usize = 0x204214;
 pub const GAME_SPEED_TGT_OFFSET: usize = 0x20424c;
@@ -342,11 +391,52 @@ pub fn get_village_setter_patch_state(bytes: &[u8]) -> ExeVillageSetterPatchStat
         ExeVillageSetterPatchState::Original
     } else if hook == Some(VILLAGE_HOOK_PATCHED) && cave == Some(VILLAGE_CAVE_PATCHED) {
         ExeVillageSetterPatchState::EntireMap
-    } else if hook == Some(VILLAGE_HOOK_PATCHED) {
+    } else if hook == Some(VILLAGE_HOOK_PATCHED) && cave == Some(VILLAGE_CAVE_LEGACY_2X) {
         ExeVillageSetterPatchState::Legacy2x
+    } else if hook == Some(VILLAGE_HOOK_PATCHED) && cave == Some(VILLAGE_CAVE_LEGACY_2_POINT_5X) {
+        ExeVillageSetterPatchState::Legacy2Point5x
+    } else if hook == Some(VILLAGE_HOOK_PATCHED) && cave == Some(VILLAGE_CAVE_LEGACY_3X) {
+        ExeVillageSetterPatchState::Legacy3x
+    } else if hook == Some(VILLAGE_HOOK_PATCHED) && cave == Some(VILLAGE_CAVE_LEGACY_5X) {
+        ExeVillageSetterPatchState::Legacy5x
     } else {
         ExeVillageSetterPatchState::Unknown
     }
+}
+
+/// Mirrors ExePatchModel.GetVillageBuildRangePatchState (legacy four-site range patch).
+pub fn get_village_build_range_patch_state(bytes: &[u8]) -> ExeVillageRangePatchState {
+    if bytes.len() < VILLAGE_RANGE_PATCH_REQUIRED_LENGTH {
+        return ExeVillageRangePatchState::Unknown;
+    }
+    let x = slice(bytes, VILLAGE_RANGE_X_OFFSET, 3);
+    let z = slice(bytes, VILLAGE_RANGE_Z_OFFSET, 3);
+    let fx = slice(bytes, VILLAGE_FRAME_X_OFFSET, 3);
+    let fz = slice(bytes, VILLAGE_FRAME_Z_OFFSET, 3);
+    if x.is_none() || z.is_none() || fx.is_none() || fz.is_none() {
+        return ExeVillageRangePatchState::Unknown;
+    }
+    let range_orig = x == Some(VILLAGE_RANGE_X_ORIGINAL) && z == Some(VILLAGE_RANGE_Z_ORIGINAL);
+    let range_patched = x == Some(VILLAGE_RANGE_X_PATCHED) && z == Some(VILLAGE_RANGE_Z_PATCHED);
+    let frame_orig = fx == Some(VILLAGE_FRAME_X_ORIGINAL) && fz == Some(VILLAGE_FRAME_Z_ORIGINAL);
+    let frame_patched = fx == Some(VILLAGE_FRAME_X_PATCHED) && fz == Some(VILLAGE_FRAME_Z_PATCHED);
+    if range_orig && frame_orig { ExeVillageRangePatchState::Original }
+    else if range_patched && frame_orig { ExeVillageRangePatchState::LegacyLogicOnly }
+    else if range_patched && frame_patched { ExeVillageRangePatchState::Expanded }
+    else { ExeVillageRangePatchState::Unknown }
+}
+
+/// Mirrors ExePatchModel.PlanVillageRangeRestore: (offset, original bytes) writes; empty unless a legacy patch is present.
+pub fn plan_village_range_restore(state: ExeVillageRangePatchState) -> Vec<(usize, &'static [u8])> {
+    if state != ExeVillageRangePatchState::Expanded && state != ExeVillageRangePatchState::LegacyLogicOnly {
+        return Vec::new();
+    }
+    vec![
+        (VILLAGE_RANGE_X_OFFSET, VILLAGE_RANGE_X_ORIGINAL),
+        (VILLAGE_RANGE_Z_OFFSET, VILLAGE_RANGE_Z_ORIGINAL),
+        (VILLAGE_FRAME_X_OFFSET, VILLAGE_FRAME_X_ORIGINAL),
+        (VILLAGE_FRAME_Z_OFFSET, VILLAGE_FRAME_Z_ORIGINAL),
+    ]
 }
 
 pub fn is_exe_original(bytes: &[u8]) -> bool {
@@ -387,6 +477,30 @@ pub fn apply_profile(bytes: &[u8], profile: &PatchProfile) -> io::Result<Vec<u8>
         write_bytes(&mut out, FOCUS_OFFSET, FOCUS_PATCHED)?;
     } else if !focus && state == ExePatchState::FocusPatched {
         write_bytes(&mut out, FOCUS_OFFSET, FOCUS_ORIGINAL)?;
+    }
+
+    // C# ApplyCompat restores the retired four-site range patch before the setter.
+    // Unknown/mixed legacy sites are left untouched unless VillageBuildRange is requested.
+    let legacy_state = get_village_build_range_patch_state(&out);
+    for (offset, original) in plan_village_range_restore(legacy_state) {
+        write_bytes(&mut out, offset, original)?;
+    }
+    require_known(
+        profile.get_bool("VillageBuildRange"),
+        get_village_build_range_patch_state(&out) != ExeVillageRangePatchState::Original,
+        "VillageBuildRange legacy range",
+    )?;
+
+    // Current village setter follows retired range cleanup, as in C#.
+    let village = profile.get_bool("VillageBuildRange");
+    let village_state = get_village_setter_patch_state(&out);
+    require_known(village, village_state == ExeVillageSetterPatchState::Unknown, "VillageBuildRange")?;
+    if village && village_state != ExeVillageSetterPatchState::EntireMap && village_state != ExeVillageSetterPatchState::Unknown {
+        write_bytes(&mut out, VILLAGE_HOOK_OFFSET, VILLAGE_HOOK_PATCHED)?;
+        write_bytes(&mut out, VILLAGE_CAVE_OFFSET, VILLAGE_CAVE_PATCHED)?;
+    } else if !village && village_state != ExeVillageSetterPatchState::Original && village_state != ExeVillageSetterPatchState::Unknown {
+        write_bytes(&mut out, VILLAGE_HOOK_OFFSET, VILLAGE_HOOK_ORIGINAL)?;
+        write_bytes(&mut out, VILLAGE_CAVE_OFFSET, VILLAGE_CAVE_ORIGINAL)?;
     }
 
     // 2. Spell Altar
@@ -500,18 +614,6 @@ pub fn apply_profile(bytes: &[u8], profile: &PatchProfile) -> io::Result<Vec<u8>
         write_bytes(&mut out, ZOOM_CAVE_OFFSET, ZOOM_CAVE_ORIGINAL)?;
     }
 
-    // 11. Village build range setter
-    let village = profile.get_bool("VillageBuildRange");
-    let village_state = get_village_setter_patch_state(&out);
-    require_known(village, village_state == ExeVillageSetterPatchState::Unknown, "VillageBuildRange")?;
-    if village && village_state != ExeVillageSetterPatchState::EntireMap && village_state != ExeVillageSetterPatchState::Unknown {
-        write_bytes(&mut out, VILLAGE_HOOK_OFFSET, VILLAGE_HOOK_PATCHED)?;
-        write_bytes(&mut out, VILLAGE_CAVE_OFFSET, VILLAGE_CAVE_PATCHED)?;
-    } else if !village && village_state != ExeVillageSetterPatchState::Original && village_state != ExeVillageSetterPatchState::Unknown {
-        write_bytes(&mut out, VILLAGE_HOOK_OFFSET, VILLAGE_HOOK_ORIGINAL)?;
-        write_bytes(&mut out, VILLAGE_CAVE_OFFSET, VILLAGE_CAVE_ORIGINAL)?;
-    }
-
     // 12. Game speed
     let speed = profile.get_int("GameSpeed");
     if (1..=10).contains(&speed) {
@@ -542,6 +644,12 @@ mod tests {
             (UNIT_RECRUIT_20_OFFSET, UNIT_RECRUIT_20_ORIGINAL),
             (IDLE_SELECT_999_OFFSET, IDLE_SELECT_999_ORIGINAL),
             (CORPSE_RETENTION_OFFSET, CORPSE_RETENTION_ORIGINAL),
+            (VILLAGE_RANGE_X_OFFSET, VILLAGE_RANGE_X_ORIGINAL),
+            (VILLAGE_RANGE_Z_OFFSET, VILLAGE_RANGE_Z_ORIGINAL),
+            (VILLAGE_FRAME_X_OFFSET, VILLAGE_FRAME_X_ORIGINAL),
+            (VILLAGE_FRAME_Z_OFFSET, VILLAGE_FRAME_Z_ORIGINAL),
+            (VILLAGE_HOOK_OFFSET, VILLAGE_HOOK_ORIGINAL),
+            (VILLAGE_CAVE_OFFSET, VILLAGE_CAVE_ORIGINAL),
         ];
         for (o, s) in sites { b[o..o + s.len()].copy_from_slice(s); }
         for &(o, orig, _) in SPELL_ALTAR_SITES { b[o..o + orig.len()].copy_from_slice(orig); }
@@ -554,6 +662,309 @@ mod tests {
         let mut p = PatchProfile::new();
         p.set(id, FeatureValue::Bool(true));
         p
+    }
+
+    // Parse the C# authority independently so incorrect Rust cave bytes cannot
+    // make both the classifier and its fixtures agree on the same mistake.
+    fn csharp_village_cave(name: &str) -> Vec<u8> {
+        let source = include_str!("../../../src.Core/Core/Patches/ExePatchModel.cs");
+        let declaration = format!("VillageSetterCave{name}Bytes = {{");
+        let body = source.split_once(&declaration).unwrap().1.split_once("};").unwrap().0;
+        let bytes: Vec<_> = body.lines().flat_map(|line| {
+            line.split("//").next().unwrap().split(',').filter_map(|token| {
+                token.trim().strip_prefix("0x").map(|hex| u8::from_str_radix(hex, 16).unwrap())
+            })
+        }).collect();
+        assert_eq!(bytes.len(), 39);
+        bytes
+    }
+
+    fn assert_exact_legacy_setter(name: &str, cave: &[u8], state: ExeVillageSetterPatchState) {
+        assert_eq!(cave, csharp_village_cave(name));
+        for mask in [0, 3, 15] {
+            let mut bytes = legacy_fixture(mask);
+            write_bytes(&mut bytes, VILLAGE_HOOK_OFFSET, VILLAGE_HOOK_PATCHED).unwrap();
+            write_bytes(&mut bytes, VILLAGE_CAVE_OFFSET, cave).unwrap();
+            assert_eq!(get_village_setter_patch_state(&bytes), state);
+            let mut expected = legacy_fixture(0);
+            write_bytes(&mut expected, VILLAGE_HOOK_OFFSET, VILLAGE_HOOK_PATCHED).unwrap();
+            write_bytes(&mut expected, VILLAGE_CAVE_OFFSET, VILLAGE_CAVE_PATCHED).unwrap();
+            let enabled = apply_profile(&bytes, &profile("VillageBuildRange")).unwrap();
+            assert_eq!(enabled, expected, "{name}: exact migration after cleanup");
+            assert_eq!(get_village_setter_patch_state(&enabled), ExeVillageSetterPatchState::EntireMap);
+            assert_eq!(apply_profile(&bytes, &PatchProfile::new()).unwrap(), legacy_fixture(0),
+                "{name}: exact restoration after cleanup");
+        }
+    }
+
+    #[test]
+    fn village_setter_exact_legacy_2x() {
+        assert_exact_legacy_setter("Legacy2x", VILLAGE_CAVE_LEGACY_2X, ExeVillageSetterPatchState::Legacy2x);
+    }
+
+    #[test]
+    fn village_setter_exact_legacy_2_point_5x() {
+        assert_exact_legacy_setter("Legacy2Point5x", VILLAGE_CAVE_LEGACY_2_POINT_5X, ExeVillageSetterPatchState::Legacy2Point5x);
+    }
+
+    #[test]
+    fn village_setter_exact_legacy_3x() {
+        assert_exact_legacy_setter("Legacy3x", VILLAGE_CAVE_LEGACY_3X, ExeVillageSetterPatchState::Legacy3x);
+    }
+
+    #[test]
+    fn village_setter_exact_legacy_5x() {
+        assert_exact_legacy_setter("Legacy5x", VILLAGE_CAVE_LEGACY_5X, ExeVillageSetterPatchState::Legacy5x);
+    }
+
+    const KNOWN_SETTER_CAVES: [&[u8]; 5] = [
+        VILLAGE_CAVE_LEGACY_2X, VILLAGE_CAVE_LEGACY_2_POINT_5X,
+        VILLAGE_CAVE_LEGACY_3X, VILLAGE_CAVE_LEGACY_5X, VILLAGE_CAVE_PATCHED,
+    ];
+
+    fn assert_unknown_setter_safety(bytes: &[u8]) {
+        assert_eq!(get_village_setter_patch_state(bytes), ExeVillageSetterPatchState::Unknown);
+        let before = bytes.to_vec();
+        let mut enabled = profile("VillageBuildRange");
+        enabled.set("FocusLoss", FeatureValue::Bool(true));
+        let err = apply_profile(bytes, &enabled).unwrap_err();
+        assert!(err.to_string().contains("VillageBuildRange"), "{err}");
+        assert_eq!(bytes, before, "error must preserve input, including retired range sites");
+        let mut expected = before;
+        for (offset, original) in plan_village_range_restore(get_village_build_range_patch_state(bytes)) {
+            write_bytes(&mut expected, offset, original).unwrap();
+        }
+        let mut disabled = PatchProfile::new();
+        disabled.set("VillageBuildRange", FeatureValue::Bool(false));
+        for requested in [&disabled, &PatchProfile::new()] {
+            let out = apply_profile(bytes, requested).unwrap();
+            assert_eq!(out, expected, "only retired range cleanup may change unknown setter input");
+            assert_eq!(&out[VILLAGE_HOOK_OFFSET..VILLAGE_HOOK_OFFSET + VILLAGE_HOOK_ORIGINAL.len()],
+                &bytes[VILLAGE_HOOK_OFFSET..VILLAGE_HOOK_OFFSET + VILLAGE_HOOK_ORIGINAL.len()]);
+            assert_eq!(&out[VILLAGE_CAVE_OFFSET..], &bytes[VILLAGE_CAVE_OFFSET..],
+                "preserve the entire unknown cave, including any trailing data");
+        }
+    }
+
+    #[test]
+    fn village_setter_unknown_and_corrupt_caves_are_safe() {
+        for mask in [0, 3, 15] {
+            let mut bytes = legacy_fixture(mask);
+            write_bytes(&mut bytes, VILLAGE_HOOK_OFFSET, VILLAGE_HOOK_PATCHED).unwrap();
+            // A patched hook with an original/empty or arbitrary cave is unknown.
+            assert_unknown_setter_safety(&bytes);
+            bytes[VILLAGE_CAVE_OFFSET..VILLAGE_CAVE_OFFSET + 39].fill(0xCC);
+            assert_unknown_setter_safety(&bytes);
+            for cave in KNOWN_SETTER_CAVES {
+                // Every cave byte matters: guards, operands, branch targets and padding.
+                for i in 0..39 {
+                    write_bytes(&mut bytes, VILLAGE_CAVE_OFFSET, cave).unwrap();
+                    bytes[VILLAGE_CAVE_OFFSET + i] ^= 0xFF;
+                    assert_unknown_setter_safety(&bytes);
+                }
+                // An exact cave still requires the exact patched hook.
+                write_bytes(&mut bytes, VILLAGE_CAVE_OFFSET, cave).unwrap();
+                write_bytes(&mut bytes, VILLAGE_HOOK_OFFSET, VILLAGE_HOOK_ORIGINAL).unwrap();
+                assert_unknown_setter_safety(&bytes);
+                for i in 0..VILLAGE_HOOK_PATCHED.len() {
+                    write_bytes(&mut bytes, VILLAGE_HOOK_OFFSET, VILLAGE_HOOK_PATCHED).unwrap();
+                    bytes[VILLAGE_HOOK_OFFSET + i] ^= 0xFF;
+                    assert_unknown_setter_safety(&bytes);
+                }
+                write_bytes(&mut bytes, VILLAGE_HOOK_OFFSET, VILLAGE_HOOK_PATCHED).unwrap();
+            }
+        }
+    }
+
+    #[test]
+    fn village_setter_mixed_caves_are_unknown() {
+        let mut cases = 0;
+        for left in KNOWN_SETTER_CAVES {
+            for right in KNOWN_SETTER_CAVES {
+                for split in 1..39 {
+                    let mut cave = left.to_vec();
+                    cave[split..].copy_from_slice(&right[split..]);
+                    if KNOWN_SETTER_CAVES.contains(&cave.as_slice()) { continue; }
+                    for mask in [0, 3, 15] {
+                        let mut bytes = legacy_fixture(mask);
+                        write_bytes(&mut bytes, VILLAGE_HOOK_OFFSET, VILLAGE_HOOK_PATCHED).unwrap();
+                        write_bytes(&mut bytes, VILLAGE_CAVE_OFFSET, &cave).unwrap();
+                        assert_unknown_setter_safety(&bytes);
+                    }
+                    cases += 1;
+                }
+            }
+        }
+        assert!(cases > 0, "exercise actual mixed versions, excluding exact recognized caves");
+    }
+
+    #[test]
+    fn village_setter_truncated_caves_are_unknown() {
+        for cave in KNOWN_SETTER_CAVES {
+            for mask in [0, 3, 15] {
+                let mut bytes = legacy_fixture(mask);
+                write_bytes(&mut bytes, VILLAGE_HOOK_OFFSET, VILLAGE_HOOK_PATCHED).unwrap();
+                write_bytes(&mut bytes, VILLAGE_CAVE_OFFSET, cave).unwrap();
+                for len in 0..39 {
+                    assert_unknown_setter_safety(&bytes[..VILLAGE_CAVE_OFFSET + len]);
+                }
+            }
+        }
+    }
+
+    // Literal sites from the C# authority, independent of the Rust restore plan.
+    const LEGACY_SITES: [(usize, &[u8], &[u8]); 4] = [
+        (0x1366c4, &[0xC1, 0xE2, 0x06], &[0xC1, 0xE2, 0x07]),
+        (0x1366cd, &[0xC1, 0xE1, 0x06], &[0xC1, 0xE1, 0x07]),
+        (0x0d722c, &[0xC1, 0xE6, 0x06], &[0xC1, 0xE6, 0x07]),
+        (0x0d723b, &[0xC1, 0xE7, 0x06], &[0xC1, 0xE7, 0x07]),
+    ];
+
+    fn legacy_fixture(mask: u8) -> Vec<u8> {
+        let mut bytes = synthetic_original();
+        for (i, &(offset, original, patched)) in LEGACY_SITES.iter().enumerate() {
+            write_bytes(&mut bytes, offset, if mask & (1 << i) != 0 { patched } else { original }).unwrap();
+        }
+        bytes
+    }
+
+    #[test]
+    fn village_range_original_is_unchanged() {
+        let bytes = legacy_fixture(0);
+        assert_eq!(get_village_build_range_patch_state(&bytes), ExeVillageRangePatchState::Original);
+        assert!(plan_village_range_restore(ExeVillageRangePatchState::Original).is_empty());
+        assert_eq!(apply_profile(&bytes, &PatchProfile::new()).unwrap(), bytes);
+    }
+
+    fn assert_legacy_restore(mask: u8, state: ExeVillageRangePatchState) {
+        let bytes = legacy_fixture(mask);
+        assert_eq!(get_village_build_range_patch_state(&bytes), state);
+        let expected_plan: Vec<_> = LEGACY_SITES.iter().map(|&(o, original, _)| (o, original)).collect();
+        assert_eq!(plan_village_range_restore(state), expected_plan, "all four writes in C# order");
+        let out = apply_profile(&bytes, &PatchProfile::new()).unwrap();
+        assert_eq!(get_village_build_range_patch_state(&out), ExeVillageRangePatchState::Original);
+        assert_eq!(out, legacy_fixture(0));
+        // Check every byte, including padding and the new setter hook/cave.
+        let changed: Vec<_> = bytes.iter().zip(&out).enumerate()
+            .filter_map(|(i, (before, after))| (before != after).then_some(i)).collect();
+        let expected_changes: Vec<_> = LEGACY_SITES.iter().enumerate()
+            .filter_map(|(i, &(offset, _, _))| (mask & (1 << i) != 0).then_some(offset + 2)).collect();
+        let mut expected_changes = expected_changes;
+        expected_changes.sort_unstable();
+        assert_eq!(changed, expected_changes, "only the legacy immediates may change");
+    }
+
+    #[test]
+    fn village_range_legacy_logic_only_restores_exact_four_site_plan() {
+        assert_legacy_restore(3, ExeVillageRangePatchState::LegacyLogicOnly);
+    }
+
+    #[test]
+    fn village_range_expanded_restores_exact_four_site_plan() {
+        assert_legacy_restore(15, ExeVillageRangePatchState::Expanded);
+    }
+
+    fn assert_unknown_legacy_safety(bytes: &[u8]) {
+        assert_eq!(get_village_build_range_patch_state(bytes), ExeVillageRangePatchState::Unknown);
+        assert!(plan_village_range_restore(ExeVillageRangePatchState::Unknown).is_empty());
+        assert_eq!(apply_profile(bytes, &PatchProfile::new()).unwrap(), bytes);
+        let mut disabled = PatchProfile::new();
+        disabled.set("VillageBuildRange", FeatureValue::Bool(false));
+        assert_eq!(apply_profile(bytes, &disabled).unwrap(), bytes);
+        let before = bytes.to_vec();
+        let mut requested = profile("VillageBuildRange");
+        if get_focus_patch_state(bytes) == ExePatchState::Original {
+            requested.set("FocusLoss", FeatureValue::Bool(true));
+        }
+        let err = apply_profile(bytes, &requested).unwrap_err();
+        assert!(err.to_string().contains("VillageBuildRange"), "{err}");
+        assert_eq!(bytes, before, "failed application must preserve its input");
+    }
+
+    #[test]
+    fn village_range_all_mixed_combinations_are_safe() {
+        // All 13 unrecognized combinations, including original logic/patched frames.
+        for mask in 0..16 {
+            if ![0, 3, 15].contains(&mask) {
+                assert_unknown_legacy_safety(&legacy_fixture(mask));
+            }
+        }
+    }
+
+    #[test]
+    fn village_range_corrupt_and_truncated_sites_are_safe() {
+        for mask in [0, 3, 15] {
+            for &(offset, _, _) in &LEGACY_SITES {
+                let mut bytes = legacy_fixture(mask);
+                bytes[offset] ^= 0xFF;
+                assert_unknown_legacy_safety(&bytes);
+            }
+        }
+        for len in [0, VILLAGE_FRAME_X_OFFSET + 2, VILLAGE_RANGE_PATCH_REQUIRED_LENGTH - 1] {
+            assert_unknown_legacy_safety(&legacy_fixture(0)[..len]);
+        }
+        let bytes = legacy_fixture(0);
+        assert_eq!(get_village_build_range_patch_state(&bytes[..VILLAGE_RANGE_PATCH_REQUIRED_LENGTH]),
+            ExeVillageRangePatchState::Original);
+    }
+
+    #[test]
+    fn village_setter_applies_after_legacy_cleanup() {
+        for mask in [0, 3, 15] {
+            let bytes = legacy_fixture(mask);
+            let out = apply_profile(&bytes, &profile("VillageBuildRange")).unwrap();
+            let mut expected = legacy_fixture(0);
+            write_bytes(&mut expected, VILLAGE_HOOK_OFFSET, VILLAGE_HOOK_PATCHED).unwrap();
+            write_bytes(&mut expected, VILLAGE_CAVE_OFFSET, VILLAGE_CAVE_PATCHED).unwrap();
+            assert_eq!(out, expected, "mask {mask}: cleanup plus only setter hook/cave changes");
+            assert_eq!(get_village_setter_patch_state(&out), ExeVillageSetterPatchState::EntireMap);
+        }
+    }
+
+    #[test]
+    fn village_range_repeated_application_is_idempotent() {
+        for mask in [0, 3, 15] {
+            for enabled in [false, true] {
+                let mut requested = PatchProfile::new();
+                requested.set("VillageBuildRange", FeatureValue::Bool(enabled));
+                let once = apply_profile(&legacy_fixture(mask), &requested).unwrap();
+                assert_eq!(apply_profile(&once, &requested).unwrap(), once);
+                let disabled = apply_profile(&once, &PatchProfile::new()).unwrap();
+                assert_eq!(disabled, legacy_fixture(0));
+                assert_eq!(apply_profile(&disabled, &PatchProfile::new()).unwrap(), disabled);
+            }
+        }
+    }
+
+    #[test]
+    fn village_cleanup_with_unknown_setter_only_fails_when_requested() {
+        let mut bytes = legacy_fixture(15);
+        bytes[VILLAGE_HOOK_OFFSET] ^= 0xFF;
+        assert_eq!(get_village_setter_patch_state(&bytes), ExeVillageSetterPatchState::Unknown);
+        let out = apply_profile(&bytes, &PatchProfile::new()).unwrap();
+        let mut expected = legacy_fixture(0);
+        expected[VILLAGE_HOOK_OFFSET] ^= 0xFF;
+        assert_eq!(out, expected);
+        let before = bytes.clone();
+        let err = apply_profile(&bytes, &profile("VillageBuildRange")).unwrap_err();
+        assert!(err.to_string().contains("VillageBuildRange"), "{err}");
+        assert_eq!(bytes, before, "setter failure must not return partial legacy cleanup");
+    }
+
+    #[test]
+    fn village_cleanup_preserves_unknown_game_speed_skip() {
+        let mut bytes = legacy_fixture(15);
+        bytes[GAME_SPEED_QPC_OFFSET..GAME_SPEED_QPC_OFFSET + 8].fill(0xFF);
+        assert_eq!(get_game_speed_multiplier(&bytes), 0);
+        let mut requested = profile("VillageBuildRange");
+        requested.set("GameSpeed", FeatureValue::Int(2));
+        let out = apply_profile(&bytes, &requested).unwrap();
+        assert_eq!(&out[GAME_SPEED_QPC_OFFSET..GAME_SPEED_QPC_OFFSET + 8],
+            &bytes[GAME_SPEED_QPC_OFFSET..GAME_SPEED_QPC_OFFSET + 8]);
+        assert_eq!(&out[GAME_SPEED_TGT_OFFSET..GAME_SPEED_TGT_OFFSET + 8],
+            &bytes[GAME_SPEED_TGT_OFFSET..GAME_SPEED_TGT_OFFSET + 8]);
+        assert_eq!(get_village_build_range_patch_state(&out), ExeVillageRangePatchState::Original);
+        assert_eq!(get_village_setter_patch_state(&out), ExeVillageSetterPatchState::EntireMap);
     }
 
     #[test]
