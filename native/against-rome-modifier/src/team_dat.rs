@@ -1,5 +1,6 @@
 //! team.dat patcher ported faithfully from src.Core/Core/Patches/TeamDatPatcher.cs.
 
+use crate::lzss::is_pfil;
 use crate::patch_text::{parse_csv_line, to_csv_string, TextDocument};
 use std::io;
 
@@ -31,7 +32,19 @@ impl TeamDatPatcher {
             return Ok(original.to_vec());
         }
 
-        let doc = TextDocument::read(original)?;
+        let mut doc = TextDocument::read(original)?;
+        // C# PatchText.Write always calls GameLZSS.CompressPfil(.., original): headerless input
+        // throws below 64 bytes, otherwise its first 64 bytes become the (non-PFIL) header.
+        if !doc.was_pfil {
+            if original.len() < 64 {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "PFIL header must contain at least 64 bytes.",
+                ));
+            }
+            doc.was_pfil = true;
+            doc.raw_header_template = Some(original[..64].to_vec());
+        }
         let mut output_lines = doc.lines.clone();
         let mut in_teamdata = false;
 
@@ -67,13 +80,26 @@ impl TeamDatPatcher {
             }
         }
 
-        doc.write_with_lines(&output_lines)
+        let mut out = doc.write_with_lines(&output_lines)?;
+        if !is_pfil(original) {
+            out[..4].copy_from_slice(&original[..4]); // C# copies the header verbatim
+        }
+        Ok(out)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::lzss::{compress_pfil, decompress_pfil};
+
+    fn pfil(text: &str) -> Vec<u8> {
+        compress_pfil(text.as_bytes(), Some(&[0u8; 64])).unwrap()
+    }
+
+    fn unpfil(bytes: &[u8]) -> String {
+        String::from_utf8(decompress_pfil(bytes).unwrap()).unwrap()
+    }
 
     #[test]
     fn team_dat_patch_sets_positive_population_and_restores() {
@@ -84,15 +110,16 @@ mod tests {
             roman_player: false,
         };
 
-        let patched_bytes = TeamDatPatcher::get_patched_bytes(sample.as_bytes(), &options).unwrap();
-        let patched_str = String::from_utf8(patched_bytes).unwrap();
+        let patched_bytes = TeamDatPatcher::get_patched_bytes(&pfil(sample), &options).unwrap();
+        let patched_str = unpfil(&patched_bytes);
 
         assert!(patched_str.contains("A,B,C,D,1600,F"));
         assert!(patched_str.contains("A,B,C,D,0,F")); // Zero pop unaffected
 
         // No options: untouched
-        let untouched = TeamDatPatcher::get_patched_bytes(sample.as_bytes(), &TeamDatOptions::default()).unwrap();
-        assert_eq!(untouched, sample.as_bytes());
+        let untouched =
+            TeamDatPatcher::get_patched_bytes(&pfil(sample), &TeamDatOptions::default()).unwrap();
+        assert_eq!(untouched, pfil(sample));
     }
 
     #[test]
@@ -103,8 +130,8 @@ mod tests {
             population_limit: 1600,
             roman_player: true,
         };
-        let patched = TeamDatPatcher::get_patched_bytes(sample.as_bytes(), &options).unwrap();
-        let s = String::from_utf8(patched).unwrap();
+        let patched = TeamDatPatcher::get_patched_bytes(&pfil(sample), &options).unwrap();
+        let s = unpfil(&patched);
         assert!(s.contains("0,ROM,C,D,80,F"));
     }
 }

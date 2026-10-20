@@ -1,11 +1,12 @@
 //! Faithful port of `SdlSceneCatalog`, `MapSceneObject`, and `SdlSceneEditService`.
 
-use std::collections::{HashMap, HashSet};
-use std::fs;
-use std::path::Path;
 use crate::custom_map::CustomMapAccess;
 use crate::sdl_objects::SdlPlacedObjectsFile;
 use crate::text_docs::{SdlDocument, SdlVector3};
+use crate::transaction::MapSaveTransaction;
+use std::collections::{HashMap, HashSet};
+use std::fs;
+use std::path::Path;
 
 /// A placed object parsed from a settlement SDL blueprint (`MapSceneObject`).
 #[derive(Clone, Debug, PartialEq)]
@@ -57,18 +58,34 @@ impl SdlSceneCatalog {
     pub fn load(path: &Path) -> Result<Vec<MapSceneObject>, String> {
         let doc = SdlDocument::load(path)?;
         let settlement = doc.settlement();
-        let refpos_str = settlement.get("refpos").ok_or("SDL 缺少 settlement 區段或 refpos。")?;
+        let refpos_str = settlement
+            .get("refpos")
+            .ok_or("SDL 缺少 settlement 區段或 refpos。")?;
         let refpos = SdlVector3::parse(refpos_str)?;
 
-        let source_file = path.file_name().and_then(|s| s.to_str()).unwrap_or("").to_string();
+        let source_file = path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("")
+            .to_string();
         let mut result = Vec::new();
 
         for sec in doc.objects() {
             let pos_str = sec.get_value("pos").unwrap_or("0,0,0");
             let local_pos = SdlVector3::parse(pos_str).unwrap_or_default();
-            let name = sec.get_value("namedef").unwrap_or("未命名物件").trim().to_string();
-            let team = sec.get_value("team").and_then(|v| v.parse().ok()).unwrap_or(0);
-            let angle = sec.get_value("angle").and_then(|v| v.parse().ok()).filter(|v: &f32| v.is_finite());
+            let name = sec
+                .get_value("namedef")
+                .unwrap_or("未命名物件")
+                .trim()
+                .to_string();
+            let team = sec
+                .get_value("team")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(0);
+            let angle = sec
+                .get_value("angle")
+                .and_then(|v| v.parse().ok())
+                .filter(|v: &f32| v.is_finite());
 
             let world_x = refpos.x + local_pos.x;
             let world_y = refpos.y + local_pos.y;
@@ -96,7 +113,9 @@ impl SdlSceneCatalog {
         Ok(result)
     }
 
-    pub fn load_settlement_origins(map_directory: &Path) -> Result<HashMap<String, SdlVector3>, String> {
+    pub fn load_settlement_origins(
+        map_directory: &Path,
+    ) -> Result<HashMap<String, SdlVector3>, String> {
         let mut origins = HashMap::new();
         for path in Self::settlement_files(map_directory)? {
             if let Ok(doc) = SdlDocument::load(&path) {
@@ -168,6 +187,13 @@ pub struct SdlSettlementTranslation {
     pub delta_z: f32,
 }
 
+/// One changed SDL file ready for `MapSaveTransaction::stage_file`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SdlStagedFile {
+    pub relative_path: String,
+    pub bytes: Vec<u8>,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct SceneKey {
     source_file: String,
@@ -187,6 +213,7 @@ impl SceneKey {
 pub struct SdlSceneEditService;
 
 impl SdlSceneEditService {
+    /// Applies the edits transactionally via `MapSaveTransaction` (all-or-nothing with rollback).
     pub fn save_changes(
         map_directory: &Path,
         saved_objects: &[MapSceneObject],
@@ -195,6 +222,36 @@ impl SdlSceneEditService {
         additions: Option<&[SdlSceneObjectAddition]>,
         translations: Option<&[SdlSettlementTranslation]>,
     ) -> Result<(), String> {
+        let staged = Self::stage_changes(
+            map_directory,
+            saved_objects,
+            current_objects,
+            removals,
+            additions,
+            translations,
+        )?;
+        if staged.is_empty() {
+            return Ok(());
+        }
+        let map_path = CustomMapAccess::require_editable_directory(map_directory, None)?;
+        let mut transaction = MapSaveTransaction::for_custom_map(map_path, None)?;
+        for file in staged {
+            transaction.stage_file_tagged(&file.relative_path, file.bytes, "sdl-scene")?;
+        }
+        transaction.commit().map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    /// Computes the changed SDL files and their serialized bytes without touching disk.
+    /// Results are sorted by relative path; files whose bytes would be unchanged are omitted.
+    pub fn stage_changes(
+        map_directory: &Path,
+        saved_objects: &[MapSceneObject],
+        current_objects: &[MapSceneObject],
+        removals: Option<&[SdlSceneObjectRemoval]>,
+        additions: Option<&[SdlSceneObjectAddition]>,
+        translations: Option<&[SdlSettlementTranslation]>,
+    ) -> Result<Vec<SdlStagedFile>, String> {
         let map_path = CustomMapAccess::require_editable_directory(map_directory, None)?;
         let saved = Self::index(saved_objects)?;
         let current = Self::index(current_objects)?;
@@ -207,12 +264,16 @@ impl SdlSceneEditService {
         let pending_additions = Self::validate_additions(additions, &current)?;
         let pending_translations = Self::validate_translations(translations)?;
 
-        // Pre-read template fields before modifying any file
+        // Pre-read pristine template fields before modifying any file
         let mut template_fields: HashMap<(String, i32), HashMap<String, String>> = HashMap::new();
         for addition in &pending_additions {
-            let key = (addition.source_file.to_ascii_uppercase(), addition.template_index);
+            let key = (
+                addition.source_file.to_ascii_uppercase(),
+                addition.template_index,
+            );
             if !template_fields.contains_key(&key) {
-                let template_doc = SdlDocument::load(&Self::resolve_sdl_path(&map_path, &addition.source_file)?)?;
+                let template_doc =
+                    SdlDocument::load(&Self::resolve_sdl_path(&map_path, &addition.source_file)?)?;
                 let template = template_doc
                     .objects()
                     .into_iter()
@@ -224,23 +285,16 @@ impl SdlSceneEditService {
                         )
                     })?;
 
-                let mut fields = template.fields;
-                fields.insert("team".to_string(), addition.team.to_string());
-                fields.insert(
-                    "pos".to_string(),
-                    SdlVector3::new(addition.local_x, addition.local_y, addition.local_z).to_string_2dp(),
-                );
-                if let Some(angle) = addition.angle {
-                    fields.insert("angle".to_string(), format!("{:.2}", angle));
-                }
-                template_fields.insert(key, fields);
+                template_fields.insert(key, template.fields);
             }
         }
 
         // Determine all affected files
         let mut affected_files = HashSet::new();
         for item in current.values() {
-            if let Some(saved_item) = saved.get(&SceneKey::new(&item.source_file, item.object_index)) {
+            if let Some(saved_item) =
+                saved.get(&SceneKey::new(&item.source_file, item.object_index))
+            {
                 if Self::has_changed(saved_item, item) {
                     affected_files.insert(item.source_file.to_ascii_uppercase());
                 }
@@ -256,6 +310,10 @@ impl SdlSceneEditService {
             affected_files.insert(t.source_file.to_ascii_uppercase());
         }
 
+        let mut affected_files: Vec<String> = affected_files.into_iter().collect();
+        affected_files.sort();
+
+        let mut staged = Vec::new();
         for file_key in affected_files {
             let path = Self::resolve_sdl_path(&map_path, &file_key)?;
             let mut document = SdlDocument::load(&path)?;
@@ -263,17 +321,23 @@ impl SdlSceneEditService {
             // 1. Update modified existing objects
             for item in current.values() {
                 if item.source_file.eq_ignore_ascii_case(&file_key) {
-                    if let Some(saved_item) = saved.get(&SceneKey::new(&item.source_file, item.object_index)) {
+                    if let Some(saved_item) =
+                        saved.get(&SceneKey::new(&item.source_file, item.object_index))
+                    {
                         if Self::has_changed(saved_item, item) {
                             document.set_object_team(item.object_index, item.team)?;
                             document.set_object_position(
                                 item.object_index,
                                 SdlVector3::new(item.local_x, item.local_y, item.local_z),
                             )?;
-                            if let Some(angle) = item.angle {
-                                if saved_item.angle != Some(angle) {
+                            match item.angle {
+                                Some(angle) if saved_item.angle != Some(angle) => {
                                     document.set_object_angle(item.object_index, angle)?;
                                 }
+                                None if saved_item.angle.is_some() => {
+                                    document.remove_object_value(item.object_index, "angle")?;
+                                }
+                                _ => {}
                             }
                         }
                     }
@@ -283,16 +347,36 @@ impl SdlSceneEditService {
             // 2. Settlement translations
             for translation in &pending_translations {
                 if translation.source_file.eq_ignore_ascii_case(&file_key) {
-                    document.translate_settlement(translation.delta_x, translation.delta_y, translation.delta_z)?;
+                    document.translate_settlement(
+                        translation.delta_x,
+                        translation.delta_y,
+                        translation.delta_z,
+                    )?;
                 }
             }
 
             // 3. Additions
             for addition in &pending_additions {
-                if addition.effective_target_file().eq_ignore_ascii_case(&file_key) {
-                    let key = (addition.source_file.to_ascii_uppercase(), addition.template_index);
-                    if let Some(fields) = template_fields.get(&key) {
-                        document.add_object(fields)?;
+                if addition
+                    .effective_target_file()
+                    .eq_ignore_ascii_case(&file_key)
+                {
+                    let key = (
+                        addition.source_file.to_ascii_uppercase(),
+                        addition.template_index,
+                    );
+                    if let Some(template) = template_fields.get(&key) {
+                        let mut fields = template.clone();
+                        fields.insert("team".to_string(), addition.team.to_string());
+                        fields.insert(
+                            "pos".to_string(),
+                            SdlVector3::new(addition.local_x, addition.local_y, addition.local_z)
+                                .to_string_2dp(),
+                        );
+                        if let Some(angle) = addition.angle {
+                            fields.insert("angle".to_string(), format!("{:.2}", angle));
+                        }
+                        document.add_object(&fields)?;
                     }
                 }
             }
@@ -307,23 +391,38 @@ impl SdlSceneEditService {
                 document.remove_object(removal.object_index)?;
             }
 
-            document.save()?;
+            let bytes = document.to_bytes()?;
+            if fs::read(&path).map_err(|e| e.to_string())? == bytes {
+                continue;
+            }
+            let relative_path = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .ok_or_else(|| format!("SDL 場景檔名無效：{file_key}。"))?
+                .to_string();
+            staged.push(SdlStagedFile {
+                relative_path,
+                bytes,
+            });
         }
 
-        Ok(())
+        staged.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
+        Ok(staged)
     }
 
     pub fn has_changes(baseline: &[MapSceneObject], current: &[MapSceneObject]) -> bool {
-        let Ok(before) = Self::index(baseline) else { return true; };
-        let Ok(after) = Self::index(current) else { return true; };
+        let Ok(before) = Self::index(baseline) else {
+            return true;
+        };
+        let Ok(after) = Self::index(current) else {
+            return true;
+        };
         if before.len() != after.len() {
             return true;
         }
-        before.iter().any(|(k, v)| {
-            match after.get(k) {
-                Some(item) => Self::has_changed(v, item),
-                None => true,
-            }
+        before.iter().any(|(k, v)| match after.get(k) {
+            Some(item) => Self::has_changed(v, item),
+            None => true,
         })
     }
 
@@ -358,15 +457,23 @@ impl SdlSceneEditService {
         removals: Option<&[SdlSceneObjectRemoval]>,
         current: &HashMap<SceneKey, MapSceneObject>,
     ) -> Result<Vec<SdlSceneObjectRemoval>, String> {
-        let Some(removals) = removals else { return Ok(Vec::new()); };
+        let Some(removals) = removals else {
+            return Ok(Vec::new());
+        };
         let mut seen = HashSet::new();
         for r in removals {
             let key = SceneKey::new(&r.source_file, r.object_index);
             if !current.contains_key(&key) {
-                return Err(format!("待刪除的 SDL 物件不存在：{} / {}。", r.source_file, r.object_index));
+                return Err(format!(
+                    "待刪除的 SDL 物件不存在：{} / {}。",
+                    r.source_file, r.object_index
+                ));
             }
             if !seen.insert(key) {
-                return Err(format!("重複的 SDL 刪除項目：{} / {}。", r.source_file, r.object_index));
+                return Err(format!(
+                    "重複的 SDL 刪除項目：{} / {}。",
+                    r.source_file, r.object_index
+                ));
             }
         }
         Ok(removals.to_vec())
@@ -376,11 +483,16 @@ impl SdlSceneEditService {
         additions: Option<&[SdlSceneObjectAddition]>,
         current: &HashMap<SceneKey, MapSceneObject>,
     ) -> Result<Vec<SdlSceneObjectAddition>, String> {
-        let Some(additions) = additions else { return Ok(Vec::new()); };
+        let Some(additions) = additions else {
+            return Ok(Vec::new());
+        };
         for a in additions {
             let key = SceneKey::new(&a.source_file, a.template_index);
             if !current.contains_key(&key) {
-                return Err(format!("SDL 複製模板不存在：{} / {}。", a.source_file, a.template_index));
+                return Err(format!(
+                    "SDL 複製模板不存在：{} / {}。",
+                    a.source_file, a.template_index
+                ));
             }
             if !(-1..=15).contains(&a.team) {
                 return Err("SDL 場景物件隊伍必須介於 -1 與 15。".into());
@@ -405,7 +517,9 @@ impl SdlSceneEditService {
     fn validate_translations(
         translations: Option<&[SdlSettlementTranslation]>,
     ) -> Result<Vec<SdlSettlementTranslation>, String> {
-        let Some(translations) = translations else { return Ok(Vec::new()); };
+        let Some(translations) = translations else {
+            return Ok(Vec::new());
+        };
         let mut seen = HashSet::new();
         for t in translations {
             if !is_sdl_file_name(&t.source_file) {
@@ -442,7 +556,9 @@ impl SdlSceneEditService {
     fn resolve_sdl_path(map_path: &Path, source_file: &str) -> Result<std::path::PathBuf, String> {
         let target = map_path.join(source_file);
         let canonical_map = map_path.canonicalize().map_err(|e| e.to_string())?;
-        let canonical_target = target.canonicalize().map_err(|_| format!("找不到自製地圖的 SDL 場景檔: {}", target.display()))?;
+        let canonical_target = target
+            .canonicalize()
+            .map_err(|_| format!("找不到自製地圖的 SDL 場景檔: {}", target.display()))?;
         if canonical_target.parent() != Some(&canonical_map) {
             return Err(format!("找不到自製地圖的 SDL 場景檔: {}", target.display()));
         }
@@ -452,8 +568,7 @@ impl SdlSceneEditService {
 
 fn is_sdl_file_name(file: &str) -> bool {
     let p = Path::new(file);
-    p.file_name() == Some(std::ffi::OsStr::new(file))
-        && file.to_ascii_lowercase().ends_with(".sdl")
+    p.file_name() == Some(std::ffi::OsStr::new(file)) && file.to_ascii_lowercase().ends_with(".sdl")
 }
 
 fn is_valid_angle(angle: f32) -> bool {

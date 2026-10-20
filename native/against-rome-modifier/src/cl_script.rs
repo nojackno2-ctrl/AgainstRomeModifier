@@ -227,7 +227,11 @@ impl ClScriptPatcher {
                     {
                         value = (orig_val * 5.0) as i64;
                     }
-                    if options.spell_healing_10x && faction == "KEL" && spell == "Spell1" && key == "Value" {
+                    if options.spell_healing_10x
+                        && faction == "KEL"
+                        && spell == "Spell1"
+                        && key == "Value"
+                    {
                         value = (orig_val * 10.0) as i64;
                     }
                     if options.spell_resurrection
@@ -313,7 +317,8 @@ impl ClScriptPatcher {
                     if let Some((ok, orest)) = obody.split_once('=') {
                         if ok.trim().eq_ignore_ascii_case(key) {
                             let oparts: Vec<&str> = orest.split(',').collect();
-                            if !oparts.is_empty() && oparts[0].trim().eq_ignore_ascii_case(faction) {
+                            if !oparts.is_empty() && oparts[0].trim().eq_ignore_ascii_case(faction)
+                            {
                                 return orig.clone();
                             }
                         }
@@ -363,19 +368,38 @@ Value      = GER, Spell2, 50         ; damage spell
         let text = String::from_utf8(patched).unwrap();
 
         assert!(text.contains("CiviDelay  =GER, 500       ; civilian delay"));
-        assert!(text.contains("MoralsDecLostMem = GER, 0; lost memory") || text.contains("MoralsDecLostMem = GER, 0   ; lost memory"));
-        assert!(text.contains("MoralsDecFlee    = GER, 0; flee") || text.contains("MoralsDecFlee    = GER, 0   ; flee"));
-        assert!(text.contains("MoralsDecOverPop = GER, 99999999; overpop") || text.contains("MoralsDecOverPop = GER, 99999999   ; overpop"));
-        assert!(text.contains("MoralsIncIdle    = GER, 500; idle") || text.contains("MoralsIncIdle    = GER, 500   ; idle"));
+        assert!(
+            text.contains("MoralsDecLostMem = GER, 0; lost memory")
+                || text.contains("MoralsDecLostMem = GER, 0   ; lost memory")
+        );
+        assert!(
+            text.contains("MoralsDecFlee    = GER, 0; flee")
+                || text.contains("MoralsDecFlee    = GER, 0   ; flee")
+        );
+        assert!(
+            text.contains("MoralsDecOverPop = GER, 99999999; overpop")
+                || text.contains("MoralsDecOverPop = GER, 99999999   ; overpop")
+        );
+        assert!(
+            text.contains("MoralsIncIdle    = GER, 500; idle")
+                || text.contains("MoralsIncIdle    = GER, 500   ; idle")
+        );
         assert!(text.contains("Value      =GER, Spell2, 250       ; damage spell"));
 
         // Disable options and restore
-        let restored = ClScriptPatcher::get_patched_bytes(&text.into_bytes(), &ClScriptOptions {
-            original_bytes: Some(raw.to_vec()),
-            ..Default::default()
-        }).unwrap();
+        let restored = ClScriptPatcher::get_patched_bytes(
+            &text.into_bytes(),
+            &ClScriptOptions {
+                original_bytes: Some(raw.to_vec()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
         let restored_text = String::from_utf8(restored).unwrap();
-        assert!(restored_text.contains("CiviDelay  =GER, 5000") || restored_text.contains("CiviDelay  = GER, 5000"));
+        assert!(
+            restored_text.contains("CiviDelay  =GER, 5000")
+                || restored_text.contains("CiviDelay  = GER, 5000")
+        );
         assert!(restored_text.contains("MoralsDecLostMem = GER, 10"));
     }
 }

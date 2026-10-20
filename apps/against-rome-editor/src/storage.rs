@@ -56,16 +56,145 @@ fn resolved_path(path: &Path) -> io::Result<PathBuf> {
     Ok(result)
 }
 pub fn is_forbidden_install_path(path: &Path) -> bool {
-    let Ok(resolved) = resolved_path(path) else {
+    is_forbidden_install_path_opt(path, false)
+}
+
+fn strip_unc(path: PathBuf) -> PathBuf {
+    let s = path.to_string_lossy();
+    if let Some(stripped) = s.strip_prefix(r"\\?\UNC\") {
+        PathBuf::from(format!(r"\\{stripped}"))
+    } else if let Some(stripped) = s.strip_prefix(r"\\?\") {
+        PathBuf::from(stripped)
+    } else {
+        path
+    }
+}
+
+pub fn is_forbidden_install_path_opt(path: &Path, allow_staged_marker: bool) -> bool {
+    let resolved = resolved_path(path).unwrap_or_else(|_| {
+        if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            std::env::current_dir().unwrap_or_default().join(path)
+        }
+    });
+    let resolved = strip_unc(resolved);
+
+    let Some(game_root) = against_rome_maps::detect_game_root(&resolved, None) else {
+        return false;
+    };
+    let game_root = strip_unc(game_root);
+
+    let Ok(rel) = resolved.strip_prefix(&game_root) else {
         return true;
     };
-    let parts: Vec<_> = resolved
-        .components()
-        .map(|c| c.as_os_str().to_string_lossy().to_lowercase())
-        .collect();
-    parts.windows(2).any(|p| {
-        (p[0] == "program files" || p[0] == "program files (x86)") && p[1] == "against rome"
-    })
+
+    let mut comps = rel.components();
+    let Some(std::path::Component::Normal(first)) = comps.next() else {
+        // Target is game root itself
+        return true;
+    };
+
+    if !first.to_string_lossy().eq_ignore_ascii_case("MAPS") {
+        // Any file or directory not in MAPS is forbidden
+        return true;
+    }
+
+    let Some(std::path::Component::Normal(map_folder)) = comps.next() else {
+        // Target is MAPS directory itself
+        return true;
+    };
+
+    let folder_name = map_folder.to_string_lossy();
+    let Some(slot) = against_rome_maps::parse_endl_slot(&folder_name) else {
+        // Retail map (TUTOR, CAMP, etc.) or unauthorized folder
+        return true;
+    };
+
+    if !(5..=999).contains(&slot) {
+        // Retail endless ENDL_000..004 or out of range
+        return true;
+    }
+
+    // For ENDL_005..999: check marker
+    let map_dir = game_root.join("MAPS").join(&*folder_name);
+    let has_marker = map_dir.join(against_rome_maps::CustomMapManifest::MARKER_FILE_NAME).is_file();
+    if !has_marker && !allow_staged_marker {
+        return true;
+    }
+
+    false
+}
+
+/// Read-only preflight for destinations used by the native whole-map coordinator.
+#[allow(dead_code)]
+pub(crate) fn preflight_transaction_target(path: &Path) -> Result<(), String> {
+    preflight_transaction_target_opt(path, false)
+}
+
+pub(crate) fn preflight_transaction_target_opt(path: &Path, allow_staged_marker: bool) -> Result<(), String> {
+    if is_forbidden_install_path_opt(path, allow_staged_marker) {
+        return Err(format!("Security Guard: installation path forbidden: {}", path.display()));
+    }
+    for ancestor in path.ancestors().filter(|p| !p.as_os_str().is_empty()) {
+        match fs::symlink_metadata(ancestor) {
+            Ok(meta) => {
+                let mut linked = meta.file_type().is_symlink();
+                #[cfg(windows)]
+                {
+                    use std::os::windows::fs::MetadataExt;
+                    linked |= meta.file_attributes() & 0x400 != 0;
+                }
+                if linked {
+                    return Err(format!("Save preflight rejects symlink/reparse point: {}", ancestor.display()));
+                }
+                if ancestor == path && meta.is_dir() {
+                    return Err(format!("Save target is a directory: {}", path.display()));
+                }
+                if ancestor != path && !meta.is_dir() {
+                    return Err(format!("Save ancestor is not a directory: {}", ancestor.display()));
+                }
+                if meta.permissions().readonly() && (!meta.is_dir() || cfg!(unix)) {
+                    return Err(format!("Save preflight rejects read-only path: {}", ancestor.display()));
+                }
+            }
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+            Err(e) => return Err(format!("Save preflight {}: {e}", ancestor.display())),
+        }
+    }
+    Ok(())
+}
+
+#[allow(dead_code)]
+pub(crate) fn preflight_transaction_tree(dir: &Path) -> Result<(), String> {
+    preflight_transaction_tree_opt(dir, false)
+}
+
+pub(crate) fn preflight_transaction_tree_opt(dir: &Path, allow_staged_marker: bool) -> Result<(), String> {
+    // Checking a fictitious child also validates the root as an ancestor directory.
+    preflight_transaction_target_opt(&dir.join(".arm-preflight"), allow_staged_marker)?;
+    if !dir.try_exists().map_err(|e| e.to_string())? {
+        return Ok(());
+    }
+    fn visit(dir: &Path, allow_staged_marker: bool) -> Result<(), String> {
+        for entry in fs::read_dir(dir).map_err(|e| format!("{}: {e}", dir.display()))? {
+            let entry = entry.map_err(|e| e.to_string())?;
+            let path = entry.path();
+            let meta = fs::symlink_metadata(&path).map_err(|e| e.to_string())?;
+            let name = entry.file_name().to_string_lossy().to_lowercase();
+            if name.contains(".tmp_tx") || name.ends_with(".arm_temp")
+                || name.ends_with(".arm_old") || name.ends_with(".tmp_arm") || name == ".arm-save.lock" {
+                return Err(format!("Save preflight preserves existing recovery/lock path: {}", path.display()));
+            }
+            // Use a child to validate directories without rejecting them as file targets.
+            preflight_transaction_target_opt(&if meta.is_dir() { path.join(".arm-preflight") } else { path.clone() }, allow_staged_marker)?;
+            if meta.is_dir() {
+                visit(&path, allow_staged_marker)?;
+            }
+        }
+        Ok(())
+    }
+    visit(dir, allow_staged_marker)
 }
 pub fn load_map(dir: &Path) -> Result<TerrainSession, String> {
     if !dir.is_dir() {
@@ -162,6 +291,24 @@ fn backup(target: &Path, original: &[u8]) -> io::Result<PathBuf> {
 pub fn safe_save_map(dir: &Path, terrain: &mut TerrainSession) -> Result<SaveReport, String> {
     save_using(dir, terrain, |_, from, to| fs::rename(from, to))
 }
+/// Encode without changing the baseline or touching disk (whole-map transaction staging).
+pub(crate) fn encode_terrain(terrain: &TerrainSession) -> Result<(BmpImage, BmpImage), String> {
+    let mut height = terrain.raw_boden_bmp.clone().unwrap_or_else(|| {
+        BmpImage::from_green_channel_grayscale(terrain.vertex_size, terrain.vertex_size, terrain.heights())
+    });
+    if height.width != terrain.vertex_size || height.height != terrain.vertex_size {
+        return Err("raw height dimensions disagree with terrain".into());
+    }
+    height.update_green_channel(terrain.heights());
+    let mut collision = terrain.raw_collision_bmp.clone().unwrap_or_else(|| {
+        BmpImage::from_collision_channel(terrain.collision_size, terrain.collision_size, terrain.collision())
+    });
+    if collision.width != terrain.collision_size || collision.height != terrain.collision_size {
+        return Err("raw collision dimensions disagree with terrain".into());
+    }
+    collision.update_collision_channel(terrain.collision());
+    Ok((height, collision))
+}
 fn save_using(
     dir: &Path,
     terrain: &mut TerrainSession,
@@ -179,28 +326,7 @@ fn save_using(
             ));
         }
     }
-    let mut height = terrain.raw_boden_bmp.clone().unwrap_or_else(|| {
-        BmpImage::from_green_channel_grayscale(
-            terrain.vertex_size,
-            terrain.vertex_size,
-            terrain.heights(),
-        )
-    });
-    if height.width != terrain.vertex_size || height.height != terrain.vertex_size {
-        return Err("raw height dimensions disagree with terrain".into());
-    }
-    height.update_green_channel(terrain.heights());
-    let mut collision = terrain.raw_collision_bmp.clone().unwrap_or_else(|| {
-        BmpImage::from_collision_channel(
-            terrain.collision_size,
-            terrain.collision_size,
-            terrain.collision(),
-        )
-    });
-    if collision.width != terrain.collision_size || collision.height != terrain.collision_size {
-        return Err("raw collision dimensions disagree with terrain".into());
-    }
-    collision.update_collision_channel(terrain.collision());
+    let (height, collision) = encode_terrain(terrain)?;
     let payloads = [
         ("boden.bmp", height.encode_bmp()),
         ("collision.bmp", collision.encode_bmp()),
@@ -369,6 +495,80 @@ mod tests {
         assert!(!is_forbidden_install_path(Path::new(
             "D:/Program Files Copy/Against Rome"
         )));
+        // Non-standard install path tests
+        assert!(is_forbidden_install_path(Path::new(
+            "D:/Games/Against Rome/MAPS/ENDL_001"
+        )));
+        assert!(is_forbidden_install_path(Path::new(
+            "D:/Games/Against Rome/MAPS/TUTOR_01"
+        )));
+        assert!(is_forbidden_install_path(Path::new(
+            "D:/Games/Against Rome/MAPS/CAMP_01"
+        )));
+        assert!(is_forbidden_install_path(Path::new(
+            "D:/Games/Against Rome/Against_Rome.exe"
+        )));
+        assert!(is_forbidden_install_path(Path::new(
+            "C:/Program Files (x86)/Against Rome/Against_Rome.exe"
+        )));
+        // Unmarked ENDL_998 in game maps is forbidden without marker
+        assert!(is_forbidden_install_path(Path::new(
+            "C:/Program Files (x86)/Against Rome/MAPS/ENDL_998"
+        )));
+        assert!(is_forbidden_install_path(Path::new(
+            "D:/Games/Against Rome/MAPS/ENDL_005"
+        )));
+        // Genuine marker-backed ENDL_005 in Program Files is permitted!
+        assert!(!is_forbidden_install_path(Path::new(
+            "C:/Program Files (x86)/Against Rome/MAPS/ENDL_005"
+        )));
+        // With staged marker override during creation, any ENDL_005..999 is allowed!
+        assert!(!is_forbidden_install_path_opt(
+            Path::new("C:/Program Files (x86)/Against Rome/MAPS/ENDL_998"),
+            true
+        ));
+        assert!(!is_forbidden_install_path_opt(
+            Path::new("D:/Games/Against Rome/MAPS/ENDL_005"),
+            true
+        ));
+        // Staged marker override still strictly rejects retail maps
+        assert!(is_forbidden_install_path_opt(
+            Path::new("D:/Games/Against Rome/MAPS/ENDL_001"),
+            true
+        ));
+        assert!(is_forbidden_install_path_opt(
+            Path::new("D:/Games/Against Rome/MAPS/TUTOR_01"),
+            true
+        ));
+    }
+
+    #[test]
+    fn guard_permits_marker_backed_custom_map_in_synthetic_installs() {
+        let d = Dir::new();
+        let game = d.0.join("Games").join("Against Rome");
+        let maps = game.join("MAPS");
+        let custom_map = maps.join("ENDL_005");
+        let retail_map = maps.join("ENDL_001");
+        let tutor_map = maps.join("TUTOR_01");
+        fs::create_dir_all(&custom_map).unwrap();
+        fs::create_dir_all(&retail_map).unwrap();
+        fs::create_dir_all(&tutor_map).unwrap();
+
+        // 1. Without marker, custom_map is forbidden
+        assert!(is_forbidden_install_path(&custom_map));
+
+        // 2. Add .arm_custom_map marker to ENDL_005
+        fs::write(custom_map.join(".arm_custom_map"), b"{}").unwrap();
+        assert!(!is_forbidden_install_path(&custom_map));
+        assert!(!is_forbidden_install_path(&custom_map.join("boden.bmp")));
+
+        // 3. Retail maps are forbidden even if someone created .arm_custom_map in them
+        fs::write(retail_map.join(".arm_custom_map"), b"{}").unwrap();
+        assert!(is_forbidden_install_path(&retail_map));
+        assert!(is_forbidden_install_path(&retail_map.join("boden.bmp")));
+
+        fs::write(tutor_map.join(".arm_custom_map"), b"{}").unwrap();
+        assert!(is_forbidden_install_path(&tutor_map));
     }
     #[test]
     fn second_publish_failure_rollback_retry_preserves_backup() {

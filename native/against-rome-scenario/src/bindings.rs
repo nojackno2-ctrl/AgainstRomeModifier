@@ -6,6 +6,7 @@ use std::{
 
 /// Immutable source identity evidence. Re-read immediately before publishing an export.
 /// Watches the entire objects.dat file, including inactive records and PFIL metadata.
+#[derive(Debug)]
 pub struct DataBindingSource {
     path: PathBuf,
     original: Vec<u8>,
@@ -49,6 +50,21 @@ impl DataBindingSource {
         };
         source.verify_unchanged()?;
         Ok(source)
+    }
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+    pub fn original_bytes(&self) -> &[u8] {
+        &self.original
+    }
+    pub fn active_bindings(&self) -> &[(i32, u32)] {
+        &self.active
+    }
+    pub fn is_slot_active(&self, slot: i32, uid: u32) -> bool {
+        self.active.contains(&(slot, uid))
+    }
+    pub fn uid_for_slot(&self, slot: i32) -> Option<u32> {
+        self.active.iter().find(|(s, _)| *s == slot).map(|(_, uid)| *uid)
     }
     pub fn verify_unchanged(&self) -> Result<()> {
         let current = fs::read(&self.path).map_err(|e| format!("{}: {e}", self.path.display()))?;

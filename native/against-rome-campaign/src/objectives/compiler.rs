@@ -259,7 +259,7 @@ impl BciObjectiveCompiler {
         for spawn in scenario_copy.spawns.iter().filter(|s| !s.prebuilt) {
             if !known_aliases
                 .iter()
-                .any(|a| a.eq_ignore_ascii_case(&spawn.alias))
+                .any(|a| crate::ai::dotnet_unicode::ordinal_ignore_case_eq(a, &spawn.alias))
             {
                 let mut diags = result.diagnostics;
                 diags.push(ObjectiveDiagnostic::new(

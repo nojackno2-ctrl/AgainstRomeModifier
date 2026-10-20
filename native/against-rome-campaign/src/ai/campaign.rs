@@ -204,6 +204,11 @@ impl WaveAttackDefinition {
         for squad in &self.squads {
             squad.validate()?;
         }
+        if let Some(dest) = &self.move_destination {
+            if !(0..=16383).contains(&dest.x) || !(0..=16383).contains(&dest.z) {
+                return Err("移動目的地座標必須介於 0 與 16383 之間。".into());
+            }
+        }
         Ok(())
     }
 }
@@ -294,7 +299,7 @@ impl PartialEq for WaveAttackDefinition {
 }
 
 /// 高階戰役企劃總綱
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct CampaignMissionPlan {
     pub title: String,
     pub briefing: String,
@@ -349,6 +354,127 @@ impl CampaignMissionPlan {
         }
 
         Ok(())
+    }
+}
+
+/// 戰役波次企劃產生參數（對應 C# CampaignWaveDialog 與 MapEditorForm.ApplyCampaignWaves 規格）
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct WavePlanParameters {
+    pub archetype_id: String,
+    pub waves: i32,
+    pub first_delay_seconds: i32,
+    pub interval_seconds: i32,
+    pub count_per_unit_type: i32,
+    pub team: i32,
+    pub spawn_x: f32,
+    pub spawn_z: f32,
+    pub move_destination: Option<(i32, i32)>,
+}
+
+impl Default for WavePlanParameters {
+    fn default() -> Self {
+        Self {
+            archetype_id: String::new(),
+            waves: 3,
+            first_delay_seconds: 120,
+            interval_seconds: 30,
+            count_per_unit_type: 5,
+            team: 1,
+            spawn_x: 1000.0,
+            spawn_z: 1000.0,
+            move_destination: None,
+        }
+    }
+}
+
+impl WavePlanParameters {
+    pub fn new(
+        archetype_id: impl Into<String>,
+        waves: i32,
+        first_delay_seconds: i32,
+        interval_seconds: i32,
+        count_per_unit_type: i32,
+        team: i32,
+        spawn_x: f32,
+        spawn_z: f32,
+    ) -> Self {
+        Self {
+            archetype_id: archetype_id.into(),
+            waves,
+            first_delay_seconds,
+            interval_seconds,
+            count_per_unit_type,
+            team,
+            spawn_x,
+            spawn_z,
+            move_destination: None,
+        }
+    }
+
+    pub fn with_destination(mut self, x: i32, z: i32) -> Self {
+        self.move_destination = Some((x, z));
+        self
+    }
+
+    pub fn validate(&self) -> Result<(), String> {
+        if !(1..=256).contains(&self.waves) {
+            return Err("波次數必須介於 1 與 256 之間。".into());
+        }
+        if !(0..=86400).contains(&self.first_delay_seconds) {
+            return Err("首波延遲秒數必須介於 0 與 86400 之間。".into());
+        }
+        if !(1..=86400).contains(&self.interval_seconds) {
+            return Err("波次間隔秒數必須介於 1 與 86400 之間。".into());
+        }
+        if !(1..=20).contains(&self.count_per_unit_type) {
+            return Err("每兵種人數必須介於 1 與 20 之間。".into());
+        }
+        if !(0..=7).contains(&self.team) {
+            return Err("隊伍編號必須介於 0 與 7 之間。".into());
+        }
+        if !self.spawn_x.is_finite()
+            || !self.spawn_z.is_finite()
+            || !(0.0..=16383.0).contains(&self.spawn_x)
+            || !(0.0..=16383.0).contains(&self.spawn_z)
+        {
+            return Err("生成點座標必須介於 0 與 16383 之間。".into());
+        }
+        if let Some((x, z)) = self.move_destination {
+            if !(0..=16383).contains(&x) || !(0..=16383).contains(&z) {
+                return Err("目的地座標必須介於 0 與 16383 之間。".into());
+            }
+        }
+        Ok(())
+    }
+
+    /// 從戰術原型與參數產生高階戰役任務企劃（完全對應 C# CampaignWaveDialog.Plan 行為）
+    pub fn build_plan(
+        &self,
+        archetype: &super::archetype::AiArchetypeProfile,
+    ) -> CampaignMissionPlan {
+        let mut waves = Vec::with_capacity(self.waves.max(0) as usize);
+        for i in 1..=self.waves {
+            let delay = self.first_delay_seconds + (i - 1) * self.interval_seconds;
+            let squads: Vec<WaveSquadDefinition> = archetype
+                .unit_preferences
+                .iter()
+                .map(|p| {
+                    WaveSquadDefinition::new(p.alias.clone(), self.count_per_unit_type, self.team)
+                })
+                .collect();
+            let mut wave =
+                WaveAttackDefinition::new(i, delay, "", self.spawn_x, self.spawn_z, squads);
+            wave.move_destination = self.move_destination.map(|(x, z)| WorldPosition { x, z });
+            waves.push(wave);
+        }
+        CampaignMissionPlan {
+            title: "Campaign waves".to_string(),
+            briefing: String::new(),
+            objectives: vec![],
+            waves,
+            reinforcements: vec![],
+            faction_profiles: vec![],
+        }
     }
 }
 

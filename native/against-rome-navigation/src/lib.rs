@@ -1,6 +1,19 @@
 //! Designer-facing diagnostics ported from MapEditor.Modules/Pathfinding.
 //! These are editor heuristics, not an implementation of the native game pathfinder.
 use std::collections::{HashSet, VecDeque};
+
+pub mod formation;
+pub mod repair;
+pub use formation::{
+    analyze_formation, diagnose_route, diagnose_routes, evaluate_corridors_signed,
+    required_clearance_signed, topological_chokes_signed, EndpointIssue, FormationReport,
+    FormationTrip, RouteDiagnostic, RouteStatus,
+};
+pub use repair::{
+    apply_repair, bridge_action, recommended_repairs, road_heal_actions, undo_repair, IssueKind,
+    RepairAction, RepairError, RepairOutcome, RepairSession,
+};
+
 const DIRS: [(i32, i32); 4] = [(0, -1), (1, 0), (0, 1), (-1, 0)];
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -18,6 +31,35 @@ impl Coordinate {
             z,
             world_x: (x as f32 + 0.5) * scale,
             world_z: (z as f32 + 0.5) * scale,
+        }
+    }
+
+    /// Construct coordinate from world space floats, clamped to the grid bounds,
+    /// matching C# `NavMeshCoordinate.FromWorld`.
+    pub fn from_world(world_x: f32, world_z: f32, size: usize, world: f32) -> Self {
+        let size = if size == 0 { 256 } else { size };
+        let world = if world.is_finite() && world > 0.0 {
+            world
+        } else {
+            16384.0
+        };
+        let scale = world / size as f32;
+        let max = size.saturating_sub(1) as i32;
+        let x = if scale > 0.0 {
+            ((world_x / scale) as i32).clamp(0, max)
+        } else {
+            0
+        };
+        let z = if scale > 0.0 {
+            ((world_z / scale) as i32).clamp(0, max)
+        } else {
+            0
+        };
+        Self {
+            x,
+            z,
+            world_x,
+            world_z,
         }
     }
 }
@@ -93,6 +135,9 @@ impl PassabilityGrid {
     pub fn coordinate(&self, x: i32, z: i32) -> Coordinate {
         Coordinate::from_tile(x, z, self.size, self.world_dimension)
     }
+    pub fn world_to_coordinate(&self, world_x: f32, world_z: f32) -> Coordinate {
+        Coordinate::from_world(world_x, world_z, self.size, self.world_dimension)
+    }
     pub fn tile_scale(&self) -> f32 {
         self.world_dimension / self.size as f32
     }
@@ -157,7 +202,7 @@ impl ClampPair for (i32, i32) {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct IsolatedRegion {
     pub component_id: usize,
     pub tile_count: usize,
@@ -326,7 +371,7 @@ pub fn max_safe_unit_count(clearance: i32) -> usize {
         _ => 20,
     }
 }
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ChokePoint {
     pub location: Coordinate,
     pub clearance: i32,
@@ -337,7 +382,7 @@ pub struct ChokePoint {
     pub troop_count: usize,
     pub kind: &'static str,
 }
-fn choke(
+pub(crate) fn choke(
     grid: &PassabilityGrid,
     x: i32,
     z: i32,
@@ -484,7 +529,7 @@ fn supports(texture: &str, dx: i32, dz: i32) -> bool {
         true
     }
 }
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct RoadGap {
     pub start: Coordinate,
     pub end: Coordinate,
@@ -492,6 +537,13 @@ pub struct RoadGap {
     pub texture: &'static str,
     pub clear_collision: bool,
     pub style: &'static str,
+}
+impl RoadGap {
+    /// Number of missing road tiles in the gap, matching C# `RoadGapCandidate.GapDistance`.
+    #[inline]
+    pub fn gap_distance(&self) -> usize {
+        self.tiles.len()
+    }
 }
 pub fn detect_road_gaps(
     dimension: usize,
@@ -613,7 +665,7 @@ pub fn detect_road_gaps(
     Ok(result)
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct TileChange {
     pub x: i32,
     pub z: i32,
@@ -656,3 +708,97 @@ pub fn bridge_repair(
         collision: Some(0),
     })
 }
+
+/// Complete NavMesh analysis report, mirroring C# `NavMeshAnalysisResult` in
+/// `AgainstRomeMapEditor.Modules.Pathfinding.NavMeshRepairContracts`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct NavMeshAnalysisResult {
+    pub isolated_regions: Vec<IsolatedRegion>,
+    pub road_gaps: Vec<RoadGap>,
+    pub formation_choke_points: Vec<ChokePoint>,
+    pub recommended_repairs: Vec<RepairAction>,
+}
+
+impl NavMeshAnalysisResult {
+    pub fn empty() -> Self {
+        Self {
+            isolated_regions: Vec::new(),
+            road_gaps: Vec::new(),
+            formation_choke_points: Vec::new(),
+            recommended_repairs: Vec::new(),
+        }
+    }
+}
+
+/// Request configuration for end-to-end NavMesh analysis.
+#[derive(Clone, Debug)]
+pub struct NavMeshAnalysisRequest<'a> {
+    pub primary_seeds: &'a [(i32, i32)],
+    pub interest_points: &'a [(i32, i32)],
+    pub min_isolated_size: usize,
+    pub textures: Option<(&'a [String], usize)>,
+    pub max_gap_distance: usize,
+    pub trips: &'a [FormationTrip],
+    pub squad_max_troops: i32,
+    pub bridge_texture: &'a str,
+}
+
+impl<'a> Default for NavMeshAnalysisRequest<'a> {
+    fn default() -> Self {
+        Self {
+            primary_seeds: &[],
+            interest_points: &[],
+            min_isolated_size: 1,
+            textures: None,
+            max_gap_distance: 2,
+            trips: &[],
+            squad_max_troops: 0,
+            bridge_texture: "H_WEG1",
+        }
+    }
+}
+
+/// Runs full NavMesh connectivity, road gap, formation corridor, and repair action diagnostics,
+/// returning a unified `NavMeshAnalysisResult` matching C# `MapDiagnostics.AnalyzeNavMesh`.
+pub fn analyze_navmesh(
+    grid: &PassabilityGrid,
+    request: &NavMeshAnalysisRequest,
+) -> NavMeshAnalysisResult {
+    let isolated = analyze_connectivity(
+        grid,
+        request.primary_seeds,
+        request.interest_points,
+        request.min_isolated_size.max(1),
+    );
+
+    let (gaps, tex_dim) = match request.textures {
+        Some((tex, dim)) if dim > 0 && tex.len() == dim * dim => {
+            let detected = detect_road_gaps(dim, tex, Some(grid), request.max_gap_distance)
+                .unwrap_or_default();
+            (detected, dim)
+        }
+        _ => (Vec::new(), 64),
+    };
+
+    let repairs = recommended_repairs(
+        &gaps,
+        &isolated,
+        request.bridge_texture,
+        tex_dim,
+    );
+
+    let formation_report = analyze_formation(grid, request.trips, request.squad_max_troops);
+    let chokes = if !formation_report.corridor_chokes.is_empty() {
+        formation_report.corridor_chokes
+    } else {
+        formation_report.topological_chokes
+    };
+
+    NavMeshAnalysisResult {
+        isolated_regions: isolated,
+        road_gaps: gaps,
+        formation_choke_points: chokes,
+        recommended_repairs: repairs,
+    }
+}
+

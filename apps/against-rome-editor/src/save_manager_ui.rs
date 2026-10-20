@@ -182,6 +182,33 @@ impl Language {
         }
     }
 
+    pub fn unparsed_note(&self) -> &'static str {
+        match self {
+            Language::TraditionalChinese => "save.ini 未完整解析",
+            Language::English => "save.ini not fully parsed",
+        }
+    }
+
+    /// Title/level cell text. Unlike the C# grid (which replaces unparsed rows with a
+    /// placeholder), metadata that was still read stays visible and is flagged instead.
+    pub fn metadata_display(&self, parsed: bool, value: &str, placeholder: &'static str) -> String {
+        if parsed {
+            value.to_string()
+        } else if value.trim().is_empty() {
+            placeholder.to_string()
+        } else {
+            format!("{value} ⚠{}", self.unparsed_note())
+        }
+    }
+
+    pub fn title_display(&self, parsed: bool, title: &str) -> String {
+        self.metadata_display(parsed, title, self.unparsable())
+    }
+
+    pub fn level_display(&self, parsed: bool, level: &str) -> String {
+        self.metadata_display(parsed, level, self.unknown())
+    }
+
     pub fn unknown(&self) -> &'static str {
         match self {
             Language::TraditionalChinese => "未知",
@@ -476,16 +503,20 @@ impl SaveManagerModel {
         let save_info = cat.saves.iter().find(|s| s.folder == folder);
 
         let title = save_info
-            .map(|s| if s.parsed { s.title.as_str() } else { self.language.unparsable() })
-            .unwrap_or_else(|| self.language.unknown());
+            .map(|s| self.language.title_display(s.parsed, &s.title))
+            .unwrap_or_else(|| self.language.unknown().to_string());
         let level = save_info
-            .map(|s| if s.parsed { s.level.as_str() } else { self.language.unknown() })
-            .unwrap_or_else(|| self.language.unknown());
+            .map(|s| self.language.level_display(s.parsed, &s.level))
+            .unwrap_or_else(|| self.language.unknown().to_string());
+        let unparsed = save_info.is_some_and(|s| !s.parsed);
         let time = save_info
             .map(|s| s.last_write_time.as_str())
             .unwrap_or("");
 
-        self.detail_text = self.language.format_game_save_detail(folder, title, level, time);
+        self.detail_text = self.language.format_game_save_detail(folder, &title, &level, time);
+        if unparsed {
+            self.detail_text.push_str(&format!("\n\n⚠ {}", self.language.unparsed_note()));
+        }
 
         let key = format!("live:{folder}");
         if self.last_preview_key != key {
@@ -510,16 +541,20 @@ impl SaveManagerModel {
             .map(|b| if b.orig_folder.is_empty() { self.language.unknown() } else { b.orig_folder.as_str() })
             .unwrap_or_else(|| self.language.unknown());
         let title = backup_info
-            .map(|b| if b.parsed { b.title.as_str() } else { self.language.unparsable() })
-            .unwrap_or_else(|| self.language.unknown());
+            .map(|b| self.language.title_display(b.parsed, &b.title))
+            .unwrap_or_else(|| self.language.unknown().to_string());
         let level = backup_info
-            .map(|b| if b.parsed { b.level.as_str() } else { self.language.unknown() })
-            .unwrap_or_else(|| self.language.unknown());
+            .map(|b| self.language.level_display(b.parsed, &b.level))
+            .unwrap_or_else(|| self.language.unknown().to_string());
+        let unparsed = backup_info.is_some_and(|b| !b.parsed);
         let time = backup_info
             .map(|b| b.backup_time.as_str())
             .unwrap_or("");
 
-        self.detail_text = self.language.format_backup_detail(file_name, orig_folder, title, level, time);
+        self.detail_text = self.language.format_backup_detail(file_name, orig_folder, &title, &level, time);
+        if unparsed {
+            self.detail_text.push_str(&format!("\n\n⚠ {}", self.language.unparsed_note()));
+        }
 
         let key = format!("backup:{file_name}");
         if self.last_preview_key != key {
@@ -535,7 +570,33 @@ impl SaveManagerModel {
 
     // --- Action Requests ---
 
+    /// Records `result`'s error in the visible status line; success passes through.
+    fn report<T>(&mut self, result: Result<T, String>) -> Result<T, String> {
+        if let Err(e) = &result {
+            self.status_message = e.clone();
+            self.status_is_error = true;
+        }
+        result
+    }
+
+    /// Rescans after a successful action; a rescan failure stays visible next to the
+    /// success message instead of being overwritten by it.
+    fn finish_action(&mut self, mut msg: String) -> String {
+        let rescan = self.rescan();
+        if let Err(e) = &rescan {
+            msg.push_str(&format!(" ({e})"));
+        }
+        self.status_message = msg.clone();
+        self.status_is_error = rescan.is_err();
+        msg
+    }
+
     pub fn request_backup_save(&mut self) -> Result<String, String> {
+        let result = self.request_backup_save_inner();
+        self.report(result)
+    }
+
+    fn request_backup_save_inner(&mut self) -> Result<String, String> {
         let Some(folder) = self.selected_live_save.clone() else {
             return Err(if self.language.is_zh() {
                 "請先選擇要備份的存檔。".into()
@@ -570,15 +631,12 @@ impl SaveManagerModel {
             .create_backup(&folder, &title, &level)
             .map_err(|e| format!("備份存檔失敗: {e}"))?;
 
-        let _ = self.rescan();
         let msg = if self.language.is_zh() {
             format!("備份存檔成功！已建立備份: {created}")
         } else {
             format!("Save backed up successfully! Created: {created}")
         };
-        self.status_message = msg.clone();
-        self.status_is_error = false;
-        Ok(msg)
+        Ok(self.finish_action(msg))
     }
 
     pub fn request_delete_save(&mut self) {
@@ -738,6 +796,11 @@ impl SaveManagerModel {
     }
 
     pub fn confirm_pending_action(&mut self) -> Result<String, String> {
+        let result = self.confirm_pending_action_inner();
+        self.report(result)
+    }
+
+    fn confirm_pending_action_inner(&mut self) -> Result<String, String> {
         let Some(pending) = self.pending_confirmation.take() else {
             return Err("無待確認操作".into());
         };
@@ -753,16 +816,13 @@ impl SaveManagerModel {
                 self.selected_live_save = None;
                 self.preview_image = None;
                 self.detail_text.clear();
-                let _ = self.rescan();
 
                 let msg = if self.language.is_zh() {
                     format!("已成功刪除存檔 [{folder}]。")
                 } else {
                     format!("Successfully deleted save [{folder}].")
                 };
-                self.status_message = msg.clone();
-                self.status_is_error = false;
-                Ok(msg)
+                Ok(self.finish_action(msg))
             }
             ConfirmedAction::DeleteBackup { file_name } => {
                 let backup_root = check_explicit_path(&self.backup_path)?;
@@ -773,16 +833,13 @@ impl SaveManagerModel {
                 self.selected_backup = None;
                 self.preview_image = None;
                 self.detail_text.clear();
-                let _ = self.rescan();
 
                 let msg = if self.language.is_zh() {
                     format!("已成功刪除備份 [{file_name}]。")
                 } else {
                     format!("Successfully deleted backup [{file_name}].")
                 };
-                self.status_message = msg.clone();
-                self.status_is_error = false;
-                Ok(msg)
+                Ok(self.finish_action(msg))
             }
             ConfirmedAction::RestoreBackup { file_name, target_folder } => {
                 let game_root = check_explicit_path(&self.game_path)?;
@@ -793,7 +850,6 @@ impl SaveManagerModel {
                     .restore_backup(&file_name, &target_folder)
                     .map_err(|e| format!("還原備份失敗: {e}"))?;
 
-                let _ = self.rescan();
                 let mut msg = if self.language.is_zh() {
                     format!("還原備份 [{file_name}] 至 [{target_folder}] 成功！")
                 } else {
@@ -802,9 +858,7 @@ impl SaveManagerModel {
                 if !warnings.is_empty() {
                     msg.push_str(&format!(" (清理警告: {})", warnings.join("; ")));
                 }
-                self.status_message = msg.clone();
-                self.status_is_error = false;
-                Ok(msg)
+                Ok(self.finish_action(msg))
             }
             ConfirmedAction::RepairEndlessAi { folder } => {
                 let game_root = check_explicit_path(&self.game_path)?;
@@ -817,7 +871,6 @@ impl SaveManagerModel {
                     .repair_endless_ai(&folder)
                     .map_err(|e| format!("修復無盡 AI 失敗: {e}"))?;
 
-                let _ = self.rescan();
                 let msg = match res {
                     AiRepairResult::AlreadyRepaired => {
                         if self.language.is_zh() {
@@ -834,9 +887,7 @@ impl SaveManagerModel {
                         }
                     }
                 };
-                self.status_message = msg.clone();
-                self.status_is_error = false;
-                Ok(msg)
+                Ok(self.finish_action(msg))
             }
         }
     }
@@ -1100,8 +1151,8 @@ impl SaveManagerApp {
                                             } else {
                                                 for save in &cat.saves {
                                                     let is_selected = self.model.selected_live_save.as_deref() == Some(&save.folder);
-                                                    let title_display = if save.parsed { &save.title } else { lang.unparsable() };
-                                                    let level_display = if save.parsed { &save.level } else { lang.unknown() };
+                                                    let title_display = lang.title_display(save.parsed, &save.title);
+                                                    let level_display = lang.level_display(save.parsed, &save.level);
 
                                                     let row_text = format!(
                                                         "{:<14} | {:<22} | {:<12} | {}",
@@ -1212,8 +1263,8 @@ impl SaveManagerApp {
                                             } else {
                                                 for b in &cat.backups {
                                                     let is_selected = self.model.selected_backup.as_deref() == Some(&b.file_name);
-                                                    let title_display = if b.parsed { &b.title } else { lang.unparsable() };
-                                                    let level_display = if b.parsed { &b.level } else { lang.unknown() };
+                                                    let title_display = lang.title_display(b.parsed, &b.title);
+                                                    let level_display = lang.level_display(b.parsed, &b.level);
                                                     let orig_display = if b.orig_folder.is_empty() { lang.unknown() } else { &b.orig_folder };
 
                                                     let row_text = format!(
@@ -1857,6 +1908,69 @@ mod tests {
     }
 
     #[test]
+    fn action_errors_are_visible_in_status() {
+        let t = TempDir::new("action-errors");
+        let game = t.0.join("game");
+        make_game(&game, "SAVE_001");
+        let mut model = SaveManagerModel::new(Some(game.display().to_string()));
+        model.set_backup_path(t.0.join("SavesBackup").display().to_string());
+
+        // Backup with nothing selected.
+        model.status_message.clear();
+        model.status_is_error = false;
+        assert!(model.request_backup_save().is_err());
+        assert!(model.status_is_error);
+        assert!(!model.status_message.is_empty());
+
+        // Confirm without a pending action.
+        model.status_message.clear();
+        model.status_is_error = false;
+        assert!(model.confirm_pending_action().is_err());
+        assert!(model.status_is_error);
+        assert!(!model.status_message.is_empty());
+
+        // Service failure: restore a backup that does not exist.
+        model.status_message.clear();
+        model.status_is_error = false;
+        model.pending_confirmation = Some(PendingConfirmation {
+            title: String::new(),
+            prompt: String::new(),
+            action: ConfirmedAction::RestoreBackup {
+                file_name: "missing.zip".into(),
+                target_folder: "SAVE_001".into(),
+            },
+        });
+        let err = model.confirm_pending_action().unwrap_err();
+        assert!(model.status_is_error);
+        assert_eq!(model.status_message, err);
+    }
+
+    #[test]
+    fn rescan_failure_after_successful_action_stays_visible() {
+        let t = TempDir::new("rescan-after");
+        let game = t.0.join("game");
+        make_game(&game, "SAVE_001");
+        let mut model = SaveManagerModel::new(Some(game.display().to_string()));
+        model.set_backup_path(t.0.join("SavesBackup").display().to_string());
+        model.select_live_save("SAVE_001");
+        model.request_backup_save().unwrap();
+        assert!(!model.status_is_error);
+
+        let msg = model.finish_action("done".into());
+        assert!(!model.status_is_error);
+        assert_eq!(msg, "done");
+
+        // A backup root that is a regular file makes the follow-up rescan fail.
+        let bad_backup = t.0.join("backups-file");
+        fs::write(&bad_backup, b"not a directory").unwrap();
+        model.backup_path = bad_backup.display().to_string();
+        let msg = model.finish_action("done".into());
+        assert!(model.status_is_error);
+        assert!(msg.starts_with("done ("));
+        assert_eq!(model.status_message, msg);
+    }
+
+    #[test]
     fn test_save_manager_safety_guards() {
         assert!(check_explicit_path("").is_err());
         assert!(check_explicit_path("relative/path").is_err());
@@ -1893,6 +2007,49 @@ mod tests {
         let detail_en = en.format_game_save_detail("DIR", "Title", "Level", "2026-10-18");
         assert!(detail_en.contains("Save Type: Game Save"));
         assert!(detail_en.contains("DIR"));
+    }
+
+    #[test]
+    fn unparsed_metadata_stays_visible_with_warning() {
+        use against_rome_modifier::save_manager::{GameSaveInfo, SaveBackupCatalog, SaveBackupInfo};
+
+        let zh = Language::TraditionalChinese;
+        assert_eq!(zh.title_display(true, "T"), "T");
+        assert_eq!(zh.title_display(false, ""), "無法解析");
+        assert_eq!(zh.level_display(false, " "), "未知");
+        let shown = zh.title_display(false, "Cannae");
+        assert!(shown.starts_with("Cannae") && shown.contains("save.ini 未完整解析"));
+
+        let mut model = SaveManagerModel::new(None);
+        model.catalog = Some(SaveBackupCatalog {
+            saves: vec![GameSaveInfo {
+                folder: "SAVE_001".into(),
+                title: "Cannae".into(),
+                level: "ENDL_001".into(),
+                last_write_time: "2026-10-19T00:00:00".into(),
+                parsed: false,
+            }],
+            backups: vec![SaveBackupInfo {
+                file_name: "b.zip".into(),
+                title: "Zama".into(),
+                level: "ENDL_002".into(),
+                backup_time: "2026-10-18 12:00:00".into(),
+                orig_folder: "SAVE_007".into(),
+                last_write_time: String::new(),
+                parsed: false,
+            }],
+        });
+
+        model.select_live_save("SAVE_001");
+        for want in ["SAVE_001", "Cannae", "ENDL_001", "2026-10-19T00:00:00", "未完整解析"] {
+            assert!(model.detail_text.contains(want), "{want} missing: {}", model.detail_text);
+        }
+        assert!(!model.detail_text.contains("無法解析"));
+
+        model.select_backup("b.zip");
+        for want in ["b.zip", "SAVE_007", "Zama", "ENDL_002", "2026-10-18 12:00:00", "未完整解析"] {
+            assert!(model.detail_text.contains(want), "{want} missing: {}", model.detail_text);
+        }
     }
 
     #[test]

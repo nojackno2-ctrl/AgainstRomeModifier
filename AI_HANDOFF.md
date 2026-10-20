@@ -1,6 +1,725 @@
+## 2026-10-19 23:27+08:00 Codex：Rust full restore 自製地圖刪除 parity
+
+- 比對 C# `CustomMapRestoreService.Execute` 與 Rust restore flow，確認 Rust 在 `preserve_custom_maps=false` 時未刪除自製地圖，且錯將 `team.dat` 備份寫入地圖。新增 `custom_map_restore`：完整還原先驗證 marker/manifest/`.deleting_arm`，plan 一律排除自製地圖檔，再以 maps crate deleter 刪除；外層 `FileRollbackScope` 同時追蹤 plan 檔案、manifest 與地圖目錄，任一步驟失敗可回復。CLI dry-run 回報預計刪除數。
+- 新增 4 個 Rust 單元測試，涵蓋保留、不完整登記、殘留暫存資料夾拒絕，以及登記地圖刪除與檔案還原；另擴充 category restore parity 測試確認 preserve=false 不會先寫入地圖。完整 `cargo test --manifest-path native/against-rome-modifier/Cargo.toml --locked --offline` 通過；`cargo check --workspace --locked --offline` exit 0（含 editor app）；`rustfmt --check` 新模組及程式/盤點文件的 scoped `git diff --check` 通過；root handoff 舊有其他行仍含 trailing whitespace（未改動）。僅合成暫存目錄測試，未操作安裝遊戲；未 commit/push。
+
+## 2026-10-19 23:20+08:00 Claude CLI：TGA migration edge parity tests
+
+- Claude 新增 `native/against-rome-modifier/tests/tga_decoder_migration_edges.rs`，以一次性 C# `TgaDecoder.Decode` oracle 覆蓋索引色、方向、截斷輸入、不支援格式與尺寸邊界；未修改既有檔案。父端重跑 `cargo test --locked --offline --target-dir re_workspace/target-against-rome-modifier --test tga_decoder_migration_edges`（於 modifier crate）結果 5 passed。新檔 `git diff --no-index --check` 無 whitespace error。
+- Claude 5 小時配額完成後為 4%（7 日剩餘 46%）；依 5 小時停派線不再增加工作。Rust/C# 其他行為未由此測試證明；未做 GUI/遊戲驗收，未 commit/push。
+
+## 2026-10-19 23:11+08:00 Codex：Neutral wildlife 物件接入 DATA session
+
+- Environment 面板的 Neutral Lair 預覽此前只保留 lair records/events，沒有把 catalog 中實際已觀察到的 FigTie 狼、熊等中立動物物件加入地圖。新增 template-resolved `lair_requests`、地表高度採樣與 `Apply Animals to Objects session`，使用既有 DATA template clone，team 設為 8；未解析模板、非 cloneable map types、無效座標與超過 96-item undo batch 均在 mutation 前 fail closed，沒有虛構巢穴建築或刷怪規則。Safe Save 使用既有全圖交易路徑。
+- 新增 helper tests 覆蓋 template/name、地表高度、rotation、neutral team、unresolved template、batch 上限與 lair/event 草稿同步清理；app integration tests 驗證整批 unresolved 時無 mutation，以及從 map template clone、加入 placement session、Safe Save、reload DATA 後位置/team 正確。Local Laguna review 指出 apply 後事件草稿會失去 lair 對應；已同步清理並加測試。`cargo test --manifest-path apps/against-rome-editor/Cargo.toml --locked --offline --target-dir re_workspace/rust-editor-app-target` exit 0：382 lib tests 與所有 bin/integration/doc targets 通過。GUI 和 retail/game 驗收仍未做；`rustfmt --check` 在兩個既有大檔仍報多處舊格式差異，本輪新增程式碼區塊已不在剩餘 diff locations。工作樹仍有 317 項混合 dirty/untracked，未清理、未 commit/push。
+
+## 2026-10-19 22:56+08:00 Codex：Modifier CLI 移植狀態核對
+
+- 核對 Modifier 子專案 HANDOFF 時，發現 WP-03b 的 `backup`/`stats`/`saves` CLI「尚未移植」描述已過期。現行 `native/against-rome-modifier/src/cli_commands.rs` 實作三組命令，`cli.rs` 已路由至其 handler；`tests/save_manager_parity.rs` 覆蓋 saves backup/preview/restore/delete/error paths。
+- 父端以 `cargo test --manifest-path native/against-rome-modifier/Cargo.toml --locked --offline --target-dir re_workspace/target-against-rome-modifier` 重跑成功，27 個 test result suites 共 190 passed、0 failed（含 71 個 library tests）。另 `pwsh -NoProfile -ExecutionPolicy Bypass -File tools/test-rust-rewrite.ps1 -Offline -IncludeDesktop` exit 0，涵蓋目前 workspace crates、probes 與 editor app。腳本仍將部分 C#／retail gates 標為 ignored；這不是 GUI、零售地圖或遊戲內驗收。額度即時查詢：Codex 5h 8%、Claude 5h 8% 後查詢回報 HTTP 429、Agy 兩個 7d pool 皆 0%；沒有活躍代理工作。
+- 同次核對修正兩項過期 handoff：Rust `PatchEngine::compose` 已路由 `compose_bci` 並保留 PFIL template header，但缺完整 C# end-to-end differential；Rust editor 已接 Nature Plant/Remove brush 與 Safe Save staging，Nature focused tests 8 passed，仍未做 GUI/retail map/game 驗收。後續 neutral wildlife DATA clone/save 進度見本檔 23:11+08 記錄。
+
+## 2026-10-19 22:52+08:00 Codex：Rust 遷移代理批次與離線驗證
+
+- Claude batch `172076665946` 的五項工作全部 succeeded：修正 `unit_stats.rs` metadata lookup 的大小寫語意並加 5 個測試；將 `formation-golden-rs` 納入 root workspace 和 `tools/test-rust-rewrite.ps1`；完成 Connected/Select Objects 差距唯讀稽核；確認 Navigation 已有 194 case C# differential 並記錄缺口；在 Rust workflow 加入 portable ZIP provenance/asset contract gate。最後兩項為文件/CI 變更，不代表 GUI 或遠端 CI 驗收。
+- 父端重驗 `cargo test -p against-rome-editor-app --locked --offline --target-dir re_workspace/rust-editor-app-target` exit 0：430 passed。`cargo test -p against-rome-scenario --locked --offline --target-dir re_workspace/target-scenario-full` exit 0；另以 `--include-ignored` 跑 BCI/PFIL synthetic C# differential，12/12 passed。`cargo test -p against-rome-modifier --locked --offline --target-dir re_workspace/target-against-rome-modifier` exit 0，含 69 library tests 及全部其他 targets。
+- 父端 `pwsh -NoProfile -ExecutionPolicy Bypass -File tools/test-rust-rewrite.ps1 -Offline` exit 0，涵蓋 root workspace Rust crates、probe 清單和 workspace drift check；新 `formation-golden-rs` 已列入。另 `cargo test -p against-rome-navigation --locked --offline --target-dir re_workspace/target-against-rome-navigation-final` exit 0。並非桌面 GUI、乾淨 Windows、retail map 或遊戲實機驗收。
+- C# `SelectObjects` 是矩形選取、Connected 是填色。Claude `b008980ae741` 在 `placement_ui.rs` 加半開 TileRect helper/3 項幾何測試；Codex `d60c440bb815` 加 Placement 面板整數 tile bounds 表單與選取按鈕、錯誤輸入保留選取且不改 dirty/undo/磁碟。父端重跑 editor app 全部 targets 449 passed，focused tests 6/6；`rustfmt --check` 及該檔 `git diff --check` 通過。尚無 GUI/遊戲實測。
+- Codex batch `583d6e8a48b3` 五項均 succeeded：`troops.rs` 與 `objdef.rs` 修正 C# case-sensitive UnitMeta 行為；Map Diff 新增 bound alias/count 與 scenario spawn/data-slot 比較；release-candidate workflow 加 provenance/asset/binary/trace checks；region selection UI 稽核未找到安全既有入口，遵照範圍未改 code。首次整合時兩個 Modifier 測試發現 `unit_stats` 舊測試仍期待 case-insensitive metadata；Codex `07d4442df34a` 僅更新該測試預期，父端重跑完整 Modifier crate exit 0（71 library tests 與所有 integration targets）。父端完整 editor app 測試 exit 0：442 passed，Map Diff suite 18 passed。YAML/6 PowerShell blocks/23 negative fixtures 由代理本機驗證；未跑遠端 CI 或遊戲 GUI。無 commit/push。
+- Codex batch `94ef5ae1be5b` 五項完成：Saves rollback 保留外部重建目標目錄並新增測試；Campaign WaveSurvival 延遲 overflow 改為 C# wrapping semantics 並加入 27 案 differential；Ambience JSON Attributes/Flags 拒絕超出 uint32 且保留未知位元 roundtrip；Scene ambient-color clamp/minute precision 修正並加 3 項 oracle tests；ScenarioUi 新增事件複製、undo/redo、256 上限與 Unicode 截斷。父端完整重跑 saves 44 passed/1 ignored、campaign 62、ambience 26、scene 100，以及 editor app 446；最新 Placement 面板完成後再重跑 editor app 449。
+- Codex `b1adf4e0a4df` 僅改主 CI workflow：驗證 ZIP 後由解壓路徑啟動五個支援 `--version` 的 binary；跳過沒有安全旗標、一般啟動會寫入資料的 ArmMapPackage。代理驗證 YAML、9 個 PowerShell blocks 與 8 項 fixture；父端對 workflow `git diff --check` 通過。未跑遠端 GitHub Actions。
+- 最新 5h quota 查詢 (2026-10-19 14:52 UTC)：Claude 剩 8%，Codex 剩 8%；Agy `/usage` 回報兩個 7d pools 皆 0%，未提供 5h window。沒有仍在執行的代理工作；依 agent-delegation skill 的 <=10% 規則不再新增工作。保留混合 dirty/untracked work，未 commit/push、未改 installed game。
+- Codex `9230628cce85` 對照 C# Connected material mapping 後未改檔：Rust resolver 缺少完整 FindByTexture owner map，從 corner variants 推定會破壞未知-texture fallback。Focused region tests 3 passed、texture crate 60 passed/4 ignored；未變更既有 untracked `native/against-rome-textures/src/catalog.rs`。
+- Codex `74a4abcb9693` 將 `services.rs` 三處 UnitMeta 取值改為 C# 同等的精確大小寫查找，新增 `services_metadata_parity.rs` 4 項回歸測試；父端獨立重跑完整 Modifier crate 成功（69 library tests 與全部 integration targets，含新 4 項）。`git diff --check` 通過。沒有 commit/push。
+
+## 2026-10-19 Codex：trace release panic regression 已修復並驗證
+
+- 本次僅修改 native/against-rome-trace/build-win32.ps1、tools/test-rust-rewrite.ps1、tools/publish-rust.ps1、tools/test-publish-rust.ps1 與本紀錄；保留既有混合 dirty work。無 commit/push、無 installed-game writes，root profile 與 CRT 設定未改。
+- Before：使用者指定 root cargo rustc --locked --offline --release -p against-rome-trace --target i686-pc-windows-msvc --config native/against-rome-trace/.cargo/config.toml --lib -- --print cfg 實測 panic="unwind"、crt-static。After：同命令在 DLL-only CARGO_PROFILE_RELEASE_PANIC=abort 下實測 panic="abort"、crt-static；release --test logic cfg 仍為 panic="unwind" 且含 test。記錄：re_workspace/trace-panic-{release,test}-cfg.log。
+- 三條 DLL route 僅在 cfg/build 期間設 abort，cfg 必須實際回報 abort，finally 精確還原呼叫者 panic 值；cargo test 與 export helper 在範圍外。Publisher dry run/buildCommand 揭露 override，trace panicStrategy 為 abort；SkipBuild 為 unverifiable，workspace/root Cargo.lock 說明已修正。
+- pwsh -NoProfile -File tools/test-rust-rewrite.ps1 -TraceOnly：exit 0，i686 Release 80 passed（8+47+25），DLL cfg abort/static CRT、193 exact exports、無 dynamic Microsoft CRT imports 通過。pwsh -NoProfile -File native/against-rome-trace/build-win32.ps1：exit 0，i686 debug 80 passed、release DLL build/cfg/export audit 通過。Logs：re_workspace/trace-panic-{traceonly,build-win32}.log。
+- pwsh -NoProfile -File tools/test-publish-rust.ps1 -SkipNetworkFetch：exit 0；三入口 absent/empty/unwind/abort 原值 × 成功/cfg失敗/build失敗/錯誤unwind cfg 均驗證還原與拒絕，真 i686 fresh/cached abort DLL、PE32、fixture staging/ZIP/rollback/provenance contracts 通過。網路 fetch/bootstrap 子測試刻意跳過；log：re_workspace/trace-panic-publisher-tests.log。獨立 Codex 唯讀稽核 a2b279bf98ac 已完成。
+- 父端完整重跑 `pwsh -NoProfile -ExecutionPolicy Bypass -File tools/test-publish-rust.ps1`（未跳過 network fetch）exit 0：獨立 CARGO_HOME 拉取 27,546 個檔、fetch 後 offline metadata 與 packaging crate check 通過；publisher staging/rollback/provenance 與真 i686 abort/static-CRT DLL contract 通過。父端亦獨立重跑 `pwsh -NoProfile -ExecutionPolicy Bypass -File tools/test-rust-rewrite.ps1 -TraceOnly` exit 0、80 passed、193 exports 和 CRT 檢查通過。
+- 限制：未跑完整桌面套件 publisher 實建置、遠端 CI、實際 DLL loading/retail game hook/遊戲內 panic 行為；靜態 cfg、PE/exports 與 synthetic detour tests 不等同遊戲 runtime 驗收。
+
+## 2026-10-19 21:48+08:00 Codex：Nature、WildLair、Rust workflow 與 trace workspace
+
+- Claude `a44203d0bad9` 完成五片：Nature stroke core、新增 WildLair event merge UI request、安全合併與拒絕測試、Rust CI package gate、manual release-candidate artifact workflow、trace crate 加入 workspace。均未 commit/push；CI 未在 GitHub runner 執行，candidate workflow 未實際派送，GUI/遊戲內未驗收。
+- 父端獨立驗證：environment `cargo test --locked --offline -p against-rome-environment --target-dir re_workspace/target-against-rome-environment` 81 passed；editor app 同一鎖版離線測試 422 passed；trace crate workspace 測試 72 passed；`cargo metadata --locked --offline --no-deps` 通過。Nature 新檔 rustfmt check 通過；兩 workflow YAML 與 13 個內嵌 PowerShell blocks 解析均通過。
+- Trace 風險：原 trace manifest 的 release `panic=abort` 因 workspace 化被移除，Cargo release profile 現顯示 `panic="unwind"`（父端 `cargo rustc ... -- --print cfg` 實測）。不得以全 workspace profile 改成 abort；Codex follow-up `674b51a5e72e` 正修正 trace DLL release build 的 process-local 設定，完成前不可視為 trace release parity 已確認。
+- 舊 handoff「Nature stroke 未接 editor UI」已過期：`app.rs` 的 `NatureWorkflow`、map-canvas `draw_nature_overlay`/paint handler 與 Safe Save staging 已接線。2026-10-19 對 editor app 跑 `cargo test ... nature` 得 8 passed；全 `test-rust-rewrite.ps1 -Offline -IncludeDesktop` exit 0。仍未做 GUI/retail map/game 驗收；height world-to-tile 精確浮點 tie parity 尚未驗；WildLair 實際 lair object save、完整 live alias catalog 仍有缺口。
+## 2026-10-19 21:41+08:00 Codex：Map Diff saved baseline 五層對照
+
+- Claude `3ddebe3d3cf9` 擴充 `packaging_ui.rs`，新增 saved map folder baseline、heightmap/collision/textures/objects/scenario events 五層 coverage 與 Differences/Identical/Incomplete verdict；缺失資料顯示 unavailable，不能當 PASS。僅比較當前側 in-memory height/collision，texture/object/event 仍讀目前地圖磁碟版本。
+- 父端獨立重跑 `cargo test -p against-rome-editor-app --locked --offline --target-dir re_workspace/rust-editor-app-target` 成功：419 passed、0 failed，含新 `packaging_map_diff.rs` 9 項測試。GUI 尚未啟動；scenario spawn/data slots、object alias/unit count 不在本切片比對範圍。
+- 四份 Claude 只讀盤點指出後續優先項：Nature brush stroke driver、WildLair event merge、Rust CI/package/release path、trace crate workspace membership。這些報告是靜態盤點，待各自實作及驗證。
+- 下一批 Claude 工作 `a44203d0bad9` 已啟動，檔案所有權切分為 Nature core、WildLair UI、Rust CI workflow、manual release-candidate workflow、trace workspace membership；父端待結果後逐項審查與測試。
+## 2026-10-19 21:34+08:00 Codex：Rust 編輯器 Design Check 已整合
+
+- Claude `b17b2d788ac0` 新增唯讀 Design Check 面板，共用 Safe Save candidate diagnostics，呈現 diagnostics、preflight 與設計提醒；測試涵蓋 pending placement/events 與不改磁碟、dirty/undo/status 等狀態。
+- 父端獨立執行 `cargo test -p against-rome-editor-app --locked --offline --target-dir re_workspace/rust-editor-app-target` 成功：410 passed、0 failed。`app.rs` 和新 `design_check_ui.rs` rustfmt check、三檔 `git diff --check` 通過；`lib.rs` rustfmt check 受既存模組/re-export 排序差異影響，未整檔格式化。
+- 未啟動 GUI，未做 retail game 驗收；Design Check 只以 headless tests 驗證，尚非整體 Rust 改寫完成證據。
+- 本紀錄更新 21:28 記載的 Design Check「進行中」狀態為已完成。Claude quota 於 2026-10-19 21:32+08:00 查得 5h 剩餘 100%、7d 剩餘 51%。
+## 2026-10-19 21:28+08:00 Codex：Modifier FeatureKey Rust/C# parity gate
+
+- Claude `a9d7ee314fee` 新增 `native/against-rome-modifier/tests/feature_registry_parity.rs`；測試以 `include_str!` 讀取 C# `FeatureKey.cs`，比較 `FeatureKeys` static Bool/Int/Reference IDs 與 Rust `FeatureRegistry::ALL`，檢查集合差異和重複值。無 production 行為變更。
+- 父端獨立執行 `cargo test -p against-rome-modifier --locked --offline --target-dir re_workspace/target-against-rome-modifier` 成功，exit 0；全 crate 每個 target 的 test result 均為 ok，含 parity test 1 passed。新測試 `rustfmt --check` 與 `git diff --check` 通過。Parser 刻意對不支援/多行 C# declaration fail-fast；尚未做 mutation test 驗證新增/改名必然使 gate 失敗。
+- Claude `b17b2d788ac0` 正在新增 app Design Check panel，檔案範圍與本測試分離；未完成或驗證前不可宣稱功能完成。
+## 2026-10-19 21:26+08:00 Codex：Placement/Ambience 儲存改走整圖 Safe Save
+
+- Claude `328de4e387aa` 將 Placement `Save DATA` 與 Ambience `Save` 按鈕改成提出 request；`EditorApp` 在面板渲染後合併請求，只呼叫一次 `request_safe_save()`。Placement legacy `save()`、Ambience `quick_save()` 限定 test；`AmbienceUi::save_to_map` 仍是 public，因現有 E2E 測試直接呼叫，但沒有 app product UI call site。場景、placement、ambience 現在共用 app transaction；不代表無其他直接 writers。
+- 父端獨立重跑 `cargo test -p against-rome-editor-app --locked --offline --target-dir re_workspace/rust-editor-app-target` 成功，exit 0：352 library + 55 其他 targets = **407 passed**。`rustfmt --check` 對 `app.rs`、`placement_ui.rs`、`ambience_ui.rs` 通過；`git diff --check` 通過。新增測試覆蓋 request take-once、合併請求、idle 不寫檔、失敗保留 ambience dirty；尚未直接點擊 Placement egui 按鈕，也未做 GUI/game 驗收。
+- 最新 quota (UTC 13:24)：Claude 5h 剩61%、7d剩51%；5h 約13:30重置。Codex 5h剩88%，Agy 5h仍無資料、兩個7d池0%。遵守以5h為準與 Claude 剩20%縮至單一工作的規則。
+## 2026-10-19 21:23+08:00 Codex：SDL Scene UI 接入 editor Safe Save 完成並獨立重驗
+
+- Claude `84508d2f98bc` 新增 `apps/against-rome-editor/src/scene_ui.rs`，提供 SDL 物件檢視、編輯 team/local XYZ/angle、刪除、複製與 undo；`lib.rs` 導出模組。`EditorApp` 在地圖載入/空白重置 scene session，dirty 參與 unsaved/map-switch/close guard，候選 SDL bytes 與其他資料共用 `MapSaveTransaction`，commit 成功後才重載 baseline，錯誤交易保留 dirty/undo，錯誤 target fail-closed。
+- 父端獨立重跑 `cargo test -p against-rome-editor-app --locked --offline --target-dir re_workspace/rust-editor-app-target` 成功，exit 0：348 library + launcher 23 + modifier GUI 7 + modifier binary 5 + blank-map/ambience E2E 4 + BMP safety 3 + CLI startup 6 + editor 3 + terrain adapter 4 = **403 passed**，0 failed。`rustfmt --check` 對 app.rs/scene_ui.rs 通過；`git diff --check` 對 app/lib/scene 與 maps 修改通過。修除 `lib.rs` EOF 額外空行。
+- 完成 editor app 的 403 項 headless 測試不等於實際視窗驗收；SDL Scene 面板尚未實際打開或用 retail map/game 驗證。全 Rust rewrite、全 editor parity、正式 Rust CI/release 仍未完成。工作樹仍混合 dirty，未 commit/push。
+- Claude 配額查詢自 2026-10-19 13:10Z 起多次回 429；最後成功 Claude 5h snapshot 仍是開始派工前 95%，不能當成即時現值。Agy 5h 缺值、7d pools 為 0%。沒有因此新增 Agy 派工。
+## 2026-10-19 21:18+08:00 Codex：修正 SDL 多次複製與角度移除並重驗
+
+- Claude `f684d430b538` 將 template cache 改為保存 pristine 欄位，每筆 addition 獨立套用 team/position/angle；angle `Some -> None` 現由 `SdlDocument::remove_object_value` 移除 SDL key，且測試涵蓋註解、欄位順序和其他 section 保留。
+- 父端重跑 `cargo test -p against-rome-maps --locked --offline --target-dir re_workspace/target-against-rome-maps` 完整成功：lib 52 passed/8 ignored、deleter 1、diagnostics 11、map transaction 17、maps integration 45、route checks 6、SDL staging 8 passed；總計 140 passed、8 ignored。`rustfmt --check` 對 `sdl_scene.rs` 和新增測試通過；`git diff --check` 通過。`text_docs.rs` 全檔 rustfmt check 列出多處既有區段格式差異（本次新 helper 未出現在格式差異中），未格式化整檔以免擴大無關 diff。
+- 仍未完成：SDL scene/settlement editor UI 與 app Safe Save baseline 接線。SDL maps crate 修改尚在混合工作樹中，未 commit/push；沒有 GUI/遊戲實機驗收。
+## 2026-10-19 21:14+08:00 Codex：編輯器 parity 與 Safe Save 靜態缺口盤點
+
+- Claude `a92d0fc79708`、`34e165610e7a` 唯讀報告皆 succeeded/exit0，未改檔或跑測試。Parity 報告列出 Wild Lair 事件設定未合入劇本、Map Diff 僅記憶體快照且缺 textures/events/objects、layout import/export/apply 無 UI、AI Planner 缺 multi-model/lock/preview 流程、Nature brush/區域選取缺口。皆需父端按產品目標核實與分批實作。
+- Safe Save 報告確認中央交易已有 terrain/emboss/ambience/placement/scenario/start-camera/textures staging；但 Placement `Save DATA` (`placement_ui.rs`) 與 Ambience `quick_save` (`ambience_ui.rs`) 仍直接寫入且可獨立清 dirty/baseline，繞開整圖診斷/transaction。`app.rs` 其餘 dirty panels 目前 fail-closed 拒絕中央保存。報告為靜態分析，尚未父端逐行核對或測試。SDL staging 後優先考慮取消/接管這兩個直接保存入口。
+- Claude SDL 正確性修補 `f684d430b538` 已完成，狀態與驗證詳見更新段落。Claude quota API 目前 429；最近有效 5h snapshot 為剩95%，不可將此當成即時確認。無新增 Agy 派工，Agy 5h 不可讀。
+## 2026-10-19 21:12+08:00 Codex：SDL Safe Save staging 接入並通過 maps 全套測試
+
+- Claude `ce17fdfbdf99` 完成 `SdlSceneEditService::stage_changes`：純計算相對 SDL 路徑與序列化 bytes、略過未變檔案；既有 `save_changes` 現改用 `MapSaveTransaction`。新增 `tests/sdl_scene_staging_tests.rs` 五項測試。父端執行 `cargo test -p against-rome-maps --locked --offline --target-dir re_workspace/target-against-rome-maps` 成功：lib 52 passed/8 ignored；deleter 1、diagnostics 11、map transaction 17、maps integration 45、route check 6、SDL staging 5 均 passed，合計 137 passed、8 ignored。
+- 父端審查發現 Codex 唯讀稽核指出的兩個靜態風險尚待修正：同模板多次 addition 共用已注入首筆值；angle `Some -> None` 未刪除 SDL 欄位。Claude `f684d430b538` 正在限縮修改 `sdl_scene.rs`、`text_docs.rs` 和 SDL 測試檔補修及測試。尚未重跑全套後的最新版本；scene UI/app Safe Save 接線仍未完成。
+- Claude `838d88910afc` 全 Rust 範圍盤點及 `0d6f0bf96ecc` build/release 盤點 succeeded/exit0、均唯讀，未跑測試。報告辨識 Saved Lights/Particles、Design Check、Formations 等 UI 缺口；Rust portable package 尚未接 CI/正式 release，而 `.github/workflows/release.yml` 仍以 .NET 發布。這些屬靜態盤點，需父端逐項核對，不是驗收證據。
+- 配額觀察：Codex 5h 最近可讀為 95%；Agy 5h 缺值、7d pools 0%。Claude 先前 5h 曾讀到95%/7d54%，其後 usage API 回429；本次 Claude UI parity 與 Safe Save 唯讀稽核 `a92d0fc79708`、`34e165610e7a` 均 succeeded/exit0；SDL 修補 `f684d430b538` 仍 running。額度端點仍回429，未以週額度替代 5h 控制。
+## 2026-10-19 21:10+08:00 Codex：SDL 唯讀核對找到保存缺口與回歸風險
+
+- Codex SDL audit `3fe906c47b3e` succeeded/exit0，僅靜態閱讀，未改檔或跑測試。確認 `SdlSceneEditService::save_changes` 直接逐檔寫入，未接 editor UI/Safe Save；`SdlDocument::to_bytes()` 已存在，可支援候選 bytes staging。
+- 靜態指出待重現風險：同來源+模板索引的新增物件快取可能令後續 additions 重用第一筆 team/position/angle；`Some(angle) -> None` 可能未刪除既有 SDL angle；loader 忽略個別解析錯誤、錯誤位置轉零及固定世界尺寸亦待單獨評估。這些尚非已重現缺陷。
+- 建議以純 staging API 回傳相對路徑及 bytes，先新增隔離測試，再整合到 app `MapSaveTransaction`；目前 Claude `ce17fdfbdf99` 正在實作 stage API/測試，尚未完成，父端需審查上述風險是否涵蓋後再驗證。
+## 2026-10-19 21:07+08:00 Codex：恢復全 Rust 遷移並擴大 Claude 協作
+
+- 重新檢查分支 `主要開發`、工作樹與 `AI_HANDOFF.md`；原有混合 dirty changes 保留。最新可確認的 app 全套驗證仍為 396 tests passed，尚無桌面 GUI/零售遊戲驗收證據。
+- 使用者更新目標為全專案 Rust 遷移，允許 Agy、Claude 與本地 AI 協助。即時額度：Claude 5h 95%、7d 54%；Codex 5h 96%；Agy 只回報 7d 兩個 pool 皆 0%，無 5h 數值，不以 7d 代替 5h 判斷。Laguna `laguna-xs-2.1:latest` 已載入；本地設計建議未驗證。
+- Claude 派出五項工作：`ce17fdfbdf99` SDL stage API/測試（唯一寫入工作，限制 maps SDL service 與新測試檔）；`838d88910afc` 全 Rust 範圍稽核；`a92d0fc79708` editor UI parity 稽核；`34e165610e7a` Safe Save 缺口稽核；`0d6f0bf96ecc` Rust build/release 稽核。均仍在 running，未視為完成。Codex SDL 唯讀稽核 `3fe906c47b3e` 亦仍在 running。無 Agy 工作。
+- SDL 核心已有 `SdlSceneEditService::save_changes`，但直接寫入檔案；editor app 尚無 scene UI 接線。下一步待稽核與 stage API 完成後，父端審查改動，測試通過再接 Safe Save 與 UI。
+- 不提交、不推送本批工作；依 5h quota 持續監看，Claude 額度剩 20% 時縮至單一工作，Codex 5h 剩 5% 時停止新增 Codex 工作。
+## 2026-10-19 11:47+08:00 Codex：依使用者指示暫停 Rust 遷移工作
+
+- 使用者明確要求暫停。停止新增派工並取消 Claude SDL 任務 `50b47e06cc5e`，終態 cancelled/exit 130；取消前只執行約 15 秒，沒有完成結果或驗證，不可視為 SDL 工作完成。
+- 暫停時 delegation job 狀態全為終態；最新任務為上述 cancelled。當前狀態檢查顯示 `app.rs` 仍有既存大量 dirty changes；未見新 `scene_ui.rs` 或 `sdl_scene.rs` 狀態。保留整個混合工作樹，不還原、不清理、不提交、不推送。分支 `主要開發`。
+- 最後父端驗證：`cargo test -p against-rome-editor-app --locked --offline` 全套通過，341 library + 55 其他 binary/integration/doc tests，總計 396 passed；`app.rs`、`ambience_ui.rs` rustfmt check 與 app.rs diff check 通過。無桌面 GUI/遊戲 runtime 驗收。
+- 恢復時先重查 `AI_HANDOFF.md`、`git status/diff`，特別審查 app.rs 暫停前後內容；再重新拆分 SDL staging service、scene UI、Safe Save 整合，不假設已取消任務有交付。Codex quota 最後查詢為 5h 剩 11%；剩 5% 時停止增加 Codex 工作。Agy 5h 不可讀，不使用 7d 池替代。
+## 2026-10-19 11:45+08:00 Codex：Safe Save diagnostics、ambience 與 emboss 驗證
+
+- Codex `be64825652f2` 接通 Safe Save `MapDiagnostics`/`ScenarioSavePreflight`：錯誤 fail-closed、警告確認後重驗，測試失敗時檔案不變且 dirty/undo 保留。
+- Claude `f0bb7af40d82` 補 `boden.ini` PFIL/CP1251 原文 round-trip 與原生 `TEXT/US/briefing.put` 額外欄位保留；`ac16323e5525` 把 boden.ini、soundscape.sndz、可選 briefing 合併到單一 `MapSaveTransaction` 並測 rollback。
+- Claude `754b7f7bf0f5` 讓載入地圖建立 optional `EmbossSession` baseline，Safe Save 僅在高度變更且原始 emboss 存在時重建 `emboss.bmp`，與 boden.bmp 同交易，成功後更新 baseline；缺檔不建立，碰撞單獨變更不寫 emboss。
+- 父端重跑 `cargo test -p against-rome-editor-app --locked --offline` 通過：341 library、23 launcher、7 GUI、5 modifier、4 blank-map E2E、3 BMP、6 CLI、3 editor、4 terrain adapter，總計 396 passed。`app.rs`、`ambience_ui.rs` rustfmt check 通過，app.rs diff check 無 whitespace errors。
+- 未做桌面 GUI/遊戲實機驗收；Emboss flat relight 尚無 app 操作入口。Briefing PFIL/CP1251 的 Safe Save 整合 round-trip、舊 SCRIPT 副本處理、非 US 語系仍待測。下一項評估 SDL scene/settlement 編輯與 Safe Save transaction 整合。
+- 即時 quota（UTC 03:45）：Codex 5h 剩 11%，使用者要求剩 5% 時停止新增 Codex 工作；Claude 5h 剩 85%；Agy 5h 未回報且 7d pools 顯示 0%，不拿 7d 額度代替 5h 控制。
+## 2026-10-19 11:20+08:00 Codex：驗證並接續五個 Rust 移植工作
+
+- 首批 `b75e35ee2874` 已成功完成五項（console、3D ramp picking、terrain Elevate/Depress、start-camera script copy、placement UI save/undo 邊界）。父端重跑 `cargo test -p against-rome-editor-app --locked --offline` 通過（310 library tests，所有 binary/integration/doc targets exit 0）；`cargo test -p against-rome-editor --locked --offline` 通過（terrain 14、emboss 6、texture history 4，1 項 live C# differential ignored）。父端對七個修改 Rust 檔 `rustfmt --check` 通過。仍未做 GUI/game acceptance；start-camera 目前輸出安全 work copy，未接目前地圖 transaction；viewport 尚沿用連續 grid 座標。
+- 首批完成後即補派第二批 `f3b97936e154`，涵蓋 start-camera 當前地圖安全整合、viewport C# 座標 parity、placement Reset baseline、Elevate/Depress C# differential，以及唯讀缺口盤點。派工前後 Codex 5h quota 顯示剩 64%；低於 5% 前不限制此批現有工作，達 5% 後停止新增 Codex 工作。第二批尚在 running。
+- 供應商 quota：Agy `/usage` 仍未提供 5h window（僅顯示 7d pools 0% remaining）；Claude 5h 0%。目前只使用 Codex，沒有以 7d 額度替代 5h 判斷。
+## 2026-10-19 11:13+08:00 Codex：重啟 Rust 移植並平行處理五個獨立缺口
+
+- 即時配額（UTC 03:12）：Codex 5h 剩 99%、Claude 5h 0%；Agy `/usage` 只提供兩個 7d pool 且均為 0%，沒有可讀的 5h 窗。依使用者 5h 控制規則，派出 Codex 平行批次 `b75e35ee2874`，限定 console parity、3D ramp picking、terrain session wrappers、start-camera workflow、placement UI undo/session 五個不重疊檔案範圍。派後即時 quota 剩 98%，仍遠高於「5%停止新增」門檻；目前僅此批次在途，不新增其他 Codex 工作。
+- 本批次不使用 Agy/Claude：Agy 5h 狀態不可讀且 7d pool 顯示已耗盡，Claude 5h 為 0%。Codex 批次尚未回報子任務完成，後續由父端檢視共享工作樹並測試。
+## 2026-10-19 07:29+08:00 Codex：依使用者指示以 5 小時額度控管代理數
+
+- 即時 quota API（UTC 2026-10-18 23:28）：Codex 5h 剩 4%，Claude 5h 剩 0%；Agy `/usage` 只回報 7d 池，未提供 5h 窗。使用者補充 Codex 5h 剩 5% 時停止新增 Codex 工作；當前已低於該門檻（3%），因此只讓既有唯一工作 `d57854ff97a3` 收尾、不再新增 Codex 工作。Claude 5h 為 0%、無在途工作；Agy 未提供可讀的 5h 數值，不以 7d 額度替代，也不新增派工（先前 Agy 429 記錄仍適用）。
+- Codex 工作 `d57854ff97a3` 終態為 failed/exit 78，log 明示 subscription usage limit；它的跨來源 `import_family_candidate`、`BlankMapStarterKit::apply_to_candidate` 與 starter-import tests 已留在共享工作樹，父端逐檔審查後保留並完成測試。Codex quota 當時 5h 3%，依使用者 5% 停止新增工作規則不再派 Codex；Agy 5h 未回報，不派 Agy。
+- 父端修正 family light closure golden assertions；`cargo test -p against-rome-placement --locked --offline` 通過：48 passed、8 ignored。另 `live_csharp_placement_oracle` ignored 測試以 `--ignored` 執行通過：move/clone/delete 三階段 11 個 DATA pools 與真實 C# oracle byte-identical。`family_differential` 的固定 hash 更新為此 C# 驗證過的輸出，該測試通過。
+- `cargo test -p against-rome-maps --locked --offline` 通過：maps lib 52 passed、8 ignored；deleter rollback 1、diagnostics parity 11、map save transaction 17、maps integration 45、route checks 6 passed。`starter_kit_tutorial_family_full_binding_and_atomic_late_failure` 通過，涵蓋 TUTOR family 完整綁定與 late-failure 原子性。
+- `cargo test -p against-rome-editor-app --locked --offline` 亦通過：library 294、launcher 23、modifier GUI 7、modifier binary 5、blank-map/ambience E2E 4、BMP safety 3、CLI startup 6、editor 3、terrain adapter 4，合計 349 passed。新增 Starter Kit 路徑可由 editor app 依賴正常編譯與測試。
+- 工作樹其餘 dirty work 全數保留，未 commit/push，亦未做 GUI 或遊戲 runtime 驗收。
+## 2026-10-19 07:20+08:00 Codex：補全缺口盤點並處理 Agy 資源耗盡
+
+- Claude 唯讀全專案稽核 `f72cafb6b26e` 找到可核對的未移植/部分移植項：`BlankMapStarterKit` 主屋家族匯入及 Spawn→DATA 交易、`TerrainSculptFilter` 的 Terrace/SharpenRidge/CarveValley、3D ramp picking/粒子繪製仍 partial。已修正 `docs/rust-port-inventory.md`：BlankMapStarterKit 與 LevelObjectStore family import 改列部分移植，TerrainSculpt 列加入 landscape/sculpt.rs 及精確 differential 證據，session-wrapper parity 仍待查。Claude `14f35c032b07` 已移植 TerrainSculpt 三濾鏡；父端 `cargo test -p against-rome-landscape --locked --offline` 53 unit tests 通過，新 sculpt differential 為 6 passed/1 ignored，專屬 rustfmt check 通過；另重跑 release C# differential：551 cases、32,048 samples bit-exact、7,547 pipeline changes 相符。Agy `b9e3a6077858` placement parity 受 quota 中斷。
+- Agy viewport 重派 `8491c2924eff`、兩項唯讀稽核 `6dcd08987d7f`、批次 `d2ce3fc5582d` 均因 `RESOURCE_EXHAUSTED (429)` 失敗；`/usage` 只回報兩個 7d 池 0%，5h windows 暫不可讀。遵守只依 5h 門檻的規則；Agy formation `4fbaf450d439` 仍在跑，未以 7d 額度作縮減判準。Codex 5h 已降至 10%，縮為單一 Starter Kit family import 工作 `d57854ff97a3`；ramp job 因啟動環境錯誤取消且沒有已知檔案修改，console job取消前已改 `console.rs`（未驗證，140 insertions/8 deletions），其測試被同時的 `placement/src/import.rs:111` 編譯錯誤擋住；family worker 仍在修正該 compile error。Claude 5h 1%，目前單一 ALR parity fix `51d0a3db7bab` 在跑。
+- 父端在 minimap 完成後重跑 `cargo test -p against-rome-editor-app --locked --offline`：library 294 tests 及 package integration 全通過。Landscape crate 53 tests 通過，sculpt differential 551 cases/32,048 samples bit-exact；crate fmt check 只差其他在途 erosion/ramp tests，sculpt 自身單檔 fmt 通過。Modifier package 全套、modifier fmt check、campaign differential 6 項亦已通過。Local Laguna 對 service compose 的建議只作未驗證評論；其稱 `compose_bci` 沒涵蓋 BCI 特化功能及測試沒涵蓋 install features，與實際程式碼/`patch_engine_install_compose` 5 項測試矛盾。
+- 工作樹保留所有 dirty work，未 commit/push；沒有桌面 GUI 或遊戲 runtime 驗收。
+## 2026-10-19 07:12+08:00 Codex：Modifier/campaign 套件復核與在途槽位補派
+
+- 父端獨立通過 `cargo test -p against-rome-modifier --locked --offline`（整 crate 測試套件，exit 0）；`cargo test -p against-rome-campaign --locked --offline --test campaign_merge_differential` 6 passed，含現場 C# oracle 比對。Modifier 的 `cargo fmt -p against-rome-modifier -- --check` 起初只指出兩個新 differential test 檔未格式化；以單檔 rustfmt 修正後 check 通過。Claude `ed7120c075bf` 確認 faction_profiles 五個案例已在 fixture/oracle 中，無需改碼；仍只有前三個案例有專屬 guard/helper 斷言。
+- Agy `12104108c273` 的 service compose API/CLI 整合已檢視：Rust 保留 core-only `compose`，新增 core+install `compose_with_install` 並讓 CLI apply 使用之；父端 modifier package 全套測試通過。Agy viewport 工作 `9f1ccacc8f30` 雖回報 succeeded，log 只含搜尋 `TryResolveSpriteRect` 起始訊息，結束時還終止一個背景子工作，無交付物；不得視為已完成，後續需重派。
+- 按 5 小時窗新補兩個 Agy 唯讀缺口盤點（editor UI、Core Services，工作批次 `d2ce3fc5582d`）與單一 Claude 全專案缺口盤點（`f72cafb6b26e`）。截至約 07:12+08 額度 Agy Gemini 59%、Claude 16%；Agy 五槽滿載（formation、placement、minimap、兩項缺口盤點），Claude 一個缺口盤點。所有代理均不得改 handoff；父端集中更新。
+- 工作樹仍含多代理未提交變更；沒有 commit/push。沒有桌面視窗或遊戲 runtime 驗收。
+## 2026-10-19 07:10+08:00 Codex：依 5 小時額度縮減 Claude 併發並復核 Rust UI/maps 批次
+
+- 使用者指定只以 5 小時額度控制併發。即時額度 07:09+08：Agy Gemini 60%、Agy Claude/GPT 100%、Claude 17%；因此保留 5 個 Agy 工作，將 Claude 從 5 個縮到 1 個。取消 Claude 批次 `67fdb6ce1967` 後，取回終態結果：其中 4 項已成功完成（save-manager 未解析 metadata 顯示、Modifier Restore All Options、launcher `--lang`、maps deleter rollback regression），campaign faction_profiles 覆蓋項在取消時仍未完成。
+- 已派單一 Claude 工作 `ed7120c075bf`，限定檢查/補 campaign merge 的 faction_profiles differential coverage；工作仍在執行。Agy 五項在途：`9f1ccacc8f30` viewport 粒子、`4fbaf450d439` formation golden、`12104108c273` modifier service compose、`b9e3a6077858` placement particle/garrison、`9efddf1358fe` minimap UI。
+- 父端獨立驗證：`cargo test -p against-rome-editor-app --locked --offline` 全套通過（library 289 tests，launcher 23、modifier GUI 7，另含全部 package integration tests）；`cargo test -p against-rome-maps --locked --offline` 全套通過（deleter rollback 1、diagnostics 11、map save transaction 17、maps tests 45、route checks 6；合計 80）。未做桌面 GUI 或遊戲 runtime 驗收。
+- 工作樹保持 dirty，未 commit/push；Rust 全專案遷移仍未完成，待代理結果、審查及更廣 workspace 驗證。
+## 2026-10-19 07:05+08:00 Antigravity：MapDiagnostics C# 對齊審查與 differential coverage 擴充完成
+
+- 對照 C# `src.MapEditor.Modules/Diagnostics/MapDiagnostics.cs`、`CliffDiagnostics.cs` 與對應測試：
+  - `MapDiagnostics.Check` 涵蓋之 15 項診斷檢查：`identity`（TryAdd 保持首筆物件）、`coordinates`、`alias`（大小寫不敏感且 prebuilt 豁免）、`team-count`（隊伍與人數範圍約束）、`construction-site`、`event-validation`、`event-target`、`overlap`（64 單位網格 GroupBy 首見順序）、`no-start`、`no-collision`、`collision-limit`、`no-height`、`blocked-start`、`blocked-building`、`isolated-building`、`isolated-area`。
+  - `CliffDiagnostics.Check` 涵蓋之 2 項檢查：`cliff-steep-unblocked`（高差 delta >= 15 未阻擋警告）、`cliff-missing-collision`（懸崖印章缺少阻擋警告）。
+  - `AnalyzeNavMesh` 與 `ConvertToIssues` 涵蓋之 NavMesh 診斷：`isolated-land`、`road-gap`、`formation-bottleneck`。
+- 確認 Rust `native/against-rome-maps/src/diagnostics.rs` 核心邏輯已與 C# 等價。保留既有未提交之變更（包含 `TryAdd` 語意修復、`overlap` 首見順序穩定化、`route_check.rs` 路線覆蓋整合）。
+- 於 `native/against-rome-maps/tests/diagnostics_parity.rs` 建立完整的 11 項 parity 與 differential coverage 測試（包含 C# `MapDiagnosticsTests` 全數 5 項 Fact、`CliffDiagnosticsTests`、團隊/人數邊界、別名規則、NavMesh 報告轉 MapIssue）。
+- 驗證命令：`cargo test -p against-rome-maps --locked --offline --test diagnostics_parity` 通過（11 passed / 0 failed）。
+- 遵循限制：未修改 `custom_map.rs`、`cloner.rs`、`maps_tests.rs` 及任何其他非授權檔案；未 commit/push；未觸碰安裝遊戲資料夾。
+
+## 2026-10-19 07:01+08:00 Antigravity：InstallFeatureDetector ToEnglish stale flag 修正與 C# parity 驗證
+
+
+- 對照 C# `InstallFeatureDetector.cs` 與 `LanguagePackFeature.TryGetLanguageOverlayState`：C# 只要探測未拋出例外，即無條件寫入 `profile.ToEnglish = languageOverlayEnabled`（若缺少 `ToEng` 目錄、目錄為空或內容不符時均為 `false`）；原 Rust `InstallFeatureDetector::detect` 僅在 `language_overlay_state` 回傳 `Some(overlay)` 時賦值，導致 `ToEng` 缺失時 `Ok(None)` 使得既有 `true` stale flag 殘留。
+- 修正 `native/against-rome-modifier/src/install.rs`：探測成功（`Ok(overlay)`）時寫入 `overlay.unwrap_or(false)`；I/O 或路徑例外（`Err(_)`）時保留原 profile 旗標，精確對齊 C# `catch (Exception ex)` 語意。
+- 於 `native/against-rome-modifier/tests/services_install_detectors.rs` 新增測試 `install_feature_detector_clears_stale_to_english_and_detects_overlay`，驗證：
+  1. 缺少 `ToEng` 目錄時清除既有 `ToEnglish = true` stale flag。
+  2. 空 `ToEng` 目錄時清除既有 `ToEnglish = true` stale flag。
+  3. 存在且檔案一致的真實 overlay 正常探測為 `ToEnglish = true`。
+  4. 存在但檔案不一致的 overlay 清除既有 `ToEnglish = true` stale flag。
+- 驗證命令：`cargo test -p against-rome-modifier --locked --offline --test services_install_detectors` 通過（15 passed / 0 failed）；`cargo test -p against-rome-modifier --locked --offline --test feature_detector_stale_flags` 通過（4 passed / 0 failed）；`cargo test -p against-rome-modifier --lib --locked --offline` 通過（64 passed / 0 failed）。
+- 保留工作樹所有既有 dirty work；僅最小 surgical edit 改動 `install.rs` 與指定測試檔，未改動 service API 或其他模組，未 commit/push，未碰零售遊戲安裝目錄。實機零售環境及桌面視窗未驗收。
+
+## 2026-10-19 06:58+08:00 Codex：lighting 與 modifier 差分復核
+
+- Agy `cb535c422d44` 完成 lighting-probe 已確認的 Base64 padding、ShadowError 分類、.NET NaN、負零與 CRLF 差異修正。父端 `cargo fmt -p lighting-probe -- --check` 與 `cargo test -p lighting-probe --locked --offline` 通過（23 tests）。
+- Claude `6ce230b8e1a1` 修正 BCI FoodHealing false/out-value 導致 stale flag；父端 `cargo test -p against-rome-modifier --test feature_detector_stale_flags --locked --offline` 通過（4 tests），`cargo test -p against-rome-modifier --lib --locked --offline` 通過（64 tests）。
+- 最初完整 `cargo test -p against-rome-modifier --locked --offline` 曾因 Partgeo differential 3/33 cases 壓縮位元組/格式不一致而失敗；Agy `53a3fc8bc35e` 已修正欄寬及 LZSS 重疊匹配語意。父端獨立 `cargo fmt -p against-rome-modifier -- --check` 通過，`cargo test ... --test partgeo_differential` 通過（33/33 fixture cases），`cargo test ... --lib partgeo` 通過（2 tests）。完整 modifier package gate 待 install/service 兩個在途切片結束後再跑。
+- 最新 quota（06:57+08）：AGY Gemini 72%、AGY Claude/GPT 100%、Claude 53%、Codex 44%。Agy 活躍：`9f1ccacc8f30` viewport 粒子、`4fbaf450d439` formation golden、`976a9aef1b47` map diagnostics、`fca3e7749392` install stale flag、`12104108c273` service compose API。Claude 活躍：`276c1ee69430` 五項 UI/map/scenario 工作。均高於 20% 門檻；工作樹未 commit/push。
+
+## 2026-10-19 06:54+08:00 Codex：roads-golden 整合與代理續派
+
+- 父端審查 Agy `463500e5a386` 的 `tools/re/roads-golden-rs`；獨立 `cargo fmt --manifest-path ... -- --check` 與 standalone `cargo test` 通過（7 tests），fixture 逐位元組測試通過。已移除該 crate 的空 `[workspace]`、加入 root `Cargo.toml`，更新 `docs/rust-port-inventory.md` 為 13 個 RE 工具/31 個 Cargo packages，Cargo lock 已更新。
+- 整合驗證：`cargo fmt -p roads-golden -- --check`、`cargo test -p roads-golden --locked --offline` 全部通過（7 tests）；`cargo test -p against-rome-navigation --locked --offline` 全部通過（37 tests）。首次 root `--locked` 在 lock 尚未生成 roads-golden 條目時按預期拒絕；先以 `--offline` 生成 lock，再重跑 locked 通過。
+- 最新 5h quota（06:54+08）：AGY Gemini 76%、AGY Claude/GPT 100%、Claude 57%、Codex 45%；均高於 20% 收縮門檻。Agy 活躍：`9f1ccacc8f30` viewport 粒子、`53a3fc8bc35e` Partgeo differential、`06ec73e3a520` install audit、`4fbaf450d439` formation golden generator、`976a9aef1b47` map diagnostics parity。Claude 活躍：`6ce230b8e1a1` 已完成 BCI stale flag 修正；`13aaf2fd8612` 執行四項獨立工作，`3aae5081f296` 補位 modifier CLI dispatch。以上新代理變更尚待父端檢視與整合測試；Local AI 先前建議未作證據。
+- 工作樹保留所有既存 dirty changes；未 commit/push。新代理不得同時編輯此 handoff，父端在批次結果驗證後集中更新。
+
+## 2026-10-19 Claude：Save Manager UI 錯誤不再靜默
+
+- `save_manager_ui.rs`：備份按鈕與確認(刪除/還原/修復)回傳的 `Err` 先前被 UI `let _ =` 丟棄且 model 未寫入狀態列；現 `request_backup_save`/`confirm_pending_action` 失敗時寫入 `status_message` + `status_is_error`。動作成功後的 rescan 失敗改附加於成功訊息並標為錯誤(`finish_action`)。新增 2 測試；`cargo test -p against-rome-editor-app --lib save_manager_ui --locked --offline` 16 passed。未改備份根/寫入政策/遊戲目錄；未 commit/push。
+
+## 2026-10-19 06:47+08:00 Codex：Lighting parity 審查與已確認修正派工
+
+- Agy lighting review `342917341453` 完成。父端用 Windows/.NET PowerShell 驗證 `Vector3.Max(NaN, 1)` 保留 NaN、負零 `.ToString()` 是 `-0`、`Environment.NewLine` 是 CRLF；檢閱 Base64 decoder 確認目前允許 padded chunk 後續再解碼。審查另指出 `ShadowError` variants 在 `ProbeError` 轉型時遺失分類。
+- Agy job `cb535c422d44` 正在修正上述確認差異並加 regression tests，範圍僅 `tools/re/lighting-probe-rs`；parent 之後需獨立驗證。
+- 目前五項 Agy 工作為 `9f1ccacc8f30` viewport particle preview、`463500e5a386` roads golden tool、`53a3fc8bc35e` Partgeo differential、`06ec73e3a520` installer audit、`cb535c422d44` lighting parity fixes。Claude batch `c7974e6609e3` 仍以 concurrency 5 做五項唯讀審查。Local AI 回覆已完成，但錯稱 AmbientAt 使用整數除法、Rust 缺少有限值檢查等，與提供的程式片段直接矛盾；已丟棄其建議，未改程式。
+- 最新 5h quota snapshot（06:44+08 左右）：Agy 87%、Claude 97%、Codex 47% remaining；以 5h 窗為準。所有變更未提交/推送；lighting 變動完成後需重跑 locked tests，所有集成後再跑完整 workspace gate。
+
+## 2026-10-19 06:46+08:00 Codex：擴大平行 Rust 遷移審查與實作
+
+- 依使用者要求以 5 小時窗控制並行。最新查詢：Agy Gemini 87% remaining、Claude 97%、Codex 47%，均高於 20% 收縮門檻。
+- 五項 Agy 工作：`342917341453` lighting 獨立語意審查；`9f1ccacc8f30` Rust viewport 粒子預覽；`463500e5a386` road golden generator Rust port；`53a3fc8bc35e` Partgeo C# differential 測試/必要修正；`06ec73e3a520` installer feature 唯讀差異審查。
+- Claude batch `c7974e6609e3` 以 max concurrency 5 執行五個不同領域唯讀 parity audits（modifier UI、BCI/EXE、maps、campaign/scenario、Save Manager）。Local AI 正在審核 lighting 模型片段中的邊界差異；其結果只作建議，需由父端核實。
+- 尚未有以上新工作完成回報。保留所有既有 dirty changes，不提交或推送；等結果後分檔審查、跑相應差分與整合後全 workspace gate。
+
+## 2026-10-19 06:40+08:00 Codex：整合 lighting probe Rust crate
+
+- Agy job `6bc8e610906c` 成功新增 `tools/re/lighting-probe-rs`：移植 APT ZIP frame extraction、stdin validation、24-bit BMP、daynight interpolation、local-light 與 sprite-gain 公式。Agy 回報 20 tests、`cargo fmt --check` 通過；唯讀 retail APT pixel outputs 與 C# 相等，validate 三行逐行相等。父端已檢查主要 parser/model 與 CLI 並將 crate 加入根 workspace，移除 child `[workspace]`。
+- 父端 `cargo fmt -p lighting-probe -- --check` 與 `cargo test -p lighting-probe --offline` 通過（20 tests）。整合後完整 workspace gate 尚待重跑；既有 29-package gate 是加入 lighting 前通過。
+- `docs/rust-port-inventory.md` 更新為 12 個 Rust RE 工具、30 個 crate（根 workspace 29 + 獨立 trace）；C# 工具與 oracle 保留作為差分參考。
+- 將 `campaign_ui.rs` 只供測試使用的 `Action` / `WorldPosition` imports 改為 `#[cfg(test)]`，保留現有測試引用並清除 production warning；`cargo test -p against-rome-editor-app --lib campaign_ui --locked --offline` **8 passed**，`cargo check -p against-rome-editor-app --lib --locked --offline` exit 0 且無 warnings。
+- Agy job `342917341453` 正在獨立唯讀審查 lighting 語意；`9f1ccacc8f30` 正在做 viewport 粒子預覽；`463500e5a386` 新派工移植道路連通 golden generator，僅新增隔離 crate；`644b6ea5d6ba` 已完成盤點並推薦該移植。完整 workspace 測試需在上述整合完成後重跑。未 commit/push，dirty 工作樹完整保留。
+
+## 2026-10-19 06:38+08:00 Codex：ALR scanline 整合與 workspace gate
+
+- Codex job `503a0cccbfbc` 完成新增 `tools/re/alr-scanline-differential-rs`，以獨立 frozen C# decoder 對 production ALR parser 做逐影格、逐 palette 像素差分；唯讀零售資料結果為 68 members、11,345 frames、14,996 decodes、10,193,112 pixels、0 failures、`source_unchanged=true`。代理回報 crate 19 tests passed；未改 C# oracle或提交。
+- 父端審查隔離 parser、archive hash/mtime 前後驗證、member hash/唯一匹配、輸出路徑 canonicalization 與 `create_new` 防覆寫流程；`cargo fmt -p alr-scanline-differential -- --check` 通過，根 workspace 整合後 `cargo test -p alr-scanline-differential --offline` 通過 19 tests（10 unit + 9 CLI）。Root `Cargo.toml` 已加入 member 並移除子 crate `[workspace]`；Cargo lock 更新。
+- `docs/rust-port-inventory.md` 更新為 11 個 RE 工具、29 個 Rust crate（根 workspace 28 + 獨立 trace）。
+- 整合後重跑 `cargo test --workspace --locked --offline` exit 0；全 workspace 測試通過。唯一警告為 `apps/against-rome-editor/src/campaign_ui.rs` 兩個 unused imports，未更動共享檔。
+- `cargo fmt --all -- --check` 因共享工作樹多個既有檔案格式差異而回報大量 diff；未執行會改寫全樹的 formatter。曾暫時移除 `campaign_ui.rs` 測試所需 import，`campaign_ui` 測試編譯失敗後立即還原；最終 `cargo test -p against-rome-editor-app --lib campaign_ui --locked --offline` **8 passed**，工作檔恢復原狀。
+- 目前仍有大量跨模組未提交改動，禁止清理或覆蓋。Agy job `6bc8e610906c`（lighting-probe 移植）、唯讀盤點 `644b6ea5d6ba`，以及新粒子 viewport 實作 `9f1ccacc8f30` 均 running。Claude job `2f8f64560e0f` 已完成唯讀分析，建議核對 particle frame API 後把預覽接入 `viewport_3d.rs`；新實作按此切片派出。未 commit/push。
+
+## 2026-10-19 06:29+08:00 Codex：shad probe Rust 移植驗證與整合
+
+- 目前目標維持整個專案改寫為 Rust；本工作樹已有大量未提交變更，必須保留。最近提交仍為 `fe803ca`，未執行 commit/push。
+- 父端重跑 `cargo fmt -p anim-probe -- --check` 及 `cargo test -p alr-probe -p apt-probe -p anim-probe --locked --offline`，exit 0，三探針測試共 23 項通過。ALR/APT 真實資料差分已記於下方；anim 五張圖像素已與 C# 相同，但先前 TEMP 目錄目前不存在，因此 summary JSON CRLF 位元組一致性仍待重跑確認。
+- Agy job `6bc8e610906c` 正在獨立移植 `tools/re/lighting-probe`；Codex CLI job `503a0cccbfbc` 正在獨立移植 `tools/re/alr-scanline-differential`。兩者禁止修改 root Cargo manifest/lock、handoff、盤點文件及彼此範圍；完成後由父端審查、整合、驗證與真實輸入差分。Claude OAuth 目前過期；最新 live quota 約為 AGY Gemini 12% 週額、AGY Claude/GPT pool 9%、Codex 5h 66% / 7d 48%。
+- Local AI 對兩項移植契約各提供一次未驗證 edge-case 清單；僅作審核提示，不視為實作或測試證據。
+- Agy job `bf15da8dce0d` 成功新增 `tools/re/formation-probe-rs`。父端獨立執行 `cargo fmt -p formation-probe -- --check` 與 `cargo test -p formation-probe --offline`，22 tests passed；根 workspace 有 27 packages（另有 workspace 外 trace package）。唯讀零售資料差分：Rust/C# layout SHA256、9 segments、matchesEmbedded 與 count 1..20 一致，420 個座標分量最大絕對差 4e-6；Python/Rust PFIL dump 0:64 逐行相同；ALR archive 24 個 RGBA 檔 SHA256 逐一相同且 `frames.json` metadata 完全相等。因初次 build 暴露 C# oracle csproj 漏 link `RustAlrFrameDecoder`，已補 link 並 build 成功（0 warning/error）。父端另修正 Rust `matchesEmbedded` 為 C# record exact equality，加入近似值回歸測試；ZIP 查找改為大小寫精確，新增回歸。只讀原始遊戲資料，輸出位於 TEMP。
+- Codex job `d586e42abc4f` 成功新增並整合 `tools/re/shad-probe-rs`。父端在 root workspace 執行 `cargo fmt -p shad-probe -- --check`、`cargo test -p shad-probe --offline`（15 passed/1 ignored），且獨立重跑 `cargo test --manifest-path tools/re/shad-probe-rs/Cargo.toml --locked --offline -- --include-ignored`（16 passed）。唯讀真實 `C:\Program Files (x86)\Against Rome\shad.dat` 差分：C#/Rust 正規化 report 完全相等，2,674 entries、415 documents/frames、2,256 other BMPs、3 directories、0 failures；10 張 sample/ground PNG 維度與解碼像素 SHA256 逐一相同。C# oracle 初建因 wildcard 編入無關 `NativeShadowCatalog.cs` 失敗；已於 `shad-probe.csproj` 排除此檔，重建 exit 0（0 warning/error）。根 `Cargo.toml`/lock 已納入 crate，`docs/rust-port-inventory.md` 現計 10 RE tools、28 Rust packages；`.gitignore` 忽略所有 crate `target/`。
+- `tools/re/lighting-probe-rs` 與 `tools/re/alr-scanline-differential-rs` 目前由 Agy 與 Codex CLI 各一個 live job 實作；尚未審查或驗證。兩個 Local AI 回覆是未驗證 checklist，僅供審核參考。
+- `dotnet build AgainstRomeModifier.slnx --configuration Release --no-restore` exit 0，0 warnings/errors；`dotnet test AgainstRomeModifier.slnx --configuration Release --no-build --no-restore` exit 0，兩測試專案合計 2,446 passed、35 skipped、0 failed（6s + 3m）。這只證明當前 C# oracle/舊方案可建置及測試，不表示 Rust 遷移完成。
+
+## 2026-10-19 01:24+08:00 Codex：Portable release 驗證與 Rust trace DLL 發行缺口
+
+- 更新：Agy jobs `d85f5cb8175d` 與 `c66ca06a3413` 均完成。最終 publisher 僅對 Cargo up-to-date DLL 顯示 warning，不再以 crate 內文件 mtime 判 stale；保留 Cargo exit、產物 PE32/exports/CLR 驗證、build 中全來源狀態 race fingerprint、與舊 C++ DLL hash 不同等 gate。父端獨立執行 `pwsh -NoProfile -ExecutionPolicy Bypass -File tools/test-publish-rust.ps1 -SkipNetworkFetch`，exit 0；新增迴歸將 trace README 時間戳設為未來，Cargo 命中快取仍正確接受 DLL，並還原原時間戳。父端再跑 `publish-rust.ps1 -Offline` 至獨立 TEMP，exit 0，staged 13 files、ZIP 14 entries，ZIP SHA256 `b511e5280ca2ef47d890ba7683aab675fe4f33f1cff44b5c2cd0199025aedf0d`；前兩次獨立 staging 也均成功，Rust DLL 均匹配 provenance（SHA256 `D31CC00BA0682C521C25B520FE35202A6FBF83A8FE93C746B40A14EEF6F8D0BE`）。範圍限 publisher/test，未 commit/push；未驗 clean Windows、GPU、零售遊戲 runtime。
+- Rust tooling migration milestone：Agy job `b2b01da3f037` 完成，新增 workspace crate `tools/re/alr-probe-rs`，重用 `against-rome-data`，保留 C# probe 作 oracle。合成測試涵蓋 ZIP entries、計數/report/樣本 RGBA、path traversal、輸出衝突與 CLI exit codes。父端獨立 `cargo fmt -p alr-probe -- --check`、`cargo test -p alr-probe --locked --offline` 通過（6 tests），以及 `cargo test -p against-rome-data --locked --offline --test alr_document --test alr_differential` 通過（9 tests）。真實唯讀 `C:\Program Files (x86)\Against Rome\alr.dat` 差分：兩版本同為 2,075 entries/documents, 358,083 frames, 2,921,730 palette frames, 2,374 blanks, 0 failures, 4 sample exports；解析後整份 `report.json` 欄位相等，四個 RGBA sample SHA256 逐檔相等（`FBF86E23...`, `184D7A10...`, `29F62FF1...`, `63BD9960...`）。為使 C# oracle 可執行，`tools/re/alr-probe/alr-probe.csproj` 增加 `RustAlrFrameDecoder*.cs` link 並排除不相干且依賴粒子型別的 `RustAlrFrameDecoder.Blit.cs`；首次執行證實原 csproj 缺 decoder links 無法編譯，修正後 C# probe 在真實資料上 exit 0。產物僅寫入 TEMP，遊戲檔唯讀。未 commit/push。
+- Rust tooling migration milestone：Agy job `7ed968090644` 完成，新增 `tools/re/apt-probe-rs` workspace crate，重用 Rust APT parser 與 `apt_geometry::place`，實作附件、palette tile/frame、`--attachments-only`、樣本與報告輸出，保留 C# oracle。父端 `cargo fmt -p apt-probe -- --check`、`cargo test -p apt-probe --locked --offline` 通過（8 tests）；`against-rome-data` APT document/attachments/geometry 測試通過（14 tests）。唯讀真實 `C:\Program Files (x86)\Against Rome\apt.dat` 結果：222 documents，500,507 palette tiles，103,601 palette frames，0 failures。父端修復/建置 C# oracle 後與 Rust 真實輸出差分：C# / Rust report JSON 正規化後完全相等，計數與 222 筆 attachments 一致，兩個 RGBA sample SHA256 相同（`4267366F...`, `83A4CB8A...`）。來源 archive 唯讀；未 commit/push。
+- 下一個工具移植切片：因 Agy Gemini 5h 僅 7%、Claude/GPT pool 週額度 9%，依 live quota 將 C# `tools/re/anim-probe` 移植派給 Codex CLI job `f5cc613ca444`，新增 Rust `tools/re/anim-probe-rs` workspace crate，使用 Rust ALR/APT APIs，重現 contact sheets 與 PNG/summary 輸出。單一工作者執行中，保留 C# oracle，不 commit/push；父端將驗證 tests 與真實資料像素差分。
+- Codex job `f5cc613ca444` 最終狀態為 failed（Exit 78，Codex CLI 配額上限），但已落盤新 crate/workspace/lock；父端接手執行 `cargo fmt -p anim-probe -- --check` 與 `cargo test -p anim-probe --locked --offline`，exit 0（9 tests），並跑 `against-rome-data` ALR/APT 測試 23 項、全通過。真實遊戲 archive 上 Rust probe exit 0：ALR 6,528 frames、24x16 layout、9 variants；APT 1,250 frames、layout 5x2x5x25，frame 1000/1125 pixel diff 0/413,600。C# oracle 初次 build 因 `anim-probe.csproj` 漏 link `RustAlrFrameDecoder` 失敗，已補必要 decoder link 並成功執行。Rust/C# 五張 PNG 的 dimensions 與解碼 pixel SHA256 全相同。Rust summary 已改用有序 struct，欄位內容/順序與 C# 相同；尚需將 Windows JSON 行尾 CRLF 對齊 C# 並確認 summary 位元組一致。遊戲資料檔唯讀，Rust/C# outputs 寫 TEMP。
+- 下一個全庫 Rust 遷移切片尚待從剩餘 C# probe/tools 選定；目前 ALR 與 APT 兩個 reverse-engineering CLI 已有 Rust workspace 對應版本，舊 C# 專案暫保留作差分 oracle。工作樹中仍有大量先前未提交項目。
+
+- 父端重跑 `pwsh -NoProfile -File tools/test-publish-rust.ps1 -SkipNetworkFetch`，exit 0。通過 parser/AST、WhatIf、source-race rollback、拒絕既有輸出、缺失 binary/asset、錯架構/CLR、ZIP/checksum 等測試；此選項明確跳過 network fetch 與 bootstrap 後 Cargo build，因此不等同 clean Cargo cache 驗收。
+- Codex job `dca62f77e3b0` 成功；其實際 Rust portable staging 六個 EXE、七個 runtime assets，ZIP SHA256 `da85b6ffc7a50de30e6543464cfee1e2cd75c0746fbd739ab3a0e58979ca7dc7`，PE imports 未見 .NET 或動態 CRT。實際 staging 仍複製原版 C++ `ThirdParty/argm-trace/winmm.dll`：其 SHA256 `D1D7E51835CB8DFCD40AD7BCD50B238403955F38721867721F25B0B0AA0A10E8` 與打包檔相同；已有 Rust i686 DLL `re_workspace/target-against-rome-trace/i686-pc-windows-msvc/release/winmm.dll` SHA256 `42B54823B61B2A02D2F6347015ADC0AA27D98777D9723949BF701E413FF1A7D1`。這是明確尚未全 Rust 的發行缺口。
+- 已啟動單一 Agy job `b6da9a5d3313`（`claude-sonnet-5-5` pool，AGY Claude/GPT quota），狀態 running；只改 Rust publisher、對應測試及 trace README，讓 portable Release 獨立建立 i686 Rust `winmm.dll` 並以它取代 staging 中的 C++ binary。原始 C++ oracle/source 暫保留作 parity 證據。尚需完整 C++ source retirement、clean Windows、GPU 與遊戲 runtime 驗收。
+
+## 2026-10-19 01:12+08:00 Codex：Rust trace x64/x86 驗證與 release agent 狀態校正
+
+- Workspace 外的 `against-rome-trace` 獨立測試通過：x64 Release **72 passed**；i686 MSVC Release **80 passed**（runtime 8、C++ LDE parity 47、logic 25）。首次使用 host-global rustup 的 x86 命令因該 toolchain 未裝 i686 target 而失敗；repo-local `re_workspace/rust-runtime` 已含該 target，使用 repo-local `CARGO_HOME`/`RUSTUP_HOME` 重跑後通過，未安裝或更動全域 toolchain。測試不涵蓋真實遊戲注入驗收。
+- 更正 portable release job `dca62f77e3b0` 的 backend：雖派送時指定 Agy，quota-balanced dispatcher 實際回報 `usedAgents=["codex"]`；目前由 Codex CLI 子代理執行，僅修改 `tools/publish-rust.ps1` 與 `tools/test-publish-rust.ps1`，狀態仍 running。Gemini 5h quota 10%，不再派 Gemini；沒有第二個代理。
+
+## 2026-10-19 01:08+08:00 Codex：3D Ramp 接線驗收與 Rust portable release 工作續派
+
+- 父端獨立驗證 Agy `e8eb3a25a1c4` 的 viewport 變更及 app 接線：focused `viewport_3d` suite **22 passed**；完整 `cargo test -q -p against-rome-editor-app --release --locked --offline --target-dir re_workspace/codex-ramp-app-full-verify-20261019` exit 0：lib **271 passed**、launcher **19 passed**、其他整合測試 **20 passed**。僅有既有 `campaign_ui.rs` unused-import warning；未做桌面 GPU/遊戲 runtime 驗收。
+- `app.rs` 新增 `PickTerrain` → Ramp route 測試已在上述 focused 與 full suite 通過；3D Ramp 保持可啟動，地形離散點擊不會誤畫筆刷。
+- Agy job `e8eb3a25a1c4` succeeded。接續派出的 quota-balanced release job `dca62f77e3b0` 實際路由至 Codex CLI（見 01:12 狀態校正），只負責 `tools/publish-rust.ps1` / `tools/test-publish-rust.ps1` 的 Rust-only portable distribution 審查與修復；禁止 commit/push。該 release pipeline 尚未驗證 clean Windows 無 .NET 環境。
+
+## 2026-10-19 01:05+08:00 Agy：3D Ramp 離散地形點擊選取（PickTerrain）實作完成
+
+- 依指示範圍嚴格限定於 `apps/against-rome-editor/src/viewport_3d.rs`（含其內部單元測試），未修改 `app.rs` 或其他檔案，保留未提交之工作樹，未 commit/push。
+- **ViewportAction 與離散地形拾取**：
+  - 新增 `ViewportAction::PickTerrain { grid_x: f32, grid_y: f32 }` variant，攜帶 picked terrain 網格座標。
+  - 新增輔助方法：`picked_terrain(&self) -> Option<(f32, f32)>`、`is_pick_terrain(&self) -> bool`、`selected_object(&self) -> Option<(usize, u32)>`。
+  - 新增幾何運算輔助方法 `Viewport3d::try_pick_terrain_grid`，可精確在純幾何/無 egui context 下計算與驗證離散點擊網格座標與邊界限制。
+- **互動判定（Click vs Drag 及物件選取優先權）**：
+  - 區分單擊（discrete click）與筆刷拖曳（brush drag）：
+    - 單擊空白地形（Primary Click）：發出 `ViewportAction::PickTerrain { grid_x, grid_y }`，不觸發 `Paint`，不觸發 `CommitStroke`。
+    - 滑鼠拖曳（Primary Drag）：持續發出 `ViewportAction::Paint { grid_x, grid_y }`，放開滑鼠時發出 `ViewportAction::CommitStroke`，保留既有筆刷編輯語意。
+    - 物件優先權（Object Selection Priority）：點擊物件優先發出 `ViewportAction::SelectObject(Some((slot, uid)))`，絕不發出 `PickTerrain`。
+    - 射線拾取失敗（Failed Ray Pick，如天空或邊界外）：不發出 `PickTerrain` 或任何編輯動作。
+- **驗證結果**：
+  - 執行指令：`cargo test -p against-rome-editor-app --release --locked --offline --target-dir re_workspace/agy-ramp-3d-pick-20261019 --lib viewport_3d`
+  - 結果：**22 passed / 0 failed / 0 ignored**（249 filtered out），耗時 0.02s，exit 0。
+  - 涵蓋測試包含：
+    - `test_discrete_terrain_pick_point_click_vs_drag`（單擊 PickTerrain vs 拖曳 Paint/CommitStroke 狀態流轉）
+    - `test_discrete_terrain_pick_coordinate_payload`（座標 payload 正確性、網格邊界 clamp 與 roundtrip helpers）
+    - `test_discrete_terrain_pick_object_priority_and_failed_ray`（物件選取優先權與天空拾取失敗防護）
+    - 以及既有之相機、LOD、Floor Atlas 與 Viewport3d 測試全數通過。
+- **未驗收事項**：僅於 headless / off-screen egui context 下單元測試通過；真實桌面視窗與 GPU 渲染未手動驗收；未 commit/push。
+
+## 2026-10-19 00:59+08:00 Codex：3D Ramp app action integration (pending verification)
+
+- While Agy owns only `apps/against-rome-editor/src/viewport_3d.rs`, parent integrated its new `ViewportAction::PickTerrain` in `app.rs`: discrete terrain picks route to Ramp endpoints only while Ramp selection is active; 3D Ramp selection remains enabled instead of being cancelled/disabled; help text distinguishes 2D right-click from 3D Escape cancellation. Added `test_viewport_3d_terrain_pick_routes_to_ramp_without_painting`.
+- **Not yet compiled or tested** because Agy job `e8eb3a25a1c4` is still actively changing the viewport file. Once it terminates, run its focused viewport test command, then the focused app test and full editor suite; fix integration failures before treating this as complete.
+
+## 2026-10-19 00:47+08:00 Codex：Rust workspace 回歸驗證
+
+- `cargo test -p against-rome-maps --release --locked --offline --target-dir re_workspace/codex-goal-maps-20261019` exit 0：**66 passed / 0 failed / 0 ignored**（diagnostics parity 2、map save transactions 17、maps 41、route checks 6）。
+- `cargo test --workspace --exclude against-rome-editor-app --release --locked --offline --target-dir re_workspace/codex-goal-native-workspace-20261019` exit 0，原生 workspace 及 RE probe crates 的測試全部完成；明確標記為 ignored 的環境盤點測試不在本機執行範圍。此項不涵蓋 editor app，也不代表整體 Rust 遷移完成。
+- Agy job `e8eb3a25a1c4` 仍在 `apps/against-rome-editor/src/viewport_3d.rs` 實作 Ramp 3D 地形點選；AGY Gemini quota 16% weekly / 18% five-hour，維持單一代理。保留未提交工作，未 commit/push。
+
+## 2026-10-19 00:43+08:00 Codex：Safe Save、Landscape 與 Placement 遷移接線驗收
+
+- 完成 Scenario/Textures Safe Save transaction 整合、Erosion apply 與 2D 雙點 Ramp 工具；Ramp 套用為一個 TerrainSession undo 操作，寬度/衰減可調，3D view 尚未接 ramp picking。Scenario graph dirty 納入 unsaved guards。
+- 修復 Scenario 測試 fixture 的 PID/計數器目錄衝突，改用 UUID；完整 app suite 在預設並行模式通過。驗證：`cargo test -q -p against-rome-editor-app --release --locked --offline --target-dir re_workspace/codex-final-app-20261019` exit 0：lib **267 passed**、launcher **19 passed**、其餘整合 binaries/tests **24 passed**。Ramp focused test 1/1 通過；唯一既有 warning 為 `campaign_ui.rs` unused imports。
+- Agy job `a83592e502ec` 完成 Placement 多選/批次工作流，父端確認 job succeeded；其 placement panel suite **20 passed**。根目錄 Cargo metadata 為 22 packages；修正 `docs/rust-port-inventory.md` 的過時 workspace、獨立 GUI 與 Save Manager Hex viewer 說法；`save_manager_ui` **14 passed**。
+- 未 commit/push。全專案 Rust 改寫仍未完成；C# oracle/原始來源仍保留，Windows 原生視窗、portable clean machine 與零售遊戲驗收尚未完成。
+## 2026-10-18 16:45Z Agy：Placement UI 多選與批次編輯 (Batch Editing) 實作完成
+
+- 依使用者指示，範圍嚴格限定於 `apps/against-rome-editor/src/placement_ui.rs`（含其內部單元測試），未修改 `app.rs` 或 native backend，保留未提交之工作樹，未 commit/push。
+- **多選工作流程 (Multi-Selection Workflow)**：
+  - 維持既有單選 API 簽章相容：`selected_object()` 回傳當前/主要選取物件，`select_object(key)` 維持相容單選與過濾。
+  - 新增多選 API 與互動：
+    - `selected_objects(&self) -> Vec<(usize, u32)>`、`is_selected(&self, key) -> bool`。
+    - `select_objects(&mut self, keys: &[(usize, u32)])`：批次設定選取，自動過濾不存在物件。
+    - `toggle_select_object(&mut self, key: (usize, u32))`：Ctrl 點選切換選取/反選。
+    - `select_range_from_visible(&mut self, visible: &[WorldObject], target: (usize, u32))`：Shift 點選錨點範圍選取。
+    - `select_all(&mut self)` 與 `clear_selection(&mut self)`：全選與清空選取。
+  - UI 介面更新：物件清單支援 Ctrl 點選切換與 Shift 點選範圍選取，標頭新增「Select all」「Clear selection」快捷操作，多選狀態即時呈現已選數量與提示。
+- **批次編輯操作 (Batch Editing Actions)**：
+  - 接通 `against-rome-placement` native 批次 API：
+    - `move_family`：呼叫 `translate_families_fixed` 批次位移所有選取 families（零位移不產生空 undo 步驟）。
+    - `clone_family`：呼叫 `clone_families_fixed` 批次複製所有選取 families，原子分配 pool slots 並自動將選取更新至新複製品。
+    - `rotate_family`：呼叫 `set_families_rotation`（絕對設定）或 `rotate_families`（相對旋轉）批次調整角度。
+    - `set_team`：呼叫 `set_families_team` 批次設定隊伍歸屬（0..15 或 -1/65535）。
+    - `snap_to_grid`：呼叫 `snap_families_to_grid` 以錨點對齊 256 網格（128 mod 256）並等量位移整批物件保持相對佈局。
+    - `batch_edit` 與 `apply_batch_edit_fields`：支援單一原子交易同時批次設定隊伍與旋轉角度。
+    - `request_remove` / `confirm_pending`：支援批次移除選取的完整 families，若在確認前選取變更則 fail closed；確認後原子移除並清空選取。
+  - 原子性與 Undo 不變量：所有批次操作在 native store 僅產生單一歷史快照，UI 以單一 `record_edit(1)` 記錄；單次 Undo/Redo 即可完整還原/重做整個批次操作，正確維持 dirty 與 undo-tree 不變量。
+  - 防禦與安全邊界：空選取操作立即 fail closed 回傳錯誤；選取中包含 stale 或不存在 UID 物件時全面 fail closed，不寫入任何池、不標記 dirty、不污染 undo 歷史。
+- **測試結果**：
+  - 執行 `cargo test -p against-rome-editor-app --release --locked --offline --target-dir re_workspace/agy-placement-multiselect-20261019 --lib placement_ui`。
+  - 結果：**20 passed / 0 failed / 0 ignored**（247 filtered out），0 warnings，exit 0。
+  - 涵蓋單選/多選/Ctrl-toggle/Shift-range/全選/清空、批次位移原子性與單步 Undo/Redo、批次隊伍/旋轉/批次綜合編輯原子性、批次複製與槽位不足原子回滾、批次網格對齊、批次刪除確認與還原、空選取與 stale/missing 物件安全防護。
+- **界限與限制**：僅完成 PlacementUi 面板與單元測試；未做真實 3D 視窗滑鼠框選/點選驗收或遊戲實機驗收。
+
+## 2026-10-18 16:30Z Codex：Safe Save 加入 Scenario 與 Textures，並接通 Erosion apply
+
+- 已整合 Agy job `57a6813aac6a` 提供的純 staging / post-commit baseline APIs：Safe Save 現在把 dirty Scenario、Textures 檔案先加入同一 `MapSaveTransaction`，成功 commit 後才確認各自 baseline；stale/unloaded source 與未套用 Scenario graph 會 fail closed。`has_unsaved_changes` 與面板 dirty roster 也包含 Scenario 內嵌 graph。
+- 新增端到端測試：Scenario 輸出 BCI、JSON、Camera、原始 BCI 備份並清除 dirty；Textures 保存 `boden.txt` 並清除 dirty；Scenario+Textures+Terrain 的注入式交易失敗完全回滾磁碟且保留 dirty。Erosion apply 另有 undo 與 stale-preview tests。
+- 完整驗證：`cargo test -q -p against-rome-editor-app --release --locked --offline --target-dir re_workspace/codex-scenario-save-integration-20261019 -- --test-threads=1` exit 0；lib **259 passed**、launcher **19 passed**、其他整合測試 **24 passed**，0 failures。合併 Scenario+Textures 成功保存與注入式 rollback 測試均通過；尚有既有 `campaign_ui.rs` unused imports warning。Agy `57a6813aac6a` succeeded；未 commit/push。新 Agy `a83592e502ec` 單一工作者正處理 Placement 多選與 batch editing（週配額剩 18%）。
+- 先前 16:23/16:35 記錄所稱尚未整合或仍在 running，已由本里程碑更新為完成；仍未完成整個 Rust 遷移，也未做桌面視窗或零售遊戲實機驗收。
+## 2026-10-18 16:35Z Agy：TexturesUi 與 ScenarioUi Safe Save 序列化與 Baseline Commit 實作完成
+
+- 依使用者指示，範圍嚴格限定於 `apps/against-rome-editor/src/textures_ui.rs` 與 `apps/against-rome-editor/src/scenario_ui.rs`，未碰 `app.rs`（由父端整合），保留既有大量未提交工作樹，未 commit/push。保留 `textures_ui.rs` 既有合法 byte string 中原始 NUL/控制字元（`write_floortex` fixture）。
+- **TexturesUi**：
+  - 新增 `stage_boden_bytes(&self, target_map: &Path) -> Result<Vec<u8>>` 與 `stage_transaction_files(&self, target_map: &Path) -> Result<Vec<(PathBuf, Vec<u8>)>>`：驗證 `loaded_path` 存在且屬於目標地圖；驗證磁碟上 `boden.txt` 仍等於原始載入快照（外部變更 fail closed）；序列化 session 材質並做 `BodenTexturesDocument` roundtrip 驗證；clean 時回傳空，dirty 時回傳 `("boden.txt", bytes)`；純 staging，不碰磁碟、不改 memory dirty 或 baseline。
+  - 新增 `commit_baseline(&mut self, target_map: &Path) -> Result<()>`：驗證落盤檔案材質與 session 一致，安全更新 `original`、`document` 與 `session.commit_baseline()`，清除 dirty 並保留所有偏好設定。未落盤或不一致時 fail closed 保留 dirty。
+- **ScenarioUi**：
+  - 新增 `stage_transaction_files(&self, target_map: &Path) -> Result<Vec<(PathBuf, Vec<u8>)>>`：只接受已載入 map/source；驗證所有 watched 輸入（源 BCI、`arm_scenario.json`、`arm_start_camera.json`、DATA bindings）位元組未被外部修改；以 `scenario::compile_script_verified` 編譯產生通過 BCI parse 與 PFIL roundtrip 驗證的 `SCRIPT/ak_level.bci`；保留原始 BCI 於 `SCRIPT/ak_level.arm_original`；序列化 `arm_scenario.json`（version 6）與 `arm_start_camera.json`（CamelCase 格式，經 `from_json` 與 `StartCamera` 反序列化 roundtrip 驗證）；回傳 4 項相對路徑 payload，不寫磁碟，不改 memory dirty 或 baseline。節點圖有未套用修改或 session 未載入時 fail closed，不覆寫地圖資料。
+  - 新增 `commit_baseline(&mut self, target_map: &Path) -> Result<()>`：驗證落盤 JSON 與編輯狀態一致後透過 `load_now` 重新加載，重設 baseline 與 watched 檔案，清除 dirty 並同步節點圖。
+- **Focused Tests**：
+  - 隔離測試：`cargo test -p against-rome-editor-app --release --locked --offline --target-dir re_workspace/agy-panel-staging-20261019 --lib textures_ui`，exit 0，**14 passed / 0 failed / 0 ignored**。
+  - 隔離測試：`cargo test -p against-rome-editor-app --release --locked --offline --target-dir re_workspace/agy-panel-staging-20261019 --lib scenario_ui`，exit 0，**17 passed / 0 failed / 0 ignored**。
+- **界限與限制**：僅完成面板純 staging 及 post-transaction baseline commit API 與單元測試；尚未將其接入 `app.rs` 的 `save_transaction` 全圖交易流程，未進行整圖整合或真實遊戲/視窗驗收。
+
+## 2026-10-18 16:23Z Codex：Erosion apply 接入 TerrainSession
+
+- 將 `LandscapeUi::take_erosion_apply_request()` 接到 app；apply 前逐 sample 核對預覽的 source height，stale plan fail-closed 並保留計畫；成功變更走 `TerrainSession::apply_height_changes` / `commit_stroke`，更新 terrain dirty、texture cache 與 navigation invalidation。
+- 新增 app tests 驗證 undo history、derived-view invalidation 和 stale-source rejection。驗證命令：`cargo test -p against-rome-editor-app --release --locked --offline --target-dir re_workspace/codex-erosion-wire-20261019 --lib erosion_apply`，exit 0，**4 passed / 0 failed / 239 filtered**。
+- 完整 editor app suite 以序列模式重驗：cargo test -p against-rome-editor-app --release --locked --offline --target-dir re_workspace/codex-erosion-wire-20261019 -- --test-threads=1，exit 0；lib 248/248、launcher 19/19、modifier CLI 6/6、editor integration 3/3、terrain adapter 4/4；僅有既有 campaign_ui unused-import warning。序列模式避免本機測試 fixture 目錄碰撞。
+- 整體 Rust 改寫仍未完成。Agy `57a6813aac6a` 仍回報 running，預定的 Textures/Scenario staging 尚未交付；本次只改 `app.rs` 的 erosion 接線與測試，未碰它負責的兩個檔案。
+## 2026-10-18 16:07Z Codex / Agy：Safe Save 遊戲路徑分層政策驗證
+
+- Agy `6d96f0007376` 完成 `against-rome-maps` 交易層及 editor app storage/app Safe Save 的分層路徑政策：外部獨立專案可存檔；辨識到的遊戲安裝路徑僅允許 marker-backed `ENDL_005..999` 自製地圖；零售地圖及安裝根目錄其他路徑拒絕；新圖 staged marker 可解除首次保存死鎖。僅使用 synthetic temp fixtures，未寫入真實遊戲目錄。
+- 父端獨立驗證 maps：`cargo test -p against-rome-maps --release --locked --offline --target-dir re_workspace/codex-maps-safe-path-verify-20261019`，exit 0，**66 passed / 0 failed / 0 ignored**。
+- 父端獨立驗證完整 app：`cargo test -p against-rome-editor-app --release --locked --offline --target-dir re_workspace/codex-app-safe-path-verify-20261019`，exit 0，**284 passed / 0 failed / 0 ignored**。編譯有一項既有 `campaign_ui.rs` unused-import warning；全套測試通過。
+- 曾派 Agy 任務 `ef6df0444384` 建立 profiler crate，但在寫檔前查到功能已存在於 `native/against-rome-packaging/src/profiler/` 並已接入 `apps/against-rome-editor/src/packaging_ui.rs`，故立即取消以免重複實作；對照測試：`cargo test --manifest-path native/against-rome-packaging/Cargo.toml --release --locked --offline --target-dir re_workspace/codex-packaging-profiler-verify-20261019` exit 0，**50 passed / 0 failed / 0 ignored**，其中 profiler tests 9 項。Agy 唯讀審計 `9fe6f26d64c9` 完成：真缺口為 Safe Save 尚未納入 textures/scenario、Placement UI 缺多選批次工作流、Erosion UI 有 apply contract 但 app 未接線；profiler 已存在不可重複。當前 Agy 實作 `57a6813aac6a` 正只改 `textures_ui.rs` / `scenario_ui.rs` staging API，父端負責 `app.rs` transaction integration；週額度剩 18%，最多一個代理。
+- 父端執行全套 Rust Release 測試：`pwsh -NoProfile -ExecutionPolicy Bypass -File tools/test-rust-rewrite.ps1 -Release -IncludeDesktop` exit 0；覆蓋腳本列出的 17 個 native crate 與桌面 editor app。輸出顯示 C#/.NET 與 retail-map oracle gates 為 ignored（需另開 gate），不能視為已通過；app 編譯仍有 `campaign_ui.rs` unused-import warning。
+- 隨後執行 repository 專用 Win32 trace release gate：`pwsh -NoProfile -ExecutionPolicy Bypass -File tools/test-rust-rewrite.ps1 -TraceOnly` exit 0。i686 MSVC runtime tests **80 passed**（含 8 個 x86 runtime hooks tests），確認 `crt-static`、`winmm.dll` 為 x86、無動態 Microsoft CRT，並驗證 **193 個 exports** 名稱/ordinal/NONAME 與原版一致；DLL SHA256 `42B54823B61B2A02D2F6347015ADC0AA27D98777D9723949BF701E413FF1A7D1`。未載入零售遊戲或做實機 hook 驗收.
+- 額外檢查已移植的 Rust runtime trace crate：`cargo test --manifest-path native/against-rome-trace/Cargo.toml --release --locked --offline --target-dir re_workspace/codex-trace-host-verify-20261019` exit 0，**72 passed / 0 failed / 0 ignored**（47 C++ differential decoder + 25 runtime/logic tests）。這僅證明 host-side contract tests；未執行 i686 Win32 DLL 裝載或零售遊戲 hook 驗收。
+- 尚未完成整體 Rust 改寫；portable 發行、部分 UI/渲染與遊戲 runtime 仍待驗收。既有混合 dirty 工作樹保留，未 commit/push。
+
 # AI Handoff — Rust 全程式改寫
+## 2026-10-18 15:50Z Codex / Agy：Placement 進入交易式 Safe Save
+
+- Maps transaction symlink/junction hardening 完成，父端獨立 maps suite **63 passed / 0 failed / 0 ignored**（命令及目標目錄見下方15:40Z handoff entry）。
+- Agy batch `8c8e35650538` 的 EventGraph→ScenarioUi 子任務成功，代理報完整 app suite **274 passed / 0 failed / 0 ignored**；該 batch 原 viewport 子任務因 backend `INVALID_ARGUMENT` 未開始。重派 `0fce8db3771a` 已接入 `FloorTextureAtlas` 到 egui mesh 與 CPU fallback；代理報 app suite 275 passed，待父端統一重驗。EventGraph/ScenarioUi 尚待父端重驗。
+- Agy `0bab06e973c1` 檢查 C# `MapEditorForm.Campaign.cs:96-97`，確認原生事件引擎不支援每小隊非零 relative delay；Rust 保持 `compile` 與 `compile_for_merge` fail-closed，未臆造功能。父端獨立執行 `cargo test -p against-rome-campaign --release --locked --offline --target-dir re_workspace/parent-staggered-wave-20261018` exit0：**55 passed / 0 failed / 0 ignored**。
+- Agy `9810c08a3c81` 已完成 Placement/ObjectStore 文件納入 `MapSaveTransaction`。代理 app release suite 報告 **278 passed / 0 failed / 0 ignored**，主端獨立 app suite 待 viewport writer 完成後重跑。覆蓋 placement 無損序列化與同路徑檢查、交易失敗保留 dirty/undo、成功後 roundtrip；其餘未支援 dirty 面板仍 fail-closed。
+- Agy `d833abcee026` 唯讀審查發現 Safe Save 路徑政策雙向缺口：非 Program Files 搬移遊戲目錄的零售槽會被放行；相反地，合規的 Program Files `ENDL_005` 測試地圖被一概拒絕。外部專案路徑不應全域要求 ENDL 標記；遊戲根目錄/MAPS 內則只允許 marker-backed `ENDL_005..999`。代理並指出 staged marker 新圖需通過交易前置驗證。Agy `6d96f0007376` 正按此政策修 transaction/storage/app，僅用 synthetic temp fixtures，禁止寫入真實遊戲目錄。
+- Scenario standalone CLI 曾因週額度降至19%取消 Agy 工作；取消前已寫入 create-new 原子輸出與 `tests/cli.rs`（9項），父端執行 `cargo test -p against-rome-scenario --release --locked --offline --target-dir re_workspace/parent-scenario-cli-atomic-20261018` 首次發現測試 `StartCamera` 使用不存在的 `pitch/yaw` 欄位，並修正為現行 `y/primitive`。父端又移除 `hard_link` 失敗時不安全的 `rename` 覆寫 fallback，現在無法保證原子 no-replace 時會 fail closed。重跑 **45 passed / 0 failed / 4 ignored**（4項為 dotnet/retail gates）；命令 exit0。新增的 CLI 變更未經代理最終回報，但父端測試已全通過。
+- 依週額度剩19%已降至單一 Agy：`6d96f0007376` Safe Save 路徑政策修正；另有 viewport、scenario CLI 及 EventGraph review 工作取消前的已完成變更保留。父端 app suite 等 Safe Save writer 結束後重跑。quota於15:56Z：Gemini週剩19%、5小時剩30%。未 commit/push。
+
+## 2026-10-18 15:40Z Codex / Agy：Campaign UI 整合完成、持續補足 Safe Save 和 compiler parity
+
+- Agy `1d51d678e96a` 修正 `restore_categories` 將 BCI/安裝/語言還原錯誤靜默吞掉的行為，改為錯誤向上傳遞，並增加回歸測試。父端獨立執行 `cargo test -p against-rome-modifier --release --locked --offline --target-dir re_workspace/parent-modifier-failclosed-20261018`，exit 0：**141 passed / 0 failed / 0 ignored**。變更限 `services.rs` 與 `category_restore_parity.rs`。
+- Agy job `9810c08a3c81` 正實作 Placement/ObjectStore dirty 文件接入 app `MapSaveTransaction`，目標包含 roundtrip、失敗回滾保留 dirty/undo 的測試；範圍為 `app.rs`、必要時 `placement_ui.rs`，尚待父端審查與測試。
+- Agy `3a14b061b7f6` 已將 canonical `WavePlanParameters` / `compile_for_merge` 接入 `campaign_ui.rs`，代理隔離完整 app suite 報告 **268 passed / 0 failed / 0 ignored**，父端需待其他 app writer 停止後統一重跑。
+- Agy `0bab06e973c1` 正查證並嘗試實作 Campaign 每小隊 `relative_delay_seconds` 等價 BCI 降階；若 C#/遊戲契約無明確證據，應維持 fail-closed。
+- Agy `fe5f6d1e05b1` 完成 maps transaction / rollback 的 symlink/reparse-point 防禦與 partial rollback 危害修復：限定 `native/against-rome-maps/src/transaction.rs`、`src/rollback.rs` 與 `tests/map_save_transaction_tests.rs`，public API 簽章完全未改。前置驗證加入 `verify_path_components_safe` 與 `has_reparse_point_component`，在任何寫入前拒絕包含 symlink/junction/reparse-point 的目標路徑元件；`FileRollbackScope` 及 `SafeFileWriter` 拒絕追蹤或跟隨連結，遞迴快照遇到連結時拒絕且外部檔案不被讀寫，回滾失敗時保留備份目錄不刪除以防資料遺失，並修復 `DuringPostVerification` 注入失敗時正確觸發回滾與報告 `CleanlyRestored`。隔離 target-dir `re_workspace/maps-hardening-target` 執行 release locked offline 測試：**63 passed / 0 failed / 0 ignored**（14 transaction + 41 maps + 6 route + 2 diagnostics）。已回歸證明外部目標位元組完全不變、寫入前即拒絕、遞迴快照安全阻擋。剩餘極限：在 preflight 與 rename 之間的外部並行置換 TOCTOU 視窗（已在 rename 前加補 reparse 檢查與重試）。工作樹全部保留，未 commit/push。
+- Codex 父端獨立重跑 maps hardening：`cargo test -p against-rome-maps --release --locked --offline --target-dir re_workspace/parent-maps-hardening-20261018` exit 0，**63 passed / 0 failed / 0 ignored**；新增 junction/symlink 逃逸、reparse rollback copy 阻擋及 post-verification rollback 測試通過。Agy `d999edff01b5` 正唯讀審 Safe Save custom-map 寫入邊界，避免 `MapSaveTransaction::new()` 放行不該覆寫的地圖目錄。
+- 全體工作仍在未提交大型工作樹；本輪沒有 commit/push。桌面 GPU 與零售遊戲驗收仍缺。
+
+## 2026-10-18 15:35Z Codex / Agy：Rust parity 批次持續
+
+- Maps UI Build & Open dirty/discard guard 已由 Agy 實作並由父端重跑 `cargo test -p against-rome-editor-app --release --locked --offline --target-dir re_workspace/rust-editor-app-target`：**261 passed / 0 failed / 0 ignored**；log `re_workspace/parent-maps-ui-release-2026-10-18.log`。UI 先產生 typed intent，由 app owner guard 通過後才建圖；dirty 拒絕不改檔，clean/discard E2E 有覆蓋。無 native-window/game 驗收。
+- Save Manager nullable-manifest / PFIL `save.ini` fallback 由 Codex 完成並由父端獨立驗證：saves crate **38 unit + 3 differential/oracle passed, 1 ignored, 0 failed**，log/target command見 `re_workspace/parent-verify-saves`。不代表完整 Save Manager 整合或遊戲驗收。
+- Rust publisher clean-cache bootstrap 已由父端完整重跑 `pwsh -NoProfile -ExecutionPolicy Bypass -File tools/test-publish-rust.ps1`：隔離 `CARGO_HOME` locked fetch下載 **27,546 files**，post-fetch offline metadata及packaging `cargo check --locked --offline`、WhatIf、合成 ZIP、provenance均通過。代理逾20分鐘沒回結果；上述主端重跑才作為證據。
+- Maps `MapSaveTransaction` API已完成；父端 maps crate release/locked/offline exit0，**57 passed / 0 failed / 0 ignored**，log `re_workspace/parent-maps-transaction-release-2026-10-18.log`。測試注入多個失敗點並以遞迴位元組快照驗證回滾。API尚未接入 app Save按鈕；跨volume原子性、desktop/game驗收未做。
+- Scene particle contract已完成；父端 `cargo test -p against-rome-scene --release --locked --offline --target-dir re_workspace/parent-verify-saves` exit0，依各測試目標逐項加總 **97 passed / 0 failed / 0 ignored**（代理摘要誤算為93）；log `re_workspace/parent-scene-particles-release-2026-10-18.log`。這是CPU幾何/命令資料測試，不是GPU或遊戲render驗收。
+- Modifier restore-category parity原有135項通過，但發現 `restore_categories` 對部分 install/BCI/lang plan靜默忽略錯誤；已由Agy `1d51d678e96a` 修正並由父端以新隔離 target 重驗：**141 passed / 0 failed / 0 ignored**。新錯誤傳遞與回歸測試已覆蓋；桌面及真實遊戲目錄驗收未做。
+- Campaign wave planning/merge parity已完成於 `native/against-rome-campaign`；父端 release/locked/offline **54 passed / 0 failed / 0 ignored**，log `re_workspace/parent-campaign-parity-release-2026-10-18.log`。新增波次參數驗證、事件命名衝突去重、256事件上限與合併後scenario驗證；還未接入桌面 UI。路徑巡邏、相對延遲與指定物件攻擊仍 fail-closed/未支援。
+- Texture floor-atlas packing已由Agy完成，父端 crate測試exit0：**60 passed / 0 failed / 4 ignored**；log `re_workspace/parent-texture-atlas-release-2026-10-18.log`。新增CPU圖集/UV/gutter行為；GPU viewport整合未驗。Environment自然編輯/選取與Undo行為Agy完成，父端crate測試exit0：**74 passed / 0 failed / 0 ignored**；log `re_workspace/parent-environment-nature-release-2026-10-18.log`。兩者均未做desktop/retail-game驗收。
+- Navigation聚合式NavMesh分析入口已由Agy完成，父端 release/locked/offline exit0：**37 passed / 0 failed / 0 ignored**；log `re_workspace/parent-navigation-parity-release-2026-10-18.log`。已加 `from_world`、統一診斷結果及推薦修復清單。`against-rome-maps` 仍有重複結果模型；桌面/遊戲未驗收。
+- Codex job `847fce508d6d` 已將 `MapSaveTransaction` 接到 app Safe Save。worker報 **264 passed / 0 failed / 0 ignored**（log `re_workspace/safe-save-app-20261018-release.log`，命令使用隔離target）；父端重驗待其他app crate agents停止寫入後執行。現先stage terrain、ambience、briefing、backup/cache變更後統一提交，會在任何寫入前拒絕unsupported dirty panel/weather欄位；這是安全整合第一步，尚未涵蓋placement/scenario/textures/event graph/maps/environment/landscape/packaging/campaign/AI/tools的完整持久化格式，不是全圖所有面板都可儲存。
+- 新 Agy batch `8c8e35650538`：EventGraph接線到ScenarioUi（`scenario_ui.rs`/graph UI）與FloorTextureAtlas接egui viewport（`viewport_3d.rs`），兩個分離範圍；均需headless app tests，不宣稱GPU/game驗收。
+- 新 Agy job `fe5f6d1e05b1` 正對 maps transaction / rollback 做 symlink/reparse-point 安全審查及故障測試；保持 public API 不變，以免與 Codex Safe Save 整合衝突。
+- 新 Agy job `3a14b061b7f6` 正將 canonical wave planner/merge 接到 `campaign_ui.rs`，範圍排除 Codex持有的 `app.rs`。
+
+## 2026-10-18 Agy / Codex：切圖面板 reset 初版與獨立測試結果
+
+- Agy job `99fcd541a665`（直接 AGY backend；20 分鐘後只回傳 partial log，未提供測試結論）加入各面板 `reset_session`、Placement/Scenario/Textures map loaders、ambience transactional parsing/defaults、app load/blank reset 流程及 A→B/blank/corrupt-file 測試。父端確認該 Agy process 已終止，未見仍在跑的 cargo 子程序。
+- 初測 2 項失敗：dirty flora 測試 setup 不應繞過 guard；Placement 把不存在的 map directory 當合法缺 DATA。Codex job `f38fc25df3df` 修正 missing-root 驗證及 discard 測試，但因 Codex subscription usage limit，無法執行它自己的測試命令；父端接手驗證與修正。
+- 有效零售地圖的 `DATA/objects.dat` 是 native pool 格式，與 Placement `ObjectStore` 編輯格式不同。為保留既有明確載入工作流並避免開圖失敗，`install_loaded_map()` 現重設 Placement/Materials/Scenario 至新路徑下 unloaded 狀態，清 EventGraph 與所有 derived panels；使用者再從各 panel 明確載入。Placement 可辨識 native pool 並拒絕把它誤當 editor document；無效路徑仍錯誤返回。
+- 父端讓 `ambience.load_from_map()` 先以 staged parse 完成，再 reset 其他 panels；新增損毀 `daynight.bmp` 時 A 的 terrain/objects/materials/ambience 全保留測試。完整 app `--release --locked --offline --quiet`：**256 passed / 0 failed / 0 ignored**；Blank Map integration 3/3；本輪 source 範圍 `git diff --check` 無錯誤。仍未做桌面/零售遊戲驗收；預檢與讀取間的外部磁碟競態、整圖原子 save、完整 C# parity 仍開放。工作樹混有既有大範圍修改，未 commit/push。
+
+## 2026-10-18 Codex：地圖切換後殘留面板狀態審查
+
+- 只讀 delegation job `9a1731a3aa81` 實際由 Codex 執行（雖請求 Agy）；確認 dirty guard 之外仍有重大 clean-switch 缺口：`install_loaded_map()` 只替換 terrain/settings/ambience，其他 panels 仍可能帶著 A 地圖的 document、來源路徑、undo/history、plans/reports 操作 B。Blank UI 更未清 ambience。
+- 審查指出不能直接用 `clear_dirty()` 或整個 panel `Default` 取代：多個 clear_dirty 漏 transient；整體替換會丟 user preferences。要按欄位分離 map-bound document/transient 與 preferences，且按 Placement/Textures/Scenario/Ambience → EventGraph → derived panels 相依順序 reload/reset。詳細 field 清單、C# 證據、測試表見 delegation job 結果。
+- 可驗證相鄰風險：ambience loader 內吞 read/parse errors、缺檔會保留舊欄位仍清 dirty；Maps UI 的 Build & Open 先落盤再要求切換；EventGraph 尚無 scenario load/compile caller。此輪只讀，未改檔或跑測試；下一步需實作 map-session boundary 與 failure-atomic load，後續整圖原子 save 仍獨立未解。
+
+## 2026-10-18 Codex：公開地圖切換 API 防止遺失 dirty session
+
+- Codex delegation job `32c41d5f5323` 改 `app.rs`、`main.rs` 和 `tests/blank_map_and_ambience_e2e.rs`。`set_loaded_map()` 現回傳 `Result` 並在 dirty 時拒絕；`create_blank_map()` 在建圖/寫檔前使用同一 guard。UI 的明確 Discard 流程仍走內部安裝函式。
+- 新測試涵蓋 12 類非 terrain dirty 面板、terrain dirty、無 terrain 但面板 dirty；確認拒絕不改 app/map/build 輸出，clean flow 可載入/建圖。父端獨立跑完整 app `--release --locked --offline`：**249 passed / 0 failed / 0 ignored**；本輪 tracked 檔 `git diff --check` 通過。
+- Headless 驗證；尚缺直接 API caller 的非 terrain session reset、load error handling 與整圖原子 save coordinator。大範圍 app 檔有既有工作樹修改，未 commit/push；全 Rust rewrite 仍未完成。
+
+## 2026-10-18 Codex：地圖切換檢查所有未儲存面板
+
+- Codex delegation job `00e73d0be0ea` 僅修改 `apps/against-rome-editor/src/app.rs`：Load／Blank／Close 現在都走完整 `has_unsaved_changes()`，保留既有 Discard confirmation；新增測試涵蓋 12 類非地形 dirty 面板對三種動作，以及 clean Load/Blank。
+- 父端獨立執行 `cargo test -p against-rome-editor-app --release --locked --offline --target-dir re_workspace/root-workspace-release`，exit 0：**244 passed / 0 failed / 0 ignored**；`git diff --check -- apps/against-rome-editor/src/app.rs` 通過。Headless 驗證，未做桌面操作。
+- 仍未處理：直接呼叫 `create_blank_map()`／`set_loaded_map()` 不經 UI dirty guard；Discard 後面板 session 重置及整圖原子存檔交易仍缺。`app.rs` 含大量既有未提交修改，本輪未 commit/push。Rust 全專案改寫仍未完成。
+
+## 2026-10-18 Codex / Antigravity：Standalone Save Manager 遊戲目錄選擇器（headless 驗證通過）
+
+- Agy jobs `214574eb8c72` / `5cb8d498d5e5` 在既有 untracked `apps/against-rome-editor/src/save_manager_ui.rs` 加入可注入 native folder picker 與 same-path rescan parity；取消與無效路徑保留目錄/選取，成功路徑更新預設備份目錄並掃描。三個新增測試覆蓋成功、取消/無效、掃描失敗與相同路徑回歸。
+- 父端獨立 `cargo test -p against-rome-editor-app --release --locked --offline --target-dir re_workspace/root-workspace-release`：**237 passed / 0 failed / 0 ignored**。`against-rome-save-manager` 與 `save-manager` release `--smoke-test` 均 exit 0，三個 UI frames；原生 Windows folder dialog 尚未手動驗收。
+- 修復 root lockfile 與 app manifest 不一致：提交 `9f9eaf8` 已將 `rfd`、`against-rome-ambience`、`against-rome-scene` 宣告推送；`cargo metadata --format-version 1 --no-deps --locked` exit 0。此 commit 只納入 Cargo.toml 三項直接依賴。
+- 已提交並推送 `14097e7`：納入 standalone Save Manager UI、`save_manager_ui` 模組匯出與 canonical `save-manager` binary。別名 `against-rome-save-manager.rs` 仍 untracked；原生 Windows folder dialog 尚未手動驗收。
+
+## 2026-10-18 Codex / Agy：全 workspace 驗證與 Rust parity 安全缺口
+
+- 重新核對 branch `主要開發`；HEAD 現為 `fe803ca`。其餘工作樹仍有大量既有 dirty/untracked 變更，全部保留，未 reset/clean。
+- 父端執行 `cargo test --workspace --release --locked --offline`，exit 0；之後對最新 app 與 Modifier 變更再分別跑完整 crate suite。Placement 仍有 8 個明確標記需 .NET／零售地圖的 ignored gates，不能計作 parity 驗收。
+- 獨立 trace workspace 執行 `cargo test --release --locked --offline --manifest-path native/against-rome-trace/Cargo.toml --target-dir re_workspace/current-trace-verify --features check-runtime`：**77 passed / 0 failed / 0 ignored**。
+- 三路唯讀 Agy/Codex parity audit `616a09a95d56` 完成，指出整圖跨模組存檔交易缺失、切圖未檢查所有 dirty session、Campaign/EventGraph/Console/SDL UI 尚未接線、Modifier Unknown EXE pattern 可能略過仍成功，以及官方 release/CI 仍由 C# 和 C++ trace 驅動。具體證據及剩餘缺口見該 job 結果；舊 inventory 不可當現況。
+- Modifier unknown-feature fail-closed 修補已由 `8d2c403` 推送；舊版 village range 四站點遷移與四種 cave 精確分類由 `fe803ca` 推送至 `origin/主要開發`。父端完整 `cargo test -p against-rome-modifier --release --locked --offline --target-dir re_workspace/parent-village-cave-verify` exit 0；Codex 報告 **130 passed / 0 failed / 0 ignored**。C# `ExePatchModelTests`：**81 passed / 0 failed**。Rust 對 Unknown/mixed cave 明確啟用時拒絕且不改 input；停用時保留未知 bytes。
+- Agy Claude/GPT pool 降至 19% 後依使用者門檻縮到一個代理；Agy `78471f0b1970` 隨後因 quota HTTP 429 終止，partial work 保留並由 Codex 完成。較早 Agy UI job `4504d1d592b4` 已完成；父端完整 app suite：**240 passed / 0 failed / 0 ignored**。app.rs 與 ambience_ui.rs 的變更未提交，因混有既有大範圍未提交/新檔工作。
+- Safe Save 現能揭露 terrain 成功但 ambience 失敗的部分成功，並保留 ambience dirty；快速 Save/Reload 失敗也顯示狀態。這不是整圖原子交易：terrain 已寫入時 ambience 後續失敗不會回滾；Ambience 內部部分備份/目錄錯誤與開圖載入錯誤仍被忽略。下一步優先實作整圖 save coordinator 和 map session 切換交易；Rust rewrite 仍未完成。Clean Windows 發行、原生視窗、零售遊戲 runtime 驗收仍未完成。
+
+## 2026-10-18 Codex / Antigravity：統一 Rust Cargo workspace（全量驗證通過）
+
+- 根目錄現有 `Cargo.toml` / `Cargo.lock` 統一 22 members（app、16 native crates、5 Rust tools），排除有自身 `[workspace]` 的 `native/against-rome-trace`；全 repo 共 23 個 manifests。
+- Agy job `af39d592cd56` 建立 workspace 並報告 no-run build 通過。父端 `cargo metadata --format-version 1 --no-deps --locked` exit 0、列出22 members；補齊 `cargo fetch --locked` 後，debug 與 release `cargo test --workspace --locked --offline` 均通過：各 179 suites、**1204 passed / 0 failed / 23 ignored**。
+- 獨立 `cargo test --locked --offline --manifest-path native/against-rome-trace/Cargo.toml --target-dir re_workspace/root-trace-target --features check-runtime`：**77 passed / 0 failed**。刪除 `native/against-rome-data/Cargo.toml` 被忽略的冗餘 release profile，root profile 保持 `panic = "unwind"`；最後 workspace 測試無 profile 警告。
+- 配額檢查：AGY Gemini 五小時剩 9%，故使用 AGY Claude/GPT pool（五小時剩 83%）；本輪同時只派一個工作。提交 `f212fca` 已推送至 `origin/主要開發`；其他既有工作樹變更未納入。
+
+## 2026-10-18 Codex / Antigravity：Save Manager 遊戲目錄選擇器
+
+- Agy job `4751a09ca54f`（Antigravity CLI，Claude Sonnet pool）完成 C# `SaveManagerForm.cs` Browse 行為的 Rust 移植，僅修改 `apps/against-rome-editor/src/toolbox.rs`。Picker 可注入測試；取消保留狀態，無效路徑保留目錄清單，成功選擇後重新掃描。
+- 父端獨立執行 focused toolbox 測試：**14 passed, 0 failed**（含 3 個新 picker 測試）；完整 app suite `cargo test --release --locked --offline --manifest-path apps/against-rome-editor/Cargo.toml --target-dir re_workspace/parent-save-picker-check`：**233 passed, 0 failed, 0 ignored**。原生 Windows dialog 未實際點選驗收。
+- 父端先前確認舊 Placement Agy PID `9976` 已不存在；delegation registry 僅有 cancelled job `26eaee3a3169`，本輪只派一個 Agy 工作。單檔提交 `e5da69b` 已推送至 `origin/主要開發`；其他既有工作樹變更未納入。
+
+## 2026-10-18 Codex / Antigravity：Modifier `.artroop` picker 與 portable ZIP（headless 驗證通過）
+
+- Agy `26eaee3a3169` 因發現先前的 Placement Agy 子程序仍在工作，依單代理額度限制取消；取消前已加入 `rfd` 依賴、`.artroop` open/save picker 與可注入 picker 的 UI 測試。父端保留並獨立驗證該實作；原生 Windows dialog 尚未人工驗收。
+- `cargo test --release --locked --offline --manifest-path apps/against-rome-editor/Cargo.toml --target-dir re_workspace/parent-modifier-dialog-check --lib modifier_ui` 首次因本機 Cargo cache 缺 `rfd` 而無法離線解析。線上解析後下載 `rfd 0.17.2`；父端修正英文 UI 測試初始化的 dirty flag，聚焦 app library 測試 **20 passed, 0 failed**（167 filtered）。
+- 原 .NET 基準 `dotnet test AgainstRomeModifier.slnx -c Release`：Modules **1,152 passed / 2 skipped**；Modifier **1,294 passed / 33 skipped**；全程 0 failed。略過項包含零售素材/明確 gate，不能視為實機驗收。
+- 父端接續取消前半成品後，完整 app 命令 `cargo test --release --locked --offline --manifest-path apps/against-rome-editor/Cargo.toml --target-dir re_workspace/parent-modifier-dialog-check` **228 passed, 0 failed, 0 ignored**（187 library + 19 Launcher + 其餘 binary/integration suites）。`git diff --check` 對此範圍沒有 whitespace error，僅有 Cargo.toml 換行格式提示。
+- 目前 Rust `.artroop` native picker、英文/繁中接線與 fake-picker workflow 已由聚焦及完整 app 測試驗證；實際 Windows dialog/桌面視窗、clean Windows 發行、遊戲或 GPU 仍未驗。2026-10-18 本輪確認舊 Agy PID `9976` 已不存在，delegation registry 僅保留已取消 job `26eaee3a3169`；Placement UI 不再有已確認的活躍代理。未 commit/push。
+- C# `MapSelectionForm.Browse()` 的遊戲目錄選擇亦已移植到 `maps_ui.rs`，以同一 `rfd` 依賴提供 Catalog/Blank Map 兩處 Browse；取消保留原路徑，無效路徑不覆寫。`cargo test --release --locked --offline --manifest-path apps/against-rome-editor/Cargo.toml --target-dir re_workspace/parent-modifier-dialog-check --lib maps_ui` **8 passed**；同 target-dir 完整 app suite 更新為 **230 passed, 0 failed, 0 ignored**。實際 Windows 桌面 dialog 仍未開啟驗收。
+- 為縮小 C# 發行依賴，新增 `tools/RustPortableArchive.psm1`，由 `tools/publish-rust.ps1` 在 ShouldProcess 同意後建立 sibling `.zip` 與 `.zip.sha256`。Helper 會核對來源與 ZIP entry 清單/內容 SHA256、拒絕覆寫，失敗時清除本次產生的未修改輸出。`pwsh -NoProfile -ExecutionPolicy Bypass -File tools/test-publish-rust.ps1` 通過 AST/六目標/WhatIf/custom-output 與合成 ZIP entry/hash/no-overwrite 測試。
+- 未重跑真實六 binary build/staging/ZIP，因工作樹仍有另一 Agy 對 `placement_ui.rs` 的未完成工作，publisher 會在 source fingerprint 變更時拒絕產出。合成封裝測試不等同真實 portable 發行或 clean Windows 驗收。
+
+## 2026-10-18 Codex / Antigravity：Save Manager 遊戲目錄選擇器（已完成，保留派工背景）
+
+- 重新核對分支 `主要開發`、Git 狀態與相關差異；全工作樹有大量既有變更，目標 `apps/against-rome-editor/src/toolbox.rs` 目前乾淨。C# `SaveManagerForm.cs` 有 `FolderBrowserDialog`，Rust Save Manager 的 Game root 目前只有文字欄位；`rfd 0.17` 已是 app 既有依賴。
+- Agy job `4751a09ca54f` 以 `claude-sonnet-5-5`（AGY Claude/GPT 配額池）完成限定於 `toolbox.rs` 的可注入 folder picker 與 headless 測試。派工前即時配額：AGY Gemini 5h 剩 9%（未派至此池），AGY Claude/GPT 5h/7d 剩 100%；Codex 5h/7d 剩 79%/81%；Claude CLI 認證/限流不可用。本輪只使用一個外部子代理。
+- 父端審閱 diff 並獨立執行 focused 與完整 app 測試；單檔提交 `e5da69b` 已推送至 origin。原生 Windows dialog 仍未點選驗收。
+
+## 2026-10-18 Codex / Antigravity：Launcher 子程式參數與 smoke-test 隔離
+
+- Agy job `0a0295a30b6f` 完成，僅修改 untracked `apps/against-rome-editor/src/bin/against-rome-launcher.rs`。依子程式 CLI 合約路由參數：Editor 無 map 時不帶參數，有 game+map 才傳入；Modifier GUI 不接收不支援的旗標；Save Manager 僅接收 game/lang。Smoke-test 使用隔離暫存 base dir，避免誤啟動同目錄 sibling binary。
+- 父端重新執行 launcher release 單元測試：`cargo test --release --locked --offline --manifest-path apps/against-rome-editor/Cargo.toml --target-dir re_workspace/parent-verify-app-integrated --bin against-rome-launcher`，**19 passed, 0 failed**。
+- 父端重新執行 `cargo run --release --locked --offline --manifest-path apps/against-rome-editor/Cargo.toml --target-dir re_workspace/parent-verify-app-integrated --bin against-rome-launcher -- --smoke-test`，Exit 0，輸出三個 UI frames 成功。Agy 報告整個 app suite **225 passed** 及其獨立 target-dir smoke Exit 0；本端尚未在變更後重跑整個 app suite。
+- 未啟動遊戲或 sibling app，未改遊戲資料，未 commit/push。Launcher 修復僅有 headless 驗證，沒有桌面 GPU 驗收。
+- 此工作現已完成：`ArmMapPackage` 的 CLI 行為已對照並擴充邊界測試，且 portable publisher 已納入第六個 Rust 執行檔。
+
+## 2026-10-18 Codex / Antigravity：ArmMapPackage CLI parity 與 publisher 整合
+
+- Agy job `be49f9ed6c26` 完成。對照 C# `tools/ArmMapPackage/Program.cs` 與 Rust `native/against-rome-packaging/src/main.rs` 的語法、位置參數、`--force`、輸出串流與 exit code；擴充 `native/against-rome-packaging/tests/cli.rs`，涵蓋錯置旗標、stdout/stderr 隔離、損毀 ZIP 與多槽位安裝。
+- `tools/publish-rust.ps1` 已納入第六目標 `ArmMapPackage.exe`，含 release build、SkipBuild 搜尋、staging、SHA256、provenance；`tools/test-publish-rust.ps1` 驗證六個目標與 ShouldProcess/WhatIf 保護。Cargo 正式 bin 名稱為 `ArmMapPackage`，依賴為 Rust crates，未見額外 native DLL。
+- 父端重跑 `cargo test --release --locked --offline --manifest-path native/against-rome-packaging/Cargo.toml --target-dir re_workspace/parent-verify-packaging`：**50 passed, 0 failed, 0 ignored**。父端 publisher PowerShell 契約/WhatIf 測試六目標全部通過，exit 0。
+- 父端以 repo 外新目錄 `C:\Users\nojac\AppData\Local\Temp\AgainstRomeModifierRustStageCodex-20261018-0818` 執行真實 build/stage，exit 0。暫存目錄含 6 個 exe、7 個第三方資產及 provenance；逐一核對六個 binary 的 SHA256/length 均與 provenance 相符。Modifier GUI、Launcher、Save Manager headless smoke 均成功；Editor/Modifier CLI help 與 ArmMapPackage usage exit code 亦通過。
+- 未在無 .NET 的 clean Windows 裝置驗收，未做零售遊戲 install/playability 驗收；未 commit/push，未修改安裝遊戲。輸出暫存目錄及 GUI smoke state 留在 TEMP 供後續檢查。
+- 下一步可加入 ZIP/SHA256 發行輸出，之後依 parity 證據安排 C# 產品專案退役；整體改寫未完成。
+
+## 2026-10-18 Codex：Placement particle/garrison 全面差分與 retail 掃描
+
+- 父端 `cargo test --release --locked --offline --manifest-path native/against-rome-placement/Cargo.toml --target-dir re_workspace/rust-placement-target`：**44 passed, 0 failed, 8 ignored**；之後把八項 ignored gates 逐項執行，全部 **1 passed**：batch DATA pools、family light/aux、family particle/garrison、family rejection parity、placement workflow/batch dialog、retail managed differential、retail TEMP roundtrip、retail particle/garrison scan。
+- C# synthetic oracles：family move/clone/delete 11 pools 位元組一致；light/aux family 8 pools 一致；兩 family 的 batch DATA pools 各 7 pools 一致；batch workflow 6 stages 一致；28 個 corrupted/unsupported relationship case 均與 C# 一致地拒絕。
+- TUTOR_01 slot 0 / UID 13136 的真圖 C# move/clone/delete differential：每階段 11 pools、7,490,210 decoded bytes 完全一致；TEMP roundtrip 成功，輸出明示 source DATA bytes unchanged。唯讀掃描 74/74 maps 均成功載入；4,140 個具 particle/garrison references 的 roots 中 2,912 accepted，其餘依 fail-closed 診斷拒絕（含 unsupported related pool columns）。沒有寫入安裝目錄。
+- 已更新 `native/against-rome-placement/README.md`，移除「particle/garrison 尚未移植」的錯誤敘述，列出仍未做的跨圖匯入、definition-based creation、batch selection、persisted undo；另更新本輪 Rust port inventory 的 Launcher 與 packaging 狀態。
+- Agy `1bfcc4903e1c` 正處理唯一一項 app/UI 工作：Placement family inspector 的可讀關聯呈現；僅改 app placement UI，父端不得同時編輯其 owned files。
+
+## 2026-10-18 Codex：Rust Trace Win32 x86 重新驗證
+
+- `cargo test --release --locked --offline --manifest-path native/against-rome-trace/Cargo.toml --target-dir re_workspace/target-against-rome-trace --features check-runtime`：x64 host **77 passed**。
+- 同 crate `--target i686-pc-windows-msvc` release suite：**80 passed, 0 failed, 0 ignored**，含兩項真 x86 inline-detour 執行/復原測試與 WinMM export resolution。
+- `pwsh -NoProfile -ExecutionPolicy Bypass -File native/against-rome-trace/build-win32.ps1`：x86 tests 通過、static-CRT `winmm.dll` build 成功，`audit_exports` 確認 **193 exports** 名稱、ordinal、NONAME 與系統/定義一致。
+- 這些驗證未把 DLL 複製到遊戲目錄，也未載入零售遊戲；C++ `native/argm-trace` 保留為參考，真實遊戲 process/hook 執行尚未驗收。
+
+## 2026-10-18 Antigravity：native/against-rome-environment 自然地景調色盤與筆刷行為（完成）
+
+- 依使用者指示，範圍嚴格限定於 `native/against-rome-environment/**`，保留全部既有 dirty/untracked，未 commit/push/reset/clean。
+- 對照 C# 地圖設計師工作流（`MapEditorForm.Nature.cs`, `Flora.cs`, `Weather.cs`, `WildLairDialog.cs`, `SettlementGeneratorDialog.cs`）：
+  - 天候預設（WeatherPresets/AtmosphereEditSession）已在 `against-rome-ambience` 實作；巢穴（WildLairScenarioEventBinder）、基地（SettlementGeneratorEngine）與植被生態（FloraScatterEngine）已在 environment 實作。
+  - C# `MapEditorForm.Nature.cs` 核心設計師行為在 Rust 仍缺失：地景主要地區自動檢測（15% 門檻）、分類過濾（`NatureCategory`）、地區隔離調色盤（`NaturePaletteFilter`）、同地區同類別物種混種選擇器（`NatureSpeciesMixer`）、未鎖定地景保護筆刷移除（`NatureBrushRemover`）與筆刷種植規劃（`NatureBrushPainter`）。
+- **實作成品**：
+  - 新增 `src/nature/palette.rs`，包含 `nature_region`、`nature_category`、`map_nature_regions`、`NatureCatalogItem`、`NaturePaletteFilter`、`NatureSpeciesMixer`、`PlacedNatureObject`、`NatureBrushRemover`、`NatureBrushPainter`。
+  - 在 `src/nature/mod.rs` 與 `src/lib.rs` 重新匯出上述型別與函式。
+  - 新增 `tests/nature_palette_tests.rs` 7 項測試（涵蓋地區提取、分類多語系、15% 門檻多地區檢測、調色盤過濾排序、物種混種隔離、已連結物件防護移除、筆刷種植與 session 復原重做閉環）。
+- **驗證成果**：
+  - 獨立執行 `cargo test --release --locked --offline --manifest-path native/against-rome-environment/Cargo.toml` exit 0：
+    - `unittests src/lib.rs`: 6 passed
+    - `tests/flora_scatter_tests.rs`: 9 passed
+    - `tests/nature_palette_tests.rs`: 7 passed
+    - `tests/neutral_lair_tests.rs`: 9 passed
+    - `tests/settlement_tests.rs`: 9 passed
+    - `tests/shadow_tests.rs`: 24 passed
+    - 總計 **64 passed, 0 failed, 0 ignored**。
+  - 執行 `cargo check --all-targets --release --locked --offline --manifest-path native/against-rome-environment/Cargo.toml` exit 0，無任何 warnings。
+- **未驗證界限**：此為純 Rust native/against-rome-environment 演算法與資料層驗證，未修改安裝遊戲目錄，未做桌面視窗/GPU 顯示驗收。
+## 2026-10-18 Codex：Rust parity wave / agent status
+
+- Parent independently re-ran Environment release tests: **68 passed**. Parent independently re-ran Placement release tests: **44 passed, 8 ignored**; then ran the two new synthetic .NET differential tests individually: all six placement UI stages matched, and translate/clone/remove matched decompressed bytes across all seven DATA pools. Retail-map and other .NET gates remain explicitly unrun/ignored.
+- Agy `4926aa0a0499` added a direct C# `NativeAlrDocument` differential oracle. Parent independently ran the complete `against-rome-data` release suite, including this live differential, successfully; the agent reports 209 passed, 1 installed-inventory audit ignored, plus 16 valid ALR cases, 23 malformed cases, and 196 truncations checked. The agent also reports `dotnet build` and all-target release checks clean.
+- Agy `8b5325bd0f79` fixed Nature PRNG consumption parity, case-insensitive region filtering, species ordering, UTF-8 boundary safety and tile removal planning. Its reported suite was 68 passed; parent suite also passed. No native-window/GPU or game test was run.
+- Agy `cf65b3185f33` added managed C# oracles for Placement batch UI and DATA pools; both new differential tests pass independently on the parent machine. Rust placement suite: 44 passed/8 ignored.
+- The Rust rewrite remains incomplete. No current result proves native-window/GPU acceptance, retail-game map compatibility, deployment on a clean Windows machine, full C# feature parity, or live Rust DLL behavior. Preserve those as open gates.
+- Agy `8813515de576` corrected C# ties-to-even direction rounding in Rust. Parent ran the full textures release suite (**52 passed, 4 ignored**) and the real .NET 10 catalog differential (**2 passed**): degraded and normal fixtures each matched 5,201 lines, including 1,712 sprites and 408 animations in the normal fixture.
+- Agy `f4dcfe2a5e7a` added .NET 10 EventGraph/ScenarioEventSession differential coverage. Parent ran the complete scenario release suite (**36 passed, 3 ignored**), including the differential for 5 graph conversions, 30 validator cases, and 22 session operations. Retail-script and C# save-load gates remain ignored.
+- The Rust rewrite remains incomplete. No current result proves native-window/GPU acceptance, retail-game map compatibility, deployment on a clean Windows machine, full C# feature parity, or live Rust DLL behavior. Preserve those as open gates.
+- Claude `62df30507701` added `tools/publish-rust.ps1`; parent PowerShell parser and `-WhatIf` checks passed (0 parse errors, exit 0, no output directory created). No actual build/staging or output-hash verification was performed. Read-only reviews `7b3bced6a25c` and `b46cdf38a85c` found no P1/P2 issue after fixes. Remaining P3 review findings include ordinal-vs-culture sorting in the untracked manifest and custom non-ignored output directories being detected as a source race; actual build/staging and cleanup remain unverified. A true staging run remains pending until the desktop viewport source stops changing.
+- The Rust rewrite remains incomplete. No current result proves native-window/GPU acceptance, retail-game map compatibility, deployment on a clean Windows machine, full C# feature parity, or live Rust DLL behavior. Preserve those as open gates.
+- Agy `976280619cb5` created `docs/rust-port-inventory.md`. Parent refreshed the live count to **36 `.csproj` files and 23 Cargo manifests** (`rg --files --no-ignore` excluding build/workspace output), including the new APT and Save Manifest oracle projects. Re-inspection of all `src.SaveManager` C# files found no Hex viewer or offset-search feature, so the inventory no longer misclassifies it as an existing C# migration gap; the true standalone Save Manager UI gap remains active under Agy `b5506db3a9bd`. Agy `28143dc1cdc4` added the standalone Rust `ArmMapPackage` CLI (`install`/`export`/`--force`); parent independently ran its complete release suite: **48 passed, 0 failed, 0 ignored**. Real retail-game install/export remains unverified.
+- Claude `b55b2a0acf59` found that Rust modifier CLI logic exists but is not included in the Rust portable publisher; the .NET `tools/publish.ps1` still publishes the legacy C# app. Agy `064501d9b941` is addressing the Rust portable-package gap. The C# `--game <dir> --map <ID>` direct-map startup contract is now being ported by Agy `af671f430e53`; the general C# launcher/no-args UI remains open. Claude quota is 4% five-hour / 64% weekly, so no additional Claude turn is dispatched until quota resets.
+- Agy `6b5cdefa58b6` completed a new C# `NativeAptDocument` differential oracle in `native/against-rome-data/tests/oracle_apt/` and `tests/apt_differential.rs`. Parent independently ran `cargo test --release --locked --offline --manifest-path native/against-rome-data/Cargo.toml`: exit 0, 152 passed, 1 ignored; the ignored test requires the existing installed-inventory TSV. No game files were touched.
+- Agy `418ec243fc8b` corrected `StartCameraPrimitive` JSON compatibility (numeric C# serialization with tolerant Rust enum reads) and added a .NET 10 camera-track oracle. Parent independently ran the full campaign release suite: **48 passed, 0 failed, 0 ignored**. No game runtime or camera playback acceptance was performed.
+- Agy `064501d9b941` was dispatched to close the Rust portable-publisher gap by staging the existing `against-rome-modifier` CLI binary alongside the editor; scope is `tools/publish-rust.ps1` and directly necessary `tools/` tests/docs only. It must preserve `-WhatIf`/`-SkipBuild`; no real staging/build is authorized in that task.
+- Agy `638d22c631c3` added 3D viewport object/marker rendering, picking and terrain-brush guards in `viewport_3d.rs`/`app.rs`. Parent independently ran the desktop app release test suite: **181 passed, 0 failed, 0 ignored**. This is headless/UI logic evidence only; no real GPU window or retail-game acceptance was performed.
+- Parent independently ran `native/against-rome-trace/build-win32.ps1`: Win32 x86 tests **80 passed, 0 failed, 0 ignored** (8 runtime, 47 decoder, 25 logic), release `winmm.dll` build succeeded, and export audit verified **193 names/ordinals/NONAME entries** against the system DLL. This verifies the Rust proxy build/export contract only; it was not injected into the game.
+- Agy `3d8a6e7306db` added a live C# `SaveBackupManifestCodec` oracle in `native/against-rome-saves/tests/oracle_manifest/` and `tests/manifest_differential.rs`. Parent independently ran the full save crate suite: **40 passed, 1 existing ignored, 0 failed**; the ignored test is the existing LZSS differential gate.
+- Agy `b5506db3a9bd` is implementing a standalone Rust Save Manager desktop binary from the existing C# SaveManager workflow, using the current save service; scope excludes the active editor viewport and save core. Agy `af671f430e53` is porting the C# direct-map `--game <dir> --map <ID>` startup contract into the Rust editor CLI.
+- Agy `8f56254c3e26` is adding a standalone Rust Modifier desktop binary by hosting the existing `ModifierUi` directly, without starting the map editor.
+- Agy `26d63c206154` is porting the C# `TechDocForm` read-only Markdown window into a localized, scrollable Rust editor UI.
+- Status refresh (2026-10-18 08:00Z): Scenario contract audit found no implemented C# event condition/action missing from Rust; parent Release suite passed **36 tests / 3 ignored**, and both ignored .NET 10 differentials passed when explicitly run (2 exact compiler fixtures; 99 save/load cases). Parent app Release suite passed **219/0/0**, and `cargo check --release --locked --offline ... --bins` passed. Direct Modifier GUI and Save Manager `--smoke-test` each exited 0. Agy `7c059711b866` completed the five-binary portable publisher; parent `tools/test-publish-rust.ps1` passed all 7 assertions, but no actual staging/build was performed. Current Agy quota is **16% five-hour / 43% weekly**, so keep one worker only. Current single Agy task `0a0295a30b6f` fixes a real Launcher runtime smoke failure and per-child CLI argument routing. Claude was last 4% five-hour / 64% weekly; none active. Local Laguna has no background worker.
+- Parent reran the full Release app suite after Save Manager/Launcher source stabilized: `cargo test --release --locked --offline --manifest-path apps/against-rome-editor/Cargo.toml --target-dir re_workspace/parent-verify-app-integrated` exit 0, **219 passed, 0 failed, 0 ignored**, including all bin targets and CLI/editor integration tests. This supersedes the earlier transient E0502 compile failure; no native window/GPU or installed-game acceptance was performed.
+- Parent ran Launcher `--smoke-test`; it exited 101 at `src/bin/against-rome-launcher.rs:928`, because smoke mode tried to launch the sibling editor and `launch_child_process` forwards unsupported `--lang` (and optional `--game`) to every child. No data writes occurred. Fix per-child argument routing and isolate smoke mode from real sibling binaries under active Agy `0a0295a30b6f`.
+- `git check-ignore -v` proved `[Bb]in/` hid all `apps/against-rome-editor/src/bin/*.rs` sources. Narrow `.gitignore` exceptions are now in place, and Git sees all four sources. The publisher and its WhatIf contract tests now cover editor, Modifier GUI/CLI, Launcher, and Save Manager with separate targets and provenance entries; actual publication and packaging of the ArmMapPackage CLI remain open.
+- The Rust rewrite remains incomplete. No current result proves native-window/GPU acceptance, retail-game map compatibility, deployment on a clean Windows machine, full C# feature parity, or live Rust DLL behavior. Preserve those as open gates.
+- The Rust rewrite remains incomplete. No current result proves native-window/GPU acceptance, retail-game map compatibility, deployment on a clean Windows machine, full C# feature parity, or live Rust DLL behavior. Preserve those as open gates.
+- The Rust rewrite remains incomplete. No current result proves native-window/GPU acceptance, retail-game map compatibility, deployment on a clean Windows machine, full C# feature parity, or live Rust DLL behavior. Preserve those as open gates.
+## 2026-10-18 Codex：artroop parity（改採現有路徑欄位）
+
+- 2026-10-18 Codex：限 `modifier_ui.rs` / 本段交接實作，保留全部既有 dirty/untracked，未 commit/push/reset/clean。已重讀 AGENTS、handoff、現場 branch/status/diff/cached/recent log；寫入前再次重讀 handoff。
+- 已接線手動路徑欄位與匯入/匯出草稿按鈕，重用 `cli::parse_preset` / `unit_stats::write_preset`，處理 UTF-8 BOM、balanced fallback、跳過格式錯誤計數、priest sight 與獨立欄位保護。匯入先驗證再替換草稿，profile 僅 final Apply 更新；匯出六欄、C# headers、UTC invariant timestamp，atomic write 並拒絕遊戲目錄。
+- Codex 最終執行指定完整 `cargo test --release --locked --offline --manifest-path apps/against-rome-editor/Cargo.toml --target-dir re_workspace/target-against-rome-desktop` exit 0：148 unit + 12 integration passed，0 failed/ignored，無編譯 warnings。新增 4 regressions：BOM/六欄/九欄/partial fallback/skip、六欄 roundtrip/cancel/no-game-write、failed import/export 原子保護、egui 實際點擊匯入→匯出→取消且不持久化 profile。
+- 檢查發現 app 沒有 file-picker dependency/API；但 `modifier_ui.rs` 現有 Profile 面板使用手動路徑欄位配合匯入/匯出按鈕，可依相同操作接線 `.artroop`，不需新依賴或平台 API。
+- 父端獨立執行 `cargo test --release --locked --offline --manifest-path apps/against-rome-editor/Cargo.toml --target-dir re_workspace/parent-verify-custom-unit-stats` exit 0：148 unit + 12 integration passed，0 failed/ignored，0 warnings。父端已審查草稿原子性、保留獨立欄位、游戲路徑拒絕與不落盤保護；測試為合成資料與 egui headless UI，尚無 native window/GPU/遊戲內驗收。
+- 未觸及安裝遊戲；驗證使用合成 fixture 與 egui headless frame，未做 native-window/GPU/遊戲內驗收。匯出路徑的 parent 必須已存在，錯誤保留草稿與既有輸出；匯入未知兵種不更新草稿，無已知有效兵種則報錯。既有 handoff 混合換行造成的 diff-check CR whitespace 訊息未清理，以保留其他代理內容。
+## 2026-10-18 Codex：CustomUnitStats UI（完成指定功能）
+
+- 僅更新既有 untracked `apps/against-rome-editor/src/modifier_ui.rs` 與本段交接；保留其他 dirty/untracked 工作，未 commit/push/reset/clean。Codex child `0b45e2fb7ccc` 實作，父端審查逐位元 baseline diff（+239/-1，僅此功能）並獨立驗證。
+- 以原生 TroopConfig/BackupManager/PatchProfile 接入六欄草稿編輯（HP/Dmg/VW/AW/Sight/Relt）、取消、原子驗證、stale profile/game/baseline 防護；indices 4/7/8 與 priest sight 保留原始基準。成功更新清除 preview 並持久化 profile；編輯動作不寫遊戲檔案，沿用既有預覽/確認流程。介面提示現有 Balance 生效條件；無新增依賴或 native API 變更。
+- 新增 4 tests：model/profile/settings roundtrip、獨立數值/祭司 invariant、finite/非負/HP>0 原子拒絕、取消/編輯唯讀與 stale/missing baseline、egui 草稿 render。父端獨立執行 `cargo test --release --locked --offline --manifest-path apps/against-rome-editor/Cargo.toml --target-dir re_workspace/parent-verify-custom-unit-stats` exit 0：144 unit + 12 integration passed，0 failed/ignored。
+- 狀態：本功能及 desktop suite 已獨立驗證；未做 native-window/GPU/遊戲內驗收，未將此功能完成視為全程式 Rust rewrite 完成。已確認 C# `TroopPresetForm` 另有 `.artroop` 匯入/匯出，Rust 桌面編輯器尚未接線；這是下一個 parity gap。
+
+## 即時更新 2026-10-18 04:01Z（Save Manager AI 修復）
+
+- Agy `61979dc12387` added review/confirm/apply for the existing Rust `SaveService::repair_endless_ai` flow, including selected save binding, full source snapshot checks, no-op/changed reporting, backup path reporting, and fail-closed guards. Its report: 3 new tests, app suite 136 passed.
+- Agy committed and pushed only `apps/against-rome-editor/src/toolbox.rs` as `3313935` (`feat(editor): implement Save Manager AI-repair review and apply workflow`). Parent verified the commit stat contains exactly that one file; prior dirty/untracked work remains untouched. Parent reran the desktop suite: 136 unit + 12 integration tests passed. Agy `f8f67a2dfd1a` removed the three unused imports from `packaging_ui.rs`/`ai_planner_ui.rs`; parent `cargo check --release --locked --offline --all-targets` now exits 0 with no warnings.
+- Parent ran the previously ignored AI-repair C# differential gate: `cargo test --release --locked --offline --manifest-path native/against-rome-saves/Cargo.toml --target-dir re_workspace/parent-verify-saves-ai-repair-diff ai_repair::tests::csharp_synthetic_differential -- --ignored --nocapture` passed 19 cases, 46,761 decoded bytes, and byte-exact PFIL compression.
+- Parent also ran the live C# terrain differential gate: `cargo test --release --locked --offline --manifest-path native/against-rome-editor/Cargo.toml --target-dir re_workspace/parent-verify-editor-diff --test differential -- --ignored --nocapture` passed 3,502,254 exact layer bytes, 24 ramps, 22 session snapshots, and 289 noise samples (max delta 0).
+- Agy `4b960bf916ce` added read-only Verify Save/Backup UI actions over `SaveService::verify_save` / `verify_backup`, with four new tests. Parent reran the full desktop suite: 140 unit + 12 integration tests passed. Only `apps/against-rome-editor/src/toolbox.rs` was staged and committed as `f018cbb` (`feat(editor): add save integrity verification UI`); post-commit hook pushed successfully to `origin/主要開發`. Other dirty files remain untouched.
+- Agy Gemini is at 5h9%/7d67%, no current Agy job; Claude five-hour quota was depleted. Do not dispatch further work until Agy resets above the 10% floor. Laguna is synchronous and has no background job. Overall rewrite remains incomplete; source-based feature table refresh was made in `docs/rust-rewrite.md`.
+- Warning-only import cleanup was parent-reviewed and committed as `5443cde` (`chore(editor): remove unused Rust imports`), pushing successfully. Latest app suite is 140 unit + 12 integration tests passed; the last all-target release check completed without warnings. `docs/rust-rewrite.md` now records the 152-test suite and current Save Manager features.
+
+## 即時更新 2026-10-18 03:52Z（emboss 驗證與下一個工作）
+
+- Agy `e55879de67a5` succeeded: Rust emboss fit/relight port in `native/against-rome-editor`; parent release/offline tests passed (6 emboss + 8 terrain; one live .NET differential ignored). Parent `apps/against-rome-editor` suite passed 133 unit + 12 integration tests. App builds with 3 unused-import warnings in `packaging_ui.rs` and `ai_planner_ui.rs`.
+- Modifier all-target `cargo check --release --locked --offline` passes with no warnings. Laguna synchronous scope recommendation completed but is unverified; source inspection showed BCI/INI and save-manager work already partially implemented.
+- Full documented native suite `powershell -NoProfile -ExecutionPolicy Bypass -File tools/test-rust-rewrite.ps1 -Release` exited 0 across all 17 native crates. Explicitly ignored gates include installed-game retail maps, live C# differentials, and .NET 10 oracle cases; this result is not retail/game acceptance.
+- Current: Agy `61979dc12387` working only in `apps/against-rome-editor/src/toolbox.rs` to port C# endless-save AI repair through Rust SaveService, with review/confirm, source revalidation and safety backup. Quota at dispatch: Agy Gemini 5h15%/7d69%; Claude 5h0%/7d72%. Keep one external agent while low quota.
+- The overall rewrite remains incomplete. `docs/rust-rewrite.md` has stale feature rows and needs a source-based refresh; full C#/C++ replacement and runtime acceptance remain outstanding.
+
+## 即時更新 2026-10-18 03:44Z（覆蓋上方 current jobs）
+
+- Current: Agy `e55879de67a5` emboss port running; Claude `9caa22f62ca0` modifier warning cleanup running. Quota snapshots: Agy Gemini 5h17%/7d69%, Claude 5h0%/7d72%; both at one active job maximum.
+- Claude CLI version job `9ace523baa92` succeeded: `--version` and stand-alone `-v`, Cargo package identity/version, JSON envelope, no-game-path/no-write semantics. Parent `cargo test --release --locked --offline --manifest-path native/against-rome-modifier/Cargo.toml --target-dir re_workspace/parent-verify-modifier-cli-version` exit0; `cli_commands_parity` 5/5. `cargo check --all-targets` also exit0 but reports 11 existing warnings; Claude is addressing only those warnings in detectors/endless_ai.
+- Trace parent verification: x64 76/76 and i686 79/79 release tests passed after Claude lifecycle fixes. Dotnet full build/test passed earlier this turn. Rust desktop app tests are queued for parent verification once Agy emboss dependency work is terminal.
+
+
+## 即時更新 2026-10-18 03:42Z（覆蓋上方 roster）
+
+- Current jobs: Agy `e55879de67a5` emboss port running; Claude `9ace523baa92` CLI version parity running. Agy Gemini 5h剩18%、Claude 5h剩2%；各只保留1個工作。
+- Claude `584587bcc2a6` trace lifecycle fix succeeded。父端 `cargo test --release --locked --offline --manifest-path native/against-rome-trace/Cargo.toml --target-dir re_workspace/parent-verify-trace-lifecycle --features check-runtime` exit0（5+47+24=76 passed）；使用 repo process-local Rust toolchain 執行 i686 target exit0（8+47+24=79 passed，含真 x86 detour）。第一次使用 global rustup 的 i686 命令失敗，因目標未安裝；只改用既有 local Rustup 重跑，未更動系統 toolchain。
+- `f15f2983164a` erosion UI 已成功；父端 app crate 全套驗證尚待目前 Agy `e55879de67a5` 停止修改 native editor dependency 後進行。
+
+
+## 即時更新 2026-10-18 03:40Z（覆蓋上方代理狀態）
+
+- Agy `f15f2983164a` 已成功完成 erosion UI 接線：讀取 C# `TerrainRegionDialog.cs` / `MapEditorForm.Erosion.cs`，新增矩形 selection、Hydraulic/Thermal 參數、預覽與獨立 apply contract；agent 測試回報 app lib133 passed，4 integration suites共12 passed。父端仍需重跑。
+- Agy Gemini 5h剩18%（7d70%），只派/保留一個：新 emboss port `e55879de67a5` running。Claude5h剩3%（7d72%），單一 trace lifecycle audit/fix `584587bcc2a6` running。Local Laguna最近一次 UI acceptance review 已同步完成、建議未驗證。
+- 全專案 .NET build/test 已依 README 執行成功：build 0 warning/0 error；Modules tests 1152 pass/2 skip，Modifier tests 1294 pass/33 skip。Rust app測試須待 `e55879de67a5` 停止修改其 native dependency 後再由父端獨立跑。
+
+
+## 即時更新 2026-10-18 03:37Z（覆蓋上方驗證計畫及 quota）
+
+- Live quota / job：Agy Gemini 5h剩19%、7d70%；只保留 Agy `f15f2983164a`，目前仍 running，低於20%時維持單一工作。Claude Modifier UI已完成，Claude5h剩3%，不派新 Claude；Laguna同步審查已結束。
+- 按 README 執行 `dotnet build AgainstRomeModifier.slnx -c Release` 成功，0 warning/0 error。`dotnet test AgainstRomeModifier.slnx -c Release` exit0：AgainstRomeMapEditor.Modules.Tests 1152 passed/2 skipped；AgainstRomeModifier.Tests 1294 passed/33 skipped。
+- app Rust crate 仍待 Agy `f15f2983164a` 停止寫入後父端重跑獨立測試；先前 Claude 回報其合成目錄測試140項通過，不作為父端驗證。
+
+
+## 即時更新 2026-10-18 03:33Z（覆蓋較早的 roster）
+
+- 配額門檻已觸發：Agy Gemini 5h剩20%，只保留 landscape UI工作 `f15f2983164a`；其餘4個 Agy 工作已停止，dirty/untracked 全部保留。Claude Modifier UI `539df7d0e773` 成功；Claude 5h剩3%，目前無 Claude 工作，等額度恢復前不派新工作。
+- 父端重新驗證取消代理留下的 crates：maps 38/38、placement 37 passed/6 ignored、scenario 26 passed/3 ignored、campaign 39/39；均 release/locked/offline exit0。Maps diagnostics 刪除一個取消接線留下的 unused import 後，重新測試38/38通過且無該warning。
+- Landscape release/locked/offline為48 unit+8 oracle通過、3項 .NET 10差分忽略；scene crate release/locked/offline exit0（含draw list新增11項測試通過）。這些是 Rust crate 證據，不代表桌面GPU或遊戲內驗收。
+- Claude 回報 app crate 140項測試在合成目錄通過；父端待 `f15f2983164a` 停止寫 apps crate 後重新驗證。應依 README 執行 `dotnet build AgainstRomeModifier.slnx -c Release` 與 `dotnet test AgainstRomeModifier.slnx -c Release`。
+## 即時更新 2026-10-18 03:31Z（覆蓋上方 03:29Z roster）
+
+- 額度觸發縮減：Agy Gemini 5h 剩20%（7d71%），目前保留單一 Agy landscape UI erosion 接線 `f15f2983164a`；已取消 ambience `af7f647e1f28`、ALR `8dba9f837a53`、emboss `fbbeec2d24a4`、trace lifecycle `abce643e3042`，取消時均 running/exit130。檔案更動保留，待日後檢視；不得清理或回退。Claude Modifier UI `539df7d0e773` 已成功；Claude 5h 剩3%，暫不補派。Local Laguna transaction edge-case review 已結束，僅建議、未驗證。
+- Agy landscape erosion `78854ec33ed3` 成功；新增 thermal/hydraulic simulator 與 8 固定 oracle tests。父端獨立執行 `cargo test --release --locked --offline --manifest-path native/against-rome-landscape/Cargo.toml --target-dir re_workspace/parent-verify-landscape-erosion` exit0：48 unit + 8 oracle passed；3 個需 .NET 10 的舊差分測試 ignored。
+- Scene draw-list 工作 `a0de4300a27a` 父端 release/locked/offline crate tests exit0（含新增 draw list 11 tests）。CPU frame command preparation 不是 GPU/遊戲驗收。
+- Claude Modifier UI 報告 140 app tests 通過（合成目錄、未開視窗）；父端尚未重跑，須等唯一仍寫 apps crate 的 Agy `f15f2983164a` 結束後再做全 crate 獨立驗證。Live 狀態以 delegation job registry 為準，不能將 canceled jobs 算 active。
+
+## 即時更新 2026-10-18 03:29Z（覆蓋 03:22Z roster）
+
+- 即時子代理狀態：Agy 5 個、Claude 1 個；Claude 5h 剩 5%，按使用者 20% 門檻維持 1 個。Agy Gemini 5h 剩 22%，尚未觸發縮減；7d剩71%。Codex quota讀值5h剩48%、7d剩92%。
+- Agy erosion `78854ec33ed3`、APT/ALR `8dba9f837a53`、ambience `af7f647e1f28` 仍 running；scene `a0de4300a27a`、textures `db001d000656` 已 succeeded。依補位指示新派 emboss migration `fbbeec2d24a4` 與 trace lifecycle audit/fix `abce643e3042`（明確分開檔案範圍）。Claude placement `fe9732809ccf`、maps/navigation `18a77b3e1692`、scenario parser `7467520c4248`、campaign safety `be681be43743` 已因額度低取消；部分工作樹檔案保留待檢查。Claude Modifier UI `539df7d0e773` 是唯一仍運作的 Claude 工作。
+- Local Laguna 本輪已完成一次同步的 transaction edge-case review；其建議是未驗證建議，不是測試結果，且 local connector 不支援常駐背景工作。
+- 03:29Z live quota source：agent-delegation get_agent_quotas bypass_cache；`get_job_status` 回報以上狀態。不得將已取消的工作計入 active，也不得清理其可能寫入的檔案。
+
+## 即時更新 2026-10-18 Antigravity：native/against-rome-scene 渲染切片（CPU 繪圖清單／影格準備完成）
+
+- 依使用者指示，範圍嚴格限定於 `native/against-rome-scene/**`，未變更 app 或其他 crates，未 commit/push，完整保留所有既有 dirty/untracked 檔案。
+- **完成項目**：
+  - 新增 `src/draw_list.rs` 與 `src/frame.rs`，提供純 CPU 驗證的場景繪圖清單與影格準備（Scene Draw List / Frame Preparation）。
+  - 將 `SceneObject`、`EditorCamera`、`PreparedSceneLighting`、`SceneLightingContext`、`SavedSceneLightSet` 與 `TerrainHeightField` 完整串接為 `PreparedSceneFrame`（`SceneDrawList`）。
+  - 產出結構化繪圖命令與頂點幾何批次：
+    - `TerrainDrawCommand`：包含 MVP 矩陣、日光方向、環境光、原生高度網格 uniform 與 64 光源 uniform。
+    - `WaterDrawCommand`：動態水位高度、4 頂點逆時針幾何、最低原生高程水面抑制與自定義 RGBA。
+    - `GridDrawCommand`：地形網格線框開關控制。
+    - `ShadowDrawBatch`：5 floats/vertex（X, Y+0.03, Z, U, V）地面陰影批次。
+    - `SpriteDrawBatch`：8 floats/vertex（錨點 xyz, 視角偏移 xy, uv, 原生 lighting Y）遠至近深度排序批次。
+    - `OrderedSpriteDraw`：精確保留各物件之視角空間深度、物件索引與頂點切片。
+    - `SceneMarkerDraw`：無 active sprite 物件之陣營標記（1..7 陣營色、10px）與腳本標記（`skriptmark...` 青色、5px）。
+    - `BrushCursorDraw`：筆刷編輯周長頂點迴圈（取樣地形高程+0.15）與 `SelectionRect` 矩形範圍支援。
+    - `PlacementPreviewOptions`：放置預覽 ghost 物件之半透明（alpha 0.6）幾何批次。
+  - 實作 CPU 端光照評估 `evaluate_lighting_at(tile_pos, native_y)`，位元級還原 0x49FFE0 / GLSL GameLightingShader 之 64 光源二次衰減與原生 Y 契約。
+  - 提供直接拾取與投影查詢：`pick_object`、`pick_terrain`、`pick_tile`、`project_world_to_screen`。
+- **驗證成果**：
+  - 執行 `cargo test --release --locked --offline --manifest-path native/against-rome-scene/Cargo.toml --target-dir re_workspace/target-against-rome-scene`。
+  - 14 個測試套件共 **89 passed, 0 failed, 0 ignored**（其中新增 `draw_list_tests.rs` 11 項測試全數通過，0 warnings）。
+
+## 即時更新 2026-10-18 03:22Z（覆蓋下方早先的 agent roster）
+
+- Claude `838bb07281d1` 完成 Scenario BCI condition/action save-load 與 C# oracle；Claude `165fe7dd271c` 完成 app canonical `/brush` console 接線（需父端重跑 app 測試；代理只在隔離副本驗證）。兩項完成後立即補位：scenario BCI reverse parser `7467520c4248`、campaign export idempotence/failure safety `be681be43743`。
+- Claude environment `012ad93797d1` 完成 shadow projection/occlusion port，新增24個 shadow tests；父端 `cargo test --release --locked --offline --manifest-path native/against-rome-environment/Cargo.toml --target-dir re_workspace/parent-verify-environment` exit0。完成後立即補派 maps↔navigation formation diagnostic integration `18a77b3e1692`。
+- 當前仍維持 AGY5：erosion `78854ec33ed3`、ALR parser `8dba9f837a53`、scene `a0de4300a27a`、textures `db001d000656`、ambience `af7f647e1f28`；Claude5：placement `fe9732809ccf`、Modifier UI `539df7d0e773`、maps-navigation `18a77b3e1692`、scenario parser `7467520c4248`、campaign safety `be681be43743`。Agy APT 工作 `c675e2d92356` 已完成並於其空位補派 ALR parser；舊 batch app/saves 初始化錯誤和 scene executor 失敗均已替換，無需再計為 active。
+- Local Laguna 在新波次期間同步提供風險檢視（非驗證證據）；local connector 僅同步呼叫，不能常駐背景。Quota 上次 03:19Z：AGY Gemini 5h 剩37%、Claude 5h剩58%；下次派工時再查，剩餘≤20%才縮至1。
+
+## 2026-10-18 Codex：恢復全程式 Rust 改寫（進行中）
+
+- 使用者「繼續完成」恢復先前暫停的目標；保留原有所有 dirty/untracked 檔案，不提交未驗證工作。現場仍為 `主要開發` / `cbdf098`，未 staged；上一批完整套件的 851 passing executions 只代表其當時驗證，不代表本輪或全專案完成。
+- 重新確認 live quota（02:51Z）：派發 Agy batch `e8915ed35318` 五項並行。結果 03:04Z 終態 failed/exit3：maps、modifier、AI planner 三工作成功；app 與 saves/packaging 兩工作於 Gemini function schema 初始化報 `INVALID_ARGUMENT`，未完成。本輪 Agy 使用量由 Gemini 7d 17%/5h39% 升至 21%/49%。Claude 唯讀全專案稽核 job `51053a9b3757` succeeded/exit0。Local Laguna 建議未驗證，不作技術證據。
+- Agy maps：新增規格驅動 `BlankMapSpec/build_with_spec`、starter kit/briefing、磁碟產物驗證與回滾測試；worker 報38 passed，合成暫存目錄測試，非遊戲驗收。Modifier：交易並行保護、fail-safe rollback、dry-run唯讀備份與舊 profile 欄位相容，新增6 regression tests；worker報94 passed。AI planner：canonical BrushCommand parse/format/run、roundtrip/replay測試，worker報60 passed；app console仍未接線。父端以隔離 target 重跑三 crate `cargo test --release --locked --offline`，maps/modifier/AI planner 均 exit0。未完成的 app、saves/packaging 已由備援 AGY 入口重派。
+- 透過第二個 Agy MCP 入口重派 app-only job `937bda2f0b6b` 與 saves/packaging-only job `fec213089318`。Saves/packaging succeeded/exit0，完成 ZIP symlink/device/path 防護、解壓大小界線、交易式 ZIP 替換、唯讀檔回滾清理及 hardening tests；worker 報 saves Debug/Release35pass/1ignored、Oracle1pass；packaging Debug/Release39pass。父端另以隔離 target 執行兩 crate `cargo test --release --locked --offline`：saves35pass/1ignored、packaging 全測試通過（39 pass），均 exit0。
+- 依使用者03:16Z指示，併發目標AGY5、Claude5、local AI1；剩餘額度降20%才縮為1個。Quota 03:19Z：AGY 7d/5h剩76%/37%，Claude剩77%/58%，Codex剩92%/50%。AGY app `937bda2f0b6b` succeeded/exit0：app接ambience/scene API，blank wizard接`BlankMapBuilder`並加合成E2E開編存重載，worker報Debug/Release各119pass，GPU/遊戲未驗；完成即補ambience Soundscape port `af7f647e1f28`。saves完成後補textures `db001d000656`；scene初始化失敗`5cf7160564b5`後補`a0de4300a27a`。當前AGY五項：landscape erosion `78854ec33ed3`、data ALR `8dba9f837a53`、scene `a0de4300a27a`、textures `db001d000656`、ambience `af7f647e1f28`。Claude navigation `8c9969b49911` succeeded：FormationWidthValidator移植，C# golden248格網逐位元differential；父端Release/locked/offline22測試exit0。Claude campaign `21546cee2d75` succeeded：Rust model→編譯→匯出地圖`SCRIPT/ak_level.bci`→磁碟回讀；父端Release/locked/offline39測試exit0。Claude environment `012ad93797d1` succeeded：shadow投影/遮蔽查詢移植，24個新shadow tests；父端environment Release/locked/offline exit0。完成後分別補派app canonical `/brush` `165fe7dd271c`、Modifier UI `539df7d0e773`、maps-navigation整合 `18a77b3e1692`。目前Claude五項：placement `fe9732809ccf`、scenario `838bb07281d1`、console `165fe7dd271c`、Modifier UI `539df7d0e773`、maps-navigation `18a77b3e1692`。Local Laguna於派發期間同步分析；connector無背景/async，需以同步呼叫參與。
+- Claude audit 查核當前 source、manifest、logs、git；未執行測試。判定產品仍以 C# 發行、C++ trace CI 在用；app 缺 scene/ambience/trace renderer 依賴、ambience model 重複、blank map 與 rollback 未接線、缺整圖交易式保存，Modifier GUI 僅三個 patch，另列 erosion/APT-sprite/shadow/formation 功能缺口。下一閘門應為真實地圖於 Rust app「開啟→編輯→跨檔交易保存→再載入」，故障注入時原始檔位元不變，再用 C# oracle 對照。細節見 Claude 子代理輸出；此為稽核建議，需由父代理驗實與分期落地。
+- Codex job `31fd139c4da9` succeeded/exit0：證實根目錄 `--manifest-path` build 沒讀取 trace `.cargo/config.toml`（輸出缺 `crt-static`）。`tools/test-rust-rewrite.ps1 -TraceOnly` 現明確傳 `--config`，加 i686 Release 測試/DLL/PE CRT 相依與 exports gate；workflow 裝 i686 target、執行 gate 並上傳 DLL。實測 77 passed/0 failed，x86 DLL 僅系統相依、193 exports exact；RUSTFLAGS 關閉 CRT-static 時拒絕。PowerShell/YAML/scoped diff-check 通過。尚待父代理審查；遠端 CI/game 未驗證，trace `.cargo/config.toml` 是 untracked，要追蹤才入版。log `C:\Users\nojac\AppData\Local\Temp\agent-delegation-logs\aae26544-codex.log`。
+- 本輪驗收將依變更 crate 各自獨立測試，再跑中央 Rust suite；核對 Git diff/既有半成品歸屬及跨 crate 編譯。完整替代尚包括 C#/C++ 核心退役、實際 UI/遊戲驗收等，不能僅憑測試全綠稱已完成。
+
+## 2026-10-18 Codex：本批收尾完成，依使用者指示暫停
+
+- 使用者最新指示：等目前工作完成後先暫停。現有 9 個 job 均 succeeded/exit0（6 Agy、2 Claude、1 Codex），無新增波次；本批驗證已結束，保留 dirty/untracked，不 commit/push，不自動恢復。
+- **最終驗證**：所有 worker 終態後重跑 `powershell -NoProfile -ExecutionPolicy Bypass -File tools/test-rust-rewrite.ps1 -Release -IncludeDesktop -Differential -Retail` exit0。17 native crates+app 共851 passing test executions（含5個 explicit gate executions）、14 ignored reports；不是851項唯一功能或完整 parity。log `re_workspace/parent-final-full-rust-2026-10-18.log`。
+- **最終產物**：`cargo build --release --locked --offline --manifest-path apps/against-rome-editor/Cargo.toml --target-dir re_workspace/rust-editor-app-target` exit0；EXE `--version`/`--help` exit0。SHA256 `2119860C81161BEAB57D90A71B82BF679AB09B368900D42989111F76D5102778`；log `re_workspace/parent-final-app-build-2026-10-18.log`。未做本批 native-window/GPU/遊戲內驗收、未重跑完整 .NET suites。
+- **保留狀態**：HEAD仍 `cbdf098`、無 staged；工作樹變更清單/統計在 `re_workspace/pause-{git-status,diff-stat}-2026-10-18.txt`（交接最後更新不含於舊 snapshot）。`git diff --check` exit1僅 `native/against-rome-maps/tests/maps_tests.rs:1140` 新增 EOF 空白行；未當作程式失敗或擅自清理。
+- **恢復入口**：先重新讀現場狀態與 scoped reports，重建 ownership；優先 native ambience/scene 與 app 接線、canonical /brush、全圖安全保存、Modifier transaction/legacy profile、BlankMapBuilder 真入口、trace CRT與真 runtime、完整 UI/遊戲驗收與最後 C#／C++退役。目標仍未完成；不要以本批測試全綠當作全專案 Rust 替代完成。
+
+- 現場 HEAD `cbdf098`、分支 `主要開發`；保留全部既有 Rust 半成品與 C# CI 修正，無 commit/push。原基準段落是歷史證據。
+- 派工時使用者要求至少 5 個 Agy 同時協作；當時 host 已確認初批 5 Agy+1 Codex running，後加1 Agy+2 Claude；以下為各工作包與實證。
+- Agy ownership：`6d8cf188fc63` app/**；`5b6628b5dc22` placement/**；`70a64d77024e` scenario/** + campaign/**；`cec889b17795` trace/**；`873d900a30d0` scene/** + ambience/**（native 路徑均在 native/）。
+- Codex `817f2e2d286a` succeeded/exit0：Modifier/SaveManager CLI、EndlessAi migration、TGA/PFIL 防護與 C# oracle。父代理獨立 release/locked/offline 88pass/0fail；log re_workspace/parent-modifier-2026-10-18.log，報告 re_workspace/modifier-rust-2026-10-18/report.md。既有 commit_plan transaction、部分 dry-run 可能建 .bak、legacy module 字典與 CLI version 缺口仍在，未做真遊戲/GPU 驗收。其他 worker 不可改交接、commit/push 或遞迴委派。
+- Parent ownership：tools/docs/.gitignore/交接/集中驗證。修正 textures CLI 被 bin ignore 排除的規則，並把其餘 9 個 Rust crate 納入集中測試腳本；尚待全套驗證。
+- 使用者另授權本地 AI 與 Claude：Laguna `delegate_local` 已完成集中測試腳本審查（thinking=true）；父代理確認零測試 false-positive 風險，新增 differential 必須至少 1 passed 檢查。PowerShell parse 與 mock 正向/零測試/exit101 三案例通過，非完整 Rust suite 通過；其他兩項本地建議不適用現行 Windows/fail-fast 環境，未採用。
+- Claude `6682041b8704` succeeded/exit0：saves 加 verify_backup/verify_save/backup_health::load_zip；packaging 加 verify_zip、ZIP size/link/hash 防護與 registry atomic write。父代理獨立 release/locked/offline 重跑 saves31pass/1ignored + explicit oracle1pass（19 cases/46761 decoded bytes/PFIL exact），packaging36pass，0fail。logs：re_workspace/parent-{saves,saves-oracle,packaging}-2026-10-18.log。新 API 未全部接入 app/CLI、無完整遊戲驗收；報告 re_workspace/claude-saves-packaging-2026-10-18.md。
+- Parent textures 檢查：release/locked/offline 24 pass；將 2 個零售圖資測試標為 explicit ignored 並加入集中腳本 `-Retail`，重驗一般 22 pass/2 ignored、explicit retail 2 pass，0 fail。真圖只讀、修改在 TEMP，非遊戲內驗收。docs/rust-rewrite.md 已說明 17 crate 與閘門範圍。
+- 使用者要求優先使用其他 AI 額度。00:52Z live quotas：Agy Gemini 7d91%/5h92% remaining、Claude 7d80%/5h95%、Codex 7d97%/5h84%。新增 Claude `1cda29c73949`（native/against-rome-ai-planner/**，HTTP wire compatibility）與 Agy `893cf527ce26`（native/against-rome-maps/**，空白地圖/管理安全）；parent 聚焦協調與驗證。不得為消耗額度製造無關工作。
+- Claude `1cda29c73949` succeeded/exit0：Ollama HTTP chunked/length/deadline/URL validation、process-wide inference gate、BrushCommand parse/format/run。父代理獨立 release/locked/offline 56pass/0fail（15 real TCP wire tests）；log re_workspace/parent-ai-planner-2026-10-18.log，報告 re_workspace/claude-ai-planner-2026-10-18.md。app terrain_cmds 的另一套 /brush 語法仍未串接 canonical parser，材質指令僅 parse roundtrip，不能宣稱完整 app 閉環已完成。
+- Agy `cec889b17795` succeeded/exit0：trace log cap/signature config/x86 9-arg detour；父代理獨立 i686 locked/offline 77pass/0fail，已建 release DLL 的 PE audit 193 exports exact names/ordinals/NONAME pass。logs re_workspace/parent-trace-{i686,exports}-2026-10-18.log，報告 re_workspace/trace-rust-replacement-report.md。worker 安裝 repo-local i686 target；.cargo/config.toml static CRT 是否被 root --manifest-path build 套用仍待另查，無遊戲內/併發安裝與動態卸載驗收。
+- Agy `873d900a30d0` succeeded/exit0：scene ray/object picking、lighting/model、camera APIs 與 ambience root reexports。父代理獨立 release/locked/offline scene78pass/ambience24pass，0fail；logs re_workspace/parent-{scene,ambience}-2026-10-18.log，報告 re_workspace/rust-scene-ambience-migration-report.md。資料準備/邏輯測試非 GPU 顯示驗收。
+- Agy `70a64d77024e` succeeded/exit0：BCI VIDX bounds、DATA binding lifecycle、ties-even、CampaignCompiler pipeline。父代理獨立 release/locked/offline scenario19pass/2ignored、campaign22pass、synthetic oracle1pass（2 exact comparisons、source SHA unchanged），0fail。logs re_workspace/parent-{scenario,scenario-oracle,campaign}-2026-10-18.log，報告 re_workspace/audit-scenario-campaign-2026-10-18.md。未做完整 app/零售圖 compile-save 驗收。
+- Agy `6d8cf188fc63` succeeded/exit0：design_apply 與 environment/landscape 批次套用、Modifier/SaveManager tabs、Ambience UI；父代理獨立 release/locked/offline app117pass/0fail，log re_workspace/parent-app-2026-10-18.log。報告 re_workspace/audit-rust-editor-design-apply-2026-10-18.md。重要未完成：Ambience UI 複製模型且 app manifest 無 native ambience/scene 依賴，worker 當時匯出阻擋已被另一 worker 解決，不應沿用為現在不可接線的理由；仍缺實際 native 接線/3D/GPU/全圖安全保存證據。暫停前不開新開發波次。
+- Agy `893cf527ce26` succeeded/exit0：maps blank_builder/blank_content/starter_kit/rollback 與 clone/delete hardening。父代理獨立 release/locked/offline33pass/0fail；log re_workspace/parent-maps-2026-10-18.log，報告 re_workspace/agy-maps-2026-10-18.md。僅 synthetic、未做零售遊戲載入與完整故障注入；app 新空白圖入口仍需實際串接新 builder。
+- Agy `5b6628b5dc22` succeeded/exit0：particle/lager/biglager family move/clone/delete、跨池 owner/occupancy/cycle 驗證。最終集中測試 placement29pass/4ignored；父代理另行 release/locked/offline `-- --ignored --nocapture` 4pass/0fail，含11-pool particle/garrison oracle與retail 7,490,210 decoded bytes exact/來源不變。log `re_workspace/parent-final-placement-oracles-2026-10-18.log`，報告 `re_workspace/placement-particle-garrison-report-2026-10-18.md`。集中腳本尚未單獨納入新 particle/garrison oracle，恢復後補接；這是 TEMP/static資料往返，非遊戲內行為驗收。
+- Parent 集中 `tools/test-rust-rewrite.ps1 -Release -IncludeDesktop -Differential -Retail` exit0：17 native crates+app、retail textures2、terrain/placement/scenario differential 各1pass；log re_workspace/parent-full-rust-2026-10-18.log，逐 crate summary 同名 JSON。注意 placement worker 在執行期間仍修改，這是中途 snapshot，不能替最終 source 背書；其終態後需重驗 placement/app。saves oracle 與 trace i686 為另行命令驗證，不屬集中腳本。
+- 後續必須用上述原 handle 輪詢終態、獨立檢查 diff/test/build，再進行 app 整合與完整 parity 稽核。全 Rust 替代尚未完成；未做 GPU/遊戲驗收，未改 installed game 或安全政策。
 
 更新：2026-10-15，Antigravity；依照使用者指示恢復 placement crate 任務並完成驗證。
+
+## 2026-10-17 Antigravity：CI 失敗修復（GLFW 異常防護與專有圖資測試跳過，完成）
+
+- 本輪嚴格限定範圍：僅修正 `src.MapEditor/Map3DViewControl.cs`、`tests/AgainstRomeModifier.Tests/StarterKitFamilyTests.cs`、`BlankMapStarterKitTests.cs`、新增 `MapEditor3DFallbackTests.cs` 迴歸測試；無 delegation/commit/push/tag/GitHub publish、無安全政策或 installed game 變更，未更動 Rust 原始碼/lock/dirty 檔，保留 handoff 原始尾端兩行。
+- CI 崩潰根因與修復：GitHub Windows runner 因存在虛擬顯示器而通過 monitor 檢查，但無 OpenGL 驅動程式，`base.OnHandleCreated` 調用 GLFW 建立視窗拋出 `GLFWException: WGL: The driver does not appear to support OpenGL` 逃逸崩潰。現已將 `GLFWProvider.EnsureInitialized()` 與 `base.OnHandleCreated` 完整包覆於 narrow try-catch，記錄 `_contextCreationFailure` / `LastFailureReason` 並觸發 `InitializationFailed` 事件切換至既有 2D fallback；確保 `OnPaint` / `Dispose` 安全不呼叫 GL，且保留有 Context 時之 `RetryInitialization()` 重建能力。
+- 缺專有素材之 10 項測試修復：`StarterKitFamilyTests`（8 項：2 Fact + 6 Theory rows）與 `BlankMapStarterKitTests`（2 項 Fact）原強制依賴安裝目錄之 `MAPS\TUTOR_01\DATA` 與 `MAPS\ENDL_000`。現新增 `RequiresInstalledStarterKitFact/Theory` 與 `RequiresRealStarterKitFact` 屬性，在缺少零售圖資時以 xUnit `[SKIP]` 標註明確跳過理由；所有 synthetic 測試維持無條件執行；保留 `ARM_REQUIRE_INSTALLED_FIXTURES=1` 時嚴格失敗模式。
+- 完整建置與驗證：使用新 DLL `D:/Github/release-audit-2026-10-17/ARM-native-data-verification/against_rome_data.dll`（SHA256 `7689369B93D9A9475DD505F9F6ACA128BD40EB824298AD5335728D1ED3B97C2C`，verified ABI）。
+  - Strict Rebuild：`dotnet build AgainstRomeModifier.slnx -c Release -p:PlatformTarget=x64 -p:IncludeBackupZip=false -warnaserror` exit 0（0 warnings / 0 errors）。
+  - Modules suite：**1152 pass / 2 skip / 0 fail**。
+  - Host suite（本機具素材）：**1294 pass / 33 skip / 0 fail**（原 1292 + 2 項新迴歸測試）。
+  - 缺檔閘門隔離測試（`ARM_TEST_INSTALLED_PATH=C:\missing_nonexistent_arm_path`）：15 synthetic pass / 5 skipped（精確涵蓋 10 項原本失敗案例）/ 0 fail；未更名實際安裝檔案；嚴格模式在缺檔時確實 exit 1 阻擋。
+- 完整報告見 `D:/Github/audit-arm-ci-repair-2026-10-17.md`。所有自身程序 handle 均已到達終態。
 
 ## 2026-10-17 Codex 父代理：v1.3.0 審查與可重現發布流程
 
@@ -105,9 +824,7 @@
 - Parent `dotnet build AgainstRomeModifier.slnx -c Release --nologo --no-restore`：0errors/71warnings；Modules完整1152pass/2skip/0fail。logs `re_workspace/rust-wave2-dotnet-{build,tests}.log`。本輪沒再跑全Host。
 - Debug app test反覆在serde build-script被 Windows應用程式控制原則 **4551** 擋；CodeIntegrity Operational事件3077已唯讀查證，尚未到app編譯。`rust-wave2-desktop-tests.log`。
 - 正常Release test `18385`也在parking_lot_core/paste build-scripts4551終止，`rust-wave2-desktop-release-tests.log`。未調整policy、未重命名/搬移binary或變更編譯設定繞過限制。遇同handle timeout要確認process終態，不能盲目重啟。
-- Rust工具鏈process-local：CARGO_HOME=`D:\Github\AgainstRomeModifier
-e_workspace
-ust-runtime\cargo`，RUSTUP_HOME同root的`rustup`，PATH前加cargo/bin；cargo.exe位於CARGO_HOME/bin，repo-local stable1.99。targets一律re_workspace；不要改全域環境。
+- Rust工具鏈process-local：CARGO_HOME=`D:\Github\AgainstRomeModifiere_workspaceust-runtime\cargo`，RUSTUP_HOME同root的`rustup`，PATH前加cargo/bin；cargo.exe位於CARGO_HOME/bin，repo-local stable1.99。targets一律re_workspace；不要改全域環境。
 
 ## 明確恢復後的先後順序
 
@@ -129,3 +846,25 @@ ust-runtime\cargo`，RUSTUP_HOME同root的`rustup`，PATH前加cargo/bin；cargo
 - 之後還需：app 接線所有新 crate、3D viewport 繪製、Modifier GUI 對話框、最終移除/退役 C#。
 - 2026-10-15 462ddf5 app(75 pass) 已推；新提交 maps25/campaign15/ai-planner37。Codex 額度用盡（重置 2026-10-16 00:12），modifier 剩餘/ambience/scene 由 Agy job `9178af553b57`（fallback claude）接續半成品。注意：新 target-dir 首次編譯常被 4551 擋 build script，驗證用既有 target-dir。
 - 13:58Z Agy Gemini 5h 也歸零（重置 17:00Z），Codex 重置 16:12Z。modifier剩餘/ambience/scene/app 整合四項改由 Claude CLI job `8a38c7e2542d` 接續。額度恢復後優先改回 Codex/Agy。
+- 412a2bb 已推（modifier66/ambience21/scene57/app95）。第五波 Claude job `ae74fcd0bfcb`：modifier CLI backup/stats/saves+compose EndlessAi+C# oracle；app 3D viewport+面板套用。之後：Modifier/SaveManager GUI 對話框與 ambience 面板（app）、最後退役 C#（需確認 parity）。
+- 用量上限：已取消第五波 job `ae74fcd0bfcb`；native/against-rome-modifier 與 apps/against-rome-editor 可能有未提交、未驗證的半成品，接手者先看 git diff 再續做（modifier CLI backup/stats/saves+compose EndlessAi+C# oracle；app 3D viewport+面板套用）。其後：Modifier/SaveManager GUI、ambience 面板、退役 C#。
+
+## 2026-10-18 Antigravity: Ambience save/reload error surfacing
+
+- `app.rs`: Safe Save moved to `EditorApp::safe_save_current`; ambience `save_to_map` failure after terrain success now shows an error "Partial save: terrain saved ..., ambience NOT saved" and keeps ambience dirty. `ambience_ui.rs`: quick Save/Reload use `quick_save`/`quick_reload`, which set error status. Tests added in both files (headless, temp dirs).
+- Verified: `cargo test -p against-rome-editor-app --release --locked --offline --target-dir re_workspace/agy-ambience-save-errors` passed (199 lib tests, 0 failed). Not committed.
+- Limitation: NOT an atomic whole-map transaction; terrain is written first and stays written if ambience fails. `set_loaded_map` still ignores `ambience.load_from_map` errors (out of scope).
+## 2026-10-19 11:29+08:00 Codex：兩批 Rust UI/terrain 移植整合驗證
+
+- 第二批 `f3b97936e154` 五項工作均成功終止：StartCamera 加入當前地圖 Safe Save transaction、3D viewport tile-center picking 對齊 C#、placement Reset DATA、terrain Elevate/Depress 精確 parity differential，以及 Rust UI 移植缺口唯讀盤點。父端重跑 `cargo test -p against-rome-editor-app --locked --offline` 通過，323 個 library tests 及全部 launcher/binary/integration/doc targets exit 0。
+- terrain differential agent 回報 Release 模式下 1,968 個案例、6,633,510 bytes 與 live C# 完全一致；其 Rust core 專項測試及指定檔案格式檢查通過。GUI 與遊戲 runtime 尚未驗收。
+- 缺口盤點指出待處理：briefing PUT 檔路徑/欄位 parity、boden.ini PFIL/CP1251 與原文保存、Safe Save 派生 emboss.bmp、保存前 MapDiagnostics gate、SDL scene/settlement 的 UI 與交易保存整合。這些是靜態程式碼盤點，尚未新增或跑對應回歸測試。
+- 即時 quota（UTC 03:29）：Codex 5h 剩 23%；Claude 5h 剩 0%（重置時間 03:30Z）；Agy `/usage` 僅回報 7d pools 0%，未回報 5h。依使用者規則，Codex 剩 5% 時停止新增 Codex 工作；不以 7d 窗口取代 5h 判斷。
+
+## 2026-10-19 Claude (Sonnet 5.5): Map Diff saved-baseline + layer coverage
+
+- Scope: only `apps/against-rome-editor/src/packaging_ui.rs` (additive on top of the pre-existing uncommitted `reset_session` diff) and new `apps/against-rome-editor/tests/packaging_map_diff.rs`. app.rs/lib.rs untouched. Not committed/pushed.
+- New: `PackagingUi::load_saved_baseline(dir)` (read-only) loads heights/collision (`storage::load_map`), textures (`boden.txt`), objects (`DATA` via `ObjectStore`, id = slot+uid) and scenario events (`arm_scenario.json`) from a saved map folder; `compare_with_current_map` compares in-memory terrain against it, reading the current side's textures/objects/events from the saved map folder (`map_dir_input`). UI: "Saved baseline map folder" field + "Load Saved Baseline" button on the Map Diff tab, per-layer coverage lines.
+- No false PASS: each layer is `Compared` or `Unavailable(reason)` (missing/unreadable file, no collision.bmp, objects without position, dimension mismatch, nothing supplied from memory). Unavailable layers are blanked on both sides before the engine runs; verdict is `Differences` / `Identical` (only when all 5 layers compared) / `Incomplete` ("NOT a pass"). The old in-memory flow now also reports textures/events (and objects when not supplied) as unavailable instead of "完全一致".
+- Verified: `cargo test -p against-rome-editor-app --release --locked --offline --test packaging_map_diff` (CARGO_TARGET_DIR=re_workspace/agy-mapdiff-baseline) 9 passed / 0 failed; lib `packaging_ui` 3 passed; `cargo check --all-targets` no warnings from packaging_ui.rs; `rustfmt --check` clean on the new test file; `git diff --check` clean. Full app suite was NOT rerun.
+- Limitations: `packaging_ui.rs` was already not rustfmt-clean at HEAD (12 diff hunks) and I did not reformat it. Current-side textures/objects/events come from disk, so unsaved in-memory edits to those layers are not diffed (heights/collision are live). Scenario spawns/data slots are not diffed (events only); object alias/unit_count unknown (empty/0), so only slot/uid/type/team/position/rotation changes are detected. Objects layer is unavailable if any active object lacks a position record. Selecting the folder is a text field (no native file dialog). `app.rs` wiring of live objects into `compare_snapshots` is still not done. GUI not visually verified.

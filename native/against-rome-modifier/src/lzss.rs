@@ -12,7 +12,7 @@ pub fn is_pfil(data: &[u8]) -> bool {
 
 /// Decompress data if it has a PFIL header; otherwise returns data as-is.
 pub fn decompress_if_pfil(data: &[u8]) -> io::Result<Vec<u8>> {
-    if is_pfil(data) {
+    if data.starts_with(b"PFIL") {
         decompress_pfil(data)
     } else {
         Ok(data.to_vec())
@@ -37,7 +37,8 @@ pub fn decompress_pfil(input: &[u8]) -> io::Result<Vec<u8>> {
             "missing PFIL magic bytes",
         ));
     }
-    let uncompressed_size = u32::from_le_bytes([input[16], input[17], input[18], input[19]]) as usize;
+    let uncompressed_size =
+        u32::from_le_bytes([input[16], input[17], input[18], input[19]]) as usize;
     if uncompressed_size > MAX_UNCOMPRESSED_SIZE {
         return Err(Error::new(
             ErrorKind::InvalidData,
@@ -148,49 +149,47 @@ pub fn compress(input: &[u8]) -> Vec<u8> {
     let mut code_ptr = 1usize;
     let mut mask = 1u16;
 
-    let remove_node =
-        |idx: usize,
-         current_hash: &mut [i32; N],
-         prev: &mut [i32; N],
-         next: &mut [i32; N],
-         head: &mut [i32; 65536]| {
-            let old_h = current_hash[idx];
-            if old_h != -1 {
-                let p = prev[idx];
-                let n = next[idx];
-                if p != -1 {
-                    next[p as usize] = n;
-                } else {
-                    head[old_h as usize] = n;
-                }
-                if n != -1 {
-                    prev[n as usize] = p;
-                }
-                current_hash[idx] = -1;
-                next[idx] = -1;
-                prev[idx] = -1;
+    let remove_node = |idx: usize,
+                       current_hash: &mut [i32; N],
+                       prev: &mut [i32; N],
+                       next: &mut [i32; N],
+                       head: &mut [i32; 65536]| {
+        let old_h = current_hash[idx];
+        if old_h != -1 {
+            let p = prev[idx];
+            let n = next[idx];
+            if p != -1 {
+                next[p as usize] = n;
+            } else {
+                head[old_h as usize] = n;
             }
-        };
-
-    let insert_node =
-        |idx: usize,
-         win: &[u8; N],
-         next: &mut [i32; N],
-         head: &mut [i32; 65536],
-         prev: &mut [i32; N],
-         current_hash: &mut [i32; N]| {
-            let h = (((win[idx] as u32) << 8)
-                ^ ((win[(idx + 1) & 4095] as u32) << 4)
-                ^ (win[(idx + 2) & 4095] as u32)) as usize
-                & 0xFFFF;
-            next[idx] = head[h];
+            if n != -1 {
+                prev[n as usize] = p;
+            }
+            current_hash[idx] = -1;
+            next[idx] = -1;
             prev[idx] = -1;
-            if head[h] != -1 {
-                prev[head[h] as usize] = idx as i32;
-            }
-            head[h] = idx as i32;
-            current_hash[idx] = h as i32;
-        };
+        }
+    };
+
+    let insert_node = |idx: usize,
+                       win: &[u8; N],
+                       next: &mut [i32; N],
+                       head: &mut [i32; 65536],
+                       prev: &mut [i32; N],
+                       current_hash: &mut [i32; N]| {
+        let h = (((win[idx] as u32) << 8)
+            ^ ((win[(idx + 1) & 4095] as u32) << 4)
+            ^ (win[(idx + 2) & 4095] as u32)) as usize
+            & 0xFFFF;
+        next[idx] = head[h];
+        prev[idx] = -1;
+        if head[h] != -1 {
+            prev[head[h] as usize] = idx as i32;
+        }
+        head[h] = idx as i32;
+        current_hash[idx] = h as i32;
+    };
 
     let update_window = |idx: usize,
                          val: u8,

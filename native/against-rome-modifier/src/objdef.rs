@@ -2,6 +2,7 @@
 
 use crate::lzss::compress_pfil;
 use crate::patch_text::{check_length, parse_csv_line, to_csv_string, TextDocument};
+use crate::troop_config::unit_meta_exact;
 use crate::troops::{ObjdefIndex, TroopConfig};
 use std::collections::HashMap;
 use std::io::{self, Error, ErrorKind};
@@ -42,7 +43,7 @@ pub struct ObjdefPatcher;
 
 impl ObjdefPatcher {
     pub fn supports_entire_map_vision(name: &str) -> bool {
-        TroopConfig::get_metadata(name).is_some()
+        unit_meta_exact(name).is_some()
             || matches!(
                 name,
                 "FigZivMan00_Zivilist" | "FigZivWei00_Zivilistin" | "FigTiePac00_Packpferd"
@@ -69,24 +70,49 @@ impl ObjdefPatcher {
                 for &index in GLORY_COLUMNS {
                     let value = Self::read_col(&source, index);
                     if value > 0.0 {
-                        Self::set_value_if_fits(&mut cols, index, &((value as i64 * GLORY_MULTIPLIER).to_string()));
+                        Self::set_value_if_fits(
+                            &mut cols,
+                            index,
+                            &((value as i64 * GLORY_MULTIPLIER).to_string()),
+                        );
                     }
                 }
             }
 
             if options.housing_capacity_20x {
-                Self::multiply_original_int(&mut cols, &source, ObjdefIndex::HousingCapacity as usize, 20, &name, "housing capacity")?;
+                Self::multiply_original_int(
+                    &mut cols,
+                    &source,
+                    ObjdefIndex::HousingCapacity as usize,
+                    20,
+                    &name,
+                    "housing capacity",
+                )?;
             }
 
             if options.storage_capacity_10x
                 && name.starts_with("Bau")
                 && (name.contains("Hau") || name.contains("Lag"))
             {
-                Self::multiply_original_int(&mut cols, &source, ObjdefIndex::StorageCapacity as usize, 10, &name, "storage capacity")?;
+                Self::multiply_original_int(
+                    &mut cols,
+                    &source,
+                    ObjdefIndex::StorageCapacity as usize,
+                    10,
+                    &name,
+                    "storage capacity",
+                )?;
             }
 
             if options.hq_hp_10x && name.starts_with("Bau") && name.contains("Hau") {
-                Self::multiply_original_int(&mut cols, &source, ObjdefIndex::Hp as usize, 10, &name, "hq hp")?;
+                Self::multiply_original_int(
+                    &mut cols,
+                    &source,
+                    ObjdefIndex::Hp as usize,
+                    10,
+                    &name,
+                    "hq hp",
+                )?;
             }
 
             if options.fast_build_upgrade_repair && name.starts_with("Bau") {
@@ -98,7 +124,7 @@ impl ObjdefPatcher {
                 Self::patch_projectile_weapons(&mut cols, &source, &name, options)?;
             }
 
-            if let Some(meta) = TroopConfig::get_metadata(&name) {
+            if let Some(meta) = unit_meta_exact(&name) {
                 if let Some(stats) = options.unit_stats.get(&name) {
                     Self::patch_unit(&mut cols, &source, &name, meta.unit_type, stats, options)?;
                 }
@@ -114,7 +140,7 @@ impl ObjdefPatcher {
             }
 
             if options.no_run_hp_loss
-                && (TroopConfig::get_metadata(&name).is_some()
+                && (unit_meta_exact(&name).is_some()
                     || matches!(
                         name.as_str(),
                         "FigZivMan00_Zivilist" | "FigZivWei00_Zivilistin" | "FigTiePac00_Packpferd"
@@ -122,13 +148,25 @@ impl ObjdefPatcher {
             {
                 let original_lpsub = Self::read_col(&source, ObjdefIndex::Lpsub as usize);
                 if (original_lpsub - 1.00).abs() < 0.01 {
-                    Self::set_value(&mut cols, ObjdefIndex::Lpsub as usize, "0.00", &name, "lpsub")?;
+                    Self::set_value(
+                        &mut cols,
+                        ObjdefIndex::Lpsub as usize,
+                        "0.00",
+                        &name,
+                        "lpsub",
+                    )?;
                 }
             }
 
             // Final override: AllUnitsEntireMapVision owns Sirad last
             if options.all_units_entire_map_vision && Self::supports_entire_map_vision(&name) {
-                Self::set_value(&mut cols, ObjdefIndex::Sirad as usize, &ENTIRE_MAP_SIGHT.to_string(), &name, "視野")?;
+                Self::set_value(
+                    &mut cols,
+                    ObjdefIndex::Sirad as usize,
+                    &ENTIRE_MAP_SIGHT.to_string(),
+                    &name,
+                    "視野",
+                )?;
             }
 
             lines[row] = to_csv_string(cols.iter().map(|s| s.as_str()));
@@ -189,24 +227,58 @@ impl ObjdefPatcher {
             melee_reload
         };
 
-        let speed_scale: f64 = if options.unit_movement_speed_2x { 2.0 } else { 1.0 };
-        let mut range_scale = if original_range > 0.0 { stats[7] / original_range } else { 1.0 };
+        let speed_scale: f64 = if options.unit_movement_speed_2x {
+            2.0
+        } else {
+            1.0
+        };
+        let mut range_scale = if original_range > 0.0 {
+            stats[7] / original_range
+        } else {
+            1.0
+        };
         let supports_ranged_range_3x = TroopConfig::supports_ranged_range_3x(unit_type);
         if supports_ranged_range_3x && options.ranged_range_3x {
             range_scale *= 3.0;
         }
 
         let is_priest = unit_type == "priest";
-        let reload_scale = if primary_reload > 0.0 { stats[6] / primary_reload } else { 1.0 };
-        let damage_scale = if primary_damage > 0.0 { stats[1] / primary_damage } else { 1.0 };
+        let reload_scale = if primary_reload > 0.0 {
+            stats[6] / primary_reload
+        } else {
+            1.0
+        };
+        let damage_scale = if primary_damage > 0.0 {
+            stats[1] / primary_damage
+        } else {
+            1.0
+        };
 
         if moves > 0.0 && (speed_scale - 1.0).abs() > 0.001 {
-            Self::set_value(cols, ObjdefIndex::Moves as usize, &format!("{:.2}", moves * speed_scale), name, "移動速度")?;
+            Self::set_value(
+                cols,
+                ObjdefIndex::Moves as usize,
+                &format!("{:.2}", moves * speed_scale),
+                name,
+                "移動速度",
+            )?;
             if movsf > 0.0 {
-                Self::set_value(cols, ObjdefIndex::Movsf as usize, &format!("{:.2}", movsf * speed_scale), name, "移動速度")?;
+                Self::set_value(
+                    cols,
+                    ObjdefIndex::Movsf as usize,
+                    &format!("{:.2}", movsf * speed_scale),
+                    name,
+                    "移動速度",
+                )?;
             }
             if bmovs > 0.0 {
-                Self::set_value(cols, ObjdefIndex::Bmovs as usize, &format!("{:.2}", bmovs * speed_scale), name, "移動速度")?;
+                Self::set_value(
+                    cols,
+                    ObjdefIndex::Bmovs as usize,
+                    &format!("{:.2}", bmovs * speed_scale),
+                    name,
+                    "移動速度",
+                )?;
             }
         }
 
@@ -220,16 +292,40 @@ impl ObjdefPatcher {
         }
 
         if (sight - Self::read_col(source, ObjdefIndex::Sirad as usize)).abs() > 0.01 {
-            Self::set_value(cols, ObjdefIndex::Sirad as usize, &(sight as i64).to_string(), name, "視野")?;
+            Self::set_value(
+                cols,
+                ObjdefIndex::Sirad as usize,
+                &(sight as i64).to_string(),
+                name,
+                "視野",
+            )?;
         }
         if (stats[0] - Self::read_col(source, ObjdefIndex::Hp as usize)).abs() > 0.01 {
-            Self::set_value(cols, ObjdefIndex::Hp as usize, &(stats[0] as i64).to_string(), name, "生命值")?;
+            Self::set_value(
+                cols,
+                ObjdefIndex::Hp as usize,
+                &(stats[0] as i64).to_string(),
+                name,
+                "生命值",
+            )?;
         }
         if (stats[3] - Self::read_col(source, ObjdefIndex::Aw as usize)).abs() > 0.01 {
-            Self::set_value(cols, ObjdefIndex::Aw as usize, &(stats[3] as i64).to_string(), name, "戰鬥")?;
+            Self::set_value(
+                cols,
+                ObjdefIndex::Aw as usize,
+                &(stats[3] as i64).to_string(),
+                name,
+                "戰鬥",
+            )?;
         }
         if (stats[2] - Self::read_col(source, ObjdefIndex::Vw as usize)).abs() > 0.01 {
-            Self::set_value(cols, ObjdefIndex::Vw as usize, &(stats[2] as i64).to_string(), name, "防禦")?;
+            Self::set_value(
+                cols,
+                ObjdefIndex::Vw as usize,
+                &(stats[2] as i64).to_string(),
+                name,
+                "防禦",
+            )?;
         }
 
         for w in 1..=8 {
@@ -246,12 +342,24 @@ impl ObjdefPatcher {
                 let priest_weapon_dam = Self::read_col(source, damage);
                 let new_priest_dmg = priest_weapon_dam * damage_scale;
                 if (new_priest_dmg - priest_weapon_dam).abs() > 0.01 {
-                    Self::set_value(cols, damage, &format!("{:.2}", new_priest_dmg), name, "damage")?;
+                    Self::set_value(
+                        cols,
+                        damage,
+                        &format!("{:.2}", new_priest_dmg),
+                        name,
+                        "damage",
+                    )?;
                 }
                 let orig_priest_reload = Self::read_col(source, reload);
                 let new_priest_reload = (orig_priest_reload * reload_scale).round();
                 if (new_priest_reload - orig_priest_reload).abs() > 0.01 {
-                    Self::set_value(cols, reload, &(new_priest_reload as i64).to_string(), name, "reload")?;
+                    Self::set_value(
+                        cols,
+                        reload,
+                        &(new_priest_reload as i64).to_string(),
+                        name,
+                        "reload",
+                    )?;
                 }
                 continue;
             }
@@ -264,7 +372,13 @@ impl ObjdefPatcher {
             if is_ranged_weapon && (range_scale - 1.0).abs() > 0.001 {
                 let r = Self::read_col(source, max_col);
                 if r > 0.0 {
-                    Self::set_value(cols, max_col, &format!("{:.2}", r * range_scale), name, "射程")?;
+                    Self::set_value(
+                        cols,
+                        max_col,
+                        &format!("{:.2}", r * range_scale),
+                        name,
+                        "射程",
+                    )?;
                 }
             }
 
@@ -281,7 +395,13 @@ impl ObjdefPatcher {
             let orig_reload = Self::read_col(source, reload);
             let new_reload = (orig_reload * reload_scale).round();
             if (new_reload - orig_reload).abs() > 0.01 {
-                Self::set_value(cols, reload, &(new_reload as i64).to_string(), name, "攻擊冷卻")?;
+                Self::set_value(
+                    cols,
+                    reload,
+                    &(new_reload as i64).to_string(),
+                    name,
+                    "攻擊冷卻",
+                )?;
             }
         }
 
@@ -316,7 +436,13 @@ impl ObjdefPatcher {
             if options.ranged_range_3x && drad < source.len() {
                 if let Ok(drad_val) = source[drad].trim().parse::<i64>() {
                     if drad_val > 0 {
-                        Self::set_value(cols, drad, &(drad_val * ACCURACY_DRAD_MULTIPLIER).to_string(), name, "落點傷害半徑")?;
+                        Self::set_value(
+                            cols,
+                            drad,
+                            &(drad_val * ACCURACY_DRAD_MULTIPLIER).to_string(),
+                            name,
+                            "落點傷害半徑",
+                        )?;
                     }
                 }
             }
@@ -324,7 +450,12 @@ impl ObjdefPatcher {
         Ok(())
     }
 
-    fn patch_civilian_speed(cols: &mut [String], source: &[String], name: &str, multiplier: f64) -> io::Result<()> {
+    fn patch_civilian_speed(
+        cols: &mut [String],
+        source: &[String],
+        name: &str,
+        multiplier: f64,
+    ) -> io::Result<()> {
         for index in [
             ObjdefIndex::Moves as usize,
             ObjdefIndex::Movsf as usize,
@@ -332,7 +463,13 @@ impl ObjdefPatcher {
         ] {
             let val = Self::read_col(source, index);
             if val > 0.0 {
-                Self::set_value(cols, index, &format!("{:.2}", val * multiplier), name, "移動速度")?;
+                Self::set_value(
+                    cols,
+                    index,
+                    &format!("{:.2}", val * multiplier),
+                    name,
+                    "移動速度",
+                )?;
             }
         }
         Ok(())
@@ -435,7 +572,8 @@ impl ObjdefPatcher {
                 continue;
             }
             let val = Self::read_col(cols, reload);
-            let is_ranged = matches!(cols[dtype].trim(), "1" | "2" | "3" | "4") || unit_type == "siege";
+            let is_ranged =
+                matches!(cols[dtype].trim(), "1" | "2" | "3" | "4") || unit_type == "siege";
             if is_ranged {
                 if val > 0.0 && (ranged == 0.0 || val < ranged) {
                     ranged = val;
@@ -459,7 +597,9 @@ impl ObjdefPatcher {
             if max_col >= cols.len() || cols[active].trim() != "1" {
                 continue;
             }
-            max_r = max_r.max(Self::read_col(cols, min_r)).max(Self::read_col(cols, max_col));
+            max_r = max_r
+                .max(Self::read_col(cols, min_r))
+                .max(Self::read_col(cols, max_col));
         }
         max_r
     }

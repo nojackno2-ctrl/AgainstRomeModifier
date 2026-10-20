@@ -65,3 +65,17 @@ fn default_catalog_resolves_known_and_unknown() {
     assert_eq!(c.resolve(&first).sound_id, first);
     let _ = c.resolve("no_such_sound");
 }
+
+#[test]
+fn editor_height_only_edit_is_dirty() {
+    let mut m = SoundscapeEditorModule::default();
+    let mut z = zone(5.0, 6.0);
+    m.add_zone(&z);
+    m.accept_changes();
+    assert!(!m.is_dirty());
+    z.center_world_y = 42.0;
+    assert!(m.update_zone(&z));
+    assert!(m.is_dirty(), "changing only CenterWorldY must mark the session dirty");
+    assert!(m.undo());
+    assert!(!m.is_dirty());
+}

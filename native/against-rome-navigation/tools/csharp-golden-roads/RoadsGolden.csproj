@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Generates tests/fixtures/connectivity_roads_golden.txt from the C# Pathfinding sources (compiled in place). -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RollForward>Major</RollForward>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../../../src.MapEditor.Modules/Pathfinding/NavMeshPassabilityGrid.cs" />
+    <Compile Include="../../../../src.MapEditor.Modules/Pathfinding/NavMeshRepairContracts.cs" />
+    <Compile Include="../../../../src.MapEditor.Modules/Pathfinding/NavMeshConnectivityAnalyzer.cs" />
+    <Compile Include="../../../../src.MapEditor.Modules/Pathfinding/RoadGapDetector.cs" />
+    <Compile Include="../../../../src.MapEditor.Modules/Pathfinding/RoadPathHealer.cs" />
+  </ItemGroup>
+</Project>

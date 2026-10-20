@@ -101,6 +101,18 @@ impl Vec3 {
             Self::ZERO
         }
     }
+
+    pub fn min(self, b: Self) -> Self {
+        Self::new(self.x.min(b.x), self.y.min(b.y), self.z.min(b.z))
+    }
+
+    pub fn max(self, b: Self) -> Self {
+        Self::new(self.x.max(b.x), self.y.max(b.y), self.z.max(b.z))
+    }
+
+    pub fn clamp(self, min: Self, max: Self) -> Self {
+        self.max(min).min(max)
+    }
 }
 
 impl std::ops::Add for Vec3 {

@@ -11,7 +11,7 @@ pub mod preview;
 pub mod scope;
 
 pub use brush::{
-    EditorBrushExecutor, EditorBrushResult, EditorBrushStroke, EditorBrushTool, EditorHeightBrush,
+    BrushCommand, EditorBrushExecutor, EditorBrushResult, EditorBrushStroke, EditorBrushTool, EditorHeightBrush,
     TerrainStrokePath,
 };
 pub use formation::{FormationLayout, FormationLayoutDefinition, FormationLayoutSegment};
@@ -22,7 +22,7 @@ pub use multi_planner::{
 };
 pub use ollama::{
     AiMaterialOption, HttpResponse, HttpTransport, MockHttpTransport, OllamaMapPlanner,
-    TcpHttpTransport,
+    ConfiguredTcpHttpTransport, TcpHttpTransport, TcpTransportOptions,
 };
 pub use operator::AiEditorOperator;
 pub use plan::{

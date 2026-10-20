@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="D:\Github\AgainstRomeModifier\src.MapEditor.Modules\NativeAssets\NativeShadowCatalog.cs" />
+    <Compile Include="D:\Github\AgainstRomeModifier\src.MapEditor.Modules\NativeAssets\NativeShadowDocument.cs" />
+    <Compile Include="D:\Github\AgainstRomeModifier\src.MapEditor.Modules\NativeAssets\MapLightingShadowMap.cs" />
+  </ItemGroup>
+</Project>

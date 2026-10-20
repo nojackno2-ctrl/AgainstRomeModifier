@@ -1,7 +1,10 @@
 //! OllamaMapPlanner: local LLM map planner with mockable HTTP transport.
 
+use std::io::{ErrorKind, Read, Write};
+use std::net::{TcpStream, ToSocketAddrs};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 use crate::plan::{AiMapPlan, LOCATION_NAMES};
 
@@ -90,8 +93,45 @@ where
     }
 }
 
-/// Simple TCP-based HTTP/1.1 transport for local Ollama instances.
+/// Limits applied by the loopback HTTP/1.1 transport.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TcpTransportOptions {
+    /// Per-address TCP connect timeout.
+    pub connect_timeout: Duration,
+    /// Deadline for the whole request/response exchange (C# `HttpClient.Timeout` is 10 minutes).
+    pub total_timeout: Duration,
+    pub max_header_bytes: usize,
+    pub max_body_bytes: usize,
+}
+
+impl Default for TcpTransportOptions {
+    fn default() -> Self {
+        Self {
+            connect_timeout: Duration::from_secs(10),
+            total_timeout: Duration::from_secs(600),
+            max_header_bytes: 64 * 1024,
+            max_body_bytes: 64 * 1024 * 1024,
+        }
+    }
+}
+
+/// Plain `http://` HTTP/1.1 transport for local Ollama instances (default options).
+///
+/// Supports `Content-Length`, `Transfer-Encoding: chunked` (extensions and trailers) and
+/// close-delimited bodies, with connect/total timeouts, size limits and strict URL/status parsing.
+/// `https://` is rejected explicitly; redirects are not followed (3xx is returned as a status).
 pub struct TcpHttpTransport;
+
+/// Same as [`TcpHttpTransport`] with caller-chosen [`TcpTransportOptions`].
+pub struct ConfiguredTcpHttpTransport {
+    pub options: TcpTransportOptions,
+}
+
+impl ConfiguredTcpHttpTransport {
+    pub fn new(options: TcpTransportOptions) -> Self {
+        Self { options }
+    }
+}
 
 impl HttpTransport for TcpHttpTransport {
     fn send(
@@ -101,74 +141,405 @@ impl HttpTransport for TcpHttpTransport {
         headers: &[(&str, &str)],
         body: Option<&[u8]>,
     ) -> Result<HttpResponse, String> {
-        use std::io::{Read, Write};
-        use std::net::TcpStream;
-
-        let parsed_url = url.strip_prefix("http://").unwrap_or(url);
-        let (host_port, path) = match parsed_url.find('/') {
-            Some(idx) => (&parsed_url[..idx], &parsed_url[idx..]),
-            None => (parsed_url, "/"),
-        };
-
-        let host_port = if !host_port.contains(':') {
-            format!("{}:80", host_port)
-        } else {
-            host_port.to_string()
-        };
-
-        let mut stream = TcpStream::connect(&host_port)
-            .map_err(|e| format!("Failed to connect to {}: {}", host_port, e))?;
-
-        let body_bytes = body.unwrap_or(&[]);
-        let mut request = format!(
-            "{} {} HTTP/1.1\r\nHost: {}\r\nContent-Length: {}\r\nConnection: close\r\n",
-            method,
-            path,
-            host_port,
-            body_bytes.len()
-        );
-
-        for &(k, v) in headers {
-            request.push_str(&format!("{}: {}\r\n", k, v));
-        }
-        request.push_str("\r\n");
-
-        stream
-            .write_all(request.as_bytes())
-            .map_err(|e| format!("Write failed: {}", e))?;
-        if !body_bytes.is_empty() {
-            stream
-                .write_all(body_bytes)
-                .map_err(|e| format!("Write body failed: {}", e))?;
-        }
-
-        let mut response_bytes = Vec::new();
-        stream
-            .read_to_end(&mut response_bytes)
-            .map_err(|e| format!("Read failed: {}", e))?;
-
-        let response_str = String::from_utf8_lossy(&response_bytes);
-        let (header_part, body_part) = match response_str.find("\r\n\r\n") {
-            Some(idx) => (&response_str[..idx], &response_str[idx + 4..]),
-            None => ("", response_str.as_ref()),
-        };
-
-        let status_code = header_part
-            .lines()
-            .next()
-            .and_then(|line| {
-                let parts: Vec<&str> = line.split_whitespace().collect();
-                if parts.len() >= 2 {
-                    parts[1].parse::<u16>().ok()
-                } else {
-                    None
-                }
-            })
-            .unwrap_or(0);
-
-        Ok(HttpResponse::new(status_code, body_part))
+        tcp_send(&TcpTransportOptions::default(), method, url, headers, body)
     }
 }
+
+impl HttpTransport for ConfiguredTcpHttpTransport {
+    fn send(
+        &self,
+        method: &str,
+        url: &str,
+        headers: &[(&str, &str)],
+        body: Option<&[u8]>,
+    ) -> Result<HttpResponse, String> {
+        tcp_send(&self.options, method, url, headers, body)
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct ParsedUrl {
+    host: String,
+    port: u16,
+    path: String,
+}
+
+fn parse_http_url(url: &str) -> Result<ParsedUrl, String> {
+    let url = url.trim();
+    let lower = url.to_ascii_lowercase();
+    let rest = if lower.starts_with("http://") {
+        &url[7..]
+    } else if lower.starts_with("https://") {
+        return Err(format!("不支援 https（僅支援本機 http）：{url}"));
+    } else {
+        return Err(format!("無效的 URL（必須以 http:// 開頭）：{url}"));
+    };
+    if rest.chars().any(|c| c.is_control() || c == ' ' || c == '\\') {
+        return Err(format!("URL 含有非法字元：{url}"));
+    }
+    let rest = rest.split('#').next().unwrap_or("");
+    let (authority, path) = match rest.find(['/', '?']) {
+        Some(i) if rest.as_bytes()[i] == b'/' => (&rest[..i], rest[i..].to_string()),
+        Some(i) => (&rest[..i], format!("/{}", &rest[i..])),
+        None => (rest, "/".to_string()),
+    };
+    if authority.contains('@') {
+        return Err(format!("URL 不允許 userinfo：{url}"));
+    }
+    let (host, port_str) = if let Some(stripped) = authority.strip_prefix('[') {
+        let end = stripped.find(']').ok_or_else(|| format!("無效的 IPv6 位址：{url}"))?;
+        let after = &stripped[end + 1..];
+        let port = match after {
+            "" => None,
+            _ => Some(after.strip_prefix(':').ok_or_else(|| format!("無效的 URL：{url}"))?),
+        };
+        (stripped[..end].to_string(), port)
+    } else {
+        match authority.rsplit_once(':') {
+            Some((h, p)) => (h.to_string(), Some(p)),
+            None => (authority.to_string(), None),
+        }
+    };
+    if host.is_empty() || (!authority.starts_with('[') && host.contains(':')) {
+        return Err(format!("URL 缺少有效主機：{url}"));
+    }
+    let port = match port_str {
+        None => 80,
+        Some(p) => match p.parse::<u16>() {
+            Ok(n) if n != 0 && p.bytes().all(|b| b.is_ascii_digit()) => n,
+            _ => return Err(format!("無效的連接埠 '{p}'：{url}")),
+        },
+    };
+    Ok(ParsedUrl { host, port, path })
+}
+
+fn is_token(s: &str) -> bool {
+    !s.is_empty()
+        && s.bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"!#$%&'*+-.^_`|~".contains(&b))
+}
+
+fn remaining(deadline: Instant) -> Result<Duration, String> {
+    let now = Instant::now();
+    if now >= deadline {
+        Err("HTTP 要求逾時".to_string())
+    } else {
+        Ok(deadline - now)
+    }
+}
+
+fn io_err(what: &str, e: std::io::Error) -> String {
+    match e.kind() {
+        ErrorKind::WouldBlock | ErrorKind::TimedOut => format!("HTTP {what}逾時"),
+        _ => format!("HTTP {what}失敗：{e}"),
+    }
+}
+
+/// Buffered reader enforcing the overall deadline on every socket read.
+struct DeadlineReader {
+    stream: TcpStream,
+    buf: Vec<u8>,
+    pos: usize,
+    deadline: Instant,
+    eof: bool,
+}
+
+impl DeadlineReader {
+    fn fill(&mut self) -> Result<bool, String> {
+        if self.eof {
+            return Ok(false);
+        }
+        if self.pos > 0 && self.pos == self.buf.len() {
+            self.buf.clear();
+            self.pos = 0;
+        }
+        self.stream
+            .set_read_timeout(Some(remaining(self.deadline)?.max(Duration::from_millis(1))))
+            .map_err(|e| io_err("讀取", e))?;
+        let mut chunk = [0u8; 8192];
+        loop {
+            match self.stream.read(&mut chunk) {
+                Ok(0) => {
+                    self.eof = true;
+                    return Ok(false);
+                }
+                Ok(n) => {
+                    self.buf.extend_from_slice(&chunk[..n]);
+                    return Ok(true);
+                }
+                Err(e) if e.kind() == ErrorKind::Interrupted => continue,
+                // A reset after the peer already sent everything is indistinguishable from
+                // truncation; surface it as an error so framing checks decide.
+                Err(e) => return Err(io_err("讀取", e)),
+            }
+        }
+    }
+
+    fn available(&self) -> &[u8] {
+        &self.buf[self.pos..]
+    }
+
+    /// Reads one CRLF/LF terminated line (without terminator), at most `limit` bytes.
+    fn read_line(&mut self, limit: usize) -> Result<Option<String>, String> {
+        loop {
+            if let Some(i) = self.available().iter().position(|&b| b == b'\n') {
+                let mut line = &self.available()[..i];
+                if line.last() == Some(&b'\r') {
+                    line = &line[..line.len() - 1];
+                }
+                let s = String::from_utf8_lossy(line).into_owned();
+                self.pos += i + 1;
+                return Ok(Some(s));
+            }
+            if self.available().len() > limit {
+                return Err("HTTP 標頭過大".to_string());
+            }
+            if !self.fill()? {
+                return if self.available().is_empty() {
+                    Ok(None)
+                } else {
+                    Err("HTTP 回應在行結束前中斷".to_string())
+                };
+            }
+        }
+    }
+
+    fn read_exact_into(&mut self, out: &mut Vec<u8>, mut n: usize, max: usize) -> Result<(), String> {
+        while n > 0 {
+            if self.available().is_empty() && !self.fill()? {
+                return Err("HTTP 回應本文提早結束".to_string());
+            }
+            let take = n.min(self.available().len());
+            if out.len() + take > max {
+                return Err("HTTP 回應本文超過大小上限".to_string());
+            }
+            out.extend_from_slice(&self.available()[..take]);
+            self.pos += take;
+            n -= take;
+        }
+        Ok(())
+    }
+
+    fn read_to_close(&mut self, out: &mut Vec<u8>, max: usize) -> Result<(), String> {
+        loop {
+            if out.len() + self.available().len() > max {
+                return Err("HTTP 回應本文超過大小上限".to_string());
+            }
+            out.extend_from_slice(&self.buf[self.pos..]);
+            self.pos = self.buf.len();
+            if !self.fill()? {
+                return Ok(());
+            }
+        }
+    }
+}
+
+fn read_chunked(r: &mut DeadlineReader, out: &mut Vec<u8>, opts: &TcpTransportOptions) -> Result<(), String> {
+    loop {
+        let line = r
+            .read_line(1024)?
+            .ok_or_else(|| "HTTP chunked 本文提早結束".to_string())?;
+        let size_str = line.split(';').next().unwrap_or("").trim();
+        if size_str.is_empty() || !size_str.bytes().all(|b| b.is_ascii_hexdigit()) || size_str.len() > 16 {
+            return Err(format!("無效的 chunk 大小：'{size_str}'"));
+        }
+        let size = usize::from_str_radix(size_str, 16).map_err(|_| "無效的 chunk 大小".to_string())?;
+        if size == 0 {
+            // Trailers until the blank line.
+            loop {
+                match r.read_line(opts.max_header_bytes)? {
+                    None => return Err("HTTP chunked 結尾提早結束".to_string()),
+                    Some(l) if l.is_empty() => return Ok(()),
+                    Some(_) => {}
+                }
+            }
+        }
+        r.read_exact_into(out, size, opts.max_body_bytes)?;
+        let end = r
+            .read_line(2)?
+            .ok_or_else(|| "HTTP chunked 本文提早結束".to_string())?;
+        if !end.is_empty() {
+            return Err("chunk 資料後缺少 CRLF".to_string());
+        }
+    }
+}
+
+fn read_response(
+    r: &mut DeadlineReader,
+    method: &str,
+    opts: &TcpTransportOptions,
+) -> Result<HttpResponse, String> {
+    loop {
+        let status_line = r
+            .read_line(opts.max_header_bytes)?
+            .ok_or_else(|| "伺服器未回應即關閉連線".to_string())?;
+        let mut parts = status_line.splitn(3, ' ');
+        let version = parts.next().unwrap_or("");
+        let code = parts.next().unwrap_or("");
+        if !(version == "HTTP/1.1" || version == "HTTP/1.0")
+            || code.len() != 3
+            || !code.bytes().all(|b| b.is_ascii_digit())
+        {
+            return Err(format!("無效的 HTTP 狀態列：'{status_line}'"));
+        }
+        let status: u16 = code.parse().unwrap();
+        if !(100..=599).contains(&status) {
+            return Err(format!("無效的 HTTP 狀態碼：{status}"));
+        }
+
+        let mut content_length: Option<usize> = None;
+        let mut chunked = false;
+        let mut encoded = false;
+        let mut header_bytes = 0usize;
+        loop {
+            let line = r
+                .read_line(opts.max_header_bytes)?
+                .ok_or_else(|| "HTTP 標頭提早結束".to_string())?;
+            if line.is_empty() {
+                break;
+            }
+            header_bytes += line.len();
+            if header_bytes > opts.max_header_bytes {
+                return Err("HTTP 標頭過大".to_string());
+            }
+            let (name, value) = line
+                .split_once(':')
+                .ok_or_else(|| format!("無效的 HTTP 標頭：'{line}'"))?;
+            let value = value.trim();
+            match name.trim().to_ascii_lowercase().as_str() {
+                "content-length" => {
+                    if value.is_empty() || !value.bytes().all(|b| b.is_ascii_digit()) {
+                        return Err(format!("無效的 Content-Length：'{value}'"));
+                    }
+                    let n: usize = value.parse().map_err(|_| "Content-Length 過大".to_string())?;
+                    if content_length.is_some_and(|c| c != n) {
+                        return Err("Content-Length 重複且不一致".to_string());
+                    }
+                    content_length = Some(n);
+                }
+                "transfer-encoding" => {
+                    let codings: Vec<String> =
+                        value.split(',').map(|c| c.trim().to_ascii_lowercase()).collect();
+                    if codings.last().map(String::as_str) == Some("chunked") {
+                        chunked = true;
+                        if codings.len() > 1 {
+                            encoded = true;
+                        }
+                    } else {
+                        encoded = true;
+                    }
+                }
+                "content-encoding" => {
+                    if !value.eq_ignore_ascii_case("identity") {
+                        encoded = true;
+                    }
+                }
+                _ => {}
+            }
+        }
+        if encoded {
+            return Err("不支援的 Content-Encoding／Transfer-Encoding".to_string());
+        }
+
+        if (100..200).contains(&status) && status != 101 {
+            continue; // interim response such as 100 Continue
+        }
+        let mut body = Vec::new();
+        let no_body = method.eq_ignore_ascii_case("HEAD") || status == 101 || status == 204 || status == 304;
+        if !no_body {
+            if chunked {
+                read_chunked(r, &mut body, opts)?;
+            } else if let Some(n) = content_length {
+                if n > opts.max_body_bytes {
+                    return Err("HTTP 回應本文超過大小上限".to_string());
+                }
+                r.read_exact_into(&mut body, n, opts.max_body_bytes)?;
+            } else {
+                r.read_to_close(&mut body, opts.max_body_bytes)?;
+            }
+        }
+        return Ok(HttpResponse::new(status, String::from_utf8_lossy(&body).into_owned()));
+    }
+}
+
+fn tcp_send(
+    opts: &TcpTransportOptions,
+    method: &str,
+    url: &str,
+    headers: &[(&str, &str)],
+    body: Option<&[u8]>,
+) -> Result<HttpResponse, String> {
+    if !is_token(method) {
+        return Err(format!("無效的 HTTP 方法：'{method}'"));
+    }
+    let parsed = parse_http_url(url)?;
+    let deadline = Instant::now() + opts.total_timeout;
+
+    let host_for_header = if parsed.host.contains(':') {
+        format!("[{}]", parsed.host)
+    } else {
+        parsed.host.clone()
+    };
+    let host_header = if parsed.port == 80 {
+        host_for_header
+    } else {
+        format!("{}:{}", host_for_header, parsed.port)
+    };
+
+    let body_bytes = body.unwrap_or(&[]);
+    let mut request = format!(
+        "{} {} HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n",
+        method, parsed.path, host_header
+    );
+    if body.is_some() || matches!(method.to_ascii_uppercase().as_str(), "POST" | "PUT" | "PATCH") {
+        request.push_str(&format!("Content-Length: {}\r\n", body_bytes.len()));
+    }
+    for &(k, v) in headers {
+        if !is_token(k) || v.bytes().any(|b| b == b'\r' || b == b'\n' || b == 0) {
+            return Err(format!("無效的 HTTP 標頭：'{k}'"));
+        }
+        let lk = k.to_ascii_lowercase();
+        if matches!(lk.as_str(), "host" | "content-length" | "connection" | "transfer-encoding" | "accept-encoding") {
+            continue; // transport owns framing headers
+        }
+        request.push_str(&format!("{}: {}\r\n", k, v));
+    }
+    request.push_str("Accept-Encoding: identity\r\n\r\n");
+
+    let addrs: Vec<_> = (parsed.host.as_str(), parsed.port)
+        .to_socket_addrs()
+        .map_err(|e| format!("無法解析主機 {}：{}", parsed.host, e))?
+        .collect();
+    let mut last_err = format!("無法解析主機 {}", parsed.host);
+    let mut stream = None;
+    for addr in addrs {
+        let t = remaining(deadline)?.min(opts.connect_timeout);
+        match TcpStream::connect_timeout(&addr, t) {
+            Ok(s) => {
+                stream = Some(s);
+                break;
+            }
+            Err(e) => last_err = format!("無法連線到 {}：{}", addr, e),
+        }
+    }
+    let mut stream = stream.ok_or(last_err)?;
+    let _ = stream.set_nodelay(true);
+
+    stream
+        .set_write_timeout(Some(remaining(deadline)?))
+        .map_err(|e| io_err("寫入", e))?;
+    stream.write_all(request.as_bytes()).map_err(|e| io_err("寫入", e))?;
+    if !body_bytes.is_empty() {
+        stream.write_all(body_bytes).map_err(|e| io_err("寫入", e))?;
+    }
+    stream.flush().map_err(|e| io_err("寫入", e))?;
+
+    let mut reader = DeadlineReader { stream, buf: Vec::new(), pos: 0, deadline, eof: false };
+    read_response(&mut reader, method, opts)
+}
+
+/// Mirrors the C# `OllamaMapPlanner.InferenceGate`: one inference request at a time per process.
+static INFERENCE_GATE: Mutex<()> = Mutex::new(());
 
 pub struct OllamaMapPlanner {
     endpoint: String,
@@ -262,6 +633,7 @@ impl OllamaMapPlanner {
         let body_bytes = serde_json::to_vec(&request_body).map_err(|e| e.to_string())?;
         let url = format!("{}/api/chat", self.endpoint);
 
+        let _gate = INFERENCE_GATE.lock().unwrap_or_else(|p| p.into_inner());
         let res = self.transport.send(
             "POST",
             &url,

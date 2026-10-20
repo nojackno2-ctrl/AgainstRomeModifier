@@ -1,0 +1,21 @@
+[package]
+name = "lighting-probe"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Rust port of tools/re/lighting-probe: validates lighting bitmaps and shadow maps, and extracts APT frames."
+
+[lib]
+name = "lighting_probe"
+path = "src/lib.rs"
+
+[[bin]]
+name = "lighting-probe-rs"
+path = "src/main.rs"
+
+[dependencies]
+against-rome-data = { path = "../../../native/against-rome-data" }
+against-rome-environment = { path = "../../../native/against-rome-environment" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+zip = { version = "=0.6.6", default-features = false, features = ["deflate"] }

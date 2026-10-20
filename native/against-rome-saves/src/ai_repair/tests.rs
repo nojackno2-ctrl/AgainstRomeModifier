@@ -332,3 +332,33 @@ fn csharp_synthetic_differential() {
     }
     println!("C# P6/P8/P9 differential: {} cases, {compared} decoded bytes + byte-exact PFIL compression passed",cases.len());
 }
+#[test]
+fn safety_backup_records_title_level_and_unrestorable_backup_blocks_repair() {
+    let temp = Temp::new();
+    let svc = temp.service();
+    let folder = svc.root().join("SAVE_001");
+    std::fs::create_dir_all(folder.join("CLAK")).unwrap();
+    let scr = folder.join("CLAK/scr.dat");
+    std::fs::write(&scr, fixture()).unwrap();
+    std::fs::write(folder.join("save.ini"), b"[titel]\nMy Game\n[orglevelname]\nENDL_003\n").unwrap();
+    let backup = match svc.repair_endless_ai("SAVE_001").unwrap() {
+        AiRepairResult::Changed { backup } => backup,
+        other => panic!("{other:?}"),
+    };
+    let info = svc.scan().unwrap().backups.into_iter().find(|b| b.file_name == backup).unwrap();
+    assert_eq!(info.manifest.orig_folder, "SAVE_001");
+    assert_eq!(info.manifest.title, "My Game");
+    assert_eq!(info.manifest.level, "ENDL_003");
+    assert!(svc.verify_backup(&backup).unwrap().is_ok());
+
+    // A save without save.ini yields a backup that restore would refuse: repair must stop
+    // before touching scr.dat and must not leave the useless backup behind.
+    let bad = svc.root().join("SAVE_002/CLAK");
+    std::fs::create_dir_all(&bad).unwrap();
+    std::fs::write(bad.join("scr.dat"), fixture()).unwrap();
+    let err = svc.repair_endless_ai("SAVE_002").unwrap_err().to_string();
+    assert!(err.contains("safety backup failed verification"), "{err}");
+    assert_eq!(std::fs::read(bad.join("scr.dat")).unwrap(), fixture());
+    let leftovers: Vec<_> = svc.scan().unwrap().backups.into_iter().filter(|b| b.manifest.orig_folder == "SAVE_002").collect();
+    assert!(leftovers.is_empty());
+}

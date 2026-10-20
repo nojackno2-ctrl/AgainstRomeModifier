@@ -1,4 +1,7 @@
 use super::campaign::*;
+use super::dotnet_unicode::{
+    is_letter_or_digit_unit, ordinal_ignore_case_eq, ordinal_ignore_case_key,
+};
 use super::waypoint::WaypointPath;
 use against_rome_scenario::{Action, Condition, Event, ScenarioDocument};
 use std::collections::HashSet;
@@ -9,6 +12,7 @@ pub struct CampaignCompilationResult {
     pub success: bool,
     pub compiled_events: Vec<Event>,
     pub diagnostics: Vec<String>,
+    pub bci_bytes: Option<Vec<u8>>,
 }
 
 /// 將高階戰役目標（波次進攻、定時增援、基地防守、刺殺/摧毀）
@@ -35,6 +39,7 @@ impl CampaignMissionCompiler {
                 success: false,
                 compiled_events,
                 diagnostics,
+                bci_bytes: None,
             };
         }
 
@@ -52,7 +57,7 @@ impl CampaignMissionCompiler {
             for squad in &wave.squads {
                 if !known_aliases
                     .iter()
-                    .any(|a| a.eq_ignore_ascii_case(&squad.alias))
+                    .any(|a| ordinal_ignore_case_eq(a, &squad.alias))
                 {
                     diagnostics.push(format!(
                         "[Error] 波次 {} 的部隊別名未知：{} | Wave {}: unknown unit alias {}",
@@ -63,10 +68,18 @@ impl CampaignMissionCompiler {
         }
 
         for reinf in &plan.reinforcements {
+            if reinf.assigned_path_id.is_some()
+                || reinf.squads.iter().any(|s| s.relative_delay_seconds != 0)
+            {
+                diagnostics.push(format!(
+                    "[Error] 增援「{}」：巡邏路徑與部隊相對延遲尚未支援。 | Reinforcement {}: patrol paths and relative delays are unsupported.",
+                    reinf.name, reinf.name
+                ));
+            }
             for squad in &reinf.squads {
                 if !known_aliases
                     .iter()
-                    .any(|a| a.eq_ignore_ascii_case(&squad.alias))
+                    .any(|a| ordinal_ignore_case_eq(a, &squad.alias))
                 {
                     diagnostics.push(format!(
                         "[Error] 增援「{}」的部隊別名未知：{} | Reinforcement {}: unknown unit alias {}",
@@ -99,6 +112,7 @@ impl CampaignMissionCompiler {
                 success: false,
                 compiled_events,
                 diagnostics,
+                bci_bytes: None,
             };
         }
 
@@ -313,7 +327,9 @@ impl CampaignMissionCompiler {
                     };
                     let wave_survival_event = Event {
                         name: format!("WaveSurvivalWin_{}", sanitize_name(&obj.title)),
-                        delay_seconds: last_wave_delay + survive_buffer,
+                        // Match C# unchecked int addition; the final event validator
+                        // rejects a wrapped negative delay instead of panicking.
+                        delay_seconds: last_wave_delay.wrapping_add(survive_buffer),
                         repeat: false,
                         enabled: true,
                         conditions: vec![],
@@ -345,6 +361,7 @@ impl CampaignMissionCompiler {
                 success: false,
                 compiled_events,
                 diagnostics,
+                bci_bytes: None,
             };
         }
 
@@ -356,24 +373,147 @@ impl CampaignMissionCompiler {
             success: true,
             compiled_events,
             diagnostics,
+            bci_bytes: None,
         }
+    }
+
+    /// 將戰役任務企劃降階為 ScenarioEvent 並編譯進原版 ak_level.bci 位元碼。
+    pub fn compile_to_bci(
+        plan: &CampaignMissionPlan,
+        original: &[u8],
+        scenario: &ScenarioDocument,
+        known_aliases: &[String],
+        camera: Option<&crate::MapStartCamera>,
+    ) -> CampaignCompilationResult {
+        let mut result = Self::compile(plan, None, known_aliases, Some(scenario));
+        if !result.success {
+            return result;
+        }
+
+        let mut scenario_copy = scenario.clone();
+        scenario_copy.events.extend(result.compiled_events.clone());
+
+        let start_cam_opt: Option<against_rome_scenario::StartCamera> = camera.map(Into::into);
+
+        match against_rome_scenario::compile_script(
+            original,
+            &scenario_copy,
+            start_cam_opt.as_ref(),
+            Some(known_aliases),
+        ) {
+            Ok(bytes) => {
+                result.bci_bytes = Some(bytes);
+                result
+                    .diagnostics
+                    .push("[Info] 成功編譯戰役企劃為 BCI 位元碼。".to_string());
+                result
+            }
+            Err(e) => {
+                result.success = false;
+                result.diagnostics.push(format!("[Error] BCI 編譯失敗: {e}"));
+                result
+            }
+        }
+    }
+
+    /// 編譯戰役企劃並合併至既有劇本（對應 C# `CampaignWaveDialog.CompileForMerge` / `MapEditorForm.ApplyCampaignWaves`）：
+    /// 1. 拒絕未支援之企劃欄位（勢力 AI 設定、波次/增援之路徑、攻擊目標、部隊相對延遲）。
+    /// 2. 調用 `compile` 進行波次降階編譯。
+    /// 3. 對編譯生成事件名稱進行 `OrdinalIgnoreCase` 序數大小寫不敏感去重（碰撞時附加 `_2`, `_3` 等後綴）。
+    /// 4. 強制檢查合併後事件總數不超過原版引擎之 256 事件上限。
+    /// 5. 針對合併後之整體 ScenarioDocument 進行完整結構、別名與條件驗證。
+    pub fn compile_for_merge(
+        plan: &CampaignMissionPlan,
+        known_aliases: &[String],
+        scenario: &ScenarioDocument,
+    ) -> CampaignCompilationResult {
+        if !plan.faction_profiles.is_empty()
+            || plan.waves.iter().any(|w| {
+                w.assigned_path_id.is_some()
+                    || w.target_object_id.is_some()
+                    || w.squads.iter().any(|s| s.relative_delay_seconds != 0)
+            })
+            || plan.reinforcements.iter().any(|r| {
+                r.assigned_path_id.is_some()
+                    || r.squads.iter().any(|s| s.relative_delay_seconds != 0)
+            })
+        {
+            return CampaignCompilationResult {
+                success: false,
+                compiled_events: vec![],
+                diagnostics: vec![
+                    "[Error] 尚不支援勢力 AI、路徑、攻擊目標與部隊相對延遲。 | Faction AI, paths, attack targets and relative squad delays are unsupported.".to_string(),
+                ],
+                bci_bytes: None,
+            };
+        }
+
+        let mut result = Self::compile(plan, None, known_aliases, Some(scenario));
+        if !result.success {
+            return result;
+        }
+
+        let mut used = HashSet::new();
+        for ev in &scenario.events {
+            used.insert(ordinal_ignore_case_key(&ev.name));
+        }
+
+        let mut deduplicated = Vec::with_capacity(result.compiled_events.len());
+        for item in result.compiled_events {
+            let mut name = item.name.clone();
+            let mut n = 2;
+            while !used.insert(ordinal_ignore_case_key(&name)) {
+                name = format!("{}_{}", item.name, n);
+                n += 1;
+            }
+            let mut renamed = item;
+            renamed.name = name;
+            deduplicated.push(renamed);
+        }
+
+        if scenario.events.len() + deduplicated.len() > 256 {
+            return CampaignCompilationResult {
+                success: false,
+                compiled_events: vec![],
+                diagnostics: vec![
+                    "[Error] 合併後會超過 256 個事件上限。 | Merging would exceed the 256-event limit.".to_string(),
+                ],
+                bci_bytes: None,
+            };
+        }
+
+        let mut check_doc = scenario.clone();
+        check_doc.events.extend(deduplicated.clone());
+        if let Err(e) = check_doc.validate(Some(known_aliases)) {
+            let mut diags = result.diagnostics;
+            diags.push(format!(
+                "[Error] 合併事件後驗證失敗：{e} | Merged events validation failed: {e}"
+            ));
+            return CampaignCompilationResult {
+                success: false,
+                compiled_events: vec![],
+                diagnostics: diags,
+                bci_bytes: None,
+            };
+        }
+
+        result.compiled_events = deduplicated;
+        result
     }
 }
 
+/// 對應 C# `CampaignMissionCompiler.SanitizeName`：僅空白字串回傳 "Item"；
+/// 其餘逐 UTF-16 code unit 將非 `char.IsLetterOrDigit` 者換成 `_`（surrogate 單元恆為非字母，
+/// 故補充平面字元如 emoji、𠀀 各變成兩個 `_`，與 C# 一致）、修剪兩端 `_`、截斷至 30 個 UTF-16 單元。
+/// 全為符號時與 C# 相同回傳空字串。分類表由真 .NET 8 oracle 產生（見 `dotnet_unicode`）。
 pub fn sanitize_name(raw: &str) -> String {
     if raw.trim().is_empty() {
         return "Item".to_string();
     }
-    let chars: String = raw
-        .chars()
-        .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+    let mapped: String = raw
+        .encode_utf16()
+        .map(|u| if is_letter_or_digit_unit(u) { u } else { b'_' as u16 })
+        .map(|u| char::from_u32(u as u32).unwrap_or('_'))
         .collect();
-    let clean = chars.trim_matches('_');
-    if clean.is_empty() {
-        "Item".to_string()
-    } else if clean.len() > 30 {
-        clean[..30].to_string()
-    } else {
-        clean.to_string()
-    }
+    mapped.trim_matches('_').chars().take(30).collect()
 }

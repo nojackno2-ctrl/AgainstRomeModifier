@@ -7,19 +7,32 @@ use against_rome_modifier::{
     services::*,
     PatchProfile,
 };
-use std::{fs, io::Write, path::{Path, PathBuf}, sync::atomic::{AtomicUsize, Ordering}};
+use std::{
+    fs,
+    io::Write,
+    path::{Path, PathBuf},
+    sync::atomic::{AtomicUsize, Ordering},
+};
 
 static N: AtomicUsize = AtomicUsize::new(0);
 struct Tmp(PathBuf);
 impl Tmp {
     fn new() -> Self {
-        let p = std::env::temp_dir().join(format!("arm-svc-{}-{}", std::process::id(), N.fetch_add(1, Ordering::Relaxed)));
+        let p = std::env::temp_dir().join(format!(
+            "arm-svc-{}-{}",
+            std::process::id(),
+            N.fetch_add(1, Ordering::Relaxed)
+        ));
         let _ = fs::remove_dir_all(&p);
         fs::create_dir_all(&p).unwrap();
         Tmp(p)
     }
 }
-impl Drop for Tmp { fn drop(&mut self) { let _ = fs::remove_dir_all(&self.0); } }
+impl Drop for Tmp {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
 fn put(root: &Path, rel: &str, bytes: &[u8]) {
     let p = root.join(rel);
     fs::create_dir_all(p.parent().unwrap()).unwrap();
@@ -30,15 +43,32 @@ fn put(root: &Path, rel: &str, bytes: &[u8]) {
 fn locator_prefers_existing_preferred_then_base_exe_then_registry_then_default() {
     let t = Tmp::new();
     let (pref, base, def) = (t.0.join("pref"), t.0.join("base"), t.0.join("def"));
-    for d in [&pref, &base, &def] { fs::create_dir_all(d).unwrap(); }
+    for d in [&pref, &base, &def] {
+        fs::create_dir_all(d).unwrap();
+    }
     let none = Path::new("");
-    assert_eq!(GameDirectoryLocator::resolve_with(Some(&pref), &base, none, &def), pref);
-    assert_eq!(GameDirectoryLocator::resolve_with(Some(&t.0.join("missing")), &base, none, &def), def);
+    assert_eq!(
+        GameDirectoryLocator::resolve_with(Some(&pref), &base, none, &def),
+        pref
+    );
+    assert_eq!(
+        GameDirectoryLocator::resolve_with(Some(&t.0.join("missing")), &base, none, &def),
+        def
+    );
     put(&base, "Against_Rome.exe", b"x");
-    assert_eq!(GameDirectoryLocator::resolve_with(None, &base, Path::new("R:/reg"), &def), base);
+    assert_eq!(
+        GameDirectoryLocator::resolve_with(None, &base, Path::new("R:/reg"), &def),
+        base
+    );
     fs::remove_file(base.join("Against_Rome.exe")).unwrap();
-    assert_eq!(GameDirectoryLocator::resolve_with(None, &base, Path::new("R:/reg"), &def), PathBuf::from("R:/reg"));
-    assert_eq!(GameDirectoryLocator::resolve_with(None, &base, none, &t.0.join("nodef")), PathBuf::new());
+    assert_eq!(
+        GameDirectoryLocator::resolve_with(None, &base, Path::new("R:/reg"), &def),
+        PathBuf::from("R:/reg")
+    );
+    assert_eq!(
+        GameDirectoryLocator::resolve_with(None, &base, none, &t.0.join("nodef")),
+        PathBuf::new()
+    );
 }
 
 #[test]
@@ -53,7 +83,9 @@ fn backup_manager_zip_roundtrip_case_insensitive_and_rejects_traversal() {
     }
     let files = BackupManager::load_zip(&buf).unwrap();
     let mut b = BackupManager::new();
-    for (k, v) in files { b.set_backup_file(&k, v); }
+    for (k, v) in files {
+        b.set_backup_file(&k, v);
+    }
     assert!(b.has_file("system/CL_SCRIPT.ini"));
     assert_eq!(b.get_backup_bytes("SYSTEM/cl_script.ini").unwrap(), b"abc");
     assert!(b.get_backup_bytes("nothing").is_err());
@@ -63,7 +95,8 @@ fn backup_manager_zip_roundtrip_case_insensitive_and_rejects_traversal() {
     let mut bad = Vec::new();
     {
         let mut z = zip::ZipWriter::new(std::io::Cursor::new(&mut bad));
-        z.start_file("../evil.txt", zip::write::FileOptions::default()).unwrap();
+        z.start_file("../evil.txt", zip::write::FileOptions::default())
+            .unwrap();
         z.write_all(b"x").unwrap();
         z.finish().unwrap();
     }
@@ -106,14 +139,21 @@ fn language_pack_enable_disable_restores_exactly() {
     put(&t.0, "ToEng/new.txt", b"new");
     put(&t.0, "TEXT/a.txt", b"original");
     let plan = LanguagePackFeature::plan(&t.0, true).unwrap();
-    for (p, b) in &plan.writes { fs::create_dir_all(p.parent().unwrap()).unwrap(); fs::write(p, b).unwrap(); }
+    for (p, b) in &plan.writes {
+        fs::create_dir_all(p.parent().unwrap()).unwrap();
+        fs::write(p, b).unwrap();
+    }
     assert_eq!(fs::read(t.0.join("TEXT/a.txt")).unwrap(), b"english");
     assert_eq!(language_overlay_state(&t.0).unwrap(), Some(true));
     // re-enabling while already enabled keeps the original backup
     assert!(LanguagePackFeature::plan(&t.0, true).is_ok());
     let plan = LanguagePackFeature::plan(&t.0, false).unwrap();
-    for (p, b) in &plan.writes { fs::write(p, b).unwrap(); }
-    for p in &plan.deletes { fs::remove_file(p).unwrap(); }
+    for (p, b) in &plan.writes {
+        fs::write(p, b).unwrap();
+    }
+    for p in &plan.deletes {
+        fs::remove_file(p).unwrap();
+    }
     assert_eq!(fs::read(t.0.join("TEXT/a.txt")).unwrap(), b"original");
     assert!(!t.0.join("new.txt").exists());
 }
@@ -134,20 +174,29 @@ fn widescreen_settings_require_exactly_one_key_and_keep_bom() {
     assert!(out.starts_with(&[239, 187, 191]) || out.starts_with("\u{feff}".as_bytes()));
     let text = String::from_utf8(out).unwrap();
     assert!(text.contains("FullScreenMode = true") || text.contains("FullScreenMode=true"));
-    assert!(text.contains("ScalingMode=stretched_ar") && text.contains("FullscreenAttributes=fake"));
+    assert!(
+        text.contains("ScalingMode=stretched_ar") && text.contains("FullscreenAttributes=fake")
+    );
     assert!(apply_native_widescreen_window(b"FullScreenMode=true\r\n").is_err());
 }
 
 fn resources() -> InstallResources {
     let mut r = InstallResources::default();
-    for n in ["D3D8.dll", "DDraw.dll", "dgVoodooCpl.exe"] { r.dgvoodoo.insert(n.into(), n.as_bytes().to_vec()); }
+    for n in ["D3D8.dll", "DDraw.dll", "dgVoodooCpl.exe"] {
+        r.dgvoodoo.insert(n.into(), n.as_bytes().to_vec());
+    }
     r.dgvoodoo.insert("dgVoodoo.conf".into(), b"FullScreenMode=false\nScalingMode=a\nCenterAppWindow=false\nWindowedAttributes=\nFullscreenAttributes=\n".to_vec());
     r.argm_winmm = b"winmm-bytes".to_vec();
     r
 }
 fn commit(plan: &InstallPlan) {
-    for (p, b) in &plan.writes { fs::create_dir_all(p.parent().unwrap()).unwrap(); fs::write(p, b).unwrap(); }
-    for p in &plan.deletes { let _ = fs::remove_file(p); }
+    for (p, b) in &plan.writes {
+        fs::create_dir_all(p.parent().unwrap()).unwrap();
+        fs::write(p, b).unwrap();
+    }
+    for p in &plan.deletes {
+        let _ = fs::remove_file(p);
+    }
 }
 
 #[test]
@@ -183,7 +232,9 @@ fn argm_trace_install_uninstall_and_conflict() {
     assert!(ArgmTraceFeature::plan(&t.0, true, &InstallResources::default()).is_err());
     commit(&ArgmTraceFeature::plan(&t.0, true, &resources()).unwrap());
     assert!(ArgmTraceFeature::is_installed(&t.0));
-    assert!(fs::read_to_string(t.0.join("argm_trace.ini")).unwrap().contains("enableHooks=0"));
+    assert!(fs::read_to_string(t.0.join("argm_trace.ini"))
+        .unwrap()
+        .contains("enableHooks=0"));
     commit(&ArgmTraceFeature::plan(&t.0, false, &resources()).unwrap());
     assert!(!t.0.join("winmm.dll").exists() && !ArgmTraceFeature::is_installed(&t.0));
     put(&t.0, "winmm.dll", b"foreign");
@@ -194,9 +245,23 @@ fn argm_trace_install_uninstall_and_conflict() {
 fn orchestrator_modules_and_empty_game_dir_is_unknown() {
     let t = Tmp::new();
     let mut o = EndlessAiOrchestrator::new(true);
-    for id in ["M1", "Core", "M2", "M3", "M4", "M5", "M6", "VillageGarrisonQuota3x", "R0"] {
+    for id in [
+        "M1",
+        "Core",
+        "M2",
+        "M3",
+        "M4",
+        "M5",
+        "M6",
+        "VillageGarrisonQuota3x",
+        "R0",
+    ] {
         assert!(o.get_module(id).is_some(), "{id}");
-        assert_eq!(o.detect_module_by_id(&t.0, id), Some(PatchState::Unknown), "{id}");
+        assert_eq!(
+            o.detect_module_by_id(&t.0, id),
+            Some(PatchState::Unknown),
+            "{id}"
+        );
     }
     assert!(o.get_module("nope").is_none());
     assert_eq!(o.detect_module_by_id(&t.0, "nope"), None);
@@ -222,16 +287,71 @@ fn detector_on_empty_dir_reports_nothing_enabled() {
 #[test]
 fn exe_detector_sees_patched_bytes() {
     let t = Tmp::new();
-    let size = ALL_EXE_PATCHES.iter().map(|p| p.offset + p.original.len()).max().unwrap() + 16;
+    let size = ALL_EXE_PATCHES
+        .iter()
+        .map(|p| p.offset + p.original.len())
+        .max()
+        .unwrap()
+        + 16;
     let mut exe = vec![0x90u8; size];
-    for p in ALL_EXE_PATCHES { exe[p.offset..p.offset + p.original.len()].copy_from_slice(p.original); }
+    for p in ALL_EXE_PATCHES {
+        exe[p.offset..p.offset + p.original.len()].copy_from_slice(p.original);
+    }
     put(&t.0, "Against_Rome.exe", &exe);
     let mut original = PatchProfile::new();
     against_rome_modifier::detectors::ExeFeatureDetector::detect(&t.0, &mut original);
     assert!(!original.get_bool("FocusLoss") && !original.get_bool("UnitRecruit20"));
-    for p in ALL_EXE_PATCHES { exe[p.offset..p.offset + p.replacement.len()].copy_from_slice(p.replacement); }
+    for p in ALL_EXE_PATCHES {
+        exe[p.offset..p.offset + p.replacement.len()].copy_from_slice(p.replacement);
+    }
     put(&t.0, "Against_Rome.exe", &exe);
     let mut patched = PatchProfile::new();
     against_rome_modifier::detectors::ExeFeatureDetector::detect(&t.0, &mut patched);
-    assert!(patched.get_bool("FocusLoss"), "focus patch should be detected");
+    assert!(
+        patched.get_bool("FocusLoss"),
+        "focus patch should be detected"
+    );
+}
+
+#[test]
+fn install_feature_detector_clears_stale_to_english_and_detects_overlay() {
+    let t_missing = Tmp::new();
+    let mut profile = PatchProfile::new();
+    profile.set_bool("ToEnglish", true);
+    InstallFeatureDetector::detect(&t_missing.0, &mut profile);
+    assert!(
+        !profile.get_bool("ToEnglish"),
+        "detect on game dir without ToEng must clear stale ToEnglish flag"
+    );
+
+    let t_empty = Tmp::new();
+    fs::create_dir_all(t_empty.0.join("ToEng")).unwrap();
+    let mut profile_empty = PatchProfile::new();
+    profile_empty.set_bool("ToEnglish", true);
+    InstallFeatureDetector::detect(&t_empty.0, &mut profile_empty);
+    assert!(
+        !profile_empty.get_bool("ToEnglish"),
+        "detect on empty ToEng directory must clear stale ToEnglish flag"
+    );
+
+    let t_overlay = Tmp::new();
+    put(&t_overlay.0, "ToEng/TEXT/a.txt", b"english");
+    put(&t_overlay.0, "TEXT/a.txt", b"english");
+    let mut profile_overlay = PatchProfile::new();
+    InstallFeatureDetector::detect(&t_overlay.0, &mut profile_overlay);
+    assert!(
+        profile_overlay.get_bool("ToEnglish"),
+        "detect on game dir with matching ToEng overlay must set ToEnglish to true"
+    );
+
+    let t_mismatch = Tmp::new();
+    put(&t_mismatch.0, "ToEng/TEXT/a.txt", b"english");
+    put(&t_mismatch.0, "TEXT/a.txt", b"german");
+    let mut profile_mismatch = PatchProfile::new();
+    profile_mismatch.set_bool("ToEnglish", true);
+    InstallFeatureDetector::detect(&t_mismatch.0, &mut profile_mismatch);
+    assert!(
+        !profile_mismatch.get_bool("ToEnglish"),
+        "detect on game dir with mismatched ToEng overlay must clear stale ToEnglish flag"
+    );
 }

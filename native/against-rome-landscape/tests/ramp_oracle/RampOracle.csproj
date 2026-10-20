@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../../../src.MapEditor.Modules/Terrain/TerrainRampTool.cs" Link="TerrainRampTool.cs" />
+    <Compile Include="../../../../src.MapEditor.Modules/Terrain/TerrainSculptFilter.cs" Link="TerrainSculptFilter.cs" />
+    <Compile Include="../../../../src.MapEditor.Modules/Terrain/TerrainHeightWorkBuffer.cs" Link="TerrainHeightWorkBuffer.cs" />
+    <Compile Include="../../../../src.MapEditor.Modules/Terrain/TerrainHeightEditSession.cs" Link="TerrainHeightEditSession.cs" />
+  </ItemGroup>
+</Project>

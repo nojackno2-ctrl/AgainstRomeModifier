@@ -6,9 +6,29 @@ using Xunit.Abstractions;
 
 namespace AgainstRomeModifier.Tests;
 
+internal sealed class RequiresInstalledStarterKitFactAttribute : FactAttribute
+{
+    public RequiresInstalledStarterKitFactAttribute()
+    {
+        if (Environment.GetEnvironmentVariable("ARM_REQUIRE_INSTALLED_FIXTURES") == "1") return;
+        if (!InstalledStarterKitFixture.HasRequiredFixtures(out string reason))
+            Skip = reason;
+    }
+}
+
+internal sealed class RequiresInstalledStarterKitTheoryAttribute : TheoryAttribute
+{
+    public RequiresInstalledStarterKitTheoryAttribute()
+    {
+        if (Environment.GetEnvironmentVariable("ARM_REQUIRE_INSTALLED_FIXTURES") == "1") return;
+        if (!InstalledStarterKitFixture.HasRequiredFixtures(out string reason))
+            Skip = reason;
+    }
+}
+
 public sealed class StarterKitFamilyTests(ITestOutputHelper output)
 {
-    [Fact]
+    [RequiresInstalledStarterKitFact]
     public void Official_TUTOR_01_family_places_saves_reloads_all_members_pools_offsets_and_root_identity()
     {
         using var fixture = new InstalledStarterKitFixture();
@@ -62,7 +82,7 @@ public sealed class StarterKitFamilyTests(ITestOutputHelper output)
         fixture.AssertSourceUnchanged();
     }
 
-    [Theory]
+    [RequiresInstalledStarterKitTheory]
     [InlineData("identity")]
     [InlineData("uid")]
     [InlineData("capacity")]
@@ -100,7 +120,7 @@ public sealed class StarterKitFamilyTests(ITestOutputHelper output)
         fixture.AssertSourceUnchanged();
     }
 
-    [Fact]
+    [RequiresInstalledStarterKitFact]
     public void Family_budget_counts_hidden_child_at_14000_boundary_including_formation_banner()
     {
         using var fixture = new InstalledStarterKitFixture();
@@ -139,7 +159,40 @@ public sealed class StarterKitFamilyTests(ITestOutputHelper output)
 
 internal sealed class InstalledStarterKitFixture : IDisposable
 {
-    internal const string Installed = @"C:\Program Files (x86)\Against Rome";
+    internal const string DefaultInstalled = @"C:\Program Files (x86)\Against Rome";
+    internal static string Installed => ResolveInstalledPath();
+    internal static string ResolveInstalledPath()
+    {
+        string? custom = Environment.GetEnvironmentVariable("ARM_TEST_INSTALLED_PATH")
+            ?? Environment.GetEnvironmentVariable("ARM_GAME_PATH");
+        return !string.IsNullOrWhiteSpace(custom) ? custom : DefaultInstalled;
+    }
+
+    internal static bool HasRequiredFixtures(out string missingReason)
+    {
+        string root = Installed;
+        foreach (string id in new[] { "TUTOR_01", "KAMP_021_i" })
+        {
+            string source = Path.Combine(root, "MAPS", id, "DATA");
+            if (!Directory.Exists(source))
+            {
+                missingReason = $"Requires installed official DATA at '{source}'; proprietary game files are not in Git.";
+                return false;
+            }
+        }
+        foreach (string relative in new[] { @"CLAK\cl_scint.ini", @"DATA_MP\DEFAULTS\objdef.dau", @"DATA_MP\DEFAULTS\lightdef.dau" })
+        {
+            string file = Path.Combine(root, "SYSTEM", relative);
+            if (!File.Exists(file))
+            {
+                missingReason = $"Requires installed system file at '{file}'; proprietary game files are not in Git.";
+                return false;
+            }
+        }
+        missingReason = string.Empty;
+        return true;
+    }
+
     internal string Root { get; } = Path.Combine(Path.GetTempPath(), "ArmStarterOfficial_" + Guid.NewGuid().ToString("N"));
     internal string HouseMap => Path.Combine(Root, "MAPS", "TUTOR_01");
     internal string Map => Path.Combine(Root, "MAPS", "ENDL_005");
@@ -147,14 +200,15 @@ internal sealed class InstalledStarterKitFixture : IDisposable
 
     internal InstalledStarterKitFixture()
     {
+        string root = Installed;
         foreach (string id in new[] { "TUTOR_01", "KAMP_021_i" })
         {
-            string source = Path.Combine(Installed, "MAPS", id, "DATA");
+            string source = Path.Combine(root, "MAPS", id, "DATA");
             Assert.True(Directory.Exists(source), $"Installed official DATA required: {source}");
             foreach (string file in Directory.EnumerateFiles(source)) CopyOfficial(file, Path.Combine(Root, "MAPS", id, "DATA", Path.GetFileName(file)));
         }
         foreach (string relative in new[] { @"CLAK\cl_scint.ini", @"DATA_MP\DEFAULTS\objdef.dau", @"DATA_MP\DEFAULTS\lightdef.dau" })
-            CopyOfficial(Path.Combine(Installed, "SYSTEM", relative), Path.Combine(Root, "SYSTEM", relative));
+            CopyOfficial(Path.Combine(root, "SYSTEM", relative), Path.Combine(Root, "SYSTEM", relative));
         foreach (string file in Directory.EnumerateFiles(Path.Combine(HouseMap, "DATA")))
         { Directory.CreateDirectory(Path.Combine(Map, "DATA")); File.Copy(file, Path.Combine(Map, "DATA", Path.GetFileName(file))); }
         var blank = LevelObjectStore.Load(Map); blank.ResetForBlankMap();

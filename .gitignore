@@ -1,6 +1,10 @@
 # Visual Studio
 .vs/
 [Bb]in/
+!native/against-rome-textures/src/bin/
+!native/against-rome-textures/src/bin/*.rs
+!apps/against-rome-editor/src/bin/
+!apps/against-rome-editor/src/bin/*.rs
 [Oo]bj/
 dist/
 artifacts/
@@ -59,5 +63,6 @@ scratch/
 
 # Local runtime/build artifacts
 TEMP/
+**/target/
 native/against-rome-data/target/
 .claude/settings.local.json

@@ -195,15 +195,21 @@ fn team_dat_patch_sets_positive_population_and_restores() {
     assert!(text.contains("A,B,C,D,1600,F"));
     assert!(text.contains("A,B,C,D,0,F"));
 
-    let restored = TeamDatPatcher::get_patched_bytes(&original, &TeamDatOptions::default()).unwrap();
+    let restored =
+        TeamDatPatcher::get_patched_bytes(&original, &TeamDatOptions::default()).unwrap();
     assert_eq!(restored, original);
 }
 
 #[test]
 fn partgeo_projectile_arc_height_doubles_all_ysub() {
     let names = [
-        "Wurfspeer00", "Wurfaxt00", "Katapultstein00", "Katapultstein01",
-        "Pfeil00", "Spiess00", "Fackel",
+        "Wurfspeer00",
+        "Wurfaxt00",
+        "Katapultstein00",
+        "Katapultstein01",
+        "Pfeil00",
+        "Spiess00",
+        "Fackel",
     ];
     let mut rows = vec!["header1".to_string(), "header2".to_string()];
     for name in names {
@@ -214,7 +220,13 @@ fn partgeo_projectile_arc_height_doubles_all_ysub() {
     }
     let original = synthetic_pfil(&(rows.join("\r\n") + "\r\n"));
 
-    let patched = PartgeoPatcher::get_patched_bytes(&original, &PartgeoOptions { projectile_arc_height: true }).unwrap();
+    let patched = PartgeoPatcher::get_patched_bytes(
+        &original,
+        &PartgeoOptions {
+            projectile_arc_height: true,
+        },
+    )
+    .unwrap();
     let text = synthetic_text(&patched);
 
     for line in text.lines().skip(2) {
@@ -283,7 +295,13 @@ fn retail_baseline_files_roundtrip_and_patch_correctly() {
     let partgeo_path = baseline_root.join("SYSTEM/DATA_MP/DEFAULTS/partgeo.dau");
     if partgeo_path.exists() {
         let raw = fs::read(&partgeo_path).unwrap();
-        let patched = PartgeoPatcher::get_patched_bytes(&raw, &PartgeoOptions { projectile_arc_height: true }).unwrap();
+        let patched = PartgeoPatcher::get_patched_bytes(
+            &raw,
+            &PartgeoOptions {
+                projectile_arc_height: true,
+            },
+        )
+        .unwrap();
         assert!(is_pfil(&patched));
     }
 }

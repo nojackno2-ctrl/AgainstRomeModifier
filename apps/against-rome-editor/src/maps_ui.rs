@@ -2,9 +2,9 @@
 //! Replicates C# `MapSelectionForm.cs` and integrates `native/against-rome-maps`.
 
 use against_rome_maps::{
+    blank_builder::{BlankMapBuildResult, BlankMapBuilder, BlankMapSpec},
     catalog::{EndlessMapCatalog, EndlessMapInfo, GameMapCatalog, GameMapInfo},
     cloner::EndlessMapCloner,
-    custom_map::{CustomMapAccess, CustomMapEntry},
     deleter::EndlessMapDeleter,
     design_validator::{DesignIssueSeverity, MapDesignIssue, MapDesignValidationRequest, MapDesignValidator},
     diagnostics::{MapCheckObject, MapCheckSnapshot, MapDiagnostics, MapIssue, MapIssueSeverity},
@@ -13,6 +13,18 @@ use against_rome_maps::{
 use against_rome_scenario::model::{Event, ScenarioDocument, Spawn};
 use eframe::egui::{self, Color32, Vec2};
 use std::path::{Path, PathBuf};
+
+pub type GameFolderPicker = Box<dyn Fn() -> Option<PathBuf> + Send + Sync>;
+
+fn native_game_folder_dialog(current_path: &str) -> Option<PathBuf> {
+    let mut dialog = rfd::FileDialog::new()
+        .set_title("Select Against Rome Game Folder / 選擇 Against Rome 遊戲資料夾");
+    let current = Path::new(current_path.trim());
+    if current.is_dir() {
+        dialog = dialog.set_directory(current);
+    }
+    dialog.pick_folder()
+}
 
 /// Read-only view of the live editor state handed to the panel every frame.
 #[derive(Clone, Copy, Default)]
@@ -31,6 +43,7 @@ pub struct MapsContext<'a> {
 pub enum MapsTab {
     Catalog,
     ClonerDeleter,
+    NewBlankMap,
     DesignValidator,
     Diagnostics,
     Preflight,
@@ -42,10 +55,30 @@ pub enum MapsPendingAction {
     DiscardAndClose,
 }
 
+/// Typed intent to build and open a blank map.
+/// Execution is deferred to the owning app so dirty sessions can be guarded
+/// before any filesystem mutations take place.
+#[derive(Clone, Debug, PartialEq)]
+pub struct BlankMapBuildIntent {
+    pub game_path: PathBuf,
+    pub spec: BlankMapSpec,
+}
+
+impl BlankMapBuildIntent {
+    pub fn new(game_path: impl Into<PathBuf>, spec: BlankMapSpec) -> Self {
+        Self {
+            game_path: game_path.into(),
+            spec,
+        }
+    }
+}
+
 pub struct MapsUi {
     pub open: bool,
     pub current_tab: MapsTab,
     pub game_path_input: String,
+    /// Injectable for UI tests; the desktop default opens the native folder picker.
+    pub game_folder_picker: Option<GameFolderPicker>,
     pub endless_maps: Vec<EndlessMapInfo>,
     pub general_maps: Vec<GameMapInfo>,
     pub selected_map_id: Option<String>,
@@ -60,6 +93,18 @@ pub struct MapsUi {
     // Deleter confirmation
     pub delete_confirm_slot: Option<i32>,
 
+    // Blank Map Builder inputs
+    pub blank_source_slot: i32,
+    pub blank_target_slot: i32,
+    pub blank_target_name: String,
+    pub blank_height_override: u8,
+    pub blank_include_starter_kit: bool,
+    pub blank_starter_team: i32,
+    pub blank_starter_x: f32,
+    pub blank_starter_z: f32,
+    pub blank_briefing: String,
+    pub blank_last_result: Option<BlankMapBuildResult>,
+
     // Validation & Diagnostics results
     pub design_issues: Vec<MapDesignIssue>,
     pub diagnostic_issues: Vec<MapIssue>,
@@ -67,6 +112,7 @@ pub struct MapsUi {
 
     // Pending confirmation & dirty state
     pub pending_action: Option<MapsPendingAction>,
+    pub pending_build_intent: Option<BlankMapBuildIntent>,
     pub status_message: String,
     pub status_is_error: bool,
     pub dirty: bool,
@@ -78,6 +124,7 @@ impl Default for MapsUi {
             open: false,
             current_tab: MapsTab::Catalog,
             game_path_input: String::new(),
+            game_folder_picker: None,
             endless_maps: Vec::new(),
             general_maps: Vec::new(),
             selected_map_id: None,
@@ -87,10 +134,21 @@ impl Default for MapsUi {
             clone_target_slot: 5,
             clone_new_name: "Custom Map".to_string(),
             delete_confirm_slot: None,
+            blank_source_slot: 0,
+            blank_target_slot: 5,
+            blank_target_name: "New Blank Map".to_string(),
+            blank_height_override: 32,
+            blank_include_starter_kit: true,
+            blank_starter_team: 0,
+            blank_starter_x: 8192.0,
+            blank_starter_z: 8192.0,
+            blank_briefing: String::new(),
+            blank_last_result: None,
             design_issues: Vec::new(),
             diagnostic_issues: Vec::new(),
             preflight_result: None,
             pending_action: None,
+            pending_build_intent: None,
             status_message: "Ready.".to_string(),
             status_is_error: false,
             dirty: false,
@@ -110,6 +168,58 @@ impl MapsUi {
     pub fn clear_dirty(&mut self) {
         self.dirty = false;
         self.pending_action = None;
+    }
+
+    /// Takes any pending blank map build intent deferred for the owner application.
+    pub fn take_pending_build_intent(&mut self) -> Option<BlankMapBuildIntent> {
+        self.pending_build_intent.take()
+    }
+
+    /// Constructs a typed BlankMapBuildIntent from the current UI input fields without touching the filesystem.
+    pub fn blank_map_build_intent(&self) -> BlankMapBuildIntent {
+        let source_id = format!("ENDL_{:03}", self.blank_source_slot);
+        let mut spec = BlankMapSpec::new(source_id, self.blank_target_slot, &self.blank_target_name)
+            .with_height_override(self.blank_height_override);
+        if self.blank_include_starter_kit {
+            spec = spec.with_starter_kit(
+                self.blank_starter_team,
+                self.blank_starter_x,
+                self.blank_starter_z,
+            );
+        }
+        let trimmed_briefing = self.blank_briefing.trim();
+        if !trimmed_briefing.is_empty() {
+            spec = spec.with_briefing(trimmed_briefing);
+        }
+        let game_path = PathBuf::from(self.game_path_input.trim());
+        BlankMapBuildIntent::new(game_path, spec)
+    }
+
+    /// Requests building a blank map by queuing a typed build intent.
+    /// Does NOT perform any filesystem mutation; the owning app is responsible for
+    /// verifying clean/discard state before executing the build.
+    pub fn request_build_blank_map(&mut self) -> BlankMapBuildIntent {
+        let intent = self.blank_map_build_intent();
+        self.pending_build_intent = Some(intent.clone());
+        intent
+    }
+
+    /// Resets map-bound validation issues, diagnostic reports, preflight results, blank build reports,
+    /// and transient confirmation actions.
+    /// Preserves user preferences (open state, current tab, game_path_input, game_folder_picker,
+    /// cached endless/general maps catalog, cloner/blank tool parameters).
+    pub fn reset_session(&mut self, new_map_path: Option<&Path>) {
+        self.design_issues.clear();
+        self.diagnostic_issues.clear();
+        self.preflight_result = None;
+        self.blank_last_result = None;
+        self.delete_confirm_slot = None;
+        self.pending_action = None;
+        self.pending_build_intent = None;
+        self.dirty = false;
+        self.status_message.clear();
+        self.status_is_error = false;
+        self.selected_map_path = new_map_path.map(|p| p.to_path_buf());
     }
 
     pub fn request_close(&mut self) {
@@ -151,28 +261,82 @@ impl MapsUi {
         }
     }
 
+    /// Opens the native folder picker and refreshes catalogs after a valid selection.
+    /// Cancelling leaves both the current path and map lists untouched.
+    pub fn browse_game_folder(&mut self) {
+        let selected = if let Some(picker) = &self.game_folder_picker {
+            picker()
+        } else {
+            native_game_folder_dialog(&self.game_path_input)
+        };
+        let Some(path) = selected else { return };
+        if !path.is_dir() {
+            self.status_message = format!("Selected game folder does not exist: {}", path.display());
+            self.status_is_error = true;
+            return;
+        }
+        self.game_path_input = path.to_string_lossy().into_owned();
+        self.refresh_catalog();
+    }
+
+    /// C# `SuggestedCopyName`.
+    pub fn suggested_copy_name(map: &EndlessMapInfo) -> String {
+        format!("{} - Copy", map.display_name.as_deref().unwrap_or(&map.id()))
+    }
+
+    /// Selects an endless map; as in C# the clone source and suggested copy name follow the selection.
+    pub fn select_endless_map(&mut self, map: &EndlessMapInfo) {
+        self.selected_map_id = Some(map.id());
+        self.selected_map_path = Some(map.directory_path.clone());
+        self.selected_is_custom = map.is_custom;
+        self.clone_source_slot = map.slot;
+        self.clone_new_name = Self::suggested_copy_name(map);
+    }
+
+    fn clear_selection(&mut self) {
+        self.selected_map_id = None;
+        self.selected_map_path = None;
+        self.selected_is_custom = false;
+    }
+
+    /// Reports a committed disk operation; a catalog refresh failure (already in `status_message`)
+    /// is appended and keeps the error flag so the user sees it.
+    fn finish_disk_action(&mut self, success: String) {
+        if self.status_is_error {
+            self.status_message = format!("{success} Catalog refresh failed: {}", self.status_message);
+        } else {
+            self.status_message = success;
+        }
+    }
+
+    /// Clones into the next free custom slot (C# `GetNextFreeSlot`), trimming and requiring a name.
     pub fn execute_clone(&mut self) -> Result<EndlessMapInfo, String> {
         let game_path = Path::new(self.game_path_input.trim());
         if !game_path.exists() {
             return Err("Game path does not exist.".into());
         }
+        let name = self.clone_new_name.trim().to_string();
+        if name.is_empty() {
+            return Err("Map name must not be blank.".into());
+        }
 
-        let cloner = EndlessMapCloner::new();
-        let result = cloner.clone_map(
-            game_path,
-            self.clone_source_slot,
-            self.clone_target_slot,
-            &self.clone_new_name,
-        )?;
+        let slot = EndlessMapCatalog::new().get_next_free_slot(game_path)?;
+        self.clone_target_slot = slot;
+        let result = EndlessMapCloner::new().clone_map(game_path, self.clone_source_slot, slot, &name)?;
 
-        self.dirty = true;
+        // The clone is already committed on disk (transactional, rolled back on failure); it does not
+        // leave unsaved in-memory map content, so it must not mark the session dirty or the safe-save
+        // transaction would reject saving the open map.
+        self.status_is_error = false;
         self.refresh_catalog();
-        self.status_message = format!(
+        self.selected_map_id = Some(result.id());
+        self.selected_map_path = Some(result.directory_path.clone());
+        self.selected_is_custom = result.is_custom;
+        self.finish_disk_action(format!(
             "Cloned map to {} successfully! ({})",
             result.id(),
             result.display_name.as_deref().unwrap_or("Untitled")
-        );
-        self.status_is_error = false;
+        ));
         Ok(result)
     }
 
@@ -185,12 +349,36 @@ impl MapsUi {
         let deleter = EndlessMapDeleter::new();
         deleter.delete(game_path, slot)?;
 
-        self.dirty = true;
+        // Deletion is committed on disk; nothing unsaved remains, so the session stays clean.
         self.delete_confirm_slot = None;
-        self.refresh_catalog();
-        self.status_message = format!("Successfully deleted custom map ENDL_{:03}.", slot);
+        if self.selected_map_id.as_deref() == Some(&format!("ENDL_{:03}", slot)) {
+            self.clear_selection();
+        }
         self.status_is_error = false;
+        self.refresh_catalog();
+        self.finish_disk_action(format!("Successfully deleted custom map ENDL_{:03}.", slot));
         Ok(())
+    }
+
+    /// Builds a new blank endless map using BlankMapBuilder and BlankMapSpec.
+    pub fn build_blank_map(&mut self) -> Result<BlankMapBuildResult, String> {
+        let intent = self.blank_map_build_intent();
+        if !intent.game_path.is_dir() {
+            return Err(format!(
+                "Game root path is invalid or does not exist: {}",
+                intent.game_path.display()
+            ));
+        }
+        let result = BlankMapBuilder::build_with_spec(&intent.game_path, &intent.spec)?;
+        result.verify_disk_artifacts(&intent.game_path)?;
+        self.refresh_catalog();
+        self.blank_last_result = Some(result.clone());
+        self.status_message = format!(
+            "Blank map ENDL_{:03} created and verified successfully!",
+            intent.spec.target_slot
+        );
+        self.status_is_error = false;
+        Ok(result)
     }
 
     pub fn run_design_validator(
@@ -288,6 +476,7 @@ impl MapsUi {
                 ui.horizontal(|ui| {
                     ui.selectable_value(&mut self.current_tab, MapsTab::Catalog, "Map Catalog");
                     ui.selectable_value(&mut self.current_tab, MapsTab::ClonerDeleter, "Clone / Delete");
+                    ui.selectable_value(&mut self.current_tab, MapsTab::NewBlankMap, "New Blank Map (BlankMapBuilder)");
                     ui.selectable_value(&mut self.current_tab, MapsTab::DesignValidator, "Design Validator");
                     ui.selectable_value(&mut self.current_tab, MapsTab::Diagnostics, "Diagnostics");
                     ui.selectable_value(&mut self.current_tab, MapsTab::Preflight, "Save Preflight");
@@ -308,6 +497,7 @@ impl MapsUi {
                 match self.current_tab {
                     MapsTab::Catalog => self.render_catalog_tab(ui, &mut on_load_requested),
                     MapsTab::ClonerDeleter => self.render_cloner_tab(ui),
+                    MapsTab::NewBlankMap => self.render_blank_map_tab(ui),
                     MapsTab::DesignValidator => self.render_validator_tab(ui, cx),
                     MapsTab::Diagnostics => self.render_diagnostics_tab(ui, cx),
                     MapsTab::Preflight => self.render_preflight_tab(ui, cx),
@@ -350,7 +540,10 @@ impl MapsUi {
             if confirm {
                 match action_copy {
                     MapsPendingAction::DeleteCustom(slot) => {
-                        let _ = self.execute_delete(slot);
+                        if let Err(e) = self.execute_delete(slot) {
+                            self.status_message = format!("Delete failed: {e}");
+                            self.status_is_error = true;
+                        }
                     }
                     MapsPendingAction::DiscardAndClose => {
                         self.clear_dirty();
@@ -368,6 +561,9 @@ impl MapsUi {
         ui.horizontal(|ui| {
             ui.label("Game Root Path:");
             ui.text_edit_singleline(&mut self.game_path_input);
+            if ui.button("Browse... / 瀏覽").clicked() {
+                self.browse_game_folder();
+            }
             if ui.button("Refresh Catalog").clicked() {
                 self.refresh_catalog();
             }
@@ -380,7 +576,8 @@ impl MapsUi {
             if self.endless_maps.is_empty() {
                 ui.label("No endless maps found or catalog not yet scanned.");
             } else {
-                for map in &self.endless_maps {
+                let maps = self.endless_maps.clone();
+                for map in &maps {
                     let is_selected = self.selected_map_id.as_deref() == Some(&map.id());
                     let label = format!(
                         "[{}] {} ({}) - {}",
@@ -390,10 +587,7 @@ impl MapsUi {
                         map.directory_path.display()
                     );
                     if ui.selectable_label(is_selected, label).clicked() {
-                        self.selected_map_id = Some(map.id());
-                        self.selected_map_path = Some(map.directory_path.clone());
-                        self.selected_is_custom = map.is_custom;
-                        self.clone_source_slot = map.slot;
+                        self.select_endless_map(map);
                     }
                 }
             }
@@ -446,8 +640,7 @@ impl MapsUi {
         });
 
         ui.horizontal(|ui| {
-            ui.label("Target Slot (5..=999):");
-            ui.add(egui::DragValue::new(&mut self.clone_target_slot).clamp_range(5..=999));
+            ui.label("Target Slot: next free custom slot (assigned automatically, like the C# editor)");
         });
 
         ui.horizontal(|ui| {
@@ -485,6 +678,104 @@ impl MapsUi {
             }
         } else {
             ui.label("Select a custom map in the catalog to delete.");
+        }
+    }
+
+    fn render_blank_map_tab(&mut self, ui: &mut egui::Ui) {
+        ui.heading("Blank Map Builder (規格驅動新地圖建置)");
+        ui.label("根據規格建立全新平坦自訂地圖 (ENDL_005..ENDL_999)。自動繼承資產、重設池、清理快取並註冊清單。");
+
+        ui.add_space(6.0);
+        ui.horizontal(|ui| {
+            ui.label("遊戲目錄路徑 (Game Root):");
+            ui.text_edit_singleline(&mut self.game_path_input);
+            if ui.button("瀏覽遊戲資料夾 (Browse...)").clicked() {
+                self.browse_game_folder();
+            }
+        });
+
+        ui.horizontal(|ui| {
+            ui.label("來源模板槽位 (Source Slot):");
+            ui.add(egui::DragValue::new(&mut self.blank_source_slot).clamp_range(0..=999).prefix("ENDL_"));
+            ui.label("(預設 ENDL_000 零售模板)");
+        });
+
+        ui.horizontal(|ui| {
+            ui.label("目標地圖槽位 (Target Slot):");
+            ui.add(egui::DragValue::new(&mut self.blank_target_slot).clamp_range(5..=999).prefix("ENDL_"));
+            ui.label("(自訂地圖範圍 5..999)");
+        });
+
+        ui.horizontal(|ui| {
+            ui.label("新地圖名稱 (Map Name):");
+            ui.text_edit_singleline(&mut self.blank_target_name);
+        });
+
+        ui.horizontal(|ui| {
+            ui.label("基礎地形高度 (Base Height):");
+            ui.add(egui::Slider::new(&mut self.blank_height_override, 0..=255));
+        });
+
+        ui.separator();
+        ui.checkbox(&mut self.blank_include_starter_kit, "配置起始聚落 (Starter Kit: 主城與初始部隊)");
+        if self.blank_include_starter_kit {
+            ui.horizontal(|ui| {
+                ui.label("起始陣營 (Team 0..7):");
+                ui.add(egui::DragValue::new(&mut self.blank_starter_team).clamp_range(0..=7));
+            });
+            ui.horizontal(|ui| {
+                ui.label("聚落中心位置 X, Z (0..16383):");
+                ui.add(egui::DragValue::new(&mut self.blank_starter_x).prefix("X: "));
+                ui.add(egui::DragValue::new(&mut self.blank_starter_z).prefix("Z: "));
+            });
+        }
+
+        ui.horizontal(|ui| {
+            ui.label("任務簡報說明 (Briefing, 選填):");
+            ui.text_edit_singleline(&mut self.blank_briefing);
+        });
+
+        ui.separator();
+        ui.horizontal(|ui| {
+            if ui.button("驗證規格 (Validate Spec)").clicked() {
+                let game_path = Path::new(self.game_path_input.trim());
+                let source_id = format!("ENDL_{:03}", self.blank_source_slot);
+                let mut spec = BlankMapSpec::new(source_id, self.blank_target_slot, &self.blank_target_name)
+                    .with_height_override(self.blank_height_override);
+                if self.blank_include_starter_kit {
+                    spec = spec.with_starter_kit(self.blank_starter_team, self.blank_starter_x, self.blank_starter_z);
+                }
+                if !self.blank_briefing.trim().is_empty() {
+                    spec = spec.with_briefing(self.blank_briefing.trim());
+                }
+                match spec.validate(game_path) {
+                    Ok(()) => {
+                        self.status_message = "規格驗證通過，隨時可建置地圖。".to_string();
+                        self.status_is_error = false;
+                    }
+                    Err(e) => {
+                        self.status_message = format!("規格驗證失敗: {e}");
+                        self.status_is_error = true;
+                    }
+                }
+            }
+
+            if ui.button("建立並載入空白地圖 (Build Blank Map & Open)").clicked() {
+                let intent = self.request_build_blank_map();
+                self.status_message = format!(
+                    "已提出空白地圖建置請求 (ENDL_{:03})，等待確認...",
+                    intent.spec.target_slot
+                );
+                self.status_is_error = false;
+            }
+        });
+
+        if let Some(res) = &self.blank_last_result {
+            ui.separator();
+            ui.colored_label(Color32::LIGHT_GREEN, format!("最近建置地圖: {} ({})", res.info.id(), res.info.display_name.as_deref().unwrap_or("")));
+            ui.label(format!("路徑: {}", res.map_path.display()));
+            ui.label(format!("套用地形高度: {} | 代表性材質: {}", res.applied_height, res.representative_texture));
+            ui.label(format!("起始聚落配置: {} (生成物件數: {})", res.starter_kit_applied, res.starter_spawns_count));
         }
     }
 
@@ -586,6 +877,7 @@ impl MapsUi {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 
     #[test]
     fn test_maps_ui_initial_state_and_dirty_lifecycle() {
@@ -602,6 +894,42 @@ mod tests {
         ui.clear_dirty();
         assert!(!ui.is_dirty());
         assert!(ui.pending_action.is_none());
+    }
+
+    #[test]
+    fn native_game_folder_picker_updates_path_and_refreshes_catalog() {
+        let mut ui = MapsUi::default();
+        let selected_path = std::env::temp_dir();
+        let selected_by_picker = selected_path.clone();
+        let was_called = Arc::new(AtomicBool::new(false));
+        let called = was_called.clone();
+        ui.game_folder_picker = Some(Box::new(move || {
+            called.store(true, Ordering::SeqCst);
+            Some(selected_by_picker.clone())
+        }));
+
+        ui.browse_game_folder();
+
+        assert!(was_called.load(Ordering::SeqCst));
+        assert_eq!(PathBuf::from(&ui.game_path_input), selected_path);
+        assert_ne!(ui.status_message, "Ready.", "selecting a folder refreshes the map catalogs");
+    }
+
+    #[test]
+    fn game_folder_picker_cancel_and_invalid_selection_preserve_current_path() {
+        let mut ui = MapsUi::default();
+        ui.game_path_input = "existing path".to_string();
+        ui.game_folder_picker = Some(Box::new(|| None));
+        ui.browse_game_folder();
+        assert_eq!(ui.game_path_input, "existing path");
+        assert_eq!(ui.status_message, "Ready.");
+
+        let mut ui = MapsUi::default();
+        ui.game_path_input = "existing path".to_string();
+        ui.game_folder_picker = Some(Box::new(|| Some(PathBuf::from("missing-game-folder-12345"))));
+        ui.browse_game_folder();
+        assert_eq!(ui.game_path_input, "existing path");
+        assert!(ui.status_is_error);
     }
 
     #[test]
@@ -632,5 +960,164 @@ mod tests {
         let aliases = vec!["GER_INF00".to_string()];
         ui.run_preflight(&scenario, &aliases);
         assert!(ui.preflight_result.as_ref().unwrap().is_ok());
+    }
+
+    fn info(slot: i32, name: Option<&str>) -> EndlessMapInfo {
+        EndlessMapInfo {
+            slot,
+            directory_path: PathBuf::from(format!("MAPS/ENDL_{slot:03}")),
+            is_custom: slot >= 5,
+            display_name: name.map(str::to_string),
+        }
+    }
+
+    #[test]
+    fn test_maps_ui_selection_suggests_copy_name_and_source() {
+        let mut ui = MapsUi::default();
+        ui.select_endless_map(&info(7, Some("Nordic")));
+        assert_eq!(ui.clone_source_slot, 7);
+        assert_eq!(ui.clone_new_name, "Nordic - Copy");
+        assert!(ui.selected_is_custom);
+        ui.select_endless_map(&info(1, None));
+        assert_eq!(ui.clone_new_name, "ENDL_001 - Copy");
+    }
+
+    #[test]
+    fn test_maps_ui_clone_rejects_blank_name_and_delete_clears_selection() {
+        let mut ui = MapsUi::default();
+        ui.game_path_input = std::env::temp_dir().to_string_lossy().into_owned();
+        ui.clone_new_name = "   ".to_string();
+        assert!(ui.execute_clone().unwrap_err().contains("blank"));
+
+        ui.select_endless_map(&info(9, Some("X")));
+        ui.clear_selection();
+        assert!(ui.selected_map_id.is_none() && ui.selected_map_path.is_none() && !ui.selected_is_custom);
+    }
+
+    #[test]
+    fn test_maps_ui_blank_map_tab_and_spec_validation() {
+        let mut ui = MapsUi::default();
+        ui.current_tab = MapsTab::NewBlankMap;
+        ui.blank_target_slot = 77;
+        ui.blank_target_name = "Nordic Plains".to_string();
+        ui.blank_height_override = 45;
+
+        // Spec validation on non-existent path properly fails
+        let non_existent = Path::new("non_existent_arm_game_root_12345");
+        let spec = BlankMapSpec::new("ENDL_000", ui.blank_target_slot, &ui.blank_target_name)
+            .with_height_override(ui.blank_height_override);
+        assert!(spec.validate(non_existent).is_err());
+    }
+
+    #[test]
+    fn test_maps_ui_request_build_blank_map_creates_intent_without_filesystem_mutation() {
+        let temp_dir = std::env::temp_dir().join(format!("arm_maps_ui_intent_test_{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&temp_dir).unwrap();
+
+        let mut ui = MapsUi::default();
+        ui.game_path_input = temp_dir.to_string_lossy().to_string();
+        ui.blank_source_slot = 0;
+        ui.blank_target_slot = 88;
+        ui.blank_target_name = "Deferred Map".to_string();
+        ui.blank_height_override = 50;
+        ui.blank_include_starter_kit = true;
+        ui.blank_starter_team = 2;
+        ui.blank_starter_x = 5000.0;
+        ui.blank_starter_z = 5000.0;
+        ui.blank_briefing = "Deferred mission briefing".to_string();
+
+        assert!(ui.pending_build_intent.is_none());
+        assert!(!ui.is_dirty());
+
+        let intent = ui.request_build_blank_map();
+        assert_eq!(intent.game_path, temp_dir);
+        assert_eq!(intent.spec.source_map_id, "ENDL_000");
+        assert_eq!(intent.spec.target_slot, 88);
+        assert_eq!(intent.spec.target_name, "Deferred Map");
+        assert_eq!(intent.spec.height_override, Some(50));
+        assert!(intent.spec.starter_kit.is_some());
+        assert_eq!(intent.spec.briefing_text.as_deref(), Some("Deferred mission briefing"));
+
+        // Intent is staged in UI without mutating disk
+        assert_eq!(ui.pending_build_intent, Some(intent.clone()));
+        assert!(!temp_dir.join("MAPS").exists(), "no MAPS directory created on request");
+        assert!(!temp_dir.join("MAPS/ENDL_088").exists(), "no target directory created on request");
+        assert_eq!(std::fs::read_dir(&temp_dir).unwrap().count(), 0, "directory remains empty");
+        assert!(!ui.is_dirty(), "intent staging must not falsely dirty clean session");
+
+        // take_pending_build_intent clears staging
+        let taken = ui.take_pending_build_intent();
+        assert_eq!(taken, Some(intent));
+        assert!(ui.pending_build_intent.is_none());
+
+        // reset_session clears pending intent
+        ui.request_build_blank_map();
+        assert!(ui.pending_build_intent.is_some());
+        ui.reset_session(None);
+        assert!(ui.pending_build_intent.is_none());
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    fn disk_fixture() -> PathBuf {
+        let root = std::env::temp_dir().join(format!("arm_maps_ui_disk_{}", uuid::Uuid::new_v4()));
+        let src = root.join("MAPS").join("ENDL_001");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(src.join("level.put"), "var:map_name =\"Template\";
+").unwrap();
+        std::fs::write(src.join("briefing.put"), "var:briefing_titel_1 =\"Brief\";
+").unwrap();
+        std::fs::write(src.join("map.sdl"), "[settlement]
+refpos=100.0,0.0,100.0
+").unwrap();
+        std::fs::write(src.join("boden.txt"), "[Dimension]
+64
+
+[Texturen]
+").unwrap();
+        std::fs::write(src.join("minimap.bmp"), "BM").unwrap();
+        root
+    }
+
+    #[test]
+    fn test_maps_ui_clone_and_delete_do_not_mark_session_dirty() {
+        let root = disk_fixture();
+        let mut ui = MapsUi::default();
+        ui.game_path_input = root.to_string_lossy().into_owned();
+        ui.clone_source_slot = 1;
+        ui.clone_new_name = "Disk Copy".to_string();
+
+        let cloned = ui.execute_clone().unwrap();
+        assert!(!ui.is_dirty(), "committed clone must not block safe save");
+        assert!(!ui.status_is_error);
+        assert!(cloned.directory_path.exists());
+
+        ui.execute_delete(cloned.slot).unwrap();
+        assert!(!ui.is_dirty(), "committed delete must not block safe save");
+        assert!(!cloned.directory_path.exists());
+        assert!(ui.status_message.contains("deleted"));
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn test_maps_ui_failed_delete_stays_clean_and_error_is_reportable() {
+        let root = disk_fixture();
+        let mut ui = MapsUi::default();
+        ui.game_path_input = root.to_string_lossy().into_owned();
+        assert!(ui.execute_delete(1).is_err(), "retail slot must be refused");
+        assert!(!ui.is_dirty());
+        assert!(root.join("MAPS").join("ENDL_001").exists());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn test_maps_ui_finish_disk_action_surfaces_refresh_failure() {
+        let mut ui = MapsUi::default();
+        ui.status_message = "Failed to list endless maps: boom".into();
+        ui.status_is_error = true;
+        ui.finish_disk_action("Cloned.".into());
+        assert!(ui.status_is_error);
+        assert!(ui.status_message.starts_with("Cloned.") && ui.status_message.contains("boom"));
     }
 }

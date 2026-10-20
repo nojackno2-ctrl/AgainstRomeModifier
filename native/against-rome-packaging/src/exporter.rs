@@ -94,6 +94,53 @@ pub struct ModInstallResult {
     pub preflight_report: Option<MapPreflightReport>,
 }
 
+/// Reads an entry whose decompressed length must equal the size its header declared.
+/// A header that under-reports (decompression bomb) is rejected after at most one extra byte.
+fn read_exact_declared(reader: &mut impl Read, declared: u64) -> Result<Vec<u8>> {
+    let mut buf = Vec::new();
+    reader.take(declared.saturating_add(1)).read_to_end(&mut buf)?;
+    if buf.len() as u64 != declared {
+        return Err(Error::new(ErrorKind::InvalidData, "ZIP entry size does not match its header."));
+    }
+    Ok(buf)
+}
+
+fn hex_sha256(bytes: &[u8]) -> String {
+    against_rome_data::sha256::sha256(bytes)
+        .iter()
+        .map(|b| format!("{:02X}", b))
+        .collect()
+}
+
+pub(crate) fn remove_dir_all_force(path: &Path) -> Result<()> {
+    if !path.exists() {
+        return Ok(());
+    }
+    if let Err(_) = fs::remove_dir_all(path) {
+        fn make_writable_and_remove(p: &Path) -> Result<()> {
+            if let Ok(m) = fs::symlink_metadata(p) {
+                let mut perm = m.permissions();
+                if perm.readonly() {
+                    perm.set_readonly(false);
+                    let _ = fs::set_permissions(p, perm);
+                }
+            }
+            if p.is_dir() {
+                for entry in fs::read_dir(p)? {
+                    let entry = entry?;
+                    make_writable_and_remove(&entry.path())?;
+                }
+                fs::remove_dir(p)?;
+            } else {
+                fs::remove_file(p)?;
+            }
+            Ok(())
+        }
+        make_writable_and_remove(path)?;
+    }
+    Ok(())
+}
+
 pub struct ModBundleExporter;
 
 impl ModBundleExporter {
@@ -106,6 +153,7 @@ impl ModBundleExporter {
         let options = options.unwrap_or(&default_opt);
 
         reject_links(map_directory)?;
+        reject_links(output_zip_path)?;
 
         // 步驟 1：執行發布前預檢驗收
         let preflight = MapExportPreflightChecker::check(map_directory, None, None)?;
@@ -202,8 +250,11 @@ impl ModBundleExporter {
             let files_to_include: Vec<MapPackageFileEntry> = manifest.files.clone();
             for file_entry in files_to_include {
                 let source_path = map_directory.join(&file_entry.relative_path);
-                if !source_path.exists() {
-                    continue;
+                if !source_path.is_file() {
+                    return Err(Error::new(
+                        ErrorKind::NotFound,
+                        format!("Listed payload disappeared during export: {}", file_entry.relative_path),
+                    ));
                 }
 
                 let zip_entry_name = format!("{}{}", MAP_SUBDIRECTORY_IN_ZIP, file_entry.relative_path);
@@ -212,6 +263,14 @@ impl ModBundleExporter {
                 let mut src = File::open(&source_path)?;
                 let mut buf = Vec::new();
                 src.read_to_end(&mut buf)?;
+                if buf.len() as i64 != file_entry.size_bytes
+                    || !hex_sha256(&buf).eq_ignore_ascii_case(&file_entry.sha256)
+                {
+                    return Err(Error::new(
+                        ErrorKind::InvalidData,
+                        format!("Payload changed during export: {}", file_entry.relative_path),
+                    ));
+                }
                 zip.write_all(&buf)?;
 
                 file_count += 1;
@@ -233,9 +292,20 @@ impl ModBundleExporter {
         }
 
         if output_zip_path.exists() {
-            let _ = fs::remove_file(output_zip_path);
+            let backup_zip_path = output_zip_path.with_extension(format!("bak_{}.zip", Uuid::new_v4().simple()));
+            fs::rename(output_zip_path, &backup_zip_path)?;
+            if let Err(rename_err) = fs::rename(&temp_zip_path, output_zip_path) {
+                let _ = fs::rename(&backup_zip_path, output_zip_path);
+                let _ = fs::remove_file(&temp_zip_path);
+                return Err(rename_err);
+            }
+            let _ = fs::remove_file(&backup_zip_path);
+        } else {
+            if let Err(rename_err) = fs::rename(&temp_zip_path, output_zip_path) {
+                let _ = fs::remove_file(&temp_zip_path);
+                return Err(rename_err);
+            }
         }
-        fs::rename(&temp_zip_path, output_zip_path)?;
 
         Ok(ModExportResult {
             success: true,
@@ -247,31 +317,19 @@ impl ModBundleExporter {
         })
     }
 
-    pub fn install_from_zip(
-        zip_path: &Path,
-        game_path: &Path,
-        policy: Option<&ModInstallPolicy>,
-    ) -> Result<ModInstallResult> {
-        if !zip_path.exists() || !zip_path.is_file() {
-            return Err(Error::new(
-                ErrorKind::NotFound,
-                format!("找不到模組 ZIP 檔案: {}", zip_path.display()),
-            ));
-        }
-
-        let maps_root = game_path.join("MAPS");
-        fs::create_dir_all(&maps_root)?;
-
-        let default_policy = ModInstallPolicy::default();
-        let policy = policy.unwrap_or(&default_policy);
-
-        let zip_file = File::open(zip_path)?;
-        let mut archive = ZipArchive::new(zip_file)?;
-
+    /// Validates every archive-level invariant (paths, manifest, inventory, size limits)
+    /// without extracting anything. Shared by install and verify.
+    fn validate_package(archive: &mut ZipArchive<File>) -> Result<MapPackageManifest> {
         let mut entry_names = HashSet::new();
 
         for i in 0..archive.len() {
             let file = archive.by_index(i)?;
+            if let Some(mode) = file.unix_mode() {
+                let kind = mode & 0o170000;
+                if kind != 0 && kind != 0o100000 && kind != 0o040000 {
+                    return Err(Error::new(ErrorKind::InvalidData, "ZIP symbolic/special entry rejected."));
+                }
+            }
             let name = file.name().to_string();
             let lower_name = name.to_ascii_lowercase();
 
@@ -283,7 +341,15 @@ impl ModBundleExporter {
                 if file.size() > 1024 * 1024 {
                     return Err(Error::new(ErrorKind::InvalidData, "Missing or oversized manifest.json."));
                 }
-            } else if name == "README.txt" || name == "thumbnail.bmp" {
+            } else if name == "README.txt" {
+                if file.size() > 1024 * 1024 {
+                    return Err(Error::new(ErrorKind::InvalidData, "Oversized README.txt."));
+                }
+                continue;
+            } else if name == "thumbnail.bmp" {
+                if file.size() > 16 * 1024 * 1024 {
+                    return Err(Error::new(ErrorKind::InvalidData, "Oversized thumbnail.bmp."));
+                }
                 continue;
             } else if let Some(stripped) = name.strip_prefix(MAP_SUBDIRECTORY_IN_ZIP) {
                 if !is_payload_path(stripped) {
@@ -297,9 +363,11 @@ impl ModBundleExporter {
         let mut manifest_file = archive
             .by_name(MANIFEST_FILE_NAME)
             .map_err(|_| Error::new(ErrorKind::InvalidData, "Missing or oversized manifest.json."))?;
-        let mut m_str = String::new();
-        manifest_file.read_to_string(&mut m_str)?;
+        let declared = manifest_file.size();
+        let m_bytes = read_exact_declared(&mut manifest_file, declared)?;
         drop(manifest_file);
+        let m_str = String::from_utf8(m_bytes)
+            .map_err(|_| Error::new(ErrorKind::InvalidData, "manifest.json is not UTF-8."))?;
 
         let manifest = MapPackageManifest::from_json(&m_str)?;
         if manifest.schema_version != CURRENT_SCHEMA_VERSION
@@ -343,6 +411,68 @@ impl ModBundleExporter {
             return Err(Error::new(ErrorKind::InvalidData, "Payload inventory mismatch or size limit exceeded."));
         }
 
+        Ok(manifest)
+    }
+
+    /// Read-only package check: archive invariants plus streamed SHA-256 of every payload.
+    /// Never touches a game directory.
+    pub fn verify_zip(zip_path: &Path) -> Result<MapPackageManifest> {
+        reject_links(zip_path)?;
+        let mut archive = ZipArchive::new(File::open(zip_path)?)?;
+        let manifest = Self::validate_package(&mut archive)?;
+        for file_entry in &manifest.files {
+            let name = format!("{}{}", MAP_SUBDIRECTORY_IN_ZIP, file_entry.relative_path);
+            let mut entry = archive.by_name(&name)?;
+            let declared = entry.size();
+            let buf = read_exact_declared(&mut entry, declared)?;
+            if !hex_sha256(&buf).eq_ignore_ascii_case(&file_entry.sha256) {
+                return Err(Error::new(
+                    ErrorKind::InvalidData,
+                    format!("Payload checksum mismatch: {}", file_entry.relative_path),
+                ));
+            }
+        }
+        for opt_name in &["README.txt", "thumbnail.bmp"] {
+            if let Ok(mut entry) = archive.by_name(opt_name) {
+                let declared = entry.size();
+                read_exact_declared(&mut entry, declared)?;
+            }
+        }
+        Ok(manifest)
+    }
+
+    pub fn install_from_zip(
+        zip_path: &Path,
+        game_path: &Path,
+        policy: Option<&ModInstallPolicy>,
+    ) -> Result<ModInstallResult> {
+        reject_links(zip_path)?;
+        if !zip_path.exists() || !zip_path.is_file() {
+            return Err(Error::new(
+                ErrorKind::NotFound,
+                format!("找不到模組 ZIP 檔案: {}", zip_path.display()),
+            ));
+        }
+
+        // Parity with EndlessMapCatalog.ValidateGamePath: never conjure a game directory.
+        if game_path.as_os_str().is_empty() || !game_path.is_dir() {
+            return Err(Error::new(
+                ErrorKind::NotFound,
+                format!("找不到遊戲路徑: {}", game_path.display()),
+            ));
+        }
+        reject_links(game_path)?;
+        let maps_root = game_path.join("MAPS");
+        reject_links(&maps_root)?;
+        fs::create_dir_all(&maps_root)?;
+        reject_links(&maps_root)?;
+
+        let default_policy = ModInstallPolicy::default();
+        let policy = policy.unwrap_or(&default_policy);
+
+        let mut archive = ZipArchive::new(File::open(zip_path)?)?;
+        let manifest = Self::validate_package(&mut archive)?;
+
         let source_slot = manifest.compatibility.preferred_slot;
         if let Some(target) = policy.target_slot {
             if target < MIN_CUSTOM_SLOT {
@@ -365,7 +495,7 @@ impl ModBundleExporter {
 
         reject_links(&maps_root)?;
 
-        let next_free = Self::allocate_next_free_slot(game_path);
+        let next_free = Self::allocate_next_free_slot(game_path)?;
         let target_slot = match policy.collision_strategy {
             SlotCollisionStrategy::AutoAllocateNextFree => next_free,
             _ => policy.target_slot.unwrap_or(next_free),
@@ -416,15 +546,14 @@ impl ModBundleExporter {
                     fs::create_dir_all(p)?;
                 }
 
-                let mut out_file = File::create(&dest_file)?;
-                let mut buf = Vec::new();
-                zip_entry.read_to_end(&mut buf)?;
+                let declared = zip_entry.size();
+                let buf = read_exact_declared(&mut zip_entry, declared)?;
+                let mut out_file = fs::OpenOptions::new().write(true).create_new(true).open(&dest_file)?;
                 out_file.write_all(&buf)?;
+                out_file.sync_all()?;
                 drop(out_file);
 
-                let hash = against_rome_data::sha256::sha256(&buf);
-                let hex_hash: String = hash.iter().map(|b| format!("{:02X}", b)).collect();
-                if !hex_hash.eq_ignore_ascii_case(&file_entry.sha256) {
+                if !hex_sha256(&buf).eq_ignore_ascii_case(&file_entry.sha256) {
                     return Err(Error::new(
                         ErrorKind::InvalidData,
                         format!("Payload checksum mismatch: {}", file_entry.relative_path),
@@ -468,7 +597,13 @@ impl ModBundleExporter {
 
             let reg_json = serde_json::to_string_pretty(&custom_entries)
                 .map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
-            fs::write(&registry_path, reg_json)?;
+            // Stage then rename so a crash or full disk never leaves a truncated registry.
+            let registry_tmp = maps_root.join(format!(".arm_registry_{}.tmp", Uuid::new_v4().simple()));
+            let published = fs::write(&registry_tmp, reg_json).and_then(|_| fs::rename(&registry_tmp, &registry_path));
+            if let Err(e) = published {
+                let _ = fs::remove_file(&registry_tmp);
+                return Err(e);
+            }
 
             Ok(ModInstallResult {
                 installed_slot: target_slot,
@@ -483,31 +618,36 @@ impl ModBundleExporter {
         match execute {
             Ok(res) => {
                 if temp_staging.exists() {
-                    let _ = fs::remove_dir_all(&temp_staging);
+                    let _ = remove_dir_all_force(&temp_staging);
                 }
                 Ok(res)
             }
             Err(e) => {
                 if moved && target_dir.exists() {
-                    let _ = fs::remove_dir_all(&target_dir);
+                    let _ = remove_dir_all_force(&target_dir);
                 }
                 if temp_staging.exists() {
-                    let _ = fs::remove_dir_all(&temp_staging);
+                    let _ = remove_dir_all_force(&temp_staging);
                 }
                 Err(e)
             }
         }
     }
 
-    pub fn allocate_next_free_slot(game_path: &Path) -> i32 {
+    /// Parity with C# `EndlessMapCatalog.GetNextFreeSlot`: a full ENDL_005..ENDL_999 range is an
+    /// error, never a silent fallback to the last (occupied) slot.
+    pub fn allocate_next_free_slot(game_path: &Path) -> Result<i32> {
         let maps_root = game_path.join("MAPS");
         for slot in MIN_CUSTOM_SLOT..=MAX_CUSTOM_SLOT {
             let slot_dir = maps_root.join(format!("ENDL_{:03}", slot));
             if !slot_dir.exists() {
-                return slot;
+                return Ok(slot);
             }
         }
-        MAX_CUSTOM_SLOT
+        Err(Error::new(
+            ErrorKind::StorageFull,
+            format!("沒有可用的 ENDL_{:03} 至 ENDL_{:03} 地圖槽位。", MIN_CUSTOM_SLOT, MAX_CUSTOM_SLOT),
+        ))
     }
 
     pub fn rewrite_known_files(
@@ -518,7 +658,14 @@ impl ModBundleExporter {
     ) -> Result<()> {
         let briefing = directory.join("TEXT").join("US").join("briefing.put");
         if briefing.exists() {
-            if let Ok(content) = fs::read_to_string(&briefing) {
+            if let Ok(raw) = fs::read(&briefing) {
+                let content = match String::from_utf8(raw.clone()) {
+                    Ok(s) => s,
+                    Err(_) => {
+                        let (decoded, _, _) = encoding_rs::WINDOWS_1252.decode(&raw);
+                        decoded.into_owned()
+                    }
+                };
                 let mut lines = Vec::new();
                 let mut replaced = false;
                 for line in content.lines() {
@@ -548,8 +695,15 @@ impl ModBundleExporter {
                 if path.is_file() {
                     let name = path.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
                     let lower = name.to_ascii_lowercase();
-                    if lower.starts_with("endlos_") && lower.contains("_siedlung") && lower.ends_with(".sdl") {
-                        if let Ok(content) = fs::read_to_string(&path) {
+                    if lower.starts_with("endlos_") && lower[7..].contains("_siedlung") && lower.ends_with(".sdl") {
+                        if let Ok(raw) = fs::read(&path) {
+                            let content = match String::from_utf8(raw.clone()) {
+                                Ok(s) => s,
+                                Err(_) => {
+                                    let (decoded, _, _) = encoding_rs::WINDOWS_1252.decode(&raw);
+                                    decoded.into_owned()
+                                }
+                            };
                             let old_pattern = format!("MAPS/{}/", old_map_id);
                             let new_pattern = format!("MAPS/{}/", new_map_id);
 
@@ -625,5 +779,18 @@ impl ModBundleExporter {
             Some(&spawns),
             None,
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::read_exact_declared;
+    use std::io::Cursor;
+
+    #[test]
+    fn declared_size_is_enforced_both_ways() {
+        assert_eq!(read_exact_declared(&mut Cursor::new(vec![1u8; 10]), 10).unwrap().len(), 10);
+        assert!(read_exact_declared(&mut Cursor::new(vec![1u8; 11]), 10).is_err());
+        assert!(read_exact_declared(&mut Cursor::new(vec![1u8; 9]), 10).is_err());
     }
 }

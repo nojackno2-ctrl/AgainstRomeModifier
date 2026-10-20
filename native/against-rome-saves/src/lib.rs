@@ -17,7 +17,7 @@ static NEXT: AtomicU64 = AtomicU64::new(0);
 fn fail<T>(message: impl Into<String>) -> Result<T> {
     Err(std::io::Error::new(std::io::ErrorKind::InvalidData, message.into()).into())
 }
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, PartialEq)]
 #[serde(rename_all = "PascalCase")]
 pub struct Manifest {
     #[serde(default)]
@@ -28,6 +28,29 @@ pub struct Manifest {
     pub level: String,
     #[serde(default)]
     pub backup_time: String,
+}
+// C# accepts a null manifest and nullable/missing string fields. Normalize them
+// to empty strings so catalog reads can still fill Title/Level from save.ini.
+impl<'de> Deserialize<'de> for Manifest {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> std::result::Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(rename_all = "PascalCase")]
+        struct Fields {
+            orig_folder: Option<String>,
+            title: Option<String>,
+            level: Option<String>,
+            backup_time: Option<String>,
+        }
+        Ok(match Option::<Fields>::deserialize(deserializer)? {
+            Some(fields) => Self {
+                orig_folder: fields.orig_folder.unwrap_or_default(),
+                title: fields.title.unwrap_or_default(),
+                level: fields.level.unwrap_or_default(),
+                backup_time: fields.backup_time.unwrap_or_default(),
+            },
+            None => Self::default(),
+        })
+    }
 }
 #[derive(Debug, Serialize)]
 pub struct SaveInfo {
@@ -51,23 +74,69 @@ pub struct Catalog {
 pub struct RestoreResult {
     pub cleanup_warnings: Vec<String>,
 }
+/// Outcome of a read-only integrity check of a backup ZIP or a live save folder.
+#[derive(Debug, Default, Serialize)]
+pub struct VerifyReport {
+    pub entries: usize,
+    pub total_bytes: u64,
+    pub title: String,
+    pub level: String,
+    /// Blocking problems: restoring or trusting this item is unsafe.
+    pub errors: Vec<String>,
+    /// Non-blocking oddities (unreadable manifest, odd folder name, ...).
+    pub warnings: Vec<String>,
+}
+impl VerifyReport {
+    pub fn is_ok(&self) -> bool {
+        self.errors.is_empty()
+    }
+}
 #[derive(Debug, Serialize, PartialEq)]
 pub enum AiRepairResult {
     AlreadyRepaired,
     Changed { backup: String },
 }
+pub(crate) fn remove_dir_all_force(path: &Path) -> std::io::Result<()> {
+    if !path.exists() {
+        return Ok(());
+    }
+    if let Err(_) = fs::remove_dir_all(path) {
+        fn make_writable_and_remove(p: &Path) -> std::io::Result<()> {
+            if let Ok(m) = fs::symlink_metadata(p) {
+                let mut perm = m.permissions();
+                if perm.readonly() {
+                    perm.set_readonly(false);
+                    let _ = fs::set_permissions(p, perm);
+                }
+            }
+            if p.is_dir() {
+                for entry in fs::read_dir(p)? {
+                    let entry = entry?;
+                    make_writable_and_remove(&entry.path())?;
+                }
+                fs::remove_dir(p)?;
+            } else {
+                fs::remove_file(p)?;
+            }
+            Ok(())
+        }
+        make_writable_and_remove(path)?;
+    }
+    Ok(())
+}
 pub fn simple_name(name: &str) -> bool {
     !name.trim().is_empty()
         && name != "."
         && name != ".."
+        && !name.starts_with(' ')
         && !name.ends_with(['.', ' '])
         && !name.chars().any(|c| c < ' ' || "<>:\"/\\|?*".contains(c))
         && {
             let base = name.split('.').next().unwrap().to_ascii_uppercase();
-            !matches!(base.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+            !matches!(base.as_str(), "CON" | "PRN" | "AUX" | "NUL" | "CLOCK$")
                 && !(base.len() == 4
                     && (base.starts_with("COM") || base.starts_with("LPT"))
-                    && matches!(base.as_bytes()[3], b'1'..=b'9'))
+                    && matches!(base.as_bytes()[3], b'0'..=b'9'))
         }
 }
 fn child(root: &Path, name: &str) -> Result<PathBuf> {
@@ -166,7 +235,21 @@ impl SaveService {
         if permissions.readonly() {
             return fail("scr.dat is read-only");
         }
-        let backup = self.backup(folder, "", "")?;
+        // Match the C# UI contract: the safety backup carries the save's Title/Level.
+        let (title, level) = fs::read(source.join("save.ini"))
+            .ok()
+            .and_then(|b| read_save_info(&b).ok())
+            .unwrap_or_default();
+        let backup = self.backup(folder, &title, &level)?;
+        // Never overwrite scr.dat unless the safety backup itself is provably restorable.
+        let health = self.verify_backup(&backup)?;
+        if !health.is_ok() {
+            let _ = self.delete_backup(&backup);
+            return fail(format!(
+                "safety backup failed verification, scr.dat untouched: {}",
+                health.errors.join("; ")
+            ));
+        }
         let stage = unique(scr.parent().unwrap(), "ai_repair_tmp");
         let result = (|| -> Result<()> {
             let mut out = OpenOptions::new()
@@ -205,14 +288,15 @@ impl SaveService {
         let mut saves = vec![];
         if root.exists() {
             for entry in fs::read_dir(&root)? {
-                let entry = entry?;
-                reject_links(&entry.path())?;
-                if !entry.file_type()?.is_dir() {
+                // A single linked/unreadable entry is skipped, never followed, and must not abort the catalog.
+                let Ok(entry) = entry else { continue };
+                if reject_links(&entry.path()).is_err()
+                    || !entry.file_type().is_ok_and(|t| t.is_dir())
+                {
                     continue;
                 }
                 let ini = entry.path().join("save.ini");
-                reject_links(&ini)?;
-                if !ini.is_file() {
+                if reject_links(&ini).is_err() || !ini.is_file() {
                     continue;
                 }
                 let parsed = fs::read(ini).ok().and_then(|b| read_save_info(&b).ok());
@@ -228,16 +312,16 @@ impl SaveService {
         create_dir(&self.backups)?;
         let mut backups = vec![];
         for entry in fs::read_dir(&self.backups)? {
-            let entry = entry?;
+            let Ok(entry) = entry else { continue };
             if entry
                 .path()
                 .extension()
                 .is_some_and(|e| e.eq_ignore_ascii_case("zip"))
             {
-                reject_links(&entry.path())?;
-                let info = self.backup_info(&entry.path());
-                let parsed = info.is_ok();
-                let mut manifest = info.unwrap_or_default();
+                if reject_links(&entry.path()).is_err() {
+                    continue;
+                }
+                let (mut manifest, parsed) = self.backup_info(&entry.path());
                 legacy(&entry.file_name().to_string_lossy(), &mut manifest);
                 backups.push(BackupInfo {
                     file_name: entry.file_name().to_string_lossy().into(),
@@ -250,29 +334,46 @@ impl SaveService {
         backups.sort_by(|a, b| a.file_name.cmp(&b.file_name));
         Ok(Catalog { saves, backups })
     }
-    fn backup_info(&self, path: &Path) -> Result<Manifest> {
-        let mut zip = ZipArchive::new(File::open(path)?)?;
-        let mut m = match zip.by_name("manifest.json") {
-            Ok(mut e) => {
-                let b = read_limited(&mut e, 4 * 1024 * 1024)?;
-                serde_json::from_slice::<Manifest>(b.strip_prefix(&[239, 187, 191]).unwrap_or(&b))?
-            }
-            Err(zip::result::ZipError::FileNotFound) => Manifest::default(),
-            Err(e) => return Err(e.into()),
+    /// Mirrors C# GetOrReadBackup: metadata read before a failure is kept and the failure
+    /// only clears `parsed`. This never gates restore; restore re-validates the archive itself.
+    fn backup_info(&self, path: &Path) -> (Manifest, bool) {
+        let mut m = Manifest::default();
+        let mut parsed = true;
+        let Ok(file) = File::open(path) else {
+            return (m, false);
         };
-        if m.title.is_empty() || m.level.is_empty() {
+        let Ok(mut zip) = ZipArchive::new(file) else {
+            return (m, false);
+        };
+        let manifest = match zip.by_name("manifest.json") {
+            Ok(mut e) => read_limited(&mut e, 4 * 1024 * 1024).and_then(|b| {
+                Ok(serde_json::from_slice::<Manifest>(
+                    b.strip_prefix(&[239, 187, 191]).unwrap_or(&b),
+                )?)
+            }),
+            Err(zip::result::ZipError::FileNotFound) => Ok(Manifest::default()),
+            Err(e) => Err(e.into()),
+        };
+        match manifest {
+            Ok(found) => m = found,
+            Err(_) => parsed = false,
+        }
+        if parsed && (m.title.is_empty() || m.level.is_empty()) {
             if let Ok(mut e) = zip.by_name("save.ini") {
-                let b = read_limited(&mut e, LIMIT)?;
-                let (t, l) = read_save_info(&b)?;
-                if m.title.is_empty() {
-                    m.title = t;
-                }
-                if m.level.is_empty() {
-                    m.level = l;
+                match read_limited(&mut e, LIMIT).and_then(|b| read_save_info(&b)) {
+                    Ok((t, l)) => {
+                        if m.title.is_empty() {
+                            m.title = t;
+                        }
+                        if m.level.is_empty() {
+                            m.level = l;
+                        }
+                    }
+                    Err(_) => parsed = false,
                 }
             }
         }
-        Ok(m)
+        (m, parsed)
     }
     pub fn backup(&self, folder: &str, title: &str, level: &str) -> Result<String> {
         let now = chrono::Local::now();
@@ -329,8 +430,15 @@ impl SaveService {
             })?)?;
             zip.finish()?.sync_all()?;
             // Hard-link publication fails if a competing writer already published the name.
-            fs::hard_link(&temp, &dest)?;
-            fs::remove_file(&temp)?;
+            if let Err(link_err) = fs::hard_link(&temp, &dest) {
+                if !dest.exists() {
+                    fs::rename(&temp, &dest)?;
+                } else {
+                    return Err(link_err.into());
+                }
+            } else {
+                let _ = fs::remove_file(&temp);
+            }
             Ok(())
         })();
         if result.is_err() {
@@ -380,14 +488,21 @@ impl SaveService {
         if let Err(error) = result {
             let rollback = (|| -> Result<()> {
                 if published {
-                    fs::remove_dir_all(&dest)?;
+                    remove_dir_all_force(&dest)?;
                 }
                 if moved_old {
+                    // Like C# RestoreBackup, never delete a destination we did not
+                    // publish. Preserve both saves if another writer recreated it.
+                    match fs::symlink_metadata(&dest) {
+                        Ok(_) => return fail("save destination reappeared during rollback"),
+                        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                        Err(e) => return Err(e.into()),
+                    }
                     fs::rename(&old, &dest)?;
                 }
                 Ok(())
             })();
-            let _ = fs::remove_dir_all(&temp);
+            let _ = remove_dir_all_force(&temp);
             if let Err(r) = rollback {
                 return fail(format!(
                     "{error}; rollback failed: {r}; preserved original: {}",
@@ -398,11 +513,159 @@ impl SaveService {
         }
         let mut report = RestoreResult::default();
         if moved_old {
-            if let Err(e) = fs::remove_dir_all(&old) {
+            if let Err(e) = remove_dir_all_force(&old) {
                 report
                     .cleanup_warnings
                     .push(format!("{}: {e}", old.display()));
             }
+        }
+        Ok(report)
+    }
+    /// Reads every entry of a backup (forcing CRC checks) and applies the same path, size,
+    /// duplicate and link rules as restore, without extracting anything.
+    pub fn verify_backup(&self, file_name: &str) -> Result<VerifyReport> {
+        let archive = child(&self.backups, file_name)?;
+        reject_links(&archive)?;
+        let mut report = VerifyReport::default();
+        let mut zip = match ZipArchive::new(File::open(&archive)?) {
+            Ok(z) => z,
+            Err(e) => {
+                report.errors.push(format!("not a readable ZIP: {e}"));
+                return Ok(report);
+            }
+        };
+        if zip.len() > 100000 {
+            report.errors.push("too many entries".into());
+            return Ok(report);
+        }
+        let mut seen = HashSet::new();
+        let mut save_ini = None;
+        let mut manifest = None;
+        for i in 0..zip.len() {
+            let mut e = match zip.by_index(i) {
+                Ok(e) => e,
+                Err(err) => {
+                    report.errors.push(format!("entry {i}: {err}"));
+                    continue;
+                }
+            };
+            let name = e.name().to_string();
+            if let Err(err) = validate_entry(&name) {
+                report.errors.push(format!("{name}: {err}"));
+                continue;
+            }
+            if !seen.insert(name.trim_end_matches('/').to_ascii_lowercase()) {
+                report.errors.push(format!("{name}: duplicate archive path"));
+                continue;
+            }
+            if let Some(mode) = e.unix_mode() {
+                let ty = mode & 0o170000;
+                if ty != 0 && ty != 0o100000 && ty != 0o040000 {
+                    report.errors.push(format!("{name}: symbolic/special link"));
+                    continue;
+                }
+            }
+            report.entries += 1;
+            if e.is_dir() {
+                continue;
+            }
+            let declared = e.size();
+            report.total_bytes = report.total_bytes.saturating_add(declared);
+            if declared > LIMIT || report.total_bytes > LIMIT {
+                report.errors.push("archive exceeds size limit".into());
+                break;
+            }
+            let keep = matches!(name.as_str(), "save.ini" | "manifest.json");
+            let mut data = vec![];
+            let max_read = declared.saturating_add(1);
+            let read = if keep {
+                e.by_ref().take(max_read).read_to_end(&mut data)
+            } else {
+                std::io::copy(&mut e.by_ref().take(max_read), &mut std::io::sink())
+                    .map(|n| n as usize)
+            };
+            match read {
+                Ok(n) if n as u64 == declared => {}
+                Ok(_) => {
+                    report.errors.push(format!("{name}: size does not match header"));
+                    continue;
+                }
+                Err(err) => {
+                    report.errors.push(format!("{name}: {err}"));
+                    continue;
+                }
+            }
+            match name.as_str() {
+                "save.ini" => save_ini = Some(data),
+                "manifest.json" => manifest = Some(data),
+                _ => {}
+            }
+        }
+        match save_ini {
+            None => report.errors.push("archive missing save.ini".into()),
+            Some(b) => match read_save_info(&b) {
+                Ok((t, l)) => {
+                    report.title = t;
+                    report.level = l;
+                }
+                Err(e) => report.warnings.push(format!("save.ini unreadable: {e}")),
+            },
+        }
+        if let Some(b) = manifest {
+            match serde_json::from_slice::<Manifest>(b.strip_prefix(&[239, 187, 191]).unwrap_or(&b)) {
+                Ok(m) => {
+                    if !m.orig_folder.is_empty() && !simple_name(&m.orig_folder) {
+                        report
+                            .warnings
+                            .push("manifest OrigFolder is not a valid folder name".into());
+                    }
+                }
+                Err(e) => report.warnings.push(format!("manifest.json unreadable: {e}")),
+            }
+        }
+        Ok(report)
+    }
+    /// Read-only check of a live save folder: link-free, regular files, save.ini decodes.
+    pub fn verify_save(&self, folder: &str) -> Result<VerifyReport> {
+        let dir = child(&self.root(), folder)?;
+        reject_tree(&dir)?;
+        let mut report = VerifyReport::default();
+        if !dir.is_dir() {
+            report.errors.push("save directory missing".into());
+            return Ok(report);
+        }
+        let mut files = vec![];
+        if let Err(e) = collect_files(&dir, &dir, &mut files) {
+            report.errors.push(e.to_string());
+            return Ok(report);
+        }
+        report.entries = files.len();
+        for (p, _) in &files {
+            match fs::metadata(p) {
+                Ok(m) => {
+                    report.total_bytes = report.total_bytes.saturating_add(m.len());
+                    if report.total_bytes > LIMIT {
+                        report.errors.push("save directory exceeds size limit".into());
+                        break;
+                    }
+                }
+                Err(e) => {
+                    report.errors.push(format!("{}: {e}", p.display()));
+                }
+            }
+        }
+        match fs::read(dir.join("save.ini")) {
+            Err(_) => report.errors.push("save.ini missing".into()),
+            Ok(b) => match read_save_info(&b) {
+                Ok((t, l)) => {
+                    report.title = t;
+                    report.level = l;
+                }
+                Err(e) => report.errors.push(format!("save.ini unreadable: {e}")),
+            },
+        }
+        if !dir.join("CLAK/scr.dat").is_file() {
+            report.warnings.push("CLAK/scr.dat missing".into());
         }
         Ok(report)
     }
@@ -418,6 +681,9 @@ impl SaveService {
     pub fn backup_preview(&self, file_name: &str) -> Result<Option<Vec<u8>>> {
         let p = child(&self.backups, file_name)?;
         reject_links(&p)?;
+        if !p.is_file() {
+            return Ok(None);
+        }
         let mut zip = ZipArchive::new(File::open(p)?)?;
         let result = match zip.by_name("savepic.tga") {
             Ok(mut e) => Ok(Some(read_limited(&mut e, LIMIT)?)),
@@ -430,7 +696,7 @@ impl SaveService {
         let p = child(&self.root(), folder)?;
         reject_tree(&p)?;
         if p.exists() {
-            fs::remove_dir_all(p)?;
+            remove_dir_all_force(&p)?;
         }
         Ok(())
     }
@@ -445,7 +711,7 @@ impl SaveService {
 }
 fn read_limited(reader: &mut impl Read, limit: u64) -> Result<Vec<u8>> {
     let mut b = vec![];
-    reader.take(limit + 1).read_to_end(&mut b)?;
+    reader.take(limit.saturating_add(1)).read_to_end(&mut b)?;
     if b.len() as u64 > limit {
         return fail("entry exceeds size limit");
     }
@@ -532,7 +798,8 @@ fn extract(archive: &Path, dest: &Path) -> Result<()> {
                 .write(true)
                 .create_new(true)
                 .open(target)?;
-            let copied = std::io::copy(&mut e.by_ref().take(LIMIT + 1), &mut out)?;
+            let max_read = e.size().saturating_add(1);
+            let copied = std::io::copy(&mut e.by_ref().take(max_read), &mut out)?;
             if copied != e.size() {
                 return fail("entry size mismatch");
             }

@@ -10,8 +10,3 @@ crate-type = ["cdylib", "rlib"]
 [features]
 # Compile-check the Win32 implementation on the host; never enables host DllMain.
 check-runtime = []
-
-[profile.release]
-panic = "abort"
-
-[workspace]

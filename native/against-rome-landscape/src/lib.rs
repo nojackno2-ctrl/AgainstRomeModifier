@@ -1,9 +1,20 @@
 //! Pure planning ports of the C# landscape brushes. Plans do not write map files.
 //! Coordinates are tile (X,Y), or (X,Z) for fortifications; masks are N/E/S/W.
 pub mod cliff;
+pub mod erosion;
 pub mod fortification;
+pub mod ramp;
 pub mod river;
 pub mod road;
+pub mod sculpt;
+
+pub use erosion::{
+    calculate_falloff, simulate_hydraulic_erosion, simulate_thermal_erosion, BrushRegion,
+    DotNetRandom, HydraulicErosionParams, TerrainFalloffType, TerrainHeightWorkBuffer,
+    TerrainSampleChange, ThermalErosionParams,
+};
+pub use ramp::{calculate_ramp, TerrainRampParameters};
+pub use sculpt::{carve_valley, sharpen_ridge, terrace, TerraceParams};
 
 pub type Point = (i32, i32);
 pub const NEIGHBORS: [(i32, i32, u8, u8); 4] =

@@ -44,10 +44,10 @@ Behavior and deliberate safety differences from C++:
 - `enableHooks=false` by default; `enabled=false` remains proxy-only. All
   address-based AI hooks require a nonzero matching timestamp. Both faction
   variants always require their original signatures.
-- `verifySignatures`, `argDumpCount` and `maxLogMegabytes` are loaded exactly as
-  in C++. The original installer always checks supplied signatures, formatters
-  have fixed widths, and the original logger does not enforce the configured
-  size cap. This port retains those behaviors; the size cap is not a guarantee.
+- `verifySignatures`, `argDumpCount` and `maxLogMegabytes` are loaded from INI.
+  The Rust logger actively enforces `maxLogMegabytes`, emitting a warning notice
+  and suppressing subsequent writes once reached to prevent disk fill during
+  high-volume opcode traces. `verifySignatures` gates target signature checks.
 - Bounded decoder rejects truncated input, instructions longer than the x86
   15-byte limit, and prefixed relative branches. C++ allowed up to 16 bytes and
   only checked unprefixed relative branches. All original target prologues and

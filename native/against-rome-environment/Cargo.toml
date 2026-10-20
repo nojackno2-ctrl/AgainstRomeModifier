@@ -7,6 +7,9 @@ description = "Pure Rust environment, ecology noise, flora scatter, wild lair an
 
 [dependencies]
 against-rome-editor = { path = "../against-rome-editor" }
+against-rome-data = { path = "../against-rome-data" }
+encoding_rs = "0.8"
+zip = { version = "=0.6.6", default-features = false, features = ["deflate"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 uuid = { version = "1", features = ["serde", "v4"] }

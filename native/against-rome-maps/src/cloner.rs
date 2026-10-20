@@ -105,7 +105,7 @@ impl EndlessMapCloner {
         if new_name.trim().is_empty() {
             return Err("請輸入地圖名稱。".into());
         }
-        if new_name.chars().any(|c| "/\\:*?\"<>|".contains(c)) {
+        if new_name.chars().any(|c| c.is_control() || "/\\:*?\"<>|".contains(c)) {
             return Err("地圖名稱含不允許的字元。".into());
         }
         if !can_encode_game_text(new_name) {
@@ -121,6 +121,7 @@ impl EndlessMapCloner {
             return Err(format!("目標地圖槽位已存在或有待清理暫存資料夾: {map_id}"));
         }
 
+        let mut rollback = crate::rollback::FileRollbackScope::new()?;
         let mut moved = false;
         let result = (|| -> Result<EndlessMapInfo, String> {
             copy_directory_recursive(source_directory, &temporary)?;
@@ -150,14 +151,17 @@ impl EndlessMapCloner {
 
             let mut manifest = CustomMapManifest::load(normalized_game_path)?;
             manifest.register(marker)?;
-            manifest.save(normalized_game_path)?;
+            manifest.save_with_rollback(normalized_game_path, Some(&mut rollback))?;
 
-            self.catalog.require(normalized_game_path, new_slot)
+            let created = self.catalog.require(normalized_game_path, new_slot)?;
+            rollback.commit();
+            Ok(created)
         })();
 
         match result {
             Ok(info) => Ok(info),
             Err(e) => {
+                let _ = rollback.restore_all();
                 if moved && destination.exists() {
                     let _ = fs::remove_dir_all(&destination);
                 }
@@ -178,28 +182,27 @@ pub fn rewrite_known_files(
 ) -> Result<(), String> {
     let briefing = directory.join("TEXT").join("US").join("briefing.put");
     if briefing.exists() {
-        if let Ok(mut put) = PutTextDocument::load(&briefing) {
-            put.set_value("briefing_titel_1", new_name)?;
-            put.save()?;
-        }
+        let mut put = PutTextDocument::load(&briefing)
+            .map_err(|e| format!("無法解析 briefing.put，已中止複製: {e}"))?;
+        put.set_value("briefing_titel_1", new_name)?;
+        put.save()?;
     }
 
-    if let Ok(entries) = fs::read_dir(directory) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if !path.is_file() {
-                continue;
-            }
-            let Some(name) = path.file_name().and_then(|s| s.to_str()) else {
-                continue;
-            };
-            let lower = name.to_ascii_lowercase();
-            if lower.starts_with("endlos_") && lower.contains("_siedlung") && lower.ends_with(".sdl") {
-                if let Ok(mut sdl) = SdlDocument::load(&path) {
-                    sdl.rewrite_map_path(old_map_id, new_map_id);
-                    sdl.save()?;
-                }
-            }
+    let entries = fs::read_dir(directory).map_err(|e| format!("讀取地圖目錄失敗: {e}"))?;
+    for entry in entries {
+        let path = entry.map_err(|e| format!("讀取地圖目錄項目失敗: {e}"))?.path();
+        if !path.is_file() {
+            continue;
+        }
+        let Some(name) = path.file_name().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        let lower = name.to_ascii_lowercase();
+        if lower.starts_with("endlos_") && lower.contains("_siedlung") && lower.ends_with(".sdl") {
+            let mut sdl = SdlDocument::load(&path)
+                .map_err(|e| format!("無法解析 {name}，已中止複製: {e}"))?;
+            sdl.rewrite_map_path(old_map_id, new_map_id);
+            sdl.save()?;
         }
     }
 

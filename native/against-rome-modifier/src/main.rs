@@ -58,7 +58,11 @@ fn run() -> Result<(), String> {
     if against_rome_modifier::cli::is_cli_invocation(&raw)
         && !matches!(raw.first().map(String::as_str), Some("features" | "troops" | "inspect" | "apply") if !raw.iter().any(|a| a == "--cli" || a == "--json" || a == "--game"))
     {
-        let code = against_rome_modifier::cli::run_cli(&raw, &mut std::io::stdout(), &mut std::io::stderr());
+        let code = against_rome_modifier::cli::run_cli(
+            &raw,
+            &mut std::io::stdout(),
+            &mut std::io::stderr(),
+        );
         std::process::exit(code);
     }
     let mut args = env::args_os().skip(1);
@@ -82,7 +86,10 @@ fn run() -> Result<(), String> {
         for key in against_rome_modifier::TroopConfig::sorted_units() {
             let meta = against_rome_modifier::TroopConfig::get_metadata(key).unwrap();
             let name_zh = against_rome_modifier::TroopConfig::get_name_zh(key).unwrap_or("");
-            println!("{} ({}) - {} [{}/{}]", key, name_zh, meta.faction, meta.tier, meta.unit_type);
+            println!(
+                "{} ({}) - {} [{}/{}]",
+                key, name_zh, meta.faction, meta.tier, meta.unit_type
+            );
         }
         return Ok(());
     }

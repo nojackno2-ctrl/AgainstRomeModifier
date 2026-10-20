@@ -19,6 +19,7 @@ fn get_game_dir() -> PathBuf {
 }
 
 #[test]
+#[ignore = "requires installed retail maps; run the explicit -Retail verification gate"]
 fn test_installed_maps_read_only_and_temp_hash_preservation() {
     let game_dir = get_game_dir();
     let sample_maps = ["TUTOR_01", "ENDL_000", "KAMP_002", "MP_000"];
@@ -69,6 +70,7 @@ fn test_installed_maps_read_only_and_temp_hash_preservation() {
 }
 
 #[test]
+#[ignore = "requires installed TUTOR_01 and floortex.dat; edits only TEMP copies"]
 fn test_tutor_01_real_map_pfil_decode_edit_undo_and_safe_save() {
     let game_dir = get_game_dir();
     let original_path = game_dir.join("MAPS").join("TUTOR_01").join("boden.txt");

@@ -1,3 +1,4 @@
+pub mod catalog;
 pub mod contract;
 pub mod diff;
 pub mod exporter;
@@ -6,6 +7,7 @@ pub mod preflight;
 pub mod profiler;
 pub mod thumbnail;
 
+pub use catalog::{list_endless_maps, require_endless_map, EndlessMapInfo};
 pub use contract::{is_payload_path, reject_links};
 pub use diff::*;
 pub use exporter::{

@@ -1,6 +1,7 @@
 pub mod archetype;
 pub mod campaign;
 pub mod compiler;
+pub mod dotnet_unicode;
 pub mod session;
 pub mod waypoint;
 

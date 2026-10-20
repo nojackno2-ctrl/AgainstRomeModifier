@@ -1,12 +1,17 @@
 //! Native scenario compiler. Original BCI code and constant indices remain stationary;
 //! shims append code and only the validated main-loop wait pair is patched.
 pub mod bci;
+pub mod bci_pattern;
+pub mod bci_script;
 mod bindings;
 pub use bindings::DataBindingSource;
 pub mod compiler;
+pub mod graph;
 pub mod model;
 pub use bci::BciImage;
+pub use bci_script::BciScriptFile;
 pub use compiler::*;
+pub use graph::*;
 pub use model::*;
 pub type Result<T> = std::result::Result<T, String>;
 /// Creates a persistent editor identity without exposing a UUID runtime dependency to UI callers.

@@ -96,6 +96,42 @@ fn rollback_restores_old_directory_after_move() {
     assert_eq!(fs::read_dir(s.root()).unwrap().count(), 1);
 }
 #[test]
+fn rollback_preserves_reappeared_destination_and_original_save() {
+    let t = Temp::new();
+    let s = t.service();
+    source(&s);
+    s.backup_as("SAVE_001", "good.zip", "", "", "").unwrap();
+    let dest = s.root().join("SAVE_001");
+    fs::write(dest.join("old"), b"original save").unwrap();
+
+    let error = s
+        .restore_impl("good.zip", "SAVE_001", || {
+            // Another writer creates a save after the original was moved aside.
+            fs::create_dir(&dest)?;
+            fs::write(dest.join("new"), b"other writer's save")?;
+            fail("injected publish failure")
+        })
+        .unwrap_err()
+        .to_string();
+
+    assert_eq!(fs::read(dest.join("new")).unwrap(), b"other writer's save");
+    let old = fs::read_dir(s.root())
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .find(|path| {
+            path.file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with(".restore_old_")
+        })
+        .expect("original save must be retained for recovery");
+    assert_eq!(fs::read(old.join("old")).unwrap(), b"original save");
+    assert!(error.contains("injected publish failure"), "{error}");
+    assert!(error.contains("rollback failed"), "{error}");
+    assert!(error.contains(&old.display().to_string()), "{error}");
+    assert_eq!(fs::read_dir(s.root()).unwrap().count(), 2);
+}
+#[test]
 fn invalid_archives_never_replace_save() {
     let t = Temp::new();
     let s = t.service();
@@ -199,4 +235,326 @@ fn source_and_destination_symlinks_rejected() {
     symlink(t.0.join("elsewhere"), s.root().join("SAVE_001/link")).unwrap();
     assert!(s.backup_as("SAVE_001", "bad.zip", "", "", "").is_err());
     assert!(s.delete_save("SAVE_001").is_err());
+}
+#[test]
+fn verify_backup_accepts_fresh_backup_and_reads_metadata() {
+    let t = Temp::new();
+    let s = t.service();
+    source(&s);
+    s.backup_as(
+        "SAVE_001",
+        "ok.zip",
+        "Title",
+        "ENDL_000",
+        "2026-10-18T00:00:00+00:00",
+    )
+    .unwrap();
+    let r = s.verify_backup("ok.zip").unwrap();
+    assert!(r.is_ok(), "{:?}", r.errors);
+    assert_eq!(r.title, "Title");
+    assert_eq!(r.level, "ENDL_000");
+    assert_eq!(r.entries, 4); // save.ini, DATA/a.dat, savepic.tga, manifest.json
+}
+#[test]
+fn verify_backup_detects_bit_rot_via_crc_without_extracting() {
+    let t = Temp::new();
+    let s = t.service();
+    fs::create_dir_all(&s.backups).unwrap();
+    let ini = pfil(b"[titel]\nT\n[orglevelname]\nM\n");
+    let payload = vec![0x41u8; 256];
+    let mut z = ZipWriter::new(File::create(s.backups.join("rot.zip")).unwrap());
+    let stored = FileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    z.start_file("save.ini", stored).unwrap();
+    z.write_all(&ini).unwrap();
+    z.start_file("DATA/blob.bin", stored).unwrap();
+    z.write_all(&payload).unwrap();
+    z.finish().unwrap();
+    assert!(s.verify_backup("rot.zip").unwrap().is_ok());
+    let path = s.backups.join("rot.zip");
+    let mut raw = fs::read(&path).unwrap();
+    let at = raw
+        .windows(256)
+        .position(|w| w == payload.as_slice())
+        .unwrap();
+    raw[at + 100] ^= 1;
+    fs::write(&path, raw).unwrap();
+    let r = s.verify_backup("rot.zip").unwrap();
+    assert!(!r.is_ok());
+    assert!(
+        r.errors.iter().any(|e| e.contains("blob.bin")),
+        "{:?}",
+        r.errors
+    );
+    assert!(!s.root().join("SAVE_001").exists());
+}
+#[test]
+fn verify_backup_flags_missing_save_ini_unsafe_paths_and_garbage() {
+    let t = Temp::new();
+    let s = t.service();
+    archive(&s, "noini.zip", &[("DATA/a.dat", b"x")]);
+    assert!(s
+        .verify_backup("noini.zip")
+        .unwrap()
+        .errors
+        .iter()
+        .any(|e| e.contains("save.ini")));
+    archive(
+        &s,
+        "evil.zip",
+        &[("save.ini", b"x"), ("../escape.txt", b"x"), ("CON", b"x")],
+    );
+    assert!(s.verify_backup("evil.zip").unwrap().errors.len() >= 2);
+    fs::write(s.backups.join("junk.zip"), b"not a zip at all").unwrap();
+    let r = s.verify_backup("junk.zip").unwrap();
+    assert!(!r.is_ok());
+    assert!(s.verify_backup("../x.zip").is_err());
+}
+#[test]
+fn verify_backup_warns_on_bad_manifest_but_stays_ok() {
+    let t = Temp::new();
+    let s = t.service();
+    archive(
+        &s,
+        "m.zip",
+        &[
+            ("save.ini", b"[titel]\nT\n[orglevelname]\nL\n"),
+            ("manifest.json", b"{broken"),
+        ],
+    );
+    let r = s.verify_backup("m.zip").unwrap();
+    assert!(r.is_ok());
+    assert_eq!(r.warnings.len(), 1);
+}
+#[test]
+fn verify_save_reports_state_of_live_folder() {
+    let t = Temp::new();
+    let s = t.service();
+    assert!(!s.verify_save("SAVE_001").unwrap().is_ok());
+    source(&s);
+    let r = s.verify_save("SAVE_001").unwrap();
+    assert!(r.is_ok());
+    assert_eq!(r.title, "Title");
+    assert!(r.warnings.iter().any(|w| w.contains("scr.dat")));
+    fs::write(s.root().join("SAVE_001/save.ini"), b"PFIL\0\0").unwrap();
+    assert!(!s.verify_save("SAVE_001").unwrap().is_ok());
+    assert!(s.verify_save("a/b").is_err());
+}
+#[test]
+fn simple_name_rejects_clock_dollar_com0_lpt0_and_leading_spaces() {
+    for bad in [
+        "CLOCK$",
+        "clock$.txt",
+        "COM0",
+        "com0.ini",
+        "LPT0",
+        "lpt0.dat",
+        " foo",
+        "foo. ",
+        "foo.",
+        "CON",
+        "PRN",
+        "AUX",
+        "NUL",
+    ] {
+        assert!(!simple_name(bad), "expected false for {bad}");
+    }
+    assert!(simple_name("valid_name.zip"));
+    assert!(simple_name("SAVE_001"));
+}
+#[test]
+fn restore_rollback_preserves_original_even_with_readonly_files() {
+    let t = Temp::new();
+    let s = t.service();
+    source(&s);
+    let original_ini = fs::read(s.root().join("SAVE_001/save.ini")).unwrap();
+    let mut perm = fs::metadata(s.root().join("SAVE_001/save.ini"))
+        .unwrap()
+        .permissions();
+    perm.set_readonly(true);
+    fs::set_permissions(s.root().join("SAVE_001/save.ini"), perm).unwrap();
+
+    archive(
+        &s,
+        "new.zip",
+        &[("save.ini", b"[titel]\nNewTitle\n[orglevelname]\nNewLevel\n")],
+    );
+
+    let res = s.restore_impl("new.zip", "SAVE_001", || {
+        fail("simulated crash before publish")
+    });
+    assert!(res.is_err());
+
+    assert!(s.root().join("SAVE_001/save.ini").exists());
+    let mut perm = fs::metadata(s.root().join("SAVE_001/save.ini"))
+        .unwrap()
+        .permissions();
+    perm.set_readonly(false);
+    let _ = fs::set_permissions(s.root().join("SAVE_001/save.ini"), perm);
+    assert_eq!(
+        fs::read(s.root().join("SAVE_001/save.ini")).unwrap(),
+        original_ini
+    );
+}
+#[test]
+fn extract_decompression_bomb_truncated_safely() {
+    let t = Temp::new();
+    let s = t.service();
+    fs::create_dir_all(&s.backups).unwrap();
+    let path = s.backups.join("bomb.zip");
+
+    let file = File::create(&path).unwrap();
+    let mut z = ZipWriter::new(file);
+    z.start_file(
+        "save.ini",
+        FileOptions::default().compression_method(zip::CompressionMethod::Deflated),
+    )
+    .unwrap();
+    z.write_all(&vec![b'A'; 1024]).unwrap();
+    z.finish().unwrap();
+
+    let mut raw = fs::read(&path).unwrap();
+    raw[22..26].copy_from_slice(&8u32.to_le_bytes());
+    if let Some(pos) = raw.windows(4).position(|w| w == [0x50, 0x4b, 0x01, 0x02]) {
+        raw[pos + 24..pos + 28].copy_from_slice(&8u32.to_le_bytes());
+    }
+    fs::write(&path, raw).unwrap();
+
+    let dest = s.root().join("BOMB");
+    let err = extract(&path, &dest).unwrap_err().to_string();
+    assert!(err.contains("size mismatch"), "{err}");
+    if let Ok(meta) = fs::metadata(dest.join("save.ini")) {
+        assert!(meta.len() <= 9, "wrote too many bytes: {}", meta.len());
+    }
+}
+
+#[test]
+fn backup_preview_missing_backup_returns_none() {
+    let t = Temp::new();
+    let s = t.service();
+    source(&s);
+    assert_eq!(s.backup_preview("missing.zip").unwrap(), None);
+}
+
+fn make_dir_link(link: &Path, target: &Path) -> bool {
+    #[cfg(windows)]
+    {
+        std::process::Command::new("cmd")
+            .args(["/C", "mklink", "/J"])
+            .arg(link)
+            .arg(target)
+            .output()
+            .is_ok_and(|o| o.status.success())
+    }
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(target, link).is_ok()
+    }
+}
+fn remove_dir_link(link: &Path) {
+    let _ = fs::remove_dir(link).or_else(|_| fs::remove_file(link));
+}
+
+#[test]
+fn scan_skips_linked_entries_and_keeps_valid_ones() {
+    let t = Temp::new();
+    let s = t.service();
+    source(&s);
+    s.backup_as("SAVE_001", "good.zip", "", "", "").unwrap();
+    let outside = t.0.join("outside");
+    fs::create_dir_all(&outside).unwrap();
+    fs::write(
+        outside.join("save.ini"),
+        pfil(b"[titel]\nX\n[orglevelname]\nM\n"),
+    )
+    .unwrap();
+    let save_link = s.root().join("SAVE_LINK");
+    let zip_link = s.backups.join("evil.zip");
+    if !make_dir_link(&save_link, &outside) || !make_dir_link(&zip_link, &outside) {
+        eprintln!("skipping: cannot create directory links");
+        return;
+    }
+    let c = s.scan().unwrap();
+    remove_dir_link(&save_link);
+    remove_dir_link(&zip_link);
+    assert_eq!(
+        c.saves
+            .iter()
+            .map(|x| x.folder.as_str())
+            .collect::<Vec<_>>(),
+        ["SAVE_001"]
+    );
+    assert_eq!(
+        c.backups
+            .iter()
+            .map(|x| x.file_name.as_str())
+            .collect::<Vec<_>>(),
+        ["good.zip"]
+    );
+    assert!(outside.join("save.ini").exists());
+}
+
+#[test]
+fn scan_missing_game_path_never_creates_game_directories() {
+    let t = Temp::new();
+    let s = t.service();
+    let c = s.scan().unwrap();
+    assert!(c.saves.is_empty() && c.backups.is_empty());
+    // Game install path (and its SAVE folder) must stay untouched by a scan.
+    assert!(!s.game.exists());
+    assert!(!s.root().exists());
+    // C# SaveBackupService.Scan explicitly calls Directory.CreateDirectory(backupDirectory); kept for parity.
+    assert!(s.backups.is_dir());
+}
+
+#[test]
+fn malformed_save_ini_keeps_manifest_metadata_and_reports_unparsed() {
+    let t = Temp::new();
+    let s = t.service();
+    // Valid PFIL header but truncated payload: read_save_info fails, like C# TryReadSaveInfo.
+    let mut bad_ini = pfil(b"[titel]\nX\n[orglevelname]\nMAP\n");
+    bad_ini.truncate(bad_ini.len() - 1);
+    let manifest = br#"{"OrigFolder":"SAVE_007","Title":"Kept Title","Level":"","BackupTime":"2026-10-15T10:00:00"}"#;
+    archive(
+        &s,
+        "bad_ini.zip",
+        &[("save.ini", &bad_ini), ("manifest.json", manifest)],
+    );
+    // Unreadable manifest JSON: nothing from it survives, but the legacy file name still does.
+    archive(
+        &s,
+        "Backup_SAVE_002_20261015_123456.zip",
+        &[("save.ini", &bad_ini), ("manifest.json", b"{not json")],
+    );
+    let c = s.scan().unwrap();
+    let b = c
+        .backups
+        .iter()
+        .find(|b| b.file_name == "bad_ini.zip")
+        .unwrap();
+    assert!(!b.parsed);
+    assert_eq!(b.manifest.orig_folder, "SAVE_007");
+    assert_eq!(b.manifest.title, "Kept Title");
+    assert_eq!(b.manifest.backup_time, "2026-10-15T10:00:00");
+    let l = c
+        .backups
+        .iter()
+        .find(|b| b.file_name.starts_with("Backup_"))
+        .unwrap();
+    assert!(!l.parsed);
+    assert_eq!(l.manifest.orig_folder, "SAVE_002");
+    assert_eq!(l.manifest.backup_time, "2026-10-15 12:34:56");
+    assert!(l.manifest.title.is_empty());
+    // Restore safety is independent of `parsed`: unsafe entries still fail closed.
+    archive(
+        &s,
+        "unsafe.zip",
+        &[
+            ("save.ini", &bad_ini),
+            ("../evil.txt", b"x"),
+            ("manifest.json", manifest),
+        ],
+    );
+    assert!(!s.verify_backup("unsafe.zip").unwrap().is_ok());
+    assert!(s.restore("unsafe.zip", "SAVE_007").is_err());
+    assert!(!s.root().join("SAVE_007").exists());
 }

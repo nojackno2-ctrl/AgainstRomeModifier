@@ -240,3 +240,42 @@ fn test_scope_is_strictly_respected_and_outside_tiles_are_untouched() {
     let inside_vertex = (22 * 4 + 2) * 257 + 22 * 4 + 2;
     assert_ne!(100, session.heights()[inside_vertex]);
 }
+
+#[test]
+fn test_rejected_material_dabs_report_each_rejected_tile_not_every_path_point() {
+    let plan = AiMapPlan {
+        features: vec![AiMapFeature {
+            feature_type: Some("material".to_string()),
+            x: 20,
+            y: 20,
+            radius: 6,
+            material: Some("Rock".to_string()),
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    let painted = std::cell::RefCell::new(Vec::new());
+    let fallback = |_: &str, x: f32, y: f32, r: f32| {
+        painted.borrow_mut().push((x, y, r));
+        x < 20.0
+    };
+    let mut reported: Vec<(f32, f32, f32)> = Vec::new();
+    let mut on_rejected = |x: f32, y: f32, r: f32| reported.push((x, y, r));
+    let result = AiEditorOperator::apply(
+        &plan,
+        None,
+        None,
+        64,
+        0.0,
+        false,
+        Some(&fallback),
+        None,
+        Some(&mut on_rejected),
+    );
+    let painted = painted.into_inner();
+    let expected: Vec<_> = painted.iter().filter(|p| p.0 >= 20.0).copied().collect();
+    assert!(!expected.is_empty());
+    assert!(painted.iter().any(|p| p.0 < 20.0));
+    assert_eq!(reported, expected, "callback must mirror C# onRejectedDab (one per rejected tile)");
+    assert_eq!(result.rejected_material_strokes, 1);
+}

@@ -37,7 +37,11 @@ impl CustomMapEntry {
 
 /// Helper functions to parse and validate `ENDL_###` slot names.
 pub fn parse_endl_slot(name: &str) -> Option<i32> {
-    if name.len() == 8 && name[..5].eq_ignore_ascii_case("ENDL_") {
+    let bytes = name.as_bytes();
+    if bytes.len() == 8
+        && bytes[..5].eq_ignore_ascii_case(b"ENDL_")
+        && bytes[5..].iter().all(u8::is_ascii_digit)
+    {
         name[5..].parse::<i32>().ok()
     } else {
         None
@@ -148,6 +152,11 @@ impl CustomMapManifest {
 
     /// Saves the manifest to `<gamePath>/MAPS/arm_custom_maps.json`.
     pub fn save(&self, game_path: &Path) -> Result<(), String> {
+        self.save_with_rollback(game_path, None)
+    }
+
+    /// Saves the manifest to `<gamePath>/MAPS/arm_custom_maps.json` with transactional rollback support.
+    pub fn save_with_rollback(&self, game_path: &Path, rollback: Option<&mut crate::rollback::FileRollbackScope>) -> Result<(), String> {
         let maps_path = game_path.join("MAPS");
         if !maps_path.exists() {
             fs::create_dir_all(&maps_path)
@@ -159,14 +168,7 @@ impl CustomMapManifest {
         let json = serde_json::to_string_pretty(&sorted)
             .map_err(|e| format!("序列化自製地圖清單失敗: {e}"))?;
 
-        // Atomic write via temporary file
-        let tmp_path = maps_path.join(format!("{}.tmp", Self::FILE_NAME));
-        fs::write(&tmp_path, json.as_bytes())
-            .map_err(|e| format!("寫入暫存清單失敗: {e}"))?;
-        fs::rename(&tmp_path, &manifest_path)
-            .map_err(|e| format!("替換自製地圖清單失敗: {e}"))?;
-
-        Ok(())
+        crate::rollback::SafeFileWriter::write_all_bytes(&manifest_path, json.as_bytes(), rollback)
     }
 
     /// Returns true if the map directory contains `.arm_custom_map`.

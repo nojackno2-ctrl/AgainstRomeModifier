@@ -21,7 +21,9 @@ impl EparaPatcher {
         let doc = TextDocument::read(original)?;
         let mut lines = doc.lines.clone();
 
-        Self::patch_section_value(&mut lines, VARIANCE_SECTION, |_| ACCURACY_VARIANCE_VALUE.to_string())?;
+        Self::patch_section_value(&mut lines, VARIANCE_SECTION, |_| {
+            ACCURACY_VARIANCE_VALUE.to_string()
+        })?;
         Self::patch_section_value(&mut lines, INIT_SPEED_SECTION, |val| {
             let res = val * INIT_SPEED_REACH_MULTIPLIER;
             // Format to match C# "0.###"
@@ -54,7 +56,10 @@ impl EparaPatcher {
                 let val = trimmed.parse::<f64>().map_err(|_| {
                     Error::new(
                         ErrorKind::InvalidData,
-                        format!("cl_epara.ini {} value line cannot be parsed: '{}'", section, trimmed),
+                        format!(
+                            "cl_epara.ini {} value line cannot be parsed: '{}'",
+                            section, trimmed
+                        ),
                     )
                 })?;
 

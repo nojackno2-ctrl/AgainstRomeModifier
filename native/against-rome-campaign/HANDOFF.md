@@ -43,3 +43,10 @@
   - `tests/ai_tests.rs`: 6 passed, 0 failed
   - `tests/cinematics_tests.rs`: 5 passed, 0 failed
   - `tests/objectives_tests.rs`: 4 passed, 0 failed
+
+## 2026-10-18 匯出閉環（Claude）
+- `CampaignCompiler::export_to_map`（`src/export.rs`）：模型 → `compile_to_bci` → `<map>/SCRIPT/ak_level.bci`。來源優先取 `ak_level.arm_original`（重複匯出不疊加注入），否則取現有腳本並於編譯成功後建立備份；先寫同目錄暫存檔並回讀驗證，再以 rename 取代並二次回讀，失敗還原；任何失敗路徑原檔位元不變、不遺留暫存檔。
+- `verify_exported_script`：輸出須為來源純追加（原程式碼區最多修補 2 字、常數/符號/變數表為來源前綴、入口指向追加區、PFIL 標頭除長度欄位外不變），且訊息文字／別名／開局相機原生呼叫名稱必須出現在常數表。
+- 過場完結連結：`on_complete_trigger_event` 必須指向既有或本次產出的事件（不分大小寫），否則 pipeline 失敗；原生 ABI 無「觸發事件」動作，故只驗證連結並於延遲不一致時警告，不自動對齊。系統產生的標記訊息會把非 Windows-1251 字元換成 `?`。開局相機（含由第 1 航點推得者）須通過 `MapStartCamera::validate`。
+- 測試：`tests/campaign_export_tests.rs` 16 項（合成暫存地圖，非遊戲驗收）。
+- 未驗證：樣條相機路徑僅取第 1 航點作開局相機（航點 Zoom/Pitch/Yaw 對原生參數的映射無證據，未編進位元碼）；未在遊戲內載入匯出的 ak_level.bci；未用零售地圖測。

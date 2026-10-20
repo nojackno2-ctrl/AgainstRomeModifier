@@ -1,0 +1,21 @@
+[package]
+name = "alr-probe"
+version = "0.1.0"
+edition = "2021"
+description = "Rust port of tools/re/alr-probe: decodes every ALR in a read-only alr.dat and writes report.json plus sample RGBA files."
+publish = false
+
+[lib]
+name = "alr_probe"
+path = "src/lib.rs"
+
+[[bin]]
+name = "alr-probe-rs"
+path = "src/main.rs"
+
+[dependencies]
+against-rome-data = { path = "../../../native/against-rome-data" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10.9"
+zip = { version = "=0.6.6", default-features = false, features = ["deflate"] }

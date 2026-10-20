@@ -1,6 +1,8 @@
+mod cli;
+
 use against_rome_editor_app::{load_map, EditorApp};
+use cli::{parse_startup_options, resolve_startup_map};
 use eframe::egui;
-use std::path::PathBuf;
 
 struct Desktop {
     editor: EditorApp,
@@ -21,37 +23,19 @@ impl eframe::App for Desktop {
 }
 
 fn run() -> Result<(), String> {
-    let mut map = None;
-    let mut validate = false;
-    let mut smoke = false;
-    let mut args = std::env::args_os().skip(1);
-    while let Some(arg) = args.next() {
-        if arg == "--help" || arg == "-h" {
-            println!("against-rome-editor [--map DIRECTORY] [--validate-map | --smoke-test]\n--validate-map reads BMP layers without writing.\n--smoke-test runs three native UI updates and closes.");
-            return Ok(());
-        } else if arg == "--version" {
-            println!("against-rome-editor {}", env!("CARGO_PKG_VERSION"));
-            return Ok(());
-        } else if arg == "--map" && map.is_none() {
-            map = Some(PathBuf::from(
-                args.next().ok_or("--map requires a directory")?,
-            ));
-        } else if arg == "--validate-map" && !validate {
-            validate = true;
-        } else if arg == "--smoke-test" && !smoke {
-            smoke = true;
-        } else {
-            return Err(format!(
-                "unknown or duplicate argument: {}",
-                arg.to_string_lossy()
-            ));
-        }
+    let options = parse_startup_options(std::env::args_os().skip(1))?;
+    if options.show_help {
+        println!("against-rome-editor [--game <PATH> --map <ID> | --map DIRECTORY] [--validate-map | --smoke-test]\n--validate-map reads BMP layers without writing.\n--smoke-test runs three native UI updates and closes.");
+        return Ok(());
     }
-    if validate && (map.is_none() || smoke) {
-        return Err("--validate-map requires --map and cannot combine with --smoke-test".into());
+    if options.show_version {
+        println!("against-rome-editor {}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
     }
+
+    let map = resolve_startup_map(&options)?;
     let loaded = map.as_ref().map(|p| load_map(p)).transpose()?;
-    if validate {
+    if options.validate_map {
         let session = loaded.as_ref().unwrap();
         println!(
             "Validated height {}x{}, collision {}x{}; no files written.",
@@ -74,16 +58,17 @@ fn run() -> Result<(), String> {
         Box::new(move |cc| {
             let mut editor = EditorApp::new(cc);
             if let Some(session) = loaded {
-                editor.set_loaded_map(map.unwrap(),session);
+                editor.set_loaded_map(map.unwrap(), session)
+                    .expect("new editor has no unsaved map changes");
             }
             Box::new(Desktop {
                 editor,
-                frames_left: smoke.then_some(3),
+                frames_left: options.smoke_test.then_some(3),
             })
         }),
     )
     .map_err(|e| e.to_string())?;
-    if smoke {
+    if options.smoke_test {
         println!("Native desktop smoke test completed: three UI updates executed.");
     }
     Ok(())

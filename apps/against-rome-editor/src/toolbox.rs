@@ -200,6 +200,11 @@ impl ToolboxUi {
     pub fn is_dirty(&self) -> bool {
         self.patch_review.is_some() || self.save_review.is_some()
     }
+
+    pub fn clear_transient_reviews(&mut self) {
+        self.patch_review = None;
+        self.save_review = None;
+    }
     fn inspect(&mut self) -> Result<()> {
         self.patch_review = None;
         self.states = None;

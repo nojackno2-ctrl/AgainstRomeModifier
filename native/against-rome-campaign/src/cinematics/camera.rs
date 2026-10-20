@@ -1,13 +1,76 @@
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
+pub use super::previewer::{CameraFlightPreviewer, CameraPreviewState};
+pub use super::spline::{CameraEasingType, CameraPose, CameraTrackSplinePlanner, CameraWaypoint};
+
 /// 開局相機使用的底層原生原語。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum StartCameraPrimitive {
     /// 使用原版戰役/多人地圖開局呼叫的 s_centerToPos(x, z) 搭配 s_lgcSetEngineZoom(zoom)。
     CenterToPos = 0,
     /// 使用底層原生原語 s_lgcSetEnginePos(x, y, z) 搭配 s_lgcSetEngineZoom(zoom)。
     DirectEnginePos = 1,
+}
+
+impl Serialize for StartCameraPrimitive {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_i32(*self as i32)
+    }
+}
+
+impl<'de> Deserialize<'de> for StartCameraPrimitive {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct Visitor;
+        impl<'de> serde::de::Visitor<'de> for Visitor {
+            type Value = StartCameraPrimitive;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("an integer (0 or 1) or string name ('CenterToPos' or 'DirectEnginePos')")
+            }
+
+            fn visit_i64<E>(self, v: i64) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                match v {
+                    0 => Ok(StartCameraPrimitive::CenterToPos),
+                    1 => Ok(StartCameraPrimitive::DirectEnginePos),
+                    _ => Err(E::custom(format!("invalid StartCameraPrimitive integer value: {v}"))),
+                }
+            }
+
+            fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                match v {
+                    0 => Ok(StartCameraPrimitive::CenterToPos),
+                    1 => Ok(StartCameraPrimitive::DirectEnginePos),
+                    _ => Err(E::custom(format!("invalid StartCameraPrimitive integer value: {v}"))),
+                }
+            }
+
+            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                match v {
+                    "CenterToPos" | "centerToPos" => Ok(StartCameraPrimitive::CenterToPos),
+                    "DirectEnginePos" | "directEnginePos" => Ok(StartCameraPrimitive::DirectEnginePos),
+                    _ => Err(E::custom(format!("unknown StartCameraPrimitive variant: {v}"))),
+                }
+            }
+        }
+
+        deserializer.deserialize_any(Visitor)
+    }
 }
 
 impl Default for StartCameraPrimitive {
@@ -105,5 +168,34 @@ impl From<&MapStartCamera> for against_rome_scenario::StartCamera {
             zoom: c.zoom,
             primitive: c.primitive as i32,
         }
+    }
+}
+
+impl From<MapStartCamera> for against_rome_scenario::StartCamera {
+    fn from(c: MapStartCamera) -> Self {
+        Self::from(&c)
+    }
+}
+
+impl From<&against_rome_scenario::StartCamera> for MapStartCamera {
+    fn from(c: &against_rome_scenario::StartCamera) -> Self {
+        Self {
+            enabled: c.enabled,
+            x: c.x,
+            y: c.y,
+            z: c.z,
+            zoom: c.zoom,
+            primitive: if c.primitive == 1 {
+                StartCameraPrimitive::DirectEnginePos
+            } else {
+                StartCameraPrimitive::CenterToPos
+            },
+        }
+    }
+}
+
+impl From<against_rome_scenario::StartCamera> for MapStartCamera {
+    fn from(c: against_rome_scenario::StartCamera) -> Self {
+        Self::from(&c)
     }
 }

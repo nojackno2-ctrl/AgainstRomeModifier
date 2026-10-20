@@ -1,0 +1,293 @@
+{
+  "cases": [
+    {
+      "name": "wave_survival_delay_overflow_is_rejected",
+      "compareDiagnostics": false,
+      "aliases": ["legionary"],
+      "plan": {
+        "title": "Overflow",
+        "waves": [
+          { "index": 1, "delay": 1, "x": 100, "z": 100, "squads": [ { "alias": "legionary", "count": 1, "team": 1 } ] }
+        ],
+        "objectives": [
+          { "id": "a0000000-0000-0000-0000-000000000008", "type": "WaveSurvival", "title": "Repel", "requiredSeconds": 2147483647 }
+        ]
+      }
+    },
+    {
+      "name": "waves_out_of_order_with_move_destination",
+      "compareDiagnostics": true,
+      "aliases": ["legionary", "Archer", "ballista"],
+      "plan": {
+        "title": "Waves",
+        "waves": [
+          { "index": 3, "delay": 180, "announcement": "Third wave!", "x": 123.5, "z": 16383, "squads": [ { "alias": "ARCHER", "count": 20, "team": 7 } ] },
+          { "index": 1, "delay": 60, "announcement": "", "x": 8000, "z": 8000, "squads": [ { "alias": "Legionary", "count": 10, "team": 1 }, { "alias": "archer", "count": 1, "team": 1 } ] },
+          { "index": 2, "delay": 120, "announcement": "   ", "x": 0, "z": 0.25, "moveDestination": { "x": 16383, "z": 0 },
+            "squads": [ { "alias": "ballista", "count": 5, "team": 0 }, { "alias": "legionary", "count": 3, "team": 2 } ] }
+        ]
+      }
+    },
+    {
+      "name": "briefing_reinforcements_and_all_objective_kinds",
+      "compareDiagnostics": true,
+      "aliases": ["legionary", "archer"],
+      "spawnIds": ["11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222"],
+      "plan": {
+        "title": "Chapter 1: Rome!",
+        "briefing": "Defend the forum.\nHold out.",
+        "objectives": [
+          { "id": "a0000000-0000-0000-0000-000000000001", "type": "DefendTarget", "title": "Hold Forum", "targetId": "11111111-1111-1111-1111-111111111111" },
+          { "id": "a0000000-0000-0000-0000-000000000002", "type": "DestroyTarget", "title": "Kill Chief", "targetId": "22222222-2222-2222-2222-222222222222" },
+          { "id": "a0000000-0000-0000-0000-000000000003", "type": "SurviveTime", "title": "Survive", "requiredSeconds": 600 },
+          { "id": "a0000000-0000-0000-0000-000000000004", "type": "ReachArea", "title": "Escort", "targetId": "11111111-1111-1111-1111-111111111111",
+            "minX": 100, "minZ": 200, "maxX": 300, "maxZ": 16383 },
+          { "id": "a0000000-0000-0000-0000-000000000005", "type": "WaveSurvival", "title": "Repel" }
+        ],
+        "waves": [
+          { "index": 1, "delay": 30, "announcement": "Go", "x": 10, "z": 20, "squads": [ { "alias": "legionary", "count": 4, "team": 1 } ] },
+          { "index": 2, "delay": 90, "x": 10, "z": 20, "squads": [ { "alias": "archer", "count": 4, "team": 1 } ] }
+        ],
+        "reinforcements": [
+          { "id": "b0000000-0000-0000-0000-000000000001", "name": "North Gate", "delay": 45, "team": 0, "x": 5.5, "z": 6.5,
+            "notification": "Reinforcements arrive", "squads": [ { "alias": "legionary", "count": 2, "team": 0 }, { "alias": "archer", "count": 2, "team": 0 } ] },
+          { "id": "b0000000-0000-0000-0000-000000000002", "name": "South", "delay": 0, "team": 0, "x": 1, "z": 2,
+            "notification": "  ", "squads": [ { "alias": "archer", "count": 1, "team": 3 } ] }
+        ]
+      }
+    },
+    {
+      "name": "wave_survival_explicit_seconds_without_waves",
+      "compareDiagnostics": true,
+      "aliases": ["legionary"],
+      "plan": {
+        "title": "Quiet",
+        "objectives": [
+          { "id": "a0000000-0000-0000-0000-000000000006", "type": "WaveSurvival", "title": "Wait", "requiredSeconds": 45 },
+          { "id": "a0000000-0000-0000-0000-000000000007", "type": "WaveSurvival", "title": "Wait Default" }
+        ]
+      }
+    },
+    {
+      "name": "name_collisions_case_insensitive_and_suffix_cascade",
+      "compareDiagnostics": true,
+      "aliases": ["legionary"],
+      "existingEventNames": ["wave_01", "WAVE_02", "Wave_02_2", "Reinf_Raiders", "missionbriefing_collide"],
+      "plan": {
+        "title": "Collide",
+        "briefing": "b",
+        "waves": [
+          { "index": 1, "delay": 1, "x": 1, "z": 1, "squads": [ { "alias": "legionary", "count": 1, "team": 1 } ] },
+          { "index": 2, "delay": 2, "x": 1, "z": 1, "squads": [ { "alias": "legionary", "count": 1, "team": 1 } ] },
+          { "index": 3, "delay": 3, "x": 1, "z": 1, "squads": [ { "alias": "legionary", "count": 1, "team": 1 } ] }
+        ],
+        "reinforcements": [
+          { "id": "b0000000-0000-0000-0000-000000000003", "name": "Raiders!", "delay": 5, "team": 0, "x": 1, "z": 1, "squads": [ { "alias": "legionary", "count": 1, "team": 0 } ] },
+          { "id": "b0000000-0000-0000-0000-000000000004", "name": "Raiders?", "delay": 6, "team": 0, "x": 1, "z": 1, "squads": [ { "alias": "legionary", "count": 1, "team": 0 } ] }
+        ]
+      }
+    },
+    {
+      "name": "briefing_title_collides_with_existing_ignoring_case",
+      "compareDiagnostics": true,
+      "aliases": ["legionary"],
+      "existingEventNames": ["MISSIONBRIEFING_Collide"],
+      "plan": { "title": "Collide", "briefing": "hello" }
+    },
+    {
+      "name": "unicode_sanitize_and_truncation_in_event_names",
+      "compareDiagnostics": true,
+      "aliases": ["legionary"],
+      "spawnIds": ["11111111-1111-1111-1111-111111111111"],
+      "plan": {
+        "title": "𠀀 Ünïcode 軍團 – Ωmega 😀 end",
+        "briefing": "ascii briefing",
+        "objectives": [
+          { "id": "a0000000-0000-0000-0000-000000000008", "type": "DefendTarget", "title": "THIS TITLE IS DEFINITELY LONGER THAN THIRTY CHARS", "targetId": "11111111-1111-1111-1111-111111111111" },
+          { "id": "a0000000-0000-0000-0000-000000000009", "type": "SurviveTime", "title": "!!!", "requiredSeconds": 1 },
+          { "id": "a0000000-0000-0000-0000-00000000000a", "type": "SurviveTime", "title": "_x_", "requiredSeconds": 86400 }
+        ],
+        "reinforcements": [
+          { "id": "b0000000-0000-0000-0000-000000000005", "name": "𠀀𠀀𠀀𠀀𠀀𠀀𠀀𠀀𠀀𠀀𠀀𠀀𠀀𠀀𠀀𠀀𠀀𠀀", "delay": 7, "team": 0, "x": 1, "z": 1, "notification": "notice", "squads": [ { "alias": "LEGIONARY", "count": 1, "team": 0 } ] },
+          { "id": "b0000000-0000-0000-0000-000000000006", "name": "   x   ", "delay": 8, "team": 0, "x": 1, "z": 1, "squads": [ { "alias": "legionary", "count": 1, "team": 0 } ] }
+        ]
+      }
+    },
+    {
+      "name": "exact_256_events_after_merge_is_accepted",
+      "compareDiagnostics": true,
+      "aliases": ["legionary"],
+      "padExistingEvents": 254,
+      "plan": {
+        "title": "Cap",
+        "waves": [
+          { "index": 1, "delay": 1, "x": 1, "z": 1, "squads": [ { "alias": "legionary", "count": 1, "team": 1 } ] },
+          { "index": 2, "delay": 2, "x": 1, "z": 1, "squads": [ { "alias": "legionary", "count": 1, "team": 1 } ] }
+        ]
+      }
+    },
+    {
+      "name": "257_events_after_merge_is_rejected",
+      "compareDiagnostics": false,
+      "aliases": ["legionary"],
+      "padExistingEvents": 255,
+      "plan": {
+        "title": "Cap",
+        "waves": [
+          { "index": 1, "delay": 1, "x": 1, "z": 1, "squads": [ { "alias": "legionary", "count": 1, "team": 1 } ] },
+          { "index": 2, "delay": 2, "x": 1, "z": 1, "squads": [ { "alias": "legionary", "count": 1, "team": 1 } ] }
+        ]
+      }
+    },
+    {
+      "name": "unknown_alias_in_wave_and_reinforcement_is_rejected",
+      "compareDiagnostics": true,
+      "aliases": ["legionary"],
+      "plan": {
+        "title": "Bad alias",
+        "waves": [ { "index": 1, "delay": 1, "x": 1, "z": 1, "squads": [ { "alias": "ghost", "count": 1, "team": 1 } ] } ],
+        "reinforcements": [ { "id": "b0000000-0000-0000-0000-000000000007", "name": "R", "delay": 1, "team": 0, "x": 1, "z": 1, "squads": [ { "alias": "phantom", "count": 1, "team": 0 } ] } ]
+      }
+    },
+    {
+      "name": "missing_objective_target_spawn_is_rejected",
+      "compareDiagnostics": true,
+      "aliases": ["legionary"],
+      "spawnIds": ["11111111-1111-1111-1111-111111111111"],
+      "plan": {
+        "title": "Missing target",
+        "objectives": [ { "id": "a0000000-0000-0000-0000-00000000000b", "type": "DestroyTarget", "title": "Gone", "targetId": "99999999-9999-9999-9999-999999999999" } ]
+      }
+    },
+    {
+      "name": "wave_with_patrol_path_is_rejected",
+      "compareDiagnostics": false,
+      "expectGuardRejection": true,
+      "aliases": ["legionary"],
+      "plan": {
+        "title": "Path",
+        "waves": [ { "index": 1, "delay": 1, "x": 1, "z": 1, "pathId": "c0000000-0000-0000-0000-000000000001", "squads": [ { "alias": "legionary", "count": 1, "team": 1 } ] } ]
+      }
+    },
+    {
+      "name": "wave_with_object_attack_target_is_rejected",
+      "compareDiagnostics": false,
+      "expectGuardRejection": true,
+      "aliases": ["legionary"],
+      "plan": {
+        "title": "Target",
+        "waves": [ { "index": 1, "delay": 1, "x": 1, "z": 1, "targetObjectId": "c0000000-0000-0000-0000-000000000002", "squads": [ { "alias": "legionary", "count": 1, "team": 1 } ] } ]
+      }
+    },
+    {
+      "name": "reinforcement_relative_delay_is_rejected",
+      "compareDiagnostics": false,
+      "expectGuardRejection": true,
+      "aliases": ["legionary"],
+      "plan": {
+        "title": "Delay",
+        "reinforcements": [ { "id": "b0000000-0000-0000-0000-000000000008", "name": "R", "delay": 1, "team": 0, "x": 1, "z": 1, "squads": [ { "alias": "legionary", "count": 1, "team": 0, "relativeDelay": 5 } ] } ]
+      }
+    },
+    {
+      "name": "duplicate_wave_index_is_rejected",
+      "compareDiagnostics": false,
+      "aliases": ["legionary"],
+      "plan": {
+        "title": "Dup",
+        "waves": [
+          { "index": 1, "delay": 1, "x": 1, "z": 1, "squads": [ { "alias": "legionary", "count": 1, "team": 1 } ] },
+          { "index": 1, "delay": 2, "x": 1, "z": 1, "squads": [ { "alias": "legionary", "count": 1, "team": 1 } ] }
+        ]
+      }
+    },
+    {
+      "name": "wave_delay_over_86400_fails_compiled_event_validation",
+      "compareDiagnostics": false,
+      "aliases": ["legionary"],
+      "plan": {
+        "title": "Late",
+        "waves": [ { "index": 1, "delay": 86401, "x": 1, "z": 1, "squads": [ { "alias": "legionary", "count": 1, "team": 1 } ] } ]
+      }
+    },
+    {
+      "name": "whitespace_title_is_rejected",
+      "compareDiagnostics": false,
+      "aliases": ["legionary"],
+      "plan": { "title": "   ", "briefing": "x" }
+    },
+    {
+      "name": "message_text_outside_game_code_page_is_rejected",
+      "compareDiagnostics": false,
+      "aliases": ["legionary"],
+      "plan": { "title": "Msg", "briefing": "軍團 😀" }
+    },
+    {
+      "name": "known_divergence_existing_spawn_alias_not_in_event_alias_list",
+      "compareDiagnostics": false,
+      "expectRustDivergence": true,
+      "aliases": ["legionary"],
+      "spawnAlias": "tower",
+      "spawnIds": ["11111111-1111-1111-1111-111111111111"],
+      "plan": {
+        "title": "Divergence",
+        "objectives": [ { "id": "a0000000-0000-0000-0000-00000000000c", "type": "DefendTarget", "title": "Tower", "targetId": "11111111-1111-1111-1111-111111111111" } ]
+      }
+    },
+    {
+      "name": "empty_plan_merges_nothing",
+      "compareDiagnostics": true,
+      "aliases": ["legionary"],
+      "plan": { "title": "Nothing" }
+    },
+    {
+      "name": "faction_profiles_alone_is_rejected",
+      "compareDiagnostics": false,
+      "expectGuardRejection": true,
+      "aliases": ["legionary"],
+      "plan": { "title": "faction_profiles_alone_is_rejected", "factionProfiles": [ { "team": 1, "archetypeId": "NomadicRaider" } ] }
+    },
+    {
+      "name": "faction_profiles_disabled_entry_still_rejected",
+      "compareDiagnostics": false,
+      "expectGuardRejection": true,
+      "aliases": ["legionary"],
+      "plan": { "title": "faction_profiles_disabled_entry_still_rejected", "factionProfiles": [ { "team": 2, "archetypeId": "RomanFortress", "enabled": false } ] }
+    },
+    {
+      "name": "faction_profiles_with_valid_wave_is_rejected",
+      "compareDiagnostics": false,
+      "expectGuardRejection": true,
+      "aliases": ["legionary"],
+      "plan": { "title": "faction_profiles_with_valid_wave_is_rejected", "waves": [ { "index": 1, "delay": 5, "x": 1, "z": 1, "squads": [ { "alias": "legionary", "count": 1, "team": 1 } ] } ], "factionProfiles": [ { "team": 1, "archetypeId": "GermanicSettlement" } ] }
+    },
+    {
+      "name": "faction_profiles_invalid_team_rejected_by_guard_first",
+      "compareDiagnostics": false,
+      "expectGuardRejection": true,
+      "aliases": ["legionary"],
+      "plan": { "title": "faction_profiles_invalid_team_rejected_by_guard_first", "factionProfiles": [ { "team": 9, "archetypeId": "NomadicRaider" } ] }
+    },
+    {
+      "name": "faction_profiles_blank_archetype_rejected_by_guard_first",
+      "compareDiagnostics": false,
+      "expectGuardRejection": true,
+      "aliases": ["legionary"],
+      "plan": { "title": "faction_profiles_blank_archetype_rejected_by_guard_first", "factionProfiles": [ { "team": 1, "archetypeId": "  " } ] }
+    },
+    {
+      "name": "wave_squad_relative_delay_is_rejected",
+      "compareDiagnostics": false,
+      "expectGuardRejection": true,
+      "aliases": ["legionary"],
+      "plan": { "title": "wave_squad_relative_delay_is_rejected", "waves": [ { "index": 1, "delay": 5, "x": 1, "z": 1, "squads": [ { "alias": "legionary", "count": 1, "team": 1, "relativeDelay": 3 } ] } ] }
+    },
+    {
+      "name": "reinforcement_patrol_path_is_rejected",
+      "compareDiagnostics": false,
+      "expectGuardRejection": true,
+      "aliases": ["legionary"],
+      "plan": { "title": "reinforcement_patrol_path_is_rejected", "reinforcements": [ { "id": "b0000000-0000-0000-0000-000000000009", "name": "R", "delay": 1, "team": 0, "x": 1, "z": 1, "pathId": "c0000000-0000-0000-0000-000000000002", "squads": [ { "alias": "legionary", "count": 1, "team": 0 } ] } ] }
+    }
+  ]
+}

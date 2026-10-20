@@ -1,0 +1,1202 @@
+{
+  "sourcePins": [
+    {
+      "name": "apply_campaign_waves_preconditions",
+      "file": "src.MapEditor/MapEditorForm.Campaign.cs",
+      "sha256": "c799d6f89586237e85e9495ceb75f40bbb454efefecf43d5627f71e919cf6701"
+    },
+    {
+      "name": "apply_campaign_waves_guard",
+      "file": "src.MapEditor/MapEditorForm.Campaign.cs",
+      "sha256": "32bdce6a1db850413e6d75e41e641a113cad001bd607d5b59911360031ca9220"
+    },
+    {
+      "name": "apply_campaign_waves_flow",
+      "file": "src.MapEditor/MapEditorForm.Campaign.cs",
+      "sha256": "d6af9b054f5f04e38be61b6d9b973bfdff203820420c0b427413f4170d7e161d"
+    },
+    {
+      "name": "merge_scenario_events_cap",
+      "file": "src.MapEditor/MapEditorForm.Campaign.cs",
+      "sha256": "4bfd604dc6eed3775b64cf1eba56bdf87f328d8f7c1d07d15668a52464a9e921"
+    },
+    {
+      "name": "can_merge_scenario_events",
+      "file": "src.MapEditor/MapEditorForm.Campaign.cs",
+      "sha256": "c1330d1eccab45b9139e6525c56cdf7acd0bf6f2ab7a7e0ff6f36ead582063d1"
+    },
+    {
+      "name": "unique_event_names_reads_session_only",
+      "file": "src.MapEditor/MapEditorForm.Campaign.cs",
+      "sha256": "74c47c3704229290465808b4d6daac0b95267349086ff99e0aa83683b8346852"
+    },
+    {
+      "name": "compile_for_merge_body",
+      "file": "src.MapEditor/CampaignWaveDialog.cs",
+      "sha256": "ad321a4808c11daaaf36fdda303f2e2250741b6ccad6be34ae303f63e921e90f"
+    }
+  ],
+  "results": [
+    {
+      "name": "wave_survival_delay_overflow_is_rejected",
+      "success": false,
+      "diagnostics": [
+        "[Error] \u7DE8\u8B6F\u5F8C\u4E4B ScenarioEvent \u9A57\u8B49\u5931\u6557\uFF1A\u8A08\u6642\u5FC5\u9808\u4ECB\u65BC 0 \u8207 86400 \u79D2\uFF1B\u91CD\u8907\u4E8B\u4EF6\u81F3\u5C11\u9593\u9694 1 \u79D2\u3002 | Compiled ScenarioEvent validation failed: \u8A08\u6642\u5FC5\u9808\u4ECB\u65BC 0 \u8207 86400 \u79D2\uFF1B\u91CD\u8907\u4E8B\u4EF6\u81F3\u5C11\u9593\u9694 1 \u79D2\u3002"
+      ],
+      "events": [],
+      "guardRejected": false
+    },
+    {
+      "name": "waves_out_of_order_with_move_destination",
+      "success": true,
+      "diagnostics": [
+        "[Info] \u6210\u529F\u7DE8\u8B6F 3 \u500B\u6230\u5F79\u57F7\u884C\u5E8F\u4E8B\u4EF6\u3002"
+      ],
+      "events": [
+        {
+          "Name": "Wave_01",
+          "DelaySeconds": 60,
+          "Repeat": false,
+          "Enabled": true,
+          "Actions": [
+            {
+              "Kind": 2,
+              "Text": "",
+              "Team": 1,
+              "OtherTeam": 1,
+              "Hostile": true,
+              "Alias": "Legionary",
+              "X": 8000,
+              "Z": 8000,
+              "Count": 10,
+              "MoveDestination": null
+            },
+            {
+              "Kind": 2,
+              "Text": "",
+              "Team": 1,
+              "OtherTeam": 1,
+              "Hostile": true,
+              "Alias": "archer",
+              "X": 8000,
+              "Z": 8000,
+              "Count": 1,
+              "MoveDestination": null
+            }
+          ],
+          "Conditions": []
+        },
+        {
+          "Name": "Wave_02",
+          "DelaySeconds": 120,
+          "Repeat": false,
+          "Enabled": true,
+          "Actions": [
+            {
+              "Kind": 2,
+              "Text": "",
+              "Team": 0,
+              "OtherTeam": 1,
+              "Hostile": true,
+              "Alias": "ballista",
+              "X": 0,
+              "Z": 0.25,
+              "Count": 5,
+              "MoveDestination": {
+                "X": 16383,
+                "Z": 0
+              }
+            },
+            {
+              "Kind": 2,
+              "Text": "",
+              "Team": 2,
+              "OtherTeam": 1,
+              "Hostile": true,
+              "Alias": "legionary",
+              "X": 0,
+              "Z": 0.25,
+              "Count": 3,
+              "MoveDestination": {
+                "X": 16383,
+                "Z": 0
+              }
+            }
+          ],
+          "Conditions": []
+        },
+        {
+          "Name": "Wave_03",
+          "DelaySeconds": 180,
+          "Repeat": false,
+          "Enabled": true,
+          "Actions": [
+            {
+              "Kind": 0,
+              "Text": "Third wave!",
+              "Team": 0,
+              "OtherTeam": 1,
+              "Hostile": true,
+              "Alias": "",
+              "X": 8000,
+              "Z": 8000,
+              "Count": 10,
+              "MoveDestination": null
+            },
+            {
+              "Kind": 2,
+              "Text": "",
+              "Team": 7,
+              "OtherTeam": 1,
+              "Hostile": true,
+              "Alias": "ARCHER",
+              "X": 123.5,
+              "Z": 16383,
+              "Count": 20,
+              "MoveDestination": null
+            }
+          ],
+          "Conditions": []
+        }
+      ],
+      "guardRejected": false
+    },
+    {
+      "name": "briefing_reinforcements_and_all_objective_kinds",
+      "success": true,
+      "diagnostics": [
+        "[Info] \u6210\u529F\u7DE8\u8B6F 10 \u500B\u6230\u5F79\u57F7\u884C\u5E8F\u4E8B\u4EF6\u3002"
+      ],
+      "events": [
+        {
+          "Name": "MissionBriefing_Chapter_1__Rome",
+          "DelaySeconds": 2,
+          "Repeat": false,
+          "Enabled": true,
+          "Actions": [
+            {
+              "Kind": 0,
+              "Text": "Defend the forum.\nHold out.",
+              "Team": 0,
+              "OtherTeam": 1,
+              "Hostile": true,
+              "Alias": "",
+              "X": 8000,
+              "Z": 8000,
+              "Count": 10,
+              "MoveDestination": null
+            }
+          ],
+          "Conditions": []
+        },
+        {
+          "Name": "Reinf_North_Gate",
+          "DelaySeconds": 45,
+          "Repeat": false,
+          "Enabled": true,
+          "Actions": [
+            {
+              "Kind": 0,
+              "Text": "Reinforcements arrive",
+              "Team": 0,
+              "OtherTeam": 1,
+              "Hostile": true,
+              "Alias": "",
+              "X": 8000,
+              "Z": 8000,
+              "Count": 10,
+              "MoveDestination": null
+            },
+            {
+              "Kind": 2,
+              "Text": "",
+              "Team": 0,
+              "OtherTeam": 1,
+              "Hostile": true,
+              "Alias": "legionary",
+              "X": 5.5,
+              "Z": 6.5,
+              "Count": 2,
+              "MoveDestination": null
+            },
+            {
+              "Kind": 2,
+              "Text": "",
+              "Team": 0,
+              "OtherTeam": 1,
+              "Hostile": true,
+              "Alias": "archer",
+              "X": 5.5,
+              "Z": 6.5,
+              "Count": 2,
+              "MoveDestination": null
+            }
+          ],
+          "Conditions": []
+        },
+        {
+          "Name": "Reinf_South",
+          "DelaySeconds": 0,
+          "Repeat": false,
+          "Enabled": true,
+          "Actions": [
+            {
+              "Kind": 2,
+              "Text": "",
+              "Team": 3,
+              "OtherTeam": 1,
+              "Hostile": true,
+              "Alias": "archer",
+              "X": 1,
+              "Z": 2,
+              "Count": 1,
+              "MoveDestination": null
+            }
+          ],
+          "Conditions": []
+        },
+        {
+          "Name": "Wave_01",
+          "DelaySeconds": 30,
+          "Repeat": false,
+          "Enabled": true,
+          "Actions": [
+            {
+              "Kind": 0,
+              "Text": "Go",
+              "Team": 0,
+              "OtherTeam": 1,
+              "Hostile": true,
+              "Alias": "",
+              "X": 8000,
+              "Z": 8000,
+              "Count": 10,
+              "MoveDestination": null
+            },
+            {
+              "Kind": 2,
+              "Text": "",
+              "Team": 1,
+              "OtherTeam": 1,
+              "Hostile": true,
+              "Alias": "legionary",
+              "X": 10,
+              "Z": 20,
+              "Count": 4,
+              "MoveDestination": null
+            }
+          ],
+          "Conditions": []
+        },
+        {
+          "Name": "Wave_02",
+          "DelaySeconds": 90,
+          "Repeat": false,
+          "Enabled": true,
+          "Actions": [
+            {
+              "Kind": 2,
+              "Text": "",
+              "Team": 1,
+              "OtherTeam": 1,
+              "Hostile": true,
+              "Alias": "archer",
+              "X": 10,
+              "Z": 20,
+              "Count": 4,
+              "MoveDestination": null
+            }
+          ],
+          "Conditions": []
+        },
+        {
+          "Name": "DefendFail_Hold_Forum",
+          "DelaySeconds": 1,
+          "Repeat": false,
+          "Enabled": true,
+          "Actions": [
+            {
+              "Kind": 0,
+              "Text": "Defense failed: the protected target was destroyed!",
+              "Team": 0,
+              "OtherTeam": 1,
+              "Hostile": true,
+              "Alias": "",
+              "X": 8000,
+              "Z": 8000,
+              "Count": 10,
+              "MoveDestination": null
+            },
+            {
+              "Kind": 4,
+              "Text": "",
+              "Team": 0,
+              "OtherTeam": 1,
+              "Hostile": true,
+              "Alias": "",
+              "X": 8000,
+              "Z": 8000,
+              "Count": 10,
+              "MoveDestination": null
+            }
+          ],
+          "Conditions": [
+            {
+              "Kind": 1,
+              "TargetId": "11111111-1111-1111-1111-111111111111",
+              "MinX": 0,
+              "MinZ": 0,
+              "MaxX": 16383,
+              "MaxZ": 16383
+            }
+          ]
+        },
+        {
+          "Name": "DestroyWin_Kill_Chief",
+          "DelaySeconds": 1,
+          "Repeat": false,
+          "Enabled": true,
+          "Actions": [
+            {
+              "Kind": 0,
+              "Text": "Objective achieved: the target was destroyed!",
+              "Team": 0,
+              "OtherTeam": 1,
+              "Hostile": true,
+              "Alias": "",
+              "X": 8000,
+              "Z": 8000,
+              "Count": 10,
+              "MoveDestination": null
+            },
+            {
+              "Kind": 3,
+              "Text": "",
+              "Team": 0,
+              "OtherTeam": 1,
+              "Hostile": true,
+              "Alias": "",
+              "X": 8000,
+              "Z": 8000,
+              "Count": 10,
+              "MoveDestination": null
+            }
+          ],
+          "Conditions": [
+            {
+              "Kind": 1,
+              "TargetId": "22222222-2222-2222-2222-222222222222",
+              "MinX": 0,
+              "MinZ": 0,
+              "MaxX": 16383,
+              "MaxZ": 16383
+            }
+          ]
+        },
+        {
+          "Name": "SurviveWin_Survive",
+          "DelaySeconds": 600,
+          "Repeat": false,
+          "Enabled": true,
+          "Actions": [
+            {
+              "Kind": 0,
+              "Text": "Defense successful: survived for 600 seconds!",
+              "Team": 0,
+              "OtherTeam": 1,
+              "Hostile": true,
+              "Alias": "",
+              "X": 8000,
+              "Z": 8000,
+              "Count": 10,
+              "MoveDestination": null
+            },
+            {
+              "Kind": 3,
+              "Text": "",
+              "Team": 0,
+              "OtherTeam": 1,
+              "Hostile": true,
+              "Alias": "",
+              "X": 8000,
+              "Z": 8000,
+              "Count": 10,
+              "MoveDestination": null
+            }
+          ],
+          "Conditions": []
+        },
+        {
+          "Name": "ReachWin_Escort",
+          "DelaySeconds": 1,
+          "Repeat": false,
+          "Enabled": true,
+          "Actions": [
+            {
+              "Kind": 0,
+              "Text": "Mission complete: the target unit reached the designated area!",
+              "Team": 0,
+              "OtherTeam": 1,
+              "Hostile": true,
+              "Alias": "",
+              "X": 8000,
+              "Z": 8000,
+              "Count": 10,
+              "MoveDestination": null
+            },
+            {
+              "Kind": 3,
+              "Text": "",
+              "Team": 0,
+              "OtherTeam": 1,
+              "Hostile": true,
+              "Alias": "",
+              "X": 8000,
+              "Z": 8000,
+              "Count": 10,
+              "MoveDestination": null
+            }
+          ],
+          "Conditions": [
+            {
+              "Kind": 2,
+              "TargetId": "11111111-1111-1111-1111-111111111111",
+              "MinX": 100,
+              "MinZ": 200,
+              "MaxX": 300,
+              "MaxZ": 16383
+            }
+          ]
+        },
+        {
+          "Name": "WaveSurvivalWin_Repel",
+          "DelaySeconds": 210,
+          "Repeat": false,
+          "Enabled": true,
+          "Actions": [
+            {
+              "Kind": 0,
+              "Text": "Victory! All enemy attack waves have been repelled!",
+              "Team": 0,
+              "OtherTeam": 1,
+              "Hostile": true,
+              "Alias": "",
+              "X": 8000,
+              "Z": 8000,
+              "Count": 10,
+              "MoveDestination": null
+            },
+            {
+              "Kind": 3,
+              "Text": "",
+              "Team": 0,
+              "OtherTeam": 1,
+              "Hostile": true,
+              "Alias": "",
+              "X": 8000,
+              "Z": 8000,
+              "Count": 10,
+              "MoveDestination": null
+            }
+          ],
+          "Conditions": []
+        }
+      ],
+      "guardRejected": false
+    },
+    {
+      "name": "wave_survival_explicit_seconds_without_waves",
+      "success": true,
+      "diagnostics": [
+        "[Info] \u6210\u529F\u7DE8\u8B6F 2 \u500B\u6230\u5F79\u57F7\u884C\u5E8F\u4E8B\u4EF6\u3002"
+      ],
+      "events": [
+        {
+          "Name": "WaveSurvivalWin_Wait",
+          "DelaySeconds": 45,
+          "Repeat": false,
+          "Enabled": true,
+          "Actions": [
+            {
+              "Kind": 0,
+              "Text": "Victory! All enemy attack waves have been repelled!",
+              "Team": 0,
+              "OtherTeam": 1,
+              "Hostile": true,
+              "Alias": "",
+              "X": 8000,
+              "Z": 8000,
+              "Count": 10,
+              "MoveDestination": null
+            },
+            {
+              "Kind": 3,
+              "Text": "",
+              "Team": 0,
+              "OtherTeam": 1,
+              "Hostile": true,
+              "Alias": "",
+              "X": 8000,
+              "Z": 8000,
+              "Count": 10,
+              "MoveDestination": null
+            }
+          ],
+          "Conditions": []
+        },
+        {
+          "Name": "WaveSurvivalWin_Wait_Default",
+          "DelaySeconds": 120,
+          "Repeat": false,
+          "Enabled": true,
+          "Actions": [
+            {
+              "Kind": 0,
+              "Text": "Victory! All enemy attack waves have been repelled!",
+              "Team": 0,
+              "OtherTeam": 1,
+              "Hostile": true,
+              "Alias": "",
+              "X": 8000,
+              "Z": 8000,
+              "Count": 10,
+              "MoveDestination": null
+            },
+            {
+              "Kind": 3,
+              "Text": "",
+              "Team": 0,
+              "OtherTeam": 1,
+              "Hostile": true,
+              "Alias": "",
+              "X": 8000,
+              "Z": 8000,
+              "Count": 10,
+              "MoveDestination": null
+            }
+          ],
+          "Conditions": []
+        }
+      ],
+      "guardRejected": false
+    },
+    {
+      "name": "name_collisions_case_insensitive_and_suffix_cascade",
+      "success": true,
+      "diagnostics": [
+        "[Info] \u6210\u529F\u7DE8\u8B6F 6 \u500B\u6230\u5F79\u57F7\u884C\u5E8F\u4E8B\u4EF6\u3002"
+      ],
+      "events": [
+        {
+          "Name": "MissionBriefing_Collide_2",
+          "DelaySeconds": 2,
+          "Repeat": false,
+          "Enabled": true,
+          "Actions": [
+            {
+              "Kind": 0,
+              "Text": "b",
+              "Team": 0,
+              "OtherTeam": 1,
+              "Hostile": true,
+              "Alias": "",
+              "X": 8000,
+              "Z": 8000,
+              "Count": 10,
+              "MoveDestination": null
+            }
+          ],
+          "Conditions": []
+        },
+        {
+          "Name": "Reinf_Raiders_2",
+          "DelaySeconds": 5,
+          "Repeat": false,
+          "Enabled": true,
+          "Actions": [
+            {
+              "Kind": 2,
+              "Text": "",
+              "Team": 0,
+              "OtherTeam": 1,
+              "Hostile": true,
+              "Alias": "legionary",
+              "X": 1,
+              "Z": 1,
+              "Count": 1,
+              "MoveDestination": null
+            }
+          ],
+          "Conditions": []
+        },
+        {
+          "Name": "Reinf_Raiders_3",
+          "DelaySeconds": 6,
+          "Repeat": false,
+          "Enabled": true,
+          "Actions": [
+            {
+              "Kind": 2,
+              "Text": "",
+              "Team": 0,
+              "OtherTeam": 1,
+              "Hostile": true,
+              "Alias": "legionary",
+              "X": 1,
+              "Z": 1,
+              "Count": 1,
+              "MoveDestination": null
+            }
+          ],
+          "Conditions": []
+        },
+        {
+          "Name": "Wave_01_2",
+          "DelaySeconds": 1,
+          "Repeat": false,
+          "Enabled": true,
+          "Actions": [
+            {
+              "Kind": 2,
+              "Text": "",
+              "Team": 1,
+              "OtherTeam": 1,
+              "Hostile": true,
+              "Alias": "legionary",
+              "X": 1,
+              "Z": 1,
+              "Count": 1,
+              "MoveDestination": null
+            }
+          ],
+          "Conditions": []
+        },
+        {
+          "Name": "Wave_02_3",
+          "DelaySeconds": 2,
+          "Repeat": false,
+          "Enabled": true,
+          "Actions": [
+            {
+              "Kind": 2,
+              "Text": "",
+              "Team": 1,
+              "OtherTeam": 1,
+              "Hostile": true,
+              "Alias": "legionary",
+              "X": 1,
+              "Z": 1,
+              "Count": 1,
+              "MoveDestination": null
+            }
+          ],
+          "Conditions": []
+        },
+        {
+          "Name": "Wave_03",
+          "DelaySeconds": 3,
+          "Repeat": false,
+          "Enabled": true,
+          "Actions": [
+            {
+              "Kind": 2,
+              "Text": "",
+              "Team": 1,
+              "OtherTeam": 1,
+              "Hostile": true,
+              "Alias": "legionary",
+              "X": 1,
+              "Z": 1,
+              "Count": 1,
+              "MoveDestination": null
+            }
+          ],
+          "Conditions": []
+        }
+      ],
+      "guardRejected": false
+    },
+    {
+      "name": "briefing_title_collides_with_existing_ignoring_case",
+      "success": true,
+      "diagnostics": [
+        "[Info] \u6210\u529F\u7DE8\u8B6F 1 \u500B\u6230\u5F79\u57F7\u884C\u5E8F\u4E8B\u4EF6\u3002"
+      ],
+      "events": [
+        {
+          "Name": "MissionBriefing_Collide_2",
+          "DelaySeconds": 2,
+          "Repeat": false,
+          "Enabled": true,
+          "Actions": [
+            {
+              "Kind": 0,
+              "Text": "hello",
+              "Team": 0,
+              "OtherTeam": 1,
+              "Hostile": true,
+              "Alias": "",
+              "X": 8000,
+              "Z": 8000,
+              "Count": 10,
+              "MoveDestination": null
+            }
+          ],
+          "Conditions": []
+        }
+      ],
+      "guardRejected": false
+    },
+    {
+      "name": "unicode_sanitize_and_truncation_in_event_names",
+      "success": true,
+      "diagnostics": [
+        "[Info] \u6210\u529F\u7DE8\u8B6F 6 \u500B\u6230\u5F79\u57F7\u884C\u5E8F\u4E8B\u4EF6\u3002"
+      ],
+      "events": [
+        {
+          "Name": "MissionBriefing_\u00DCn\u00EFcode_\u8ECD\u5718___\u03A9mega____end",
+          "DelaySeconds": 2,
+          "Repeat": false,
+          "Enabled": true,
+          "Actions": [
+            {
+              "Kind": 0,
+              "Text": "ascii briefing",
+              "Team": 0,
+              "OtherTeam": 1,
+              "Hostile": true,
+              "Alias": "",
+              "X": 8000,
+              "Z": 8000,
+              "Count": 10,
+              "MoveDestination": null
+            }
+          ],
+          "Conditions": []
+        },
+        {
+          "Name": "Reinf_",
+          "DelaySeconds": 7,
+          "Repeat": false,
+          "Enabled": true,
+          "Actions": [
+            {
+              "Kind": 0,
+              "Text": "notice",
+              "Team": 0,
+              "OtherTeam": 1,
+              "Hostile": true,
+              "Alias": "",
+              "X": 8000,
+              "Z": 8000,
+              "Count": 10,
+              "MoveDestination": null
+            },
+            {
+              "Kind": 2,
+              "Text": "",
+              "Team": 0,
+              "OtherTeam": 1,
+              "Hostile": true,
+              "Alias": "LEGIONARY",
+              "X": 1,
+              "Z": 1,
+              "Count": 1,
+              "MoveDestination": null
+            }
+          ],
+          "Conditions": []
+        },
+        {
+          "Name": "Reinf_x",
+          "DelaySeconds": 8,
+          "Repeat": false,
+          "Enabled": true,
+          "Actions": [
+            {
+              "Kind": 2,
+              "Text": "",
+              "Team": 0,
+              "OtherTeam": 1,
+              "Hostile": true,
+              "Alias": "legionary",
+              "X": 1,
+              "Z": 1,
+              "Count": 1,
+              "MoveDestination": null
+            }
+          ],
+          "Conditions": []
+        },
+        {
+          "Name": "DefendFail_THIS_TITLE_IS_DEFINITELY_LONGE",
+          "DelaySeconds": 1,
+          "Repeat": false,
+          "Enabled": true,
+          "Actions": [
+            {
+              "Kind": 0,
+              "Text": "Defense failed: the protected target was destroyed!",
+              "Team": 0,
+              "OtherTeam": 1,
+              "Hostile": true,
+              "Alias": "",
+              "X": 8000,
+              "Z": 8000,
+              "Count": 10,
+              "MoveDestination": null
+            },
+            {
+              "Kind": 4,
+              "Text": "",
+              "Team": 0,
+              "OtherTeam": 1,
+              "Hostile": true,
+              "Alias": "",
+              "X": 8000,
+              "Z": 8000,
+              "Count": 10,
+              "MoveDestination": null
+            }
+          ],
+          "Conditions": [
+            {
+              "Kind": 1,
+              "TargetId": "11111111-1111-1111-1111-111111111111",
+              "MinX": 0,
+              "MinZ": 0,
+              "MaxX": 16383,
+              "MaxZ": 16383
+            }
+          ]
+        },
+        {
+          "Name": "SurviveWin_",
+          "DelaySeconds": 1,
+          "Repeat": false,
+          "Enabled": true,
+          "Actions": [
+            {
+              "Kind": 0,
+              "Text": "Defense successful: survived for 1 seconds!",
+              "Team": 0,
+              "OtherTeam": 1,
+              "Hostile": true,
+              "Alias": "",
+              "X": 8000,
+              "Z": 8000,
+              "Count": 10,
+              "MoveDestination": null
+            },
+            {
+              "Kind": 3,
+              "Text": "",
+              "Team": 0,
+              "OtherTeam": 1,
+              "Hostile": true,
+              "Alias": "",
+              "X": 8000,
+              "Z": 8000,
+              "Count": 10,
+              "MoveDestination": null
+            }
+          ],
+          "Conditions": []
+        },
+        {
+          "Name": "SurviveWin_x",
+          "DelaySeconds": 86400,
+          "Repeat": false,
+          "Enabled": true,
+          "Actions": [
+            {
+              "Kind": 0,
+              "Text": "Defense successful: survived for 86400 seconds!",
+              "Team": 0,
+              "OtherTeam": 1,
+              "Hostile": true,
+              "Alias": "",
+              "X": 8000,
+              "Z": 8000,
+              "Count": 10,
+              "MoveDestination": null
+            },
+            {
+              "Kind": 3,
+              "Text": "",
+              "Team": 0,
+              "OtherTeam": 1,
+              "Hostile": true,
+              "Alias": "",
+              "X": 8000,
+              "Z": 8000,
+              "Count": 10,
+              "MoveDestination": null
+            }
+          ],
+          "Conditions": []
+        }
+      ],
+      "guardRejected": false
+    },
+    {
+      "name": "exact_256_events_after_merge_is_accepted",
+      "success": true,
+      "diagnostics": [
+        "[Info] \u6210\u529F\u7DE8\u8B6F 2 \u500B\u6230\u5F79\u57F7\u884C\u5E8F\u4E8B\u4EF6\u3002"
+      ],
+      "events": [
+        {
+          "Name": "Wave_01",
+          "DelaySeconds": 1,
+          "Repeat": false,
+          "Enabled": true,
+          "Actions": [
+            {
+              "Kind": 2,
+              "Text": "",
+              "Team": 1,
+              "OtherTeam": 1,
+              "Hostile": true,
+              "Alias": "legionary",
+              "X": 1,
+              "Z": 1,
+              "Count": 1,
+              "MoveDestination": null
+            }
+          ],
+          "Conditions": []
+        },
+        {
+          "Name": "Wave_02",
+          "DelaySeconds": 2,
+          "Repeat": false,
+          "Enabled": true,
+          "Actions": [
+            {
+              "Kind": 2,
+              "Text": "",
+              "Team": 1,
+              "OtherTeam": 1,
+              "Hostile": true,
+              "Alias": "legionary",
+              "X": 1,
+              "Z": 1,
+              "Count": 1,
+              "MoveDestination": null
+            }
+          ],
+          "Conditions": []
+        }
+      ],
+      "guardRejected": false
+    },
+    {
+      "name": "257_events_after_merge_is_rejected",
+      "success": false,
+      "diagnostics": [
+        "[Info] \u6210\u529F\u7DE8\u8B6F 2 \u500B\u6230\u5F79\u57F7\u884C\u5E8F\u4E8B\u4EF6\u3002",
+        "[Error] \u4E8B\u4EF6\u4E0A\u9650\u70BA 256 \u500B\u3002"
+      ],
+      "events": [],
+      "guardRejected": false
+    },
+    {
+      "name": "unknown_alias_in_wave_and_reinforcement_is_rejected",
+      "success": false,
+      "diagnostics": [
+        "[Error] \u6CE2\u6B21 1 \u7684\u90E8\u968A\u5225\u540D\u672A\u77E5\uFF1Aghost | Wave 1: unknown unit alias ghost",
+        "[Error] \u589E\u63F4\u300CR\u300D\u7684\u90E8\u968A\u5225\u540D\u672A\u77E5\uFF1Aphantom | Reinforcement R: unknown unit alias phantom"
+      ],
+      "events": [],
+      "guardRejected": false
+    },
+    {
+      "name": "missing_objective_target_spawn_is_rejected",
+      "success": false,
+      "diagnostics": [
+        "[Error] \u76EE\u6A19\u300CGone\u300D\u6307\u5B9A\u7684\u76EE\u6A19\u7269\u4EF6 ID (99999999-9999-9999-9999-999999999999) \u4E0D\u5B58\u5728\u65BC\u5834\u666F\u653E\u7F6E\u4E2D\u3002 | Objective Gone: target object ID (99999999-9999-9999-9999-999999999999) is not in the scene placement."
+      ],
+      "events": [],
+      "guardRejected": false
+    },
+    {
+      "name": "wave_with_patrol_path_is_rejected",
+      "success": false,
+      "diagnostics": [],
+      "events": [],
+      "guardRejected": true,
+      "helperSucceedsWithoutGuard": false
+    },
+    {
+      "name": "wave_with_object_attack_target_is_rejected",
+      "success": false,
+      "diagnostics": [],
+      "events": [],
+      "guardRejected": true,
+      "helperSucceedsWithoutGuard": false
+    },
+    {
+      "name": "reinforcement_relative_delay_is_rejected",
+      "success": false,
+      "diagnostics": [],
+      "events": [],
+      "guardRejected": true,
+      "helperSucceedsWithoutGuard": true
+    },
+    {
+      "name": "duplicate_wave_index_is_rejected",
+      "success": false,
+      "diagnostics": [
+        "[Error] \u4F01\u5283\u7E3D\u7DB1\u9A57\u8B49\u5931\u6557\uFF1A\u5305\u542B\u91CD\u8907\u7684\u6CE2\u6B21\u5E8F\u865F\uFF1A1 | Campaign plan validation failed: \u5305\u542B\u91CD\u8907\u7684\u6CE2\u6B21\u5E8F\u865F\uFF1A1"
+      ],
+      "events": [],
+      "guardRejected": false
+    },
+    {
+      "name": "wave_delay_over_86400_fails_compiled_event_validation",
+      "success": false,
+      "diagnostics": [
+        "[Error] \u7DE8\u8B6F\u5F8C\u4E4B ScenarioEvent \u9A57\u8B49\u5931\u6557\uFF1A\u8A08\u6642\u5FC5\u9808\u4ECB\u65BC 0 \u8207 86400 \u79D2\uFF1B\u91CD\u8907\u4E8B\u4EF6\u81F3\u5C11\u9593\u9694 1 \u79D2\u3002 | Compiled ScenarioEvent validation failed: \u8A08\u6642\u5FC5\u9808\u4ECB\u65BC 0 \u8207 86400 \u79D2\uFF1B\u91CD\u8907\u4E8B\u4EF6\u81F3\u5C11\u9593\u9694 1 \u79D2\u3002"
+      ],
+      "events": [],
+      "guardRejected": false
+    },
+    {
+      "name": "whitespace_title_is_rejected",
+      "success": false,
+      "diagnostics": [
+        "[Error] \u4F01\u5283\u7E3D\u7DB1\u9A57\u8B49\u5931\u6557\uFF1A\u6230\u5F79\u4EFB\u52D9\u6A19\u984C\u4E0D\u80FD\u70BA\u7A7A\u3002 | Campaign plan validation failed: \u6230\u5F79\u4EFB\u52D9\u6A19\u984C\u4E0D\u80FD\u70BA\u7A7A\u3002"
+      ],
+      "events": [],
+      "guardRejected": false
+    },
+    {
+      "name": "message_text_outside_game_code_page_is_rejected",
+      "success": false,
+      "diagnostics": [
+        "[Error] \u7DE8\u8B6F\u5F8C\u4E4B ScenarioEvent \u9A57\u8B49\u5931\u6557\uFF1AUnable to translate Unicode character \\\\u8ECD at index 0 to specified code page. | Compiled ScenarioEvent validation failed: Unable to translate Unicode character \\\\u8ECD at index 0 to specified code page."
+      ],
+      "events": [],
+      "guardRejected": false
+    },
+    {
+      "name": "known_divergence_existing_spawn_alias_not_in_event_alias_list",
+      "success": true,
+      "diagnostics": [
+        "[Info] \u6210\u529F\u7DE8\u8B6F 1 \u500B\u6230\u5F79\u57F7\u884C\u5E8F\u4E8B\u4EF6\u3002"
+      ],
+      "events": [
+        {
+          "Name": "DefendFail_Tower",
+          "DelaySeconds": 1,
+          "Repeat": false,
+          "Enabled": true,
+          "Actions": [
+            {
+              "Kind": 0,
+              "Text": "Defense failed: the protected target was destroyed!",
+              "Team": 0,
+              "OtherTeam": 1,
+              "Hostile": true,
+              "Alias": "",
+              "X": 8000,
+              "Z": 8000,
+              "Count": 10,
+              "MoveDestination": null
+            },
+            {
+              "Kind": 4,
+              "Text": "",
+              "Team": 0,
+              "OtherTeam": 1,
+              "Hostile": true,
+              "Alias": "",
+              "X": 8000,
+              "Z": 8000,
+              "Count": 10,
+              "MoveDestination": null
+            }
+          ],
+          "Conditions": [
+            {
+              "Kind": 1,
+              "TargetId": "11111111-1111-1111-1111-111111111111",
+              "MinX": 0,
+              "MinZ": 0,
+              "MaxX": 16383,
+              "MaxZ": 16383
+            }
+          ]
+        }
+      ],
+      "guardRejected": false
+    },
+    {
+      "name": "empty_plan_merges_nothing",
+      "success": true,
+      "diagnostics": [
+        "[Info] \u6210\u529F\u7DE8\u8B6F 0 \u500B\u6230\u5F79\u57F7\u884C\u5E8F\u4E8B\u4EF6\u3002"
+      ],
+      "events": [],
+      "guardRejected": false
+    },
+    {
+      "name": "faction_profiles_alone_is_rejected",
+      "success": false,
+      "diagnostics": [],
+      "events": [],
+      "guardRejected": true,
+      "helperSucceedsWithoutGuard": true
+    },
+    {
+      "name": "faction_profiles_disabled_entry_still_rejected",
+      "success": false,
+      "diagnostics": [],
+      "events": [],
+      "guardRejected": true,
+      "helperSucceedsWithoutGuard": true
+    },
+    {
+      "name": "faction_profiles_with_valid_wave_is_rejected",
+      "success": false,
+      "diagnostics": [],
+      "events": [],
+      "guardRejected": true,
+      "helperSucceedsWithoutGuard": true
+    },
+    {
+      "name": "faction_profiles_invalid_team_rejected_by_guard_first",
+      "success": false,
+      "diagnostics": [],
+      "events": [],
+      "guardRejected": true,
+      "helperSucceedsWithoutGuard": false
+    },
+    {
+      "name": "faction_profiles_blank_archetype_rejected_by_guard_first",
+      "success": false,
+      "diagnostics": [],
+      "events": [],
+      "guardRejected": true,
+      "helperSucceedsWithoutGuard": false
+    },
+    {
+      "name": "wave_squad_relative_delay_is_rejected",
+      "success": false,
+      "diagnostics": [],
+      "events": [],
+      "guardRejected": true,
+      "helperSucceedsWithoutGuard": false
+    },
+    {
+      "name": "reinforcement_patrol_path_is_rejected",
+      "success": false,
+      "diagnostics": [],
+      "events": [],
+      "guardRejected": true,
+      "helperSucceedsWithoutGuard": true
+    }
+  ]
+}

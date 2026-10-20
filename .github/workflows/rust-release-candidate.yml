@@ -1,0 +1,125 @@
+name: Rust release candidate
+
+# Manual, artifact-only candidate build. This workflow never creates a tag or a
+# GitHub release and does not touch the .NET release workflow (release.yml).
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rust-release-candidate:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+      - name: Rust toolchain
+        shell: pwsh
+        run: |
+          rustup toolchain install stable --profile minimal
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          rustup default stable
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          rustup target add x86_64-pc-windows-msvc i686-pc-windows-msvc
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Publisher contract tests
+        shell: pwsh
+        run: ./tools/test-publish-rust.ps1
+      - name: Rust rewrite tests
+        shell: pwsh
+        run: ./tools/test-rust-rewrite.ps1 -IncludeDesktop -Differential
+      - name: Trace i686 release DLL gate
+        shell: pwsh
+        run: ./tools/test-rust-rewrite.ps1 -TraceOnly
+      - name: Build portable ZIP
+        shell: pwsh
+        run: ./tools/publish-rust.ps1 -OutputDirectory (Join-Path $env:RUNNER_TEMP 'rust-candidate')
+      - name: Verify ZIP checksum and provenance
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $out = Join-Path $env:RUNNER_TEMP 'rust-candidate'
+          $zips = @(Get-ChildItem -LiteralPath $out -Filter '*.zip' -File)
+          if ($zips.Count -ne 1) { throw "Expected exactly one ZIP in $out, found $($zips.Count)." }
+          $zip = $zips[0]
+          $sumFile = "$($zip.FullName).sha256"
+          if (!(Test-Path -LiteralPath $sumFile -PathType Leaf)) { throw "Missing checksum file: $sumFile" }
+
+          # Require the exact publisher sidecar format, including its final LF.
+          $actual = (Get-FileHash -LiteralPath $zip.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ([IO.File]::ReadAllText($sumFile) -cne "$actual  $($zip.Name)`n") { throw 'ZIP checksum sidecar does not match the archive.' }
+
+          $extract = Join-Path $env:RUNNER_TEMP 'rust-candidate-extract'
+          if (Test-Path -LiteralPath $extract) { throw "Output directory must not pre-exist: $extract" }
+          Expand-Archive -LiteralPath $zip.FullName -DestinationPath $extract
+          $provPath = Join-Path $extract 'provenance.json'
+          if (!(Test-Path -LiteralPath $provPath -PathType Leaf)) { throw 'provenance.json missing from ZIP.' }
+          $prov = Get-Content -LiteralPath $provPath -Raw | ConvertFrom-Json
+          if ($prov.git.commit -ne $env:GITHUB_SHA) { throw "Provenance commit $($prov.git.commit) != $env:GITHUB_SHA." }
+          if ($prov.git.dirty -ne $false) { throw 'Provenance reports a dirty source tree.' }
+          if ($prov.exeProvenance -ne 'built-by-this-run-from-recorded-source-state') {
+            throw "Unexpected exeProvenance '$($prov.exeProvenance)'."
+          }
+          if ($prov.traceDll.cppSourceBinaryCopied -ne $false -or $prov.traceDll.target -ne 'i686-pc-windows-msvc' -or
+              $prov.traceDll.origin -ne 'built-by-this-run-from-rust-crate' -or $prov.traceDll.crtLinkage -ne 'static') { throw 'Incorrect trace DLL provenance.' }
+          $recorded = @($prov.files.PSObject.Properties)
+          if ($recorded.Count -eq 0) { throw 'provenance.json records no files.' }
+          foreach ($entry in $recorded) {
+            $path = Join-Path $extract $entry.Name
+            if (!(Test-Path -LiteralPath $path -PathType Leaf)) { throw "Recorded file missing from ZIP: $($entry.Name)" }
+            $h = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($h -ne $entry.Value) { throw "Extracted $($entry.Name) hash $h != recorded $($entry.Value)." }
+          }
+          $expected = @($prov.files.PSObject.Properties.Name) + 'provenance.json' | Sort-Object
+          $contents = @(Get-ChildItem -LiteralPath $extract -Recurse -File | ForEach-Object { [IO.Path]::GetRelativePath($extract, $_.FullName).Replace('\', '/') }) | Sort-Object
+          if (($expected -join "`n") -cne ($contents -join "`n")) { throw 'ZIP contents differ from provenance file list.' }
+
+          if ($prov.schema -ne 2 -or $prov.product -ne 'against-rome-suite' -or $prov.platform -ne 'win-x64') {
+            throw "Unexpected provenance identity: schema=$($prov.schema) product=$($prov.product) platform=$($prov.platform)"
+          }
+          $manifest = Get-Content -LiteralPath 'apps/against-rome-editor/Cargo.toml' -Raw
+          $version = [regex]::Match($manifest, '(?m)^\s*version\s*=\s*"([^"]+)"').Groups[1].Value
+          if (!$version -or $prov.version -ne $version) { throw "Provenance version '$($prov.version)' != editor Cargo version '$version'." }
+          $expectedName = "against-rome-editor-$version-win-x64-$($env:GITHUB_SHA.Substring(0, 8)).zip"
+          if ($zip.Name -cne $expectedName) { throw "ZIP name '$($zip.Name)' != '$expectedName'." }
+
+          $exes = 'against-rome-editor.exe', 'against-rome-modifier-gui.exe', 'against-rome-launcher.exe',
+              'save-manager.exe', 'against-rome-modifier.exe', 'ArmMapPackage.exe'
+          $required = $exes + 'ThirdParty/argm-trace/winmm.dll', 'ThirdParty/argm-trace/README.md',
+              'ThirdParty/dgVoodoo2/D3D8.dll', 'ThirdParty/dgVoodoo2/DDraw.dll', 'ThirdParty/dgVoodoo2/dgVoodooCpl.exe',
+              'ThirdParty/dgVoodoo2/dgVoodoo.conf', 'ThirdParty/dgVoodoo2/REDISTRIBUTION.md'
+          foreach ($name in $required) {
+            if (!$prov.files.PSObject.Properties[$name]) { throw "Provenance files lacks required entry: $name" }
+            if (!(Test-Path -LiteralPath (Join-Path $extract $name) -PathType Leaf)) { throw "ZIP lacks required entry: $name" }
+          }
+          # The per-binary table must describe exactly the shipped executables, with the same hashes as `files`.
+          $binNames = @($prov.binaries.PSObject.Properties.Name) | Sort-Object
+          if (($binNames -join "`n") -cne (($exes | Sort-Object) -join "`n")) { throw "provenance.binaries lists: $($binNames -join ', ')" }
+          foreach ($b in $prov.binaries.PSObject.Properties) {
+            if ($b.Value.sha256 -ne $prov.files.($b.Name)) { throw "binaries/files hash mismatch for $($b.Name)." }
+          }
+
+          $packagedTrace = Join-Path $extract 'ThirdParty/argm-trace/winmm.dll'
+          $traceHash = (Get-FileHash -LiteralPath $packagedTrace -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($traceHash -ne $prov.traceDll.sha256) { throw 'Packaged trace DLL differs from provenance.traceDll.sha256.' }
+          $builtTrace = Join-Path $PWD 're_workspace/rust-rewrite-targets/native-against-rome-trace/i686-pc-windows-msvc/release/winmm.dll'
+          if ((Get-FileHash -LiteralPath $builtTrace -Algorithm SHA256).Hash.ToLowerInvariant() -ne $traceHash) { throw 'Packaged trace DLL differs from the publisher build output.' }
+          Write-Host "Verified $($zip.Name) SHA256=$actual with $($recorded.Count) recorded files at $env:GITHUB_SHA."
+      - name: Upload candidate artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-release-candidate-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/rust-candidate/*.zip
+            ${{ runner.temp }}/rust-candidate/*.zip.sha256
+          if-no-files-found: error
+          retention-days: 14

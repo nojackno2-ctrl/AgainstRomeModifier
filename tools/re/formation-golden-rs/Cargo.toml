@@ -1,0 +1,18 @@
+[package]
+name = "formation-golden"
+version = "0.1.0"
+edition = "2021"
+description = "Deterministic golden differential fixture generator for Against Rome formation width validation and passability"
+publish = false
+
+[lib]
+name = "formation_golden"
+path = "src/lib.rs"
+
+[[bin]]
+name = "formation-golden"
+path = "src/main.rs"
+
+[dependencies]
+against-rome-navigation = { path = "../../../native/against-rome-navigation" }
+

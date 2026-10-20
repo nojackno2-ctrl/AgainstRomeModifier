@@ -307,6 +307,46 @@ fn logger_bom_line_format_and_truncation() {
     assert_eq!(long.last(), Some(&b'\n'));
 }
 #[test]
+fn logger_size_cap_appends_warning_and_suppresses_subsequent_writes() {
+    let mut b = Vec::new();
+    {
+        let mut l = tracelog::TraceLog::with_max_bytes(&mut b, Some(80)).unwrap();
+        l.log(1, "test", "first message").unwrap();
+        assert!(!l.is_stopped());
+        l.log(1, "test", "second message which will trigger cap")
+            .unwrap();
+        assert!(l.is_stopped());
+        let written = l.bytes_written();
+        l.log(1, "test", "third message suppressed").unwrap();
+        assert_eq!(l.bytes_written(), written);
+        l.raw("fourth raw message suppressed").unwrap();
+        assert_eq!(l.bytes_written(), written);
+    }
+    let text = String::from_utf8_lossy(&b);
+    assert!(text.contains("first message"));
+    assert!(text.contains("log size limit reached, suppressing further trace output"));
+    assert!(!text.contains("third message"));
+    assert!(!text.contains("fourth raw message"));
+}
+#[test]
+fn logger_close_synced_flushes_then_syncs_writer_and_propagates_errors() {
+    let mut b = Vec::new();
+    let mut synced = false;
+    let mut l = tracelog::TraceLog::new(&mut b).unwrap();
+    l.raw("x").unwrap();
+    l.close_synced(|w| {
+        assert_eq!(w.last(), Some(&10u8));
+        synced = true;
+        Ok(())
+    })
+    .unwrap();
+    assert!(synced);
+    let e = l
+        .close_synced(|_| Err(std::io::Error::other("sync failed")))
+        .unwrap_err();
+    assert_eq!(e.to_string(), "sync failed");
+}
+#[test]
 fn exports_snapshot_matches_original_names_ordinals_and_noname() {
     let ours = include_str!("../winmm.def");
     let source = include_str!("../../argm-trace/argm_trace.def");

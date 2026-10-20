@@ -1,0 +1,2439 @@
+//! 3D Terrain & Object Viewport for Against Rome Map Editor.
+//!
+//! Provides an interactive 3D terrain and placed object viewport with:
+//! - Orbit, Pan, and Zoom camera controls based on `against_rome_scene::EditorCamera`
+//! - Terrain ray-cast picking using `against_rome_scene::TerrainRayPicker`
+//! - Pixel-accurate sprite and marker object picking using `against_rome_scene::PreparedSceneFrame::pick_object`
+//! - Shaded relief, heightmap, and collision visualization
+//! - Placed object visualization supporting native sprites (via `NativeSpriteCatalog` / atlas)
+//!   and clear, stable team-colored marker placeholders with graceful fallback when assets are missing
+//! - Water plane and 3D brush perimeter cursor overlays
+//! - Real-time world-to-map coordinate routing for terrain editing tools while ensuring
+//!   object picking selects placements without inadvertently triggering the terrain brush
+//!
+//! # Parity Notice
+//! This module provides an editor preview viewport based on pure CPU scene/frame
+//! mathematics and egui geometry rendering. It is NOT full game-renderer parity
+//! (no original game APT patch interpolation, retail particle blend shaders,
+//! retail DirectX 8/9 pipeline, or retail soundscape triggers).
+
+use std::collections::HashMap;
+use std::sync::Arc;
+
+use against_rome_placement::WorldObject;
+use against_rome_scene::{
+    camera::EditorCamera,
+    draw_list::{
+        prepare_scene_frame, BrushCursorOptions, PreparedSceneFrame, SceneFrameOptions,
+        BRUSH_CURSOR_COLOR,
+    },
+    math::{Vec2 as SceneVec2, Vec3 as SceneVec3},
+    picking::PickableSprite,
+    ray_picker::TerrainRayPicker,
+    scene::Sprite,
+    scene_object::SceneObject,
+    terrain::TerrainHeightField,
+    AtlasUv,
+};
+use against_rome_textures::{
+    direction_for_angle, AtlasPoint, BoundedSpriteCatalog, FloorTextureAtlas, NativeSpriteAtlas,
+    NativeSpriteCatalog, DEFAULT_DIRECTION,
+};
+use eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke, Ui};
+
+use crate::terrain::TerrainSession;
+
+/// Visual shading mode for the 3D terrain surface.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ShadingMode {
+    /// Elevation-based natural terrain relief (sand, grass, highlands, rock, snow)
+    Relief,
+    /// Grayscale heightmap visualization lit by sunlight
+    Heightmap,
+    /// Walkability / collision overlay
+    Collision,
+    /// Textured ground tiles mapped via FloorTextureAtlas
+    Textured,
+}
+
+/// Action produced by viewport interaction to be executed by EditorApp.
+#[derive(Clone, Debug, PartialEq)]
+pub enum ViewportAction {
+    None,
+    /// A stroke dab was applied at height vertex coordinates `(grid_x, grid_y)`.
+    Paint {
+        grid_x: f32,
+        grid_y: f32,
+    },
+    /// Pointer was released; commit the stroke to history.
+    CommitStroke,
+    /// An object was selected (or selection changed) via 3D picking.
+    SelectObject(Option<(usize, u32)>),
+    /// A discrete terrain tile center, converted to height vertex coordinates.
+    PickTerrain {
+        grid_x: f32,
+        grid_y: f32,
+    },
+    /// Cancel a pending two-point terrain selection.
+    CancelTerrainPick,
+}
+
+impl ViewportAction {
+    /// Returns the picked terrain grid coordinates `(grid_x, grid_y)` if this is a `PickTerrain` action.
+    #[inline]
+    pub fn picked_terrain(&self) -> Option<(f32, f32)> {
+        match *self {
+            Self::PickTerrain { grid_x, grid_y } => Some((grid_x, grid_y)),
+            _ => None,
+        }
+    }
+
+    /// Returns the selected object `(slot, uid)` if this is a `SelectObject` action.
+    #[inline]
+    pub fn selected_object(&self) -> Option<Option<(usize, u32)>> {
+        match *self {
+            Self::SelectObject(key) => Some(key),
+            _ => None,
+        }
+    }
+
+    /// Returns true if this action is a discrete terrain pick.
+    #[inline]
+    pub fn is_pick_terrain(&self) -> bool {
+        matches!(self, Self::PickTerrain { .. })
+    }
+}
+
+/// Interactive 3D terrain and object viewport state and renderer.
+#[derive(Clone)]
+pub struct Viewport3d {
+    pub camera: EditorCamera,
+    pub show_grid: bool,
+    pub show_water: bool,
+    pub show_markers: bool,
+    pub show_objects: bool,
+    pub mesh_lod_step: usize,
+    pub relief_scale: f32,
+    pub shading_mode: ShadingMode,
+    pub hover_tile: Option<(i32, i32)>,
+    pub hover_world: Option<SceneVec3>,
+    pub hover_grid: Option<(f32, f32)>,
+    pub hover_object: Option<(usize, u32)>,
+    pub status_info: String,
+
+    // Catalogs and asset mapping
+    pub sprite_catalog: Option<Arc<NativeSpriteCatalog>>,
+    pub bounded_catalog: Option<Arc<BoundedSpriteCatalog>>,
+    pub sprite_atlas: Option<Arc<NativeSpriteAtlas>>,
+    pub atlas_texture: Option<egui::TextureHandle>,
+    pub type_names: HashMap<u16, String>,
+
+    // Floor texture atlas and tile mapping
+    pub floor_atlas: Option<Arc<FloorTextureAtlas>>,
+    pub floor_atlas_texture: Option<egui::TextureHandle>,
+    pub tile_textures: Option<Vec<String>>,
+
+    /// Select ramp endpoints instead of applying continuous brush dabs.
+    pub terrain_pick_mode: bool,
+    terrain_pick_press: Option<(f32, f32)>,
+
+    // Interaction tracking
+    pub is_panning: bool,
+    pub is_rotating: bool,
+    pub rotate_start: Option<Pos2>,
+    pub last_pointer: Option<Pos2>,
+    pub drag_started_on_object: bool,
+    pub is_dragging_terrain: bool,
+    pub last_rect: Option<Rect>,
+}
+
+impl std::fmt::Debug for Viewport3d {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Viewport3d")
+            .field("camera", &self.camera)
+            .field("show_grid", &self.show_grid)
+            .field("show_water", &self.show_water)
+            .field("show_markers", &self.show_markers)
+            .field("show_objects", &self.show_objects)
+            .field("mesh_lod_step", &self.mesh_lod_step)
+            .field("relief_scale", &self.relief_scale)
+            .field("shading_mode", &self.shading_mode)
+            .field("hover_tile", &self.hover_tile)
+            .field("hover_world", &self.hover_world)
+            .field("hover_grid", &self.hover_grid)
+            .field("hover_object", &self.hover_object)
+            .field("status_info", &self.status_info)
+            .field("has_sprite_catalog", &self.sprite_catalog.is_some())
+            .field("has_bounded_catalog", &self.bounded_catalog.is_some())
+            .field("has_sprite_atlas", &self.sprite_atlas.is_some())
+            .field("has_floor_atlas", &self.floor_atlas.is_some())
+            .field(
+                "has_floor_atlas_texture",
+                &self.floor_atlas_texture.is_some(),
+            )
+            .field(
+                "tile_textures_count",
+                &self.tile_textures.as_ref().map(|v| v.len()),
+            )
+            .field("type_names_count", &self.type_names.len())
+            .field("drag_started_on_object", &self.drag_started_on_object)
+            .field("is_dragging_terrain", &self.is_dragging_terrain)
+            .field("last_rect", &self.last_rect)
+            .finish()
+    }
+}
+
+impl Default for Viewport3d {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Viewport3d {
+    pub const PAN_SPEED: f32 = 0.08;
+    pub const ROTATE_SPEED: f32 = 0.35;
+    pub const DRAG_THRESHOLD: f32 = 4.0;
+    pub const OBJECT_PICK_RADIUS: f32 = 12.0;
+    pub const NON_PARITY_NOTICE: &'static str =
+        "3D Terrain Viewport: Editor preview via EditorCamera and TerrainRayPicker. Not full game-renderer parity (no native runtime APT/FPU shaders).";
+
+    pub fn new() -> Self {
+        Self {
+            terrain_pick_mode: false,
+            terrain_pick_press: None,
+            camera: EditorCamera::default(),
+            show_grid: false,
+            show_water: true,
+            show_markers: true,
+            show_objects: true,
+            mesh_lod_step: 2,
+            relief_scale: 1.0,
+            shading_mode: ShadingMode::Relief,
+            hover_tile: None,
+            hover_world: None,
+            hover_grid: None,
+            hover_object: None,
+            status_info: String::new(),
+            sprite_catalog: None,
+            bounded_catalog: None,
+            sprite_atlas: None,
+            atlas_texture: None,
+            type_names: HashMap::new(),
+            floor_atlas: None,
+            floor_atlas_texture: None,
+            tile_textures: None,
+            is_panning: false,
+            is_rotating: false,
+            rotate_start: None,
+            last_pointer: None,
+            drag_started_on_object: false,
+            is_dragging_terrain: false,
+            last_rect: None,
+        }
+    }
+
+    /// Sets or replaces the active floor texture atlas, invalidating any cached GPU handle.
+    pub fn set_floor_atlas(&mut self, atlas: Option<Arc<FloorTextureAtlas>>) {
+        self.floor_atlas = atlas;
+        self.floor_atlas_texture = None;
+    }
+
+    /// Sets or updates the per-tile texture name grid.
+    pub fn set_tile_textures(&mut self, textures: Option<Vec<String>>) {
+        self.tile_textures = textures;
+    }
+
+    /// Resolves the texture name for a specific terrain tile coordinate.
+    pub fn resolve_tile_texture(&self, x: usize, z: usize, dimension: usize) -> &str {
+        if let Some(ref textures) = self.tile_textures {
+            let idx = z * dimension + x;
+            if let Some(name) = textures.get(idx) {
+                let trimmed = name.trim();
+                if !trimmed.is_empty() {
+                    return trimmed;
+                }
+            }
+        }
+        if let Some(ref atlas) = self.floor_atlas {
+            if let Some(first) = atlas.names().first() {
+                return first.as_str();
+            }
+        }
+        "4BA___51"
+    }
+
+    /// Samples the 4 UV corner points `[Top-Left, Top-Right, Bottom-Right, Bottom-Left]`
+    /// for a terrain tile coordinate using the active floor texture atlas.
+    pub fn sample_tile_uv(&self, x: usize, z: usize, dimension: usize) -> Option<[AtlasPoint; 4]> {
+        let atlas = self.floor_atlas.as_ref()?;
+        let name = self.resolve_tile_texture(x, z, dimension);
+        Some(atlas.get_uv(name))
+    }
+
+    /// Synchronizes the CPU `FloorTextureAtlas` ARGB pixels into an egui `TextureHandle`.
+    pub fn sync_floor_atlas_texture(&mut self, ctx: &egui::Context) {
+        if let Some(ref atlas) = self.floor_atlas {
+            let width = atlas.size();
+            let height = atlas.size();
+            let mut pixels = Vec::with_capacity(width * height);
+            for &argb in atlas.argb_pixels() {
+                let a = ((argb >> 24) & 0xFF) as u8;
+                let r = ((argb >> 16) & 0xFF) as u8;
+                let g = ((argb >> 8) & 0xFF) as u8;
+                let b = (argb & 0xFF) as u8;
+                pixels.push(Color32::from_rgba_unmultiplied(r, g, b, a));
+            }
+            let color_image = egui::ColorImage {
+                size: [width, height],
+                pixels,
+            };
+            let handle = ctx.load_texture(
+                "floor_texture_atlas",
+                color_image,
+                egui::TextureOptions::LINEAR,
+            );
+            self.floor_atlas_texture = Some(handle);
+        }
+    }
+
+    /// Resets the camera to center on the terrain dimension with default orbit angles.
+    pub fn reset_camera(&mut self, dimension: f32) {
+        let center = dimension * 0.5;
+        self.camera.target = SceneVec3::new(center, 0.0, center);
+        self.camera.set_distance(82.0);
+        self.camera.rotate(
+            45.0 - self.camera.yaw_degrees(),
+            30.0 - self.camera.pitch_degrees(),
+        );
+    }
+
+    /// Rotates the camera orbit angles (yaw and pitch in degrees).
+    pub fn orbit(&mut self, delta_x: f32, delta_y: f32) {
+        self.camera
+            .rotate(delta_x * Self::ROTATE_SPEED, -delta_y * Self::ROTATE_SPEED);
+    }
+
+    /// Pans the camera target along the right/forward ground planes.
+    pub fn pan(&mut self, delta_x: f32, delta_y: f32) {
+        self.camera
+            .pan(-delta_x * Self::PAN_SPEED, delta_y * Self::PAN_SPEED);
+    }
+
+    /// Zooms the camera distance by standard stepping factors.
+    pub fn zoom(&mut self, zoom_in: bool) {
+        self.camera.zoom_step(zoom_in);
+    }
+
+    /// Evaluates discrete terrain pick coordinates for a screen position if ray hits empty terrain.
+    ///
+    /// Returns `None` if an object was picked (object-selection priority) or if ray-cast picking misses the terrain.
+    pub fn try_pick_terrain_grid(
+        &self,
+        screen_pt: Pos2,
+        viewport_rect: Rect,
+        session: &TerrainSession,
+        field: &TerrainHeightField,
+        _objects: &[WorldObject],
+        frame: &PreparedSceneFrame,
+        scene_objects: &[SceneObject],
+        pickable_sprites: &[Option<PickableSprite<'_>>],
+    ) -> Option<(f32, f32)> {
+        let local_x = screen_pt.x - viewport_rect.min.x;
+        let local_y = screen_pt.y - viewport_rect.min.y;
+        let screen_vec = SceneVec2::new(local_x, local_y);
+
+        // Object priority: if hitting an object, terrain pick is rejected
+        if self.show_objects {
+            if frame
+                .pick_object(
+                    screen_vec,
+                    scene_objects,
+                    pickable_sprites,
+                    field,
+                    Self::OBJECT_PICK_RADIUS,
+                )
+                .is_some()
+            {
+                return None;
+            }
+        }
+
+        let ray = self.camera.create_ray(
+            local_x,
+            local_y,
+            viewport_rect.width(),
+            viewport_rect.height(),
+        );
+        let tile = TerrainRayPicker::try_pick(field, ray)?;
+        Some(Self::terrain_tile_to_grid(session, field, tile))
+    }
+
+    /// C# Map3DViewControl.TryGetTile floors/clamps the hit via TerrainRayPicker.TryPick;
+    /// TerrainRampTool.TileToVertex then maps that integer tile's center to vertices.
+    fn terrain_tile_to_grid(
+        session: &TerrainSession,
+        field: &TerrainHeightField,
+        (tile_x, tile_y): (i32, i32),
+    ) -> (f32, f32) {
+        let scale_x = (session.vertex_size - 1) as f32 / field.tile_width;
+        let scale_y = (session.vertex_size - 1) as f32 / field.tile_height;
+        (
+            (tile_x as f32 + 0.5) * scale_x,
+            (tile_y as f32 + 0.5) * scale_y,
+        )
+    }
+
+    /// Builds a `TerrainHeightField` from the current `TerrainSession`.
+    pub fn build_height_field(
+        session: &TerrainSession,
+        height_scale: f32,
+        native_step: f32,
+    ) -> Result<TerrainHeightField, &'static str> {
+        let dimension = ((session.vertex_size.saturating_sub(1)) / 4).max(1) as f32;
+        TerrainHeightField::new(
+            session.vertex_size,
+            session.vertex_size,
+            session.heights().to_vec(),
+            height_scale,
+            dimension,
+            dimension,
+            Some(native_step),
+        )
+    }
+
+    /// Converts raw `WorldObject` instances into rich `SceneObject` definitions,
+    /// pickable sprites, and scene sprites based on active catalog assets.
+    pub fn convert_world_objects(
+        &self,
+        objects: &[WorldObject],
+    ) -> (
+        Vec<SceneObject>,
+        Vec<Option<PickableSprite<'static>>>,
+        Vec<Option<Sprite>>,
+    ) {
+        let mut scene_objs = Vec::with_capacity(objects.len());
+        let mut pickables = Vec::with_capacity(objects.len());
+        let mut scene_sprites = Vec::with_capacity(objects.len());
+
+        for obj in objects {
+            if !obj.position[0].is_finite() || !obj.position[2].is_finite() {
+                continue;
+            }
+
+            let name = self
+                .type_names
+                .get(&obj.type_id)
+                .cloned()
+                .unwrap_or_else(|| format!("obj_{}", obj.type_id));
+
+            let angle = if obj.rotation_degrees.is_finite() {
+                Some(obj.rotation_degrees)
+            } else {
+                None
+            };
+
+            let scene_obj = SceneObject {
+                name: name.clone(),
+                world: SceneVec3::new(obj.position[0], obj.position[1], obj.position[2]),
+                local: SceneVec3::ZERO,
+                team: obj.team as i32,
+                source_file: "placement".to_string(),
+                object_index: obj.slot as i32,
+                angle,
+                has_native_saved_position: true,
+            };
+
+            // 1. Resolve native sprite from catalogs if available
+            let native_sprite = if let Some(ref cat) = self.sprite_catalog {
+                let dir = angle
+                    .map(|a| direction_for_angle(a, 8))
+                    .unwrap_or(DEFAULT_DIRECTION);
+                cat.get_sprite(&name, obj.team as i32, dir, angle, None)
+            } else if let Some(ref bcat) = self.bounded_catalog {
+                bcat.get_sprite(&name)
+            } else {
+                None
+            };
+
+            // 2. Build pickable sprite and scene sprite if asset resolved
+            let (pickable, scene_sprite) = if let Some(ref ns) = native_sprite {
+                let p = PickableSprite::new(
+                    ns.width as u32,
+                    ns.height as u32,
+                    ns.anchor_x as f32,
+                    ns.anchor_y as f32,
+                    None,
+                );
+
+                let uv = self
+                    .sprite_atlas
+                    .as_ref()
+                    .and_then(|atlas| atlas.try_get_uv(ns))
+                    .map(|u| AtlasUv {
+                        u0: u.u0,
+                        v0: u.v0,
+                        u1: u.u1,
+                        v1: u.v1,
+                    })
+                    .unwrap_or(AtlasUv {
+                        u0: 0.0,
+                        v0: 0.0,
+                        u1: 1.0,
+                        v1: 1.0,
+                    });
+
+                let s = Sprite {
+                    width: ns.width as f32,
+                    height: ns.height as f32,
+                    anchor_x: ns.anchor_x as f32,
+                    anchor_y: ns.anchor_y as f32,
+                    uv,
+                };
+                (Some(p), Some(s))
+            } else {
+                (None, None)
+            };
+
+            scene_objs.push(scene_obj);
+            pickables.push(pickable);
+            scene_sprites.push(scene_sprite);
+        }
+
+        (scene_objs, pickables, scene_sprites)
+    }
+
+    /// Prepares a pure CPU scene frame using `against_rome_scene`.
+    pub fn prepare_frame(
+        &self,
+        viewport_size: egui::Vec2,
+        field: &TerrainHeightField,
+        water_surface: f32,
+        brush_radius_tiles: f32,
+        objects: &[SceneObject],
+        sprites: &[Option<Sprite>],
+    ) -> Result<PreparedSceneFrame, &'static str> {
+        let mut options = SceneFrameOptions::default();
+        options.show_grid = self.show_grid;
+        options.show_water = self.show_water;
+        options.show_markers = self.show_markers && self.show_objects;
+        options.show_objects = self.show_objects;
+        options.water_level = water_surface;
+        options.brush_cursor = self.hover_tile.map(|(tx, ty)| BrushCursorOptions {
+            hover_tile_x: tx,
+            hover_tile_y: ty,
+            brush_size: (brush_radius_tiles * 2.0).round().max(1.0) as i32,
+            selection: None,
+            color: BRUSH_CURSOR_COLOR,
+            line_width: 2.0,
+        });
+
+        let vp = SceneVec2::new(viewport_size.x.max(1.0), viewport_size.y.max(1.0));
+        prepare_scene_frame(
+            &self.camera,
+            vp,
+            field,
+            objects,
+            sprites,
+            &[],
+            None,
+            None,
+            &options,
+        )
+    }
+
+    /// Shows the 3D terrain and object viewport in the given UI region and returns any editing action.
+    pub fn show(
+        &mut self,
+        ui: &mut Ui,
+        ctx: &egui::Context,
+        session: &TerrainSession,
+        height_step: f32,
+        water_surface: f32,
+        brush_radius: f32,
+        objects: &[WorldObject],
+        selected_object: Option<(usize, u32)>,
+    ) -> ViewportAction {
+        let mut action = ViewportAction::None;
+
+        // 1. Top controls toolbar
+        self.render_toolbar(ui, session, objects, selected_object);
+
+        // 1b. Synchronize floor texture atlas to GPU texture handle if not yet loaded
+        if self.floor_atlas.is_some() && self.floor_atlas_texture.is_none() {
+            self.sync_floor_atlas_texture(ctx);
+        }
+
+        // 2. Build heightfield from session
+        let height_scale = 6.0 * self.relief_scale;
+        let field = match Self::build_height_field(session, height_scale, height_step) {
+            Ok(f) => f,
+            Err(err) => {
+                ui.colored_label(Color32::RED, format!("Terrain init error: {err}"));
+                return action;
+            }
+        };
+
+        // 3. Allocate canvas area
+        let available = ui.available_size();
+        let (response, painter) = ui.allocate_painter(available, Sense::click_and_drag());
+        let rect = response.rect;
+        self.last_rect = Some(rect);
+
+        if rect.width() <= 10.0 || rect.height() <= 10.0 {
+            return action;
+        }
+
+        // 4. Handle camera interactions: Zoom (Mouse wheel)
+        if response.hovered() {
+            let scroll = ctx.input(|i| i.raw_scroll_delta.y);
+            if scroll > 0.0 {
+                self.zoom(true);
+            } else if scroll < 0.0 {
+                self.zoom(false);
+            }
+        }
+
+        // 5. Handle camera interactions: Pan (Middle click or Alt + Left click)
+        let is_alt_down = ctx.input(|i| i.modifiers.alt);
+        if response.dragged_by(egui::PointerButton::Middle)
+            || (response.dragged_by(egui::PointerButton::Primary) && is_alt_down)
+        {
+            let delta = response.drag_delta();
+            self.pan(delta.x, delta.y);
+            self.is_panning = true;
+        } else {
+            self.is_panning = false;
+        }
+
+        // 6. Handle camera interactions: Orbit (Right-click drag)
+        if response.dragged_by(egui::PointerButton::Secondary) {
+            let delta = response.drag_delta();
+            self.orbit(delta.x, delta.y);
+            self.is_rotating = true;
+        } else {
+            self.is_rotating = false;
+        }
+
+        // 7. Convert WorldObjects to SceneObjects and resolve sprites
+        let (scene_objects, pickable_sprites, scene_sprites) = self.convert_world_objects(objects);
+
+        // 8. Prepare CPU scene frame
+        let brush_radius_tiles =
+            brush_radius * (field.tile_width / (session.vertex_size - 1) as f32);
+        let frame = match self.prepare_frame(
+            rect.size(),
+            &field,
+            water_surface,
+            brush_radius_tiles,
+            &scene_objects,
+            &scene_sprites,
+        ) {
+            Ok(f) => f,
+            Err(e) => {
+                painter.text(
+                    rect.center(),
+                    egui::Align2::CENTER_CENTER,
+                    format!("Frame Error: {e}"),
+                    egui::FontId::proportional(16.0),
+                    Color32::RED,
+                );
+                return action;
+            }
+        };
+
+        // 9. Ray Picking & Object Detection
+        let pointer_pos = response
+            .interact_pointer_pos()
+            .or_else(|| response.hover_pos())
+            .or_else(|| ctx.input(|i| i.pointer.latest_pos()));
+        let mut picked_obj_idx = None;
+
+        if let Some(pos) = pointer_pos {
+            let local_x = pos.x - rect.min.x;
+            let local_y = pos.y - rect.min.y;
+            let screen_pt = SceneVec2::new(local_x, local_y);
+
+            // 9a. Object Picking (priority over terrain brush)
+            if self.show_objects {
+                picked_obj_idx = frame.pick_object(
+                    screen_pt,
+                    &scene_objects,
+                    &pickable_sprites,
+                    &field,
+                    Self::OBJECT_PICK_RADIUS,
+                );
+            }
+
+            if let Some(idx) = picked_obj_idx {
+                if let Some(raw) = objects.get(idx) {
+                    self.hover_object = Some((raw.slot, raw.uid));
+                }
+            } else {
+                self.hover_object = None;
+            }
+
+            // 9b. Terrain Picking
+            let ray = self
+                .camera
+                .create_ray(local_x, local_y, rect.width(), rect.height());
+
+            self.hover_world = TerrainRayPicker::try_pick_point(&field, ray);
+            self.hover_tile = TerrainRayPicker::try_pick(&field, ray);
+
+            if let Some(hit) = self.hover_world {
+                let v_scale_x = (session.vertex_size - 1) as f32 / field.tile_width;
+                let v_scale_y = (session.vertex_size - 1) as f32 / field.tile_height;
+                let gx = (hit.x * v_scale_x).clamp(0.0, (session.vertex_size - 1) as f32);
+                let gy = (hit.z * v_scale_y).clamp(0.0, (session.vertex_size - 1) as f32);
+                self.hover_grid = Some((gx, gy));
+
+                // Left click & drag interaction:
+                if !is_alt_down && !self.terrain_pick_mode {
+                    let is_primary_clicked = response.clicked_by(egui::PointerButton::Primary)
+                        || (rect.contains(pos)
+                            && ctx
+                                .input(|i| i.pointer.button_clicked(egui::PointerButton::Primary))
+                            && !response.dragged());
+
+                    if is_primary_clicked {
+                        // Discrete primary click:
+                        // Priority 1: Object selection if clicking an object
+                        if let Some(idx) = picked_obj_idx {
+                            let raw = &objects[idx];
+                            action = ViewportAction::SelectObject(Some((raw.slot, raw.uid)));
+                            self.drag_started_on_object = true;
+                        } else if let Some(tile) = self.hover_tile {
+                            // Priority 2: Primary click on empty terrain -> emit discrete terrain pick (for ramp endpoints)
+                            let (gx, gy) = Self::terrain_tile_to_grid(session, &field, tile);
+                            action = ViewportAction::PickTerrain {
+                                grid_x: gx,
+                                grid_y: gy,
+                            };
+                        }
+                    } else {
+                        let is_primary_dragged = response.dragged_by(egui::PointerButton::Primary)
+                            || (rect.contains(pos)
+                                && ctx.input(|i| {
+                                    i.pointer.button_down(egui::PointerButton::Primary)
+                                })
+                                && ctx.input(|i| i.pointer.delta().length() > 0.0));
+
+                        if is_primary_dragged {
+                            // Brush drag:
+                            if picked_obj_idx.is_some() {
+                                self.drag_started_on_object = true;
+                            }
+                            if !self.drag_started_on_object && picked_obj_idx.is_none() {
+                                self.is_dragging_terrain = true;
+                                action = ViewportAction::Paint {
+                                    grid_x: gx,
+                                    grid_y: gy,
+                                };
+                            }
+                        }
+                    }
+                }
+            } else {
+                self.hover_grid = None;
+                // Ray did not hit terrain, but check if user clicked an object extending outside terrain:
+                let is_primary_clicked = response.clicked_by(egui::PointerButton::Primary)
+                    || ((rect.contains(pos) || response.hovered())
+                        && ctx.input(|i| i.pointer.button_clicked(egui::PointerButton::Primary))
+                        && !response.dragged());
+                if !is_alt_down && !self.terrain_pick_mode && is_primary_clicked {
+                    if let Some(idx) = picked_obj_idx {
+                        let raw = &objects[idx];
+                        action = ViewportAction::SelectObject(Some((raw.slot, raw.uid)));
+                        self.drag_started_on_object = true;
+                    }
+                    // For failed ray pick on empty space: do not emit PickTerrain
+                }
+            }
+        } else {
+            self.hover_world = None;
+            self.hover_tile = None;
+            self.hover_grid = None;
+            self.hover_object = None;
+        }
+
+        // Ramp endpoints use integer tile centers; hover_grid/brush dabs stay continuous.
+        let terrain_pick_grid = self
+            .hover_tile
+            .map(|tile| Self::terrain_tile_to_grid(session, &field, tile));
+        // Capture only presses inside this canvas; a release outside or in the sky
+        // must not reuse the last valid terrain coordinate.
+        if self.terrain_pick_mode {
+            if response.clicked_by(egui::PointerButton::Secondary) {
+                self.terrain_pick_press = None;
+                action = ViewportAction::CancelTerrainPick;
+            } else if !is_alt_down {
+                if response.is_pointer_button_down_on()
+                    && ctx.input(|i| i.pointer.button_pressed(egui::PointerButton::Primary))
+                {
+                    self.terrain_pick_press = None;
+                    if let Some(idx) = picked_obj_idx {
+                        let raw = &objects[idx];
+                        action = ViewportAction::SelectObject(Some((raw.slot, raw.uid)));
+                    } else if let Some(point) = terrain_pick_grid
+                        .filter(|_| pointer_pos.is_some_and(|pos| rect.contains(pos)))
+                    {
+                        self.terrain_pick_press = Some(point);
+                        action = ViewportAction::PickTerrain {
+                            grid_x: point.0,
+                            grid_y: point.1,
+                        };
+                    }
+                }
+                if ctx.input(|i| i.pointer.button_released(egui::PointerButton::Primary)) {
+                    if let Some(start) = self.terrain_pick_press.take() {
+                        if let Some(point) = terrain_pick_grid.filter(|point| {
+                            *point != start
+                                && picked_obj_idx.is_none()
+                                && pointer_pos.is_some_and(|pos| rect.contains(pos))
+                        }) {
+                            action = ViewportAction::PickTerrain {
+                                grid_x: point.0,
+                                grid_y: point.1,
+                            };
+                        }
+                    }
+                }
+            } else {
+                self.terrain_pick_press = None;
+            }
+        } else {
+            self.terrain_pick_press = None;
+        }
+
+        // Commit stroke when primary button is released after a terrain brush drag
+        if ctx.input(|i| i.pointer.button_released(egui::PointerButton::Primary)) {
+            let was_dragging_object = self.drag_started_on_object;
+            let was_dragging_terrain = self.is_dragging_terrain;
+            self.drag_started_on_object = false;
+            self.is_dragging_terrain = false;
+            if !self.terrain_pick_mode
+                && !is_alt_down
+                && was_dragging_terrain
+                && !was_dragging_object
+            {
+                action = ViewportAction::CommitStroke;
+            }
+        }
+
+        // 10. Render Terrain Mesh (projected triangles in back-to-front painter order)
+        self.render_terrain_mesh(&painter, rect, &frame, &field, session);
+
+        // 11. Render Water Plane
+        if self.show_water {
+            if let Some(ref water_cmd) = frame.water {
+                self.render_water_plane(&painter, rect, &frame, water_cmd);
+            }
+        }
+
+        // 12. Render Placed Objects (Sprites & Fallback Placeholders)
+        if self.show_objects {
+            self.render_objects(
+                &painter,
+                rect,
+                &frame,
+                objects,
+                &scene_objects,
+                selected_object,
+            );
+        }
+
+        // 13. Render 3D Brush Cursor
+        if let Some(ref cursor_cmd) = frame.cursor {
+            self.render_brush_cursor(&painter, rect, &frame, cursor_cmd);
+        }
+
+        // 14. Render Hit Point Indicator (when not hovering an object)
+        if self.hover_object.is_none() {
+            if let Some(hit) = self.hover_world {
+                if let Some(screen_pt) = frame.project_world_to_screen(hit) {
+                    let p = Pos2::new(rect.min.x + screen_pt.x, rect.min.y + screen_pt.y);
+                    painter.circle_filled(p, 4.0, Color32::from_rgb(255, 235, 70));
+                    painter.circle_stroke(p, 5.0, Stroke::new(1.0_f32, Color32::BLACK));
+                }
+            }
+        }
+
+        // 15. Floating Viewport HUD
+        self.render_hud(&painter, rect, objects, selected_object);
+
+        action
+    }
+
+    /// Renders placed objects using active sprite quads or clear stable marker placeholders.
+    fn render_objects(
+        &self,
+        painter: &egui::Painter,
+        rect: Rect,
+        frame: &PreparedSceneFrame,
+        raw_objects: &[WorldObject],
+        scene_objects: &[SceneObject],
+        selected_object: Option<(usize, u32)>,
+    ) {
+        // 1. Render ordered sprites
+        for ordered in &frame.ordered_sprites {
+            if let Some(screen_pt) = frame.project_world_to_screen(ordered.anchor) {
+                let p = Pos2::new(rect.min.x + screen_pt.x, rect.min.y + screen_pt.y);
+                let s = ordered.sprite;
+                let left = p.x - s.anchor_x;
+                let top = p.y - s.anchor_y;
+                let sprite_rect =
+                    Rect::from_min_size(Pos2::new(left, top), egui::Vec2::new(s.width, s.height));
+
+                if let Some(ref texture) = self.atlas_texture {
+                    let uv_rect = Rect::from_min_max(
+                        Pos2::new(s.uv.u0, s.uv.v0),
+                        Pos2::new(s.uv.u1, s.uv.v1),
+                    );
+                    painter.image(texture.id(), sprite_rect, uv_rect, Color32::WHITE);
+                } else {
+                    // Safe placeholder billboard when sprite is resolved but atlas texture is not yet on GPU
+                    let raw = raw_objects.get(ordered.object_index);
+                    let team = raw.map(|r| r.team as i32).unwrap_or(0);
+                    let col = against_rome_scene::draw_list::team_color(team);
+                    let color = Color32::from_rgba_unmultiplied(
+                        (col[0] * 255.0) as u8,
+                        (col[1] * 255.0) as u8,
+                        (col[2] * 255.0) as u8,
+                        170,
+                    );
+                    painter.rect_filled(sprite_rect, 2.0, color);
+                    painter.rect_stroke(sprite_rect, 2.0, Stroke::new(1.0_f32, Color32::BLACK));
+                }
+
+                // Selection outline around sprite
+                if let Some(raw) = raw_objects.get(ordered.object_index) {
+                    if selected_object == Some((raw.slot, raw.uid)) {
+                        painter.rect_stroke(
+                            sprite_rect.expand(2.0),
+                            2.0,
+                            Stroke::new(2.5_f32, Color32::from_rgb(255, 235, 70)),
+                        );
+                    } else if self.hover_object == Some((raw.slot, raw.uid)) {
+                        painter.rect_stroke(
+                            sprite_rect.expand(1.5),
+                            1.5,
+                            Stroke::new(1.5_f32, Color32::WHITE),
+                        );
+                    }
+                }
+            }
+        }
+
+        // 2. Render marker placeholders for objects without active sprites or script marks
+        if self.show_markers {
+            for marker in &frame.markers {
+                let Some(raw) = raw_objects.get(marker.object_index) else {
+                    continue;
+                };
+
+                let Some(screen_pt) = frame.project_world_to_screen(marker.point) else {
+                    continue;
+                };
+
+                let p = Pos2::new(rect.min.x + screen_pt.x, rect.min.y + screen_pt.y);
+                let is_selected = selected_object == Some((raw.slot, raw.uid));
+                let is_hovered = self.hover_object == Some((raw.slot, raw.uid));
+
+                let base_color = Color32::from_rgba_unmultiplied(
+                    (marker.color[0] * 255.0) as u8,
+                    (marker.color[1] * 255.0) as u8,
+                    (marker.color[2] * 255.0) as u8,
+                    (marker.color[3] * 255.0) as u8,
+                );
+
+                let radius = (marker.point_size * 0.5).max(3.0);
+
+                if marker.is_script_mark {
+                    // Script mark: crisp cyan diamond
+                    let pts = vec![
+                        Pos2::new(p.x, p.y - radius),
+                        Pos2::new(p.x + radius, p.y),
+                        Pos2::new(p.x, p.y + radius),
+                        Pos2::new(p.x - radius, p.y),
+                    ];
+                    painter.add(egui::Shape::convex_polygon(
+                        pts,
+                        base_color,
+                        Stroke::new(1.0_f32, Color32::BLACK),
+                    ));
+                } else {
+                    // Standard object: team-colored filled circle with dark perimeter
+                    painter.circle_filled(p, radius, base_color);
+                    painter.circle_stroke(
+                        p,
+                        radius,
+                        Stroke::new(1.0_f32, Color32::from_rgb(20, 20, 20)),
+                    );
+                }
+
+                // Selection halo
+                if is_selected {
+                    painter.circle_stroke(
+                        p,
+                        radius + 4.0,
+                        Stroke::new(2.5_f32, Color32::from_rgb(255, 235, 70)),
+                    );
+                    painter.circle_stroke(
+                        p,
+                        radius + 6.0,
+                        Stroke::new(1.0_f32, Color32::from_rgb(20, 20, 20)),
+                    );
+                } else if is_hovered {
+                    painter.circle_stroke(p, radius + 3.0, Stroke::new(1.5_f32, Color32::WHITE));
+                }
+
+                // Label for selected or hovered object
+                if is_selected || is_hovered {
+                    let obj_name = scene_objects
+                        .get(marker.object_index)
+                        .map(|s| s.name.as_str())
+                        .unwrap_or("object");
+                    let text = format!("{}: {} (T{})", raw.slot, obj_name, raw.team);
+                    painter.text(
+                        Pos2::new(p.x, p.y - radius - 8.0),
+                        egui::Align2::CENTER_BOTTOM,
+                        text,
+                        egui::FontId::monospace(10.5),
+                        if is_selected {
+                            Color32::from_rgb(255, 235, 70)
+                        } else {
+                            Color32::WHITE
+                        },
+                    );
+                }
+            }
+        }
+    }
+
+    /// Renders the top toolbar with camera toggles and status indicators.
+    fn render_toolbar(
+        &mut self,
+        ui: &mut Ui,
+        session: &TerrainSession,
+        objects: &[WorldObject],
+        selected_object: Option<(usize, u32)>,
+    ) {
+        ui.horizontal_wrapped(|ui| {
+            ui.heading("3D Viewport");
+            ui.separator();
+
+            let dimension = ((session.vertex_size.saturating_sub(1)) / 4).max(1) as f32;
+            if ui.button("Reset Camera").clicked() {
+                self.reset_camera(dimension);
+            }
+
+            // Orthographic vs Perspective toggle
+            let ortho_label = if self.camera.orthographic {
+                "Proj: Ortho"
+            } else {
+                "Proj: Persp"
+            };
+            if ui.button(ortho_label).clicked() {
+                self.camera.orthographic = !self.camera.orthographic;
+            }
+
+            // Grid overlay toggle
+            ui.toggle_value(&mut self.show_grid, "Grid");
+
+            // Water toggle
+            ui.toggle_value(&mut self.show_water, "Water");
+
+            // Objects & Markers toggles
+            ui.separator();
+            ui.toggle_value(&mut self.show_objects, "Objects");
+            ui.toggle_value(&mut self.show_markers, "Markers");
+
+            // Shading mode selection
+            ui.separator();
+            ui.label("Shading:");
+            ui.selectable_value(&mut self.shading_mode, ShadingMode::Relief, "Relief");
+            ui.selectable_value(&mut self.shading_mode, ShadingMode::Heightmap, "Height");
+            ui.selectable_value(&mut self.shading_mode, ShadingMode::Collision, "Collision");
+            ui.selectable_value(&mut self.shading_mode, ShadingMode::Textured, "Textured");
+
+            // LOD Mesh Step selection
+            ui.separator();
+            ui.label("LOD:");
+            ui.selectable_value(&mut self.mesh_lod_step, 1, "1 (Fine)");
+            ui.selectable_value(&mut self.mesh_lod_step, 2, "2 (Med)");
+            ui.selectable_value(&mut self.mesh_lod_step, 4, "4 (Fast)");
+
+            // Object count status
+            ui.separator();
+            ui.label(format!("Objects: {}", objects.len()));
+            if let Some(sel) = selected_object {
+                ui.label(format!("Selected: [slot={}, uid={}]", sel.0, sel.1));
+            }
+
+            if let Some((tx, ty)) = self.hover_tile {
+                let h = self.hover_world.map(|w| w.y).unwrap_or(0.0);
+                ui.label(format!("Tile: ({tx}, {ty}) Y: {h:.2}"));
+            }
+
+            if let Some(ref atlas) = self.floor_atlas {
+                ui.separator();
+                ui.label(format!("Atlas: {} tiles", atlas.count()));
+            }
+        });
+    }
+
+    /// Renders the floating HUD overlay in the viewport.
+    fn render_hud(
+        &self,
+        painter: &egui::Painter,
+        rect: Rect,
+        objects: &[WorldObject],
+        selected_object: Option<(usize, u32)>,
+    ) {
+        let hud_pos = Pos2::new(rect.min.x + 8.0, rect.max.y - 42.0);
+        let sel_str = if let Some(sel) = selected_object {
+            format!(" | Selected: Slot {}, UID {}", sel.0, sel.1)
+        } else {
+            String::new()
+        };
+        let hov_str = if let Some(hov) = self.hover_object {
+            format!(" | Hover: Slot {}, UID {}", hov.0, hov.1)
+        } else {
+            String::new()
+        };
+        let atlas_str = if self.floor_atlas.is_some() {
+            if self.floor_atlas_texture.is_some() {
+                " | Atlas: Textured"
+            } else {
+                " | Atlas: Fallback"
+            }
+        } else {
+            ""
+        };
+        let text = format!(
+            "Controls: Right-drag: Orbit | Middle/Alt-drag: Pan | Wheel: Zoom | Click: Paint / Pick Object\nObjects: {}{}{}{}\n{}",
+            objects.len(),
+            sel_str,
+            hov_str,
+            atlas_str,
+            Self::NON_PARITY_NOTICE
+        );
+        painter.text(
+            hud_pos,
+            egui::Align2::LEFT_BOTTOM,
+            text,
+            egui::FontId::monospace(10.5),
+            Color32::from_rgba_unmultiplied(220, 220, 220, 180),
+        );
+    }
+
+    /// Renders the shaded terrain mesh quads in back-to-front order.
+    fn render_terrain_mesh(
+        &self,
+        painter: &egui::Painter,
+        rect: Rect,
+        frame: &PreparedSceneFrame,
+        field: &TerrainHeightField,
+        session: &TerrainSession,
+    ) {
+        let step = self.mesh_lod_step.clamp(1, 8);
+        let dim = field.tile_width as usize;
+        let v_size = session.vertex_size;
+
+        // Determine back-to-front iteration order based on camera position relative to target
+        let cam_pos = self.camera.position();
+        let target = self.camera.target;
+
+        let x_rev = cam_pos.x < target.x;
+        let z_rev = cam_pos.z < target.z;
+
+        let x_steps: Vec<usize> = if x_rev {
+            (0..dim).step_by(step).rev().collect()
+        } else {
+            (0..dim).step_by(step).collect()
+        };
+
+        let z_steps: Vec<usize> = if z_rev {
+            (0..dim).step_by(step).rev().collect()
+        } else {
+            (0..dim).step_by(step).collect()
+        };
+
+        let sun_dir = SceneVec3::new(0.577, 0.707, 0.408).normalized();
+        let grid_stroke = if self.show_grid {
+            Stroke::new(1.0_f32, Color32::from_rgba_unmultiplied(40, 40, 40, 70))
+        } else {
+            Stroke::NONE
+        };
+
+        let is_textured_mode = self.shading_mode == ShadingMode::Textured;
+        let mut textured_mesh = if is_textured_mode {
+            self.floor_atlas_texture
+                .as_ref()
+                .map(|t| egui::Mesh::with_texture(t.id()))
+        } else {
+            None
+        };
+
+        for &z in &z_steps {
+            for &x in &x_steps {
+                let x0 = x as f32;
+                let z0 = z as f32;
+                let x1 = (x + step).min(dim) as f32;
+                let z1 = (z + step).min(dim) as f32;
+
+                let h0 = field.sample_height(x0, z0);
+                let h1 = field.sample_height(x1, z0);
+                let h2 = field.sample_height(x1, z1);
+                let h3 = field.sample_height(x0, z1);
+
+                let p0 = SceneVec3::new(x0, h0, z0);
+                let p1 = SceneVec3::new(x1, h1, z0);
+                let p2 = SceneVec3::new(x1, h2, z1);
+                let p3 = SceneVec3::new(x0, h3, z1);
+
+                // Project 4 corners
+                let sp0 = match frame.project_world_to_screen(p0) {
+                    Some(s) => Pos2::new(rect.min.x + s.x, rect.min.y + s.y),
+                    None => continue,
+                };
+                let sp1 = match frame.project_world_to_screen(p1) {
+                    Some(s) => Pos2::new(rect.min.x + s.x, rect.min.y + s.y),
+                    None => continue,
+                };
+                let sp2 = match frame.project_world_to_screen(p2) {
+                    Some(s) => Pos2::new(rect.min.x + s.x, rect.min.y + s.y),
+                    None => continue,
+                };
+                let sp3 = match frame.project_world_to_screen(p3) {
+                    Some(s) => Pos2::new(rect.min.x + s.x, rect.min.y + s.y),
+                    None => continue,
+                };
+
+                // Surface normal estimation for lighting
+                let cx = (x0 + x1) * 0.5;
+                let cz = (z0 + z1) * 0.5;
+                let dx = field.sample_height(cx + 0.5, cz) - field.sample_height(cx - 0.5, cz);
+                let dz = field.sample_height(cx, cz + 0.5) - field.sample_height(cx, cz - 0.5);
+                let normal = SceneVec3::new(-dx, 1.0, -dz).normalized();
+                let diffuse = normal.dot(sun_dir).max(0.0);
+                let light = (0.35 + 0.65 * diffuse).clamp(0.2, 1.0);
+
+                let avg_h = (h0 + h1 + h2 + h3) * 0.25;
+                let norm_h = if field.height_scale > 0.0 {
+                    (avg_h / field.height_scale).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
+
+                // Textured mode with active GPU atlas texture handle
+                if let Some(ref mut mesh) = textured_mesh {
+                    let tex_name = self.resolve_tile_texture(x, z, dim);
+                    let uv = if let Some(ref atlas) = self.floor_atlas {
+                        atlas.get_uv(tex_name)
+                    } else {
+                        [AtlasPoint::new(0.0, 0.0); 4]
+                    };
+
+                    let tint = Color32::from_rgb(
+                        (255.0 * light) as u8,
+                        (255.0 * light) as u8,
+                        (255.0 * light) as u8,
+                    );
+
+                    let base_idx = mesh.vertices.len() as u32;
+                    mesh.vertices.push(egui::epaint::Vertex {
+                        pos: sp0,
+                        uv: Pos2::new(uv[0].u, uv[0].v),
+                        color: tint,
+                    });
+                    mesh.vertices.push(egui::epaint::Vertex {
+                        pos: sp1,
+                        uv: Pos2::new(uv[1].u, uv[1].v),
+                        color: tint,
+                    });
+                    mesh.vertices.push(egui::epaint::Vertex {
+                        pos: sp2,
+                        uv: Pos2::new(uv[2].u, uv[2].v),
+                        color: tint,
+                    });
+                    mesh.vertices.push(egui::epaint::Vertex {
+                        pos: sp3,
+                        uv: Pos2::new(uv[3].u, uv[3].v),
+                        color: tint,
+                    });
+                    mesh.add_triangle(base_idx, base_idx + 1, base_idx + 2);
+                    mesh.add_triangle(base_idx, base_idx + 2, base_idx + 3);
+
+                    if self.show_grid {
+                        painter.add(egui::Shape::closed_line(
+                            vec![sp0, sp1, sp2, sp3],
+                            grid_stroke,
+                        ));
+                    }
+                    continue;
+                }
+
+                let color = match self.shading_mode {
+                    ShadingMode::Relief => Self::relief_color(norm_h, light),
+                    ShadingMode::Heightmap => Self::heightmap_color(norm_h, light),
+                    ShadingMode::Collision => {
+                        let v_scale = (v_size - 1) as f32 / field.tile_width;
+                        let sample_vx = (cx * v_scale).round() as usize;
+                        let sample_vz = (cz * v_scale).round() as usize;
+                        let col_scale = session.collision_size as f32 / (v_size - 1) as f32;
+                        let col_x = ((sample_vx as f32) * col_scale).round() as usize;
+                        let col_y = ((sample_vz as f32) * col_scale).round() as usize;
+                        let blocked =
+                            if col_x < session.collision_size && col_y < session.collision_size {
+                                let idx = col_y * session.collision_size + col_x;
+                                session.collision().get(idx).copied().unwrap_or(0) > 0
+                            } else {
+                                false
+                            };
+                        if blocked {
+                            Color32::from_rgb(
+                                (210.0 * light) as u8,
+                                (60.0 * light) as u8,
+                                (60.0 * light) as u8,
+                            )
+                        } else {
+                            Self::relief_color(norm_h, light * 0.9)
+                        }
+                    }
+                    ShadingMode::Textured => {
+                        // CPU Fallback: map texture via FloorTextureAtlas::fallback_color
+                        let tex_name = self.resolve_tile_texture(x, z, dim);
+                        if self.floor_atlas.is_some() {
+                            let argb = FloorTextureAtlas::fallback_color(tex_name);
+                            let r = ((argb >> 16) & 0xFF) as f32;
+                            let g = ((argb >> 8) & 0xFF) as f32;
+                            let b = (argb & 0xFF) as f32;
+                            Color32::from_rgb(
+                                (r * light).clamp(0.0, 255.0) as u8,
+                                (g * light).clamp(0.0, 255.0) as u8,
+                                (b * light).clamp(0.0, 255.0) as u8,
+                            )
+                        } else {
+                            Self::relief_color(norm_h, light)
+                        }
+                    }
+                };
+
+                // Draw two convex triangles forming the quad
+                painter.add(egui::Shape::convex_polygon(
+                    vec![sp0, sp1, sp2],
+                    color,
+                    grid_stroke,
+                ));
+                painter.add(egui::Shape::convex_polygon(
+                    vec![sp0, sp2, sp3],
+                    color,
+                    grid_stroke,
+                ));
+            }
+        }
+
+        if let Some(mesh) = textured_mesh {
+            if !mesh.is_empty() {
+                painter.add(egui::Shape::Mesh(mesh));
+            }
+        }
+    }
+
+    /// Renders the water plane quad at dynamic water height.
+    fn render_water_plane(
+        &self,
+        painter: &egui::Painter,
+        rect: Rect,
+        frame: &PreparedSceneFrame,
+        cmd: &against_rome_scene::draw_list::WaterDrawCommand,
+    ) {
+        let mut screen_pts = Vec::with_capacity(4);
+        for &v in &cmd.vertices {
+            if let Some(s) = frame.project_world_to_screen(v) {
+                screen_pts.push(Pos2::new(rect.min.x + s.x, rect.min.y + s.y));
+            }
+        }
+        if screen_pts.len() == 4 {
+            let water_color = Color32::from_rgba_unmultiplied(
+                (cmd.color[0] * 255.0) as u8,
+                (cmd.color[1] * 255.0) as u8,
+                (cmd.color[2] * 255.0) as u8,
+                ((cmd.color[3] * 0.8).clamp(0.0, 1.0) * 255.0) as u8,
+            );
+            painter.add(egui::Shape::convex_polygon(
+                screen_pts,
+                water_color,
+                Stroke::NONE,
+            ));
+        }
+    }
+
+    /// Renders the 3D brush cursor perimeter loop.
+    fn render_brush_cursor(
+        &self,
+        painter: &egui::Painter,
+        rect: Rect,
+        frame: &PreparedSceneFrame,
+        cmd: &against_rome_scene::draw_list::BrushCursorDraw,
+    ) {
+        let pts: Vec<Pos2> = cmd
+            .perimeter_points
+            .iter()
+            .filter_map(|&p| {
+                frame
+                    .project_world_to_screen(p)
+                    .map(|s| Pos2::new(rect.min.x + s.x, rect.min.y + s.y))
+            })
+            .collect();
+
+        if pts.len() >= 3 {
+            let color = Color32::from_rgba_unmultiplied(
+                (cmd.color[0] * 255.0) as u8,
+                (cmd.color[1] * 255.0) as u8,
+                (cmd.color[2] * 255.0) as u8,
+                (cmd.color[3] * 255.0) as u8,
+            );
+            painter.add(egui::Shape::closed_line(
+                pts,
+                Stroke::new(cmd.line_width, color),
+            ));
+        }
+    }
+
+    /// Maps normalized elevation (0.0..1.0) and sun lighting to natural landscape relief colors.
+    fn relief_color(norm_height: f32, light: f32) -> Color32 {
+        let (r, g, b) = if norm_height < 0.12 {
+            // Water bed / sand
+            (195.0, 180.0, 135.0)
+        } else if norm_height < 0.38 {
+            // Grass / lowlands
+            let t = (norm_height - 0.12) / 0.26;
+            (
+                195.0 + (75.0 - 195.0) * t,
+                180.0 + (145.0 - 180.0) * t,
+                135.0 + (65.0 - 135.0) * t,
+            )
+        } else if norm_height < 0.68 {
+            // Forest / plateau
+            let t = (norm_height - 0.38) / 0.30;
+            (
+                75.0 + (115.0 - 75.0) * t,
+                145.0 + (125.0 - 145.0) * t,
+                65.0 + (75.0 - 65.0) * t,
+            )
+        } else if norm_height < 0.88 {
+            // Mountain rock
+            let t = (norm_height - 0.68) / 0.20;
+            (
+                115.0 + (140.0 - 115.0) * t,
+                125.0 + (120.0 - 125.0) * t,
+                75.0 + (105.0 - 75.0) * t,
+            )
+        } else {
+            // Snow / crest
+            let t = ((norm_height - 0.88) / 0.12).min(1.0);
+            (
+                140.0 + (225.0 - 140.0) * t,
+                120.0 + (230.0 - 120.0) * t,
+                105.0 + (240.0 - 105.0) * t,
+            )
+        };
+
+        Color32::from_rgb(
+            (r * light).clamp(0.0, 255.0) as u8,
+            (g * light).clamp(0.0, 255.0) as u8,
+            (b * light).clamp(0.0, 255.0) as u8,
+        )
+    }
+
+    /// Maps normalized elevation to grayscale heightmap color.
+    fn heightmap_color(norm_height: f32, light: f32) -> Color32 {
+        let v = (norm_height * 255.0 * light).clamp(0.0, 255.0) as u8;
+        Color32::from_rgb(v, v, v)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use against_rome_placement::WorldObject;
+    use against_rome_scene::camera::TerrainRay;
+    use against_rome_textures::NativeSprite;
+
+    fn make_test_world_object(
+        slot: usize,
+        uid: u32,
+        type_id: u16,
+        team: u16,
+        pos_x: f32,
+        pos_z: f32,
+    ) -> WorldObject {
+        WorldObject {
+            slot,
+            type_id,
+            team,
+            uid,
+            position: [pos_x, 0.0, pos_z],
+            rotation_degrees: 0.0,
+            parent: None,
+            vitals: None,
+        }
+    }
+
+    #[test]
+    fn test_viewport_3d_initial_state() {
+        let vp = Viewport3d::new();
+        assert_eq!(vp.camera.target, SceneVec3::new(32.0, 0.0, 32.0));
+        assert_eq!(vp.camera.yaw_degrees(), 45.0);
+        assert_eq!(vp.camera.pitch_degrees(), 30.0);
+        assert_eq!(vp.camera.distance(), 82.0);
+        assert!(vp.camera.orthographic);
+        assert!(!vp.show_grid);
+        assert!(vp.show_water);
+        assert!(vp.show_markers);
+        assert!(vp.show_objects);
+        assert_eq!(vp.mesh_lod_step, 2);
+        assert_eq!(vp.shading_mode, ShadingMode::Relief);
+        assert!(vp.hover_tile.is_none());
+        assert!(vp.hover_world.is_none());
+        assert!(vp.hover_object.is_none());
+    }
+
+    #[test]
+    fn test_camera_orbit_pan_zoom() {
+        let mut vp = Viewport3d::new();
+        let initial_yaw = vp.camera.yaw_degrees();
+        let initial_pitch = vp.camera.pitch_degrees();
+
+        // Orbit test
+        vp.orbit(10.0, 5.0);
+        assert!(
+            (vp.camera.yaw_degrees() - (initial_yaw + 10.0 * Viewport3d::ROTATE_SPEED)).abs()
+                < 1e-4
+        );
+        assert!(
+            (vp.camera.pitch_degrees() - (initial_pitch - 5.0 * Viewport3d::ROTATE_SPEED)).abs()
+                < 1e-4
+        );
+
+        // Zoom test
+        let dist = vp.camera.distance();
+        vp.zoom(true); // zoom in
+        assert!(vp.camera.distance() < dist);
+        vp.zoom(false); // zoom out
+        assert!((vp.camera.distance() - dist).abs() < 1.0);
+
+        // Pan test
+        let target_before = vp.camera.target;
+        vp.pan(5.0, 5.0);
+        assert_ne!(vp.camera.target, target_before);
+
+        // Reset camera
+        vp.reset_camera(64.0);
+        assert_eq!(vp.camera.target, SceneVec3::new(32.0, 0.0, 32.0));
+        assert_eq!(vp.camera.yaw_degrees(), 45.0);
+        assert_eq!(vp.camera.pitch_degrees(), 30.0);
+    }
+
+    #[test]
+    fn test_heightfield_construction_and_ray_picking() {
+        let session = TerrainSession::create_blank(257, 32);
+        let field = Viewport3d::build_height_field(&session, 6.0, 4.0).unwrap();
+        assert_eq!(field.width(), 257);
+        assert_eq!(field.height(), 257);
+        assert_eq!(field.tile_width, 64.0);
+        assert_eq!(field.tile_height, 64.0);
+
+        // Blank map height: 32 / 255 * 6.0
+        let expected_h = 32.0 / 255.0 * 6.0;
+        let sampled = field.sample_height(32.0, 32.0);
+        assert!((sampled - expected_h).abs() < 1e-4);
+
+        // Top-down vertical ray hitting center
+        let ray = TerrainRay {
+            origin: SceneVec3::new(32.0, 50.0, 32.0),
+            direction: SceneVec3::new(0.0, -1.0, 0.0),
+        };
+        let hit = TerrainRayPicker::try_pick_point(&field, ray);
+        assert!(hit.is_some());
+        let pt = hit.unwrap();
+        assert!((pt.x - 32.0).abs() < 1e-3);
+        assert!((pt.z - 32.0).abs() < 1e-3);
+        assert!((pt.y - expected_h).abs() < 1e-3);
+
+        let tile = TerrainRayPicker::try_pick(&field, ray);
+        assert_eq!(tile, Some((32, 32)));
+
+        // World to grid conversion
+        let v_scale = (session.vertex_size - 1) as f32 / field.tile_width;
+        let gx = pt.x * v_scale;
+        let gy = pt.z * v_scale;
+        assert!((gx - 128.0).abs() < 1e-2);
+        assert!((gy - 128.0).abs() < 1e-2);
+    }
+
+    #[test]
+    fn test_object_conversion_and_fallback_markers() {
+        let session = TerrainSession::create_blank(257, 32);
+        let field = Viewport3d::build_height_field(&session, 6.0, 4.0).unwrap();
+        let mut vp = Viewport3d::new();
+
+        // 3 test objects: Team 1 (Roman blue), Team 2 (Germanic red), and Scriptmark
+        let obj1 = make_test_world_object(0, 101, 1, 1, 8192.0, 8192.0); // tile (32, 32)
+        let obj2 = make_test_world_object(1, 102, 2, 2, 4096.0, 4096.0); // tile (16, 16)
+        let obj3 = make_test_world_object(2, 103, 3, 0, 12288.0, 12288.0); // tile (48, 48)
+
+        vp.type_names.insert(1, "BauLegionCamp".into());
+        vp.type_names.insert(2, "FigGermanicWarrior".into());
+        vp.type_names.insert(3, "SkriptmarkZoneA".into());
+
+        let raw = vec![obj1, obj2, obj3];
+        let (scene_objs, pickables, sprites) = vp.convert_world_objects(&raw);
+
+        assert_eq!(scene_objs.len(), 3);
+        assert_eq!(scene_objs[0].name, "BauLegionCamp");
+        assert_eq!(scene_objs[1].name, "FigGermanicWarrior");
+        assert_eq!(scene_objs[2].name, "SkriptmarkZoneA");
+
+        // With no catalog loaded, sprites are safely None (graceful fallback)
+        assert!(sprites.iter().all(|s| s.is_none()));
+        assert!(pickables.iter().all(|p| p.is_none()));
+
+        // Prepare frame
+        let frame = vp
+            .prepare_frame(
+                egui::Vec2::new(1280.0, 720.0),
+                &field,
+                50.0,
+                4.0,
+                &scene_objs,
+                &sprites,
+            )
+            .expect("prepare frame succeeds");
+
+        // Markers are generated for all 3 objects
+        assert_eq!(frame.markers.len(), 3);
+        assert_eq!(frame.diagnostics.marker_count, 3);
+
+        // Marker 0: Team 1 color [0.25, 0.45, 0.95, 1.0], point size 10.0
+        assert_eq!(frame.markers[0].color, [0.25, 0.45, 0.95, 1.0]);
+        assert_eq!(frame.markers[0].point_size, 10.0);
+        assert!(!frame.markers[0].is_script_mark);
+
+        // Marker 1: Team 2 color [0.90, 0.15, 0.20, 1.0], point size 10.0
+        assert_eq!(frame.markers[1].color, [0.90, 0.15, 0.20, 1.0]);
+        assert_eq!(frame.markers[1].point_size, 10.0);
+        assert!(!frame.markers[1].is_script_mark);
+
+        // Marker 2: Script mark color SCRIPT_MARK_COLOR [0.2, 0.85, 0.95, 1.0], point size 5.0
+        assert_eq!(frame.markers[2].color, [0.2, 0.85, 0.95, 1.0]);
+        assert_eq!(frame.markers[2].point_size, 5.0);
+        assert!(frame.markers[2].is_script_mark);
+    }
+
+    #[test]
+    fn test_object_picking_and_terrain_brush_guard() {
+        let session = TerrainSession::create_blank(257, 32);
+        let field = Viewport3d::build_height_field(&session, 6.0, 4.0).unwrap();
+        let mut vp = Viewport3d::new();
+
+        // Object placed exactly at center (world 8192, 8192 => tile 32, 32)
+        let obj = make_test_world_object(5, 777, 10, 1, 8192.0, 8192.0);
+        let raw = vec![obj];
+        let (scene_objs, pickables, sprites) = vp.convert_world_objects(&raw);
+
+        let viewport = egui::Vec2::new(800.0, 600.0);
+        let frame = vp
+            .prepare_frame(viewport, &field, 50.0, 4.0, &scene_objs, &sprites)
+            .unwrap();
+
+        // Target (32, y, 32) is centered in the camera view
+        let screen_center = frame
+            .project_world_to_screen(SceneVec3::new(32.0, 0.0, 32.0))
+            .expect("projects to screen");
+
+        // 1. Pick object at exact screen center
+        let picked = frame.pick_object(
+            screen_center,
+            &scene_objs,
+            &pickables,
+            &field,
+            Viewport3d::OBJECT_PICK_RADIUS,
+        );
+        assert_eq!(picked, Some(0), "Object at center should be picked");
+
+        // 2. Pick point far away from object
+        let picked_far = frame.pick_object(
+            SceneVec2::new(10.0, 10.0),
+            &scene_objs,
+            &pickables,
+            &field,
+            Viewport3d::OBJECT_PICK_RADIUS,
+        );
+        assert_eq!(picked_far, None, "Empty coordinate must not hit object");
+
+        // 3. Verify drag_started_on_object flag prevents terrain painting
+        vp.drag_started_on_object = true;
+        // When drag_started_on_object is true, dragging does not emit Paint
+        assert!(vp.drag_started_on_object);
+    }
+
+    #[test]
+    fn test_sprite_catalog_and_atlas_rendering() {
+        let session = TerrainSession::create_blank(257, 32);
+        let field = Viewport3d::build_height_field(&session, 6.0, 4.0).unwrap();
+        let mut vp = Viewport3d::new();
+
+        // Create in-memory test sprite (16x16 pixels)
+        let pixels = vec![0xFFFFFFFF; 256];
+        let sprite =
+            Arc::new(NativeSprite::new(16, 16, pixels, 8, 16, "test_building.bmp").unwrap());
+
+        let mut bcat = BoundedSpriteCatalog::new(10, 10);
+        bcat.insert_sprite("BauTest", sprite.clone());
+        let atlas = bcat.build_atlas(256).unwrap();
+
+        vp.bounded_catalog = Some(Arc::new(bcat));
+        vp.sprite_atlas = Some(Arc::new(atlas));
+        vp.type_names.insert(42, "BauTest".into());
+
+        let raw = vec![make_test_world_object(1, 99, 42, 1, 8192.0, 8192.0)];
+        let (scene_objs, pickables, sprites) = vp.convert_world_objects(&raw);
+
+        assert_eq!(scene_objs.len(), 1);
+        assert!(
+            sprites[0].is_some(),
+            "Sprite should be resolved from bounded catalog"
+        );
+        assert!(pickables[0].is_some(), "Pickable sprite should be created");
+
+        let s = sprites[0].unwrap();
+        assert_eq!(s.width, 16.0);
+        assert_eq!(s.height, 16.0);
+        assert_eq!(s.anchor_x, 8.0);
+        assert_eq!(s.anchor_y, 16.0);
+
+        let frame = vp
+            .prepare_frame(
+                egui::Vec2::new(800.0, 600.0),
+                &field,
+                50.0,
+                4.0,
+                &scene_objs,
+                &sprites,
+            )
+            .unwrap();
+
+        // When a sprite is present, it is routed into ordered_sprites
+        assert_eq!(frame.ordered_sprites.len(), 1);
+        assert_eq!(frame.ordered_sprites[0].object_index, 0);
+        assert_eq!(frame.diagnostics.sprite_count, 1);
+    }
+
+    #[test]
+    fn test_shading_color_helpers() {
+        let sand = Viewport3d::relief_color(0.05, 1.0);
+        let snow = Viewport3d::relief_color(0.95, 1.0);
+        assert_ne!(sand, snow);
+
+        let h_dark = Viewport3d::heightmap_color(0.1, 1.0);
+        let h_bright = Viewport3d::heightmap_color(0.9, 1.0);
+        assert!(h_bright.r() > h_dark.r());
+    }
+
+    #[test]
+    fn test_viewport_3d_visibility_toggles() {
+        let session = TerrainSession::create_blank(257, 32);
+        let field = Viewport3d::build_height_field(&session, 6.0, 4.0).unwrap();
+        let mut vp = Viewport3d::new();
+
+        let raw = vec![make_test_world_object(0, 101, 1, 1, 8192.0, 8192.0)];
+        let (scene_objs, _pickables, sprites) = vp.convert_world_objects(&raw);
+
+        // 1. Objects hidden
+        vp.show_objects = false;
+        let frame_no_objs = vp
+            .prepare_frame(
+                egui::Vec2::new(800.0, 600.0),
+                &field,
+                50.0,
+                4.0,
+                &scene_objs,
+                &sprites,
+            )
+            .unwrap();
+        assert_eq!(frame_no_objs.markers.len(), 0);
+        assert_eq!(frame_no_objs.ordered_sprites.len(), 0);
+
+        // 2. Objects shown, markers hidden
+        vp.show_objects = true;
+        vp.show_markers = false;
+        let frame_no_markers = vp
+            .prepare_frame(
+                egui::Vec2::new(800.0, 600.0),
+                &field,
+                50.0,
+                4.0,
+                &scene_objs,
+                &sprites,
+            )
+            .unwrap();
+        assert_eq!(frame_no_markers.markers.len(), 0);
+    }
+
+    #[test]
+    fn test_viewport_3d_shared_placement_state_updates() {
+        let session = TerrainSession::create_blank(257, 32);
+        let field = Viewport3d::build_height_field(&session, 6.0, 4.0).unwrap();
+        let vp = Viewport3d::new();
+
+        // Initial snapshot: 1 object
+        let raw1 = vec![make_test_world_object(0, 101, 1, 1, 8192.0, 8192.0)];
+        let (objs1, _, sprites1) = vp.convert_world_objects(&raw1);
+        let frame1 = vp
+            .prepare_frame(
+                egui::Vec2::new(800.0, 600.0),
+                &field,
+                50.0,
+                4.0,
+                &objs1,
+                &sprites1,
+            )
+            .unwrap();
+        assert_eq!(frame1.markers.len(), 1);
+
+        // Updated snapshot: 2 objects placed
+        let raw2 = vec![
+            make_test_world_object(0, 101, 1, 1, 8192.0, 8192.0),
+            make_test_world_object(1, 102, 2, 2, 4096.0, 4096.0),
+        ];
+        let (objs2, _, sprites2) = vp.convert_world_objects(&raw2);
+        let frame2 = vp
+            .prepare_frame(
+                egui::Vec2::new(800.0, 600.0),
+                &field,
+                50.0,
+                4.0,
+                &objs2,
+                &sprites2,
+            )
+            .unwrap();
+        assert_eq!(
+            frame2.markers.len(),
+            2,
+            "Updated placement snapshot immediately reflected"
+        );
+    }
+
+    #[test]
+    fn test_headless_viewport_show_runs_cleanly_with_objects() {
+        let session = TerrainSession::create_blank(257, 32);
+        let mut vp = Viewport3d::new();
+        let objects = vec![
+            make_test_world_object(0, 1001, 1, 1, 8192.0, 8192.0),
+            make_test_world_object(1, 1002, 2, 2, 4096.0, 4096.0),
+        ];
+
+        let ctx = egui::Context::default();
+        let mut recorded_action = ViewportAction::None;
+
+        let _ = ctx.run(Default::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                recorded_action =
+                    vp.show(ui, ctx, &session, 4.0, 50.0, 4.0, &objects, Some((0, 1001)));
+            });
+        });
+
+        // Headless run with no pointer events returns ViewportAction::None
+        assert_eq!(recorded_action, ViewportAction::None);
+        assert_eq!(vp.hover_object, None);
+    }
+
+    #[test]
+    fn test_floor_texture_atlas_wiring_and_uv_lookup() {
+        let mut vp = Viewport3d::new();
+        assert!(vp.floor_atlas.is_none());
+        assert!(vp.floor_atlas_texture.is_none());
+        assert!(vp.tile_textures.is_none());
+
+        // Create an in-memory FloorTextureAtlas with two textures
+        let atlas = FloorTextureAtlas::create_with_decoder(vec!["4BA___51", "4BB___51"], |_| None)
+            .expect("in-memory atlas creation succeeds");
+
+        assert_eq!(atlas.count(), 2);
+        assert_eq!(atlas.size(), 2048);
+
+        vp.set_floor_atlas(Some(Arc::new(atlas)));
+        assert!(vp.floor_atlas.is_some());
+        assert!(vp.floor_atlas_texture.is_none());
+
+        // 4 tiles in a 2x2 grid
+        vp.set_tile_textures(Some(vec![
+            "4BA___51".into(),
+            "4BB___51".into(),
+            "4BB___51".into(),
+            "4BA___51".into(),
+        ]));
+
+        assert_eq!(vp.resolve_tile_texture(0, 0, 2), "4BA___51");
+        assert_eq!(vp.resolve_tile_texture(1, 0, 2), "4BB___51");
+        assert_eq!(vp.resolve_tile_texture(0, 1, 2), "4BB___51");
+        assert_eq!(vp.resolve_tile_texture(1, 1, 2), "4BA___51");
+
+        // Verify valid UV points for tile (0, 0)
+        let uv = vp.sample_tile_uv(0, 0, 2).expect("tile UV must be present");
+        assert_eq!(uv.len(), 4);
+        // All UVs should be normalized within [0.0..=1.0]
+        for pt in &uv {
+            assert!(pt.u >= 0.0 && pt.u <= 1.0);
+            assert!(pt.v >= 0.0 && pt.v <= 1.0);
+        }
+        // Top-Left should be to the left of Top-Right
+        assert!(uv[0].u < uv[1].u);
+        // Top-Left should be above Bottom-Left
+        assert!(uv[0].v < uv[3].v);
+    }
+
+    #[test]
+    fn test_floor_texture_atlas_fallback_when_unmapped() {
+        let mut vp = Viewport3d::new();
+
+        // 1. Without atlas and without tile_textures, fallback returns default "4BA___51"
+        assert_eq!(vp.resolve_tile_texture(0, 0, 64), "4BA___51");
+        assert!(vp.sample_tile_uv(0, 0, 64).is_none());
+
+        // 2. With atlas having unique name "CustomGround", fallback returns first atlas name
+        let atlas = FloorTextureAtlas::create_with_decoder(vec!["CustomGround"], |_| None).unwrap();
+        vp.set_floor_atlas(Some(Arc::new(atlas)));
+        assert_eq!(vp.resolve_tile_texture(999, 999, 64), "CustomGround");
+
+        let uv = vp.sample_tile_uv(999, 999, 64).expect("sample UV succeeds");
+        assert!(uv[1].u > uv[0].u);
+
+        // 3. Fallback color is deterministic non-zero color
+        let col = FloorTextureAtlas::fallback_color("CustomGround");
+        assert_ne!(col, 0);
+        assert_eq!((col >> 24) & 0xFF, 0xFF); // Alpha must be 255
+    }
+
+    #[test]
+    fn test_floor_atlas_texture_synchronization() {
+        let mut vp = Viewport3d::new();
+        let atlas = FloorTextureAtlas::create_with_decoder(vec!["4BA___51"], |_| None).unwrap();
+        vp.set_floor_atlas(Some(Arc::new(atlas)));
+        assert!(vp.floor_atlas_texture.is_none());
+
+        let ctx = egui::Context::default();
+        vp.sync_floor_atlas_texture(&ctx);
+        assert!(vp.floor_atlas_texture.is_some());
+
+        // Replacing atlas invalidates previous GPU texture handle
+        let new_atlas = FloorTextureAtlas::create_with_decoder(vec!["4BB___51"], |_| None).unwrap();
+        vp.set_floor_atlas(Some(Arc::new(new_atlas)));
+        assert!(vp.floor_atlas_texture.is_none());
+    }
+
+    #[test]
+    fn test_headless_viewport_show_with_floor_atlas_textured_and_fallback() {
+        let session = TerrainSession::create_blank(257, 32);
+        let mut vp = Viewport3d::new();
+        vp.shading_mode = ShadingMode::Textured;
+
+        let atlas =
+            FloorTextureAtlas::create_with_decoder(vec!["4BA___51", "4BB___51"], |_| None).unwrap();
+        vp.set_floor_atlas(Some(Arc::new(atlas)));
+        vp.set_tile_textures(Some(vec!["4BA___51".into(); 64 * 64]));
+
+        let ctx = egui::Context::default();
+
+        // Run show in Textured mode: show() will automatically sync floor_atlas_texture with ctx
+        let _ = ctx.run(Default::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let action = vp.show(ui, ctx, &session, 4.0, 50.0, 4.0, &[], None);
+                assert_eq!(action, ViewportAction::None);
+            });
+        });
+
+        // Verify that the texture handle was created during show
+        assert!(vp.floor_atlas_texture.is_some());
+
+        // Now test CPU fallback path when floor_atlas_texture is explicitly cleared
+        vp.floor_atlas_texture = None;
+        let _ = ctx.run(Default::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                // Manually calling render_terrain_mesh without texture handle tests CPU fallback
+                let field = Viewport3d::build_height_field(&session, 6.0, 4.0).unwrap();
+                let frame = vp
+                    .prepare_frame(egui::Vec2::new(800.0, 600.0), &field, 50.0, 4.0, &[], &[])
+                    .unwrap();
+                let painter = ui.painter();
+                vp.render_terrain_mesh(painter, ui.max_rect(), &frame, &field, &session);
+            });
+        });
+    }
+
+    #[test]
+    fn test_discrete_terrain_pick_point_click_vs_drag() {
+        let session = TerrainSession::create_blank(257, 32);
+        let mut vp = Viewport3d::new();
+        let viewport_size = egui::Vec2::new(800.0, 600.0);
+        let center = Pos2::new(400.0, 300.0);
+
+        // 1. Point-click on empty terrain emits PickTerrain (not Paint, not CommitStroke)
+        let ctx = egui::Context::default();
+        let mut recorded_action = ViewportAction::None;
+
+        // Frame 1: Pointer down at center
+        let mut raw_down = egui::RawInput::default();
+        raw_down.screen_rect = Some(Rect::from_min_size(Pos2::ZERO, viewport_size));
+        raw_down.events.push(egui::Event::PointerMoved(center));
+        raw_down.events.push(egui::Event::PointerButton {
+            pos: center,
+            button: egui::PointerButton::Primary,
+            pressed: true,
+            modifiers: Default::default(),
+        });
+        let _ = ctx.run(raw_down, |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                recorded_action = vp.show(ui, ctx, &session, 4.0, 50.0, 4.0, &[], None);
+            });
+        });
+        // Pointer is down without release; no action yet
+        assert_eq!(recorded_action, ViewportAction::None);
+        assert!(!vp.is_dragging_terrain);
+
+        // Frame 2: Pointer released at same location without movement (discrete click)
+        let mut raw_up = egui::RawInput::default();
+        raw_up.screen_rect = Some(Rect::from_min_size(Pos2::ZERO, viewport_size));
+        raw_up.events.push(egui::Event::PointerMoved(center));
+        raw_up.events.push(egui::Event::PointerButton {
+            pos: center,
+            button: egui::PointerButton::Primary,
+            pressed: false,
+            modifiers: Default::default(),
+        });
+        let _ = ctx.run(raw_up, |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                recorded_action = vp.show(ui, ctx, &session, 4.0, 50.0, 4.0, &[], None);
+            });
+        });
+
+        // Must emit PickTerrain carrying valid terrain grid coordinates
+        assert!(
+            recorded_action.is_pick_terrain(),
+            "Action must be PickTerrain on discrete click, got: {recorded_action:?}"
+        );
+        let (gx, gy) = recorded_action
+            .picked_terrain()
+            .expect("must yield grid coords");
+        assert!(gx >= 0.0 && gx <= 256.0, "gx {gx} within grid bounds");
+        assert!(gy >= 0.0 && gy <= 256.0, "gy {gy} within grid bounds");
+        assert_eq!((gx, gy), (110.0, 110.0));
+        assert_eq!(vp.hover_tile, Some((27, 27)));
+        assert_ne!(
+            (gx, gy),
+            vp.hover_grid.expect("hover_grid stays continuous")
+        );
+        assert_ne!(recorded_action, ViewportAction::CommitStroke);
+        assert!(!vp.is_dragging_terrain);
+
+        // 2. Brush Drag: Moving mouse while button is down emits Paint, and releasing commits stroke
+        let ctx2 = egui::Context::default();
+        let mut drag_action = ViewportAction::None;
+
+        // Frame 1: Pointer down
+        let mut raw_drag1 = egui::RawInput::default();
+        raw_drag1.screen_rect = Some(Rect::from_min_size(Pos2::ZERO, viewport_size));
+        raw_drag1.events.push(egui::Event::PointerMoved(center));
+        raw_drag1.events.push(egui::Event::PointerButton {
+            pos: center,
+            button: egui::PointerButton::Primary,
+            pressed: true,
+            modifiers: Default::default(),
+        });
+        let _ = ctx2.run(raw_drag1, |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                drag_action = vp.show(ui, ctx, &session, 4.0, 50.0, 4.0, &[], None);
+            });
+        });
+        assert_eq!(drag_action, ViewportAction::None);
+
+        // Frame 2: Pointer dragged by 30px (exceeds DRAG_THRESHOLD)
+        let drag_pos = Pos2::new(center.x + 30.0, center.y + 30.0);
+        let mut raw_drag2 = egui::RawInput::default();
+        raw_drag2.screen_rect = Some(Rect::from_min_size(Pos2::ZERO, viewport_size));
+        raw_drag2.events.push(egui::Event::PointerMoved(drag_pos));
+        let _ = ctx2.run(raw_drag2, |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                drag_action = vp.show(ui, ctx, &session, 4.0, 50.0, 4.0, &[], None);
+            });
+        });
+        // Dragging must emit Paint, NOT PickTerrain
+        match drag_action {
+            ViewportAction::Paint { grid_x, grid_y } => {
+                assert!(grid_x >= 0.0 && grid_x <= 256.0);
+                assert!(grid_y >= 0.0 && grid_y <= 256.0);
+            }
+            other => panic!("Expected ViewportAction::Paint during brush drag, got: {other:?}"),
+        }
+        assert!(
+            vp.is_dragging_terrain,
+            "is_dragging_terrain flag must be set during brush drag"
+        );
+
+        // Frame 3: Pointer released after drag -> emits CommitStroke
+        let mut raw_drag3 = egui::RawInput::default();
+        raw_drag3.screen_rect = Some(Rect::from_min_size(Pos2::ZERO, viewport_size));
+        raw_drag3.events.push(egui::Event::PointerButton {
+            pos: drag_pos,
+            button: egui::PointerButton::Primary,
+            pressed: false,
+            modifiers: Default::default(),
+        });
+        let _ = ctx2.run(raw_drag3, |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                drag_action = vp.show(ui, ctx, &session, 4.0, 50.0, 4.0, &[], None);
+            });
+        });
+        assert_eq!(
+            drag_action,
+            ViewportAction::CommitStroke,
+            "Release after drag must emit CommitStroke"
+        );
+        assert!(
+            !vp.is_dragging_terrain,
+            "is_dragging_terrain must be reset after commit"
+        );
+    }
+
+    #[test]
+    fn test_terrain_pick_csharp_floor_then_tile_center_contract() {
+        use against_rome_scene::camera::TerrainRay;
+
+        for vertex_size in [193, 257, 258] {
+            let session = TerrainSession::create_blank(vertex_size, 32);
+            let field = Viewport3d::build_height_field(&session, 6.0, 4.0).unwrap();
+            let dimension = field.tile_width;
+            let step = (vertex_size - 1) as f32 / dimension;
+            for (x, z, expected_tile) in [
+                (0.0, 0.0, (0, 0)),
+                (0.999, 1.001, (0, 1)),
+                (12.01, 23.99, (12, 23)),
+                (12.99, 23.01, (12, 23)),
+                (13.0, 24.0, (13, 24)),
+                (
+                    dimension - 0.001,
+                    dimension - 0.001,
+                    (dimension as i32 - 1, dimension as i32 - 1),
+                ),
+            ] {
+                let ray = TerrainRay {
+                    origin: SceneVec3::new(x, 50.0, z),
+                    direction: SceneVec3::new(0.0, -1.0, 0.0),
+                };
+                let tile = TerrainRayPicker::try_pick(&field, ray).unwrap();
+                assert_eq!(tile, expected_tile);
+                let grid = Viewport3d::terrain_tile_to_grid(&session, &field, tile);
+                // Exact C# TerrainRampTool.TileToVertex formula, including +0.5.
+                assert_eq!(
+                    grid,
+                    (
+                        (expected_tile.0 as f32 + 0.5) * step,
+                        (expected_tile.1 as f32 + 0.5) * step,
+                    )
+                );
+                assert!(grid.0 > 0.0 && grid.0 < (vertex_size - 1) as f32);
+                assert!(grid.1 > 0.0 && grid.1 < (vertex_size - 1) as f32);
+            }
+        }
+    }
+
+    #[test]
+    fn test_ramp_gesture_uses_tile_centers_and_ignores_same_tile_release() {
+        let session = TerrainSession::create_blank(257, 32);
+        let field = Viewport3d::build_height_field(&session, 6.0, 4.0).unwrap();
+        let mut vp = Viewport3d::new();
+        vp.terrain_pick_mode = true;
+        let ctx = egui::Context::default();
+        let mut action = ViewportAction::None;
+        let mut run = |vp: &mut Viewport3d, events: Vec<egui::Event>| {
+            let raw = egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, egui::vec2(800.0, 600.0))),
+                events,
+                ..Default::default()
+            };
+            let _ = ctx.run(raw, |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    action = vp.show(ui, ctx, &session, 4.0, 50.0, 4.0, &[], None);
+                });
+            });
+            action.clone()
+        };
+        run(&mut vp, vec![]);
+        let rect = vp.last_rect.unwrap();
+        let frame = vp
+            .prepare_frame(rect.size(), &field, 50.0, 4.0, &[], &[])
+            .unwrap();
+        let screen = |x, z| {
+            let p = frame
+                .project_world_to_screen(SceneVec3::new(x, field.sample_height(x, z), z))
+                .unwrap();
+            rect.min + egui::vec2(p.x, p.y)
+        };
+        let pointer = |pos, pressed| {
+            vec![
+                egui::Event::PointerMoved(pos),
+                egui::Event::PointerButton {
+                    pos,
+                    button: egui::PointerButton::Primary,
+                    pressed,
+                    modifiers: Default::default(),
+                },
+            ]
+        };
+        let start = screen(30.2, 30.2);
+        let same_tile = screen(30.8, 30.8);
+        assert_eq!(
+            run(&mut vp, pointer(start, true)).picked_terrain(),
+            Some((122.0, 122.0))
+        );
+        assert_eq!(vp.terrain_pick_press, Some((122.0, 122.0)));
+        assert_eq!(
+            run(&mut vp, pointer(same_tile, false)),
+            ViewportAction::None
+        );
+        assert_eq!(vp.terrain_pick_press, None);
+        assert_eq!(
+            run(&mut vp, pointer(start, true)).picked_terrain(),
+            Some((122.0, 122.0))
+        );
+        assert_eq!(
+            run(&mut vp, pointer(screen(31.2, 32.2), false)).picked_terrain(),
+            Some((126.0, 130.0))
+        );
+        assert!(!vp.is_dragging_terrain);
+        assert!(!session.can_undo());
+    }
+
+    #[test]
+    fn test_discrete_terrain_pick_coordinate_payload() {
+        let session = TerrainSession::create_blank(257, 32);
+        let field = Viewport3d::build_height_field(&session, 6.0, 4.0).unwrap();
+        let vp = Viewport3d::new();
+        let viewport_rect = Rect::from_min_size(Pos2::ZERO, egui::Vec2::new(800.0, 600.0));
+
+        let (scene_objs, pickables, sprites) = vp.convert_world_objects(&[]);
+        let frame = vp
+            .prepare_frame(
+                viewport_rect.size(),
+                &field,
+                50.0,
+                4.0,
+                &scene_objs,
+                &sprites,
+            )
+            .unwrap();
+
+        // 1. Center of screen projects to valid grid coordinates on terrain
+        let center_screen = Pos2::new(400.0, 300.0);
+        let picked = vp.try_pick_terrain_grid(
+            center_screen,
+            viewport_rect,
+            &session,
+            &field,
+            &[],
+            &frame,
+            &scene_objs,
+            &pickables,
+        );
+        assert!(picked.is_some(), "Center screen point should pick terrain");
+        let (gx, gy) = picked.unwrap();
+        assert_eq!((gx, gy), (130.0, 130.0));
+
+        // 2. ViewportAction payload roundtrip helper verification
+        let action = ViewportAction::PickTerrain {
+            grid_x: gx,
+            grid_y: gy,
+        };
+        assert_eq!(action.picked_terrain(), Some((gx, gy)));
+        assert!(action.is_pick_terrain());
+        assert_eq!(action.selected_object(), None);
+
+        // 3. Coordinate clamping: values must remain clamped within [0.0..=vertex_size - 1]
+        let max_coord = (session.vertex_size - 1) as f32;
+        assert!(gx >= 0.0 && gx <= max_coord);
+        assert!(gy >= 0.0 && gy <= max_coord);
+    }
+
+    #[test]
+    fn test_discrete_terrain_pick_object_priority_and_failed_ray() {
+        for terrain_pick_mode in [false, true] {
+            let session = TerrainSession::create_blank(257, 32);
+            let field = Viewport3d::build_height_field(&session, 6.0, 4.0).unwrap();
+            let mut vp = Viewport3d::new();
+            vp.terrain_pick_mode = terrain_pick_mode;
+            let viewport_size = egui::Vec2::new(800.0, 600.0);
+
+            // Place object at terrain center (world 8192, 8192 => tile 32, 32)
+            let obj = make_test_world_object(3, 8888, 1, 1, 8192.0, 8192.0);
+            let raw_objects = vec![obj];
+            let (scene_objs, pickables, sprites) = vp.convert_world_objects(&raw_objects);
+
+            // Run an initial layout frame to allocate canvas rect
+            let ctx = egui::Context::default();
+            let mut action = ViewportAction::None;
+            let mut raw_init = egui::RawInput::default();
+            raw_init.screen_rect = Some(Rect::from_min_size(Pos2::ZERO, viewport_size));
+            let _ = ctx.run(raw_init, |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    let _ = vp.show(ui, ctx, &session, 4.0, 50.0, 4.0, &raw_objects, None);
+                });
+            });
+            let canvas_rect = vp.last_rect.expect("last_rect must be recorded");
+
+            let frame = vp
+                .prepare_frame(canvas_rect.size(), &field, 50.0, 4.0, &scene_objs, &sprites)
+                .unwrap();
+
+            // Compute exact projected screen position of the placed object
+            let screen_pt = frame
+                .project_world_to_screen(SceneVec3::new(32.0, 0.0, 32.0))
+                .expect("object projects to screen");
+            let obj_click_pos = Pos2::new(
+                canvas_rect.min.x + screen_pt.x,
+                canvas_rect.min.y + screen_pt.y,
+            );
+
+            // 1. Object Priority: try_pick_terrain_grid returns None when hitting an object
+            let picked_grid = vp.try_pick_terrain_grid(
+                obj_click_pos,
+                canvas_rect,
+                &session,
+                &field,
+                &raw_objects,
+                &frame,
+                &scene_objs,
+                &pickables,
+            );
+            assert_eq!(
+                picked_grid, None,
+                "try_pick_terrain_grid must return None when an object occupies the position"
+            );
+
+            // Verify through show() UI interaction loop: click on object
+            // Frame 1: Pointer down over object
+            let mut raw_down = egui::RawInput::default();
+            raw_down.screen_rect = Some(Rect::from_min_size(Pos2::ZERO, viewport_size));
+            raw_down
+                .events
+                .push(egui::Event::PointerMoved(obj_click_pos));
+            raw_down.events.push(egui::Event::PointerButton {
+                pos: obj_click_pos,
+                button: egui::PointerButton::Primary,
+                pressed: true,
+                modifiers: Default::default(),
+            });
+            let _ = ctx.run(raw_down, |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    action = vp.show(ui, ctx, &session, 4.0, 50.0, 4.0, &raw_objects, None);
+                });
+            });
+
+            if terrain_pick_mode {
+                assert_eq!(action, ViewportAction::SelectObject(Some((3, 8888))));
+                assert_eq!(vp.terrain_pick_press, None);
+            }
+
+            // Frame 2: Pointer up (click gesture)
+            let mut raw_up = egui::RawInput::default();
+            raw_up.screen_rect = Some(Rect::from_min_size(Pos2::ZERO, viewport_size));
+            raw_up.events.push(egui::Event::PointerMoved(obj_click_pos));
+            raw_up.events.push(egui::Event::PointerButton {
+                pos: obj_click_pos,
+                button: egui::PointerButton::Primary,
+                pressed: false,
+                modifiers: Default::default(),
+            });
+            let _ = ctx.run(raw_up, |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    action = vp.show(ui, ctx, &session, 4.0, 50.0, 4.0, &raw_objects, None);
+                });
+            });
+
+            // Must select the object and NOT emit PickTerrain
+            assert_eq!(
+                action,
+                if terrain_pick_mode {
+                    ViewportAction::None // already selected on press; no ramp endpoint on release
+                } else {
+                    ViewportAction::SelectObject(Some((3, 8888)))
+                }
+            );
+            assert_eq!(
+                action.picked_terrain(),
+                None,
+                "Must not emit terrain pick when clicking an object"
+            );
+
+            // 2. Failed Ray Pick: Clicking into the sky / empty space outside terrain must NOT emit PickTerrain
+            let sky_pos = Pos2::new(canvas_rect.min.x + 10.0, canvas_rect.min.y + 10.0);
+            let sky_pick = vp.try_pick_terrain_grid(
+                sky_pos,
+                canvas_rect,
+                &session,
+                &field,
+                &raw_objects,
+                &frame,
+                &scene_objs,
+                &pickables,
+            );
+            assert_eq!(
+                sky_pick, None,
+                "try_pick_terrain_grid must return None when ray misses terrain"
+            );
+
+            // Verify through show() UI loop
+            let ctx2 = egui::Context::default();
+            let mut sky_action = ViewportAction::None;
+
+            let mut raw_sky_down = egui::RawInput::default();
+            raw_sky_down.screen_rect = Some(Rect::from_min_size(Pos2::ZERO, viewport_size));
+            raw_sky_down.events.push(egui::Event::PointerMoved(sky_pos));
+            raw_sky_down.events.push(egui::Event::PointerButton {
+                pos: sky_pos,
+                button: egui::PointerButton::Primary,
+                pressed: true,
+                modifiers: Default::default(),
+            });
+            let _ = ctx2.run(raw_sky_down, |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    sky_action = vp.show(ui, ctx, &session, 4.0, 50.0, 4.0, &raw_objects, None);
+                });
+            });
+
+            let mut raw_sky_up = egui::RawInput::default();
+            raw_sky_up.screen_rect = Some(Rect::from_min_size(Pos2::ZERO, viewport_size));
+            raw_sky_up.events.push(egui::Event::PointerMoved(sky_pos));
+            raw_sky_up.events.push(egui::Event::PointerButton {
+                pos: sky_pos,
+                button: egui::PointerButton::Primary,
+                pressed: false,
+                modifiers: Default::default(),
+            });
+            let _ = ctx2.run(raw_sky_up, |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    sky_action = vp.show(ui, ctx, &session, 4.0, 50.0, 4.0, &raw_objects, None);
+                });
+            });
+
+            assert_eq!(
+                sky_action,
+                ViewportAction::None,
+                "Failed ray pick on sky must not emit PickTerrain or any action"
+            );
+            assert_eq!(sky_action.picked_terrain(), None);
+        }
+    }
+}

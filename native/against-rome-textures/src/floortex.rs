@@ -1,6 +1,7 @@
 //! Reader for `floortex.dat` (the global Against Rome terrain texture archive).
 
 use crate::error::TextureError;
+use crate::terrain_layer::TerrainLayer;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
@@ -83,5 +84,11 @@ impl FloortexLibrary {
         let mut bytes = Vec::with_capacity(entry.size() as usize);
         entry.read_to_end(&mut bytes).ok()?;
         Some(bytes)
+    }
+
+    /// Reads and decodes a floor texture BMP into a `TerrainLayer`.
+    pub fn get_layer(&mut self, name: &str) -> Option<TerrainLayer> {
+        let bytes = self.get_bmp_bytes(name)?;
+        TerrainLayer::decode(&bytes).ok()
     }
 }

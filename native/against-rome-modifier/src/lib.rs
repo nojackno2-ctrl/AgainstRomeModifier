@@ -6,24 +6,30 @@ use std::{
     path::{Path, PathBuf},
 };
 
+pub mod bci_features;
 pub mod cl_script;
-pub mod epara;
-pub mod exe_patches;
-pub mod features;
-pub mod lzss;
-pub mod objdef;
-pub mod patch_text;
-pub mod partgeo;
-pub mod ress;
-pub mod team_dat;
-pub mod troops;
 pub mod cli;
-pub mod services;
-pub mod install;
+pub mod cli_commands;
+pub mod custom_map_restore;
 pub mod detectors;
 pub mod endless_ai;
-pub mod bci_features;
+pub mod epara;
 pub mod exe_features;
+pub mod exe_patches;
+pub mod features;
+pub mod install;
+pub mod lzss;
+pub mod objdef;
+pub mod partgeo;
+pub mod patch_text;
+pub mod ress;
+pub mod save_manager;
+pub mod services;
+pub mod team_dat;
+pub mod tga;
+pub mod troop_config;
+pub mod troops;
+pub mod unit_stats;
 
 pub use cl_script::{ClScriptOptions, ClScriptPatcher};
 pub use epara::{CleanEparaBaseline, EparaPatcher};
@@ -152,7 +158,7 @@ impl Drop for LockGuard {
     }
 }
 
-fn create_synced(path: &Path, bytes: &[u8]) -> io::Result<()> {
+pub(crate) fn create_synced(path: &Path, bytes: &[u8]) -> io::Result<()> {
     let mut file = OpenOptions::new().write(true).create_new(true).open(path)?;
     if let Err(error) = file.write_all(bytes).and_then(|_| file.sync_all()) {
         drop(file);
@@ -256,7 +262,7 @@ fn restore_original(path: &Path, backup: &Path, original: &[u8]) -> io::Result<(
 }
 
 #[cfg(windows)]
-fn replace(path: &Path, replacement: &Path) -> io::Result<()> {
+pub(crate) fn replace(path: &Path, replacement: &Path) -> io::Result<()> {
     use std::os::windows::ffi::OsStrExt;
     #[link(name = "kernel32")]
     extern "system" {
@@ -297,7 +303,7 @@ fn replace(path: &Path, replacement: &Path) -> io::Result<()> {
     }
 }
 #[cfg(not(windows))]
-fn replace(path: &Path, replacement: &Path) -> io::Result<()> {
+pub(crate) fn replace(path: &Path, replacement: &Path) -> io::Result<()> {
     fs::rename(replacement, path)
 }
 

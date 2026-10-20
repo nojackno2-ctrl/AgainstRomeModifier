@@ -1,0 +1,134 @@
+using System.Buffers.Binary;
+using System.Text;
+using AgainstRomeMapEditor.NativeAssets;
+
+namespace AgainstRomeModifier.Maps
+{
+    internal static class GameLZSS { public static byte[] DecompressPfil(byte[] b) => throw new NotSupportedException(); }
+    internal static class MapTextEncoding { public static Encoding Game => Encoding.Latin1; }
+}
+
+internal static class Program
+{
+    static ulong Fnv(ulong h, ReadOnlySpan<byte> data) { foreach (byte b in data) { h ^= b; h *= 0x100000001b3UL; } return h; }
+    const ulong Basis = 0xcbf29ce484222325UL;
+
+    static byte[] Shadows(uint seed)
+    {
+        byte[] bytes = new byte[MapLightingShadowMap.DecodedLength];
+        int[] header = [256, 256, 128, 6, 0, 16000, 5000, 12345];
+        for (int i = 0; i < header.Length; i++) BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(i * 4), header[i]);
+        uint s = seed;
+        for (int i = 32; i < bytes.Length; i++) { s = unchecked(s * 1664525u + 1013904223u); bytes[i] = (byte)(s >> 24); }
+        return bytes;
+    }
+
+    static byte[] Fixture(bool topDown = false)
+    {
+        var bytes = new byte[1086];
+        BinaryPrimitives.WriteUInt16LittleEndian(bytes, 0x4D42);
+        Write(bytes, 2, (uint)bytes.Length); Write(bytes, 10, 1078); Write(bytes, 14, 40);
+        Write(bytes, 18, 3); Write(bytes, 22, unchecked((uint)(topDown ? -2 : 2)));
+        BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(26), 1);
+        BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(28), 8);
+        Write(bytes, 34, 8); Write(bytes, 46, 256);
+        for (int i = 0; i < 256; i++) Write(bytes, 54 + i * 4, 0xEE204080);
+        byte[] pixels = topDown ? [0, 1, 128, 0xAA, 255, 64, 192, 0xBB] : [255, 64, 192, 0xBB, 0, 1, 128, 0xAA];
+        pixels.CopyTo(bytes, 1078);
+        return bytes;
+    }
+    static void Write(byte[] bytes, int offset, uint value) => BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(offset), value);
+
+    static char Classify(byte[] data, out NativeShadowDocument? doc)
+    {
+        doc = null;
+        try { doc = NativeShadowDocument.Parse(data); return 'O'; }
+        catch (InvalidDataException) { return 'I'; }
+        catch (NotSupportedException) { return 'N'; }
+    }
+
+    static void Main()
+    {
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        // ---- shadow map ----
+        var map = MapLightingShadowMap.ParseDecoded(Shadows(12345));
+        int[] S = [0, 1, 337, 674, 675, 676, 12345, 43200, 85724, 85725, 86399];
+        int[] W = [-32768, -1000, -64, -1, 0, 1, 31, 32, 63, 64, 100, 4095, 8191, 16320, 16383, 16384, 32000, 32767];
+        int[] C = [0, 1, 7, 8, 100, 254, 255];
+        ulong hOcc = Basis, hSample = Basis, hFactor = Basis, hBit = Basis; int n = 0;
+        foreach (int s in S) foreach (int x in C) foreach (int z in C) { int v = map.OcclusionAt(s, x, z); hOcc = Fnv(hOcc, BitConverter.GetBytes(v)); n++; }
+        Console.WriteLine($"occ_count={n} occ_hash=0x{hOcc:x16}");
+        n = 0;
+        foreach (int s in S) foreach (int wx in W) foreach (int wz in W) { int v = map.SampleOcclusion(s, wx, wz); hSample = Fnv(hSample, BitConverter.GetBytes(v)); n++; }
+        Console.WriteLine($"sample_count={n} sample_hash=0x{hSample:x16}");
+        n = 0; float[] strengths = [0f, 0.25f, 0.5f, 1f];
+        foreach (int s in S) foreach (int wx in W) foreach (int wz in W) foreach (float st in strengths) { float v = map.ShadowFactor(s, wx, wz, st); hFactor = Fnv(hFactor, BitConverter.GetBytes(v)); n++; }
+        Console.WriteLine($"factor_count={n} factor_hash=0x{hFactor:x16}");
+        n = 0;
+        for (int sl = 0; sl < 128; sl += 5) foreach (int x in C) foreach (int z in C) { hBit = Fnv(hBit, [map.IsOccluded(sl, x, z) ? (byte)1 : (byte)0]); n++; }
+        Console.WriteLine($"bit_count={n} bit_hash=0x{hBit:x16}");
+        foreach (var (s, wx, wz) in new[] { (0, 128, 192), (337, 100, 100), (12345, -1000, 16384), (43200, 16383, 16383), (86399, 32767, 32767), (675, 31, 63) })
+            Console.WriteLine($"sample {s} {wx} {wz} = {map.SampleOcclusion(s, wx, wz)} occ_at_cell={map.OcclusionAt(s, Math.Clamp(wx >> 6, 0, 255), Math.Clamp(wz >> 6, 0, 255))} factor_half={map.ShadowFactor(s, wx, wz, 0.5f).ToString("R", inv)}");
+
+        // ---- BMP document ----
+        uint[] values = [0, 1, 2, 8, 12, 40, 54, 255, 256, 257, 1077, 1078, 1086, 0x80000000, int.MaxValue, uint.MaxValue];
+        int[] offsets = [2, 6, 10, 14, 18, 22, 26, 28, 30, 34, 46, 50];
+        var sb = new StringBuilder();
+        foreach (int off in offsets) foreach (uint v in values) { byte[] d = Fixture(); Write(d, off, v); sb.Append(Classify(d, out _)); }
+        Console.WriteLine($"bmp_mutation_classes={sb}");
+        ulong hPrefix = Basis; byte[] fx = Fixture();
+        for (int len = 0; len < fx.Length; len++)
+        {
+            byte[] p = fx[..len]; hPrefix = Fnv(hPrefix, [(byte)Classify(p, out _)]);
+            if (len >= 6) { Write(p, 2, (uint)len); hPrefix = Fnv(hPrefix, [(byte)Classify(p, out _)]); }
+        }
+        Console.WriteLine($"bmp_prefix_hash=0x{hPrefix:x16}");
+        foreach (bool td in new[] { false, true })
+        {
+            Classify(Fixture(td), out var doc);
+            Console.WriteLine($"bmp_ok td={td} w={doc!.Width} h={doc.Height} stride={doc.StoredStride} top={doc.IsTopDown} colors={doc.PaletteColorCount} trail={doc.TrailingByteCount} mask={Convert.ToHexString(doc.DecodeFrame().AlphaMask.ToArray())} argb={string.Join(",", doc.DecodeFrame().ArgbPixels.ToArray().Select(v => v.ToString("x8")))}");
+        }
+        byte[] zc = [.. Fixture(), 0xAA, 0xBB]; Write(zc, 2, (uint)zc.Length); Write(zc, 34, 0); Write(zc, 46, 0);
+        Classify(zc, out var zdoc);
+        Console.WriteLine($"bmp_trailer colors={zdoc!.PaletteColorCount} trail={zdoc.TrailingByteCount}");
+        ulong hDark = Basis;
+        foreach (uint dst in new uint[] { 0x7F804020, 0xFFFFFFFF, 0x00010203, 0xFE102030 })
+            for (int st = 0; st < 256; st++) hDark = Fnv(hDark, BitConverter.GetBytes(NativeShadowFrame.DarkenArgb(dst, (byte)st)));
+        Console.WriteLine($"darken_hash=0x{hDark:x16}");
+
+        // ---- catalog parsing ----
+        string ini = "garbage,line.bmp\r\n[Other]\r\n0007,ignored.bmp\r\n[shadownames]\r\n; comment\r\n0000,small_round_shadow.bmp\r\n 0001 , schuetze_shadow.bmp \r\n+2,plus.bmp\r\n0003,dup1.bmp\r\n3,dup2.bmp\r\n1999,last.bmp\r\n2000,toobig.bmp\r\n-1,neg.bmp\r\n0004,sub/dir.bmp\r\n0005,back\\slash.bmp\r\n0006,\r\n0008\r\nabc,x.bmp\r\n0009,comma,inside.bmp\r\n";
+        var names = NativeShadowCatalog.ParseShadowNames(ini);
+        Console.WriteLine("names=" + string.Join(";", names.OrderBy(k => k.Key).Select(k => $"{k.Key}:{k.Value}")));
+        static string Row(string name, string shidx, string shsiz, string shtyp, string shacx, string shacz)
+        {
+            string[] r = new string[53]; Array.Fill(r, "0");
+            r[3] = shacz; r[4] = shacx; r[5] = shtyp; r[6] = shsiz; r[7] = shidx; r[52] = name;
+            return string.Join(",", r) + "\r\n";
+        }
+        string objdef = "[ObjectDefaults]\r\n;idx,a,b,shacz,shacx,shtyp,shsiz,shidx\r\n" +
+            Row("Alpha", "0", "25", "1", "5", "-3") + Row("beta", "1", "30", "0", "-7", "+9") + Row("ALPHA", "1", "99", "1", "0", "0") +
+            Row("NoShadow", "-1", "10", "1", "0", "0") + Row("Unmapped", "42", "10", "1", "0", "0") + Row("BadNum", "1", "x", "1", "0", "0") +
+            "6,1,Short,1,1\r\n" + Row("", "1", "5", "1", "0", "0") + Row(" Spaced ", "2", " 12 ", "7", " 1 ", " 2 ") + Row("Plus", "3", "4", "1", "0", "0") +
+            Row("Last", "1999", "8", "0", "100", "-100") + ";comment,line\r\n" + Row("Beta2", "1", "5", "1", "0", "0");
+        var defs = NativeShadowCatalog.ParseObjdefShadows(objdef, names);
+        foreach (var kv in defs)
+            Console.WriteLine($"def {kv.Key}|{kv.Value.ShadowId}|{kv.Value.ShadowSize}|{(int)kv.Value.ShadowType}|{kv.Value.CorrectionX}|{kv.Value.CorrectionZ}|{kv.Value.TextureFileName}");
+        string[] row = new string[53]; Array.Fill(row, "0"); row[11] = "1"; row[12] = "30"; row[13] = "1"; row[15] = "5"; row[16] = "-3"; row[52] = "DefaultCols";
+        var d2 = NativeShadowCatalog.ParseObjdefShadows(string.Join(",", row), names);
+        foreach (var kv in d2) Console.WriteLine($"def2 {kv.Key}|{kv.Value.ShadowId}|{kv.Value.ShadowSize}|{(int)kv.Value.ShadowType}|{kv.Value.CorrectionX}|{kv.Value.CorrectionZ}|{kv.Value.TextureFileName}");
+
+        // projection
+        var cat = NativeShadowCatalog.FromText(objdef, ini, _ => Fixture());
+        foreach (var (obj, ax, az) in new[] { ("Alpha", 11392.0, 10112.0), ("BETA", -5.5, 0.25), ("Last", 0.0, 0.0), ("Spaced", 1e9, -1e9) })
+        {
+            var sh = cat.GetShadow(obj);
+            if (sh is null) { Console.WriteLine($"quad {obj} null"); continue; }
+            var q = sh.ComputeWorldQuad(ax, az); var (dx, dy) = sh.ComputeScreenOffset();
+            Console.WriteLine($"quad {obj} {q.CenterX.ToString("R", inv)} {q.CenterZ.ToString("R", inv)} {q.HalfExtent.ToString("R", inv)} NW={q.CornerNW_X.ToString("R", inv)},{q.CornerNW_Z.ToString("R", inv)} NE={q.CornerNE_X.ToString("R", inv)},{q.CornerNE_Z.ToString("R", inv)} SE={q.CornerSE_X.ToString("R", inv)},{q.CornerSE_Z.ToString("R", inv)} SW={q.CornerSW_X.ToString("R", inv)},{q.CornerSW_Z.ToString("R", inv)} screen={dx.ToString("R", inv)},{dy.ToString("R", inv)}");
+        }
+        Console.WriteLine($"counts defs={cat.DefinitionCount} names={cat.ShadowNameMappingCount}");
+        var bad = NativeShadowCatalog.FromText(objdef, ini, name => name == "plus.bmp" ? Array.Empty<byte>() : name == "schuetze_shadow.bmp" ? new byte[] { 1, 2, 3 } : null);
+        Console.WriteLine($"invalid_assets alpha={bad.GetShadow("Alpha") is null} beta={bad.GetShadow("beta") is null} plus={bad.GetShadow("Plus") is null} def_only={bad.TryGetDefinition("beta", out _)}");
+    }
+}

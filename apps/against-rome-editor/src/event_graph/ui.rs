@@ -10,7 +10,7 @@ use uuid::Uuid;
 
 use crate::event_graph::converter;
 use crate::event_graph::model::{
-    EventGraph, GraphDiagnostic, GraphDiagnosticSeverity, GraphNode, PortDirection,
+    EventGraph, GraphDiagnostic, GraphDiagnosticSeverity, GraphNode, NodeKind, PortDirection,
     PortType,
 };
 use crate::event_graph::validator;
@@ -39,6 +39,10 @@ pub struct EventGraphUi {
     // 新增節點對話選單
     show_add_menu: bool,
     new_node_kind_selection: usize,
+
+    // 關閉確認與套用狀態
+    pub pending_close: bool,
+    pub apply_requested: bool,
 }
 
 impl Default for EventGraphUi {
@@ -58,6 +62,8 @@ impl Default for EventGraphUi {
             connecting_current_pos: None,
             show_add_menu: false,
             new_node_kind_selection: 0,
+            pending_close: false,
+            apply_requested: false,
         }
     }
 }
@@ -70,6 +76,16 @@ impl EventGraphUi {
     pub fn mark_dirty(&mut self) {
         self.is_dirty = true;
         self.validate();
+    }
+
+    pub fn clear_transient(&mut self) {
+        self.dragging_node_id = None;
+        self.connecting_port_id = None;
+        self.connecting_start_pos = None;
+        self.connecting_current_pos = None;
+        self.show_add_menu = false;
+        self.pending_close = false;
+        self.apply_requested = false;
     }
 
     pub fn validate(&mut self) {
@@ -87,18 +103,243 @@ impl EventGraphUi {
         self.status_message = format!("診斷完成：{errors} 項錯誤，{warnings} 項警告。");
     }
 
+    /// Validates graph structure and port connections before compilation.
+    /// Fails closed if any edge references missing nodes, missing ports,
+    /// incompatible directions/types, self loops, or violates single-edge port constraints.
+    pub fn validate_graph_integrity(&self) -> Result<(), String> {
+        let mut in_counts: std::collections::HashMap<Uuid, usize> = std::collections::HashMap::new();
+        let mut out_counts: std::collections::HashMap<Uuid, usize> = std::collections::HashMap::new();
+
+        for edge in &self.graph.edges {
+            if edge.source_node_id == edge.target_node_id {
+                return Err(format!("節點不可自我連線：節點 {}", edge.source_node_id));
+            }
+            let s_node = self
+                .graph
+                .find_node(edge.source_node_id)
+                .ok_or_else(|| format!("連線參照了不存在的來源節點 {}", edge.source_node_id))?;
+            let t_node = self
+                .graph
+                .find_node(edge.target_node_id)
+                .ok_or_else(|| format!("連線參照了不存在的目標節點 {}", edge.target_node_id))?;
+
+            let s_port = s_node
+                .find_port(edge.source_port_id)
+                .ok_or_else(|| format!("連線參照了不存在的來源端口 {}", edge.source_port_id))?;
+            let t_port = t_node
+                .find_port(edge.target_port_id)
+                .ok_or_else(|| format!("連線參照了不存在的目標端口 {}", edge.target_port_id))?;
+
+            if s_port.direction != PortDirection::Output || t_port.direction != PortDirection::Input {
+                return Err(format!(
+                    "連線端口方向不匹配：來源 {} ({:?}) -> 目標 {} ({:?})",
+                    s_port.name, s_port.direction, t_port.name, t_port.direction
+                ));
+            }
+
+            if s_port.port_type != t_port.port_type {
+                return Err(format!(
+                    "連線端口型別不相容：來源 {} ({:?}) 與 目標 {} ({:?})",
+                    s_port.name, s_port.port_type, t_port.name, t_port.port_type
+                ));
+            }
+
+            *in_counts.entry(t_port.id).or_insert(0) += 1;
+            *out_counts.entry(s_port.id).or_insert(0) += 1;
+
+            if !t_port.allow_multiple && in_counts[&t_port.id] > 1 {
+                return Err(format!("目標端口 {} 不允許多條連線輸入。", t_port.name));
+            }
+            if !s_port.allow_multiple && out_counts[&s_port.id] > 1 {
+                return Err(format!("來源端口 {} 不允許多條連線輸出。", s_port.name));
+            }
+        }
+        Ok(())
+    }
+
+    /// Full static validation with scenario target objects and catalog aliases.
+    /// Checks structural edge integrity, cycle detection, orphan/terminal action rules,
+    /// spawn aliases and area bounds.
+    pub fn validate_with_scenario(
+        &mut self,
+        scenario: &against_rome_scenario::ScenarioDocument,
+        aliases: &[String],
+    ) -> Result<(), String> {
+        self.diagnostics.clear();
+
+        // 1. 結構與端口連線完整性檢查
+        if let Err(e) = self.validate_graph_integrity() {
+            self.diagnostics.push(GraphDiagnostic::new(
+                GraphDiagnosticSeverity::Error,
+                "INVALID_LINK",
+                e.clone(),
+            ));
+            self.status_message = format!("節點連線無效：{e}");
+            return Err(e);
+        }
+
+        // 2. 節點語義與業務邏輯驗證
+        let valid_targets: HashSet<Uuid> = scenario.spawns.iter().map(|s| s.id).collect();
+        let alias_slice = if aliases.is_empty() {
+            None
+        } else {
+            Some(aliases)
+        };
+        self.diagnostics = validator::validate(&self.graph, Some(&valid_targets), alias_slice);
+
+        // 檢查是否有 Delay 節點（Against Rome 劇本動作序列不支援獨立 Delay 節點）
+        for node in &self.graph.nodes {
+            if matches!(node.kind, NodeKind::Delay { .. }) {
+                self.diagnostics.push(
+                    GraphDiagnostic::new(
+                        GraphDiagnosticSeverity::Error,
+                        "UNSUPPORTED_DELAY_NODE",
+                        format!(
+                            "劇本事件不支援 Delay 節點「{}」；請使用事件觸發節點本身的延遲秒數設定。",
+                            node.title()
+                        ),
+                    )
+                    .with_node(node.id),
+                );
+            }
+        }
+
+        let errors: Vec<_> = self
+            .diagnostics
+            .iter()
+            .filter(|d| d.severity == GraphDiagnosticSeverity::Error)
+            .collect();
+        let warnings = self
+            .diagnostics
+            .iter()
+            .filter(|d| d.severity == GraphDiagnosticSeverity::Warning)
+            .count();
+
+        if let Some(first_err) = errors.first() {
+            self.status_message = format!("驗證錯誤 [{}]: {}", first_err.code, first_err.message);
+            Err(format!("{}: {}", first_err.code, first_err.message))
+        } else {
+            self.status_message = format!("診斷通過：0 項錯誤，{warnings} 項警告。");
+            Ok(())
+        }
+    }
+
+    /// Compiles graph to scenario events after validating integrity and business rules.
+    /// Fails closed if graph errors exist or compiled scenario cannot validate against aliases.
+    pub fn compile_to_scenario_events_checked(
+        &mut self,
+        scenario: &against_rome_scenario::ScenarioDocument,
+        aliases: &[String],
+    ) -> Result<Vec<against_rome_scenario::Event>, String> {
+        self.validate_with_scenario(scenario, aliases)?;
+        let events = converter::to_scenario_events(&self.graph);
+
+        let mut draft = scenario.clone();
+        draft.events = events.clone();
+        draft
+            .validate(if aliases.is_empty() {
+                None
+            } else {
+                Some(aliases)
+            })
+            .map_err(|e| format!("編譯後劇本驗證失敗：{e}"))?;
+
+        Ok(events)
+    }
+
     pub fn load_from_scenario_events(&mut self, events: &[against_rome_scenario::Event]) {
         self.graph = converter::from_scenario_events(events, None);
         self.selected_nodes.clear();
         self.is_dirty = false;
+        self.clear_transient();
         self.validate();
+    }
+
+    /// Resets all map-bound event graph nodes, diagnostics, selections, and transient dragging/connecting states.
+    /// Preserves user preferences (open state, canvas pan, zoom, new-node-kind selection).
+    pub fn reset_session(&mut self) {
+        self.graph = EventGraph::new();
+        self.selected_nodes.clear();
+        self.diagnostics.clear();
+        self.is_dirty = false;
+        self.status_message.clear();
+        self.clear_transient();
+    }
+
+    /// Reloads or resets the event graph from the scenario document.
+    /// If scenario events are present, converts them into visual graph nodes; if empty, cleanly resets.
+    pub fn reload_from_scenario(&mut self, scenario: &against_rome_scenario::ScenarioDocument) {
+        if scenario.events.is_empty() {
+            self.reset_session();
+        } else {
+            let label_map: std::collections::HashMap<Uuid, String> = scenario
+                .spawns
+                .iter()
+                .map(|s| (s.id, format!("{} / {}", s.alias, s.id)))
+                .collect();
+            self.graph = converter::from_scenario_events(
+                &scenario.events,
+                Some(&|id| {
+                    label_map
+                        .get(&id)
+                        .cloned()
+                        .unwrap_or_else(|| id.to_string())
+                }),
+            );
+            self.selected_nodes.clear();
+            self.is_dirty = false;
+            self.clear_transient();
+            self.validate();
+        }
     }
 
     pub fn compile_to_scenario_events(&self) -> Vec<against_rome_scenario::Event> {
         converter::to_scenario_events(&self.graph)
     }
 
+    /// Request closing the event graph editor.
+    /// If changes are unsaved, opens pending close confirmation modal.
+    pub fn request_close(&mut self) {
+        if self.is_dirty {
+            self.pending_close = true;
+        } else {
+            self.open = false;
+            self.pending_close = false;
+        }
+    }
+
+    /// Discards unsaved edits and closes the window.
+    pub fn discard_and_close(&mut self) {
+        self.is_dirty = false;
+        self.open = false;
+        self.pending_close = false;
+        self.clear_transient();
+    }
+
+    /// Cancels close request and keeps the editor open.
+    pub fn cancel_close(&mut self) {
+        self.pending_close = false;
+        self.open = true;
+    }
+
     pub fn show(&mut self, ctx: &egui::Context) {
+        if self.pending_close {
+            egui::Window::new("未儲存的節點圖修改")
+                .collapsible(false)
+                .resizable(false)
+                .show(ctx, |ui| {
+                    ui.label("節點圖中有未套用的修改。關閉將放棄這些變更。");
+                    ui.horizontal(|ui| {
+                        if ui.button("放棄修改並關閉").clicked() {
+                            self.discard_and_close();
+                        }
+                        if ui.button("取消").clicked() {
+                            self.cancel_close();
+                        }
+                    });
+                });
+        }
+
         if !self.open {
             return;
         }
@@ -112,6 +353,15 @@ impl EventGraphUi {
                 ui.horizontal_wrapped(|ui| {
                     if ui.button("驗證 (Validate)").clicked() {
                         self.validate();
+                    }
+                    if ui
+                        .add_enabled(
+                            self.is_dirty,
+                            egui::Button::new("套用至劇本 (Apply to Scenario)"),
+                        )
+                        .clicked()
+                    {
+                        self.apply_requested = true;
                     }
                     if ui
                         .add_enabled(
@@ -452,7 +702,11 @@ impl EventGraphUi {
                 });
             });
 
-        self.open = open;
+        if !open {
+            self.request_close();
+        } else {
+            self.open = true;
+        }
     }
 }
 
@@ -519,4 +773,192 @@ fn get_port_center_world(node: &GraphNode, port: &crate::event_graph::model::Gra
         bounds.max.x
     };
     Pos2::new(x, y)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use against_rome_scenario::{Action, Condition, Event, ScenarioDocument, Spawn};
+    use crate::event_graph::model::GraphEdge;
+
+    fn sample_doc_and_alias() -> (ScenarioDocument, Vec<String>) {
+        let spawn_id = Uuid::new_v4();
+        let doc = ScenarioDocument {
+            version: 6,
+            spawns: vec![Spawn {
+                id: spawn_id,
+                alias: "GER_INF01".into(),
+                x: 8000.0,
+                z: 8000.0,
+                team: 0,
+                count: 10,
+                ..Default::default()
+            }],
+            events: vec![Event {
+                name: "Test Event".into(),
+                delay_seconds: 5,
+                repeat: false,
+                enabled: true,
+                conditions: vec![Condition {
+                    kind: 0,
+                    target_id: spawn_id,
+                    ..Default::default()
+                }],
+                actions: vec![
+                    Action {
+                        kind: 0,
+                        text: "Initial Message".into(),
+                        ..Default::default()
+                    },
+                    Action {
+                        kind: 2,
+                        alias: "GER_INF01".into(),
+                        team: 0,
+                        x: 8100.0,
+                        z: 8100.0,
+                        count: 4,
+                        ..Default::default()
+                    },
+                ],
+            }],
+            ..Default::default()
+        };
+        let aliases = vec!["GER_INF01".into(), "ROM_LEG01".into()];
+        (doc, aliases)
+    }
+
+    #[test]
+    fn test_graph_ui_reload_from_scenario_and_roundtrip() {
+        let (doc, aliases) = sample_doc_and_alias();
+        let mut ui = EventGraphUi::default();
+
+        ui.reload_from_scenario(&doc);
+        assert!(!ui.is_dirty());
+        assert_eq!(ui.graph.nodes.len(), 4); // 1 trigger + 1 condition + 2 actions
+        assert_eq!(ui.graph.edges.len(), 3); // 1 cond->trigger + 2 exec links
+
+        // Edit an action node: change message text
+        let mut found = false;
+        for node in &mut ui.graph.nodes {
+            if let NodeKind::MessageAction { message_text } = &mut node.kind {
+                *message_text = "Modified in Graph".into();
+                found = true;
+                break;
+            }
+        }
+        assert!(found);
+        ui.mark_dirty();
+        assert!(ui.is_dirty());
+
+        let compiled = ui.compile_to_scenario_events_checked(&doc, &aliases).unwrap();
+        assert_eq!(compiled.len(), 1);
+        assert_eq!(compiled[0].name, "Test Event");
+        assert_eq!(compiled[0].actions.len(), 2);
+        assert_eq!(compiled[0].actions[0].text, "Modified in Graph");
+        assert_eq!(compiled[0].actions[1].alias, "GER_INF01");
+    }
+
+    #[test]
+    fn test_graph_ui_invalid_links_fail_closed() {
+        let (doc, aliases) = sample_doc_and_alias();
+        let mut ui = EventGraphUi::default();
+        ui.reload_from_scenario(&doc);
+
+        // 1. Edge referencing nonexistent port
+        let mut bad_ui = EventGraphUi::default();
+        bad_ui.graph = ui.graph.clone();
+        bad_ui.graph.edges.push(GraphEdge::new(
+            bad_ui.graph.nodes[0].id,
+            Uuid::new_v4(),
+            bad_ui.graph.nodes[1].id,
+            Uuid::new_v4(),
+        ));
+        assert!(bad_ui.validate_graph_integrity().is_err());
+        assert!(bad_ui.compile_to_scenario_events_checked(&doc, &aliases).is_err());
+
+        // 2. Self-loop edge
+        let mut loop_ui = EventGraphUi::default();
+        loop_ui.graph = ui.graph.clone();
+        let node0 = &loop_ui.graph.nodes[0];
+        let p_in = node0.find_port_by_name("ExecIn").unwrap().id;
+        let p_out = node0.find_port_by_name("ExecOut").unwrap().id;
+        loop_ui.graph.edges.push(GraphEdge::new(node0.id, p_out, node0.id, p_in));
+        assert!(loop_ui.validate_graph_integrity().is_err());
+        assert!(loop_ui.compile_to_scenario_events_checked(&doc, &aliases).is_err());
+
+        // 3. Port type mismatch: connect Condition port to Execution port
+        let mut mismatch_ui = EventGraphUi::default();
+        mismatch_ui.graph = ui.graph.clone();
+        let cond_node = mismatch_ui.graph.nodes.iter().find(|n| matches!(n.kind, NodeKind::ObjectExistsCondition { .. })).unwrap();
+        let act_node = mismatch_ui.graph.nodes.iter().find(|n| matches!(n.kind, NodeKind::MessageAction { .. })).unwrap();
+        let cond_out = cond_node.find_port_by_name("ConditionOut").unwrap().id;
+        let act_in = act_node.find_port_by_name("ExecIn").unwrap().id;
+        mismatch_ui.graph.edges.push(GraphEdge::new(cond_node.id, cond_out, act_node.id, act_in));
+        assert!(mismatch_ui.validate_graph_integrity().is_err());
+
+        // 4. Direction mismatch: Input to Input
+        let mut dir_ui = EventGraphUi::default();
+        dir_ui.graph = ui.graph.clone();
+        let trig_node = &dir_ui.graph.nodes[0];
+        let t_in = trig_node.find_port_by_name("ExecIn").unwrap().id;
+        dir_ui.graph.edges.push(GraphEdge::new(trig_node.id, t_in, act_node.id, act_in));
+        assert!(dir_ui.validate_graph_integrity().is_err());
+
+        // 5. Multiple incoming connections to single-input ExecIn
+        let mut multi_ui = EventGraphUi::default();
+        multi_ui.graph = ui.graph.clone();
+        let (act_id, act_exec_in) = {
+            let act = multi_ui.graph.nodes.iter().find(|n| matches!(n.kind, NodeKind::MessageAction { .. })).unwrap();
+            (act.id, act.find_port_by_name("ExecIn").unwrap().id)
+        };
+        let extra_trigger = GraphNode::new_event_trigger("Extra", 0, false, true);
+        let extra_exec_out = extra_trigger.find_port_by_name("ExecOut").unwrap().id;
+        let extra_id = extra_trigger.id;
+        multi_ui.graph.add_node(extra_trigger);
+        multi_ui.graph.edges.push(GraphEdge::new(extra_id, extra_exec_out, act_id, act_exec_in));
+        assert!(multi_ui.validate_graph_integrity().is_err());
+    }
+
+    #[test]
+    fn test_graph_ui_dirty_close_behavior() {
+        let mut ui = EventGraphUi::default();
+        ui.open = true;
+
+        // Clean close
+        ui.request_close();
+        assert!(!ui.open);
+        assert!(!ui.pending_close);
+
+        // Dirty close requested
+        ui.open = true;
+        ui.mark_dirty();
+        assert!(ui.is_dirty());
+        ui.request_close();
+        assert!(ui.open); // Remains open because modal is shown
+        assert!(ui.pending_close);
+
+        // Cancel close
+        ui.cancel_close();
+        assert!(ui.open);
+        assert!(!ui.pending_close);
+        assert!(ui.is_dirty());
+
+        // Discard and close
+        ui.request_close();
+        assert!(ui.pending_close);
+        ui.discard_and_close();
+        assert!(!ui.open);
+        assert!(!ui.pending_close);
+        assert!(!ui.is_dirty());
+
+        // Headless egui test for pending_close dialog
+        let ctx = egui::Context::default();
+        ui.open = true;
+        ui.mark_dirty();
+        ui.request_close();
+        ctx.begin_frame(Default::default());
+        ui.show(&ctx);
+        let out = ctx.end_frame();
+        assert!(!out.shapes.is_empty());
+    }
 }

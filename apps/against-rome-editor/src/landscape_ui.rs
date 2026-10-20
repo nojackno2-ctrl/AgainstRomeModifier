@@ -12,9 +12,98 @@ use against_rome_landscape::{
         RiverStrokePlan, RiverTileCatalog,
     },
     road::{build_available as build_road_tiles, plan as plan_road, RoadStrokePlan},
-    Point,
+    simulate_hydraulic_erosion, simulate_thermal_erosion, BrushRegion, HydraulicErosionParams,
+    TerrainHeightWorkBuffer, TerrainSampleChange, ThermalErosionParams, Point,
 };
 use eframe::egui::{self, Color32, Vec2};
+
+/// Which plan the "Apply to map" button asks the app to write into the edit sessions.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LandscapeApply {
+    Cliff,
+    River,
+    Road,
+    Wall,
+}
+
+/// Result of an erosion simulation in a rectangle, faithful to C# MapEditorForm.Erosion.cs.
+/// Provides a standalone apply contract to preserve existing application architecture.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ErosionPlan {
+    /// Bounding rectangle in tile coordinates: `(min_tile_x, min_tile_y, max_tile_x, max_tile_y)`.
+    pub tile_bounds: (i32, i32, i32, i32),
+    /// Bounding rectangle in vertex coordinates: `(min_v, min_z, max_v, max_z)`.
+    pub vertex_bounds: (i32, i32, i32, i32),
+    /// Simulation center and radius on the height grid.
+    pub brush: BrushRegion,
+    /// Detailed height changes inside the selection rectangle.
+    pub changes: Vec<TerrainSampleChange>,
+    /// Minimum height change (delta = after - before).
+    pub min_delta: i16,
+    /// Maximum height change.
+    pub max_delta: i16,
+    /// Hydraulic erosion parameters used.
+    pub hydraulic_params: HydraulicErosionParams,
+    /// Thermal erosion parameters used.
+    pub thermal_params: ThermalErosionParams,
+    /// Whether hydraulic simulation was active.
+    pub hydraulic_enabled: bool,
+    /// Whether thermal simulation was active.
+    pub thermal_enabled: bool,
+}
+
+impl ErosionPlan {
+    /// Applies the planned sample changes directly into a mutable slice of terrain heights.
+    /// Returns the number of height vertices changed.
+    pub fn apply_to_heights(&self, heights: &mut [u8]) -> usize {
+        let mut count = 0;
+        for change in &self.changes {
+            if change.index < heights.len() && heights[change.index] != change.after {
+                heights[change.index] = change.after;
+                count += 1;
+            }
+        }
+        count
+    }
+}
+
+/// Live map state a plan is computed against.
+#[derive(Clone, Copy)]
+pub struct LandscapeContext<'a> {
+    /// Height grid vertices per side.
+    pub vertex_size: usize,
+    pub heights: Option<&'a [u8]>,
+    /// Per-tile texture names of the loaded `boden.txt` session (defines the tile grid).
+    pub textures: Option<&'a [String]>,
+    /// Texture names the map/floortex library really has.
+    pub texture_names: &'a [String],
+}
+
+impl<'a> LandscapeContext<'a> {
+    pub fn plain(vertex_size: usize, heights: Option<&'a [u8]>) -> Self {
+        Self { vertex_size, heights, textures: None, texture_names: &[] }
+    }
+    /// (tile dimension, height vertices per tile). Game tiles are 4 vertices wide on retail
+    /// (257 vertices = 64 tiles); other sizes fall back to one vertex cell per tile.
+    pub fn geometry(&self) -> (usize, usize) {
+        let cells = self.vertex_size.saturating_sub(1);
+        if let Some(t) = self.textures {
+            let dim = (t.len() as f64).sqrt().round() as usize;
+            if dim > 0 && dim * dim == t.len() && cells % dim == 0 {
+                return (dim, cells / dim);
+            }
+        }
+        if cells >= 4 && cells % 4 == 0 { (cells / 4, 4) } else { (cells.max(1), 1) }
+    }
+    /// Real texture grid when it matches the geometry, else a placeholder grid for preview only.
+    fn texture_grid(&self) -> (i32, Vec<String>) {
+        let (dim, _) = self.geometry();
+        match self.textures {
+            Some(t) if t.len() == dim * dim => (dim as i32, t.to_vec()),
+            _ => (dim as i32, vec!["GRAS1".to_string(); dim * dim]),
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LandscapeTab {
@@ -22,6 +111,7 @@ pub enum LandscapeTab {
     RiverPlanner,
     RoadPlanner,
     WallPlanner,
+    ErosionPlanner,
 }
 
 pub struct LandscapeUi {
@@ -31,6 +121,7 @@ pub struct LandscapeUi {
     // --- Cliff state ---
     pub cliff_min_slope: f32,
     pub cliff_min_delta: f32,
+    pub cliff_generate_scree: bool,
     pub last_cliff_result: Option<CliffDetectionResult>,
 
     // --- River state ---
@@ -39,6 +130,7 @@ pub struct LandscapeUi {
     pub river_end_x: i32,
     pub river_end_y: i32,
     pub river_preferred_texture: String,
+    pub river_mode: RiverElevationMode,
     pub last_river_plan: Option<RiverStrokePlan>,
 
     // --- Road state ---
@@ -51,9 +143,27 @@ pub struct LandscapeUi {
     pub wall_waypoints_text: String,
     pub wall_place_towers: bool,
     pub wall_place_gates: bool,
+    /// One `id,name` DATA template per line; walls need an existing object of each type on the map.
+    pub wall_templates_text: String,
     pub last_wall_plan: Option<WallStrokePlan>,
 
+    // --- Erosion state ---
+    /// Text input for rectangle vertices, faithful to C# TerrainRegionDialog format ("10,10\n30,30").
+    pub erosion_rectangle_text: String,
+    pub erosion_start_x: i32,
+    pub erosion_start_y: i32,
+    pub erosion_end_x: i32,
+    pub erosion_end_y: i32,
+    pub erosion_enable_hydraulic: bool,
+    pub erosion_enable_thermal: bool,
+    pub erosion_hydraulic_params: HydraulicErosionParams,
+    pub erosion_thermal_params: ThermalErosionParams,
+    pub last_erosion_plan: Option<ErosionPlan>,
+    pub erosion_apply_requested: bool,
+
     // Dirty / guards
+    pub apply_requested: Option<LandscapeApply>,
+
     pub dirty: bool,
     pub pending_discard: bool,
     pub status_message: String,
@@ -67,12 +177,14 @@ impl Default for LandscapeUi {
             current_tab: LandscapeTab::CliffPlanner,
             cliff_min_slope: DEFAULT_MIN_SLOPE_DEGREES,
             cliff_min_delta: DEFAULT_MIN_ELEVATION_DELTA,
+            cliff_generate_scree: false,
             last_cliff_result: None,
             river_start_x: 10,
             river_start_y: 10,
             river_end_x: 50,
             river_end_y: 50,
             river_preferred_texture: "FLUSS1".to_string(),
+            river_mode: RiverElevationMode::ValidateOnly,
             last_river_plan: None,
             road_waypoints_text: "15,15\n30,15\n30,45".to_string(),
             road_preferred_texture: "PFAD1".to_string(),
@@ -81,7 +193,23 @@ impl Default for LandscapeUi {
             wall_waypoints_text: "20,20\n40,20\n40,40\n20,40\n20,20".to_string(),
             wall_place_towers: true,
             wall_place_gates: true,
+            wall_templates_text: String::new(),
             last_wall_plan: None,
+            erosion_rectangle_text: "10,10\n30,30".to_string(),
+            erosion_start_x: 10,
+            erosion_start_y: 10,
+            erosion_end_x: 30,
+            erosion_end_y: 30,
+            erosion_enable_hydraulic: true,
+            erosion_enable_thermal: true,
+            erosion_hydraulic_params: HydraulicErosionParams {
+                droplet_count: 8000,
+                ..Default::default()
+            },
+            erosion_thermal_params: ThermalErosionParams::default(),
+            last_erosion_plan: None,
+            erosion_apply_requested: false,
+            apply_requested: None,
             dirty: false,
             pending_discard: false,
             status_message: "Ready.".to_string(),
@@ -97,6 +225,7 @@ impl LandscapeUi {
             || self.last_river_plan.is_some()
             || self.last_road_plan.is_some()
             || self.last_wall_plan.is_some()
+            || self.last_erosion_plan.is_some()
     }
 
     pub fn mark_dirty(&mut self) {
@@ -104,12 +233,23 @@ impl LandscapeUi {
     }
 
     pub fn clear_dirty(&mut self) {
+        self.reset_session();
+    }
+
+    /// Resets all map-bound plans, detection results, and pending apply requests (cliff, river, road, wall, erosion).
+    /// Preserves user preferences (open state, current tab, brush/slope options, waypoint text, erosion params).
+    pub fn reset_session(&mut self) {
         self.dirty = false;
+        self.pending_discard = false;
         self.last_cliff_result = None;
         self.last_river_plan = None;
         self.last_road_plan = None;
         self.last_wall_plan = None;
-        self.pending_discard = false;
+        self.last_erosion_plan = None;
+        self.erosion_apply_requested = false;
+        self.apply_requested = None;
+        self.status_message = "Ready.".to_string();
+        self.status_is_error = false;
     }
 
     pub fn request_close(&mut self) {
@@ -134,14 +274,19 @@ impl LandscapeUi {
             .collect()
     }
 
-    /// `vertex_size` is the height-grid vertex count; planners work on `vertex_size - 1` tiles.
+    /// `vertex_size` is the height-grid vertex count.
     pub fn run_cliff_detection(&mut self, vertex_size: usize, heights: Option<&[u8]>) -> Result<(), String> {
-        let result = match heights {
+        self.plan_cliffs(&LandscapeContext::plain(vertex_size, heights))
+    }
+
+    pub fn plan_cliffs(&mut self, cx: &LandscapeContext) -> Result<(), String> {
+        let (tiles, step) = cx.geometry();
+        let result = match cx.heights {
             Some(h) => detect_from_vertex_heights(
-                vertex_size,
+                cx.vertex_size,
                 h,
-                vertex_size.saturating_sub(1),
-                1,
+                tiles,
+                step,
                 self.cliff_min_slope,
                 self.cliff_min_delta,
             ),
@@ -168,33 +313,34 @@ impl LandscapeUi {
         }
     }
 
-    fn tile_textures(vertex_size: usize) -> (i32, Vec<String>) {
-        let tiles = vertex_size.saturating_sub(1);
-        (tiles as i32, vec!["GRAS1".to_string(); tiles * tiles])
+    pub fn run_river_planning(&mut self, vertex_size: usize, heights: Option<&[u8]>) -> Result<(), String> {
+        self.plan_river(&LandscapeContext::plain(vertex_size, heights))
     }
 
-    pub fn run_river_planning(&mut self, vertex_size: usize, heights: Option<&[u8]>) -> Result<(), String> {
+    pub fn plan_river(&mut self, cx: &LandscapeContext) -> Result<(), String> {
         let path = rasterize_orthogonal_path(&[
             (self.river_start_x, self.river_start_y),
             (self.river_end_x, self.river_end_y),
         ]);
         let preferred = self.river_preferred_texture.trim();
         let preferred = (!preferred.is_empty()).then_some(preferred);
-        let catalog = RiverTileCatalog::build_available(None, preferred, None);
+        let names = (!cx.texture_names.is_empty()).then_some(cx.texture_names);
+        let catalog = RiverTileCatalog::build_available(names, preferred, None);
         let options = RiverPlannerOptions {
             preferred_river_texture: preferred.map(str::to_string),
-            elevation_mode: RiverElevationMode::ValidateOnly,
+            elevation_mode: self.river_mode,
             ..Default::default()
         };
-        let (tiles, textures) = Self::tile_textures(vertex_size);
-        let heights = heights.filter(|h| h.len() == vertex_size * vertex_size);
+        let (tiles, textures) = cx.texture_grid();
+        let heights = cx.heights.filter(|h| h.len() == cx.vertex_size * cx.vertex_size);
 
-        match plan_river(tiles, &textures, heights, vertex_size as i32, &path, &catalog, &options) {
+        match plan_river(tiles, &textures, heights, cx.vertex_size as i32, &path, &catalog, &options) {
             Ok(plan) => {
                 self.status_message = format!(
-                    "River planned: {} water tiles, {} bank tiles, {} unsupported.",
+                    "River planned: {} water tiles, {} bank tiles, {} height edits, {} unsupported.",
                     plan.water_tiles.len(),
                     plan.bank_tiles.len(),
+                    plan.height_adjustments.len(),
                     plan.unsupported.len()
                 );
                 self.status_is_error = false;
@@ -211,14 +357,19 @@ impl LandscapeUi {
     }
 
     pub fn run_road_planning(&mut self, vertex_size: usize) -> Result<(), String> {
+        self.plan_road(&LandscapeContext::plain(vertex_size, None))
+    }
+
+    pub fn plan_road(&mut self, cx: &LandscapeContext) -> Result<(), String> {
         let points = Self::parse_waypoints(&self.road_waypoints_text);
         if points.len() < 2 {
             return Err("At least 2 waypoints are required for road planning.".into());
         }
 
-        let (tiles, textures) = Self::tile_textures(vertex_size);
+        let (tiles, textures) = cx.texture_grid();
         let preferred = self.road_preferred_texture.trim();
-        let available = build_road_tiles(None, (!preferred.is_empty()).then_some(preferred));
+        let names = (!cx.texture_names.is_empty()).then_some(cx.texture_names);
+        let available = build_road_tiles(names, (!preferred.is_empty()).then_some(preferred));
 
         match plan_road(tiles, &textures, &points, &available, preferred) {
             Ok(plan) => {
@@ -241,6 +392,10 @@ impl LandscapeUi {
     }
 
     pub fn run_wall_planning(&mut self, vertex_size: usize) -> Result<(), String> {
+        self.plan_wall(&LandscapeContext::plain(vertex_size, None))
+    }
+
+    pub fn plan_wall(&mut self, cx: &LandscapeContext) -> Result<(), String> {
         let points = Self::parse_waypoints(&self.wall_waypoints_text);
         if points.len() < 2 {
             return Err("At least 2 waypoints are required for wall planning.".into());
@@ -254,8 +409,8 @@ impl LandscapeUi {
             ..Default::default()
         };
 
-        let tiles = vertex_size.saturating_sub(1) as i32;
-        let plan = plan_wall_stroke(tiles, &points, &options, &catalog, None, None, None);
+        let (tiles, _) = cx.geometry();
+        let plan = plan_wall_stroke(tiles as i32, &points, &options, &catalog, None, None, None);
         let count = |kind| plan.placements.iter().filter(|p| p.kind == kind).count();
         self.status_message = format!(
             "Wall planned: {} placements, {} towers, {} gates, {} footprint tiles{}.",
@@ -271,7 +426,297 @@ impl LandscapeUi {
         Ok(())
     }
 
-    pub fn show(&mut self, ctx: &egui::Context, dimension: usize, heights: Option<&[u8]>) {
+    /// Parses opposite corner coordinates from `erosion_rectangle_text`, faithful to C# `TerrainRegionDialog`.
+    pub fn parse_erosion_rectangle(&self, tile_dimension: usize) -> Result<((i32, i32), (i32, i32)), String> {
+        let lines: Vec<&str> = self
+            .erosion_rectangle_text
+            .lines()
+            .map(str::trim)
+            .filter(|l| !l.is_empty())
+            .collect();
+
+        if lines.len() != 2 {
+            return Err("Rectangle erosion requires exactly 2 coordinate points (two opposite corners).".to_string());
+        }
+
+        let mut pts = Vec::with_capacity(2);
+        for line in lines {
+            let parts: Vec<&str> = line.split(',').map(str::trim).collect();
+            if parts.len() != 2 {
+                return Err("Use X,Y on each line (e.g. 10,10).".to_string());
+            }
+            let x = parts[0]
+                .parse::<i32>()
+                .map_err(|_| format!("Invalid coordinate integer: '{}'", parts[0]))?;
+            let y = parts[1]
+                .parse::<i32>()
+                .map_err(|_| format!("Invalid coordinate integer: '{}'", parts[1]))?;
+            pts.push((x, y));
+        }
+
+        let dim = tile_dimension as i32;
+        for &(x, y) in &pts {
+            if x < 0 || y < 0 || x >= dim || y >= dim {
+                return Err(format!(
+                    "Coordinate ({x}, {y}) out of bounds (allowed range: 0..{}).",
+                    dim.saturating_sub(1)
+                ));
+            }
+        }
+
+        Ok((pts[0], pts[1]))
+    }
+
+    pub fn sync_erosion_text_from_coords(&mut self) {
+        self.erosion_rectangle_text = format!(
+            "{},{}\n{},{}",
+            self.erosion_start_x, self.erosion_start_y, self.erosion_end_x, self.erosion_end_y
+        );
+    }
+
+    pub fn sync_coords_from_erosion_text(&mut self) {
+        let pts = Self::parse_waypoints(&self.erosion_rectangle_text);
+        if pts.len() >= 2 {
+            self.erosion_start_x = pts[0].0;
+            self.erosion_start_y = pts[0].1;
+            self.erosion_end_x = pts[1].0;
+            self.erosion_end_y = pts[1].1;
+        }
+    }
+
+    /// Convenience wrapper for testing and headless calls.
+    pub fn run_erosion_planning(&mut self, vertex_size: usize, heights: Option<&[u8]>) -> Result<ErosionPlan, String> {
+        self.plan_erosion(&LandscapeContext::plain(vertex_size, heights))
+    }
+
+    /// Plans hydraulic and thermal erosion in the selected tile rectangle, faithful to C# `MapEditorForm.Erosion.cs`.
+    pub fn plan_erosion(&mut self, cx: &LandscapeContext) -> Result<ErosionPlan, String> {
+        let Some(heights) = cx.heights else {
+            let msg = "Terrain heights are not available.".to_string();
+            self.status_message = format!("Erosion planning error: {msg}");
+            self.status_is_error = true;
+            return Err(msg);
+        };
+        if heights.len() != cx.vertex_size * cx.vertex_size {
+            let msg = format!(
+                "Terrain height buffer length ({}) does not match vertex size {}x{}.",
+                heights.len(),
+                cx.vertex_size,
+                cx.vertex_size
+            );
+            self.status_message = format!("Erosion planning error: {msg}");
+            self.status_is_error = true;
+            return Err(msg);
+        }
+
+        let (tiles, step) = cx.geometry();
+        let (p1, p2) = match self.parse_erosion_rectangle(tiles) {
+            Ok(pair) => pair,
+            Err(e) => {
+                self.status_message = format!("Erosion planning error: {e}");
+                self.status_is_error = true;
+                return Err(e);
+            }
+        };
+
+        if !self.erosion_enable_hydraulic && !self.erosion_enable_thermal {
+            let msg = "Both hydraulic and thermal erosion are disabled; nothing to simulate.".to_string();
+            self.status_message = format!("Erosion planning error: {msg}");
+            self.status_is_error = true;
+            return Err(msg);
+        }
+
+        let min_x = p1.0.min(p2.0);
+        let max_x = p1.0.max(p2.0);
+        let min_y = p1.1.min(p2.1);
+        let max_y = p1.1.max(p2.1);
+
+        // Faithful to C# MapEditorForm.Erosion.cs:
+        // int step = Math.Max(1, (layers.VertexSize - 1) / _texturesDocument.Dimension);
+        // int minV = tiles.Left * step, maxV = tiles.Right * step, minZ = tiles.Top * step, maxZ = tiles.Bottom * step;
+        // float cx = (minV + maxV) / 2f, cz = (minZ + maxZ) / 2f, radius = MathF.Max(maxV - minV, maxZ - minZ) / 2f + 1f;
+        let step_i = step.max(1) as i32;
+        let min_v = min_x * step_i;
+        let max_v = max_x * step_i;
+        let min_z = min_y * step_i;
+        let max_z = max_y * step_i;
+
+        let center_x = (min_v + max_v) as f32 / 2.0;
+        let center_z = (min_z + max_z) as f32 / 2.0;
+        let radius = ((max_v - min_v).max(max_z - min_z) as f32) / 2.0 + 1.0;
+        let brush = BrushRegion::new(center_x, center_z, radius);
+
+        let mut buffer = TerrainHeightWorkBuffer::from_bytes(cx.vertex_size, heights)
+            .map_err(|e| {
+                self.status_message = format!("Erosion buffer error: {e}");
+                self.status_is_error = true;
+                e
+            })?;
+
+        if self.erosion_enable_hydraulic {
+            simulate_hydraulic_erosion(&mut buffer, Some(&self.erosion_hydraulic_params), Some(brush));
+        }
+
+        if self.erosion_enable_thermal {
+            simulate_thermal_erosion(&mut buffer, Some(&self.erosion_thermal_params), Some(brush), None);
+        }
+
+        let size = cx.vertex_size;
+        let inside: Vec<TerrainSampleChange> = buffer
+            .extract_changes(heights)
+            .into_iter()
+            .filter(|change| {
+                let x = (change.index % size) as i32;
+                let z = (change.index / size) as i32;
+                x >= min_v && x <= max_v && z >= min_z && z <= max_z
+            })
+            .collect();
+
+        if inside.is_empty() {
+            self.status_message = "Erosion made no visible change.".to_string();
+            self.status_is_error = false;
+            let plan = ErosionPlan {
+                tile_bounds: (min_x, min_y, max_x, max_y),
+                vertex_bounds: (min_v, min_z, max_v, max_z),
+                brush,
+                changes: Vec::new(),
+                min_delta: 0,
+                max_delta: 0,
+                hydraulic_params: self.erosion_hydraulic_params,
+                thermal_params: self.erosion_thermal_params,
+                hydraulic_enabled: self.erosion_enable_hydraulic,
+                thermal_enabled: self.erosion_enable_thermal,
+            };
+            self.last_erosion_plan = Some(plan.clone());
+            self.dirty = true;
+            return Ok(plan);
+        }
+
+        let mut min_delta = i16::MAX;
+        let mut max_delta = i16::MIN;
+        for c in &inside {
+            let delta = c.after as i16 - c.before as i16;
+            if delta < min_delta {
+                min_delta = delta;
+            }
+            if delta > max_delta {
+                max_delta = delta;
+            }
+        }
+
+        self.status_message = format!("Erosion planned: {} height samples.", inside.len());
+        self.status_is_error = false;
+
+        let plan = ErosionPlan {
+            tile_bounds: (min_x, min_y, max_x, max_y),
+            vertex_bounds: (min_v, min_z, max_v, max_z),
+            brush,
+            changes: inside,
+            min_delta,
+            max_delta,
+            hydraulic_params: self.erosion_hydraulic_params,
+            thermal_params: self.erosion_thermal_params,
+            hydraulic_enabled: self.erosion_enable_hydraulic,
+            thermal_enabled: self.erosion_enable_thermal,
+        };
+
+        self.last_erosion_plan = Some(plan.clone());
+        self.dirty = true;
+        Ok(plan)
+    }
+
+    /// Request an apply of the currently planned erosion.
+    ///
+    /// NOTE on Architecture / Contract:
+    /// `app.rs` handles `LandscapeApply` which currently covers Cliff, River, Road, Wall.
+    /// To preserve other agents' concurrent edits without modifying `app.rs` or `lib.rs`,
+    /// `LandscapeUi` provides this explicit Apply Contract for erosion:
+    /// - `take_erosion_apply_request(&mut self) -> Option<ErosionPlan>`
+    /// - `apply_erosion_to_slice(&mut self, heights: &mut [u8]) -> Result<usize, String>`
+    /// - `erosion_applied(&mut self, summary: &str)`
+    pub fn request_erosion_apply(&mut self) {
+        if let Some(plan) = &self.last_erosion_plan {
+            if !plan.changes.is_empty() {
+                self.erosion_apply_requested = true;
+                self.status_message = format!(
+                    "Erosion apply requested: {} height samples ready.",
+                    plan.changes.len()
+                );
+                self.status_is_error = false;
+            } else {
+                self.status_message = "Erosion made no visible change; nothing to apply.".to_string();
+                self.status_is_error = false;
+            }
+        } else {
+            self.status_message = "No erosion plan available to apply.".to_string();
+            self.status_is_error = true;
+        }
+    }
+
+    pub fn take_erosion_apply_request(&mut self) -> Option<ErosionPlan> {
+        if self.erosion_apply_requested {
+            self.erosion_apply_requested = false;
+            self.last_erosion_plan.clone()
+        } else {
+            None
+        }
+    }
+
+    pub fn erosion_applied(&mut self, summary: &str) {
+        self.last_erosion_plan = None;
+        self.erosion_apply_requested = false;
+        self.dirty = false;
+        self.status_message = format!("Erosion applied: {summary}");
+        self.status_is_error = false;
+    }
+
+    /// Directly applies the current erosion plan changes to a mutable height slice.
+    pub fn apply_erosion_to_slice(&mut self, heights: &mut [u8]) -> Result<usize, String> {
+        let Some(plan) = self.last_erosion_plan.take() else {
+            return Err("No erosion plan available to apply.".to_string());
+        };
+        let count = plan.apply_to_heights(heights);
+        self.erosion_apply_requested = false;
+        self.dirty = false;
+        self.status_message = format!("Erosion applied: {count} height samples.");
+        self.status_is_error = false;
+        Ok(count)
+    }
+
+    pub fn take_apply_request(&mut self) -> Option<LandscapeApply> {
+        self.apply_requested.take()
+    }
+
+    /// The plan was written into the edit sessions, whose own dirty/undo state now tracks it.
+    pub fn plan_applied(&mut self, kind: LandscapeApply, summary: &str) {
+        match kind {
+            LandscapeApply::Cliff => self.last_cliff_result = None,
+            LandscapeApply::River => self.last_river_plan = None,
+            LandscapeApply::Road => self.last_road_plan = None,
+            LandscapeApply::Wall => self.last_wall_plan = None,
+        }
+        self.dirty = false;
+        self.status_message = format!("Applied: {summary}");
+        self.status_is_error = false;
+    }
+
+    /// A rejected apply keeps the plan so it can be adjusted and retried.
+    pub fn apply_failed(&mut self, message: impl Into<String>) {
+        self.status_message = format!("Apply rejected: {}", message.into());
+        self.status_is_error = true;
+    }
+
+    fn apply_button(&mut self, ui: &mut egui::Ui, kind: LandscapeApply, enabled: bool) {
+        if ui
+            .add_enabled(enabled, egui::Button::new("Apply to map"))
+            .on_hover_text("Writes the plan into the terrain / material / object sessions as undoable edits.")
+            .clicked()
+        {
+            self.apply_requested = Some(kind);
+        }
+    }
+
+    pub fn show(&mut self, ctx: &egui::Context, cx: &LandscapeContext) {
         if !self.open {
             return;
         }
@@ -286,6 +731,7 @@ impl LandscapeUi {
                     ui.selectable_value(&mut self.current_tab, LandscapeTab::RiverPlanner, "River Flow");
                     ui.selectable_value(&mut self.current_tab, LandscapeTab::RoadPlanner, "Road Polyline");
                     ui.selectable_value(&mut self.current_tab, LandscapeTab::WallPlanner, "Wall / Palisade");
+                    ui.selectable_value(&mut self.current_tab, LandscapeTab::ErosionPlanner, "Erosion (Hydraulic & Thermal)");
                 });
                 ui.separator();
 
@@ -300,10 +746,11 @@ impl LandscapeUi {
                 }
 
                 match self.current_tab {
-                    LandscapeTab::CliffPlanner => self.render_cliff_tab(ui, dimension, heights),
-                    LandscapeTab::RiverPlanner => self.render_river_tab(ui, dimension, heights),
-                    LandscapeTab::RoadPlanner => self.render_road_tab(ui, dimension),
-                    LandscapeTab::WallPlanner => self.render_wall_tab(ui, dimension),
+                    LandscapeTab::CliffPlanner => self.render_cliff_tab(ui, cx),
+                    LandscapeTab::RiverPlanner => self.render_river_tab(ui, cx),
+                    LandscapeTab::RoadPlanner => self.render_road_tab(ui, cx),
+                    LandscapeTab::WallPlanner => self.render_wall_tab(ui, cx),
+                    LandscapeTab::ErosionPlanner => self.render_erosion_tab(ui, cx),
                 }
             });
 
@@ -320,7 +767,7 @@ impl LandscapeUi {
                 .collapsible(false)
                 .resizable(false)
                 .show(ctx, |ui| {
-                    ui.label("Closing will discard currently planned cliff, river, road, and wall strokes.");
+                    ui.label("Closing will discard currently planned cliff, river, road, wall, and erosion strokes.");
                     ui.horizontal(|ui| {
                         if ui.button("Discard & Close").clicked() {
                             confirm = true;
@@ -340,7 +787,7 @@ impl LandscapeUi {
         }
     }
 
-    fn render_cliff_tab(&mut self, ui: &mut egui::Ui, dimension: usize, heights: Option<&[u8]>) {
+    fn render_cliff_tab(&mut self, ui: &mut egui::Ui, cx: &LandscapeContext) {
         ui.heading("Cliff Edge Detection & Face Planning");
         ui.label("Detects steep elevation gradients and extracts continuous cliff contour lines.");
 
@@ -353,27 +800,39 @@ impl LandscapeUi {
             ui.label("Min Elevation Delta:");
             ui.add(egui::Slider::new(&mut self.cliff_min_delta, 5.0..=64.0));
             ui.end_row();
+
+            ui.label("Blend scree at cliff foot:");
+            ui.checkbox(&mut self.cliff_generate_scree, "needs the original transition tiles");
+            ui.end_row();
         });
 
         ui.add_space(8.0);
         if ui.button("Detect Cliffs on Heightmap").clicked() {
-            let _ = self.run_cliff_detection(dimension, heights);
+            let _ = self.plan_cliffs(cx);
         }
 
-        if let Some(res) = &self.last_cliff_result {
+        if let Some((cell_count, contour_count, paths)) = self.last_cliff_result.as_ref().map(|res| {
+            let paths: Vec<_> = res.contours.iter().enumerate().map(|(i, c)| (i + 1, c.cells.len(), c.is_closed_loop)).collect();
+            (res.cliff_cells.len(), res.contours.len(), paths)
+        }) {
             ui.separator();
-            ui.label(format!("Detected Cliff Cells: {}", res.cliff_cells.len()));
-            ui.label(format!("Contour Paths: {}", res.contours.len()));
+            ui.label(format!("Detected Cliff Cells: {}", cell_count));
+            ui.label(format!("Contour Paths: {}", contour_count));
+            let ready = cell_count > 0 && cx.textures.is_some();
+            self.apply_button(ui, LandscapeApply::Cliff, ready);
+            if cx.textures.is_none() {
+                ui.label("Load the map in the Materials panel to apply cliff textures.");
+            }
 
             egui::ScrollArea::vertical().max_height(200.0).show(ui, |ui| {
-                for (i, contour) in res.contours.iter().enumerate() {
-                    ui.label(format!("Path #{}: {} cells (Closed: {})", i + 1, contour.cells.len(), contour.is_closed_loop));
+                for (idx, len, closed) in paths {
+                    ui.label(format!("Path #{}: {} cells (Closed: {})", idx, len, closed));
                 }
             });
         }
     }
 
-    fn render_river_tab(&mut self, ui: &mut egui::Ui, dimension: usize, heights: Option<&[u8]>) {
+    fn render_river_tab(&mut self, ui: &mut egui::Ui, cx: &LandscapeContext) {
         ui.heading("River Flow Planner");
         ui.label("Traces natural downhill water courses with seamless water and riverbank textures.");
 
@@ -393,27 +852,43 @@ impl LandscapeUi {
             });
             ui.end_row();
 
-            ui.label("Water Texture Prefix:");
+            ui.label("Water Texture:");
             ui.text_edit_singleline(&mut self.river_preferred_texture);
+            ui.end_row();
+
+            ui.label("Riverbed:");
+            egui::ComboBox::from_id_source("river_mode_select")
+                .selected_text(format!("{:?}", self.river_mode))
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(&mut self.river_mode, RiverElevationMode::ValidateOnly, "ValidateOnly (no height edits)");
+                    ui.selectable_value(&mut self.river_mode, RiverElevationMode::AutoCarveDescending, "AutoCarveDescending");
+                    ui.selectable_value(&mut self.river_mode, RiverElevationMode::AutoCarveTrench, "AutoCarveTrench");
+                });
             ui.end_row();
         });
 
         ui.add_space(8.0);
         if ui.button("Plan River Stroke").clicked() {
-            let _ = self.run_river_planning(dimension, heights);
+            let _ = self.plan_river(cx);
         }
 
-        if let Some(plan) = &self.last_river_plan {
+        if let Some((water_count, bank_count, height_count, unsupported_count, succeeded)) = self.last_river_plan.as_ref().map(|plan| {
+            (plan.water_tiles.len(), plan.bank_tiles.len(), plan.height_adjustments.len(), plan.unsupported.len(), plan.succeeded)
+        }) {
             ui.separator();
-            ui.label(format!("Water Tiles Planned: {}", plan.water_tiles.len()));
-            ui.label(format!("Bank Transition Tiles: {}", plan.bank_tiles.len()));
-            if !plan.unsupported.is_empty() {
-                ui.colored_label(Color32::from_rgb(255, 180, 50), format!("Unsupported Tiles: {}", plan.unsupported.len()));
+            ui.label(format!("Water Tiles Planned: {}", water_count));
+            ui.label(format!("Bank Transition Tiles: {}", bank_count));
+            ui.label(format!("Riverbed height edits: {}", height_count));
+            let ready = succeeded && cx.textures.is_some();
+            self.apply_button(ui, LandscapeApply::River, ready);
+            if unsupported_count > 0 {
+                ui.label("The path leaves the map; fix the coordinates before applying.");
+                ui.colored_label(Color32::from_rgb(255, 180, 50), format!("Unsupported Tiles: {}", unsupported_count));
             }
         }
     }
 
-    fn render_road_tab(&mut self, ui: &mut egui::Ui, dimension: usize) {
+    fn render_road_tab(&mut self, ui: &mut egui::Ui, cx: &LandscapeContext) {
         ui.heading("Road & Path Polyline Planner");
         ui.label("Draws continuous road strokes with proper straight, turn, and T-junction textures.");
 
@@ -428,19 +903,21 @@ impl LandscapeUi {
 
         ui.add_space(8.0);
         if ui.button("Plan Road Stroke").clicked() {
-            let _ = self.run_road_planning(dimension);
+            let _ = self.plan_road(cx);
         }
 
-        if let Some(plan) = &self.last_road_plan {
+        if let Some((tile_count, succeeded)) = self.last_road_plan.as_ref().map(|plan| (plan.tiles.len(), plan.succeeded)) {
             ui.separator();
-            ui.label(format!("Road Placements Planned: {}", plan.tiles.len()));
-            if !plan.succeeded {
+            ui.label(format!("Road Placements Planned: {}", tile_count));
+            let ready = succeeded && cx.textures.is_some();
+            self.apply_button(ui, LandscapeApply::Road, ready);
+            if !succeeded {
                 ui.colored_label(Color32::from_rgb(255, 100, 100), "Road stroke encountered out-of-bounds tiles.");
             }
         }
     }
 
-    fn render_wall_tab(&mut self, ui: &mut egui::Ui, dimension: usize) {
+    fn render_wall_tab(&mut self, ui: &mut egui::Ui, cx: &LandscapeContext) {
         ui.heading("Wall & Palisade Planner");
         ui.label("Places straight walls, corner segments, defensive towers, and gates along waypoints.");
 
@@ -468,18 +945,201 @@ impl LandscapeUi {
 
         ui.label("Waypoints (One X,Y per line):");
         ui.text_edit_multiline(&mut self.wall_waypoints_text);
+        ui.label("Object templates (id,name per line; the map needs an existing object of each type):");
+        ui.add(egui::TextEdit::multiline(&mut self.wall_templates_text).desired_rows(2));
 
         ui.add_space(8.0);
         if ui.button("Plan Wall Stroke").clicked() {
-            let _ = self.run_wall_planning(dimension);
+            let _ = self.plan_wall(cx);
         }
 
-        if let Some(plan) = &self.last_wall_plan {
-            ui.separator();
-            ui.label(format!("Placements Planned: {}", plan.placements.len()));
+        if let Some((placement_count, tower_count, gate_count, footprint_count, succeeded)) = self.last_wall_plan.as_ref().map(|plan| {
             let count = |kind| plan.placements.iter().filter(|p| p.kind == kind).count();
-            ui.label(format!("Towers: {}, Gates: {}", count(WallComponentKind::Tower), count(WallComponentKind::Gate)));
-            ui.label(format!("Blocked Footprint Tiles: {}", plan.footprint_tiles.len()));
+            (plan.placements.len(), count(WallComponentKind::Tower), count(WallComponentKind::Gate), plan.footprint_tiles.len(), plan.succeeded)
+        }) {
+            ui.separator();
+            ui.label(format!("Placements Planned: {}", placement_count));
+            ui.label(format!("Towers: {}, Gates: {}", tower_count, gate_count));
+            ui.label(format!("Blocked Footprint Tiles: {}", footprint_count));
+            let ready = succeeded;
+            self.apply_button(ui, LandscapeApply::Wall, ready);
+        }
+    }
+
+    fn render_erosion_tab(&mut self, ui: &mut egui::Ui, cx: &LandscapeContext) {
+        let (dim, _) = cx.geometry();
+        ui.heading("Hydraulic & Thermal Erosion in Rectangle");
+        ui.label(
+            "Simulates rainfall droplet runoff and talus slope dispersion inside a selected rectangular tile region.",
+        );
+
+        ui.add_space(6.0);
+        ui.label(format!("Tile coordinates: 0–{}. Opposite corners (One X,Y per line):", dim.saturating_sub(1)));
+        if ui
+            .add(egui::TextEdit::multiline(&mut self.erosion_rectangle_text).desired_rows(2))
+            .changed()
+        {
+            self.sync_coords_from_erosion_text();
+        }
+
+        ui.horizontal(|ui| {
+            ui.label("Corner 1 (X, Y):");
+            let c1 = ui.add(egui::DragValue::new(&mut self.erosion_start_x)).changed()
+                | ui.add(egui::DragValue::new(&mut self.erosion_start_y)).changed();
+            ui.label("Corner 2 (X, Y):");
+            let c2 = ui.add(egui::DragValue::new(&mut self.erosion_end_x)).changed()
+                | ui.add(egui::DragValue::new(&mut self.erosion_end_y)).changed();
+            if c1 || c2 {
+                self.sync_erosion_text_from_coords();
+            }
+        });
+
+        ui.add_space(6.0);
+        ui.horizontal(|ui| {
+            ui.checkbox(&mut self.erosion_enable_hydraulic, "Hydraulic Erosion (水力侵蝕)");
+            ui.checkbox(&mut self.erosion_enable_thermal, "Thermal Erosion (熱力侵蝕)");
+        });
+
+        ui.separator();
+        egui::CollapsingHeader::new("Simulation Parameters")
+            .default_open(true)
+            .show(ui, |ui| {
+                if self.erosion_enable_hydraulic {
+                    ui.strong("Hydraulic Droplet Parameters");
+                    egui::Grid::new("hydraulic_params_grid")
+                        .num_columns(2)
+                        .spacing([12.0, 4.0])
+                        .show(ui, |ui| {
+                            ui.label("Droplet Count:");
+                            ui.add(egui::Slider::new(&mut self.erosion_hydraulic_params.droplet_count, 100..=50000));
+                            ui.end_row();
+
+                            ui.label("Max Lifetime:");
+                            ui.add(egui::Slider::new(&mut self.erosion_hydraulic_params.max_lifetime, 10..=100));
+                            ui.end_row();
+
+                            ui.label("Inertia:");
+                            ui.add(egui::Slider::new(&mut self.erosion_hydraulic_params.inertia, 0.0..=0.5));
+                            ui.end_row();
+
+                            ui.label("Gravity:");
+                            ui.add(egui::Slider::new(&mut self.erosion_hydraulic_params.gravity, 1.0..=10.0));
+                            ui.end_row();
+
+                            ui.label("Erosion Rate:");
+                            ui.add(egui::Slider::new(&mut self.erosion_hydraulic_params.erosion_rate, 0.01..=1.0));
+                            ui.end_row();
+
+                            ui.label("Deposition Rate:");
+                            ui.add(egui::Slider::new(&mut self.erosion_hydraulic_params.deposition_rate, 0.01..=1.0));
+                            ui.end_row();
+
+                            ui.label("Erosion Radius:");
+                            ui.add(egui::Slider::new(&mut self.erosion_hydraulic_params.erosion_radius, 1..=5));
+                            ui.end_row();
+
+                            ui.label("Random Seed:");
+                            ui.add(egui::DragValue::new(&mut self.erosion_hydraulic_params.random_seed));
+                            ui.end_row();
+                        });
+                }
+
+                if self.erosion_enable_thermal {
+                    if self.erosion_enable_hydraulic {
+                        ui.add_space(4.0);
+                    }
+                    ui.strong("Thermal Talus Parameters");
+                    egui::Grid::new("thermal_params_grid")
+                        .num_columns(2)
+                        .spacing([12.0, 4.0])
+                        .show(ui, |ui| {
+                            ui.label("Talus Angle:");
+                            ui.add(egui::Slider::new(&mut self.erosion_thermal_params.talus_angle_degrees, 15.0..=75.0).text("°"));
+                            ui.end_row();
+
+                            ui.label("Erosion Rate:");
+                            ui.add(egui::Slider::new(&mut self.erosion_thermal_params.erosion_rate, 0.05..=1.0));
+                            ui.end_row();
+
+                            ui.label("Iterations:");
+                            ui.add(egui::Slider::new(&mut self.erosion_thermal_params.iterations, 1..=32));
+                            ui.end_row();
+                        });
+                }
+
+                ui.add_space(4.0);
+                if ui.button("Reset to Defaults").clicked() {
+                    self.erosion_hydraulic_params = HydraulicErosionParams {
+                        droplet_count: 8000,
+                        ..Default::default()
+                    };
+                    self.erosion_thermal_params = ThermalErosionParams::default();
+                }
+            });
+
+        ui.add_space(8.0);
+        if ui.button("Simulate Erosion in Selection").clicked() {
+            let _ = self.plan_erosion(cx);
+        }
+
+        let mut apply_clicked = false;
+        if let Some(plan) = &self.last_erosion_plan {
+            ui.separator();
+            ui.label(format!(
+                "Tile Selection: ({}, {}) to ({}, {}) [Vertices: ({}, {}) to ({}, {})]",
+                plan.tile_bounds.0,
+                plan.tile_bounds.1,
+                plan.tile_bounds.2,
+                plan.tile_bounds.3,
+                plan.vertex_bounds.0,
+                plan.vertex_bounds.1,
+                plan.vertex_bounds.2,
+                plan.vertex_bounds.3,
+            ));
+            ui.label(format!("Height Samples Changed: {}", plan.changes.len()));
+
+            if !plan.changes.is_empty() {
+                ui.label(format!(
+                    "Elevation Delta Range: [{}, {}]",
+                    plan.min_delta, plan.max_delta
+                ));
+
+                let ready = cx.heights.is_some();
+                if ui
+                    .add_enabled(ready, egui::Button::new("Apply to map"))
+                    .on_hover_text("Requests applying the erosion height changes to the loaded terrain.")
+                    .clicked()
+                {
+                    apply_clicked = true;
+                }
+
+                if self.erosion_apply_requested {
+                    ui.colored_label(
+                        Color32::from_rgb(100, 200, 255),
+                        "Apply requested: ready in apply contract. (app.rs integration pending)",
+                    );
+                }
+
+                egui::ScrollArea::vertical().max_height(140.0).show(ui, |ui| {
+                    let preview_count = plan.changes.len().min(50);
+                    for c in &plan.changes[..preview_count] {
+                        let delta = c.after as i16 - c.before as i16;
+                        ui.label(format!(
+                            "Vertex #{}: before={}, after={} (delta={:+})",
+                            c.index, c.before, c.after, delta
+                        ));
+                    }
+                    if plan.changes.len() > 50 {
+                        ui.label(format!("... and {} more vertices", plan.changes.len() - 50));
+                    }
+                });
+            } else {
+                ui.label("Erosion produced no height changes on this terrain with current parameters.");
+            }
+        }
+
+        if apply_clicked {
+            self.request_erosion_apply();
         }
     }
 }
@@ -558,5 +1218,173 @@ mod tests {
         assert!(ui.run_wall_planning(16).is_ok());
         assert!(ui.last_wall_plan.is_some());
         assert!(ui.is_dirty());
+    }
+
+    #[test]
+    fn test_landscape_ui_erosion_valid_params_produce_changes_and_bounds_filter() {
+        let mut ui = LandscapeUi::default();
+        let size = 32;
+        let mut heights = vec![0u8; size * size];
+        // Create a steep slope in the center
+        for y in 0..size {
+            for x in 0..size {
+                if x >= 10 && x <= 22 && y >= 10 && y <= 22 {
+                    heights[y * size + x] = 180;
+                } else {
+                    heights[y * size + x] = 40;
+                }
+            }
+        }
+
+        ui.erosion_rectangle_text = "10,10\n22,22".to_string();
+        ui.erosion_hydraulic_params.droplet_count = 2000;
+        ui.erosion_thermal_params.iterations = 6;
+
+        let res = ui.run_erosion_planning(size, Some(&heights));
+        assert!(res.is_ok(), "planning failed: {:?}", res.err());
+        let plan = res.unwrap();
+
+        assert!(!plan.changes.is_empty(), "Erosion should produce changes on steep slope");
+        assert!(ui.is_dirty(), "UI should be dirty after planning erosion");
+
+        // Verify C# inside bounds filtering: all changes must fall within vertex bounds
+        let (min_v, min_z, max_v, max_z) = plan.vertex_bounds;
+        for c in &plan.changes {
+            let vx = (c.index % size) as i32;
+            let vz = (c.index / size) as i32;
+            assert!(
+                vx >= min_v && vx <= max_v && vz >= min_z && vz <= max_z,
+                "Sample index {} ({vx}, {vz}) leaked outside bounds [{min_v}..={max_v}, {min_z}..={max_z}]",
+                c.index
+            );
+            assert_ne!(c.before, c.after);
+        }
+    }
+
+    #[test]
+    fn test_landscape_ui_erosion_flat_terrain_reports_no_change() {
+        let mut ui = LandscapeUi::default();
+        let size = 16;
+        let heights = vec![100u8; size * size];
+
+        ui.erosion_rectangle_text = "2,2\n8,8".to_string();
+        let res = ui.run_erosion_planning(size, Some(&heights));
+        assert!(res.is_ok());
+        let plan = res.unwrap();
+        assert_eq!(plan.changes.len(), 0);
+        assert_eq!(ui.status_message, "Erosion made no visible change.");
+    }
+
+    #[test]
+    fn test_landscape_ui_erosion_bounds_and_invalid_input_guard() {
+        let mut ui = LandscapeUi::default();
+        let size = 16;
+        let heights = vec![100u8; size * size];
+
+        // 1. Missing terrain heights
+        let res_no_heights = ui.run_erosion_planning(size, None);
+        assert!(res_no_heights.is_err());
+        assert!(ui.status_is_error);
+
+        // 2. Out-of-bounds coordinates
+        ui.erosion_rectangle_text = "0,0\n30,30".to_string(); // size 16 has tiles 0..15
+        let res_oob = ui.run_erosion_planning(size, Some(&heights));
+        assert!(res_oob.is_err());
+        assert!(res_oob.unwrap_err().contains("out of bounds"));
+
+        // 3. Not enough points
+        ui.erosion_rectangle_text = "5,5".to_string();
+        let res_too_few = ui.run_erosion_planning(size, Some(&heights));
+        assert!(res_too_few.is_err());
+
+        // 4. Malformed syntax
+        ui.erosion_rectangle_text = "invalid\n5,5".to_string();
+        let res_syntax = ui.run_erosion_planning(size, Some(&heights));
+        assert!(res_syntax.is_err());
+
+        // 5. Both simulations disabled
+        ui.erosion_rectangle_text = "2,2\n6,6".to_string();
+        ui.erosion_enable_hydraulic = false;
+        ui.erosion_enable_thermal = false;
+        let res_disabled = ui.run_erosion_planning(size, Some(&heights));
+        assert!(res_disabled.is_err());
+        assert!(res_disabled.unwrap_err().contains("disabled"));
+    }
+
+    #[test]
+    fn test_landscape_ui_erosion_apply_contract_and_dirty_lifecycle() {
+        let mut ui = LandscapeUi::default();
+        let size = 16;
+        let mut heights = vec![0u8; size * size];
+        for y in 0..size {
+            for x in 0..size {
+                if x >= 4 && x <= 12 && y >= 4 && y <= 12 {
+                    heights[y * size + x] = 160;
+                } else {
+                    heights[y * size + x] = 20;
+                }
+            }
+        }
+
+        ui.erosion_rectangle_text = "4,4\n12,12".to_string();
+        let res = ui.run_erosion_planning(size, Some(&heights));
+        assert!(res.is_ok());
+        let plan = res.unwrap();
+        assert!(!plan.changes.is_empty());
+        assert!(ui.is_dirty());
+
+        // Request apply via contract
+        ui.request_erosion_apply();
+        assert!(ui.erosion_apply_requested);
+
+        // Take request
+        let requested_plan = ui.take_erosion_apply_request();
+        assert!(requested_plan.is_some());
+        assert!(!ui.erosion_apply_requested);
+
+        // Apply to height slice
+        let mut test_heights = heights.clone();
+        let applied_count = requested_plan.unwrap().apply_to_heights(&mut test_heights);
+        assert_eq!(applied_count, plan.changes.len());
+        assert_ne!(test_heights, heights);
+
+        // Mark applied
+        ui.erosion_applied("8 height samples modified");
+        assert!(!ui.is_dirty());
+        assert!(ui.last_erosion_plan.is_none());
+
+        // Clear dirty lifecycle check
+        ui.erosion_rectangle_text = "4,4\n12,12".to_string();
+        let _ = ui.run_erosion_planning(size, Some(&heights));
+        assert!(ui.is_dirty());
+        ui.clear_dirty();
+        assert!(!ui.is_dirty());
+        assert!(ui.last_erosion_plan.is_none());
+    }
+
+    #[test]
+    fn test_landscape_ui_erosion_apply_to_slice_convenience() {
+        let mut ui = LandscapeUi::default();
+        let size = 16;
+        let mut heights = vec![0u8; size * size];
+        for y in 0..size {
+            for x in 0..size {
+                if x >= 4 && x <= 12 && y >= 4 && y <= 12 {
+                    heights[y * size + x] = 160;
+                } else {
+                    heights[y * size + x] = 20;
+                }
+            }
+        }
+
+        ui.erosion_rectangle_text = "4,4\n12,12".to_string();
+        let _ = ui.run_erosion_planning(size, Some(&heights));
+        let mut live_heights = heights.clone();
+        let count_res = ui.apply_erosion_to_slice(&mut live_heights);
+        assert!(count_res.is_ok());
+        assert!(count_res.unwrap() > 0);
+        assert!(!ui.is_dirty());
+        assert!(ui.last_erosion_plan.is_none());
+        assert!(ui.status_message.contains("Erosion applied"));
     }
 }

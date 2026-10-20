@@ -96,6 +96,8 @@ $env:CARGO_HOME='D:\Github\AgainstRomeModifier\re_workspace\rust-runtime\cargo';
 - 修正 4 個編譯錯誤：`compress_pfil` 缺第二參數；`EndlessAiOrchestrator` 對 module 的 immutable/mutable 借用衝突 → 新增 `detect_module_by_id` / `apply_module_by_id`（暫時取出 module 再放回），`apply_mandatory_repair`、`services.rs`、`bci_features.rs` 改用之。
 - `cli.rs` 新增 `is_cli_invocation`、`run_cli`（detect-game/status/features/maps/profile/apply/restore/help，含 `--json` 封套、`--dry-run`）與 `commit_plan`（temp+rename，失敗回滾）；`main.rs` 把 CLI 指令導到 `run_cli`，舊 `inspect/apply EXE --backup` 行為保留。
 - 新測試 `tests/services_install_detectors.rs`（14 項）+ cli.rs 單元測試 3 項。
-- **未完成/未驗證**：CLI `backup`/`stats`/`saves` 指令尚未移植（回傳「尚未移植」）；`PatchEngine::compose` 目前不含 EndlessAi/BCI 模組寫入（EndlessAiOrchestrator.save_all 以預設 PFIL header 壓縮，未與 C# 逐位元比對）；CustomPatches/BciLiteralPatch 無獨立 C# differential 測試，未對真實遊戲檔驗證；install 的 Resources 需由呼叫端提供。
+- **已解決的舊缺口**：CLI `backup`/`stats`/`saves` 已由 `src/cli_commands.rs` 實作並從 `cli.rs` 路由；`tests/save_manager_parity.rs` 覆蓋 saves backup、preview、restore、delete 及錯誤路徑。Codex 於 2026-10-19 重跑 Modifier crate 完整離線測試：27 suites、190 passed、0 failed。
+- **已實作、仍缺端到端 parity 證據**：`PatchEngine::compose` 已呼叫 `compose_bci`，會還原後重套 Endless AI modules、mandatory repair、FoodHealing、retired arrows migration 與 civilian production migration；`EndlessAiOrchestrator::save_all` 取用載入時保留的原 PFIL header。現有測試驗證 template header preservation、serialization failure retry 及 FoodHealing enable/disable，但尚無完整 C# compose/apply 輸出逐位元 differential。
+- **仍未完成/未驗證**：CustomPatches/BciLiteralPatch 無獨立 C# differential 測試，未對真實遊戲檔驗證；install 的 Resources 需由呼叫端提供。
 - 驗證指令：
   `cargo test --offline --manifest-path native/against-rome-modifier/Cargo.toml --target-dir re_workspace/target-modifier`

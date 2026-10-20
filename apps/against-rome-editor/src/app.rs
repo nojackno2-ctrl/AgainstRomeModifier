@@ -1,21 +1,44 @@
 //! Against Rome 原生 Rust 桌面地圖編輯器主介面 (egui/eframe)
 
+use against_rome_environment::nature::{
+    map_nature_regions, NatureCatalogItem, NatureCategory, NatureDensity, NatureEditSession,
+    NatureHeightField, NatureOperation, NaturePaletteFilter, NatureStrokeDriver,
+    NatureStrokeReport, NatureStrokeSettings, PlacedNatureObject,
+};
+use against_rome_environment::DotNetRandom;
 use eframe::egui::{self, Color32, ColorImage, Pos2, Rect, Sense, Stroke, TextureHandle, Vec2};
-use std::path::PathBuf;
+use std::collections::{BTreeSet, HashMap};
+use std::path::{Path, PathBuf};
 
-use crate::storage::{load_map, safe_save_map};
+use crate::ambience_ui::AmbienceUi;
+use crate::minimap_ui::MinimapUi;
+use crate::modifier_ui::ModifierUi;
+use crate::scene_ui::SceneUi;
+use crate::storage::load_map;
+#[cfg(test)]
+use crate::storage::safe_save_map;
+use crate::tech_doc_ui::TechDocUi;
 use crate::terrain::{BrushPath, CollisionBrushOp, HeightBrushOp, TerrainSession};
-use crate::{map_settings::MapSettings, navigation::NavigationUi, toolbox::ToolboxUi};
-use crate::{placement_ui::PlacementUi,scenario_ui::ScenarioUi};
 use crate::textures_ui::TexturesUi;
-use crate::{maps_ui::{MapsContext,MapsUi},environment_ui::EnvironmentUi,landscape_ui::LandscapeUi,packaging_ui::PackagingUi,campaign_ui::CampaignUi,ai_planner_ui::AiPlannerUi};
+use crate::viewport_3d::{Viewport3d, ViewportAction};
+use crate::{
+    ai_planner_ui::AiPlannerUi,
+    campaign_ui::CampaignUi,
+    environment_ui::{EnvApply, EnvironmentUi},
+    landscape_ui::{LandscapeApply, LandscapeContext, LandscapeUi},
+    maps_ui::{BlankMapBuildIntent, MapsContext, MapsUi},
+    packaging_ui::PackagingUi,
+};
 use crate::{console::ConsoleUi, event_graph::EventGraphUi};
+use crate::{map_settings::MapSettings, navigation::NavigationUi, toolbox::ToolboxUi};
+use crate::{placement_ui::PlacementUi, scenario_ui::ScenarioUi};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ViewMode {
     Heightmap,
     Collision,
     Blended,
+    View3D,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -30,15 +53,32 @@ pub enum ActiveTool {
     CollisionClear,
 }
 
-enum PendingAction {
+#[derive(Clone, Debug, PartialEq)]
+pub enum PendingAction {
     Load(PathBuf),
     Blank(usize),
+    BuildBlank(BlankMapBuildIntent),
     Close,
+}
+
+/// Original `emboss.bmp` layer plus the C# `TerrainHeightEditSession` light/baseline state.
+/// Present only when the loaded map has an emboss layer; absent means Safe Save never writes one.
+struct EmbossBaseline {
+    raw: crate::bmp::BmpImage,
+    session: against_rome_editor::emboss::EmbossSession,
+}
+
+/// Result of [`EditorApp::candidate_diagnostics`].
+pub(crate) struct CandidateDiagnostics {
+    pub map_issues: Vec<against_rome_maps::diagnostics::MapIssue>,
+    pub design: Result<Vec<against_rome_maps::design_validator::MapDesignIssue>, String>,
 }
 
 pub struct EditorApp {
     pub map_path_input: String,
+    loaded_map_path: Option<PathBuf>,
     pub session: Option<TerrainSession>,
+    emboss: Option<EmbossBaseline>,
     pub status_message: String,
     pub status_is_error: bool,
 
@@ -49,6 +89,10 @@ pub struct EditorApp {
     pub flatten_target: u8,
     pub roughness_seed: i32,
     pub sample_flatten_target: bool,
+    pub ramp_width: f32,
+    pub ramp_falloff: f32,
+    ramp_selecting: bool,
+    ramp_start: Option<(f32, f32)>,
     pub water_surface: f32,
     pub water_bed: u8,
 
@@ -62,22 +106,36 @@ pub struct EditorApp {
     texture_dirty: bool,
     is_painting: bool,
     stroke_path: BrushPath,
-    pending_action: Option<PendingAction>,
+    pub pending_action: Option<PendingAction>,
     close_allowed: bool,
+    pending_save_warnings: Option<(
+        PathBuf,
+        Vec<against_rome_maps::design_validator::MapDesignIssue>,
+    )>,
     toolbox: ToolboxUi,
     navigation: NavigationUi,
     height_step: f32,
     placement: PlacementUi,
     scenario: ScenarioUi,
     textures: TexturesUi,
+    scene: SceneUi,
     event_graph: EventGraphUi,
     console: ConsoleUi,
-    maps: MapsUi,
+    pub maps: MapsUi,
     environment: EnvironmentUi,
     landscape: LandscapeUi,
     packaging: PackagingUi,
     campaign: CampaignUi,
     ai_planner: AiPlannerUi,
+    pub ambience: AmbienceUi,
+    pub modifier: ModifierUi,
+    pub viewport_3d: Viewport3d,
+    pub tech_doc: TechDocUi,
+    pub minimap: MinimapUi,
+    pub(crate) design_check: crate::design_check_ui::DesignCheckUi,
+    nature: NatureWorkflow,
+    last_canvas_rect: Rect,
+    last_map_rect: Rect,
 }
 
 impl EditorApp {
@@ -87,10 +145,16 @@ impl EditorApp {
         if let Some(windows) = std::env::var_os("WINDIR") {
             for name in ["msjh.ttc", "msyh.ttc"] {
                 if let Ok(bytes) = std::fs::read(PathBuf::from(&windows).join("Fonts").join(name)) {
-                    let mut fonts=egui::FontDefinitions::default();
-                    fonts.font_data.insert("system-cjk".into(),egui::FontData::from_owned(bytes));
-                    for family in [egui::FontFamily::Proportional,egui::FontFamily::Monospace] {
-                        fonts.families.entry(family).or_default().push("system-cjk".into());
+                    let mut fonts = egui::FontDefinitions::default();
+                    fonts
+                        .font_data
+                        .insert("system-cjk".into(), egui::FontData::from_owned(bytes));
+                    for family in [egui::FontFamily::Proportional, egui::FontFamily::Monospace] {
+                        fonts
+                            .families
+                            .entry(family)
+                            .or_default()
+                            .push("system-cjk".into());
                     }
                     cc.egui_ctx.set_fonts(fonts);
                     break;
@@ -98,17 +162,21 @@ impl EditorApp {
             }
         }
         #[cfg(not(windows))]
-        let _=cc;
-        Self::initial_state()
+        let _ = cc;
+        let mut app = Self::initial_state();
+        app.modifier = ModifierUi::persisted(crate::modifier_ui::default_state_dir());
+        app
     }
 
-    fn initial_state() -> Self {
+    pub fn initial_state() -> Self {
         // 預設建立一張空白 257x257 地圖以便立即可用
         let session = TerrainSession::create_blank(257, 32);
 
         Self {
             map_path_input: String::new(),
+            loaded_map_path: None,
             session: Some(session),
+            emboss: None,
             status_message: "Ready. Blank 257x257 map initialized.".to_string(),
             status_is_error: false,
             active_tool: ActiveTool::HeightRaise,
@@ -117,6 +185,10 @@ impl EditorApp {
             flatten_target: 32,
             roughness_seed: 42,
             sample_flatten_target: true,
+            ramp_width: 4.0,
+            ramp_falloff: 2.0,
+            ramp_selecting: false,
+            ramp_start: None,
             water_surface: 48.0,
             water_bed: 24,
             view_mode: ViewMode::Blended,
@@ -128,12 +200,14 @@ impl EditorApp {
             stroke_path: BrushPath::default(),
             pending_action: None,
             close_allowed: false,
+            pending_save_warnings: None,
             toolbox: ToolboxUi::default(),
             navigation: NavigationUi::default(),
             height_step: 4.0,
             placement: PlacementUi::default(),
             scenario: ScenarioUi::default(),
             textures: TexturesUi::default(),
+            scene: SceneUi::default(),
             event_graph: EventGraphUi::default(),
             console: ConsoleUi::default(),
             maps: MapsUi::default(),
@@ -142,35 +216,790 @@ impl EditorApp {
             packaging: PackagingUi::default(),
             campaign: CampaignUi::default(),
             ai_planner: AiPlannerUi::default(),
+            ambience: AmbienceUi::default(),
+            modifier: ModifierUi::default(),
+            viewport_3d: Viewport3d::new(),
+            tech_doc: TechDocUi::default(),
+            minimap: MinimapUi::default(),
+            design_check: Default::default(),
+            nature: NatureWorkflow::default(),
+            last_canvas_rect: Rect::from_min_size(Pos2::ZERO, Vec2::new(800.0, 600.0)),
+            last_map_rect: Rect::from_min_size(Pos2::ZERO, Vec2::new(600.0, 600.0)),
+        }
+    }
+}
+
+impl Default for EditorApp {
+    fn default() -> Self {
+        Self::initial_state()
+    }
+}
+
+impl EditorApp {
+    /// Noninteractive save, like C# TrySaveMap: design warnings may proceed, errors may not.
+    /// The toolbar uses request_safe_save for the interactive design-warning confirmation.
+    pub fn safe_save_current(&mut self) {
+        self.safe_save_current_using(|tx| tx.commit().map_err(|e| e.to_string()));
+    }
+
+    fn safe_save_current_using(
+        &mut self,
+        commit: impl FnOnce(
+            &mut against_rome_maps::MapSaveTransaction,
+        ) -> Result<against_rome_maps::MapSaveReport, String>,
+    ) {
+        self.pending_save_warnings = None;
+        self.safe_save_confirming_using(|_| true, commit);
+    }
+
+    fn safe_save_confirming_using(
+        &mut self,
+        confirm_design: impl FnOnce(&[against_rome_maps::design_validator::MapDesignIssue]) -> bool,
+        commit: impl FnOnce(
+            &mut against_rome_maps::MapSaveTransaction,
+        ) -> Result<against_rome_maps::MapSaveReport, String>,
+    ) {
+        let result = self.save_transaction(confirm_design, commit);
+        match result {
+            Ok(report) => {
+                self.status_message = format!(
+                    "Saved safely in one transaction ({} files, {} cache deletions).",
+                    report.written_files.len(),
+                    report.deleted_files.len()
+                );
+                self.status_is_error = false;
+            }
+            Err(err) => {
+                self.status_message = format!("Safe Save Rejected: {err}; unsaved changes kept.");
+                self.status_is_error = true;
+            }
         }
     }
 
-    pub fn set_loaded_map(&mut self,path:PathBuf,session:TerrainSession) {
-        self.session=Some(session);
-        self.map_path_input=path.to_string_lossy().into_owned();
-        self.status_is_error=false;
-        self.status_message=format!("Loaded {}",path.display());
-        let settings=match MapSettings::load(&path) {
-            Ok(s)=>s,
-            Err(e)=>{self.status_is_error=true;self.status_message=format!("Map loaded; water settings disabled: {e}");MapSettings::default()}
+    /// Placement/Ambience Save buttons only raise requests; both collapse into one central
+    /// Safe Save so the whole-map transaction stays the only product path that writes the map.
+    fn consume_panel_save_requests(&mut self) {
+        let placement = self.placement.take_save_request();
+        let ambience = self.ambience.take_save_request();
+        if placement || ambience {
+            self.request_safe_save();
+        }
+    }
+
+    fn request_safe_save(&mut self) {
+        self.confirm_safe_save(None);
+    }
+
+    fn confirm_safe_save(
+        &mut self,
+        approved: Option<(
+            PathBuf,
+            Vec<against_rome_maps::design_validator::MapDesignIssue>,
+        )>,
+    ) {
+        self.pending_save_warnings = None;
+        let path = PathBuf::from(self.map_path_input.trim());
+        let mut pending = None;
+        self.safe_save_confirming_using(
+            |issues| {
+                if approved
+                    .as_ref()
+                    .is_some_and(|(p, old)| p == &path && old == issues)
+                {
+                    true
+                } else {
+                    pending = Some((path.clone(), issues.to_vec()));
+                    false
+                }
+            },
+            |tx| tx.commit().map_err(|e| e.to_string()),
+        );
+        if let Some(pending) = pending {
+            self.pending_save_warnings = Some(pending);
+            self.status_message =
+                "Safe Save awaiting design warning confirmation; unsaved changes kept.".into();
+            self.status_is_error = false;
+        }
+    }
+
+    fn resolve_safe_save_warnings(&mut self, proceed: bool) {
+        let Some(pending) = self.pending_save_warnings.take() else {
+            return;
         };
-        self.height_step=settings.height_step;
-        self.water_surface=settings.water_surface();
-        self.water_bed=settings.suggested_bed();
-        self.navigation.invalidate();self.texture_dirty=true;
+        if proceed {
+            // Rebuild and revalidate the candidate; confirmation never bypasses errors.
+            self.confirm_safe_save(Some(pending));
+        } else {
+            self.status_message = "Safe Save cancelled; unsaved changes kept.".into();
+            self.status_is_error = false;
+            self.maps.open = true;
+            self.maps.current_tab = crate::maps_ui::MapsTab::Diagnostics;
+        }
+    }
+
+    /// Inspect the effective candidate, even when the scenario panel has never been opened.
+    /// Staged JSON wins over saved JSON; clean/unloaded panel defaults must not hide saved spawns.
+    fn save_diagnostics(
+        &mut self,
+        path: &Path,
+        staged_scenario: &[(PathBuf, Vec<u8>)],
+    ) -> Result<Vec<against_rome_maps::design_validator::MapDesignIssue>, String> {
+        use against_rome_maps::diagnostics::MapIssueSeverity;
+        let candidate = self.candidate_diagnostics(path, staged_scenario)?;
+        self.maps.diagnostic_issues = candidate.map_issues;
+        if let Some(blocking) = self
+            .maps
+            .diagnostic_issues
+            .iter()
+            .find(|issue| issue.severity == MapIssueSeverity::Error)
+        {
+            self.maps.open = true;
+            self.maps.current_tab = crate::maps_ui::MapsTab::Diagnostics;
+            return Err(format!(
+                "MapDiagnostics [{}]: {}",
+                blocking.code, blocking.english
+            ));
+        }
+        candidate.design
+    }
+
+    /// Memory-only counterpart of Safe Save's scenario staging for the Design Check panel:
+    /// dirty scenario/events/camera win over saved JSON. Returns the map path and staged files.
+    pub(crate) fn check_candidate_inputs(
+        &self,
+    ) -> Result<(PathBuf, Vec<(PathBuf, Vec<u8>)>), String> {
+        let path = if self.map_path_input.trim().is_empty() {
+            self.loaded_map_path.clone().unwrap_or_default()
+        } else {
+            PathBuf::from(self.map_path_input.trim())
+        };
+        let staged = if self.scenario.dirty() || self.scenario.graph_ui().is_dirty() {
+            self.scenario
+                .stage_transaction_files(&path)
+                .map_err(|e| format!("Scenario: {e}"))?
+        } else {
+            Vec::new()
+        };
+        let staged =
+            self.campaign
+                .stage_camera_candidate(&path, &staged, self.scenario.known_aliases())?;
+        Ok((path, staged))
+    }
+
+    /// Side-effect-free evaluation of the effective in-memory candidate shared by Safe Save
+    /// and the read-only Design Check panel. `design` is the preflight/validator outcome and
+    /// is only meaningful when `map_issues` holds no Error.
+    pub(crate) fn candidate_diagnostics(
+        &self,
+        path: &Path,
+        staged_scenario: &[(PathBuf, Vec<u8>)],
+    ) -> Result<CandidateDiagnostics, String> {
+        use against_rome_maps::{
+            design_validator::{MapDesignValidationRequest, MapDesignValidator},
+            diagnostics::{MapCheckObject, MapCheckSnapshot, MapDiagnostics, MapIssueSeverity},
+            preflight::ScenarioSavePreflight,
+        };
+        use against_rome_scenario::model::ScenarioDocument;
+
+        let mut document = if let Some((_, bytes)) = staged_scenario
+            .iter()
+            .find(|(p, _)| p == Path::new("arm_scenario.json"))
+        {
+            ScenarioDocument::from_json(bytes)?
+        } else {
+            match std::fs::read(path.join("arm_scenario.json")) {
+                Ok(bytes) => ScenarioDocument::from_json(&bytes)?,
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => ScenarioDocument::default(),
+                Err(e) => return Err(format!("Cannot read saved scenario: {e}")),
+            }
+        };
+        // Placement edits change DATA, not scenario JSON. Use their pending positions/teams
+        // for bound spawns rather than diagnosing their stale saved positions.
+        if self.placement.is_dirty() {
+            let objects = self.placement.objects();
+            for binding in document.data_slots.iter().filter(|b| !b.spawn_id.is_nil()) {
+                let spawn = document
+                    .spawns
+                    .iter_mut()
+                    .find(|s| s.id == binding.spawn_id)
+                    .ok_or("Diagnostics: missing bound scenario spawn")?;
+                let object = objects.iter().find(|o| o.slot as i32 == binding.slot && o.uid == binding.uid)
+                    .ok_or("Diagnostics: pending placement removed or replaced a bound scenario object")?;
+                [spawn.x, spawn.y, spawn.z] = object.position;
+                spawn.team = i32::from(object.team);
+            }
+        }
+        let aliases = if self.scenario.dirty() {
+            self.scenario.known_aliases().to_vec()
+        } else {
+            path.parent()
+                .and_then(Path::parent)
+                .and_then(|root| against_rome_scenario::load_aliases(root).ok())
+                .unwrap_or_default()
+        };
+        let terrain = self
+            .session
+            .as_ref()
+            .ok_or("No terrain session to diagnose")?;
+        let snapshot = MapCheckSnapshot {
+            objects: document
+                .spawns
+                .iter()
+                .map(|s| MapCheckObject::new(s.clone(), s.count == 0, s.prebuilt))
+                .collect(),
+            events: document.events.clone(),
+            aliases: aliases.clone(),
+            collision_size: terrain.collision_size,
+            collision: Some(terrain.collision().to_vec()),
+            height_size: terrain.vertex_size,
+            heights: Some(terrain.heights().to_vec()),
+            height_step: self.height_step,
+            water_level: if self.ambience.is_dirty() {
+                self.ambience.profile.boden.waterlevel
+            } else {
+                self.water_surface
+            },
+        };
+        let map_issues = MapDiagnostics::check(&snapshot);
+        if map_issues
+            .iter()
+            .any(|issue| issue.severity == MapIssueSeverity::Error)
+        {
+            return Ok(CandidateDiagnostics {
+                map_issues,
+                design: Ok(Vec::new()),
+            });
+        }
+        let design = ScenarioSavePreflight::validate(&document, &aliases)
+            .map_err(|e| format!("ScenarioSavePreflight: {e}"))
+            .map(|_| {
+                MapDesignValidator::validate(&MapDesignValidationRequest {
+                    objects: document.spawns,
+                    events: document.events,
+                    collision: snapshot.collision,
+                    collision_size: snapshot.collision_size,
+                    heights: snapshot.heights,
+                    height_size: snapshot.height_size,
+                    height_step: snapshot.height_step,
+                    water_level: snapshot.water_level,
+                    ..Default::default()
+                })
+            });
+        Ok(CandidateDiagnostics { map_issues, design })
+    }
+
+    fn save_transaction(
+        &mut self,
+        confirm_design: impl FnOnce(&[against_rome_maps::design_validator::MapDesignIssue]) -> bool,
+        commit: impl FnOnce(
+            &mut against_rome_maps::MapSaveTransaction,
+        ) -> Result<against_rome_maps::MapSaveReport, String>,
+    ) -> Result<against_rome_maps::MapSaveReport, String> {
+        use against_rome_ambience::{
+            atmosphere::BodenIniSerializer,
+            soundscape::{SoundscapeBinaryStorage, SoundscapeSnapshot},
+        };
+        // A brush stroke still in flight must be part of the candidate, never half-recorded.
+        self.nature_end_stroke();
+        // Remaining panels do not expose a complete, side-effect-free staging + acknowledge API.
+        // Never call their independent writers or clear their dirty flags here.
+        let gaps: Vec<_> = [
+            (self.event_graph.is_dirty(), "EventGraph: pending graph has no map-bound scenario compile/save contract"),
+            (self.maps.is_dirty(), "Maps: pending catalog/build settings have no map artifact serializer"),
+            (self.environment.is_dirty(), "Environment: pending flora/lair/settlement plans must be applied or discarded"),
+            (self.landscape.is_dirty(), "Landscape: pending terrain/placement plans must be applied or discarded"),
+            (self.packaging.is_dirty(), "Packaging: pending export/diff/budget state has no map artifact serializer"),
+            (self.campaign.has_unsupported_edits(), "Campaign: pending objectives/waves/cinematics have no map-bound compile/save contract"),
+            (self.ai_planner.is_dirty(), "AI Planner: pending plan must be applied or discarded"),
+            (self.toolbox.is_dirty(), "Toolbox: pending external save/backup review requires its own Apply/discard"),
+        ].into_iter().filter_map(|(dirty, gap)| dirty.then_some(gap)).collect();
+        if !gaps.is_empty() {
+            return Err(format!(
+                "unsupported dirty panel state: {}",
+                gaps.join("; ")
+            ));
+        }
+        let session = self.session.as_ref().ok_or("No terrain session to save")?;
+        let path = PathBuf::from(self.map_path_input.trim());
+        if path.as_os_str().is_empty() {
+            return Err("Please specify target map directory path before saving".into());
+        }
+        let (height, collision) = crate::storage::encode_terrain(session)?;
+        let mut tx = against_rome_maps::MapSaveTransaction::new(&path).with_create_if_missing(true);
+        tx.stage_file("boden.bmp", height.encode_bmp())?;
+        tx.stage_file("collision.bmp", collision.encode_bmp())?;
+        // C# parity: emboss.bmp is rebuilt only when heights changed and an original layer exists.
+        let staged_emboss = match &self.emboss {
+            Some(emboss) if emboss.session.heights_dirty(session.heights()) => emboss
+                .session
+                .build_emboss(session.heights())
+                .map_err(|e| format!("emboss.bmp relight: {e}"))?
+                .map(|green| {
+                    let mut image = emboss.raw.clone();
+                    image.update_green_channel(&green);
+                    (image, green)
+                }),
+            _ => None,
+        };
+        if let Some((image, _)) = &staged_emboss {
+            tx.stage_file("emboss.bmp", image.encode_bmp())?;
+        }
+        if session.is_dirty() {
+            tx.stage_height_cache_invalidation()?;
+        }
+        let ambience_dirty = self.ambience.is_dirty();
+        if ambience_dirty {
+            // The current loader restores only profile.boden, SNDZ and briefing.
+            // Weather/lighting preview fields have no round-trip format yet.
+            let current =
+                serde_json::to_value(&self.ambience.profile).map_err(|e| e.to_string())?;
+            let defaults = serde_json::to_value(
+                against_rome_ambience::atmosphere::WeatherPresets::create_clear_sky(),
+            )
+            .map_err(|e| e.to_string())?;
+            let unsupported: Vec<_> = current
+                .as_object()
+                .ok_or("Ambience profile is not an object")?
+                .iter()
+                .filter_map(|(key, value)| {
+                    (key != "boden" && defaults.get(key) != Some(value)).then_some(key.as_str())
+                })
+                .collect();
+            if !unsupported.is_empty() {
+                return Err(format!(
+                    "Ambience unsupported dirty profile fields (no save/reload serializer): {}",
+                    unsupported.join(", ")
+                ));
+            }
+            let (valid, errors) = BodenIniSerializer::validate(&self.ambience.profile.boden);
+            if !valid {
+                return Err(format!(
+                    "Ambience boden.ini validation: {}",
+                    errors.join("; ")
+                ));
+            }
+            tx.stage_file("boden.ini", self.ambience.stage_boden_ini_bytes(&path)?)?;
+            let snapshot = SoundscapeSnapshot {
+                global_ambience_id: self.ambience.global_sound_id.clone(),
+                global_ambience_volume: self.ambience.global_volume,
+                zones: self.ambience.zones.clone(),
+            };
+            tx.stage_file(
+                "soundscape.sndz",
+                SoundscapeBinaryStorage::serialize_to_binary(&snapshot)
+                    .map_err(|e| format!("Ambience soundscape.sndz serialization: {e}"))?,
+            )?;
+            // Native location TEXT/US/briefing.put; None means no briefing field changed.
+            if let Some(bytes) = self.ambience.stage_briefing_bytes(&path)? {
+                tx.stage_file("TEXT/US/briefing.put", bytes)?;
+            }
+        }
+        let placement_dirty = self.placement.is_dirty();
+        let staged_placement = if placement_dirty {
+            self.placement.stage_transaction_files(&path)?
+        } else {
+            Vec::new()
+        };
+        for (rel_path, bytes) in &staged_placement {
+            tx.stage_file(rel_path, bytes.clone())?;
+        }
+        let nature_dirty = self.nature.session.is_dirty();
+        let staged_nature = if nature_dirty {
+            self.stage_nature_files(&path)?
+        } else {
+            Vec::new()
+        };
+        for (rel_path, bytes) in &staged_nature {
+            tx.stage_file(rel_path, bytes.clone())?;
+        }
+        let scenario_dirty = self.scenario.dirty() || self.scenario.graph_ui().is_dirty();
+        let staged_scenario = if scenario_dirty {
+            self.scenario.stage_transaction_files(&path)?
+        } else {
+            Vec::new()
+        };
+        let camera_pending = self.campaign.camera_pending();
+        if camera_pending
+            && self
+                .loaded_map_path
+                .as_ref()
+                .and_then(|p| std::fs::canonicalize(p).ok())
+                != std::fs::canonicalize(&path).ok()
+        {
+            return Err("Start camera save target differs from the loaded map".into());
+        }
+        let staged_scenario = self.campaign.stage_camera_candidate(
+            &path,
+            &staged_scenario,
+            self.scenario.known_aliases(),
+        )?;
+        for (rel_path, bytes) in &staged_scenario {
+            tx.stage_file(rel_path, bytes.clone())?;
+        }
+        let textures_dirty = self.textures.is_dirty();
+        let staged_textures = if textures_dirty {
+            self.textures.stage_transaction_files(&path)?
+        } else {
+            Vec::new()
+        };
+        for (rel_path, bytes) in &staged_textures {
+            tx.stage_file(rel_path, bytes.clone())?;
+        }
+        let scene_dirty = self.scene.is_dirty();
+        for (rel_path, bytes) in self.scene.stage_transaction_files(&path)? {
+            tx.stage_file(rel_path, bytes)?;
+        }
+        // Staging above is memory-only. All diagnostics/preflight/confirmation gates must
+        // finish before backups, cache deletion, directory creation or commit can write.
+        let design_issues = self.save_diagnostics(&path, &staged_scenario)?;
+        if !design_issues.is_empty() && !confirm_design(&design_issues) {
+            return Err("Design warning confirmation declined".into());
+        }
+        // Native cleanup scans the map recursively. Reject pre-existing recovery files and
+        // links throughout that tree so a failed save cannot delete unrelated evidence.
+        let staged_marker = tx.has_staged(against_rome_maps::CustomMapManifest::MARKER_FILE_NAME)
+            || tx.staged_entries().iter().any(|e| {
+                e.relative_path()
+                    == Path::new(against_rome_maps::CustomMapManifest::MARKER_FILE_NAME)
+                    && !e.is_deletion()
+            });
+        crate::storage::preflight_transaction_tree_opt(&path, staged_marker)?;
+        let entries = tx.staged_entries().to_vec();
+        for entry in &entries {
+            let target = path.join(entry.relative_path());
+            crate::storage::preflight_transaction_target_opt(&target, staged_marker)?;
+            if target.is_file() {
+                let original =
+                    std::fs::read(&target).map_err(|e| format!("{}: {e}", target.display()))?;
+                // Backups themselves participate in rollback; never overwrite old backups.
+                let mut backup = entry.relative_path().as_os_str().to_os_string();
+                backup.push(format!(".arm_backup.{}", uuid::Uuid::new_v4().simple()));
+                let backup = PathBuf::from(backup);
+                if path.join(&backup).try_exists().map_err(|e| e.to_string())? {
+                    return Err(format!("Backup already exists: {}", backup.display()));
+                }
+                tx.stage_file(backup, original)?;
+            }
+        }
+        tx.validate().map_err(|e| e.to_string())?;
+        let report = commit(&mut tx)?;
+        // Publish in-memory baselines only after *all* disk artifacts committed.
+        let session = self.session.as_mut().expect("session validated above");
+        session.raw_boden_bmp = Some(height);
+        session.raw_collision_bmp = Some(collision);
+        if let (Some(emboss), Some((image, green))) = (self.emboss.as_mut(), staged_emboss) {
+            emboss
+                .session
+                .commit_baseline(session.heights(), Some(&green))
+                .map_err(|e| format!("emboss baseline: {e}"))?;
+            emboss.raw = image;
+        }
+        session.commit_baseline();
+        if ambience_dirty {
+            self.ambience.clear_dirty();
+            self.ambience.status_message = "Ambience saved in whole-map transaction.".into();
+            self.ambience.status_is_error = false;
+        }
+        if placement_dirty {
+            self.placement.commit_baseline(&path)?;
+        }
+        if nature_dirty {
+            // The committed objects.dat is the new baseline for both Nature and the DATA panel.
+            self.nature.accept_saved();
+            if self.placement.is_loaded() {
+                self.placement.commit_baseline(&path)?;
+            }
+        }
+        if camera_pending {
+            self.scenario.load_session(&path)?;
+            self.campaign.camera_saved();
+        } else if scenario_dirty {
+            self.scenario.commit_baseline(&path)?;
+        }
+        if textures_dirty {
+            self.textures.commit_baseline(&path)?;
+        }
+        if scene_dirty {
+            self.scene.commit_baseline(&path)?;
+        }
+        Ok(report)
+    }
+
+    /// Returns a reference to any pending action awaiting clean-state or discard resolution.
+    pub fn pending_action(&self) -> Option<&PendingAction> {
+        self.pending_action.as_ref()
+    }
+
+    fn require_clean_map_switch(&self) -> Result<(), String> {
+        if self.has_unsaved_changes() {
+            return Err("Map switch rejected: unsaved changes; save first or use the UI discard confirmation.".into());
+        }
+        Ok(())
+    }
+
+    /// Install a loaded map only when every current map session is clean.
+    /// Rejection leaves the app unchanged; explicit discard is handled by the UI.
+    pub fn set_loaded_map(&mut self, path: PathBuf, session: TerrainSession) -> Result<(), String> {
+        self.require_clean_map_switch()?;
+        self.install_loaded_map(path, session)?;
+        Ok(())
+    }
+
+    /// Prevalidates map files transactionally before modifying any editor panel state.
+    fn prevalidate_map_load(path: &Path) -> Result<(), String> {
+        if !path.is_dir() {
+            return Err(format!(
+                "Target map path is not a directory: {}",
+                path.display()
+            ));
+        }
+        // Validate Day/Night BMP if present
+        let daynight_path = path.join("daynight.bmp");
+        if daynight_path.is_file() {
+            let bytes = std::fs::read(&daynight_path)
+                .map_err(|e| format!("Failed to read {}: {e}", daynight_path.display()))?;
+            against_rome_scene::lighting::MapLightingDayNight::parse(&bytes)
+                .map_err(|e| format!("Corrupted {}: {e}", daynight_path.display()))?;
+        }
+        // Validate Soundscape SNDZ if present
+        let sndz_path = path.join("soundscape.sndz");
+        if sndz_path.is_file() {
+            let bytes = std::fs::read(&sndz_path)
+                .map_err(|e| format!("Failed to read {}: {e}", sndz_path.display()))?;
+            against_rome_ambience::soundscape::SoundscapeBinaryStorage::deserialize_from_binary(
+                &bytes,
+            )
+            .map_err(|e| format!("Corrupted {}: {e}", sndz_path.display()))?;
+        }
+        // Validate Briefing PUT scripts if present in SCRIPT/
+        let script_dir = path.join("SCRIPT");
+        if script_dir.is_dir() {
+            if let Ok(entries) = std::fs::read_dir(&script_dir) {
+                for entry in entries.flatten() {
+                    let name = entry.file_name().to_string_lossy().to_string();
+                    if name.starts_with("briefing") && name.ends_with(".put") {
+                        let text = std::fs::read_to_string(entry.path()).map_err(|e| {
+                            format!("Failed to read {}: {e}", entry.path().display())
+                        })?;
+                        against_rome_ambience::localization::BriefingTextTable::parse(&text)
+                            .map_err(|e| format!("Corrupted {}: {e}", entry.path().display()))?;
+                    }
+                }
+            }
+        }
+        // Validate Materials (boden.txt) if present
+        let boden_txt = path.join("boden.txt");
+        if boden_txt.is_file() {
+            let bytes = std::fs::read(&boden_txt)
+                .map_err(|e| format!("Failed to read {}: {e}", boden_txt.display()))?;
+            against_rome_textures::BodenTexturesDocument::from_bytes(&bytes)
+                .map_err(|e| format!("Corrupted {}: {e}", boden_txt.display()))?;
+        }
+        // Validate Scenario (SCRIPT/ak_level.bci or arm_original) if present
+        let bci = script_dir.join("ak_level.bci");
+        let arm_orig = script_dir.join("ak_level.arm_original");
+        let script_path = if arm_orig.is_file() {
+            Some(arm_orig)
+        } else if bci.is_file() {
+            Some(bci)
+        } else {
+            None
+        };
+        if let Some(sp) = script_path {
+            let bytes =
+                std::fs::read(&sp).map_err(|e| format!("Failed to read {}: {e}", sp.display()))?;
+            let raw = if bytes.starts_with(b"PFIL") {
+                against_rome_data::lzss::decompress_pfil(&bytes, None)
+                    .map_err(|e| format!("Decompression failed for {}: {e}", sp.display()))?
+            } else {
+                bytes
+            };
+            against_rome_scenario::BciImage::parse(&raw)
+                .map_err(|e| format!("Corrupted script {}: {e}", sp.display()))?;
+        }
+        Ok(())
+    }
+
+    /// Reads the optional original `emboss.bmp` as the relight baseline (C# `_embossLayer`).
+    fn load_emboss_baseline(
+        path: &Path,
+        terrain: &TerrainSession,
+    ) -> Result<Option<EmbossBaseline>, String> {
+        let file = path.join("emboss.bmp");
+        if !file.is_file() {
+            return Ok(None);
+        }
+        let bytes =
+            std::fs::read(&file).map_err(|e| format!("Failed to read {}: {e}", file.display()))?;
+        let raw = crate::bmp::BmpImage::parse(&bytes)
+            .map_err(|e| format!("Corrupted {}: {e}", file.display()))?;
+        if raw.width != terrain.vertex_size || raw.height != terrain.vertex_size {
+            return Err(format!(
+                "{} size {}x{} does not match boden.bmp {}",
+                file.display(),
+                raw.width,
+                raw.height,
+                terrain.vertex_size
+            ));
+        }
+        let session = against_rome_editor::emboss::EmbossSession::new(
+            terrain.vertex_size,
+            terrain.original_heights().to_vec(),
+            Some(raw.extract_green_channel()),
+        )
+        .map_err(|e| format!("{}: {e}", file.display()))?;
+        Ok(Some(EmbossBaseline { raw, session }))
+    }
+
+    // Only called after a clean-state check or the UI's explicit discard confirmation.
+    fn install_loaded_map(&mut self, path: PathBuf, session: TerrainSession) -> Result<(), String> {
+        Self::prevalidate_map_load(&path)?;
+        let emboss = Self::load_emboss_baseline(&path, &session)?;
+
+        // Keep map-bound documents unloaded until their panels explicitly load them.
+        // Retail DATA pools and editor ObjectStore documents are different formats; map
+        // opening must not reinterpret native game pools as editable placement data.
+        // Ambience loading is the last fallible document load, so perform it before resetting
+        // the other panels. AmbienceUi stages its parse and leaves itself untouched on failure.
+        let mut loaded_camera = CampaignUi::default();
+        loaded_camera.load_map_camera(&path)?;
+        self.ambience.load_from_map(&path)?;
+        self.pending_save_warnings = None;
+        self.placement.reset_session(Some(&path));
+        self.nature.reset_map_bound();
+        self.textures.reset_session(Some(&path));
+        self.scene.reset_session(Some(&path));
+        self.scenario.reset_session(Some(&path));
+
+        // Install terrain session and settings
+        self.session = Some(session);
+        self.emboss = emboss;
+        self.loaded_map_path = Some(path.clone());
+        self.map_path_input = path.to_string_lossy().into_owned();
+        self.status_is_error = false;
+        self.status_message = format!("Loaded {}", path.display());
+        let settings = match MapSettings::load(&path) {
+            Ok(s) => s,
+            Err(e) => {
+                self.status_is_error = true;
+                self.status_message = format!("Map loaded; water settings disabled: {e}");
+                MapSettings::default()
+            }
+        };
+        self.height_step = settings.height_step;
+        self.water_surface = settings.water_surface();
+        self.water_bed = settings.suggested_bed();
+
+        // Rebuild / reset derived panels in dependency order
+        self.event_graph.reset_session();
+        self.maps.reset_session(Some(&path));
+        self.environment.reset_session();
+        self.landscape.reset_session();
+        self.packaging.reset_session(Some(&path));
+        self.campaign.reset_session();
+        self.campaign.start_camera = loaded_camera.start_camera;
+        self.ai_planner.reset_session();
+        self.toolbox.clear_transient_reviews();
+
+        self.navigation.invalidate();
+        self.texture_dirty = true;
+        self.is_painting = false;
+        self.stroke_path.clear();
+        self.ramp_selecting = false;
+        self.ramp_start = None;
+        Ok(())
+    }
+
+    fn install_blank_map(&mut self, size: usize) {
+        self.pending_save_warnings = None;
+        self.loaded_map_path = None;
+        self.session = Some(TerrainSession::create_blank(size, 32));
+        self.emboss = None;
+        self.status_message = format!("Created blank {size}x{size} terrain");
+        self.status_is_error = false;
+        self.map_path_input.clear();
+        self.height_step = 4.0;
+        self.water_surface = 0.0;
+        self.water_bed = 0;
+
+        // Reset base documents
+        self.placement.reset_session(None);
+        self.nature.reset_map_bound();
+        self.textures.reset_session(None);
+        self.scene.reset_session(None);
+        self.scenario.reset_session(None);
+        self.ambience.reset_session();
+
+        // Rebuild / reset derived panels
+        self.event_graph.reset_session();
+        self.maps.reset_session(None);
+        self.environment.reset_session();
+        self.landscape.reset_session();
+        self.packaging.reset_session(None);
+        self.campaign.reset_session();
+        self.ai_planner.reset_session();
+        self.toolbox.clear_transient_reviews();
+
+        self.navigation.invalidate();
+        self.texture_dirty = true;
+        self.is_painting = false;
+        self.stroke_path.clear();
+        self.ramp_selecting = false;
+        self.ramp_start = None;
+    }
+
+    fn build_and_install_blank_map(
+        &mut self,
+        game_path: &Path,
+        spec: &against_rome_maps::blank_builder::BlankMapSpec,
+    ) -> Result<against_rome_maps::blank_builder::BlankMapBuildResult, String> {
+        let result =
+            against_rome_maps::blank_builder::BlankMapBuilder::build_with_spec(game_path, spec)?;
+        result.verify_disk_artifacts(game_path)?;
+        let loaded = load_map(&result.map_path)?;
+        self.install_loaded_map(result.map_path.clone(), loaded)?;
+        self.maps.refresh_catalog();
+        self.maps.blank_last_result = Some(result.clone());
+        self.maps.status_message = format!(
+            "Blank map ENDL_{:03} created and verified successfully!",
+            spec.target_slot
+        );
+        self.maps.status_is_error = false;
+        Ok(result)
+    }
+
+    /// Build and open a blank map. Reject dirty sessions before building or changing any files.
+    pub fn create_blank_map(
+        &mut self,
+        game_path: &Path,
+        spec: &against_rome_maps::blank_builder::BlankMapSpec,
+    ) -> Result<against_rome_maps::blank_builder::BlankMapBuildResult, String> {
+        self.require_clean_map_switch()?;
+        self.build_and_install_blank_map(game_path, spec)
+    }
+
+    /// Execute a blank map build intent. Reject dirty sessions before building or changing any files.
+    pub fn execute_build_intent(
+        &mut self,
+        intent: &BlankMapBuildIntent,
+    ) -> Result<against_rome_maps::blank_builder::BlankMapBuildResult, String> {
+        self.create_blank_map(&intent.game_path, &intent.spec)
+    }
+
+    /// Queue a typed blank map build intent into the pending action pipeline.
+    pub fn queue_build_intent(&mut self, intent: BlankMapBuildIntent) {
+        self.pending_action = Some(PendingAction::BuildBlank(intent));
     }
 
     fn perform_action(&mut self, action: PendingAction, ctx: &egui::Context) {
         match action {
             PendingAction::Load(path) => match load_map(&path) {
                 Ok(loaded) => {
-                    self.status_message = format!(
-                        "Loaded {}: {} height vertices, {} collision pixels per side",
-                        path.display(),
-                        loaded.vertex_size,
-                        loaded.collision_size
-                    );
-                    self.set_loaded_map(path,loaded);
+                    if let Err(error) = self.install_loaded_map(path, loaded) {
+                        self.status_message = format!("Load failed: {error}");
+                        self.status_is_error = true;
+                        return;
+                    }
                 }
                 Err(error) => {
                     self.status_message = format!("Load failed: {error}");
@@ -179,12 +1008,23 @@ impl EditorApp {
                 }
             },
             PendingAction::Blank(size) => {
-                self.session = Some(TerrainSession::create_blank(size, 32));
-                self.status_message = format!("Created blank {size}x{size} terrain");
-                self.status_is_error = false;
-                self.map_path_input.clear();
-                self.height_step=4.0;self.water_surface=0.0;self.water_bed=0;
-                self.navigation.invalidate();
+                self.install_blank_map(size);
+            }
+            PendingAction::BuildBlank(intent) => {
+                match self.build_and_install_blank_map(&intent.game_path, &intent.spec) {
+                    Ok(result) => {
+                        self.status_message =
+                            format!("Built and loaded blank map {}", result.map_path.display());
+                        self.status_is_error = false;
+                    }
+                    Err(error) => {
+                        self.status_message = format!("Build failed: {error}");
+                        self.status_is_error = true;
+                        self.maps.status_message = format!("建置失敗: {error}");
+                        self.maps.status_is_error = true;
+                        return;
+                    }
+                }
             }
             PendingAction::Close => {
                 self.close_allowed = true;
@@ -194,17 +1034,16 @@ impl EditorApp {
         }
         self.is_painting = false;
         self.stroke_path.clear();
+        self.ramp_selecting = false;
+        self.ramp_start = None;
         self.texture_dirty = true;
     }
 
-    fn handle_pending_action(&mut self, ctx: &egui::Context) {
+    pub fn handle_pending_action(&mut self, ctx: &egui::Context) {
         if self.pending_action.is_none() {
             return;
         }
-        let dirty=if matches!(self.pending_action,Some(PendingAction::Close)) {
-            self.has_unsaved_changes()
-        } else {self.session.as_ref().is_some_and(|s|s.is_dirty())};
-        if !dirty {
+        if !self.has_unsaved_changes() {
             let action = self.pending_action.take().unwrap();
             self.perform_action(action, ctx);
             return;
@@ -230,37 +1069,600 @@ impl EditorApp {
         }
     }
 
-    /// Designer panels backed by the native maps/environment/landscape/packaging/campaign/ai-planner crates.
-    fn show_studio_panels(&mut self, ctx: &egui::Context) {
-        let dim=self.session.as_ref().map_or(0,|s|s.vertex_size);
-        let water=self.water_surface;
-        let mut load_req:Option<PathBuf>=None;
-        {
-            let cx=MapsContext{
-                scenario:Some(self.scenario.document()),
-                aliases:self.scenario.known_aliases(),
-                heights:self.session.as_ref().map(|s|s.heights()),
-                height_size:dim,
-                collision:self.session.as_ref().map(|s|s.collision()),
-                height_step:self.height_step,
-                water_level:water,
-            };
-            let mut cb=|p:PathBuf|{load_req=Some(p);};
-            self.maps.show(ctx,&cx,Some(&mut cb));
+    /// Merges campaign AI waves into the scenario via its event session (undoable, capped, fail-closed).
+    fn apply_campaign_wave_merge(&mut self) {
+        if self.campaign.take_wave_merge_request() {
+            let _ = self.campaign.merge_waves_into_scenario(&mut self.scenario);
         }
-        if let Some(p)=load_req {self.pending_action=Some(PendingAction::Load(p));}
-        self.environment.show(ctx,dim,self.session.as_ref().map(|s|s.heights()),water);
-        self.landscape.show(ctx,dim,self.session.as_ref().map(|s|s.heights()));
-        self.packaging.show(ctx,dim,self.session.as_ref().map(|s|s.heights()),self.session.as_ref().map(|s|s.collision()),Some(&self.scenario.document().spawns));
-        self.campaign.show(ctx,Some(self.scenario.document()),self.scenario.known_aliases());
-        let had_session=self.session.is_some();
-        let before=self.session.as_ref().is_some_and(|s|s.is_dirty());
-        self.ai_planner.show(ctx,self.session.as_mut(),water);
-        if had_session && self.session.as_ref().is_some_and(|s|s.is_dirty()) && !before {self.texture_dirty=true;self.navigation.invalidate();}
     }
 
-    fn has_unsaved_changes(&self)->bool {
-        self.session.as_ref().is_some_and(|s|s.is_dirty()) || self.placement.is_dirty() || self.scenario.dirty() || self.textures.is_dirty() || self.event_graph.is_dirty() || self.maps.is_dirty() || self.environment.is_dirty() || self.landscape.is_dirty() || self.packaging.is_dirty() || self.campaign.is_dirty() || self.ai_planner.is_dirty()
+    /// Merges pending Neutral Lair events into the scenario on an explicit Apply Lair Events request.
+    fn apply_lair_events_request(&mut self) {
+        if self.environment.take_lair_events_apply_request() {
+            let _ = self.environment.apply_lair_events(&mut self.scenario);
+        }
+    }
+
+    /// Designer panels backed by the native maps/environment/landscape/packaging/campaign/ai-planner/ambience crates.
+    pub fn show_studio_panels(&mut self, ctx: &egui::Context) {
+        let dim = self.session.as_ref().map_or(0, |s| s.vertex_size);
+        let water = self.water_surface;
+        let mut load_req: Option<PathBuf> = None;
+        {
+            let cx = MapsContext {
+                scenario: Some(self.scenario.document()),
+                aliases: self.scenario.known_aliases(),
+                heights: self.session.as_ref().map(|s| s.heights()),
+                height_size: dim,
+                collision: self.session.as_ref().map(|s| s.collision()),
+                height_step: self.height_step,
+                water_level: water,
+            };
+            let mut cb = |p: PathBuf| {
+                load_req = Some(p);
+            };
+            self.maps.show(ctx, &cx, Some(&mut cb));
+        }
+        if let Some(p) = load_req {
+            self.pending_action = Some(PendingAction::Load(p));
+        }
+        if let Some(intent) = self.maps.take_pending_build_intent() {
+            self.pending_action = Some(PendingAction::BuildBlank(intent));
+        }
+        self.environment
+            .show(ctx, dim, self.session.as_ref().map(|s| s.heights()), water);
+        if let Some(apply) = self.environment.take_apply_request() {
+            self.handle_environment_apply(apply);
+        }
+        self.apply_lair_events_request();
+
+        let textures = self.textures.session_textures();
+        let texture_names = self.textures.known_textures();
+        let lcx = LandscapeContext {
+            vertex_size: dim,
+            heights: self.session.as_ref().map(|s| s.heights()),
+            textures,
+            texture_names,
+        };
+        self.landscape.show(ctx, &lcx);
+        if let Some(plan) = self.landscape.take_erosion_apply_request() {
+            self.handle_erosion_apply(plan);
+        }
+        if let Some(apply) = self.landscape.take_apply_request() {
+            self.handle_landscape_apply(apply);
+        }
+
+        self.packaging.show(
+            ctx,
+            dim,
+            self.session.as_ref().map(|s| s.heights()),
+            self.session.as_ref().map(|s| s.collision()),
+            Some(&self.scenario.document().spawns),
+        );
+        self.campaign.show(
+            ctx,
+            Some(self.scenario.document()),
+            self.scenario.known_aliases(),
+        );
+        self.apply_campaign_wave_merge();
+        self.apply_campaign_camera_requests();
+        let map_path = if self.map_path_input.trim().is_empty() {
+            None
+        } else {
+            Some(std::path::Path::new(self.map_path_input.trim()))
+        };
+        self.ambience.show(ctx, map_path, water);
+        self.modifier.show(ctx);
+
+        let had_session = self.session.is_some();
+        let before = self.session.as_ref().is_some_and(|s| s.is_dirty());
+        self.ai_planner.show(ctx, self.session.as_mut(), water);
+        if had_session && self.session.as_ref().is_some_and(|s| s.is_dirty()) && !before {
+            self.texture_dirty = true;
+            self.navigation.invalidate();
+        }
+    }
+
+    fn handle_landscape_apply(&mut self, apply: LandscapeApply) {
+        match apply {
+            LandscapeApply::Cliff => {
+                let Some(detection) = self.landscape.last_cliff_result.clone() else {
+                    self.landscape
+                        .apply_failed("No cliff detection result available.");
+                    return;
+                };
+                let Some(terrain) = self.session.as_mut() else {
+                    self.landscape.apply_failed("No terrain session loaded.");
+                    return;
+                };
+                let known_names = self.textures.known_textures().to_vec();
+                let known = crate::design_apply::TextureNames::new(&known_names);
+                let options = against_rome_landscape::cliff::CliffPlannerOptions {
+                    generate_scree: self.landscape.cliff_generate_scree,
+                    ..Default::default()
+                };
+                let Some(textures_session) = self.textures.session_mut() else {
+                    self.landscape.apply_failed(
+                        "Materials session (boden.txt) must be loaded to apply cliffs.",
+                    );
+                    return;
+                };
+                match crate::design_apply::apply_cliffs(
+                    terrain,
+                    textures_session,
+                    &known,
+                    &known_names,
+                    &detection,
+                    &options,
+                ) {
+                    Ok(report) => {
+                        self.texture_dirty = true;
+                        self.navigation.invalidate();
+                        self.landscape
+                            .plan_applied(LandscapeApply::Cliff, &report.summary());
+                    }
+                    Err(e) => self.landscape.apply_failed(e),
+                }
+            }
+            LandscapeApply::River => {
+                let Some(plan) = self.landscape.last_river_plan.clone() else {
+                    self.landscape.apply_failed("No river plan available.");
+                    return;
+                };
+                let Some(terrain) = self.session.as_mut() else {
+                    self.landscape.apply_failed("No terrain session loaded.");
+                    return;
+                };
+                let known_names = self.textures.known_textures().to_vec();
+                let known = crate::design_apply::TextureNames::new(&known_names);
+                let Some(textures_session) = self.textures.session_mut() else {
+                    self.landscape.apply_failed(
+                        "Materials session (boden.txt) must be loaded to apply river.",
+                    );
+                    return;
+                };
+                match crate::design_apply::apply_river(terrain, textures_session, &known, &plan) {
+                    Ok(report) => {
+                        self.texture_dirty = true;
+                        self.navigation.invalidate();
+                        self.landscape
+                            .plan_applied(LandscapeApply::River, &report.summary());
+                    }
+                    Err(e) => self.landscape.apply_failed(e),
+                }
+            }
+            LandscapeApply::Road => {
+                let Some(plan) = self.landscape.last_road_plan.clone() else {
+                    self.landscape.apply_failed("No road plan available.");
+                    return;
+                };
+                let known_names = self.textures.known_textures().to_vec();
+                let known = crate::design_apply::TextureNames::new(&known_names);
+                let Some(textures_session) = self.textures.session_mut() else {
+                    self.landscape.apply_failed(
+                        "Materials session (boden.txt) must be loaded to apply road.",
+                    );
+                    return;
+                };
+                match crate::design_apply::apply_road(textures_session, &known, &plan) {
+                    Ok(report) => {
+                        self.texture_dirty = true;
+                        self.landscape
+                            .plan_applied(LandscapeApply::Road, &report.summary());
+                    }
+                    Err(e) => self.landscape.apply_failed(e),
+                }
+            }
+            LandscapeApply::Wall => {
+                let Some(plan) = self.landscape.last_wall_plan.clone() else {
+                    self.landscape.apply_failed("No wall plan available.");
+                    return;
+                };
+                let Some(terrain) = self.session.as_mut() else {
+                    self.landscape.apply_failed("No terrain session loaded.");
+                    return;
+                };
+                let templates =
+                    match crate::design_apply::parse_templates(&self.landscape.wall_templates_text)
+                    {
+                        Ok(t) => t,
+                        Err(e) => {
+                            self.landscape
+                                .apply_failed(format!("Invalid template definitions: {e}"));
+                            return;
+                        }
+                    };
+                let resolve = crate::design_apply::resolver(&templates);
+                let (tile_dim, _) =
+                    crate::landscape_ui::LandscapeContext::plain(terrain.vertex_size, None)
+                        .geometry();
+                let edits = match crate::design_apply::plan_wall_edits(
+                    terrain, tile_dim, &plan, &resolve,
+                ) {
+                    Ok(edits) => edits,
+                    Err(e) => {
+                        self.landscape.apply_failed(e);
+                        return;
+                    }
+                };
+                let blocked = crate::design_apply::commit_wall_collision(terrain, &edits);
+                let mut placed_count = 0;
+                let mut placement_note = String::new();
+                if !edits.unresolved.is_empty() {
+                    let list: Vec<_> = edits.unresolved.iter().cloned().collect();
+                    placement_note
+                        .push_str(&format!(" (unresolved templates: {})", list.join(", ")));
+                }
+                if !edits.requests.is_empty() {
+                    if self.placement.is_loaded() {
+                        match self.placement.apply_requests(&edits.requests) {
+                            Ok(batch) => {
+                                placed_count = batch.placed;
+                                if !batch.skipped.is_empty() {
+                                    placement_note.push_str(&format!(
+                                        " (skipped: {})",
+                                        batch.skipped.join("; ")
+                                    ));
+                                }
+                            }
+                            Err(e) => {
+                                placement_note
+                                    .push_str(&format!(" (object placement failed: {e})"));
+                            }
+                        }
+                    } else {
+                        placement_note
+                            .push_str(" (objects skipped: load DATA in Objects panel first)");
+                    }
+                } else if !plan.placements.is_empty() && !self.placement.is_loaded() {
+                    placement_note.push_str(" (objects skipped: load DATA in Objects panel first)");
+                }
+                self.texture_dirty = true;
+                self.navigation.invalidate();
+                let summary = format!(
+                    "wall applied: {blocked} collision pixels, {placed_count} objects placed{placement_note}"
+                );
+                self.landscape.plan_applied(LandscapeApply::Wall, &summary);
+            }
+        }
+    }
+
+    fn handle_erosion_apply(&mut self, plan: crate::landscape_ui::ErosionPlan) {
+        let Some(terrain) = self.session.as_mut() else {
+            self.landscape.apply_failed("No terrain session loaded.");
+            return;
+        };
+
+        // The preview is calculated against a specific heightmap. Reject it if another
+        // tool changed any source sample while the dialog remained open.
+        if plan
+            .changes
+            .iter()
+            .any(|change| terrain.heights().get(change.index).copied() != Some(change.before))
+        {
+            self.landscape.apply_failed(
+                "Terrain changed after the erosion preview; calculate the plan again.",
+            );
+            return;
+        }
+
+        let changes: Vec<_> = plan
+            .changes
+            .iter()
+            .map(|change| against_rome_editor::terrain::SampleChange {
+                index: change.index,
+                before: change.before,
+                after: change.after,
+            })
+            .collect();
+        let applied = terrain.apply_height_changes(&changes);
+        if applied.is_empty() {
+            self.landscape.erosion_applied("no height samples changed");
+            return;
+        }
+        terrain.commit_stroke();
+        self.texture_dirty = true;
+        self.navigation.invalidate();
+        self.landscape
+            .erosion_applied(&format!("{} height samples modified", applied.len()));
+    }
+
+    fn handle_ramp_point(&mut self, point: (f32, f32)) {
+        let Some(start) = self.ramp_start.take() else {
+            self.ramp_start = Some(point);
+            self.status_message = format!(
+                "Ramp start selected at ({:.0}, {:.0}); choose the endpoint.",
+                point.0, point.1
+            );
+            self.status_is_error = false;
+            return;
+        };
+        if start == point {
+            self.ramp_start = Some(start);
+            return;
+        }
+        let Some(terrain) = self.session.as_mut() else {
+            self.ramp_start = Some(start);
+            self.status_message = "Ramp rejected: no terrain session loaded.".into();
+            self.status_is_error = true;
+            return;
+        };
+        let parameters = against_rome_editor::terrain::RampParameters {
+            width: self.ramp_width,
+            falloff: self.ramp_falloff,
+            ..Default::default()
+        };
+        match terrain.apply_ramp(start, point, &parameters) {
+            Ok(changes) if !changes.is_empty() => {
+                self.ramp_selecting = false;
+                self.texture_dirty = true;
+                self.navigation.invalidate();
+                self.status_message =
+                    format!("Ramp applied: {} height samples modified.", changes.len());
+                self.status_is_error = false;
+            }
+            Ok(_) => {
+                self.ramp_start = Some(start);
+                self.status_message =
+                    "Ramp made no visible change; choose another endpoint.".into();
+                self.status_is_error = false;
+            }
+            Err(error) => {
+                self.ramp_start = Some(start);
+                self.status_message = format!("Ramp rejected: {error}");
+                self.status_is_error = true;
+            }
+        }
+    }
+
+    fn cancel_ramp_selection(&mut self) {
+        self.ramp_selecting = false;
+        self.ramp_start = None;
+        self.status_message = "Ramp selection cancelled.".into();
+        self.status_is_error = false;
+    }
+
+    fn handle_environment_apply(&mut self, apply: EnvApply) {
+        if !self.placement.is_loaded() {
+            self.environment
+                .apply_failed("Load DATA in the Objects panel first before applying placements.");
+            return;
+        }
+        match apply {
+            EnvApply::Flora => {
+                let requests = self.environment.flora_requests();
+                if requests.is_empty() {
+                    self.environment
+                        .apply_failed("No flora generated to apply.");
+                    return;
+                }
+                match self.placement.apply_requests(&requests) {
+                    Ok(batch) => {
+                        let note = if !batch.skipped.is_empty() {
+                            format!(" (skipped: {})", batch.skipped.join("; "))
+                        } else {
+                            String::new()
+                        };
+                        self.environment
+                            .plan_queued(EnvApply::Flora, batch.placed, &note);
+                    }
+                    Err(e) => self.environment.apply_failed(e),
+                }
+            }
+            EnvApply::Lairs => {
+                let dim = self.session.as_ref().map_or(0, |s| s.vertex_size);
+                let heights = self.session.as_ref().map(|s| s.heights());
+                match self
+                    .environment
+                    .lair_requests(dim, heights, self.height_step)
+                {
+                    Ok((requests, unresolved)) => {
+                        if !unresolved.is_empty() {
+                            self.environment.apply_failed(format!(
+                                "Add cloneable templates for all neutral animal types before applying: {}",
+                                unresolved.join(", ")
+                            ));
+                            return;
+                        }
+                        if requests.is_empty() {
+                            self.environment.apply_failed(format!(
+                                "No neutral animal templates could be resolved{}",
+                                if unresolved.is_empty() {
+                                    String::new()
+                                } else {
+                                    format!(": {}", unresolved.join(", "))
+                                }
+                            ));
+                            return;
+                        }
+                        let available_templates = self
+                            .placement
+                            .objects()
+                            .into_iter()
+                            .filter(|o| {
+                                o.parent.is_none() && o.position.iter().all(|v| v.is_finite())
+                            })
+                            .map(|o| o.type_id)
+                            .collect::<std::collections::BTreeSet<_>>();
+                        let missing_templates = requests
+                            .iter()
+                            .filter(|r| {
+                                u16::try_from(r.type_id)
+                                    .map_or(true, |type_id| !available_templates.contains(&type_id))
+                            })
+                            .map(|r| r.name.clone())
+                            .collect::<std::collections::BTreeSet<_>>();
+                        if !missing_templates.is_empty() {
+                            self.environment.apply_failed(format!(
+                                "Neutral animal templates are not cloneable from this map: {}",
+                                missing_templates.into_iter().collect::<Vec<_>>().join(", ")
+                            ));
+                            return;
+                        }
+                        match self.placement.apply_requests(&requests) {
+                            Ok(batch) => {
+                                let mut notes = Vec::new();
+                                if !batch.skipped.is_empty() {
+                                    notes.push(batch.skipped.join("; "));
+                                }
+                                if !unresolved.is_empty() {
+                                    notes.push(format!(
+                                        "unresolved animal templates: {}",
+                                        unresolved.join(", ")
+                                    ));
+                                }
+                                let note = if notes.is_empty() {
+                                    String::new()
+                                } else {
+                                    format!(" ({})", notes.join("; "))
+                                };
+                                self.environment
+                                    .plan_queued(EnvApply::Lairs, batch.placed, &note);
+                            }
+                            Err(e) => self.environment.apply_failed(e),
+                        }
+                    }
+                    Err(e) => self.environment.apply_failed(e),
+                }
+            }
+            EnvApply::Settlement => {
+                let dim = self.session.as_ref().map_or(0, |s| s.vertex_size);
+                let heights = self.session.as_ref().map(|s| s.heights());
+                match self
+                    .environment
+                    .settlement_requests(dim, heights, self.height_step)
+                {
+                    Ok((requests, unresolved)) => {
+                        if requests.is_empty() {
+                            let note = if !unresolved.is_empty() {
+                                format!("; unresolved types: {}", unresolved.join(", "))
+                            } else {
+                                String::new()
+                            };
+                            self.environment.apply_failed(format!(
+                                "No settlement objects could be resolved{note}"
+                            ));
+                            return;
+                        }
+                        match self.placement.apply_requests(&requests) {
+                            Ok(batch) => {
+                                let mut notes = Vec::new();
+                                if !batch.skipped.is_empty() {
+                                    notes.push(batch.skipped.join("; "));
+                                }
+                                if !unresolved.is_empty() {
+                                    notes.push(format!(
+                                        "unresolved template types: {}",
+                                        unresolved.join(", ")
+                                    ));
+                                }
+                                let note_str = if !notes.is_empty() {
+                                    format!(" ({})", notes.join("; "))
+                                } else {
+                                    String::new()
+                                };
+                                self.environment.plan_queued(
+                                    EnvApply::Settlement,
+                                    batch.placed,
+                                    &note_str,
+                                );
+                            }
+                            Err(e) => self.environment.apply_failed(e),
+                        }
+                    }
+                    Err(e) => self.environment.apply_failed(e),
+                }
+            }
+        }
+    }
+
+    fn current_view_start_camera(&self) -> Result<against_rome_campaign::MapStartCamera, String> {
+        if self.loaded_map_path.is_none()
+            || self.session.is_none()
+            || self.view_mode != ViewMode::View3D
+        {
+            return Err("Capture requires a loaded map and the current 3D view".into());
+        }
+        let target = self.viewport_3d.camera.target;
+        if !target.x.is_finite() || !target.y.is_finite() || !target.z.is_finite() {
+            return Err("Current view has invalid camera coordinates".into());
+        }
+        Ok(against_rome_campaign::MapStartCamera {
+            enabled: true,
+            x: (target.x as f64 * 256.0).clamp(0.0, 16383.0),
+            y: (target.y as f64).clamp(-500.0, 5000.0),
+            z: (target.z as f64 * 256.0).clamp(0.0, 16383.0),
+            zoom: 5.0,
+            primitive: against_rome_campaign::StartCameraPrimitive::CenterToPos,
+        })
+    }
+
+    fn apply_campaign_camera_requests(&mut self) {
+        let (apply, capture) = self.campaign.take_camera_requests();
+        if capture {
+            match self.current_view_start_camera() {
+                Ok(camera) => {
+                    self.campaign.capture_camera(camera);
+                }
+                Err(e) => {
+                    self.campaign.status_message = e;
+                    self.campaign.status_is_error = true;
+                }
+            }
+        }
+        if apply {
+            let result = self.apply_start_camera_candidate();
+            match result {
+                Ok(()) => {
+                    self.campaign.status_message =
+                        "Start camera candidate ready; use Safe Save to write.".into();
+                    self.campaign.status_is_error = false;
+                }
+                Err(e) => {
+                    self.campaign.status_message = format!("Start camera Apply rejected: {e}");
+                    self.campaign.status_is_error = true;
+                }
+            }
+        }
+    }
+
+    fn apply_start_camera_candidate(&mut self) -> Result<(), String> {
+        let path = self
+            .loaded_map_path
+            .as_ref()
+            .ok_or("Load a map before applying the start camera")?;
+        if self.session.is_none()
+            || std::fs::canonicalize(path).map_err(|e| e.to_string())?
+                != std::fs::canonicalize(self.map_path_input.trim()).map_err(|e| e.to_string())?
+        {
+            return Err("Start camera target must be the currently loaded map".into());
+        }
+        let scenario_files = if self.scenario.dirty() || self.scenario.graph_ui().is_dirty() {
+            self.scenario.stage_transaction_files(path)?
+        } else {
+            Vec::new()
+        };
+        self.campaign
+            .apply_camera_candidate(path, &scenario_files, self.scenario.known_aliases())
+    }
+
+    pub fn has_unsaved_changes(&self) -> bool {
+        self.session.as_ref().is_some_and(|s| s.is_dirty())
+            || self.placement.is_dirty()
+            || self.nature.session.is_dirty()
+            || self.scenario.dirty()
+            || self.scenario.graph_ui().is_dirty()
+            || self.textures.is_dirty()
+            || self.scene.is_dirty()
+            || self.event_graph.is_dirty()
+            || self.maps.is_dirty()
+            || self.environment.is_dirty()
+            || self.landscape.is_dirty()
+            || self.packaging.is_dirty()
+            || self.campaign.is_dirty()
+            || self.ai_planner.is_dirty()
+            || self.ambience.is_dirty()
+            || self.toolbox.is_dirty()
     }
 
     fn update_texture(&mut self, ctx: &egui::Context) {
@@ -299,7 +1701,7 @@ impl EditorApp {
                             Color32::from_rgb(30, 30, 30) // 暗黑可通行
                         }
                     }
-                    ViewMode::Blended => {
+                    ViewMode::Blended | ViewMode::View3D => {
                         let base_g = (height as f32 * 0.7) as u8 + 40;
                         if is_blocked {
                             Color32::from_rgb(200, base_g / 2, base_g / 2) // 阻擋染紅
@@ -325,12 +1727,3418 @@ impl EditorApp {
         }
         self.texture_dirty = false;
     }
+
+    pub fn handle_viewport_3d_action(&mut self, action: ViewportAction) {
+        match action {
+            ViewportAction::None => {}
+            ViewportAction::CancelTerrainPick => {
+                if self.ramp_selecting {
+                    self.cancel_ramp_selection();
+                }
+            }
+            ViewportAction::PickTerrain { grid_x, grid_y } => {
+                if self.ramp_selecting && self.pending_action.is_none() {
+                    self.handle_ramp_point((grid_x, grid_y));
+                }
+            }
+            ViewportAction::SelectObject(key) => {
+                self.placement.select_object(key);
+            }
+            ViewportAction::Paint { grid_x, grid_y } if self.nature.enabled => {
+                if self.pending_action.is_some() || self.ramp_selecting {
+                    return;
+                }
+                if let Some((tx, ty)) = self.nature_tile_from_grid(grid_x, grid_y) {
+                    self.nature_paint_tile(tx, ty);
+                }
+            }
+            ViewportAction::CommitStroke if self.nature.driver.is_active() => {
+                self.nature_end_stroke();
+            }
+            ViewportAction::Paint { grid_x, grid_y } => {
+                if self.pending_action.is_some() || self.ramp_selecting {
+                    return;
+                }
+                if !self.is_painting {
+                    self.stroke_path.clear();
+                }
+                self.is_painting = true;
+                self.nature.last_action = false;
+                let tool = self.active_tool;
+                let radius = self.brush_radius;
+                let strength = self.brush_strength;
+                let seed = self.roughness_seed;
+
+                let points = self.stroke_path.advance((
+                    grid_x.round_ties_even() as i32,
+                    grid_y.round_ties_even() as i32,
+                ));
+
+                if let Some(session_mut) = &mut self.session {
+                    for (x, y) in points {
+                        let gx = x as f32;
+                        let gy = y as f32;
+                        if tool == ActiveTool::HeightFlatten
+                            && self.stroke_path.flatten_target.is_none()
+                        {
+                            self.stroke_path.flatten_target = Some(if self.sample_flatten_target {
+                                session_mut.heights()
+                                    [y as usize * session_mut.vertex_size + x as usize]
+                            } else {
+                                self.flatten_target
+                            });
+                        }
+                        let flat_target = self.stroke_path.flatten_target;
+                        let result = match tool {
+                            ActiveTool::HeightRaise => session_mut.paint_height(
+                                gx,
+                                gy,
+                                radius,
+                                HeightBrushOp::Raise,
+                                strength,
+                                None,
+                                seed,
+                            ),
+                            ActiveTool::HeightLower => session_mut.paint_height(
+                                gx,
+                                gy,
+                                radius,
+                                HeightBrushOp::Lower,
+                                strength,
+                                None,
+                                seed,
+                            ),
+                            ActiveTool::HeightFlatten => session_mut.paint_height(
+                                gx,
+                                gy,
+                                radius,
+                                HeightBrushOp::Flatten,
+                                strength,
+                                flat_target,
+                                seed,
+                            ),
+                            ActiveTool::HeightSmooth => session_mut.paint_height(
+                                gx,
+                                gy,
+                                radius,
+                                HeightBrushOp::Smooth,
+                                strength,
+                                None,
+                                seed,
+                            ),
+                            ActiveTool::HeightRoughen => session_mut.paint_height(
+                                gx,
+                                gy,
+                                radius,
+                                HeightBrushOp::Roughen,
+                                strength,
+                                None,
+                                seed,
+                            ),
+                            ActiveTool::Water if self.water_surface < 4.0 => {
+                                Err(against_rome_editor::terrain::Error::InvalidParameters)
+                            }
+                            ActiveTool::Water => session_mut
+                                .paint_water(
+                                    gx,
+                                    gy,
+                                    radius,
+                                    strength,
+                                    self.water_bed,
+                                    self.water_surface,
+                                )
+                                .map(|s| s.heights),
+                            ActiveTool::CollisionBlock => {
+                                let col_scale = session_mut.collision_size as f32
+                                    / (session_mut.vertex_size - 1) as f32;
+                                session_mut.paint_collision(
+                                    gx * col_scale,
+                                    gy * col_scale,
+                                    radius * col_scale,
+                                    CollisionBrushOp::Block,
+                                )
+                            }
+                            ActiveTool::CollisionClear => {
+                                let col_scale = session_mut.collision_size as f32
+                                    / (session_mut.vertex_size - 1) as f32;
+                                session_mut.paint_collision(
+                                    gx * col_scale,
+                                    gy * col_scale,
+                                    radius * col_scale,
+                                    CollisionBrushOp::Clear,
+                                )
+                            }
+                        };
+                        if let Err(error) = result {
+                            self.status_message = format!("Brush rejected: {error}");
+                            self.status_is_error = true;
+                        }
+                    }
+                    self.texture_dirty = true;
+                }
+            }
+            ViewportAction::CommitStroke => {
+                if self.is_painting {
+                    self.is_painting = false;
+                    if let Some(session_mut) = &mut self.session {
+                        session_mut.commit_stroke();
+                    }
+                    self.stroke_path.clear();
+                    self.texture_dirty = true;
+                }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Nature Plant/Remove brush (port of C# `MapEditorForm.Nature.cs`)
+//
+// The native `NatureStrokeDriver` plans each brush dab. This workflow owns the pending
+// `NatureEditSession` and, on Safe Save, replays it onto a freshly loaded `ObjectStore` so the
+// committed additions/removals reach `DATA/*.dat` through the same whole-map transaction as every
+// other panel. Anything that cannot be proven (objdef names, template objects, slot identity,
+// linked/shared data, pool capacity) aborts the save with the candidate and session untouched.
+// ---------------------------------------------------------------------------------------------
+
+/// One tile = 256 world units (`SdlSceneCatalog.WorldUnitsPerMapPixel * 4`).
+const NATURE_TILE_WORLD: f32 = 256.0;
+/// 16384 world units / 256 per tile; used when no texture session reports its own dimension.
+const NATURE_DEFAULT_DIMENSION: i32 = 64;
+const NATURE_WORLD_SIZE: f32 = 16384.0;
+const NATURE_POOLS: [&str; 11] = [
+    "objects", "objdata", "position", "anim", "gfxtype", "action", "engine", "light", "particle",
+    "lager", "biglager",
+];
+
+/// Map-bound snapshot of the landscape objects the brush may see, taken from the DATA session.
+struct NatureMapData {
+    map: PathBuf,
+    level: Vec<PlacedNatureObject>,
+    /// slot -> (uid, type id): proves at save time that a removed slot is still the same object.
+    identity: HashMap<i32, (u32, u16)>,
+    positions: HashMap<i32, (f32, f32)>,
+    /// Root landscape types present on the map, i.e. types that can be cloned as templates.
+    catalog: Vec<NatureCatalogItem>,
+    regions: BTreeSet<String>,
+}
+
+struct NatureWorkflow {
+    enabled: bool,
+    operation: NatureOperation,
+    brush_size: i32,
+    density: NatureDensity,
+    mix_species: bool,
+    show_other_regions: bool,
+    category: Option<NatureCategory>,
+    selected_type: Option<i32>,
+    session: NatureEditSession,
+    driver: NatureStrokeDriver,
+    random: DotNetRandom,
+    /// objdef names keyed by the game root they were read from.
+    names: Option<(PathBuf, HashMap<i32, String>)>,
+    data: Option<NatureMapData>,
+    /// Nature was the last thing edited, so Ctrl+Z targets it before the terrain history.
+    last_action: bool,
+}
+
+impl Default for NatureWorkflow {
+    fn default() -> Self {
+        let seed = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.subsec_nanos() as i32);
+        Self {
+            enabled: false,
+            operation: NatureOperation::Plant,
+            brush_size: 1,
+            density: NatureDensity::Normal,
+            mix_species: false,
+            show_other_regions: false,
+            category: None,
+            selected_type: None,
+            session: NatureEditSession::new(),
+            driver: NatureStrokeDriver::new(),
+            random: DotNetRandom::new(seed),
+            names: None,
+            data: None,
+            last_action: false,
+        }
+    }
+}
+
+impl NatureWorkflow {
+    /// Drops everything bound to the previous map; brush preferences survive.
+    fn reset_map_bound(&mut self) {
+        self.session.clear();
+        self.driver = NatureStrokeDriver::new();
+        self.names = None;
+        self.data = None;
+        self.last_action = false;
+    }
+
+    /// A committed Safe Save made the disk the new baseline; the snapshot is rebuilt lazily.
+    fn accept_saved(&mut self) {
+        self.session.accept_changes();
+        self.driver = NatureStrokeDriver::new();
+        self.data = None;
+        self.last_action = false;
+    }
+}
+
+fn nature_encode_pfil(header: &[u8], uncompressed: &[u8]) -> Vec<u8> {
+    let mut out = header[..64].to_vec();
+    out[16..20].copy_from_slice(&(uncompressed.len() as u32).to_le_bytes());
+    for part in uncompressed.chunks(8) {
+        out.push(((1u16 << part.len()) - 1) as u8);
+        out.extend_from_slice(part);
+    }
+    out
+}
+
+impl EditorApp {
+    fn nature_fail(&mut self, message: impl Into<String>) {
+        self.status_message = format!("Nature: {}", message.into());
+        self.status_is_error = true;
+    }
+
+    /// Turn the brush on/off. Turning it off closes any open stroke; edits stay pending.
+    pub fn nature_set_enabled(&mut self, enabled: bool) {
+        if !enabled {
+            self.nature_end_stroke();
+        }
+        self.nature.enabled = enabled;
+        if enabled {
+            match self.ensure_nature_data() {
+                Ok(()) => {
+                    self.status_message = "Nature brush ready.".into();
+                    self.status_is_error = false;
+                }
+                Err(e) => self.nature_fail(e),
+            }
+        }
+    }
+
+    pub fn nature_set_operation(&mut self, operation: NatureOperation) {
+        self.nature_end_stroke();
+        self.nature.operation = operation;
+    }
+
+    pub fn nature_select_type(&mut self, type_id: i32) {
+        self.nature.selected_type = Some(type_id);
+    }
+
+    pub fn nature_is_dirty(&self) -> bool {
+        self.nature.session.is_dirty()
+    }
+
+    /// Pending additions / removed existing slots.
+    pub fn nature_pending_counts(&self) -> (usize, usize) {
+        (
+            self.nature.session.additions().len(),
+            self.nature.session.removed_slots().len(),
+        )
+    }
+
+    /// (Re)builds the catalog and level-object snapshot from the loaded DATA session. While
+    /// Nature edits are pending the snapshot is frozen so slot identities stay provable.
+    fn ensure_nature_data(&mut self) -> Result<(), String> {
+        if self.placement.is_dirty() {
+            return Err("the Objects (DATA) session has unsaved edits; save or discard them before using the Nature brush".into());
+        }
+        let map = self.placement.loaded_map().map(Path::to_path_buf).ok_or(
+            "catalog/object data unavailable: load the map's DATA in the Objects panel first",
+        )?;
+        if self.nature.session.is_dirty() {
+            return match &self.nature.data {
+                Some(data) if data.map == map => Ok(()),
+                _ => Err(
+                    "pending Nature edits no longer match the loaded DATA; save or discard them"
+                        .into(),
+                ),
+            };
+        }
+        let game = map
+            .parent()
+            .and_then(Path::parent)
+            .map(Path::to_path_buf)
+            .ok_or("catalog unavailable: the map folder is not inside a game MAPS directory")?;
+        if !matches!(&self.nature.names, Some((root, _)) if *root == game) {
+            let definitions = against_rome_maps::NativeObjectDefinitions::load(&game)
+                .map_err(|e| format!("catalog unavailable (objdef): {e}"))?;
+            let names: HashMap<i32, String> = definitions
+                .into_iter()
+                .filter_map(|(id, d)| d.name.filter(|n| !n.is_empty()).map(|n| (id, n)))
+                .collect();
+            if names.is_empty() {
+                return Err(format!(
+                    "catalog unavailable: no object names found under {}",
+                    game.display()
+                ));
+            }
+            self.nature.names = Some((game, names));
+        }
+        let names = &self.nature.names.as_ref().expect("names cached above").1;
+        let mut data = NatureMapData {
+            map,
+            level: Vec::new(),
+            identity: HashMap::new(),
+            positions: HashMap::new(),
+            catalog: Vec::new(),
+            regions: BTreeSet::new(),
+        };
+        let mut roots: std::collections::BTreeMap<i32, &String> = Default::default();
+        for object in self.placement.objects() {
+            let type_id = i32::from(object.type_id);
+            let Some(name) = names.get(&type_id) else {
+                continue;
+            };
+            if !(name.len() >= 3 && name[..3].eq_ignore_ascii_case("Lan")) {
+                continue;
+            }
+            let [x, y, z] = object.position;
+            if !(x.is_finite() && y.is_finite() && z.is_finite()) {
+                continue;
+            }
+            let linked = object.parent.is_some();
+            let rotation = if object.rotation_degrees.is_finite() {
+                object.rotation_degrees.to_radians()
+            } else {
+                0.0
+            };
+            let slot = object.slot as i32;
+            data.level.push(PlacedNatureObject::with_transform(
+                slot,
+                type_id,
+                name.as_str(),
+                x,
+                y,
+                z,
+                rotation,
+                i32::from(object.team),
+                linked,
+            ));
+            data.identity.insert(slot, (object.uid, object.type_id));
+            data.positions.insert(slot, (x, z));
+            if !linked {
+                roots.entry(type_id).or_insert(name);
+            }
+        }
+        data.catalog = roots
+            .into_iter()
+            .map(|(id, name)| NatureCatalogItem::new(id, name.as_str()))
+            .collect();
+        data.regions = map_nature_regions(data.level.iter().map(|o| o.name.as_str()));
+        self.nature.data = Some(data);
+        Ok(())
+    }
+
+    /// Catalog filtered by category and the map's dominant regions (C# `RefreshNatureTypes`).
+    pub fn nature_palette(&self) -> Vec<NatureCatalogItem> {
+        let Some(data) = &self.nature.data else {
+            return Vec::new();
+        };
+        NaturePaletteFilter::new()
+            .with_category(self.nature.category)
+            .with_dominant_regions(data.regions.clone())
+            .with_show_other_regions(self.nature.show_other_regions)
+            .filter_and_sort(&data.catalog)
+            .into_iter()
+            .cloned()
+            .collect()
+    }
+
+    fn nature_selected_item(&self, palette: &[NatureCatalogItem]) -> Option<NatureCatalogItem> {
+        self.nature
+            .selected_type
+            .and_then(|id| palette.iter().find(|i| i.type_id == id))
+            .or_else(|| palette.first())
+            .cloned()
+    }
+
+    fn nature_dimension(&mut self) -> i32 {
+        self.textures
+            .session_mut()
+            .map(|s| s.tile_dimension() as i32)
+            .filter(|d| *d > 0)
+            .unwrap_or(NATURE_DEFAULT_DIMENSION)
+    }
+
+    /// Vertex-grid position (0..=vertex_size-1) to a texture tile.
+    fn nature_tile_from_grid(&mut self, grid_x: f32, grid_y: f32) -> Option<(i32, i32)> {
+        let span = (self.session.as_ref()?.vertex_size.checked_sub(1)?).max(1) as f32;
+        let dimension = self.nature_dimension();
+        let tile = |g: f32| ((g / span * dimension as f32).floor() as i32).clamp(0, dimension - 1);
+        (grid_x.is_finite() && grid_y.is_finite()).then(|| (tile(grid_x), tile(grid_y)))
+    }
+
+    /// One brush dab at a tile; the first dab of a stroke refreshes the object snapshot.
+    /// Fails closed (status error, no edit) when catalog/template/object data is unavailable.
+    pub fn nature_paint_tile(&mut self, tile_x: i32, tile_y: i32) -> NatureStrokeReport {
+        if !self.nature.driver.is_active() || self.nature.data.is_none() {
+            if let Err(e) = self.ensure_nature_data() {
+                self.nature_fail(e);
+                return NatureStrokeReport::default();
+            }
+        }
+        let dimension = self.nature_dimension();
+        if tile_x < 0 || tile_y < 0 || tile_x >= dimension || tile_y >= dimension {
+            return NatureStrokeReport::default();
+        }
+        let palette = self.nature_palette();
+        let selected = self.nature_selected_item(&palette);
+        let height_step = self.height_step;
+        let Some(terrain) = self.session.as_ref() else {
+            self.nature_fail("no terrain session loaded");
+            return NatureStrokeReport::default();
+        };
+        let settings = NatureStrokeSettings {
+            operation: self.nature.operation,
+            brush_size: self.nature.brush_size.max(1),
+            density: self.nature.density,
+            dimension,
+            tile_world_size: NATURE_TILE_WORLD,
+            mix_species: self.nature.mix_species,
+            selected,
+            heights: Some(NatureHeightField {
+                vertex_size: terrain.vertex_size,
+                heights: terrain.heights(),
+                height_step,
+            }),
+        };
+        let nature = &mut self.nature;
+        let Some(data) = nature.data.as_ref() else {
+            self.status_message = "Nature: catalog/object data unavailable".into();
+            self.status_is_error = true;
+            return NatureStrokeReport::default();
+        };
+        let report = nature.driver.paint(
+            &mut nature.session,
+            &settings,
+            &data.level,
+            &palette,
+            &mut nature.random,
+            tile_x,
+            tile_y,
+        );
+        if report.missing_selection {
+            self.status_message =
+                "Nature: pick a landscape type first (the catalog has no matching entry).".into();
+            self.status_is_error = true;
+        } else if report.changed() {
+            self.status_message = format!(
+                "Nature: planted {}, removed {} existing / {} pending objects.",
+                report.planted, report.removed_slots, report.removed_additions
+            );
+            self.status_is_error = false;
+        }
+        report
+    }
+
+    /// Ends the open stroke as exactly one undo step.
+    pub fn nature_end_stroke(&mut self) -> bool {
+        let committed = self.nature.driver.end(&mut self.nature.session);
+        if committed {
+            self.nature.last_action = true;
+        }
+        committed
+    }
+
+    /// Esc: drop the stroke in progress without leaving an undo step.
+    pub fn nature_cancel_stroke(&mut self) {
+        if self.nature.driver.end(&mut self.nature.session) {
+            self.nature.session.undo();
+            self.status_message = "Nature stroke cancelled.".into();
+            self.status_is_error = false;
+        }
+    }
+
+    /// Ctrl+Z target: true when Nature handled the undo.
+    pub fn nature_undo(&mut self) -> bool {
+        self.nature_end_stroke();
+        if !(self.nature.last_action && self.nature.session.can_undo()) {
+            return false;
+        }
+        self.nature.session.undo();
+        self.status_message = "Nature undo performed.".into();
+        self.status_is_error = false;
+        true
+    }
+
+    pub fn nature_redo(&mut self) -> bool {
+        self.nature_end_stroke();
+        if !(self.nature.last_action && self.nature.session.can_redo()) {
+            return false;
+        }
+        self.nature.session.redo();
+        self.status_message = "Nature redo performed.".into();
+        self.status_is_error = false;
+        true
+    }
+
+    /// Drops every pending Nature edit back to the last saved baseline.
+    pub fn nature_discard(&mut self) {
+        self.nature.driver = NatureStrokeDriver::new();
+        self.nature.session.reset();
+        self.nature.last_action = false;
+        self.status_message = "Nature edits discarded.".into();
+        self.status_is_error = false;
+    }
+
+    /// Memory-only: replays the pending Nature session onto the on-disk DATA store and returns
+    /// the changed pool files. Never touches disk or the session.
+    fn stage_nature_files(&self, target_map: &Path) -> Result<Vec<(PathBuf, Vec<u8>)>, String> {
+        use crate::design_apply::{apply_placements, PlacementRequest};
+        use against_rome_placement::ObjectStore;
+
+        let session = &self.nature.session;
+        if !session.is_dirty() {
+            return Ok(Vec::new());
+        }
+        if self.placement.is_dirty() {
+            return Err("Nature: the Objects (DATA) session has unsaved edits; save or discard them before saving Nature changes".into());
+        }
+        let loaded = self
+            .placement
+            .loaded_map()
+            .ok_or("Nature: no DATA session is loaded for this map")?;
+        let same_path =
+            |a: &Path, b: &Path| match (std::fs::canonicalize(a), std::fs::canonicalize(b)) {
+                (Ok(a), Ok(b)) => a == b,
+                _ => a == b,
+            };
+        if !same_path(loaded, target_map) {
+            return Err(format!(
+                "Nature: edits belong to '{}' and cannot be saved to '{}'",
+                loaded.display(),
+                target_map.display()
+            ));
+        }
+        let data = self
+            .nature
+            .data
+            .as_ref()
+            .filter(|d| same_path(&d.map, target_map))
+            .ok_or("Nature: catalog/object data unavailable; cannot verify pending edits")?;
+
+        let mut store = ObjectStore::load(target_map)
+            .map_err(|e| format!("Nature: cannot load DATA objects: {e}"))?;
+        let current: HashMap<i32, (u32, u16)> = store
+            .objects()
+            .iter()
+            .map(|o| (o.slot as i32, (o.uid, o.type_id)))
+            .collect();
+        let mut families = Vec::new();
+        for slot in session.removed_slots() {
+            let expected = data.identity.get(slot).ok_or_else(|| {
+                format!("Nature: removed slot {slot} is not a known landscape object")
+            })?;
+            if current.get(slot) != Some(expected) {
+                return Err(format!(
+                    "Nature: slot {slot} changed on disk since it was selected; reload the map and redo the removal"
+                ));
+            }
+            families.push((*slot as usize, expected.0));
+        }
+        // Add before removing so templates survive even when a whole type is erased.
+        let requests: Vec<PlacementRequest> = session
+            .additions()
+            .iter()
+            .map(|a| PlacementRequest {
+                type_id: a.type_id,
+                name: a.name.clone(),
+                x: a.x,
+                y: a.y,
+                z: a.z,
+                rotation_deg: a.rotation.to_degrees(),
+                team: None,
+            })
+            .collect();
+        let mut rest = requests.as_slice();
+        while !rest.is_empty() {
+            let batch = apply_placements(&mut store, rest)
+                .map_err(|e| format!("Nature: cannot add objects: {e}"))?;
+            if batch.consumed == 0 || batch.placed != batch.consumed || !batch.skipped.is_empty() {
+                return Err(format!(
+                    "Nature: additions rejected (missing template or invalid position): {}",
+                    batch.skipped.join("; ")
+                ));
+            }
+            rest = &rest[batch.consumed..];
+        }
+        store
+            .remove_families(&families)
+            .map_err(|e| format!("Nature: removal rejected (linked, shared or stale data): {e}"))?;
+
+        let data_dir = target_map.join("DATA");
+        let mut staged = Vec::new();
+        for name in NATURE_POOLS {
+            let Some(current_bytes) = store.payload(name) else {
+                continue;
+            };
+            let pool_path = data_dir.join(format!("{name}.dat"));
+            let relative = PathBuf::from(format!("DATA/{name}.dat"));
+            match std::fs::read(&pool_path) {
+                Ok(disk) if disk.starts_with(b"PFIL") => {
+                    if disk.len() < 64 {
+                        return Err(format!(
+                            "Nature: corrupted PFIL header in {}",
+                            pool_path.display()
+                        ));
+                    }
+                    let initial =
+                        against_rome_data::lzss::decompress_pfil(&disk, None).map_err(|e| {
+                            format!("Nature: cannot decompress {}: {e}", pool_path.display())
+                        })?;
+                    if initial != current_bytes {
+                        staged.push((relative, nature_encode_pfil(&disk, current_bytes)));
+                    }
+                }
+                Ok(disk) => {
+                    if disk != current_bytes {
+                        staged.push((relative, current_bytes.to_vec()));
+                    }
+                }
+                Err(e) => {
+                    return Err(format!("Nature: cannot read {}: {e}", pool_path.display()));
+                }
+            }
+        }
+        if staged.is_empty() {
+            return Err("Nature: pending edits produced no DATA pool changes".into());
+        }
+        Ok(staged)
+    }
+
+    /// Pending additions (green) and removed existing objects (red) over the 2D map.
+    fn draw_nature_overlay(&self, painter: &egui::Painter, map_rect: Rect) {
+        let to_screen = |x: f32, z: f32| {
+            Pos2::new(
+                map_rect.min.x + x / NATURE_WORLD_SIZE * map_rect.width(),
+                map_rect.min.y + z / NATURE_WORLD_SIZE * map_rect.height(),
+            )
+        };
+        for addition in self.nature.session.additions() {
+            painter.circle_filled(to_screen(addition.x, addition.z), 2.0, Color32::LIGHT_GREEN);
+        }
+        if let Some(data) = &self.nature.data {
+            for slot in self.nature.session.removed_slots() {
+                if let Some(&(x, z)) = data.positions.get(slot) {
+                    painter.circle_stroke(
+                        to_screen(x, z),
+                        3.0,
+                        Stroke::new(1.0_f32, Color32::LIGHT_RED),
+                    );
+                }
+            }
+        }
+    }
+
+    fn show_nature_panel(&mut self, ui: &mut egui::Ui) {
+        ui.heading("Nature Brush");
+        let mut enabled = self.nature.enabled;
+        if ui
+            .checkbox(&mut enabled, "Nature brush (replaces terrain brush)")
+            .changed()
+        {
+            self.nature_set_enabled(enabled);
+        }
+        if !self.nature.enabled {
+            return;
+        }
+        let mut operation = self.nature.operation;
+        ui.horizontal(|ui| {
+            ui.selectable_value(&mut operation, NatureOperation::Plant, "Plant");
+            ui.selectable_value(&mut operation, NatureOperation::Remove, "Remove");
+        });
+        if operation != self.nature.operation {
+            self.nature_set_operation(operation);
+        }
+        ui.add(egui::Slider::new(&mut self.nature.brush_size, 1..=16).text("Brush size (tiles)"));
+        if self.nature.operation == NatureOperation::Plant {
+            ui.horizontal(|ui| {
+                ui.label("Density:");
+                for (density, label) in [
+                    (NatureDensity::Sparse, "Sparse"),
+                    (NatureDensity::Normal, "Normal"),
+                    (NatureDensity::Dense, "Dense"),
+                ] {
+                    ui.selectable_value(&mut self.nature.density, density, label);
+                }
+            });
+            ui.checkbox(&mut self.nature.mix_species, "Mix species in category");
+        }
+        if self.nature.data.is_none() {
+            if let Err(e) = self.ensure_nature_data() {
+                ui.colored_label(Color32::from_rgb(240, 80, 80), format!("Unavailable: {e}"));
+                return;
+            }
+        }
+        ui.checkbox(
+            &mut self.nature.show_other_regions,
+            "Show other regions' objects",
+        );
+        let categories: Vec<NatureCategory> = self
+            .nature
+            .data
+            .as_ref()
+            .map(|d| {
+                NatureCategory::ALL
+                    .into_iter()
+                    .filter(|c| d.catalog.iter().any(|i| i.category() == *c))
+                    .collect()
+            })
+            .unwrap_or_default();
+        egui::ComboBox::from_label("Category")
+            .selected_text(self.nature.category.map_or("All", |c| c.display_name(true)))
+            .show_ui(ui, |ui| {
+                ui.selectable_value(&mut self.nature.category, None, "All");
+                for category in categories {
+                    ui.selectable_value(
+                        &mut self.nature.category,
+                        Some(category),
+                        category.display_name(true),
+                    );
+                }
+            });
+        let palette = self.nature_palette();
+        let selected = self.nature_selected_item(&palette).map(|i| i.type_id);
+        egui::ScrollArea::vertical()
+            .id_source("nature_types")
+            .max_height(160.0)
+            .show(ui, |ui| {
+                for item in &palette {
+                    if ui
+                        .selectable_label(selected == Some(item.type_id), &item.name)
+                        .clicked()
+                    {
+                        self.nature.selected_type = Some(item.type_id);
+                    }
+                }
+            });
+        let (planted, removed) = self.nature_pending_counts();
+        ui.small(format!(
+            "Pending: +{planted} planted, -{removed} existing removed."
+        ));
+        ui.horizontal(|ui| {
+            if ui
+                .add_enabled(self.nature.session.can_undo(), egui::Button::new("Undo"))
+                .clicked()
+            {
+                self.nature.last_action = true;
+                self.nature_undo();
+            }
+            if ui
+                .add_enabled(self.nature.session.can_redo(), egui::Button::new("Redo"))
+                .clicked()
+            {
+                self.nature.last_action = true;
+                self.nature_redo();
+            }
+            if ui
+                .add_enabled(self.nature.session.is_dirty(), egui::Button::new("Discard"))
+                .clicked()
+            {
+                self.nature_discard();
+            }
+        });
+        ui.small("Drag on the map. Remove never touches script-linked or non-landscape objects. Save with Safe Save.");
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::terrain::SampleChange;
+
+    fn start_camera_app(pfil: bool) -> (EditorApp, PathBuf, Vec<u8>) {
+        let dir = temp_map_dir("start_camera");
+        std::fs::create_dir_all(dir.join("SCRIPT")).unwrap();
+        let raw = against_rome_scenario::BciImage::idle().serialize();
+        let original = if pfil {
+            {
+                let mut pfil = vec![0; 64];
+                pfil[..4].copy_from_slice(b"PFIL");
+                pfil[16..20].copy_from_slice(&(raw.len() as u32).to_le_bytes());
+                for chunk in raw.chunks(8) {
+                    pfil.push(((1u16 << chunk.len()) - 1) as u8);
+                    pfil.extend_from_slice(chunk);
+                }
+                pfil
+            }
+        } else {
+            raw
+        };
+        std::fs::write(dir.join("SCRIPT/ak_level.bci"), &original).unwrap();
+        let mut app = EditorApp::initial_state();
+        app.set_loaded_map(dir.clone(), TerrainSession::create_blank(5, 32))
+            .unwrap();
+        (app, dir, original)
+    }
+
+    #[test]
+    fn start_camera_apply_and_repeat_save_disable_preserve_original_raw_and_pfil() {
+        for pfil in [false, true] {
+            let (mut app, dir, original) = start_camera_app(pfil);
+            assert!(!app.campaign.start_camera.enabled);
+            let before = save_file_snapshot(&dir);
+            app.campaign.start_camera.enabled = true;
+            app.campaign.start_camera.x = 12512.0;
+            app.apply_start_camera_candidate().unwrap();
+            assert_eq!(save_file_snapshot(&dir), before, "Apply is memory only");
+            assert!(app.has_unsaved_changes());
+            assert!(app.require_clean_map_switch().is_err());
+            app.safe_save_current();
+            assert!(!app.status_is_error, "{}", app.status_message);
+            assert!(!app.has_unsaved_changes());
+            let script = std::fs::read(dir.join("SCRIPT/ak_level.bci")).unwrap();
+            assert_eq!(script.starts_with(b"PFIL"), pfil);
+            assert_ne!(script, original);
+            assert_eq!(
+                std::fs::read(dir.join("SCRIPT/ak_level.arm_original")).unwrap(),
+                original
+            );
+            app.apply_start_camera_candidate().unwrap();
+            app.safe_save_current();
+            assert!(!app.status_is_error, "{}", app.status_message);
+            assert_eq!(
+                std::fs::read(dir.join("SCRIPT/ak_level.bci")).unwrap(),
+                script
+            );
+            app.campaign.start_camera.enabled = false;
+            app.apply_start_camera_candidate().unwrap();
+            app.safe_save_current();
+            assert!(!app.status_is_error, "{}", app.status_message);
+            assert_eq!(
+                std::fs::read(dir.join("SCRIPT/ak_level.bci")).unwrap(),
+                original
+            );
+            assert_eq!(
+                std::fs::read(dir.join("SCRIPT/ak_level.arm_original")).unwrap(),
+                original
+            );
+            std::fs::remove_dir_all(dir).unwrap();
+        }
+    }
+
+    #[test]
+    fn start_camera_and_pending_scenario_events_share_transaction_and_reload() {
+        let (mut app, dir, original) = start_camera_app(false);
+        app.scenario.load_session(&dir).unwrap();
+        app.scenario
+            .add_events(&[against_rome_scenario::Event {
+                name: "Timer".into(),
+                delay_seconds: 2,
+                actions: vec![against_rome_scenario::Action {
+                    text: "Hello".into(),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }])
+            .unwrap();
+        app.campaign.start_camera.enabled = true;
+        app.apply_start_camera_candidate().unwrap();
+        app.safe_save_current();
+        assert!(!app.status_is_error, "{}", app.status_message);
+        assert_eq!(app.scenario.document().events.len(), 1);
+        assert!(!app.scenario.dirty());
+        let script = std::fs::read(dir.join("SCRIPT/ak_level.bci")).unwrap();
+        let camera = against_rome_scenario::StartCamera::from(&app.campaign.start_camera);
+        let expected = against_rome_scenario::compile_script_verified(
+            &original,
+            app.scenario.document(),
+            Some(&camera),
+            None,
+            None,
+        )
+        .unwrap();
+        assert_eq!(script, expected);
+        let mut reloaded = EditorApp::initial_state();
+        reloaded
+            .set_loaded_map(dir.clone(), TerrainSession::create_blank(5, 32))
+            .unwrap();
+        assert_eq!(reloaded.campaign.start_camera, app.campaign.start_camera);
+        reloaded.campaign.start_camera.enabled = false;
+        reloaded.apply_start_camera_candidate().unwrap();
+        reloaded.safe_save_current();
+        assert!(!reloaded.status_is_error, "{}", reloaded.status_message);
+        assert_eq!(reloaded.scenario.document().events.len(), 1);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn start_camera_failure_rolls_back_script_metadata_backup_and_keeps_candidate() {
+        use against_rome_maps::TransactionFailurePoint as Fail;
+        for point in [
+            Fail::AfterPath("SCRIPT/ak_level.bci".into()),
+            Fail::BeforeFinalCommit,
+        ] {
+            let (mut app, dir, _) = start_camera_app(false);
+            app.campaign.start_camera.enabled = true;
+            app.apply_start_camera_candidate().unwrap();
+            edit_save_terrain(&mut app);
+            let before = save_file_snapshot(&dir);
+            app.safe_save_current_using(|tx| {
+                let mut injected =
+                    std::mem::replace(tx, against_rome_maps::MapSaveTransaction::new("unused"))
+                        .with_injected_failure(point, "camera rollback test");
+                injected.commit().map_err(|e| e.to_string())
+            });
+            assert!(app.status_is_error, "{}", app.status_message);
+            assert_eq!(save_file_snapshot(&dir), before);
+            assert!(app.campaign.camera_pending());
+            assert!(app.session.as_ref().unwrap().is_dirty());
+            app.safe_save_current();
+            assert!(!app.status_is_error, "{}", app.status_message);
+            std::fs::remove_dir_all(dir).unwrap();
+        }
+    }
+
+    #[test]
+    fn start_camera_rejects_stale_sources_draft_wrong_target_and_other_pending_work() {
+        for source in [
+            "SCRIPT/ak_level.bci",
+            "SCRIPT/ak_level.arm_original",
+            "arm_scenario.json",
+            "arm_start_camera.json",
+            "DATA/objects.dat",
+        ] {
+            let (mut app, dir, _) = start_camera_app(false);
+            app.campaign.start_camera.enabled = true;
+            app.apply_start_camera_candidate().unwrap();
+            std::fs::create_dir_all(dir.join(source).parent().unwrap()).unwrap();
+            std::fs::write(dir.join(source), b"external change").unwrap();
+            let before = save_file_snapshot(&dir);
+            app.safe_save_current();
+            assert!(app.status_is_error, "{}", app.status_message);
+            assert_eq!(save_file_snapshot(&dir), before);
+            assert!(app.campaign.camera_pending());
+            std::fs::remove_dir_all(dir).unwrap();
+        }
+        let (mut app, dir, _) = start_camera_app(false);
+        app.campaign.start_camera.enabled = true;
+        app.apply_start_camera_candidate().unwrap();
+        let other = temp_map_dir("camera_wrong_target");
+        app.map_path_input = other.display().to_string();
+        assert!(app.apply_start_camera_candidate().is_err());
+        app.safe_save_current();
+        assert!(app.status_is_error);
+        assert!(save_file_snapshot(&other).is_empty());
+        app.map_path_input = dir.display().to_string();
+        app.campaign.start_camera.x += 32.0;
+        app.safe_save_current();
+        assert!(app.status_is_error);
+        app.apply_start_camera_candidate().unwrap();
+        app.campaign.mark_dirty();
+        let before = save_file_snapshot(&dir);
+        app.safe_save_current();
+        assert!(app.status_is_error && app.campaign.has_unsupported_edits());
+        assert_eq!(save_file_snapshot(&dir), before);
+        std::fs::remove_dir_all(dir).unwrap();
+        std::fs::remove_dir_all(other).unwrap();
+    }
+
+    #[test]
+    fn start_camera_invalid_apply_preserves_prior_candidate_and_pending_scenario() {
+        let (mut app, dir, original) = start_camera_app(false);
+        app.campaign.start_camera.enabled = true;
+        app.apply_start_camera_candidate().unwrap();
+        let before = save_file_snapshot(&dir);
+        app.campaign.start_camera.zoom = 10.0;
+        assert!(app.apply_start_camera_candidate().is_err());
+        assert!(app.campaign.camera_pending());
+        app.campaign.start_camera.zoom = 5.0;
+        // The old, valid candidate survived the failed Apply.
+        app.safe_save_current();
+        assert!(!app.status_is_error, "{}", app.status_message);
+        // An existing immutable backup must not even be staged for replacement.
+        app.apply_start_camera_candidate().unwrap();
+        app.safe_save_current_using(|tx| {
+            assert!(!tx.has_staged("SCRIPT/ak_level.arm_original"));
+            tx.commit().map_err(|e| e.to_string())
+        });
+        assert!(!app.status_is_error, "{}", app.status_message);
+        assert_eq!(
+            std::fs::read(dir.join("SCRIPT/ak_level.arm_original")).unwrap(),
+            original
+        );
+        assert_ne!(save_file_snapshot(&dir), before);
+        std::fs::remove_dir_all(dir).unwrap();
+
+        let (mut app, dir, _) = start_camera_app(false);
+        let mut document = against_rome_scenario::ScenarioDocument::default();
+        document.spawns.push(against_rome_scenario::Spawn {
+            prebuilt: true,
+            alias: "GER_INF01".into(),
+            ..Default::default()
+        });
+        std::fs::write(
+            dir.join("arm_scenario.json"),
+            serde_json::to_vec(&document).unwrap(),
+        )
+        .unwrap();
+        let before = save_file_snapshot(&dir);
+        app.campaign.start_camera.enabled = true;
+        assert!(
+            app.apply_start_camera_candidate().is_err(),
+            "prebuilt slots need verified DATA"
+        );
+        assert!(!app.campaign.camera_pending());
+        assert_eq!(save_file_snapshot(&dir), before);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn start_camera_capture_uses_real_3d_target_and_requires_loaded_3d_view() {
+        let mut blank = EditorApp::initial_state();
+        blank.view_mode = ViewMode::View3D;
+        assert!(blank.current_view_start_camera().is_err());
+        assert!(blank.apply_start_camera_candidate().is_err());
+        let (mut app, dir, _) = start_camera_app(false);
+        assert!(app.current_view_start_camera().is_err());
+        app.view_mode = ViewMode::View3D;
+        app.viewport_3d.camera.target = against_rome_scene::Vec3::new(12.5, 72.0, 20.0);
+        let camera = app.current_view_start_camera().unwrap();
+        assert_eq!(
+            (camera.x, camera.y, camera.z, camera.zoom),
+            (3200.0, 72.0, 5120.0, 5.0)
+        );
+        app.campaign.capture_camera(camera);
+        assert!(app.has_unsaved_changes());
+        let before = save_file_snapshot(&dir);
+        app.safe_save_current();
+        assert!(app.status_is_error, "must Apply first");
+        assert_eq!(save_file_snapshot(&dir), before);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    fn erosion_plan_for(
+        app: &mut EditorApp,
+        index: usize,
+        before: u8,
+        after: u8,
+    ) -> crate::landscape_ui::ErosionPlan {
+        let heights = app.session.as_ref().unwrap().heights().to_vec();
+        let mut plan = app
+            .landscape
+            .run_erosion_planning(257, Some(&heights))
+            .unwrap();
+        plan.changes = vec![against_rome_landscape::TerrainSampleChange::new(
+            index, before, after,
+        )];
+        plan
+    }
+
+    #[test]
+    fn erosion_apply_uses_terrain_undo_history_and_invalidates_derived_views() {
+        let mut app = EditorApp::initial_state();
+        let plan = erosion_plan_for(&mut app, 0, 32, 91);
+        app.handle_erosion_apply(plan);
+
+        let terrain = app.session.as_ref().unwrap();
+        assert_eq!(terrain.heights()[0], 91);
+        assert!(terrain.can_undo());
+        assert!(terrain.is_dirty());
+        assert!(app.texture_dirty);
+        assert!(app
+            .landscape
+            .status_message
+            .contains("1 height samples modified"));
+
+        assert!(app.session.as_mut().unwrap().undo());
+        assert_eq!(app.session.as_ref().unwrap().heights()[0], 32);
+    }
+
+    #[test]
+    fn erosion_apply_rejects_preview_when_source_height_changed() {
+        let mut app = EditorApp::initial_state();
+        let plan = erosion_plan_for(&mut app, 0, 32, 91);
+        app.session
+            .as_mut()
+            .unwrap()
+            .apply_height_changes(&[SampleChange {
+                index: 0,
+                before: 32,
+                after: 44,
+            }]);
+        app.session.as_mut().unwrap().commit_stroke();
+        let before_dirty = app.session.as_ref().unwrap().is_dirty();
+
+        app.handle_erosion_apply(plan);
+
+        assert_eq!(app.session.as_ref().unwrap().heights()[0], 44);
+        assert_eq!(app.session.as_ref().unwrap().is_dirty(), before_dirty);
+        assert!(app.landscape.status_is_error);
+        assert!(app.landscape.last_erosion_plan.is_some());
+    }
+
+    #[test]
+    fn two_point_ramp_ui_applies_one_undoable_terrain_operation() {
+        let mut terrain = TerrainSession::create_blank(65, 32);
+        let start_index = 20 * 65 + 10;
+        let end_index = 20 * 65 + 50;
+        terrain.apply_height_changes(&[
+            SampleChange {
+                index: start_index,
+                before: 32,
+                after: 12,
+            },
+            SampleChange {
+                index: end_index,
+                before: 32,
+                after: 96,
+            },
+        ]);
+        terrain.commit_stroke();
+        terrain.commit_baseline();
+
+        let mut app = EditorApp::initial_state();
+        app.session = Some(terrain);
+        app.ramp_selecting = true;
+        app.handle_ramp_point((10.0, 20.0));
+        assert_eq!(app.ramp_start, Some((10.0, 20.0)));
+        assert!(!app.session.as_ref().unwrap().can_undo());
+
+        app.handle_ramp_point((50.0, 20.0));
+
+        let terrain = app.session.as_ref().unwrap();
+        assert!(!app.ramp_selecting);
+        assert!(terrain.is_dirty());
+        assert!(terrain.can_undo());
+        assert!(app.texture_dirty);
+        assert!(app.status_message.contains("Ramp applied"));
+        assert!(app.session.as_mut().unwrap().undo());
+        assert_eq!(app.session.as_ref().unwrap().heights()[start_index], 12);
+        assert_eq!(app.session.as_ref().unwrap().heights()[end_index], 96);
+    }
+
+    fn temp_map_dir(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("arm_app_{tag}_{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn safe_save_with_dirty_ambience_success_clears_dirty() {
+        let dir = temp_map_dir("save_ok");
+        let mut app = EditorApp::initial_state();
+        app.map_path_input = dir.to_string_lossy().into_owned();
+        app.ambience.mark_dirty();
+        app.safe_save_current();
+        assert!(!app.status_is_error, "{}", app.status_message);
+        assert!(app.status_message.starts_with("Saved safely"));
+        assert!(!app.ambience.is_dirty());
+        assert!(dir.join("boden.ini").is_file());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn panel_save_requests_route_through_one_central_safe_save() {
+        let dir = temp_map_dir("panel_request");
+        let mut app = EditorApp::initial_state();
+        app.map_path_input = dir.to_string_lossy().into_owned();
+
+        // No request: nothing is written and no status change.
+        app.consume_panel_save_requests();
+        assert!(!dir.join("boden.ini").exists());
+
+        // Ambience request alone: consumed, saved through the transaction, dirty cleared.
+        app.ambience.mark_dirty();
+        app.ambience.request_save();
+        app.consume_panel_save_requests();
+        // The interactive route may stop for design-warning confirmation; accept it.
+        app.resolve_safe_save_warnings(true);
+        assert!(!app.status_is_error, "{}", app.status_message);
+        assert!(
+            app.status_message.starts_with("Saved safely"),
+            "{}",
+            app.status_message
+        );
+        assert!(!app.ambience.is_dirty());
+        assert!(dir.join("boden.ini").is_file());
+        assert!(!app.ambience.take_save_request());
+
+        // Both panels requesting collapse into a single request that is fully consumed.
+        app.ambience.request_save();
+        app.placement.request_save();
+        app.consume_panel_save_requests();
+        assert!(!app.ambience.take_save_request());
+        assert!(!app.placement.take_save_request());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn panel_save_request_failure_keeps_dirty_and_never_auto_saves_on_idle() {
+        let dir = temp_map_dir("panel_request_fail");
+        std::fs::create_dir_all(dir.join("boden.ini")).unwrap();
+        let before = save_file_snapshot(&dir);
+        let mut app = EditorApp::initial_state();
+        app.map_path_input = dir.to_string_lossy().into_owned();
+        app.ambience.mark_dirty();
+
+        // Dirty without a request never writes.
+        app.consume_panel_save_requests();
+        assert_eq!(save_file_snapshot(&dir), before);
+
+        app.ambience.request_save();
+        app.consume_panel_save_requests();
+        app.resolve_safe_save_warnings(true);
+        assert!(app.status_is_error, "{}", app.status_message);
+        assert!(app.ambience.is_dirty());
+        assert_eq!(save_file_snapshot(&dir), before);
+        // The request was consumed: a failed save is not retried automatically.
+        assert!(!app.ambience.take_save_request());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn safe_save_preflight_failure_keeps_all_artifacts_and_dirty() {
+        let dir = temp_map_dir("save_preflight");
+        std::fs::write(dir.join("boden.bmp"), b"original height").unwrap();
+        std::fs::create_dir_all(dir.join("boden.ini")).unwrap();
+        let before = save_file_snapshot(&dir);
+        let mut app = EditorApp::initial_state();
+        app.map_path_input = dir.to_string_lossy().into_owned();
+        app.ambience.mark_dirty();
+        app.safe_save_current();
+        assert!(app.status_is_error);
+        assert!(
+            app.status_message.contains("target is a directory"),
+            "{}",
+            app.status_message
+        );
+        assert!(app.status_message.contains("boden.ini"));
+        assert!(app.ambience.is_dirty());
+        assert!(app.session.as_ref().unwrap().raw_boden_bmp.is_none());
+        assert_eq!(save_file_snapshot(&dir), before);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn save_file_snapshot(dir: &Path) -> std::collections::BTreeMap<PathBuf, Vec<u8>> {
+        fn visit(root: &Path, dir: &Path, out: &mut std::collections::BTreeMap<PathBuf, Vec<u8>>) {
+            for entry in std::fs::read_dir(dir).unwrap() {
+                let path = entry.unwrap().path();
+                if path.is_dir() {
+                    visit(root, &path, out);
+                } else {
+                    out.insert(
+                        path.strip_prefix(root).unwrap().to_owned(),
+                        std::fs::read(path).unwrap(),
+                    );
+                }
+            }
+        }
+        let mut out = std::collections::BTreeMap::new();
+        visit(dir, dir, &mut out);
+        out
+    }
+
+    fn edit_save_terrain(app: &mut EditorApp) {
+        let terrain = app.session.as_mut().unwrap();
+        terrain.apply_height_changes(&[SampleChange {
+            index: 0,
+            before: terrain.heights()[0],
+            after: 99,
+        }]);
+        terrain
+            .paint_collision(0.5, 0.5, 0.5, CollisionBrushOp::Block)
+            .unwrap();
+        assert_eq!(terrain.collision()[0], 255);
+        terrain.commit_stroke();
+    }
+
+    // Include directory inventory, file bytes, modification times and read-only flags:
+    // an aborted gate must not even create staging/backup directories or rewrite equal bytes.
+    fn save_artifact_snapshot(
+        root: &Path,
+    ) -> std::collections::BTreeMap<PathBuf, (bool, Vec<u8>, std::time::SystemTime, bool)> {
+        fn visit(
+            root: &Path,
+            path: &Path,
+            out: &mut std::collections::BTreeMap<
+                PathBuf,
+                (bool, Vec<u8>, std::time::SystemTime, bool),
+            >,
+        ) {
+            let meta = std::fs::metadata(path).unwrap();
+            out.insert(
+                path.strip_prefix(root).unwrap().to_owned(),
+                (
+                    meta.is_dir(),
+                    if meta.is_file() {
+                        std::fs::read(path).unwrap()
+                    } else {
+                        vec![]
+                    },
+                    meta.modified().unwrap(),
+                    meta.permissions().readonly(),
+                ),
+            );
+            if meta.is_dir() {
+                for entry in std::fs::read_dir(path).unwrap() {
+                    visit(root, &entry.unwrap().path(), out);
+                }
+            }
+        }
+        let mut out = std::collections::BTreeMap::new();
+        visit(root, root, &mut out);
+        out
+    }
+
+    #[test]
+    fn safe_save_diagnostics_error_precedes_commit_and_keeps_all_sessions_and_artifacts() {
+        let (mut app, dir, _) = start_camera_app(false);
+        pending_placement_fixture(&dir);
+        app.placement.load_session(&dir).unwrap();
+        app.placement.select_object(Some((0, 1)));
+        app.placement
+            .set_delta(["10".into(), "0".into(), "0".into()]);
+        app.placement.move_family().unwrap();
+        app.scenario.load_session(&dir).unwrap();
+        app.scenario
+            .add_events(&[against_rome_scenario::Event {
+                name: "pending message".into(),
+                actions: vec![against_rome_scenario::Action {
+                    text: "hello".into(),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }])
+            .unwrap();
+        // The manual design validator only warns here. MapDiagnostics must still run
+        // and reject its independent collision-limit Error before the commit callback.
+        app.session = Some(TerrainSession::create_blank(1026, 32));
+        edit_save_terrain(&mut app);
+        app.ambience.mark_dirty();
+        std::fs::write(dir.join("skydens.dat"), b"retain height cache").unwrap();
+        std::fs::create_dir_all(dir.join("empty/evidence")).unwrap();
+        let before = save_artifact_snapshot(&dir);
+        let flags = pending_panel_dirty_flags(&app);
+        let undo_depth = app.placement.undo_depth();
+        let events = app.scenario.document().clone();
+
+        app.safe_save_current_using(|_| panic!("diagnostics failure must never reach commit"));
+
+        assert!(app.status_is_error);
+        assert!(
+            app.status_message
+                .contains("MapDiagnostics [collision-limit]"),
+            "{}",
+            app.status_message
+        );
+        assert_eq!(save_artifact_snapshot(&dir), before);
+        assert_eq!(pending_panel_dirty_flags(&app), flags);
+        assert!(app.session.as_ref().unwrap().is_dirty());
+        assert!(app.session.as_ref().unwrap().can_undo());
+        assert!(app.session.as_ref().unwrap().raw_boden_bmp.is_none());
+        assert_eq!(app.placement.undo_depth(), undo_depth);
+        assert_eq!(app.scenario.document(), &events);
+        assert!(app.scenario.can_undo_events());
+        assert!(app.ambience.is_dirty());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn safe_save_diagnostics_reads_saved_spawns_with_clean_or_unopened_scenario() {
+        for load_panel in [false, true] {
+            let (mut app, dir, _) = start_camera_app(false);
+            let document = against_rome_scenario::ScenarioDocument {
+                spawns: vec![against_rome_scenario::Spawn {
+                    id: uuid::Uuid::new_v4(),
+                    alias: "unknown_not_in_catalog".into(),
+                    x: 8000.0,
+                    z: 8000.0,
+                    count: 1,
+                    ..Default::default()
+                }],
+                ..Default::default()
+            };
+            std::fs::write(
+                dir.join("arm_scenario.json"),
+                serde_json::to_vec(&document).unwrap(),
+            )
+            .unwrap();
+            if load_panel {
+                app.scenario.load_session(&dir).unwrap();
+            }
+            assert!(!app.scenario.dirty());
+            edit_save_terrain(&mut app);
+            let before = save_artifact_snapshot(&dir);
+            app.safe_save_current_using(|_| panic!("unknown saved alias must block every save"));
+            assert!(
+                app.status_message.contains("MapDiagnostics [alias]"),
+                "{}",
+                app.status_message
+            );
+            assert_eq!(save_artifact_snapshot(&dir), before);
+            assert!(app.session.as_ref().unwrap().is_dirty());
+            assert!(!app.scenario.dirty());
+            std::fs::remove_dir_all(dir).unwrap();
+        }
+    }
+
+    #[test]
+    fn safe_save_design_warning_cancel_keeps_artifacts_dirty_and_continue_commits() {
+        let (mut app, dir, _) = start_camera_app(false);
+        let document = against_rome_scenario::ScenarioDocument {
+            spawns: vec![against_rome_scenario::Spawn {
+                id: uuid::Uuid::new_v4(),
+                alias: "BAU_HAU".into(),
+                prebuilt: true,
+                x: 8000.0,
+                z: 8000.0,
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        std::fs::write(
+            dir.join("arm_scenario.json"),
+            serde_json::to_vec(&document).unwrap(),
+        )
+        .unwrap();
+        edit_save_terrain(&mut app);
+        // The pending water level, rather than the toolbar's old preview level, submerges
+        // this building. The saved scenario must be checked despite its unopened panel.
+        app.ambience.profile.boden.waterlevel = 500.0;
+        app.ambience.mark_dirty();
+        std::fs::write(dir.join("skydens.dat"), b"cached original").unwrap();
+        std::fs::create_dir_all(dir.join("empty/evidence")).unwrap();
+        let before = save_artifact_snapshot(&dir);
+        app.request_safe_save();
+        assert!(app.pending_save_warnings.is_some());
+        assert!(app
+            .pending_save_warnings
+            .as_ref()
+            .unwrap()
+            .1
+            .iter()
+            .any(|i| i.code == "water"));
+        assert!(app
+            .maps
+            .diagnostic_issues
+            .iter()
+            .any(|i| i.code == "blocked-building"));
+        assert!(app
+            .maps
+            .diagnostic_issues
+            .iter()
+            .any(|i| i.code == "no-start"));
+        assert_eq!(save_artifact_snapshot(&dir), before);
+        app.resolve_safe_save_warnings(false);
+        assert!(app.pending_save_warnings.is_none());
+        assert!(app.status_message.contains("cancelled"));
+        assert_eq!(save_artifact_snapshot(&dir), before);
+        assert!(app.session.as_ref().unwrap().is_dirty());
+        assert!(app.session.as_ref().unwrap().can_undo());
+        assert!(app.ambience.is_dirty());
+        app.request_safe_save();
+        app.resolve_safe_save_warnings(true);
+        assert!(!app.status_is_error, "{}", app.status_message);
+        assert!(app.status_message.starts_with("Saved safely"));
+        assert!(!app.has_unsaved_changes());
+        assert!(!dir.join("skydens.dat").exists());
+        assert_eq!(load_map(&dir).unwrap().heights()[0], 99);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn safe_save_warning_confirmation_cannot_bypass_new_diagnostics_error() {
+        let (mut app, dir, _) = start_camera_app(false);
+        app.request_safe_save();
+        assert!(app.pending_save_warnings.is_some());
+        app.session = Some(TerrainSession::create_blank(1026, 32));
+        edit_save_terrain(&mut app);
+        let before = save_artifact_snapshot(&dir);
+        app.resolve_safe_save_warnings(true);
+        assert!(app.status_is_error);
+        assert!(app
+            .status_message
+            .contains("MapDiagnostics [collision-limit]"));
+        assert!(app.pending_save_warnings.is_none());
+        assert_eq!(save_artifact_snapshot(&dir), before);
+        assert!(app.session.as_ref().unwrap().is_dirty());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn safe_save_gate_uses_staged_events_and_pending_terrain_not_stale_saved_state() {
+        let (mut app, dir, _) = start_camera_app(false);
+        // Saved event has an unknown alias; deleting it in the active session repairs it.
+        let document = against_rome_scenario::ScenarioDocument {
+            events: vec![against_rome_scenario::Event {
+                name: "remove this".into(),
+                actions: vec![against_rome_scenario::Action {
+                    kind: 2,
+                    alias: "unknown".into(),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        std::fs::write(
+            dir.join("arm_scenario.json"),
+            serde_json::to_vec(&document).unwrap(),
+        )
+        .unwrap();
+        app.scenario.load_session(&dir).unwrap();
+        app.scenario.remove_event(0).unwrap();
+        let before = save_artifact_snapshot(&dir);
+        app.safe_save_confirming_using(|_| false, |_| panic!("cancelled candidate must not write"));
+        assert!(
+            app.status_message.contains("confirmation declined"),
+            "{}",
+            app.status_message
+        );
+        assert_eq!(save_artifact_snapshot(&dir), before);
+        assert!(app.scenario.dirty());
+        assert!(app.scenario.can_undo_events());
+        app.safe_save_current();
+        assert!(!app.status_is_error, "{}", app.status_message);
+        assert!(!app.scenario.dirty());
+        assert!(against_rome_scenario::ScenarioDocument::from_json(
+            &std::fs::read(dir.join("arm_scenario.json")).unwrap()
+        )
+        .unwrap()
+        .events
+        .is_empty());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn safe_save_gate_fails_closed_on_unreadable_saved_scenario_and_missing_destination() {
+        let dir = temp_map_dir("diagnostics_fail_closed");
+        let mut app = EditorApp::initial_state();
+        app.map_path_input = dir.display().to_string();
+        edit_save_terrain(&mut app);
+        std::fs::write(dir.join("arm_scenario.json"), b"invalid JSON").unwrap();
+        let before = save_artifact_snapshot(&dir);
+        app.safe_save_current_using(|_| panic!("cannot ignore corrupt saved scenario"));
+        assert!(app.status_is_error);
+        assert_eq!(save_artifact_snapshot(&dir), before);
+        assert!(app.session.as_ref().unwrap().is_dirty());
+        app.map_path_input = dir.join("not-created").display().to_string();
+        app.session = Some(TerrainSession::create_blank(1026, 32));
+        edit_save_terrain(&mut app);
+        app.safe_save_current_using(|_| panic!("error must precede destination creation"));
+        assert!(app
+            .status_message
+            .contains("MapDiagnostics [collision-limit]"));
+        assert_eq!(save_artifact_snapshot(&dir), before);
+        assert!(app.session.as_ref().unwrap().is_dirty());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn safe_save_gate_uses_pending_bound_placement_and_rejects_missing_binding() {
+        for missing in [false, true] {
+            let dir = temp_map_dir("diagnostics_bound_placement");
+            pending_placement_fixture(&dir);
+            let id = uuid::Uuid::new_v4();
+            let document = against_rome_scenario::ScenarioDocument {
+                spawns: vec![against_rome_scenario::Spawn {
+                    id,
+                    alias: "BAU_HAU".into(),
+                    prebuilt: true,
+                    x: 0.5,
+                    z: 0.5,
+                    ..Default::default()
+                }],
+                data_slots: vec![against_rome_scenario::model::DataSlot {
+                    spawn_id: id,
+                    slot: if missing { 100 } else { 0 },
+                    uid: 1,
+                }],
+                ..Default::default()
+            };
+            std::fs::write(
+                dir.join("arm_scenario.json"),
+                serde_json::to_vec(&document).unwrap(),
+            )
+            .unwrap();
+            let mut app = EditorApp::initial_state();
+            app.session = Some(TerrainSession::create_blank(5, 32));
+            app.map_path_input = dir.display().to_string();
+            app.placement.load_session(&dir).unwrap();
+            app.placement.select_object(Some((0, 1)));
+            app.placement
+                .set_delta(["8000".into(), "0".into(), "8000".into()]);
+            app.placement.move_family().unwrap();
+            edit_save_terrain(&mut app); // old anchor's cell is blocked, new one is clear
+            let before = save_artifact_snapshot(&dir);
+            app.safe_save_confirming_using(|_| false, |_| panic!("gate must not write"));
+            assert_eq!(save_artifact_snapshot(&dir), before);
+            assert!(app.placement.is_dirty());
+            assert!(app.placement.undo_depth() > 0);
+            assert!(app.session.as_ref().unwrap().is_dirty());
+            if missing {
+                assert!(
+                    app.status_message.contains("bound scenario object"),
+                    "{}",
+                    app.status_message
+                );
+            } else {
+                assert!(
+                    app.status_message.contains("confirmation declined"),
+                    "{}",
+                    app.status_message
+                );
+                assert!(!app
+                    .maps
+                    .diagnostic_issues
+                    .iter()
+                    .any(|i| i.code == "blocked-building"));
+            }
+            std::fs::remove_dir_all(dir).unwrap();
+        }
+    }
+
+    fn design_check_codes(report: &crate::design_check_ui::DesignCheckReport) -> Vec<String> {
+        match report {
+            crate::design_check_ui::DesignCheckReport::Checked {
+                map_issues,
+                design_issues,
+                ..
+            } => map_issues
+                .iter()
+                .map(|i| i.code.clone())
+                .chain(design_issues.iter().map(|i| i.code.clone()))
+                .collect(),
+            other => panic!("check unavailable: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn design_check_uses_pending_placement_and_leaves_disk_and_sessions_untouched() {
+        let dir = temp_map_dir("design_check_placement");
+        pending_placement_fixture(&dir);
+        let id = uuid::Uuid::new_v4();
+        let document = against_rome_scenario::ScenarioDocument {
+            spawns: vec![against_rome_scenario::Spawn {
+                id,
+                alias: "BAU_HAU".into(),
+                prebuilt: true,
+                x: 0.5,
+                z: 0.5,
+                ..Default::default()
+            }],
+            data_slots: vec![against_rome_scenario::model::DataSlot {
+                spawn_id: id,
+                slot: 0,
+                uid: 1,
+            }],
+            ..Default::default()
+        };
+        std::fs::write(
+            dir.join("arm_scenario.json"),
+            serde_json::to_vec(&document).unwrap(),
+        )
+        .unwrap();
+        let mut app = EditorApp::initial_state();
+        app.session = Some(TerrainSession::create_blank(5, 32));
+        app.map_path_input = dir.display().to_string();
+        app.placement.load_session(&dir).unwrap();
+        edit_save_terrain(&mut app); // the saved anchor cell is blocked
+                                     // Saved placement position sits on the blocked cell.
+        assert!(design_check_codes(&app.design_check_report())
+            .iter()
+            .any(|c| c == "blocked-building"));
+        // Pending placement moves the bound object to a clear cell.
+        app.placement.select_object(Some((0, 1)));
+        app.placement
+            .set_delta(["8000".into(), "0".into(), "8000".into()]);
+        app.placement.move_family().unwrap();
+        let before = save_artifact_snapshot(&dir);
+        let flags = pending_panel_dirty_flags(&app);
+        let undo_depth = app.placement.undo_depth();
+        let status = app.status_message.clone();
+        app.run_design_check();
+        let report = app.design_check.report.clone().unwrap();
+        assert!(
+            !design_check_codes(&report)
+                .iter()
+                .any(|c| c == "blocked-building"),
+            "{report:?}"
+        );
+        assert!(app.design_check.open);
+        assert_eq!(save_artifact_snapshot(&dir), before);
+        assert_eq!(pending_panel_dirty_flags(&app), flags);
+        assert_eq!(app.placement.undo_depth(), undo_depth);
+        assert!(app.session.as_ref().unwrap().is_dirty());
+        assert!(app.session.as_ref().unwrap().can_undo());
+        assert_eq!(app.status_message, status);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn design_check_uses_pending_scenario_events_and_keeps_errors_distinct() {
+        let (mut app, dir, _) = start_camera_app(false);
+        app.scenario.load_session(&dir).unwrap();
+        let saved = app.design_check_report();
+        assert!(design_check_codes(&saved)
+            .iter()
+            .any(|c| c == "scenario-no-win-loss"));
+        let action = |kind| against_rome_scenario::Action {
+            kind,
+            ..Default::default()
+        };
+        app.scenario
+            .add_events(&[3, 4].map(|kind| against_rome_scenario::Event {
+                name: format!("end{kind}"),
+                actions: vec![action(kind)],
+                ..Default::default()
+            }))
+            .unwrap();
+        let before = save_artifact_snapshot(&dir);
+        let flags = pending_panel_dirty_flags(&app);
+        let events = app.scenario.document().clone();
+        let report = app.design_check_report();
+        assert!(
+            !design_check_codes(&report)
+                .iter()
+                .any(|c| c.starts_with("scenario-no-")),
+            "{report:?}"
+        );
+        assert_eq!(save_artifact_snapshot(&dir), before);
+        assert_eq!(pending_panel_dirty_flags(&app), flags);
+        assert_eq!(app.scenario.document(), &events);
+        assert!(app.scenario.can_undo_events());
+        // A blocking diagnostic stays an Error, distinct from the warnings.
+        app.session = Some(TerrainSession::create_blank(1026, 32));
+        let report = app.design_check_report();
+        assert!(report.error_count() > 0, "{report:?}");
+        assert!(!report.is_clean());
+        assert_eq!(save_artifact_snapshot(&dir), before);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn safe_save_multifile_failure_restores_every_byte_and_preserves_edit_history() {
+        use against_rome_maps::TransactionFailurePoint as Fail;
+        for existing in [false, true] {
+            for point in [
+                Fail::DuringReplacement(0),
+                Fail::DuringReplacement(1),
+                Fail::AfterPath("soundscape.sndz".into()),
+                Fail::BeforeFinalCommit,
+            ] {
+                let dir = temp_map_dir("transaction_rollback");
+                let mut app = EditorApp::initial_state();
+                app.session = Some(TerrainSession::create_blank(5, 32));
+                app.map_path_input = dir.display().to_string();
+                if existing {
+                    app.ambience.mark_dirty();
+                    app.safe_save_current();
+                    assert!(!app.status_is_error, "{}", app.status_message);
+                }
+                std::fs::write(dir.join("skydens.dat"), b"cached original").unwrap();
+                std::fs::write(dir.join("boden.bmp.arm_backup"), b"older recovery evidence")
+                    .unwrap();
+                std::fs::write(dir.join("unrelated.dat"), b"keep this").unwrap();
+                std::fs::create_dir_all(dir.join("TEXT/US")).unwrap();
+                std::fs::write(
+                    dir.join("TEXT/US/briefing.put"),
+                    briefing_fixture_with_extras(),
+                )
+                .unwrap();
+                edit_save_terrain(&mut app);
+                app.ambience.global_sound_id = "rain_new".into();
+                app.ambience.profile.boden.waterlevel = 61.0;
+                app.ambience.briefing_title = "Changed".into();
+                app.ambience.briefing_subtitle = "Changed subtitle".into();
+                app.ambience.briefing_team_names[1] = "Changed team".into();
+                app.ambience.briefing_body = "Changed briefing".into();
+                app.ambience.mark_dirty();
+                let before = save_file_snapshot(&dir);
+                let terrain = app.session.as_ref().unwrap();
+                let raw = (
+                    terrain.raw_boden_bmp.clone(),
+                    terrain.raw_collision_bmp.clone(),
+                );
+                let baseline = terrain.original_heights().to_vec();
+                app.safe_save_current_using(|tx| {
+                    // Fail after *actual* writes in the same coordinator used by Safe Save.
+                    let mut injected =
+                        std::mem::replace(tx, against_rome_maps::MapSaveTransaction::new("unused"))
+                            .with_injected_failure(point, "app integration failure");
+                    injected.commit().map_err(|e| e.to_string())
+                });
+                assert!(app.status_is_error, "{}", app.status_message);
+                assert!(
+                    app.status_message.contains("CleanlyRestored"),
+                    "{}",
+                    app.status_message
+                );
+                assert_eq!(save_file_snapshot(&dir), before);
+                let terrain = app.session.as_mut().unwrap();
+                assert!(terrain.is_dirty());
+                assert!(terrain.can_undo());
+                assert_eq!(terrain.raw_boden_bmp, raw.0);
+                assert_eq!(terrain.raw_collision_bmp, raw.1);
+                assert_eq!(terrain.original_heights(), baseline);
+                assert!(terrain.undo());
+                assert_eq!(terrain.heights()[0], 32);
+                assert!(terrain.redo());
+                assert_eq!(terrain.heights()[0], 99);
+                assert!(app.ambience.is_dirty());
+                assert_eq!(app.ambience.briefing_title, "Changed");
+                // Retry succeeds, persisted terrain and ambience reload together.
+                app.safe_save_current();
+                assert!(!app.status_is_error, "{}", app.status_message);
+                assert!(!app.has_unsaved_changes());
+                assert!(!dir.join("skydens.dat").exists());
+                let terrain = load_map(&dir).unwrap();
+                assert_eq!(terrain.heights()[0], 99);
+                assert_eq!(terrain.collision()[0], 255);
+                let mut ambience = AmbienceUi::default();
+                ambience.load_from_map(&dir).unwrap();
+                assert_eq!(ambience.global_sound_id, "rain_new");
+                assert_eq!(ambience.profile.boden.waterlevel, 61.0);
+                assert_eq!(ambience.briefing_title, "Changed");
+                assert_eq!(ambience.briefing_body, "Changed briefing");
+                assert_eq!(ambience.briefing_subtitle, "Changed subtitle");
+                assert_eq!(ambience.briefing_team_names[1], "Changed team");
+                let saved = against_rome_ambience::localization::BriefingTextTable::parse(
+                    &String::from_utf8(std::fs::read(dir.join("TEXT/US/briefing.put")).unwrap())
+                        .unwrap(),
+                )
+                .unwrap();
+                assert_eq!(saved.debriefing_win(), Some("Extra win text"));
+                assert!(!dir.join("SCRIPT").join("briefing_us.put").exists());
+                std::fs::remove_dir_all(dir).unwrap();
+            }
+        }
+    }
+
+    const EMBOSS_SIZE: usize = 7;
+
+    fn emboss_fixture_heights() -> Vec<u8> {
+        (0..EMBOSS_SIZE * EMBOSS_SIZE)
+            .map(|i| {
+                let (x, y) = (i % EMBOSS_SIZE, i / EMBOSS_SIZE);
+                20 + ((x * x * 7 + y * 13 + x * y * 3) % 50) as u8
+            })
+            .collect()
+    }
+
+    /// Map dir whose emboss green is an exact linear function of the height gradient,
+    /// so the fitted light model is usable. Blue/red are distinctive to prove preservation.
+    fn emboss_fixture_dir(tag: &str, with_emboss: bool) -> (PathBuf, Vec<u8>) {
+        let dir = temp_map_dir(tag);
+        let heights = emboss_fixture_heights();
+        let mut boden = crate::bmp::BmpImage::new_solid(EMBOSS_SIZE, EMBOSS_SIZE, 1, 0, 2);
+        boden.update_green_channel(&heights);
+        std::fs::write(dir.join("boden.bmp"), boden.encode_bmp()).unwrap();
+        let green: Vec<u8> = (0..heights.len())
+            .map(|i| {
+                let (gx, gy) = against_rome_editor::emboss::gradient(
+                    &heights,
+                    EMBOSS_SIZE,
+                    i % EMBOSS_SIZE,
+                    i / EMBOSS_SIZE,
+                );
+                against_rome_editor::emboss::quantize_f32(128.0 + 2.0 * gx - 1.5 * gy)
+            })
+            .collect();
+        if with_emboss {
+            let mut emboss = crate::bmp::BmpImage::new_solid(EMBOSS_SIZE, EMBOSS_SIZE, 7, 0, 9);
+            emboss.update_green_channel(&green);
+            std::fs::write(dir.join("emboss.bmp"), emboss.encode_bmp()).unwrap();
+        }
+        (dir, green)
+    }
+
+    fn emboss_app(dir: &Path) -> EditorApp {
+        let mut app = EditorApp::initial_state();
+        app.set_loaded_map(dir.to_path_buf(), load_map(dir).unwrap())
+            .unwrap();
+        app
+    }
+
+    fn edit_center_height(app: &mut EditorApp) {
+        let terrain = app.session.as_mut().unwrap();
+        terrain.apply_height_changes(&[SampleChange {
+            index: 24,
+            before: terrain.heights()[24],
+            after: 120,
+        }]);
+        terrain.commit_stroke();
+    }
+
+    #[test]
+    fn safe_save_height_edit_stages_relit_emboss_and_syncs_baseline() {
+        let (dir, green) = emboss_fixture_dir("emboss_ok", true);
+        let mut app = emboss_app(&dir);
+        edit_center_height(&mut app);
+        let edited = app.session.as_ref().unwrap().heights().to_vec();
+        let expected = against_rome_editor::emboss::EmbossSession::new(
+            EMBOSS_SIZE,
+            emboss_fixture_heights(),
+            Some(green.clone()),
+        )
+        .unwrap()
+        .build_emboss(&edited)
+        .unwrap()
+        .unwrap();
+        assert!(app.emboss.as_ref().unwrap().session.light().is_usable());
+        assert_ne!(expected, green, "fixture must change at least one vertex");
+        let mut staged = false;
+        app.safe_save_current_using(|tx| {
+            staged = tx.has_staged("emboss.bmp") && tx.has_staged("boden.bmp");
+            std::mem::replace(tx, against_rome_maps::MapSaveTransaction::new("unused"))
+                .commit()
+                .map_err(|e| e.to_string())
+        });
+        assert!(!app.status_is_error, "{}", app.status_message);
+        assert!(staged);
+        let saved =
+            crate::bmp::BmpImage::parse(&std::fs::read(dir.join("emboss.bmp")).unwrap()).unwrap();
+        assert_eq!(saved.extract_green_channel(), expected);
+        assert!(saved.bgr_pixels.chunks(3).all(|p| p[0] == 7 && p[2] == 9));
+        let baseline = app.emboss.as_ref().unwrap();
+        assert_eq!(baseline.session.baseline_heights(), edited);
+        assert_eq!(baseline.session.saved_emboss(), Some(expected.as_slice()));
+        assert_eq!(
+            baseline.raw.encode_bmp(),
+            std::fs::read(dir.join("emboss.bmp")).unwrap()
+        );
+        // Nothing changed since: a second save must not stage emboss.bmp again.
+        let before = std::fs::read(dir.join("emboss.bmp")).unwrap();
+        app.safe_save_current_using(|tx| {
+            assert!(!tx.has_staged("emboss.bmp"));
+            std::mem::replace(tx, against_rome_maps::MapSaveTransaction::new("unused"))
+                .commit()
+                .map_err(|e| e.to_string())
+        });
+        assert_eq!(std::fs::read(dir.join("emboss.bmp")).unwrap(), before);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn safe_save_without_original_emboss_never_creates_one() {
+        let (dir, _) = emboss_fixture_dir("emboss_missing", false);
+        let mut app = emboss_app(&dir);
+        assert!(app.emboss.is_none());
+        edit_center_height(&mut app);
+        app.safe_save_current_using(|tx| {
+            assert!(tx.has_staged("boden.bmp"));
+            assert!(!tx.has_staged("emboss.bmp"));
+            std::mem::replace(tx, against_rome_maps::MapSaveTransaction::new("unused"))
+                .commit()
+                .map_err(|e| e.to_string())
+        });
+        assert!(!app.status_is_error, "{}", app.status_message);
+        assert!(!dir.join("emboss.bmp").exists());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn safe_save_collision_only_edit_leaves_emboss_untouched() {
+        let (dir, _) = emboss_fixture_dir("emboss_noop", true);
+        let original = std::fs::read(dir.join("emboss.bmp")).unwrap();
+        let mut app = emboss_app(&dir);
+        let terrain = app.session.as_mut().unwrap();
+        terrain
+            .paint_collision(0.5, 0.5, 0.5, CollisionBrushOp::Block)
+            .unwrap();
+        terrain.commit_stroke();
+        assert!(terrain.is_dirty());
+        app.safe_save_current_using(|tx| {
+            assert!(tx.has_staged("collision.bmp"));
+            assert!(!tx.has_staged("emboss.bmp"));
+            std::mem::replace(tx, against_rome_maps::MapSaveTransaction::new("unused"))
+                .commit()
+                .map_err(|e| e.to_string())
+        });
+        assert!(!app.status_is_error, "{}", app.status_message);
+        assert_eq!(std::fs::read(dir.join("emboss.bmp")).unwrap(), original);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn safe_save_emboss_rolls_back_with_boden_and_keeps_dirty_state() {
+        use against_rome_maps::TransactionFailurePoint as Fail;
+        for point in [
+            Fail::AfterPath("emboss.bmp".into()),
+            Fail::AfterPath("boden.bmp".into()),
+            Fail::BeforeFinalCommit,
+        ] {
+            let (dir, green) = emboss_fixture_dir("emboss_rollback", true);
+            let mut app = emboss_app(&dir);
+            edit_center_height(&mut app);
+            let edited = app.session.as_ref().unwrap().heights().to_vec();
+            let before = save_file_snapshot(&dir);
+            app.safe_save_current_using(|tx| {
+                assert!(tx.has_staged("emboss.bmp"));
+                let mut injected =
+                    std::mem::replace(tx, against_rome_maps::MapSaveTransaction::new("unused"))
+                        .with_injected_failure(point.clone(), "emboss injected failure");
+                injected.commit().map_err(|e| e.to_string())
+            });
+            assert!(app.status_is_error, "{}", app.status_message);
+            assert_eq!(save_file_snapshot(&dir), before, "{point:?}");
+            let terrain = app.session.as_ref().unwrap();
+            assert!(terrain.is_dirty() && terrain.can_undo());
+            let baseline = app.emboss.as_ref().unwrap();
+            assert_eq!(
+                baseline.session.baseline_heights(),
+                emboss_fixture_heights()
+            );
+            assert_eq!(baseline.session.saved_emboss(), Some(green.as_slice()));
+            assert!(baseline.session.heights_dirty(&edited));
+            // Retry commits both layers together.
+            app.safe_save_current();
+            assert!(!app.status_is_error, "{}", app.status_message);
+            let saved =
+                crate::bmp::BmpImage::parse(&std::fs::read(dir.join("emboss.bmp")).unwrap())
+                    .unwrap();
+            assert_ne!(saved.extract_green_channel(), green);
+            assert_eq!(load_map(&dir).unwrap().heights()[24], 120);
+            std::fs::remove_dir_all(dir).unwrap();
+        }
+    }
+
+    fn briefing_fixture_with_extras() -> String {
+        let mut table = against_rome_ambience::localization::BriefingTextTable::create_empty();
+        table.set_title1("Original");
+        table.set_briefing_text("Original briefing");
+        table.set_debriefing_win("Extra win text");
+        table.to_script_text()
+    }
+
+    #[test]
+    fn safe_save_staged_briefing_failure_leaves_no_terrain_ambience_or_briefing() {
+        use against_rome_maps::TransactionFailurePoint as Fail;
+        for point in [
+            Fail::AfterPath("TEXT/US/briefing.put".into()),
+            Fail::AfterPath("soundscape.sndz".into()),
+            Fail::BeforeFinalCommit,
+        ] {
+            // Fresh map: every staged artifact (terrain, boden.ini, SNDZ, briefing) is new.
+            let dir = temp_map_dir("briefing_rollback");
+            let mut app = EditorApp::initial_state();
+            app.session = Some(TerrainSession::create_blank(5, 32));
+            app.map_path_input = dir.display().to_string();
+            edit_save_terrain(&mut app);
+            app.ambience.profile.boden.waterlevel = 61.0;
+            app.ambience.briefing_title = "New title".into();
+            app.ambience.mark_dirty();
+            let before = save_file_snapshot(&dir);
+            app.safe_save_current_using(|tx| {
+                assert!(tx.has_staged("boden.bmp"));
+                assert!(tx.has_staged("boden.ini"));
+                assert!(tx.has_staged("soundscape.sndz"));
+                assert!(tx.has_staged("TEXT/US/briefing.put"));
+                let mut injected =
+                    std::mem::replace(tx, against_rome_maps::MapSaveTransaction::new("unused"))
+                        .with_injected_failure(point.clone(), "briefing stage failure");
+                injected.commit().map_err(|e| e.to_string())
+            });
+            assert!(app.status_is_error, "{}", app.status_message);
+            assert_eq!(save_file_snapshot(&dir), before, "{point:?}");
+            for rel in [
+                "boden.bmp",
+                "boden.ini",
+                "soundscape.sndz",
+                "TEXT/US/briefing.put",
+            ] {
+                assert!(!dir.join(rel).exists(), "{rel} left behind for {point:?}");
+            }
+            assert!(app.ambience.is_dirty());
+            assert!(app.session.as_ref().unwrap().is_dirty());
+            std::fs::remove_dir_all(dir).unwrap();
+        }
+    }
+
+    #[test]
+    fn safe_save_rejects_each_unsupported_dirty_panel_before_any_write() {
+        let unsupported_panels: [(usize, &str); 8] = [
+            (3, "EventGraph"),
+            (4, "Toolbox"),
+            (5, "Maps"),
+            (6, "Environment"),
+            (7, "Landscape"),
+            (8, "Packaging"),
+            (9, "Campaign"),
+            (10, "AI Planner"),
+        ];
+        for (panel, name) in unsupported_panels {
+            let dir = temp_map_dir("unsupported_save");
+            let mut app = EditorApp::initial_state();
+            app.map_path_input = dir.display().to_string();
+            pending_panel_edit(&mut app, panel, &dir);
+            edit_save_terrain(&mut app);
+            app.ambience.mark_dirty();
+            let before = save_file_snapshot(&dir);
+            let flags = pending_panel_dirty_flags(&app);
+            app.safe_save_current();
+            assert!(app.status_is_error);
+            assert!(app.status_message.contains("unsupported dirty panel state"));
+            assert!(app.status_message.contains(name), "{}", app.status_message);
+            assert_eq!(save_file_snapshot(&dir), before);
+            assert_eq!(pending_panel_dirty_flags(&app), flags);
+            assert!(app.session.as_ref().unwrap().is_dirty());
+            std::fs::remove_dir_all(dir).unwrap();
+        }
+    }
+
+    #[test]
+    fn safe_save_with_dirty_loaded_scenario_commits_bci_and_baseline() {
+        let dir = temp_map_dir("scenario_save_ok");
+        std::fs::create_dir_all(dir.join("SCRIPT")).unwrap();
+        std::fs::write(
+            dir.join("SCRIPT/ak_level.bci"),
+            against_rome_scenario::BciImage::idle().serialize(),
+        )
+        .unwrap();
+        let mut app = EditorApp::initial_state();
+        app.session = Some(TerrainSession::create_blank(5, 32));
+        app.map_path_input = dir.display().to_string();
+        app.scenario.load_session(&dir).unwrap();
+        app.scenario.open = true;
+        pending_panel_click(&mut app, &egui::Context::default(), 1, "新增事件");
+        assert!(app.scenario.dirty());
+
+        app.safe_save_current();
+
+        assert!(!app.status_is_error, "{}", app.status_message);
+        assert!(!app.scenario.dirty());
+        assert!(dir.join("arm_scenario.json").is_file());
+        assert!(dir.join("arm_start_camera.json").is_file());
+        assert!(dir.join("SCRIPT/ak_level.arm_original").is_file());
+        assert!(dir.join("SCRIPT/ak_level.bci").is_file());
+        assert!(std::fs::read_dir(dir.join("SCRIPT")).unwrap().any(|entry| {
+            entry
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .contains(".arm_backup.")
+        }));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn scenario_graph_only_edits_are_unsaved_and_safe_save_rejects_unapplied_graph() {
+        let dir = temp_map_dir("scenario_graph_dirty");
+        let mut app = EditorApp::initial_state();
+        app.map_path_input = dir.display().to_string();
+        app.scenario.graph_ui_mut().mark_dirty();
+        assert!(app.has_unsaved_changes());
+        assert!(pending_panel_dirty_flags(&app)[1]);
+        let before = save_file_snapshot(&dir);
+
+        app.safe_save_current();
+
+        assert!(app.status_is_error);
+        assert!(
+            app.status_message.contains("劇本尚未載入來源")
+                || app.status_message.contains("未套用"),
+            "{}",
+            app.status_message
+        );
+        assert_eq!(save_file_snapshot(&dir), before);
+        assert!(app.scenario.graph_ui().is_dirty());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn safe_save_with_dirty_loaded_textures_commits_boden_and_baseline() {
+        let dir = temp_map_dir("textures_save_ok");
+        let original = b"[Dimension]\n2\n[Texturen]\n4BA___51\n4BA___51\n4BA___51\n4BB___51\n";
+        std::fs::write(dir.join("boden.txt"), original).unwrap();
+        let mut app = EditorApp::initial_state();
+        app.session = Some(TerrainSession::create_blank(5, 32));
+        app.map_path_input = dir.display().to_string();
+        app.textures.load_session(&dir).unwrap();
+        let texture_session = app.textures.session_mut().unwrap();
+        assert!(texture_session.stamp_texture(0, 0, "4BB___51").is_some());
+        assert!(texture_session.commit_stroke());
+        assert!(app.textures.is_dirty());
+
+        app.safe_save_current();
+
+        assert!(!app.status_is_error, "{}", app.status_message);
+        assert!(!app.textures.is_dirty());
+        let saved = std::fs::read(dir.join("boden.txt")).unwrap();
+        assert_ne!(saved, original);
+        assert!(String::from_utf8_lossy(&saved).contains("4BB___51"));
+        assert!(std::fs::read_dir(&dir).unwrap().any(|entry| {
+            entry
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .starts_with("boden.txt.arm_backup.")
+        }));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn combined_scenario_and_texture_transaction_failure_restores_disk_and_dirty_state() {
+        use against_rome_maps::TransactionFailurePoint as Fail;
+        let dir = temp_map_dir("scenario_textures_rollback");
+        std::fs::create_dir_all(dir.join("SCRIPT")).unwrap();
+        std::fs::write(
+            dir.join("SCRIPT/ak_level.bci"),
+            against_rome_scenario::BciImage::idle().serialize(),
+        )
+        .unwrap();
+        let original_textures =
+            b"[Dimension]\n2\n[Texturen]\n4BA___51\n4BA___51\n4BA___51\n4BB___51\n";
+        std::fs::write(dir.join("boden.txt"), original_textures).unwrap();
+        let mut app = EditorApp::initial_state();
+        app.session = Some(TerrainSession::create_blank(5, 32));
+        app.map_path_input = dir.display().to_string();
+        app.scenario.load_session(&dir).unwrap();
+        app.scenario.open = true;
+        pending_panel_click(&mut app, &egui::Context::default(), 1, "新增事件");
+        app.textures.load_session(&dir).unwrap();
+        let texture_session = app.textures.session_mut().unwrap();
+        assert!(texture_session.stamp_texture(0, 0, "4BB___51").is_some());
+        assert!(texture_session.commit_stroke());
+        edit_save_terrain(&mut app);
+        let before_disk = save_file_snapshot(&dir);
+
+        app.safe_save_current_using(|tx| {
+            let mut injected =
+                std::mem::replace(tx, against_rome_maps::MapSaveTransaction::new("unused"))
+                    .with_injected_failure(
+                        Fail::BeforeFinalCommit,
+                        "scenario/texture rollback verification",
+                    );
+            injected.commit().map_err(|e| e.to_string())
+        });
+
+        assert!(app.status_is_error, "{}", app.status_message);
+        assert!(
+            app.status_message.contains("CleanlyRestored"),
+            "{}",
+            app.status_message
+        );
+        assert_eq!(save_file_snapshot(&dir), before_disk);
+        assert!(app.session.as_ref().unwrap().is_dirty());
+        assert!(app.scenario.dirty());
+        assert!(app.textures.is_dirty());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    const SCENE_SDL: &str = "[settlement]
+refpos=1000.0,50.0,2000.0
+
+[object0000]
+def=1700
+namedef=BauRomHau00_Haupthaus
+pos=100.00,10.00,100.00
+team=0
+angle=0.00
+";
+
+    fn scene_app(tag: &str) -> (EditorApp, PathBuf) {
+        let dir = temp_map_dir(tag).join("MAPS").join("ENDL_005");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join(against_rome_maps::CustomMapManifest::MARKER_FILE_NAME),
+            b"",
+        )
+        .unwrap();
+        std::fs::write(dir.join("Endlos_01_Siedlung01.sdl"), SCENE_SDL).unwrap();
+        let mut app = EditorApp::initial_state();
+        app.session = Some(TerrainSession::create_blank(5, 32));
+        app.map_path_input = dir.display().to_string();
+        app.loaded_map_path = Some(dir.clone());
+        app.scene.reset_session(Some(&dir));
+        (app, dir)
+    }
+
+    #[test]
+    fn safe_save_commits_scene_edits_and_clears_scene_dirty() {
+        let (mut app, dir) = scene_app("scene_save_ok");
+        assert!(!app.has_unsaved_changes() || app.session.as_ref().unwrap().is_dirty());
+        app.scene.set_team(0, 4).unwrap();
+        app.scene
+            .duplicate_object(0, 1, [5.0, 6.0, 7.0], Some(45.0))
+            .unwrap();
+        assert!(app.has_unsaved_changes());
+        assert!(app.require_clean_map_switch().is_err());
+
+        app.safe_save_current();
+
+        assert!(!app.status_is_error, "{}", app.status_message);
+        assert!(!app.scene.is_dirty());
+        let objects = against_rome_maps::SdlSceneCatalog::load_directory(&dir).unwrap();
+        assert_eq!(objects.len(), 2);
+        assert!(objects.iter().any(|o| o.team == 4));
+        assert!(objects.iter().any(|o| o.team == 1 && o.angle == Some(45.0)));
+        std::fs::remove_dir_all(dir.parent().unwrap().parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn safe_save_scene_failure_restores_files_and_keeps_scene_dirty_and_undo() {
+        use against_rome_maps::TransactionFailurePoint as Fail;
+        let (mut app, dir) = scene_app("scene_save_fail");
+        app.scene.set_team(0, 4).unwrap();
+        let before = save_file_snapshot(&dir);
+
+        app.safe_save_current_using(|tx| {
+            let mut injected =
+                std::mem::replace(tx, against_rome_maps::MapSaveTransaction::new("unused"))
+                    .with_injected_failure(Fail::BeforeFinalCommit, "scene rollback");
+            injected.commit().map_err(|e| e.to_string())
+        });
+
+        assert!(app.status_is_error, "{}", app.status_message);
+        assert!(
+            app.status_message.contains("CleanlyRestored"),
+            "{}",
+            app.status_message
+        );
+        assert_eq!(save_file_snapshot(&dir), before);
+        assert!(app.scene.is_dirty() && app.scene.can_undo());
+        std::fs::remove_dir_all(dir.parent().unwrap().parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn safe_save_dirty_scene_rejects_different_target_without_writes() {
+        let (mut app, dir) = scene_app("scene_target_a");
+        let other = temp_map_dir("scene_target_b");
+        app.scene.set_team(0, 4).unwrap();
+        app.map_path_input = other.display().to_string();
+
+        app.safe_save_current();
+
+        assert!(app.status_is_error, "{}", app.status_message);
+        assert!(
+            app.status_message.contains("differs"),
+            "{}",
+            app.status_message
+        );
+        assert!(app.scene.is_dirty());
+        assert_eq!(std::fs::read_dir(&other).unwrap().count(), 0);
+        std::fs::remove_dir_all(dir.parent().unwrap().parent().unwrap()).unwrap();
+        std::fs::remove_dir_all(other).unwrap();
+    }
+
+    #[test]
+    fn combined_scenario_and_texture_transaction_saves_both_and_clears_baselines() {
+        let dir = temp_map_dir("scenario_textures_save_ok");
+        std::fs::create_dir_all(dir.join("SCRIPT")).unwrap();
+        std::fs::write(
+            dir.join("SCRIPT/ak_level.bci"),
+            against_rome_scenario::BciImage::idle().serialize(),
+        )
+        .unwrap();
+        let original_textures =
+            b"[Dimension]\n2\n[Texturen]\n4BA___51\n4BA___51\n4BA___51\n4BB___51\n";
+        std::fs::write(dir.join("boden.txt"), original_textures).unwrap();
+        let mut app = EditorApp::initial_state();
+        app.session = Some(TerrainSession::create_blank(5, 32));
+        app.map_path_input = dir.display().to_string();
+        app.scenario.load_session(&dir).unwrap();
+        app.scenario.open = true;
+        pending_panel_click(&mut app, &egui::Context::default(), 1, "新增事件");
+        app.textures.load_session(&dir).unwrap();
+        let texture_session = app.textures.session_mut().unwrap();
+        assert!(texture_session.stamp_texture(0, 0, "4BB___51").is_some());
+        assert!(texture_session.commit_stroke());
+        edit_save_terrain(&mut app);
+
+        app.safe_save_current();
+
+        assert!(!app.status_is_error, "{}", app.status_message);
+        assert!(!app.session.as_ref().unwrap().is_dirty());
+        assert!(!app.scenario.dirty());
+        assert!(!app.textures.is_dirty());
+        assert!(dir.join("arm_scenario.json").is_file());
+        assert!(dir.join("arm_start_camera.json").is_file());
+        assert!(dir.join("SCRIPT/ak_level.arm_original").is_file());
+        assert!(dir.join("SCRIPT/ak_level.bci").is_file());
+        assert_ne!(
+            std::fs::read(dir.join("boden.txt")).unwrap(),
+            original_textures
+        );
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn safe_save_with_dirty_placement_success_clears_dirty_and_roundtrips() {
+        let dir = temp_map_dir("placement_save_ok");
+        pending_placement_fixture(&dir);
+        let mut app = EditorApp::initial_state();
+        app.session = Some(TerrainSession::create_blank(5, 32));
+        app.map_path_input = dir.display().to_string();
+
+        // 1. Explicitly load Placement session and open window
+        app.placement.open = true;
+        app.placement.load_session(&dir).unwrap();
+        assert!(app.placement.is_loaded());
+        assert!(!app.placement.is_dirty());
+
+        // 2. Edit an object: snap to tile modifies position.dat
+        let object_before = app.placement.objects()[0].clone();
+        app.placement
+            .select_object(Some((object_before.slot, object_before.uid)));
+        let ctx = egui::Context::default();
+        pending_panel_click(&mut app, &ctx, 0, "Snap to tile");
+        assert!(app.placement.is_dirty());
+        assert!(app.has_unsaved_changes());
+        let pos_edited = app.placement.objects()[0].position;
+        assert_ne!(pos_edited, object_before.position);
+
+        // 3. Safe save current app
+        app.safe_save_current();
+        assert!(!app.status_is_error, "{}", app.status_message);
+        assert!(app.status_message.starts_with("Saved safely"));
+        assert!(!app.placement.is_dirty());
+        assert!(!app.has_unsaved_changes());
+
+        // 4. Roundtrip reload: new PlacementUi instance loads the saved map
+        let mut reloaded = PlacementUi::default();
+        reloaded.load_session(&dir).unwrap();
+        assert!(!reloaded.is_dirty());
+        let reloaded_objs = reloaded.objects();
+        assert_eq!(reloaded_objs.len(), 3);
+        assert_eq!(reloaded_objs[0].position, pos_edited);
+        assert_eq!(reloaded_objs[0].slot, object_before.slot);
+        assert_eq!(reloaded_objs[0].uid, object_before.uid);
+
+        // 5. Verify PFIL container encoding roundtrip
+        // Replace position.dat with a synthetic PFIL container, edit, and safe_save
+        let orig_pos_bytes = std::fs::read(dir.join("DATA/position.dat")).unwrap();
+        let mut pfil_pos = vec![0u8; 64];
+        pfil_pos[..4].copy_from_slice(b"PFIL");
+        pfil_pos[16..20].copy_from_slice(&(orig_pos_bytes.len() as u32).to_le_bytes());
+        for part in orig_pos_bytes.chunks(8) {
+            let ctrl = ((1u16 << part.len()) - 1) as u8;
+            pfil_pos.push(ctrl);
+            pfil_pos.extend_from_slice(part);
+        }
+        std::fs::write(dir.join("DATA/position.dat"), &pfil_pos).unwrap();
+
+        // Reload PFIL placement into app, edit it, and safe_save
+        app.placement.load_session(&dir).unwrap();
+        assert!(!app.placement.is_dirty());
+        app.placement.select_object(Some((0, 1)));
+        app.placement
+            .set_delta(["10".into(), "0".into(), "0".into()]);
+        pending_panel_click(&mut app, &ctx, 0, "Move family");
+        assert!(app.placement.is_dirty());
+        let pos_pfil_edited = app.placement.objects()[0].position;
+
+        app.safe_save_current();
+        assert!(!app.status_is_error, "{}", app.status_message);
+        assert!(!app.placement.is_dirty());
+
+        // Verify disk position.dat still has PFIL magic and decodes properly
+        let saved_disk_pfil = std::fs::read(dir.join("DATA/position.dat")).unwrap();
+        assert!(saved_disk_pfil.starts_with(b"PFIL"));
+        let mut pfil_reloaded = PlacementUi::default();
+        pfil_reloaded.load_session(&dir).unwrap();
+        assert_eq!(pfil_reloaded.objects()[0].position, pos_pfil_edited);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn safe_save_placement_failure_restores_disk_bytes_and_preserves_dirty_undo() {
+        use against_rome_maps::TransactionFailurePoint as Fail;
+        let dir = temp_map_dir("placement_fail_restore");
+        pending_placement_fixture(&dir);
+        let mut app = EditorApp::initial_state();
+        app.session = Some(TerrainSession::create_blank(5, 32));
+        app.map_path_input = dir.display().to_string();
+
+        app.placement.open = true;
+        app.placement.load_session(&dir).unwrap();
+        let before_disk = save_file_snapshot(&dir);
+
+        // Edit placement
+        app.placement.select_object(Some((0, 1)));
+        let ctx = egui::Context::default();
+        pending_panel_click(&mut app, &ctx, 0, "Snap to tile");
+        assert!(app.placement.is_dirty());
+        let undo_count = app.placement.undo_depth();
+        assert!(undo_count > 0);
+
+        // Inject transaction failure at BeforeFinalCommit
+        app.safe_save_current_using(|tx| {
+            let mut injected =
+                std::mem::replace(tx, against_rome_maps::MapSaveTransaction::new("unused"))
+                    .with_injected_failure(Fail::BeforeFinalCommit, "simulated disk failure");
+            injected.commit().map_err(|e| e.to_string())
+        });
+
+        assert!(app.status_is_error, "{}", app.status_message);
+        assert!(
+            app.status_message.contains("CleanlyRestored"),
+            "{}",
+            app.status_message
+        );
+
+        // All disk files restored to before-edit bytes
+        assert_eq!(save_file_snapshot(&dir), before_disk);
+
+        // In-memory placement state remains dirty and undo stack is completely preserved
+        assert!(app.placement.is_dirty());
+        assert_eq!(app.placement.undo_depth(), undo_count);
+        assert!(app.has_unsaved_changes());
+
+        // Undo successfully rolls back the edit in memory
+        app.placement.undo().unwrap();
+        assert_eq!(app.placement.undo_depth(), undo_count - 1);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn safe_save_placement_dirty_fails_closed_when_another_panel_is_dirty() {
+        let dir = temp_map_dir("placement_other_dirty_fails");
+        pending_placement_fixture(&dir);
+        let mut app = EditorApp::initial_state();
+        app.session = Some(TerrainSession::create_blank(5, 32));
+        app.map_path_input = dir.display().to_string();
+
+        app.placement.open = true;
+        app.placement.load_session(&dir).unwrap();
+        app.placement.select_object(Some((0, 1)));
+        let ctx = egui::Context::default();
+        pending_panel_click(&mut app, &ctx, 0, "Snap to tile");
+        assert!(app.placement.is_dirty());
+
+        // Dirty another panel (Scenario)
+        app.scenario.open = true;
+        pending_panel_click(&mut app, &ctx, 1, "新增事件");
+        assert!(app.scenario.dirty());
+
+        let before_disk = save_file_snapshot(&dir);
+        app.safe_save_current();
+
+        assert!(app.status_is_error);
+        assert!(
+            app.status_message.contains("劇本尚未載入來源"),
+            "{}",
+            app.status_message
+        );
+
+        // Disk unchanged, dirty state kept
+        assert_eq!(save_file_snapshot(&dir), before_disk);
+        assert!(app.placement.is_dirty());
+        assert!(app.scenario.dirty());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn safe_save_placement_fail_closed_on_unsupported_states() {
+        let dir_a = temp_map_dir("placement_state_a");
+        let dir_b = temp_map_dir("placement_state_b");
+        pending_placement_fixture(&dir_a);
+        pending_placement_fixture(&dir_b);
+
+        let mut app = EditorApp::initial_state();
+        app.session = Some(TerrainSession::create_blank(5, 32));
+        app.map_path_input = dir_b.display().to_string();
+
+        // 1. Mismatched map path: placement loaded from dir_a, saving to dir_b
+        app.placement.open = true;
+        app.placement.load_session(&dir_a).unwrap();
+        app.placement.select_object(Some((0, 1)));
+        let ctx = egui::Context::default();
+        pending_panel_click(&mut app, &ctx, 0, "Snap to tile");
+        assert!(app.placement.is_dirty());
+
+        let before_a = save_file_snapshot(&dir_a);
+        let before_b = save_file_snapshot(&dir_b);
+        app.safe_save_current();
+
+        assert!(app.status_is_error);
+        assert!(
+            app.status_message
+                .contains("cannot be saved to different map path"),
+            "{}",
+            app.status_message
+        );
+        assert_eq!(save_file_snapshot(&dir_a), before_a);
+        assert_eq!(save_file_snapshot(&dir_b), before_b);
+        assert!(app.placement.is_dirty());
+
+        // 2. Native retail pool guard: if DATA/objects.dat is retail pool format (stride 56)
+        let retail_dir = temp_map_dir("placement_retail");
+        pending_placement_fixture(&retail_dir);
+        let count = 2u32;
+        let mut retail_objects = vec![0u8; 8 + count as usize * 56];
+        retail_objects[..4].copy_from_slice(&1u32.to_le_bytes());
+        retail_objects[4..8].copy_from_slice(&count.to_le_bytes());
+        std::fs::write(retail_dir.join("DATA/objects.dat"), &retail_objects).unwrap();
+
+        app.map_path_input = retail_dir.display().to_string();
+        app.safe_save_current();
+        assert!(app.status_is_error);
+        assert!(app.placement.is_dirty());
+
+        let _ = std::fs::remove_dir_all(&dir_a);
+        let _ = std::fs::remove_dir_all(&dir_b);
+        let _ = std::fs::remove_dir_all(&retail_dir);
+    }
+
+    #[test]
+    fn safe_save_serialization_and_recovery_preflights_never_create_destination() {
+        let root = temp_map_dir("serialization_save");
+        let dir = root.join("not-created");
+        let mut app = EditorApp::initial_state();
+        app.map_path_input = dir.display().to_string();
+        app.ambience.profile.boden.waterlevel = f32::NAN;
+        app.ambience.mark_dirty();
+        app.safe_save_current();
+        assert!(app.status_is_error);
+        assert!(app.status_message.contains("boden.ini validation"));
+        assert!(!dir.exists());
+        assert!(app.ambience.is_dirty());
+        app.ambience.profile.boden.waterlevel = 48.0;
+        app.ambience.global_volume = f32::NAN;
+        app.safe_save_current();
+        assert!(app.status_is_error);
+        assert!(app.status_message.contains("soundscape.sndz serialization"));
+        assert!(!dir.exists());
+        app.ambience.global_volume = 0.6;
+        app.ambience.profile.wind_speed = 29.0;
+        app.safe_save_current();
+        assert!(app.status_is_error);
+        assert!(app.status_message.contains("wind_speed"));
+        assert!(!dir.exists());
+        app.ambience.profile.wind_speed =
+            against_rome_ambience::atmosphere::WeatherPresets::create_clear_sky().wind_speed;
+        std::fs::create_dir(&dir).unwrap();
+        std::fs::write(dir.join("precious.tmp_tx.evidence"), b"do not delete").unwrap();
+        let before = save_file_snapshot(&dir);
+        app.safe_save_current();
+        assert!(app.status_is_error);
+        assert!(app.status_message.contains("recovery/lock path"));
+        assert_eq!(save_file_snapshot(&dir), before);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn safe_save_tiered_path_policy_enforcement() {
+        use against_rome_maps::CustomMapManifest;
+
+        let root = temp_map_dir("tiered_save_policy");
+
+        // 1. External standalone map project: arbitrary name, no marker, safe_save succeeds
+        let ext_dir = root.join("independent_projects").join("my_creative_map");
+        let mut app_ext = EditorApp::initial_state();
+        app_ext.session = Some(TerrainSession::create_blank(5, 32));
+        app_ext.map_path_input = ext_dir.display().to_string();
+        app_ext.safe_save_current();
+        assert!(!app_ext.status_is_error, "{}", app_ext.status_message);
+        assert!(ext_dir.join("boden.bmp").is_file());
+        assert!(ext_dir.join("collision.bmp").is_file());
+
+        // 2. Standard install path: Program Files (x86)\Against Rome
+        let std_game = root.join("Program Files (x86)").join("Against Rome");
+        let std_maps = std_game.join("MAPS");
+        std::fs::create_dir_all(&std_maps).unwrap();
+
+        // 2a. Unmarked ENDL_005 rejected
+        let std_endl_005 = std_maps.join("ENDL_005");
+        let mut app_unmarked = EditorApp::initial_state();
+        app_unmarked.session = Some(TerrainSession::create_blank(5, 32));
+        app_unmarked.map_path_input = std_endl_005.display().to_string();
+        app_unmarked.safe_save_current();
+        assert!(app_unmarked.status_is_error);
+        assert!(
+            app_unmarked.status_message.contains("安全拒絕")
+                || app_unmarked.status_message.contains("Security Guard")
+        );
+
+        // 2b. Marker-backed ENDL_005 succeeds
+        std::fs::create_dir_all(&std_endl_005).unwrap();
+        let marker_json =
+            r#"{"Slot":5,"SourceSlot":1,"CreatedAt":"2026-10-18T00:00:00Z","ToolVersion":"1.0.0"}"#;
+        std::fs::write(
+            std_endl_005.join(CustomMapManifest::MARKER_FILE_NAME),
+            marker_json,
+        )
+        .unwrap();
+
+        let mut app_marked = EditorApp::initial_state();
+        app_marked.session = Some(TerrainSession::create_blank(5, 32));
+        app_marked.map_path_input = std_endl_005.display().to_string();
+        app_marked.safe_save_current();
+        assert!(!app_marked.status_is_error, "{}", app_marked.status_message);
+        assert!(std_endl_005.join("boden.bmp").is_file());
+
+        // 3. Non-standard install path: D:\Games\Against Rome
+        let nonstd_game = root.join("Games").join("Against Rome");
+        let nonstd_maps = nonstd_game.join("MAPS");
+        std::fs::create_dir_all(&nonstd_maps).unwrap();
+        std::fs::write(nonstd_game.join("Against_Rome.exe"), b"GAME_EXE").unwrap();
+
+        // 3a. Retail ENDL_001 in non-standard install rejected
+        let nonstd_endl_001 = nonstd_maps.join("ENDL_001");
+        std::fs::create_dir_all(&nonstd_endl_001).unwrap();
+        let mut app_endl_001 = EditorApp::initial_state();
+        app_endl_001.session = Some(TerrainSession::create_blank(5, 32));
+        app_endl_001.map_path_input = nonstd_endl_001.display().to_string();
+        app_endl_001.safe_save_current();
+        assert!(app_endl_001.status_is_error);
+        assert!(
+            app_endl_001.status_message.contains("安全拒絕")
+                || app_endl_001.status_message.contains("Security Guard")
+        );
+        assert!(!nonstd_endl_001.join("boden.bmp").exists());
+
+        // 3b. Retail TUTOR_01 in non-standard install rejected
+        let nonstd_tutor = nonstd_maps.join("TUTOR_01");
+        std::fs::create_dir_all(&nonstd_tutor).unwrap();
+        let mut app_tutor = EditorApp::initial_state();
+        app_tutor.session = Some(TerrainSession::create_blank(5, 32));
+        app_tutor.map_path_input = nonstd_tutor.display().to_string();
+        app_tutor.safe_save_current();
+        assert!(app_tutor.status_is_error);
+        assert!(!nonstd_tutor.join("boden.bmp").exists());
+
+        // 3c. Marker-backed ENDL_007 in non-standard install succeeds
+        let nonstd_endl_007 = nonstd_maps.join("ENDL_007");
+        std::fs::create_dir_all(&nonstd_endl_007).unwrap();
+        let marker_007_json =
+            r#"{"Slot":7,"SourceSlot":1,"CreatedAt":"2026-10-18T00:00:00Z","ToolVersion":"1.0.0"}"#;
+        std::fs::write(
+            nonstd_endl_007.join(CustomMapManifest::MARKER_FILE_NAME),
+            marker_007_json,
+        )
+        .unwrap();
+
+        let mut app_007 = EditorApp::initial_state();
+        app_007.session = Some(TerrainSession::create_blank(5, 32));
+        app_007.map_path_input = nonstd_endl_007.display().to_string();
+        app_007.safe_save_current();
+        assert!(!app_007.status_is_error, "{}", app_007.status_message);
+        assert!(nonstd_endl_007.join("boden.bmp").is_file());
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    fn pending_placement_fixture(map: &Path) {
+        use against_rome_placement::{COLUMNS, SEGMENTS};
+        use std::fs;
+        let data = map.join("DATA");
+        fs::create_dir_all(&data).unwrap();
+        let n = 3usize;
+        let mut objects = vec![0u8; 16 + n * (79 + COLUMNS.iter().sum::<usize>())];
+        objects[..4].copy_from_slice(&1u32.to_le_bytes());
+        objects[4..8].copy_from_slice(&(n as u32).to_le_bytes());
+        objects[8..12].copy_from_slice(&30u32.to_le_bytes());
+        objects[12..16].copy_from_slice(&30u32.to_le_bytes());
+        for slot in 0..n {
+            let r = 16 + slot * 79;
+            objects[r] = 1;
+            objects[r + 3..r + 7].copy_from_slice(&(slot as u32 + 1).to_le_bytes());
+            for offset in [67, 69] {
+                objects[r + offset..r + offset + 2].copy_from_slice(&(slot as u16).to_le_bytes());
+            }
+            for offset in [71, 73, 77] {
+                objects[r + offset..r + offset + 2].fill(255);
+            }
+            for col in 0..18 {
+                let offset =
+                    16 + n * 79 + n * COLUMNS[..col].iter().sum::<usize>() + slot * COLUMNS[col];
+                if COLUMNS[col] == 2 {
+                    objects[offset..offset + 2].fill(255);
+                }
+                if col == 1 {
+                    objects[offset..offset + 2].copy_from_slice(&(slot as u16).to_le_bytes());
+                }
+            }
+        }
+        let mut position = vec![0u8; 8 + n * 17];
+        position[..4].copy_from_slice(&1u32.to_le_bytes());
+        position[4..8].copy_from_slice(&(n as u32).to_le_bytes());
+        for slot in 0..n {
+            position[8 + slot * 17] = 1;
+            position[9 + slot * 17..13 + slot * 17]
+                .copy_from_slice(&(slot as f32 * 20.0 + 0.5).to_le_bytes());
+        }
+        let mut objdata = vec![0u8; 8 + n * SEGMENTS.iter().sum::<usize>()];
+        objdata[..4].copy_from_slice(&1u32.to_le_bytes());
+        objdata[4..8].copy_from_slice(&(n as u32).to_le_bytes());
+        for (name, bytes) in [
+            ("objects", objects),
+            ("position", position),
+            ("objdata", objdata),
+        ] {
+            fs::write(data.join(format!("{name}.dat")), bytes).unwrap();
+        }
+    }
+
+    // Drive public panel UI where loading/editing has no programmatic entry point.
+    fn pending_panel_frame(
+        app: &mut EditorApp,
+        ctx: &egui::Context,
+        panel: usize,
+        events: Vec<egui::Event>,
+    ) -> egui::FullOutput {
+        ctx.run(
+            egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, egui::vec2(1800.0, 1400.0))),
+                events,
+                ..Default::default()
+            },
+            |ctx| match panel {
+                0 => app.placement.show(ctx),
+                1 => app.scenario.show(ctx),
+                2 => app.textures.show(ctx),
+                4 => app.toolbox.show(ctx),
+                _ => unreachable!(),
+            },
+        )
+    }
+
+    fn pending_panel_click_at(app: &mut EditorApp, ctx: &egui::Context, panel: usize, pos: Pos2) {
+        for pressed in [true, false] {
+            pending_panel_frame(
+                app,
+                ctx,
+                panel,
+                vec![
+                    egui::Event::PointerMoved(pos),
+                    egui::Event::PointerButton {
+                        pos,
+                        button: egui::PointerButton::Primary,
+                        pressed,
+                        modifiers: egui::Modifiers::NONE,
+                    },
+                ],
+            );
+        }
+    }
+
+    fn pending_panel_label(
+        app: &mut EditorApp,
+        ctx: &egui::Context,
+        panel: usize,
+        label: &str,
+    ) -> Rect {
+        // Settle the window's first-frame sizing before locating painted text.
+        pending_panel_frame(app, ctx, panel, vec![]);
+        let output = pending_panel_frame(app, ctx, panel, vec![]);
+        output
+            .shapes
+            .iter()
+            .find_map(|s| match &s.shape {
+                egui::epaint::Shape::Text(t) if t.galley.text() == label => {
+                    Some(Rect::from_min_size(t.pos, t.galley.size()))
+                }
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("panel {panel}: missing {label}"))
+    }
+
+    fn pending_panel_click(app: &mut EditorApp, ctx: &egui::Context, panel: usize, label: &str) {
+        let pos = pending_panel_label(app, ctx, panel, label).center();
+        pending_panel_click_at(app, ctx, panel, pos);
+    }
+
+    fn pending_panel_path(
+        app: &mut EditorApp,
+        ctx: &egui::Context,
+        panel: usize,
+        label: &str,
+        path: &Path,
+    ) {
+        let rect = pending_panel_label(app, ctx, panel, label);
+        // These labels immediately precede their single-line path field.
+        pending_panel_click_at(
+            app,
+            ctx,
+            panel,
+            Pos2::new(rect.left() + 40.0, rect.bottom() + 12.0),
+        );
+        pending_panel_frame(
+            app,
+            ctx,
+            panel,
+            vec![egui::Event::Text(path.display().to_string())],
+        );
+    }
+
+    struct PendingPanelTemp(PathBuf);
+    impl Drop for PendingPanelTemp {
+        fn drop(&mut self) {
+            std::fs::remove_dir_all(&self.0).unwrap();
+        }
+    }
+
+    fn pending_panel_dirty_flags(app: &EditorApp) -> [bool; 12] {
+        [
+            app.placement.is_dirty(),
+            app.scenario.dirty() || app.scenario.graph_ui().is_dirty(),
+            app.textures.is_dirty(),
+            app.event_graph.is_dirty(),
+            app.toolbox.is_dirty(),
+            app.maps.is_dirty(),
+            app.environment.is_dirty(),
+            app.landscape.is_dirty(),
+            app.packaging.is_dirty(),
+            app.campaign.is_dirty(),
+            app.ai_planner.is_dirty(),
+            app.ambience.is_dirty(),
+        ]
+    }
+
+    fn pending_panel_edit(app: &mut EditorApp, panel: usize, dir: &Path) {
+        let ctx = egui::Context::default();
+        match panel {
+            0 => {
+                pending_placement_fixture(dir);
+                app.placement.open = true;
+                pending_panel_path(app, &ctx, panel, "MAP 完整路徑（包含 DATA 的資料夾）", dir);
+                pending_panel_click(app, &ctx, panel, "Load DATA");
+                assert!(app.placement.is_loaded());
+                let object = app.placement.objects()[0].clone();
+                app.placement.select_object(Some((object.slot, object.uid)));
+                pending_panel_click(app, &ctx, panel, "Snap to tile");
+                assert_ne!(app.placement.objects()[0].position, object.position);
+            }
+            1 => {
+                app.scenario.open = true;
+                pending_panel_click(app, &ctx, panel, "新增事件");
+                assert_eq!(app.scenario.document().events.len(), 1);
+            }
+            2 => {
+                std::fs::write(
+                    dir.join("boden.txt"),
+                    b"[Dimension]\n2\n[Texturen]\n4BA___51\n4BA___51\n4BA___51\n4BB___51\n",
+                )
+                .unwrap();
+                app.textures.open = true;
+                pending_panel_path(
+                    app,
+                    &ctx,
+                    panel,
+                    "MAP 資料夾（boden.txt）；材質保存與地形 / DATA 分開。",
+                    dir,
+                );
+                pending_panel_click(app, &ctx, panel, "載入材質層");
+                let session = app.textures.session_mut().expect("loaded texture session");
+                assert!(session.stamp_texture(0, 0, "4BB___51").is_some());
+                assert!(session.commit_stroke());
+            }
+            3 => {
+                app.event_graph.graph.add_node(
+                    crate::event_graph::model::GraphNode::new_message_action("guard regression"),
+                );
+                app.event_graph.mark_dirty();
+            }
+            4 => {
+                let save = dir.join("SAVE/SAVE_001");
+                std::fs::create_dir_all(&save).unwrap();
+                std::fs::write(
+                    save.join("save.ini"),
+                    b"[titel]\nGuard\n[orglevelname]\nENDL_000\n",
+                )
+                .unwrap();
+                app.toolbox.open_save_manager();
+                pending_panel_path(app, &ctx, panel, "Game root", dir);
+                pending_panel_path(app, &ctx, panel, "Backups root", &dir.join("backups"));
+                pending_panel_click(app, &ctx, panel, "Scan saves / backups");
+                pending_panel_click(
+                    app,
+                    &ctx,
+                    panel,
+                    "SAVE_001 | Guard | ENDL_000 | parsed=true",
+                );
+                app.toolbox
+                    .review_save(crate::toolbox::SaveAction::Backup)
+                    .unwrap();
+            }
+            5 => app.maps.mark_dirty(),
+            6 => app.environment.mark_dirty(),
+            7 => app.landscape.mark_dirty(),
+            8 => app.packaging.mark_dirty(),
+            9 => app.campaign.mark_dirty(),
+            10 => app.ai_planner.mark_dirty(),
+            11 => app.ambience.mark_dirty(),
+            _ => unreachable!(),
+        }
+    }
+
+    // Capture session identity, editable documents, history flags and switch-related app state.
+    fn map_switch_snapshot(app: &EditorApp) -> Vec<String> {
+        let terrain = app.session.as_ref().unwrap();
+        vec![
+            format!(
+                "{:?}",
+                (
+                    terrain as *const TerrainSession,
+                    terrain.vertex_size,
+                    terrain.collision_size,
+                    terrain.heights(),
+                    terrain.collision(),
+                    terrain.is_dirty(),
+                    terrain.can_undo(),
+                    terrain.can_redo()
+                )
+            ),
+            format!(
+                "{:?}",
+                (
+                    terrain.raw_boden_bmp.as_ref().map(|b| b.encode_bmp()),
+                    terrain.raw_collision_bmp.as_ref().map(|b| b.encode_bmp())
+                )
+            ),
+            format!(
+                "{:?}",
+                (
+                    &app.map_path_input,
+                    &app.status_message,
+                    app.status_is_error,
+                    app.height_step,
+                    app.water_surface,
+                    app.water_bed,
+                    app.texture_dirty,
+                    app.is_painting,
+                    app.close_allowed,
+                    app.view_mode,
+                    app.pan,
+                    app.zoom
+                )
+            ),
+            format!(
+                "{:?}",
+                app.pending_action.as_ref().map(|a| match a {
+                    PendingAction::Load(p) => format!("load:{}", p.display()),
+                    PendingAction::Blank(s) => format!("blank:{s}"),
+                    PendingAction::BuildBlank(intent) => format!(
+                        "build_blank:{}:{}",
+                        intent.game_path.display(),
+                        intent.spec.target_slot
+                    ),
+                    PendingAction::Close => "close".into(),
+                })
+            ),
+            format!("{:?}", pending_panel_dirty_flags(app)),
+            format!("{:?}", app.placement.objects()),
+            serde_json::to_string(app.scenario.document()).unwrap(),
+            format!("{:?}", app.textures.session_textures()),
+            format!("{:?}", app.event_graph.graph),
+            app.toolbox.status().to_owned(),
+            serde_json::to_string(&app.ambience.profile).unwrap(),
+            format!(
+                "{:?}",
+                (
+                    &app.ambience.briefing_title,
+                    &app.ambience.briefing_body,
+                    &app.ambience.status_message,
+                    app.ambience.status_is_error
+                )
+            ),
+        ]
+    }
+
+    #[test]
+    fn public_map_switch_apis_reject_each_dirty_session_without_changing_app() {
+        for dirty_kind in 0..13 {
+            let dir = PendingPanelTemp(temp_map_dir("public_switch"));
+            let mut app = EditorApp::initial_state();
+            if dirty_kind == 12 {
+                app.session
+                    .as_mut()
+                    .unwrap()
+                    .apply_height_changes(&[SampleChange {
+                        index: 0,
+                        before: 32,
+                        after: 71,
+                    }]);
+                assert!(app.session.as_ref().unwrap().is_dirty());
+                assert_eq!(pending_panel_dirty_flags(&app), [false; 12]);
+            } else {
+                pending_panel_edit(&mut app, dirty_kind, &dir.0);
+                let mut expected = [false; 12];
+                expected[dirty_kind] = true;
+                assert_eq!(pending_panel_dirty_flags(&app), expected);
+                assert!(!app.session.as_ref().unwrap().is_dirty());
+            }
+            app.map_path_input = dir.0.to_string_lossy().into_owned();
+            app.status_message = "retain current status".into();
+            app.texture_dirty = false;
+            app.pending_action = Some(PendingAction::Blank(193));
+            let before = map_switch_snapshot(&app);
+            let err = app
+                .set_loaded_map(
+                    dir.0.join("replacement"),
+                    TerrainSession::create_blank(193, 99),
+                )
+                .unwrap_err();
+            assert!(err.contains("unsaved changes"), "{dirty_kind}: {err}");
+            assert_eq!(map_switch_snapshot(&app), before, "dirty kind {dirty_kind}");
+
+            // Even an invalid root/spec must fail at the dirty guard, before builder validation.
+            let game = dir.0.join("missing-game");
+            let spec = against_rome_maps::blank_builder::BlankMapSpec::new("ENDL_000", 7, "Guard");
+            let err = app
+                .create_blank_map(&game, &spec)
+                .err()
+                .expect("dirty build rejected");
+            assert!(err.contains("unsaved changes"), "{dirty_kind}: {err}");
+            assert_eq!(map_switch_snapshot(&app), before, "dirty kind {dirty_kind}");
+            assert!(!game.exists());
+        }
+    }
+
+    #[test]
+    fn public_map_switch_rejects_dirty_panel_without_terrain() {
+        let dir = PendingPanelTemp(temp_map_dir("public_no_terrain"));
+        let mut app = EditorApp::initial_state();
+        app.session = None;
+        app.ambience
+            .load_preset(against_rome_ambience::atmosphere::WeatherPresets::STORM_ID);
+        assert!(app.ambience.is_dirty());
+        let profile = serde_json::to_vec(&app.ambience.profile).unwrap();
+        let status = app.status_message.clone();
+        assert!(app
+            .set_loaded_map(dir.0.clone(), TerrainSession::create_blank(193, 77))
+            .unwrap_err()
+            .contains("unsaved changes"));
+        let spec = against_rome_maps::blank_builder::BlankMapSpec::new("ENDL_000", 7, "Guard");
+        assert!(app
+            .create_blank_map(&dir.0, &spec)
+            .err()
+            .unwrap()
+            .contains("unsaved changes"));
+        assert!(app.session.is_none());
+        assert!(app.map_path_input.is_empty());
+        assert_eq!(app.status_message, status);
+        assert!(!app.status_is_error);
+        assert!(app.ambience.is_dirty());
+        assert_eq!(serde_json::to_vec(&app.ambience.profile).unwrap(), profile);
+        assert_eq!(std::fs::read_dir(&dir.0).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn public_set_loaded_map_accepts_clean_session() {
+        let dir = PendingPanelTemp(temp_map_dir("public_clean"));
+        std::fs::write(
+            dir.0.join("boden.ini"),
+            b"[Heightmapstep]\n2.0\n[Waterlevel]\n30.0\n",
+        )
+        .unwrap();
+        let mut app = EditorApp::initial_state();
+        app.set_loaded_map(dir.0.clone(), TerrainSession::create_blank(193, 77))
+            .unwrap();
+        assert_eq!(app.session.as_ref().unwrap().vertex_size, 193);
+        assert_eq!(app.session.as_ref().unwrap().heights()[0], 77);
+        assert_eq!(app.map_path_input, dir.0.to_string_lossy());
+        assert_eq!(app.height_step, 2.0);
+        assert_eq!(app.water_surface, 15.0);
+        assert!(!app.status_is_error, "{}", app.status_message);
+        assert!(!app.has_unsaved_changes());
+    }
+
+    #[test]
+    fn ui_explicit_discard_still_loads_over_dirty_sessions() {
+        let dir = PendingPanelTemp(temp_map_dir("discard_load"));
+        let mut terrain = TerrainSession::create_blank(193, 77);
+        safe_save_map(&dir.0, &mut terrain).unwrap();
+        for terrain_dirty in [false, true] {
+            let mut app = EditorApp::initial_state();
+            if terrain_dirty {
+                app.session
+                    .as_mut()
+                    .unwrap()
+                    .apply_height_changes(&[SampleChange {
+                        index: 0,
+                        before: 32,
+                        after: 71,
+                    }]);
+            } else {
+                pending_panel_edit(&mut app, 1, &dir.0);
+            }
+            app.pending_action = Some(PendingAction::Load(dir.0.clone()));
+            let ctx = egui::Context::default();
+            let _ = ctx.run(Default::default(), |ctx| app.handle_pending_action(ctx));
+            let output = ctx.run(Default::default(), |ctx| app.handle_pending_action(ctx));
+            let pos = output
+                .shapes
+                .iter()
+                .find_map(|s| match &s.shape {
+                    egui::epaint::Shape::Text(t)
+                        if t.galley.text() == "Discard unsaved changes" =>
+                    {
+                        Some(Rect::from_min_size(t.pos, t.galley.size()).center())
+                    }
+                    _ => None,
+                })
+                .expect("discard button");
+            for pressed in [true, false] {
+                let _ = ctx.run(
+                    egui::RawInput {
+                        events: vec![
+                            egui::Event::PointerMoved(pos),
+                            egui::Event::PointerButton {
+                                pos,
+                                button: egui::PointerButton::Primary,
+                                pressed,
+                                modifiers: egui::Modifiers::NONE,
+                            },
+                        ],
+                        ..Default::default()
+                    },
+                    |ctx| app.handle_pending_action(ctx),
+                );
+            }
+            assert!(app.pending_action.is_none());
+            assert_eq!(app.session.as_ref().unwrap().vertex_size, 193);
+            assert_eq!(app.session.as_ref().unwrap().heights()[0], 77);
+            assert_eq!(app.map_path_input, dir.0.to_string_lossy());
+            assert!(!app.status_is_error, "{}", app.status_message);
+        }
+    }
+
+    fn assert_pending_non_terrain_guard(action_kind: usize) {
+        let names = [
+            "placement",
+            "scenario",
+            "textures",
+            "event_graph",
+            "toolbox",
+            "maps",
+            "environment",
+            "landscape",
+            "packaging",
+            "campaign",
+            "ai_planner",
+            "ambience",
+        ];
+        for (panel, name) in names.iter().enumerate() {
+            // Independent session for every action/category: terrain never masks a panel's dirty flag.
+            let dir = PendingPanelTemp(temp_map_dir("pending_panel"));
+            let missing_map = dir.0.join("missing-map");
+            let mut app = EditorApp::initial_state();
+            assert!(!app.has_unsaved_changes());
+            pending_panel_edit(&mut app, panel, &dir.0);
+            let mut expected_dirty = [false; 12];
+            expected_dirty[panel] = true;
+            assert_eq!(pending_panel_dirty_flags(&app), expected_dirty, "{name}");
+            assert!(!app.session.as_ref().unwrap().is_dirty(), "{name}");
+            app.map_path_input = "original-map-path".into();
+            app.status_message = "original-status".into();
+            app.status_is_error = false;
+            let terrain = app.session.as_ref().unwrap();
+            let terrain_ptr = terrain as *const TerrainSession;
+            let heights = terrain.heights().to_vec();
+            let objects = format!("{:?}", app.placement.objects());
+            let scenario = serde_json::to_vec(app.scenario.document()).unwrap();
+            let textures = app.textures.session_textures().map(|t| t.to_vec());
+            let graph = format!("{:?}", app.event_graph.graph);
+            let toolbox_status = app.toolbox.status().to_owned();
+            app.pending_action = Some(match action_kind {
+                0 => PendingAction::Load(missing_map.clone()),
+                1 => PendingAction::Blank(193),
+                2 => PendingAction::Close,
+                3 => PendingAction::BuildBlank(BlankMapBuildIntent::new(
+                    missing_map.clone(),
+                    against_rome_maps::blank_builder::BlankMapSpec::new("ENDL_000", 7, "Guard"),
+                )),
+                _ => unreachable!(),
+            });
+            let ctx = egui::Context::default();
+            let _ = ctx.run(Default::default(), |ctx| app.handle_pending_action(ctx));
+            let output = ctx.run(Default::default(), |ctx| app.handle_pending_action(ctx));
+            assert!(
+                match (&app.pending_action, action_kind) {
+                    (Some(PendingAction::Load(path)), 0) => path == &missing_map,
+                    (Some(PendingAction::Blank(size)), 1) => *size == 193,
+                    (Some(PendingAction::Close), 2) => true,
+                    (Some(PendingAction::BuildBlank(intent)), 3) => intent.game_path == missing_map,
+                    _ => false,
+                },
+                "{name}: action must be retained"
+            );
+            let text: Vec<_> = output
+                .shapes
+                .iter()
+                .filter_map(|s| match &s.shape {
+                    egui::epaint::Shape::Text(t) => Some(t.galley.text()),
+                    _ => None,
+                })
+                .collect();
+            assert!(text.contains(&"Discard unsaved changes"), "{name}");
+            assert!(text.contains(&"Keep editing"), "{name}");
+            assert!(!app.close_allowed, "{name}");
+            assert_eq!(app.map_path_input, "original-map-path", "{name}");
+            // A missing Load would report failure; Blank would change terrain size and status.
+            assert_eq!(app.status_message, "original-status", "{name}");
+            assert!(!app.status_is_error, "{name}");
+            let terrain = app.session.as_ref().unwrap();
+            assert_eq!(terrain as *const TerrainSession, terrain_ptr, "{name}");
+            assert_eq!(terrain.vertex_size, 257, "{name}");
+            assert_eq!(terrain.heights(), heights, "{name}");
+            assert!(!terrain.is_dirty(), "{name}");
+            assert_eq!(pending_panel_dirty_flags(&app), expected_dirty, "{name}");
+            assert_eq!(format!("{:?}", app.placement.objects()), objects, "{name}");
+            assert_eq!(
+                serde_json::to_vec(app.scenario.document()).unwrap(),
+                scenario,
+                "{name}"
+            );
+            assert_eq!(
+                app.textures.session_textures().map(|t| t.to_vec()),
+                textures,
+                "{name}"
+            );
+            assert_eq!(format!("{:?}", app.event_graph.graph), graph, "{name}");
+            assert_eq!(app.toolbox.status(), toolbox_status, "{name}");
+            assert!(app.has_unsaved_changes(), "{name}");
+            assert!(!missing_map.exists());
+        }
+    }
+
+    #[test]
+    fn pending_non_terrain_load_requires_explicit_discard() {
+        assert_pending_non_terrain_guard(0);
+    }
+
+    #[test]
+    fn pending_non_terrain_blank_requires_explicit_discard() {
+        assert_pending_non_terrain_guard(1);
+    }
+
+    #[test]
+    fn pending_non_terrain_close_requires_explicit_discard() {
+        assert_pending_non_terrain_guard(2);
+    }
+
+    #[test]
+    fn pending_non_terrain_build_blank_requires_explicit_discard() {
+        assert_pending_non_terrain_guard(3);
+    }
+
+    #[test]
+    fn pending_clean_load_and_blank_are_allowed() {
+        let ctx = egui::Context::default();
+        let dir = PendingPanelTemp(temp_map_dir("pending_clean"));
+        let mut terrain = TerrainSession::create_blank(193, 77);
+        safe_save_map(&dir.0, &mut terrain).unwrap();
+        let mut app = EditorApp::initial_state();
+        assert!(!app.has_unsaved_changes());
+        app.pending_action = Some(PendingAction::Load(dir.0.clone()));
+        let _ = ctx.run(Default::default(), |ctx| app.handle_pending_action(ctx));
+        assert!(app.pending_action.is_none());
+        assert!(!app.status_is_error, "{}", app.status_message);
+        assert_eq!(app.session.as_ref().unwrap().vertex_size, 193);
+        assert_eq!(app.session.as_ref().unwrap().heights()[0], 77);
+        assert_eq!(app.map_path_input, dir.0.to_string_lossy());
+        assert!(!app.has_unsaved_changes());
+
+        let mut app = EditorApp::initial_state();
+        assert!(!app.has_unsaved_changes());
+        app.map_path_input = "old-path".into();
+        app.pending_action = Some(PendingAction::Blank(193));
+        let _ = ctx.run(Default::default(), |ctx| app.handle_pending_action(ctx));
+        assert!(app.pending_action.is_none());
+        assert!(!app.status_is_error);
+        assert_eq!(app.session.as_ref().unwrap().vertex_size, 193);
+        assert_eq!(app.status_message, "Created blank 193x193 terrain");
+        assert!(app.map_path_input.is_empty());
+    }
 
     #[test]
     fn dirty_session_blocks_new_and_open_until_explicit_discard() {
@@ -347,6 +5155,10 @@ mod tests {
         for action in [
             PendingAction::Blank(193),
             PendingAction::Load(PathBuf::from("not-a-map")),
+            PendingAction::BuildBlank(BlankMapBuildIntent::new(
+                "missing-game",
+                against_rome_maps::blank_builder::BlankMapSpec::new("ENDL_000", 7, "Guard"),
+            )),
             PendingAction::Close,
         ] {
             app.pending_action = Some(action);
@@ -363,6 +5175,247 @@ mod tests {
     }
 
     #[test]
+    fn dirty_build_blank_intent_cancels_cleanly_without_filesystem_mutation() {
+        let temp_dir =
+            std::env::temp_dir().join(format!("arm_cancel_test_{}", uuid::Uuid::new_v4()));
+        let mut app = EditorApp::initial_state();
+        app.session
+            .as_mut()
+            .unwrap()
+            .apply_height_changes(&[SampleChange {
+                index: 0,
+                before: 32,
+                after: 105,
+            }]);
+        assert!(app.has_unsaved_changes());
+
+        let target_game = temp_dir.join("game_root");
+        let spec =
+            against_rome_maps::blank_builder::BlankMapSpec::new("ENDL_000", 9, "CancelGuard");
+        let intent = BlankMapBuildIntent::new(target_game.clone(), spec);
+
+        app.queue_build_intent(intent.clone());
+        assert_eq!(
+            app.pending_action(),
+            Some(&PendingAction::BuildBlank(intent))
+        );
+
+        let ctx = egui::Context::default();
+        let _ = ctx.run(Default::default(), |ctx| app.handle_pending_action(ctx));
+        let output = ctx.run(Default::default(), |ctx| app.handle_pending_action(ctx));
+
+        // Click "Keep editing" (Cancel)
+        let pos = output
+            .shapes
+            .iter()
+            .find_map(|s| match &s.shape {
+                egui::epaint::Shape::Text(t) if t.galley.text() == "Keep editing" => {
+                    Some(Rect::from_min_size(t.pos, t.galley.size()).center())
+                }
+                _ => None,
+            })
+            .expect("cancel button");
+        for pressed in [true, false] {
+            let _ = ctx.run(
+                egui::RawInput {
+                    events: vec![
+                        egui::Event::PointerMoved(pos),
+                        egui::Event::PointerButton {
+                            pos,
+                            button: egui::PointerButton::Primary,
+                            pressed,
+                            modifiers: egui::Modifiers::NONE,
+                        },
+                    ],
+                    ..Default::default()
+                },
+                |ctx| app.handle_pending_action(ctx),
+            );
+        }
+
+        assert!(app.pending_action().is_none());
+        assert!(app.has_unsaved_changes(), "session must remain dirty");
+        assert_eq!(app.session.as_ref().unwrap().heights()[0], 105);
+        assert!(
+            !target_game.exists(),
+            "no filesystem mutation on cancelled build intent"
+        );
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn public_execute_build_intent_rejects_dirty_session_without_mutation() {
+        let temp_dir =
+            std::env::temp_dir().join(format!("arm_public_intent_test_{}", uuid::Uuid::new_v4()));
+        let mut app = EditorApp::initial_state();
+        app.ambience
+            .load_preset(against_rome_ambience::atmosphere::WeatherPresets::STORM_ID);
+        assert!(app.ambience.is_dirty());
+        assert!(app.has_unsaved_changes());
+
+        let target_game = temp_dir.join("game_root");
+        let spec =
+            against_rome_maps::blank_builder::BlankMapSpec::new("ENDL_000", 9, "PublicGuard");
+        let intent = BlankMapBuildIntent::new(target_game.clone(), spec);
+
+        let err = app.execute_build_intent(&intent).unwrap_err();
+        assert!(err.contains("unsaved changes"), "must reject: {err}");
+        assert!(
+            !target_game.exists(),
+            "no filesystem mutation on rejected build intent"
+        );
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn campaign_wave_merge_request_updates_scenario_session() {
+        let mut app = EditorApp::initial_state();
+        app.campaign.wave_count = 2;
+        app.apply_campaign_wave_merge();
+        assert!(app.scenario.document().events.is_empty());
+        app.campaign.request_wave_merge();
+        app.apply_campaign_wave_merge();
+        let n = app.scenario.document().events.len();
+        assert!(n > 0 && app.scenario.can_undo_events() && app.scenario.dirty());
+        app.apply_campaign_wave_merge();
+        assert_eq!(app.scenario.document().events.len(), n);
+        assert!(app.scenario.undo_events());
+        assert!(app.scenario.document().events.is_empty());
+    }
+
+    fn lair_test_event(name: &str) -> against_rome_environment::wild_lair::ScenarioEvent {
+        use against_rome_environment::wild_lair::ScenarioAction;
+        let mut e = against_rome_environment::wild_lair::ScenarioEvent::new(name, 60, true, true);
+        e.actions.push(ScenarioAction::spawn_unit(1, "GER_INF01", 4000.0, 6000.0, 2));
+        e
+    }
+
+    fn app_with_loaded_scenario_and_lair_events(tag: &str, n: usize) -> (EditorApp, PathBuf) {
+        let dir = temp_map_dir(tag);
+        std::fs::create_dir_all(dir.join("SCRIPT")).unwrap();
+        std::fs::write(
+            dir.join("SCRIPT/ak_level.bci"),
+            against_rome_scenario::BciImage::idle().serialize(),
+        )
+        .unwrap();
+        let mut app = EditorApp::initial_state();
+        app.session = Some(TerrainSession::create_blank(5, 32));
+        app.map_path_input = dir.display().to_string();
+        app.scenario.load_session(&dir).unwrap();
+        app.environment.add_neutral_lair().unwrap();
+        app.environment.generated_lair_events =
+            (0..n).map(|i| lair_test_event(&format!("LAIR_t{i}"))).collect();
+        app.environment.lair_event_counts = vec![n];
+        (app, dir)
+    }
+
+    #[test]
+    fn lair_events_apply_request_merges_once_with_one_undo_step() {
+        let (mut app, dir) = app_with_loaded_scenario_and_lair_events("lair_apply_ok", 2);
+        app.apply_lair_events_request();
+        assert!(app.scenario.document().events.is_empty(), "no request, no merge");
+
+        app.environment.request_lair_events_apply();
+        app.apply_lair_events_request();
+        assert!(
+            !app.environment.status_is_error,
+            "{}",
+            app.environment.status_message
+        );
+        let events = &app.scenario.document().events;
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].actions[0].kind, 2);
+        assert_eq!(events[0].actions[0].alias, "GER_INF01");
+        assert!(events[0].repeat && events[0].enabled);
+        assert!(app.environment.generated_lair_events.is_empty());
+        assert_eq!(app.environment.lair_event_counts, vec![0]);
+        assert_eq!(app.environment.generated_lairs.len(), 1, "lairs stay pending");
+        assert!(app.scenario.dirty() && app.scenario.can_undo_events());
+
+        // The request was consumed; a repeated pass must not merge again.
+        app.apply_lair_events_request();
+        assert_eq!(app.scenario.document().events.len(), 2);
+
+        assert!(app.scenario.undo_events());
+        assert!(app.scenario.document().events.is_empty());
+        assert!(!app.scenario.can_undo_events());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn lair_events_apply_refusals_keep_pending_state_and_block_saves() {
+        // Unloaded scenario.
+        let mut app = EditorApp::initial_state();
+        app.environment.add_neutral_lair().unwrap();
+        app.environment.generated_lair_events = vec![lair_test_event("LAIR_a")];
+        app.environment.lair_event_counts = vec![1];
+        app.environment.request_lair_events_apply();
+        app.apply_lair_events_request();
+        assert!(app.environment.status_is_error);
+        assert_eq!(app.environment.generated_lair_events.len(), 1);
+        assert_eq!(app.environment.lair_event_counts, vec![1]);
+        assert!(app.scenario.document().events.is_empty() && !app.scenario.can_undo_events());
+
+        // Dirty graph.
+        let (mut app, dir) = app_with_loaded_scenario_and_lair_events("lair_apply_graph", 1);
+        app.scenario.graph_ui_mut().mark_dirty();
+        app.environment.request_lair_events_apply();
+        app.apply_lair_events_request();
+        assert!(app.environment.status_is_error);
+        assert_eq!(app.environment.generated_lair_events.len(), 1);
+        assert!(app.scenario.document().events.is_empty() && !app.scenario.can_undo_events());
+        let _ = std::fs::remove_dir_all(dir);
+
+        // 256-event cap, then saves stay blocked while lair state is pending.
+        let (mut app, dir) = app_with_loaded_scenario_and_lair_events("lair_apply_cap", 2);
+        let filler: Vec<_> = (0..255)
+            .map(|i| against_rome_scenario::Event {
+                name: format!("f{i}"),
+                actions: vec![against_rome_scenario::Action {
+                    text: "m".into(),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            })
+            .collect();
+        app.scenario.add_events(&filler).unwrap();
+        app.environment.request_lair_events_apply();
+        app.apply_lair_events_request();
+        assert!(app.environment.status_is_error);
+        assert!(app.environment.status_message.contains("limit"));
+        assert_eq!(app.environment.generated_lair_events.len(), 2);
+        assert_eq!(app.environment.lair_event_counts, vec![2]);
+        assert_eq!(app.scenario.document().events.len(), 255);
+        assert!(app.environment.is_dirty() && app.has_unsaved_changes());
+        let before = std::fs::read_dir(&dir).unwrap().count();
+        app.safe_save_current();
+        assert!(app.status_is_error, "{}", app.status_message);
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), before);
+        assert!(!dir.join("arm_scenario.json").exists());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn lair_events_rejected_by_scenario_validation_keep_pending_events() {
+        let (mut app, dir) = app_with_loaded_scenario_and_lair_events("lair_apply_invalid", 1);
+        // A condition on a spawn the scenario does not know is refused by add_events validation.
+        app.environment.generated_lair_events[0].conditions.push(
+            against_rome_environment::wild_lair::ScenarioCondition::new(
+                against_rome_environment::wild_lair::ScenarioConditionKind::ObjectExists,
+                uuid::Uuid::new_v4(),
+            ),
+        );
+        app.environment.request_lair_events_apply();
+        app.apply_lair_events_request();
+        assert!(app.environment.status_is_error);
+        assert_eq!(app.environment.generated_lair_events.len(), 1);
+        assert_eq!(app.environment.lair_event_counts, vec![1]);
+        assert!(app.scenario.document().events.is_empty() && !app.scenario.can_undo_events());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
     fn studio_panels_render_and_guard_close() {
         let mut app = EditorApp::initial_state();
         let ctx = egui::Context::default();
@@ -372,17 +5425,20 @@ mod tests {
         app.packaging.open = true;
         app.campaign.open = true;
         app.ai_planner.open = true;
+        app.ambience.open = true;
+        app.modifier.open = true;
         let _ = ctx.run(Default::default(), |ctx| app.show_studio_panels(ctx));
         assert!(!app.has_unsaved_changes());
 
         type Mark = fn(&mut EditorApp);
-        let marks: [Mark; 6] = [
+        let marks: [Mark; 7] = [
             |a| a.maps.mark_dirty(),
             |a| a.environment.mark_dirty(),
             |a| a.landscape.mark_dirty(),
             |a| a.packaging.mark_dirty(),
             |a| a.campaign.mark_dirty(),
             |a| a.ai_planner.mark_dirty(),
+            |a| a.ambience.mark_dirty(),
         ];
         for mark in marks {
             let mut app = EditorApp::initial_state();
@@ -393,6 +5449,1421 @@ mod tests {
             assert!(app.pending_action.is_some());
             assert!(!app.close_allowed);
         }
+    }
+
+    #[test]
+    fn landscape_apply_wall_without_objects_session_commits_collision_and_reports_note() {
+        let mut app = EditorApp::initial_state();
+        let ctx = egui::Context::default();
+        app.landscape.wall_waypoints_text = "4,4\n8,4\n8,8".into();
+        let cx = LandscapeContext::plain(257, app.session.as_ref().map(|s| s.heights()));
+        app.landscape.plan_wall(&cx).unwrap();
+        assert!(app.landscape.last_wall_plan.is_some());
+        app.landscape.apply_requested = Some(LandscapeApply::Wall);
+
+        let _ = ctx.run(Default::default(), |ctx| app.show_studio_panels(ctx));
+        assert!(app.landscape.status_message.contains("wall applied"));
+        assert!(app.landscape.status_message.contains("objects skipped"));
+        assert!(app.session.as_ref().unwrap().is_dirty());
+    }
+
+    #[test]
+    fn environment_apply_guards_unloaded_objects_session() {
+        let mut app = EditorApp::initial_state();
+        let ctx = egui::Context::default();
+        app.environment.generate_flora_scatter(257, None, 0.0);
+        assert!(!app.environment.generated_flora.is_empty());
+        app.environment.apply_requested = Some(EnvApply::Flora);
+
+        let _ = ctx.run(Default::default(), |ctx| app.show_studio_panels(ctx));
+        assert!(app.environment.status_is_error);
+        assert!(app
+            .environment
+            .status_message
+            .contains("Load DATA in the Objects panel"));
+    }
+
+    #[test]
+    fn neutral_wildlife_apply_clones_template_into_objects_session() {
+        let dir = PendingPanelTemp(temp_map_dir("neutral_wildlife_apply"));
+        make_test_map(&dir.0, 10001, "NeutralWildlife", "NeutralWildlife");
+        make_test_placement_fixture_with_free_slot(&dir.0, 10001);
+
+        let mut app = EditorApp::initial_state();
+        let loaded = load_map(&dir.0).unwrap();
+        app.set_loaded_map(dir.0.clone(), loaded).unwrap();
+        app.placement.load_session(&dir.0).unwrap();
+        let initial_count = app.placement.object_count();
+        app.environment.flora_templates_text = "0,FigTieWol00_Wilder_Wolf".into();
+        app.environment.lair_world_x = 256.0;
+        app.environment.lair_world_z = 320.0;
+        app.environment.add_neutral_lair().unwrap();
+
+        app.handle_environment_apply(EnvApply::Lairs);
+
+        assert!(
+            !app.environment.status_is_error,
+            "{}",
+            app.environment.status_message
+        );
+        assert_eq!(app.placement.object_count(), initial_count + 1);
+        let wolf = app.placement.objects().pop().unwrap();
+        assert_eq!(wolf.type_id, 0);
+        assert_eq!(wolf.team, 8);
+        assert_eq!(wolf.position[0], 256.0);
+        assert_eq!(wolf.position[2], 320.0);
+        assert!(app.placement.is_dirty());
+        assert!(app.environment.generated_lairs.is_empty());
+        assert!(app
+            .environment
+            .status_message
+            .contains("Queued 1 objects for the Objects session"));
+        app.safe_save_current();
+        assert!(!app.status_is_error, "{}", app.status_message);
+        assert!(!app.placement.is_dirty());
+        let saved = against_rome_placement::ObjectStore::load(&dir.0)
+            .unwrap()
+            .objects();
+        let saved_wolf = saved.iter().find(|o| o.uid == wolf.uid).unwrap();
+        assert_eq!(saved_wolf.team, 8);
+        assert_eq!(saved_wolf.position[0], 256.0);
+        assert_eq!(saved_wolf.position[2], 320.0);
+    }
+
+    #[test]
+    fn neutral_wildlife_apply_rejects_unresolved_mixed_templates_without_mutation() {
+        let dir = PendingPanelTemp(temp_map_dir("neutral_wildlife_unresolved"));
+        make_test_map(&dir.0, 10001, "NeutralWildlife", "NeutralWildlife");
+        make_test_placement_fixture_with_free_slot(&dir.0, 10001);
+
+        let mut app = EditorApp::initial_state();
+        let loaded = load_map(&dir.0).unwrap();
+        app.set_loaded_map(dir.0.clone(), loaded).unwrap();
+        app.placement.load_session(&dir.0).unwrap();
+        let initial_count = app.placement.object_count();
+        app.environment.flora_templates_text = "0,FigTieWol00_Wilder_Wolf".into();
+        app.environment.add_neutral_lair().unwrap();
+        app.environment.selected_lair_id = "ALL_BAE00".into();
+        app.environment.lair_world_x = 512.0;
+        app.environment.add_neutral_lair().unwrap();
+
+        app.handle_environment_apply(EnvApply::Lairs);
+
+        assert!(app.environment.status_is_error);
+        assert!(app.environment.status_message.contains("FigTieBae00_Baer"));
+        assert_eq!(app.placement.object_count(), initial_count);
+        assert!(!app.placement.is_dirty());
+        assert_eq!(app.environment.generated_lairs.len(), 2);
+    }
+
+    #[test]
+    fn test_viewport_3d_mode_selection_and_headless_render() {
+        let mut app = EditorApp::initial_state();
+        let ctx = egui::Context::default();
+        app.view_mode = ViewMode::View3D;
+        assert_eq!(app.view_mode, ViewMode::View3D);
+
+        let _ = ctx.run(Default::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                if app.view_mode == ViewMode::View3D {
+                    if let Some(session) = &app.session {
+                        let placement_objects = app.placement.objects();
+                        let selected_obj = app.placement.selected_object();
+                        let action = app.viewport_3d.show(
+                            ui,
+                            ctx,
+                            session,
+                            app.height_step,
+                            app.water_surface,
+                            app.brush_radius,
+                            &placement_objects,
+                            selected_obj,
+                        );
+                        app.handle_viewport_3d_action(action);
+                    }
+                }
+            });
+        });
+
+        assert!(!app.has_unsaved_changes());
+    }
+
+    #[test]
+    fn test_viewport_3d_action_routes_tools_and_preserves_dirty_undo() {
+        let mut app = EditorApp::initial_state();
+        app.view_mode = ViewMode::View3D;
+        app.active_tool = ActiveTool::HeightRaise;
+        app.brush_strength = 10;
+        app.brush_radius = 4.0;
+
+        let initial_h = app.session.as_ref().unwrap().heights()[64 * 257 + 64];
+
+        app.handle_viewport_3d_action(ViewportAction::Paint {
+            grid_x: 64.0,
+            grid_y: 64.0,
+        });
+        assert!(app.is_painting);
+
+        app.handle_viewport_3d_action(ViewportAction::CommitStroke);
+        assert!(!app.is_painting);
+
+        assert!(app.has_unsaved_changes());
+        assert!(app.session.as_ref().unwrap().is_dirty());
+        assert!(app.session.as_ref().unwrap().can_undo());
+
+        let raised_h = app.session.as_ref().unwrap().heights()[64 * 257 + 64];
+        assert!(
+            raised_h > initial_h,
+            "raised_h {raised_h} should exceed initial_h {initial_h}"
+        );
+
+        app.view_mode = ViewMode::Blended;
+        assert!(app.has_unsaved_changes());
+        app.view_mode = ViewMode::View3D;
+        assert!(app.has_unsaved_changes());
+
+        app.session.as_mut().unwrap().undo();
+        let restored_h = app.session.as_ref().unwrap().heights()[64 * 257 + 64];
+        assert_eq!(restored_h, initial_h);
+    }
+
+    #[test]
+    fn test_viewport_3d_camera_manipulation() {
+        let mut app = EditorApp::initial_state();
+        let initial_yaw = app.viewport_3d.camera.yaw_degrees();
+        let initial_pitch = app.viewport_3d.camera.pitch_degrees();
+
+        app.viewport_3d.orbit(15.0, 10.0);
+        assert_ne!(app.viewport_3d.camera.yaw_degrees(), initial_yaw);
+        assert_ne!(app.viewport_3d.camera.pitch_degrees(), initial_pitch);
+
+        let initial_dist = app.viewport_3d.camera.distance();
+        app.viewport_3d.zoom(true);
+        assert!(app.viewport_3d.camera.distance() < initial_dist);
+
+        app.viewport_3d.reset_camera(64.0);
+        assert_eq!(app.viewport_3d.camera.yaw_degrees(), 45.0);
+        assert_eq!(app.viewport_3d.camera.pitch_degrees(), 30.0);
+    }
+
+    #[test]
+    fn test_viewport_3d_shares_placement_state_and_select_action() {
+        let mut app = EditorApp::initial_state();
+        assert_eq!(app.placement.selected_object(), None);
+
+        // Selecting via 3D viewport routes to shared placement state
+        app.handle_viewport_3d_action(ViewportAction::SelectObject(Some((1, 42))));
+        // When no store is loaded, invalid keys are safely rejected/cleared by placement_ui
+        assert_eq!(app.placement.selected_object(), None);
+
+        // Deselecting via 3D viewport also routes cleanly
+        app.handle_viewport_3d_action(ViewportAction::SelectObject(None));
+        assert_eq!(app.placement.selected_object(), None);
+    }
+
+    // Drive real egui pointer frames through the viewport ray picker and app route.
+    fn ramp_viewport_frame(
+        app: &mut EditorApp,
+        ctx: &egui::Context,
+        events: Vec<egui::Event>,
+    ) -> ViewportAction {
+        let input = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, egui::vec2(800.0, 600.0))),
+            events,
+            ..Default::default()
+        };
+        let mut action = ViewportAction::None;
+        let _ = ctx.run(input, |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                app.viewport_3d.terrain_pick_mode = app.ramp_selecting;
+                action = app.viewport_3d.show(
+                    ui,
+                    ctx,
+                    app.session.as_ref().unwrap(),
+                    4.0,
+                    50.0,
+                    4.0,
+                    &[],
+                    None,
+                );
+            });
+        });
+        app.handle_viewport_3d_action(action.clone());
+        action
+    }
+
+    fn ramp_pointer(pos: Pos2, button: egui::PointerButton, pressed: bool) -> Vec<egui::Event> {
+        vec![
+            egui::Event::PointerMoved(pos),
+            egui::Event::PointerButton {
+                pos,
+                button,
+                pressed,
+                modifiers: Default::default(),
+            },
+        ]
+    }
+
+    #[test]
+    fn viewport_3d_ray_pick_to_ramp_click_and_drag_are_single_undo_operations() {
+        for drag in [false, true] {
+            let mut app = EditorApp::initial_state();
+            let mut terrain = TerrainSession::create_blank(257, 32);
+            let changes: Vec<_> = (0..257 * 257)
+                .map(|index| SampleChange {
+                    index,
+                    before: 32,
+                    after: (16 + (index % 257).pow(2) / 8192) as u8,
+                })
+                .collect();
+            terrain.apply_height_changes(&changes);
+            terrain.commit_stroke();
+            terrain.commit_baseline();
+            let before = terrain.heights().to_vec();
+            let mut expected = TerrainSession::create_blank(257, 32);
+            expected.apply_height_changes(&changes);
+            expected.commit_stroke();
+            expected.commit_baseline();
+            app.session = Some(terrain);
+            app.ramp_selecting = true;
+            let ctx = egui::Context::default();
+            ramp_viewport_frame(&mut app, &ctx, vec![]);
+            let rect = app.viewport_3d.last_rect.unwrap();
+            let start_pos = rect.center() - egui::vec2(60.0, 0.0);
+            let end_pos = rect.center() + egui::vec2(60.0, 0.0);
+            let first = ramp_viewport_frame(
+                &mut app,
+                &ctx,
+                ramp_pointer(start_pos, egui::PointerButton::Primary, true),
+            );
+            let start = first
+                .picked_terrain()
+                .expect("press must ray-pick the ramp start");
+            assert_eq!(app.ramp_start, Some(start));
+            assert_eq!(app.session.as_ref().unwrap().heights(), before);
+            assert!(!app.session.as_ref().unwrap().can_undo());
+            if !drag {
+                assert_eq!(
+                    ramp_viewport_frame(
+                        &mut app,
+                        &ctx,
+                        ramp_pointer(start_pos, egui::PointerButton::Primary, false)
+                    ),
+                    ViewportAction::None
+                );
+            } else {
+                assert_eq!(
+                    ramp_viewport_frame(&mut app, &ctx, vec![egui::Event::PointerMoved(end_pos)]),
+                    ViewportAction::None
+                );
+                assert_eq!(app.session.as_ref().unwrap().heights(), before);
+            }
+            let second = ramp_viewport_frame(
+                &mut app,
+                &ctx,
+                ramp_pointer(end_pos, egui::PointerButton::Primary, !drag),
+            );
+            let end = second
+                .picked_terrain()
+                .expect("endpoint must come from a terrain ray hit");
+            assert_ne!(start, end);
+            let changes = expected
+                .apply_ramp(
+                    start,
+                    end,
+                    &against_rome_editor::terrain::RampParameters {
+                        width: app.ramp_width,
+                        falloff: app.ramp_falloff,
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+            assert!(!changes.is_empty());
+            assert_eq!(app.session.as_ref().unwrap().heights(), expected.heights());
+            assert!(!app.is_painting);
+            assert!(!app.ramp_selecting);
+            assert!(app.texture_dirty);
+            assert!(app.session.as_mut().unwrap().undo());
+            assert_eq!(app.session.as_ref().unwrap().heights(), before);
+            assert!(!app.session.as_ref().unwrap().can_undo());
+            assert!(app.session.as_mut().unwrap().redo());
+            assert_eq!(app.session.as_ref().unwrap().heights(), expected.heights());
+        }
+    }
+
+    #[test]
+    fn viewport_3d_ramp_cancel_miss_and_pending_action_preserve_terrain() {
+        let mut app = EditorApp::initial_state();
+        app.session = Some(TerrainSession::create_blank(257, 32));
+        app.ramp_selecting = true;
+        let ctx = egui::Context::default();
+        ramp_viewport_frame(&mut app, &ctx, vec![]);
+        let center = app.viewport_3d.last_rect.unwrap().center();
+        ramp_viewport_frame(
+            &mut app,
+            &ctx,
+            ramp_pointer(center, egui::PointerButton::Primary, true),
+        );
+        let start = app.ramp_start.unwrap();
+        // Releasing outside the canvas must not complete a ramp using stale hover.
+        assert_eq!(
+            ramp_viewport_frame(
+                &mut app,
+                &ctx,
+                ramp_pointer(Pos2::new(-50.0, -50.0), egui::PointerButton::Primary, false)
+            ),
+            ViewportAction::None
+        );
+        assert_eq!(app.ramp_start, Some(start));
+        app.handle_viewport_3d_action(ViewportAction::Paint {
+            grid_x: 100.0,
+            grid_y: 100.0,
+        });
+        assert!(!app.is_painting);
+        app.pending_action = Some(PendingAction::Close);
+        app.handle_viewport_3d_action(ViewportAction::PickTerrain {
+            grid_x: 120.0,
+            grid_y: 120.0,
+        });
+        assert_eq!(app.ramp_start, Some(start));
+        app.pending_action = None;
+        ramp_viewport_frame(
+            &mut app,
+            &ctx,
+            ramp_pointer(center, egui::PointerButton::Secondary, true),
+        );
+        assert_eq!(
+            ramp_viewport_frame(
+                &mut app,
+                &ctx,
+                ramp_pointer(center, egui::PointerButton::Secondary, false)
+            ),
+            ViewportAction::CancelTerrainPick
+        );
+        assert!(!app.ramp_selecting);
+        assert_eq!(app.ramp_start, None);
+        assert!(!app.session.as_ref().unwrap().is_dirty());
+        assert!(!app.session.as_ref().unwrap().can_undo());
+    }
+
+    #[test]
+    fn test_viewport_3d_terrain_pick_routes_to_ramp_without_painting() {
+        let mut app = EditorApp::initial_state();
+        app.view_mode = ViewMode::View3D;
+        app.ramp_selecting = true;
+
+        app.handle_viewport_3d_action(ViewportAction::PickTerrain {
+            grid_x: 23.0,
+            grid_y: 41.0,
+        });
+
+        assert_eq!(app.ramp_start, Some((23.0, 41.0)));
+        assert!(app.ramp_selecting);
+        assert!(!app.is_painting);
+
+        // A normal terrain pick outside Ramp mode must not start a brush stroke.
+        app.ramp_selecting = false;
+        app.handle_viewport_3d_action(ViewportAction::PickTerrain {
+            grid_x: 24.0,
+            grid_y: 42.0,
+        });
+        assert_eq!(app.ramp_start, Some((23.0, 41.0)));
+        assert!(!app.is_painting);
+    }
+
+    #[test]
+    fn test_tech_doc_app_integration() {
+        let mut app = EditorApp::initial_state();
+        assert!(!app.tech_doc.is_open());
+
+        app.tech_doc.open();
+        assert!(app.tech_doc.is_open());
+
+        let ctx = egui::Context::default();
+        let _ = ctx.run(Default::default(), |ctx| {
+            app.tech_doc.show(ctx);
+        });
+        assert!(app.tech_doc.is_open());
+        assert!(!app.has_unsaved_changes());
+
+        app.tech_doc.close();
+        assert!(!app.tech_doc.is_open());
+    }
+
+    fn make_test_placement_fixture(map: &Path, base_uid: u32) {
+        make_test_placement_fixture_slots(map, base_uid, 2);
+    }
+
+    fn make_test_placement_fixture_with_free_slot(map: &Path, base_uid: u32) {
+        make_test_placement_fixture_slots(map, base_uid, 3);
+    }
+
+    fn make_test_placement_fixture_slots(map: &Path, base_uid: u32, slots: usize) {
+        use against_rome_placement::{COLUMNS, SEGMENTS};
+        use std::fs;
+        let data = map.join("DATA");
+        fs::create_dir_all(&data).unwrap();
+        let n = slots;
+        let mut objects = vec![0u8; 16 + n * (79 + COLUMNS.iter().sum::<usize>())];
+        objects[..4].copy_from_slice(&1u32.to_le_bytes());
+        objects[4..8].copy_from_slice(&(n as u32).to_le_bytes());
+        objects[8..12].copy_from_slice(&30u32.to_le_bytes());
+        objects[12..16].copy_from_slice(&30u32.to_le_bytes());
+        for slot in 0..n {
+            let r = 16 + slot * 79;
+            objects[r] = u8::from(slot < 2);
+            objects[r + 3..r + 7].copy_from_slice(&(base_uid + slot as u32).to_le_bytes());
+            for offset in [67, 69] {
+                objects[r + offset..r + offset + 2].copy_from_slice(&(slot as u16).to_le_bytes());
+            }
+            for offset in [71, 73, 77] {
+                objects[r + offset..r + offset + 2].fill(255);
+            }
+            for col in 0..18 {
+                let offset =
+                    16 + n * 79 + n * COLUMNS[..col].iter().sum::<usize>() + slot * COLUMNS[col];
+                if COLUMNS[col] == 2 {
+                    objects[offset..offset + 2].fill(255);
+                }
+                if col == 1 {
+                    objects[offset..offset + 2].copy_from_slice(&(slot as u16).to_le_bytes());
+                }
+            }
+        }
+        let mut position = vec![0u8; 8 + n * 17];
+        position[..4].copy_from_slice(&1u32.to_le_bytes());
+        position[4..8].copy_from_slice(&(n as u32).to_le_bytes());
+        for slot in 0..n {
+            position[8 + slot * 17] = u8::from(slot < 2);
+            position[9 + slot * 17..13 + slot * 17]
+                .copy_from_slice(&(slot as f32 * 20.0 + 0.5).to_le_bytes());
+        }
+        let mut objdata = vec![0u8; 8 + n * SEGMENTS.iter().sum::<usize>()];
+        objdata[..4].copy_from_slice(&1u32.to_le_bytes());
+        objdata[4..8].copy_from_slice(&(n as u32).to_le_bytes());
+        for (name, bytes) in [
+            ("objects", objects),
+            ("position", position),
+            ("objdata", objdata),
+        ] {
+            fs::write(data.join(format!("{name}.dat")), bytes).unwrap();
+        }
+    }
+
+    fn make_test_daynight_bmp() -> Vec<u8> {
+        let width = 24u32;
+        let height = 6u32;
+        let stride = ((width * 3 + 3) / 4) * 4;
+        let image_size = stride * height;
+        let file_size = 54 + image_size;
+        let mut bmp = vec![0u8; file_size as usize];
+        bmp[0..2].copy_from_slice(b"BM");
+        bmp[2..6].copy_from_slice(&file_size.to_le_bytes());
+        bmp[10..14].copy_from_slice(&54u32.to_le_bytes());
+        bmp[14..18].copy_from_slice(&40u32.to_le_bytes());
+        bmp[18..22].copy_from_slice(&width.to_le_bytes());
+        bmp[22..26].copy_from_slice(&height.to_le_bytes());
+        bmp[26..28].copy_from_slice(&1u16.to_le_bytes());
+        bmp[28..30].copy_from_slice(&24u16.to_le_bytes());
+        bmp[34..38].copy_from_slice(&image_size.to_le_bytes());
+        for b in &mut bmp[54..] {
+            *b = 120;
+        }
+        bmp
+    }
+
+    fn make_test_soundscape(zone_name: &str, sound_id: &str) -> Vec<u8> {
+        use against_rome_ambience::soundscape::{
+            SoundscapeBinaryStorage, SoundscapeSnapshot, SoundscapeZone,
+        };
+        let snapshot = SoundscapeSnapshot {
+            global_ambience_id: sound_id.to_string(),
+            global_ambience_volume: 0.75,
+            zones: vec![SoundscapeZone {
+                name: zone_name.to_string(),
+                sound_def_id: sound_id.to_string(),
+                ..Default::default()
+            }],
+        };
+        SoundscapeBinaryStorage::serialize_to_binary(&snapshot).unwrap()
+    }
+
+    fn make_test_briefing(title: &str, body: &str) -> String {
+        use against_rome_ambience::localization::BriefingTextTable;
+        let mut table = BriefingTextTable::create_empty();
+        table.set_title1(title);
+        table.set_briefing_text(body);
+        table.to_script_text()
+    }
+
+    fn make_test_map(dir: &Path, base_uid: u32, zone_name: &str, briefing_title: &str) {
+        let mut terrain = TerrainSession::create_blank(193, 77);
+        safe_save_map(dir, &mut terrain).unwrap();
+        std::fs::write(
+            dir.join("boden.ini"),
+            b"[Heightmapstep]\n2.0\n[Waterlevel]\n30.0\n",
+        )
+        .unwrap();
+        make_test_placement_fixture(dir, base_uid);
+        std::fs::write(dir.join("daynight.bmp"), make_test_daynight_bmp()).unwrap();
+        std::fs::write(
+            dir.join("soundscape.sndz"),
+            make_test_soundscape(zone_name, &format!("SND_{zone_name}")),
+        )
+        .unwrap();
+        let script_dir = dir.join("SCRIPT");
+        std::fs::create_dir_all(&script_dir).unwrap();
+        std::fs::write(
+            script_dir.join("briefing.put"),
+            make_test_briefing(briefing_title, "Mission description"),
+        )
+        .unwrap();
+        std::fs::write(dir.join("boden.txt"), b"; boden\r\n[Dimension]\r\n2\r\n[Texturen]\r\n4BA___51\r\n4BA___51\r\n4BA___51\r\n4BA___51\r\n").unwrap();
+    }
+
+    #[test]
+    fn test_map_switch_a_to_b_clears_all_map_a_documents_and_plans_while_preserving_preferences() {
+        let dir_a = PendingPanelTemp(temp_map_dir("switch_a"));
+        let dir_b = PendingPanelTemp(temp_map_dir("switch_b"));
+        make_test_map(&dir_a.0, 10001, "Zone_A", "Briefing_A");
+        make_test_map(&dir_b.0, 20001, "Zone_B", "Briefing_B");
+
+        let mut app = EditorApp::initial_state();
+        let loaded_a = load_map(&dir_a.0).unwrap();
+        app.set_loaded_map(dir_a.0.clone(), loaded_a).unwrap();
+
+        // Objects, materials, and scenario documents are explicit panel loads.
+        app.placement.load_session(&dir_a.0).unwrap();
+        app.textures.load_session(&dir_a.0).unwrap();
+        app.scenario.load_session(&dir_a.0).unwrap();
+
+        // Verify Map A documents loaded
+        assert_eq!(app.placement.objects()[0].uid, 10001);
+        assert_eq!(app.ambience.zones[0].name, "Zone_A");
+        assert_eq!(app.ambience.briefing_title, "Briefing_A");
+
+        // Set user preferences
+        app.placement.open = true;
+        app.placement
+            .set_delta(["12.5".into(), "0".into(), "-5.5".into()]);
+        app.textures.open = true;
+        app.scenario.open = true;
+        app.event_graph.open = true;
+        app.maps.open = true;
+        app.environment.open = true;
+        app.landscape.open = true;
+        app.packaging.open = true;
+        app.campaign.open = true;
+        app.ai_planner.open = true;
+        app.view_mode = ViewMode::View3D;
+        app.brush_radius = 24.0;
+
+        // Set Map A-bound transient & pending states
+        app.placement.select_object(Some((0, 10001)));
+        let event = against_rome_scenario::Event {
+            name: "Evt A".into(),
+            delay_seconds: 5,
+            repeat: false,
+            enabled: true,
+            actions: vec![],
+            conditions: vec![],
+        };
+        app.event_graph.load_from_scenario_events(&[event]);
+        let node_ids_a: Vec<uuid::Uuid> =
+            app.event_graph.graph.nodes.iter().map(|n| n.id).collect();
+        assert!(!node_ids_a.is_empty());
+
+        app.landscape.last_cliff_result =
+            Some(against_rome_landscape::cliff::CliffDetectionResult {
+                dimension: 64,
+                cliff_cells: vec![],
+                contours: vec![],
+            });
+        app.landscape.apply_requested = Some(LandscapeApply::Cliff);
+        app.environment.generated_flora =
+            vec![against_rome_environment::nature::NatureAddition::new(
+                1, "Tree", 10.0, 0.0, 10.0, 0.0,
+            )];
+        app.environment.apply_requested = Some(EnvApply::Flora);
+        app.ai_planner.current_plan = Some(against_rome_ai_planner::AiMapPlan::default());
+        app.ai_planner.plan_summary = "Plan for A".into();
+        app.packaging.diff_summary_text = "Diff for A".into();
+        app.campaign.objectives =
+            vec![against_rome_campaign::objectives::ObjectiveDefinition::default()];
+        app.maps.diagnostic_issues = vec![against_rome_maps::diagnostics::MapIssue::new(
+            against_rome_maps::diagnostics::MapIssueSeverity::Warning,
+            "MAP_A_ISSUE",
+            "說明",
+            "Description",
+        )];
+
+        // Generated results and pending plans are unsaved work: retain them until
+        // the user explicitly approves Discard through the normal switch dialog.
+        assert!(app.has_unsaved_changes());
+        let loaded_b = load_map(&dir_b.0).unwrap();
+        assert!(app.set_loaded_map(dir_b.0.clone(), loaded_b).is_err());
+        assert_eq!(app.map_path_input, dir_a.0.to_string_lossy());
+        assert!(!app.environment.generated_flora.is_empty());
+        app.pending_action = Some(PendingAction::Load(dir_b.0.clone()));
+        let ctx = egui::Context::default();
+        let _ = ctx.run(Default::default(), |ctx| app.handle_pending_action(ctx));
+        let output = ctx.run(Default::default(), |ctx| app.handle_pending_action(ctx));
+        let pos = output
+            .shapes
+            .iter()
+            .find_map(|s| match &s.shape {
+                egui::epaint::Shape::Text(t) if t.galley.text() == "Discard unsaved changes" => {
+                    Some(Rect::from_min_size(t.pos, t.galley.size()).center())
+                }
+                _ => None,
+            })
+            .expect("discard button");
+        for pressed in [true, false] {
+            let _ = ctx.run(
+                egui::RawInput {
+                    events: vec![
+                        egui::Event::PointerMoved(pos),
+                        egui::Event::PointerButton {
+                            pos,
+                            button: egui::PointerButton::Primary,
+                            pressed,
+                            modifiers: egui::Modifiers::NONE,
+                        },
+                    ],
+                    ..Default::default()
+                },
+                |ctx| app.handle_pending_action(ctx),
+            );
+        }
+        assert!(app.pending_action.is_none());
+        assert!(!app.status_is_error, "{}", app.status_message);
+        assert!(!app.has_unsaved_changes());
+
+        // Verify Map A documents are completely gone and replaced by Map B
+        assert_eq!(app.map_path_input, dir_b.0.to_string_lossy());
+        assert_eq!(app.placement.loaded_map(), None);
+        assert!(app.placement.objects().is_empty());
+        assert_eq!(app.placement.selected_object(), None);
+
+        assert_eq!(app.ambience.zones.len(), 1);
+        assert_eq!(app.ambience.zones[0].name, "Zone_B");
+        assert_eq!(app.ambience.briefing_title, "Briefing_B");
+
+        for id in node_ids_a {
+            assert!(!app.event_graph.graph.nodes.iter().any(|n| n.id == id));
+        }
+
+        // Verify derived panels were reset
+        assert!(app.landscape.last_cliff_result.is_none());
+        assert!(app.landscape.apply_requested.is_none());
+        assert!(app.environment.generated_flora.is_empty());
+        assert!(app.environment.apply_requested.is_none());
+        assert!(app.ai_planner.current_plan.is_none());
+        assert!(app.ai_planner.plan_summary.is_empty());
+        assert!(app.packaging.diff_summary_text.is_empty());
+        assert!(app.campaign.objectives.is_empty());
+        assert!(app.maps.diagnostic_issues.is_empty());
+
+        // Verify user preferences are preserved
+        assert!(app.placement.open);
+        assert_eq!(app.placement.delta(), &["12.5", "0", "-5.5"]);
+        assert!(app.textures.open);
+        assert!(app.scenario.open);
+        assert!(app.event_graph.open);
+        assert!(app.maps.open);
+        assert!(app.environment.open);
+        assert!(app.landscape.open);
+        assert!(app.packaging.open);
+        assert!(app.campaign.open);
+        assert!(app.ai_planner.open);
+        assert_eq!(app.view_mode, ViewMode::View3D);
+        assert_eq!(app.brush_radius, 24.0);
+    }
+
+    #[test]
+    fn test_map_switch_missing_optional_ambience_uses_clean_defaults() {
+        let dir_a = PendingPanelTemp(temp_map_dir("missing_amb_a"));
+        let dir_b = PendingPanelTemp(temp_map_dir("missing_amb_b"));
+        make_test_map(&dir_a.0, 10001, "Zone_A", "Briefing_A");
+
+        // Map B has valid terrain and boden.ini, but no soundscape, no daynight, no briefing
+        let mut terrain_b = TerrainSession::create_blank(193, 77);
+        safe_save_map(&dir_b.0, &mut terrain_b).unwrap();
+        std::fs::write(
+            dir_b.0.join("boden.ini"),
+            b"[Heightmapstep]\n2.0\n[Waterlevel]\n30.0\n",
+        )
+        .unwrap();
+
+        let mut app = EditorApp::initial_state();
+        let loaded_a = load_map(&dir_a.0).unwrap();
+        app.set_loaded_map(dir_a.0.clone(), loaded_a).unwrap();
+        assert_eq!(app.ambience.zones.len(), 1);
+
+        let loaded_b = load_map(&dir_b.0).unwrap();
+        app.set_loaded_map(dir_b.0.clone(), loaded_b).unwrap();
+
+        assert!(app.ambience.zones.is_empty());
+        assert!(app.ambience.lighting_context.day_night.is_none());
+        assert!(app.ambience.briefing_title.is_empty());
+        assert!(app.ambience.briefing_body.is_empty());
+        assert!(!app.ambience.is_dirty());
+    }
+
+    #[test]
+    fn test_map_switch_corrupt_ambience_aborts_and_preserves_map_a() {
+        let dir_a = PendingPanelTemp(temp_map_dir("corrupt_amb_a"));
+        let dir_c = PendingPanelTemp(temp_map_dir("corrupt_amb_c"));
+        make_test_map(&dir_a.0, 10001, "Zone_A", "Briefing_A");
+
+        // Map C has valid terrain, but corrupt soundscape.sndz
+        let mut terrain_c = TerrainSession::create_blank(193, 77);
+        safe_save_map(&dir_c.0, &mut terrain_c).unwrap();
+        std::fs::write(
+            dir_c.0.join("boden.ini"),
+            b"[Heightmapstep]\n2.0\n[Waterlevel]\n30.0\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir_c.0.join("soundscape.sndz"),
+            b"INVALID_GARBAGE_HEADER_BYTES",
+        )
+        .unwrap();
+
+        let mut app = EditorApp::initial_state();
+        let loaded_a = load_map(&dir_a.0).unwrap();
+        app.set_loaded_map(dir_a.0.clone(), loaded_a).unwrap();
+        app.placement.load_session(&dir_a.0).unwrap();
+
+        let loaded_c = load_map(&dir_c.0).unwrap();
+        let err = app.set_loaded_map(dir_c.0.clone(), loaded_c).unwrap_err();
+        assert!(
+            err.contains("Corrupted") && err.contains("soundscape.sndz"),
+            "{err}"
+        );
+
+        // Map A remains completely intact and unpolluted
+        assert_eq!(app.map_path_input, dir_a.0.to_string_lossy());
+        assert_eq!(app.ambience.zones.len(), 1);
+        assert_eq!(app.ambience.zones[0].name, "Zone_A");
+        assert_eq!(app.placement.objects()[0].uid, 10001);
+        assert!(!app.has_unsaved_changes());
+    }
+
+    #[test]
+    fn test_map_switch_corrupt_daynight_aborts_before_resetting_other_panels() {
+        let dir_a = PendingPanelTemp(temp_map_dir("corrupt_daynight_a"));
+        let dir_b = PendingPanelTemp(temp_map_dir("corrupt_daynight_b"));
+        make_test_map(&dir_a.0, 10001, "Zone_A", "Briefing_A");
+
+        let mut terrain_b = TerrainSession::create_blank(193, 77);
+        safe_save_map(&dir_b.0, &mut terrain_b).unwrap();
+        std::fs::write(dir_b.0.join("daynight.bmp"), b"broken daynight table").unwrap();
+
+        let mut app = EditorApp::initial_state();
+        app.set_loaded_map(dir_a.0.clone(), load_map(&dir_a.0).unwrap())
+            .unwrap();
+        app.placement.load_session(&dir_a.0).unwrap();
+        app.textures.load_session(&dir_a.0).unwrap();
+        let old_heights = app.session.as_ref().unwrap().heights().to_vec();
+        let old_texture_doc = app.textures.session_textures().map(|x| x.to_vec());
+
+        let err = app
+            .set_loaded_map(dir_b.0.clone(), load_map(&dir_b.0).unwrap())
+            .unwrap_err();
+        assert!(
+            err.contains("Corrupted") && err.contains("daynight.bmp"),
+            "{err}"
+        );
+        assert_eq!(app.map_path_input, dir_a.0.to_string_lossy());
+        assert_eq!(app.session.as_ref().unwrap().heights(), old_heights);
+        assert_eq!(app.placement.objects()[0].uid, 10001);
+        assert_eq!(app.placement.loaded_map(), Some(dir_a.0.as_path()));
+        assert_eq!(
+            app.textures.session_textures().map(|x| x.to_vec()),
+            old_texture_doc
+        );
+        assert_eq!(app.ambience.zones[0].name, "Zone_A");
+        assert!(!app.has_unsaved_changes());
+    }
+
+    #[test]
+    fn test_blank_map_switch_resets_all_panel_documents_and_preserves_preferences() {
+        let dir_a = PendingPanelTemp(temp_map_dir("blank_switch_a"));
+        make_test_map(&dir_a.0, 10001, "Zone_A", "Briefing_A");
+
+        let mut app = EditorApp::initial_state();
+        let loaded_a = load_map(&dir_a.0).unwrap();
+        app.set_loaded_map(dir_a.0.clone(), loaded_a).unwrap();
+
+        // Set user preferences and transient plans
+        app.placement.open = true;
+        app.placement
+            .set_delta(["1.0".into(), "2.0".into(), "3.0".into()]);
+        app.landscape.open = true;
+        app.landscape.apply_requested = Some(LandscapeApply::River);
+        app.environment.generated_flora =
+            vec![against_rome_environment::nature::NatureAddition::new(
+                1, "Tree", 10.0, 0.0, 10.0, 0.0,
+            )];
+        app.ai_planner.plan_summary = "AI summary".into();
+
+        let ctx = egui::Context::default();
+        app.perform_action(PendingAction::Blank(257), &ctx);
+
+        assert_eq!(app.session.as_ref().unwrap().vertex_size, 257);
+        assert!(app.map_path_input.is_empty());
+        assert!(app.placement.objects().is_empty());
+        assert!(app.placement.loaded_map().is_none());
+        assert!(app.ambience.zones.is_empty());
+        assert!(app.ambience.briefing_title.is_empty());
+        assert!(app.ambience.lighting_context.day_night.is_none());
+        assert!(app.landscape.apply_requested.is_none());
+        assert!(app.environment.generated_flora.is_empty());
+        assert!(app.ai_planner.plan_summary.is_empty());
+
+        // User preferences preserved
+        assert!(app.placement.open);
+        assert_eq!(app.placement.delta(), &["1.0", "2.0", "3.0"]);
+        assert!(app.landscape.open);
+        assert!(!app.has_unsaved_changes());
+    }
+
+    #[test]
+    fn test_ui_explicit_discard_cleanly_switches_to_map_b_without_leakage() {
+        let dir_a = PendingPanelTemp(temp_map_dir("discard_leak_a"));
+        let dir_b = PendingPanelTemp(temp_map_dir("discard_leak_b"));
+        make_test_map(&dir_a.0, 10001, "Zone_A", "Briefing_A");
+        make_test_map(&dir_b.0, 20001, "Zone_B", "Briefing_B");
+
+        let mut app = EditorApp::initial_state();
+        let loaded_a = load_map(&dir_a.0).unwrap();
+        app.set_loaded_map(dir_a.0.clone(), loaded_a).unwrap();
+        app.placement.load_session(&dir_a.0).unwrap();
+
+        // Dirty Map A
+        app.session
+            .as_mut()
+            .unwrap()
+            .apply_height_changes(&[SampleChange {
+                index: 0,
+                before: 77,
+                after: 88,
+            }]);
+        app.placement.select_object(Some((0, 10001)));
+        app.landscape.last_cliff_result =
+            Some(against_rome_landscape::cliff::CliffDetectionResult {
+                dimension: 64,
+                cliff_cells: vec![],
+                contours: vec![],
+            });
+        app.landscape.apply_requested = Some(LandscapeApply::Cliff);
+        assert!(app.has_unsaved_changes());
+
+        // Queue switch to Map B
+        app.pending_action = Some(PendingAction::Load(dir_b.0.clone()));
+
+        // Simulate discard confirmation in perform_action
+        let ctx = egui::Context::default();
+        let action = app.pending_action.take().unwrap();
+        app.perform_action(action, &ctx);
+
+        // Verify Map B is installed and Map A dirty/transient state is completely cleared
+        assert_eq!(app.map_path_input, dir_b.0.to_string_lossy());
+        assert_eq!(app.ambience.zones[0].name, "Zone_B");
+        assert!(app.placement.objects().is_empty());
+        assert_eq!(app.placement.loaded_map(), None);
+        assert_eq!(app.placement.selected_object(), None);
+        assert!(app.landscape.last_cliff_result.is_none());
+        assert!(app.landscape.apply_requested.is_none());
+        assert!(!app.has_unsaved_changes());
+
+        // The Objects panel remains explicit: loading B after the switch yields only B data.
+        app.placement.load_session(&dir_b.0).unwrap();
+        let uids: Vec<u32> = app.placement.objects().iter().map(|o| o.uid).collect();
+        assert!(uids.contains(&20001));
+        assert!(!uids.contains(&10001));
+    }
+
+    // ---------------------------------------------------------------- Nature brush workflow
+
+    const NATURE_TREE: u16 = 10;
+    const NATURE_GRASS: u16 = 11;
+    const NATURE_LINKED: u16 = 12;
+    const NATURE_HOUSE: u16 = 20;
+
+    /// Game root with an objdef naming the fixture types; `with_objdef = false` omits it.
+    fn nature_game(tag: &str, with_objdef: bool) -> (PathBuf, PathBuf) {
+        let root = temp_map_dir(tag);
+        let map = root.join("game").join("MAPS").join("NAT1");
+        std::fs::create_dir_all(&map).unwrap();
+        if with_objdef {
+            let defaults = root.join("game/SYSTEM/DATA_MP/DEFAULTS");
+            std::fs::create_dir_all(&defaults).unwrap();
+            let mut text = String::from("[ObjectDefaults]\n");
+            for (id, name) in [
+                (NATURE_TREE, "LanGerNad00_Tanne"),
+                (NATURE_GRASS, "LanGerGra01_Gras"),
+                (NATURE_LINKED, "LanGerStr01_Strauch"),
+                (NATURE_HOUSE, "BuiGerHaus01"),
+            ] {
+                let mut columns = vec!["0".to_string(); 52];
+                columns[0] = id.to_string();
+                columns[1] = "1".into();
+                columns.push(name.into());
+                text.push_str(&columns.join(","));
+                text.push('\n');
+            }
+            std::fs::write(defaults.join("objdef.dau"), text).unwrap();
+        }
+        (root, map)
+    }
+
+    /// Editor-format DATA: slots 0 tree, 1 far tree, 2 grass, 3 house, 4 landscape child of the
+    /// house; slots 5.. are free capacity for clones.
+    fn nature_data_fixture(map: &Path, capacity: usize) {
+        use against_rome_placement::{COLUMNS, SEGMENTS};
+        let data = map.join("DATA");
+        std::fs::create_dir_all(&data).unwrap();
+        let n = capacity;
+        let mut objects = vec![0u8; 16 + n * (79 + COLUMNS.iter().sum::<usize>())];
+        objects[..4].copy_from_slice(&1u32.to_le_bytes());
+        objects[4..8].copy_from_slice(&(n as u32).to_le_bytes());
+        objects[8..12].copy_from_slice(&30u32.to_le_bytes());
+        objects[12..16].copy_from_slice(&30u32.to_le_bytes());
+        let actives: [(u16, [f32; 3], Option<u16>); 5] = [
+            (NATURE_TREE, [900.0, 0.0, 900.0], None),
+            (NATURE_TREE, [4000.0, 0.0, 4000.0], None),
+            (NATURE_GRASS, [950.0, 0.0, 950.0], None),
+            (NATURE_HOUSE, [880.0, 0.0, 880.0], None),
+            (NATURE_LINKED, [900.0, 0.0, 880.0], Some(3)),
+        ];
+        for slot in 0..n {
+            let r = 16 + slot * 79;
+            for offset in [67, 69] {
+                objects[r + offset..r + offset + 2].copy_from_slice(&(slot as u16).to_le_bytes());
+            }
+            for offset in [71, 73, 77] {
+                objects[r + offset..r + offset + 2].fill(255);
+            }
+            for col in 0..18 {
+                let offset =
+                    16 + n * 79 + n * COLUMNS[..col].iter().sum::<usize>() + slot * COLUMNS[col];
+                if COLUMNS[col] == 2 {
+                    objects[offset..offset + 2].fill(255);
+                }
+                if col == 1 {
+                    objects[offset..offset + 2].copy_from_slice(&(slot as u16).to_le_bytes());
+                }
+                if col == 13 {
+                    if let Some(Some(parent)) = actives.get(slot).map(|a| a.2) {
+                        objects[offset..offset + 2].copy_from_slice(&parent.to_le_bytes());
+                    }
+                }
+            }
+            if let Some((type_id, _, _)) = actives.get(slot) {
+                objects[r] = 1;
+                objects[r + 3..r + 7].copy_from_slice(&(slot as u32 + 1).to_le_bytes());
+                objects[r + 75..r + 77].copy_from_slice(&type_id.to_le_bytes());
+            }
+        }
+        let mut position = vec![0u8; 8 + n * 17];
+        position[..4].copy_from_slice(&1u32.to_le_bytes());
+        position[4..8].copy_from_slice(&(n as u32).to_le_bytes());
+        for (slot, (_, xyz, _)) in actives.iter().enumerate() {
+            position[8 + slot * 17] = 1;
+            for (axis, v) in xyz.iter().enumerate() {
+                position[9 + slot * 17 + axis * 4..13 + slot * 17 + axis * 4]
+                    .copy_from_slice(&v.to_le_bytes());
+            }
+        }
+        let mut objdata = vec![0u8; 8 + n * SEGMENTS.iter().sum::<usize>()];
+        objdata[..4].copy_from_slice(&1u32.to_le_bytes());
+        objdata[4..8].copy_from_slice(&(n as u32).to_le_bytes());
+        for (name, bytes) in [
+            ("objects", objects),
+            ("position", position),
+            ("objdata", objdata),
+        ] {
+            std::fs::write(data.join(format!("{name}.dat")), bytes).unwrap();
+        }
+    }
+
+    fn nature_app(tag: &str) -> (EditorApp, PathBuf) {
+        let (root, map) = nature_game(tag, true);
+        nature_data_fixture(&map, 16);
+        let mut app = EditorApp::initial_state();
+        app.session = Some(TerrainSession::create_blank(5, 32));
+        app.map_path_input = map.display().to_string();
+        app.placement.load_session(&map).unwrap();
+        app.nature.random = DotNetRandom::new(1234);
+        (app, root)
+    }
+
+    fn nature_stroke(app: &mut EditorApp, tiles: &[(i32, i32)]) -> NatureStrokeReport {
+        let mut total = NatureStrokeReport::default();
+        for &(x, y) in tiles {
+            let report = app.nature_paint_tile(x, y);
+            total.planted += report.planted;
+            total.removed_slots += report.removed_slots;
+            total.removed_additions += report.removed_additions;
+            total.visited.extend(report.visited);
+        }
+        app.nature_end_stroke();
+        total
+    }
+
+    fn nature_active_objects(map: &Path) -> Vec<against_rome_placement::WorldObject> {
+        against_rome_placement::ObjectStore::load(map)
+            .unwrap()
+            .objects()
+    }
+
+    #[test]
+    fn nature_brush_catalog_comes_from_map_templates_and_objdef_names() {
+        let (mut app, root) = nature_app("nature_catalog");
+        app.nature_set_enabled(true);
+        assert!(!app.status_is_error, "{}", app.status_message);
+        let names: Vec<_> = app.nature_palette().into_iter().map(|i| i.name).collect();
+        // Root landscape types only: the house and the linked child are not templates.
+        assert_eq!(names, ["LanGerGra01_Gras", "LanGerNad00_Tanne"]);
+        app.nature.category = Some(NatureCategory::Tree);
+        assert_eq!(app.nature_palette().len(), 1);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn nature_brush_plant_remove_are_single_undoable_strokes() {
+        let (mut app, root) = nature_app("nature_edit_undo");
+        app.nature_set_enabled(true);
+        app.nature_select_type(i32::from(NATURE_TREE));
+        app.nature.brush_size = 3;
+        app.nature.density = NatureDensity::Dense;
+
+        // A fast drag skips tiles; the driver fills the gap and the stroke is one undo step.
+        let planted = nature_stroke(&mut app, &[(10, 10), (14, 10)]);
+        assert_eq!(planted.visited.len(), 5, "gap tiles filled");
+        let (added, removed) = app.nature_pending_counts();
+        assert!(added > 0 && planted.planted == added && removed == 0);
+        assert!(app.nature_is_dirty() && app.has_unsaved_changes());
+        assert!(app
+            .nature
+            .session
+            .additions()
+            .iter()
+            .all(|a| a.type_id == i32::from(NATURE_TREE) && a.x < 16384.0 && a.z < 16384.0));
+
+        // Remove: the tree/grass under tile (3,3) go; house and its linked child are protected.
+        app.nature_set_operation(NatureOperation::Remove);
+        app.nature.brush_size = 1;
+        let removal = nature_stroke(&mut app, &[(3, 3)]);
+        assert_eq!(removal.removed_slots, 2);
+        assert_eq!(
+            app.nature
+                .session
+                .removed_slots()
+                .iter()
+                .copied()
+                .collect::<Vec<_>>(),
+            [0, 2]
+        );
+        assert_eq!(app.nature_pending_counts().0, added);
+
+        // Remove also erases pending additions under the brush.
+        let pending_tile = {
+            let a = &app.nature.session.additions()[0];
+            (
+                (a.x / NATURE_TILE_WORLD) as i32,
+                (a.z / NATURE_TILE_WORLD) as i32,
+            )
+        };
+        app.nature.brush_size = 2;
+        let erased = nature_stroke(&mut app, &[pending_tile]);
+        assert!(erased.removed_additions > 0);
+        assert!(app.nature_pending_counts().0 < added);
+
+        // Three strokes -> three undo steps, then redo restores them in order.
+        assert!(app.nature_undo());
+        assert_eq!(app.nature_pending_counts().0, added);
+        assert!(app.nature_undo());
+        assert_eq!(app.nature_pending_counts(), (added, 0));
+        assert!(app.nature_undo());
+        assert_eq!(app.nature_pending_counts(), (0, 0));
+        assert!(!app.nature_is_dirty() && !app.has_unsaved_changes());
+        assert!(!app.nature_undo());
+        assert!(app.nature_redo());
+        assert_eq!(app.nature_pending_counts(), (added, 0));
+
+        // Esc mid-stroke leaves no step behind.
+        app.nature_set_operation(NatureOperation::Plant);
+        app.nature_paint_tile(30, 30);
+        app.nature_cancel_stroke();
+        assert_eq!(app.nature_pending_counts(), (added, 0));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn nature_brush_fails_closed_without_catalog_or_objects() {
+        // No DATA session loaded.
+        let mut app = EditorApp::initial_state();
+        app.nature_set_enabled(true);
+        assert!(app.status_is_error, "{}", app.status_message);
+        let report = app.nature_paint_tile(3, 3);
+        assert!(!report.changed() && !app.nature_is_dirty());
+        assert!(
+            app.status_message.contains("unavailable"),
+            "{}",
+            app.status_message
+        );
+
+        // DATA loaded but the game objdef catalog is missing.
+        let (root, map) = nature_game("nature_no_objdef", false);
+        nature_data_fixture(&map, 16);
+        let mut app = EditorApp::initial_state();
+        app.session = Some(TerrainSession::create_blank(5, 32));
+        app.placement.load_session(&map).unwrap();
+        app.nature_set_enabled(true);
+        assert!(app.status_is_error && app.status_message.contains("catalog unavailable"));
+        assert!(!app.nature_paint_tile(3, 3).changed() && !app.nature_is_dirty());
+
+        // Catalog present but no template object of a selected type is on the map: nothing plants.
+        let (mut app, root2) = nature_app("nature_unselected");
+        app.nature_set_enabled(true);
+        app.nature.category = Some(NatureCategory::Rock);
+        app.nature_paint_tile(10, 10);
+        app.nature_end_stroke();
+        assert!(!app.nature_is_dirty());
+        assert!(app.status_is_error && app.status_message.contains("pick a landscape type"));
+
+        // Unsaved DATA edits make the snapshot stale, so the brush refuses.
+        let (mut app, root3) = nature_app("nature_placement_dirty");
+        app.placement.open = true;
+        app.placement.select_object(Some((0, 1)));
+        let ctx = egui::Context::default();
+        pending_panel_click(&mut app, &ctx, 0, "Snap to tile");
+        assert!(app.placement.is_dirty());
+        app.nature_set_enabled(true);
+        assert!(!app.nature_paint_tile(3, 3).changed() && !app.nature_is_dirty());
+        assert!(
+            app.status_message.contains("unsaved edits"),
+            "{}",
+            app.status_message
+        );
+        for dir in [root, root2, root3] {
+            let _ = std::fs::remove_dir_all(dir);
+        }
+    }
+
+    #[test]
+    fn nature_pending_edits_guard_map_switch_and_discard_cleanly() {
+        let (mut app, root) = nature_app("nature_guard");
+        app.nature_set_enabled(true);
+        app.nature_select_type(i32::from(NATURE_TREE));
+        app.nature.brush_size = 3;
+        app.nature.density = NatureDensity::Dense;
+        nature_stroke(&mut app, &[(10, 10)]);
+        assert!(app.nature_is_dirty());
+
+        app.pending_action = Some(PendingAction::Blank(193));
+        let err = app
+            .set_loaded_map(root.join("elsewhere"), TerrainSession::create_blank(193, 1))
+            .unwrap_err();
+        assert!(err.contains("unsaved changes"), "{err}");
+        assert!(app.nature_is_dirty() && app.pending_action.is_some());
+
+        // The UI path keeps the edit until the designer explicitly discards.
+        let ctx = egui::Context::default();
+        let _ = ctx.run(egui::RawInput::default(), |ctx| {
+            app.handle_pending_action(ctx)
+        });
+        assert!(app.pending_action.is_some() && app.nature_is_dirty());
+        app.perform_action(PendingAction::Blank(193), &ctx);
+        assert!(!app.nature_is_dirty() && !app.has_unsaved_changes());
+        assert!(app.nature.data.is_none());
+
+        let (mut app, root2) = nature_app("nature_discard");
+        app.nature_set_enabled(true);
+        nature_stroke(&mut app, &[(10, 10)]);
+        assert!(app.nature_is_dirty());
+        app.nature_discard();
+        assert!(!app.nature_is_dirty() && !app.nature_undo());
+        for dir in [root, root2] {
+            let _ = std::fs::remove_dir_all(dir);
+        }
+    }
+
+    #[test]
+    fn nature_safe_save_persists_additions_and_removals_transactionally() {
+        let (mut app, root) = nature_app("nature_save_ok");
+        let map = PathBuf::from(&app.map_path_input);
+        app.nature_set_enabled(true);
+        app.nature_select_type(i32::from(NATURE_TREE));
+        app.nature.brush_size = 3;
+        app.nature.density = NatureDensity::Dense;
+        nature_stroke(&mut app, &[(10, 10)]);
+        app.nature_set_operation(NatureOperation::Remove);
+        app.nature.brush_size = 1;
+        nature_stroke(&mut app, &[(3, 3)]);
+        let (added, removed) = app.nature_pending_counts();
+        assert!(added > 0 && removed == 2);
+        let additions = app.nature.session.additions().to_vec();
+
+        app.safe_save_current();
+        assert!(!app.status_is_error, "{}", app.status_message);
+        assert!(app.status_message.starts_with("Saved safely"));
+        assert!(!app.nature_is_dirty() && !app.has_unsaved_changes());
+        assert!(!app.placement.is_dirty());
+
+        let objects = nature_active_objects(&map);
+        let slots: Vec<_> = objects.iter().map(|o| o.slot).collect();
+        // Removed: slot 0 tree, slot 2 grass. Kept: far tree, house and its linked child.
+        for removed_slot in [0, 2] {
+            assert!(
+                !slots.contains(&removed_slot),
+                "slot {removed_slot} removed"
+            );
+        }
+        for kept in [1, 3, 4] {
+            assert!(slots.contains(&kept), "slot {kept} kept");
+        }
+        assert_eq!(objects.len(), 3 + added);
+        for addition in &additions {
+            assert!(
+                objects.iter().any(|o| o.type_id == NATURE_TREE
+                    && (o.position[0] - addition.x).abs() < 0.01
+                    && (o.position[2] - addition.z).abs() < 0.01),
+                "addition at ({}, {}) persisted",
+                addition.x,
+                addition.z
+            );
+        }
+        // The DATA panel was reloaded from the committed files and the brush rebuilds lazily.
+        assert_eq!(app.placement.object_count(), 3 + added);
+        assert!(app.nature.data.is_none());
+        app.nature_paint_tile(20, 20);
+        app.nature_end_stroke();
+        assert!(app.nature.data.is_some());
+
+        // A second save with nothing pending writes nothing Nature-related.
+        let before = save_file_snapshot(&map);
+        app.nature_discard();
+        app.safe_save_current();
+        assert!(!app.status_is_error, "{}", app.status_message);
+        assert_eq!(
+            save_file_snapshot(&map).get(&PathBuf::from("DATA/objects.dat")),
+            before.get(&PathBuf::from("DATA/objects.dat"))
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn nature_safe_save_failure_restores_disk_and_keeps_edits_and_history() {
+        use against_rome_maps::TransactionFailurePoint as Fail;
+        let (mut app, root) = nature_app("nature_save_fail");
+        let map = PathBuf::from(&app.map_path_input);
+        app.nature_set_enabled(true);
+        app.nature_select_type(i32::from(NATURE_TREE));
+        app.nature.brush_size = 3;
+        app.nature.density = NatureDensity::Dense;
+        nature_stroke(&mut app, &[(10, 10)]);
+        let pending = app.nature_pending_counts();
+        let before = save_file_snapshot(&map);
+
+        app.safe_save_current_using(|tx| {
+            let mut injected =
+                std::mem::replace(tx, against_rome_maps::MapSaveTransaction::new("unused"))
+                    .with_injected_failure(Fail::BeforeFinalCommit, "simulated disk failure");
+            injected.commit().map_err(|e| e.to_string())
+        });
+        assert!(app.status_is_error, "{}", app.status_message);
+        assert_eq!(save_file_snapshot(&map), before);
+        assert!(app.nature_is_dirty() && app.has_unsaved_changes());
+        assert_eq!(app.nature_pending_counts(), pending);
+        assert!(app.nature_undo(), "history survives a failed save");
+        assert_eq!(app.nature_pending_counts(), (0, 0));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn nature_safe_save_rejects_unprovable_candidates_without_writing() {
+        // Capacity exhausted: every free slot is gone, so a clone cannot be stored.
+        let (root, map) = nature_game("nature_save_full", true);
+        nature_data_fixture(&map, 5);
+        let mut app = EditorApp::initial_state();
+        app.session = Some(TerrainSession::create_blank(5, 32));
+        app.map_path_input = map.display().to_string();
+        app.placement.load_session(&map).unwrap();
+        app.nature_set_enabled(true);
+        app.nature_select_type(i32::from(NATURE_TREE));
+        app.nature.brush_size = 3;
+        app.nature.density = NatureDensity::Dense;
+        nature_stroke(&mut app, &[(10, 10)]);
+        assert!(app.nature_is_dirty());
+        let before = save_file_snapshot(&map);
+        app.safe_save_current();
+        assert!(app.status_is_error, "{}", app.status_message);
+        assert!(
+            app.status_message.contains("Nature:"),
+            "{}",
+            app.status_message
+        );
+        assert_eq!(save_file_snapshot(&map), before);
+        assert!(app.nature_is_dirty());
+
+        // The object under a pending removal changed on disk after it was selected.
+        let (mut app, root2) = nature_app("nature_save_stale");
+        let map2 = PathBuf::from(&app.map_path_input);
+        app.nature_set_enabled(true);
+        app.nature_set_operation(NatureOperation::Remove);
+        nature_stroke(&mut app, &[(3, 3)]);
+        assert_eq!(app.nature_pending_counts().1, 2);
+        let mut objects = std::fs::read(map2.join("DATA/objects.dat")).unwrap();
+        objects[16 + 3..16 + 7].copy_from_slice(&999u32.to_le_bytes());
+        std::fs::write(map2.join("DATA/objects.dat"), &objects).unwrap();
+        let before = save_file_snapshot(&map2);
+        app.safe_save_current();
+        assert!(app.status_is_error && app.status_message.contains("changed on disk"));
+        assert_eq!(save_file_snapshot(&map2), before);
+        assert!(app.nature_is_dirty());
+
+        // Unsaved DATA-panel edits and Nature edits both want objects.dat: refuse, write nothing.
+        let (mut app, root3) = nature_app("nature_save_conflict");
+        let map3 = PathBuf::from(&app.map_path_input);
+        app.nature_set_enabled(true);
+        nature_stroke(&mut app, &[(10, 10)]);
+        app.placement.open = true;
+        app.placement.select_object(Some((0, 1)));
+        let ctx = egui::Context::default();
+        pending_panel_click(&mut app, &ctx, 0, "Snap to tile");
+        let before = save_file_snapshot(&map3);
+        app.safe_save_current();
+        assert!(app.status_is_error, "{}", app.status_message);
+        assert_eq!(save_file_snapshot(&map3), before);
+        for dir in [root, root2, root3] {
+            let _ = std::fs::remove_dir_all(dir);
+        }
+    }
+
+    #[test]
+    fn nature_panel_and_overlay_render_headless() {
+        let (mut app, root) = nature_app("nature_render");
+        app.nature_set_enabled(true);
+        app.nature_select_type(i32::from(NATURE_TREE));
+        app.nature.brush_size = 3;
+        app.nature.density = NatureDensity::Dense;
+        nature_stroke(&mut app, &[(10, 10)]);
+        let ctx = egui::Context::default();
+        let _ = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                app.show_nature_panel(ui);
+                let (_, painter) = ui.allocate_painter(Vec2::splat(64.0), Sense::hover());
+                app.draw_nature_overlay(
+                    &painter,
+                    Rect::from_min_size(Pos2::ZERO, Vec2::splat(64.0)),
+                );
+            });
+        });
+        let _ = std::fs::remove_dir_all(&root);
     }
 }
 
@@ -405,17 +6876,24 @@ impl eframe::App for EditorApp {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
             self.pending_action = Some(PendingAction::Close);
         }
-        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) && self.is_painting {
-            if let Some(session) = &mut self.session {
-                session.cancel_stroke();
+        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+            if self.ramp_selecting {
+                self.cancel_ramp_selection();
+            } else if self.nature.driver.is_active() {
+                self.nature_cancel_stroke();
+            } else if self.is_painting {
+                if let Some(session) = &mut self.session {
+                    session.cancel_stroke();
+                }
+                self.is_painting = false;
+                self.stroke_path.clear();
+                self.texture_dirty = true;
             }
-            self.is_painting = false;
-            self.stroke_path.clear();
-            self.texture_dirty = true;
         }
         // 快捷鍵處理
         if ctx.input(|i| i.modifiers.ctrl && i.key_pressed(egui::Key::Z)) {
-            if let Some(session) = &mut self.session {
+            if self.nature_undo() {
+            } else if let Some(session) = &mut self.session {
                 if session.undo() {
                     self.is_painting = false;
                     self.stroke_path.clear();
@@ -426,7 +6904,8 @@ impl eframe::App for EditorApp {
             }
         }
         if ctx.input(|i| i.modifiers.ctrl && i.key_pressed(egui::Key::Y)) {
-            if let Some(session) = &mut self.session {
+            if self.nature_redo() {
+            } else if let Some(session) = &mut self.session {
                 if session.redo() {
                     self.is_painting = false;
                     self.stroke_path.clear();
@@ -442,19 +6921,80 @@ impl eframe::App for EditorApp {
             ui.horizontal_wrapped(|ui| {
                 ui.heading("Against Rome Map Editor (Rust)");
                 ui.separator();
-                if ui.button("Modifier / Saves").clicked() {self.toolbox.open=true;}
-                if ui.button("Navigation").clicked() {self.navigation.open=true;}
-                if ui.button("Objects").clicked() {self.placement.open=true;}
-                if ui.button("Scenario / Camera").clicked() {self.scenario.open=true;}
-                if ui.button("Materials").clicked() {self.textures.open=true;}
-                if ui.button("Event Graph").clicked() {self.event_graph.open=true;}
-                if ui.button("Console").clicked() {self.console.open=true;}
-                if ui.button("Maps").clicked() {self.maps.open=true;}
-                if ui.button("Environment").clicked() {self.environment.open=true;}
-                if ui.button("Landscape").clicked() {self.landscape.open=true;}
-                if ui.button("Packaging").clicked() {self.packaging.open=true;}
-                if ui.button("Campaign").clicked() {self.campaign.open=true;}
-                if ui.button("AI Planner").clicked() {self.ai_planner.open=true;}
+                if ui.button("Modifier").clicked() {
+                    self.toolbox.open_modifier();
+                }
+                if ui.button("Modifier Studio").clicked() {
+                    self.modifier.open = true;
+                }
+                if ui.button("Save Manager").clicked() {
+                    self.toolbox.open_save_manager();
+                }
+                if ui.button("Navigation").clicked() {
+                    self.navigation.open = true;
+                }
+                if ui.button("Minimap").clicked() {
+                    self.minimap.open = true;
+                }
+                if ui.button("Objects").clicked() {
+                    self.placement.open = true;
+                }
+                if ui.button("Scenario / Camera").clicked() {
+                    self.scenario.open = true;
+                }
+                if ui.button("Materials").clicked() {
+                    self.textures.open = true;
+                }
+                if ui.button("Scene (SDL)").clicked() {
+                    self.scene.open = true;
+                }
+                if ui.button("Event Graph").clicked() {
+                    self.event_graph.open = true;
+                }
+                if ui.button("Console").clicked() {
+                    self.console.open = true;
+                }
+                if ui.button("Maps").clicked() {
+                    self.maps.open = true;
+                }
+                if ui.button("New Map").clicked() {
+                    self.maps.open = true;
+                    self.maps.current_tab = crate::maps_ui::MapsTab::NewBlankMap;
+                    if self.maps.game_path_input.trim().is_empty()
+                        && !self.map_path_input.trim().is_empty()
+                    {
+                        if let Some(parent) = Path::new(self.map_path_input.trim()).parent() {
+                            if let Some(game_root) = parent.parent() {
+                                self.maps.game_path_input =
+                                    game_root.to_string_lossy().into_owned();
+                            }
+                        }
+                    }
+                }
+                if ui.button("Environment").clicked() {
+                    self.environment.open = true;
+                }
+                if ui.button("Landscape").clicked() {
+                    self.landscape.open = true;
+                }
+                if ui.button("Packaging").clicked() {
+                    self.packaging.open = true;
+                }
+                if ui.button("Campaign").clicked() {
+                    self.campaign.open = true;
+                }
+                if ui.button("AI Planner").clicked() {
+                    self.ai_planner.open = true;
+                }
+                if ui.button("Ambience").clicked() {
+                    self.ambience.open = true;
+                }
+                if ui.button("Tech Doc").clicked() {
+                    self.tech_doc.open = true;
+                }
+                if ui.button("Design Check").clicked() {
+                    self.run_design_check();
+                }
 
                 ui.label("Map Folder:");
                 ui.text_edit_singleline(&mut self.map_path_input);
@@ -466,33 +7006,7 @@ impl eframe::App for EditorApp {
                 }
 
                 if ui.button("Safe Save").clicked() {
-                    if let Some(session) = &mut self.session {
-                        let path = PathBuf::from(self.map_path_input.trim());
-                        if path.as_os_str().is_empty() {
-                            self.status_message =
-                                "Error: Please specify target map directory path before saving."
-                                    .to_string();
-                            self.status_is_error = true;
-                        } else {
-                            match safe_save_map(&path, session) {
-                                Ok(report) => {
-                                    self.status_message = format!(
-                                        "Saved safely! Backup: {:?}",
-                                        report.boden_backup.map(|p| p
-                                            .file_name()
-                                            .unwrap()
-                                            .to_string_lossy()
-                                            .into_owned())
-                                    );
-                                    self.status_is_error = false;
-                                }
-                                Err(err) => {
-                                    self.status_message = format!("Safe Save Rejected: {}", err);
-                                    self.status_is_error = true;
-                                }
-                            }
-                        }
-                    }
+                    self.request_safe_save();
                 }
 
                 ui.separator();
@@ -534,157 +7048,263 @@ impl eframe::App for EditorApp {
                         ui.colored_label(Color32::YELLOW, "[Unsaved Changes]");
                     }
                 }
+                if self.nature.session.is_dirty() {
+                    ui.colored_label(Color32::YELLOW, "[Unsaved Nature]");
+                }
             });
         });
+
+        if let Some((_, issues)) = &self.pending_save_warnings {
+            let messages: Vec<_> = issues.iter().map(|i| i.english.clone()).collect();
+            let mut open = true;
+            let mut decision = None;
+            egui::Window::new("Confirm Save (Design Warnings)")
+                .open(&mut open)
+                .collapsible(false)
+                .resizable(false)
+                .show(ctx, |ui| {
+                    ui.label("These design warnings may affect playability. Continue saving?");
+                    for message in messages.iter().take(10) {
+                        ui.label(message);
+                    }
+                    ui.horizontal(|ui| {
+                        if ui.button("Continue saving").clicked() {
+                            decision = Some(true);
+                        }
+                        if ui.button("Cancel save").clicked() {
+                            decision = Some(false);
+                        }
+                    });
+                });
+            if !open {
+                decision = Some(false);
+            }
+            if let Some(proceed) = decision {
+                self.resolve_safe_save_warnings(proceed);
+            }
+        }
 
         // 左側工具面板
         egui::SidePanel::left("left_tools_panel")
             .min_width(220.0)
             .show(ctx, |ui| {
-                egui::ScrollArea::vertical().show(ui,|ui| {
-                ui.heading("Tools & Settings");
-                ui.separator();
+                egui::ScrollArea::vertical().show(ui, |ui| {
+                    ui.heading("Tools & Settings");
+                    ui.separator();
 
-                ui.label("Display Mode:");
-                ui.horizontal(|ui| {
+                    ui.label("Display Mode:");
+                    ui.horizontal_wrapped(|ui| {
+                        if ui
+                            .selectable_value(&mut self.view_mode, ViewMode::Blended, "Blended")
+                            .clicked()
+                        {
+                            self.texture_dirty = true;
+                        }
+                        if ui
+                            .selectable_value(&mut self.view_mode, ViewMode::Heightmap, "Height")
+                            .clicked()
+                        {
+                            self.texture_dirty = true;
+                        }
+                        if ui
+                            .selectable_value(&mut self.view_mode, ViewMode::Collision, "Collision")
+                            .clicked()
+                        {
+                            self.texture_dirty = true;
+                        }
+                        if ui
+                            .selectable_value(&mut self.view_mode, ViewMode::View3D, "3D View")
+                            .clicked()
+                        {
+                            self.texture_dirty = true;
+                        }
+                    });
+
+                    ui.separator();
+                    ui.label("Brush Mode:");
                     if ui
-                        .selectable_value(&mut self.view_mode, ViewMode::Blended, "Blended")
+                        .add(egui::Button::new(if self.ramp_selecting {
+                            "Cancel Ramp Selection"
+                        } else {
+                            "Ramp: choose two points"
+                        }))
                         .clicked()
                     {
-                        self.texture_dirty = true;
+                        if self.ramp_selecting {
+                            self.cancel_ramp_selection();
+                        } else {
+                            self.ramp_start = None;
+                            self.ramp_selecting = true;
+                            self.status_message = "Click the ramp start point on the map.".into();
+                            self.status_is_error = false;
+                        }
                     }
-                    if ui
-                        .selectable_value(&mut self.view_mode, ViewMode::Heightmap, "Height")
-                        .clicked()
-                    {
-                        self.texture_dirty = true;
+                    ui.add(egui::Slider::new(&mut self.ramp_width, 0.5..=32.0).text("Ramp width"));
+                    ui.add(
+                        egui::Slider::new(&mut self.ramp_falloff, 0.0..=24.0).text("Ramp falloff"),
+                    );
+                    if self.ramp_selecting {
+                        let cancel_hint = if self.view_mode == ViewMode::View3D {
+                            "Use left-click on terrain to choose points; Esc cancels."
+                        } else {
+                            "Click the endpoint; right-click or Esc cancels."
+                        };
+                        ui.small(match self.ramp_start {
+                            Some((x, y)) => format!("Start: ({x:.0}, {y:.0}); {cancel_hint}"),
+                            None => format!("Click a start point, then an endpoint. {cancel_hint}"),
+                        });
                     }
-                    if ui
-                        .selectable_value(&mut self.view_mode, ViewMode::Collision, "Collision")
-                        .clicked()
-                    {
-                        self.texture_dirty = true;
+                    ui.selectable_value(
+                        &mut self.active_tool,
+                        ActiveTool::HeightRaise,
+                        "Raise (Height)",
+                    );
+                    ui.selectable_value(
+                        &mut self.active_tool,
+                        ActiveTool::HeightLower,
+                        "Lower (Height)",
+                    );
+                    ui.selectable_value(
+                        &mut self.active_tool,
+                        ActiveTool::HeightFlatten,
+                        "Flatten (Height)",
+                    );
+                    ui.selectable_value(
+                        &mut self.active_tool,
+                        ActiveTool::HeightSmooth,
+                        "Smooth (Height)",
+                    );
+                    ui.selectable_value(
+                        &mut self.active_tool,
+                        ActiveTool::HeightRoughen,
+                        "Roughen (Noise)",
+                    );
+                    ui.selectable_value(
+                        &mut self.active_tool,
+                        ActiveTool::Water,
+                        "Water (Height + Collision)",
+                    );
+                    ui.selectable_value(
+                        &mut self.active_tool,
+                        ActiveTool::CollisionBlock,
+                        "Block (Collision)",
+                    );
+                    ui.selectable_value(
+                        &mut self.active_tool,
+                        ActiveTool::CollisionClear,
+                        "Clear (Collision)",
+                    );
+
+                    ui.separator();
+                    ui.add(
+                        egui::Slider::new(&mut self.brush_radius, 1.0..=64.0)
+                            .text("Radius (vertices)"),
+                    );
+                    ui.add(egui::Slider::new(&mut self.brush_strength, 1..=64).text("Strength"));
+
+                    if self.active_tool == ActiveTool::HeightFlatten {
+                        ui.checkbox(&mut self.sample_flatten_target, "Sample first dab height");
+                        if !self.sample_flatten_target {
+                            ui.add(
+                                egui::Slider::new(&mut self.flatten_target, 0..=255)
+                                    .text("Flatten Target"),
+                            );
+                        }
                     }
-                });
-
-                ui.separator();
-                ui.label("Brush Mode:");
-                ui.selectable_value(
-                    &mut self.active_tool,
-                    ActiveTool::HeightRaise,
-                    "Raise (Height)",
-                );
-                ui.selectable_value(
-                    &mut self.active_tool,
-                    ActiveTool::HeightLower,
-                    "Lower (Height)",
-                );
-                ui.selectable_value(
-                    &mut self.active_tool,
-                    ActiveTool::HeightFlatten,
-                    "Flatten (Height)",
-                );
-                ui.selectable_value(
-                    &mut self.active_tool,
-                    ActiveTool::HeightSmooth,
-                    "Smooth (Height)",
-                );
-                ui.selectable_value(
-                    &mut self.active_tool,
-                    ActiveTool::HeightRoughen,
-                    "Roughen (Noise)",
-                );
-                ui.selectable_value(
-                    &mut self.active_tool,
-                    ActiveTool::Water,
-                    "Water (Height + Collision)",
-                );
-                ui.selectable_value(
-                    &mut self.active_tool,
-                    ActiveTool::CollisionBlock,
-                    "Block (Collision)",
-                );
-                ui.selectable_value(
-                    &mut self.active_tool,
-                    ActiveTool::CollisionClear,
-                    "Clear (Collision)",
-                );
-
-                ui.separator();
-                ui.add(
-                    egui::Slider::new(&mut self.brush_radius, 1.0..=64.0).text("Radius (vertices)"),
-                );
-                ui.add(egui::Slider::new(&mut self.brush_strength, 1..=64).text("Strength"));
-
-                if self.active_tool == ActiveTool::HeightFlatten {
-                    ui.checkbox(&mut self.sample_flatten_target, "Sample first dab height");
-                    if !self.sample_flatten_target {
+                    if self.active_tool == ActiveTool::Water {
                         ui.add(
-                            egui::Slider::new(&mut self.flatten_target, 0..=255)
-                                .text("Flatten Target"),
+                            egui::Slider::new(&mut self.water_surface, 0.0..=255.0)
+                                .text("Water surface (G units)"),
                         );
-                    }
-                }
-                if self.active_tool == ActiveTool::Water {
-                    ui.add(
-                        egui::Slider::new(&mut self.water_surface, 0.0..=255.0)
-                            .text("Water surface (G units)"),
-                    );
-                    ui.add(egui::Slider::new(&mut self.water_bed, 0..=254).text("Bed height"));
-                    ui.label("Local excavation/blocking; set game water level separately.");
-                    ui.label(format!("World water: {:.2}; Heightmapstep: {}",self.water_surface*self.height_step,self.height_step));
-                    if self.water_surface<4.0 {ui.label("Water surface too low for the water brush (minimum 4).");}
-                }
-                if self.active_tool == ActiveTool::HeightRoughen {
-                    ui.add(
-                        egui::Slider::new(&mut self.roughness_seed, 0..=1000).text("Noise Seed"),
-                    );
-                }
-
-                ui.separator();
-                ui.heading("Map Diagnostics");
-                if let Some(session) = &self.session {
-                    let v_size = session.vertex_size;
-                    let is_standard_257 = v_size == 257;
-                    if is_standard_257 {
+                        ui.add(egui::Slider::new(&mut self.water_bed, 0..=254).text("Bed height"));
+                        ui.label("Local excavation/blocking; set game water level separately.");
                         ui.label(format!(
-                            "Height Dimensions: {}x{} (Standard)",
-                            v_size, v_size
+                            "World water: {:.2}; Heightmapstep: {}",
+                            self.water_surface * self.height_step,
+                            self.height_step
                         ));
-                    } else {
-                        ui.colored_label(
-                            Color32::from_rgb(255, 180, 50),
-                            format!(
-                                "Height Dimensions: {}x{} (Non-257 Compatible)",
-                                v_size, v_size
-                            ),
+                        if self.water_surface < 4.0 {
+                            ui.label("Water surface too low for the water brush (minimum 4).");
+                        }
+                    }
+                    if self.active_tool == ActiveTool::HeightRoughen {
+                        ui.add(
+                            egui::Slider::new(&mut self.roughness_seed, 0..=1000)
+                                .text("Noise Seed"),
                         );
                     }
-                    ui.label(format!(
-                        "Collision Grid: {}x{}",
-                        session.collision_size, session.collision_size
-                    ));
-                    ui.label("Channel: Green channel height decoded");
-                    if session.raw_boden_bmp.is_some() {
-                        ui.colored_label(Color32::LIGHT_GREEN, "Original R/B pixels preserved");
-                    } else {
-                        ui.label("Synthesized grayscale heightmap");
-                    }
-                }
 
-                ui.separator();
-                ui.heading("Quick Presets");
-                if ui.button("New Blank 257x257 (Retail)").clicked() {
-                    self.pending_action = Some(PendingAction::Blank(257));
-                }
-                if ui.button("New Blank 193x193 (TUTOR_01)").clicked() {
-                    self.pending_action = Some(PendingAction::Blank(193));
-                }
+                    ui.separator();
+                    self.show_nature_panel(ui);
+
+                    ui.separator();
+                    ui.heading("Map Diagnostics");
+                    if let Some(session) = &self.session {
+                        let v_size = session.vertex_size;
+                        let is_standard_257 = v_size == 257;
+                        if is_standard_257 {
+                            ui.label(format!(
+                                "Height Dimensions: {}x{} (Standard)",
+                                v_size, v_size
+                            ));
+                        } else {
+                            ui.colored_label(
+                                Color32::from_rgb(255, 180, 50),
+                                format!(
+                                    "Height Dimensions: {}x{} (Non-257 Compatible)",
+                                    v_size, v_size
+                                ),
+                            );
+                        }
+                        ui.label(format!(
+                            "Collision Grid: {}x{}",
+                            session.collision_size, session.collision_size
+                        ));
+                        ui.label("Channel: Green channel height decoded");
+                        if session.raw_boden_bmp.is_some() {
+                            ui.colored_label(Color32::LIGHT_GREEN, "Original R/B pixels preserved");
+                        } else {
+                            ui.label("Synthesized grayscale heightmap");
+                        }
+                    }
+
+                    ui.separator();
+                    ui.heading("Quick Presets");
+                    if ui.button("New Blank 257x257 (Retail)").clicked() {
+                        self.pending_action = Some(PendingAction::Blank(257));
+                    }
+                    if ui.button("New Blank 193x193 (TUTOR_01)").clicked() {
+                        self.pending_action = Some(PendingAction::Blank(193));
+                    }
                 });
             });
 
         // 中央畫布檢視區
         egui::CentralPanel::default().show(ctx, |ui| {
+            if self.view_mode == ViewMode::View3D {
+                if let Some(session) = &self.session {
+                    let placement_objects = self.placement.objects();
+                    let selected_obj = self.placement.selected_object();
+                    self.viewport_3d.terrain_pick_mode = self.ramp_selecting;
+                    let action = self.viewport_3d.show(
+                        ui,
+                        ctx,
+                        session,
+                        self.height_step,
+                        self.water_surface,
+                        self.brush_radius,
+                        &placement_objects,
+                        selected_obj,
+                    );
+                    self.handle_viewport_3d_action(action);
+                } else {
+                    ui.centered_and_justified(|ui| {
+                        ui.heading("No terrain session loaded. Create or load a map first.");
+                    });
+                }
+                return;
+            }
+
             if self.texture_dirty || self.texture.is_none() {
                 self.update_texture(ctx);
             }
@@ -706,6 +7326,29 @@ impl eframe::App for EditorApp {
 
             let top_left = canvas_rect.min + (canvas_rect.size() - display_size) * 0.5 + self.pan;
             let map_rect = Rect::from_min_size(top_left, display_size);
+            self.last_canvas_rect = canvas_rect;
+            self.last_map_rect = map_rect;
+
+            // 最小可用 pan state：支援滑鼠中鍵拖曳平移
+            if response.dragged_by(egui::PointerButton::Middle) {
+                self.pan += response.drag_delta();
+            }
+
+            // 支援滑鼠滾輪縮放（以游標為錨點保持世界座標不變）
+            let scroll_delta = ctx.input(|i| i.raw_scroll_delta.y);
+            if response.hovered() && scroll_delta.abs() > 0.0 {
+                let factor = if scroll_delta > 0.0 {
+                    1.15_f32
+                } else {
+                    1.0_f32 / 1.15_f32
+                };
+                let new_zoom = (self.zoom * factor).clamp(0.25, 10.0);
+                if let Some(mouse_pos) = response.hover_pos() {
+                    let center_offset = mouse_pos - canvas_rect.center();
+                    self.pan = (self.pan - center_offset) * (new_zoom / self.zoom) + center_offset;
+                }
+                self.zoom = new_zoom;
+            }
 
             painter.image(
                 texture.id(),
@@ -713,6 +7356,7 @@ impl eframe::App for EditorApp {
                 Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(1.0, 1.0)),
                 Color32::WHITE,
             );
+            self.draw_nature_overlay(&painter, map_rect);
 
             // 處理滑鼠操作繪製
             if let Some(mouse_pos) = response.hover_pos() {
@@ -724,8 +7368,14 @@ impl eframe::App for EditorApp {
                     let grid_y = norm_y * (session.vertex_size - 1) as f32;
 
                     // 繪製筆刷圓圈指示器
+                    let brush_vertices = if self.nature.enabled {
+                        self.nature.brush_size as f32 / 2.0 * (session.vertex_size - 1) as f32
+                            / NATURE_DEFAULT_DIMENSION as f32
+                    } else {
+                        self.brush_radius
+                    };
                     let pixel_radius =
-                        self.brush_radius * (map_rect.width() / (session.vertex_size - 1) as f32);
+                        brush_vertices * (map_rect.width() / (session.vertex_size - 1) as f32);
                     painter.circle_stroke(
                         mouse_pos,
                         pixel_radius,
@@ -733,7 +7383,23 @@ impl eframe::App for EditorApp {
                     );
 
                     // 筆刷塗畫
-                    if self.pending_action.is_none()
+                    if self.pending_action.is_none() && self.ramp_selecting {
+                        if response.clicked_by(egui::PointerButton::Primary) {
+                            self.handle_ramp_point((grid_x, grid_y));
+                        } else if response.clicked_by(egui::PointerButton::Secondary) {
+                            self.cancel_ramp_selection();
+                        }
+                    } else if self.nature.enabled {
+                        if self.pending_action.is_none()
+                            && (response.is_pointer_button_down_on()
+                                && ctx.input(|i| i.pointer.primary_down())
+                                || response.clicked_by(egui::PointerButton::Primary))
+                        {
+                            if let Some((tx, ty)) = self.nature_tile_from_grid(grid_x, grid_y) {
+                                self.nature_paint_tile(tx, ty);
+                            }
+                        }
+                    } else if self.pending_action.is_none()
                         && (response.is_pointer_button_down_on()
                             && ctx.input(|i| i.pointer.primary_down())
                             || response.clicked_by(egui::PointerButton::Primary))
@@ -742,6 +7408,7 @@ impl eframe::App for EditorApp {
                             self.stroke_path.clear();
                         }
                         self.is_painting = true;
+                        self.nature.last_action = false;
                         let tool = self.active_tool;
                         let radius = self.brush_radius;
                         let strength = self.brush_strength;
@@ -814,7 +7481,9 @@ impl eframe::App for EditorApp {
                                         None,
                                         seed,
                                     ),
-                                    ActiveTool::Water if self.water_surface < 4.0 => Err(against_rome_editor::terrain::Error::InvalidParameters),
+                                    ActiveTool::Water if self.water_surface < 4.0 => {
+                                        Err(against_rome_editor::terrain::Error::InvalidParameters)
+                                    }
                                     ActiveTool::Water => session_mut
                                         .paint_water(
                                             grid_x,
@@ -857,6 +7526,10 @@ impl eframe::App for EditorApp {
                 }
             }
 
+            // 放開拖曳時提交自然物件筆劃（一筆一個復原步驟）
+            if !ctx.input(|i| i.pointer.primary_down()) && self.nature.driver.is_active() {
+                self.nature_end_stroke();
+            }
             // 放開拖曳時提交筆劃
             if !ctx.input(|i| i.pointer.primary_down()) && self.is_painting {
                 self.is_painting = false;
@@ -868,12 +7541,27 @@ impl eframe::App for EditorApp {
         });
         self.handle_pending_action(ctx);
         self.toolbox.show(ctx);
-        self.navigation.show(ctx,self.session.as_ref(),self.water_surface);
+        self.navigation
+            .show(ctx, self.session.as_ref(), self.water_surface);
+        if let Some(new_pan) = self.minimap.show(
+            ctx,
+            self.session.as_ref(),
+            self.texture.as_ref(),
+            self.last_canvas_rect,
+            self.last_map_rect,
+            self.zoom,
+        ) {
+            self.pan = new_pan;
+        }
         self.placement.show(ctx);
         self.scenario.show(ctx);
         self.textures.show(ctx);
+        self.scene.show(ctx);
         self.event_graph.show(ctx);
         self.console.show(ctx);
+        self.tech_doc.show(ctx);
+        self.show_design_check(ctx);
         self.show_studio_panels(ctx);
+        self.consume_panel_save_requests();
     }
 }

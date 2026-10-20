@@ -12,13 +12,68 @@ use against_rome_environment::{
         SettlementTribe, SymmetryMode,
     },
     wild_lair::{
-        NeutralLairCatalog, PlacedNeutralLair, ScenarioEvent, WildLairScenarioEventBinder,
+        NeutralLairCatalog, PlacedNeutralLair, ScenarioActionKind, ScenarioConditionKind, ScenarioEvent,
+        WildLairScenarioEventBinder,
     },
 };
+use crate::scenario_ui::ScenarioUi;
+use against_rome_scenario::{Action, Condition, Event};
+use crate::design_apply::{parse_templates, resolver, PlacementRequest};
 use std::collections::HashMap;
 use eframe::egui::{self, Color32, Vec2};
 
+/// World units per tile for lair spawn offsets (1 tile = 256 world units).
+const LAIR_TILE_WORLD_SIZE: f32 = 256.0;
+/// Scenario event cap enforced by `ScenarioUi::add_events`.
+const SCENARIO_EVENT_LIMIT: usize = 256;
+
 const DEFAULT_FLORA_TEMPLATES: &str = "1,LanGerNad00_Tanne_gross\n2,LanGerBus01_Busch\n3,LanGerGra01_Gras\n4,LanGerSch01_Schilf\n5,LanGerSte01_Stein";
+
+/// Maps a binder event onto the scenario model (Message=0, SpawnUnit=2; ObjectExists=0, ObjectDeadOrRemoved=1).
+fn to_scenario_event(e: &ScenarioEvent) -> Event {
+    Event {
+        name: e.name.clone(),
+        delay_seconds: e.delay_seconds,
+        repeat: e.repeat,
+        enabled: e.active,
+        actions: e
+            .actions
+            .iter()
+            .map(|a| Action {
+                kind: match a.kind {
+                    ScenarioActionKind::Message => 0,
+                    ScenarioActionKind::SpawnUnit => 2,
+                },
+                team: a.team,
+                alias: a.alias.clone(),
+                x: a.x,
+                z: a.z,
+                count: a.count,
+                text: a.text.clone(),
+                ..Default::default()
+            })
+            .collect(),
+        conditions: e
+            .conditions
+            .iter()
+            .map(|c| Condition {
+                kind: match c.kind {
+                    ScenarioConditionKind::ObjectExists => 0,
+                    ScenarioConditionKind::ObjectDeadOrRemoved => 1,
+                },
+                target_id: c.target_id,
+                ..Default::default()
+            })
+            .collect(),
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EnvApply {
+    Flora,
+    Lairs,
+    Settlement,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EnvironmentTab {
@@ -51,6 +106,8 @@ pub struct EnvironmentUi {
     pub lair_rotation_deg: f32,
     pub generated_lairs: Vec<PlacedNeutralLair>,
     pub generated_lair_events: Vec<ScenarioEvent>,
+    /// Scenario events produced per lair (parallel to `generated_lairs`), so removal drops its events.
+    pub lair_event_counts: Vec<usize>,
 
     // --- Settlement Generator state ---
     pub settlement_players: usize,
@@ -64,6 +121,11 @@ pub struct EnvironmentUi {
     pub last_nature_preset: Option<MapLayoutPreset>,
 
     // Dirty / guards
+    /// Set by the "Apply to Objects session" buttons; the app turns it into placement requests.
+    pub apply_requested: Option<EnvApply>,
+    /// Set by the "Apply Lair Events" button; the app merges the pending lair events into the scenario.
+    pub lair_events_apply_requested: bool,
+
     pub dirty: bool,
     pub pending_discard: bool,
     pub status_message: String,
@@ -98,6 +160,7 @@ impl Default for EnvironmentUi {
             lair_rotation_deg: 0.0,
             generated_lairs: Vec::new(),
             generated_lair_events: Vec::new(),
+            lair_event_counts: Vec::new(),
             settlement_players: 2,
             settlement_tribe: SettlementTribe::Germanic,
             settlement_symmetry: SymmetryMode::RotationalSymmetry,
@@ -107,6 +170,8 @@ impl Default for EnvironmentUi {
             last_distribution: None,
             last_placement_preset: None,
             last_nature_preset: None,
+            apply_requested: None,
+            lair_events_apply_requested: false,
             dirty: false,
             pending_discard: false,
             status_message: "Ready.".to_string(),
@@ -120,6 +185,7 @@ impl EnvironmentUi {
         self.dirty
             || !self.generated_flora.is_empty()
             || !self.generated_lairs.is_empty()
+            || !self.generated_lair_events.is_empty()
             || self.last_distribution.is_some()
     }
 
@@ -128,14 +194,26 @@ impl EnvironmentUi {
     }
 
     pub fn clear_dirty(&mut self) {
+        self.reset_session();
+    }
+
+    /// Resets all map-bound generated flora, lairs, lair events, settlement layouts, and pending apply requests.
+    /// Preserves user preferences (open state, current tab, biome, flora parameters/templates,
+    /// lair selections, settlement options).
+    pub fn reset_session(&mut self) {
         self.dirty = false;
+        self.pending_discard = false;
         self.generated_flora.clear();
         self.generated_lairs.clear();
         self.generated_lair_events.clear();
+        self.lair_event_counts.clear();
         self.last_distribution = None;
         self.last_placement_preset = None;
         self.last_nature_preset = None;
-        self.pending_discard = false;
+        self.apply_requested = None;
+        self.lair_events_apply_requested = false;
+        self.status_message = "Ready.".to_string();
+        self.status_is_error = false;
     }
 
     pub fn request_close(&mut self) {
@@ -164,6 +242,215 @@ impl EnvironmentUi {
             return Err("No object templates configured.".into());
         }
         Ok((ids, names))
+    }
+
+    /// Flora plan as DATA-session requests (engine rotation is radians; the store uses degrees).
+    pub fn flora_requests(&self) -> Vec<PlacementRequest> {
+        self.generated_flora
+            .iter()
+            .map(|f| PlacementRequest {
+                type_id: f.type_id,
+                name: f.name.clone(),
+                x: f.x,
+                y: f.y,
+                z: f.z,
+                rotation_deg: f.rotation.to_degrees(),
+                team: None,
+            })
+            .collect()
+    }
+
+    /// Resolve observed neutral wildlife to existing map templates for the DATA session.
+    /// The editor can clone a known object family; it cannot invent a missing game object type.
+    pub fn lair_requests(
+        &self,
+        dimension: usize,
+        heights: Option<&[u8]>,
+        height_step: f32,
+    ) -> Result<(Vec<PlacementRequest>, Vec<String>), String> {
+        if self.generated_lairs.is_empty() {
+            return Err("Add a neutral animal first.".into());
+        }
+        if self.generated_lairs.len() > crate::design_apply::MAX_OBJECTS_PER_BATCH {
+            return Err(format!(
+                "Apply at most {} neutral animals per undoable batch.",
+                crate::design_apply::MAX_OBJECTS_PER_BATCH
+            ));
+        }
+        let templates = crate::design_apply::parse_templates(&self.flora_templates_text)?;
+        let resolve = resolver(&templates);
+        let mut requests = Vec::new();
+        let mut unresolved = std::collections::BTreeSet::new();
+        for lair in &self.generated_lairs {
+            if !lair.world_x.is_finite()
+                || !lair.world_z.is_finite()
+                || !lair.rotation_deg.is_finite()
+                || !(0.0..16384.0).contains(&lair.world_x)
+                || !(0.0..16384.0).contains(&lair.world_z)
+            {
+                return Err(format!(
+                    "Neutral animal '{}' must have finite coordinates inside the map.",
+                    lair.definition_id
+                ));
+            }
+            let def = self
+                .lair_catalog
+                .get_by_id(&lair.definition_id)
+                .ok_or_else(|| format!("Unknown lair definition '{}'.", lair.definition_id))?;
+            match resolve(&def.native_building_or_landscape_type) {
+                Some(type_id) => requests.push(PlacementRequest {
+                    type_id,
+                    name: def.native_building_or_landscape_type.clone(),
+                    x: lair.world_x,
+                    y: ground_height(heights, dimension, lair.world_x, lair.world_z, height_step),
+                    z: lair.world_z,
+                    rotation_deg: lair.rotation_deg,
+                    team: Some(8),
+                }),
+                None => {
+                    unresolved.insert(def.native_building_or_landscape_type.clone());
+                }
+            }
+        }
+        Ok((requests, unresolved.into_iter().collect()))
+    }
+
+    /// Settlement plan as requests; entries whose `type_name` is not in the template list are
+    /// returned as unresolved (the editor has no ObjDef catalog to map names to type ids).
+    /// `height_step` converts raw height bytes to world height.
+    pub fn settlement_requests(
+        &self,
+        dimension: usize,
+        heights: Option<&[u8]>,
+        height_step: f32,
+    ) -> Result<(Vec<PlacementRequest>, Vec<String>), String> {
+        let dist = self.last_distribution.as_ref().ok_or("Generate a settlement first.")?;
+        let templates = parse_templates(&self.flora_templates_text)?;
+        let resolve = resolver(&templates);
+        let ground = |x: f32, z: f32| ground_height(heights, dimension, x, z, height_step);
+        let mut requests = Vec::new();
+        let mut unresolved = std::collections::BTreeSet::new();
+        let mut push = |name: &str, x: f32, z: f32, offset: f32, angle: f32, team: Option<i32>| {
+            match resolve(name) {
+                Some(type_id) => requests.push(PlacementRequest {
+                    type_id,
+                    name: name.to_string(),
+                    x,
+                    y: ground(x, z) + offset,
+                    z,
+                    rotation_deg: angle,
+                    team: team.and_then(|t| u16::try_from(t).ok()),
+                }),
+                None => {
+                    unresolved.insert(name.to_string());
+                }
+            }
+        };
+        for player in &dist.players {
+            for b in &player.buildings {
+                push(&b.type_name, b.world_x, b.world_z, b.height_offset, b.angle, Some(b.team));
+            }
+            for t in player.forest_trees.iter().chain(&player.stone_quarries) {
+                push(&t.type_name, t.world_x, t.world_z, t.height_offset, t.angle_deg, None);
+            }
+            for w in &player.wildlife_and_food {
+                push(&w.type_name, w.world_x, w.world_z, w.height_offset, w.angle_deg, Some(w.team));
+            }
+        }
+        Ok((requests, unresolved.into_iter().collect()))
+    }
+
+    pub fn request_lair_events_apply(&mut self) {
+        self.lair_events_apply_requested = true;
+    }
+
+    pub fn take_lair_events_apply_request(&mut self) -> bool {
+        std::mem::take(&mut self.lair_events_apply_requested)
+    }
+
+    /// Merges the pending lair events into the live scenario through `ScenarioUi::add_events`
+    /// (validation, 256-event cap, one undo step). Requires a loaded scenario with a clean graph.
+    /// Only on success are the pending events cleared; every failure keeps all pending state.
+    pub fn apply_lair_events(&mut self, scenario: &mut ScenarioUi) -> Result<usize, String> {
+        let result = self.try_apply_lair_events(scenario);
+        match &result {
+            Ok(n) => {
+                self.status_message = format!(
+                    "Applied {n} lair events to the scenario (total: {}).",
+                    scenario.document().events.len()
+                );
+                self.status_is_error = false;
+            }
+            Err(e) => {
+                self.status_message = format!("Lair events not applied: {e}");
+                self.status_is_error = true;
+            }
+        }
+        result
+    }
+
+    fn try_apply_lair_events(&mut self, scenario: &mut ScenarioUi) -> Result<usize, String> {
+        if self.generated_lair_events.is_empty() {
+            return Err("No lair events pending.".to_string());
+        }
+        if !scenario.is_loaded() {
+            return Err("Load the scenario (map script) first.".to_string());
+        }
+        if scenario.graph_ui().is_dirty() {
+            return Err("Apply or discard the pending event graph edits first.".to_string());
+        }
+        let pending = self.generated_lair_events.len();
+        let existing = scenario.document().events.len();
+        if existing + pending > SCENARIO_EVENT_LIMIT {
+            return Err(format!(
+                "Scenario event limit exceeded ({existing} existing + {pending} pending > {SCENARIO_EVENT_LIMIT})."
+            ));
+        }
+        let events: Vec<_> = self.generated_lair_events.iter().map(to_scenario_event).collect();
+        scenario.add_events(&events)?;
+        // Counts stay parallel to `generated_lairs`; the lairs themselves remain pending.
+        self.generated_lair_events.clear();
+        self.lair_event_counts.iter_mut().for_each(|c| *c = 0);
+        Ok(events.len())
+    }
+
+    pub fn take_apply_request(&mut self) -> Option<EnvApply> {
+        self.apply_requested.take()
+    }
+
+    /// The app queued the plan into the DATA session: the plan now lives in that session's
+    /// dirty/undo state, so the panel's own copy is cleared.
+    pub fn plan_queued(&mut self, kind: EnvApply, count: usize, note: &str) {
+        let discarded_lair_events =
+            kind == EnvApply::Lairs && !self.generated_lair_events.is_empty();
+        match kind {
+            EnvApply::Flora => self.generated_flora.clear(),
+            EnvApply::Lairs => {
+                self.generated_lairs.clear();
+                self.generated_lair_events.clear();
+                self.lair_event_counts.clear();
+            }
+            EnvApply::Settlement => {
+                self.last_distribution = None;
+                self.last_placement_preset = None;
+                self.last_nature_preset = None;
+            }
+        }
+        self.dirty = false;
+        self.status_message = format!(
+            "Queued {count} objects for the Objects session.{note}{}",
+            if discarded_lair_events {
+                " Lair event drafts were cleared with their placement records."
+            } else {
+                ""
+            }
+        );
+        self.status_is_error = false;
+    }
+
+    pub fn apply_failed(&mut self, message: impl Into<String>) {
+        self.status_message = message.into();
+        self.status_is_error = true;
     }
 
     /// `dimension` is the height-grid vertex count; `heights` is the matching raw u8 grid.
@@ -240,13 +527,14 @@ impl EnvironmentUi {
             def.native_building_or_landscape_type.clone(),
         )];
         let (events, note) = match WildLairScenarioEventBinder::generate_events_for_lair(
-            &placed, &def, 0, 64.0, &aliases,
+            &placed, &def, 0, LAIR_TILE_WORLD_SIZE, &aliases,
         ) {
             Ok(events) => (events, String::new()),
             Err(e) => (Vec::new(), format!(" No scenario events: {e}")),
         };
 
         self.generated_lairs.push(placed);
+        self.lair_event_counts.push(events.len());
         self.generated_lair_events.extend(events);
         self.dirty = true;
         self.status_message = format!(
@@ -257,6 +545,29 @@ impl EnvironmentUi {
         );
         self.status_is_error = false;
         Ok(())
+    }
+
+    /// Removes one placed lair together with the scenario events it generated.
+    pub fn remove_lair(&mut self, index: usize) -> bool {
+        if index >= self.generated_lairs.len() || self.lair_event_counts.len() != self.generated_lairs.len() {
+            return false;
+        }
+        let start: usize = self.lair_event_counts[..index].iter().sum();
+        let end = (start + self.lair_event_counts[index]).min(self.generated_lair_events.len());
+        self.generated_lair_events.drain(start.min(end)..end);
+        self.lair_event_counts.remove(index);
+        self.generated_lairs.remove(index);
+        self.status_message = format!("Removed lair; {} remaining.", self.generated_lairs.len());
+        self.status_is_error = false;
+        true
+    }
+
+    pub fn clear_lairs(&mut self) {
+        self.generated_lairs.clear();
+        self.generated_lair_events.clear();
+        self.lair_event_counts.clear();
+        self.status_message = "Cleared neutral lairs.".to_string();
+        self.status_is_error = false;
     }
 
     /// `dimension` is the height-grid vertex count.
@@ -433,6 +744,13 @@ impl EnvironmentUi {
                 self.status_message = "Cleared generated flora.".to_string();
                 self.status_is_error = false;
             }
+            if ui
+                .add_enabled(!self.generated_flora.is_empty(), egui::Button::new("Apply to Objects session"))
+                .on_hover_text("Clones existing map objects of each template type; load DATA in the Objects panel first.")
+                .clicked()
+            {
+                self.apply_requested = Some(EnvApply::Flora);
+            }
         });
 
         ui.separator();
@@ -448,8 +766,8 @@ impl EnvironmentUi {
     }
 
     fn render_lairs_tab(&mut self, ui: &mut egui::Ui) {
-        ui.heading("Neutral Lair & Monster Den Setup");
-        ui.label("Places neutral wolf dens, bear caves, and bandit camps with automated scenario spawn waves and rewards.");
+        ui.heading("Neutral Wildlife & Lair Setup");
+        ui.label("The current catalog contains observed neutral animal types. Add matching id,name templates in the Flora tab, then clone them into the Objects session. Unverified lair buildings and spawn rules are not inferred.");
 
         ui.add_space(6.0);
         egui::Grid::new("lair_settings").num_columns(2).spacing([12.0, 6.0]).show(ui, |ui| {
@@ -488,12 +806,68 @@ impl EnvironmentUi {
         }
 
         ui.separator();
+        if ui
+            .add_enabled(
+                !self.generated_lairs.is_empty(),
+                egui::Button::new("Apply Animals to Objects session"),
+            )
+            .on_hover_text(
+                "Requires each animal type to exist in the loaded map as a cloneable template.",
+            )
+            .clicked()
+        {
+            self.apply_requested = Some(EnvApply::Lairs);
+        }
+        if ui
+            .add_enabled(
+                !self.generated_lair_events.is_empty(),
+                egui::Button::new("Apply Lair Events"),
+            )
+            .clicked()
+        {
+            self.request_lair_events_apply();
+        }
         ui.label(format!("Placed Lairs: {} (Scenario Events: {})", self.generated_lairs.len(), self.generated_lair_events.len()));
+        if ui
+            .add_enabled(!self.generated_lairs.is_empty(), egui::Button::new("Clear Lairs"))
+            .clicked()
+        {
+            self.clear_lairs();
+        }
+        let mut remove = None;
         egui::ScrollArea::vertical().max_height(180.0).show(ui, |ui| {
             for (i, lair) in self.generated_lairs.iter().enumerate() {
-                ui.label(format!("{}. {} at ({:.1}, {:.1}) rot {:.0}", i + 1, lair.definition_id, lair.world_x, lair.world_z, lair.rotation_deg));
+                ui.horizontal(|ui| {
+                    ui.label(format!(
+                        "{}. {} at ({:.1}, {:.1}) rot {:.0}, {} events",
+                        i + 1,
+                        lair.definition_id,
+                        lair.world_x,
+                        lair.world_z,
+                        lair.rotation_deg,
+                        self.lair_event_counts.get(i).copied().unwrap_or(0)
+                    ));
+                    if ui.small_button("Remove").clicked() {
+                        remove = Some(i);
+                    }
+                });
             }
         });
+        if let Some(i) = remove {
+            self.remove_lair(i);
+        }
+        if !self.generated_lair_events.is_empty() {
+            ui.separator();
+            ui.label("Scenario event preview:");
+            egui::ScrollArea::vertical().id_source("lair_event_preview").max_height(120.0).show(ui, |ui| {
+                for e in &self.generated_lair_events {
+                    ui.label(format!(
+                        "{} (delay {}s, repeat {}, {} conditions, {} actions)",
+                        e.name, e.delay_seconds, e.repeat, e.conditions.len(), e.actions.len()
+                    ));
+                }
+            });
+        }
     }
 
     fn render_settlement_tab(&mut self, ui: &mut egui::Ui, dimension: usize, heights: Option<&[u8]>, water_level: f32) {
@@ -556,6 +930,15 @@ impl EnvironmentUi {
             }
         }
 
+        if self.last_distribution.is_some()
+            && ui
+                .button("Apply to Objects session")
+                .on_hover_text("Template names come from the Flora tab's id,name list.")
+                .clicked()
+        {
+            self.apply_requested = Some(EnvApply::Settlement);
+        }
+
         if let Some(dist) = &self.last_distribution {
             ui.separator();
             let f = &dist.fairness_report;
@@ -585,6 +968,22 @@ impl EnvironmentUi {
             }
         }
     }
+}
+
+/// Bilinear world height (raw byte × step) of the vertex grid; 64 world units per vertex cell.
+pub fn ground_height(heights: Option<&[u8]>, dimension: usize, x: f32, z: f32, step: f32) -> f32 {
+    let Some(h) = heights.filter(|h| dimension >= 2 && h.len() == dimension * dimension) else {
+        return 0.0;
+    };
+    let max = (dimension - 1) as f32;
+    let (vx, vz) = ((x / 64.0).clamp(0.0, max), (z / 64.0).clamp(0.0, max));
+    let (x0, z0) = (vx.floor() as usize, vz.floor() as usize);
+    let (x1, z1) = ((x0 + 1).min(dimension - 1), (z0 + 1).min(dimension - 1));
+    let (fx, fz) = (vx - x0 as f32, vz - z0 as f32);
+    let at = |x: usize, z: usize| h[z * dimension + x] as f32;
+    let top = at(x0, z0) + (at(x1, z0) - at(x0, z0)) * fx;
+    let bottom = at(x0, z1) + (at(x1, z1) - at(x0, z1)) * fx;
+    (top + (bottom - top) * fz) * step
 }
 
 #[cfg(test)]
@@ -626,6 +1025,98 @@ mod tests {
         assert!(ui.generated_lair_events.is_empty());
         assert!(ui.status_message.contains("No scenario events"));
         assert!(ui.is_dirty());
+    }
+
+    #[test]
+    fn test_environment_ui_lair_remove_and_clear_keep_events_in_sync() {
+        let mut ui = EnvironmentUi::default();
+        ui.add_neutral_lair().unwrap();
+        ui.add_neutral_lair().unwrap();
+        // Simulate event output per lair (canonical animal lairs yield none).
+        ui.generated_lair_events = vec![
+            ScenarioEvent::new("a1", 0, false, true),
+            ScenarioEvent::new("a2", 0, false, true),
+            ScenarioEvent::new("b1", 0, false, true),
+        ];
+        ui.lair_event_counts = vec![2, 1];
+        assert!(!ui.remove_lair(5));
+        assert!(ui.remove_lair(0));
+        assert_eq!(ui.generated_lairs.len(), 1);
+        assert_eq!(ui.generated_lair_events.len(), 1);
+        assert_eq!(ui.generated_lair_events[0].name, "b1");
+        ui.clear_lairs();
+        assert!(ui.generated_lairs.is_empty() && ui.generated_lair_events.is_empty() && ui.lair_event_counts.is_empty());
+    }
+
+    #[test]
+    fn neutral_animal_requests_resolve_template_and_sample_ground_height() {
+        let mut ui = EnvironmentUi::default();
+        ui.lair_world_x = 64.0;
+        ui.lair_world_z = 64.0;
+        ui.lair_rotation_deg = 90.0;
+        ui.add_neutral_lair().unwrap();
+        ui.flora_templates_text = "77,FigTieWol00_Wilder_Wolf".into();
+        let (requests, unresolved) = ui.lair_requests(2, Some(&[1, 2, 3, 4]), 2.0).unwrap();
+        assert!(unresolved.is_empty());
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].type_id, 77);
+        assert_eq!(requests[0].name, "FigTieWol00_Wilder_Wolf");
+        assert_eq!(
+            (requests[0].x, requests[0].y, requests[0].z),
+            (64.0, 8.0, 64.0)
+        );
+        assert_eq!(requests[0].rotation_deg, 90.0);
+        assert_eq!(requests[0].team, Some(8));
+    }
+
+    #[test]
+    fn neutral_animal_requests_report_unresolved_template_names() {
+        let mut ui = EnvironmentUi::default();
+        ui.add_neutral_lair().unwrap();
+        ui.flora_templates_text = "77,OtherAnimal".into();
+        let (requests, unresolved) = ui.lair_requests(65, None, 1.0).unwrap();
+        assert!(requests.is_empty());
+        assert_eq!(unresolved, vec!["FigTieWol00_Wilder_Wolf"]);
+    }
+
+    #[test]
+    fn neutral_animal_requests_refuse_more_than_one_undoable_batch() {
+        let mut ui = EnvironmentUi::default();
+        for _ in 0..=crate::design_apply::MAX_OBJECTS_PER_BATCH {
+            ui.add_neutral_lair().unwrap();
+        }
+        assert!(ui
+            .lair_requests(65, None, 1.0)
+            .unwrap_err()
+            .contains("undoable batch"));
+        assert_eq!(
+            ui.generated_lairs.len(),
+            crate::design_apply::MAX_OBJECTS_PER_BATCH + 1
+        );
+    }
+
+    #[test]
+    fn queued_neutral_animals_clear_their_associated_event_drafts() {
+        let mut ui = EnvironmentUi::default();
+        ui.add_neutral_lair().unwrap();
+        ui.generated_lair_events
+            .push(ScenarioEvent::new("lair-wave", 60, true, true));
+        ui.lair_event_counts = vec![1];
+        ui.plan_queued(EnvApply::Lairs, 1, "");
+        assert!(ui.generated_lairs.is_empty());
+        assert!(ui.generated_lair_events.is_empty() && ui.lair_event_counts.is_empty());
+        assert!(ui.status_message.contains("Lair event drafts were cleared"));
+    }
+
+    #[test]
+    fn test_environment_ui_lairs_tab_renders_with_entries() {
+        let mut ui = EnvironmentUi::default();
+        ui.open = true;
+        ui.current_tab = EnvironmentTab::NeutralLairs;
+        ui.add_neutral_lair().unwrap();
+        let ctx = egui::Context::default();
+        let _ = ctx.run(egui::RawInput::default(), |ctx| ui.show(ctx, 65, None, 0.0));
+        assert_eq!(ui.generated_lairs.len(), 1);
     }
 
     #[test]

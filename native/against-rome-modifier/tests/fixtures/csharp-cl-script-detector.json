@@ -1,0 +1,1351 @@
+{
+  "Sources": {
+    "ClScriptFeatureDetector": "0FBA6710AC818B60C1D85929CFCEE60263124D82662CFE34CA5ED750FA3420FC",
+    "ClScriptPatcher": "B198822772B91409979153A3F8580AC901C5B7C3D2E85C349149EDBCC856CDF3"
+  },
+  "Flags": [
+    "FastCiviProduction",
+    "InfiniteMorale",
+    "SpellDamage5x",
+    "SpellHealing10x",
+    "SpellResurrection",
+    "SpellRange3x",
+    "GeneralSkills"
+  ],
+  "Cases": [
+    {
+      "Name": "missing-everything",
+      "Text": "",
+      "Original": null,
+      "FromFalse": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      },
+      "FromTrue": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": true,
+        "SpellHealing10x": true,
+        "SpellResurrection": true,
+        "SpellRange3x": true,
+        "GeneralSkills": true
+      }
+    },
+    {
+      "Name": "morale-patched",
+      "Text": "MoralsDecLostMem=GER,0\r\nMoralsDecFlee=GER,0\r\nMoralsDecOverPop=GER,99999999\r\nMoralsIncIdle=GER,500\r\n",
+      "Original": null,
+      "FromFalse": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": true,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      },
+      "FromTrue": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": true,
+        "SpellDamage5x": true,
+        "SpellHealing10x": true,
+        "SpellResurrection": true,
+        "SpellRange3x": true,
+        "GeneralSkills": true
+      }
+    },
+    {
+      "Name": "morale-first-unpatched-then-patched",
+      "Text": "MoralsDecLostMem=GER,5\r\nMoralsDecFlee=GER,0\r\nMoralsDecOverPop=GER,99999999\r\nMoralsIncIdle=GER,500\r\nMoralsDecLostMem=GER,0\r\nMoralsDecFlee=GER,0\r\nMoralsDecOverPop=GER,99999999\r\nMoralsIncIdle=GER,500\r\n",
+      "Original": null,
+      "FromFalse": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      },
+      "FromTrue": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": true,
+        "SpellHealing10x": true,
+        "SpellResurrection": true,
+        "SpellRange3x": true,
+        "GeneralSkills": true
+      }
+    },
+    {
+      "Name": "morale-first-patched-then-unpatched",
+      "Text": "MoralsDecLostMem=GER,0\r\nMoralsDecFlee=GER,0\r\nMoralsDecOverPop=GER,99999999\r\nMoralsIncIdle=GER,500\r\nMoralsDecLostMem=GER,5\r\nMoralsDecFlee=GER,5\r\nMoralsDecOverPop=GER,1\r\nMoralsIncIdle=GER,1\r\n",
+      "Original": null,
+      "FromFalse": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": true,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      },
+      "FromTrue": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": true,
+        "SpellDamage5x": true,
+        "SpellHealing10x": true,
+        "SpellResurrection": true,
+        "SpellRange3x": true,
+        "GeneralSkills": true
+      }
+    },
+    {
+      "Name": "morale-negative-zero",
+      "Text": "MoralsDecLostMem=GER,-0\r\nMoralsDecFlee=GER,0\r\nMoralsDecOverPop=GER,99999999\r\nMoralsIncIdle=GER,500\r\n",
+      "Original": null,
+      "FromFalse": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      },
+      "FromTrue": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": true,
+        "SpellHealing10x": true,
+        "SpellResurrection": true,
+        "SpellRange3x": true,
+        "GeneralSkills": true
+      }
+    },
+    {
+      "Name": "morale-plus-zero",
+      "Text": "MoralsDecLostMem=GER,\u002B0\r\nMoralsDecFlee=GER,0\r\nMoralsDecOverPop=GER,99999999\r\nMoralsIncIdle=GER,500\r\n",
+      "Original": null,
+      "FromFalse": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      },
+      "FromTrue": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": true,
+        "SpellHealing10x": true,
+        "SpellResurrection": true,
+        "SpellRange3x": true,
+        "GeneralSkills": true
+      }
+    },
+    {
+      "Name": "morale-int32-overflow",
+      "Text": "MoralsDecLostMem=GER,0\r\nMoralsDecFlee=GER,0\r\nMoralsDecOverPop=GER,99999999999\r\nMoralsIncIdle=GER,500\r\n",
+      "Original": null,
+      "FromFalse": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      },
+      "FromTrue": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": true,
+        "SpellHealing10x": true,
+        "SpellResurrection": true,
+        "SpellRange3x": true,
+        "GeneralSkills": true
+      }
+    },
+    {
+      "Name": "morale-int32-max",
+      "Text": "MoralsDecLostMem=GER,0\r\nMoralsDecFlee=GER,0\r\nMoralsDecOverPop=GER,2147483647\r\nMoralsIncIdle=GER,500\r\n",
+      "Original": null,
+      "FromFalse": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": true,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      },
+      "FromTrue": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": true,
+        "SpellDamage5x": true,
+        "SpellHealing10x": true,
+        "SpellResurrection": true,
+        "SpellRange3x": true,
+        "GeneralSkills": true
+      }
+    },
+    {
+      "Name": "morale-int32-max-plus1",
+      "Text": "MoralsDecLostMem=GER,0\r\nMoralsDecFlee=GER,0\r\nMoralsDecOverPop=GER,2147483648\r\nMoralsIncIdle=GER,500\r\n",
+      "Original": null,
+      "FromFalse": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      },
+      "FromTrue": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": true,
+        "SpellHealing10x": true,
+        "SpellResurrection": true,
+        "SpellRange3x": true,
+        "GeneralSkills": true
+      }
+    },
+    {
+      "Name": "morale-leading-zeros-fraction",
+      "Text": "MoralsDecLostMem=GER,000\r\nMoralsDecFlee=GER,0\r\nMoralsDecOverPop=GER,0099999999\r\nMoralsIncIdle=GER,500.7\r\n",
+      "Original": null,
+      "FromFalse": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": true,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      },
+      "FromTrue": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": true,
+        "SpellDamage5x": true,
+        "SpellHealing10x": true,
+        "SpellResurrection": true,
+        "SpellRange3x": true,
+        "GeneralSkills": true
+      }
+    },
+    {
+      "Name": "morale-threshold-minus1",
+      "Text": "MoralsDecLostMem=GER,0\r\nMoralsDecFlee=GER,0\r\nMoralsDecOverPop=GER,99999998\r\nMoralsIncIdle=GER,500\r\n",
+      "Original": null,
+      "FromFalse": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      },
+      "FromTrue": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": true,
+        "SpellHealing10x": true,
+        "SpellResurrection": true,
+        "SpellRange3x": true,
+        "GeneralSkills": true
+      }
+    },
+    {
+      "Name": "morale-idle-501",
+      "Text": "MoralsDecLostMem=GER,0\r\nMoralsDecFlee=GER,0\r\nMoralsDecOverPop=GER,99999999\r\nMoralsIncIdle=GER,501\r\n",
+      "Original": null,
+      "FromFalse": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      },
+      "FromTrue": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": true,
+        "SpellHealing10x": true,
+        "SpellResurrection": true,
+        "SpellRange3x": true,
+        "GeneralSkills": true
+      }
+    },
+    {
+      "Name": "morale-missing-line",
+      "Text": "MoralsDecLostMem=GER,0\r\n",
+      "Original": null,
+      "FromFalse": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      },
+      "FromTrue": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": true,
+        "SpellHealing10x": true,
+        "SpellResurrection": true,
+        "SpellRange3x": true,
+        "GeneralSkills": true
+      }
+    },
+    {
+      "Name": "morale-wrong-faction",
+      "Text": "MoralsDecLostMem=GER,0\r\nMoralsDecFlee=ROM,0\r\nMoralsDecOverPop=GER,99999999\r\nMoralsIncIdle=GER,500\r\n",
+      "Original": null,
+      "FromFalse": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      },
+      "FromTrue": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": true,
+        "SpellHealing10x": true,
+        "SpellResurrection": true,
+        "SpellRange3x": true,
+        "GeneralSkills": true
+      }
+    },
+    {
+      "Name": "morale-spaced",
+      "Text": "MoralsDecLostMem = GER , 0\r\nMoralsDecFlee\t=\tGER,0\r\nMoralsDecOverPop=GER ,  99999999\r\nMoralsIncIdle=GER,500\r\n",
+      "Original": null,
+      "FromFalse": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": true,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      },
+      "FromTrue": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": true,
+        "SpellDamage5x": true,
+        "SpellHealing10x": true,
+        "SpellResurrection": true,
+        "SpellRange3x": true,
+        "GeneralSkills": true
+      }
+    },
+    {
+      "Name": "morale-indented-still-matches-unanchored",
+      "Text": "  MoralsDecLostMem=GER,0\r\n  MoralsDecFlee=GER,0\r\n  MoralsDecOverPop=GER,99999999\r\n  MoralsIncIdle=GER,500\r\n  ",
+      "Original": null,
+      "FromFalse": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": true,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      },
+      "FromTrue": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": true,
+        "SpellDamage5x": true,
+        "SpellHealing10x": true,
+        "SpellResurrection": true,
+        "SpellRange3x": true,
+        "GeneralSkills": true
+      }
+    },
+    {
+      "Name": "morale-lowercase-faction",
+      "Text": "MoralsDecLostMem=ger,0\r\nMoralsDecFlee=ger,0\r\nMoralsDecOverPop=ger,99999999\r\nMoralsIncIdle=ger,500\r\n",
+      "Original": null,
+      "FromFalse": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      },
+      "FromTrue": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": true,
+        "SpellHealing10x": true,
+        "SpellResurrection": true,
+        "SpellRange3x": true,
+        "GeneralSkills": true
+      }
+    },
+    {
+      "Name": "civi-ok",
+      "Text": "CiviDelay=GER,100\r\nCiviDelay=ROM,500\r\n",
+      "Original": null,
+      "FromFalse": {
+        "FastCiviProduction": true,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      },
+      "FromTrue": {
+        "FastCiviProduction": true,
+        "InfiniteMorale": false,
+        "SpellDamage5x": true,
+        "SpellHealing10x": true,
+        "SpellResurrection": true,
+        "SpellRange3x": true,
+        "GeneralSkills": true
+      }
+    },
+    {
+      "Name": "civi-501",
+      "Text": "CiviDelay=GER,100\r\nCiviDelay=ROM,501\r\n",
+      "Original": null,
+      "FromFalse": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      },
+      "FromTrue": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": true,
+        "SpellHealing10x": true,
+        "SpellResurrection": true,
+        "SpellRange3x": true,
+        "GeneralSkills": true
+      }
+    },
+    {
+      "Name": "civi-zero",
+      "Text": "CiviDelay=GER,0\r\n",
+      "Original": null,
+      "FromFalse": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      },
+      "FromTrue": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": true,
+        "SpellHealing10x": true,
+        "SpellResurrection": true,
+        "SpellRange3x": true,
+        "GeneralSkills": true
+      }
+    },
+    {
+      "Name": "civi-negative",
+      "Text": "CiviDelay=GER,-5\r\n",
+      "Original": null,
+      "FromFalse": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      },
+      "FromTrue": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": true,
+        "SpellHealing10x": true,
+        "SpellResurrection": true,
+        "SpellRange3x": true,
+        "GeneralSkills": true
+      }
+    },
+    {
+      "Name": "civi-lowercase",
+      "Text": "CiviDelay=ger,5\r\n",
+      "Original": null,
+      "FromFalse": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      },
+      "FromTrue": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": true,
+        "SpellHealing10x": true,
+        "SpellResurrection": true,
+        "SpellRange3x": true,
+        "GeneralSkills": true
+      }
+    },
+    {
+      "Name": "civi-spaced",
+      "Text": "CiviDelay = GER , 250\r\n",
+      "Original": null,
+      "FromFalse": {
+        "FastCiviProduction": true,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      },
+      "FromTrue": {
+        "FastCiviProduction": true,
+        "InfiniteMorale": false,
+        "SpellDamage5x": true,
+        "SpellHealing10x": true,
+        "SpellResurrection": true,
+        "SpellRange3x": true,
+        "GeneralSkills": true
+      }
+    },
+    {
+      "Name": "civi-fraction",
+      "Text": "CiviDelay=GER,500.9\r\n",
+      "Original": null,
+      "FromFalse": {
+        "FastCiviProduction": true,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      },
+      "FromTrue": {
+        "FastCiviProduction": true,
+        "InfiniteMorale": false,
+        "SpellDamage5x": true,
+        "SpellHealing10x": true,
+        "SpellResurrection": true,
+        "SpellRange3x": true,
+        "GeneralSkills": true
+      }
+    },
+    {
+      "Name": "civi-huge-digits",
+      "Text": "CiviDelay=GER,99999999999999999999\r\n",
+      "Original": null,
+      "FromFalse": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      },
+      "FromTrue": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": true,
+        "SpellHealing10x": true,
+        "SpellResurrection": true,
+        "SpellRange3x": true,
+        "GeneralSkills": true
+      }
+    },
+    {
+      "Name": "civi-one-bad-among-good",
+      "Text": "CiviDelay=GER,1\r\nCiviDelay=ROM,600\r\nCiviDelay=KEL,2\r\n",
+      "Original": null,
+      "FromFalse": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      },
+      "FromTrue": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": true,
+        "SpellHealing10x": true,
+        "SpellResurrection": true,
+        "SpellRange3x": true,
+        "GeneralSkills": true
+      }
+    },
+    {
+      "Name": "res-both",
+      "Text": "Value=KEL,Spell3,100\r\nValue2=KEL,Spell3,100\r\n",
+      "Original": "Value=KEL,Spell3,50\r\nValue2=KEL,Spell3,60\r\nValue=GER,Spell3,10\r\n",
+      "FromFalse": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": true,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      },
+      "FromTrue": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": true,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      }
+    },
+    {
+      "Name": "res-value2-missing",
+      "Text": "Value=KEL,Spell3,100\r\n",
+      "Original": "Value=KEL,Spell3,50\r\nValue2=KEL,Spell3,60\r\nValue=GER,Spell3,10\r\n",
+      "FromFalse": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      },
+      "FromTrue": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      }
+    },
+    {
+      "Name": "res-value-missing",
+      "Text": "Value2=KEL,Spell3,100\r\n",
+      "Original": "Value=KEL,Spell3,50\r\nValue2=KEL,Spell3,60\r\nValue=GER,Spell3,10\r\n",
+      "FromFalse": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      },
+      "FromTrue": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      }
+    },
+    {
+      "Name": "res-value2-original",
+      "Text": "Value=KEL,Spell3,100\r\nValue2=KEL,Spell3,60\r\n",
+      "Original": "Value=KEL,Spell3,50\r\nValue2=KEL,Spell3,60\r\nValue=GER,Spell3,10\r\n",
+      "FromFalse": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      },
+      "FromTrue": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      }
+    },
+    {
+      "Name": "res-already-100-original",
+      "Text": "Value=KEL,Spell3,100\r\n",
+      "Original": "Value=KEL,Spell3,100\r\n",
+      "FromFalse": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      },
+      "FromTrue": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      }
+    },
+    {
+      "Name": "res-no-backup",
+      "Text": "Value=KEL,Spell3,100\r\nValue2=KEL,Spell3,100\r\n",
+      "Original": null,
+      "FromFalse": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      },
+      "FromTrue": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": true,
+        "SpellHealing10x": true,
+        "SpellResurrection": true,
+        "SpellRange3x": true,
+        "GeneralSkills": true
+      }
+    },
+    {
+      "Name": "res-fraction-truncates",
+      "Text": "Value=KEL,Spell3,100.9\r\nValue2=KEL,Spell3,100.2\r\n",
+      "Original": "Value=KEL,Spell3,50\r\nValue2=KEL,Spell3,60\r\nValue=GER,Spell3,10\r\n",
+      "FromFalse": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": true,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      },
+      "FromTrue": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": true,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      }
+    },
+    {
+      "Name": "res-lowercase-key-case-insensitive-dict",
+      "Text": "Value=KEL,Spell3,100\r\nValue2=KEL,Spell3,100\r\n",
+      "Original": "Value=KEL,Spell3,50\r\nValue2=KEL,Spell3,60\r\nValue=GER,Spell3,10\r\n",
+      "FromFalse": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": true,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      },
+      "FromTrue": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": true,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      }
+    },
+    {
+      "Name": "dmg-indented",
+      "Text": "  Value=GER,Spell3,50\r\n",
+      "Original": "Value=GER,Spell3,10\r\n",
+      "FromFalse": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      },
+      "FromTrue": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      }
+    },
+    {
+      "Name": "dmg-trailing-comment",
+      "Text": "Value=GER,Spell2,50 ; x5\r\nValue=HUN,Spell0,50 ; x5\r\nValue=HUN,Spell1,50 ; x5\r\nValue=HUN,Spell2,50 ; x5\r\nValue=KEL,Spell0,50 ; x5\r\nValue=KEL,Spell2,50 ; x5\r\n",
+      "Original": "Value=GER,Spell2,10\r\nValue=HUN,Spell0,10\r\nValue=HUN,Spell1,10\r\nValue=HUN,Spell2,10\r\nValue=KEL,Spell0,10\r\nValue=KEL,Spell2,10\r\n",
+      "FromFalse": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": true,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      },
+      "FromTrue": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": true,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      }
+    },
+    {
+      "Name": "dmg-5x-all-listed-keys",
+      "Text": "Value=GER,Spell2,50\r\nValue=HUN,Spell0,50\r\nValue=HUN,Spell1,50\r\nValue=HUN,Spell2,50\r\nValue=KEL,Spell0,50\r\nValue=KEL,Spell2,50\r\n",
+      "Original": "Value=GER,Spell2,10\r\nValue=HUN,Spell0,10\r\nValue=HUN,Spell1,10\r\nValue=HUN,Spell2,10\r\nValue=KEL,Spell0,10\r\nValue=KEL,Spell2,10\r\n",
+      "FromFalse": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": true,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      },
+      "FromTrue": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": true,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      }
+    },
+    {
+      "Name": "dmg-5x-spell3-only",
+      "Text": "Value=GER,Spell3,50\r\n",
+      "Original": "Value=GER,Spell3,10\r\n",
+      "FromFalse": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      },
+      "FromTrue": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      }
+    },
+    {
+      "Name": "dmg-5x-one-key-missing",
+      "Text": "Value=GER,Spell2,50\r\nValue=HUN,Spell0,50\r\nValue=HUN,Spell1,50\r\nValue=KEL,Spell0,50\r\nValue=KEL,Spell2,50\r\n",
+      "Original": "Value=GER,Spell2,10\r\nValue=HUN,Spell0,10\r\nValue=HUN,Spell1,10\r\nValue=HUN,Spell2,10\r\nValue=KEL,Spell0,10\r\nValue=KEL,Spell2,10\r\n",
+      "FromFalse": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      },
+      "FromTrue": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      }
+    },
+    {
+      "Name": "dmg-lowercase-faction",
+      "Text": "Value=ger,Spell3,50\r\n",
+      "Original": "Value=GER,Spell3,10\r\n",
+      "FromFalse": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      },
+      "FromTrue": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      }
+    },
+    {
+      "Name": "dmg-unchanged",
+      "Text": "Value=GER,Spell2,10\r\nValue=HUN,Spell0,10\r\nValue=HUN,Spell1,10\r\nValue=HUN,Spell2,10\r\nValue=KEL,Spell0,10\r\nValue=KEL,Spell2,10\r\n",
+      "Original": "Value=GER,Spell2,10\r\nValue=HUN,Spell0,10\r\nValue=HUN,Spell1,10\r\nValue=HUN,Spell2,10\r\nValue=KEL,Spell0,10\r\nValue=KEL,Spell2,10\r\n",
+      "FromFalse": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      },
+      "FromTrue": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      }
+    },
+    {
+      "Name": "heal-10x",
+      "Text": "Value=KEL,Spell1,100\r\n",
+      "Original": "Value=KEL,Spell1,10\r\n",
+      "FromFalse": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": true,
+        "SpellResurrection": false,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      },
+      "FromTrue": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": true,
+        "SpellResurrection": false,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      }
+    },
+    {
+      "Name": "heal-9x",
+      "Text": "Value=KEL,Spell1,90\r\n",
+      "Original": "Value=KEL,Spell1,10\r\n",
+      "FromFalse": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      },
+      "FromTrue": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      }
+    },
+    {
+      "Name": "heal-original-zero",
+      "Text": "Value=KEL,Spell1,100\r\n",
+      "Original": "Value=KEL,Spell1,0\r\n",
+      "FromFalse": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      },
+      "FromTrue": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      }
+    },
+    {
+      "Name": "radius-3x",
+      "Text": "Radius=GER,Spell1,30\r\n",
+      "Original": "Radius=GER,Spell1,10\r\n",
+      "FromFalse": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": true,
+        "GeneralSkills": false
+      },
+      "FromTrue": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": true,
+        "GeneralSkills": false
+      }
+    },
+    {
+      "Name": "radius-7.5x",
+      "Text": "Radius=GER,Spell1,75\r\n",
+      "Original": "Radius=GER,Spell1,10\r\n",
+      "FromFalse": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": true,
+        "GeneralSkills": false
+      },
+      "FromTrue": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": true,
+        "GeneralSkills": false
+      }
+    },
+    {
+      "Name": "radius-31",
+      "Text": "Radius=GER,Spell1,31\r\n",
+      "Original": "Radius=GER,Spell1,10\r\n",
+      "FromFalse": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      },
+      "FromTrue": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      }
+    },
+    {
+      "Name": "radius-tolerance",
+      "Text": "Radius=GER,Spell1,30.4\r\n",
+      "Original": "Radius=GER,Spell1,10\r\n",
+      "FromFalse": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": true,
+        "GeneralSkills": false
+      },
+      "FromTrue": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": true,
+        "GeneralSkills": false
+      }
+    },
+    {
+      "Name": "radius-missing-current",
+      "Text": "",
+      "Original": "Radius=GER,Spell1,10\r\n",
+      "FromFalse": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      },
+      "FromTrue": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      }
+    },
+    {
+      "Name": "radius-two-keys-one-bad",
+      "Text": "Radius=GER,Spell1,30\r\nRadius=ROM,Spell2,20\r\n",
+      "Original": "Radius=GER,Spell1,10\r\nRadius=ROM,Spell2,10\r\n",
+      "FromFalse": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      },
+      "FromTrue": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      }
+    },
+    {
+      "Name": "radius-zero-baseline",
+      "Text": "Radius=GER,Spell1,30\r\n",
+      "Original": "Radius=GER,Spell1,0\r\n",
+      "FromFalse": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      },
+      "FromTrue": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      }
+    },
+    {
+      "Name": "ability-5x",
+      "Text": "Value=GER,SAbility1,20\r\n",
+      "Original": "Value=GER,SAbility1,4\r\n",
+      "FromFalse": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": false,
+        "GeneralSkills": true
+      },
+      "FromTrue": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": false,
+        "GeneralSkills": true
+      }
+    },
+    {
+      "Name": "ability-unchanged",
+      "Text": "Value=GER,SAbility1,4\r\n",
+      "Original": "Value=GER,SAbility1,4\r\n",
+      "FromFalse": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      },
+      "FromTrue": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      }
+    },
+    {
+      "Name": "ability-5x-two-keys-one-bad",
+      "Text": "Value=GER,SAbility1,20\r\nValue2=GER,SAbility1,5\r\n",
+      "Original": "Value=GER,SAbility1,4\r\nValue2=GER,SAbility1,4\r\n",
+      "FromFalse": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      },
+      "FromTrue": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      }
+    },
+    {
+      "Name": "ability-missing-current",
+      "Text": "",
+      "Original": "Value=GER,SAbility1,4\r\n",
+      "FromFalse": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      },
+      "FromTrue": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      }
+    },
+    {
+      "Name": "ability-fraction",
+      "Text": "Value=GER,SAbility1,20.9\r\n",
+      "Original": "Value=GER,SAbility1,4.1\r\n",
+      "FromFalse": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": false,
+        "GeneralSkills": true
+      },
+      "FromTrue": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": false,
+        "GeneralSkills": true
+      }
+    },
+    {
+      "Name": "ability-non-numeric",
+      "Text": "Value=GER,SAbility1,abc\r\n",
+      "Original": "Value=GER,SAbility1,4\r\n",
+      "FromFalse": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      },
+      "FromTrue": {
+        "FastCiviProduction": false,
+        "InfiniteMorale": false,
+        "SpellDamage5x": false,
+        "SpellHealing10x": false,
+        "SpellResurrection": false,
+        "SpellRange3x": false,
+        "GeneralSkills": false
+      }
+    },
+    {
+      "Name": "combined-everything",
+      "Text": "MoralsDecLostMem=GER,0\r\nMoralsDecFlee=GER,0\r\nMoralsDecOverPop=GER,99999999\r\nMoralsIncIdle=GER,500\r\nCiviDelay=GER,100\r\nValue=GER,Spell2,50\r\nValue=HUN,Spell0,50\r\nValue=HUN,Spell1,50\r\nValue=HUN,Spell2,50\r\nValue=KEL,Spell0,50\r\nValue=KEL,Spell2,50\r\nValue=KEL,Spell1,100\r\nValue=KEL,Spell3,100\r\nValue2=KEL,Spell3,100\r\nRadius=GER,Spell1,30\r\nValue=GER,SAbility1,20\r\n",
+      "Original": "Value=GER,Spell2,10\r\nValue=HUN,Spell0,10\r\nValue=HUN,Spell1,10\r\nValue=HUN,Spell2,10\r\nValue=KEL,Spell0,10\r\nValue=KEL,Spell2,10\r\nValue=KEL,Spell1,10\r\nValue=KEL,Spell3,50\r\nValue2=KEL,Spell3,60\r\nValue=GER,Spell3,10\r\nRadius=GER,Spell1,10\r\nValue=GER,SAbility1,4\r\n",
+      "FromFalse": {
+        "FastCiviProduction": true,
+        "InfiniteMorale": true,
+        "SpellDamage5x": true,
+        "SpellHealing10x": true,
+        "SpellResurrection": true,
+        "SpellRange3x": true,
+        "GeneralSkills": true
+      },
+      "FromTrue": {
+        "FastCiviProduction": true,
+        "InfiniteMorale": true,
+        "SpellDamage5x": true,
+        "SpellHealing10x": true,
+        "SpellResurrection": true,
+        "SpellRange3x": true,
+        "GeneralSkills": true
+      }
+    }
+  ]
+}

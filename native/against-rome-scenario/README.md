@@ -50,6 +50,31 @@ local app compilation/tests remain unverified because Windows policy blocks serd
 normal build-script execution with error 4551. Native core tests and the oracle run
 successfully. CI can run `csharp_synthetic_differential` without the retail game.
 
+## Save/load parity (2026-10-18)
+
+`ScenarioDocument::to_json` is the counterpart of `from_json` and of C# `ScenarioDocument.Save`: it
+never mutates the document, forces Version 6, rejects non-finite floats (serde would write `null`, which
+C# cannot load) and runs the full `validate(None)` gate. `from_json` additionally refuses what System.Text.Json
+refuses but serde derives accept: positional-array records (`[]`, `[6,[],[],[]]`) and GUIDs that are not the
+36-character hyphenated form. Event names are limited in UTF-16 units like C# `string.Length`.
+
+`tests/scenario_roundtrip.rs` holds a 99-case corpus (a four-event scenario whose conditions target script
+spawns and prebuilt DATA objects and whose actions message/ally/spawn+move/win; legacy v3 migration; malformed
+JSON, identities, bindings, conditions, actions). Always-on tests: lossless/idempotent save-load, compile
+equality across reload, legacy ids, fail-closed `to_json`. Explicit gate (needs `dotnet`, no retail files):
+
+```powershell
+cargo test --locked --manifest-path native/against-rome-scenario/Cargo.toml --target-dir re_workspace/rust-scenario-target --test scenario_roundtrip csharp_scenario_save_load_differential -- --ignored --exact --nocapture
+```
+
+It runs every case through the shipped C# `Load` -> `Save` -> Apply-equivalent compile (`Oracle scenario-batch`)
+and asserts: whatever C# refuses, Rust refuses; saved JSON is semantically identical (15 saved cases);
+compiled BCI bytes are identical (13 compiled cases). Rust is intentionally stricter at load than C#
+(it validates actions/events on load, C# defers to Save/Apply); the oracle proves every such case is also
+refused by C# one stage later, except `CSHARP_ACCEPTS_RUST_REJECTS` (duplicate JSON keys, a MoveDestination
+missing an axis, and spawn count/position that C# silently clamps). A C#-saved draft containing such
+invalid events therefore cannot be opened by the Rust loader.
+
 ## Scenario review fixes (2026-10-15, Codex)
 
 All six findings have regression coverage: empty compile validates BCI before

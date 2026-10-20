@@ -202,6 +202,7 @@ name = "against-rome-modifier"
 version = "0.1.0"
 dependencies = [
  "against-rome-ambience",
+ "against-rome-maps",
  "against-rome-saves",
  "chrono",
  "serde_json",
@@ -273,6 +274,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "against-rome-trace"
+version = "0.1.0"
+
+[[package]]
 name = "ahash"
 version = "0.8.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -299,6 +304,28 @@ name = "allocator-api2"
 version = "0.2.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
+
+[[package]]
+name = "alr-probe"
+version = "0.1.0"
+dependencies = [
+ "against-rome-data",
+ "serde",
+ "serde_json",
+ "sha2",
+ "zip",
+]
+
+[[package]]
+name = "alr-scanline-differential"
+version = "0.1.0"
+dependencies = [
+ "against-rome-data",
+ "serde",
+ "serde_json",
+ "sha2",
+ "zip",
+]
 
 [[package]]
 name = "android-activity"
@@ -334,6 +361,28 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ae221649c9976a6f6c56ae1facf410f3ddb33cc661c4b7b61020a912d4237fbc"
 dependencies = [
  "libc",
+]
+
+[[package]]
+name = "anim-probe"
+version = "0.1.0"
+dependencies = [
+ "against-rome-data",
+ "png",
+ "serde",
+ "serde_json",
+ "zip",
+]
+
+[[package]]
+name = "apt-probe"
+version = "0.1.0"
+dependencies = [
+ "against-rome-data",
+ "serde",
+ "serde_json",
+ "sha2",
+ "zip",
 ]
 
 [[package]]
@@ -1425,6 +1474,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "formation-golden"
+version = "0.1.0"
+dependencies = [
+ "against-rome-navigation",
+]
+
+[[package]]
+name = "formation-probe"
+version = "0.1.0"
+dependencies = [
+ "against-rome-data",
+ "serde",
+ "serde_json",
+ "sha2",
+ "zip",
+]
+
+[[package]]
 name = "futures-core"
 version = "0.3.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2070,6 +2137,17 @@ dependencies = [
  "libc",
  "plain",
  "redox_syscall 0.9.5",
+]
+
+[[package]]
+name = "lighting-probe"
+version = "0.1.0"
+dependencies = [
+ "against-rome-data",
+ "against-rome-environment",
+ "serde",
+ "serde_json",
+ "zip",
 ]
 
 [[package]]
@@ -2844,6 +2922,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "roads-golden"
+version = "0.1.0"
+dependencies = [
+ "against-rome-navigation",
+]
+
+[[package]]
 name = "rustc-hash"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2980,6 +3065,7 @@ version = "1.0.152"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1741ab7a6cc54a03a89b5d563ed60075c277d9e3cfa73ad0c1f23f23974703c6"
 dependencies = [
+ "indexmap",
  "itoa",
  "memchr",
  "serde",
@@ -3018,6 +3104,18 @@ dependencies = [
  "cfg-if",
  "cpufeatures",
  "digest",
+]
+
+[[package]]
+name = "shad-probe"
+version = "0.1.0"
+dependencies = [
+ "against-rome-environment",
+ "png",
+ "serde",
+ "serde_json",
+ "sha2",
+ "zip",
 ]
 
 [[package]]

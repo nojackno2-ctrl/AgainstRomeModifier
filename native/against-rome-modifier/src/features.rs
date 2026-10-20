@@ -35,7 +35,13 @@ impl FeatureValue {
     pub fn as_int(&self) -> i32 {
         match self {
             FeatureValue::Int(i) => *i,
-            FeatureValue::Bool(b) => if *b { 1 } else { 0 },
+            FeatureValue::Bool(b) => {
+                if *b {
+                    1
+                } else {
+                    0
+                }
+            }
             FeatureValue::String(s) => s.parse::<i32>().unwrap_or(0),
         }
     }
@@ -362,12 +368,16 @@ impl FeatureRegistry {
         Self::ALL.iter().find(|f| f.id.eq_ignore_ascii_case(id))
     }
 
-    pub fn by_category(category: FeatureCategory) -> impl Iterator<Item = &'static FeatureDefinition> {
+    pub fn by_category(
+        category: FeatureCategory,
+    ) -> impl Iterator<Item = &'static FeatureDefinition> {
         Self::ALL.iter().filter(move |f| f.category == category)
     }
 
     pub fn toggle_features() -> impl Iterator<Item = &'static FeatureDefinition> {
-        Self::ALL.iter().filter(|f| f.control_kind == FeatureControlKind::Toggle)
+        Self::ALL
+            .iter()
+            .filter(|f| f.control_kind == FeatureControlKind::Toggle)
     }
 
     pub fn get_disabled_value(id: &str) -> FeatureValue {
@@ -423,9 +433,18 @@ impl PatchProfile {
         self.get(id).as_int()
     }
 
+    pub fn has_explicit_value(&self, id: &str) -> bool {
+        self.values.keys().any(|k| k.eq_ignore_ascii_case(id))
+    }
+
     pub fn set(&mut self, id: impl Into<String>, value: FeatureValue) {
         let key = id.into();
-        if let Some(existing) = self.values.keys().find(|k| k.eq_ignore_ascii_case(&key)).cloned() {
+        if let Some(existing) = self
+            .values
+            .keys()
+            .find(|k| k.eq_ignore_ascii_case(&key))
+            .cloned()
+        {
             self.values.remove(&existing);
         }
         self.values.insert(key, value);
@@ -442,6 +461,79 @@ impl PatchProfile {
     pub fn set_string(&mut self, id: impl Into<String>, value: impl Into<String>) {
         self.set(id, FeatureValue::String(value.into()));
     }
+
+    /// C# PatchProfile.GetEndlessAiModule, including legacy profile selections.
+    pub fn get_endless_ai_module(&self, module_id: &str) -> bool {
+        let legacy = self
+            .endless_ai_modules
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case(module_id))
+            .map(|(_, v)| *v);
+        if module_id.eq_ignore_ascii_case("M6") {
+            return self.get_bool("RomanReinforcementGarrison")
+                || legacy.unwrap_or_else(|| self.get_bool("EndlessAi.M6"));
+        }
+        if module_id.eq_ignore_ascii_case("VillageGarrisonQuota3x") {
+            return self.get_int("VillageGarrisonQuotaMultiplier") > 1 || legacy.unwrap_or(false);
+        }
+        if let Some(v) = legacy {
+            return v;
+        }
+        match module_id.to_ascii_uppercase().as_str() {
+            "M1" => self.get_bool("EndlessAi.M1"),
+            "CORE" => self.get_bool("EndlessAi.Core"),
+            "M2" | "M3" | "M4" => self.get_bool("EndlessAi.Core"),
+            "M5" => self.get_bool("EndlessAi.M5"),
+            _ => false,
+        }
+    }
+
+    /// C# PatchProfile.NormalizeCompositeValues: M6 mirrors RomanReinforcementGarrison; M2/M3/M4 mirror Core.
+    pub fn normalize_composite_values(&mut self) {
+        let modules: Vec<(String, bool)> = self
+            .endless_ai_modules
+            .iter()
+            .map(|(k, v)| (k.clone(), *v))
+            .collect();
+        let mut roman = self.get_bool("RomanReinforcementGarrison");
+        let mut legacy_core = false;
+        for (id, enabled) in &modules {
+            if id.eq_ignore_ascii_case("M6") {
+                roman |= *enabled;
+            } else if id.eq_ignore_ascii_case("VillageGarrisonQuota3x") {
+                if *enabled && self.get_int("VillageGarrisonQuotaMultiplier") <= 1 {
+                    self.set_int("VillageGarrisonQuotaMultiplier", 3);
+                }
+            } else {
+                self.set_bool(format!("EndlessAi.{id}"), *enabled);
+                if ["M2", "M3", "M4"]
+                    .iter()
+                    .any(|m| id.eq_ignore_ascii_case(m))
+                {
+                    legacy_core |= *enabled;
+                }
+            }
+        }
+        let roman = roman | self.get_bool("EndlessAi.M6");
+        self.set_bool("RomanReinforcementGarrison", roman);
+        self.set_bool("EndlessAi.M6", roman);
+        let core = self.get_bool("EndlessAi.Core") | legacy_core;
+        if modules.iter().any(|(id, _)| {
+            ["Core", "M2", "M3", "M4"]
+                .iter()
+                .any(|m| id.eq_ignore_ascii_case(m))
+        }) {
+            for id in ["Core", "M2", "M3", "M4"] {
+                self.endless_ai_modules
+                    .retain(|key, _| !key.eq_ignore_ascii_case(id));
+                self.endless_ai_modules.insert(id.into(), core);
+            }
+        }
+        self.set_bool("EndlessAi.Core", core);
+        for id in ["EndlessAi.M2", "EndlessAi.M3", "EndlessAi.M4"] {
+            self.set_bool(id, core);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -453,7 +545,10 @@ mod tests {
         assert_eq!(FeatureRegistry::ALL.len(), 49);
         let toggles: Vec<_> = FeatureRegistry::toggle_features().collect();
         assert_eq!(toggles.len(), 42);
-        let specialized: Vec<_> = FeatureRegistry::ALL.iter().filter(|f| f.control_kind == FeatureControlKind::Specialized).collect();
+        let specialized: Vec<_> = FeatureRegistry::ALL
+            .iter()
+            .filter(|f| f.control_kind == FeatureControlKind::Specialized)
+            .collect();
         assert_eq!(specialized.len(), 7);
     }
 

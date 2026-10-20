@@ -18,13 +18,22 @@ members = [
     "native/against-rome-scenario",
     "native/against-rome-scene",
     "native/against-rome-textures",
+    "native/against-rome-trace",
+    "tools/re/formation-probe-rs",
+    "tools/re/shad-probe-rs",
+    "tools/re/alr-probe-rs",
+    "tools/re/apt-probe-rs",
+    "tools/re/anim-probe-rs",
+    "tools/re/alr-scanline-differential-rs",
+    "tools/re/lighting-probe-rs",
+    "tools/re/roads-golden-rs",
+    "tools/re/formation-golden-rs",
     "tools/re/particle-assets-rs",
     "tools/re/particle-definition-probe-rs",
     "tools/re/particle-numeric-contract-rs",
     "tools/re/particle-render-contract-rs",
     "tools/re/saved-light-contract-rs",
 ]
-exclude = ["native/against-rome-trace"]
 
 [profile.release]
 panic = "unwind"

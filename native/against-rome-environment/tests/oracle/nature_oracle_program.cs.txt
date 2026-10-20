@@ -1,0 +1,185 @@
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.IO;
+using System.Linq;
+using AgainstRomeMapEditor.Modules.Nature;
+using AgainstRomeModifier.Maps;
+
+namespace AgainstRomeModifier.Maps
+{
+    public sealed class LevelObjectTemplate
+    {
+        public int TypeId { get; }
+        public LevelObjectTemplate(int typeId) => TypeId = typeId;
+    }
+    public sealed record NatureAddition(LevelObjectTemplate Template, string Name, float X, float Y, float Z, float Rotation);
+}
+
+namespace NatureOracle
+{
+    internal static class Program
+    {
+        static string NatureRegion(string name) => name.Length >= 6 ? name.Substring(3, 3) : "";
+
+        static string NatureCategory(string name)
+        {
+            string code = name.Length >= 9 ? name.Substring(6, 3) : "";
+            return code switch
+            {
+                "Nad" or "Lau" or "Bau" or "Pal" or "Bir" or "Eic" or "Buc" or "Kie" or "Tan" or "Fic" or "Obs" or "Zyp" or "Pin" => "tree",
+                "Gra" or "Bli" or "Blu" => "grass",
+                "Dor" or "Bod" or "Bus" or "Str" or "Ger" or "Hec" => "bush",
+                "Sch" or "Ent" or "Wei" or "Ser" => "water",
+                "Ste" or "Fel" or "Sto" or "Kie" => "rock",
+                _ => "other",
+            };
+        }
+
+        static bool IsLandscape(string? name) => name is not null && name.StartsWith("Lan", StringComparison.OrdinalIgnoreCase);
+
+        static IReadOnlySet<string> MapNatureRegions(IEnumerable<string> names)
+        {
+            var counts = names
+                .Where(name => name is not null && IsLandscape(name))
+                .Select(name => NatureRegion(name!))
+                .Where(region => region.Length == 3)
+                .GroupBy(region => region, StringComparer.OrdinalIgnoreCase)
+                .Select(group => (Region: group.Key, Count: group.Count())).ToArray();
+            int total = counts.Sum(item => item.Count);
+            return counts.Where(item => item.Count * 100 >= total * 15).Select(item => item.Region).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        }
+
+        sealed record NatureTypeItem(LevelObjectTemplate Template, string Name) { public override string ToString() => Name; }
+
+        static List<NatureTypeItem> RefreshNatureTypes(
+            string categoryKey,
+            bool showOtherRegions,
+            IReadOnlySet<string> mapRegions,
+            IEnumerable<(int Id, LevelObjectTemplate Template, string Name)> catalog)
+        {
+            IReadOnlySet<string> regions = showOtherRegions ? new HashSet<string>() : mapRegions;
+            var result = new List<NatureTypeItem>();
+            foreach (var item in catalog.OrderBy(pair => pair.Name, StringComparer.OrdinalIgnoreCase))
+            {
+                if (categoryKey != "all" && NatureCategory(item.Name) != categoryKey) continue;
+                if (regions.Count > 0 && !regions.Contains(NatureRegion(item.Name))) continue;
+                result.Add(new NatureTypeItem(item.Template, item.Name));
+            }
+            return result;
+        }
+
+        static List<NatureAddition> PaintNaturePlant(
+            int tileX, int tileY, int brushSize, NatureDensity density, int dimension,
+            float tileWorld,
+            IEnumerable<(float X, float Z)> existingAdditions,
+            IEnumerable<(float X, float Z, int Slot, string Name, bool Linked)> levelObjects,
+            IReadOnlySet<int> natureRemovals,
+            NatureTypeItem selectedType,
+            IReadOnlyList<NatureTypeItem> activeTypes,
+            bool mixChecked,
+            Func<float, float, float> sampleHeight,
+            Random random)
+        {
+            float near = (brushSize / 2f + 2) * tileWorld;
+            float ncx = (tileX + .5f) * tileWorld, ncz = (tileY + .5f) * tileWorld;
+            var existing = existingAdditions
+                .Concat(levelObjects.Where(item => !item.Linked && IsLandscape(item.Name) && !natureRemovals.Contains(item.Slot)).Select(item => (item.X, item.Z)))
+                .Where(item => MathF.Abs(item.Item1 - ncx) <= near && MathF.Abs(item.Item2 - ncz) <= near)
+                .Select(item => (item.Item1 / tileWorld, item.Item2 / tileWorld)).ToArray();
+
+            var points = NatureScatter.Plan(tileX, tileY, brushSize, density, dimension, existing, random);
+            var results = new List<NatureAddition>();
+            if (points.Count == 0) return results;
+
+            NatureTypeItem[] species = mixChecked
+                ? activeTypes.Where(item => NatureRegion(item.Name) == NatureRegion(selectedType.Name)).ToArray()
+                : [selectedType];
+
+            foreach ((float pointX, float pointZ) in points)
+            {
+                float x = pointX * tileWorld, z = pointZ * tileWorld, y = sampleHeight(x, z);
+                NatureTypeItem pick = species.Length == 0 ? selectedType : species[random.Next(species.Length)];
+                float rot = (float)(random.NextDouble() * Math.PI * 2);
+                results.Add(new NatureAddition(pick.Template, pick.Name, x, y, z, rot));
+            }
+            return results;
+        }
+
+        static Random CreateXoshiroRandom(int seed)
+        {
+            var rnd = new Random();
+            var field = typeof(Random).GetField("_impl", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+            var impl = field.GetValue(rnd)!;
+            var t = impl.GetType();
+            ulong sm = (ulong)(uint)seed;
+            static ulong SplitMix64(ref ulong state)
+            {
+                state += 0x9E3779B97F4A7C15UL;
+                ulong z = state;
+                z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9UL;
+                z = (z ^ (z >> 27)) * 0x94D049BB133111EBUL;
+                return z ^ (z >> 31);
+            }
+            ulong s0 = SplitMix64(ref sm);
+            ulong s1 = SplitMix64(ref sm);
+            ulong s2 = SplitMix64(ref sm);
+            ulong s3 = SplitMix64(ref sm);
+
+            t.GetField("_s0", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.SetValue(impl, s0);
+            t.GetField("_s1", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.SetValue(impl, s1);
+            t.GetField("_s2", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.SetValue(impl, s2);
+            t.GetField("_s3", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.SetValue(impl, s3);
+            return rnd;
+        }
+
+        static void Main()
+        {
+            var inv = CultureInfo.InvariantCulture;
+
+            var rawMapNames = new List<string>();
+            for (int i = 0; i < 85; i++) rawMapNames.Add("langerNad01");
+            for (int i = 0; i < 15; i++) rawMapNames.Add("LanItaZyp01");
+            var regions = MapNatureRegions(rawMapNames);
+
+            var catalog = new List<(int, LevelObjectTemplate, string)>
+            {
+                (1, new LevelObjectTemplate(1), "LanGerNad02"),
+                (2, new LevelObjectTemplate(2), "langerNad01"),
+                (3, new LevelObjectTemplate(3), "LANITA01_Zyp"),
+                (4, new LevelObjectTemplate(4), "LanKelBir01"),
+            };
+            var filtered = RefreshNatureTypes("all", false, regions, catalog);
+
+            // Single tile NoMix
+            {
+                var rng = CreateXoshiroRandom(1337);
+                var sel = filtered[0];
+                var planted = PaintNaturePlant(10, 10, 1, NatureDensity.Normal, 64, 256.0f,
+                    [], [], new HashSet<int>(), sel, filtered, false, (x, z) => (x + z) * 0.01f, rng);
+                foreach (var p in planted)
+                    Console.WriteLine($"Plant_Single_NoMix: name={p.Name} x={p.X.ToString("F4", inv)} y={p.Y.ToString("F4", inv)} z={p.Z.ToString("F4", inv)} rot={p.Rotation.ToString("F6", inv)}");
+            }
+
+            // Single tile Mix
+            {
+                var rng = CreateXoshiroRandom(1337);
+                var sel = filtered[0];
+                var planted = PaintNaturePlant(10, 10, 1, NatureDensity.Normal, 64, 256.0f,
+                    [], [], new HashSet<int>(), sel, filtered, true, (x, z) => (x + z) * 0.01f, rng);
+                foreach (var p in planted)
+                    Console.WriteLine($"Plant_Single_Mix: name={p.Name} x={p.X.ToString("F4", inv)} y={p.Y.ToString("F4", inv)} z={p.Z.ToString("F4", inv)} rot={p.Rotation.ToString("F6", inv)}");
+            }
+
+            // Large brush NoMix
+            {
+                var rng = CreateXoshiroRandom(2026);
+                var sel = filtered[0];
+                var planted = PaintNaturePlant(20, 20, 5, NatureDensity.Normal, 64, 256.0f,
+                    [], [], new HashSet<int>(), sel, filtered, false, (x, z) => (x + z) * 0.01f, rng);
+                foreach (var p in planted)
+                    Console.WriteLine($"Plant_Large_NoMix: name={p.Name} x={p.X.ToString("F4", inv)} y={p.Y.ToString("F4", inv)} z={p.Z.ToString("F4", inv)} rot={p.Rotation.ToString("F6", inv)}");
+            }
+        }
+    }
+}

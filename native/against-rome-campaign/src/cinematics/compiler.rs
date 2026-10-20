@@ -1,7 +1,7 @@
 use super::camera::{MapStartCamera, StartCameraPrimitive};
 use super::cutscene::CutsceneSequence;
 use super::spline::CameraTrackSplinePlanner;
-use against_rome_scenario::{Action, BciImage, Event};
+use against_rome_scenario::{Action, BciImage, Event, ScenarioDocument};
 
 /// 已核對 EXE ABI 的底層呼叫片段；完整序列仍為實驗性、未接入存檔。
 /// 不推測航點 Zoom、Pitch、Yaw 與原生引擎參數的對應。見 cinematic-camera.md。
@@ -99,8 +99,8 @@ impl CinematicBciCompiler {
             StartCameraPrimitive::CenterToPos => {
                 let mut words = Self::compile_center_to_pos_call(
                     image,
-                    camera.x.round() as i32,
-                    camera.z.round() as i32,
+                    camera.x.round_ties_even() as i32,
+                    camera.z.round_ties_even() as i32,
                 )?;
                 let bits = camera.zoom.to_bits();
                 words.push(67);
@@ -137,6 +137,31 @@ impl CinematicBciCompiler {
         Ok(words)
     }
 
+    /// 編輯器事件名稱可含任意 Unicode；遊戲訊息只能是 Windows-1251，
+    /// 將無法表示的字元換成 '?'，避免系統產生的標記訊息讓整個情境驗證失敗。
+    fn game_safe_text(text: &str) -> String {
+        text.chars()
+            .map(|c| {
+                let mut buf = [0u8; 4];
+                let (_, _, bad) = encoding_rs::WINDOWS_1251.encode(c.encode_utf8(&mut buf));
+                if bad || c == '\0' { '?' } else { c }
+            })
+            .collect()
+    }
+
+    /// 提取過場動畫第 1 個航點作為開局相機起點姿態。
+    pub fn initial_start_camera(sequence: &CutsceneSequence) -> Option<MapStartCamera> {
+        let wp = sequence.camera_waypoints.first()?;
+        Some(MapStartCamera {
+            enabled: true,
+            x: wp.position[0] as f64,
+            y: wp.position[1] as f64,
+            z: wp.position[2] as f64,
+            zoom: ((wp.zoom / 10.0).clamp(0.0, 9.0) as f64),
+            primitive: StartCameraPrimitive::DirectEnginePos,
+        })
+    }
+
     /// 僅把字幕轉為一次性 Message 事件。DelaySeconds 是從開局算起，非前一字幕的相對延遲。
     /// 不執行相機、輸入鎖定、黑邊、語音、部隊或後續觸發；沒有字幕就沒有事件。
     pub fn compile_to_scenario_events(sequence: &CutsceneSequence) -> Vec<Event> {
@@ -156,7 +181,7 @@ impl CinematicBciCompiler {
                 } else {
                     format!("[{}] {}", sub.speaker, sub.text)
                 };
-                let delay = sub.start_time_seconds.round() as i32;
+                let delay = (sub.start_time_seconds as f64).round_ties_even() as i32;
                 Event {
                     name: format!("{}_字幕_{}", sequence.name, index + 1),
                     delay_seconds: delay.max(0),
@@ -171,6 +196,89 @@ impl CinematicBciCompiler {
                 }
             })
             .collect()
+    }
+
+    /// 將過場動畫序列完整編譯為 ScenarioEvent 集合（含字幕、部隊行進/動作命令及完結觸發）。
+    pub fn compile_cutscene_events(sequence: &CutsceneSequence) -> Vec<Event> {
+        let mut events = Self::compile_to_scenario_events(sequence);
+
+        // 編譯部隊演員指令關鍵影格 (Unit Order Keyframes)
+        for (i, order) in sequence.unit_orders.iter().enumerate() {
+            let delay = (order.time_seconds as f64).round_ties_even() as i32;
+            let action = match order.order {
+                super::cutscene::CutsceneUnitOrderKind::MoveTo => {
+                    Action {
+                        kind: 2, // SpawnUnit with MoveDestination
+                        alias: if order.unit_alias.is_empty() { "GER_INF00".into() } else { order.unit_alias.clone() },
+                        team: 0,
+                        count: 1,
+                        x: order.target_x,
+                        z: order.target_z,
+                        move_destination: Some(against_rome_scenario::WorldPosition {
+                            x: (order.target_x as f64).round_ties_even() as i32,
+                            z: (order.target_z as f64).round_ties_even() as i32,
+                        }),
+                        ..Default::default()
+                    }
+                }
+                _ => Action {
+                    kind: 0,
+                    text: format!("UnitOrder_{:?}: {}", order.order, Self::game_safe_text(&order.unit_alias)),
+                    ..Default::default()
+                },
+            };
+
+            events.push(Event {
+                name: format!("{}_部隊指令_{}", sequence.name, i + 1),
+                delay_seconds: delay.max(0),
+                repeat: false,
+                enabled: true,
+                actions: vec![action],
+                conditions: vec![],
+            });
+        }
+
+        // 編譯過場動畫完結事件 (On-Complete Trigger)
+        if let Some(ref trigger_name) = sequence.on_complete_trigger_event {
+            let total_duration = (sequence.calculate_total_duration() as f64).round_ties_even() as i32;
+            events.push(Event {
+                name: format!("{}_完結觸發", sequence.name),
+                delay_seconds: total_duration.max(1),
+                repeat: false,
+                enabled: true,
+                actions: vec![Action {
+                    kind: 0,
+                    text: format!("Cutscene completed: {}", Self::game_safe_text(trigger_name)),
+                    ..Default::default()
+                }],
+                conditions: vec![],
+            });
+        }
+
+        events
+    }
+
+    /// 將過場動畫序列、開局運鏡及場景事件編譯為二進位 BCI 位元碼。
+    pub fn compile_sequence_to_bci(
+        sequence: &CutsceneSequence,
+        original: &[u8],
+        scenario: &ScenarioDocument,
+        known_aliases: &[String],
+        override_camera: Option<&MapStartCamera>,
+    ) -> Result<Vec<u8>, String> {
+        let cutscene_events = Self::compile_cutscene_events(sequence);
+        let mut full_doc = scenario.clone();
+        full_doc.events.extend(cutscene_events);
+
+        let camera_to_use = override_camera.cloned().or_else(|| Self::initial_start_camera(sequence));
+        let start_cam_opt: Option<against_rome_scenario::StartCamera> = camera_to_use.as_ref().map(Into::into);
+
+        against_rome_scenario::compile_script(
+            original,
+            &full_doc,
+            start_cam_opt.as_ref(),
+            Some(known_aliases),
+        )
     }
 
     /// 人類可讀的預覽規劃，不是 IPR 原始碼或可執行 BCI；所有輸出皆為註解。

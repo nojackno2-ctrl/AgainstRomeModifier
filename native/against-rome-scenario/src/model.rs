@@ -1,7 +1,24 @@
 use crate::Result;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-#[derive(Clone, Debug, Serialize, Deserialize)]
+/// System.Text.Json only reads/writes GUIDs as 36-character hyphenated "D" text. The `uuid` crate
+/// would also accept simple/braced/URN forms, so the on-disk contract is enforced here.
+mod guid_d {
+    use serde::{de::Error, Deserialize, Deserializer, Serialize, Serializer};
+    use uuid::Uuid;
+    pub fn serialize<S: Serializer>(id: &Uuid, s: S) -> Result<S::Ok, S::Error> {
+        id.hyphenated().serialize(s)
+    }
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Uuid, D::Error> {
+        let text = String::deserialize(d)?;
+        let b = text.as_bytes();
+        if b.len() != 36 || [8, 13, 18, 23].iter().any(|&i| b[i] != b'-') {
+            return Err(D::Error::custom("GUID must use the 36-character hyphenated form"));
+        }
+        Uuid::parse_str(&text).map_err(D::Error::custom)
+    }
+}
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase", default)]
 pub struct ScenarioDocument {
     pub version: i32,
@@ -19,7 +36,7 @@ impl Default for ScenarioDocument {
         }
     }
 }
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase", default)]
 pub struct Spawn {
     pub alias: String,
@@ -30,18 +47,20 @@ pub struct Spawn {
     pub angle: i32,
     pub y: f32,
     pub prebuilt: bool,
+    #[serde(with = "guid_d")]
     pub id: Uuid,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub raw_rotation: Option<f32>,
 }
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase", default)]
 pub struct DataSlot {
     pub slot: i32,
     pub uid: u32,
+    #[serde(with = "guid_d")]
     pub spawn_id: Uuid,
 }
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase", default)]
 pub struct Event {
     pub name: String,
@@ -65,7 +84,7 @@ impl Default for Event {
 }
 /// Numeric kinds preserve System.Text.Json's enum representation: Message=0,
 /// Diplomacy=1, SpawnUnit=2, Victory=3, Defeat=4.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase", default)]
 pub struct Action {
     pub kind: i32,
@@ -95,16 +114,17 @@ impl Default for Action {
         }
     }
 }
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct WorldPosition {
     pub x: i32,
     pub z: i32,
 }
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase", default)]
 pub struct Condition {
     pub kind: i32,
+    #[serde(with = "guid_d")]
     pub target_id: Uuid,
     pub min_x: i32,
     pub min_z: i32,
@@ -148,6 +168,49 @@ impl Default for StartCamera {
 pub fn runtime_key(id: Uuid, suffix: &str) -> String {
     format!("ARM_OBJECT_{}_{}", id.simple(), suffix)
 }
+/// Computes deterministic legacy UUID matching C# ScenarioObjectIdentity.LegacyId.
+pub fn legacy_spawn_id(index: usize) -> Uuid {
+    let h = against_rome_data::sha256::sha256(
+        format!("AgainstRomeScenarioLegacy:{index}").as_bytes(),
+    );
+    let mut bytes: [u8; 16] = h[..16].try_into().unwrap();
+    bytes[..4].reverse();
+    bytes[4..6].reverse();
+    bytes[6..8].reverse();
+    Uuid::from_bytes(bytes)
+}
+/// serde's derived structs also accept positional JSON arrays (`[]`, `[6,[],[],[]]`), which System.Text.Json
+/// refuses. `arm_scenario.json` is object-only, so every record position must be an object (or null where
+/// the field is optional); the typed parse that follows then rejects nulls and wrong types.
+fn require_object_shapes(data: &[u8]) -> Result<()> {
+    let root: serde_json::Value = serde_json::from_slice(data).map_err(|e| e.to_string())?;
+    let is_object = |v: &serde_json::Value| v.is_object();
+    let list = |v: &serde_json::Value, key: &str| -> Vec<serde_json::Value> {
+        v.get(key).and_then(|x| x.as_array()).cloned().unwrap_or_default()
+    };
+    if !is_object(&root) {
+        return Err("scenario root must be a JSON object".into());
+    }
+    let mut records = list(&root, "Spawns");
+    records.extend(list(&root, "DataSlots"));
+    let events = list(&root, "Events");
+    for event in &events {
+        records.push(event.clone());
+        for key in ["Actions", "Conditions"] {
+            records.extend(list(event, key));
+        }
+        for action in list(event, "Actions") {
+            if let Some(destination) = action.get("MoveDestination").filter(|d| !d.is_null()) {
+                records.push(destination.clone());
+            }
+        }
+    }
+    if records.iter().all(is_object) {
+        Ok(())
+    } else {
+        Err("scenario records must be JSON objects".into())
+    }
+}
 impl ScenarioDocument {
     /// Removes editor metadata only; it never deletes an object from native DATA.
     /// Referenced objects must be detached from event conditions first.
@@ -168,38 +231,265 @@ impl ScenarioDocument {
         self.data_slots.retain(|b| b.spawn_id != id);
         Ok(spawn)
     }
+    /// Returns the DATA slot binding for the given spawn, if any.
+    pub fn data_binding(&self, spawn_id: Uuid) -> Option<&DataSlot> {
+        if spawn_id.is_nil() {
+            return None;
+        }
+        self.data_slots.iter().find(|b| b.spawn_id == spawn_id)
+    }
+    /// Safely binds or updates a prebuilt object's DATA slot and UID.
+    pub fn bind_prebuilt(&mut self, spawn_id: Uuid, slot: i32, uid: u32) -> Result<()> {
+        if spawn_id.is_nil() {
+            return Err("cannot bind nil spawn ID".into());
+        }
+        let spawn = self
+            .spawns
+            .iter()
+            .find(|s| s.id == spawn_id)
+            .ok_or("spawn not found")?;
+        if !spawn.prebuilt {
+            return Err("only prebuilt objects can be bound to DATA slots".into());
+        }
+        if !(0..14000).contains(&slot) || uid == 0 {
+            return Err("invalid DATA slot or UID".into());
+        }
+        if self
+            .data_slots
+            .iter()
+            .any(|b| b.slot == slot && b.spawn_id != spawn_id)
+        {
+            return Err(format!("DATA slot {slot} is already bound to another object"));
+        }
+        if let Some(existing) = self.data_slots.iter_mut().find(|b| b.spawn_id == spawn_id) {
+            existing.slot = slot;
+            existing.uid = uid;
+        } else {
+            self.data_slots.push(DataSlot {
+                slot,
+                uid,
+                spawn_id,
+            });
+        }
+        Ok(())
+    }
+    /// Removes any DATA slot binding for the given spawn.
+    pub fn unbind_prebuilt(&mut self, spawn_id: Uuid) {
+        if !spawn_id.is_nil() {
+            self.data_slots.retain(|b| b.spawn_id != spawn_id);
+        }
+    }
+    /// Ensures all spawns have persistent non-nil unique identities and aligns legacy slot bindings.
+    pub fn prepare_identities(&mut self, legacy: bool) -> Result<()> {
+        let mut ids = std::collections::HashSet::new();
+        for (index, spawn) in self.spawns.iter_mut().enumerate() {
+            if spawn.id.is_nil() {
+                spawn.id = if legacy {
+                    legacy_spawn_id(index)
+                } else {
+                    uuid::Uuid::new_v4()
+                };
+            }
+            if !ids.insert(spawn.id) {
+                return Err("duplicate spawn ID in scenario".into());
+            }
+        }
+        let prebuilt_ids: Vec<_> = self
+            .spawns
+            .iter()
+            .filter(|s| s.prebuilt)
+            .map(|s| s.id)
+            .collect();
+        if legacy
+            && self.data_slots.len() == prebuilt_ids.len()
+            && self.data_slots.iter().all(|s| s.spawn_id.is_nil())
+        {
+            for (slot, id) in self.data_slots.iter_mut().zip(prebuilt_ids) {
+                slot.spawn_id = id;
+            }
+        }
+        self.validate(None)
+    }
+    /// Validates all prebuilt bindings against an active DataBindingSource.
+    pub fn sync_prebuilt_bindings(&mut self, source: &crate::DataBindingSource) -> Result<usize> {
+        source.verify_unchanged()?;
+        crate::verify_binding_snapshot(self, source.active_bindings())?;
+        Ok(self.spawns.iter().filter(|s| s.prebuilt).count())
+    }
+    /// Preflight check for scenario save; validates structure and optional DATA bindings.
+    pub fn preflight_validate(
+        &self,
+        aliases: Option<&[String]>,
+        data_source: Option<&crate::DataBindingSource>,
+    ) -> Result<()> {
+        self.validate(aliases)?;
+        if let Some(source) = data_source {
+            source.verify_unchanged()?;
+            crate::verify_binding_snapshot(self, source.active_bindings())?;
+        }
+        Ok(())
+    }
+    /// Converts this document's events into a visual EventGraph.
+    pub fn to_event_graph(&self) -> crate::graph::EventGraph {
+        crate::graph::EventGraphConverter::from_scenario_events(&self.events)
+    }
+    /// Compiles an EventGraph draft and applies it to this document with fail-closed rollback.
+    /// Rejects unsupported constructs (Delay nodes and chained triggers), graph errors, orphan/dangling
+    /// elements, and invalid scenario states before mutating `self.events`.
+    pub fn apply_event_graph(
+        &mut self,
+        graph: &crate::graph::EventGraph,
+        aliases: Option<&[String]>,
+    ) -> Result<()> {
+        let valid_targets: std::collections::HashSet<Uuid> =
+            self.spawns.iter().map(|s| s.id).collect();
+        let diagnostics =
+            crate::graph::EventGraphValidator::validate(graph, Some(&valid_targets), aliases);
+        if diagnostics.iter().any(|d| {
+            d.severity == crate::graph::GraphDiagnosticSeverity::Error
+                || matches!(
+                    d.code.as_str(),
+                    "ORPHAN_ACTION" | "DANGLING_CONDITION" | "ORPHAN_DELAY"
+                )
+        }) {
+            return Err(
+                "Fix graph errors and disconnected nodes before applying. Delay nodes and chained triggers are unsupported."
+                    .into(),
+            );
+        }
+        if graph
+            .nodes
+            .iter()
+            .any(|n| matches!(n, crate::graph::GraphNode::Delay(_)))
+            || graph.has_chained_triggers()
+        {
+            return Err(
+                "Fix graph errors and disconnected nodes before applying. Delay nodes and chained triggers are unsupported."
+                    .into(),
+            );
+        }
+        let compiled = crate::graph::EventGraphConverter::to_scenario_events(graph)?;
+        let mut draft = self.clone();
+        draft.events = compiled.clone();
+        draft.validate(aliases)?;
+        self.events = compiled;
+        Ok(())
+    }
+    /// Appends an event enforcing the 256 event limit and document invariants.
+    pub fn add_event(&mut self, event: Event) -> Result<usize> {
+        if self.events.len() >= 256 {
+            return Err("事件上限為 256 個。".into());
+        }
+        let mut draft = self.clone();
+        draft.events.push(event.clone());
+        draft.validate(None)?;
+        let idx = self.events.len();
+        self.events.push(event);
+        Ok(idx)
+    }
+    /// Duplicates an event at `index` with `suffix`, enforcing the 256 limit and 100-character name cap.
+    pub fn duplicate_event(&mut self, index: usize, suffix: &str) -> Result<usize> {
+        if self.events.len() >= 256 {
+            return Err("事件上限為 256 個。".into());
+        }
+        if suffix.encode_utf16().count() > 100 {
+            return Err("副本名稱後綴過長。".into());
+        }
+        let source = self.events.get(index).ok_or("event index out of bounds")?;
+        let max_base_len = 100usize.saturating_sub(suffix.encode_utf16().count());
+        let mut base_name = String::new();
+        let mut utf16_count = 0;
+        for c in source.name.chars() {
+            let c_len = c.len_utf16();
+            if utf16_count + c_len > max_base_len {
+                break;
+            }
+            base_name.push(c);
+            utf16_count += c_len;
+        }
+        base_name.push_str(suffix);
+        let mut copy = source.clone();
+        copy.name = base_name;
+        let insert_idx = index + 1;
+        self.events.insert(insert_idx, copy);
+        Ok(insert_idx)
+    }
+    /// Removes an event by index with bounds checking.
+    pub fn remove_event(&mut self, index: usize) -> Result<Event> {
+        if index >= self.events.len() {
+            return Err("event index out of bounds".into());
+        }
+        Ok(self.events.remove(index))
+    }
+    /// Atomically replaces an event by index with rollback on invariant failure.
+    pub fn replace_event(&mut self, index: usize, event: Event) -> Result<()> {
+        if index >= self.events.len() {
+            return Err("event index out of bounds".into());
+        }
+        let old = std::mem::replace(&mut self.events[index], event);
+        if let Err(e) = self.validate(None) {
+            self.events[index] = old;
+            return Err(e);
+        }
+        Ok(())
+    }
+    /// Reorders an action within an event with rollback on terminal action invariant violation.
+    pub fn move_event_action(
+        &mut self,
+        event_idx: usize,
+        action_idx: usize,
+        offset: isize,
+    ) -> Result<usize> {
+        let event = self
+            .events
+            .get_mut(event_idx)
+            .ok_or("event index out of bounds")?;
+        let target = action_idx as isize + offset;
+        if target < 0 || target >= event.actions.len() as isize || action_idx >= event.actions.len() {
+            return Err("action index or target out of bounds".into());
+        }
+        let target_idx = target as usize;
+        event.actions.swap(action_idx, target_idx);
+        if let Err(e) = self.validate(None) {
+            let event = &mut self.events[event_idx];
+            event.actions.swap(action_idx, target_idx);
+            return Err(e);
+        }
+        Ok(target_idx)
+    }
+    /// Serializes the document as `arm_scenario.json` (Version 6, indented, numeric enums), the
+    /// counterpart of `from_json` and of C# `ScenarioDocument.Save`. Fails closed and never mutates
+    /// `self`: every float must be finite (serde would otherwise write `null`, which C# refuses to
+    /// load) and the document must pass the full `validate(None)` gate, a superset of the C# Save
+    /// checks (identity, DATA bindings, condition targets). Alias membership is checked at compile.
+    pub fn to_json(&self) -> Result<Vec<u8>> {
+        let finite = self.spawns.iter().all(|s| {
+            s.x.is_finite() && s.y.is_finite() && s.z.is_finite() && s.raw_rotation.is_none_or(f32::is_finite)
+        }) && self
+            .events
+            .iter()
+            .flat_map(|e| &e.actions)
+            .all(|a| a.x.is_finite() && a.z.is_finite());
+        if !finite {
+            return Err("scenario contains a non-finite coordinate".into());
+        }
+        let mut document = self.clone();
+        document.version = 6;
+        document.validate(None)?;
+        serde_json::to_vec_pretty(&document).map_err(|e| e.to_string())
+    }
     pub fn from_json(data: &[u8]) -> Result<Self> {
         let data = data.strip_prefix(&[239, 187, 191]).unwrap_or(data);
+        require_object_shapes(data)?;
         let mut d: Self = serde_json::from_slice(data).map_err(|e| e.to_string())?;
         if !(1..=6).contains(&d.version) {
             return Err("unsupported scenario version".into());
         }
         if d.version < 4 {
-            for (i, s) in d.spawns.iter_mut().enumerate() {
-                if s.id.is_nil() {
-                    let h = against_rome_data::sha256::sha256(
-                        format!("AgainstRomeScenarioLegacy:{i}").as_bytes(),
-                    );
-                    let mut bytes: [u8; 16] = h[..16].try_into().unwrap();
-                    bytes[..4].reverse();
-                    bytes[4..6].reverse();
-                    bytes[6..8].reverse();
-                    s.id = Uuid::from_bytes(bytes)
-                }
-            }
-            let p: Vec<_> = d
-                .spawns
-                .iter()
-                .filter(|s| s.prebuilt)
-                .map(|s| s.id)
-                .collect();
-            if p.len() == d.data_slots.len() && d.data_slots.iter().all(|s| s.spawn_id.is_nil()) {
-                for (s, id) in d.data_slots.iter_mut().zip(p) {
-                    s.spawn_id = id
-                }
-            }
+            d.prepare_identities(true)?;
+        } else {
+            d.validate(None)?;
         }
-        d.validate(None)?;
         Ok(d)
     }
     pub fn validate(&self, aliases: Option<&[String]>) -> Result<()> {
@@ -264,7 +554,7 @@ impl ScenarioDocument {
         }
         for e in &self.events {
             if e.name.trim().is_empty()
-                || e.name.chars().count() > 100
+                || e.name.encode_utf16().count() > 100 // C# string.Length counts UTF-16 units
                 || !(0..=86400).contains(&e.delay_seconds)
                 || (e.repeat && e.delay_seconds == 0)
                 || e.actions.is_empty()

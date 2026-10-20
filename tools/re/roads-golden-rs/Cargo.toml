@@ -1,0 +1,18 @@
+[package]
+name = "roads-golden"
+version = "0.1.0"
+edition = "2021"
+description = "Deterministic golden differential fixture generator for Against Rome road connectivity and path healing"
+publish = false
+
+[lib]
+name = "roads_golden"
+path = "src/lib.rs"
+
+[[bin]]
+name = "roads-golden"
+path = "src/main.rs"
+
+[dependencies]
+against-rome-navigation = { path = "../../../native/against-rome-navigation" }
+

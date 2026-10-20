@@ -141,4 +141,15 @@ impl EditorCamera {
             direction: dir,
         }
     }
+
+    /// Focuses the camera target on a specific tile position, sampling terrain height.
+    pub fn focus_tile(&mut self, tile_x: f32, tile_y: f32, heights: &crate::terrain::TerrainHeightField) {
+        let y = heights.sample_height(tile_x, tile_y);
+        self.target = Vec3::new(tile_x, y, tile_y);
+    }
+
+    /// Zooms in or out by the standard editor stepping factor (0.84 / 1.19).
+    pub fn zoom_step(&mut self, zoom_in: bool) {
+        self.zoom(if zoom_in { 0.84 } else { 1.19 });
+    }
 }

@@ -1,0 +1,17 @@
+[package]
+name = "alr-scanline-differential"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "alr-scanline-differential-rs"
+path = "src/main.rs"
+
+[dependencies]
+against-rome-data = { path = "../../../native/against-rome-data" }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+sha2 = "0.10.9"
+zip = { version = "=0.6.6", default-features = false, features = ["deflate"] }
+

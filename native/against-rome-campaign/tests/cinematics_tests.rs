@@ -158,3 +158,122 @@ fn test_map_start_camera_injector() {
     let last_op = image.code[image.code.len() - 2];
     assert_eq!(last_op, MapStartCameraInjector::OP_JUMP);
 }
+
+#[test]
+fn test_cutscene_spline_initial_camera_extraction() {
+    let mut seq = CutsceneSequence {
+        name: "IntroFlyover".to_string(),
+        camera_waypoints: vec![
+            CameraWaypoint::new(
+                [1500.5, 20.0, 3500.5],
+                35.0,
+                45.0,
+                55.0,
+                0.0,
+                CameraEasingType::Linear,
+                Some("StartPoint".into()),
+            ),
+            CameraWaypoint::new(
+                [2500.0, 30.0, 4500.0],
+                30.0,
+                60.0,
+                60.0,
+                5.0,
+                CameraEasingType::SmoothStep,
+                Some("EndPoint".into()),
+            ),
+        ],
+        ..Default::default()
+    };
+
+    let start_cam = CinematicBciCompiler::initial_start_camera(&seq).unwrap();
+    assert!(start_cam.enabled);
+    assert_eq!(start_cam.x, 1500.5);
+    assert_eq!(start_cam.y, 20.0);
+    assert_eq!(start_cam.z, 3500.5);
+    assert!((start_cam.zoom - 5.5).abs() < 1e-4);
+    assert_eq!(start_cam.primitive, StartCameraPrimitive::DirectEnginePos);
+
+    // Empty sequence returns None
+    seq.camera_waypoints.clear();
+    assert!(CinematicBciCompiler::initial_start_camera(&seq).is_none());
+}
+
+#[test]
+fn test_cutscene_events_compilation_and_sequence_to_bci() {
+    let seq = CutsceneSequence {
+        name: "BattleIntro".to_string(),
+        camera_waypoints: vec![
+            CameraWaypoint::new(
+                [1200.0, 0.0, 1400.0],
+                30.0,
+                45.0,
+                50.0,
+                0.0,
+                CameraEasingType::Linear,
+                None,
+            ),
+        ],
+        subtitles: vec![
+            SubtitleKeyframe::new(1.0, 3.0, "Leader", "To battle!"),
+            SubtitleKeyframe::new(5.0, 2.0, "", "Charge!"),
+        ],
+        unit_orders: vec![
+            UnitOrderKeyframe::new(
+                2.0,
+                "GER_INF00",
+                CutsceneUnitOrderKind::MoveTo,
+                3000.0,
+                4000.0,
+            ),
+        ],
+        on_complete_trigger_event: Some("StartBattleTimer".into()),
+        ..Default::default()
+    };
+
+    let events = CinematicBciCompiler::compile_cutscene_events(&seq);
+    assert_eq!(events.len(), 4); // 2 subtitles + 1 unit order + 1 on_complete
+    assert_eq!(events[0].name, "BattleIntro_字幕_1");
+    assert_eq!(events[0].delay_seconds, 1);
+    assert_eq!(events[1].name, "BattleIntro_字幕_2");
+    assert_eq!(events[1].delay_seconds, 5);
+    assert_eq!(events[2].name, "BattleIntro_部隊指令_1");
+    assert_eq!(events[2].delay_seconds, 2);
+    assert_eq!(events[3].name, "BattleIntro_完結觸發");
+
+    // Test compiling directly to BCI
+    let idle_bci = BciImage::idle().serialize();
+    let scenario = against_rome_scenario::ScenarioDocument::default();
+    let aliases = vec!["GER_INF00".to_string()];
+
+    let bci_result = CinematicBciCompiler::compile_sequence_to_bci(
+        &seq,
+        &idle_bci,
+        &scenario,
+        &aliases,
+        None,
+    );
+    assert!(bci_result.is_ok(), "{:?}", bci_result.err());
+    let bci_bytes = bci_result.unwrap();
+    assert!(bci_bytes.len() > idle_bci.len());
+    let parsed = BciImage::parse(&bci_bytes);
+    assert!(parsed.is_ok());
+}
+
+#[test]
+fn test_bankers_rounding_parity() {
+    let mut image = BciImage::idle();
+    // 100.5 rounds to 100 with banker's rounding (even), 101.5 rounds to 102
+    let cam1 = MapStartCamera {
+        x: 100.5,
+        z: 101.5,
+        zoom: 3.0,
+        primitive: StartCameraPrimitive::CenterToPos,
+        enabled: true,
+        ..Default::default()
+    };
+    let words = CinematicBciCompiler::compile_start_camera_calls(&mut image, &cam1).unwrap();
+    // In CenterToPos: words[1] is z (102), words[3] is x (100)
+    assert_eq!(words[1], 102);
+    assert_eq!(words[3], 100);
+}

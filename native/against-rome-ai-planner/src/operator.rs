@@ -32,6 +32,12 @@ fn run_stroke(
     counters: &mut OperatorCounters,
 ) -> EditorBrushResult {
     let tex_cb = on_texture.as_mut().map(|cb| &mut **cb as &mut dyn FnMut(TerrainTextureChange));
+    let radius = stroke.radius_tiles();
+    let mut rejected_cb = |x: i32, y: i32| {
+        if let Some(cb) = on_rejected_material.as_mut() {
+            cb(x as f32 + 0.5, y as f32 + 0.5, radius);
+        }
+    };
     let result = EditorBrushExecutor::execute(
         stroke,
         heights.as_deref_mut(),
@@ -42,18 +48,13 @@ fn run_stroke(
         allows_tile,
         paint_material_fallback,
         tex_cb,
-        None,
+        Some(&mut rejected_cb),
     );
 
     if stroke.tool == EditorBrushTool::Material {
         counters.total_material_strokes += 1;
         if result.rejected_material_dabs > 0 {
             counters.total_rejected_material_strokes += 1;
-            if let Some(ref mut cb) = on_rejected_material {
-                for pt in &stroke.path {
-                    cb(pt.0 as f32 + 0.5, pt.1 as f32 + 0.5, stroke.radius_tiles());
-                }
-            }
         }
     }
 
@@ -933,56 +934,10 @@ impl AiEditorOperator {
         h.heights()[vy * h.vertex_size() + vx] as i32
     }
 
+    /// Canonical replayable `/brush` text (see [`crate::brush::BrushCommand`]).
     pub fn format_brush_command(stroke: &EditorBrushStroke) -> String {
-        let mut s = String::from("/brush ");
-        match stroke.tool {
-            EditorBrushTool::Height => {
-                let op = match stroke.height_operation {
-                    EditorHeightBrush::Raise => "raise",
-                    EditorHeightBrush::Lower => "lower",
-                    EditorHeightBrush::Smooth => "smooth",
-                    EditorHeightBrush::Flatten => "flatten",
-                    EditorHeightBrush::Roughen => "roughen",
-                    EditorHeightBrush::Water => "water",
-                };
-                s.push_str("height ");
-                s.push_str(op);
-            }
-            EditorBrushTool::Collision => {
-                s.push_str("collision ");
-                s.push_str(if stroke.block { "block" } else { "clear" });
-            }
-            EditorBrushTool::Material => {
-                s.push_str("material ");
-                s.push_str(stroke.material.as_deref().unwrap_or("default"));
-            }
-        }
-
-        for pt in &stroke.path {
-            s.push(' ');
-            s.push_str(&pt.0.to_string());
-            s.push(',');
-            s.push_str(&pt.1.to_string());
-        }
-
-        s.push_str(" --size ");
-        s.push_str(&stroke.size.to_string());
-
-        if stroke.tool == EditorBrushTool::Height {
-            let strength = match stroke.strength_level {
-                0 => "light",
-                2 => "strong",
-                _ => "medium",
-            };
-            s.push_str(" --strength ");
-            s.push_str(strength);
-        }
-
-        if stroke.auto_bridge {
-            s.push_str(" --auto-bridge");
-        }
-
-        s
+        crate::brush::BrushCommand::format(stroke)
+            .unwrap_or_else(|e| format!("/brush invalid ({e})"))
     }
 
     pub fn format_human_description(

@@ -8,14 +8,21 @@
 pub mod ai;
 pub mod cinematics;
 pub mod objectives;
+pub mod export;
+pub mod pipeline;
+
+pub use export::{verify_exported_script, CampaignExportResult, ExportVerification};
+pub use pipeline::{
+    CampaignCompiler, CampaignPipelineOptions, CampaignPipelineResult, MAX_SCENARIO_EVENTS,
+};
 
 // AI exports
 pub use ai::{
     AiArchetypeCatalog, AiArchetypeProfile, CampaignCompilationResult, CampaignMissionCompiler,
     CampaignMissionPlan, CampaignObjective, CampaignObjectiveType, EngagementRule,
     FactionAiProfile, FactionAiSession, ReinforcementDefinition, TacticalPosture, TargetPriority,
-    UnitPreferenceWeight, WaveAttackDefinition, WaveSquadDefinition, WaypointMovementMode,
-    WaypointNode, WaypointPath, WaypointPathPlanner, WaypointStance,
+    UnitPreferenceWeight, WaveAttackDefinition, WavePlanParameters, WaveSquadDefinition,
+    WaypointMovementMode, WaypointNode, WaypointPath, WaypointPathPlanner, WaypointStance,
 };
 
 // Cinematics exports

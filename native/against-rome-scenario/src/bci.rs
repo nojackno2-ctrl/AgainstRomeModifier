@@ -88,7 +88,11 @@ impl BciImage {
         r.tag(b"VIDX")?;
         let mut variable_offsets = vec![];
         for _ in 0..lens[5] {
-            variable_offsets.push(r.word()?)
+            let v = r.word()?;
+            if v < 0 || v as usize >= variables.len() {
+                return Err("invalid variable offset".into());
+            }
+            variable_offsets.push(v)
         }
         let dtor = r.word()?;
         let main = r.word()?;

@@ -431,3 +431,197 @@ fn test_heal_navmesh_finds_and_heals_road_gaps_and_undo_restores() {
     runner.undo(&mut context);
     assert_eq!(context.textures.as_ref().unwrap()[15 * DIM + 20], "Gras1");
 }
+
+// ---------------------------------------------------------------------------
+// /brush：console 與 native AI planner 共用 canonical BrushCommand
+// ---------------------------------------------------------------------------
+
+mod brush_canonical {
+    use against_rome_ai_planner::BrushCommand as CanonicalBrush;
+
+    use super::create_test_runner;
+    use crate::macro_cmd::commands::terrain_cmds::{canonical_from_log, canonicalize_brush_line};
+    use crate::macro_cmd::models::CommandExecutionContext;
+
+    const VERTEX: usize = 17;
+    const TILES: usize = 16;
+
+    fn brush_context() -> CommandExecutionContext {
+        CommandExecutionContext {
+            heights: Some(vec![100u8; VERTEX * VERTEX]),
+            vertex_size: VERTEX,
+            map_tile_dimension: TILES,
+            water_level: 8.0,
+            ..Default::default()
+        }
+    }
+
+    fn heights(context: &CommandExecutionContext) -> Vec<u8> {
+        context.heights.clone().unwrap()
+    }
+
+    #[test]
+    fn brush_applies_canonical_height_stroke_and_undo_restores() {
+        let (_, mut runner) = create_test_runner();
+        let mut context = brush_context();
+        let before = heights(&context);
+
+        let res = runner.execute_line("/brush height raise 5,5 6,5 --size 3 --strength strong", &mut context, true);
+        assert!(res.success, "{}", res.message);
+        assert!(res.affected_count > 0);
+        let after = heights(&context);
+        assert_ne!(after, before);
+        assert!(after.iter().zip(&before).all(|(a, b)| a >= b), "raise 不得降低高度");
+
+        runner.undo(&mut context);
+        assert_eq!(heights(&context), before);
+        runner.redo(&mut context);
+        assert_eq!(heights(&context), after);
+    }
+
+    #[test]
+    fn brush_matches_native_canonical_run_exactly() {
+        use against_rome_editor::terrain::TerrainSession;
+
+        let (_, mut runner) = create_test_runner();
+        let mut context = brush_context();
+        let line = "/brush height lower 4,4 8,8 --size 5 --strength gentle";
+        assert!(runner.execute_line(line, &mut context, true).success);
+
+        let mut session = TerrainSession::new(VERTEX, vec![100u8; VERTEX * VERTEX], 0, None).unwrap();
+        CanonicalBrush::run(line, Some(&mut session), None, TILES, 8.0).unwrap();
+        assert_eq!(heights(&context), session.heights());
+    }
+
+    #[test]
+    fn brush_aliases_and_spellings_canonicalize_and_roundtrip() {
+        let spellings = [
+            "/brush height raise 3,3",
+            "/paint HEIGHT Raise 3,3 --size 1 --strength medium",
+            "/stroke height raise 3,3 --strength medium --size 1",
+            "brush height raise 3,3",
+        ];
+        let canonical = canonicalize_brush_line(spellings[0], TILES).unwrap();
+        assert_eq!(canonical, "/brush height raise 3,3 --size 1 --strength medium");
+        for s in spellings {
+            assert_eq!(canonicalize_brush_line(s, TILES).unwrap(), canonical, "{s}");
+        }
+        // 規範化後再規範化是恆等式，且與 native format(parse()) 一致。
+        assert_eq!(canonicalize_brush_line(&canonical, TILES).unwrap(), canonical);
+        let stroke = CanonicalBrush::parse(&canonical, TILES).unwrap();
+        assert_eq!(CanonicalBrush::format(&stroke).unwrap(), canonical);
+    }
+
+    #[test]
+    fn brush_command_log_roundtrips_and_replays_to_identical_heights() {
+        let (_, mut runner) = create_test_runner();
+        let mut original = brush_context();
+        let typed = [
+            "/paint height raise 2,2 5,2 --size 3",
+            "/brush HEIGHT smooth 4,4 --size 5 --strength strong",
+            "/stroke height flatten 8,8 10,8 --size 3 --strength gentle",
+        ];
+        let mut replay_log = Vec::new();
+        for line in typed {
+            let res = runner.execute_line(line, &mut original, true);
+            assert!(res.success, "{line}: {}", res.message);
+            // 結果訊息與 context 日誌都帶有 canonical 重播文字。
+            let from_msg = canonical_from_log(&res.message).expect("訊息缺少 canonical").to_string();
+            assert_eq!(res.details.as_deref(), Some(&[from_msg.clone()][..]));
+            let ok_log = original
+                .logs
+                .iter()
+                .rev()
+                .find(|(m, _)| m.starts_with("[OK] /"))
+                .map(|(m, _)| m.clone())
+                .unwrap();
+            assert_eq!(canonical_from_log(&ok_log), Some(from_msg.as_str()));
+            assert_eq!(canonicalize_brush_line(&from_msg, TILES).unwrap(), from_msg);
+            replay_log.push(from_msg);
+        }
+
+        let (_, mut replay_runner) = create_test_runner();
+        let mut replayed = brush_context();
+        for line in &replay_log {
+            assert!(replay_runner.execute_line(line, &mut replayed, true).success, "{line}");
+        }
+        assert_eq!(heights(&replayed), heights(&original));
+
+        // 同一份 canonical 日誌以 transactional 腳本重播，結果相同且為單一 undo 單元。
+        let (_, mut script_runner) = create_test_runner();
+        let mut scripted = brush_context();
+        let before = heights(&scripted);
+        let report = script_runner.execute_script(&replay_log.join("\n"), &mut scripted, Some("replay.armcmd"), None, true);
+        assert!(report.success, "{:?}", report.error_message);
+        assert_eq!(heights(&scripted), heights(&original));
+        script_runner.undo(&mut scripted);
+        assert_eq!(heights(&scripted), before);
+    }
+
+    #[test]
+    fn brush_rejects_legacy_syntax_without_touching_heights() {
+        let (_, mut runner) = create_test_runner();
+        let mut context = brush_context();
+        let before = heights(&context);
+        for line in ["/brush raise 5 5 3", "/brush flatten 5 5 3 90", "/paint LOWER 4 4 2 8"] {
+            let res = runner.execute_line(line, &mut context, true);
+            assert!(!res.success, "{line}");
+            assert!(res.message.contains("/brush height"), "應提示 canonical 語法: {}", res.message);
+        }
+        assert_eq!(heights(&context), before);
+        assert!(!runner.can_undo());
+    }
+
+    #[test]
+    fn brush_rejects_invalid_and_unsupported_strokes_atomically() {
+        let (_, mut runner) = create_test_runner();
+        let mut context = brush_context();
+        let before = heights(&context);
+        for line in [
+            "/brush",
+            "/brush height raise",
+            "/brush height raise 5,5 --size 4",
+            "/brush height raise 5,5 --strength extreme",
+            "/brush height raise 99,99",
+            "/brush height raise -1,3",
+            "/brush height raise 5.5,5",
+            "/brush height raise 5,5 --size",
+            "/brush height raise 5,5 --size 3 --size 3",
+            "/brush height bogus 5,5",
+            "/brush height raise 5,5 --auto-bridge",
+            // console context 沒有 collision / blend 圖層：由 canonical run 拒絕。
+            "/brush collision block 5,5",
+            "/brush material \"Grass 1\" 5,5",
+        ] {
+            let res = runner.execute_line(line, &mut context, true);
+            assert!(!res.success, "{line} 應失敗");
+            assert_eq!(heights(&context), before, "{line} 失敗後高度必須不變");
+        }
+        assert!(!runner.can_undo());
+
+        // 高度尚未就緒。
+        let mut empty = CommandExecutionContext::default();
+        assert!(!runner.execute_line("/brush height raise 5,5", &mut empty, true).success);
+    }
+
+    #[test]
+    fn brush_failure_in_transactional_script_rolls_back_earlier_brush() {
+        let (_, mut runner) = create_test_runner();
+        let mut context = brush_context();
+        let before = heights(&context);
+        let script = "/brush height raise 6,6 --size 5\n/brush height raise 999,999\n";
+        let report = runner.execute_script(script, &mut context, Some("bad.armcmd"), None, true);
+        assert!(!report.success);
+        assert!(report.was_rolled_back);
+        assert_eq!(heights(&context), before);
+    }
+
+    #[test]
+    fn brush_usage_is_the_canonical_usage() {
+        let (registry, _) = create_test_runner();
+        let cmd = registry.try_get_command("brush").unwrap();
+        assert_eq!(cmd.usage_syntax(), CanonicalBrush::USAGE);
+        assert!(registry.try_get_command("paint").is_some());
+        assert!(registry.try_get_command("stroke").is_some());
+    }
+}

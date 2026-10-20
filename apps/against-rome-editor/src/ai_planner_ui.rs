@@ -81,11 +81,19 @@ impl AiPlannerUi {
     }
 
     pub fn clear_dirty(&mut self) {
+        self.reset_session();
+    }
+
+    /// Resets all map-bound generated AI plans, summaries, and apply results.
+    /// Preserves user preferences (open state, ollama url, selected model, prompt description, scope, roles).
+    pub fn reset_session(&mut self) {
         self.dirty = false;
         self.current_plan = None;
         self.plan_summary.clear();
         self.last_apply_result = None;
         self.pending_discard = false;
+        self.status_message = "Ready.".to_string();
+        self.status_is_error = false;
     }
 
     pub fn request_close(&mut self) {

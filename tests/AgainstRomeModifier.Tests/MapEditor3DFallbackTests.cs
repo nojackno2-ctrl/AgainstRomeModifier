@@ -89,4 +89,66 @@ public sealed partial class MapEditorSaveTransactionTests
             Assert.Equal(edited, GetField<TerrainHeightEditSession>(reopened, "_terrainLayers").Heights);
         });
     }
+
+    [Fact]
+    public void Context_creation_failure_during_handle_creation_records_failure_and_allows_safe_paint_and_dispose()
+    {
+        RunInSta(() =>
+        {
+            Application.SetUnhandledExceptionMode(UnhandledExceptionMode.ThrowException, threadScope: true);
+            OpenTK.Windowing.Desktop.GLFWProvider.CheckForMainThread = false;
+            using var view = new Map3DViewControl();
+
+            string simulatedError = "OpenGL 3.3 初始化失敗：GLFWException: WGL: The driver does not appear to support OpenGL";
+            FieldInfo contextFailureField = typeof(Map3DViewControl).GetField("_contextCreationFailure", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            contextFailureField.SetValue(view, simulatedError);
+            typeof(Map3DViewControl).GetProperty("LastFailureReason")!.GetSetMethod(true)!.Invoke(view, [simulatedError]);
+
+            Assert.False(view.IsReady);
+            Assert.Equal(simulatedError, view.LastFailureReason);
+
+            MethodInfo onPaint = typeof(Map3DViewControl).GetMethod("OnPaint", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            using var bmp = new System.Drawing.Bitmap(10, 10);
+            using var g = System.Drawing.Graphics.FromImage(bmp);
+            using var pe = new PaintEventArgs(g, new System.Drawing.Rectangle(0, 0, 10, 10));
+            onPaint.Invoke(view, [pe]);
+
+            Assert.False(view.RetryInitialization());
+        });
+    }
+
+    [Fact]
+    public void Glfw_context_creation_failure_triggers_2d_fallback_with_diagnostics()
+    {
+        string map = CreateFixture();
+        RunInSta(() =>
+        {
+            Application.SetUnhandledExceptionMode(UnhandledExceptionMode.ThrowException, threadScope: true);
+            OpenTK.Windowing.Desktop.GLFWProvider.CheckForMainThread = false;
+            using var form = new MapEditorForm(_root, new GameMapInfo("ENDL_005", map, true, "GLFW Fallback", "Test"));
+            typeof(MapEditorForm).GetField("_allowClose", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(form, true);
+            form.StartPosition = FormStartPosition.Manual; form.Location = new System.Drawing.Point(-30000, -30000);
+            form.Show(); Application.DoEvents();
+
+            var view = GetField<Map3DViewControl>(form, "_view3d");
+            var view3dButton = GetField<ToolStripButton>(form, "_view3dButton");
+            var view2dButton = GetField<ToolStripButton>(form, "_view2dButton");
+
+            if (view.IsReady)
+            {
+                var simulatedEx = new InvalidOperationException("WGL: The driver does not appear to support OpenGL");
+                MethodInfo disableMethod = typeof(MapEditorForm).GetMethod("Disable3DView", BindingFlags.Instance | BindingFlags.NonPublic, null, [typeof(string), typeof(Exception)], null)!;
+                disableMethod.Invoke(form, ["OpenGL 3.3 初始化失敗：GLFWException: WGL: The driver does not appear to support OpenGL", simulatedEx]);
+                Invoke(form, "SetActiveView", false);
+            }
+
+            Assert.False(view3dButton.Enabled);
+            Assert.True(view2dButton.Checked);
+            Assert.True(GetField<MapCanvasControl>(form, "_canvas").Visible);
+            Assert.False(view.Visible);
+            string? report = GetField<string?>(form, "_last3DDiagnostic");
+            Assert.NotNull(report);
+            Assert.Contains("OpenGL 3.3", report);
+        });
+    }
 }

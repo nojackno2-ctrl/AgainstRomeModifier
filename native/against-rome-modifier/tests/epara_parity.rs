@@ -1,12 +1,11 @@
 //! Parity tests comparing Rust clean and modified epara with C# implementations and baseline files.
 
-use against_rome_modifier::{
-    decompress_pfil, is_pfil, CleanEparaBaseline, EparaPatcher,
-};
+use against_rome_modifier::{decompress_pfil, is_pfil, CleanEparaBaseline, EparaPatcher};
 use std::fs;
 use std::path::Path;
 
-const RETAIL_EPARA_PATH: &str = "../../re_workspace/cd-modifier-baseline-20261010/files/SYSTEM/cl_epara.ini";
+const RETAIL_EPARA_PATH: &str =
+    "../../re_workspace/cd-modifier-baseline-20261010/files/SYSTEM/cl_epara.ini";
 const CSHARP_EPARA_SOURCE: &str = "../../src.Core/Core/Services/CleanEparaBaseline.cs";
 
 #[test]
@@ -25,7 +24,10 @@ fn clean_epara_baseline_text_matches_csharp_source_verbatim() {
     let cs_normalized = cs_text.replace("\r\n", "\n");
     let rust_normalized = CleanEparaBaseline::TEXT.replace("\r\n", "\n");
 
-    assert_eq!(rust_normalized, cs_normalized, "Rust CleanEparaBaseline text must match C# verbatim");
+    assert_eq!(
+        rust_normalized, cs_normalized,
+        "Rust CleanEparaBaseline text must match C# verbatim"
+    );
 }
 
 #[test]
@@ -40,8 +42,8 @@ fn clean_epara_baseline_compressed_roundtrips_and_patches_identically() {
     );
 
     // Apply Range3x patch to clean epara
-    let patched_bytes = EparaPatcher::get_patched_bytes(&clean_bytes, true)
-        .expect("apply range 3x patch");
+    let patched_bytes =
+        EparaPatcher::get_patched_bytes(&clean_bytes, true).expect("apply range 3x patch");
     assert!(is_pfil(&patched_bytes));
 
     let patched_decomp = decompress_pfil(&patched_bytes).expect("decompress patched");
@@ -62,8 +64,8 @@ fn clean_epara_baseline_compressed_roundtrips_and_patches_identically() {
     );
 
     // Verify unpatched range3x=false returns identical bytes
-    let unpatched_bytes = EparaPatcher::get_patched_bytes(&clean_bytes, false)
-        .expect("unpatched call");
+    let unpatched_bytes =
+        EparaPatcher::get_patched_bytes(&clean_bytes, false).expect("unpatched call");
     assert_eq!(unpatched_bytes, clean_bytes);
 }
 
@@ -84,8 +86,8 @@ fn retail_cd_baseline_epara_patches_and_preserves_roundtrip() {
     assert!(orig_text.contains("[ProjectileInitSpeedFactor]"));
 
     // Patch retail file with range3x
-    let patched_retail = EparaPatcher::get_patched_bytes(&retail_bytes, true)
-        .expect("patch retail epara");
+    let patched_retail =
+        EparaPatcher::get_patched_bytes(&retail_bytes, true).expect("patch retail epara");
     assert!(is_pfil(&patched_retail));
 
     let patched_decomp = decompress_pfil(&patched_retail).expect("decompress patched retail");
@@ -94,7 +96,10 @@ fn retail_cd_baseline_epara_patches_and_preserves_roundtrip() {
     assert!(patched_text.contains("1.62"));
 
     // Restore / no-op
-    let restored_retail = EparaPatcher::get_patched_bytes(&retail_bytes, false)
-        .expect("restore retail epara");
-    assert_eq!(restored_retail, retail_bytes, "false option must leave retail bytes verbatim");
+    let restored_retail =
+        EparaPatcher::get_patched_bytes(&retail_bytes, false).expect("restore retail epara");
+    assert_eq!(
+        restored_retail, retail_bytes,
+        "false option must leave retail bytes verbatim"
+    );
 }

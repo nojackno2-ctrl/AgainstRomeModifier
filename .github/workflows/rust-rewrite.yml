@@ -11,7 +11,7 @@ permissions:
 jobs:
   windows-rust:
     runs-on: windows-latest
-    timeout-minutes: 40
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@v4
         with:
@@ -27,6 +27,12 @@ jobs:
           rustup toolchain install stable --profile minimal
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           rustup default stable
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          rustup target add i686-pc-windows-msvc
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Trace i686 release DLL, static CRT and exports
+        shell: pwsh
+        run: ./tools/test-rust-rewrite.ps1 -TraceOnly
       - name: Test native cores and desktop
         shell: pwsh
         run: ./tools/test-rust-rewrite.ps1 -IncludeDesktop -Differential
@@ -39,3 +45,137 @@ jobs:
           ./re_workspace/rust-editor-app-target/debug/against-rome-editor.exe --version
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           ./re_workspace/rust-editor-app-target/debug/against-rome-editor.exe --help
+      - name: Test portable publisher contract
+        shell: pwsh
+        run: ./tools/test-publish-rust.ps1
+      - name: Build and validate Rust portable package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $out = Join-Path $env:RUNNER_TEMP 'rust-portable'
+          $evidence = Join-Path $env:RUNNER_TEMP 'rust-portable-evidence'
+          $extract = Join-Path $env:RUNNER_TEMP 'rust-portable-extract'
+          $traceOut = Join-Path $env:RUNNER_TEMP 'rust-trace-artifact'
+          foreach ($d in $out, $evidence, $extract, $traceOut) {
+            if (Test-Path -LiteralPath $d) { throw "Output directory must not pre-exist: $d" }
+          }
+          # Dry run first: validates argument compatibility and must write nothing.
+          ./tools/publish-rust.ps1 -OutputDirectory $out -WhatIf
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (Test-Path -LiteralPath $out) { throw '-WhatIf created output.' }
+          ./tools/publish-rust.ps1 -OutputDirectory $out
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          $zips = @(Get-ChildItem -LiteralPath $out -Filter '*.zip' -File)
+          if ($zips.Count -ne 1) { throw "Expected exactly one portable ZIP, found $($zips.Count)." }
+          $zip = $zips[0].FullName
+          $sidecar = "$zip.sha256"
+          if (!(Test-Path -LiteralPath $sidecar -PathType Leaf)) { throw "Missing checksum sidecar: $sidecar" }
+          if ($zips[0].Name -match 'skipbuild|dirty') { throw "Package must come from a clean, built tree: $($zips[0].Name)" }
+
+          # Sidecar must be '<sha256>  <zip name>\n' and match the ZIP bytes.
+          $zipHash = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ([IO.File]::ReadAllText($sidecar) -cne "$zipHash  $($zips[0].Name)`n") { throw 'ZIP checksum sidecar does not match the archive.' }
+
+          # Extract a separate copy and verify every entry against provenance.json.
+          Expand-Archive -LiteralPath $zip -DestinationPath $extract
+          $provPath = Join-Path $extract 'provenance.json'
+          $prov = Get-Content -LiteralPath $provPath -Raw | ConvertFrom-Json
+          if ($prov.exeProvenance -ne 'built-by-this-run-from-recorded-source-state') { throw "Unexpected exeProvenance: $($prov.exeProvenance)" }
+          if ($prov.git.dirty -ne $false) { throw 'Provenance records a dirty source tree.' }
+          if ($prov.git.commit -ne $env:GITHUB_SHA) { throw "Provenance commit $($prov.git.commit) != $env:GITHUB_SHA" }
+          if ($prov.traceDll.cppSourceBinaryCopied -ne $false -or $prov.traceDll.target -ne 'i686-pc-windows-msvc' -or
+              $prov.traceDll.origin -ne 'built-by-this-run-from-rust-crate' -or $prov.traceDll.crtLinkage -ne 'static') { throw 'Incorrect trace DLL provenance.' }
+          foreach ($exe in 'against-rome-editor.exe', 'against-rome-modifier-gui.exe', 'against-rome-launcher.exe', 'save-manager.exe', 'against-rome-modifier.exe', 'ArmMapPackage.exe') {
+            if (!$prov.files.PSObject.Properties[$exe]) { throw "Provenance lacks $exe" }
+          }
+          foreach ($f in $prov.files.PSObject.Properties) {
+            $path = Join-Path $extract $f.Name
+            if ((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() -ne $f.Value) { throw "Extracted file differs from provenance: $($f.Name)" }
+          }
+          $expected = @($prov.files.PSObject.Properties.Name) + 'provenance.json' | Sort-Object
+          $actual = @(Get-ChildItem -LiteralPath $extract -Recurse -File | ForEach-Object { [IO.Path]::GetRelativePath($extract, $_.FullName).Replace('\', '/') }) | Sort-Object
+          if (($expected -join "`n") -cne ($actual -join "`n")) { throw 'ZIP contents differ from provenance file list.' }
+
+          # The trace artifact is the packaged DLL (same bytes), not a separate rebuild.
+          $packagedTrace = Join-Path $extract 'ThirdParty/argm-trace/winmm.dll'
+          $traceHash = (Get-FileHash -LiteralPath $packagedTrace -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($traceHash -ne $prov.traceDll.sha256) { throw 'Packaged trace DLL differs from provenance.traceDll.sha256.' }
+          $builtTrace = Join-Path $PWD 're_workspace/rust-rewrite-targets/native-against-rome-trace/i686-pc-windows-msvc/release/winmm.dll'
+          if ((Get-FileHash -LiteralPath $builtTrace -Algorithm SHA256).Hash.ToLowerInvariant() -ne $traceHash) { throw 'Packaged trace DLL differs from the publisher build output.' }
+          $gateTrace = Join-Path $PWD 're_workspace/target-against-rome-trace/i686-pc-windows-msvc/release/winmm.dll'
+          $gateHash = (Get-FileHash -LiteralPath $gateTrace -Algorithm SHA256).Hash.ToLowerInvariant()
+          Write-Host "Trace gate DLL SHA256 $gateHash; packaged trace DLL SHA256 $traceHash$(if ($gateHash -ne $traceHash) { ' (differs: separate target dir; packaged bytes are uploaded)' })"
+
+          New-Item -ItemType Directory -Path $evidence, $traceOut | Out-Null
+          Copy-Item -LiteralPath $zip, $sidecar, $provPath -Destination $evidence
+          Copy-Item -LiteralPath $packagedTrace -Destination $traceOut
+          if ((Get-FileHash -LiteralPath (Join-Path $traceOut 'winmm.dll') -Algorithm SHA256).Hash.ToLowerInvariant() -ne $traceHash) { throw 'Trace artifact copy differs from packaged DLL.' }
+          Write-Host "Portable ZIP $($zips[0].Name) SHA256 $zipHash validated"
+      - name: Check portable package contract
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $extract = Join-Path $env:RUNNER_TEMP 'rust-portable-extract'
+          $evidence = Join-Path $env:RUNNER_TEMP 'rust-portable-evidence'
+          $prov = Get-Content -LiteralPath (Join-Path $extract 'provenance.json') -Raw | ConvertFrom-Json
+          $zip = @(Get-ChildItem -LiteralPath $evidence -Filter '*.zip' -File)
+          if ($zip.Count -ne 1) { throw "Expected exactly one evidence ZIP, found $($zip.Count)." }
+
+          if ($prov.schema -ne 2 -or $prov.product -ne 'against-rome-suite' -or $prov.platform -ne 'win-x64') {
+            throw "Unexpected provenance identity: schema=$($prov.schema) product=$($prov.product) platform=$($prov.platform)"
+          }
+          $manifest = Get-Content -LiteralPath 'apps/against-rome-editor/Cargo.toml' -Raw
+          $version = [regex]::Match($manifest, '(?m)^\s*version\s*=\s*"([^"]+)"').Groups[1].Value
+          if (!$version -or $prov.version -ne $version) { throw "Provenance version '$($prov.version)' != editor Cargo version '$version'." }
+          $expectedName = "against-rome-editor-$version-win-x64-$($env:GITHUB_SHA.Substring(0, 8)).zip"
+          if ($zip[0].Name -cne $expectedName) { throw "ZIP name '$($zip[0].Name)' != '$expectedName'." }
+
+          $exes = 'against-rome-editor.exe', 'against-rome-modifier-gui.exe', 'against-rome-launcher.exe',
+              'save-manager.exe', 'against-rome-modifier.exe', 'ArmMapPackage.exe'
+          $required = $exes + 'ThirdParty/argm-trace/winmm.dll', 'ThirdParty/argm-trace/README.md',
+              'ThirdParty/dgVoodoo2/D3D8.dll', 'ThirdParty/dgVoodoo2/DDraw.dll', 'ThirdParty/dgVoodoo2/dgVoodooCpl.exe',
+              'ThirdParty/dgVoodoo2/dgVoodoo.conf', 'ThirdParty/dgVoodoo2/REDISTRIBUTION.md'
+          foreach ($name in $required) {
+            if (!$prov.files.PSObject.Properties[$name]) { throw "Provenance files lacks required entry: $name" }
+            if (!(Test-Path -LiteralPath (Join-Path $extract $name) -PathType Leaf)) { throw "ZIP lacks required entry: $name" }
+          }
+          # The per-binary table must describe exactly the shipped executables, with the same hashes as `files`.
+          $binNames = @($prov.binaries.PSObject.Properties.Name) | Sort-Object
+          if (($binNames -join "`n") -cne (($exes | Sort-Object) -join "`n")) { throw "provenance.binaries lists: $($binNames -join ', ')" }
+          foreach ($b in $prov.binaries.PSObject.Properties) {
+            if ($b.Value.sha256 -ne $prov.files.($b.Name)) { throw "binaries/files hash mismatch for $($b.Name)." }
+          }
+          Write-Host "Package contract OK: $($zip[0].Name), $($required.Count) required entries, $($exes.Count) binaries."
+      - name: Smoke test extracted portable executables
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $extract = Join-Path $env:RUNNER_TEMP 'rust-portable-extract'
+          # These --version paths return before UI, game discovery or persistent state access:
+          # editor main.rs/cli.rs; bin/against-rome-{modifier-gui,launcher}.rs;
+          # save_manager_ui.rs::run_standalone_entry; modifier cli.rs::run_cli.
+          $exes = 'against-rome-editor.exe', 'against-rome-modifier-gui.exe', 'against-rome-launcher.exe',
+              'save-manager.exe', 'against-rome-modifier.exe'
+          foreach ($exe in $exes) {
+            $path = Join-Path $extract $exe
+            if (!(Test-Path -LiteralPath $path -PathType Leaf)) { throw "Missing packaged executable: $exe" }
+            Write-Host "Runtime smoke: $exe --version"
+            $process = Start-Process -FilePath $path -ArgumentList '--version' -WorkingDirectory $extract -NoNewWindow -Wait -PassThru
+            if ($process.ExitCode -ne 0) { throw "Packaged $exe --version failed with exit code $($process.ExitCode)." }
+          }
+          # native/against-rome-packaging/src/main.rs accepts only install/export (both write).
+          # No --version or safe --smoke-test contract exists; do not invoke its normal startup.
+          Write-Host 'SKIP ArmMapPackage.exe: no safe startup flag; --version exits 2.'
+      - name: Upload packaged trace DLL
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-trace-i686-release
+          path: ${{ runner.temp }}/rust-trace-artifact/winmm.dll
+          if-no-files-found: error
+      - name: Upload Rust portable package
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-portable-win-x64
+          path: ${{ runner.temp }}/rust-portable-evidence/*
+          if-no-files-found: error

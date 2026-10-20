@@ -7,6 +7,16 @@ using Xunit.Abstractions;
 
 namespace AgainstRomeModifier.Tests;
 
+internal sealed class RequiresRealStarterKitFactAttribute : FactAttribute
+{
+    public RequiresRealStarterKitFactAttribute()
+    {
+        if (Environment.GetEnvironmentVariable("ARM_REQUIRE_INSTALLED_FIXTURES") == "1") return;
+        if (!StarterKitFixture.HasRequiredFixtures(out string reason))
+            Skip = reason;
+    }
+}
+
 public sealed class BlankMapStarterKitTests
 {
     private readonly ITestOutputHelper _output;
@@ -53,7 +63,7 @@ public sealed class BlankMapStarterKitTests
         AssertNativeKit(kit, LevelObjectStore.Load(fixture.Map), ScenarioDocument.Load(fixture.Map), 7);
     }
 
-    [Fact]
+    [RequiresRealStarterKitFact]
     public void Real_TEMP_DATA_pools_with_synthetic_safe_templates_Apply_save_reload_preserves_verified_type_ids_and_source()
     {
         using var fixture = new StarterKitFixture();
@@ -76,7 +86,7 @@ public sealed class BlankMapStarterKitTests
         fixture.AssertSourceUnchanged();
     }
 
-    [Fact]
+    [RequiresRealStarterKitFact]
     public void Real_TEMP_source_missing_safe_house_and_unit_templates_fails_closed_without_writes_or_script_fallback()
     {
         using var fixture = new StarterKitFixture();
@@ -260,6 +270,28 @@ internal sealed class StarterKitSyntheticFixture : IDisposable
 internal sealed class StarterKitFixture : IDisposable
 {
     internal const string CompareSource = @"C:\Users\nojac\AppData\Local\Temp\ArmGameCompare_20261007";
+    internal const string DefaultInstalled = @"C:\Program Files (x86)\Against Rome";
+    internal static string ResolveInstalledPath()
+    {
+        string? custom = Environment.GetEnvironmentVariable("ARM_TEST_INSTALLED_PATH")
+            ?? Environment.GetEnvironmentVariable("ARM_GAME_PATH");
+        if (!string.IsNullOrWhiteSpace(custom)) return custom;
+        return Directory.Exists(CompareSource) ? CompareSource : DefaultInstalled;
+    }
+
+    internal static bool HasRequiredFixtures(out string missingReason)
+    {
+        string source = ResolveInstalledPath();
+        string sourceMap = Path.Combine(source, source == CompareSource ? "ENDL_000" : @"MAPS\ENDL_000");
+        if (!Directory.Exists(sourceMap))
+        {
+            missingReason = $"Requires real starter-kit fixture at '{sourceMap}'; proprietary game files are not in Git.";
+            return false;
+        }
+        missingReason = string.Empty;
+        return true;
+    }
+
     internal string Root { get; } = Path.Combine(Path.GetTempPath(), "ArmStarterKit_" + Guid.NewGuid().ToString("N"));
     internal string Map => Path.Combine(Root, "MAPS", "ENDL_005");
     internal string OfficialMap => Path.Combine(Root, "MAPS", "ENDL_000");
@@ -268,7 +300,7 @@ internal sealed class StarterKitFixture : IDisposable
 
     internal StarterKitFixture()
     {
-        Source = Directory.Exists(CompareSource) ? CompareSource : @"C:\Program Files (x86)\Against Rome";
+        Source = ResolveInstalledPath();
         string sourceMap = Path.Combine(Source, Source == CompareSource ? "ENDL_000" : @"MAPS\ENDL_000");
         Assert.True(Directory.Exists(sourceMap), $"Real starter-kit fixture is required: {sourceMap}");
         // Do not copy images, archives or TEXTUREN assets that the persistence tests do not consume.

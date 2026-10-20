@@ -15,7 +15,7 @@ use std::{
     path::PathBuf,
     ptr,
     sync::{
-        atomic::{AtomicU32, Ordering},
+        atomic::{AtomicBool, AtomicU32, Ordering},
         Mutex,
     },
 };
@@ -152,6 +152,9 @@ struct Installed {
     _descriptor: Box<Target>,
 }
 static HOOKS: Mutex<Vec<Installed>> = Mutex::new(Vec::new());
+// Set once the process is detaching so a late init thread cannot patch code
+// that points into a module that is about to be unmapped.
+static SHUTDOWN: AtomicBool = AtomicBool::new(false);
 unsafe extern "C" fn on_hit(desc: *const Target, rb: *const detour::RegBank) {
     let _ = std::panic::catch_unwind(|| {
         if desc.is_null() || rb.is_null() {
@@ -176,17 +179,16 @@ unsafe extern "C" fn on_hit(desc: *const Target, rb: *const detour::RegBank) {
         }
     });
 }
-unsafe fn install(t: Target) -> bool {
-    let mut hooks = match HOOKS.lock() {
-        Ok(h) => h,
-        Err(_) => return false,
-    };
-    if hooks.len() >= 32 {
+unsafe fn install(t: Target, verify_signatures: bool) -> bool {
+    // A poisoned list is still accurate: entries are pushed only after the patch.
+    let mut hooks = HOOKS.lock().unwrap_or_else(|e| e.into_inner());
+    if SHUTDOWN.load(Ordering::SeqCst) || hooks.len() >= 32 {
         return false;
     }
     let address = pe::rebase(t.va, BASE.load(Ordering::Relaxed));
     let mut bytes = [0u8; 32];
-    if !Process.read(address, &mut bytes) || !detour::verify_signature(&bytes, t.signature, t.mask)
+    if !Process.read(address, &mut bytes)
+        || (verify_signatures && !detour::verify_signature(&bytes, t.signature, t.mask))
     {
         log(
             "hook",
@@ -250,21 +252,29 @@ unsafe fn install(t: Target) -> bool {
     true
 }
 unsafe fn remove_all() {
-    if let Ok(mut hooks) = HOOKS.lock() {
-        hooks.retain(|h| {
-            let mut old = 0;
-            if VirtualProtect(h.target as _, h.original.len(), 0x40, &mut old) == 0 {
-                return true;
-            }
-            ptr::copy_nonoverlapping(h.original.as_ptr(), h.target as *mut u8, h.original.len());
-            let mut ignored = 0;
-            VirtualProtect(h.target as _, h.original.len(), old, &mut ignored);
-            FlushInstructionCache(GetCurrentProcess(), h.target as _, h.original.len());
-            VirtualFree(h.trampoline as _, 0, 0x8000);
-            VirtualFree(h.stub as _, 0, 0x8000);
-            false
-        });
+    // Never strand patches because another thread panicked while holding the lock.
+    let mut hooks = HOOKS.lock().unwrap_or_else(|e| e.into_inner());
+    hooks.retain(|h| {
+        let mut old = 0;
+        if VirtualProtect(h.target as _, h.original.len(), 0x40, &mut old) == 0 {
+            return true;
+        }
+        ptr::copy_nonoverlapping(h.original.as_ptr(), h.target as *mut u8, h.original.len());
+        let mut ignored = 0;
+        VirtualProtect(h.target as _, h.original.len(), old, &mut ignored);
+        FlushInstructionCache(GetCurrentProcess(), h.target as _, h.original.len());
+        VirtualFree(h.trampoline as _, 0, 0x8000);
+        VirtualFree(h.stub as _, 0, 0x8000);
+        false
+    });
+}
+// Final teardown: block further installs, then restore everything installed so far.
+unsafe fn shutdown() {
+    {
+        let _hooks = HOOKS.lock().unwrap_or_else(|e| e.into_inner());
+        SHUTDOWN.store(true, Ordering::SeqCst);
     }
+    remove_all();
 }
 unsafe extern "system" fn init(_: Handle) -> u32 {
     let mut path = [0u16; 260];
@@ -296,7 +306,12 @@ unsafe extern "system" fn init(_: Handle) -> u32 {
         Ok(f) => f,
         Err(_) => return 0,
     };
-    let mut writer = match TraceLog::new(file) {
+    let max_bytes = if cfg.maxLogMegabytes > 0 {
+        Some((cfg.maxLogMegabytes as u64) * 1024 * 1024)
+    } else {
+        None
+    };
+    let mut writer = match TraceLog::with_max_bytes(file, max_bytes) {
         Ok(l) => l,
         Err(_) => return 0,
     };
@@ -380,7 +395,7 @@ unsafe extern "system" fn init(_: Handle) -> u32 {
     let total = ts.len();
     let mut ok = 0;
     for t in ts {
-        if install(t) {
+        if install(t, cfg.verifySignatures) {
             ok += 1;
         }
     }
@@ -408,11 +423,11 @@ unsafe extern "system" fn dll_main(module: Handle, reason: u32, _reserved: Handl
             }
         }
         0 => {
-            remove_all();
+            shutdown();
             log("shutdown", "process detach");
             if let Ok(mut l) = LOG.lock() {
                 if let Some(l) = l.as_mut() {
-                    let _ = l.close();
+                    let _ = l.close_synced(|f| f.sync_all());
                 }
                 *l = None;
             }
@@ -428,6 +443,8 @@ core::arch::global_asm!(".global \"_DllMain@12\"\n\"_DllMain@12\":\njmp {entry}"
 
 #[cfg(all(test, target_arch = "x86"))]
 static TEST_HIT: Mutex<Vec<u32>> = Mutex::new(Vec::new());
+#[cfg(test)]
+static TEST_LOCK: Mutex<()> = Mutex::new(());
 
 #[cfg(test)]
 mod tests {
@@ -442,6 +459,69 @@ mod tests {
     #[test]
     fn unreadable_process_address_returns_false_without_fault() {
         assert!(!Process.read(0, &mut [0; 4]));
+    }
+    fn fake_hook(buf: &mut [u8; 8], original: [u8; 5]) -> Installed {
+        unsafe {
+            let tramp = VirtualAlloc(ptr::null_mut(), 16, 0x3000, 0x40) as usize;
+            let stub = VirtualAlloc(ptr::null_mut(), 16, 0x3000, 0x40) as usize;
+            assert!(tramp != 0 && stub != 0);
+            buf[..5].copy_from_slice(&[0xe9, 1, 2, 3, 4]);
+            Installed {
+                target: buf.as_mut_ptr() as usize,
+                original: original.to_vec(),
+                trampoline: tramp,
+                stub,
+                _descriptor: Box::new(Target {
+                    name: "fake",
+                    va: 0,
+                    argc: 0,
+                    signature: &[],
+                    mask: b"",
+                }),
+            }
+        }
+    }
+    #[test]
+    fn remove_all_restores_bytes_even_when_hook_list_is_poisoned() {
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let mut buf = [0u8; 8];
+        let h = fake_hook(&mut buf, [1, 2, 3, 4, 5]);
+        HOOKS.lock().unwrap_or_else(|e| e.into_inner()).push(h);
+        let _ = std::thread::spawn(|| {
+            let _g = HOOKS.lock().unwrap_or_else(|e| e.into_inner());
+            panic!("poison");
+        })
+        .join();
+        assert!(HOOKS.is_poisoned());
+        unsafe { remove_all() };
+        assert_eq!(&buf[..5], &[1, 2, 3, 4, 5]);
+        assert!(HOOKS.lock().unwrap_or_else(|e| e.into_inner()).is_empty());
+        // Repeated teardown is a harmless no-op.
+        unsafe { remove_all() };
+        HOOKS.clear_poison();
+    }
+    #[test]
+    fn install_after_shutdown_is_refused_and_shutdown_is_repeatable() {
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let mut buf = [0u8; 8];
+        let h = fake_hook(&mut buf, [9, 8, 7, 6, 5]);
+        HOOKS.lock().unwrap_or_else(|e| e.into_inner()).push(h);
+        unsafe {
+            shutdown();
+            shutdown();
+            assert_eq!(&buf[..5], &[9, 8, 7, 6, 5]);
+            // A late init thread must not patch anything once detach has begun.
+            let t = Target {
+                name: "faction",
+                va: buf.as_ptr() as usize as u32,
+                argc: 0,
+                signature: &[],
+                mask: b"",
+            };
+            assert!(!install(t, false));
+        }
+        assert!(HOOKS.lock().unwrap_or_else(|e| e.into_inner()).is_empty());
+        SHUTDOWN.store(false, Ordering::SeqCst);
     }
     #[cfg(target_arch = "x86")]
     #[test]
@@ -497,7 +577,10 @@ mod tests {
     #[cfg(target_arch = "x86")]
     #[test]
     fn real_x86_detour_preserves_return_captures_arguments_and_restores_bytes() {
+        let _lock = TEST_LOCK.lock().unwrap();
         unsafe {
+            remove_all();
+            TEST_HIT.lock().unwrap().clear();
             let p = VirtualAlloc(ptr::null_mut(), 32, 0x3000, 0x40);
             assert!(!p.is_null());
             let code = [0x8b, 0x44, 0x24, 0x04, 0x90, 0x83, 0xc0, 0x07, 0xc3];
@@ -506,13 +589,16 @@ mod tests {
             let call: unsafe extern "C" fn(u32) -> u32 = std::mem::transmute(p);
             assert_eq!(call(5), 12);
             BASE.store(0x400000, Ordering::Relaxed);
-            assert!(install(Target {
-                name: "faction",
-                va: p as u32,
-                argc: 1,
-                signature: &[0x8b, 0x44, 0x24, 0x04, 0x90],
-                mask: b"xxxxx"
-            }));
+            assert!(install(
+                Target {
+                    name: "faction",
+                    va: p as u32,
+                    argc: 1,
+                    signature: &[0x8b, 0x44, 0x24, 0x04, 0x90],
+                    mask: b"xxxxx"
+                },
+                true
+            ));
             assert_eq!(call(20), 27);
             assert_eq!(TEST_HIT.lock().unwrap()[1], 20);
             assert_ne!(TEST_HIT.lock().unwrap()[0], 0);
@@ -525,6 +611,77 @@ mod tests {
             );
             assert_eq!(call(7), 14);
             assert_eq!(TEST_HIT.lock().unwrap()[1], 99);
+            VirtualFree(p, 0, 0x8000);
+        }
+    }
+
+    #[cfg(target_arch = "x86")]
+    #[test]
+    fn real_x86_multi_arg_detour_preserves_regs_captures_all_args_and_restores() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        unsafe {
+            remove_all();
+            TEST_HIT.lock().unwrap().clear();
+            let p = VirtualAlloc(ptr::null_mut(), 64, 0x3000, 0x40);
+            assert!(!p.is_null());
+            // Target function mimicking s_addNPCJob_createUnit(team, mode, a3, a4, a5, cntLo, cntHi, a8, a9):
+            // 53 56 57 55               push ebx; push esi; push edi; push ebp
+            // 8B 5C 24 14               mov ebx, [esp + 0x14]  (arg1 = team)
+            // 8B 74 24 28               mov esi, [esp + 0x28]  (arg6 = cntLo)
+            // 69 DB E8 03 00 00         imul ebx, ebx, 1000
+            // 01 F3                     add ebx, esi
+            // 89 D8                     mov eax, ebx
+            // 5D 5F 5E 5B               pop ebp; pop edi; pop esi; pop ebx
+            // C3                        ret
+            static CODE: [u8; 27] = [
+                0x53, 0x56, 0x57, 0x55, 0x8b, 0x5c, 0x24, 0x14, 0x8b, 0x74, 0x24, 0x28, 0x69, 0xdb,
+                0xe8, 0x03, 0x00, 0x00, 0x01, 0xf3, 0x89, 0xd8, 0x5d, 0x5f, 0x5e, 0x5b, 0xc3,
+            ];
+            ptr::copy_nonoverlapping(CODE.as_ptr(), p as *mut u8, CODE.len());
+            FlushInstructionCache(GetCurrentProcess(), p, CODE.len());
+
+            type NpcJobFn =
+                unsafe extern "C" fn(i32, i32, i32, i32, i32, i32, i32, i32, i32) -> i32;
+            let call: NpcJobFn = std::mem::transmute(p);
+            assert_eq!(call(5, 1, 4, 0, 0, 20, 20, 8, 3), 5020);
+
+            BASE.store(0x400000, Ordering::Relaxed);
+            assert!(install(
+                Target {
+                    name: "npcjob",
+                    va: p as u32,
+                    argc: 9,
+                    signature: &CODE[..8],
+                    mask: b"xxxxxxxx",
+                },
+                true,
+            ));
+
+            // Verify first call with 9 arguments
+            assert_eq!(call(5, 1, 4, 0, 0, 20, 20, 8, 3), 5020);
+            let hit1 = TEST_HIT.lock().unwrap().clone();
+            assert_eq!(hit1.len(), 10); // ret addr + 9 args
+            assert_ne!(hit1[0], 0); // ret addr into caller
+            assert_eq!(&hit1[1..], &[5, 1, 4, 0, 0, 20, 20, 8, 3]);
+
+            // Verify second call with different arguments
+            assert_eq!(call(3, 3, 9, 1, 2, 15, 40, 0, 0), 3015);
+            let hit2 = TEST_HIT.lock().unwrap().clone();
+            assert_eq!(&hit2[1..], &[3, 3, 9, 1, 2, 15, 40, 0, 0]);
+
+            // Remove detour and verify clean restoration
+            remove_all();
+            assert_eq!(
+                std::slice::from_raw_parts(p as *const u8, CODE.len()),
+                &CODE
+            );
+            assert_eq!(call(7, 0, 0, 0, 0, 99, 0, 0, 0), 7099);
+            // Verify no new hit recorded after removal
+            assert_eq!(
+                &TEST_HIT.lock().unwrap()[1..],
+                &[3, 3, 9, 1, 2, 15, 40, 0, 0]
+            );
+
             VirtualFree(p, 0, 0x8000);
         }
     }

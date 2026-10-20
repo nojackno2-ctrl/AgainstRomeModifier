@@ -8,6 +8,6 @@
   <ItemGroup>
     <Compile Include="Program.cs" />
     <Compile Include="PngWriter.cs" />
-    <Compile Include="../../../src.MapEditor.Modules/NativeAssets/NativeShadow*.cs" Link="%(Filename)%(Extension)" />
+    <Compile Include="../../../src.MapEditor.Modules/NativeAssets/NativeShadow*.cs" Exclude="../../../src.MapEditor.Modules/NativeAssets/NativeShadowCatalog.cs" Link="%(Filename)%(Extension)" />
   </ItemGroup>
 </Project>

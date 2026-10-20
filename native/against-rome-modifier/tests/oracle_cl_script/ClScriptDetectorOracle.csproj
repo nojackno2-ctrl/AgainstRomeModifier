@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <!-- src.Core grants InternalsVisibleTo this assembly name, so the real internal detector is callable. -->
+    <AssemblyName>AgainstRomeModifier</AssemblyName>
+    <RootNamespace>ClScriptOracle</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../../../src.Core/AgainstRome.Core.csproj" />
+  </ItemGroup>
+</Project>

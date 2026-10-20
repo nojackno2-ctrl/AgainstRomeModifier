@@ -40,10 +40,10 @@ rewritten. Changed PFIL payloads retain all 64 header bytes except the declared
 size; the encoder emits valid literal LZSS, so compressed bytes are intentionally
 different and may be larger.
 
-Not yet migrated: garrison/lager/biglager or particle families, cross-map family
-import, definition-based initial creation, batch selection, undo persistence.
-Those family relationships are rejected (including reverse ownership references);
-they are not silently dropped.
+Particle, lager, and biglager relationships are supported for family validation,
+move, clone, delete, undo/redo, and DATA save/reload. Cross-map family import,
+definition-based initial creation, batch selection, and persisted undo history are
+not yet migrated. Unsupported or externally referenced relationships fail closed.
 
 ```powershell
 cargo test --manifest-path native/against-rome-placement/Cargo.toml
@@ -68,17 +68,28 @@ Explicit TUTOR_01 test passes: slot 0 UID 13136, TEMP move/save/reload/undo/save
 copy/save/reload/delete/save, all installed source DATA files exactly byte-equal
 before/after. CLI inspect and TEMP move/save/reload also executed successfully.
 
-Two explicit differential tests run an independent C# oracle project referencing
+Explicit differential tests run an independent C# oracle project referencing
 the real `src.Shared` implementation. They invoke actual family move/copy/delete
 methods and compare complete decoded payloads after each step:
 
 - TUTOR_01 root 0/13136 → copy 5507/26932: **all 11 pools, 7,490,210 bytes per
   stage are bitwise identical** after move, clone, and delete. Installed DATA
   files remain byte-for-byte unchanged.
-- Synthetic parent-child family, direct and attached lights, patterned unknown
-  animation/gfxtype records and both animation tails, action records and an
-  engine counter 100: **all 8 pools are bitwise identical** after every stage;
-  clone allocates root 2/100 independently.
+- Synthetic parent-child family, direct and attached lights, particle emitters,
+  lager/biglager occupants, patterned unknown animation/gfxtype records and both
+  animation tails, action records and an engine counter 100: **all 11 pools are
+  bitwise identical** after move, clone, and delete; clone allocates root 4/100
+  independently. The explicit C# oracle gate
+  `managed_family_particle_garrison_differential` passes when run with
+  `--ignored --nocapture`.
 
 Run all explicit tests with `cargo test --manifest-path
 native/against-rome-placement/Cargo.toml -- --ignored --nocapture --test-threads=1`.
+
+Verified on 2026-10-18 with the repository-local Rust toolchain: release suite
+**44 passed, 8 ignored**, followed by explicit execution of all eight ignored
+gates, each passing. This includes the 74-map readonly particle/garrison scan
+(74 loaded; 4,140 related roots, 2,912 accepted and the remaining roots rejected
+by fail-closed validation), TUTOR_01 TEMP roundtrip, and the 11-pool C#
+move/clone/delete differential. The installed TUTOR_01 DATA source stayed
+byte-for-byte unchanged.

@@ -12,6 +12,9 @@ pub enum TextureError {
     EmptyMaterial,
     UnsupportedJunction(String),
     InvalidRadius,
+    InvalidSprite(String),
+    InvalidAnimation(String),
+    InvalidAtlas(String),
 }
 
 impl fmt::Display for TextureError {
@@ -29,6 +32,9 @@ impl fmt::Display for TextureError {
             Self::EmptyMaterial => write!(f, "Material cannot be empty"),
             Self::UnsupportedJunction(s) => write!(f, "Unsupported terrain junction: {}", s),
             Self::InvalidRadius => write!(f, "Radius must be finite and non-negative"),
+            Self::InvalidSprite(s) => write!(f, "Invalid sprite: {}", s),
+            Self::InvalidAnimation(s) => write!(f, "Invalid animation: {}", s),
+            Self::InvalidAtlas(s) => write!(f, "Invalid atlas: {}", s),
         }
     }
 }

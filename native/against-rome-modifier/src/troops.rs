@@ -36,7 +36,10 @@ pub struct TroopConfig;
 
 impl TroopConfig {
     pub fn supports_ranged_range_3x(unit_type: &str) -> bool {
-        matches!(unit_type, "ranged_inf" | "ranged_cav" | "hybrid_inf" | "siege")
+        matches!(
+            unit_type,
+            "ranged_inf" | "ranged_cav" | "hybrid_inf" | "siege"
+        )
     }
 
     pub fn supports_configurable_spell_radius(key: &str) -> bool {
@@ -45,49 +48,393 @@ impl TroopConfig {
     }
 
     pub const UNIT_METADATA_ENTRIES: &[(&'static str, UnitMetadata)] = &[
-        ("FigRomInf00_Lanze_Schild", UnitMetadata { faction: "Roman", tier: "mid", unit_type: "melee_inf", style: "shield" }),
-        ("FigRomSch00_Speer_Schild", UnitMetadata { faction: "Roman", tier: "high", unit_type: "hybrid_inf", style: "shield" }),
-        ("FigRomInf01_Schwert_Schild", UnitMetadata { faction: "Roman", tier: "high", unit_type: "melee_inf", style: "shield" }),
-        ("FigRomSch01_Bogen", UnitMetadata { faction: "Roman", tier: "mid", unit_type: "ranged_inf", style: "ranged" }),
-        ("FigRomKav00_Schwert_Schild", UnitMetadata { faction: "Roman", tier: "ace", unit_type: "cav", style: "shield" }),
-        ("FigRomAnf00_Anfuehrer", UnitMetadata { faction: "Roman", tier: "leader", unit_type: "leader_melee", style: "none" }),
-        ("FigGerInf01_Schwert", UnitMetadata { faction: "Teuton", tier: "low", unit_type: "melee_inf", style: "none" }),
-        ("FigGerSch00_Speer", UnitMetadata { faction: "Teuton", tier: "low", unit_type: "ranged_inf", style: "two_handed" }),
-        ("FigGerInf00_Hammer_Schild", UnitMetadata { faction: "Teuton", tier: "mid", unit_type: "melee_inf", style: "shield" }),
-        ("FigGerSch01_Axt_Schild", UnitMetadata { faction: "Teuton", tier: "mid", unit_type: "hybrid_inf", style: "shield" }),
-        ("FigGerInf02_Zweihandaxt", UnitMetadata { faction: "Teuton", tier: "high", unit_type: "melee_inf", style: "two_handed" }),
-        ("FigGerKav00_Schwert_Schild", UnitMetadata { faction: "Teuton", tier: "high", unit_type: "cav", style: "shield" }),
-        ("FigGerInf03_Doppelhammer", UnitMetadata { faction: "Teuton", tier: "ace", unit_type: "melee_inf", style: "dual_wield" }),
-        ("FigGerAnf00_Anfuehrer", UnitMetadata { faction: "Teuton", tier: "leader", unit_type: "leader_melee", style: "two_handed" }),
-        ("FigGerPri00_Priester", UnitMetadata { faction: "Teuton", tier: "mid", unit_type: "priest", style: "none" }),
-        ("FigKelInf00_Schwert", UnitMetadata { faction: "Celt", tier: "low", unit_type: "melee_inf", style: "none" }),
-        ("FigKelSch00_Bogen", UnitMetadata { faction: "Celt", tier: "low", unit_type: "ranged_inf", style: "ranged" }),
-        ("FigKelInf01_Lanze", UnitMetadata { faction: "Celt", tier: "mid", unit_type: "melee_inf", style: "shield" }),
-        ("FigKelSch01_Schleuder", UnitMetadata { faction: "Celt", tier: "mid", unit_type: "ranged_inf", style: "ranged" }),
-        ("FigKelInf02_Doppelschwert", UnitMetadata { faction: "Celt", tier: "high", unit_type: "melee_inf", style: "dual_wield" }),
-        ("FigKelSch02_Schwere_Schleuder", UnitMetadata { faction: "Celt", tier: "ace", unit_type: "ranged_inf", style: "ranged" }),
-        ("FigKelKav00_Lanze_Schild", UnitMetadata { faction: "Celt", tier: "high", unit_type: "cav", style: "shield" }),
-        ("FigKelAnf00_Anfuehrer", UnitMetadata { faction: "Celt", tier: "leader", unit_type: "leader_melee", style: "shield" }),
-        ("FigKelPri00_Priester", UnitMetadata { faction: "Celt", tier: "mid", unit_type: "priest", style: "none" }),
-        ("FigHunInf00_Keule", UnitMetadata { faction: "Hun", tier: "low", unit_type: "melee_inf", style: "none" }),
-        ("FigHunSch00_Bogen", UnitMetadata { faction: "Hun", tier: "low", unit_type: "ranged_inf", style: "ranged" }),
-        ("FigHunInf01_Schwert_Schild", UnitMetadata { faction: "Hun", tier: "mid", unit_type: "melee_inf", style: "shield" }),
-        ("FigHunKav00_Schwert_Schild", UnitMetadata { faction: "Hun", tier: "mid", unit_type: "cav", style: "shield" }),
-        ("FigHunKav01_Bogen", UnitMetadata { faction: "Hun", tier: "high", unit_type: "ranged_cav", style: "ranged" }),
-        ("FigHunKav02_Lanze_Schild", UnitMetadata { faction: "Hun", tier: "ace", unit_type: "cav", style: "shield" }),
-        ("FigHunKav03_Geisterreiter", UnitMetadata { faction: "Hun", tier: "high", unit_type: "cav", style: "none" }),
-        ("FigHunAnf00_Anfuehrer", UnitMetadata { faction: "Hun", tier: "leader", unit_type: "leader_cav", style: "none" }),
-        ("FigHunPri00_Priester", UnitMetadata { faction: "Hun", tier: "mid", unit_type: "priest", style: "none" }),
-        ("FigGerArt00_Katapult", UnitMetadata { faction: "Teuton", tier: "siege", unit_type: "siege", style: "none" }),
-        ("FigGerArt00_Katapult_Aufbau", UnitMetadata { faction: "Teuton", tier: "siege", unit_type: "siege", style: "none" }),
-        ("FigRomArt00_Speerschleuder", UnitMetadata { faction: "Roman", tier: "siege", unit_type: "siege", style: "none" }),
-        ("FigRomArt00_Speerschleuder_Auf", UnitMetadata { faction: "Roman", tier: "siege", unit_type: "siege", style: "none" }),
-        ("FigRomArt01_Katapult", UnitMetadata { faction: "Roman", tier: "siege", unit_type: "siege", style: "none" }),
-        ("FigRomArt01_Katapult_Aufbau", UnitMetadata { faction: "Roman", tier: "siege", unit_type: "siege", style: "none" }),
-        ("FigKelArt00_Speerschleuder", UnitMetadata { faction: "Celt", tier: "siege", unit_type: "siege", style: "none" }),
-        ("FigKelArt00_Speerschleuder_A", UnitMetadata { faction: "Celt", tier: "siege", unit_type: "siege", style: "none" }),
-        ("FigKelArt01_Katapult", UnitMetadata { faction: "Celt", tier: "siege", unit_type: "siege", style: "none" }),
-        ("FigKelArt01_Katapult_Aufbau", UnitMetadata { faction: "Celt", tier: "siege", unit_type: "siege", style: "none" }),
+        (
+            "FigRomInf00_Lanze_Schild",
+            UnitMetadata {
+                faction: "Roman",
+                tier: "mid",
+                unit_type: "melee_inf",
+                style: "shield",
+            },
+        ),
+        (
+            "FigRomSch00_Speer_Schild",
+            UnitMetadata {
+                faction: "Roman",
+                tier: "high",
+                unit_type: "hybrid_inf",
+                style: "shield",
+            },
+        ),
+        (
+            "FigRomInf01_Schwert_Schild",
+            UnitMetadata {
+                faction: "Roman",
+                tier: "high",
+                unit_type: "melee_inf",
+                style: "shield",
+            },
+        ),
+        (
+            "FigRomSch01_Bogen",
+            UnitMetadata {
+                faction: "Roman",
+                tier: "mid",
+                unit_type: "ranged_inf",
+                style: "ranged",
+            },
+        ),
+        (
+            "FigRomKav00_Schwert_Schild",
+            UnitMetadata {
+                faction: "Roman",
+                tier: "ace",
+                unit_type: "cav",
+                style: "shield",
+            },
+        ),
+        (
+            "FigRomAnf00_Anfuehrer",
+            UnitMetadata {
+                faction: "Roman",
+                tier: "leader",
+                unit_type: "leader_melee",
+                style: "none",
+            },
+        ),
+        (
+            "FigGerInf01_Schwert",
+            UnitMetadata {
+                faction: "Teuton",
+                tier: "low",
+                unit_type: "melee_inf",
+                style: "none",
+            },
+        ),
+        (
+            "FigGerSch00_Speer",
+            UnitMetadata {
+                faction: "Teuton",
+                tier: "low",
+                unit_type: "ranged_inf",
+                style: "two_handed",
+            },
+        ),
+        (
+            "FigGerInf00_Hammer_Schild",
+            UnitMetadata {
+                faction: "Teuton",
+                tier: "mid",
+                unit_type: "melee_inf",
+                style: "shield",
+            },
+        ),
+        (
+            "FigGerSch01_Axt_Schild",
+            UnitMetadata {
+                faction: "Teuton",
+                tier: "mid",
+                unit_type: "hybrid_inf",
+                style: "shield",
+            },
+        ),
+        (
+            "FigGerInf02_Zweihandaxt",
+            UnitMetadata {
+                faction: "Teuton",
+                tier: "high",
+                unit_type: "melee_inf",
+                style: "two_handed",
+            },
+        ),
+        (
+            "FigGerKav00_Schwert_Schild",
+            UnitMetadata {
+                faction: "Teuton",
+                tier: "high",
+                unit_type: "cav",
+                style: "shield",
+            },
+        ),
+        (
+            "FigGerInf03_Doppelhammer",
+            UnitMetadata {
+                faction: "Teuton",
+                tier: "ace",
+                unit_type: "melee_inf",
+                style: "dual_wield",
+            },
+        ),
+        (
+            "FigGerAnf00_Anfuehrer",
+            UnitMetadata {
+                faction: "Teuton",
+                tier: "leader",
+                unit_type: "leader_melee",
+                style: "two_handed",
+            },
+        ),
+        (
+            "FigGerPri00_Priester",
+            UnitMetadata {
+                faction: "Teuton",
+                tier: "mid",
+                unit_type: "priest",
+                style: "none",
+            },
+        ),
+        (
+            "FigKelInf00_Schwert",
+            UnitMetadata {
+                faction: "Celt",
+                tier: "low",
+                unit_type: "melee_inf",
+                style: "none",
+            },
+        ),
+        (
+            "FigKelSch00_Bogen",
+            UnitMetadata {
+                faction: "Celt",
+                tier: "low",
+                unit_type: "ranged_inf",
+                style: "ranged",
+            },
+        ),
+        (
+            "FigKelInf01_Lanze",
+            UnitMetadata {
+                faction: "Celt",
+                tier: "mid",
+                unit_type: "melee_inf",
+                style: "shield",
+            },
+        ),
+        (
+            "FigKelSch01_Schleuder",
+            UnitMetadata {
+                faction: "Celt",
+                tier: "mid",
+                unit_type: "ranged_inf",
+                style: "ranged",
+            },
+        ),
+        (
+            "FigKelInf02_Doppelschwert",
+            UnitMetadata {
+                faction: "Celt",
+                tier: "high",
+                unit_type: "melee_inf",
+                style: "dual_wield",
+            },
+        ),
+        (
+            "FigKelSch02_Schwere_Schleuder",
+            UnitMetadata {
+                faction: "Celt",
+                tier: "ace",
+                unit_type: "ranged_inf",
+                style: "ranged",
+            },
+        ),
+        (
+            "FigKelKav00_Lanze_Schild",
+            UnitMetadata {
+                faction: "Celt",
+                tier: "high",
+                unit_type: "cav",
+                style: "shield",
+            },
+        ),
+        (
+            "FigKelAnf00_Anfuehrer",
+            UnitMetadata {
+                faction: "Celt",
+                tier: "leader",
+                unit_type: "leader_melee",
+                style: "shield",
+            },
+        ),
+        (
+            "FigKelPri00_Priester",
+            UnitMetadata {
+                faction: "Celt",
+                tier: "mid",
+                unit_type: "priest",
+                style: "none",
+            },
+        ),
+        (
+            "FigHunInf00_Keule",
+            UnitMetadata {
+                faction: "Hun",
+                tier: "low",
+                unit_type: "melee_inf",
+                style: "none",
+            },
+        ),
+        (
+            "FigHunSch00_Bogen",
+            UnitMetadata {
+                faction: "Hun",
+                tier: "low",
+                unit_type: "ranged_inf",
+                style: "ranged",
+            },
+        ),
+        (
+            "FigHunInf01_Schwert_Schild",
+            UnitMetadata {
+                faction: "Hun",
+                tier: "mid",
+                unit_type: "melee_inf",
+                style: "shield",
+            },
+        ),
+        (
+            "FigHunKav00_Schwert_Schild",
+            UnitMetadata {
+                faction: "Hun",
+                tier: "mid",
+                unit_type: "cav",
+                style: "shield",
+            },
+        ),
+        (
+            "FigHunKav01_Bogen",
+            UnitMetadata {
+                faction: "Hun",
+                tier: "high",
+                unit_type: "ranged_cav",
+                style: "ranged",
+            },
+        ),
+        (
+            "FigHunKav02_Lanze_Schild",
+            UnitMetadata {
+                faction: "Hun",
+                tier: "ace",
+                unit_type: "cav",
+                style: "shield",
+            },
+        ),
+        (
+            "FigHunKav03_Geisterreiter",
+            UnitMetadata {
+                faction: "Hun",
+                tier: "high",
+                unit_type: "cav",
+                style: "none",
+            },
+        ),
+        (
+            "FigHunAnf00_Anfuehrer",
+            UnitMetadata {
+                faction: "Hun",
+                tier: "leader",
+                unit_type: "leader_cav",
+                style: "none",
+            },
+        ),
+        (
+            "FigHunPri00_Priester",
+            UnitMetadata {
+                faction: "Hun",
+                tier: "mid",
+                unit_type: "priest",
+                style: "none",
+            },
+        ),
+        (
+            "FigGerArt00_Katapult",
+            UnitMetadata {
+                faction: "Teuton",
+                tier: "siege",
+                unit_type: "siege",
+                style: "none",
+            },
+        ),
+        (
+            "FigGerArt00_Katapult_Aufbau",
+            UnitMetadata {
+                faction: "Teuton",
+                tier: "siege",
+                unit_type: "siege",
+                style: "none",
+            },
+        ),
+        (
+            "FigRomArt00_Speerschleuder",
+            UnitMetadata {
+                faction: "Roman",
+                tier: "siege",
+                unit_type: "siege",
+                style: "none",
+            },
+        ),
+        (
+            "FigRomArt00_Speerschleuder_Auf",
+            UnitMetadata {
+                faction: "Roman",
+                tier: "siege",
+                unit_type: "siege",
+                style: "none",
+            },
+        ),
+        (
+            "FigRomArt01_Katapult",
+            UnitMetadata {
+                faction: "Roman",
+                tier: "siege",
+                unit_type: "siege",
+                style: "none",
+            },
+        ),
+        (
+            "FigRomArt01_Katapult_Aufbau",
+            UnitMetadata {
+                faction: "Roman",
+                tier: "siege",
+                unit_type: "siege",
+                style: "none",
+            },
+        ),
+        (
+            "FigKelArt00_Speerschleuder",
+            UnitMetadata {
+                faction: "Celt",
+                tier: "siege",
+                unit_type: "siege",
+                style: "none",
+            },
+        ),
+        (
+            "FigKelArt00_Speerschleuder_A",
+            UnitMetadata {
+                faction: "Celt",
+                tier: "siege",
+                unit_type: "siege",
+                style: "none",
+            },
+        ),
+        (
+            "FigKelArt01_Katapult",
+            UnitMetadata {
+                faction: "Celt",
+                tier: "siege",
+                unit_type: "siege",
+                style: "none",
+            },
+        ),
+        (
+            "FigKelArt01_Katapult_Aufbau",
+            UnitMetadata {
+                faction: "Celt",
+                tier: "siege",
+                unit_type: "siege",
+                style: "none",
+            },
+        ),
     ];
 
     pub const UNIT_NAME_ENTRIES: &[(&'static str, &'static str)] = &[
@@ -138,61 +485,188 @@ impl TroopConfig {
 
     pub const BALANCED_STATS_ENTRIES: &[(&'static str, [f64; 9])] = &[
         // Roman
-        ("FigRomInf00_Lanze_Schild", [100.0, 20.0, 40.0, 50.0, 3.2, 1500.0, 500.0, 400.0, 0.0]),
-        ("FigRomSch00_Speer_Schild", [100.0, 15.0, 80.0, 50.0, 3.2, 1500.0, 500.0, 900.0, 0.0]),
-        ("FigRomInf01_Schwert_Schild", [100.0, 20.0, 80.0, 70.0, 3.2, 1500.0, 500.0, 400.0, 0.0]),
-        ("FigRomSch01_Bogen", [100.0, 10.0, 50.0, 50.0, 3.2, 1500.0, 1300.0, 1200.0, 0.0]),
-        ("FigRomKav00_Schwert_Schild", [100.0, 20.0, 80.0, 75.0, 3.2, 1500.0, 500.0, 400.0, 0.0]),
-        ("FigRomAnf00_Anfuehrer", [400.0, 20.0, 100.0, 80.0, 2.6, 1500.0, 500.0, 128.0, 0.0]),
-        ("FigRomArt00_Speerschleuder", [150.0, 175.0, 40.0, 60.0, 0.0, 1500.0, 3000.0, 1300.0, 0.0]),
-        ("FigRomArt00_Speerschleuder_Auf", [150.0, 175.0, 40.0, 60.0, 0.0, 1500.0, 3000.0, 1300.0, 0.0]),
-        ("FigRomArt01_Katapult", [300.0, 250.0, 40.0, 60.0, 0.0, 1500.0, 6000.0, 1200.0, 0.0]),
-        ("FigRomArt01_Katapult_Aufbau", [300.0, 250.0, 40.0, 60.0, 0.0, 1500.0, 6000.0, 1200.0, 0.0]),
-
+        (
+            "FigRomInf00_Lanze_Schild",
+            [100.0, 20.0, 40.0, 50.0, 3.2, 1500.0, 500.0, 400.0, 0.0],
+        ),
+        (
+            "FigRomSch00_Speer_Schild",
+            [100.0, 15.0, 80.0, 50.0, 3.2, 1500.0, 500.0, 900.0, 0.0],
+        ),
+        (
+            "FigRomInf01_Schwert_Schild",
+            [100.0, 20.0, 80.0, 70.0, 3.2, 1500.0, 500.0, 400.0, 0.0],
+        ),
+        (
+            "FigRomSch01_Bogen",
+            [100.0, 10.0, 50.0, 50.0, 3.2, 1500.0, 1300.0, 1200.0, 0.0],
+        ),
+        (
+            "FigRomKav00_Schwert_Schild",
+            [100.0, 20.0, 80.0, 75.0, 3.2, 1500.0, 500.0, 400.0, 0.0],
+        ),
+        (
+            "FigRomAnf00_Anfuehrer",
+            [400.0, 20.0, 100.0, 80.0, 2.6, 1500.0, 500.0, 128.0, 0.0],
+        ),
+        (
+            "FigRomArt00_Speerschleuder",
+            [150.0, 175.0, 40.0, 60.0, 0.0, 1500.0, 3000.0, 1300.0, 0.0],
+        ),
+        (
+            "FigRomArt00_Speerschleuder_Auf",
+            [150.0, 175.0, 40.0, 60.0, 0.0, 1500.0, 3000.0, 1300.0, 0.0],
+        ),
+        (
+            "FigRomArt01_Katapult",
+            [300.0, 250.0, 40.0, 60.0, 0.0, 1500.0, 6000.0, 1200.0, 0.0],
+        ),
+        (
+            "FigRomArt01_Katapult_Aufbau",
+            [300.0, 250.0, 40.0, 60.0, 0.0, 1500.0, 6000.0, 1200.0, 0.0],
+        ),
         // Teuton
-        ("FigGerInf01_Schwert", [100.0, 12.0, 40.0, 20.0, 3.2, 1500.0, 500.0, 400.0, 0.0]),
-        ("FigGerSch00_Speer", [100.0, 5.0, 25.0, 20.0, 3.2, 1500.0, 1500.0, 900.0, 0.0]),
-        ("FigGerInf00_Hammer_Schild", [100.0, 12.0, 60.0, 20.0, 3.2, 1500.0, 500.0, 400.0, 0.0]),
-        ("FigGerSch01_Axt_Schild", [100.0, 12.0, 80.0, 25.0, 3.2, 1500.0, 500.0, 700.0, 0.0]),
-        ("FigGerInf02_Zweihandaxt", [100.0, 20.0, 50.0, 30.0, 3.2, 1500.0, 500.0, 400.0, 0.0]),
-        ("FigGerKav00_Schwert_Schild", [100.0, 12.0, 90.0, 50.0, 3.2, 1500.0, 500.0, 400.0, 0.0]),
-        ("FigGerInf03_Doppelhammer", [100.0, 30.0, 50.0, 40.0, 3.2, 1500.0, 500.0, 400.0, 0.0]),
-        ("FigGerAnf00_Anfuehrer", [400.0, 20.0, 100.0, 30.0, 2.6, 1500.0, 500.0, 128.0, 0.0]),
-        ("FigGerPri00_Priester", [100.0, 10.0, 70.0, 30.0, 2.6, 1500.0, 500.0, 1500.0, 0.0]),
-        ("FigGerArt00_Katapult", [50.0, 150.0, 50.0, 50.0, 0.0, 1500.0, 5000.0, 1000.0, 0.0]),
-        ("FigGerArt00_Katapult_Aufbau", [10.0, 150.0, 50.0, 0.0, 0.0, 1500.0, 5000.0, 1000.0, 0.0]),
-
+        (
+            "FigGerInf01_Schwert",
+            [100.0, 12.0, 40.0, 20.0, 3.2, 1500.0, 500.0, 400.0, 0.0],
+        ),
+        (
+            "FigGerSch00_Speer",
+            [100.0, 5.0, 25.0, 20.0, 3.2, 1500.0, 1500.0, 900.0, 0.0],
+        ),
+        (
+            "FigGerInf00_Hammer_Schild",
+            [100.0, 12.0, 60.0, 20.0, 3.2, 1500.0, 500.0, 400.0, 0.0],
+        ),
+        (
+            "FigGerSch01_Axt_Schild",
+            [100.0, 12.0, 80.0, 25.0, 3.2, 1500.0, 500.0, 700.0, 0.0],
+        ),
+        (
+            "FigGerInf02_Zweihandaxt",
+            [100.0, 20.0, 50.0, 30.0, 3.2, 1500.0, 500.0, 400.0, 0.0],
+        ),
+        (
+            "FigGerKav00_Schwert_Schild",
+            [100.0, 12.0, 90.0, 50.0, 3.2, 1500.0, 500.0, 400.0, 0.0],
+        ),
+        (
+            "FigGerInf03_Doppelhammer",
+            [100.0, 30.0, 50.0, 40.0, 3.2, 1500.0, 500.0, 400.0, 0.0],
+        ),
+        (
+            "FigGerAnf00_Anfuehrer",
+            [400.0, 20.0, 100.0, 30.0, 2.6, 1500.0, 500.0, 128.0, 0.0],
+        ),
+        (
+            "FigGerPri00_Priester",
+            [100.0, 10.0, 70.0, 30.0, 2.6, 1500.0, 500.0, 1500.0, 0.0],
+        ),
+        (
+            "FigGerArt00_Katapult",
+            [50.0, 150.0, 50.0, 50.0, 0.0, 1500.0, 5000.0, 1000.0, 0.0],
+        ),
+        (
+            "FigGerArt00_Katapult_Aufbau",
+            [10.0, 150.0, 50.0, 0.0, 0.0, 1500.0, 5000.0, 1000.0, 0.0],
+        ),
         // Celt
-        ("FigKelInf00_Schwert", [100.0, 5.0, 85.0, 20.0, 3.2, 1500.0, 500.0, 400.0, 0.0]),
-        ("FigKelSch00_Bogen", [100.0, 7.5, 30.0, 50.0, 3.2, 1500.0, 1250.0, 1100.0, 0.0]),
-        ("FigKelInf01_Lanze", [100.0, 10.0, 90.0, 30.0, 3.2, 1500.0, 500.0, 400.0, 0.0]),
-        ("FigKelSch01_Schleuder", [100.0, 25.0, 70.0, 65.0, 3.2, 1500.0, 1000.0, 1000.0, 0.0]),
-        ("FigKelInf02_Doppelschwert", [100.0, 25.0, 70.0, 60.0, 3.2, 1500.0, 500.0, 400.0, 0.0]),
-        ("FigKelSch02_Schwere_Schleuder", [100.0, 30.0, 70.0, 80.0, 3.2, 1500.0, 1500.0, 900.0, 0.0]),
-        ("FigKelKav00_Lanze_Schild", [100.0, 20.0, 95.0, 75.0, 3.2, 1500.0, 500.0, 400.0, 0.0]),
-        ("FigKelAnf00_Anfuehrer", [400.0, 20.0, 100.0, 60.0, 2.6, 1500.0, 500.0, 128.0, 0.0]),
-        ("FigKelPri00_Priester", [100.0, 10.0, 80.0, 60.0, 2.6, 1500.0, 500.0, 1500.0, 500.0]),
-        ("FigKelArt00_Speerschleuder", [150.0, 100.0, 40.0, 60.0, 0.0, 1500.0, 3000.0, 1100.0, 0.0]),
-        ("FigKelArt00_Speerschleuder_A", [150.0, 100.0, 40.0, 60.0, 0.0, 1500.0, 3000.0, 1100.0, 0.0]),
-        ("FigKelArt01_Katapult", [50.0, 175.0, 50.0, 50.0, 0.0, 1500.0, 5000.0, 1000.0, 0.0]),
-        ("FigKelArt01_Katapult_Aufbau", [10.0, 175.0, 50.0, 0.0, 0.0, 1500.0, 5000.0, 1000.0, 0.0]),
-
+        (
+            "FigKelInf00_Schwert",
+            [100.0, 5.0, 85.0, 20.0, 3.2, 1500.0, 500.0, 400.0, 0.0],
+        ),
+        (
+            "FigKelSch00_Bogen",
+            [100.0, 7.5, 30.0, 50.0, 3.2, 1500.0, 1250.0, 1100.0, 0.0],
+        ),
+        (
+            "FigKelInf01_Lanze",
+            [100.0, 10.0, 90.0, 30.0, 3.2, 1500.0, 500.0, 400.0, 0.0],
+        ),
+        (
+            "FigKelSch01_Schleuder",
+            [100.0, 25.0, 70.0, 65.0, 3.2, 1500.0, 1000.0, 1000.0, 0.0],
+        ),
+        (
+            "FigKelInf02_Doppelschwert",
+            [100.0, 25.0, 70.0, 60.0, 3.2, 1500.0, 500.0, 400.0, 0.0],
+        ),
+        (
+            "FigKelSch02_Schwere_Schleuder",
+            [100.0, 30.0, 70.0, 80.0, 3.2, 1500.0, 1500.0, 900.0, 0.0],
+        ),
+        (
+            "FigKelKav00_Lanze_Schild",
+            [100.0, 20.0, 95.0, 75.0, 3.2, 1500.0, 500.0, 400.0, 0.0],
+        ),
+        (
+            "FigKelAnf00_Anfuehrer",
+            [400.0, 20.0, 100.0, 60.0, 2.6, 1500.0, 500.0, 128.0, 0.0],
+        ),
+        (
+            "FigKelPri00_Priester",
+            [100.0, 10.0, 80.0, 60.0, 2.6, 1500.0, 500.0, 1500.0, 500.0],
+        ),
+        (
+            "FigKelArt00_Speerschleuder",
+            [150.0, 100.0, 40.0, 60.0, 0.0, 1500.0, 3000.0, 1100.0, 0.0],
+        ),
+        (
+            "FigKelArt00_Speerschleuder_A",
+            [150.0, 100.0, 40.0, 60.0, 0.0, 1500.0, 3000.0, 1100.0, 0.0],
+        ),
+        (
+            "FigKelArt01_Katapult",
+            [50.0, 175.0, 50.0, 50.0, 0.0, 1500.0, 5000.0, 1000.0, 0.0],
+        ),
+        (
+            "FigKelArt01_Katapult_Aufbau",
+            [10.0, 175.0, 50.0, 0.0, 0.0, 1500.0, 5000.0, 1000.0, 0.0],
+        ),
         // Hun
-        ("FigHunInf00_Keule", [100.0, 5.0, 20.0, 30.0, 3.2, 1500.0, 500.0, 400.0, 0.0]),
-        ("FigHunSch00_Bogen", [100.0, 10.0, 20.0, 50.0, 3.2, 1500.0, 750.0, 1000.0, 0.0]),
-        ("FigHunInf01_Schwert_Schild", [100.0, 10.0, 50.0, 50.0, 2.6, 1500.0, 500.0, 400.0, 0.0]),
-        ("FigHunKav00_Schwert_Schild", [100.0, 15.0, 35.0, 40.0, 3.2, 1500.0, 500.0, 400.0, 0.0]),
-        ("FigHunKav01_Bogen", [100.0, 10.0, 20.0, 70.0, 3.2, 1500.0, 500.0, 1000.0, 0.0]),
-        ("FigHunKav02_Lanze_Schild", [100.0, 30.0, 60.0, 75.0, 3.2, 1500.0, 500.0, 400.0, 0.0]),
-        ("FigHunKav03_Geisterreiter", [100.0, 15.0, 60.0, 60.0, 3.2, 1500.0, 500.0, 400.0, 0.0]),
-        ("FigHunAnf00_Anfuehrer", [400.0, 20.0, 100.0, 50.0, 3.2, 1500.0, 500.0, 128.0, 0.0]),
-        ("FigHunPri00_Priester", [100.0, 15.0, 30.0, 50.0, 2.6, 1500.0, 500.0, 1500.0, 500.0]),
+        (
+            "FigHunInf00_Keule",
+            [100.0, 5.0, 20.0, 30.0, 3.2, 1500.0, 500.0, 400.0, 0.0],
+        ),
+        (
+            "FigHunSch00_Bogen",
+            [100.0, 10.0, 20.0, 50.0, 3.2, 1500.0, 750.0, 1000.0, 0.0],
+        ),
+        (
+            "FigHunInf01_Schwert_Schild",
+            [100.0, 10.0, 50.0, 50.0, 2.6, 1500.0, 500.0, 400.0, 0.0],
+        ),
+        (
+            "FigHunKav00_Schwert_Schild",
+            [100.0, 15.0, 35.0, 40.0, 3.2, 1500.0, 500.0, 400.0, 0.0],
+        ),
+        (
+            "FigHunKav01_Bogen",
+            [100.0, 10.0, 20.0, 70.0, 3.2, 1500.0, 500.0, 1000.0, 0.0],
+        ),
+        (
+            "FigHunKav02_Lanze_Schild",
+            [100.0, 30.0, 60.0, 75.0, 3.2, 1500.0, 500.0, 400.0, 0.0],
+        ),
+        (
+            "FigHunKav03_Geisterreiter",
+            [100.0, 15.0, 60.0, 60.0, 3.2, 1500.0, 500.0, 400.0, 0.0],
+        ),
+        (
+            "FigHunAnf00_Anfuehrer",
+            [400.0, 20.0, 100.0, 50.0, 3.2, 1500.0, 500.0, 128.0, 0.0],
+        ),
+        (
+            "FigHunPri00_Priester",
+            [100.0, 15.0, 30.0, 50.0, 2.6, 1500.0, 500.0, 1500.0, 500.0],
+        ),
     ];
 
+    /// C# `UnitMeta` uses the default, case-sensitive string comparer.
     pub fn get_metadata(key: &str) -> Option<&'static UnitMetadata> {
         Self::UNIT_METADATA_ENTRIES
             .iter()
-            .find(|(k, _)| k.eq_ignore_ascii_case(key))
+            .find(|(k, _)| *k == key)
             .map(|(_, m)| m)
     }
 
@@ -263,7 +737,11 @@ impl UnitStatParser {
             }
 
             if index == 4 || index == 7 || index == 8 || (index == 5 && remove_priest_sight) {
-                layered[index] = if fallback.len() > index { fallback[index] } else { 0.0 };
+                layered[index] = if fallback.len() > index {
+                    fallback[index]
+                } else {
+                    0.0
+                };
                 continue;
             }
 
@@ -287,7 +765,8 @@ impl UnitStatParser {
             let dmg_idx = active_idx + 1;
             let type_idx = ObjdefIndex::Weapon1Dtyp as usize + (weapon - 1);
 
-            if active_idx >= columns.len() || dmg_idx >= columns.len() || type_idx >= columns.len() {
+            if active_idx >= columns.len() || dmg_idx >= columns.len() || type_idx >= columns.len()
+            {
                 continue;
             }
             if columns[active_idx].trim() != "1" {
@@ -315,7 +794,10 @@ impl UnitStatParser {
             let reload_idx = active_idx + 6;
             let type_idx = ObjdefIndex::Weapon1Dtyp as usize + (weapon - 1);
 
-            if active_idx >= columns.len() || reload_idx >= columns.len() || type_idx >= columns.len() {
+            if active_idx >= columns.len()
+                || reload_idx >= columns.len()
+                || type_idx >= columns.len()
+            {
                 continue;
             }
             if columns[active_idx].trim() != "1" {
@@ -379,9 +861,44 @@ mod tests {
     use super::*;
 
     #[test]
+    fn metadata_lookup_matches_csharp_case_sensitive_unit_meta() {
+        for (key, expected) in TroopConfig::UNIT_METADATA_ENTRIES {
+            assert_eq!(TroopConfig::get_metadata(key), Some(expected), "{key}");
+            for variant in [key.to_ascii_lowercase(), key.to_ascii_uppercase()] {
+                assert_eq!(TroopConfig::get_metadata(&variant), None, "{variant}");
+            }
+        }
+        assert_eq!(TroopConfig::get_metadata("FigUnknown"), None);
+    }
+
+    #[test]
+    fn balanced_stats_lookup_keeps_csharp_ordinal_ignore_case_behavior() {
+        for (key, expected) in TroopConfig::BALANCED_STATS_ENTRIES {
+            for variant in [
+                key.to_string(),
+                key.to_ascii_lowercase(),
+                key.to_ascii_uppercase(),
+            ] {
+                assert_eq!(
+                    TroopConfig::get_balanced_stats(&variant),
+                    Some(expected),
+                    "{variant}"
+                );
+            }
+        }
+        assert_eq!(TroopConfig::get_balanced_stats("FigUnknown"), None);
+    }
+
+    #[test]
     fn parser_classifies_damage_reload_and_range() {
         let mut cols = vec!["0".to_string(); 256];
-        let set_weapon = |cols: &mut [String], slot: usize, dtype: &str, dam: &str, rel: &str, min_r: &str, max_r: &str| {
+        let set_weapon = |cols: &mut [String],
+                          slot: usize,
+                          dtype: &str,
+                          dam: &str,
+                          rel: &str,
+                          min_r: &str,
+                          max_r: &str| {
             let offset = (slot - 1) * 8;
             let active = ObjdefIndex::Weapon1Akti as usize + offset;
             cols[active] = "1".to_string();
@@ -395,21 +912,26 @@ mod tests {
         set_weapon(&mut cols, 1, "0", "10", "2.5", "1", "50");
         set_weapon(&mut cols, 2, "1", "20", "1.5", "5", "100");
 
-        let (melee_dam, ranged_dam) = UnitStatParser::get_melee_and_ranged_damage(&cols, "hybrid_inf");
-        let (melee_rel, ranged_rel) = UnitStatParser::get_melee_and_ranged_reload(&cols, "hybrid_inf");
+        let (melee_dam, ranged_dam) =
+            UnitStatParser::get_melee_and_ranged_damage(&cols, "hybrid_inf");
+        let (melee_rel, ranged_rel) =
+            UnitStatParser::get_melee_and_ranged_reload(&cols, "hybrid_inf");
 
         assert_eq!(melee_dam, 10.0);
         assert_eq!(ranged_dam, 20.0);
         assert_eq!(melee_rel, 2.5);
         assert_eq!(ranged_rel, 1.5);
-        assert_eq!(UnitStatParser::get_maximum_range(&cols, "hybrid_inf"), 100.0);
+        assert_eq!(
+            UnitStatParser::get_maximum_range(&cols, "hybrid_inf"),
+            100.0
+        );
 
         cols[ObjdefIndex::Sirad as usize] = "300".to_string();
         assert_eq!(UnitStatParser::get_maximum_range(&cols, "priest"), 300.0);
     }
 
     #[test]
-    fn troop_config_has_all_44_units_and_stable_order() {
+    fn troop_config_has_43_unique_units_matching_csharp_and_stable_order() {
         assert_eq!(TroopConfig::UNIT_METADATA_ENTRIES.len(), 43);
         assert_eq!(TroopConfig::BALANCED_STATS_ENTRIES.len(), 43);
         let sorted = TroopConfig::sorted_units();

@@ -329,16 +329,27 @@ internal sealed partial class Map3DViewControl : GLControl
     {
         // GLFW may initialize successfully in a headless Windows session while exposing no monitors.
         // GLControl then calls glfwGetVideoMode with a null monitor, which cannot be caught in managed code.
-        OpenTK.Windowing.Desktop.GLFWProvider.EnsureInitialized();
-        _contextCreationFailure = OpenTK.Windowing.Desktop.Monitors.GetMonitors().Count == 0
-            ? "OpenGL 3.3 初始化失敗：目前 Windows 工作階段沒有可用的顯示器。" : null;
-        if (_contextCreationFailure is not null)
+        try
         {
+            OpenTK.Windowing.Desktop.GLFWProvider.EnsureInitialized();
+            if (OpenTK.Windowing.Desktop.Monitors.GetMonitors().Count == 0)
+            {
+                _contextCreationFailure = "OpenGL 3.3 初始化失敗：目前 Windows 工作階段沒有可用的顯示器。";
+                LastFailureReason = _contextCreationFailure;
+                InitializationFailed?.Invoke(this, new InvalidOperationException(_contextCreationFailure));
+                return;
+            }
+            _contextCreationFailure = null;
+            base.OnHandleCreated(e);
+        }
+        catch (Exception ex)
+        {
+            _contextCreationFailure = $"OpenGL 3.3 初始化失敗：{ex.GetType().Name}: {ex.Message}";
             LastFailureReason = _contextCreationFailure;
-            InitializationFailed?.Invoke(this, new InvalidOperationException(_contextCreationFailure));
+            InitializationFailed?.Invoke(this, ex);
             return;
         }
-        base.OnHandleCreated(e);
+
         // 控制項未釋放而 handle 被重建（例如重新指定父容器）時，原 context 已隨舊 handle 銷毀，需重新初始化。
         if (_reinitializeOnHandleCreated) { _reinitializeOnHandleCreated = false; InitializeGl(); }
         UpdateAnimationTimer();
@@ -373,6 +384,7 @@ internal sealed partial class Map3DViewControl : GLControl
             _lightsLocSprite = GL.GetUniformLocation(_spriteProgram, "uLightPosRadius");
             _lightColorsLocSprite = GL.GetUniformLocation(_spriteProgram, "uLightColor");
             _initialized = true;
+            _contextCreationFailure = null;
             LastFailureReason = null;
             _collisionTexture = GL.GenTexture();
             UploadCollisionMask();
@@ -400,7 +412,7 @@ internal sealed partial class Map3DViewControl : GLControl
         try
         {
             RecreateHandle();
-            if (!_initialized) InitializeGl();
+            if (!_initialized && HasValidContext) InitializeGl();
             return _initialized;
         }
         catch (Exception ex)

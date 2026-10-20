@@ -1,0 +1,4 @@
+[target.i686-pc-windows-msvc]
+# Cargo searches from CWD, not --manifest-path. Root callers must explicitly use
+# --config native/against-rome-trace/.cargo/config.toml (see tools/test-rust-rewrite.ps1).
+rustflags = ["-C", "target-feature=+crt-static"]

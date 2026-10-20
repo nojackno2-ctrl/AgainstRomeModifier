@@ -311,6 +311,131 @@ impl TerrainSession {
         }
         applied
     }
+    /// Sets specific vertices to target heights (e.g. river bed carving); out-of-range indices are skipped.
+    pub fn apply_height_adjustments(&mut self, targets: &[(usize, u8)]) -> Vec<SampleChange> {
+        let changes: Vec<SampleChange> = targets
+            .iter()
+            .map(|&(index, after)| SampleChange {
+                index,
+                before: 0,
+                after,
+            })
+            .collect();
+        self.apply_height_changes(&changes)
+    }
+    /// Applies a per-vertex transform over the whole map (batch/AI edits). Non-finite results are
+    /// skipped; values round ties-to-even and clamp to 0..=255. Caller commits the stroke.
+    pub fn transform_heights(
+        &mut self,
+        mut f: impl FnMut(usize, usize, u8) -> f32,
+    ) -> Vec<SampleChange> {
+        let size = self.size;
+        let mut changes = vec![];
+        for y in 0..size {
+            for x in 0..size {
+                let index = y * size + x;
+                let value = f(x, y, self.heights[index]);
+                if !value.is_finite() {
+                    continue;
+                }
+                changes.push(SampleChange {
+                    index,
+                    before: 0,
+                    after: value.round_ties_even().clamp(0.0, 255.0) as u8,
+                });
+            }
+        }
+        self.apply_height_changes(&changes)
+    }
+    /// C# TerrainSculptPipeline.Elevate: float strength, selectable falloff and an
+    /// upper height bound. Quantizes once per call; leaves the stroke uncommitted.
+    /// Non-finite inputs follow the original .NET 8 x64 pipeline, including its
+    /// unchecked float-to-int conversion; unlike PaintHeight, it does not reject them.
+    pub fn elevate(
+        &mut self,
+        center: (f32, f32),
+        radius: f32,
+        strength: f32,
+        falloff: Falloff,
+        max_height: f32,
+    ) -> Result<Vec<SampleChange>, Error> {
+        self.sculpt_offset(center, radius, strength, falloff, max_height, true)
+    }
+
+    /// C# TerrainSculptPipeline.Depress; the lower bound is applied before byte
+    /// quantization. Shares pending history with other height/collision edits.
+    pub fn depress(
+        &mut self,
+        center: (f32, f32),
+        radius: f32,
+        strength: f32,
+        falloff: Falloff,
+        min_height: f32,
+    ) -> Result<Vec<SampleChange>, Error> {
+        self.sculpt_offset(center, radius, strength, falloff, min_height, false)
+    }
+
+    fn sculpt_offset(
+        &mut self,
+        center: (f32, f32),
+        radius: f32,
+        strength: f32,
+        falloff: Falloff,
+        limit: f32,
+        elevate: bool,
+    ) -> Result<Vec<SampleChange>, Error> {
+        // .NET 8 x64 unchecked (int)float returns int.MinValue for NaN,
+        // infinities and overflow. Rust's saturating cast has different semantics.
+        fn csharp_int(value: f32) -> i32 {
+            if (-2147483648.0..2147483648.0).contains(&value) {
+                value as i32
+            } else {
+                i32::MIN
+            }
+        }
+        if radius <= 0.0 || strength <= 0.0 {
+            return Ok(vec![]);
+        }
+        // Match GetBrushBounds before distance checks, including overflow/NaN.
+        let min_x = csharp_int((center.0 - radius).floor()).max(0);
+        let max_x = csharp_int((center.0 + radius).ceil()).min(self.size as i32 - 1);
+        let min_y = csharp_int((center.1 - radius).floor()).max(0);
+        let max_y = csharp_int((center.1 + radius).ceil()).min(self.size as i32 - 1);
+        let mut changes = vec![];
+        for y in min_y..=max_y {
+            for x in min_x..=max_x {
+                let dx = x as f32 - center.0;
+                let dy = y as f32 - center.1;
+                let distance = (dx * dx + dy * dy).sqrt();
+                if distance > radius {
+                    continue;
+                }
+                let index = y as usize * self.size + x as usize;
+                let before = self.heights[index];
+                let delta = strength * falloff.weight(distance / radius);
+                // Apply the bound even at zero-weight boundary vertices, as C# does.
+                // Math.Min/Max propagate NaN; Rust's min/max would ignore it.
+                let value = if limit.is_nan() || delta.is_nan() {
+                    f32::NAN
+                } else if elevate {
+                    (before as f32 + delta).min(limit)
+                } else {
+                    (before as f32 - delta).max(limit)
+                };
+                // ExtractChanges rounds, casts to int, THEN clamps to byte range.
+                let after = csharp_int(value.round_ties_even()).clamp(0, 255) as u8;
+                if before != after {
+                    changes.push(SampleChange {
+                        index,
+                        before,
+                        after,
+                    });
+                }
+            }
+        }
+        Ok(self.apply_height_changes(&changes))
+    }
+
     pub fn apply_ramp(
         &mut self,
         start: (f32, f32),

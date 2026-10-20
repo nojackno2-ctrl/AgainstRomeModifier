@@ -24,6 +24,56 @@ fn has_team(files: &BackupFiles) -> bool {
         k.starts_with("maps/") && k.ends_with("team.dat")
     })
 }
+/// Loads an original-file Backup.zip into a dictionary (C# BackupSourceLoader.LoadZip).
+/// Unsafe paths, duplicate (case-insensitive) keys, and entries whose real length differs
+/// from the header or exceeds the limits are errors instead of being silently accepted.
+pub fn load_zip(reader: impl std::io::Read + std::io::Seek) -> Result<BackupFiles> {
+    use std::io::Read;
+    const ENTRY_LIMIT: u64 = 256 * 1024 * 1024;
+    const TOTAL_LIMIT: u64 = 1024 * 1024 * 1024;
+    let mut zip = zip::ZipArchive::new(reader)?;
+    if zip.len() > 100000 {
+        return fail("Backup.zip has too many entries");
+    }
+    let mut files = BackupFiles::new();
+    let mut seen = std::collections::HashSet::new();
+    let mut total = 0u64;
+    for i in 0..zip.len() {
+        let mut e = zip.by_index(i)?;
+        if let Some(mode) = e.unix_mode() {
+            let ty = mode & 0o170000;
+            if ty != 0 && ty != 0o100000 && ty != 0o040000 {
+                return fail(format!("Backup.zip symbolic/special link rejected: {}", e.name()));
+            }
+        }
+        let key = e.name().replace('\\', "/");
+        let trim_key = key.trim_end_matches('/');
+        let bad = trim_key.is_empty()
+            || key.starts_with('/')
+            || trim_key.split('/').any(|p| !crate::simple_name(p));
+        if bad {
+            return fail(format!("Backup.zip contains an unsafe entry path: {}", e.name()));
+        }
+        if e.is_dir() {
+            continue;
+        }
+        if !seen.insert(key.to_ascii_lowercase()) {
+            return fail(format!("Backup.zip contains a duplicate entry: {key}"));
+        }
+        let declared = e.size();
+        total = total.saturating_add(declared);
+        if declared > ENTRY_LIMIT || total > TOTAL_LIMIT {
+            return fail("Backup.zip exceeds size limits");
+        }
+        let mut buf = Vec::new();
+        e.by_ref().take(declared.saturating_add(1)).read_to_end(&mut buf)?;
+        if buf.len() as u64 != declared {
+            return fail(format!("Backup.zip entry size mismatch: {key}"));
+        }
+        files.insert(key, buf);
+    }
+    Ok(files)
+}
 pub fn find_missing(files: &BackupFiles) -> Vec<String> {
     let mut missing: Vec<_> = REQUIRED_FILES
         .iter()
@@ -276,5 +326,57 @@ mod tests {
                 .changed
         );
         assert!(f.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod load_zip_tests {
+    use super::*;
+    use std::io::{Cursor, Write};
+    fn zip_of(entries: &[(&str, &[u8])]) -> Cursor<Vec<u8>> {
+        let mut z = zip::ZipWriter::new(Cursor::new(vec![]));
+        for (n, b) in entries {
+            z.start_file(*n, zip::write::FileOptions::default()).unwrap();
+            z.write_all(b).unwrap();
+        }
+        Cursor::new(z.finish().unwrap().into_inner())
+    }
+    #[test]
+    fn loads_and_normalizes_keys_then_feeds_validator() {
+        let mut entries: Vec<(String, &[u8])> = REQUIRED_FILES.iter().map(|k| (k.replace('/', "\\"), &b"x"[..])).collect();
+        entries.push(("MAPS/ENDL_000/team.dat".into(), b"t"));
+        let refs: Vec<(&str, &[u8])> = entries.iter().map(|(k, v)| (k.as_str(), *v)).collect();
+        let files = load_zip(zip_of(&refs)).unwrap();
+        assert!(files.contains_key("SYSTEM/cl_script.ini"));
+        validate(&files).unwrap();
+    }
+    #[test]
+    fn rejects_traversal_rooted_drive_and_case_duplicates() {
+        for bad in ["../x", "/abs", "C:/x", "a/../b", "a//b"] {
+            assert!(load_zip(zip_of(&[(bad, b"x")])).is_err(), "{bad}");
+        }
+        assert!(load_zip(zip_of(&[("A/b.ini", b"1"), ("a/B.ini", b"2")])).is_err());
+    }
+    #[test]
+    fn incomplete_zip_is_reported_by_find_missing() {
+        let files = load_zip(zip_of(&[("Against_Rome.exe", b"x")])).unwrap();
+        let m = find_missing(&files);
+        assert!(m.contains(&"SYSTEM/ress.ini".to_string()));
+        assert!(m.contains(&"MAPS/.../team.dat".to_string()));
+        assert!(validate(&files).is_err());
+    }
+    #[test]
+    fn rejects_devices_symlinks_and_non_simple_names() {
+        for bad in ["CON", "CON/", "CLOCK$", "CLOCK$/", "COM0", "LPT0", "SYSTEM/./cl_script.ini", " foo.ini", "../", "SYSTEM/../evil"] {
+            assert!(load_zip(zip_of(&[(bad, b"x")])).is_err(), "expected error for {bad}");
+        }
+        let mut z = zip::ZipWriter::new(Cursor::new(vec![]));
+        z.start_file("SYSTEM/cl_script.ini", zip::write::FileOptions::default().unix_permissions(0o120777)).unwrap();
+        z.write_all(b"symlink").unwrap();
+        let mut raw = z.finish().unwrap().into_inner();
+        let at = raw.windows(4).position(|w| w == [0x50, 0x4b, 0x01, 0x02]).unwrap();
+        raw[at + 5] = 3;
+        raw[at + 38..at + 42].copy_from_slice(&(0o120777u32 << 16).to_le_bytes());
+        assert!(load_zip(Cursor::new(raw)).is_err());
     }
 }

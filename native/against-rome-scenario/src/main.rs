@@ -1,5 +1,28 @@
-﻿use against_rome_scenario::*;
-use std::{fs, io::Write, path::Path};
+use against_rome_scenario::*;
+use std::{fs, io::Write, path::{Path, PathBuf}};
+
+struct TempFileGuard {
+    path: PathBuf,
+    active: bool,
+}
+
+impl TempFileGuard {
+    fn new(path: PathBuf) -> Self {
+        Self { path, active: true }
+    }
+
+    fn disarm(&mut self) {
+        self.active = false;
+    }
+}
+
+impl Drop for TempFileGuard {
+    fn drop(&mut self) {
+        if self.active {
+            let _ = fs::remove_file(&self.path);
+        }
+    }
+}
 
 fn run() -> Result<()> {
     let args: Vec<_> = std::env::args().collect();
@@ -39,10 +62,42 @@ fn run() -> Result<()> {
             if canonical.to_string_lossy().to_ascii_lowercase().contains("\\against rome") {
                 return Err("CLI output inside installed game directory is forbidden".into());
             }
+            if output.exists() {
+                return Err(format!("destination file already exists: {}", output.display()).into());
+            }
             if let Some(source) = &bindings { source.verify_unchanged()?; }
-            let mut file = fs::OpenOptions::new().write(true).create_new(true).open(output).map_err(|e| e.to_string())?;
-            file.write_all(&bytes).map_err(|e| e.to_string())?;
-            file.sync_all().map_err(|e| e.to_string())?;
+
+            let temp_name = format!(
+                ".{}.tmp.{}",
+                output.file_name().and_then(|n| n.to_str()).unwrap_or("output"),
+                uuid::Uuid::new_v4().simple()
+            );
+            let temp_path = parent.join(temp_name);
+            let mut guard = TempFileGuard::new(temp_path.clone());
+
+            {
+                let mut file = fs::OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .open(&temp_path)
+                    .map_err(|e| e.to_string())?;
+                file.write_all(&bytes).map_err(|e| e.to_string())?;
+                file.flush().map_err(|e| e.to_string())?;
+                file.sync_all().map_err(|e| e.to_string())?;
+            }
+
+            if output.exists() {
+                return Err(format!("destination file already exists: {}", output.display()).into());
+            }
+            fs::hard_link(&temp_path, output).map_err(|e| {
+                if e.kind() == std::io::ErrorKind::AlreadyExists || output.exists() {
+                    format!("destination file already exists: {}", output.display())
+                } else {
+                    format!("cannot atomically install output without replacing an existing file: {e}")
+                }
+            })?;
+            guard.disarm();
+            let _ = fs::remove_file(&temp_path);
             println!("compiled {} bytes into {}", bytes.len(), output.display());
         }
         _ => return Err("commands: inspect, compile (input PFIL format preserved, existing files never overwritten)".into()),

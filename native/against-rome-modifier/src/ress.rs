@@ -75,10 +75,13 @@ impl RessPatcher {
                         output_lines.push(line.clone());
                         continue;
                     }
-                    let siege = name.contains("Art") || name.contains("Bar") || name.contains("Fal");
+                    let siege =
+                        name.contains("Art") || name.contains("Bar") || name.contains("Fal");
                     let priest = name.contains("Pri") || name.contains("Dru");
                     Self::rewrite(&mut cols, |i, _| {
-                        (options.free_production && i >= FIG_PROD_COST_START && i <= FIG_PROD_COST_END)
+                        (options.free_production
+                            && i >= FIG_PROD_COST_START
+                            && i <= FIG_PROD_COST_END)
                             || (options.free_production
                                 && siege
                                 && i >= FIG_SIEGE_BUILD_COST_START

@@ -73,16 +73,9 @@ impl TextDocument {
         let decompressed = decompress_if_pfil(raw_bytes)?;
         let text = decode_cp1251(&decompressed);
 
-        let line_ending = if text.contains("\r\n") {
-            "\r\n"
-        } else {
-            "\n"
-        };
+        let line_ending = if text.contains("\r\n") { "\r\n" } else { "\n" };
 
-        let lines: Vec<String> = text
-            .split(line_ending)
-            .map(|s| s.to_string())
-            .collect();
+        let lines: Vec<String> = text.split(line_ending).map(|s| s.to_string()).collect();
 
         Ok(Self {
             text,

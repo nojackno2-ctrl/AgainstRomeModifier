@@ -29,6 +29,7 @@ fn is_dos_device_name(part: &str) -> bool {
         || base.eq_ignore_ascii_case("PRN")
         || base.eq_ignore_ascii_case("AUX")
         || base.eq_ignore_ascii_case("NUL")
+        || base.eq_ignore_ascii_case("CLOCK$")
     {
         return true;
     }
@@ -36,7 +37,7 @@ fn is_dos_device_name(part: &str) -> bool {
         let prefix = &base[..3];
         let num = base.as_bytes()[3];
         if (prefix.eq_ignore_ascii_case("COM") || prefix.eq_ignore_ascii_case("LPT"))
-            && (b'1'..=b'9').contains(&num)
+            && (b'0'..=b'9').contains(&num)
         {
             return true;
         }
@@ -75,6 +76,7 @@ pub fn is_payload_path(path: &str) -> bool {
         if *p == ""
             || *p == "."
             || *p == ".."
+            || p.starts_with(' ')
             || p.ends_with('.')
             || p.ends_with(' ')
             || p.chars().any(|c| (c as u32) < 32 || "<>:\"/\\|?*".contains(c))
@@ -120,37 +122,45 @@ pub fn is_payload_path(path: &str) -> bool {
     false
 }
 
-/// Rejects symbolic links and Windows reparse points/junctions.
-pub fn reject_links(directory: &Path) -> Result<()> {
+/// Rejects symbolic links and Windows reparse points/junctions for path, existing ancestors and descendants.
+pub fn reject_links(path: &Path) -> Result<()> {
     fn check_entry(entry: &Path) -> Result<()> {
-        let meta = fs::symlink_metadata(entry)?;
-        if meta.file_type().is_symlink() {
-            return Err(Error::new(
-                ErrorKind::InvalidInput,
-                format!("Linked payloads are not supported: {}", entry.display()),
-            ));
-        }
-        #[cfg(windows)]
-        {
-            use std::os::windows::fs::MetadataExt;
-            if meta.file_attributes() & 0x400 != 0 {
-                return Err(Error::new(
-                    ErrorKind::InvalidInput,
-                    format!("Linked payloads are not supported: {}", entry.display()),
-                ));
+        match fs::symlink_metadata(entry) {
+            Ok(meta) => {
+                if meta.file_type().is_symlink() {
+                    return Err(Error::new(
+                        ErrorKind::InvalidInput,
+                        format!("Linked payloads are not supported: {}", entry.display()),
+                    ));
+                }
+                #[cfg(windows)]
+                {
+                    use std::os::windows::fs::MetadataExt;
+                    if meta.file_attributes() & 0x400 != 0 {
+                        return Err(Error::new(
+                            ErrorKind::InvalidInput,
+                            format!("Linked payloads are not supported: {}", entry.display()),
+                        ));
+                    }
+                }
+                Ok(())
             }
+            Err(e) if e.kind() == ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(e),
         }
-        Ok(())
     }
 
-    check_entry(directory)?;
-    if directory.is_dir() {
-        for entry in fs::read_dir(directory)? {
+    for ancestor in path.ancestors() {
+        check_entry(ancestor)?;
+    }
+
+    if path.is_dir() {
+        for entry in fs::read_dir(path)? {
             let entry = entry?;
-            let path = entry.path();
-            check_entry(&path)?;
-            if path.is_dir() {
-                reject_links(&path)?;
+            let child = entry.path();
+            check_entry(&child)?;
+            if child.is_dir() {
+                reject_links(&child)?;
             }
         }
     }

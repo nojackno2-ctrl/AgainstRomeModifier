@@ -81,14 +81,18 @@ impl RawTextDocument {
         }
     }
 
+    pub fn to_bytes(&self) -> Result<Vec<u8>, String> {
+        let plain_bytes = encode_cp1251(&self.text)?;
+        if is_pfil(&self.original_bytes) {
+            compress_pfil(&plain_bytes, &self.original_bytes)
+        } else {
+            Ok(plain_bytes)
+        }
+    }
+
     pub fn save(&self, destination: Option<&Path>) -> Result<(), String> {
         let target_path = destination.unwrap_or(&self.path);
-        let plain_bytes = encode_cp1251(&self.text)?;
-        let output_bytes = if is_pfil(&self.original_bytes) {
-            compress_pfil(&plain_bytes, &self.original_bytes)?
-        } else {
-            plain_bytes
-        };
+        let output_bytes = self.to_bytes()?;
 
         // Write safely via tmp file
         if let Some(parent) = target_path.parent() {
@@ -155,6 +159,10 @@ impl BodenIniDocument {
 
     pub fn save(&self) -> Result<(), String> {
         self.raw.save(None)
+    }
+
+    pub fn to_bytes(&self) -> Result<Vec<u8>, String> {
+        self.raw.to_bytes()
     }
 
     fn find_value(&self, section: &str) -> Option<(usize, usize, String)> {
@@ -237,6 +245,10 @@ impl PutTextDocument {
 
     pub fn save(&self) -> Result<(), String> {
         self.raw.save(None)
+    }
+
+    pub fn to_bytes(&self) -> Result<Vec<u8>, String> {
+        self.raw.to_bytes()
     }
 
     pub fn get_value(&self, key: &str) -> Option<String> {
@@ -544,6 +556,10 @@ impl SdlDocument {
         self.raw.save(None)
     }
 
+    pub fn to_bytes(&self) -> Result<Vec<u8>, String> {
+        self.raw.to_bytes()
+    }
+
     pub fn settlement(&self) -> HashMap<String, String> {
         self.read_section("settlement").unwrap_or_default()
     }
@@ -611,6 +627,30 @@ impl SdlDocument {
 
     pub fn set_object_value(&mut self, index: i32, key: &str, value: &str) -> Result<(), String> {
         self.set_section_value(&object_name(index), key, value)
+    }
+
+    /// Removes every `key=` line from an object section, leaving all other bytes untouched.
+    /// A missing key is a no-op; a missing section is an error.
+    pub fn remove_object_value(&mut self, index: i32, key: &str) -> Result<(), String> {
+        let section_name = object_name(index);
+        let sec = self.find_section(&section_name)?;
+        let key_lower = key.trim().to_ascii_lowercase();
+        let mut kept = String::with_capacity(sec.body.len());
+        let mut removed = false;
+        for line in sec.body.split_inclusive('\n') {
+            if let Some((k, _)) = line.trim().split_once('=') {
+                if k.trim().to_ascii_lowercase() == key_lower {
+                    removed = true;
+                    continue;
+                }
+            }
+            kept.push_str(line);
+        }
+        if removed {
+            let body_end = sec.body_start + sec.body.len();
+            self.raw.text.replace_range(sec.body_start..body_end, &kept);
+        }
+        Ok(())
     }
 
     pub fn set_object_team(&mut self, index: i32, team: i32) -> Result<(), String> {
@@ -889,6 +929,10 @@ impl BodenTexturesDocument {
 
     pub fn save(&self) -> Result<(), String> {
         self.raw.save(None)
+    }
+
+    pub fn to_bytes(&self) -> Result<Vec<u8>, String> {
+        self.raw.to_bytes()
     }
 
     pub fn dimension(&self) -> Result<usize, String> {

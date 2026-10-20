@@ -1,3 +1,7 @@
 /tests/oracle/bin/
 /tests/oracle/obj/
 /tests/oracle/cache/
+/tests/ramp_oracle/bin/
+/tests/ramp_oracle/obj/
+/tests/erosion_oracle/bin/
+/tests/erosion_oracle/obj/

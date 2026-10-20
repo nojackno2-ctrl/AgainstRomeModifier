@@ -1,10 +1,13 @@
 //! 地形高程調整指令集 (Elevate, Flatten, Brush)
 
+use against_rome_ai_planner::BrushCommand as CanonicalBrush;
+
 use crate::macro_cmd::execution::EditorCommand;
 use crate::macro_cmd::models::{
     CommandExecutionContext, CommandParameter, CommandParameterType, CommandResult,
     MacroStepSnapshot, MapRegionCircle, MapRegionRect, ParsedCommand,
 };
+use against_rome_editor::terrain::TerrainSession;
 
 /// 高程批量調整指令 (/elevate)。
 pub struct ElevateCommand;
@@ -306,8 +309,38 @@ impl EditorCommand for FlattenCommand {
     }
 }
 
-/// 筆刷單點模擬指令 (/brush)。
+/// 筆刷指令 (/brush)：轉接 native `against-rome-ai-planner` 的 canonical `BrushCommand`。
+///
+/// 語法解析、格式化與執行全由 canonical API 負責，console 不再維護第二套語法；
+/// 成功訊息會附上 canonical 文字（`CANONICAL_MARKER` 之後），可由 command log 取回並原樣重播。
+/// console context 只有高度陣列：collision / material 需要尚無 undo 快照的圖層，
+/// 因此一律由 canonical `run` 以「沒有可編輯圖層」拒絕，不會留下無法回滾的變更。
 pub struct BrushCommand;
+
+/// 成功訊息中，canonical 指令文字之前的分隔標記。
+pub const CANONICAL_MARKER: &str = " => ";
+
+/// 舊版 console 語法 (`/brush raise <cx> <cz> <radius> [strength]`) 的操作名稱。
+const LEGACY_OPS: &[&str] = &["raise", "lower", "flatten", "smooth"];
+
+/// 從 console 原始行取出可交給 canonical parser 的文字：別名 (`/paint`、`/stroke`) 改寫為 `/brush`，其餘原樣保留。
+fn canonical_input(raw_text: &str) -> String {
+    let trimmed = raw_text.trim();
+    let rest = trimmed.split_once(char::is_whitespace).map_or("", |(_, r)| r);
+    format!("/brush {rest}")
+}
+
+/// 把任何合法的 `/brush` 行規範化為 canonical 重播文字 (`parse` → `format`)。
+pub fn canonicalize_brush_line(raw_text: &str, tile_dimension: usize) -> Result<String, String> {
+    CanonicalBrush::canonicalize(&canonical_input(raw_text), tile_dimension)
+}
+
+/// 從 `/brush` 成功訊息（或含該訊息的 log 行）取回 canonical 重播文字。
+pub fn canonical_from_log(message: &str) -> Option<&str> {
+    let (_, tail) = message.rsplit_once(CANONICAL_MARKER)?;
+    let tail = tail.trim();
+    tail.starts_with("/brush ").then_some(tail)
+}
 
 impl EditorCommand for BrushCommand {
     fn name(&self) -> &str {
@@ -323,15 +356,15 @@ impl EditorCommand for BrushCommand {
     }
 
     fn description_zh(&self) -> &str {
-        "在指定世界座標套用單次圓形地形筆刷操作。"
+        "以 canonical 筆刷語法沿 tile 路徑套用高度筆刷（與 AI planner 共用同一解析/格式化/執行）。"
     }
 
     fn description_en(&self) -> &str {
-        "Apply a circular terrain brush stroke at specified coordinates."
+        "Apply a height brush along a tile path using the canonical shared BrushCommand syntax."
     }
 
     fn usage_syntax(&self) -> &str {
-        "/brush <raise|lower|flatten|smooth> <cx> <cz> <radius> [strength]"
+        CanonicalBrush::USAGE
     }
 
     fn parameters(&self) -> &[CommandParameter] {
@@ -345,68 +378,61 @@ impl EditorCommand for BrushCommand {
         context: &mut CommandExecutionContext,
         snapshots: &mut Option<&mut Vec<MacroStepSnapshot>>,
     ) -> CommandResult {
-        let op = match command.get_positional(0) {
-            Some(o) => o.to_ascii_lowercase(),
-            None => return CommandResult::fail("缺少筆刷操作類型 (raise|lower|flatten|smooth)。"),
-        };
-
-        let cx = match command.try_get_positional_f32(1) {
-            Some(v) => v,
-            None => return CommandResult::fail("缺少圓心 X 座標。"),
-        };
-        let cz = match command.try_get_positional_f32(2) {
-            Some(v) => v,
-            None => return CommandResult::fail("缺少圓心 Z 座標。"),
-        };
-        let radius = match command.try_get_positional_f32(3) {
-            Some(v) => v,
-            None => return CommandResult::fail("缺少半徑。"),
-        };
-        let strength = command.try_get_positional_i32(4).unwrap_or(8);
-
-        let delta = match op.as_str() {
-            "raise" => strength,
-            "lower" => -strength,
-            "flatten" => {
-                let target = strength.clamp(0, 255) as u8;
-                let size = context.vertex_size;
-                let heights = match &mut context.heights {
-                    Some(h) if h.len() >= size * size => h,
-                    _ => return CommandResult::fail("地形高度未就緒。"),
-                };
-                let mut changes = Vec::new();
-                let c = MapRegionCircle::new(cx, cz, radius);
-                collect_circle_flatten(heights, size, c, target, &mut changes);
-                for &(idx, _, after) in &changes {
-                    heights[idx] = after;
-                }
-                let count = changes.len();
-                if let Some(recorder) = snapshots {
-                    recorder.push(MacroStepSnapshot::HeightDeltas { changes });
-                }
-                return CommandResult::ok(format!("成功整平 {count} 頂點至 {target}。"), count);
-            }
-            _ => strength,
-        };
+        if command
+            .get_positional(0)
+            .is_some_and(|op| LEGACY_OPS.iter().any(|l| l.eq_ignore_ascii_case(op)))
+        {
+            return CommandResult::fail(format!(
+                "舊版 /brush 語法已移除，請改用 canonical 語法: {}",
+                CanonicalBrush::USAGE
+            ));
+        }
 
         let size = context.vertex_size;
+        let tile_dimension = context.map_tile_dimension;
+        let surface_height = context.water_level;
         let heights = match &mut context.heights {
-            Some(h) if h.len() >= size * size => h,
+            Some(h) if size >= 2 && h.len() >= size * size => h,
             _ => return CommandResult::fail("地形高度未就緒。"),
         };
 
-        let mut changes = Vec::new();
-        let c = MapRegionCircle::new(cx, cz, radius);
-        collect_circle(heights, size, c, delta, &mut changes);
+        // 在副本上執行：任何失敗都不會動到 context，成功後以差異寫回並記錄快照。
+        let mut session = match TerrainSession::new(size, heights[..size * size].to_vec(), 0, None) {
+            Ok(s) => s,
+            Err(e) => return CommandResult::fail(format!("無法建立地形編輯工作階段: {e:?}")),
+        };
+        let text = canonical_input(&command.raw_text);
+        if let Err(e) = CanonicalBrush::run(&text, Some(&mut session), None, tile_dimension, surface_height) {
+            return CommandResult::fail(e);
+        }
+        let canonical = match CanonicalBrush::canonicalize(&text, tile_dimension) {
+            Ok(c) => c,
+            Err(e) => return CommandResult::fail(e),
+        };
+
+        let changes: Vec<(usize, u8, u8)> = session
+            .heights()
+            .iter()
+            .zip(heights.iter())
+            .enumerate()
+            .filter(|(_, (after, before))| after != before)
+            .map(|(idx, (&after, &before))| (idx, before, after))
+            .collect();
         for &(idx, _, after) in &changes {
             heights[idx] = after;
         }
         let count = changes.len();
-        if let Some(recorder) = snapshots {
-            recorder.push(MacroStepSnapshot::HeightDeltas { changes });
+        if count > 0 {
+            if let Some(recorder) = snapshots {
+                recorder.push(MacroStepSnapshot::HeightDeltas { changes });
+            }
         }
 
-        CommandResult::ok(format!("成功套用筆刷 {op} 於 {count} 個頂點。"), count)
+        CommandResult::ok_with_details(
+            format!("已變更 {count} 個高程頂點{CANONICAL_MARKER}{canonical}"),
+            count,
+            vec![canonical],
+        )
     }
 }
 

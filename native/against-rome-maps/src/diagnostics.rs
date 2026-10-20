@@ -1,8 +1,8 @@
 use crate::preflight::ScenarioEventValidator;
 use against_rome_landscape::cliff::CliffTileCatalog;
+use crate::route_check::TRAVEL_PATH_CHOKE;
 use against_rome_navigation::{
-    analyze_connectivity, evaluate_corridors, topological_chokes, ChokePoint, IsolatedRegion,
-    PassabilityGrid, RoadGap, TileChange,
+    analyze_connectivity, ChokePoint, IsolatedRegion, RoadGap, RouteDiagnostic, TileChange,
 };
 use against_rome_scenario::model::{Event, Spawn};
 use serde::{Deserialize, Serialize};
@@ -213,6 +213,10 @@ pub struct NavMeshAnalysisResult {
     pub road_gaps: Vec<RoadGap>,
     pub formation_choke_points: Vec<ChokePoint>,
     pub repairs: Vec<Vec<TileChange>>,
+    /// Per-route formation diagnostics for the default scenario routes.
+    pub routes: Vec<RouteDiagnostic>,
+    /// Actionable route findings (blocked endpoint, disconnected, formation choke on a route).
+    pub route_issues: Vec<MapIssue>,
 }
 
 impl NavMeshAnalysisResult {
@@ -222,6 +226,8 @@ impl NavMeshAnalysisResult {
             road_gaps: vec![],
             formation_choke_points: vec![],
             repairs: vec![],
+            routes: vec![],
+            route_issues: vec![],
         }
     }
 }
@@ -240,7 +246,15 @@ impl MapDiagnostics {
         let mut by_id = HashMap::new();
         for obj in &map.objects {
             let spawn = &obj.spawn;
-            if spawn.id.is_nil() || by_id.insert(spawn.id, obj).is_some() {
+            // C# `TryAdd`: the first object keeps the id; later duplicates are reported only.
+            let duplicate = match by_id.entry(spawn.id) {
+                std::collections::hash_map::Entry::Occupied(_) => true,
+                std::collections::hash_map::Entry::Vacant(slot) => {
+                    slot.insert(obj);
+                    false
+                }
+            };
+            if spawn.id.is_nil() || duplicate {
                 issues.push(MapIssue {
                     severity: MapIssueSeverity::Error,
                     code: "identity".into(),
@@ -361,15 +375,21 @@ impl MapDiagnostics {
             .collect();
 
         // 64 單位重疊檢查
-        let mut grouped: HashMap<(i32, i32), Vec<&MapCheckObject>> = HashMap::new();
+        // Keep first-seen group order (C# GroupBy) so issue order is deterministic.
+        let mut group_slot: HashMap<(i32, i32), usize> = HashMap::new();
+        let mut grouped: Vec<Vec<&MapCheckObject>> = Vec::new();
         for obj in &valid {
             let key = (
                 (obj.spawn.x / 64.0) as i32,
                 (obj.spawn.z / 64.0) as i32,
             );
-            grouped.entry(key).or_default().push(obj);
+            let slot = *group_slot.entry(key).or_insert_with(|| {
+                grouped.push(Vec::new());
+                grouped.len() - 1
+            });
+            grouped[slot].push(obj);
         }
-        for (_, group) in grouped {
+        for group in grouped {
             if group.len() > 1 {
                 for obj in group {
                     issues.push(MapIssue {
@@ -637,6 +657,8 @@ impl MapDiagnostics {
             }
         }
 
+        issues.extend(Self::route_coverage_issues(map));
+
         issues
     }
 
@@ -653,28 +675,9 @@ impl MapDiagnostics {
             return NavMeshAnalysisResult::empty();
         }
 
-        let height_param = if map.height_size > 1
-            && map.heights.is_some()
-            && map.heights.as_ref().unwrap().len() == map.height_size * map.height_size
-        {
-            Some((
-                map.height_size,
-                map.heights.as_deref().unwrap(),
-                map.height_step,
-                map.water_level,
-            ))
-        } else {
-            None
-        };
-
-        let grid = match PassabilityGrid::new(
-            map.collision_size,
-            map.collision.as_deref(),
-            height_param,
-            16384.0,
-        ) {
-            Ok(g) => g,
-            Err(_) => return NavMeshAnalysisResult::empty(),
+        let grid = match Self::passability_grid(map) {
+            Some(g) => g,
+            None => return NavMeshAnalysisResult::empty(),
         };
 
         let primary_seeds: Vec<(i32, i32)> = map
@@ -738,41 +741,24 @@ impl MapDiagnostics {
             }
         }
 
-        let mut trips = Vec::new();
-        let squads: Vec<&MapCheckObject> = map
+        let requests = Self::scenario_route_requests(map);
+        let squad_max = map
             .objects
             .iter()
             .filter(|o| o.spawn.count > 1 && Self::valid_point(o.spawn.x, o.spawn.z))
-            .collect();
-        let enemy_or_targets: Vec<&MapCheckObject> = map
-            .objects
-            .iter()
-            .filter(|o| o.spawn.team != 0 && Self::valid_point(o.spawn.x, o.spawn.z))
-            .collect();
-
-        for squad in &squads {
-            let start = grid.world_to_tile(squad.spawn.x, squad.spawn.z);
-            for target in enemy_or_targets.iter().take(3) {
-                let end = grid.world_to_tile(target.spawn.x, target.spawn.z);
-                trips.push((start, end, squad.spawn.count as usize));
-            }
-        }
-
-        let mut chokes = evaluate_corridors(&grid, &trips);
-        if chokes.is_empty() && !squads.is_empty() {
-            let max_count = squads
-                .iter()
-                .map(|s| s.spawn.count as usize)
-                .max()
-                .unwrap_or(1);
-            chokes = topological_chokes(&grid, max_count);
-        }
+            .map(|o| o.spawn.count)
+            .max()
+            .unwrap_or(0);
+        let report = Self::check_routes_on_grid(&grid, &requests, squad_max);
+        let chokes = report.choke_points();
 
         NavMeshAnalysisResult {
             isolated_regions: isolated,
             road_gaps: gaps,
             formation_choke_points: chokes,
             repairs,
+            routes: report.formation.routes,
+            route_issues: report.route_issues,
         }
     }
 
@@ -833,24 +819,15 @@ impl MapDiagnostics {
             });
         }
 
-        for choke in &nav_result.formation_choke_points {
-            issues.push(MapIssue {
-                severity: MapIssueSeverity::Warning,
-                code: "formation-bottleneck".into(),
-                chinese: format!(
-                    "關鍵通道淨寬僅 {} 格（約 {:.0} 單位），無法容納 {} 人方陣通行（需 {} 格，安全上限 {} 人）。",
-                    choke.clearance, choke.width, choke.troop_count, choke.required, choke.safe_units
-                ),
-                english: format!(
-                    "Choke point clearance is only {} tiles (~{:.0} units); cannot fit {}-man formation (requires {} tiles, safe max {}).",
-                    choke.clearance, choke.width, choke.troop_count, choke.required, choke.safe_units
-                ),
-                object_id: Uuid::nil(),
-                event_index: -1,
-                world_x: Some(choke.location.world_x),
-                world_z: Some(choke.location.world_z),
-            });
+        // Corridor chokes are reported with route context in `route_issues`.
+        for choke in nav_result
+            .formation_choke_points
+            .iter()
+            .filter(|c| c.kind != TRAVEL_PATH_CHOKE)
+        {
+            issues.push(crate::route_check::bottleneck_issue(choke));
         }
+        issues.extend(nav_result.route_issues.iter().cloned());
 
         issues
     }

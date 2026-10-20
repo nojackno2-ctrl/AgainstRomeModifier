@@ -534,3 +534,342 @@ impl EditorBrushExecutor {
         count
     }
 }
+
+/// Canonical, replayable `/brush` command text. Mirrors C# `BrushCommand.Format/Execute`:
+/// `/brush height <raise|lower|smooth|flatten|roughen|water> <x,y> ... [--size 1|3|5|9|15] [--strength gentle|medium|strong]`,
+/// `/brush collision <block|passable> <x,y> ... [--size 1|3|5|9|15]`,
+/// `/brush material <materialId> <x,y> ... [--size N] [--auto-bridge]`.
+pub struct BrushCommand;
+
+impl BrushCommand {
+    /// Canonical usage syntax string.
+    pub const USAGE: &'static str = "/brush height <raise|lower|smooth|flatten|roughen|water> <x,y> ... [--size 1|3|5|9|15] [--strength gentle|medium|strong] | /brush collision <block|passable> <x,y> ... [--size 1|3|5|9|15] | /brush material <materialId> <x,y> ... [--size N] [--auto-bridge]";
+
+    /// Formats an [`EditorBrushStroke`] into canonical, replayable command text.
+    ///
+    /// Validates stroke properties (non-empty path, non-negative coordinates, valid sizes,
+    /// and required material names) so that every formatted command is guaranteed to parse back.
+    pub fn format(stroke: &EditorBrushStroke) -> Result<String, String> {
+        if stroke.path.is_empty() {
+            return Err("Brush path must not be empty.".to_string());
+        }
+        if stroke.path.iter().any(|p| p.0 < 0 || p.1 < 0) {
+            return Err("Invalid coordinate in brush path.".to_string());
+        }
+        if stroke.size <= 0
+            || (stroke.tool != EditorBrushTool::Material
+                && !EditorBrushStroke::BRUSH_SIZES.contains(&stroke.size))
+        {
+            return Err("Invalid brush size.".to_string());
+        }
+        let (tool, argument) = match stroke.tool {
+            EditorBrushTool::Height => (
+                "height",
+                match stroke.height_operation {
+                    EditorHeightBrush::Raise => "raise",
+                    EditorHeightBrush::Lower => "lower",
+                    EditorHeightBrush::Smooth => "smooth",
+                    EditorHeightBrush::Flatten => "flatten",
+                    EditorHeightBrush::Roughen => "roughen",
+                    EditorHeightBrush::Water => "water",
+                }
+                .to_string(),
+            ),
+            EditorBrushTool::Collision => (
+                "collision",
+                if stroke.block { "block" } else { "passable" }.to_string(),
+            ),
+            EditorBrushTool::Material => match stroke.material.as_deref() {
+                Some(m) if !m.trim().is_empty() => (
+                    "material",
+                    format!("\"{}\"", m.replace('\\', "\\\\").replace('"', "\\\"")),
+                ),
+                _ => return Err("Invalid brush tool or material.".to_string()),
+            },
+        };
+        let path: Vec<String> = stroke.path.iter().map(|p| format!("{},{}", p.0, p.1)).collect();
+        let mut text = format!("/brush {} {} {} --size {}", tool, argument, path.join(" "), stroke.size);
+        if stroke.tool == EditorBrushTool::Height {
+            text.push_str(match stroke.strength_level {
+                0 => " --strength gentle",
+                1 => " --strength medium",
+                2 => " --strength strong",
+                _ => return Err("Invalid strength.".to_string()),
+            });
+        }
+        if stroke.tool == EditorBrushTool::Material && stroke.auto_bridge {
+            text.push_str(" --auto-bridge");
+        }
+        Ok(text)
+    }
+
+    fn tokenize(text: &str) -> Result<Vec<String>, String> {
+        let mut tokens = Vec::new();
+        let mut cur = String::new();
+        let mut in_token = false;
+        let mut quoted = false;
+        let mut chars = text.chars();
+        while let Some(c) = chars.next() {
+            if quoted {
+                match c {
+                    '\\' => match chars.next() {
+                        Some(n @ ('\\' | '"')) => cur.push(n),
+                        Some(n) => {
+                            cur.push('\\');
+                            cur.push(n);
+                        }
+                        None => return Err("未結束的跳脫字元。".to_string()),
+                    },
+                    '"' => quoted = false,
+                    _ => cur.push(c),
+                }
+            } else if c == '"' {
+                quoted = true;
+                in_token = true;
+            } else if c.is_whitespace() {
+                if in_token {
+                    tokens.push(std::mem::take(&mut cur));
+                    in_token = false;
+                }
+            } else {
+                cur.push(c);
+                in_token = true;
+            }
+        }
+        if quoted {
+            return Err("未結束的引號。".to_string());
+        }
+        if in_token {
+            tokens.push(cur);
+        }
+        Ok(tokens)
+    }
+
+    /// Strictly parses a `/brush` line; nothing is executed when it fails.
+    pub fn parse(text: &str, dimension: usize) -> Result<EditorBrushStroke, String> {
+        let tokens = Self::tokenize(text.trim())?;
+        let mut it = tokens.into_iter();
+        match it.next() {
+            Some(c) if c.eq_ignore_ascii_case("/brush") => {}
+            _ => return Err(Self::USAGE.to_string()),
+        }
+        let mut positional: Vec<String> = Vec::new();
+        let mut size_flag: Option<String> = None;
+        let mut strength_flag: Option<String> = None;
+        let mut auto_bridge = false;
+        let rest: Vec<String> = it.collect();
+        let mut i = 0;
+        while i < rest.len() {
+            let t = &rest[i];
+            if let Some(name) = t.strip_prefix("--") {
+                let has_value = rest.get(i + 1).is_some_and(|n| !n.starts_with("--"));
+                match name.to_ascii_lowercase().as_str() {
+                    "size" | "strength" => {
+                        if !has_value {
+                            return Err(format!("旗標 --{name} 缺少值。"));
+                        }
+                        let slot = if name.eq_ignore_ascii_case("size") { &mut size_flag } else { &mut strength_flag };
+                        if slot.replace(rest[i + 1].clone()).is_some() {
+                            return Err(format!("旗標 --{name} 重複。"));
+                        }
+                        i += 2;
+                    }
+                    "auto-bridge" => {
+                        if has_value {
+                            return Err("--auto-bridge 不接受參數，請放在座標之後。".to_string());
+                        }
+                        if auto_bridge {
+                            return Err("旗標 --auto-bridge 重複。".to_string());
+                        }
+                        auto_bridge = true;
+                        i += 1;
+                    }
+                    _ => return Err(format!("未知的筆刷旗標：--{name}")),
+                }
+            } else {
+                positional.push(t.clone());
+                i += 1;
+            }
+        }
+
+        let tool = match positional.first().map(|s| s.to_ascii_lowercase()).as_deref() {
+            Some("height") => EditorBrushTool::Height,
+            Some("collision") => EditorBrushTool::Collision,
+            Some("material") => EditorBrushTool::Material,
+            _ => return Err(Self::USAGE.to_string()),
+        };
+        let argument = positional
+            .get(1)
+            .filter(|a| !a.trim().is_empty())
+            .ok_or_else(|| Self::USAGE.to_string())?;
+        let mut stroke = EditorBrushStroke::new(tool, Vec::new());
+        match tool {
+            EditorBrushTool::Height => {
+                stroke.height_operation = match argument.to_ascii_lowercase().as_str() {
+                    "raise" => EditorHeightBrush::Raise,
+                    "lower" => EditorHeightBrush::Lower,
+                    "smooth" => EditorHeightBrush::Smooth,
+                    "flatten" => EditorHeightBrush::Flatten,
+                    "roughen" => EditorHeightBrush::Roughen,
+                    "water" => EditorHeightBrush::Water,
+                    _ => return Err("未知的高度筆刷操作。".to_string()),
+                }
+            }
+            EditorBrushTool::Collision => {
+                stroke.block = match argument.to_ascii_lowercase().as_str() {
+                    "block" => true,
+                    "passable" => false,
+                    _ => return Err("通行筆刷須指定 block 或 passable。".to_string()),
+                }
+            }
+            EditorBrushTool::Material => stroke.material = Some(argument.clone()),
+        }
+        if (strength_flag.is_some() && tool != EditorBrushTool::Height)
+            || (auto_bridge && tool != EditorBrushTool::Material)
+        {
+            return Err("此旗標不適用於選取的筆刷。".to_string());
+        }
+        if let Some(s) = size_flag {
+            let size: i32 = s.parse().map_err(|_| "筆刷大小無效。".to_string())?;
+            if size <= 0 || (tool != EditorBrushTool::Material && !EditorBrushStroke::BRUSH_SIZES.contains(&size)) {
+                return Err("筆刷大小無效。".to_string());
+            }
+            stroke.size = size;
+        }
+        if let Some(s) = strength_flag {
+            stroke.strength_level = match s.to_ascii_lowercase().as_str() {
+                "gentle" => 0,
+                "medium" => 1,
+                "strong" => 2,
+                _ => return Err("筆刷強度須為 gentle、medium 或 strong。".to_string()),
+            };
+        }
+        stroke.auto_bridge = auto_bridge;
+        for raw in &positional[2..] {
+            let bad = || format!("tile 座標無效：{raw}");
+            let (xs, ys) = raw.split_once(',').ok_or_else(bad)?;
+            // C# int.TryParse(NumberStyles.Integer) accepts surrounding whitespace and one leading sign.
+            let int = |s: &str| {
+                let s = s.trim();
+                let digits = s.strip_prefix(['+', '-']).unwrap_or(s);
+                if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
+                    return None;
+                }
+                s.parse::<i32>().ok()
+            };
+            let x = int(xs).ok_or_else(bad)?;
+            let y = int(ys).ok_or_else(bad)?;
+            if x < 0 || y < 0 || x as usize >= dimension || y as usize >= dimension {
+                return Err(bad());
+            }
+            stroke.path.push((x, y));
+        }
+        if stroke.path.is_empty() || dimension == 0 {
+            return Err(Self::USAGE.to_string());
+        }
+        Ok(stroke)
+    }
+
+    /// Canonicalizes any valid `/brush` text into the standard canonical replay string.
+    pub fn canonicalize(text: &str, dimension: usize) -> Result<String, String> {
+        let stroke = Self::parse(text, dimension)?;
+        Self::format(&stroke)
+    }
+
+    /// Parse, execute and commit one undo step like the C# macro command (no scope/material fallback).
+    ///
+    /// If execution fails (e.g., rejected material dabs or invalid map state), pending changes
+    /// are rolled back immediately, leaving the terrain untouched.
+    pub fn run(
+        text: &str,
+        heights: Option<&mut TerrainSession>,
+        blend: Option<&mut TerrainBlendEditSession>,
+        dimension: usize,
+        surface_height: f32,
+    ) -> Result<EditorBrushResult, String> {
+        let stroke = Self::parse(text, dimension)?;
+        let (mut heights, mut blend) = (heights, blend);
+        let missing = if stroke.tool == EditorBrushTool::Material {
+            blend.is_none()
+        } else {
+            heights.is_none()
+        };
+        if missing {
+            return Err("此地圖沒有可編輯的筆刷圖層。".to_string());
+        }
+        if stroke.tool == EditorBrushTool::Collision
+            && heights.as_ref().and_then(|h| h.collision()).is_none()
+        {
+            return Err("此地圖沒有可編輯的 collision.bmp。".to_string());
+        }
+        if stroke.tool == EditorBrushTool::Height
+            && stroke.height_operation == EditorHeightBrush::Water
+            && (!surface_height.is_finite() || surface_height < 0.0)
+        {
+            return Err("水面高度無效。".to_string());
+        }
+
+        let result = EditorBrushExecutor::execute(
+            &stroke,
+            heights.as_deref_mut(),
+            blend.as_deref_mut(),
+            dimension,
+            surface_height,
+            0,
+            None,
+            None,
+            None,
+            None,
+        );
+
+        let total_changed = result.height_samples_changed
+            + result.collision_pixels_changed
+            + result.material_tiles_changed;
+
+        if result.rejected_material_dabs > 0 {
+            if let Some(b) = blend.as_deref_mut() {
+                b.cancel_stroke();
+            }
+            return Err("材質筆觸無法由原版 transition tile 表達。".to_string());
+        }
+
+        if let Some(ref notice) = result.notice {
+            if total_changed == 0 {
+                if let Some(h) = heights.as_deref_mut() {
+                    h.cancel_stroke();
+                }
+                if let Some(b) = blend.as_deref_mut() {
+                    b.cancel_stroke();
+                }
+                return Err(notice.clone());
+            }
+        }
+
+        if stroke.tool == EditorBrushTool::Material {
+            if let Some(b) = blend.as_deref_mut() {
+                b.commit_stroke();
+            }
+        } else if let Some(h) = heights.as_deref_mut() {
+            h.commit_stroke();
+        }
+        Ok(result)
+    }
+}
+
+#[cfg(test)]
+mod parse_compat_tests {
+    use super::*;
+
+    #[test]
+    fn coordinates_follow_csharp_integer_style() {
+        let s = BrushCommand::parse("/brush collision block +3,4 \" 5, 6 \" -0,+0", 10).unwrap();
+        assert_eq!(s.path, vec![(3, 4), (5, 6), (0, 0)]);
+        for bad in ["+,1", "1,", "--1,2", "+-1,2", "1,2,3", "-1,2", "+10,0"] {
+            let cmd = format!("/brush collision block {bad}");
+            assert!(BrushCommand::parse(&cmd, 10).is_err(), "{cmd}");
+        }
+        // canonical output drops the sign/whitespace and round-trips
+        let canon = BrushCommand::canonicalize("/brush collision block +3,4", 10).unwrap();
+        assert_eq!(canon, "/brush collision block 3,4 --size 1");
+    }
+}

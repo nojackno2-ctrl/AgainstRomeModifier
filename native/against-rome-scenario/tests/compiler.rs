@@ -478,3 +478,116 @@ fn deleting_prebuilt_removes_its_data_slots_and_allows_export() {
     assert!(referenced.remove_spawn(id).is_err());
     assert_eq!(serde_json::to_vec(&referenced).unwrap(), before);
 }
+
+#[test]
+fn vidx_bounds_checked_and_negative_rejected() {
+    let mut image = BciImage::idle();
+    image.variables = b"var1\0".to_vec();
+    image.variable_offsets = vec![0];
+    let raw = image.serialize();
+    assert!(BciImage::parse(&raw).is_ok());
+
+    // Case 1: Negative VIDX offset
+    image.variable_offsets = vec![-1];
+    let bad_negative = image.serialize();
+    assert!(BciImage::parse(&bad_negative).is_err());
+
+    // Case 2: Out of bounds VIDX offset (> variables.len())
+    image.variable_offsets = vec![100];
+    let bad_oob = image.serialize();
+    assert!(BciImage::parse(&bad_oob).is_err());
+
+    // Case 3: Empty variables but non-empty VIDX
+    image.variables.clear();
+    image.variable_offsets = vec![0];
+    let bad_empty_var = image.serialize();
+    assert!(BciImage::parse(&bad_empty_var).is_err());
+}
+
+#[test]
+fn prebuilt_data_binding_management_and_preflight_validation() {
+    let mut doc = ScenarioDocument::default();
+    let spawn_id = new_spawn_id();
+    doc.spawns.push(Spawn {
+        alias: "house".into(),
+        x: 100.0,
+        z: 200.0,
+        team: 0,
+        count: 0,
+        angle: 0,
+        y: 0.0,
+        prebuilt: true,
+        id: spawn_id,
+        raw_rotation: None,
+    });
+
+    // Test data_binding query when unbound
+    assert!(doc.data_binding(spawn_id).is_none());
+
+    // Test binding valid slot
+    assert!(doc.bind_prebuilt(spawn_id, 10, 500).is_ok());
+    let binding = doc.data_binding(spawn_id).unwrap();
+    assert_eq!(binding.slot, 10);
+    assert_eq!(binding.uid, 500);
+
+    // Test re-binding updates in place
+    assert!(doc.bind_prebuilt(spawn_id, 12, 501).is_ok());
+    assert_eq!(doc.data_binding(spawn_id).unwrap().slot, 12);
+    assert_eq!(doc.data_slots.len(), 1);
+
+    // Test binding duplicate slot to different spawn
+    let spawn_id2 = new_spawn_id();
+    doc.spawns.push(Spawn {
+        alias: "house".into(),
+        x: 150.0,
+        z: 250.0,
+        team: 0,
+        count: 0,
+        angle: 0,
+        y: 0.0,
+        prebuilt: true,
+        id: spawn_id2,
+        raw_rotation: None,
+    });
+    assert!(doc.bind_prebuilt(spawn_id2, 12, 999).is_err());
+
+    // Test unbind_prebuilt
+    doc.unbind_prebuilt(spawn_id);
+    assert!(doc.data_binding(spawn_id).is_none());
+    assert_eq!(doc.data_slots.len(), 0);
+
+    // Test prepare_identities on doc with nil IDs
+    let mut blank_doc = ScenarioDocument::default();
+    blank_doc.spawns.push(Spawn {
+        alias: "house".into(),
+        x: 100.0,
+        z: 200.0,
+        team: 0,
+        count: 0,
+        angle: 0,
+        y: 0.0,
+        prebuilt: true,
+        id: uuid::Uuid::nil(),
+        raw_rotation: None,
+    });
+    assert!(blank_doc.prepare_identities(true).is_ok());
+    assert!(!blank_doc.spawns[0].id.is_nil());
+    assert_eq!(blank_doc.spawns[0].id, legacy_spawn_id(0));
+
+    // Test preflight_validate with DataBindingSource
+    let temp = std::env::temp_dir().join(format!("arm-preflight-{}", new_spawn_id()));
+    std::fs::create_dir_all(temp.join("DATA")).unwrap();
+    let path = temp.join("DATA/objects.dat");
+    std::fs::write(&path, object_file(777, true)).unwrap();
+    let source = DataBindingSource::load(&temp).unwrap();
+    assert!(source.is_slot_active(9, 777));
+    assert_eq!(source.uid_for_slot(9), Some(777));
+    assert!(!source.is_slot_active(9, 888));
+
+    // Bind slot 9 to spawn
+    blank_doc.bind_prebuilt(blank_doc.spawns[0].id, 9, 777).unwrap();
+    assert!(blank_doc.preflight_validate(Some(&["house".into()]), Some(&source)).is_ok());
+    assert_eq!(blank_doc.sync_prebuilt_bindings(&source).unwrap(), 1);
+
+    std::fs::remove_dir_all(temp).unwrap();
+}
