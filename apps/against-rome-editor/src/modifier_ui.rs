@@ -7,8 +7,9 @@
 
 use against_rome_ambience::app_localization::{Language, Loc};
 use against_rome_modifier::{
+    icons::{self, UnitIcons, ICON_INI_KEY},
     cli::{commit_plan, profile_from_json, profile_to_json, ENABLE_ALL_EXCLUDED},
-    features::{FeatureCategory, FeatureControlKind, FeatureRegistry, PatchProfile},
+    features::{FeatureCategory, FeatureControlKind, FeatureDefinition, FeatureRegistry, PatchProfile},
     install::{plan_install, sha256, InstallResources},
     services::{BackupManager, GameDirectoryLocator, PatchEngine, PatchFilePlan},
     troops::TroopConfig,
@@ -23,6 +24,32 @@ use std::{
 use uuid::Uuid;
 
 pub type ModResult<T> = Result<T, String>;
+
+/// Process spawner used by "Start Game": `(exe path, working directory)`. Injectable so tests never spawn.
+pub type GameLauncher = Box<dyn Fn(&Path, &Path) -> io::Result<()> + Send + Sync>;
+
+/// Real launcher: `Against_Rome.exe` with the game directory as working directory (C# `ProcessStartInfo`).
+pub fn spawn_game_process(exe: &Path, work_dir: &Path) -> io::Result<()> {
+    std::process::Command::new(exe).current_dir(work_dir).spawn().map(|_| ())
+}
+
+/// Features shown on the Experimental page until promoted (C# `InitializeExperimentalFeatures`).
+pub const EXPERIMENTAL_FEATURES: [&str; 8] = [
+    "Balance",
+    "SpellHealing10x",
+    "SpellResurrection",
+    "GeneralSkills",
+    "LeaderGlory",
+    "VillageGarrisonQuota3x",
+    "ArgmTrace",
+    "CorpseRetention",
+];
+
+pub fn is_experimental_feature(id: &str) -> bool {
+    EXPERIMENTAL_FEATURES.iter().any(|x| x.eq_ignore_ascii_case(id))
+}
+const APP_SETTINGS_FILE: &str = "app_settings.json";
+
 fn io_err(e: io::Error) -> String {
     e.to_string()
 }
@@ -573,6 +600,20 @@ impl UnitStatsRow {
     }
 }
 
+/// Draws the unit icon cell (24x24); an empty cell when the icon is unavailable. Textures are cached per unit.
+fn show_unit_icon(ui: &mut egui::Ui, ctx: &egui::Context, icons: &Option<UnitIcons>, textures: &mut std::collections::HashMap<String, egui::TextureHandle>, key: &str) {
+    let size = egui::vec2(24.0, 24.0);
+    let Some(icon) = icons.as_ref().and_then(|i| i.get(key)) else {
+        ui.allocate_space(size);
+        return;
+    };
+    let tex = textures.entry(key.to_ascii_lowercase()).or_insert_with(|| {
+        let image = egui::ColorImage::from_rgba_unmultiplied([icon.width, icon.height], &icon.rgba);
+        ctx.load_texture(format!("unit_icon_{key}"), image, egui::TextureOptions::LINEAR)
+    });
+    ui.image((tex.id(), size));
+}
+
 /// Gregorian UTC timestamp, without adding a date/time dependency.
 fn preset_timestamp() -> String {
     let seconds = snapshot::now();
@@ -601,6 +642,10 @@ pub struct ModifierModel {
     pub backup_base: PathBuf,
     pub preview: Option<ModifierPreview>,
     pub log: Vec<String>,
+    /// Preset label shown next to the troop stats (C# `presetFileName`); empty = default.
+    pub preset_label: String,
+    /// App-wide preferences (promoted experimental features); persisted by `Loc` when it has a path.
+    pub app_loc: Loc,
     settings_dirty: bool,
 }
 
@@ -620,6 +665,8 @@ impl Default for ModifierModel {
             backup_base: std::env::current_exe().ok().and_then(|p| p.parent().map(Path::to_path_buf)).unwrap_or_default(),
             preview: None,
             log: Vec::new(),
+            preset_label: String::new(),
+            app_loc: Loc::default(),
             settings_dirty: false,
         }
     }
@@ -627,7 +674,8 @@ impl Default for ModifierModel {
 
 impl ModifierModel {
     pub fn with_state_dir(dir: PathBuf) -> Self {
-        Self { state_dir: Some(dir), ..Self::default() }
+        let app_loc = Loc::load(dir.join(APP_SETTINGS_FILE), "zh-TW");
+        Self { state_dir: Some(dir), app_loc, ..Self::default() }
     }
     pub fn loc(&self) -> Loc {
         Loc::new(if self.english { Language::English } else { Language::TraditionalChinese })
@@ -647,6 +695,90 @@ impl ModifierModel {
         if self.log.len() > 200 {
             self.log.drain(..self.log.len() - 200);
         }
+    }
+
+    // ---- Start Game (C# BtnStartGame_Click)
+    /// Launches `<game>/Against_Rome.exe` through `launch`. Errors use the C# messages and are also logged.
+    pub fn start_game_with(&mut self, launch: &dyn Fn(&Path, &Path) -> io::Result<()>) -> ModResult<PathBuf> {
+        let loc = self.loc();
+        let game = PathBuf::from(self.game_path.trim());
+        if self.game_path.trim().is_empty() || !game.is_dir() {
+            return Err(loc.get("MsgSelectGameDir").to_owned());
+        }
+        let exe = game.join("Against_Rome.exe");
+        if !exe.is_file() {
+            return Err(loc.get("MsgExeNotFound").to_owned());
+        }
+        match launch(&exe, &game) {
+            Ok(()) => {
+                self.note(loc.get("LogGameStarted"));
+                Ok(exe)
+            }
+            Err(e) => {
+                let msg = format!("{}{e}", loc.get("MsgLaunchFailed"));
+                self.note(msg.clone());
+                Err(msg)
+            }
+        }
+    }
+
+    // ---- Experimental grouping (C# InitializeExperimentalFeatures / UpdateExperimentalLayout)
+    pub fn is_promoted(&self, id: &str) -> bool {
+        self.app_loc.is_promoted(id)
+    }
+    /// Moves an experimental feature to the main list (promote) or back (demote). Returns the new promoted state.
+    pub fn toggle_promotion(&mut self, id: &str) -> ModResult<bool> {
+        let def = FeatureRegistry::get(id).filter(|d| is_experimental_feature(d.id)).ok_or_else(|| format!("'{id}' 不是實驗性功能。"))?;
+        if self.app_loc.is_promoted(def.id) {
+            self.app_loc.demote_feature(def.id);
+            self.note(format!("已將功能 {} 移回實驗性頁面。", def.id));
+            Ok(false)
+        } else {
+            self.app_loc.promote_feature(def.id);
+            self.note(format!("已將功能 {} 移至主控制台。", def.id));
+            Ok(true)
+        }
+    }
+
+    // ---- Balanced Base Stats template (C# CbTroopTemplate_SelectedIndexChanged)
+    /// Replaces every custom unit stat with the built-in balanced values (speed/range/radius, and
+    /// priest sight, kept at original like `NormalizeIndependentFields`). Caller must have confirmed.
+    /// Returns the number of units written. Nothing is changed on error.
+    pub fn apply_balanced_template(&mut self) -> ModResult<usize> {
+        let game = self.game_dir()?;
+        let backup = self.load_backup(&game, false)?;
+        let mut stats = std::collections::BTreeMap::new();
+        for key in TroopConfig::sorted_units() {
+            if TroopConfig::get_metadata(key).is_none() {
+                continue;
+            }
+            let balanced = backup.get_default_balanced_stats(key).map_err(io_err)?;
+            let normalized = against_rome_modifier::unit_stats::normalize_independent_fields(&backup, key, &balanced).map_err(io_err)?;
+            stats.insert(key.to_owned(), normalized.to_vec());
+        }
+        let n = stats.len();
+        self.profile.custom_unit_stats = Some(stats.into_iter().collect());
+        self.preset_label = self.loc().get("TroopTemplateBalanced").to_owned();
+        self.touch();
+        self.note(if self.english { "Applied built-in balanced troop stats template." } else { "已套用修改器內建平衡兵種屬性範本。" });
+        Ok(n)
+    }
+
+    // ---- unit icons (C# LoadIcons)
+    /// Reads `icon.ini` from the original backup and TGAs from `gui.dat`; logs like C#. Never writes.
+    pub fn load_unit_icons(&mut self) -> UnitIcons {
+        let game = Some(PathBuf::from(self.game_path.trim())).filter(|p| !self.game_path.trim().is_empty() && p.is_dir());
+        let ini = game
+            .as_ref()
+            .filter(|g| g.join("gui.dat").is_file())
+            .and_then(|g| self.load_backup(g, false).ok())
+            .and_then(|b| b.get_backup_bytes(ICON_INI_KEY).ok().map(<[u8]>::to_vec));
+        let icons = icons::load_unit_icons(game.as_deref(), ini.as_deref());
+        let loc = self.loc();
+        for entry in &icons.log {
+            self.note(entry.format(|k| loc.get(k).to_owned()));
+        }
+        icons
     }
 
     // ---- selection
@@ -1086,6 +1218,12 @@ pub struct ModifierUi {
     snapshots_stale: bool,
     startup_migrated: bool,
     status: Option<(String, bool)>,
+    /// Process spawner for "Start Game"; replaceable via [`ModifierUi::with_game_launcher`].
+    launcher: GameLauncher,
+    /// Confirmation dialog for the Balanced Base Stats template is open.
+    pub template_confirm: bool,
+    icons: Option<UnitIcons>,
+    icon_textures: std::collections::HashMap<String, egui::TextureHandle>,
 }
 
 impl Default for ModifierUi {
@@ -1106,6 +1244,10 @@ impl Default for ModifierUi {
             snapshots_stale: true,
             startup_migrated: false,
             status: None,
+            launcher: Box::new(spawn_game_process),
+            template_confirm: false,
+            icons: None,
+            icon_textures: std::collections::HashMap::new(),
         }
     }
 }
@@ -1124,6 +1266,9 @@ enum Action {
     LoadProfile(String),
     Export,
     Import,
+    StartGame,
+    ConfirmTemplate,
+    TogglePromotion(String),
 }
 
 fn category_label(c: Option<FeatureCategory>) -> &'static str {
@@ -1139,6 +1284,12 @@ impl ModifierUi {
     /// Restores the persisted selection from `state_dir`; a corrupt file is reported, not fatal.
     pub fn persisted(state_dir: PathBuf) -> Self {
         let mut ui = Self { model: ModifierModel::with_state_dir(state_dir), ..Self::default() };
+        // Promoted features live in the settings file shared with the C# tools
+        // and the editor (`%APPDATA%\AgainstRomeModifier\settings.json`).
+        if let Some(appdata) = std::env::var_os("APPDATA") {
+            let shared = PathBuf::from(appdata).join("AgainstRomeModifier").join("settings.json");
+            ui.model.app_loc = Loc::load(shared, "zh-TW");
+        }
         if let Err(e) = ui.model.load_settings() {
             ui.status = Some((e, true));
         }
@@ -1162,6 +1313,24 @@ impl ModifierUi {
     {
         self.preset_file_picker = Some(Box::new(picker));
         self
+    }
+    /// Replaces the process spawner (tests inject a fake so nothing is ever launched).
+    pub fn with_game_launcher<F>(mut self, launcher: F) -> Self
+    where
+        F: Fn(&Path, &Path) -> io::Result<()> + Send + Sync + 'static,
+    {
+        self.launcher = Box::new(launcher);
+        self
+    }
+    /// "Start Game" action; also usable headlessly.
+    pub fn start_game(&mut self) -> ModResult<String> {
+        let r = self.model.start_game_with(&*self.launcher);
+        r.map(|exe| format!("已啟動 {}", exe.display()))
+    }
+    /// Loads unit icons once per (re)open of the stats editor; textures are created lazily in `show_unit_stats`.
+    fn reload_icons(&mut self) {
+        self.icon_textures.clear();
+        self.icons = Some(self.model.load_unit_icons());
     }
     pub fn set_status(&mut self, r: ModResult<String>) {
         self.status = Some(match r {
@@ -1210,6 +1379,19 @@ impl ModifierUi {
                 let p = PathBuf::from(self.export_path.trim());
                 self.model.import_profile(&p).map(|_| format!("已匯入 {}", p.display()))
             }
+            Action::StartGame => self.start_game(),
+            Action::ConfirmTemplate => {
+                self.template_confirm = false;
+                let r = self.model.apply_balanced_template().map(|n| format!("已套用修改器內建平衡範本 ({n} 個兵種)，請重新預覽套用。"));
+                if r.is_ok() {
+                    // An open draft was built from the previous profile and would be rejected on apply.
+                    self.unit_stats_draft = None;
+                }
+                r
+            }
+            Action::TogglePromotion(id) => self.model.toggle_promotion(&id).map(|promoted| {
+                if promoted { format!("{id} 已移至主控制台") } else { format!("{id} 已移回實驗性") }
+            }),
         };
         self.confirm_write = false;
         self.set_status(r);
@@ -1231,6 +1413,9 @@ impl ModifierUi {
         self.open = open;
         self.show_unit_stats(ctx);
         if let Some(a) = self.show_restore_dialog(ctx) {
+            action = Some(a);
+        }
+        if let Some(a) = self.show_template_dialog(ctx) {
             action = Some(a);
         }
         if let Some(a) = action {
@@ -1256,6 +1441,9 @@ impl ModifierUi {
             }
             if ui.button("載入遊戲目前狀態").on_hover_text("唯讀掃描遊戲檔案，將偵測到的功能設為目前選擇").clicked() {
                 action = Some(Action::LoadCurrent);
+            }
+            if ui.button(if self.model.english { "Start Game" } else { "啟動遊戲" }).on_hover_text("以遊戲目錄為工作目錄啟動 Against_Rome.exe").clicked() {
+                action = Some(Action::StartGame);
             }
         });
         ui.horizontal(|ui| {
@@ -1316,7 +1504,9 @@ impl ModifierUi {
                 action = Some(Action::Clear);
             }
         });
-        self.draw_features(ui);
+        if let Some(a) = self.draw_features(ui) {
+            action = Some(a);
+        }
 
         ui.separator();
         for issue in self.model.validate() {
@@ -1356,63 +1546,134 @@ impl ModifierUi {
         action
     }
 
-    fn draw_features(&mut self, ui: &mut egui::Ui) {
+    fn draw_features(&mut self, ui: &mut egui::Ui) -> Option<Action> {
         let loc = self.model.loc();
         let search = self.search.trim().to_lowercase();
+        let mut action = None;
         egui::ScrollArea::vertical().id_source("modifier_features").max_height(240.0).show(ui, |ui| {
-            for def in FeatureRegistry::ALL {
-                if self.category.is_some_and(|c| c != def.category) {
-                    continue;
+            let visible = |category: Option<FeatureCategory>, def: &FeatureDefinition| -> bool {
+                if category.is_some_and(|c| c != def.category) {
+                    return false;
                 }
                 let name = loc.get(def.id);
-                if !search.is_empty() && !def.id.to_lowercase().contains(&search) && !name.to_lowercase().contains(&search) {
+                search.is_empty() || def.id.to_lowercase().contains(&search) || name.to_lowercase().contains(&search)
+            };
+            let category = self.category;
+            // Main list: everything except experimental features that have not been promoted.
+            for def in FeatureRegistry::ALL {
+                let experimental = is_experimental_feature(def.id);
+                if (experimental && !self.model.is_promoted(def.id)) || !visible(category, def) {
                     continue;
                 }
-                let tip_key = format!("{}Tip", def.id);
-                let tip = loc.get(&tip_key);
-                match (def.control_kind, def.id) {
-                    (FeatureControlKind::Toggle, _) => {
-                        let mut on = self.model.feature_enabled(def.id);
-                        let risky = ENABLE_ALL_EXCLUDED.contains(&def.id);
-                        let text = if risky { format!("{name} ({}) ⚠", def.id) } else { format!("{name} ({})", def.id) };
-                        if ui.checkbox(&mut on, text).on_hover_text(tip).changed() {
-                            let _ = self.model.set_feature(def.id, on);
-                        }
-                    }
-                    (_, "GameSpeed") => {
-                        let mut n = self.model.game_speed();
-                        ui.horizontal(|ui| {
-                            if ui.add(egui::DragValue::new(&mut n).clamp_range(1..=10).suffix("x")).on_hover_text(tip).changed() {
-                                let _ = self.model.set_game_speed(n);
-                            }
-                            ui.label(format!("{name} ({})", def.id));
-                        });
-                    }
-                    (_, "VillageGarrisonQuota3x") => {
-                        let mut n = self.model.quota();
-                        ui.horizontal(|ui| {
-                            if ui.add(egui::DragValue::new(&mut n).clamp_range(1..=10).suffix("x")).on_hover_text(tip).changed() {
-                                let _ = self.model.set_quota(n);
-                            }
-                            ui.label(format!("{name} ({})", def.id));
-                        });
-                    }
-                    (_, "CustomUnitStats") => {
-                        if ui.button(format!("{name} ({}): {} 筆 — 編輯", def.id, self.model.custom_unit_count())).on_hover_text(tip).clicked() {
-                            match UnitStatsDraft::load(&self.model) {
-                                Ok(draft) => self.unit_stats_draft = Some(draft),
-                                Err(e) => self.set_status(Err(e)),
-                            }
-                        }
-                    }
-                    _ => {
-                        // Composite Endless-AI modules mirror EndlessAi.Core / RomanReinforcementGarrison.
-                        let mut on = self.model.profile.get_endless_ai_module(def.id.trim_start_matches("EndlessAi."));
-                        ui.add_enabled(false, egui::Checkbox::new(&mut on, format!("{name} ({}) — 隨 EndlessAi.Core / M6 連動", def.id))).on_hover_text(tip);
+                if let Some(a) = self.draw_feature_row(ui, def, &loc, experimental.then_some("移回實驗性 (Demote)")) {
+                    action = Some(a);
+                }
+            }
+            // Experimental group: features that have not been promoted yet.
+            let pending: Vec<&FeatureDefinition> =
+                FeatureRegistry::ALL.iter().filter(|d| is_experimental_feature(d.id) && !self.model.is_promoted(d.id) && visible(category, d)).collect();
+            if !pending.is_empty() {
+                ui.separator();
+                ui.strong(loc.get("ExperimentalCardTitle"));
+                ui.small(loc.get("ExperimentalSubtitle"));
+                for def in pending {
+                    if let Some(a) = self.draw_feature_row(ui, def, &loc, Some("移至主控制台 (Promote)")) {
+                        action = Some(a);
                     }
                 }
             }
         });
+        action
+    }
+
+    /// One feature row; `promote_label` adds the Promote/Demote button (experimental features only).
+    fn draw_feature_row(&mut self, ui: &mut egui::Ui, def: &FeatureDefinition, loc: &Loc, promote_label: Option<&str>) -> Option<Action> {
+        let mut action = None;
+        let name = loc.get(def.id);
+        let tip_key = format!("{}Tip", def.id);
+        let tip = loc.get(&tip_key);
+        ui.horizontal(|ui| {
+            match (def.control_kind, def.id) {
+                (FeatureControlKind::Toggle, _) => {
+                    let mut on = self.model.feature_enabled(def.id);
+                    let risky = ENABLE_ALL_EXCLUDED.contains(&def.id);
+                    let text = if risky { format!("{name} ({}) ⚠", def.id) } else { format!("{name} ({})", def.id) };
+                    if ui.checkbox(&mut on, text).on_hover_text(tip).changed() {
+                        let _ = self.model.set_feature(def.id, on);
+                    }
+                }
+                (_, "GameSpeed") => {
+                    let mut n = self.model.game_speed();
+                    if ui.add(egui::DragValue::new(&mut n).clamp_range(1..=10).suffix("x")).on_hover_text(tip).changed() {
+                        let _ = self.model.set_game_speed(n);
+                    }
+                    ui.label(format!("{name} ({})", def.id));
+                }
+                (_, "VillageGarrisonQuota3x") => {
+                    let mut n = self.model.quota();
+                    if ui.add(egui::DragValue::new(&mut n).clamp_range(1..=10).suffix("x")).on_hover_text(tip).changed() {
+                        let _ = self.model.set_quota(n);
+                    }
+                    ui.label(format!("{name} ({})", def.id));
+                }
+                (_, "CustomUnitStats") => {
+                    if ui.button(format!("{name} ({}): {} 筆 — 編輯", def.id, self.model.custom_unit_count())).on_hover_text(tip).clicked() {
+                        match UnitStatsDraft::load(&self.model) {
+                            Ok(draft) => {
+                                self.unit_stats_draft = Some(draft);
+                                self.reload_icons();
+                            }
+                            Err(e) => self.set_status(Err(e)),
+                        }
+                    }
+                    if ui.button(loc.get("TroopTemplateBalanced")).on_hover_text("以內建平衡數值覆蓋所有自訂兵種屬性 (需確認)").clicked() {
+                        self.template_confirm = true;
+                    }
+                    if !self.model.preset_label.is_empty() {
+                        ui.label(format!("範本: {}", self.model.preset_label));
+                    }
+                }
+                _ => {
+                    // Composite Endless-AI modules mirror EndlessAi.Core / RomanReinforcementGarrison.
+                    let mut on = self.model.profile.get_endless_ai_module(def.id.trim_start_matches("EndlessAi."));
+                    ui.add_enabled(false, egui::Checkbox::new(&mut on, format!("{name} ({}) — 隨 EndlessAi.Core / M6 連動", def.id))).on_hover_text(tip);
+                }
+            }
+            if let Some(label) = promote_label {
+                if ui.small_button(label).clicked() {
+                    action = Some(Action::TogglePromotion(def.id.to_owned()));
+                }
+            }
+        });
+        action
+    }
+
+    /// Confirmation for the Balanced Base Stats template (C# `MessageBox` YesNo); No changes nothing.
+    fn show_template_dialog(&mut self, ctx: &egui::Context) -> Option<Action> {
+        if !self.template_confirm {
+            return None;
+        }
+        let en = self.model.english;
+        let (mut yes, mut no) = (false, false);
+        let mut open = true;
+        egui::Window::new(if en { "Confirm Template Overwrite" } else { "確認範本覆蓋" }).open(&mut open).collapsible(false).resizable(false).show(ctx, |ui| {
+            ui.label(if en {
+                "Are you sure you want to apply the 'Balanced Base Stats' template? This will overwrite your current custom unit stats."
+            } else {
+                "確定要套用「修改器內建平衡」範本嗎？這將覆蓋目前的自訂兵種屬性。"
+            });
+            ui.horizontal(|ui| {
+                yes = ui.button(if en { "Yes" } else { "是" }).clicked();
+                no = ui.button(if en { "No" } else { "否" }).clicked();
+            });
+        });
+        if yes {
+            return Some(Action::ConfirmTemplate);
+        }
+        if no || !open {
+            self.template_confirm = false;
+        }
+        None
     }
 
     /// C# `RestoreAllOptionsDialog` plus the per-category restores: pick a scope, keep/delete custom maps,
@@ -1458,6 +1719,7 @@ impl ModifierUi {
 
         {
             let draft = self.unit_stats_draft.as_mut().unwrap();
+            let (icons, textures) = (&self.icons, &mut self.icon_textures);
             egui::Window::new(if is_en { "CustomUnitStats — 6 Editable Troop Stats" } else { "CustomUnitStats — 六項兵種屬性" })
                 .open(&mut open)
                 .default_width(980.0)
@@ -1495,11 +1757,13 @@ impl ModifierUi {
                     }
                     egui::ScrollArea::both().id_source("custom_unit_stats_scroll").max_height(450.0).show(ui, |ui| {
                         egui::Grid::new("custom_unit_stats_grid").striped(true).show(ui, |ui| {
+                            ui.label("");
                             ui.label("兵種 / faction / tier");
                             for (_, label) in EDITABLE_STATS { ui.label(label); }
                             ui.end_row();
                             for row in &mut draft.rows {
                                 let meta = TroopConfig::get_metadata(&row.key).unwrap();
+                                show_unit_icon(ui, ctx, icons, textures, &row.key);
                                 ui.label(format!("{} / {} / {}", TroopConfig::get_name_zh(&row.key).unwrap_or(&row.key), meta.faction, meta.tier)).on_hover_text(&row.key);
                                 for (i, cell) in row.cells.iter_mut().enumerate() {
                                     ui.add_enabled(!(meta.unit_type == "priest" && EDITABLE_STATS[i].0 == 5), egui::TextEdit::singleline(cell).desired_width(65.0));
@@ -2551,6 +2815,133 @@ mod tests {
         assert!(ui.status.as_ref().is_some_and(|(_, err)| !*err));
         let fresh = ModifierUi::persisted(sb.0.join("state"));
         assert!(fresh.model.feature_enabled("FocusLoss"), "selection survives a restart");
+    }
+
+    // ---- parity: Start Game / Experimental promote / Balanced template
+
+    #[test]
+    fn start_game_missing_exe_or_dir_errors_without_spawning() {
+        use std::sync::atomic::AtomicBool;
+        let spawned = AtomicBool::new(false);
+        let fake = |_: &Path, _: &Path| -> io::Result<()> {
+            spawned.store(true, Ordering::SeqCst);
+            Ok(())
+        };
+        let sb = Sandbox::new();
+        let mut m = sb.model();
+        m.set_game_path("");
+        assert_eq!(m.start_game_with(&fake).unwrap_err(), m.loc().get("MsgSelectGameDir"));
+        m.set_game_path(sb.0.join("does-not-exist").to_string_lossy().into_owned());
+        assert_eq!(m.start_game_with(&fake).unwrap_err(), m.loc().get("MsgSelectGameDir"));
+        fs::remove_file(sb.game().join("Against_Rome.exe")).unwrap();
+        m.set_game_path(sb.game().to_string_lossy().into_owned());
+        assert_eq!(m.start_game_with(&fake).unwrap_err(), m.loc().get("MsgExeNotFound"));
+        assert!(!spawned.load(Ordering::SeqCst), "launcher must not run when the exe is missing");
+        // The real spawner reports a missing exe as an io error rather than panicking.
+        assert!(spawn_game_process(&sb.game().join("Against_Rome.exe"), &sb.game()).is_err());
+    }
+
+    #[test]
+    fn start_game_passes_exe_and_game_dir_to_launcher_and_reports_failure() {
+        use std::sync::{Arc, Mutex};
+        let sb = Sandbox::new();
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let rec = calls.clone();
+        let mut ui = ModifierUi::default().with_game_launcher(move |exe: &Path, dir: &Path| {
+            rec.lock().unwrap().push((exe.to_path_buf(), dir.to_path_buf()));
+            Ok(())
+        });
+        ui.model = sb.model();
+        ui.start_game().unwrap();
+        assert_eq!(*calls.lock().unwrap(), vec![(sb.game().join("Against_Rome.exe"), sb.game())]);
+        assert_eq!(ui.model.log.last().unwrap(), ui.model.loc().get("LogGameStarted"));
+
+        let mut failing = ModifierUi::default().with_game_launcher(|_: &Path, _: &Path| Err(io::Error::new(io::ErrorKind::PermissionDenied, "denied")));
+        failing.model = sb.model();
+        let err = failing.start_game().unwrap_err();
+        assert!(err.starts_with(failing.model.loc().get("MsgLaunchFailed")) && err.contains("denied"), "{err}");
+        assert_eq!(failing.model.log.last().unwrap(), &err);
+    }
+
+    #[test]
+    fn experimental_promote_demote_persists_through_loc_settings() {
+        let sb = Sandbox::new();
+        let mut m = sb.model();
+        for id in EXPERIMENTAL_FEATURES {
+            assert!(FeatureRegistry::get(id).is_some(), "{id} must be a real feature id");
+            assert!(!m.is_promoted(id));
+        }
+        assert!(m.toggle_promotion("Balance").unwrap());
+        assert!(m.is_promoted("balance"));
+        assert!(m.toggle_promotion("ArgmTrace").unwrap());
+        assert!(m.toggle_promotion("FocusLoss").is_err(), "non-experimental features cannot be promoted");
+        assert!(m.toggle_promotion("Nope").is_err());
+        let reloaded = sb.model();
+        assert!(reloaded.is_promoted("Balance") && reloaded.is_promoted("ArgmTrace") && !reloaded.is_promoted("GeneralSkills"));
+        assert!(!m.toggle_promotion("Balance").unwrap());
+        assert!(!sb.model().is_promoted("Balance") && sb.model().is_promoted("ArgmTrace"));
+        assert!(m.log.iter().any(|l| l.contains("Balance") && l.contains("移回實驗性")));
+        assert!(m.log.iter().any(|l| l.contains("ArgmTrace") && l.contains("移至主控制台")));
+    }
+
+    #[test]
+    fn balanced_template_replaces_all_custom_stats_with_normalized_balanced_values() {
+        let sb = Sandbox::new();
+        unit_stats_fixture(&sb);
+        let mut m = sb.model();
+        let key = "FigRomInf00_Lanze_Schild";
+        m.profile.custom_unit_stats = Some([(key.to_lowercase(), vec![1.0; 9]), ("stale_unit".into(), vec![2.0; 9])].into());
+        m.preview_apply().unwrap();
+        m.take_settings_dirty();
+        let before_tree = sb.tree();
+        let n = m.apply_balanced_template().unwrap();
+        assert_eq!(n, TroopConfig::sorted_units().len());
+        assert_eq!(sb.tree(), before_tree, "template only edits the in-memory profile");
+        assert!(m.preview.is_none() && m.take_settings_dirty());
+        assert_eq!(m.preset_label, m.loc().get("TroopTemplateBalanced"));
+        assert!(m.log.last().unwrap().contains("內建平衡"));
+        let stats = m.profile.custom_unit_stats.clone().unwrap();
+        assert_eq!(stats.len(), n);
+        assert!(!stats.contains_key(&key.to_lowercase()) && !stats.contains_key("stale_unit"));
+        let backup = m.load_backup(&sb.game(), false).unwrap();
+        for unit in TroopConfig::sorted_units() {
+            let balanced = backup.get_default_balanced_stats(unit).unwrap();
+            let original = backup.get_original_stats(unit).unwrap();
+            let got = &stats[unit];
+            for i in 0..9 {
+                let expect = if [4, 7, 8].contains(&i) || (i == 5 && TroopConfig::get_metadata(unit).unwrap().unit_type == "priest") { original[i] } else { balanced[i] };
+                assert_eq!(got[i], expect, "{unit}[{i}]");
+            }
+        }
+        // English mode logs the English message and the failure path changes nothing.
+        let mut bad = sb.model();
+        bad.english = true;
+        bad.profile.custom_unit_stats = Some([("keep".into(), vec![3.0; 9])].into());
+        bad.set_game_path(sb.0.join("missing").to_string_lossy().into_owned());
+        assert!(bad.apply_balanced_template().is_err());
+        assert_eq!(bad.profile.custom_unit_stats.as_ref().unwrap().len(), 1);
+        assert!(bad.preset_label.is_empty());
+        bad.set_game_path(sb.game().to_string_lossy().into_owned());
+        bad.apply_balanced_template().unwrap();
+        assert_eq!(bad.preset_label, "Balanced Base Stats");
+        assert_eq!(bad.log.last().unwrap(), "Applied built-in balanced troop stats template.");
+    }
+
+    #[test]
+    fn unit_icons_degrade_gracefully_with_csharp_log_messages() {
+        let sb = Sandbox::new();
+        let mut m = sb.model();
+        let icons = m.load_unit_icons();
+        assert!(icons.is_empty());
+        assert_eq!(m.log.last().unwrap(), m.loc().get("LogGuiDatNotFound"));
+        sb.put("gui.dat", b"not a zip");
+        let icons = m.load_unit_icons();
+        assert!(icons.is_empty());
+        let last = m.log.last().unwrap();
+        assert!(last.starts_with(m.loc().get("LogLoadIconFailed")) || last == m.loc().get("LogIconIniNotFound"), "{last}");
+        let mut none = ModifierModel::default();
+        none.load_unit_icons();
+        assert_eq!(none.log.last().unwrap(), none.loc().get("LogGamePathNotSetIcon"));
     }
 }
 

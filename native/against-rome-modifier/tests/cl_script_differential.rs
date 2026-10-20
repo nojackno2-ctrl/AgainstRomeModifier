@@ -5,7 +5,6 @@
 //! (the latter proves reset behaviour, including the C# no-backup early return that keeps spell flags).
 use against_rome_modifier::{detectors::ClScriptFeatureDetector, PatchProfile};
 use serde_json::Value;
-use sha2::{Digest, Sha256};
 
 fn run(text: &str, original: Option<&str>, flags: &[&str], initial: bool) -> PatchProfile {
     let mut profile = PatchProfile::new();
@@ -20,23 +19,6 @@ fn run(text: &str, original: Option<&str>, flags: &[&str], initial: bool) -> Pat
 fn csharp_cl_script_detector_matches_rust_flag_by_flag() {
     let fixture: Value =
         serde_json::from_str(include_str!("fixtures/csharp-cl-script-detector.json")).unwrap();
-    for (name, source) in [
-        (
-            "ClScriptFeatureDetector",
-            include_bytes!("../../../src.Core/Core/Features/Ini/ClScriptFeatureDetector.cs")
-                .as_slice(),
-        ),
-        (
-            "ClScriptPatcher",
-            include_bytes!("../../../src.Core/Core/Patches/ClScriptPatcher.cs").as_slice(),
-        ),
-    ] {
-        assert_eq!(
-            fixture["Sources"][name].as_str().unwrap(),
-            format!("{:X}", Sha256::digest(source)),
-            "Regenerate stale C# oracle fixture: {name}"
-        );
-    }
     let flags: Vec<&str> = fixture["Flags"]
         .as_array()
         .unwrap()

@@ -1,78 +1,38 @@
-//! TroopConfig parity: the Rust tables must match src.Core/Core/TroopConfig.cs exactly.
-//! The C# source is the oracle and is parsed directly. It defines 43 unique units
+//! TroopConfig parity: the Rust tables must match the tables frozen from the former C# TroopConfig.cs
+//! (fixtures/csharp-frozen-tables.json). It defines 43 unique units
 //! (not 44) in each of UnitNames, UnitOrder, UnitMeta and BalancedUnitStats.
 use against_rome_modifier::TroopConfig;
 use std::collections::HashSet;
 
-const CS: &str = include_str!("../../../src.Core/Core/TroopConfig.cs");
-
-/// Text of the C# member `name` from its declaration to the closing `};`.
-fn section(name: &str) -> &'static str {
-    let start = CS
-        .find(&format!(" {name} ="))
-        .unwrap_or_else(|| panic!("missing {name}"));
-    let rest = &CS[start..];
-    let end = rest.find("};").expect("section end");
-    &rest[..end]
+fn frozen() -> serde_json::Value {
+    let f: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/csharp-frozen-tables.json")).unwrap();
+    f["troop"].clone()
 }
 
-fn quoted(s: &str) -> Vec<String> {
-    s.split('"')
-        .skip(1)
-        .step_by(2)
-        .map(str::to_string)
-        .collect()
-}
-
-fn code_lines(sec: &'static str) -> impl Iterator<Item = &'static str> {
-    sec.lines().map(str::trim).filter(|l| !l.starts_with("//"))
+fn strs(v: &serde_json::Value) -> Vec<String> {
+    v.as_array().unwrap().iter().map(|x| x.as_str().unwrap().to_string()).collect()
 }
 
 fn cs_names() -> Vec<(String, String)> {
-    code_lines(section("UnitNames"))
-        .filter(|l| l.starts_with("{\"Fig"))
-        .map(|l| {
-            let q = quoted(l);
-            (q[0].clone(), q[1].clone())
-        })
-        .collect()
+    frozen()["names"].as_array().unwrap().iter().map(|p| { let q = strs(p); (q[0].clone(), q[1].clone()) }).collect()
 }
 
 fn cs_order() -> Vec<String> {
-    let mut v = Vec::new();
-    for l in code_lines(section("UnitOrder")) {
-        v.extend(quoted(l));
-    }
-    v
+    strs(&frozen()["order"])
 }
 
 fn cs_meta() -> Vec<(String, [String; 4])> {
-    code_lines(section("UnitMeta"))
-        .filter(|l| l.starts_with("{\"Fig"))
-        .map(|l| {
-            let q = quoted(l);
-            (
-                q[0].clone(),
-                [q[1].clone(), q[2].clone(), q[3].clone(), q[4].clone()],
-            )
-        })
-        .collect()
+    frozen()["meta"].as_array().unwrap().iter().map(|p| {
+        let q = strs(&p[1]);
+        (p[0].as_str().unwrap().to_string(), [q[0].clone(), q[1].clone(), q[2].clone(), q[3].clone()])
+    }).collect()
 }
 
 fn cs_stats() -> Vec<(String, Vec<f64>)> {
-    code_lines(section("BalancedUnitStats"))
-        .filter(|l| l.starts_with("{\"Fig"))
-        .map(|l| {
-            let key = quoted(l)[0].clone();
-            let body = &l[l.find('{').unwrap() + 1..];
-            let inner = &body[body.rfind("{").unwrap() + 1..body.find('}').unwrap()];
-            let nums = inner
-                .split(',')
-                .map(|n| n.trim().parse::<f64>().unwrap())
-                .collect();
-            (key, nums)
-        })
-        .collect()
+    frozen()["stats"].as_array().unwrap().iter().map(|p| {
+        (p[0].as_str().unwrap().to_string(), p[1].as_array().unwrap().iter().map(|n| n.as_f64().unwrap()).collect())
+    }).collect()
 }
 
 fn unique(keys: impl Iterator<Item = String>) -> usize {

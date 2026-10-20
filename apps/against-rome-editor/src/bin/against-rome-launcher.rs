@@ -369,35 +369,28 @@ pub fn launch_child_process(
     launch_child_process_with_map(base_dir, app, game_path, None, lang)
 }
 
-/// Detects default Against Rome game directory from standard installation paths.
+/// Detects the Against Rome game directory using the C# `GameDirectoryLocator` chain:
+/// portable install next to the launcher -> registry (HKCU, HKLM, HKLM WOW6432Node)
+/// -> default install path. Returns `None` when every source misses.
 pub fn detect_default_game_path() -> Option<PathBuf> {
-    // 1. Current executable directory if Against_Rome.exe exists
-    if let Ok(curr) = std::env::current_exe() {
-        if let Some(parent) = curr.parent() {
-            if parent.join("Against_Rome.exe").is_file() {
-                return Some(parent.to_path_buf());
-            }
-        }
+    let found = against_rome_modifier::services::GameDirectoryLocator::resolve_initial_game_path(None);
+    if found.as_os_str().is_empty() {
+        None
+    } else {
+        Some(found)
     }
+}
 
-    // 2. Standard Program Files (x86) location
-    #[cfg(windows)]
-    {
-        if let Some(pf86) = std::env::var_os("ProgramFiles(x86)") {
-            let p = PathBuf::from(pf86).join("Against Rome");
-            if p.is_dir() {
-                return Some(p);
-            }
-        }
-        if let Some(pf) = std::env::var_os("ProgramFiles") {
-            let p = PathBuf::from(pf).join("Against Rome");
-            if p.is_dir() {
-                return Some(p);
-            }
-        }
+/// Pure fallback-chain resolver (injectable inputs) behind [`detect_default_game_path`].
+pub fn resolve_game_path_chain(base: &Path, registry: &Path, default: &Path) -> Option<PathBuf> {
+    let found = against_rome_modifier::services::GameDirectoryLocator::resolve_with(
+        None, base, registry, default,
+    );
+    if found.as_os_str().is_empty() {
+        None
+    } else {
+        Some(found)
     }
-
-    None
 }
 
 /// Checks whether a given directory looks like a valid Against Rome game folder.
@@ -1166,6 +1159,29 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn game_path_chain_prefers_portable_then_registry_then_default() {
+        let tmp = std::env::temp_dir().join(format!("ar_launcher_chain_{}", std::process::id()));
+        let base = tmp.join("base");
+        let default = tmp.join("default");
+        std::fs::create_dir_all(&base).unwrap();
+        std::fs::create_dir_all(&default).unwrap();
+        let reg = tmp.join("registry");
+        // Nothing portable: registry wins over default.
+        assert_eq!(resolve_game_path_chain(&base, &reg, &default), Some(reg.clone()));
+        // Empty registry: default install if it exists.
+        assert_eq!(resolve_game_path_chain(&base, Path::new(""), &default), Some(default.clone()));
+        // Portable exe beats registry.
+        std::fs::write(base.join("Against_Rome.exe"), b"x").unwrap();
+        assert_eq!(resolve_game_path_chain(&base, &reg, &default), Some(base.clone()));
+        // Everything missing.
+        assert_eq!(
+            resolve_game_path_chain(&tmp.join("nope"), Path::new(""), &tmp.join("nope2")),
+            None
+        );
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
 
     #[test]
     fn test_parse_cli_args_help() {

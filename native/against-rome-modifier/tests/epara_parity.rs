@@ -6,19 +6,12 @@ use std::path::Path;
 
 const RETAIL_EPARA_PATH: &str =
     "../../re_workspace/cd-modifier-baseline-20261010/files/SYSTEM/cl_epara.ini";
-const CSHARP_EPARA_SOURCE: &str = "../../src.Core/Core/Services/CleanEparaBaseline.cs";
 
 #[test]
-fn clean_epara_baseline_text_matches_csharp_source_verbatim() {
-    let cs_source = fs::read_to_string(CSHARP_EPARA_SOURCE)
-        .expect("must be able to read C# CleanEparaBaseline.cs source");
-
-    // Extract Text constant from C# source: between Text = @" and ";
-    let start_tag = "Text = @\"";
-    let end_tag = "\";";
-    let start_idx = cs_source.find(start_tag).expect("start tag found") + start_tag.len();
-    let end_idx = cs_source[start_idx..].find(end_tag).expect("end tag found") + start_idx;
-    let cs_text = &cs_source[start_idx..end_idx];
+fn clean_epara_baseline_text_matches_frozen_csharp_text() {
+    let frozen: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/csharp-frozen-tables.json")).unwrap();
+    let cs_text = frozen["epara_text"].as_str().unwrap();
 
     // Normalize newlines for comparison
     let cs_normalized = cs_text.replace("\r\n", "\n");

@@ -5,7 +5,6 @@ use against_rome_modifier::{
     troops::{ObjdefIndex, TroopConfig},
 };
 use serde_json::Value;
-use sha2::{Digest, Sha256};
 
 fn fixture() -> Value {
     serde_json::from_str(include_str!("fixtures/csharp-troop-config.json")).unwrap()
@@ -26,16 +25,6 @@ fn sorted(v: Vec<(&str, i64)>) -> Vec<(String, i64)> {
     let mut o: Vec<_> = v.into_iter().map(|(k, n)| (k.to_string(), n)).collect();
     o.sort();
     o
-}
-
-#[test]
-fn fixture_is_not_stale() {
-    let src = include_bytes!("../../../src.Core/Core/TroopConfig.cs");
-    assert_eq!(
-        fixture()["Sources"]["TroopConfig"].as_str().unwrap(),
-        format!("{:X}", Sha256::digest(src)),
-        "Regenerate stale C# oracle fixture: TroopConfig"
-    );
 }
 
 #[test]

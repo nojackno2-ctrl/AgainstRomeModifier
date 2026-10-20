@@ -17,6 +17,7 @@ pub mod epara;
 pub mod exe_features;
 pub mod exe_patches;
 pub mod features;
+pub mod icons;
 pub mod install;
 pub mod lzss;
 pub mod objdef;

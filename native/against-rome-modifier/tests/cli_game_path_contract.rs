@@ -1,8 +1,6 @@
-//! Game-path resolution contract against `src.Modifier/Cli/CliCommands.cs`.
+//! Game-path resolution contract (messages frozen from the former C# CliCommands).
 use against_rome_modifier::cli::{resolve_game_path, run_cli, strip_verbatim_prefix};
 use std::{fs, path::PathBuf};
-
-const CS: &str = include_str!("../../../src.Modifier/Cli/CliCommands.cs");
 
 fn args(a: &[&str]) -> Vec<String> {
     a.iter().map(|s| s.to_string()).collect()
@@ -17,9 +15,6 @@ fn temp(name: &str) -> PathBuf {
 
 #[test]
 fn csharp_messages_match_rust_messages() {
-    assert!(CS.contains("指定的遊戲目錄不存在: {candidate}"));
-    assert!(CS
-        .contains("無法自動偵測到遊戲目錄。請使用 --game <路徑> 明確指定 Against Rome 安裝目錄。"));
     let missing = std::env::temp_dir().join("arm-gp-definitely-missing-dir");
     let err = resolve_game_path(Some(missing.to_str().unwrap())).unwrap_err();
     assert_eq!(err.kind(), std::io::ErrorKind::NotFound);

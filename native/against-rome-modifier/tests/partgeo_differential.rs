@@ -4,7 +4,6 @@
 
 use against_rome_modifier::{PartgeoOptions, PartgeoPatcher};
 use serde_json::Value;
-use sha2::{Digest, Sha256};
 
 fn b64_decode(s: &str) -> Vec<u8> {
     let mut out = Vec::new();
@@ -49,27 +48,6 @@ fn partgeo_csharp_parity_matches_oracle_fixture() {
     let fixture: Value =
         serde_json::from_str(include_str!("fixtures/csharp-partgeo.json")).unwrap();
 
-    // 1. Verify freshness of C# oracle sources
-    for (name, source) in [
-        (
-            "PartgeoPatcher",
-            include_bytes!("../../../src.Core/Core/Patches/PartgeoPatcher.cs").as_slice(),
-        ),
-        (
-            "PatchText",
-            include_bytes!("../../../src.Core/Core/Patches/PatchText.cs").as_slice(),
-        ),
-        (
-            "GameLZSS",
-            include_bytes!("../../../src.Shared/Core/GameLZSS.cs").as_slice(),
-        ),
-    ] {
-        assert_eq!(
-            fixture["Sources"][name].as_str().unwrap(),
-            format!("{:X}", Sha256::digest(source)),
-            "Regenerate stale C# oracle fixture: {name}"
-        );
-    }
 
     let cases = fixture["Cases"].as_array().unwrap();
     assert!(
