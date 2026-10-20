@@ -1,4 +1,4 @@
-﻿# Against Rome Reverse Engineering Notes
+# Against Rome Reverse Engineering Notes
 
 > Index reviewed 2026-07-11. This is evidence documentation, not permission to write original game files directly. Product changes must be made in the modifier and verified through its fixture/apply/restore workflow.
 
@@ -6,6 +6,18 @@ This directory is the project-local knowledge base for original game data
 formats, confirmed field indexes, executable entry points, and patch safety
 notes. Addresses and indexes belong here instead of being scattered across UI
 and patch code.
+
+## Tooling (Rust)
+
+All reverse-engineering tooling is Rust. Reusable validators/inventories live in
+`tools/re/ar-re-tools-rs` (binary `ar-re`; script → subcommand table in its
+README), BCI disassembly in `ar-bcitool` (`native/against-rome-scenario`), and
+format probes in `tools/re/*-rs`. The former Python scripts (`tools/bcitool.py`,
+`tools/re/*.py`) were removed after porting; one-off instruction proofs whose
+results are recorded in these notes were not ported. Retrieve any of them with
+`git show 1bbe220:tools/re/<name>.py`. Ghidra analysis scripts
+(`tools/re/Ghidra*.java`) remain because they run inside Ghidra's own Java
+scripting host; they are inputs to that external tool, not project code.
 
 ## Files
 
