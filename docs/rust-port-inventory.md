@@ -1,3 +1,5 @@
+> **歷史文件（Historical）**：本文件撰寫於 Rust 遷移期間；其中引用的 C#／C++ 路徑（`src.*`、`tests/`、`.slnx`、`native/argm-trace` 等）已不存在。需要時可用 `git show 8d49cb3:<path>` 取回。最終結論請見 [docs/rust-rewrite.md](rust-rewrite.md)。
+
 # AgainstRomeModifier → Rust 全程式改寫遷移盤點清單 (Port Inventory)
 
 > 本文件為依據目前 Repository 真實檔案、專案檔（.csproj / .slnx / CMakeLists.txt / Cargo.toml）與程式碼符號建立的逐項遷移盤點清單。

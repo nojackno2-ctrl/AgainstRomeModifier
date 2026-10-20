@@ -1,3 +1,5 @@
+> **歷史文件（Historical）**：本文件撰寫於 Rust 遷移期間；其中引用的 C#／C++ 路徑（`src.*`、`tests/`、`.slnx`、`native/argm-trace` 等）已不存在。需要時可用 `git show 8d49cb3:<path>` 取回。最終結論請見 [docs/rust-rewrite.md](rust-rewrite.md)。
+
 # Rust 桌面入口進度
 
 `apps/against-rome-editor` 使用 eframe/egui 0.27.2 建立獨立 Rust 桌面程式，不啟動 .NET。除地形／通行圖外，現有入口還包含材質、放置、scenario/event、environment/Nature/wildlife、ambience、navigation、AI planning、modifier、save manager、diff 與 packaging 等面板；各面板的 parity 與完整工作流程仍不等同於整體改寫完成。完整功能範圍見 [rust-rewrite.md](rust-rewrite.md)。

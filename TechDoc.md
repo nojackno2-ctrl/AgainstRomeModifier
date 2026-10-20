@@ -13,12 +13,12 @@
 ## 0. 2026-07-11 現況摘要（優先於下方歷史段落）
 
 - 架構已完成解耦：`PatchProfile`、`FeatureRegistry`、`IFeatureModule`、`PatchContext` 與 `DetectContext` 是唯一功能契約；`PatchOptions` 已移除。套用、偵測、分類還原與 UI 回填均以 registry 為主。
-- `Backup.zip` 是選用且不追蹤的本機基線；只有非 Release 開發建置明確傳入 `-p:IncludeBackupZip=true` 才可內嵌，Release／publish 強制停用。內嵌／程式旁沒有它時，修改器才從使用者選取且有效的遊戲根目錄建立**記憶體**基線。開發、測試與文件工作不得直接改寫遊戲安裝目錄。
+- `Backup.zip` 是選用且不追蹤的本機基線，只可放在程式旁，Release／publish 不會內嵌。程式旁沒有它時，修改器才從使用者選取且有效的遊戲根目錄建立**記憶體**基線。開發、測試與文件工作不得直接改寫遊戲安裝目錄。
 - FoodHealing 與 Endless AI 共用 `BciScriptFile` 快取，最後只由 `SaveAll` 寫回；任何新 BCI 功能不得繞過此流程直接寫檔。
 - `CiviProduce20` 與 `UnitRecruit20` 已在遊戲內實機驗證，皆為可還原、僅作用於玩家端的 EXE 功能；現已列入正式的「資源與戰鬥升級」及「所有功能開啟」，不影響 AI 招募。
 - 自訂兵種新格式只保留 `HP,Dmg,VW,AW,Sight,Relt`。速度、遠程射程、法術半徑與祭司 `Sirad`（施法距離）不得由自訂層管理；啟用 `AllUnitsEntireMapVision` 時，所有支援單位的 Sight 會在最後統一覆寫為 30000。
 - 無盡軍事模式安全組態為 `20..20` 人、`30000 ms` 增援等待與排程週期、同時活躍隊伍上限 `8`。runtime 只有 20 個 NPC-job slots；無條件 gate bypass 已否決。
-- 本次文件複核的本機驗證：`dotnet build AgainstRomeModifier.csproj -c Release --no-restore` 為 0 warnings/0 errors；xUnit 為 98 passed、0 failed、0 skipped。
+- 本次文件複核的本機驗證：全專案已改寫為 Rust；驗證以 `cargo test --workspace --locked` 與 `tools/test-rust-rewrite.ps1` 為準（見第 18 章與 `docs/rust-rewrite.md`）。舊版 .NET 測試數字不再適用。
 
 ## 1. 新代理必讀與修改原則
 
@@ -45,60 +45,62 @@
 
 ## 2. 技術架構
 
-| 檔案 | 責任 |
+| 檔案／crate | 責任 |
 |---|---|
-| `src.Launcher/` | 套件啟動器：啟動修改器／地圖編輯器／存檔管理器，內建技術文件檢視器 |
-| `src.Modifier/Program.cs` | 修改器 WinForms 入口、DPI、UAC |
-| `src.Modifier/UI/ModifierForm.cs` | 手工 UI、事件 wiring |
-| `src.Modifier/UI/ModifierForm.Data.cs` | 備份載入、目前資料讀取、狀態偵測、顯示 |
-| `src.Modifier/UI/ModifierForm.Patches.cs` | 套用、回復、rollback、遊戲檔補丁 |
-| `src.Modifier/UI/ModifierForm.Presets.cs` | 一鍵啟用／關閉所有功能控制 |
-| `src.Modifier/UI/TroopPresetForm.cs` | 6 欄單位 preset 編輯（`HP,Dmg,VW,AW,Sight,Relt`）；舊 9 欄匯入相容但移除欄位不會寫回 |
-| `src.SaveManager/UI/SaveManagerForm.cs` | 獨立存檔管理器：存檔瀏覽、備份、回復、刪除 |
-| `src.MapEditor/` | 地圖編輯器，含無盡地圖複製／刪除管理 |
-| `src.Core/Core/Features/Install/DgVoodooFeature.cs` | dgVoodoo2 受管安裝／移除 |
-| `src.Core/Core/TroopConfig.cs` | 欄位 enum、單位 metadata、平衡規則 |
-| `src.Core/Core/Bci/` | BCI 特徵碼搜尋、字組寫入與 PFIL 腳本封裝 |
-| `src.Core/Core/EndlessAi/` | 受約束的無盡 AI BCI 模組、狀態偵測與套用協調 |
-| `src.Core/Core/Features/` | 功能 Registry、`PatchProfile`、EXE/INI/DAU/BCI/安裝功能規劃與統一狀態偵測 |
-| `src.Core/Core/Services/PatchEngine.cs` | 精簡編排器：交易順序、分類還原與功能模組協調，不保存功能專屬常數 |
-| `src.Core/Core/Patches/` | 純 patch 邏輯（`ObjdefPatcher`、`RessPatcher`、`ClScriptPatcher`、`ClEparaPatcher`、`ClScintPatcher`、`TeamDatPatcher`、`ExePatchModel`、`VerifiedBinaryWriter`），不依賴 WinForms；UI 只建立 `PatchProfile` 並委派給 Core |
-| `src.Core/Core/Localization.cs` | 中英文 UI／log |
-| `src.Shared/Core/GameLZSS.cs` | 遊戲 LZSS 與 `PFIL@` 包裝 |
-| `src.Shared/Maps/` | 地圖目錄、複製、刪除與 SDL 場景服務 |
+| `apps/against-rome-editor/src/bin/against-rome-launcher.rs` | 套件啟動器：啟動修改器／地圖編輯器／存檔管理器 |
+| `apps/against-rome-editor/src/main.rs`、`app.rs` | 地圖編輯器 egui 桌面入口與主視窗 |
+| `apps/against-rome-editor/src/bin/against-rome-modifier-gui.rs`、`modifier_ui.rs` | 修改器 GUI 入口與面板：profile、預覽、套用、回復；6 欄單位 preset 編輯（`HP,Dmg,VW,AW,Sight,Relt`），舊 9 欄匯入相容但移除欄位不會寫回 |
+| `apps/against-rome-editor/src/bin/against-rome-save-manager.rs`、`save_manager_ui.rs` | 獨立存檔管理器 GUI：存檔瀏覽、備份、回復、刪除 |
+| `apps/against-rome-editor/src/tech_doc_ui.rs` | 內嵌技術文件檢視器（`include_str!` 本文件與 `TechDoc_EN.md`） |
+| `apps/against-rome-editor/src/maps_ui.rs` | 地圖管理，含無盡地圖複製／刪除 |
+| `native/against-rome-modifier/src/features.rs` | 功能 Registry（`FeatureRegistry`）、`PatchProfile`、功能 Id／分類／停用值 |
+| `native/against-rome-modifier/src/services.rs` | 精簡編排器：交易順序、分類還原與功能模組協調，不保存功能專屬常數 |
+| `native/against-rome-modifier/src/{exe_patches,exe_features,detectors}.rs` | EXE 補丁模型、規劃與統一狀態偵測（original／current／legacy／unknown） |
+| `native/against-rome-modifier/src/{objdef,ress,cl_script,epara,team_dat,patch_text}.rs` | 純 patch 邏輯（objdef.dau、ress.ini、cl_script.ini、epara、team.dat），不依賴 GUI；UI 只建立 `PatchProfile` 並委派 |
+| `native/against-rome-modifier/src/{bci_features,endless_ai}.rs` | BCI 特徵碼搜尋、字組寫入、受約束的無盡 AI BCI 模組、狀態偵測與套用協調 |
+| `native/against-rome-modifier/src/install.rs` | dgVoodoo2 受管安裝／移除 |
+| `native/against-rome-modifier/src/{troop_config,troops,unit_stats}.rs` | 欄位 enum、單位 metadata、平衡規則、自訂兵種 |
+| `native/against-rome-modifier/src/{cli,cli_commands,main}.rs` | 修改器 CLI（`against-rome-modifier`） |
+| `native/against-rome-modifier/src/lzss.rs`、`native/against-rome-data/src/lzss.rs` | 遊戲 LZSS 與 `PFIL@` 包裝 |
+| `native/against-rome-saves/` | 存檔 ZIP／manifest、scan、備份、回復、刪除、驗證與 AI repair |
+| `native/against-rome-maps/` | 地圖目錄、複製、刪除、SDL 場景服務、`FileRollbackScope` 交易 |
+| `native/against-rome-ambience/src/{localization,app_localization}.rs` | 中英文 UI／log |
+| `native/against-rome-packaging/` | 地圖封裝 CLI（`ArmMapPackage`）、manifest、preflight |
+| `native/against-rome-trace/` | Win32 proxy／hook／trace runtime（取代舊 C++ 追蹤 DLL） |
+| `native/against-rome-{data,editor,landscape,navigation,placement,scenario,campaign,environment,scene,textures,ai-planner}/` | 地圖編輯器的資料解析、地形、通行、放置、劇本、環境、場景與材質核心 |
+| `tools/re/*-rs/` | Rust 逆向工程探針與 golden／contract 測試 |
 | `data/game_schema.json` | 機器可讀的欄位、offset 與 patch metadata |
 
-目標框架為 .NET 8 Windows、WinForms、x64、nullable enabled、PerMonitorV2 DPI。程式 manifest 要求管理員權限，因為正常遊戲安裝位於 `Program Files (x86)`。
+目標為 Rust workspace（`Cargo.toml`；edition 與依賴見各 crate）、egui/eframe 桌面程式、Windows x64。原有 C#／.NET（WinForms）實作已完全移除，且不再需要 .NET 或 C++ 工具鏈；舊程式碼可用 `git show 8d49cb3:<path>` 取回。manifest 要求管理員權限，因為正常遊戲安裝位於 `Program Files (x86)`。
 
 ### 2.1 UI 維護規則
 
-UI 是手寫 WinForms 程式碼，控制項與卡片建立位於 `src.Modifier/UI/ModifierForm.cs`；不要依賴已移除的 `ModifierForm.Layout.cs` 或舊的自動卡片排版範例。新增功能開關時：
+UI 為 egui 即時模式程式碼，面板位於 `apps/against-rome-editor/src/modifier_ui.rs`（修改器）與其他 `*_ui.rs`；不要依賴任何舊 WinForms 版面。新增功能開關時：
 
-1. 在 `ModifierForm.cs` 宣告、建立，並加入使用者指定的既有容器；不得以「看起來相近」為理由移到其他卡片。
+1. 在 `modifier_ui.rs` 繪製控制項，並放入使用者指定的既有分組；不得以「看起來相近」為理由移到其他分組。
 2. 在 `FeatureRegistry` 註冊唯一 ID、類別與 disabled value，並在 `PatchProfile` 和對應 patcher 完整實作 Apply/Detect/Restore。
-3. 在 `ModifierForm.Patches.cs` 的 `featureToggles` map 加入同一 ID；不可另寫平行的 checkbox 清單。
-4. 在 `Localization.cs` 同時補齊 zh-TW/en 的標題、tooltip、log key，且格式化 placeholder 必須對稱。
+3. 在 `FeatureRegistry::toggle_features()` 與 `PatchProfile` 使用同一 ID（`FeatureRegistry::validate_toggle_ids` 會比對；不可另寫平行的 checkbox 清單）。
+4. 在 `native/against-rome-ambience/src/{localization,app_localization}.rs` 同時補齊 zh-TW/en 的標題、tooltip、log key，且格式化 placeholder 必須對稱。
 5. 新寫入必須有原始／patched／legacy／unknown 狀態、rollback 與測試。未知狀態不可覆寫。
 
 速度、遠程射程、法術效果半徑及祭司施法距離是獨立功能的專屬欄位，不能加回自訂兵種 UI 或 `.artroop` 新格式。一般單位 Sight 仍可自訂，但 `AllUnitsEntireMapVision` 啟用時以 30000 為最終值。
 
 ## 3. 遊戲根目錄與備份基線
 
-`GetGamePath()` 回傳 UI 中選定的遊戲路徑。套用、回復、啟動、SAVE、語言 overlay、dgVoodoo2 都必須從這個根目錄推導。任何會寫入或刪除的入口，都應要求 `<gamePath>\Against_Rome.exe` 存在。
+GUI 中選定的遊戲路徑（CLI 為 `--game`）是唯一根目錄。套用、回復、啟動、SAVE、語言 overlay、dgVoodoo2 都必須從這個根目錄推導。任何會寫入或刪除的入口，都應要求 `<gamePath>\Against_Rome.exe` 存在。
 
 原版資料來源順序：
 
-1. 內嵌 `Backup.zip`。
-2. 執行檔旁的本機 `Backup.zip`。
-3. 使用者所選遊戲安裝中的檔案，載入成記憶體基線。
+1. 執行檔旁的本機 `Backup.zip`（選用、不追蹤）。
+2. 使用者所選遊戲安裝中的檔案，載入成記憶體基線。
 
-公開版本不包含原始遊戲資料，因此第三種方式是正式支援路徑。補丁從原版基線重新產生，避免在已修改資料上累積倍率。
+公開版本不包含原始遊戲資料，因此第二種方式是正式支援路徑。補丁從原版基線重新產生，避免在已修改資料上累積倍率。
 
 「執行修改」會在同一個 `FileRollbackScope` 交易內，先透過 `RestoreCategories` 執行不改動 UI 勾選狀態的完整原版恢復，再依 `PatchProfile` 快照重新產生補丁。`FeatureRegistry` 是 Stats／Compat／Language 分類與停用值的唯一來源。EXE、屬性檔、team.dat、無盡 AI、食物治療、語言與 dgVoodoo2 都受同一編排器管理；若任一步驟失敗，整次操作回滾到執行前狀態。
 
-FoodHealing 與 Endless AI 共用 `EndlessAiOrchestrator` 的 `BciScriptFile` 快取。兩者只在記憶體規劃修改，最後由一次 `SaveAll` 統一壓縮與寫入；啟動安全遷移與分類還原也使用相同路徑。
+FoodHealing 與 Endless AI 共用 `endless_ai.rs` 編排器的 `BciScriptFile` 快取。兩者只在記憶體規劃修改，最後由一次 `SaveAll` 統一壓縮與寫入；啟動安全遷移與分類還原也使用相同路徑。
 
-每個 Registry 項目實作 `IFeatureModule`，透過 `PatchContext`／`DetectContext` 參與 Apply 與 Detect 迴圈；同檔案的多個功能值再由 per-file composer 一次產生 bytes。新增功能流程：在 `src.Core/Core/Features/<分類>/` 加入功能實作、於 `FeatureRegistry` 登錄 Id／分類／停用值、在 UI 的 `BuildFeatureToggleMap` 加入控制項，並新增對應測試。Apply／Detect／Restore 的編排器不需增加逐功能 checkbox 分支。
+每個 Registry 項目實作 `IFeatureModule`，透過 `PatchContext`／`DetectContext` 參與 Apply 與 Detect 迴圈；同檔案的多個功能值再由 per-file composer 一次產生 bytes。新增功能流程：在 `native/against-rome-modifier/src/`（如 `exe_features.rs`、`bci_features.rs`） 加入功能實作、於 `FeatureRegistry` 登錄 Id／分類／停用值、在 `modifier_ui.rs` 加入控制項，並新增對應測試。Apply／Detect／Restore 的編排器不需增加逐功能 checkbox 分支。
 
 ## 4. 寫入與回復安全
 
@@ -251,8 +253,8 @@ AI Ultimate 的主體是 3 個可獨立控制的體驗型功能：M1 增援規�
 
 村莊駐軍配額倍率（功能 id 沿用 `VillageGarrisonQuota3x`，值改為倍率本身：1=停用、UI 下拉可選 ×2/×3/×5/×10）是另一個獨立的實驗功能，不屬於 M1 或無盡重生核心。P20 在 `SYSTEM/CLAK/SCRIPT/Dorfverteidigung.bci` 精確辨識 code-stream offsets `0xD350/0xD37C/0xD3A8/0xD3D4` 的四個 `s_searchImportantPos` 呼叫，將它們改為 opcode 120 的同腳本 helper 呼叫；helper 再呼叫原始 symbol #151，並以已由原生 VM dispatcher 確認的 opcode 34 將回傳數量乘以所選倍率（乘法字面值位於 helper 第 14 個 word，換倍率時原地改寫、不移動程式碼）。這會把四類防守 ImportantPos 的動態 squad 配額各乘 N，保留原比例與 0 值，且不改變 P12 的每支部隊 20 人。偵測要求四個呼叫點與唯一 helper/target 全部精確吻合；helper 內字面值屬支援集合但與目前選擇不同時回報 Legacy 並可原地改寫遷移，其餘混合或未知狀態拒絕寫入。停用時會恢復四個外部呼叫、移除 88-byte helper 並還原 `codeSize`。目前只有靜態與自動測試證據，新開局實機及效能仍待驗證，因此不納入「所有功能開啟」。
 
-2026-07-08 新增 P17/P18/P19（皆屬 M4）：修復長期存在的「被擊敗的電腦過一陣子後不再重生」問題，**已套用到實際安裝並經玩家實機確認解決**。根因：type-1 村莊與 type-4 羅馬奠基者的 create 都必須先透過 `fn 0x9904` 找到可用定居地點；地點只要半徑 2500 內有任一隊伍的村莊中心或**任一隊伍的單位（含玩家）**即被否決，後期玩家擴張＋死亡隊伍在 npc.dat 的殘留記錄會把全部 8 個地點永久封死，create 便無聲刪除新派系並失敗（存檔層面完全無痕跡）。P18 將單位鄰近檢查比較值 0→1（玩家單位不再否決，CPU 單位仍否決；錨點＝檔內唯一 `callint -636`）；P19 將否決半徑 2500→800（錨點＝唯一 `callint -36800`）。P17 為 2026-07-06 已設計並有單元測試、但一直未接進任何模組的奠基者機率閘修復（實際檔案先前仍為 60）。套用後獨立位元組驗證：五張地圖各僅 1 個簽名命中、數值皆為目標值（P17=100/P18=1/P19=800）、PFIL 標頭大小欄位正確、解壓縮往返位元組相同，`dotnet test --filter CheckGameStatusTest` 顯示 M1-M6 全數 `Ultimate` 且無 `Legacy`/`Unknown`。注意：存檔內嵌 ak_level 腳本，舊存檔不受修復影響，需開新無盡對局。詳見 `docs/reverse-engineering/endless-mode-ai.md`。
-為了防止遊戲邏輯死結與重生死當，P2 (任務完工回收)、P15 (DELETE_PARTY 安全遷移) 則合併為常駐底層安全修復 R0，不提供 UI 開關，但套用時會自動常駐生效，以確保 AI 運行健全度。實作入口為 `src.Core/Core/EndlessAi/EndlessAiOrchestrator.cs`。
+2026-07-08 新增 P17/P18/P19（皆屬 M4）：修復長期存在的「被擊敗的電腦過一陣子後不再重生」問題，**已套用到實際安裝並經玩家實機確認解決**。根因：type-1 村莊與 type-4 羅馬奠基者的 create 都必須先透過 `fn 0x9904` 找到可用定居地點；地點只要半徑 2500 內有任一隊伍的村莊中心或**任一隊伍的單位（含玩家）**即被否決，後期玩家擴張＋死亡隊伍在 npc.dat 的殘留記錄會把全部 8 個地點永久封死，create 便無聲刪除新派系並失敗（存檔層面完全無痕跡）。P18 將單位鄰近檢查比較值 0→1（玩家單位不再否決，CPU 單位仍否決；錨點＝檔內唯一 `callint -636`）；P19 將否決半徑 2500→800（錨點＝唯一 `callint -36800`）。P17 為 2026-07-06 已設計並有單元測試、但一直未接進任何模組的奠基者機率閘修復（實際檔案先前仍為 60）。套用後獨立位元組驗證：五張地圖各僅 1 個簽名命中、數值皆為目標值（P17=100/P18=1/P19=800）、PFIL 標頭大小欄位正確、解壓縮往返位元組相同，狀態偵測測試（原 `dotnet test --filter CheckGameStatusTest`，現為 `cargo test -p against-rome-modifier`）顯示 M1-M6 全數 `Ultimate` 且無 `Legacy`/`Unknown`。注意：存檔內嵌 ak_level 腳本，舊存檔不受修復影響，需開新無盡對局。詳見 `docs/reverse-engineering/endless-mode-ai.md`。
+為了防止遊戲邏輯死結與重生死當，P2 (任務完工回收)、P15 (DELETE_PARTY 安全遷移) 則合併為常駐底層安全修復 R0，不提供 UI 開關，但套用時會自動常駐生效，以確保 AI 運行健全度。實作入口為 `native/against-rome-modifier/src/endless_ai.rs`。
 
 P15 現為 R0 常駐安全修復：兩個定居型 party 的終態在解壓偏移
 `0x109E8`、`0x16374` 必須維持原版 `DELETE_PARTY (256)`。舊版曾改成
@@ -410,7 +412,7 @@ SHA-256 `49839eb76743893b879be201c729c8104c09415acccc29928fbcea29eee02429`），
 - baseline 完整：精確回復原檔。
 - 原版不存在的 overlay-only 檔案：回復時刪除。
 
-不得把 active `ToEng` 檔當成原版。真實安裝曾有 332 個 overlay 檔但無 baseline，而當時 `Backup.zip` 的 146 entries 不含這些目標。修復工具為 `tools/Repair-LanguageBackup.ps1`。
+不得把 active `ToEng` 檔當成原版。真實安裝曾有 332 個 overlay 檔但無 baseline，而當時 `Backup.zip` 的 146 entries 不含這些目標。修復工具為 `against-rome-modifier repair-language-backup`（可加 `--dry-run`）。
 
 ## 13. 存檔與 VirtualStore
 
@@ -431,6 +433,8 @@ ZIP 備份先建立 `.tmp`，加入修改器產生的 `manifest.json`，成功�
 獨立的實驗性 `CameraZoomOut1` 不修改解析度。遊戲內實測證明原生縮放下限必須從 0 提高到第一個離散級距 1 才會顯示更大戰場；後續嘗試的浮點 0.5 沒有可見作用，因此已撤回。現行補丁把初始化 `0x81388`、讀檔 `0x8D880`、任務腳本 `0x14C1FA` 三個持久化 setter 呼叫導向 `0x1625C0` 的 28-byte cave，把小於 `1.0f` 的要求提升為 `1.0f`，再 tail-jump 至原生 setter；引擎生成快取的暫時縮放不攔截。舊 0.5 cave 會偵測為 `LegacyZoomHalf`，勾選時只改寫 cave 遷移為 +1，取消時也可直接還原。其他混合／未知狀態拒絕啟用；還原先移除三個 redirect，最後清空 cave。+1 的視野擴張已實測成立，但世界中的單位、血條與資訊也會縮小；選取、捲動、霧區、邊界、存讀檔與任務相容性仍待驗證。
 
 ## 15. UI 與 preset
+
+> 注意：以下 UI 條目（`mainTabControl`、`StyleNavButton`、`pnl*Card` 等）為已移除 WinForms 版的歷史紀錄，僅保留設計意圖；目前 UI 為 egui（`apps/against-rome-editor/src/*_ui.rs`）。
 
 - `mainTabControl` 的 header 故意隱藏，左側按鈕負責導航。
 - `StyleNavButton` 綁定前必須先建立對應 `TabPage`。
@@ -464,13 +468,14 @@ ZIP 備份先建立 `.tmp`，加入修改器產生的 `manifest.json`，成功�
 基本驗證：
 
 ```powershell
-dotnet build .\AgainstRomeModifier.csproj -c Release --no-restore
-dotnet test .\tests\AgainstRomeModifier.Tests\AgainstRomeModifier.Tests.csproj -c Release
+cargo test --workspace --locked
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/test-rust-rewrite.ps1
+powershell -NoProfile -File tools/publish-rust.ps1   # 可攜發行 staging（PowerShell 7）
 Get-Content .\data\game_schema.json -Raw | ConvertFrom-Json | Out-Null
 git diff --check
 ```
 
-`tests/AgainstRomeModifier.Tests`（xUnit）以合成 fixture 取代真實遊戲檔案，因此在乾淨 clone、無 `Backup.zip`／遊戲目錄的 CI 環境下也能執行（見 `.github/workflows/ci.yml`）。P1–P19 補丁的黃金值驗證已全數併入這個 xUnit 專案（`EndlessAiCoreIntegrationTests` 等）；舊的 `tests/verify_split_patches` 手動 console 專案已於 2026-07-26 移除。
+各 crate 的 `tests/` 與單元測試（`cargo test`）以合成 fixture 取代真實遊戲檔案，因此在乾淨 clone、無 `Backup.zip`／遊戲目錄的 CI 環境下也能執行（見 `.github/workflows/rust-rewrite.yml`）。P1–P19 補丁的黃金值驗證已全數併入 Rust 測試（`native/against-rome-modifier/tests/` 等）；舊 C# 的 xUnit 與 `tests/verify_split_patches` 專案已移除（C# oracle 輸出已凍結為 fixture）。
 
 依修改類型追加：
 
@@ -485,7 +490,7 @@ git diff --check
 
 不得提交：原始遊戲資料、`Backup.zip`、`MAPS/`、`SYSTEM/`、`SAVE/`、`ToEng/`、原始遊戲封存、本機語言 baseline、`.codex/`、`.agents/`、`re_workspace/`、內部 AI 稽核、工具下載 cache。
 
-可以提交：C# source、README、技術文件、schema、`tools/re/` scripts、已記錄來源與 hash 的 dgVoodoo2 檔。未獲使用者明確要求時，不 commit、不 push、不 rewrite history、不 force-push；本 repo 也不應使用 `git push --mirror`。
+可以提交：Rust source、README、技術文件、schema、`tools/re/` scripts、已記錄來源與 hash 的 dgVoodoo2 檔。未獲使用者明確要求時，不 commit、不 push、不 rewrite history、不 force-push；本 repo 也不應使用 `git push --mirror`。
 
 ## 20. 建議的代理工作順序
 
@@ -505,7 +510,7 @@ git diff --check
 |---|---|---|---|
 | 命令從 `C:\` 掃描並大量 access denied | 中文 cwd 未被沙箱採用 | 繼續進行盲目的全域遞迴搜尋 | `Get-Location`、使用絕對/完整路徑、`git -C`、直接定位目標檔 |
 | Git 回報 dubious ownership | sandbox user 與 repo owner 不同 | 修改全域 safe.directory 設定 | 單次使用 `-c safe.directory=...` 參數 |
-| Build 讀不到 NuGet.Config | sandbox 權限限制 | 認定 C# 專案損毀 | 先用 `--no-restore` 建置；必要時核准讀取使用者設定 |
+| Build 無法取得依賴 | sandbox 權限或離線 | 認定專案損毀 | 使用 `cargo ... --locked --offline` 與既有 `--target-dir`；必要時核准網路 |
 | UI 效果不顯示 | 初始化順序導致 null page | 刪除「看似沒用」的 styling 設定 | 先查 UI 建立順序與事件 wiring |
 | Toggle 又自動變回 live 狀態 | constructor 與 load path 同時寫 Checked | 只修改單一地方 | 同時檢查初始化、event、`LoadCurrentData`、以及 preset 相互干擾 |
 | 免費模式仍有錯誤退還 | 成本與退還欄位重疊 | 只清 obvious cost 或清掉 19..24 欄 | 用原版資料核對完整欄位分組並保留 equipment refund (19..24) |
@@ -519,6 +524,8 @@ git diff --check
 | `.gitignore` 有英文規則但遊戲檔仍出現 | 真實資料夾是本地化名稱 | 假設已忽略成功 | 對照實際 on-disk name 與 `git status --ignored` 的真實輸出 |
 
 ## 22. 歷史修改時間線
+
+> 注意：2026-10 Rust 全面改寫完成前的條目描述的是已移除的 C#／.NET 實作（路徑如 `src.Core/...`、`ModifierForm.*`、xUnit 均已不存在，可用 `git show 8d49cb3:<path>` 取回）；其行為契約已由 Rust 對應模組承接。詳見 `docs/rust-rewrite.md`。
 
 ### 2026-06-22：免費生產與 Git 清理
 - 修正 `ress.ini` 生產／退還分組；保留 `FigTiePac00_Packpferd`。

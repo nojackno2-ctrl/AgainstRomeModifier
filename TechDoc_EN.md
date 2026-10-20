@@ -10,12 +10,12 @@ This document describes the current code, data formats, reverse-engineering evid
 ## 0. Current State — 2026-07-11
 
 - The architecture migration is complete: `PatchProfile`, `FeatureRegistry`, `IFeatureModule`, `PatchContext`, and `DetectContext` are the feature contract; `PatchOptions` is removed. Apply, Detect, category Restore, and UI synchronization use the registry.
-- `Backup.zip` is optional and intentionally untracked. When no embedded or local archive exists, the modifier creates an **in-memory** baseline from the user-selected valid game root. Development and tests must not write directly to an installed game directory.
+- `Backup.zip` is optional and intentionally untracked. When no local archive exists next to the executable, the modifier creates an **in-memory** baseline from the user-selected valid game root. Development and tests must not write directly to an installed game directory.
 - FoodHealing and Endless AI share the `BciScriptFile` cache and commit through one `SaveAll`; new BCI features must not bypass it with direct file writes.
 - `CiviProduce20` and `UnitRecruit20` are runtime-verified, reversible player-side EXE features. They are formal Resource & Combat Upgrades toggles and are included by Enable All; neither modifies AI recruitment.
 - New troop presets contain only `HP,Dmg,VW,AW,Sight,Relt`. Speed, ranged distance, spell radius, and priest `Sirad` (casting distance) are owned by independent features; when `AllUnitsEntireMapVision` is enabled, supported-unit Sight is finally overridden to 30000.
 - The safe endless-military configuration is `20..20` units, `5000 ms` wait, active-party limit `8`, and original loop pacing. The runtime has 20 NPC-job slots; the unconditional gate bypass is rejected.
-- Local verification for this documentation refresh: Release build 0 warnings/0 errors; xUnit 98 passed, 0 failed, 0 skipped.
+- Local verification: the whole project has been ported to Rust; verification is `cargo test --workspace --locked` and `tools/test-rust-rewrite.ps1` (see Section 16 and `docs/rust-rewrite.md`). Former .NET build/xUnit numbers no longer apply.
 
 For the detailed maintenance chronology, debugging failures, checklists, and workflow guidelines intended for future AI agents, refer to the integrated chapters at the end of the Chinese technical document `TechDoc.md`. This file remains the English current-state specification.
 
@@ -33,34 +33,37 @@ For the detailed maintenance chronology, debugging failures, checklists, and wor
 
 ## 2. Architecture
 
-| File | Responsibility |
+| File / crate | Responsibility |
 |---|---|
-| `src.Launcher/` | Suite launcher: starts the Modifier / Map Editor / Save Manager and hosts the technical documentation viewer. |
-| `src.Modifier/Program.cs` | Modifier WinForms entry, elevation, High DPI startup, global exception handling. |
-| `src.Modifier/UI/ModifierForm.cs` | Main UI, controls, backup cache, parsed unit cache, shared state. |
-| `src.Modifier/UI/ModifierForm.Data.cs` | Current-data reading, CSV-like parsing, comparisons, icons, EXE state detection (delegates to `ExePatchModel`). |
-| `src.Modifier/UI/ModifierForm.DataExt.cs` | Safe access to cached original unit rows. |
-| `src.Modifier/UI/ModifierForm.Patches.cs` | Collects the registry-backed toggle map into a `PatchProfile`, starts transactional apply/restore operations, and reports results. |
-| `src.Modifier/UI/ModifierForm.Presets.cs` | Actions to enable/disable all features at once. |
-| `src.Modifier/UI/TroopPresetForm.cs` | Six-property editing (`HP,Dmg,VW,AW,Sight,Relt`) and `.artroop` I/O; legacy nine-field imports are normalized. |
-| `src.Modifier/UI/UIElements.cs` | Owner-drawn toggles, dark menu renderer, GDI disposal. |
-| `src.SaveManager/UI/SaveManagerForm.cs` | Standalone save manager: save discovery, ZIP backup/restore/delete, metadata cache. |
-| `src.MapEditor/` | Map editor, including endless-map clone/delete management. |
-| `src.Core/Core/Bci/` | BCI signature matching, word writes, and PFIL script handling. |
-| `src.Core/Core/EndlessAi/` | Bounded Endless AI BCI modules, state detection, and orchestration. |
-| `src.Core/Core/Features/` | Feature registry, `PatchProfile`, EXE/INI/DAU/BCI/install feature planning, and unified state detection. |
-| `src.Core/Core/Services/PatchEngine.cs` | Thin orchestrator for transaction order, category restores, and feature coordination; it owns no feature-specific constants. |
-| `src.Core/Core/TroopConfig.cs` | Field enums, unit IDs, names, factions, tiers, types, and balance baselines. |
-| `src.Core/Core/Patches/` | Pure, WinForms-independent patch logic: `ObjdefPatcher`, `RessPatcher`, `ClScriptPatcher`, `ClEparaPatcher`, `ClScintPatcher`, `TeamDatPatcher`, `ExePatchModel`, `VerifiedBinaryWriter`. Byte computation and fixed-offset state detection/planning live here so they can be unit-tested without WinForms or copyrighted game files. |
-| `src.Core/Core/Localization.cs` | Chinese/English UI and log strings. |
-| `src.Shared/Core/GameLZSS.cs` | LZSS and `PFIL@` wrapper decode/encode with bounds checks. |
-| `src.Shared/Maps/` | Map catalog, clone, delete, and SDL scene services. |
+| `apps/against-rome-editor/src/bin/against-rome-launcher.rs` | Suite launcher: starts the Modifier / Map Editor / Save Manager. |
+| `apps/against-rome-editor/src/main.rs`, `app.rs` | Map editor egui desktop entry and main window. |
+| `apps/against-rome-editor/src/bin/against-rome-modifier-gui.rs`, `modifier_ui.rs` | Modifier GUI entry and panels: profile, preview, apply, restore; six-property unit presets (`HP,Dmg,VW,AW,Sight,Relt`); legacy nine-field imports are normalized. |
+| `apps/against-rome-editor/src/bin/against-rome-save-manager.rs`, `save_manager_ui.rs` | Standalone save manager GUI: save discovery, ZIP backup/restore/delete. |
+| `apps/against-rome-editor/src/tech_doc_ui.rs` | Embedded technical document viewer (`include_str!` of this file and `TechDoc.md`). |
+| `apps/against-rome-editor/src/maps_ui.rs` | Map management, including endless-map clone/delete. |
+| `native/against-rome-modifier/src/features.rs` | Feature registry (`FeatureRegistry`), `PatchProfile`, feature Ids/categories/disabled values. |
+| `native/against-rome-modifier/src/services.rs` | Thin orchestrator for transaction order, category restores, and feature coordination; it owns no feature-specific constants. |
+| `native/against-rome-modifier/src/{exe_patches,exe_features,detectors}.rs` | EXE patch model, planning, and unified state detection (original/current/legacy/unknown). |
+| `native/against-rome-modifier/src/{objdef,ress,cl_script,epara,team_dat,patch_text}.rs` | Pure, GUI-independent patch logic (objdef.dau, ress.ini, cl_script.ini, epara, team.dat). The UI only builds a `PatchProfile` and delegates. |
+| `native/against-rome-modifier/src/{bci_features,endless_ai}.rs` | BCI signature matching, word writes, bounded Endless AI BCI modules, state detection, and orchestration. |
+| `native/against-rome-modifier/src/install.rs` | Managed dgVoodoo2 install/remove. |
+| `native/against-rome-modifier/src/{troop_config,troops,unit_stats}.rs` | Field enums, unit metadata, balance baselines, and custom troops. |
+| `native/against-rome-modifier/src/{cli,cli_commands,main}.rs` | Modifier CLI (`against-rome-modifier`). |
+| `native/against-rome-modifier/src/lzss.rs`, `native/against-rome-data/src/lzss.rs` | LZSS and `PFIL@` wrapper decode/encode with bounds checks. |
+| `native/against-rome-saves/` | Save ZIP/manifest, scan, backup, restore, delete, verification, and AI repair. |
+| `native/against-rome-maps/` | Map catalog, clone, delete, SDL scene services, and `FileRollbackScope` transactions. |
+| `native/against-rome-ambience/src/{localization,app_localization}.rs` | Chinese/English UI and log strings. |
+| `native/against-rome-packaging/` | Map packaging CLI (`ArmMapPackage`), manifest, preflight. |
+| `native/against-rome-trace/` | Win32 proxy/hook/trace runtime (replaces the former C++ trace DLL). |
+| `native/against-rome-{data,editor,landscape,navigation,placement,scenario,campaign,environment,scene,textures,ai-planner}/` | Map editor data parsing, terrain, pathing, placement, scenario, environment, scene, and texture cores. |
+| `tools/re/*-rs/` | Rust reverse-engineering probes and golden/contract tests. |
+| `data/game_schema.json` | Machine-readable fields, offsets, and patch metadata. |
 
-The application targets `.NET 8`, `net8.0-windows`, WinForms, x64, nullable reference types, and `PerMonitorV2` DPI. `Backup.zip` is embedded only for an explicit non-Release developer build with `-p:IncludeBackupZip=true`; Release and publish commands force it off. Both embedded technical documents are mandatory resources.
+The project is a Rust workspace (`Cargo.toml`), an egui/eframe desktop app, Windows x64. The former C#/.NET (WinForms) implementation has been fully removed and neither .NET nor a C++ toolchain is needed; retrieve old code with `git show 8d49cb3:<path>`. The manifest requests administrator rights because the normal game install lives under `Program Files (x86)`. `Backup.zip` is an optional untracked local baseline picked up next to the executable; it is never bundled into release artifacts. Both embedded technical documents are mandatory resources (`include_str!`).
 
 ## 3. Backup, Transactions, and Apply Order
 
-Original data may be loaded from an embedded `Backup.zip` only in an explicitly opted-in developer build. Public repositories and release artifacts must not publish original game assets. Without the archive, required originals are read from the selected game installation and retained in memory. `backupFiles` uses case-insensitive keys.
+Original data may be loaded from a local `Backup.zip` next to the executable; it is never embedded in release artifacts. Public repositories and release artifacts must not publish original game assets. Without the archive, required originals are read from the selected game installation and retained in memory. `backupFiles` uses case-insensitive keys.
 
 `FileRollbackScope` records every target before its first write. `SafeWriteAllBytes` writes through a temporary file in the target directory. Any exception restores all files to their state at the start of that operation. A successful operation calls `Commit()`, disposes the scope, and only then refreshes UI data. This is a per-operation transaction, not a persistent `.bak` system.
 
@@ -77,7 +80,7 @@ Apply order:
 
 FoodHealing and Endless AI share the orchestrator's `BciScriptFile` cache. Both plan changes in memory and a single `SaveAll` performs final PFIL compression and writes. Startup-safe migration and category restore use the same path.
 
-Every registry entry implements `IFeatureModule` and participates in Apply/Detect through `PatchContext` and `DetectContext`; values sharing one file are then composed into bytes once by a per-file composer. To add a feature, add its implementation under `src.Core/Core/Features/<category>/`, register its Id/category/disabled value in `FeatureRegistry`, add its UI control to `BuildFeatureToggleMap`, and add tests. The Apply/Detect/Restore orchestrators require no per-checkbox branch.
+Every registry entry implements `IFeatureModule` and participates in Apply/Detect through `PatchContext` and `DetectContext`; values sharing one file are then composed into bytes once by a per-file composer. To add a feature, add its implementation under `native/against-rome-modifier/src/` (for example `exe_features.rs` or `bci_features.rs`), register its Id/category/disabled value in `FeatureRegistry`, add its control in `modifier_ui.rs` and its Id to `FeatureRegistry::toggle_features()`, and add tests. The Apply/Detect/Restore orchestrators require no per-checkbox branch.
 9. Restore original `team.dat` files, then apply population only.
 10. Apply endless-mode BCI changes.
 11. Apply language resources.
@@ -91,7 +94,7 @@ The decompressor rejects negative or greater-than-50-MB output sizes. The 4096-b
 
 **Ring-init contract (fixed 2026-07-02):** the game EXE decompressor (`FUN_00565c00`) fills only the first `0xFEE` ring positions with spaces (`0x20`); the last 18 positions (`0xFEE..0xFFF`) stay `0x00` from `memset`, and the write cursor starts at `0xFEE`. The compressor's window model must match exactly. The old `GameLZSS` modeled the whole ring as spaces, so space runs within the first 18 output bytes could be matched against the "phantom spaces" at `0xFEE..0xFFF`; the game then decoded `0x00` there, and NULs truncated text files at the INI tokenizer (symptom: `No Mem len=0 CLMK\mk_tcon.c [1138]`, `.sdl` parsed as zero objects). Binary payloads (BCI) never triggered it because they contain no early space runs.
 
-The game does not implement RFC 4180 CSV. CSV-like rows use `Split(',')` and `string.Join`. Adding quotes or escaping can make old engine object IDs and paths invalid, causing missing building buttons. Preserve original line endings, trailing empty fields, and cp1251 encoding.
+The game does not implement RFC 4180 CSV. CSV-like rows use comma splitting and joining (no quoting). Adding quotes or escaping can make old engine object IDs and paths invalid, causing missing building buttons. Preserve original line endings, trailing empty fields, and cp1251 encoding.
 
 ## 5. Language Resources
 
@@ -235,8 +238,8 @@ AI Ultimate exposes three independent experience controls: M1 reinforcement size
 
 The Village Garrison Quota Multiplier (feature id kept as `VillageGarrisonQuota3x` for migration; the value is now the multiplier itself: 1 = disabled, UI dropdown offers x2/x3/x5/x10) is a separate Experimental option, not part of M1 or the Endless Respawn Core. P20 recognizes the four exact `s_searchImportantPos` calls at code-stream offsets `0xD350/0xD37C/0xD3A8/0xD3D4` in `SYSTEM/CLAK/SCRIPT/Dorfverteidigung.bci` and redirects them through opcode-120 internal calls to one appended helper. The helper calls original symbol #151 and multiplies its result by the selected factor with opcode 34, confirmed as signed multiplication in the native VM dispatcher (the multiplier literal sits at word 14 of the helper, so switching multipliers is an in-place literal rewrite that never moves code). This multiplies each of the four dynamic defensive-ImportantPos squad quotas by N while preserving their ratios and zero values; P12's 20 members per newly produced squad remains independent. Detection requires all four exact call sites and the exact helper/target; a helper literal from the supported set that differs from the current selection reports Legacy and migrates via the in-place rewrite, while any other mixed or unknown state is refused. Disable restores the external calls, removes the 88-byte helper, and restores `codeSize`. Only static and automated evidence exists so far; fresh-game runtime and performance verification remain pending, so Enable All excludes it.
 
-Added 2026-07-08, all in M4, **RUNTIME-CONFIRMED**: P17/P18/P19 fix the long-standing "defeated CPUs eventually stop respawning" endless-mode bug. Root cause: both village (type-1) and Roman founder (type-4) creation must first obtain a free settle place from `fn 0x9904`; a place is vetoed whenever ANY team's village center or ANY team's units (including the player's) are within radius 2500. Late-game player expansion plus dead-team leftovers in npc.dat permanently veto all 8 places, so creation silently deletes the fresh party and fails forever. P18 raises the unit-scan comparand 0 -> 1 (player units no longer veto; anchor = the file's only `callint -636`); P19 shrinks the veto radius 2500 -> 800 (anchor = the only `callint -36800`). P17 (designed and unit-tested 2026-07-06) had never been wired into a module until now — installed files still carried the vanilla 60. After applying M4 to the live install, the player confirmed in-game that defeated CPU teams resume respawning. Independent byte-level verification: all five maps show exactly 1 signature hit each with the exact Ultimate values, correct PFIL header size fields, and byte-identical decompress/recompress round-trips; `dotnet test --filter CheckGameStatusTest` reports M1-M6 all `Ultimate` with zero `Legacy`/`Unknown`. Note: saves embed their own ak_level script, so the fix applies to NEW endless games only. See `docs/reverse-engineering/endless-mode-ai.md` for the full decode.
-To prevent game logic deadlocks and respawn-related crashes, P2 (completed-job slot recycle) and P15 (DELETE_PARTY safety migration) are merged into R0 as mandatory background safety fixes. They are applied automatically under the hood to ensure robust AI execution. `src.Core/Core/EndlessAi/EndlessAiOrchestrator.cs` owns module detection and application.
+Added 2026-07-08, all in M4, **RUNTIME-CONFIRMED**: P17/P18/P19 fix the long-standing "defeated CPUs eventually stop respawning" endless-mode bug. Root cause: both village (type-1) and Roman founder (type-4) creation must first obtain a free settle place from `fn 0x9904`; a place is vetoed whenever ANY team's village center or ANY team's units (including the player's) are within radius 2500. Late-game player expansion plus dead-team leftovers in npc.dat permanently veto all 8 places, so creation silently deletes the fresh party and fails forever. P18 raises the unit-scan comparand 0 -> 1 (player units no longer veto; anchor = the file's only `callint -636`); P19 shrinks the veto radius 2500 -> 800 (anchor = the only `callint -36800`). P17 (designed and unit-tested 2026-07-06) had never been wired into a module until now — installed files still carried the vanilla 60. After applying M4 to the live install, the player confirmed in-game that defeated CPU teams resume respawning. Independent byte-level verification: all five maps show exactly 1 signature hit each with the exact Ultimate values, correct PFIL header size fields, and byte-identical decompress/recompress round-trips; the status-detection tests (formerly `dotnet test --filter CheckGameStatusTest`, now `cargo test -p against-rome-modifier`) reports M1-M6 all `Ultimate` with zero `Legacy`/`Unknown`. Note: saves embed their own ak_level script, so the fix applies to NEW endless games only. See `docs/reverse-engineering/endless-mode-ai.md` for the full decode.
+To prevent game logic deadlocks and respawn-related crashes, P2 (completed-job slot recycle) and P15 (DELETE_PARTY safety migration) are merged into R0 as mandatory background safety fixes. They are applied automatically under the hood to ensure robust AI execution. `native/against-rome-modifier/src/endless_ai.rs` owns module detection and application.
 
 P15 is now a mandatory R0 safety repair. The two settled-party terminal
 transitions at decompressed offsets `0x109E8` and `0x16374` must remain on the
@@ -374,7 +377,7 @@ Legacy nine-field rows are import-compatible only; removed fields are discarded 
 
 All 43 known units, including three priests and seven siege units, are supported. Imports validate keys, field counts, and numeric values before updating grids.
 
-Save management scans live saves and ZIP backups. The only authoritative live-save root is `Path.Combine(GetGamePath(), "SAVE")`, which is `C:\Program Files (x86)\Against Rome\SAVE` for the default installation. The modifier must never treat `%LOCALAPPDATA%\VirtualStore` as a game-data source or patch target.
+Save management scans live saves and ZIP backups. The only authoritative live-save root is `<selected game path>\SAVE`, which is `C:\Program Files (x86)\Against Rome\SAVE` for the default installation. The modifier must never treat `%LOCALAPPDATA%\VirtualStore` as a game-data source or patch target.
 
 When this legacy game is started from `Program Files (x86)` without elevation, Windows UAC file virtualization can redirect relative writes to `%LOCALAPPDATA%\VirtualStore\Program Files (x86)\Against Rome\SAVE`, creating a separate set of saves. The modifier manifest uses `requireAdministrator`; its launcher points `FileName` at the selected `Against_Rome.exe` and sets `WorkingDirectory` to that same selected game directory. Direct game shortcuts must also run elevated to prevent VirtualStore from being recreated.
 
@@ -398,7 +401,7 @@ Final user runtime verification confirms that centered 4:3 fullscreen and correc
 
 The independent Experimental `CameraZoomOut1` does not change resolution. Runtime testing proves that the native minimum must reach the first discrete step, 1, before the battlefield visibly pulls back; the later fractional 0.5 experiment had no visible effect and has been withdrawn. Persistent startup (`0x81388`), save-load (`0x8D880`), and mission-script (`0x14C1FA`) calls redirect through the 28-byte cave at `0x1625C0`, which raises requests below `1.0f` to `1.0f` and tail-jumps to the native setter; temporary cache-generation calls remain untouched. The old 0.5 cave is detected as `LegacyZoomHalf` and migrates by replacing only the cave, while disable can restore it directly. Other mixed/unknown states refuse enabling. The +1 battlefield expansion is runtime-proven, but world units, health bars, and information also become smaller; selection, scrolling, fog, bounds, save/load, and mission compatibility still require verification.
 
-- Borderless dark WinForms UI with sidebar-driven hidden-header tabs.
+- egui desktop UI (`apps/against-rome-editor/src/*_ui.rs`); the former borderless WinForms UI has been removed. The remaining items in this list are historical WinForms-era notes retained for intent only.
 - Owner-drawn `ModernToggle`; every `CreateRoundRectRgn` handle is released with `DeleteObject`.
 - Fixed table widths and vertical scrolling prevent column shifts.
 - `_backupUnitRows` parses original `objdef.dau` once for default/current grids.
@@ -429,9 +432,9 @@ Use these before repeating whole-program analysis. Rebuild the inventory only fo
 
 ## 16. Verification Checklist
 
-- `dotnet test .\tests\AgainstRomeModifier.Tests\AgainstRomeModifier.Tests.csproj -c Release` passes (33 xUnit tests as of 2026-07-05). All fixtures are synthetic; no copyrighted game files are required, so this also runs in the `.github/workflows/ci.yml` CI job on a clean checkout. The legacy `tests/verify_split_patches` console project was removed on 2026-07-26; its golden-value coverage now lives in the xUnit suite (`EndlessAiCoreIntegrationTests` and friends).
-- `ExePatchModelTests` specifically covers the EXE fixed-offset patches (focus-loss, spell-altar, legacy village-range restore, village setter Legacy 2x/2.5x/3x/5x and EntireMap): state detection, enable/disable round-trips, migration from any legacy setter state to EntireMap and back, and abort-without-corruption when expected bytes don't match.
-- Build succeeds and JSON parses.
+- `cargo test --workspace --locked` passes, and `tools/test-rust-rewrite.ps1` runs every native crate (add `-IncludeDesktop` for the app). All fixtures are synthetic; no copyrighted game files are required, so this also runs in the `.github/workflows/rust-rewrite.yml` CI job on a clean checkout. The former C# xUnit project and `tests/verify_split_patches` were removed; C# oracle outputs were frozen into fixtures before deletion.
+- The EXE patch tests (`native/against-rome-modifier/tests/`, `exe_patches.rs`) specifically cover the EXE fixed-offset patches (focus-loss, spell-altar, legacy village-range restore, village setter Legacy 2x/2.5x/3x/5x and EntireMap): state detection, enable/disable round-trips, migration from any legacy setter state to EntireMap and back, and abort-without-corruption when expected bytes do not match.
+- `cargo build --workspace --locked` succeeds and `data/game_schema.json` parses. Portable staging: `tools/publish-rust.ps1` (PowerShell 7).
 - The current Chinese and English documents are included by the project as the
   intended embedded resources.
 - `git diff --check` passes.
@@ -463,7 +466,7 @@ Always separate a stored value from its runtime meaning. Proximity, naming simil
 
 ## 18. Public Repository Boundary
 
-- Publishable: C# source, `data/game_schema.json`, `docs/reverse-engineering/`, reproducible scripts under `tools/re/`, `tools/Repair-LanguageBackup.ps1`, and the redistributable `ThirdParty/dgVoodoo2/` integration files.
+- Publishable: Rust source, `data/game_schema.json`, `docs/reverse-engineering/`, reproducible Rust tools under `tools/re/`, and the redistributable `ThirdParty/dgVoodoo2/` integration files.
 - Never publish: localized original-game folders covered by `.gitignore`,
   `Original game archives/`, `Backup.zip`, game executables/data/maps/language/save
   payloads, or whole-program decompiler output derived from the original executable.

@@ -1,28 +1,55 @@
-# 全程式 Rust 改寫
+# 全程式 Rust 改寫：最終遷移紀錄
 
-使用者於 2026-10-15 要求整個程式改寫成 Rust。完成條件是既有修改器、存檔管理器與地圖編輯器的功能均有 Rust 實作及實際入口，建置與執行不再需要 C#／.NET。Rust DLL、FFI 或只有部分功能的新視窗都不足以代表完成。
+使用者於 2026-10-15 要求整個程式改寫成 Rust。本文件是遷移完成後的最終紀錄（原為進行中的計畫與對照表）。舊 C#／.NET 與 C++ 原始碼已自工作樹移除，仍可由 Git 歷史取回，例如 `git show 8d49cb3:<path>`。
 
-## 功能與證據對照
+## 完成條件（已達成）
 
-| 範圍 | 現有來源 | Rust 改寫位置／狀態 |
-|---|---|---|
-| 原生資料與素材 | `src.Shared`、`Modules/NativeAssets` | `native/against-rome-data` 已有 ALR、APT 文件／幾何／附件、light pool、particle definition、PFIL/LZSS 等解析與寫入核心；其餘資料池、資產載入和行為仍須逐項盤點。Release suite 目前通過；不代表完整覆蓋。 |
-| 地形編輯 | `Modules/Terrain`、`MapEditorForm.Terrain*` | `native/against-rome-editor` 有尺寸、取樣、筆刷、歷史、斜坡與 emboss fit/relight；`native/against-rome-landscape` 有道路、河流、懸崖、堡壘和水力／熱侵蝕。父端 2026-10-18 Release tests：editor 14 passed，landscape 56 passed；live .NET differential 有 ignored gate。材質編輯另見下列 UI/材質列。 |
-| 通行與道路診斷 | `Modules/Pathfinding` | `native/against-rome-navigation` 有路網、連通、formation、clearance、道路間隙與診斷；app 有 `navigation.rs` 即時診斷入口。Native Release tests 通過，仍待實際桌面互動驗收。 |
-| 修改器 | `src.Core/Core/Patches`、`Features`、`src.Modifier` | `native/against-rome-modifier` 有 EXE/INI/BCI、物件資料、隊伍、部隊統計、安裝偵測、交易、安全存檔服務與 CLI；app 有 profile/preview/apply 入口。仍須逐項核對完整 Feature Registry、GUI parity 及真實遊戲檔相容。2026-10-18 Release crate tests 通過。 |
-| 桌面入口 | `LauncherForm`、`MapEditorForm` | `apps/against-rome-editor` 是 egui 原生桌面入口，已有地圖、地形、材質、放置、scenario/event、campaign、environment、ambience、navigation、AI planning、modifier、save manager、packaging 等面板；Rust Modifier 已有 CustomUnitStats 六欄編輯及 `.artroop` 手動路徑匯入/匯出；Save Manager AI repair 於 `3313935` 加入，唯讀存檔完整性驗證於 `f018cbb` 加入。2026-10-18 父端 Release app suite 160 tests passed (148 unit + 12 integration)；`cargo check --all-targets` 無 warning。真正 GUI/遊戲工作流程仍需驗收。 |
-| 存檔管理 | `SaveBackupService`、`src.SaveManager` | `native/against-rome-saves` 有 ZIP/manifest、scan、preview、backup/restore/delete、rollback、verification、backup health/recovery、AI repair；Rust app toolbox 已有 review/confirm 操作與 SaveService AI repair。仍須核對 C# 完整 UI parity、故障注入和使用者資料相容。2026-10-18 native 35 tests passed、1 .NET differential ignored。 |
-| 放置與關聯池 | `Modules/Placement`、`LevelObjectStore` | `native/against-rome-placement` 已有交易式 family closure/remap、引用驗證、移動／複製／刪除、undo/redo、存檔安全與 app UI。2026-10-18 native 37 tests passed、6 differential/retail tests ignored；真圖往返與安裝版遊戲驗收仍未完成。 |
-| 劇本、事件及開場 | `Modules/Scripting`、`Events`、`Cinematics`、`Objectives` | `native/against-rome-scenario` 已有 BCI parse/compile、safe load/save/rollback，app 有 scenario 與 event graph UI；`native/against-rome-campaign` 有 AI/cinematics/campaign pipeline。2026-10-18 scenario 26 tests passed、3 differential tests ignored；真實腳本 corpus 和遊戲內結果仍待驗證。 |
-| 其他設計工具 | Nature、Atmosphere、Soundscape、Settlement、WildLair、Fortification、AI、Packaging、Diff、Localization | Rust crates 已涵蓋環境生成、氛圍／音景／本地化、AI map planner、campaign、packaging contracts 等多項；桌面有部分入口。需比對每個 C# 模組，尚未證明全功能 parity。 |
-| 渲染與互動 | `Modules/Rendering`、2D／3D view | `native/against-rome-scene` 有相機、draw list、lighting、culling、picking、ray picking、terrain mesh 等 CPU-side 準備；不能據此宣稱完整 GPU renderer、完整材質／粒子/物件視覺或 3D app parity。需完成畫面與互動驗收。 |
-| 發行 | csproj／MSBuild／publish scripts | Rust workspace、CLI 與 desktop crate 可建置，驗證腳本涵蓋 17 個 native crates；正式 Rust 可攜發行、版本/provenance、安裝／升級及替代舊 .NET 發行流程仍待完成。 |
-| 原生追蹤 DLL | `native/argm-trace`（C++） | `native/against-rome-trace` 有 Rust Win32 proxy/hook/trace runtime，父端 x64 76 tests、i686 79 tests 通過；仍須核對 C++ 完整 parity、DLL 部署/卸載與授權範圍內真實遊戲 runtime，不能只以 crate tests 宣告替換完成。 |
+- 所有產品程式碼均為 Rust：修改器、存檔管理器、地圖編輯器、啟動器、封裝 CLI、追蹤 DLL 與逆向工程探針。
+- 建置、測試與執行不再需要 .NET、MSBuild、C++ 工具鏈或 Python。
+- 已有 Rust 實際入口：`apps/against-rome-editor`（egui 桌面程式，含 `against-rome-launcher`、`against-rome-modifier-gui`、`against-rome-save-manager` 等 bin）、`native/against-rome-modifier`（CLI）、`native/against-rome-packaging`（`ArmMapPackage`）。
+- 遷移期間用來比對行為的 C# oracle 輸出，已在刪除 C# 前凍結成 fixtures（Rust 測試不再需要 dotnet）。
 
-## 驗證入口
+## 對照摘要（原 C#／C++ 範圍 → Rust crate）
 
-`powershell -NoProfile -ExecutionPolicy Bypass -File tools/test-rust-rewrite.ps1` 對 Rust 資料核心與新核心逐 crate 執行 `cargo test --locked`；加 `-IncludeDesktop` 納入桌面 crate，加 `-Release` 測試 Release，加 `-Differential` 實際執行 C#／Rust 地形比對（需 .NET）。ExecutionPolicy 參數僅作用於該程序。腳本優先使用專案本機工具鏈，只更動該程序環境；所有編譯輸出位於 ignored `re_workspace`。
+| 原範圍 | Rust 位置 |
+|---|---|
+| `src.Shared`（PFIL/LZSS、ALR、APT、粒子、資料池）、NativeAssets | `native/against-rome-data` |
+| `src.Core`（Patches、Features、Bci、EndlessAi、Services、TroopConfig、Localization）、`src.Modifier` | `native/against-rome-modifier`（`features.rs`、`services.rs`、`exe_*`、`objdef`、`ress`、`cl_script`、`epara`、`team_dat`、`bci_features`、`endless_ai`、`install`、CLI）；本地化在 `native/against-rome-ambience` |
+| `src.SaveManager`、SaveBackupService | `native/against-rome-saves` + `apps/against-rome-editor/src/save_manager_ui.rs` |
+| `src.Shared/Maps`、地圖複製／刪除／空白地圖／交易 | `native/against-rome-maps` |
+| Modules/Terrain | `native/against-rome-editor`、`native/against-rome-landscape` |
+| Modules/Pathfinding | `native/against-rome-navigation` |
+| Modules/Placement、LevelObjectStore | `native/against-rome-placement` |
+| Modules/Scripting、Events | `native/against-rome-scenario` |
+| Modules/Cinematics、Objectives、AI、campaign | `native/against-rome-campaign`、`native/against-rome-ai-planner` |
+| Nature、Settlement、WildLair、Shadow | `native/against-rome-environment` |
+| Atmosphere、Soundscape、Localization | `native/against-rome-ambience` |
+| Modules/Rendering、2D／3D view | `native/against-rome-scene`、`native/against-rome-textures` + app 的 `viewport_3d.rs` 等 |
+| Packaging、Diff（C# `ArmMapPackage`） | `native/against-rome-packaging` |
+| `native/argm-trace`（C++） | `native/against-rome-trace`（Rust Win32 proxy／hook／trace） |
+| `src.Launcher`、`MapEditorForm`、WinForms UI | `apps/against-rome-editor`（egui） |
+| C# RE probes、Python 探針（`ar-re`） | `tools/re/*-rs`（含 `ar-re-tools-rs`） |
+| csproj／MSBuild／`tools/publish.ps1` | Cargo workspace、`tools/publish-rust.ps1` |
 
-每個測試結果僅證明它涵蓋的功能。仍須完成桌面實際啟動、既有地圖往返、失敗回滾、修改器／存檔相容及授權範圍內遊戲驗收。不得將測試全綠視作整體改寫完成。移植期間保留現有 C#，待對應 Rust 功能、使用入口和驗證到位後再逐段移除。
+逐項遷移期間的詳細盤點仍保存在 [rust-rewrite-inventory.md](rust-rewrite-inventory.md)、[rust-port-inventory.md](rust-port-inventory.md)、[rust-rewrite-app.md](rust-rewrite-app.md)（皆為歷史文件）。
 
-2026-10-18：集中腳本已納入全部 17 個 native Rust crates；桌面入口仍由 `-IncludeDesktop` 啟用。`-Differential` 的各閘門必須實際產生至少一項 passing test，零測試不能視為通過。加 `-Retail` 顯式執行材質真圖 PFIL／TEMP 保存往返測試；需要本機零售遊戲圖資，缺檔應失敗。一般 CI 不執行這兩項 retail 測試，會清楚列為 ignored，其他 synthetic 測試照常執行。這些驗證不代表遊戲內驗收。
+## 驗證指令
+
+```powershell
+cargo test --workspace --locked
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/test-rust-rewrite.ps1            # 逐 crate；-IncludeDesktop 納入桌面、-Release、-Retail（需本機零售圖資）、-TraceOnly
+powershell -NoProfile -File tools/test-publish-rust.ps1                                    # 發行腳本契約測試（PowerShell 7）
+powershell -NoProfile -File tools/publish-rust.ps1                                         # 可攜 ZIP staging（PowerShell 7）
+```
+
+最後一次完整本機驗證（2026-10-20）：`cargo test --workspace --locked --offline` 2215 passed / 0 failed / 15 ignored（忽略項目需要零售遊戲或本機證據）。CI 見 `.github/workflows/rust-rewrite.yml`、`rust-release-candidate.yml`、`release.yml`。零測試的閘門不得視為通過。
+
+## 尚未驗證（Not yet verified）
+
+- 沒有執行過實際 GUI 互動（桌面程式的點擊／拖曳／畫面與 3D 視圖僅有單元與整合測試）。
+- 沒有遊戲內驗收（修改器補丁、地圖編輯結果在真實遊戲中的行為）；測試通過不等於遊戲內可用。
+- 沒有在乾淨 Windows 上驗收可攜發行包（解壓、啟動、權限／UAC、dgVoodoo2／追蹤 DLL 部署）。
+- `tools/test-publish-rust.ps1` 的 PowerShell 7 發行契約測試只在 CI 執行；本機沒有 pwsh 7，僅做過語法解析。
+- 渲染保真度（粒子混合、超過 64 盞光源、RNG／FPU 重播）不在範圍內：本專案是地圖編輯器，不是遊戲重製。
+
+不得將測試全綠視作遊戲內可用的證據。
