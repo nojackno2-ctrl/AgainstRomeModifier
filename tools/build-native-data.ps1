@@ -10,7 +10,7 @@
   particle ABI/size queries are checked, and a manifest is written next to it.
 
   The deployed DLL contains Rust light.dat and particle.dat readers plus editor ALR scanline decoding; it is not a game
-  file and the script never touches the game directory or ISO. Point the C# bridge at it with
+  file and the script never touches the game directory or ISO. C ABI consumers can use
   ARM_NATIVE_DATA_DLL=<OutputDir>\against_rome_data.dll, or place it beside the host executable.
 #>
 [CmdletBinding()]

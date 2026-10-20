@@ -27,7 +27,8 @@ pub struct InstallResources {
     pub argm_winmm: Vec<u8>,
 }
 impl InstallResources {
-    /// Loads the bundled third-party payloads (C# embedded resources) from a `ThirdParty` directory.
+    /// Explicitly loads all payloads from a caller-selected `ThirdParty` directory.
+    /// Kept for callers/tests that deliberately inject a complete resource bundle.
     pub fn from_third_party(root: &Path) -> io::Result<Self> {
         let mut r = Self::default();
         for name in ["D3D8.dll", "DDraw.dll", "dgVoodooCpl.exe", "dgVoodoo.conf"] {
@@ -37,27 +38,83 @@ impl InstallResources {
         r.argm_winmm = fs::read(root.join("argm-trace").join("winmm.dll"))?;
         Ok(r)
     }
-    /// Looks for `ThirdParty` via `ARM_THIRDPARTY_DIR`, next to the executable, then up to four parents (repo layout); empty if absent.
+    /// Discovers DgVoodoo independently of the Rust trace DLL.
+    /// `ARM_ARGM_TRACE_DLL` overrides trace discovery; otherwise only app-local
+    /// payloads and Rust release build outputs are considered, never ancestor
+    /// `ThirdParty/argm-trace` directories (which may contain the legacy C++ DLL).
     pub fn discover() -> Self {
-        let mut roots: Vec<PathBuf> = std::env::var_os("ARM_THIRDPARTY_DIR")
-            .map(PathBuf::from)
-            .into_iter()
-            .collect();
-        if let Some(mut dir) = std::env::current_exe()
+        let exe_dir = std::env::current_exe()
             .ok()
-            .and_then(|p| p.parent().map(Path::to_path_buf))
-        {
-            for _ in 0..5 {
-                roots.push(dir.join("ThirdParty"));
-                if !dir.pop() {
-                    break;
+            .and_then(|p| p.parent().map(Path::to_path_buf));
+        let third_party = std::env::var_os("ARM_THIRDPARTY_DIR").map(PathBuf::from);
+        let trace_dll = std::env::var_os("ARM_ARGM_TRACE_DLL").map(PathBuf::from);
+        Self::discover_with(
+            exe_dir.as_deref(),
+            third_party.as_deref(),
+            trace_dll.as_deref(),
+        )
+    }
+
+    /// Deterministic discovery with the executable directory and environment
+    /// overrides supplied by the caller. A missing explicit trace override leaves
+    /// trace unavailable instead of silently installing a different DLL.
+    pub fn discover_with(
+        exe_dir: Option<&Path>,
+        third_party: Option<&Path>,
+        trace_dll: Option<&Path>,
+    ) -> Self {
+        let mut roots: Vec<PathBuf> = third_party.map(Path::to_path_buf).into_iter().collect();
+        if let Some(dir) = exe_dir {
+            roots.extend(dir.ancestors().take(5).map(|p| p.join("ThirdParty")));
+        }
+        let dgvoodoo = roots
+            .iter()
+            .find_map(|root| {
+                DG_FILES
+                    .iter()
+                    .map(|name| {
+                        fs::read(root.join("dgVoodoo2").join(name))
+                            .map(|bytes| (name.to_string(), bytes))
+                    })
+                    .collect::<io::Result<BTreeMap<_, _>>>()
+                    .ok()
+            })
+            .unwrap_or_default();
+
+        let argm_winmm = if let Some(path) = trace_dll {
+            fs::read(path).unwrap_or_default()
+        } else {
+            let mut candidates = Vec::new();
+            if let Some(dir) = exe_dir {
+                // A source checkout's ThirdParty is not a packaged Rust payload,
+                // even when a developer puts the executable at the repo root.
+                if !dir.join(".git").exists()
+                    && !dir.join("native/against-rome-trace/Cargo.toml").is_file()
+                {
+                    candidates.push(dir.join("ThirdParty/argm-trace/winmm.dll"));
+                    candidates.push(dir.join("winmm.dll"));
+                }
+                for root in dir.ancestors() {
+                    for target in [
+                        "re_workspace/rust-rewrite-targets/native-against-rome-trace",
+                        "re_workspace/target-against-rome-trace",
+                    ] {
+                        candidates.push(
+                            root.join(target)
+                                .join("i686-pc-windows-msvc/release/winmm.dll"),
+                        );
+                    }
                 }
             }
+            candidates
+                .iter()
+                .find_map(|path| fs::read(path).ok().filter(|b| !b.is_empty()))
+                .unwrap_or_default()
+        };
+        Self {
+            dgvoodoo,
+            argm_winmm,
         }
-        roots
-            .iter()
-            .find_map(|r| Self::from_third_party(r).ok())
-            .unwrap_or_default()
     }
 }
 #[derive(Debug, Clone, Default)]

@@ -12,11 +12,9 @@ Run `cargo test --manifest-path native/against-rome-navigation/Cargo.toml`.
 
 ## Differential tests
 
-`tests/formation_differential.rs` replays `tests/fixtures/formation_golden.txt`, which `tools/csharp-golden` generates by compiling the real C# `NavMeshPassabilityGrid` / `FormationWidthValidator` (private `FindPath` via reflection) over 248 deterministic grids (random collision/height/water, invalid optional layers, out-of-bounds trips, negative troop counts, canyon lanes of width 1-7). Floats are compared bit-for-bit. Regenerate after touching the C# sources:
+`tests/formation_differential.rs` replays the frozen historical C# oracle output in `tests/fixtures/formation_golden.txt` over 248 deterministic grids. Floats are compared bit-for-bit. The C# oracle source was retired after its outputs were captured; Rust tests consume the checked-in fixture and do not require .NET.
 
-`dotnet run --project native/against-rome-navigation/tools/csharp-golden -- <abs path>/native/against-rome-navigation/tests/fixtures/formation_golden.txt`
-
-`tests/connectivity_roads_differential.rs` does the same for `NavMeshConnectivityAnalyzer`, `RoadGapDetector` and `RoadPathHealer` (194 cases: random collision/height/water layers, texture grids of a different dimension than the passability grid, 1-4 tile road breaks, isolated land behind walls of thickness 1-14) using `tests/fixtures/connectivity_roads_golden.txt` from `tools/csharp-golden-roads`; region order, bridge points, gap tiles, styles, action ids and texts are compared exactly. Regenerate with `dotnet run --project native/against-rome-navigation/tools/csharp-golden-roads -- <abs path>/native/against-rome-navigation/tests/fixtures/connectivity_roads_golden.txt`.
+`tests/connectivity_roads_differential.rs` replays the frozen historical C# oracle output in `tests/fixtures/connectivity_roads_golden.txt` over 194 cases. Region order, bridge points, gap tiles, styles, action ids and texts are compared exactly. This fixture is also checked in; its retired C# generator is not part of the Rust workspace.
 
 ## Compatibility boundaries
 
@@ -26,7 +24,7 @@ Run `cargo test --manifest-path native/against-rome-navigation/Cargo.toml`.
 - Road endpoints are enumerated in row-major order for deterministic results rather than relying on hash-set enumeration.
 - `FormationTrip` troop counts are `i32`: `<= 0` needs no clearance, `<= 1` is never a corridor warning. Obstacle-free grids keep the `-1` sentinel and are still flagged by C#; `RouteDiagnostic::no_obstacles` lets callers suppress that.
 - Zero/overflow grid sizes and non-finite/non-positive world dimensions return errors. Malformed optional collision/height layers are ignored, as in the original loader.
-- Repair prescriptions are pure data. Actual terrain transactions, undo/redo, UI integration and replacing the C# callers are still outstanding. There is no C ABI yet.
+- Repair prescriptions are pure data. Actual terrain transactions and undo/redo remain owned by editor modules; the Rust desktop app is the production caller. There is no C ABI for this crate.
 
 The integration tests cover collision ownership, layer validation, coordinate mapping, mixed-resolution footprints, water exclusion, four-neighbor islands, real bridge midpoint/distance and depth limit, clearance distances, shortest routes, choke deduplication, formation thresholds, texture direction/style and repair contents. They do not claim native game pathfinding equivalence or in-game acceptance.
 
@@ -34,7 +32,7 @@ The integration tests cover collision ownership, layer validation, coordinate ma
 
 Covered by `connectivity_roads_differential`: `NavMeshCoordinate` (tile/world values, bit-exact), `IsolatedRegion`, `RoadGapCandidate`, `NavMeshTileChange`, and `NavMeshRepairAction` produced by `RoadPathHealer`/`RoadGapDetector`.
 
-Not ported, deliberately (no production change made):
-- `NavMeshIssueKind.FormationBottleneck` and `SubmergedPassage` are declared in C# but no C# source constructs a repair action with them, so there is no behavior to diff; Rust `IssueKind` has only `IsolatedLand` and `RoadGap`. Add them when a C# producer exists.
+Historical contract notes:
+- `NavMeshIssueKind.FormationBottleneck` and `SubmergedPassage` were declared in the retired C# source, but no producer constructed repair actions with them. Rust `IssueKind` has only `IsolatedLand` and `RoadGap`.
 - `NavMeshCoordinate.FromWorld` (clamping world-to-tile) has no direct golden case; Rust only exercises it indirectly through bridge/heal paths. A dedicated golden line in `tools/csharp-golden-roads` would be needed.
 - `NavMeshAnalysisResult` assembly (`analyze_navmesh`) is not diffed against `MapDiagnostics.AnalyzeNavMesh` here; that needs editor session types stubbed beyond `Stubs.cs`.

@@ -23,7 +23,6 @@
     If anything fails, or the pipeline is stopped, only files and directories created by this run are removed (the
     staging folder and partial archive/checksum, plus parent directories this run created, deepest first and only while empty).
     This is a staging script only; it does not prove portability on a clean Windows.
-    The legacy .NET flow lives in tools/publish.ps1 and is untouched.
 .PARAMETER OutputDirectory
     Parent directory for the staging folder (default: <repo>/artifacts/rust-editor). The staging folder is
     <OutputDirectory>/against-rome-editor-<version>-win-x64-<shortcommit>[-dirty][-skipbuild-unverified] and must not

@@ -1,6 +1,5 @@
-//! Real C# differential: tests/fixtures/csharp-cl-script-detector.json is produced by running the
-//! original internal ClScriptFeatureDetector.Detect (tests/oracle_cl_script, repo root):
-//!   dotnet run --project native/against-rome-modifier/tests/oracle_cl_script -- native/against-rome-modifier/tests/fixtures/csharp-cl-script-detector.json
+//! Differential against tests/fixtures/csharp-cl-script-detector.json, frozen from the original
+//! internal ClScriptFeatureDetector.Detect. The C# oracle source was retired with the .NET projects.
 //! Every case is compared flag-by-flag from both an all-false and an all-true starting profile
 //! (the latter proves reset behaviour, including the C# no-backup early return that keeps spell flags).
 use against_rome_modifier::{detectors::ClScriptFeatureDetector, PatchProfile};

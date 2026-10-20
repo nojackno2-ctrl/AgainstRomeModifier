@@ -1,3 +1,14 @@
+## 2026-10-21 Codex：退役舊 .NET/C++ 原始碼，Rust-only generator/resource discovery（workspace 通過）
+
+- 開始時 `git ls-files` 有 652 `.cs`、8 `.csproj`、1 `.slnx`；工作樹沒有舊 source 修改。現已移除 `src.Core`、`src.Shared`、`src.MapEditor.Modules`、`src.MapEditor`、`src.Modifier`、`src.SaveManager`、C# `tests/`、solution/MSBuild/NuGet 檔與 tracked 舊 C++ `ThirdParty/argm-trace/winmm.dll`。另移除無現行引用的 `tools/publish.ps1`／`tools/Test-ReleaseArtifacts.ps1`；`publish-rust.ps1` 保留為唯一 publisher。
+- 本地化表格的 PowerShell/C# source generator 已換成 Rust example ＋ canonical JSON；752 筆與順序對照 frozen fixture，相較舊生成檔僅首行註解不同。代理測試 32 passed，連續生成與 `--check` hash 穩定。
+- Modifier `InstallResources::discover` 已不會從祖先 `ThirdParty` 偷用舊 DLL；支援明確 `ARM_ARGM_TRACE_DLL`、app/package-local 與兩種 Rust release output 路徑，DgVoodoo 及明確注入 helper 保留。代理 modifier 測試 221 passed，含 12 個新探索案例。
+- C ABI header 及 `tools/build-native-data.ps1` 保留：它們支援仍由 Rust 實作與測試的 `against-rome-data` C ABI；該 build script 不再有 managed consumer，描述已改為泛用 C ABI consumer。Ghidra Java 是允許保留的 RE host scripts；PowerShell 僅保留 build/release/test orchestration。
+- 276 個舊 C# test methods 未建立逐方法 crosswalk；它們不能被稱為已逐案以 Rust 重寫。Frozen Rust fixtures 與現有 Rust 測試須按功能持續補足未覆蓋行為；這是完成語言遷移後仍需保留的 parity audit，而非留下 C# runtime/source 的理由。
+- 舊來源移除後重跑 `cargo test --workspace --locked --offline --target-dir re_workspace/target-w18 -- --test-threads=1`，明確 `CARGO_TEST_EXIT=0`；unit/integration/doc tests 全數執行完畢，retail map gates 依設定 ignored。未操作安裝遊戲。
+- navigation README 的失效 dotnet golden 產生指引已移除；`docs/rust-rewrite.md` 已改述語言遷移完成與 parity audit 未結案。276 個舊 C# test methods 尚無逐方法 crosswalk，需持續按功能盤點，不能宣稱逐案 parity 完整。
+- `AGENTS.md`、`README.md` 是使用者既有未提交修改，未更動、未納入 staging；其餘遷移檔待最終 diff review，未 commit/push。
+
 ## 2026-10-21 Codex：Settlement terrain parity、grouped apply 與 Placement/Nature 整合（已驗證）
 
 - `EnvironmentUi` 現在以 live terrain session 驗證 height/collision buffer，collision >128 會阻擋站點／資源；raw heights 乘目前 `height_step`，raw `water_surface` 換算 world water。父端依 C# `MapEditorForm.Layouts.cs::LayoutGroundHeight` 將 settlement 高度取樣修正為 nearest vertex / ties-to-even（一般 `ground_height` 仍供其他面板使用）。缺 session、長度錯誤、step/water 非有限時保留原 plan 並拒絕生成。

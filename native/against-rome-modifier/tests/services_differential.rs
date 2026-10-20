@@ -1,5 +1,5 @@
-//! Regenerate with tests/oracle/ModifierServicesOracle.csproj; compares actual C# output,
-//! and rejects stale fixtures when either linked C# implementation changes.
+//! Expected output is a frozen C# oracle fixture. The historical oracle project was retired;
+//! this test no longer regenerates output or checks source freshness.
 use against_rome_modifier::{tga, unit_stats, TroopConfig};
 use serde_json::Value;
 #[test]

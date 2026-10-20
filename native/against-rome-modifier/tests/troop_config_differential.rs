@@ -1,5 +1,5 @@
 //! Differential test against the real C# TroopConfig compiled by tests/oracle_troop_config.
-//! Regenerate (repo root): dotnet run --project native/against-rome-modifier/tests/oracle_troop_config -- native/against-rome-modifier/tests/fixtures/csharp-troop-config.json
+//! Expected output is a frozen C# oracle fixture; the oracle source was retired with the .NET projects.
 use against_rome_modifier::{
     troop_config::*,
     troops::{ObjdefIndex, TroopConfig},

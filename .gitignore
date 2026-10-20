@@ -10,16 +10,11 @@
 dist/
 artifacts/
 
-# CMake build output (e.g. native/argm-trace)
-/build/
-CMakeCache.txt
-CMakeFiles/
-*.csproj.user
+# Visual Studio user state
 *.user
 *.suo
 *.userosscache
 *.sln.docstates
-*.binlog
 
 # OS-generated files
 .DS_Store

@@ -2,12 +2,14 @@
 
 使用者於 2026-10-15 要求整個程式改寫成 Rust。本文件是遷移完成後的最終紀錄（原為進行中的計畫與對照表）。舊 C#／.NET 與 C++ 原始碼已自工作樹移除，仍可由 Git 歷史取回，例如 `git show 8d49cb3:<path>`。
 
-## 完成條件（已達成）
+## 語言遷移狀態（已完成；行為 parity 仍持續盤點）
 
 - 所有產品程式碼均為 Rust：修改器、存檔管理器、地圖編輯器、啟動器、封裝 CLI、追蹤 DLL 與逆向工程探針。
 - 建置、測試與執行不再需要 .NET、MSBuild、C++ 工具鏈或 Python。
 - 已有 Rust 實際入口：`apps/against-rome-editor`（egui 桌面程式，含 `against-rome-launcher`、`against-rome-modifier-gui`、`against-rome-save-manager` 等 bin）、`native/against-rome-modifier`（CLI）、`native/against-rome-packaging`（`ArmMapPackage`）。
 - 遷移期間用來比對行為的 C# oracle 輸出，已在刪除 C# 前凍結成 fixtures（Rust 測試不再需要 dotnet）。
+
+這表示產品與工具原始碼已完成 Rust 化，不表示舊 C# 測試已逐案證明等價。遷移稽核發現 276 個舊 C# test methods 尚無逐方法 crosswalk；Rust fixtures、定向測試及後續功能驗收仍需持續補足。舊 C# 實作與測試可從 Git 歷史還原供唯讀比較。
 
 ## 對照摘要（原 C#／C++ 範圍 → Rust crate）
 
@@ -42,7 +44,7 @@ powershell -NoProfile -File tools/test-publish-rust.ps1                         
 powershell -NoProfile -File tools/publish-rust.ps1                                         # 可攜 ZIP staging（PowerShell 7）
 ```
 
-最後一次完整本機驗證（2026-10-20）：`cargo test --workspace --locked --offline` 2215 passed / 0 failed / 15 ignored（忽略項目需要零售遊戲或本機證據）。CI 見 `.github/workflows/rust-rewrite.yml`、`rust-release-candidate.yml`、`release.yml`。零測試的閘門不得視為通過。
+最後一次完整本機驗證（2026-10-21，舊來源移除後）：`cargo test --workspace --locked --offline --target-dir re_workspace/target-w18 -- --test-threads=1`，`CARGO_TEST_EXIT=0`，workspace unit、integration、doc tests 均完成；需要零售遊戲的 gates 仍依設定 ignored，並未視為通過。CI 見 `.github/workflows/rust-rewrite.yml`、`rust-release-candidate.yml`、`release.yml`。零測試的閘門不得視為通過。
 
 ## 尚未驗證（Not yet verified）
 

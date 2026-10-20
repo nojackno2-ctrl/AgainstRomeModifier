@@ -1,6 +1,6 @@
 //! .NET 8 字元語意的 Rust 對應：`char.IsLetterOrDigit(char)` 與 `StringComparison.OrdinalIgnoreCase`。
-//! 資料表由 `tests/csharp_oracle`（真 .NET 8 執行階段）產生於 `dotnet_unicode_tables.rs`，
-//! 不使用 Rust 的 `is_alphabetic`/`to_lowercase`（分類與完整大小寫對映皆與 .NET 不同）。
+//! 資料表是遷移期間由真 .NET 8 oracle 產生並凍結於 `dotnet_unicode_tables.rs`；
+//! oracle source 已退役。不使用 Rust 的 `is_alphabetic`/`to_lowercase`（分類與完整大小寫對映皆與 .NET 不同）。
 
 #[path = "dotnet_unicode_tables.rs"]
 mod tables;
