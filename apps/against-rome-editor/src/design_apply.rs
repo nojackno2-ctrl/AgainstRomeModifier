@@ -372,6 +372,16 @@ pub struct WallEdits {
     pub collision: Vec<CollisionPixelChange>,
     pub requests: Vec<PlacementRequest>,
     pub unresolved: BTreeSet<String>,
+    /// Foundation texture stamps (C# coordinator step 3); empty unless `stamp_foundations` was set.
+    pub foundations: Vec<FoundationStamp>,
+}
+
+/// One tile foundation texture to stamp under a wall component.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FoundationStamp {
+    pub tile_x: i32,
+    pub tile_z: i32,
+    pub texture: String,
 }
 
 pub fn plan_wall_edits(
@@ -394,6 +404,13 @@ pub fn plan_wall_edits(
         ..Default::default()
     };
     for p in &plan.placements {
+        if let Some(texture) = p.foundation_texture.as_deref().filter(|t| !t.is_empty()) {
+            edits.foundations.push(FoundationStamp {
+                tile_x: p.tile.0,
+                tile_z: p.tile.1,
+                texture: texture.to_string(),
+            });
+        }
         match resolve(&p.name_def) {
             Some(type_id) => edits.requests.push(PlacementRequest {
                 type_id,
@@ -410,6 +427,33 @@ pub fn plan_wall_edits(
         }
     }
     Ok(edits)
+}
+
+/// Stamps the wall foundation textures as one undoable texture stroke (all-or-nothing: unknown
+/// textures or out-of-range tiles are skipped and reported, never partially applied elsewhere).
+/// Returns the number of tiles actually changed.
+pub fn commit_wall_foundations(
+    textures: &mut TerrainBlendEditSession,
+    known: &TextureNames,
+    edits: &WallEdits,
+) -> usize {
+    let dim = textures.tile_dimension();
+    let mut fork = textures.fork();
+    let mut changed = 0;
+    for f in &edits.foundations {
+        if f.tile_x < 0 || f.tile_z < 0 || f.tile_x as usize >= dim || f.tile_z as usize >= dim {
+            continue;
+        }
+        if !known.contains(&f.texture) {
+            continue;
+        }
+        changed += fork.stamp_texture(f.tile_x as usize, f.tile_z as usize, &f.texture).is_some() as usize;
+    }
+    if changed > 0 {
+        fork.commit_stroke();
+        *textures = fork;
+    }
+    changed
 }
 
 /// Writes the wall footprint into the collision layer as one undoable stroke.
@@ -564,6 +608,41 @@ mod tests {
         assert!(!terrain.is_dirty());
         assert!(terrain.collision().iter().all(|&v| v == 0));
         let _ = size;
+    }
+
+    #[test]
+    fn wall_foundations_follow_stamp_foundations_option() {
+        let terrain = TerrainSession::create_blank(33, 100);
+        let tile_dim = 8;
+        let mk = |stamp: bool| {
+            let options = WallStrokeOptions {
+                style: FortificationStyle::GermanicPalisade,
+                stamp_foundations: stamp,
+                ..Default::default()
+            };
+            plan_wall_stroke(tile_dim as i32, &[(1, 1), (5, 1)], &options, &WallTileCatalog::default(), None, None, None)
+        };
+        let resolve = |_: &str| None;
+        let off = plan_wall_edits(&terrain, tile_dim, &mk(false), &resolve).unwrap();
+        assert!(off.foundations.is_empty());
+        let plan = mk(true);
+        let on = plan_wall_edits(&terrain, tile_dim, &plan, &resolve).unwrap();
+        let expected = plan.placements.iter().filter(|p| p.foundation_texture.as_deref().is_some_and(|t| !t.is_empty())).count();
+        assert!(expected > 0 && on.foundations.len() == expected);
+        let wanted = on.foundations[0].texture.clone();
+        let mut textures = texture_session(tile_dim, &["4BA___51"]);
+        let known = TextureNames::new(["4BA___51", wanted.as_str()]);
+        let n = commit_wall_foundations(&mut textures, &known, &on);
+        assert!(n > 0 && textures.is_dirty());
+        let f = &on.foundations[0];
+        assert_eq!(textures.get_texture(f.tile_x as usize, f.tile_z as usize).unwrap(), wanted);
+        assert!(textures.undo().is_some());
+        let unknown = TextureNames::new(["4BA___51"]);
+        let mut untouched = texture_session(tile_dim, &["4BA___51"]);
+        if !wanted.eq_ignore_ascii_case("4BA___51") {
+            assert_eq!(commit_wall_foundations(&mut untouched, &unknown, &on), 0);
+            assert!(!untouched.is_dirty());
+        }
     }
 
     #[test]

@@ -6,3 +6,5 @@ description = "Renderer-independent Against Rome editor scene data and math"
 license = "MIT"
 
 [dependencies]
+against-rome-data = { path = "../against-rome-data" }
+encoding_rs = "0.8"

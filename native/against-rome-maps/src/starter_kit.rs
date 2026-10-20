@@ -140,15 +140,7 @@ impl BlankMapStarterKit {
             crate::text_encoding::decode_cp1251(&crate::text_encoding::decompress_pfil_if_needed(&raw)?)
         };
         let aliases = read_text(game.join("SYSTEM/CLAK/cl_scint.ini"))?;
-        let mut section = false;
-        let mut pairs = vec![];
-        for raw in aliases.lines() {
-            let line = raw.trim();
-            if line.starts_with('[') { section = line.eq_ignore_ascii_case("[ObjDefName]"); continue; }
-            if section && !line.starts_with(';') {
-                if let Some((a,n)) = line.split_once('=') { pairs.push((a.trim(),n.trim())); }
-            }
-        }
+        let pairs: Vec<_> = crate::script_aliases::ScriptObjectAliases::parse(&aliases);
         let definitions = read_text(game.join("SYSTEM/DATA_MP/DEFAULTS/objdef.dau"))?;
         let mut names = BTreeMap::new();
         for line in definitions.lines() {
@@ -157,9 +149,9 @@ impl BlankMapStarterKit {
             if fields.len()>52 { if let Ok(id) = fields[0].trim().parse::<u16>() { names.insert(id,fields[52].trim()); } }
         }
         let resolve = |alias: &str,name: &str| -> Result<u16,String> {
-            let a: Vec<_> = pairs.iter().filter(|(a,_)| a.eq_ignore_ascii_case(alias)).collect();
+            let a: Vec<_> = pairs.iter().filter(|p| p.alias.eq_ignore_ascii_case(alias)).collect();
             let ids: Vec<_> = names.iter().filter(|(_,n)| n.eq_ignore_ascii_case(name)).collect();
-            if a.len()!=1 || !a[0].1.eq_ignore_ascii_case(name) || ids.len()!=1 { return Err(format!("unverified or nonunique starter alias {alias}")); }
+            if a.len()!=1 || !a[0].name_def.eq_ignore_ascii_case(name) || ids.len()!=1 { return Err(format!("unverified or nonunique starter alias {alias}")); }
             Ok(*ids[0].0)
         };
         let house_id = resolve(Self::MAIN_HOUSE_ALIAS,Self::MAIN_HOUSE_NAME)?;

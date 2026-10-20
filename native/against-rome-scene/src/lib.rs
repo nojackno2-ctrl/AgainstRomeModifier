@@ -6,6 +6,7 @@ pub mod atlas;
 pub mod camera;
 pub mod draw_list;
 pub mod frame;
+pub mod light_definitions;
 pub mod lighting;
 pub mod math;
 pub mod minimap;

@@ -198,3 +198,51 @@ impl ScenarioSavePreflight {
         Ok(())
     }
 }
+
+/// DATA filenames opened by Against_Rome.exe 0x48e960 (C# `NativeMapLoadContract`).
+/// Presence alone does not establish payload validity or successful game loading.
+pub const NATIVE_REQUIRED_DATA_FILES: [&str; 24] = [
+    "light.dat", "gametime.dat", "rain.dat", "hagel.dat", "snow.dat", "flash.dat",
+    "objects.dat", "position.dat", "anim.dat", "gfxtype.dat", "action.dat", "objdata.dat",
+    "hirarchy.dat", "formatio.dat", "lager.dat", "engine.dat", "fow.dat", "fowreq.dat",
+    "way.dat", "particle.dat", "explos.dat", "hitex.dat", "stat.dat", "biglager.dat",
+];
+
+/// C# `NativeMapLoadContract.RequiredDataFiles`.
+pub fn required_data_files() -> &'static [&'static str] {
+    &NATIVE_REQUIRED_DATA_FILES
+}
+
+/// C# `NativeMapLoadContract.FindMissingDataFiles`: required `DATA/*.dat` files absent from the map directory.
+pub fn find_missing_data_files(map_directory: &std::path::Path) -> Result<Vec<String>, String> {
+    if map_directory.as_os_str().is_empty() || map_directory.to_string_lossy().trim().is_empty() {
+        return Err("mapDirectory 不可為空。".into());
+    }
+    let data = map_directory.join("DATA");
+    Ok(NATIVE_REQUIRED_DATA_FILES
+        .iter()
+        .filter(|f| !data.join(f).is_file())
+        .map(|f| f.to_string())
+        .collect())
+}
+
+#[cfg(test)]
+mod native_load_contract_tests {
+    use super::*;
+
+    #[test]
+    fn lists_24_unique_files_and_detects_missing() {
+        let set: std::collections::HashSet<_> = required_data_files().iter().collect();
+        assert_eq!(set.len(), 24);
+        let dir = std::env::temp_dir().join(format!("ar_loadcontract_{}", std::process::id()));
+        let data = dir.join("DATA");
+        std::fs::create_dir_all(&data).unwrap();
+        assert_eq!(find_missing_data_files(&dir).unwrap().len(), 24);
+        for f in required_data_files().iter().filter(|f| **f != "fow.dat" && **f != "stat.dat") {
+            std::fs::write(data.join(f), b"x").unwrap();
+        }
+        assert_eq!(find_missing_data_files(&dir).unwrap(), vec!["fow.dat".to_string(), "stat.dat".to_string()]);
+        assert!(find_missing_data_files(std::path::Path::new("")).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
