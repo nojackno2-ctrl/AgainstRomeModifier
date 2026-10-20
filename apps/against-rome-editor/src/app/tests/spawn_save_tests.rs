@@ -63,7 +63,7 @@ pub(super) fn write_data(map: &Path, n: usize, live: &[(u16, Option<u16>)], curs
 
 /// Game root with alias + objdef catalogs, one official map holding a house template, and a
 /// custom map `ENDL_005` with an idle level script.
-fn fixture(tag: &str, live: &[(u16, Option<u16>)]) -> (EditorApp, PathBuf, PathBuf) {
+pub(super) fn fixture(tag: &str, live: &[(u16, Option<u16>)]) -> (EditorApp, PathBuf, PathBuf) {
     let root = temp_map_dir(&format!("spawn_save_{tag}"));
     std::fs::create_dir_all(root.join("SYSTEM/CLAK")).unwrap();
     std::fs::create_dir_all(root.join("SYSTEM/DATA_MP/DEFAULTS")).unwrap();

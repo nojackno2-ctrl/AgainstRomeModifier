@@ -1252,6 +1252,14 @@ impl EditorApp {
         }
     }
 
+    fn apply_campaign_objective_request(&mut self) {
+        if self.campaign.take_objective_apply_request() {
+            let _ = self
+                .campaign
+                .apply_objectives_to_scenario(&mut self.scenario);
+        }
+    }
+
     /// Merges pending Neutral Lair events into the scenario on an explicit Apply Lair Events request.
     fn apply_lair_events_request(&mut self) {
         if self.environment.take_lair_events_apply_request() {
@@ -1322,6 +1330,7 @@ impl EditorApp {
             Some(self.scenario.document()),
             self.scenario.known_aliases(),
         );
+        self.apply_campaign_objective_request();
         self.apply_campaign_wave_merge();
         self.apply_campaign_camera_requests();
         let map_path = if self.map_path_input.trim().is_empty() {
@@ -3881,6 +3890,7 @@ mod tests {
     use super::*;
     use crate::terrain::SampleChange;
 
+    mod objectives_apply_tests;
     mod spawn_save_tests;
     mod starter_kit_tests;
 

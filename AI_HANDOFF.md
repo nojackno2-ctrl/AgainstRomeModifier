@@ -1,3 +1,10 @@
+## 2026-10-20 Codex：Campaign Objectives 套用至 Scenario（已驗證）
+
+- 新增明確的 Compile Preview／Apply 流程。Apply 依 live Scenario/spawn 重編譯、以 UUID 事件名稱定位舊生成事件、作為單一 Scenario undo/redo 交易；事件上限、輸入/編譯驗證、未知事件 graph 轉換會 fail closed。相同生成事件有內容快照保護；使用者既有同名事件衝突或手動改過生成事件時拒絕覆寫。`campaign_ui.rs`、`app.rs`、`app/tests/objectives_apply_tests.rs`；`spawn_save_tests.rs` 僅將 fixture 開放給同層測試共用。
+- 合成測試覆蓋預覽唯讀、Apply、重複 Apply、UUID 重新編譯取代、undo/redo、同名衝突、手動編輯保留、256 上限、live spawn 改變、失敗時 draft/preview/history 不變、原始與 PFIL 存檔重載。
+- 驗證：父端 `cargo test -p against-rome-editor-app --locked --offline --target-dir re_workspace/target-w18 --quiet` exit 0，**640 passed / 0 failed / 0 ignored**；`rustfmt --edition 2021 --check apps/against-rome-editor/src/campaign_ui.rs apps/against-rome-editor/src/app/tests/objectives_apply_tests.rs` 通過；本次 Rust/Handoff scoped `git diff --check` 通過。無 GUI／遊戲內驗收；未操作安裝遊戲。
+- 狀態：功能與合成測試已驗證；尚未提交。全程式 Rust 改寫目標仍未完成，且目前 HEAD 仍追蹤 C# 原始碼／專案檔；須先盤點現存 C# oracle、build 與工具依賴，再進行最終退役。
+
 ## 2026-10-20 Claude（Sonnet）：C# 剩餘小缺口收尾（未提交）
 
 - 已實作（皆未提交、未做 GUI／遊戲內驗收）：

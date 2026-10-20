@@ -92,6 +92,9 @@ pub struct CampaignUi {
     pub last_objective_diagnostics: Vec<String>,
     pub obj_reward_msg: String,
     pub last_compiled_objective_events: Vec<Event>,
+    objective_apply_requested: bool,
+    applied_objectives: String,
+    applied_objective_events: Vec<Event>,
 
     // --- Campaign Waves & AI state ---
     pub archetypes: Vec<against_rome_campaign::ai::AiArchetypeProfile>,
@@ -167,6 +170,9 @@ impl Default for CampaignUi {
             last_objective_diagnostics: Vec::new(),
             obj_reward_msg: "Victory achieved!".to_string(),
             last_compiled_objective_events: Vec::new(),
+            objective_apply_requested: false,
+            applied_objectives: "[]".into(),
+            applied_objective_events: Vec::new(),
             archetypes,
             selected_archetype_id: default_arch_id,
             wave_count: 3,
@@ -243,7 +249,7 @@ impl CampaignUi {
 
     pub(crate) fn has_unsupported_edits(&self) -> bool {
         self.dirty
-            || !self.objectives.is_empty()
+            || self.objective_snapshot() != self.applied_objectives
             || self.last_wave_result.is_some()
             || !self.last_cinematic_events.is_empty()
             || self.flight_pose_count > 0
@@ -264,6 +270,9 @@ impl CampaignUi {
         self.dirty = false;
         self.pending_discard = false;
         self.objectives.clear();
+        self.objective_apply_requested = false;
+        self.applied_objectives = "[]".into();
+        self.applied_objective_events.clear();
         self.selected_objective_idx = None;
         self.last_compiled_objective_events.clear();
         self.last_wave_result = None;
@@ -313,7 +322,6 @@ impl CampaignUi {
         }
 
         self.objectives.push(obj);
-        self.dirty = true;
         self.status_message = format!("Added objective '{}'.", self.obj_title_input);
         self.status_is_error = false;
     }
@@ -352,7 +360,6 @@ impl CampaignUi {
             return Err(err);
         }
         self.last_compiled_objective_events = result.compiled_events;
-        self.dirty = true;
         self.status_message = format!(
             "Compiled {} objectives into {} scenario events.",
             self.objectives.len(),
@@ -360,6 +367,144 @@ impl CampaignUi {
         );
         self.status_is_error = false;
         Ok(())
+    }
+
+    fn objective_snapshot(&self) -> String {
+        serde_json::to_string(&self.objectives).unwrap_or_else(|_| "invalid".into())
+    }
+
+    pub(crate) fn request_objective_apply(&mut self) {
+        self.objective_apply_requested = true;
+    }
+
+    pub(crate) fn take_objective_apply_request(&mut self) -> bool {
+        std::mem::take(&mut self.objective_apply_requested)
+    }
+
+    /// Recompile against live bindings, never the preview. Reserved OBJ_WIN/OBJ_FAIL UUID
+    /// identities replace generated events independently of objective titles.
+    pub(crate) fn apply_objectives_to_scenario(
+        &mut self,
+        scenario: &mut ScenarioUi,
+    ) -> Result<(), String> {
+        let result = (|| {
+            if !scenario.is_loaded() {
+                return Err("Load a scenario before applying objectives.".into());
+            }
+            let mut graph = ObjectiveDependencyGraph::new();
+            for objective in &self.objectives {
+                graph.add_objective(objective.clone())?;
+            }
+            let aliases = scenario.known_aliases();
+            let compiled = BciObjectiveCompiler::compile(
+                &graph,
+                Some(scenario.document()),
+                (!aliases.is_empty()).then_some(aliases),
+            );
+            if !compiled.success {
+                return Err(format!(
+                    "Objective Apply compilation failed: {}",
+                    compiled
+                        .diagnostics
+                        .iter()
+                        .map(|d| format!("{}: {}", d.code, d.message))
+                        .collect::<Vec<_>>()
+                        .join("; ")
+                ));
+            }
+            // Only replace events whose exact contents still match the last Apply snapshot.
+            // A matching generated name alone is not provenance: user-authored events can
+            // collide, and users can edit an applied event in the Scenario editor.
+            let applied_names: Vec<&str> = self
+                .applied_objective_events
+                .iter()
+                .map(|event| event.name.as_str())
+                .collect();
+            let compiled_names: Vec<&str> = compiled
+                .compiled_events
+                .iter()
+                .map(|event| event.name.as_str())
+                .collect();
+            let live = &scenario.document().events;
+            for event in live {
+                if let Some(previous) = self
+                    .applied_objective_events
+                    .iter()
+                    .find(|previous| previous.name == event.name)
+                {
+                    if previous != event {
+                        return Err(format!(
+                            "Generated objective event '{}' was edited in Scenario; preserve or remove it before applying objectives again.",
+                            event.name
+                        ));
+                    }
+                } else if compiled_names.contains(&event.name.as_str()) {
+                    return Err(format!(
+                        "Scenario event '{}' conflicts with a generated objective event; rename it before applying objectives.",
+                        event.name
+                    ));
+                }
+            }
+            let replaces = live
+                .iter()
+                .any(|event| applied_names.contains(&event.name.as_str()));
+            let mut candidate: Vec<Event> = live
+                .iter()
+                .filter(|event| !applied_names.contains(&event.name.as_str()))
+                .cloned()
+                .collect();
+            // Keep the first generated event's position, including on duplicate Apply after
+            // unrelated live events were appended. Unrelated events retain their order.
+            let insert_at = live
+                .iter()
+                .position(|event| applied_names.contains(&event.name.as_str()))
+                .unwrap_or(candidate.len());
+            candidate.splice(insert_at..insert_at, compiled.compiled_events.clone());
+            if candidate.len() > 256 {
+                return Err("Objective Apply exceeds the 256 event limit.".into());
+            }
+            let mut document = scenario.document().clone();
+            document.events = candidate.clone();
+            document.validate((!aliases.is_empty()).then_some(aliases))?;
+            if candidate != *live {
+                if replaces {
+                    // Existing public whole-event transaction, with a lossless-conversion guard.
+                    let mut transaction = crate::event_graph::EventGraphUi::default();
+                    transaction.load_from_scenario_events(&candidate);
+                    if transaction.compile_to_scenario_events() != candidate {
+                        return Err(
+                            "Objective Apply event transaction would alter existing events.".into(),
+                        );
+                    }
+                    scenario.apply_from_graph_ui(&mut transaction)?;
+                    if !scenario.graph_ui().is_dirty() {
+                        let _ = scenario.sync_to_graph();
+                    }
+                } else {
+                    scenario.add_events(&compiled.compiled_events)?;
+                }
+            }
+            self.applied_objectives = self.objective_snapshot();
+            self.applied_objective_events = compiled.compiled_events.clone();
+            self.last_compiled_objective_events = compiled.compiled_events;
+            self.last_objective_diagnostics = compiled
+                .diagnostics
+                .iter()
+                .map(|d| format!("[{:?}] {}: {}", d.severity, d.code, d.message))
+                .collect();
+            Ok(())
+        })();
+        match &result {
+            Ok(()) => {
+                self.status_message = "Objectives applied to scenario. Use Safe Save to persist; Undo/Redo is available in Scenario.".into();
+                self.status_is_error = false;
+            }
+            Err(e) => {
+                self.status_message = format!("Objective Apply rejected: {e}");
+                self.status_is_error = true;
+            }
+        }
+        result
     }
 
     /// Extracts canonical `WavePlanParameters` from current UI state.
@@ -809,8 +954,17 @@ impl CampaignUi {
             if ui.button("Add Objective").clicked() {
                 self.add_objective();
             }
-            if ui.button("Compile to Scenario Events").clicked() {
+            if ui.button("Compile Preview").clicked() {
                 let _ = self.compile_objectives_to_events(scenario, aliases);
+            }
+            if ui
+                .add_enabled(
+                    scenario.is_some() && !self.objectives.is_empty(),
+                    egui::Button::new("Apply Objectives to Scenario"),
+                )
+                .clicked()
+            {
+                self.request_objective_apply();
             }
         });
 
