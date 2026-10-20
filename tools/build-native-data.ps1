@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   Builds native/against-rome-data (release, --locked) and deploys against_rome_data.dll to an explicit directory.
 
@@ -113,80 +113,13 @@ try {
 if ((Get-FileHash -Algorithm SHA256 -LiteralPath $deployed).Hash -ne $builtHash) { throw '部署後 SHA-256 不符。' }
 Copy-Item -LiteralPath (Join-Path $crateDir 'include/against_rome_data.h') -Destination (Join-Path $OutputDir 'against_rome_data.h') -Force
 
-# --- load once and confirm the ABI ---
-Add-Type -TypeDefinition @'
-using System;
-using System.Runtime.InteropServices;
-public static class ArNativeProbe
-{
-    [DllImport("kernel32", SetLastError = true, CharSet = CharSet.Unicode)] static extern IntPtr LoadLibraryW(string path);
-    [DllImport("kernel32", SetLastError = true)] static extern IntPtr GetProcAddress(IntPtr module, string name);
-    [DllImport("kernel32")] static extern bool FreeLibrary(IntPtr module);
-    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate uint U32Fn();
-    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate UIntPtr SizeFn();
-    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate int PixelRowFn(
-        [In] byte[] indices, UIntPtr count, [In] uint[] palette, UIntPtr paletteLength,
-        [In] uint[] destination, uint mode, uint skipZero, [In, Out] uint[] output, UIntPtr capacity);
-    public static ulong[] Probe(string fullPath, string[] requiredExports)
-    {
-        IntPtr lib = LoadLibraryW(fullPath);
-        if (lib == IntPtr.Zero) throw new InvalidOperationException("LoadLibrary failed: " + Marshal.GetLastWin32Error());
-        try
-        {
-            foreach (string name in requiredExports)
-                if (GetProcAddress(lib, name) == IntPtr.Zero)
-                    throw new InvalidOperationException("missing export " + name);
-            uint Call(string name)
-            {
-                IntPtr p = GetProcAddress(lib, name);
-                if (p == IntPtr.Zero) throw new InvalidOperationException("missing export " + name);
-                return Marshal.GetDelegateForFunctionPointer<U32Fn>(p)();
-            }
-            ulong Size(string name)
-            {
-                IntPtr p = GetProcAddress(lib, name);
-                if (p == IntPtr.Zero) throw new InvalidOperationException("missing export " + name);
-                return Marshal.GetDelegateForFunctionPointer<SizeFn>(p)().ToUInt64();
-            }
-            if (Call("ar_particle_pixel_abi_version") != 1)
-                throw new InvalidOperationException("particle pixel ABI mismatch");
-            if (Call("ar_alr_scanline_abi_version") != 1)
-                throw new InvalidOperationException("ALR scanline ABI mismatch");
-            if (Call("ar_particle_definition_abi_version") != 1 || Call("ar_particle_definition_struct_size") != 44)
-                throw new InvalidOperationException("Particle definitions ABI mismatch");
-            var row = Marshal.GetDelegateForFunctionPointer<PixelRowFn>(GetProcAddress(lib, "ar_particle_pixel_row"));
-            uint[] output = { 0, 0, 0, 0xdeadbeef };
-            int result = row(new byte[] { 0, 1, 2 }, new UIntPtr(3),
-                new uint[] { 0, 0xffffffff, 0x010305 }, new UIntPtr(3),
-                new uint[] { 0xaabbccdd, 0xffffffff, 0xff030507 }, 1, 1, output, new UIntPtr(4));
-            if (result != 0 || output[0] != 0xaabbccdd || output[1] != 0xfefefe
-                || output[2] != 0x010305 || output[3] != 0xdeadbeef)
-                throw new InvalidOperationException("particle pixel DLL row smoke failed");
-            result = row(new byte[] { 1, 1, 3 }, new UIntPtr(3),
-                new uint[] { 0, 0xffffffff, 0x010305 }, new UIntPtr(3),
-                new uint[] { 0, 0, 0 }, 0, 0, output, new UIntPtr(4));
-            if (result != 201 || output[0] != 0xaabbccdd || output[1] != 0xfefefe
-                || output[2] != 0x010305 || output[3] != 0xdeadbeef)
-                throw new InvalidOperationException("particle pixel DLL atomic failure smoke failed");
-            return new ulong[] { Call("ar_light_abi_version"), Call("ar_light_snapshot_struct_size"),
-                Call("ar_particle_pool_abi_version"), Call("ar_particle_pool_snapshot_struct_size"),
-                Size("ar_particle_pool_record_size"), Size("ar_particle_pool_state_size"),
-                Size("ar_particle_pool_child_size"), Size("ar_particle_pool_payload_size") };
-        }
-        finally { FreeLibrary(lib); }
-    }
-}
-'@
-$abi = [ArNativeProbe]::Probe($deployed, $exports)
-if ($abi[0] -ne 1) { throw "ABI version $($abi[0])，預期 1。" }
-if ($abi[1] -ne 120) { throw "ArLightSnapshot size $($abi[1])，預期 120。" }
-$particleExpected = 1, 24, 2252, 16, 35, 2322444
-for ($index = 0; $index -lt $particleExpected.Count; $index++) {
-    if ($abi[$index + 2] -ne $particleExpected[$index]) {
-        throw "Particle ABI/size query $index returned $($abi[$index + 2]), expected $($particleExpected[$index])."
-    }
-}
-
+# --- Rust-only explicit-path ABI audit; no managed Add-Type probe ---
+$probe = Join-Path $TargetDir 'release/ar-native-probe.exe'
+if (-not (Test-Path -LiteralPath $probe)) { throw "建置後找不到 $probe" }
+& $probe $deployed
+if ($LASTEXITCODE -ne 0) { throw "Rust native ABI probe failed (exit $LASTEXITCODE)." }
+# These manifest values are emitted only after the Rust executable verifies each query.
+$abi = 1, 120, 1, 24, 2252, 16, 35, 2322444
 # --- manifest ---
 $manifest = [ordered]@{
     purpose       = 'against_rome_data: saved pools, particle pixels, ALR scanlines and base/effective definition snapshots (C ABI v1)'

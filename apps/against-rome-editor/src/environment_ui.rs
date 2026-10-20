@@ -29,6 +29,76 @@ const LAIR_TILE_WORLD_SIZE: f32 = 256.0;
 /// Scenario event cap enforced by `ScenarioUi::add_events`.
 const SCENARIO_EVENT_LIMIT: usize = 256;
 
+/// Settlement tiles are height-grid cells (four cells per 256-world-unit texture tile).
+const SETTLEMENT_TILE_WORLD_SIZE: f32 = 64.0;
+
+struct SettlementTerrain<'a> {
+    dimension: usize,
+    heights: &'a [u8],
+    collision: &'a [u8],
+    height_step: f32,
+    water_world: f32,
+}
+
+impl<'a> SettlementTerrain<'a> {
+    fn new(
+        dimension: usize,
+        heights: Option<&'a [u8]>,
+        collision: Option<(usize, &'a [u8])>,
+        water_level: f32,
+        height_step: f32,
+    ) -> Result<Self, String> {
+        let heights = heights.ok_or("Load a terrain session before generating settlements.")?;
+        let (collision_size, collision) =
+            collision.ok_or("Current-session collision is unavailable.")?;
+        if dimension < 2
+            || dimension - 1 > i32::MAX as usize
+            || dimension.checked_mul(dimension) != Some(heights.len())
+            || collision_size != dimension - 1
+            || collision_size.checked_mul(collision_size) != Some(collision.len())
+        {
+            return Err(
+                "Inconsistent current-session height/collision dimensions or lengths.".into(),
+            );
+        }
+        let water_world = water_level * height_step;
+        if !height_step.is_finite()
+            || height_step <= 0.0
+            || !(255.0 * height_step).is_finite()
+            || !water_world.is_finite()
+        {
+            return Err("Invalid current-session height step or water level.".into());
+        }
+        Ok(Self {
+            dimension,
+            heights,
+            collision,
+            height_step,
+            water_world,
+        })
+    }
+
+    fn sample_height(&self, x: f32, z: f32) -> f32 {
+        // Match C# MapEditorForm.LayoutGroundHeight: map world coordinates to the
+        // nearest height vertex, then multiply the raw sample by the active step.
+        let max = (self.dimension - 1) as f32;
+        let vx = (x / SETTLEMENT_TILE_WORLD_SIZE).clamp(0.0, max);
+        let vz = (z / SETTLEMENT_TILE_WORLD_SIZE).clamp(0.0, max);
+        let ix = vx.round_ties_even() as usize;
+        let iz = vz.round_ties_even() as usize;
+        self.heights[iz * self.dimension + ix] as f32 * self.height_step
+    }
+
+    fn is_blocked(&self, x: i32, z: i32) -> bool {
+        let size = self.dimension - 1;
+        x < 0
+            || z < 0
+            || x as usize >= size
+            || z as usize >= size
+            || self.collision[z as usize * size + x as usize] > 128
+    }
+}
+
 const DEFAULT_FLORA_TEMPLATES: &str = "1,LanGerNad00_Tanne_gross\n2,LanGerBus01_Busch\n3,LanGerGra01_Gras\n4,LanGerSch01_Schilf\n5,LanGerSte01_Stein";
 
 /// Maps a binder event onto the scenario model (Message=0, SpawnUnit=2; ObjectExists=0, ObjectDeadOrRemoved=1).
@@ -375,6 +445,110 @@ impl EnvironmentUi {
         Ok((requests, unresolved.into_iter().collect()))
     }
 
+    /// Resolve the entire generated plan against current-map cloneable definitions. No partial
+    /// application: missing or ambiguous names are collected across both destinations.
+    pub(crate) fn settlement_plan(
+        &self,
+        catalog: &[(i32, String)],
+        dimension: usize,
+        heights: Option<&[u8]>,
+        collision: Option<(usize, &[u8])>,
+        water: f32,
+        step: f32,
+    ) -> Result<(Vec<PlacementRequest>, Vec<NatureAddition>), String> {
+        let terrain = SettlementTerrain::new(dimension, heights, collision, water, step)?;
+        let dist = self
+            .last_distribution
+            .as_ref()
+            .ok_or("Generate a settlement first")?;
+        let mut placement = Vec::new();
+        let mut nature = Vec::new();
+        let mut unresolved = std::collections::BTreeSet::new();
+        let mut push = |name: &str,
+                        x: f32,
+                        z: f32,
+                        offset: f32,
+                        angle: f32,
+                        team: Option<i32>,
+                        natural: bool| {
+            let ids: std::collections::BTreeSet<_> = catalog
+                .iter()
+                .filter(|(_, n)| n.eq_ignore_ascii_case(name))
+                .map(|(id, _)| *id)
+                .collect();
+            if ids.len() != 1 {
+                unresolved.insert(name.to_owned());
+                return;
+            }
+            let type_id = *ids.first().unwrap();
+            let y = terrain.sample_height(x, z) + offset;
+            if natural {
+                nature.push(NatureAddition::new(
+                    type_id,
+                    name,
+                    x,
+                    y,
+                    z,
+                    angle.to_radians(),
+                ));
+            } else {
+                placement.push(PlacementRequest {
+                    type_id,
+                    name: name.into(),
+                    x,
+                    y,
+                    z,
+                    rotation_deg: angle,
+                    team: team.and_then(|t| u16::try_from(t).ok()),
+                });
+            }
+        };
+        for player in &dist.players {
+            for b in &player.buildings {
+                push(
+                    &b.type_name,
+                    b.world_x,
+                    b.world_z,
+                    b.height_offset,
+                    b.angle,
+                    Some(b.team),
+                    false,
+                );
+            }
+            for w in &player.wildlife_and_food {
+                push(
+                    &w.type_name,
+                    w.world_x,
+                    w.world_z,
+                    w.height_offset,
+                    w.angle_deg,
+                    Some(w.team),
+                    false,
+                );
+            }
+            if self.settlement_include_nature {
+                for t in player.forest_trees.iter().chain(&player.stone_quarries) {
+                    push(
+                        &t.type_name,
+                        t.world_x,
+                        t.world_z,
+                        t.height_offset,
+                        t.angle_deg,
+                        None,
+                        true,
+                    );
+                }
+            }
+        }
+        if !unresolved.is_empty() {
+            return Err(format!(
+                "Settlement unresolved definitions/templates: {}",
+                unresolved.into_iter().collect::<Vec<_>>().join(", ")
+            ));
+        }
+        Ok((placement, nature))
+    }
+
     /// Parses the nature-capture rectangle (C# `TerrainRegionPlanner.Rectangle` input).
     pub fn parse_layout_rect(&self) -> Result<TileRect, String> {
         let mut v = [0i32; 4];
@@ -509,7 +683,8 @@ impl EnvironmentUi {
         }
         self.dirty = false;
         self.status_message = format!(
-            "Queued {count} objects for the Objects session.{note}{}",
+            "Queued {count} objects for {}.{note}{}",
+            if kind == EnvApply::Settlement { "Placement / Nature" } else { "the Objects session" },
             if discarded_lair_events {
                 " Lair event drafts were cleared with their placement records."
             } else {
@@ -641,25 +816,42 @@ impl EnvironmentUi {
         self.status_is_error = false;
     }
 
-    /// `dimension` is the height-grid vertex count.
-    pub fn generate_settlement(&mut self, dimension: usize, heights: Option<&[u8]>, water_level: f32) -> Result<(), String> {
-        let tiles = dimension.saturating_sub(1).max(1);
-        let heights = heights.filter(|h| h.len() == dimension * dimension);
-        let sample_height = |x: f32, y: f32| -> f32 {
-            match heights {
-                Some(h) => {
-                    let ix = ((x / 64.0).round().max(0.0) as usize).min(dimension - 1);
-                    let iy = ((y / 64.0).round().max(0.0) as usize).min(dimension - 1);
-                    h[iy * dimension + ix] as f32
-                }
-                None => water_level + 10.0,
-            }
-        };
-        let is_blocked = |_x: i32, _y: i32| -> bool { false };
+    /// `dimension` is the height-grid vertex count. Water is in raw height units;
+    /// collision must be the current session's cell grid. Missing sources fail closed.
+    pub fn generate_settlement(
+        &mut self,
+        dimension: usize,
+        heights: Option<&[u8]>,
+        collision: Option<(usize, &[u8])>,
+        water_level: f32,
+        height_step: f32,
+    ) -> Result<(), String> {
+        let terrain =
+            SettlementTerrain::new(dimension, heights, collision, water_level, height_step)?;
+        let tiles = (dimension - 1) as i32;
+        let sample_height = |x, z| terrain.sample_height(x, z);
+        let is_blocked = |x, z| terrain.is_blocked(x, z);
 
-        let evaluator = SettlementSiteEvaluator::new(tiles as i32, &sample_height, &is_blocked, water_level, 64.0);
-        let planner = ResourceClusterPlanner::new(tiles as i32, &sample_height, &is_blocked, water_level, 64.0);
-        let balancer = MultiplayerFairnessBalancer::new(&evaluator, &planner, tiles as i32, 64.0);
+        let evaluator = SettlementSiteEvaluator::new(
+            tiles,
+            &sample_height,
+            &is_blocked,
+            terrain.water_world,
+            SETTLEMENT_TILE_WORLD_SIZE,
+        );
+        let planner = ResourceClusterPlanner::new(
+            tiles,
+            &sample_height,
+            &is_blocked,
+            terrain.water_world,
+            SETTLEMENT_TILE_WORLD_SIZE,
+        );
+        let balancer = MultiplayerFairnessBalancer::new(
+            &evaluator,
+            &planner,
+            tiles,
+            SETTLEMENT_TILE_WORLD_SIZE,
+        );
         let tribes = vec![self.settlement_tribe; self.settlement_players];
 
         let result = balancer.generate(
@@ -678,7 +870,11 @@ impl EnvironmentUi {
         self.status_message = format!(
             "Settlement generation complete: {} player bases, {}.",
             result.players.len(),
-            if result.fairness_report.is_balanced { "balanced" } else { "NOT balanced" }
+            if result.fairness_report.is_balanced {
+                "balanced"
+            } else {
+                "NOT balanced"
+            }
         );
         self.last_distribution = Some(result);
         self.last_placement_preset = Some(placement_preset);
@@ -688,7 +884,15 @@ impl EnvironmentUi {
         Ok(())
     }
 
-    pub fn show(&mut self, ctx: &egui::Context, dimension: usize, heights: Option<&[u8]>, water_level: f32) {
+    pub fn show(
+        &mut self,
+        ctx: &egui::Context,
+        dimension: usize,
+        heights: Option<&[u8]>,
+        collision: Option<(usize, &[u8])>,
+        water_level: f32,
+        height_step: f32,
+    ) {
         if !self.open {
             return;
         }
@@ -723,7 +927,9 @@ impl EnvironmentUi {
                 match self.current_tab {
                     EnvironmentTab::FloraScatter => self.render_flora_tab(ui, dimension, heights, water_level),
                     EnvironmentTab::NeutralLairs => self.render_lairs_tab(ui),
-                    EnvironmentTab::SettlementGenerator => self.render_settlement_tab(ui, dimension, heights, water_level),
+                    EnvironmentTab::SettlementGenerator => {
+                        self.render_settlement_tab(ui, dimension, heights, collision, water_level, height_step)
+                    }
                     EnvironmentTab::Layouts => self.render_layouts_tab(ui),
                 }
             });
@@ -943,7 +1149,15 @@ impl EnvironmentUi {
         }
     }
 
-    fn render_settlement_tab(&mut self, ui: &mut egui::Ui, dimension: usize, heights: Option<&[u8]>, water_level: f32) {
+    fn render_settlement_tab(
+        &mut self,
+        ui: &mut egui::Ui,
+        dimension: usize,
+        heights: Option<&[u8]>,
+        collision: Option<(usize, &[u8])>,
+        water_level: f32,
+        height_step: f32,
+    ) {
         ui.heading("One-Click Settlement / Base Generator");
         ui.label("Instantly balances starting town centers, barracks, resource depots, and surrounding forests/stone.");
 
@@ -997,7 +1211,7 @@ impl EnvironmentUi {
 
         ui.add_space(8.0);
         if ui.button("Generate Settlement Bases").clicked() {
-            if let Err(e) = self.generate_settlement(dimension, heights, water_level) {
+            if let Err(e) = self.generate_settlement(dimension, heights, collision, water_level, height_step) {
                 self.status_message = format!("Generation error: {e}");
                 self.status_is_error = true;
             }
@@ -1230,7 +1444,7 @@ mod tests {
         ui.current_tab = EnvironmentTab::NeutralLairs;
         ui.add_neutral_lair().unwrap();
         let ctx = egui::Context::default();
-        let _ = ctx.run(egui::RawInput::default(), |ctx| ui.show(ctx, 65, None, 0.0));
+        let _ = ctx.run(egui::RawInput::default(), |ctx| ui.show(ctx, 65, None, None, 0.0, 4.0));
         assert_eq!(ui.generated_lairs.len(), 1);
     }
 
@@ -1238,10 +1452,189 @@ mod tests {
     fn test_environment_ui_settlement_generation() {
         let mut ui = EnvironmentUi::default();
         ui.settlement_players = 2;
-        assert!(ui.generate_settlement(129, None, 0.0).is_ok());
+        assert!(ui
+            .generate_settlement(
+                129,
+                Some(&vec![20; 129 * 129]),
+                Some((128, &vec![0; 128 * 128])),
+                0.0,
+                4.0
+            )
+            .is_ok());
         assert!(ui.last_distribution.is_some());
         assert!(ui.last_placement_preset.is_some());
         assert!(ui.is_dirty());
+    }
+
+    #[test]
+    fn settlement_terrain_converts_world_heights_water_and_blocked_cells() {
+        let heights = [10, 20, 30, 20, 30, 40, 30, 40, 50];
+        let collision = [0, 128, 129, 255];
+        let terrain =
+            SettlementTerrain::new(3, Some(&heights), Some((2, &collision)), 12.5, 4.0).unwrap();
+        assert_eq!(terrain.sample_height(64.0, 0.0), 80.0);
+        assert_eq!(
+            terrain.sample_height(32.0, 32.0),
+            40.0,
+            "half-vertex coordinates use MathF.Round ties-to-even"
+        );
+        assert_eq!(terrain.sample_height(128.0, 128.0), 200.0);
+        assert_eq!(terrain.water_world, 50.0);
+        assert!(!terrain.is_blocked(0, 0));
+        assert!(!terrain.is_blocked(1, 0));
+        assert!(terrain.is_blocked(0, 1));
+        assert!(terrain.is_blocked(1, 1));
+        for (x, z) in [(-1, 0), (0, -1), (2, 0), (0, 2), (i32::MAX, 0)] {
+            assert!(terrain.is_blocked(x, z));
+        }
+    }
+
+    #[test]
+    fn settlement_terrain_rejects_missing_inconsistent_and_invalid_sources() {
+        let h = [20; 9];
+        let c = [0; 4];
+        assert!(SettlementTerrain::new(0, None, None, 0.0, 4.0).is_err());
+        assert!(SettlementTerrain::new(3, Some(&h), None, 0.0, 4.0).is_err());
+        for (dimension, heights, size, collision) in [
+            (1, &h[..1], 0, &c[..0]),
+            (3, &h[..8], 2, &c[..]),
+            (3, &h[..], 1, &c[..1]),
+            (3, &h[..], 2, &c[..3]),
+            (usize::MAX, &h[..], 2, &c[..]),
+        ] {
+            assert!(SettlementTerrain::new(
+                dimension,
+                Some(heights),
+                Some((size, collision)),
+                0.0,
+                4.0
+            )
+            .is_err());
+        }
+        for step in [0.0, -1.0, f32::NAN, f32::INFINITY, f32::MAX] {
+            assert!(SettlementTerrain::new(3, Some(&h), Some((2, &c)), 0.0, step).is_err());
+        }
+        assert!(SettlementTerrain::new(3, Some(&h), Some((2, &c)), f32::NAN, 4.0).is_err());
+    }
+
+    #[test]
+    fn settlement_generation_no_session_preserves_existing_ui_plan_and_settings() {
+        let mut ui = EnvironmentUi::default();
+        let heights = vec![20; 129 * 129];
+        let collision = vec![0; 128 * 128];
+        ui.generate_settlement(129, Some(&heights), Some((128, &collision)), 0.0, 4.0)
+            .unwrap();
+        let before = ui.last_distribution.clone();
+        let preset = ui.last_placement_preset.clone();
+        let nature = ui.last_nature_preset.clone();
+        ui.apply_requested = Some(EnvApply::Settlement);
+        ui.settlement_seed = 777;
+        ui.open = true;
+        assert!(ui
+            .generate_settlement(0, None, None, 0.0, 4.0)
+            .unwrap_err()
+            .contains("session"));
+        assert!(ui
+            .generate_settlement(129, Some(&heights), Some((127, &collision)), 0.0, 4.0)
+            .is_err());
+        assert_eq!(ui.last_distribution, before);
+        assert_eq!(ui.last_placement_preset, preset);
+        assert_eq!(ui.last_nature_preset, nature);
+        assert_eq!(ui.apply_requested, Some(EnvApply::Settlement));
+        assert_eq!(ui.settlement_seed, 777);
+        assert!(ui.open && ui.is_dirty());
+    }
+
+    #[test]
+    fn settlement_live_collision_changes_sites_and_resources_deterministically() {
+        let mut ui = EnvironmentUi::default();
+        let heights = vec![20; 129 * 129];
+        let mut collision = vec![0; 128 * 128];
+        ui.generate_settlement(129, Some(&heights), Some((128, &collision)), 0.0, 4.0)
+            .unwrap();
+        let clear = ui.last_distribution.clone().unwrap();
+        assert!(clear.players.iter().all(|p| p.site_evaluation.is_valid));
+        let site = &clear.players[0].site_evaluation;
+        let (cx, cz) = (site.anchor_tile_x as usize, site.anchor_tile_z as usize);
+        for z in cz.saturating_sub(4)..=(cz + 4).min(127) {
+            for x in cx.saturating_sub(4)..=(cx + 4).min(127) {
+                collision[z * 128 + x] = 255;
+            }
+        }
+        assert!(!clear.players[0].forest_trees.is_empty());
+        for tree in &clear.players[0].forest_trees {
+            let x = (tree.world_x / SETTLEMENT_TILE_WORLD_SIZE) as usize;
+            let z = (tree.world_z / SETTLEMENT_TILE_WORLD_SIZE) as usize;
+            collision[z * 128 + x] = 255;
+        }
+        ui.generate_settlement(129, Some(&heights), Some((128, &collision)), 0.0, 4.0)
+            .unwrap();
+        let blocked = ui.last_distribution.clone().unwrap();
+        assert_ne!(clear.players[0].buildings, blocked.players[0].buildings);
+        assert_ne!(
+            clear.players[0].forest_trees,
+            blocked.players[0].forest_trees
+        );
+        let terrain =
+            SettlementTerrain::new(129, Some(&heights), Some((128, &collision)), 0.0, 4.0).unwrap();
+        for player in &blocked.players {
+            for tree in player.forest_trees.iter().chain(&player.stone_quarries) {
+                assert!(!terrain.is_blocked(
+                    (tree.world_x / SETTLEMENT_TILE_WORLD_SIZE) as i32,
+                    (tree.world_z / SETTLEMENT_TILE_WORLD_SIZE) as i32
+                ));
+            }
+        }
+        ui.generate_settlement(129, Some(&heights), Some((128, &collision)), 0.0, 4.0)
+            .unwrap();
+        assert_eq!(ui.last_distribution.as_ref(), Some(&blocked));
+    }
+
+    #[test]
+    fn settlement_live_height_step_and_water_change_site_validity() {
+        let mut heights = vec![20; 129 * 129];
+        for z in 0..129 {
+            for x in 0..129 {
+                heights[z * 129 + x] += ((x + z) % 2) as u8 * 2;
+            }
+        }
+        let collision = vec![0; 128 * 128];
+        let valid = |step, water| {
+            let terrain =
+                SettlementTerrain::new(129, Some(&heights), Some((128, &collision)), water, step)
+                    .unwrap();
+            let height = |x, z| terrain.sample_height(x, z);
+            let blocked = |x, z| terrain.is_blocked(x, z);
+            SettlementSiteEvaluator::new(
+                128,
+                &height,
+                &blocked,
+                terrain.water_world,
+                SETTLEMENT_TILE_WORLD_SIZE,
+            )
+            .evaluate(64.0, 64.0, SettlementTribe::Germanic, 0, 0.0)
+            .is_valid
+        };
+        assert!(valid(1.0, 0.0));
+        assert!(
+            !valid(4.0, 0.0),
+            "world height delta 8 exceeds the slope limit"
+        );
+        assert!(!valid(1.0, 22.0), "current water level submerges the site");
+    }
+
+    #[test]
+    fn settlement_ground_height_matches_nearest_csharp_vertex_sampling() {
+        let heights = [0, 100, 200, 10, 110, 210, 20, 120, 220];
+        let collision = [0; 4];
+        let terrain =
+            SettlementTerrain::new(3, Some(&heights), Some((2, &collision)), 0.0, 2.0)
+                .unwrap();
+        assert_eq!(terrain.sample_height(31.0, 0.0), 0.0);
+        assert_eq!(terrain.sample_height(32.0, 0.0), 0.0, "0.5 ties to even");
+        assert_eq!(terrain.sample_height(96.0, 0.0), 400.0, "1.5 ties to even");
+        assert_eq!(terrain.sample_height(10_000.0, 0.0), 400.0, "clamped at map edge");
+        assert_eq!(terrain.sample_height(0.0, 64.0), 20.0);
     }
 
     #[test]

@@ -151,6 +151,8 @@ pub struct EditorApp {
     pub minimap: MinimapUi,
     pub(crate) design_check: crate::design_check_ui::DesignCheckUi,
     nature: NatureWorkflow,
+    settlement_undo: Vec<SettlementEdit>,
+    settlement_redo: Vec<SettlementEdit>,
     /// App-level UI language (zh-TW / en) persisted through the shared `Loc` settings file.
     loc: Loc,
     last_canvas_rect: Rect,
@@ -281,6 +283,8 @@ impl EditorApp {
             minimap: MinimapUi::default(),
             design_check: Default::default(),
             nature: NatureWorkflow::default(),
+            settlement_undo: Vec::new(),
+            settlement_redo: Vec::new(),
             loc: Loc::new(AppLanguage::English),
             last_canvas_rect: Rect::from_min_size(Pos2::ZERO, Vec2::new(800.0, 600.0)),
             last_map_rect: Rect::from_min_size(Pos2::ZERO, Vec2::new(600.0, 600.0)),
@@ -674,7 +678,8 @@ impl EditorApp {
             }
         }
         let placement_dirty = self.placement.is_dirty();
-        let staged_placement = if placement_dirty {
+        let nature_dirty = self.nature.session.is_dirty();
+        let staged_placement = if placement_dirty && !nature_dirty {
             self.placement.stage_transaction_files(&path)?
         } else {
             Vec::new()
@@ -682,7 +687,6 @@ impl EditorApp {
         for (rel_path, bytes) in &staged_placement {
             tx.stage_file(rel_path, bytes.clone())?;
         }
-        let nature_dirty = self.nature.session.is_dirty();
         let staged_nature = if nature_dirty {
             self.stage_nature_files(&path)?
         } else {
@@ -803,7 +807,7 @@ impl EditorApp {
             self.ambience.status_message = "Ambience saved in whole-map transaction.".into();
             self.ambience.status_is_error = false;
         }
-        if placement_dirty {
+        if placement_dirty && !nature_dirty {
             self.placement.commit_baseline(&path)?;
         }
         if nature_dirty {
@@ -813,6 +817,8 @@ impl EditorApp {
                 self.placement.commit_baseline(&path)?;
             }
         }
+        self.settlement_undo.clear();
+        self.settlement_redo.clear();
         if spawn_data_staged {
             // The committed DATA is the new baseline for the Objects panel and the clearance cache.
             if self.placement.is_loaded() {
@@ -979,6 +985,8 @@ impl EditorApp {
         self.placement.reset_session(Some(&path));
         self.family.reset_session();
         self.nature.reset_map_bound();
+        self.settlement_undo.clear();
+        self.settlement_redo.clear();
         self.textures.reset_session(Some(&path));
         self.scene.reset_session(Some(&path));
         self.scenario.reset_session(Some(&path));
@@ -1042,6 +1050,8 @@ impl EditorApp {
         self.placement.reset_session(None);
         self.family.reset_session();
         self.nature.reset_map_bound();
+        self.settlement_undo.clear();
+        self.settlement_redo.clear();
         self.textures.reset_session(None);
         self.scene.reset_session(None);
         self.scenario.reset_session(None);
@@ -1293,8 +1303,14 @@ impl EditorApp {
         if let Some(intent) = self.maps.take_pending_build_intent() {
             self.pending_action = Some(PendingAction::BuildBlank(intent));
         }
-        self.environment
-            .show(ctx, dim, self.session.as_ref().map(|s| s.heights()), water);
+        self.environment.show(
+            ctx,
+            dim,
+            self.session.as_ref().map(|s| s.heights()),
+            self.session.as_ref().map(|s| (s.collision_size, s.collision())),
+            water,
+            self.height_step,
+        );
         if let Some(apply) = self.environment.take_apply_request() {
             self.handle_environment_apply(apply);
         }
@@ -2047,54 +2063,167 @@ impl EditorApp {
                 }
             }
             EnvApply::Settlement => {
-                let dim = self.session.as_ref().map_or(0, |s| s.vertex_size);
-                let heights = self.session.as_ref().map(|s| s.heights());
-                match self
-                    .environment
-                    .settlement_requests(dim, heights, self.height_step)
-                {
-                    Ok((requests, unresolved)) => {
-                        if requests.is_empty() {
-                            let note = if !unresolved.is_empty() {
-                                format!("; unresolved types: {}", unresolved.join(", "))
-                            } else {
-                                String::new()
-                            };
-                            self.environment.apply_failed(format!(
-                                "No settlement objects could be resolved{note}"
-                            ));
-                            return;
-                        }
-                        match self.placement.apply_requests(&requests) {
-                            Ok(batch) => {
-                                let mut notes = Vec::new();
-                                if !batch.skipped.is_empty() {
-                                    notes.push(batch.skipped.join("; "));
-                                }
-                                if !unresolved.is_empty() {
-                                    notes.push(format!(
-                                        "unresolved template types: {}",
-                                        unresolved.join(", ")
-                                    ));
-                                }
-                                let note_str = if !notes.is_empty() {
-                                    format!(" ({})", notes.join("; "))
-                                } else {
-                                    String::new()
-                                };
-                                self.environment.plan_queued(
-                                    EnvApply::Settlement,
-                                    batch.placed,
-                                    &note_str,
-                                );
-                            }
-                            Err(e) => self.environment.apply_failed(e),
-                        }
-                    }
+                match self.apply_settlement() {
+                    Ok(count) => self.environment.plan_queued(EnvApply::Settlement, count, " Placement and Nature share one undo step."),
                     Err(e) => self.environment.apply_failed(e),
                 }
             }
         }
+    }
+
+    fn apply_settlement(&mut self) -> Result<usize, String> {
+        if self.current_map_is_original() {
+            return Err("Settlement: original maps are read-only".into());
+        }
+        let loaded = self
+            .loaded_map_path
+            .as_ref()
+            .ok_or("Settlement: load the current map first")?;
+        let placement_map = self
+            .placement
+            .loaded_map()
+            .ok_or("Settlement: load DATA first")?;
+        let loaded = std::fs::canonicalize(loaded).map_err(|e| e.to_string())?;
+        if std::fs::canonicalize(self.map_path_input.trim()).map_err(|e| e.to_string())? != loaded
+            || std::fs::canonicalize(placement_map).map_err(|e| e.to_string())? != loaded
+        {
+            return Err("Settlement: terrain and DATA must belong to the current map".into());
+        }
+        if self.nature.driver.is_active() {
+            return Err("Settlement: finish the current Nature stroke first".into());
+        }
+        if let Err(catalog_error) = self.ensure_nature_data_with_placement(true) {
+            let terrain = self.session.as_ref().ok_or("Settlement: load terrain first")?;
+            let unresolved = self.environment.settlement_plan(
+                &[], terrain.vertex_size, Some(terrain.heights()),
+                Some((terrain.collision_size, terrain.collision())),
+                self.water_surface, self.height_step,
+            ).err().unwrap_or_else(|| "Settlement catalog unavailable".into());
+            return Err(format!("{unresolved}; {catalog_error}"));
+        }
+        let names = &self
+            .nature
+            .names
+            .as_ref()
+            .ok_or("Settlement: missing objdef catalog")?
+            .1;
+        let catalog: Vec<_> = self
+            .placement
+            .objects()
+            .into_iter()
+            .filter(|o| o.parent.is_none() && o.position.iter().all(|v| v.is_finite()))
+            .filter_map(|o| {
+                names
+                    .get(&i32::from(o.type_id))
+                    .map(|n| (i32::from(o.type_id), n.clone()))
+            })
+            .collect();
+        let terrain = self
+            .session
+            .as_ref()
+            .ok_or("Settlement: load terrain first")?;
+        let (requests, additions) = self.environment.settlement_plan(
+            &catalog,
+            terrain.vertex_size,
+            Some(terrain.heights()),
+            Some((terrain.collision_size, terrain.collision())),
+            self.water_surface,
+            self.height_step,
+        )?;
+        if requests.is_empty() && additions.is_empty() {
+            return Err("Settlement: empty generated plan".into());
+        }
+        let before = self.placement.capture_state();
+        let after = self.placement.settlement_candidate(&requests)?;
+        let nature_before = self.nature.session.clone();
+        let mut nature_after = nature_before.clone();
+        nature_after.plant_many(&additions)?;
+        // Replay Nature onto the detached Placement candidate as well: shared pool capacity,
+        // links and late failures must be proven before either live session is published.
+        let mut detached = PlacementUi::default();
+        detached.restore_state(&after);
+        let map = self
+            .placement
+            .loaded_map()
+            .ok_or("Settlement: load DATA first")?;
+        self.replay_nature_candidate(map, &nature_after, detached.detached_store()?)?;
+        self.placement.restore_state(&after);
+        self.nature.session = nature_after.clone();
+        self.nature.last_action = false;
+        self.settlement_undo.push(SettlementEdit {
+            before,
+            after,
+            nature_before,
+            nature_after,
+            placement_changed: !requests.is_empty(),
+            nature_changed: !additions.is_empty(),
+        });
+        self.settlement_redo.clear();
+        Ok(requests.len() + additions.len())
+    }
+
+    fn settlement_history(&mut self, redo: bool) -> bool {
+        let stack = if redo {
+            &self.settlement_redo
+        } else {
+            &self.settlement_undo
+        };
+        let Some(edit) = stack.last() else {
+            return false;
+        };
+        let (expected, nature_expected) = if redo {
+            (&edit.before, &edit.nature_before)
+        } else {
+            (&edit.after, &edit.nature_after)
+        };
+        let matches = if redo {
+            self.placement.matches_state(expected)
+        } else {
+            self.placement.matches_undo_boundary(expected)
+        };
+        if !matches || self.nature.session.capture() != nature_expected.capture() {
+            return false;
+        }
+        let placement = if edit.placement_changed {
+            match self.placement.history_candidate(redo) {
+                Ok(state) => state,
+                Err(_) => return false,
+            }
+        } else {
+            self.placement.capture_state()
+        };
+        let mut nature = self.nature.session.clone();
+        if edit.nature_changed && !(if redo { nature.redo() } else { nature.undo() }) {
+            return false;
+        }
+        let mut edit = if redo {
+            self.settlement_redo.pop().unwrap()
+        } else {
+            self.settlement_undo.pop().unwrap()
+        };
+        self.placement.restore_state(&placement);
+        self.nature.session = nature;
+        if redo {
+            edit.after = self.placement.capture_state();
+            edit.nature_after = self.nature.session.clone();
+        } else {
+            edit.before = self.placement.capture_state();
+            edit.nature_before = self.nature.session.clone();
+        }
+        self.nature.last_action = false;
+        if redo {
+            self.settlement_undo.push(edit);
+        } else {
+            self.settlement_redo.push(edit);
+        }
+        self.status_message = if redo {
+            "Settlement redo performed."
+        } else {
+            "Settlement undo performed."
+        }
+        .into();
+        self.status_is_error = false;
+        true
     }
 
     fn current_view_start_camera(&self) -> Result<against_rome_campaign::MapStartCamera, String> {
@@ -2442,11 +2571,6 @@ const NATURE_TILE_WORLD: f32 = 256.0;
 /// 16384 world units / 256 per tile; used when no texture session reports its own dimension.
 const NATURE_DEFAULT_DIMENSION: i32 = 64;
 const NATURE_WORLD_SIZE: f32 = 16384.0;
-const NATURE_POOLS: [&str; 11] = [
-    "objects", "objdata", "position", "anim", "gfxtype", "action", "engine", "light", "particle",
-    "lager", "biglager",
-];
-
 /// Map-bound snapshot of the landscape objects the brush may see, taken from the DATA session.
 struct NatureMapData {
     map: PathBuf,
@@ -2457,6 +2581,15 @@ struct NatureMapData {
     /// Root landscape types present on the map, i.e. types that can be cloned as templates.
     catalog: Vec<NatureCatalogItem>,
     regions: BTreeSet<String>,
+}
+
+struct SettlementEdit {
+    before: crate::placement_ui::PlacementState,
+    after: crate::placement_ui::PlacementState,
+    nature_before: NatureEditSession,
+    nature_after: NatureEditSession,
+    placement_changed: bool,
+    nature_changed: bool,
 }
 
 struct NatureWorkflow {
@@ -2521,16 +2654,6 @@ impl NatureWorkflow {
     }
 }
 
-fn nature_encode_pfil(header: &[u8], uncompressed: &[u8]) -> Vec<u8> {
-    let mut out = header[..64].to_vec();
-    out[16..20].copy_from_slice(&(uncompressed.len() as u32).to_le_bytes());
-    for part in uncompressed.chunks(8) {
-        out.push(((1u16 << part.len()) - 1) as u8);
-        out.extend_from_slice(part);
-    }
-    out
-}
-
 impl EditorApp {
     fn nature_fail(&mut self, message: impl Into<String>) {
         self.status_message = format!("Nature: {}", message.into());
@@ -2578,7 +2701,11 @@ impl EditorApp {
     /// (Re)builds the catalog and level-object snapshot from the loaded DATA session. While
     /// Nature edits are pending the snapshot is frozen so slot identities stay provable.
     fn ensure_nature_data(&mut self) -> Result<(), String> {
-        if self.placement.is_dirty() {
+        self.ensure_nature_data_with_placement(false)
+    }
+
+    fn ensure_nature_data_with_placement(&mut self, allow_placement: bool) -> Result<(), String> {
+        if self.placement.is_dirty() && !allow_placement {
             return Err("the Objects (DATA) session has unsaved edits; save or discard them before using the Nature brush".into());
         }
         let map = self.placement.loaded_map().map(Path::to_path_buf).ok_or(
@@ -2790,6 +2917,7 @@ impl EditorApp {
 
     /// Ctrl+Z target: true when Nature handled the undo.
     pub fn nature_undo(&mut self) -> bool {
+        if self.settlement_history(false) { return true; }
         self.nature_end_stroke();
         if !(self.nature.last_action && self.nature.session.can_undo()) {
             return false;
@@ -2801,6 +2929,7 @@ impl EditorApp {
     }
 
     pub fn nature_redo(&mut self) -> bool {
+        if self.settlement_history(true) { return true; }
         self.nature_end_stroke();
         if !(self.nature.last_action && self.nature.session.can_redo()) {
             return false;
@@ -2820,18 +2949,23 @@ impl EditorApp {
         self.status_is_error = false;
     }
 
-    /// Memory-only: replays the pending Nature session onto the on-disk DATA store and returns
-    /// the changed pool files. Never touches disk or the session.
+    /// Replay Nature onto a detached current Placement store and serialize DATA once.
+    /// Independent conflicting workflows retain their existing fail-closed behavior.
     fn stage_nature_files(&self, target_map: &Path) -> Result<Vec<(PathBuf, Vec<u8>)>, String> {
-        use crate::design_apply::{apply_placements, PlacementRequest};
-        use against_rome_placement::ObjectStore;
-
-        let session = &self.nature.session;
-        if !session.is_dirty() {
-            return Ok(Vec::new());
-        }
-        if self.placement.is_dirty() {
+        if self.placement.is_dirty() && self.settlement_undo.is_empty() && self.settlement_redo.is_empty() {
             return Err("Nature: the Objects (DATA) session has unsaved edits; save or discard them before saving Nature changes".into());
+        }
+        let store = self.replay_nature_candidate(target_map, &self.nature.session, self.placement.detached_store()?)?;
+        self.placement.stage_candidate_store(target_map, store)
+    }
+
+    fn replay_nature_candidate(
+        &self, target_map: &Path, session: &NatureEditSession,
+        mut store: against_rome_placement::ObjectStore,
+    ) -> Result<against_rome_placement::ObjectStore, String> {
+        use crate::design_apply::{apply_placements, PlacementRequest};
+        if !session.is_dirty() {
+            return Ok(store);
         }
         let loaded = self
             .placement
@@ -2856,8 +2990,10 @@ impl EditorApp {
             .filter(|d| same_path(&d.map, target_map))
             .ok_or("Nature: catalog/object data unavailable; cannot verify pending edits")?;
 
-        let mut store = ObjectStore::load(target_map)
+        let disk = against_rome_placement::ObjectStore::load(target_map)
             .map_err(|e| format!("Nature: cannot load DATA objects: {e}"))?;
+        let current_disk: HashMap<i32, (u32, u16)> = disk.objects().iter()
+            .map(|o| (o.slot as i32, (o.uid, o.type_id))).collect();
         let current: HashMap<i32, (u32, u16)> = store
             .objects()
             .iter()
@@ -2868,7 +3004,7 @@ impl EditorApp {
             let expected = data.identity.get(slot).ok_or_else(|| {
                 format!("Nature: removed slot {slot} is not a known landscape object")
             })?;
-            if current.get(slot) != Some(expected) {
+            if current.get(slot) != Some(expected) || current_disk.get(slot) != Some(expected) {
                 return Err(format!(
                     "Nature: slot {slot} changed on disk since it was selected; reload the map and redo the removal"
                 ));
@@ -2904,45 +3040,7 @@ impl EditorApp {
         store
             .remove_families(&families)
             .map_err(|e| format!("Nature: removal rejected (linked, shared or stale data): {e}"))?;
-
-        let data_dir = target_map.join("DATA");
-        let mut staged = Vec::new();
-        for name in NATURE_POOLS {
-            let Some(current_bytes) = store.payload(name) else {
-                continue;
-            };
-            let pool_path = data_dir.join(format!("{name}.dat"));
-            let relative = PathBuf::from(format!("DATA/{name}.dat"));
-            match std::fs::read(&pool_path) {
-                Ok(disk) if disk.starts_with(b"PFIL") => {
-                    if disk.len() < 64 {
-                        return Err(format!(
-                            "Nature: corrupted PFIL header in {}",
-                            pool_path.display()
-                        ));
-                    }
-                    let initial =
-                        against_rome_data::lzss::decompress_pfil(&disk, None).map_err(|e| {
-                            format!("Nature: cannot decompress {}: {e}", pool_path.display())
-                        })?;
-                    if initial != current_bytes {
-                        staged.push((relative, nature_encode_pfil(&disk, current_bytes)));
-                    }
-                }
-                Ok(disk) => {
-                    if disk != current_bytes {
-                        staged.push((relative, current_bytes.to_vec()));
-                    }
-                }
-                Err(e) => {
-                    return Err(format!("Nature: cannot read {}: {e}", pool_path.display()));
-                }
-            }
-        }
-        if staged.is_empty() {
-            return Err("Nature: pending edits produced no DATA pool changes".into());
-        }
-        Ok(staged)
+        Ok(store)
     }
 
     /// Pending additions (green) and removed existing objects (red) over the 2D map.
@@ -3057,14 +3155,14 @@ impl EditorApp {
         ));
         ui.horizontal(|ui| {
             if ui
-                .add_enabled(self.nature.session.can_undo(), egui::Button::new("Undo"))
+                .add_enabled(self.nature.session.can_undo() || !self.settlement_undo.is_empty(), egui::Button::new("Undo"))
                 .clicked()
             {
                 self.nature.last_action = true;
                 self.nature_undo();
             }
             if ui
-                .add_enabled(self.nature.session.can_redo(), egui::Button::new("Redo"))
+                .add_enabled(self.nature.session.can_redo() || !self.settlement_redo.is_empty(), egui::Button::new("Redo"))
                 .clicked()
             {
                 self.nature.last_action = true;
@@ -3106,14 +3204,16 @@ pub fn tr(lang: AppLanguage, en: &'static str, zh: &'static str) -> &'static str
 impl EditorApp {
     /// True when any history the toolbar Undo button / Ctrl+Z can act on exists.
     pub fn can_undo_any(&self) -> bool {
-        (self.spawn_ui.is_active() && self.spawn_ui.session().can_undo())
+        !self.settlement_undo.is_empty()
+            || (self.spawn_ui.is_active() && self.spawn_ui.session().can_undo())
             || (self.nature.last_action && self.nature.session.can_undo())
             || (self.active_tool == ActiveTool::Material && self.textures.can_material_undo())
             || self.session.as_ref().is_some_and(|s| s.can_undo())
     }
 
     pub fn can_redo_any(&self) -> bool {
-        (self.spawn_ui.is_active() && self.spawn_ui.session().can_redo())
+        !self.settlement_redo.is_empty()
+            || (self.spawn_ui.is_active() && self.spawn_ui.session().can_redo())
             || (self.nature.last_action && self.nature.session.can_redo())
             || (self.active_tool == ActiveTool::Material && self.textures.can_material_redo())
             || self.session.as_ref().is_some_and(|s| s.can_redo())
@@ -3122,6 +3222,7 @@ impl EditorApp {
     /// Ctrl+Z and the toolbar Undo: spawn placement, nature brush, Material strokes (only while
     /// the Material tool is active), then the terrain history.
     pub fn perform_undo(&mut self) {
+        if self.settlement_history(false) { return; }
         if self.spawn_ui.is_active() && self.spawn_ui.session().can_undo() {
             let read_only = self.current_map_is_original();
             let cx = Self::spawn_cx(&self.session, self.loc.current_language(), self.height_step, read_only);
@@ -3143,6 +3244,7 @@ impl EditorApp {
 
     /// Ctrl+Y and the toolbar Redo (same routing as [`Self::perform_undo`]).
     pub fn perform_redo(&mut self) {
+        if self.settlement_history(true) { return; }
         if self.spawn_ui.is_active() && self.spawn_ui.session().can_redo() {
             let read_only = self.current_map_is_original();
             let cx = Self::spawn_cx(&self.session, self.loc.current_language(), self.height_step, read_only);
@@ -3896,6 +3998,7 @@ mod tests {
     use crate::terrain::SampleChange;
 
     mod objectives_apply_tests;
+    mod settlement_apply_tests;
     mod spawn_save_tests;
     mod starter_kit_tests;
 
@@ -9531,7 +9634,15 @@ impl eframe::App for EditorApp {
             self.pan = new_pan;
         }
         self.refresh_placement_type_names();
+        self.placement.settlement_history_routing = !self.settlement_undo.is_empty() || !self.settlement_redo.is_empty();
+        self.placement.settlement_history_available = (!self.settlement_undo.is_empty(), !self.settlement_redo.is_empty());
         self.placement.show(ctx);
+        if let Some(redo) = self.placement.history_request.take() {
+            if !self.settlement_history(redo) {
+                if redo { let _ = self.placement.redo(); }
+                else { let _ = self.placement.undo(); }
+            }
+        }
         self.scenario.show(ctx);
         self.show_spawn_panel(ctx);
         self.textures.show(ctx);

@@ -1,10 +1,39 @@
-## 2026-10-20 Codex：Map Diff 即時 session 快照（已驗證，待提交）
+## 2026-10-21 Codex：Settlement terrain parity、grouped apply 與 Placement/Nature 整合（已驗證）
+
+- `EnvironmentUi` 現在以 live terrain session 驗證 height/collision buffer，collision >128 會阻擋站點／資源；raw heights 乘目前 `height_step`，raw `water_surface` 換算 world water。父端依 C# `MapEditorForm.Layouts.cs::LayoutGroundHeight` 將 settlement 高度取樣修正為 nearest vertex / ties-to-even（一般 `ground_height` 仍供其他面板使用）。缺 session、長度錯誤、step/water 非有限時保留原 plan 並拒絕生成。
+- `PlacementUi::apply_requests_grouped` 以 detached `ObjectStore` 分段消費 >96 requests，只在全段成功後發布一個 undo group；late pool failure 不污染 live store/history。新增測試涵蓋 106 筆、chunk 內 skips、一 undo/redo、late allocation fail、無 edit 時保留 pending/history。
+- Settlement Apply 將 buildings/wildlife 分流到 Placement，forest/quarry 分流到 Nature（由 includeNature 控制）；名稱、模板、terrain 和 capacity 任一無法驗證時整批拒絕。雙 session candidate 先 detached preflight，再以一個跨 session undo/redo 動作發布；外部 placement history 仍保留。Safe Save 將兩者重播到同一 detached ObjectStore，透過單一 map transaction 寫入，成功後更新兩個 baseline 並清聯合歷史；失敗回滾保持 bytes、sessions 與聯合歷史，支援重試。
+- 合成測試涵蓋產生→套用→單步 undo/redo→Safe Save→reload、includeNature true/false、超過 96 requests、未解析名稱／不可複製模板、late Nature pool failure、獨立 Placement history、交易失敗回滾與 PFIL header 保留。未操作安裝遊戲；未做 GUI／遊戲內驗收。
+- 父端驗證：專項 `settlement_apply_tests` **8 passed**；`cargo test -p against-rome-editor-app --lib --locked --offline --target-dir re_workspace/target-w18 -- --test-threads=1` **515 passed / 0 failed / 0 ignored**。整合代理另回報序列化 workspace **2282 passed / 0 failed / 16 ignored**。`git diff --check` 通過。全檔 rustfmt 仍會帶入大範圍舊格式變動，未執行格式化。
+- 狀態：此 Settlement slice 已驗證，未 commit/push。完整專案 Rust 遷移目標仍未完成；tracked C# source、project files 與工具鏈仍需盤點／退役，oracle fixtures 必須保留。
+## 2026-10-20 Codex：ABI probe 父端重驗與 workspace 重現（已通過）
+
+- 父端重跑 `cargo test -p against-rome-data --locked --offline --target-dir re_workspace/target-w18`：crate 全部已啟用測試通過；另設 `AR_NATIVE_PROBE_TEST_DLL` 執行 `native_probe_cli -- --ignored`，真 Windows DLL explicit-load gate 1 passed。
+- 曾報告失敗的兩個 maps 測試單獨各 1 passed。序列化重跑 `cargo test --workspace --locked --offline --target-dir re_workspace/target-w18 -- --test-threads=1` exit 0；含 ignored gates，不能視為那些 gate 已通過。之前並行 workspace exit 101 未能重現，根因仍未知。
+- ABI probe 變更尚待 diff review；目前保留 C# 檔案、deploy/header/MSBuild target 與使用者 AGENTS.md／README.md 修改。未 commit/push。
+## 2026-10-20 Codex：Rust ABI probe 首批替換（待父端 review；禁止 commit/push）
+
+- 新增 `native/against-rome-data/src/bin/ar-native-probe.rs`、`tests/native_probe_cli.rs`；`tools/build-native-data.ps1` 的 Add-Type/ArNativeProbe 改呼叫 Rust CLI。無新依賴；Windows x64 explicit absolute DLL path、PE/DLL 預檢、LoadLibraryExW restricted search＋RAII、45 exports、原 ABI/size＋frame/saved-mode size、原 half-average/skip-zero/tail/late-invalid-index atomic failure。錯誤 exit nonzero，無 fallback。
+- 退役判定：暫保留三候選檔。舊 C# RustLightPool／RustAlrFrameDecoder／RustParticleBaseDefinitions 仍在；Directory.Build.targets 仍 copy DLL＋publish gate；build-native-data.ps1 仍有 deploy/hash/manifest 責任；header 是現存 ABI 文件與部署輸出。保留 Rust FFI、frozen oracle 與整棵舊 C#；未動使用者 AGENTS.md／README.md。此 slice 不代表 .NET 全退役。
+- 驗證（repo-local cargo；共同 flags `--locked --offline --target-dir re_workspace/target-w18`）：`cargo test -p against-rome-data --bin ar-native-probe` 7 passed；`cargo test -p against-rome-data --quiet` **162 passed/0 failed/2 ignored**；`cargo build -p against-rome-data --lib --bin ar-native-probe` 成功。CLI regular negatives 3 passed（參數／缺檔／non-DLL／kernel32 缺 export）；unit negatives 逐 export、逐 ABI/size、fake success、partial failure、truncated PE。
+- Explicit DLL gate 已另外真跑：`AR_NATIVE_PROBE_TEST_DLL=<absolute target-w18/debug/against_rome_data.dll> cargo test -p against-rome-data --test native_probe_cli -- --ignored` 1 passed；後以隔離 release DLL 重跑 gate 1 passed，複製為含中文/空白路徑及不同檔名，驗證實際 GetProcAddress/query/pixel calls 與 child exit 後可刪除 DLL。gate 沒設環境變數會 fail，預設 ignored 不算通過。
+- Release wrapper：`powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools/build-native-data.ps1 -OutputDir re_workspace/native-probe-retirement-deploy -TargetDir re_workspace/target-w18` exit 0，Rust probe PASS＋SHA/manifest。SHA256 `0305A21152EA0D5B659AFFEC193A1B9D50DE4D61C7541B22960CD001B4C943F0`。首次 PS5.1 無 BOM 中文 ParserError，改為 UTF-8 BOM 後成功；未換預設 deploy。
+- Workspace：`cargo test --workspace --locked --offline --target-dir re_workspace/target-w18 --quiet` exit 101，maps 64 passed/2 failed/3 ignored：`starter_kit::native::tests::{failed_rollback_retains_original_recovery_evidence,save_checks_unchanged_dependency_and_exclusive_lock}`（PermissionDenied／error assertion）；log `re_workspace/native-probe-workspace.log`。序列重跑 `cargo test -p against-rome-maps --lib --locked --offline --target-dir re_workspace/target-w18 starter_kit::native::tests:: -- --test-threads=1` exit 0：53 passed/0 failed/3 ignored（含原兩項）；顯示並行／環境敏感，根因未定。未改 maps，未宣稱 workspace 綠。data log `re_workspace/native-probe-data-tests.log`。
+- 工具：sandbox exec/node 啟動 helper_unknown_error，採已核准原生 PowerShell；collaboration 子代理 no rollout found，未啟動。rustfmt/scoped diff --check 通過。未 commit/push、GUI/遊戲驗收、操作安裝遊戲。
+
+## 2026-10-20 Codex：全 Rust workspace 回歸測試
+
+- 以 repo-local Rust runtime 執行 `cargo test --workspace --locked --offline --target-dir re_workspace/target-w18 --quiet`，exit 0；所有已執行測試 targets 通過，命令輸出包含部分已標 `ignored` 的 gate，故不計作通過驗收。沒有執行 ignored retail/local evidence gates，也沒有 GUI／遊戲內驗收。
+- 驗證對應目前推送 HEAD `fcb8aa4`；本機與 `origin/主要開發` 相同。工作樹仍只保留既有 `AGENTS.md`、`README.md` 修改（另有本 handoff 更新）。
+- 狀態：Rust workspace regression 通過；不是完整 C# parity、Windows GUI、零售遊戲或乾淨可攜發行驗收證據。
+
+## 2026-10-20 Codex：Map Diff 即時 session 快照（已驗證並推送）
 
 - Map Diff Compare 改由當下 `TexturesUi`、`PlacementUi`、`ScenarioUi` 擷取唯讀 live snapshot；Compare 不存檔、不以磁碟 current data 回退。缺少 session、圖層尺寸不一致、非有限物件位置/角度、無法證明唯一 prebuilt slot/UID/spawn 綁定時，該層標 `Unavailable`，不得 PASS。baseline capture from memory 仍只提供原先的有限圖層。
 - 新增 27 項 integration tests，涵蓋 live edits（textures、objects、events、spawns、DATA slots）、同數量 event payload 修改、刪除／新增、缺 session／尺寸錯誤／ambiguous metadata、baseline frozen，以及 compare 前後所有來源 map bytes 相同。
 - 父端重驗：`cargo test -p against-rome-editor-app --locked --offline --target-dir re_workspace/target-w18 --test packaging_map_diff --quiet` **27 passed / 0 failed / 0 ignored**；同 crate `--lib --quiet` **498 passed / 0 failed / 0 ignored**；`rustfmt --edition 2021 --check apps/against-rome-editor/tests/packaging_map_diff.rs apps/against-rome-editor/src/packaging_ui.rs`、scoped `git diff --check` 通過。代理 job `32f9143aaee2` succeeded；僅修改 `app.rs`、`packaging_ui.rs`、`tests/packaging_map_diff.rs`。
 - 限制：Diff 欄位未含 DATA parent/vitals/完整 family、原生 unit population、`ScenarioDocument.version`、水位與 height step；使用 packaging engine 現行容差。未做 GUI／遊戲內驗收，未操作安裝遊戲。
-- 狀態：程式與合成測試已驗證，尚未提交；完整 Rust 改寫目標仍未完成。
+- 狀態：已提交並推送 `fcb8aa4`（`feat(editor): diff live map sessions`）；完整 Rust 改寫目標仍未完成。
 
 ## 2026-10-20 Codex：Campaign Objectives 套用至 Scenario（已驗證）
 

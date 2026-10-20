@@ -126,6 +126,16 @@ enum Pending {
     Remove { families: Vec<(usize, u32)> },
 }
 
+#[derive(Clone)]
+pub(crate) struct PlacementState {
+    store: Option<ObjectStore>,
+    undo: Vec<usize>,
+    redo: Vec<usize>,
+    selected: Option<(usize, u32)>,
+    selection: Vec<(usize, u32)>,
+    pending: Option<Pending>,
+}
+
 pub struct PlacementUi {
     pub open: bool,
     map_input: String,
@@ -149,6 +159,9 @@ pub struct PlacementUi {
     redo_groups: Vec<usize>,
     /// Raised by the Save button; `EditorApp` consumes it and routes to the central Safe Save.
     save_requested: bool,
+    pub(crate) settlement_history_routing: bool,
+    pub(crate) settlement_history_available: (bool, bool),
+    pub(crate) history_request: Option<bool>,
     /// Injectable layout file picker; `None` uses the native `rfd` dialogs.
     pub layout_picker: Option<LayoutFilePicker>,
     /// Loaded layout waiting for the apply dialog (C# `LayoutApplyDialog`).
@@ -193,6 +206,9 @@ impl Default for PlacementUi {
             undo_groups: Vec::new(),
             redo_groups: Vec::new(),
             save_requested: false,
+            settlement_history_routing: false,
+            settlement_history_available: (false, false),
+            history_request: None,
             layout_picker: None,
             layout_pending: None,
             layout_options: LayoutApplyOptions::default(),
@@ -204,6 +220,106 @@ impl Default for PlacementUi {
     }
 }
 impl PlacementUi {
+    pub(crate) fn capture_state(&self) -> PlacementState {
+        PlacementState {
+            store: self.store.clone(),
+            undo: self.undo_groups.clone(),
+            redo: self.redo_groups.clone(),
+            selected: self.selected,
+            selection: self.selection.clone(),
+            pending: self.pending.clone(),
+        }
+    }
+
+    pub(crate) fn matches_state(&self, state: &PlacementState) -> bool {
+        self.undo_groups == state.undo
+            && self.redo_groups == state.redo
+            && match (&self.store, &state.store) {
+                (Some(a), Some(b)) => [
+                    "objects", "objdata", "position", "anim", "gfxtype", "action", "engine",
+                    "light", "particle", "lager", "biglager",
+                ]
+                .iter()
+                .all(|n| a.payload(n) == b.payload(n)),
+                (None, None) => true,
+                _ => false,
+            }
+    }
+
+    pub(crate) fn restore_state(&mut self, state: &PlacementState) {
+        self.store = state.store.clone();
+        self.undo_groups = state.undo.clone();
+        self.redo_groups = state.redo.clone();
+        self.selected = state.selected;
+        self.selection = state.selection.clone();
+        self.pending = state.pending.clone();
+    }
+
+    pub(crate) fn matches_undo_boundary(&self, state: &PlacementState) -> bool {
+        let mut boundary = state.clone();
+        boundary.redo = self.redo_groups.clone();
+        self.matches_state(&boundary)
+    }
+
+    pub(crate) fn history_candidate(&self, redo: bool) -> Result<PlacementState> {
+        let mut candidate = Self::default();
+        candidate.restore_state(&self.capture_state());
+        if redo {
+            candidate.redo()?;
+        } else {
+            candidate.undo()?;
+        }
+        Ok(candidate.capture_state())
+    }
+
+    /// Uses the existing grouped implementation on an isolated session.
+    pub(crate) fn settlement_candidate(
+        &self,
+        requests: &[PlacementRequest],
+    ) -> Result<PlacementState> {
+        let mut candidate = Self::default();
+        candidate.restore_state(&self.capture_state());
+        let batch = candidate.apply_requests_grouped(requests)?;
+        if batch.placed != requests.len() || !batch.skipped.is_empty() {
+            return Err(format!(
+                "Settlement placement rejected: {}",
+                batch.skipped.join("; ")
+            ));
+        }
+        Ok(candidate.capture_state())
+    }
+
+    pub(crate) fn detached_store(&self) -> Result<ObjectStore> {
+        self.store.clone().ok_or_else(|| "Load DATA first".into())
+    }
+
+    pub(crate) fn stage_candidate_store(
+        &self,
+        map: &Path,
+        store: ObjectStore,
+    ) -> Result<Vec<(PathBuf, Vec<u8>)>> {
+        let disk = ObjectStore::load(map)?;
+        let baseline = self
+            .baseline
+            .as_ref()
+            .ok_or("Placement: missing loaded baseline")?;
+        for name in [
+            "objects", "objdata", "position", "anim", "gfxtype", "action", "engine", "light",
+            "particle", "lager", "biglager",
+        ] {
+            if disk.payload(name) != baseline.payload(name) {
+                return Err(format!(
+                    "Placement: DATA/{name}.dat changed on disk; reload before saving"
+                ));
+            }
+        }
+        let mut candidate = Self::default();
+        candidate.loaded_map = self.loaded_map.clone();
+        candidate.baseline = self.baseline.clone();
+        candidate.store = Some(store);
+        candidate.stage_transaction_files(map)
+    }
+
     /// Ask the host to run the whole-map Safe Save; this panel never writes DATA itself.
     pub fn request_save(&mut self) {
         self.save_requested = true;
@@ -1097,35 +1213,33 @@ impl PlacementUi {
     pub fn cancel_layout_apply(&mut self) {
         self.layout_pending = None;
     }
-    /// Applies placements in bounded batches but records a single undo step.
-    pub fn apply_requests_grouped(&mut self, requests: &[PlacementRequest]) -> Result<PlacementBatch> {
-        let groups_before = self.undo_groups.len();
+    /// Consumes all requests in bounded batches on a candidate store, then publishes one
+    /// undoable group. Any batch failure leaves the entire live session unchanged.
+    pub fn apply_requests_grouped(
+        &mut self,
+        requests: &[PlacementRequest],
+    ) -> Result<PlacementBatch> {
+        let mut candidate = self
+            .store
+            .as_ref()
+            .ok_or("請先載入 MAP（Objects 面板 Load DATA）")?
+            .clone();
         let mut total = PlacementBatch::default();
-        let mut rest = requests;
-        let mut outcome = Ok(());
-        while !rest.is_empty() {
-            match self.apply_requests(rest) {
-                Ok(batch) => {
-                    total.consumed += batch.consumed;
-                    total.ops += batch.ops;
-                    total.placed += batch.placed;
-                    total.skipped.extend(batch.skipped);
-                    if batch.consumed == 0 {
-                        break;
-                    }
-                    rest = &rest[batch.consumed.min(rest.len())..];
-                }
-                Err(error) => {
-                    outcome = Err(error);
-                    break;
-                }
-            }
+        for chunk in requests.chunks(crate::design_apply::MAX_OBJECTS_PER_BATCH) {
+            let batch = apply_placements(&mut candidate, chunk)?;
+            total.consumed += batch.consumed;
+            total.ops += batch.ops;
+            total.placed += batch.placed;
+            total.skipped.extend(batch.skipped);
         }
-        if self.undo_groups.len() > groups_before + 1 {
-            let merged: usize = self.undo_groups.drain(groups_before..).sum();
-            self.undo_groups.push(merged);
+        if total.ops > 0 {
+            self.store = Some(candidate);
+            self.record_edit(total.ops);
+            self.selected = None;
+            self.selection.clear();
+            self.pending = None;
         }
-        outcome.map(|()| total)
+        Ok(total)
     }
     /// Runs queued layout exports/applies (called by `EditorApp` with terrain + objdef context).
     pub fn process_layout_requests(&mut self, ctx: &LayoutContext<'_>) {
@@ -1459,10 +1573,16 @@ impl PlacementUi {
                         self.report(r);
                     }
                 }
-                let can_undo=!self.undo_groups.is_empty();
-                let can_redo=!self.redo_groups.is_empty();
-                if ui.add_enabled(can_undo,egui::Button::new("Undo")).clicked() {let r=self.undo();self.report(r);}
-                if ui.add_enabled(can_redo,egui::Button::new("Redo")).clicked() {let r=self.redo();self.report(r);}
+                let can_undo=!self.undo_groups.is_empty() || self.settlement_history_available.0;
+                let can_redo=!self.redo_groups.is_empty() || self.settlement_history_available.1;
+                if ui.add_enabled(can_undo,egui::Button::new("Undo")).clicked() {
+                    if self.settlement_history_routing { self.history_request = Some(false); }
+                    else { let r=self.undo();self.report(r); }
+                }
+                if ui.add_enabled(can_redo,egui::Button::new("Redo")).clicked() {
+                    if self.settlement_history_routing { self.history_request = Some(true); }
+                    else { let r=self.redo();self.report(r); }
+                }
                 if ui.add_enabled(self.is_dirty(),egui::Button::new("Save DATA")).clicked() {self.request_save();}
                 if ui.add_enabled(self.is_loaded(),egui::Button::new("Reset DATA…")).clicked() {let r=self.request_reset();self.report(r);}
             });
@@ -1905,10 +2025,7 @@ mod tests {
             let p = std::env::temp_dir().join(format!(
                 "ar-placement-ui-{}-{}",
                 std::process::id(),
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_nanos()
+                uuid::Uuid::new_v4()
             ));
             fs::create_dir(&p).unwrap();
             Self(p)
@@ -1920,9 +2037,12 @@ mod tests {
         }
     }
     fn fixture(map: &Path) {
+        fixture_with_capacity(map, 3, 3);
+    }
+    fn fixture_with_capacity(map: &Path, n: usize, active: usize) {
+        assert!(active <= n);
         let data = map.join("DATA");
         fs::create_dir_all(&data).unwrap();
-        let n = 3usize;
         let mut objects = vec![0u8; 16 + n * (79 + COLUMNS.iter().sum::<usize>())];
         objects[..4].copy_from_slice(&1u32.to_le_bytes());
         objects[4..8].copy_from_slice(&(n as u32).to_le_bytes());
@@ -1930,7 +2050,7 @@ mod tests {
         objects[12..16].copy_from_slice(&30u32.to_le_bytes());
         for slot in 0..n {
             let r = 16 + slot * 79;
-            objects[r] = 1;
+            objects[r] = u8::from(slot < active);
             objects[r + 3..r + 7].copy_from_slice(&(slot as u32 + 1).to_le_bytes());
             for offset in [67, 69] {
                 objects[r + offset..r + offset + 2].copy_from_slice(&(slot as u16).to_le_bytes());
@@ -1953,7 +2073,7 @@ mod tests {
         position[..4].copy_from_slice(&1u32.to_le_bytes());
         position[4..8].copy_from_slice(&(n as u32).to_le_bytes());
         for slot in 0..n {
-            position[8 + slot * 17] = 1;
+            position[8 + slot * 17] = u8::from(slot < active);
             position[9 + slot * 17..13 + slot * 17]
                 .copy_from_slice(&(slot as f32 * 20.0).to_le_bytes());
         }
@@ -2579,6 +2699,156 @@ mod tests {
         assert_eq!(batch.consumed, crate::design_apply::MAX_OBJECTS_PER_BATCH);
         assert_eq!(batch.placed, 0);
         assert!(!ui.is_dirty());
+    }
+
+    fn placement_payloads(store: &ObjectStore) -> Vec<Option<Vec<u8>>> {
+        [
+            "objects", "objdata", "position", "anim", "gfxtype", "action", "engine", "light",
+            "particle", "lager", "biglager",
+        ]
+        .iter()
+        .map(|name| store.payload(name).map(<[u8]>::to_vec))
+        .collect()
+    }
+
+    #[test]
+    fn design_grouped_requests_consume_all_chunks_with_one_undo_redo() {
+        let cap = crate::design_apply::MAX_OBJECTS_PER_BATCH;
+        let placed_count = cap + 10;
+        let temp = Temp::new();
+        fixture_with_capacity(&temp.0, placed_count + 2, 2);
+        let mut ui = PlacementUi::default();
+        ui.load_session(&temp.0).unwrap();
+        ui.select_objects(&[(0, 1), (1, 2)]);
+        ui.request_remove().unwrap();
+        let before = placement_payloads(ui.store.as_ref().unwrap());
+        let mut requests: Vec<_> = (0..placed_count)
+            .map(|i| request(300.0 + i as f32, 400.0))
+            .collect();
+        // Skips in both chunks must be consumed and reported as well.
+        requests.insert(0, request(-1.0, 0.0));
+        let mut unknown = request(100.0, 100.0);
+        unknown.type_id = 999;
+        requests.insert(cap, unknown);
+        requests.push(request(f32::NAN, 0.0));
+        let batch = ui.apply_requests_grouped(&requests).unwrap();
+        assert_eq!((batch.consumed, batch.placed), (requests.len(), placed_count));
+        assert_eq!(batch.ops, placed_count * 3, "clone + rotation + team");
+        assert_eq!(batch.skipped.len(), 3);
+        for reason in ["1 requests outside", "type 999 ×1", "1 non-finite"] {
+            assert!(batch.skipped.iter().any(|s| s.contains(reason)), "{batch:?}");
+        }
+        assert_eq!(ui.undo_groups, vec![batch.ops]);
+        assert_eq!(ui.redo_depth(), 0);
+        assert!(ui.selected.is_none() && ui.selection.is_empty() && ui.pending.is_none());
+        assert!(ui.is_dirty());
+        assert_eq!(ui.object_count(), placed_count + 2);
+        for (i, object) in ui.objects().iter().skip(2).enumerate() {
+            assert_eq!(object.position, [300.0 + i as f32, 1.5, 400.0]);
+            assert_eq!((object.rotation_degrees, object.team), (90.0, 3));
+        }
+        let after = placement_payloads(ui.store.as_ref().unwrap());
+        ui.undo().unwrap();
+        assert_eq!(placement_payloads(ui.store.as_ref().unwrap()), before);
+        assert_eq!((ui.undo_depth(), ui.redo_depth()), (0, 1));
+        assert!(!ui.is_dirty());
+        assert!(!ui.store.as_ref().unwrap().can_undo());
+        ui.redo().unwrap();
+        assert_eq!(placement_payloads(ui.store.as_ref().unwrap()), after);
+        assert_eq!((ui.undo_depth(), ui.redo_depth()), (1, 0));
+        assert!(!ui.store.as_ref().unwrap().can_redo());
+    }
+
+    #[test]
+    fn design_grouped_requests_late_pool_failure_preserves_entire_session() {
+        let cap = crate::design_apply::MAX_OBJECTS_PER_BATCH;
+        let temp = Temp::new();
+        // Exactly one full chunk fits; the next request fails real core allocation.
+        fixture_with_capacity(&temp.0, cap + 2, 2);
+        let mut ui = PlacementUi::default();
+        ui.load_session(&temp.0).unwrap();
+        ui.select_objects(&[(0, 1), (1, 2)]);
+        ui.delta[0] = "1".into();
+        ui.move_family().unwrap();
+        ui.move_family().unwrap();
+        ui.undo().unwrap();
+        ui.request_remove().unwrap();
+        let mut expected = ui.store.as_ref().unwrap().clone();
+        let selected = ui.selected;
+        let selection = ui.selection.clone();
+        let undo = ui.undo_groups.clone();
+        let redo = ui.redo_groups.clone();
+        assert_eq!((undo.len(), redo.len()), (1, 1));
+        let requests = vec![request(300.0, 400.0); cap + 1];
+
+        // Establish that this is a late failure, rather than a rejected fixture/template.
+        let mut probe = expected.clone();
+        let first = apply_placements(&mut probe, &requests[..cap]).unwrap();
+        assert_eq!((first.consumed, first.placed), (cap, cap));
+        assert_eq!(probe.objects().len(), cap + 2);
+        let error = apply_placements(&mut probe, &requests[cap..]).unwrap_err();
+        assert!(error.contains("insufficient free native pool slots"), "{error}");
+        let error = ui.apply_requests_grouped(&requests).unwrap_err();
+        assert!(error.contains("insufficient free native pool slots"), "{error}");
+
+        assert_eq!(placement_payloads(ui.store.as_ref().unwrap()), placement_payloads(&expected));
+        assert_eq!(ui.objects(), expected.objects());
+        assert_eq!(ui.is_dirty(), expected.is_dirty());
+        assert_eq!(ui.selected, selected);
+        assert_eq!(ui.selection, selection);
+        assert!(matches!(&ui.pending, Some(Pending::Remove { families }) if *families == selection));
+        assert_eq!(ui.undo_groups, undo);
+        assert_eq!(ui.redo_groups, redo);
+        // Replay both histories against the untouched clone, comparing all pool bytes at
+        // every step so retained depth alone cannot hide lost or altered history entries.
+        ui.redo().unwrap();
+        assert!(expected.redo());
+        assert_eq!(placement_payloads(ui.store.as_ref().unwrap()), placement_payloads(&expected));
+        for _ in 0..2 {
+            ui.undo().unwrap();
+            assert!(expected.undo());
+            assert_eq!(placement_payloads(ui.store.as_ref().unwrap()), placement_payloads(&expected));
+        }
+        assert!(!ui.is_dirty());
+        assert!(!ui.store.as_ref().unwrap().can_undo());
+        assert!(!expected.can_undo());
+        for _ in 0..2 {
+            ui.redo().unwrap();
+            assert!(expected.redo());
+            assert_eq!(placement_payloads(ui.store.as_ref().unwrap()), placement_payloads(&expected));
+        }
+        assert!(!ui.store.as_ref().unwrap().can_redo());
+        assert!(!expected.can_redo());
+    }
+
+    #[test]
+    fn design_grouped_requests_without_edits_preserve_history_and_pending_state() {
+        let temp = Temp::new();
+        fixture(&temp.0);
+        let mut ui = PlacementUi::default();
+        assert!(ui.apply_requests_grouped(&[request(1.0, 1.0)]).is_err());
+        ui.load_session(&temp.0).unwrap();
+        ui.select_object(Some((0, 1)));
+        ui.delta[0] = "1".into();
+        ui.move_family().unwrap();
+        ui.move_family().unwrap();
+        ui.undo().unwrap();
+        ui.request_remove().unwrap();
+        let before = placement_payloads(ui.store.as_ref().unwrap());
+        let undo = ui.undo_groups.clone();
+        let redo = ui.redo_groups.clone();
+        let requests = vec![request(-1.0, 0.0); crate::design_apply::MAX_OBJECTS_PER_BATCH + 1];
+        let batch = ui.apply_requests_grouped(&requests).unwrap();
+        assert_eq!((batch.consumed, batch.placed, batch.ops), (requests.len(), 0, 0));
+        assert_eq!(batch.skipped.len(), 2, "one skip summary per internal chunk");
+        assert_eq!(ui.apply_requests_grouped(&[]).unwrap(), PlacementBatch::default());
+        assert_eq!(placement_payloads(ui.store.as_ref().unwrap()), before);
+        assert_eq!(ui.selected, Some((0, 1)));
+        assert_eq!(ui.selection, vec![(0, 1)]);
+        assert!(matches!(&ui.pending, Some(Pending::Remove { families }) if *families == vec![(0, 1)]));
+        assert_eq!(ui.undo_groups, undo);
+        assert_eq!(ui.redo_groups, redo);
+        assert!(ui.store.as_ref().unwrap().can_redo());
     }
 
     #[test]
