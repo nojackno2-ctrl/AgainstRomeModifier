@@ -1,3 +1,15 @@
+## 2026-10-20 Claude（Sonnet）：C# 剩餘小缺口收尾（未提交）
+
+- 已實作（皆未提交、未做 GUI／遊戲內驗收）：
+  1. 還原地表／重設平坦地形：`app.rs` 的 `reset_terrain_now`／`apply_flat_terrain_now`＋確認視窗＋左側「地表」按鈕；平坦＝`water_surface.round_ties_even()+20`、碰撞清除、`EmbossSession::apply_blank_terrain`、材質層以最常見基礎材質整張鋪一筆、`apply_blank_terrain_nature_clearance`、儲存時重設 `vertex.bmp`(255)／`smooth.bmp`(0)（`reset_auxiliary_layers`，成功 commit 後清除）。原版地圖唯讀。還原地表同 C# 不可復原；平坦地形的高度＋碰撞為單一復原步驟，材質／自然物件各有自己的歷史。Emboss 暫存條件由 `heights_dirty` 改為 `is_dirty`（含 flat relight）。
+  2. 材質調色盤：`palette.rs` 新增 `build_full_catalog`／`extend_catalog`（L 系列區域材質 `L{組}:{編號}`、`PFAD` 土路、需圖塊像素時推斷 0 開頭遮罩 4U／L 過渡／PFAD 邊界，移植 C# 色差推斷與門檻）、`owner_material_in`；`resolver.rs` 排除遮罩命名的 4U 家族（避免 `4UJX__14` 被誤判為形狀 1）。`textures_ui.rs` 載入時用 floortex 圖塊作 probe。
+  3. 工具列 Undo/Redo 與 Ctrl+Z/Y 共用 `perform_undo/redo`（含材質筆畫）。
+  4. 2D 格線／物件顯示切換（`show_grid`／`show_objects`，同步到 3D viewport）。
+  5. 3D 陣型展開：`viewport_3d.rs` 的 `TroopCatalog`／`expand_troops_for_3d`／`load_formation_definition`；`app.rs` 背景執行緒載入 SDL 範本與 formdef.dau，僅顯示用（不可挑選、不寫入）。
+  6. 平坦範本地圖：`BlankMapBuildIntent.flat_template`＋Maps 面板按鈕＋`PendingAction::BuildBlank` 分支（複製範本→開啟→不經確認整平）。
+- 驗證：新增單元／e2e 測試（palette、app、viewport troops、textures catalog、flat template e2e）；`cargo test --workspace --locked --offline --target-dir re_workspace/target-w18` 2230 passed / 0 failed / 15 ignored，無新警告（`textures_ui` 的 palette 測試因 fixture 含 L3 材質，隱藏數 1→2）。
+- 未移植／已知差異：C# 在有 floortex 時也以像素推斷 4U／4T 角點（Rust 仍用名稱形狀，已由 C# 差分測試驗證）；PFAD／L 全同角點的選圖用 `pick_stable` 而非 C# 的代表貼圖；3D 陣型成員只顯示、不可點選；平坦地形需 DATA（Objects）才能清除地景，載入失敗時狀態列會註明未清除。
+
 ## 2026-10-20 Claude（Opus）：依使用者指示暫停（Rust 全遷移收尾，剩最終刪除 C#）
 
 - 本輪已提交並推送（896f746 → 08245b6）：既有移植成果、ar-bcitool、Modifier GUI 缺口、共用資料/placement 規則、編輯器快捷鍵/box select/layout（C# byte-compat fixture）/issue list/地圖複製/Families/Region tools、劇本放置流程與存檔 DATA 交易、starter kit、材質繪製、SDL 場景物件編輯、AI 規劃背景生成；所有 C# oracle 凍結為 fixtures（Rust 測試不再需要 dotnet）；ar-re（25 個 Python 工具移植）；repair-language-backup；CI 改為純 Rust（ci.yml 移除、CodeQL rust、release.yml 發行 Rust 可攜 ZIP）；刪除 Python 探針、C++ argm-trace、C# ArmMapPackage 與 C# RE probes。

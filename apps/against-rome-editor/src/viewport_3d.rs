@@ -180,6 +180,8 @@ pub struct Viewport3d {
     pub scene_pick: bool,
     /// Scene entries to draw/pick (world units); refreshed by the app each frame.
     pub scene_markers: Vec<SceneMarker>,
+    /// Formation-expanded scenario spawns (display only); refreshed by the app.
+    pub troop_objects: Vec<TroopObject>,
     /// Gestures produced by the last `show`; the app drains them into `SceneUi::scene_pointer`.
     pub scene_events: Vec<ScenePointer>,
     scene_dragging: bool,
@@ -250,6 +252,7 @@ impl Viewport3d {
             terrain_pick_press: None,
             scene_pick: false,
             scene_markers: Vec::new(),
+            troop_objects: Vec::new(),
             scene_events: Vec::new(),
             scene_dragging: false,
             camera: EditorCamera::default(),
@@ -509,56 +512,7 @@ impl Viewport3d {
                 has_native_saved_position: true,
             };
 
-            // 1. Resolve native sprite from catalogs if available
-            let native_sprite = if let Some(ref cat) = self.sprite_catalog {
-                let dir = angle
-                    .map(|a| direction_for_angle(a, 8))
-                    .unwrap_or(DEFAULT_DIRECTION);
-                cat.get_sprite(&name, obj.team as i32, dir, angle, None)
-            } else if let Some(ref bcat) = self.bounded_catalog {
-                bcat.get_sprite(&name)
-            } else {
-                None
-            };
-
-            // 2. Build pickable sprite and scene sprite if asset resolved
-            let (pickable, scene_sprite) = if let Some(ref ns) = native_sprite {
-                let p = PickableSprite::new(
-                    ns.width as u32,
-                    ns.height as u32,
-                    ns.anchor_x as f32,
-                    ns.anchor_y as f32,
-                    None,
-                );
-
-                let uv = self
-                    .sprite_atlas
-                    .as_ref()
-                    .and_then(|atlas| atlas.try_get_uv(ns))
-                    .map(|u| AtlasUv {
-                        u0: u.u0,
-                        v0: u.v0,
-                        u1: u.u1,
-                        v1: u.v1,
-                    })
-                    .unwrap_or(AtlasUv {
-                        u0: 0.0,
-                        v0: 0.0,
-                        u1: 1.0,
-                        v1: 1.0,
-                    });
-
-                let s = Sprite {
-                    width: ns.width as f32,
-                    height: ns.height as f32,
-                    anchor_x: ns.anchor_x as f32,
-                    anchor_y: ns.anchor_y as f32,
-                    uv,
-                };
-                (Some(p), Some(s))
-            } else {
-                (None, None)
-            };
+            let (pickable, scene_sprite) = self.resolve_visual(&name, obj.team as i32, angle);
 
             scene_objs.push(scene_obj);
             pickables.push(pickable);
@@ -566,6 +520,97 @@ impl Viewport3d {
         }
 
         (scene_objs, pickables, scene_sprites)
+    }
+
+    /// Resolves the native sprite (catalog, else bounded catalog) of an object name into its
+    /// pickable footprint and scene sprite; both are `None` when no asset resolves.
+    fn resolve_visual(
+        &self,
+        name: &str,
+        team: i32,
+        angle: Option<f32>,
+    ) -> (Option<PickableSprite<'static>>, Option<Sprite>) {
+        // 1. Resolve native sprite from catalogs if available
+        let native_sprite = if let Some(ref cat) = self.sprite_catalog {
+            let dir = angle
+                .map(|a| direction_for_angle(a, 8))
+                .unwrap_or(DEFAULT_DIRECTION);
+            cat.get_sprite(name, team, dir, angle, None)
+        } else if let Some(ref bcat) = self.bounded_catalog {
+            bcat.get_sprite(&name)
+        } else {
+            None
+        };
+        let (pickable, scene_sprite) = if let Some(ref ns) = native_sprite {
+            let p = PickableSprite::new(
+                ns.width as u32,
+                ns.height as u32,
+                ns.anchor_x as f32,
+                ns.anchor_y as f32,
+                None,
+            );
+
+            let uv = self
+                .sprite_atlas
+                .as_ref()
+                .and_then(|atlas| atlas.try_get_uv(ns))
+                .map(|u| AtlasUv {
+                    u0: u.u0,
+                    v0: u.v0,
+                    u1: u.u1,
+                    v1: u.v1,
+                })
+                .unwrap_or(AtlasUv {
+                    u0: 0.0,
+                    v0: 0.0,
+                    u1: 1.0,
+                    v1: 1.0,
+                });
+
+            let s = Sprite {
+                width: ns.width as f32,
+                height: ns.height as f32,
+                anchor_x: ns.anchor_x as f32,
+                anchor_y: ns.anchor_y as f32,
+                uv,
+            };
+            (Some(p), Some(s))
+        } else {
+            (None, None)
+        };
+
+        (pickable, scene_sprite)
+    }
+
+    /// Display-only objects of the formation-expanded scenario spawns (never picked or edited).
+    pub fn convert_troop_objects(
+        &self,
+        troops: &[TroopObject],
+    ) -> (
+        Vec<SceneObject>,
+        Vec<Option<PickableSprite<'static>>>,
+        Vec<Option<Sprite>>,
+    ) {
+        let mut scene_objs = Vec::with_capacity(troops.len());
+        let mut pickables = Vec::with_capacity(troops.len());
+        let mut sprites = Vec::with_capacity(troops.len());
+        for troop in troops {
+            let angle = Some(troop.angle).filter(|a| a.is_finite());
+            scene_objs.push(SceneObject {
+                name: troop.name.clone(),
+                world: SceneVec3::new(troop.world[0], troop.world[1], troop.world[2]),
+                local: SceneVec3::ZERO,
+                team: troop.team,
+                source_file: "troop".to_string(),
+                object_index: -5000 - troop.spawn_index as i32,
+                angle,
+                has_native_saved_position: true,
+            });
+            let (pickable, sprite) = self.resolve_visual(&troop.name, troop.team, angle);
+            pickables.push(pickable);
+            sprites.push(sprite);
+        }
+        (scene_objs, pickables, sprites)
     }
 
     /// Prepares a pure CPU scene frame using `against_rome_scene`.
@@ -694,7 +739,17 @@ impl Viewport3d {
         }
 
         // 7. Convert WorldObjects to SceneObjects and resolve sprites
-        let (scene_objects, pickable_sprites, scene_sprites) = self.convert_world_objects(objects);
+        let (mut scene_objects, mut pickable_sprites, mut scene_sprites) =
+            self.convert_world_objects(objects);
+        // Squad markers and formation members follow the placed objects; they are never picked.
+        let pickable_count = scene_objects.len();
+        if self.show_objects && !self.troop_objects.is_empty() {
+            let (extra_objects, extra_pickables, extra_sprites) =
+                self.convert_troop_objects(&self.troop_objects);
+            scene_objects.extend(extra_objects);
+            pickable_sprites.extend(extra_pickables);
+            scene_sprites.extend(extra_sprites);
+        }
 
         // 8. Prepare CPU scene frame
         let brush_radius_tiles =
@@ -736,8 +791,8 @@ impl Viewport3d {
             if self.show_objects {
                 picked_obj_idx = frame.pick_object(
                     screen_pt,
-                    &scene_objects,
-                    &pickable_sprites,
+                    &scene_objects[..pickable_count],
+                    &pickable_sprites[..pickable_count],
                     &field,
                     Self::OBJECT_PICK_RADIUS,
                 );
@@ -1091,17 +1146,15 @@ impl Viewport3d {
         // 2. Render marker placeholders for objects without active sprites or script marks
         if self.show_markers {
             for marker in &frame.markers {
-                let Some(raw) = raw_objects.get(marker.object_index) else {
-                    continue;
-                };
+                let raw = raw_objects.get(marker.object_index);
 
                 let Some(screen_pt) = frame.project_world_to_screen(marker.point) else {
                     continue;
                 };
 
                 let p = Pos2::new(rect.min.x + screen_pt.x, rect.min.y + screen_pt.y);
-                let is_selected = selected_object == Some((raw.slot, raw.uid));
-                let is_hovered = self.hover_object == Some((raw.slot, raw.uid));
+                let is_selected = raw.is_some_and(|raw| selected_object == Some((raw.slot, raw.uid)));
+                let is_hovered = raw.is_some_and(|raw| self.hover_object == Some((raw.slot, raw.uid)));
 
                 let base_color = Color32::from_rgba_unmultiplied(
                     (marker.color[0] * 255.0) as u8,
@@ -1152,7 +1205,7 @@ impl Viewport3d {
                 }
 
                 // Label for selected or hovered object
-                if is_selected || is_hovered {
+                if let (Some(raw), true) = (raw, is_selected || is_hovered) {
                     let obj_name = scene_objects
                         .get(marker.object_index)
                         .map(|s| s.name.as_str())
@@ -1617,6 +1670,198 @@ impl Viewport3d {
         let v = (norm_height * 255.0 * light).clamp(0.0, 255.0) as u8;
         Color32::from_rgb(v, v, v)
     }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Squad formation expansion for the 3D view (C# `MapEditorForm.Formations.cs`)
+// ---------------------------------------------------------------------------------------------
+
+use against_rome_ai_planner::formation::{FormationLayout, FormationLayoutDefinition};
+use against_rome_maps::sdl_objects::{SdlObjectCategory, SdlObjectType};
+use against_rome_maps::spawn_data::SpawnDataCatalog;
+use against_rome_scenario::model::Spawn;
+use std::cell::RefCell;
+use std::path::Path;
+
+/// C# `LoadFormationDefinition`: `SYSTEM/DATA_MP/DEFAULTS/formdef.dau` formation 0, falling back to
+/// the native default layout when the file is missing or malformed (3D display only, never fatal).
+pub fn load_formation_definition(game_root: &Path) -> FormationLayoutDefinition {
+    let path = game_root.join("SYSTEM").join("DATA_MP").join("DEFAULTS").join("formdef.dau");
+    let Ok(mut bytes) = std::fs::read(&path) else {
+        return FormationLayoutDefinition::native_default();
+    };
+    if bytes.starts_with(b"PFIL") {
+        match against_rome_data::lzss::decompress_pfil(&bytes, None) {
+            Ok(raw) => bytes = raw,
+            Err(_) => return FormationLayoutDefinition::native_default(),
+        }
+    }
+    let text = against_rome_maps::decode_cp1251(&bytes).unwrap_or_else(|_| String::from_utf8_lossy(&bytes).into_owned());
+    FormationLayoutDefinition::from_form_def_text(&text, 0).unwrap_or_else(|_| FormationLayoutDefinition::native_default())
+}
+
+/// Display names resolved for one spawn alias.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct TroopNames {
+    /// Object name of the spawn marker itself (the SDL object, or the alias when unknown).
+    pub marker: String,
+    /// Member figure name; `None` for anything that is not a squad.
+    pub soldier: Option<String>,
+    /// Banner object shown at the squad position (`None` keeps the plain spawn marker).
+    pub banner: Option<String>,
+}
+
+/// Catalog data needed to expand squads into formation members (C# `SoldierName` / `BannerName`).
+#[derive(Clone, Debug, Default)]
+pub struct TroopCatalog {
+    types: Vec<SdlObjectType>,
+    spawn_catalog: SpawnDataCatalog,
+    /// Lower-case objdef names, used to validate the fallback banner name.
+    known_names: std::collections::HashSet<String>,
+    cache: RefCell<HashMap<String, TroopNames>>,
+}
+
+impl TroopCatalog {
+    pub fn new(types: Vec<SdlObjectType>, spawn_catalog: SpawnDataCatalog) -> Self {
+        let known_names = spawn_catalog.type_names.values().map(|n| n.to_ascii_lowercase()).collect();
+        Self { types, spawn_catalog, known_names, cache: RefCell::default() }
+    }
+
+    /// Loads the SDL object templates of the retail maps and the objdef / script alias catalogs.
+    pub fn from_game(game_root: &Path) -> Result<Self, String> {
+        let types = against_rome_maps::sdl_objects::SdlObjectCatalog::build(game_root)?;
+        let spawn_catalog = SpawnDataCatalog::from_game(game_root)?;
+        Ok(Self::new(types, spawn_catalog))
+    }
+
+    fn type_for_name(&self, name: &str) -> Option<&SdlObjectType> {
+        self.types.iter().find(|t| t.name_def.eq_ignore_ascii_case(name))
+    }
+
+    /// Script alias -> object definition name (`cl_scint.ini [ObjDefName]`).
+    fn name_for_alias(&self, alias: &str) -> Option<&str> {
+        self.spawn_catalog
+            .aliases
+            .iter()
+            .find(|a| a.alias.eq_ignore_ascii_case(alias))
+            .map(|a| a.name_def.as_str())
+    }
+
+    /// C# `SoldierName`: a figure is its own soldier; a unit group names its member through the
+    /// template's `objdefn0` (objdef id, script alias, or a literal `Fig…` name).
+    fn soldier_name(&self, ty: &SdlObjectType) -> Option<String> {
+        if ty.category == SdlObjectCategory::Figure {
+            return Some(ty.name_def.clone());
+        }
+        if !ty.has_unit_count() {
+            return None;
+        }
+        let member = ty.template_fields.get("objdefn0")?.trim();
+        if let Ok(id) = member.parse::<i32>() {
+            return self.spawn_catalog.type_names.get(&id).cloned();
+        }
+        if let Some(name) = self.name_for_alias(member) {
+            return Some(name.to_string());
+        }
+        member.get(..3).filter(|p| p.eq_ignore_ascii_case("Fig")).map(|_| member.to_string())
+    }
+
+    /// C# `BannerName`.
+    fn banner_name(&self, ty: &SdlObjectType, soldier: &str) -> Option<String> {
+        if ty.has_unit_count() {
+            return Some(ty.name_def.clone());
+        }
+        if let Some(template) = self
+            .types
+            .iter()
+            .find(|t| t.has_unit_count() && self.soldier_name(t).is_some_and(|s| s.eq_ignore_ascii_case(soldier)))
+        {
+            return Some(template.name_def.clone());
+        }
+        // No SDL squad template for this soldier: only reuse an existing retail military banner.
+        let name = format!(
+            "Ver{}KamIco00_Kampf_Icon",
+            against_rome_maps::sdl_objects::SdlObjectCatalog::tribe(soldier)
+        );
+        self.known_names.contains(&name.to_ascii_lowercase()).then_some(name)
+    }
+
+    /// Names for a spawn alias (cached; the catalog scan is linear in the SDL template count).
+    pub fn names_for_alias(&self, alias: &str) -> TroopNames {
+        let key = alias.to_ascii_lowercase();
+        if let Some(hit) = self.cache.borrow().get(&key) {
+            return hit.clone();
+        }
+        let ty = self.name_for_alias(alias).and_then(|name| self.type_for_name(name));
+        let names = match ty {
+            None => TroopNames { marker: alias.to_string(), soldier: None, banner: None },
+            Some(ty) => {
+                let soldier = self.soldier_name(ty);
+                let banner = soldier.as_deref().and_then(|s| self.banner_name(ty, s));
+                TroopNames { marker: ty.name_def.clone(), soldier, banner }
+            }
+        };
+        self.cache.borrow_mut().insert(key, names.clone());
+        names
+    }
+}
+
+/// One display-only object of a spawn: the spawn marker/banner or a formation member.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TroopObject {
+    /// Index of the owning spawn in the scenario's spawn list.
+    pub spawn_index: usize,
+    pub name: String,
+    pub world: [f32; 3],
+    pub team: i32,
+    pub angle: f32,
+    /// True for the spawn's own marker/banner, false for formation members.
+    pub is_marker: bool,
+}
+
+/// C# `ExpandTroopsFor3D`: every spawn yields its marker; squads (unit groups / figures with a
+/// positive count) additionally yield one soldier per member laid out by the formation definition.
+/// Display only: nothing is added to the scenario, SDL or DATA.
+pub fn expand_troops_for_3d(
+    spawns: &[Spawn],
+    catalog: &TroopCatalog,
+    definition: &FormationLayoutDefinition,
+) -> Vec<TroopObject> {
+    let mut out = Vec::new();
+    for (spawn_index, spawn) in spawns.iter().enumerate() {
+        if !(spawn.x.is_finite() && spawn.y.is_finite() && spawn.z.is_finite()) {
+            continue;
+        }
+        let names = catalog.names_for_alias(&spawn.alias);
+        let marker = |name: String| TroopObject {
+            spawn_index,
+            name,
+            world: [spawn.x, spawn.y, spawn.z],
+            team: spawn.team,
+            angle: spawn.angle as f32,
+            is_marker: true,
+        };
+        let Some(soldier) = names.soldier.clone().filter(|_| spawn.count > 0) else {
+            out.push(marker(names.marker));
+            continue;
+        };
+        // An unresolved banner still keeps one spawn marker (same as the 2D / selection behaviour).
+        out.push(marker(names.banner.clone().unwrap_or_else(|| format!("TroopSpawn:{}", spawn.alias))));
+        let count = (spawn.count as usize).min(FormationLayout::MAXIMUM_SCENARIO_MEMBERS);
+        let offsets = FormationLayout::create(count, spawn.angle as f32, definition, FormationLayout::INITIAL_SPACING)
+            .unwrap_or_default();
+        for (dx, dz) in offsets {
+            out.push(TroopObject {
+                spawn_index,
+                name: soldier.clone(),
+                world: [spawn.x + dx, spawn.y, spawn.z + dz],
+                team: spawn.team,
+                angle: spawn.angle as f32,
+                is_marker: false,
+            });
+        }
+    }
+    out
 }
 
 #[cfg(test)]
@@ -2623,5 +2868,118 @@ mod tests {
             );
             assert_eq!(sky_action.picked_terrain(), None);
         }
+    }
+}
+
+#[cfg(test)]
+mod troop_tests {
+    use super::*;
+    use against_rome_maps::script_aliases::ScriptObjectAlias;
+
+    fn catalog() -> TroopCatalog {
+        let mut legion_fields = HashMap::new();
+        legion_fields.insert("objdefn0".to_string(), "7".to_string());
+        let types = vec![
+            SdlObjectType::new("VerRomLegion", 100, SdlObjectCategory::UnitGroup, "Rom", 3, legion_fields),
+            SdlObjectType::new("FigRomSoldat", 7, SdlObjectCategory::Figure, "Rom", 3, HashMap::new()),
+            SdlObjectType::new("FigKelAxt", 8, SdlObjectCategory::Figure, "Kel", 1, HashMap::new()),
+            SdlObjectType::new("FigGerSpeer", 9, SdlObjectCategory::Figure, "Ger", 1, HashMap::new()),
+            SdlObjectType::new("BauRomHaus", 50, SdlObjectCategory::Building, "Rom", 1, HashMap::new()),
+        ];
+        let alias = |alias: &str, name: &str| ScriptObjectAlias { alias: alias.into(), name_def: name.into() };
+        let spawn_catalog = SpawnDataCatalog {
+            aliases: vec![
+                alias("Legion", "VerRomLegion"),
+                alias("Soldat", "FigRomSoldat"),
+                alias("Axt", "FigKelAxt"),
+                alias("Speer", "FigGerSpeer"),
+                alias("Haus", "BauRomHaus"),
+            ],
+            type_names: HashMap::from([
+                (7, "FigRomSoldat".to_string()),
+                (11, "VerKelKamIco00_Kampf_Icon".to_string()),
+            ]),
+            game_maps: None,
+        };
+        TroopCatalog::new(types, spawn_catalog)
+    }
+
+    fn spawn(alias: &str, x: f32, z: f32, count: i32, angle: i32) -> Spawn {
+        Spawn {
+            alias: alias.into(),
+            x,
+            z,
+            team: 1,
+            count,
+            angle,
+            y: 12.0,
+            prebuilt: false,
+            id: Default::default(),
+            raw_rotation: None,
+        }
+    }
+
+    #[test]
+    fn squads_expand_into_formation_members_around_the_banner() {
+        let def = FormationLayoutDefinition::native_default();
+        let spawns = [spawn("Legion", 1000.0, 2000.0, 5, 90)];
+        let out = expand_troops_for_3d(&spawns, &catalog(), &def);
+        assert_eq!(out.len(), 6);
+        assert!(out[0].is_marker && out[0].name == "VerRomLegion", "banner = the unit-group type");
+        let offsets = FormationLayout::create(5, 90.0, &def, FormationLayout::INITIAL_SPACING).unwrap();
+        for (member, (dx, dz)) in out[1..].iter().zip(offsets) {
+            assert!(!member.is_marker && member.name == "FigRomSoldat");
+            assert_eq!(member.world, [1000.0 + dx, 12.0, 2000.0 + dz]);
+            assert_eq!((member.spawn_index, member.team), (0, 1));
+        }
+        // The formation really spreads the members instead of stacking them.
+        assert!(out[1..].windows(2).any(|w| w[0].world != w[1].world));
+    }
+
+    #[test]
+    fn member_count_is_capped_and_non_squads_stay_single_markers() {
+        let def = FormationLayoutDefinition::native_default();
+        let spawns = [
+            spawn("Legion", 0.0, 0.0, 99, 0),
+            spawn("Haus", 100.0, 100.0, 5, 0),
+            spawn("Legion", 200.0, 200.0, 0, 0),
+            spawn("Unknown", 300.0, 300.0, 4, 0),
+        ];
+        let out = expand_troops_for_3d(&spawns, &catalog(), &def);
+        assert_eq!(out.iter().filter(|o| o.spawn_index == 0).count(), 1 + FormationLayout::MAXIMUM_SCENARIO_MEMBERS);
+        let single = |index: usize| -> Vec<&TroopObject> { out.iter().filter(|o| o.spawn_index == index).collect() };
+        assert_eq!(single(1).len(), 1);
+        assert_eq!(single(1)[0].name, "BauRomHaus");
+        assert_eq!((single(2).len(), single(2)[0].name.as_str()), (1, "VerRomLegion"), "count 0 is not expanded");
+        assert_eq!((single(3).len(), single(3)[0].name.as_str()), (1, "Unknown"), "unknown alias keeps its alias");
+    }
+
+    #[test]
+    fn banner_falls_back_to_the_military_icon_or_a_troop_spawn_marker() {
+        let def = FormationLayoutDefinition::native_default();
+        let out = expand_troops_for_3d(&[spawn("Axt", 0.0, 0.0, 2, 0), spawn("Speer", 0.0, 0.0, 2, 0)], &catalog(), &def);
+        let first: Vec<_> = out.iter().filter(|o| o.spawn_index == 0).collect();
+        assert_eq!(first.len(), 3);
+        assert_eq!(first[0].name, "VerKelKamIco00_Kampf_Icon", "existing retail icon of the tribe");
+        assert_eq!(first[1].name, "FigKelAxt");
+        let second: Vec<_> = out.iter().filter(|o| o.spawn_index == 1).collect();
+        assert_eq!(second[0].name, "TroopSpawn:Speer", "no template and no icon keeps one spawn marker");
+        // A figure that is the member of a unit-group template reuses that template as its banner.
+        let soldiers = expand_troops_for_3d(&[spawn("Soldat", 0.0, 0.0, 1, 0)], &catalog(), &def);
+        assert_eq!(soldiers[0].name, "VerRomLegion");
+    }
+
+    #[test]
+    fn formation_definition_falls_back_to_native_default_and_troops_convert_for_display() {
+        let missing = std::env::temp_dir().join(format!("arm_no_formdef_{}", uuid::Uuid::new_v4()));
+        assert_eq!(load_formation_definition(&missing), FormationLayoutDefinition::native_default());
+
+        let def = FormationLayoutDefinition::native_default();
+        let troops = expand_troops_for_3d(&[spawn("Legion", 10.0, 20.0, 3, 45)], &catalog(), &def);
+        let vp = Viewport3d::new();
+        let (objects, pickables, sprites) = vp.convert_troop_objects(&troops);
+        assert_eq!((objects.len(), pickables.len(), sprites.len()), (4, 4, 4));
+        assert!(objects.iter().all(|o| o.source_file == "troop" && o.object_index == -5000 && o.team == 1));
+        assert!(pickables.iter().all(Option::is_none), "no sprite catalog loaded in this fixture");
     }
 }

@@ -62,6 +62,9 @@ pub enum MapsPendingAction {
 pub struct BlankMapBuildIntent {
     pub game_path: PathBuf,
     pub spec: BlankMapSpec,
+    /// C# "Flat Template" (`MapSelectionForm.CreateBlankMap`): clone the template as is (settlements,
+    /// scripts and DATA kept) and flatten the terrain once it opens, instead of the Empty Scene build.
+    pub flat_template: bool,
 }
 
 impl BlankMapBuildIntent {
@@ -69,7 +72,14 @@ impl BlankMapBuildIntent {
         Self {
             game_path: game_path.into(),
             spec,
+            flat_template: false,
         }
+    }
+
+    /// Marks this intent as the Flat Template flow (clone, open, then flatten the terrain).
+    pub fn with_flat_template(mut self) -> Self {
+        self.flat_template = true;
+        self
     }
 }
 
@@ -193,6 +203,25 @@ impl MapsUi {
         }
         let game_path = PathBuf::from(self.game_path_input.trim());
         BlankMapBuildIntent::new(game_path, spec)
+    }
+
+    /// C# "Flat Template" request: clones the selected template into the next free custom slot and
+    /// asks the owning app to open it with flattened terrain. Does NOT touch the filesystem.
+    pub fn request_build_flat_template(&mut self) -> Result<BlankMapBuildIntent, String> {
+        let game_path = PathBuf::from(self.game_path_input.trim());
+        if !game_path.is_dir() {
+            return Err(format!("Game root path is invalid or does not exist: {}", game_path.display()));
+        }
+        let name = self.blank_target_name.trim().to_string();
+        if name.is_empty() {
+            return Err("Map name must not be blank.".into());
+        }
+        let slot = EndlessMapCatalog::new().get_next_free_slot(&game_path)?;
+        self.blank_target_slot = slot;
+        let spec = BlankMapSpec::new(format!("ENDL_{:03}", self.blank_source_slot), slot, name);
+        let intent = BlankMapBuildIntent::new(game_path, spec).with_flat_template();
+        self.pending_build_intent = Some(intent.clone());
+        Ok(intent)
     }
 
     /// Requests building a blank map by queuing a typed build intent.
@@ -851,6 +880,26 @@ impl MapsUi {
                     }
                     Err(e) => {
                         self.status_message = format!("規格驗證失敗: {e}");
+                        self.status_is_error = true;
+                    }
+                }
+            }
+
+            if ui
+                .button("建立平坦範本地圖 (Build Flat Template & Open)")
+                .on_hover_text("複製範本（保留聚落、腳本與 DATA），開啟後立即整平地形並重設地表材質、阻擋、光照；儲存前仍可還原。使用下一個可用的自製地圖槽位。")
+                .clicked()
+            {
+                match self.request_build_flat_template() {
+                    Ok(intent) => {
+                        self.status_message = format!(
+                            "已提出平坦範本建置請求 (ENDL_{:03})，等待確認...",
+                            intent.spec.target_slot
+                        );
+                        self.status_is_error = false;
+                    }
+                    Err(e) => {
+                        self.status_message = format!("平坦範本請求失敗: {e}");
                         self.status_is_error = true;
                     }
                 }

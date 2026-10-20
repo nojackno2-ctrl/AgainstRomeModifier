@@ -21,7 +21,10 @@ use crate::storage::safe_save_map;
 use crate::tech_doc_ui::TechDocUi;
 use crate::terrain::{BrushPath, CollisionBrushOp, HeightBrushOp, TerrainSession};
 use crate::textures_ui::TexturesUi;
-use crate::viewport_3d::{Viewport3d, ViewportAction};
+use crate::viewport_3d::{
+    expand_troops_for_3d, load_formation_definition, TroopCatalog, Viewport3d, ViewportAction,
+};
+use against_rome_ai_planner::formation::FormationLayoutDefinition;
 use crate::{
     ai_planner_ui::AiPlannerUi,
     campaign_ui::CampaignUi,
@@ -152,6 +155,34 @@ pub struct EditorApp {
     loc: Loc,
     last_canvas_rect: Rect,
     last_map_rect: Rect,
+    /// C# `_showGrid` / `_showObjects` display toggles (2D canvas and 3D viewport).
+    pub show_grid: bool,
+    pub show_objects: bool,
+    /// C# `_resetAuxiliaryLayers`: Flat Terrain resets `vertex.bmp` / `smooth.bmp` on the next save.
+    reset_auxiliary_layers: bool,
+    /// Pending confirm dialog of a bulk terrain action (C# `MessageBox`).
+    terrain_confirm: Option<TerrainBulkAction>,
+    /// Squad catalog and formation layout feeding the 3D view's formation members.
+    troops: TroopDisplay,
+}
+
+/// Background-loaded squad catalog plus the fingerprint of the spawns last expanded for the 3D
+/// view (C# `ExpandTroopsFor3D`; the C# editor builds the SDL template catalog lazily too).
+#[derive(Default)]
+struct TroopDisplay {
+    game: Option<PathBuf>,
+    loading: Option<std::sync::mpsc::Receiver<Result<(TroopCatalog, FormationLayoutDefinition), String>>>,
+    data: Option<(TroopCatalog, FormationLayoutDefinition)>,
+    key: Option<u64>,
+}
+
+/// Bulk terrain actions that need confirmation (C# `ResetTerrain` / `ApplyBlankTerrain(confirm)`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TerrainBulkAction {
+    /// 還原地表: discard unsaved terrain changes (not undoable, like C#).
+    Reset,
+    /// 重設平坦地形: flatten everything just above the water level (undoable per layer).
+    Flat,
 }
 
 impl EditorApp {
@@ -253,6 +284,11 @@ impl EditorApp {
             loc: Loc::new(AppLanguage::English),
             last_canvas_rect: Rect::from_min_size(Pos2::ZERO, Vec2::new(800.0, 600.0)),
             last_map_rect: Rect::from_min_size(Pos2::ZERO, Vec2::new(600.0, 600.0)),
+            show_grid: true,
+            show_objects: true,
+            reset_auxiliary_layers: false,
+            terrain_confirm: None,
+            troops: TroopDisplay::default(),
         }
     }
 }
@@ -558,7 +594,7 @@ impl EditorApp {
         tx.stage_file("collision.bmp", collision.encode_bmp())?;
         // C# parity: emboss.bmp is rebuilt only when heights changed and an original layer exists.
         let staged_emboss = match &self.emboss {
-            Some(emboss) if emboss.session.heights_dirty(session.heights()) => emboss
+            Some(emboss) if emboss.session.is_dirty(session.heights()) => emboss
                 .session
                 .build_emboss(session.heights())
                 .map_err(|e| format!("emboss.bmp relight: {e}"))?
@@ -571,6 +607,21 @@ impl EditorApp {
         };
         if let Some((image, _)) = &staged_emboss {
             tx.stage_file("emboss.bmp", image.encode_bmp())?;
+        }
+        // C# `_resetAuxiliaryLayers`: Flat Terrain resets vertex colours and the smoothing mask.
+        let aux_reset = self.reset_auxiliary_layers;
+        if aux_reset {
+            for (name, value) in [("vertex.bmp", 255u8), ("smooth.bmp", 0u8)] {
+                let file = path.join(name);
+                if !file.is_file() {
+                    continue;
+                }
+                let bytes = std::fs::read(&file).map_err(|e| format!("{}: {e}", file.display()))?;
+                let mut image = crate::bmp::BmpImage::parse(&bytes)
+                    .map_err(|e| format!("Corrupted {}: {e}", file.display()))?;
+                fill_layer_value(&mut image, value);
+                tx.stage_file(name, image.encode_bmp())?;
+            }
         }
         if session.is_dirty() {
             tx.stage_height_cache_invalidation()?;
@@ -744,6 +795,9 @@ impl EditorApp {
             emboss.raw = image;
         }
         session.commit_baseline();
+        if aux_reset {
+            self.reset_auxiliary_layers = false;
+        }
         if ambience_dirty {
             self.ambience.clear_dirty();
             self.ambience.status_message = "Ambience saved in whole-map transaction.".into();
@@ -932,6 +986,8 @@ impl EditorApp {
         // Install terrain session and settings
         self.session = Some(session);
         self.emboss = emboss;
+        self.reset_auxiliary_layers = false;
+        self.terrain_confirm = None;
         self.loaded_map_path = Some(path.clone());
         self.map_path_input = path.to_string_lossy().into_owned();
         self.status_is_error = false;
@@ -973,6 +1029,8 @@ impl EditorApp {
         self.loaded_map_path = None;
         self.session = Some(TerrainSession::create_blank(size, 32));
         self.emboss = None;
+        self.reset_auxiliary_layers = false;
+        self.terrain_confirm = None;
         self.status_message = format!("Created blank {size}x{size} terrain");
         self.status_is_error = false;
         self.map_path_input.clear();
@@ -1042,7 +1100,48 @@ impl EditorApp {
         &mut self,
         intent: &BlankMapBuildIntent,
     ) -> Result<against_rome_maps::blank_builder::BlankMapBuildResult, String> {
+        if intent.flat_template {
+            return Err("The Flat Template intent opens a cloned template; queue it as PendingAction::BuildBlank".into());
+        }
         self.create_blank_map(&intent.game_path, &intent.spec)
+    }
+
+    /// C# "Flat Template" (`MapSelectionForm.CreateBlankMap` + `_startWithBlankTerrain`): clones the
+    /// template unchanged (settlements, scripts and DATA kept), opens the copy and immediately
+    /// flattens its terrain without a confirm dialog. Nothing is saved until the designer saves.
+    fn build_and_install_flat_template(
+        &mut self,
+        game_path: &Path,
+        spec: &against_rome_maps::blank_builder::BlankMapSpec,
+    ) -> Result<against_rome_maps::catalog::EndlessMapInfo, String> {
+        let source_slot = spec
+            .source_map_id
+            .to_ascii_uppercase()
+            .strip_prefix("ENDL_")
+            .and_then(|slot| slot.parse::<i32>().ok())
+            .ok_or_else(|| format!("Flat Template source must be an ENDL_### map: {}", spec.source_map_id))?;
+        let info = against_rome_maps::cloner::EndlessMapCloner::new().clone_map(
+            game_path,
+            source_slot,
+            spec.target_slot,
+            &spec.target_name,
+        )?;
+        let loaded = load_map(&info.directory_path)?;
+        self.install_loaded_map(info.directory_path.clone(), loaded)?;
+        self.maps.refresh_catalog();
+        if !self.apply_flat_terrain_now() {
+            return Err(format!(
+                "Template {} was created but could not be flattened: {}",
+                info.id(),
+                self.status_message
+            ));
+        }
+        self.maps.status_message = format!(
+            "Flat template {} created; terrain flattened (unsaved). Shape it, then Save.",
+            info.id()
+        );
+        self.maps.status_is_error = false;
+        Ok(info)
     }
 
     /// Queue a typed blank map build intent into the pending action pipeline.
@@ -1068,6 +1167,24 @@ impl EditorApp {
             },
             PendingAction::Blank(size) => {
                 self.install_blank_map(size);
+            }
+            PendingAction::BuildBlank(intent) if intent.flat_template => {
+                match self.build_and_install_flat_template(&intent.game_path, &intent.spec) {
+                    Ok(info) => {
+                        self.status_message = format!(
+                            "Flat template {} created and opened; terrain flattened (unsaved).",
+                            info.id()
+                        );
+                        self.status_is_error = false;
+                    }
+                    Err(error) => {
+                        self.status_message = format!("Flat template failed: {error}");
+                        self.status_is_error = true;
+                        self.maps.status_message = format!("平坦範本建置失敗: {error}");
+                        self.maps.status_is_error = true;
+                        return;
+                    }
+                }
             }
             PendingAction::BuildBlank(intent) => {
                 match self.build_and_install_blank_map(&intent.game_path, &intent.spec) {
@@ -2038,6 +2155,7 @@ impl EditorApp {
 
     pub fn has_unsaved_changes(&self) -> bool {
         self.session.as_ref().is_some_and(|s| s.is_dirty())
+            || self.reset_auxiliary_layers
             || self.placement.is_dirty()
             || self.nature.session.is_dirty()
             || self.scenario.dirty()
@@ -2967,6 +3085,268 @@ pub fn tr(lang: AppLanguage, en: &'static str, zh: &'static str) -> &'static str
     }
 }
 
+// ---------------------------------------------------------------------------------------------
+// Undo / Redo routing, Reset Terrain and Flat Terrain (C# `MapEditorForm.Terrain.cs`)
+// ---------------------------------------------------------------------------------------------
+
+impl EditorApp {
+    /// True when any history the toolbar Undo button / Ctrl+Z can act on exists.
+    pub fn can_undo_any(&self) -> bool {
+        (self.spawn_ui.is_active() && self.spawn_ui.session().can_undo())
+            || (self.nature.last_action && self.nature.session.can_undo())
+            || (self.active_tool == ActiveTool::Material && self.textures.can_material_undo())
+            || self.session.as_ref().is_some_and(|s| s.can_undo())
+    }
+
+    pub fn can_redo_any(&self) -> bool {
+        (self.spawn_ui.is_active() && self.spawn_ui.session().can_redo())
+            || (self.nature.last_action && self.nature.session.can_redo())
+            || (self.active_tool == ActiveTool::Material && self.textures.can_material_redo())
+            || self.session.as_ref().is_some_and(|s| s.can_redo())
+    }
+
+    /// Ctrl+Z and the toolbar Undo: spawn placement, nature brush, Material strokes (only while
+    /// the Material tool is active), then the terrain history.
+    pub fn perform_undo(&mut self) {
+        if self.spawn_ui.is_active() && self.spawn_ui.session().can_undo() {
+            let read_only = self.current_map_is_original();
+            let cx = Self::spawn_cx(&self.session, self.loc.current_language(), self.height_step, read_only);
+            self.spawn_ui.undo(&mut self.scenario, &cx);
+        } else if self.nature_undo() {
+        } else if self.active_tool == ActiveTool::Material && self.textures.material_undo() {
+            self.status_message = "Material undo performed.".into();
+            self.status_is_error = false;
+        } else if let Some(session) = &mut self.session {
+            if session.undo() {
+                self.is_painting = false;
+                self.stroke_path.clear();
+                self.texture_dirty = true;
+                self.status_message = "Undo performed.".to_string();
+                self.status_is_error = false;
+            }
+        }
+    }
+
+    /// Ctrl+Y and the toolbar Redo (same routing as [`Self::perform_undo`]).
+    pub fn perform_redo(&mut self) {
+        if self.spawn_ui.is_active() && self.spawn_ui.session().can_redo() {
+            let read_only = self.current_map_is_original();
+            let cx = Self::spawn_cx(&self.session, self.loc.current_language(), self.height_step, read_only);
+            self.spawn_ui.redo(&mut self.scenario, &cx);
+        } else if self.nature_redo() {
+        } else if self.active_tool == ActiveTool::Material && self.textures.material_redo() {
+            self.status_message = "Material redo performed.".into();
+            self.status_is_error = false;
+        } else if let Some(session) = &mut self.session {
+            if session.redo() {
+                self.is_painting = false;
+                self.stroke_path.clear();
+                self.texture_dirty = true;
+                self.status_message = "Redo performed.".to_string();
+                self.status_is_error = false;
+            }
+        }
+    }
+
+    /// C# `_resetTerrainButton.Enabled`: custom map with unsaved terrain, material or reset state.
+    pub fn can_reset_terrain(&self) -> bool {
+        !self.current_map_is_original()
+            && (self.session.as_ref().is_some_and(|s| s.is_dirty())
+                || self.textures.is_dirty()
+                || self.reset_auxiliary_layers
+                || self.emboss.as_ref().is_some_and(|e| e.session.is_relight_pending()))
+    }
+
+    /// C# `_blankTerrainButton.Enabled`: any editable (custom) map with a terrain session.
+    pub fn can_apply_flat_terrain(&self) -> bool {
+        self.session.is_some() && !self.current_map_is_original()
+    }
+
+    /// Opens the confirm dialog of a bulk terrain action (no-op when the action is unavailable).
+    pub fn request_terrain_action(&mut self, action: TerrainBulkAction) {
+        let allowed = match action {
+            TerrainBulkAction::Reset => self.can_reset_terrain(),
+            TerrainBulkAction::Flat => self.can_apply_flat_terrain(),
+        };
+        if allowed {
+            self.terrain_confirm = Some(action);
+        }
+    }
+
+    /// C# `ResetTerrain` after confirmation: drops unsaved heights, collision, textures, nature
+    /// edits and the pending lighting / auxiliary-layer reset. Like C#, this is the discard itself
+    /// and therefore leaves no undo step.
+    pub fn reset_terrain_now(&mut self) -> bool {
+        let lang = self.loc.current_language();
+        if self.current_map_is_original() {
+            self.set_status(
+                tr(lang, "Original maps are read-only.", "原版地圖唯讀。").into(),
+                true,
+            );
+            return false;
+        }
+        self.nature_end_stroke();
+        self.textures.end_material_stroke();
+        if let Some(session) = self.session.as_mut() {
+            session.cancel_stroke();
+            session.core_mut().reset_to_baseline();
+        }
+        if let Some(emboss) = self.emboss.as_mut() {
+            emboss.session.reset_to_baseline();
+        }
+        self.reset_auxiliary_layers = false;
+        self.nature_discard();
+        self.textures.reset_to_baseline();
+        self.is_painting = false;
+        self.stroke_path.clear();
+        self.texture_dirty = true;
+        self.navigation.invalidate();
+        self.set_status(
+            tr(
+                lang,
+                "Unsaved terrain changes discarded (heights, passability, materials).",
+                "已放棄尚未儲存的地表變更（材質、高度、通行區域）。",
+            )
+            .into(),
+            false,
+        );
+        true
+    }
+
+    /// C# `ApplyBlankTerrain(confirm: false)`: flattens the map just above the water level, paints
+    /// one base material, clears blocked ground, resets lighting / vertex colours / smoothing on the
+    /// next save and removes removable scenery (settlements and scripts are kept). Heights and
+    /// collision are one undo step; materials and nature edits keep their own histories.
+    pub fn apply_flat_terrain_now(&mut self) -> bool {
+        let lang = self.loc.current_language();
+        if self.session.is_none() {
+            return false;
+        }
+        if self.current_map_is_original() {
+            self.set_status(
+                tr(lang, "Original maps are read-only; copy to a custom map first.", "原版地圖唯讀；請先複製為自訂地圖。").into(),
+                true,
+            );
+            return false;
+        }
+        self.nature_end_stroke();
+        self.textures.end_material_stroke();
+        // Heights: water level + 20 (C# `Math.Round(water) + 20`, banker's rounding).
+        let level = ((self.water_surface.round_ties_even() as i32).saturating_add(20)).clamp(0, 255) as u8;
+        if let Some(session) = self.session.as_mut() {
+            session.commit_stroke();
+            session.core_mut().transform_heights(|_, _, _| f32::from(level));
+            let size = session.collision_size as f32;
+            let _ = session.paint_collision(size / 2.0, size / 2.0, size, CollisionBrushOp::Clear);
+            session.commit_stroke();
+        }
+        if let Some(emboss) = self.emboss.as_mut() {
+            emboss.session.apply_blank_terrain();
+        }
+        // Base material (needs the map's boden.txt session; load it on demand).
+        if self.textures.session_textures().is_none() {
+            if let Some(path) = self.loaded_map_path.clone() {
+                let _ = self.textures.load_session(&path);
+            }
+        }
+        let material = self.textures.apply_blank_material();
+        self.reset_auxiliary_layers = true;
+        // Scenery: removable nature objects and pending additions (needs the DATA session).
+        let mut scenery = tr(lang, "scenery cleared", "地景已清除");
+        if !self.placement.is_loaded() && !self.placement.is_dirty() {
+            if let Some(path) = self.loaded_map_path.clone() {
+                let _ = self.placement.load_session(&path);
+            }
+        }
+        match self.ensure_nature_data() {
+            Ok(()) => {
+                let nature = &mut self.nature;
+                if let Some(data) = nature.data.as_ref() {
+                    against_rome_environment::apply_blank_terrain_nature_clearance(&data.level, &mut nature.session);
+                    nature.last_action = true;
+                }
+            }
+            Err(_) => scenery = tr(lang, "scenery not cleared (object data unavailable)", "地景未清除（物件資料不可用）"),
+        }
+        self.is_painting = false;
+        self.stroke_path.clear();
+        self.texture_dirty = true;
+        self.navigation.invalidate();
+        let material_note = match &material {
+            Some(id) => format!("{} {id}", tr(lang, "material", "材質")),
+            None => tr(lang, "no material layer", "無材質層").to_string(),
+        };
+        self.set_status(
+            format!(
+                "{} ({material_note}; {scenery}). {}",
+                tr(
+                    lang,
+                    "Flat terrain prepared; settlements and scripts are kept",
+                    "已準備平坦地形，聚落與腳本保留",
+                ),
+                tr(lang, "Shape the terrain, then Save.", "完成地形編輯後按「儲存」。"),
+            ),
+            false,
+        );
+        true
+    }
+
+    /// Confirmation dialog for the bulk terrain actions (C# `MessageBox.Show(... YesNo)`).
+    fn show_terrain_confirm(&mut self, ctx: &egui::Context) {
+        let Some(action) = self.terrain_confirm else {
+            return;
+        };
+        let lang = self.loc.current_language();
+        let (title, message) = match action {
+            TerrainBulkAction::Reset => (
+                tr(lang, "Reset Terrain", "還原地表"),
+                tr(
+                    lang,
+                    "Discard unsaved terrain changes (textures, heights, passability)?\nMap metadata, environment settings and scene objects will not be affected.",
+                    "要放棄這次尚未儲存的地表變更（材質、高度、通行區域）嗎？\n地圖名稱、環境設定與場景物件不會受影響。",
+                ),
+            ),
+            TerrainBulkAction::Flat => (
+                tr(lang, "Reset Flat Terrain", "重設平坦地形"),
+                tr(
+                    lang,
+                    "Flatten the whole terrain?\nHeights, ground material, blocked areas, vertex colors, smoothing and lighting are reset when you Save. Removable scenery is cleared; settlements and scripts are kept. You can still use \"Reset Terrain\" before saving.",
+                    "要整平整張地形嗎？\n高度、地表材質、阻擋區、頂點色、平滑遮罩與光照會在儲存時重設，可移除地景會清除；聚落與腳本保留。儲存前仍可用「還原地表」放棄。",
+                ),
+            ),
+        };
+        let mut decision = None;
+        egui::Window::new(title)
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
+            .show(ctx, |ui| {
+                ui.label(message);
+                ui.horizontal(|ui| {
+                    if ui.button(tr(lang, "Yes", "是")).clicked() {
+                        decision = Some(true);
+                    }
+                    if ui.button(tr(lang, "No", "否")).clicked() {
+                        decision = Some(false);
+                    }
+                });
+            });
+        if let Some(yes) = decision {
+            self.terrain_confirm = None;
+            if yes {
+                match action {
+                    TerrainBulkAction::Reset => {
+                        self.reset_terrain_now();
+                    }
+                    TerrainBulkAction::Flat => {
+                        self.apply_flat_terrain_now();
+                    }
+                }
+            }
+        }
+    }
+}
+
 /// Editor-wide keyboard shortcuts (C# `HandleShortcut` / `HandlePlacementWorkflowKey`).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ShortcutAction {
@@ -3022,6 +3402,111 @@ pub fn shortcut_action(
             })
         }
         _ => None,
+    }
+}
+
+impl EditorApp {
+    /// Game root (the folder holding `MAPS`) of the loaded map, if it lives in one.
+    fn troop_game_root(&self) -> Option<PathBuf> {
+        let map = Path::new(self.map_path_input.trim());
+        let root = map.parent()?.parent()?;
+        root.join("MAPS").is_dir().then(|| root.to_path_buf())
+    }
+
+    /// Keeps `viewport_3d.troop_objects` in sync with the scenario spawns: loads the squad catalog
+    /// and `formdef.dau` once per game root on a worker thread, then re-expands whenever a spawn
+    /// changes. Display only; never touches the scenario, SDL or DATA.
+    fn refresh_troop_objects(&mut self, ctx: &egui::Context) {
+        use std::hash::{Hash, Hasher};
+        if !self.show_objects {
+            self.viewport_3d.troop_objects.clear();
+            self.troops.key = None;
+            return;
+        }
+        let game = self.troop_game_root();
+        if game != self.troops.game {
+            self.troops = TroopDisplay { game: game.clone(), ..Default::default() };
+            self.viewport_3d.troop_objects.clear();
+            if let Some(game) = game {
+                let (tx, rx) = std::sync::mpsc::channel();
+                std::thread::spawn(move || {
+                    let loaded = TroopCatalog::from_game(&game)
+                        .map(|catalog| (catalog, load_formation_definition(&game)));
+                    let _ = tx.send(loaded);
+                });
+                self.troops.loading = Some(rx);
+            }
+        }
+        if let Some(rx) = self.troops.loading.take() {
+            match rx.try_recv() {
+                Ok(Ok(data)) => self.troops.data = Some(data),
+                Ok(Err(_)) | Err(std::sync::mpsc::TryRecvError::Disconnected) => {}
+                Err(std::sync::mpsc::TryRecvError::Empty) => {
+                    self.troops.loading = Some(rx);
+                    ctx.request_repaint_after(std::time::Duration::from_millis(250));
+                }
+            }
+        }
+        let Some((catalog, definition)) = &self.troops.data else {
+            return;
+        };
+        let spawns = &self.scenario.document().spawns;
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        for spawn in spawns {
+            spawn.alias.hash(&mut hasher);
+            [spawn.x, spawn.y, spawn.z].map(f32::to_bits).hash(&mut hasher);
+            (spawn.team, spawn.count, spawn.angle).hash(&mut hasher);
+        }
+        let key = hasher.finish();
+        if self.troops.key != Some(key) {
+            self.viewport_3d.troop_objects = expand_troops_for_3d(spawns, catalog, definition);
+            self.troops.key = Some(key);
+        }
+    }
+}
+
+/// Minimum on-screen cell size (px) for the 2D grid (C# `cellWidth >= 6`).
+const GRID_MIN_CELL_PX: f32 = 6.0;
+
+/// Grid line segments over the map rectangle: `dimension + 1` vertical and horizontal lines, each as
+/// a shadow line (1 px right/below) plus a light line, or nothing when cells are too small to read.
+pub(crate) fn canvas_grid_lines(map_rect: Rect, dimension: usize) -> Vec<([Pos2; 2], bool)> {
+    if dimension == 0 {
+        return Vec::new();
+    }
+    let cell_w = map_rect.width() / dimension as f32;
+    let cell_h = map_rect.height() / dimension as f32;
+    if !(cell_w >= GRID_MIN_CELL_PX && cell_h >= GRID_MIN_CELL_PX) {
+        return Vec::new();
+    }
+    let mut lines = Vec::with_capacity((dimension + 1) * 4);
+    for i in 0..=dimension {
+        let px = map_rect.min.x + i as f32 * cell_w;
+        let py = map_rect.min.y + i as f32 * cell_h;
+        // `true` marks the dark shadow line, `false` the light highlight (C# draws both).
+        lines.push(([Pos2::new(px + 1.0, map_rect.top()), Pos2::new(px + 1.0, map_rect.bottom())], true));
+        lines.push(([Pos2::new(px, map_rect.top()), Pos2::new(px, map_rect.bottom())], false));
+        lines.push(([Pos2::new(map_rect.left(), py + 1.0), Pos2::new(map_rect.right(), py + 1.0)], true));
+        lines.push(([Pos2::new(map_rect.left(), py), Pos2::new(map_rect.right(), py)], false));
+    }
+    lines
+}
+
+fn draw_canvas_grid(painter: &egui::Painter, map_rect: Rect, dimension: usize) {
+    let shadow = Stroke::new(1.0_f32, Color32::from_rgba_unmultiplied(0, 0, 0, 70));
+    let light = Stroke::new(1.0_f32, Color32::from_rgba_unmultiplied(255, 255, 255, 55));
+    for (points, is_shadow) in canvas_grid_lines(map_rect, dimension) {
+        painter.line_segment(points, if is_shadow { shadow } else { light });
+    }
+}
+
+/// C# `TerrainLayerFiles.EncodeWithGreen` for a constant layer: pixels whose green already equals
+/// `value` keep their colour, every other pixel becomes grey `value`.
+fn fill_layer_value(image: &mut crate::bmp::BmpImage, value: u8) {
+    for pixel in image.bgr_pixels.chunks_exact_mut(3) {
+        if pixel[1] != value {
+            pixel.fill(value);
+        }
     }
 }
 
@@ -4511,6 +4996,195 @@ mod tests {
             after: 120,
         }]);
         terrain.commit_stroke();
+    }
+
+    #[test]
+    fn reset_terrain_discards_unsaved_heights_collision_and_flat_relight() {
+        let (dir, _) = emboss_fixture_dir("reset_terrain", true);
+        let mut app = emboss_app(&dir);
+        assert!(!app.can_reset_terrain(), "nothing to reset yet");
+        edit_center_height(&mut app);
+        assert!(app.can_reset_terrain());
+        app.request_terrain_action(TerrainBulkAction::Reset);
+        assert_eq!(app.terrain_confirm, Some(TerrainBulkAction::Reset));
+        assert!(app.apply_flat_terrain_now());
+        assert!(app.reset_auxiliary_layers);
+        assert!(app.emboss.as_ref().unwrap().session.is_relight_pending());
+
+        assert!(app.reset_terrain_now());
+        let session = app.session.as_ref().unwrap();
+        assert_eq!(session.heights(), emboss_fixture_heights().as_slice());
+        assert!(!session.is_dirty() && !session.can_undo(), "reset is the discard itself");
+        assert!(!app.reset_auxiliary_layers);
+        assert!(!app.emboss.as_ref().unwrap().session.is_relight_pending());
+        assert!(!app.can_reset_terrain());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn flat_terrain_is_one_undo_step_and_resets_aux_layers_on_save() {
+        let (dir, _) = emboss_fixture_dir("flat_terrain", true);
+        for (name, green) in [("vertex.bmp", 10u8), ("smooth.bmp", 200u8)] {
+            let mut layer = crate::bmp::BmpImage::new_solid(EMBOSS_SIZE, EMBOSS_SIZE, 3, 0, 4);
+            layer.update_green_channel(&vec![green; EMBOSS_SIZE * EMBOSS_SIZE]);
+            std::fs::write(dir.join(name), layer.encode_bmp()).unwrap();
+        }
+        let mut app = emboss_app(&dir);
+        app.water_surface = 5.0;
+        {
+            let terrain = app.session.as_mut().unwrap();
+            terrain.paint_collision(3.5, 0.5, 0.4, CollisionBrushOp::Block).unwrap();
+            terrain.commit_stroke();
+        }
+        assert!(app.apply_flat_terrain_now(), "{}", app.status_message);
+        let session = app.session.as_ref().unwrap();
+        assert!(session.heights().iter().all(|h| *h == 25), "water 5 + 20");
+        assert!(session.collision().iter().all(|c| *c == 0));
+        assert!(app.reset_auxiliary_layers && app.has_unsaved_changes());
+
+        // Heights and collision of the flatten are a single undo step on top of the earlier stroke.
+        let session = app.session.as_mut().unwrap();
+        assert!(session.undo());
+        assert_eq!(session.heights(), emboss_fixture_heights().as_slice());
+        assert_eq!(session.collision()[3], 255);
+        assert!(session.redo());
+        assert!(session.heights().iter().all(|h| *h == 25));
+
+        app.safe_save_current();
+        assert!(!app.status_is_error, "{}", app.status_message);
+        let vertex = crate::bmp::BmpImage::parse(&std::fs::read(dir.join("vertex.bmp")).unwrap()).unwrap();
+        let smooth = crate::bmp::BmpImage::parse(&std::fs::read(dir.join("smooth.bmp")).unwrap()).unwrap();
+        assert!(vertex.extract_green_channel().iter().all(|g| *g == 255));
+        assert!(smooth.extract_green_channel().iter().all(|g| *g == 0));
+        assert!(!app.reset_auxiliary_layers, "flag clears after a committed save");
+        let emboss = crate::bmp::BmpImage::parse(&std::fs::read(dir.join("emboss.bmp")).unwrap()).unwrap();
+        let flat = emboss.extract_green_channel();
+        assert!(flat.iter().all(|g| *g == flat[0]), "flat terrain gets one uniform light value");
+        assert!(!app.emboss.as_ref().unwrap().session.is_relight_pending());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn flat_terrain_paints_the_most_common_base_material() {
+        let dir = temp_map_dir("flat_material");
+        std::fs::write(
+            dir.join("boden.txt"),
+            b"[Dimension]\n2\n[Texturen]\n4BA___51\n4BA___51\n4BA___51\n4BB___51\n",
+        )
+        .unwrap();
+        let mut app = EditorApp::initial_state();
+        app.session = Some(TerrainSession::create_blank(5, 32));
+        app.loaded_map_path = Some(dir.clone());
+        app.map_path_input = dir.display().to_string();
+        app.textures.load_session(&dir).unwrap();
+        assert!(app.apply_flat_terrain_now(), "{}", app.status_message);
+        let textures = app.textures.session_textures().unwrap();
+        assert!(textures.iter().all(|t| t.eq_ignore_ascii_case("4BA___51")), "{textures:?}");
+        assert!(app.textures.is_dirty());
+        // Reset Terrain brings every texture (and the heights) back.
+        assert!(app.reset_terrain_now());
+        let textures = app.textures.session_textures().unwrap();
+        assert!(textures[3].eq_ignore_ascii_case("4BB___51"));
+        assert!(!app.textures.is_dirty());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn terrain_bulk_actions_refuse_original_maps() {
+        let root = temp_map_dir("flat_original");
+        let dir = root.join("MAPS").join("ENDL_001");
+        std::fs::create_dir_all(&dir).unwrap();
+        let heights = emboss_fixture_heights();
+        let mut boden = crate::bmp::BmpImage::new_solid(EMBOSS_SIZE, EMBOSS_SIZE, 1, 0, 2);
+        boden.update_green_channel(&heights);
+        std::fs::write(dir.join("boden.bmp"), boden.encode_bmp()).unwrap();
+        let mut app = emboss_app(&dir);
+        assert!(app.current_map_is_original());
+        assert!(!app.can_apply_flat_terrain() && !app.can_reset_terrain());
+        app.request_terrain_action(TerrainBulkAction::Flat);
+        assert_eq!(app.terrain_confirm, None);
+        assert!(!app.apply_flat_terrain_now() && app.status_is_error);
+        assert!(!app.reset_terrain_now());
+        assert_eq!(app.session.as_ref().unwrap().heights(), heights.as_slice());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn toolbar_undo_redo_route_to_material_strokes_when_material_tool_is_active() {
+        let dir = temp_map_dir("toolbar_material_undo");
+        std::fs::write(
+            dir.join("boden.txt"),
+            b"[Dimension]\n2\n[Texturen]\n4BA___51\n4BA___51\n4BA___51\n4BB___51\n",
+        )
+        .unwrap();
+        let mut app = EditorApp::initial_state();
+        app.session = Some(TerrainSession::create_blank(5, 32));
+        app.map_path_input = dir.display().to_string();
+        app.textures.load_session(&dir).unwrap();
+        let texture_session = app.textures.session_mut().unwrap();
+        assert!(texture_session.stamp_texture(0, 0, "4BB___51").is_some());
+        assert!(texture_session.commit_stroke());
+        assert!(!app.can_undo_any(), "material history is only reachable from the Material tool");
+
+        app.active_tool = ActiveTool::Material;
+        assert!(app.can_undo_any() && !app.can_redo_any());
+        app.perform_undo();
+        assert!(app.textures.session_textures().unwrap()[0].eq_ignore_ascii_case("4BA___51"));
+        assert!(app.can_redo_any() && !app.can_undo_any());
+        app.perform_redo();
+        assert!(app.textures.session_textures().unwrap()[0].eq_ignore_ascii_case("4BB___51"));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn troop_display_follows_object_toggle_and_loaded_catalog() {
+        use crate::viewport_3d::TroopObject;
+        let ctx = egui::Context::default();
+        let mut app = EditorApp::initial_state();
+        let stale = TroopObject {
+            spawn_index: 0,
+            name: "FigX".into(),
+            world: [0.0; 3],
+            team: 0,
+            angle: 0.0,
+            is_marker: false,
+        };
+        app.viewport_3d.troop_objects = vec![stale];
+        app.show_objects = false;
+        app.refresh_troop_objects(&ctx);
+        assert!(app.viewport_3d.troop_objects.is_empty(), "hidden objects drop the troop display");
+
+        // With a loaded catalog the expansion tracks the scenario (empty scenario -> nothing to show).
+        app.show_objects = true;
+        app.troops.data = Some((
+            TroopCatalog::new(Vec::new(), Default::default()),
+            FormationLayoutDefinition::native_default(),
+        ));
+        app.viewport_3d.troop_objects = vec![TroopObject {
+            spawn_index: 9,
+            name: "stale".into(),
+            world: [0.0; 3],
+            team: 0,
+            angle: 0.0,
+            is_marker: true,
+        }];
+        app.refresh_troop_objects(&ctx);
+        assert!(app.viewport_3d.troop_objects.is_empty());
+        assert!(app.troops.key.is_some());
+    }
+
+    #[test]
+    fn canvas_grid_follows_cell_size_and_toggle_defaults() {
+        let app = EditorApp::initial_state();
+        assert!(app.show_grid && app.show_objects, "C# checkboxes default to checked");
+        let rect = Rect::from_min_size(Pos2::new(10.0, 20.0), Vec2::new(640.0, 640.0));
+        let lines = canvas_grid_lines(rect, 64);
+        assert_eq!(lines.len(), 65 * 4, "64 cells -> 65 lines per axis, shadow + light each");
+        assert_eq!(lines[1].0, [Pos2::new(10.0, 20.0), Pos2::new(10.0, 660.0)]);
+        assert!(lines[0].1 && !lines[1].1);
+        // 5 px cells are below the C# readability threshold, so no grid is drawn.
+        assert!(canvas_grid_lines(Rect::from_min_size(Pos2::ZERO, Vec2::splat(320.0)), 64).is_empty());
+        assert!(canvas_grid_lines(rect, 0).is_empty());
     }
 
     #[test]
@@ -7888,42 +8562,10 @@ impl eframe::App for EditorApp {
         }
         // 快捷鍵處理
         if ctx.input(|i| i.modifiers.ctrl && i.key_pressed(egui::Key::Z)) {
-            if self.spawn_ui.is_active() && self.spawn_ui.session().can_undo() {
-                let read_only = self.current_map_is_original();
-                let cx = Self::spawn_cx(&self.session, self.loc.current_language(), self.height_step, read_only);
-                self.spawn_ui.undo(&mut self.scenario, &cx);
-            } else if self.nature_undo() {
-            } else if self.active_tool == ActiveTool::Material && self.textures.material_undo() {
-                self.status_message = "Material undo performed.".into();
-                self.status_is_error = false;
-            } else if let Some(session) = &mut self.session {
-                if session.undo() {
-                    self.is_painting = false;
-                    self.stroke_path.clear();
-                    self.texture_dirty = true;
-                    self.status_message = "Undo performed.".to_string();
-                    self.status_is_error = false;
-                }
-            }
+            self.perform_undo();
         }
         if ctx.input(|i| i.modifiers.ctrl && i.key_pressed(egui::Key::Y)) {
-            if self.spawn_ui.is_active() && self.spawn_ui.session().can_redo() {
-                let read_only = self.current_map_is_original();
-                let cx = Self::spawn_cx(&self.session, self.loc.current_language(), self.height_step, read_only);
-                self.spawn_ui.redo(&mut self.scenario, &cx);
-            } else if self.nature_redo() {
-            } else if self.active_tool == ActiveTool::Material && self.textures.material_redo() {
-                self.status_message = "Material redo performed.".into();
-                self.status_is_error = false;
-            } else if let Some(session) = &mut self.session {
-                if session.redo() {
-                    self.is_painting = false;
-                    self.stroke_path.clear();
-                    self.texture_dirty = true;
-                    self.status_message = "Redo performed.".to_string();
-                    self.status_is_error = false;
-                }
-            }
+            self.perform_redo();
         }
 
         // Editor shortcuts: Ctrl+S, Ctrl+A, Ctrl+D, Delete, Ctrl+Arrow nudge.
@@ -8073,26 +8715,20 @@ impl eframe::App for EditorApp {
 
                 ui.separator();
 
-                let can_undo = self.session.as_ref().map(|s| s.can_undo()).unwrap_or(false);
+                let can_undo = self.can_undo_any();
                 if ui
                     .add_enabled(can_undo, egui::Button::new(tr(lang, "Undo (Ctrl+Z)", "復原 (Ctrl+Z)")))
                     .clicked()
                 {
-                    if let Some(s) = &mut self.session {
-                        s.undo();
-                        self.texture_dirty = true;
-                    }
+                    self.perform_undo();
                 }
 
-                let can_redo = self.session.as_ref().map(|s| s.can_redo()).unwrap_or(false);
+                let can_redo = self.can_redo_any();
                 if ui
                     .add_enabled(can_redo, egui::Button::new(tr(lang, "Redo (Ctrl+Y)", "重做 (Ctrl+Y)")))
                     .clicked()
                 {
-                    if let Some(s) = &mut self.session {
-                        s.redo();
-                        self.texture_dirty = true;
-                    }
+                    self.perform_redo();
                 }
             });
 
@@ -8106,7 +8742,7 @@ impl eframe::App for EditorApp {
                 ui.colored_label(color, &self.status_message);
 
                 if let Some(session) = &self.session {
-                    if session.is_dirty() {
+                    if session.is_dirty() || self.reset_auxiliary_layers {
                         ui.colored_label(Color32::YELLOW, "[Unsaved Changes]");
                     }
                 }
@@ -8145,6 +8781,8 @@ impl eframe::App for EditorApp {
                 self.resolve_safe_save_warnings(proceed);
             }
         }
+
+        self.show_terrain_confirm(ctx);
 
         // 左側工具面板
         egui::SidePanel::left("left_tools_panel")
@@ -8331,6 +8969,38 @@ impl eframe::App for EditorApp {
                     }
 
                     ui.separator();
+                    ui.label(tr(lang, "Terrain:", "地表："));
+                    ui.horizontal_wrapped(|ui| {
+                        if ui
+                            .add_enabled(self.can_reset_terrain(), egui::Button::new(tr(lang, "Reset Terrain", "還原地表")))
+                            .on_hover_text(tr(
+                                lang,
+                                "Discard unsaved terrain changes (textures, heights, passability).",
+                                "放棄尚未儲存的地表變更（材質、高度、通行區域）。",
+                            ))
+                            .clicked()
+                        {
+                            self.request_terrain_action(TerrainBulkAction::Reset);
+                        }
+                        if ui
+                            .add_enabled(self.can_apply_flat_terrain(), egui::Button::new(tr(lang, "Reset Flat Terrain…", "重設平坦地形…")))
+                            .on_hover_text(tr(
+                                lang,
+                                "Flatten the whole map just above the water level, paint one base material, clear blocked ground, and reset vertex colors / smoothing / lighting on Save. Settlements are kept.",
+                                "整平整張地圖到水面上方、鋪單一基礎材質、清除阻擋，並在儲存時重設頂點色／平滑／光照。聚落保留。",
+                            ))
+                            .clicked()
+                        {
+                            self.request_terrain_action(TerrainBulkAction::Flat);
+                        }
+                    });
+                    ui.checkbox(&mut self.show_grid, tr(lang, "Show grid", "顯示格線"));
+                    ui.checkbox(
+                        &mut self.show_objects,
+                        tr(lang, "Show buildings and objects", "顯示建築與場景物件"),
+                    );
+
+                    ui.separator();
                     self.show_nature_panel(ui);
 
                     ui.separator();
@@ -8378,10 +9048,13 @@ impl eframe::App for EditorApp {
         // 中央畫布檢視區
         egui::CentralPanel::default().show(ctx, |ui| {
             if self.view_mode == ViewMode::View3D {
+                self.refresh_troop_objects(ctx);
                 if let Some(session) = &self.session {
                     let placement_objects = self.placement.objects();
                     let selected_obj = self.placement.selected_object();
                     self.viewport_3d.terrain_pick_mode = self.ramp_selecting;
+                    self.viewport_3d.show_grid = self.show_grid;
+                    self.viewport_3d.show_objects = self.show_objects;
                     if let Some(grid) = self.textures.take_view_sync() {
                         self.viewport_3d.set_tile_textures(grid);
                     }
@@ -8464,8 +9137,14 @@ impl eframe::App for EditorApp {
             if self.active_tool == ActiveTool::Material {
                 self.textures.draw_material_overlay(ctx, &painter, map_rect);
             }
-            self.draw_nature_overlay(&painter, map_rect);
-            self.spawn_ui.draw_overlay(&painter, map_rect);
+            if self.show_grid {
+                let dimension = self.textures.tile_dimension().unwrap_or(NATURE_DEFAULT_DIMENSION as usize);
+                draw_canvas_grid(&painter, map_rect, dimension);
+            }
+            if self.show_objects {
+                self.draw_nature_overlay(&painter, map_rect);
+                self.spawn_ui.draw_overlay(&painter, map_rect);
+            }
 
             // 放置物件面板：點選／拖曳 2D 標記（命中時筆刷不作用）
             let tool_busy = self.pending_action.is_some()
@@ -8505,7 +9184,9 @@ impl eframe::App for EditorApp {
                         map_rect.min.y + w.1 / world_size * map_rect.height(),
                     )
                 };
-                self.scene.paint_scene_overlay(&painter, &screen_from_world);
+                if self.show_objects {
+                    self.scene.paint_scene_overlay(&painter, &screen_from_world);
+                }
                 if !tool_busy {
                     self.scene
                         .scene_canvas_input(&response, &world_from_screen, &screen_from_world);

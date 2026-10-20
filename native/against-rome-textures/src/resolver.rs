@@ -171,8 +171,13 @@ impl StandardFloorMaterialCatalog {
         }
 
         // 2. 2-material transitions: 4U<1char><1char>__<shape: 1char><variant: 1char>
+        // A family that uses the corner-mask naming (`4UJX__05`) must not be read as shapes (C# `maskFamilies`).
+        let mask_families = mask_transition_families(&name_list);
         for name in &name_list {
             if let Some((first, second, shape)) = parse_two_material_transition(name) {
+                if mask_families.contains(&format!("{first}|{second}")) {
+                    continue;
+                }
                 if let Some(corners) = two_material_corners(&first, &second, shape) {
                     catalog
                         .native_corners_by_texture
@@ -254,6 +259,40 @@ impl NativeTerrainMaterialResolver for StandardFloorMaterialCatalog {
     }
 }
 
+/// Parses the corner-mask 4U naming `4U<first><second>__<mask 01-14>` (C# `MaskTransitionName`).
+/// Returns `(first, second, mask_is_zero_prefixed)` with `B`-prefixed upper-case material ids.
+pub(crate) fn parse_mask_transition(name: &str) -> Option<(String, String, bool)> {
+    let b = name.as_bytes();
+    if b.len() != 8
+        || b[0] != b'4'
+        || !b[1].eq_ignore_ascii_case(&b'U')
+        || !b[2].is_ascii_alphanumeric()
+        || !b[3].is_ascii_alphanumeric()
+        || b[4] != b'_'
+        || b[5] != b'_'
+    {
+        return None;
+    }
+    let valid = matches!((b[6], b[7]), (b'0', b'1'..=b'9') | (b'1', b'0'..=b'4'));
+    valid.then(|| {
+        (
+            format!("B{}", (b[2] as char).to_ascii_uppercase()),
+            format!("B{}", (b[3] as char).to_ascii_uppercase()),
+            b[6] == b'0',
+        )
+    })
+}
+
+/// Material pairs (`"BJ|BX"`) whose 4U family uses the 0-prefixed corner-mask naming.
+pub(crate) fn mask_transition_families(names: &[String]) -> HashSet<String> {
+    names
+        .iter()
+        .filter_map(|n| parse_mask_transition(n))
+        .filter(|(_, _, zero)| *zero)
+        .map(|(first, second, _)| format!("{first}|{second}"))
+        .collect()
+}
+
 // Helpers for name pattern parsing
 fn parse_base_material(name: &str) -> Option<String> {
     // 4B<code: 1char>___5<variant: 1char>
@@ -321,7 +360,7 @@ fn parse_three_material_transition(name: &str) -> Option<(String, String, String
 }
 
 /// Corner order is texture-space: TL, TR, BR, BL
-fn two_material_corners(first: &str, second: &str, shape: u8) -> Option<[String; 4]> {
+pub(crate) fn two_material_corners(first: &str, second: &str, shape: u8) -> Option<[String; 4]> {
     let f = first.to_string();
     let s = second.to_string();
     match shape {

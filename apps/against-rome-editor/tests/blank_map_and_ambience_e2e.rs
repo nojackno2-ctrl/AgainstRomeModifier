@@ -546,3 +546,42 @@ fn test_build_and_open_ui_flow_dirty_session_safety_and_explicit_discard() {
 
     let _ = fs::remove_dir_all(&temp_root);
 }
+
+#[test]
+fn flat_template_clones_opens_and_flattens_terrain_unsaved() {
+    let temp_root = std::env::temp_dir().join(format!("arm_e2e_flat_template_{}", Uuid::new_v4()));
+    setup_synthetic_game_root(&temp_root);
+    let mut app = EditorApp::initial_state();
+    app.maps.game_path_input = temp_root.to_string_lossy().to_string();
+    app.maps.blank_source_slot = 0;
+    app.maps.blank_target_name = "Flat Probe".to_string();
+
+    let intent = app.maps.request_build_flat_template().expect("flat template intent");
+    assert!(intent.flat_template);
+    assert_eq!(intent.spec.target_slot, 5, "next free custom slot");
+    assert_eq!(intent.spec.source_map_id, "ENDL_000");
+    // Requesting never touches the disk.
+    assert!(!temp_root.join("MAPS/ENDL_005").exists());
+
+    app.queue_build_intent(intent);
+    let ctx = egui::Context::default();
+    app.handle_pending_action(&ctx);
+    assert!(!app.status_is_error, "{}", app.status_message);
+    let map = temp_root.join("MAPS/ENDL_005");
+    assert!(map.join("Endlos_01_Siedlung01.sdl").is_file(), "settlements are kept");
+    assert!(app.map_path_input.ends_with("ENDL_005"), "{}", app.map_path_input);
+
+    // Water 30 / step 2 = 15 G units; C# flat terrain = water + 20.
+    let session = app.session.as_ref().unwrap();
+    assert!(session.heights().iter().all(|h| *h == 35));
+    assert!(session.collision().iter().all(|c| *c == 0));
+    assert!(app.has_unsaved_changes(), "flattening is pending until the designer saves");
+    let on_disk = load_map(&map).unwrap();
+    assert_eq!(on_disk.heights()[0], 50, "disk keeps the template terrain until Save");
+
+    // Reset Terrain brings the template heights back; the designer can still choose not to flatten.
+    assert!(app.reset_terrain_now());
+    assert_eq!(app.session.as_ref().unwrap().heights()[0], 50);
+    assert!(!app.has_unsaved_changes());
+    let _ = fs::remove_dir_all(&temp_root);
+}
