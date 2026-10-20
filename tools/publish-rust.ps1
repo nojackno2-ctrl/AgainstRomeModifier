@@ -461,13 +461,6 @@ try {
         foreach ($exe in @($modifierExe, $packagingExe)) { Assert-NativeWindowsExe $exe 3 }
         Assert-NativeWindowsDll32 $traceDll
         $traceDllHash = Get-Sha256 $traceDll
-        $cppTraceDll = Join-Path (Join-Path $repo 'ThirdParty/argm-trace') $traceDllName
-        if (Test-Path -LiteralPath $cppTraceDll -PathType Leaf) {
-            $cppTraceHash = Get-Sha256 $cppTraceDll
-            if ($traceDllHash -ceq $cppTraceHash) {
-                throw "Rust trace DLL unexpectedly matches legacy C++ binary ($cppTraceDll). Build output required, no C++ fallback."
-            }
-        }
         $editorExeHash = Get-Sha256 $editorExe
         $modifierGuiExeHash = Get-Sha256 $modifierGuiExe
         $launcherExeHash = Get-Sha256 $launcherExe

@@ -236,7 +236,7 @@ impl ModBundleExporter {
                  =======================================================\r\n\r\n\
                  {}\r\n\r\n\
                  [安裝方式]\r\n\
-                 1. 先關閉遊戲，使用 tools/ArmMapPackage 安裝 CLI（詳見 docs/map-package-install.md）。\r\n\
+                 1. 先關閉遊戲，使用 ArmMapPackage.exe 安裝 CLI（詳見 docs/map-package-install.md）。\r\n\
                  2. map/ 是相對於槽位的內容；不可直接解壓到任意 ENDL_XXX。安裝器會選連續空位、重寫 SDL 並建立 marker。\r\n",
                 manifest.title,
                 manifest.author,

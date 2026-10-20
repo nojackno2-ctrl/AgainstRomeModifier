@@ -348,9 +348,9 @@ fn logger_close_synced_flushes_then_syncs_writer_and_propagates_errors() {
 }
 #[test]
 fn exports_snapshot_matches_original_names_ordinals_and_noname() {
+    // winmm.def was verified byte-identical to the retired C++ argm_trace.def
+    // before that project was removed; it is now the single source of truth.
     let ours = include_str!("../winmm.def");
-    let source = include_str!("../../argm-trace/argm_trace.def");
-    assert_eq!(ours, source);
     let entries: Vec<_> = ours
         .lines()
         .filter(|l| l.trim().starts_with("Thunk_Ordinal2") || l.contains("= Thunk_"))

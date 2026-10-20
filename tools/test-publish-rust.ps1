@@ -192,13 +192,10 @@ if ($assetStrings -contains 'ThirdParty/argm-trace/winmm.dll') { throw 'Legacy C
 if ($scriptContent -match 'Copy-Item[^\r\n]*(?:ThirdParty/argm-trace/winmm\.dll|\$traceStagedRelative)') {
     throw 'Script must not copy the C++ source-tree winmm.dll.'
 }
-if ($scriptContent -notmatch 'matches legacy C\+\+ binary') {
-    throw 'Script must explicitly verify that the built trace DLL does not match the legacy C++ binary.'
-}
 if ($scriptContent -notmatch 'Copy-Item\s+-LiteralPath\s+\$traceDll\s+-Destination\s+\$traceDest') { throw 'Staged trace DLL must be copied from the Cargo build output ($traceDll).' }
 if ($scriptContent -match 'cmake|MSBuild|argm-trace/build') { throw 'Publisher must not invoke the C++ toolchain.' }
 Write-Host "  [PASS] Manifest declarations, locked fetch bootstrap, and no-duplicate-alias verified"
-Write-Host "  [PASS] Rust trace crate: i686 locked/offline Release cdylib build, PE32 validation, C++ source DLL not a copy source, C++ match rejection"
+Write-Host "  [PASS] Rust trace crate: i686 locked/offline Release cdylib build, PE32 validation, C++ source DLL not a copy source"
 
 # Execute actual DLL-only blocks with Cargo stubs; do not load a DLL or launch tests.
 foreach ($route in @('native/against-rome-trace/build-win32.ps1', 'tools/test-rust-rewrite.ps1', 'tools/publish-rust.ps1')) {
@@ -571,7 +568,7 @@ try {
         'tools/publish-rust.ps1', 'tools/RustPortableArchive.psm1',
         'ThirdParty/dgVoodoo2/D3D8.dll', 'ThirdParty/dgVoodoo2/DDraw.dll',
         'ThirdParty/dgVoodoo2/dgVoodooCpl.exe', 'ThirdParty/dgVoodoo2/dgVoodoo.conf',
-        'ThirdParty/dgVoodoo2/REDISTRIBUTION.md', 'ThirdParty/argm-trace/winmm.dll', 'ThirdParty/argm-trace/README.md')
+        'ThirdParty/dgVoodoo2/REDISTRIBUTION.md', 'ThirdParty/argm-trace/README.md')
     foreach ($relative in $fixtureFiles) {
         $dest = Join-Path $fixtureRepo $relative
         New-Item -ItemType Directory -Path (Split-Path $dest -Parent) -Force | Out-Null
@@ -594,15 +591,13 @@ try {
         [BitConverter]::GetBytes([uint32]16).CopyTo($bytes, 196)
         [IO.File]::WriteAllBytes($dest, $bytes)
     }
-    # Fake Rust i686 build output; its bytes differ from the C++ ThirdParty/argm-trace/winmm.dll copied into the fixture above.
+    # Fake Rust i686 build output.
     $fixtureTraceDll = Join-Path $fixtureRepo 're_workspace/rust-rewrite-targets/native-against-rome-trace/i686-pc-windows-msvc/release/winmm.dll'
     New-Item -ItemType Directory -Path (Split-Path $fixtureTraceDll -Parent) -Force | Out-Null
     $traceFixtureBytes = New-Pe32DllFixtureBytes
     [BitConverter]::GetBytes([uint32]0x52555354).CopyTo($traceFixtureBytes, 512)   # marker unique to the "Rust build output"
     [IO.File]::WriteAllBytes($fixtureTraceDll, $traceFixtureBytes)
-    $cppDllHash = (Get-FileHash -LiteralPath (Join-Path $fixtureRepo 'ThirdParty/argm-trace/winmm.dll') -Algorithm SHA256).Hash.ToLowerInvariant()
     $traceFixtureHash = (Get-FileHash -LiteralPath $fixtureTraceDll -Algorithm SHA256).Hash.ToLowerInvariant()
-    if ($cppDllHash -ceq $traceFixtureHash) { throw 'Fixture trace DLL must differ from the C++ DLL.' }
     $fixtureScript = Join-Path $fixtureRepo 'tools/publish-rust.ps1'
     $env:CARGO_HOME = $isolatedCargoHome
     New-Item -ItemType Directory -Path $fixtureOutput | Out-Null
@@ -634,7 +629,6 @@ try {
     $stagedTrace = Join-Path $stage[0].FullName 'ThirdParty/argm-trace/winmm.dll'
     $stagedTraceHash = (Get-FileHash -LiteralPath $stagedTrace -Algorithm SHA256).Hash.ToLowerInvariant()
     if ($stagedTraceHash -cne $traceFixtureHash) { throw 'Staged trace DLL is not the Rust build output.' }
-    if ($stagedTraceHash -ceq $cppDllHash -or $provenance.files.PSObject.Properties.Value -contains $cppDllHash) { throw 'C++ source winmm.dll leaked into the package.' }
     Assert-Pe32Dll $stagedTrace 'Staged trace DLL'
     if ($provenance.traceDll.sha256 -cne $traceFixtureHash -or $provenance.traceDll.cppSourceBinaryCopied -ne $false -or
         $provenance.traceDll.target -ne 'i686-pc-windows-msvc' -or $provenance.traceDll.cargoManifest -ne 'native/against-rome-trace/Cargo.toml' -or
@@ -740,14 +734,8 @@ try {
             Invoke-FixturePublish $badTraceOutput 'Invalid native Windows 32-bit DLL'
             if (Test-Path -LiteralPath $badTraceOutput) { throw "Invalid trace DLL created output: $case" }
         }
-        # Regression test: if trace DLL in target dir is the legacy C++ binary, publish must reject it before staging
-        $cppBytes = [IO.File]::ReadAllBytes((Join-Path $fixtureRepo 'ThirdParty/argm-trace/winmm.dll'))
-        [IO.File]::WriteAllBytes($fixtureTraceDll, $cppBytes)
-        $badCppOutput = Join-Path $fixtureRoot 'trace-cpp-match'
-        Invoke-FixturePublish $badCppOutput 'matches legacy C\+\+ binary'
-        if (Test-Path -LiteralPath $badCppOutput) { throw 'Legacy C++ trace DLL created output: trace-cpp-match' }
     } finally { [IO.File]::WriteAllBytes($fixtureTraceDll, $validTraceBytes) }
-    Write-Host '  [PASS] Non-i386, non-DLL, managed, export-less, truncated and legacy C++ trace DLLs rejected before staging'
+    Write-Host '  [PASS] Non-i386, non-DLL, managed, export-less and truncated trace DLLs rejected before staging'
 } finally {
     $env:CARGO_HOME = $savedCargoHome
     if (Test-Path -LiteralPath $fixtureRoot) {
@@ -780,9 +768,7 @@ try {
     if (!(Test-Path -LiteralPath $builtTrace -PathType Leaf)) { throw "Cargo did not produce $builtTrace" }
     Assert-Pe32Dll $builtTrace 'Cargo-built Rust trace DLL'
     $builtHash = (Get-FileHash -LiteralPath $builtTrace -Algorithm SHA256).Hash.ToLowerInvariant()
-    $cppHash = (Get-FileHash -LiteralPath (Join-Path $repo 'ThirdParty/argm-trace/winmm.dll') -Algorithm SHA256).Hash.ToLowerInvariant()
-    if ($builtHash -ceq $cppHash) { throw 'Cargo-built Rust DLL unexpectedly equals the C++ source DLL.' }
-    Write-Host "  [PASS] Cargo built Rust cdylib winmm.dll (i686, PE32, exports, no CLR; SHA256 $builtHash) distinct from C++ DLL $cppHash"
+    Write-Host "  [PASS] Cargo built Rust cdylib winmm.dll (i686, PE32, exports, no CLR; SHA256 $builtHash)"
 
     # 12. Regression test: cached/up-to-date Cargo trace build produces an identical, valid artifact without rebuild failure
     # even when unrelated documentation timestamps (e.g. README.md, HANDOFF.md) are newer than the cached artifact.

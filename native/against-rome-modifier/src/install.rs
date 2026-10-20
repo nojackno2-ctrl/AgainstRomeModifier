@@ -490,7 +490,7 @@ pub fn build_trace_ini(expected: u32) -> String {
         "; 目標組建未辨識;開啟 hook 後僅安裝有簽章驗證的 hook。\r\nexpectedTimeDateStamp=0\r\n\r\n"
             .to_owned()
     };
-    format!("; 由 Against Rome Modifier 自動產生（argm-trace 執行期飛行紀錄器,winmm 代理）。\r\n; 逐鍵說明見 native/argm-trace/argm_trace.ini.sample。\r\n\r\n[general]\r\nenabled=1\r\nverifySignatures=1\r\n; 首次部署為 log-only（不裝任何 hook）。確認遊戲能正常啟動且產生\r\n; argm_trace.log 後,把下一行改成 enableHooks=1 即可開啟 AI 事件記錄。\r\nenableHooks=0\r\nargDumpCount=9\r\nmaxLogMegabytes=256\r\n\r\n[build]\r\n{build}[hooks]\r\ntraceNpcJobs=1\r\ntraceNpcActive=1\r\ntraceVillage=1\r\ntraceCreateUnit=1\r\n; 無盡 AI 決策脈絡：復活資格快照、新局邊界、單位數量上限。\r\ntraceNpcQuery=1\r\ntraceLevelInit=1\r\ntraceUnitMax=1\r\ntraceOpcodes=0\r\n")
+    format!("; 由 Against Rome Modifier 自動產生（argm-trace 執行期飛行紀錄器,winmm 代理）。\r\n; 逐鍵說明見 native/against-rome-trace/argm_trace.ini.sample。\r\n\r\n[general]\r\nenabled=1\r\nverifySignatures=1\r\n; 首次部署為 log-only（不裝任何 hook）。確認遊戲能正常啟動且產生\r\n; argm_trace.log 後,把下一行改成 enableHooks=1 即可開啟 AI 事件記錄。\r\nenableHooks=0\r\nargDumpCount=9\r\nmaxLogMegabytes=256\r\n\r\n[build]\r\n{build}[hooks]\r\ntraceNpcJobs=1\r\ntraceNpcActive=1\r\ntraceVillage=1\r\ntraceCreateUnit=1\r\n; 無盡 AI 決策脈絡：復活資格快照、新局邊界、單位數量上限。\r\ntraceNpcQuery=1\r\ntraceLevelInit=1\r\ntraceUnitMax=1\r\ntraceOpcodes=0\r\n")
 }
 pub fn plan_install(
     game: &Path,
