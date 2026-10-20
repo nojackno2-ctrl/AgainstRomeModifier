@@ -332,15 +332,16 @@ mod tests {
     }
     #[test]
     fn output_create_new_preserves_existing() {
-        let p = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../../re_workspace/particle-numeric-target")
-            .join(format!("create-new-test-{}.json", std::process::id()));
+        let p = std::env::temp_dir().join(format!("particle-numeric-create-new-test-{}.json", std::process::id()));
+        let _ = fs::remove_file(&p);
         write_new(&p, &json!({"test":1})).unwrap();
         let b = fs::read(&p).unwrap();
         assert!(write_new(&p, &json!({"test":2})).is_err());
         assert_eq!(fs::read(&p).unwrap(), b);
+        let _ = fs::remove_file(&p);
     }
     #[test]
+    #[ignore = "needs the installed retail Against_Rome.exe and local re_workspace evidence"]
     fn installed_frozen_contract_and_mutated_constants() {
         let repo = Path::new(env!("CARGO_MANIFEST_DIR"))
             .ancestors()

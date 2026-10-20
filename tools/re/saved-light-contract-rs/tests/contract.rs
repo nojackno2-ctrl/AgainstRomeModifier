@@ -130,6 +130,7 @@ fn schemas_accept_valid_binding_and_reject_missing_or_wrong_fields() {
 }
 
 #[test]
+#[ignore = "needs local re_workspace evidence files that are not committed"]
 fn repository_evidence_schemas_and_all_instruction_lines_decode() {
     let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).ancestors().nth(3).unwrap().to_path_buf();
     for ev in contract()["reused_evidence"].as_array().unwrap() {
