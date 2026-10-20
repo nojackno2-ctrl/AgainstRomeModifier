@@ -1,6 +1,7 @@
 # Visual Studio
 .vs/
 [Bb]in/
+!**/src/bin/
 !native/against-rome-textures/src/bin/
 !native/against-rome-textures/src/bin/*.rs
 !apps/against-rome-editor/src/bin/

@@ -1,3 +1,16 @@
+## 2026-10-20 14:40+08:00 Claude（Opus）：最終 Rust 遷移收尾（/goal：完成整個專案轉移成 Rust）
+
+- 先前 419 檔未提交的移植成果經 `cargo test --workspace --locked --offline`（1894 passed / 0 failed / 36 ignored）驗證後提交為 `896f746` 並推送。
+- 額度：Codex 週額度剩 3%（只派 `ar-bcitool` 一項）、Agy 7 日 0%、Claude CLI usage 429；主力改用 Claude 子代理，本地 Ollama 用於純文字分類。
+- 四份唯讀 parity 審查結論：功能核心幾乎全移植；剩餘缺口：
+  - Modifier GUI：Start Game、Experimental promote/demote、Balanced 範本套用、單位圖示（icon.ini+gui.dat）、Launcher registry 偵測。
+  - Shared：lightdef.dau/d00-09 載入、light 由定義建立、24 個必要 DATA 檔檢查、cl_scint.ini alias catalog。
+  - Placement：squad unit count、分類 team 規則、BuildFamilyCopyRequests；城牆 foundation texture。
+  - Editor UI：Ctrl+S/Delete/Ctrl+A/Ctrl+D/方向鍵、3D 鍵盤、水色、遊戲測試啟動、中英切換；後續：box-select、region tools、.arm-layout.json 匯入匯出、原圖唯讀/複製、saved light/particle/family UI、diagnostics issue list。
+  - 測試：所有 C# oracle 需凍結成 fixtures，移除 `include_str!` C# 與 dotnet 呼叫。
+- 進行中（勿重疊）：W1 modifier_ui.rs/launcher/icons.rs；W2 scene lighting/placement/maps/design_apply.rs；W3 app.rs/viewport_3d.rs/ambience_ui.rs/packaging_ui.rs/placement_ui.rs；W5 native/*/tests oracle 凍結與 workflows；W6 tools/re/ar-re-tools-rs（Python 可重用工具移植）；Codex scenario `ar-bcitool`。
+- 最終步驟（待上列完成並驗證）：刪除 src.*、tests/ C#、slnx、Directory.Build.*、C# probes、C++ argm-trace、.NET CI/publish；31 個一次性 Python 探針移除（git 歷史保留），Ghidra Java 腳本屬第三方工具插件另議。
+
 ## 2026-10-19 23:27+08:00 Codex：Rust full restore 自製地圖刪除 parity
 
 - 比對 C# `CustomMapRestoreService.Execute` 與 Rust restore flow，確認 Rust 在 `preserve_custom_maps=false` 時未刪除自製地圖，且錯將 `team.dat` 備份寫入地圖。新增 `custom_map_restore`：完整還原先驗證 marker/manifest/`.deleting_arm`，plan 一律排除自製地圖檔，再以 maps crate deleter 刪除；外層 `FileRollbackScope` 同時追蹤 plan 檔案、manifest 與地圖目錄，任一步驟失敗可回復。CLI dry-run 回報預計刪除數。
