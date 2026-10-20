@@ -1053,6 +1053,8 @@ fn event_editor(ui: &mut egui::Ui, e: &mut Event, targets: &[(Spawn, String)], a
     }
     ui.label("動作：依序執行。勝敗動作只能放在單次事件最後。");
     let mut remove = None;
+    let mut move_request: Option<(usize, isize)> = None;
+    let action_count = e.actions.len();
     for (i, a) in e.actions.iter_mut().enumerate() {
         ui.push_id(("action", i), |ui| {
             ui.group(|ui| {
@@ -1065,6 +1067,15 @@ fn event_editor(ui: &mut egui::Ui, e: &mut Event, targets: &[(Spawn, String)], a
                     );
                     if ui.button("刪除此動作").clicked() {
                         remove = Some(i)
+                    }
+                    if ui.add_enabled(i > 0, egui::Button::new("上移")).clicked() {
+                        move_request = Some((i, -1));
+                    }
+                    if ui
+                        .add_enabled(i + 1 < action_count, egui::Button::new("下移"))
+                        .clicked()
+                    {
+                        move_request = Some((i, 1));
                     }
                 });
                 match a.kind {
@@ -1129,6 +1140,8 @@ fn event_editor(ui: &mut egui::Ui, e: &mut Event, targets: &[(Spawn, String)], a
     }
     if let Some(i) = remove {
         e.actions.remove(i);
+    } else if let Some((i, offset)) = move_request {
+        move_action(&mut e.actions, i, offset);
     }
     if ui.button("新增動作").clicked() {
         e.actions.push(Action {
@@ -1136,6 +1149,18 @@ fn event_editor(ui: &mut egui::Ui, e: &mut Event, targets: &[(Spawn, String)], a
             ..Default::default()
         });
     }
+}
+/// C# `ScenarioEventDialog` Move up/down: swaps an action with its neighbour (execution order
+/// matters). Returns the action's new index, or `None` when the move is out of range.
+/// The caller edits a clone of the event, so the surrounding `replace_event` records exactly one
+/// undo step.
+fn move_action(actions: &mut [Action], index: usize, offset: isize) -> Option<usize> {
+    let target = index.checked_add_signed(offset)?;
+    if index >= actions.len() || target >= actions.len() {
+        return None;
+    }
+    actions.swap(index, target);
+    Some(target)
 }
 fn kind_combo(ui: &mut egui::Ui, id: &str, value: &mut i32, names: &[&str]) {
     egui::ComboBox::from_id_source(id)
@@ -1237,6 +1262,50 @@ mod tests {
             }],
             ..Default::default()
         }
+    }
+    fn texts(e: &Event) -> Vec<String> {
+        e.actions.iter().map(|a| a.text.clone()).collect()
+    }
+    #[test]
+    fn move_action_swaps_neighbours_and_rejects_out_of_range() {
+        let mut v: Vec<Action> = ["a", "b", "c"]
+            .iter()
+            .map(|t| Action { text: (*t).into(), ..Default::default() })
+            .collect();
+        let names = |v: &[Action]| v.iter().map(|a| a.text.clone()).collect::<Vec<_>>();
+        assert_eq!(move_action(&mut v, 0, -1), None);
+        assert_eq!(move_action(&mut v, 2, 1), None);
+        assert_eq!(move_action(&mut v, 3, -1), None);
+        assert_eq!(names(&v), ["a", "b", "c"]);
+        assert_eq!(move_action(&mut v, 1, 1), Some(2));
+        assert_eq!(names(&v), ["a", "c", "b"]);
+        assert_eq!(move_action(&mut v, 2, -1), Some(1));
+        assert_eq!(names(&v), ["a", "b", "c"]);
+    }
+    #[test]
+    fn moving_an_action_is_one_undo_step_through_replace_event() {
+        let mut ui = ScenarioUi::default();
+        let mut e = ev("e");
+        e.actions = ["a", "b", "c"]
+            .iter()
+            .map(|t| Action { text: (*t).into(), ..Default::default() })
+            .collect();
+        ui.document.events = vec![e.clone()];
+        ui.events = ScenarioEventSession::with_events(ui.document.events.clone());
+        ui.baseline = state_bytes(&ui.document, &ui.camera).unwrap();
+
+        // Same shape as the panel: edit a clone, then replace_event when it differs.
+        let mut edited = ui.document.events[0].clone();
+        assert_eq!(move_action(&mut edited.actions, 0, 1), Some(1));
+        assert_ne!(edited, ui.document.events[0]);
+        ui.replace_event(0, edited).unwrap();
+        assert_eq!(texts(&ui.document.events[0]), ["b", "a", "c"]);
+        assert!(ui.dirty());
+        assert!(ui.undo_events());
+        assert_eq!(texts(&ui.document.events[0]), ["a", "b", "c"]);
+        assert!(!ui.dirty() && !ui.can_undo_events());
+        assert!(ui.redo_events());
+        assert_eq!(texts(&ui.document.events[0]), ["b", "a", "c"]);
     }
     #[test]
     fn duplicate_event_preserves_content_order_and_is_one_undo_step() {

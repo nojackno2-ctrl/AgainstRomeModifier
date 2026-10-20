@@ -1,5 +1,6 @@
 //! MultiAiMapPlanner: orchestrates multiple AI model roles (Terrain, Water, Materials).
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use serde_json::Value;
 use crate::ollama::AiMaterialOption;
@@ -94,6 +95,25 @@ impl MultiAiMapPlanResult {
     }
 }
 
+/// Cooperative cancellation flag shared between the UI thread and a generation worker
+/// (the Rust counterpart of C# `CancellationToken`). Clones observe the same flag.
+#[derive(Debug, Clone, Default)]
+pub struct CancelToken(Arc<AtomicBool>);
+
+impl CancelToken {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn cancel(&self) {
+        self.0.store(true, Ordering::SeqCst);
+    }
+
+    pub fn is_cancelled(&self) -> bool {
+        self.0.load(Ordering::SeqCst)
+    }
+}
+
 pub type GenerateRolePlanFn = Arc<
     dyn Fn(&str, &str, &[AiMaterialOption], f32) -> Result<(AiMapPlan, String), String>
         + Send
@@ -162,6 +182,28 @@ impl MultiAiMapPlanner {
         description: &str,
         materials: &[AiMaterialOption],
         water_level_sample: f32,
+        progress: Option<&mut dyn FnMut(AiMapRoleProgress)>,
+    ) -> Result<MultiAiMapPlanResult, String> {
+        self.generate_plan_cancellable(
+            requests,
+            description,
+            materials,
+            water_level_sample,
+            &CancelToken::new(),
+            progress,
+        )
+    }
+
+    /// Same as [`Self::generate_plan`] but honours `cancel` like the C# `CancellationToken`:
+    /// no start progress once cancelled, remaining roles report `Cancelled`, and the result
+    /// carries `is_cancelled = true` with no plan.
+    pub fn generate_plan_cancellable(
+        &self,
+        requests: &[MultiAiMapRoleRequest],
+        description: &str,
+        materials: &[AiMaterialOption],
+        water_level_sample: f32,
+        cancel: &CancelToken,
         mut progress: Option<&mut dyn FnMut(AiMapRoleProgress)>,
     ) -> Result<MultiAiMapPlanResult, String> {
         if requests.is_empty() {
@@ -191,17 +233,20 @@ impl MultiAiMapPlanner {
                 None => continue,
             };
 
-            if let Some(cb) = progress.as_deref_mut() {
-                cb(AiMapRoleProgress {
-                    role,
-                    model: req.model.clone(),
-                    completed_roles: results.len(),
-                    finished: false,
-                    status: None,
-                });
+            if !cancel.is_cancelled() {
+                if let Some(cb) = progress.as_deref_mut() {
+                    cb(AiMapRoleProgress {
+                        role,
+                        model: req.model.clone(),
+                        completed_roles: results.len(),
+                        finished: false,
+                        status: None,
+                    });
+                }
             }
 
             let role_res = self.generate_role(
+                cancel,
                 role,
                 &req.model,
                 description,
@@ -225,6 +270,13 @@ impl MultiAiMapPlanner {
         }
 
         let reports: Vec<AiMapRoleResult> = results.iter().map(|(_, rep)| rep.clone()).collect();
+        if cancel.is_cancelled() {
+            return Ok(MultiAiMapPlanResult {
+                plan: None,
+                roles: reports,
+                is_cancelled: true,
+            });
+        }
         if results.iter().all(|(plan, _)| plan.is_none()) {
             return Ok(MultiAiMapPlanResult {
                 plan: None,
@@ -272,6 +324,7 @@ impl MultiAiMapPlanner {
 
     fn generate_role(
         &self,
+        cancel: &CancelToken,
         role: AiMapDesignRole,
         model: &str,
         description: &str,
@@ -283,7 +336,28 @@ impl MultiAiMapPlanner {
         let mut warnings = Vec::new();
         let prompt = Self::build_role_prompt(role, description);
 
+        let cancelled = |raw: Option<String>, warnings: Vec<String>| {
+            (
+                None,
+                AiMapRoleResult {
+                    role,
+                    model: model.to_string(),
+                    status: AiMapRoleStatus::Cancelled,
+                    accepted_features: 0,
+                    error: Some("已取消。".to_string()),
+                    warnings,
+                    raw_response: raw,
+                },
+            )
+        };
+        if cancel.is_cancelled() {
+            return cancelled(None, warnings);
+        }
         let gen_res = (self.generate)(model, &prompt, materials, water);
+        if cancel.is_cancelled() {
+            // A provider may finish after Cancel; its result must never become applicable.
+            return cancelled(gen_res.ok().map(|(_, raw)| raw), warnings);
+        }
         let (generated_plan, raw) = match gen_res {
             Ok(pair) => pair,
             Err(e) => {

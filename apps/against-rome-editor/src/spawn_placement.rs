@@ -620,7 +620,8 @@ pub fn placed_to_spawn(item: &SdlPlacedObject, previous: Option<&Spawn>) -> Spaw
         count: if is_squad(item) { item.unit_count.max(1) } else { 0 },
         angle,
         y: item.world_y,
-        prebuilt: previous.is_some_and(|s| s.prebuilt),
+        // A native raw rotation only exists on prebuilt DATA objects (document validation).
+        prebuilt: raw_rotation.is_some() || previous.is_some_and(|s| s.prebuilt),
         id: item.scenario_id,
         raw_rotation,
     }

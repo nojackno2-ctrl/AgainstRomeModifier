@@ -17,13 +17,15 @@
 use crate::app::{tr, ShortcutAction};
 use crate::scenario_ui::ScenarioUi;
 use crate::spawn_placement::{
-    category_text, landscape_move_warning, landscape_nearby, landscape_place_warning, load_spawns,
+    category_text, landscape_move_warning, landscape_nearby, landscape_place_warning, load_spawns, spawn_to_placed,
     matches_search, nearest_placement, new_placement, normalize_angle, object_display_name, session_to_spawns, takes_unit_count, team_range, tile_center, tile_ground_height, tribe_text,
     type_for_alias, world_ground_height, PlacementError, SpawnPlacementSession,
 };
 use against_rome_ambience::Language as AppLanguage;
 use against_rome_maps::sdl_objects::{SdlObjectCategory, SdlObjectType, SdlPlacedObject};
 use against_rome_maps::script_aliases::ScriptObjectAliases;
+use against_rome_maps::spawn_data::{stage_starter_kit, StarterKitTerrain};
+use against_rome_maps::starter_kit::BlankMapStarterKit;
 use against_rome_scenario::model::Spawn;
 use eframe::egui::{self, Color32, Pos2, Rect, Stroke};
 use std::collections::{BTreeSet, HashSet};
@@ -66,6 +68,14 @@ struct EditDialog {
     native: bool,
     min_team: i32,
     max_team: i32,
+}
+
+/// Starter kit dialog inputs: team and anchor in map tiles (C# `StarterKitDialog`).
+#[derive(Clone, Debug, PartialEq)]
+struct StarterDialog {
+    team: i32,
+    x: f32,
+    z: f32,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -122,6 +132,11 @@ pub struct SpawnPlacementUi {
     /// Landscape (tree/bush) object positions `(x, z)` for the building clearance warning.
     landscape: Vec<(f32, f32)>,
     drag: Option<CanvasDrag>,
+    /// Detached starter kit staged on an existing blank map; imported into DATA on Safe Save
+    /// (C# `_pendingStarterKit`). Retained across Undo/Redo; live ids decide whether it applies.
+    pending_kit: Option<BlankMapStarterKit>,
+    starter_dialog: Option<StarterDialog>,
+    starter_request: Option<(i32, f32, f32)>,
     /// A canvas press hit a placement: brushes must ignore the gesture until it is released.
     captured: bool,
     status: String,
@@ -156,6 +171,9 @@ impl Default for SpawnPlacementUi {
             batch_dialog: None,
             landscape: Vec::new(),
             drag: None,
+            pending_kit: None,
+            starter_dialog: None,
+            starter_request: None,
             captured: false,
             status: String::new(),
             status_error: false,
@@ -240,7 +258,7 @@ impl SpawnPlacementUi {
         self.angle
     }
 
-    fn set_status(&mut self, message: impl Into<String>, error: bool) {
+    pub(crate) fn set_status(&mut self, message: impl Into<String>, error: bool) {
         self.status = message.into();
         self.status_error = error;
     }
@@ -297,10 +315,12 @@ impl SpawnPlacementUi {
             self.anchor = None;
             self.edit_dialog = None;
             self.batch_dialog = None;
+            self.pending_kit = None;
             self.rebuild_bound(scenario);
         } else if self.session.is_dirty() && !scenario.dirty() {
             // Safe Save committed the spawns (scenario baseline advanced): re-baseline.
             self.session.accept_saved_changes();
+            self.pending_kit = None;
             self.rebuild_bound(scenario);
         }
     }
@@ -974,6 +994,17 @@ impl SpawnPlacementUi {
                         self.rotate_next_placement(45);
                     }
                 });
+                if ui
+                    .button(tr(lang, "Starter kit: main house + 4 axemen…", "起始配置：主屋＋4 名斧兵…"))
+                    .on_hover_text(tr(
+                        lang,
+                        "For a custom blank map. Choose team and anchor; staged until Save, with one Undo.",
+                        "用於自製空白地圖。指定隊伍與錨點；儲存前不寫檔，可單步復原。",
+                    ))
+                    .clicked()
+                {
+                    self.open_starter_dialog();
+                }
                 ui.separator();
                 // Placed list
                 ui.horizontal(|ui| {
@@ -1184,6 +1215,46 @@ impl SpawnPlacementUi {
                 self.edit_dialog = Some(dialog);
             }
         }
+        if let Some(mut dialog) = self.starter_dialog.take() {
+            let mut keep = true;
+            let mut place = false;
+            egui::Window::new(tr(lang, "Blank map starter kit", "空白地圖起始配置"))
+                .collapsible(false)
+                .resizable(false)
+                .show(ctx, |ui| {
+                    ui.label(tr(
+                        lang,
+                        "1 Germanic main house + 4 individual axemen. Anchor uses map tiles. Team 0 is the player. Save writes the kit; Undo removes it as one action.",
+                        "1 棟日耳曼主屋＋4 名獨立斧兵。錨點使用圖格座標，隊伍 0 為玩家。儲存才寫入，可整批單步復原。",
+                    ));
+                    egui::Grid::new("spawn_starter_grid").num_columns(2).show(ui, |ui| {
+                        ui.label(tr(lang, "Team", "隊伍"));
+                        ui.add(egui::DragValue::new(&mut dialog.team).clamp_range(0..=7));
+                        ui.end_row();
+                        ui.label(tr(lang, "Anchor X", "錨點 X"));
+                        ui.add(egui::DragValue::new(&mut dialog.x).clamp_range(0.0..=63.99).speed(0.1).fixed_decimals(2));
+                        ui.end_row();
+                        ui.label(tr(lang, "Anchor Z", "錨點 Z"));
+                        ui.add(egui::DragValue::new(&mut dialog.z).clamp_range(0.0..=63.99).speed(0.1).fixed_decimals(2));
+                        ui.end_row();
+                    });
+                    ui.horizontal(|ui| {
+                        if ui.button(tr(lang, "Place", "放置")).clicked() {
+                            place = true;
+                        }
+                        if ui.button(tr(lang, "Cancel", "取消")).clicked() {
+                            keep = false;
+                        }
+                    });
+                });
+            if place {
+                self.starter_request = Some((dialog.team, dialog.x * 256.0, dialog.z * 256.0));
+                keep = false;
+            }
+            if keep {
+                self.starter_dialog = Some(dialog);
+            }
+        }
         if let Some(mut dialog) = self.batch_dialog.take() {
             let mut keep = true;
             let mut apply = false;
@@ -1235,7 +1306,110 @@ impl SpawnPlacementUi {
 
     /// Test/automation access to the pending dialogs.
     pub fn has_open_dialog(&self) -> bool {
-        self.edit_dialog.is_some() || self.batch_dialog.is_some()
+        self.edit_dialog.is_some() || self.batch_dialog.is_some() || self.starter_dialog.is_some()
+    }
+
+    // ---- starter kit on an existing blank map (C# MapEditorForm.StarterKit.cs) -----------------
+
+    /// Opens the starter kit dialog; the team defaults to the current placement team (0..=7).
+    pub fn open_starter_dialog(&mut self) {
+        self.starter_dialog = Some(StarterDialog { team: self.team.clamp(0, 7), x: 32.0, z: 32.0 });
+    }
+
+    /// The dialog's confirmed `(team, anchor X, anchor Z)` in world units, once; the editor applies
+    /// it because only it owns the terrain data the kit is validated against.
+    pub fn take_starter_request(&mut self) -> Option<(i32, f32, f32)> {
+        self.starter_request.take()
+    }
+
+    /// Staged kit and the ids of its placements that are still alive (kit originals and their
+    /// copies; C# `PendingStarterKitIds`). `None` once every kit placement was removed.
+    pub fn pending_starter_kit(&self) -> Option<(&BlankMapStarterKit, HashSet<Uuid>)> {
+        let kit = self.pending_kit.as_ref()?;
+        let originals: HashSet<Uuid> = kit.spawns.iter().map(|s| s.id).collect();
+        let ids: HashSet<Uuid> = self
+            .session
+            .objects()
+            .iter()
+            .filter(|o| originals.contains(&o.scenario_id) || originals.contains(&o.copy_source_scenario_id))
+            .map(|o| o.scenario_id)
+            .collect();
+        (!ids.is_empty()).then_some((kit, ids))
+    }
+
+    /// C# `ApplyStarterKit`: adds 1 main house + 4 individual axemen to a blank custom map as ONE
+    /// undo step. Everything is planned on detached copies first; any failure changes nothing.
+    /// The DATA family import happens at Safe Save ([`Self::pending_starter_kit`]).
+    pub fn apply_starter_kit(
+        &mut self,
+        scenario: &mut ScenarioUi,
+        cx: &SpawnContext,
+        map: &Path,
+        terrain: &StarterKitTerrain,
+        team: i32,
+        x: f32,
+        z: f32,
+    ) -> bool {
+        if !self.guard(scenario, cx) {
+            return false;
+        }
+        match self.try_starter_kit(scenario, cx, map, terrain, team, x, z) {
+            Ok(()) => {
+                self.set_status(
+                    tr(
+                        cx.lang,
+                        "Staged 1 main house + 4 individual axemen; Save to write. Single Undo/Redo available.",
+                        "已暫存 1 棟主屋＋4 名獨立斧兵；按儲存才寫入，可單步復原／重做。",
+                    ),
+                    false,
+                );
+                true
+            }
+            Err(e) => {
+                self.set_status(e, true);
+                false
+            }
+        }
+    }
+
+    fn try_starter_kit(
+        &mut self,
+        scenario: &mut ScenarioUi,
+        cx: &SpawnContext,
+        map: &Path,
+        terrain: &StarterKitTerrain,
+        team: i32,
+        x: f32,
+        z: f32,
+    ) -> Result<(), String> {
+        let lang = cx.lang;
+        self.sync_with_document(scenario, Some(map));
+        if !self.session.is_empty() || !scenario.document().spawns.is_empty() {
+            return Err("請先復原其他待存放置，再加入起始配置。".into());
+        }
+        let game = map
+            .parent()
+            .and_then(Path::parent)
+            .ok_or("地圖資料夾不在遊戲 MAPS 目錄內。")?;
+        let previous = scenario.saved_document()?;
+        let stage = stage_starter_kit(game, map, &previous, team, x, z, terrain)?;
+        let planned = stage
+            .spawns
+            .iter()
+            .map(|spawn| {
+                spawn_to_placed(spawn, &self.catalog)
+                    .ok_or_else(|| format!("起始配置類型 {} 不在放置目錄內。", spawn.alias))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        // add_many prevalidates identities and bounds before its single history command; a
+        // document rejection rolls that command back (nothing staged).
+        self.mutate(scenario, lang, ("The starter kit does not fit on the map.", "起始配置超出地圖範圍。"), |s| {
+            s.add_many(&planned).map(|_| ())
+        })?;
+        self.pending_kit = Some(stage.kit);
+        self.selection = (0..self.session.count()).collect();
+        self.anchor = Some(0);
+        Ok(())
     }
 
     /// Alias of the catalog type used by a spawn (tests).

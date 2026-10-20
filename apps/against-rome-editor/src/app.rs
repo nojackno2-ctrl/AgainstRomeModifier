@@ -54,6 +54,8 @@ pub enum ActiveTool {
     Water,
     CollisionBlock,
     CollisionClear,
+    /// Interactive terrain material painting (C# texture tool).
+    Material,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -2143,6 +2145,17 @@ impl EditorApp {
             ViewportAction::CommitStroke if self.nature.driver.is_active() => {
                 self.nature_end_stroke();
             }
+            ViewportAction::Paint { grid_x, grid_y } if self.active_tool == ActiveTool::Material => {
+                if self.pending_action.is_some() || self.ramp_selecting {
+                    return;
+                }
+                let english = self.lang() == AppLanguage::English;
+                let Some(span) = self.session.as_ref().map(|s| (s.vertex_size - 1) as f32) else {
+                    return;
+                };
+                self.textures
+                    .paint_material_at_grid(grid_x, grid_y, span, english);
+            }
             ViewportAction::Paint { grid_x, grid_y } => {
                 if self.pending_action.is_some() || self.ramp_selecting {
                     return;
@@ -2178,6 +2191,8 @@ impl EditorApp {
                         }
                         let flat_target = self.stroke_path.flatten_target;
                         let result = match tool {
+                            // Material is handled by its own branch before this brush loop.
+                            ActiveTool::Material => continue,
                             ActiveTool::HeightRaise => session_mut.paint_height(
                                 gx,
                                 gy,
@@ -2266,6 +2281,7 @@ impl EditorApp {
                 }
             }
             ViewportAction::CommitStroke => {
+                self.textures.end_material_stroke();
                 if self.is_painting {
                     self.is_painting = false;
                     if let Some(session_mut) = &mut self.session {
@@ -3068,6 +3084,50 @@ impl EditorApp {
         self.refresh_spawn_landscape(map_path.as_deref());
         let cx = Self::spawn_cx(&self.session, self.loc.current_language(), self.height_step, read_only);
         self.spawn_ui.show(ctx, &mut self.scenario, &cx, map_path.as_deref());
+        if let Some((team, x, z)) = self.spawn_ui.take_starter_request() {
+            self.apply_starter_kit(team, x, z);
+        }
+    }
+
+    /// Layout > Starter kit (C# `ApplyStarterKit`): stages 1 main house + 4 axemen on the loaded
+    /// blank custom map as one spawn undo step; Safe Save imports the house family into DATA.
+    /// Nothing changes when any gate or validation fails.
+    pub fn apply_starter_kit(&mut self, team: i32, x: f32, z: f32) -> bool {
+        let lang = self.loc.current_language();
+        let map = PathBuf::from(self.map_path_input.trim());
+        let blocked = if self.placement.is_dirty() || self.nature.session.is_dirty() || self.scene.is_dirty() {
+            Some(tr(
+                lang,
+                "Save or discard the pending Objects (DATA), Nature and scene edits before adding the starter kit.",
+                "請先儲存或放棄待存的物件 (DATA)、地景與場景編輯，再加入起始配置。",
+            ))
+        } else if map.as_os_str().is_empty() {
+            Some(tr(lang, "Load a custom blank map first.", "請選取自製空白地圖。"))
+        } else {
+            None
+        };
+        if let Some(message) = blocked {
+            self.spawn_ui.set_status(message, true);
+            return false;
+        }
+        let Some(session) = self.session.as_ref() else {
+            self.spawn_ui.set_status(
+                tr(lang, "The map has no trusted terrain data; cannot validate the starter kit.", "地圖缺少可信地形高度資料，無法驗證起始配置。"),
+                true,
+            );
+            return false;
+        };
+        let read_only = is_original_map_dir(&map);
+        let terrain = against_rome_maps::spawn_data::StarterKitTerrain {
+            heights: session.heights(),
+            vertex_size: session.vertex_size,
+            height_step: self.height_step,
+            collision: session.collision(),
+            collision_size: session.collision_size,
+            water_world: self.water_surface * self.height_step,
+        };
+        let cx = Self::spawn_cx(&self.session, lang, self.height_step, read_only);
+        self.spawn_ui.apply_starter_kit(&mut self.scenario, &cx, &map, &terrain, team, x, z)
     }
 
     /// Feeds the spawn panel the landscape objects of the map's DATA (objdef name `Lan*`), minus
@@ -3170,7 +3230,7 @@ impl EditorApp {
         &self,
         map: &Path,
     ) -> Result<Option<against_rome_maps::spawn_data::SpawnDataPlan>, String> {
-        use against_rome_maps::spawn_data::{mark_prebuilt, plan_spawn_data, SpawnDataCatalog};
+        use against_rome_maps::spawn_data::{mark_prebuilt, SpawnDataCatalog};
         if !self.spawn_ui.session().is_dirty() {
             return Ok(None);
         }
@@ -3186,14 +3246,33 @@ impl EditorApp {
             .and_then(Path::parent)
             .ok_or_else(|| "the map folder is not inside a game MAPS directory".to_string())
             .and_then(SpawnDataCatalog::from_game);
+        let kit = self.spawn_ui.pending_starter_kit();
         let catalog = match catalog {
             Ok(catalog) => catalog,
             // Without game catalogs nothing can be bound to DATA: keep the C#-less script
-            // fallback for new buildings, but never edit around existing DATA bindings.
-            Err(_) if previous.data_slots.is_empty() => return Ok(None),
+            // fallback for new buildings, but never edit around existing DATA bindings or a
+            // staged starter kit (which must be imported, never silently dropped).
+            Err(_) if previous.data_slots.is_empty() && kit.is_none() => return Ok(None),
             Err(e) => return Err(format!("Spawn DATA: game catalogs unavailable: {e}")),
         };
-        plan_spawn_data(map, &catalog, &previous, &next, placed)
+        // Starter kit import (C# `ImportPendingStarterKit`) is validated against the live terrain.
+        let session = self.session.as_ref();
+        let terrain = session.map(|s| against_rome_maps::spawn_data::StarterKitTerrain {
+            heights: s.heights(),
+            vertex_size: s.vertex_size,
+            height_step: self.height_step,
+            collision: s.collision(),
+            collision_size: s.collision_size,
+            water_world: self.water_surface * self.height_step,
+        });
+        let pending = match (&kit, &terrain) {
+            (Some((kit, ids)), Some(terrain)) => {
+                Some(against_rome_maps::spawn_data::PendingStarterKit { kit, ids, terrain })
+            }
+            (Some(_), None) => return Err("Spawn DATA: starter kit needs trusted terrain data".into()),
+            _ => None,
+        };
+        against_rome_maps::spawn_data::plan_spawn_data_with_kit(map, &catalog, &previous, &next, placed, pending.as_ref())
             .map_err(|e| format!("Spawn DATA: {e}"))
     }
 
@@ -3212,6 +3291,11 @@ impl EditorApp {
                     self.set_status(read_only_msg.into(), true);
                 } else {
                     self.request_safe_save();
+                }
+            }
+            ShortcutAction::Delete if self.scene.scene_pick_active() && self.scene.selected_ref().is_some() => {
+                if let Err(err) = self.scene.toggle_delete_selected() {
+                    self.scene.status = err;
                 }
             }
             ShortcutAction::SelectAll if self.spawn_ui.is_active() => {
@@ -3313,6 +3397,7 @@ mod tests {
     use crate::terrain::SampleChange;
 
     mod spawn_save_tests;
+    mod starter_kit_tests;
 
     fn start_camera_app(pfil: bool) -> (EditorApp, PathBuf, Vec<u8>) {
         let dir = temp_map_dir("start_camera");
@@ -7725,6 +7810,20 @@ angle=0.00
     }
 
     #[test]
+    fn material_tool_routes_viewport_paint_without_touching_heights() {
+        let mut app = EditorApp::initial_state();
+        app.active_tool = ActiveTool::Material;
+        let heights = app.session.as_ref().unwrap().heights().to_vec();
+        // No boden.txt session is loaded: the tool reports it and never falls through to height brushes.
+        app.handle_viewport_3d_action(ViewportAction::Paint { grid_x: 10.0, grid_y: 10.0 });
+        app.handle_viewport_3d_action(ViewportAction::CommitStroke);
+        assert!(app.textures.material_notice().is_some());
+        assert_eq!(app.session.as_ref().unwrap().heights(), heights.as_slice());
+        assert!(!app.session.as_ref().unwrap().can_undo());
+        assert!(!app.textures.is_dirty());
+    }
+
+    #[test]
     fn language_switch_changes_text_and_syncs_ambience() {
         let mut app = EditorApp::default();
         assert_eq!(tr(app.lang(), "Save", "儲存"), "Save");
@@ -7775,6 +7874,9 @@ impl eframe::App for EditorApp {
                 self.cancel_ramp_selection();
             } else if self.nature.driver.is_active() {
                 self.nature_cancel_stroke();
+            } else if self.textures.cancel_material_stroke() {
+                self.status_message = "Material stroke cancelled.".into();
+                self.status_is_error = false;
             } else if self.is_painting {
                 if let Some(session) = &mut self.session {
                     session.cancel_stroke();
@@ -7791,6 +7893,9 @@ impl eframe::App for EditorApp {
                 let cx = Self::spawn_cx(&self.session, self.loc.current_language(), self.height_step, read_only);
                 self.spawn_ui.undo(&mut self.scenario, &cx);
             } else if self.nature_undo() {
+            } else if self.active_tool == ActiveTool::Material && self.textures.material_undo() {
+                self.status_message = "Material undo performed.".into();
+                self.status_is_error = false;
             } else if let Some(session) = &mut self.session {
                 if session.undo() {
                     self.is_painting = false;
@@ -7807,6 +7912,9 @@ impl eframe::App for EditorApp {
                 let cx = Self::spawn_cx(&self.session, self.loc.current_language(), self.height_step, read_only);
                 self.spawn_ui.redo(&mut self.scenario, &cx);
             } else if self.nature_redo() {
+            } else if self.active_tool == ActiveTool::Material && self.textures.material_redo() {
+                self.status_message = "Material redo performed.".into();
+                self.status_is_error = false;
             } else if let Some(session) = &mut self.session {
                 if session.redo() {
                     self.is_painting = false;
@@ -8163,13 +8271,32 @@ impl eframe::App for EditorApp {
                         ActiveTool::CollisionClear,
                         "Clear (Collision)",
                     );
+                    ui.selectable_value(
+                        &mut self.active_tool,
+                        ActiveTool::Material,
+                        tr(lang, "Material (terrain paint)", "材質（地表繪製）"),
+                    );
 
                     ui.separator();
-                    ui.add(
-                        egui::Slider::new(&mut self.brush_radius, 1.0..=64.0)
-                            .text("Radius (vertices)"),
-                    );
-                    ui.add(egui::Slider::new(&mut self.brush_strength, 1..=64).text("Strength"));
+                    if self.active_tool == ActiveTool::Material {
+                        let regions = self
+                            .nature
+                            .data
+                            .as_ref()
+                            .map(|d| d.regions.clone())
+                            .unwrap_or_default();
+                        self.textures.show_material_palette(
+                            ui,
+                            lang == AppLanguage::English,
+                            &regions,
+                        );
+                    } else {
+                        ui.add(
+                            egui::Slider::new(&mut self.brush_radius, 1.0..=64.0)
+                                .text("Radius (vertices)"),
+                        );
+                        ui.add(egui::Slider::new(&mut self.brush_strength, 1..=64).text("Strength"));
+                    }
 
                     if self.active_tool == ActiveTool::HeightFlatten {
                         ui.checkbox(&mut self.sample_flatten_target, "Sample first dab height");
@@ -8255,6 +8382,12 @@ impl eframe::App for EditorApp {
                     let placement_objects = self.placement.objects();
                     let selected_obj = self.placement.selected_object();
                     self.viewport_3d.terrain_pick_mode = self.ramp_selecting;
+                    if let Some(grid) = self.textures.take_view_sync() {
+                        self.viewport_3d.set_tile_textures(grid);
+                    }
+                    self.viewport_3d.scene_pick = self.scene.scene_pick_active();
+                    self.viewport_3d.scene_markers =
+                        if self.scene.open { self.scene.markers() } else { Vec::new() };
                     let action = self.viewport_3d.show(
                         ui,
                         ctx,
@@ -8265,6 +8398,9 @@ impl eframe::App for EditorApp {
                         &placement_objects,
                         selected_obj,
                     );
+                    for event in std::mem::take(&mut self.viewport_3d.scene_events) {
+                        self.scene.scene_pointer(event);
+                    }
                     self.handle_viewport_3d_action(action);
                 } else {
                     ui.centered_and_justified(|ui| {
@@ -8325,6 +8461,9 @@ impl eframe::App for EditorApp {
                 Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(1.0, 1.0)),
                 Color32::WHITE,
             );
+            if self.active_tool == ActiveTool::Material {
+                self.textures.draw_material_overlay(ctx, &painter, map_rect);
+            }
             self.draw_nature_overlay(&painter, map_rect);
             self.spawn_ui.draw_overlay(&painter, map_rect);
 
@@ -8351,9 +8490,36 @@ impl eframe::App for EditorApp {
                 &mut self.scenario,
             );
 
+            // SDL 場景物件：疊圖＋移動模式的點選／拖曳（命中時筆刷不作用）
+            {
+                let world_size = 16384.0_f32;
+                let world_from_screen = |p: Pos2| {
+                    (
+                        (p.x - map_rect.min.x) / map_rect.width() * world_size,
+                        (p.y - map_rect.min.y) / map_rect.height() * world_size,
+                    )
+                };
+                let screen_from_world = |w: (f32, f32)| {
+                    Pos2::new(
+                        map_rect.min.x + w.0 / world_size * map_rect.width(),
+                        map_rect.min.y + w.1 / world_size * map_rect.height(),
+                    )
+                };
+                self.scene.paint_scene_overlay(&painter, &screen_from_world);
+                if !tool_busy {
+                    self.scene
+                        .scene_canvas_input(&response, &world_from_screen, &screen_from_world);
+                } else if self.scene.is_capturing() {
+                    self.scene.end_drag();
+                }
+            }
+
             // 處理滑鼠操作繪製
             if let Some(mouse_pos) = response.hover_pos().filter(|_| {
-                !self.box_select && !self.landscape.region_pick_active() && !self.spawn_ui.is_capturing()
+                !self.box_select
+                    && !self.landscape.region_pick_active()
+                    && !self.spawn_ui.is_capturing()
+                    && !self.scene.scene_pick_active()
             }) {
                 if map_rect.contains(mouse_pos) {
                     let norm_x = (mouse_pos.x - map_rect.min.x) / map_rect.width();
@@ -8366,6 +8532,9 @@ impl eframe::App for EditorApp {
                     let brush_vertices = if self.nature.enabled {
                         self.nature.brush_size as f32 / 2.0 * (session.vertex_size - 1) as f32
                             / NATURE_DEFAULT_DIMENSION as f32
+                    } else if self.active_tool == ActiveTool::Material {
+                        self.textures.material_brush_tiles() / 2.0 * (session.vertex_size - 1) as f32
+                            / self.textures.tile_dimension().unwrap_or(64) as f32
                     } else {
                         self.brush_radius
                     };
@@ -8410,6 +8579,22 @@ impl eframe::App for EditorApp {
                                 self.nature_paint_tile(tx, ty);
                             }
                         }
+                    } else if self.active_tool == ActiveTool::Material {
+                        // Material tool (C# texture tool): drag paints, right-click eyedrops.
+                        if self.pending_action.is_none() {
+                            let english = self.lang() == AppLanguage::English;
+                            let span = (session.vertex_size - 1) as f32;
+                            if response.clicked_by(egui::PointerButton::Secondary) {
+                                self.textures
+                                    .sample_material_at_grid(grid_x, grid_y, span, english);
+                            } else if response.is_pointer_button_down_on()
+                                && ctx.input(|i| i.pointer.primary_down())
+                                || response.clicked_by(egui::PointerButton::Primary)
+                            {
+                                self.textures
+                                    .paint_material_at_grid(grid_x, grid_y, span, english);
+                            }
+                        }
                     } else if self.pending_action.is_none()
                         && (response.is_pointer_button_down_on()
                             && ctx.input(|i| i.pointer.primary_down())
@@ -8447,6 +8632,8 @@ impl eframe::App for EditorApp {
                                 }
                                 let flat_target = self.stroke_path.flatten_target;
                                 let result = match tool {
+                            // Material is handled by its own branch before this brush loop.
+                            ActiveTool::Material => continue,
                                     ActiveTool::HeightRaise => session_mut.paint_height(
                                         grid_x,
                                         grid_y,
@@ -8549,6 +8736,10 @@ impl eframe::App for EditorApp {
             if !ctx.input(|i| i.pointer.primary_down()) && self.nature.driver.is_active() {
                 self.nature_end_stroke();
             }
+            // 放開拖曳時提交材質筆劃（一筆一個復原步驟）
+            if !ctx.input(|i| i.pointer.primary_down()) {
+                self.textures.end_material_stroke();
+            }
             // 放開拖曳時提交筆劃
             if !ctx.input(|i| i.pointer.primary_down()) && self.is_painting {
                 self.is_painting = false;
@@ -8577,6 +8768,7 @@ impl eframe::App for EditorApp {
         self.scenario.show(ctx);
         self.show_spawn_panel(ctx);
         self.textures.show(ctx);
+        self.scene.english = self.lang() == AppLanguage::English;
         self.scene.show(ctx);
         self.event_graph.show(ctx);
         self.console.show(ctx);

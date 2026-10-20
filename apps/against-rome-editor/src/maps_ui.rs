@@ -524,7 +524,7 @@ impl MapsUi {
                 ui.horizontal(|ui| {
                     ui.selectable_value(&mut self.current_tab, MapsTab::Catalog, "Map Catalog");
                     ui.selectable_value(&mut self.current_tab, MapsTab::ClonerDeleter, "Clone / Delete");
-                    ui.selectable_value(&mut self.current_tab, MapsTab::NewBlankMap, "New Blank Map (BlankMapBuilder)");
+                    ui.selectable_value(&mut self.current_tab, MapsTab::NewBlankMap, "Empty Scene (Exp.) / 空白場景（實驗）");
                     ui.selectable_value(&mut self.current_tab, MapsTab::DesignValidator, "Design Validator");
                     ui.selectable_value(&mut self.current_tab, MapsTab::Diagnostics, "Diagnostics");
                     ui.selectable_value(&mut self.current_tab, MapsTab::Preflight, "Save Preflight");
@@ -764,9 +764,22 @@ impl MapsUi {
         }
     }
 
+    /// C# `MapSelectionForm` hint distinguishing the two new-map flavours. This tab is the
+    /// "Empty Scene" path (`BlankMapBuilder.Create`); the Cloner tab copies a template unchanged.
+    pub fn empty_scene_help() -> &'static str {
+        "平坦範本保留聚落與腳本；空白場景清除來源物件與生成腳本，遊戲開局待驗證。原版地圖維持唯讀。\n\
+         Flat Template keeps settlements and scripts. Empty Scene clears source objects and generation scripts; game startup awaits validation. Original maps are read-only."
+    }
+
     fn render_blank_map_tab(&mut self, ui: &mut egui::Ui) {
-        ui.heading("Blank Map Builder (規格驅動新地圖建置)");
+        ui.heading("Empty Scene (Exp.) / 空白場景（實驗）");
         ui.label("根據規格建立全新平坦自訂地圖 (ENDL_005..ENDL_999)。自動繼承資產、重設池、清理快取並註冊清單。");
+        ui.label(Self::empty_scene_help());
+        ui.collapsing("清除／保留內容說明 (What is cleared / kept)", |ui| {
+            let source_id = format!("ENDL_{:03}", self.blank_source_slot);
+            ui.label(BlankMapBuilder::describe(&source_id, false));
+            ui.label(BlankMapBuilder::describe(&source_id, true));
+        });
 
         ui.add_space(6.0);
         ui.horizontal(|ui| {
@@ -843,7 +856,7 @@ impl MapsUi {
                 }
             }
 
-            if ui.button("建立並載入空白地圖 (Build Blank Map & Open)").clicked() {
+            if ui.button("建立並載入空白場景 (Build Empty Scene & Open)").clicked() {
                 let intent = self.request_build_blank_map();
                 self.status_message = format!(
                     "已提出空白地圖建置請求 (ENDL_{:03})，等待確認...",
@@ -1243,5 +1256,20 @@ refpos=100.0,0.0,100.0
         ui.finish_disk_action("Cloned.".into());
         assert!(ui.status_is_error);
         assert!(ui.status_message.starts_with("Cloned.") && ui.status_message.contains("boom"));
+    }
+
+    #[test]
+    fn empty_scene_tab_is_the_blank_builder_path_and_documents_the_flat_template_difference() {
+        let help = MapsUi::empty_scene_help();
+        assert!(help.contains("空白場景") && help.contains("平坦範本"));
+        assert!(help.contains("Empty Scene clears source objects"));
+        let zh = BlankMapBuilder::describe("ENDL_000", false);
+        assert!(zh.contains("清除") && zh.contains("ENDL_000"));
+        // The tab only queues an intent; it never touches the filesystem itself.
+        let mut ui = MapsUi::default();
+        ui.game_path_input = "does-not-exist".into();
+        let intent = ui.request_build_blank_map();
+        assert_eq!(intent.spec.target_slot, ui.blank_target_slot);
+        assert!(ui.pending_build_intent.is_some());
     }
 }

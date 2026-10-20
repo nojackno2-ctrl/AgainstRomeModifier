@@ -7,7 +7,7 @@ use against_rome_placement::{ObjectStore, COLUMNS, SEGMENTS};
 
 const HOUSE: &str = "BauGerHau00_Haupthaus";
 
-fn write_data(map: &Path, n: usize, live: &[(u16, Option<u16>)], cursor: u32) {
+pub(super) fn write_data(map: &Path, n: usize, live: &[(u16, Option<u16>)], cursor: u32) {
     std::fs::create_dir_all(map.join("DATA")).unwrap();
     let mut o = vec![0u8; 16 + n * (79 + COLUMNS.iter().sum::<usize>())];
     for (i, v) in [1u32, n as u32, 30, 30].iter().enumerate() {
@@ -94,7 +94,7 @@ fn fixture(tag: &str, live: &[(u16, Option<u16>)]) -> (EditorApp, PathBuf, PathB
     (app, root, map)
 }
 
-fn cx() -> SpawnContext<'static> {
+pub(super) fn cx() -> SpawnContext<'static> {
     SpawnContext {
         lang: AppLanguage::English,
         heights: None,
@@ -104,22 +104,22 @@ fn cx() -> SpawnContext<'static> {
     }
 }
 
-fn place_house(app: &mut EditorApp, tile: (i32, i32), team: i32) {
+pub(super) fn place_house(app: &mut EditorApp, tile: (i32, i32), team: i32) {
     app.spawn_ui.select_type(HOUSE);
     app.spawn_ui.set_placement_values(team, 1, 0);
     app.spawn_ui.place_at_tile(&mut app.scenario, &cx(), tile.0, tile.1);
     assert!(!app.spawn_ui.status().1, "{}", app.spawn_ui.status().0);
 }
 
-fn sync(app: &mut EditorApp, map: &Path) {
+pub(super) fn sync(app: &mut EditorApp, map: &Path) {
     app.spawn_ui.sync_with_document(&app.scenario, Some(map));
 }
 
-fn data_objects(map: &Path) -> Vec<against_rome_placement::WorldObject> {
+pub(super) fn data_objects(map: &Path) -> Vec<against_rome_placement::WorldObject> {
     ObjectStore::load(map).unwrap().objects()
 }
 
-fn save_ok(app: &mut EditorApp) {
+pub(super) fn save_ok(app: &mut EditorApp) {
     app.safe_save_current();
     assert!(!app.status_is_error, "{}", app.status_message);
 }

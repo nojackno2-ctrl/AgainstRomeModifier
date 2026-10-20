@@ -17,7 +17,7 @@ pub use brush::{
 pub use formation::{FormationLayout, FormationLayoutDefinition, FormationLayoutSegment};
 pub use layout_resolver::{LayoutTypeResolver, SdlObjectType};
 pub use multi_planner::{
-    AiMapDesignRole, AiMapRoleProgress, AiMapRoleResult, AiMapRoleStatus, MultiAiMapPlanResult,
+    AiMapDesignRole, AiMapRoleProgress, AiMapRoleResult, CancelToken, AiMapRoleStatus, MultiAiMapPlanResult,
     MultiAiMapPlanner, MultiAiMapRoleRequest,
 };
 pub use ollama::{

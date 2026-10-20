@@ -41,6 +41,7 @@ use against_rome_textures::{
 };
 use eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke, Ui};
 
+use crate::scene_ui::{nearest_marker, SceneMarker, ScenePointer};
 use crate::terrain::TerrainSession;
 
 /// Visual shading mode for the 3D terrain surface.
@@ -175,6 +176,14 @@ pub struct Viewport3d {
     pub terrain_pick_mode: bool,
     terrain_pick_press: Option<(f32, f32)>,
 
+    /// SDL scene move mode: presses/drags select and move `scene_markers` instead of painting.
+    pub scene_pick: bool,
+    /// Scene entries to draw/pick (world units); refreshed by the app each frame.
+    pub scene_markers: Vec<SceneMarker>,
+    /// Gestures produced by the last `show`; the app drains them into `SceneUi::scene_pointer`.
+    pub scene_events: Vec<ScenePointer>,
+    scene_dragging: bool,
+
     // Interaction tracking
     pub is_panning: bool,
     pub is_rotating: bool,
@@ -239,6 +248,10 @@ impl Viewport3d {
         Self {
             terrain_pick_mode: false,
             terrain_pick_press: None,
+            scene_pick: false,
+            scene_markers: Vec::new(),
+            scene_events: Vec::new(),
+            scene_dragging: false,
             camera: EditorCamera::default(),
             show_grid: false,
             show_water: true,
@@ -754,7 +767,7 @@ impl Viewport3d {
                 self.hover_grid = Some((gx, gy));
 
                 // Left click & drag interaction:
-                if !is_alt_down && !self.terrain_pick_mode {
+                if !is_alt_down && !self.terrain_pick_mode && !self.scene_pick {
                     let is_primary_clicked = response.clicked_by(egui::PointerButton::Primary)
                         || (rect.contains(pos)
                             && ctx
@@ -806,7 +819,7 @@ impl Viewport3d {
                     || ((rect.contains(pos) || response.hovered())
                         && ctx.input(|i| i.pointer.button_clicked(egui::PointerButton::Primary))
                         && !response.dragged());
-                if !is_alt_down && !self.terrain_pick_mode && is_primary_clicked {
+                if !is_alt_down && !self.terrain_pick_mode && !self.scene_pick && is_primary_clicked {
                     if let Some(idx) = picked_obj_idx {
                         let raw = &objects[idx];
                         action = ViewportAction::SelectObject(Some((raw.slot, raw.uid)));
@@ -820,6 +833,55 @@ impl Viewport3d {
             self.hover_tile = None;
             self.hover_grid = None;
             self.hover_object = None;
+        }
+
+        // 9c. SDL scene move mode: press selects the nearest marker, drag follows the terrain
+        // hit point (world units), release ends the drag (one undo step in `SceneUi`).
+        self.scene_events.clear();
+        if self.scene_pick && !is_alt_down && !self.terrain_pick_mode {
+            let (pressed, down) = ctx.input(|i| {
+                (
+                    i.pointer.button_pressed(egui::PointerButton::Primary),
+                    i.pointer.button_down(egui::PointerButton::Primary),
+                )
+            });
+            if pressed && response.hovered() {
+                if let Some(pos) = pointer_pos {
+                    let hit = nearest_marker(
+                        &self.scene_markers,
+                        pos,
+                        &|m| {
+                            let p = against_rome_scene::ground_point(
+                                against_rome_scene::SceneObjectPosition {
+                                    world: SceneVec3::new(m.world[0], m.world[1], m.world[2]),
+                                    ..Default::default()
+                                },
+                                &field,
+                                0.25,
+                            );
+                            frame
+                                .project_world_to_screen(p)
+                                .map(|s| Pos2::new(rect.min.x + s.x, rect.min.y + s.y))
+                        },
+                        12.0,
+                    );
+                    self.scene_events.push(ScenePointer::Press { hit });
+                    self.scene_dragging = hit.is_some();
+                }
+            } else if self.scene_dragging {
+                if down {
+                    if let Some(h) = self.hover_world {
+                        let k = against_rome_scene::WORLD_UNITS_PER_TILE;
+                        self.scene_events.push(ScenePointer::Drag { world: (h.x * k, h.z * k) });
+                    }
+                } else {
+                    self.scene_events.push(ScenePointer::Release);
+                    self.scene_dragging = false;
+                }
+            }
+        } else if self.scene_dragging {
+            self.scene_events.push(ScenePointer::Release);
+            self.scene_dragging = false;
         }
 
         // Ramp endpoints use integer tile centers; hover_grid/brush dabs stay continuous.
@@ -906,6 +968,42 @@ impl Viewport3d {
                 &scene_objects,
                 selected_object,
             );
+        }
+
+        // 12b. Render SDL scene markers (team-colored dots; selection ringed; removals crossed)
+        for m in &self.scene_markers {
+            let p = against_rome_scene::ground_point(
+                against_rome_scene::SceneObjectPosition {
+                    world: SceneVec3::new(m.world[0], m.world[1], m.world[2]),
+                    ..Default::default()
+                },
+                &field,
+                0.25,
+            );
+            if let Some(s) = frame.project_world_to_screen(p) {
+                let c = against_rome_scene::draw_list::team_color(m.team);
+                let fill = Color32::from_rgb(
+                    (c[0] * 255.0) as u8,
+                    (c[1] * 255.0) as u8,
+                    (c[2] * 255.0) as u8,
+                );
+                let at = Pos2::new(rect.min.x + s.x, rect.min.y + s.y);
+                painter.circle_filled(at, 5.0, fill);
+                painter.circle_stroke(at, 5.0, Stroke::new(1.0_f32, Color32::BLACK));
+                if m.selected {
+                    painter.circle_stroke(at, 9.0, Stroke::new(2.0_f32, Color32::YELLOW));
+                }
+                if m.removed {
+                    painter.line_segment(
+                        [at + egui::vec2(-6.0, -6.0), at + egui::vec2(6.0, 6.0)],
+                        Stroke::new(2.0_f32, Color32::RED),
+                    );
+                    painter.line_segment(
+                        [at + egui::vec2(-6.0, 6.0), at + egui::vec2(6.0, -6.0)],
+                        Stroke::new(2.0_f32, Color32::RED),
+                    );
+                }
+            }
         }
 
         // 13. Render 3D Brush Cursor
