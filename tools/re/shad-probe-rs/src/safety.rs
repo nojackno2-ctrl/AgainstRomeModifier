@@ -177,8 +177,24 @@ pub fn validate_output(path: &Path, temp: &Path) -> io::Result<PathBuf> {
     Ok(path)
 }
 
-pub fn create_output(path: &Path) -> io::Result<PathBuf> {
+/// TEMP in its canonical long-name form. `std::env::temp_dir()` can return an
+/// 8.3 alias (e.g. `RUNNER~1` on CI), which the alias guard above rejects.
+pub fn temp_root() -> PathBuf {
     let temp = std::env::temp_dir();
+    match temp.canonicalize() {
+        Ok(canonical) => {
+            let text = canonical.to_string_lossy();
+            match text.strip_prefix(r"\\?\") {
+                Some(rest) if !rest.starts_with("UNC\\") => PathBuf::from(rest),
+                _ => canonical,
+            }
+        }
+        Err(_) => temp,
+    }
+}
+
+pub fn create_output(path: &Path) -> io::Result<PathBuf> {
+    let temp = temp_root();
     let path = validate_output(path, &temp)?;
     // Reserve each missing directory separately. create_dir (not create_dir_all)
     // fails if another process wins the final name, including an empty directory.

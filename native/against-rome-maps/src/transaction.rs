@@ -176,6 +176,26 @@ pub fn detect_game_root(path: &Path, explicit_game_path: Option<&Path>) -> Optio
     None
 }
 
+/// Canonicalizes the deepest existing ancestor of `path` and re-appends the
+/// missing tail, so a not-yet-created map folder compares against the
+/// canonical game root (e.g. 8.3 short names such as `RUNNER~1` expand).
+fn canonicalize_existing_prefix(path: &Path) -> PathBuf {
+    let mut tail = Vec::new();
+    let mut current = path;
+    loop {
+        if let Ok(canonical) = current.canonicalize() {
+            return tail.iter().rev().fold(canonical, |acc: PathBuf, part| acc.join(part));
+        }
+        match (current.parent(), current.file_name()) {
+            (Some(parent), Some(name)) => {
+                tail.push(name.to_os_string());
+                current = parent;
+            }
+            _ => return path.to_path_buf(),
+        }
+    }
+}
+
 /// Validates the tiered path policy for whole-map save operations:
 /// 1. External standalone map projects can be saved anywhere without naming or marker constraints.
 /// 2. If the map or target resides inside an identifiable game installation root:
@@ -193,7 +213,7 @@ pub fn validate_path_policy(
     };
 
     // Tier 2: Inside an identifiable Against Rome game installation directory.
-    let clean_target = strip_unc_prefix(target_dir.canonicalize().unwrap_or_else(|_| target_dir.to_path_buf()));
+    let clean_target = strip_unc_prefix(canonicalize_existing_prefix(target_dir));
     let clean_root = strip_unc_prefix(game_root.canonicalize().unwrap_or_else(|_| game_root));
 
     let Ok(rel_to_root) = clean_target.strip_prefix(&clean_root) else {

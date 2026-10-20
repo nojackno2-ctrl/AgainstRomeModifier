@@ -14,7 +14,7 @@ static NEXT: AtomicUsize = AtomicUsize::new(0);
 struct Temp(PathBuf);
 impl Temp {
     fn new() -> Self {
-        let path = std::env::temp_dir().join(format!(
+        let path = shad_probe::safety::temp_root().join(format!(
             "shad-probe-rs-tests-{}-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
@@ -280,7 +280,7 @@ fn path_validation_rejects_traversal_devices_and_aliases() {
 #[test]
 fn output_must_be_new_temp_child_and_never_overwrites() {
     let t = Temp::new();
-    let temp = std::env::temp_dir();
+    let temp = shad_probe::safety::temp_root();
     assert!(safety::validate_output(&temp, &temp).is_err());
     assert!(safety::validate_output(&t.0, &temp).is_err());
     assert!(safety::validate_output(&temp.with_extension("evil").join("new"), &temp).is_err());

@@ -2219,7 +2219,7 @@ mod tests {
         fn click(ui: &mut ModifierUi, ctx: &egui::Context, label: &str) {
             let output = frame(ui, ctx, vec![]);
             let pos = output.shapes.iter().find_map(|s| match &s.shape {
-                egui::epaint::Shape::Text(t) if t.galley.text() == label => Some(t.pos + t.galley.size() * 0.5),
+                egui::epaint::Shape::Text(t) if t.galley.text() == label && s.clip_rect.contains(t.pos + egui::vec2(t.galley.size().x * 0.5, 2.0)) => Some(t.pos + egui::vec2(t.galley.size().x * 0.5, 2.0)),
                 _ => None,
             }).unwrap_or_else(|| panic!("button {label} not rendered"));
             frame(ui, ctx, vec![egui::Event::PointerMoved(pos), egui::Event::PointerButton {
@@ -2274,7 +2274,7 @@ mod tests {
         fn click(ui: &mut ModifierUi, ctx: &egui::Context, label: &str) {
             let output = frame(ui, ctx, vec![]);
             let pos = output.shapes.iter().find_map(|s| match &s.shape {
-                egui::epaint::Shape::Text(t) if t.galley.text() == label => Some(t.pos + t.galley.size() * 0.5),
+                egui::epaint::Shape::Text(t) if t.galley.text() == label && s.clip_rect.contains(t.pos + egui::vec2(t.galley.size().x * 0.5, 2.0)) => Some(t.pos + egui::vec2(t.galley.size().x * 0.5, 2.0)),
                 _ => None,
             }).unwrap_or_else(|| panic!("button {label} not rendered"));
             frame(ui, ctx, vec![egui::Event::PointerMoved(pos), egui::Event::PointerButton {
@@ -2315,7 +2315,7 @@ mod tests {
         fn click(ui: &mut ModifierUi, ctx: &egui::Context, label: &str) {
             let output = frame(ui, ctx, vec![]);
             let pos = output.shapes.iter().find_map(|s| match &s.shape {
-                egui::epaint::Shape::Text(t) if t.galley.text() == label => Some(t.pos + t.galley.size() * 0.5),
+                egui::epaint::Shape::Text(t) if t.galley.text() == label && s.clip_rect.contains(t.pos + egui::vec2(t.galley.size().x * 0.5, 2.0)) => Some(t.pos + egui::vec2(t.galley.size().x * 0.5, 2.0)),
                 _ => None,
             }).unwrap_or_else(|| panic!("button {label} not rendered"));
             frame(ui, ctx, vec![egui::Event::PointerMoved(pos), egui::Event::PointerButton {
@@ -2355,7 +2355,7 @@ mod tests {
         fn click(ui: &mut ModifierUi, ctx: &egui::Context, label: &str) {
             let output = frame(ui, ctx, vec![]);
             let pos = output.shapes.iter().find_map(|s| match &s.shape {
-                egui::epaint::Shape::Text(t) if t.galley.text() == label => Some(t.pos + t.galley.size() * 0.5),
+                egui::epaint::Shape::Text(t) if t.galley.text() == label && s.clip_rect.contains(t.pos + egui::vec2(t.galley.size().x * 0.5, 2.0)) => Some(t.pos + egui::vec2(t.galley.size().x * 0.5, 2.0)),
                 _ => None,
             }).unwrap_or_else(|| panic!("button {label} not rendered"));
             frame(ui, ctx, vec![egui::Event::PointerMoved(pos), egui::Event::PointerButton {
@@ -2695,7 +2695,7 @@ mod tests {
         restore_frame(ui, ctx, vec![]);
         let (out, _) = restore_frame(ui, ctx, vec![]);
         let pos = out.shapes.iter().find_map(|s| match &s.shape {
-            egui::epaint::Shape::Text(t) if t.galley.text() == label => Some(t.pos + t.galley.size() * 0.5),
+            egui::epaint::Shape::Text(t) if t.galley.text() == label && s.clip_rect.contains(t.pos + egui::vec2(t.galley.size().x * 0.5, 2.0)) => Some(t.pos + egui::vec2(t.galley.size().x * 0.5, 2.0)),
             _ => None,
         }).unwrap_or_else(|| panic!("{label} not rendered"));
         let btn = |pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::NONE };

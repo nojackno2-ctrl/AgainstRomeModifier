@@ -472,7 +472,7 @@ pub fn cli(args: Vec<OsString>) -> i32 {
         return 2;
     }
     let paths: Vec<_> = args.into_iter().map(PathBuf::from).collect();
-    if let Err(error) = safety::validate_output(&paths[1], &std::env::temp_dir()) {
+    if let Err(error) = safety::validate_output(&paths[1], &safety::temp_root()) {
         eprintln!("{error}");
         return 2;
     }
