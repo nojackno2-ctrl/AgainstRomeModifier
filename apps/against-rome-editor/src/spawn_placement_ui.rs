@@ -6,16 +6,19 @@
 //! after every session command the spawn list is validated and written through
 //! `ScenarioUi::apply_spawns`; if the document rejects it the command is rolled back.
 //!
-//! Scope notes (see `AI_HANDOFF.md`): objects created here are always *script-created*
-//! (`prebuilt = false`, built as construction sites at game start). Spawns that are bound to
-//! native DATA (`prebuilt`) are shown and selectable but locked; editing them needs the
-//! starter-kit / family-copy DATA transaction which is not part of this panel.
+//! Prebuilt rules (C# `MapEditorForm.Persistence.cs`): while editing, every placement is an
+//! ordinary spawn in the scenario document. On Safe Save, buildings on team 0..=8 (and native
+//! raw-rotation objects) become prebuilt DATA objects through the save-time DATA transaction
+//! (`against_rome_maps::spawn_data`), duplicates of bound spawns copy their DATA family, and a
+//! building without a template falls back to a script-created construction site. Bound spawns stay
+//! fully editable: ordinary ones are rebuilt from their template; native families (raw rotation)
+//! only translate (the session rejects team/direction changes).
 
 use crate::app::{tr, ShortcutAction};
 use crate::scenario_ui::ScenarioUi;
 use crate::spawn_placement::{
-    category_text, load_spawns, matches_search, new_placement, normalize_angle, object_display_name,
-    session_to_spawns, takes_unit_count, team_range, tile_center, tile_ground_height, tribe_text,
+    category_text, landscape_move_warning, landscape_nearby, landscape_place_warning, load_spawns,
+    matches_search, nearest_placement, new_placement, normalize_angle, object_display_name, session_to_spawns, takes_unit_count, team_range, tile_center, tile_ground_height, tribe_text,
     type_for_alias, world_ground_height, PlacementError, SpawnPlacementSession,
 };
 use against_rome_ambience::Language as AppLanguage;
@@ -75,6 +78,14 @@ struct BatchDialog {
     angle: i32,
 }
 
+/// A canvas gesture on the selected placements: world-space press point and current offset.
+#[derive(Clone, Copy, Debug)]
+struct CanvasDrag {
+    start: (f32, f32),
+    offset: (f32, f32),
+    moved: bool,
+}
+
 /// Result of one row click, applied after the list closure ends.
 enum RowClick {
     Single(usize),
@@ -91,7 +102,9 @@ pub struct SpawnPlacementUi {
     foreign: Vec<Spawn>,
     /// Document spawns the session currently reflects (change detection + `previous` lookup).
     synced: Vec<Spawn>,
-    locked: HashSet<Uuid>,
+    /// Spawns as loaded/saved: lets undo restore a deleted spawn with its original flags.
+    loaded: Vec<Spawn>,
+    bound: HashSet<Uuid>,
     map_key: Option<PathBuf>,
     selection: BTreeSet<usize>,
     anchor: Option<usize>,
@@ -106,6 +119,11 @@ pub struct SpawnPlacementUi {
     active: bool,
     edit_dialog: Option<EditDialog>,
     batch_dialog: Option<BatchDialog>,
+    /// Landscape (tree/bush) object positions `(x, z)` for the building clearance warning.
+    landscape: Vec<(f32, f32)>,
+    drag: Option<CanvasDrag>,
+    /// A canvas press hit a placement: brushes must ignore the gesture until it is released.
+    captured: bool,
     status: String,
     status_error: bool,
 }
@@ -120,7 +138,8 @@ impl Default for SpawnPlacementUi {
             catalog_fixed: false,
             foreign: Vec::new(),
             synced: Vec::new(),
-            locked: HashSet::new(),
+            loaded: Vec::new(),
+            bound: HashSet::new(),
             map_key: None,
             selection: BTreeSet::new(),
             anchor: None,
@@ -135,6 +154,9 @@ impl Default for SpawnPlacementUi {
             active: false,
             edit_dialog: None,
             batch_dialog: None,
+            landscape: Vec::new(),
+            drag: None,
+            captured: false,
             status: String::new(),
             status_error: false,
         }
@@ -202,8 +224,9 @@ impl SpawnPlacementUi {
     pub fn status(&self) -> (&str, bool) {
         (&self.status, self.status_error)
     }
-    pub fn is_locked_index(&self, index: usize) -> bool {
-        self.session.get(index).is_some_and(|o| self.locked.contains(&o.scenario_id))
+    /// True when the spawn at `index` is a prebuilt native DATA object (bound to a DATA family).
+    pub fn is_data_bound_index(&self, index: usize) -> bool {
+        self.session.get(index).is_some_and(|o| self.bound.contains(&o.scenario_id))
     }
     pub fn select_type(&mut self, name_def: &str) {
         self.selected_type = Some(name_def.to_string());
@@ -247,9 +270,9 @@ impl SpawnPlacementUi {
         self.selected_type = None;
     }
 
-    fn rebuild_locked(&mut self, scenario: &ScenarioUi) {
+    fn rebuild_bound(&mut self, scenario: &ScenarioUi) {
         let document = scenario.document();
-        self.locked = document
+        self.bound = document
             .spawns
             .iter()
             .filter(|s| s.prebuilt || document.data_slots.iter().any(|b| b.spawn_id == s.id))
@@ -269,22 +292,24 @@ impl SpawnPlacementUi {
             self.session.load(&placed);
             self.foreign = foreign;
             self.synced = spawns.clone();
+            self.loaded = spawns.clone();
             self.selection.clear();
             self.anchor = None;
             self.edit_dialog = None;
             self.batch_dialog = None;
-            self.rebuild_locked(scenario);
+            self.rebuild_bound(scenario);
         } else if self.session.is_dirty() && !scenario.dirty() {
             // Safe Save committed the spawns (scenario baseline advanced): re-baseline.
             self.session.accept_saved_changes();
-            self.rebuild_locked(scenario);
+            self.rebuild_bound(scenario);
         }
     }
 
     /// Writes the session content into the scenario document; the document validates it.
     fn push_to_scenario(&mut self, scenario: &mut ScenarioUi) -> Result<(), String> {
-        let spawns =
-            session_to_spawns(self.session.objects(), &self.synced, &self.foreign, &self.catalog);
+        let mut original = self.synced.clone();
+        original.extend(self.loaded.iter().filter(|s| !self.synced.iter().any(|k| k.id == s.id)).cloned());
+        let spawns = session_to_spawns(self.session.objects(), &original, &self.foreign, &self.catalog);
         scenario.apply_spawns(spawns)?;
         self.synced = scenario.document().spawns.clone();
         self.selection.retain(|&i| i < self.session.count());
@@ -334,22 +359,6 @@ impl SpawnPlacementUi {
         true
     }
 
-    /// Refuses changes to spawns that are bound to native DATA; returns true when blocked.
-    fn blocked_by_lock(&mut self, indices: &[usize], lang: AppLanguage) -> bool {
-        if indices.iter().any(|&i| self.is_locked_index(i)) {
-            self.set_status(
-                tr(
-                    lang,
-                    "Prebuilt DATA objects are locked here; edit them in the Objects (DATA) panel. No objects changed.",
-                    "預建 DATA 物件在此為鎖定；請至「物件」(DATA) 面板編輯。所有物件均未變更。",
-                ),
-                true,
-            );
-            return true;
-        }
-        false
-    }
-
     // ---- operations (C# MapEditorForm.Placement*.cs) ------------------------------------
 
     /// C# `PlaceObjectAt`: one object at the centre of the clicked tile; Y from the terrain.
@@ -383,14 +392,16 @@ impl SpawnPlacementUi {
                 self.selection.clear();
                 self.selection.insert(self.session.count() - 1);
                 self.anchor = Some(self.session.count() - 1);
-                self.set_status(
-                    if cx.english() {
-                        format!("Placed {name} at tile ({tile_x},{tile_y}); Save to write it.")
-                    } else {
-                        format!("已在格子 ({tile_x},{tile_y}) 放置 {name}；按「儲存」才會寫入。")
-                    },
-                    false,
-                );
+                let mut message = if cx.english() {
+                    format!("Placed {name} at tile ({tile_x},{tile_y}); Save to write it.")
+                } else {
+                    format!("已在格子 ({tile_x},{tile_y}) 放置 {name}；按「儲存」才會寫入。")
+                };
+                // Buildings over trees: script creation is rejected by the game, DATA clips through.
+                if self.warns_landscape(&[self.session.count() - 1]) {
+                    message.push_str(landscape_place_warning(cx.english()));
+                }
+                self.set_status(message, false);
             }
             Err(e) => self.set_status(e, true),
         }
@@ -398,7 +409,7 @@ impl SpawnPlacementUi {
 
     pub fn delete_selected(&mut self, scenario: &mut ScenarioUi, cx: &SpawnContext) {
         let indices = self.selection();
-        if indices.is_empty() || !self.guard(scenario, cx) || self.blocked_by_lock(&indices, cx.lang) {
+        if indices.is_empty() || !self.guard(scenario, cx) {
             return;
         }
         match self.mutate(scenario, cx.lang, ("Cannot delete.", "無法刪除。"), |s| s.remove_many(&indices)) {
@@ -420,7 +431,7 @@ impl SpawnPlacementUi {
 
     pub fn duplicate_selected(&mut self, scenario: &mut ScenarioUi, cx: &SpawnContext) {
         let indices = self.selection();
-        if indices.is_empty() || !self.guard(scenario, cx) || self.blocked_by_lock(&indices, cx.lang) {
+        if indices.is_empty() || !self.guard(scenario, cx) {
             return;
         }
         let mut copies = Vec::new();
@@ -456,7 +467,7 @@ impl SpawnPlacementUi {
     /// C# `HandlePlacementRotationKey` for the placed list: relative rotation of the selection.
     pub fn rotate_selected(&mut self, scenario: &mut ScenarioUi, cx: &SpawnContext, degrees: i32) {
         let indices = self.selection();
-        if indices.is_empty() || !self.guard(scenario, cx) || self.blocked_by_lock(&indices, cx.lang) {
+        if indices.is_empty() || !self.guard(scenario, cx) {
             return;
         }
         if let Err(e) = self.mutate(scenario, cx.lang, ("Cannot rotate.", "無法旋轉。"), |s| {
@@ -474,7 +485,7 @@ impl SpawnPlacementUi {
     /// C# `MoveSelectedPlacements` (Ctrl+arrows / align to tile centre).
     pub fn move_selected(&mut self, scenario: &mut ScenarioUi, cx: &SpawnContext, dx: f32, dz: f32, snap: bool) {
         let indices = self.selection();
-        if indices.is_empty() || !self.guard(scenario, cx) || self.blocked_by_lock(&indices, cx.lang) {
+        if indices.is_empty() || !self.guard(scenario, cx) {
             return;
         }
         let height = |x: f32, z: f32| cx.ground_height(x, z);
@@ -495,16 +506,107 @@ impl SpawnPlacementUi {
             },
         );
         match result {
-            Ok(()) => self.set_status(
-                if cx.english() {
+            Ok(()) => {
+                let mut message = if cx.english() {
                     format!("Moved {} objects; Save to write.", indices.len())
                 } else {
                     format!("已移動 {} 個物件；按「儲存」才會寫入。", indices.len())
-                },
-                false,
-            ),
+                };
+                if self.warns_landscape(&indices) {
+                    message.push_str(landscape_move_warning(cx.english()));
+                }
+                self.set_status(message, false);
+            }
             Err(e) => self.set_status(e, true),
         }
+    }
+
+    // ---- landscape clearance + canvas picking --------------------------------------------
+
+    /// Replaces the landscape (tree/bush) positions used by the building clearance warning.
+    pub fn set_landscape(&mut self, points: Vec<(f32, f32)>) {
+        self.landscape = points;
+    }
+
+    pub fn landscape_count(&self) -> usize {
+        self.landscape.len()
+    }
+
+    fn warns_landscape(&self, indices: &[usize]) -> bool {
+        indices.iter().filter_map(|&i| self.session.get(i)).any(|o| {
+            o.obj_type.category == SdlObjectCategory::Building && landscape_nearby(&self.landscape, o.world_x, o.world_z)
+        })
+    }
+
+    /// True between a canvas press on a placement and its release.
+    pub fn is_dragging(&self) -> bool {
+        self.drag.is_some()
+    }
+
+    /// Whether a drag moved far enough to count as a move (not a click).
+    pub fn drag_offset(&self) -> Option<(f32, f32)> {
+        self.drag.filter(|d| d.moved).map(|d| d.offset)
+    }
+
+    /// Canvas press at a world point. A hit selects the nearest placement (Ctrl toggles, Shift adds
+    /// without dragging) and, for a plain press, arms a drag of the whole selection. Returns true
+    /// when the press hit a placement, i.e. the gesture belongs to this panel and not to a brush.
+    pub fn canvas_press(&mut self, world: (f32, f32), radius: f32, toggle: bool, add: bool) -> bool {
+        let Some(hit) = nearest_placement(self.session.objects(), world.0, world.1, radius) else {
+            return false;
+        };
+        self.active = true;
+        self.captured = true;
+        if toggle {
+            if !self.selection.remove(&hit) {
+                self.selection.insert(hit);
+            }
+            self.anchor = Some(hit);
+            return true;
+        }
+        if add {
+            self.selection.insert(hit);
+            self.anchor = Some(hit);
+            return true;
+        }
+        if !self.selection.contains(&hit) {
+            self.selection.clear();
+            self.selection.insert(hit);
+        }
+        self.anchor = Some(hit);
+        self.drag = Some(CanvasDrag { start: world, offset: (0.0, 0.0), moved: false });
+        true
+    }
+
+    /// Updates the drag with the current world point; `threshold` (world units) separates a click
+    /// from a move.
+    pub fn canvas_drag(&mut self, world: (f32, f32), threshold: f32) {
+        if let Some(drag) = &mut self.drag {
+            drag.offset = (world.0 - drag.start.0, world.1 - drag.start.1);
+            drag.moved |= drag.offset.0.hypot(drag.offset.1) > threshold;
+        }
+    }
+
+    pub fn cancel_drag(&mut self) {
+        self.drag = None;
+        self.captured = false;
+    }
+
+    /// True while a canvas gesture that started on a placement is held down.
+    pub fn is_capturing(&self) -> bool {
+        self.captured
+    }
+
+    /// Ends a drag: a real move translates the selection as one undoable command (Y from the
+    /// terrain, same rules and refusal messages as the keyboard move); a click only selected.
+    pub fn canvas_release(&mut self, scenario: &mut ScenarioUi, cx: &SpawnContext) -> bool {
+        self.captured = false;
+        let Some(drag) = self.drag.take() else { return false };
+        if !drag.moved {
+            return false;
+        }
+        self.move_selected(scenario, cx, drag.offset.0, drag.offset.1, false);
+        true
     }
 
     pub fn select_all(&mut self) {
@@ -514,7 +616,7 @@ impl SpawnPlacementUi {
 
     pub fn apply_batch(&mut self, scenario: &mut ScenarioUi, cx: &SpawnContext, team: Option<i32>, angle: Option<f32>) {
         let indices = self.selection();
-        if indices.is_empty() || !self.guard(scenario, cx) || self.blocked_by_lock(&indices, cx.lang) {
+        if indices.is_empty() || !self.guard(scenario, cx) {
             return;
         }
         match self.mutate(scenario, cx.lang, ("Invalid team or direction for the selection.", "所選物件的隊伍或方向無效。"), |s| {
@@ -574,7 +676,7 @@ impl SpawnPlacementUi {
 
     /// Applies the edit dialog (C# `PlacedObjectEditDialog.OnOk` + `Edit`).
     fn commit_edit_dialog(&mut self, scenario: &mut ScenarioUi, cx: &SpawnContext, dialog: &EditDialog) -> bool {
-        if !self.guard(scenario, cx) || self.blocked_by_lock(&[dialog.index], cx.lang) {
+        if !self.guard(scenario, cx) {
             return false;
         }
         let lang = cx.lang;
@@ -651,7 +753,7 @@ impl SpawnPlacementUi {
 
     // ---- canvas overlay ------------------------------------------------------------------
 
-    /// Draws placed spawns over the 2D map: team coloured dots, squares for DATA-locked ones,
+    /// Draws placed spawns over the 2D map: team coloured dots, squares for DATA-bound ones,
     /// white ring on selected, direction tick.
     pub fn draw_overlay(&self, painter: &egui::Painter, map_rect: Rect) {
         if !self.open && self.session.is_empty() {
@@ -663,11 +765,13 @@ impl SpawnPlacementUi {
                 map_rect.min.y + z / WORLD_SIZE * map_rect.height(),
             )
         };
+        let (ox, oz) = self.drag_offset().unwrap_or((0.0, 0.0));
         for (index, item) in self.session.objects().iter().enumerate() {
-            let pos = to_screen(item.world_x, item.world_z);
-            let color = team_color(item.team);
             let selected = self.selection.contains(&index);
-            if self.locked.contains(&item.scenario_id) {
+            let (dx, dz) = if selected { (ox, oz) } else { (0.0, 0.0) };
+            let pos = to_screen(item.world_x + dx, item.world_z + dz);
+            let color = team_color(item.team);
+            if self.bound.contains(&item.scenario_id) {
                 let half = 3.5;
                 painter.rect_filled(Rect::from_center_size(pos, egui::vec2(half * 2.0, half * 2.0)), 0.0, color);
             } else {
@@ -762,8 +866,8 @@ impl SpawnPlacementUi {
                 }
                 ui.small(tr(
                     lang,
-                    "Pick a type, enable \"Place on map\", then click the 2D map. Objects are script-created spawns (buildings start as construction sites). Units: team 0-7, 1-20 soldiers; team 0 is the player. R / Shift+R turns the next placement or the selection by 45 degrees. List: Ctrl+A select all, Ctrl+arrows move one tile (Shift: 64 units), Ctrl+D duplicate, Delete remove.",
-                    "選類型後啟用「在地圖上放置」並點擊 2D 地圖。物件為腳本生成物件（建築開局為工地）。人物以部隊建立，隊伍 0-7、人數 1-20；隊伍 0 為玩家。R／Shift+R 調整下次放置方向或旋轉選取物件 ±45°。清單：Ctrl+A 全選、Ctrl+方向鍵移動一格（Shift 為 64 單位）、Ctrl+D 複製、Delete 刪除。",
+                    "Pick a type, enable \"Place on map\", then click the 2D map. Buildings on teams 0-8 become prebuilt DATA objects on Save (complete at game start; no template = construction site); other objects are script-created. Click or drag a marker on the 2D map to select / move it. Units: team 0-7, 1-20 soldiers; team 0 is the player. R / Shift+R turns the next placement or the selection by 45 degrees. List: Ctrl+A select all, Ctrl+arrows move one tile (Shift: 64 units), Ctrl+D duplicate, Delete remove.",
+                    "選類型後啟用「在地圖上放置」並點擊 2D 地圖。隊伍 0-8 的建築於儲存時寫成預建 DATA 物件（開局即完工；找不到範本則為工地），其餘為腳本生成物件。可在 2D 地圖上點選或拖曳標記來選取／移動。人物以部隊建立，隊伍 0-7、人數 1-20；隊伍 0 為玩家。R／Shift+R 調整下次放置方向或旋轉選取物件 ±45°。清單：Ctrl+A 全選、Ctrl+方向鍵移動一格（Shift 為 64 單位）、Ctrl+D 複製、Delete 刪除。",
                 ));
                 ui.separator();
                 // Palette filters
@@ -881,7 +985,7 @@ impl SpawnPlacementUi {
                 let list = egui::ScrollArea::vertical().id_source("spawn_placed").max_height(200.0).show(ui, |ui| {
                     let modifiers = ui.input(|i| i.modifiers);
                     for (index, item) in self.session.objects().iter().enumerate() {
-                        let locked = self.locked.contains(&item.scenario_id);
+                        let locked = self.bound.contains(&item.scenario_id);
                         let selected = self.selection.contains(&index);
                         let row = ui
                             .selectable_label(selected, self.placed_row_text(item, en, locked))

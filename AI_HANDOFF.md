@@ -1,3 +1,11 @@
+## 2026-10-20 Claude：Spawn 存檔 DATA 交易（prebuilt／副本）＋ 2D 畫布選取拖曳 ＋ 地景警告
+
+- 新增 `native/against-rome-maps/src/spawn_data.rs`（經 `placement_edit.rs` 以 `#[path]` 註冊，公開路徑 `against_rome_maps::spawn_data`）：`mark_prebuilt`（C# 規則：建築且隊伍 0..=8，或有 raw rotation）、`SpawnDataCatalog`（alias→objdef 型別、`ResolveNativeAlias`）、`plan_spawn_data`（官方圖→現圖單例範本、`build_family_copy_requests`、`apply_to_candidate_with_copies`、換成 `DATA/*.dat` 位元組，PFIL 標頭保留；全程 detached、不寫檔）。`starter_transaction.rs` 新增 `apply_to_candidate_with_copies`（C# `ApplyToCandidate(familyCopies)` 的預檢＋依 id 排序複製＋copiedIds 不走 owned 捷徑）。
+- Editor：Safe Save（`app.rs::save_transaction`）在 scenario 暫存前呼叫 `plan_spawn_data_for_save`，DATA 位元組與最終 scenario（綁定／prebuilt 旗標；找不到範本者退回腳本工地）同一交易暫存，commit 後 `commit_baseline_with` 重載。`ScenarioUi` 新增 `saved_document`／`stage_transaction_files_with`／`commit_baseline_with`；`apply_spawns` 的 DATA 綁定改隨 spawn（刪除時暫時移除、undo 回復）。已綁定／prebuilt spawn 解除鎖定（原生 raw-rotation 家族仍只能平移，與 C# 同）；undo 刪除後保留原 prebuilt 旗標。
+- 與待存 Objects(DATA)／Nature 編輯、待套用鏡頭候選同時需要 DATA 變更時 fail closed（錯誤訊息，什麼都不寫）。
+- 2D 畫布：面板開啟且非放置模式時，點標記選取（Ctrl 切換、Shift 加選）、拖曳整批移動（放開時一個 undo 步驟，沿用 `move_selected` 規則）；沒點中標記則仍交給筆刷。建築放置／移動後若 384 單位方框內有地景（DATA `Lan*` 物件，扣除 Nature 待移除、加上待新增）附加 C# 警告文字。
+- 驗證：`cargo test -p against-rome-editor-app -p against-rome-maps -p against-rome-placement --locked --offline --target-dir re_workspace/target-w13` 全數通過、無新警告（log: re_workspace/w13-full.log）。新測試：maps `tests/spawn_data_tests.rs`(12)、editor `src/app/tests/spawn_save_tests.rs`(8，含注入失敗回滾)、`tests/spawn_canvas.rs`(9)。僅合成暫存目錄；未做 GUI／遊戲內驗收，未動安裝目錄，未 commit。
+- 未完成／差異：未接 Starter Kit（`ImportPendingStarterKit`／`ValidateStarterKitCandidate` 地形檢查）到編輯器；`Guid` 排序為位元組序（C# 為 .NET Guid 欄位序，只影響多副本的 slot 配置順序）；同名 objdef 多個 id 時取最小 id（C# 取字典序首個）；canvas 拖曳只在 2D 檢視。
 ## 2026-10-20 14:40+08:00 Claude（Opus）：最終 Rust 遷移收尾（/goal：完成整個專案轉移成 Rust）
 
 - 先前 419 檔未提交的移植成果經 `cargo test --workspace --locked --offline`（1894 passed / 0 failed / 36 ignored）驗證後提交為 `896f746` 並推送。

@@ -652,23 +652,31 @@ fn document_validation_rolls_back_deleting_a_spawn_used_by_an_event() {
 }
 
 #[test]
-fn prebuilt_data_spawns_are_locked_and_unknown_aliases_survive_edits() {
-    let mut f = Fixture::new("locked");
+fn prebuilt_data_spawns_are_editable_and_unknown_aliases_survive_edits() {
+    let mut f = Fixture::new("bound");
     let mut prebuilt = spawn("house", 1000.0, 1000.0, 0, 0, 0);
     prebuilt.prebuilt = true;
     let unknown = spawn("mystery", 3000.0, 3000.0, 2, 0, 0);
     f.scenario.apply_spawns(vec![prebuilt.clone(), unknown.clone()]).unwrap();
     f.sync();
     assert_eq!(f.ui.session().count(), 1, "unknown alias is not a placed object");
-    assert!(f.ui.is_locked_index(0));
+    assert!(f.ui.is_data_bound_index(0), "prebuilt spawns are marked as DATA objects in the list");
     f.ui.select_all();
     let cx = SpawnContext { lang: Language::English, heights: None, vertex_size: 0, height_step: 4.0, read_only: false };
-    f.ui.delete_selected(&mut f.scenario, &cx);
-    assert!(f.ui.status().0.contains("locked"));
+    // C# parity: prebuilt spawns are ordinary placements; Save decides how DATA follows.
     f.ui.move_selected(&mut f.scenario, &cx, 256.0, 0.0, false);
-    f.ui.duplicate_selected(&mut f.scenario, &cx);
+    assert_eq!(f.scenario.document().spawns[0].x, 1256.0);
+    assert!(f.scenario.document().spawns[0].prebuilt, "an edit keeps the prebuilt flag");
     f.ui.rotate_selected(&mut f.scenario, &cx, 45);
+    assert_eq!(f.scenario.document().spawns[0].angle, 45);
+    f.ui.undo(&mut f.scenario, &cx);
+    f.ui.undo(&mut f.scenario, &cx);
     assert_eq!(f.scenario.document().spawns, vec![prebuilt.clone(), unknown.clone()]);
+    f.ui.select_all();
+    f.ui.delete_selected(&mut f.scenario, &cx);
+    assert_eq!(f.scenario.document().spawns, vec![unknown.clone()], "the foreign spawn survives a delete");
+    f.ui.undo(&mut f.scenario, &cx);
+    assert_eq!(f.scenario.document().spawns.len(), 2);
 
     // a normal placement keeps both original spawns and appends the new one before the foreign tail
     f.place("BauRomHaus", (9, 9));

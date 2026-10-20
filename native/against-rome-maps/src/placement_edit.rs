@@ -8,6 +8,11 @@ use against_rome_scenario::model::ScenarioDocument;
 use std::collections::HashMap;
 use uuid::Uuid;
 
+// Spawn -> DATA save planning lives beside the edit rules it shares (registered here so the crate
+// root module list stays untouched); public path: `against_rome_maps::spawn_data`.
+#[path = "spawn_data.rs"]
+pub mod spawn_data;
+
 /// Squad (figure) team range, 0..=7 (C# `IsValidUnitTeam`).
 pub fn is_valid_unit_team(team: i32) -> bool {
     (0..=7).contains(&team)

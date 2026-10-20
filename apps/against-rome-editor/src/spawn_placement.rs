@@ -804,3 +804,65 @@ pub fn new_placement(
     item.scenario_id = Uuid::new_v4();
     Ok(item)
 }
+
+// --- Landscape clearance warning (C# `PlaceObjectAt` / `MoveSelectedPlacements`) ---
+
+/// A building closer than this (per axis, box test) to a tree/landscape object is rejected by the
+/// game's script placement check and clips through it when written to DATA.
+pub const LANDSCAPE_CLEARANCE: f32 = 384.0;
+
+/// C# `NatureDisplayObjects().Any(|dx| < 384 && |dz| < 384)`.
+pub fn landscape_nearby(landscape: &[(f32, f32)], world_x: f32, world_z: f32) -> bool {
+    landscape
+        .iter()
+        .any(|&(x, z)| (x - world_x).abs() < LANDSCAPE_CLEARANCE && (z - world_z).abs() < LANDSCAPE_CLEARANCE)
+}
+
+/// Warning appended to the status line after placing a building (C# wording).
+pub fn landscape_place_warning(english: bool) -> &'static str {
+    if english {
+        " Warning: trees or other landscape objects are very close; clear them with the Nature tool."
+    } else {
+        " 注意：附近有樹木或其他地景物件，建議用「自然物件 → 移除」清出空地。"
+    }
+}
+
+/// Warning appended to the status line after moving buildings (C# wording).
+pub fn landscape_move_warning(english: bool) -> &'static str {
+    if english {
+        " Warning: landscape objects are close; clear space with Nature tools."
+    } else {
+        " 注意：附近有地景物件，建議用自然物件工具清出空地。"
+    }
+}
+
+/// Landscape (objdef name starts with `Lan`, C# `ObjDefNames.IsLandscape`) object positions of a
+/// DATA snapshot: `(slot, x, z)`.
+pub fn landscape_points(
+    objects: &[against_rome_placement::WorldObject],
+    names: &HashMap<i32, String>,
+) -> Vec<(i32, f32, f32)> {
+    objects
+        .iter()
+        .filter(|o| {
+            names
+                .get(&i32::from(o.type_id))
+                .is_some_and(|n| n.len() >= 3 && n.as_bytes()[..3].eq_ignore_ascii_case(b"Lan"))
+        })
+        .filter(|o| o.position[0].is_finite() && o.position[2].is_finite())
+        .map(|o| (o.slot as i32, o.position[0], o.position[2]))
+        .collect()
+}
+
+// --- Canvas picking ---
+
+/// Index of the placement nearest to a world point within `radius` world units (ties: first).
+pub fn nearest_placement(objects: &[SdlPlacedObject], world_x: f32, world_z: f32, radius: f32) -> Option<usize> {
+    objects
+        .iter()
+        .enumerate()
+        .map(|(index, o)| (index, (o.world_x - world_x).hypot(o.world_z - world_z)))
+        .filter(|&(_, distance)| distance <= radius)
+        .min_by(|a, b| a.1.total_cmp(&b.1))
+        .map(|(index, _)| index)
+}

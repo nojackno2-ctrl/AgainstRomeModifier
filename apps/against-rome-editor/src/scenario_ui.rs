@@ -153,6 +153,14 @@ impl ScenarioUi {
         }
         let mut draft = self.document.clone();
         draft.spawns = spawns;
+        // DATA bindings only change in a save. A binding follows its spawn: it disappears while the
+        // spawn is deleted and comes back when an undo restores it (bound spawns are editable).
+        let saved = self.saved_document()?;
+        draft.data_slots = saved
+            .data_slots
+            .into_iter()
+            .filter(|b| draft.spawns.iter().any(|s| s.id == b.spawn_id && s.prebuilt))
+            .collect();
         self.validate_draft(&draft)?;
         self.document = draft;
         self.error = None;
@@ -580,6 +588,31 @@ impl ScenarioUi {
     /// (source BCI, camera/scenario JSON, DATA bindings) were modified externally, if graph has unapplied changes,
     /// or if compilation / roundtrip verification fails.
     pub fn stage_transaction_files(&self, target_map: &Path) -> Result<Vec<(PathBuf, Vec<u8>)>> {
+        self.stage_transaction_files_with(target_map, None)
+    }
+
+    /// The scenario as last loaded or saved (the C# `previousScenario`): bindings and prebuilt
+    /// spawns as they exist on disk, before any pending edit.
+    pub fn saved_document(&self) -> Result<ScenarioDocument> {
+        serde_json::from_slice::<(ScenarioDocument, StartCamera)>(&self.baseline)
+            .map(|(document, _)| document)
+            .map_err(|e| e.to_string())
+    }
+
+    /// Like [`Self::stage_transaction_files`], but compiles and stages `override_data` (the final
+    /// document of a spawn DATA transaction plus the active `(slot, uid)` list of its candidate
+    /// DATA) instead of the in-memory document. The override is verified against the candidate
+    /// DATA, never against the (not yet rewritten) disk DATA.
+    pub fn stage_transaction_files_with(
+        &self,
+        target_map: &Path,
+        override_data: Option<(&ScenarioDocument, &[(i32, u32)])>,
+    ) -> Result<Vec<(PathBuf, Vec<u8>)>> {
+        let document = override_data.map_or(&self.document, |(d, _)| d);
+        let active_bindings = match override_data {
+            Some((_, active)) => Some(active),
+            None => self.active_bindings.as_deref(),
+        };
         let source = self
             .source
             .as_ref()
@@ -618,11 +651,11 @@ impl ScenarioUi {
             }
         }
 
-        if let Some(active) = &self.active_bindings {
-            scenario::verify_binding_snapshot(&self.document, active)?;
+        if let Some(active) = active_bindings {
+            scenario::verify_binding_snapshot(document, active)?;
         }
 
-        self.document.validate(if self.aliases.is_empty() {
+        document.validate(if self.aliases.is_empty() {
             None
         } else {
             Some(&self.aliases)
@@ -631,14 +664,14 @@ impl ScenarioUi {
         let original = &source.bytes;
         let compiled_bci = scenario::compile_script_verified(
             original,
-            &self.document,
+            document,
             Some(&self.camera),
             if self.aliases.is_empty() {
                 None
             } else {
                 Some(&self.aliases)
             },
-            self.active_bindings.as_deref(),
+            active_bindings,
         )?;
 
         let raw = if compiled_bci.starts_with(b"PFIL") {
@@ -648,7 +681,7 @@ impl ScenarioUi {
         };
         let _bci = scenario::BciImage::parse(&raw)?;
 
-        let mut d = self.document.clone();
+        let mut d = document.clone();
         d.version = 6;
         let json = serde_json::to_vec_pretty(&d).map_err(|e| e.to_string())?;
         let camera = serde_json::to_vec_pretty(&self.camera).map_err(|e| e.to_string())?;
@@ -671,6 +704,13 @@ impl ScenarioUi {
     /// Verifies staged scenario files have been written to disk matching current edits,
     /// reloads the updated session from disk so that baseline matches disk, and clears dirty status.
     pub fn commit_baseline(&mut self, target_map: &Path) -> Result<()> {
+        self.commit_baseline_with(target_map, None)
+    }
+
+    /// Like [`Self::commit_baseline`] after a save that staged `final_document` (spawn DATA
+    /// transaction: new bindings / prebuilt flags). The disk copy must equal it; only then does it
+    /// replace the in-memory document before the usual reload.
+    pub fn commit_baseline_with(&mut self, target_map: &Path, final_document: Option<&ScenarioDocument>) -> Result<()> {
         if !self.dirty() && !self.graph_ui.is_dirty() {
             return Ok(());
         }
@@ -701,7 +741,7 @@ impl ScenarioUi {
         }
         let disk_scenario_bytes = fs::read(&scenario_path).map_err(|e| e.to_string())?;
         let disk_doc = ScenarioDocument::from_json(&disk_scenario_bytes)?;
-        let mut expected_doc = self.document.clone();
+        let mut expected_doc = final_document.unwrap_or(&self.document).clone();
         expected_doc.version = 6;
         if disk_doc != expected_doc {
             return Err("磁碟上之劇本與當前編輯狀態不符，交易尚未成功，拒絕清除 dirty".into());

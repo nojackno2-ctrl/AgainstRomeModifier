@@ -127,6 +127,8 @@ pub struct EditorApp {
     family_history_key: (usize, usize, usize),
     scenario: ScenarioUi,
     spawn_ui: SpawnPlacementUi,
+    /// DATA landscape objects `(slot, x, z)` of the map (building clearance warning), per map.
+    spawn_landscape: Option<(PathBuf, Vec<(i32, f32, f32)>)>,
     textures: TexturesUi,
     scene: SceneUi,
     event_graph: EventGraphUi,
@@ -228,6 +230,7 @@ impl EditorApp {
             family_history_key: (0, 0, 0),
             scenario: ScenarioUi::default(),
             spawn_ui: SpawnPlacementUi::default(),
+            spawn_landscape: None,
             textures: TexturesUi::default(),
             scene: SceneUi::default(),
             event_graph: EventGraphUi::default(),
@@ -636,12 +639,33 @@ impl EditorApp {
             tx.stage_file(rel_path, bytes.clone())?;
         }
         let scenario_dirty = self.scenario.dirty() || self.scenario.graph_ui().is_dirty();
+        // Save-time DATA transaction of the spawn panel (C# prebuilt block): new buildings become
+        // DATA objects, bound spawns move/rebuild, duplicates copy their family. Detached: it only
+        // yields bytes to stage, so a later failure leaves every file untouched.
+        let spawn_plan = if scenario_dirty {
+            self.plan_spawn_data_for_save(&path)?
+        } else {
+            None
+        };
+        let spawn_data_staged = spawn_plan.as_ref().is_some_and(|p| !p.files.is_empty());
+        if spawn_data_staged && (placement_dirty || nature_dirty) {
+            return Err("Spawn placement DATA changes (prebuilt buildings / bound spawns) cannot be saved together with pending Objects (DATA) or Nature edits; save or discard those first".into());
+        }
+        for (rel_path, bytes) in spawn_plan.iter().flat_map(|p| p.files.iter()) {
+            tx.stage_file(rel_path, bytes.clone())?;
+        }
         let staged_scenario = if scenario_dirty {
-            self.scenario.stage_transaction_files(&path)?
+            self.scenario.stage_transaction_files_with(
+                &path,
+                spawn_plan.as_ref().map(|p| (&p.scenario, p.active.as_slice())),
+            )?
         } else {
             Vec::new()
         };
         let camera_pending = self.campaign.camera_pending();
+        if spawn_data_staged && camera_pending {
+            return Err("Start camera candidate and new prebuilt DATA objects cannot be saved in one transaction; apply one and save first".into());
+        }
         if camera_pending
             && self
                 .loaded_map_path
@@ -733,11 +757,19 @@ impl EditorApp {
                 self.placement.commit_baseline(&path)?;
             }
         }
+        if spawn_data_staged {
+            // The committed DATA is the new baseline for the Objects panel and the clearance cache.
+            if self.placement.is_loaded() {
+                self.placement.commit_baseline(&path)?;
+            }
+            self.spawn_landscape = None;
+        }
         if camera_pending {
             self.scenario.load_session(&path)?;
             self.campaign.camera_saved();
         } else if scenario_dirty {
-            self.scenario.commit_baseline(&path)?;
+            self.scenario
+                .commit_baseline_with(&path, spawn_plan.as_ref().map(|p| &p.scenario))?;
         }
         if textures_dirty {
             self.textures.commit_baseline(&path)?;
@@ -3033,8 +3065,136 @@ impl EditorApp {
             Some(PathBuf::from(self.map_path_input.trim()))
         };
         let read_only = is_original_map_dir(map_path.as_deref().unwrap_or(Path::new("")));
+        self.refresh_spawn_landscape(map_path.as_deref());
         let cx = Self::spawn_cx(&self.session, self.loc.current_language(), self.height_step, read_only);
         self.spawn_ui.show(ctx, &mut self.scenario, &cx, map_path.as_deref());
+    }
+
+    /// Feeds the spawn panel the landscape objects of the map's DATA (objdef name `Lan*`), minus
+    /// pending Nature removals plus pending Nature additions (C# `NatureDisplayObjects`).
+    fn refresh_spawn_landscape(&mut self, map: Option<&Path>) {
+        if !self.spawn_ui.open {
+            return;
+        }
+        let Some(map) = map else {
+            self.spawn_ui.set_landscape(Vec::new());
+            return;
+        };
+        if !matches!(&self.spawn_landscape, Some((cached, _)) if cached == map) {
+            let names: HashMap<i32, String> = map
+                .parent()
+                .and_then(Path::parent)
+                .and_then(|game| against_rome_maps::NativeObjectDefinitions::load(game).ok())
+                .map(|definitions| {
+                    definitions
+                        .into_iter()
+                        .filter_map(|(id, d)| d.name.filter(|n| !n.is_empty()).map(|n| (id, n)))
+                        .collect()
+                })
+                .unwrap_or_default();
+            let objects = if self.placement.loaded_map() == Some(map) {
+                self.placement.objects()
+            } else {
+                against_rome_placement::ObjectStore::load(map)
+                    .map(|store| store.objects())
+                    .unwrap_or_default()
+            };
+            self.spawn_landscape =
+                Some((map.to_path_buf(), crate::spawn_placement::landscape_points(&objects, &names)));
+        }
+        let removed = self.nature.session.removed_slots();
+        let mut points: Vec<(f32, f32)> = self
+            .spawn_landscape
+            .iter()
+            .flat_map(|(_, base)| base.iter())
+            .filter(|(slot, _, _)| !removed.contains(slot))
+            .map(|&(_, x, z)| (x, z))
+            .collect();
+        points.extend(self.nature.session.additions().iter().map(|a| (a.x, a.z)));
+        self.spawn_ui.set_landscape(points);
+    }
+
+    /// 2D canvas gestures of the spawn panel (outside place mode): a press on a marker selects it
+    /// (Ctrl toggles, Shift adds), dragging moves the whole selection as one undo step on release.
+    /// A press that misses every marker is left to the active brush.
+    fn handle_spawn_canvas(
+        ctx: &egui::Context,
+        response: &egui::Response,
+        map_rect: Rect,
+        tool_busy: bool,
+        cx: &SpawnContext,
+        spawn_ui: &mut SpawnPlacementUi,
+        scenario: &mut ScenarioUi,
+    ) {
+        if !spawn_ui.open || spawn_ui.place_mode() || tool_busy {
+            if spawn_ui.is_capturing() {
+                spawn_ui.cancel_drag();
+            }
+            return;
+        }
+        let world_size = 16384.0_f32;
+        let to_world = |p: Pos2| {
+            (
+                (p.x - map_rect.min.x) / map_rect.width() * world_size,
+                (p.y - map_rect.min.y) / map_rect.height() * world_size,
+            )
+        };
+        let units_per_pixel = world_size / map_rect.width().max(1.0);
+        let (pressed, down, pointer, modifiers) = ctx.input(|i| {
+            (i.pointer.primary_pressed(), i.pointer.primary_down(), i.pointer.interact_pos(), i.modifiers)
+        });
+        if pressed && response.hovered() {
+            if let Some(position) = pointer.filter(|p| map_rect.contains(*p)) {
+                spawn_ui.canvas_press(
+                    to_world(position),
+                    10.0 * units_per_pixel,
+                    modifiers.ctrl || modifiers.command,
+                    modifiers.shift,
+                );
+            }
+        } else if spawn_ui.is_capturing() {
+            if down {
+                if let Some(position) = pointer {
+                    spawn_ui.canvas_drag(to_world(position), 4.0 * units_per_pixel);
+                }
+            } else {
+                spawn_ui.canvas_release(scenario, cx);
+            }
+        }
+    }
+
+    /// C# prebuilt block of `TrySaveMap` for this save: marks the placements that become DATA
+    /// objects, then plans the detached DATA candidate (templates, family copies, bindings).
+    /// `Ok(None)` when the spawn panel has no placement edits or nothing is / was prebuilt.
+    fn plan_spawn_data_for_save(
+        &self,
+        map: &Path,
+    ) -> Result<Option<against_rome_maps::spawn_data::SpawnDataPlan>, String> {
+        use against_rome_maps::spawn_data::{mark_prebuilt, plan_spawn_data, SpawnDataCatalog};
+        if !self.spawn_ui.session().is_dirty() {
+            return Ok(None);
+        }
+        let previous = self.scenario.saved_document()?;
+        let mut next = self.scenario.document().clone();
+        let placed = self.spawn_ui.session().objects();
+        mark_prebuilt(&mut next.spawns, placed);
+        if !next.spawns.iter().any(|s| s.prebuilt) && previous.data_slots.is_empty() {
+            return Ok(None);
+        }
+        let catalog = map
+            .parent()
+            .and_then(Path::parent)
+            .ok_or_else(|| "the map folder is not inside a game MAPS directory".to_string())
+            .and_then(SpawnDataCatalog::from_game);
+        let catalog = match catalog {
+            Ok(catalog) => catalog,
+            // Without game catalogs nothing can be bound to DATA: keep the C#-less script
+            // fallback for new buildings, but never edit around existing DATA bindings.
+            Err(_) if previous.data_slots.is_empty() => return Ok(None),
+            Err(e) => return Err(format!("Spawn DATA: game catalogs unavailable: {e}")),
+        };
+        plan_spawn_data(map, &catalog, &previous, &next, placed)
+            .map_err(|e| format!("Spawn DATA: {e}"))
     }
 
     /// Dispatches one shortcut. Mutating actions are refused on retail maps like the C# editor.
@@ -3151,6 +3311,8 @@ impl EditorApp {
 mod tests {
     use super::*;
     use crate::terrain::SampleChange;
+
+    mod spawn_save_tests;
 
     fn start_camera_app(pfil: bool) -> (EditorApp, PathBuf, Vec<u8>) {
         let dir = temp_map_dir("start_camera");
@@ -8166,8 +8328,33 @@ impl eframe::App for EditorApp {
             self.draw_nature_overlay(&painter, map_rect);
             self.spawn_ui.draw_overlay(&painter, map_rect);
 
+            // 放置物件面板：點選／拖曳 2D 標記（命中時筆刷不作用）
+            let tool_busy = self.pending_action.is_some()
+                || self.box_select
+                || self.ramp_selecting
+                || self.nature.enabled
+                || self.landscape.region_pick_active();
+            let spawn_cx = SpawnContext {
+                lang: self.loc.current_language(),
+                heights: Some(session.heights()),
+                vertex_size: session.vertex_size,
+                height_step: self.height_step,
+                read_only: is_original_map_dir(Path::new(self.map_path_input.trim())),
+            };
+            Self::handle_spawn_canvas(
+                ctx,
+                &response,
+                map_rect,
+                tool_busy,
+                &spawn_cx,
+                &mut self.spawn_ui,
+                &mut self.scenario,
+            );
+
             // 處理滑鼠操作繪製
-            if let Some(mouse_pos) = response.hover_pos().filter(|_| !self.box_select && !self.landscape.region_pick_active()) {
+            if let Some(mouse_pos) = response.hover_pos().filter(|_| {
+                !self.box_select && !self.landscape.region_pick_active() && !self.spawn_ui.is_capturing()
+            }) {
                 if map_rect.contains(mouse_pos) {
                     let norm_x = (mouse_pos.x - map_rect.min.x) / map_rect.width();
                     let norm_y = (mouse_pos.y - map_rect.min.y) / map_rect.height();
