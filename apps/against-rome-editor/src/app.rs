@@ -33,6 +33,7 @@ use crate::{
 use crate::{console::ConsoleUi, event_graph::EventGraphUi};
 use crate::{map_settings::MapSettings, navigation::NavigationUi, toolbox::ToolboxUi};
 use crate::{placement_ui::PlacementUi, scenario_ui::ScenarioUi};
+use crate::{layout_io::LayoutContext, placement_ui::LayoutRequest};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ViewMode {
@@ -94,6 +95,9 @@ pub struct EditorApp {
     pub ramp_falloff: f32,
     ramp_selecting: bool,
     ramp_start: Option<(f32, f32)>,
+    /// Box-select tool (C# `_boxSelectButton`): one drag selects placed objects, then the tool turns off.
+    pub box_select: bool,
+    box_drag_start: Option<Pos2>,
     pub water_surface: f32,
     pub water_bed: u8,
 
@@ -196,6 +200,8 @@ impl EditorApp {
             ramp_falloff: 2.0,
             ramp_selecting: false,
             ramp_start: None,
+            box_select: false,
+            box_drag_start: None,
             water_surface: 48.0,
             water_bed: 24,
             view_mode: ViewMode::Blended,
@@ -1123,6 +1129,7 @@ impl EditorApp {
             self.handle_environment_apply(apply);
         }
         self.apply_lair_events_request();
+        self.pump_layout_requests();
 
         let textures = self.textures.session_textures();
         let texture_names = self.textures.known_textures();
@@ -1433,6 +1440,188 @@ impl EditorApp {
         self.ramp_start = None;
         self.status_message = "Ramp selection cancelled.".into();
         self.status_is_error = false;
+    }
+
+    /// Centers the 2D canvas on a world position (C# `LocateMapIssue` -> `FocusTile`).
+    pub fn focus_world_position(&mut self, world_x: f32, world_z: f32) {
+        if !(world_x.is_finite() && world_z.is_finite()) {
+            return;
+        }
+        let canvas = self.last_canvas_rect;
+        let side = canvas.width().min(canvas.height()) * self.zoom;
+        let world = self.nature_dimension() as f32 * 256.0;
+        // map_rect centre = canvas centre + pan; the point sits at (norm - 0.5) * side from it.
+        self.pan = Vec2::new(
+            -(world_x / world - 0.5) * side,
+            -(world_z / world - 0.5) * side,
+        );
+        self.status_message = format!(
+            "Focused tile ({:.1}, {:.1}).",
+            world_x / 256.0,
+            world_z / 256.0
+        );
+        self.status_is_error = false;
+    }
+
+    /// Applies a Locate request from the Design Check issue list.
+    fn consume_design_check_focus(&mut self) {
+        if let Some((x, z)) = self.design_check.focus_request.take() {
+            self.focus_world_position(x, z);
+        }
+        if self.design_check.event_request.take().is_some() {
+            self.scenario.open = true;
+        }
+    }
+
+    /// Starts or cancels the box-select tool (needs loaded DATA; 2D canvas only).
+    pub fn toggle_box_select(&mut self) {
+        if self.box_select {
+            self.cancel_box_select();
+        } else if !self.placement.is_loaded() {
+            self.status_message = "Load DATA in the Objects panel before box select.".into();
+            self.status_is_error = true;
+        } else {
+            self.box_select = true;
+            self.box_drag_start = None;
+            self.ramp_selecting = false;
+            self.status_message = "Drag to select placed objects (Shift adds); Esc cancels.".into();
+            self.status_is_error = false;
+        }
+    }
+
+    pub fn cancel_box_select(&mut self) {
+        self.box_select = false;
+        self.box_drag_start = None;
+    }
+
+    /// Finishes a box drag between two screen points over the displayed map.
+    pub fn finish_box_select(&mut self, a: Pos2, b: Pos2, map_rect: Rect, additive: bool) -> usize {
+        let dimension = self.nature_dimension();
+        let rect = crate::placement_ui::screen_box_to_tile_rect(
+            (a.x, a.y),
+            (b.x, b.y),
+            (map_rect.min.x, map_rect.min.y),
+            (map_rect.width(), map_rect.height()),
+            dimension,
+        );
+        let count = self.placement.select_in_tile_rect(rect, additive);
+        self.box_select = false;
+        self.box_drag_start = None;
+        self.status_message = format!(
+            "Box selected {count} object(s) in tiles [{},{}) x [{},{}).",
+            rect.left, rect.right, rect.top, rect.bottom
+        );
+        self.status_is_error = false;
+        count
+    }
+
+    /// 2D canvas input for the box-select tool: drag a rectangle, release to select.
+    fn handle_box_select_input(
+        &mut self,
+        ctx: &egui::Context,
+        response: &egui::Response,
+        painter: &egui::Painter,
+        map_rect: Rect,
+    ) {
+        let world = self.nature_dimension() as f32 * 256.0;
+        for object in self.placement.objects() {
+            let nx = object.position[0] / world;
+            let nz = object.position[2] / world;
+            let point = Pos2::new(
+                map_rect.min.x + nx * map_rect.width(),
+                map_rect.min.y + nz * map_rect.height(),
+            );
+            let color = if self.placement.is_selected((object.slot, object.uid)) {
+                Color32::YELLOW
+            } else {
+                Color32::from_rgba_unmultiplied(120, 200, 255, 160)
+            };
+            painter.circle_filled(point, 2.0, color);
+        }
+        let pointer = ctx.input(|i| (i.pointer.latest_pos(), i.pointer.primary_down(), i.modifiers.shift));
+        if self.box_drag_start.is_none() && response.drag_started_by(egui::PointerButton::Primary) {
+            self.box_drag_start = ctx
+                .input(|i| i.pointer.press_origin())
+                .or(pointer.0)
+                .map(|p| map_rect.clamp(p));
+        }
+        let Some(start) = self.box_drag_start else {
+            return;
+        };
+        let Some(current) = pointer.0.map(|p| map_rect.clamp(p)) else {
+            return;
+        };
+        let rect = Rect::from_two_pos(start, current);
+        painter.rect(
+            rect,
+            0.0,
+            Color32::from_rgba_unmultiplied(255, 220, 80, 40),
+            Stroke::new(1.5_f32, Color32::YELLOW),
+        );
+        if !pointer.1 {
+            self.finish_box_select(start, current, map_rect, pointer.2);
+        }
+    }
+
+    /// Objdef names (cached per game root) plus the Environment template list, for layouts.
+    fn layout_name_table(&mut self) -> Vec<(i32, String)> {
+        let mut table: Vec<(i32, String)> = Vec::new();
+        let game = self
+            .placement
+            .loaded_map()
+            .and_then(|m| m.parent())
+            .and_then(Path::parent)
+            .map(Path::to_path_buf);
+        if let Some(game) = game {
+            if !matches!(&self.nature.names, Some((root, _)) if *root == game) {
+                if let Ok(definitions) = against_rome_maps::NativeObjectDefinitions::load(&game) {
+                    let names: HashMap<i32, String> = definitions
+                        .into_iter()
+                        .filter_map(|(id, d)| d.name.filter(|n| !n.is_empty()).map(|n| (id, n)))
+                        .collect();
+                    if !names.is_empty() {
+                        self.nature.names = Some((game.clone(), names));
+                    }
+                }
+            }
+            if let Some((root, names)) = &self.nature.names {
+                if *root == game {
+                    table.extend(names.iter().map(|(id, name)| (*id, name.clone())));
+                    table.sort_by_key(|(id, _)| *id);
+                }
+            }
+        }
+        if let Ok(templates) = crate::design_apply::parse_templates(&self.environment.flora_templates_text) {
+            for (id, name) in templates {
+                if !table.iter().any(|(existing, _)| *existing == id) {
+                    table.push((id, name));
+                }
+            }
+        }
+        table
+    }
+
+    /// Forwards Environment-panel layout buttons and runs queued layout exports/applies with the
+    /// current terrain and objdef names.
+    fn pump_layout_requests(&mut self) {
+        if let Some(rect) = self.environment.take_layout_export_request() {
+            self.placement.request_layout(LayoutRequest::ExportNature(rect));
+        }
+        if self.environment.take_layout_import_request() {
+            self.placement.begin_layout_import();
+        }
+        if !self.placement.has_layout_requests() {
+            return;
+        }
+        let names = self.layout_name_table();
+        let dim = self.session.as_ref().map_or(0, |s| s.vertex_size);
+        let step = self.height_step;
+        let heights = self.session.as_ref().map(|s| s.heights());
+        let ground = move |x: f32, z: f32| crate::environment_ui::ground_height(heights, dim, x, z, step);
+        let ctx = LayoutContext { names: &names, ground: &ground };
+        self.placement.process_layout_requests(&ctx);
+        self.status_message = self.placement.layout_status().to_string();
+        self.status_is_error = self.status_message.contains("failed");
     }
 
     fn handle_environment_apply(&mut self, apply: EnvApply) {
@@ -2648,7 +2837,7 @@ pub fn is_original_map_dir(dir: &Path) -> bool {
 }
 
 impl EditorApp {
-    fn lang(&self) -> AppLanguage {
+    pub(crate) fn lang(&self) -> AppLanguage {
         self.loc.current_language()
     }
 
@@ -7150,6 +7339,38 @@ angle=0.00
     }
 
     #[test]
+    fn focus_world_position_centers_the_point_and_box_select_needs_loaded_data() {
+        let mut app = EditorApp::default();
+        app.toggle_box_select();
+        assert!(!app.box_select, "box select needs loaded DATA");
+        assert!(app.status_is_error);
+
+        app.last_canvas_rect = Rect::from_min_size(Pos2::ZERO, Vec2::new(800.0, 600.0));
+        app.zoom = 2.0;
+        app.focus_world_position(4096.0, 12288.0); // normalized (0.25, 0.75) on the 64-tile default
+        let side = 600.0 * app.zoom;
+        let centre = app.last_canvas_rect.center() + app.pan;
+        let point = Pos2::new(centre.x + (0.25 - 0.5) * side, centre.y + (0.75 - 0.5) * side);
+        assert!((point - app.last_canvas_rect.center()).length() < 0.01, "{point:?}");
+
+        let pan = app.pan;
+        app.focus_world_position(f32::NAN, 1.0);
+        assert_eq!(app.pan, pan, "non-finite focus is ignored");
+    }
+
+    #[test]
+    fn design_check_locate_request_is_consumed_once() {
+        let mut app = EditorApp::default();
+        app.last_canvas_rect = Rect::from_min_size(Pos2::ZERO, Vec2::new(600.0, 600.0));
+        app.design_check.focus_request = Some((8192.0, 8192.0));
+        app.design_check.event_request = Some(2);
+        app.consume_design_check_focus();
+        assert!(app.design_check.focus_request.is_none() && app.design_check.event_request.is_none());
+        assert!(app.scenario.open, "event issues reveal the scenario panel");
+        assert!(app.pan.length() < 0.01, "map centre needs no pan");
+    }
+
+    #[test]
     fn language_switch_changes_text_and_syncs_ambience() {
         let mut app = EditorApp::default();
         assert_eq!(tr(app.lang(), "Save", "儲存"), "Save");
@@ -7194,7 +7415,9 @@ impl eframe::App for EditorApp {
             self.pending_action = Some(PendingAction::Close);
         }
         if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
-            if self.ramp_selecting {
+            if self.box_select {
+                self.cancel_box_select();
+            } else if self.ramp_selecting {
                 self.cancel_ramp_selection();
             } else if self.nature.driver.is_active() {
                 self.nature_cancel_stroke();
@@ -7484,6 +7707,21 @@ impl eframe::App for EditorApp {
                     });
 
                     ui.separator();
+                    let can_box = self.placement.is_loaded() && self.view_mode != ViewMode::View3D;
+                    if ui
+                        .add_enabled(
+                            can_box || self.box_select,
+                            egui::Button::new(tr(lang, "Box select objects", "框選物件")).selected(self.box_select),
+                        )
+                        .on_hover_text(tr(
+                            lang,
+                            "Drag a rectangle on the 2D map to select placed objects (Shift adds); Esc cancels.",
+                            "在 2D 地圖上拖曳矩形選取放置物件（Shift 加選）；Esc 取消。",
+                        ))
+                        .clicked()
+                    {
+                        self.toggle_box_select();
+                    }
                     ui.label("Brush Mode:");
                     if ui
                         .add(egui::Button::new(if self.ramp_selecting {
@@ -7722,7 +7960,7 @@ impl eframe::App for EditorApp {
             self.draw_nature_overlay(&painter, map_rect);
 
             // 處理滑鼠操作繪製
-            if let Some(mouse_pos) = response.hover_pos() {
+            if let Some(mouse_pos) = response.hover_pos().filter(|_| !self.box_select) {
                 if map_rect.contains(mouse_pos) {
                     let norm_x = (mouse_pos.x - map_rect.min.x) / map_rect.width();
                     let norm_y = (mouse_pos.y - map_rect.min.y) / map_rect.height();
@@ -7889,6 +8127,11 @@ impl eframe::App for EditorApp {
                 }
             }
 
+            // 框選工具：拖曳矩形選取放置物件
+            if self.box_select {
+                self.handle_box_select_input(ctx, &response, &painter, map_rect);
+            }
+
             // 放開拖曳時提交自然物件筆劃（一筆一個復原步驟）
             if !ctx.input(|i| i.pointer.primary_down()) && self.nature.driver.is_active() {
                 self.nature_end_stroke();
@@ -7924,6 +8167,7 @@ impl eframe::App for EditorApp {
         self.console.show(ctx);
         self.tech_doc.show(ctx);
         self.show_design_check(ctx);
+        self.consume_design_check_focus();
         self.show_studio_panels(ctx);
         self.consume_panel_save_requests();
     }

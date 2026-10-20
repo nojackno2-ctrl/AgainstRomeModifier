@@ -280,6 +280,54 @@ impl MapsUi {
     }
 
     /// C# `SuggestedCopyName`.
+    /// C# `MapSelectionForm.CanCloneToCustom`: only Endless (ENDL) maps carry the settlement
+    /// definitions a custom map needs, so campaign/other retail maps are refused as sources.
+    pub fn can_clone_to_custom(map_id: &str, is_custom: bool) -> bool {
+        is_custom || map_id.to_ascii_uppercase().starts_with("ENDL_")
+    }
+
+    /// Copy-name suggestion for any catalog entry (`"<name or id> - Copy"`).
+    pub fn suggested_copy_name_for(display_name: Option<&str>, map_id: &str) -> String {
+        format!("{} - Copy", display_name.unwrap_or(map_id))
+    }
+
+    /// "Copy to Custom Map": clones the selected catalog map into the next free custom slot, which
+    /// registers its custom-map manifest so it is editable, then selects the new map.
+    pub fn execute_copy_selected(&mut self) -> Result<EndlessMapInfo, String> {
+        let source_id = self
+            .selected_map_id
+            .clone()
+            .ok_or("Select a map from the catalog first.")?;
+        if !Self::can_clone_to_custom(&source_id, self.selected_is_custom) {
+            return Err(
+                "Only Endless Mode (ENDL) maps can be copied to custom maps. Other map types lack endless settlement definitions."
+                    .into(),
+            );
+        }
+        let game_path = Path::new(self.game_path_input.trim()).to_path_buf();
+        if !game_path.exists() {
+            return Err("Game path does not exist.".into());
+        }
+        let name = self.clone_new_name.trim().to_string();
+        if name.is_empty() {
+            return Err("Map name must not be blank.".into());
+        }
+        let slot = EndlessMapCatalog::new().get_next_free_slot(&game_path)?;
+        self.clone_target_slot = slot;
+        let result = EndlessMapCloner::new().clone_from_map_id(&game_path, &source_id, slot, &name)?;
+        self.status_is_error = false;
+        self.refresh_catalog();
+        self.selected_map_id = Some(result.id());
+        self.selected_map_path = Some(result.directory_path.clone());
+        self.selected_is_custom = result.is_custom;
+        self.finish_disk_action(format!(
+            "Copied {source_id} to custom map {} ({}).",
+            result.id(),
+            result.display_name.as_deref().unwrap_or("Untitled")
+        ));
+        Ok(result)
+    }
+
     pub fn suggested_copy_name(map: &EndlessMapInfo) -> String {
         format!("{} - Copy", map.display_name.as_deref().unwrap_or(&map.id()))
     }
@@ -609,12 +657,15 @@ impl MapsUi {
                         self.selected_map_id = Some(map.id.clone());
                         self.selected_map_path = Some(map.directory_path.clone());
                         self.selected_is_custom = map.is_custom;
+                        self.clone_new_name =
+                            Self::suggested_copy_name_for(map.display_name.as_deref(), &map.id);
                     }
                 }
             }
         });
 
         ui.separator();
+        let mut copy_requested = false;
         ui.horizontal(|ui| {
             if let Some(path) = &self.selected_map_path {
                 ui.label(format!("Selected: {}", path.display()));
@@ -627,6 +678,38 @@ impl MapsUi {
                 ui.label("Select a map from the catalog to inspect or load.");
             }
         });
+        if let Some(id) = self.selected_map_id.clone() {
+            if !self.selected_is_custom {
+                ui.horizontal(|ui| {
+                    ui.label("Retail maps are read-only. Copy to edit / 原版地圖唯讀；複製後可編輯:");
+                    ui.text_edit_singleline(&mut self.clone_new_name);
+                    let allowed = Self::can_clone_to_custom(&id, false);
+                    if ui
+                        .add_enabled(allowed, egui::Button::new("Copy to Custom Map / 複製到自製地圖"))
+                        .on_disabled_hover_text(
+                            "Only Endless Mode (ENDL) maps can be copied. 只有無盡模式（ENDL）地圖能複製。",
+                        )
+                        .clicked()
+                    {
+                        copy_requested = true;
+                    }
+                });
+            }
+        }
+        if copy_requested {
+            match self.execute_copy_selected() {
+                Ok(created) => {
+                    // C# `CloneAndOpen`: the new custom map opens straight away.
+                    if let Some(cb) = on_load_requested.as_deref_mut() {
+                        cb(created.directory_path.clone());
+                    }
+                }
+                Err(e) => {
+                    self.status_message = format!("Copy failed: {e}");
+                    self.status_is_error = true;
+                }
+            }
+        }
     }
 
     fn render_cloner_tab(&mut self, ui: &mut egui::Ui) {
@@ -1108,6 +1191,47 @@ refpos=100.0,0.0,100.0
         assert!(ui.execute_delete(1).is_err(), "retail slot must be refused");
         assert!(!ui.is_dirty());
         assert!(root.join("MAPS").join("ENDL_001").exists());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn test_maps_ui_can_clone_to_custom_rules_and_suggested_name() {
+        assert!(MapsUi::can_clone_to_custom("ENDL_001", false));
+        assert!(MapsUi::can_clone_to_custom("endl_002", false));
+        assert!(!MapsUi::can_clone_to_custom("KAMP_001", false));
+        assert!(MapsUi::can_clone_to_custom("KAMP_001", true));
+        assert_eq!(MapsUi::suggested_copy_name_for(Some("Forest"), "ENDL_001"), "Forest - Copy");
+        assert_eq!(MapsUi::suggested_copy_name_for(None, "ENDL_001"), "ENDL_001 - Copy");
+    }
+
+    #[test]
+    fn test_maps_ui_copy_selected_retail_map_registers_editable_custom_map() {
+        let root = disk_fixture();
+        let mut ui = MapsUi::default();
+        ui.game_path_input = root.to_string_lossy().into_owned();
+        // Nothing selected, then a non-ENDL source: both refused without touching disk.
+        assert!(ui.execute_copy_selected().is_err());
+        ui.selected_map_id = Some("KAMP_001".into());
+        assert!(ui.execute_copy_selected().unwrap_err().contains("ENDL"));
+
+        ui.selected_map_id = Some("ENDL_001".into());
+        ui.selected_is_custom = false;
+        ui.clone_new_name = "  Retail Copy ".into();
+        let copy = ui.execute_copy_selected().unwrap();
+        assert!(copy.is_custom, "copy must be a registered custom map");
+        assert!(copy.slot >= 5);
+        assert!(copy.directory_path.join(against_rome_maps::custom_map::CustomMapManifest::MARKER_FILE_NAME).exists());
+        assert_eq!(ui.selected_map_id.as_deref(), Some(copy.id().as_str()));
+        assert!(ui.selected_is_custom);
+        assert!(!ui.is_dirty());
+        assert!(root.join("MAPS").join("ENDL_001").exists(), "retail source untouched");
+        let manifest = std::fs::read_to_string(root.join("MAPS").join("arm_custom_maps.json")).unwrap();
+        assert!(manifest.contains(&format!("{}", copy.slot)));
+
+        ui.clone_new_name = "   ".into();
+        ui.selected_map_id = Some("ENDL_001".into());
+        ui.selected_is_custom = false;
+        assert!(ui.execute_copy_selected().unwrap_err().contains("blank"));
         let _ = std::fs::remove_dir_all(&root);
     }
 

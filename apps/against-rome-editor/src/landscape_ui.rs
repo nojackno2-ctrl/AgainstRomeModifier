@@ -15,6 +15,7 @@ use against_rome_landscape::{
     simulate_hydraulic_erosion, simulate_thermal_erosion, BrushRegion, HydraulicErosionParams,
     TerrainHeightWorkBuffer, TerrainSampleChange, ThermalErosionParams, Point,
 };
+use against_rome_textures::{TerrainBlendEditSession, TerrainRegionPlanner};
 use eframe::egui::{self, Color32, Vec2};
 
 /// Which plan the "Apply to map" button asks the app to write into the edit sessions.
@@ -112,6 +113,7 @@ pub enum LandscapeTab {
     RoadPlanner,
     WallPlanner,
     ErosionPlanner,
+    RegionTools,
 }
 
 pub struct LandscapeUi {
@@ -161,6 +163,9 @@ pub struct LandscapeUi {
     pub last_erosion_plan: Option<ErosionPlan>,
     pub erosion_apply_requested: bool,
 
+    // --- Region tools state (C# TerrainRegionDialog) ---
+    pub region: RegionToolState,
+
     // Dirty / guards
     pub apply_requested: Option<LandscapeApply>,
 
@@ -209,6 +214,7 @@ impl Default for LandscapeUi {
             erosion_thermal_params: ThermalErosionParams::default(),
             last_erosion_plan: None,
             erosion_apply_requested: false,
+            region: RegionToolState::default(),
             apply_requested: None,
             dirty: false,
             pending_discard: false,
@@ -226,6 +232,7 @@ impl LandscapeUi {
             || self.last_road_plan.is_some()
             || self.last_wall_plan.is_some()
             || self.last_erosion_plan.is_some()
+            || self.region.plan.is_some()
     }
 
     pub fn mark_dirty(&mut self) {
@@ -247,6 +254,7 @@ impl LandscapeUi {
         self.last_wall_plan = None;
         self.last_erosion_plan = None;
         self.erosion_apply_requested = false;
+        self.region.reset();
         self.apply_requested = None;
         self.status_message = "Ready.".to_string();
         self.status_is_error = false;
@@ -732,6 +740,7 @@ impl LandscapeUi {
                     ui.selectable_value(&mut self.current_tab, LandscapeTab::RoadPlanner, "Road Polyline");
                     ui.selectable_value(&mut self.current_tab, LandscapeTab::WallPlanner, "Wall / Palisade");
                     ui.selectable_value(&mut self.current_tab, LandscapeTab::ErosionPlanner, "Erosion (Hydraulic & Thermal)");
+                    ui.selectable_value(&mut self.current_tab, LandscapeTab::RegionTools, "Region Tools");
                 });
                 ui.separator();
 
@@ -751,6 +760,7 @@ impl LandscapeUi {
                     LandscapeTab::RoadPlanner => self.render_road_tab(ui, cx),
                     LandscapeTab::WallPlanner => self.render_wall_tab(ui, cx),
                     LandscapeTab::ErosionPlanner => self.render_erosion_tab(ui, cx),
+                    LandscapeTab::RegionTools => self.render_region_tab(ui, cx),
                 }
             });
 
@@ -1140,6 +1150,532 @@ impl LandscapeUi {
 
         if apply_clicked {
             self.request_erosion_apply();
+        }
+    }
+}
+
+// ================================================================================================
+// Region tools (C# `TerrainRegionDialog` + `MapEditorForm.ApplyRegionTool`)
+//
+// Rectangle fill, connected-material fill, dirt-road polyline fill and "select objects in
+// rectangle", plus the drag-a-rectangle hooks the 2D canvas feeds. River / cliff / wall / erosion
+// of the C# dialog already have their own planner tabs in this window; the erosion tab is kept in
+// sync with the dragged rectangle.
+// ================================================================================================
+
+/// Operations of the C# region dialog that act on a tile selection.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum RegionOperation {
+    #[default]
+    RectangleFill,
+    ConnectedFill,
+    RoadPolyline,
+    SelectObjects,
+}
+
+impl RegionOperation {
+    pub const ALL: [RegionOperation; 4] = [
+        RegionOperation::RectangleFill,
+        RegionOperation::ConnectedFill,
+        RegionOperation::RoadPolyline,
+        RegionOperation::SelectObjects,
+    ];
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::RectangleFill => "Rectangle fill (矩形填色)",
+            Self::ConnectedFill => "Connected material fill (同材質連通區填色)",
+            Self::RoadPolyline => "Dirt road polyline (土路折線)",
+            Self::SelectObjects => "Select objects in rectangle (矩形選取物件)",
+        }
+    }
+    /// Minimum vertex count, as in C# (`Connected` needs one seed, everything else two).
+    pub fn min_vertices(self) -> usize {
+        if self == Self::ConnectedFill {
+            1
+        } else {
+            2
+        }
+    }
+    /// Only polylines accept more vertices than the minimum.
+    pub fn is_polyline(self) -> bool {
+        self == Self::RoadPolyline
+    }
+}
+
+/// World units per tile (matches C# `WorldX / 256f`).
+pub const REGION_WORLD_UNITS_PER_TILE: f32 = 256.0;
+
+/// Inclusive tile rectangle (`max` is the last selected tile, like the dialog's second corner).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TileRect {
+    pub min_x: i32,
+    pub min_y: i32,
+    pub max_x: i32,
+    pub max_y: i32,
+}
+
+impl TileRect {
+    pub fn from_corners(a: (i32, i32), b: (i32, i32)) -> Self {
+        Self { min_x: a.0.min(b.0), min_y: a.1.min(b.1), max_x: a.0.max(b.0), max_y: a.1.max(b.1) }
+    }
+    /// Clamps to `0..dimension` tiles; `None` when the dimension is zero.
+    pub fn clamped(self, dimension: usize) -> Option<Self> {
+        let hi = dimension as i32 - 1;
+        (hi >= 0).then(|| Self {
+            min_x: self.min_x.clamp(0, hi),
+            min_y: self.min_y.clamp(0, hi),
+            max_x: self.max_x.clamp(0, hi),
+            max_y: self.max_y.clamp(0, hi),
+        })
+    }
+    pub fn tile_count(&self) -> usize {
+        ((self.max_x - self.min_x + 1).max(0) * (self.max_y - self.min_y + 1).max(0)) as usize
+    }
+    /// C# `SelectObjects` test: tile coordinate = world / 256, half-open `[min, max + 1)`.
+    pub fn contains_world(&self, world_x: f32, world_z: f32) -> bool {
+        let x = world_x / REGION_WORLD_UNITS_PER_TILE;
+        let y = world_z / REGION_WORLD_UNITS_PER_TILE;
+        x >= self.min_x as f32 && x < (self.max_x + 1) as f32 && y >= self.min_y as f32 && y < (self.max_y + 1) as f32
+    }
+    pub fn to_text(&self) -> String {
+        format!("{},{}\n{},{}", self.min_x, self.min_y, self.max_x, self.max_y)
+    }
+}
+
+/// Parses the dialog's `X,Y`-per-line text and bounds-checks against `dimension` tiles.
+pub fn parse_region_vertices(text: &str, dimension: usize) -> Result<Vec<(usize, usize)>, String> {
+    let mut out = Vec::new();
+    for line in text.lines().map(str::trim).filter(|l| !l.is_empty()) {
+        let parts: Vec<&str> = line.split(',').map(str::trim).collect();
+        if parts.len() != 2 {
+            return Err("Use X,Y on each line.".into());
+        }
+        let x: i64 = parts[0].parse().map_err(|_| format!("Invalid coordinate integer: '{}'", parts[0]))?;
+        let y: i64 = parts[1].parse().map_err(|_| format!("Invalid coordinate integer: '{}'", parts[1]))?;
+        if x < 0 || y < 0 || x >= dimension as i64 || y >= dimension as i64 {
+            return Err(format!(
+                "Coordinate ({x}, {y}) out of bounds (allowed range: 0..{}).",
+                dimension.saturating_sub(1)
+            ));
+        }
+        out.push((x as usize, y as usize));
+    }
+    Ok(out)
+}
+
+/// Tile cells an operation covers, via the native `TerrainRegionPlanner`.
+///
+/// `textures` (row-major tile texture names) is only needed by `ConnectedFill`.
+/// `SelectObjects` returns the rectangle cells too so the caller can show a count.
+pub fn plan_region_cells(
+    op: RegionOperation,
+    dimension: usize,
+    vertices: &[(usize, usize)],
+    road_width: usize,
+    textures: Option<&[String]>,
+) -> Result<Vec<(usize, usize)>, String> {
+    let need = op.min_vertices();
+    if vertices.len() < need || (!op.is_polyline() && vertices.len() != need) {
+        return Err("Invalid vertex count.".into());
+    }
+    match op {
+        RegionOperation::RectangleFill | RegionOperation::SelectObjects => {
+            TerrainRegionPlanner::rectangle(dimension, vertices[0], vertices[1]).map_err(|e| e.to_string())
+        }
+        RegionOperation::RoadPolyline => {
+            TerrainRegionPlanner::polyline(dimension, vertices, road_width.max(1)).map_err(|e| e.to_string())
+        }
+        RegionOperation::ConnectedFill => {
+            let textures = textures
+                .filter(|t| t.len() == dimension * dimension)
+                .ok_or("Load the map in the Materials panel to use the connected fill.")?;
+            TerrainRegionPlanner::connected(dimension, textures, vertices[0]).map_err(|e| e.to_string())
+        }
+    }
+}
+
+/// Ids of objects whose `(world_x, world_z)` falls inside the rectangle.
+pub fn objects_in_rect(rect: &TileRect, objects: &[(usize, f32, f32)]) -> Vec<usize> {
+    objects.iter().filter(|(_, x, z)| rect.contains_world(*x, *z)).map(|(id, _, _)| *id).collect()
+}
+
+/// Planned region, cached until applied or discarded.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RegionPlan {
+    pub op: RegionOperation,
+    pub cells: Vec<(usize, usize)>,
+    pub rect: TileRect,
+}
+
+/// A texture fill the host applies to the material session.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RegionPaintRequest {
+    pub cells: Vec<(usize, usize)>,
+    pub material: String,
+    pub auto_bridge: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RegionRequest {
+    Paint(RegionPaintRequest),
+    SelectObjects(TileRect),
+}
+
+/// Result of [`LandscapeUi::apply_pending_region`].
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct RegionOutcome {
+    /// Number of tiles whose texture changed (host should mark textures dirty / redraw when > 0).
+    pub textures_changed: usize,
+    /// Object ids to select in the placement list, when the request was `SelectObjects`.
+    pub selected_objects: Option<Vec<usize>>,
+}
+
+/// Applies a fill as one undoable stroke on a fork; the real session is replaced only when every
+/// tile bakes (C#: "Unsupported native transition ...; region unchanged").
+pub fn apply_region_paint(
+    session: &mut TerrainBlendEditSession,
+    request: &RegionPaintRequest,
+) -> Result<usize, String> {
+    let mut fork = session.fork();
+    let result = fork
+        .paint_tiles(&request.cells, &request.material, request.auto_bridge)
+        .map_err(|e| e.to_string())?;
+    if !result.succeeded {
+        return Err(match result.issues.first() {
+            Some(i) => format!("Unsupported native transition at {},{}; region unchanged.", i.tile_x, i.tile_y),
+            None => "Region could not be baked; region unchanged.".into(),
+        });
+    }
+    let changed = result.texture_changes.len();
+    if changed > 0 {
+        fork.commit_stroke();
+        *session = fork;
+    }
+    Ok(changed)
+}
+
+/// Drag-a-rectangle state for the 2D canvas.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct RegionDrag {
+    start: Option<(i32, i32)>,
+    current: Option<(i32, i32)>,
+}
+
+impl RegionDrag {
+    pub fn begin(&mut self, tile: (i32, i32)) {
+        self.start = Some(tile);
+        self.current = Some(tile);
+    }
+    pub fn update(&mut self, tile: (i32, i32)) {
+        if self.start.is_some() {
+            self.current = Some(tile);
+        }
+    }
+    /// Finishes the drag and returns the rectangle.
+    pub fn finish(&mut self) -> Option<TileRect> {
+        let r = self.rect();
+        self.cancel();
+        r
+    }
+    pub fn cancel(&mut self) {
+        self.start = None;
+        self.current = None;
+    }
+    pub fn is_active(&self) -> bool {
+        self.start.is_some()
+    }
+    pub fn rect(&self) -> Option<TileRect> {
+        Some(TileRect::from_corners(self.start?, self.current?))
+    }
+}
+
+/// All state of the region tab.
+#[derive(Clone, Debug)]
+pub struct RegionToolState {
+    pub op: RegionOperation,
+    /// One `X,Y` per line, as in the C# dialog.
+    pub vertices_text: String,
+    pub road_width: usize,
+    /// Material id painted by fill / road operations.
+    pub material: String,
+    pub auto_bridge: bool,
+    /// While armed, the host should route 2D canvas drags to `region_drag_input`.
+    pub pick_armed: bool,
+    pub drag: RegionDrag,
+    /// Last rectangle produced by a canvas drag.
+    pub selection: Option<TileRect>,
+    pub plan: Option<RegionPlan>,
+    pub request: Option<RegionRequest>,
+}
+
+impl Default for RegionToolState {
+    fn default() -> Self {
+        Self {
+            op: RegionOperation::default(),
+            vertices_text: "10,10\n20,20".to_string(),
+            road_width: 3,
+            material: String::new(),
+            auto_bridge: true,
+            pick_armed: false,
+            drag: RegionDrag::default(),
+            selection: None,
+            plan: None,
+            request: None,
+        }
+    }
+}
+
+impl RegionToolState {
+    /// Clears map-bound state; keeps the user's preferences (operation, material, width).
+    pub fn reset(&mut self) {
+        self.drag.cancel();
+        self.selection = None;
+        self.plan = None;
+        self.request = None;
+    }
+}
+
+impl LandscapeUi {
+    /// True when the host should forward 2D canvas drags to [`Self::region_drag_input`].
+    pub fn region_pick_active(&self) -> bool {
+        self.open && self.current_tab == LandscapeTab::RegionTools && self.region.pick_armed
+    }
+
+    /// Feeds one canvas interaction. `tile_at` maps a screen position to a tile coordinate (it may
+    /// return coordinates outside the map; they are clamped when the drag finishes). Returns the
+    /// finished rectangle on release.
+    pub fn region_drag_input(
+        &mut self,
+        response: &egui::Response,
+        dimension: usize,
+        tile_at: impl Fn(egui::Pos2) -> Option<(i32, i32)>,
+    ) -> Option<TileRect> {
+        if !self.region_pick_active() {
+            return None;
+        }
+        let pos = response.interact_pointer_pos().or_else(|| response.hover_pos());
+        let tile = pos.and_then(&tile_at);
+        if response.drag_started_by(egui::PointerButton::Primary) {
+            if let Some(t) = tile {
+                self.region.drag.begin(t);
+            }
+        } else if response.dragged_by(egui::PointerButton::Primary) {
+            if let Some(t) = tile {
+                self.region.drag.update(t);
+            }
+        }
+        if response.drag_stopped_by(egui::PointerButton::Primary) {
+            if let Some(t) = tile {
+                self.region.drag.update(t);
+            }
+            let rect = self.region.drag.finish().and_then(|r| r.clamped(dimension))?;
+            self.set_region_selection(rect);
+            return Some(rect);
+        }
+        None
+    }
+
+    /// Cancels an in-progress drag (e.g. Escape).
+    pub fn region_drag_cancel(&mut self) {
+        self.region.drag.cancel();
+    }
+
+    /// Stores a canvas selection into the dialog text and the erosion tab (C# `RunRegionTool`
+    /// prefills the dialog from `_canvas.SelectionTiles`).
+    pub fn set_region_selection(&mut self, rect: TileRect) {
+        self.region.selection = Some(rect);
+        self.region.vertices_text = rect.to_text();
+        self.region.plan = None;
+        self.erosion_start_x = rect.min_x;
+        self.erosion_start_y = rect.min_y;
+        self.erosion_end_x = rect.max_x;
+        self.erosion_end_y = rect.max_y;
+        self.sync_erosion_text_from_coords();
+    }
+
+    /// Draws the live drag rectangle and the last selection. `tile_to_screen` maps a tile *corner*
+    /// coordinate (so `max + 1` for the far edge) to a screen position.
+    pub fn paint_region_overlay(&self, painter: &egui::Painter, tile_to_screen: impl Fn(f32, f32) -> egui::Pos2) {
+        let draw = |r: TileRect, color: Color32| {
+            let a = tile_to_screen(r.min_x as f32, r.min_y as f32);
+            let b = tile_to_screen((r.max_x + 1) as f32, (r.max_y + 1) as f32);
+            let rect = egui::Rect::from_two_pos(a, b);
+            painter.rect_filled(rect, 0.0, color.gamma_multiply(0.2));
+            painter.rect_stroke(rect, 0.0, egui::Stroke::new(1.5_f32, color));
+        };
+        if let Some(sel) = self.region.selection {
+            draw(sel, Color32::from_rgb(90, 190, 255));
+        }
+        if let Some(live) = self.region.drag.rect() {
+            draw(live, Color32::from_rgb(255, 210, 70));
+        }
+    }
+
+    /// Plans the cells of the current operation from the dialog text.
+    pub fn plan_region(&mut self, cx: &LandscapeContext) -> Result<(), String> {
+        let (dimension, _) = cx.geometry();
+        let result = parse_region_vertices(&self.region.vertices_text, dimension).and_then(|vertices| {
+            let cells = plan_region_cells(self.region.op, dimension, &vertices, self.region.road_width, cx.textures)?;
+            let rect = cells
+                .iter()
+                .fold(None::<TileRect>, |acc, &(x, y)| {
+                    let (x, y) = (x as i32, y as i32);
+                    Some(match acc {
+                        None => TileRect { min_x: x, min_y: y, max_x: x, max_y: y },
+                        Some(r) => TileRect {
+                            min_x: r.min_x.min(x),
+                            min_y: r.min_y.min(y),
+                            max_x: r.max_x.max(x),
+                            max_y: r.max_y.max(y),
+                        },
+                    })
+                })
+                .ok_or_else(|| "Region is empty.".to_string())?;
+            Ok(RegionPlan { op: self.region.op, cells, rect })
+        });
+        match result {
+            Ok(plan) => {
+                self.status_message = format!("Region planned: {} tiles.", plan.cells.len());
+                self.status_is_error = false;
+                self.region.plan = Some(plan);
+                self.dirty = true;
+                Ok(())
+            }
+            Err(e) => {
+                self.region.plan = None;
+                self.status_message = format!("Region planning error: {e}");
+                self.status_is_error = true;
+                Err(e)
+            }
+        }
+    }
+
+    /// Turns the planned region into a host request (what the "Apply" button does).
+    pub fn request_region_apply(&mut self) -> Result<(), String> {
+        let Some(plan) = self.region.plan.clone() else {
+            return Err("No region plan available.".into());
+        };
+        let request = match plan.op {
+            RegionOperation::SelectObjects => RegionRequest::SelectObjects(plan.rect),
+            _ => {
+                let material = self.region.material.trim().to_string();
+                if material.is_empty() {
+                    let msg = "Select an available material first (e.g. 4BA___51).".to_string();
+                    self.apply_failed(msg.clone());
+                    return Err(msg);
+                }
+                RegionRequest::Paint(RegionPaintRequest {
+                    cells: plan.cells,
+                    material,
+                    auto_bridge: self.region.auto_bridge,
+                })
+            }
+        };
+        self.region.request = Some(request);
+        Ok(())
+    }
+
+    pub fn take_region_request(&mut self) -> Option<RegionRequest> {
+        self.region.request.take()
+    }
+
+    /// One-call host integration: takes a pending request, applies it and records the status.
+    ///
+    /// `objects` is only evaluated for `SelectObjects` and must return `(id, world_x, world_z)`.
+    pub fn apply_pending_region(
+        &mut self,
+        session: Option<&mut TerrainBlendEditSession>,
+        objects: impl FnOnce() -> Vec<(usize, f32, f32)>,
+    ) -> RegionOutcome {
+        let Some(request) = self.take_region_request() else {
+            return RegionOutcome::default();
+        };
+        match request {
+            RegionRequest::SelectObjects(rect) => {
+                let ids = objects_in_rect(&rect, &objects());
+                self.region.plan = None;
+                self.status_message = format!("Selected {} objects in the rectangle.", ids.len());
+                self.status_is_error = false;
+                RegionOutcome { textures_changed: 0, selected_objects: Some(ids) }
+            }
+            RegionRequest::Paint(paint) => {
+                let Some(session) = session else {
+                    self.apply_failed("Materials session (boden.txt) must be loaded to apply a region fill.");
+                    return RegionOutcome::default();
+                };
+                match apply_region_paint(session, &paint) {
+                    Ok(changed) => {
+                        self.region.plan = None;
+                        self.dirty = false;
+                        self.status_message = format!("Region applied: {changed} tiles changed.");
+                        self.status_is_error = false;
+                        RegionOutcome { textures_changed: changed, selected_objects: None }
+                    }
+                    Err(e) => {
+                        self.apply_failed(e);
+                        RegionOutcome::default()
+                    }
+                }
+            }
+        }
+    }
+
+    fn render_region_tab(&mut self, ui: &mut egui::Ui, cx: &LandscapeContext) {
+        let (dimension, _) = cx.geometry();
+        ui.heading("Region Tools");
+        ui.label(format!(
+            "Tile coordinates 0-{}. One X,Y per line: fill/select take two opposite corners, connected fill one seed, road any number of waypoints. River, cliff, wall and erosion have their own tabs (the erosion rectangle follows the dragged selection).",
+            dimension.saturating_sub(1)
+        ));
+        ui.add_space(6.0);
+        egui::ComboBox::from_id_source("region_op_select")
+            .selected_text(self.region.op.label())
+            .width(360.0)
+            .show_ui(ui, |ui| {
+                for op in RegionOperation::ALL {
+                    ui.selectable_value(&mut self.region.op, op, op.label());
+                }
+            });
+        ui.add(egui::TextEdit::multiline(&mut self.region.vertices_text).desired_rows(3));
+        ui.horizontal(|ui| {
+            ui.checkbox(&mut self.region.pick_armed, "Drag a rectangle on the 2D map");
+            if let Some(sel) = self.region.selection {
+                ui.label(format!("selection {}x{} tiles", sel.max_x - sel.min_x + 1, sel.max_y - sel.min_y + 1));
+            }
+        });
+        if self.region.op != RegionOperation::SelectObjects {
+            egui::Grid::new("region_settings").num_columns(2).spacing([12.0, 6.0]).show(ui, |ui| {
+                ui.label("Material id:");
+                ui.text_edit_singleline(&mut self.region.material);
+                ui.end_row();
+                if self.region.op == RegionOperation::RoadPolyline {
+                    ui.label("Road width (tiles):");
+                    ui.add(egui::DragValue::new(&mut self.region.road_width).clamp_range(1..=dimension.max(1)));
+                    ui.end_row();
+                }
+                ui.label("Auto bridge transitions:");
+                ui.checkbox(&mut self.region.auto_bridge, "");
+                ui.end_row();
+            });
+        }
+        ui.add_space(8.0);
+        if ui.button("Plan Region").clicked() {
+            let _ = self.plan_region(cx);
+        }
+        if let Some((count, op)) = self.region.plan.as_ref().map(|p| (p.cells.len(), p.op)) {
+            ui.separator();
+            ui.label(format!("Tiles covered: {count}"));
+            let ready = op == RegionOperation::SelectObjects || cx.textures.is_some();
+            if ui
+                .add_enabled(ready, egui::Button::new("Apply region"))
+                .on_hover_text("Fills as one undoable texture stroke; selection only picks placed objects.")
+                .clicked()
+            {
+                let _ = self.request_region_apply();
+            }
+            if !ready {
+                ui.label("Load the map in the Materials panel to apply a fill.");
+            }
         }
     }
 }

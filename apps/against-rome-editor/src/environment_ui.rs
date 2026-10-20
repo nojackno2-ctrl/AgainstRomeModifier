@@ -16,6 +16,8 @@ use against_rome_environment::{
         WildLairScenarioEventBinder,
     },
 };
+use crate::layout_io::{self, LayoutDialogKind, LayoutFilePicker};
+use crate::placement_ui::TileRect;
 use crate::scenario_ui::ScenarioUi;
 use against_rome_scenario::{Action, Condition, Event};
 use crate::design_apply::{parse_templates, resolver, PlacementRequest};
@@ -80,6 +82,7 @@ pub enum EnvironmentTab {
     FloraScatter,
     NeutralLairs,
     SettlementGenerator,
+    Layouts,
 }
 
 pub struct EnvironmentUi {
@@ -125,6 +128,14 @@ pub struct EnvironmentUi {
     pub apply_requested: Option<EnvApply>,
     /// Set by the "Apply Lair Events" button; the app merges the pending lair events into the scenario.
     pub lair_events_apply_requested: bool,
+
+    // --- Layout import/export (.arm-layout.json) ---
+    /// Nature capture rectangle in tiles: left, top, right, bottom (half-open).
+    pub layout_rect: [String; 4],
+    /// Injectable layout file picker; `None` uses the native `rfd` dialogs.
+    pub layout_picker: Option<LayoutFilePicker>,
+    layout_export_request: Option<TileRect>,
+    layout_import_requested: bool,
 
     pub dirty: bool,
     pub pending_discard: bool,
@@ -172,6 +183,10 @@ impl Default for EnvironmentUi {
             last_nature_preset: None,
             apply_requested: None,
             lair_events_apply_requested: false,
+            layout_rect: ["0".into(), "0".into(), "8".into(), "8".into()],
+            layout_picker: None,
+            layout_export_request: None,
+            layout_import_requested: false,
             dirty: false,
             pending_discard: false,
             status_message: "Ready.".to_string(),
@@ -358,6 +373,62 @@ impl EnvironmentUi {
             }
         }
         Ok((requests, unresolved.into_iter().collect()))
+    }
+
+    /// Parses the nature-capture rectangle (C# `TerrainRegionPlanner.Rectangle` input).
+    pub fn parse_layout_rect(&self) -> Result<TileRect, String> {
+        let mut v = [0i32; 4];
+        for (i, text) in self.layout_rect.iter().enumerate() {
+            v[i] = text
+                .trim()
+                .parse::<i32>()
+                .map_err(|_| format!("{} must be an integer tile index.", ["left", "top", "right", "bottom"][i]))?;
+        }
+        let rect = TileRect { left: v[0], top: v[1], right: v[2], bottom: v[3] };
+        if rect.left < 0 || rect.top < 0 || rect.left >= rect.right || rect.top >= rect.bottom {
+            return Err("Rectangle must satisfy 0 <= left < right and 0 <= top < bottom.".into());
+        }
+        Ok(rect)
+    }
+
+    /// Queues a forest/nature layout export of the current rectangle (executed by the app, which
+    /// owns the object session and terrain).
+    pub fn request_nature_layout_export(&mut self) {
+        match self.parse_layout_rect() {
+            Ok(rect) => {
+                self.layout_export_request = Some(rect);
+                self.status_message = "Nature layout export queued.".into();
+                self.status_is_error = false;
+            }
+            Err(e) => {
+                self.status_message = e;
+                self.status_is_error = true;
+            }
+        }
+    }
+    pub fn take_layout_export_request(&mut self) -> Option<TileRect> {
+        self.layout_export_request.take()
+    }
+    pub fn request_layout_import(&mut self) {
+        self.layout_import_requested = true;
+    }
+    pub fn take_layout_import_request(&mut self) -> bool {
+        std::mem::take(&mut self.layout_import_requested)
+    }
+
+    /// Saves the last generated settlement preset (placement or nature) as `.arm-layout.json`.
+    pub fn export_generated_preset(&mut self, nature: bool) -> Result<Option<std::path::PathBuf>, String> {
+        let preset = if nature { &self.last_nature_preset } else { &self.last_placement_preset }
+            .clone()
+            .ok_or("Generate a settlement first.")?;
+        let kind = LayoutDialogKind::Save { suggested_name: layout_io::suggested_file_name(preset.kind) };
+        let picked = match &self.layout_picker {
+            Some(picker) => picker(&kind),
+            None => layout_io::native_layout_picker()(&kind),
+        };
+        let Some(path) = picked else { return Ok(None) };
+        let written = layout_io::write_layout_file(&path, &preset)?;
+        Ok(Some(written))
     }
 
     pub fn request_lair_events_apply(&mut self) {
@@ -635,6 +706,7 @@ impl EnvironmentUi {
                         EnvironmentTab::SettlementGenerator,
                         "Settlement Generator",
                     );
+                    ui.selectable_value(&mut self.current_tab, EnvironmentTab::Layouts, "Layouts (.arm-layout.json)");
                 });
                 ui.separator();
 
@@ -652,6 +724,7 @@ impl EnvironmentUi {
                     EnvironmentTab::FloraScatter => self.render_flora_tab(ui, dimension, heights, water_level),
                     EnvironmentTab::NeutralLairs => self.render_lairs_tab(ui),
                     EnvironmentTab::SettlementGenerator => self.render_settlement_tab(ui, dimension, heights, water_level),
+                    EnvironmentTab::Layouts => self.render_layouts_tab(ui),
                 }
             });
 
@@ -966,7 +1039,49 @@ impl EnvironmentUi {
             if let Some(nature) = &self.last_nature_preset {
                 ui.label(format!("Nature Preset Entries: {}", nature.entries.len()));
             }
+            ui.horizontal(|ui| {
+                if self.last_placement_preset.is_some() && ui.button("Save placement preset as layout...").clicked() {
+                    self.report_preset_export(false);
+                }
+                if self.last_nature_preset.is_some() && ui.button("Save nature preset as layout...").clicked() {
+                    self.report_preset_export(true);
+                }
+            });
         }
+    }
+
+    fn report_preset_export(&mut self, nature: bool) {
+        match self.export_generated_preset(nature) {
+            Ok(Some(path)) => {
+                self.status_message = format!("Saved layout: {}", path.display());
+                self.status_is_error = false;
+            }
+            Ok(None) => {}
+            Err(e) => {
+                self.status_message = format!("Layout failed: {e}");
+                self.status_is_error = true;
+            }
+        }
+    }
+
+    fn render_layouts_tab(&mut self, ui: &mut egui::Ui) {
+        ui.heading("Layouts / 配置");
+        ui.label("Forest (nature) layouts capture landscape objects in a tile rectangle; settlement layouts are saved from the Objects panel (selection) or the Settlement Generator.");
+        ui.horizontal(|ui| {
+            for (index, name) in ["left", "top", "right", "bottom"].iter().enumerate() {
+                ui.label(*name);
+                ui.add(egui::TextEdit::singleline(&mut self.layout_rect[index]).desired_width(48.0));
+            }
+        });
+        ui.horizontal(|ui| {
+            if ui.button("Save forest region... / 保存森林區域").clicked() {
+                self.request_nature_layout_export();
+            }
+            if ui.button("Load and apply layout... / 載入並套用配置").clicked() {
+                self.request_layout_import();
+            }
+        });
+        ui.small("Apply opens the Objects panel's Apply layout dialog (anchor tile, rotation, team override); one Undo step.");
     }
 }
 
@@ -1127,5 +1242,46 @@ mod tests {
         assert!(ui.last_distribution.is_some());
         assert!(ui.last_placement_preset.is_some());
         assert!(ui.is_dirty());
+    }
+
+    #[test]
+    fn layout_rect_parsing_and_export_requests() {
+        let mut ui = EnvironmentUi::default();
+        assert_eq!(ui.parse_layout_rect().unwrap(), TileRect { left: 0, top: 0, right: 8, bottom: 8 });
+        ui.layout_rect = ["2".into(), "3".into(), "2".into(), "9".into()];
+        assert!(ui.parse_layout_rect().is_err(), "empty width");
+        ui.request_nature_layout_export();
+        assert!(ui.status_is_error && ui.take_layout_export_request().is_none());
+        ui.layout_rect = ["-1".into(), "0".into(), "4".into(), "4".into()];
+        assert!(ui.parse_layout_rect().is_err());
+        ui.layout_rect = [" 2 ".into(), "3".into(), "6".into(), "9".into()];
+        ui.request_nature_layout_export();
+        assert_eq!(ui.take_layout_export_request(), Some(TileRect { left: 2, top: 3, right: 6, bottom: 9 }));
+        assert!(ui.take_layout_export_request().is_none(), "take-once");
+        ui.request_layout_import();
+        assert!(ui.take_layout_import_request() && !ui.take_layout_import_request());
+    }
+
+    #[test]
+    fn generated_settlement_presets_export_through_injected_picker() {
+        use against_rome_environment::settlement::{MapLayoutEntry, MapLayoutKind, MapLayoutPreset};
+        let dir = std::env::temp_dir().join(format!("arm_env_layout_{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let target = dir.join("base");
+        let mut ui = EnvironmentUi::default();
+        assert!(ui.export_generated_preset(false).is_err(), "nothing generated yet");
+        ui.last_placement_preset = Some(MapLayoutPreset::new(
+            MapLayoutKind::Placement,
+            vec![MapLayoutEntry::with_team_and_count("RomHaus01", 10.0, 20.0, 0.0, 90.0, 1, 0)],
+        ));
+        let t = target.clone();
+        ui.layout_picker = Some(Box::new(move |_| Some(t.clone())));
+        let written = ui.export_generated_preset(false).unwrap().unwrap();
+        assert!(written.to_string_lossy().ends_with("base.arm-layout.json"));
+        let back = crate::layout_io::read_layout_file(&written).unwrap();
+        assert_eq!(back.entries[0].type_name, "RomHaus01");
+        ui.layout_picker = Some(Box::new(|_| None));
+        assert_eq!(ui.export_generated_preset(false).unwrap(), None, "cancelled picker");
+        let _ = std::fs::remove_dir_all(dir);
     }
 }

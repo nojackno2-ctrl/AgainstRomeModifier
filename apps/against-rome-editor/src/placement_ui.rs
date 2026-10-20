@@ -1,5 +1,9 @@
 //! DATA object-family editor. Its Save is independent of terrain/image saving.
 use crate::design_apply::{apply_placements, PlacementBatch, PlacementRequest};
+use crate::layout_io::{
+    self, LayoutApplyOptions, LayoutContext, LayoutDialogKind, LayoutFilePicker, MapLayoutKind,
+    MapLayoutPreset,
+};
 use against_rome_placement::{ObjectStore, WorldObject};
 use eframe::egui;
 use std::{
@@ -143,7 +147,29 @@ pub struct PlacementUi {
     redo_groups: Vec<usize>,
     /// Raised by the Save button; `EditorApp` consumes it and routes to the central Safe Save.
     save_requested: bool,
+    /// Injectable layout file picker; `None` uses the native `rfd` dialogs.
+    pub layout_picker: Option<LayoutFilePicker>,
+    /// Loaded layout waiting for the apply dialog (C# `LayoutApplyDialog`).
+    layout_pending: Option<MapLayoutPreset>,
+    layout_options: LayoutApplyOptions,
+    layout_team_override: bool,
+    layout_team: i32,
+    /// Layout work that needs terrain/name context; drained by `process_layout_requests`.
+    layout_queue: Vec<LayoutRequest>,
+    layout_status: String,
 }
+
+/// Layout actions queued by the UI and executed with an app-provided [`LayoutContext`].
+#[derive(Clone, Debug, PartialEq)]
+pub enum LayoutRequest {
+    ExportSelection,
+    ExportNature(TileRect),
+    Apply {
+        preset: MapLayoutPreset,
+        options: LayoutApplyOptions,
+    },
+}
+
 impl Default for PlacementUi {
     fn default() -> Self {
         Self {
@@ -164,6 +190,13 @@ impl Default for PlacementUi {
             undo_groups: Vec::new(),
             redo_groups: Vec::new(),
             save_requested: false,
+            layout_picker: None,
+            layout_pending: None,
+            layout_options: LayoutApplyOptions::default(),
+            layout_team_override: false,
+            layout_team: 0,
+            layout_queue: Vec::new(),
+            layout_status: String::new(),
         }
     }
 }
@@ -571,6 +604,23 @@ impl PlacementUi {
             self.pending = None;
         }
     }
+    /// Box-select result (C# `TerrainRegionOperation.SelectObjects`): replaces the selection, or
+    /// adds to it when `additive` (Shift). Returns how many objects the rectangle contains.
+    pub fn select_in_tile_rect(&mut self, rect: TileRect, additive: bool) -> usize {
+        let hits = select_objects_in_tile_rect(&self.objects(), rect);
+        if additive {
+            let mut keys = self.selected_objects();
+            for key in &hits {
+                if !keys.contains(key) {
+                    keys.push(*key);
+                }
+            }
+            self.select_objects(&keys);
+        } else {
+            self.select_objects(&hits);
+        }
+        hits.len()
+    }
     /// Selects all active objects currently in the loaded store.
     pub fn select_all(&mut self) {
         if let Some(store) = &self.store {
@@ -923,6 +973,268 @@ impl PlacementUi {
         self.pending = None;
         Ok(())
     }
+    // ---------------------------------------------------------------- layouts
+    pub fn layout_status(&self) -> &str {
+        &self.layout_status
+    }
+    pub fn has_pending_layout(&self) -> bool {
+        self.layout_pending.is_some()
+    }
+    pub fn layout_options(&self) -> LayoutApplyOptions {
+        self.layout_options
+    }
+    pub fn set_layout_options(&mut self, options: LayoutApplyOptions) {
+        self.layout_options = options;
+        self.layout_team_override = options.team.is_some();
+        if let Some(team) = options.team {
+            self.layout_team = team;
+        }
+    }
+    /// Queues a layout action; it runs on the next `process_layout_requests`.
+    pub fn request_layout(&mut self, request: LayoutRequest) {
+        self.layout_queue.push(request);
+    }
+    pub fn has_layout_requests(&self) -> bool {
+        !self.layout_queue.is_empty()
+    }
+    fn pick_layout_file(&self, kind: &LayoutDialogKind) -> Option<PathBuf> {
+        match &self.layout_picker {
+            Some(picker) => picker(kind),
+            None => layout_io::native_layout_picker()(kind),
+        }
+    }
+    /// "Import layout": pick a file, validate it, then open the apply dialog.
+    pub fn begin_layout_import(&mut self) {
+        let Some(path) = self.pick_layout_file(&LayoutDialogKind::Open) else {
+            return;
+        };
+        self.load_layout_from(&path);
+    }
+    /// Reads and validates `path`; on success the apply dialog opens (C# `RunLayoutApply`).
+    pub fn load_layout_from(&mut self, path: &Path) {
+        match layout_io::read_layout_file(path) {
+            Ok(preset) => {
+                self.layout_status = format!(
+                    "已載入配置：{:?}，{} 個物件 / Loaded layout ({:?}, {} objects)",
+                    preset.kind,
+                    preset.entries.len(),
+                    preset.kind,
+                    preset.entries.len()
+                );
+                self.layout_pending = Some(preset);
+            }
+            Err(error) => {
+                self.layout_pending = None;
+                self.layout_status = format!("配置操作失敗 / Layout failed: {error}");
+            }
+        }
+    }
+    /// Confirms the apply dialog: validates the options and queues the apply.
+    pub fn confirm_layout_apply(&mut self) -> Result<()> {
+        let mut options = self.layout_options;
+        let placement = self
+            .layout_pending
+            .as_ref()
+            .is_some_and(|p| p.kind == MapLayoutKind::Placement);
+        options.team = (placement && self.layout_team_override).then_some(self.layout_team);
+        options.validate()?;
+        let preset = self.layout_pending.take().ok_or("沒有待套用的配置")?;
+        self.layout_options = options;
+        self.layout_queue.push(LayoutRequest::Apply { preset, options });
+        Ok(())
+    }
+    pub fn cancel_layout_apply(&mut self) {
+        self.layout_pending = None;
+    }
+    /// Applies placements in bounded batches but records a single undo step.
+    pub fn apply_requests_grouped(&mut self, requests: &[PlacementRequest]) -> Result<PlacementBatch> {
+        let groups_before = self.undo_groups.len();
+        let mut total = PlacementBatch::default();
+        let mut rest = requests;
+        let mut outcome = Ok(());
+        while !rest.is_empty() {
+            match self.apply_requests(rest) {
+                Ok(batch) => {
+                    total.consumed += batch.consumed;
+                    total.ops += batch.ops;
+                    total.placed += batch.placed;
+                    total.skipped.extend(batch.skipped);
+                    if batch.consumed == 0 {
+                        break;
+                    }
+                    rest = &rest[batch.consumed.min(rest.len())..];
+                }
+                Err(error) => {
+                    outcome = Err(error);
+                    break;
+                }
+            }
+        }
+        if self.undo_groups.len() > groups_before + 1 {
+            let merged: usize = self.undo_groups.drain(groups_before..).sum();
+            self.undo_groups.push(merged);
+        }
+        outcome.map(|()| total)
+    }
+    /// Runs queued layout exports/applies (called by `EditorApp` with terrain + objdef context).
+    pub fn process_layout_requests(&mut self, ctx: &LayoutContext<'_>) {
+        for request in std::mem::take(&mut self.layout_queue) {
+            let result = match request {
+                LayoutRequest::ExportSelection => self.run_export_selection(ctx),
+                LayoutRequest::ExportNature(rect) => self.run_export_nature(rect, ctx),
+                LayoutRequest::Apply { preset, options } => self.run_apply_layout(&preset, &options, ctx),
+            };
+            self.layout_status = match result {
+                Ok(message) => message,
+                Err(error) => format!("配置操作失敗 / Layout failed: {error}"),
+            };
+        }
+    }
+    fn save_layout(&self, preset: &MapLayoutPreset) -> Result<String> {
+        let kind = LayoutDialogKind::Save {
+            suggested_name: layout_io::suggested_file_name(preset.kind),
+        };
+        let Some(path) = self.pick_layout_file(&kind) else {
+            return Ok("已取消保存配置 / Layout save cancelled".into());
+        };
+        let written = layout_io::write_layout_file(&path, preset)?;
+        Ok(format!(
+            "已保存配置，共 {} 個物件 / Saved {} layout objects: {}",
+            preset.entries.len(),
+            preset.entries.len(),
+            written.display()
+        ))
+    }
+    fn run_export_selection(&mut self, ctx: &LayoutContext<'_>) -> Result<String> {
+        if !self.is_loaded() {
+            return Err("請先載入 MAP".into());
+        }
+        let preset = layout_io::capture_placement(
+            &self.objects(),
+            &self.selected_objects(),
+            &|id| ctx.name_of(id),
+            ctx.ground,
+        )?;
+        self.save_layout(&preset)
+    }
+    fn run_export_nature(&mut self, rect: TileRect, ctx: &LayoutContext<'_>) -> Result<String> {
+        if !self.is_loaded() {
+            return Err("請先載入 MAP".into());
+        }
+        let preset = layout_io::capture_nature(&self.objects(), rect, &|id| ctx.name_of(id), ctx.ground)?;
+        self.save_layout(&preset)
+    }
+    fn run_apply_layout(
+        &mut self,
+        preset: &MapLayoutPreset,
+        options: &LayoutApplyOptions,
+        ctx: &LayoutContext<'_>,
+    ) -> Result<String> {
+        if !self.is_loaded() {
+            return Err("請先載入 MAP".into());
+        }
+        let requests = layout_io::plan_requests(preset, &|name| ctx.resolve(name), options, ctx.ground)?;
+        let before: Vec<(usize, u32)> = self.objects().iter().map(|o| (o.slot, o.uid)).collect();
+        let batch = self.apply_requests_grouped(&requests)?;
+        if batch.placed == 0 && !batch.skipped.is_empty() {
+            return Err(batch.skipped.join("; "));
+        }
+        // Select what was just placed (C# selects the new rows).
+        let fresh: Vec<(usize, u32)> = self
+            .objects()
+            .iter()
+            .map(|o| (o.slot, o.uid))
+            .filter(|key| !before.contains(key))
+            .collect();
+        self.select_objects(&fresh);
+        let note = if batch.skipped.is_empty() {
+            String::new()
+        } else {
+            format!("（略過：{}）", batch.skipped.join("; "))
+        };
+        Ok(format!(
+            "已套用配置：{} 個物件（可 Undo）{note} / Applied {} layout objects ({:?})",
+            batch.placed, batch.placed, preset.kind
+        ))
+    }
+    fn layout_section(&mut self, ui: &mut egui::Ui) {
+        ui.separator();
+        ui.horizontal_wrapped(|ui| {
+            ui.label("配置 / Layout (.arm-layout.json)");
+            let has_selection = !self.selected_families().is_empty();
+            if ui
+                .add_enabled(
+                    self.is_loaded() && has_selection,
+                    egui::Button::new("保存選取的聚落／物件… / Export selection"),
+                )
+                .clicked()
+            {
+                self.request_layout(LayoutRequest::ExportSelection);
+            }
+            if ui
+                .add_enabled(self.is_loaded(), egui::Button::new("載入並套用配置… / Import layout"))
+                .clicked()
+            {
+                self.begin_layout_import();
+            }
+        });
+        if !self.layout_status.is_empty() {
+            ui.small(&self.layout_status);
+        }
+    }
+    fn show_layout_apply(&mut self, ctx: &egui::Context) {
+        let Some(preset) = self.layout_pending.clone() else {
+            return;
+        };
+        let mut confirm = false;
+        let mut cancel = false;
+        let mut open = true;
+        egui::Window::new("套用配置 / Apply layout")
+            .open(&mut open)
+            .collapsible(false)
+            .resizable(false)
+            .show(ctx, |ui| {
+                ui.label(format!(
+                    "{:?}：{} 個物件。錨點使用圖格座標；繞保存的原點旋轉，高度貼合地形。類型缺失或位置越界時整批拒絕。",
+                    preset.kind,
+                    preset.entries.len()
+                ));
+                ui.label("Anchor is in tile units; rotates about the saved origin; heights follow terrain; the whole layout is rejected if any type or position is invalid.");
+                ui.horizontal(|ui| {
+                    ui.label("錨點 X / Anchor X");
+                    ui.add(egui::DragValue::new(&mut self.layout_options.anchor_tile_x).clamp_range(0.0..=63.99).speed(0.1));
+                    ui.label("錨點 Z / Anchor Z");
+                    ui.add(egui::DragValue::new(&mut self.layout_options.anchor_tile_z).clamp_range(0.0..=63.99).speed(0.1));
+                });
+                ui.horizontal(|ui| {
+                    ui.label("旋轉（度）/ Rotation");
+                    ui.add(egui::DragValue::new(&mut self.layout_options.rotation).clamp_range(0.0..=359.0).speed(45.0));
+                });
+                let placement = preset.kind == MapLayoutKind::Placement;
+                ui.horizontal(|ui| {
+                    ui.add_enabled(placement, egui::Checkbox::new(&mut self.layout_team_override, "指定隊伍 / Override team"));
+                    ui.add_enabled(
+                        placement && self.layout_team_override,
+                        egui::DragValue::new(&mut self.layout_team).clamp_range(-1..=15),
+                    );
+                });
+                ui.horizontal(|ui| {
+                    if ui.button("套用 / Apply").clicked() {
+                        confirm = true;
+                    }
+                    if ui.button("取消 / Cancel").clicked() {
+                        cancel = true;
+                    }
+                });
+            });
+        if confirm {
+            if let Err(error) = self.confirm_layout_apply() {
+                self.layout_status = format!("配置操作失敗 / Layout failed: {error}");
+            }
+        } else if cancel || !open {
+            self.cancel_layout_apply();
+        }
+    }
     fn report(&mut self, result: Result<()>) {
         self.status = match result {
             Ok(()) => "完成（DATA 保存與 terrain 保存獨立）".into(),
@@ -1098,8 +1410,10 @@ impl PlacementUi {
                 if ui.add_enabled(self.is_dirty(),egui::Button::new("Save DATA")).clicked() {self.request_save();}
                 if ui.add_enabled(self.is_loaded(),egui::Button::new("Reset DATA…")).clicked() {let r=self.request_reset();self.report(r);}
             });
+            self.layout_section(ui);
             ui.separator();ui.label(&self.status);
         });
+        self.show_layout_apply(ctx);
         // The title-bar close button follows the same dirty guard as the explicit Close tool.
         if self.open && !visible {
             self.request_close();
@@ -1156,6 +1470,39 @@ pub fn select_objects_in_tile_rect(objects: &[WorldObject], rect: TileRect) -> V
         })
         .map(|o| (o.slot, o.uid))
         .collect()
+}
+
+/// Normalized (0..1) map position to a tile index, clamped to the map.
+pub fn norm_to_tile(norm: f32, dimension: i32) -> i32 {
+    if !norm.is_finite() || dimension <= 0 {
+        return 0;
+    }
+    ((norm * dimension as f32).floor() as i32).clamp(0, dimension - 1)
+}
+
+/// Box-select rectangle from two screen points over the displayed map, inclusive of the tile under
+/// each corner like C# `Rectangle.FromLTRB(min, min, max + 1, max + 1)`.
+/// `map_min`/`map_size` describe the on-screen map image.
+pub fn screen_box_to_tile_rect(
+    a: (f32, f32),
+    b: (f32, f32),
+    map_min: (f32, f32),
+    map_size: (f32, f32),
+    dimension: i32,
+) -> TileRect {
+    let tile = |p: (f32, f32)| {
+        (
+            norm_to_tile((p.0 - map_min.0) / map_size.0, dimension),
+            norm_to_tile((p.1 - map_min.1) / map_size.1, dimension),
+        )
+    };
+    let (ta, tb) = (tile(a), tile(b));
+    TileRect {
+        left: ta.0.min(tb.0),
+        top: ta.1.min(tb.1),
+        right: ta.0.max(tb.0) + 1,
+        bottom: ta.1.max(tb.1) + 1,
+    }
 }
 
 #[cfg(test)]
@@ -2459,5 +2806,188 @@ mod tests {
         );
         assert!(!ui.is_dirty());
         assert_eq!(ui.undo_depth(), 0);
+    }
+
+    #[test]
+    fn screen_box_maps_to_inclusive_tile_rect_regardless_of_drag_direction() {
+        // 64 tiles over a 640 px map at (100, 50): 10 px per tile.
+        let (min, size) = ((100.0, 50.0), (640.0, 640.0));
+        let forward = screen_box_to_tile_rect((125.0, 75.0), (161.0, 133.0), min, size, 64);
+        assert_eq!(forward, TileRect { left: 2, top: 2, right: 7, bottom: 9 });
+        let backward = screen_box_to_tile_rect((161.0, 133.0), (125.0, 75.0), min, size, 64);
+        assert_eq!(forward, backward);
+        // A click without drag selects its own tile (C# FromLTRB(.., max + 1)).
+        let single = screen_box_to_tile_rect((105.0, 55.0), (105.0, 55.0), min, size, 64);
+        assert_eq!(single, TileRect { left: 0, top: 0, right: 1, bottom: 1 });
+        // Dragging past the map clamps to the border tiles.
+        let wide = screen_box_to_tile_rect((-500.0, -500.0), (9999.0, 9999.0), min, size, 64);
+        assert_eq!(wide, TileRect { left: 0, top: 0, right: 64, bottom: 64 });
+        assert_eq!(norm_to_tile(f32::NAN, 64), 0);
+        assert_eq!(norm_to_tile(1.0, 64), 63);
+    }
+
+    #[test]
+    fn box_select_replaces_or_adds_with_shift() {
+        let temp = Temp::new();
+        fixture(&temp.0);
+        let mut ui = PlacementUi {
+            map_input: temp.0.display().to_string(),
+            ..Default::default()
+        };
+        ui.request_load().unwrap();
+        let tile0 = TileRect { left: 0, top: 0, right: 1, bottom: 1 };
+        let far = TileRect { left: 10, top: 10, right: 12, bottom: 12 };
+        assert_eq!(ui.select_in_tile_rect(tile0, false), 3, "fixture objects sit in tile (0,0)");
+        assert_eq!(ui.selected_objects().len(), 3);
+        // An empty replace clears; an empty additive box keeps the selection.
+        assert_eq!(ui.select_in_tile_rect(far, true), 0);
+        assert_eq!(ui.selected_objects().len(), 3);
+        assert_eq!(ui.select_in_tile_rect(far, false), 0);
+        assert!(ui.selected_objects().is_empty());
+        ui.select_object(Some((0, 1)));
+        ui.select_in_tile_rect(tile0, true);
+        assert_eq!(ui.selected_objects().len(), 3, "additive union has no duplicates");
+        assert!(!ui.is_dirty(), "selection never dirties DATA");
+    }
+
+    #[test]
+    fn layout_export_import_apply_roundtrip_is_one_undo_step() {
+        use crate::layout_io::{LayoutApplyOptions, LayoutContext, LayoutDialogKind};
+        let temp = Temp::new();
+        fixture(&temp.0);
+        free_last_slot(&temp.0); // slot 2 becomes the single free native slot
+        let file = temp.0.join("saved.arm-layout.json");
+        let mut ui = PlacementUi {
+            map_input: temp.0.display().to_string(),
+            ..Default::default()
+        };
+        let target = file.clone();
+        ui.layout_picker = Some(Box::new(move |kind| match kind {
+            LayoutDialogKind::Save { suggested_name } => {
+                assert_eq!(suggested_name, "settlement.arm-layout.json");
+                Some(target.clone())
+            }
+            LayoutDialogKind::Open => Some(target.clone()),
+        }));
+        let names = vec![(0, "RomA".to_string())];
+        let ground = |_: f32, _: f32| 0.0;
+        let ctx = LayoutContext { names: &names, ground: &ground };
+
+        ui.request_load().unwrap();
+        // Nothing selected: export is refused and nothing is written.
+        ui.request_layout(LayoutRequest::ExportSelection);
+        ui.process_layout_requests(&ctx);
+        assert!(ui.layout_status().contains("Select placed objects"), "{}", ui.layout_status());
+        assert!(!file.exists());
+
+        ui.select_object(Some((1, 2)));
+        ui.request_layout(LayoutRequest::ExportSelection);
+        ui.process_layout_requests(&ctx);
+        let saved = crate::layout_io::read_layout_file(&file).unwrap();
+        assert_eq!(saved.entries.len(), 1);
+        assert_eq!(saved.entries[0].type_name, "RomA");
+        assert_eq!((saved.entries[0].x, saved.entries[0].z), (0.0, 0.0), "relative to the min corner");
+        assert_eq!(saved.entries[0].team, 0);
+
+        // Import opens the dialog; apply is queued only after confirmation.
+        let before = ui.object_count();
+        ui.begin_layout_import();
+        assert!(ui.has_pending_layout());
+        ui.set_layout_options(LayoutApplyOptions { anchor_tile_x: 10.0, anchor_tile_z: 12.0, rotation: 90.0, team: Some(4) });
+        ui.layout_team_override = true;
+        ui.confirm_layout_apply().unwrap();
+        assert!(!ui.has_pending_layout() && ui.has_layout_requests());
+        let undo_before = ui.undo_depth();
+        ui.process_layout_requests(&ctx);
+        assert!(ui.layout_status().contains("已套用配置"), "{}", ui.layout_status());
+        assert_eq!(ui.object_count(), before + 1);
+        assert_eq!(ui.undo_depth(), undo_before + 1, "layout apply is one undo step");
+        assert_eq!(ui.selected_objects().len(), 1, "new object is selected");
+        let placed = ui.objects().into_iter().find(|o| o.slot == 2).unwrap();
+        assert!((placed.position[0] - 2560.0).abs() < 0.1 && (placed.position[2] - 3072.0).abs() < 0.1, "{:?}", placed.position);
+        assert_eq!(placed.team, 4);
+        ui.undo().unwrap();
+        assert_eq!(ui.object_count(), before);
+    }
+
+    #[test]
+    fn layout_apply_rejects_unknown_types_and_bad_options_without_editing() {
+        use crate::layout_io::{LayoutApplyOptions, LayoutContext};
+        let temp = Temp::new();
+        fixture(&temp.0);
+        let mut ui = PlacementUi {
+            map_input: temp.0.display().to_string(),
+            ..Default::default()
+        };
+        ui.request_load().unwrap();
+        let names = vec![(0, "RomA".to_string())];
+        let ground = |_: f32, _: f32| 0.0;
+        let ctx = LayoutContext { names: &names, ground: &ground };
+        let preset = crate::layout_io::deserialize(
+            r#"{"version":1,"kind":"Placement","entries":[{"type":"RomA"},{"type":"Missing"}]}"#,
+        )
+        .unwrap();
+        ui.request_layout(LayoutRequest::Apply { preset: preset.clone(), options: LayoutApplyOptions::default() });
+        ui.process_layout_requests(&ctx);
+        assert!(ui.layout_status().contains("Missing placement type: Missing"), "{}", ui.layout_status());
+        assert!(!ui.is_dirty() && ui.undo_depth() == 0, "whole layout rejected");
+
+        // Out-of-range dialog values are refused at confirmation and keep the dialog open.
+        let path = temp.0.join("a.arm-layout.json");
+        crate::layout_io::write_layout_file(&path, &preset).unwrap();
+        ui.load_layout_from(&path);
+        ui.set_layout_options(LayoutApplyOptions { anchor_tile_x: 99.0, ..Default::default() });
+        assert!(ui.confirm_layout_apply().is_err());
+        assert!(ui.has_pending_layout());
+        ui.cancel_layout_apply();
+        assert!(!ui.has_pending_layout());
+
+        // Corrupt files never open the dialog.
+        fs::write(&path, "{ not json").unwrap();
+        ui.load_layout_from(&path);
+        assert!(!ui.has_pending_layout());
+        assert!(ui.layout_status().contains("Layout failed"));
+    }
+
+    #[test]
+    fn nature_layout_export_uses_landscape_names_inside_tile_rect() {
+        use crate::layout_io::{LayoutContext, LayoutDialogKind};
+        let temp = Temp::new();
+        fixture(&temp.0);
+        let file = temp.0.join("forest.arm-layout.json");
+        let mut ui = PlacementUi {
+            map_input: temp.0.display().to_string(),
+            ..Default::default()
+        };
+        let target = file.clone();
+        ui.layout_picker = Some(Box::new(move |kind| {
+            if let LayoutDialogKind::Save { suggested_name } = kind {
+                assert_eq!(suggested_name, "forest.arm-layout.json");
+            }
+            Some(target.clone())
+        }));
+        ui.request_load().unwrap();
+        let names = vec![(0, "LanTree".to_string())];
+        let ground = |_: f32, _: f32| 0.0;
+        let ctx = LayoutContext { names: &names, ground: &ground };
+        ui.request_layout(LayoutRequest::ExportNature(TileRect { left: 0, top: 0, right: 1, bottom: 1 }));
+        ui.process_layout_requests(&ctx);
+        assert!(file.exists(), "{}", ui.layout_status());
+        let saved = crate::layout_io::read_layout_file(&file).unwrap();
+        assert_eq!(saved.kind, MapLayoutKind::Nature);
+        assert_eq!(saved.entries.len(), 3);
+        assert!(saved.entries.iter().all(|e| e.type_name == "LanTree" && e.team == 0 && e.count == 0));
+        assert_eq!(saved.entries[2].x, 40.0, "relative to the rectangle corner");
+        // Outside the rectangle, or non-landscape names: error and nothing written.
+        fs::remove_file(&file).unwrap();
+        ui.request_layout(LayoutRequest::ExportNature(TileRect { left: 20, top: 20, right: 21, bottom: 21 }));
+        ui.process_layout_requests(&ctx);
+        assert!(!file.exists());
+        assert!(ui.layout_status().contains("No landscape objects"));
+        let buildings = vec![(0, "RomA".to_string())];
+        let ctx = LayoutContext { names: &buildings, ground: &ground };
+        ui.request_layout(LayoutRequest::ExportNature(TileRect { left: 0, top: 0, right: 1, bottom: 1 }));
+        ui.process_layout_requests(&ctx);
+        assert!(!file.exists(), "buildings are not nature");
     }
 }
