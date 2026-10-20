@@ -33,6 +33,7 @@ members = [
     "tools/re/particle-numeric-contract-rs",
     "tools/re/particle-render-contract-rs",
     "tools/re/saved-light-contract-rs",
+    "tools/re/ar-re-tools-rs",
 ]
 
 [profile.release]

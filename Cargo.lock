@@ -390,6 +390,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "ar-re-tools"
+version = "0.1.0"
+dependencies = [
+ "against-rome-data",
+ "flate2",
+ "iced-x86",
+ "saved-light-contract",
+ "serde_json",
+ "sha2",
+ "zip",
+]
+
+[[package]]
 name = "arboard"
 version = "3.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

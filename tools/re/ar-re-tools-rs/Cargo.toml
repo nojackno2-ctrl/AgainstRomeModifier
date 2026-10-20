@@ -1,0 +1,23 @@
+[package]
+name = "ar-re-tools"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Rust port of the reusable read-only tools/re/*.py validation scripts (binary `ar-re`, one subcommand per script)."
+
+[lib]
+name = "ar_re_tools"
+path = "src/lib.rs"
+
+[[bin]]
+name = "ar-re"
+path = "src/main.rs"
+
+[dependencies]
+against-rome-data = { path = "../../../native/against-rome-data" }
+saved-light-contract = { path = "../saved-light-contract-rs" }
+iced-x86 = { version = "=1.21.0", default-features = false, features = ["std", "decoder", "intel", "instr_info"] }
+sha2 = "0.10.9"
+serde_json = "1"
+zip = { version = "=0.6.6", default-features = false, features = ["deflate"] }
+flate2 = "1"

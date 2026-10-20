@@ -37,7 +37,7 @@ $crates = @('native/against-rome-data', 'native/against-rome-editor',
 $probes = @('formation-probe-rs', 'shad-probe-rs', 'alr-probe-rs', 'apt-probe-rs', 'anim-probe-rs',
     'alr-scanline-differential-rs', 'lighting-probe-rs', 'roads-golden-rs', 'formation-golden-rs', 'particle-assets-rs',
     'particle-definition-probe-rs', 'particle-numeric-contract-rs', 'particle-render-contract-rs',
-    'saved-light-contract-rs') | ForEach-Object { "tools/re/$_" }
+    'saved-light-contract-rs', 'ar-re-tools-rs') | ForEach-Object { "tools/re/$_" }
 $desktop = 'apps/against-rome-editor'
 # TraceOnly is a focused release/i686 gate; it never runs retail or C# oracles.
 if ($TraceOnly) {
