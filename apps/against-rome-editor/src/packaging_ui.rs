@@ -1135,8 +1135,56 @@ fn describe_records<T: PartialEq + std::fmt::Debug>(
     changed
 }
 
+// ---------------------------------------------------------------------------
+// Test in game (C# MapEditorForm.PreviewInGame)
+// ---------------------------------------------------------------------------
+
+/// Game install directory implied by a map folder `<game>/MAPS/<map>` (None if the layout does not fit).
+pub fn game_dir_for_map(map_dir: &Path) -> Option<PathBuf> {
+    let game = map_dir.parent()?.parent()?;
+    (!game.as_os_str().is_empty()).then(|| game.to_path_buf())
+}
+
+/// Process spawner: `(exe, working_dir)`. Injectable so tests never start the real game.
+pub type GameSpawner<'a> = &'a mut dyn FnMut(&Path, &Path) -> std::io::Result<()>;
+
+/// Production spawner: starts `Against_Rome.exe` detached with the game directory as cwd.
+pub fn spawn_game_process(exe: &Path, cwd: &Path) -> std::io::Result<()> {
+    std::process::Command::new(exe).current_dir(cwd).spawn().map(|_| ())
+}
+
+/// Validates `Against_Rome.exe` exists in `game_dir`, then spawns it. Returns the exe path.
+pub fn launch_game(game_dir: &Path, spawn: GameSpawner<'_>) -> Result<PathBuf, String> {
+    let exe = game_dir.join("Against_Rome.exe");
+    if !exe.is_file() {
+        return Err(format!("Against_Rome.exe not found in game folder: {}", game_dir.display()));
+    }
+    spawn(&exe, game_dir).map_err(|e| format!("Failed to launch game: {e}"))?;
+    Ok(exe)
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn launch_game_uses_injected_spawner_and_checks_exe() {
+        let dir = std::env::temp_dir().join(format!("ar_launch_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("MAPS").join("ENDL_007")).unwrap();
+        let mut calls = Vec::new();
+        let mut spawn = |exe: &Path, cwd: &Path| {
+            calls.push((exe.to_path_buf(), cwd.to_path_buf()));
+            Ok(())
+        };
+        assert!(launch_game(&dir, &mut spawn).unwrap_err().contains("not found"));
+        std::fs::write(dir.join("Against_Rome.exe"), b"x").unwrap();
+        assert_eq!(game_dir_for_map(&dir.join("MAPS").join("ENDL_007")).unwrap(), dir);
+        launch_game(&dir, &mut spawn).unwrap();
+        assert_eq!(calls, vec![(dir.join("Against_Rome.exe"), dir.clone())]);
+        let mut failing = |_: &Path, _: &Path| Err(std::io::Error::other("boom"));
+        assert!(launch_game(&dir, &mut failing).unwrap_err().contains("boom"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     use super::*;
 
     #[test]

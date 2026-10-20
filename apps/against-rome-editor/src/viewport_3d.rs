@@ -104,6 +104,44 @@ impl ViewportAction {
     }
 }
 
+/// Keyboard camera commands (C# `Map3DViewControl.OnKeyDown`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum CameraKeyAction {
+    /// Pan in screen directions: (right, forward) as a fraction of the camera distance.
+    Pan(f32, f32),
+    ZoomIn,
+    ZoomOut,
+    ResetGameScale,
+}
+
+/// Pure key -> camera mapping. Ctrl/Alt combinations belong to other features
+/// (Ctrl+Arrow nudges the placement selection), so they never move the camera.
+pub fn camera_key_action(key: egui::Key, ctrl: bool, alt: bool) -> Option<CameraKeyAction> {
+    if ctrl || alt {
+        return None;
+    }
+    Some(match key {
+        egui::Key::ArrowLeft => CameraKeyAction::Pan(-0.1, 0.0),
+        egui::Key::ArrowRight => CameraKeyAction::Pan(0.1, 0.0),
+        egui::Key::ArrowUp => CameraKeyAction::Pan(0.0, 0.1),
+        egui::Key::ArrowDown => CameraKeyAction::Pan(0.0, -0.1),
+        egui::Key::PageUp => CameraKeyAction::ZoomIn,
+        egui::Key::PageDown => CameraKeyAction::ZoomOut,
+        egui::Key::Home => CameraKeyAction::ResetGameScale,
+        _ => return None,
+    })
+}
+
+const CAMERA_KEYS: [egui::Key; 7] = [
+    egui::Key::ArrowLeft,
+    egui::Key::ArrowRight,
+    egui::Key::ArrowUp,
+    egui::Key::ArrowDown,
+    egui::Key::PageUp,
+    egui::Key::PageDown,
+    egui::Key::Home,
+];
+
 /// Interactive 3D terrain and object viewport state and renderer.
 #[derive(Clone)]
 pub struct Viewport3d {
@@ -317,6 +355,21 @@ impl Viewport3d {
     pub fn pan(&mut self, delta_x: f32, delta_y: f32) {
         self.camera
             .pan(-delta_x * Self::PAN_SPEED, delta_y * Self::PAN_SPEED);
+    }
+
+    /// Applies a keyboard camera command; `viewport_height` is the canvas height in pixels.
+    pub fn apply_camera_key(&mut self, action: CameraKeyAction, viewport_height: f32) {
+        match action {
+            CameraKeyAction::Pan(right, forward) => {
+                let d = self.camera.distance();
+                self.camera.pan(right * d, forward * d);
+            }
+            CameraKeyAction::ZoomIn => self.camera.zoom(0.84),
+            CameraKeyAction::ZoomOut => self.camera.zoom(1.19),
+            CameraKeyAction::ResetGameScale => {
+                self.camera.zoom_to_game_scale(viewport_height.max(1.0) as i32)
+            }
+        }
     }
 
     /// Zooms the camera distance by standard stepping factors.
@@ -612,6 +665,19 @@ impl Viewport3d {
             self.is_rotating = true;
         } else {
             self.is_rotating = false;
+        }
+
+        // 6b. Keyboard camera (arrows pan, PgUp/PgDn zoom, Home = game scale), hover-only so
+        // placement nudging (Ctrl+Arrow) and text fields keep their keys.
+        if response.hovered() && !ctx.wants_keyboard_input() {
+            let (ctrl, alt) = ctx.input(|i| (i.modifiers.ctrl || i.modifiers.command, i.modifiers.alt));
+            for key in CAMERA_KEYS {
+                if ctx.input(|i| i.key_pressed(key)) {
+                    if let Some(action) = camera_key_action(key, ctrl, alt) {
+                        self.apply_camera_key(action, rect.height());
+                    }
+                }
+            }
         }
 
         // 7. Convert WorldObjects to SceneObjects and resolve sprites
@@ -1499,6 +1565,30 @@ mod tests {
         assert!(vp.hover_tile.is_none());
         assert!(vp.hover_world.is_none());
         assert!(vp.hover_object.is_none());
+    }
+
+    #[test]
+    fn test_camera_key_mapping_and_application() {
+        use egui::Key::*;
+        assert_eq!(camera_key_action(ArrowLeft, false, false), Some(CameraKeyAction::Pan(-0.1, 0.0)));
+        assert_eq!(camera_key_action(ArrowUp, false, false), Some(CameraKeyAction::Pan(0.0, 0.1)));
+        assert_eq!(camera_key_action(PageUp, false, false), Some(CameraKeyAction::ZoomIn));
+        assert_eq!(camera_key_action(PageDown, false, false), Some(CameraKeyAction::ZoomOut));
+        assert_eq!(camera_key_action(Home, false, false), Some(CameraKeyAction::ResetGameScale));
+        assert_eq!(camera_key_action(ArrowLeft, true, false), None);
+        assert_eq!(camera_key_action(ArrowLeft, false, true), None);
+        assert_eq!(camera_key_action(A, false, false), None);
+
+        let mut vp = Viewport3d::new();
+        let target = vp.camera.target;
+        vp.apply_camera_key(CameraKeyAction::Pan(0.1, 0.0), 600.0);
+        assert_ne!(vp.camera.target, target);
+        let d = vp.camera.distance();
+        vp.apply_camera_key(CameraKeyAction::ZoomIn, 600.0);
+        assert!(vp.camera.distance() < d);
+        vp.apply_camera_key(CameraKeyAction::ZoomOut, 600.0);
+        vp.apply_camera_key(CameraKeyAction::ResetGameScale, 600.0);
+        assert!(vp.camera.distance() > 0.0);
     }
 
     #[test]

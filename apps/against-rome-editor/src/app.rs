@@ -10,6 +10,7 @@ use eframe::egui::{self, Color32, ColorImage, Pos2, Rect, Sense, Stroke, Texture
 use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
+use against_rome_ambience::{Language as AppLanguage, Loc};
 use crate::ambience_ui::AmbienceUi;
 use crate::minimap_ui::MinimapUi;
 use crate::modifier_ui::ModifierUi;
@@ -134,6 +135,8 @@ pub struct EditorApp {
     pub minimap: MinimapUi,
     pub(crate) design_check: crate::design_check_ui::DesignCheckUi,
     nature: NatureWorkflow,
+    /// App-level UI language (zh-TW / en) persisted through the shared `Loc` settings file.
+    loc: Loc,
     last_canvas_rect: Rect,
     last_map_rect: Rect,
 }
@@ -165,6 +168,10 @@ impl EditorApp {
         let _ = cc;
         let mut app = Self::initial_state();
         app.modifier = ModifierUi::persisted(crate::modifier_ui::default_state_dir());
+        if let Some(path) = app_settings_path() {
+            app.loc = Loc::load(path, "");
+            app.ambience.app_language = app.loc.current_language();
+        }
         app
     }
 
@@ -223,6 +230,7 @@ impl EditorApp {
             minimap: MinimapUi::default(),
             design_check: Default::default(),
             nature: NatureWorkflow::default(),
+            loc: Loc::new(AppLanguage::English),
             last_canvas_rect: Rect::from_min_size(Pos2::ZERO, Vec2::new(800.0, 600.0)),
             last_map_rect: Rect::from_min_size(Pos2::ZERO, Vec2::new(600.0, 600.0)),
         }
@@ -1151,7 +1159,12 @@ impl EditorApp {
         } else {
             Some(std::path::Path::new(self.map_path_input.trim()))
         };
+        self.ambience.app_language = self.loc.current_language();
         self.ambience.show(ctx, map_path, water);
+        if self.ambience.app_language != self.loc.current_language() {
+            let chosen = self.ambience.app_language;
+            self.set_app_language(chosen);
+        }
         self.modifier.show(ctx);
 
         let had_session = self.session.is_some();
@@ -2542,6 +2555,214 @@ impl EditorApp {
             }
         });
         ui.small("Drag on the map. Remove never touches script-linked or non-landscape objects. Save with Safe Save.");
+    }
+}
+
+/// Shared with the C# editor: `%APPDATA%\AgainstRomeModifier\settings.json`.
+fn app_settings_path() -> Option<PathBuf> {
+    std::env::var_os("APPDATA").map(|appdata| {
+        PathBuf::from(appdata)
+            .join("AgainstRomeModifier")
+            .join("settings.json")
+    })
+}
+
+/// Picks the English or Traditional Chinese text for the current app language.
+pub fn tr(lang: AppLanguage, en: &'static str, zh: &'static str) -> &'static str {
+    if lang == AppLanguage::English {
+        en
+    } else {
+        zh
+    }
+}
+
+/// Editor-wide keyboard shortcuts (C# `HandleShortcut` / `HandlePlacementWorkflowKey`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum ShortcutAction {
+    Save,
+    Delete,
+    SelectAll,
+    Duplicate,
+    Nudge { dx: f32, dz: f32 },
+}
+
+/// Keys polled each frame for [`shortcut_action`].
+const SHORTCUT_KEYS: [egui::Key; 8] = [
+    egui::Key::S,
+    egui::Key::A,
+    egui::Key::D,
+    egui::Key::Delete,
+    egui::Key::ArrowLeft,
+    egui::Key::ArrowRight,
+    egui::Key::ArrowUp,
+    egui::Key::ArrowDown,
+];
+
+/// Pure key -> action mapping. `text_focus` (a text field wants the keyboard) suppresses everything
+/// except Ctrl+S. Nudge is Ctrl+Arrow, 256 units (64 with Shift), Up/Left negative as in C#.
+pub fn shortcut_action(
+    key: egui::Key,
+    ctrl: bool,
+    shift: bool,
+    alt: bool,
+    text_focus: bool,
+) -> Option<ShortcutAction> {
+    use egui::Key;
+    if alt {
+        return None;
+    }
+    if ctrl && key == Key::S {
+        return Some(ShortcutAction::Save);
+    }
+    if text_focus {
+        return None;
+    }
+    match key {
+        Key::A if ctrl => Some(ShortcutAction::SelectAll),
+        Key::D if ctrl => Some(ShortcutAction::Duplicate),
+        Key::Delete if !ctrl && !shift => Some(ShortcutAction::Delete),
+        Key::ArrowLeft | Key::ArrowRight | Key::ArrowUp | Key::ArrowDown if ctrl => {
+            let step = if shift { 64.0 } else { 256.0 };
+            Some(match key {
+                Key::ArrowLeft => ShortcutAction::Nudge { dx: -step, dz: 0.0 },
+                Key::ArrowRight => ShortcutAction::Nudge { dx: step, dz: 0.0 },
+                Key::ArrowUp => ShortcutAction::Nudge { dx: 0.0, dz: -step },
+                _ => ShortcutAction::Nudge { dx: 0.0, dz: step },
+            })
+        }
+        _ => None,
+    }
+}
+
+/// Retail maps are `ENDL_001..ENDL_004`; custom maps start at slot 5 (C# `IsCustom`).
+/// Folders that do not follow the `ENDL_nnn` naming are treated as editable.
+pub fn is_original_map_dir(dir: &Path) -> bool {
+    // C# gates edits on CustomMapAccess.IsEditableDirectory: any map that lives
+    // in a game MAPS folder but is not a registered custom map is original.
+    let in_maps_folder = dir
+        .parent()
+        .and_then(Path::file_name)
+        .and_then(|n| n.to_str())
+        .is_some_and(|n| n.eq_ignore_ascii_case("MAPS"));
+    in_maps_folder && !against_rome_maps::CustomMapAccess::is_editable_directory(dir)
+}
+
+impl EditorApp {
+    fn lang(&self) -> AppLanguage {
+        self.loc.current_language()
+    }
+
+    fn set_app_language(&mut self, language: AppLanguage) {
+        self.loc.set_language(language);
+        self.ambience.app_language = language;
+    }
+
+    fn current_map_is_original(&self) -> bool {
+        is_original_map_dir(Path::new(self.map_path_input.trim()))
+    }
+
+    fn set_status(&mut self, message: String, is_error: bool) {
+        self.status_message = message;
+        self.status_is_error = is_error;
+    }
+
+    /// Dispatches one shortcut. Mutating actions are refused on retail maps like the C# editor.
+    pub fn handle_shortcut_action(&mut self, action: ShortcutAction) {
+        let lang = self.lang();
+        let read_only = self.current_map_is_original();
+        let read_only_msg = tr(
+            lang,
+            "Original maps are read-only; copy to a custom map first.",
+            "原廠地圖為唯讀，無法儲存；請先複製為自製地圖。",
+        );
+        match action {
+            ShortcutAction::Save => {
+                if read_only {
+                    self.set_status(read_only_msg.into(), true);
+                } else {
+                    self.request_safe_save();
+                }
+            }
+            ShortcutAction::SelectAll => {
+                if self.placement.is_loaded() {
+                    self.placement.select_all();
+                }
+            }
+            ShortcutAction::Delete | ShortcutAction::Duplicate | ShortcutAction::Nudge { .. } => {
+                if !self.placement.is_loaded() || self.placement.selected_objects().is_empty() {
+                    return;
+                }
+                if read_only {
+                    self.set_status(read_only_msg.into(), true);
+                    return;
+                }
+                let result = match action {
+                    ShortcutAction::Delete => self.placement.delete_selection(),
+                    ShortcutAction::Duplicate => self.placement.duplicate_selection(),
+                    ShortcutAction::Nudge { dx, dz } => self.placement.nudge_selection(dx, dz),
+                    _ => Ok(()),
+                };
+                if let Err(err) = result {
+                    self.set_status(format!("Placement shortcut failed: {err}"), true);
+                }
+            }
+        }
+    }
+
+    /// "Test in game": saves a dirty custom map first, then launches `Against_Rome.exe`.
+    pub fn test_in_game(&mut self) {
+        self.test_in_game_using(&mut crate::packaging_ui::spawn_game_process);
+    }
+
+    pub fn test_in_game_using(&mut self, spawn: crate::packaging_ui::GameSpawner<'_>) {
+        let lang = self.lang();
+        let text = self.map_path_input.trim().to_string();
+        let map_dir = PathBuf::from(&text);
+        let Some(game_dir) = (!text.is_empty())
+            .then(|| crate::packaging_ui::game_dir_for_map(&map_dir))
+            .flatten()
+        else {
+            self.set_status(
+                tr(
+                    lang,
+                    "Please select a map to preview.",
+                    "請先選擇要預覽的地圖。",
+                )
+                .into(),
+                true,
+            );
+            return;
+        };
+        if !self.current_map_is_original() && self.has_unsaved_changes() {
+            self.safe_save_current();
+            if self.has_unsaved_changes() {
+                let msg = tr(
+                    lang,
+                    "Game not launched: the map could not be saved.",
+                    "未啟動遊戲：地圖尚未成功儲存。",
+                );
+                self.status_message = format!("{msg} {}", self.status_message);
+                self.status_is_error = true;
+                return;
+            }
+        }
+        match crate::packaging_ui::launch_game(&game_dir, spawn) {
+            Ok(_) => {
+                let name = map_dir
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+                let msg = if lang == AppLanguage::English {
+                    format!(
+                        "Game launched. To test the custom map, enter Endless Mode and select {name}."
+                    )
+                } else {
+                    format!("遊戲已啟動。若要測試自製地圖，請進入「無盡模式」並選擇 {name}。")
+                };
+                self.set_status(msg, false);
+            }
+            Err(err) => self.set_status(err, true),
+        }
     }
 }
 
@@ -6865,6 +7086,102 @@ angle=0.00
         });
         let _ = std::fs::remove_dir_all(&root);
     }
+
+    #[test]
+    fn shortcut_mapping_is_pure_and_matches_csharp() {
+        use egui::Key::*;
+        let f = |k, c, s, a, t| shortcut_action(k, c, s, a, t);
+        assert_eq!(f(S, true, false, false, false), Some(ShortcutAction::Save));
+        assert_eq!(f(S, true, false, false, true), Some(ShortcutAction::Save));
+        assert_eq!(f(S, false, false, false, false), None);
+        assert_eq!(f(A, true, false, false, false), Some(ShortcutAction::SelectAll));
+        assert_eq!(f(A, true, false, false, true), None);
+        assert_eq!(f(D, true, false, false, false), Some(ShortcutAction::Duplicate));
+        assert_eq!(f(Delete, false, false, false, false), Some(ShortcutAction::Delete));
+        assert_eq!(f(Delete, true, false, false, false), None);
+        assert_eq!(f(Delete, false, false, false, true), None);
+        assert_eq!(
+            f(ArrowLeft, true, false, false, false),
+            Some(ShortcutAction::Nudge { dx: -256.0, dz: 0.0 })
+        );
+        assert_eq!(
+            f(ArrowRight, true, true, false, false),
+            Some(ShortcutAction::Nudge { dx: 64.0, dz: 0.0 })
+        );
+        assert_eq!(
+            f(ArrowUp, true, false, false, false),
+            Some(ShortcutAction::Nudge { dx: 0.0, dz: -256.0 })
+        );
+        assert_eq!(
+            f(ArrowDown, true, false, false, false),
+            Some(ShortcutAction::Nudge { dx: 0.0, dz: 256.0 })
+        );
+        // Plain arrows belong to the 3D camera; Alt disables everything.
+        assert_eq!(f(ArrowLeft, false, false, false, false), None);
+        assert_eq!(f(S, true, false, true, false), None);
+    }
+
+    #[test]
+    fn original_map_detection_follows_custom_map_registration() {
+        // Unregistered maps inside MAPS (retail ENDL_000-004, tutorials,
+        // campaign maps, or ENDL slots without a custom-map marker) are original.
+        for original in [
+            "MAPS/ENDL_000",
+            "MAPS/ENDL_004",
+            "D:/g/MAPS/endl_002",
+            "MAPS/TUTOR_01",
+            "MAPS/ENDL_042",
+        ] {
+            assert!(is_original_map_dir(Path::new(original)), "{original}");
+        }
+        for custom in ["work/ENDL_005", "scratch/my_map", ""] {
+            assert!(!is_original_map_dir(Path::new(custom)), "{custom}");
+        }
+    }
+
+    #[test]
+    fn save_shortcut_refuses_original_maps_without_saving() {
+        let mut app = EditorApp::default();
+        app.map_path_input = "C:/Game/MAPS/ENDL_002".into();
+        app.handle_shortcut_action(ShortcutAction::Save);
+        assert!(app.status_is_error);
+        assert!(app.status_message.contains("read-only"));
+        assert!(app.pending_save_warnings.is_none());
+    }
+
+    #[test]
+    fn language_switch_changes_text_and_syncs_ambience() {
+        let mut app = EditorApp::default();
+        assert_eq!(tr(app.lang(), "Save", "儲存"), "Save");
+        app.set_app_language(AppLanguage::TraditionalChinese);
+        assert_eq!(tr(app.lang(), "Save", "儲存"), "儲存");
+        assert_eq!(app.ambience.app_language, AppLanguage::TraditionalChinese);
+    }
+
+    #[test]
+    fn test_in_game_requires_map_saves_then_spawns_via_injected_spawner() {
+        let root = temp_map_dir("test_in_game_root");
+        let game = root.join("game");
+        let map = game.join("MAPS").join("ENDL_007");
+        std::fs::create_dir_all(&map).unwrap();
+        let mut calls = 0usize;
+        let mut spawn = |_: &Path, _: &Path| {
+            calls += 1;
+            Ok(())
+        };
+        let mut app = EditorApp::default();
+        app.test_in_game_using(&mut spawn);
+        assert!(app.status_is_error, "no map path");
+        app.map_path_input = map.to_string_lossy().into_owned();
+        app.test_in_game_using(&mut spawn);
+        assert!(app.status_is_error && app.status_message.contains("Against_Rome.exe"));
+        std::fs::write(game.join("Against_Rome.exe"), b"x").unwrap();
+        app.test_in_game_using(&mut spawn);
+        assert!(!app.status_is_error, "{}", app.status_message);
+        assert!(app.status_message.contains("ENDL_007"));
+        assert_eq!(calls, 1);
+        let _ = std::fs::remove_dir_all(&root);
+    }
 }
 
 impl eframe::App for EditorApp {
@@ -6916,48 +7233,67 @@ impl eframe::App for EditorApp {
             }
         }
 
+        // Editor shortcuts: Ctrl+S, Ctrl+A, Ctrl+D, Delete, Ctrl+Arrow nudge.
+        {
+            let text_focus = ctx.wants_keyboard_input();
+            let actions: Vec<ShortcutAction> = ctx.input(|i| {
+                let ctrl = i.modifiers.ctrl || i.modifiers.command;
+                SHORTCUT_KEYS
+                    .iter()
+                    .filter(|k| i.key_pressed(**k))
+                    .filter_map(|k| {
+                        shortcut_action(*k, ctrl, i.modifiers.shift, i.modifiers.alt, text_focus)
+                    })
+                    .collect()
+            });
+            for action in actions {
+                self.handle_shortcut_action(action);
+            }
+        }
+
         // 頂部導覽列
+        let lang = self.lang();
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             ui.horizontal_wrapped(|ui| {
-                ui.heading("Against Rome Map Editor (Rust)");
+                ui.heading(tr(lang, "Against Rome Map Editor (Rust)", "Against Rome 地圖編輯器 (Rust)"));
                 ui.separator();
-                if ui.button("Modifier").clicked() {
+                if ui.button(tr(lang, "Modifier", "修改器")).clicked() {
                     self.toolbox.open_modifier();
                 }
-                if ui.button("Modifier Studio").clicked() {
+                if ui.button(tr(lang, "Modifier Studio", "修改器工作室")).clicked() {
                     self.modifier.open = true;
                 }
-                if ui.button("Save Manager").clicked() {
+                if ui.button(tr(lang, "Save Manager", "存檔管理")).clicked() {
                     self.toolbox.open_save_manager();
                 }
-                if ui.button("Navigation").clicked() {
+                if ui.button(tr(lang, "Navigation", "導航")).clicked() {
                     self.navigation.open = true;
                 }
-                if ui.button("Minimap").clicked() {
+                if ui.button(tr(lang, "Minimap", "小地圖")).clicked() {
                     self.minimap.open = true;
                 }
-                if ui.button("Objects").clicked() {
+                if ui.button(tr(lang, "Objects", "物件")).clicked() {
                     self.placement.open = true;
                 }
-                if ui.button("Scenario / Camera").clicked() {
+                if ui.button(tr(lang, "Scenario / Camera", "劇本／鏡頭")).clicked() {
                     self.scenario.open = true;
                 }
-                if ui.button("Materials").clicked() {
+                if ui.button(tr(lang, "Materials", "材質")).clicked() {
                     self.textures.open = true;
                 }
-                if ui.button("Scene (SDL)").clicked() {
+                if ui.button(tr(lang, "Scene (SDL)", "場景 (SDL)")).clicked() {
                     self.scene.open = true;
                 }
-                if ui.button("Event Graph").clicked() {
+                if ui.button(tr(lang, "Event Graph", "事件圖")).clicked() {
                     self.event_graph.open = true;
                 }
-                if ui.button("Console").clicked() {
+                if ui.button(tr(lang, "Console", "主控台")).clicked() {
                     self.console.open = true;
                 }
-                if ui.button("Maps").clicked() {
+                if ui.button(tr(lang, "Maps", "地圖")).clicked() {
                     self.maps.open = true;
                 }
-                if ui.button("New Map").clicked() {
+                if ui.button(tr(lang, "New Map", "新地圖")).clicked() {
                     self.maps.open = true;
                     self.maps.current_tab = crate::maps_ui::MapsTab::NewBlankMap;
                     if self.maps.game_path_input.trim().is_empty()
@@ -6971,49 +7307,76 @@ impl eframe::App for EditorApp {
                         }
                     }
                 }
-                if ui.button("Environment").clicked() {
+                if ui.button(tr(lang, "Environment", "環境")).clicked() {
                     self.environment.open = true;
                 }
-                if ui.button("Landscape").clicked() {
+                if ui.button(tr(lang, "Landscape", "地景")).clicked() {
                     self.landscape.open = true;
                 }
-                if ui.button("Packaging").clicked() {
+                if ui.button(tr(lang, "Packaging", "打包")).clicked() {
                     self.packaging.open = true;
                 }
-                if ui.button("Campaign").clicked() {
+                if ui.button(tr(lang, "Campaign", "戰役")).clicked() {
                     self.campaign.open = true;
                 }
-                if ui.button("AI Planner").clicked() {
+                if ui.button(tr(lang, "AI Planner", "AI 企劃")).clicked() {
                     self.ai_planner.open = true;
                 }
-                if ui.button("Ambience").clicked() {
+                if ui.button(tr(lang, "Ambience", "氛圍")).clicked() {
                     self.ambience.open = true;
                 }
-                if ui.button("Tech Doc").clicked() {
+                if ui.button(tr(lang, "Tech Doc", "技術文件")).clicked() {
                     self.tech_doc.open = true;
                 }
-                if ui.button("Design Check").clicked() {
+                if ui.button(tr(lang, "Design Check", "設計檢查")).clicked() {
                     self.run_design_check();
                 }
 
-                ui.label("Map Folder:");
+                ui.label(tr(lang, "Map Folder:", "地圖資料夾:"));
                 ui.text_edit_singleline(&mut self.map_path_input);
 
-                if ui.button("Load Folder").clicked() {
+                if ui.button(tr(lang, "Load Folder", "載入資料夾")).clicked() {
                     self.pending_action = Some(PendingAction::Load(PathBuf::from(
                         self.map_path_input.trim(),
                     )));
                 }
 
-                if ui.button("Safe Save").clicked() {
+                if ui.button(tr(lang, "Safe Save", "安全儲存 (Ctrl+S)")).clicked() {
                     self.request_safe_save();
+                }
+
+                if ui
+                    .button(tr(lang, "Test in Game", "選用：啟動遊戲測試"))
+                    .clicked()
+                {
+                    self.test_in_game();
+                }
+
+                ui.separator();
+                let mut chosen = lang;
+                if ui
+                    .selectable_label(lang == AppLanguage::TraditionalChinese, "中")
+                    .on_hover_text("繁體中文")
+                    .clicked()
+                {
+                    chosen = AppLanguage::TraditionalChinese;
+                }
+                if ui
+                    .selectable_label(lang == AppLanguage::English, "EN")
+                    .on_hover_text("English")
+                    .clicked()
+                {
+                    chosen = AppLanguage::English;
+                }
+                if chosen != lang {
+                    self.set_app_language(chosen);
                 }
 
                 ui.separator();
 
                 let can_undo = self.session.as_ref().map(|s| s.can_undo()).unwrap_or(false);
                 if ui
-                    .add_enabled(can_undo, egui::Button::new("Undo (Ctrl+Z)"))
+                    .add_enabled(can_undo, egui::Button::new(tr(lang, "Undo (Ctrl+Z)", "復原 (Ctrl+Z)")))
                     .clicked()
                 {
                     if let Some(s) = &mut self.session {
@@ -7024,7 +7387,7 @@ impl eframe::App for EditorApp {
 
                 let can_redo = self.session.as_ref().map(|s| s.can_redo()).unwrap_or(false);
                 if ui
-                    .add_enabled(can_redo, egui::Button::new("Redo (Ctrl+Y)"))
+                    .add_enabled(can_redo, egui::Button::new(tr(lang, "Redo (Ctrl+Y)", "重做 (Ctrl+Y)")))
                     .clicked()
                 {
                     if let Some(s) = &mut self.session {
@@ -7089,10 +7452,10 @@ impl eframe::App for EditorApp {
             .min_width(220.0)
             .show(ctx, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {
-                    ui.heading("Tools & Settings");
+                    ui.heading(tr(lang, "Tools & Settings", "工具與設定"));
                     ui.separator();
 
-                    ui.label("Display Mode:");
+                    ui.label(tr(lang, "Display Mode:", "顯示模式:"));
                     ui.horizontal_wrapped(|ui| {
                         if ui
                             .selectable_value(&mut self.view_mode, ViewMode::Blended, "Blended")

@@ -973,13 +973,23 @@ impl AmbienceUi {
                 ui.end_row();
 
                 ui.label("Water Color (BGR Hex, 例 0xffdfbf):");
-                if ui
-                    .text_edit_singleline(&mut self.profile.boden.water_color)
-                    .changed()
-                {
-                    self.dirty = true;
-                    self.validate_current();
-                }
+                ui.horizontal(|ui| {
+                    // Color picker over the BGR hex string (C# ChooseWaterColor); text stays editable.
+                    let rgb = self.profile.boden.get_water_rgb();
+                    let mut color = rgb;
+                    if ui.color_edit_button_rgb(&mut color).changed() && color != rgb {
+                        self.profile.boden.set_water_rgb(color[0], color[1], color[2]);
+                        self.dirty = true;
+                        self.validate_current();
+                    }
+                    if ui
+                        .text_edit_singleline(&mut self.profile.boden.water_color)
+                        .changed()
+                    {
+                        self.dirty = true;
+                        self.validate_current();
+                    }
+                });
                 ui.end_row();
 
                 ui.label("Water Bump Amplitude:");
@@ -1432,6 +1442,15 @@ mod tests {
         ui.profile.boden.water_bump_amplitude = 2000;
         assert!(!ui.validate_current());
         assert!(!ui.validation_errors.is_empty());
+    }
+
+    #[test]
+    fn test_water_color_picker_roundtrips_bgr_hex() {
+        let mut ui = AmbienceUi::default();
+        ui.profile.boden.set_water_rgb(1.0, 0.0, 0.5);
+        // BGR order: blue 0x80, green 0x00, red 0xff.
+        assert_eq!(ui.profile.boden.water_color, "0x8000ff");
+        assert_eq!(ui.profile.boden.get_water_rgb(), [1.0, 0.0, 128.0 / 255.0]);
     }
 
     #[test]

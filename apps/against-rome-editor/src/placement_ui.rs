@@ -703,6 +703,47 @@ impl PlacementUi {
         }
         Ok(())
     }
+    /// Keyboard nudge (C# `MoveSelectedPlacements`): shifts the selection by whole world units
+    /// without touching the panel's delta text fields. One undoable group.
+    pub fn nudge_selection(&mut self, dx: f32, dz: f32) -> Result<()> {
+        let families = self.current_families()?;
+        let fixed = |v: f32| (f64::from(v) * 65536.0).round() as i32;
+        let delta = [fixed(dx), 0, fixed(dz)];
+        if delta == [0, 0, 0] {
+            return Ok(());
+        }
+        self.store
+            .as_mut()
+            .unwrap()
+            .translate_families_fixed(&families, delta)?;
+        self.record_edit(1);
+        Ok(())
+    }
+    /// Keyboard duplicate (C# `DuplicateSelectedPlacedObjects`): copies at +256/+256 and selects the copies.
+    pub fn duplicate_selection(&mut self) -> Result<()> {
+        let families = self.current_families()?;
+        let offset = (256.0f64 * 65536.0) as i32;
+        let cloned = self
+            .store
+            .as_mut()
+            .unwrap()
+            .clone_families_fixed(&families, [offset, 0, offset])?;
+        self.record_edit(1);
+        if !cloned.is_empty() {
+            self.selected = cloned.last().copied();
+            self.selection = cloned;
+        }
+        Ok(())
+    }
+    /// Keyboard Delete (C# `DeleteSelectedPlacedObjects`): removes the selection immediately
+    /// (undoable) without the panel's confirmation step.
+    pub fn delete_selection(&mut self) -> Result<()> {
+        let families = self.current_families()?;
+        self.store.as_mut().unwrap().remove_families(&families)?;
+        self.record_edit(1);
+        self.clear_selection();
+        Ok(())
+    }
     /// `absolute` sets the family heading; otherwise the angle is added to the current heading.
     pub fn rotate_family(&mut self, absolute: bool) -> Result<()> {
         let families = self.current_families()?;
