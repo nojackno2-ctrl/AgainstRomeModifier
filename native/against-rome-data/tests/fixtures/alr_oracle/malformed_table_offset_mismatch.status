@@ -1,0 +1,2 @@
+REJECT InvalidDataException
+ALR frame has an invalid row table offset or truncated payload.

@@ -1,7 +1,6 @@
 //! 與真 .NET 8 oracle（tests/csharp_oracle）對拍：sanitize_name、OrdinalIgnoreCase 事件名碰撞與別名比對。
 //! 夾具由 oracle 呼叫真正的 `CampaignMissionCompiler.SanitizeName`（反射）與 BCL 比較器產生。
-//! 重新產生：`dotnet run --project tests/csharp_oracle -c Release -- src/ai/dotnet_unicode_tables.rs tests/fixtures`
-//! 設 `ARM_RUN_CSHARP_ORACLE=1` 可讓測試即時重跑 oracle 並要求輸出與已提交夾具逐位元相同。
+//! 夾具已凍結於 tests/fixtures（C# oracle 專案已移除，不再需要 dotnet）。
 
 use against_rome_campaign::ai::compiler::sanitize_name;
 use against_rome_campaign::ai::dotnet_unicode::{
@@ -116,36 +115,4 @@ fn alias_membership_matches_ordinal_ignore_case() {
         let got = known.iter().any(|k| ordinal_ignore_case_eq(k, &probe));
         assert_eq!(got, want, "probe {probe:?}");
     }
-}
-
-#[test]
-fn committed_fixtures_equal_a_fresh_oracle_run_when_requested() {
-    if std::env::var("ARM_RUN_CSHARP_ORACLE").ok().as_deref() != Some("1") {
-        return;
-    }
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let out = std::env::temp_dir().join(format!("arm_oracle_{}", std::process::id()));
-    std::fs::create_dir_all(&out).unwrap();
-    let table = out.join("tables.rs");
-    let status = std::process::Command::new("dotnet")
-        .current_dir(&root)
-        .args(["run", "--project", "tests/csharp_oracle", "-c", "Release", "--"])
-        .arg(&table)
-        .arg(&out)
-        .status()
-        .expect("dotnet not available");
-    assert!(status.success(), "oracle failed");
-    for f in [
-        "dotnet_sanitize_cases.tsv",
-        "dotnet_event_name_collision_cases.tsv",
-        "dotnet_alias_cases.tsv",
-    ] {
-        assert_eq!(std::fs::read(out.join(f)).unwrap(), std::fs::read(root.join("tests/fixtures").join(f)).unwrap(), "{f} drifted");
-    }
-    assert_eq!(
-        std::fs::read(&table).unwrap(),
-        std::fs::read(root.join("src/ai/dotnet_unicode_tables.rs")).unwrap(),
-        "tables drifted"
-    );
-    let _ = std::fs::remove_dir_all(&out);
 }

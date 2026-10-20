@@ -1,10 +1,7 @@
-//! C# differential for `ramp::calculate_ramp` against the real `TerrainRampTool.cs`
-//! (linked into tests/ramp_oracle/RampOracle.csproj). The case matrix mirrors
-//! tests/ramp_oracle/Program.cs one-to-one.
-//! Run: cargo test --release --locked --offline --test ramp_differential -- --ignored
+//! Differential for `ramp::calculate_ramp` against output frozen from the original C# TerrainRampTool
+//! (tests/fixtures/ramp_oracle.txt). Case order is the fixture's case id.
 use against_rome_landscape::ramp::{calculate_ramp, TerrainRampParameters};
 use against_rome_landscape::TerrainFalloffType as T;
-use std::process::Command;
 
 fn grid(size: usize, pattern: u8) -> Vec<u8> {
     (0..size * size)
@@ -18,33 +15,10 @@ fn grid(size: usize, pattern: u8) -> Vec<u8> {
         .collect()
 }
 
-fn run_oracle() -> String {
-    let root = env!("CARGO_MANIFEST_DIR");
-    let project = format!("{root}/tests/ramp_oracle/RampOracle.csproj");
-    let config = format!("{root}/tests/ramp_oracle/NuGet.Config");
-    let appdata = format!("{root}/tests/oracle/cache");
-    let run = |args: &[&str]| {
-        let o = Command::new("dotnet")
-            .env("APPDATA", &appdata)
-            .args(args)
-            .output()
-            .expect("dotnet SDK required");
-        let text = format!(
-            "{}{}",
-            String::from_utf8_lossy(&o.stdout),
-            String::from_utf8_lossy(&o.stderr)
-        );
-        assert!(o.status.success(), "{text}");
-        String::from_utf8_lossy(&o.stdout).into_owned()
-    };
-    run(&["restore", &project, "--configfile", &config, "--verbosity", "quiet"]);
-    run(&["run", "--no-restore", "--project", &project, "-c", "Release", "--verbosity", "quiet"])
-}
 
 #[test]
-#[ignore = "requires .NET 10 SDK to execute the linked C# TerrainRampTool oracle"]
 fn csharp_ramp_differential() {
-    let stdout = run_oracle();
+    let stdout = include_str!("fixtures/ramp_oracle.txt");
     let actual: Vec<&str> = stdout.lines().filter(|l| l.starts_with("R|")).collect();
     let types = [T::Smoothstep, T::Cosine, T::Spherical, T::Gaussian, T::Linear, T::Plateau];
     let mut expected = Vec::new();

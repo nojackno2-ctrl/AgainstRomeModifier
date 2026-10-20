@@ -1,0 +1,1152 @@
+{
+  "EasingResults": [
+    0,
+    0,
+    0.001,
+    0.1,
+    0.25,
+    0.3333,
+    0.5,
+    0.6667,
+    0.75,
+    0.999,
+    1,
+    1,
+    0,
+    0,
+    2.9980001E-06,
+    0.028,
+    0.15625,
+    0.25921482,
+    0.5,
+    0.7407852,
+    0.84375,
+    0.999997,
+    1,
+    1,
+    0,
+    0,
+    1.0000001E-06,
+    0.010000001,
+    0.0625,
+    0.11108889,
+    0.25,
+    0.44448888,
+    0.5625,
+    0.99800104,
+    1,
+    1,
+    0,
+    0,
+    0.001998961,
+    0.19000006,
+    0.4375,
+    0.5555111,
+    0.75,
+    0.8889111,
+    0.9375,
+    0.999999,
+    1,
+    1,
+    0,
+    0,
+    4.0000008E-09,
+    0.004,
+    0.0625,
+    0.1481037,
+    0.5,
+    0.8518963,
+    0.9375,
+    1,
+    1,
+    1
+  ],
+  "CatmullRomResults": [
+    [
+      10,
+      0,
+      0
+    ],
+    [
+      11,
+      0,
+      0
+    ],
+    [
+      12.5,
+      0,
+      0
+    ],
+    [
+      15,
+      0,
+      0
+    ],
+    [
+      17.5,
+      0,
+      0
+    ],
+    [
+      19.000002,
+      0,
+      0
+    ],
+    [
+      20,
+      0,
+      0
+    ],
+    [
+      22,
+      0,
+      0
+    ],
+    [
+      2000,
+      80,
+      3000
+    ],
+    [
+      2158.809,
+      87.694405,
+      3215.3015
+    ],
+    [
+      2415.7812,
+      101.49197,
+      3542.5796
+    ],
+    [
+      2891.255,
+      125.97887,
+      4080.5547
+    ],
+    [
+      3421.1006,
+      144.97632,
+      4578.252
+    ],
+    [
+      3762.8945,
+      150.21037,
+      4842.6978
+    ],
+    [
+      4000,
+      150,
+      5000
+    ],
+    [
+      4494.8633,
+      138.25636,
+      5258.743
+    ],
+    [
+      100,
+      0,
+      0
+    ],
+    [
+      104.49999,
+      0,
+      6.3999996
+    ],
+    [
+      109.375,
+      0,
+      20.3125
+    ],
+    [
+      112.5,
+      0,
+      50
+    ],
+    [
+      109.375,
+      0,
+      79.6875
+    ],
+    [
+      104.49999,
+      0,
+      93.6
+    ],
+    [
+      100,
+      0,
+      100
+    ],
+    [
+      88,
+      0,
+      103.20002
+    ],
+    [
+      500.00003,
+      10.000001,
+      500.00003
+    ],
+    [
+      516.555,
+      11.13029,
+      540.13135
+    ],
+    [
+      596.58136,
+      16.301216,
+      729.7321
+    ],
+    [
+      840.8307,
+      30.13446,
+      1279.1799
+    ],
+    [
+      1164.6648,
+      43.900482,
+      1939.0378
+    ],
+    [
+      1368.8406,
+      48.966484,
+      2300.876
+    ],
+    [
+      1500,
+      50,
+      2500
+    ],
+    [
+      1730.7974,
+      44.253044,
+      2736.9116
+    ],
+    [
+      1000,
+      50,
+      1000
+    ],
+    [
+      1000.00006,
+      50,
+      1000.00006
+    ],
+    [
+      999.99994,
+      50.000004,
+      999.99994
+    ],
+    [
+      1000,
+      50.000004,
+      1000
+    ],
+    [
+      999.9999,
+      50.000004,
+      999.9999
+    ],
+    [
+      1000.00006,
+      50.000004,
+      1000.00006
+    ],
+    [
+      999.99994,
+      50,
+      999.99994
+    ],
+    [
+      999.99976,
+      49.999992,
+      999.99976
+    ],
+    [
+      1000,
+      50,
+      1000
+    ],
+    [
+      1106.8617,
+      55.562134,
+      1106.8617
+    ],
+    [
+      1293.1545,
+      65.038025,
+      1293.1545
+    ],
+    [
+      1621.6707,
+      81.42157,
+      1621.6707
+    ],
+    [
+      1889.3516,
+      94.59435,
+      1889.3516
+    ],
+    [
+      1980.7412,
+      99.06141,
+      1980.7412
+    ],
+    [
+      2000,
+      100,
+      2000
+    ],
+    [
+      1910.811,
+      95.67036,
+      1910.811
+    ],
+    [
+      8192,
+      50,
+      8192
+    ],
+    [
+      8192,
+      50,
+      8192
+    ],
+    [
+      8192,
+      50,
+      8192
+    ],
+    [
+      8192,
+      50,
+      8192
+    ],
+    [
+      8192,
+      50,
+      8192
+    ],
+    [
+      8192,
+      50,
+      8192
+    ],
+    [
+      8192,
+      50,
+      8192
+    ],
+    [
+      8192,
+      50,
+      8192
+    ],
+    [
+      10.00001,
+      10.00001,
+      10
+    ],
+    [
+      10.0000105,
+      10.0000105,
+      10
+    ],
+    [
+      10.000011,
+      10.000011,
+      10
+    ],
+    [
+      10.000014,
+      10.000014,
+      10
+    ],
+    [
+      10.000015,
+      10.000015,
+      10
+    ],
+    [
+      10.000018,
+      10.000018,
+      10
+    ],
+    [
+      10.00002,
+      10.00002,
+      10
+    ],
+    [
+      10.000026,
+      10.000026,
+      10
+    ]
+  ],
+  "PlannerResults": [
+    {
+      "Name": "empty_planner",
+      "TotalDuration": 0,
+      "Count": 0,
+      "Poses": [
+        {
+          "Position": [
+            8192,
+            0,
+            8192
+          ],
+          "PitchDegrees": 30,
+          "YawDegrees": 45,
+          "Zoom": 82,
+          "TimeSeconds": -1
+        },
+        {
+          "Position": [
+            8192,
+            0,
+            8192
+          ],
+          "PitchDegrees": 30,
+          "YawDegrees": 45,
+          "Zoom": 82,
+          "TimeSeconds": 0
+        },
+        {
+          "Position": [
+            8192,
+            0,
+            8192
+          ],
+          "PitchDegrees": 30,
+          "YawDegrees": 45,
+          "Zoom": 82,
+          "TimeSeconds": 1
+        },
+        {
+          "Position": [
+            8192,
+            0,
+            8192
+          ],
+          "PitchDegrees": 30,
+          "YawDegrees": 45,
+          "Zoom": 82,
+          "TimeSeconds": 5
+        },
+        {
+          "Position": [
+            8192,
+            0,
+            8192
+          ],
+          "PitchDegrees": 30,
+          "YawDegrees": 45,
+          "Zoom": 82,
+          "TimeSeconds": 10
+        }
+      ]
+    },
+    {
+      "Name": "single_waypoint",
+      "TotalDuration": 0,
+      "Count": 1,
+      "Poses": [
+        {
+          "Position": [
+            1200,
+            50,
+            3400
+          ],
+          "PitchDegrees": 42,
+          "YawDegrees": 135,
+          "Zoom": 65,
+          "TimeSeconds": 0
+        },
+        {
+          "Position": [
+            1200,
+            50,
+            3400
+          ],
+          "PitchDegrees": 42,
+          "YawDegrees": 135,
+          "Zoom": 65,
+          "TimeSeconds": 0
+        },
+        {
+          "Position": [
+            1200,
+            50,
+            3400
+          ],
+          "PitchDegrees": 42,
+          "YawDegrees": 135,
+          "Zoom": 65,
+          "TimeSeconds": 0
+        },
+        {
+          "Position": [
+            1200,
+            50,
+            3400
+          ],
+          "PitchDegrees": 42,
+          "YawDegrees": 135,
+          "Zoom": 65,
+          "TimeSeconds": 0
+        }
+      ]
+    },
+    {
+      "Name": "zero_duration_segment",
+      "TotalDuration": 0.001,
+      "Count": 2,
+      "Poses": [
+        {
+          "Position": [
+            1000,
+            0,
+            1000
+          ],
+          "PitchDegrees": 30,
+          "YawDegrees": 45,
+          "Zoom": 80,
+          "TimeSeconds": 0
+        },
+        {
+          "Position": [
+            1500,
+            0,
+            1500
+          ],
+          "PitchDegrees": 30,
+          "YawDegrees": 45,
+          "Zoom": 80,
+          "TimeSeconds": 0.0005
+        },
+        {
+          "Position": [
+            2000,
+            0,
+            2000
+          ],
+          "PitchDegrees": 30,
+          "YawDegrees": 45,
+          "Zoom": 80,
+          "TimeSeconds": 0.001
+        },
+        {
+          "Position": [
+            2000,
+            0,
+            2000
+          ],
+          "PitchDegrees": 30,
+          "YawDegrees": 45,
+          "Zoom": 80,
+          "TimeSeconds": 0.001
+        }
+      ]
+    },
+    {
+      "Name": "yaw_unwrapping_shortest_arc",
+      "TotalDuration": 4,
+      "Count": 3,
+      "Poses": [
+        {
+          "Position": [
+            1000,
+            0,
+            1000
+          ],
+          "PitchDegrees": 30,
+          "YawDegrees": 350,
+          "Zoom": 82,
+          "TimeSeconds": 0
+        },
+        {
+          "Position": [
+            1250,
+            0,
+            1250
+          ],
+          "PitchDegrees": 30,
+          "YawDegrees": 355,
+          "Zoom": 82,
+          "TimeSeconds": 0.5
+        },
+        {
+          "Position": [
+            1500,
+            0,
+            1500
+          ],
+          "PitchDegrees": 30,
+          "YawDegrees": 0,
+          "Zoom": 82,
+          "TimeSeconds": 1
+        },
+        {
+          "Position": [
+            1750.0001,
+            0,
+            1750.0001
+          ],
+          "PitchDegrees": 30,
+          "YawDegrees": 5,
+          "Zoom": 82,
+          "TimeSeconds": 1.5
+        },
+        {
+          "Position": [
+            2000,
+            0,
+            2000
+          ],
+          "PitchDegrees": 30,
+          "YawDegrees": 10,
+          "Zoom": 82,
+          "TimeSeconds": 2
+        },
+        {
+          "Position": [
+            2250,
+            0,
+            2250
+          ],
+          "PitchDegrees": 30,
+          "YawDegrees": 5,
+          "Zoom": 82,
+          "TimeSeconds": 2.5
+        },
+        {
+          "Position": [
+            2500,
+            0,
+            2500
+          ],
+          "PitchDegrees": 30,
+          "YawDegrees": 0,
+          "Zoom": 82,
+          "TimeSeconds": 3
+        },
+        {
+          "Position": [
+            2750,
+            0,
+            2750
+          ],
+          "PitchDegrees": 30,
+          "YawDegrees": 355,
+          "Zoom": 82,
+          "TimeSeconds": 3.5
+        },
+        {
+          "Position": [
+            3000,
+            0,
+            3000
+          ],
+          "PitchDegrees": 30,
+          "YawDegrees": 350,
+          "Zoom": 82,
+          "TimeSeconds": 4
+        }
+      ]
+    },
+    {
+      "Name": "complex_cinematic_track",
+      "TotalDuration": 12.5,
+      "Count": 4,
+      "Poses": [
+        {
+          "Position": [
+            1000,
+            10,
+            1000
+          ],
+          "PitchDegrees": 20,
+          "YawDegrees": 45,
+          "Zoom": 90,
+          "TimeSeconds": 0
+        },
+        {
+          "Position": [
+            1000,
+            10,
+            1000
+          ],
+          "PitchDegrees": 20,
+          "YawDegrees": 45,
+          "Zoom": 90,
+          "TimeSeconds": 0
+        },
+        {
+          "Position": [
+            1124.754,
+            17.17715,
+            1092.9487
+          ],
+          "PitchDegrees": 22.5,
+          "YawDegrees": 47.8125,
+          "Zoom": 87.5,
+          "TimeSeconds": 1
+        },
+        {
+          "Position": [
+            1496.8523,
+            41.367554,
+            1364.7437
+          ],
+          "PitchDegrees": 30,
+          "YawDegrees": 56.25,
+          "Zoom": 80,
+          "TimeSeconds": 2
+        },
+        {
+          "Position": [
+            2115.7046,
+            83.29637,
+            1813.4617
+          ],
+          "PitchDegrees": 42.5,
+          "YawDegrees": 70.3125,
+          "Zoom": 67.5,
+          "TimeSeconds": 3
+        },
+        {
+          "Position": [
+            3000,
+            120,
+            2500
+          ],
+          "PitchDegrees": 60,
+          "YawDegrees": 90,
+          "Zoom": 50,
+          "TimeSeconds": 4
+        },
+        {
+          "Position": [
+            4218.784,
+            81.0877,
+            3571.0576
+          ],
+          "PitchDegrees": 72.244896,
+          "YawDegrees": 134.08163,
+          "Zoom": 40.204082,
+          "TimeSeconds": 5
+        },
+        {
+          "Position": [
+            5044.2246,
+            43.76628,
+            4351.776
+          ],
+          "PitchDegrees": 80.408165,
+          "YawDegrees": 163.46939,
+          "Zoom": 33.67347,
+          "TimeSeconds": 6
+        },
+        {
+          "Position": [
+            5500,
+            40,
+            4800
+          ],
+          "PitchDegrees": 85,
+          "YawDegrees": 180,
+          "Zoom": 30,
+          "TimeSeconds": 7.5
+        },
+        {
+          "Position": [
+            5774.5054,
+            46.61632,
+            5078.2124
+          ],
+          "PitchDegrees": 77.44,
+          "YawDegrees": 192.96,
+          "Zoom": 34.32,
+          "TimeSeconds": 9
+        },
+        {
+          "Position": [
+            7362.5566,
+            152.98932,
+            6801.204
+          ],
+          "PitchDegrees": 32.919994,
+          "YawDegrees": 269.28,
+          "Zoom": 59.760002,
+          "TimeSeconds": 10.5
+        },
+        {
+          "Position": [
+            7990.001,
+            199.358,
+            7489.197
+          ],
+          "PitchDegrees": 15.279999,
+          "YawDegrees": 299.52,
+          "Zoom": 69.84,
+          "TimeSeconds": 12
+        },
+        {
+          "Position": [
+            8000,
+            200,
+            7500
+          ],
+          "PitchDegrees": 15,
+          "YawDegrees": 300,
+          "Zoom": 70,
+          "TimeSeconds": 12.5
+        },
+        {
+          "Position": [
+            8000,
+            200,
+            7500
+          ],
+          "PitchDegrees": 15,
+          "YawDegrees": 300,
+          "Zoom": 70,
+          "TimeSeconds": 12.5
+        }
+      ]
+    }
+  ],
+  "SamplePathResults": [
+    {
+      "Name": "sample_empty",
+      "Samples": []
+    },
+    {
+      "Name": "sample_single",
+      "Samples": [
+        {
+          "Position": [
+            2000,
+            0,
+            2000
+          ],
+          "PitchDegrees": 30,
+          "YawDegrees": 45,
+          "Zoom": 82,
+          "TimeSeconds": 0
+        }
+      ]
+    },
+    {
+      "Name": "sample_track_11",
+      "Samples": [
+        {
+          "Position": [
+            1000,
+            0,
+            1000
+          ],
+          "PitchDegrees": 30,
+          "YawDegrees": 45,
+          "Zoom": 80,
+          "TimeSeconds": 0
+        },
+        {
+          "Position": [
+            1162.942,
+            8.527227,
+            1078.9368
+          ],
+          "PitchDegrees": 31.217344,
+          "YawDegrees": 48.65203,
+          "Zoom": 78.37688,
+          "TimeSeconds": 0.7
+        },
+        {
+          "Position": [
+            1569.4312,
+            32.052937,
+            1260.8396
+          ],
+          "PitchDegrees": 34.22625,
+          "YawDegrees": 57.67875,
+          "Zoom": 74.365,
+          "TimeSeconds": 1.4
+        },
+        {
+          "Position": [
+            2088.8364,
+            62.83438,
+            1488.4678
+          ],
+          "PitchDegrees": 38.06203,
+          "YawDegrees": 69.18609,
+          "Zoom": 69.250626,
+          "TimeSeconds": 2.1
+        },
+        {
+          "Position": [
+            2581.8108,
+            87.42991,
+            1735.3098
+          ],
+          "PitchDegrees": 41.76,
+          "YawDegrees": 80.28,
+          "Zoom": 64.32,
+          "TimeSeconds": 2.8
+        },
+        {
+          "Position": [
+            2918.1565,
+            98.379845,
+            1942.598
+          ],
+          "PitchDegrees": 44.35547,
+          "YawDegrees": 88.06641,
+          "Zoom": 60.859375,
+          "TimeSeconds": 3.5
+        },
+        {
+          "Position": [
+            3027.1143,
+            100.43043,
+            2019.7257
+          ],
+          "PitchDegrees": 44.872593,
+          "YawDegrees": 90.382225,
+          "Zoom": 60.127407,
+          "TimeSeconds": 4.2
+        },
+        {
+          "Position": [
+            3449.4553,
+            100.61242,
+            2370.4634
+          ],
+          "PitchDegrees": 42.84,
+          "YawDegrees": 96.48,
+          "Zoom": 62.16,
+          "TimeSeconds": 4.9
+        },
+        {
+          "Position": [
+            4114.4976,
+            82.07926,
+            3048.2192
+          ],
+          "PitchDegrees": 39.50074,
+          "YawDegrees": 106.49778,
+          "Zoom": 65.49926,
+          "TimeSeconds": 5.6
+        },
+        {
+          "Position": [
+            4726.3037,
+            58.306007,
+            3716.5466
+          ],
+          "PitchDegrees": 36.37926,
+          "YawDegrees": 115.86222,
+          "Zoom": 68.62074,
+          "TimeSeconds": 6.2999997
+        },
+        {
+          "Position": [
+            5000,
+            50,
+            4000
+          ],
+          "PitchDegrees": 35,
+          "YawDegrees": 120,
+          "Zoom": 70,
+          "TimeSeconds": 7
+        }
+      ]
+    }
+  ],
+  "PreviewerResults": [
+    {
+      "Name": "flight_preview_full_lifecycle",
+      "StepResults": [
+        {
+          "State": 1,
+          "CurrentTime": 0.5,
+          "LastPose": {
+            "Position": [
+              1042.9688,
+              2.148439,
+              1042.9688
+            ],
+            "PitchDegrees": 30.644531,
+            "YawDegrees": 46.933594,
+            "Zoom": 81.05469,
+            "TimeSeconds": 0.5
+          },
+          "TriggeredFxCount": 0,
+          "PlaybackFinished": false
+        },
+        {
+          "State": 1,
+          "CurrentTime": 1.5,
+          "LastPose": {
+            "Position": [
+              1316.4062,
+              15.8203125,
+              1316.4062
+            ],
+            "PitchDegrees": 34.746094,
+            "YawDegrees": 59.23828,
+            "Zoom": 75.03906,
+            "TimeSeconds": 1.5
+          },
+          "ActiveSubtitleText": "Advance!",
+          "TriggeredFxCount": 1,
+          "PlaybackFinished": false
+        },
+        {
+          "State": 2,
+          "CurrentTime": 1.5,
+          "LastPose": {
+            "Position": [
+              1316.4062,
+              15.8203125,
+              1316.4062
+            ],
+            "PitchDegrees": 34.746094,
+            "YawDegrees": 59.23828,
+            "Zoom": 75.03906,
+            "TimeSeconds": 1.5
+          },
+          "ActiveSubtitleText": "Advance!",
+          "TriggeredFxCount": 1,
+          "PlaybackFinished": false
+        },
+        {
+          "State": 1,
+          "CurrentTime": 1.5,
+          "LastPose": {
+            "Position": [
+              1316.4062,
+              15.8203125,
+              1316.4062
+            ],
+            "PitchDegrees": 34.746094,
+            "YawDegrees": 59.23828,
+            "Zoom": 75.03906,
+            "TimeSeconds": 1.5
+          },
+          "ActiveSubtitleText": "Advance!",
+          "TriggeredFxCount": 1,
+          "PlaybackFinished": false
+        },
+        {
+          "State": 1,
+          "CurrentTime": 2.5,
+          "LastPose": {
+            "Position": [
+              1683.5939,
+              34.179688,
+              1683.5939
+            ],
+            "PitchDegrees": 40.253906,
+            "YawDegrees": 75.76172,
+            "Zoom": 66.96094,
+            "TimeSeconds": 2.5
+          },
+          "ActiveSubtitleText": "Advance!",
+          "TriggeredFxCount": 1,
+          "PlaybackFinished": false
+        },
+        {
+          "State": 0,
+          "CurrentTime": 4,
+          "LastPose": {
+            "Position": [
+              9999,
+              99,
+              9999
+            ],
+            "PitchDegrees": 30,
+            "YawDegrees": 45,
+            "Zoom": 82,
+            "TimeSeconds": 0
+          },
+          "TriggeredFxCount": 1,
+          "PlaybackFinished": true
+        }
+      ]
+    }
+  ],
+  "StartCameraValidationResults": [
+    {
+      "IsValid": true
+    },
+    {
+      "IsValid": true
+    },
+    {
+      "IsValid": true
+    },
+    {
+      "IsValid": false,
+      "ErrorMessage": "X \u5EA7\u6A19\u5FC5\u9808\u5728\u4E16\u754C\u5730\u5716\u7BC4\u570D 0..16383 \u5167\u3002 (Parameter \u0027X\u0027)"
+    },
+    {
+      "IsValid": false,
+      "ErrorMessage": "X \u5EA7\u6A19\u5FC5\u9808\u5728\u4E16\u754C\u5730\u5716\u7BC4\u570D 0..16383 \u5167\u3002 (Parameter \u0027X\u0027)"
+    },
+    {
+      "IsValid": false,
+      "ErrorMessage": "Z \u5EA7\u6A19\u5FC5\u9808\u5728\u4E16\u754C\u5730\u5716\u7BC4\u570D 0..16383 \u5167\u3002 (Parameter \u0027Z\u0027)"
+    },
+    {
+      "IsValid": false,
+      "ErrorMessage": "Z \u5EA7\u6A19\u5FC5\u9808\u5728\u4E16\u754C\u5730\u5716\u7BC4\u570D 0..16383 \u5167\u3002 (Parameter \u0027Z\u0027)"
+    },
+    {
+      "IsValid": false,
+      "ErrorMessage": "\u539F\u751F\u7E2E\u653E\u7BC4\u570D\u5FC5\u9808\u70BA 0..9\u3002 (Parameter \u0027Zoom\u0027)"
+    },
+    {
+      "IsValid": false,
+      "ErrorMessage": "\u539F\u751F\u7E2E\u653E\u7BC4\u570D\u5FC5\u9808\u70BA 0..9\u3002 (Parameter \u0027Zoom\u0027)"
+    },
+    {
+      "IsValid": false,
+      "ErrorMessage": "X \u5EA7\u6A19\u5FC5\u9808\u5728\u4E16\u754C\u5730\u5716\u7BC4\u570D 0..16383 \u5167\u3002 (Parameter \u0027X\u0027)"
+    },
+    {
+      "IsValid": false,
+      "ErrorMessage": "\u9AD8\u5EA6\u5FC5\u9808\u70BA\u6709\u9650\u6D6E\u9EDE\u6578\u3002 (Parameter \u0027Y\u0027)"
+    }
+  ],
+  "StartCameraJsonResults": [
+    {
+      "SerializedJson": "{\r\n  \u0022enabled\u0022: true,\r\n  \u0022x\u0022: 8192,\r\n  \u0022y\u0022: 0,\r\n  \u0022z\u0022: 8192,\r\n  \u0022zoom\u0022: 5,\r\n  \u0022primitive\u0022: 0\r\n}",
+      "DeserializedEnabled": true,
+      "DeserializedX": 8192,
+      "DeserializedY": 0,
+      "DeserializedZ": 8192,
+      "DeserializedZoom": 5,
+      "DeserializedPrimitive": 0
+    },
+    {
+      "SerializedJson": "{\r\n  \u0022enabled\u0022: true,\r\n  \u0022x\u0022: 12512.5,\r\n  \u0022y\u0022: 35,\r\n  \u0022z\u0022: 14816.5,\r\n  \u0022zoom\u0022: 7.25,\r\n  \u0022primitive\u0022: 1\r\n}",
+      "DeserializedEnabled": true,
+      "DeserializedX": 12512.5,
+      "DeserializedY": 35,
+      "DeserializedZ": 14816.5,
+      "DeserializedZoom": 7.25,
+      "DeserializedPrimitive": 1
+    },
+    {
+      "SerializedJson": "{\r\n  \u0022enabled\u0022: false,\r\n  \u0022x\u0022: 4096,\r\n  \u0022y\u0022: 10,\r\n  \u0022z\u0022: 4096,\r\n  \u0022zoom\u0022: 3,\r\n  \u0022primitive\u0022: 0\r\n}",
+      "DeserializedEnabled": false,
+      "DeserializedX": 4096,
+      "DeserializedY": 10,
+      "DeserializedZ": 4096,
+      "DeserializedZoom": 3,
+      "DeserializedPrimitive": 0
+    }
+  ]
+}

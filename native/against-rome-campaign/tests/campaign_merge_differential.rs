@@ -2,14 +2,12 @@
 //! versus the real C# path (`CampaignWaveDialog.CompileForMerge` + `MapEditorForm` guard / `UniqueEventNames` /
 //! 256-event cap), driven by the same fixed cases in `tests/fixtures/campaign_merge_cases.json`.
 //!
-//! What is real vs replicated on the C# side (see `oracle_campaign_merge/Program.cs`): `CompileForMerge` and
+//! What is real vs replicated on the C# side (oracle project since removed; output frozen in the fixture): `CompileForMerge` and
 //! `MapEditorForm.UniqueEventNames` are the real C# methods (reflection); the `ApplyCampaignWaves` unsupported-field guard
 //! and the `MergeScenarioEvents` 256-event cap are replicas pinned to the C# source text by SHA-256 (`sourcePins`).
 //!
 //! * `committed_oracle_output_matches_rust` compares against the committed C# output
 //!   (`campaign_merge_oracle_expected.json`), no .NET needed.
-//! * `fresh_csharp_oracle_run_matches_rust_and_committed_output` runs `tests/oracle_campaign_merge` live
-//!   (needs `dotnet`); set `ARM_SKIP_CSHARP_ORACLE=1` to skip it.
 //!
 //! Event JSON is compared structurally with an order-preserving parser: same keys in the same order,
 //! same array order, strings exact, numbers by value (C# writes `8000`, serde_json writes `8000.0` for f32).
@@ -470,32 +468,4 @@ fn committed_oracle_covers_success_and_failure_paths() {
         .filter(|r| matches!(r, Json::Obj(o) if o.iter().any(|(k, v)| k == "success" && *v == Json::Bool(true))))
         .count();
     assert!(ok >= 7 && ok < CASE_COUNT, "fixture must exercise both successful merges and rejections (ok={ok})");
-}
-
-#[test]
-fn fresh_csharp_oracle_run_matches_rust_and_committed_output() {
-    if std::env::var("ARM_SKIP_CSHARP_ORACLE").ok().as_deref() == Some("1") {
-        return;
-    }
-    let out = std::env::temp_dir().join(format!("arm_campaign_merge_{}", std::process::id()));
-    std::fs::create_dir_all(&out).unwrap();
-    let out_file = out.join("oracle.json");
-    let output = std::process::Command::new("dotnet")
-        .current_dir(root())
-        .args(["run", "--project", "tests/oracle_campaign_merge", "-c", "Release", "--"])
-        .arg(root().join("tests/fixtures/campaign_merge_cases.json"))
-        .arg(&out_file)
-        .output()
-        .expect("dotnet not available (set ARM_SKIP_CSHARP_ORACLE=1 to skip)");
-    assert!(
-        output.status.success(),
-        "oracle failed\nstdout: {}\nstderr: {}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let fresh = std::fs::read(&out_file).unwrap();
-    let committed = std::fs::read(root().join("tests/fixtures/campaign_merge_oracle_expected.json")).unwrap();
-    assert_eq!(fresh, committed, "committed C# oracle output drifted from a fresh oracle run");
-    assert_eq!(compare_all(std::str::from_utf8(&fresh).unwrap(), "fresh"), CASE_COUNT);
-    let _ = std::fs::remove_dir_all(&out);
 }

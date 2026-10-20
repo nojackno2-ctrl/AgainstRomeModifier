@@ -1,0 +1,2 @@
+REJECT NotSupportedException
+Only 8-bit indexed ALR frames are supported.

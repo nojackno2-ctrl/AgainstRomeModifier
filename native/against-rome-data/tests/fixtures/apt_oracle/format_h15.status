@@ -1,0 +1,2 @@
+REJECT NotSupportedException
+Only 8-bit APT 64x31 diamond patches are supported.

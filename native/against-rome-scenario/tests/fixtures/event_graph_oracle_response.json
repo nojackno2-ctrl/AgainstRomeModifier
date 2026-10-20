@@ -1,0 +1,4297 @@
+{
+  "FromScenarioEventsResults": [
+    {
+      "Name": "empty_events",
+      "Nodes": [],
+      "Edges": []
+    },
+    {
+      "Name": "single_trigger_simple",
+      "Nodes": [
+        {
+          "Id": "91f8e228-0810-4d72-95b9-8e2452876aff",
+          "Category": "Trigger",
+          "Title": "Event: MissionStart",
+          "X": 360,
+          "Y": 60,
+          "Ports": [
+            {
+              "Id": "2a2609f1-ea13-41c9-9a4d-85fd94f26d06",
+              "Name": "ExecIn",
+              "DisplayName": "In",
+              "PortType": 0,
+              "Direction": 0,
+              "AllowMultiple": false
+            },
+            {
+              "Id": "9224a607-2fb6-47ec-b94e-4e4a2eb34afe",
+              "Name": "ConditionsIn",
+              "DisplayName": "Conditions (AND)",
+              "PortType": 1,
+              "Direction": 0,
+              "AllowMultiple": true
+            },
+            {
+              "Id": "ae5ceea4-e73c-4f4b-9574-a1067b45be29",
+              "Name": "ExecOut",
+              "DisplayName": "Triggered",
+              "PortType": 0,
+              "Direction": 1,
+              "AllowMultiple": false
+            }
+          ]
+        }
+      ],
+      "Edges": []
+    },
+    {
+      "Name": "single_trigger_repeat",
+      "Nodes": [
+        {
+          "Id": "8d8236f9-7963-4583-b4c1-507f883292c5",
+          "Category": "Trigger",
+          "Title": "Event: PeriodicReinforce",
+          "X": 360,
+          "Y": 60,
+          "Ports": [
+            {
+              "Id": "4e3da419-3e58-406e-b7a2-156c2e51bc9a",
+              "Name": "ExecIn",
+              "DisplayName": "In",
+              "PortType": 0,
+              "Direction": 0,
+              "AllowMultiple": false
+            },
+            {
+              "Id": "5b32d174-84dd-4054-8319-26fda06960d9",
+              "Name": "ConditionsIn",
+              "DisplayName": "Conditions (AND)",
+              "PortType": 1,
+              "Direction": 0,
+              "AllowMultiple": true
+            },
+            {
+              "Id": "e909211c-9eee-426f-8922-51682c89b800",
+              "Name": "ExecOut",
+              "DisplayName": "Triggered",
+              "PortType": 0,
+              "Direction": 1,
+              "AllowMultiple": false
+            }
+          ]
+        }
+      ],
+      "Edges": []
+    },
+    {
+      "Name": "single_with_conditions_and_actions",
+      "Nodes": [
+        {
+          "Id": "8fc66693-7fe7-459d-a74b-2d99d8eeea33",
+          "Category": "Trigger",
+          "Title": "Event: DefeatBoss",
+          "X": 360,
+          "Y": 60,
+          "Ports": [
+            {
+              "Id": "52c3fadf-27d0-403b-8605-4425af17b504",
+              "Name": "ExecIn",
+              "DisplayName": "In",
+              "PortType": 0,
+              "Direction": 0,
+              "AllowMultiple": false
+            },
+            {
+              "Id": "3a4f2198-6b46-42db-9b7f-0b8f29eb91d3",
+              "Name": "ConditionsIn",
+              "DisplayName": "Conditions (AND)",
+              "PortType": 1,
+              "Direction": 0,
+              "AllowMultiple": true
+            },
+            {
+              "Id": "bb8df7dc-5627-4382-8344-5905ece6f0ff",
+              "Name": "ExecOut",
+              "DisplayName": "Triggered",
+              "PortType": 0,
+              "Direction": 1,
+              "AllowMultiple": false
+            }
+          ]
+        },
+        {
+          "Id": "49e4789a-336c-4995-a59d-974733420c3f",
+          "Category": "Condition",
+          "Title": "Condition: Object Exists",
+          "X": 60,
+          "Y": 60,
+          "Ports": [
+            {
+              "Id": "39033e57-7971-4ae9-92e0-2b8b243aef0c",
+              "Name": "ConditionOut",
+              "DisplayName": "Condition",
+              "PortType": 1,
+              "Direction": 1,
+              "AllowMultiple": true
+            }
+          ]
+        },
+        {
+          "Id": "188d4a2e-1129-4b26-8c56-259dd538c8e2",
+          "Category": "Condition",
+          "Title": "Condition: Object Dead/Removed",
+          "X": 60,
+          "Y": 150,
+          "Ports": [
+            {
+              "Id": "2f77dc91-027e-4728-9c88-8d0b0ecd3600",
+              "Name": "ConditionOut",
+              "DisplayName": "Condition",
+              "PortType": 1,
+              "Direction": 1,
+              "AllowMultiple": true
+            }
+          ]
+        },
+        {
+          "Id": "84caa316-63d1-42ab-916c-55d0d9738abf",
+          "Category": "Condition",
+          "Title": "Condition: Object In Area",
+          "X": 60,
+          "Y": 240,
+          "Ports": [
+            {
+              "Id": "a34d61fc-6356-471a-b2a7-ad25b2d3166a",
+              "Name": "ConditionOut",
+              "DisplayName": "Condition",
+              "PortType": 1,
+              "Direction": 1,
+              "AllowMultiple": true
+            }
+          ]
+        },
+        {
+          "Id": "e9cdaf05-61da-440f-87da-d605590f8ed7",
+          "Category": "Action",
+          "Title": "Action: Show Message",
+          "X": 660,
+          "Y": 60,
+          "Ports": [
+            {
+              "Id": "524db69c-a7f2-4d47-8411-a4a0ece597ac",
+              "Name": "ExecIn",
+              "DisplayName": "In",
+              "PortType": 0,
+              "Direction": 0,
+              "AllowMultiple": false
+            },
+            {
+              "Id": "f971b710-44aa-4358-be4e-0b4a88eb63d0",
+              "Name": "ExecOut",
+              "DisplayName": "Out",
+              "PortType": 0,
+              "Direction": 1,
+              "AllowMultiple": false
+            }
+          ]
+        },
+        {
+          "Id": "89892e40-b401-4cd0-90a5-3ad94c016164",
+          "Category": "Action",
+          "Title": "Action: Diplomacy (T0 with T2)",
+          "X": 920,
+          "Y": 60,
+          "Ports": [
+            {
+              "Id": "bccb703a-29cd-4a31-8a41-4c5ae76f936e",
+              "Name": "ExecIn",
+              "DisplayName": "In",
+              "PortType": 0,
+              "Direction": 0,
+              "AllowMultiple": false
+            },
+            {
+              "Id": "9050541c-a36b-4d26-b5cc-d0d1ad6fc264",
+              "Name": "ExecOut",
+              "DisplayName": "Out",
+              "PortType": 0,
+              "Direction": 1,
+              "AllowMultiple": false
+            }
+          ]
+        },
+        {
+          "Id": "29f97c16-2c99-441d-9296-548971342ebe",
+          "Category": "Action",
+          "Title": "Action: Spawn Unit (ROM_LEG01 x15)",
+          "X": 1180,
+          "Y": 60,
+          "Ports": [
+            {
+              "Id": "5f774300-53be-497f-9e45-545df8c1d275",
+              "Name": "ExecIn",
+              "DisplayName": "In",
+              "PortType": 0,
+              "Direction": 0,
+              "AllowMultiple": false
+            },
+            {
+              "Id": "f541e2c2-29fe-43c1-b4a2-704d9959d129",
+              "Name": "ExecOut",
+              "DisplayName": "Out",
+              "PortType": 0,
+              "Direction": 1,
+              "AllowMultiple": false
+            }
+          ]
+        },
+        {
+          "Id": "50042b3c-d1d3-43a2-ba01-5abebb35d93b",
+          "Category": "Action",
+          "Title": "Action: Victory",
+          "X": 1440,
+          "Y": 60,
+          "Ports": [
+            {
+              "Id": "d8c6f39d-01c1-4286-8ef1-2211756d00a7",
+              "Name": "ExecIn",
+              "DisplayName": "In",
+              "PortType": 0,
+              "Direction": 0,
+              "AllowMultiple": false
+            }
+          ]
+        }
+      ],
+      "Edges": [
+        {
+          "SourceNodeId": "49e4789a-336c-4995-a59d-974733420c3f",
+          "SourcePortName": "ConditionOut",
+          "TargetNodeId": "8fc66693-7fe7-459d-a74b-2d99d8eeea33",
+          "TargetPortName": "ConditionsIn"
+        },
+        {
+          "SourceNodeId": "188d4a2e-1129-4b26-8c56-259dd538c8e2",
+          "SourcePortName": "ConditionOut",
+          "TargetNodeId": "8fc66693-7fe7-459d-a74b-2d99d8eeea33",
+          "TargetPortName": "ConditionsIn"
+        },
+        {
+          "SourceNodeId": "84caa316-63d1-42ab-916c-55d0d9738abf",
+          "SourcePortName": "ConditionOut",
+          "TargetNodeId": "8fc66693-7fe7-459d-a74b-2d99d8eeea33",
+          "TargetPortName": "ConditionsIn"
+        },
+        {
+          "SourceNodeId": "8fc66693-7fe7-459d-a74b-2d99d8eeea33",
+          "SourcePortName": "ExecOut",
+          "TargetNodeId": "e9cdaf05-61da-440f-87da-d605590f8ed7",
+          "TargetPortName": "ExecIn"
+        },
+        {
+          "SourceNodeId": "e9cdaf05-61da-440f-87da-d605590f8ed7",
+          "SourcePortName": "ExecOut",
+          "TargetNodeId": "89892e40-b401-4cd0-90a5-3ad94c016164",
+          "TargetPortName": "ExecIn"
+        },
+        {
+          "SourceNodeId": "89892e40-b401-4cd0-90a5-3ad94c016164",
+          "SourcePortName": "ExecOut",
+          "TargetNodeId": "29f97c16-2c99-441d-9296-548971342ebe",
+          "TargetPortName": "ExecIn"
+        },
+        {
+          "SourceNodeId": "29f97c16-2c99-441d-9296-548971342ebe",
+          "SourcePortName": "ExecOut",
+          "TargetNodeId": "50042b3c-d1d3-43a2-ba01-5abebb35d93b",
+          "TargetPortName": "ExecIn"
+        }
+      ]
+    },
+    {
+      "Name": "multi_event_layout_hierarchy",
+      "Nodes": [
+        {
+          "Id": "061a16ee-d005-4b9b-a2f2-d1591b1069f3",
+          "Category": "Trigger",
+          "Title": "Event: Event1_StageA",
+          "X": 360,
+          "Y": 60,
+          "Ports": [
+            {
+              "Id": "4133ca8f-14a7-4117-9eee-c1edcc920de4",
+              "Name": "ExecIn",
+              "DisplayName": "In",
+              "PortType": 0,
+              "Direction": 0,
+              "AllowMultiple": false
+            },
+            {
+              "Id": "712aab51-d60e-4a18-893c-76d071f67545",
+              "Name": "ConditionsIn",
+              "DisplayName": "Conditions (AND)",
+              "PortType": 1,
+              "Direction": 0,
+              "AllowMultiple": true
+            },
+            {
+              "Id": "c7c0be42-2cf7-456c-a3e5-647ca596b463",
+              "Name": "ExecOut",
+              "DisplayName": "Triggered",
+              "PortType": 0,
+              "Direction": 1,
+              "AllowMultiple": false
+            }
+          ]
+        },
+        {
+          "Id": "b65c9536-427c-414c-9ce2-f8ede024c76e",
+          "Category": "Condition",
+          "Title": "Condition: Object Exists",
+          "X": 60,
+          "Y": 60,
+          "Ports": [
+            {
+              "Id": "c9388f11-e4a4-45e0-8001-8c1219458ac1",
+              "Name": "ConditionOut",
+              "DisplayName": "Condition",
+              "PortType": 1,
+              "Direction": 1,
+              "AllowMultiple": true
+            }
+          ]
+        },
+        {
+          "Id": "f37883b4-8b9b-4a21-a9e3-4f445a5f3ebe",
+          "Category": "Action",
+          "Title": "Action: Show Message",
+          "X": 660,
+          "Y": 60,
+          "Ports": [
+            {
+              "Id": "e4324c8d-7e58-47a8-94c3-46f74b6140b6",
+              "Name": "ExecIn",
+              "DisplayName": "In",
+              "PortType": 0,
+              "Direction": 0,
+              "AllowMultiple": false
+            },
+            {
+              "Id": "877c05a4-694e-4458-944a-10b1e306a0f6",
+              "Name": "ExecOut",
+              "DisplayName": "Out",
+              "PortType": 0,
+              "Direction": 1,
+              "AllowMultiple": false
+            }
+          ]
+        },
+        {
+          "Id": "ea9d5659-47f7-4957-a673-bad8230185bf",
+          "Category": "Trigger",
+          "Title": "Event: Event2_StageB",
+          "X": 360,
+          "Y": 300,
+          "Ports": [
+            {
+              "Id": "a21b95fc-3985-4821-8058-fdb6b95dd514",
+              "Name": "ExecIn",
+              "DisplayName": "In",
+              "PortType": 0,
+              "Direction": 0,
+              "AllowMultiple": false
+            },
+            {
+              "Id": "667f397e-e064-443e-a198-56e1e4e234f8",
+              "Name": "ConditionsIn",
+              "DisplayName": "Conditions (AND)",
+              "PortType": 1,
+              "Direction": 0,
+              "AllowMultiple": true
+            },
+            {
+              "Id": "8e0d5a64-fe17-4669-a43a-05328b76a93d",
+              "Name": "ExecOut",
+              "DisplayName": "Triggered",
+              "PortType": 0,
+              "Direction": 1,
+              "AllowMultiple": false
+            }
+          ]
+        },
+        {
+          "Id": "201ddeb1-333b-41e3-872c-e0918ea8dd80",
+          "Category": "Condition",
+          "Title": "Condition: Object Dead/Removed",
+          "X": 60,
+          "Y": 300,
+          "Ports": [
+            {
+              "Id": "459fd60f-4a2f-4543-ac0a-c4dd1e9a8d3c",
+              "Name": "ConditionOut",
+              "DisplayName": "Condition",
+              "PortType": 1,
+              "Direction": 1,
+              "AllowMultiple": true
+            }
+          ]
+        },
+        {
+          "Id": "362274cf-c4a7-4f21-a929-4b4f012a024e",
+          "Category": "Condition",
+          "Title": "Condition: Object In Area",
+          "X": 60,
+          "Y": 390,
+          "Ports": [
+            {
+              "Id": "c008866c-d3f4-4a1f-9002-307c08d64188",
+              "Name": "ConditionOut",
+              "DisplayName": "Condition",
+              "PortType": 1,
+              "Direction": 1,
+              "AllowMultiple": true
+            }
+          ]
+        },
+        {
+          "Id": "e9373411-93fa-4032-8cfc-a5f5db5e1f6f",
+          "Category": "Action",
+          "Title": "Action: Spawn Unit (GER_INF01 x8)",
+          "X": 660,
+          "Y": 300,
+          "Ports": [
+            {
+              "Id": "e75f6c14-b034-404a-a712-f204c2170fdb",
+              "Name": "ExecIn",
+              "DisplayName": "In",
+              "PortType": 0,
+              "Direction": 0,
+              "AllowMultiple": false
+            },
+            {
+              "Id": "7495cd22-1524-4d75-93f4-cb81494a79b3",
+              "Name": "ExecOut",
+              "DisplayName": "Out",
+              "PortType": 0,
+              "Direction": 1,
+              "AllowMultiple": false
+            }
+          ]
+        },
+        {
+          "Id": "2173b957-655c-4777-8bff-6a30af184306",
+          "Category": "Action",
+          "Title": "Action: Defeat",
+          "X": 920,
+          "Y": 300,
+          "Ports": [
+            {
+              "Id": "d38ddad5-d30d-440f-9986-b575c1b933cf",
+              "Name": "ExecIn",
+              "DisplayName": "In",
+              "PortType": 0,
+              "Direction": 0,
+              "AllowMultiple": false
+            }
+          ]
+        },
+        {
+          "Id": "bf02637b-ac54-4a34-8459-527432a20f82",
+          "Category": "Trigger",
+          "Title": "Event: Event3_NoConditions",
+          "X": 360,
+          "Y": 540,
+          "Ports": [
+            {
+              "Id": "2babab09-4ecc-4465-a697-1ec44ed73326",
+              "Name": "ExecIn",
+              "DisplayName": "In",
+              "PortType": 0,
+              "Direction": 0,
+              "AllowMultiple": false
+            },
+            {
+              "Id": "38674f16-3d49-4693-b2b2-e603651293aa",
+              "Name": "ConditionsIn",
+              "DisplayName": "Conditions (AND)",
+              "PortType": 1,
+              "Direction": 0,
+              "AllowMultiple": true
+            },
+            {
+              "Id": "cac89763-18c6-4b66-9034-e17b4b1fbea2",
+              "Name": "ExecOut",
+              "DisplayName": "Triggered",
+              "PortType": 0,
+              "Direction": 1,
+              "AllowMultiple": false
+            }
+          ]
+        },
+        {
+          "Id": "a1bb17b7-5d3e-450c-aa23-277db645f1bd",
+          "Category": "Action",
+          "Title": "Action: Show Message",
+          "X": 660,
+          "Y": 540,
+          "Ports": [
+            {
+              "Id": "bc398fdb-3682-4e49-a2ee-b7f3abc99fc3",
+              "Name": "ExecIn",
+              "DisplayName": "In",
+              "PortType": 0,
+              "Direction": 0,
+              "AllowMultiple": false
+            },
+            {
+              "Id": "bc737b3b-5aab-4af9-8383-7e9b269fe4c3",
+              "Name": "ExecOut",
+              "DisplayName": "Out",
+              "PortType": 0,
+              "Direction": 1,
+              "AllowMultiple": false
+            }
+          ]
+        }
+      ],
+      "Edges": [
+        {
+          "SourceNodeId": "b65c9536-427c-414c-9ce2-f8ede024c76e",
+          "SourcePortName": "ConditionOut",
+          "TargetNodeId": "061a16ee-d005-4b9b-a2f2-d1591b1069f3",
+          "TargetPortName": "ConditionsIn"
+        },
+        {
+          "SourceNodeId": "061a16ee-d005-4b9b-a2f2-d1591b1069f3",
+          "SourcePortName": "ExecOut",
+          "TargetNodeId": "f37883b4-8b9b-4a21-a9e3-4f445a5f3ebe",
+          "TargetPortName": "ExecIn"
+        },
+        {
+          "SourceNodeId": "201ddeb1-333b-41e3-872c-e0918ea8dd80",
+          "SourcePortName": "ConditionOut",
+          "TargetNodeId": "ea9d5659-47f7-4957-a673-bad8230185bf",
+          "TargetPortName": "ConditionsIn"
+        },
+        {
+          "SourceNodeId": "362274cf-c4a7-4f21-a929-4b4f012a024e",
+          "SourcePortName": "ConditionOut",
+          "TargetNodeId": "ea9d5659-47f7-4957-a673-bad8230185bf",
+          "TargetPortName": "ConditionsIn"
+        },
+        {
+          "SourceNodeId": "ea9d5659-47f7-4957-a673-bad8230185bf",
+          "SourcePortName": "ExecOut",
+          "TargetNodeId": "e9373411-93fa-4032-8cfc-a5f5db5e1f6f",
+          "TargetPortName": "ExecIn"
+        },
+        {
+          "SourceNodeId": "e9373411-93fa-4032-8cfc-a5f5db5e1f6f",
+          "SourcePortName": "ExecOut",
+          "TargetNodeId": "2173b957-655c-4777-8bff-6a30af184306",
+          "TargetPortName": "ExecIn"
+        },
+        {
+          "SourceNodeId": "bf02637b-ac54-4a34-8459-527432a20f82",
+          "SourcePortName": "ExecOut",
+          "TargetNodeId": "a1bb17b7-5d3e-450c-aa23-277db645f1bd",
+          "TargetPortName": "ExecIn"
+        }
+      ]
+    }
+  ],
+  "ToScenarioEventsResults": [
+    {
+      "Name": "to_events_standard_linear",
+      "Events": [
+        {
+          "Name": "SimpleLinear",
+          "DelaySeconds": 10,
+          "Repeat": false,
+          "Enabled": true,
+          "Conditions": [
+            {
+              "Kind": 0,
+              "TargetId": "11111111-1111-1111-1111-111111111111",
+              "MinX": 0,
+              "MinZ": 0,
+              "MaxX": 16383,
+              "MaxZ": 16383
+            }
+          ],
+          "Actions": [
+            {
+              "Kind": 0,
+              "Text": "Hello",
+              "Team": 0,
+              "OtherTeam": 1,
+              "Hostile": true,
+              "Alias": "",
+              "X": 8000,
+              "Z": 8000,
+              "Count": 10
+            },
+            {
+              "Kind": 1,
+              "Text": "",
+              "Team": 0,
+              "OtherTeam": 2,
+              "Hostile": false,
+              "Alias": "",
+              "X": 8000,
+              "Z": 8000,
+              "Count": 10
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "Name": "to_events_victory_termination",
+      "Events": [
+        {
+          "Name": "VictoryStop",
+          "DelaySeconds": 5,
+          "Repeat": false,
+          "Enabled": true,
+          "Conditions": [],
+          "Actions": [
+            {
+              "Kind": 0,
+              "Text": "You won!",
+              "Team": 0,
+              "OtherTeam": 1,
+              "Hostile": true,
+              "Alias": "",
+              "X": 8000,
+              "Z": 8000,
+              "Count": 10
+            },
+            {
+              "Kind": 3,
+              "Text": "",
+              "Team": 0,
+              "OtherTeam": 1,
+              "Hostile": true,
+              "Alias": "",
+              "X": 8000,
+              "Z": 8000,
+              "Count": 10
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "Name": "to_events_defeat_termination",
+      "Events": [
+        {
+          "Name": "DefeatStop",
+          "DelaySeconds": 0,
+          "Repeat": false,
+          "Enabled": true,
+          "Conditions": [],
+          "Actions": [
+            {
+              "Kind": 4,
+              "Text": "",
+              "Team": 0,
+              "OtherTeam": 1,
+              "Hostile": true,
+              "Alias": "",
+              "X": 8000,
+              "Z": 8000,
+              "Count": 10
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "Name": "to_events_action_cycle_protection",
+      "Events": [
+        {
+          "Name": "CycleEvent",
+          "DelaySeconds": 5,
+          "Repeat": false,
+          "Enabled": true,
+          "Conditions": [],
+          "Actions": [
+            {
+              "Kind": 0,
+              "Text": "LoopStep1",
+              "Team": 0,
+              "OtherTeam": 1,
+              "Hostile": true,
+              "Alias": "",
+              "X": 8000,
+              "Z": 8000,
+              "Count": 10
+            },
+            {
+              "Kind": 0,
+              "Text": "LoopStep2",
+              "Team": 0,
+              "OtherTeam": 1,
+              "Hostile": true,
+              "Alias": "",
+              "X": 8000,
+              "Z": 8000,
+              "Count": 10
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "Name": "to_events_stops_at_unsupported_delay_node",
+      "Events": [
+        {
+          "Name": "DelayInterrupted",
+          "DelaySeconds": 1,
+          "Repeat": false,
+          "Enabled": true,
+          "Conditions": [],
+          "Actions": [
+            {
+              "Kind": 0,
+              "Text": "BeforeDelay",
+              "Team": 0,
+              "OtherTeam": 1,
+              "Hostile": true,
+              "Alias": "",
+              "X": 8000,
+              "Z": 8000,
+              "Count": 10
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "ValidatorResults": [
+    {
+      "Name": "val_clean_valid",
+      "Diagnostics": []
+    },
+    {
+      "Name": "val_empty_event_name",
+      "Diagnostics": [
+        {
+          "Severity": 2,
+          "Code": "EMPTY_EVENT_NAME",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u540D\u7A31\u4E0D\u53EF\u70BA\u7A7A\u3002",
+          "NodeId": "aaaaaaaa-0001-0001-0001-000000000001"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300C   \u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "aaaaaaaa-0001-0001-0001-000000000001"
+        }
+      ]
+    },
+    {
+      "Name": "val_negative_delay",
+      "Diagnostics": [
+        {
+          "Severity": 2,
+          "Code": "INVALID_DELAY",
+          "Message": "\u4E8B\u4EF6\u300CNegativeDelay\u300D\u5EF6\u9072\u79D2\u6578\u5FC5\u9808\u4ECB\u65BC 0 \u8207 86400 \u79D2\u3002",
+          "NodeId": "aaaaaaaa-0001-0001-0001-000000000001"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CNegativeDelay\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "aaaaaaaa-0001-0001-0001-000000000001"
+        }
+      ]
+    },
+    {
+      "Name": "val_excessive_delay",
+      "Diagnostics": [
+        {
+          "Severity": 2,
+          "Code": "INVALID_DELAY",
+          "Message": "\u4E8B\u4EF6\u300COverDayDelay\u300D\u5EF6\u9072\u79D2\u6578\u5FC5\u9808\u4ECB\u65BC 0 \u8207 86400 \u79D2\u3002",
+          "NodeId": "aaaaaaaa-0001-0001-0001-000000000001"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300COverDayDelay\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "aaaaaaaa-0001-0001-0001-000000000001"
+        }
+      ]
+    },
+    {
+      "Name": "val_repeat_zero_delay",
+      "Diagnostics": [
+        {
+          "Severity": 2,
+          "Code": "REPEAT_ZERO_DELAY",
+          "Message": "\u91CD\u8907\u57F7\u884C\u7684\u4E8B\u4EF6\u300CRapidTick\u300D\u9593\u9694\u6642\u9593\u81F3\u5C11\u5FC5\u9808\u70BA 1 \u79D2\uFF0C\u5426\u5247\u5C07\u9020\u6210\u6BCF\u4E00\u5E40\u89F8\u767C\u4E4B\u6B7B\u9396\u554F\u984C\u3002",
+          "NodeId": "aaaaaaaa-0001-0001-0001-000000000001"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CRapidTick\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "aaaaaaaa-0001-0001-0001-000000000001"
+        }
+      ]
+    },
+    {
+      "Name": "val_terminal_victory_in_repeat",
+      "Diagnostics": [
+        {
+          "Severity": 2,
+          "Code": "TERMINAL_IN_REPEAT_EVENT",
+          "Message": "\u4E8B\u4EF6\u300CRepeatWin\u300D\u8A2D\u5B9A\u70BA\u91CD\u8907\u57F7\u884C\uFF0C\u4F46\u5176\u52D5\u4F5C\u93C8\u4E2D\u5305\u542B\u52DD\u5229/\u5931\u6557\u7D42\u6B62\u52D5\u4F5C\u3002",
+          "NodeId": "aaaaaaaa-0001-0001-0001-000000000003"
+        }
+      ]
+    },
+    {
+      "Name": "val_terminal_defeat_in_repeat",
+      "Diagnostics": [
+        {
+          "Severity": 2,
+          "Code": "TERMINAL_IN_REPEAT_EVENT",
+          "Message": "\u4E8B\u4EF6\u300CRepeatLoss\u300D\u8A2D\u5B9A\u70BA\u91CD\u8907\u57F7\u884C\uFF0C\u4F46\u5176\u52D5\u4F5C\u93C8\u4E2D\u5305\u542B\u52DD\u5229/\u5931\u6557\u7D42\u6B62\u52D5\u4F5C\u3002",
+          "NodeId": "aaaaaaaa-0001-0001-0001-000000000003"
+        }
+      ]
+    },
+    {
+      "Name": "val_empty_target_guid",
+      "Diagnostics": [
+        {
+          "Severity": 2,
+          "Code": "EMPTY_TARGET_GUID",
+          "Message": "\u689D\u4EF6\u7BC0\u9EDE\u300CCondition: Object Exists\u300D\u5C1A\u672A\u6307\u5B9A\u76EE\u6A19\u7269\u4EF6 GUID\u3002",
+          "NodeId": "aaaaaaaa-0001-0001-0001-000000000002"
+        },
+        {
+          "Severity": 1,
+          "Code": "DANGLING_CONDITION",
+          "Message": "\u689D\u4EF6\u7BC0\u9EDE\u300CCondition: Object Exists\u300D\u672A\u9023\u63A5\u81F3\u4EFB\u4F55\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\uFF0C\u5C6C\u65BC\u61F8\u7A7A\u689D\u4EF6\u3002",
+          "NodeId": "aaaaaaaa-0001-0001-0001-000000000002"
+        }
+      ]
+    },
+    {
+      "Name": "val_invalid_target_guid",
+      "Diagnostics": [
+        {
+          "Severity": 2,
+          "Code": "INVALID_TARGET_GUID",
+          "Message": "\u689D\u4EF6\u7BC0\u9EDE\u300CCondition: Object Exists\u300D\u5F15\u7528\u7684\u76EE\u6A19\u7269\u4EF6 GUID (22222222-2222-2222-2222-222222222222) \u5728\u5730\u5716\u4E2D\u4E0D\u5B58\u5728\u6216\u5DF2\u906D\u522A\u9664\u3002",
+          "NodeId": "aaaaaaaa-0001-0001-0001-000000000002"
+        },
+        {
+          "Severity": 1,
+          "Code": "DANGLING_CONDITION",
+          "Message": "\u689D\u4EF6\u7BC0\u9EDE\u300CCondition: Object Exists\u300D\u672A\u9023\u63A5\u81F3\u4EFB\u4F55\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\uFF0C\u5C6C\u65BC\u61F8\u7A7A\u689D\u4EF6\u3002",
+          "NodeId": "aaaaaaaa-0001-0001-0001-000000000002"
+        }
+      ]
+    },
+    {
+      "Name": "val_invalid_area_bounds_inverted",
+      "Diagnostics": [
+        {
+          "Severity": 2,
+          "Code": "INVALID_AREA_BOUNDS",
+          "Message": "\u5340\u57DF\u689D\u4EF6\u5EA7\u6A19\u7BC4\u570D\u7121\u6548\uFF1A[500, 100] \u81F3 [200, 600] \u5FC5\u9808\u5728 0\u201316383 \u7BC4\u570D\u5167\u4E14 Min \u003C= Max\u3002",
+          "NodeId": "aaaaaaaa-0001-0001-0001-000000000002"
+        },
+        {
+          "Severity": 1,
+          "Code": "DANGLING_CONDITION",
+          "Message": "\u689D\u4EF6\u7BC0\u9EDE\u300CCondition: Object In Area\u300D\u672A\u9023\u63A5\u81F3\u4EFB\u4F55\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\uFF0C\u5C6C\u65BC\u61F8\u7A7A\u689D\u4EF6\u3002",
+          "NodeId": "aaaaaaaa-0001-0001-0001-000000000002"
+        }
+      ]
+    },
+    {
+      "Name": "val_invalid_area_bounds_negative",
+      "Diagnostics": [
+        {
+          "Severity": 2,
+          "Code": "INVALID_AREA_BOUNDS",
+          "Message": "\u5340\u57DF\u689D\u4EF6\u5EA7\u6A19\u7BC4\u570D\u7121\u6548\uFF1A[-10, 0] \u81F3 [1000, 1000] \u5FC5\u9808\u5728 0\u201316383 \u7BC4\u570D\u5167\u4E14 Min \u003C= Max\u3002",
+          "NodeId": "aaaaaaaa-0001-0001-0001-000000000002"
+        },
+        {
+          "Severity": 1,
+          "Code": "DANGLING_CONDITION",
+          "Message": "\u689D\u4EF6\u7BC0\u9EDE\u300CCondition: Object In Area\u300D\u672A\u9023\u63A5\u81F3\u4EFB\u4F55\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\uFF0C\u5C6C\u65BC\u61F8\u7A7A\u689D\u4EF6\u3002",
+          "NodeId": "aaaaaaaa-0001-0001-0001-000000000002"
+        }
+      ]
+    },
+    {
+      "Name": "val_invalid_area_bounds_overflow",
+      "Diagnostics": [
+        {
+          "Severity": 2,
+          "Code": "INVALID_AREA_BOUNDS",
+          "Message": "\u5340\u57DF\u689D\u4EF6\u5EA7\u6A19\u7BC4\u570D\u7121\u6548\uFF1A[0, 0] \u81F3 [20000, 1000] \u5FC5\u9808\u5728 0\u201316383 \u7BC4\u570D\u5167\u4E14 Min \u003C= Max\u3002",
+          "NodeId": "aaaaaaaa-0001-0001-0001-000000000002"
+        },
+        {
+          "Severity": 1,
+          "Code": "DANGLING_CONDITION",
+          "Message": "\u689D\u4EF6\u7BC0\u9EDE\u300CCondition: Object In Area\u300D\u672A\u9023\u63A5\u81F3\u4EFB\u4F55\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\uFF0C\u5C6C\u65BC\u61F8\u7A7A\u689D\u4EF6\u3002",
+          "NodeId": "aaaaaaaa-0001-0001-0001-000000000002"
+        }
+      ]
+    },
+    {
+      "Name": "val_dangling_condition",
+      "Diagnostics": [
+        {
+          "Severity": 1,
+          "Code": "DANGLING_CONDITION",
+          "Message": "\u689D\u4EF6\u7BC0\u9EDE\u300CCondition: Object Dead/Removed\u300D\u672A\u9023\u63A5\u81F3\u4EFB\u4F55\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\uFF0C\u5C6C\u65BC\u61F8\u7A7A\u689D\u4EF6\u3002",
+          "NodeId": "aaaaaaaa-0001-0001-0001-000000000002"
+        }
+      ]
+    },
+    {
+      "Name": "val_orphan_action",
+      "Diagnostics": [
+        {
+          "Severity": 1,
+          "Code": "ORPHAN_ACTION",
+          "Message": "\u52D5\u4F5C\u7BC0\u9EDE\u300CAction: Show Message\u300D\u6C92\u6709\u524D\u7F6E\u57F7\u884C\u9023\u7DDA\uFF0C\u6C38\u9060\u4E0D\u6703\u88AB\u57F7\u884C\u3002",
+          "NodeId": "aaaaaaaa-0001-0001-0001-000000000003"
+        }
+      ]
+    },
+    {
+      "Name": "val_empty_message_text",
+      "Diagnostics": [
+        {
+          "Severity": 1,
+          "Code": "ORPHAN_ACTION",
+          "Message": "\u52D5\u4F5C\u7BC0\u9EDE\u300CAction: Show Message\u300D\u6C92\u6709\u524D\u7F6E\u57F7\u884C\u9023\u7DDA\uFF0C\u6C38\u9060\u4E0D\u6703\u88AB\u57F7\u884C\u3002",
+          "NodeId": "aaaaaaaa-0001-0001-0001-000000000003"
+        },
+        {
+          "Severity": 2,
+          "Code": "EMPTY_MESSAGE_TEXT",
+          "Message": "\u8A0A\u606F\u52D5\u4F5C\u6587\u5B57\u4E0D\u53EF\u70BA\u7A7A\u3002",
+          "NodeId": "aaaaaaaa-0001-0001-0001-000000000003"
+        }
+      ]
+    },
+    {
+      "Name": "val_diplomacy_same_team",
+      "Diagnostics": [
+        {
+          "Severity": 1,
+          "Code": "ORPHAN_ACTION",
+          "Message": "\u52D5\u4F5C\u7BC0\u9EDE\u300CAction: Diplomacy (T1 vs T1)\u300D\u6C92\u6709\u524D\u7F6E\u57F7\u884C\u9023\u7DDA\uFF0C\u6C38\u9060\u4E0D\u6703\u88AB\u57F7\u884C\u3002",
+          "NodeId": "aaaaaaaa-0001-0001-0001-000000000003"
+        },
+        {
+          "Severity": 2,
+          "Code": "INVALID_DIPLOMACY_TEAMS",
+          "Message": "\u5916\u4EA4\u52D5\u4F5C\u9700\u8981\u5169\u500B\u4E0D\u540C\u968A\u4F0D\uFF080\u20137\uFF09\uFF0C\u7576\u524D\u8A2D\u5B9A\u70BA\u968A\u4F0D 1 \u8207\u968A\u4F0D 1\u3002",
+          "NodeId": "aaaaaaaa-0001-0001-0001-000000000003"
+        }
+      ]
+    },
+    {
+      "Name": "val_diplomacy_team_overflow",
+      "Diagnostics": [
+        {
+          "Severity": 1,
+          "Code": "ORPHAN_ACTION",
+          "Message": "\u52D5\u4F5C\u7BC0\u9EDE\u300CAction: Diplomacy (T8 vs T0)\u300D\u6C92\u6709\u524D\u7F6E\u57F7\u884C\u9023\u7DDA\uFF0C\u6C38\u9060\u4E0D\u6703\u88AB\u57F7\u884C\u3002",
+          "NodeId": "aaaaaaaa-0001-0001-0001-000000000003"
+        },
+        {
+          "Severity": 2,
+          "Code": "INVALID_DIPLOMACY_TEAMS",
+          "Message": "\u5916\u4EA4\u52D5\u4F5C\u9700\u8981\u5169\u500B\u4E0D\u540C\u968A\u4F0D\uFF080\u20137\uFF09\uFF0C\u7576\u524D\u8A2D\u5B9A\u70BA\u968A\u4F0D 8 \u8207\u968A\u4F0D 0\u3002",
+          "NodeId": "aaaaaaaa-0001-0001-0001-000000000003"
+        }
+      ]
+    },
+    {
+      "Name": "val_spawn_invalid_team",
+      "Diagnostics": [
+        {
+          "Severity": 1,
+          "Code": "ORPHAN_ACTION",
+          "Message": "\u52D5\u4F5C\u7BC0\u9EDE\u300CAction: Spawn Unit (GER_INF01 x5)\u300D\u6C92\u6709\u524D\u7F6E\u57F7\u884C\u9023\u7DDA\uFF0C\u6C38\u9060\u4E0D\u6703\u88AB\u57F7\u884C\u3002",
+          "NodeId": "aaaaaaaa-0001-0001-0001-000000000003"
+        },
+        {
+          "Severity": 2,
+          "Code": "INVALID_SPAWN_TEAM",
+          "Message": "\u751F\u6210\u90E8\u968A\u968A\u4F0D\u5FC5\u9808\u4ECB\u65BC 0 \u8207 7\uFF0C\u7576\u524D\u70BA 9\u3002",
+          "NodeId": "aaaaaaaa-0001-0001-0001-000000000003"
+        }
+      ]
+    },
+    {
+      "Name": "val_spawn_count_bounds",
+      "Diagnostics": [
+        {
+          "Severity": 1,
+          "Code": "ORPHAN_ACTION",
+          "Message": "\u52D5\u4F5C\u7BC0\u9EDE\u300CAction: Spawn Unit (GER_INF01 x0)\u300D\u6C92\u6709\u524D\u7F6E\u57F7\u884C\u9023\u7DDA\uFF0C\u6C38\u9060\u4E0D\u6703\u88AB\u57F7\u884C\u3002",
+          "NodeId": "aaaaaaaa-0001-0001-0001-000000000003"
+        },
+        {
+          "Severity": 2,
+          "Code": "INVALID_SPAWN_COUNT",
+          "Message": "\u751F\u6210\u90E8\u968A\u4EBA\u6578\u5FC5\u9808\u4ECB\u65BC 1 \u8207 20\uFF0C\u7576\u524D\u70BA 0\u3002",
+          "NodeId": "aaaaaaaa-0001-0001-0001-000000000003"
+        },
+        {
+          "Severity": 1,
+          "Code": "ORPHAN_ACTION",
+          "Message": "\u52D5\u4F5C\u7BC0\u9EDE\u300CAction: Spawn Unit (GER_INF01 x25)\u300D\u6C92\u6709\u524D\u7F6E\u57F7\u884C\u9023\u7DDA\uFF0C\u6C38\u9060\u4E0D\u6703\u88AB\u57F7\u884C\u3002",
+          "NodeId": "aaaaaaaa-0001-0001-0001-000000000004"
+        },
+        {
+          "Severity": 2,
+          "Code": "INVALID_SPAWN_COUNT",
+          "Message": "\u751F\u6210\u90E8\u968A\u4EBA\u6578\u5FC5\u9808\u4ECB\u65BC 1 \u8207 20\uFF0C\u7576\u524D\u70BA 25\u3002",
+          "NodeId": "aaaaaaaa-0001-0001-0001-000000000004"
+        }
+      ]
+    },
+    {
+      "Name": "val_spawn_coordinates_overflow",
+      "Diagnostics": [
+        {
+          "Severity": 1,
+          "Code": "ORPHAN_ACTION",
+          "Message": "\u52D5\u4F5C\u7BC0\u9EDE\u300CAction: Spawn Unit (GER_INF01 x5)\u300D\u6C92\u6709\u524D\u7F6E\u57F7\u884C\u9023\u7DDA\uFF0C\u6C38\u9060\u4E0D\u6703\u88AB\u57F7\u884C\u3002",
+          "NodeId": "aaaaaaaa-0001-0001-0001-000000000003"
+        },
+        {
+          "Severity": 2,
+          "Code": "INVALID_SPAWN_COORDINATES",
+          "Message": "\u751F\u6210\u90E8\u968A\u5EA7\u6A19\u5FC5\u9808\u4ECB\u65BC 0 \u8207 16383 \u4E4B\u9593\uFF0C\u7576\u524D\u70BA (-50, 20000)\u3002",
+          "NodeId": "aaaaaaaa-0001-0001-0001-000000000003"
+        }
+      ]
+    },
+    {
+      "Name": "val_spawn_unknown_alias",
+      "Diagnostics": [
+        {
+          "Severity": 1,
+          "Code": "ORPHAN_ACTION",
+          "Message": "\u52D5\u4F5C\u7BC0\u9EDE\u300CAction: Spawn Unit (MYSTERY_UNIT x5)\u300D\u6C92\u6709\u524D\u7F6E\u57F7\u884C\u9023\u7DDA\uFF0C\u6C38\u9060\u4E0D\u6703\u88AB\u57F7\u884C\u3002",
+          "NodeId": "aaaaaaaa-0001-0001-0001-000000000003"
+        },
+        {
+          "Severity": 2,
+          "Code": "INVALID_SPAWN_ALIAS",
+          "Message": "\u672A\u77E5\u7684\u90E8\u968A\u5225\u540D\uFF1AMYSTERY_UNIT\u3002",
+          "NodeId": "aaaaaaaa-0001-0001-0001-000000000003"
+        }
+      ]
+    },
+    {
+      "Name": "val_delay_orphan_and_negative",
+      "Diagnostics": [
+        {
+          "Severity": 1,
+          "Code": "ORPHAN_DELAY",
+          "Message": "\u5EF6\u9072\u7BC0\u9EDE\u300CDelay: -5s\u300D\u6C92\u6709\u524D\u7F6E\u57F7\u884C\u9023\u7DDA\u3002",
+          "NodeId": "aaaaaaaa-0001-0001-0001-000000000003"
+        },
+        {
+          "Severity": 2,
+          "Code": "NEGATIVE_DELAY",
+          "Message": "\u5EF6\u9072\u6642\u9593\u4E0D\u80FD\u70BA\u8CA0\u6578\u3002",
+          "NodeId": "aaaaaaaa-0001-0001-0001-000000000003"
+        }
+      ]
+    },
+    {
+      "Name": "val_execution_cycle_two_nodes",
+      "Diagnostics": [
+        {
+          "Severity": 2,
+          "Code": "EXECUTION_CYCLE_DETECTED",
+          "Message": "\u5075\u6E2C\u5230\u57F7\u884C\u6D41\u6B7B\u5FAA\u74B0\uFF08\u5305\u542B\u7BC0\u9EDE Action: Show Message\uFF09\uFF0C\u5C07\u5C0E\u81F4\u904A\u6232\u8173\u672C\u5F15\u64CE\u9677\u5165\u7121\u7AAE\u8FF4\u5708\u6216\u6B7B\u9396\u3002",
+          "NodeId": "aaaaaaaa-0001-0001-0001-000000000003"
+        }
+      ]
+    },
+    {
+      "Name": "val_execution_cycle_three_nodes",
+      "Diagnostics": [
+        {
+          "Severity": 2,
+          "Code": "EXECUTION_CYCLE_DETECTED",
+          "Message": "\u5075\u6E2C\u5230\u57F7\u884C\u6D41\u6B7B\u5FAA\u74B0\uFF08\u5305\u542B\u7BC0\u9EDE Action: Show Message\uFF09\uFF0C\u5C07\u5C0E\u81F4\u904A\u6232\u8173\u672C\u5F15\u64CE\u9677\u5165\u7121\u7AAE\u8FF4\u5708\u6216\u6B7B\u9396\u3002",
+          "NodeId": "aaaaaaaa-0001-0001-0001-000000000003"
+        }
+      ]
+    },
+    {
+      "Name": "val_compound_edge_cases",
+      "Diagnostics": [
+        {
+          "Severity": 2,
+          "Code": "REPEAT_ZERO_DELAY",
+          "Message": "\u91CD\u8907\u57F7\u884C\u7684\u4E8B\u4EF6\u300CCompound\u300D\u9593\u9694\u6642\u9593\u81F3\u5C11\u5FC5\u9808\u70BA 1 \u79D2\uFF0C\u5426\u5247\u5C07\u9020\u6210\u6BCF\u4E00\u5E40\u89F8\u767C\u4E4B\u6B7B\u9396\u554F\u984C\u3002",
+          "NodeId": "aaaaaaaa-0001-0001-0001-000000000001"
+        },
+        {
+          "Severity": 2,
+          "Code": "TERMINAL_IN_REPEAT_EVENT",
+          "Message": "\u4E8B\u4EF6\u300CCompound\u300D\u8A2D\u5B9A\u70BA\u91CD\u8907\u57F7\u884C\uFF0C\u4F46\u5176\u52D5\u4F5C\u93C8\u4E2D\u5305\u542B\u52DD\u5229/\u5931\u6557\u7D42\u6B62\u52D5\u4F5C\u3002",
+          "NodeId": "aaaaaaaa-0001-0001-0001-000000000003"
+        },
+        {
+          "Severity": 2,
+          "Code": "EMPTY_TARGET_GUID",
+          "Message": "\u689D\u4EF6\u7BC0\u9EDE\u300CCondition: Object Exists\u300D\u5C1A\u672A\u6307\u5B9A\u76EE\u6A19\u7269\u4EF6 GUID\u3002",
+          "NodeId": "aaaaaaaa-0001-0001-0001-000000000002"
+        },
+        {
+          "Severity": 1,
+          "Code": "DANGLING_CONDITION",
+          "Message": "\u689D\u4EF6\u7BC0\u9EDE\u300CCondition: Object Exists\u300D\u672A\u9023\u63A5\u81F3\u4EFB\u4F55\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\uFF0C\u5C6C\u65BC\u61F8\u7A7A\u689D\u4EF6\u3002",
+          "NodeId": "aaaaaaaa-0001-0001-0001-000000000002"
+        },
+        {
+          "Severity": 1,
+          "Code": "ORPHAN_DELAY",
+          "Message": "\u5EF6\u9072\u7BC0\u9EDE\u300CDelay: -1s\u300D\u6C92\u6709\u524D\u7F6E\u57F7\u884C\u9023\u7DDA\u3002",
+          "NodeId": "aaaaaaaa-0001-0001-0001-000000000004"
+        },
+        {
+          "Severity": 2,
+          "Code": "NEGATIVE_DELAY",
+          "Message": "\u5EF6\u9072\u6642\u9593\u4E0D\u80FD\u70BA\u8CA0\u6578\u3002",
+          "NodeId": "aaaaaaaa-0001-0001-0001-000000000004"
+        },
+        {
+          "Severity": 2,
+          "Code": "INVALID_SPAWN_TEAM",
+          "Message": "\u751F\u6210\u90E8\u968A\u968A\u4F0D\u5FC5\u9808\u4ECB\u65BC 0 \u8207 7\uFF0C\u7576\u524D\u70BA 9\u3002",
+          "NodeId": "aaaaaaaa-0001-0001-0001-000000000005"
+        },
+        {
+          "Severity": 2,
+          "Code": "INVALID_SPAWN_COUNT",
+          "Message": "\u751F\u6210\u90E8\u968A\u4EBA\u6578\u5FC5\u9808\u4ECB\u65BC 1 \u8207 20\uFF0C\u7576\u524D\u70BA 50\u3002",
+          "NodeId": "aaaaaaaa-0001-0001-0001-000000000005"
+        },
+        {
+          "Severity": 2,
+          "Code": "INVALID_SPAWN_COORDINATES",
+          "Message": "\u751F\u6210\u90E8\u968A\u5EA7\u6A19\u5FC5\u9808\u4ECB\u65BC 0 \u8207 16383 \u4E4B\u9593\uFF0C\u7576\u524D\u70BA (-100, 25000)\u3002",
+          "NodeId": "aaaaaaaa-0001-0001-0001-000000000005"
+        },
+        {
+          "Severity": 2,
+          "Code": "INVALID_SPAWN_ALIAS",
+          "Message": "\u672A\u77E5\u7684\u90E8\u968A\u5225\u540D\uFF1AINVALID\u3002",
+          "NodeId": "aaaaaaaa-0001-0001-0001-000000000005"
+        }
+      ]
+    },
+    {
+      "Name": "val_condition_limit_exceeded",
+      "Diagnostics": [
+        {
+          "Severity": 2,
+          "Code": "CONDITION_LIMIT_EXCEEDED",
+          "Message": "\u4E8B\u4EF6\u300COverConditions\u300D\u9023\u63A5\u4E86 33 \u500B\u689D\u4EF6\uFF0C\u8D85\u904E\u4E0A\u9650 32 \u500B\u3002",
+          "NodeId": "aaaaaaaa-0001-0001-0001-000000000001"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300COverConditions\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "aaaaaaaa-0001-0001-0001-000000000001"
+        }
+      ]
+    },
+    {
+      "Name": "val_action_limit_exceeded",
+      "Diagnostics": [
+        {
+          "Severity": 2,
+          "Code": "ACTION_LIMIT_EXCEEDED",
+          "Message": "\u4E8B\u4EF6\u300COverActions\u300D\u52D5\u4F5C\u6578\u91CF\u70BA 33\uFF0C\u8D85\u904E\u4E0A\u9650 32 \u500B\u3002",
+          "NodeId": "aaaaaaaa-0001-0001-0001-000000000001"
+        }
+      ]
+    },
+    {
+      "Name": "val_event_limit_exceeded",
+      "Diagnostics": [
+        {
+          "Severity": 2,
+          "Code": "EVENT_LIMIT_EXCEEDED",
+          "Message": "\u5716\u4E2D\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u6578\u91CF\u70BA 257\uFF0C\u8D85\u904E\u904A\u6232\u4E0A\u9650 256 \u500B\u3002",
+          "NodeId": null
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_0\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "bfc565dd-c36a-4beb-acc9-acf101afa5f4"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_1\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "f79dd9af-041d-4a99-a3da-c1e0a3f5ee7f"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_2\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "07a13de2-f2cc-4868-b6ee-5458f4c72be7"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_3\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "514bcc5f-7dde-4dc4-b3c7-a1d22d92d0ee"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_4\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "f6c413b3-81c6-4b71-9053-5cdb2dd03dd2"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_5\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "bb6f1a26-4bab-4ba0-b10c-56205c118d58"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_6\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "4887fb24-5e92-4e2a-962e-a5c578b2a1b5"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_7\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "ae7b047a-3101-49b8-86f8-32b14b278cb7"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_8\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "5b8b3b29-6dac-452a-9937-8c75a69a8b23"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_9\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "d1e74e9f-b5f1-4f38-9b40-fccf646f1993"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_10\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "7d3f37d1-f621-488c-9ff9-4203389bb196"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_11\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "9a166d1c-a4b9-4558-abfb-8a966eccf1d8"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_12\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "384b6461-a745-4920-b739-13c6bfd739f4"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_13\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "8cc8abab-fab9-41cc-963f-4d5ae6b01f9f"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_14\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "6438b826-edd2-4c6a-be4f-18ee6d45f510"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_15\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "27d93b8c-c10a-43c4-a5c1-8ce53d01fc0d"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_16\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "d26e7425-d1fb-4bc1-8e57-f4b868f3e18b"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_17\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "bdfcf347-c003-4180-98e5-aed28eb2ac21"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_18\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "e3ae1b83-9fda-45d5-9d71-55e13a636806"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_19\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "634d647d-bf2e-46d7-a5d7-802d2030388f"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_20\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "5fc88d1c-17da-4421-a6bf-4a6186a01728"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_21\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "4a9e5e9b-8e1c-4ed6-8d37-f11002e0aeae"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_22\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "1eef3416-5b31-489d-8f3f-a26e70d49937"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_23\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "78ac6d46-010c-4602-9b2e-c84ad6a0b87a"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_24\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "2fdfd035-10d9-4d56-9194-df1cfabd7b63"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_25\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "370c8d5a-ea64-474f-a1ce-925277b2b291"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_26\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "0da56e66-5b48-496d-b3ba-4b784a254f6b"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_27\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "f8c279a0-8415-4589-8a7a-3a8562c0e2a7"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_28\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "0ffc2273-1589-4cc6-bf0e-c848b1c6c1dd"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_29\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "30ae0f90-4068-4ec7-9af7-86526f574a4a"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_30\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "4d38eb84-87aa-4adb-815d-1c9a16393054"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_31\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "770c66ec-4a27-4545-a2ff-483688a2664b"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_32\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "d4e47a3a-a43a-4386-8290-ce7c39a709ee"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_33\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "17e9570f-9cac-490c-9296-cf8d734da3ba"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_34\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "e0d09fc6-63f6-4913-80e7-7947827a0420"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_35\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "f6d0e6b7-d514-4cf7-9254-653111a9ecac"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_36\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "41628df9-21ac-44a9-92c3-cf53122c9afa"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_37\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "bb4e5e9e-f850-4b50-aada-01df632cf8c0"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_38\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "19f6c521-cca1-4169-9b02-04c59cc2005a"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_39\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "ed9103a4-b584-4b3b-b3a4-b5fcf3f68b87"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_40\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "1d195952-ed1b-4240-862b-58caf1534304"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_41\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "a6294eac-6384-46f1-8b15-58050bc96dc3"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_42\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "92728e8b-50d9-43b4-8961-e90293dff973"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_43\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "122b708e-e1fb-43fb-952a-ebe4f2d20d35"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_44\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "bf0b950d-a1f5-49f4-a803-cd87fc935a0b"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_45\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "b3c8417b-3659-44dd-90af-7402641469f1"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_46\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "949ef8ee-df69-4d04-8c07-070746e3422b"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_47\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "4f5431c9-0bfe-41a5-a1de-a7255d3febcc"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_48\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "2ba3483b-5ec6-4fd1-a0bd-301f56404065"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_49\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "5bbab2a5-3b9c-4730-b95a-7da9ee7618d6"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_50\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "136dd80b-22ee-4f05-af06-c566d4e63663"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_51\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "2bcee13e-14c9-42d1-b997-fe8eb62b949b"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_52\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "51ba864b-9f54-44bd-aec2-44809a7029ac"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_53\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "0cfafa5d-d64d-4ae4-8712-794e924d92c6"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_54\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "93aa6925-d92b-4d61-a92e-318fce5f0f28"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_55\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "eb946f9f-2f4f-4a10-a45d-f891840b4d19"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_56\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "f32032af-7557-4bbc-a2ce-2ff7c7854b71"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_57\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "4078e925-8667-4c8f-b9bb-dafede521a0a"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_58\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "6497035b-92dd-4218-9db2-2735d5725756"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_59\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "8c63d1a8-533e-4766-af11-887cf5ea6deb"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_60\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "d3048c4b-ad81-4dd8-9cbf-c966e70a21fe"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_61\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "2355d94d-5df3-4539-abb9-d25efbaaba3f"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_62\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "ce306b45-5ab9-4db3-bfd2-cdc80f2a6109"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_63\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "42635f5c-2735-4213-a1f2-f1c48e4936c8"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_64\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "b21019d3-cd1a-4664-b456-c9051e43e90c"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_65\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "b6b32ee2-b855-475c-803c-43ffba847767"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_66\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "4b2f95e0-8de5-4374-9aad-51144f416d9f"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_67\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "0fab647c-11bf-4143-bbe5-b68cc3561fc0"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_68\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "c76d0f0c-ccd9-4a6d-9ef7-06a217ebd4c7"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_69\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "1422110d-2a5a-4804-8738-4aa9a7bfb96a"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_70\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "54b5872f-aaa7-4fb7-8993-3a6d3c0b7ffc"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_71\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "3f17a8ae-7489-4f22-becf-a1692380caef"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_72\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "49b2cace-9a99-4ef1-ac3e-8c9f70b0c4e8"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_73\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "b66311a8-659b-4e10-ac85-b7ed4a6bf34a"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_74\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "598f380c-2114-43bb-a1f5-c1a92e9de44c"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_75\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "220707f2-64fe-4863-a843-149b07411e23"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_76\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "61b5b291-7a15-4072-b5d0-b13992f14980"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_77\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "492c371f-160c-4aba-a721-9a510d393d4b"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_78\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "8e579265-4620-4d41-b42f-b4e9966d5a4b"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_79\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "2b5ee6ed-b35f-4f98-82f8-3d543e356512"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_80\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "90ce2335-2927-45c0-ac2f-149329076780"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_81\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "5d508d64-6835-4adb-b44a-942f9c41b85b"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_82\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "b35a22ae-94fe-46ae-996a-b1e7a0bbbb08"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_83\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "5588bf6d-faa4-49c6-9beb-36857332f569"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_84\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "63bb26cc-57b4-4945-a903-40079377fb99"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_85\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "54e67400-5db6-4b7c-a3e7-4c75d6dccc0f"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_86\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "94410687-7912-4a1e-9f38-d04964c71154"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_87\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "bdfc0fa2-a6b1-47bf-8438-eb7b05a5d337"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_88\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "bd21f9bf-bac6-475e-baef-e0978c7559eb"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_89\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "ebaa2c52-cafe-4754-a6dd-3e29f538b017"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_90\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "fbb10d95-5cc4-4c1c-a6c9-d96cf926d3b2"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_91\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "e4e17653-dff5-426f-9cac-3762ffc8c717"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_92\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "62c824ea-0ce6-4357-b749-83e6758f386e"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_93\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "5578523d-8cd8-4e84-8a3a-1fe3de783812"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_94\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "8a8681ec-7c06-4cd7-8cd1-9df8290994c3"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_95\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "78edaba0-2c2a-4c43-a930-f6d784edf35d"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_96\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "d3f74475-ae77-46a3-bfb0-a76be4da54ba"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_97\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "5bd9d257-6c27-4e84-b2d8-c89429a83af0"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_98\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "31672767-23ff-4d6d-a0ee-bad859e25ecb"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_99\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "3796146f-e5f0-41f5-9a93-8bb4c92aeb3e"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_100\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "8550fa98-d15c-4df2-946f-a1a100c1839b"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_101\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "0a93017c-75dc-4c55-80a3-3caec9d03f72"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_102\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "24759003-3dc3-4457-8cdc-12a4939af2ce"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_103\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "d92c8074-6396-4749-a4b1-7b410dc294dd"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_104\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "68043fe3-4c02-4023-bcc6-de4537b69134"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_105\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "02feba31-5fdc-42cd-8972-ef1dd5871d13"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_106\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "0994d62b-499a-472c-9442-c10037d649d1"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_107\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "84468aa2-3e14-471a-9902-9a57fdf28bd6"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_108\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "9fe1254f-f6fa-4cf7-992a-f008a8708c10"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_109\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "ccb412c7-767d-4ecf-9bf0-f7c86c5a39c3"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_110\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "a9ea33b8-0659-4ae7-823c-92cbe0d4b6e1"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_111\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "eb5fa6b9-e7ca-487f-bf8d-9f2f6cec2494"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_112\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "0d0e2944-6ee5-4202-823c-8f4e547da9bb"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_113\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "9634e93a-97e3-4b7e-ac57-0ef476562338"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_114\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "fbc07357-7aa5-4d85-8c7e-299dac72c9ba"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_115\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "bdee0308-a169-43c2-8b68-1755f9c800c2"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_116\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "709cbcce-9627-4dc4-97a5-e9370c2d5238"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_117\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "5f0bedf8-d84a-4ad8-85e5-2ce01be39072"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_118\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "b558e5f7-a692-49f4-b6f3-04df3005bfd0"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_119\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "3157d81a-cc35-49eb-854f-62078d7f351c"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_120\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "5b9a5081-9de3-4a80-998f-c0034ff56646"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_121\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "c4a85719-2720-4164-a526-e461c35630d6"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_122\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "bee5fe98-9bd4-4b6b-a68e-077f5cfa534b"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_123\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "b27e5db5-d7a8-4ebd-be74-79c9f6d9c6ac"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_124\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "e2ad045d-9ca2-494e-bf04-a72d3f6cfced"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_125\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "7cb7e260-51c6-44e5-af32-263c6f0510e1"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_126\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "1a17f67a-1f5d-4241-913f-696ce71f367a"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_127\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "7de812b0-d4ba-4b08-9f11-af783af41dab"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_128\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "665dfc54-5c40-40c0-a19e-5973044e0554"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_129\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "087b35f0-e72f-465f-b31c-ee640467a256"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_130\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "bf53e9f1-7dae-4bbd-983e-4368344c276e"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_131\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "d4bf601e-ff4b-4a26-86ba-17723851ab50"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_132\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "9f211f97-bba8-4d93-afea-8839a2d4adce"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_133\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "4f4e3f93-f64f-4c6d-9565-1364f2db6d31"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_134\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "69ada81f-2bcf-419e-adc3-03e6fac3507b"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_135\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "90f36b15-77df-4f51-aa07-ddede6cf63e4"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_136\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "b84c173b-9b83-46e0-84ca-1196e0a82da0"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_137\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "80b18689-f1f0-4bc1-9551-ec2ce03220af"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_138\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "d45cdf25-c2ef-467f-96a5-cccf1fc0fc72"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_139\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "0b136bbd-f8e3-4f56-8bd4-7067fdb4f5d8"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_140\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "50ae8b22-52a2-4ba9-8d9b-a48187b73b55"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_141\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "9d293e22-95b0-491c-8cb0-43e1527ca8db"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_142\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "4a03d0b1-92c1-4efa-a928-4f51359cb7ee"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_143\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "3b5c953e-fcb5-446e-b5b5-a7216bcb4d4f"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_144\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "c0a777dc-5455-4845-aa91-082d7d9713c0"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_145\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "e773ccaf-7c16-4aed-8644-22a9642ca5b1"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_146\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "a798d1be-88b8-4532-b3c6-91c1ed5cf190"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_147\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "590cc177-6f43-419a-9c0b-75e46fd108eb"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_148\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "9dfe7e1a-d11f-454d-8e23-5d92e566aa83"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_149\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "ba15020c-367a-4b39-91e4-9cd119a4f205"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_150\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "4e4fcaf4-4b09-473a-b9bf-99321ea294ee"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_151\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "782e1fee-24d7-4472-8f55-68c69d1e0a9a"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_152\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "a83369d8-1bb8-4909-8f65-b3a592c1f304"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_153\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "9117a3f2-d97d-468c-b415-871a656d0df6"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_154\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "9306f5db-fed7-46cb-bcfc-fc40d07a984e"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_155\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "62780b73-d2ca-43b5-8372-bd4be1d8069e"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_156\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "3d60ec62-7102-4f00-859f-5e5f0ee8d85c"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_157\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "465ce218-8275-41a2-bde6-745218bbbd1a"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_158\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "60f4060b-81e5-475e-afed-cfd64c67c362"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_159\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "f347d964-f9c5-400f-83c4-281657fc0fe3"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_160\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "855d3908-5b1c-46d9-bdf1-d4013c366a42"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_161\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "d541ab16-0641-4bd6-816d-66bc6ded130c"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_162\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "e6bf6544-8227-4324-b199-e6b7793d5672"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_163\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "c5a92d92-c7bd-48c6-8251-b682bad38cdb"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_164\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "596a17cb-5fa0-4126-97cc-5a3e77863fe0"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_165\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "c31fc337-1461-43ca-b2e6-8204ba3dc51d"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_166\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "6753daf5-5ae2-47fc-8f14-866c2fc614d2"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_167\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "c3a0a99a-5998-4770-9cbe-a11802ffefce"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_168\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "09c5e469-7402-4beb-be66-e40f6d157493"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_169\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "754058d1-2744-49b1-92b8-5286856919bc"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_170\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "9bc8dd34-2208-4594-a44c-f6b6c455e216"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_171\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "9d632c78-fc20-444b-a3fd-ebfbe7e6a6b0"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_172\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "300f2149-23e7-4a8c-9671-f49ecb46ca3e"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_173\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "8f81fca0-ac67-4f49-aec5-12b363be99df"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_174\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "6132fb7b-7ecd-4df6-9990-1fed2b1ccfd2"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_175\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "142e36a4-7aac-47d9-a289-ff2a954ce9d6"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_176\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "87bdaf80-14ec-4afd-a822-283d166093c7"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_177\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "57a2891b-206a-4975-96ad-853016d53f49"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_178\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "a14d56c2-a33c-4522-86a4-7bc440ac7f76"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_179\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "9b346168-b37b-4fca-8ce7-8aa7aaaeeea3"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_180\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "c8262efe-c0d5-492e-98c4-8c7fba8dacfd"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_181\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "43367036-c94a-419b-86b0-1304d28e71e6"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_182\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "0fa2175c-8907-4164-9138-e74cee18c4e7"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_183\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "6d4367f6-df79-4f39-a74f-36582e0e5a18"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_184\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "503e296e-c1f6-4a69-9105-6f7537690cd4"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_185\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "be58cf0b-1e2a-4dcf-9a55-0882c2d5e0e8"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_186\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "3e3ddc15-d070-4849-9b46-742fcff0a625"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_187\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "e42c9d0b-b718-4c04-a828-31d0df17eee5"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_188\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "f53f742c-4838-4bf1-a5d7-d4bbb5d27d48"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_189\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "903b4d0f-76f7-408d-93f9-21bd9a6457fc"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_190\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "8f42a274-55a6-4c87-b140-ecd6c71b4765"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_191\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "56407190-d15c-4686-b48d-771e6a1d80d1"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_192\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "a6af9a4c-b7fc-4fa5-9fdd-c9429bdef1cd"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_193\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "cda35be8-4561-4863-93c5-a62789f8acc6"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_194\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "96a580cd-7fda-41cd-9ad5-95004d0918fe"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_195\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "b91c969a-5df6-4094-94b3-df9b454b374c"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_196\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "31c522c4-502d-414f-a0bf-6ab1fa70feea"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_197\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "734f0c60-30c1-4e13-9e64-e57d601d686a"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_198\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "e4c4b209-3a39-4618-9aec-bf6af7c898b6"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_199\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "86cbb2ad-c23c-41c5-b0b7-0e0b7380726a"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_200\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "451f879b-fed5-441a-8fdf-1cdaa8a2b31f"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_201\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "3a20e6ef-47ba-4e7d-b3e9-2a4780193187"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_202\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "d54de88a-80f5-48a3-8225-fbb7fbd6032c"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_203\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "218ba9f7-8855-4ecc-9c8e-04700493bdf4"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_204\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "f8615318-7efc-4bcb-b739-934a4668851b"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_205\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "46ef5229-705b-48ba-99f4-7a1b83cbf814"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_206\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "4d1e2955-275c-4bc8-9a2e-f8bf30e8919a"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_207\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "9199632b-c56e-4ed6-baab-4ec0edf43368"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_208\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "9e06a041-0ecd-4be2-bb30-4426c6c13382"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_209\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "89af5aec-e529-450f-8dec-9da3189ca054"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_210\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "1589c60a-bdff-4bb4-be05-8c2764120b70"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_211\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "d094c882-221c-4386-acc1-9d0829006115"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_212\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "0792650b-5e1f-4937-9915-b0cf98c98bd8"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_213\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "9963fdc5-1bf0-449c-8f71-a32e5fdca22d"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_214\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "b0f225eb-9f72-41f9-8b15-8d64d90077fa"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_215\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "68a70db1-7c22-4894-b88f-b12bae7ac792"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_216\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "4fa9cc20-cee7-42bd-b16d-f8acd2e91489"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_217\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "e79c8a50-b98e-459c-b2c7-743f1e3096b7"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_218\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "0e18ec11-74a5-4c67-91b4-39cb7b359c89"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_219\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "56430d6d-5433-4519-bc71-9f67b5df970d"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_220\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "05cd5b89-5228-42eb-8c83-f074bf17a41b"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_221\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "20a85b52-c7b9-466d-a010-55b13b6de61d"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_222\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "6a22a6b6-af32-4a52-9bc3-fbd7a63c3730"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_223\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "d7f1b6f1-09f5-4563-96d3-a496a0f10277"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_224\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "bdaef76f-bab4-4cd4-97f5-e1b7c4a88f18"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_225\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "a8a39ed2-b81c-4264-8379-8cc3ec5ac2b9"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_226\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "135a3995-591d-4feb-a75c-4601d0395075"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_227\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "0136b054-f89e-4284-93bc-0b15a0eaf9f7"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_228\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "e1112762-1cd8-403e-8a0c-a47dc0cd8abc"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_229\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "c11978a2-2cc2-4016-87a9-ca8af13ae159"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_230\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "25c40129-b3f9-4c87-bf8f-cd38ece2fa05"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_231\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "60c209b9-edb7-4396-8a59-1ef64b90db10"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_232\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "1988a103-5d68-4071-8bf2-92eb16b34b91"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_233\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "fbe69238-5ff3-4297-804e-d27bd4872054"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_234\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "a10c750b-a977-4589-8a51-0bd1349e56bd"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_235\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "ba41b647-c2c6-49e6-9e62-043b5a0d6ba3"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_236\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "ea9d54dd-841a-4fd3-9b98-8c3f9147bfb1"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_237\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "398ad3a6-8d54-4a61-9e0c-5187ee275010"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_238\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "83ac2628-34f7-4ca5-b048-7592c997cffc"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_239\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "0ef08a1a-adbc-41a1-87e2-0e5fd1f27c89"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_240\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "2336f4c6-98a5-438b-95be-7883e7d1f216"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_241\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "e4dac384-fc15-4355-9542-6d7d3be72c62"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_242\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "9a761871-bcfc-44c6-bc61-88b2ad2f19df"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_243\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "ceba8eee-a268-42d0-8f00-1d0a71e32152"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_244\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "dc410740-59f0-419b-bd85-fade32183a69"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_245\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "26d4df3e-709c-41f3-9560-8bf7fe5cfff8"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_246\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "ac7094c6-887a-45dd-9a2b-1c2a83b222ec"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_247\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "bfa933de-07d2-41f4-9a29-95fa25933662"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_248\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "7b4a3acb-3c3d-47c8-aea9-7cf320c913aa"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_249\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "c7856793-34de-4f72-b498-462995de2ba8"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_250\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "bddc7571-2d9a-4581-b1db-1aaf6d91b2ef"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_251\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "5e714597-9017-4528-a90b-54468ee21e91"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_252\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "5b61762c-fcef-48be-8a02-caac05b3628f"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_253\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "3a562cb4-d625-4d2f-9a34-4de577e85d64"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_254\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "b760e5be-e2d9-4e1c-9961-20d6ea0ff505"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_255\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "9cefb419-19e0-4000-9403-16e51c942f7d"
+        },
+        {
+          "Severity": 1,
+          "Code": "EMPTY_TRIGGER_FLOW",
+          "Message": "\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\u300CTrig_256\u300D\u672A\u9023\u63A5\u4EFB\u4F55\u5F8C\u7E8C\u52D5\u4F5C\uFF0C\u89F8\u767C\u6642\u5C07\u7121\u5BE6\u8CEA\u6548\u679C\u3002",
+          "NodeId": "15185106-c522-4a03-adf7-b40a389fa1a0"
+        }
+      ]
+    },
+    {
+      "Name": "val_execution_cycle_with_trigger",
+      "Diagnostics": [
+        {
+          "Severity": 2,
+          "Code": "EXECUTION_CYCLE_DETECTED",
+          "Message": "\u5075\u6E2C\u5230\u57F7\u884C\u6D41\u6B7B\u5FAA\u74B0\uFF08\u5305\u542B\u7BC0\u9EDE Event: CycleTrig\uFF09\uFF0C\u5C07\u5C0E\u81F4\u904A\u6232\u8173\u672C\u5F15\u64CE\u9677\u5165\u7121\u7AAE\u8FF4\u5708\u6216\u6B7B\u9396\u3002",
+          "NodeId": "aaaaaaaa-0001-0001-0001-000000000001"
+        }
+      ]
+    },
+    {
+      "Name": "val_multiple_orphans_and_dangling",
+      "Diagnostics": [
+        {
+          "Severity": 1,
+          "Code": "DANGLING_CONDITION",
+          "Message": "\u689D\u4EF6\u7BC0\u9EDE\u300CCondition: Object Exists\u300D\u672A\u9023\u63A5\u81F3\u4EFB\u4F55\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\uFF0C\u5C6C\u65BC\u61F8\u7A7A\u689D\u4EF6\u3002",
+          "NodeId": "aaaaaaaa-0001-0001-0001-000000000002"
+        },
+        {
+          "Severity": 1,
+          "Code": "DANGLING_CONDITION",
+          "Message": "\u689D\u4EF6\u7BC0\u9EDE\u300CCondition: Object Dead/Removed\u300D\u672A\u9023\u63A5\u81F3\u4EFB\u4F55\u4E8B\u4EF6\u89F8\u767C\u7BC0\u9EDE\uFF0C\u5C6C\u65BC\u61F8\u7A7A\u689D\u4EF6\u3002",
+          "NodeId": "aaaaaaaa-0001-0001-0001-000000000007"
+        },
+        {
+          "Severity": 1,
+          "Code": "ORPHAN_ACTION",
+          "Message": "\u52D5\u4F5C\u7BC0\u9EDE\u300CAction: Show Message\u300D\u6C92\u6709\u524D\u7F6E\u57F7\u884C\u9023\u7DDA\uFF0C\u6C38\u9060\u4E0D\u6703\u88AB\u57F7\u884C\u3002",
+          "NodeId": "aaaaaaaa-0001-0001-0001-000000000003"
+        },
+        {
+          "Severity": 1,
+          "Code": "ORPHAN_ACTION",
+          "Message": "\u52D5\u4F5C\u7BC0\u9EDE\u300CAction: Diplomacy (T0 vs T1)\u300D\u6C92\u6709\u524D\u7F6E\u57F7\u884C\u9023\u7DDA\uFF0C\u6C38\u9060\u4E0D\u6703\u88AB\u57F7\u884C\u3002",
+          "NodeId": "aaaaaaaa-0001-0001-0001-000000000004"
+        },
+        {
+          "Severity": 1,
+          "Code": "ORPHAN_DELAY",
+          "Message": "\u5EF6\u9072\u7BC0\u9EDE\u300CDelay: 10s\u300D\u6C92\u6709\u524D\u7F6E\u57F7\u884C\u9023\u7DDA\u3002",
+          "NodeId": "aaaaaaaa-0001-0001-0001-000000000005"
+        }
+      ]
+    }
+  ],
+  "SessionResults": [
+    {
+      "Name": "session_lifecycle_and_dirty_tracking",
+      "Steps": [
+        {
+          "Op": "Add",
+          "Success": true,
+          "Error": null,
+          "Count": 3,
+          "IsDirty": true,
+          "CanUndo": true,
+          "CanRedo": false,
+          "EventNames": [
+            "InitialAlpha",
+            "InitialBeta",
+            "ExtraGamma"
+          ],
+          "BaselineNames": [
+            "InitialAlpha",
+            "InitialBeta"
+          ]
+        },
+        {
+          "Op": "AddRange",
+          "Success": true,
+          "Error": null,
+          "Count": 4,
+          "IsDirty": true,
+          "CanUndo": true,
+          "CanRedo": false,
+          "EventNames": [
+            "InitialAlpha",
+            "InitialBeta",
+            "ExtraGamma",
+            "ExtraDelta"
+          ],
+          "BaselineNames": [
+            "InitialAlpha",
+            "InitialBeta"
+          ]
+        },
+        {
+          "Op": "AcceptChanges",
+          "Success": true,
+          "Error": null,
+          "Count": 4,
+          "IsDirty": false,
+          "CanUndo": true,
+          "CanRedo": false,
+          "EventNames": [
+            "InitialAlpha",
+            "InitialBeta",
+            "ExtraGamma",
+            "ExtraDelta"
+          ],
+          "BaselineNames": [
+            "InitialAlpha",
+            "InitialBeta",
+            "ExtraGamma",
+            "ExtraDelta"
+          ]
+        },
+        {
+          "Op": "Replace",
+          "Success": true,
+          "Error": null,
+          "Count": 4,
+          "IsDirty": true,
+          "CanUndo": true,
+          "CanRedo": false,
+          "EventNames": [
+            "ReplacedAlpha",
+            "InitialBeta",
+            "ExtraGamma",
+            "ExtraDelta"
+          ],
+          "BaselineNames": [
+            "InitialAlpha",
+            "InitialBeta",
+            "ExtraGamma",
+            "ExtraDelta"
+          ]
+        },
+        {
+          "Op": "Duplicate",
+          "Success": true,
+          "Error": null,
+          "Count": 5,
+          "IsDirty": true,
+          "CanUndo": true,
+          "CanRedo": false,
+          "EventNames": [
+            "ReplacedAlpha",
+            "InitialBeta",
+            "InitialBeta_copy",
+            "ExtraGamma",
+            "ExtraDelta"
+          ],
+          "BaselineNames": [
+            "InitialAlpha",
+            "InitialBeta",
+            "ExtraGamma",
+            "ExtraDelta"
+          ]
+        },
+        {
+          "Op": "RemoveAt",
+          "Success": true,
+          "Error": null,
+          "Count": 4,
+          "IsDirty": true,
+          "CanUndo": true,
+          "CanRedo": false,
+          "EventNames": [
+            "ReplacedAlpha",
+            "InitialBeta",
+            "ExtraGamma",
+            "ExtraDelta"
+          ],
+          "BaselineNames": [
+            "InitialAlpha",
+            "InitialBeta",
+            "ExtraGamma",
+            "ExtraDelta"
+          ]
+        },
+        {
+          "Op": "Undo",
+          "Success": true,
+          "Error": null,
+          "Count": 5,
+          "IsDirty": true,
+          "CanUndo": true,
+          "CanRedo": true,
+          "EventNames": [
+            "ReplacedAlpha",
+            "InitialBeta",
+            "InitialBeta_copy",
+            "ExtraGamma",
+            "ExtraDelta"
+          ],
+          "BaselineNames": [
+            "InitialAlpha",
+            "InitialBeta",
+            "ExtraGamma",
+            "ExtraDelta"
+          ]
+        },
+        {
+          "Op": "Undo",
+          "Success": true,
+          "Error": null,
+          "Count": 4,
+          "IsDirty": true,
+          "CanUndo": true,
+          "CanRedo": true,
+          "EventNames": [
+            "ReplacedAlpha",
+            "InitialBeta",
+            "ExtraGamma",
+            "ExtraDelta"
+          ],
+          "BaselineNames": [
+            "InitialAlpha",
+            "InitialBeta",
+            "ExtraGamma",
+            "ExtraDelta"
+          ]
+        },
+        {
+          "Op": "Redo",
+          "Success": true,
+          "Error": null,
+          "Count": 5,
+          "IsDirty": true,
+          "CanUndo": true,
+          "CanRedo": true,
+          "EventNames": [
+            "ReplacedAlpha",
+            "InitialBeta",
+            "InitialBeta_copy",
+            "ExtraGamma",
+            "ExtraDelta"
+          ],
+          "BaselineNames": [
+            "InitialAlpha",
+            "InitialBeta",
+            "ExtraGamma",
+            "ExtraDelta"
+          ]
+        },
+        {
+          "Op": "Reset",
+          "Success": true,
+          "Error": null,
+          "Count": 4,
+          "IsDirty": false,
+          "CanUndo": false,
+          "CanRedo": false,
+          "EventNames": [
+            "InitialAlpha",
+            "InitialBeta",
+            "ExtraGamma",
+            "ExtraDelta"
+          ],
+          "BaselineNames": [
+            "InitialAlpha",
+            "InitialBeta",
+            "ExtraGamma",
+            "ExtraDelta"
+          ]
+        }
+      ]
+    },
+    {
+      "Name": "session_duplicate_and_move_order",
+      "Steps": [
+        {
+          "Op": "Duplicate",
+          "Success": true,
+          "Error": null,
+          "Count": 4,
+          "IsDirty": true,
+          "CanUndo": true,
+          "CanRedo": false,
+          "EventNames": [
+            "EventA",
+            "EventA_dup0",
+            "EventB",
+            "EventC"
+          ],
+          "BaselineNames": [
+            "EventA",
+            "EventB",
+            "EventC"
+          ]
+        },
+        {
+          "Op": "Duplicate",
+          "Success": true,
+          "Error": null,
+          "Count": 5,
+          "IsDirty": true,
+          "CanUndo": true,
+          "CanRedo": false,
+          "EventNames": [
+            "EventA",
+            "EventA_dup0",
+            "EventB",
+            "EventC",
+            "EventC_dup3"
+          ],
+          "BaselineNames": [
+            "EventA",
+            "EventB",
+            "EventC"
+          ]
+        },
+        {
+          "Op": "Duplicate",
+          "Success": true,
+          "Error": null,
+          "Count": 6,
+          "IsDirty": true,
+          "CanUndo": true,
+          "CanRedo": false,
+          "EventNames": [
+            "EventA",
+            "EventA_dup0",
+            "EventB",
+            "EventB_dup2",
+            "EventC",
+            "EventC_dup3"
+          ],
+          "BaselineNames": [
+            "EventA",
+            "EventB",
+            "EventC"
+          ]
+        },
+        {
+          "Op": "RemoveAt",
+          "Success": true,
+          "Error": null,
+          "Count": 5,
+          "IsDirty": true,
+          "CanUndo": true,
+          "CanRedo": false,
+          "EventNames": [
+            "EventA",
+            "EventB",
+            "EventB_dup2",
+            "EventC",
+            "EventC_dup3"
+          ],
+          "BaselineNames": [
+            "EventA",
+            "EventB",
+            "EventC"
+          ]
+        },
+        {
+          "Op": "Undo",
+          "Success": true,
+          "Error": null,
+          "Count": 6,
+          "IsDirty": true,
+          "CanUndo": true,
+          "CanRedo": true,
+          "EventNames": [
+            "EventA",
+            "EventA_dup0",
+            "EventB",
+            "EventB_dup2",
+            "EventC",
+            "EventC_dup3"
+          ],
+          "BaselineNames": [
+            "EventA",
+            "EventB",
+            "EventC"
+          ]
+        },
+        {
+          "Op": "Redo",
+          "Success": true,
+          "Error": null,
+          "Count": 5,
+          "IsDirty": true,
+          "CanUndo": true,
+          "CanRedo": false,
+          "EventNames": [
+            "EventA",
+            "EventB",
+            "EventB_dup2",
+            "EventC",
+            "EventC_dup3"
+          ],
+          "BaselineNames": [
+            "EventA",
+            "EventB",
+            "EventC"
+          ]
+        }
+      ]
+    },
+    {
+      "Name": "session_duplicate_name_truncation",
+      "Steps": [
+        {
+          "Op": "Duplicate",
+          "Success": true,
+          "Error": null,
+          "Count": 2,
+          "IsDirty": true,
+          "CanUndo": true,
+          "CanRedo": false,
+          "EventNames": [
+            "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+            "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX_LONG_SUFFIX_123456789"
+          ],
+          "BaselineNames": [
+            "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+          ]
+        },
+        {
+          "Op": "Duplicate",
+          "Success": false,
+          "Error": "ArgumentException: \u526F\u672C\u540D\u7A31\u5F8C\u7DB4\u904E\u9577\u3002 (Parameter \u0027suffix\u0027)",
+          "Count": 2,
+          "IsDirty": true,
+          "CanUndo": true,
+          "CanRedo": false,
+          "EventNames": [
+            "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+            "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX_LONG_SUFFIX_123456789"
+          ],
+          "BaselineNames": [
+            "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+          ]
+        }
+      ]
+    },
+    {
+      "Name": "session_capacity_limits",
+      "Steps": [
+        {
+          "Op": "AddRange",
+          "Success": true,
+          "Error": null,
+          "Count": 255,
+          "IsDirty": true,
+          "CanUndo": true,
+          "CanRedo": false,
+          "EventNames": [
+            "Batch_0",
+            "Batch_1",
+            "Batch_2",
+            "Batch_3",
+            "Batch_4",
+            "Batch_5",
+            "Batch_6",
+            "Batch_7",
+            "Batch_8",
+            "Batch_9",
+            "Batch_10",
+            "Batch_11",
+            "Batch_12",
+            "Batch_13",
+            "Batch_14",
+            "Batch_15",
+            "Batch_16",
+            "Batch_17",
+            "Batch_18",
+            "Batch_19",
+            "Batch_20",
+            "Batch_21",
+            "Batch_22",
+            "Batch_23",
+            "Batch_24",
+            "Batch_25",
+            "Batch_26",
+            "Batch_27",
+            "Batch_28",
+            "Batch_29",
+            "Batch_30",
+            "Batch_31",
+            "Batch_32",
+            "Batch_33",
+            "Batch_34",
+            "Batch_35",
+            "Batch_36",
+            "Batch_37",
+            "Batch_38",
+            "Batch_39",
+            "Batch_40",
+            "Batch_41",
+            "Batch_42",
+            "Batch_43",
+            "Batch_44",
+            "Batch_45",
+            "Batch_46",
+            "Batch_47",
+            "Batch_48",
+            "Batch_49",
+            "Batch_50",
+            "Batch_51",
+            "Batch_52",
+            "Batch_53",
+            "Batch_54",
+            "Batch_55",
+            "Batch_56",
+            "Batch_57",
+            "Batch_58",
+            "Batch_59",
+            "Batch_60",
+            "Batch_61",
+            "Batch_62",
+            "Batch_63",
+            "Batch_64",
+            "Batch_65",
+            "Batch_66",
+            "Batch_67",
+            "Batch_68",
+            "Batch_69",
+            "Batch_70",
+            "Batch_71",
+            "Batch_72",
+            "Batch_73",
+            "Batch_74",
+            "Batch_75",
+            "Batch_76",
+            "Batch_77",
+            "Batch_78",
+            "Batch_79",
+            "Batch_80",
+            "Batch_81",
+            "Batch_82",
+            "Batch_83",
+            "Batch_84",
+            "Batch_85",
+            "Batch_86",
+            "Batch_87",
+            "Batch_88",
+            "Batch_89",
+            "Batch_90",
+            "Batch_91",
+            "Batch_92",
+            "Batch_93",
+            "Batch_94",
+            "Batch_95",
+            "Batch_96",
+            "Batch_97",
+            "Batch_98",
+            "Batch_99",
+            "Batch_100",
+            "Batch_101",
+            "Batch_102",
+            "Batch_103",
+            "Batch_104",
+            "Batch_105",
+            "Batch_106",
+            "Batch_107",
+            "Batch_108",
+            "Batch_109",
+            "Batch_110",
+            "Batch_111",
+            "Batch_112",
+            "Batch_113",
+            "Batch_114",
+            "Batch_115",
+            "Batch_116",
+            "Batch_117",
+            "Batch_118",
+            "Batch_119",
+            "Batch_120",
+            "Batch_121",
+            "Batch_122",
+            "Batch_123",
+            "Batch_124",
+            "Batch_125",
+            "Batch_126",
+            "Batch_127",
+            "Batch_128",
+            "Batch_129",
+            "Batch_130",
+            "Batch_131",
+            "Batch_132",
+            "Batch_133",
+            "Batch_134",
+            "Batch_135",
+            "Batch_136",
+            "Batch_137",
+            "Batch_138",
+            "Batch_139",
+            "Batch_140",
+            "Batch_141",
+            "Batch_142",
+            "Batch_143",
+            "Batch_144",
+            "Batch_145",
+            "Batch_146",
+            "Batch_147",
+            "Batch_148",
+            "Batch_149",
+            "Batch_150",
+            "Batch_151",
+            "Batch_152",
+            "Batch_153",
+            "Batch_154",
+            "Batch_155",
+            "Batch_156",
+            "Batch_157",
+            "Batch_158",
+            "Batch_159",
+            "Batch_160",
+            "Batch_161",
+            "Batch_162",
+            "Batch_163",
+            "Batch_164",
+            "Batch_165",
+            "Batch_166",
+            "Batch_167",
+            "Batch_168",
+            "Batch_169",
+            "Batch_170",
+            "Batch_171",
+            "Batch_172",
+            "Batch_173",
+            "Batch_174",
+            "Batch_175",
+            "Batch_176",
+            "Batch_177",
+            "Batch_178",
+            "Batch_179",
+            "Batch_180",
+            "Batch_181",
+            "Batch_182",
+            "Batch_183",
+            "Batch_184",
+            "Batch_185",
+            "Batch_186",
+            "Batch_187",
+            "Batch_188",
+            "Batch_189",
+            "Batch_190",
+            "Batch_191",
+            "Batch_192",
+            "Batch_193",
+            "Batch_194",
+            "Batch_195",
+            "Batch_196",
+            "Batch_197",
+            "Batch_198",
+            "Batch_199",
+            "Batch_200",
+            "Batch_201",
+            "Batch_202",
+            "Batch_203",
+            "Batch_204",
+            "Batch_205",
+            "Batch_206",
+            "Batch_207",
+            "Batch_208",
+            "Batch_209",
+            "Batch_210",
+            "Batch_211",
+            "Batch_212",
+            "Batch_213",
+            "Batch_214",
+            "Batch_215",
+            "Batch_216",
+            "Batch_217",
+            "Batch_218",
+            "Batch_219",
+            "Batch_220",
+            "Batch_221",
+            "Batch_222",
+            "Batch_223",
+            "Batch_224",
+            "Batch_225",
+            "Batch_226",
+            "Batch_227",
+            "Batch_228",
+            "Batch_229",
+            "Batch_230",
+            "Batch_231",
+            "Batch_232",
+            "Batch_233",
+            "Batch_234",
+            "Batch_235",
+            "Batch_236",
+            "Batch_237",
+            "Batch_238",
+            "Batch_239",
+            "Batch_240",
+            "Batch_241",
+            "Batch_242",
+            "Batch_243",
+            "Batch_244",
+            "Batch_245",
+            "Batch_246",
+            "Batch_247",
+            "Batch_248",
+            "Batch_249",
+            "Batch_250",
+            "Batch_251",
+            "Batch_252",
+            "Batch_253",
+            "Batch_254"
+          ],
+          "BaselineNames": []
+        },
+        {
+          "Op": "Add",
+          "Success": true,
+          "Error": null,
+          "Count": 256,
+          "IsDirty": true,
+          "CanUndo": true,
+          "CanRedo": false,
+          "EventNames": [
+            "Batch_0",
+            "Batch_1",
+            "Batch_2",
+            "Batch_3",
+            "Batch_4",
+            "Batch_5",
+            "Batch_6",
+            "Batch_7",
+            "Batch_8",
+            "Batch_9",
+            "Batch_10",
+            "Batch_11",
+            "Batch_12",
+            "Batch_13",
+            "Batch_14",
+            "Batch_15",
+            "Batch_16",
+            "Batch_17",
+            "Batch_18",
+            "Batch_19",
+            "Batch_20",
+            "Batch_21",
+            "Batch_22",
+            "Batch_23",
+            "Batch_24",
+            "Batch_25",
+            "Batch_26",
+            "Batch_27",
+            "Batch_28",
+            "Batch_29",
+            "Batch_30",
+            "Batch_31",
+            "Batch_32",
+            "Batch_33",
+            "Batch_34",
+            "Batch_35",
+            "Batch_36",
+            "Batch_37",
+            "Batch_38",
+            "Batch_39",
+            "Batch_40",
+            "Batch_41",
+            "Batch_42",
+            "Batch_43",
+            "Batch_44",
+            "Batch_45",
+            "Batch_46",
+            "Batch_47",
+            "Batch_48",
+            "Batch_49",
+            "Batch_50",
+            "Batch_51",
+            "Batch_52",
+            "Batch_53",
+            "Batch_54",
+            "Batch_55",
+            "Batch_56",
+            "Batch_57",
+            "Batch_58",
+            "Batch_59",
+            "Batch_60",
+            "Batch_61",
+            "Batch_62",
+            "Batch_63",
+            "Batch_64",
+            "Batch_65",
+            "Batch_66",
+            "Batch_67",
+            "Batch_68",
+            "Batch_69",
+            "Batch_70",
+            "Batch_71",
+            "Batch_72",
+            "Batch_73",
+            "Batch_74",
+            "Batch_75",
+            "Batch_76",
+            "Batch_77",
+            "Batch_78",
+            "Batch_79",
+            "Batch_80",
+            "Batch_81",
+            "Batch_82",
+            "Batch_83",
+            "Batch_84",
+            "Batch_85",
+            "Batch_86",
+            "Batch_87",
+            "Batch_88",
+            "Batch_89",
+            "Batch_90",
+            "Batch_91",
+            "Batch_92",
+            "Batch_93",
+            "Batch_94",
+            "Batch_95",
+            "Batch_96",
+            "Batch_97",
+            "Batch_98",
+            "Batch_99",
+            "Batch_100",
+            "Batch_101",
+            "Batch_102",
+            "Batch_103",
+            "Batch_104",
+            "Batch_105",
+            "Batch_106",
+            "Batch_107",
+            "Batch_108",
+            "Batch_109",
+            "Batch_110",
+            "Batch_111",
+            "Batch_112",
+            "Batch_113",
+            "Batch_114",
+            "Batch_115",
+            "Batch_116",
+            "Batch_117",
+            "Batch_118",
+            "Batch_119",
+            "Batch_120",
+            "Batch_121",
+            "Batch_122",
+            "Batch_123",
+            "Batch_124",
+            "Batch_125",
+            "Batch_126",
+            "Batch_127",
+            "Batch_128",
+            "Batch_129",
+            "Batch_130",
+            "Batch_131",
+            "Batch_132",
+            "Batch_133",
+            "Batch_134",
+            "Batch_135",
+            "Batch_136",
+            "Batch_137",
+            "Batch_138",
+            "Batch_139",
+            "Batch_140",
+            "Batch_141",
+            "Batch_142",
+            "Batch_143",
+            "Batch_144",
+            "Batch_145",
+            "Batch_146",
+            "Batch_147",
+            "Batch_148",
+            "Batch_149",
+            "Batch_150",
+            "Batch_151",
+            "Batch_152",
+            "Batch_153",
+            "Batch_154",
+            "Batch_155",
+            "Batch_156",
+            "Batch_157",
+            "Batch_158",
+            "Batch_159",
+            "Batch_160",
+            "Batch_161",
+            "Batch_162",
+            "Batch_163",
+            "Batch_164",
+            "Batch_165",
+            "Batch_166",
+            "Batch_167",
+            "Batch_168",
+            "Batch_169",
+            "Batch_170",
+            "Batch_171",
+            "Batch_172",
+            "Batch_173",
+            "Batch_174",
+            "Batch_175",
+            "Batch_176",
+            "Batch_177",
+            "Batch_178",
+            "Batch_179",
+            "Batch_180",
+            "Batch_181",
+            "Batch_182",
+            "Batch_183",
+            "Batch_184",
+            "Batch_185",
+            "Batch_186",
+            "Batch_187",
+            "Batch_188",
+            "Batch_189",
+            "Batch_190",
+            "Batch_191",
+            "Batch_192",
+            "Batch_193",
+            "Batch_194",
+            "Batch_195",
+            "Batch_196",
+            "Batch_197",
+            "Batch_198",
+            "Batch_199",
+            "Batch_200",
+            "Batch_201",
+            "Batch_202",
+            "Batch_203",
+            "Batch_204",
+            "Batch_205",
+            "Batch_206",
+            "Batch_207",
+            "Batch_208",
+            "Batch_209",
+            "Batch_210",
+            "Batch_211",
+            "Batch_212",
+            "Batch_213",
+            "Batch_214",
+            "Batch_215",
+            "Batch_216",
+            "Batch_217",
+            "Batch_218",
+            "Batch_219",
+            "Batch_220",
+            "Batch_221",
+            "Batch_222",
+            "Batch_223",
+            "Batch_224",
+            "Batch_225",
+            "Batch_226",
+            "Batch_227",
+            "Batch_228",
+            "Batch_229",
+            "Batch_230",
+            "Batch_231",
+            "Batch_232",
+            "Batch_233",
+            "Batch_234",
+            "Batch_235",
+            "Batch_236",
+            "Batch_237",
+            "Batch_238",
+            "Batch_239",
+            "Batch_240",
+            "Batch_241",
+            "Batch_242",
+            "Batch_243",
+            "Batch_244",
+            "Batch_245",
+            "Batch_246",
+            "Batch_247",
+            "Batch_248",
+            "Batch_249",
+            "Batch_250",
+            "Batch_251",
+            "Batch_252",
+            "Batch_253",
+            "Batch_254",
+            "Event256"
+          ],
+          "BaselineNames": []
+        },
+        {
+          "Op": "Add",
+          "Success": false,
+          "Error": "InvalidOperationException: \u4E8B\u4EF6\u4E0A\u9650\u70BA 256 \u500B\u3002",
+          "Count": 256,
+          "IsDirty": true,
+          "CanUndo": true,
+          "CanRedo": false,
+          "EventNames": [
+            "Batch_0",
+            "Batch_1",
+            "Batch_2",
+            "Batch_3",
+            "Batch_4",
+            "Batch_5",
+            "Batch_6",
+            "Batch_7",
+            "Batch_8",
+            "Batch_9",
+            "Batch_10",
+            "Batch_11",
+            "Batch_12",
+            "Batch_13",
+            "Batch_14",
+            "Batch_15",
+            "Batch_16",
+            "Batch_17",
+            "Batch_18",
+            "Batch_19",
+            "Batch_20",
+            "Batch_21",
+            "Batch_22",
+            "Batch_23",
+            "Batch_24",
+            "Batch_25",
+            "Batch_26",
+            "Batch_27",
+            "Batch_28",
+            "Batch_29",
+            "Batch_30",
+            "Batch_31",
+            "Batch_32",
+            "Batch_33",
+            "Batch_34",
+            "Batch_35",
+            "Batch_36",
+            "Batch_37",
+            "Batch_38",
+            "Batch_39",
+            "Batch_40",
+            "Batch_41",
+            "Batch_42",
+            "Batch_43",
+            "Batch_44",
+            "Batch_45",
+            "Batch_46",
+            "Batch_47",
+            "Batch_48",
+            "Batch_49",
+            "Batch_50",
+            "Batch_51",
+            "Batch_52",
+            "Batch_53",
+            "Batch_54",
+            "Batch_55",
+            "Batch_56",
+            "Batch_57",
+            "Batch_58",
+            "Batch_59",
+            "Batch_60",
+            "Batch_61",
+            "Batch_62",
+            "Batch_63",
+            "Batch_64",
+            "Batch_65",
+            "Batch_66",
+            "Batch_67",
+            "Batch_68",
+            "Batch_69",
+            "Batch_70",
+            "Batch_71",
+            "Batch_72",
+            "Batch_73",
+            "Batch_74",
+            "Batch_75",
+            "Batch_76",
+            "Batch_77",
+            "Batch_78",
+            "Batch_79",
+            "Batch_80",
+            "Batch_81",
+            "Batch_82",
+            "Batch_83",
+            "Batch_84",
+            "Batch_85",
+            "Batch_86",
+            "Batch_87",
+            "Batch_88",
+            "Batch_89",
+            "Batch_90",
+            "Batch_91",
+            "Batch_92",
+            "Batch_93",
+            "Batch_94",
+            "Batch_95",
+            "Batch_96",
+            "Batch_97",
+            "Batch_98",
+            "Batch_99",
+            "Batch_100",
+            "Batch_101",
+            "Batch_102",
+            "Batch_103",
+            "Batch_104",
+            "Batch_105",
+            "Batch_106",
+            "Batch_107",
+            "Batch_108",
+            "Batch_109",
+            "Batch_110",
+            "Batch_111",
+            "Batch_112",
+            "Batch_113",
+            "Batch_114",
+            "Batch_115",
+            "Batch_116",
+            "Batch_117",
+            "Batch_118",
+            "Batch_119",
+            "Batch_120",
+            "Batch_121",
+            "Batch_122",
+            "Batch_123",
+            "Batch_124",
+            "Batch_125",
+            "Batch_126",
+            "Batch_127",
+            "Batch_128",
+            "Batch_129",
+            "Batch_130",
+            "Batch_131",
+            "Batch_132",
+            "Batch_133",
+            "Batch_134",
+            "Batch_135",
+            "Batch_136",
+            "Batch_137",
+            "Batch_138",
+            "Batch_139",
+            "Batch_140",
+            "Batch_141",
+            "Batch_142",
+            "Batch_143",
+            "Batch_144",
+            "Batch_145",
+            "Batch_146",
+            "Batch_147",
+            "Batch_148",
+            "Batch_149",
+            "Batch_150",
+            "Batch_151",
+            "Batch_152",
+            "Batch_153",
+            "Batch_154",
+            "Batch_155",
+            "Batch_156",
+            "Batch_157",
+            "Batch_158",
+            "Batch_159",
+            "Batch_160",
+            "Batch_161",
+            "Batch_162",
+            "Batch_163",
+            "Batch_164",
+            "Batch_165",
+            "Batch_166",
+            "Batch_167",
+            "Batch_168",
+            "Batch_169",
+            "Batch_170",
+            "Batch_171",
+            "Batch_172",
+            "Batch_173",
+            "Batch_174",
+            "Batch_175",
+            "Batch_176",
+            "Batch_177",
+            "Batch_178",
+            "Batch_179",
+            "Batch_180",
+            "Batch_181",
+            "Batch_182",
+            "Batch_183",
+            "Batch_184",
+            "Batch_185",
+            "Batch_186",
+            "Batch_187",
+            "Batch_188",
+            "Batch_189",
+            "Batch_190",
+            "Batch_191",
+            "Batch_192",
+            "Batch_193",
+            "Batch_194",
+            "Batch_195",
+            "Batch_196",
+            "Batch_197",
+            "Batch_198",
+            "Batch_199",
+            "Batch_200",
+            "Batch_201",
+            "Batch_202",
+            "Batch_203",
+            "Batch_204",
+            "Batch_205",
+            "Batch_206",
+            "Batch_207",
+            "Batch_208",
+            "Batch_209",
+            "Batch_210",
+            "Batch_211",
+            "Batch_212",
+            "Batch_213",
+            "Batch_214",
+            "Batch_215",
+            "Batch_216",
+            "Batch_217",
+            "Batch_218",
+            "Batch_219",
+            "Batch_220",
+            "Batch_221",
+            "Batch_222",
+            "Batch_223",
+            "Batch_224",
+            "Batch_225",
+            "Batch_226",
+            "Batch_227",
+            "Batch_228",
+            "Batch_229",
+            "Batch_230",
+            "Batch_231",
+            "Batch_232",
+            "Batch_233",
+            "Batch_234",
+            "Batch_235",
+            "Batch_236",
+            "Batch_237",
+            "Batch_238",
+            "Batch_239",
+            "Batch_240",
+            "Batch_241",
+            "Batch_242",
+            "Batch_243",
+            "Batch_244",
+            "Batch_245",
+            "Batch_246",
+            "Batch_247",
+            "Batch_248",
+            "Batch_249",
+            "Batch_250",
+            "Batch_251",
+            "Batch_252",
+            "Batch_253",
+            "Batch_254",
+            "Event256"
+          ],
+          "BaselineNames": []
+        },
+        {
+          "Op": "Duplicate",
+          "Success": false,
+          "Error": "InvalidOperationException: \u4E8B\u4EF6\u4E0A\u9650\u70BA 256 \u500B\u3002",
+          "Count": 256,
+          "IsDirty": true,
+          "CanUndo": true,
+          "CanRedo": false,
+          "EventNames": [
+            "Batch_0",
+            "Batch_1",
+            "Batch_2",
+            "Batch_3",
+            "Batch_4",
+            "Batch_5",
+            "Batch_6",
+            "Batch_7",
+            "Batch_8",
+            "Batch_9",
+            "Batch_10",
+            "Batch_11",
+            "Batch_12",
+            "Batch_13",
+            "Batch_14",
+            "Batch_15",
+            "Batch_16",
+            "Batch_17",
+            "Batch_18",
+            "Batch_19",
+            "Batch_20",
+            "Batch_21",
+            "Batch_22",
+            "Batch_23",
+            "Batch_24",
+            "Batch_25",
+            "Batch_26",
+            "Batch_27",
+            "Batch_28",
+            "Batch_29",
+            "Batch_30",
+            "Batch_31",
+            "Batch_32",
+            "Batch_33",
+            "Batch_34",
+            "Batch_35",
+            "Batch_36",
+            "Batch_37",
+            "Batch_38",
+            "Batch_39",
+            "Batch_40",
+            "Batch_41",
+            "Batch_42",
+            "Batch_43",
+            "Batch_44",
+            "Batch_45",
+            "Batch_46",
+            "Batch_47",
+            "Batch_48",
+            "Batch_49",
+            "Batch_50",
+            "Batch_51",
+            "Batch_52",
+            "Batch_53",
+            "Batch_54",
+            "Batch_55",
+            "Batch_56",
+            "Batch_57",
+            "Batch_58",
+            "Batch_59",
+            "Batch_60",
+            "Batch_61",
+            "Batch_62",
+            "Batch_63",
+            "Batch_64",
+            "Batch_65",
+            "Batch_66",
+            "Batch_67",
+            "Batch_68",
+            "Batch_69",
+            "Batch_70",
+            "Batch_71",
+            "Batch_72",
+            "Batch_73",
+            "Batch_74",
+            "Batch_75",
+            "Batch_76",
+            "Batch_77",
+            "Batch_78",
+            "Batch_79",
+            "Batch_80",
+            "Batch_81",
+            "Batch_82",
+            "Batch_83",
+            "Batch_84",
+            "Batch_85",
+            "Batch_86",
+            "Batch_87",
+            "Batch_88",
+            "Batch_89",
+            "Batch_90",
+            "Batch_91",
+            "Batch_92",
+            "Batch_93",
+            "Batch_94",
+            "Batch_95",
+            "Batch_96",
+            "Batch_97",
+            "Batch_98",
+            "Batch_99",
+            "Batch_100",
+            "Batch_101",
+            "Batch_102",
+            "Batch_103",
+            "Batch_104",
+            "Batch_105",
+            "Batch_106",
+            "Batch_107",
+            "Batch_108",
+            "Batch_109",
+            "Batch_110",
+            "Batch_111",
+            "Batch_112",
+            "Batch_113",
+            "Batch_114",
+            "Batch_115",
+            "Batch_116",
+            "Batch_117",
+            "Batch_118",
+            "Batch_119",
+            "Batch_120",
+            "Batch_121",
+            "Batch_122",
+            "Batch_123",
+            "Batch_124",
+            "Batch_125",
+            "Batch_126",
+            "Batch_127",
+            "Batch_128",
+            "Batch_129",
+            "Batch_130",
+            "Batch_131",
+            "Batch_132",
+            "Batch_133",
+            "Batch_134",
+            "Batch_135",
+            "Batch_136",
+            "Batch_137",
+            "Batch_138",
+            "Batch_139",
+            "Batch_140",
+            "Batch_141",
+            "Batch_142",
+            "Batch_143",
+            "Batch_144",
+            "Batch_145",
+            "Batch_146",
+            "Batch_147",
+            "Batch_148",
+            "Batch_149",
+            "Batch_150",
+            "Batch_151",
+            "Batch_152",
+            "Batch_153",
+            "Batch_154",
+            "Batch_155",
+            "Batch_156",
+            "Batch_157",
+            "Batch_158",
+            "Batch_159",
+            "Batch_160",
+            "Batch_161",
+            "Batch_162",
+            "Batch_163",
+            "Batch_164",
+            "Batch_165",
+            "Batch_166",
+            "Batch_167",
+            "Batch_168",
+            "Batch_169",
+            "Batch_170",
+            "Batch_171",
+            "Batch_172",
+            "Batch_173",
+            "Batch_174",
+            "Batch_175",
+            "Batch_176",
+            "Batch_177",
+            "Batch_178",
+            "Batch_179",
+            "Batch_180",
+            "Batch_181",
+            "Batch_182",
+            "Batch_183",
+            "Batch_184",
+            "Batch_185",
+            "Batch_186",
+            "Batch_187",
+            "Batch_188",
+            "Batch_189",
+            "Batch_190",
+            "Batch_191",
+            "Batch_192",
+            "Batch_193",
+            "Batch_194",
+            "Batch_195",
+            "Batch_196",
+            "Batch_197",
+            "Batch_198",
+            "Batch_199",
+            "Batch_200",
+            "Batch_201",
+            "Batch_202",
+            "Batch_203",
+            "Batch_204",
+            "Batch_205",
+            "Batch_206",
+            "Batch_207",
+            "Batch_208",
+            "Batch_209",
+            "Batch_210",
+            "Batch_211",
+            "Batch_212",
+            "Batch_213",
+            "Batch_214",
+            "Batch_215",
+            "Batch_216",
+            "Batch_217",
+            "Batch_218",
+            "Batch_219",
+            "Batch_220",
+            "Batch_221",
+            "Batch_222",
+            "Batch_223",
+            "Batch_224",
+            "Batch_225",
+            "Batch_226",
+            "Batch_227",
+            "Batch_228",
+            "Batch_229",
+            "Batch_230",
+            "Batch_231",
+            "Batch_232",
+            "Batch_233",
+            "Batch_234",
+            "Batch_235",
+            "Batch_236",
+            "Batch_237",
+            "Batch_238",
+            "Batch_239",
+            "Batch_240",
+            "Batch_241",
+            "Batch_242",
+            "Batch_243",
+            "Batch_244",
+            "Batch_245",
+            "Batch_246",
+            "Batch_247",
+            "Batch_248",
+            "Batch_249",
+            "Batch_250",
+            "Batch_251",
+            "Batch_252",
+            "Batch_253",
+            "Batch_254",
+            "Event256"
+          ],
+          "BaselineNames": []
+        }
+      ]
+    }
+  ]
+}

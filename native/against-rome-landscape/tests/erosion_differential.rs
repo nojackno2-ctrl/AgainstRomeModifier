@@ -1,14 +1,10 @@
-//! C# differential for `erosion::{simulate_thermal_erosion, simulate_hydraulic_erosion}` against the
-//! real `ThermalErosionSimulator.cs` / `HydraulicErosionSimulator.cs` (+ `TerrainHeightWorkBuffer.cs`)
-//! linked into tests/erosion_oracle/ErosionOracle.csproj. Rust is the single source of the case matrix:
-//! it writes every input (f32 bit patterns) to a file the C# oracle replays, then compares outputs.
-//! Run: cargo test --release --locked --offline --test erosion_differential -- --ignored
+//! Differential (frozen C# oracle output in tests/fixtures/erosion_oracle.txt) for `erosion::{simulate_thermal_erosion, simulate_hydraulic_erosion}` against the
+//! the original C# simulators. The case matrix is regenerated in Rust; expected outputs are frozen.
 use against_rome_landscape::erosion::{
     simulate_hydraulic_erosion, simulate_thermal_erosion, BrushRegion, HydraulicErosionParams,
     TerrainHeightWorkBuffer, ThermalErosionParams,
 };
 use std::collections::HashMap;
-use std::process::Command;
 
 /// Max |rust - csharp| per sample. Thermal is pure f32 arithmetic (+ `tan`); hydraulic adds sin/cos/sqrt
 /// and chaotic droplet paths, so it is bounded separately and reported with the exact-match ratio.
@@ -45,15 +41,6 @@ fn terrain(size: usize, pattern: u8) -> Vec<f32> {
         .collect()
 }
 
-fn bits(v: &[f32]) -> String {
-    v.iter().map(|f| format!("{:x}", f.to_bits())).collect::<Vec<_>>().join(",")
-}
-fn fb(f: f32) -> String {
-    format!("{:x}", f.to_bits())
-}
-fn brush_s(b: Option<BrushRegion>) -> String {
-    b.map_or("-".into(), |b| format!("{}:{}:{}", fb(b.center_x), fb(b.center_y), fb(b.radius)))
-}
 fn parse(s: &str) -> Vec<f32> {
     s.split(',').map(|h| f32::from_bits(u32::from_str_radix(h, 16).unwrap())).collect()
 }
@@ -178,24 +165,6 @@ fn hydro_cases() -> Vec<Hydro> {
     v
 }
 
-fn run_oracle(cases_file: &str) -> String {
-    let root = env!("CARGO_MANIFEST_DIR");
-    let project = format!("{root}/tests/erosion_oracle/ErosionOracle.csproj");
-    let config = format!("{root}/tests/erosion_oracle/NuGet.Config");
-    let appdata = format!("{root}/tests/oracle/cache");
-    let run = |args: &[&str]| {
-        let o = Command::new("dotnet")
-            .env("APPDATA", &appdata)
-            .args(args)
-            .output()
-            .expect("dotnet SDK required");
-        let text = format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr));
-        assert!(o.status.success(), "{text}");
-        String::from_utf8_lossy(&o.stdout).into_owned()
-    };
-    run(&["restore", &project, "--configfile", &config, "--verbosity", "quiet"]);
-    run(&["run", "--no-restore", "--project", &project, "-c", "Release", "--verbosity", "quiet", "--", cases_file])
-}
 
 #[derive(Default)]
 struct Stats {
@@ -217,48 +186,11 @@ impl Stats {
 }
 
 #[test]
-#[ignore = "requires .NET 10 SDK to execute the linked C# erosion simulators"]
-fn csharp_erosion_differential() {
+fn frozen_csharp_erosion_differential() {
     let thermal = thermal_cases();
     let hydro = hydro_cases();
-    let mut input = String::new();
-    for (i, c) in thermal.iter().enumerate() {
-        input += &format!(
-            "T|t{i}|{}|{}|{}|{}|{}|{}|{}|{}\n",
-            c.size,
-            fb(c.p.talus_angle_degrees),
-            fb(c.p.erosion_rate),
-            c.p.iterations,
-            fb(c.p.grid_spacing),
-            brush_s(c.brush),
-            c.scree as u8,
-            bits(&terrain(c.size, c.pat))
-        );
-    }
-    for (i, c) in hydro.iter().enumerate() {
-        let p = &c.p;
-        input += &format!(
-            "H|h{i}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}\n",
-            c.size,
-            p.droplet_count,
-            p.max_lifetime,
-            fb(p.inertia),
-            fb(p.gravity),
-            fb(p.capacity_factor),
-            fb(p.min_slope),
-            fb(p.erosion_rate),
-            fb(p.deposition_rate),
-            fb(p.evaporation_rate),
-            p.erosion_radius,
-            p.random_seed,
-            brush_s(c.brush),
-            bits(&terrain(c.size, c.pat))
-        );
-    }
-    let path = std::env::temp_dir().join(format!("erosion_cases_{}.txt", std::process::id()));
-    std::fs::write(&path, input).unwrap();
-    let stdout = run_oracle(path.to_str().unwrap());
-    let _ = std::fs::remove_file(&path);
+    // Frozen C# oracle output (ids t<i>/h<i>); Rust regenerates the identical input matrix.
+    let stdout = include_str!("fixtures/erosion_oracle.txt");
 
     let out: HashMap<String, Vec<&str>> = stdout
         .lines()
@@ -268,7 +200,7 @@ fn csharp_erosion_differential() {
             (f[1].to_string(), f[2..].to_vec())
         })
         .collect();
-    assert_eq!(out.len(), thermal.len() + hydro.len(), "every oracle case must execute: {stdout}");
+    assert_eq!(out.len(), thermal.len() + hydro.len(), "every frozen oracle case must be present");
 
     let (mut ts, mut hs) = (Stats::default(), Stats::default());
     let (mut changed_t, mut changed_h) = (false, false);

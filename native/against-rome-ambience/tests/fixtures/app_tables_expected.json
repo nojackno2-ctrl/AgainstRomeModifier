@@ -1,0 +1,3018 @@
+{
+"ZH": [
+[
+"GamePathLabel",
+"遊戲目錄："
+],
+[
+"BrowseButton",
+"瀏覽..."
+],
+[
+"NavSystem",
+"主控制台"
+],
+[
+"NavExperimental",
+"實驗性修改"
+],
+[
+"NavDefaultStats",
+"自訂兵種屬性"
+],
+[
+"NavCurrentStats",
+"當前兵種數值"
+],
+[
+"MainTitle",
+"AGAINST ROME MODIFIER PRO"
+],
+[
+"SystemHeading",
+"修改器控制中心"
+],
+[
+"SystemSubtitle",
+"選擇要啟用的功能，確認遊戲路徑後再執行修改。"
+],
+[
+"ExperimentalHeading",
+"實驗性修改控制中心"
+],
+[
+"ExperimentalSubtitle",
+"測試中的實驗性功能。確認測試成功後，可將其移至主控制台。"
+],
+[
+"ExperimentalCardTitle",
+"實驗性修改選項"
+],
+[
+"VerifiedTitle",
+"已驗證功能（需手動開啟）"
+],
+[
+"VerifiedTitleTip",
+"此區功能已實測修改成功，但不會被「所有功能開啟」勾選，需自行手動開啟。"
+],
+[
+"NumericTitle",
+"系統與相容性設定"
+],
+[
+"MaxPopulation",
+"最大人口上限 (1600)"
+],
+[
+"RomanEndless",
+"無盡模式羅馬陣營"
+],
+[
+"RomanReinforcementGarrison",
+"羅馬增援完全移交"
+],
+[
+"VillageGarrisonQuota3x",
+"村莊駐軍配額倍率（實驗）"
+],
+[
+"FastCiviProduction",
+"村民生產速度最快"
+],
+[
+"FocusLoss",
+"視窗失焦不自動暫停"
+],
+[
+"GameSpeedLabel",
+"整體遊戲運行加速（倍率可調）"
+],
+[
+"ToEng",
+"強制英文語系"
+],
+[
+"VillagerTitle",
+"村民與操作便利"
+],
+[
+"SpellTitle",
+"法術與祭司"
+],
+[
+"GeneralSkills",
+"將軍特殊技能強化（實驗性）"
+],
+[
+"LeaderGlory",
+"首領榮譽與士氣光環增強（實驗性）"
+],
+[
+"EnableAll",
+"所有功能開啟"
+],
+[
+"DisableAll",
+"所有功能關閉"
+],
+[
+"CombatTitle",
+"戰鬥與部隊強化"
+],
+[
+"BuildTitle",
+"建設、經濟與人口"
+],
+[
+"FreeProd",
+"建造與生產免費"
+],
+[
+"FreeUpgrade",
+"科技與升級免費"
+],
+[
+"NoSpellCost",
+"祭司與賢者無限法力"
+],
+[
+"NoSpellAltar",
+"法術免除祭壇需求"
+],
+[
+"SpellDamage5x",
+"法術傷害提升 5 倍"
+],
+[
+"SpellHealing10x",
+"治療術提升 10 倍（實驗性）"
+],
+[
+"SpellResurrection",
+"法師復活術強化（實驗性）"
+],
+[
+"InfiniteMorale",
+"部隊無限士氣"
+],
+[
+"NoRunHpLoss",
+"單位跑步不扣血"
+],
+[
+"HousingCapacity20x",
+"人口建築容量提升"
+],
+[
+"StorageCapacity10x",
+"主堡與倉庫容量提升"
+],
+[
+"HqHp10x",
+"主堡生命值提升"
+],
+[
+"FastBuildUpgradeRepair",
+"建築建造與維修加速"
+],
+[
+"FoodHealing10x",
+"待機回血速度提升"
+],
+[
+"CiviProduce20",
+"住宅帳篷一次生產 20 人"
+],
+[
+"UnitRecruit20",
+"招募面板一次選滿 20"
+],
+[
+"IdleSelect999",
+"閒置村民一次全選 999"
+],
+[
+"CorpseRetention",
+"屍體保留量提高（實驗性）"
+],
+[
+"AiCardTitle",
+"無盡模式 (AI 終極戰爭)"
+],
+[
+"AiM1",
+"增援兵團擴軍"
+],
+[
+"AiCore",
+"AI 無盡重生核心"
+],
+[
+"AiM5",
+"提供開局資源"
+],
+[
+"DgVoodoo",
+"啟用圖形相容修補"
+],
+[
+"ArgmTrace",
+"啟用遊戲運作記錄（除錯）（實驗性）"
+],
+[
+"VillageBuildRange",
+"全地圖自由建設"
+],
+[
+"GamePath",
+"遊戲路徑:"
+],
+[
+"Browse",
+"瀏覽..."
+],
+[
+"LoadCurrent",
+"讀取現有設定"
+],
+[
+"Restore",
+"恢復原版"
+],
+[
+"Apply",
+"執行修改"
+],
+[
+"StartGame",
+"啟動遊戲"
+],
+[
+"RestoreAll",
+"全部還原"
+],
+[
+"RestoreStats",
+"僅還原兵種屬性"
+],
+[
+"RestoreCompat",
+"僅還原相容性修正"
+],
+[
+"RestoreLang",
+"僅還原語系設定"
+],
+[
+"DefaultStatsTitle",
+"自訂兵種屬性對比 (無自訂加成)"
+],
+[
+"EnableBalance",
+"啟用自訂兵種屬性平衡與陣營特色（實驗性）"
+],
+[
+"TroopTemplateLabel",
+"選擇範本:"
+],
+[
+"TroopTemplateSelect",
+"(請選擇範本)"
+],
+[
+"TroopTemplateBalanced",
+"修改器內建平衡"
+],
+[
+"BtnTroopPreset",
+"修改兵種檔案"
+],
+[
+"TroopPresetDefault",
+"屬性檔案：預設範本"
+],
+[
+"TroopPresetManual",
+"屬性檔案：自訂配置 (手動)"
+],
+[
+"TroopPresetFile",
+"屬性檔案：{0}"
+],
+[
+"TroopPresetLoaded",
+"屬性檔案：設定檔載入 ({0})"
+],
+[
+"CurrentStatsTitle",
+"當前兵種數值 (原版與當前對比)"
+],
+[
+"Refresh",
+"重新整理"
+],
+[
+"LanguageLabel",
+"修改器語系 / Language"
+],
+[
+"LangZhButton",
+"繁體中文"
+],
+[
+"LangEnButton",
+"English"
+],
+[
+"HeaderName",
+"兵種名稱"
+],
+[
+"HeaderIcon",
+"圖示"
+],
+[
+"HeaderType",
+"部隊類型"
+],
+[
+"HeaderStyle",
+"裝備分類"
+],
+[
+"HeaderHp",
+"生命值"
+],
+[
+"HeaderMeleeDmg",
+"近戰傷害"
+],
+[
+"HeaderRangedDmg",
+"遠程傷害"
+],
+[
+"HeaderMeleeRelt",
+"近戰冷卻"
+],
+[
+"HeaderRangedRelt",
+"遠程冷卻"
+],
+[
+"HeaderVw",
+"防禦力"
+],
+[
+"HeaderAw",
+"戰鬥力"
+],
+[
+"HeaderSpeed",
+"移動速度"
+],
+[
+"HeaderSight",
+"視野"
+],
+[
+"HeaderRange",
+"射程/技能距離"
+],
+[
+"HeaderSpellRadius",
+"法術半徑"
+],
+[
+"HeaderTier",
+"階級"
+],
+[
+"HeaderHpComp",
+"生命值對比"
+],
+[
+"HeaderMeleeDmgComp",
+"近戰傷害對比"
+],
+[
+"HeaderRangedDmgComp",
+"遠程傷害對比"
+],
+[
+"HeaderMeleeReltComp",
+"近戰冷卻對比"
+],
+[
+"HeaderRangedReltComp",
+"遠程冷卻對比"
+],
+[
+"HeaderVwComp",
+"防禦對比"
+],
+[
+"HeaderAwComp",
+"戰鬥對比"
+],
+[
+"HeaderSpeedComp",
+"移動速度對比"
+],
+[
+"HeaderSightComp",
+"視野對比"
+],
+[
+"HeaderRangeComp",
+"射程對比"
+],
+[
+"HeaderSpellRadiusComp",
+"法術半徑對比"
+],
+[
+"HeaderFolder",
+"資料夾"
+],
+[
+"HeaderSaveTitle",
+"存檔標題"
+],
+[
+"HeaderLevel",
+"原版關卡"
+],
+[
+"HeaderTime",
+"存檔時間"
+],
+[
+"HeaderBackupFile",
+"備份檔名"
+],
+[
+"HeaderBackupTime",
+"備份時間"
+],
+[
+"HeaderOrigFolder",
+"原資料夾"
+],
+[
+"TabRoman",
+" 羅馬 "
+],
+[
+"TabTeuton",
+" 條頓 "
+],
+[
+"TabCelt",
+" 塞爾特 "
+],
+[
+"TabHun",
+" 匈奴 "
+],
+[
+"TitlePathError",
+"路徑錯誤"
+],
+[
+"TitleConfirm",
+"確認執行"
+],
+[
+"TitleSuccess",
+"成功"
+],
+[
+"TitleError",
+"錯誤"
+],
+[
+"TitleWarning",
+"確認覆蓋"
+],
+[
+"TitleTips",
+"提示"
+],
+[
+"LogConstructCompleted",
+"修改器視窗建構完成，開始載入資料..."
+],
+[
+"LogLoadIconFailed",
+"載入圖示失敗: "
+],
+[
+"LogDefaultStatsLoaded",
+"自訂兵種屬性載入完成，共 {0} 筆資料。"
+],
+[
+"LogDefaultStatsLoadError",
+"載入自訂屬性數據錯誤: "
+],
+[
+"LogBalanceToggled",
+"自訂兵種屬性平衡與陣營特色已{0}。"
+],
+[
+"LogReadCurrent",
+"正在讀取現有設定..."
+],
+[
+"LogReadCurrentDone",
+"現有屬性設定讀取完成，共 {0} 筆比對資料。"
+],
+[
+"LogPresetImportError",
+"讀取現有設定失敗: "
+],
+[
+"LogBrowseTitle",
+"請選擇《羅馬的榮耀》(Against Rome) 遊戲安裝目錄"
+],
+[
+"MsgSelectGameDir",
+"請先設定正確的遊戲路徑。"
+],
+[
+"MsgWrongGameDir",
+"設定的目錄不包含遊戲主程式 Against_Rome.exe，請重新選擇正確的安裝路徑。"
+],
+[
+"MsgConfirmApply",
+"確定要套用所有修改嗎？\n此操作將覆蓋遊戲檔案。"
+],
+[
+"MsgApplySuccess",
+"修改成功套用！"
+],
+[
+"MsgApplyFailed",
+"修改失敗: "
+],
+[
+"MsgRestoreAllSuccess",
+"已成功恢復全部原版設定！"
+],
+[
+"MsgRestoreStatsSuccess",
+"已成功恢復兵種屬性設定！"
+],
+[
+"MsgRestoreCompatSuccess",
+"已成功恢復相容性設定！"
+],
+[
+"MsgRestoreLangSuccess",
+"已成功恢復語言設定！"
+],
+[
+"MsgRestoreFailed",
+"還原失敗: "
+],
+[
+"MsgExeNotFound",
+"在遊戲目錄中找不到 Against_Rome.exe。"
+],
+[
+"MsgLaunchFailed",
+"啟動遊戲失敗: "
+],
+[
+"LogStartApply",
+"開始套用修改..."
+],
+[
+"LogApplyAllSuccess",
+"所有修改已成功套用！"
+],
+[
+"LogStartRestoreAll",
+"開始恢復全部原版設定..."
+],
+[
+"LogRestoreAllDone",
+"已成功恢復全部原版設定。"
+],
+[
+"LogStartRestoreStats",
+"開始恢復兵種屬性原版設定..."
+],
+[
+"LogRestoreStatsDone",
+"已成功恢復兵種屬性設定。"
+],
+[
+"LogStartRestoreCompat",
+"開始恢復相容性原版設定..."
+],
+[
+"LogRestoreCompatDone",
+"已成功恢復相容性設定。"
+],
+[
+"LogStartRestoreLang",
+"開始恢復語言原版設定..."
+],
+[
+"LogRestoreLangDone",
+"已成功恢復語言設定。"
+],
+[
+"LogGameStarted",
+"遊戲已成功啟動。"
+],
+[
+"LogGamePathNotSetIcon",
+"遊戲路徑未設定或不存在，無法載入兵種圖示。"
+],
+[
+"LogGuiDatNotFound",
+"找不到 gui.dat，無法載入兵種圖示。"
+],
+[
+"LogIconIniNotFound",
+"記憶體備份中找不到 icon.ini，無法載入兵種圖示。"
+],
+[
+"LogObjdefNotFound",
+"記憶體備份中找不到 objdef.dau，無法載入自訂兵種屬性。"
+],
+[
+"LogNoObjdefForRead",
+"找不到任何 objdef.dau 檔案，無法讀取設定。"
+],
+[
+"LogIconsLoaded",
+"成功載入 {0} 個兵種圖示。"
+],
+[
+"LogStartupMigrationFailed",
+"舊版腳本安全遷移失敗: "
+],
+[
+"LogSetGamePathFirst",
+"請先在右上角設定遊戲路徑。"
+],
+[
+"LogSpellRadiusReadFailed",
+"讀取 cl_script.ini 法術半徑失敗，將以原版半徑顯示: "
+],
+[
+"LogCustomTroopStatsApplied",
+"已套用自訂兵種屬性配置。"
+],
+[
+"LogEnsureBackupFailed",
+"載入或建立遊戲備份時發生錯誤: "
+],
+[
+"LogCheckpointApply",
+"已建立修改前檔案回復點。"
+],
+[
+"LogCheckpointRestoreAll",
+"已建立還原前檔案回復點。"
+],
+[
+"LogCheckpointRestoreStats",
+"已建立屬性檔案回復點。"
+],
+[
+"LogCheckpointRestoreCompat",
+"已建立相容性檔案回復點。"
+],
+[
+"LogCheckpointRestoreLang",
+"已建立語言檔案回復點。"
+],
+[
+"LogRollbackStartedApply",
+"套用失敗，開始回復已修改的檔案。"
+],
+[
+"LogRollbackDoneApply",
+"檔案回復流程已完成。"
+],
+[
+"LogRollbackStartedRestore",
+"還原失敗，開始回復變更。"
+],
+[
+"LogRollbackDoneRestore",
+"還原失敗後的回復流程已完成。"
+],
+[
+"LogReloadAfterApplyFailed",
+"套用成功後重新讀取現況失敗: "
+],
+[
+"LogReloadAfterRestoreFailed",
+"還原成功後重新讀取現況失敗: "
+],
+[
+"SaveDetailGameSave",
+"存檔類型: 遊戲存檔\n\n資料夾: {0}\n\n存檔標題: {1}\n\n原版關卡: {2}\n\n存檔時間: {3}"
+],
+[
+"SaveDetailBackup",
+"存檔類型: 備份檔案\n\n備份檔名: {0}\n\n原資料夾: {1}\n\n存檔標題: {2}\n\n原版關卡: {3}\n\n備份時間: {4}"
+],
+[
+"MsgSelectBackup",
+"請先選擇要還原的備份。"
+],
+[
+"MsgGamePathNotSet",
+"遊戲路徑未設定，無法還原。"
+],
+[
+"MsgConfirmOverwriteSave",
+"目標存檔資料夾 [{0}] 已存在，是否覆蓋？"
+],
+[
+"MsgRestoreBackupSuccess",
+"還原備份成功！"
+],
+[
+"MsgRestoreBackupFailed",
+"還原備份失敗: "
+],
+[
+"MsgInvalidSaveDir",
+"無效的存檔目錄，操作已取消。"
+],
+[
+"MsgConfirmDeleteSave",
+"確定要永久刪除遊戲存檔 [{0}] 嗎？此操作不可還原！"
+],
+[
+"MsgDeleteSaveFailed",
+"刪除存檔失敗: "
+],
+[
+"MsgConfirmDeleteBackup",
+"確定要永久刪除備份檔案 [{0}] 嗎？"
+],
+[
+"MsgDeleteBackupFailed",
+"刪除備份失敗: "
+],
+[
+"MsgSelectSaveToBackup",
+"請先選擇要備份的存檔。"
+],
+[
+"MsgNoOrigFolderToBackup",
+"找不到該存檔的原始資料夾。"
+],
+[
+"MsgBackupSaveSuccess",
+"備份存檔成功！"
+],
+[
+"MsgBackupSaveFailed",
+"備份存檔失敗: "
+],
+[
+"BtnRepairEndlessAi",
+"修復無盡 AI"
+],
+[
+"MsgSelectSaveToRepairAi",
+"請先選擇要修復的無盡模式存檔。"
+],
+[
+"MsgConfirmRepairEndlessAi",
+"修復前會先建立完整備份，再更新存檔內嵌的無盡 AI 排程與增援規則。已堆積的馱馬不會自動移除。是否繼續？"
+],
+[
+"MsgRepairEndlessAiSuccess",
+"無盡 AI 排程與增援規則已修復，並已建立修復前備份。已堆積的馱馬不會自動移除；若仍阻斷增援，請還原堆積前備份或新開無盡局。"
+],
+[
+"MsgRepairEndlessAiAlready",
+"這份存檔已包含目前的無盡 AI 排程與增援修復。"
+],
+[
+"MsgRepairEndlessAiFailed",
+"修復無盡 AI 失敗: "
+],
+[
+"Unparsable",
+"無法解析"
+],
+[
+"Unknown",
+"未知"
+],
+[
+"FocusLossTip",
+"切換到其他程式（Alt+Tab）時遊戲不會暫停，可在背景繼續運行與建造。"
+],
+[
+"ToEngTip",
+"將遊戲介面、按鈕與地圖切換為英文版，解決字型亂碼或切換語系造成的卡死問題。"
+],
+[
+"DgVoodooTip",
+"安裝 dgVoodoo2 相容層，完美修復 Windows 10/11 常見的畫面卡頓、低 FPS、視窗化失敗與黑屏。"
+],
+[
+"ArgmTraceTip",
+"除錯專用工具。在背景記錄電腦 AI 運作日誌，方便遇到問題時備查分析，不改變遊戲檔案。"
+],
+[
+"GameSpeedTip",
+"整體遊戲運作時脈快進 2～10 倍，加速生產、建造、移動與戰鬥。"
+],
+[
+"GeneralSkillsTip",
+"將所有將軍與首領的被動技能與光環效果大幅提升 5 倍。"
+],
+[
+"LeaderGloryTip",
+"將各陣營首領隨榮譽升級的攻擊、防禦與士氣光環加成提升 5 倍。"
+],
+[
+"AllUnitsEntireMapVision",
+"所有單位全地圖視野"
+],
+[
+"AllUnitsEntireMapVisionTip",
+"直接揭開全地圖迷霧，所有敵我單位與地圖動向一覽無遺。"
+],
+[
+"LogAllUnitsEntireMapVisionToggled",
+"所有單位全地圖視野已{0}。"
+],
+[
+"NativeWidescreen1920x1080",
+"高解析度置中（4:3）"
+],
+[
+"NativeWidescreen1920x1080Tip",
+"提供現代高解析度顯示，保持原版 4:3 畫面比例置中播放，畫面不拉伸變形。"
+],
+[
+"CameraZoomOut1",
+"攝影機拉遠 0.5"
+],
+[
+"CameraZoomOut1Tip",
+"將遊戲鏡頭稍微往後拉遠，提供更寬廣的戰場視野。"
+],
+[
+"RangedRange3x",
+"遠程單位射程提升 3 倍"
+],
+[
+"RangedRange3xTip",
+"弓箭手、投石車與弩砲等遠程單位攻擊距離提升 3 倍，且遠距離射擊更精準。"
+],
+[
+"LogRangedRange3xToggled",
+"遠程單位射程提升 3 倍已{0}。"
+],
+[
+"UnitMovementSpeed2x",
+"單位移動速度提升 2 倍"
+],
+[
+"UnitMovementSpeed2xTip",
+"將所有戰鬥單位（士兵、領袖、祭司）的移動速度提升 2 倍。"
+],
+[
+"LogUnitMovementSpeed2xToggled",
+"單位移動速度提升 2 倍已{0}。"
+],
+[
+"VillagerMovementSpeed5x",
+"村民移動速度提升 5 倍"
+],
+[
+"VillagerMovementSpeed5xTip",
+"將平民單位（村民、馱馬）的移動速度提升 5 倍。"
+],
+[
+"LogVillagerMovementSpeed5xToggled",
+"村民移動速度提升 5 倍已{0}。"
+],
+[
+"SpellEntireMap",
+"法師施法距離提升至全地圖"
+],
+[
+"SpellEntireMapTip",
+"祭司可站在本營向全地圖任何位置施放神術與復活術。"
+],
+[
+"LogSpellEntireMapToggled",
+"法師施法距離提升至全地圖已{0}。"
+],
+[
+"SpellRange3x",
+"法師法術範圍提升 3 倍"
+],
+[
+"SpellRange3xTip",
+"神術影響半徑與命中範圍擴大為原版的 3 倍。"
+],
+[
+"LogSpellRange3xToggled",
+"法師法術範圍提升 3 倍已{0}。"
+],
+[
+"ProjectileArcHeight",
+"拋射彈道增高 2 倍"
+],
+[
+"ProjectileArcHeightTip",
+"箭矢與投石拋出的弧度更高，更容易越過城牆與樹木打中後方敵軍。"
+],
+[
+"RomanEndlessTip",
+"解鎖無盡模式，可選擇羅馬陣營入場體驗。"
+],
+[
+"RomanReinforcementGarrisonTip",
+"修正羅馬增援抵達後自動撤退的問題，所有增援士兵、平民與馱馬全數留守村莊為你效力。"
+],
+[
+"VillageGarrisonQuota3xTip",
+"自由設定電腦 AI 村莊防衛軍團的數量倍率（2～10 倍），建立更龐大的敵我守軍。"
+],
+[
+"FreeProdTip",
+"蓋建築、維修、生產村民與招募各類兵種完全零消耗資源。"
+],
+[
+"FreeUpgradeTip",
+"研發陣型、軍備科技與解鎖兵種屬性完全免費零消耗。"
+],
+[
+"NoSpellCostTip",
+"法師施放神術與復活術零消耗 MP，可無冷卻連續施法。"
+],
+[
+"InfiniteMoraleTip",
+"士兵士氣永遠滿格，殘血或被圍絕不潰逃。"
+],
+[
+"NoRunHpLossTip",
+"部隊急行軍跑步不再消耗體力扣減血量。"
+],
+[
+"BalanceTip",
+"啟用修改器調校的兵種平衡檔，修復原版兵種強弱不均，突顯四大陣營戰術特色。"
+],
+[
+"NoSpellAltarTip",
+"只需 1 個祭壇即可直接使用所有高階神術，免去多蓋祭壇需求。"
+],
+[
+"SpellDamage5xTip",
+"將所有陣營的主動攻擊與傷害型神術傷害提升 5 倍。"
+],
+[
+"SpellHealing10xTip",
+"祭司治療術效果提升 10 倍，幾秒內補滿殘血部隊。"
+],
+[
+"SpellResurrectionTip",
+"塞爾特祭司復活術效果改為滿血滿士氣復活（男屍變槍盾兵、女屍變女雙劍士）。"
+],
+[
+"MaxPopulationTip",
+"打破人口限制，將全場總人口上限開放至 1,600 人。"
+],
+[
+"HousingCapacity20xTip",
+"民房與帳篷人口容量暴增 20 倍，少蓋房屋即可養大軍。"
+],
+[
+"StorageCapacity10xTip",
+"城鎮中心與倉庫資源儲存上限提高 10 倍，資源不再爆倉。"
+],
+[
+"HqHp10xTip",
+"城鎮中心（大本營）血量提高 10 倍，極耐打防偷爆。"
+],
+[
+"FastCiviProductionTip",
+"城鎮中心生產與轉換村民的速度加快 10 倍。"
+],
+[
+"FastBuildUpgradeRepairTip",
+"興建、升級與工匠維修建築的速度加快 10 倍。"
+],
+[
+"FoodHealing10xTip",
+"受傷士兵待機時以 10 倍速自動回血，且不消耗食物。"
+],
+[
+"CiviProduce20Tip",
+"住宅帳篷生產村民按鈕點一下直接排入 20 人。"
+],
+[
+"UnitRecruit20Tip",
+"村民轉裝備/部隊面板點一下直接選滿 20 人。"
+],
+[
+"IdleSelect999Tip",
+"按選取閒置村民可一次選取全地圖最多 999 名閒置村民。"
+],
+[
+"CorpseRetentionTip",
+"戰場屍體回收前可多保留約 450 具，方便塞爾特法師復活。"
+],
+[
+"VillageBuildRangeTip",
+"取消村莊建造邊界限制，可在地圖任何角落自由蓋建築。"
+],
+[
+"AiM1Tip",
+"無盡模式電腦 AI 增援與村莊招募規模提升至每隊滿編 20 人。"
+],
+[
+"AiCoreTip",
+"修復並加速無盡模式電腦 AI 的聚落重生與補兵，防止後期不刷兵。"
+],
+[
+"AiM5Tip",
+"開局給予電腦 AI 村莊額外資源，幫助電腦快速爆兵提升挑戰性。"
+],
+[
+"SvcLogPreApplyRestore",
+"正在套用前將相關檔案復原為乾淨狀態，以清除殘留修改..."
+],
+[
+"SvcLogFocusApplied",
+"已套用視窗失去焦點不暫停補丁。"
+],
+[
+"SvcLogFocusRestored",
+"已還原視窗失去焦點暫停設定。"
+],
+[
+"SvcLogVillageLegacyRestoreUnknown",
+"無法還原舊版村莊建造半徑補丁：主程式特徵碼不符合。"
+],
+[
+"SvcLogVillageLegacyRemoved",
+"已移除舊版村莊建造半徑補丁。"
+],
+[
+"SvcLogVillageApplyUnknown",
+"無法套用村莊建造半徑補丁：主程式特徵碼不符合。"
+],
+[
+"SvcLogVillageApplied",
+"已套用村莊建造範圍擴大補丁。"
+],
+[
+"SvcLogVillageRestored",
+"已還原村莊建造範圍設定。"
+],
+[
+"SvcLogAltarApplied",
+"已套用法術免祭壇需求補丁。"
+],
+[
+"SvcLogAltarRestored",
+"已還原法術祭壇需求設定。"
+],
+[
+"SvcLogGameSpeedUnknown",
+"偵測到未知的遊戲時脈常數，已略過遊戲加速補丁以免覆蓋未知版本。"
+],
+[
+"SvcLogGameSpeedApplied",
+"遊戲整體運行速度：{0}× 加速。"
+],
+[
+"SvcLogGameSpeedOriginal",
+"遊戲整體運行速度：原版（未加速）。"
+],
+[
+"SvcLogTeamDatApplied",
+"已修改所有地圖的 team.dat 人口上限為 {0} (共處理 {1} 個檔案)。"
+],
+[
+"SvcLogTeamDatRestored",
+"已將所有地圖的 team.dat 人口上限還原為原版。"
+],
+[
+"SvcLogTeamDatRoman",
+"已將 {0} 張無盡地圖 (team.dat) 的玩家陣營改為羅馬。"
+],
+[
+"SvcLogTeamDatRomanRestored",
+"已將無盡地圖的玩家陣營還原為原版。"
+],
+[
+"SvcLogRomanEndlessExeApplied",
+"已將無盡模式部族選擇強制設為羅馬。"
+],
+[
+"SvcLogRomanEndlessExeRestored",
+"已還原無盡模式的原版部族選擇。"
+],
+[
+"SvcLogCiviProduce20Applied",
+"已將住宅帳篷生產鈕改為點一次 +20。"
+],
+[
+"SvcLogCiviProduce20Restored",
+"已還原住宅帳篷生產鈕為點一次 +1。"
+],
+[
+"SvcLogUnitRecruit20Applied",
+"已將招募面板改為點一次選滿 20。"
+],
+[
+"SvcLogUnitRecruit20Restored",
+"已還原招募面板為點一次 +1。"
+],
+[
+"SvcLogIdleSelect999Applied",
+"已將閒置村民選取上限由 40 提高為 999。"
+],
+[
+"SvcLogIdleSelect999Restored",
+"已還原閒置村民選取上限為 40。"
+],
+[
+"SvcLogIdleSelect999Unknown",
+"Against_Rome.exe 的閒置村民選取函式特徵碼無法辨識；已保留主程式原狀。"
+],
+[
+"SvcLogCorpseRetentionApplied",
+"已將屍體回收的物件池保留量由 500 降為 50。"
+],
+[
+"SvcLogCorpseRetentionRestored",
+"已將屍體回收的物件池保留量還原為 500。"
+],
+[
+"SvcLogCorpseRetentionUnknown",
+"Against_Rome.exe 的屍體回收保留量特徵碼無法辨識；已保留主程式原狀。"
+],
+[
+"SvcLogRetiredSpecialArrowsRestored",
+"已清除停用的特殊箭矢實驗並還原普通箭。"
+],
+[
+"SvcLogNativeWidescreenApplied",
+"已將原生 1600×1200 32-bit mode 0x22 替換為 1920×1080；下次啟動遊戲將強制選用此模式。"
+],
+[
+"SvcLogNativeWidescreenRestored",
+"已還原原生 1600×1200 32-bit 顯示模式。"
+],
+[
+"SvcLogNativeWidescreenUnknown",
+"Against_Rome.exe 的原生寬螢幕特徵碼無法辨識；已保留主程式原狀。"
+],
+[
+"SvcLogCameraZoomOutApplied",
+"已套用攝影機拉遠 0.5 實驗補丁。"
+],
+[
+"SvcLogCameraZoomOutRestored",
+"已還原原版攝影機縮放範圍。"
+],
+[
+"SvcLogCameraZoomOutUnknown",
+"Against_Rome.exe 的攝影機縮放特徵碼無法辨識；已保留主程式原狀。"
+],
+[
+"SvcLogRomanEndlessExeUnknown",
+"無法辨識無盡模式羅馬陣營的 EXE 特徵碼，已保留主程式原狀。"
+],
+[
+"SvcLogRomanEndlessMismatch",
+"警告：無盡模式羅馬陣營的 EXE 與 team.dat 狀態不一致；介面狀態以 EXE 為準。"
+],
+[
+"SvcLogLeaderScriptMigrated",
+"已移除會造成戰鬥閃退的舊版首領榮耀腳本，並以原版 ak_anfuehrer.bci 重建。"
+],
+[
+"SvcLogLangApplied",
+"已成功套用英文介面與地圖語言包。"
+],
+[
+"SvcLogLangRestored",
+"已將英文介面與地圖語言包還原為原版。"
+],
+[
+"SvcLogDgvInstalled",
+"已成功安裝與設定 dgVoodoo2 ({0}) 繪圖轉譯器。"
+],
+[
+"SvcLogDgvWidescreenWindow",
+"已啟用原生寬螢幕的 dgVoodoo2 視窗設定：視窗化時使用桌面尺寸的無邊框視窗，並保持畫面比例。"
+],
+[
+"SvcLogDgvWidescreenCustomConfig",
+"偵測到使用者自訂的 dgVoodoo.conf；已保留其他自訂值，並更新寬螢幕所需的縮放與無邊框桌面尺寸設定。"
+],
+[
+"SvcLogDgvNotManaged",
+"偵測到遊戲目錄中存在非本修改器部署的 dgVoodoo2 相關元件，為保護使用者資產將不主動進行刪除；若要乾淨卸載，請手動刪除遊戲目錄下的 DDraw.dll, D3D8.dll, dgVoodooCpl.exe。"
+],
+[
+"SvcLogDgvPreserved",
+"dgVoodoo2 託管設定檔 {0} 的雜湊值已變更，將予以保留不刪除。"
+],
+[
+"SvcLogDgvRemoved",
+"已成功移除 dgVoodoo2 所有受託管檔案。"
+],
+[
+"SvcLogArgmInstalled",
+"已安裝 argm-trace 執行期飛行紀錄器（version.dll 代理）與 argm_trace.ini。"
+],
+[
+"SvcLogArgmHookUnlocked",
+"已辨識遊戲組建（TimeDateStamp={0}），位址型 AI 事件追蹤已解鎖。啟動遊戲後可於遊戲目錄的 argm_trace.log 檢視記錄。"
+],
+[
+"SvcLogArgmHookLocked",
+"遊戲組建（TimeDateStamp={0}）與被逆向的版本（{1}）不符，僅安裝有簽章驗證的陣營 hook。若確認相同，可手動把 log 中的 TimeDateStamp 填入 argm_trace.ini 解鎖其餘追蹤。"
+],
+[
+"SvcLogArgmIniPreserved",
+"偵測到使用者自訂的 argm_trace.ini，予以保留不覆蓋。"
+],
+[
+"SvcLogArgmPreserved",
+"argm-trace 託管檔 {0} 的雜湊值已變更，將予以保留不刪除。"
+],
+[
+"SvcLogArgmNotManaged",
+"遊戲目錄中存在非本修改器部署的 version.dll，為保護使用者資產將不主動刪除；若要卸載請手動處理。"
+],
+[
+"SvcLogArgmRemoved",
+"已移除 argm-trace 受託管檔案（保留 argm_trace.log 擷取資料）。"
+],
+[
+"SvcLogArgmLegacyRemoved",
+"已移除先前部署的 version.dll 代理（改用 winmm.dll）。"
+],
+[
+"SvcLogRestoredFile",
+"已還原: {0}"
+],
+[
+"SvcLogRestoredPopulation",
+"已還原人口上限: {0}"
+],
+[
+"SvcLogDetectFailed",
+"[偵測] {0} 狀態偵測失敗，該群組選項將顯示為未勾選: {1}"
+],
+[
+"SvcErrArgmDllConflict",
+"遊戲目錄已存在非本工具託管的 version.dll：{0}。為避免覆蓋其它程式（如其他包裝器），已中止安裝遊戲運作記錄。請先手動移除或備份該檔案後再重試。"
+],
+[
+"SvcLogBackupLoadedEmbedded",
+"已載入內嵌 Backup.zip 備份資料。"
+],
+[
+"SvcLogBackupLoadedLocal",
+"已載入程式目錄中的 Backup.zip 備份資料。"
+],
+[
+"SvcLogBackupMissing",
+"找不到內嵌或本機 Backup.zip；請選擇合法的遊戲安裝目錄，程式會從該目錄建立本機記憶體備份。"
+],
+[
+"SvcLogEparaHealed",
+"已使用修改器內建乾淨預設值修復記憶體備份項目: SYSTEM/cl_epara.ini"
+],
+[
+"SvcLogEparaHealFailed",
+"修復記憶體備份項目 SYSTEM/cl_epara.ini 失敗: {0}"
+],
+[
+"SvcLogEparaBuildFailed",
+"以內建預設值建立 SYSTEM/cl_epara.ini 備份失敗: {0}"
+],
+[
+"SvcLogAutoHealed",
+"已從遊戲目錄自動修復缺少之記憶體備份項目: {0}"
+],
+[
+"SvcLogAutoHealFailed",
+"自動修復記憶體備份項目 {0} 失敗: {1}"
+],
+[
+"SvcLogTeamDatHealed",
+"已從遊戲目錄自動修復地圖團隊備份項目 (team.dat)。"
+],
+[
+"SvcLogTeamDatHealFailed",
+"自動修復地圖 team.dat 備份失敗: {0}"
+],
+[
+"SvcLogBackupIncomplete",
+"備份來源缺少必要檔案，修改與還原功能可能無法安全執行:"
+],
+[
+"SvcLogBackupFromGameDir",
+"已成功從指定遊戲目錄建立乾淨記憶體備份。"
+]
+],
+"EN": [
+[
+"GamePathLabel",
+"Game Path:"
+],
+[
+"BrowseButton",
+"Browse..."
+],
+[
+"NavSystem",
+"Main Console"
+],
+[
+"NavExperimental",
+"Experimental Features"
+],
+[
+"NavDefaultStats",
+"Custom Unit Stats"
+],
+[
+"NavCurrentStats",
+"Current Unit Stats"
+],
+[
+"MainTitle",
+"AGAINST ROME MODIFIER PRO"
+],
+[
+"SystemHeading",
+"Modifier Control Center"
+],
+[
+"SystemSubtitle",
+"Choose the features to enable, verify the game path, then apply the changes."
+],
+[
+"ExperimentalHeading",
+"Experimental Control Center"
+],
+[
+"ExperimentalSubtitle",
+"Features currently in testing. Promote to Main Control Center once validated."
+],
+[
+"ExperimentalCardTitle",
+"Experimental Options"
+],
+[
+"VerifiedTitle",
+"Verified Features (opt-in)"
+],
+[
+"VerifiedTitleTip",
+"Features here are confirmed working, but Enable All never turns them on — enable them manually."
+],
+[
+"NumericTitle",
+"System & Compatibility Settings"
+],
+[
+"MaxPopulation",
+"Maximum Population Limit (1600)"
+],
+[
+"RomanEndless",
+"Play as Romans in Endless Mode"
+],
+[
+"RomanReinforcementGarrison",
+"Hand Over All Roman Reinforcements"
+],
+[
+"VillageGarrisonQuota3x",
+"Village Garrison Quota Multiplier (Experimental)"
+],
+[
+"FastCiviProduction",
+"Fastest Villager Production (10x)"
+],
+[
+"FocusLoss",
+"Run in Background (No Auto-Pause)"
+],
+[
+"GameSpeedLabel",
+"Overall Game Speed (Adjustable Multiplier)"
+],
+[
+"ToEng",
+"Force English Language"
+],
+[
+"VillagerTitle",
+"Villagers & Convenience"
+],
+[
+"SpellTitle",
+"Spells & Priests"
+],
+[
+"GeneralSkills",
+"5x General Special Skills (Experimental)"
+],
+[
+"LeaderGlory",
+"Leader Glory & Morale Aura Buff (Experimental)"
+],
+[
+"EnableAll",
+"Enable All"
+],
+[
+"DisableAll",
+"Disable All"
+],
+[
+"CombatTitle",
+"Combat & Unit Enhancements"
+],
+[
+"BuildTitle",
+"Build, Economy & Population"
+],
+[
+"FreeProd",
+"Free Construction, Repair & Unit Production"
+],
+[
+"FreeUpgrade",
+"Free Formations, Research & Upgrades"
+],
+[
+"NoSpellCost",
+"No Spell Cost for Priests & Druids"
+],
+[
+"NoSpellAltar",
+"No Spell Altar Requirements"
+],
+[
+"SpellDamage5x",
+"5x Spell Damage"
+],
+[
+"SpellHealing10x",
+"10x Healing Spell (Experimental)"
+],
+[
+"SpellResurrection",
+"Enhanced Resurrection (Experimental)"
+],
+[
+"InfiniteMorale",
+"Infinite Morale"
+],
+[
+"NoRunHpLoss",
+"No HP Loss When Running"
+],
+[
+"HousingCapacity20x",
+"20x Capacity for All Population Buildings"
+],
+[
+"StorageCapacity10x",
+"10x Storage Capacity for Town Halls & Warehouses"
+],
+[
+"HqHp10x",
+"10x HP for Town Halls"
+],
+[
+"FastBuildUpgradeRepair",
+"10x Faster Building Construction, Upgrade & Repair"
+],
+[
+"FoodHealing10x",
+"10x Idle HP Regeneration"
+],
+[
+"CiviProduce20",
+"Residential Tent: +20 Civilians Per Click"
+],
+[
+"UnitRecruit20",
+"Recruit Panel: Fill to 20 Per Click"
+],
+[
+"IdleSelect999",
+"Select Idle Villagers: Up to 999"
+],
+[
+"CorpseRetention",
+"Increase Corpse Retention (Experimental)"
+],
+[
+"AiCardTitle",
+"Endless Mode (AI Ultimate)"
+],
+[
+"AiM1",
+"Reinf. Size (20/unit)"
+],
+[
+"AiCore",
+"Endless Respawn Core"
+],
+[
+"AiM5",
+"AI Starting Resources"
+],
+[
+"DgVoodoo",
+"Enable dgVoodoo2 Wrapper"
+],
+[
+"ArgmTrace",
+"Enable Gameplay Trace Logger (Debug) (Experimental)"
+],
+[
+"VillageBuildRange",
+"Village Build / Red-Frame Range (Entire Map)"
+],
+[
+"GamePath",
+"Game Path:"
+],
+[
+"Browse",
+"Browse..."
+],
+[
+"LoadCurrent",
+"Load Current"
+],
+[
+"Restore",
+"Restore Original"
+],
+[
+"Apply",
+"Apply Changes"
+],
+[
+"StartGame",
+"Launch Game"
+],
+[
+"RestoreAll",
+"Restore All"
+],
+[
+"RestoreStats",
+"Restore Stats Only"
+],
+[
+"RestoreCompat",
+"Restore Compatibility Only"
+],
+[
+"RestoreLang",
+"Restore Language Only"
+],
+[
+"DefaultStatsTitle",
+"Custom Unit Stats Comparison (No Custom Buffs)"
+],
+[
+"EnableBalance",
+"Enable Custom Unit Attribute Balance & Faction Traits (Experimental)"
+],
+[
+"TroopTemplateLabel",
+"Template:"
+],
+[
+"TroopTemplateSelect",
+"(Select Template)"
+],
+[
+"TroopTemplateBalanced",
+"Balanced Base Stats"
+],
+[
+"BtnTroopPreset",
+"Edit Troop File"
+],
+[
+"TroopPresetDefault",
+"Stats File: Default Template"
+],
+[
+"TroopPresetManual",
+"Stats File: Custom Config (Manual)"
+],
+[
+"TroopPresetFile",
+"Stats File: {0}"
+],
+[
+"TroopPresetLoaded",
+"Stats File: Loaded from Preset ({0})"
+],
+[
+"CurrentStatsTitle",
+"Current Unit Stats (Original vs. Current)"
+],
+[
+"Refresh",
+"Refresh"
+],
+[
+"LanguageLabel",
+"Language"
+],
+[
+"LangZhButton",
+"繁體中文"
+],
+[
+"LangEnButton",
+"English"
+],
+[
+"HeaderName",
+"Unit Name"
+],
+[
+"HeaderIcon",
+"Icon"
+],
+[
+"HeaderType",
+"Type"
+],
+[
+"HeaderStyle",
+"Category"
+],
+[
+"HeaderHp",
+"HP"
+],
+[
+"HeaderMeleeDmg",
+"Melee Dmg"
+],
+[
+"HeaderRangedDmg",
+"Ranged Dmg"
+],
+[
+"HeaderMeleeRelt",
+"Melee Cooldown"
+],
+[
+"HeaderRangedRelt",
+"Ranged Cooldown"
+],
+[
+"HeaderVw",
+"Defense"
+],
+[
+"HeaderAw",
+"Combat Power"
+],
+[
+"HeaderSpeed",
+"Speed"
+],
+[
+"HeaderSight",
+"Sight"
+],
+[
+"HeaderRange",
+"Range/Skill Dist"
+],
+[
+"HeaderSpellRadius",
+"Spell Radius"
+],
+[
+"HeaderTier",
+"Tier"
+],
+[
+"HeaderHpComp",
+"HP Comparison"
+],
+[
+"HeaderMeleeDmgComp",
+"Melee Dmg Comparison"
+],
+[
+"HeaderRangedDmgComp",
+"Ranged Dmg Comparison"
+],
+[
+"HeaderMeleeReltComp",
+"Melee Cooldown Comp"
+],
+[
+"HeaderRangedReltComp",
+"Ranged Cooldown Comp"
+],
+[
+"HeaderVwComp",
+"Defense Comparison"
+],
+[
+"HeaderAwComp",
+"Combat Comparison"
+],
+[
+"HeaderSpeedComp",
+"Speed Comparison"
+],
+[
+"HeaderSightComp",
+"Sight Comparison"
+],
+[
+"HeaderRangeComp",
+"Range Comparison"
+],
+[
+"HeaderSpellRadiusComp",
+"Spell Radius Comp"
+],
+[
+"HeaderFolder",
+"Folder"
+],
+[
+"HeaderSaveTitle",
+"Save Title"
+],
+[
+"HeaderLevel",
+"Orig Level"
+],
+[
+"HeaderTime",
+"Save Time"
+],
+[
+"HeaderBackupFile",
+"Backup File"
+],
+[
+"HeaderBackupTime",
+"Backup Time"
+],
+[
+"HeaderOrigFolder",
+"Orig Folder"
+],
+[
+"TabRoman",
+" Roman "
+],
+[
+"TabTeuton",
+" Teuton "
+],
+[
+"TabCelt",
+" Celt "
+],
+[
+"TabHun",
+" Hun "
+],
+[
+"TitlePathError",
+"Path Error"
+],
+[
+"TitleConfirm",
+"Confirm Action"
+],
+[
+"TitleSuccess",
+"Success"
+],
+[
+"TitleError",
+"Error"
+],
+[
+"TitleWarning",
+"Confirm Overwrite"
+],
+[
+"TitleTips",
+"Tips"
+],
+[
+"LogConstructCompleted",
+"Modifier form constructed. Loading data..."
+],
+[
+"LogLoadIconFailed",
+"Failed to load unit icon: "
+],
+[
+"LogDefaultStatsLoaded",
+"Custom unit stats loaded. Total {0} records."
+],
+[
+"LogDefaultStatsLoadError",
+"Error loading custom unit stats: "
+],
+[
+"LogBalanceToggled",
+"Custom unit attribute balance & faction traits {0}."
+],
+[
+"LogReadCurrent",
+"Reading current settings..."
+],
+[
+"LogReadCurrentDone",
+"Current settings read. Total {0} records for comparison."
+],
+[
+"LogPresetImportError",
+"Failed to read current settings: "
+],
+[
+"LogBrowseTitle",
+"Please select the Against Rome installation folder"
+],
+[
+"MsgSelectGameDir",
+"Please set the correct game path first."
+],
+[
+"MsgWrongGameDir",
+"The selected directory does not contain Against_Rome.exe. Please select the correct path."
+],
+[
+"MsgConfirmApply",
+"Are you sure you want to apply all changes?\nThis will overwrite game files."
+],
+[
+"MsgApplySuccess",
+"Changes successfully applied!"
+],
+[
+"MsgApplyFailed",
+"Failed to apply changes: "
+],
+[
+"MsgRestoreAllSuccess",
+"All original settings restored successfully!"
+],
+[
+"MsgRestoreStatsSuccess",
+"Unit stats restored successfully!"
+],
+[
+"MsgRestoreCompatSuccess",
+"Compatibility settings restored successfully!"
+],
+[
+"MsgRestoreLangSuccess",
+"Language settings restored successfully!"
+],
+[
+"MsgRestoreFailed",
+"Failed to restore: "
+],
+[
+"MsgExeNotFound",
+"Against_Rome.exe not found in game directory."
+],
+[
+"MsgLaunchFailed",
+"Failed to launch game: "
+],
+[
+"LogStartApply",
+"Applying changes..."
+],
+[
+"LogApplyAllSuccess",
+"All changes applied successfully!"
+],
+[
+"LogStartRestoreAll",
+"Restoring all original settings..."
+],
+[
+"LogRestoreAllDone",
+"All original settings successfully restored."
+],
+[
+"LogStartRestoreStats",
+"Restoring unit stats to original..."
+],
+[
+"LogRestoreStatsDone",
+"Unit stats successfully restored."
+],
+[
+"LogStartRestoreCompat",
+"Restoring compatibility to original..."
+],
+[
+"LogRestoreCompatDone",
+"Compatibility successfully restored."
+],
+[
+"LogStartRestoreLang",
+"Restoring language pack to original..."
+],
+[
+"LogRestoreLangDone",
+"Language successfully restored."
+],
+[
+"LogGameStarted",
+"Game successfully launched."
+],
+[
+"LogGamePathNotSetIcon",
+"Game path not set or invalid. Cannot load unit icons."
+],
+[
+"LogGuiDatNotFound",
+"gui.dat not found. Cannot load unit icons."
+],
+[
+"LogIconIniNotFound",
+"icon.ini not found in backup memory. Cannot load unit icons."
+],
+[
+"LogObjdefNotFound",
+"objdef.dau not found in backup memory. Cannot load custom unit stats."
+],
+[
+"LogNoObjdefForRead",
+"No objdef.dau file found to read."
+],
+[
+"LogIconsLoaded",
+"Loaded {0} unit icons."
+],
+[
+"LogStartupMigrationFailed",
+"Legacy script safe migration failed: "
+],
+[
+"LogSetGamePathFirst",
+"Set the game path in the top-right corner first."
+],
+[
+"LogSpellRadiusReadFailed",
+"Failed to read the spell radius from cl_script.ini; showing the original radius: "
+],
+[
+"LogCustomTroopStatsApplied",
+"Custom unit stats applied."
+],
+[
+"LogEnsureBackupFailed",
+"Failed to load or create the game backup: "
+],
+[
+"LogCheckpointApply",
+"Created a restore point before applying."
+],
+[
+"LogCheckpointRestoreAll",
+"Created a restore point before restoring."
+],
+[
+"LogCheckpointRestoreStats",
+"Created a restore point for the stats files."
+],
+[
+"LogCheckpointRestoreCompat",
+"Created a restore point for the compatibility files."
+],
+[
+"LogCheckpointRestoreLang",
+"Created a restore point for the language files."
+],
+[
+"LogRollbackStartedApply",
+"Apply failed; rolling back the modified files."
+],
+[
+"LogRollbackDoneApply",
+"File rollback completed."
+],
+[
+"LogRollbackStartedRestore",
+"Restore failed; rolling back the changes."
+],
+[
+"LogRollbackDoneRestore",
+"Rollback after the failed restore completed."
+],
+[
+"LogReloadAfterApplyFailed",
+"Reloading the current state after a successful apply failed: "
+],
+[
+"LogReloadAfterRestoreFailed",
+"Reloading the current state after a successful restore failed: "
+],
+[
+"SaveDetailGameSave",
+"Save Type: Game Save\n\nFolder: {0}\n\nSave Title: {1}\n\nOriginal Level: {2}\n\nSave Time: {3}"
+],
+[
+"SaveDetailBackup",
+"Save Type: Backup File\n\nBackup File: {0}\n\nOriginal Folder: {1}\n\nSave Title: {2}\n\nOriginal Level: {3}\n\nBackup Time: {4}"
+],
+[
+"MsgSelectBackup",
+"Please select a backup to restore first."
+],
+[
+"MsgGamePathNotSet",
+"Game path not set first. Cannot restore."
+],
+[
+"MsgConfirmOverwriteSave",
+"The target save folder [{0}] already exists. Overwrite?"
+],
+[
+"MsgRestoreBackupSuccess",
+"Backup restored successfully!"
+],
+[
+"MsgRestoreBackupFailed",
+"Failed to restore backup: "
+],
+[
+"MsgInvalidSaveDir",
+"Invalid save directory. Operation cancelled."
+],
+[
+"MsgConfirmDeleteSave",
+"Are you sure you want to permanently delete the save [{0}]? This action cannot be undone!"
+],
+[
+"MsgDeleteSaveFailed",
+"Failed to delete save: "
+],
+[
+"MsgConfirmDeleteBackup",
+"Are you sure you want to permanently delete the backup file [{0}]?"
+],
+[
+"MsgDeleteBackupFailed",
+"Failed to delete backup: "
+],
+[
+"MsgSelectSaveToBackup",
+"Please select a save to backup first."
+],
+[
+"MsgNoOrigFolderToBackup",
+"Cannot find the original folder for this save."
+],
+[
+"MsgBackupSaveSuccess",
+"Save backed up successfully!"
+],
+[
+"MsgBackupSaveFailed",
+"Failed to backup save: "
+],
+[
+"BtnRepairEndlessAi",
+"Repair Endless AI"
+],
+[
+"MsgSelectSaveToRepairAi",
+"Please select an endless-mode save to repair."
+],
+[
+"MsgConfirmRepairEndlessAi",
+"A full backup will be created before updating the endless AI scheduler and reinforcement rules embedded in this save. Existing accumulated pack horses will not be removed automatically. Continue?"
+],
+[
+"MsgRepairEndlessAiSuccess",
+"The endless AI scheduler and reinforcement rules were repaired and a pre-repair backup was created. Existing pack horses were not removed; if they still block reinforcements, restore a backup from before the pileup or start a new endless game."
+],
+[
+"MsgRepairEndlessAiAlready",
+"This save already contains the current endless AI scheduler and reinforcement repairs."
+],
+[
+"MsgRepairEndlessAiFailed",
+"Failed to repair endless AI: "
+],
+[
+"Unparsable",
+"Unparsable"
+],
+[
+"Unknown",
+"Unknown"
+],
+[
+"FocusLossTip",
+"Prevents the game from automatically pausing when the game window loses focus (runs in background)."
+],
+[
+"ToEngTip",
+"Forces the game interface and core text to English to avoid encoding issues."
+],
+[
+"DgVoodooTip",
+"Installs and enables dgVoodoo2 to fix graphics lag, low FPS, or black screens on Windows 10/11."
+],
+[
+"ArgmTraceTip",
+"Installs a runtime flight-recorder (a version.dll proxy) that logs what the computer AI actually does (reinforcement spawns, settlement arrivals, team respawns) to argm_trace.log in the game folder. Log-only, never edits game files; it auto-detects the game build to unlock the matching trace hooks. Use it to diagnose endless-mode AI reinforcement issues, then hand the log over for analysis. Coexists with dgVoodoo2."
+],
+[
+"GameSpeedTip",
+"Speedhack-style scaling of the game's master clock so movement, production, combat and AI all run at the selected multiplier (2x-10x). Patches Against_Rome.exe and is fully reversible."
+],
+[
+"GeneralSkillsTip",
+"Greatly increases all passive special ability values of generals and chiefs by 5x."
+],
+[
+"LeaderGloryTip",
+"Multiplies each faction chief's glory-level attack/defense/damage growth and morale aura by 5x."
+],
+[
+"AllUnitsEntireMapVision",
+"Entire-Map Vision for All Units"
+],
+[
+"AllUnitsEntireMapVisionTip",
+"Sets sight (Sirad) to 30000 for all known combat units, leaders, priests, siege engines, villagers, and packhorses across every faction. When combined with 3x ranged range or entire-map priest casting, this feature owns Sirad last without cancelling the 3x weapon range; the entire-map vision effect is runtime-verified in game."
+],
+[
+"LogAllUnitsEntireMapVisionToggled",
+"Entire-Map Vision for All Units {0}."
+],
+[
+"NativeWidescreen1920x1080",
+"Centered High Resolution (4:3)"
+],
+[
+"NativeWidescreen1920x1080Tip",
+"Restores the runtime-rejected native 1920x1080 EXE experiment and keeps supported 1600x1200. dgVoodoo centers fullscreen through fake fullscreen; windowed mode keeps the normal stock window size and is centered instead of being forced to desktop size. It is not stretched and does not expand the world to 16:9."
+],
+[
+"CameraZoomOut1",
+"Camera Zoom Out 0.5"
+],
+[
+"CameraZoomOut1Tip",
+"Raises the native camera minimum from 0 to 0.5 for a milder pullback while integer information/LOD consumers retain the stock zoom-0 scale. This revises the +1 build after runtime testing made units and information too small. Selection, edge scrolling, fog, map bounds, save/load, and mission compatibility still require in-game verification."
+],
+[
+"RangedRange3x",
+"3x Range for Ranged Units"
+],
+[
+"RangedRange3xTip",
+"Triples the attack and firing range of all ranged infantry, ranged cavalry, and siege weapons. Includes a built-in accuracy fix: the projectile impact damage radius is doubled (near misses now hit) and the random lead-aim scatter against moving targets is removed, so shots still connect at the longer range. Applies to all factions."
+],
+[
+"LogRangedRange3xToggled",
+"3x Range for Ranged Units {0}."
+],
+[
+"UnitMovementSpeed2x",
+"2x Movement Speed for Units"
+],
+[
+"UnitMovementSpeed2xTip",
+"Doubles the movement speed of all combat units (including soldiers, leaders, priests). (Excludes villagers and packhorses)"
+],
+[
+"LogUnitMovementSpeed2xToggled",
+"2x Movement Speed for Units {0}."
+],
+[
+"VillagerMovementSpeed5x",
+"5x Movement Speed for Villagers"
+],
+[
+"VillagerMovementSpeed5xTip",
+"Multiplies the movement speed of civilian units (villagers, packhorses) by 5x."
+],
+[
+"LogVillagerMovementSpeed5xToggled",
+"5x Movement Speed for Villagers {0}."
+],
+[
+"SpellEntireMap",
+"Spell Casting Distance: Entire Map"
+],
+[
+"SpellEntireMapTip",
+"Raises priest spell and resurrection casting distance to the entire map; spell effect radius is unchanged."
+],
+[
+"LogSpellEntireMapToggled",
+"Spell Casting Distance: Entire Map {0}."
+],
+[
+"SpellRange3x",
+"3x Spell Effect Radius"
+],
+[
+"SpellRange3xTip",
+"Triples spell effect and hit radius from the original value; priest casting distance is unchanged."
+],
+[
+"LogSpellRange3xToggled",
+"3x Spell Effect Radius {0}."
+],
+[
+"ProjectileArcHeight",
+"2x Projectile Arc Height"
+],
+[
+"ProjectileArcHeightTip",
+"Raises projectile launch speed and gravity by 2x together: arrows, javelins and catapult stones fly 2x higher arcs that clear trees and buildings more easily, while landing point and flight time stay unchanged. Applies to all factions."
+],
+[
+"RomanEndlessTip",
+"Forces the player faction to Roman on all five endless maps. All three flags in the faction dialog will enter as Romans and may show no highlighted selection; the faction switch in Options can still be used manually to return to a barbarian faction. By original design Romans have no priest or glory skill tree; affects new games only."
+],
+[
+"RomanReinforcementGarrisonTip",
+"Releases every Roman reinforcement object from retreat mode and hands soldiers, pack horses, and civilians to the village instead of splitting them by unit type; this complete handoff is verified in a fresh endless game. The reinforcement unit threshold is raised with the handoff patch so retained units do not stop later waves prematurely. Affects new endless games only; use Repair Endless AI in Save Manager for an existing save."
+],
+[
+"VillageGarrisonQuota3xTip",
+"Experimental: multiplies each of the four village-AI squad quotas dynamically derived from OD_IPOS01-04 by the selected factor (x2/x3/x5/x10), preserving the original unit mix and zero values. This raises squad count only; members per squad remain controlled by Reinforcement Size. Higher multipliers increase civilian, population, performance, and save-size load; test in a fresh endless game."
+],
+[
+"FreeProdTip",
+"Makes all construction, building repairs, and unit production free (0 resource cost)."
+],
+[
+"FreeUpgradeTip",
+"Makes all formations, research, and attribute upgrades free (0 resource cost)."
+],
+[
+"NoSpellCostTip",
+"Priests and Druids consume no mana (0 MP cost) when casting spells."
+],
+[
+"InfiniteMoraleTip",
+"Locks unit morale at maximum, preventing retreat and keeping combat effectiveness."
+],
+[
+"NoRunHpLossTip",
+"Removes the HP depletion penalty when military units or civilians are running (Force Marching) or have zero morale."
+],
+[
+"BalanceTip",
+"Enables custom attribute balancing and faction traits for units."
+],
+[
+"NoSpellAltarTip",
+"Removes the requirement of having multiple altars to cast advanced spells."
+],
+[
+"SpellDamage5xTip",
+"Increases active combat and damage spell values by 5x for all factions."
+],
+[
+"SpellHealing10xTip",
+"Multiplies Kelt priest healing spell (Spell1) effects by 10x for rapid recovery."
+],
+[
+"SpellResurrectionTip",
+"Celtic resurrection restores units with 100% HP & morale, spawning Spearmen (male) or Heavy Infantry (female)."
+],
+[
+"MaxPopulationTip",
+"Increases the maximum game population limit to 1600."
+],
+[
+"HousingCapacity20xTip",
+"Increases the population capacity provided by tents and houses by 20x."
+],
+[
+"StorageCapacity10xTip",
+"Increases the resource storage capacity of Town Halls and Warehouses by 10x."
+],
+[
+"HqHp10xTip",
+"Increases the hit points (HP) of all Town Halls by 10x, significantly boosting base defense."
+],
+[
+"FastCiviProductionTip",
+"Increases the production or conversion speed of villagers by 10x."
+],
+[
+"FastBuildUpgradeRepairTip",
+"Increases building construction, upgrade, and repair speed by 10x."
+],
+[
+"FoodHealing10xTip",
+"Raises each automatic idle-regeneration tick from 1 HP to 10 HP while keeping the original interval. Decompilation confirms this path does not read or consume food resources."
+],
+[
+"CiviProduce20Tip",
+"Each click on the male/female production button in the residential tent panel now queues 20 civilians instead of 1 (clamped to remaining housing capacity — pair with 20x Housing Capacity). This is a player-only executable patch and does not affect AI villages."
+],
+[
+"UnitRecruit20Tip",
+"In the villager-to-unit recruit panel, clicking a unit now sets its selected count straight to the cap of 20 instead of +1, so you don't click one at a time. Protected by the game's existing cap so it never exceeds 20; player-only, does not affect AI. Actual creation still needs enough free villagers."
+],
+[
+"IdleSelect999Tip",
+"The IGM \"select idle villagers\" button originally selects at most 40 villagers per click; this raises it to 999 (the structural cap of the engine's master selection list; 1600 would require relocating fixed-capacity global arrays, which is beyond safe patching). The search chain also scans at most 1000 entries, so one click adds up to 999 idle villagers."
+],
+[
+"CorpseRetentionTip",
+"Lowers the empty object-slot reserve that triggers oldest-dead-object eviction from 500 to 50, allowing roughly 450 more objects to remain on the battlefield. This does not disable cleanup: the fixed 14,000-slot pool still needs room for new units, projectiles, and save processing. Long-session performance and stability still require in-game verification."
+],
+[
+"VillageBuildRangeTip",
+"Sets the village construction/red-frame boundary radius to a very large value, allowing construction anywhere on the map."
+],
+[
+"AiM1Tip",
+"Endless mode: raises AI unit size from 6 to 20 members across all three paths (reinforcement units, reinforcement rebuild, and village day-to-day civilian conversion)."
+],
+[
+"AiCoreTip",
+"Endless-mode core: atomically combines accelerated reinforcement, defeat cleanup, and settlement respawn, including the save/load timer recovery guard. The three lifecycle stages are always applied or restored together."
+],
+[
+"AiM5Tip",
+"Endless mode: AI settlements start with main-hall stockpiles to speed up their economy and army. Affects AI settlements only, never the player."
+],
+[
+"SvcLogPreApplyRestore",
+"Restoring affected files to a clean state before applying, to clear leftover modifications..."
+],
+[
+"SvcLogFocusApplied",
+"Applied the no-pause-on-focus-loss patch."
+],
+[
+"SvcLogFocusRestored",
+"Restored the original pause-on-focus-loss behavior."
+],
+[
+"SvcLogVillageLegacyRestoreUnknown",
+"Cannot revert the legacy village build-range patch: executable signature mismatch."
+],
+[
+"SvcLogVillageLegacyRemoved",
+"Removed the legacy village build-range patch."
+],
+[
+"SvcLogVillageApplyUnknown",
+"Cannot apply the village build-range patch: executable signature mismatch."
+],
+[
+"SvcLogVillageApplied",
+"Applied the expanded village build-range patch."
+],
+[
+"SvcLogVillageRestored",
+"Restored the original village build-range."
+],
+[
+"SvcLogAltarApplied",
+"Applied the no-altar-requirement spell patch."
+],
+[
+"SvcLogAltarRestored",
+"Restored the original spell altar requirement."
+],
+[
+"SvcLogGameSpeedUnknown",
+"Unknown game clock constants detected; skipped the game-speed patch to avoid overwriting an unknown build."
+],
+[
+"SvcLogGameSpeedApplied",
+"Overall game speed: {0}x acceleration."
+],
+[
+"SvcLogGameSpeedOriginal",
+"Overall game speed: original (no acceleration)."
+],
+[
+"SvcLogTeamDatApplied",
+"Set the population cap to {0} in every map's team.dat ({1} files processed)."
+],
+[
+"SvcLogTeamDatRestored",
+"Restored the original population cap in every map's team.dat."
+],
+[
+"SvcLogTeamDatRoman",
+"Set the player faction to Roman in {0} endless maps (team.dat)."
+],
+[
+"SvcLogTeamDatRomanRestored",
+"Restored the original player faction in endless maps."
+],
+[
+"SvcLogRomanEndlessExeApplied",
+"Forced the endless-mode faction selector to Romans."
+],
+[
+"SvcLogRomanEndlessExeRestored",
+"Restored the original endless-mode faction selector."
+],
+[
+"SvcLogCiviProduce20Applied",
+"Set the residential tent production button to +20 per click."
+],
+[
+"SvcLogCiviProduce20Restored",
+"Restored the residential tent production button to +1 per click."
+],
+[
+"SvcLogUnitRecruit20Applied",
+"Set the recruit panel to fill to 20 per click."
+],
+[
+"SvcLogUnitRecruit20Restored",
+"Restored the recruit panel to +1 per click."
+],
+[
+"SvcLogIdleSelect999Applied",
+"Raised the idle-villager selection cap from 40 to 999."
+],
+[
+"SvcLogIdleSelect999Restored",
+"Restored the idle-villager selection cap to 40."
+],
+[
+"SvcLogIdleSelect999Unknown",
+"The idle-villager selection EXE signature is unknown; the executable was left unchanged."
+],
+[
+"SvcLogCorpseRetentionApplied",
+"Lowered the corpse-eviction object-pool reserve from 500 to 50."
+],
+[
+"SvcLogCorpseRetentionRestored",
+"Restored the corpse-eviction object-pool reserve to 500."
+],
+[
+"SvcLogCorpseRetentionUnknown",
+"The corpse-retention EXE signature is unknown; the executable was left unchanged."
+],
+[
+"SvcLogRetiredSpecialArrowsRestored",
+"Removed the retired special-arrow experiment and restored normal arrows."
+],
+[
+"SvcLogNativeWidescreenApplied",
+"Replaced native 1600x1200 32-bit mode 0x22 with 1920x1080; the next game launch will force this mode."
+],
+[
+"SvcLogNativeWidescreenRestored",
+"Restored the native 1600x1200 32-bit display mode."
+],
+[
+"SvcLogNativeWidescreenUnknown",
+"The native-widescreen EXE signatures are unknown; the executable was left unchanged."
+],
+[
+"SvcLogCameraZoomOutApplied",
+"Applied the experimental Camera Zoom Out 0.5 patch."
+],
+[
+"SvcLogCameraZoomOutRestored",
+"Restored the stock camera zoom range."
+],
+[
+"SvcLogCameraZoomOutUnknown",
+"The camera-zoom EXE signatures are unknown; the executable was left unchanged."
+],
+[
+"SvcLogRomanEndlessExeUnknown",
+"The Roman endless-mode EXE signature is unknown; the executable was left unchanged."
+],
+[
+"SvcLogRomanEndlessMismatch",
+"Warning: Roman endless-mode EXE and team.dat states disagree; the UI follows the EXE state."
+],
+[
+"SvcLogLeaderScriptMigrated",
+"Removed the legacy leader-glory script that caused combat crashes and rebuilt ak_anfuehrer.bci from the original."
+],
+[
+"SvcLogLangApplied",
+"Applied the English UI and map language pack."
+],
+[
+"SvcLogLangRestored",
+"Restored the original language files."
+],
+[
+"SvcLogDgvInstalled",
+"Installed and configured the dgVoodoo2 ({0}) graphics wrapper."
+],
+[
+"SvcLogDgvWidescreenWindow",
+"Enabled the native-widescreen dgVoodoo2 window profile: windowed mode uses a borderless desktop-sized window while preserving aspect ratio."
+],
+[
+"SvcLogDgvWidescreenCustomConfig",
+"A customized dgVoodoo.conf was detected. Other custom values were preserved while the required scaling and borderless desktop-sized window settings were updated."
+],
+[
+"SvcLogDgvNotManaged",
+"Detected dgVoodoo2 components in the game folder that were not deployed by this modifier; they will not be deleted to protect your files. For a clean uninstall, manually remove DDraw.dll, D3D8.dll and dgVoodooCpl.exe from the game folder."
+],
+[
+"SvcLogDgvPreserved",
+"The managed dgVoodoo2 file {0} has been modified; it will be kept, not deleted."
+],
+[
+"SvcLogDgvRemoved",
+"Removed all modifier-managed dgVoodoo2 files."
+],
+[
+"SvcLogArgmInstalled",
+"Installed the argm-trace runtime flight recorder (version.dll proxy) and argm_trace.ini."
+],
+[
+"SvcLogArgmHookUnlocked",
+"Game build recognized (TimeDateStamp={0}); address-based AI event hooks unlocked. After launching, read argm_trace.log in the game folder."
+],
+[
+"SvcLogArgmHookLocked",
+"Game build (TimeDateStamp={0}) does not match the analyzed build ({1}); only the signature-verified faction hook was installed. If they are the same build, put the TimeDateStamp from the log into argm_trace.ini to unlock the rest."
+],
+[
+"SvcLogArgmIniPreserved",
+"A customized argm_trace.ini was detected; it was preserved and not overwritten."
+],
+[
+"SvcLogArgmPreserved",
+"The managed argm-trace file {0} has been modified; it will be kept, not deleted."
+],
+[
+"SvcLogArgmNotManaged",
+"A version.dll not deployed by this modifier exists in the game folder; it will not be deleted to protect your files. Remove it manually to uninstall."
+],
+[
+"SvcLogArgmRemoved",
+"Removed modifier-managed argm-trace files (argm_trace.log capture data is kept)."
+],
+[
+"SvcLogArgmLegacyRemoved",
+"Removed the previously deployed version.dll proxy (superseded by winmm.dll)."
+],
+[
+"SvcLogRestoredFile",
+"Restored: {0}"
+],
+[
+"SvcLogRestoredPopulation",
+"Restored population cap: {0}"
+],
+[
+"SvcLogDetectFailed",
+"[Detect] Failed to detect {0} state; options in this group will show as unchecked: {1}"
+],
+[
+"SvcErrArgmDllConflict",
+"A version.dll not managed by this tool already exists in the game folder: {0}. Installation of the gameplay trace logger was aborted to avoid overwriting another program (e.g. a different wrapper). Remove or back up that file manually and retry."
+],
+[
+"SvcLogBackupLoadedEmbedded",
+"Loaded the embedded Backup.zip baseline."
+],
+[
+"SvcLogBackupLoadedLocal",
+"Loaded Backup.zip from the program folder."
+],
+[
+"SvcLogBackupMissing",
+"No embedded or local Backup.zip found; select a valid game folder and the modifier will build an in-memory baseline from it."
+],
+[
+"SvcLogEparaHealed",
+"Rebuilt the in-memory backup entry SYSTEM/cl_epara.ini from the modifier's built-in clean defaults."
+],
+[
+"SvcLogEparaHealFailed",
+"Failed to rebuild backup entry SYSTEM/cl_epara.ini: {0}"
+],
+[
+"SvcLogEparaBuildFailed",
+"Failed to build the SYSTEM/cl_epara.ini backup from built-in defaults: {0}"
+],
+[
+"SvcLogAutoHealed",
+"Auto-restored missing backup entry from the game folder: {0}"
+],
+[
+"SvcLogAutoHealFailed",
+"Failed to auto-restore backup entry {0}: {1}"
+],
+[
+"SvcLogTeamDatHealed",
+"Auto-restored map team.dat backup entries from the game folder."
+],
+[
+"SvcLogTeamDatHealFailed",
+"Failed to auto-restore map team.dat backups: {0}"
+],
+[
+"SvcLogBackupIncomplete",
+"The backup source is missing required files; apply/restore may not run safely:"
+],
+[
+"SvcLogBackupFromGameDir",
+"Built a clean in-memory baseline from the selected game folder."
+]
+],
+"EN_UNIT_NAMES": [
+[
+"FigRomAnf00_Anfuehrer",
+"Roman Leader"
+],
+[
+"FigRomInf00_Lanze_Schild",
+"Roman Light Infantry"
+],
+[
+"FigRomInf01_Schwert_Schild",
+"Roman Sword & Shieldman"
+],
+[
+"FigRomKav00_Schwert_Schild",
+"Roman Assault Cavalry"
+],
+[
+"FigRomSch00_Speer_Schild",
+"Roman Heavy Infantry"
+],
+[
+"FigRomSch01_Bogen",
+"Roman Archer"
+],
+[
+"FigGerAnf00_Anfuehrer",
+"Teuton Leader"
+],
+[
+"FigGerInf00_Hammer_Schild",
+"Teuton Mace & Shieldman"
+],
+[
+"FigGerInf01_Schwert",
+"Teuton Swordsman"
+],
+[
+"FigGerInf02_Zweihandaxt",
+"Teuton Two-Handed Axeman"
+],
+[
+"FigGerInf03_Doppelhammer",
+"Teuton Dual Hammerer"
+],
+[
+"FigGerKav00_Schwert_Schild",
+"Teuton Cavalry"
+],
+[
+"FigGerPri00_Priester",
+"Teuton Priest"
+],
+[
+"FigGerSch00_Speer",
+"Teuton Spearman"
+],
+[
+"FigGerSch01_Axt_Schild",
+"Teuton Ax & Shieldman"
+],
+[
+"FigKelAnf00_Anfuehrer",
+"Celt Leader"
+],
+[
+"FigKelInf00_Schwert",
+"Celt Swordsman"
+],
+[
+"FigKelInf01_Lanze",
+"Celt Spearman"
+],
+[
+"FigKelInf02_Doppelschwert",
+"Celt Heavy Infantry"
+],
+[
+"FigKelKav00_Lanze_Schild",
+"Celt Lancer"
+],
+[
+"FigKelPri00_Priester",
+"Celt Priest"
+],
+[
+"FigKelSch00_Bogen",
+"Celt Archer"
+],
+[
+"FigKelSch01_Schleuder",
+"Celt Slinger"
+],
+[
+"FigKelSch02_Schwere_Schleuder",
+"Celt Heavy Slinger"
+],
+[
+"FigHunAnf00_Anfuehrer",
+"Hun Leader"
+],
+[
+"FigHunInf00_Keule",
+"Hun Clubman"
+],
+[
+"FigHunInf01_Schwert_Schild",
+"Hun Sword & Shieldman"
+],
+[
+"FigHunKav00_Schwert_Schild",
+"Hun Light Cavalry"
+],
+[
+"FigHunKav01_Bogen",
+"Hun Archer Cavalry"
+],
+[
+"FigHunKav02_Lanze_Schild",
+"Hun Heavy Cavalry"
+],
+[
+"FigHunKav03_Geisterreiter",
+"Hun Ghost Warrior"
+],
+[
+"FigHunPri00_Priester",
+"Hun Priest"
+],
+[
+"FigHunSch00_Bogen",
+"Hun Archer"
+],
+[
+"FigGerArt00_Katapult",
+"Teuton Catapult"
+],
+[
+"FigGerArt00_Katapult_Aufbau",
+"Teuton Deployed Catapult"
+],
+[
+"FigRomArt00_Speerschleuder",
+"Roman Ballista"
+],
+[
+"FigRomArt00_Speerschleuder_Auf",
+"Roman Deployed Ballista"
+],
+[
+"FigRomArt01_Katapult",
+"Roman Catapult"
+],
+[
+"FigRomArt01_Katapult_Aufbau",
+"Roman Deployed Catapult"
+],
+[
+"FigKelArt00_Speerschleuder",
+"Celt Ballista"
+],
+[
+"FigKelArt00_Speerschleuder_A",
+"Celt Deployed Ballista"
+],
+[
+"FigKelArt01_Katapult",
+"Celt Catapult"
+],
+[
+"FigKelArt01_Katapult_Aufbau",
+"Celt Deployed Catapult"
+]
+],
+"ZH_UNIT_NAMES": [
+[
+"FigRomAnf00_Anfuehrer",
+"羅馬領袖"
+],
+[
+"FigRomInf00_Lanze_Schild",
+"羅馬輕裝步兵"
+],
+[
+"FigRomInf01_Schwert_Schild",
+"羅馬劍盾兵"
+],
+[
+"FigRomKav00_Schwert_Schild",
+"羅馬突擊騎兵"
+],
+[
+"FigRomSch00_Speer_Schild",
+"羅馬重裝步兵"
+],
+[
+"FigRomSch01_Bogen",
+"羅馬弓箭手"
+],
+[
+"FigGerAnf00_Anfuehrer",
+"條頓領袖"
+],
+[
+"FigGerInf00_Hammer_Schild",
+"條頓錘盾兵"
+],
+[
+"FigGerInf01_Schwert",
+"條頓劍士"
+],
+[
+"FigGerInf02_Zweihandaxt",
+"條頓雙手斧兵"
+],
+[
+"FigGerInf03_Doppelhammer",
+"條頓雙錘兵"
+],
+[
+"FigGerKav00_Schwert_Schild",
+"條頓騎兵"
+],
+[
+"FigGerPri00_Priester",
+"條頓祭司"
+],
+[
+"FigGerSch00_Speer",
+"條頓矛兵"
+],
+[
+"FigGerSch01_Axt_Schild",
+"條頓斧盾兵"
+],
+[
+"FigKelAnf00_Anfuehrer",
+"塞爾特領袖"
+],
+[
+"FigKelInf00_Schwert",
+"塞爾特劍士"
+],
+[
+"FigKelInf01_Lanze",
+"塞爾特槍兵"
+],
+[
+"FigKelInf02_Doppelschwert",
+"塞爾特重裝步兵"
+],
+[
+"FigKelKav00_Lanze_Schild",
+"塞爾特槍騎兵"
+],
+[
+"FigKelPri00_Priester",
+"塞爾特祭司"
+],
+[
+"FigKelSch00_Bogen",
+"塞爾特弓箭手"
+],
+[
+"FigKelSch01_Schleuder",
+"塞爾特投石兵"
+],
+[
+"FigKelSch02_Schwere_Schleuder",
+"塞爾特重裝投石兵"
+],
+[
+"FigHunAnf00_Anfuehrer",
+"匈奴領袖"
+],
+[
+"FigHunInf00_Keule",
+"匈奴棍棒兵"
+],
+[
+"FigHunInf01_Schwert_Schild",
+"匈奴劍盾兵"
+],
+[
+"FigHunKav00_Schwert_Schild",
+"匈奴輕裝騎兵"
+],
+[
+"FigHunKav01_Bogen",
+"匈奴弓騎兵"
+],
+[
+"FigHunKav02_Lanze_Schild",
+"匈奴重裝騎兵"
+],
+[
+"FigHunKav03_Geisterreiter",
+"匈奴幽靈武士"
+],
+[
+"FigHunPri00_Priester",
+"匈奴祭司"
+],
+[
+"FigHunSch00_Bogen",
+"匈奴弓箭手"
+],
+[
+"FigGerArt00_Katapult",
+"條頓投石機"
+],
+[
+"FigGerArt00_Katapult_Aufbau",
+"條頓投石機(架設)"
+],
+[
+"FigRomArt00_Speerschleuder",
+"羅馬弩車"
+],
+[
+"FigRomArt00_Speerschleuder_Auf",
+"羅馬弩車(架設)"
+],
+[
+"FigRomArt01_Katapult",
+"羅馬投石機"
+],
+[
+"FigRomArt01_Katapult_Aufbau",
+"羅馬投石機(架設)"
+],
+[
+"FigKelArt00_Speerschleuder",
+"塞爾特弩車"
+],
+[
+"FigKelArt00_Speerschleuder_A",
+"塞爾特弩車(架設)"
+],
+[
+"FigKelArt01_Katapult",
+"塞爾特投石機"
+],
+[
+"FigKelArt01_Katapult_Aufbau",
+"塞爾特投石機(架設)"
+]
+]
+}

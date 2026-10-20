@@ -538,41 +538,12 @@ fn crc_corruption_is_reported_and_processing_continues() {
     assert_eq!(r.other_bmps, 1);
 }
 
-/// Builds unchanged oracle sources into TEMP, without fixing the original
-/// csproj's unrelated NativeShadowCatalog dependencies or writing bin/obj there.
+/// Compares Rust output to the frozen C# oracle output (report.json + every PNG) committed under
+/// `tests/fixtures/csharp_oracle/{plain,mapped,edge}`; no .NET required.
 #[test]
-#[ignore = "requires .NET 8 SDK; run explicitly for C# differential verification"]
-fn unchanged_csharp_source_json_and_all_png_pixels_match() {
+fn frozen_csharp_json_and_all_png_pixels_match() {
     let t = Temp::new();
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
-    let oracle = t.join("oracle");
-    fs::create_dir(&oracle).unwrap();
-    let include = |path: &str| {
-        root.join(path)
-            .display()
-            .to_string()
-            .replace('&', "&amp;")
-            .replace('"', "&quot;")
-    };
-    let project = format!(
-        r#"<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net8.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><EnableDefaultCompileItems>false</EnableDefaultCompileItems></PropertyGroup><ItemGroup><Compile Include="{}"/><Compile Include="{}"/><Compile Include="{}"/></ItemGroup></Project>"#,
-        include("tools/re/shad-probe/Program.cs"),
-        include("tools/re/shad-probe/PngWriter.cs"),
-        include("src.MapEditor.Modules/NativeAssets/NativeShadowDocument.cs")
-    );
-    fs::write(oracle.join("oracle.csproj"), project).unwrap();
-    let result = Command::new("dotnet")
-        .arg("build")
-        .arg(oracle.join("oracle.csproj"))
-        .args(["--nologo", "-v:q"])
-        .output()
-        .unwrap();
-    assert!(
-        result.status.success(),
-        "{}\n{}",
-        String::from_utf8_lossy(&result.stdout),
-        String::from_utf8_lossy(&result.stderr)
-    );
+    let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/csharp_oracle");
     let input = t.join("input.zip");
     let mut mismatch = bmp24();
     put32(&mut mismatch, 34, 999);
@@ -617,13 +588,7 @@ fn unchanged_csharp_source_json_and_all_png_pixels_match() {
             )
             .unwrap();
         }
-        let cs = t.join(if extreme {
-            "cs-edge"
-        } else if mapped {
-            "cs-mapped"
-        } else {
-            "cs"
-        });
+        let cs = fixtures.join(if extreme { "edge" } else if mapped { "mapped" } else { "plain" });
         let rs = t.join(if extreme {
             "rs-edge"
         } else if mapped {
@@ -631,23 +596,6 @@ fn unchanged_csharp_source_json_and_all_png_pixels_match() {
         } else {
             "rs"
         });
-        let mut command = Command::new("dotnet");
-        command
-            .arg(oracle.join("bin/Debug/net8.0/oracle.dll"))
-            .arg(&input)
-            .arg(&cs)
-            .arg(&obj);
-        if mapped {
-            command.arg(&names);
-        }
-        let result = command.output().unwrap();
-        assert_eq!(
-            result.status.code(),
-            Some(1),
-            "{}\n{}",
-            String::from_utf8_lossy(&result.stdout),
-            String::from_utf8_lossy(&result.stderr)
-        );
         run(&input, &rs, Some(&obj), mapped.then_some(names.as_path())).unwrap();
         let cs_report: Value =
             serde_json::from_slice(&fs::read(cs.join("report.json")).unwrap()).unwrap();

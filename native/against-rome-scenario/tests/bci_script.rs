@@ -1,9 +1,10 @@
-//! BCI word-pattern and script-file semantics. Always-on tests need no .NET;
-//! `csharp_bci_pattern_and_pfil_differential` replays the shipped `BciPattern`/`GameLZSS` (dotnet required).
+//! BCI word-pattern and script-file semantics. No .NET needed:
+//! `csharp_bci_pattern_and_pfil_differential` compares against outputs frozen from the (since removed)
+//! shipped C# `BciPattern`/`GameLZSS` (tests/fixtures/bci_pattern_pfil_oracle.json).
 use against_rome_scenario::bci_pattern::*;
 use against_rome_scenario::{BciImage, BciScriptFile};
-use serde_json::{json, Value};
-use std::{fs, path::PathBuf, process::Command};
+use serde_json::Value;
+use std::{fs, path::PathBuf};
 
 fn words(w: &[i32]) -> Vec<u8> {
     w.iter().flat_map(|v| v.to_le_bytes()).collect()
@@ -202,9 +203,6 @@ fn script_file_save_is_atomic_and_reloadable() {
     fs::remove_dir_all(dir).ok();
 }
 
-fn hex(b: &[u8]) -> String {
-    b.iter().map(|x| format!("{x:02X}")).collect()
-}
 fn unhex(s: &str) -> Vec<u8> {
     (0..s.len())
         .step_by(2)
@@ -213,7 +211,6 @@ fn unhex(s: &str) -> Vec<u8> {
 }
 
 #[test]
-#[ignore = "requires dotnet; synthetic C# differential gate with no retail installation"]
 fn csharp_bci_pattern_and_pfil_differential() {
     // Deterministic xorshift corpus over a tiny value alphabet so matches and overlaps are common.
     let mut s = 0x2545F491u32;
@@ -246,33 +243,19 @@ fn csharp_bci_pattern_and_pfil_differential() {
     let plains: Vec<Vec<u8>> = (0..40usize)
         .map(|i| (0..i * 7).map(|j| (j * 31 + i) as u8).collect())
         .collect();
+    let res: Value = serde_json::from_slice(
+        &fs::read(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/bci_pattern_pfil_oracle.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(res["Sites"].as_array().unwrap().len(), cases.len());
+    assert_eq!(res["Compressed"].as_array().unwrap().len(), plains.len());
+    // The frozen "Decoded" column is the C# decode of the Rust compressor output for each plain input.
     let rust_packed: Vec<Vec<u8>> = plains
         .iter()
         .map(|p| {
             against_rome_scenario::bci_script::compress_pfil_literal(p, &pfil_template()).unwrap()
         })
         .collect();
-    let req = json!({
-        "Sites": cases.iter().map(|(d, p)| json!({"DataHex": hex(d), "Pattern": p})).collect::<Vec<_>>(),
-        "Pfil": plains.iter().map(|p| json!({"PlainHex": hex(p), "TemplateHex": hex(&pfil_template())})).collect::<Vec<_>>(),
-        "Decode": rust_packed.iter().map(|p| hex(p)).collect::<Vec<_>>(),
-    });
-    let dir = std::env::temp_dir().join(format!("arm-bci-oracle-{}", std::process::id()));
-    fs::create_dir_all(&dir).unwrap();
-    let (rq, rs) = (dir.join("req.json"), dir.join("res.json"));
-    fs::write(&rq, req.to_string()).unwrap();
-    let manifest =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/bci_oracle/BciOracle.csproj");
-    let status = Command::new("dotnet")
-        .args(["run", "-c", "Release", "--project"])
-        .arg(&manifest)
-        .arg("--")
-        .arg(&rq)
-        .arg(&rs)
-        .status()
-        .expect("dotnet");
-    assert!(status.success());
-    let res: Value = serde_json::from_slice(&fs::read(&rs).unwrap()).unwrap();
     for (i, (d, p)) in cases.iter().enumerate() {
         let expected: Vec<usize> = res["Sites"][i]
             .as_array()
@@ -297,6 +280,10 @@ fn csharp_bci_pattern_and_pfil_differential() {
             *plain,
             "Rust -> C# pfil {i}"
         );
+        assert_eq!(
+            against_rome_data::lzss::decompress_pfil(&rust_packed[i], None).unwrap(),
+            *plain,
+            "Rust round-trip pfil {i}"
+        );
     }
-    fs::remove_dir_all(dir).ok();
 }

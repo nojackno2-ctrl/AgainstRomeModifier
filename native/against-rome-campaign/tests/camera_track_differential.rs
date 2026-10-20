@@ -9,7 +9,6 @@ use against_rome_campaign::cinematics::{
 };
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use std::process::Command;
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
@@ -202,44 +201,19 @@ struct StartCameraJsonResult {
     deserialized_primitive: i32,
 }
 
+/// Returns the frozen C# (.NET 10) oracle response for `request`. The request is checked against the
+/// committed request fixture so any drift in the generated inputs is caught.
 fn run_oracle(request: &OracleRequest) -> OracleResponse {
-    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let temp_dir = std::env::temp_dir().join(format!("arm_cam_diff_{}", uuid::Uuid::new_v4()));
-    std::fs::create_dir_all(&temp_dir).expect("create temp dir");
-
-    let req_path = temp_dir.join("request.json");
-    let resp_path = temp_dir.join("response.json");
-
-    let req_bytes = serde_json::to_vec_pretty(request).expect("serialize request");
-    std::fs::write(&req_path, req_bytes).expect("write request.json");
-
-    let project_path = manifest_dir.join("tests/oracle_camera_track/CameraTrackOracle.csproj");
-
-    let output = Command::new("dotnet")
-        .arg("run")
-        .arg("--project")
-        .arg(&project_path)
-        .arg("-c")
-        .arg("Release")
-        .arg(&req_path)
-        .arg(&resp_path)
-        .output()
-        .expect("failed to spawn dotnet CameraTrackOracle");
-
-    if !output.status.success() {
-        panic!(
-            "CameraTrackOracle failed with code {:?}\nstdout: {}\nstderr: {}",
-            output.status.code(),
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
-
-    let resp_bytes = std::fs::read(&resp_path).expect("read response.json");
-    let resp: OracleResponse = serde_json::from_slice(&resp_bytes).expect("deserialize response");
-
-    let _ = std::fs::remove_dir_all(&temp_dir);
-    resp
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    // Round-trip the fixture through the same typed model so f32 text forms compare equal.
+    let frozen: OracleRequest =
+        serde_json::from_slice(&std::fs::read(dir.join("camera_track_request.json")).expect("read request fixture"))
+            .expect("parse request fixture");
+    let frozen_req = serde_json::to_string(&frozen).unwrap();
+    let got_req = serde_json::to_string(request).expect("serialize request");
+    assert_eq!(got_req, frozen_req, "test inputs drifted from camera_track_request.json");
+    let resp_bytes = std::fs::read(dir.join("camera_track_oracle_expected.json")).expect("read response fixture");
+    serde_json::from_slice(&resp_bytes).expect("deserialize response")
 }
 
 fn to_rust_easing(code: i32) -> CameraEasingType {
@@ -290,7 +264,7 @@ fn assert_pose_near(a: &CameraPose, b: &PoseDto, eps: f32, msg: &str) {
 }
 
 #[test]
-fn test_csharp_dotnet10_camera_track_differential() {
+fn camera_track_matches_frozen_csharp_oracle() {
     let mut request = OracleRequest {
         easing_queries: Vec::new(),
         catmull_rom_queries: Vec::new(),

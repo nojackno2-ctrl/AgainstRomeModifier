@@ -1,54 +1,8 @@
 use against_rome_landscape::{cliff, fortification as fort};
-use std::process::Command;
 
 #[test]
-#[ignore = "requires .NET 10 SDK to execute the linked C# oracle"]
-fn csharp_cliff_and_fortification_differential() {
-    let root = env!("CARGO_MANIFEST_DIR");
-    let project = format!("{root}/tests/oracle/RoadOracle.csproj");
-    let config = format!("{root}/tests/oracle/NuGet.Config");
-    let appdata = format!("{root}/tests/oracle/cache");
-    let restore = Command::new("dotnet")
-        .env("APPDATA", &appdata)
-        .args([
-            "restore",
-            &project,
-            "--configfile",
-            &config,
-            "--verbosity",
-            "quiet",
-        ])
-        .output()
-        .unwrap();
-    assert!(
-        restore.status.success(),
-        "{}{}",
-        String::from_utf8_lossy(&restore.stdout),
-        String::from_utf8_lossy(&restore.stderr)
-    );
-    let output = Command::new("dotnet")
-        .env("APPDATA", &appdata)
-        .args([
-            "run",
-            "--no-restore",
-            "--project",
-            &project,
-            "-c",
-            "Release",
-            "--verbosity",
-            "quiet",
-            "--",
-            "landscape",
-        ])
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "{}{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let stdout = String::from_utf8(output.stdout).unwrap();
+fn frozen_csharp_cliff_and_fortification_differential() {
+    let stdout = include_str!("fixtures/landscape_oracle.txt");
     let actual: Vec<_> = stdout
         .lines()
         .filter(|s| s.starts_with("C|") || s.starts_with("F|"))

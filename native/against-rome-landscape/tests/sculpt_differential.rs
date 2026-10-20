@@ -1,13 +1,12 @@
 //! Concrete tests plus a C# differential for `sculpt::{terrace, sharpen_ridge, carve_valley}` and the
 //! pipeline wrappers against the real `TerrainSculptFilter.cs` / `TerrainSculptPipeline.cs` linked into
 //! tests/sculpt_oracle/. Rust writes every input (f32 bit patterns) for the oracle to replay.
-//! Run: cargo test --release --locked --offline --test sculpt_differential -- --ignored
+//! Expected outputs are frozen in tests/fixtures/sculpt_oracle.txt (captured from the original C# filters).
 use against_rome_landscape::erosion::{TerrainHeightWorkBuffer, TerrainSampleChange};
 use against_rome_landscape::sculpt::{
     carve_valley, sharpen_ridge, sharpen_ridge_changes, terrace, terrace_changes, TerraceParams,
 };
 use std::collections::HashMap;
-use std::process::Command;
 
 const TOL: f32 = 1e-3;
 
@@ -155,12 +154,6 @@ fn terrain(size: usize, pattern: u8) -> Vec<f32> {
         .collect()
 }
 
-fn fb(f: f32) -> String {
-    format!("{:x}", f.to_bits())
-}
-fn bits(v: &[f32]) -> String {
-    v.iter().map(|f| fb(*f)).collect::<Vec<_>>().join(",")
-}
 fn parse(s: &str) -> Vec<f32> {
     s.split(',')
         .map(|h| f32::from_bits(u32::from_str_radix(h, 16).unwrap()))
@@ -171,13 +164,6 @@ fn bytes_of(v: &[f32]) -> Vec<u8> {
         .map(|f| f.round_ties_even().clamp(0.0, 255.0) as u8)
         .collect()
 }
-fn dec(v: &[u8]) -> String {
-    v.iter()
-        .map(|b| b.to_string())
-        .collect::<Vec<_>>()
-        .join(",")
-}
-
 type Brush = (f32, f32, f32);
 
 const BRUSHES: [Brush; 10] = [
@@ -193,46 +179,6 @@ const BRUSHES: [Brush; 10] = [
     (40.0, 40.0, 3.0),
 ];
 
-fn run_oracle(cases_file: &str) -> String {
-    let root = env!("CARGO_MANIFEST_DIR");
-    let project = format!("{root}/tests/sculpt_oracle/SculptOracle.csproj");
-    let config = format!("{root}/tests/sculpt_oracle/NuGet.Config");
-    let appdata = format!("{root}/tests/oracle/cache");
-    let run = |args: &[&str]| {
-        let o = Command::new("dotnet")
-            .env("APPDATA", &appdata)
-            .args(args)
-            .output()
-            .expect("dotnet SDK required");
-        let text = format!(
-            "{}{}",
-            String::from_utf8_lossy(&o.stdout),
-            String::from_utf8_lossy(&o.stderr)
-        );
-        assert!(o.status.success(), "{text}");
-        String::from_utf8_lossy(&o.stdout).into_owned()
-    };
-    run(&[
-        "restore",
-        &project,
-        "--configfile",
-        &config,
-        "--verbosity",
-        "quiet",
-    ]);
-    run(&[
-        "run",
-        "--no-restore",
-        "--project",
-        &project,
-        "-c",
-        "Release",
-        "--verbosity",
-        "quiet",
-        "--",
-        cases_file,
-    ])
-}
 
 enum Case {
     A(usize, u8, Brush, TerraceParams),
@@ -319,76 +265,10 @@ fn cases() -> Vec<Case> {
     v
 }
 
-fn brush_s(b: Brush) -> String {
-    format!("{}|{}|{}", fb(b.0), fb(b.1), fb(b.2))
-}
-
-fn terrace_s(p: &TerraceParams) -> String {
-    format!(
-        "{}|{}|{}|{}|{}",
-        fb(p.step_interval),
-        fb(p.flatness),
-        fb(p.edge_sharpness),
-        fb(p.strength),
-        fb(p.base_offset)
-    )
-}
-
-fn encode(i: usize, c: &Case) -> String {
-    let (s, pat) = c.grid();
-    let src = terrain(s, pat);
-    match c {
-        Case::A(_, _, br, p) => format!(
-            "A|c{i}|{s}|{}|{}|{}\n",
-            brush_s(*br),
-            terrace_s(p),
-            bits(&src)
-        ),
-        Case::B(_, _, br, g, r, it) => {
-            format!(
-                "B|c{i}|{s}|{}|{}|{}|{it}|{}\n",
-                brush_s(*br),
-                fb(*g),
-                *r as u8,
-                bits(&src)
-            )
-        }
-        Case::C(_, _, br, d, st) => {
-            format!(
-                "C|c{i}|{s}|{}|{}|{}|{}\n",
-                brush_s(*br),
-                fb(*d),
-                fb(*st),
-                bits(&src)
-            )
-        }
-        Case::P(_, _, br, p) => {
-            format!(
-                "P|c{i}|{s}|{}|{}|{}\n",
-                brush_s(*br),
-                terrace_s(p),
-                dec(&bytes_of(&src))
-            )
-        }
-        Case::Q(_, _, br, g, r, it) => format!(
-            "Q|c{i}|{s}|{}|{}|{}|{it}|{}\n",
-            brush_s(*br),
-            fb(*g),
-            *r as u8,
-            dec(&bytes_of(&src))
-        ),
-    }
-}
-
 #[test]
-#[ignore = "requires .NET 10 SDK to execute the linked C# sculpt filters"]
 fn csharp_sculpt_differential() {
     let cs = cases();
-    let input: String = cs.iter().enumerate().map(|(i, c)| encode(i, c)).collect();
-    let path = std::env::temp_dir().join(format!("sculpt_cases_{}.txt", std::process::id()));
-    std::fs::write(&path, input).unwrap();
-    let stdout = run_oracle(path.to_str().unwrap());
-    let _ = std::fs::remove_file(&path);
+    let stdout = include_str!("fixtures/sculpt_oracle.txt");
 
     let out: HashMap<String, String> = stdout
         .lines()
@@ -404,7 +284,7 @@ fn csharp_sculpt_differential() {
     assert_eq!(
         out.len(),
         cs.len(),
-        "every oracle case must execute: {stdout}"
+        "every frozen oracle case must be present"
     );
 
     let (mut samples, mut exact, mut max) = (0usize, 0usize, 0f32);

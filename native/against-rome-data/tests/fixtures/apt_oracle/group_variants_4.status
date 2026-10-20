@@ -1,0 +1,2 @@
+REJECT NotSupportedException
+APT group variants exceed the native three slots.

@@ -1002,32 +1002,16 @@ mod tests {
         p
     }
 
-    // Parse the C# authority independently so incorrect Rust cave bytes cannot
+    // Bytes frozen from the former C# authority (independent of the Rust constants) so incorrect Rust cave bytes cannot
     // make both the classifier and its fixtures agree on the same mistake.
     fn csharp_village_cave(name: &str) -> Vec<u8> {
-        let source = include_str!("../../../src.Core/Core/Patches/ExePatchModel.cs");
-        let declaration = format!("VillageSetterCave{name}Bytes = {{");
-        let body = source
-            .split_once(&declaration)
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../tests/fixtures/csharp-frozen-tables.json")).unwrap();
+        let bytes: Vec<u8> = fixture["village_caves"][name]
+            .as_array()
             .unwrap()
-            .1
-            .split_once("};")
-            .unwrap()
-            .0;
-        let bytes: Vec<_> = body
-            .lines()
-            .flat_map(|line| {
-                line.split("//")
-                    .next()
-                    .unwrap()
-                    .split(',')
-                    .filter_map(|token| {
-                        token
-                            .trim()
-                            .strip_prefix("0x")
-                            .map(|hex| u8::from_str_radix(hex, 16).unwrap())
-                    })
-            })
+            .iter()
+            .map(|v| v.as_u64().unwrap() as u8)
             .collect();
         assert_eq!(bytes.len(), 39);
         bytes

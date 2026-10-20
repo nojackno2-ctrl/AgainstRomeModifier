@@ -1,0 +1,2 @@
+REJECT NotSupportedException
+ALR version 7 is not supported; expected 4..6.

@@ -1,0 +1,22 @@
+{
+ "ENDL_000": {
+  "0": {
+   "source_sha256": "336e3a5cb808e7f2ef6aaa77ac2ef54a0fb00de04cb00d1abb4fbd5b937d5f27",
+   "compiled_sha256": "1e4bef7b62a3512e9f7caa76c0c327ce5c9ba0fe45422c2ab2f1cdf5c769288e"
+  },
+  "1": {
+   "source_sha256": "336e3a5cb808e7f2ef6aaa77ac2ef54a0fb00de04cb00d1abb4fbd5b937d5f27",
+   "compiled_sha256": "de4f19e80cddc003fccfd2921f4777e98b19a0cc4f534c212245f15777b94219"
+  }
+ },
+ "TUTOR_01": {
+  "0": {
+   "source_sha256": "29db6cf3e80590c7a08a75effde463ddf341c2bcabd8bb3fe1c111feac567b32",
+   "compiled_sha256": "23f8e16027dcc62cb454276163ed72451fe5f32c2b9af17c6d25e1bb255c3677"
+  },
+  "1": {
+   "source_sha256": "29db6cf3e80590c7a08a75effde463ddf341c2bcabd8bb3fe1c111feac567b32",
+   "compiled_sha256": "86cdff41c014fbc0f56294611d517f2dbde0f6d3dfc36f9c14c3b479be03d71b"
+  }
+ }
+}

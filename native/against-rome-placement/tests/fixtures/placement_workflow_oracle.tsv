@@ -1,0 +1,24 @@
+SNAP_DELTA	-16	0	104
+initial	0	BauGerHau00_Haupthaus	400	20	600	1	90	0
+initial	1	FigGerWar00_Krieger	850	10	1200	1	180	5
+initial	2	BauGerTow00_Turm	1500	15	2000	2	270	0
+translate	0	BauGerHau00_Haupthaus	656	20	536	1	90	0
+translate	1	FigGerWar00_Krieger	1106	10	1136	1	180	5
+translate	2	BauGerTow00_Turm	1500	15	2000	2	270	0
+snap	0	BauGerHau00_Haupthaus	640	20	640	1	90	0
+snap	1	FigGerWar00_Krieger	1090	10	1240	1	180	5
+snap	2	BauGerTow00_Turm	1500	15	2000	2	270	0
+rotate	0	BauGerHau00_Haupthaus	640	20	640	1	135	0
+rotate	1	FigGerWar00_Krieger	1090	10	1240	1	225	5
+rotate	2	BauGerTow00_Turm	1500	15	2000	2	315	0
+batch_edit	0	BauGerHau00_Haupthaus	640	20	640	4	315	0
+batch_edit	1	FigGerWar00_Krieger	1090	10	1240	4	315	5
+batch_edit	2	BauGerTow00_Turm	1500	15	2000	2	315	0
+clone	0	BauGerHau00_Haupthaus	640	20	640	4	315	0
+clone	1	BauGerHau00_Haupthaus	896	20	896	4	315	0
+clone	2	FigGerWar00_Krieger	1090	10	1240	4	315	5
+clone	3	FigGerWar00_Krieger	1346	10	1496	4	315	5
+clone	4	BauGerTow00_Turm	1500	15	2000	2	315	0
+remove	0	BauGerHau00_Haupthaus	640	20	640	4	315	0
+remove	1	FigGerWar00_Krieger	1090	10	1240	4	315	5
+remove	2	BauGerTow00_Turm	1500	15	2000	2	315	0

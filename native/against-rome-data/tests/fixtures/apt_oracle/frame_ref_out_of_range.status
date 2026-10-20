@@ -1,0 +1,2 @@
+REJECT InvalidDataException
+APT frame references tiles outside its table.

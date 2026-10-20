@@ -99,6 +99,29 @@ impl Blob {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Expected values frozen from the original C# oracle (tests/fixtures/placement_oracle_hashes.tsv):
+    // columns case, stage, pool, decoded length, sha256; `text` rows carry oracle side-files.
+    const FROZEN_HASHES: &str = include_str!("../tests/fixtures/placement_oracle_hashes.tsv");
+    fn frozen_text(case: &str, name: &str) -> String {
+        FROZEN_HASHES
+            .lines()
+            .map(|l| l.split('\t').collect::<Vec<_>>())
+            .find(|c| c[0] == case && c[1] == "text" && c[2] == name)
+            .unwrap_or_else(|| panic!("missing frozen text {case}/{name}"))[4]
+            .replace('|', "\n")
+    }
+    fn assert_pools_match_frozen(s: &ObjectStore, case: &str, stage: &str) {
+        for (n, b) in &s.pools {
+            let row = FROZEN_HASHES
+                .lines()
+                .map(|l| l.split('\t').collect::<Vec<_>>())
+                .find(|c| c[0] == case && c[1] == stage && c[2] == n.as_str())
+                .unwrap_or_else(|| panic!("missing frozen {case}/{stage}/{n}"));
+            assert_eq!(row[3].parse::<usize>().unwrap(), b.bytes.len(), "{case}/{stage}/{n} length");
+            assert_eq!(row[4], against_rome_data::sha256::sha256_hex(&b.bytes), "{case}/{stage}/{n} hash");
+        }
+    }
     fn fixture() -> ObjectStore {
         fixture_count(3)
     }
@@ -1115,24 +1138,18 @@ mod tests {
         );
     }
     #[test]
-    #[ignore = "requires dotnet and installed retail map; real C# differential in TEMP"]
+    #[ignore = "requires installed retail map TUTOR_01; compares against frozen C# oracle hashes"]
     fn retail_managed_differential() {
         let source = Path::new(r"C:\Program Files (x86)\Against Rome\MAPS\TUTOR_01");
         let root = std::env::temp_dir().join(format!("ar-placement-oracle-{}", std::process::id()));
         let rust = root.join("rust");
-        let managed = root.join("managed");
-        let output = root.join("oracle");
-        for map in [&rust, &managed] {
-            fs::create_dir_all(map.join("DATA")).unwrap();
-        }
+        fs::create_dir_all(rust.join("DATA")).unwrap();
         let before: Vec<_> = fs::read_dir(source.join("DATA"))
             .unwrap()
             .map(|e| {
                 let path = e.unwrap().path();
                 let bytes = fs::read(&path).unwrap();
-                for map in [&rust, &managed] {
-                    fs::write(map.join("DATA").join(path.file_name().unwrap()), &bytes).unwrap();
-                }
+                fs::write(rust.join("DATA").join(path.file_name().unwrap()), &bytes).unwrap();
                 (path, bytes)
             })
             .collect();
@@ -1142,59 +1159,23 @@ mod tests {
             .into_iter()
             .find(|o| s.family(o.slot, o.uid).is_ok())
             .unwrap();
-        let project =
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/oracle/PlacementOracle.csproj");
-        let status = std::process::Command::new("dotnet")
-            .args(["run", "--project"])
-            .arg(project)
-            .args(["--configuration", "Release", "--"])
-            .arg(&managed)
-            .arg(&output)
-            .arg(object.slot.to_string())
-            .arg(object.uid.to_string())
-            .status()
-            .unwrap();
-        assert!(status.success());
-        let compare = |s: &ObjectStore, stage: &str| {
-            let mut count = 0;
-            for (n, b) in &s.pools {
-                let expected = fs::read(output.join(stage).join(format!("{n}.bin"))).unwrap();
-                if expected != b.bytes {
-                    let first = expected.iter().zip(&b.bytes).position(|(a, b)| a != b);
-                    panic!(
-                        "C# differential {stage}/{n}: lengths {}/{} first mismatch {:?}",
-                        expected.len(),
-                        b.bytes.len(),
-                        first
-                    );
-                }
-                count += b.bytes.len();
-            }
-            println!(
-                "C# {stage}: {count} decoded bytes identical across {} native pools",
-                s.pools.len()
-            );
-        };
+        assert_eq!((object.slot, object.uid), (0, 13136), "frozen oracle root");
         s.translate_family_fixed(object.slot, object.uid, [65536, 32768, -123])
             .unwrap();
-        compare(&s, "move");
+        assert_pools_match_frozen(&s, "retail", "move");
         let (copy, uid) = s
             .clone_family_fixed(object.slot, object.uid, [131072, -65536, 4321])
             .unwrap();
-        assert_eq!(
-            fs::read_to_string(output.join("copy.txt")).unwrap(),
-            format!("{copy} {uid}")
-        );
-        compare(&s, "clone");
+        assert_eq!(frozen_text("retail", "copy.txt"), format!("{copy} {uid}"));
+        assert_pools_match_frozen(&s, "retail", "clone");
         s.remove_family(copy, uid).unwrap();
-        compare(&s, "delete");
+        assert_pools_match_frozen(&s, "retail", "delete");
         for (p, b) in before {
             assert_eq!(fs::read(p).unwrap(), b);
         }
-        println!("retail C# oracle source unchanged; TEMP={}", root.display());
+        let _ = fs::remove_dir_all(root);
     }
     #[test]
-    #[ignore = "requires dotnet; real C# family/light/auxiliary differential in TEMP"]
     fn managed_family_light_auxiliary_differential() {
         let mut s = fixture_count(5);
         for i in 2..5 {
@@ -1255,45 +1236,14 @@ mod tests {
         engine[34..38].copy_from_slice(&100u32.to_le_bytes());
         s.pools
             .insert("engine".into(), Blob::decode(engine).unwrap());
-        let root =
-            std::env::temp_dir().join(format!("ar-placement-family-oracle-{}", std::process::id()));
-        let managed = root.join("managed");
-        let output = root.join("oracle");
-        fs::create_dir_all(managed.join("DATA")).unwrap();
-        for (n, b) in &s.pools {
-            fs::write(managed.join("DATA").join(format!("{n}.dat")), &b.bytes).unwrap();
-        }
-        let project =
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/oracle/PlacementOracle.csproj");
-        let status = std::process::Command::new("dotnet")
-            .args(["run", "--project"])
-            .arg(project)
-            .args(["--configuration", "Release", "--"])
-            .arg(managed)
-            .arg(&output)
-            .args(["0", "1"])
-            .status()
-            .unwrap();
-        assert!(status.success());
-        let compare = |s: &ObjectStore, stage: &str| {
-            for (n, b) in &s.pools {
-                let expected = fs::read(output.join(stage).join(format!("{n}.bin"))).unwrap();
-                if expected != b.bytes {
-                    panic!(
-                        "C# {stage}/{n} first mismatch {:?}",
-                        expected.iter().zip(&b.bytes).position(|(a, b)| a != b)
-                    )
-                }
-            }
-            println!("C# synthetic {stage}: {} pools bitwise identical; parent family, direct+attached lights, anim/gfx tails and engineUID",s.pools.len());
-        };
+        let compare = |s: &ObjectStore, stage: &str| assert_pools_match_frozen(s, "light_aux", stage);
         s.translate_family_fixed(0, 1, [65536, 32768, -123])
             .unwrap();
         compare(&s, "move");
         let (copy, uid) = s.clone_family_fixed(0, 1, [131072, -65536, 4321]).unwrap();
         assert_eq!(uid, 100);
         assert_eq!(
-            fs::read_to_string(output.join("copy.txt")).unwrap(),
+            frozen_text("light_aux", "copy.txt"),
             format!("{copy} {uid}")
         );
         compare(&s, "clone");
@@ -1447,57 +1397,16 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires dotnet; real C# family/particle/garrison differential in TEMP"]
     fn managed_family_particle_garrison_differential() {
         let mut s = particle_garrison_fixture();
 
-        let root = std::env::temp_dir()
-            .join(format!("ar-placement-particle-garrison-oracle-{}", std::process::id()));
-        let managed = root.join("managed");
-        let output = root.join("oracle");
-        fs::create_dir_all(managed.join("DATA")).unwrap();
-        for (n, b) in &s.pools {
-            fs::write(managed.join("DATA").join(format!("{n}.dat")), &b.bytes).unwrap();
-        }
-        let project =
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/oracle/PlacementOracle.csproj");
-        let status = std::process::Command::new("dotnet")
-            .args(["run", "--project"])
-            .arg(project)
-            .args(["--configuration", "Release", "--"])
-            .arg(managed)
-            .arg(&output)
-            .args(["0", "1"])
-            .status()
-            .unwrap();
-        assert!(status.success());
-        let compare = |s: &ObjectStore, stage: &str| {
-            for (n, b) in &s.pools {
-                let expected = fs::read(output.join(stage).join(format!("{n}.bin"))).unwrap();
-                if expected != b.bytes {
-                    let pos = expected.iter().zip(&b.bytes).position(|(a, b)| a != b).unwrap();
-                    let start = pos.saturating_sub(4);
-                    let end = (pos + 8).min(b.bytes.len());
-                    panic!(
-                        "C# {stage}/{n} length {}/{} mismatch at {pos}: expected {:?}, actual {:?}",
-                        expected.len(),
-                        b.bytes.len(),
-                        &expected[start..end],
-                        &b.bytes[start..end],
-                    )
-                }
-            }
-            println!(
-                "C# synthetic {stage}: {} pools bitwise identical (particle, lager, biglager, lights, aux, engine)",
-                s.pools.len()
-            );
-        };
+        let compare = |s: &ObjectStore, stage: &str| assert_pools_match_frozen(s, "particle_garrison", stage);
         s.translate_family_fixed(0, 1, [65536, 32768, -123]).unwrap();
         compare(&s, "move");
         let (copy, uid) = s.clone_family_fixed(0, 1, [131072, -65536, 4321]).unwrap();
         assert_eq!(uid, 100);
         assert_eq!(
-            fs::read_to_string(output.join("copy.txt")).unwrap(),
+            frozen_text("particle_garrison", "copy.txt"),
             format!("{copy} {uid}")
         );
         compare(&s, "clone");
@@ -1588,26 +1497,8 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires dotnet; real C# MapEditorForm.PlacementWorkflow and PlacementBatchEditDialog differential"]
     fn managed_placement_workflow_and_batch_dialog_differential() {
-        let root = std::env::temp_dir()
-            .join(format!("ar-placement-workflow-oracle-{}", std::process::id()));
-        fs::create_dir_all(&root).unwrap();
-        let json_path = root.join("workflow.json");
-        let tsv_path = root.join("workflow.tsv");
-
-        let project =
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/oracle/PlacementOracle.csproj");
-        let status = std::process::Command::new("dotnet")
-            .args(["run", "--project"])
-            .arg(project)
-            .args(["--configuration", "Release", "--", "batch-workflow"])
-            .arg(&json_path)
-            .status()
-            .unwrap();
-        assert!(status.success(), "PlacementOracle batch-workflow failed");
-
-        let tsv_content = fs::read_to_string(&tsv_path).expect("failed to read workflow.tsv");
+let tsv_content = include_str!("../tests/fixtures/placement_workflow_oracle.tsv");
         let mut snap_delta = [0.0f32; 3];
         let mut stages: BTreeMap<String, Vec<TsvRow>> = BTreeMap::new();
         for line in tsv_content.lines() {
@@ -1720,50 +1611,15 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires dotnet; real C# batch DATA pools differential in TEMP"]
     fn managed_batch_data_pools_differential() {
         let mut s = workflow_fixture(8);
-        let root = std::env::temp_dir()
-            .join(format!("ar-placement-batch-data-oracle-{}", std::process::id()));
-        let managed = root.join("managed");
-        let output = root.join("oracle");
-        fs::create_dir_all(managed.join("DATA")).unwrap();
-        for (n, b) in &s.pools {
-            fs::write(managed.join("DATA").join(format!("{n}.dat")), &b.bytes).unwrap();
-        }
-        let project =
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/oracle/PlacementOracle.csproj");
-        let status = std::process::Command::new("dotnet")
-            .args(["run", "--project"])
-            .arg(project)
-            .args(["--configuration", "Release", "--", "batch-data"])
-            .arg(&managed)
-            .arg(&output)
-            .args(["0", "1", "1", "2"])
-            .status()
-            .unwrap();
-        assert!(status.success());
-        let compare = |s: &ObjectStore, stage: &str| {
-            for (n, b) in &s.pools {
-                let expected = fs::read(output.join(stage).join(format!("{n}.bin"))).unwrap();
-                if expected != b.bytes {
-                    let pos = expected.iter().zip(&b.bytes).position(|(a, b)| a != b).unwrap();
-                    panic!(
-                        "C# batch-data {stage}/{n} length {}/{} mismatch at {pos}",
-                        expected.len(),
-                        b.bytes.len()
-                    );
-                }
-            }
-            println!("C# batch-data {stage}: {} pools bitwise identical", s.pools.len());
-        };
+let compare = |s: &ObjectStore, stage: &str| assert_pools_match_frozen(s, "batch_data", stage);
 
         s.translate_families_fixed(&[(0, 1), (1, 2)], [65536, 0, -32768]).unwrap();
         compare(&s, "translate");
 
         let cloned = s.clone_families_fixed(&[(0, 1), (1, 2)], [131072, 0, 65536]).unwrap();
-        let cloned_lines: Vec<_> = fs::read_to_string(output.join("cloned.txt"))
-            .unwrap()
+        let cloned_lines: Vec<_> = frozen_text("batch_data", "cloned.txt")
             .lines()
             .map(|l| {
                 let parts: Vec<&str> = l.split_whitespace().collect();
@@ -2304,39 +2160,21 @@ mod tests {
         assert!(loaded > 0, "no retail map loaded");
     }
     #[test]
-    #[ignore = "requires dotnet; managed FamilyAt accept/reject parity for corrupted particle/garrison families"]
     fn managed_family_rejection_parity() {
-        let root = std::env::temp_dir().join(format!("ar-placement-reject-parity-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&root);
         let mut labels = vec![("baseline", "", None)];
         labels.extend(corruption_cases().into_iter().map(|(l, n, f)| (l, n, Some(f))));
         let mut rust = Vec::new();
-        let mut dirs = Vec::new();
-        for (label, _, corrupt) in &labels {
+        for (_, _, corrupt) in &labels {
             let mut s = rich_fixture();
             if let Some(corrupt) = corrupt {
                 corrupt(&mut s);
             }
-            let dir = root.join(label);
-            fs::create_dir_all(dir.join("DATA")).unwrap();
-            for (n, b) in &s.pools {
-                fs::write(dir.join("DATA").join(format!("{n}.dat")), &b.bytes).unwrap();
-            }
             rust.push(s.family_details(0, 1).map(|d| (sorted(&d.object_slots), d.particle_slots, d.lager_slots, d.big_lager_slots, sorted(&d.light_slots))));
-            dirs.push(dir);
         }
-        let project = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/oracle/PlacementOracle.csproj");
-        let output = std::process::Command::new("dotnet")
-            .args(["run", "--project"])
-            .arg(project)
-            .args(["--configuration", "Release", "--", "probe", "0", "1"])
-            .args(&dirs)
-            .output()
-            .unwrap();
-        assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
-        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+        // Frozen output of the original C# LevelObjectStore.FamilyAt probe, one line per label.
+        let stdout = include_str!("../tests/fixtures/placement_probe_oracle.txt");
         let managed: Vec<_> = stdout.lines().filter(|l| l.starts_with("accept") || l.starts_with("reject")).collect();
-        assert_eq!(managed.len(), labels.len(), "{stdout}");
+        assert_eq!(managed.len(), labels.len(), "frozen probe lines vs corruption matrix");
         let list = |text: &str, key: &str| -> Vec<usize> {
             text.split_whitespace()
                 .find_map(|w| w.strip_prefix(key))
@@ -2360,7 +2198,6 @@ mod tests {
             }
             println!("C# parity {label}: {}", if rust.is_ok() { "both accept" } else { "both reject" });
         }
-        let _ = fs::remove_dir_all(root);
     }
     #[test]
     fn translate_families_fixed_batch_and_undo_redo() {

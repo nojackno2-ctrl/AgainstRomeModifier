@@ -5,29 +5,17 @@ fn owned_temp() -> PathBuf {
     fs::create_dir_all(&path).unwrap(); path
 }
 #[test]
-fn all_application_tables_match_csharp_source() {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    for (file, name, actual) in [
-        ("src.Core/Core/Localization.cs", "Zh", ZH),
-        ("src.Core/Core/Localization.cs", "En", EN),
-        ("src.Core/Core/Localization.cs", "EnUnitNames", EN_UNIT_NAMES),
-        ("src.Core/Core/TroopConfig.cs", "UnitNames", ZH_UNIT_NAMES),
-    ] {
-        let source = fs::read_to_string(root.join(file)).unwrap();
-        let start = source.find(&format!("Dictionary<string, string> {name} =")).unwrap();
-        let section = source[start..].split("};").next().unwrap();
-        let mut expected = Vec::new();
-        for line in section.lines().skip(1) {
-            let line = line.trim();
-            if line.starts_with('{') {
-                let pair = line.trim_end_matches(',');
-                let pair = format!("[{}]", &pair[1..pair.len()-1]);
-                let values: Vec<String> = serde_json::from_str(&pair).unwrap();
-                expected.push((values[0].clone(), values[1].clone()));
-            }
-        }
+fn all_application_tables_match_frozen_managed_tables() {
+    // Tables frozen from the former managed (C#) Localization/TroopConfig sources.
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/app_tables_expected.json");
+    let frozen: std::collections::BTreeMap<String, Vec<(String, String)>> =
+        serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap();
+    for (name, actual) in [("ZH", ZH), ("EN", EN), ("EN_UNIT_NAMES", EN_UNIT_NAMES), ("ZH_UNIT_NAMES", ZH_UNIT_NAMES)] {
+        let expected = &frozen[name];
         assert_eq!(expected.len(), actual.len(), "{name}");
-        for ((ek,ev),(ak,av)) in expected.iter().zip(actual) { assert_eq!((ek.as_str(),ev.as_str()),(*ak,*av), "{name}"); }
+        for ((ek, ev), (ak, av)) in expected.iter().zip(actual) {
+            assert_eq!((ek.as_str(), ev.as_str()), (*ak, *av), "{name}");
+        }
     }
 }
 #[test]

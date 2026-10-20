@@ -1,0 +1,2 @@
+REJECT NotSupportedException
+APT version 0 is not supported; expected 2..3.

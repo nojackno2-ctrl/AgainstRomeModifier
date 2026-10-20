@@ -232,12 +232,11 @@ fn invalid_or_readonly_save_creates_no_backup_and_preserves_source() {
     assert!(svc.repair_endless_ai("../bad").is_err());
 }
 #[test]
-#[ignore = "explicit C# differential gate; requires .NET 8 SDK"]
 fn csharp_synthetic_differential() {
-    use std::{fs, process::Command};
-    let temp = Temp::new();
-    let inputs = temp.0.join("cases");
-    fs::create_dir(&inputs).unwrap();
+    // Expected outputs were frozen from the (now removed) C# oracle in tests/fixtures/ai_repair
+    // ({i}.output = decoded BCI tail, {i}.pfil = byte-exact PFIL compression of that tail).
+    use std::fs;
+    let inputs = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/ai_repair");
     let mut cases = vec![fixture()];
     // Exercise compressor dictionary wrap, initial spaces/NULs and self-overlap.
     let raw = fixture();
@@ -272,64 +271,23 @@ fn csharp_synthetic_differential() {
     write(&mut broken, off + s.action + 40, 160);
     cases.push(current.clone());
     cases.push(compress_pfil(&broken, &current));
-    for (i, raw) in cases.iter().enumerate() {
-        let b = decode(raw);
-        fs::write(inputs.join(format!("{i}.input")), &b[bci_offset(&b)..]).unwrap();
-    }
-    let artifacts = temp.0.join("artifacts");
-    let project =
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/oracle/Oracle.csproj");
-    let config = project.parent().unwrap().join("NuGet.Config");
-    let appdata = temp.0.join("appdata");
-    fs::create_dir(&appdata).unwrap();
-    let output = Command::new("dotnet")
-        .env("APPDATA", &appdata)
-        .args([
-            "build",
-            project.to_str().unwrap(),
-            "--artifacts-path",
-            artifacts.to_str().unwrap(),
-            "--configfile",
-            config.to_str().unwrap(),
-            "--nologo",
-            "-v:q",
-        ])
-        .output()
-        .expect("dotnet build launch");
-    assert!(
-        output.status.success(),
-        "{}\n{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let dll = artifacts.join("bin/Oracle/debug/Oracle.dll");
-    let output = Command::new("dotnet")
-        .arg(dll)
-        .arg(&inputs)
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "{}\n{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
     let mut compared = 0;
     for (i, raw) in cases.iter().enumerate() {
         let out = repair_payload(raw).unwrap().unwrap_or_else(|| raw.clone());
         let b = decode(&out);
         let tail = &b[bci_offset(&b)..];
-        let oracle = fs::read(inputs.join(format!("{i}.input.output"))).unwrap();
+        let oracle = fs::read(inputs.join(format!("{i}.output"))).unwrap();
         assert_eq!(tail, oracle, "decoded case {i}");
         let mut header = vec![0; 64];
         header[..4].copy_from_slice(b"PFIL");
         assert_eq!(
             compress_pfil(tail, &header),
-            fs::read(inputs.join(format!("{i}.input.pfil"))).unwrap(),
+            fs::read(inputs.join(format!("{i}.pfil"))).unwrap(),
             "compressed case {i}"
         );
         compared += tail.len();
     }
+    assert_eq!(cases.len(), 19);
     println!("C# P6/P8/P9 differential: {} cases, {compared} decoded bytes + byte-exact PFIL compression passed",cases.len());
 }
 #[test]

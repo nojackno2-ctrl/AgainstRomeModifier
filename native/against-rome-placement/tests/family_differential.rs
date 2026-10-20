@@ -6,7 +6,8 @@
 //! 2. Exact signed 16.16 translation of objects, particles, and lights.
 //! 3. Cross-pool cloning with disjoint allocation, UID remap, and pointer rewiring.
 //! 4. Complete family removal and clean pool resetting.
-//! 5. Bit-for-bit parity against C# LevelObjectStore / PlacementOracle golden outputs.
+//! 5. Bit-for-bit parity against sha256 digests frozen from the original C# LevelObjectStore oracle
+//!    (verified identical to a live oracle run before the C# sources were removed).
 
 use against_rome_data::sha256::sha256_hex;
 use against_rome_placement::{
@@ -336,77 +337,6 @@ fn family_closure_fail_closed_validation() {
     // Selecting non-root child rejects
     let err_child = store.family_details(1, 2).unwrap_err();
     assert!(err_child.contains("select family root"));
-
-    let _ = fs::remove_dir_all(dir);
-}
-
-#[test]
-#[ignore = "requires dotnet; live execution against tests/oracle/PlacementOracle.csproj"]
-fn live_csharp_placement_oracle() {
-    let dir = temp_fixture_dir("live-oracle");
-    create_synthetic_fixture_map(&dir);
-
-    let mut store = ObjectStore::load(&dir).unwrap();
-    let oracle_out = dir.join("oracle_out");
-
-    let project = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/oracle/PlacementOracle.csproj");
-    let status = std::process::Command::new("dotnet")
-        .args(["run", "--project"])
-        .arg(project)
-        .args(["--configuration", "Release", "--"])
-        .arg(&dir)
-        .arg(&oracle_out)
-        .args(["0", "1"])
-        .status()
-        .expect("dotnet execution failed");
-    assert!(status.success());
-
-    // Compare move
-    store
-        .translate_family_fixed(0, 1, [65536, 32768, -123])
-        .unwrap();
-    for name in [
-        "objects", "objdata", "position", "anim", "gfxtype", "action", "engine", "light",
-        "particle", "lager", "biglager",
-    ] {
-        let expected = fs::read(oracle_out.join("move").join(format!("{name}.bin"))).unwrap();
-        assert_eq!(
-            store.payload(name).unwrap(),
-            expected.as_slice(),
-            "live move mismatch: {name}"
-        );
-    }
-
-    // Compare clone
-    let (copy, uid) = store
-        .clone_family_fixed(0, 1, [131072, -65536, 4321])
-        .unwrap();
-    assert_eq!((copy, uid), (4, 100));
-    for name in [
-        "objects", "objdata", "position", "anim", "gfxtype", "action", "engine", "light",
-        "particle", "lager", "biglager",
-    ] {
-        let expected = fs::read(oracle_out.join("clone").join(format!("{name}.bin"))).unwrap();
-        assert_eq!(
-            store.payload(name).unwrap(),
-            expected.as_slice(),
-            "live clone mismatch: {name}"
-        );
-    }
-
-    // Compare delete
-    store.remove_family(copy, uid).unwrap();
-    for name in [
-        "objects", "objdata", "position", "anim", "gfxtype", "action", "engine", "light",
-        "particle", "lager", "biglager",
-    ] {
-        let expected = fs::read(oracle_out.join("delete").join(format!("{name}.bin"))).unwrap();
-        assert_eq!(
-            store.payload(name).unwrap(),
-            expected.as_slice(),
-            "live delete mismatch: {name}"
-        );
-    }
 
     let _ = fs::remove_dir_all(dir);
 }

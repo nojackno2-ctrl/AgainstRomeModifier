@@ -95,48 +95,32 @@ fn camera_abi_and_native_constant_reuse() {
     assert_eq!(i.main + i.code[before + 16] + 68, 24);
 }
 #[test]
-#[ignore = "requires dotnet and installed retail scripts; explicit differential gate"]
+#[ignore = "requires the installed retail game; compares against SHA-256 values frozen from the removed C# oracle"]
 fn csharp_and_retail_differential() {
     differential(true);
 }
 #[test]
-#[ignore = "requires dotnet; synthetic C# differential gate with no retail installation"]
 fn csharp_synthetic_differential() {
     differential(false);
 }
+/// Compiles with the same inputs the C# oracle saw and compares with outputs frozen from it
+/// (tests/fixtures/compiler_idle_primitive{0,1}.bci; retail hashes in compiler_retail_hashes.json).
 fn differential(retail: bool) {
-    static ORACLE: std::sync::Mutex<()> = std::sync::Mutex::new(());
-    let _lock = ORACLE.lock().unwrap();
-    use std::{fs, process::Command};
-    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let temp = std::env::temp_dir().join(format!(
-        "arm-rust-scenario-{}-{}",
-        std::process::id(),
-        if retail { "retail" } else { "synthetic" }
-    ));
-    fs::create_dir_all(&temp).unwrap();
+    use std::fs;
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
     let document = fixture();
-    fs::write(
-        temp.join("arm_scenario.json"),
-        serde_json::to_vec_pretty(&document).unwrap(),
-    )
-    .unwrap();
-    let idle = temp.join("idle.bci");
-    fs::write(&idle, BciImage::idle().serialize()).unwrap();
-    let mut paths = vec![idle];
-    for name in if retail {
-        vec!["ENDL_000", "TUTOR_01"]
-    } else {
-        vec![]
-    } {
-        paths.push(std::path::PathBuf::from(format!(
-            r"C:\Program Files (x86)\Against Rome\MAPS\{name}\SCRIPT\ak_level.bci"
-        )));
+    let idle = BciImage::idle().serialize();
+    let mut sources: Vec<(String, Vec<u8>)> = vec![("idle".into(), idle)];
+    if retail {
+        for name in ["ENDL_000", "TUTOR_01"] {
+            let p = format!(r"C:\Program Files (x86)\Against Rome\MAPS\{name}\SCRIPT\ak_level.bci");
+            sources.push((name.into(), fs::read(p).unwrap()));
+        }
     }
+    let retail_hashes: serde_json::Value =
+        serde_json::from_slice(&fs::read(root.join("compiler_retail_hashes.json")).unwrap()).unwrap();
     let mut checked = 0;
-    for p in paths {
-        let original = fs::read(&p).unwrap();
-        let hash = against_rome_data::sha256::sha256(&original);
+    for (name, original) in &sources {
         for primitive in [0, 1] {
             let camera = StartCamera {
                 x: 125.5,
@@ -146,44 +130,35 @@ fn differential(retail: bool) {
                 primitive,
                 ..Default::default()
             };
-            fs::write(
-                temp.join("arm_start_camera.json"),
-                serde_json::to_vec_pretty(&camera).unwrap(),
-            )
-            .unwrap();
-            let expected = temp.join("expected.bci");
-            let status = Command::new("dotnet")
-                .arg("run")
-                .arg("--project")
-                .arg(root.join("tests/oracle/Oracle.csproj"))
-                .arg(format!(
-                    "-p:RestoreConfigFile={}",
-                    root.join("../../NuGet.Config").display()
-                ))
-                .arg("--")
-                .arg(&p)
-                .arg(&temp)
-                .arg(&expected)
-                .arg(&temp)
-                .status()
-                .unwrap();
-            assert!(status.success());
             let actual = compile(
-                &original,
+                original,
                 &document,
                 Some(&camera),
                 Some(&["unit".into(), "house".into()]),
             )
             .unwrap();
-            assert_eq!(
-                actual,
-                fs::read(&expected).unwrap(),
-                "{} primitive={primitive}",
-                p.display()
-            );
+            if name == "idle" {
+                assert_eq!(
+                    actual,
+                    fs::read(root.join(format!("compiler_idle_primitive{primitive}.bci"))).unwrap(),
+                    "idle primitive={primitive}"
+                );
+            } else {
+                let frozen = &retail_hashes[name.as_str()][primitive.to_string()];
+                assert_eq!(
+                    against_rome_data::sha256::sha256_hex(original),
+                    frozen["source_sha256"].as_str().unwrap(),
+                    "{name}: installed script differs from the one the oracle compiled"
+                );
+                assert_eq!(
+                    against_rome_data::sha256::sha256_hex(&actual),
+                    frozen["compiled_sha256"].as_str().unwrap(),
+                    "{name} primitive={primitive}"
+                );
+            }
             assert_eq!(
                 compile(
-                    &original,
+                    original,
                     &document,
                     Some(&camera),
                     Some(&["unit".into(), "house".into()])
@@ -193,16 +168,8 @@ fn differential(retail: bool) {
             );
             checked += 1;
         }
-        assert_eq!(
-            against_rome_data::sha256::sha256(&fs::read(p).unwrap()),
-            hash
-        );
     }
     assert_eq!(checked, if retail { 6 } else { 2 });
-    println!(
-        "{checked} exact C# differential comparisons; retail={retail}; all source SHA256 unchanged; artifacts {}",
-        temp.display()
-    );
 }
 
 #[test]

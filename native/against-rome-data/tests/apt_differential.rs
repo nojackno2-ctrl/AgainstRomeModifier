@@ -1,5 +1,6 @@
 //! Differential oracle for `AptDocument`, `NativeAptAttachmentGeometry`, and `NativeAptLightPoints`
-//! against the true C# implementation linked into `tests/oracle_apt/AptOracle.csproj`.
+//! against expected outputs frozen from the original C# implementation (tests/fixtures/apt_oracle and
+//! tests/fixtures/apt_geom; the C# oracle project was retired, so no dotnet is needed).
 //!
 //! Direct parity verification across:
 //!   - Synthetic APT v2 and v3 valid containers
@@ -18,34 +19,19 @@ use against_rome_data::apt_geometry::*;
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
-struct TempDir {
-    path: PathBuf,
+fn fixture_dir(name: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures").join(name)
 }
 
-impl TempDir {
-    fn new(prefix: &str) -> Self {
-        let mut path = std::env::temp_dir();
-        let unique = format!(
-            "{}_{}_{}",
-            prefix,
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        );
-        path.push(unique);
-        fs::create_dir_all(&path).expect("Failed to create temp dir");
-        Self { path }
-    }
-}
-
-impl Drop for TempDir {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.path);
-    }
+/// Inputs were frozen with the C# oracle outputs; make sure the generated input still matches.
+fn check_input(path: &Path, bytes: &[u8]) {
+    assert_eq!(
+        fs::read(path).unwrap(),
+        bytes,
+        "generated input differs from frozen fixture {}",
+        path.display()
+    );
 }
 
 fn row_width(y: usize) -> usize {
@@ -56,74 +42,32 @@ fn row_width(y: usize) -> usize {
     }
 }
 
-static ORACLE_DLL: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
-
-fn ensure_oracle_built() -> &'static Path {
-    ORACLE_DLL.get_or_init(|| {
-        let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-        let project = manifest_dir.join("tests/oracle_apt/AptOracle.csproj");
-        let output = Command::new("dotnet")
-            .args(["build", project.to_str().unwrap(), "-c", "Release"])
-            .output()
-            .expect("Failed to execute dotnet build on AptOracle");
-
-        assert!(
-            output.status.success(),
-            "Failed to build AptOracle:\nSTDOUT:\n{}\nSTDERR:\n{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
-
-        manifest_dir.join("tests/oracle_apt/bin/Release/net8.0/AptOracle.dll")
-    })
-}
-
-fn run_oracle(oracle_dll: &Path, cases_dir: &Path) {
-    let output = Command::new("dotnet")
-        .arg(oracle_dll)
-        .arg(cases_dir)
-        .output()
-        .expect("Failed to execute AptOracle");
-
-    assert!(
-        output.status.success(),
-        "AptOracle execution failed:\nSTDOUT:\n{}\nSTDERR:\n{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-}
-
-fn run_oracle_geom(oracle_dll: &Path, inputs: &[f32]) -> Vec<Result<f32, String>> {
-    let temp = TempDir::new("apt_oracle_geom");
-    let in_file = temp.path.join("in.txt");
-    let out_file = temp.path.join("out.txt");
-
+fn frozen_geom(inputs: &[f32]) -> Vec<Result<f32, String>> {
+    let dir = fixture_dir("apt_geom");
     let mut in_str = String::new();
     for f in inputs {
         if f.is_nan() {
-            in_str.push_str("NaN\n");
+            in_str.push_str("NaN
+");
         } else if f.is_infinite() {
             if *f > 0.0 {
-                in_str.push_str("Infinity\n");
+                in_str.push_str("Infinity
+");
             } else {
-                in_str.push_str("-Infinity\n");
+                in_str.push_str("-Infinity
+");
             }
         } else {
-            in_str.push_str(&format!("{f}\n"));
+            in_str.push_str(&format!("{f}
+"));
         }
     }
-    fs::write(&in_file, in_str).unwrap();
-
-    let output = Command::new("dotnet")
-        .arg(oracle_dll)
-        .arg("--geom")
-        .arg(&in_file)
-        .arg(&out_file)
-        .output()
-        .expect("Failed to run oracle --geom");
-
-    assert!(output.status.success());
-    let out_content = fs::read_to_string(&out_file).unwrap();
+    assert_eq!(
+        fs::read_to_string(dir.join("in.txt")).unwrap().replace("\r\n", "\n"),
+        in_str,
+        "geometry inputs differ from frozen fixture"
+    );
+    let out_content = fs::read_to_string(dir.join("out.txt")).unwrap();
     out_content
         .lines()
         .map(|line| {
@@ -406,8 +350,6 @@ fn make_compressed_tile(
 
 #[test]
 fn test_pure_geometry_parity() {
-    let oracle_dll = ensure_oracle_built();
-
     let inputs: Vec<f32> = vec![
         0.0,
         63.9,
@@ -426,7 +368,7 @@ fn test_pure_geometry_parity() {
         -1e20,
     ];
 
-    let oracle_results = run_oracle_geom(&oracle_dll, &inputs);
+    let oracle_results = frozen_geom(&inputs);
 
     for (i, val) in inputs.iter().enumerate() {
         let rust_res = world_grid_origin(*val);
@@ -454,8 +396,7 @@ fn test_pure_geometry_parity() {
 
 #[test]
 fn csharp_apt_differential() {
-    let oracle_dll = ensure_oracle_built();
-    let temp_cases = TempDir::new("apt_diff_cases");
+    let cases_dir = fixture_dir("apt_oracle");
 
     let mut valid_cases = HashMap::new();
     let mut malformed_cases = HashMap::new();
@@ -826,12 +767,12 @@ fn csharp_apt_differential() {
 
     // Write all input cases to temp_cases
     for (name, bytes) in &valid_cases {
-        let p = temp_cases.path.join(format!("{name}.in"));
-        fs::write(p, bytes).unwrap();
+        let p = cases_dir.join(format!("{name}.in"));
+        check_input(&p, bytes);
     }
     for (name, bytes) in &malformed_cases {
-        let p = temp_cases.path.join(format!("{name}.in"));
-        fs::write(p, bytes).unwrap();
+        let p = cases_dir.join(format!("{name}.in"));
+        check_input(&p, bytes);
     }
 
     // Prefix truncation cases
@@ -840,24 +781,23 @@ fn csharp_apt_differential() {
     for &off in &trunc_offsets {
         if off < base_valid.len() {
             let name = format!("trunc_{off}");
-            let p = temp_cases.path.join(format!("{name}.in"));
-            fs::write(p, &base_valid[..off]).unwrap();
+            let p = cases_dir.join(format!("{name}.in"));
+            check_input(&p, &base_valid[..off]);
             trunc_cases.push(name);
         }
     }
 
-    // Execute oracle on temp_cases
-    run_oracle(&oracle_dll, &temp_cases.path);
+    // Expected outputs were captured once from the original C# oracle (tests/fixtures/apt_oracle).
 
     // Verify Valid Cases
     for (name, bytes) in &valid_cases {
-        let status = fs::read_to_string(temp_cases.path.join(format!("{name}.status"))).unwrap();
+        let status = fs::read_to_string(cases_dir.join(format!("{name}.status"))).unwrap();
         assert_eq!(status.trim(), "OK", "Case {name} failed in C# oracle: {status}");
 
         let rust_doc = AptDocument::parse(bytes).expect(&format!("Rust parse failed on {name}"));
 
         // Compare Meta
-        let meta_content = fs::read_to_string(temp_cases.path.join(format!("{name}.meta"))).unwrap();
+        let meta_content = fs::read_to_string(cases_dir.join(format!("{name}.meta"))).unwrap();
         let mut lines = meta_content.lines();
         let doc_line = lines.next().unwrap();
         let dp: Vec<&str> = doc_line.split_whitespace().collect();
@@ -880,7 +820,7 @@ fn csharp_apt_differential() {
         assert_eq!(rust_doc.attachment_groups.len(), dp[16].parse::<usize>().unwrap());
 
         // Compare Attachment Queries
-        let queries_content = fs::read_to_string(temp_cases.path.join(format!("{name}.queries"))).unwrap();
+        let queries_content = fs::read_to_string(cases_dir.join(format!("{name}.queries"))).unwrap();
         for ql in queries_content.lines() {
             let qp: Vec<&str> = ql.split_whitespace().collect();
             let a0: u32 = qp[1].parse().unwrap();
@@ -928,8 +868,8 @@ fn csharp_apt_differential() {
         // Compare Tiles Decoding
         for t in 0..rust_doc.tiles.len() {
             for v in 0..rust_doc.palette_variant_count {
-                let bin_path = temp_cases.path.join(format!("{name}.tile_{t}_{v}.bin"));
-                let err_path = temp_cases.path.join(format!("{name}.tile_{t}_{v}.err"));
+                let bin_path = cases_dir.join(format!("{name}.tile_{t}_{v}.bin"));
+                let err_path = cases_dir.join(format!("{name}.tile_{t}_{v}.err"));
 
                 let rust_tile = rust_doc.decode_tile(t, v);
                 if bin_path.exists() {
@@ -953,8 +893,8 @@ fn csharp_apt_differential() {
         // Compare Frames Decoding
         for f in 0..rust_doc.frames.len() {
             for v in 0..rust_doc.palette_variant_count {
-                let bin_path = temp_cases.path.join(format!("{name}.frame_{f}_{v}.bin"));
-                let err_path = temp_cases.path.join(format!("{name}.frame_{f}_{v}.err"));
+                let bin_path = cases_dir.join(format!("{name}.frame_{f}_{v}.bin"));
+                let err_path = cases_dir.join(format!("{name}.frame_{f}_{v}.err"));
 
                 let rust_frame = rust_doc.decode_frame(f, v);
                 if bin_path.exists() {
@@ -976,7 +916,7 @@ fn csharp_apt_differential() {
         }
 
         // Compare Geometry
-        let geom_content = fs::read_to_string(temp_cases.path.join(format!("{name}.geom"))).unwrap();
+        let geom_content = fs::read_to_string(cases_dir.join(format!("{name}.geom"))).unwrap();
         for gl in geom_content.lines() {
             let gp: Vec<&str> = gl.split_whitespace().collect();
             if gp[0] == "PROJECT" {
@@ -1039,16 +979,16 @@ fn csharp_apt_differential() {
 
     // Verify Malformed & Truncated Cases (Both must reject, no panic)
     for (name, bytes) in &malformed_cases {
-        let status = fs::read_to_string(temp_cases.path.join(format!("{name}.status"))).unwrap();
+        let status = fs::read_to_string(cases_dir.join(format!("{name}.status"))).unwrap();
         assert!(status.starts_with("REJECT"), "C# oracle should reject {name}, got: {status}");
         let rust_res = AptDocument::parse(bytes);
         assert!(rust_res.is_err(), "Rust parser should reject {name}, but returned Ok");
     }
 
     for name in &trunc_cases {
-        let status = fs::read_to_string(temp_cases.path.join(format!("{name}.status"))).unwrap();
+        let status = fs::read_to_string(cases_dir.join(format!("{name}.status"))).unwrap();
         assert!(status.starts_with("REJECT"), "C# oracle should reject {name}, got: {status}");
-        let bytes = fs::read(temp_cases.path.join(format!("{name}.in"))).unwrap();
+        let bytes = fs::read(cases_dir.join(format!("{name}.in"))).unwrap();
         let rust_res = AptDocument::parse(&bytes);
         assert!(rust_res.is_err(), "Rust parser should reject {name}, but returned Ok");
     }

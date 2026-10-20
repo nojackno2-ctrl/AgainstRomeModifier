@@ -1,58 +1,10 @@
 use against_rome_landscape::river::{
     self, RiverElevationMode, RiverPlannerOptions, RiverTileCatalog,
 };
-use std::process::Command;
 
 #[test]
-#[ignore = "requires .NET 10 SDK to execute the linked C# oracle"]
-fn csharp_river_differential() {
-    let project = format!(
-        "{}/tests/oracle/RoadOracle.csproj",
-        env!("CARGO_MANIFEST_DIR")
-    );
-    let config = format!("{}/tests/oracle/NuGet.Config", env!("CARGO_MANIFEST_DIR"));
-    let appdata = format!("{}/tests/oracle/cache", env!("CARGO_MANIFEST_DIR"));
-    let restore = Command::new("dotnet")
-        .env("APPDATA", &appdata)
-        .args([
-            "restore",
-            &project,
-            "--configfile",
-            &config,
-            "--verbosity",
-            "quiet",
-        ])
-        .output()
-        .expect("restore framework-only oracle");
-    assert!(
-        restore.status.success(),
-        "{}{}",
-        String::from_utf8_lossy(&restore.stdout),
-        String::from_utf8_lossy(&restore.stderr)
-    );
-    let output = Command::new("dotnet")
-        .env("APPDATA", &appdata)
-        .args([
-            "run",
-            "--no-restore",
-            "--project",
-            &project,
-            "-c",
-            "Release",
-            "--verbosity",
-            "quiet",
-            "--",
-            "river",
-        ])
-        .output()
-        .expect("execute .NET river oracle");
-    assert!(
-        output.status.success(),
-        "C# oracle failed: {}\n{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let stdout = String::from_utf8(output.stdout).unwrap();
+fn frozen_csharp_river_differential() {
+    let stdout = include_str!("fixtures/river_oracle.txt");
     let actual: Vec<_> = stdout.lines().filter(|s| s.starts_with("R|")).collect();
     let catalog = RiverTileCatalog::build_available(None, None, None);
     let mut expected = vec![];

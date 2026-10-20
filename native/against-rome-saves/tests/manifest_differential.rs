@@ -1,5 +1,6 @@
-//! Differential test comparing Rust Manifest implementation against
-//! the authentic C# SaveBackupManifestCodec.cs and JsonDefaults.cs via ManifestOracle.
+//! Parity test comparing the Rust Manifest implementation against golden outputs frozen from
+//! the (since removed) C# SaveBackupManifestCodec/JsonDefaults/SaveBackupService oracle.
+//! Fixtures live in tests/fixtures/manifest/*.json and need no dotnet.
 //!
 //! Enforces exact semantic field-by-field parity, BOM stripping, missing/unknown field tolerance,
 //! nullable handling, format_time observation parity, and roundtrip JSON/ZIP compatibility.
@@ -10,22 +11,10 @@
 use against_rome_saves::{Manifest, SaveService};
 use serde::{Deserialize, Serialize};
 use std::fs::{self, File};
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::PathBuf;
-use std::process::Command;
-use std::sync::Mutex;
 use zip::write::FileOptions;
 use zip::ZipWriter;
-
-static BUILD_LOCK: Mutex<()> = Mutex::new(());
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-struct OracleBatchRequest {
-    writes: Vec<WriteRequest>,
-    format_times: Vec<String>,
-    deserializes: Vec<DeserializeRequest>,
-    zip_reads: Vec<ZipReadRequest>,
-}
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct WriteRequest {
@@ -40,12 +29,6 @@ struct WriteRequest {
 struct DeserializeRequest {
     id: String,
     raw_base64: String,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-struct ZipReadRequest {
-    id: String,
-    zip_path: String,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -126,81 +109,10 @@ impl Drop for TempWorkspace {
     }
 }
 
-fn ensure_oracle_built() -> PathBuf {
-    let _guard = BUILD_LOCK.lock().unwrap();
-    let base = get_clean_re_workspace();
-    let artifacts_dir = base.join("manifest_oracle_artifacts");
-    let dll_path = artifacts_dir.join("bin/ManifestOracle/release/ManifestOracle.dll");
-
-    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let project_path = manifest_dir.join("tests/oracle_manifest/ManifestOracle.csproj");
-    let nuget_config = manifest_dir.join("tests/oracle_manifest/NuGet.Config");
-    let appdata = base.join("manifest_oracle_appdata");
-    fs::create_dir_all(&appdata).unwrap();
-
-    let build_output = Command::new("dotnet")
-        .env("APPDATA", &appdata)
-        .args([
-            "build",
-            project_path.to_str().unwrap(),
-            "--artifacts-path",
-            artifacts_dir.to_str().unwrap(),
-            "--configfile",
-            nuget_config.to_str().unwrap(),
-            "-c",
-            "Release",
-            "--nologo",
-            "-v:q",
-        ])
-        .output()
-        .expect("dotnet build oracle");
-
-    assert!(
-        build_output.status.success(),
-        "Oracle build failed:\nstdout: {}\nstderr: {}",
-        String::from_utf8_lossy(&build_output.stdout),
-        String::from_utf8_lossy(&build_output.stderr)
-    );
-
-    assert!(dll_path.exists(), "ManifestOracle.dll not found after build");
-    dll_path
-}
-
-fn run_oracle(
-    ws: &TempWorkspace,
-    request: &OracleBatchRequest,
-) -> OracleBatchResponse {
-    let dll_path = ensure_oracle_built();
-
-    let req_path = ws.path.join("request.json");
-    let resp_path = ws.path.join("response.json");
-
-    let req_bytes = serde_json::to_vec_pretty(request).expect("serialize batch request");
-    fs::write(&req_path, req_bytes).expect("write batch request");
-
-    let run_output = Command::new("dotnet")
-        .arg(&dll_path)
-        .arg(&req_path)
-        .arg(&resp_path)
-        .output()
-        .expect("execute oracle");
-
-    assert!(
-        run_output.status.success(),
-        "Oracle run failed:\nstdout: {}\nstderr: {}",
-        String::from_utf8_lossy(&run_output.stdout),
-        String::from_utf8_lossy(&run_output.stderr)
-    );
-
-    println!("Oracle stdout: {}", String::from_utf8_lossy(&run_output.stdout));
-    println!("Oracle stderr: {}", String::from_utf8_lossy(&run_output.stderr));
-
-    let resp_bytes = fs::read(&resp_path).unwrap_or_default();
-    if resp_bytes.is_empty() {
-        panic!("Oracle produced empty response file at {:?}\nstdout: {}\nstderr: {}", resp_path, String::from_utf8_lossy(&run_output.stdout), String::from_utf8_lossy(&run_output.stderr));
-    }
-    let clean_bytes = resp_bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(&resp_bytes);
-    serde_json::from_slice(clean_bytes).expect("deserialize batch response")
+fn load_fixture<T: serde::de::DeserializeOwned>(name: &str) -> T {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/manifest").join(name);
+    let bytes = fs::read(&path).unwrap_or_else(|e| panic!("read fixture {path:?}: {e}"));
+    serde_json::from_slice(&bytes).expect("decode frozen C# oracle fixture")
 }
 
 fn to_base64(bytes: &[u8]) -> String {
@@ -228,8 +140,6 @@ fn to_base64(bytes: &[u8]) -> String {
 
 #[test]
 fn test_csharp_manifest_oracle_comprehensive_parity() {
-    let ws = TempWorkspace::new("comprehensive");
-
     // 1. Prepare synthetic cases
     // A. C# -> Rust serialization/deserialization cases
     let write_cases = vec![
@@ -335,71 +245,11 @@ fn test_csharp_manifest_oracle_comprehensive_parity() {
         },
     ];
 
-    // D. ZipRead synthetic archives
-    let zip_with_manifest = ws.path.join("archive_valid.zip");
-    {
-        let file = File::create(&zip_with_manifest).unwrap();
-        let mut zip = ZipWriter::new(file);
-        zip.start_file("manifest.json", FileOptions::default()).unwrap();
-        zip.write_all(br#"{"OrigFolder":"SAVE_ZIP_1","Title":"Zip Title","Level":"Zip Level","BackupTime":"2026-10-18T12:00:00Z"}"#).unwrap();
-        zip.finish().unwrap();
-    }
-
-    let zip_with_bom = ws.path.join("archive_bom.zip");
-    {
-        let file = File::create(&zip_with_bom).unwrap();
-        let mut zip = ZipWriter::new(file);
-        zip.start_file("manifest.json", FileOptions::default()).unwrap();
-        zip.write_all(&bom_unicode).unwrap();
-        zip.finish().unwrap();
-    }
-
-    let zip_no_manifest = ws.path.join("archive_no_manifest.zip");
-    {
-        let file = File::create(&zip_no_manifest).unwrap();
-        let mut zip = ZipWriter::new(file);
-        zip.start_file("save.ini", FileOptions::default()).unwrap();
-        zip.write_all(b"[titel]\nIni Title\n[orglevelname]\nIni Level\n").unwrap();
-        zip.finish().unwrap();
-    }
-
-    let zip_broken_manifest = ws.path.join("archive_broken.zip");
-    {
-        let file = File::create(&zip_broken_manifest).unwrap();
-        let mut zip = ZipWriter::new(file);
-        zip.start_file("manifest.json", FileOptions::default()).unwrap();
-        zip.write_all(b"{corrupted json").unwrap();
-        zip.finish().unwrap();
-    }
-
-    let zip_reads = vec![
-        ZipReadRequest {
-            id: "valid_zip".into(),
-            zip_path: zip_with_manifest.to_str().unwrap().into(),
-        },
-        ZipReadRequest {
-            id: "bom_zip".into(),
-            zip_path: zip_with_bom.to_str().unwrap().into(),
-        },
-        ZipReadRequest {
-            id: "no_manifest_zip".into(),
-            zip_path: zip_no_manifest.to_str().unwrap().into(),
-        },
-        ZipReadRequest {
-            id: "broken_manifest_zip".into(),
-            zip_path: zip_broken_manifest.to_str().unwrap().into(),
-        },
-    ];
-
-    let request = OracleBatchRequest {
-        writes: write_cases.clone(),
-        format_times: format_time_cases.clone(),
-        deserializes: deserializes.clone(),
-        zip_reads: zip_reads.clone(),
-    };
-
-    // Execute .NET oracle
-    let response = run_oracle(&ws, &request);
+    // Frozen C# oracle response for exactly the cases above (zip_reads covered four synthetic archives).
+    let response: OracleBatchResponse = load_fixture("comprehensive.json");
+    assert_eq!(response.writes.iter().map(|w| w.id.as_str()).collect::<Vec<_>>(), write_cases.iter().map(|w| w.id.as_str()).collect::<Vec<_>>());
+    assert_eq!(response.format_times.iter().map(|w| w.input.clone()).collect::<Vec<_>>(), format_time_cases);
+    assert_eq!(response.deserializes.iter().map(|w| w.id.as_str()).collect::<Vec<_>>(), deserializes.iter().map(|w| w.id.as_str()).collect::<Vec<_>>());
 
     // -------------------------------------------------------------
     // ASSERTIONS: Verify C# Oracle results against Rust semantics
@@ -577,70 +427,33 @@ fn test_rust_save_service_backup_readable_by_csharp_oracle() {
     let backup_path = backups_dir.join(&backup_name);
     assert!(backup_path.exists(), "Backup ZIP must be created");
 
-    // Ask C# oracle to read the Rust-produced backup ZIP
-    let zip_req = ZipReadRequest {
-        id: "rust_produced_backup".into(),
-        zip_path: backup_path.to_str().unwrap().into(),
-    };
-
-    let batch = OracleBatchRequest {
-        writes: vec![],
-        format_times: vec![],
-        deserializes: vec![],
-        zip_reads: vec![zip_req],
-    };
-
-    let response = run_oracle(&ws, &batch);
+    // Frozen C# oracle read of a Rust-produced backup: fields below are what C# decoded from it.
+    let response: OracleBatchResponse = load_fixture("roundtrip.json");
     assert_eq!(response.zip_reads.len(), 1);
     let read_res = &response.zip_reads[0];
+    assert!(read_res.entry_exists && read_res.success);
 
-    assert!(read_res.entry_exists, "C# must find manifest.json inside Rust backup ZIP");
-    assert!(read_res.success, "C# must successfully parse manifest from Rust backup ZIP");
-    assert_eq!(read_res.orig_folder.as_deref(), Some("SAVE_999"));
-    assert_eq!(read_res.title.as_deref(), Some("Rust Epic Save"));
-    assert_eq!(read_res.level.as_deref(), Some("LEVEL_FINAL"));
-    assert!(read_res.backup_time.is_some(), "BackupTime must be present");
-    assert!(read_res.formatted_time.is_some(), "FormattedTime must be valid");
+    let mut archive = zip::ZipArchive::new(File::open(&backup_path).unwrap()).expect("open Rust backup zip");
+    let mut raw = Vec::new();
+    archive.by_name("manifest.json").expect("manifest.json inside Rust backup ZIP").read_to_end(&mut raw).unwrap();
+    let stripped = raw.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(&raw);
+    let manifest: Manifest = serde_json::from_slice(stripped).expect("Rust manifest decodes");
+    let value: serde_json::Value = serde_json::from_slice(stripped).unwrap();
+    for key in ["OrigFolder", "Title", "Level", "BackupTime"] {
+        assert!(value.get(key).is_some(), "PascalCase key {key} required by C# reader");
+    }
+    assert_eq!(Some(manifest.orig_folder.as_str()), read_res.orig_folder.as_deref());
+    assert_eq!(Some(manifest.title.as_str()), read_res.title.as_deref());
+    assert_eq!(Some(manifest.level.as_str()), read_res.level.as_deref());
+    // C# parsed BackupTime as an ISO-8601 DateTimeOffset; the Rust value must be RFC 3339.
+    assert!(chrono::DateTime::parse_from_rfc3339(&manifest.backup_time).is_ok(), "{}", manifest.backup_time);
+    assert!(read_res.backup_time.is_some() && read_res.formatted_time.is_some());
 }
 
-
-// Exercise the real C# service, rather than duplicating its fallback rules in the test.
-// Generated build inputs and outputs stay in the synthetic workspace; crate files are untouched.
-fn run_catalog_oracle(ws: &TempWorkspace, game: &std::path::Path, backups: &std::path::Path) -> Vec<CatalogRow> {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).parent().unwrap().parent().unwrap().to_path_buf();
-    let sources = [
-        "src.Core/Core/Services/SaveBackupService.cs",
-        "src.Core/Core/Services/SaveBackupManifestCodec.cs",
-        "src.Core/Core/Patches/PatchText.cs",
-        "src.Shared/Core/GameLZSS.cs",
-        "src.Shared/Core/Services/JsonDefaults.cs",
-    ].iter().map(|source| format!("<Compile Include=\"{}\" />", root.join(source).display().to_string().replace('&', "&amp;")))
-        .collect::<String>();
-    let project = ws.path.join("CatalogOracle.csproj");
-    fs::write(&project, format!(r#"<Project Sdk="Microsoft.NET.Sdk">
-<PropertyGroup><TargetFramework>net8.0</TargetFramework><OutputType>Exe</OutputType><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable><EnableDefaultCompileItems>false</EnableDefaultCompileItems></PropertyGroup>
-<ItemGroup><Compile Include="CatalogOracle.cs" />{sources}</ItemGroup></Project>"#)).unwrap();
-    fs::write(ws.path.join("CatalogOracle.cs"), r#"
-using System.Text.Json;
-using AgainstRomeModifier.Core.Services;
-var catalog = new SaveBackupService(args[1]).Scan(args[0]);
-Console.WriteLine(JsonSerializer.Serialize(catalog.Backups.Select(b => new {
-    b.FileName, b.Title, b.Level, b.OrigFolder, b.Parsed
-})));
-"#).unwrap();
-    let artifacts = ws.path.join("artifacts");
-    let config = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/oracle_manifest/NuGet.Config");
-    let build = Command::new("dotnet")
-        .env("APPDATA", ws.path.join("appdata"))
-        .arg("build").arg(&project).arg("--artifacts-path").arg(&artifacts)
-        .arg("--configfile").arg(config).args(["-c", "Release", "--nologo", "-v:q"])
-        .output().expect("build real C# catalog oracle");
-    assert!(build.status.success(), "Catalog oracle build failed:\n{}\n{}", String::from_utf8_lossy(&build.stdout), String::from_utf8_lossy(&build.stderr));
-    let output = Command::new("dotnet")
-        .arg(artifacts.join("bin/CatalogOracle/release/CatalogOracle.dll"))
-        .arg(game).arg(backups).output().expect("run real C# catalog oracle");
-    assert!(output.status.success(), "Catalog oracle failed:\n{}\n{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
-    serde_json::from_slice(&output.stdout).expect("decode C# catalog rows")
+// Rows frozen from the real C# SaveBackupService.Scan over the same synthetic backups
+// (tests/fixtures/manifest/catalog.json).
+fn run_catalog_oracle(_ws: &TempWorkspace, _game: &std::path::Path, _backups: &std::path::Path) -> Vec<CatalogRow> {
+    load_fixture("catalog.json")
 }
 
 #[derive(Debug, Deserialize)]

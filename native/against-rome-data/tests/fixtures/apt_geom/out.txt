@@ -1,0 +1,15 @@
+OK 0
+OK 0
+OK 64
+OK 0
+OK -64
+OK -64
+OK 64
+OK -256
+OK 960
+OK -1024
+REJECT ArgumentOutOfRangeException
+REJECT ArgumentOutOfRangeException
+REJECT ArgumentOutOfRangeException
+REJECT ArgumentOutOfRangeException
+REJECT ArgumentOutOfRangeException

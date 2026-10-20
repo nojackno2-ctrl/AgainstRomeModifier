@@ -1,11 +1,11 @@
 //! Save/load parity for `arm_scenario.json` across events: conditions that target script spawns and
 //! prebuilt DATA objects, actions that spawn/move/end the mission, legacy migration and malformed input.
-//! The always-on tests need no .NET; `csharp_scenario_save_load_differential` is the explicit oracle gate
-//! that replays every corpus case through the shipped C# `ScenarioDocument.Load/Save` and the Apply
-//! compile path (`dotnet` required, no retail files).
+//! `csharp_scenario_save_load_differential` compares every corpus case with verdicts and outputs frozen from
+//! the (since removed) C# `ScenarioDocument.Load/Save` and Apply compile path
+//! (tests/fixtures/scenario_roundtrip_oracle.json); no .NET or retail files required.
 use against_rome_scenario::*;
 use serde_json::{json, Value};
-use std::{collections::BTreeSet, fs, path::PathBuf, process::Command};
+use std::{collections::BTreeSet, fs, path::PathBuf};
 
 const A: &str = "12345678-1122-3344-5566-778899001122"; // script squad
 const B: &str = "22345678-1122-3344-5566-778899001122"; // prebuilt house, slot 9, uid u32::MAX
@@ -419,44 +419,43 @@ fn first_difference(a: &Value, b: &Value, path: &str) -> Option<String> {
     }
 }
 
-fn read_verdict(dir: &std::path::Path, name: &str, stage: &str) -> Option<String> {
-    fs::read_to_string(dir.join(format!("{name}.{stage}"))).ok()
+/// Frozen C# oracle results for one corpus case.
+struct Frozen(Value);
+impl Frozen {
+    fn verdict(&self, stage: &str) -> Option<String> {
+        self.0.get(stage).and_then(Value::as_str).map(str::to_string)
+    }
+    fn saved(&self) -> Value {
+        self.0["saved"].clone()
+    }
+    fn bci(&self) -> Vec<u8> {
+        unhex(self.0["bci_hex"].as_str().unwrap())
+    }
+}
+fn unhex(s: &str) -> Vec<u8> {
+    (0..s.len()).step_by(2).map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap()).collect()
+}
+fn frozen_oracle() -> std::collections::BTreeMap<String, Frozen> {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/scenario_roundtrip_oracle.json");
+    let value: Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
+    value.as_object().unwrap().iter().map(|(k, v)| (k.clone(), Frozen(v.clone()))).collect()
 }
 
 #[test]
-#[ignore = "requires dotnet; replays the whole save/load corpus through shipped C# ScenarioDocument"]
 fn csharp_scenario_save_load_differential() {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let temp = std::env::temp_dir().join(format!("arm-rust-scenario-roundtrip-{}", std::process::id()));
-    let _ = fs::remove_dir_all(&temp);
-    let (cases_dir, out_dir) = (temp.join("cases"), temp.join("csharp"));
-    fs::create_dir_all(&cases_dir).unwrap();
     let corpus = corpus();
-    for c in &corpus {
-        fs::write(cases_dir.join(format!("{}.json", c.name)), &c.bytes).unwrap();
-    }
-    let idle_path = temp.join("idle.bci");
-    fs::write(&idle_path, idle()).unwrap();
-    let status = Command::new("dotnet")
-        .arg("run")
-        .arg("--project")
-        .arg(root.join("tests/oracle/Oracle.csproj"))
-        .arg(format!("-p:RestoreConfigFile={}", root.join("../../NuGet.Config").display()))
-        .arg("--")
-        .arg("scenario-batch")
-        .arg(&cases_dir)
-        .arg(&out_dir)
-        .arg(&idle_path)
-        .status()
-        .unwrap();
-    assert!(status.success(), "oracle failed to run");
-
+    let oracle = frozen_oracle();
+    assert_eq!(
+        oracle.keys().cloned().collect::<BTreeSet<_>>(),
+        corpus.iter().map(|c| c.name.clone()).collect::<BTreeSet<_>>(),
+        "corpus drifted from the frozen C# oracle fixture"
+    );
     let (mut stricter_load, mut stricter_save, mut stricter_compile) = (BTreeSet::new(), BTreeSet::new(), BTreeSet::new());
     let (mut both_saved, mut both_compiled, mut both_rejected) = (0, 0, 0);
     let aliases = aliases();
     for c in &corpus {
         let n = c.name.as_str();
-        let cs_load = read_verdict(&out_dir, n, "load").unwrap_or_else(|| panic!("{n}: no C# load verdict"));
+        let cs_load = oracle[n].verdict("load").unwrap_or_else(|| panic!("{n}: no C# load verdict"));
         let rust = ScenarioDocument::from_json(&c.bytes);
         match (cs_load.starts_with("ok"), rust.as_ref()) {
             (false, Ok(_)) => panic!("{n}: C# refused load ({cs_load}) but Rust accepted"),
@@ -465,15 +464,14 @@ fn csharp_scenario_save_load_differential() {
             (true, Ok(_)) => {}
         }
         let doc = rust.unwrap();
-        let cs_save = read_verdict(&out_dir, n, "save").unwrap_or_else(|| panic!("{n}: no C# save verdict"));
+        let cs_save = oracle[n].verdict("save").unwrap_or_else(|| panic!("{n}: no C# save verdict"));
         let rust_saved = doc.to_json();
-        let cs_saved_bytes = out_dir.join(format!("{n}.saved")).join("arm_scenario.json");
         match (cs_save.starts_with("ok"), rust_saved.as_ref()) {
             (false, Ok(_)) => panic!("{n}: C# refused save ({cs_save}) but Rust saved"),
             (false, Err(_)) => { both_rejected += 1; continue; }
             (true, Err(_)) => { stricter_save.insert(n.to_string()); continue; }
             (true, Ok(bytes)) => {
-                let cs_value: Value = serde_json::from_slice(&fs::read(&cs_saved_bytes).unwrap()).unwrap();
+                let cs_value: Value = oracle[n].saved();
                 let rust_value: Value = serde_json::from_slice(bytes).unwrap();
                 if let Some(path) = first_difference(&rust_value, &cs_value, "$") {
                     panic!("{n}: saved JSON differs from C# Save at {path}");
@@ -483,14 +481,14 @@ fn csharp_scenario_save_load_differential() {
         }
         // C# accepts what Rust wrote, and compiles it to the same bytes as Rust does.
         let reloaded = ScenarioDocument::from_json(rust_saved.as_ref().unwrap()).unwrap();
-        let cs_compile = read_verdict(&out_dir, n, "compile").unwrap_or_else(|| panic!("{n}: no C# compile verdict"));
+        let cs_compile = oracle[n].verdict("compile").unwrap_or_else(|| panic!("{n}: no C# compile verdict"));
         let rust_bytes = compile_script(&idle(), &reloaded, None, Some(&aliases));
         match (cs_compile.starts_with("ok"), rust_bytes) {
             (false, Ok(_)) => panic!("{n}: C# refused compile ({cs_compile}) but Rust compiled"),
             (false, Err(_)) => both_rejected += 1,
             (true, Err(_)) => { stricter_compile.insert(n.to_string()); }
             (true, Ok(bytes)) => {
-                assert_eq!(bytes, fs::read(out_dir.join(format!("{n}.bci"))).unwrap(), "{n}: compiled BCI differs from C#");
+                assert_eq!(bytes, oracle[n].bci(), "{n}: compiled BCI differs from C#");
                 both_compiled += 1;
             }
         }
@@ -502,7 +500,7 @@ fn csharp_scenario_save_load_differential() {
         .filter(|n| {
             let later_stage_rejects = ["save", "compile"]
                 .iter()
-                .any(|stage| read_verdict(&out_dir, n, stage).is_some_and(|v| v.starts_with("err")));
+                .any(|stage| oracle[n.as_str()].verdict(stage).is_some_and(|v| v.starts_with("err")));
             !later_stage_rejects
         })
         .cloned()
@@ -515,5 +513,4 @@ fn csharp_scenario_save_load_differential() {
     );
     assert_eq!(lenient_in_csharp, expected, "C# leniency drifted from the documented list");
     assert!(both_saved >= 12 && both_compiled >= 8, "oracle covered too little");
-    let _ = fs::remove_dir_all(&temp);
 }

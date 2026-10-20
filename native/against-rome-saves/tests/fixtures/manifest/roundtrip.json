@@ -1,0 +1,18 @@
+{
+  "writes": [],
+  "format_times": [],
+  "deserializes": [],
+  "zip_reads": [
+    {
+      "id": "rust_produced_backup",
+      "entry_exists": true,
+      "success": true,
+      "orig_folder": "SAVE_999",
+      "title": "Rust Epic Save",
+      "level": "LEVEL_FINAL",
+      "backup_time": "2026-10-20T14:31:16.555792900\u002B08:00",
+      "formatted_time": "2026-10-20 14:31:16",
+      "error": null
+    }
+  ]
+}

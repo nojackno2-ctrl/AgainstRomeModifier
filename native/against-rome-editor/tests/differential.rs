@@ -1,27 +1,13 @@
-//! Opt-in live oracle; requires .NET 8 and the repository C# Modules project.
-//! Run: cargo test --test differential -- --ignored --nocapture
+//! Differential against terrain output frozen from the original C# implementation
+//! (tests/fixtures/terrain_oracle.bin); no dotnet needed.
 use against_rome_editor::terrain::*;
 
 #[test]
-#[ignore = "builds and executes the original C# implementation; requires dotnet"]
-fn live_csharp_terrain_differential() {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let output = root.join("re_workspace/terrain-csharp-oracle.bin");
-    std::fs::create_dir_all(output.parent().unwrap()).unwrap();
-    let result = std::process::Command::new("dotnet")
-        .args(["run", "--project"])
-        .arg(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/oracle/Oracle.csproj"))
-        .args(["-c", "Release", "--"])
-        .arg(&output)
-        .output()
-        .unwrap();
-    assert!(
-        result.status.success(),
-        "{}\n{}",
-        String::from_utf8_lossy(&result.stdout),
-        String::from_utf8_lossy(&result.stderr)
-    );
-    let expected = std::fs::read(&output).unwrap();
+fn frozen_csharp_terrain_differential() {
+    let expected = std::fs::read(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/terrain_oracle.bin"),
+    )
+    .unwrap();
     let mut actual = Vec::new();
     fn snapshot(out: &mut Vec<u8>, s: &TerrainSession) {
         out.extend_from_slice(s.heights());

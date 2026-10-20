@@ -1,0 +1,221 @@
+{
+  "hash": "E2DDC272BE55CEE81E0DCFD9F80FF0DDD455EACBBDA39F7A8E915B828467E73F",
+  "inputBytes": 1880,
+  "entries": 10,
+  "documents": 5,
+  "frames": 5,
+  "directories": 1,
+  "otherBmps": 1,
+  "failures": [
+    {
+      "entry": "not-bmp",
+      "error": "Missing/truncated BMP."
+    },
+    {
+      "entry": "SYSTEM/DATA/SHADOWTEXTURE/badsize.bmp",
+      "error": "Invalid shadow BMP palette, pixel offset, or payload extent."
+    },
+    {
+      "entry": "SYSTEM/DATA/SHADOWTEXTURE/unsupported.bmp",
+      "error": "Only uncompressed 8-bit BI_RGB shadow BMPs are supported."
+    }
+  ],
+  "samples": [
+    {
+      "entry": "SYSTEM/DATA/SHADOWTEXTURE/round_small_shadow.bmp",
+      "file": "sample-0.png",
+      "groundFile": "sample-0-ground.png",
+      "Width": 3,
+      "Height": 2
+    },
+    {
+      "entry": "SYSTEM/DATA/SHADOWTEXTURE/GerHau02_shadow.bmp",
+      "file": "sample-1.png",
+      "groundFile": "sample-1-ground.png",
+      "Width": 3,
+      "Height": 2
+    },
+    {
+      "entry": "SYSTEM/DATA/SHADOWTEXTURE/GerNadelbaum_shadow.bmp",
+      "file": "sample-2.png",
+      "groundFile": "sample-2-ground.png",
+      "Width": 3,
+      "Height": 2
+    },
+    {
+      "entry": "SYSTEM/DATA/SHADOWTEXTURE/LakaDorn_shadow.bmp",
+      "file": "sample-3.png",
+      "groundFile": "sample-3-ground.png",
+      "Width": 3,
+      "Height": 2
+    },
+    {
+      "entry": "SYSTEM/DATA/SHADOWTEXTURE/error.bmp",
+      "file": "sample-4.png",
+      "groundFile": "sample-4-ground.png",
+      "Width": 3,
+      "Height": 2
+    }
+  ],
+  "objects": [
+    {
+      "id": 12,
+      "name": "Object 12",
+      "shidx": 1,
+      "shsiz": 40,
+      "shtyp": 1,
+      "shacx": 1,
+      "shacz": 0,
+      "correctionScreenX": 0.5,
+      "correctionScreenY": 0.25,
+      "mappedEntry": "GerNadelbaum_shadow.bmp",
+      "candidateEntry": null,
+      "status": "ID from supplied ShadowNames",
+      "found": true,
+      "preview": "object-12-ground-assumption.png",
+      "frame": 0,
+      "previewLimit": "Flat ground; assumed UV orientation. No game comparison or object sprite overlay."
+    },
+    {
+      "id": 42,
+      "name": "Object 42",
+      "shidx": 2,
+      "shsiz": 48,
+      "shtyp": 0,
+      "shacx": -3,
+      "shacz": 2,
+      "correctionScreenX": -2.5,
+      "correctionScreenY": -0.25,
+      "mappedEntry": "missing.bmp",
+      "candidateEntry": null,
+      "status": "ID from supplied ShadowNames",
+      "found": false,
+      "preview": null,
+      "frame": 0,
+      "previewLimit": "Flat ground; assumed UV orientation. No game comparison or object sprite overlay."
+    },
+    {
+      "id": 46,
+      "name": "Object 46",
+      "shidx": 3,
+      "shsiz": 0,
+      "shtyp": 1,
+      "shacx": 0,
+      "shacz": 0,
+      "correctionScreenX": 0,
+      "correctionScreenY": 0,
+      "mappedEntry": null,
+      "candidateEntry": "GerNadelbaum_shadow.bmp",
+      "status": "UNVERIFIED candidate; ShadowNames missing",
+      "found": true,
+      "preview": "object-46-ground-assumption.png",
+      "frame": 0,
+      "previewLimit": "Flat ground; assumed UV orientation. No game comparison or object sprite overlay."
+    }
+  ],
+  "inventory": [
+    {
+      "entry": "SYSTEM/",
+      "kind": "directory"
+    },
+    {
+      "entry": "ordinary.bmp",
+      "kind": "other BMP",
+      "audit": {
+        "width": 2,
+        "height": 1,
+        "depth": 24,
+        "stride": 8,
+        "declaredImageBytes": 999,
+        "actualImageBytes": 8,
+        "imageSizeMatches": false,
+        "trailingBytes": 0
+      }
+    },
+    {
+      "entry": "SYSTEM/DATA/SHADOWTEXTURE/round_small_shadow.bmp",
+      "kind": "shadow",
+      "audit": {
+        "width": 3,
+        "height": 2,
+        "depth": 8,
+        "stride": 4,
+        "declaredImageBytes": 8,
+        "actualImageBytes": 8,
+        "imageSizeMatches": true,
+        "trailingBytes": 0
+      },
+      "TrailingByteCount": 0,
+      "minStrength": 0,
+      "maxStrength": 255
+    },
+    {
+      "entry": "SYSTEM/DATA/SHADOWTEXTURE/GerHau02_shadow.bmp",
+      "kind": "shadow",
+      "audit": {
+        "width": 3,
+        "height": -2,
+        "depth": 8,
+        "stride": 4,
+        "declaredImageBytes": 8,
+        "actualImageBytes": 8,
+        "imageSizeMatches": true,
+        "trailingBytes": 0
+      },
+      "TrailingByteCount": 0,
+      "minStrength": 0,
+      "maxStrength": 255
+    },
+    {
+      "entry": "SYSTEM/DATA/SHADOWTEXTURE/GerNadelbaum_shadow.bmp",
+      "kind": "shadow",
+      "audit": {
+        "width": 3,
+        "height": 2,
+        "depth": 8,
+        "stride": 4,
+        "declaredImageBytes": 8,
+        "actualImageBytes": 8,
+        "imageSizeMatches": true,
+        "trailingBytes": 0
+      },
+      "TrailingByteCount": 0,
+      "minStrength": 0,
+      "maxStrength": 255
+    },
+    {
+      "entry": "SYSTEM/DATA/SHADOWTEXTURE/LakaDorn_shadow.bmp",
+      "kind": "shadow",
+      "audit": {
+        "width": 3,
+        "height": -2,
+        "depth": 8,
+        "stride": 4,
+        "declaredImageBytes": 8,
+        "actualImageBytes": 8,
+        "imageSizeMatches": true,
+        "trailingBytes": 0
+      },
+      "TrailingByteCount": 0,
+      "minStrength": 0,
+      "maxStrength": 255
+    },
+    {
+      "entry": "SYSTEM/DATA/SHADOWTEXTURE/error.bmp",
+      "kind": "shadow",
+      "audit": {
+        "width": 3,
+        "height": 2,
+        "depth": 8,
+        "stride": 4,
+        "declaredImageBytes": 8,
+        "actualImageBytes": 8,
+        "imageSizeMatches": true,
+        "trailingBytes": 0
+      },
+      "TrailingByteCount": 0,
+      "minStrength": 0,
+      "maxStrength": 255
+    }
+  ]
+}

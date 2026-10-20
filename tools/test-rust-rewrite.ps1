@@ -8,12 +8,12 @@ Default: host `cargo test` for every native/against-rome-* workspace member plus
 -IncludeDesktop  also tests apps/against-rome-editor (the egui app; excluded by default as the slowest build).
 -TraceWin32      additionally runs the i686 static-CRT panic=abort trace DLL release gate (Windows/MSVC only).
 -TraceOnly       runs ONLY the i686 trace gate (always --release, implies -TraceWin32, -Release is redundant)
-                 and cannot be combined with -IncludeDesktop/-Differential/-Retail.
--Differential    adds ignored live C#/Rust oracle tests; -Retail adds the ignored installed-game texture roundtrip.
+                 and cannot be combined with -IncludeDesktop/-Retail.
+-Retail          adds the ignored installed-game texture roundtrip.
 Workspace members are checked against `cargo metadata`, so a new member cannot silently skip this script.
 #>
 [CmdletBinding()]
-param([switch]$Release, [switch]$IncludeDesktop, [switch]$Differential, [switch]$Retail,
+param([switch]$Release, [switch]$IncludeDesktop, [switch]$Retail,
     [switch]$TraceWin32, [switch]$TraceOnly, [switch]$Offline)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -41,7 +41,7 @@ $probes = @('formation-probe-rs', 'shad-probe-rs', 'alr-probe-rs', 'apt-probe-rs
 $desktop = 'apps/against-rome-editor'
 # TraceOnly is a focused release/i686 gate; it never runs retail or C# oracles.
 if ($TraceOnly) {
-    if ($IncludeDesktop -or $Differential -or $Retail) { throw 'TraceOnly cannot be combined with desktop/differential/retail gates.' }
+    if ($IncludeDesktop -or $Retail) { throw 'TraceOnly cannot be combined with desktop/retail gates.' }
     $TraceWin32 = $true
 }
 # CARGO_NET_OFFLINE is the env form of --offline and covers every cargo call below.
@@ -158,26 +158,4 @@ if ($Retail) {
     if ($Release) { $arguments += '--release' }
     $arguments += @('--', '--ignored', '--nocapture')
     Invoke-DifferentialTest -CargoArguments $arguments -Label 'Retail textures TEMP roundtrip'
-}
-if ($Differential) {
-    $arguments = @('test', '--locked', '--manifest-path',
-        (Join-Path $repo 'native/against-rome-editor/Cargo.toml'), '--target-dir',
-        (Join-Path $repo 're_workspace/rust-rewrite-targets/native-against-rome-editor'),
-        '--test', 'differential')
-    if ($Release) { $arguments += '--release' }
-    $arguments += @('--', '--ignored', '--nocapture')
-    Invoke-DifferentialTest -CargoArguments $arguments -Label 'Live C# / Rust terrain differential'
-    $gates = @(
-        @{ Crate = 'against-rome-placement'; Filter = 'managed_family_light_auxiliary_differential'; Kind = '--lib' },
-        @{ Crate = 'against-rome-scenario'; Filter = 'csharp_synthetic_differential'; Kind = '--test' }
-    )
-    foreach ($gate in $gates) {
-        $arguments = @('test', '--locked', '--manifest-path',
-            (Join-Path $repo "native/$($gate.Crate)/Cargo.toml"), '--target-dir',
-            (Join-Path $repo "re_workspace/rust-rewrite-targets/native-$($gate.Crate)"), $gate.Kind)
-        if ($gate.Kind -eq '--test') { $arguments += 'compiler' }
-        if ($Release) { $arguments += '--release' }
-        $arguments += @($gate.Filter, '--', '--ignored', '--nocapture')
-        Invoke-DifferentialTest -CargoArguments $arguments -Label "C# / Rust differential: $($gate.Crate)"
-    }
 }

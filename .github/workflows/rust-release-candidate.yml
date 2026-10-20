@@ -17,11 +17,6 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: |
-            8.0.x
-            10.0.x
       - name: Rust toolchain
         shell: pwsh
         run: |
@@ -36,7 +31,7 @@ jobs:
         run: ./tools/test-publish-rust.ps1
       - name: Rust rewrite tests
         shell: pwsh
-        run: ./tools/test-rust-rewrite.ps1 -IncludeDesktop -Differential
+        run: ./tools/test-rust-rewrite.ps1 -IncludeDesktop
       - name: Trace i686 release DLL gate
         shell: pwsh
         run: ./tools/test-rust-rewrite.ps1 -TraceOnly

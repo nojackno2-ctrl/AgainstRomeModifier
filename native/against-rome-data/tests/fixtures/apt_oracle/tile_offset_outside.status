@@ -1,0 +1,2 @@
+REJECT InvalidDataException
+APT tile points outside its pixel block.

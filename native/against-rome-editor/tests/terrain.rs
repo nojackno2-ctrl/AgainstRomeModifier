@@ -1,81 +1,10 @@
 use against_rome_editor::terrain::*;
 
-// The driver references the original Modules assembly (including the real session,
-// pipeline, filter and work buffer), rather than translating their formulas to C#.
-const SCULPT_ORACLE: &str = r#"
-using AgainstRomeMapEditor;
-using var input = new BinaryReader(File.OpenRead(args[0]));
-using var output = new BinaryWriter(File.Create(args[1]));
-int count = input.ReadInt32();
-for (int test = 0; test < count; test++)
-{
-    int size = input.ReadInt32();
-    byte[] heights = input.ReadBytes(size * size);
-    bool up = input.ReadBoolean();
-    var falloff = (TerrainFalloffType)input.ReadInt32();
-    float cx = input.ReadSingle(), cy = input.ReadSingle(), radius = input.ReadSingle();
-    float strength = input.ReadSingle(), limit = input.ReadSingle();
-    int history = input.ReadInt32();
-    var session = new TerrainHeightEditSession(size, heights, null, 0, null);
-    if (history == 1)
-    {
-        session.ApplyHeightAdjustments(new[] { (heights.Length - 1, (byte)(heights[^1] ^ 1)) });
-        session.Undo(); // A no-op must preserve this redo entry.
-    }
-    if (history == 2)
-        session.ApplyHeightAdjustments(new[] { (0, (byte)(heights[0] ^ 1)) });
-    // Two separate pipeline calls must quantize separately and share one stroke.
-    for (int repeat = 0; repeat < 2; repeat++)
-    {
-        var changes = up
-            ? TerrainSculptPipeline.Elevate(session, cx, cy, radius, strength, falloff, limit)
-            : TerrainSculptPipeline.Depress(session, cx, cy, radius, strength, falloff, limit);
-        output.Write(changes.Count);
-        foreach (var c in changes)
-        {
-            output.Write(c.Index); output.Write(c.Before); output.Write(c.After);
-        }
-        Snapshot(session);
-    }
-    output.Write(session.CommitStroke());
-    output.Write(session.Undo() is not null); Snapshot(session);
-    output.Write(session.Redo() is not null); Snapshot(session);
-    session.ResetToBaseline(); Snapshot(session);
-}
-void Snapshot(TerrainHeightEditSession s)
-{
-    output.Write(s.Heights.ToArray());
-    output.Write(s.IsDirty); output.Write(s.CanUndo); output.Write(s.CanRedo);
-}
-"#;
-
+// Expected output was frozen from the original C# sculpt pipeline (TerrainHeightEditSession +
+// TerrainSculptPipeline) and is stored in two halves (<5 MB each) under tests/fixtures.
 #[test]
-#[ignore = "executes original C# sculpt pipeline; requires .NET 8 SDK/runtime"]
-fn live_csharp_sculpt_pipeline_differential() {
-    use std::{fs, process::Command};
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let directory = std::env::temp_dir().join(format!(
-        "terrain-sculpt-oracle-{}-{}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    ));
-    fs::create_dir_all(&directory).unwrap();
-    let module = root
-        .join("src.MapEditor.Modules/AgainstRome.MapEditor.Modules.csproj")
-        .canonicalize()
-        .unwrap();
-    // AssemblyName is an existing InternalsVisibleTo friend of Modules.
-    fs::write(directory.join("Oracle.csproj"), format!(r#"<Project Sdk="Microsoft.NET.Sdk">
-<PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net8.0</TargetFramework>
-<ImplicitUsings>enable</ImplicitUsings><AssemblyName>AlrScanlineDifferential</AssemblyName></PropertyGroup>
-<ItemGroup><ProjectReference Include="{}" /></ItemGroup></Project>"#,
-        module.display().to_string().trim_start_matches(r"\\?\").replace('&', "&amp;").replace('"', "&quot;")
-    )).unwrap();
-    fs::write(directory.join("Program.cs"), SCULPT_ORACLE).unwrap();
-
+fn frozen_csharp_sculpt_pipeline_differential() {
+    use std::fs;
     let mut cases = vec![];
     for up in [false, true] {
         for falloff in 0..6 {
@@ -158,40 +87,9 @@ fn live_csharp_sculpt_pipeline_differential() {
             session.can_redo() as u8,
         ]);
     }
-    let mut input = vec![];
-    i32_bytes(&mut input, cases.len() as i32);
-    for (id, &(size, up, falloff, p)) in cases.iter().enumerate() {
-        i32_bytes(&mut input, size);
-        input.extend((0..size * size).map(|i| {
-            if id % 2 == 0 {
-                100
-            } else {
-                (i * 37 % 256) as u8
-            }
-        }));
-        input.push(up as u8);
-        i32_bytes(&mut input, falloff);
-        for f in p {
-            input.extend_from_slice(&f.to_le_bytes());
-        }
-        i32_bytes(&mut input, (id % 3) as i32);
-    }
-    fs::write(directory.join("input.bin"), input).unwrap();
-    let result = Command::new("dotnet")
-        .args(["run", "--project"])
-        .arg(directory.join("Oracle.csproj"))
-        .args(["-c", "Release", "--"])
-        .arg(directory.join("input.bin"))
-        .arg(directory.join("output.bin"))
-        .output()
-        .unwrap();
-    assert!(
-        result.status.success(),
-        "oracle failed: {}\n{}",
-        String::from_utf8_lossy(&result.stdout),
-        String::from_utf8_lossy(&result.stderr)
-    );
-    let expected = fs::read(directory.join("output.bin")).unwrap();
+    let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    let mut expected = fs::read(fixtures.join("sculpt_oracle_part0.bin")).unwrap();
+    expected.extend(fs::read(fixtures.join("sculpt_oracle_part1.bin")).unwrap());
     let mut offset = 0;
     for (id, &(size, up, falloff, p)) in cases.iter().enumerate() {
         let initial = (0..size * size)
@@ -255,10 +153,6 @@ fn live_csharp_sculpt_pipeline_differential() {
         cases.len(),
         offset
     );
-    let resolved = directory.canonicalize().unwrap();
-    assert!(resolved.starts_with(std::env::temp_dir().canonicalize().unwrap()));
-    assert_eq!(resolved.file_name(), directory.file_name());
-    fs::remove_dir_all(resolved).unwrap();
 }
 
 #[test]

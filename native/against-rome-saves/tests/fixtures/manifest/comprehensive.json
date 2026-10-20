@@ -1,0 +1,207 @@
+{
+  "writes": [
+    {
+      "id": "standard_ascii",
+      "json": "{\r\n  \u0022OrigFolder\u0022: \u0022SAVE_001\u0022,\r\n  \u0022Title\u0022: \u0022Battle for Rome\u0022,\r\n  \u0022Level\u0022: \u0022MAP_01\u0022,\r\n  \u0022BackupTime\u0022: \u00222026-10-18T14:30:00.0000000Z\u0022\r\n}",
+      "orig_folder": "SAVE_001",
+      "title": "Battle for Rome",
+      "level": "MAP_01",
+      "backup_time": "2026-10-18T14:30:00.0000000Z"
+    },
+    {
+      "id": "unicode_traditional_chinese",
+      "json": "{\r\n  \u0022OrigFolder\u0022: \u0022SAVE_002\u0022,\r\n  \u0022Title\u0022: \u0022\\u7F85\\u99AC\\u7684\\u5D1B\\u8D77 \\u2694\\uFE0F (Campaign 01)\u0022,\r\n  \u0022Level\u0022: \u0022\\u95DC\\u5361_01_\\u6559\\u5B78\u0022,\r\n  \u0022BackupTime\u0022: \u00222026-10-18T22:30:00.0000000\\u002B08:00\u0022\r\n}",
+      "orig_folder": "SAVE_002",
+      "title": "\u7F85\u99AC\u7684\u5D1B\u8D77 \u2694\uFE0F (Campaign 01)",
+      "level": "\u95DC\u5361_01_\u6559\u5B78",
+      "backup_time": "2026-10-18T22:30:00.0000000\u002B08:00"
+    },
+    {
+      "id": "empty_strings",
+      "json": "{\r\n  \u0022OrigFolder\u0022: \u0022\u0022,\r\n  \u0022Title\u0022: \u0022\u0022,\r\n  \u0022Level\u0022: \u0022\u0022,\r\n  \u0022BackupTime\u0022: \u00222026-01-01T00:00:00.0000000Z\u0022\r\n}",
+      "orig_folder": "",
+      "title": "",
+      "level": "",
+      "backup_time": "2026-01-01T00:00:00.0000000Z"
+    },
+    {
+      "id": "special_escapes",
+      "json": "{\r\n  \u0022OrigFolder\u0022: \u0022SAVE_SPECIAL\u0022,\r\n  \u0022Title\u0022: \u0022Title with \\u0022quotes\\u0022 and \\\\slashes\\\\ \\u0026 symbols\u0022,\r\n  \u0022Level\u0022: \u0022LEVEL\\tTAB\u0022,\r\n  \u0022BackupTime\u0022: \u00222026-06-15T12:00:00.0000000Z\u0022\r\n}",
+      "orig_folder": "SAVE_SPECIAL",
+      "title": "Title with \u0022quotes\u0022 and \\slashes\\ \u0026 symbols",
+      "level": "LEVEL\tTAB",
+      "backup_time": "2026-06-15T12:00:00.0000000Z"
+    }
+  ],
+  "format_times": [
+    {
+      "input": "2026-10-18T15:30:00Z",
+      "formatted": "2026-10-18 15:30:00"
+    },
+    {
+      "input": "2026-10-18T15:30:00.0000000Z",
+      "formatted": "2026-10-18 15:30:00"
+    },
+    {
+      "input": "2026-10-18T15:30:00\u002B08:00",
+      "formatted": "2026-10-18 15:30:00"
+    },
+    {
+      "input": "2026-10-18T15:30:00-05:00",
+      "formatted": "2026-10-19 04:30:00"
+    },
+    {
+      "input": "2026-10-18T15:30:00",
+      "formatted": "2026-10-18 15:30:00"
+    },
+    {
+      "input": "2026-10-18 15:30:00",
+      "formatted": "2026-10-18 15:30:00"
+    },
+    {
+      "input": "invalid-not-a-date",
+      "formatted": "invalid-not-a-date"
+    },
+    {
+      "input": "",
+      "formatted": ""
+    },
+    {
+      "input": "9999-99-99",
+      "formatted": "9999-99-99"
+    },
+    {
+      "input": "2026-02-30T10:00:00",
+      "formatted": "2026-02-30T10:00:00"
+    }
+  ],
+  "deserializes": [
+    {
+      "id": "bom_standard",
+      "success": true,
+      "orig_folder": "SAVE_BOM",
+      "title": "BOM Title",
+      "level": "MAP_BOM",
+      "backup_time": "2026-10-18T10:00:00Z",
+      "error": null
+    },
+    {
+      "id": "bom_unicode",
+      "success": true,
+      "orig_folder": "SAVE_\u6F22",
+      "title": "\u7E41\u9AD4\u4E2D\u6587\u6E2C\u8A66",
+      "level": "\u95DC\u5361",
+      "backup_time": "2026-10-18T10:00:00Z",
+      "error": null
+    },
+    {
+      "id": "missing_fields",
+      "success": true,
+      "orig_folder": null,
+      "title": "Only Title",
+      "level": null,
+      "backup_time": null,
+      "error": null
+    },
+    {
+      "id": "empty_obj",
+      "success": true,
+      "orig_folder": null,
+      "title": null,
+      "level": null,
+      "backup_time": null,
+      "error": null
+    },
+    {
+      "id": "unknown_fields",
+      "success": true,
+      "orig_folder": "SAVE_010",
+      "title": "T",
+      "level": "L",
+      "backup_time": "2026-10-18T10:00:00Z",
+      "error": null
+    },
+    {
+      "id": "json_null",
+      "success": true,
+      "orig_folder": null,
+      "title": null,
+      "level": null,
+      "backup_time": null,
+      "error": null
+    },
+    {
+      "id": "field_nulls",
+      "success": true,
+      "orig_folder": null,
+      "title": null,
+      "level": null,
+      "backup_time": null,
+      "error": null
+    },
+    {
+      "id": "broken_syntax",
+      "success": false,
+      "orig_folder": null,
+      "title": null,
+      "level": null,
+      "backup_time": null,
+      "error": "JsonException: Expected end of string, but instead reached end of data. Path: $.OrigFolder | LineNumber: 0 | BytePositionInLine: 22."
+    },
+    {
+      "id": "non_object",
+      "success": false,
+      "orig_folder": null,
+      "title": null,
+      "level": null,
+      "backup_time": null,
+      "error": "JsonException: The JSON value could not be converted to AgainstRomeModifier.Core.Services.SaveBackupManifest. Path: $ | LineNumber: 0 | BytePositionInLine: 1."
+    }
+  ],
+  "zip_reads": [
+    {
+      "id": "valid_zip",
+      "entry_exists": true,
+      "success": true,
+      "orig_folder": "SAVE_ZIP_1",
+      "title": "Zip Title",
+      "level": "Zip Level",
+      "backup_time": "2026-10-18T12:00:00Z",
+      "formatted_time": "2026-10-18 12:00:00",
+      "error": null
+    },
+    {
+      "id": "bom_zip",
+      "entry_exists": true,
+      "success": true,
+      "orig_folder": "SAVE_\u6F22",
+      "title": "\u7E41\u9AD4\u4E2D\u6587\u6E2C\u8A66",
+      "level": "\u95DC\u5361",
+      "backup_time": "2026-10-18T10:00:00Z",
+      "formatted_time": "2026-10-18 10:00:00",
+      "error": null
+    },
+    {
+      "id": "no_manifest_zip",
+      "entry_exists": false,
+      "success": true,
+      "orig_folder": null,
+      "title": null,
+      "level": null,
+      "backup_time": null,
+      "formatted_time": null,
+      "error": null
+    },
+    {
+      "id": "broken_manifest_zip",
+      "entry_exists": true,
+      "success": false,
+      "orig_folder": null,
+      "title": null,
+      "level": null,
+      "backup_time": null,
+      "formatted_time": null,
+      "error": "JsonException: \u0027c\u0027 is an invalid start of a property name. Expected a \u0027\u0022\u0027. Path: $ | LineNumber: 0 | BytePositionInLine: 1."
+    }
+  ]
+}

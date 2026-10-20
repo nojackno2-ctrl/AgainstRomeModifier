@@ -1,50 +1,17 @@
-//! Real C# differential for `AlrDocument` against `NativeAlrDocument.cs` and `NativeAlrIndexedFrame.cs`
-//! (linked into tests/oracle/AlrOracle.csproj).
+//! Differential test for `AlrDocument` against expected outputs frozen from the original C#
+//! `NativeAlrDocument` oracle (inputs and outputs in tests/fixtures/alr_oracle; the C# oracle project
+//! has been retired, so no dotnet is needed).
 //!
-//! Directly links the original NativeAlrDocument.cs and related scanline/parser sources,
-//! reads synthetic inputs and outputs:
-//!   - frame metadata
-//!   - indexed pixels / samples
-//!   - palette words
-//!   - roundtrip bytes
-//! And compares against Rust AlrDocument full output across:
-//!   - v4, v5, v6 container layouts
-//!   - shared frame DAGs (including transitive shared references)
-//!   - palette variants (1, 2, 4 variants; local vs first-frame fallback)
-//!   - malformed headers and corrupted container structures.
+//! Covers frame metadata, indexed samples, palettes, ARGB pixels, roundtrip bytes across v4/v5/v6
+//! layouts, shared frame DAGs, palette variants, and malformed/corrupt containers.
 
 use against_rome_data::alr::*;
 use against_rome_data::alr_scanlines::IndexedSample;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
-struct TempDir {
-    path: PathBuf,
-}
-
-impl TempDir {
-    fn new(prefix: &str) -> Self {
-        let mut path = std::env::temp_dir();
-        let unique = format!(
-            "{}_{}_{}",
-            prefix,
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        );
-        path.push(unique);
-        fs::create_dir_all(&path).expect("Failed to create temp dir");
-        Self { path }
-    }
-}
-
-impl Drop for TempDir {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.path);
-    }
+fn fixture_dir() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/alr_oracle")
 }
 
 fn put_u32_le(buf: &mut [u8], offset: usize, value: u32) {
@@ -109,39 +76,6 @@ fn build_header(
         buf.extend_from_slice(&w.to_le_bytes());
     }
     buf
-}
-
-fn ensure_oracle_built() -> PathBuf {
-    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let project = manifest_dir.join("tests/oracle/AlrOracle.csproj");
-    let output = Command::new("dotnet")
-        .args(["build", project.to_str().unwrap(), "-c", "Release"])
-        .output()
-        .expect("Failed to execute dotnet build on AlrOracle");
-
-    assert!(
-        output.status.success(),
-        "Failed to build AlrOracle:\nSTDOUT:\n{}\nSTDERR:\n{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-
-    manifest_dir.join("tests/oracle/bin/Release/net8.0/AlrOracle.dll")
-}
-
-fn run_oracle(oracle_dll: &Path, cases_dir: &Path) {
-    let output = Command::new("dotnet")
-        .arg(oracle_dll)
-        .arg(cases_dir)
-        .output()
-        .expect("Failed to execute AlrOracle");
-
-    assert!(
-        output.status.success(),
-        "AlrOracle execution failed:\nSTDOUT:\n{}\nSTDERR:\n{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
 }
 
 #[derive(Debug)]
@@ -243,15 +177,18 @@ fn read_u16_array(bytes: &[u8]) -> Vec<u16> {
 
 #[test]
 fn csharp_alr_document_differential_suite() {
-    let oracle_dll = ensure_oracle_built();
-    let temp = TempDir::new("alr_oracle_diff");
-    let dir = &temp.path;
+    let fixture = fixture_dir();
+    let dir = &fixture;
 
     let mut test_names = Vec::new();
 
     let mut add_case = |name: &str, data: &[u8]| {
         let in_path = dir.join(format!("{name}.in"));
-        fs::write(&in_path, data).unwrap();
+        assert_eq!(
+            fs::read(&in_path).unwrap(),
+            data,
+            "Case {name}: generated input differs from frozen fixture input"
+        );
         test_names.push(name.to_string());
     };
 
@@ -816,8 +753,7 @@ fn csharp_alr_document_differential_suite() {
         add_case("frame0_zero_palette_later_frame_nonzero", &buf);
     }
 
-    // Run C# Oracle on the cases directory
-    run_oracle(&oracle_dll, dir);
+    // Expected outputs were captured once from the original C# oracle and frozen in tests/fixtures/alr_oracle.
 
     // Verify Rust against C# Oracle for every case
     let mut verified_ok = 0;
