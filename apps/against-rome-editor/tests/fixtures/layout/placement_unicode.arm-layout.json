@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "kind": "Placement",
+  "entries": [
+    {
+      "type": "\u7F85\u99AC\u0022\u5175\\\u71DF\u00E9\uD83C\uDFDB\u003C\u003E\u0026\u0027",
+      "x": 100.5,
+      "z": -200.5,
+      "heightOffset": 1.5,
+      "angle": 45,
+      "team": 0,
+      "count": 5
+    }
+  ]
+}

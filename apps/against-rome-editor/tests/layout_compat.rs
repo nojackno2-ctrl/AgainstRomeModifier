@@ -37,3 +37,26 @@ fn imported_nature_layout_plans_without_team() {
     assert_eq!((plan[0].type_id, plan[0].team), (77, None), "nature layouts ignore team override");
     assert_eq!((plan[0].x, plan[0].z, plan[0].y), (268.5, 812.0, 100.25));
 }
+
+/// Files produced by the real C# `MapLayoutPresets.Serialize` (frozen under fixtures/layout).
+const CSHARP_FIXTURES: [(&str, &str); 3] = [
+    ("placement_settlement", include_str!("fixtures/layout/placement_settlement.arm-layout.json")),
+    ("nature_forest", include_str!("fixtures/layout/nature_forest.arm-layout.json")),
+    ("placement_unicode", include_str!("fixtures/layout/placement_unicode.arm-layout.json")),
+];
+
+#[test]
+fn csharp_fixture_files_parse_and_reserialize_byte_identically() {
+    for (name, text) in CSHARP_FIXTURES {
+        let preset = deserialize(text).unwrap_or_else(|e| panic!("{name}: {e}"));
+        assert_eq!(serialize(&preset).unwrap(), text, "{name}");
+    }
+}
+
+#[test]
+fn csharp_unicode_fixture_keeps_escapes_and_values() {
+    let preset = deserialize(CSHARP_FIXTURES[2].1).unwrap();
+    assert_eq!(preset.entries[0].type_name, "\u{7f85}\u{99ac}\"\u{5175}\\\u{71df}\u{e9}\u{1f3db}<>&'");
+    let small = deserialize(CSHARP_FIXTURES[1].1).unwrap();
+    assert_eq!(small.entries[1].angle, 1.0e-7_f32);
+}

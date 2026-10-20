@@ -121,6 +121,9 @@ pub struct EditorApp {
     navigation: NavigationUi,
     height_step: f32,
     placement: PlacementUi,
+    family: crate::family_ui::FamilyUi,
+    family_open: bool,
+    family_history_key: (usize, usize, usize),
     scenario: ScenarioUi,
     textures: TexturesUi,
     scene: SceneUi,
@@ -218,6 +221,9 @@ impl EditorApp {
             navigation: NavigationUi::default(),
             height_step: 4.0,
             placement: PlacementUi::default(),
+            family: crate::family_ui::FamilyUi::default(),
+            family_open: false,
+            family_history_key: (0, 0, 0),
             scenario: ScenarioUi::default(),
             textures: TexturesUi::default(),
             scene: SceneUi::default(),
@@ -880,6 +886,7 @@ impl EditorApp {
         self.ambience.load_from_map(&path)?;
         self.pending_save_warnings = None;
         self.placement.reset_session(Some(&path));
+        self.family.reset_session();
         self.nature.reset_map_bound();
         self.textures.reset_session(Some(&path));
         self.scene.reset_session(Some(&path));
@@ -938,6 +945,7 @@ impl EditorApp {
 
         // Reset base documents
         self.placement.reset_session(None);
+        self.family.reset_session();
         self.nature.reset_map_bound();
         self.textures.reset_session(None);
         self.scene.reset_session(None);
@@ -1146,6 +1154,7 @@ impl EditorApp {
         if let Some(apply) = self.landscape.take_apply_request() {
             self.handle_landscape_apply(apply);
         }
+        self.apply_region_request();
 
         self.packaging.show(
             ctx,
@@ -1177,10 +1186,140 @@ impl EditorApp {
         let had_session = self.session.is_some();
         let before = self.session.as_ref().is_some_and(|s| s.is_dirty());
         self.ai_planner.show(ctx, self.session.as_mut(), water);
+        self.show_family_window(ctx);
         if had_session && self.session.as_ref().is_some_and(|s| s.is_dirty()) && !before {
             self.texture_dirty = true;
             self.navigation.invalidate();
         }
+    }
+
+    /// Loads objdef names (cached per game root) so placement team edits use category limits.
+    fn refresh_placement_type_names(&mut self) {
+        if self.placement.has_type_names() || !self.placement.is_loaded() {
+            return;
+        }
+        let Some(game) = self
+            .placement
+            .loaded_map()
+            .and_then(|m| m.parent())
+            .and_then(Path::parent)
+            .map(Path::to_path_buf)
+        else {
+            return;
+        };
+        if let Ok(definitions) = against_rome_maps::NativeObjectDefinitions::load(&game) {
+            let names: HashMap<i32, String> = definitions
+                .into_iter()
+                .filter_map(|(id, d)| d.name.filter(|n| !n.is_empty()).map(|n| (id, n)))
+                .collect();
+            self.placement.set_type_names(names);
+        }
+    }
+
+    /// Families & Effects window (saved lights, particles, native family copy).
+    fn show_family_window(&mut self, ctx: &egui::Context) {
+        // Any placement edit (including undo/redo/load) invalidates the cached tables.
+        let key = (
+            self.placement.object_count(),
+            self.placement.undo_depth(),
+            self.placement.redo_depth(),
+        );
+        if key != self.family_history_key {
+            self.family_history_key = key;
+            self.family.invalidate();
+        }
+        if !self.family_open {
+            return;
+        }
+        let english = self.lang() == AppLanguage::English;
+        let map_dir = self.placement.loaded_map().map(Path::to_path_buf).or_else(|| {
+            let t = self.map_path_input.trim();
+            (!t.is_empty()).then(|| PathBuf::from(t))
+        });
+        let game_dir = map_dir.as_deref().and_then(crate::packaging_ui::game_dir_for_map);
+        let can_edit = map_dir.as_deref().is_some_and(|d| !is_original_map_dir(d));
+        let bound: BTreeSet<usize> = self
+            .scenario
+            .document()
+            .data_slots
+            .iter()
+            .filter_map(|d| usize::try_from(d.slot).ok())
+            .collect();
+        let mut open = self.family_open;
+        let family = &mut self.family;
+        let placement = &mut self.placement;
+        egui::Window::new(tr(self.loc.current_language(), "Families & Effects", "群組與特效"))
+            .open(&mut open)
+            .default_size(Vec2::new(640.0, 560.0))
+            .show(ctx, |ui| {
+                family.show(
+                    ui,
+                    crate::family_ui::FamilyCtx {
+                        store: placement.store_mut(),
+                        map_dir: map_dir.as_deref(),
+                        game_dir: game_dir.as_deref(),
+                        can_edit,
+                        english,
+                        bound_root_slots: Some(&bound),
+                    },
+                );
+            });
+        self.family_open = open;
+        if self.family.take_store_changed() {
+            self.placement.note_external_store_edit();
+            self.navigation.invalidate();
+        }
+    }
+
+    /// Applies a pending Region Tools request (texture fill or object selection).
+    fn apply_region_request(&mut self) {
+        let objects: Vec<(usize, f32, f32)> = self
+            .placement
+            .objects()
+            .iter()
+            .map(|o| (o.slot, o.position[0], o.position[2]))
+            .collect();
+        let outcome = self
+            .landscape
+            .apply_pending_region(self.textures.session_mut(), || objects);
+        if outcome.textures_changed > 0 {
+            self.texture_dirty = true;
+            self.navigation.invalidate();
+        }
+        if let Some(ids) = outcome.selected_objects {
+            let keys: Vec<(usize, u32)> = self
+                .placement
+                .objects()
+                .iter()
+                .filter(|o| ids.contains(&o.slot))
+                .map(|o| (o.slot, o.uid))
+                .collect();
+            self.placement.select_objects(&keys);
+        }
+    }
+
+    /// 2D canvas hooks for Region Tools: drag a rectangle and paint the selection overlay.
+    fn handle_region_canvas(&mut self, response: &egui::Response, painter: &egui::Painter, map_rect: Rect) {
+        let dim = self.nature_dimension();
+        let to_screen = |x: f32, y: f32| {
+            Pos2::new(
+                map_rect.min.x + x / dim as f32 * map_rect.width(),
+                map_rect.min.y + y / dim as f32 * map_rect.height(),
+            )
+        };
+        if self.landscape.region_pick_active() {
+            let tile_at = |p: Pos2| {
+                Some((
+                    ((p.x - map_rect.min.x) / map_rect.width() * dim as f32).floor() as i32,
+                    ((p.y - map_rect.min.y) / map_rect.height() * dim as f32).floor() as i32,
+                ))
+            };
+            if self.landscape.region_drag_input(response, dim.max(1) as usize, tile_at).is_some() {
+                self.status_message = "Region selection updated from canvas.".into();
+                self.status_is_error = false;
+            }
+        }
+        self.landscape.paint_region_overlay(painter, to_screen);
     }
 
     fn handle_landscape_apply(&mut self, apply: LandscapeApply) {
@@ -1306,6 +1445,18 @@ impl EditorApp {
                     }
                 };
                 let blocked = crate::design_apply::commit_wall_collision(terrain, &edits);
+                let mut foundations = 0;
+                if !edits.foundations.is_empty() {
+                    let known_names = self.textures.known_textures().to_vec();
+                    let known = crate::design_apply::TextureNames::new(&known_names);
+                    if let Some(textures_session) = self.textures.session_mut() {
+                        foundations = crate::design_apply::commit_wall_foundations(
+                            textures_session,
+                            &known,
+                            &edits,
+                        );
+                    }
+                }
                 let mut placed_count = 0;
                 let mut placement_note = String::new();
                 if !edits.unresolved.is_empty() {
@@ -1340,7 +1491,7 @@ impl EditorApp {
                 self.texture_dirty = true;
                 self.navigation.invalidate();
                 let summary = format!(
-                    "wall applied: {blocked} collision pixels, {placed_count} objects placed{placement_note}"
+                    "wall applied: {blocked} collision pixels, {foundations} foundation tiles, {placed_count} objects placed{placement_note}"
                 );
                 self.landscape.plan_applied(LandscapeApply::Wall, &summary);
             }
@@ -7548,6 +7699,9 @@ impl eframe::App for EditorApp {
                 if ui.button(tr(lang, "Ambience", "氛圍")).clicked() {
                     self.ambience.open = true;
                 }
+                if ui.button(tr(lang, "Families & Effects", "群組與特效")).clicked() {
+                    self.family_open = true;
+                }
                 if ui.button(tr(lang, "Tech Doc", "技術文件")).clicked() {
                     self.tech_doc.open = true;
                 }
@@ -7960,7 +8114,7 @@ impl eframe::App for EditorApp {
             self.draw_nature_overlay(&painter, map_rect);
 
             // 處理滑鼠操作繪製
-            if let Some(mouse_pos) = response.hover_pos().filter(|_| !self.box_select) {
+            if let Some(mouse_pos) = response.hover_pos().filter(|_| !self.box_select && !self.landscape.region_pick_active()) {
                 if map_rect.contains(mouse_pos) {
                     let norm_x = (mouse_pos.x - map_rect.min.x) / map_rect.width();
                     let norm_y = (mouse_pos.y - map_rect.min.y) / map_rect.height();
@@ -8127,6 +8281,9 @@ impl eframe::App for EditorApp {
                 }
             }
 
+            // Region Tools：拖曳矩形並繪製選取覆蓋
+            self.handle_region_canvas(&response, &painter, map_rect);
+
             // 框選工具：拖曳矩形選取放置物件
             if self.box_select {
                 self.handle_box_select_input(ctx, &response, &painter, map_rect);
@@ -8159,6 +8316,7 @@ impl eframe::App for EditorApp {
         ) {
             self.pan = new_pan;
         }
+        self.refresh_placement_type_names();
         self.placement.show(ctx);
         self.scenario.show(ctx);
         self.textures.show(ctx);

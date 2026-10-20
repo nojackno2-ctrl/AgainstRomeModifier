@@ -140,6 +140,8 @@ pub struct PlacementUi {
     delta: [String; 3],
     angle: String,
     team: String,
+    /// Object type id -> objdef name, used to apply per-category team limits (C# `ValidateBounds`).
+    type_names: std::collections::HashMap<i32, String>,
     pending: Option<Pending>,
     status: String,
     /// History entries per user-visible edit (a batch apply is one undo step).
@@ -185,6 +187,7 @@ impl Default for PlacementUi {
             delta: ["0".into(), "0".into(), "0".into()],
             angle: "0".into(),
             team: "0".into(),
+            type_names: std::collections::HashMap::new(),
             pending: None,
             status: String::new(),
             undo_groups: Vec::new(),
@@ -232,6 +235,7 @@ impl PlacementUi {
     /// Preserves user preferences (open state, delta translations, angle, team).
     pub fn reset_session(&mut self, map_path: Option<&Path>) {
         self.store = None;
+        self.type_names.clear();
         self.baseline = None;
         self.loaded_map = None;
         self.selected = None;
@@ -506,6 +510,49 @@ impl PlacementUi {
             self.pending = None;
         }
         Ok(batch)
+    }
+    /// Mutable DATA store for panels that edit it directly (Families & Effects).
+    pub fn store_mut(&mut self) -> Option<&mut ObjectStore> {
+        self.store.as_mut()
+    }
+    /// Call after a panel edited/undid the store behind this session's back: the grouped
+    /// undo/redo bookkeeping no longer matches the store history, so it is reset (the store's own
+    /// history stays intact) and selection / pending actions are revalidated.
+    pub fn note_external_store_edit(&mut self) {
+        self.undo_groups.clear();
+        self.redo_groups.clear();
+        self.pending = None;
+        self.check_selection();
+    }
+    /// Supplies objdef names so team edits can apply the per-category limits.
+    pub fn set_type_names(&mut self, names: std::collections::HashMap<i32, String>) {
+        self.type_names = names;
+    }
+    pub fn has_type_names(&self) -> bool {
+        !self.type_names.is_empty()
+    }
+    /// Per-category team limits and unit-count rule of an object type (C# `ValidateBounds`):
+    /// squads (figures) team 0..=7, animals count 0, others team -1..=15.
+    pub fn category_limits(&self, type_id: i32) -> Option<String> {
+        let name = self.type_names.get(&type_id)?;
+        Some(match placement_category(name) {
+            PlacementCategory::Squad => "team 0..7, unit count 1..20".to_string(),
+            PlacementCategory::Animal => "team -1..15, unit count 0".to_string(),
+            PlacementCategory::UnitGroup => "team -1..15, unit count 1..20 (SDL)".to_string(),
+            PlacementCategory::Other => "team -1..15".to_string(),
+        })
+    }
+    /// Validates a team value for every selected family root against its category limits.
+    /// Types without a known name are checked with the generic -1..15 object rule.
+    fn validate_team_for_families(&self, families: &[(usize, u32)], team: i32) -> Result<()> {
+        let Some(store) = self.store.as_ref() else { return Ok(()) };
+        let objects = store.objects();
+        for &(slot, uid) in families {
+            let Some(o) = objects.iter().find(|o| o.slot == slot && o.uid == uid) else { continue };
+            let Some(name) = self.type_names.get(&(o.type_id as i32)) else { continue };
+            validate_team_for_name(name, team).map_err(|e| format!("slot {slot}: {e}"))?;
+        }
+        Ok(())
     }
     pub fn object_count(&self) -> usize {
         self.store.as_ref().map_or(0, |s| s.objects().len())
@@ -825,6 +872,7 @@ impl PlacementUi {
         } else {
             text.parse::<u16>().map_err(|_| "隊伍必須是 0..15 或 -1")?
         };
+        self.validate_team_for_families(&families, if team == 65535 { -1 } else { i32::from(team) })?;
         self.store
             .as_mut()
             .unwrap()
@@ -888,6 +936,9 @@ impl PlacementUi {
         };
         if team_parsed.is_none() && angle_parsed.is_none() {
             return Err("請輸入要批次設定的隊伍或角度".into());
+        }
+        if let Some(team) = team_parsed {
+            self.validate_team_for_families(&families, if team == 65535 { -1 } else { i32::from(team) })?;
         }
         self.store
             .as_mut()
@@ -1364,6 +1415,11 @@ impl PlacementUi {
                     }
                 }
             });
+            if let Some(o) = self.selected.and_then(|k| objects.iter().find(|o| (o.slot, o.uid) == k)) {
+                if let Some(limits) = self.category_limits(o.type_id as i32) {
+                    ui.label(format!("類別限制：{limits}（單位數量存於 SDL，不在 DATA）"));
+                }
+            }
             if let Some(store) = &self.store {
                 let families = self.selected_families();
                 if families.len() == 1 {
@@ -1443,6 +1499,46 @@ impl PlacementUi {
             });
         }
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PlacementCategory {
+    Squad,
+    Animal,
+    UnitGroup,
+    Other,
+}
+
+/// Classifies an objdef name like the C# SDL catalog (`FigTie*` = animal, other `Fig*` = squad).
+pub fn placement_category(name_def: &str) -> PlacementCategory {
+    use against_rome_maps::{SdlObjectCatalog, SdlObjectCategory};
+    match SdlObjectCatalog::categorize(name_def) {
+        SdlObjectCategory::Figure if name_def.to_ascii_lowercase().starts_with("figtie") => PlacementCategory::Animal,
+        SdlObjectCategory::Figure => PlacementCategory::Squad,
+        SdlObjectCategory::UnitGroup => PlacementCategory::UnitGroup,
+        _ => PlacementCategory::Other,
+    }
+}
+
+/// Runs the C# `ValidateBounds` team rule for an object of this type via the maps crate.
+/// Position/angle are neutral because only team and unit count are being checked.
+pub fn validate_team_for_name(name_def: &str, team: i32) -> std::result::Result<(), String> {
+    use against_rome_maps::{placement_edit::validate_bounds, SdlObjectCategory, SdlObjectType, SdlPlacedObject};
+    let category = against_rome_maps::SdlObjectCatalog::categorize(name_def);
+    let unit_count = i32::from(category == SdlObjectCategory::Figure && placement_category(name_def) == PlacementCategory::Squad);
+    let obj_type = SdlObjectType::new(name_def, 0, category, "", 0, Default::default());
+    validate_bounds(&SdlPlacedObject::new(obj_type, 0.0, 0.0, 0.0, team, 0.0, unit_count), true)
+}
+
+/// Validates a squad edit (team, unit count) before it is written to an SDL placement, using the
+/// maps crate's `edit_placement_values` rules. Returns the accepted `(team, unit_count)`.
+pub fn validate_squad_values(name_def: &str, team: i32, unit_count: i32) -> std::result::Result<(i32, i32), String> {
+    use against_rome_maps::{placement_edit::edit_placement_values, SdlObjectCatalog, SdlObjectType, SdlPlacedObject};
+    let category = SdlObjectCatalog::categorize(name_def);
+    let obj_type = SdlObjectType::new(name_def, 0, category, "", 0, Default::default());
+    let before = SdlPlacedObject::new(obj_type, 0.0, 0.0, 0.0, team, 0.0, unit_count.max(1));
+    let edited = edit_placement_values(&before, team, 0.0, 0.0, 0.0, 0.0, unit_count)?;
+    Ok((edited.team, edited.unit_count))
 }
 
 /// Half-open tile rectangle: `left <= x < right`, `top <= y < bottom`.

@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "kind": "Placement",
+  "entries": [
+    {
+      "type": "BauRomHaus01",
+      "x": 0,
+      "z": 0,
+      "heightOffset": 0,
+      "angle": 0,
+      "team": 2,
+      "count": 0
+    },
+    {
+      "type": "FigRomLeg01",
+      "x": -128.5,
+      "z": 256.25,
+      "heightOffset": 0.125,
+      "angle": 90,
+      "team": 3,
+      "count": 12
+    },
+    {
+      "type": "VerRomIco01",
+      "x": 1E-05,
+      "z": 12345.678,
+      "heightOffset": -3.5,
+      "angle": 359.9,
+      "team": -1,
+      "count": 20
+    }
+  ]
+}
