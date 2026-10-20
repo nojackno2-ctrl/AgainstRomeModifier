@@ -1,12 +1,15 @@
 name: Release
 
+# Tag-triggered Rust portable release. The tag must equal the editor crate
+# version (apps/against-rome-editor/Cargo.toml) as vMAJOR.MINOR.PATCH.
+
 on:
   push:
     tags: ["v*"]
   workflow_dispatch:
     inputs:
       tag:
-        description: "Version tag to publish (e.g. v1.2.1)"
+        description: "Version tag to publish (e.g. v2.0.0)"
         required: true
         type: string
 
@@ -16,72 +19,34 @@ permissions:
 jobs:
   build-and-release:
     runs-on: windows-latest
-    timeout-minutes: 30
+    timeout-minutes: 75
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           persist-credentials: false
-
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: "10.0.x"
-
-      - name: Setup Rust toolchain
-        uses: dtolnay/rust-toolchain@1.99.0
-        with:
-          toolchain: 1.99.0
-          targets: x86_64-pc-windows-msvc
-
-      - name: Build and verify native data helper
+      - name: Rust toolchain
         shell: pwsh
         run: |
-          ./tools/build-native-data.ps1
-
-      - name: Restore
-        run: |
-          dotnet restore AgainstRomeModifier.slnx --configfile NuGet.Config
+          rustup toolchain install stable --profile minimal
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          dotnet restore src.Modifier\AgainstRomeModifier.csproj -r win-x64 --configfile NuGet.Config -p:IncludeBackupZip=false
+          rustup default stable
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-      - name: Build and Test
-        run: |
-          dotnet build AgainstRomeModifier.slnx --configuration Release -p:PlatformTarget=x64 -p:IncludeBackupZip=false --no-restore -warnaserror
+          rustup target add x86_64-pc-windows-msvc i686-pc-windows-msvc
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          dotnet test tests/AgainstRomeModifier.Tests/AgainstRomeModifier.Tests.csproj --configuration Release -p:PlatformTarget=x64 -p:IncludeBackupZip=false --no-build --no-restore
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          dotnet test tests/AgainstRomeMapEditor.Modules.Tests/AgainstRomeMapEditor.Modules.Tests.csproj --configuration Release -p:PlatformTarget=x64 -p:IncludeBackupZip=false --no-build --no-restore
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-      - name: Validate tag against project version
+      - name: Validate tag against crate version
         shell: pwsh
         env:
           DISPATCH_TAG: ${{ inputs.tag }}
         run: |
           $tag = if ($env:GITHUB_EVENT_NAME -eq 'workflow_dispatch') { $env:DISPATCH_TAG } else { $env:GITHUB_REF_NAME }
           $tag = $tag.Trim()
-          if ($tag -notmatch '^v(?<version>\d+\.\d+\.\d+)$') {
-            throw "Release tag must be vMAJOR.MINOR.PATCH; got '$tag'."
-          }
+          if ($tag -notmatch '^v(?<version>\d+\.\d+\.\d+)$') { throw "Release tag must be vMAJOR.MINOR.PATCH; got '$tag'." }
           $tagVersion = $Matches.version
-
-          $projectVersion = (& dotnet msbuild src.Modifier\AgainstRomeModifier.csproj `
-            -getProperty:Version `
-            -p:Configuration=Release `
-            -p:IncludeBackupZip=false).Trim()
-          if ($LASTEXITCODE -ne 0) {
-            throw "Unable to read the project version."
-          }
-          if ($tagVersion -ne $projectVersion) {
-            throw "Tag version $tagVersion does not match project version $projectVersion."
-          }
-
+          $manifest = Get-Content -LiteralPath 'apps/against-rome-editor/Cargo.toml' -Raw
+          $crateVersion = [regex]::Match($manifest, '(?m)^\s*version\s*=\s*"([^"]+)"').Groups[1].Value
+          if ($tagVersion -ne $crateVersion) { throw "Tag version $tagVersion does not match editor crate version $crateVersion." }
           Add-Content -Path $env:GITHUB_ENV -Value "TAG_NAME=$tag"
-          Add-Content -Path $env:GITHUB_ENV -Value "PROJECT_VERSION=$projectVersion"
-
       - name: Verify release identity is unused
         shell: pwsh
         env:
@@ -89,101 +54,113 @@ jobs:
           RELEASE_REPOSITORY: ${{ github.repository }}
         run: |
           $releaseProbe = @(gh api "repos/$env:RELEASE_REPOSITORY/releases/tags/$env:TAG_NAME" 2>&1)
-          $releaseExit = $LASTEXITCODE
-          if ($releaseExit -eq 0) {
-            throw "Release $env:TAG_NAME already exists; refusing to replace published assets."
-          }
-          if (($releaseProbe -join "`n") -notmatch 'HTTP 404') {
-            throw "Unable to prove release $env:TAG_NAME is unused: $($releaseProbe -join ' ')"
-          }
-
+          if ($LASTEXITCODE -eq 0) { throw "Release $env:TAG_NAME already exists; refusing to replace published assets." }
+          if (($releaseProbe -join "`n") -notmatch 'HTTP 404') { throw "Unable to prove release $env:TAG_NAME is unused: $($releaseProbe -join ' ')" }
           if ($env:GITHUB_EVENT_NAME -eq 'workflow_dispatch') {
             git ls-remote --exit-code --tags origin "refs/tags/$env:TAG_NAME" | Out-Null
             $tagExit = $LASTEXITCODE
-            if ($tagExit -eq 0) {
-              throw "Tag $env:TAG_NAME already exists; refusing to attach this commit's assets to another ref."
-            }
-            if ($tagExit -ne 2) {
-              throw "Unable to prove tag $env:TAG_NAME is unused (git ls-remote exit $tagExit)."
-            }
+            if ($tagExit -eq 0) { throw "Tag $env:TAG_NAME already exists; refusing to attach this commit's assets to another ref." }
+            if ($tagExit -ne 2) { throw "Unable to prove tag $env:TAG_NAME is unused (git ls-remote exit $tagExit)." }
           } elseif ($env:GITHUB_REF_NAME -ne $env:TAG_NAME) {
             throw "Pushed tag '$env:GITHUB_REF_NAME' does not match resolved tag '$env:TAG_NAME'."
           }
           exit 0
-
-      - name: Publish Single-File Executable
+      - name: Publisher contract tests
+        shell: pwsh
+        run: ./tools/test-publish-rust.ps1
+      - name: Rust tests
+        shell: pwsh
+        run: ./tools/test-rust-rewrite.ps1 -IncludeDesktop
+      - name: Trace i686 release DLL gate
+        shell: pwsh
+        run: ./tools/test-rust-rewrite.ps1 -TraceOnly
+      - name: Build portable ZIP
+        shell: pwsh
+        run: ./tools/publish-rust.ps1 -OutputDirectory (Join-Path $env:RUNNER_TEMP 'rust-candidate')
+      - name: Verify ZIP checksum and provenance
         shell: pwsh
         run: |
-          $tag = $env:TAG_NAME
-          $version = $env:PROJECT_VERSION
+          $ErrorActionPreference = 'Stop'
+          $out = Join-Path $env:RUNNER_TEMP 'rust-candidate'
+          $zips = @(Get-ChildItem -LiteralPath $out -Filter '*.zip' -File)
+          if ($zips.Count -ne 1) { throw "Expected exactly one ZIP in $out, found $($zips.Count)." }
+          $zip = $zips[0]
+          $sumFile = "$($zip.FullName).sha256"
+          if (!(Test-Path -LiteralPath $sumFile -PathType Leaf)) { throw "Missing checksum file: $sumFile" }
 
-          $distDir = Join-Path $env:GITHUB_WORKSPACE 'artifacts\release'
-          New-Item -ItemType Directory -Path $distDir -Force | Out-Null
+          # Require the exact publisher sidecar format, including its final LF.
+          $actual = (Get-FileHash -LiteralPath $zip.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ([IO.File]::ReadAllText($sumFile) -cne "$actual  $($zip.Name)`n") { throw 'ZIP checksum sidecar does not match the archive.' }
 
-          dotnet publish src.Modifier\AgainstRomeModifier.csproj `
-            -c Release `
-            -r win-x64 `
-            --self-contained true `
-            --no-restore `
-            -p:PublishSingleFile=true `
-            -p:IncludeNativeLibrariesForSelfExtract=true `
-            -p:IncludeBackupZip=false `
-            -p:DebugType=None `
-            -p:DebugSymbols=false `
-            -o $distDir
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $extract = Join-Path $env:RUNNER_TEMP 'rust-release-extract'
+          if (Test-Path -LiteralPath $extract) { throw "Output directory must not pre-exist: $extract" }
+          Expand-Archive -LiteralPath $zip.FullName -DestinationPath $extract
+          $provPath = Join-Path $extract 'provenance.json'
+          if (!(Test-Path -LiteralPath $provPath -PathType Leaf)) { throw 'provenance.json missing from ZIP.' }
+          $prov = Get-Content -LiteralPath $provPath -Raw | ConvertFrom-Json
+          if ($prov.git.commit -ne $env:GITHUB_SHA) { throw "Provenance commit $($prov.git.commit) != $env:GITHUB_SHA." }
+          if ($prov.git.dirty -ne $false) { throw 'Provenance reports a dirty source tree.' }
+          if ($prov.exeProvenance -ne 'built-by-this-run-from-recorded-source-state') {
+            throw "Unexpected exeProvenance '$($prov.exeProvenance)'."
+          }
+          if ($prov.traceDll.cppSourceBinaryCopied -ne $false -or $prov.traceDll.target -ne 'i686-pc-windows-msvc' -or
+              $prov.traceDll.origin -ne 'built-by-this-run-from-rust-crate' -or $prov.traceDll.crtLinkage -ne 'static') { throw 'Incorrect trace DLL provenance.' }
+          $recorded = @($prov.files.PSObject.Properties)
+          if ($recorded.Count -eq 0) { throw 'provenance.json records no files.' }
+          foreach ($entry in $recorded) {
+            $path = Join-Path $extract $entry.Name
+            if (!(Test-Path -LiteralPath $path -PathType Leaf)) { throw "Recorded file missing from ZIP: $($entry.Name)" }
+            $h = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($h -ne $entry.Value) { throw "Extracted $($entry.Name) hash $h != recorded $($entry.Value)." }
+          }
+          $expected = @($prov.files.PSObject.Properties.Name) + 'provenance.json' | Sort-Object
+          $contents = @(Get-ChildItem -LiteralPath $extract -Recurse -File | ForEach-Object { [IO.Path]::GetRelativePath($extract, $_.FullName).Replace('\', '/') }) | Sort-Object
+          if (($expected -join "`n") -cne ($contents -join "`n")) { throw 'ZIP contents differ from provenance file list.' }
 
-          # Clean XML files
-          Get-ChildItem -Path $distDir -Filter "*.xml" -Recurse | Remove-Item -Force
+          if ($prov.schema -ne 2 -or $prov.product -ne 'against-rome-suite' -or $prov.platform -ne 'win-x64') {
+            throw "Unexpected provenance identity: schema=$($prov.schema) product=$($prov.product) platform=$($prov.platform)"
+          }
+          $manifest = Get-Content -LiteralPath 'apps/against-rome-editor/Cargo.toml' -Raw
+          $version = [regex]::Match($manifest, '(?m)^\s*version\s*=\s*"([^"]+)"').Groups[1].Value
+          if (!$version -or $prov.version -ne $version) { throw "Provenance version '$($prov.version)' != editor Cargo version '$version'." }
+          $expectedName = "against-rome-editor-$version-win-x64-$($env:GITHUB_SHA.Substring(0, 8)).zip"
+          if ($zip.Name -cne $expectedName) { throw "ZIP name '$($zip.Name)' != '$expectedName'." }
 
-          # Create ZIP archive
-          $zipName = "AgainstRomeModifier_${tag}_win-x64.zip"
-          $zipPath = Join-Path $distDir $zipName
-          Compress-Archive -Path (Join-Path $distDir 'AgainstRomeModifier.exe') -DestinationPath $zipPath -Force
+          $exes = 'against-rome-editor.exe', 'against-rome-modifier-gui.exe', 'against-rome-launcher.exe',
+              'save-manager.exe', 'against-rome-modifier.exe', 'ArmMapPackage.exe'
+          $required = $exes + 'ThirdParty/argm-trace/winmm.dll', 'ThirdParty/argm-trace/README.md',
+              'ThirdParty/dgVoodoo2/D3D8.dll', 'ThirdParty/dgVoodoo2/DDraw.dll', 'ThirdParty/dgVoodoo2/dgVoodooCpl.exe',
+              'ThirdParty/dgVoodoo2/dgVoodoo.conf', 'ThirdParty/dgVoodoo2/REDISTRIBUTION.md'
+          foreach ($name in $required) {
+            if (!$prov.files.PSObject.Properties[$name]) { throw "Provenance files lacks required entry: $name" }
+            if (!(Test-Path -LiteralPath (Join-Path $extract $name) -PathType Leaf)) { throw "ZIP lacks required entry: $name" }
+          }
+          # The per-binary table must describe exactly the shipped executables, with the same hashes as `files`.
+          $binNames = @($prov.binaries.PSObject.Properties.Name) | Sort-Object
+          if (($binNames -join "`n") -cne (($exes | Sort-Object) -join "`n")) { throw "provenance.binaries lists: $($binNames -join ', ')" }
+          foreach ($b in $prov.binaries.PSObject.Properties) {
+            if ($b.Value.sha256 -ne $prov.files.($b.Name)) { throw "binaries/files hash mismatch for $($b.Name)." }
+          }
 
-          & tools\Test-ReleaseArtifacts.ps1 `
-            -ArtifactDirectory $distDir `
-            -ArchivePath $zipPath `
-            -AssemblyPath 'src.Core\bin\Release\net8.0-windows\AgainstRome.Core.dll' `
-            -ExpectedVersion $version
-
-          # Checksums
-          $exePath = Join-Path $distDir 'AgainstRomeModifier.exe'
-          $hashExe = (Get-FileHash -LiteralPath $exePath -Algorithm SHA256).Hash
-          $hashZip = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash
-
-          $checksums = "$hashExe  AgainstRomeModifier.exe`n$hashZip  $zipName"
-          $sumPath = Join-Path $distDir 'SHA256SUMS.txt'
-          Set-Content -LiteralPath $sumPath -Value $checksums -Encoding utf8
-
-          Add-Content -Path $env:GITHUB_ENV -Value "DIST_DIR=$distDir"
-
+          $packagedTrace = Join-Path $extract 'ThirdParty/argm-trace/winmm.dll'
+          $traceHash = (Get-FileHash -LiteralPath $packagedTrace -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($traceHash -ne $prov.traceDll.sha256) { throw 'Packaged trace DLL differs from provenance.traceDll.sha256.' }
+          $builtTrace = Join-Path $PWD 're_workspace/rust-rewrite-targets/native-against-rome-trace/i686-pc-windows-msvc/release/winmm.dll'
+          if ((Get-FileHash -LiteralPath $builtTrace -Algorithm SHA256).Hash.ToLowerInvariant() -ne $traceHash) { throw 'Packaged trace DLL differs from the publisher build output.' }
+          Write-Host "Verified $($zip.Name) SHA256=$actual with $($recorded.Count) recorded files at $env:GITHUB_SHA."
       - name: Create GitHub Release
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_REPOSITORY: ${{ github.repository }}
         run: |
-          $tag = $env:TAG_NAME
-          $dist = $env:DIST_DIR
-          $exe = Join-Path $dist 'AgainstRomeModifier.exe'
-          $zip = (Get-ChildItem -Path $dist -Filter "AgainstRomeModifier_*_win-x64.zip").FullName
-          $sums = Join-Path $dist 'SHA256SUMS.txt'
-
-          $notes = "docs/RELEASE_$tag.md"
-          $releaseArgs = @('release', 'create', $tag, $exe, $zip, $sums,
+          $out = Join-Path $env:RUNNER_TEMP 'rust-candidate'
+          $zip = @(Get-ChildItem -LiteralPath $out -Filter '*.zip' -File)[0].FullName
+          $sum = "$zip.sha256"
+          $releaseArgs = @('release', 'create', $env:TAG_NAME, $zip, $sum,
             '--repo', $env:RELEASE_REPOSITORY, '--target', $env:GITHUB_SHA,
-            '--title', "Against Rome Modifier $tag")
-          if (Test-Path -LiteralPath $notes) {
-            $finalNotes = Join-Path $env:RUNNER_TEMP 'arm-release-notes.md'
-            $nativeHash = (Get-FileHash -LiteralPath 're_workspace/native-data-deploy/against_rome_data.dll' -Algorithm SHA256).Hash.ToLowerInvariant()
-            $text = (Get-Content -LiteralPath $notes -Raw) + "`nSource commit: $env:GITHUB_SHA`nNative helper SHA256: $nativeHash`n"
-            [IO.File]::WriteAllText($finalNotes, $text, [Text.UTF8Encoding]::new($false))
-            $releaseArgs += @('--notes-file', $finalNotes)
-          } else {
-            $releaseArgs += '--generate-notes'
-          }
+            '--title', "Against Rome Modifier $env:TAG_NAME")
+          $notes = "docs/RELEASE_$env:TAG_NAME.md"
+          if (Test-Path -LiteralPath $notes) { $releaseArgs += @('--notes-file', $notes) } else { $releaseArgs += '--generate-notes' }
           gh @releaseArgs
-          if ($LASTEXITCODE -ne 0) {
-            throw "gh release create failed with exit code $LASTEXITCODE."
-          }
+          if ($LASTEXITCODE -ne 0) { throw "gh release create failed with exit code $LASTEXITCODE." }

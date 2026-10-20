@@ -1,7 +1,7 @@
 name: Rust release candidate
 
 # Manual, artifact-only candidate build. This workflow never creates a tag or a
-# GitHub release and does not touch the .NET release workflow (release.yml).
+# GitHub release and does not run the tag-triggered release workflow (release.yml).
 
 on:
   workflow_dispatch:
