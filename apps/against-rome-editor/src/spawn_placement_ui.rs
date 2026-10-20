@@ -1,0 +1,1141 @@
+//! Scenario spawn placement panel (port of C# `MapEditorForm.Placement.cs`,
+//! `MapEditorForm.PlacementWorkflow.cs` and `PlacementBatchEditDialog.cs`).
+//!
+//! The panel edits scenario spawns (`ScenarioDocument.spawns`, compiled into the level BCI on
+//! Safe Save) through a [`SpawnPlacementSession`]. `ScenarioUi` stays the single source of truth:
+//! after every session command the spawn list is validated and written through
+//! `ScenarioUi::apply_spawns`; if the document rejects it the command is rolled back.
+//!
+//! Scope notes (see `AI_HANDOFF.md`): objects created here are always *script-created*
+//! (`prebuilt = false`, built as construction sites at game start). Spawns that are bound to
+//! native DATA (`prebuilt`) are shown and selectable but locked; editing them needs the
+//! starter-kit / family-copy DATA transaction which is not part of this panel.
+
+use crate::app::{tr, ShortcutAction};
+use crate::scenario_ui::ScenarioUi;
+use crate::spawn_placement::{
+    category_text, load_spawns, matches_search, new_placement, normalize_angle, object_display_name,
+    session_to_spawns, takes_unit_count, team_range, tile_center, tile_ground_height, tribe_text,
+    type_for_alias, world_ground_height, PlacementError, SpawnPlacementSession,
+};
+use against_rome_ambience::Language as AppLanguage;
+use against_rome_maps::sdl_objects::{SdlObjectCategory, SdlObjectType, SdlPlacedObject};
+use against_rome_maps::script_aliases::ScriptObjectAliases;
+use against_rome_scenario::model::Spawn;
+use eframe::egui::{self, Color32, Pos2, Rect, Stroke};
+use std::collections::{BTreeSet, HashSet};
+use std::path::{Path, PathBuf};
+use uuid::Uuid;
+
+const WORLD_SIZE: f32 = 16384.0;
+
+/// Per-frame data the panel needs from the editor (kept free of `EditorApp` borrows).
+pub struct SpawnContext<'a> {
+    pub lang: AppLanguage,
+    pub heights: Option<&'a [u8]>,
+    pub vertex_size: usize,
+    pub height_step: f32,
+    /// Retail maps are read-only (C# `IsCustom == false`).
+    pub read_only: bool,
+}
+
+impl SpawnContext<'_> {
+    fn english(&self) -> bool {
+        self.lang == AppLanguage::English
+    }
+    fn ground_height(&self, x: f32, z: f32) -> f32 {
+        self.heights
+            .map_or(0.0, |h| world_ground_height(h, self.vertex_size, x, z, self.height_step))
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct EditDialog {
+    index: usize,
+    team: i32,
+    x: f32,
+    y: f32,
+    z: f32,
+    angle: i32,
+    count: i32,
+    figure: bool,
+    animal: bool,
+    native: bool,
+    min_team: i32,
+    max_team: i32,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct BatchDialog {
+    count: usize,
+    includes_units: bool,
+    apply_team: bool,
+    team: i32,
+    apply_angle: bool,
+    angle: i32,
+}
+
+/// Result of one row click, applied after the list closure ends.
+enum RowClick {
+    Single(usize),
+    Toggle(usize),
+    Range(usize),
+}
+
+pub struct SpawnPlacementUi {
+    pub open: bool,
+    session: SpawnPlacementSession,
+    catalog: Vec<SdlObjectType>,
+    catalog_root: Option<PathBuf>,
+    catalog_fixed: bool,
+    foreign: Vec<Spawn>,
+    /// Document spawns the session currently reflects (change detection + `previous` lookup).
+    synced: Vec<Spawn>,
+    locked: HashSet<Uuid>,
+    map_key: Option<PathBuf>,
+    selection: BTreeSet<usize>,
+    anchor: Option<usize>,
+    category_filter: Option<SdlObjectCategory>,
+    tribe_filter: Option<String>,
+    search: String,
+    selected_type: Option<String>,
+    team: i32,
+    count: i32,
+    angle: i32,
+    place_mode: bool,
+    active: bool,
+    edit_dialog: Option<EditDialog>,
+    batch_dialog: Option<BatchDialog>,
+    status: String,
+    status_error: bool,
+}
+
+impl Default for SpawnPlacementUi {
+    fn default() -> Self {
+        Self {
+            open: false,
+            session: SpawnPlacementSession::new(),
+            catalog: Vec::new(),
+            catalog_root: None,
+            catalog_fixed: false,
+            foreign: Vec::new(),
+            synced: Vec::new(),
+            locked: HashSet::new(),
+            map_key: None,
+            selection: BTreeSet::new(),
+            anchor: None,
+            category_filter: None,
+            tribe_filter: None,
+            search: String::new(),
+            selected_type: None,
+            team: 0,
+            count: 10,
+            angle: 0,
+            place_mode: false,
+            active: false,
+            edit_dialog: None,
+            batch_dialog: None,
+            status: String::new(),
+            status_error: false,
+        }
+    }
+}
+
+fn team_color(team: i32) -> Color32 {
+    const PALETTE: [(u8, u8, u8); 9] = [
+        (80, 160, 255),
+        (255, 90, 90),
+        (90, 220, 110),
+        (255, 210, 70),
+        (200, 110, 255),
+        (80, 230, 230),
+        (255, 150, 60),
+        (230, 130, 190),
+        (200, 200, 200),
+    ];
+    let (r, g, b) = PALETTE.get(team.max(0) as usize).copied().unwrap_or((170, 170, 170));
+    Color32::from_rgb(r, g, b)
+}
+
+fn error_text(lang: AppLanguage, error: &PlacementError, out_of_range: (&'static str, &'static str)) -> String {
+    match error {
+        PlacementError::OutOfRange(_) => tr(lang, out_of_range.0, out_of_range.1).to_string(),
+        other => other.to_string(),
+    }
+}
+
+impl SpawnPlacementUi {
+    // ---- state access (tests / app) ----------------------------------------------------
+
+    pub fn session(&self) -> &SpawnPlacementSession {
+        &self.session
+    }
+    pub fn catalog(&self) -> &[SdlObjectType] {
+        &self.catalog
+    }
+    /// Injects a catalog (tests / callers that already hold the alias list).
+    pub fn set_catalog(&mut self, catalog: Vec<SdlObjectType>) {
+        self.catalog = catalog;
+        self.catalog_fixed = true;
+        self.catalog_root = None;
+        self.synced.clear();
+    }
+    pub fn place_mode(&self) -> bool {
+        self.open && self.place_mode
+    }
+    pub fn set_place_mode(&mut self, on: bool) {
+        self.place_mode = on;
+    }
+    /// Keyboard shortcuts target this panel while it is open and was last interacted with.
+    pub fn is_active(&self) -> bool {
+        self.open && self.active
+    }
+    pub fn set_active(&mut self, active: bool) {
+        self.active = active;
+    }
+    pub fn selection(&self) -> Vec<usize> {
+        self.selection.iter().copied().collect()
+    }
+    pub fn has_selection(&self) -> bool {
+        !self.selection.is_empty()
+    }
+    pub fn status(&self) -> (&str, bool) {
+        (&self.status, self.status_error)
+    }
+    pub fn is_locked_index(&self, index: usize) -> bool {
+        self.session.get(index).is_some_and(|o| self.locked.contains(&o.scenario_id))
+    }
+    pub fn select_type(&mut self, name_def: &str) {
+        self.selected_type = Some(name_def.to_string());
+    }
+    pub fn set_placement_values(&mut self, team: i32, count: i32, angle: i32) {
+        self.team = team;
+        self.count = count;
+        self.angle = normalize_angle(angle);
+    }
+    pub fn placement_angle(&self) -> i32 {
+        self.angle
+    }
+
+    fn set_status(&mut self, message: impl Into<String>, error: bool) {
+        self.status = message.into();
+        self.status_error = error;
+    }
+
+    fn selected_catalog_type(&self) -> Option<&SdlObjectType> {
+        let name = self.selected_type.as_deref()?;
+        self.catalog.iter().find(|t| t.name_def == name)
+    }
+
+    // ---- document sync -----------------------------------------------------------------
+
+    /// Loads the alias catalog for the game root of `map` once per root.
+    fn ensure_catalog(&mut self, map: Option<&Path>) {
+        if self.catalog_fixed {
+            return;
+        }
+        let root = map.and_then(Path::parent).and_then(Path::parent).map(Path::to_path_buf);
+        if root == self.catalog_root {
+            return;
+        }
+        self.catalog = match root.as_deref().map(ScriptObjectAliases::load) {
+            Some(Ok(aliases)) => crate::spawn_placement::build_spawn_catalog(&aliases),
+            _ => Vec::new(),
+        };
+        self.catalog_root = root;
+        self.synced.clear();
+        self.selected_type = None;
+    }
+
+    fn rebuild_locked(&mut self, scenario: &ScenarioUi) {
+        let document = scenario.document();
+        self.locked = document
+            .spawns
+            .iter()
+            .filter(|s| s.prebuilt || document.data_slots.iter().any(|b| b.spawn_id == s.id))
+            .map(|s| s.id)
+            .collect();
+    }
+
+    /// Re-reads the session from the scenario document when it changed behind our back (map
+    /// load/switch, Safe Save reload, reset) and accepts a saved state (C# `AcceptSavedChanges`).
+    pub fn sync_with_document(&mut self, scenario: &ScenarioUi, map: Option<&Path>) {
+        self.ensure_catalog(map);
+        let key = map.map(Path::to_path_buf);
+        let spawns = &scenario.document().spawns;
+        if key != self.map_key || *spawns != self.synced {
+            self.map_key = key;
+            let (placed, foreign) = load_spawns(spawns, &self.catalog);
+            self.session.load(&placed);
+            self.foreign = foreign;
+            self.synced = spawns.clone();
+            self.selection.clear();
+            self.anchor = None;
+            self.edit_dialog = None;
+            self.batch_dialog = None;
+            self.rebuild_locked(scenario);
+        } else if self.session.is_dirty() && !scenario.dirty() {
+            // Safe Save committed the spawns (scenario baseline advanced): re-baseline.
+            self.session.accept_saved_changes();
+            self.rebuild_locked(scenario);
+        }
+    }
+
+    /// Writes the session content into the scenario document; the document validates it.
+    fn push_to_scenario(&mut self, scenario: &mut ScenarioUi) -> Result<(), String> {
+        let spawns =
+            session_to_spawns(self.session.objects(), &self.synced, &self.foreign, &self.catalog);
+        scenario.apply_spawns(spawns)?;
+        self.synced = scenario.document().spawns.clone();
+        self.selection.retain(|&i| i < self.session.count());
+        Ok(())
+    }
+
+    /// Runs one session command, then syncs the document; a rejected sync rolls the command back.
+    fn mutate(
+        &mut self,
+        scenario: &mut ScenarioUi,
+        lang: AppLanguage,
+        out_of_range: (&'static str, &'static str),
+        command: impl FnOnce(&mut SpawnPlacementSession) -> Result<(), PlacementError>,
+    ) -> Result<(), String> {
+        let before = self.session.undo_depth();
+        command(&mut self.session).map_err(|e| error_text(lang, &e, out_of_range))?;
+        if self.session.undo_depth() == before {
+            return Ok(()); // no-op command (nothing changed)
+        }
+        if let Err(e) = self.push_to_scenario(scenario) {
+            self.session.abort_last();
+            return Err(e);
+        }
+        Ok(())
+    }
+
+    fn guard(&mut self, scenario: &ScenarioUi, cx: &SpawnContext) -> bool {
+        let lang = cx.lang;
+        if cx.read_only {
+            self.set_status(
+                tr(lang, "Original maps are read-only; copy to a custom map first.", "原廠地圖為唯讀；請先複製為自製地圖。"),
+                true,
+            );
+            return false;
+        }
+        if !scenario.is_loaded() {
+            self.set_status(
+                tr(
+                    lang,
+                    "Load the scenario first (the map needs SCRIPT/ak_level.bci).",
+                    "請先載入劇本（地圖需有 SCRIPT/ak_level.bci）。",
+                ),
+                true,
+            );
+            return false;
+        }
+        true
+    }
+
+    /// Refuses changes to spawns that are bound to native DATA; returns true when blocked.
+    fn blocked_by_lock(&mut self, indices: &[usize], lang: AppLanguage) -> bool {
+        if indices.iter().any(|&i| self.is_locked_index(i)) {
+            self.set_status(
+                tr(
+                    lang,
+                    "Prebuilt DATA objects are locked here; edit them in the Objects (DATA) panel. No objects changed.",
+                    "預建 DATA 物件在此為鎖定；請至「物件」(DATA) 面板編輯。所有物件均未變更。",
+                ),
+                true,
+            );
+            return true;
+        }
+        false
+    }
+
+    // ---- operations (C# MapEditorForm.Placement*.cs) ------------------------------------
+
+    /// C# `PlaceObjectAt`: one object at the centre of the clicked tile; Y from the terrain.
+    pub fn place_at_tile(&mut self, scenario: &mut ScenarioUi, cx: &SpawnContext, tile_x: i32, tile_y: i32) {
+        if !self.guard(scenario, cx) {
+            return;
+        }
+        let lang = cx.lang;
+        let Some(object_type) = self.selected_catalog_type().cloned() else {
+            self.set_status(
+                tr(lang, "Pick an object type in the palette first.", "請先在清單中選擇物件類型。"),
+                true,
+            );
+            return;
+        };
+        let (world_x, world_z) = tile_center(tile_x, tile_y);
+        let world_y = cx
+            .heights
+            .map_or(0.0, |h| tile_ground_height(h, cx.vertex_size, tile_x, tile_y, cx.height_step));
+        let item = match new_placement(&object_type, world_x, world_y, world_z, self.team, self.angle as f32, self.count) {
+            Ok(item) => item,
+            Err(e) => {
+                let message = error_text(lang, &e, ("Units need a team between 0 and 7.", "人物與部隊的隊伍必須介於 0 與 7。"));
+                self.set_status(message, true);
+                return;
+            }
+        };
+        let name = object_display_name(&object_type, cx.english());
+        match self.mutate(scenario, lang, ("Cannot place here.", "無法在此放置。"), |s| s.add(item)) {
+            Ok(()) => {
+                self.selection.clear();
+                self.selection.insert(self.session.count() - 1);
+                self.anchor = Some(self.session.count() - 1);
+                self.set_status(
+                    if cx.english() {
+                        format!("Placed {name} at tile ({tile_x},{tile_y}); Save to write it.")
+                    } else {
+                        format!("已在格子 ({tile_x},{tile_y}) 放置 {name}；按「儲存」才會寫入。")
+                    },
+                    false,
+                );
+            }
+            Err(e) => self.set_status(e, true),
+        }
+    }
+
+    pub fn delete_selected(&mut self, scenario: &mut ScenarioUi, cx: &SpawnContext) {
+        let indices = self.selection();
+        if indices.is_empty() || !self.guard(scenario, cx) || self.blocked_by_lock(&indices, cx.lang) {
+            return;
+        }
+        match self.mutate(scenario, cx.lang, ("Cannot delete.", "無法刪除。"), |s| s.remove_many(&indices)) {
+            Ok(()) => {
+                self.selection.clear();
+                self.anchor = None;
+                self.set_status(
+                    if cx.english() {
+                        format!("Deleted {} object(s); Save to write.", indices.len())
+                    } else {
+                        format!("已刪除 {} 個物件；按「儲存」才會寫入。", indices.len())
+                    },
+                    false,
+                );
+            }
+            Err(e) => self.set_status(e, true),
+        }
+    }
+
+    pub fn duplicate_selected(&mut self, scenario: &mut ScenarioUi, cx: &SpawnContext) {
+        let indices = self.selection();
+        if indices.is_empty() || !self.guard(scenario, cx) || self.blocked_by_lock(&indices, cx.lang) {
+            return;
+        }
+        let mut copies = Vec::new();
+        let result = self.mutate(
+            scenario,
+            cx.lang,
+            (
+                "Cannot duplicate: a shifted object would be outside the map or has invalid values. No objects were changed.",
+                "無法複製：偏移後有物件超出地圖或數值無效；所有物件均未變更。",
+            ),
+            |s| {
+                copies = s.duplicate_many(&indices, 256.0, 256.0)?;
+                Ok(())
+            },
+        );
+        match result {
+            Ok(()) => {
+                self.selection = copies.iter().copied().collect();
+                self.anchor = copies.first().copied();
+                self.set_status(
+                    if cx.english() {
+                        format!("Duplicated {} placed object(s); Save to write.", indices.len())
+                    } else {
+                        format!("已複製 {} 個放置物件；按「儲存」才會寫入。", indices.len())
+                    },
+                    false,
+                );
+            }
+            Err(e) => self.set_status(e, true),
+        }
+    }
+
+    /// C# `HandlePlacementRotationKey` for the placed list: relative rotation of the selection.
+    pub fn rotate_selected(&mut self, scenario: &mut ScenarioUi, cx: &SpawnContext, degrees: i32) {
+        let indices = self.selection();
+        if indices.is_empty() || !self.guard(scenario, cx) || self.blocked_by_lock(&indices, cx.lang) {
+            return;
+        }
+        if let Err(e) = self.mutate(scenario, cx.lang, ("Cannot rotate.", "無法旋轉。"), |s| {
+            s.rotate_many(&indices, degrees)
+        }) {
+            self.set_status(e, true);
+        }
+    }
+
+    /// Next placement direction (type list `R` / `Shift+R`).
+    pub fn rotate_next_placement(&mut self, degrees: i32) {
+        self.angle = normalize_angle(self.angle + degrees);
+    }
+
+    /// C# `MoveSelectedPlacements` (Ctrl+arrows / align to tile centre).
+    pub fn move_selected(&mut self, scenario: &mut ScenarioUi, cx: &SpawnContext, dx: f32, dz: f32, snap: bool) {
+        let indices = self.selection();
+        if indices.is_empty() || !self.guard(scenario, cx) || self.blocked_by_lock(&indices, cx.lang) {
+            return;
+        }
+        let height = |x: f32, z: f32| cx.ground_height(x, z);
+        let height_at: Option<&dyn Fn(f32, f32) -> f32> = cx.heights.map(|_| &height as &dyn Fn(f32, f32) -> f32);
+        let result = self.mutate(
+            scenario,
+            cx.lang,
+            (
+                "Cannot move: selection would leave the map. No objects changed.",
+                "無法移動：選取物件會超出地圖；所有物件均未變更。",
+            ),
+            |s| {
+                if snap {
+                    s.snap_many_to_grid(&indices, height_at)
+                } else {
+                    s.move_many(&indices, dx, dz, height_at)
+                }
+            },
+        );
+        match result {
+            Ok(()) => self.set_status(
+                if cx.english() {
+                    format!("Moved {} objects; Save to write.", indices.len())
+                } else {
+                    format!("已移動 {} 個物件；按「儲存」才會寫入。", indices.len())
+                },
+                false,
+            ),
+            Err(e) => self.set_status(e, true),
+        }
+    }
+
+    pub fn select_all(&mut self) {
+        self.selection = (0..self.session.count()).collect();
+        self.anchor = self.selection.iter().next().copied();
+    }
+
+    pub fn apply_batch(&mut self, scenario: &mut ScenarioUi, cx: &SpawnContext, team: Option<i32>, angle: Option<f32>) {
+        let indices = self.selection();
+        if indices.is_empty() || !self.guard(scenario, cx) || self.blocked_by_lock(&indices, cx.lang) {
+            return;
+        }
+        match self.mutate(scenario, cx.lang, ("Invalid team or direction for the selection.", "所選物件的隊伍或方向無效。"), |s| {
+            s.edit_many(&indices, team, angle)
+        }) {
+            Ok(()) => self.set_status(
+                tr(cx.lang, "Updated team / direction of the selection.", "已更新選取物件的隊伍／方向。"),
+                false,
+            ),
+            Err(e) => self.set_status(e, true),
+        }
+    }
+
+    fn open_edit_dialog(&mut self, cx: &SpawnContext) {
+        let selected = self.selection();
+        if selected.len() != 1 {
+            return;
+        }
+        let index = selected[0];
+        let Some(item) = self.session.get(index) else { return };
+        let (min_team, max_team) = team_range(&item.obj_type);
+        self.edit_dialog = Some(EditDialog {
+            index,
+            team: item.team.clamp(min_team, max_team),
+            x: item.world_x,
+            y: item.world_y,
+            z: item.world_z,
+            angle: normalize_angle(item.angle.round_ties_even() as i32),
+            count: if takes_unit_count(&item.obj_type) { item.unit_count.clamp(1, 20) } else { 1 },
+            figure: item.obj_type.category == SdlObjectCategory::Figure,
+            animal: item.obj_type.is_animal(),
+            native: item.raw_rotation.is_some() || item.native_source_identity.is_some(),
+            min_team,
+            max_team,
+        });
+        let _ = cx;
+    }
+
+    fn open_batch_dialog(&mut self) {
+        let indices = self.selection();
+        if indices.is_empty() {
+            return;
+        }
+        let includes_units = indices
+            .iter()
+            .filter_map(|&i| self.session.get(i))
+            .any(|o| o.obj_type.category == SdlObjectCategory::Figure && !o.obj_type.is_animal());
+        self.batch_dialog = Some(BatchDialog {
+            count: indices.len(),
+            includes_units,
+            apply_team: false,
+            team: 0,
+            apply_angle: false,
+            angle: 0,
+        });
+    }
+
+    /// Applies the edit dialog (C# `PlacedObjectEditDialog.OnOk` + `Edit`).
+    fn commit_edit_dialog(&mut self, scenario: &mut ScenarioUi, cx: &SpawnContext, dialog: &EditDialog) -> bool {
+        if !self.guard(scenario, cx) || self.blocked_by_lock(&[dialog.index], cx.lang) {
+            return false;
+        }
+        let lang = cx.lang;
+        let Some(before) = self.session.get(dialog.index) else { return false };
+        let squad = takes_unit_count(&before.obj_type);
+        if squad {
+            if !(0..=7).contains(&dialog.team) {
+                self.set_status(tr(lang, "Units need a team between 0 and 7.", "人物與部隊的隊伍必須介於 0 與 7。"), true);
+                return false;
+            }
+            if !(1..=20).contains(&dialog.count) {
+                self.set_status(tr(lang, "Unit count must be between 1 and 20.", "部隊人數必須介於 1 與 20。"), true);
+                return false;
+            }
+        } else if !(-1..=15).contains(&dialog.team) {
+            self.set_status(tr(lang, "Team must be between -1 and 15.", "隊伍必須介於 -1 與 15。"), true);
+            return false;
+        }
+        // Native group objects only translate: keep their own team / direction.
+        let (team, angle) = if dialog.native { (before.team, before.angle) } else { (dialog.team, dialog.angle as f32) };
+        let count = if squad { dialog.count } else { 0 };
+        let name = object_display_name(&before.obj_type, cx.english());
+        let result = self.mutate(scenario, lang, ("Invalid values for this object.", "此物件的數值無效。"), |s| {
+            s.edit_values(dialog.index, team, dialog.x, dialog.y, dialog.z, angle, count)
+        });
+        match result {
+            Ok(()) => {
+                self.set_status(if cx.english() { format!("Updated {name}.") } else { format!("已更新 {name}。") }, false);
+                true
+            }
+            Err(e) => {
+                self.set_status(e, true);
+                false
+            }
+        }
+    }
+
+    pub fn undo(&mut self, scenario: &mut ScenarioUi, cx: &SpawnContext) -> bool {
+        if !self.guard(scenario, cx) || !self.session.undo() {
+            return false;
+        }
+        if let Err(e) = self.push_to_scenario(scenario) {
+            self.session.redo();
+            self.set_status(e, true);
+            return false;
+        }
+        self.set_status(tr(cx.lang, "Undo performed.", "已復原。"), false);
+        true
+    }
+
+    pub fn redo(&mut self, scenario: &mut ScenarioUi, cx: &SpawnContext) -> bool {
+        if !self.guard(scenario, cx) || !self.session.redo() {
+            return false;
+        }
+        if let Err(e) = self.push_to_scenario(scenario) {
+            self.session.undo();
+            self.set_status(e, true);
+            return false;
+        }
+        self.set_status(tr(cx.lang, "Redo performed.", "已重做。"), false);
+        true
+    }
+
+    /// C# `HandlePlacementWorkflowKey`: shortcuts act on this panel while it is active.
+    pub fn handle_shortcut(&mut self, action: ShortcutAction, scenario: &mut ScenarioUi, cx: &SpawnContext) {
+        match action {
+            ShortcutAction::SelectAll => self.select_all(),
+            ShortcutAction::Delete => self.delete_selected(scenario, cx),
+            ShortcutAction::Duplicate => self.duplicate_selected(scenario, cx),
+            ShortcutAction::Nudge { dx, dz } => self.move_selected(scenario, cx, dx, dz, false),
+            ShortcutAction::Save => {}
+        }
+    }
+
+    // ---- canvas overlay ------------------------------------------------------------------
+
+    /// Draws placed spawns over the 2D map: team coloured dots, squares for DATA-locked ones,
+    /// white ring on selected, direction tick.
+    pub fn draw_overlay(&self, painter: &egui::Painter, map_rect: Rect) {
+        if !self.open && self.session.is_empty() {
+            return;
+        }
+        let to_screen = |x: f32, z: f32| {
+            Pos2::new(
+                map_rect.min.x + x / WORLD_SIZE * map_rect.width(),
+                map_rect.min.y + z / WORLD_SIZE * map_rect.height(),
+            )
+        };
+        for (index, item) in self.session.objects().iter().enumerate() {
+            let pos = to_screen(item.world_x, item.world_z);
+            let color = team_color(item.team);
+            let selected = self.selection.contains(&index);
+            if self.locked.contains(&item.scenario_id) {
+                let half = 3.5;
+                painter.rect_filled(Rect::from_center_size(pos, egui::vec2(half * 2.0, half * 2.0)), 0.0, color);
+            } else {
+                painter.circle_filled(pos, 3.5, color);
+            }
+            let radians = (item.angle as f64).to_radians() as f32;
+            // Compass angle 0 points to -Z (map up), like the C# tile preview.
+            let tip = pos + egui::vec2(radians.sin(), -radians.cos()) * 8.0;
+            painter.line_segment([pos, tip], Stroke::new(1.0_f32, color));
+            if selected {
+                painter.circle_stroke(pos, 7.0, Stroke::new(1.5_f32, Color32::WHITE));
+            }
+        }
+    }
+
+    /// Placement ghost under the cursor while in place mode.
+    pub fn draw_ghost(&self, painter: &egui::Painter, pointer: Pos2) {
+        if self.place_mode() && self.selected_type.is_some() {
+            let color = team_color(self.team);
+            painter.circle_stroke(pointer, 6.0, Stroke::new(1.5_f32, color));
+            let radians = (self.angle as f32).to_radians();
+            painter.line_segment(
+                [pointer, pointer + egui::vec2(radians.sin(), -radians.cos()) * 12.0],
+                Stroke::new(1.5_f32, color),
+            );
+        }
+    }
+
+    // ---- window ---------------------------------------------------------------------------
+
+    fn visible_types(&self) -> Vec<&SdlObjectType> {
+        self.catalog
+            .iter()
+            .filter(|t| self.category_filter.map_or(true, |c| t.category == c))
+            .filter(|t| self.tribe_filter.as_ref().map_or(true, |tr| &t.tribe == tr))
+            .filter(|t| matches_search(t, &self.search))
+            .collect()
+    }
+
+    fn placed_row_text(&self, item: &SdlPlacedObject, english: bool, locked: bool) -> String {
+        let mut name = object_display_name(&item.obj_type, english);
+        if item.unit_count > 1 {
+            name.push_str(&format!(" ×{}", item.unit_count));
+        }
+        format!(
+            "{}{}   T{}   ({},{})   {}°",
+            if locked { "[DATA] " } else { "" },
+            name,
+            item.team,
+            (item.world_x / 256.0) as i32,
+            (item.world_z / 256.0) as i32,
+            item.angle as i32
+        )
+    }
+
+    pub fn show(&mut self, ctx: &egui::Context, scenario: &mut ScenarioUi, cx: &SpawnContext, map: Option<&Path>) {
+        self.sync_with_document(scenario, map);
+        if !self.open {
+            self.place_mode = false;
+            return;
+        }
+        let en = cx.english();
+        let lang = cx.lang;
+        let mut open = true;
+        let mut clicked: Option<RowClick> = None;
+        let mut action_edit = false;
+        let mut action_batch = false;
+        let mut action_duplicate = false;
+        let mut action_delete = false;
+        let mut action_snap = false;
+        let mut action_undo = false;
+        let mut action_redo = false;
+        let mut rotate: Option<i32> = None;
+        let mut hovered_palette = false;
+        let mut hovered_list = false;
+        let text_focus_before = ctx.wants_keyboard_input();
+        let title = tr(lang, "Place Script Objects (Spawns)", "放置腳本物件 (Spawns)");
+        let response = egui::Window::new(title)
+            .open(&mut open)
+            .default_width(380.0)
+            .default_height(640.0)
+            .show(ctx, |ui| {
+                if !scenario.is_loaded() {
+                    ui.colored_label(
+                        Color32::from_rgb(255, 180, 50),
+                        tr(
+                            lang,
+                            "No scenario loaded: the map needs SCRIPT/ak_level.bci (load it in the Scenario panel).",
+                            "尚未載入劇本：地圖需有 SCRIPT/ak_level.bci（請在劇本面板載入）。",
+                        ),
+                    );
+                }
+                ui.small(tr(
+                    lang,
+                    "Pick a type, enable \"Place on map\", then click the 2D map. Objects are script-created spawns (buildings start as construction sites). Units: team 0-7, 1-20 soldiers; team 0 is the player. R / Shift+R turns the next placement or the selection by 45 degrees. List: Ctrl+A select all, Ctrl+arrows move one tile (Shift: 64 units), Ctrl+D duplicate, Delete remove.",
+                    "選類型後啟用「在地圖上放置」並點擊 2D 地圖。物件為腳本生成物件（建築開局為工地）。人物以部隊建立，隊伍 0-7、人數 1-20；隊伍 0 為玩家。R／Shift+R 調整下次放置方向或旋轉選取物件 ±45°。清單：Ctrl+A 全選、Ctrl+方向鍵移動一格（Shift 為 64 單位）、Ctrl+D 複製、Delete 刪除。",
+                ));
+                ui.separator();
+                // Palette filters
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(tr(lang, "Category", "類別"));
+                    let cat_label = self
+                        .category_filter
+                        .map_or(tr(lang, "All", "全部").to_string(), |c| category_text(c, en).to_string());
+                    egui::ComboBox::from_id_source("spawn_category").selected_text(cat_label).show_ui(ui, |ui| {
+                        ui.selectable_value(&mut self.category_filter, None, tr(lang, "All", "全部"));
+                        for category in [
+                            SdlObjectCategory::Building,
+                            SdlObjectCategory::UnitGroup,
+                            SdlObjectCategory::Figure,
+                            SdlObjectCategory::Effect,
+                            SdlObjectCategory::Other,
+                        ] {
+                            if self.catalog.iter().any(|t| t.category == category) {
+                                ui.selectable_value(&mut self.category_filter, Some(category), category_text(category, en));
+                            }
+                        }
+                    });
+                    ui.label(tr(lang, "Tribe", "部族"));
+                    let tribe_label = self
+                        .tribe_filter
+                        .as_deref()
+                        .map_or(tr(lang, "All", "全部").to_string(), |t| tribe_text(t, en).to_string());
+                    egui::ComboBox::from_id_source("spawn_tribe").selected_text(tribe_label).show_ui(ui, |ui| {
+                        ui.selectable_value(&mut self.tribe_filter, None, tr(lang, "All", "全部"));
+                        for code in ["Ger", "Hun", "Kel", "Rom", ""] {
+                            if self.catalog.iter().any(|t| t.tribe == code) {
+                                ui.selectable_value(&mut self.tribe_filter, Some(code.to_string()), tribe_text(code, en));
+                            }
+                        }
+                    });
+                });
+                ui.horizontal(|ui| {
+                    ui.label(tr(lang, "Search", "搜尋"));
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.search).hint_text(tr(
+                            lang,
+                            "Name or alias (space = AND)",
+                            "名稱／別名（空白分隔多條件）",
+                        )),
+                    );
+                });
+                if self.catalog.is_empty() {
+                    ui.colored_label(
+                        Color32::from_rgb(255, 180, 50),
+                        tr(
+                            lang,
+                            "No object alias catalog (SYSTEM/CLAK/cl_scint.ini) found for this map's game folder.",
+                            "此地圖的遊戲資料夾找不到物件別名目錄 (SYSTEM/CLAK/cl_scint.ini)。",
+                        ),
+                    );
+                }
+                let types: Vec<SdlObjectType> = self.visible_types().into_iter().cloned().collect();
+                let palette = egui::ScrollArea::vertical().id_source("spawn_palette").max_height(170.0).show(ui, |ui| {
+                    for object_type in &types {
+                        let selected = self.selected_type.as_deref() == Some(object_type.name_def.as_str());
+                        let label = format!(
+                            "{}  ({})",
+                            object_display_name(object_type, en),
+                            crate::spawn_placement::alias_of(object_type)
+                        );
+                        if ui.selectable_label(selected, label).clicked() {
+                            self.selected_type = Some(object_type.name_def.clone());
+                            let (min, max) = team_range(object_type);
+                            self.team = self.team.clamp(min, max);
+                        }
+                    }
+                });
+                hovered_palette = ui.rect_contains_pointer(palette.inner_rect);
+                if self.selected_type.is_none() {
+                    if let Some(first) = types.first() {
+                        self.selected_type = Some(first.name_def.clone());
+                    }
+                }
+                // Placement values with per-category limits
+                let (min_team, max_team, takes_count) = self
+                    .selected_catalog_type()
+                    .map_or((-1, 15, false), |t| {
+                        let (a, b) = team_range(t);
+                        (a, b, takes_unit_count(t))
+                    });
+                self.team = self.team.clamp(min_team, max_team);
+                egui::Grid::new("spawn_values").num_columns(2).show(ui, |ui| {
+                    ui.label(tr(lang, "Team", "隊伍"));
+                    ui.add(egui::DragValue::new(&mut self.team).clamp_range(min_team..=max_team));
+                    ui.end_row();
+                    ui.label(tr(lang, "Soldiers", "人數"));
+                    ui.add_enabled(takes_count, egui::DragValue::new(&mut self.count).clamp_range(1..=20));
+                    ui.end_row();
+                    ui.label(tr(lang, "Angle", "角度"));
+                    ui.add(egui::DragValue::new(&mut self.angle).clamp_range(0..=359).speed(1.0));
+                    ui.end_row();
+                });
+                ui.horizontal(|ui| {
+                    ui.checkbox(&mut self.place_mode, tr(lang, "Place on map", "在地圖上放置"));
+                    if ui.small_button("-45").clicked() {
+                        self.rotate_next_placement(-45);
+                    }
+                    if ui.small_button("+45").clicked() {
+                        self.rotate_next_placement(45);
+                    }
+                });
+                ui.separator();
+                // Placed list
+                ui.horizontal(|ui| {
+                    ui.strong(format!("{} ({})", tr(lang, "Placed objects", "已放置物件"), self.session.count()));
+                    if self.session.is_dirty() {
+                        ui.colored_label(Color32::YELLOW, tr(lang, "[unsaved]", "[未儲存]"));
+                    }
+                });
+                let list = egui::ScrollArea::vertical().id_source("spawn_placed").max_height(200.0).show(ui, |ui| {
+                    let modifiers = ui.input(|i| i.modifiers);
+                    for (index, item) in self.session.objects().iter().enumerate() {
+                        let locked = self.locked.contains(&item.scenario_id);
+                        let selected = self.selection.contains(&index);
+                        let row = ui
+                            .selectable_label(selected, self.placed_row_text(item, en, locked))
+                            .on_hover_text(format!("ID {}", item.scenario_id));
+                        if row.clicked() {
+                            clicked = Some(if modifiers.shift {
+                                RowClick::Range(index)
+                            } else if modifiers.ctrl || modifiers.command {
+                                RowClick::Toggle(index)
+                            } else {
+                                RowClick::Single(index)
+                            });
+                        }
+                    }
+                });
+                hovered_list = ui.rect_contains_pointer(list.inner_rect);
+                let count = self.selection.len();
+                ui.horizontal_wrapped(|ui| {
+                    action_edit = ui.add_enabled(count == 1, egui::Button::new(tr(lang, "Edit...", "編輯..."))).clicked();
+                    action_duplicate = ui.add_enabled(count > 0, egui::Button::new(tr(lang, "Duplicate", "複製選取"))).clicked();
+                    action_batch = ui
+                        .add_enabled(count > 0, egui::Button::new(tr(lang, "Team / Direction...", "隊伍／方向…")))
+                        .clicked();
+                    action_delete = ui
+                        .add_enabled(count > 0, egui::Button::new(tr(lang, "Delete Selected", "刪除選取的物件")))
+                        .clicked();
+                    action_snap = ui
+                        .add_enabled(count > 0, egui::Button::new(tr(lang, "Align selection to tile center", "整批對齊格心")))
+                        .clicked();
+                });
+                ui.horizontal(|ui| {
+                    if ui.add_enabled(count > 0, egui::Button::new("-45")).clicked() {
+                        rotate = Some(-45);
+                    }
+                    if ui.add_enabled(count > 0, egui::Button::new("+45")).clicked() {
+                        rotate = Some(45);
+                    }
+                    action_undo = ui
+                        .add_enabled(self.session.can_undo(), egui::Button::new(tr(lang, "Undo", "復原")))
+                        .clicked();
+                    action_redo = ui
+                        .add_enabled(self.session.can_redo(), egui::Button::new(tr(lang, "Redo", "重做")))
+                        .clicked();
+                });
+                if !self.status.is_empty() {
+                    let color = if self.status_error { Color32::from_rgb(240, 80, 80) } else { Color32::from_rgb(100, 200, 100) };
+                    ui.colored_label(color, &self.status);
+                }
+            });
+        // Which part of the editor owns keyboard shortcuts.
+        if let Some(window) = &response {
+            if ctx.input(|i| i.pointer.any_pressed()) {
+                let over = ctx.input(|i| i.pointer.interact_pos()).is_some_and(|p| window.response.rect.contains(p));
+                if over {
+                    self.active = true;
+                } else if !self.place_mode {
+                    self.active = false;
+                }
+            }
+        }
+        if !open {
+            self.open = false;
+            self.place_mode = false;
+            self.active = false;
+        }
+
+        // R / Shift+R (type list: next direction; placed list: rotate selection)
+        if self.active && !text_focus_before {
+            let rotation = ctx.input(|i| {
+                if i.key_pressed(egui::Key::R) && !i.modifiers.ctrl && !i.modifiers.alt && !i.modifiers.command {
+                    Some(if i.modifiers.shift { -45 } else { 45 })
+                } else {
+                    None
+                }
+            });
+            if let Some(degrees) = rotation {
+                if hovered_list || (!hovered_palette && self.has_selection()) {
+                    rotate = Some(degrees);
+                } else {
+                    self.rotate_next_placement(degrees);
+                }
+            }
+        }
+
+        // Apply row selection
+        if let Some(click) = clicked {
+            match click {
+                RowClick::Single(i) => {
+                    self.selection.clear();
+                    self.selection.insert(i);
+                    self.anchor = Some(i);
+                }
+                RowClick::Toggle(i) => {
+                    if !self.selection.remove(&i) {
+                        self.selection.insert(i);
+                    }
+                    self.anchor = Some(i);
+                }
+                RowClick::Range(i) => {
+                    let from = self.anchor.unwrap_or(i);
+                    self.selection = (from.min(i)..=from.max(i)).collect();
+                }
+            }
+            self.active = true;
+        }
+
+        // Actions
+        if action_edit {
+            self.open_edit_dialog(cx);
+        }
+        if action_batch {
+            self.open_batch_dialog();
+        }
+        if action_duplicate {
+            self.duplicate_selected(scenario, cx);
+        }
+        if action_delete {
+            self.delete_selected(scenario, cx);
+        }
+        if action_snap {
+            self.move_selected(scenario, cx, 0.0, 0.0, true);
+        }
+        if let Some(degrees) = rotate {
+            self.rotate_selected(scenario, cx, degrees);
+        }
+        if action_undo {
+            self.undo(scenario, cx);
+        }
+        if action_redo {
+            self.redo(scenario, cx);
+        }
+        self.show_dialogs(ctx, scenario, cx);
+    }
+
+    fn show_dialogs(&mut self, ctx: &egui::Context, scenario: &mut ScenarioUi, cx: &SpawnContext) {
+        let lang = cx.lang;
+        if let Some(mut dialog) = self.edit_dialog.take() {
+            let mut keep = true;
+            let mut apply = false;
+            let name = self.session.get(dialog.index).map(|o| {
+                format!("{} ({})", object_display_name(&o.obj_type, cx.english()), o.obj_type.name_def)
+            });
+            let id = self.session.get(dialog.index).map(|o| o.scenario_id);
+            egui::Window::new(tr(lang, "Edit Placed Object", "編輯放置物件"))
+                .collapsible(false)
+                .resizable(false)
+                .show(ctx, |ui| {
+                    ui.label(name.unwrap_or_default());
+                    ui.small(format!("{}: {}", tr(lang, "Scenario ID", "識別碼"), id.map(|i| i.to_string()).unwrap_or_default()));
+                    egui::Grid::new("spawn_edit_grid").num_columns(2).show(ui, |ui| {
+                        ui.label(tr(lang, "Team", "隊伍"));
+                        ui.add_enabled(
+                            !dialog.native,
+                            egui::DragValue::new(&mut dialog.team).clamp_range(dialog.min_team..=dialog.max_team),
+                        );
+                        ui.end_row();
+                        ui.label(tr(lang, "Position X", "世界 X"));
+                        ui.add(egui::DragValue::new(&mut dialog.x).clamp_range(0.0..=16383.0));
+                        ui.end_row();
+                        ui.label(tr(lang, "Position Z", "世界 Z"));
+                        ui.add(egui::DragValue::new(&mut dialog.z).clamp_range(0.0..=16383.0));
+                        ui.end_row();
+                        ui.label(tr(lang, "Height Y", "高度 Y"));
+                        ui.add(egui::DragValue::new(&mut dialog.y).clamp_range(-1000.0..=10000.0));
+                        ui.end_row();
+                        ui.label(tr(lang, "Angle", "角度"));
+                        ui.add_enabled(!dialog.native, egui::DragValue::new(&mut dialog.angle).clamp_range(0..=359));
+                        ui.end_row();
+                        ui.label(tr(lang, "Soldiers", "人數"));
+                        ui.add_enabled(
+                            dialog.figure && !dialog.animal && !dialog.native,
+                            egui::DragValue::new(&mut dialog.count).clamp_range(1..=20),
+                        );
+                        ui.end_row();
+                    });
+                    ui.small(if dialog.figure && !dialog.animal {
+                        tr(lang, "Units: team 0-7, count 1-20 (team 0 = player).", "人物／部隊：隊伍 0-7，人數 1-20（隊伍 0 為玩家）。")
+                    } else {
+                        tr(lang, "Team -1 to 15 (8 = neutral); count does not apply.", "隊伍 -1 至 15（8 為中立）；人數不適用。")
+                    });
+                    ui.horizontal(|ui| {
+                        if ui.button(tr(lang, "OK", "確定")).clicked() {
+                            apply = true;
+                        }
+                        if ui.button(tr(lang, "Cancel", "取消")).clicked() {
+                            keep = false;
+                        }
+                    });
+                });
+            if apply {
+                if self.commit_edit_dialog(scenario, cx, &dialog) {
+                    keep = false;
+                }
+            }
+            if keep {
+                self.edit_dialog = Some(dialog);
+            }
+        }
+        if let Some(mut dialog) = self.batch_dialog.take() {
+            let mut keep = true;
+            let mut apply = false;
+            let (min_team, max_team) = if dialog.includes_units { (0, 7) } else { (-1, 15) };
+            egui::Window::new(tr(lang, "Set selected teams / directions", "批次設定隊伍／方向"))
+                .collapsible(false)
+                .resizable(false)
+                .show(ctx, |ui| {
+                    ui.label(if cx.english() {
+                        format!(
+                            "{} selected objects. Only checked settings change; position, count and event identity are preserved.",
+                            dialog.count
+                        )
+                    } else {
+                        format!("已選取 {} 個物件。只修改勾選的設定；位置、人數及事件目標身份保留。", dialog.count)
+                    });
+                    ui.horizontal(|ui| {
+                        ui.checkbox(&mut dialog.apply_team, tr(lang, "Change team", "設定隊伍"));
+                        ui.add_enabled(
+                            dialog.apply_team,
+                            egui::DragValue::new(&mut dialog.team).clamp_range(min_team..=max_team),
+                        );
+                    });
+                    ui.horizontal(|ui| {
+                        ui.checkbox(&mut dialog.apply_angle, tr(lang, "Change direction", "設定方向"));
+                        ui.add_enabled(dialog.apply_angle, egui::DragValue::new(&mut dialog.angle).clamp_range(0..=359));
+                    });
+                    ui.horizontal(|ui| {
+                        let any = dialog.apply_team || dialog.apply_angle;
+                        if ui.add_enabled(any, egui::Button::new(tr(lang, "Apply", "套用"))).clicked() {
+                            apply = true;
+                        }
+                        if ui.button(tr(lang, "Cancel", "取消")).clicked() {
+                            keep = false;
+                        }
+                    });
+                });
+            if apply {
+                let team = dialog.apply_team.then_some(dialog.team);
+                let angle = dialog.apply_angle.then_some(dialog.angle as f32);
+                self.apply_batch(scenario, cx, team, angle);
+                keep = false;
+            }
+            if keep {
+                self.batch_dialog = Some(dialog);
+            }
+        }
+    }
+
+    /// Test/automation access to the pending dialogs.
+    pub fn has_open_dialog(&self) -> bool {
+        self.edit_dialog.is_some() || self.batch_dialog.is_some()
+    }
+
+    /// Alias of the catalog type used by a spawn (tests).
+    pub fn catalog_type_for(&self, alias: &str) -> Option<&SdlObjectType> {
+        type_for_alias(&self.catalog, alias)
+    }
+}

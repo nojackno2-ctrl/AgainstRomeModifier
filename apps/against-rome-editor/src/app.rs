@@ -33,6 +33,7 @@ use crate::{
 use crate::{console::ConsoleUi, event_graph::EventGraphUi};
 use crate::{map_settings::MapSettings, navigation::NavigationUi, toolbox::ToolboxUi};
 use crate::{placement_ui::PlacementUi, scenario_ui::ScenarioUi};
+use crate::spawn_placement_ui::{SpawnContext, SpawnPlacementUi};
 use crate::{layout_io::LayoutContext, placement_ui::LayoutRequest};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -125,6 +126,7 @@ pub struct EditorApp {
     family_open: bool,
     family_history_key: (usize, usize, usize),
     scenario: ScenarioUi,
+    spawn_ui: SpawnPlacementUi,
     textures: TexturesUi,
     scene: SceneUi,
     event_graph: EventGraphUi,
@@ -225,6 +227,7 @@ impl EditorApp {
             family_open: false,
             family_history_key: (0, 0, 0),
             scenario: ScenarioUi::default(),
+            spawn_ui: SpawnPlacementUi::default(),
             textures: TexturesUi::default(),
             scene: SceneUi::default(),
             event_graph: EventGraphUi::default(),
@@ -3006,6 +3009,34 @@ impl EditorApp {
         self.status_is_error = is_error;
     }
 
+    /// Per-frame data for the spawn placement panel (borrows only the terrain session).
+    fn spawn_cx(
+        session: &Option<TerrainSession>,
+        lang: AppLanguage,
+        height_step: f32,
+        read_only: bool,
+    ) -> SpawnContext<'_> {
+        SpawnContext {
+            lang,
+            heights: session.as_ref().map(|s| s.heights()),
+            vertex_size: session.as_ref().map_or(0, |s| s.vertex_size),
+            height_step,
+            read_only,
+        }
+    }
+
+    /// Scenario spawn placement window (C# placement tab); edits flow into the scenario document.
+    fn show_spawn_panel(&mut self, ctx: &egui::Context) {
+        let map_path = if self.map_path_input.trim().is_empty() {
+            None
+        } else {
+            Some(PathBuf::from(self.map_path_input.trim()))
+        };
+        let read_only = is_original_map_dir(map_path.as_deref().unwrap_or(Path::new("")));
+        let cx = Self::spawn_cx(&self.session, self.loc.current_language(), self.height_step, read_only);
+        self.spawn_ui.show(ctx, &mut self.scenario, &cx, map_path.as_deref());
+    }
+
     /// Dispatches one shortcut. Mutating actions are refused on retail maps like the C# editor.
     pub fn handle_shortcut_action(&mut self, action: ShortcutAction) {
         let lang = self.lang();
@@ -3022,6 +3053,16 @@ impl EditorApp {
                 } else {
                     self.request_safe_save();
                 }
+            }
+            ShortcutAction::SelectAll if self.spawn_ui.is_active() => {
+                self.spawn_ui.select_all();
+            }
+            ShortcutAction::Delete | ShortcutAction::Duplicate | ShortcutAction::Nudge { .. }
+                if self.spawn_ui.is_active() && self.spawn_ui.has_selection() =>
+            {
+                let read_only = self.current_map_is_original();
+                let cx = Self::spawn_cx(&self.session, self.loc.current_language(), self.height_step, read_only);
+                self.spawn_ui.handle_shortcut(action, &mut self.scenario, &cx);
             }
             ShortcutAction::SelectAll => {
                 if self.placement.is_loaded() {
@@ -7583,7 +7624,11 @@ impl eframe::App for EditorApp {
         }
         // 快捷鍵處理
         if ctx.input(|i| i.modifiers.ctrl && i.key_pressed(egui::Key::Z)) {
-            if self.nature_undo() {
+            if self.spawn_ui.is_active() && self.spawn_ui.session().can_undo() {
+                let read_only = self.current_map_is_original();
+                let cx = Self::spawn_cx(&self.session, self.loc.current_language(), self.height_step, read_only);
+                self.spawn_ui.undo(&mut self.scenario, &cx);
+            } else if self.nature_undo() {
             } else if let Some(session) = &mut self.session {
                 if session.undo() {
                     self.is_painting = false;
@@ -7595,7 +7640,11 @@ impl eframe::App for EditorApp {
             }
         }
         if ctx.input(|i| i.modifiers.ctrl && i.key_pressed(egui::Key::Y)) {
-            if self.nature_redo() {
+            if self.spawn_ui.is_active() && self.spawn_ui.session().can_redo() {
+                let read_only = self.current_map_is_original();
+                let cx = Self::spawn_cx(&self.session, self.loc.current_language(), self.height_step, read_only);
+                self.spawn_ui.redo(&mut self.scenario, &cx);
+            } else if self.nature_redo() {
             } else if let Some(session) = &mut self.session {
                 if session.redo() {
                     self.is_painting = false;
@@ -7651,6 +7700,9 @@ impl eframe::App for EditorApp {
                 }
                 if ui.button(tr(lang, "Scenario / Camera", "劇本／鏡頭")).clicked() {
                     self.scenario.open = true;
+                }
+                if ui.button(tr(lang, "Spawns", "放置腳本物件")).clicked() {
+                    self.spawn_ui.open = true;
                 }
                 if ui.button(tr(lang, "Materials", "材質")).clicked() {
                     self.textures.open = true;
@@ -8112,6 +8164,7 @@ impl eframe::App for EditorApp {
                 Color32::WHITE,
             );
             self.draw_nature_overlay(&painter, map_rect);
+            self.spawn_ui.draw_overlay(&painter, map_rect);
 
             // 處理滑鼠操作繪製
             if let Some(mouse_pos) = response.hover_pos().filter(|_| !self.box_select && !self.landscape.region_pick_active()) {
@@ -8143,6 +8196,22 @@ impl eframe::App for EditorApp {
                             self.handle_ramp_point((grid_x, grid_y));
                         } else if response.clicked_by(egui::PointerButton::Secondary) {
                             self.cancel_ramp_selection();
+                        }
+                    } else if self.spawn_ui.place_mode() {
+                        self.spawn_ui.draw_ghost(&painter, mouse_pos);
+                        if self.pending_action.is_none() && response.clicked_by(egui::PointerButton::Primary) {
+                            let tiles = 64.0_f32;
+                            let tile_x = ((norm_x * tiles).floor() as i32).clamp(0, 63);
+                            let tile_y = ((norm_y * tiles).floor() as i32).clamp(0, 63);
+                            let cx = SpawnContext {
+                                lang: self.loc.current_language(),
+                                heights: Some(session.heights()),
+                                vertex_size: session.vertex_size,
+                                height_step: self.height_step,
+                                read_only: is_original_map_dir(Path::new(self.map_path_input.trim())),
+                            };
+                            self.spawn_ui.set_active(true);
+                            self.spawn_ui.place_at_tile(&mut self.scenario, &cx, tile_x, tile_y);
                         }
                     } else if self.nature.enabled {
                         if self.pending_action.is_none()
@@ -8319,6 +8388,7 @@ impl eframe::App for EditorApp {
         self.refresh_placement_type_names();
         self.placement.show(ctx);
         self.scenario.show(ctx);
+        self.show_spawn_panel(ctx);
         self.textures.show(ctx);
         self.scene.show(ctx);
         self.event_graph.show(ctx);

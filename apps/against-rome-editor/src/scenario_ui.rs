@@ -144,6 +144,20 @@ impl ScenarioUi {
     pub fn document(&self) -> &ScenarioDocument {
         &self.document
     }
+    /// Replaces the scenario spawns after full document validation (aliases, ids, event targets,
+    /// DATA bindings). On failure nothing changes. This is the single write path used by the
+    /// spawn placement panel so Safe Save keeps working from `document.spawns` unchanged.
+    pub fn apply_spawns(&mut self, spawns: Vec<Spawn>) -> Result<()> {
+        if self.source.is_none() {
+            return Err("劇本尚未載入（地圖缺少 SCRIPT/ak_level.bci）；無法編輯生成物件。".into());
+        }
+        let mut draft = self.document.clone();
+        draft.spawns = spawns;
+        self.validate_draft(&draft)?;
+        self.document = draft;
+        self.error = None;
+        Ok(())
+    }
     /// True once a map script source has been loaded (event merges need a loaded scenario).
     pub fn is_loaded(&self) -> bool {
         self.source.is_some()
@@ -775,54 +789,14 @@ impl ScenarioUi {
                                     ui.selectable_value(&mut self.camera.primitive, 1, "引擎座標");
                                 });
                         });
-                        ui.collapsing("場景生成物件與持久 ID", |ui| {
-                            let mut remove = None;
-                            for (i, s) in self.document.spawns.iter_mut().enumerate() {
-                                ui.push_id(i, |ui| {
-                                    if s.prebuilt {
-                                        ui.label(format!("預建 DATA 唯讀：{} / ID {} / X {} Z {} team {} angle {}", s.alias, s.id, s.x, s.z, s.team, s.angle));
-                                        return;
-                                    }
-                                    ui.horizontal(|ui| {
-                                        ui.text_edit_singleline(&mut s.alias);
-                                        alias_combo(ui, &mut s.alias, &self.aliases);
-                                        ui.label("team");
-                                        ui.add(egui::DragValue::new(&mut s.team));
-                                        ui.label("count (0=物件)");
-                                        ui.add(egui::DragValue::new(&mut s.count));
-                                        if ui.button("刪除").clicked() {
-                                             remove = Some(i)
-                                        }
-                                    });
-                                    ui.horizontal(|ui| {
-                                        for (label, v) in [("X", &mut s.x), ("Z", &mut s.z)] {
-                                            ui.label(label);
-                                            ui.add(egui::DragValue::new(v));
-                                        }
-                                        ui.label("角度");
-                                        ui.add(egui::DragValue::new(&mut s.angle));
-                                        ui.label(if s.prebuilt {
-                                            "既有 DATA 預建；需保留 binding"
-                                        } else {
-                                            "開局腳本生成"
-                                        });
-                                    });
-                                    ui.small(format!("ID {}", s.id));
-                                });
-                            }
-                            if let Some(i) = remove {
-                                self.document.spawns.remove(i);
-                            }
-                            if ui.button("新增腳本生成物件").clicked() {
-                                self.document.spawns.push(Spawn {
-                                    id: scenario::new_spawn_id(),
-                                    alias: "unit".into(),
-                                    x: 8000.,
-                                    z: 8000.,
-                                    team: 0,
-                                    count: 10,
-                                    ..Default::default()
-                                });
+                        ui.collapsing("場景生成物件與持久 ID（唯讀；請用「放置腳本物件」面板編輯）", |ui| {
+                            ui.small("新增、移動、旋轉、複製與刪除請使用工具列的「放置腳本物件 / Spawns」面板（含驗證與復原）。");
+                            for s in &self.document.spawns {
+                                ui.label(format!(
+                                    "{}{} / ID {} / X {:.0} Z {:.0} team {} 數量 {} 角度 {}",
+                                    if s.prebuilt { "[預建 DATA] " } else { "" },
+                                    s.alias, s.id, s.x, s.z, s.team, s.count, s.angle
+                                ));
                             }
                         });
                         ui.separator();
