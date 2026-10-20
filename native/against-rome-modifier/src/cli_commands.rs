@@ -122,6 +122,26 @@ pub fn backup_command(
     )
 }
 
+pub fn repair_language_backup_command(
+    o: &CliOptions,
+    resolve: impl Fn(&CliOptions) -> io::Result<std::path::PathBuf>,
+) -> io::Result<Value> {
+    use crate::language_repair as lr;
+    let game = resolve(o)?;
+    let original = match o.original_path.as_deref().filter(|p| !p.trim().is_empty()) {
+        Some(p) => std::path::PathBuf::from(p),
+        None => lr::discover_original()?,
+    };
+    let original = fs::canonicalize(&original).map_err(|e| {
+        io::Error::new(e.kind(), format!("Invalid original game directory: {}: {e}", original.display()))
+    })?;
+    let original = std::path::PathBuf::from(strip_verbatim(&original.display().to_string()));
+    let mut v = lr::repair_language_backup(&game, &original, o.dry_run)?.to_json();
+    v["gamePath"] = json!(game.display().to_string());
+    v["originalPath"] = json!(original.display().to_string());
+    Ok(v)
+}
+
 fn unit_item(loc: &Loc, key: &str, stats: &[f64; 9]) -> Value {
     let m = TroopConfig::get_metadata(key);
     json!({"key": key, "name": loc.get_unit_name(key), "faction": m.map(|m| m.faction).unwrap_or(""), "tier": m.map(|m| m.tier).unwrap_or(""),
@@ -451,6 +471,7 @@ pub fn help_json() -> Value {
             cmd("stats", "檢視與匯出兵種數值（list / get / export）", &["--game <path>", "--balance", "--json"], Some(&["list", "get <unitKey>", "export --format <ini|json> --output <path>"])),
             cmd("profile", "匯出或檢視修改配置設定檔（export / schema）", &["--game <path>", "--json"], Some(&["schema", "export --output <path>"])),
             cmd("saves", "管理遊戲存檔、備份與縮圖", &["--game <path>", "--json"], Some(&["list", "backup <folder>", "repair-ai <folder>", "restore <backup.zip> <folder>", "delete <folder>", "delete-backup <backup.zip>", "preview <folder>", "preview-backup <backup.zip>"])),
+            cmd("repair-language-backup", "由原版目錄重建 ToEng 語言備份基準（不修改遊戲檔案）", &["--game <path>", "--original <path>", "--dry-run", "--json"], None),
             cmd("maps", "列出遊戲地圖（list）", &["--game <path>", "--json"], Some(&["list"])),
         ],
         "examples": ["AgainstRomeModifier.exe status --json", "AgainstRomeModifier.exe apply --enable FastCiviProduction,InfiniteMorale --game-speed 3 --json",
@@ -729,6 +750,16 @@ pub fn render_text(command: &str, v: &Value, loc: &Loc) -> String {
                     s(m, "category")
                 );
             }
+        }
+        "repair-language-backup" => {
+            if v["dryRun"].as_bool().unwrap_or(false) {
+                line!("[dry-run] 語言備份基準驗證通過，未寫入任何檔案。");
+            } else {
+                line!("Language baseline repaired successfully.");
+            }
+            line!("Backup: {}", s(v, "backup"));
+            line!("Existing files: {}", v["existingCount"]);
+            line!("Missing files: 0");
         }
         "help" => {
             line!("=== {} v{} ===", s(v, "appName"), s(v, "version"));

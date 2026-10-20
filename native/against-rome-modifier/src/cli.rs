@@ -36,6 +36,7 @@ pub struct CliOptions {
     pub format: Option<String>,
     pub category: Option<String>,
     pub language: Option<String>,
+    pub original_path: Option<String>,
 }
 fn canonical_command(s: &str) -> Option<&'static str> {
     Some(match s.to_ascii_lowercase().as_str() {
@@ -49,6 +50,7 @@ fn canonical_command(s: &str) -> Option<&'static str> {
         "profile" => "profile",
         "saves" => "saves",
         "maps" => "maps",
+        "repair-language-backup" | "repair-language" => "repair-language-backup",
         "help" => "help",
         _ => return None,
     })
@@ -135,6 +137,7 @@ impl CliOptions {
                 "--category" | "-c" => o.category = Some(value()?),
                 "--unit" | "-u" => o.sub_arg = Some(value()?),
                 "--lang" => o.language = Some(value()?),
+                "--original" | "--original-path" => o.original_path = Some(value()?),
                 "--help" | "-h" | "/?" => return Ok(o),
                 _ => {
                     if !args[i].starts_with('-') {
@@ -1012,6 +1015,7 @@ pub fn run_cli(args: &[String], out: &mut dyn io::Write, err: &mut dyn io::Write
         "backup" => cc::backup_command(&o, resolve_game),
         "stats" => cc::stats_command(&o, resolve_game, &loc, &now),
         "saves" => cc::saves_command(&o, resolve_game),
+        "repair-language-backup" => cc::repair_language_backup_command(&o, resolve_game),
         other => Err(arg_error(format!("指令 '{other}' 不存在。"))),
     };
     match result {
