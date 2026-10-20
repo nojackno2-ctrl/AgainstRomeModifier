@@ -1,3 +1,14 @@
+## 2026-10-20 Claude（Opus）：依使用者指示暫停（Rust 全遷移收尾，剩最終刪除 C#）
+
+- 本輪已提交並推送（896f746 → 08245b6）：既有移植成果、ar-bcitool、Modifier GUI 缺口、共用資料/placement 規則、編輯器快捷鍵/box select/layout（C# byte-compat fixture）/issue list/地圖複製/Families/Region tools、劇本放置流程與存檔 DATA 交易、starter kit、材質繪製、SDL 場景物件編輯、AI 規劃背景生成；所有 C# oracle 凍結為 fixtures（Rust 測試不再需要 dotnet）；ar-re（25 個 Python 工具移植）；repair-language-backup；CI 改為純 Rust（ci.yml 移除、CodeQL rust、release.yml 發行 Rust 可攜 ZIP）；刪除 Python 探針、C++ argm-trace、C# ArmMapPackage 與 C# RE probes。
+- 驗證：`cargo test --workspace --locked --offline` 2215 passed / 0 failed / 15 ignored（零售遊戲或本機證據）。乾淨 clone 無 dotnet 測試曾發現 .bin fixture 被 `*.bin` 忽略與 3 個 RE 測試依賴本機證據，均已修正（f1d28e1、daa29b7）。test-publish-rust.ps1 本機無 pwsh 7，僅做語法解析，需看 GitHub CI。未做任何 GUI 或遊戲內驗收。
+- 未提交：`README.md` 已改寫為 Rust 版（描述 .NET 已移除），刻意留到最終刪除提交。
+- 剩餘工作（依序）：
+  1. 小缺口：材質 palette 缺 L 系列區域材質、PFAD、mask transitions；工具列 Undo/Redo 未路由到材質筆刷；重設地表/平坦地形按鈕（native 已有 reset_to_baseline/apply_blank_terrain）；2D 格線/物件顯示切換；3D 陣型展開（formation.rs）；flat-template 空白圖需 app.rs BuildBlank hook。
+  2. 最終刪除：src.*、tests/（C#）、AgainstRomeModifier.slnx、Directory.Build.*、NuGet.Config、tools/publish.ps1、tools/Test-ReleaseArtifacts.ps1、tools/build-native-data.ps1、native/against-rome-data/include/*.h、ThirdParty/argm-trace/winmm.dll（C++ 舊檔，src.Core 仍內嵌所以暫留）、.gitignore C# 規則；AGENTS.md 第 25/30 行改為 Rust/cargo；docs/rust-rewrite*.md 狀態更新；提交 README。
+  3. Ghidra `tools/re/Ghidra*.java` 屬 Ghidra 腳本宿主輸入，決定保留並已在 docs/reverse-engineering/README.md 說明。
+- 版本：Rust crates 為 0.1.0，C# 發行為 v1.2.x；release.yml 要求 tag 等於 editor crate 版本，發行前需使用者決定版本號。
+
 ## 2026-10-20 Claude：Spawn 存檔 DATA 交易（prebuilt／副本）＋ 2D 畫布選取拖曳 ＋ 地景警告
 
 - 新增 `native/against-rome-maps/src/spawn_data.rs`（經 `placement_edit.rs` 以 `#[path]` 註冊，公開路徑 `against_rome_maps::spawn_data`）：`mark_prebuilt`（C# 規則：建築且隊伍 0..=8，或有 raw rotation）、`SpawnDataCatalog`（alias→objdef 型別、`ResolveNativeAlias`）、`plan_spawn_data`（官方圖→現圖單例範本、`build_family_copy_requests`、`apply_to_candidate_with_copies`、換成 `DATA/*.dat` 位元組，PFIL 標頭保留；全程 detached、不寫檔）。`starter_transaction.rs` 新增 `apply_to_candidate_with_copies`（C# `ApplyToCandidate(familyCopies)` 的預檢＋依 id 排序複製＋copiedIds 不走 owned 捷徑）。
