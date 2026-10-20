@@ -1324,6 +1324,11 @@ impl EditorApp {
             self.session.as_ref().map(|s| s.heights()),
             self.session.as_ref().map(|s| s.collision()),
             Some(&self.scenario.document().spawns),
+            crate::packaging_ui::LiveDiffSessions::from_sessions(
+                &self.textures,
+                &self.placement,
+                &self.scenario,
+            ),
         );
         self.campaign.show(
             ctx,
@@ -6118,6 +6123,7 @@ angle=0.00
                 0 => app.placement.show(ctx),
                 1 => app.scenario.show(ctx),
                 2 => app.textures.show(ctx),
+                3 => app.show_studio_panels(ctx),
                 4 => app.toolbox.show(ctx),
                 _ => unreachable!(),
             },
@@ -6167,6 +6173,76 @@ angle=0.00
     fn pending_panel_click(app: &mut EditorApp, ctx: &egui::Context, panel: usize, label: &str) {
         let pos = pending_panel_label(app, ctx, panel, label).center();
         pending_panel_click_at(app, ctx, panel, pos);
+    }
+
+    #[test]
+    fn packaging_compare_button_captures_live_app_sessions_without_safe_save() {
+        use crate::bmp::BmpImage;
+        use crate::packaging_ui::{DiffVerdict, PackagingTab};
+        let (mut app, root, map) = spawn_save_tests::fixture("packaging_live", &[(232, None)]);
+        let _temp = PendingPanelTemp(root);
+        app.spawn_ui.open = false;
+        std::fs::write(
+            map.join("boden.bmp"),
+            BmpImage::new_solid(5, 5, 0, 32, 0).encode_bmp(),
+        )
+        .unwrap();
+        std::fs::write(
+            map.join("collision.bmp"),
+            BmpImage::new_solid(4, 4, 0, 0, 0).encode_bmp(),
+        )
+        .unwrap();
+        std::fs::write(
+            map.join("boden.txt"),
+            format!("[Dimension]\n4\n[Texturen]\n{}", "4BA___51\n".repeat(16)),
+        )
+        .unwrap();
+        std::fs::write(
+            map.join("arm_scenario.json"),
+            app.scenario.document().to_json().unwrap(),
+        )
+        .unwrap();
+        app.textures.load_session(&map).unwrap();
+        app.placement.load_session(&map).unwrap();
+        app.packaging.load_saved_baseline(&map).unwrap();
+        app.textures
+            .session_mut()
+            .unwrap()
+            .stamp_texture(0, 0, "4BB___51")
+            .unwrap();
+        app.textures.session_mut().unwrap().commit_stroke();
+        app.placement
+            .store_mut()
+            .unwrap()
+            .set_family_team(0, 1, 3)
+            .unwrap();
+        let event = serde_json::from_str(
+            r#"{"Name":"LiveAppEvent","Actions":[{"Kind":0,"Text":"unsaved"}]}"#,
+        )
+        .unwrap();
+        app.scenario.add_events(&[event]).unwrap();
+        let texture_bytes = std::fs::read(map.join("boden.txt")).unwrap();
+        let object_bytes = std::fs::read(map.join("DATA/objects.dat")).unwrap();
+        let scenario_bytes = std::fs::read(map.join("arm_scenario.json")).unwrap();
+        app.packaging.current_tab = PackagingTab::MapDiff;
+        app.packaging.open = true;
+        let ctx = egui::Context::default();
+        pending_panel_click(&mut app, &ctx, 3, "Compare Working vs Baseline");
+        assert_eq!(app.packaging.diff_verdict, Some(DiffVerdict::Differences));
+        let report = app.packaging.diff_report.as_ref().unwrap();
+        assert_eq!(report.textures.changed_tile_count, 1);
+        assert_eq!(report.objects.modified.len(), 1);
+        assert_eq!(report.events.added.len(), 1);
+        assert_eq!(std::fs::read(map.join("boden.txt")).unwrap(), texture_bytes);
+        assert_eq!(
+            std::fs::read(map.join("DATA/objects.dat")).unwrap(),
+            object_bytes
+        );
+        assert_eq!(
+            std::fs::read(map.join("arm_scenario.json")).unwrap(),
+            scenario_bytes
+        );
+        assert!(app.textures.is_dirty() && app.scenario.dirty());
     }
 
     fn pending_panel_path(

@@ -13,6 +13,29 @@ use against_rome_scenario::model::{ScenarioDocument, Spawn};
 use eframe::egui::{self, Color32, Vec2};
 use std::path::{Path, PathBuf};
 
+/// Borrowed live editor state. Capture is read-only and never saves or reloads a session.
+#[derive(Clone, Copy)]
+pub struct LiveDiffSessions<'a> {
+    pub textures: &'a crate::textures_ui::TexturesUi,
+    pub placement: &'a crate::placement_ui::PlacementUi,
+    /// `None` when ScenarioUi is not loaded; never substitute a default or disk document.
+    pub scenario: Option<&'a ScenarioDocument>,
+}
+
+impl<'a> LiveDiffSessions<'a> {
+    pub fn from_sessions(
+        textures: &'a crate::textures_ui::TexturesUi,
+        placement: &'a crate::placement_ui::PlacementUi,
+        scenario: &'a crate::scenario_ui::ScenarioUi,
+    ) -> Self {
+        Self {
+            textures,
+            placement,
+            scenario: scenario.is_loaded().then(|| scenario.document()),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PackagingTab {
     ModExporter,
@@ -326,68 +349,56 @@ impl PackagingUi {
         }
     }
 
-    /// Compares the working terrain in memory against the baseline. Textures, objects and scenario
-    /// events of the current side are read from the saved map at `current_map_dir`, if given;
-    /// otherwise those layers are reported as unavailable.
+    /// Compatibility entry point without live sessions. Disk values must never stand in for
+    /// unavailable editor state; callers with sessions should use `compare_live_sessions`.
     pub fn compare_with_current_map(
         &mut self,
         current_label: &str,
         dimension: usize,
         heights: Option<&[u8]>,
         collision: Option<&[u8]>,
-        current_map_dir: Option<&Path>,
+        _current_map_dir: Option<&Path>,
     ) -> Result<(), String> {
-        let (mut curr, mut av) =
-            memory_snapshot(current_label, dimension, heights, collision, None);
-        let mut scenario = None;
-        match current_map_dir {
-            Some(dir) if dir.is_dir() => {
-                let (disk, disk_av, disk_scenario) =
-                    load_saved_snapshot_details(dir, current_label).unwrap_or_else(|e| {
-                        let reason = Some(e);
-                        let av = LayerAvailability {
-                            height: reason.clone(),
-                            collision: reason.clone(),
-                            textures: reason.clone(),
-                            objects: reason.clone(),
-                            events: reason.clone(),
-                            object_metadata: reason.clone(),
-                            spawns: reason.clone(),
-                            data_slots: reason,
-                        };
-                        (
-                            MapVersionSnapshot::new(current_label, 0, 0, None, 4.0),
-                            av,
-                            None,
-                        )
-                    });
-                scenario = disk_scenario;
-                av.object_metadata = disk_av.object_metadata;
-                av.spawns = disk_av.spawns;
-                av.data_slots = disk_av.data_slots;
-                curr.textures = disk.textures;
-                if disk.tile_dimension != 0 && disk_av.textures.is_none() {
-                    curr.tile_dimension = disk.tile_dimension;
-                }
-                curr.objects = disk.objects;
-                curr.events = disk.events;
-                av.textures = disk_av.textures;
-                av.objects = disk_av.objects;
-                av.events = disk_av.events;
-            }
-            _ => {
-                let reason = "current map directory is not set or not a directory";
-                av.textures = Some(reason.into());
-                av.objects = Some(reason.into());
-                av.events = Some(reason.into());
-                av.object_metadata = Some(reason.into());
-                av.spawns = Some(reason.into());
-                av.data_slots = Some(reason.into());
-            }
-        }
-        self.run_compare(curr, av, scenario)
+        self.compare_snapshots(current_label, dimension, heights, collision, None)
     }
 
+    /// Captures the actual sessions at Compare time, including unsaved changes. No disk fallback.
+    pub fn compare_live_sessions(
+        &mut self,
+        label: &str,
+        dimension: usize,
+        heights: Option<&[u8]>,
+        collision: Option<&[u8]>,
+        live: LiveDiffSessions<'_>,
+    ) -> Result<(), String> {
+        let (mut snap, mut av) = memory_snapshot(label, dimension, heights, collision, None);
+        match (
+            live.textures.tile_dimension(),
+            live.textures.session_textures(),
+        ) {
+            (Some(d), Some(textures)) if d > 0 && d.checked_mul(d) == Some(textures.len()) => {
+                snap.tile_dimension = d;
+                snap.textures = Some(textures.to_vec());
+                av.textures = None;
+            }
+            _ => {
+                av.textures =
+                    Some("live texture session missing or grid dimensions inconsistent".into())
+            }
+        }
+        if live.placement.is_loaded() {
+            capture_objects(&mut snap, &mut av, &live.placement.objects());
+        }
+        let scenario = live.scenario.cloned();
+        if let Some(doc) = &scenario {
+            snap.events = Some(doc.events.clone());
+            av.events = None;
+            av.spawns = None;
+            av.data_slots = None;
+        }
+        bind_object_metadata(&mut snap, &mut av, scenario.as_ref());
+        self.run_compare(snap, av, scenario)
+    }
     pub fn compare_snapshots(
         &mut self,
         current_label: &str,
@@ -488,6 +499,14 @@ impl PackagingUi {
         let mut supplemental = String::new();
         let mut supplemental_changed = false;
         if let (Some(before), Some(after)) = (&self.baseline_scenario, &scenario) {
+            if states[4].is_none() {
+                supplemental_changed |= describe_records(
+                    "Scenario events",
+                    &before.events,
+                    &after.events,
+                    &mut supplemental,
+                );
+            }
             if states[6].is_none() {
                 supplemental_changed |= describe_records(
                     "Scenario spawns",
@@ -546,7 +565,7 @@ impl PackagingUi {
             ));
         }
         text.push_str(&supplemental);
-        text.push_str("\nObject alias/unit count: scenario metadata verified by prebuilt slot/UID bindings; not native DATA unit population.\nCurrent textures/objects/scenario use saved disk data; pending editor edits are excluded.\nA complete comparison applies only to the listed document fields and engine tolerances, not whole-map bytes or game behavior.\n");
+        text.push_str("\nObject alias/unit count: scenario metadata requires unique prebuilt slot/UID bindings; not native DATA unit population.\nCurrent layers use live editor sessions, including unsaved edits. Missing sessions are unavailable.\nA complete comparison applies only to the listed document fields and engine tolerances, not whole-map bytes or game behavior.\n");
         text.push_str("\n--- Layer coverage ---\n");
         for (name, state) in &coverage {
             match state {
@@ -619,6 +638,7 @@ impl PackagingUi {
         heights: Option<&[u8]>,
         collision: Option<&[u8]>,
         spawns: Option<&[Spawn]>,
+        live: LiveDiffSessions<'_>,
     ) {
         if !self.open {
             return;
@@ -657,7 +677,7 @@ impl PackagingUi {
                 match self.current_tab {
                     PackagingTab::ModExporter => self.render_exporter_tab(ui),
                     PackagingTab::MapDiff => {
-                        self.render_diff_tab(ui, dimension, heights, collision)
+                        self.render_diff_tab(ui, dimension, heights, collision, live)
                     }
                     PackagingTab::BudgetProfiler => {
                         self.render_budget_tab(ui, dimension, heights, collision, spawns)
@@ -784,6 +804,7 @@ impl PackagingUi {
         dimension: usize,
         heights: Option<&[u8]>,
         collision: Option<&[u8]>,
+        live: LiveDiffSessions<'_>,
     ) {
         ui.heading("Map Version Diff Engine");
         ui.label("Compares working memory edits against a baseline snapshot across height, collision, objects, and scripts.");
@@ -800,20 +821,8 @@ impl PackagingUi {
                 );
             }
             if ui.button("Compare Working vs Baseline").clicked() {
-                if matches!(self.baseline_source, Some(BaselineSource::SavedMap(_))) {
-                    let dir = PathBuf::from(self.map_dir_input.trim());
-                    let dir = (!self.map_dir_input.trim().is_empty()).then_some(dir);
-                    let _ = self.compare_with_current_map(
-                        "Latest Edits",
-                        dimension,
-                        heights,
-                        collision,
-                        dir.as_deref(),
-                    );
-                } else {
-                    let _ =
-                        self.compare_snapshots("Latest Edits", dimension, heights, collision, None);
-                }
+                let _ =
+                    self.compare_live_sessions("Latest Edits", dimension, heights, collision, live);
             }
         });
         ui.horizontal(|ui| {
@@ -828,7 +837,7 @@ impl PackagingUi {
             match src {
                 BaselineSource::Memory => ui.label("Baseline: in-memory (heightmap/collision only)."),
                 BaselineSource::SavedMap(p) => ui.label(format!(
-                    "Baseline: saved map {} (current textures/objects/scenario are read from the saved Map folder on the Mod Exporter tab).",
+                    "Baseline: saved map {} (current layers are captured from live editor sessions).",
                     p.display()
                 )),
             };
@@ -939,6 +948,8 @@ fn memory_snapshot(
     collision: Option<&[u8]>,
     objects: Option<&[DiffObjectItem]>,
 ) -> (MapVersionSnapshot, LayerAvailability) {
+    // Collision is a separate square grid; storage accepts dimensions independent of heights.
+    let collision_dimension = collision.map_or(0, |c| c.len().isqrt());
     let snap = MapVersionSnapshot {
         version_label: label.to_string(),
         tile_dimension: dimension.saturating_sub(1),
@@ -946,19 +957,29 @@ fn memory_snapshot(
         heights: heights.map(|h| h.to_vec()),
         height_step: 4.0,
         textures: None,
-        collision_dimension: dimension.saturating_sub(1),
+        collision_dimension,
         collision: collision.map(|c| c.to_vec()),
         objects: objects.map(|o| o.to_vec()),
         events: None,
     };
     let missing = |present: bool, why: &str| (!present).then(|| why.to_string());
     let av = LayerAvailability {
-        height: missing(heights.is_some(), "no heightmap in memory"),
-        collision: missing(collision.is_some(), "no collision map in memory"),
+        height: missing(
+            dimension > 1
+                && heights.is_some_and(|h| dimension.checked_mul(dimension) == Some(h.len())),
+            "heightmap missing or dimensions inconsistent in memory",
+        ),
+        collision: missing(
+            collision_dimension > 0
+                && collision.is_some_and(|c| {
+                    collision_dimension.checked_mul(collision_dimension) == Some(c.len())
+                }),
+            "collision map missing or dimensions inconsistent in memory",
+        ),
         textures: Some("not captured from memory".into()),
         objects: missing(objects.is_some(), "no object list supplied"),
         events: Some("not captured from memory".into()),
-        object_metadata: missing(objects.is_some(), "no object metadata supplied"),
+        object_metadata: Some("prebuilt slot/UID bindings not captured from memory".into()),
         spawns: Some("not captured from memory".into()),
         data_slots: Some("not captured from memory".into()),
     };
@@ -1020,43 +1041,9 @@ fn load_saved_snapshot_details(
     }
 
     match against_rome_placement::ObjectStore::load(dir) {
-        Ok(store) => {
-            let objects = store.objects();
-            let unplaced = objects
-                .iter()
-                .filter(|o| o.position.iter().any(|v| !v.is_finite()))
-                .count();
-            if unplaced > 0 {
-                av.objects = Some(format!(
-                    "{unplaced} active object(s) have no position record"
-                ));
-            } else {
-                snap.objects = Some(
-                    objects
-                        .iter()
-                        .map(|o| {
-                            DiffObjectItem::new(
-                                uuid::Uuid::from_u128(((o.slot as u128) << 32) | o.uid as u128),
-                                o.slot as i32,
-                                o.uid,
-                                "",
-                                o.type_id as i32,
-                                o.team as i32,
-                                o.position[0],
-                                o.position[1],
-                                o.position[2],
-                                o.rotation_degrees,
-                                0,
-                                false,
-                            )
-                        })
-                        .collect(),
-                );
-            }
-        }
+        Ok(store) => capture_objects(&mut snap, &mut av, &store.objects()),
         Err(e) => av.objects = Some(format!("DATA objects: {e}")),
     }
-
     let scenario = dir.join("arm_scenario.json");
     let mut document = None;
     match std::fs::read(&scenario) {
@@ -1072,47 +1059,103 @@ fn load_saved_snapshot_details(
 
     av.spawns = av.events.clone();
     av.data_slots = av.events.clone();
-    av.object_metadata = av.objects.clone().or_else(|| av.events.clone());
-    if let (Some(objects), Some(doc)) = (&mut snap.objects, &document) {
-        // A scenario label alone is not evidence for a native slot. Require a unique, live
-        // slot/UID binding and a prebuilt spawn for EVERY active object before comparing metadata.
-        let complete = objects.iter().all(|o| {
-            doc.data_slots
-                .iter()
-                .filter(|b| {
-                    b.slot == o.slot
-                        && b.uid == o.uid
-                        && doc.spawns.iter().any(|s| s.id == b.spawn_id && s.prebuilt)
-                })
-                .count()
-                == 1
-        });
-        if complete {
-            for object in objects {
-                let binding = doc
-                    .data_slots
-                    .iter()
-                    .find(|b| b.slot == object.slot && b.uid == object.uid)
-                    .unwrap();
-                let spawn = doc
-                    .spawns
-                    .iter()
-                    .find(|s| s.id == binding.spawn_id && s.prebuilt)
-                    .unwrap();
-                object.alias = spawn.alias.clone();
-                object.unit_count = spawn.count;
-                object.prebuilt = true;
-            }
-        } else {
-            av.object_metadata = Some("active DATA objects lack complete prebuilt scenario slot/UID bindings; native alias/unit count are not exposed by ObjectStore".into());
-        }
-    }
+    bind_object_metadata(&mut snap, &mut av, document.as_ref());
     if av.slots().iter().all(|s| s.is_some()) {
         return Err(format!("no readable map layers in {}", dir.display()));
     }
     Ok((snap, av, document))
 }
 
+fn capture_objects(
+    snap: &mut MapVersionSnapshot,
+    av: &mut LayerAvailability,
+    objects: &[against_rome_placement::WorldObject],
+) {
+    if objects
+        .iter()
+        .any(|o| o.position.iter().any(|v| !v.is_finite()) || !o.rotation_degrees.is_finite())
+    {
+        av.objects =
+            Some("active objects have missing/nonfinite position or rotation records".into());
+        snap.objects = None;
+        return;
+    }
+    snap.objects = Some(
+        objects
+            .iter()
+            .map(|o| {
+                DiffObjectItem::new(
+                    uuid::Uuid::from_u128(((o.slot as u128) << 32) | o.uid as u128),
+                    o.slot as i32,
+                    o.uid,
+                    "",
+                    o.type_id as i32,
+                    o.team as i32,
+                    o.position[0],
+                    o.position[1],
+                    o.position[2],
+                    o.rotation_degrees,
+                    0,
+                    false,
+                )
+            })
+            .collect(),
+    );
+    av.objects = None;
+}
+
+fn bind_object_metadata(
+    snap: &mut MapVersionSnapshot,
+    av: &mut LayerAvailability,
+    document: Option<&ScenarioDocument>,
+) {
+    av.object_metadata =
+        Some("active DATA objects require unique prebuilt scenario slot/UID/spawn bindings".into());
+    let (Some(objects), Some(doc)) = (&mut snap.objects, document) else {
+        return;
+    };
+    // Validate the entire binding before assigning any metadata. Duplicate spawn identities or
+    // multiple native slots sharing one spawn are ambiguous, even if a first match exists.
+    if !objects.iter().all(|o| {
+        let bindings: Vec<_> = doc.data_slots.iter().filter(|b| b.slot == o.slot).collect();
+        bindings.len() == 1
+            && bindings[0].uid == o.uid
+            && doc
+                .data_slots
+                .iter()
+                .filter(|b| b.spawn_id == bindings[0].spawn_id)
+                .count()
+                == 1
+            && doc
+                .spawns
+                .iter()
+                .filter(|s| s.id == bindings[0].spawn_id)
+                .count()
+                == 1
+            && doc
+                .spawns
+                .iter()
+                .any(|s| s.id == bindings[0].spawn_id && s.prebuilt)
+    }) {
+        return;
+    }
+    for object in objects {
+        let binding = doc
+            .data_slots
+            .iter()
+            .find(|b| b.slot == object.slot)
+            .unwrap();
+        let spawn = doc
+            .spawns
+            .iter()
+            .find(|s| s.id == binding.spawn_id)
+            .unwrap();
+        object.alias = spawn.alias.clone();
+        object.unit_count = spawn.count;
+        object.prebuilt = true;
+    }
+    av.object_metadata = None;
+}
 /// Preserve record order and every typed field (including identity/raw rotation); no fuzzy matching.
 fn describe_records<T: PartialEq + std::fmt::Debug>(
     name: &str,
@@ -1120,7 +1163,7 @@ fn describe_records<T: PartialEq + std::fmt::Debug>(
     after: &[T],
     text: &mut String,
 ) -> bool {
-    text.push_str(&format!("\n--- {name} (saved document order) ---\n"));
+    text.push_str(&format!("\n--- {name} (document order) ---\n"));
     let mut changed = false;
     for index in 0..before.len().max(after.len()) {
         let (old, new) = (before.get(index), after.get(index));
@@ -1150,14 +1193,20 @@ pub type GameSpawner<'a> = &'a mut dyn FnMut(&Path, &Path) -> std::io::Result<()
 
 /// Production spawner: starts `Against_Rome.exe` detached with the game directory as cwd.
 pub fn spawn_game_process(exe: &Path, cwd: &Path) -> std::io::Result<()> {
-    std::process::Command::new(exe).current_dir(cwd).spawn().map(|_| ())
+    std::process::Command::new(exe)
+        .current_dir(cwd)
+        .spawn()
+        .map(|_| ())
 }
 
 /// Validates `Against_Rome.exe` exists in `game_dir`, then spawns it. Returns the exe path.
 pub fn launch_game(game_dir: &Path, spawn: GameSpawner<'_>) -> Result<PathBuf, String> {
     let exe = game_dir.join("Against_Rome.exe");
     if !exe.is_file() {
-        return Err(format!("Against_Rome.exe not found in game folder: {}", game_dir.display()));
+        return Err(format!(
+            "Against_Rome.exe not found in game folder: {}",
+            game_dir.display()
+        ));
     }
     spawn(&exe, game_dir).map_err(|e| format!("Failed to launch game: {e}"))?;
     Ok(exe)
@@ -1175,13 +1224,20 @@ mod tests {
             calls.push((exe.to_path_buf(), cwd.to_path_buf()));
             Ok(())
         };
-        assert!(launch_game(&dir, &mut spawn).unwrap_err().contains("not found"));
+        assert!(launch_game(&dir, &mut spawn)
+            .unwrap_err()
+            .contains("not found"));
         std::fs::write(dir.join("Against_Rome.exe"), b"x").unwrap();
-        assert_eq!(game_dir_for_map(&dir.join("MAPS").join("ENDL_007")).unwrap(), dir);
+        assert_eq!(
+            game_dir_for_map(&dir.join("MAPS").join("ENDL_007")).unwrap(),
+            dir
+        );
         launch_game(&dir, &mut spawn).unwrap();
         assert_eq!(calls, vec![(dir.join("Against_Rome.exe"), dir.clone())]);
         let mut failing = |_: &Path, _: &Path| Err(std::io::Error::other("boom"));
-        assert!(launch_game(&dir, &mut failing).unwrap_err().contains("boom"));
+        assert!(launch_game(&dir, &mut failing)
+            .unwrap_err()
+            .contains("boom"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 

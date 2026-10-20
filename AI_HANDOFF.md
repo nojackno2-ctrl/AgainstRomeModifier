@@ -1,9 +1,17 @@
+## 2026-10-20 Codex：Map Diff 即時 session 快照（已驗證，待提交）
+
+- Map Diff Compare 改由當下 `TexturesUi`、`PlacementUi`、`ScenarioUi` 擷取唯讀 live snapshot；Compare 不存檔、不以磁碟 current data 回退。缺少 session、圖層尺寸不一致、非有限物件位置/角度、無法證明唯一 prebuilt slot/UID/spawn 綁定時，該層標 `Unavailable`，不得 PASS。baseline capture from memory 仍只提供原先的有限圖層。
+- 新增 27 項 integration tests，涵蓋 live edits（textures、objects、events、spawns、DATA slots）、同數量 event payload 修改、刪除／新增、缺 session／尺寸錯誤／ambiguous metadata、baseline frozen，以及 compare 前後所有來源 map bytes 相同。
+- 父端重驗：`cargo test -p against-rome-editor-app --locked --offline --target-dir re_workspace/target-w18 --test packaging_map_diff --quiet` **27 passed / 0 failed / 0 ignored**；同 crate `--lib --quiet` **498 passed / 0 failed / 0 ignored**；`rustfmt --edition 2021 --check apps/against-rome-editor/tests/packaging_map_diff.rs apps/against-rome-editor/src/packaging_ui.rs`、scoped `git diff --check` 通過。代理 job `32f9143aaee2` succeeded；僅修改 `app.rs`、`packaging_ui.rs`、`tests/packaging_map_diff.rs`。
+- 限制：Diff 欄位未含 DATA parent/vitals/完整 family、原生 unit population、`ScenarioDocument.version`、水位與 height step；使用 packaging engine 現行容差。未做 GUI／遊戲內驗收，未操作安裝遊戲。
+- 狀態：程式與合成測試已驗證，尚未提交；完整 Rust 改寫目標仍未完成。
+
 ## 2026-10-20 Codex：Campaign Objectives 套用至 Scenario（已驗證）
 
 - 新增明確的 Compile Preview／Apply 流程。Apply 依 live Scenario/spawn 重編譯、以 UUID 事件名稱定位舊生成事件、作為單一 Scenario undo/redo 交易；事件上限、輸入/編譯驗證、未知事件 graph 轉換會 fail closed。相同生成事件有內容快照保護；使用者既有同名事件衝突或手動改過生成事件時拒絕覆寫。`campaign_ui.rs`、`app.rs`、`app/tests/objectives_apply_tests.rs`；`spawn_save_tests.rs` 僅將 fixture 開放給同層測試共用。
 - 合成測試覆蓋預覽唯讀、Apply、重複 Apply、UUID 重新編譯取代、undo/redo、同名衝突、手動編輯保留、256 上限、live spawn 改變、失敗時 draft/preview/history 不變、原始與 PFIL 存檔重載。
-- 驗證：父端 `cargo test -p against-rome-editor-app --locked --offline --target-dir re_workspace/target-w18 --quiet` exit 0，**640 passed / 0 failed / 0 ignored**；`rustfmt --edition 2021 --check apps/against-rome-editor/src/campaign_ui.rs apps/against-rome-editor/src/app/tests/objectives_apply_tests.rs` 通過；本次 Rust/Handoff scoped `git diff --check` 通過。無 GUI／遊戲內驗收；未操作安裝遊戲。
-- 狀態：功能與合成測試已驗證；尚未提交。全程式 Rust 改寫目標仍未完成，且目前 HEAD 仍追蹤 C# 原始碼／專案檔；須先盤點現存 C# oracle、build 與工具依賴，再進行最終退役。
+- 驗證：父端 `cargo test -p against-rome-editor-app --locked --offline --target-dir re_workspace/target-w18 --quiet` exit 0，**640 passed / 0 failed / 0 ignored**；scoped rustfmt 與 `git diff --check` 通過。無 GUI／遊戲內驗收；未操作安裝遊戲。
+- 狀態：已提交並推送 `5c0a66a`。全程式 Rust 改寫目標仍未完成，且目前 HEAD 仍追蹤 C# 原始碼／專案檔；須先盤點現存 C# oracle、build 與工具依賴，再進行最終退役。
 
 ## 2026-10-20 Claude（Sonnet）：C# 剩餘小缺口收尾（未提交）
 
