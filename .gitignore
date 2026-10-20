@@ -50,6 +50,7 @@ AgainstRomeModifier_*.zip
 *.dmp
 *.dump
 *.bin
+!**/tests/fixtures/**/*.bin
 *.pdb
 
 # Local package/tool caches
