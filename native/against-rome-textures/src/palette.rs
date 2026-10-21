@@ -184,6 +184,7 @@ pub fn map_material_ids(
 pub struct TransitionProbe<'a> {
     resolver: &'a dyn NativeTerrainMaterialResolver,
     cache: HashMap<(String, String), bool>,
+    blend_cache: HashMap<(String, String), bool>,
 }
 
 impl<'a> TransitionProbe<'a> {
@@ -191,6 +192,7 @@ impl<'a> TransitionProbe<'a> {
         Self {
             resolver,
             cache: HashMap::new(),
+            blend_cache: HashMap::new(),
         }
     }
 
@@ -217,8 +219,31 @@ impl<'a> TransitionProbe<'a> {
         found
     }
 
-    /// 0 = already used on the map; 1 = direct transition to a map material; 2 = reachable through
-    /// one bridge material (auto transition); 3 = hard to blend (C# `MapSuitability`).
+    /// True when every two-material corner pattern a convex brush blob produces (all 14 except
+    /// the two diagonals) has a native tile, so a round stroke of `second` on `first` can bake.
+    /// `has_transition` (any single pattern) is far weaker: on ENDL_005's B8 ground it accepted
+    /// grasses that no stroke can paint.
+    pub fn blends(&mut self, first: &str, second: &str) -> bool {
+        if first.eq_ignore_ascii_case(second) {
+            return true;
+        }
+        let (a, b) = (first.to_ascii_uppercase(), second.to_ascii_uppercase());
+        let key = if a < b { (a, b) } else { (b, a) };
+        if let Some(&cached) = self.blend_cache.get(&key) {
+            return cached;
+        }
+        let ok = (1..15u8).filter(|m| *m != 5 && *m != 10).all(|mask| {
+            let corner = |bit: u8| if (mask >> bit) & 1 == 1 { second } else { first };
+            let corners = [corner(0), corner(1), corner(2), corner(3)];
+            self.resolver.resolve_native_tile(&corners, 0, 0).is_some()
+        });
+        self.blend_cache.insert(key, ok);
+        ok
+    }
+
+    /// 0 = already used on the map; 1 = blends directly with a map material; 2 = reachable through
+    /// one bridge material (auto transition); 3 = hard to blend. Like C# `MapSuitability`, but
+    /// tiers 1–2 require [`Self::blends`] so the visible palette only offers paintable materials.
     pub fn map_suitability(
         &mut self,
         material: &str,
@@ -229,12 +254,12 @@ impl<'a> TransitionProbe<'a> {
             return 0;
         }
         let present: Vec<&String> = map_materials.iter().collect();
-        if present.iter().any(|p| self.has_transition(material, p)) {
+        if present.iter().any(|p| self.blends(p, material)) {
             return 1;
         }
         for bridge in all_materials {
-            if self.has_transition(material, &bridge.id)
-                && present.iter().any(|p| self.has_transition(&bridge.id, p))
+            if self.blends(&bridge.id, material)
+                && present.iter().any(|p| self.blends(p, &bridge.id))
             {
                 return 2;
             }
@@ -973,6 +998,23 @@ mod tests {
         assert_eq!(ba.category_name(true), "Grassland");
         assert_eq!(ba.representative, "4BA___50");
         assert_eq!(palette[3].category_name(true), "Wasteland");
+    }
+
+    #[test]
+    fn partial_transition_set_is_not_a_direct_blend() {
+        // BA↔BV has only one native corner shape: some transition exists, yet a round stroke
+        // of BV on BA cannot bake (ENDL_005's B8 ground vs. grasses).
+        let mut names = names_with_transition();
+        names.push("4UAV__11".into());
+        let catalog = StandardFloorMaterialCatalog::from_texture_names(&names);
+        let palette = build_material_palette(&catalog);
+        let mut probe = TransitionProbe::new(&catalog);
+        assert!(probe.has_transition("BA", "BV"));
+        assert!(!probe.blends("BA", "BV"));
+        assert!(probe.blends("BA", "BC"));
+        let map = HashSet::from(["BA".to_string()]);
+        assert_eq!(probe.map_suitability("BV", &palette, &map), 3);
+        assert_eq!(probe.map_suitability("BC", &palette, &map), 1);
     }
 
     #[test]

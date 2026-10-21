@@ -1,3 +1,10 @@
+## 2026-10-22 Claude：材質筆刷按需載入與調色盤只列可畫材質（UI 點擊驗證）
+
+- **材質筆刷要求另外載入**：已開啟 ENDL_005（有 boden.txt）後選「Material (terrain paint)」仍顯示「Load a map with boden.txt to paint materials.」。現在依 Flat Terrain 先例按需載入，每張地圖只嘗試一次（失敗不每幀重讀 42MB floortex.dat），錯誤寫入狀態列。新單元測試 `material_brush_mode_loads_the_open_maps_materials_on_demand`。
+- **調色盤推薦畫不上去的材質**：`TransitionProbe::map_suitability` 以「存在任一轉角圖塊」判定可直接銜接（沿用 C# `MapSuitability`），ENDL_005 B8 地面上列出 Grass 等五種草地，實畫整筆被撤回並顯示「cannot be expressed with native transition tiles even with bridge materials」。新增 `TransitionProbe::blends`（凸形筆刷產生的 12 種轉角皆可解析）供 tier 1／2 使用；ENDL_005 現列 Dark Brown Gravel、Dirt Road 等，隱藏 72 種。刻意偏離 C# parity，理由為設計者正確性。新測試 `partial_transition_set_is_not_a_direct_blend`。
+- **UI 點擊驗收擴充**（ignored `gui_click_through_design_check_brush_undo_save_reload_language`，TEMP 複製 ENDL_005＋floortex.dat）：選 Material 模式 → 點調色盤「Dirt Road」→ 畫布拖曳實畫 27 格 → 復原／重做按鈕 → Safe Save → 新 TexturesUi 重載 boden.txt 一致。曾嘗試驗證 bridge tier 草地，但調色盤清單被面板高度截斷、需捲動，測試誤抓小地圖文字；已移除該步驟，**bridge tier 實畫未驗證**。
+- 驗證：`cargo test --workspace --locked --offline --target-dir re_workspace/target-w20 -- --test-threads=1` exit 0，283 groups **2,359 passed／0 failed／22 ignored**（`re_workspace/material-ui-workspace-test.log`）。非視覺／GPU 驗收；遊戲內仍未做。
+
 ## 2026-10-22 Claude：無視窗完整編輯器點擊驗收（已驗證，非視覺驗收）
 
 - 行為不變重構（獨立提交 `240926f`）：`eframe::App::update` 委派給公開的 `EditorApp::ui_frame(ctx)`，測試可用 `egui::Context` 無視窗跑整個編輯器畫面。

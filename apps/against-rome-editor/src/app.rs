@@ -160,6 +160,8 @@ pub struct EditorApp {
     ai_planner: AiPlannerUi,
     /// Edit area + material revision the AI material options were computed for.
     ai_materials_key: String,
+    /// Map for which the Material brush already tried to load boden.txt on demand.
+    material_autoload_tried: Option<PathBuf>,
     pub ambience: AmbienceUi,
     pub modifier: ModifierUi,
     pub viewport_3d: Viewport3d,
@@ -294,6 +296,7 @@ impl EditorApp {
             campaign: CampaignUi::default(),
             ai_planner: AiPlannerUi::default(),
             ai_materials_key: String::new(),
+            material_autoload_tried: None,
             ambience: AmbienceUi::default(),
             modifier: ModifierUi::default(),
             viewport_3d: Viewport3d::new(),
@@ -5185,6 +5188,7 @@ mod tests {
         copy_tree(&game.join("MAPS/ENDL_005"), &dir);
         std::fs::create_dir_all(root.join("SYSTEM/CLAK")).unwrap();
         std::fs::copy(game.join("SYSTEM/CLAK/cl_scint.ini"), root.join("SYSTEM/CLAK/cl_scint.ini")).unwrap();
+        std::fs::copy(game.join("floortex.dat"), root.join("floortex.dat")).unwrap();
         let mut app = EditorApp::initial_state();
         app.set_loaded_map(dir.clone(), crate::storage::load_map(&dir).unwrap()).unwrap();
         let ctx = egui::Context::default();
@@ -5232,6 +5236,37 @@ mod tests {
         assert!(!app.session.as_ref().unwrap().is_dirty(), "{}", app.status_message);
         assert_eq!(crate::storage::load_map(&dir).unwrap().heights(), &painted[..]);
 
+        // 4b. Material brush (loaded on demand): palette pick + canvas drag paints boden.txt.
+        let out = gui_click(&mut app, &ctx, "Material (terrain paint)");
+        let before = app.textures.session_textures().expect("materials loaded on demand").to_vec();
+        if gui_find(&out, "Dirt Road").is_none() {
+            let texts: Vec<String> = out.shapes.iter().filter_map(|s| match &s.shape { egui::epaint::Shape::Text(t) => Some(t.galley.text().to_string()), _ => None }).collect();
+            panic!("Dirt Road not in palette: {texts:?}");
+        }
+        let picked = gui_click(&mut app, &ctx, "Dirt Road");
+        eprintln!("after pick: {:?}", picked.shapes.iter().filter_map(|s| match &s.shape { egui::epaint::Shape::Text(t) if t.galley.text().starts_with("Active brush") => Some(t.galley.text().to_string()), _ => None }).collect::<Vec<_>>());
+        let map = app.last_map_rect;
+        let (a, b) = (map.lerp_inside(egui::vec2(0.30, 0.30)), map.lerp_inside(egui::vec2(0.40, 0.30)));
+        gui_frame(&mut app, &ctx, gui_pointer(a, true));
+        for step in 1..=10 {
+            gui_frame(&mut app, &ctx, vec![egui::Event::PointerMoved(a + (b - a) * (step as f32 / 10.0))]);
+        }
+        gui_frame(&mut app, &ctx, gui_pointer(b, false));
+        gui_frame(&mut app, &ctx, vec![]);
+        let after = app.textures.session_textures().unwrap().to_vec();
+        let tiles = before.iter().zip(&after).filter(|(x, y)| x != y).count();
+        eprintln!("material tiles painted through the UI: {tiles}; status: {}; notice: {:?}; map rect {:?}", app.status_message, app.textures.material_notice(), map);
+        assert!(tiles > 0, "material drag painted nothing: {}", app.status_message);
+        gui_click(&mut app, &ctx, "Undo (Ctrl+Z)");
+        assert_eq!(app.textures.session_textures().unwrap(), &before[..]);
+        gui_click(&mut app, &ctx, "Redo (Ctrl+Y)");
+        assert_eq!(app.textures.session_textures().unwrap(), &after[..]);
+        gui_click(&mut app, &ctx, "Safe Save");
+        assert!(app.pending_save_warnings.is_none() && !app.status_is_error, "{}", app.status_message);
+        let mut reloaded = TexturesUi::default();
+        reloaded.load_session(&dir).unwrap();
+        assert_eq!(reloaded.session_textures().unwrap(), &after[..]);
+
         // 5. Language toggle repaints the toolbar in Traditional Chinese.
         let out = gui_click(&mut app, &ctx, "中");
         assert!(gui_find(&out, "Design Check").is_none(), "toolbar still English");
@@ -5240,6 +5275,28 @@ mod tests {
             out.shapes.iter().filter_map(|s| match &s.shape { egui::epaint::Shape::Text(t) if t.pos.y < 60.0 => Some(t.galley.text().to_string()), _ => None }).collect::<Vec<_>>()
         );
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    /// Choosing the Material brush on an opened map must load its boden.txt on demand (like
+    /// Flat Terrain), not tell the designer to "load a map with boden.txt".
+    #[test]
+    fn material_brush_mode_loads_the_open_maps_materials_on_demand() {
+        let dir = temp_map_dir("material_mode_autoload");
+        std::fs::write(
+            dir.join("boden.txt"),
+            b"[Dimension]\n2\n[Texturen]\n4BA___51\n4BA___51\n4BA___51\n4BB___51\n",
+        )
+        .unwrap();
+        let mut app = EditorApp::initial_state();
+        app.set_loaded_map(dir.clone(), TerrainSession::create_blank(9, 32)).unwrap();
+        assert!(app.textures.session_textures().is_none());
+        let ctx = egui::Context::default();
+        let out = gui_click(&mut app, &ctx, "Material (terrain paint)");
+        assert_eq!(app.active_tool, ActiveTool::Material);
+        assert!(app.textures.session_textures().is_some(), "{}", app.status_message);
+        assert!(gui_find(&out, "Load a map with boden.txt to paint materials.").is_none());
+        assert!(!app.has_unsaved_changes(), "loading materials is not an edit");
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     /// Retail gate (read-only): on ENDL_005's B8 ground most materials have no native corner
@@ -9526,6 +9583,19 @@ impl EditorApp {
 
                     ui.separator();
                     if self.active_tool == ActiveTool::Material {
+                        // The open map's boden.txt loads on demand, like Flat Terrain does; one
+                        // attempt per opened map so a failure is not retried every frame.
+                        if self.textures.session_textures().is_none()
+                            && self.material_autoload_tried != self.loaded_map_path
+                        {
+                            self.material_autoload_tried = self.loaded_map_path.clone();
+                            if let Some(path) = self.loaded_map_path.clone() {
+                                if let Err(e) = self.textures.load_session(&path) {
+                                    self.status_message = format!("Materials: {e}");
+                                    self.status_is_error = true;
+                                }
+                            }
+                        }
                         let regions = self
                             .nature
                             .data
