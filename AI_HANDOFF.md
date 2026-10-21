@@ -1,3 +1,15 @@
+## 2026-10-21 Codex：49 項功能反編譯稽核（有缺陷，未全數通過）
+
+- 使用者要求以反編譯驗證所有功能；以現行 Rust registry、apply/detect/restore 與工具箱功能為清單。保留既有 `AGENTS.md`、`README.md` 修改；不寫入安裝遊戲，不執行遊戲。
+- REA Ghidra 12.1.4 已完成安裝版 `Against_Rome.exe` 新反編譯，x86 PE、SHA-256 `6ac85239ea3b87a4357ed8ce09a1818e68c09fe3c00e8d98831f473577b719bf`；33 筆 Evidence 匯出至 `re_workspace/feature-audit-20261021-rea-evidence.json`，session 已關閉。確認 999 選取上限、500 清理保留值、雙份村莊邊界、移速／射程／法術成本／計時器等消費路徑。2 個 ress callback 未被預設分析建立為函式，不能當作反編譯成功。
+- 新增 ignored gate `retail_exe_feature_audit`；以 `ARM_AUDIT_EXE` 指定安裝版執行，**1 passed**：10 個 EXE 功能（含原生寬螢幕低階路徑）、速度 2/5/10、合併組態皆套用／冪等／精確還原，讀回來源完全相同。只在記憶體操作，不代表遊戲行為。最終紀錄 `re_workspace/feature-audit-20261021-retail-exe-final.log`；專項 check --tests／test／build exit 0，rustfmt check 通過。
+- ress／script INI callback 以既有 headless scripts 補充驗證。首次直接傳 `Program Files (x86)` 路徑遭批次檔解析錯誤 `\\Against was unexpected at this time.`（exit 255）；改用 repo ignored 目錄中的唯一 EXE 副本並核對 SHA-256 後重新執行，exit 0、Post-analysis／Import succeeded，兩個 ress callback 成功建立與反編譯；31 個 objres 欄位 case 與 spruch 25..28 的 storage 及 consumer 一致。不修改安裝來源。
+- 分工報告限定於 `docs/reverse-engineering/modifier-rust-feature-audit-2026-10-21.md`、`editor-save-feature-audit-2026-10-21.md`；父端索引為 `feature-audit-2026-10-21.md`。workspace 依序 check／test／build 全 exit 0：276 groups、**2,315 passed／0 failed／16 ignored**，紀錄 `re_workspace/feature-audit-20261021-validation.log`；新 retail gate 另行通過、不混入 workspace 計數。靜態分析與自動測試不代表 GUI／遊戲內驗收。
+- `tools/re/GhidraFeatureVerification.java` 真正執行 5 個 VA 全部成功，log `feature-audit-20261021-collision-save.log`：`0x431410` 經 USER／level 路徑恢復 svar 並進入 `0x4870e0`，`0x48e960` 重新確認 24 pools 巢狀開檔。`0x4d87a0` 只清碰撞格、`0x4d8830` 依 visible bit0 強制255、`0x4ae320` 不消費碰撞格，因此 >0／>128 仍未解，不標為已確認 Bug。
+- 已完成 49/49 registry ID 與 apply/detect/restore 逐項盤點，report IDs 與 registry 集合一致。重要缺陷：啟用寬螢幕仍寫入已被歷史實機否決的六個原生點；直接 M2/M3/M4=true 正規化後變 false；P20 倍率未傳入 patch，要求2/3/5/10實際皆3（來源零售 BCI 不變）；registry 駐軍鍵與執行鍵不同；未知速度要求2倍回 Ok 卻保持0。後四項經父端純 Rust 探針重現，log `feature-audit-20261021-contract-probe.log`，exit0僅指探針完成，不是功能通過。
+- 部分 detector 只驗代表單位／單一檔案，MaxPopulation 未知可能被判開啟；CustomUnitStats 依賴 Balance 且沒有獨立磁碟反推。ArgmTrace 現行為 winmm.dll，舊 version.dll 文件已過時。未更改產品行為；下一步先修正寬螢幕政策與 P20 倍率傳遞、別名正規化，再補獨立多檔完整性判準及 GUI／遊戲內驗收。
+- 本輪提交範圍僅本紀錄、3 份稽核文件、舊矩陣現況註記、零售 EXE 測試與 Ghidra host script；既有 AGENTS.md／README.md 不納入。依本次較新規則禁止未明確授權的 push，commit 使用單次空 hooks 路徑避免既有 post-commit 自動推送；不更動 hooks／全域設定，原版 EXE、完整偽碼與探針輸出留 ignored 目錄。
+
 ## 2026-10-21 Claude：專案檢查與提交未提交的已驗證切片
 
 - 父端重驗目前混合工作樹：`cargo test --workspace --locked --offline --target-dir re_workspace/target-w20 -- --test-threads=1` exit 0，276 test-result groups 累計 **2,315 passed / 0 failed / 16 ignored**；`git diff --check` 無空白錯誤。

@@ -100,3 +100,7 @@ xrefs, while `GhidraScriptIniAnalysis.java` and `GhidraRessAnalysis.java`
 reconfirmed their parser and storage chains. This refreshes those high-coverage
 evidence families; the generated full inventory and remaining focused logs stay
 valid local evidence unless a future rerun finds a concrete contradiction.
+
+## 2026-10-21 現況校正
+
+本頁為舊版實作的歷史矩陣，不能直接視為現行 Rust 全功能通過。新的逐項核對、反編譯 Evidence、已確認矛盾與測試結果，見 [本輪驗證索引](feature-audit-2026-10-21.md)。尤其原生寬螢幕路徑須以目前 Rust 程式碼重新判定；原有行號保留，供本輪報告追溯。
