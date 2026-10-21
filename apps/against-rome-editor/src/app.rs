@@ -5062,8 +5062,9 @@ mod tests {
         )
         .unwrap();
         use against_rome_maps::diagnostics::MapIssueSeverity;
-        let no_end = rows.iter().find(|r| r.code == "scenario-no-win-loss");
-        assert_eq!(no_end.map(|r| r.severity), Some(MapIssueSeverity::Warning), "{rows:?}");
+        // The fixture has an idle BCI and no authored objects/events.
+        let native = rows.iter().find(|r| r.code == "scenario-native-only");
+        assert_eq!(native.map(|r| r.severity), Some(MapIssueSeverity::Warning), "{rows:?}");
         assert!(format_issue_row(&rows[0], AppLanguage::English).starts_with('['));
         let blocked = headless_design_check(
             &dir,
@@ -5083,7 +5084,7 @@ mod tests {
         let saved = app.design_check_report();
         assert!(design_check_codes(&saved)
             .iter()
-            .any(|c| c == "scenario-no-win-loss"));
+            .any(|c| c == "scenario-native-only"));
         let action = |kind| against_rome_scenario::Action {
             kind,
             ..Default::default()
@@ -5102,7 +5103,7 @@ mod tests {
         assert!(
             !design_check_codes(&report)
                 .iter()
-                .any(|c| c.starts_with("scenario-no-")),
+                .any(|c| c.starts_with("scenario-no-") || c == "scenario-native-only"),
             "{report:?}"
         );
         assert_eq!(save_artifact_snapshot(&dir), before);

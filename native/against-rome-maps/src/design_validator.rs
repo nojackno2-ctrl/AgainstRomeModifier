@@ -150,6 +150,22 @@ impl MapDesignValidator {
     /// 執行地圖設計檢查並回傳所有發現的警告與問題。
     pub fn validate(request: &MapDesignValidationRequest) -> Vec<MapDesignIssue> {
         let mut issues = Vec::new();
+        // Nothing authored in the editor: bases, troops and victory logic live in the
+        // template's native DATA pools and BCI script, which this validator cannot see.
+        if request.objects.is_empty() && request.events.is_empty() {
+            issues.push(MapDesignIssue {
+                severity: DesignIssueSeverity::Warning,
+                code: "scenario-native-only".into(),
+                chinese: "此地圖沒有編輯器放置的物件或事件；起始部隊、主堡與勝負條件都來自範本的原生資料與腳本，編輯器未檢查。若要自訂劇本，請放置物件並加入勝利／失敗事件。".into(),
+                english: "This map has no editor-placed objects or events; starting troops, main houses and victory/defeat come from the template's native data and scripts and were not checked. To author a scenario, place objects and add Victory/Defeat events.".into(),
+                object_alias: String::new(),
+                team: -1,
+                world_x: None,
+                world_z: None,
+                object_id: Uuid::nil(),
+            });
+            return issues;
+        }
         let dim = if request.map_dimension > 0.0 {
             request.map_dimension
         } else {

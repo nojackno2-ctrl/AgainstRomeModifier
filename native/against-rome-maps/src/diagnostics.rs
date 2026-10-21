@@ -428,7 +428,10 @@ impl MapDiagnostics {
             .filter(|obj| obj.spawn.team == 0 && obj.spawn.count > 0)
             .collect();
 
-        if starts.is_empty() {
+        // With no editor-authored objects or events, starts come from native template data;
+        // `MapDesignValidator` reports that once as `scenario-native-only`.
+        let native_only = map.objects.is_empty() && map.events.is_empty();
+        if starts.is_empty() && !native_only {
             issues.push(MapIssue {
                 severity: MapIssueSeverity::Warning,
                 code: "no-start".into(),

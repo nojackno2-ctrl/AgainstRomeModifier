@@ -1,3 +1,10 @@
+## 2026-10-22 Claude：未編輯的原版地圖改報單一 `scenario-native-only`（已驗證）
+
+- 唯讀批次檢查全部 40 張非戰役安裝版地圖（`re_workspace/validate-all-maps.log`）：39 張未編輯地圖每張都報同樣 4 個警告（no-start、team-no-main-house、team-no-units、scenario-no-win-loss）。原版地圖的建築、部隊在原生 DATA 池、勝負邏輯在原生 BCI，編輯器劇本模型看不到，這些都是猜測雜訊。
+- 修正：劇本完全沒有編輯器放置物件與事件時，`MapDesignValidator` 只回報一個 Warning `scenario-native-only`（說明起始部隊、主堡、勝負來自範本原生資料且未檢查，並提示如何自訂），`MapDiagnostics` 不再報 `no-start`。一旦放了任一物件或事件，完整檢查照舊（C# parity 測試皆含物件，不受影響）。
+- 結果：39 張原版地圖各剩 1 個說明性警告；ENDL_005（有編輯劇本）仍 0／0；全部 exit 0。新測試 `test_untouched_native_map_reports_one_native_only_warning`；兩個編輯器測試的空劇本 fixture 斷言改為 `scenario-native-only`，加入事件後亦確認它消失。
+- 驗證：`cargo test --workspace --locked --offline --target-dir re_workspace/target-w20 -- --test-threads=1` exit 0，282 groups **2,352 passed／0 failed／18 ignored**（`re_workspace/native-only-workspace-test.log`）；`git diff --check` 通過。GUI／遊戲內驗收仍未做。
+
 ## 2026-10-22 Claude：`--validate-map --lang zh` 繁中輸出（已驗證）
 
 - 新增 `--lang zh|en`（大小寫不敏感，zh-tw/zh-hant 視為 zh；重複或非法值拒絕）。`--validate-map` 標頭、每列（`[錯誤] code: 訊息（格 x, z）`）與摘要依語言輸出；預設仍英文，結束碼不變。

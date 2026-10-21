@@ -343,6 +343,25 @@ fn test_map_design_validator_event_only_wave_team_needs_no_main_house() {
 }
 
 #[test]
+fn test_untouched_native_map_reports_one_native_only_warning() {
+    let codes = |req: &MapDesignValidationRequest| -> Vec<String> {
+        MapDesignValidator::validate(req).into_iter().map(|i| i.code).collect()
+    };
+    // Untouched template: one explanation instead of team/start/win-loss guesses.
+    assert_eq!(codes(&MapDesignValidationRequest::default()), vec!["scenario-native-only".to_string()]);
+    let empty = MapCheckSnapshot::new(vec![], vec![], vec!["U".into()], 8, Some(vec![0u8; 64]));
+    assert!(MapDiagnostics::check(&empty).iter().all(|i| i.code != "no-start"));
+    // One authored object brings back the full checks.
+    let req = MapDesignValidationRequest {
+        objects: vec![Spawn { alias: "GER_INF01".into(), x: 8000.0, z: 8000.0, team: 0, count: 10, id: Uuid::new_v4(), ..Default::default() }],
+        ..Default::default()
+    };
+    let authored = codes(&req);
+    assert!(!authored.contains(&"scenario-native-only".to_string()));
+    assert!(authored.contains(&"scenario-no-win-loss".to_string()));
+}
+
+#[test]
 fn test_map_design_validator_is_main_house() {
     assert!(MapDesignValidator::is_main_house("GER_HAU00"));
     assert!(MapDesignValidator::is_main_house("ROM_HAU00"));
