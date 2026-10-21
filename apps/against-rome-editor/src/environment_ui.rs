@@ -95,7 +95,9 @@ impl<'a> SettlementTerrain<'a> {
             || z < 0
             || x as usize >= size
             || z as usize >= size
-            || self.collision[z as usize * size + x as usize] > 128
+            || against_rome_navigation::placement_collision_blocked(
+                self.collision[z as usize * size + x as usize],
+            )
     }
 }
 
@@ -1481,11 +1483,26 @@ mod tests {
         assert_eq!(terrain.sample_height(128.0, 128.0), 200.0);
         assert_eq!(terrain.water_world, 50.0);
         assert!(!terrain.is_blocked(0, 0));
-        assert!(!terrain.is_blocked(1, 0));
+        assert!(terrain.is_blocked(1, 0));
         assert!(terrain.is_blocked(0, 1));
         assert!(terrain.is_blocked(1, 1));
         for (x, z) in [(-1, 0), (0, -1), (2, 0), (0, 2), (i32::MAX, 0)] {
             assert!(terrain.is_blocked(x, z));
+        }
+    }
+
+    #[test]
+    fn settlement_collision_matches_native_free_cell_boundary() {
+        let heights = [20; 4];
+        for (value, blocked) in [
+            (0, false), (1, false), (5, false), (6, true),
+            (127, true), (128, true), (129, true), (255, true),
+        ] {
+            let collision = [value];
+            let terrain = SettlementTerrain::new(
+                2, Some(&heights), Some((1, &collision)), 0.0, 4.0,
+            ).unwrap();
+            assert_eq!(terrain.is_blocked(0, 0), blocked, "collision={value}");
         }
     }
 

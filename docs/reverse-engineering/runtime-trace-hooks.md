@@ -1,4 +1,8 @@
-# Runtime Trace Hooks (`native/argm-trace`)
+# Runtime Trace Hooks（歷史實作紀錄）
+
+> **狀態校正（2026-10-22）**：本文記載的 `native/argm-trace` C++／`version.dll` 部署流程已過時；該來源已從 Rust-only 專案移除。目前安裝器管理 `winmm.dll` 與 `argm_trace.ini`，`version.dll` 僅作舊版遷移辨識。本文內的 CMake、CTest、版本戳與 live-game 步驟不可當作現行產品操作說明。現行安裝完整性與行為限制見[功能修復紀錄](feature-audit-fixes-2026-10-21.md)及[功能稽核](modifier-rust-feature-audit-2026-10-21.md)。
+
+以下內容保留作舊版逆向證據與歷史實作紀錄。
 
 > Status 2026-07-18: implementation complete and **compiled with MSVC**
 > (Win32 `version.dll`, correct undecorated export table). Every hook target's

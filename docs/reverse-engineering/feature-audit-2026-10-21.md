@@ -112,7 +112,7 @@ REA 預設分析未建立 `0x46bd00`（objres）與 `0x46b200`（volkres）callb
 - `0x4d87a0` **只清空** 256×256 short 碰撞格，不能稱為 BMP 解碼器或門檻 consumer。
 - `0x4d8830` 確實將 visible bit0 未設的格子標 255。
 - `0x4ae320` 是按 object/type 重建每物件 byte 狀態，**未消費**碰撞格；不能用此函式支持 `>0` 或 `>128` 的門檻。
-- 因此，`environment_ui.rs:98` 的 `>128` 與舊 `map-formats.md` 的 `>0` 仍是**未解疑點**，不是已確認產品 Bug；需補實際碰撞 reader 與尋路／放置 consumer，包含 1/127/128/129/255。
+- **修復更新**：後續追到真正 `collision.bmp` loader、依單位參數比較的尋路 consumer，以及 `<=5` 空地選點 consumer；`0x4ae320` 不讀碰撞格。原 `>128` 對聚落選點錯放 6..128 已修正，非零導航診斷保留為保守門檻。證據與界限見[碰撞契約](collision-passability-contract.md)；遊戲內行為仍未驗收。
 - `0x431410` 確實在組合 USER／level 路徑後還原 `DATA/svar.dat`，呼叫 `0x474b00/0x44e1b0/0x469370` 並進入 `0x4870e0`；支持存檔與地圖共用部分載入鏈，尚不證明全部 metadata／script tasks 已安全恢復。
 - `0x48e960` 重新確認 24 pools 的巢狀開檔鏈；缺檔可中止後續 reader。這不是「檔案可省略」證據，亦非所有 pool record／tail 的逐欄位證明。
 

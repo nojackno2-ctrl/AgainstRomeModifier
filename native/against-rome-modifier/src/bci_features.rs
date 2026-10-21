@@ -271,6 +271,18 @@ impl BciFeatureDetector {
                     profile.set_int("VillageGarrisonQuotaMultiplier", multiplier);
                 } else {
                     profile.set_bool(format!("EndlessAi.{}", module_id), selected);
+                    if module_id == "Core" {
+                        profile.endless_ai_modules.retain(|id, _| {
+                            !["Core", "M2", "M3", "M4"]
+                                .iter()
+                                .any(|alias| id.eq_ignore_ascii_case(alias))
+                        });
+                        for alias in ["M2", "M3", "M4"] {
+                            profile.set_bool(format!("EndlessAi.{alias}"), selected);
+                            profile.endless_ai_modules.insert(alias.into(), selected);
+                        }
+                        profile.endless_ai_modules.insert("Core".into(), selected);
+                    }
                 }
             }
         }

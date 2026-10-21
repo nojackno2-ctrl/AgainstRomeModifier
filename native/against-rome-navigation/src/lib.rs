@@ -16,6 +16,13 @@ pub use repair::{
 
 const DIRS: [(i32, i32); 4] = [(0, -1), (1, 0), (0, 1), (-1, 0)];
 
+/// 原生空地選點 `0x51f790` 僅接受 `max(collision, 另一格值) <= 5`。
+/// 此處只判斷 collision 必要條件；不代表完整建築放置或單位尋路驗證。
+/// 證據與 visible 限制見 `docs/reverse-engineering/collision-passability-contract.md`。
+pub fn placement_collision_blocked(value: u8) -> bool {
+    value >= 6
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Coordinate {
     pub x: i32,
@@ -117,6 +124,7 @@ impl PassabilityGrid {
             .map_or(0, |v| v[z as usize * self.size + x as usize])
     }
     pub fn collision_blocked(&self, x: i32, z: i32) -> bool {
+        // 未指定單位通行能力時採保守診斷；原生尋路以 collision >= 單位門檻拒絕。
         !self.in_bounds(x, z) || self.collision_byte(x, z) != 0
     }
     pub fn submerged(&self, x: i32, z: i32) -> bool {

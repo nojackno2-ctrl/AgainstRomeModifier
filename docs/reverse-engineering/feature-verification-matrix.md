@@ -103,4 +103,10 @@ valid local evidence unless a future rerun finds a concrete contradiction.
 
 ## 2026-10-21 現況校正
 
-本頁為舊版實作的歷史矩陣，不能直接視為現行 Rust 全功能通過。新的逐項核對、反編譯 Evidence、已確認矛盾與測試結果，見 [本輪驗證索引](feature-audit-2026-10-21.md)。尤其原生寬螢幕路徑須以目前 Rust 程式碼重新判定；原有行號保留，供本輪報告追溯。
+本頁為舊版實作的歷史矩陣，不能直接視為現行 Rust 全功能通過。新的逐項核對、反編譯 Evidence、已確認矛盾與測試結果，見 [本輪驗證索引](feature-audit-2026-10-21.md)。原有行號保留，供本輪報告追溯。
+
+### 2026-10-22 Rust 修復現況
+
+- `ArgmTrace` 現行由安裝器管理 `winmm.dll` 與 `argm_trace.ini`；`version.dll` 僅作為依 marker／hash 辨識的舊版遷移目標。部署檔存在不代表 DLL 已載入或 hook 已執行。
+- `NativeWidescreen1920x1080` 不再寫入遭否決的原生 EXE 實驗點；現行置中顯示透過 dgVoodoo 安裝路徑處理。舊列只保留為歷史證據。
+- 其餘 49 項的修復狀態與限制見[修復紀錄](feature-audit-fixes-2026-10-21.md)；workspace 結果及遊戲內驗收須以該紀錄更新值為準。

@@ -1,5 +1,4 @@
-//! RessFeatureDetector must detect exactly what RessPatcher writes, using the same
-//! RessIndex/VolkresIndex ranges and first-match line semantics as the C# detector.
+//! 成本偵測涵蓋套用器的全部受支援列與欄位，拒絕舊 oracle 的第一筆抽樣。
 use against_rome_modifier::{
     detectors::RessFeatureDetector, PatchProfile, RessOptions, RessPatcher,
 };
@@ -75,8 +74,8 @@ fn each_patch_option_is_detected_independently() {
 }
 
 #[test]
-fn only_the_first_matching_line_decides() {
-    // A later, differently priced duplicate must not flip the result (C# uses Regex.Match).
+fn duplicate_or_partial_rows_cannot_be_hidden_by_first_match() {
+    // 後續受支援列未套用，必須拒絕整項成本功能。
     let original = ress_text(&row("Ger_Kampf2", 300));
     let all = RessOptions {
         free_production: true,
@@ -84,13 +83,12 @@ fn only_the_first_matching_line_decides() {
         no_spell_cost: true,
     };
     let mut text = patched(&original, all);
+    text.push_str("\r\n[objres]\r\n");
     text.push_str(&row("FigRomInf00_Lanze_Schild", 29));
     let profile = detect(&text);
-    assert!(
-        profile.get_bool("FreeProduction")
-            && profile.get_bool("FreeUpgrade")
-            && profile.get_bool("NoSpellCost")
-    );
+    assert!(!profile.get_bool("FreeProduction"));
+    assert!(profile.get_bool("FreeUpgrade"));
+    assert!(profile.get_bool("NoSpellCost"));
 }
 
 #[test]

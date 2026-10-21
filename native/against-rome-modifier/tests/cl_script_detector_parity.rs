@@ -1,145 +1,101 @@
-//! ClScriptFeatureDetector must follow the C# regex semantics: first-match morale lines,
-//! Int32 digit-only parsing, and a missing resurrection key means "not detected".
+//! 舊 C# 的第一筆抽樣、整數截斷與寬鬆倍率均不是完整功能的判準。
 use against_rome_modifier::{detectors::ClScriptFeatureDetector, PatchProfile};
-
 fn detect(text: &str, original: Option<&str>) -> PatchProfile {
-    let mut profile = PatchProfile::new();
-    ClScriptFeatureDetector::detect_text(text, original, &mut profile);
-    profile
+    let mut p = PatchProfile::new();
+    ClScriptFeatureDetector::detect_text(text, original, &mut p);
+    p
 }
-
-fn morale(lost: &str, flee: &str, over: &str, idle: &str) -> String {
-    format!(
-        "MoralsDecLostMem=GER,{lost}\r\nMoralsDecFlee=GER,{flee}\r\nMoralsDecOverPop=GER,{over}\r\nMoralsIncIdle=GER,{idle}\r\n"
-    )
+fn morale(faction: &str, lost: &str, flee: &str, over: &str, idle: &str) -> String {
+    format!("MoralsDecLostMem={faction},{lost}\nMoralsDecFlee={faction},{flee}\nMoralsDecOverPop={faction},{over}\nMoralsIncIdle={faction},{idle}\n")
 }
-
 #[test]
-fn infinite_morale_uses_first_match_only() {
-    assert!(detect(&morale("0", "0", "99999999", "500"), None).get_bool("InfiniteMorale"));
-    // A later patched duplicate must not rescue an unpatched first line (C# Regex.Match).
-    let text = format!(
-        "{}{}",
-        morale("5", "0", "99999999", "500"),
-        morale("0", "0", "99999999", "500")
-    );
-    assert!(!detect(&text, None).get_bool("InfiniteMorale"));
-    // ...and a later unpatched duplicate must not break a patched first line.
-    let text = format!(
-        "{}{}",
-        morale("0", "0", "99999999", "500"),
-        morale("5", "5", "1", "1")
-    );
-    assert!(detect(&text, None).get_bool("InfiniteMorale"));
+fn every_morale_faction_and_duplicate_must_be_valid() {
+    let good = morale("GER", "0", "0", "99999999", "500");
+    assert!(detect(&good, None).get_bool("InfiniteMorale"));
+    for text in [
+        format!("{good}{}", morale("HUN", "0", "1", "99999999", "500")),
+        format!("{good}{good}"),
+        morale("KEL", "0", "0", "99999999", "500.7"),
+        morale("ROM", "0", "0", "99999998", "500"),
+        morale("GER", "NaN", "0", "99999999", "500"),
+    ] {
+        assert!(!detect(&text, None).get_bool("InfiniteMorale"));
+    }
 }
-
 #[test]
-fn morale_integer_parsing_matches_dotnet() {
-    // Regex \d+ has no sign: "-0" does not match, so the whole feature is false.
-    assert!(!detect(&morale("-0", "0", "99999999", "500"), None).get_bool("InfiniteMorale"));
-    assert!(!detect(&morale("+0", "0", "99999999", "500"), None).get_bool("InfiniteMorale"));
-    // Int32 overflow makes int.TryParse fail (i64 would have accepted it).
-    assert!(!detect(&morale("0", "0", "99999999999", "500"), None).get_bool("InfiniteMorale"));
-    // Leading zeros and trailing fractions: regex captures only the digit run.
-    assert!(detect(&morale("000", "0", "0099999999", "500.7"), None).get_bool("InfiniteMorale"));
-    // Threshold is >= 99999999.
-    assert!(!detect(&morale("0", "0", "99999998", "500"), None).get_bool("InfiniteMorale"));
-    // Missing line, wrong faction.
-    assert!(!detect("MoralsDecLostMem=GER,0\r\n", None).get_bool("InfiniteMorale"));
-    assert!(!detect(
-        &morale("0", "0", "99999999", "500").replace("MoralsDecFlee=GER", "MoralsDecFlee=ROM"),
-        None
-    )
-    .get_bool("InfiniteMorale"));
+fn civi_delay_requires_exact_value_on_every_row() {
+    assert!(detect("CiviDelay=GER,500\nCiviDelay=ROM,500", None).get_bool("FastCiviProduction"));
+    for text in [
+        "CiviDelay=GER,100",
+        "CiviDelay=GER,500.7",
+        "CiviDelay=GER,500\nCiviDelay=ROM,bad",
+        "CiviDelay=GER,500\nCiviDelay=GER,500",
+    ] {
+        assert!(!detect(text, None).get_bool("FastCiviProduction"));
+    }
 }
-
 #[test]
-fn infinite_morale_resets_to_false() {
-    let mut profile = PatchProfile::new();
-    profile.set_bool("InfiniteMorale", true);
-    profile.set_bool("FastCiviProduction", true);
-    ClScriptFeatureDetector::detect_text("", None, &mut profile);
-    assert!(!profile.get_bool("InfiniteMorale"));
-    assert!(!profile.get_bool("FastCiviProduction"));
+fn no_backup_or_partial_spell_input_clears_stale_flags() {
+    let mut p = PatchProfile::new();
+    for id in [
+        "SpellDamage5x",
+        "SpellHealing10x",
+        "SpellResurrection",
+        "SpellRange3x",
+        "GeneralSkills",
+    ] {
+        p.set_bool(id, true);
+    }
+    ClScriptFeatureDetector::detect_text("", None, &mut p);
+    for id in [
+        "SpellDamage5x",
+        "SpellHealing10x",
+        "SpellResurrection",
+        "SpellRange3x",
+        "GeneralSkills",
+    ] {
+        assert!(!p.get_bool(id));
+    }
 }
-
 #[test]
-fn civi_delay_all_matches_digits_only() {
+fn resurrection_checks_both_fields_exactly() {
+    let orig = "Value=KEL,Spell3,50\nValue2=KEL,Spell3,60";
     assert!(
-        detect("CiviDelay=GER,100\r\nCiviDelay=ROM,500\r\n", None).get_bool("FastCiviProduction")
-    );
-    assert!(
-        !detect("CiviDelay=GER,100\r\nCiviDelay=ROM,501\r\n", None).get_bool("FastCiviProduction")
-    );
-    assert!(!detect("CiviDelay=GER,0\r\n", None).get_bool("FastCiviProduction"));
-    assert!(!detect("CiviDelay=GER,-5\r\n", None).get_bool("FastCiviProduction"));
-    assert!(!detect("CiviDelay=ger,5\r\n", None).get_bool("FastCiviProduction"));
-    assert!(detect("CiviDelay = GER , 250\r\n", None).get_bool("FastCiviProduction"));
-}
-
-const ORIGINAL: &str = "Value=KEL,Spell3,50\r\nValue2=KEL,Spell3,60\r\nValue=GER,Spell3,10\r\n";
-
-#[test]
-fn resurrection_missing_current_key_is_not_detected() {
-    // Both keys patched.
-    assert!(detect(
-        "Value=KEL,Spell3,100\r\nValue2=KEL,Spell3,100\r\n",
-        Some(ORIGINAL)
-    )
-    .get_bool("SpellResurrection"));
-    // Value2 missing in current: C# returns false (Rust used to skip and return true).
-    assert!(!detect("Value=KEL,Spell3,100\r\n", Some(ORIGINAL)).get_bool("SpellResurrection"));
-    // Value patched, Value2 left at original.
-    assert!(!detect(
-        "Value=KEL,Spell3,100\r\nValue2=KEL,Spell3,60\r\n",
-        Some(ORIGINAL)
-    )
-    .get_bool("SpellResurrection"));
-    // Key already 100 in the original is skipped; nothing else => false.
-    assert!(
-        !detect("Value=KEL,Spell3,100\r\n", Some("Value=KEL,Spell3,100\r\n"))
+        detect("Value=KEL,Spell3,100\nValue2=KEL,Spell3,100", Some(orig))
             .get_bool("SpellResurrection")
     );
-    // Without a backup nothing is evaluated.
+    for text in [
+        "Value=KEL,Spell3,100",
+        "Value=KEL,Spell3,100\nValue2=KEL,Spell3,100.7",
+        "Value=KEL,Spell3,100\nValue2=KEL,Spell3,60",
+    ] {
+        assert!(!detect(text, Some(orig)).get_bool("SpellResurrection"));
+    }
     assert!(
-        !detect("Value=KEL,Spell3,100\r\nValue2=KEL,Spell3,100\r\n", None)
-            .get_bool("SpellResurrection")
+        !detect("Value=KEL,Spell3,100", Some("Value=KEL,Spell3,100")).get_bool("SpellResurrection")
     );
 }
-
 #[test]
-fn keyed_values_are_line_anchored_and_case_sensitive() {
-    let orig = "Value=GER,Spell2,10\r\n";
-    assert!(detect("Value=GER,Spell2,50\r\n", Some(orig)).get_bool("SpellDamage5x"));
-    // Leading whitespace breaks the ^ anchor in C#, so the value is missing => false.
-    assert!(!detect("  Value=GER,Spell2,50\r\n", Some(orig)).get_bool("SpellDamage5x"));
-    // Lower-case faction does not match [A-Z]{3}.
-    assert!(!detect("Value=ger,Spell2,50\r\n", Some(orig)).get_bool("SpellDamage5x"));
-    // Trailing comment is stripped.
-    assert!(detect("Value=GER,Spell2,50 ; x5\r\n", Some(orig)).get_bool("SpellDamage5x"));
+fn legal_whitespace_comments_and_unrelated_fields_are_tolerated() {
+    let orig = "Value=GER,Spell2,10";
+    assert!(
+        detect("  Value = GER, Spell2, 50 ; 傷害\nOther=3", Some(orig)).get_bool("SpellDamage5x")
+    );
+    assert!(!detect("Value=GER,Spell2,50.7", Some(orig)).get_bool("SpellDamage5x"));
 }
-
 #[test]
-fn radius_and_abilities() {
-    let orig = "Radius=GER,Spell1,10\r\nValue=GER,SAbility1,4\r\n";
-    assert!(detect(
-        "Radius=GER,Spell1,30\r\nValue=GER,SAbility1,20\r\n",
-        Some(orig)
-    )
-    .get_bool("SpellRange3x"));
-    assert!(detect(
-        "Radius=GER,Spell1,30\r\nValue=GER,SAbility1,20\r\n",
-        Some(orig)
-    )
-    .get_bool("GeneralSkills"));
-    assert!(!detect(
-        "Radius=GER,Spell1,31\r\nValue=GER,SAbility1,4\r\n",
-        Some(orig)
-    )
-    .get_bool("SpellRange3x"));
-    assert!(!detect(
-        "Radius=GER,Spell1,30\r\nValue=GER,SAbility1,4\r\n",
-        Some(orig)
-    )
-    .get_bool("GeneralSkills"));
+fn all_ability_slots_and_radius_entries_must_match() {
+    let orig =
+        "Radius=GER,Spell1,10\nRadius=HUN,Spell2,20\nValue=GER,SAbility1,4\nValue2=HUN,SAbility3,6";
+    let good="Radius=GER,Spell1,30\nRadius=HUN,Spell2,60\nValue=GER,SAbility1,20\nValue2=HUN,SAbility3,30";
+    let p = detect(good, Some(orig));
+    assert!(p.get_bool("SpellRange3x"));
+    assert!(p.get_bool("GeneralSkills"));
+    assert!(!detect(&good.replace("Spell2,60", "Spell2,150"), Some(orig)).get_bool("SpellRange3x"));
+    assert!(
+        !detect(&good.replace("SAbility3,30", "SAbility3,6"), Some(orig)).get_bool("GeneralSkills")
+    );
+    assert!(
+        !detect(&good.replace("Value2=HUN,SAbility3,30", ""), Some(orig)).get_bool("GeneralSkills")
+    );
 }

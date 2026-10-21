@@ -594,7 +594,7 @@ impl BackupManager {
         let baseline = if profile.get_bool("Balance") {
             self.get_default_balanced_stats(key)?
         } else {
-            return self.get_original_stats(key);
+            self.get_original_stats(key)?
         };
         let custom = profile.custom_unit_stats.clone().unwrap_or_default();
         if let Some((_, values)) = custom.iter().find(|(k, _)| k.eq_ignore_ascii_case(key)) {

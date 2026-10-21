@@ -22,8 +22,6 @@ fn retail_exe_features_apply_idempotently_and_restore_exactly(
         "IdleSelect999",
         "CorpseRetention",
         "CameraZoomOut1",
-        // 此項只證明位元組往返，畫面與既有退役政策另由稽核判定。
-        "NativeWidescreen1920x1080",
     ];
     for id in ids {
         let mut profile = PatchProfile::new();
@@ -51,6 +49,14 @@ fn retail_exe_features_apply_idempotently_and_restore_exactly(
         eprintln!("零售 EXE 記憶體往返通過：GameSpeed={speed}");
     }
     let mut combined = PatchProfile::new();
+    // 寬螢幕只設定外部呈現，對原版 EXE 不得產生補丁。
+    let mut widescreen = PatchProfile::new();
+    widescreen.set_bool("NativeWidescreen1920x1080", true);
+    assert_eq!(apply_profile(&original, &widescreen)?, original);
+    assert_eq!(
+        get_native_widescreen_patch_state(&original),
+        ExeNativeWidescreenPatchState::Original
+    );
     for id in ids {
         combined.set_bool(id, true);
     }

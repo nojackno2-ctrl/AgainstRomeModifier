@@ -96,7 +96,8 @@ fn projected_custom_priest_stats_preserve_independent_fields_then_apply_modifier
     assert_eq!(result[8], baseline[8] * 3.);
     assert_eq!(p.custom_unit_stats, before);
     p.set_bool("Balance", false);
-    assert_eq!(unit_stats::project(&b, key, &p).unwrap()[0], 0.); // Custom values require Balance, as in C#.
+    // 自訂屬性可直接套用在原版基準上，不再依賴平衡預設。
+    assert_eq!(unit_stats::project(&b, key, &p).unwrap()[0], 111.);
 }
 
 #[test]

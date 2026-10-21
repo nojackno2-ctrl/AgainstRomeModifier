@@ -259,7 +259,7 @@ fn restore_stats_only_keeps_compat_and_reverts_stats_on_exe_and_data() {
     );
     assert_eq!(
         get_native_widescreen_patch_state(planned_exe),
-        ExeNativeWidescreenPatchState::Patched
+        ExeNativeWidescreenPatchState::Original
     );
     assert_eq!(
         get_camera_zoom_out_patch_state(planned_exe),
@@ -359,7 +359,9 @@ fn restore_compat_only_keeps_stats_and_preserves_roman_endless_on_exe() {
 
     // Stats remain ON
     assert!(detected.get_bool("FastCiviProduction"));
-    assert!(detected.get_bool("RomanEndless"));
+    // 此 fixture 的 team.dat 不是可解析隊伍資料；EXE 保留由上方位元組斷言驗證，
+    // 整合偵測不得只因 EXE 已套用，就將未知的隊伍資料也視為完成。
+    assert!(!detected.get_bool("RomanEndless"));
 }
 
 #[test]

@@ -763,7 +763,7 @@ pub fn apply_profile(bytes: &[u8], profile: &PatchProfile) -> io::Result<Vec<u8>
         write_bytes(&mut out, ARROWS_CAVE_OFFSET, ARROWS_CAVE_ORIGINAL)?;
     }
 
-    // 9. Native widescreen
+    // 原生寬螢幕實驗已退役；此開關只使用外部置中呈現，EXE 僅還原已知舊狀態。
     let ws = profile.get_bool("NativeWidescreen1920x1080");
     let ws_state = get_native_widescreen_patch_state(&out);
     require_known(
@@ -771,18 +771,7 @@ pub fn apply_profile(bytes: &[u8], profile: &PatchProfile) -> io::Result<Vec<u8>
         ws_state == ExeNativeWidescreenPatchState::Unknown,
         "NativeWidescreen1920x1080",
     )?;
-    if ws
-        && ws_state != ExeNativeWidescreenPatchState::Patched
-        && ws_state != ExeNativeWidescreenPatchState::Unknown
-    {
-        write_bytes(&mut out, WS_ID_OFFSET, WS_ID_PATCHED)?;
-        write_bytes(&mut out, WS_CREATE_OFFSET, WS_CREATE_PATCHED)?;
-        write_bytes(&mut out, WS_TEXT_OFFSET, WS_TEXT_PATCHED)?;
-        write_bytes(&mut out, WS_FORCE_OFFSET, WS_FORCE_PATCHED)?;
-        write_bytes(&mut out, WS_ACTMODE_OFFSET, WS_ACTMODE_PATCHED)?;
-        write_bytes(&mut out, WS_IGM_OFFSET, WS_IGM_PATCHED)?;
-    } else if !ws
-        && ws_state != ExeNativeWidescreenPatchState::Original
+    if ws_state != ExeNativeWidescreenPatchState::Original
         && ws_state != ExeNativeWidescreenPatchState::Unknown
     {
         write_bytes(&mut out, WS_ID_OFFSET, WS_ID_ORIGINAL)?;
@@ -823,6 +812,7 @@ pub fn apply_profile(bytes: &[u8], profile: &PatchProfile) -> io::Result<Vec<u8>
     // C# PlanGameSpeed: desired < 1 is treated as 1 (restore); no upper clamp.
     let speed = profile.get_int("GameSpeed").max(1);
     let cur = get_game_speed_multiplier(&out);
+    require_known(speed > 1, cur == 0, "GameSpeed")?;
     if cur > 0 && cur != speed {
         let qpc = (GAME_SPEED_QPC_BASE * speed as f64).to_le_bytes();
         let tgt = (GAME_SPEED_TGT_BASE * speed as f64).to_le_bytes();
@@ -982,6 +972,12 @@ mod tests {
             (VILLAGE_FRAME_Z_OFFSET, VILLAGE_FRAME_Z_ORIGINAL),
             (VILLAGE_HOOK_OFFSET, VILLAGE_HOOK_ORIGINAL),
             (VILLAGE_CAVE_OFFSET, VILLAGE_CAVE_ORIGINAL),
+            (WS_ID_OFFSET, WS_ID_ORIGINAL),
+            (WS_CREATE_OFFSET, WS_CREATE_ORIGINAL),
+            (WS_TEXT_OFFSET, WS_TEXT_ORIGINAL),
+            (WS_FORCE_OFFSET, WS_FORCE_ORIGINAL),
+            (WS_ACTMODE_OFFSET, WS_ACTMODE_ORIGINAL),
+            (WS_IGM_OFFSET, WS_IGM_ORIGINAL),
         ];
         for (o, s) in sites {
             b[o..o + s.len()].copy_from_slice(s);
@@ -1002,11 +998,70 @@ mod tests {
         p
     }
 
+    #[test]
+    fn widescreen_preserves_original_and_migrates_retired_experiment() {
+        let original = synthetic_original();
+        let requested = profile("NativeWidescreen1920x1080");
+        assert_eq!(apply_profile(&original, &requested).unwrap(), original);
+        let mut retired = original.clone();
+        for (offset, patched) in [
+            (WS_ID_OFFSET, WS_ID_PATCHED),
+            (WS_CREATE_OFFSET, WS_CREATE_PATCHED),
+            (WS_TEXT_OFFSET, WS_TEXT_PATCHED),
+            (WS_FORCE_OFFSET, WS_FORCE_PATCHED),
+            (WS_ACTMODE_OFFSET, WS_ACTMODE_PATCHED),
+            (WS_IGM_OFFSET, WS_IGM_PATCHED),
+        ] {
+            write_bytes(&mut retired, offset, patched).unwrap();
+        }
+        assert_eq!(
+            get_native_widescreen_patch_state(&retired),
+            ExeNativeWidescreenPatchState::Patched
+        );
+        for desired in [requested, PatchProfile::new()] {
+            assert_eq!(apply_profile(&retired, &desired).unwrap(), original);
+        }
+        retired[WS_ID_OFFSET] ^= 0xff;
+        assert!(apply_profile(&retired, &profile("NativeWidescreen1920x1080")).is_err());
+        assert_eq!(
+            apply_profile(&retired, &PatchProfile::new()).unwrap(),
+            retired
+        );
+    }
+
+    #[test]
+    fn requested_speed_refuses_unknown_constants_without_claiming_success() {
+        let mut requested = PatchProfile::new();
+        requested.set_int("GameSpeed", 2);
+        for value in [
+            0.0,
+            -1.0,
+            f64::NAN,
+            f64::INFINITY,
+            GAME_SPEED_QPC_BASE * 1.5,
+        ] {
+            let mut bytes = synthetic_original();
+            write_bytes(&mut bytes, GAME_SPEED_QPC_OFFSET, &value.to_le_bytes()).unwrap();
+            assert_eq!(get_game_speed_multiplier(&bytes), 0);
+            assert!(apply_profile(&bytes, &requested).is_err());
+            assert_eq!(apply_profile(&bytes, &PatchProfile::new()).unwrap(), bytes);
+        }
+        let bytes = synthetic_original();
+        let patched = apply_profile(&bytes, &requested).unwrap();
+        assert_eq!(get_game_speed_multiplier(&patched), 2);
+        assert_eq!(apply_profile(&patched, &requested).unwrap(), patched);
+        assert_eq!(
+            apply_profile(&patched, &PatchProfile::new()).unwrap(),
+            bytes
+        );
+    }
+
     // Bytes frozen from the former C# authority (independent of the Rust constants) so incorrect Rust cave bytes cannot
     // make both the classifier and its fixtures agree on the same mistake.
     fn csharp_village_cave(name: &str) -> Vec<u8> {
         let fixture: serde_json::Value =
-            serde_json::from_str(include_str!("../tests/fixtures/csharp-frozen-tables.json")).unwrap();
+            serde_json::from_str(include_str!("../tests/fixtures/csharp-frozen-tables.json"))
+                .unwrap();
         let bytes: Vec<u8> = fixture["village_caves"][name]
             .as_array()
             .unwrap()
@@ -1392,12 +1447,17 @@ mod tests {
     }
 
     #[test]
-    fn village_cleanup_preserves_unknown_game_speed_skip() {
+    fn village_cleanup_rejects_requested_unknown_game_speed_atomically() {
         let mut bytes = legacy_fixture(15);
         bytes[GAME_SPEED_QPC_OFFSET..GAME_SPEED_QPC_OFFSET + 8].fill(0xFF);
         assert_eq!(get_game_speed_multiplier(&bytes), 0);
         let mut requested = profile("VillageBuildRange");
         requested.set("GameSpeed", FeatureValue::Int(2));
+        let before = bytes.clone();
+        assert!(apply_profile(&bytes, &requested).is_err());
+        assert_eq!(bytes, before);
+        // 未要求變更速度時仍保留未知常數，只執行可辨識的村莊遷移。
+        requested.set_int("GameSpeed", 1);
         let out = apply_profile(&bytes, &requested).unwrap();
         assert_eq!(
             &out[GAME_SPEED_QPC_OFFSET..GAME_SPEED_QPC_OFFSET + 8],

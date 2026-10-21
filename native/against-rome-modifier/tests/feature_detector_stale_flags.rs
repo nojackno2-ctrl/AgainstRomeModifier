@@ -59,14 +59,14 @@ fn objdef_detector_without_backup_clears_backup_independent_flags() {
     for id in ids {
         profile.set_bool(id, true);
     }
-    // Backup-relative flags stay untouched when no backup exists (C# skips them).
+    // 缺少備份時無法驗證，必要旗標必須清除。
     profile.set_bool("HousingCapacity20x", true);
 
     ObjdefFeatureDetector::detect(&t.0, &BackupManager::new(), &mut profile);
     for id in ids {
         assert!(!profile.get_bool(id), "{id} stayed stale");
     }
-    assert!(profile.get_bool("HousingCapacity20x"));
+    assert!(!profile.get_bool("HousingCapacity20x"));
 }
 
 #[test]

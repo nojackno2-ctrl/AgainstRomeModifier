@@ -1,5 +1,5 @@
-//! Read-only diagnostics on the current edited layers; never infer or rewrite
-//! the authored collision layer from terrain geometry.
+//! 目前編輯圖層的唯讀診斷，不依地形推導或改寫 collision。
+//! 未指定單位通行能力時，保守視非零 collision 為阻擋；不代表原生逐單位尋路。
 use crate::terrain::TerrainSession;
 use against_rome_navigation::{analyze_connectivity, find_path, IsolatedRegion, PassabilityGrid};
 use eframe::egui;

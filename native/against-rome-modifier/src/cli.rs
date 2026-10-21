@@ -185,9 +185,16 @@ fn read_json(path: &str) -> io::Result<Value> {
         .map_err(|e| invalid(e.to_string()))
 }
 pub fn profile_to_json(p: &PatchProfile) -> Value {
-    let features: BTreeMap<_, _> = FeatureRegistry::toggle_features()
-        .map(|f| (f.id, p.get_bool(f.id)))
+    let mut features: BTreeMap<_, Value> = FeatureRegistry::toggle_features()
+        .map(|f| (f.id, json!(p.get_bool(f.id))))
         .collect();
+    for id in ["EndlessAi.M2", "EndlessAi.M3", "EndlessAi.M4"] {
+        features.insert(id, json!(p.get_bool(id)));
+    }
+    features.insert(
+        "VillageGarrisonQuota3x",
+        json!(p.get_int("VillageGarrisonQuota3x")),
+    );
     let mut endless_ai: BTreeMap<String, bool> = BTreeMap::new();
     for m in ["M1", "Core", "M2", "M3", "M4", "M5", "M6"] {
         endless_ai.insert(m.to_string(), p.get_endless_ai_module(m));
@@ -220,12 +227,35 @@ pub fn profile_from_json(v: &Value) -> io::Result<PatchProfile> {
             .as_object()
             .ok_or_else(|| invalid("Features must be an object"))?;
         for (id, value) in f_obj {
+            if id.eq_ignore_ascii_case("VillageGarrisonQuota3x")
+                || id.eq_ignore_ascii_case("VillageGarrisonQuotaMultiplier")
+            {
+                continue;
+            }
             p.set_bool(
                 id,
                 value
                     .as_bool()
                     .ok_or_else(|| invalid("Feature values must be boolean"))?,
             );
+        }
+        let quota = ["VillageGarrisonQuotaMultiplier", "VillageGarrisonQuota3x"]
+            .iter()
+            .find_map(|id| f_obj.iter().find(|(key, _)| key.eq_ignore_ascii_case(id)));
+        if let Some((id, value)) = quota {
+            if let Some(b) = value.as_bool() {
+                p.set_bool(id, b);
+            } else {
+                p.set_int(
+                    id,
+                    i32::try_from(
+                        value
+                            .as_i64()
+                            .ok_or_else(|| invalid("Expected integer or boolean"))?,
+                    )
+                    .map_err(|_| invalid("Integer overflow"))?,
+                );
+            }
         }
     }
     for (key, val) in obj {
@@ -250,6 +280,27 @@ pub fn profile_from_json(v: &Value) -> io::Result<PatchProfile> {
             }
         }
     }
+    // 優先序：頂層 Multiplier > Features Multiplier > Features registry 鍵 > 頂層舊鍵 > 舊模組 map。
+    if !p.has_explicit_value("VillageGarrisonQuota3x") {
+        if let Some((_, value)) = obj
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case("VillageGarrisonQuota3x"))
+        {
+            if let Some(b) = value.as_bool() {
+                p.set_bool("VillageGarrisonQuota3x", b);
+            } else {
+                p.set_int(
+                    "VillageGarrisonQuota3x",
+                    i32::try_from(
+                        value
+                            .as_i64()
+                            .ok_or_else(|| invalid("Expected integer or boolean"))?,
+                    )
+                    .map_err(|_| invalid("Integer overflow"))?,
+                );
+            }
+        }
+    }
     for id in ["GameSpeed", "VillageGarrisonQuotaMultiplier"] {
         if let Some((_, n)) = obj.iter().find(|(k, _)| k.eq_ignore_ascii_case(id)) {
             p.set_int(
@@ -257,16 +308,6 @@ pub fn profile_from_json(v: &Value) -> io::Result<PatchProfile> {
                 i32::try_from(n.as_i64().ok_or_else(|| invalid("Expected integer"))?)
                     .map_err(|_| invalid("Integer overflow"))?,
             );
-        }
-    }
-    if let Some((_, b_val)) = obj
-        .iter()
-        .find(|(k, _)| k.eq_ignore_ascii_case("VillageGarrisonQuota3x"))
-    {
-        if let Some(true) = b_val.as_bool() {
-            if p.get_int("VillageGarrisonQuotaMultiplier") <= 1 {
-                p.set_int("VillageGarrisonQuotaMultiplier", 3);
-            }
         }
     }
     if let Some((_, b)) = obj.iter().find(|(k, _)| k.eq_ignore_ascii_case("Balance")) {

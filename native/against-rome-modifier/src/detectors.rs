@@ -9,11 +9,9 @@ use crate::{
     install::InstallFeatureDetector,
     objdef::ObjdefPatcher,
     patch_text::parse_csv_line,
-    ress,
     services::BackupManager,
-    team_dat::{TeamDatOptions, TeamDatPatcher},
-    troops::{TroopConfig, UnitStatParser},
-    ObjdefIndex, PatchProfile,
+    troops::TroopConfig,
+    PatchProfile,
 };
 use std::{collections::HashMap, fs, path::Path};
 
@@ -101,840 +99,729 @@ impl ExeFeatureDetector {
 
 pub struct ClScriptFeatureDetector;
 impl ClScriptFeatureDetector {
+    const IDS: [&'static str; 7] = [
+        "FastCiviProduction",
+        "InfiniteMorale",
+        "SpellDamage5x",
+        "SpellHealing10x",
+        "SpellResurrection",
+        "SpellRange3x",
+        "GeneralSkills",
+    ];
+
     pub fn detect(game_path: &Path, backup: &BackupManager, profile: &mut PatchProfile) {
-        let path = game_path.join("SYSTEM/cl_script.ini");
-        if !path.is_file() {
-            return;
+        for id in Self::IDS {
+            profile.set_bool(id, false);
         }
-        let Ok(bytes) = fs::read(&path) else { return };
-        let decode = |b: &[u8]| match crate::decompress_if_pfil(b) {
-            Ok(d) => crate::decode_cp1251(&d),
-            Err(_) => crate::decode_cp1251(b),
+        let key = "SYSTEM/cl_script.ini";
+        let Ok(bytes) = fs::read(game_path.join(key)) else {
+            return;
         };
-        let text = decode(&bytes);
-        let original = if backup.has_file("SYSTEM/cl_script.ini") {
-            backup
-                .get_backup_bytes("SYSTEM/cl_script.ini")
-                .ok()
-                .map(decode)
-        } else {
-            None
+        let Ok(doc) = crate::patch_text::TextDocument::read(&bytes) else {
+            return;
         };
-        Self::detect_text(&text, original.as_deref(), profile);
+        let original = backup
+            .get_backup_bytes(key)
+            .ok()
+            .and_then(|b| crate::patch_text::TextDocument::read(b).ok());
+        Self::detect_text(
+            &doc.text,
+            original.as_ref().map(|d| d.text.as_str()),
+            profile,
+        );
     }
 
-    /// Mirrors the C# ClScriptFeatureDetector regexes: unanchored first-match for the
-    /// morale lines (digits only, Int32 range), all-matches for CiviDelay, line-anchored
-    /// case-sensitive matching for Value/Radius lines, and a missing resurrection key
-    /// in the current script means "not detected".
     pub fn detect_text(text: &str, original: Option<&str>, profile: &mut PatchProfile) {
-        let civi = Self::civi_delays(text);
-        profile.set_bool(
-            "FastCiviProduction",
-            !civi.is_empty() && civi.iter().all(|&d| d > 0.0 && d <= 500.0),
-        );
-
-        let lost = Self::first_morale(text, "MoralsDecLostMem");
-        let flee = Self::first_morale(text, "MoralsDecFlee");
-        let over_pop = Self::first_morale(text, "MoralsDecOverPop");
-        let idle = Self::first_morale(text, "MoralsIncIdle");
-        let infinite = matches!(
-            (lost, flee, over_pop, idle),
-            (Some(Some(0)), Some(Some(0)), Some(Some(op)), Some(Some(500))) if op >= 99_999_999
-        );
-        profile.set_bool("InfiniteMorale", infinite);
-
-        let Some(orig_text) = original else { return };
-
-        let current_spells = Self::read_keyed_values(text, "Spell");
-        let orig_spells = Self::read_keyed_values(orig_text, "Spell");
-        let current_radius = Self::read_radius_values(text);
-        let orig_radius = Self::read_radius_values(orig_text);
-
-        let damage_keys: Vec<String> = crate::cl_script::DAMAGE_SPELL_KEYS
-            .iter()
-            .map(|k| format!("Value_{k}"))
-            .collect();
-        let damage_refs: Vec<&str> = damage_keys.iter().map(String::as_str).collect();
-        profile.set_bool(
-            "SpellDamage5x",
-            Self::all_scaled(&current_spells, &orig_spells, &damage_refs, 5),
-        );
-        profile.set_bool(
-            "SpellHealing10x",
-            Self::all_scaled(&current_spells, &orig_spells, &["Value_KEL_Spell1"], 10),
-        );
-        profile.set_bool(
-            "SpellResurrection",
-            Self::detect_resurrection(&current_spells, &orig_spells),
-        );
-        profile.set_bool(
-            "SpellRange3x",
-            Self::radius_scaled_by_three(&current_radius, &orig_radius),
-        );
-
-        let current_abilities = Self::read_keyed_values(text, "SAbility");
-        let orig_abilities = Self::read_keyed_values(orig_text, "SAbility");
-        let ability_keys: Vec<_> = orig_abilities.keys().cloned().collect();
-        let ability_refs: Vec<&str> = ability_keys.iter().map(String::as_str).collect();
-        profile.set_bool(
-            "GeneralSkills",
-            Self::all_scaled(&current_abilities, &orig_abilities, &ability_refs, 5),
-        );
-    }
-
-    fn take_digits(s: &str) -> Option<(&str, &str)> {
-        let end = s.find(|c: char| !c.is_ascii_digit()).unwrap_or(s.len());
-        if end == 0 {
-            None
-        } else {
-            Some(s.split_at(end))
+        for id in Self::IDS {
+            profile.set_bool(id, false);
+        }
+        let current = Self::values(text);
+        let orig = original.map(Self::values);
+        for id in Self::IDS {
+            if orig.is_none() && !matches!(id, "FastCiviProduction" | "InfiniteMorale") {
+                continue;
+            }
+            let source = orig.as_ref().unwrap_or(&current);
+            let mut any = false;
+            let mut evidence = false;
+            let mut valid = true;
+            // 同時驗證來源與目前的受支援列，新增／遺失／重複／損毀列皆不能略過。
+            let keys: std::collections::HashSet<_> = source.keys().chain(current.keys()).collect();
+            let mut morale_factions = std::collections::HashSet::new();
+            for key in keys {
+                let parts: Vec<_> = key.split('|').collect();
+                let head = parts[0];
+                let target = match id {
+                    "FastCiviProduction" if head == "CIVIDELAY" => Some(500.0),
+                    "InfiniteMorale" => match head {
+                        "MORALSDECLOSTMEM" | "MORALSDECFLEE" => Some(0.0),
+                        "MORALSDECOVERPOP" => Some(99_999_999.0),
+                        "MORALSINCIDLE" => Some(500.0),
+                        _ => None,
+                    },
+                    "SpellDamage5x"
+                        if head == "Value"
+                            && parts.len() == 3
+                            && crate::cl_script::DAMAGE_SPELL_KEYS
+                                .contains(&format!("{}_{}", parts[1], parts[2]).as_str()) =>
+                    {
+                        source
+                            .get(key)
+                            .or_else(|| current.get(key))
+                            .map(|v| (v * 5.0).trunc())
+                    }
+                    "SpellHealing10x" if key == "Value|KEL|Spell1" => source
+                        .get(key)
+                        .or_else(|| current.get(key))
+                        .map(|v| (v * 10.0).trunc()),
+                    "SpellResurrection"
+                        if matches!(key.as_str(), "Value|KEL|Spell3" | "Value2|KEL|Spell3") =>
+                    {
+                        Some(100.0)
+                    }
+                    "SpellRange3x" if head == "RADIUS" => source
+                        .get(key)
+                        .or_else(|| current.get(key))
+                        .map(|v| (v * 3.0).trunc()),
+                    "GeneralSkills"
+                        if head.starts_with("Value")
+                            && parts.get(2).is_some_and(|p| p.starts_with("SAbility")) =>
+                    {
+                        source
+                            .get(key)
+                            .or_else(|| current.get(key))
+                            .map(|v| (v * 5.0).trunc())
+                    }
+                    _ => None,
+                };
+                if let Some(expected) = target {
+                    any = true;
+                    evidence |= orig.is_none()
+                        || source
+                            .get(key)
+                            .is_some_and(|v| (*v - expected).abs() > 0.00001);
+                    valid &= source.get(key).is_some_and(|v| v.is_finite())
+                        && current
+                            .get(key)
+                            .is_some_and(|v| v.is_finite() && (*v - expected).abs() < 0.00001);
+                    if id == "InfiniteMorale" && parts.len() >= 2 {
+                        morale_factions.insert(parts[1]);
+                    }
+                }
+            }
+            if id == "InfiniteMorale" {
+                valid &= morale_factions.iter().all(|f| {
+                    [
+                        "MORALSDECLOSTMEM",
+                        "MORALSDECFLEE",
+                        "MORALSDECOVERPOP",
+                        "MORALSINCIDLE",
+                    ]
+                    .iter()
+                    .all(|h| current.contains_key(&format!("{h}|{f}")))
+                });
+            }
+            profile.set_bool(id, any && valid && evidence);
         }
     }
 
-    /// `name\s*=\s*` at the start of `s`, returning the remainder.
-    fn assign<'a>(s: &'a str, name: &str) -> Option<&'a str> {
-        let rest = s.strip_prefix(name)?.trim_start().strip_prefix('=')?;
-        Some(rest.trim_start())
-    }
-
-    /// `([A-Z]{3})\s*,\s*` -> (faction, remainder after the comma).
-    fn faction_comma(s: &str) -> Option<(&str, &str)> {
-        let faction = s
-            .get(..3)
-            .filter(|f| f.bytes().all(|b| b.is_ascii_uppercase()))?;
-        let rest = s[3..].trim_start().strip_prefix(',')?;
-        Some((faction, rest.trim_start()))
-    }
-
-    /// C# `CiviDelay\s*=\s*([A-Z]{3})\s*,\s*(\d+)`, every match in the text.
-    fn civi_delays(text: &str) -> Vec<f64> {
-        text.match_indices("CiviDelay")
-            .filter_map(|(pos, _)| {
-                let rest = Self::assign(&text[pos..], "CiviDelay")?;
-                let (_, rest) = Self::faction_comma(rest)?;
-                let (digits, _) = Self::take_digits(rest)?;
-                digits.parse::<f64>().ok()
-            })
-            .collect()
-    }
-
-    /// First match of `name\s*=\s*GER\s*,\s*(\d+)`: `None` = no match,
-    /// `Some(None)` = matched but not a valid Int32 (C# int.TryParse fails).
-    fn first_morale(text: &str, name: &str) -> Option<Option<i32>> {
-        text.match_indices(name).find_map(|(pos, _)| {
-            let rest = Self::assign(&text[pos..], name)?.strip_prefix("GER")?;
-            let rest = rest.trim_start().strip_prefix(',')?.trim_start();
-            let (digits, _) = Self::take_digits(rest)?;
-            Some(digits.parse::<i32>().ok())
-        })
-    }
-
-    /// Line `^(<head>)\s*=\s*([A-Z]{3})\s*,\s*(<tag>\d+)\s*,\s*([^;\r\n]+)` with no leading
-    /// whitespace allowed; `head_digits` allows the `Value\d*` suffix. Returns
-    /// (head, faction, spell, raw value).
-    fn parse_value_line<'a>(
-        line: &'a str,
-        head: &str,
-        head_digits: bool,
-        tag: &str,
-    ) -> Option<(&'a str, &'a str, &'a str, &'a str)> {
-        let after_head = line.strip_prefix(head)?;
-        let suffix = if head_digits {
-            after_head.len()
-                - after_head
-                    .trim_start_matches(|c: char| c.is_ascii_digit())
-                    .len()
-        } else {
-            0
-        };
-        let head_full = &line[..head.len() + suffix];
-        let rest = after_head[suffix..]
-            .trim_start()
-            .strip_prefix('=')?
-            .trim_start();
-        let (faction, rest) = Self::faction_comma(rest)?;
-        let (digits, after) = Self::take_digits(rest.strip_prefix(tag)?)?;
-        let spell = &rest[..tag.len() + digits.len()];
-        let after = after.trim_start().strip_prefix(',')?.trim_start();
-        let end = after.find([';', '\r', '\n']).unwrap_or(after.len());
-        if end == 0 {
-            return None;
-        }
-        Some((head_full, faction, spell, &after[..end]))
-    }
-
-    fn parse_value(raw: &str) -> Option<f64> {
-        raw.trim().parse::<f64>().ok().filter(|v| v.is_finite())
-    }
-
-    fn read_keyed_values(text: &str, tag: &str) -> HashMap<String, f64> {
-        let mut map = HashMap::new();
-        for line in text.split('\n') {
-            let Some((head, faction, spell, raw)) =
-                Self::parse_value_line(line, "Value", true, tag)
-            else {
+    fn values(text: &str) -> HashMap<String, f64> {
+        let mut result = HashMap::new();
+        for line in text.lines() {
+            let body = line.split(';').next().unwrap_or("").trim();
+            let Some((head, value)) = body.split_once('=') else {
                 continue;
             };
-            if let Some(v) = Self::parse_value(raw) {
-                map.insert(format!("{head}_{faction}_{spell}").to_ascii_uppercase(), v);
-            }
-        }
-        map
-    }
-
-    fn read_radius_values(text: &str) -> HashMap<String, f64> {
-        let mut map = HashMap::new();
-        for line in text.split('\n') {
-            let Some((_, faction, spell, raw)) =
-                Self::parse_value_line(line, "Radius", false, "Spell")
-            else {
+            let head = head.trim();
+            let parts: Vec<_> = value.split(',').map(str::trim).collect();
+            let keyed = head.starts_with("Value") || head.eq_ignore_ascii_case("Radius");
+            if parts.is_empty() {
                 continue;
+            }
+            let normalized = if head.starts_with("Value") {
+                head.to_owned()
+            } else {
+                head.to_ascii_uppercase()
             };
-            if let Some(v) = Self::parse_value(raw) {
-                map.insert(format!("Radius_{faction}_{spell}").to_ascii_uppercase(), v);
-            }
-        }
-        map
-    }
-
-    fn all_scaled(
-        current: &HashMap<String, f64>,
-        orig: &HashMap<String, f64>,
-        keys: &[&str],
-        mult: i32,
-    ) -> bool {
-        let mut any = false;
-        for &key in keys {
-            let upper = key.to_ascii_uppercase();
-            let Some(&orig_v) = orig.get(&upper) else {
-                continue;
+            let key = if keyed {
+                format!(
+                    "{normalized}|{}|{}",
+                    parts[0],
+                    parts.get(1).copied().unwrap_or("")
+                )
+            } else {
+                format!("{normalized}|{}", parts[0])
             };
-            if orig_v <= 0.0 {
-                continue;
-            }
-            let expected = (orig_v * mult as f64) as i64;
-            if expected == orig_v as i64 {
-                continue;
-            }
-            match current.get(&upper) {
-                Some(&cur_v) if cur_v as i64 == expected => any = true,
-                _ => return false,
+            let parsed = parts
+                .get(if keyed { 2 } else { 1 })
+                .and_then(|v| v.parse::<f64>().ok())
+                .unwrap_or(f64::NAN);
+            if result.insert(key.clone(), parsed).is_some() {
+                result.insert(key, f64::NAN);
             }
         }
-        any
-    }
-
-    fn radius_scaled_by_three(current: &HashMap<String, f64>, orig: &HashMap<String, f64>) -> bool {
-        let mut any = false;
-        for (key, &orig_v) in orig {
-            if orig_v <= 0.0 {
-                continue;
-            }
-            let Some(&cur_v) = current.get(key) else {
-                return false;
-            };
-            let ratio = cur_v / orig_v;
-            if (ratio - 3.0).abs() > 0.05 && (ratio - 7.5).abs() > 0.1 {
-                return false;
-            }
-            any = true;
-        }
-        any
-    }
-
-    fn detect_resurrection(current: &HashMap<String, f64>, orig: &HashMap<String, f64>) -> bool {
-        let mut any = false;
-        for key in ["VALUE_KEL_SPELL3", "VALUE2_KEL_SPELL3"] {
-            let Some(&orig_v) = orig.get(key) else {
-                continue;
-            };
-            if orig_v as i64 == 100 {
-                continue;
-            }
-            match current.get(key) {
-                Some(&cur_v) if cur_v as i64 == 100 => any = true,
-                _ => return false,
-            }
-        }
-        any
+        result
     }
 }
-
 pub struct RessFeatureDetector;
+type Costs = [HashMap<(String, String, usize), Option<f64>>; 3];
 impl RessFeatureDetector {
+    const IDS: [&'static str; 3] = ["FreeProduction", "FreeUpgrade", "NoSpellCost"];
     pub fn detect(game_path: &Path, profile: &mut PatchProfile) {
-        let path = game_path.join("SYSTEM/ress.ini");
-        if !path.is_file() {
+        for id in Self::IDS {
+            profile.set_bool(id, false);
+        }
+        let Ok(bytes) = fs::read(game_path.join("SYSTEM/ress.ini")) else {
             return;
-        }
-        let Ok(bytes) = fs::read(&path) else { return };
-        let text = match crate::decompress_if_pfil(&bytes) {
-            Ok(b) => crate::decode_cp1251(&b),
-            Err(_) => crate::decode_cp1251(&bytes),
         };
-
-        Self::detect_text(&text, profile);
+        let Ok(doc) = crate::patch_text::TextDocument::read(&bytes) else {
+            return;
+        };
+        Self::detect_text(&doc.text, profile);
     }
 
-    /// Mirrors C# RessFeatureDetector: only the first matching line of each kind is
-    /// inspected, using the RessIndex/VolkresIndex ranges that RessPatcher zeroes.
+    /// 公開文字介面驗證所有現存列；整套偵測另以備份檢查必要列是否遺失。
     pub fn detect_text(text: &str, profile: &mut PatchProfile) {
-        let first_line = |matches: &dyn Fn(&str) -> bool| text.split('\n').find(|l| matches(l));
-        let starts_with_name = |line: &str, name: &str| {
-            line.strip_prefix(name)
-                .is_some_and(|rest| rest.trim_start().starts_with(','))
-        };
+        Self::detect_relative(text, None, profile);
+    }
 
-        if let Some(line) = first_line(&|l| starts_with_name(l, "FigRomInf00_Lanze_Schild")) {
-            let free = Self::all_zero(
-                &parse_csv_line(line),
-                ress::FIG_PROD_COST_START,
-                ress::FIG_PROD_COST_END,
+    fn detect_relative(text: &str, original: Option<&str>, profile: &mut PatchProfile) {
+        let current = Self::costs(text);
+        let original = original.map(Self::costs);
+        for (i, id) in Self::IDS.iter().enumerate() {
+            let complete = original
+                .as_ref()
+                .is_none_or(|o| o[i].keys().all(|k| current[i].contains_key(k)));
+            profile.set_bool(
+                *id,
+                complete && !current[i].is_empty() && current[i].values().all(|v| *v == Some(0.0)),
             );
-            profile.set_bool("FreeProduction", free);
-        }
-        if let Some(line) = first_line(&|l| l.contains("Ger_Kampf")) {
-            let free = Self::all_zero(
-                &parse_csv_line(line),
-                ress::UNIT_UPGRADE_START,
-                ress::UNIT_UPGRADE_END,
-            );
-            profile.set_bool("FreeUpgrade", free);
-        }
-        if let Some(line) = first_line(&|l| starts_with_name(l, "FigGerPri00_Priester")) {
-            let free = Self::all_zero(
-                &parse_csv_line(line),
-                ress::FIG_PRIEST_SPELL_COST_START,
-                ress::FIG_PRIEST_SPELL_COST_END,
-            );
-            profile.set_bool("NoSpellCost", free);
         }
     }
 
-    fn all_zero(columns: &[String], first: usize, last: usize) -> bool {
-        (first..=last).all(|i| columns.get(i).is_some_and(|c| c.trim() == "0"))
+    fn costs(text: &str) -> Costs {
+        let mut section = "";
+        let mut result: Costs = Default::default();
+        for line in text.lines() {
+            let line = line.trim();
+            if line.starts_with('[') {
+                section = line;
+                continue;
+            }
+            if line.is_empty() || line.starts_with(';') {
+                continue;
+            }
+            let cols = parse_csv_line(line);
+            let Some(name) = cols.first().map(|s| s.trim()) else {
+                continue;
+            };
+            let mut fields = [Vec::new(), Vec::new(), Vec::new()];
+            if section == "[objres]" {
+                if name.starts_with("Bau") {
+                    fields[0].extend(1..=6);
+                    fields[1].extend(7..=12);
+                } else if name.starts_with("Fig")
+                    && !name.eq_ignore_ascii_case("FigTiePac00_Packpferd")
+                {
+                    fields[0].extend(13..=18);
+                    if name.contains("Art") || name.contains("Bar") || name.contains("Fal") {
+                        fields[0].extend(1..=6);
+                    }
+                    if name.contains("Pri") || name.contains("Dru") {
+                        fields[2].extend(25..=28);
+                    }
+                }
+            } else if section == "[volkres]" {
+                fields[1].extend([8, 10, 12, 14]);
+                fields[1].extend((24..=263).step_by(2));
+                fields[1].extend(264..=295);
+            }
+            for i in 0..3 {
+                for &c in &fields[i] {
+                    let key = (section.to_owned(), name.to_owned(), c);
+                    let value = number(&cols, c);
+                    if result[i].insert(key.clone(), value).is_some() {
+                        result[i].insert(key, None);
+                    }
+                }
+            }
+        }
+        result
     }
 }
-
 pub struct TeamDatFeatureDetector;
 impl TeamDatFeatureDetector {
     pub fn detect(game_path: &Path, backup: &BackupManager) -> (bool, bool) {
-        let mut max_population = false;
-        let mut roman_player = false;
-
-        for (key, original) in backup.backup_files() {
-            let lower = key.to_ascii_lowercase();
-            if !lower.starts_with("maps/") || !lower.ends_with("team.dat") {
-                continue;
+        let mut keys: std::collections::BTreeSet<String> = backup
+            .backup_files()
+            .keys()
+            .filter(|k| k.starts_with("maps/") && k.ends_with("/team.dat"))
+            .cloned()
+            .collect();
+        fn visit(
+            root: &Path,
+            dir: &Path,
+            keys: &mut std::collections::BTreeSet<String>,
+        ) -> Option<()> {
+            if !dir.exists() {
+                return Some(());
             }
-            let path = game_path.join(key);
-            if !path.is_file() {
-                continue;
-            }
-            let Ok(current) = fs::read(&path) else {
-                continue;
-            };
-            let is_endl = lower.starts_with("maps/endl_");
-
-            if let Some((max_pop, rom_p)) = Self::try_detect_options(original, &current, is_endl) {
-                max_population |= max_pop;
-                roman_player |= rom_p;
-            } else {
-                max_population = true;
-            }
-        }
-
-        (max_population, roman_player)
-    }
-
-    fn try_detect_options(original: &[u8], current: &[u8], is_endl: bool) -> Option<(bool, bool)> {
-        for (candidate_pop, candidate_rom) in
-            [(false, false), (true, false), (false, true), (true, true)]
-        {
-            let effective_rom = candidate_rom && is_endl;
-            if let Ok(candidate) = TeamDatPatcher::get_patched_bytes(
-                original,
-                &TeamDatOptions {
-                    max_population: candidate_pop,
-                    roman_player: effective_rom,
-                    ..Default::default()
-                },
-            ) {
-                if current == candidate {
-                    return Some((candidate_pop, effective_rom));
+            for entry in fs::read_dir(dir).ok()? {
+                let entry = entry.ok()?;
+                let kind = entry.file_type().ok()?;
+                if kind.is_symlink() {
+                    continue;
+                }
+                if kind.is_dir() {
+                    visit(root, &entry.path(), keys)?;
+                } else if entry
+                    .file_name()
+                    .to_string_lossy()
+                    .eq_ignore_ascii_case("team.dat")
+                    && !crate::services::is_custom_map_file(&root.join("MAPS"), &entry.path())
+                {
+                    keys.insert(
+                        entry
+                            .path()
+                            .strip_prefix(root)
+                            .ok()?
+                            .to_string_lossy()
+                            .replace('\\', "/")
+                            .to_ascii_lowercase(),
+                    );
                 }
             }
+            Some(())
         }
-        None
+        if visit(game_path, &game_path.join("MAPS"), &mut keys).is_none() {
+            return (false, false);
+        }
+        let mut pop_ok = true;
+        let mut rom_ok = true;
+        let mut pop_any = false;
+        let mut rom_any = false;
+        for key in keys {
+            if crate::services::is_custom_map_file(&game_path.join("MAPS"), &game_path.join(&key)) {
+                continue;
+            }
+            let endless = key.starts_with("maps/endl_");
+            let pair = || {
+                Some((
+                    Self::teams(backup.get_backup_bytes(&key).ok()?)?,
+                    Self::teams(&fs::read(game_path.join(&key)).ok()?)?,
+                ))
+            };
+            let Some((original, current)) = pair() else {
+                pop_ok = false;
+                if endless {
+                    rom_ok = false;
+                }
+                continue;
+            };
+            for (team, row) in &original {
+                let Some(value) = row.get(4).and_then(|v| v.trim().parse::<i32>().ok()) else {
+                    pop_ok = false;
+                    continue;
+                };
+                if value > 0 {
+                    pop_any = true;
+                    pop_ok &= current
+                        .get(team)
+                        .and_then(|r| r.get(4))
+                        .and_then(|v| v.trim().parse::<i32>().ok())
+                        == Some(1600);
+                }
+            }
+            // 新增隊伍也必須符合上限；未知或遺失必要欄位不能被忽略。
+            for row in current.values() {
+                match row.get(4).and_then(|v| v.trim().parse::<i32>().ok()) {
+                    Some(v) if v > 0 => {
+                        pop_any = true;
+                        pop_ok &= v == 1600;
+                    }
+                    Some(_) => {}
+                    None => pop_ok = false,
+                }
+            }
+            if endless {
+                rom_any = true;
+                rom_ok &= original.contains_key("0")
+                    && current
+                        .get("0")
+                        .and_then(|r| r.get(1))
+                        .is_some_and(|f| f.trim() == "ROM");
+            }
+        }
+        (pop_ok && pop_any, rom_ok && rom_any)
+    }
+
+    fn teams(bytes: &[u8]) -> Option<Rows> {
+        let doc = crate::patch_text::TextDocument::read(bytes).ok()?;
+        let mut active = false;
+        let mut result = HashMap::new();
+        for line in &doc.lines {
+            let line = line.trim();
+            if line.starts_with('[') {
+                active = line == "[teamdata]";
+                continue;
+            }
+            if !active || line.is_empty() || line.starts_with(';') {
+                continue;
+            }
+            let cols = parse_csv_line(line);
+            if cols.len() < 5 {
+                return None;
+            }
+            let id = cols[0].trim().to_owned();
+            if id.is_empty() || result.insert(id, cols).is_some() {
+                return None;
+            }
+        }
+        if result.is_empty() {
+            None
+        } else {
+            Some(result)
+        }
     }
 }
-
+/// 偵測只回報磁碟可證明的完整功能，不從任意自訂數值猜測設定。
 pub struct ObjdefFeatureDetector;
-impl ObjdefFeatureDetector {
-    pub fn detect(game_path: &Path, backup: &BackupManager, profile: &mut PatchProfile) {
-        let path = game_path.join("SYSTEM/DATA_MP/DEFAULTS/objdef.dau");
-        if !path.is_file() {
-            return;
+type Rows = HashMap<String, Vec<String>>;
+type Fields = Vec<(String, usize)>;
+
+fn rows(bytes: &[u8], name_col: usize) -> Option<Rows> {
+    let doc = crate::patch_text::TextDocument::read(bytes).ok()?;
+    let mut result = HashMap::new();
+    for line in doc.lines.iter().skip(2) {
+        let cols = parse_csv_line(line);
+        let Some(name) = cols
+            .get(name_col)
+            .map(|v| v.trim())
+            .filter(|v| !v.is_empty())
+        else {
+            continue;
+        };
+        if result.insert(name.to_owned(), cols.clone()).is_some() {
+            return None;
         }
-        let Ok(bytes) = fs::read(&path) else { return };
-        let Ok(raw) = crate::decompress_pfil(&bytes) else {
+    }
+    Some(result)
+}
+
+fn number(row: &[String], col: usize) -> Option<f64> {
+    row.get(col)?
+        .trim()
+        .parse::<f64>()
+        .ok()
+        .filter(|n| n.is_finite())
+}
+
+/// 僅比較功能擁有的欄位，無關欄位、空白與行序均可不同；必要列或欄位缺失即拒絕。
+fn matches_fields(current: &Rows, expected: &Rows, original: &Rows, fields: &Fields) -> bool {
+    let mut changed = false;
+    for (name, col) in fields {
+        let values = || {
+            Some((
+                number(current.get(name)?, *col)?,
+                number(expected.get(name)?, *col)?,
+                number(original.get(name)?, *col)?,
+            ))
+        };
+        let Some((c, e, o)) = values() else {
+            return false;
+        };
+        if (c - e).abs() > 0.00001 {
+            return false;
+        }
+        changed |= (e - o).abs() > 0.00001;
+    }
+    changed
+}
+
+impl ObjdefFeatureDetector {
+    const KEY: &'static str = "SYSTEM/DATA_MP/DEFAULTS/objdef.dau";
+    const IDS: [&'static str; 13] = [
+        "HousingCapacity20x",
+        "StorageCapacity10x",
+        "HqHp10x",
+        "FastBuildUpgradeRepair",
+        "ProjectileArcHeight",
+        "NoRunHpLoss",
+        "AllUnitsEntireMapVision",
+        "Balance",
+        "LeaderGlory",
+        "UnitMovementSpeed2x",
+        "RangedRange3x",
+        "VillagerMovementSpeed5x",
+        "SpellEntireMap",
+    ];
+
+    pub fn detect(game_path: &Path, backup: &BackupManager, profile: &mut PatchProfile) {
+        for id in Self::IDS {
+            profile.set_bool(id, false);
+        }
+        // 相同結果可由多組自訂設定產生，不能唯一反推；磁碟偵測必須清除記憶體殘值。
+        profile.custom_unit_stats = None;
+        profile.set_string("CustomUnitStats", "");
+        let Ok(original_bytes) = backup.get_backup_bytes(Self::KEY) else {
             return;
         };
-        let current_text = crate::decode_cp1251(&raw);
-        let current_rows: Vec<Vec<String>> = current_text
-            .lines()
-            .filter(|l| l.len() >= 100)
-            .map(parse_csv_line)
-            .collect();
-
-        // C# only runs the backup-relative checks (and sets their flags) when the backup exists;
-        // the remaining flags are always assigned, with an empty original-row set otherwise.
-        const BACKUP_KEY: &str = "SYSTEM/DATA_MP/DEFAULTS/objdef.dau";
-        let mut orig_rows: Vec<Vec<String>> = Vec::new();
-        if backup.has_file(BACKUP_KEY) {
-            let Ok(orig_bytes) = backup.get_backup_bytes(BACKUP_KEY) else {
+        let Ok(current_bytes) = fs::read(game_path.join(Self::KEY)) else {
+            return;
+        };
+        let (Some(original), Some(current)) = (rows(original_bytes, 52), rows(&current_bytes, 52))
+        else {
+            return;
+        };
+        // 預期值只在記憶體產生，避免為每個候選重壓縮整份 PFIL。
+        let Ok(doc) = crate::patch_text::TextDocument::read(original_bytes) else {
+            return;
+        };
+        let original_raw = crate::patch_text::encode_cp1251(&doc.text);
+        let original_bytes = original_raw.as_slice();
+        let mut base = crate::objdef::ObjdefOptions::default();
+        for name in original
+            .keys()
+            .filter(|n| TroopConfig::get_metadata(n).is_some())
+        {
+            let Ok(stats) = backup.get_original_stats(name) else {
                 return;
             };
-            let Ok(orig_raw) = crate::decompress_pfil(orig_bytes) else {
-                return;
-            };
-            let orig_text = crate::decode_cp1251(&orig_raw);
-            orig_rows = orig_text
-                .lines()
-                .filter(|l| l.len() >= 100)
-                .map(parse_csv_line)
-                .collect();
-
-            profile.set_bool(
-                "HousingCapacity20x",
-                Self::has_capacity_multiplier(
-                    &current_rows,
-                    &orig_rows,
-                    ObjdefIndex::HousingCapacity as usize,
-                    20,
-                ),
-            );
-            profile.set_bool(
-                "StorageCapacity10x",
-                Self::has_storage_multiplier(&current_rows, &orig_rows, 10),
-            );
-            profile.set_bool(
-                "HqHp10x",
-                Self::has_hq_hp_multiplier(&current_rows, &orig_rows, 10),
-            );
-            profile.set_bool(
-                "FastBuildUpgradeRepair",
-                Self::has_fast_build(&current_rows, &orig_rows),
-            );
-            profile.set_bool(
-                "ProjectileArcHeight",
-                Self::has_projectile_scale(&current_rows, &orig_rows),
-            );
-            profile.set_bool(
-                "NoRunHpLoss",
-                Self::has_no_run_hp_loss(&current_rows, &orig_rows),
-            );
+            base.unit_stats.insert(name.clone(), stats);
         }
-        let entire_vision = Self::has_entire_map_vision(&current_rows, &orig_rows);
-        profile.set_bool("AllUnitsEntireMapVision", entire_vision);
-
-        // Unit rows map
-        let mut unit_rows = HashMap::new();
-        for r in &current_rows {
-            if r.len() >= 192 {
-                let name = r[52].trim();
-                unit_rows.insert(name.to_ascii_uppercase(), r.clone());
-            }
-        }
-        let orig_unit_rows = backup.get_backup_unit_rows().unwrap_or_default();
-
-        // Range 3x probe
-        let mut range3x = false;
-        if let Some(r) = unit_rows.get("FIGROMSCH01_BOGEN") {
-            let cur = UnitStatParser::get_maximum_range(r, "ranged_inf");
-            let orig = backup
-                .get_original_stats("FigRomSch01_Bogen")
-                .map(|s| s[7])
-                .unwrap_or(0.0);
-            range3x = cur > 0.0 && (cur - orig * 3.0).abs() < 5.0;
-        }
-
-        // Balance check
-        let mut is_balanced = false;
-        for key in TroopConfig::sorted_units() {
-            let upper = key.to_ascii_uppercase();
-            if let (Some(cur), Some(orig)) = (unit_rows.get(&upper), orig_unit_rows.get(key)) {
-                let cur_hp = cur
-                    .get(ObjdefIndex::Hp as usize)
-                    .and_then(|s| s.trim().parse::<f64>().ok())
-                    .unwrap_or(0.0);
-                let orig_hp = orig
-                    .get(ObjdefIndex::Hp as usize)
-                    .and_then(|s| s.trim().parse::<f64>().ok())
-                    .unwrap_or(0.0);
-                let cur_vw = cur
-                    .get(ObjdefIndex::Vw as usize)
-                    .and_then(|s| s.trim().parse::<f64>().ok())
-                    .unwrap_or(0.0);
-                let orig_vw = orig
-                    .get(ObjdefIndex::Vw as usize)
-                    .and_then(|s| s.trim().parse::<f64>().ok())
-                    .unwrap_or(0.0);
-                let cur_aw = cur
-                    .get(ObjdefIndex::Aw as usize)
-                    .and_then(|s| s.trim().parse::<f64>().ok())
-                    .unwrap_or(0.0);
-                let orig_aw = orig
-                    .get(ObjdefIndex::Aw as usize)
-                    .and_then(|s| s.trim().parse::<f64>().ok())
-                    .unwrap_or(0.0);
-
-                if TroopConfig::get_metadata(key).map(|m| m.tier) != Some("leader") {
-                    if (cur_hp - orig_hp).abs() > 0.01
-                        || (cur_vw - orig_vw).abs() > 0.01
-                        || (cur_aw - orig_aw).abs() > 0.01
-                    {
-                        is_balanced = true;
-                    }
-                }
-            }
-        }
-        profile.set_bool("Balance", is_balanced);
-
-        // Leader glory
-        profile.set_bool(
+        // 獨立功能不受自訂戰鬥數值影響，所有必要欄位仍須逐列吻合。
+        for id in [
+            "HousingCapacity20x",
+            "StorageCapacity10x",
+            "HqHp10x",
+            "FastBuildUpgradeRepair",
+            "ProjectileArcHeight",
+            "NoRunHpLoss",
             "LeaderGlory",
-            Self::detect_leader_glory(&current_rows, &orig_unit_rows),
-        );
+            "UnitMovementSpeed2x",
+            "VillagerMovementSpeed5x",
+        ] {
+            let mut options = base.clone();
+            match id {
+                "HousingCapacity20x" => options.housing_capacity_20x = true,
+                "StorageCapacity10x" => options.storage_capacity_10x = true,
+                "HqHp10x" => options.hq_hp_10x = true,
+                "FastBuildUpgradeRepair" => options.fast_build_upgrade_repair = true,
+                "ProjectileArcHeight" => options.projectile_arc_height = true,
+                "NoRunHpLoss" => options.no_run_hp_loss = true,
+                "LeaderGlory" => options.leader_glory_5x = true,
+                "UnitMovementSpeed2x" => options.unit_movement_speed_2x = true,
+                _ => options.villager_movement_speed_5x = true,
+            }
+            let fields = Self::fields(&original, id);
+            let valid = ObjdefPatcher::get_patched_bytes(original_bytes, &options)
+                .ok()
+                .and_then(|b| rows(&b, 52))
+                .is_some_and(|e| matches_fields(&current, &e, &original, &fields));
+            profile.set_bool(
+                id,
+                valid && (id != "ProjectileArcHeight" || Self::partgeo(game_path, backup)),
+            );
+        }
 
-        // Speed 2x
-        let mut speed2x = false;
-        if let Some(r) = unit_rows.get("FIGROMINF00_LANZE_SCHILD") {
-            let cur_moves = r
-                .get(ObjdefIndex::Moves as usize)
-                .and_then(|s| s.trim().parse::<f64>().ok())
-                .unwrap_or(0.0);
-            let expected_base = backup
-                .get_base_stats_for_unit("FigRomInf00_Lanze_Schild", profile)
-                .map(|s| s[4] / 2.0)
-                .unwrap_or(0.0);
-            if cur_moves > 0.0 && (cur_moves - expected_base * 2.0).abs() < 0.05 {
-                speed2x = true;
-            }
-        }
-        profile.set_bool("UnitMovementSpeed2x", speed2x);
-        profile.set_bool("RangedRange3x", range3x);
-
-        // Villager speed 5x
-        let mut villager5x = false;
-        if let (Some(cur), Some(orig)) = (
-            unit_rows.get("FIGZIVMAN00_ZIVILIST"),
-            orig_unit_rows.get("FigZivMan00_Zivilist"),
-        ) {
-            let cur_moves = cur
-                .get(ObjdefIndex::Moves as usize)
-                .and_then(|s| s.trim().parse::<f64>().ok())
-                .unwrap_or(0.0);
-            let orig_moves = orig
-                .get(ObjdefIndex::Moves as usize)
-                .and_then(|s| s.trim().parse::<f64>().ok())
-                .unwrap_or(0.0);
-            if cur_moves > 0.0 && (cur_moves - orig_moves * 5.0).abs() < 0.05 {
-                villager5x = true;
-            }
-        }
-        profile.set_bool("VillagerMovementSpeed5x", villager5x);
-
-        // Priest spell range entire map
-        let mut spell_map = false;
-        if let Some(r) = unit_rows.get("FIGKELPRI00_PRIESTER") {
-            let cur_range = UnitStatParser::get_maximum_range(r, "priest");
-            if cur_range > 0.0 && (cur_range - 30000.0).abs() < 100.0 {
-                spell_map = true;
-            }
-        }
-        profile.set_bool("SpellEntireMap", spell_map);
-    }
-
-    fn has_capacity_multiplier(
-        current: &[Vec<String>],
-        orig: &[Vec<String>],
-        col: usize,
-        mult: i64,
-    ) -> bool {
-        let mut cur_map = HashMap::new();
-        for r in current {
-            if r.len() > col && r.len() > 52 {
-                if let Ok(v) = r[col].trim().parse::<i64>() {
-                    cur_map.insert(r[52].trim().to_ascii_uppercase(), v);
-                }
-            }
-        }
-        let mut found = false;
-        for r in orig {
-            if r.len() > col && r.len() > 52 {
-                if let Ok(v) = r[col].trim().parse::<i64>() {
-                    if v > 0 {
-                        found = true;
-                        let name = r[52].trim().to_ascii_uppercase();
-                        if cur_map.get(&name) != Some(&(v * mult)) {
-                            return false;
-                        }
-                    }
-                }
-            }
-        }
-        found
-    }
-
-    fn has_storage_multiplier(current: &[Vec<String>], orig: &[Vec<String>], mult: i64) -> bool {
-        let col = ObjdefIndex::StorageCapacity as usize;
-        let mut cur_map = HashMap::new();
-        for r in current {
-            if r.len() > col && r.len() > 52 {
-                if let Ok(v) = r[col].trim().parse::<i64>() {
-                    cur_map.insert(r[52].trim().to_ascii_uppercase(), v);
-                }
-            }
-        }
-        let mut found = false;
-        for r in orig {
-            if r.len() > col && r.len() > 52 {
-                let name = r[52].trim();
-                if !name.starts_with("Bau") || !(name.contains("Hau") || name.contains("Lag")) {
-                    continue;
-                }
-                if let Ok(v) = r[col].trim().parse::<i64>() {
-                    if v > 0 {
-                        found = true;
-                        if cur_map.get(&name.to_ascii_uppercase()) != Some(&(v * mult)) {
-                            return false;
-                        }
-                    }
-                }
-            }
-        }
-        found
-    }
-
-    fn has_hq_hp_multiplier(current: &[Vec<String>], orig: &[Vec<String>], mult: i64) -> bool {
-        let col = ObjdefIndex::Hp as usize;
-        let mut cur_map = HashMap::new();
-        for r in current {
-            if r.len() > col && r.len() > 52 {
-                if let Ok(v) = r[col].trim().parse::<i64>() {
-                    cur_map.insert(r[52].trim().to_ascii_uppercase(), v);
-                }
-            }
-        }
-        let mut found = false;
-        for r in orig {
-            if r.len() > col && r.len() > 52 {
-                let name = r[52].trim();
-                if !name.starts_with("Bau") || !name.contains("Hau") {
-                    continue;
-                }
-                if let Ok(v) = r[col].trim().parse::<i64>() {
-                    if v > 0 {
-                        found = true;
-                        if cur_map.get(&name.to_ascii_uppercase()) != Some(&(v * mult)) {
-                            return false;
-                        }
-                    }
-                }
-            }
-        }
-        found
-    }
-
-    fn has_fast_build(current: &[Vec<String>], orig: &[Vec<String>]) -> bool {
-        let mut cur_build = HashMap::new();
-        let mut cur_upg = HashMap::new();
-        for r in current {
-            if r.len() >= 192 && r[52].trim().starts_with("Bau") {
-                let name = r[52].trim().to_ascii_uppercase();
-                if let Ok(b) = r[73].trim().parse::<i64>() {
-                    cur_build.insert(name.clone(), b);
-                }
-                if let Ok(u) = r[74].trim().parse::<i64>() {
-                    cur_upg.insert(name, u);
-                }
-            }
-        }
-        let mut found = false;
-        for r in orig {
-            if r.len() >= 192 && r[52].trim().starts_with("Bau") {
-                let name = r[52].trim().to_ascii_uppercase();
-                let b = r[73].trim().parse::<i64>().ok().filter(|&x| x > 0);
-                let u = r[74].trim().parse::<i64>().ok().filter(|&x| x > 0);
-                if b.is_some() || u.is_some() {
-                    found = true;
-                    if let Some(bv) = b {
-                        let expected = (bv / 10).max(1);
-                        if cur_build.get(&name) != Some(&expected) {
-                            return false;
-                        }
-                    }
-                    if let Some(uv) = u {
-                        let expected = (uv / 10).max(1);
-                        if cur_upg.get(&name) != Some(&expected) {
-                            return false;
-                        }
-                    }
-                }
-            }
-        }
-        found
-    }
-
-    fn has_projectile_scale(current: &[Vec<String>], orig: &[Vec<String>]) -> bool {
-        let mut cur_map = HashMap::new();
-        for r in current {
-            if r.len() > 52 {
-                cur_map.insert(r[52].trim().to_ascii_uppercase(), r);
-            }
-        }
-        let mut any = false;
-        for orig_r in orig {
-            if orig_r.len() <= 52 {
+        let epara = Self::epara(game_path, backup);
+        // 視野覆寫射程與祭司視野，Balance 又會改動射程基準。
+        // 枚舉既有功能的組合，但只有每個已啟用功能皆完整吻合才接受；
+        // 不能用局部視野值假裝另一功能已啟用，也不猜測未知自訂覆寫。
+        for bits in 1..16 {
+            let mut options = base.clone();
+            options.balance = bits & 1 != 0;
+            options.ranged_range_3x = bits & 2 != 0;
+            options.spell_entire_map = bits & 4 != 0;
+            options.all_units_entire_map_vision = bits & 8 != 0;
+            if options.ranged_range_3x && !epara {
                 continue;
             }
-            let name = orig_r[52].trim().to_ascii_uppercase();
-            let Some(cur_r) = cur_map.get(&name) else {
-                continue;
-            };
-            for w in 1..=8 {
-                let active = ObjdefIndex::Weapon1Akti as usize + (w - 1) * 8;
-                let emit = ObjdefIndex::Weapon1Emit as usize + (w - 1) * 8;
-                if emit >= orig_r.len() || emit >= cur_r.len() {
-                    continue;
-                }
-                if orig_r[active].trim() != "1" {
-                    continue;
-                }
-                let Ok(orig_emit) = orig_r[emit].trim().parse::<i64>() else {
-                    continue;
-                };
-                let Ok(cur_emit) = cur_r[emit].trim().parse::<i64>() else {
-                    continue;
-                };
-                if orig_emit <= 0 {
-                    continue;
-                }
-                let expected = (orig_emit as f64 * 2.0).round() as i64;
-                if expected == orig_emit {
-                    continue;
-                }
-                if cur_emit != expected {
-                    return false;
-                }
-                any = true;
-            }
-        }
-        any
-    }
-
-    fn has_no_run_hp_loss(current: &[Vec<String>], orig: &[Vec<String>]) -> bool {
-        let probe = "FIGROMINF00_LANZE_SCHILD";
-        let cur = current
-            .iter()
-            .find(|r| r.len() > 52 && r[52].trim().eq_ignore_ascii_case(probe));
-        let orig = orig
-            .iter()
-            .find(|r| r.len() > 52 && r[52].trim().eq_ignore_ascii_case(probe));
-        if let (Some(c), Some(o)) = (cur, orig) {
-            let col = ObjdefIndex::Lpsub as usize;
-            if c.len() > col && o.len() > col {
-                let cur_lp = c[col].trim().parse::<f64>().unwrap_or(1.0);
-                let orig_lp = o[col].trim().parse::<f64>().unwrap_or(0.0);
-                return orig_lp > 0.0 && cur_lp.abs() < 0.01;
-            }
-        }
-        false
-    }
-
-    fn has_entire_map_vision(current: &[Vec<String>], orig: &[Vec<String>]) -> bool {
-        let mut cur_map = HashMap::new();
-        for r in current {
-            if r.len() > ObjdefIndex::Sirad as usize && r.len() > 52 {
-                let name = r[52].trim();
-                if ObjdefPatcher::supports_entire_map_vision(name) {
-                    cur_map.insert(name.to_ascii_uppercase(), r);
+            if options.balance {
+                for (name, stat) in &mut options.unit_stats {
+                    let Ok(value) = backup.get_default_balanced_stats(name) else {
+                        return;
+                    };
+                    *stat = value;
                 }
             }
-        }
-        let mut expected = 0;
-        for r in orig {
-            if r.len() > ObjdefIndex::Sirad as usize && r.len() > 52 {
-                let name = r[52].trim();
-                if !ObjdefPatcher::supports_entire_map_vision(name) {
-                    continue;
-                }
-                expected += 1;
-                let Some(c) = cur_map.get(&name.to_ascii_uppercase()) else {
-                    return false;
-                };
-                let sight = c[ObjdefIndex::Sirad as usize]
-                    .trim()
-                    .parse::<f64>()
-                    .unwrap_or(0.0);
-                if (sight - 30000.0).abs() >= 100.0 {
-                    return false;
-                }
-            }
-        }
-        expected > 0
-    }
-
-    fn detect_leader_glory(
-        current: &[Vec<String>],
-        orig_map: &HashMap<String, Vec<String>>,
-    ) -> bool {
-        let leaders = [
-            "FigGerAnf00_Anfuehrer",
-            "FigKelAnf00_Anfuehrer",
-            "FigHunAnf00_Anfuehrer",
-            "FigRomAnf00_Anfuehrer",
-        ];
-        let glory_cols = [
-            102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116,
-        ];
-        let mut any = false;
-
-        for leader in leaders {
-            let Some(orig) = orig_map.get(leader) else {
-                continue;
-            };
-            let Some(cur) = current
-                .iter()
-                .find(|r| r.len() > 52 && r[52].trim().eq_ignore_ascii_case(leader))
+            let Some(expected) = ObjdefPatcher::get_patched_bytes(original_bytes, &options)
+                .ok()
+                .and_then(|b| rows(&b, 52))
             else {
                 continue;
             };
-            for &idx in &glory_cols {
-                if idx >= orig.len() || idx >= cur.len() {
-                    continue;
+            let ids = [
+                (1, "Balance"),
+                (2, "RangedRange3x"),
+                (4, "SpellEntireMap"),
+                (8, "AllUnitsEntireMapVision"),
+            ];
+            if ids
+                .iter()
+                .filter(|(bit, _)| bits & bit != 0)
+                .all(|(_, id)| {
+                    matches_fields(&current, &expected, &original, &Self::fields(&original, id))
+                })
+            {
+                for (bit, id) in ids {
+                    if bits & bit == 0 {
+                        continue;
+                    }
+                    let mut without = options.clone();
+                    match id {
+                        "Balance" => {
+                            without.balance = false;
+                            without.unit_stats = base.unit_stats.clone();
+                        }
+                        "RangedRange3x" => without.ranged_range_3x = false,
+                        "SpellEntireMap" => without.spell_entire_map = false,
+                        _ => without.all_units_entire_map_vision = false,
+                    }
+                    let distinct = ObjdefPatcher::get_patched_bytes(original_bytes, &without)
+                        .ok()
+                        .and_then(|b| rows(&b, 52))
+                        .is_some_and(|other| {
+                            Self::fields(&original, id).iter().any(|(n, c)| {
+                                expected.get(n).and_then(|r| number(r, *c))
+                                    != other.get(n).and_then(|r| number(r, *c))
+                            })
+                        });
+                    if distinct {
+                        profile.set_bool(id, true);
+                    }
                 }
-                let Ok(orig_v) = orig[idx].trim().parse::<f64>() else {
-                    continue;
-                };
-                if orig_v <= 0.0 {
-                    continue;
-                }
-                let Ok(cur_v) = cur[idx].trim().parse::<f64>() else {
-                    return false;
-                };
-                if (cur_v - orig_v * 5.0).abs() > 0.01 {
-                    return false;
-                }
-                any = true;
             }
         }
-        any
+        // 全圖視野遮蔽祭司視野，無法從磁碟證明祭司開關。
+        if profile.get_bool("AllUnitsEntireMapVision") {
+            profile.set_bool("SpellEntireMap", false);
+        }
+    }
+
+    fn fields(original: &Rows, id: &str) -> Fields {
+        let mut fields = Vec::new();
+        for (name, row) in original {
+            let meta = TroopConfig::get_metadata(name);
+            let civilian = matches!(
+                name.as_str(),
+                "FigZivMan00_Zivilist" | "FigZivWei00_Zivilistin" | "FigTiePac00_Packpferd"
+            );
+            let mut cols = Vec::new();
+            match id {
+                "HousingCapacity20x" => cols.push(156),
+                "StorageCapacity10x"
+                    if name.starts_with("Bau")
+                        && (name.contains("Hau") || name.contains("Lag")) =>
+                {
+                    cols.push(42)
+                }
+                "HqHp10x" if name.starts_with("Bau") && name.contains("Hau") => cols.push(19),
+                "FastBuildUpgradeRepair" if name.starts_with("Bau") => cols.extend([73, 74]),
+                "LeaderGlory" if crate::objdef::GLORY_LEADERS.contains(&name.as_str()) => {
+                    cols.extend(crate::objdef::GLORY_COLUMNS)
+                }
+                "UnitMovementSpeed2x" if meta.is_some() => cols.extend([4, 23, 191]),
+                "VillagerMovementSpeed5x" if civilian => cols.extend([4, 23, 191]),
+                "NoRunHpLoss" if meta.is_some() || civilian => cols.push(208),
+                "AllUnitsEntireMapVision" if meta.is_some() || civilian => cols.push(24),
+                "SpellEntireMap" if meta.is_some_and(|m| m.unit_type == "priest") => cols.push(24),
+                "Balance" if meta.is_some() => {
+                    cols.extend([19, 142, 146, 24]);
+                    for w in 0..8 {
+                        if row.get(78 + w * 8).is_some_and(|v| v.trim() == "1") {
+                            cols.extend([78 + w * 8, 79 + w * 8, 81 + w * 8, 84 + w * 8]);
+                        }
+                    }
+                }
+                _ => {}
+            }
+            if id == "ProjectileArcHeight" || id == "RangedRange3x" {
+                if id == "RangedRange3x"
+                    && meta.is_some_and(|m| TroopConfig::supports_ranged_range_3x(m.unit_type))
+                {
+                    cols.push(24);
+                    for w in 0..8 {
+                        if row.get(78 + w * 8).is_some_and(|v| v.trim() == "1") {
+                            cols.extend([78 + w * 8, 81 + w * 8]);
+                        }
+                    }
+                }
+                for w in 0..8 {
+                    // 啟用狀態是必要條件；不能靠刪除後段武器欄位縮小檢查集合。
+                    cols.push(78 + w * 8);
+                    if row.get(78 + w * 8).is_some_and(|v| v.trim() == "1") {
+                        if id == "ProjectileArcHeight" {
+                            cols.push(85 + w * 8);
+                        } else if number(row, 85 + w * 8).is_some_and(|v| v > 0.0) {
+                            cols.push(164 + w * 2);
+                        }
+                    }
+                }
+            }
+            fields.extend(cols.into_iter().map(|c| (name.clone(), c)));
+        }
+        fields
+    }
+
+    fn partgeo(game: &Path, backup: &BackupManager) -> bool {
+        let key = "SYSTEM/DATA_MP/DEFAULTS/partgeo.dau";
+        let valid = || {
+            let original = backup.get_backup_bytes(key).ok()?;
+            let current = rows(&fs::read(game.join(key)).ok()?, 2)?;
+            let expected = crate::partgeo::PartgeoPatcher::get_patched_bytes(
+                original,
+                &crate::partgeo::PartgeoOptions {
+                    projectile_arc_height: true,
+                },
+            )
+            .ok()?;
+            let original = rows(original, 2)?;
+            let expected = rows(&expected, 2)?;
+            let fields = crate::partgeo::PROJECTILE_GEO_NAMES
+                .iter()
+                .map(|n| (n.to_string(), 12))
+                .collect();
+            Some(matches_fields(&current, &expected, &original, &fields))
+        };
+        valid() == Some(true)
+    }
+
+    fn epara(game: &Path, backup: &BackupManager) -> bool {
+        let valid = || {
+            let key = "SYSTEM/cl_epara.ini";
+            let original = backup.get_backup_bytes(key).ok()?;
+            let expected = crate::epara::EparaPatcher::get_patched_bytes(original, true).ok()?;
+            let current = fs::read(game.join(key)).ok()?;
+            let values = |bytes: &[u8]| -> Option<Vec<f64>> {
+                let doc = crate::patch_text::TextDocument::read(bytes).ok()?;
+                let mut out = Vec::new();
+                for section in [
+                    crate::epara::VARIANCE_SECTION,
+                    crate::epara::INIT_SPEED_SECTION,
+                ] {
+                    let mut matches = doc
+                        .lines
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, l)| l.trim().eq_ignore_ascii_case(section));
+                    let (i, _) = matches.next()?;
+                    if matches.next().is_some() {
+                        return None;
+                    }
+                    let value = doc.lines[i + 1..]
+                        .iter()
+                        .map(|l| l.trim())
+                        .find(|l| !l.is_empty() && !l.starts_with(';'))?;
+                    out.push(value.parse::<f64>().ok().filter(|v| v.is_finite())?);
+                }
+                Some(out)
+            };
+            Some(values(&current)? == values(&expected)?)
+        };
+        valid() == Some(true)
     }
 }
-
 pub struct FeatureDetector;
 impl FeatureDetector {
     pub fn detect(game_path: &Path, backup_manager: &BackupManager) -> PatchProfile {
@@ -942,19 +829,30 @@ impl FeatureDetector {
         let exe_roman = ExeFeatureDetector::detect(game_path, &mut profile);
         ClScriptFeatureDetector::detect(game_path, backup_manager, &mut profile);
         RessFeatureDetector::detect(game_path, &mut profile);
+        if let (Ok(current), Ok(original)) = (
+            fs::read(game_path.join("SYSTEM/ress.ini")),
+            backup_manager.get_backup_bytes("SYSTEM/ress.ini"),
+        ) {
+            if let (Ok(c), Ok(o)) = (
+                crate::patch_text::TextDocument::read(&current),
+                crate::patch_text::TextDocument::read(original),
+            ) {
+                RessFeatureDetector::detect_relative(&c.text, Some(&o.text), &mut profile);
+            } else {
+                for id in RessFeatureDetector::IDS {
+                    profile.set_bool(id, false);
+                }
+            }
+        }
         ObjdefFeatureDetector::detect(game_path, backup_manager, &mut profile);
 
         let (max_pop, roman_player) = TeamDatFeatureDetector::detect(game_path, backup_manager);
         profile.set_bool("MaxPopulation", max_pop);
-        if exe_roman == ExeRomanEndlessPatchState::Unknown {
-            profile.set_bool("RomanEndless", roman_player);
-        } else {
-            profile.set_bool(
-                "RomanEndless",
-                exe_roman == ExeRomanEndlessPatchState::Patched,
-            );
-        }
-
+        // 此開關需要 EXE 與所有無盡地圖一致；單一來源不是整項成功證據。
+        profile.set_bool(
+            "RomanEndless",
+            exe_roman == ExeRomanEndlessPatchState::Patched && roman_player,
+        );
         let mut orchestrator = EndlessAiOrchestrator::new(false);
         BciFeatureDetector::detect(game_path, &mut profile, &mut orchestrator);
         InstallFeatureDetector::detect(game_path, &mut profile);

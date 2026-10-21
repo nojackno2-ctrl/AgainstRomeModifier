@@ -349,22 +349,30 @@ impl DgVoodooFeature {
     pub fn is_installed(game: &Path) -> bool {
         read_json(&game.join(DG_MARKER)).is_some_and(|m| {
             m.get("Files").and_then(Value::as_object).is_some_and(|f| {
-                ["D3D8.dll", "DDraw.dll"]
-                    .iter()
-                    .all(|n| f.keys().any(|k| k.eq_ignore_ascii_case(n)) && game.join(n).is_file())
+                DG_FILES.iter().all(|name| {
+                    let Some((_, hash)) = f.iter().find(|(k, _)| k.eq_ignore_ascii_case(name)) else {
+                        return false;
+                    };
+                    let path = game.join(name);
+                    // 設定檔允許使用者自行調整；可執行檔必須符合受管理雜湊。
+                    if *name == "dgVoodoo.conf" {
+                        fs::read_to_string(path).is_ok()
+                    } else {
+                        hash_matches(&path, hash.as_str()).unwrap_or(false)
+                    }
+                })
             })
         })
     }
     pub fn is_centered_presentation_configured(game: &Path) -> bool {
         fs::read_to_string(game.join("dgVoodoo.conf")).is_ok_and(|s| {
             SETTINGS.iter().all(|(k, v)| {
-                s.lines().any(|l| {
-                    l.trim_start_matches('\u{feff}')
-                        .split_once('=')
-                        .is_some_and(|(a, b)| {
-                            a.trim().eq_ignore_ascii_case(k) && b.trim().eq_ignore_ascii_case(v)
-                        })
-                })
+                let mut values = s.lines().filter_map(|line| {
+                    let (key, value) = line.trim_start_matches('\u{feff}').split_once('=')?;
+                    key.trim().eq_ignore_ascii_case(k).then_some(value.trim())
+                });
+                values.next().is_some_and(|value| value.eq_ignore_ascii_case(v))
+                    && values.next().is_none()
             })
         })
     }
@@ -456,7 +464,9 @@ impl ArgmTraceFeature {
             m["DllName"]
                 .as_str()
                 .is_some_and(|s| s.eq_ignore_ascii_case("winmm.dll"))
-                && game.join("winmm.dll").is_file()
+                && hash_matches(&game.join("winmm.dll"), m["DllSha256"].as_str())
+                    .unwrap_or(false)
+                && fs::read_to_string(game.join("argm_trace.ini")).is_ok()
         })
     }
     pub fn plan(
@@ -559,7 +569,7 @@ pub fn plan_install(
         LanguagePackFeature::plan(game, profile.get_bool("ToEnglish"))?,
         DgVoodooFeature::plan(
             game,
-            profile.get_bool("DgVoodoo"),
+            profile.get_bool("DgVoodoo") || profile.get_bool("NativeWidescreen1920x1080"),
             profile.get_bool("NativeWidescreen1920x1080"),
             resources,
         )?,
@@ -579,9 +589,10 @@ impl InstallFeatureDetector {
         }
         let dg_installed = DgVoodooFeature::is_installed(game_path);
         profile.set_bool("DgVoodoo", dg_installed);
-        if dg_installed && DgVoodooFeature::is_centered_presentation_configured(game_path) {
-            profile.set_bool("NativeWidescreen1920x1080", true);
-        }
+        profile.set_bool(
+            "NativeWidescreen1920x1080",
+            dg_installed && DgVoodooFeature::is_centered_presentation_configured(game_path),
+        );
         profile.set_bool("ArgmTrace", ArgmTraceFeature::is_installed(game_path));
     }
 }

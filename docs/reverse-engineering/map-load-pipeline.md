@@ -52,7 +52,7 @@
     - `COLLMESH` (`0x4d7d50`)
     - `ANIMTIMERRANDOM` (`0x4bcf70`)
     - `MERGELAYERCOLLMESH` (`0x4d8830`)：將 `visible.dat` bit0 未設定之圖塊強制設為阻擋（255）。
-    - `CALCISTBETRETBAR` (`0x4ae320`)：計算各格子之通行性。
+    - `CALCISTBETRETBAR` (`0x4ae320`)：依物件／型別重建每物件 byte 狀態；反編譯未見它讀取 collision 格區，不能用來推定通行門檻。碰撞 loader 與尋路／選點 consumer 見[碰撞契約](collision-passability-contract.md)。
 18. **聚落與物件最後核對**：
     - `BIGLAGERCHECK` (`0x4d4e80`)：核對大型營地/倉庫（`biglager.dat`）容量。
     - `ACTIVEOBJECTS` (`0x4ae470`)：統計全域有效物件數量並存入 `0x771ca8`。

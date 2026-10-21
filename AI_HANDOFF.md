@@ -1,3 +1,18 @@
+## 2026-10-22 Codex：修復全功能稽核問題（程式與自動驗證完成）
+
+- 依使用者「修復所有問題」完成 bfb6597 後續 Rust 修正：寬螢幕舊實驗、Core/M6 別名、P20 倍率、完整多檔偵測、碰撞選點門檻、自訂屬性、未知速度及部署完整性。保留既有 `AGENTS.md`／`README.md` 使用者變更，未改根 Cargo.lock，尚未 commit/push。
+- 完整 modifier 整合最初 `cl_script_differential` 失敗：165 項差異都在新完整偵測契約收緊的 frozen cases（缺 backup 清除 stale spell flags、逐列完整／精確驗證）；原測試訊息還錯把 Rust 實值印成 `!expected`。新增明確 strict-case 清單、保留其餘 fixture 逐旗標比對並修正輸出；`cargo test -p against-rome-modifier --test cl_script_differential --locked --offline --target-dir re_workspace/target-w20 -- --nocapture` **1 passed**。完整回歸另由 `feature_detection_complete_regressions` 覆蓋，workspace 全測待完成。
+- 靜態碰撞證據已追到 `0x486ec0` loader、`0x4da370` 單位門檻尋路與 `0x51f790` 空地選點 `<=5`；`0x4ae320` 不讀 collision。聚落 `>=6` 修正及導航非零保守診斷有專項測試；新增 `docs/reverse-engineering/collision-passability-contract.md`，同步校正 `map-formats.md`／`map-load-pipeline.md` 舊說法。未執行遊戲。
+- `cargo check --workspace --locked --offline --target-dir re_workspace/target-w20`、`cargo test --workspace --locked --offline --target-dir re_workspace/target-w20 -- --test-threads=1`、`cargo build --workspace --locked --offline --target-dir re_workspace/target-w20` 均通過；282 test-result groups 累計 **2,347 passed／0 failed／18 ignored**。記錄於 `re_workspace/feature-fix-workspace-test.log` 與 `feature-fix-workspace-build.log`。零售 EXE 與 BCI 唯讀記憶體 gates 另 **2 passed／0 failed**，記錄 `re_workspace/feature-fix-retail-gates.log`。`git diff --check` 通過。`cargo fmt --all -- --check` 被 repository 既有未格式化檔案擋住；未對全 workspace 套用格式化。遊戲內 GUI、路徑／建造與 trace DLL 實際載入仍未驗證，也未 commit/push。
+
+## 2026-10-21 Codex：修復全功能稽核問題（進行中，初始紀錄）
+
+- 使用者已要求修復所有問題。分工：features/endless/bci/cli 處理別名與 P20 倍率；detectors 處理完整多檔偵測與 MaxPopulation；collision 專項追實際 native consumer；父端處理寬螢幕、未知速度、自訂屬性、部署完整性、整合測試與文件。各自檔案所有權分離，禁止子端提交／推送。
+- 起點 bfb6597，僅既有 AGENTS.md／README.md 未提交修改，保留。不得把疑點直接改成新行為；只讀零售遊戲、需要寫入時使用 TEMP fixtures。完成後依序 workspace check/test/build，並重跑零售記憶體 gate 與功能契約探針。
+- 父端已修：寬螢幕只還原已知舊 EXE 六點，置中呈現自動依賴 dgVoodoo；速度未知且要求>1時回 Err，不發布局部計畫；CustomUnitStats 可在 Balance=false 以原版基準套用，GUI 讀取目前安裝狀態不保留未驗證舊草稿；部署偵測核對受管理 binary hash、必要設定檔並拒絕重複呈現鍵。
+- 父端定向 check --tests 通過；定向測試 82 lib＋11 category restore＋3 install integrity＋5 install compose＋5 metadata 全通過。最初新測試誤用不存在的 compose_install_features 已改正為 plan_install；原有測試要求未知速度靜默略過，依新失敗封閉行為更新為原子拒絕。記錄 re_workspace/feature-fix-parent-focused.log；這不是完整 workspace 或遊戲內驗收。
+- 別名／P20 代理定向驗證回報 115 passed，含唯讀 retail BCI；父端再補主功能停用清除 Core／M6 鏡射，避免 OR 正規化重新啟用，alias＋interrupted parity **13 passed／1 ignored**。父端 GUI model **31 passed**（含自訂無 Balance 預覽、讀目前狀態不留舊草稿）；早先未知速度測試 fixture 缺常數已補成有效原版時鐘。完整 modifier 初整合因新 RomanEndless 必須同時確認 team.dat 而遇舊無效 team fixture 斷言，已保留 EXE 精確斷言並改驗無效資料不得報整項已套用；待重跑。
+
 ## 2026-10-21 Codex：49 項功能反編譯稽核（有缺陷，未全數通過）
 
 - 使用者要求以反編譯驗證所有功能；以現行 Rust registry、apply/detect/restore 與工具箱功能為清單。保留既有 `AGENTS.md`、`README.md` 修改；不寫入安裝遊戲，不執行遊戲。

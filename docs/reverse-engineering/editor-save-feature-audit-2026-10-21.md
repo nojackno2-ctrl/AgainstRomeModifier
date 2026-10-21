@@ -65,7 +65,7 @@ JSON 為單行檔，故以 `:1`＋Evidence ID／procedure 定位；它們是本�
 
 ## 優先疑點與下一步
 
-1. **碰撞門檻不一致（高）**：`A/environment_ui.rs:98` 以 `>128` 排除聚落點，`D/map-formats.md:41` 記載 native `>0` 阻擋。先查 `0x4d87a0→0x4ae320` 是否有不同階段／量尺，再用1、127、128、129、255與visible遮罩做對照；目前僅確認差異，未定為 Bug。
+1. **碰撞門檻不一致（已解決，保留原稽核疑點）**：後續直接追到 loader、單位門檻尋路 consumer 及 `<=5` 選點 consumer，並確認 `0x4ae320` 不讀碰撞格。聚落已改用 `>=6` 排除；導航診斷仍採非零保守策略。指令與限制見[碰撞契約](collision-passability-contract.md)，未做遊戲內驗收。
 2. **地圖與存檔載入不可混用（高）**：E2 證明地圖24池開檔失敗會返回、caller仍進CHECK；不自動證明 `0x431410` 存檔路徑相同。應補存檔入口→CLAK、DATA、save.ini、腳本task恢復的完整鏈及各版本格式。Verify OK／restore成功不能當作遊戲接受。
 3. **儲存鏈尚無逐 writer crosswalk（高）**：按 Safe Save staged files 列到 BMP通道／列向、boden token、PFIL、SDL、BCI、DATA header／record／tail，逐一對 reader與consumer；只找到loader名稱或檔案存在不算完成。
 4. **Family 可寫範圍（高）**：交接記錄74圖／4140 roots，僅2912接受，其餘fail closed，耗時約102秒；這是既有報告而非本次重跑。分類unsupported欄位／損壞／外部引用，不應把拒絕全部視為正確或全部視為缺功能。inactive position/light孤兒引用須保留。

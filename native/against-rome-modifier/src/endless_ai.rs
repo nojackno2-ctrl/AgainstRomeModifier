@@ -1080,7 +1080,10 @@ impl EndlessPatch for P20VillageGarrisonQuotaPatch {
     fn detect(&self, data: &[u8]) -> PatchState {
         let sites: Vec<_> = P20_CALL_SIGNATURES
             .iter()
-            .filter_map(|sig| find_sites(data, sig).first().copied())
+            .filter_map(|sig| {
+                let sites = find_sites(data, sig);
+                (sites.len() == 1).then(|| sites[0])
+            })
             .collect();
         if sites.len() != 4 {
             return PatchState::Unknown;
@@ -1088,10 +1091,10 @@ impl EndlessPatch for P20VillageGarrisonQuotaPatch {
 
         let installed = Self::try_read_installed_multiplier(data);
         let code_end = bci_code_end(data).unwrap_or(data.len());
-        let h_offset = code_end - P20_HELPER_TEMPLATE.len() * 4;
+        let h_offset = code_end.saturating_sub(P20_HELPER_TEMPLATE.len() * 4);
 
         let mut all_orig = true;
-        let mut all_redir = installed.is_some();
+        let mut all_redir = installed.is_some_and(|m| m > 1);
 
         for s in sites {
             let op = read_word(data, s + 16);
@@ -1139,7 +1142,7 @@ impl EndlessPatch for P20VillageGarrisonQuotaPatch {
 
         if enabled {
             if state == PatchState::Legacy {
-                // In-place update of multiplier literal
+                // 保留既有 helper 與呼叫位置，只更新倍率常數。
                 let h_offset = code_end - hlen;
                 changed |= write_word(data, h_offset + 14 * 4, self.multiplier)?;
             } else {
@@ -1571,6 +1574,8 @@ impl EndlessAiOrchestrator {
     pub fn set_village_garrison_quota_multiplier(&mut self, multiplier: i32) {
         if multiplier > 1 {
             self.village_quota_multiplier = multiplier;
+            self.village_garrison_quota_3x.patches =
+                vec![Box::new(P20VillageGarrisonQuotaPatch { multiplier })];
         }
     }
 
@@ -1835,7 +1840,16 @@ impl EndlessAiOrchestrator {
         enabled: bool,
     ) -> io::Result<bool> {
         let state = self.detect_module(game_path, module);
-        if state == PatchState::Unknown && enabled {
+        if state == PatchState::Unknown
+            && (enabled
+                || (module.id == "VillageGarrisonQuota3x"
+                    && !self
+                        .resolve_operation_paths(
+                            game_path,
+                            "SYSTEM/CLAK/SCRIPT/Dorfverteidigung.bci",
+                        )
+                        .is_empty()))
+        {
             return Err(error("Endless AI module in unknown state"));
         }
         if !enabled && (state == PatchState::Original || state == PatchState::Unknown) {

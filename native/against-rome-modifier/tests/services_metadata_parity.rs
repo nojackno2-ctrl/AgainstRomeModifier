@@ -106,3 +106,20 @@ fn custom_priest_sight_requires_exact_metadata() {
     expected[5] = 999.;
     assert_eq!(variant, expected);
 }
+
+#[test]
+fn custom_stats_apply_without_balance_and_preserve_independent_fields() {
+    let key = "FigKelPri00_Priester";
+    let backup = backup(&[row(key)]);
+    let original = backup.get_original_stats(key).unwrap();
+    let mut profile = PatchProfile::new();
+    profile.custom_unit_stats = Some([(key.into(), vec![999.; 9])].into());
+    let actual = backup.get_base_stats_for_unit(key, &profile).unwrap();
+    for index in [0, 1, 2, 3, 6] {
+        assert_eq!(actual[index], 999., "可編輯欄位 {index}");
+    }
+    for index in [4, 5, 7, 8] {
+        assert_eq!(actual[index], original[index], "獨立欄位 {index}");
+    }
+    assert_eq!(backup.get_base_stats_for_unit(key, &PatchProfile::new()).unwrap(), original);
+}

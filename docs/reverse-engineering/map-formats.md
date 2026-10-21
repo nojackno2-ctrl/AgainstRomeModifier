@@ -38,7 +38,7 @@
 - **`emboss.bmp` = 逐頂點光照強度（Per-vertex lighting intensity）**：
   GREEN 通道（0–255）存放於 `0x1676df0`，在光柵化器（rasterizer，約 `0x4907dc`）中跨地形多邊形進行內插；檔案缺失時預設為 255。字串 `GENEMBOSS`（`0x4a9330`）為貼圖凹凸生成（texture bump generation），而非地形光照。
 - **`collision.bmp` = 256×256 tile 像素地圖**：
-  在 `0x4d87a0` 先將陣列清為 0，非黑色像素以 `(R+G+B)/3` 作為 `int16` 存放於 `0x1e22c50`；`0` = 無碰撞（可通行），`>0` = 阻擋（不可通行；除錯覆蓋層將 `>0` 繪製為紅色）。此外，`0x4d8830` 會將所有 `visible.dat` bit0 未設定的 tile 強制設為 255。
+  真正 loader `0x486ec0` 呼叫 `0x4d87a0` 清零，再將像素的整數 `(R+G+B)/3` 作為 `int16` 存放於 `0x1e22c50`。數值不是以 128 為界的布林遮罩：`>0` 繪成紅色只屬除錯覆蓋層；原生尋路 `0x4da370` 在值大於或等於單位／群組門檻時拒絕，空地選點 `0x51f790` 則要求與另一格區取 max 後不超過 5。`0x4d8830` 將 `visible.dat` bit0 未設定的 tile 強制設為 255。這些只是各路徑的必要條件，不能由碰撞值單獨保證可走或可建造；完整指令證據與 1／127／128／129／255 邊界見 [碰撞契約](collision-passability-contract.md)。
 
 ### 快取重建機制（skydens.dat, visible.dat, cliprect.dat, shadows.dat）
 
@@ -95,7 +95,7 @@
 > 依據 2026-10-06 EXE 靜態反組譯證據，下列第 1 至 4 項之底層格式與管線語意已由靜態分析釐清；但在修改器功能正式標記為 runtime-verified 之前，仍須由使用者透過遊戲內實機執行期驗證（in-game runtime verification）確認。
 
 1. ~~`vertex.bmp` 哪一個通道（或其組合）代表高度、其量尺與 `Heightmapstep` 的換算方式~~ → **靜態證據已釐清**：`vertex.bmp` 為頂點 RGB 色彩調色，**不是高度圖**；真實高度圖為 `boden.bmp`（GREEN channel × `Heightmapstep`，stride `0x202` 之 `int16`）。（仍待使用者遊戲內實機驗證）
-2. ~~`collision.bmp` 的黑、白、灰階是否分別代表可通行、不可通行或其他導航遮罩~~ → **靜態證據已釐清**：`0` = 可通行（無碰撞），`>0`（如 255）= 阻擋。（仍待使用者遊戲內實機驗證）
+2. ~~`collision.bmp` 的黑、白、灰階是否分別代表可通行、不可通行或其他導航遮罩~~ → **靜態證據已釐清**：loader 將 RGB 平均值保存在 short 格區；尋路依單位門檻 `collision >= T` 拒絕，原生空地選點要求 collision 與另一格區的最大值 `<=5`。`>0` 僅能作保守診斷，不能代表所有單位一律阻擋。詳見[碰撞契約](collision-passability-contract.md)。（仍待使用者遊戲內實機驗證）
 3. ~~`boden.bmp`、`emboss.bmp`、`smooth.bmp` 是否由遊戲重建，或必須與 vertex／材質資料同步修改~~ → **靜態證據已釐清**：`boden.bmp` 是高度圖權威來源；`smooth.bmp` 為載入期平滑疊代次數遮罩；`emboss.bmp` 為逐頂點光照，遊戲不會在載入時自動從高度重新計算地形 emboss，須由編輯器在坡度變更處擬合重算。（仍待使用者遊戲內實機驗證）
 4. ~~`DATA/*.dat`、`cliprect.dat`、`shadows.dat`、`skydens.dat`、`visible.dat` 的權威性及重建規則~~ → **靜態證據已釐清**：`skydens.dat`、`visible.dat`、`cliprect.dat`、`shadows.dat` 為快取檔案，標頭含高度總和驗證碼，缺失或不符時由遊戲引擎自動重算並寫回；編輯高度後編輯器應直接刪除此四快取。`DATA/` 內存檔（`way.dat` 等）為關卡存檔資料，非高度衍生快取。（仍待使用者遊戲內實機驗證）
 5. SDL `refpos`／`pos` 與 256 像素 minimap 的座標轉換。Phase 2 不得疊加物件位置，避免製造誤導性視圖。
@@ -137,6 +137,6 @@
 ## 開放功能條件
 
 - 高度筆刷：靜態語意已確立（寫入 `boden.bmp` 灰階、`emboss.bmp` 坡度最小二乘法擬合重繪、交易內刪除四項快取），須完成 modifier workflow 實作，並經使用者在遊戲內實機驗證（in-game runtime verification）高度起伏與 `FileRollbackScope` 還原功能。
-- 碰撞筆刷：靜態語意已確立（0 為通行、255 為阻擋），須經使用者在遊戲內實機驗證單位阻擋與尋路行為。
+- 碰撞筆刷：靜態語意已確立（RGB 平均值、依單位門檻及選點路徑判定），須經使用者在遊戲內實機驗證單位阻擋與尋路行為。
 - minimap 自動重繪：權威圖層已由靜態載入管線確立（`boden.bmp` 高度、`boden.txt` 材質），四項快取重建規則已明確，完成離線重繪實作並經實機確認。
 - SDL 疊圖：須以至少三個明確地標校正並驗證世界到像素轉換。

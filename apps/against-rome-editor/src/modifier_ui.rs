@@ -834,9 +834,7 @@ impl ModifierModel {
     }
     /// Disables every toggle and resets speed/quota, like `apply --disable-all`.
     pub fn clear_selection(&mut self) {
-        let units = self.profile.custom_unit_stats.take();
         self.profile = Self::default().profile;
-        self.profile.custom_unit_stats = units;
         self.touch();
     }
     pub fn enabled_ids(&self) -> Vec<String> {
@@ -940,10 +938,7 @@ impl ModifierModel {
         let game = self.game_dir()?;
         let b = self.load_backup(&game, false)?;
         let mut p = PatchEngine::detect_current_patch_state(&game, &b);
-        let units = self.profile.custom_unit_stats.clone();
-        if p.custom_unit_stats.is_none() {
-            p.custom_unit_stats = units;
-        }
+        // 磁碟偵測無法唯一反推任意自訂設定，不保留先前草稿冒充目前安裝狀態。
         Self::normalize_ranges(&mut p);
         self.profile = p;
         self.touch();
@@ -1732,7 +1727,7 @@ impl ModifierUi {
                     if !self.model.feature_enabled("Balance") {
                         ui.colored_label(
                             Color32::YELLOW,
-                            if is_en { "CustomUnitStats requires Balance feature enabled to apply in-game." } else { "CustomUnitStats 需要啟用 Balance 才會套用至遊戲。" },
+                            if is_en { "CustomUnitStats uses original stats as its baseline while Balance is disabled." } else { "未啟用 Balance 時，自訂屬性以原版數值為基準套用。" },
                         );
                     }
                     ui.horizontal(|ui| {
@@ -1908,8 +1903,14 @@ mod tests {
             let game = dir.join("game");
             fs::create_dir_all(&game).unwrap();
             let sb = Self(dir);
-            let mut exe = vec![0x55; FOCUS.offset + FOCUS.original.len() + 1];
+            let mut exe = vec![0x55; against_rome_modifier::exe_features::GAME_SPEED_TGT_OFFSET + 8];
             exe[FOCUS.offset..FOCUS.offset + FOCUS.original.len()].copy_from_slice(FOCUS.original);
+            for (offset, value) in [
+                (against_rome_modifier::exe_features::GAME_SPEED_QPC_OFFSET, against_rome_modifier::exe_features::GAME_SPEED_QPC_BASE),
+                (against_rome_modifier::exe_features::GAME_SPEED_TGT_OFFSET, against_rome_modifier::exe_features::GAME_SPEED_TGT_BASE),
+            ] {
+                exe[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+            }
             for (rel, bytes) in [
                 ("Against_Rome.exe", &exe[..]),
                 ("SYSTEM/cl_script.ini", b"[CiviDelay]\r\nDelay=100\r\n"),
@@ -2011,6 +2012,37 @@ mod tests {
         }
         sb.put("SYSTEM/DATA_MP/DEFAULTS/objdef.dau", text.as_bytes());
         sb.put("SYSTEM/DATA_MP/DEFAULTS/objdef.dau.bak", text.as_bytes());
+    }
+
+    #[test]
+    fn reload_installed_state_discards_unverified_custom_draft_without_writing() {
+        let sb = Sandbox::new();
+        unit_stats_fixture(&sb);
+        let before = sb.tree();
+        let mut model = sb.model();
+        model.profile.custom_unit_stats = Some([("FigRomSch01_Bogen".into(), vec![999.; 9])].into());
+        model.load_current_state().unwrap();
+        assert!(model.profile.custom_unit_stats.is_none());
+        assert_eq!(sb.tree(), before);
+    }
+
+    #[test]
+    fn custom_stats_preview_changes_hp_without_enabling_balance() {
+        let sb = Sandbox::new();
+        unit_stats_fixture(&sb);
+        let before = sb.tree();
+        let mut model = sb.model();
+        let backup = model.load_backup(&sb.game(), false).unwrap();
+        let key = "FigRomSch01_Bogen";
+        let mut stats = backup.get_original_stats(key).unwrap();
+        stats[0] = 350.;
+        model.profile.custom_unit_stats = Some([(key.into(), stats.to_vec())].into());
+        assert!(!model.profile.get_bool("Balance"));
+        model.preview_apply().unwrap();
+        let preview = model.preview.as_ref().unwrap();
+        assert!(preview.can_commit(), "{:?}", preview.blockers);
+        assert!(preview.entries.iter().any(|entry| entry.path.ends_with("objdef.dau") && entry.kind == ChangeKind::Modify));
+        assert_eq!(sb.tree(), before);
     }
 
     #[test]
@@ -2472,8 +2504,10 @@ mod tests {
         m.set_feature("ArgmTrace", true).unwrap();
         assert_eq!(m.enable_all(), n);
         assert!(m.feature_enabled("ArgmTrace"));
+        m.profile.custom_unit_stats = Some([("FigRomSch01_Bogen".into(), vec![999.; 9])].into());
         m.clear_selection();
         assert!(m.enabled_ids().is_empty());
+        assert!(m.profile.custom_unit_stats.is_none());
     }
 
     #[test]

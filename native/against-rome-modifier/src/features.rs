@@ -418,6 +418,9 @@ impl PatchProfile {
     }
 
     pub fn get(&self, id: &str) -> FeatureValue {
+        if id.eq_ignore_ascii_case("VillageGarrisonQuotaMultiplier") {
+            return self.get("VillageGarrisonQuota3x");
+        }
         if let Some((_, v)) = self.values.iter().find(|(k, _)| k.eq_ignore_ascii_case(id)) {
             v.clone()
         } else {
@@ -434,11 +437,27 @@ impl PatchProfile {
     }
 
     pub fn has_explicit_value(&self, id: &str) -> bool {
+        if id.eq_ignore_ascii_case("VillageGarrisonQuotaMultiplier") {
+            return self.has_explicit_value("VillageGarrisonQuota3x");
+        }
         self.values.keys().any(|k| k.eq_ignore_ascii_case(id))
     }
 
     pub fn set(&mut self, id: impl Into<String>, value: FeatureValue) {
-        let key = id.into();
+        let mut key = id.into();
+        // registry 整數鍵為唯一儲存來源；舊 Multiplier API 與布林設定於入口轉換。
+        let value = if key.eq_ignore_ascii_case("VillageGarrisonQuota3x")
+            || key.eq_ignore_ascii_case("VillageGarrisonQuotaMultiplier")
+        {
+            key = "VillageGarrisonQuota3x".into();
+            FeatureValue::Int(match value {
+                FeatureValue::Bool(true) => 3,
+                FeatureValue::Bool(false) => 1,
+                other => other.as_int().max(1),
+            })
+        } else {
+            value
+        };
         if let Some(existing) = self
             .values
             .keys()
@@ -447,7 +466,32 @@ impl PatchProfile {
         {
             self.values.remove(&existing);
         }
+        let composite = if key.eq_ignore_ascii_case("EndlessAi.Core") {
+            Some((
+                vec!["EndlessAi.M2", "EndlessAi.M3", "EndlessAi.M4"],
+                vec!["Core", "M2", "M3", "M4"],
+            ))
+        } else if key.eq_ignore_ascii_case("RomanReinforcementGarrison") {
+            Some((vec!["EndlessAi.M6"], vec!["M6"]))
+        } else {
+            None
+        };
+        let enabled = value.as_bool();
         self.values.insert(key, value);
+        if let Some((aliases, modules)) = composite {
+            // 使用者切換主功能時，同步清除舊鏡射，避免停用後再次被正規化啟用。
+            for alias in aliases {
+                self.values
+                    .retain(|key, _| !key.eq_ignore_ascii_case(alias));
+                self.values
+                    .insert(alias.into(), FeatureValue::Bool(enabled));
+            }
+            for module in modules {
+                self.endless_ai_modules
+                    .retain(|key, _| !key.eq_ignore_ascii_case(module));
+                self.endless_ai_modules.insert(module.into(), enabled);
+            }
+        }
     }
 
     pub fn set_bool(&mut self, id: impl Into<String>, value: bool) {
@@ -474,7 +518,11 @@ impl PatchProfile {
                 || legacy.unwrap_or_else(|| self.get_bool("EndlessAi.M6"));
         }
         if module_id.eq_ignore_ascii_case("VillageGarrisonQuota3x") {
-            return self.get_int("VillageGarrisonQuotaMultiplier") > 1 || legacy.unwrap_or(false);
+            return if self.has_explicit_value("VillageGarrisonQuota3x") {
+                self.get_int("VillageGarrisonQuota3x") > 1
+            } else {
+                legacy.unwrap_or(false)
+            };
         }
         if let Some(v) = legacy {
             return v;
@@ -488,8 +536,17 @@ impl PatchProfile {
         }
     }
 
-    /// C# PatchProfile.NormalizeCompositeValues: M6 mirrors RomanReinforcementGarrison; M2/M3/M4 mirror Core.
+    /// 合併直接與舊版別名的啟用意圖；M2/M3/M4 與 Core 同步。
     pub fn normalize_composite_values(&mut self) {
+        // 先保留直接別名意圖，避免處理舊 map 的 false 時先覆寫其他輸入。
+        let direct_core = [
+            "EndlessAi.Core",
+            "EndlessAi.M2",
+            "EndlessAi.M3",
+            "EndlessAi.M4",
+        ]
+        .iter()
+        .any(|id| self.get_bool(id));
         let modules: Vec<(String, bool)> = self
             .endless_ai_modules
             .iter()
@@ -501,11 +558,15 @@ impl PatchProfile {
             if id.eq_ignore_ascii_case("M6") {
                 roman |= *enabled;
             } else if id.eq_ignore_ascii_case("VillageGarrisonQuota3x") {
-                if *enabled && self.get_int("VillageGarrisonQuotaMultiplier") <= 1 {
+                if *enabled && !self.has_explicit_value("VillageGarrisonQuota3x") {
                     self.set_int("VillageGarrisonQuotaMultiplier", 3);
                 }
             } else {
-                self.set_bool(format!("EndlessAi.{id}"), *enabled);
+                let direct = format!("EndlessAi.{id}");
+                let is_core = ["Core", "M2", "M3", "M4"]
+                    .iter()
+                    .any(|m| id.eq_ignore_ascii_case(m));
+                self.set_bool(&direct, *enabled || (is_core && self.get_bool(&direct)));
                 if ["M2", "M3", "M4"]
                     .iter()
                     .any(|m| id.eq_ignore_ascii_case(m))
@@ -517,7 +578,12 @@ impl PatchProfile {
         let roman = roman | self.get_bool("EndlessAi.M6");
         self.set_bool("RomanReinforcementGarrison", roman);
         self.set_bool("EndlessAi.M6", roman);
-        let core = self.get_bool("EndlessAi.Core") | legacy_core;
+        let core = direct_core
+            | self.get_bool("EndlessAi.Core")
+            | legacy_core
+            | ["EndlessAi.M2", "EndlessAi.M3", "EndlessAi.M4"]
+                .iter()
+                .any(|id| self.get_bool(id));
         if modules.iter().any(|(id, _)| {
             ["Core", "M2", "M3", "M4"]
                 .iter()
