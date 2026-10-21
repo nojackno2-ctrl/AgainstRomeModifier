@@ -36,6 +36,37 @@ fn squad_with_enemy_has_no_hint_and_no_self_route() {
 }
 
 #[test]
+fn enemy_event_wave_spawn_is_a_route_target() {
+    use against_rome_scenario::model::{Action, Event};
+    let wave = |enabled, team| Event {
+        name: "Wave_01".into(),
+        enabled,
+        actions: vec![
+            Action { kind: 2, team, alias: "HUN_KAVINF00".into(), x: 9000.0, z: 9000.0, count: 3, ..Default::default() },
+            // Same spawn point again: one target, not two.
+            Action { kind: 2, team, alias: "HUN_KAVSCH00".into(), x: 9000.0, z: 9000.0, count: 3, ..Default::default() },
+        ],
+        ..Default::default()
+    };
+    let with_events = |events| {
+        let mut s = snap(vec![obj(100.0, 100.0, 0, 20)], 8);
+        s.events = events;
+        s
+    };
+    let s = with_events(vec![wave(true, 1)]);
+    let reqs = MapDiagnostics::scenario_route_requests(&s);
+    assert_eq!(reqs.len(), 1);
+    assert_eq!(reqs[0].target, (9000.0, 9000.0));
+    assert!(reqs[0].target_id.is_nil());
+    assert!(reqs[0].label.contains("Wave_01"));
+    assert!(MapDiagnostics::route_coverage_issues(&s).is_empty());
+    // Disabled events and player-team spawns are not enemy targets.
+    for events in [vec![wave(false, 1)], vec![wave(true, 0)]] {
+        assert_eq!(MapDiagnostics::route_coverage_issues(&with_events(events)).len(), 1);
+    }
+}
+
+#[test]
 fn no_squads_no_hint() {
     assert!(MapDiagnostics::route_coverage_issues(&snap(vec![obj(1.0, 1.0, 1, 1)], 8)).is_empty());
 }

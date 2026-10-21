@@ -1,3 +1,12 @@
+## 2026-10-22 Claude：設計檢查不再對事件進攻波次誤報（已驗證）
+
+- 實測 ENDL_005（無盡防守圖）時，隊伍 1 只由事件 `Kind 2` 生成進攻波次、沒有放置物件，卻被報 `team-no-main-house`；玩家部隊也因沒有「非玩家放置物件」而報 `route-no-target`。兩者都是設計者雜訊。
+- `design_validator`：主堡檢查只針對隊伍 0 與有放置物件的勢力。`route_check::scenario_route_requests`：放置物件目標不足 3 個時，以啟用中、非玩家隊伍的事件生成點補足（同座標去重；target_id 為 nil，訊息標示事件名稱與兵種）。停用事件與玩家隊伍生成點不算目標。
+- 新測試：`test_map_design_validator_event_only_wave_team_needs_no_main_house`、`enemy_event_wave_spawn_is_a_route_target`。安裝版 ENDL_005 唯讀驗證由 2 警告降為 **0 錯誤／0 警告**（GER_INF01 → 波次生成點路線已實際檢查且可達）；ENDL_000 仍為範本應有的 4 警告。
+- `--validate-map` exit 2 分支：以 TEMP 副本破壞 arm_scenario.json（數量 99、座標越界、懸空條件目標）皆在劇本載入時被拒（exit 1 並有清楚訊息），磁碟輸入的錯誤多在載入層攔截；exit 2 僅適用通過載入但檢查為 Error 的情況，仍由單元測試覆蓋。
+- GUI 驗收：編輯器可在 TEMP 副本上啟動並正常結束、副本 SHA-256 不變；但使用者拒絕 computer-use 控制編輯器視窗，故未做點擊操作驗收。遊戲內驗收仍未做。
+- 驗證：`cargo test --workspace --locked --offline --target-dir re_workspace/target-w20 -- --test-threads=1` exit 0，282 groups **2,350 passed／0 failed／18 ignored**，紀錄 `re_workspace/validate-map-workspace-test.log`；`git diff --check` 通過。
+
 ## 2026-10-22 Claude：`--validate-map` 改跑完整設計檢查（已驗證）
 
 - 原 `--validate-map` 只讀 BMP 尺寸。現以 `design_check_ui::headless_design_check` 無視窗建立 `EditorApp`、`set_loaded_map`（含 boden.txt/BCI 等開圖前驗證）並載入劇本，輸出與 Design Check 面板／Safe Save 同一套 `[Error|Warning] code: 訊息 (tile x, z)` 與摘要；有 Error 時 exit 2，無法開圖時 exit 1。`EditorApp.scenario` 改為 `pub(crate)`。

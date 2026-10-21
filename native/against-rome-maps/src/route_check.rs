@@ -194,26 +194,44 @@ impl MapDiagnostics {
         .ok()
     }
 
-    /// Default scenario routes: every squad (> 1 unit) toward the first three non-player objects.
+    /// Default scenario routes: every squad (> 1 unit) toward the first three non-player
+    /// targets. Placed objects come first; enabled event spawns of non-player teams (attack
+    /// waves, which have no placed object) fill the remaining slots, one per spawn point.
     pub fn scenario_route_requests(map: &MapCheckSnapshot) -> Vec<MapRouteRequest> {
         let squads = map
             .objects
             .iter()
             .filter(|o| o.spawn.count > 1 && Self::valid_point(o.spawn.x, o.spawn.z));
-        let targets: Vec<_> = map
+        let mut targets: Vec<(Uuid, String, (f32, f32))> = map
             .objects
             .iter()
             .filter(|o| o.spawn.team != 0 && Self::valid_point(o.spawn.x, o.spawn.z))
             .take(3)
+            .map(|o| (o.spawn.id, o.spawn.alias.clone(), (o.spawn.x, o.spawn.z)))
             .collect();
+        let waves = map
+            .events
+            .iter()
+            .filter(|e| e.enabled)
+            .flat_map(|e| e.actions.iter().map(move |a| (e, a)))
+            .filter(|(_, a)| a.kind == 2 && a.team != 0 && Self::valid_point(a.x, a.z));
+        for (event, action) in waves {
+            if targets.len() >= 3 {
+                break;
+            }
+            if targets.iter().all(|t| t.2 != (action.x, action.z)) {
+                let label = format!("{}: {}", event.name, action.alias);
+                targets.push((Uuid::nil(), label, (action.x, action.z)));
+            }
+        }
         squads
             .flat_map(|s| {
-                targets.iter().filter(move |t| t.spawn.id != s.spawn.id).map(move |t| MapRouteRequest {
-                    label: format!("{} → {}", s.spawn.alias, t.spawn.alias),
+                targets.iter().filter(move |t| t.0 != s.spawn.id).map(move |t| MapRouteRequest {
+                    label: format!("{} → {}", s.spawn.alias, t.1),
                     start_id: s.spawn.id,
-                    target_id: t.spawn.id,
+                    target_id: t.0,
                     start: (s.spawn.x, s.spawn.z),
-                    target: (t.spawn.x, t.spawn.z),
+                    target: t.2,
                     troops: s.spawn.count,
                 })
             })
@@ -234,8 +252,8 @@ impl MapDiagnostics {
         vec![MapIssue::new(
             MapIssueSeverity::Warning,
             "route-no-target",
-            format!("有 {squads} 支部隊，但沒有可作為目標的非玩家物件，無法檢查部隊路線。請放置敵方或目標物件。"),
-            format!("{squads} squad(s) exist but there is no non-player object to route toward, so no route was checked. Place an enemy or target object."),
+            format!("有 {squads} 支部隊，但沒有可作為目標的非玩家物件或敵方事件生成點，無法檢查部隊路線。請放置敵方或目標物件。"),
+            format!("{squads} squad(s) exist but there is no non-player object or enemy event spawn to route toward, so no route was checked. Place an enemy or target object."),
         )]
     }
 

@@ -327,9 +327,10 @@ impl MapDesignValidator {
                 _ => String::new(),
             };
 
-            // 檢查主堡
+            // 檢查主堡：只針對玩家隊伍與有放置物件的勢力；僅由事件生成的進攻波次不需要基地
             let has_main_house = team_objects.iter().any(|s| Self::is_main_house(&s.alias));
-            if !has_main_house {
+            let needs_base = team == 0 || !team_objects.is_empty();
+            if needs_base && !has_main_house {
                 issues.push(MapDesignIssue {
                     severity: DesignIssueSeverity::Warning,
                     code: "team-no-main-house".into(),

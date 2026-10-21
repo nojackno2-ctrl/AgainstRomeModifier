@@ -325,6 +325,24 @@ fn test_map_design_validator_water_and_collision() {
 }
 
 #[test]
+fn test_map_design_validator_event_only_wave_team_needs_no_main_house() {
+    let wave = Event {
+        name: "Wave_01".into(),
+        actions: vec![Action { kind: 2, team: 1, alias: "HUN_KAVINF00".into(), count: 3, ..Default::default() }],
+        ..Default::default()
+    };
+    let base = |team| Spawn { alias: "GER_INF01".into(), x: 8000.0, z: 8000.0, team, count: 10, id: Uuid::new_v4(), ..Default::default() };
+    let no_house = |objects: Vec<Spawn>| -> Vec<i32> {
+        let req = MapDesignValidationRequest { objects, events: vec![wave.clone()], ..Default::default() };
+        MapDesignValidator::validate(&req).into_iter().filter(|i| i.code == "team-no-main-house").map(|i| i.team).collect()
+    };
+    // Team 1 exists only as event-spawned attack waves: no base is expected.
+    assert_eq!(no_house(vec![base(0)]), vec![0]);
+    // Once team 1 has placed objects it is a faction and must have a main house.
+    assert_eq!(no_house(vec![base(0), base(1)]), vec![0, 1]);
+}
+
+#[test]
 fn test_map_design_validator_is_main_house() {
     assert!(MapDesignValidator::is_main_house("GER_HAU00"));
     assert!(MapDesignValidator::is_main_house("ROM_HAU00"));
