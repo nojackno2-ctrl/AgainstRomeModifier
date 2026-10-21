@@ -82,6 +82,19 @@ pub(crate) struct CandidateDiagnostics {
     pub design: Result<Vec<against_rome_maps::design_validator::MapDesignIssue>, String>,
 }
 
+/// 獨立事件圖載入時的劇本快照；完整比對可避免套用覆蓋後續修改或重新載入。
+#[derive(PartialEq)]
+struct ToolbarGraphSource {
+    map: Option<PathBuf>,
+    document: against_rome_scenario::ScenarioDocument,
+    aliases: Vec<String>,
+    saved_document: against_rome_scenario::ScenarioDocument,
+}
+
+#[cfg(test)]
+#[path = "../tests/toolbar_event_graph/mod.rs"]
+mod toolbar_event_graph_tests;
+
 pub struct EditorApp {
     pub map_path_input: String,
     loaded_map_path: Option<PathBuf>,
@@ -137,6 +150,7 @@ pub struct EditorApp {
     textures: TexturesUi,
     scene: SceneUi,
     event_graph: EventGraphUi,
+    toolbar_graph_source: Option<ToolbarGraphSource>,
     console: ConsoleUi,
     pub maps: MapsUi,
     environment: EnvironmentUi,
@@ -269,6 +283,7 @@ impl EditorApp {
             textures: TexturesUi::default(),
             scene: SceneUi::default(),
             event_graph: EventGraphUi::default(),
+            toolbar_graph_source: None,
             console: ConsoleUi::default(),
             maps: MapsUi::default(),
             environment: EnvironmentUi::default(),
@@ -572,7 +587,7 @@ impl EditorApp {
         // Remaining panels do not expose a complete, side-effect-free staging + acknowledge API.
         // Never call their independent writers or clear their dirty flags here.
         let gaps: Vec<_> = [
-            (self.event_graph.is_dirty(), "EventGraph: pending graph has no map-bound scenario compile/save contract"),
+            (self.event_graph.is_dirty(), "EventGraph: unapplied edits; Apply to Scenario or discard before Safe Save"),
             (self.maps.is_dirty(), "Maps: pending catalog/build settings have no map artifact serializer"),
             (self.environment.is_dirty(), "Environment: pending flora/lair/settlement plans must be applied or discarded"),
             (self.landscape.is_dirty(), "Landscape: pending terrain/placement plans must be applied or discarded"),
@@ -1014,6 +1029,7 @@ impl EditorApp {
 
         // Rebuild / reset derived panels in dependency order
         self.event_graph.reset_session();
+        self.toolbar_graph_source = None;
         self.maps.reset_session(Some(&path));
         self.environment.reset_session();
         self.landscape.reset_session();
@@ -1059,6 +1075,7 @@ impl EditorApp {
 
         // Rebuild / reset derived panels
         self.event_graph.reset_session();
+        self.toolbar_graph_source = None;
         self.maps.reset_session(None);
         self.environment.reset_session();
         self.landscape.reset_session();
@@ -1371,10 +1388,121 @@ impl EditorApp {
         let before = self.session.as_ref().is_some_and(|s| s.is_dirty());
         self.ai_planner.show(ctx, self.session.as_mut(), water);
         self.show_family_window(ctx);
+        self.show_toolbar_event_graph(ctx);
         if had_session && self.session.as_ref().is_some_and(|s| s.is_dirty()) && !before {
             self.texture_dirty = true;
             self.navigation.invalidate();
         }
+    }
+
+    /// 首次開啟時以目前的劇本資料載入獨立事件圖。
+    fn open_toolbar_event_graph(&mut self) {
+        self.event_graph.open = true;
+        if !self.scenario.is_loaded()
+            && !self.event_graph.is_dirty()
+            && !self.event_graph.apply_requested
+            && !self.scenario.dirty()
+            && !self.scenario.graph_ui().is_dirty()
+            && !self.scenario.graph_ui().apply_requested
+        {
+            let result = self.loaded_map_path.as_deref()
+                .ok_or_else(|| "EventGraph: no loaded map scenario".to_string())
+                .and_then(|path| self.scenario.load_session(path));
+            if let Err(error) = result {
+                self.toolbar_graph_error(error);
+                return;
+            }
+        }
+        if !self.event_graph.is_dirty() && !self.event_graph.apply_requested {
+            // 放棄後再次開啟時，即使劇本未變更也必須重新載入。
+            self.toolbar_graph_source = None;
+        }
+        self.sync_toolbar_event_graph();
+        if !self.scenario.is_loaded() {
+            self.toolbar_graph_error("EventGraph: no loaded scenario; graph edits kept".into());
+        }
+    }
+
+    fn toolbar_graph_source(&self) -> Result<Option<ToolbarGraphSource>, String> {
+        if !self.scenario.is_loaded() {
+            return Ok(None);
+        }
+        Ok(Some(ToolbarGraphSource {
+            map: self.loaded_map_path.clone(),
+            document: self.scenario.document().clone(),
+            aliases: self.scenario.known_aliases().to_vec(),
+            saved_document: self.scenario.saved_document()?,
+        }))
+    }
+
+    /// 劇本重新載入時不得覆寫尚未套用的修改或排隊中的套用要求。
+    fn sync_toolbar_event_graph(&mut self) {
+        if self.event_graph.is_dirty() || self.event_graph.apply_requested {
+            return;
+        }
+        let source = match self.toolbar_graph_source() {
+            Ok(source) => source,
+            Err(error) => {
+                self.toolbar_graph_error(error);
+                return;
+            }
+        };
+        if source != self.toolbar_graph_source {
+            if source.is_some() {
+                self.scenario.sync_to_graph_ui(&mut self.event_graph);
+            } else {
+                self.event_graph.reset_session();
+            }
+            self.toolbar_graph_source = source;
+        }
+    }
+
+    fn toolbar_graph_error(&mut self, error: String) {
+        self.event_graph.status_message = error.clone();
+        self.status_message = error;
+        self.status_is_error = true;
+    }
+
+    fn apply_toolbar_event_graph_request(&mut self) {
+        if !std::mem::take(&mut self.event_graph.apply_requested) {
+            return;
+        }
+        let source = self.toolbar_graph_source();
+        let result = match source {
+            Err(error) => Err(error),
+            Ok(None) => Err("EventGraph: no loaded scenario; graph edits kept".into()),
+            Ok(Some(source)) if Some(&source) != self.toolbar_graph_source.as_ref() => {
+                Err("EventGraph: scenario changed since graph sync; graph edits kept. Resolve the conflict or discard and reopen the graph.".into())
+            }
+            Ok(Some(_)) if self.toolbar_graph_source.is_none() => {
+                Err("EventGraph: scenario changed since graph sync; graph edits kept. Resolve the conflict or discard and reopen the graph.".into())
+            }
+            Ok(Some(_)) => self.scenario.apply_from_graph_ui(&mut self.event_graph),
+        };
+        match result {
+            Ok(()) => {
+                // 劇本面板使用另一份事件圖；保留其中尚未套用的修改。
+                if !self.scenario.graph_ui().is_dirty() && !self.scenario.graph_ui().apply_requested {
+                    let _ = self.scenario.sync_to_graph();
+                }
+                match self.toolbar_graph_source() {
+                    Ok(source) => self.toolbar_graph_source = source,
+                    Err(error) => self.toolbar_graph_error(error),
+                }
+                self.event_graph.status_message = "Applied to Scenario; use Safe Save to write the map.".into();
+                self.status_message = self.event_graph.status_message.clone();
+                self.status_is_error = false;
+            }
+            Err(error) => self.toolbar_graph_error(error),
+        }
+    }
+
+    fn show_toolbar_event_graph(&mut self, ctx: &egui::Context) {
+        if self.event_graph.open {
+            self.sync_toolbar_event_graph();
+        }
+        self.event_graph.show(ctx);
+        self.apply_toolbar_event_graph_request();
     }
 
     /// Loads objdef names (cached per game root) so placement team edits use category limits.
@@ -8812,7 +8940,7 @@ impl eframe::App for EditorApp {
                     self.scene.open = true;
                 }
                 if ui.button(tr(lang, "Event Graph", "事件圖")).clicked() {
-                    self.event_graph.open = true;
+                    self.open_toolbar_event_graph();
                 }
                 if ui.button(tr(lang, "Console", "主控台")).clicked() {
                     self.console.open = true;
@@ -9648,7 +9776,7 @@ impl eframe::App for EditorApp {
         self.textures.show(ctx);
         self.scene.english = self.lang() == AppLanguage::English;
         self.scene.show(ctx);
-        self.event_graph.show(ctx);
+
         self.console.show(ctx);
         self.tech_doc.show(ctx);
         self.show_design_check(ctx);

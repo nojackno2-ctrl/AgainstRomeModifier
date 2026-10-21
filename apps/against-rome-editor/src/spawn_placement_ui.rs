@@ -27,14 +27,34 @@ use against_rome_maps::script_aliases::ScriptObjectAliases;
 use against_rome_maps::spawn_data::{stage_starter_kit, StarterKitTerrain};
 use against_rome_maps::starter_kit::BlankMapStarterKit;
 use against_rome_scenario::model::Spawn;
-use eframe::egui::{self, Color32, Pos2, Rect, Stroke};
+use against_rome_textures::{NativeSprite, NativeSpriteCatalog, DEFAULT_DIRECTION};
+use eframe::egui::{self, Color32, Pos2, Rect, Stroke, TextureHandle};
 use std::collections::{BTreeSet, HashSet};
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
 const WORLD_SIZE: f32 = 16384.0;
 
-/// Per-frame data the panel needs from the editor (kept free of `EditorApp` borrows).
+fn sprite_color_image(sprite: &NativeSprite) -> egui::ColorImage {
+    let pixels: Vec<Color32> = sprite
+        .argb_pixels
+        .iter()
+        .map(|argb| {
+            Color32::from_rgba_unmultiplied(
+                (argb >> 16) as u8,
+                (argb >> 8) as u8,
+                *argb as u8,
+                (argb >> 24) as u8,
+            )
+        })
+        .collect();
+    egui::ColorImage {
+        size: [sprite.width as usize, sprite.height as usize],
+        pixels,
+    }
+}
+
+/// 面板每影格所需的編輯器資料，避免直接借用 `EditorApp`。
 pub struct SpawnContext<'a> {
     pub lang: AppLanguage,
     pub heights: Option<&'a [u8]>,
@@ -109,6 +129,9 @@ pub struct SpawnPlacementUi {
     catalog: Vec<SdlObjectType>,
     catalog_root: Option<PathBuf>,
     catalog_fixed: bool,
+    sprite_catalog: Option<NativeSpriteCatalog>,
+    sprite_catalog_root: Option<PathBuf>,
+    palette_textures: std::collections::HashMap<(String, i32), TextureHandle>,
     foreign: Vec<Spawn>,
     /// Document spawns the session currently reflects (change detection + `previous` lookup).
     synced: Vec<Spawn>,
@@ -151,6 +174,9 @@ impl Default for SpawnPlacementUi {
             catalog: Vec::new(),
             catalog_root: None,
             catalog_fixed: false,
+            sprite_catalog: None,
+            sprite_catalog_root: None,
+            palette_textures: std::collections::HashMap::new(),
             foreign: Vec::new(),
             synced: Vec::new(),
             loaded: Vec::new(),
@@ -286,6 +312,44 @@ impl SpawnPlacementUi {
         self.catalog_root = root;
         self.synced.clear();
         self.selected_type = None;
+    }
+
+    /// 唯讀開啟遊戲精靈資料，並只快取目前顯示的縮圖。
+    fn ensure_sprite_catalog(&mut self, map: Option<&Path>) {
+        let root = map.and_then(Path::parent).and_then(Path::parent).map(Path::to_path_buf);
+        if root == self.sprite_catalog_root {
+            return;
+        }
+        self.sprite_catalog = root.as_deref().and_then(NativeSpriteCatalog::open);
+        self.sprite_catalog_root = root;
+        self.palette_textures.clear();
+    }
+
+    fn palette_texture(
+        &mut self,
+        ctx: &egui::Context,
+        object_type: &SdlObjectType,
+        team: i32,
+    ) -> Option<TextureHandle> {
+        let key = (object_type.name_def.clone(), team);
+        if let Some(texture) = self.palette_textures.get(&key) {
+            return Some(texture.clone());
+        }
+        let sprite = self.sprite_catalog.as_ref()?.get_sprite(
+            &object_type.name_def,
+            team,
+            DEFAULT_DIRECTION,
+            None,
+            None,
+        )?;
+        let image = sprite_color_image(&sprite);
+        let texture = ctx.load_texture(
+            format!("spawn-palette:{}:team-{team}", object_type.name_def),
+            image,
+            egui::TextureOptions::LINEAR,
+        );
+        self.palette_textures.insert(key, texture.clone());
+        Some(texture)
     }
 
     fn rebuild_bound(&mut self, scenario: &ScenarioUi) {
@@ -849,6 +913,7 @@ impl SpawnPlacementUi {
 
     pub fn show(&mut self, ctx: &egui::Context, scenario: &mut ScenarioUi, cx: &SpawnContext, map: Option<&Path>) {
         self.sync_with_document(scenario, map);
+        self.ensure_sprite_catalog(map);
         if !self.open {
             self.place_mode = false;
             return;
@@ -945,19 +1010,28 @@ impl SpawnPlacementUi {
                     );
                 }
                 let types: Vec<SdlObjectType> = self.visible_types().into_iter().cloned().collect();
-                let palette = egui::ScrollArea::vertical().id_source("spawn_palette").max_height(170.0).show(ui, |ui| {
-                    for object_type in &types {
+                let palette = egui::ScrollArea::vertical().id_source("spawn_palette").max_height(170.0).show_rows(ui, 32.0, types.len(), |ui, rows| {
+                    for index in rows {
+                        let object_type = &types[index];
                         let selected = self.selected_type.as_deref() == Some(object_type.name_def.as_str());
                         let label = format!(
                             "{}  ({})",
                             object_display_name(object_type, en),
                             crate::spawn_placement::alias_of(object_type)
                         );
-                        if ui.selectable_label(selected, label).clicked() {
-                            self.selected_type = Some(object_type.name_def.clone());
-                            let (min, max) = team_range(object_type);
-                            self.team = self.team.clamp(min, max);
-                        }
+                        ui.horizontal(|ui| {
+                            if let Some(texture) = self.palette_texture(ui.ctx(), object_type, self.team) {
+                                let image = egui::Image::new((texture.id(), egui::vec2(28.0, 28.0)));
+                                ui.add(image);
+                            } else {
+                                ui.add_space(28.0);
+                            }
+                            if ui.selectable_label(selected, label).clicked() {
+                                self.selected_type = Some(object_type.name_def.clone());
+                                let (min, max) = team_range(object_type);
+                                self.team = self.team.clamp(min, max);
+                            }
+                        });
                     }
                 });
                 hovered_palette = ui.rect_contains_pointer(palette.inner_rect);
@@ -1415,5 +1489,18 @@ impl SpawnPlacementUi {
     /// Alias of the catalog type used by a spawn (tests).
     pub fn catalog_type_for(&self, alias: &str) -> Option<&SdlObjectType> {
         type_for_alias(&self.catalog, alias)
+    }
+}
+
+#[cfg(test)]
+mod palette_thumbnail_tests {
+    use super::*;
+
+    #[test]
+    fn native_argb_sprite_converts_to_rgba_color_image() {
+        let sprite = NativeSprite::new(1, 1, vec![0x8011_2233], 0, 0, "fixture").unwrap();
+        let image = sprite_color_image(&sprite);
+        assert_eq!(image.size, [1, 1]);
+        assert_eq!(image.pixels[0].to_srgba_unmultiplied(), [0x11, 0x22, 0x33, 0x80]);
     }
 }
