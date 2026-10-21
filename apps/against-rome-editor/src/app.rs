@@ -5267,6 +5267,35 @@ mod tests {
         reloaded.load_session(&dir).unwrap();
         assert_eq!(reloaded.session_textures().unwrap(), &after[..]);
 
+        // 4c. Search the palette like a designer ("green"), pick a bridge-tier grass and paint it
+        // with the default auto transition.
+        let out = gui_frame(&mut app, &ctx, vec![]);
+        let search = gui_find(&out, "Search grass, sand, mud, rock...").expect("palette search box").center();
+        gui_frame(&mut app, &ctx, gui_pointer(search, true));
+        gui_frame(&mut app, &ctx, gui_pointer(search, false));
+        gui_frame(&mut app, &ctx, vec![egui::Event::Text("green".into())]);
+        let out = gui_frame(&mut app, &ctx, vec![]);
+        let texts: Vec<String> = out.shapes.iter().filter_map(|s| match &s.shape { egui::epaint::Shape::Text(t) => Some(t.galley.text().to_string()), _ => None }).collect();
+        let palette: Vec<&String> = texts.iter().skip_while(|t| !t.starts_with("Active brush")).collect();
+        eprintln!("search 'green' palette: {palette:?}");
+        let grass = palette
+            .iter()
+            .find(|t| t.contains("Green") && t.ends_with("Grass"))
+            .map(|t| t.to_string())
+            .unwrap_or_else(|| panic!("no green grass offered: {palette:?}"));
+        gui_click(&mut app, &ctx, &grass);
+        let before = app.textures.session_textures().unwrap().to_vec();
+        let (a, b) = (map.lerp_inside(egui::vec2(0.65, 0.70)), map.lerp_inside(egui::vec2(0.75, 0.70)));
+        gui_frame(&mut app, &ctx, gui_pointer(a, true));
+        for step in 1..=10 {
+            gui_frame(&mut app, &ctx, vec![egui::Event::PointerMoved(a + (b - a) * (step as f32 / 10.0))]);
+        }
+        gui_frame(&mut app, &ctx, gui_pointer(b, false));
+        gui_frame(&mut app, &ctx, vec![]);
+        let changed = before.iter().zip(app.textures.session_textures().unwrap()).filter(|(x, y)| x != y).count();
+        eprintln!("{grass}: {changed} tiles; notice {:?}", app.textures.material_notice());
+        assert!(changed > 0, "{grass} painted nothing: {:?}", app.textures.material_notice());
+
         // 5. Language toggle repaints the toolbar in Traditional Chinese.
         let out = gui_click(&mut app, &ctx, "中");
         assert!(gui_find(&out, "Design Check").is_none(), "toolbar still English");

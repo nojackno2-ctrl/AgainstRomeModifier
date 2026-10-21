@@ -1,3 +1,7 @@
+## 2026-10-22 Claude：調色盤搜尋＋bridge tier 草地 UI 實畫（已驗證）
+
+- 補上前一筆未驗證項：無視窗點擊測試在調色盤搜尋框點擊並以 `egui::Event::Text("green")` 輸入，結果列出 Light Green Grass、Grey Green Wasteland、Bright Green Grass，以及標註「(hard to blend on this map)」的 Dark Green Grass；點選 Light Green Grass（需過渡材質）後在畫布拖曳，以預設自動過渡實畫 **60 格**、無拒絕訊息。確認新的 `blends` 分級對 bridge tier 推薦可畫。非視覺驗收；遊戲內仍未做。
+
 ## 2026-10-22 Claude：材質筆刷按需載入與調色盤只列可畫材質（UI 點擊驗證）
 
 - **材質筆刷要求另外載入**：已開啟 ENDL_005（有 boden.txt）後選「Material (terrain paint)」仍顯示「Load a map with boden.txt to paint materials.」。現在依 Flat Terrain 先例按需載入，每張地圖只嘗試一次（失敗不每幀重讀 42MB floortex.dat），錯誤寫入狀態列。新單元測試 `material_brush_mode_loads_the_open_maps_materials_on_demand`。
