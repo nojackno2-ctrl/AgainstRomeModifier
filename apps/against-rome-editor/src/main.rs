@@ -28,7 +28,7 @@ impl eframe::App for Desktop {
 fn run() -> Result<(), String> {
     let options = parse_startup_options(std::env::args_os().skip(1))?;
     if options.show_help {
-        println!("against-rome-editor [--game <PATH> --map <ID> | --map DIRECTORY] [--validate-map | --smoke-test]\n--validate-map runs the read-only Design Check (exit 2 when errors would block Safe Save).\n--smoke-test runs three native UI updates and closes.");
+        println!("against-rome-editor [--game <PATH> --map <ID> | --map DIRECTORY] [--validate-map [--lang zh|en] | --smoke-test]\n--validate-map runs the read-only Design Check (exit 2 when errors would block Safe Save).\n--lang zh prints Design Check results in Traditional Chinese.\n--smoke-test runs three native UI updates and closes.");
         return Ok(());
     }
     if options.show_version {
@@ -40,14 +40,18 @@ fn run() -> Result<(), String> {
     let loaded = map.as_ref().map(|p| load_map(p)).transpose()?;
     if options.validate_map {
         let session = loaded.unwrap();
-        println!(
-            "Validated height {}x{}, collision {}x{}; no files written.",
-            session.vertex_size,
-            session.vertex_size,
-            session.collision_size,
-            session.collision_size
-        );
-        let lang = Language::English;
+        let lang = if options.chinese == Some(true) {
+            Language::TraditionalChinese
+        } else {
+            Language::English
+        };
+        let (v, c) = (session.vertex_size, session.collision_size);
+        match lang {
+            Language::English => println!(
+                "Validated height {v}x{v}, collision {c}x{c}; no files written."
+            ),
+            _ => println!("已檢查高度 {v}x{v}、碰撞 {c}x{c}；未寫入任何檔案。"),
+        }
         let rows = headless_design_check(map.as_ref().unwrap(), session, lang)?;
         for row in &rows {
             println!("{}", format_issue_row(row, lang));

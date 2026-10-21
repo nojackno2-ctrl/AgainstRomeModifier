@@ -1,3 +1,8 @@
+## 2026-10-22 Claude：`--validate-map --lang zh` 繁中輸出（已驗證）
+
+- 新增 `--lang zh|en`（大小寫不敏感，zh-tw/zh-hant 視為 zh；重複或非法值拒絕）。`--validate-map` 標頭、每列（`[錯誤] code: 訊息（格 x, z）`）與摘要依語言輸出；預設仍英文，結束碼不變。
+- 測試：`cli_startup_tests` 補 `--lang` 解析與 binary 繁中輸出斷言；`cargo test -p against-rome-editor-app --locked --offline --target-dir re_workspace/target-w20 -- --test-threads=1` 全通過（lib 528、CLI 6）。實際 binary 對 TEMP 假根目錄壞別名副本輸出繁中單一錯誤、exit 2。GUI／遊戲內驗收仍未做。
+
 ## 2026-10-22 Claude：地圖不在遊戲目錄時改報單一「別名目錄缺失」錯誤（已驗證）
 
 - 發現：以 `--map 目錄` 開啟不在遊戲根目錄下的地圖（例 TEMP 副本），別名目錄 `<root>/SYSTEM/CLAK/cl_scint.ini` 讀不到而默默變成空清單，乾淨的 ENDL_005 副本因此被報 `[Error] alias: GER_INF01` 與英文無細節的 `event-validation`，Safe Save 也會被這些誤導訊息擋下。

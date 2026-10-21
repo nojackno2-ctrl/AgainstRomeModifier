@@ -11,6 +11,8 @@ pub struct StartupOptions {
     pub smoke_test: bool,
     pub show_help: bool,
     pub show_version: bool,
+    /// `--lang zh`: Traditional Chinese console output (default English).
+    pub chinese: Option<bool>,
 }
 
 /// Checks whether map ID is not a campaign (KAMP_) map.
@@ -86,6 +88,20 @@ where
                 return Err(format!("unknown or duplicate argument: {}", arg_str));
             }
             options.smoke_test = true;
+        } else if arg_str.eq_ignore_ascii_case("--lang") {
+            if options.chinese.is_some() {
+                return Err(format!("unknown or duplicate argument: {}", arg_str));
+            }
+            let os_val: OsString = iter
+                .next()
+                .ok_or_else(|| "--lang 缺少語言參數（zh 或 en）。".to_string())?
+                .into();
+            let value = os_val.to_string_lossy().to_ascii_lowercase();
+            options.chinese = Some(match value.as_str() {
+                "zh" | "zh-tw" | "zh-hant" => true,
+                "en" => false,
+                _ => return Err(format!("--lang 只接受 zh 或 en：{value}")),
+            });
         } else {
             return Err(format!("unknown or duplicate argument: {}", arg_str));
         }

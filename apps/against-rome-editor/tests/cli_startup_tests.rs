@@ -184,6 +184,15 @@ fn test_missing_and_mismatched_flags() {
     // 8. Unknown flag
     let err_unknown = parse_startup_options(["--foobar"]).unwrap_err();
     assert_eq!(err_unknown, "unknown or duplicate argument: --foobar");
+
+    // 9. --lang
+    assert_eq!(parse_startup_options(["--LANG", "ZH-TW"]).unwrap().chinese, Some(true));
+    assert_eq!(parse_startup_options(["--lang", "en"]).unwrap().chinese, Some(false));
+    assert_eq!(parse_startup_options::<[&str; 0], &str>([]).unwrap().chinese, None);
+    assert!(parse_startup_options(["--lang", "fr"]).unwrap_err().contains("zh 或 en"));
+    assert!(parse_startup_options(["--lang"]).is_err());
+    let err_dup_lang = parse_startup_options(["--lang", "zh", "--lang", "en"]).unwrap_err();
+    assert!(err_dup_lang.contains("unknown or duplicate argument: --lang"));
 }
 
 #[test]
@@ -309,6 +318,16 @@ fn test_binary_cli_execution() {
     let stdout_val = String::from_utf8_lossy(&out_val.stdout);
     assert!(stdout_val.contains("Validated height 65x65, collision 64x64; no files written."));
     assert!(stdout_val.contains("0 errors,"), "{stdout_val}");
+
+    // 3b. Same check with Traditional Chinese output
+    let out_zh = Command::new(&bin)
+        .args(["--game", temp.path.to_str().unwrap(), "--map", "ENDL_001", "--validate-map", "--lang", "zh"])
+        .output()
+        .unwrap();
+    assert!(out_zh.status.success(), "Stderr: {}", String::from_utf8_lossy(&out_zh.stderr));
+    let stdout_zh = String::from_utf8_lossy(&out_zh.stdout);
+    assert!(stdout_zh.contains("已檢查高度 65x65、碰撞 64x64"), "{stdout_zh}");
+    assert!(stdout_zh.contains("0 個錯誤"), "{stdout_zh}");
 
     // 4. Backwards-compatible direct directory form with --validate-map
     let direct_map = temp.path.join("MAPS").join("ENDL_001");

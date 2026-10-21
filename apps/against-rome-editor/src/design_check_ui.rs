@@ -256,7 +256,10 @@ pub fn headless_design_check(
 pub fn format_issue_row(row: &IssueRow, lang: AppLanguage) -> String {
     let mut line = format!("[{}] {}: {}", row.severity_label(lang), row.code, row.text(lang));
     if let Some((x, z)) = row.focus_tile() {
-        line.push_str(&format!(" (tile {x:.1}, {z:.1})"));
+        line.push_str(&match lang {
+            AppLanguage::English => format!(" (tile {x:.1}, {z:.1})"),
+            _ => format!("（格 {x:.1}, {z:.1}）"),
+        });
     }
     line
 }
