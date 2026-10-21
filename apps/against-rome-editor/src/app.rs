@@ -143,7 +143,7 @@ pub struct EditorApp {
     family: crate::family_ui::FamilyUi,
     family_open: bool,
     family_history_key: (usize, usize, usize),
-    scenario: ScenarioUi,
+    pub(crate) scenario: ScenarioUi,
     spawn_ui: SpawnPlacementUi,
     /// DATA landscape objects `(slot, x, z)` of the map (building clearance warning), per map.
     spawn_landscape: Option<(PathBuf, Vec<(i32, f32, f32)>)>,
@@ -5046,6 +5046,32 @@ mod tests {
         assert!(app.session.as_ref().unwrap().is_dirty());
         assert!(app.session.as_ref().unwrap().can_undo());
         assert_eq!(app.status_message, status);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn headless_design_check_loads_scenario_and_writes_nothing() {
+        use crate::design_check_ui::{format_issue_row, headless_design_check};
+        let (_, dir, _) = start_camera_app(false);
+        let before = save_artifact_snapshot(&dir);
+        let rows = headless_design_check(
+            &dir,
+            TerrainSession::create_blank(5, 32),
+            AppLanguage::English,
+        )
+        .unwrap();
+        use against_rome_maps::diagnostics::MapIssueSeverity;
+        let no_end = rows.iter().find(|r| r.code == "scenario-no-win-loss");
+        assert_eq!(no_end.map(|r| r.severity), Some(MapIssueSeverity::Warning), "{rows:?}");
+        assert!(format_issue_row(&rows[0], AppLanguage::English).starts_with('['));
+        let blocked = headless_design_check(
+            &dir,
+            TerrainSession::create_blank(1026, 32),
+            AppLanguage::English,
+        )
+        .unwrap();
+        assert!(blocked.iter().any(|r| r.severity == MapIssueSeverity::Error));
+        assert_eq!(save_artifact_snapshot(&dir), before);
         std::fs::remove_dir_all(dir).unwrap();
     }
 

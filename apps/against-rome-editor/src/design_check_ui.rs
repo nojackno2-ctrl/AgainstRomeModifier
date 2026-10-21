@@ -234,6 +234,33 @@ impl DesignCheckReport {
     }
 }
 
+/// Headless Design Check for `--validate-map`: installs `session` into a fresh editor, loads
+/// the map's scenario when it has one, and returns the same severity-sorted rows the panel
+/// shows. Read-only; errors in the result are the ones that would block Safe Save.
+pub fn headless_design_check(
+    path: &Path,
+    session: crate::TerrainSession,
+    lang: AppLanguage,
+) -> Result<Vec<IssueRow>, String> {
+    let mut app = EditorApp::default();
+    app.set_loaded_map(path.to_path_buf(), session)?;
+    app.scenario
+        .load_session(path)
+        .map_err(|e| format!("Scenario: {e}"))?;
+    let report = app.design_check_report();
+    let extra: Vec<MapIssue> = missing_data_files_issue(path).into_iter().collect();
+    Ok(report_rows(&report, &extra, lang))
+}
+
+/// One plain-text line per row for console output: `[severity] code: text (x, z)`.
+pub fn format_issue_row(row: &IssueRow, lang: AppLanguage) -> String {
+    let mut line = format!("[{}] {}: {}", row.severity_label(lang), row.code, row.text(lang));
+    if let Some((x, z)) = row.focus_tile() {
+        line.push_str(&format!(" (tile {x:.1}, {z:.1})"));
+    }
+    line
+}
+
 #[derive(Default)]
 pub struct DesignCheckUi {
     pub open: bool,

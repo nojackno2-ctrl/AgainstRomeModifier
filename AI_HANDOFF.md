@@ -1,3 +1,9 @@
+## 2026-10-22 Claude：`--validate-map` 改跑完整設計檢查（已驗證）
+
+- 原 `--validate-map` 只讀 BMP 尺寸。現以 `design_check_ui::headless_design_check` 無視窗建立 `EditorApp`、`set_loaded_map`（含 boden.txt/BCI 等開圖前驗證）並載入劇本，輸出與 Design Check 面板／Safe Save 同一套 `[Error|Warning] code: 訊息 (tile x, z)` 與摘要；有 Error 時 exit 2，無法開圖時 exit 1。`EditorApp.scenario` 改為 `pub(crate)`。
+- `cli_startup_tests` 舊 fixture 的 `boden.txt` 不是有效格式（編輯器 GUI 也會拒開），改為零售版 `[Dimension]`＋逐格材質；新增 `headless_design_check_loads_scenario_and_writes_nothing`（警告／阻擋錯誤分級、檔案快照不變）。
+- 驗證：`cargo test -p against-rome-editor-app --locked --offline --target-dir re_workspace/target-w20 -- --test-threads=1` 全通過（lib 528 passed，含 CLI 6 passed）；`cargo check --workspace` 通過；`git diff --check` 通過。唯讀實測安裝版 ENDL_005（0 錯誤／2 警告：route-no-target、team-no-main-house）、ENDL_000、MP_000（各 0 錯誤／4 警告），地圖目錄無檔案變更。exit 2 分支僅由單元測試的 Error 列覆蓋，未對真實壞圖執行 binary。GUI／遊戲內驗收仍未做。
+
 ## 2026-10-22 Codex：修復全功能稽核問題（程式與自動驗證完成）
 
 - 依使用者「修復所有問題」完成 bfb6597 後續 Rust 修正：寬螢幕舊實驗、Core/M6 別名、P20 倍率、完整多檔偵測、碰撞選點門檻、自訂屬性、未知速度及部署完整性。保留既有 `AGENTS.md`／`README.md` 使用者變更，未改根 Cargo.lock；功能修復已提交並推送，提交 `4742673`。

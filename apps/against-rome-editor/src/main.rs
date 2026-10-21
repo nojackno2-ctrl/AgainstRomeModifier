@@ -1,6 +1,9 @@
 mod cli;
 
+use against_rome_ambience::Language;
+use against_rome_editor_app::design_check_ui::{format_issue_row, headless_design_check, issue_summary};
 use against_rome_editor_app::{load_map, EditorApp};
+use against_rome_maps::diagnostics::MapIssueSeverity;
 use cli::{parse_startup_options, resolve_startup_map};
 use eframe::egui;
 
@@ -25,7 +28,7 @@ impl eframe::App for Desktop {
 fn run() -> Result<(), String> {
     let options = parse_startup_options(std::env::args_os().skip(1))?;
     if options.show_help {
-        println!("against-rome-editor [--game <PATH> --map <ID> | --map DIRECTORY] [--validate-map | --smoke-test]\n--validate-map reads BMP layers without writing.\n--smoke-test runs three native UI updates and closes.");
+        println!("against-rome-editor [--game <PATH> --map <ID> | --map DIRECTORY] [--validate-map | --smoke-test]\n--validate-map runs the read-only Design Check (exit 2 when errors would block Safe Save).\n--smoke-test runs three native UI updates and closes.");
         return Ok(());
     }
     if options.show_version {
@@ -36,7 +39,7 @@ fn run() -> Result<(), String> {
     let map = resolve_startup_map(&options)?;
     let loaded = map.as_ref().map(|p| load_map(p)).transpose()?;
     if options.validate_map {
-        let session = loaded.as_ref().unwrap();
+        let session = loaded.unwrap();
         println!(
             "Validated height {}x{}, collision {}x{}; no files written.",
             session.vertex_size,
@@ -44,6 +47,15 @@ fn run() -> Result<(), String> {
             session.collision_size,
             session.collision_size
         );
+        let lang = Language::English;
+        let rows = headless_design_check(map.as_ref().unwrap(), session, lang)?;
+        for row in &rows {
+            println!("{}", format_issue_row(row, lang));
+        }
+        println!("{}", issue_summary(&rows, lang));
+        if rows.iter().any(|r| r.severity == MapIssueSeverity::Error) {
+            std::process::exit(2);
+        }
         return Ok(());
     }
     let native_options = eframe::NativeOptions {

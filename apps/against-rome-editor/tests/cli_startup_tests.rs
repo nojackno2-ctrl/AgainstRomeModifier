@@ -30,9 +30,12 @@ impl Drop for TempDirGuard {
 fn create_mock_map(map_dir: &Path, size: usize, include_meta: bool, include_bmps: bool) {
     fs::create_dir_all(map_dir).unwrap();
     if include_meta {
+        // Retail layout: one texture tile per 4x4 height cells.
+        let dimension = (size.saturating_sub(1) / 4).max(1);
+        let tiles = "4BB___50\n".repeat(dimension * dimension);
         fs::write(
             map_dir.join("boden.txt"),
-            format!("[Dimension]\nSize={size}\n\n[Texturen]\nTex1=1\n"),
+            format!("[Dimension]\n{dimension}\n[Texturen]\n{tiles}"),
         )
         .unwrap();
         let minimap = BmpImage::new_solid(16, 16, 0, 0, 0);
@@ -305,6 +308,7 @@ fn test_binary_cli_execution() {
     assert!(out_val.status.success(), "Stderr: {}", String::from_utf8_lossy(&out_val.stderr));
     let stdout_val = String::from_utf8_lossy(&out_val.stdout);
     assert!(stdout_val.contains("Validated height 65x65, collision 64x64; no files written."));
+    assert!(stdout_val.contains("0 errors,"), "{stdout_val}");
 
     // 4. Backwards-compatible direct directory form with --validate-map
     let direct_map = temp.path.join("MAPS").join("ENDL_001");
