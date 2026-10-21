@@ -1,5 +1,20 @@
 # 地圖編輯器需求與證據核對
 
+## 2026-10-22 Rust 現況（取代下方 C# 時期細節）
+
+下方 2026-10-07 表格引用的 `.cs` 測試與 WinForms 表單已隨 Rust 遷移退役；需求本身仍有效，證據改看 Rust 測試與 `AI_HANDOFF.md`。安裝目錄存取規則已改為 AGENTS.md 2026-10-08 授權（只寫自製測試圖並先備份）。
+
+| 範圍 | Rust 證據 | 狀態 |
+| --- | --- | --- |
+| 開圖、CLI、唯讀驗證 | `cli_startup_tests`；`--validate-map [--lang zh]` 無視窗跑完整設計檢查（有 Error 時 exit 2） | 已驗證：40 張非戰役安裝版地圖唯讀批次檢查全部可開；壞別名 TEMP 副本實測 exit 2 |
+| 設計檢查／Safe Save 阻擋 | `design_check_ui`、`MapDiagnostics`、`MapDesignValidator`、`route_check` 測試 | 已驗證；2026-10-22 去除進攻波次、別名目錄缺失、未編輯原版圖的誤報 |
+| 地形、材質、水、通行、放置、劇本、事件圖、Safe Save 交易 | `against-rome-editor-app` 全套（lib 528）與 workspace 2,352 passed／0 failed | 合成與 TEMP 真實地圖往返已驗證 |
+| 桌面視窗 | `--smoke-test` 三次 UI 更新；TEMP 副本可開啟並正常關閉、SHA-256 不變 | **未完成**：沒有點擊操作驗收（2026-10-22 使用者未同意 computer use 控制視窗） |
+| 遊戲內載入、尋路、勝負 | 無 | **未完成**：需在 ENDL_005 等自製槽位實機驗收 |
+| 3D GPU 管線 | CPU draw list | 非編輯阻礙，依範圍政策不追求原生渲染精度 |
+
+## 2026-10-07 C# 時期核對（歷史）
+
 2026-10-07，Codex。依 `map-editor-roadmap.md` 第 1 階段核對。這是缺口清單，不是完整完成宣告。
 
 ## 需求來源與已變更項目
