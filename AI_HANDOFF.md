@@ -1,3 +1,9 @@
+## 2026-10-22 Claude：無視窗完整編輯器點擊驗收（已驗證，非視覺驗收）
+
+- 行為不變重構（獨立提交 `240926f`）：`eframe::App::update` 委派給公開的 `EditorApp::ui_frame(ctx)`，測試可用 `egui::Context` 無視窗跑整個編輯器畫面。
+- 新 ignored 測試 `gui_click_through_design_check_brush_undo_save_reload_language`：TEMP 複製安裝版 ENDL_005（＋cl_scint.ini），以 1280x800 畫面對真實版面送滑鼠事件：點工具列「Design Check」→ 報告乾淨；點「Raise (Height)」後在地圖畫布拖曳 → 高度改變且 dirty；點「Undo (Ctrl+Z)」完整還原、「Redo (Ctrl+Y)」恢復；點「Safe Save」→ 無警告對話框、存檔成功、dirty 清除，重新 load_map 高度一致；點「中」→ 工具列改為繁中（設計檢查、安全儲存 (Ctrl+S)、復原 (Ctrl+Z) 等）。首次執行即通過。
+- 範圍說明：這驗證 UI 事件流程與真實 widget 版面，**不是**實際螢幕／GPU／DPI 視覺驗收，也不是人工操作；遊戲內驗收仍未做。編輯器全套測試通過。
+
 ## 2026-10-22 Claude：AI 材質實際上色的實機證據（已驗證）
 
 - `live_ollama_water_materials_apply_undo_save_reload` 增加 `ARM_AI_MATERIALS_ONLY`／`ARM_AI_PROMPT` 環境變數與「編輯範圍外材質格不得改變」檢查。

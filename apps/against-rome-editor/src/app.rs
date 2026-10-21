@@ -5136,6 +5136,112 @@ mod tests {
         }
     }
 
+    fn gui_frame(app: &mut EditorApp, ctx: &egui::Context, events: Vec<egui::Event>) -> egui::FullOutput {
+        ctx.run(
+            egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, egui::vec2(1280.0, 800.0))),
+                events,
+                ..Default::default()
+            },
+            |ctx| app.ui_frame(ctx),
+        )
+    }
+
+    fn gui_find(output: &egui::FullOutput, label: &str) -> Option<Rect> {
+        output.shapes.iter().find_map(|s| match &s.shape {
+            egui::epaint::Shape::Text(t) if t.galley.text() == label => {
+                Some(Rect::from_min_size(t.pos, t.galley.size()))
+            }
+            _ => None,
+        })
+    }
+
+    fn gui_pointer(pos: Pos2, pressed: bool) -> Vec<egui::Event> {
+        vec![
+            egui::Event::PointerMoved(pos),
+            egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::NONE },
+        ]
+    }
+
+    /// Clicks the painted label exactly like a mouse: press and release on its centre.
+    fn gui_click(app: &mut EditorApp, ctx: &egui::Context, label: &str) -> egui::FullOutput {
+        let settled = gui_frame(app, ctx, vec![]);
+        let pos = gui_find(&settled, label).unwrap_or_else(|| panic!("no painted label {label:?}")).center();
+        gui_frame(app, ctx, gui_pointer(pos, true));
+        gui_frame(app, ctx, gui_pointer(pos, false));
+        gui_frame(app, ctx, vec![])
+    }
+
+    /// Headless GUI click-through of the full editor frame on a TEMP copy of a retail map:
+    /// real pointer events against the real widget layout (no screen control). Not a visual
+    /// check: it proves the toolbar, canvas brush, undo/redo, Safe Save and language switch work
+    /// through the UI. `cargo test -p against-rome-editor-app --lib gui_click_through -- --ignored`
+    #[test]
+    #[ignore = "copies a map from the installed game"]
+    fn gui_click_through_design_check_brush_undo_save_reload_language() {
+        let game = PathBuf::from(std::env::var("ARM_AI_GAME_ROOT").unwrap_or_else(|_| r"C:\Program Files (x86)\Against Rome".into()));
+        let root = temp_map_dir("gui_click_root");
+        let dir = root.join("MAPS").join("ENDL_005");
+        copy_tree(&game.join("MAPS/ENDL_005"), &dir);
+        std::fs::create_dir_all(root.join("SYSTEM/CLAK")).unwrap();
+        std::fs::copy(game.join("SYSTEM/CLAK/cl_scint.ini"), root.join("SYSTEM/CLAK/cl_scint.ini")).unwrap();
+        let mut app = EditorApp::initial_state();
+        app.set_loaded_map(dir.clone(), crate::storage::load_map(&dir).unwrap()).unwrap();
+        let ctx = egui::Context::default();
+        for _ in 0..3 {
+            gui_frame(&mut app, &ctx, vec![]);
+        }
+
+        // 1. Toolbar Design Check opens the read-only report; ENDL_005 is clean.
+        gui_click(&mut app, &ctx, "Design Check");
+        assert!(app.design_check.open);
+        let report = app.design_check.report.clone().expect("report");
+        assert!(report.is_clean(), "{report:?}");
+        app.design_check.open = false;
+
+        // 2. Raise brush + drag across the map canvas.
+        gui_click(&mut app, &ctx, "Raise (Height)");
+        let original = app.session.as_ref().unwrap().heights().to_vec();
+        let map = app.last_map_rect;
+        let (a, b) = (map.lerp_inside(egui::vec2(0.45, 0.5)), map.lerp_inside(egui::vec2(0.55, 0.5)));
+        gui_frame(&mut app, &ctx, gui_pointer(a, true));
+        for step in 1..=10 {
+            let p = a + (b - a) * (step as f32 / 10.0);
+            gui_frame(&mut app, &ctx, vec![egui::Event::PointerMoved(p)]);
+        }
+        gui_frame(&mut app, &ctx, gui_pointer(b, false));
+        gui_frame(&mut app, &ctx, vec![]);
+        let painted = app.session.as_ref().unwrap().heights().to_vec();
+        let changed = original.iter().zip(&painted).filter(|(x, y)| x != y).count();
+        assert!(changed > 0, "canvas drag raised nothing");
+        assert!(app.session.as_ref().unwrap().is_dirty());
+
+        // 3. Toolbar Undo / Redo.
+        gui_click(&mut app, &ctx, "Undo (Ctrl+Z)");
+        assert_eq!(app.session.as_ref().unwrap().heights(), &original[..]);
+        gui_click(&mut app, &ctx, "Redo (Ctrl+Y)");
+        assert_eq!(app.session.as_ref().unwrap().heights(), &painted[..]);
+
+        // 4. Toolbar Safe Save, then a fresh load sees the brush stroke.
+        let out = gui_click(&mut app, &ctx, "Safe Save");
+        if app.pending_save_warnings.is_some() {
+            let texts: Vec<String> = out.shapes.iter().filter_map(|s| match &s.shape { egui::epaint::Shape::Text(t) => Some(t.galley.text().to_string()), _ => None }).collect();
+            panic!("unexpected save warning dialog: {texts:?}");
+        }
+        assert!(!app.status_is_error, "{}", app.status_message);
+        assert!(!app.session.as_ref().unwrap().is_dirty(), "{}", app.status_message);
+        assert_eq!(crate::storage::load_map(&dir).unwrap().heights(), &painted[..]);
+
+        // 5. Language toggle repaints the toolbar in Traditional Chinese.
+        let out = gui_click(&mut app, &ctx, "中");
+        assert!(gui_find(&out, "Design Check").is_none(), "toolbar still English");
+        eprintln!(
+            "zh toolbar: {:?}",
+            out.shapes.iter().filter_map(|s| match &s.shape { egui::epaint::Shape::Text(t) if t.pos.y < 60.0 => Some(t.galley.text().to_string()), _ => None }).collect::<Vec<_>>()
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     /// Retail gate (read-only): on ENDL_005's B8 ground most materials have no native corner
     /// tiles, so AI material strokes failed. Every material offered for the edit area must paint.
     #[test]
