@@ -1,3 +1,9 @@
+## 2026-10-22 Claude：AI 材質實際上色的實機證據（已驗證）
+
+- `live_ollama_water_materials_apply_undo_save_reload` 增加 `ARM_AI_MATERIALS_ONLY`／`ARM_AI_PROMPT` 環境變數與「編輯範圍外材質格不得改變」檢查。
+- 實機 laguna-xs-2.1、Materials 角色、TEMP 複製 ENDL_005：一次方案 PFAD 改 1,481 格（當時尚無範圍外檢查）；加入檢查後，一次模型回傳無可套用特徵（模型行為），下一次 PFAD 改 **74 格且範圍外 0 變更**，材質一次 undo 完整還原、redo 恢復，Safe Save 後新開編輯器重載材質與高度一致。紀錄 `re_workspace/ai-planner-live-materials-2.log`。
+- 編輯器全套測試通過。三個 AI 角色（地形、水域、材質）現在都有實機 生成→預覽→套用→undo/redo→存檔→重載 證據；GUI 點擊與遊戲內驗收仍未做。
+
 ## 2026-10-22 Claude：AI Materials 角色接上材質層、只提供可畫材質；套用後不再擋存檔（已驗證）
 
 - **Materials 角色從未生效**：`apply_plan_to_session` 傳 `None` 給 blend session 與 fallback，所有材質筆刷都回「此地圖沒有可編輯的材質」。現在 Apply 接 Textures 面板的 `TerrainBlendEditSession`（AI 面板開啟時依 Flat Terrain 先例按需載入 boden.txt），材質層一次 commit、一次 undo；含材質的方案在材質未載入時拒絕套用且不動高度。

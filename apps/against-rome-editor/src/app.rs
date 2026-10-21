@@ -5178,9 +5178,10 @@ mod tests {
         app.ai_planner.open = true;
         app.sync_ai_materials();
         assert!(!app.ai_planner.material_options.is_empty(), "catalog materials offered");
-        app.ai_planner.role_checks = [false, true, true];
+        // ARM_AI_MATERIALS_ONLY / ARM_AI_PROMPT narrow a run to collect material evidence.
+        app.ai_planner.role_checks = if std::env::var("ARM_AI_MATERIALS_ONLY").is_ok() { [false, false, true] } else { [false, true, true] };
         app.ai_planner.bounds_text = "8,8,48,48".into();
-        app.ai_planner.prompt_description = "Add a small lake near the middle of the area and paint a dirt road (PFAD) leading to its shore.".into();
+        app.ai_planner.prompt_description = std::env::var("ARM_AI_PROMPT").unwrap_or_else(|_| "Add a small lake near the middle of the area and paint a dirt road (PFAD) leading to its shore.".into());
         let water = app.water_surface;
         app.ai_planner.start_generation(water).unwrap();
         assert!(app.ai_planner.wait_generation(std::time::Duration::from_secs(20 * 60)), "timed out");
@@ -5199,6 +5200,13 @@ mod tests {
         let textures_after = app.textures.session_textures().unwrap().to_vec();
         let changed_tiles = textures_before.iter().zip(&textures_after).filter(|(a, b)| a != b).count();
         eprintln!("material tiles changed: {changed_tiles}; height samples changed: {}", result.height_samples_changed);
+        let dim = (textures_before.len() as f64).sqrt() as usize;
+        for (i, (a, b)) in textures_before.iter().zip(&textures_after).enumerate() {
+            let (tx, ty) = (i % dim, i / dim);
+            if !(8..56).contains(&tx) || !(8..56).contains(&ty) {
+                assert_eq!(a, b, "material tile ({tx},{ty}) outside the edit area changed");
+            }
+        }
         assert!(changed_tiles > 0 || heights_after != heights_before, "plan changed nothing");
 
         // Material layer: one undo reverts every AI material stroke, redo restores it.
