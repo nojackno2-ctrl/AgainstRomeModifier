@@ -1,3 +1,12 @@
+## 2026-10-22 Claude：AI 製圖套用三個缺陷修正＋真實 Ollama 全流程 gate（已驗證）
+
+- **座標單位錯誤**：`AiPlannerUi::apply_plan_to_session` 把 `vertex_size`（零售圖 257）當 `AiEditorOperator::apply` 的 dimension，但 operator／提示詞／編輯範圍都以材質格為單位（`vertex = tiles*4+1`，零售圖 64）。AI 特徵因此落在約 1/4 位置（瞄準地圖中心 tile 32 的山落在頂點 32）。改用 `tile_dimension(vertex_size)`。
+- **一次套用變成多步 undo**：原以 `commit_per_stroke=true` 每筆刷各一步，與其他工具「一次 undo」不一致；改為累積後 `commit_stroke()` 一次。
+- **模型越界時靜默**：真實 laguna 曾把特徵放在要求範圍外，套用 0 變更卻顯示成功並耗掉方案。現在 review 會警告「N 個特徵在編輯範圍外或鎖定區內」，套用 0 變更時狀態為錯誤訊息、不增加 undo。另將無視窗 `generate_ai_plan` 逾時由 60 秒改為 20 分鐘（實際推論可達數分鐘）。
+- 新測試：一次 undo、真實 laguna 方案回放（越界警告與 0 變更訊息）、tile 座標落點；新增 ignored 實機 gate `tests/ai_planner_live.rs`。
+- **實機**：`cargo test -p against-rome-editor-app --test ai_planner_live -- --ignored --nocapture` 以本機 Ollama `laguna-xs-2.1:latest`（Terrain 角色、257 頂點 TEMP 圖、範圍 8,8,48,48）通過：生成後預覽不改地圖與歷史；套用 2,250 個高度點、範圍外不變；一次 undo 完整還原、redo 恢復；Safe Save 後重載高度完全相同。紀錄 `re_workspace/ai-planner-live.log`。模型摘要偶爾用德文，屬模型行為未處理。
+- 驗證：`cargo test --workspace --locked --offline --target-dir re_workspace/target-w20 -- --test-threads=1` exit 0，283 groups **2,355 passed／0 failed／19 ignored**（`re_workspace/ai-fix-workspace-test.log`）。Water／Materials 角色未做實機 gate；GUI／遊戲內驗收仍未做。
+
 ## 2026-10-22 Claude：`--game <PATH> --validate-map` 批次檢查所有可編輯地圖（已驗證）
 
 - 不帶 `--map` 時，`--validate-map` 會用 `GameMapCatalog` 列出非戰役地圖逐張跑設計檢查，最後輸出「已檢查 N 張地圖；M 張有錯誤：…」；任一張有 Error 或無法開啟則 exit 2。單圖模式行為不變；`--validate-map` 單獨使用的錯誤訊息改為 "requires --map or --game"。

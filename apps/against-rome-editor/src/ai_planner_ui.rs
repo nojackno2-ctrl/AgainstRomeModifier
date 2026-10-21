@@ -519,6 +519,13 @@ impl AiPlannerUi {
                     "Plan generated and awaiting review. Click Apply to change the map.".to_string()
                 };
                 if let Some(plan) = res.plan.as_mut() {
+                    let outside = Self::features_outside_scope(plan, &scope);
+                    if outside > 0 {
+                        review.push_str(&format!(
+                            "Warning: {outside} of {} features are anchored outside the edit area or inside a lock and will be rejected on Apply.\n",
+                            plan.features.len()
+                        ));
+                    }
                     plan.edit_scope = Some(scope);
                     self.dirty = true;
                 }
@@ -531,7 +538,8 @@ impl AiPlannerUi {
     /// Blocking convenience wrapper (headless/tests): start, then wait for completion.
     pub fn generate_ai_plan(&mut self, water_level: f32) -> Result<(), String> {
         self.start_generation(water_level)?;
-        if !self.wait_generation(Duration::from_secs(60)) {
+        // Real local inference takes minutes per role; 60 s aborted genuine runs.
+        if !self.wait_generation(Duration::from_secs(20 * 60)) {
             self.cancel_generation();
             return Err("Generation timed out.".into());
         }
@@ -542,6 +550,19 @@ impl AiPlannerUi {
         }
     }
 
+    /// Material tiles per side for a height grid (`vertex = tiles * 4 + 1`).
+    pub fn tile_dimension(vertex_size: usize) -> usize {
+        ((vertex_size.saturating_sub(1)) / 4).max(1)
+    }
+
+    /// Features whose anchor tile is outside the edit area or inside a lock; Apply rejects them.
+    pub fn features_outside_scope(plan: &AiMapPlan, scope: &AiMapEditScope) -> usize {
+        plan.features
+            .iter()
+            .filter(|f| !scope.allows_tile(f.x, f.y))
+            .count()
+    }
+
     pub fn apply_plan_to_session(&mut self, session: &mut TerrainSession, water_level: f32) -> Result<AiMapApplyResult, String> {
         if self.job.is_some() {
             return Err("Generation is still running.".into());
@@ -550,26 +571,39 @@ impl AiPlannerUi {
             return Err("No AI plan generated to apply.".into());
         };
 
-        let dimension = session.vertex_size;
+        // The operator works in material tiles (4 height cells each; 64 on a 257-vertex map),
+        // the same units as the prompt's coordinates and the edit-area box.
+        let dimension = Self::tile_dimension(session.vertex_size);
+        // Accumulate every stroke and commit once, so one Undo reverts the whole plan like
+        // the other editor tools.
         let result = AiEditorOperator::apply(
             plan,
             Some(session.core_mut()),
             None,
             dimension,
             water_level,
-            true,
+            false,
             None,
             None,
             None,
         );
+        session.commit_stroke();
 
-        self.status_message = format!(
-            "Applied plan: {} height samples modified, {} collision pixels updated, {} operations.",
-            result.height_samples_changed,
-            result.collision_pixels_changed,
-            result.operation_count()
-        );
-        self.status_is_error = false;
+        let changed = result.height_samples_changed > 0 || result.collision_pixels_changed > 0;
+        self.status_message = if changed {
+            format!(
+                "Applied plan: {} height samples modified, {} collision pixels updated, {} operations.",
+                result.height_samples_changed,
+                result.collision_pixels_changed,
+                result.operation_count()
+            )
+        } else {
+            format!(
+                "Applied plan changed nothing: all {} operations fell outside the edit area or locks. Generate again or widen the area.",
+                result.operation_count()
+            )
+        };
+        self.status_is_error = !changed;
         self.last_apply_result = Some(result.clone());
         // C#: the plan is consumed by Apply (no double apply); the map is now dirty.
         self.current_plan = None;
@@ -888,6 +922,69 @@ mod tests {
         // The plan is consumed (C# `_plan = null`): no double apply.
         assert!(ui.current_plan.is_none());
         assert!(ui.apply_plan_to_session(&mut session, 0.0).is_err());
+    }
+
+    #[test]
+    fn applying_a_multi_stroke_plan_is_one_undo_step() {
+        let plan: AiMapPlan = serde_json::from_value(serde_json::json!({
+            "baseHeight": 40,
+            "features": [
+                {"type": "mountain", "x": 10, "y": 10, "radius": 5, "amount": 30},
+                {"type": "valley", "x": 22, "y": 22, "radius": 5, "amount": 20}
+            ]
+        }))
+        .unwrap();
+        let mut ui = AiPlannerUi::default();
+        ui.current_plan = Some(plan);
+        let mut session = TerrainSession::create_blank(257, 32);
+        let original = session.heights().to_vec();
+        let result = ui.apply_plan_to_session(&mut session, 0.0).unwrap();
+        assert!(result.operation_count() >= 3, "{}", result.operation_count());
+        let applied = session.heights().to_vec();
+        assert_ne!(applied, original);
+        assert!(session.undo());
+        assert_eq!(session.heights(), &original[..], "one undo reverts the whole plan");
+        assert!(!session.can_undo());
+        assert!(session.redo());
+        assert_eq!(session.heights(), &applied[..]);
+    }
+
+    /// Plan captured from a real laguna-xs-2.1 run (`tests/ai_planner_live.rs`). The model was
+    /// asked for X/Y 4..27 but anchored both features at x=32: review must warn, and an Apply
+    /// that changes nothing must say so instead of reporting success.
+    const REAL_LAGUNA_PLAN: &str = r#"{"summary":"t","features":[{"type":"hill","location":"center","x":32,"y":32,"radius":8,"amount":45},{"type":"valley","location":"north-center","x":32,"y":20,"radius":6,"amount":10}]}"#;
+
+    #[test]
+    fn real_laguna_plan_outside_edit_area_is_flagged_and_reported() {
+        let mut plan: AiMapPlan = serde_json::from_str(REAL_LAGUNA_PLAN).unwrap();
+        let scope = AiMapEditScope::parse("4,4,24,24", "", false).unwrap();
+        assert_eq!(AiPlannerUi::features_outside_scope(&plan, &scope), 2);
+        plan.edit_scope = Some(scope);
+        let mut ui = AiPlannerUi::default();
+        ui.current_plan = Some(plan);
+        let mut session = TerrainSession::create_blank(257, 60);
+        let result = ui.apply_plan_to_session(&mut session, 0.0).unwrap();
+        assert_eq!(result.height_samples_changed, 0);
+        assert!(ui.status_is_error);
+        assert!(ui.status_message.contains("changed nothing"), "{}", ui.status_message);
+        assert!(!session.can_undo(), "an empty apply adds no undo step");
+    }
+
+    #[test]
+    fn plan_coordinates_are_material_tiles_not_height_vertices() {
+        assert_eq!(AiPlannerUi::tile_dimension(257), 64);
+        assert_eq!(AiPlannerUi::tile_dimension(193), 48);
+        let mut plan: AiMapPlan = serde_json::from_str(REAL_LAGUNA_PLAN).unwrap();
+        plan.edit_scope = Some(AiMapEditScope::parse("0,0,64,64", "", false).unwrap());
+        let mut ui = AiPlannerUi::default();
+        ui.current_plan = Some(plan);
+        let mut session = TerrainSession::create_blank(257, 60);
+        let result = ui.apply_plan_to_session(&mut session, 0.0).unwrap();
+        assert!(result.height_samples_changed > 0, "{result:#?}");
+        // Tile (32,32) is the map centre, vertex ~(130,130); vertex (32,32) stays untouched.
+        let h = |x: usize, y: usize| session.heights()[y * 257 + x];
+        assert!(h(130, 130) > 60, "centre raised: {}", h(130, 130));
+        assert_eq!(h(32, 32), 60);
     }
 
     #[test]
