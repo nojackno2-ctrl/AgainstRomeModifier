@@ -1,3 +1,9 @@
+## 2026-10-22 Claude：`--game <PATH> --validate-map` 批次檢查所有可編輯地圖（已驗證）
+
+- 不帶 `--map` 時，`--validate-map` 會用 `GameMapCatalog` 列出非戰役地圖逐張跑設計檢查，最後輸出「已檢查 N 張地圖；M 張有錯誤：…」；任一張有 Error 或無法開啟則 exit 2。單圖模式行為不變；`--validate-map` 單獨使用的錯誤訊息改為 "requires --map or --game"。
+- 測試：`cli_startup_tests` 合成遊戲根目錄批次輸出含 ENDL_001／HIST_01、不含 KAMP_001、exit 0，並直接測 `batch_validation_maps`。`cargo test -p against-rome-editor-app --locked --offline --target-dir re_workspace/target-w20 -- --test-threads=1` 全通過、無 warning。
+- 實際安裝版唯讀：`--game "C:\Program Files (x86)\Against Rome" --validate-map --lang zh` → 「已檢查 40 張地圖；0 張有錯誤」exit 0（`re_workspace/validate-all-maps.log`）。GUI／遊戲內驗收仍未做。
+
 ## 2026-10-22 Claude：未編輯的原版地圖改報單一 `scenario-native-only`（已驗證）
 
 - 唯讀批次檢查全部 40 張非戰役安裝版地圖（`re_workspace/validate-all-maps.log`）：39 張未編輯地圖每張都報同樣 4 個警告（no-start、team-no-main-house、team-no-units、scenario-no-win-loss）。原版地圖的建築、部隊在原生 DATA 池、勝負邏輯在原生 BCI，編輯器劇本模型看不到，這些都是猜測雜訊。

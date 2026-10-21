@@ -2,7 +2,7 @@
 mod cli;
 
 use against_rome_editor_app::bmp::BmpImage;
-use cli::{parse_startup_options, resolve_direct_map, resolve_startup_map};
+use cli::{batch_validation_maps, parse_startup_options, resolve_direct_map, resolve_startup_map};
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -149,7 +149,7 @@ fn test_missing_and_mismatched_flags() {
     let err_val_alone = resolve_startup_map(&opt_val_alone).unwrap_err();
     assert_eq!(
         err_val_alone,
-        "--validate-map requires --map and cannot combine with --smoke-test"
+        "--validate-map requires --map or --game and cannot combine with --smoke-test"
     );
 
     // 6. --validate-map combined with --smoke-test
@@ -165,7 +165,7 @@ fn test_missing_and_mismatched_flags() {
     let err_val_smoke = resolve_startup_map(&opt_val_smoke).unwrap_err();
     assert_eq!(
         err_val_smoke,
-        "--validate-map requires --map and cannot combine with --smoke-test"
+        "--validate-map requires --map or --game and cannot combine with --smoke-test"
     );
 
     // 7. Duplicate flags
@@ -338,6 +338,21 @@ fn test_binary_cli_execution() {
     assert!(out_direct.status.success(), "Stderr: {}", String::from_utf8_lossy(&out_direct.stderr));
     let stdout_direct = String::from_utf8_lossy(&out_direct.stdout);
     assert!(stdout_direct.contains("Validated height 65x65, collision 64x64; no files written."));
+
+    // 4b. Batch mode: --game without --map checks every editable map, never campaigns
+    let out_all = Command::new(&bin)
+        .args(["--game", temp.path.to_str().unwrap(), "--validate-map"])
+        .output()
+        .unwrap();
+    let stdout_all = String::from_utf8_lossy(&out_all.stdout);
+    assert!(stdout_all.contains("== ENDL_001"), "{stdout_all}");
+    assert!(stdout_all.contains("== HIST_01"), "{stdout_all}");
+    assert!(!stdout_all.contains("KAMP_001"), "{stdout_all}");
+    assert!(stdout_all.contains("Checked 2 maps; 0 with errors"), "{stdout_all}");
+    assert_eq!(out_all.status.code(), Some(0), "{stdout_all}");
+    let ids: Vec<_> = batch_validation_maps(&temp.path).unwrap().into_iter().map(|m| m.id).collect();
+    assert_eq!(ids.len(), 2, "{ids:?}");
+    assert!(ids.iter().all(|id| !id.starts_with("KAMP_")));
 
     // 5. Campaign map rejected with error
     let out_kamp = Command::new(&bin)

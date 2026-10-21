@@ -42,6 +42,12 @@ pub fn resolve_direct_map(game_path: &Path, map_id: &str) -> Result<GameMapInfo,
     Ok(map)
 }
 
+/// Editable maps for `--game <PATH> --validate-map` without `--map`, in catalog order.
+pub fn batch_validation_maps(game_path: &Path) -> Result<Vec<GameMapInfo>, String> {
+    let maps = GameMapCatalog::new().list(game_path)?;
+    Ok(maps.into_iter().filter(is_selectable_map).collect())
+}
+
 /// Parses CLI arguments case-insensitively.
 pub fn parse_startup_options<I, T>(args: I) -> Result<StartupOptions, String>
 where
@@ -112,8 +118,16 @@ where
 
 /// Resolves the startup map directory (either via `--game <dir> --map <ID>` or direct `--map <dir>`).
 pub fn resolve_startup_map(options: &StartupOptions) -> Result<Option<PathBuf>, String> {
-    if options.validate_map && (options.map_arg.is_none() || options.smoke_test) {
-        return Err("--validate-map requires --map and cannot combine with --smoke-test".into());
+    if options.validate_map
+        && (options.smoke_test || (options.map_arg.is_none() && options.game_path.is_none()))
+    {
+        return Err(
+            "--validate-map requires --map or --game and cannot combine with --smoke-test".into(),
+        );
+    }
+    if options.validate_map && options.map_arg.is_none() {
+        // Batch mode: every editable map is resolved by `batch_validation_maps`.
+        return Ok(None);
     }
 
     match (&options.game_path, &options.map_arg) {
