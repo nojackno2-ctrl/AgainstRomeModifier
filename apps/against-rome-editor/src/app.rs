@@ -9029,6 +9029,14 @@ angle=0.00
 
 impl eframe::App for EditorApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.ui_frame(ctx);
+    }
+}
+
+impl EditorApp {
+    /// One full editor frame. `eframe::App::update` delegates here; tests drive it headlessly
+    /// with an `egui::Context` (no window or `eframe::Frame` needed).
+    pub fn ui_frame(&mut self, ctx: &egui::Context) {
         if ctx.input(|i| i.viewport().close_requested())
             && !self.close_allowed
             && self.has_unsaved_changes()
