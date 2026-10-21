@@ -1,5 +1,11 @@
 > **歷史文件（Historical）**：本文件撰寫於 Rust 遷移期間；其中引用的 C#／C++ 路徑（`src.*`、`tests/`、`.slnx`、`native/argm-trace` 等）已不存在。需要時可用 `git show 8d49cb3:<path>` 取回。最終結論請見 [docs/rust-rewrite.md](rust-rewrite.md)。
 
+## 目前狀態快照（2026-10-21）
+
+- 目前 Git tracked source audit：`.cs`、`.csproj`、`.sln`、`.slnx`、`.cpp`、`.c`、`.py` 均為 **0**；`.rs` 為 **571**、Ghidra Java scripts 為 **20**。C ABI header 是 Rust FFI 的介面宣告，不含 C 實作。
+- `cargo metadata --locked --offline --no-deps --format-version 1` 回報 workspace **33 packages**；repo tracked 有 **34 個 Cargo.toml**（根 workspace manifest 加 33 個 package manifests），`against-rome-trace` 也已是 workspace member。現行 PowerShell 檔是 Rust build/test/release orchestration，不是 .NET build pipeline。
+- 下方表格與統計保留遷移期間的歷史來源路徑、數量和計畫，**不是目前檔案清單或剩餘產品程式碼清單**。曾列出的 .NET oracle、舊 publisher 與 C++ 專案已從目前 tree 退役；C# oracle 輸出以 Rust fixtures 保留。完整 parity crosswalk、ignored/retail gate 與 GUI／遊戲驗收仍各自有未完成項目，見 [rust-rewrite.md](rust-rewrite.md) 與 `AI_HANDOFF.md`。
+
 # AgainstRomeModifier → Rust 全程式改寫遷移盤點清單 (Port Inventory)
 
 > 本文件為依據目前 Repository 真實檔案、專案檔（.csproj / .slnx / CMakeLists.txt / Cargo.toml）與程式碼符號建立的逐項遷移盤點清單。
@@ -262,20 +268,19 @@
 11. **檔案挑選器對話框整合 (Native File Dialogs)**：Rust Modifier `.artroop` open/save 與 Maps 遊戲目錄 folder picker 已接上 `rfd`，對應測試透過 injected picker 驗證取消與路徑安全；實際 Windows 原生對話框仍未手動啟動驗收。
    - 驗證命令：`cargo test --release --locked --offline --manifest-path apps/against-rome-editor/Cargo.toml --target-dir re_workspace/parent-modifier-dialog-check --lib modifier_ui`；`cargo test --release --locked --offline --manifest-path apps/against-rome-editor/Cargo.toml --target-dir re_workspace/parent-modifier-dialog-check --lib maps_ui`
 
-### 4.5 發行打包、部署整合與 C# 退場現況 (Release Publisher & C# Transition Status)
-12. **Rust Portable Publisher 六執行檔與實際 ZIP 發行已通過本機離線驗證 (`tools/publish-rust.ps1`)**：
+### 4.5 遷移期間的發行與 C# 退場紀錄（歷史）
+以下內容保留遷移期間的狀態，不代表目前尚有 C# 產品程式或 .NET 發行管線。
+
+12. **Rust Portable Publisher 六執行檔與實際 ZIP 發行的遷移期驗證 (`tools/publish-rust.ps1`)**：
      - 現況：已支援 editor、Modifier GUI、Modifier CLI、Launcher、Save Manager、ArmMapPackage 六個 Cargo targets，以及 Rust i686 trace DLL；父端發行 13 個 stage files，建立含 14 entries 的 ZIP 與 `.zip.sha256`。`tools/test-publish-rust.ps1 -SkipNetworkFetch` 全測試通過，兩次獨立快取離線 staging 的 provenance/ZIP checksum 通過。
     - 具體缺口：
       1. 完整 portable staging 與產物 hash/provenance 已在 repo 外 TEMP 驗證；clean Windows 驗收仍未完成。
       2. 尚未在乾淨且無 .NET/CRT 開發環境的 Windows 驗收便攜包。
       3. 零售遊戲實際安裝與 Rust trace DLL 啟動掛鉤驗收仍未執行。
     - 驗證命令：`pwsh -NoProfile -ExecutionPolicy Bypass -File tools/test-publish-rust.ps1`
-13. **『C# 測試、oracle/probe 留存』與『產品功能仍用 C#』分界說明**：
-    - **C# 測試與 Oracle/Probe（刻意留存作為驗證基準）**：
-      - 儲存庫內保留的 18 個 C# Oracle/Golden 專案（如 `CampaignUnicodeOracle`, `AlrOracle`, `PlacementOracle`, `SaveBackupManifestCodec` 等）以及 10 個 `tools/re/*-probe`，其目的為提供 Rust 重寫演算法的逐位元差分檢驗與逆向探針基準，並非產品功能未移植。
-    - **產品功能仍用 C#（待正式退場的產品實體）**：
-      - 正式發布管線 `tools/publish.ps1` 目前仍針對 `AgainstRomeModifier.slnx` 進行單檔 .NET 發布；只有在 `publish-rust.ps1` 完成並通過乾淨環境驗收後，C# 主程式與發布管線方能完全退役。
-      - 尚未在無 .NET 執行環境之乾淨 Windows 機器上實測 Rust 便攜包全套功能。
+13. **C# oracle/probe 退役紀錄與現存驗收缺口**：
+    - 遷移時使用的 C# oracle/probe 專案已自目前 tree 移除；Rust fixtures 與測試保留可重現的輸出基準，舊來源可由 Git 歷史唯讀取回。
+    - 舊 `tools/publish.ps1`、`.NET solution` 與 C# 主程式已退役；目前使用 `tools/publish-rust.ps1` 和 Cargo targets。clean Windows portable 驗收、實際 GUI 與遊戲內驗收仍未完成，不能從遷移期 staging 測試推定通過。
 
 ---
 

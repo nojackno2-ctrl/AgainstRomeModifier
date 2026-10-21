@@ -1,3 +1,44 @@
+## 2026-10-21 Claude：專案檢查與提交未提交的已驗證切片
+
+- 父端重驗目前混合工作樹：`cargo test --workspace --locked --offline --target-dir re_workspace/target-w20 -- --test-threads=1` exit 0，276 test-result groups 累計 **2,315 passed / 0 failed / 16 ignored**；`git diff --check` 無空白錯誤。
+- 分別提交：Placement cross-pool 修補、工具列事件圖套用＋出生點縮圖、水筆刷往返測試、遷移盤點文件與本交接。`AGENTS.md`、`README.md` 依先前紀錄屬使用者既有修改，保留未提交。
+- 仍未做：GUI／遊戲內驗收、完整 C# test-method parity crosswalk、family scan（約 102 秒）效能優化。
+
+## 2026-10-21 Codex：Rust 遷移盤點文件校正
+
+- 依目前 Git tracked source audit 核對：`.cs/.csproj/.sln/.slnx/.cpp/.c/.py` 均 0；`.rs` 571（工作樹含 1 個既有 untracked Rust 測試檔，共 572）；20 個 `.java` 全為 `tools/re/Ghidra*.java`；1 個 `.h` 為 `against_rome_data.h` C ABI 宣告。`cargo metadata --locked --offline --no-deps --format-version 1`：33 workspace packages；tracked Cargo.toml 34（根 workspace manifest 加 33 packages，trace 已在 workspace）。active workflow/tooling 搜尋未發現 .NET build 命令，唯一命中是 publisher 測試拒絕 C++ toolchain 的 guard。
+- `docs/rust-port-inventory.md` 原有 36 個 .NET project、18 個 C# oracle/probe 仍在 tree、舊 `tools/publish.ps1` 尚為產品 publisher 等文字已過時。新增 2026-10-21 現況快照並將舊矩陣與 4.5 節明確標示為遷移期歷史；確認 Rust rewrite summary 與現況一致。
+- 驗證：上述 `git ls-files` 副檔名計數、`cargo metadata` 均成功；`cargo test --workspace --locked --offline --target-dir re_workspace/target-w20 -- --test-threads=1` exit 0，276 個 test-result groups 累計 **2,315 passed / 0 failed / 16 ignored**（ignored 不計為通過）；`cargo check --workspace --locked --offline --target-dir re_workspace/target-w20` 與 `cargo build --workspace --locked --offline --target-dir re_workspace/target-w20` 均 exit 0，涵蓋 trace；`git diff --check` 通過。此為文件/遷移狀態校正，未改產品行為；完整 parity crosswalk、clean Windows、GUI 與遊戲內驗收仍未完成。保留混合工作樹，未 commit/push。
+
+## 2026-10-21 Codex：安裝版 retail gates 與 family scan 效能（部分通過）
+
+- 僅讀安裝版 Against Rome 與 DATA；不修改安裝目錄。`installed_maps_tests -- --ignored` **2 passed**（4 張地圖 `boden.txt` PFIL exact-hash roundtrip、TUTOR_01 實際材質 paint/undo/redo/save/reload TEMP 流程）；安裝來源 `boden.txt`（TUTOR_01、ENDL_000、KAMP_002、MP_000）與 `floortex.dat` SHA-256 前後完全一致。
+- 零售 placement `retail_managed_differential` 對 frozen C# pool hashes 通過；`retail_temp_roundtrip` **1 passed**，TUTOR_01 slot 0 / UID 13136 的移動、複製、刪除、存檔重載皆在 TEMP 完成，測試確認來源 bytes 未變。Scenario `csharp_and_retail_differential` **1 passed**。Rust `ar-re-tools` 安裝版 gate **2 passed**：EXE table 36 sections / 40 options / 10 default headers；74 張地圖、1,776 個 pools 均 well-formed、0 anomalies。
+- `retail_scan_particle_garrison_families` 原先每個 root 都重掃 lager/biglager/particle/light 關聯，逾 60 秒遭中止。現將 `FamilyDetailsIndex` 擴充為每張地圖一次建立的物件反向連結、有效 garrison/biglager 成員、particle owner/light、light owner/parent 索引；family 驗證只查相關 slot，批次 scan 與單次 public `family_details` 共用核心。
+- 驗證：28 個 C# oracle corruption cases 的 indexed/direct 結果完全相同；placement 全套 **55 passed / 0 failed / 3 ignored**，family differential **2 passed**；全地圖 retail family scan 現為 **1 passed**，讀取 74/74 地圖、處理 4,140 個相關 roots，接受 2,912 個 family，其餘按既有 fail-closed 驗證拒絕；耗時 **101.53 秒**。`cargo check`／`cargo build` exit 0。此前 retail managed differential 與 TEMP roundtrip 也各通過 1；安裝遊戲來源未修改。
+- 狀態：此性能 gate 已通過但耗時仍約 102 秒，後續可再 profiling；不代表所有 retail family 均可 managed，unsupported related-pool 欄位等拒絕仍待分別確認是否是預期資料。無 GUI 點擊或遊戲內地圖載入驗收。工作樹其他未提交變更均保留，未提交／推送。
+
+## 2026-10-21 Codex：水筆刷編輯器往返 parity 測試
+
+- 舊 C# `MapEditorWaterPassabilityTests.Water_brush_updates_collision_with_height_undo_redo_and_save_reload` 的 Rust domain/differential 測試已存在，但 editor adapter 的 `editor_tests.rs` 尚未驗證整條存檔往返。新增 TEMP BMP fixture：水筆刷同時修改高度與碰撞、保留已編輯碰撞值，undo/redo 同步還原兩層，Safe Save 後重載兩層一致且 baseline 乾淨。測試只寫入 process/time 唯一的 TEMP 子目錄並在成功後移除。
+- 驗證：定向測試通過；`cargo test -p against-rome-editor-app --locked --offline --target-dir re_workspace/target-w20 -- --test-threads=1` 完整通過，524 app unit tests、24 launcher tests、全部整合 targets 與 doc tests，新增 `editor_tests` target 為 **4 passed / 0 failed / 0 ignored**。`cargo check -p against-rome-editor-app --locked --offline --target-dir re_workspace/target-w20` exit 0；`cargo build -p against-rome-editor-app --locked --offline --target-dir re_workspace/target-w20` exit 0；scoped rustfmt check 與 `git diff --check` 通過。
+- 狀態：新增 parity coverage 尚未提交／推送。此測試未執行真實 GUI 或安裝版遊戲驗收；完整 C# test-method crosswalk 仍未完成。
+
+## 2026-10-21 Codex：Placement cross-pool parity 修補（workspace 通過）
+
+- 比對舊 C# `LevelObjectStoreCrossPoolTests.Inactive_position_referenced_as_third_is_not_reallocated`，確認 Rust `clone_family_fixed` 會把 active native object 所引用的 inactive position slot 當成可用空位，複製時可能覆寫未管理物件仍引用的資料。修正 `used_positions`：只保留 active object links 指向且 position record inactive 的 slots；active position 仍由既有配置器正常處理，越界引用不納入集合。
+- 新增 position 與 light orphan regression tests，涵蓋複製不重用、不覆寫外部引用資料、family 可解析及單步 undo 還原。曾試過保留所有 links，造成 17 個既有測試失敗；已依證據縮小為 inactive targets，placement 全套通過。
+- 驗證：`cargo test -p against-rome-placement --locked --offline --target-dir re_workspace/target-w20 -- --test-threads=1` **55 passed / 0 failed / 3 ignored**；family differential **2 passed**。`cargo test --workspace --locked --offline --target-dir re_workspace/target-w20 -- --test-threads=1` 明確 `CARGO_WORKSPACE_TEST_EXIT=0`，workspace unit/integration/doc targets 通過；retail map 測試維持 ignored（需要安裝版地圖）。`git diff --check` 通過。尚未做 GUI／遊戲內驗收，未操作安裝遊戲。
+- 舊 C# 測試庫盤點：181 個來源檔、粗數 840 個 Fact/Theory attributes；與既有 276 methods 統計口徑不一致，逐方法 crosswalk 尚未完成，不能據此宣稱 parity 完整。
+- 狀態：此 Placement parity slice 已驗證，未提交／推送。完整 Rust 改寫後續仍需完成 parity crosswalk 及 GUI／retail acceptance。
+
+## 2026-10-21 Codex：工具列事件圖套用與出生點縮圖（已驗證）
+
+- 工具列 Event Graph 現已載入目前 live Scenario；Apply 以 Scenario 的單一 undo 歷史套用，Safe Save 再負責寫檔。完整快照比對地圖、劇本文件、baseline、aliases；來源變更、baseline 解析錯誤或沒有 loaded scenario 時 fail closed，並保留圖面草稿。若 Scenario 面板另一份事件圖有待套用編輯，不會覆寫它。
+- Safe Save 將未套用的工具列事件圖列為阻擋原因。新增跨元件測試：原始/PFIL 套用存檔重載、無效圖、未套用阻擋、重新載入衝突、缺少劇本、另一份事件圖草稿保護、乾淨圖同步與放棄後重開。
+- 出生點放置類型面板新增原生精靈縮圖；只對可見列解碼並快取，依地圖所在遊戲根目錄唯讀載入精靈目錄。ARGB 通道轉換測試通過。
+- 驗證（repo-local Rust runtime，`--locked --offline --target-dir re_workspace/target-w20`）：`cargo check -p against-rome-editor-app` exit 0；`cargo test -p against-rome-editor-app -- --test-threads=1` exit 0，524 unit tests、launcher 24 tests、整合 targets 與 doc tests 全通過（app lib 0 ignored）；`cargo build -p against-rome-editor-app` exit 0；新增測試檔 rustfmt check 與 `git diff --check` 通過。全檔 rustfmt check 會要求重排既有 app 測試/模組大量歷史程式碼，未套用以免擴大差異。
+- 尚未做 GUI／遊戲內視覺驗收；未操作安裝遊戲。工作樹保留使用者既有 `AGENTS.md`、`README.md` 修改；本次尚未提交。
 ## 2026-10-21 Codex：退役舊 .NET/C++ 原始碼，Rust-only generator/resource discovery（workspace 通過）
 
 - 開始時 `git ls-files` 有 652 `.cs`、8 `.csproj`、1 `.slnx`；工作樹沒有舊 source 修改。現已移除 `src.Core`、`src.Shared`、`src.MapEditor.Modules`、`src.MapEditor`、`src.Modifier`、`src.SaveManager`、C# `tests/`、solution/MSBuild/NuGet 檔與 tracked 舊 C++ `ThirdParty/argm-trace/winmm.dll`。另移除無現行引用的 `tools/publish.ps1`／`tools/Test-ReleaseArtifacts.ps1`；`publish-rust.ps1` 保留為唯一 publisher。
