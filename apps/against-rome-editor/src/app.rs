@@ -162,6 +162,8 @@ pub struct EditorApp {
     ai_materials_key: String,
     /// Map for which the Material brush already tried to load boden.txt on demand.
     material_autoload_tried: Option<PathBuf>,
+    /// Map for which the Scenario panel already tried to load its script on demand.
+    scenario_autoload_tried: Option<PathBuf>,
     pub ambience: AmbienceUi,
     pub modifier: ModifierUi,
     pub viewport_3d: Viewport3d,
@@ -297,6 +299,7 @@ impl EditorApp {
             ai_planner: AiPlannerUi::default(),
             ai_materials_key: String::new(),
             material_autoload_tried: None,
+            scenario_autoload_tried: None,
             ambience: AmbienceUi::default(),
             modifier: ModifierUi::default(),
             viewport_3d: Viewport3d::new(),
@@ -5306,6 +5309,25 @@ mod tests {
         std::fs::remove_dir_all(root).unwrap();
     }
 
+    /// Opening the Scenario panel on an opened map loads its script on demand; events added from
+    /// the panel must then pass Design Check instead of "劇本尚未載入來源".
+    #[test]
+    fn scenario_panel_loads_the_open_maps_script_on_demand() {
+        let (mut app, dir, _) = start_camera_app(false);
+        assert!(!app.scenario.is_loaded());
+        let ctx = egui::Context::default();
+        gui_click(&mut app, &ctx, "Scenario / Camera");
+        assert!(app.scenario.is_loaded(), "{}", app.status_message);
+        assert!(!app.has_unsaved_changes(), "loading the script is not an edit");
+        gui_click(&mut app, &ctx, "新增事件");
+        assert_eq!(app.scenario.document().events.len(), 1);
+        assert!(matches!(
+            app.design_check_report(),
+            crate::design_check_ui::DesignCheckReport::Checked { .. }
+        ));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
     /// Choosing the Material brush on an opened map must load its boden.txt on demand (like
     /// Flat Terrain), not tell the designer to "load a map with boden.txt".
     #[test]
@@ -5326,6 +5348,78 @@ mod tests {
         assert!(gui_find(&out, "Load a map with boden.txt to paint materials.").is_none());
         assert!(!app.has_unsaved_changes(), "loading materials is not an edit");
         std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    fn design_codes(app: &EditorApp) -> Vec<String> {
+        match app.design_check.report.as_ref().expect("report") {
+            crate::design_check_ui::DesignCheckReport::Checked { map_issues, design_issues, .. } => map_issues
+                .iter()
+                .map(|i| i.code.clone())
+                .chain(design_issues.iter().map(|i| i.code.clone()))
+                .collect(),
+            other => panic!("check unavailable: {other:?}"),
+        }
+    }
+
+    /// Headless click-through of scenario authoring on a TEMP copy of the untouched ENDL_000
+    /// template: add Victory and Defeat events in the Scenario panel, re-run Design Check and
+    /// Safe Save, then reload. Proves the editor half of win/loss; the game half is in-game.
+    #[test]
+    #[ignore = "copies a map from the installed game"]
+    fn gui_click_through_authors_victory_and_defeat_events() {
+        let game = PathBuf::from(std::env::var("ARM_AI_GAME_ROOT").unwrap_or_else(|_| r"C:\Program Files (x86)\Against Rome".into()));
+        let root = temp_map_dir("gui_scenario_root");
+        let dir = root.join("MAPS").join("ENDL_000");
+        copy_tree(&game.join("MAPS/ENDL_000"), &dir);
+        std::fs::create_dir_all(root.join("SYSTEM/CLAK")).unwrap();
+        std::fs::copy(game.join("SYSTEM/CLAK/cl_scint.ini"), root.join("SYSTEM/CLAK/cl_scint.ini")).unwrap();
+        let script_before = std::fs::read(dir.join("SCRIPT/ak_level.bci")).unwrap();
+        let mut app = EditorApp::initial_state();
+        app.set_loaded_map(dir.clone(), crate::storage::load_map(&dir).unwrap()).unwrap();
+        let ctx = egui::Context::default();
+        for _ in 0..3 {
+            gui_frame(&mut app, &ctx, vec![]);
+        }
+
+        gui_click(&mut app, &ctx, "Design Check");
+        assert!(design_codes(&app).contains(&"scenario-native-only".to_string()));
+        app.design_check.open = false;
+
+        gui_click(&mut app, &ctx, "Scenario / Camera");
+        for kind in ["勝利", "失敗"] {
+            gui_click(&mut app, &ctx, "新增事件");
+            gui_click(&mut app, &ctx, "顯示訊息");
+            gui_click(&mut app, &ctx, kind);
+        }
+        let kinds: Vec<Vec<i32>> = app.scenario.document().events.iter().map(|e| e.actions.iter().map(|a| a.kind).collect()).collect();
+        assert_eq!(kinds, vec![vec![3], vec![4]], "victory then defeat");
+
+        gui_click(&mut app, &ctx, "Design Check");
+        let codes = design_codes(&app);
+        assert!(!codes.iter().any(|c| c == "scenario-native-only" || c.starts_with("scenario-no-")), "{codes:?}");
+        assert_eq!(app.design_check.report.as_ref().unwrap().error_count(), 0, "{codes:?}");
+        app.design_check.open = false;
+
+        gui_click(&mut app, &ctx, "Safe Save");
+        // The template's remaining warnings (no editor-placed start troop or base) need the
+        // designer's OK in the confirmation dialog.
+        assert!(app.pending_save_warnings.is_some(), "{}", app.status_message);
+        let warned: Vec<String> = app.pending_save_warnings.as_ref().unwrap().1.iter().map(|i| i.code.clone()).collect();
+        eprintln!("save warnings: {warned:?}");
+        gui_click(&mut app, &ctx, "Continue saving");
+        assert!(app.pending_save_warnings.is_none());
+        assert!(!app.status_is_error, "{}", app.status_message);
+        assert!(!app.has_unsaved_changes(), "{}", app.status_message);
+
+        let script_after = std::fs::read(dir.join("SCRIPT/ak_level.bci")).unwrap();
+        assert_ne!(script_after, script_before, "events compiled into the level script");
+        assert_eq!(std::fs::read(dir.join("SCRIPT/ak_level.arm_original")).unwrap(), script_before);
+        let mut reopened = EditorApp::initial_state();
+        reopened.set_loaded_map(dir.clone(), crate::storage::load_map(&dir).unwrap()).unwrap();
+        reopened.scenario.load_session(&dir).unwrap();
+        let kinds: Vec<Vec<i32>> = reopened.scenario.document().events.iter().map(|e| e.actions.iter().map(|a| a.kind).collect()).collect();
+        assert_eq!(kinds, vec![vec![3], vec![4]]);
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     /// Retail gate (read-only): on ENDL_005's B8 ground most materials have no native corner
@@ -10160,6 +10254,21 @@ impl EditorApp {
             if !self.settlement_history(redo) {
                 if redo { let _ = self.placement.redo(); }
                 else { let _ = self.placement.undo(); }
+            }
+        }
+        // Opening the Scenario panel loads the open map's script on demand (once per map, never
+        // over pending edits); otherwise added events could not be checked or saved.
+        if self.scenario.open
+            && !self.scenario.is_loaded()
+            && !self.scenario.dirty()
+            && self.scenario_autoload_tried != self.loaded_map_path
+        {
+            self.scenario_autoload_tried = self.loaded_map_path.clone();
+            if let Some(path) = self.loaded_map_path.clone() {
+                if let Err(e) = self.scenario.load_session(&path) {
+                    self.status_message = format!("Scenario: {e}");
+                    self.status_is_error = true;
+                }
             }
         }
         self.scenario.show(ctx);

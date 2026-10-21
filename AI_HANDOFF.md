@@ -1,3 +1,10 @@
+## 2026-10-22 Claude：劇本面板按需載入＋UI 點擊撰寫勝敗事件（已驗證）
+
+- **劇本事件無法檢查／存檔**：開圖後打開「Scenario / Camera」直接按「新增事件」，事件加到尚未載入來源腳本的 session；Design Check 回「Scenario: 劇本尚未載入來源 (SCRIPT/ak_level.bci)，無法暫存交易檔案」，Safe Save 走相同暫存流程也會失敗，除非設計者先找到「載入」按鈕。現在面板開啟時依材質先例按需 `load_session`（每張地圖一次、有未存修改時不載入），錯誤寫入狀態列。新單元測試 `scenario_panel_loads_the_open_maps_script_on_demand`。
+- 新 ignored 點擊測試 `gui_click_through_authors_victory_and_defeat_events`（TEMP 複製未編輯的 ENDL_000＋cl_scint.ini）：Design Check 先報 `scenario-native-only` → 面板「新增事件」→ 動作下拉「顯示訊息」→ 選「勝利」；再新增一個選「失敗」→ 文件事件為 [[3],[4]] → Design Check 0 錯誤、無 scenario-no-* → 工具列 Safe Save 跳出設計警告視窗（team-no-main-house、team-no-units）→ 點「Continue saving」→ 存檔成功、ak_level.bci 已改寫且 ak_level.arm_original 保存原檔 → 新編輯器重載劇本仍為勝利／失敗兩事件。
+- 觀察（未改）：範本加入事件後不再是 native-only，隊伍檢查又會對原生 DATA 中的主堡／部隊提出警告（需設計者確認）；劇本面板文字在英文模式仍為中文。
+- 驗證：`cargo test --workspace --locked --offline --target-dir re_workspace/target-w20 -- --test-threads=1` exit 0，283 groups **2,360 passed／0 failed／23 ignored**（`re_workspace/scenario-ui-workspace-test.log`）。編輯器端勝敗撰寫已驗證；遊戲內是否觸發勝負仍未做。
+
 ## 2026-10-22 Claude：調色盤搜尋＋bridge tier 草地 UI 實畫（已驗證）
 
 - 補上前一筆未驗證項：無視窗點擊測試在調色盤搜尋框點擊並以 `egui::Event::Text("green")` 輸入，結果列出 Light Green Grass、Grey Green Wasteland、Bright Green Grass，以及標註「(hard to blend on this map)」的 Dark Green Grass；點選 Light Green Grass（需過渡材質）後在畫布拖曳，以預設自動過渡實畫 **60 格**、無拒絕訊息。確認新的 `blends` 分級對 bridge tier 推薦可畫。非視覺驗收；遊戲內仍未做。
