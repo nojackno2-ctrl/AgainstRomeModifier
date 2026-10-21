@@ -1,3 +1,12 @@
+## 2026-10-22 Claude：AI Materials 角色接上材質層、只提供可畫材質；套用後不再擋存檔（已驗證）
+
+- **Materials 角色從未生效**：`apply_plan_to_session` 傳 `None` 給 blend session 與 fallback，所有材質筆刷都回「此地圖沒有可編輯的材質」。現在 Apply 接 Textures 面板的 `TerrainBlendEditSession`（AI 面板開啟時依 Flat Terrain 先例按需載入 boden.txt），材質層一次 commit、一次 undo；含材質的方案在材質未載入時拒絕套用且不動高度。
+- **提供給模型的材質 id 不存在**：原寫死 `GRAS1/ERDE/FELS/FLUSS1`，真實目錄是 `B1…BX`、`L2:01`、`PFAD` 等 90 種。改為由 `TexturesUi::palette_materials_blendable_in` 依編輯範圍提供；Materials 角色在沒有目錄時拒絕生成。
+- **大多數材質畫不上去**：ENDL_005 地面 B8 只與極少材質有原生轉角圖塊；「有任一過渡」的寬鬆判斷給出 9 種、實際只 2 種能畫。改為要求凸形筆刷會產生的 12 種雙材質轉角組合（不含兩個對角）都能解析；ENDL_005 範圍 8,8,48,48 現提供 B8、PFAD，且 PFAD 實畫 25 格。B7 實測可畫但缺一個凹角組合，被保守排除。
+- **套用後無法存檔**：Apply 後 planner 仍 `dirty=true`，Safe Save 拒絕「AI Planner: pending plan must be applied or discarded」。方案已寫入地形／材質 session（各自有 dirty 與 undo），Apply 後改為 `dirty=false`。AI 套用後通知 Textures 面板更新材質檢視。
+- 測試：Materials 角色只收目錄 id／無目錄拒絕、含材質方案無材質層拒絕；ignored retail gate `retail_ai_offered_materials_all_paint_on_endl_005`（唯讀，通過）；ignored live gate `live_ollama_water_materials_apply_undo_save_reload`（TEMP 複製 ENDL_005＋floortex.dat＋cl_scint.ini）。實機 laguna：Water 角色改 11,465／7,957 高度點、Safe Save 後重載高度與材質一致；材質筆刷被接受（0 拒絕），但兩次模型分別選 B8（同材質無變化）與未產生材質特徵，**未取得 AI 實際改變材質格的實機證據**（離線 retail gate 已證明提供的材質可畫）。
+- 驗證：`cargo test --workspace --locked --offline --target-dir re_workspace/target-w20 -- --test-threads=1` exit 0，283 groups **2,357 passed／0 failed／21 ignored**（`re_workspace/ai-materials-workspace-test.log`）；安裝目錄 ENDL_005／floortex.dat／CLAK 無變更。`textures_ui.rs` 含 NUL 位元組，以字面錨點腳本插入（曾一次 perl 正則誤改，已從與 HEAD 相同的備份還原後重做）。GUI／遊戲內驗收仍未做。
+
 ## 2026-10-22 Claude：AI 製圖套用三個缺陷修正＋真實 Ollama 全流程 gate（已驗證）
 
 - **座標單位錯誤**：`AiPlannerUi::apply_plan_to_session` 把 `vertex_size`（零售圖 257）當 `AiEditorOperator::apply` 的 dimension，但 operator／提示詞／編輯範圍都以材質格為單位（`vertex = tiles*4+1`，零售圖 64）。AI 特徵因此落在約 1/4 位置（瞄準地圖中心 tile 32 的山落在頂點 32）。改用 `tile_dimension(vertex_size)`。

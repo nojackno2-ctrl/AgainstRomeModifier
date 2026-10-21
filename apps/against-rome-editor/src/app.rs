@@ -158,6 +158,8 @@ pub struct EditorApp {
     packaging: PackagingUi,
     campaign: CampaignUi,
     ai_planner: AiPlannerUi,
+    /// Edit area + material revision the AI material options were computed for.
+    ai_materials_key: String,
     pub ambience: AmbienceUi,
     pub modifier: ModifierUi,
     pub viewport_3d: Viewport3d,
@@ -291,6 +293,7 @@ impl EditorApp {
             packaging: PackagingUi::default(),
             campaign: CampaignUi::default(),
             ai_planner: AiPlannerUi::default(),
+            ai_materials_key: String::new(),
             ambience: AmbienceUi::default(),
             modifier: ModifierUi::default(),
             viewport_3d: Viewport3d::new(),
@@ -1386,7 +1389,14 @@ impl EditorApp {
 
         let had_session = self.session.is_some();
         let before = self.session.as_ref().is_some_and(|s| s.is_dirty());
-        self.ai_planner.show(ctx, self.session.as_mut(), water);
+        self.sync_ai_materials();
+        let ai_applied = self.ai_planner.applied_revision;
+        self.ai_planner
+            .show(ctx, self.session.as_mut(), self.textures.session_mut(), water);
+        if self.ai_planner.applied_revision != ai_applied {
+            self.textures.note_external_change();
+            self.texture_dirty = true;
+        }
         self.show_family_window(ctx);
         self.show_toolbar_event_graph(ctx);
         if had_session && self.session.as_ref().is_some_and(|s| s.is_dirty()) && !before {
@@ -3768,6 +3778,43 @@ pub fn is_original_map_dir(dir: &Path) -> bool {
 }
 
 impl EditorApp {
+    /// While the AI planner is open, load the map's materials on demand (like Flat Terrain) and
+    /// offer the Materials specialist only catalog ids that can border every material already in
+    /// the edit area: AI strokes are protected and cannot auto-bridge, so others always fail.
+    pub(crate) fn sync_ai_materials(&mut self) {
+        if !self.ai_planner.open {
+            return;
+        }
+        if self.textures.session_textures().is_none() {
+            if let Some(path) = self.loaded_map_path.clone() {
+                let _ = self.textures.load_session(&path);
+            }
+        }
+        let key = format!(
+            "{}|{}|{}",
+            self.ai_planner.bounds_text,
+            self.textures.material_revision(),
+            self.textures.session_textures().is_some()
+        );
+        if key == self.ai_materials_key {
+            return;
+        }
+        self.ai_materials_key = key;
+        let options = match self.ai_planner.parse_scope() {
+            Ok(scope) => {
+                let b = *scope.bounds();
+                let clamp = |v: i32| v.max(0) as usize;
+                self.textures
+                    .palette_materials_blendable_in(clamp(b.x), clamp(b.y), clamp(b.width), clamp(b.height))
+            }
+            Err(_) => Vec::new(),
+        };
+        self.ai_planner.material_options = options
+            .iter()
+            .map(|m| against_rome_ai_planner::AiMaterialOption::new(&m.id, &m.name_en))
+            .collect();
+    }
+
     pub(crate) fn lang(&self) -> AppLanguage {
         self.loc.current_language()
     }
@@ -5075,6 +5122,101 @@ mod tests {
         assert!(blocked.iter().any(|r| r.severity == MapIssueSeverity::Error));
         assert_eq!(save_artifact_snapshot(&dir), before);
         std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    fn copy_tree(from: &Path, to: &Path) {
+        std::fs::create_dir_all(to).unwrap();
+        for entry in std::fs::read_dir(from).unwrap().flatten() {
+            let target = to.join(entry.file_name());
+            if entry.file_type().unwrap().is_dir() {
+                copy_tree(&entry.path(), &target);
+            } else {
+                std::fs::copy(entry.path(), target).unwrap();
+            }
+        }
+    }
+
+    /// Retail gate (read-only): on ENDL_005's B8 ground most materials have no native corner
+    /// tiles, so AI material strokes failed. Every material offered for the edit area must paint.
+    #[test]
+    #[ignore = "reads the installed game"]
+    fn retail_ai_offered_materials_all_paint_on_endl_005() {
+        let game = PathBuf::from(std::env::var("ARM_AI_GAME_ROOT").unwrap_or_else(|_| r"C:\Program Files (x86)\Against Rome".into()));
+        let mut textures = TexturesUi::default();
+        textures.load_session(&game.join("MAPS/ENDL_005")).unwrap();
+        let offered = textures.palette_materials_blendable_in(8, 8, 48, 48);
+        let ids: Vec<&str> = offered.iter().map(|m| m.id.as_str()).collect();
+        assert!(ids.contains(&"PFAD"), "{ids:?}");
+        assert!(!ids.contains(&"B5"), "sand has no B8 corner tiles: {ids:?}");
+        let session = textures.session_mut().unwrap();
+        for id in ids.iter().filter(|id| **id != "B8") {
+            let result = session.paint_circle(32.5, 20.5, 2.5, id, true, false, None).unwrap();
+            assert!(result.succeeded && !result.texture_changes.is_empty(), "{id} did not paint");
+            session.commit_stroke();
+            session.undo();
+        }
+    }
+
+    /// Live gate: real Ollama Water + Materials specialists on a TEMP copy of a retail map
+    /// (map, floortex.dat and the alias catalog are copied; the install is only read).
+    /// `cargo test -p against-rome-editor-app --lib live_ollama_water_materials -- --ignored --nocapture`
+    /// Env: `ARM_AI_GAME_ROOT` (default the retail install), `ARM_AI_MAP` (default ENDL_005).
+    #[test]
+    #[ignore = "requires a local Ollama server and an installed game to copy from"]
+    fn live_ollama_water_materials_apply_undo_save_reload() {
+        let game = PathBuf::from(std::env::var("ARM_AI_GAME_ROOT").unwrap_or_else(|_| r"C:\Program Files (x86)\Against Rome".into()));
+        let map_id = std::env::var("ARM_AI_MAP").unwrap_or_else(|_| "ENDL_005".into());
+        let root = temp_map_dir("ai_live_root");
+        let dir = root.join("MAPS").join(&map_id);
+        copy_tree(&game.join("MAPS").join(&map_id), &dir);
+        std::fs::copy(game.join("floortex.dat"), root.join("floortex.dat")).unwrap();
+        std::fs::create_dir_all(root.join("SYSTEM/CLAK")).unwrap();
+        std::fs::copy(game.join("SYSTEM/CLAK/cl_scint.ini"), root.join("SYSTEM/CLAK/cl_scint.ini")).unwrap();
+
+        let mut app = EditorApp::initial_state();
+        app.set_loaded_map(dir.clone(), crate::storage::load_map(&dir).unwrap()).unwrap();
+        app.ai_planner.open = true;
+        app.sync_ai_materials();
+        assert!(!app.ai_planner.material_options.is_empty(), "catalog materials offered");
+        app.ai_planner.role_checks = [false, true, true];
+        app.ai_planner.bounds_text = "8,8,48,48".into();
+        app.ai_planner.prompt_description = "Add a small lake near the middle of the area and paint a dirt road (PFAD) leading to its shore.".into();
+        let water = app.water_surface;
+        app.ai_planner.start_generation(water).unwrap();
+        assert!(app.ai_planner.wait_generation(std::time::Duration::from_secs(20 * 60)), "timed out");
+        eprintln!("status: {}\n{}", app.ai_planner.status_message, app.ai_planner.plan_summary);
+        let plan = app.ai_planner.current_plan.clone().expect("plan");
+        eprintln!("plan: {}", serde_json::to_string(&plan).unwrap());
+
+        let heights_before = app.session.as_ref().unwrap().heights().to_vec();
+        let textures_before = app.textures.session_textures().unwrap().to_vec();
+        let result = app
+            .ai_planner
+            .apply_plan_to_session(app.session.as_mut().unwrap(), app.textures.session_mut(), water)
+            .unwrap();
+        eprintln!("{result:#?}");
+        let heights_after = app.session.as_ref().unwrap().heights().to_vec();
+        let textures_after = app.textures.session_textures().unwrap().to_vec();
+        let changed_tiles = textures_before.iter().zip(&textures_after).filter(|(a, b)| a != b).count();
+        eprintln!("material tiles changed: {changed_tiles}; height samples changed: {}", result.height_samples_changed);
+        assert!(changed_tiles > 0 || heights_after != heights_before, "plan changed nothing");
+
+        // Material layer: one undo reverts every AI material stroke, redo restores it.
+        if changed_tiles > 0 {
+            assert!(app.textures.material_undo());
+            assert_eq!(app.textures.session_textures().unwrap(), &textures_before[..]);
+            assert!(app.textures.material_redo());
+            assert_eq!(app.textures.session_textures().unwrap(), &textures_after[..]);
+        }
+
+        app.safe_save_current();
+        assert!(!app.status_is_error, "{}", app.status_message);
+        let mut reopened = EditorApp::initial_state();
+        reopened.set_loaded_map(dir.clone(), crate::storage::load_map(&dir).unwrap()).unwrap();
+        assert_eq!(reopened.session.as_ref().unwrap().heights(), &heights_after[..]);
+        reopened.textures.load_session(&dir).unwrap();
+        assert_eq!(reopened.textures.session_textures().unwrap(), &textures_after[..]);
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

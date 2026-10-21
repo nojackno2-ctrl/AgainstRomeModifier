@@ -45,7 +45,7 @@ fn live_ollama_terrain_plan_preview_apply_undo_save_reload() {
     assert_eq!(session.heights(), &original[..]);
     assert!(!session.can_undo());
 
-    let result = ui.apply_plan_to_session(&mut session, 0.0).unwrap();
+    let result = ui.apply_plan_to_session(&mut session, None, 0.0).unwrap();
     eprintln!("applied: {} samples, {} operations", result.height_samples_changed, result.operation_count());
     assert!(result.height_samples_changed > 0, "plan changed nothing");
     let applied = session.heights().to_vec();

@@ -12,6 +12,7 @@ use against_rome_ai_planner::{
     AiMapRoleProgress, AiMapRoleStatus, AiMaterialOption, CancelToken, HttpTransport,
     MultiAiMapPlanResult, MultiAiMapPlanner, MultiAiMapRoleRequest, OllamaMapPlanner,
 };
+use against_rome_textures::session::TerrainBlendEditSession;
 use eframe::egui::{self, Color32, Vec2};
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::sync::Arc;
@@ -56,11 +57,16 @@ pub struct AiPlannerUi {
 
     /// Role checkboxes (Terrain, Water, Materials).
     pub role_checks: [bool; 3],
+    /// Paintable materials of the loaded map, offered to the Materials specialist. Filled by the
+    /// app from the Textures catalog; plans may only name these ids.
+    pub material_options: Vec<AiMaterialOption>,
 
     // Generated plan & preview
     pub current_plan: Option<AiMapPlan>,
     pub plan_summary: String,
     pub last_apply_result: Option<AiMapApplyResult>,
+    /// Incremented by every successful Apply, so the host can refresh dependent views.
+    pub applied_revision: u64,
 
     // Background generation state
     job: Option<GenerationJob>,
@@ -92,9 +98,11 @@ impl Default for AiPlannerUi {
             locks_text: String::new(),
             edit_passability: false,
             role_checks: [true; 3],
+            material_options: Vec::new(),
             current_plan: None,
             plan_summary: String::new(),
             last_apply_result: None,
+            applied_revision: 0,
             job: None,
             progress_done: 0,
             progress_total: 0,
@@ -354,12 +362,13 @@ impl AiPlannerUi {
             description.push_str("\nDo not create blocked or passable features; passability is protected.");
         }
 
-        let materials = vec![
-            AiMaterialOption::new("GRAS1", "Grass"),
-            AiMaterialOption::new("ERDE", "Dirt"),
-            AiMaterialOption::new("FELS", "Rock"),
-            AiMaterialOption::new("FLUSS1", "River"),
-        ];
+        if self.role_checks[2] && self.material_options.is_empty() {
+            return fail(
+                self,
+                "The Materials specialist needs the map's material catalog; load the map's textures (boden.txt and floortex.dat) or untick Materials.".to_string(),
+            );
+        }
+        let materials = self.material_options.clone();
 
         let generator = self.make_generator();
         let cancel = CancelToken::new();
@@ -563,23 +572,33 @@ impl AiPlannerUi {
             .count()
     }
 
-    pub fn apply_plan_to_session(&mut self, session: &mut TerrainSession, water_level: f32) -> Result<AiMapApplyResult, String> {
+    pub fn apply_plan_to_session(
+        &mut self,
+        session: &mut TerrainSession,
+        mut blend: Option<&mut TerrainBlendEditSession>,
+        water_level: f32,
+    ) -> Result<AiMapApplyResult, String> {
         if self.job.is_some() {
             return Err("Generation is still running.".into());
         }
         let Some(plan) = &self.current_plan else {
             return Err("No AI plan generated to apply.".into());
         };
+        let wants_materials = plan.base_material.is_some()
+            || plan.features.iter().any(|f| f.material.as_deref().is_some_and(|m| !m.trim().is_empty()));
+        if wants_materials && blend.is_none() {
+            return Err("This plan paints materials; load the map's textures (boden.txt) before applying.".into());
+        }
 
         // The operator works in material tiles (4 height cells each; 64 on a 257-vertex map),
         // the same units as the prompt's coordinates and the edit-area box.
         let dimension = Self::tile_dimension(session.vertex_size);
-        // Accumulate every stroke and commit once, so one Undo reverts the whole plan like
-        // the other editor tools.
+        // Accumulate every stroke and commit once per layer, so one Undo of each layer reverts
+        // the whole plan like the other editor tools.
         let result = AiEditorOperator::apply(
             plan,
             Some(session.core_mut()),
-            None,
+            blend.as_deref_mut(),
             dimension,
             water_level,
             false,
@@ -588,13 +607,20 @@ impl AiPlannerUi {
             None,
         );
         session.commit_stroke();
+        if let Some(b) = blend {
+            b.commit_stroke();
+        }
 
-        let changed = result.height_samples_changed > 0 || result.collision_pixels_changed > 0;
+        let changed = result.height_samples_changed > 0
+            || result.collision_pixels_changed > 0
+            || result.material_strokes > result.rejected_material_strokes;
         self.status_message = if changed {
             format!(
-                "Applied plan: {} height samples modified, {} collision pixels updated, {} operations.",
+                "Applied plan: {} height samples, {} collision pixels, {} of {} material strokes, {} operations.",
                 result.height_samples_changed,
                 result.collision_pixels_changed,
+                result.material_strokes - result.rejected_material_strokes,
+                result.material_strokes,
                 result.operation_count()
             )
         } else {
@@ -605,13 +631,22 @@ impl AiPlannerUi {
         };
         self.status_is_error = !changed;
         self.last_apply_result = Some(result.clone());
-        // C#: the plan is consumed by Apply (no double apply); the map is now dirty.
+        self.applied_revision += 1;
+        // C#: the plan is consumed by Apply (no double apply). Its edits now live in the
+        // terrain/material sessions, which carry their own dirty state and undo, so the
+        // planner itself holds nothing unsaved and must not block Safe Save.
         self.current_plan = None;
-        self.dirty = true;
+        self.dirty = false;
         Ok(result)
     }
 
-    pub fn show(&mut self, ctx: &egui::Context, session: Option<&mut TerrainSession>, water_level: f32) {
+    pub fn show(
+        &mut self,
+        ctx: &egui::Context,
+        session: Option<&mut TerrainSession>,
+        blend: Option<&mut TerrainBlendEditSession>,
+        water_level: f32,
+    ) {
         if !self.open {
             return;
         }
@@ -710,7 +745,10 @@ impl AiPlannerUi {
                     let can_apply = self.current_plan.is_some() && session.is_some() && !busy;
                     if ui.add_enabled(can_apply, egui::Button::new("Apply Plan to Map Terrain")).clicked() {
                         if let Some(s) = session {
-                            let _ = self.apply_plan_to_session(s, water_level);
+                            if let Err(e) = self.apply_plan_to_session(s, blend, water_level) {
+                                self.status_message = e;
+                                self.status_is_error = true;
+                            }
                         }
                     }
                 });
@@ -788,6 +826,16 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{Condvar, Mutex};
 
+    /// Planner with real catalog-style material ids, as the app provides after loading textures.
+    fn test_ui() -> AiPlannerUi {
+        let mut ui = AiPlannerUi::default();
+        ui.material_options = vec![
+            AiMaterialOption::new("B5", "Sand"),
+            AiMaterialOption::new("B3", "Grey Rock"),
+        ];
+        ui
+    }
+
     fn fake_plan_for(prompt: &str) -> AiMapPlan {
         if prompt.contains("Terrain specialist") {
             AiMapPlan {
@@ -812,7 +860,7 @@ mod tests {
             }
         } else {
             AiMapPlan {
-                base_material: Some("GRAS1".into()),
+                base_material: Some("B5".into()),
                 features: vec![AiMapFeature {
                     feature_type: Some("material".into()),
                     location: Some("east".into()),
@@ -862,7 +910,7 @@ mod tests {
 
     #[test]
     fn test_ai_planner_ui_initial_state_and_dirty_guards() {
-        let mut ui = AiPlannerUi::default();
+        let mut ui = test_ui();
         assert!(!ui.open);
         assert!(!ui.is_dirty());
 
@@ -879,7 +927,7 @@ mod tests {
 
     #[test]
     fn test_ai_planner_ui_generation_with_mock_transport() {
-        let mut ui = AiPlannerUi::default();
+        let mut ui = test_ui();
         let mock_transport = Arc::new(MockHttpTransport::new(|_method, url, _body| {
             if url.ends_with("/api/tags") {
                 Ok(HttpResponse::new(200, r#"{"models":[{"name":"mock-model:latest"}]}"#))
@@ -909,19 +957,20 @@ mod tests {
 
     #[test]
     fn test_ai_planner_ui_apply_to_terrain_session() {
-        let mut ui = AiPlannerUi::default();
+        let mut ui = test_ui();
         let mut plan = AiMapPlan::default();
         plan.base_height = Some(40);
         ui.current_plan = Some(plan);
 
         let mut session = TerrainSession::create_blank(33, 32);
-        let res = ui.apply_plan_to_session(&mut session, 0.0);
+        let res = ui.apply_plan_to_session(&mut session, None, 0.0);
         assert!(res.is_ok());
         assert!(ui.last_apply_result.is_some());
-        assert!(ui.is_dirty());
+        assert!(!ui.is_dirty(), "an applied plan no longer blocks Safe Save");
+        assert!(session.is_dirty());
         // The plan is consumed (C# `_plan = null`): no double apply.
         assert!(ui.current_plan.is_none());
-        assert!(ui.apply_plan_to_session(&mut session, 0.0).is_err());
+        assert!(ui.apply_plan_to_session(&mut session, None, 0.0).is_err());
     }
 
     #[test]
@@ -934,11 +983,11 @@ mod tests {
             ]
         }))
         .unwrap();
-        let mut ui = AiPlannerUi::default();
+        let mut ui = test_ui();
         ui.current_plan = Some(plan);
         let mut session = TerrainSession::create_blank(257, 32);
         let original = session.heights().to_vec();
-        let result = ui.apply_plan_to_session(&mut session, 0.0).unwrap();
+        let result = ui.apply_plan_to_session(&mut session, None, 0.0).unwrap();
         assert!(result.operation_count() >= 3, "{}", result.operation_count());
         let applied = session.heights().to_vec();
         assert_ne!(applied, original);
@@ -960,10 +1009,10 @@ mod tests {
         let scope = AiMapEditScope::parse("4,4,24,24", "", false).unwrap();
         assert_eq!(AiPlannerUi::features_outside_scope(&plan, &scope), 2);
         plan.edit_scope = Some(scope);
-        let mut ui = AiPlannerUi::default();
+        let mut ui = test_ui();
         ui.current_plan = Some(plan);
         let mut session = TerrainSession::create_blank(257, 60);
-        let result = ui.apply_plan_to_session(&mut session, 0.0).unwrap();
+        let result = ui.apply_plan_to_session(&mut session, None, 0.0).unwrap();
         assert_eq!(result.height_samples_changed, 0);
         assert!(ui.status_is_error);
         assert!(ui.status_message.contains("changed nothing"), "{}", ui.status_message);
@@ -976,10 +1025,10 @@ mod tests {
         assert_eq!(AiPlannerUi::tile_dimension(193), 48);
         let mut plan: AiMapPlan = serde_json::from_str(REAL_LAGUNA_PLAN).unwrap();
         plan.edit_scope = Some(AiMapEditScope::parse("0,0,64,64", "", false).unwrap());
-        let mut ui = AiPlannerUi::default();
+        let mut ui = test_ui();
         ui.current_plan = Some(plan);
         let mut session = TerrainSession::create_blank(257, 60);
-        let result = ui.apply_plan_to_session(&mut session, 0.0).unwrap();
+        let result = ui.apply_plan_to_session(&mut session, None, 0.0).unwrap();
         assert!(result.height_samples_changed > 0, "{result:#?}");
         // Tile (32,32) is the map centre, vertex ~(130,130); vertex (32,32) stays untouched.
         let h = |x: usize, y: usize| session.heights()[y * 257 + x];
@@ -990,7 +1039,7 @@ mod tests {
     #[test]
     fn fake_planner_generation_attaches_scope_locks_and_passability() {
         let prompts = Arc::new(Mutex::new(Vec::new()));
-        let mut ui = AiPlannerUi::default();
+        let mut ui = test_ui();
         ui.set_custom_generator(instant_generator(prompts.clone()));
         ui.bounds_text = "8,8,24,24".into();
         ui.locks_text = "10,10,4,4\n\n 20 , 20 , 2 , 2 \n".into();
@@ -1006,9 +1055,9 @@ mod tests {
         assert!(scope.allows_tile(9, 9));
         assert!(!scope.allows_tile(40, 40));
         assert_eq!(plan.base_height, Some(60));
-        assert_eq!(plan.base_material.as_deref(), Some("GRAS1"));
+        assert_eq!(plan.base_material.as_deref(), Some("B5"));
         assert!(ui.plan_summary.contains("Editable-area base height: 60"));
-        assert!(ui.plan_summary.contains("Editable-area base material: GRAS1"));
+        assert!(ui.plan_summary.contains("Editable-area base material: B5"));
         assert!(ui.plan_summary.contains("2 locks"));
         assert!(ui.dirty);
 
@@ -1020,9 +1069,44 @@ mod tests {
     }
 
     #[test]
+    fn materials_role_offers_only_catalog_ids_and_needs_a_catalog() {
+        let offered = Arc::new(Mutex::new(Vec::<Vec<String>>::new()));
+        let seen = offered.clone();
+        let mut ui = AiPlannerUi::default();
+        ui.set_custom_generator(Arc::new(move |_m, prompt, mats: &[AiMaterialOption], _w| {
+            seen.lock().unwrap().push(mats.iter().map(|m| m.id.clone()).collect());
+            let plan = fake_plan_for(prompt);
+            Ok((plan.clone(), serde_json::to_string(&plan).unwrap()))
+        }));
+        ui.role_checks = [false, false, true];
+        let err = ui.start_generation(0.0).unwrap_err();
+        assert!(err.contains("material catalog"), "{err}");
+        assert!(offered.lock().unwrap().is_empty());
+
+        ui.material_options = vec![AiMaterialOption::new("B5", "Sand")];
+        assert!(ui.generate_ai_plan(0.0).is_ok());
+        assert_eq!(*offered.lock().unwrap(), vec![vec!["B5".to_string()]]);
+    }
+
+    #[test]
+    fn material_plan_without_textures_is_refused_before_touching_heights() {
+        let mut ui = test_ui();
+        ui.current_plan = Some(AiMapPlan {
+            base_height: Some(50),
+            base_material: Some("B5".into()),
+            ..Default::default()
+        });
+        let mut session = TerrainSession::create_blank(257, 32);
+        let err = ui.apply_plan_to_session(&mut session, None, 0.0).unwrap_err();
+        assert!(err.contains("textures"), "{err}");
+        assert!(!session.can_undo());
+        assert!(ui.current_plan.is_some(), "a refused apply keeps the plan");
+    }
+
+    #[test]
     fn passability_requires_terrain_role_and_default_protects_it() {
         let prompts = Arc::new(Mutex::new(Vec::new()));
-        let mut ui = AiPlannerUi::default();
+        let mut ui = test_ui();
         ui.set_custom_generator(instant_generator(prompts.clone()));
         ui.edit_passability = true;
         ui.role_checks = [false, true, true];
@@ -1035,7 +1119,7 @@ mod tests {
 
     #[test]
     fn invalid_inputs_fail_before_spawning_and_keep_ui_usable() {
-        let mut ui = AiPlannerUi::default();
+        let mut ui = test_ui();
         ui.bounds_text = "0,0,65,64".into();
         assert!(ui.start_generation(0.0).is_err());
         assert!(!ui.is_generating());
@@ -1053,7 +1137,7 @@ mod tests {
     #[test]
     fn generation_runs_in_background_with_progress_and_does_not_block() {
         let gate = Arc::new(Gate { open: Mutex::new(false), cv: Condvar::new(), entered: AtomicUsize::new(0) });
-        let mut ui = AiPlannerUi::default();
+        let mut ui = test_ui();
         ui.set_custom_generator(gated_generator(gate.clone()));
 
         // Returns immediately although the planner is blocked.
@@ -1076,7 +1160,7 @@ mod tests {
     #[test]
     fn cancel_releases_ui_and_discards_late_result() {
         let gate = Arc::new(Gate { open: Mutex::new(false), cv: Condvar::new(), entered: AtomicUsize::new(0) });
-        let mut ui = AiPlannerUi::default();
+        let mut ui = test_ui();
         ui.set_custom_generator(gated_generator(gate.clone()));
         ui.start_generation(0.0).unwrap();
         while gate.entered.load(Ordering::SeqCst) == 0 {
@@ -1099,7 +1183,7 @@ mod tests {
     #[test]
     fn input_change_during_generation_invalidates_result() {
         let gate = Arc::new(Gate { open: Mutex::new(false), cv: Condvar::new(), entered: AtomicUsize::new(0) });
-        let mut ui = AiPlannerUi::default();
+        let mut ui = test_ui();
         ui.set_custom_generator(gated_generator(gate.clone()));
         ui.start_generation(0.0).unwrap();
         ui.prompt_description.push_str(" more rivers");
@@ -1113,7 +1197,7 @@ mod tests {
     #[test]
     fn editing_inputs_invalidates_existing_plan() {
         let prompts = Arc::new(Mutex::new(Vec::new()));
-        let mut ui = AiPlannerUi::default();
+        let mut ui = test_ui();
         ui.set_custom_generator(instant_generator(prompts));
         ui.generate_ai_plan(0.0).unwrap();
         assert!(ui.current_plan.is_some());
@@ -1125,7 +1209,7 @@ mod tests {
 
     #[test]
     fn partial_failure_is_reported_but_plan_remains_reviewable() {
-        let mut ui = AiPlannerUi::default();
+        let mut ui = test_ui();
         ui.set_custom_generator(Arc::new(|_m, prompt, _mats, _w| {
             if prompt.contains("Water specialist") {
                 return Err("boom".to_string());
@@ -1142,7 +1226,7 @@ mod tests {
 
     #[test]
     fn all_roles_failing_yields_no_plan() {
-        let mut ui = AiPlannerUi::default();
+        let mut ui = test_ui();
         ui.set_custom_generator(Arc::new(|_m, _p, _mats, _w| Err("down".to_string())));
         assert!(ui.generate_ai_plan(0.0).is_err());
         assert!(ui.current_plan.is_none());
@@ -1153,7 +1237,7 @@ mod tests {
     #[test]
     fn reset_session_cancels_running_job() {
         let gate = Arc::new(Gate { open: Mutex::new(false), cv: Condvar::new(), entered: AtomicUsize::new(0) });
-        let mut ui = AiPlannerUi::default();
+        let mut ui = test_ui();
         ui.set_custom_generator(gated_generator(gate.clone()));
         ui.start_generation(0.0).unwrap();
         ui.reset_session();
