@@ -9,6 +9,7 @@
 | 開圖、CLI、唯讀驗證 | `cli_startup_tests`；`--validate-map [--lang zh]` 無視窗跑完整設計檢查（有 Error 時 exit 2） | 已驗證：40 張非戰役安裝版地圖唯讀批次檢查全部可開；壞別名 TEMP 副本實測 exit 2 |
 | 設計檢查／Safe Save 阻擋 | `design_check_ui`、`MapDiagnostics`、`MapDesignValidator`、`route_check` 測試 | 已驗證；2026-10-22 去除進攻波次、別名目錄缺失、未編輯原版圖的誤報 |
 | 地形、材質、水、通行、放置、劇本、事件圖、Safe Save 交易 | `against-rome-editor-app` 全套（lib 528）與 workspace 2,352 passed／0 failed | 合成與 TEMP 真實地圖往返已驗證 |
+| AI 製圖（路線圖第 4 階段） | ignored live gates `tests/ai_planner_live.rs`、`live_ollama_water_materials_apply_undo_save_reload`；retail gate `retail_ai_offered_materials_all_paint_on_endl_005` | 已驗證（本機 laguna-xs-2.1）：地形、水域、材質三角色皆有 生成→預覽不改圖→套用（範圍外不變）→一次 undo/redo→Safe Save→重載一致。2026-10-22 修正 tile 座標、單步 undo、材質層未接、虛構材質 id、套用後擋存檔 |
 | 桌面視窗 | `--smoke-test` 三次 UI 更新；TEMP 副本可開啟並正常關閉、SHA-256 不變 | **未完成**：沒有點擊操作驗收（2026-10-22 使用者未同意 computer use 控制視窗） |
 | 遊戲內載入、尋路、勝負 | 無 | **未完成**：需在 ENDL_005 等自製槽位實機驗收 |
 | 3D GPU 管線 | CPU draw list | 非編輯阻礙，依範圍政策不追求原生渲染精度 |
