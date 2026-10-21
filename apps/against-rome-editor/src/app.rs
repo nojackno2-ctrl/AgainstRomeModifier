@@ -5400,14 +5400,10 @@ mod tests {
         assert_eq!(app.design_check.report.as_ref().unwrap().error_count(), 0, "{codes:?}");
         app.design_check.open = false;
 
+        // The template's base and troops are native DATA: no guessed team warnings, so Safe Save
+        // goes straight through without the confirmation dialog.
         gui_click(&mut app, &ctx, "Safe Save");
-        // The template's remaining warnings (no editor-placed start troop or base) need the
-        // designer's OK in the confirmation dialog.
-        assert!(app.pending_save_warnings.is_some(), "{}", app.status_message);
-        let warned: Vec<String> = app.pending_save_warnings.as_ref().unwrap().1.iter().map(|i| i.code.clone()).collect();
-        eprintln!("save warnings: {warned:?}");
-        gui_click(&mut app, &ctx, "Continue saving");
-        assert!(app.pending_save_warnings.is_none());
+        assert!(app.pending_save_warnings.is_none(), "unexpected design warnings: {:?}", app.pending_save_warnings.as_ref().map(|p| p.1.iter().map(|i| i.code.clone()).collect::<Vec<_>>()));
         assert!(!app.status_is_error, "{}", app.status_message);
         assert!(!app.has_unsaved_changes(), "{}", app.status_message);
 

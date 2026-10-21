@@ -428,9 +428,9 @@ impl MapDiagnostics {
             .filter(|obj| obj.spawn.team == 0 && obj.spawn.count > 0)
             .collect();
 
-        // With no editor-authored objects or events, starts come from native template data;
-        // `MapDesignValidator` reports that once as `scenario-native-only`.
-        let native_only = map.objects.is_empty() && map.events.is_empty();
+        // With no editor-placed objects, starts come from native template data (events alone do
+        // not place a start troop); `MapDesignValidator` explains a fully untouched template.
+        let native_only = map.objects.is_empty();
         if starts.is_empty() && !native_only {
             issues.push(MapIssue {
                 severity: MapIssueSeverity::Warning,

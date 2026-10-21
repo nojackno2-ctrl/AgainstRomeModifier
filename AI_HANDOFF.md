@@ -1,3 +1,9 @@
+## 2026-10-22 Claude：無放置物件時不猜測隊伍主堡／部隊（已驗證）
+
+- 範本只加勝敗事件時，`team-no-main-house`、`team-no-units`（隊伍 0）與 `no-start` 會對原生 DATA 中的主堡／部隊誤報。現在沒有編輯器放置物件時不檢查隊伍 0、也不報 no-start；事件生成的隊伍照常檢查。ENDL_000 勝敗事件點擊測試現在 Safe Save 直接成功、無警告視窗。
+- 驗證：maps 全套通過（新增斷言於 `test_untouched_native_map_reports_one_native_only_warning`）；兩個 ignored 點擊測試通過；`--game ... --validate-map` 40 張 0 錯誤（39 張僅 scenario-native-only）；workspace exit 0，283 groups **2,360 passed／0 failed／23 ignored**（`re_workspace/team-check-workspace-test.log`）。
+- 剩餘：劇本面板在英文模式仍為中文；畫面／GPU 與遊戲內（載入、尋路、勝負觸發）驗收需使用者同意 computer use。
+
 ## 2026-10-22 Claude：劇本面板按需載入＋UI 點擊撰寫勝敗事件（已驗證）
 
 - **劇本事件無法檢查／存檔**：開圖後打開「Scenario / Camera」直接按「新增事件」，事件加到尚未載入來源腳本的 session；Design Check 回「Scenario: 劇本尚未載入來源 (SCRIPT/ak_level.bci)，無法暫存交易檔案」，Safe Save 走相同暫存流程也會失敗，除非設計者先找到「載入」按鈕。現在面板開啟時依材質先例按需 `load_session`（每張地圖一次、有未存修改時不載入），錯誤寫入狀態列。新單元測試 `scenario_panel_loads_the_open_maps_script_on_demand`。

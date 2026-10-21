@@ -351,6 +351,17 @@ fn test_untouched_native_map_reports_one_native_only_warning() {
     assert_eq!(codes(&MapDesignValidationRequest::default()), vec!["scenario-native-only".to_string()]);
     let empty = MapCheckSnapshot::new(vec![], vec![], vec!["U".into()], 8, Some(vec![0u8; 64]));
     assert!(MapDiagnostics::check(&empty).iter().all(|i| i.code != "no-start"));
+    // Events alone (a template plus Victory/Defeat) keep the native base and troops unguessed.
+    let events_only = MapDesignValidationRequest {
+        events: vec![Event {
+            name: "win".into(),
+            actions: vec![Action { kind: 3, ..Default::default() }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    let codes_events_only = codes(&events_only);
+    assert!(!codes_events_only.iter().any(|c| c.starts_with("team-") || c == "scenario-native-only"), "{codes_events_only:?}");
     // One authored object brings back the full checks.
     let req = MapDesignValidationRequest {
         objects: vec![Spawn { alias: "GER_INF01".into(), x: 8000.0, z: 8000.0, team: 0, count: 10, id: Uuid::new_v4(), ..Default::default() }],

@@ -315,7 +315,11 @@ impl MapDesignValidator {
 
         // --- 3. 參戰勢力/玩家隊伍完整性檢查（主堡與部隊） ---
         let mut candidate_teams = std::collections::BTreeSet::new();
-        candidate_teams.insert(0);
+        // Without editor-placed objects the player's base and troops are the template's native
+        // DATA, which this validator cannot see; only event-spawned teams are checked then.
+        if !request.objects.is_empty() {
+            candidate_teams.insert(0);
+        }
         for s in &request.objects {
             if (0..=7).contains(&s.team) {
                 candidate_teams.insert(s.team);
