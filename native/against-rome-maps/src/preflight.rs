@@ -59,9 +59,12 @@ impl ScenarioEventValidator {
                         {
                             return Err("部隊需要隊伍 0–7、人數 1–20 與有效的地圖座標。".into());
                         }
-                        if !aliases
-                            .iter()
-                            .any(|a| a.eq_ignore_ascii_case(&action.alias))
+                        // Empty list = catalog unavailable; reported once as
+                        // `alias-catalog-missing` and enforced by the BCI compiler.
+                        if !aliases.is_empty()
+                            && !aliases
+                                .iter()
+                                .any(|a| a.eq_ignore_ascii_case(&action.alias))
                         {
                             return Err(format!("未知的部隊別名：{}", action.alias));
                         }

@@ -243,6 +243,21 @@ impl MapDiagnostics {
     pub fn check(map: &MapCheckSnapshot) -> Vec<MapIssue> {
         let mut issues = Vec::new();
 
+        // An empty alias list means the ObjDefName catalog could not be read (map outside a
+        // game directory). Report that once instead of calling every script alias unknown;
+        // the BCI compiler still refuses script objects without a catalog.
+        let catalog_missing = map.aliases.is_empty();
+        let needs_catalog = map.objects.iter().any(|o| !o.spawn.prebuilt)
+            || map.events.iter().any(|e| e.actions.iter().any(|a| a.kind == 2));
+        if catalog_missing && needs_catalog {
+            issues.push(MapIssue::new(
+                MapIssueSeverity::Error,
+                "alias-catalog-missing",
+                "找不到物件別名目錄（SYSTEM/CLAK/cl_scint.ini），無法核對或編譯腳本生成的物件與事件部隊。請從遊戲目錄內的 MAPS 開啟地圖（--game 遊戲路徑 --map 代號）。",
+                "The object alias catalog (SYSTEM/CLAK/cl_scint.ini) was not found, so script-spawned objects and event troops cannot be verified or compiled. Open the map from MAPS inside a game directory (--game <PATH> --map <ID>).",
+            ));
+        }
+
         let mut by_id = HashMap::new();
         for obj in &map.objects {
             let spawn = &obj.spawn;
@@ -281,6 +296,7 @@ impl MapDiagnostics {
             }
 
             if !spawn.prebuilt
+                && !catalog_missing
                 && !map
                     .aliases
                     .iter()
@@ -339,8 +355,8 @@ impl MapDiagnostics {
             issues.push(MapIssue {
                 severity: MapIssueSeverity::Error,
                 code: "event-validation".into(),
+                english: format!("Event configuration is invalid; review the event list. ({msg})"),
                 chinese: msg,
-                english: "Event configuration is invalid; review the event list.".into(),
                 object_id: Uuid::nil(),
                 event_index: -1,
                 world_x: None,

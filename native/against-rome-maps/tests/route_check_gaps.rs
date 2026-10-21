@@ -67,6 +67,28 @@ fn enemy_event_wave_spawn_is_a_route_target() {
 }
 
 #[test]
+fn missing_alias_catalog_is_one_clear_error_not_per_alias_noise() {
+    use against_rome_maps::MapIssueSeverity;
+    use against_rome_scenario::model::{Action, Event};
+    let wave = Event {
+        name: "Wave_01".into(),
+        actions: vec![Action { kind: 2, team: 1, alias: "HUN_KAVINF00".into(), x: 9000.0, z: 9000.0, count: 3, ..Default::default() }],
+        ..Default::default()
+    };
+    let mut s = snap(vec![obj(100.0, 100.0, 0, 20)], 8);
+    s.aliases.clear();
+    s.events = vec![wave];
+    let issues = MapDiagnostics::check(&s);
+    let codes: Vec<_> = issues.iter().map(|i| i.code.as_str()).collect();
+    assert_eq!(codes.iter().filter(|c| **c == "alias-catalog-missing").count(), 1, "{codes:?}");
+    assert!(!codes.contains(&"alias") && !codes.contains(&"event-validation"), "{codes:?}");
+    assert!(issues.iter().any(|i| i.code == "alias-catalog-missing" && i.severity == MapIssueSeverity::Error));
+    // With a catalog the per-object check is unchanged.
+    let with_catalog = snap(vec![obj(100.0, 100.0, 0, 20)], 8);
+    assert!(MapDiagnostics::check(&with_catalog).iter().all(|i| i.code != "alias-catalog-missing"));
+}
+
+#[test]
 fn no_squads_no_hint() {
     assert!(MapDiagnostics::route_coverage_issues(&snap(vec![obj(1.0, 1.0, 1, 1)], 8)).is_empty());
 }

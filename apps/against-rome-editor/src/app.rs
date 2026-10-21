@@ -4743,9 +4743,10 @@ mod tests {
             assert!(!app.scenario.dirty());
             edit_save_terrain(&mut app);
             let before = save_artifact_snapshot(&dir);
-            app.safe_save_current_using(|_| panic!("unknown saved alias must block every save"));
+            app.safe_save_current_using(|_| panic!("unverifiable saved alias must block every save"));
+            // The TEMP fixture has no game root, so the catalog itself is reported missing.
             assert!(
-                app.status_message.contains("MapDiagnostics [alias]"),
+                app.status_message.contains("MapDiagnostics [alias-catalog-missing]"),
                 "{}",
                 app.status_message
             );

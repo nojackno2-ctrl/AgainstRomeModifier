@@ -1,3 +1,11 @@
+## 2026-10-22 Claude：地圖不在遊戲目錄時改報單一「別名目錄缺失」錯誤（已驗證）
+
+- 發現：以 `--map 目錄` 開啟不在遊戲根目錄下的地圖（例 TEMP 副本），別名目錄 `<root>/SYSTEM/CLAK/cl_scint.ini` 讀不到而默默變成空清單，乾淨的 ENDL_005 副本因此被報 `[Error] alias: GER_INF01` 與英文無細節的 `event-validation`，Safe Save 也會被這些誤導訊息擋下。
+- 修正：`MapDiagnostics::check` 在別名清單為空且有腳本生成物件或事件部隊時，只報一個 Error `alias-catalog-missing`（說明缺 cl_scint.ini、請用 `--game --map` 開啟），並跳過逐物件 alias 與事件別名檢查；`ScenarioEventValidator` 空清單時不判別名。BCI compiler 的 `require_alias_catalog` 仍拒絕無目錄存檔，故不放寬存檔。`event-validation` 英文訊息附上具體原因。
+- 測試：新增 `missing_alias_catalog_is_one_clear_error_not_per_alias_noise`；`safe_save_diagnostics_reads_saved_spawns_with_clean_or_unopened_scenario` 的 TEMP fixture 無遊戲根目錄，斷言改為 `alias-catalog-missing`（仍阻擋存檔）。
+- 實際 binary：TEMP 假遊戲根目錄（僅複製 cl_scint.ini）下，乾淨副本 exit 0；把 GER_INF01 改成 XXX_BOGUS99 的副本只報 `[Error] alias: Unknown object alias: XXX_BOGUS99 (tile 38.5, 36.5)` 並 **exit 2**，`--validate-map` 錯誤結束碼已實機驗證。無目錄的副本報單一 catalog 錯誤 exit 2；安裝版 ENDL_005 仍 0／0。
+- 驗證：`cargo test --workspace --locked --offline --target-dir re_workspace/target-w20 -- --test-threads=1` exit 0，282 groups **2,351 passed／0 failed／18 ignored**（`re_workspace/alias-catalog-workspace-test.log`）。GUI 點擊與遊戲內驗收仍未做。
+
 ## 2026-10-22 Claude：設計檢查不再對事件進攻波次誤報（已驗證）
 
 - 實測 ENDL_005（無盡防守圖）時，隊伍 1 只由事件 `Kind 2` 生成進攻波次、沒有放置物件，卻被報 `team-no-main-house`；玩家部隊也因沒有「非玩家放置物件」而報 `route-no-target`。兩者都是設計者雜訊。
