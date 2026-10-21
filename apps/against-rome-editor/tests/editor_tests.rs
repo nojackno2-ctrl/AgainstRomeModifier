@@ -85,6 +85,59 @@ fn test_green_channel_exact_preservation_and_non_257_sizes() {
 }
 
 #[test]
+fn water_brush_height_and_collision_undo_redo_save_reload_roundtrip() {
+    let unique = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let temp_dir = std::env::temp_dir().join(format!(
+        "ar_water_roundtrip_{}_{}",
+        std::process::id(),
+        unique
+    ));
+    fs::create_dir(&temp_dir).unwrap();
+
+    let height = BmpImage::new_solid(9, 9, 123, 100, 210);
+    fs::write(temp_dir.join("boden.bmp"), height.encode_bmp()).unwrap();
+    let mut collision = vec![0; 8 * 8];
+    collision[4 * 8 + 4] = 90;
+    let collision_bmp = BmpImage::from_collision_channel(8, 8, &collision);
+    fs::write(temp_dir.join("collision.bmp"), collision_bmp.encode_bmp()).unwrap();
+
+    let mut session = load_map(&temp_dir).expect("load water fixture");
+    let original_heights = session.heights().to_vec();
+    let original_collision = session.collision().to_vec();
+    let stroke = session
+        .paint_water(4.0, 4.0, 2.5, 64, 10, 99.0)
+        .expect("paint water");
+    assert!(!stroke.heights.is_empty());
+    assert!(!stroke.collision.is_empty());
+    assert_eq!(
+        session.collision()[4 * 8 + 4],
+        90,
+        "authored collision is preserved"
+    );
+    assert!(session.commit_stroke());
+    let painted_heights = session.heights().to_vec();
+    let painted_collision = session.collision().to_vec();
+
+    assert!(session.undo());
+    assert_eq!(session.heights(), original_heights);
+    assert_eq!(session.collision(), original_collision);
+    assert!(session.redo());
+    assert_eq!(session.heights(), painted_heights);
+    assert_eq!(session.collision(), painted_collision);
+
+    safe_save_map(&temp_dir, &mut session).expect("save water fixture");
+    let reloaded = load_map(&temp_dir).expect("reload water fixture");
+    assert_eq!(reloaded.heights(), painted_heights);
+    assert_eq!(reloaded.collision(), painted_collision);
+    assert!(!reloaded.is_dirty());
+
+    fs::remove_dir_all(&temp_dir).unwrap();
+}
+
+#[test]
 fn test_undo_redo_stroke_integrity() {
     let mut session = TerrainSession::create_blank(257, 50);
 
