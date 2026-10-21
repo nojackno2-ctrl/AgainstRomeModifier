@@ -597,6 +597,89 @@ mod tests {
             .is_some());
     }
     #[test]
+    fn clone_keeps_inactive_unmanaged_light_reference_and_payload_reserved() {
+        let mut s = fixture_count(4);
+        for i in 2..4 {
+            let r = s.record(i);
+            s.pools.get_mut("objects").unwrap().bytes[r] = 0;
+            s.pools.get_mut("position").unwrap().bytes[8 + i * 17] = 0;
+            s.pools.get_mut("objdata").unwrap().bytes[8 + i * 9] = 0;
+        }
+
+        add_light(&mut s);
+        let widths = against_rome_data::pool::WIDTHS;
+        let active_offset = 8 + 2 * widths[0];
+        let owner_offset = 8 + 1024 * widths[..13].iter().sum::<usize>() + 2 * widths[13];
+        {
+            let light = s.pools.get_mut("light").unwrap();
+            light.bytes[active_offset..active_offset + widths[0]].fill(0x5A);
+            light.bytes[owner_offset..owner_offset + 2].copy_from_slice(&2u16.to_le_bytes());
+            light.raw = light.encoded();
+            light.initial = light.bytes.clone();
+        }
+
+        let object_light = s.column_offset(2, 12);
+        s.pools.get_mut("objects").unwrap().bytes[object_light..object_light + 2]
+            .copy_from_slice(&2u16.to_le_bytes());
+        let unmanaged_before = s.pools["light"].bytes
+            [active_offset..active_offset + widths[0]]
+            .to_vec();
+        let before = s.snapshot();
+
+        let (copy, uid) = s.clone_family_fixed(0, 1, [65536, 0, 0]).unwrap();
+
+        assert_eq!(s.col(copy, 12), 1, "managed copy must allocate around the inactive orphan");
+        assert_eq!(s.col(2, 12), 2, "unmanaged reference must remain intact");
+        assert_eq!(
+            &s.pools["light"].bytes[active_offset..active_offset + widths[0]],
+            unmanaged_before.as_slice(),
+            "inactive orphan payload must not be reused or rewritten"
+        );
+        assert!(s.family_details(0, 1).is_ok());
+        assert!(s.family_details(copy, uid).is_ok());
+        assert!(s.undo());
+        assert_eq!(s.snapshot(), before, "one undo restores every pool byte");
+    }
+    #[test]
+    fn clone_does_not_reallocate_inactive_position_still_referenced_by_native_object() {
+        let mut s = fixture_count(4);
+        for i in [1usize, 3] {
+            let r = s.record(i);
+            s.pools.get_mut("objects").unwrap().bytes[r] = 0;
+            s.pools.get_mut("position").unwrap().bytes[8 + i * 17] = 0;
+            s.pools.get_mut("objdata").unwrap().bytes[8 + i * 9] = 0;
+        }
+        let unmanaged_position_link = s.record(2) + 67;
+        s.pools.get_mut("objects").unwrap().bytes
+            [unmanaged_position_link..unmanaged_position_link + 2]
+            .copy_from_slice(&1u16.to_le_bytes());
+        let unmanaged_position = 8 + 1 * 17;
+        s.pools.get_mut("position").unwrap().bytes
+            [unmanaged_position..unmanaged_position + 17]
+            .copy_from_slice(&[
+                 0, 0xA5, 0x5A, 0xC3, 0x3C, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99,
+                0xAB, 0xCD, 0xEF,
+            ]);
+        let position_before = s.pools["position"].bytes
+            [unmanaged_position..unmanaged_position + 17]
+            .to_vec();
+        let before = s.snapshot();
+
+        let (copy, uid) = s.clone_family_fixed(0, 1, [0; 3]).unwrap();
+
+        assert_ne!(s.link(copy, 67), 1);
+        assert_ne!(s.link(copy, 69), 1);
+        assert_eq!(
+            &s.pools["position"].bytes[unmanaged_position..unmanaged_position + 17],
+            position_before.as_slice(),
+            "the referenced inactive record must not be rewritten"
+        );
+        assert!(s.family_details(0, 1).is_ok());
+        assert!(s.family_details(copy, uid).is_ok());
+        assert!(s.undo());
+        assert_eq!(s.snapshot(), before);
+    }
+    #[test]
     fn save_second_publish_failure_restores_all_and_retry() {
         let mut s = fixture();
         let dir = std::env::temp_dir().join(format!("ar-placement-failure-{}", std::process::id()));
@@ -2135,13 +2218,20 @@ let compare = |s: &ObjectStore, stage: &str| assert_pools_match_frozen(s, "batch
                 }
             };
             loaded += 1;
+            let family_index = FamilyDetailsIndex::new(&s);
+            let mut related_slots = BTreeSet::new();
+            for &slot in &family_index.active_slots {
+                if s.col(slot, 5) != 65535 || s.col(slot, 11) != 65535 {
+                    related_slots.insert(slot);
+                    related_slots.insert(s.col(slot, 13));
+                }
+            }
             for o in s.objects().into_iter().filter(|o| o.parent.is_none() && o.uid != 0) {
-                let related = (0..s.count).any(|m| s.active(m) && (m == o.slot || s.col(m, 13) == o.slot) && (s.col(m, 5) != 65535 || s.col(m, 11) != 65535));
-                if !related {
+                if !related_slots.contains(&o.slot) {
                     continue;
                 }
                 related_roots += 1;
-                match s.family_details(o.slot, o.uid) {
+                match s.family_details_with_index(o.slot, o.uid, &family_index) {
                     Ok(d) => {
                         accepted_related += 1;
                         if accepted_samples.len() < 5 && (!d.particle_slots.is_empty() || !d.lager_slots.is_empty()) {
@@ -2169,7 +2259,19 @@ let compare = |s: &ObjectStore, stage: &str| assert_pools_match_frozen(s, "batch
             if let Some(corrupt) = corrupt {
                 corrupt(&mut s);
             }
-            rust.push(s.family_details(0, 1).map(|d| (sorted(&d.object_slots), d.particle_slots, d.lager_slots, d.big_lager_slots, sorted(&d.light_slots))));
+            let index = FamilyDetailsIndex::new(&s);
+            let indexed = s.family_details_with_index(0, 1, &index);
+            let direct = s.family_details(0, 1);
+            assert_eq!(indexed, direct, "shared index changed family result");
+            rust.push(indexed.map(|d| {
+                (
+                    sorted(&d.object_slots),
+                    d.particle_slots,
+                    d.lager_slots,
+                    d.big_lager_slots,
+                    sorted(&d.light_slots),
+                )
+            }));
         }
         // Frozen output of the original C# LevelObjectStore.FamilyAt probe, one line per label.
         let stdout = include_str!("../tests/fixtures/placement_probe_oracle.txt");
@@ -2424,6 +2526,146 @@ pub struct ObjectStore {
     history: Vec<BTreeMap<String, Vec<u8>>>,
     redo: Vec<BTreeMap<String, Vec<u8>>>,
 }
+struct FamilyDetailsIndex {
+    active_slots: Vec<usize>,
+    children: BTreeMap<usize, Vec<usize>>,
+    object_lagers: BTreeMap<usize, Vec<usize>>,
+    object_particles: BTreeMap<usize, Vec<usize>>,
+    object_lights: BTreeMap<usize, Vec<usize>>,
+    lager_members: BTreeMap<usize, Vec<usize>>,
+    lager_big_slots: BTreeMap<usize, Vec<usize>>,
+    biglager_members: BTreeMap<usize, Vec<usize>>,
+    particle_owners: BTreeMap<usize, Vec<usize>>,
+    particle_lights: BTreeMap<usize, Vec<usize>>,
+    attached_lights: BTreeMap<usize, Vec<against_rome_data::pool::LightSnapshot>>,
+    particle: Option<std::result::Result<ParticlePool, String>>,
+    light: Option<std::result::Result<LightPool, String>>,
+}
+impl FamilyDetailsIndex {
+    fn new(store: &ObjectStore) -> Self {
+        let mut active_slots = Vec::new();
+        let mut children: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
+        let mut object_lagers: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
+        let mut object_particles: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
+        let mut object_lights: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
+        for slot in 0..store.count {
+            if !store.active(slot) {
+                continue;
+            }
+            active_slots.push(slot);
+            let parent = store.col(slot, 13);
+            if parent != 65535 {
+                children.entry(parent).or_default().push(slot);
+            }
+            for (value, map) in [
+                (store.col(slot, 5), &mut object_lagers),
+                (store.col(slot, 11), &mut object_particles),
+                (store.col(slot, 12), &mut object_lights),
+            ] {
+                if value != 65535 {
+                    map.entry(value).or_default().push(slot);
+                }
+            }
+        }
+        let mut lager_members: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
+        let mut lager_big_slots: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
+        if let Some(blob) = store.pools.get("lager") {
+            for camp in 0..LAGER_CAPACITY {
+                let rec = 16 + camp * LAGER_RECORD_SIZE;
+                if blob.bytes[rec] == 0 {
+                    continue;
+                }
+                for i in 0..10 {
+                    let member = i16at(&blob.bytes, rec + 23 + i * 2);
+                    if member >= 0 {
+                        lager_members.entry(member as usize).or_default().push(camp);
+                    }
+                }
+                let big = i16at(&blob.bytes, 16 + LAGER_CAPACITY * LAGER_RECORD_SIZE + camp * 2);
+                if big >= 0 {
+                    lager_big_slots.entry(big as usize).or_default().push(camp);
+                }
+            }
+        }
+        let mut biglager_members: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
+        if let Some(blob) = store.pools.get("biglager") {
+            for big in 0..BIG_LAGER_CAPACITY {
+                let rec = 12 + big * BIG_LAGER_RECORD_SIZE;
+                if blob.bytes[rec] == 0 {
+                    continue;
+                }
+                for i in 0..BIG_LAGER_MEMBERS {
+                    let member = i16at(&blob.bytes, rec + 1 + i * 2);
+                    if member >= 0 {
+                        biglager_members.entry(member as usize).or_default().push(big);
+                    }
+                }
+            }
+        }
+        let particle = store.pools.get("particle").map(|blob| {
+            ParticlePool::from_payload(&blob.bytes).map_err(|error| error.to_string())
+        });
+        let mut particle_owners: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
+        let mut particle_lights: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
+        if let Some(Ok(pool)) = particle.as_ref() {
+            for slot in pool.active_slots() {
+                let Some(snapshot) = pool.capture(slot) else { continue };
+                let slot = slot as usize;
+                if snapshot.owner() >= 0 {
+                    particle_owners.entry(snapshot.owner() as usize).or_default().push(slot);
+                }
+                for child in 0..PARTICLE_CHILDREN as u32 {
+                    if let Ok(child) = snapshot.child(child) {
+                        if child.light_link() >= 0 {
+                            particle_lights.entry(child.light_link() as usize).or_default().push(slot);
+                        }
+                    }
+                }
+            }
+        }
+        let light = store.pools.get("light").map(|blob| {
+            LightPool::from_payload(&blob.bytes).map_err(|error| error.to_string())
+        });
+        let mut attached_lights: BTreeMap<usize, Vec<against_rome_data::pool::LightSnapshot>> = BTreeMap::new();
+        if let Some(Ok(pool)) = light.as_ref() {
+            for snapshot in pool.active_snapshots() {
+                if snapshot.owner() >= 0 {
+                    attached_lights.entry(snapshot.owner() as usize).or_default().push(snapshot);
+                }
+                if snapshot.parent() >= 0 {
+                    attached_lights.entry(snapshot.parent() as usize).or_default().push(snapshot);
+                }
+            }
+        }
+        Self {
+            active_slots,
+            children,
+            object_lagers,
+            object_particles,
+            object_lights,
+            lager_members,
+            lager_big_slots,
+            biglager_members,
+            particle_owners,
+            particle_lights,
+            attached_lights,
+            particle,
+            light,
+        }
+    }
+    fn particle_pool(&self) -> Result<Option<&ParticlePool>> {
+        self.particle
+            .as_ref()
+            .map(|pool| pool.as_ref().map_err(Clone::clone))
+            .transpose()
+    }
+    fn light_pool(&self) -> Result<Option<&LightPool>> {
+        self.light
+            .as_ref()
+            .map(|pool| pool.as_ref().map_err(Clone::clone))
+            .transpose()
+    }
+}
 impl ObjectStore {
     pub fn load(map: impl AsRef<Path>) -> Result<Self> {
         let root = map.as_ref().join("DATA");
@@ -2616,6 +2858,15 @@ impl ObjectStore {
     }
     /// Returns detailed family closure including object, light, particle, lager, and biglager slots.
     pub fn family_details(&self, slot: usize, uid: u32) -> Result<FamilyDetails> {
+        let index = FamilyDetailsIndex::new(self);
+        self.family_details_with_index(slot, uid, &index)
+    }
+    fn family_details_with_index(
+        &self,
+        slot: usize,
+        uid: u32,
+        index: &FamilyDetailsIndex,
+    ) -> Result<FamilyDetails> {
         if !self.active(slot) || u32at(&self.pools["objects"].bytes, self.record(slot) + 3) != uid {
             return Err("stale object UID".into());
         }
@@ -2624,15 +2875,6 @@ impl ObjectStore {
         }
         if self.col(slot, 13) != 65535 {
             return Err("select family root".into());
-        }
-        let mut children: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
-        for s in 0..self.count {
-            if self.active(s) {
-                let parent = self.col(s, 13);
-                if parent != 65535 {
-                    children.entry(parent).or_default().push(s);
-                }
-            }
         }
         let mut members = BTreeSet::from([slot]);
         let mut order = vec![slot];
@@ -2644,7 +2886,7 @@ impl ObjectStore {
         while cursor < order.len() {
             let owner = order[cursor];
             let mut related = BTreeSet::new();
-            if let Some(descendants) = children.get(&owner) {
+            if let Some(descendants) = index.children.get(&owner) {
                 related.extend(descendants.iter().copied());
             }
             let camp_slot = self.col(owner, 5);
@@ -2770,41 +3012,32 @@ impl ObjectStore {
             }
         }
 
-        for s in 0..self.count {
-            if self.active(s) && !members.contains(&s) && lager_slots.contains(&self.col(s, 5)) {
+        for &camp in &lager_slots {
+            if index.object_lagers.get(&camp).is_some_and(|owners| {
+                owners.iter().any(|owner| !members.contains(owner))
+            }) {
                 return Err("external object references family lager".into());
             }
         }
-        if let Some(l_blob) = self.pools.get("lager") {
-            let b = &l_blob.bytes;
-            for s in 0..LAGER_CAPACITY {
-                let rec = 16 + s * LAGER_RECORD_SIZE;
-                if b[rec] != 0 && !lager_slots.contains(&s) {
-                    for i in 0..10 {
-                        let m = i16at(b, rec + 23 + i * 2);
-                        if m != -1 && members.contains(&(m as usize)) {
-                            return Err("external lager references family member".into());
-                        }
-                    }
-                    let big = i16at(b, 16 + LAGER_CAPACITY * LAGER_RECORD_SIZE + s * 2);
-                    if big != -1 && big_slots.contains(&(big as usize)) {
-                        return Err("external lager references family biglager".into());
-                    }
-                }
+        for &member in &members {
+            if index.lager_members.get(&member).is_some_and(|camps| {
+                camps.iter().any(|camp| !lager_slots.contains(camp))
+            }) {
+                return Err("external lager references family member".into());
             }
         }
-        if let Some(b_blob) = self.pools.get("biglager") {
-            let b = &b_blob.bytes;
-            for s in 0..BIG_LAGER_CAPACITY {
-                let rec = 12 + s * BIG_LAGER_RECORD_SIZE;
-                if b[rec] != 0 && !big_slots.contains(&s) {
-                    for i in 0..BIG_LAGER_MEMBERS {
-                        let m = i16at(b, rec + 1 + i * 2);
-                        if m != -1 && members.contains(&(m as usize)) {
-                            return Err("external biglager references family member".into());
-                        }
-                    }
-                }
+        for &big in &big_slots {
+            if index.lager_big_slots.get(&big).is_some_and(|camps| {
+                camps.iter().any(|camp| !lager_slots.contains(camp))
+            }) {
+                return Err("external lager references family biglager".into());
+            }
+        }
+        for &member in &members {
+            if index.biglager_members.get(&member).is_some_and(|bigs| {
+                bigs.iter().any(|big| !big_slots.contains(big))
+            }) {
+                return Err("external biglager references family member".into());
             }
         }
 
@@ -2844,9 +3077,8 @@ impl ObjectStore {
                 }
             }
         }
-        for s in 0..self.count {
-            if self.active(s)
-                && !members.contains(&s)
+        for &s in &index.active_slots {
+            if !members.contains(&s)
                 && (self.poslinks(s).iter().any(|p| positions.contains(p))
                     || data.contains(&self.col(s, 1))
                     || [71, 73, 77].into_iter().any(|o| {
@@ -2868,8 +3100,7 @@ impl ObjectStore {
             if target >= PARTICLE_CAPACITY {
                 return Err("particle slot out of range".into());
             }
-            let p_blob = self.pools.get("particle").ok_or("missing particle pool")?;
-            let pool = ParticlePool::from_payload(&p_blob.bytes).map_err(|e| e.to_string())?;
+            let pool = index.particle_pool()?.ok_or("missing particle pool")?;
             let emitter = pool.capture(target as u32).ok_or("inactive or missing particle emitter")?;
             if emitter.owner() as usize != s {
                 return Err("particle emitter owner mismatch".into());
@@ -2884,8 +3115,9 @@ impl ObjectStore {
                     if light < 0 || light as usize >= 1024 {
                         return Err("particle child light out of bounds".into());
                     }
-                    let l_blob = self.pools.get("light").ok_or("missing light pool for particle light")?;
-                    let l_pool = LightPool::from_payload(&l_blob.bytes).map_err(|e| e.to_string())?;
+                    let l_pool = index
+                        .light_pool()?
+                        .ok_or("missing light pool for particle light")?;
                     let saved = l_pool.capture(light as u32).ok_or("particle child references inactive light")?;
                     if saved.owner() >= 0 && !members.contains(&(saved.owner() as usize)) {
                         return Err("particle light owned outside family".into());
@@ -2897,26 +3129,30 @@ impl ObjectStore {
                 }
             }
         }
-        if let Some(p_blob) = self.pools.get("particle") {
-            let pool = ParticlePool::from_payload(&p_blob.bytes).map_err(|e| e.to_string())?;
-            for s in pool.active_slots() {
-                let emitter = pool.capture(s).unwrap();
-                let owner = emitter.owner();
-                if owner >= 0 && members.contains(&(owner as usize)) && !particle_slots.contains(&(s as usize)) {
-                    return Err("family member owns unreferenced active particle emitter".into());
-                }
+        for &owner in &members {
+            if index.particle_owners.get(&owner).is_some_and(|emitters| {
+                emitters.iter().any(|emitter| !particle_slots.contains(emitter))
+            }) {
+                return Err("family member owns unreferenced active particle emitter".into());
             }
         }
-        for s in 0..self.count {
-            if self.active(s) && !members.contains(&s) && particle_slots.contains(&self.col(s, 11)) {
+        for &particle in &particle_slots {
+            if index.object_particles.get(&particle).is_some_and(|owners| {
+                owners.iter().any(|owner| !members.contains(owner))
+            }) {
                 return Err("external object references family particle emitter".into());
             }
         }
 
         let mut light_slots: Vec<usize> = particle_lights.into_iter().collect();
-        if let Some(l_blob) = self.pools.get("light") {
-            let l_pool = LightPool::from_payload(&l_blob.bytes).map_err(|e| e.to_string())?;
-            for l in l_pool.active_snapshots() {
+        if let Some(l_pool) = index.light_pool()? {
+            let mut related_lights = BTreeMap::new();
+            for &member in &members {
+                if let Some(lights) = index.attached_lights.get(&member) {
+                    related_lights.extend(lights.iter().map(|light| (light.slot(), *light)));
+                }
+            }
+            for l in related_lights.values() {
                 let owner_inside = l.owner() >= 0 && members.contains(&(l.owner() as usize));
                 let parent_inside = l.parent() >= 0 && members.contains(&(l.parent() as usize));
                 if !owner_inside && !parent_inside {
@@ -2938,23 +3174,17 @@ impl ObjectStore {
                 }
             }
             let light_targets: BTreeSet<usize> = light_slots.iter().copied().collect();
-            if let Some(p_blob) = self.pools.get("particle") {
-                let pool = ParticlePool::from_payload(&p_blob.bytes).map_err(|e| e.to_string())?;
-                for s in pool.active_slots() {
-                    if !particle_slots.contains(&(s as usize)) {
-                        let emitter = pool.capture(s).unwrap();
-                        for i in 0..PARTICLE_CHILDREN as u32 {
-                            let child = emitter.child(i).map_err(|e| e.to_string())?;
-                            let link = child.light_link();
-                            if link != -1 && light_targets.contains(&(link as usize)) {
-                                return Err("external particle emitter references family light".into());
-                            }
-                        }
-                    }
+            for &light in &light_targets {
+                if index.particle_lights.get(&light).is_some_and(|emitters| {
+                    emitters.iter().any(|emitter| !particle_slots.contains(emitter))
+                }) {
+                    return Err("external particle emitter references family light".into());
                 }
             }
-            for s in 0..self.count {
-                if self.active(s) && !members.contains(&s) && light_targets.contains(&self.col(s, 12)) {
+            for &light in &light_targets {
+                if index.object_lights.get(&light).is_some_and(|owners| {
+                    owners.iter().any(|owner| !members.contains(owner))
+                }) {
                     return Err("external direct light reference".into());
                 }
             }
@@ -3236,8 +3466,11 @@ impl ObjectStore {
             (0..self.count).filter(|s| !self.active(*s) && !reserved.contains(s)),
         )?;
         let all_active: Vec<_> = (0..self.count).filter(|s| self.active(*s)).collect();
-        let used_positions: BTreeSet<_> =
-            all_active.iter().flat_map(|s| self.poslinks(*s)).collect();
+        let used_positions: BTreeSet<_> = all_active
+            .iter()
+            .flat_map(|s| self.poslinks(*s))
+            .filter(|p| *p < self.positions && self.pools["position"].bytes[8 + p * 17] == 0)
+            .collect();
         let mut source_positions = Vec::new();
         for &s in &family {
             for p in [self.link(s, 67), self.link(s, 69), self.col(s, 10)] {
