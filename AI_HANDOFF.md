@@ -1,3 +1,9 @@
+## 2026-10-23 Claude：實機確認一鍵敵對修正生效（已驗證）
+
+- 使用者關閉 Windows 輸入面板後重試（遊戲可正常點擊）。以 Rust 編輯器把 ENDL_005 的 Wave_02 移到 10 秒、主屋旁，再呼叫 `fix_hostile_waves`（加入 1 個「隊伍 0 對 1 敵對」外交事件）並 Safe Save。
+- 實機：Wave_02 的匈人騎兵在主屋旁生成，游標停留時顯示**紅色**血條（修正前同一隊為黃色中立）；第 15 秒的 Wave_01（隊伍 1）也以敵對狀態出現。腳本生成的敵軍沒有行動命令，停在原地。
+- 收尾：遊戲正常離開；ENDL_005 依 `%TEMP%\arm_ingame_backup_ENDL_005_20261022113911` 還原，檔案清單相同、55 檔雜湊全符；臨時準備測試已移除、未提交。`docs/map-editor-requirements-audit.md` 已更新。
+
 ## 2026-10-22 Claude：設計檢查一鍵修正「波次未設為敵對」（已驗證，遊戲內效果待確認）
 
 - Design Check 視窗在有 `wave-not-hostile` 時顯示「Make wave teams hostile／將波次隊伍設為敵對」，`EditorApp::fix_hostile_waves` 依最新報告為每個被標記隊伍加入第 0 秒「隊伍外交（隊伍 0 對 N 敵對）」事件，一次 `add_events`＝一步復原，必要時先載入劇本，完成後重新檢查並在狀態列提示需存檔。`loaded_map_path` 改為 `pub(crate)`。
