@@ -1,3 +1,9 @@
+## 2026-10-22 Claude：設計檢查一鍵修正「波次未設為敵對」（已驗證，遊戲內效果待確認）
+
+- Design Check 視窗在有 `wave-not-hostile` 時顯示「Make wave teams hostile／將波次隊伍設為敵對」，`EditorApp::fix_hostile_waves` 依最新報告為每個被標記隊伍加入第 0 秒「隊伍外交（隊伍 0 對 N 敵對）」事件，一次 `add_events`＝一步復原，必要時先載入劇本，完成後重新檢查並在狀態列提示需存檔。`loaded_map_path` 改為 `pub(crate)`。
+- 新測試 `design_check_quick_fix_makes_wave_team_hostile`：TEMP 根目錄（最小 cl_scint.ini）＋閒置 BCI，透過面板點擊修正 → 新事件 (kind 1, team 0, other 1, hostile) → 提醒消失 → 一次 undo 撤銷。workspace exit 0，283 groups **2,364 passed／0 failed／24 ignored**（`re_workspace/hostile-fix-workspace-test.log`）。
+- 未做：遊戲內確認「加外交後敵軍可攻擊」——每次啟動遊戲 Windows 輸入面板（TextInputHost）都佔前景、點擊被拒（使用者拒絕其權限）；等待使用者關閉面板後再驗。ENDL_005 未被修改（腳本雜湊同備份）。
+
 ## 2026-10-22 Claude：設計檢查提醒「進攻波次未設為敵對」（已驗證，補救的實機確認被輸入面板擋住）
 
 - 新 Warning `wave-not-hostile`：啟用事件會生成隊伍 1–7 的部隊，但沒有啟用中的「隊伍外交」動作（hostile=true）讓該隊與隊伍 0 敵對時提醒；起因是實機中此類波次保持中立（黃色血條）、右鍵不會攻擊。新測試 `test_event_wave_without_hostile_diplomacy_is_flagged`（無外交、和平、停用事件皆仍提醒）。安裝版 ENDL_005 唯讀 `--validate-map --lang zh` 現報此 1 個警告，與實機觀察相符。

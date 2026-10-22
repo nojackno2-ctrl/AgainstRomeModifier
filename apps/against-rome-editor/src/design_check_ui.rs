@@ -311,6 +311,46 @@ impl EditorApp {
         }
     }
 
+    /// Quick fix for `wave-not-hostile`: adds one start-of-game "Team diplomacy (hostile)" event
+    /// per flagged team against the player (team 0), as a single scenario undo step, then
+    /// re-runs the check. Returns how many events were added.
+    pub fn fix_hostile_waves(&mut self) -> Result<usize, String> {
+        let teams: Vec<i32> = match self.design_check_report() {
+            DesignCheckReport::Checked { design_issues, .. } => design_issues
+                .iter()
+                .filter(|i| i.code == "wave-not-hostile")
+                .map(|i| i.team)
+                .collect(),
+            DesignCheckReport::Unavailable(e) => return Err(e),
+        };
+        if teams.is_empty() {
+            return Ok(0);
+        }
+        if !self.scenario.is_loaded() {
+            if let Some(path) = self.loaded_map_path.clone() {
+                self.scenario.load_session(&path).map_err(|e| format!("Scenario: {e}"))?;
+            }
+        }
+        let events: Vec<against_rome_scenario::Event> = teams
+            .iter()
+            .map(|&team| against_rome_scenario::Event {
+                name: format!("ARM hostile team {team}"),
+                delay_seconds: 0,
+                actions: vec![against_rome_scenario::Action {
+                    kind: 1,
+                    team: 0,
+                    other_team: team,
+                    hostile: true,
+                    ..Default::default()
+                }],
+                ..Default::default()
+            })
+            .collect();
+        self.scenario.add_events(&events).map_err(|e| format!("Scenario: {e}"))?;
+        self.run_design_check();
+        Ok(events.len())
+    }
+
     pub fn show_design_check(&mut self, ctx: &egui::Context) {
         if !self.design_check.open {
             return;
@@ -318,6 +358,7 @@ impl EditorApp {
         let lang = self.lang();
         let mut open = true;
         let mut rerun = false;
+        let mut fix_hostility = false;
         let mut locate: Option<usize> = None;
         let rows = match &self.design_check.report {
             Some(report) => report_rows(report, &self.design_check.extra_issues, lang),
@@ -331,6 +372,13 @@ impl EditorApp {
                 ui.horizontal(|ui| {
                     if ui.button(tr(lang, "Re-run check", "重新檢查")).clicked() {
                         rerun = true;
+                    }
+                    if rows.iter().any(|r| r.code == "wave-not-hostile")
+                        && ui
+                            .button(tr(lang, "Make wave teams hostile", "將波次隊伍設為敵對"))
+                            .clicked()
+                    {
+                        fix_hostility = true;
                     }
                     let can_locate = selected
                         .and_then(|i| rows.get(i))
@@ -401,7 +449,18 @@ impl EditorApp {
             }
         }
         self.design_check.open = open;
-        if rerun {
+        if fix_hostility {
+            match self.fix_hostile_waves() {
+                Ok(n) => {
+                    self.status_message = format!("Added {n} hostile diplomacy event(s); Save to write them.");
+                    self.status_is_error = false;
+                }
+                Err(e) => {
+                    self.status_message = e;
+                    self.status_is_error = true;
+                }
+            }
+        } else if rerun {
             self.run_design_check();
         }
     }

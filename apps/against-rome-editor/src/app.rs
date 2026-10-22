@@ -97,7 +97,7 @@ mod toolbar_event_graph_tests;
 
 pub struct EditorApp {
     pub map_path_input: String,
-    loaded_map_path: Option<PathBuf>,
+    pub(crate) loaded_map_path: Option<PathBuf>,
     pub session: Option<TerrainSession>,
     emboss: Option<EmbossBaseline>,
     pub status_message: String,
@@ -5306,6 +5306,50 @@ mod tests {
             "zh toolbar: {:?}",
             out.shapes.iter().filter_map(|s| match &s.shape { egui::epaint::Shape::Text(t) if t.pos.y < 60.0 => Some(t.galley.text().to_string()), _ => None }).collect::<Vec<_>>()
         );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    /// Design Check's quick fix turns a neutral attack wave hostile with one diplomacy event
+    /// (one undo step), clicked through the real panel.
+    #[test]
+    fn design_check_quick_fix_makes_wave_team_hostile() {
+        let root = temp_map_dir("hostile_fix_root");
+        let dir = root.join("MAPS").join("ENDL_006");
+        std::fs::create_dir_all(dir.join("SCRIPT")).unwrap();
+        std::fs::create_dir_all(root.join("SYSTEM/CLAK")).unwrap();
+        std::fs::write(root.join("SYSTEM/CLAK/cl_scint.ini"), "[ObjDefName]\nHUN_KAVINF00=FigHunKav00\n").unwrap();
+        std::fs::write(dir.join("SCRIPT/ak_level.bci"), against_rome_scenario::BciImage::idle().serialize()).unwrap();
+        let mut app = EditorApp::initial_state();
+        app.set_loaded_map(dir.clone(), TerrainSession::create_blank(33, 32)).unwrap();
+        app.scenario.load_session(&dir).unwrap();
+        app.scenario
+            .add_events(&[against_rome_scenario::Event {
+                name: "Wave_01".into(),
+                delay_seconds: 10,
+                actions: vec![against_rome_scenario::Action {
+                    kind: 2,
+                    team: 1,
+                    alias: "HUN_KAVINF00".into(),
+                    x: 4000.0,
+                    z: 4000.0,
+                    count: 3,
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }])
+            .unwrap();
+        let ctx = egui::Context::default();
+        gui_click(&mut app, &ctx, "Design Check");
+        assert!(design_codes(&app).contains(&"wave-not-hostile".to_string()), "{:?}", design_codes(&app));
+        gui_click(&mut app, &ctx, "Make wave teams hostile");
+        let events = app.scenario.document().events.clone();
+        assert_eq!(events.len(), 2, "{events:?}");
+        let war = &events[1].actions[0];
+        assert_eq!((war.kind, war.team, war.other_team, war.hostile), (1, 0, 1, true));
+        assert!(!design_codes(&app).contains(&"wave-not-hostile".to_string()), "{:?}", design_codes(&app));
+        assert!(!app.status_is_error, "{}", app.status_message);
+        assert!(app.scenario.undo_events());
+        assert_eq!(app.scenario.document().events.len(), 1, "one undo removes the fix");
         std::fs::remove_dir_all(root).unwrap();
     }
 
