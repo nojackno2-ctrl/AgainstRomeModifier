@@ -1,3 +1,9 @@
+## 2026-10-22 Claude：設計檢查提醒「進攻波次未設為敵對」（已驗證，補救的實機確認被輸入面板擋住）
+
+- 新 Warning `wave-not-hostile`：啟用事件會生成隊伍 1–7 的部隊，但沒有啟用中的「隊伍外交」動作（hostile=true）讓該隊與隊伍 0 敵對時提醒；起因是實機中此類波次保持中立（黃色血條）、右鍵不會攻擊。新測試 `test_event_wave_without_hostile_diplomacy_is_flagged`（無外交、和平、停用事件皆仍提醒）。安裝版 ENDL_005 唯讀 `--validate-map --lang zh` 現報此 1 個警告，與實機觀察相符。
+- 嘗試實機確認「加外交後敵軍可攻擊」：以 Rust 編輯器在 ENDL_005 加第 1 秒外交事件（設計檢查已不再提醒）並存檔，但遊戲啟動時 Windows 輸入面板（TextInputHost）再次佔前景、點擊被拒（使用者先前拒絕其權限）；已關閉遊戲、ENDL_005 還原且 55 檔雜湊全符，**補救效果未實機確認**。
+- 驗證：workspace exit 0，283 groups **2,363 passed／0 failed／24 ignored**（`re_workspace/wave-hostile-workspace-test.log`）。
+
 ## 2026-10-22 Claude：腳本生成玩家部隊可控修正＋敵方波次／失敗實機驗證（已驗證）
 
 - 使用者關閉 Windows 輸入面板後重做遊戲內驗證（ENDL_005 仍以 `%TEMP%\arm_ingame_backup_ENDL_005_20261022113911` 備份，測後還原、55 檔雜湊全符，遊戲已關閉）。

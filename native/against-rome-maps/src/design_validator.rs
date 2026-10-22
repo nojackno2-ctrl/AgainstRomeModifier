@@ -389,6 +389,38 @@ impl MapDesignValidator {
             }
         }
 
+        // --- 3b. 事件生成的敵方隊伍是否已設為與玩家敵對 ---
+        // In game (2026-10-22) event-spawned troops of a team without a hostile diplomacy action
+        // stayed neutral (yellow bars) and could not be attacked.
+        let hostile_to_player = |team: i32| {
+            request.events.iter().filter(|e| e.enabled).any(|e| {
+                e.actions.iter().any(|a| {
+                    a.kind == 1
+                        && a.hostile
+                        && ((a.team == 0 && a.other_team == team) || (a.team == team && a.other_team == 0))
+                })
+            })
+        };
+        let mut wave_teams = std::collections::BTreeSet::new();
+        for e in request.events.iter().filter(|e| e.enabled) {
+            for a in e.actions.iter().filter(|a| a.kind == 2 && (1..=7).contains(&a.team)) {
+                wave_teams.insert(a.team);
+            }
+        }
+        for team in wave_teams.into_iter().filter(|t| !hostile_to_player(*t)) {
+            issues.push(MapDesignIssue {
+                severity: DesignIssueSeverity::Warning,
+                code: "wave-not-hostile".into(),
+                chinese: format!("事件會生成隊伍 {team} 的部隊，但沒有啟用中的外交事件把隊伍 {team} 設為與玩家（隊伍 0）敵對；遊戲中它們會保持中立、不會被攻擊。請加入「隊伍外交」動作（敵對）。"),
+                english: format!("Events spawn troops for team {team}, but no enabled diplomacy action makes team {team} hostile to the player (team 0); in game they stay neutral and cannot be attacked. Add a Team diplomacy action (hostile)."),
+                object_alias: String::new(),
+                team,
+                world_x: None,
+                world_z: None,
+                object_id: Uuid::nil(),
+            });
+        }
+
         // --- 4. 劇本勝負判定事件檢查 ---
         let enabled_events: Vec<&Event> = request.events.iter().filter(|e| e.enabled).collect();
         let has_victory = enabled_events

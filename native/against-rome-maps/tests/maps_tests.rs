@@ -373,6 +373,29 @@ fn test_untouched_native_map_reports_one_native_only_warning() {
 }
 
 #[test]
+fn test_event_wave_without_hostile_diplomacy_is_flagged() {
+    let wave = Event {
+        name: "Wave_01".into(),
+        actions: vec![Action { kind: 2, team: 1, alias: "HUN_KAVINF00".into(), count: 3, ..Default::default() }],
+        ..Default::default()
+    };
+    let diplomacy = |hostile: bool, enabled: bool| Event {
+        name: "War".into(),
+        enabled,
+        actions: vec![Action { kind: 1, team: 1, other_team: 0, hostile, ..Default::default() }],
+        ..Default::default()
+    };
+    let flagged = |events: Vec<Event>| -> Vec<i32> {
+        let req = MapDesignValidationRequest { events, ..Default::default() };
+        MapDesignValidator::validate(&req).into_iter().filter(|i| i.code == "wave-not-hostile").map(|i| i.team).collect()
+    };
+    assert_eq!(flagged(vec![wave.clone()]), vec![1]);
+    assert!(flagged(vec![wave.clone(), diplomacy(true, true)]).is_empty());
+    assert_eq!(flagged(vec![wave.clone(), diplomacy(false, true)]), vec![1], "peace is not hostility");
+    assert_eq!(flagged(vec![wave, diplomacy(true, false)]), vec![1], "disabled events do not count");
+}
+
+#[test]
 fn test_map_design_validator_is_main_house() {
     assert!(MapDesignValidator::is_main_house("GER_HAU00"));
     assert!(MapDesignValidator::is_main_house("ROM_HAU00"));
