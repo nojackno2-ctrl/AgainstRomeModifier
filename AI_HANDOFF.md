@@ -1,3 +1,11 @@
+## 2026-10-22 Claude：遊戲內實機驗收 ENDL_005（使用者授權 computer use，已還原）
+
+- 授權：使用者於 2026-10-22 明確允許以 computer use 控制遊戲，在 ENDL_005 備份副本上驗收。測前備份 `%TEMP%\arm_ingame_backup_ENDL_005_20261022113911`（55 檔＋SHA-256 清單）；測後刪除測試存檔新增的 12 個檔案、還原 2 個變更檔，檔案清單相同且 55 個雜湊全符。遊戲已正常離開。
+- **已驗證（實機）**：主選單「ОТКРЫТЬ-ЗАКРЫТЬ」（無盡）→ 日耳曼 → 地圖清單出現自製圖「Claude Test 1b」與簡介並可開始；地形載入；ENDL_005 預建 DATA 主屋（GER_HAU00）與住宅以完工狀態出現；劇本訊息「ARM test: scenario started.」第 3 秒顯示（與原版任務目標共存）；勝利事件「ARM survive 40s」於 00:00:40 準時結束並顯示勝利統計（重玩兩次結果一致）；玩家部隊框選後右鍵移動到指定處（尋路正常）。
+- **Rust 編譯器實機**：用一次性 ignored 測試（未提交）以 Rust 編輯器載入安裝版 ENDL_005、改 Wave_01 為 10 秒且移到 (10400,9600)、勝利改 120 秒，Safe Save 重新編譯 BCI。實機：40 秒不再結束、勝利於 00:02:00 準時觸發 → 遊戲執行的是 Rust 編譯腳本；Wave_01 改成隊伍 0 後玩家人口 21→28（+7），在主屋東側找到生成的匈人騎兵（紅色骷髏旗），座標正確。
+- **未解／發現**：(1) 生成給隊伍 0 的部隊在無盡模式顯示黃色血條、不可選取；Spawns 面板說明的「team 0 is the player」需逆向確認無盡模式玩家隊伍編號（開局 GER_INF01 count 10 的部隊也未在可控隊伍中明確辨識）。(2) 統計中某敵方部族 4 支部隊每局換部族，屬無盡模式原生 AI，不能當作波次證據；敵方隊伍 1 波次未直接目視（當時未看主屋附近）。(3) 失敗事件未實機觸發。(4) 每次 Safe Save 會為所有覆寫檔留下 `.arm_backup.<uuid>`（含內容未變的 boden.bmp／collision.bmp），屬既有刻意設計（不覆寫舊備份），但會隨存檔次數累積。(5) 存檔會新增 `arm_start_camera.json`。
+- 文件：`docs/map-editor-requirements-audit.md` 遊戲內一列改為「大部分已驗證」並列出未解項。
+
 ## 2026-10-22 Claude：Spawns 面板按需載入劇本＋UI 放置點擊驗收（已驗證）
 
 - **Spawns 面板要求先到劇本面板載入**：開圖後打開「Spawns」顯示「No scenario loaded ... (load it in the Scenario panel)」。劇本按需載入的條件擴充為 Scenario 或 Spawns 面板開啟（同樣每張地圖一次、不覆蓋未存修改）。新單元測試 `spawns_panel_loads_the_open_maps_script_on_demand`。
