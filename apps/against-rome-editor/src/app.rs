@@ -5336,6 +5336,22 @@ mod tests {
         std::fs::remove_dir_all(dir).unwrap();
     }
 
+    /// The Spawns panel needs the scenario too; opening it must not send the designer to the
+    /// Scenario panel first.
+    #[test]
+    fn spawns_panel_loads_the_open_maps_script_on_demand() {
+        let (mut app, dir, _) = start_camera_app(false);
+        let ctx = egui::Context::default();
+        let out = gui_click(&mut app, &ctx, "Spawns");
+        assert!(app.spawn_ui.open);
+        assert!(app.scenario.is_loaded(), "{}", app.status_message);
+        let out = gui_frame(&mut app, &ctx, vec![]);
+        let _ = &out;
+        assert!(!gui_texts(&out, 0.0).contains("No scenario loaded"), "{}", gui_texts(&out, 0.0));
+        assert!(!app.has_unsaved_changes());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
     /// Choosing the Material brush on an opened map must load its boden.txt on demand (like
     /// Flat Terrain), not tell the designer to "load a map with boden.txt".
     #[test]
@@ -5423,6 +5439,98 @@ mod tests {
         reopened.scenario.load_session(&dir).unwrap();
         let kinds: Vec<Vec<i32>> = reopened.scenario.document().events.iter().map(|e| e.actions.iter().map(|a| a.kind).collect()).collect();
         assert_eq!(kinds, vec![vec![3], vec![4]]);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    fn gui_texts(out: &egui::FullOutput, min_y: f32) -> String {
+        out.shapes
+            .iter()
+            .filter_map(|s| match &s.shape {
+                egui::epaint::Shape::Text(t) if t.pos.y >= min_y => Some(format!("{}@({:.0},{:.0})", t.galley.text(), t.pos.x, t.pos.y)),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join(" | ")
+    }
+
+
+    /// Headless click-through of placement on a TEMP custom slot cloned from ENDL_000: open Spawns (script
+    /// loads on demand), place a main house and a troop, Design Check, Safe Save and reload.
+    #[test]
+    #[ignore = "copies a map from the installed game"]
+    fn gui_click_through_places_house_and_troop_and_saves() {
+        let game = PathBuf::from(std::env::var("ARM_AI_GAME_ROOT").unwrap_or_else(|_| r"C:\Program Files (x86)\Against Rome".into()));
+        let root = temp_map_dir("gui_spawn_root");
+        // A custom slot, as New Map creates it: ENDL_000 content plus the custom-map marker.
+        let dir = root.join("MAPS").join("ENDL_006");
+        copy_tree(&game.join("MAPS/ENDL_000"), &dir);
+        std::fs::write(dir.join(".arm_custom_map"), r#"{"Slot": 6, "SourceSlot": 0, "CreatedAt": "2026-10-22T00:00:00+00:00", "ToolVersion": "test"}"#).unwrap();
+        std::fs::create_dir_all(root.join("SYSTEM/CLAK")).unwrap();
+        std::fs::copy(game.join("SYSTEM/CLAK/cl_scint.ini"), root.join("SYSTEM/CLAK/cl_scint.ini")).unwrap();
+        let mut app = EditorApp::initial_state();
+        app.set_loaded_map(dir.clone(), crate::storage::load_map(&dir).unwrap()).unwrap();
+        let ctx = egui::Context::default();
+        for _ in 0..3 {
+            gui_frame(&mut app, &ctx, vec![]);
+        }
+        gui_click(&mut app, &ctx, "Spawns");
+        assert!(app.scenario.is_loaded(), "{}", app.status_message);
+        // The starter kit is reserved for blank maps (this template has native DATA), so place a
+        // main house and a troop the regular way: pick a type, "Place on map", click the canvas.
+        let map = app.last_map_rect;
+        // "Place on map" is a toggle that stays on after a placement.
+        let mut place = |app: &mut EditorApp, row: &str, at: egui::Vec2, toggle: bool| {
+            gui_click(app, &ctx, row);
+            if toggle {
+                gui_click(app, &ctx, "Place on map");
+            }
+            let pos = map.lerp_inside(at);
+            gui_frame(app, &ctx, gui_pointer(pos, true));
+            gui_frame(app, &ctx, gui_pointer(pos, false));
+            gui_frame(app, &ctx, vec![])
+        };
+        let out = place(&mut app, "Germans Haupthaus  (GER_HAU00)", egui::vec2(0.5, 0.5), true);
+        // Search for a German infantry type, as a designer would.
+        let search = gui_find(&out, "Name or alias (space = AND)").expect("type search").center();
+        gui_frame(&mut app, &ctx, gui_pointer(search, true));
+        gui_frame(&mut app, &ctx, gui_pointer(search, false));
+        gui_frame(&mut app, &ctx, vec![egui::Event::Text("GER INF".into())]);
+        let out = gui_frame(&mut app, &ctx, vec![]);
+        let row = out
+            .shapes
+            .iter()
+            .filter_map(|s| match &s.shape {
+                egui::epaint::Shape::Text(t) if t.galley.text().contains("(GER_INF") => Some(t.galley.text().to_string()),
+                _ => None,
+            })
+            .next()
+            .unwrap_or_else(|| panic!("no infantry row: {}", gui_texts(&out, 380.0)));
+        place(&mut app, &row, egui::vec2(0.53, 0.5), false);
+        let spawns: Vec<String> = app.scenario.document().spawns.iter().map(|s| s.alias.clone()).collect();
+        eprintln!("placed: {spawns:?}; panel: {:?}", app.spawn_ui.status());
+        assert_eq!(spawns.len(), 2, "house + troop: {spawns:?} / {:?}", app.spawn_ui.status());
+        assert!(app.has_unsaved_changes());
+
+        gui_click(&mut app, &ctx, "Design Check");
+        let report = app.design_check.report.clone().unwrap();
+        let codes = design_codes(&app);
+        // No official map has a reusable GER main-house template, so (as documented in the
+        // panel and in C#) the new main house saves as a script construction site.
+        assert!(codes.contains(&"construction-site".to_string()), "{codes:?}");
+        assert_eq!(report.error_count(), 0, "{codes:?}");
+        assert!(!codes.iter().any(|c| c == "team-no-main-house" || c == "team-no-units" || c == "no-start"), "{codes:?}");
+        app.design_check.open = false;
+
+        gui_click(&mut app, &ctx, "Safe Save");
+        if app.pending_save_warnings.is_some() {
+            gui_click(&mut app, &ctx, "Continue saving");
+        }
+        assert!(!app.status_is_error && !app.has_unsaved_changes(), "{}", app.status_message);
+        let mut reopened = EditorApp::initial_state();
+        reopened.set_loaded_map(dir.clone(), crate::storage::load_map(&dir).unwrap()).unwrap();
+        reopened.scenario.load_session(&dir).unwrap();
+        let reloaded: Vec<String> = reopened.scenario.document().spawns.iter().map(|s| s.alias.clone()).collect();
+        assert_eq!(reloaded, spawns);
         std::fs::remove_dir_all(root).unwrap();
     }
 
@@ -10260,9 +10368,10 @@ impl EditorApp {
                 else { let _ = self.placement.undo(); }
             }
         }
-        // Opening the Scenario panel loads the open map's script on demand (once per map, never
-        // over pending edits); otherwise added events could not be checked or saved.
-        if self.scenario.open
+        // Opening the Scenario or Spawns panel loads the open map's script on demand (once per
+        // map, never over pending edits); otherwise added events or objects could not be
+        // checked or saved, and Spawns would send the designer to the Scenario panel.
+        if (self.scenario.open || self.spawn_ui.open)
             && !self.scenario.is_loaded()
             && !self.scenario.dirty()
             && self.scenario_autoload_tried != self.loaded_map_path

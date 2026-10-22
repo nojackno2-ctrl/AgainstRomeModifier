@@ -1,3 +1,10 @@
+## 2026-10-22 Claude：Spawns 面板按需載入劇本＋UI 放置點擊驗收（已驗證）
+
+- **Spawns 面板要求先到劇本面板載入**：開圖後打開「Spawns」顯示「No scenario loaded ... (load it in the Scenario panel)」。劇本按需載入的條件擴充為 Scenario 或 Spawns 面板開啟（同樣每張地圖一次、不覆蓋未存修改）。新單元測試 `spawns_panel_loads_the_open_maps_script_on_demand`。
+- 新 ignored 點擊測試 `gui_click_through_places_house_and_troop_and_saves`：TEMP 自製槽位 ENDL_006（ENDL_000 內容＋`.arm_custom_map`）→ 開 Spawns（劇本自動載入）→ 點「Germans Haupthaus (GER_HAU00)」→「Place on map」→ 點畫布；在型別搜尋框輸入「GER INF」→ 點步兵列 → 點畫布 → 兩個物件 → Design Check 0 錯誤、無隊伍／起始誤報 → Safe Save → 重載劇本物件一致。
+- 釐清（非缺陷）：Starter kit 只允許 DATA 與劇本都空的空白地圖，訊息清楚；ENDL_000 原始槽位在 Spawns 為唯讀屬正確。新放的 GER 主屋存成腳本工地（`construction-site` 警告正確）：唯讀檢查安裝版所有官方地圖，GER_HAU00（type 232）只出現在 KAMP_014/015/016/019、TUTOR_01–03，且皆非可重用的 singleton 範本，與面板說明及 C# 行為一致。`SpawnDataCatalog::from_game` 在安裝版成功（235 別名、2,160 型別）；但 catalog 載入失敗時程式會靜默改為腳本建立，僅有存檔前的 construction-site 警告，可再改善。
+- 驗證：workspace exit 0，283 groups **2,361 passed／0 failed／24 ignored**（`re_workspace/spawn-ui-workspace-test.log`）；三個 UI 點擊測試皆通過。遊戲內仍未做。
+
 ## 2026-10-22 Claude：劇本面板跟隨中英切換（已驗證）
 
 - `ScenarioUi` 新增 `english`（預設 false，維持既有中文直接呼叫測試），app 每幀依語言設定。面板與事件編輯器 47 個標籤改用 `tl(en, 中, 英)`，另處理 BCI／別名提示、物件列表、條件與動作種類下拉、新事件預設名稱（Event N／事件 N）；兩個視窗加固定 `Id`，切換語言不重置位置。翻譯以只作用於測試模組前、每個字串須恰好出現一次的腳本套用（第一次腳本讀檔錯誤，已從 git 還原後重做）。
