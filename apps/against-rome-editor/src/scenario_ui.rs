@@ -22,6 +22,8 @@ enum Pending {
 }
 pub struct ScenarioUi {
     pub open: bool,
+    /// UI language follows the editor toggle (set by the app each frame); data is unchanged.
+    pub english: bool,
     document: ScenarioDocument,
     camera: StartCamera,
     source: Option<Source>,
@@ -48,6 +50,7 @@ impl Default for ScenarioUi {
         let baseline = state_bytes(&document, &camera).unwrap();
         Self {
             open: false,
+            english: false,
             document,
             camera,
             source: None,
@@ -64,6 +67,14 @@ impl Default for ScenarioUi {
             error: None,
             graph_ui: EventGraphUi::default(),
         }
+    }
+}
+/// Pick the label for the current UI language.
+fn tl(english: bool, zh: &'static str, en: &'static str) -> &'static str {
+    if english {
+        en
+    } else {
+        zh
     }
 }
 fn state_bytes(d: &ScenarioDocument, c: &StartCamera) -> Result<Vec<u8>> {
@@ -781,32 +792,42 @@ impl ScenarioUi {
             self.graph_ui.show(ctx);
             return;
         }
+        let en = self.english;
         let mut opened = true;
-        egui::Window::new("劇本事件 / Scenario")
+        egui::Window::new(tl(en, "劇本事件 / Scenario", "Scenario Events"))
+            .id(egui::Id::new("scenario_events_window"))
             .open(&mut opened)
             .default_width(760.)
             .show(ctx, |ui| {
-                ui.label("來源唯讀；以結構化事件、物件條件與開局鏡頭編輯，輸出新工作副本。");
+                ui.label(tl(en, "來源唯讀；以結構化事件、物件條件與開局鏡頭編輯，輸出新工作副本。", "Source is read-only; edit structured events, object conditions and the start camera, then export a new working copy."));
                 ui.horizontal(|ui| {
-                    ui.label("來源地圖目錄");
+                    ui.label(tl(en, "來源地圖目錄", "Source map folder"));
                     ui.text_edit_singleline(&mut self.load_path);
-                    if ui.button("載入").clicked() {
+                    if ui.button(tl(en, "載入", "Load")).clicked() {
                         self.request_load(PathBuf::from(self.load_path.trim()))
                     }
                 });
                 if let Some(s) = &self.source {
-                    ui.small(format!("原始 BCI：{}", s.path.display()));
-                    ui.small(if self.aliases.is_empty() { "未找到遊戲別名 catalog；別名需手動核對。".into() }
-                    else { format!("已載入 {} 個遊戲 ObjDefName 別名，編譯時會驗證。", self.aliases.len()) });
+                    ui.small(if en {
+                        format!("Original BCI: {}", s.path.display())
+                    } else {
+                        format!("原始 BCI：{}", s.path.display())
+                    });
+                    ui.small(match (self.aliases.is_empty(), en) {
+                        (true, false) => "未找到遊戲別名 catalog；別名需手動核對。".into(),
+                        (true, true) => "No game alias catalog found; check aliases by hand.".into(),
+                        (false, false) => format!("已載入 {} 個遊戲 ObjDefName 別名，編譯時會驗證。", self.aliases.len()),
+                        (false, true) => format!("Loaded {} game ObjDefName aliases; compiling verifies them.", self.aliases.len()),
+                    });
                 }
                 if self.dirty() {
-                    ui.colored_label(egui::Color32::YELLOW, "尚未輸出的修改");
+                    ui.colored_label(egui::Color32::YELLOW, tl(en, "尚未輸出的修改", "Unexported changes"));
                 }
                 egui::ScrollArea::vertical()
                     .max_height(650.)
                     .show(ui, |ui| {
-                        ui.collapsing("開局鏡頭", |ui| {
-                            ui.checkbox(&mut self.camera.enabled, "啟用");
+                        ui.collapsing(tl(en, "開局鏡頭", "Start camera"), |ui| {
+                            ui.checkbox(&mut self.camera.enabled, tl(en, "啟用", "Enabled"));
                             ui.horizontal(|ui| {
                                 for (name, v) in [
                                     ("X", &mut self.camera.x),
@@ -820,30 +841,45 @@ impl ScenarioUi {
                             });
                             egui::ComboBox::from_id_source("camera_primitive")
                                 .selected_text(if self.camera.primitive == 0 {
-                                    "世界焦點 / centerToPos"
+                                    tl(en, "世界焦點 / centerToPos", "World focus / centerToPos")
                                 } else {
-                                    "引擎座標 / enginePos"
+                                    tl(en, "引擎座標 / enginePos", "Engine position / enginePos")
                                 })
                                 .show_ui(ui, |ui| {
-                                    ui.selectable_value(&mut self.camera.primitive, 0, "世界焦點");
-                                    ui.selectable_value(&mut self.camera.primitive, 1, "引擎座標");
+                                    ui.selectable_value(&mut self.camera.primitive, 0, tl(en, "世界焦點", "World focus"));
+                                    ui.selectable_value(&mut self.camera.primitive, 1, tl(en, "引擎座標", "Engine position"));
                                 });
                         });
-                        ui.collapsing("場景生成物件與持久 ID（唯讀；請用「放置腳本物件」面板編輯）", |ui| {
-                            ui.small("新增、移動、旋轉、複製與刪除請使用工具列的「放置腳本物件 / Spawns」面板（含驗證與復原）。");
+                        ui.collapsing(tl(en, "場景生成物件與持久 ID（唯讀；請用「放置腳本物件」面板編輯）", "Scenario objects and persistent IDs (read-only; edit them in the Spawns panel)"), |ui| {
+                            ui.small(tl(en, "新增、移動、旋轉、複製與刪除請使用工具列的「放置腳本物件 / Spawns」面板（含驗證與復原）。", "Add, move, rotate, copy and delete objects in the toolbar's Spawns panel (with validation and undo)."));
                             for s in &self.document.spawns {
-                                ui.label(format!(
-                                    "{}{} / ID {} / X {:.0} Z {:.0} team {} 數量 {} 角度 {}",
-                                    if s.prebuilt { "[預建 DATA] " } else { "" },
-                                    s.alias, s.id, s.x, s.z, s.team, s.count, s.angle
-                                ));
+                                let prebuilt = if !s.prebuilt {
+                                    ""
+                                } else {
+                                    tl(en, "[預建 DATA] ", "[prebuilt DATA] ")
+                                };
+                                ui.label(if en {
+                                    format!(
+                                        "{prebuilt}{} / ID {} / X {:.0} Z {:.0} team {} count {} angle {}",
+                                        s.alias, s.id, s.x, s.z, s.team, s.count, s.angle
+                                    )
+                                } else {
+                                    format!(
+                                        "{prebuilt}{} / ID {} / X {:.0} Z {:.0} team {} 數量 {} 角度 {}",
+                                        s.alias, s.id, s.x, s.z, s.team, s.count, s.angle
+                                    )
+                                });
                             }
                         });
                         ui.separator();
                         ui.horizontal(|ui| {
-                            if ui.button("新增事件").clicked() {
+                            if ui.button(tl(en, "新增事件", "Add event")).clicked() {
                                 let item = Event {
-                                    name: format!("事件 {}", self.document.events.len() + 1),
+                                    name: format!(
+                                        "{} {}",
+                                        tl(en, "事件", "Event"),
+                                        self.document.events.len() + 1
+                                    ),
                                     actions: vec![Action {
                                         text: "Message".into(),
                                         ..Default::default()
@@ -859,7 +895,7 @@ impl ScenarioUi {
                                 .add_enabled(
                                     self.selected < self.document.events.len()
                                         && self.document.events.len() < 256,
-                                    egui::Button::new("複製選取事件"),
+                                    egui::Button::new(tl(en, "複製選取事件", "Duplicate selected event")),
                                 )
                                 .clicked()
                             {
@@ -868,37 +904,37 @@ impl ScenarioUi {
                                 }
                             }
                             if !self.document.events.is_empty()
-                                && ui.button("刪除選取事件").clicked()
+                                && ui.button(tl(en, "刪除選取事件", "Delete selected event")).clicked()
                             {
                                 if let Err(e) = self.remove_event(self.selected) {
                                     self.error = Some(e);
                                 }
                             }
                             if ui
-                                .add_enabled(self.can_undo_events(), egui::Button::new("復原"))
+                                .add_enabled(self.can_undo_events(), egui::Button::new(tl(en, "復原", "Undo")))
                                 .clicked()
                             {
                                 self.undo_events();
                             }
                             if ui
-                                .add_enabled(self.can_redo_events(), egui::Button::new("重做"))
+                                .add_enabled(self.can_redo_events(), egui::Button::new(tl(en, "重做", "Redo")))
                                 .clicked()
                             {
                                 self.redo_events();
                             }
                             ui.separator();
-                            if ui.button("視覺化節點圖 (Event Graph)").clicked() {
+                            if ui.button(tl(en, "視覺化節點圖 (Event Graph)", "Event Graph")).clicked() {
                                 self.open_graph();
                             }
                             let graph_dirty = self.graph_ui.is_dirty();
-                            let apply_btn = egui::Button::new("從節點圖套用 (Apply Graph)");
+                            let apply_btn = egui::Button::new(tl(en, "從節點圖套用 (Apply Graph)", "Apply Graph"));
                             if ui.add_enabled(graph_dirty, apply_btn).clicked() {
                                 if let Err(e) = self.apply_graph() {
                                     self.error = Some(e);
                                 }
                             }
                             if graph_dirty {
-                                ui.colored_label(egui::Color32::YELLOW, "[節點圖有未套用變更]");
+                                ui.colored_label(egui::Color32::YELLOW, tl(en, "[節點圖有未套用變更]", "[Event graph has unapplied changes]"));
                             }
                         });
                         for (i, e) in self.document.events.iter().enumerate() {
@@ -920,7 +956,7 @@ impl ScenarioUi {
                             .collect();
                         if let Some(current) = self.document.events.get(self.selected) {
                             let mut edited = current.clone();
-                            event_editor(ui, &mut edited, &targets, &self.aliases);
+                            event_editor(ui, &mut edited, &targets, &self.aliases, en);
                             if &edited != current {
                                 if let Err(e) = self.replace_event(self.selected, edited) {
                                     self.error = Some(e);
@@ -929,15 +965,15 @@ impl ScenarioUi {
                         }
                     });
                 ui.separator();
-                if ui.button("驗證並編譯預覽").clicked() {
+                if ui.button(tl(en, "驗證並編譯預覽", "Validate and compile preview")).clicked() {
                     if let Err(e) = self.preview() {
                         self.error = Some(e)
                     }
                 }
                 ui.horizontal(|ui| {
-                    ui.label("新工作副本目錄");
+                    ui.label(tl(en, "新工作副本目錄", "New working copy folder"));
                     ui.text_edit_singleline(&mut self.export_path);
-                    if ui.button("輸出 JSON + BCI + 原版備份").clicked() {
+                    if ui.button(tl(en, "輸出 JSON + BCI + 原版備份", "Export JSON + BCI + original backup")).clicked() {
                         let path = PathBuf::from(self.export_path.trim());
                         if let Err(e) = self.export_new(&path) {
                             self.error = Some(e)
@@ -957,12 +993,13 @@ impl ScenarioUi {
             }
         }
         if let Some(pending) = self.pending.clone() {
-            egui::Window::new("尚未輸出的劇本修改")
+            egui::Window::new(tl(en, "尚未輸出的劇本修改", "Unexported scenario changes"))
+                .id(egui::Id::new("scenario_unexported_changes"))
                 .collapsible(false)
                 .show(ctx, |ui| {
-                    ui.label("載入或關閉會放棄目前修改（包含未套用之節點圖變更）。可取消後先輸出工作副本。");
+                    ui.label(tl(en, "載入或關閉會放棄目前修改（包含未套用之節點圖變更）。可取消後先輸出工作副本。", "Loading or closing discards the current changes (including unapplied event graph edits). Cancel to export a working copy first."));
                     ui.horizontal(|ui| {
-                        if ui.button("放棄修改並繼續").clicked() {
+                        if ui.button(tl(en, "放棄修改並繼續", "Discard changes and continue")).clicked() {
                             self.pending = None;
                             match pending {
                                 Pending::Close => {
@@ -977,7 +1014,7 @@ impl ScenarioUi {
                                 }
                             }
                         }
-                        if ui.button("取消").clicked() {
+                        if ui.button(tl(en, "取消", "Cancel")).clicked() {
                             self.pending = None
                         }
                     });
@@ -987,18 +1024,24 @@ impl ScenarioUi {
     }
 }
 
-fn event_editor(ui: &mut egui::Ui, e: &mut Event, targets: &[(Spawn, String)], aliases: &[String]) {
+fn event_editor(
+    ui: &mut egui::Ui,
+    e: &mut Event,
+    targets: &[(Spawn, String)],
+    aliases: &[String],
+    en: bool,
+) {
     ui.separator();
     ui.horizontal(|ui| {
-        ui.checkbox(&mut e.enabled, "啟用事件");
+        ui.checkbox(&mut e.enabled, tl(en, "啟用事件", "Event enabled"));
         ui.text_edit_singleline(&mut e.name);
     });
     ui.horizontal(|ui| {
-        ui.label("開局後延遲（秒）");
+        ui.label(tl(en, "開局後延遲（秒）", "Delay after start (s)"));
         ui.add(egui::DragValue::new(&mut e.delay_seconds).clamp_range(0..=86400));
-        ui.checkbox(&mut e.repeat, "週期重複");
+        ui.checkbox(&mut e.repeat, tl(en, "週期重複", "Repeat"));
     });
-    ui.label("條件：全部成立且延遲到期後執行；死亡條件先追蹤曾存在的物件。");
+    ui.label(tl(en, "條件：全部成立且延遲到期後執行；死亡條件先追蹤曾存在的物件。", "Conditions: all must hold once the delay expires; death conditions track objects that once existed."));
     let mut remove = None;
     for (i, c) in e.conditions.iter_mut().enumerate() {
         ui.push_id(("condition", i), |ui| {
@@ -1007,9 +1050,13 @@ fn event_editor(ui: &mut egui::Ui, e: &mut Event, targets: &[(Spawn, String)], a
                     ui,
                     "kind",
                     &mut c.kind,
-                    &["物件存在", "死亡或已移除", "位於矩形區域"],
+                    if en {
+                        &["Object exists", "Dead or removed", "Inside rectangle"]
+                    } else {
+                        &["物件存在", "死亡或已移除", "位於矩形區域"]
+                    },
                 );
-                if ui.button("刪除此條件").clicked() {
+                if ui.button(tl(en, "刪除此條件", "Delete condition")).clicked() {
                     remove = Some(i)
                 }
             });
@@ -1019,7 +1066,7 @@ fn event_editor(ui: &mut egui::Ui, e: &mut Event, targets: &[(Spawn, String)], a
                         .iter()
                         .find(|(s, _)| s.id == c.target_id)
                         .map(|(_, n)| n.as_str())
-                        .unwrap_or("請選擇目標 / 已刪除"),
+                        .unwrap_or(tl(en, "請選擇目標 / 已刪除", "Choose a target / deleted")),
                 )
                 .show_ui(ui, |ui| {
                     for (s, name) in targets {
@@ -1044,14 +1091,14 @@ fn event_editor(ui: &mut egui::Ui, e: &mut Event, targets: &[(Spawn, String)], a
     if let Some(i) = remove {
         e.conditions.remove(i);
     }
-    if ui.button("新增物件條件").clicked() {
+    if ui.button(tl(en, "新增物件條件", "Add object condition")).clicked() {
         let mut c = Condition::default();
         if let Some((s, _)) = targets.first() {
             c.target_id = s.id
         }
         e.conditions.push(c);
     }
-    ui.label("動作：依序執行。勝敗動作只能放在單次事件最後。");
+    ui.label(tl(en, "動作：依序執行。勝敗動作只能放在單次事件最後。", "Actions run in order. Victory or Defeat must be the last action of a one-shot event."));
     let mut remove = None;
     let mut move_request: Option<(usize, isize)> = None;
     let action_count = e.actions.len();
@@ -1063,16 +1110,20 @@ fn event_editor(ui: &mut egui::Ui, e: &mut Event, targets: &[(Spawn, String)], a
                         ui,
                         "kind",
                         &mut a.kind,
-                        &["顯示訊息", "隊伍外交", "生成部隊", "勝利", "失敗"],
+                        if en {
+                            &["Show message", "Team diplomacy", "Spawn troops", "Victory", "Defeat"]
+                        } else {
+                            &["顯示訊息", "隊伍外交", "生成部隊", "勝利", "失敗"]
+                        },
                     );
-                    if ui.button("刪除此動作").clicked() {
+                    if ui.button(tl(en, "刪除此動作", "Delete action")).clicked() {
                         remove = Some(i)
                     }
-                    if ui.add_enabled(i > 0, egui::Button::new("上移")).clicked() {
+                    if ui.add_enabled(i > 0, egui::Button::new(tl(en, "上移", "Move up"))).clicked() {
                         move_request = Some((i, -1));
                     }
                     if ui
-                        .add_enabled(i + 1 < action_count, egui::Button::new("下移"))
+                        .add_enabled(i + 1 < action_count, egui::Button::new(tl(en, "下移", "Move down")))
                         .clicked()
                     {
                         move_request = Some((i, 1));
@@ -1081,7 +1132,7 @@ fn event_editor(ui: &mut egui::Ui, e: &mut Event, targets: &[(Spawn, String)], a
                 match a.kind {
                     0 => {
                         ui.text_edit_multiline(&mut a.text);
-                        ui.small("文字需能使用 Windows-1251 編碼，最多 1000 bytes。");
+                        ui.small(tl(en, "文字需能使用 Windows-1251 編碼，最多 1000 bytes。", "Text must encode as Windows-1251, at most 1000 bytes."));
                     }
                     1 => {
                         ui.horizontal(|ui| {
@@ -1089,12 +1140,12 @@ fn event_editor(ui: &mut egui::Ui, e: &mut Event, targets: &[(Spawn, String)], a
                             ui.add(egui::DragValue::new(&mut a.team).clamp_range(0..=7));
                             ui.label("other team");
                             ui.add(egui::DragValue::new(&mut a.other_team).clamp_range(0..=7));
-                            ui.checkbox(&mut a.hostile, "敵對");
+                            ui.checkbox(&mut a.hostile, tl(en, "敵對", "Hostile"));
                         });
                     }
                     2 => {
                         ui.horizontal(|ui| {
-                            ui.label("ObjDefName 別名");
+                            ui.label(tl(en, "ObjDefName 別名", "ObjDefName alias"));
                             ui.text_edit_singleline(&mut a.alias);
                             alias_combo(ui, &mut a.alias, aliases);
                             ui.label("team");
@@ -1109,7 +1160,7 @@ fn event_editor(ui: &mut egui::Ui, e: &mut Event, targets: &[(Spawn, String)], a
                             ui.add(egui::DragValue::new(&mut a.z).clamp_range(0. ..=16383.));
                         });
                         let mut moved = a.move_destination.is_some();
-                        if ui.checkbox(&mut moved, "生成成功後移動至目的地").changed() {
+                        if ui.checkbox(&mut moved, tl(en, "生成成功後移動至目的地", "Move to destination after spawning")).changed() {
                             a.move_destination = if moved {
                                 Some(WorldPosition { x: 8000, z: 8000 })
                             } else {
@@ -1118,18 +1169,18 @@ fn event_editor(ui: &mut egui::Ui, e: &mut Event, targets: &[(Spawn, String)], a
                         }
                         if let Some(p) = &mut a.move_destination {
                             ui.horizontal(|ui| {
-                                ui.label("目的 X");
+                                ui.label(tl(en, "目的 X", "Destination X"));
                                 ui.add(egui::DragValue::new(&mut p.x).clamp_range(0..=16383));
-                                ui.label("目的 Z");
+                                ui.label(tl(en, "目的 Z", "Destination Z"));
                                 ui.add(egui::DragValue::new(&mut p.z).clamp_range(0..=16383));
                             });
                         }
                     }
                     3 | 4 => {
-                        ui.small("結束任務；後續事件停止輪詢。");
+                        ui.small(tl(en, "結束任務；後續事件停止輪詢。", "Ends the mission; later events stop polling."));
                     }
                     _ => {
-                        ui.colored_label(egui::Color32::RED, "不支援的動作種類");
+                        ui.colored_label(egui::Color32::RED, tl(en, "不支援的動作種類", "Unsupported action kind"));
                     }
                 }
                 if a.kind != 2 {
@@ -1143,7 +1194,7 @@ fn event_editor(ui: &mut egui::Ui, e: &mut Event, targets: &[(Spawn, String)], a
     } else if let Some((i, offset)) = move_request {
         move_action(&mut e.actions, i, offset);
     }
-    if ui.button("新增動作").clicked() {
+    if ui.button(tl(en, "新增動作", "Add action")).clicked() {
         e.actions.push(Action {
             text: "Message".into(),
             ..Default::default()

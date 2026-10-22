@@ -1,3 +1,9 @@
+## 2026-10-22 Claude：劇本面板跟隨中英切換（已驗證）
+
+- `ScenarioUi` 新增 `english`（預設 false，維持既有中文直接呼叫測試），app 每幀依語言設定。面板與事件編輯器 47 個標籤改用 `tl(en, 中, 英)`，另處理 BCI／別名提示、物件列表、條件與動作種類下拉、新事件預設名稱（Event N／事件 N）；兩個視窗加固定 `Id`，切換語言不重置位置。翻譯以只作用於測試模組前、每個字串須恰好出現一次的腳本套用（第一次腳本讀檔錯誤，已從 git 還原後重做）。
+- 測試：`scenario_panel_loads_the_open_maps_script_on_demand` 增加英文標籤與切換「中」後顯示中文、事件資料不變的斷言；勝敗事件點擊測試改用英文 "Add event"／"Show message"／"Victory"／"Defeat"，兩個點擊測試通過。
+- 驗證：editor-app 690 passed／0 failed；workspace exit 0，283 groups **2,360 passed／0 failed／23 ignored**（`re_workspace/scenario-i18n-workspace-test.log`）。畫面／遊戲內驗收仍未做。
+
 ## 2026-10-22 Claude：無放置物件時不猜測隊伍主堡／部隊（已驗證）
 
 - 範本只加勝敗事件時，`team-no-main-house`、`team-no-units`（隊伍 0）與 `no-start` 會對原生 DATA 中的主堡／部隊誤報。現在沒有編輯器放置物件時不檢查隊伍 0、也不報 no-start；事件生成的隊伍照常檢查。ENDL_000 勝敗事件點擊測試現在 Safe Save 直接成功、無警告視窗。

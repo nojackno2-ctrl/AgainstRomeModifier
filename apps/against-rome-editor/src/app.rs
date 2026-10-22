@@ -5319,12 +5319,20 @@ mod tests {
         gui_click(&mut app, &ctx, "Scenario / Camera");
         assert!(app.scenario.is_loaded(), "{}", app.status_message);
         assert!(!app.has_unsaved_changes(), "loading the script is not an edit");
-        gui_click(&mut app, &ctx, "新增事件");
+        let out = gui_click(&mut app, &ctx, "Add event");
         assert_eq!(app.scenario.document().events.len(), 1);
+        assert_eq!(app.scenario.document().events[0].name, "Event 1");
+        assert!(gui_find(&out, "Show message").is_some(), "English action list");
+        assert!(gui_find(&out, "新增事件").is_none(), "panel follows the English UI");
         assert!(matches!(
             app.design_check_report(),
             crate::design_check_ui::DesignCheckReport::Checked { .. }
         ));
+        // The panel follows the language toggle; event data is untouched.
+        let out = gui_click(&mut app, &ctx, "中");
+        assert!(gui_find(&out, "新增事件").is_some() && gui_find(&out, "顯示訊息").is_some());
+        assert!(gui_find(&out, "Add event").is_none());
+        assert_eq!(app.scenario.document().events[0].name, "Event 1");
         std::fs::remove_dir_all(dir).unwrap();
     }
 
@@ -5386,9 +5394,9 @@ mod tests {
         app.design_check.open = false;
 
         gui_click(&mut app, &ctx, "Scenario / Camera");
-        for kind in ["勝利", "失敗"] {
-            gui_click(&mut app, &ctx, "新增事件");
-            gui_click(&mut app, &ctx, "顯示訊息");
+        for kind in ["Victory", "Defeat"] {
+            gui_click(&mut app, &ctx, "Add event");
+            gui_click(&mut app, &ctx, "Show message");
             gui_click(&mut app, &ctx, kind);
         }
         let kinds: Vec<Vec<i32>> = app.scenario.document().events.iter().map(|e| e.actions.iter().map(|a| a.kind).collect()).collect();
@@ -10267,6 +10275,7 @@ impl EditorApp {
                 }
             }
         }
+        self.scenario.english = self.lang() == AppLanguage::English;
         self.scenario.show(ctx);
         self.show_spawn_panel(ctx);
         self.textures.show(ctx);
