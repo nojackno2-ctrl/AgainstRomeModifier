@@ -338,7 +338,7 @@ fn events_inner(image: &mut BciImage, d: &ScenarioDocument, original_main: i32) 
                     b.emit(66, a.x.round_ties_even() as i32);
                     b.emit(66, 0);
                     b.op(16);
-                    for v in [1, 0, 1, a.team] {
+                    for v in [1, 0, (a.team != 0) as i32, a.team] {
                         b.emit(66, v)
                     }
                     b.emit(78, 1);
@@ -515,7 +515,7 @@ pub fn inject_spawns(image: &mut BciImage, spawns: &[Spawn]) -> Result<()> {
             b.emit(66, x);
             b.emit(66, s.angle.rem_euclid(360));
             b.op(16);
-            for v in [1, 0, 1, s.team] {
+            for v in [1, 0, (s.team != 0) as i32, s.team] {
                 b.emit(66, v)
             }
             b.emit(78, 1);

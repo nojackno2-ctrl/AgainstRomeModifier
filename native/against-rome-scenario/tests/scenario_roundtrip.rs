@@ -399,6 +399,25 @@ const CSHARP_ACCEPTS_RUST_REJECTS: &[&str] = &[
 
 /// Structural JSON comparison that ignores number spelling (`8000` vs `8000.0`, `1E+2`) and key order,
 /// which are formatting choices of each serializer; returns the path of the first semantic difference.
+/// The one intended difference from the frozen C# compiler: C# passed AI-control flag 1 to
+/// `s_createUnitAndMems` for every team, which made team-0 (player) troops uncontrollable in game
+/// (verified 2026-10-22). Rust passes 0 for team 0, like the retail template does. Rewrites the
+/// oracle's team-0 tail `66 1, 66 0, 66 1, 66 0, 78 1, 78 0` to flag 0 before comparing.
+fn player_spawns_controllable(mut bci: Vec<u8>) -> Vec<u8> {
+    let tail: [i32; 12] = [66, 1, 66, 0, 66, 1, 66, 0, 78, 1, 78, 0];
+    let word = |b: &[u8], i: usize| i32::from_le_bytes(b[i..i + 4].try_into().unwrap());
+    let mut i = 0;
+    while i + tail.len() * 4 <= bci.len() {
+        if tail.iter().enumerate().all(|(k, v)| word(&bci, i + k * 4) == *v) {
+            bci[i + 5 * 4..i + 6 * 4].copy_from_slice(&0i32.to_le_bytes());
+            i += tail.len() * 4;
+        } else {
+            i += 4;
+        }
+    }
+    bci
+}
+
 fn first_difference(a: &Value, b: &Value, path: &str) -> Option<String> {
     match (a, b) {
         (Value::Number(x), Value::Number(y)) => (x.as_f64() != y.as_f64()).then(|| format!("{path} ({x} vs {y})")),
@@ -488,7 +507,7 @@ fn csharp_scenario_save_load_differential() {
             (false, Err(_)) => both_rejected += 1,
             (true, Err(_)) => { stricter_compile.insert(n.to_string()); }
             (true, Ok(bytes)) => {
-                assert_eq!(bytes, oracle[n].bci(), "{n}: compiled BCI differs from C#");
+                assert_eq!(bytes, player_spawns_controllable(oracle[n].bci()), "{n}: compiled BCI differs from C#");
                 both_compiled += 1;
             }
         }
@@ -513,4 +532,42 @@ fn csharp_scenario_save_load_differential() {
     );
     assert_eq!(lenient_in_csharp, expected, "C# leniency drifted from the documented list");
     assert!(both_saved >= 12 && both_compiled >= 8, "oracle covered too little");
+}
+
+/// In-game 2026-10-22: troops created with AI-control flag 1 for team 0 were not selectable;
+/// flag 0 made them player-controlled (retail template does the same). Enemy teams keep 1.
+#[test]
+fn script_spawns_are_player_controlled_only_for_team_zero() {
+    let doc = ScenarioDocument::from_json(
+        serde_json::to_vec(&json!({
+            "Version": 6,
+            "Spawns": [
+                {"Id": "11111111-1111-1111-1111-111111111111", "Alias": "unit", "X": 1000, "Z": 1000, "Team": 0, "Count": 5},
+                {"Id": "22222222-2222-2222-2222-222222222222", "Alias": "unit", "X": 2000, "Z": 2000, "Team": 2, "Count": 5}
+            ],
+            "Events": [{
+                "Name": "wave", "DelaySeconds": 5, "Repeat": false, "Enabled": true, "Conditions": [],
+                "Actions": [
+                    {"Kind": 2, "Alias": "unit", "Team": 0, "X": 3000, "Z": 3000, "Count": 3},
+                    {"Kind": 2, "Alias": "unit", "Team": 1, "X": 4000, "Z": 4000, "Count": 3}
+                ]
+            }]
+        }))
+        .unwrap()
+        .as_slice(),
+    )
+    .unwrap();
+    let bci = compile_script(&idle(), &doc, None, Some(&aliases())).unwrap();
+    let words: Vec<i32> = bci.chunks_exact(4).map(|c| i32::from_le_bytes(c.try_into().unwrap())).collect();
+    // `66 1, 66 0, 66 <ai>, 66 <team>, 78 1, 78 0` precedes every s_createUnitAndMems call.
+    let mut flags = Vec::new();
+    for w in words.windows(12) {
+        if w[0] == 66 && w[1] == 1 && w[2] == 66 && w[3] == 0 && w[4] == 66 && w[6] == 66
+            && w[8] == 78 && w[9] == 1 && w[10] == 78 && w[11] == 0
+        {
+            flags.push((w[7], w[5]));
+        }
+    }
+    flags.sort();
+    assert_eq!(flags, vec![(0, 0), (0, 0), (1, 1), (2, 1)], "(team, ai flag) per spawn");
 }
