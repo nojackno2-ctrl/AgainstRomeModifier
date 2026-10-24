@@ -1,3 +1,9 @@
+## 2026-10-24 Codex：勝負條件預設（自動化驗證通過，遊戲內待確認）
+
+- 變更：劇本面板新增雙語 Objective presets／勝負條件預設，支援存活秒數勝利、玩家主屋摧毀失敗、敵隊 1–7 主屋摧毀勝利。引用 kind 1 Dead/Removed Spawn；prebuilt 必須有有效 DATA 綁定，無可用目標時停用並說明。名稱避碰、等價啟用事件去重、每次新增一次 add_events＝一步 undo/redo；新增前完整編譯、重新 Design Check。
+- 驗證：依序 cargo check、cargo test、cargo build，均加 --workspace --locked --offline --target-dir re_workspace/codex-wave-dest-target，全部 exit 0（Windows MSVC，無連結錯誤）。完整測試 283 組合計 **2,374 passed／0 failed／24 ignored**；完整輸出 re_workspace/objective-presets-workspace-test.log，check/build 為同前綴 -check.log／-build.log。預設 4 項測試涵蓋編譯、Design Check 無新增錯誤、全部敵隊、一步復原、名稱避碰、等價去重及無可用 Spawn／binding 停用；沿用既有等價雙語 scenario-no-defeat Warning 並補停用事件回歸測試。
+- 遊戲內確認待驗證；未碰安裝遊戲目錄，未 stage/commit/push，保留 AGENTS.md／README.md 既有變更。
+
 ## 2026-10-24 Codex：進攻波次產生器（自動化驗證通過，遊戲內待驗證）
 
 - 變更：劇本面板新增雙語 Attack wave generator；敵方隊伍 1–7、既有 SpawnUnit 別名選單、波數／首波秒數／間隔／基本數量／每波增加／生成與目的 X/Z。支援地圖邊緣、玩家主屋按鈕，預設沿用 wave_player_target（主屋／鏡頭）；首次開啟或按鈕才解析，避免每幀讀 DATA。

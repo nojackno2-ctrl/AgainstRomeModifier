@@ -66,6 +66,10 @@ fn unused_event_name(base: &str, events: &[Event]) -> String {
     name
 }
 pub struct ScenarioUi {
+    objective_seconds: i32,
+    objective_team: i32,
+    objective_targets: [Option<uuid::Uuid>; 2],
+    pub(crate) objective_notice: Option<Result<bool>>,
     pub(crate) wave_generator: WaveGenerator,
     pub(crate) wave_target: Option<WorldPosition>,
     pub(crate) wave_target_requested: bool,
@@ -98,6 +102,10 @@ impl Default for ScenarioUi {
         };
         let baseline = state_bytes(&document, &camera).unwrap();
         Self {
+            objective_seconds: 300,
+            objective_team: 1,
+            objective_targets: [None, None],
+            objective_notice: None,
             open: false,
             wave_generator: WaveGenerator::default(),
             wave_target: None,
@@ -393,6 +401,8 @@ impl ScenarioUi {
         self.wave_target = None;
         self.wave_target_requested = true;
         self.wave_notice = None;
+        self.objective_targets = [None, None];
+        self.objective_notice = None;
     }
 
     /// Transactionally loads or resets the scenario session for the target map.
@@ -892,6 +902,99 @@ impl ScenarioUi {
         self.selected = first;
         Ok(waves as usize)
     }
+    /// 只建立引用已知 Spawn 的死亡條件；原生 DATA 物件不會被臆測成 Spawn。
+    fn objective_event(&self, seconds: Option<i32>, target: Option<uuid::Uuid>, team: i32) -> Result<Event> {
+        let (name, delay_seconds, conditions, kind) = if let Some(seconds) = seconds {
+            if !(1..=86400).contains(&seconds) { return Err("秒數需為 1–86400 / Seconds must be 1–86400".into()); }
+            (format!("Survive_{seconds}s"), seconds, vec![], 3)
+        } else {
+            if !(0..=7).contains(&team) { return Err("隊伍需為 0–7 / Team must be 0–7".into()); }
+            let spawn = self.document.spawns.iter().find(|s| Some(s.id) == target && s.team == team
+                && against_rome_maps::design_validator::MapDesignValidator::is_main_house(&s.alias))
+                .ok_or("沒有可用的主屋 Spawn／綁定；僅原生 DATA 無法引用 / No usable main-house Spawn/binding; native DATA alone cannot be referenced")?;
+            (format!("Team_{team}_main_house_destroyed"), 0,
+                vec![Condition { kind: 1, target_id: spawn.id, ..Default::default() }], if team == 0 { 4 } else { 3 })
+        };
+        Ok(Event { name: unused_event_name(&name, &self.document.events), delay_seconds,
+            conditions, actions: vec![Action { kind, ..Default::default() }], ..Default::default() })
+    }
+    /// 名稱與附帶動作不影響勝負規則；額外條件則會改變觸發時機。
+    fn has_objective(&self, candidate: &Event) -> bool {
+        self.document.events.iter().any(|e| e.enabled && !e.repeat
+            && e.delay_seconds == candidate.delay_seconds
+            && e.actions.iter().find(|a| matches!(a.kind, 3 | 4)).is_some_and(|a| a.kind == candidate.actions[0].kind)
+            && e.conditions.len() == candidate.conditions.len()
+            && e.conditions.iter().zip(&candidate.conditions).all(|(a, b)| a.kind == b.kind && a.target_id == b.target_id))
+    }
+    fn check_objective(&self, event: &Event) -> Result<()> {
+        self.source.as_ref().ok_or("請先載入劇本 / Load a scenario first")?;
+        if self.graph_ui.is_dirty() { return Err("請先套用節點圖 / Apply the event graph first".into()); }
+        if self.document.events.len() >= 256 { return Err("事件上限為 256 / Event limit is 256".into()); }
+        let mut draft = self.document.clone();
+        draft.events.push(event.clone());
+        draft.validate(if self.aliases.is_empty() { None } else { Some(&self.aliases) })?;
+        if draft.spawns.iter().any(|s| s.prebuilt) || !draft.data_slots.is_empty() {
+            scenario::verify_binding_snapshot(&draft, self.active_bindings.as_deref()
+                .ok_or("缺少原生 DATA 綁定快照 / Source DATA binding snapshot required")?)?;
+        }
+        Ok(())
+    }
+    /// 每次新增僅呼叫一次 add_events，重複與失敗不建立復原步驟。
+    pub(crate) fn add_objective(&mut self, seconds: Option<i32>, target: Option<uuid::Uuid>, team: i32) -> Result<bool> {
+        let event = self.objective_event(seconds, target, team)?;
+        if self.has_objective(&event) { return Ok(false); }
+        self.check_objective(&event)?;
+        // 完整編譯僅在新增時執行，避免面板每幀重建 BCI。
+        let mut draft = self.document.clone();
+        draft.events.push(event.clone());
+        scenario::compile_script_verified(&self.source.as_ref().ok_or("請先載入劇本 / Load a scenario first")?.bytes,
+            &draft, Some(&self.camera), if self.aliases.is_empty() { None } else { Some(&self.aliases) },
+            self.active_bindings.as_deref())?;
+        self.selected = self.add_events(&[event])?;
+        Ok(true)
+    }
+    fn objective_button(&mut self, ui: &mut egui::Ui, label: &str, seconds: Option<i32>, target: Option<uuid::Uuid>, team: i32) {
+        let event = self.objective_event(seconds, target, team);
+        let exists = event.as_ref().is_ok_and(|e| self.has_objective(e));
+        let checked = event.and_then(|e| self.check_objective(&e));
+        ui.horizontal(|ui| {
+            let response = ui.add_enabled(!exists && checked.is_ok(), egui::Button::new(label));
+            if response.clicked() { self.objective_notice = Some(self.add_objective(seconds, target, team)); }
+            if let Err(reason) = &checked {
+                response.on_disabled_hover_text(format!("無法新增預設 / Cannot add preset: {reason}"));
+            }
+            if exists { ui.label(tl(self.english, "已存在", "Already present")); }
+        });
+    }
+    fn show_objective_presets(&mut self, ui: &mut egui::Ui) {
+        let en = self.english;
+        ui.collapsing(tl(en, "勝負條件預設", "Objective presets"), |ui| {
+            ui.horizontal(|ui| {
+                ui.label(tl(en, "存活秒數", "Survival seconds"));
+                ui.add(egui::DragValue::new(&mut self.objective_seconds).clamp_range(1..=86400));
+            });
+            self.objective_button(ui, tl(en, "新增存活勝利", "Add survival victory"), Some(self.objective_seconds), None, 0);
+            ui.horizontal(|ui| {
+                ui.label(tl(en, "敵方隊伍", "Enemy team"));
+                ui.add(egui::DragValue::new(&mut self.objective_team).clamp_range(1..=7));
+            });
+            for (slot, team) in [0, self.objective_team].into_iter().enumerate() {
+                let candidates: Vec<_> = self.document.spawns.iter().filter(|s| s.team == team
+                    && against_rome_maps::design_validator::MapDesignValidator::is_main_house(&s.alias))
+                    .map(|s| (s.id, format!("{} ({})", s.alias, s.id))).collect();
+                if !candidates.iter().any(|(id, _)| Some(*id) == self.objective_targets[slot]) {
+                    self.objective_targets[slot] = candidates.first().map(|(id, _)| *id);
+                }
+                let selected = &mut self.objective_targets[slot];
+                egui::ComboBox::from_id_source(("objective_house", slot))
+                    .selected_text(candidates.iter().find(|(id, _)| Some(*id) == *selected)
+                        .map(|(_, label)| label.as_str()).unwrap_or(tl(en, "沒有主屋 Spawn", "No main-house Spawn")))
+                    .show_ui(ui, |ui| { for (id, label) in &candidates { ui.selectable_value(selected, Some(*id), label); } });
+                self.objective_button(ui, if team == 0 { tl(en, "玩家主屋摧毀即失敗", "Player main house destroyed: Defeat") }
+                    else { tl(en, "敵方主屋摧毀即勝利", "Enemy main house destroyed: Victory") }, None, self.objective_targets[slot], team);
+            }
+        });
+    }
     fn show_wave_generator(&mut self, ui: &mut egui::Ui) {
         let en = self.english;
         ui.collapsing(tl(en, "進攻波次產生器", "Attack wave generator"), |ui| {
@@ -992,6 +1095,7 @@ impl ScenarioUi {
                     .max_height(650.)
                     .show(ui, |ui| {
                         self.show_wave_generator(ui);
+                        self.show_objective_presets(ui);
                         ui.collapsing(tl(en, "開局鏡頭", "Start camera"), |ui| {
                             ui.checkbox(&mut self.camera.enabled, tl(en, "啟用", "Enabled"));
                             ui.horizontal(|ui| {
@@ -1452,6 +1556,82 @@ fn export_files(target: &Path, files: &[(&str, Vec<u8>)], fail_after: Option<usi
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn objective_presets_equivalence_and_name_collisions() {
+        let p = source();
+        for mode in ["enabled", "disabled", "delay", "action", "condition", "extra_action"] {
+            let mut ui = ScenarioUi::default();
+            ui.load_now(&p).unwrap();
+            let id = uuid::Uuid::new_v4();
+            ui.document.spawns.push(Spawn { id, alias: "GER_HAU00".into(), prebuilt: true, ..Default::default() });
+            ui.document.data_slots.push(scenario::DataSlot { spawn_id: id, slot: 0, uid: 10001 });
+            ui.active_bindings = Some(vec![(0, 10001)]);
+            let mut existing = ui.objective_event(Some(42), None, 0).unwrap();
+            existing.name = "sURVIVE_42S".into();
+            match mode {
+                "disabled" => existing.enabled = false,
+                "delay" => existing.delay_seconds += 1,
+                "action" => existing.actions[0].kind = 4,
+                "condition" => existing.conditions.push(Condition { kind: 1, target_id: id, ..Default::default() }),
+                "extra_action" => existing.actions.insert(0, Action { text: "Message".into(), ..Default::default() }),
+                _ => { existing.actions[0].text = "無關欄位".into(); }
+            }
+            ui.add_events(&[existing.clone()]).unwrap();
+            let duplicate = matches!(mode, "enabled" | "extra_action");
+            assert_eq!(ui.add_objective(Some(42), None, 0).unwrap(), !duplicate);
+            if !duplicate {
+                assert_eq!(ui.document.events[1].name, "Survive_42s_2");
+                assert!(ui.undo_events());
+                assert_eq!(ui.document.events, vec![existing.clone()]);
+            }
+            assert!(ui.undo_events());
+            assert!(ui.document.events.is_empty());
+            assert!(!ui.can_undo_events());
+        }
+        fs::remove_dir_all(p).unwrap();
+    }
+    #[test]
+    fn objective_presets_require_compilable_spawn_and_binding() {
+        let p = source();
+        let mut ui = ScenarioUi::default();
+        ui.load_now(&p).unwrap();
+        let id = uuid::Uuid::new_v4();
+        assert!(ui.add_objective(None, Some(id), 0).is_err());
+        ui.document.spawns.push(Spawn { id, alias: "GER_INF01".into(), ..Default::default() });
+        assert!(ui.add_objective(None, Some(id), 0).is_err());
+        ui.document.spawns[0].alias = "GER_HAU00".into();
+        // 沒有別名目錄的腳本生成物件不可通過真正的編譯邊界。
+        assert!(ui.add_objective(None, Some(id), 0).is_err());
+        ui.document.spawns[0].prebuilt = true;
+        assert!(ui.add_objective(None, Some(id), 0).is_err());
+        ui.document.data_slots.push(scenario::DataSlot { spawn_id: id, slot: 3, uid: 10001 });
+        assert!(ui.add_objective(None, Some(id), 0).is_err());
+        ui.active_bindings = Some(vec![(3, 10002)]);
+        assert!(ui.add_objective(None, Some(id), 0).is_err());
+        ui.active_bindings = Some(vec![(3, 10001)]);
+        assert!(ui.add_objective(None, Some(id), 1).is_err());
+        assert!(ui.add_objective(None, Some(id), 8).is_err());
+        for seconds in [0, -1, 86401] { assert!(ui.add_objective(Some(seconds), None, 0).is_err()); }
+        assert!(ui.document.events.is_empty());
+        assert!(!ui.can_undo_events());
+        assert!(ui.add_objective(None, Some(id), 0).unwrap());
+        // 死亡條件的區域數值與終局動作的無關欄位不影響等價性。
+        ui.document.events[0].conditions[0].min_x = 123;
+        assert!(!ui.add_objective(None, Some(id), 0).unwrap());
+        ui.document.events[0].conditions[0].min_x = 0;
+        assert!(ui.undo_events());
+        assert!(ui.document.events.is_empty());
+        assert!(!ui.can_undo_events());
+        ui.graph_ui.mark_dirty();
+        assert!(ui.add_objective(Some(86400), None, 0).is_err());
+        assert!(!ui.can_undo_events());
+        ui.graph_ui.reload_from_scenario(&ui.document);
+        assert!(ui.add_objective(Some(86400), None, 0).unwrap());
+        ui.reset_session(None);
+        assert!(ui.add_objective(Some(1), None, 0).is_err());
+        assert!(!ui.can_undo_events());
+        fs::remove_dir_all(p).unwrap();
+    }
     fn scratch() -> PathBuf {
         let p = std::env::temp_dir().join(format!(
             "arm-scenario-ui-{}",

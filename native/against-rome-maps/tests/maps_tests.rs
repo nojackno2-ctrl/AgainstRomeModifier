@@ -460,6 +460,54 @@ fn test_map_design_validator_win_loss() {
     assert!(!issues2.iter().any(|i| i.code == "scenario-no-victory"));
 }
 
+#[test]
+fn test_map_design_validator_no_defeat_counts_only_enabled_events() {
+    let event = |enabled, kinds: &[i32]| Event {
+        enabled,
+        actions: kinds.iter().map(|&kind| Action { kind, ..Default::default() }).collect(),
+        ..Default::default()
+    };
+    let check = |events| {
+        MapDesignValidator::validate(&MapDesignValidationRequest {
+            events,
+            ..Default::default()
+        })
+    };
+
+    // 停用的失敗事件不能補足失敗條件；多個勝利動作仍僅回報一次。
+    for events in [
+        vec![event(true, &[0, 3])],
+        vec![event(true, &[3]), event(false, &[4])],
+        vec![event(true, &[3, 3]), event(true, &[3]), event(false, &[3, 4])],
+    ] {
+        let issues = check(events);
+        assert_eq!(issues.len(), 1);
+        let issue = &issues[0];
+        assert_eq!(issue.code, "scenario-no-defeat");
+        assert_eq!(issue.severity, design_validator::DesignIssueSeverity::Warning);
+        assert!(issue.chinese.contains("失敗"));
+        assert!(issue.english.contains("Defeat"));
+        assert_eq!(issue.team, -1);
+        assert!(issue.object_id.is_nil());
+        assert_eq!((issue.world_x, issue.world_z), (None, None));
+    }
+
+    // 啟用的失敗動作可位於同一事件或另一事件。
+    assert!(check(vec![event(true, &[3, 4])]).is_empty());
+    assert!(check(vec![event(true, &[3]), event(true, &[4])]).is_empty());
+
+    // 停用的勝利事件不觸發「有勝利、無失敗」警告。
+    for (events, expected) in [
+        (vec![event(false, &[3])], "scenario-no-win-loss"),
+        (vec![event(false, &[3, 4])], "scenario-no-win-loss"),
+        (vec![event(false, &[3]), event(true, &[4])], "scenario-no-victory"),
+    ] {
+        let issues = check(events);
+        assert_eq!(issues.len(), 1);
+        assert_eq!(issues[0].code, expected);
+    }
+}
+
 // ==========================================
 // 8. Cliff Diagnostics Tests
 // ==========================================

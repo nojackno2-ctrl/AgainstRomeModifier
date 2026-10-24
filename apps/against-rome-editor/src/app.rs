@@ -5460,6 +5460,97 @@ mod tests {
         std::fs::remove_dir_all(root).unwrap();
     }
 
+    /// 三種預設、所有敵隊、編譯與設計檢查；每次新增皆可單步復原。
+    #[test]
+    fn objective_presets_compile_check_and_undo() {
+        use against_rome_scenario::{BciImage, Spawn};
+        let root = temp_map_dir("objective_presets");
+        let dir = root.join("MAPS/ENDL_006");
+        std::fs::create_dir_all(dir.join("SCRIPT")).unwrap();
+        std::fs::create_dir_all(root.join("SYSTEM/CLAK")).unwrap();
+        std::fs::write(root.join("SYSTEM/CLAK/cl_scint.ini"),
+            "[ObjDefName]\nGER_HAU00=BauGerHau00_Haupthaus\n").unwrap();
+        let original = BciImage::idle().serialize();
+        std::fs::write(dir.join("SCRIPT/ak_level.bci"), &original).unwrap();
+        let mut app = EditorApp::initial_state();
+        app.set_loaded_map(dir.clone(), TerrainSession::create_blank(33, 32)).unwrap();
+        app.scenario.load_session(&dir).unwrap();
+        let houses: Vec<_> = (0..=7).map(|team| Spawn { alias: "GER_HAU00".into(), team,
+            x: 4000., z: 4000., id: uuid::Uuid::new_v4(), ..Default::default() }).collect();
+        app.scenario.apply_spawns(houses.clone()).unwrap();
+        let errors = app.design_check_report().error_count();
+        let disk = save_artifact_snapshot(&dir);
+        for team in -1..=7 {
+            let seconds = (team == -1).then_some(123);
+            let target = (team >= 0).then(|| houses[team as usize].id);
+            assert!(app.scenario.add_objective(seconds, target, team.max(0)).unwrap());
+            let event = &app.scenario.document().events[0];
+            assert!(event.enabled && !event.repeat);
+            assert_eq!(event.delay_seconds, if team == -1 { 123 } else { 0 });
+            assert_eq!(event.actions.len(), 1);
+            assert_eq!(event.actions[0].kind, if team == 0 { 4 } else { 3 });
+            if let Some(target) = target {
+                assert_eq!(event.conditions.len(), 1);
+                assert_eq!((event.conditions[0].kind, event.conditions[0].target_id), (1, target));
+                let graph = against_rome_scenario::graph::ObjectDeadConditionNode::new(target, "主屋");
+                assert_eq!(graph.to_condition(), event.conditions[0]);
+            } else { assert!(event.conditions.is_empty()); }
+            let aliases = vec!["GER_HAU00".to_string()];
+            let compiled = against_rome_scenario::compile(&original, app.scenario.document(), None, Some(&aliases)).unwrap();
+            BciImage::parse(&compiled).unwrap();
+            assert!(app.design_check_report().error_count() <= errors);
+            assert!(!app.scenario.add_objective(seconds, target, team.max(0)).unwrap());
+            assert!(app.scenario.undo_events());
+            assert!(app.scenario.document().events.is_empty());
+            assert!(!app.scenario.can_undo_events());
+            assert!(app.scenario.redo_events());
+            assert!(app.scenario.undo_events());
+        }
+        assert_eq!(save_artifact_snapshot(&dir), disk);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    /// 真實雙語面板、去重狀態與僅原生 DATA 主屋的停用行為。
+    #[test]
+    fn objective_presets_panel_and_native_only_disabled() {
+        let root = temp_map_dir("objective_panel");
+        let dir = root.join("MAPS/ENDL_006");
+        std::fs::create_dir_all(dir.join("SCRIPT")).unwrap();
+        std::fs::write(dir.join("SCRIPT/ak_level.bci"), against_rome_scenario::BciImage::idle().serialize()).unwrap();
+        make_test_placement_fixture(&dir, 10001);
+        std::fs::create_dir_all(root.join("SYSTEM/DATA_MP/DEFAULTS")).unwrap();
+        let mut fields = vec!["0".to_string(); 53];
+        fields[52] = "BauGerHau00_Haupthaus".into();
+        std::fs::write(root.join("SYSTEM/DATA_MP/DEFAULTS/objdef.dau"),
+            format!("[ObjectDefaults]\n{}\n", fields.join(","))).unwrap();
+        let mut app = EditorApp::initial_state();
+        app.set_loaded_map(dir.clone(), TerrainSession::create_blank(33, 32)).unwrap();
+        let ctx = egui::Context::default();
+        gui_click(&mut app, &ctx, "Scenario / Camera");
+        gui_click(&mut app, &ctx, "Objective presets");
+        for _ in 0..20 { gui_frame(&mut app, &ctx, vec![]); }
+        let out = gui_frame(&mut app, &ctx, vec![]);
+        assert!(gui_find(&out, "No main-house Spawn").is_some());
+        gui_click(&mut app, &ctx, "Player main house destroyed: Defeat");
+        gui_click(&mut app, &ctx, "Enemy main house destroyed: Victory");
+        assert!(app.scenario.document().events.is_empty());
+        assert!(!app.scenario.can_undo_events());
+        assert!(app.scenario.add_objective(None, None, 0).is_err());
+        gui_click(&mut app, &ctx, "Add survival victory");
+        assert_eq!(app.scenario.document().events.len(), 1);
+        assert!(app.status_message.contains("Save"), "{}", app.status_message);
+        assert!(!app.status_is_error);
+        let out = gui_frame(&mut app, &ctx, vec![]);
+        assert!(gui_find(&out, "Already present").is_some());
+        gui_click(&mut app, &ctx, "Add survival victory");
+        assert_eq!(app.scenario.document().events.len(), 1);
+        assert!(app.scenario.undo_events());
+        assert!(!app.scenario.can_undo_events());
+        let out = gui_click(&mut app, &ctx, "中");
+        assert!(gui_find(&out, "勝負條件預設").is_some());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     /// 外交僅接受啟用的敵對動作，且兩個方向均可辨識；名稱避免大小寫碰撞。
     #[test]
     fn attack_wave_generator_diplomacy_names_and_undo() {
@@ -10715,6 +10806,21 @@ impl EditorApp {
         }
         self.scenario.english = self.lang() == AppLanguage::English;
         self.scenario.show(ctx);
+        if let Some(result) = self.scenario.objective_notice.take() {
+            match result {
+                Ok(added) => {
+                    self.status_message = match (self.scenario.english, added) {
+                        (true, true) => "Objective added; Save to write it.",
+                        (false, true) => "已新增勝負條件；請存檔以寫入變更。",
+                        (true, false) => "Equivalent objective already present.",
+                        (false, false) => "已存在等價勝負條件。",
+                    }.into();
+                    self.status_is_error = false;
+                    if added { self.run_design_check(); }
+                }
+                Err(e) => { self.status_message = e; self.status_is_error = true; }
+            }
+        }
         if let Some(result) = self.scenario.wave_notice.take() {
             match result {
                 Ok(n) => {
