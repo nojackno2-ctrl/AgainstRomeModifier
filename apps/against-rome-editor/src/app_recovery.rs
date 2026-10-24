@@ -136,12 +136,16 @@ impl EditorApp {
         if crate::recovery::fingerprint(&map)? != self.recovery.source {
             return Err("Map source changed / 地圖來源已變更".into());
         }
+        self.finish_history_gestures();
+        // 置換型復原不延續舊劇本／材質 session 的歷程；復原順序固定。
+        self.reset_journal_epoch();
         self.session
             .as_mut()
             .ok_or("Missing terrain")?
             .restore_recovery(heights, collision)?;
         if !p["scenario"].is_null() {
             self.scenario = scenario;
+            self.spawn_ui.sync_with_document(&self.scenario, Some(&map));
         }
         if !p["materials"].is_null() {
             self.textures = textures;
@@ -158,6 +162,12 @@ impl EditorApp {
         self.scenario_autoload_tried = None;
         self.material_autoload_tried = None;
         self.recovery.last = Some(p.clone());
+        let terrain = self.session.as_mut().unwrap().take_history_receipts();
+        let materials = self.textures.take_history_receipts();
+        let scenario = self.scenario.take_history_receipts();
+        for step in terrain.into_iter().chain(materials).chain(scenario) {
+            self.undo_journal.record_compound(vec![step]);
+        }
         self.set_status("Recovered unsaved work / 已復原未儲存工作".into(), false);
         Ok(())
     }
@@ -324,6 +334,18 @@ mod tests {
         assert!(a.has_unsaved_changes());
         assert_eq!(fingerprint(&map).unwrap(), before);
         assert_eq!(std::fs::read(map.join("boden.bmp")).unwrap(), original);
+        // 工具列依固定的反向順序：劇本、材質、地形。
+        a.navigate_journal(false);
+        assert!(a.scenario.document().events.is_empty());
+        assert!(a.scenario.document().spawns.is_empty());
+        assert_eq!(a.textures.session_textures().unwrap(), vec!["4BB___51".to_string(); 4]);
+        a.navigate_journal(false);
+        assert_eq!(a.textures.session_textures().unwrap(), vec!["4BA___51".to_string(); 4]);
+        assert_eq!(a.session.as_ref().unwrap().heights()[0], 70);
+        a.navigate_journal(false);
+        assert_eq!(a.session.as_ref().unwrap().heights()[0], 32);
+        assert!(!a.undo_journal.can_undo());
+        for _ in 0..3 { a.navigate_journal(true); }
         let s = a.session.as_mut().unwrap();
         assert!(s.undo());
         assert_eq!(s.heights()[0], 32);
@@ -348,6 +370,9 @@ mod tests {
         let (mut a, _root) = app();
         let map = a.loaded_map_path.clone().unwrap();
         edit(&mut a);
+        a.collect_pilot_receipts();
+        let journal = a.undo_journal.clone();
+        assert!(journal.can_undo());
         let pending = a.recovery_pending();
         a.recovery.save(&map, true, pending).unwrap();
         a.recovery.flush();
@@ -356,6 +381,7 @@ mod tests {
         assert!(a
             .save_transaction(|_| true, |_| Err("模擬交易失敗".into()))
             .is_err());
+        assert_eq!(a.undo_journal, journal);
         a.recovery.flush();
         assert!(path.exists());
         assert!(a.has_unsaved_changes());
@@ -364,6 +390,9 @@ mod tests {
         a.recovery.flush();
         assert!(!path.exists());
         assert!(!a.has_unsaved_changes());
+        assert!(!a.undo_journal.can_undo() && !a.undo_journal.can_redo());
+        a.collect_pilot_receipts();
+        assert!(!a.undo_journal.can_undo());
     }
     #[test]
     fn recovery_bound_spawn_safe_save_moves_and_deletes_data() {

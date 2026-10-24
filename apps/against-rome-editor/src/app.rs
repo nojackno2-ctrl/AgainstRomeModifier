@@ -74,6 +74,7 @@ pub enum PendingAction {
 
 /// Original `emboss.bmp` layer plus the C# `TerrainHeightEditSession` light/baseline state.
 /// Present only when the loaded map has an emboss layer; absent means Safe Save never writes one.
+#[derive(Clone)]
 struct EmbossBaseline {
     raw: crate::bmp::BmpImage,
     session: against_rome_editor::emboss::EmbossSession,
@@ -154,6 +155,8 @@ pub struct EditorApp {
     spawn_landscape: Option<(PathBuf, Vec<(i32, f32, f32)>)>,
     textures: TexturesUi,
     undo_journal: crate::undo_journal::UndoJournal,
+    auxiliary_undo: Vec<(bool, Option<EmbossBaseline>)>,
+    auxiliary_redo: Vec<(bool, Option<EmbossBaseline>)>,
     scene: SceneUi,
     event_graph: EventGraphUi,
     toolbar_graph_source: Option<ToolbarGraphSource>,
@@ -347,6 +350,8 @@ impl EditorApp {
             spawn_landscape: None,
             textures: TexturesUi::default(),
             undo_journal: Default::default(),
+            auxiliary_undo: Vec::new(),
+            auxiliary_redo: Vec::new(),
             scene: SceneUi::default(),
             event_graph: EventGraphUi::default(),
             toolbar_graph_source: None,
@@ -924,6 +929,7 @@ impl EditorApp {
             self.scene.commit_baseline(&path)?;
         }
         self.clear_recovery();
+        self.reset_journal_epoch();
         if let Ok(source) = crate::recovery::fingerprint(&path) { self.recovery.source = source; }
         self.recovery_deferred = false;
         Ok(report)
@@ -1068,6 +1074,7 @@ impl EditorApp {
         let mut loaded_camera = CampaignUi::default();
         loaded_camera.load_map_camera(&path)?;
         self.ambience.load_from_map(&path)?;
+        self.reset_journal_epoch();
         self.pending_save_warnings = None;
         self.placement.reset_session(Some(&path));
         self.family.reset_session();
@@ -1123,6 +1130,7 @@ impl EditorApp {
     }
 
     fn install_blank_map(&mut self, size: usize) {
+        self.reset_journal_epoch();
         self.recovery.offer = None;
         self.recovery.last = None;
         self.recovery.source = serde_json::Value::Null;
@@ -1308,6 +1316,7 @@ impl EditorApp {
                 }
             }
             PendingAction::Close => {
+                self.reset_journal_epoch();
                 self.close_allowed = true;
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                 return;
@@ -1343,6 +1352,7 @@ impl EditorApp {
                 });
             });
         if discard {
+            self.reset_journal_epoch();
             self.clear_recovery();
             self.recovery_deferred = false;
             let action = self.pending_action.take().unwrap();
@@ -3542,6 +3552,7 @@ impl EditorApp {
         self.reset_auxiliary_layers = false;
         self.nature_discard();
         self.textures.reset_to_baseline();
+        self.reset_journal_epoch();
         self.clear_recovery();
         self.is_painting = false;
         self.stroke_path.clear();
@@ -3559,10 +3570,9 @@ impl EditorApp {
         true
     }
 
-    /// C# `ApplyBlankTerrain(confirm: false)`: flattens the map just above the water level, paints
-    /// one base material, clears blocked ground, resets lighting / vertex colours / smoothing on the
-    /// next save and removes removable scenery (settlements and scripts are kept). Heights and
-    /// collision are one undo step; materials and nature edits keep their own histories.
+    /// 空白地形：高度設為略高於水面，填滿基底材質、清除阻擋與可移除地景，
+    /// 並於下次儲存重設光照、頂點色彩及平滑；保留聚落與腳本。
+    /// 高度、碰撞、材質、自然物件與輔助圖層由統一 journal 合為一步。
     pub fn apply_flat_terrain_now(&mut self) -> bool {
         let lang = self.loc.current_language();
         if self.session.is_none() {
@@ -3577,6 +3587,19 @@ impl EditorApp {
         }
         self.nature_end_stroke();
         self.textures.end_material_stroke();
+        self.finish_history_gestures();
+        // 先載入相依 session 並消費 DATA 載入障壁，避免抹除本次操作的收據。
+        if let Some(path) = self.loaded_map_path.clone() {
+            if !self.placement.is_loaded() && !self.placement.is_dirty() {
+                let _ = self.placement.load_session(&path);
+            }
+            if self.textures.session_textures().is_none() {
+                let _ = self.textures.load_session(&path);
+            }
+        }
+        self.collect_pilot_receipts();
+        let compound_start = self.undo_journal.checkpoint();
+        let auxiliary_before = (self.reset_auxiliary_layers, self.emboss.clone());
         // Heights: water level + 20 (C# `Math.Round(water) + 20`, banker's rounding).
         let level = ((self.water_surface.round_ties_even() as i32).saturating_add(20)).clamp(0, 255) as u8;
         if let Some(session) = self.session.as_mut() {
@@ -3589,21 +3612,11 @@ impl EditorApp {
         if let Some(emboss) = self.emboss.as_mut() {
             emboss.session.apply_blank_terrain();
         }
-        // Base material (needs the map's boden.txt session; load it on demand).
-        if self.textures.session_textures().is_none() {
-            if let Some(path) = self.loaded_map_path.clone() {
-                let _ = self.textures.load_session(&path);
-            }
-        }
+        // 相依 session 已在複合操作前嘗試載入。
         let material = self.textures.apply_blank_material();
         self.reset_auxiliary_layers = true;
         // Scenery: removable nature objects and pending additions (needs the DATA session).
         let mut scenery = tr(lang, "scenery cleared", "地景已清除");
-        if !self.placement.is_loaded() && !self.placement.is_dirty() {
-            if let Some(path) = self.loaded_map_path.clone() {
-                let _ = self.placement.load_session(&path);
-            }
-        }
         match self.ensure_nature_data() {
             Ok(()) => {
                 let nature = &mut self.nature;
@@ -3622,6 +3635,24 @@ impl EditorApp {
             Some(id) => format!("{} {id}", tr(lang, "material", "材質")),
             None => tr(lang, "no material layer", "無材質層").to_string(),
         };
+        self.collect_pilot_receipts();
+        if auxiliary_before.0 != self.reset_auxiliary_layers
+            || auxiliary_before.1.as_ref().map(|e| e.session.is_relight_pending())
+                != self.emboss.as_ref().map(|e| e.session.is_relight_pending())
+        {
+            let before_token = self.auxiliary_undo.len() as u64;
+            self.auxiliary_undo.push(auxiliary_before);
+            self.auxiliary_redo.clear();
+            self.undo_journal.record_compound(vec![crate::undo_journal::SubsystemStep {
+                subsystem: crate::undo_journal::SubsystemId::Auxiliary,
+                before_token,
+                after_token: before_token + 1,
+            }]);
+        }
+        if let Err(reason) = self.undo_journal.compound_since(compound_start) {
+            self.set_status(format!("Blank terrain history barrier / 空白地形已清除統一歷程：{reason}"), false);
+            return true;
+        }
         self.set_status(
             format!(
                 "{} ({material_note}; {scenery}). {}",
@@ -9881,7 +9912,10 @@ impl EditorApp {
     pub fn ui_frame(&mut self, ctx: &egui::Context) {
         if !self.recovery_deferred { self.recovery_tick(ctx); }
         self.recovery_dialog(ctx);
-        if ctx.input(|i| i.viewport().close_requested()) && !self.has_unsaved_changes() && !self.recovery_deferred && self.recovery.offer.is_none() { self.clear_recovery(); }
+        if ctx.input(|i| i.viewport().close_requested()) && !self.has_unsaved_changes() {
+            self.reset_journal_epoch();
+            if !self.recovery_deferred && self.recovery.offer.is_none() { self.clear_recovery(); }
+        }
         self.navigation.refresh(self.session.as_ref(), self.water_surface);
         self.navigation.cancel_pick(ctx);
         let pick_cancel = self.scenario.cancel_canvas_pick(ctx, self.lang() == AppLanguage::English);
@@ -10957,6 +10991,7 @@ impl EditorApp {
             crate::undo_journal::SubsystemId::Scenario => self.scenario.history_token(),
             crate::undo_journal::SubsystemId::Nature => self.nature.session.history_token(),
             crate::undo_journal::SubsystemId::Scene => self.scene.history_token(),
+            crate::undo_journal::SubsystemId::Auxiliary => self.auxiliary_undo.len() as u64,
             _ => 0,
         })
     }
@@ -11243,6 +11278,7 @@ mod step3a_history_tests {
         app.collect_pilot_receipts();
 
         let mut expected = UndoJournal::default();
+        for _ in 0..app.undo_journal.epoch() { expected.new_epoch(); }
         for (subsystem, before_token, after_token) in [
             (SubsystemId::Nature, nature_before, nature_after),
             (SubsystemId::Terrain, terrain_before, terrain_after),
@@ -11286,6 +11322,25 @@ mod step3a_history_tests {
 }
 
 impl EditorApp {
+    /// 生命週期界線排空通知並建立新的統一歷程。
+    fn reset_journal_epoch(&mut self) {
+        // 排空尚未收集的通知，避免重設後於下一個 frame 復活。
+        self.collect_pilot_receipts();
+        self.undo_journal.new_epoch();
+        self.auxiliary_undo.clear();
+        self.auxiliary_redo.clear();
+    }
+
+    fn navigate_auxiliary(&mut self, forward: bool) -> bool {
+        let source = if forward { &mut self.auxiliary_redo } else { &mut self.auxiliary_undo };
+        let Some((reset, emboss)) = source.pop() else { return false; };
+        let previous = (self.reset_auxiliary_layers, self.emboss.take());
+        self.reset_auxiliary_layers = reset;
+        self.emboss = emboss;
+        if forward { self.auxiliary_undo.push(previous); } else { self.auxiliary_redo.push(previous); }
+        true
+    }
+
     /// 先結束手勢，再選擇統一紀錄或相容路由；委派失敗不得轉往其他子系統。
     fn finish_history_gestures(&mut self) {
         if let Some(session) = self.session.as_mut() { session.commit_stroke(); }
@@ -11341,6 +11396,7 @@ impl crate::undo_journal::UndoTarget for EditorApp {
             Spawns => self.spawn_ui.history_token(),
             Scenario => self.scenario.history_token(),
             Scene => self.scene.history_token(),
+            Auxiliary => self.auxiliary_undo.len() as u64,
             Other => {
                 // 局部操作若改動任一側，不得讓 journal 跨過複合操作邊界。
                 let matches = self.settlement_undo.last().is_some_and(|edit| {
@@ -11371,8 +11427,13 @@ impl crate::undo_journal::UndoTarget for EditorApp {
                 let cx = Self::spawn_cx(&self.session, self.loc.current_language(), self.height_step, self.current_map_is_original());
                 self.spawn_ui.undo(&mut self.scenario, &cx)
             }
-            Scenario => self.scenario.undo_events(),
+            Scenario => {
+                let success = self.scenario.undo_events();
+                if success { self.spawn_ui.sync_with_document(&self.scenario, self.loaded_map_path.as_deref()); }
+                success
+            },
             Scene => self.scene.undo(),
+            Auxiliary => self.navigate_auxiliary(false),
             Other => {
                 let success = self.settlement_history(false);
                 // 此快照交換已由 journal 導航，不再送出旁錄 barrier。
@@ -11396,8 +11457,13 @@ impl crate::undo_journal::UndoTarget for EditorApp {
                 let cx = Self::spawn_cx(&self.session, self.loc.current_language(), self.height_step, self.current_map_is_original());
                 self.spawn_ui.redo(&mut self.scenario, &cx)
             }
-            Scenario => self.scenario.redo_events(),
+            Scenario => {
+                let success = self.scenario.redo_events();
+                if success { self.spawn_ui.sync_with_document(&self.scenario, self.loaded_map_path.as_deref()); }
+                success
+            },
             Scene => self.scene.redo(),
+            Auxiliary => self.navigate_auxiliary(true),
             Other => {
                 let success = self.settlement_history(true);
                 // 此快照交換已由 journal 導航，不再送出旁錄 barrier。

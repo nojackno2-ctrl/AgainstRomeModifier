@@ -25,6 +25,87 @@ fn setup(tag: &str) -> (EditorApp, PathBuf, egui::Context) {
 }
 
 #[test]
+fn lifecycle_load_blank_close_and_reset_clear_pending_journal_receipts() {
+    let (mut app, root, ctx) = setup("step5_lifecycle");
+    let map = app.loaded_map_path.clone().unwrap();
+    terrain(&mut app, 40);
+    app.install_loaded_map(map.clone(), TerrainSession::create_blank(5, 32)).unwrap();
+    app.collect_pilot_receipts();
+    assert!(!app.undo_journal.can_undo() && !app.undo_journal.can_redo());
+    terrain(&mut app, 41);
+    assert!(app.reset_terrain_now());
+    app.collect_pilot_receipts();
+    assert!(!app.undo_journal.can_undo() && !app.undo_journal.can_redo());
+    terrain(&mut app, 42);
+    app.install_blank_map(5);
+    app.collect_pilot_receipts();
+    assert!(!app.undo_journal.can_undo());
+    terrain(&mut app, 43);
+    app.perform_action(PendingAction::Close, &ctx);
+    app.collect_pilot_receipts();
+    assert!(!app.undo_journal.can_undo());
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn explicit_discard_clears_journal_before_blank_map_switch() {
+    let (mut app, root, ctx) = setup("step5_discard");
+    terrain(&mut app, 44);
+    app.collect_pilot_receipts();
+    assert!(app.undo_journal.can_undo());
+    app.pending_action = Some(PendingAction::Blank(5));
+    let _ = ctx.run(Default::default(), |ctx| app.handle_pending_action(ctx));
+    let output = ctx.run(Default::default(), |ctx| app.handle_pending_action(ctx));
+    let pos = gui_find(&output, "Discard unsaved changes").unwrap().center();
+    for pressed in [true, false] {
+        let _ = ctx.run(egui::RawInput { events: gui_pointer(pos, pressed), ..Default::default() },
+            |ctx| app.handle_pending_action(ctx));
+    }
+    assert!(app.pending_action.is_none());
+    app.collect_pilot_receipts();
+    assert!(!app.undo_journal.can_undo() && !app.undo_journal.can_redo());
+    assert!(app.loaded_map_path.is_none());
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn blank_terrain_toolbar_restores_heights_materials_and_auxiliary_together() {
+    let (mut app, root, _ctx) = setup("step5_flat");
+    let map = app.loaded_map_path.clone().unwrap();
+    std::fs::write(map.join("boden.txt"), "[Dimension]\n2\n[Texturen]\n4BA___51\n4BB___51\n4BA___51\n4BB___51\n").unwrap();
+    app.textures.load_session(&map).unwrap();
+    app.emboss = Some(EmbossBaseline {
+        raw: crate::bmp::BmpImage::new_solid(5, 5, 100, 100, 100),
+        session: against_rome_editor::emboss::EmbossSession::new(5, vec![32; 25], Some(vec![100; 25])).unwrap(),
+    });
+    let heights = app.session.as_ref().unwrap().heights().to_vec();
+    let materials = app.textures.session_textures().unwrap().to_vec();
+    assert!(!app.reset_auxiliary_layers);
+    assert!(app.apply_flat_terrain_now());
+    let flat_heights = app.session.as_ref().unwrap().heights().to_vec();
+    let flat_materials = app.textures.session_textures().unwrap().to_vec();
+    assert_ne!(flat_heights, heights);
+    assert!(app.reset_auxiliary_layers);
+    assert!(app.emboss.as_ref().unwrap().session.is_relight_pending());
+    let journal = app.undo_journal.clone();
+    assert!(app.apply_flat_terrain_now());
+    assert_eq!(app.undo_journal, journal, "重複套用不應新增空操作");
+    app.navigate_journal(false);
+    assert_eq!(app.session.as_ref().unwrap().heights(), heights, "{}; {journal:?}", app.status_message);
+    assert_eq!(app.textures.session_textures().unwrap(), materials);
+    assert!(!app.reset_auxiliary_layers);
+    assert!(!app.emboss.as_ref().unwrap().session.is_relight_pending());
+    assert!(!app.undo_journal.can_undo(), "{}", app.status_message);
+    app.navigate_journal(true);
+    assert_eq!(app.session.as_ref().unwrap().heights(), flat_heights);
+    assert_eq!(app.textures.session_textures().unwrap(), flat_materials);
+    assert!(app.reset_auxiliary_layers);
+    assert!(app.emboss.as_ref().unwrap().session.is_relight_pending());
+    assert!(!app.undo_journal.can_redo());
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn unified_toolbar_interleaved_reverse_order_and_redo() {
     let (mut app, root, ctx) = setup("step4a_order");
     let mut states = vec![(tokens(&app), snapshot(&app))];

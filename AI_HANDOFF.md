@@ -1,3 +1,8 @@
+## 2026-10-25 Codex：統一復原 step 5（已驗證，未提交）
+- 成功 Safe Save 配合地形／DATA／Scene 等本地歷史清除建立新 epoch；載入、空白地圖、關閉、捨棄及還原地表清除 journal，並排空待收通知。復原依地形、材質、劇本固定順序記錄；空白地形合併輔助旗標／浮雕快照。
+- 驗證：cargo check --workspace --locked --offline --target-dir re_workspace/codex-wave-dest-target 通過；新增測試首次因材質快照借用跨可變操作而編譯失敗，已改為擁有的 Vec，編輯器首輪 637 passed／2 failed／5 ignored：DATA 延遲載入障壁抹除空白地形收據，已前移載入；既有 collector 測試固定 epoch 0，已改跟隨載入後 epoch。空白地形針對性重驗通過。子代理 thread-store 啟動失敗，由主代理接手。
+- 最終驗證：cargo test --workspace --locked --offline --no-fail-fast --target-dir re_workspace/codex-wave-dest-target → 283 組，2475 passed／0 failed／24 ignored，exit 0；日誌 re_workspace/undo-journal-step5-test.log。cargo build（相同 workspace／locked／offline／target-dir）與 git diff --check 通過，無 MSVC 連結錯誤。未做真人 GUI／遊戲內驗收。
+- 先前完整測試：捨棄測試未等確認視窗完成配置，已修正；saved-light-contract 曾回報 refusing existing/inaccessible output，疑似 PID 舊 fixture 重用，保留 stale-scratch-test.log，單測與完整重跑均通過。限制：本地歷史儲存時清除，無跨儲存復原；水面控制值／戰役鏡頭無獨立 undo，補償本身失敗仍無交易式保證。未 stage／commit，保留 AGENTS.md／README.md 既有修改，未碰安裝遊戲，維持系統 TEMP/TMP。
 ## 2026-10-25 Codex：統一復原 step 4b（審查修正已驗證，未提交）
 - Scenario／Spawns／DATA／Nature／Materials／Scene／Families & Effects 局部按鈕改由共用 journal 導航；可驗證的埋藏單筆紀錄移至反向堆疊，保留其他子系統順序；複合邊界或 token 不符則清除 journal、顯示雙語狀態，僅操作指定子系統。事件圖無獨立導航；Console 為獨立巨集 context。
 - 審查修正：Nature／Placement 局部導航優先執行 settlement_history，原子還原 DATA 與 Nature；成功後核對 Other 收據前後 token 並移動，無法核對則清除 journal 與雙語提示，消費快照交換 barrier。恢復 Nature settlement 堆疊啟用條件。新增回歸測試涵蓋兩面板、有／無 Nature、埋藏收據清除、Undo／Redo 與後續工具列導航。首輪新測試使用舊 pilot 檢查器（Other 固定為 0）而失敗，已改以正式 UndoTarget token 核對；完整 workspace 重驗通過；首輪保留於 re_workspace/undo-journal-step4b-fix-first-test.log。

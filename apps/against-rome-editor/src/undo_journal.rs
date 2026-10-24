@@ -9,6 +9,7 @@ pub enum SubsystemId {
     Scenario,
     Scene,
     Other,
+    Auxiliary,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -190,6 +191,30 @@ impl UndoJournal {
         if let Some(entry) = source.pop() { destination.push(entry); }
         true
     }
+    pub(crate) fn checkpoint(&self) -> (u64, usize) {
+        (self.epoch, self.undo.len())
+    }
+
+    /// 每個子系統必須恰好對應一個本地復原步驟，否則建立障壁。
+    pub(crate) fn compound_since(&mut self, checkpoint: (u64, usize)) -> Result<(), String> {
+        let (epoch, start) = checkpoint;
+        if epoch != self.epoch || start > self.undo.len() {
+            self.clear();
+            return Err("DATA／外部歷程障壁".into());
+        }
+        if start == self.undo.len() { return Ok(()); }
+        let children: Vec<SubsystemStep> = self.undo.drain(start..).flat_map(|e| e.children).collect();
+        for (index, step) in children.iter().enumerate() {
+            if children[..index].iter().any(|prior| prior.subsystem == step.subsystem) {
+                let reason = format!("{:?} 包含多個本地步驟，無法原子復原", step.subsystem);
+                self.clear();
+                return Err(reason);
+            }
+        }
+        self.record_compound(children);
+        Ok(())
+    }
+
     pub fn clear(&mut self) {
         self.undo.clear();
         self.redo.clear();
@@ -206,6 +231,26 @@ mod tests {
     use super::*;
     use std::collections::HashMap;
     use SubsystemId::{Materials, Terrain};
+
+    #[test]
+    fn lifecycle_compound_groups_only_new_steps_and_rejects_duplicate_subsystems() {
+        let mut journal = UndoJournal::default();
+        journal.record_compound(vec![step(Terrain, 0)]);
+        let checkpoint = journal.checkpoint();
+        journal.record_compound(vec![step(Terrain, 1)]);
+        journal.record_compound(vec![step(Materials, 0)]);
+        assert!(journal.compound_since(checkpoint).is_ok());
+        assert_eq!(journal.undo.len(), 2);
+        assert_eq!(journal.undo[1].children, vec![step(Terrain, 1), step(Materials, 0)]);
+        let saved = journal.clone();
+        assert!(journal.compound_since(journal.checkpoint()).is_ok());
+        assert_eq!(journal, saved);
+        let checkpoint = journal.checkpoint();
+        journal.record_compound(vec![step(Terrain, 2)]);
+        journal.record_compound(vec![step(Terrain, 3)]);
+        assert!(journal.compound_since(checkpoint).unwrap_err().contains("Terrain"));
+        assert!(!journal.can_undo() && !journal.can_redo());
+    }
 
     #[derive(Default)]
     struct Fake {

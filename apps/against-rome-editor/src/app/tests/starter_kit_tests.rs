@@ -101,6 +101,23 @@ fn starter_kit_is_one_undo_step_and_nothing_is_written_before_save() {
 }
 
 #[test]
+fn starter_kit_toolbar_undo_redo_is_one_step() {
+    let (mut app, root, _map) = fixture("toolbar_compound", &[]);
+    kit_ok(&mut app);
+    app.collect_pilot_receipts();
+    assert!(app.undo_journal.can_undo());
+    app.navigate_journal(false);
+    assert!(app.scenario.document().spawns.is_empty());
+    assert!(app.spawn_ui.pending_starter_kit().is_none());
+    assert!(!app.undo_journal.can_undo());
+    app.navigate_journal(true);
+    assert_eq!(app.scenario.document().spawns.len(), 5);
+    assert!(app.spawn_ui.pending_starter_kit().is_some());
+    assert!(!app.undo_journal.can_redo());
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn gate_refuses_non_blank_maps_and_pending_edits_without_changes() {
     // DATA is not empty.
     let (mut app, root, _map) = fixture("gate_data", &[(232, None)]);
