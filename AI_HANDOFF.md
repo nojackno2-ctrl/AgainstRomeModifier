@@ -1,3 +1,8 @@
+## 2026-10-25 Codex：Safe Save 待處理工作（第 1 部分已驗證，尚有缺口）
+- 狀態：Codex 於 18:19Z 額度用盡中斷（06:02 本地時間重置）。Claude 以目前工作樹重跑 `cargo test --workspace --locked --offline --no-fail-fast`，exit 0，**2,488 passed／0 failed／24 ignored**（`re_workspace/save-blockers-claude-test.log`），以第 1 部分提交。新增 `app/save_blockers.rs`（集中 `SaveBlocker` 清單）與 `app/tests/save_blockers_tests.rs`（含 `save_blockers_previous_rejections_table`，比對舊拒絕條件）。
+- 尚未完成（Codex 中斷前自述）：Weather 預覽欄位、DATA 衝突等阻擋項目的安全捨棄入口，以及 starter kit 導向按鈕；這些項目目前只列出、沒有直接操作按鈕。下一步交給 Codex 補齊。
+- 已盤點中央儲存與各面板原有拒絕條件；實作集中阻擋清單、雙語處理視窗與既有套用／確認捨棄路徑，保留原交易及 Design Check 閘門。唯讀追查發現兩套 EventGraph、生成中的 AI 工作、報告狀態、Weather 預覽欄位與 DATA／鏡頭交易衝突都需涵蓋。
+- 驗證尚未完成；後續執行指定完整離線測試並將結果記於 re_workspace/save-blockers-test.log。不 stage／commit，不修改 AGENTS.md／README.md／docs，不接觸安裝遊戲，維持系統 TEMP/TMP。內建子代理因 thread-store 啟動失敗，改用 agent-delegation-tools 主機 MCP 分工。
 ## 2026-10-25 Codex：統一復原 step 5（已驗證，未提交）
 - 成功 Safe Save 配合地形／DATA／Scene 等本地歷史清除建立新 epoch；載入、空白地圖、關閉、捨棄及還原地表清除 journal，並排空待收通知。復原依地形、材質、劇本固定順序記錄；空白地形合併輔助旗標／浮雕快照。
 - 驗證：cargo check --workspace --locked --offline --target-dir re_workspace/codex-wave-dest-target 通過；新增測試首次因材質快照借用跨可變操作而編譯失敗，已改為擁有的 Vec，編輯器首輪 637 passed／2 failed／5 ignored：DATA 延遲載入障壁抹除空白地形收據，已前移載入；既有 collector 測試固定 epoch 0，已改跟隨載入後 epoch。空白地形針對性重驗通過。子代理 thread-store 啟動失敗，由主代理接手。

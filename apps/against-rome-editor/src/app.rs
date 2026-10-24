@@ -2,6 +2,7 @@
 
 #[path = "app_recovery.rs"]
 mod app_recovery;
+pub mod save_blockers;
 
 use against_rome_environment::nature::{
     map_nature_regions, NatureCatalogItem, NatureCategory, NatureDensity, NatureEditSession,
@@ -138,6 +139,8 @@ pub struct EditorApp {
     stroke_path: BrushPath,
     pub pending_action: Option<PendingAction>,
     close_allowed: bool,
+    save_blockers_open: bool,
+    save_focus_nature: bool,
     pending_save_warnings: Option<(
         PathBuf,
         Vec<against_rome_maps::design_validator::MapDesignIssue>,
@@ -337,6 +340,8 @@ impl EditorApp {
             close_allowed: false,
             recovery: Default::default(),
             recovery_deferred: false,
+            save_blockers_open: false,
+            save_focus_nature: false,
             pending_save_warnings: None,
             toolbox: ToolboxUi::default(),
             navigation: NavigationUi::default(),
@@ -543,9 +548,7 @@ impl EditorApp {
         Ok((path, staged))
     }
 
-    /// Side-effect-free evaluation of the effective in-memory candidate shared by Safe Save
-    /// and the read-only Design Check panel. `design` is the preflight/validator outcome and
-    /// is only meaningful when `map_issues` holds no Error.
+    /// Safe Save 與唯讀設計檢查共用候選資料，同時回報地圖與劇本檢查結果。
     pub(crate) fn candidate_diagnostics(
         &self,
         path: &Path,
@@ -553,7 +556,7 @@ impl EditorApp {
     ) -> Result<CandidateDiagnostics, String> {
         use against_rome_maps::{
             design_validator::{MapDesignValidationRequest, MapDesignValidator},
-            diagnostics::{MapCheckObject, MapCheckSnapshot, MapDiagnostics, MapIssueSeverity},
+            diagnostics::{MapCheckObject, MapCheckSnapshot, MapDiagnostics},
             preflight::ScenarioSavePreflight,
         };
         use against_rome_scenario::model::ScenarioDocument;
@@ -618,15 +621,6 @@ impl EditorApp {
             },
         };
         let map_issues = MapDiagnostics::check(&snapshot);
-        if map_issues
-            .iter()
-            .any(|issue| issue.severity == MapIssueSeverity::Error)
-        {
-            return Ok(CandidateDiagnostics {
-                map_issues,
-                design: Ok(Vec::new()),
-            });
-        }
         let design = ScenarioSavePreflight::validate(&document, &aliases)
             .map_err(|e| format!("ScenarioSavePreflight: {e}"))
             .map(|_| {
@@ -652,28 +646,15 @@ impl EditorApp {
             &mut against_rome_maps::MapSaveTransaction,
         ) -> Result<against_rome_maps::MapSaveReport, String>,
     ) -> Result<against_rome_maps::MapSaveReport, String> {
-        use against_rome_ambience::{
-            atmosphere::BodenIniSerializer,
-            soundscape::{SoundscapeBinaryStorage, SoundscapeSnapshot},
-        };
+        use against_rome_ambience::soundscape::{SoundscapeBinaryStorage, SoundscapeSnapshot};
         // A brush stroke still in flight must be part of the candidate, never half-recorded.
         self.nature_end_stroke();
-        // Remaining panels do not expose a complete, side-effect-free staging + acknowledge API.
-        // Never call their independent writers or clear their dirty flags here.
-        let gaps: Vec<_> = [
-            (self.event_graph.is_dirty(), "EventGraph: unapplied edits; Apply to Scenario or discard before Safe Save"),
-            (self.maps.is_dirty(), "Maps: pending catalog/build settings have no map artifact serializer"),
-            (self.environment.is_dirty(), "Environment: pending flora/lair/settlement plans must be applied or discarded"),
-            (self.landscape.is_dirty(), "Landscape: pending terrain/placement plans must be applied or discarded"),
-            (self.packaging.is_dirty(), "Packaging: pending export/diff/budget state has no map artifact serializer"),
-            (self.campaign.has_unsupported_edits(), "Campaign: pending objectives/waves/cinematics have no map-bound compile/save contract"),
-            (self.ai_planner.is_dirty(), "AI Planner: pending plan must be applied or discarded"),
-            (self.toolbox.is_dirty(), "Toolbox: pending external save/backup review requires its own Apply/discard"),
-        ].into_iter().filter_map(|(dirty, gap)| dirty.then_some(gap)).collect();
-        if !gaps.is_empty() {
+        let blockers = self.save_blockers();
+        if !blockers.is_empty() {
+            self.save_blockers_open = true;
             return Err(format!(
-                "unsupported dirty panel state: {}",
-                gaps.join("; ")
+                "unsupported dirty panel state / save blockers: {}",
+                blockers.iter().map(|b| b.english.as_str()).collect::<Vec<_>>().join("; ")
             ));
         }
         let session = self.session.as_ref().ok_or("No terrain session to save")?;
@@ -721,35 +702,6 @@ impl EditorApp {
         }
         let ambience_dirty = self.ambience.is_dirty();
         if ambience_dirty {
-            // The current loader restores only profile.boden, SNDZ and briefing.
-            // Weather/lighting preview fields have no round-trip format yet.
-            let current =
-                serde_json::to_value(&self.ambience.profile).map_err(|e| e.to_string())?;
-            let defaults = serde_json::to_value(
-                against_rome_ambience::atmosphere::WeatherPresets::create_clear_sky(),
-            )
-            .map_err(|e| e.to_string())?;
-            let unsupported: Vec<_> = current
-                .as_object()
-                .ok_or("Ambience profile is not an object")?
-                .iter()
-                .filter_map(|(key, value)| {
-                    (key != "boden" && defaults.get(key) != Some(value)).then_some(key.as_str())
-                })
-                .collect();
-            if !unsupported.is_empty() {
-                return Err(format!(
-                    "Ambience unsupported dirty profile fields (no save/reload serializer): {}",
-                    unsupported.join(", ")
-                ));
-            }
-            let (valid, errors) = BodenIniSerializer::validate(&self.ambience.profile.boden);
-            if !valid {
-                return Err(format!(
-                    "Ambience boden.ini validation: {}",
-                    errors.join("; ")
-                ));
-            }
             tx.stage_file("boden.ini", self.ambience.stage_boden_ini_bytes(&path)?)?;
             let snapshot = SoundscapeSnapshot {
                 global_ambience_id: self.ambience.global_sound_id.clone(),
@@ -794,8 +746,10 @@ impl EditorApp {
             None
         };
         let spawn_data_staged = spawn_plan.as_ref().is_some_and(|p| !p.files.is_empty());
-        if spawn_data_staged && (placement_dirty || nature_dirty) {
-            return Err("Spawn placement DATA changes (prebuilt buildings / bound spawns) cannot be saved together with pending Objects (DATA) or Nature edits; save or discard those first".into());
+        let blockers = self.save_data_blockers(&path, spawn_data_staged);
+        if !blockers.is_empty() {
+            self.save_blockers_open = true;
+            return Err(blockers.iter().map(|b| b.english.as_str()).collect::<Vec<_>>().join("; "));
         }
         for (rel_path, bytes) in spawn_plan.iter().flat_map(|p| p.files.iter()) {
             tx.stage_file(rel_path, bytes.clone())?;
@@ -809,18 +763,6 @@ impl EditorApp {
             Vec::new()
         };
         let camera_pending = self.campaign.camera_pending();
-        if spawn_data_staged && camera_pending {
-            return Err("Start camera candidate and new prebuilt DATA objects cannot be saved in one transaction; apply one and save first".into());
-        }
-        if camera_pending
-            && self
-                .loaded_map_path
-                .as_ref()
-                .and_then(|p| std::fs::canonicalize(p).ok())
-                != std::fs::canonicalize(&path).ok()
-        {
-            return Err("Start camera save target differs from the loaded map".into());
-        }
         let staged_scenario = self.campaign.stage_camera_candidate(
             &path,
             &staged_scenario,
@@ -1075,6 +1017,8 @@ impl EditorApp {
         loaded_camera.load_map_camera(&path)?;
         self.ambience.load_from_map(&path)?;
         self.reset_journal_epoch();
+        self.save_blockers_open = false;
+        self.save_focus_nature = false;
         self.pending_save_warnings = None;
         self.placement.reset_session(Some(&path));
         self.family.reset_session();
@@ -1133,6 +1077,8 @@ impl EditorApp {
         self.reset_journal_epoch();
         self.recovery.offer = None;
         self.recovery.last = None;
+        self.save_blockers_open = false;
+        self.save_focus_nature = false;
         self.recovery.source = serde_json::Value::Null;
         self.recovery_deferred = false;
         self.pending_save_warnings = None;
@@ -3307,6 +3253,9 @@ impl EditorApp {
     }
 
     fn show_nature_panel(&mut self, ui: &mut egui::Ui) {
+        if std::mem::take(&mut self.save_focus_nature) {
+            ui.scroll_to_cursor(Some(egui::Align::Center));
+        }
         ui.heading("Nature Brush");
         let mut enabled = self.nature.enabled;
         if ui
@@ -4124,14 +4073,35 @@ impl EditorApp {
         &mut self,
         map: &Path,
     ) -> Result<Option<against_rome_maps::spawn_data::SpawnDataPlan>, String> {
+        self.spawn_ui.sync_with_document(&self.scenario, Some(map));
+        self.plan_spawn_data_candidate(map, &self.spawn_ui)
+    }
+
+    /// 診斷使用獨立面板快照，避免清除真正面板的選取、草稿或復原歷史。
+    fn preview_spawn_data_for_save(
+        &self,
+        map: &Path,
+    ) -> Result<Option<against_rome_maps::spawn_data::SpawnDataPlan>, String> {
+        let mut preview = SpawnPlacementUi::default();
+        if !self.spawn_ui.catalog().is_empty() && self.loaded_map_path.as_deref() == Some(map) {
+            preview.set_catalog(self.spawn_ui.catalog().to_vec());
+        }
+        preview.sync_with_document(&self.scenario, Some(map));
+        self.plan_spawn_data_candidate(map, &preview)
+    }
+
+    fn plan_spawn_data_candidate(
+        &self,
+        map: &Path,
+        placements: &SpawnPlacementUi,
+    ) -> Result<Option<against_rome_maps::spawn_data::SpawnDataPlan>, String> {
         use against_rome_maps::spawn_data::{mark_prebuilt, SpawnDataCatalog};
         let previous = self.scenario.saved_document()?;
-        self.spawn_ui.sync_with_document(&self.scenario, Some(map));
-        if !self.spawn_ui.session().is_dirty() && previous.spawns == self.scenario.document().spawns {
+        if !placements.session().is_dirty() && !self.spawn_ui.session().is_dirty() && previous.spawns == self.scenario.document().spawns {
             return Ok(None);
         }
         let mut next = self.scenario.document().clone();
-        let placed = self.spawn_ui.session().objects();
+        let placed = placements.session().objects();
         mark_prebuilt(&mut next.spawns, placed);
         if !next.spawns.iter().any(|s| s.prebuilt) && previous.data_slots.is_empty() {
             return Ok(None);
@@ -4291,6 +4261,7 @@ mod tests {
     use super::*;
     use crate::terrain::SampleChange;
 
+    mod save_blockers_tests;
     mod unified_undo_tests;
     mod objectives_apply_tests;
     mod scenario_canvas_tests;
@@ -10932,6 +10903,7 @@ impl EditorApp {
         self.console.show(ctx);
         self.tech_doc.show(ctx);
         self.show_design_check(ctx);
+        self.show_save_blockers(ctx);
         self.consume_design_check_focus();
         self.show_studio_panels(ctx);
         self.consume_panel_history_requests();
