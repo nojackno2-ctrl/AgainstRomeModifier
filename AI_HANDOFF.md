@@ -1,3 +1,11 @@
+## 2026-10-24 Codex：進攻波次產生器（自動化驗證通過，遊戲內待驗證）
+
+- 變更：劇本面板新增雙語 Attack wave generator；敵方隊伍 1–7、既有 SpawnUnit 別名選單、波數／首波秒數／間隔／基本數量／每波增加／生成與目的 X/Z。支援地圖邊緣、玩家主屋按鈕，預設沿用 wave_player_target（主屋／鏡頭）；首次開啟或按鈕才解析，避免每幀讀 DATA。
+- 事件：Wave_01 起編並避開大小寫名稱碰撞；時間 first+i*interval，每波數量夾限 1–20，目的地必填；必要時共用 fix_hostile_waves 抽出的 helper 加第 0 秒敵對外交。整批只呼叫一次 add_events＝一步 undo/redo；預覽顯示實際夾限數量，完成後重新 Design Check 並提醒存檔。
+- 驗證：依序 cargo check、cargo test、cargo build，均加 --workspace --locked --offline --target-dir re_workspace/codex-wave-dest-target，全部 exit 0（stable-x86_64-pc-windows-msvc，無連結錯誤）。完整測試逐一加總 283 個 test result 行：**2,369 passed／0 failed／24 ignored**；完整輸出 re_workspace/wave-generator-workspace-test.log，check/build 分別為 wave-generator-workspace-check.log／wave-generator-workspace-build.log。
+- 測試／已解決：新增三項 app.rs 測試涵蓋真實 egui 面板、時間／數量／目的地、條件式外交（雙向／和平／停用／其他隊伍）、重複生成名稱避碰、單步復原、失敗原子性，以及無 wave-not-hostile／wave-no-destination。首次完整測試 exit 101（fixture 空白訊息、折疊動畫尚未完成）已修正；focused 3 passed，最終完整重跑通過，初次失敗輸出保留 wave-generator-workspace-test-initial.log。
+- 限制：事件總上限 256、時間 0–86400 秒；遊戲內移動／進攻待驗證。未碰 installed game，未 stage/commit/push；AGENTS.md／README.md 既有變更完整保留。
+
 ## 2026-10-24 Codex：波次目的地提醒與一鍵修正（自動化驗證通過）
 
 - 變更：新增雙語 Warning `wave-no-destination`（啟用事件、kind 2、隊伍 1–7、目的地 None）。Design Check 新增「Send waves toward the player base／讓波次進攻玩家主屋」，優先玩家主屋（含原生 DATA 與未存檔放置位置），否則已啟用起始鏡頭；無目標略過並提示。整批補值共用一步 undo/redo，重新檢查並提醒存檔。`ScenarioUi::replace_events` 驗證後原子套用；既有 SpawnUnit checkbox＋X/Z 可設定／清除，未新增重複 UI。

@@ -20,7 +20,56 @@ enum Pending {
     Load(PathBuf),
     Close,
 }
+/// 產生器表單；所有事件仍透過 add_events 原子加入。
+#[derive(Clone)]
+pub(crate) struct WaveGenerator {
+    pub team: i32,
+    pub alias: String,
+    pub waves: i32,
+    pub first: i32,
+    pub interval: i32,
+    pub base: i32,
+    pub increase: i32,
+    pub x: f32,
+    pub z: f32,
+    pub destination: WorldPosition,
+    initialized: bool,
+}
+impl Default for WaveGenerator {
+    fn default() -> Self {
+        Self { team: 1, alias: String::new(), waves: 5, first: 60, interval: 60,
+            base: 10, increase: 5, x: 8000., z: 8000.,
+            destination: WorldPosition { x: 8000, z: 8000 }, initialized: false }
+    }
+}
+impl WaveGenerator {
+    fn count(&self, index: i32) -> i32 {
+        self.base.saturating_add(index.saturating_mul(self.increase)).clamp(1, 20)
+    }
+    fn last_time(&self) -> i64 {
+        i64::from(self.first) + (i64::from(self.waves) - 1) * i64::from(self.interval)
+    }
+}
+/// 與設計檢查的一鍵修正共用第零秒外交事件。
+pub(crate) fn hostile_wave_event(team: i32) -> Event {
+    Event { name: format!("ARM hostile team {team}"), delay_seconds: 0,
+        actions: vec![Action { kind: 1, team: 0, other_team: team, hostile: true,
+            ..Default::default() }], ..Default::default() }
+}
+fn unused_event_name(base: &str, events: &[Event]) -> String {
+    let mut name = base.to_string();
+    let mut suffix = 2;
+    while events.iter().any(|e| e.name.eq_ignore_ascii_case(&name)) {
+        name = format!("{base}_{suffix}");
+        suffix += 1;
+    }
+    name
+}
 pub struct ScenarioUi {
+    pub(crate) wave_generator: WaveGenerator,
+    pub(crate) wave_target: Option<WorldPosition>,
+    pub(crate) wave_target_requested: bool,
+    pub(crate) wave_notice: Option<Result<usize>>,
     pub open: bool,
     /// UI language follows the editor toggle (set by the app each frame); data is unchanged.
     pub english: bool,
@@ -50,6 +99,10 @@ impl Default for ScenarioUi {
         let baseline = state_bytes(&document, &camera).unwrap();
         Self {
             open: false,
+            wave_generator: WaveGenerator::default(),
+            wave_target: None,
+            wave_target_requested: true,
+            wave_notice: None,
             english: false,
             document,
             camera,
@@ -336,6 +389,10 @@ impl ScenarioUi {
         self.report.clear();
         self.error = None;
         self.graph_ui.reset_session();
+        self.wave_generator = WaveGenerator::default();
+        self.wave_target = None;
+        self.wave_target_requested = true;
+        self.wave_notice = None;
     }
 
     /// Transactionally loads or resets the scenario session for the target map.
@@ -797,6 +854,98 @@ impl ScenarioUi {
         Ok(())
     }
 
+    /// 整批生成與必要外交共用一次 add_events；驗證失敗不變更文件。
+    pub(crate) fn generate_attack_waves(&mut self) -> Result<usize> {
+        if !self.is_loaded() {
+            return Err(tl(self.english, "請先載入地圖劇本。", "Load a map scenario first.").into());
+        }
+        let g = &self.wave_generator;
+        if !(1..=7).contains(&g.team) || !(1..=255).contains(&g.waves)
+            || g.first < 0 || g.interval < 0 || g.last_time() > 86400 {
+            return Err(tl(self.english, "隊伍需為 1–7，波數 1–255，時間需在 0–86400 秒內。",
+                "Use team 1–7, 1–255 waves, and times within 0–86400 seconds.").into());
+        }
+        let mut all = self.document.events.clone();
+        let first = all.len();
+        let waves = g.waves;
+        let hostile = all.iter().filter(|e| e.enabled).flat_map(|e| &e.actions).any(|a|
+            a.kind == 1 && a.hostile && ((a.team == 0 && a.other_team == g.team)
+                || (a.team == g.team && a.other_team == 0)));
+        if !hostile {
+            let mut event = hostile_wave_event(g.team);
+            event.name = unused_event_name(&event.name, &all);
+            all.push(event);
+        }
+        let mut number = 1;
+        for i in 0..waves {
+            let name = loop {
+                let candidate = format!("Wave_{number:02}");
+                number += 1;
+                if !all.iter().any(|e| e.name.eq_ignore_ascii_case(&candidate)) { break candidate; }
+            };
+            all.push(Event { name, delay_seconds: (i64::from(g.first) + i64::from(i) * i64::from(g.interval)) as i32,
+                actions: vec![Action { kind: 2, team: g.team, alias: g.alias.clone(),
+                    x: g.x, z: g.z, count: g.count(i), move_destination: Some(g.destination.clone()),
+                    ..Default::default() }], ..Default::default() });
+        }
+        self.add_events(&all[first..])?;
+        self.selected = first;
+        Ok(waves as usize)
+    }
+    fn show_wave_generator(&mut self, ui: &mut egui::Ui) {
+        let en = self.english;
+        ui.collapsing(tl(en, "進攻波次產生器", "Attack wave generator"), |ui| {
+            let g = &mut self.wave_generator;
+            if !g.initialized {
+                if let Some(target) = &self.wave_target { g.destination = target.clone(); }
+                if let Some(alias) = self.aliases.first() { g.alias = alias.clone(); }
+                g.initialized = true;
+            }
+            ui.horizontal(|ui| {
+                ui.label(tl(en, "敵方隊伍", "Enemy team"));
+                ui.add(egui::DragValue::new(&mut g.team).clamp_range(1..=7));
+                ui.label(tl(en, "單位別名", "Unit alias"));
+                ui.text_edit_singleline(&mut g.alias);
+                ui.push_id("wave_alias", |ui| alias_combo(ui, &mut g.alias, &self.aliases, en));
+            });
+            ui.horizontal(|ui| {
+                for (label, value, min, max) in [
+                    (tl(en, "波數", "Wave count"), &mut g.waves, 1, 255),
+                    (tl(en, "首波秒數", "First seconds"), &mut g.first, 0, 86400),
+                    (tl(en, "間隔秒數", "Interval seconds"), &mut g.interval, 0, 86400),
+                    (tl(en, "基本數量", "Base count"), &mut g.base, 1, 20),
+                    (tl(en, "每波增加", "Per-wave increase"), &mut g.increase, 0, 20)] {
+                    ui.label(label);
+                    ui.add(egui::DragValue::new(value).clamp_range(min..=max));
+                }
+            });
+            ui.horizontal(|ui| {
+                ui.label(tl(en, "生成 X/Z", "Spawn X/Z"));
+                ui.add(egui::DragValue::new(&mut g.x).clamp_range(0. ..=16383.));
+                ui.add(egui::DragValue::new(&mut g.z).clamp_range(0. ..=16383.));
+                if ui.button(tl(en, "地圖邊緣", "Map edge")).clicked() { g.x = 0.; g.z = 8000.; }
+            });
+            ui.horizontal(|ui| {
+                ui.label(tl(en, "目的 X/Z", "Destination X/Z"));
+                ui.add(egui::DragValue::new(&mut g.destination.x).clamp_range(0..=16383));
+                ui.add(egui::DragValue::new(&mut g.destination.z).clamp_range(0..=16383));
+                if ui.button(tl(en, "玩家主屋", "Player base")).clicked() {
+                    self.wave_target_requested = true;
+                }
+            });
+            ui.label(if en { format!("{} waves, {}..{} units, {}s..{}s (1–20 units per wave)",
+                g.waves, g.count(0), g.count(g.waves - 1), g.first, g.last_time())
+            } else { format!("{} 波，{}..{} 單位，{}秒..{}秒（每波限 1–20 單位）",
+                g.waves, g.count(0), g.count(g.waves - 1), g.first, g.last_time()) });
+            if ui.add_enabled(self.is_loaded(), egui::Button::new(
+                tl(en, "產生進攻波次", "Generate attack waves"))).clicked() {
+                let result = self.generate_attack_waves();
+                if let Err(e) = &result { self.error = Some(e.clone()); }
+                self.wave_notice = Some(result);
+            }
+        });
+    }
+
     pub fn show(&mut self, ctx: &egui::Context) {
         if self.graph_ui.apply_requested {
             self.graph_ui.apply_requested = false;
@@ -842,6 +991,7 @@ impl ScenarioUi {
                 egui::ScrollArea::vertical()
                     .max_height(650.)
                     .show(ui, |ui| {
+                        self.show_wave_generator(ui);
                         ui.collapsing(tl(en, "開局鏡頭", "Start camera"), |ui| {
                             ui.checkbox(&mut self.camera.enabled, tl(en, "啟用", "Enabled"));
                             ui.horizontal(|ui| {
@@ -1163,7 +1313,7 @@ fn event_editor(
                         ui.horizontal(|ui| {
                             ui.label(tl(en, "ObjDefName 別名", "ObjDefName alias"));
                             ui.text_edit_singleline(&mut a.alias);
-                            alias_combo(ui, &mut a.alias, aliases);
+                            alias_combo(ui, &mut a.alias, aliases, en);
                             ui.label("team");
                             ui.add(egui::DragValue::new(&mut a.team).clamp_range(0..=7));
                             ui.label("count");
@@ -1953,12 +2103,12 @@ mod tests {
     }
 }
 
-fn alias_combo(ui: &mut egui::Ui, alias: &mut String, names: &[String]) {
+fn alias_combo(ui: &mut egui::Ui, alias: &mut String, names: &[String], en: bool) {
     if names.is_empty() {
         return;
     }
     egui::ComboBox::from_id_source("object_alias_catalog")
-        .selected_text("從遊戲別名選擇")
+        .selected_text(tl(en, "從遊戲別名選擇", "Choose game alias"))
         .show_ui(ui, |ui| {
             for name in names {
                 ui.selectable_value(alias, name.clone(), name);

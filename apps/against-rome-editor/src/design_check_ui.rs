@@ -333,18 +333,7 @@ impl EditorApp {
         }
         let events: Vec<against_rome_scenario::Event> = teams
             .iter()
-            .map(|&team| against_rome_scenario::Event {
-                name: format!("ARM hostile team {team}"),
-                delay_seconds: 0,
-                actions: vec![against_rome_scenario::Action {
-                    kind: 1,
-                    team: 0,
-                    other_team: team,
-                    hostile: true,
-                    ..Default::default()
-                }],
-                ..Default::default()
-            })
+            .map(|&team| crate::scenario_ui::hostile_wave_event(team))
             .collect();
         self.scenario.add_events(&events).map_err(|e| format!("Scenario: {e}"))?;
         self.run_design_check();

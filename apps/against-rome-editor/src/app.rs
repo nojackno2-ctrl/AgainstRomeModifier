@@ -5404,6 +5404,147 @@ mod tests {
         std::fs::remove_dir_all(root).unwrap();
     }
 
+    /// 真實面板產生、目的地預設、夾限預覽、設計檢查及單步復原。
+    #[test]
+    fn attack_wave_generator_panel() {
+        use against_rome_scenario::WorldPosition;
+        let root = temp_map_dir("wave_generator_panel");
+        let dir = root.join("MAPS/ENDL_006");
+        std::fs::create_dir_all(dir.join("SCRIPT")).unwrap();
+        std::fs::create_dir_all(root.join("SYSTEM/CLAK")).unwrap();
+        std::fs::write(root.join("SYSTEM/CLAK/cl_scint.ini"),
+            "[ObjDefName]\nHUN_KAVINF00=FigHunKav00\n").unwrap();
+        std::fs::write(dir.join("SCRIPT/ak_level.bci"), against_rome_scenario::BciImage::idle().serialize()).unwrap();
+        let mut app = EditorApp::initial_state();
+        app.set_loaded_map(dir.clone(), TerrainSession::create_blank(33, 32)).unwrap();
+        app.campaign.start_camera.enabled = true;
+        app.campaign.start_camera.x = 6000.;
+        app.campaign.start_camera.z = 7000.;
+        let disk = save_artifact_snapshot(&dir);
+        let ctx = egui::Context::default();
+        gui_click(&mut app, &ctx, "Scenario / Camera");
+        gui_click(&mut app, &ctx, "Attack wave generator");
+        for _ in 0..20 { gui_frame(&mut app, &ctx, vec![]); }
+        let out = gui_frame(&mut app, &ctx, vec![]);
+        assert!(gui_find(&out, "5 waves, 10..20 units, 60s..300s (1–20 units per wave)").is_some());
+        assert_eq!(app.scenario.wave_generator.destination, WorldPosition { x: 6000, z: 7000 });
+        gui_click(&mut app, &ctx, "Map edge");
+        app.scenario.wave_generator.destination = WorldPosition { x: 1, z: 2 };
+        gui_click(&mut app, &ctx, "Player base");
+        gui_click(&mut app, &ctx, "Generate attack waves");
+        assert!(!app.status_is_error, "{}", app.status_message);
+        assert!(app.status_message.contains("Save"));
+        let events = app.scenario.document().events.clone();
+        assert_eq!(events.len(), 6);
+        assert_eq!(events[0], crate::scenario_ui::hostile_wave_event(1));
+        for (i, event) in events[1..].iter().enumerate() {
+            assert_eq!(event.name, format!("Wave_{:02}", i + 1));
+            assert_eq!(event.delay_seconds, 60 + i as i32 * 60);
+            assert!(event.enabled && !event.repeat && event.conditions.is_empty());
+            let a = &event.actions[0];
+            assert_eq!((a.kind, a.team, a.count), (2, 1, (10 + i as i32 * 5).min(20)));
+            assert_eq!((a.x, a.z), (0., 8000.));
+            assert_eq!(a.alias, "HUN_KAVINF00");
+            assert_eq!(a.move_destination, Some(WorldPosition { x: 6000, z: 7000 }));
+        }
+        let codes = design_codes(&app);
+        assert!(!codes.iter().any(|c| c == "wave-not-hostile" || c == "wave-no-destination"), "{codes:?}");
+        assert!(app.scenario.undo_events());
+        assert!(app.scenario.document().events.is_empty());
+        assert!(!app.scenario.can_undo_events());
+        assert!(app.scenario.redo_events());
+        assert_eq!(app.scenario.document().events, events);
+        assert_eq!(save_artifact_snapshot(&dir), disk);
+        let out = gui_click(&mut app, &ctx, "中");
+        assert!(gui_find(&out, "進攻波次產生器").is_some());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    /// 外交僅接受啟用的敵對動作，且兩個方向均可辨識；名稱避免大小寫碰撞。
+    #[test]
+    fn attack_wave_generator_diplomacy_names_and_undo() {
+        use against_rome_scenario::{Action, Event, WorldPosition};
+        for mode in ["none", "hostile", "reverse", "peace", "disabled", "other"] {
+            let root = temp_map_dir("wave_generator_diplomacy");
+            let dir = root.join("MAPS/ENDL_006");
+            std::fs::create_dir_all(dir.join("SCRIPT")).unwrap();
+            std::fs::write(dir.join("SCRIPT/ak_level.bci"), against_rome_scenario::BciImage::idle().serialize()).unwrap();
+            let mut app = EditorApp::initial_state();
+            app.set_loaded_map(dir.clone(), TerrainSession::create_blank(33, 32)).unwrap();
+            app.scenario.load_session(&dir).unwrap();
+            let message = Action { text: "Existing event".into(), ..Default::default() };
+            let mut prior = vec![Event { name: "wave_01".into(), actions: vec![message.clone()], ..Default::default() },
+                Event { name: "Wave_03".into(), actions: vec![message], ..Default::default() }];
+            if mode != "none" {
+                let mut e = crate::scenario_ui::hostile_wave_event(if mode == "other" { 2 } else { 7 });
+                if mode == "reverse" { e.actions[0].team = 7; e.actions[0].other_team = 0; }
+                if mode == "peace" { e.actions[0].hostile = false; }
+                if mode == "disabled" { e.enabled = false; }
+                prior.push(e);
+            }
+            app.scenario.add_events(&prior).unwrap();
+            let g = &mut app.scenario.wave_generator;
+            g.team = 7; g.alias = "HUN_KAVINF00".into(); g.waves = 3;
+            g.first = 0; g.interval = 10; g.base = 0; g.increase = i32::MAX;
+            g.destination = WorldPosition { x: 16383, z: 0 };
+            assert_eq!(app.scenario.generate_attack_waves().unwrap(), 3);
+            let events = &app.scenario.document().events;
+            let needs = !matches!(mode, "hostile" | "reverse");
+            assert_eq!(events.len(), prior.len() + 3 + usize::from(needs));
+            let waves = &events[events.len()-3..];
+            for (i, e) in waves.iter().enumerate() {
+                assert_eq!(e.name, ["Wave_02", "Wave_04", "Wave_05"][i]);
+                assert_eq!(e.delay_seconds, i as i32 * 10);
+                assert_eq!(e.actions[0].count, if i == 0 { 1 } else { 20 });
+                assert_eq!(e.actions[0].move_destination, Some(WorldPosition { x: 16383, z: 0 }));
+            }
+            let mut names = std::collections::HashSet::new();
+            assert!(events.iter().all(|e| names.insert(e.name.to_lowercase())));
+            app.scenario.generate_attack_waves().unwrap();
+            let mut names = std::collections::HashSet::new();
+            assert!(app.scenario.document().events.iter().all(|e| names.insert(e.name.to_lowercase())));
+            assert!(app.scenario.undo_events());
+            assert!(app.scenario.undo_events());
+            assert_eq!(app.scenario.document().events, prior);
+            std::fs::remove_dir_all(root).unwrap();
+        }
+    }
+
+    /// 時間、別名、座標與事件容量錯誤均不留下半批事件或額外復原步驟。
+    #[test]
+    fn attack_wave_generator_rejects_invalid_batch_atomically() {
+        let root = temp_map_dir("wave_generator_invalid");
+        let dir = root.join("MAPS/ENDL_006");
+        std::fs::create_dir_all(dir.join("SCRIPT")).unwrap();
+        std::fs::write(dir.join("SCRIPT/ak_level.bci"), against_rome_scenario::BciImage::idle().serialize()).unwrap();
+        let mut app = EditorApp::initial_state();
+        app.set_loaded_map(dir.clone(), TerrainSession::create_blank(33, 32)).unwrap();
+        app.scenario.load_session(&dir).unwrap();
+        let mut valid = app.scenario.wave_generator.clone();
+        valid.alias = "HUN_KAVINF00".into();
+        for mode in ["time", "alias", "coordinate", "capacity", "team", "waves"] {
+            app.scenario.wave_generator = valid.clone();
+            let g = &mut app.scenario.wave_generator;
+            match mode {
+                "time" => { g.first = i32::MAX; g.interval = i32::MAX; }
+                "alias" => g.alias.clear(),
+                "coordinate" => g.x = f32::NAN,
+                "capacity" => g.waves = 255,
+                "team" => g.team = 0,
+                _ => g.waves = 0,
+            }
+            if mode == "capacity" {
+                app.scenario.add_events(&[crate::scenario_ui::hostile_wave_event(2)]).unwrap();
+            }
+            let before = app.scenario.document().events.clone();
+            assert!(app.scenario.generate_attack_waves().is_err(), "{mode}");
+            assert_eq!(app.scenario.document().events, before);
+            if mode == "capacity" { assert!(app.scenario.undo_events()); }
+            assert!(!app.scenario.can_undo_events());
+        }
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     /// 波次目的地修正涵蓋面板點擊、主屋優先、鏡頭備援與無目標略過。
     #[test]
     fn design_check_quick_fix_sends_waves_to_player_base() {
@@ -10563,8 +10704,29 @@ impl EditorApp {
                 }
             }
         }
+        // 初次開啟與按下主屋按鈕才重算，避免每幀讀取原生 DATA。
+        if self.scenario.open && self.scenario.wave_target_requested {
+            self.scenario.wave_target_requested = false;
+            self.scenario.wave_target = self.loaded_map_path.as_deref()
+                .and_then(|path| self.wave_player_target(path));
+            if let Some(target) = &self.scenario.wave_target {
+                self.scenario.wave_generator.destination = target.clone();
+            }
+        }
         self.scenario.english = self.lang() == AppLanguage::English;
         self.scenario.show(ctx);
+        if let Some(result) = self.scenario.wave_notice.take() {
+            match result {
+                Ok(n) => {
+                    self.status_message = if self.scenario.english {
+                        format!("Generated {n} attack waves; Save to write them.")
+                    } else { format!("已產生 {n} 個進攻波次；請存檔以寫入變更。") };
+                    self.status_is_error = false;
+                    self.run_design_check();
+                }
+                Err(e) => { self.status_message = e; self.status_is_error = true; }
+            }
+        }
         self.show_spawn_panel(ctx);
         self.textures.show(ctx);
         self.scene.english = self.lang() == AppLanguage::English;
