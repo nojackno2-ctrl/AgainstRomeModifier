@@ -626,6 +626,8 @@ impl TerrainSession {
         }
         Ok(changes)
     }
+    /// 僅清除重做，保留復原與目前筆畫。
+    pub fn clear_redo(&mut self) { self.redo.clear(); }
     pub fn commit_stroke(&mut self) -> bool {
         if self.pending_heights.is_empty() && self.pending_collision.is_empty() {
             return false;

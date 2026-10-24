@@ -12,6 +12,7 @@ pub mod palette;
 pub mod region;
 pub mod resolver;
 pub mod road_path;
+pub mod history;
 pub mod session;
 pub mod sprite;
 pub mod terrain_layer;

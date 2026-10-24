@@ -14,6 +14,9 @@ pub struct TerrainSession {
     pub raw_boden_bmp: Option<BmpImage>,
     pub raw_collision_bmp: Option<BmpImage>,
     core: CoreSession,
+    history: against_rome_textures::history::HistoryTokens,
+    recovery_history: Option<against_rome_textures::history::HistoryTokens>,
+    receipts: Vec<crate::undo_journal::SubsystemStep>,
     recovery_swap: Option<CoreSession>,
     recovery_applied: bool,
     original_heights: Vec<u8>,
@@ -21,6 +24,22 @@ pub struct TerrainSession {
 }
 
 impl TerrainSession {
+    pub fn history_token(&self) -> u64 { self.history.token() }
+    pub fn take_history_receipts(&mut self) -> Vec<crate::undo_journal::SubsystemStep> {
+        std::mem::take(&mut self.receipts)
+    }
+    fn emit_receipts(&mut self) {
+        self.receipts.extend(self.history.take_receipts().into_iter().map(|(before_token, after_token)| crate::undo_journal::SubsystemStep {
+            subsystem: crate::undo_journal::SubsystemId::Terrain, before_token, after_token,
+        }));
+    }
+    pub fn clear_redo(&mut self) {
+        self.core.clear_redo();
+        self.history.clear_redo();
+        if let Some(core) = self.recovery_swap.as_mut() { core.clear_redo(); }
+        if let Some(history) = self.recovery_history.as_mut() { history.clear_redo(); }
+        if !self.recovery_applied { self.recovery_swap = None; self.recovery_history = None; }
+    }
     pub fn try_new(
         vertex_size: usize,
         heights: Vec<u8>,
@@ -51,6 +70,9 @@ impl TerrainSession {
             raw_boden_bmp,
             raw_collision_bmp,
             core,
+            history: Default::default(),
+            recovery_history: None,
+            receipts: Vec::new(),
             recovery_swap: None,
             recovery_applied: false,
             original_heights: heights,
@@ -120,19 +142,23 @@ impl TerrainSession {
     }
     pub fn commit_stroke(&mut self) -> bool {
         let changed = self.core.commit_stroke();
-        if changed && !self.recovery_applied { self.recovery_swap = None; }
+        if changed { self.history.commit(); self.emit_receipts(); }
+        if changed && !self.recovery_applied { self.recovery_swap = None; self.recovery_history = None; }
         changed
     }
     pub fn cancel_stroke(&mut self) -> StrokeTransaction {
         self.core.cancel_stroke()
     }
     pub fn undo(&mut self) -> bool {
-        if self.core.can_undo() { return self.core.undo().is_some(); }
+        self.commit_stroke();
+        if self.core.can_undo() { let done = self.core.undo().is_some(); if done { self.history.undo(); } return done; }
         self.swap_recovery(true)
     }
     pub fn redo(&mut self) -> bool {
         if !self.recovery_applied && self.recovery_swap.is_some() { return self.swap_recovery(false); }
-        self.core.redo().is_some()
+        let done = self.core.redo().is_some();
+        if done { self.history.redo(); }
+        done
     }
     pub fn apply_height_changes(&mut self, changes: &[SampleChange]) -> Vec<SampleChange> {
         self.core.apply_height_changes(changes)
@@ -189,6 +215,9 @@ impl TerrainSession {
     /// 保留原始 BMP 與基準，以整個地形子系統的一步復原套用快照。
     pub(crate) fn restore_recovery(&mut self, heights: Vec<u8>, collision: Vec<u8>) -> Result<(), String> {
         let replacement = CoreSession::new(self.vertex_size, heights, self.collision_size, Some(collision)).map_err(|e| e.to_string())?;
+        self.recovery_history = Some(self.history.clone());
+        self.history.commit();
+        self.emit_receipts();
         self.recovery_swap = Some(std::mem::replace(&mut self.core, replacement));
         self.recovery_applied = true;
         Ok(())
@@ -197,6 +226,7 @@ impl TerrainSession {
         if self.recovery_applied != undo { return false; }
         if let Some(other) = self.recovery_swap.as_mut() {
             std::mem::swap(&mut self.core, other);
+            if let Some(history) = self.recovery_history.as_mut() { std::mem::swap(&mut self.history, history); }
             self.recovery_applied = !undo;
             true
         } else { false }
@@ -209,11 +239,15 @@ impl TerrainSession {
         self.recovery_swap = None;
         self.recovery_applied = false;
         self.core.reset_to_baseline();
+        self.history = Default::default();
+        self.recovery_history = None;
     }
     pub fn commit_baseline(&mut self) {
         self.recovery_swap = None;
         self.recovery_applied = false;
         self.core.commit_baseline();
+        self.history = Default::default();
+        self.recovery_history = None;
         self.original_heights = self.heights().to_vec();
         self.original_collision = self.collision().to_vec();
     }
@@ -259,5 +293,56 @@ impl BrushPath {
             }
         }
         points
+    }
+}
+
+#[cfg(test)]
+mod history_tests {
+    use super::*;
+    fn edit(s: &mut TerrainSession, after: u8) {
+        s.apply_height_changes(&[SampleChange { index: 0, before: s.heights()[0], after }]);
+    }
+    #[test]
+    fn tokens_round_trip_branch_and_clear_only_redo() {
+        let mut s = TerrainSession::create_blank(3, 10);
+        let original = s.history_token();
+        edit(&mut s, 20);
+        assert!(s.commit_stroke());
+        let first = s.history_token();
+        let receipt = s.take_history_receipts();
+        assert_eq!((receipt[0].before_token, receipt[0].after_token), (original, first));
+        assert!(s.undo()); assert_eq!(s.history_token(), original);
+        assert!(s.redo()); assert_eq!(s.history_token(), first);
+        assert!(s.undo());
+        edit(&mut s, 30); assert!(s.commit_stroke());
+        assert_ne!(s.history_token(), first); assert!(!s.can_redo());
+        assert!(s.undo()); s.clear_redo();
+        assert!(!s.can_redo()); assert_eq!(s.history_token(), original);
+    }
+    #[test]
+    fn no_op_and_cancel_emit_nothing() {
+        let mut s = TerrainSession::create_blank(3, 10);
+        let original = s.history_token();
+        assert!(!s.commit_stroke());
+        edit(&mut s, 10); assert!(!s.commit_stroke());
+        edit(&mut s, 20); s.cancel_stroke(); assert!(!s.commit_stroke());
+        assert_eq!(s.history_token(), original); assert!(s.take_history_receipts().is_empty());
+    }
+    #[test]
+    fn recovery_swap_preserves_original_lineage_and_receipts() {
+        let mut s = TerrainSession::create_blank(3, 10);
+        edit(&mut s, 15); s.commit_stroke(); s.take_history_receipts();
+        let original = s.history_token();
+        s.restore_recovery(vec![20; 9], vec![1; 4]).unwrap();
+        let restored = s.history_token(); assert_ne!(original, restored);
+        assert_eq!(s.take_history_receipts().len(), 1);
+        edit(&mut s, 25); s.commit_stroke(); s.take_history_receipts();
+        assert!(s.undo()); assert_eq!(s.history_token(), restored);
+        assert!(s.undo()); assert_eq!(s.history_token(), original);
+        assert!(s.take_history_receipts().is_empty());
+        assert!(s.redo()); assert_eq!(s.history_token(), restored);
+        assert!(s.redo()); assert_eq!(s.heights()[0], 25);
+        assert!(s.undo()); assert!(s.undo()); s.clear_redo();
+        assert!(!s.can_redo()); assert!(s.can_undo());
     }
 }

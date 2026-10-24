@@ -1,3 +1,7 @@
+## 2026-10-24 Codex：統一復原 step 2（已驗證）
+- 地形含 recovery swap、材質 session 新增穩定 token、提交 receipt 與僅清 redo API；材質核心同步記錄，涵蓋設計工具直接提交。EditorApp 只依提交序號旁錄 journal，原有 Undo/Redo 路由不變；一致性檢查只供測試，不加執行期斷言。
+- 驗證：`cargo test --workspace --locked --offline --target-dir re_workspace/codex-wave-dest-target` exit 0；283 組，**2,434 passed、0 failed、24 ignored**。輸出：`re_workspace/undo-journal-step2-test.log`。新增 6 項測試通過（token 往返、無變更／取消、分支、recovery、真實地形／材質交錯導航與旁錄）；最終 recovery redo 清除補強另經聚焦重測通過。相同 workspace 旗標的 cargo check、cargo build 均 exit 0，日誌為 `undo-journal-step2-check.log`／`undo-journal-step2-build.log`；聚焦日誌為 `undo-journal-step2-focused.log`，皆位於 re_workspace。
+- 未暫存／提交／推送，未碰遊戲安裝目錄，AGENTS.md／README.md 原有差異保留。後續 step 3–5、全域路由與生命週期整合尚未實作，由父代理審查提交。
 ## 2026-10-24 Codex：統一復原計畫第 1 步（已驗證）
 - 依 docs/map-editor-unified-undo-plan.md 新增獨立 undo_journal 與假目標測試，僅於 lib.rs 註冊，未接 EditorApp/UI。驗證 token、委派順序與成功後才移動紀錄；複合失敗嘗試補償，目標需遵守失敗不變更與反向可還原契約。
 - 未修改或暫存 AGENTS.md、README.md；未提交，未存取遊戲目錄。依序 cargo check、cargo test、cargo build，皆使用 --workspace --locked --offline --target-dir re_workspace/codex-wave-dest-target，exit 0；測試 2428 passed、0 failed、24 ignored（新增 journal 8 passed）。完整輸出：re_workspace/undo-journal-step1-test.log；另有同前綴 check/build 日誌。

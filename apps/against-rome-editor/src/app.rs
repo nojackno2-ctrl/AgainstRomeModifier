@@ -153,6 +153,7 @@ pub struct EditorApp {
     /// DATA landscape objects `(slot, x, z)` of the map (building clearance warning), per map.
     spawn_landscape: Option<(PathBuf, Vec<(i32, f32, f32)>)>,
     textures: TexturesUi,
+    undo_journal: crate::undo_journal::UndoJournal,
     scene: SceneUi,
     event_graph: EventGraphUi,
     toolbar_graph_source: Option<ToolbarGraphSource>,
@@ -345,6 +346,7 @@ impl EditorApp {
             spawn_ui: SpawnPlacementUi::default(),
             spawn_landscape: None,
             textures: TexturesUi::default(),
+            undo_journal: Default::default(),
             scene: SceneUi::default(),
             event_graph: EventGraphUi::default(),
             toolbar_graph_source: None,
@@ -10888,5 +10890,43 @@ impl EditorApp {
         self.consume_design_check_focus();
         self.show_studio_panels(ctx);
         self.consume_panel_save_requests();
+        self.collect_pilot_receipts();
+    }
+}
+
+impl EditorApp {
+    /// 試行只旁錄，不參與既有工具列或面板的復原路由。
+    fn collect_pilot_receipts(&mut self) {
+        let mut receipts = self.session.as_mut().map_or_else(Vec::new, |s| s.take_history_receipts());
+        receipts.extend(self.textures.take_history_receipts());
+        receipts.sort_by_key(|step| step.after_token);
+        for receipt in receipts { self.undo_journal.record_compound(vec![receipt]); }
+    }
+}
+#[cfg(test)]
+impl EditorApp {
+    fn pilot_history_consistent(&self) -> bool {
+        self.undo_journal.consistent_tokens(|id| match id {
+            crate::undo_journal::SubsystemId::Terrain => self.session.as_ref().map_or(0, |s| s.history_token()),
+            crate::undo_journal::SubsystemId::Materials => self.textures.history_token(),
+            _ => 0,
+        })
+    }
+}
+
+#[cfg(test)]
+mod pilot_history_tests {
+    use super::*;
+    #[test]
+    fn pilot_records_without_switching_old_navigation() {
+        let mut app = EditorApp::initial_state();
+        let terrain = app.session.as_mut().unwrap();
+        terrain.apply_height_changes(&[crate::terrain::SampleChange { index: 0, before: 32, after: 40 }]);
+        assert!(terrain.commit_stroke());
+        app.collect_pilot_receipts();
+        assert!(app.undo_journal.can_undo());
+        assert!(app.pilot_history_consistent());
+        assert!(app.session.as_mut().unwrap().undo());
+        assert!(!app.pilot_history_consistent());
     }
 }

@@ -71,11 +71,16 @@ pub struct TerrainBlendEditSession {
     pending_textures: BTreeMap<usize, TerrainTextureChange>,
     undo_stack: Vec<TerrainBlendStroke>,
     redo_stack: Vec<TerrainBlendStroke>,
+    history: crate::history::HistoryTokens,
     unresolved_tile_indices: Vec<usize>,
     initial_corner_conflicts: Vec<NativeTerrainCornerConflict>,
 }
 
 impl TerrainBlendEditSession {
+    pub fn history_token(&self) -> u64 { self.history.token() }
+    pub fn take_history_receipts(&mut self) -> Vec<(u64, u64)> { self.history.take_receipts() }
+    /// 僅清除重做，保留復原與目前筆畫。
+    pub fn clear_redo(&mut self) { self.redo_stack.clear(); self.history.clear_redo(); }
     /// Creates a new edit session from an import result, source textures, and a material catalog.
     pub fn new(
         import: NativeTerrainImportResult,
@@ -104,6 +109,7 @@ impl TerrainBlendEditSession {
             pending_textures: BTreeMap::new(),
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
+            history: Default::default(),
             unresolved_tile_indices: import.unresolved_tile_indices,
             initial_corner_conflicts: import.corner_conflicts,
         })
@@ -192,6 +198,7 @@ impl TerrainBlendEditSession {
             pending_textures: self.pending_textures.clone(),
             undo_stack: self.undo_stack.clone(),
             redo_stack: self.redo_stack.clone(),
+            history: self.history.clone(),
             unresolved_tile_indices: self.unresolved_tile_indices.clone(),
             initial_corner_conflicts: self.initial_corner_conflicts.clone(),
         }
@@ -364,6 +371,7 @@ impl TerrainBlendEditSession {
             return false;
         }
 
+        self.history.commit();
         self.undo_stack.push(TerrainBlendStroke { corners, textures });
         self.redo_stack.clear();
         true
@@ -384,6 +392,7 @@ impl TerrainBlendEditSession {
             self.current_textures[index] = change.before.clone();
         }
 
+        self.history.undo();
         self.redo_stack.push(stroke.clone());
 
         let reverted: Vec<TerrainTextureChange> = stroke
@@ -418,6 +427,7 @@ impl TerrainBlendEditSession {
             self.current_textures[index] = change.after.clone();
         }
 
+        self.history.redo();
         self.undo_stack.push(stroke.clone());
         Some(stroke.textures)
     }
@@ -478,6 +488,7 @@ impl TerrainBlendEditSession {
             let _ = self.map.set_corner_by_index(index, baseline_mat);
         }
 
+        self.history = Default::default();
         self.undo_stack.clear();
         self.redo_stack.clear();
         self.pending_corners.clear();

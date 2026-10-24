@@ -40,6 +40,18 @@ pub struct UndoJournal {
 }
 
 impl UndoJournal {
+    /// 試行測試使用：比較每個子系統目前應在的狀態，不觸發斷言或導航。
+    #[cfg(test)]
+    pub(crate) fn consistent_tokens(&self, token: impl Fn(SubsystemId) -> u64) -> bool {
+        let mut expected = std::collections::HashMap::new();
+        for entry in self.redo.iter().rev() {
+            for step in &entry.children { expected.entry(step.subsystem).or_insert(step.before_token); }
+        }
+        for entry in &self.undo {
+            for step in &entry.children { expected.insert(step.subsystem, step.after_token); }
+        }
+        expected.into_iter().all(|(id, value)| token(id) == value)
+    }
     pub fn epoch(&self) -> u64 {
         self.epoch
     }
