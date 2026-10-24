@@ -30,6 +30,23 @@ use uuid::Uuid;
 const BRIEFING_NATIVE_RELATIVE: [&str; 3] = ["TEXT", "US", "briefing.put"];
 /// Number of `briefing_text_teamname{n}` slots edited by the C# editor.
 pub const BRIEFING_TEAM_COUNT: usize = 8;
+// 與 stage_boden_ini_bytes 的唯一 profile 儲存入口一致；其餘欄位沒有地圖序列化。
+pub const PERSISTENT_PROFILE_FIELDS: &[&str] = &["boden"];
+pub const SAVED_LABEL: &str = "Saved with map / 隨地圖儲存";
+pub const PREVIEW_LABEL: &str = "Preview only – not saved / 僅預覽，不會儲存";
+pub const RESET_PREVIEW_LABEL: &str = "Reset preview-only fields / 重設僅預覽欄位";
+const PREVIEW_TOOLTIP: &str = "Reset preview-only changes before saving. Presets also change saved boden fields. / 儲存前須重設僅預覽變更；天候預設也會修改隨地圖儲存的 boden 欄位。";
+
+/// 僅套用實際有地圖序列化的欄位，保留其餘基準值。
+fn with_persistent_fields(mut baseline: AtmosphereProfile, current: &AtmosphereProfile) -> AtmosphereProfile {
+    for field in PERSISTENT_PROFILE_FIELDS {
+        match *field {
+            "boden" => baseline.boden = current.boden.clone(),
+            _ => unreachable!("未知的地圖序列化欄位"),
+        }
+    }
+    baseline
+}
 /// The game reads `boden.ini` and `.put` files as CP1251 regardless of UI language.
 const GAME_ENCODING_NAME: &str = "WINDOWS-1251";
 
@@ -227,6 +244,22 @@ impl AmbienceUi {
         self.dirty
     }
 
+    pub fn preview_only_dirty_fields(&self) -> Result<Vec<String>, String> {
+        let baseline = with_persistent_fields(WeatherPresets::create_clear_sky(), &self.profile);
+        let current = serde_json::to_value(&self.profile).map_err(|e| e.to_string())?;
+        let baseline = serde_json::to_value(baseline).map_err(|e| e.to_string())?;
+        Ok(current.as_object().ok_or("氛圍設定不是物件")?.iter()
+            .filter_map(|(key, value)| (baseline.get(key) != Some(value)).then_some(key.clone()))
+            .collect())
+    }
+
+    /// 無 undo 的面板直接還原；不清除其他編輯或髒狀態。
+    pub fn reset_preview_only_fields(&mut self) {
+        self.profile = with_persistent_fields(WeatherPresets::create_clear_sky(), &self.profile);
+        self.selected_preset = self.profile.preset_id.clone();
+        self.validate_current();
+        self.evaluate_scene_lighting();
+    }
     pub fn mark_dirty(&mut self) {
         self.dirty = true;
     }
@@ -634,7 +667,9 @@ impl AmbienceUi {
         }
 
         // Staged parsing succeeded completely without errors. Now atomically commit to self.
+        self.profile = WeatherPresets::create_clear_sky();
         self.profile.boden = staged_boden;
+        self.selected_preset = self.profile.preset_id.clone();
         self.lighting_context.day_night = staged_daynight;
         self.zones = staged_zones;
         self.selected_zone_index = None;
@@ -774,6 +809,10 @@ impl AmbienceUi {
         map_path: Option<&Path>,
     ) {
         ui.heading("Atmospheric Lighting & Weather Profile");
+        ui.label(PREVIEW_LABEL).on_hover_text(PREVIEW_TOOLTIP);
+        if ui.button(RESET_PREVIEW_LABEL).on_hover_text(PREVIEW_TOOLTIP).clicked() {
+            self.reset_preview_only_fields();
+        }
         ui.label("設定地圖天候、光影、霧氣以及底層 boden.ini 渲染參數。");
 
         ui.horizontal(|ui| {
@@ -952,6 +991,10 @@ impl AmbienceUi {
         }
 
         ui.separator();
+        ui.heading(SAVED_LABEL).on_hover_text(format!(
+            "{} → boden.ini / 其餘 profile 欄位僅供預覽",
+            PERSISTENT_PROFILE_FIELDS.join(", ")
+        ));
         ui.heading("boden.ini Environment Parameters");
         egui::Grid::new("boden_ini_grid")
             .num_columns(2)
@@ -1821,5 +1864,74 @@ mod tests {
         reloaded.load_from_map(&dir).unwrap();
         assert_eq!(reloaded.briefing_title, "Moved");
         let _ = fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(test)]
+mod boundary_tests {
+    use super::*;
+
+    #[test]
+    fn persistent_profile_fields_match_serializer_roundtrip() {
+        assert_eq!(PERSISTENT_PROFILE_FIELDS, &["boden"]);
+        let mut ui = AmbienceUi::default();
+        let mut fields = serde_json::to_value(&ui.profile.boden).unwrap();
+        for (key, value) in fields.as_object_mut().unwrap() {
+            *value = match value {
+                serde_json::Value::Bool(v) => serde_json::json!(!*v),
+                serde_json::Value::Number(v) => serde_json::json!(v.as_f64().unwrap() + 1.0),
+                serde_json::Value::String(_) => serde_json::json!("test"),
+                _ => {
+                    assert_eq!(key, "preserved_sections");
+                    serde_json::json!([["CustomBoundary", "value"]])
+                }
+            };
+        }
+        // 整數型別須保留整數 JSON 表示。
+        let defaults = serde_json::to_value(&ui.profile.boden).unwrap();
+        for (key, value) in fields.as_object_mut().unwrap() {
+            if defaults[key].as_i64().is_some() {
+                *value = serde_json::json!(defaults[key].as_i64().unwrap() + 1);
+            }
+        }
+        ui.profile.boden = serde_json::from_value(fields).unwrap();
+        let text = BodenIniSerializer::generate_default_ini(&ui.profile.boden);
+        assert_eq!(BodenIniSerializer::parse_text(&text), ui.profile.boden);
+        // 每個巢狀欄位都必須實際改變輸出，避免把新增但未序列化的欄位標成可儲存。
+        for (key, value) in defaults.as_object().unwrap() {
+            let mut changed = defaults.clone();
+            changed[ key ] = serde_json::to_value(&ui.profile.boden).unwrap()[key].clone();
+            assert_ne!(&changed[key], value, "{key}");
+            let boden = serde_json::from_value(changed).unwrap();
+            assert_ne!(BodenIniSerializer::generate_default_ini(&boden),
+                BodenIniSerializer::generate_default_ini(&WeatherPresets::create_clear_sky().boden), "{key}");
+        }
+        assert!(ui.preview_only_dirty_fields().unwrap().is_empty());
+    }
+
+    #[test]
+    fn reset_preview_preserves_persistent_edits_and_dirty_state() {
+        let mut ui = AmbienceUi::default();
+        ui.load_preset(WeatherPresets::STORM_ID);
+        ui.profile.boden.waterlevel = 77.0;
+        let saved_edits = ui.profile.boden.clone();
+        assert!(!ui.preview_only_dirty_fields().unwrap().is_empty());
+        ui.reset_preview_only_fields();
+        assert_eq!(ui.profile.boden, saved_edits);
+        assert!(ui.is_dirty());
+        assert!(ui.preview_only_dirty_fields().unwrap().is_empty());
+        assert_eq!(ui.selected_preset, ui.profile.preset_id);
+    }
+
+    #[test]
+    fn boundary_labels_are_bilingual() {
+        for (label, english, chinese) in [
+            (SAVED_LABEL, "Saved with map", "隨地圖儲存"),
+            (PREVIEW_LABEL, "Preview only", "僅預覽，不會儲存"),
+            (RESET_PREVIEW_LABEL, "Reset preview-only fields", "重設僅預覽欄位"),
+        ] {
+            assert!(label.contains(english) && label.contains(chinese));
+        }
+        assert!(PREVIEW_TOOLTIP.contains("before saving") && PREVIEW_TOOLTIP.contains("儲存前"));
     }
 }

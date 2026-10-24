@@ -1,3 +1,7 @@
+## 2026-10-25 Codex：氛圍儲存邊界（已驗證，未提交）
+- 依 stage_boden_ini_bytes／BodenIniSerializer 確認 profile 僅 boden 有地圖序列化；共用欄位清單與預覽差異檢查，加入雙語標示及面板／Safe Save 的僅預覽重設，保留持久編輯與髒狀態。重新載入還原無序列化欄位的預設基準。
+- 新增四項測試通過：完整 boden 欄位往返與逐欄輸出差異、重設保留編輯、阻擋消失及雙語標示。cargo test --workspace --locked --offline --no-fail-fast --target-dir re_workspace/codex-wave-dest-target：exit 0，283 組、2,496 passed／0 failed／24 ignored；日誌 re_workspace/ambience-boundary-test.log。相同 workspace／locked／offline／target-dir 的 cargo check、cargo build 均 exit 0，無 MSVC 連結錯誤；git diff --check 通過。未進行實際 GUI 操作驗收。
+- 不委派、不 stage／commit、不修改 AGENTS.md／README.md、不接觸安裝遊戲；TEMP/TMP 維持系統預設。
 ## 2026-10-25 Codex：Safe Save 待處理工作（第 2 部分已驗證，未提交）
 - 第 1 部分基準：7153ba4，既有完整測試 2,488 passed／0 failed／24 ignored。
 - 第 2 部分：保留所有 blocker 的既有「開啟面板」；starter kit 預覽失敗改導向生成放置面板；DATA 衝突依 Objects／Nature 各列面板；氛圍預覽／驗證與戰役衝突沿用既有 request_close 確認捨棄，不新增 DATA 或 starter kit 捨棄語意。AI 生成與封裝報告已由既有 is_dirty 涵蓋。

@@ -34,6 +34,7 @@ pub enum SavePanel {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SaveBlockerAction {
     OpenPanel,
+    ResetPreviewOnly,
     Apply,
     Discard,
     ApplyEnvironment(EnvApply),
@@ -168,12 +169,7 @@ impl EditorApp {
             }
         }
         if self.ambience.is_dirty() {
-            let current = serde_json::to_value(&self.ambience.profile);
-            let defaults = serde_json::to_value(
-                against_rome_ambience::atmosphere::WeatherPresets::create_clear_sky(),
-            );
-            check(Ambience, current.and_then(|v| defaults.map(|d| (v,d))).map_err(|e| e.to_string()).and_then(|(v,d)| {
-                let fields: Vec<_> = v.as_object().ok_or("Ambience profile is not an object")?.iter().filter_map(|(k,v)| (k != "boden" && d.get(k) != Some(v)).then_some(k.as_str())).collect();
+            check(Ambience, self.ambience.preview_only_dirty_fields().and_then(|fields| {
                 if fields.is_empty() { Ok(()) } else { Err(format!("Ambience unsupported dirty profile fields (no save/reload serializer): {}", fields.join(", "))) }
             }));
             let (valid, errors) = against_rome_ambience::atmosphere::BodenIniSerializer::validate(
@@ -363,6 +359,11 @@ impl EditorApp {
                 }
             }
         }
+        for blocker in &mut blockers {
+            if blocker.panel == Ambience && blocker.english.starts_with("Ambience unsupported dirty profile fields") {
+                blocker.actions.push(SaveBlockerAction::ResetPreviewOnly);
+            }
+        }
         // 僅重用既有確認捨棄流程；DATA 與生成放置不新增重設語意。
         for blocker in &mut blockers {
             if (blocker.panel == Ambience && self.ambience.is_dirty())
@@ -511,6 +512,7 @@ impl EditorApp {
         self.open_save_panel(panel, ctx);
         match action {
             SaveBlockerAction::OpenPanel => (),
+            SaveBlockerAction::ResetPreviewOnly => self.ambience.reset_preview_only_fields(),
             SaveBlockerAction::Apply if panel == SavePanel::EventGraph => {
                 self.event_graph.apply_requested = true;
                 self.apply_toolbar_event_graph_request();
@@ -613,6 +615,7 @@ impl EditorApp {
                                             SaveBlockerAction::OpenPanel => {
                                                 tr(lang, "Open panel", "開啟面板")
                                             }
+                                            SaveBlockerAction::ResetPreviewOnly => crate::ambience_ui::RESET_PREVIEW_LABEL,
                                             SaveBlockerAction::Apply => tr(lang, "Apply", "套用"),
                                             SaveBlockerAction::Discard => {
                                                 tr(lang, "Discard…", "捨棄…")
@@ -701,5 +704,26 @@ mod resolution_tests {
             assert!(!blocker.actions.is_empty() || (!blocker.english.is_empty() && !blocker.chinese.is_empty()));
             assert!(blocker.actions.contains(&SaveBlockerAction::OpenPanel));
         }
+    }
+}
+
+#[cfg(test)]
+mod preview_reset_tests {
+    use super::*;
+
+    #[test]
+    fn safe_save_reset_removes_only_preview_blocker() {
+        let mut app = EditorApp::default();
+        app.ambience.load_preset(against_rome_ambience::atmosphere::WeatherPresets::STORM_ID);
+        app.ambience.profile.boden.waterlevel = 77.0;
+        let persistent = app.ambience.profile.boden.clone();
+        let blocker = app.save_blockers().into_iter()
+            .find(|b| b.english.starts_with("Ambience unsupported dirty profile fields")).unwrap();
+        assert!(blocker.actions.contains(&SaveBlockerAction::ResetPreviewOnly));
+        app.resolve_save_blocker(SavePanel::Ambience, SaveBlockerAction::ResetPreviewOnly, &egui::Context::default());
+        assert_eq!(app.ambience.profile.boden, persistent);
+        assert!(app.ambience.is_dirty());
+        assert!(!app.save_blockers().iter()
+            .any(|b| b.english.starts_with("Ambience unsupported dirty profile fields")));
     }
 }
