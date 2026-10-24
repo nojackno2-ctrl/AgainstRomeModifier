@@ -3,7 +3,7 @@ use super::*;
 use against_rome_maps::TransactionFailurePoint as Fail;
 use against_rome_placement::ObjectStore;
 
-fn fixture(tag: &str, include_nature: bool, capacity: usize) -> (EditorApp, PathBuf, PathBuf) {
+pub(super) fn fixture(tag: &str, include_nature: bool, capacity: usize) -> (EditorApp, PathBuf, PathBuf) {
     let (mut app, root, map) = spawn_save_tests::fixture(tag, &[]);
     std::fs::write(
         map.join(against_rome_maps::CustomMapManifest::MARKER_FILE_NAME),
