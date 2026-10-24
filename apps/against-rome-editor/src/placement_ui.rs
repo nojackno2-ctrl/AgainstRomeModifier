@@ -746,6 +746,30 @@ impl PlacementUi {
     pub fn set_type_names(&mut self, names: std::collections::HashMap<i32, String>) {
         self.type_names = names;
     }
+    /// 使用既有建築分類，合併整個 family 的目前位置。
+    pub(crate) fn navigation_buildings(&self, objects: &[WorldObject]) -> Vec<[f32; 4]> {
+        use against_rome_maps::{MapDesignValidator, SdlObjectCatalog, SdlObjectCategory};
+        objects.iter().filter(|o| o.parent.is_none()).filter_map(|root| {
+            let name = self.type_names.get(&i32::from(root.type_id))?;
+            if SdlObjectCatalog::categorize(name) != SdlObjectCategory::Building { return None; }
+            let margin = against_rome_maps::placement_edit::spawn_data::approximate_family_margin(
+                MapDesignValidator::is_main_house(name));
+            let mut e = [root.position[0], root.position[0], root.position[2], root.position[2]];
+            for object in objects {
+                let mut parent = object.parent;
+                for _ in 0..objects.len() {
+                    let Some(slot) = parent else { break };
+                    if slot == root.slot {
+                        e[0] = e[0].min(object.position[0]); e[1] = e[1].max(object.position[0]);
+                        e[2] = e[2].min(object.position[2]); e[3] = e[3].max(object.position[2]);
+                        break;
+                    }
+                    parent = objects.iter().find(|o| o.slot == slot).and_then(|o| o.parent);
+                }
+            }
+            Some([e[0] - margin, e[1] + margin, e[2] - margin, e[3] + margin])
+        }).collect()
+    }
     pub fn has_type_names(&self) -> bool {
         !self.type_names.is_empty()
     }
@@ -3571,5 +3595,29 @@ mod tests {
         ui.request_layout(LayoutRequest::ExportNature(TileRect { left: 0, top: 0, right: 1, bottom: 1 }));
         ui.process_layout_requests(&ctx);
         assert!(!file.exists(), "buildings are not nature");
+    }
+}
+
+#[cfg(test)]
+mod navigation_building_tests {
+    use super::*;
+    #[test]
+    fn classification_and_pending_family_positions_use_shared_margins() {
+        let mut ui = PlacementUi::default();
+        ui.set_type_names([(1, "BauGerHaus".into()), (2, "FigGer".into())].into());
+        let mut objects = vec![
+            WorldObject { slot: 0, type_id: 1, team: 0, uid: 1, position: [8192.0, 0.0, 8192.0],
+                rotation_degrees: 0.0, parent: None, vitals: None },
+            WorldObject { slot: 1, type_id: 2, team: 0, uid: 2, position: [8256.0, 0.0, 8192.0],
+                rotation_degrees: 0.0, parent: Some(0), vitals: None },
+        ];
+        let margin = against_rome_maps::placement_edit::spawn_data::approximate_family_margin(
+            against_rome_maps::MapDesignValidator::is_main_house("BauGerHaus"));
+        assert_eq!(ui.navigation_buildings(&objects),
+            vec![[8192.0-margin, 8256.0+margin, 8192.0-margin, 8192.0+margin]]);
+        objects[0].position[0] -= 1024.0;
+        assert_eq!(ui.navigation_buildings(&objects)[0][0], 7168.0-margin);
+        objects[0].type_id = 2;
+        assert!(ui.navigation_buildings(&objects).is_empty());
     }
 }

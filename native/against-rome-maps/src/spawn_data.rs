@@ -421,7 +421,7 @@ pub fn validate_starter_kit_candidate(
         if members.is_empty() {
             return Err("起始配置原生 family 無法安全驗證。".into());
         }
-        let margin = if spawn.alias.eq_ignore_ascii_case(BlankMapStarterKit::MAIN_HOUSE_ALIAS) { 384.0 } else { 64.0 };
+        let margin = approximate_family_margin(spawn.alias.eq_ignore_ascii_case(BlankMapStarterKit::MAIN_HOUSE_ALIAS));
         let fold = |f: fn(f32, f32) -> f32, axis: usize, init: f32| {
             members.iter().fold(init, |acc, o| f(acc, o.position[axis]))
         };
@@ -526,4 +526,11 @@ impl std::fmt::Debug for StarterKitStage {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("StarterKitStage").field("spawns", &self.spawns).finish_non_exhaustive()
     }
+}
+
+/// 固定 family 外擴距離，並非遊戲真實 footprint。
+pub const APPROXIMATE_MAIN_HOUSE_MARGIN: f32 = 384.0;
+pub const APPROXIMATE_FAMILY_MARGIN: f32 = 64.0;
+pub fn approximate_family_margin(main_house: bool) -> f32 {
+    if main_house { APPROXIMATE_MAIN_HOUSE_MARGIN } else { APPROXIMATE_FAMILY_MARGIN }
 }

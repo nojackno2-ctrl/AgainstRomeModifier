@@ -1,3 +1,7 @@
+## 2026-10-25 Codex：路徑診斷近似建築障礙
+- 新增預設關閉選項，沿用建築分類與共用 384／64 world units family 外擴範圍；僅診斷暫存遮罩，開關及放置變更使路徑失效。新增通道阻擋、collision 位元組不變、失效與 family 分類／位置測試均通過。
+- 驗證：cargo test --workspace --locked --offline --no-fail-fast --target-dir re_workspace/codex-wave-dest-target exit 101；283 組、2504 passed、2 failed、24 ignored；日誌 re_workspace/route-buildings-test.log。同參數 cargo check／build exit 0，無 MSVC 連結錯誤。
+- 失敗：placement::save_second_publish_failure_restores_all_and_retry 建立 TEMP staging 遇到 os error 183；saved-light-contract::output_is_new_json_directly_in_workspace_and_create_new_prevents_race 拒絕既存／不可存取輸出。未修改這些測試，依單次執行要求未重跑／未清理 TEMP。實體 GUI 未驗收；未 stage／commit，保留 AGENTS.md／README.md，未碰安裝遊戲或 TEMP／TMP 設定。
 ## 2026-10-25 Codex：劇本動作欄位本地化
 - 修正 scenario_ui.rs:1683–1697 外交／生成部隊的隊伍、對方隊伍、數量英文殘留，沿用 tl()；新增實際繪製動作編輯器的中英文無介面字串快照測試。未涉及 80f591b／6232a5c 已修項目。
 - 驗證：cargo test --workspace --locked --offline --no-fail-fast --target-dir re_workspace/codex-wave-dest-target exit 0；283 組、2504 passed、0 failed、24 ignored（日誌 re_workspace/small-ux-fixes3-test.log）。同參數 cargo check／build 均 exit 0；git diff --check 通過。未驗收實體 GUI、未提交；保留 AGENTS.md／README.md 既有變更，未碰安裝遊戲或 TEMP／TMP 設定。

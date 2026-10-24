@@ -9993,6 +9993,14 @@ impl EditorApp {
             self.reset_journal_epoch();
             if !self.recovery_deferred && self.recovery.offer.is_none() { self.clear_recovery(); }
         }
+        let route_objects = if self.placement.is_loaded() {
+            self.placement.objects()
+        } else {
+            self.loaded_map_path.as_ref().and_then(|path|
+                against_rome_placement::ObjectStore::load(path).ok()).map(|s| s.objects()).unwrap_or_default()
+        };
+        self.navigation.update_placement(&route_objects);
+        self.navigation.update_buildings(self.placement.navigation_buildings(&route_objects));
         self.navigation.refresh(self.session.as_ref(), self.water_surface);
         self.navigation.cancel_pick(ctx);
         let pick_cancel = self.scenario.cancel_canvas_pick(ctx, self.lang() == AppLanguage::English);

@@ -9,6 +9,9 @@ use eframe::egui;
 #[derive(Default)]
 pub struct NavigationUi {
     pub open: bool,
+    approximate_buildings: bool,
+    buildings: Vec<[f32; 4]>,
+    placement_snapshot: Vec<u32>,
     pick: Option<bool>,
     holding: bool,
     seed: [i32; 2],
@@ -30,12 +33,33 @@ pub fn diagnose(
     seed: [i32; 2],
     target: [i32; 2],
 ) -> Result<NavigationReport, String> {
+    diagnose_with_buildings(session, water_surface, seed, target, &[])
+}
+fn diagnose_with_buildings(
+    session: &TerrainSession, water_surface: f32, seed: [i32; 2], target: [i32; 2],
+    buildings: &[[f32; 4]],
+) -> Result<NavigationReport, String> {
+    // 僅建立暫存遮罩，不改動地形 session 或原始 collision。
+    let mut collision = session.collision().to_vec();
+    let size = session.collision_size;
+    let scale = 16384.0 / size as f32;
+    for &[left, right, top, bottom] in buildings {
+        if ![left, right, top, bottom].iter().all(|v| v.is_finite()) { continue; }
+        for z in 0..size {
+            for x in 0..size {
+                if (x as f32) * scale <= right && ((x + 1) as f32) * scale > left
+                    && (z as f32) * scale <= bottom && ((z + 1) as f32) * scale > top {
+                    collision[z * size + x] = 255;
+                }
+            }
+        }
+    }
     if !water_surface.is_finite() {
         return Err("Water surface must be finite".into());
     }
     let grid = PassabilityGrid::new(
         session.collision_size,
-        Some(session.collision()),
+        Some(&collision),
         Some((session.vertex_size, session.heights(), 1.0, water_surface)),
         16384.0,
     )
@@ -57,6 +81,29 @@ pub fn diagnose(
     })
 }
 impl NavigationUi {
+    pub(crate) fn update_placement(&mut self, objects: &[against_rome_placement::WorldObject]) {
+        let snapshot = objects.iter().flat_map(|o| [
+            o.slot as u32, o.uid, u32::from(o.type_id), u32::from(o.team),
+            o.position[0].to_bits(), o.position[1].to_bits(), o.position[2].to_bits(),
+            o.rotation_degrees.to_bits(), o.parent.map_or(u32::MAX, |p| p as u32),
+        ]).collect::<Vec<_>>();
+        if self.placement_snapshot != snapshot {
+            self.invalidate();
+            self.placement_snapshot = snapshot;
+        }
+    }
+    pub(crate) fn update_buildings(&mut self, buildings: Vec<[f32; 4]>) {
+        if self.buildings != buildings {
+            self.invalidate();
+            self.buildings = buildings;
+        }
+    }
+    fn set_approximate_buildings(&mut self, enabled: bool) {
+        if self.approximate_buildings != enabled {
+            self.approximate_buildings = enabled;
+            self.invalidate();
+        }
+    }
     pub(crate) fn owns_canvas(&self) -> bool {
         self.pick.is_some() || self.holding
     }
@@ -181,10 +228,17 @@ impl NavigationUi {
         if !self.open {
             return;
         }
-        egui::Window::new("通行診斷 / Navigation").open(&mut self.open).show(ctx,|ui| {
+        let mut enabled = self.approximate_buildings;
+        let mut open = self.open;
+        egui::Window::new("通行診斷 / Navigation").open(&mut open).show(ctx,|ui| {
             ui.label("編輯器連通模型估計，非遊戲精確尋路器。 / Editor connectivity estimate; not the exact game pathfinder.");
             let Some(session)=session else {ui.label("請先載入地圖。");return;};
             ui.label(format!("Collision {} × {} ; water surface {:.2} height samples",session.collision_size,session.collision_size,water_surface));
+            ui.checkbox(&mut enabled, "Treat buildings as obstacles (approximate) / 將建築視為障礙（近似）")
+                .on_hover_text(format!("固定 family 外擴範圍：主屋 {}、其他建築 {} world units；與 spawn_data 相同，並非遊戲真實 footprint。 / Fixed family extent; not the game's real footprint.",
+                    against_rome_maps::placement_edit::spawn_data::APPROXIMATE_MAIN_HOUSE_MARGIN,
+                    against_rome_maps::placement_edit::spawn_data::APPROXIMATE_FAMILY_MARGIN));
+            self.set_approximate_buildings(enabled);
             let max=(session.collision_size-1) as i32;
             let mut changed=false;
             for (label,point) in [("起點 / Seed",&mut self.seed),("終點 / Destination",&mut self.target)] {
@@ -197,14 +251,14 @@ impl NavigationUi {
             if self.pick.is_some() { ui.label("左鍵點選 2D 地圖；Esc／右鍵取消。 / Click 2D map; Esc/right-click cancels."); }
             if changed {self.report=None;}
             if ui.button("重新檢查 / Analyze current layers").clicked() {
-                match diagnose(session,water_surface,self.seed,self.target) {
+                match diagnose_with_buildings(session,water_surface,self.seed,self.target,if enabled { &self.buildings } else { &[] }) {
                     Ok(report)=>{self.report=Some(report);self.error=None;self.snapshot=Some((session.heights().to_vec(),session.collision().to_vec(),water_surface.to_bits()));},
                     Err(e)=>{self.report=None;self.error=Some(e);},
                 }
             }
             if let Some(error)=&self.error {ui.colored_label(egui::Color32::RED,error);}
             if let Some(report)=&self.report {
-                ui.label(format!("Passable: {} ; isolated regions from seed: {}",report.passable,report.isolated.len()));
+                if enabled { ui.label("estimate incl. approximate buildings / 包含近似建築障礙的估計"); } ui.label(format!("Passable: {} ; isolated regions from seed: {}",report.passable,report.isolated.len()));
                 if !report.seed_passable {ui.label("起點在阻擋格或水下，請選擇其他起點。");}
                 ui.label(match report.path_cells {Some(n)=>format!("Path: {n} grid cells"),None=>"終點無法抵達 / End unreachable".into()});
                 egui::ScrollArea::vertical().max_height(240.0).show(ui,|ui| {
@@ -214,6 +268,7 @@ impl NavigationUi {
                 });
             }
         });
+        self.open = open;
     }
 }
 
@@ -481,5 +536,45 @@ mod pick_tests {
                 if end { [0, 0] } else { [1, 1] }
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod building_tests {
+    use super::*;
+    use crate::terrain::CollisionBrushOp;
+
+    #[test]
+    fn building_closes_only_corridor_without_changing_collision() {
+        let mut s = TerrainSession::create_blank(6, 32);
+        for z in 0..5 {
+            if z != 2 {
+                s.paint_collision(2.5, z as f32 + 0.5, 0.4, CollisionBrushOp::Block).unwrap();
+            }
+        }
+        s.commit_stroke();
+        let collision = s.collision().to_vec();
+        let heights = s.heights().to_vec();
+        let margin = against_rome_maps::placement_edit::spawn_data::approximate_family_margin(true);
+        let center = 16384.0 / 2.0;
+        let buildings = vec![[center - margin, center + margin, center - margin, center + margin]];
+        assert!(diagnose(&s, 0.0, [0, 2], [4, 2]).unwrap().path.is_some());
+        assert!(diagnose_with_buildings(&s, 0.0, [0, 2], [4, 2], &buildings).unwrap().path.is_none());
+        assert_eq!(s.collision(), collision);
+        assert_eq!(s.heights(), heights);
+        let mut nav = NavigationUi::default();
+        assert!(!nav.approximate_buildings);
+        nav.report = Some(diagnose(&s, 0.0, [0, 2], [4, 2]).unwrap());
+        nav.set_approximate_buildings(true);
+        assert!(nav.report.is_none());
+        nav.update_buildings(buildings.clone());
+        nav.report = Some(diagnose_with_buildings(&s, 0.0, [0, 2], [4, 2], &buildings).unwrap());
+        nav.update_buildings(buildings);
+        assert!(nav.report.is_some());
+        nav.update_buildings(vec![]);
+        assert!(nav.report.is_none());
+        nav.report = Some(diagnose(&s, 0.0, [0, 2], [4, 2]).unwrap());
+        nav.set_approximate_buildings(false);
+        assert!(nav.report.is_none());
     }
 }
