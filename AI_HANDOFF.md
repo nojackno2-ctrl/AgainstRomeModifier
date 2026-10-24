@@ -1,3 +1,9 @@
+## 2026-10-24 Codex：可搜尋事件瀏覽器（自動化驗證通過）
+
+- 變更：scenario_ui.rs 新增名稱／動作文字／別名搜尋、隊伍／動作種類／僅啟用篩選、符合數量、雙語時間／條件／動作摘要、停用灰色與時間排序；只排序顯示索引，保留原始事件順序與選取，隱藏選取顯示提示。
+- 驗證：依序 cargo check、cargo test、cargo build，均加 --workspace --locked --offline --target-dir re_workspace/codex-wave-dest-target，全部 exit 0，無 MSVC 連結錯誤。完整測試 283 組合計 **2,389 passed／0 failed／24 ignored**；輸出 re_workspace/event-browser-workspace-test.log，check/build 為同前綴 -check.log／-build.log。新增 4 項測試含組合篩選、雙語摘要、排序／選取／dirty／undo 不變及實際 UI 瀏覽前後編譯位元組一致；focused 32 passed／0 failed／0 ignored。
+- 限制：人工 GUI 視覺待驗證。未碰安裝遊戲目錄，未 stage/commit/push；AGENTS.md／README.md SHA-256 與任務開始相同，暫存區為空。一般 Shell 初始化失敗，改用已核准 require_escalated。
+
 ## 2026-10-24 Codex：條件矩形框選（自動化驗證通過）
 
 - 變更：啟用事件的 kind 2 條件顯示半透明矩形、事件名稱與選取高亮，沿用劇本覆蓋圖開關；bounds 旁新增「Draw on map／在地圖上框選」。拖曳僅預覽，座標正規化／四捨五入／夾限 0..16383，放開經 replace_event 產生一步 undo；Esc／右鍵、零大小取消不寫入，快照防護避免誤改目標，手勢期間阻止筆刷／選取。角點縮放略過。

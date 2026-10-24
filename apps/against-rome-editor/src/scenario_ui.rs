@@ -66,6 +66,7 @@ fn unused_event_name(base: &str, events: &[Event]) -> String {
     name
 }
 pub struct ScenarioUi {
+    browser: EventBrowser,
     pub(crate) canvas: crate::scenario_canvas::ScenarioCanvas,
     objective_seconds: i32,
     objective_team: i32,
@@ -103,6 +104,7 @@ impl Default for ScenarioUi {
         };
         let baseline = state_bytes(&document, &camera).unwrap();
         Self {
+            browser: EventBrowser::default(),
             canvas: Default::default(),
             objective_seconds: 300,
             objective_team: 1,
@@ -139,6 +141,71 @@ fn tl(english: bool, zh: &'static str, en: &'static str) -> &'static str {
     } else {
         zh
     }
+}
+/// 僅保存檢視偏好；篩選與排序永不寫入劇本或選取狀態。
+#[derive(Default)]
+struct EventBrowser {
+    search: String,
+    team: Option<i32>,
+    kind: Option<i32>,
+    enabled_only: bool,
+    time_order: bool,
+}
+impl EventBrowser {
+    fn indices(&self, events: &[Event]) -> Vec<usize> {
+        let query = self.search.trim().to_lowercase();
+        let mut indices: Vec<_> = events.iter().enumerate().filter(|(_, e)| {
+            (!self.enabled_only || e.enabled)
+                && self.team.is_none_or(|team| e.actions.iter().any(|a| a.team == team || a.other_team == team))
+                && self.kind.is_none_or(|kind| e.actions.iter().any(|a| a.kind == kind))
+                && (query.is_empty() || e.name.to_lowercase().contains(&query)
+                    || e.actions.iter().any(|a| a.text.to_lowercase().contains(&query)
+                        || a.alias.to_lowercase().contains(&query)))
+        }).map(|(i, _)| i).collect();
+        if self.time_order {
+            indices.sort_by_key(|&i| (events[i].delay_seconds, i));
+        }
+        indices
+    }
+}
+fn action_kind_label(kind: i32, en: bool) -> &'static str {
+    match kind {
+        0 => tl(en, "訊息", "Message"),
+        1 => tl(en, "外交", "Diplomacy"),
+        2 => tl(en, "生成", "Spawn"),
+        3 => tl(en, "勝利", "Victory"),
+        4 => tl(en, "失敗", "Defeat"),
+        _ => tl(en, "未知", "Unknown"),
+    }
+}
+fn event_summary(event: &Event, en: bool) -> String {
+    let kinds: Vec<_> = event.conditions.iter().map(|c| match c.kind {
+        0 => tl(en, "物件存在", "Object exists"),
+        1 => tl(en, "死亡或已移除", "Dead or removed"),
+        2 => tl(en, "位於矩形區域", "Inside rectangle"),
+        _ => tl(en, "未知", "Unknown"),
+    }).collect();
+    let actions: Vec<_> = event.actions.iter().map(|a| {
+        let label = action_kind_label(a.kind, en);
+        match a.kind {
+            1 => format!("{label}: {} {} ↔ {} / {}={}", tl(en, "隊伍", "team"),
+                a.team, a.other_team, tl(en, "敵對", "hostile"), a.hostile),
+            2 => {
+                let destination = a.move_destination.as_ref().map(|p| format!("({}, {})", p.x, p.z))
+                    .unwrap_or_else(|| tl(en, "無", "None").into());
+                format!("{label}: {} × {} / {} {} / {} {destination}", a.count, a.alias,
+                    tl(en, "隊伍", "team"), a.team, tl(en, "目的地", "destination"))
+            }
+            _ => format!("{label}: {}", a.text),
+        }
+    }).collect();
+    format!("{} {}:{:02} / {} | {} {} [{}] | {}", tl(en, "延遲", "Delay"),
+        event.delay_seconds / 60, event.delay_seconds % 60,
+        if event.repeat { tl(en, "重複", "repeat") } else { tl(en, "單次", "once") },
+        event.conditions.len(), tl(en, "條件", "conditions"), kinds.join(", "), actions.join("; "))
+}
+fn selection_hidden(selected: usize, events: &[Event], indices: &[usize]) -> bool {
+    selected < events.len() && !indices.contains(&selected)
 }
 fn state_bytes(d: &ScenarioDocument, c: &StartCamera) -> Result<Vec<u8>> {
     serde_json::to_vec(&(d, c)).map_err(|e| e.to_string())
@@ -1059,6 +1126,51 @@ impl ScenarioUi {
         });
     }
 
+    fn show_event_browser(&mut self, ui: &mut egui::Ui) {
+        let en = self.english;
+        let browser = &mut self.browser;
+        ui.horizontal_wrapped(|ui| {
+            ui.label(tl(en, "搜尋事件名稱／動作文字／別名", "Search event name / action text / alias"));
+            ui.text_edit_singleline(&mut browser.search);
+        });
+        ui.horizontal_wrapped(|ui| {
+            ui.label(tl(en, "隊伍", "Team"));
+            egui::ComboBox::from_id_source("event_browser_team")
+                .selected_text(browser.team.map(|t| t.to_string()).unwrap_or_else(|| tl(en, "任意", "Any").into()))
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(&mut browser.team, None, tl(en, "任意", "Any"));
+                    for team in 0..=7 { ui.selectable_value(&mut browser.team, Some(team), team.to_string()); }
+                });
+            ui.label(tl(en, "動作種類", "Action kind"));
+            egui::ComboBox::from_id_source("event_browser_kind")
+                .selected_text(browser.kind.map(|k| action_kind_label(k, en)).unwrap_or(tl(en, "任意", "Any")))
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(&mut browser.kind, None, tl(en, "任意", "Any"));
+                    for kind in 0..=4 { ui.selectable_value(&mut browser.kind, Some(kind), action_kind_label(kind, en)); }
+                });
+            ui.checkbox(&mut browser.enabled_only, tl(en, "僅啟用事件", "Enabled only"));
+            ui.label(tl(en, "排序", "Order"));
+            ui.selectable_value(&mut browser.time_order, false, tl(en, "原始順序", "Original order"));
+            ui.selectable_value(&mut browser.time_order, true, tl(en, "時間", "Time"));
+        });
+        let indices = browser.indices(&self.document.events);
+        ui.label(if en { format!("{} of {} events", indices.len(), self.document.events.len()) }
+            else { format!("顯示 {} / {} 個事件", indices.len(), self.document.events.len()) });
+        if selection_hidden(self.selected, &self.document.events, &indices) {
+            ui.colored_label(egui::Color32::YELLOW, tl(en,
+                "已選事件被篩選隱藏；下方仍編輯原本選取的事件。",
+                "The selected event is hidden by filters; the editor below keeps that selection."));
+        }
+        for i in indices {
+            let event = &self.document.events[i];
+            let label = egui::RichText::new(format!("{} {}\n{}",
+                if event.enabled { "●" } else { "○" }, event.name, event_summary(event, en)));
+            let label = if event.enabled { label } else { label.color(egui::Color32::GRAY) };
+            if ui.push_id(("event_browser_row", i), |ui| ui.selectable_label(self.selected == i, label)).inner.clicked() {
+                self.selected = i;
+            }
+        }
+    }
     pub fn show(&mut self, ctx: &egui::Context) {
         if self.graph_ui.apply_requested {
             self.graph_ui.apply_requested = false;
@@ -1217,17 +1329,7 @@ impl ScenarioUi {
                                 ui.colored_label(egui::Color32::YELLOW, tl(en, "[節點圖有未套用變更]", "[Event graph has unapplied changes]"));
                             }
                         });
-                        for (i, e) in self.document.events.iter().enumerate() {
-                            if ui
-                                .selectable_label(
-                                    self.selected == i,
-                                    format!("{} {}", if e.enabled { "●" } else { "○" }, e.name),
-                                )
-                                .clicked()
-                            {
-                                self.selected = i;
-                            }
-                        }
+                        self.show_event_browser(ui);
                         let targets: Vec<_> = self
                             .document
                             .spawns
@@ -1590,6 +1692,112 @@ fn export_files(target: &Path, files: &[(&str, Vec<u8>)], fail_after: Option<usi
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn browser_events() -> Vec<Event> {
+        vec![
+            Event { name: "Late Guard".into(), delay_seconds: 125, repeat: true,
+                actions: vec![Action { text: "Hold POSITION".into(), team: 7, other_team: 6, ..Default::default() }],
+                ..Default::default() },
+            Event { name: "Wave".into(), delay_seconds: 10,
+                actions: vec![Action { kind: 2, alias: "GER_INF01".into(), count: 12, team: 2, other_team: 3,
+                    move_destination: Some(WorldPosition { x: 123, z: 456 }), ..Default::default() },
+                    Action { kind: 1, team: 4, other_team: 5, hostile: false, ..Default::default() }],
+                ..Default::default() },
+            Event { name: "Disabled".into(), delay_seconds: 10, enabled: false,
+                actions: vec![Action { kind: 3, text: "Victory text".into(), ..Default::default() }], ..Default::default() },
+            Event { name: "End".into(), delay_seconds: 0,
+                actions: vec![Action { kind: 4, text: "Defeat text".into(), ..Default::default() }], ..Default::default() },
+        ]
+    }
+    #[test]
+    fn event_browser_combined_filters_and_case_insensitive_search() {
+        let events = browser_events();
+        for (query, expected) in [("lAtE gUaRd", vec![0]), ("PoSiTiOn", vec![0]), ("ger_inf01", vec![1]),
+            ("  GER_inf01  ", vec![1]), ("不存在", vec![]), ("", vec![0, 1, 2, 3])] {
+            assert_eq!(EventBrowser { search: query.into(), ..Default::default() }.indices(&events), expected);
+        }
+        for team in 0..=7 {
+            let expected: Vec<_> = events.iter().enumerate().filter(|(_, e)|
+                e.actions.iter().any(|a| a.team == team || a.other_team == team)).map(|(i, _)| i).collect();
+            assert_eq!(EventBrowser { team: Some(team), ..Default::default() }.indices(&events), expected);
+        }
+        for (kind, expected) in [(0, vec![0]), (1, vec![1]), (2, vec![1]), (3, vec![2]), (4, vec![3])] {
+            assert_eq!(EventBrowser { kind: Some(kind), ..Default::default() }.indices(&events), expected);
+        }
+        let mut filter = EventBrowser { search: "GER_INF01".into(), team: Some(5), kind: Some(2), enabled_only: true, time_order: true };
+        // 各篩選套用於事件；隊伍與種類可由不同動作符合。
+        assert_eq!(filter.indices(&events), vec![1]);
+        filter.team = Some(7);
+        assert!(filter.indices(&events).is_empty());
+        filter = EventBrowser { kind: Some(3), enabled_only: true, ..Default::default() };
+        assert!(filter.indices(&events).is_empty());
+        assert!(EventBrowser::default().indices(&[]).is_empty());
+    }
+    #[test]
+    fn event_browser_bilingual_summaries() {
+        let mut events = browser_events();
+        events[1].conditions = (0..=2).map(|kind| Condition { kind, ..Default::default() }).collect();
+        assert_eq!(event_summary(&events[0], true), "Delay 2:05 / repeat | 0 conditions [] | Message: Hold POSITION");
+        assert_eq!(event_summary(&events[0], false), "延遲 2:05 / 重複 | 0 條件 [] | 訊息: Hold POSITION");
+        assert_eq!(event_summary(&events[1], true), "Delay 0:10 / once | 3 conditions [Object exists, Dead or removed, Inside rectangle] | Spawn: 12 × GER_INF01 / team 2 / destination (123, 456); Diplomacy: team 4 ↔ 5 / hostile=false");
+        assert_eq!(event_summary(&events[1], false), "延遲 0:10 / 單次 | 3 條件 [物件存在, 死亡或已移除, 位於矩形區域] | 生成: 12 × GER_INF01 / 隊伍 2 / 目的地 (123, 456); 外交: 隊伍 4 ↔ 5 / 敵對=false");
+        for en in [false, true] {
+            assert!(event_summary(&events[2], en).contains(&format!("{}: Victory text", action_kind_label(3, en))));
+            assert!(event_summary(&events[3], en).contains(&format!("{}: Defeat text", action_kind_label(4, en))));
+            events[1].actions[0].move_destination = None;
+            events[1].actions[1].hostile = true;
+            let text = event_summary(&events[1], en);
+            assert!(text.contains(tl(en, "目的地 無", "destination None")));
+            assert!(text.contains(tl(en, "敵對=true", "hostile=true")));
+        }
+    }
+    #[test]
+    fn event_browser_sort_preserves_source_indices_and_selection() {
+        let events = browser_events();
+        let snapshot = events.clone();
+        let mut browser = EventBrowser { time_order: true, ..Default::default() };
+        assert_eq!(browser.indices(&events), vec![3, 1, 2, 0]);
+        browser.enabled_only = true;
+        assert_eq!(browser.indices(&events), vec![3, 1, 0]);
+        browser.time_order = false;
+        assert_eq!(browser.indices(&events), vec![0, 1, 3]);
+        assert!(selection_hidden(2, &events, &browser.indices(&events)));
+        assert!(!selection_hidden(1, &events, &browser.indices(&events)));
+        assert!(!selection_hidden(0, &[], &[]));
+        assert_eq!(events, snapshot);
+    }
+    #[test]
+    fn event_browser_ui_preserves_selection_undo_dirty_and_compiled_bytes() {
+        let p = source();
+        let mut scenario_ui = ScenarioUi::default();
+        scenario_ui.load_now(&p).unwrap();
+        scenario_ui.document.events = browser_events();
+        scenario_ui.aliases = vec!["GER_INF01".into()];
+        scenario_ui.selected = 2;
+        let before = scenario_ui.preview().unwrap();
+        let snapshot = state_bytes(&scenario_ui.document, &scenario_ui.camera).unwrap();
+        scenario_ui.baseline = snapshot.clone();
+        let ctx = egui::Context::default();
+        for en in [false, true] {
+            scenario_ui.english = en;
+            for search in ["", "ger_inf01", "no matches"] {
+                for time_order in [false, true] {
+                    scenario_ui.browser = EventBrowser { search: search.into(), enabled_only: true, time_order, ..Default::default() };
+                    let output = ctx.run(Default::default(), |ctx| {
+                        egui::CentralPanel::default().show(ctx, |ui| scenario_ui.show_event_browser(ui));
+                    });
+                    let text = format!("{:?}", output.shapes);
+                    assert!(text.contains(tl(en, "已選事件被篩選隱藏", "The selected event is hidden by filters")));
+                    assert!(text.contains(if en { "of 4" } else { "/ 4 個事件" }));
+                    assert_eq!(scenario_ui.selected, 2);
+                    assert!(!scenario_ui.dirty());
+                    assert!(!scenario_ui.can_undo_events());
+                    assert_eq!(state_bytes(&scenario_ui.document, &scenario_ui.camera).unwrap(), snapshot);
+                    assert_eq!(scenario_ui.preview().unwrap(), before);
+                }
+            }
+        }
+        fs::remove_dir_all(p).unwrap();
+    }
     #[test]
     fn objective_presets_equivalence_and_name_collisions() {
         let p = source();
