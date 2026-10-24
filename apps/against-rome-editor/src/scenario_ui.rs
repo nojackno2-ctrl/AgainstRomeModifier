@@ -274,6 +274,22 @@ impl ScenarioUi {
         self.document.events = self.events.capture();
         Ok(())
     }
+    /// 驗證並整批取代事件；所有動作共用一步復原，失敗時保留原狀。
+    pub(crate) fn replace_events(&mut self, items: Vec<Event>) -> Result<()> {
+        if !self.is_loaded() {
+            return Err("劇本尚未載入。".into());
+        }
+        let mut draft = self.document.clone();
+        draft.events = items;
+        self.validate_draft(&draft)?;
+        self.sync_session();
+        self.events.replace_all(&draft.events)?;
+        self.document = draft;
+        self.clamp_selected();
+        self.error = None;
+        self.refresh_graph_after_event_change();
+        Ok(())
+    }
     pub fn undo_events(&mut self) -> bool {
         self.sync_session();
         let changed = self.events.undo();

@@ -421,6 +421,25 @@ impl MapDesignValidator {
             });
         }
 
+        // --- 3c. 敵方波次是否已設定移動目的地 ---
+        for event in request.events.iter().filter(|e| e.enabled) {
+            for action in event.actions.iter().filter(|a| {
+                a.kind == 2 && (1..=7).contains(&a.team) && a.move_destination.is_none()
+            }) {
+                issues.push(MapDesignIssue {
+                    severity: DesignIssueSeverity::Warning,
+                    code: "wave-no-destination".into(),
+                    chinese: format!("事件「{}」生成隊伍 {} 的部隊，但未設定移動目的地；部隊可能停在生成位置。請設定進攻目的地。", event.name, action.team),
+                    english: format!("Event '{}' spawns troops for team {} without a move destination; troops may stay at their spawn position. Set an attack destination.", event.name, action.team),
+                    object_alias: action.alias.clone(),
+                    team: action.team,
+                    world_x: Some(action.x),
+                    world_z: Some(action.z),
+                    object_id: Uuid::nil(),
+                });
+            }
+        }
+
         // --- 4. 劇本勝負判定事件檢查 ---
         let enabled_events: Vec<&Event> = request.events.iter().filter(|e| e.enabled).collect();
         let has_victory = enabled_events

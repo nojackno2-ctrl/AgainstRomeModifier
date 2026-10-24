@@ -208,6 +208,57 @@ pub enum TerrainBulkAction {
 }
 
 impl EditorApp {
+    /// 以目前地圖的玩家主屋為目標；沒有主屋時使用已啟用的玩家起始鏡頭。
+    pub(crate) fn wave_player_target(&self, path: &Path) -> Option<against_rome_scenario::WorldPosition> {
+        use against_rome_maps::design_validator::MapDesignValidator;
+        use against_rome_scenario::WorldPosition;
+        let position = |x: f64, z: f64| {
+            (x.is_finite() && z.is_finite() && (0.0..=16383.0).contains(&x)
+                && (0.0..=16383.0).contains(&z))
+                .then(|| WorldPosition { x: x.round() as i32, z: z.round() as i32 })
+        };
+        let document = self.scenario.document();
+        let objects = if self.placement.is_loaded() {
+            self.placement.objects()
+        } else {
+            against_rome_placement::ObjectStore::load(path).map(|s| s.objects()).unwrap_or_default()
+        };
+        for spawn in &document.spawns {
+            if !MapDesignValidator::is_main_house(&spawn.alias) {
+                continue;
+            }
+            let binding = document.data_slots.iter().find(|b| b.spawn_id == spawn.id);
+            let (team, x, z) = if let Some(binding) = binding {
+                let Some(object) = objects.iter().find(|o| o.slot as i32 == binding.slot && o.uid == binding.uid) else {
+                    continue;
+                };
+                (i32::from(object.team), object.position[0], object.position[2])
+            } else {
+                (spawn.team, spawn.x, spawn.z)
+            };
+            if team == 0 {
+                if let Some(target) = position(x as f64, z as f64) { return Some(target); }
+            }
+        }
+        // 原生地圖的主屋可能只存在 DATA，未收錄於編輯器劇本。
+        if let Some(game) = path.parent().and_then(Path::parent) {
+            if let Ok(definitions) = against_rome_maps::NativeObjectDefinitions::load(game) {
+                for object in objects.iter().filter(|o| o.team == 0 && o.parent.is_none()) {
+                    if definitions.get(&i32::from(object.type_id))
+                        .and_then(|d| d.name.as_deref()).is_some_and(MapDesignValidator::is_main_house)
+                    {
+                        if let Some(target) = position(object.position[0] as f64, object.position[2] as f64) {
+                            return Some(target);
+                        }
+                    }
+                }
+            }
+        }
+        let camera = &self.campaign.start_camera;
+        camera.enabled.then(|| position(camera.x, camera.z)).flatten()
+    }
+
+
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         // Load the user's installed CJK font, without redistributing font files.
         #[cfg(windows)]
@@ -5351,6 +5402,90 @@ mod tests {
         assert!(app.scenario.undo_events());
         assert_eq!(app.scenario.document().events.len(), 1, "one undo removes the fix");
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    /// 波次目的地修正涵蓋面板點擊、主屋優先、鏡頭備援與無目標略過。
+    #[test]
+    fn design_check_quick_fix_sends_waves_to_player_base() {
+        use against_rome_scenario::{Action, Event, Spawn, WorldPosition};
+        for mode in ["house", "native", "pending_native", "camera", "no_target"] {
+            let root = temp_map_dir("wave_destination_root");
+            let dir = root.join("MAPS/ENDL_006");
+            std::fs::create_dir_all(dir.join("SCRIPT")).unwrap();
+            std::fs::create_dir_all(root.join("SYSTEM/CLAK")).unwrap();
+            std::fs::write(root.join("SYSTEM/CLAK/cl_scint.ini"),
+                "[ObjDefName]\nHUN_KAVINF00=FigHunKav00\nGER_HAU00=BauGerHau00_Haupthaus\n").unwrap();
+            std::fs::write(dir.join("SCRIPT/ak_level.bci"), against_rome_scenario::BciImage::idle().serialize()).unwrap();
+            let mut app = EditorApp::initial_state();
+            app.set_loaded_map(dir.clone(), TerrainSession::create_blank(33, 32)).unwrap();
+            app.scenario.load_session(&dir).unwrap();
+            let action = |team, destination| Action {
+                kind: 2, team, alias: "HUN_KAVINF00".into(), count: 3,
+                x: 4000.0, z: 4000.0, move_destination: destination, ..Default::default()
+            };
+            app.scenario.add_events(&[
+                Event { name: "Wave_01".into(), actions: vec![action(1, None), action(2, None),
+                    action(0, None), action(3, Some(WorldPosition { x: 100, z: 200 }))], ..Default::default() },
+                Event { name: "Wave_02".into(), actions: vec![action(7, None)], ..Default::default() },
+                Event { name: "Disabled".into(), enabled: false, actions: vec![action(4, None)], ..Default::default() },
+            ]).unwrap();
+            // 敵方主屋不可作為玩家的進攻目標。
+            app.scenario.apply_spawns(vec![Spawn { alias: "GER_HAU00".into(), team: if mode == "house" { 0 } else { 1 },
+                x: 6000.0, z: 7000.0, count: 0, id: uuid::Uuid::new_v4(), ..Default::default() }]).unwrap();
+            app.campaign.start_camera.enabled = mode != "no_target";
+            app.campaign.start_camera.x = 8000.0;
+            app.campaign.start_camera.z = 9000.0;
+            if mode == "native" || mode == "pending_native" {
+                make_test_placement_fixture(&dir, 10001);
+                std::fs::create_dir_all(root.join("SYSTEM/DATA_MP/DEFAULTS")).unwrap();
+                let mut fields = vec!["0".to_string(); 53];
+                fields[52] = "BauGerHau00_Haupthaus".into();
+                std::fs::write(root.join("SYSTEM/DATA_MP/DEFAULTS/objdef.dau"), format!("[ObjectDefaults]\n{}\n", fields.join(","))).unwrap();
+                if mode == "pending_native" {
+                    app.placement.load_session(&dir).unwrap();
+                    app.placement.select_object(Some((0, 10001)));
+                    app.placement.set_delta(["1000".into(), "0".into(), "2000".into()]);
+                    app.placement.move_family().unwrap();
+                }
+            }
+            let disk_before = save_artifact_snapshot(&dir);
+            let before = app.scenario.document().events.clone();
+            let ctx = egui::Context::default();
+            gui_click(&mut app, &ctx, "Design Check");
+            assert!(design_codes(&app).contains(&"wave-no-destination".to_string()));
+            gui_click(&mut app, &ctx, "Send waves toward the player base");
+            if mode == "no_target" {
+                assert_eq!(app.scenario.document().events, before);
+                assert!(app.status_message.contains("Skipped"), "{}", app.status_message);
+                assert!(design_codes(&app).contains(&"wave-no-destination".to_string()));
+                assert!(app.scenario.undo_events());
+                assert!(app.scenario.document().events.is_empty(), "略過不可新增復原紀錄");
+            } else {
+                let target = match mode {
+                    "house" => WorldPosition { x: 6000, z: 7000 },
+                    "native" => WorldPosition { x: 1, z: 0 },
+                    "pending_native" => WorldPosition { x: 1001, z: 2000 },
+                    _ => WorldPosition { x: 8000, z: 9000 },
+                };
+                let mut expected = before.clone();
+                for (event, action) in [(0, 0), (0, 1), (1, 0)] {
+                    expected[event].actions[action].move_destination = Some(target.clone());
+                }
+                assert_eq!(app.scenario.document().events, expected);
+                assert!(!design_codes(&app).contains(&"wave-no-destination".to_string()));
+                assert!(!app.status_is_error && app.status_message.contains("Save"), "{}", app.status_message);
+                assert!(app.scenario.dirty());
+                assert_eq!(app.fix_wave_destinations().unwrap(), 0);
+                assert!(app.scenario.undo_events());
+                assert_eq!(app.scenario.document().events, before, "所有波次一步復原");
+                app.run_design_check();
+                assert!(design_codes(&app).contains(&"wave-no-destination".to_string()));
+                assert!(app.scenario.redo_events());
+                assert_eq!(app.scenario.document().events, expected);
+            }
+            assert_eq!(save_artifact_snapshot(&dir), disk_before, "修正前後不可寫入地圖檔案");
+            std::fs::remove_dir_all(root).unwrap();
+        }
     }
 
     /// Opening the Scenario panel on an opened map loads its script on demand; events added from

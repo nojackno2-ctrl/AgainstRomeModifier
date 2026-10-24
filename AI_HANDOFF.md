@@ -1,3 +1,10 @@
+## 2026-10-24 Codex：波次目的地提醒與一鍵修正（自動化驗證通過）
+
+- 變更：新增雙語 Warning `wave-no-destination`（啟用事件、kind 2、隊伍 1–7、目的地 None）。Design Check 新增「Send waves toward the player base／讓波次進攻玩家主屋」，優先玩家主屋（含原生 DATA 與未存檔放置位置），否則已啟用起始鏡頭；無目標略過並提示。整批補值共用一步 undo/redo，重新檢查並提醒存檔。`ScenarioUi::replace_events` 驗證後原子套用；既有 SpawnUnit checkbox＋X/Z 可設定／清除，未新增重複 UI。
+- 測試：新增診斷篩選測試與真實面板點擊測試（主屋、原生主屋、未存檔移動、鏡頭備援、無目標、保留既有目的地／玩家／停用事件、一步復原、地圖檔案不變）。`cargo test --workspace --locked --offline --target-dir re_workspace/codex-wave-dest-target` exit 0：283 組，**2,366 passed／0 failed／24 ignored**；完整輸出 `re_workspace/wave-dest-workspace-test.log`。同參數 `cargo check`、`cargo build` 均 exit 0，log 為 `wave-dest-workspace-check.log`／`wave-dest-workspace-build.log`；工具鏈 `x86_64-pc-windows-msvc`，無連結錯誤。
+- 已解決：首次 check 私有欄位存取改由 app 模組解析；新增測試漏寫 uuid::Uuid 前綴、objdef fixture 缺少 [ObjectDefaults] 已修正，focused 測試 1 passed，完整重跑通過。保留失敗 log 於 `re_workspace/wave-dest-workspace-test-initial.log`／`wave-dest-workspace-test-fixture-failure.log`。
+- 待驗證：遊戲內波次移動／進攻效果。本次未觸及 installed game，未 stage/commit/push，AGENTS.md／README.md 既有變更完整保留。
+
 ## 2026-10-23 Claude：實機確認一鍵敵對修正生效（已驗證）
 
 - 使用者關閉 Windows 輸入面板後重試（遊戲可正常點擊）。以 Rust 編輯器把 ENDL_005 的 Wave_02 移到 10 秒、主屋旁，再呼叫 `fix_hostile_waves`（加入 1 個「隊伍 0 對 1 敵對」外交事件）並 Safe Save。

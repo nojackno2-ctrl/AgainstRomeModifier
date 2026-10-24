@@ -351,6 +351,40 @@ impl EditorApp {
         Ok(events.len())
     }
 
+    /// 僅補上啟用中敵方生成動作缺少的目的地，整批驗證後以一步復原套用。
+    pub fn fix_wave_destinations(&mut self) -> Result<usize, String> {
+        match self.design_check_report() {
+            DesignCheckReport::Unavailable(e) => return Err(e),
+            DesignCheckReport::Checked { design_issues, .. } => {
+                if !design_issues.iter().any(|i| i.code == "wave-no-destination") {
+                    self.run_design_check();
+                    return Ok(0);
+                }
+            }
+        }
+        let path = self.loaded_map_path.clone().ok_or_else(|| tr(self.lang(), "No map loaded.", "尚未載入地圖。").to_string())?;
+        if !self.scenario.is_loaded() {
+            self.scenario.load_session(&path)?;
+        }
+        let Some(target) = self.wave_player_target(&path) else {
+            self.run_design_check();
+            return Err(tr(self.lang(),
+                "Skipped: no player main building or enabled start camera. Set a target and retry.",
+                "已略過：找不到玩家主屋或已啟用的起始鏡頭。請設定目標後重試。").into());
+        };
+        let mut events = self.scenario.document().events.clone();
+        let mut count = 0;
+        for event in events.iter_mut().filter(|e| e.enabled) {
+            for action in event.actions.iter_mut().filter(|a| a.kind == 2 && (1..=7).contains(&a.team) && a.move_destination.is_none()) {
+                action.move_destination = Some(target.clone());
+                count += 1;
+            }
+        }
+        if count > 0 { self.scenario.replace_events(events)?; }
+        self.run_design_check();
+        Ok(count)
+    }
+
     pub fn show_design_check(&mut self, ctx: &egui::Context) {
         if !self.design_check.open {
             return;
@@ -359,6 +393,7 @@ impl EditorApp {
         let mut open = true;
         let mut rerun = false;
         let mut fix_hostility = false;
+        let mut fix_destination = false;
         let mut locate: Option<usize> = None;
         let rows = match &self.design_check.report {
             Some(report) => report_rows(report, &self.design_check.extra_issues, lang),
@@ -369,7 +404,7 @@ impl EditorApp {
             .open(&mut open)
             .default_width(600.0)
             .show(ctx, |ui| {
-                ui.horizontal(|ui| {
+                ui.horizontal_wrapped(|ui| {
                     if ui.button(tr(lang, "Re-run check", "重新檢查")).clicked() {
                         rerun = true;
                     }
@@ -379,6 +414,11 @@ impl EditorApp {
                             .clicked()
                     {
                         fix_hostility = true;
+                    }
+                    if rows.iter().any(|r| r.code == "wave-no-destination")
+                        && ui.button(tr(lang, "Send waves toward the player base", "讓波次進攻玩家主屋")).clicked()
+                    {
+                        fix_destination = true;
                     }
                     let can_locate = selected
                         .and_then(|i| rows.get(i))
@@ -392,8 +432,8 @@ impl EditorApp {
                 });
                 ui.label(tr(
                     lang,
-                    "Checks the current in-memory state; nothing is saved or changed.",
-                    "檢查目前記憶體中的狀態；不會儲存或變更任何內容。",
+                    "Checks the current in-memory state. Quick fixes can be undone; Save to write changes.",
+                    "檢查目前記憶體中的狀態。一鍵修正可復原；變更後請存檔。",
                 ));
                 ui.separator();
                 match &self.design_check.report {
@@ -453,6 +493,24 @@ impl EditorApp {
             match self.fix_hostile_waves() {
                 Ok(n) => {
                     self.status_message = format!("Added {n} hostile diplomacy event(s); Save to write them.");
+                    self.status_is_error = false;
+                }
+                Err(e) => {
+                    self.status_message = e;
+                    self.status_is_error = true;
+                }
+            }
+        } else if fix_destination {
+            match self.fix_wave_destinations() {
+                Ok(n) if n > 0 => {
+                    self.status_message = match lang {
+                        AppLanguage::English => format!("Set destinations for {n} wave action(s); Save to write them."),
+                        _ => format!("已設定 {n} 個波次動作的目的地；請存檔以寫入變更。"),
+                    };
+                    self.status_is_error = false;
+                }
+                Ok(_) => {
+                    self.status_message = tr(lang, "No wave destinations changed.", "未變更波次目的地。").into();
                     self.status_is_error = false;
                 }
                 Err(e) => {

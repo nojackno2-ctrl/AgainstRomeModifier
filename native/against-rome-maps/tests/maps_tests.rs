@@ -412,6 +412,31 @@ fn test_map_design_validator_is_main_house() {
 }
 
 #[test]
+fn test_event_wave_destination_warning() {
+    let flagged = |enabled, team, kind, destination| {
+        MapDesignValidator::validate(&MapDesignValidationRequest {
+            events: vec![Event {
+                name: "Wave".into(), enabled,
+                actions: vec![Action { kind, team, move_destination: destination, ..Default::default() }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        }).into_iter().filter(|i| i.code == "wave-no-destination").collect::<Vec<_>>()
+    };
+    for team in 1..=7 {
+        let issues = flagged(true, team, 2, None);
+        assert_eq!(issues.len(), 1);
+        assert_eq!(issues[0].severity, against_rome_maps::design_validator::DesignIssueSeverity::Warning);
+        assert_eq!(issues[0].team, team);
+        assert!(issues[0].chinese.contains("目的地") && issues[0].english.contains("destination"));
+        assert!(flagged(true, team, 2, Some(against_rome_scenario::WorldPosition { x: 100, z: 200 })).is_empty());
+        assert!(flagged(false, team, 2, None).is_empty());
+    }
+    for team in [-1, 0, 8] { assert!(flagged(true, team, 2, None).is_empty()); }
+    assert!(flagged(true, 1, 1, None).is_empty());
+}
+
+#[test]
 fn test_map_design_validator_win_loss() {
     let spawns = vec![
         Spawn { alias: "GER_HAU00".into(), x: 5000.0, z: 5000.0, team: 0, count: 0, id: Uuid::new_v4(), ..Default::default() },
