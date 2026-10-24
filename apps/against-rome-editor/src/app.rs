@@ -631,19 +631,32 @@ impl EditorApp {
         };
         let mut map_issues = MapDiagnostics::check(&snapshot);
         if check_pending_data && (self.placement.is_dirty() || self.nature.session.is_dirty()) {
-            let candidate = self.replay_nature_candidate(
-                path, &self.nature.session, self.placement.detached_store()?,
-            )?;
-            let saved = against_rome_placement::ObjectStore::load(path)?;
-            let baseline = crate::design_check_ui::data_candidate_issues(&saved, &snapshot);
-            for mut issue in crate::design_check_ui::data_candidate_issues(&candidate, &snapshot) {
-                if !baseline.contains(&issue) {
-                    issue.chinese.push_str("（未儲存）");
-                    issue.english.push_str(" (unsaved)");
+            let pending = (|| {
+                let candidate = self.replay_nature_candidate(
+                    path, &self.nature.session, self.placement.detached_store()?,
+                )?;
+                let saved = against_rome_placement::ObjectStore::load(path)?;
+                Ok::<_, String>((candidate, saved))
+            })();
+            match pending {
+                Ok((candidate, saved)) => {
+                    let baseline = crate::design_check_ui::data_candidate_issues(&saved, &snapshot);
+                    for mut issue in crate::design_check_ui::data_candidate_issues(&candidate, &snapshot) {
+                        if !baseline.contains(&issue) {
+                            issue.chinese.push_str("（未儲存）");
+                            issue.english.push_str(" (unsaved)");
+                        }
+                        if !map_issues.contains(&issue) {
+                            map_issues.push(issue);
+                        }
+                    }
                 }
-                if !map_issues.contains(&issue) {
-                    map_issues.push(issue);
-                }
+                Err(error) => map_issues.push(against_rome_maps::diagnostics::MapIssue::new(
+                    against_rome_maps::diagnostics::MapIssueSeverity::Warning,
+                    "pending-data-unchecked",
+                    format!("未儲存的物件／自然地景變更無法檢查：{error}"),
+                    format!("Unsaved Objects/Nature edits could not be checked: {error}"),
+                )),
             }
         }
         let design = ScenarioSavePreflight::validate(&document, &aliases)
@@ -5150,6 +5163,38 @@ mod tests {
                 .collect(),
             other => panic!("check unavailable: {other:?}"),
         }
+    }
+
+    #[test]
+    fn design_check_pending_data_failure_preserves_report() {
+        let dir = temp_map_dir("pending_data_failure");
+        pending_placement_fixture(&dir);
+        let mut app = EditorApp::initial_state();
+        app.session = Some(TerrainSession::create_blank(5, 32));
+        app.map_path_input = dir.display().to_string();
+        app.placement.load_session(&dir).unwrap();
+        app.placement.select_object(Some((0, 1)));
+        app.placement.set_delta(["200".into(), "0".into(), "0".into()]);
+        app.placement.move_family().unwrap();
+        // 保留檔案但破壞格式，觸發 ObjectStore 載入時的封閉失敗檢查。
+        std::fs::write(dir.join("DATA/objects.dat"), []).unwrap();
+        let error = against_rome_placement::ObjectStore::load(&dir).err().unwrap();
+        let baseline = app.candidate_diagnostics(&dir, &[]).unwrap();
+        let report = app.design_check_report();
+        let codes = design_check_codes(&report);
+        assert!(codes.iter().any(|code| code != "pending-data-unchecked"));
+        let crate::design_check_ui::DesignCheckReport::Checked { map_issues, .. } = report else {
+            panic!("候選失敗後仍應提供檢查報告");
+        };
+        let warnings: Vec<_> = map_issues.iter()
+            .filter(|issue| issue.code == "pending-data-unchecked").collect();
+        assert_eq!(warnings.len(), 1);
+        assert_eq!(warnings[0].severity, against_rome_maps::diagnostics::MapIssueSeverity::Warning);
+        assert_eq!(warnings[0].english, format!("Unsaved Objects/Nature edits could not be checked: {error}"));
+        assert_eq!(warnings[0].chinese, format!("未儲存的物件／自然地景變更無法檢查：{error}"));
+        assert!(baseline.map_issues.iter().all(|issue| map_issues.contains(issue)));
+        assert!(!baseline.map_issues.iter().any(|issue| issue.code == "pending-data-unchecked"));
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

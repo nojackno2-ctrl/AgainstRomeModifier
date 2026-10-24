@@ -1,7 +1,7 @@
 ## 2026-10-25 Codex：未儲存 DATA 設計檢查
 - Objects／Nature 髒工作階段以 detached_store／replay_nature_candidate 重用既有座標、重疊及 family_details 連結檢查；比對已儲存 DATA，僅候選新增問題附雙語未儲存標記。乾淨工作階段維持原行為；全程唯讀。
 - TEMP 移動重疊／雙語未儲存標記／Undo／乾淨狀態／檔案快照測試通過。首輪共用入口誤影響 Nature Safe Save，已限定新增檢查只用於 Design Check，既有 Nature 測試重跑通過。最終 cargo check、cargo build --workspace --locked --offline --target-dir re_workspace/codex-wave-dest-target 均 exit 0；cargo test --workspace --locked --offline --no-fail-fast --target-dir re_workspace/codex-wave-dest-target：exit 0，283 組、2497 passed／0 failed／24 ignored，日誌 re_workspace/pending-data-check-test.log。git diff --check 通過。未驗收實際 GUI；未 stage／commit，保留 AGENTS.md／README.md 原有變更，未碰遊戲目錄。
-- Claude 審查＋父端重跑：2,497 passed／0 failed／24 ignored（`re_workspace/pending-data-check-claude-test.log`）。Safe Save 路徑仍以 `false` 呼叫，不受影響。待改：候選重播（`replay_nature_candidate`）失敗時整個 Design Check 會回報錯誤，宜改為一則警告並仍顯示其他問題。
+- Claude 審查＋父端重跑：2,497 passed／0 failed／24 ignored（`re_workspace/pending-data-check-claude-test.log`）。Safe Save 路徑仍以 `false` 呼叫，不受影響。已修正：候選建立（detached_store／replay_nature_candidate／ObjectStore::load）失敗時保留一般報告，僅加入一則雙語 Warning（pending-data-unchecked）；Safe Save false 路徑不變。新增 TEMP 損壞 DATA 格式回歸測試，已通過；cargo test -p against-rome-editor-app --locked --offline --target-dir re_workspace/codex-wave-dest-target：exit 0，23 組、819 passed／0 failed／6 ignored；git diff --check 通過，日誌 re_workspace/pending-data-warning-test.log。未 stage／commit。
 
 ## 2026-10-25 Codex：氛圍儲存邊界（已驗證，未提交）
 - 依 stage_boden_ini_bytes／BodenIniSerializer 確認 profile 僅 boden 有地圖序列化；共用欄位清單與預覽差異檢查，加入雙語標示及面板／Safe Save 的僅預覽重設，保留持久編輯與髒狀態。重新載入還原無序列化欄位的預設基準。
