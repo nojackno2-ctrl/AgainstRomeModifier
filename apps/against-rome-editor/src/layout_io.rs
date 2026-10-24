@@ -70,6 +70,12 @@ pub fn with_default_extension(path: &Path) -> PathBuf {
 pub fn write_layout_file(path: &Path, preset: &MapLayoutPreset) -> Result<PathBuf, String> {
     let json = serialize(preset)?;
     let target = with_default_extension(path);
+    write_json_atomic(&target, &json)?;
+    Ok(target)
+}
+
+/// 配置共用的原子寫入；呼叫端先完成格式驗證。
+pub fn write_json_atomic(target: &Path, json: &str) -> Result<(), String> {
     let mut temp_name = target.file_name().map(|n| n.to_os_string()).unwrap_or_default();
     temp_name.push(".tmp");
     let temp = target.with_file_name(temp_name);
@@ -78,18 +84,23 @@ pub fn write_layout_file(path: &Path, preset: &MapLayoutPreset) -> Result<PathBu
         let _ = std::fs::remove_file(&temp);
         format!("{}: {e}", target.display())
     })?;
-    Ok(target)
+    Ok(())
 }
 
 /// Reads and validates a layout file (rejects > 2 MB before reading it).
 pub fn read_layout_file(path: &Path) -> Result<MapLayoutPreset, String> {
+    deserialize(&read_json_file(path)?)
+}
+
+/// 共用配置讀取與檔案大小限制。
+pub fn read_json_file(path: &Path) -> Result<String, String> {
     let meta = std::fs::metadata(path).map_err(|e| format!("{}: {e}", path.display()))?;
     if meta.len() > MAX_LAYOUT_BYTES as u64 {
         return Err("Layout is too large.".into());
     }
     let bytes = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
     let text = String::from_utf8(bytes).map_err(|_| "Layout is not valid UTF-8.".to_string())?;
-    deserialize(&text)
+    Ok(text)
 }
 
 // ------------------------------------------------------------------ JSON (System.Text.Json compatible)

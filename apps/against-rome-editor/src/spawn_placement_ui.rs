@@ -124,6 +124,11 @@ enum RowClick {
 }
 
 pub struct SpawnPlacementUi {
+    layout_picker: crate::layout_io::LayoutFilePicker,
+    pending_layout: Option<crate::spawn_layout::SpawnLayout>,
+    layout_remap: bool,
+    layout_from: i32,
+    layout_to: i32,
     pub open: bool,
     session: SpawnPlacementSession,
     catalog: Vec<SdlObjectType>,
@@ -169,6 +174,11 @@ pub struct SpawnPlacementUi {
 impl Default for SpawnPlacementUi {
     fn default() -> Self {
         Self {
+            layout_picker: crate::layout_io::native_layout_picker(),
+            pending_layout: None,
+            layout_remap: false,
+            layout_from: 0,
+            layout_to: 1,
             open: false,
             session: SpawnPlacementSession::new(),
             catalog: Vec::new(),
@@ -369,6 +379,7 @@ impl SpawnPlacementUi {
         let key = map.map(Path::to_path_buf);
         let spawns = &scenario.document().spawns;
         if key != self.map_key || *spawns != self.synced {
+            self.pending_layout = None;
             self.map_key = key;
             let (placed, foreign) = load_spawns(spawns, &self.catalog);
             self.session.load(&placed);
@@ -398,6 +409,22 @@ impl SpawnPlacementUi {
         self.synced = scenario.document().spawns.clone();
         self.selection.retain(|&i| i < self.session.count());
         Ok(())
+    }
+
+    /// 全部別名與位置先驗證，整份配置只建立一個復原命令。
+    fn import_layout(&mut self, scenario: &mut ScenarioUi, layout: &crate::spawn_layout::SpawnLayout,
+        anchor: (f32,f32), remap: Option<(i32,i32)>, lang: AppLanguage) -> Result<(usize,usize),String> {
+        let (spawns, clamped) = layout.plan(scenario.known_aliases(), anchor, remap)?;
+        let placed = spawns.iter().map(|s| spawn_to_placed(s, &self.catalog)
+            .ok_or_else(|| format!("Unknown alias / 未知別名：{}", s.alias))).collect::<Result<Vec<_>,_>>()?;
+        let old_len = self.loaded.len();
+        self.loaded.extend(spawns.iter().cloned());
+        if let Err(e) = self.mutate(scenario, lang, ("Invalid layout values", "配置數值無效"),
+            |session| session.add_many(&placed).map(|_| ())) {
+            self.loaded.truncate(old_len);
+            return Err(format!("Import rejected / 匯入遭拒：{e}"));
+        }
+        Ok((spawns.len(),clamped))
     }
 
     /// Runs one session command, then syncs the document; a rejected sync rolls the command back.
@@ -913,6 +940,24 @@ impl SpawnPlacementUi {
 
     pub fn show(&mut self, ctx: &egui::Context, scenario: &mut ScenarioUi, cx: &SpawnContext, map: Option<&Path>) {
         self.sync_with_document(scenario, map);
+        if let Some(anchor) = scenario.canvas.layout_anchor.take() {
+            if let Some(layout) = self.pending_layout.take() {
+                if self.guard(scenario, cx) {
+                    let remap = self.layout_remap.then_some((self.layout_from, self.layout_to));
+                    match self.import_layout(scenario, &layout, anchor, remap, cx.lang) {
+                        Ok((count, clamped)) => self.set_status(if cx.english() {
+                            format!("Imported {count} spawns; {clamped} spawns clamped. Save to write changes.")
+                        } else { format!("已匯入 {count} 個生成物件；{clamped} 個座標已限制於地圖範圍。請存檔以寫入變更。") }, false),
+                        Err(e) => self.set_status(e, true),
+                    }
+                }
+            }
+        } else if !matches!(scenario.canvas.pick, Some(crate::scenario_canvas::PickTarget::SpawnLayout)) {
+            self.pending_layout = None;
+        }
+        if self.pending_layout.is_none() && matches!(scenario.canvas.pick, Some(crate::scenario_canvas::PickTarget::SpawnLayout)) {
+            scenario.canvas.pick = None;
+        }
         self.ensure_sprite_catalog(map);
         if !self.open {
             self.place_mode = false;
@@ -955,6 +1000,53 @@ impl SpawnPlacementUi {
                     "選類型後啟用「在地圖上放置」並點擊 2D 地圖。隊伍 0-8 的建築於儲存時寫成預建 DATA 物件（開局即完工；找不到範本則為工地），其餘為腳本生成物件。可在 2D 地圖上點選或拖曳標記來選取／移動。人物以部隊建立，隊伍 0-7、人數 1-20；隊伍 0 為玩家。R／Shift+R 調整下次放置方向或旋轉選取物件 ±45°。清單：Ctrl+A 全選、Ctrl+方向鍵移動一格（Shift 為 64 單位）、Ctrl+D 複製、Delete 刪除。",
                 ));
                 ui.separator();
+                ui.horizontal_wrapped(|ui| {
+                    if ui.button(tr(lang, "Export script layout", "匯出腳本配置")).clicked() {
+                        let ids = self.selection.iter().filter_map(|&i| self.session.get(i).map(|p| p.scenario_id)).collect();
+                        let (layout, skipped) = crate::spawn_layout::SpawnLayout::capture(scenario.document(), &ids);
+                        let result = layout.serialize().and_then(|json| {
+                            let path = (self.layout_picker)(&crate::layout_io::LayoutDialogKind::Save {
+                                suggested_name: "spawns.arm-spawns.json".into() });
+                            if let Some(path) = path {
+                                crate::layout_io::write_json_atomic(&path, &json)?;
+                                Ok(true)
+                            } else { Ok(false) }
+                        });
+                        match result {
+                            Ok(true) => self.set_status(if en { format!("Export complete; skipped {skipped} bound/prebuilt spawns (DATA dependencies).") }
+                                else { format!("匯出完成；略過 {skipped} 個綁定／預建物件（依賴 DATA）。") }, false),
+                            Ok(false) => self.set_status(tr(lang, "Export cancelled.", "已取消匯出。"), false),
+                            Err(e) => self.set_status(format!("{e}; skipped / 略過 {skipped}: bound/prebuilt DATA / 綁定或預建 DATA"), true),
+                        }
+                    }
+                    if ui.add_enabled(!cx.read_only && scenario.is_loaded(), egui::Button::new(tr(lang, "Import script layout", "匯入腳本配置"))).clicked() {
+                        if let Some(path) = (self.layout_picker)(&crate::layout_io::LayoutDialogKind::Open) {
+                            let result: Result<crate::spawn_layout::SpawnLayout, String> = (|| {
+                                let text = crate::layout_io::read_json_file(&path).map_err(|e| format!("Read failed / 讀取失敗：{e}"))?;
+                                let layout = crate::spawn_layout::SpawnLayout::deserialize(&text)?;
+                                layout.plan(scenario.known_aliases(), (8192.,8192.), None)?;
+                                Ok(layout)
+                            })();
+                            match result {
+                                Ok(layout) => {
+                                    self.pending_layout = Some(layout);
+                                    self.place_mode = false;
+                                    scenario.canvas.layout_anchor = None;
+                                    scenario.canvas.pick = Some(crate::scenario_canvas::PickTarget::SpawnLayout);
+                                    self.set_status(tr(lang, "Click the 2D map for the layout anchor; Esc/right-click cancels.", "點擊 2D 地圖選取配置錨點；Esc／右鍵取消。"), false);
+                                }
+                                Err(e) => self.set_status(e, true),
+                            }
+                        }
+                    }
+                });
+                ui.horizontal(|ui| {
+                    ui.checkbox(&mut self.layout_remap, tr(lang, "Remap team", "重新對應隊伍"));
+                    ui.label(tr(lang, "Source", "來源"));
+                    ui.add(egui::DragValue::new(&mut self.layout_from).clamp_range(-1..=15));
+                    ui.label(tr(lang, "Target", "目標"));
+                    ui.add(egui::DragValue::new(&mut self.layout_to).clamp_range(-1..=15));
+                });
                 // Palette filters
                 ui.horizontal_wrapped(|ui| {
                     ui.label(tr(lang, "Category", "類別"));
@@ -1495,6 +1587,36 @@ impl SpawnPlacementUi {
 #[cfg(test)]
 mod palette_thumbnail_tests {
     use super::*;
+
+    #[test]
+    fn spawn_layout_import_is_one_undo_and_unknown_alias_leaves_document_unchanged() {
+        let root = std::env::temp_dir().join(format!("arm_spawn_layout_{}",Uuid::new_v4()));
+        let map = root.join("MAPS/layout");
+        std::fs::create_dir_all(map.join("SCRIPT")).unwrap();
+        std::fs::create_dir_all(root.join("SYSTEM/CLAK")).unwrap();
+        std::fs::write(root.join("SYSTEM/CLAK/cl_scint.ini"),"[ObjDefName]\nhouse=BauRomHaus\n").unwrap();
+        std::fs::write(map.join("SCRIPT/ak_level.bci"),against_rome_scenario::BciImage::idle().serialize()).unwrap();
+        let mut scenario = ScenarioUi::default(); scenario.load_session(&map).unwrap();
+        let mut panel = SpawnPlacementUi::default(); panel.sync_with_document(&scenario,Some(&map));
+        let before = scenario.document().clone();
+        let spawn = Spawn {alias:"house".into(),x:0.,z:0.,y:3.5,team:2,count:0,angle:405,id:Uuid::new_v4(),..Default::default()};
+        let layout = crate::spawn_layout::SpawnLayout(vec![spawn.clone(),Spawn {x:100.,..spawn.clone()}]);
+        assert_eq!(panel.import_layout(&mut scenario,&layout,(1000.,1000.),Some((2,4)),AppLanguage::English).unwrap(),(2,0));
+        assert_eq!(panel.session.undo_depth(),1);
+        assert_eq!(scenario.document().spawns[0].angle,405);
+        assert_eq!(scenario.document().spawns[0].y,3.5);
+        assert_eq!(scenario.document().spawns[0].team,4);
+        assert_ne!(scenario.document().spawns[0].id,scenario.document().spawns[1].id);
+        let cx = SpawnContext {lang:AppLanguage::English,heights:None,vertex_size:0,height_step:4.,read_only:false};
+        assert!(panel.undo(&mut scenario,&cx)); assert_eq!(*scenario.document(),before);
+        assert!(panel.redo(&mut scenario,&cx));
+        let before = scenario.document().clone(); let depth = panel.session.undo_depth();
+        let invalid = crate::spawn_layout::SpawnLayout(vec![spawn.clone(),Spawn {alias:"missing_a".into(),..spawn.clone()},Spawn {alias:"missing_b".into(),..spawn}]);
+        let error = panel.import_layout(&mut scenario,&invalid,(1000.,1000.),None,AppLanguage::English).unwrap_err();
+        assert!(error.contains("missing_a") && error.contains("missing_b"));
+        assert_eq!(*scenario.document(),before); assert_eq!(panel.session.undo_depth(),depth);
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn native_argb_sprite_converts_to_rgba_color_image() {

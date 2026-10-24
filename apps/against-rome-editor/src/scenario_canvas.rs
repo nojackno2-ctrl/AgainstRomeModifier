@@ -4,12 +4,14 @@ use eframe::egui::{self, Color32, Pos2, Rect, Stroke};
 
 #[derive(Clone)]
 pub(crate) enum PickTarget {
+    SpawnLayout,
     Condition { event: usize, condition: usize, snapshot: Event },
     Event { event: usize, action: usize, destination: bool, snapshot: Event },
     Wave { destination: bool },
 }
 
 pub(crate) struct ScenarioCanvas {
+    pub layout_anchor: Option<(f32, f32)>,
     pub show: bool,
     pub pick: Option<PickTarget>,
     holding: bool,
@@ -18,7 +20,7 @@ pub(crate) struct ScenarioCanvas {
 
 impl Default for ScenarioCanvas {
     fn default() -> Self {
-        Self { show: true, pick: None, holding: false, drag: None }
+        Self { show: true, pick: None, holding: false, drag: None, layout_anchor: None }
     }
 }
 
@@ -46,13 +48,17 @@ impl ScenarioUi {
 
     pub(crate) fn pick_prompt(&self, en: bool) -> Option<&'static str> {
         self.canvas.pick.as_ref().map(|target| {
+            if matches!(target, PickTarget::SpawnLayout) {
+                return if en { "Pick layout anchor: left-click the 2D canvas; Esc/right-click cancels." }
+                else { "選取配置錨點：左鍵點擊 2D 畫布；Esc／右鍵取消。" };
+            }
             if matches!(target, PickTarget::Condition { .. }) {
                 return if en { "Draw rectangle: left-drag the 2D canvas; Esc/right-click cancels." }
                 else { "框選矩形：在 2D 畫布拖曳左鍵；Esc／右鍵取消。" };
             }
             let destination = match target {
                 PickTarget::Event { destination, .. } | PickTarget::Wave { destination } => *destination,
-                PickTarget::Condition { .. } => false,
+                PickTarget::Condition { .. } | PickTarget::SpawnLayout => false,
             };
             match (en, destination) {
                 (true, false) => "Pick spawn: left-click the 2D canvas; Esc/right-click cancels.",
@@ -112,6 +118,11 @@ impl ScenarioUi {
                 let point = WorldPosition { x: x.round().clamp(0., 16383.) as i32,
                     z: z.round().clamp(0., 16383.) as i32 };
                 self.canvas.holding = true;
+                if matches!(self.canvas.pick, Some(PickTarget::SpawnLayout)) {
+                    let _ = self.apply_canvas_pick(point);
+                    return (true, Some((if en { "Layout anchor picked; applying layout." }
+                        else { "已選取配置錨點；正在套用配置。" }.into(), false)));
+                }
                 let result = self.apply_canvas_pick(point.clone());
                 let status = match result {
                     Ok(wave) => (if en {
@@ -131,6 +142,10 @@ impl ScenarioUi {
 
     fn apply_canvas_pick(&mut self, point: WorldPosition) -> Result<bool, ()> {
         match self.canvas.pick.take().ok_or(())? {
+            PickTarget::SpawnLayout => {
+                self.canvas.layout_anchor = Some((point.x as f32, point.z as f32));
+                Ok(true)
+            }
             PickTarget::Condition { .. } => Err(()),
             PickTarget::Wave { destination } => {
                 let g = &mut self.wave_generator;
