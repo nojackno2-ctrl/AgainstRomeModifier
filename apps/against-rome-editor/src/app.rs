@@ -1394,6 +1394,7 @@ impl EditorApp {
         if let Some(intent) = self.maps.take_pending_build_intent() {
             self.pending_action = Some(PendingAction::BuildBlank(intent));
         }
+        self.environment.english = self.lang() == AppLanguage::English;
         self.environment.show(
             ctx,
             dim,

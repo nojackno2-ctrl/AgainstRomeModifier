@@ -976,6 +976,15 @@ impl LandscapeUi {
         }
     }
 
+    fn reset_enabled_erosion_parameters(&mut self) {
+        if self.erosion_enable_hydraulic {
+            self.erosion_hydraulic_params = HydraulicErosionParams { droplet_count: 8000, ..Default::default() };
+        }
+        if self.erosion_enable_thermal {
+            self.erosion_thermal_params = ThermalErosionParams::default();
+        }
+    }
+
     fn render_erosion_tab(&mut self, ui: &mut egui::Ui, cx: &LandscapeContext) {
         let (dim, _) = cx.geometry();
         ui.heading("Hydraulic & Thermal Erosion in Rectangle");
@@ -1079,11 +1088,7 @@ impl LandscapeUi {
 
                 ui.add_space(4.0);
                 if ui.button("Reset to Defaults").clicked() {
-                    self.erosion_hydraulic_params = HydraulicErosionParams {
-                        droplet_count: 8000,
-                        ..Default::default()
-                    };
-                    self.erosion_thermal_params = ThermalErosionParams::default();
+                    self.reset_enabled_erosion_parameters();
                 }
             });
 
@@ -1922,5 +1927,29 @@ mod tests {
         assert!(!ui.is_dirty());
         assert!(ui.last_erosion_plan.is_none());
         assert!(ui.status_message.contains("Erosion applied"));
+    }
+}
+
+#[cfg(test)]
+mod small_ux_tests {
+    use super::*;
+    #[test]
+    fn erosion_reset_preserves_disabled_mode() {
+        let mut ui = LandscapeUi::default();
+        ui.erosion_hydraulic_params.droplet_count = 123;
+        ui.erosion_thermal_params.iterations = 29;
+        ui.erosion_enable_hydraulic = true;
+        ui.erosion_enable_thermal = false;
+        let thermal = format!("{:?}", ui.erosion_thermal_params);
+        ui.reset_enabled_erosion_parameters();
+        assert_eq!(ui.erosion_hydraulic_params.droplet_count, 8000);
+        assert_eq!(format!("{:?}", ui.erosion_thermal_params), thermal);
+        ui.erosion_hydraulic_params.droplet_count = 456;
+        let hydraulic = format!("{:?}", ui.erosion_hydraulic_params);
+        ui.erosion_enable_hydraulic = false;
+        ui.erosion_enable_thermal = true;
+        ui.reset_enabled_erosion_parameters();
+        assert_eq!(format!("{:?}", ui.erosion_hydraulic_params), hydraulic);
+        assert_eq!(ui.erosion_thermal_params.iterations, ThermalErosionParams::default().iterations);
     }
 }

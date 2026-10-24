@@ -255,8 +255,31 @@ impl EventGraphUi {
         self.validate();
     }
 
-    /// Resets all map-bound event graph nodes, diagnostics, selections, and transient dragging/connecting states.
-    /// Preserves user preferences (open state, canvas pan, zoom, new-node-kind selection).
+    fn locate_node(&mut self, id: Uuid, canvas: Rect) -> bool {
+        let Some(node) = self.graph.nodes.iter().find(|n| n.id == id) else { return false; };
+        self.pan = canvas.size() * 0.5 - get_node_bounds_world(node).center().to_vec2() * self.zoom;
+        self.selected_nodes.clear();
+        self.selected_nodes.insert(id);
+        true
+    }
+
+    fn locate_button(&self, ui: &mut egui::Ui, id: Uuid) -> egui::Response {
+        ui.add_enabled(self.graph.nodes.iter().any(|n| n.id == id),
+            egui::Button::new("Locate / 定位"))
+    }
+
+    fn diagnostic_row(&self, ui: &mut egui::Ui, diagnostic: &GraphDiagnostic) -> bool {
+        let mut locate = false;
+        ui.horizontal(|ui| {
+            ui.label(format!("[{}] {}", diagnostic.code, diagnostic.message));
+            if let Some(id) = diagnostic.node_id {
+                locate = self.locate_button(ui, id).clicked();
+            }
+        });
+        locate
+    }
+
+    /// 清除地圖相關狀態，保留視角與使用者偏好。
     pub fn reset_session(&mut self) {
         self.graph = EventGraph::new();
         self.selected_nodes.clear();
@@ -469,7 +492,7 @@ impl EventGraphUi {
                 }
 
                 // 畫布主體區域
-                let canvas_size = ui.available_size() - Vec2::new(0.0, 60.0);
+                let canvas_size = ui.available_size() - Vec2::new(0.0, if self.diagnostics.is_empty() { 60.0 } else { 180.0 });
                 let (response, painter) = ui.allocate_painter(canvas_size.max(Vec2::new(200.0, 200.0)), Sense::click_and_drag());
                 let canvas_rect = response.rect;
 
@@ -688,6 +711,14 @@ impl EventGraphUi {
                         self.connecting_current_pos = None;
                     }
                 }
+
+                let mut locate = None;
+                egui::ScrollArea::vertical().id_source("graph_diagnostics").max_height(120.0).show(ui, |ui| {
+                    for diagnostic in &self.diagnostics {
+                        if self.diagnostic_row(ui, diagnostic) { locate = diagnostic.node_id; }
+                    }
+                });
+                if let Some(id) = locate { self.locate_node(id, canvas_rect); }
 
                 // 底部狀態列
                 ui.separator();
@@ -960,5 +991,39 @@ mod tests {
         ui.show(&ctx);
         let out = ctx.end_frame();
         assert!(!out.shapes.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod small_ux_tests {
+    use super::*;
+    #[test]
+    fn locate_selects_centers_and_missing_is_disabled() {
+        let mut ui = EventGraphUi::default();
+        let mut node = GraphNode::new_message_action("test");
+        node.x = 1300.0;
+        node.y = -500.0;
+        let id = node.id;
+        let center = get_node_bounds_world(&node).center();
+        ui.graph.nodes.push(node);
+        ui.zoom = 1.75;
+        ui.selected_nodes.insert(Uuid::nil());
+        let canvas = Rect::from_min_size(Pos2::new(40.0, 90.0), Vec2::new(800.0, 500.0));
+        assert!(ui.locate_node(id, canvas));
+        assert_eq!(ui.selected_nodes, HashSet::from([id]));
+        assert!((canvas.min + ui.pan + center.to_vec2() * ui.zoom).distance(canvas.center()) < 0.001);
+        let pan = ui.pan;
+        ui.graph.nodes.clear();
+        assert!(!ui.locate_node(id, canvas));
+        assert_eq!(ui.pan, pan);
+        assert_eq!(ui.selected_nodes, HashSet::from([id]));
+        let ctx = egui::Context::default();
+        let diagnostic = GraphDiagnostic::new(GraphDiagnosticSeverity::Error, "missing", "test").with_node(id);
+        let _ = ctx.run(Default::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |egui_ui| {
+                assert!(!ui.locate_button(egui_ui, id).enabled());
+                assert!(!ui.diagnostic_row(egui_ui, &diagnostic));
+            });
+        });
     }
 }

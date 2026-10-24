@@ -1,3 +1,7 @@
+## 2026-10-25 Codex：四項小型介面修正（已驗證、未提交）
+- 加入清除巢穴確認（取消保留、空資料不詢問）、捨棄對話雙語、診斷節點定位與失效停用；侵蝕重設僅處理已啟用模式，保留另一模式參數。新增 4 項測試。
+- 驗證：cargo check／build --workspace --locked --offline --target-dir re_workspace/codex-wave-dest-target 均 exit 0；指定 cargo test --workspace --locked --offline --no-fail-fast --target-dir re_workspace/codex-wave-dest-target exit 0，283 組、2502 passed、0 failed、24 ignored（re_workspace/small-ux-fixes-test.log）。最後整理後 small_ux_tests 另跑 4 passed（small-ux-fixes-focused.log）；未進行實體 GUI 驗收。
+- 未 stage／commit，未碰安裝遊戲；AGENTS.md／README.md 既有變更保持原樣。TEMP／TMP 維持系統設定。
 ## 2026-10-25 Codex：未儲存 DATA 設計檢查
 - Objects／Nature 髒工作階段以 detached_store／replay_nature_candidate 重用既有座標、重疊及 family_details 連結檢查；比對已儲存 DATA，僅候選新增問題附雙語未儲存標記。乾淨工作階段維持原行為；全程唯讀。
 - TEMP 移動重疊／雙語未儲存標記／Undo／乾淨狀態／檔案快照測試通過。首輪共用入口誤影響 Nature Safe Save，已限定新增檢查只用於 Design Check，既有 Nature 測試重跑通過。最終 cargo check、cargo build --workspace --locked --offline --target-dir re_workspace/codex-wave-dest-target 均 exit 0；cargo test --workspace --locked --offline --no-fail-fast --target-dir re_workspace/codex-wave-dest-target：exit 0，283 組、2497 passed／0 failed／24 ignored，日誌 re_workspace/pending-data-check-test.log。git diff --check 通過。未驗收實際 GUI；未 stage／commit，保留 AGENTS.md／README.md 原有變更，未碰遊戲目錄。

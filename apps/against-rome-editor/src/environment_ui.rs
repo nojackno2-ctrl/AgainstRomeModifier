@@ -211,6 +211,8 @@ pub struct EnvironmentUi {
 
     pub dirty: bool,
     pub pending_discard: bool,
+    pub english: bool,
+    pending_clear_lairs: bool,
     pub status_message: String,
     pub status_is_error: bool,
 }
@@ -261,6 +263,8 @@ impl Default for EnvironmentUi {
             layout_import_requested: false,
             dirty: false,
             pending_discard: false,
+            english: false,
+            pending_clear_lairs: false,
             status_message: "Ready.".to_string(),
             status_is_error: false,
         }
@@ -288,6 +292,7 @@ impl EnvironmentUi {
     /// Preserves user preferences (open state, current tab, biome, flora parameters/templates,
     /// lair selections, settlement options).
     pub fn reset_session(&mut self) {
+        self.pending_clear_lairs = false;
         self.dirty = false;
         self.pending_discard = false;
         self.generated_flora.clear();
@@ -683,6 +688,7 @@ impl EnvironmentUi {
                 self.last_nature_preset = None;
             }
         }
+        self.pending_clear_lairs = false;
         self.dirty = false;
         self.status_message = format!(
             "Queued {count} objects for {}.{note}{}",
@@ -808,6 +814,16 @@ impl EnvironmentUi {
         self.status_message = format!("Removed lair; {} remaining.", self.generated_lairs.len());
         self.status_is_error = false;
         true
+    }
+
+    fn request_clear_lairs(&mut self) {
+        self.pending_clear_lairs = !self.generated_lairs.is_empty()
+            || !self.generated_lair_events.is_empty() || !self.lair_event_counts.is_empty();
+    }
+
+    fn resolve_clear_lairs(&mut self, confirm: bool) {
+        if self.pending_clear_lairs && confirm { self.clear_lairs(); }
+        self.pending_clear_lairs = false;
     }
 
     pub fn clear_lairs(&mut self) {
@@ -940,21 +956,35 @@ impl EnvironmentUi {
             self.request_close();
         }
 
+        if self.pending_clear_lairs {
+            let mut answer = None;
+            egui::Window::new(tl(self.english, "清除所有巢穴？", "Clear All Lairs?"))
+                .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
+                .collapsible(false).resizable(false)
+                .show(ctx, |ui| {
+                    ui.label(tl(self.english, "將清除所有巢穴與事件草稿。", "Clear all lairs and event drafts."));
+                    ui.horizontal(|ui| {
+                        if ui.button(tl(self.english, "清除", "Clear")).clicked() { answer = Some(true); }
+                        if ui.button(tl(self.english, "取消", "Cancel")).clicked() { answer = Some(false); }
+                    });
+                });
+            if let Some(confirm) = answer { self.resolve_clear_lairs(confirm); }
+        }
         if self.pending_discard {
             let mut close_modal = false;
             let mut confirm = false;
 
-            egui::Window::new("Discard Unsaved Environment Changes?")
+            egui::Window::new(discard_labels(self.english)[0])
                 .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
                 .collapsible(false)
                 .resizable(false)
                 .show(ctx, |ui| {
-                    ui.label("Closing will discard currently generated flora, lairs, and settlement presets.");
+                    ui.label(discard_labels(self.english)[1]);
                     ui.horizontal(|ui| {
-                        if ui.button("Discard & Close").clicked() {
+                        if ui.button(discard_labels(self.english)[2]).clicked() {
                             confirm = true;
                         }
-                        if ui.button("Keep Editing").clicked() {
+                        if ui.button(discard_labels(self.english)[3]).clicked() {
                             close_modal = true;
                         }
                     });
@@ -1110,10 +1140,10 @@ impl EnvironmentUi {
         }
         ui.label(format!("Placed Lairs: {} (Scenario Events: {})", self.generated_lairs.len(), self.generated_lair_events.len()));
         if ui
-            .add_enabled(!self.generated_lairs.is_empty(), egui::Button::new("Clear Lairs"))
+            .add_enabled(!self.generated_lairs.is_empty() || !self.generated_lair_events.is_empty() || !self.lair_event_counts.is_empty(), egui::Button::new(tl(self.english, "清除所有巢穴", "Clear Lairs")))
             .clicked()
         {
-            self.clear_lairs();
+            self.request_clear_lairs();
         }
         let mut remove = None;
         egui::ScrollArea::vertical().max_height(180.0).show(ui, |ui| {
@@ -1693,5 +1723,47 @@ mod tests {
         ui.layout_picker = Some(Box::new(|_| None));
         assert_eq!(ui.export_generated_preset(false).unwrap(), None, "cancelled picker");
         let _ = std::fs::remove_dir_all(dir);
+    }
+}
+
+fn tl(english: bool, zh: &'static str, en: &'static str) -> &'static str {
+    if english { en } else { zh }
+}
+fn discard_labels(english: bool) -> [&'static str; 4] {
+    [
+        tl(english, "捨棄未儲存的環境變更？", "Discard Unsaved Environment Changes?"),
+        tl(english, "關閉將捨棄目前產生的植物、巢穴與聚落預設。", "Closing will discard currently generated flora, lairs, and settlement presets."),
+        tl(english, "捨棄並關閉", "Discard & Close"),
+        tl(english, "繼續編輯", "Keep Editing"),
+    ]
+}
+#[cfg(test)]
+mod small_ux_tests {
+    use super::*;
+    #[test]
+    fn clear_lairs_confirmation_cancel_confirm_empty_and_drafts() {
+        let mut ui = EnvironmentUi::default();
+        ui.request_clear_lairs();
+        assert!(!ui.pending_clear_lairs);
+        ui.add_neutral_lair().unwrap();
+        ui.generated_lair_events.push(ScenarioEvent::new("draft", 0, false, true));
+        ui.lair_event_counts = vec![1];
+        ui.request_clear_lairs();
+        assert!(ui.pending_clear_lairs);
+        ui.resolve_clear_lairs(false);
+        assert_eq!(ui.generated_lairs.len(), 1);
+        assert_eq!(ui.generated_lair_events.len(), 1);
+        assert_eq!(ui.lair_event_counts, vec![1]);
+        ui.request_clear_lairs();
+        ui.resolve_clear_lairs(true);
+        assert!(ui.generated_lairs.is_empty() && ui.generated_lair_events.is_empty() && ui.lair_event_counts.is_empty());
+        ui.generated_lair_events.push(ScenarioEvent::new("draft", 0, false, true));
+        ui.request_clear_lairs();
+        assert!(ui.pending_clear_lairs);
+    }
+    #[test]
+    fn discard_dialog_is_bilingual() {
+        assert_eq!(discard_labels(true), ["Discard Unsaved Environment Changes?", "Closing will discard currently generated flora, lairs, and settlement presets.", "Discard & Close", "Keep Editing"]);
+        assert_eq!(discard_labels(false), ["捨棄未儲存的環境變更？", "關閉將捨棄目前產生的植物、巢穴與聚落預設。", "捨棄並關閉", "繼續編輯"]);
     }
 }
