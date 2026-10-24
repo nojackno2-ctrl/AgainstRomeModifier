@@ -554,6 +554,15 @@ impl EditorApp {
         path: &Path,
         staged_scenario: &[(PathBuf, Vec<u8>)],
     ) -> Result<CandidateDiagnostics, String> {
+        self.candidate_diagnostics_with_pending_data(path, staged_scenario, false)
+    }
+
+    pub(crate) fn candidate_diagnostics_with_pending_data(
+        &self,
+        path: &Path,
+        staged_scenario: &[(PathBuf, Vec<u8>)],
+        check_pending_data: bool,
+    ) -> Result<CandidateDiagnostics, String> {
         use against_rome_maps::{
             design_validator::{MapDesignValidationRequest, MapDesignValidator},
             diagnostics::{MapCheckObject, MapCheckSnapshot, MapDiagnostics},
@@ -620,7 +629,23 @@ impl EditorApp {
                 self.water_surface
             },
         };
-        let map_issues = MapDiagnostics::check(&snapshot);
+        let mut map_issues = MapDiagnostics::check(&snapshot);
+        if check_pending_data && (self.placement.is_dirty() || self.nature.session.is_dirty()) {
+            let candidate = self.replay_nature_candidate(
+                path, &self.nature.session, self.placement.detached_store()?,
+            )?;
+            let saved = against_rome_placement::ObjectStore::load(path)?;
+            let baseline = crate::design_check_ui::data_candidate_issues(&saved, &snapshot);
+            for mut issue in crate::design_check_ui::data_candidate_issues(&candidate, &snapshot) {
+                if !baseline.contains(&issue) {
+                    issue.chinese.push_str("（未儲存）");
+                    issue.english.push_str(" (unsaved)");
+                }
+                if !map_issues.contains(&issue) {
+                    map_issues.push(issue);
+                }
+            }
+        }
         let design = ScenarioSavePreflight::validate(&document, &aliases)
             .map_err(|e| format!("ScenarioSavePreflight: {e}"))
             .map(|_| {
@@ -5127,6 +5152,41 @@ mod tests {
         }
     }
 
+    #[test]
+    fn design_check_pending_data_overlap_undo_is_read_only() {
+        let dir = temp_map_dir("pending_data_overlap");
+        pending_placement_fixture(&dir);
+        let file = dir.join("DATA/position.dat");
+        let mut bytes = std::fs::read(&file).unwrap();
+        for slot in 0..3 {
+            bytes[9 + slot * 17..13 + slot * 17]
+                .copy_from_slice(&(100.0 + slot as f32 * 200.0).to_le_bytes());
+        }
+        std::fs::write(file, bytes).unwrap();
+        let mut app = EditorApp::initial_state();
+        app.session = Some(TerrainSession::create_blank(5, 32));
+        app.map_path_input = dir.display().to_string();
+        app.placement.load_session(&dir).unwrap();
+        let before = save_artifact_snapshot(&dir);
+        let clean = app.design_check_report();
+        assert!(!design_check_codes(&clean).contains(&"overlap".to_string()));
+        app.placement.select_object(Some((0, 1)));
+        app.placement.set_delta(["200".into(), "0".into(), "0".into()]);
+        app.placement.move_family().unwrap();
+        let pending = app.design_check_report();
+        let crate::design_check_ui::DesignCheckReport::Checked { map_issues, .. } = pending else {
+            panic!("候選檢查無法執行");
+        };
+        let overlap: Vec<_> = map_issues.iter().filter(|i| i.code == "overlap").collect();
+        assert_eq!(overlap.len(), 2);
+        assert!(overlap.iter().all(|i| i.english.ends_with(" (unsaved)") && i.chinese.ends_with("（未儲存）")));
+        assert_eq!(save_artifact_snapshot(&dir), before);
+        app.placement.undo().unwrap();
+        assert!(!design_check_codes(&app.design_check_report()).contains(&"overlap".to_string()));
+        assert_eq!(save_artifact_snapshot(&dir), before);
+        assert_eq!(app.design_check_report(), clean);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
     #[test]
     fn design_check_uses_pending_placement_and_leaves_disk_and_sessions_untouched() {
         let dir = temp_map_dir("design_check_placement");

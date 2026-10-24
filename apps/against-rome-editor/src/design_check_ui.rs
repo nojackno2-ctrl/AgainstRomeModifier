@@ -15,6 +15,34 @@ use eframe::egui::{self, Color32, RichText, ScrollArea};
 use std::path::Path;
 use uuid::Uuid;
 
+/// 重用既有座標、重疊與家族連結檢查；只讀取候選資料。
+pub(crate) fn data_candidate_issues(
+    store: &against_rome_placement::ObjectStore,
+    terrain: &against_rome_maps::diagnostics::MapCheckSnapshot,
+) -> Vec<MapIssue> {
+    use against_rome_maps::diagnostics::{MapCheckObject, MapDiagnostics};
+    let mut snapshot = terrain.clone();
+    snapshot.events.clear();
+    snapshot.objects.clear();
+    let mut issues = Vec::new();
+    for object in store.objects().into_iter().filter(|o| o.parent.is_none()) {
+        // slot 與 UID 組成穩定識別，讓已儲存／候選結果可直接比對。
+        let id = Uuid::from_u128((1u128 << 127) | ((object.slot as u128) << 32) | u128::from(object.uid));
+        if let Err(error) = store.family_details(object.slot, object.uid) {
+            let mut issue = MapIssue::new(MapIssueSeverity::Error, "family-link",
+                format!("DATA 家族連結無效：{error}"), format!("Invalid DATA family links: {error}"));
+            issue.object_id = id;
+            issues.push(issue);
+        }
+        snapshot.objects.push(MapCheckObject::new(against_rome_scenario::Spawn {
+            id, x: object.position[0], y: object.position[1], z: object.position[2],
+            prebuilt: true, ..Default::default()
+        }, false, true));
+    }
+    issues.extend(MapDiagnostics::check(&snapshot).into_iter()
+        .filter(|i| matches!(i.code.as_str(), "coordinates" | "overlap")));
+    issues
+}
 /// One displayable row of the issue list (C# `MapEditorForm.Diagnostics` `_mapIssues`).
 #[derive(Clone, Debug, PartialEq)]
 pub struct IssueRow {
@@ -295,7 +323,7 @@ impl EditorApp {
             Ok(v) => v,
             Err(e) => return DesignCheckReport::Unavailable(e),
         };
-        match self.candidate_diagnostics(&path, &staged) {
+        match self.candidate_diagnostics_with_pending_data(&path, &staged, true) {
             Err(e) => DesignCheckReport::Unavailable(e),
             Ok(c) => {
                 let (preflight_error, design_issues) = match c.design {
