@@ -86,7 +86,7 @@ pub struct ScenarioUi {
     active_bindings: Option<Vec<(i32,u32)>>,
     load_path: String,
     export_path: String,
-    selected: usize,
+    pub(crate) selected: usize,
     baseline: Vec<u8>,
     events: ScenarioEventSession,
     pending: Option<Pending>,
@@ -1237,7 +1237,13 @@ impl ScenarioUi {
                         if let Some(current) = self.document.events.get(self.selected) {
                             let mut edited = current.clone();
                             let mut pick = None;
-                            event_editor(ui, &mut edited, &targets, &self.aliases, en, &mut pick);
+                            let mut draw = None;
+                            event_editor(ui, &mut edited, &targets, &self.aliases, en, &mut pick, &mut draw);
+                            if let Some(condition) = draw {
+                                self.canvas.pick = Some(crate::scenario_canvas::PickTarget::Condition {
+                                    event: self.selected, condition, snapshot: edited.clone(),
+                                });
+                            }
                             if let Some((action, destination)) = pick {
                                 self.canvas.pick = Some(crate::scenario_canvas::PickTarget::Event {
                                     event: self.selected, action, destination,
@@ -1318,6 +1324,7 @@ fn event_editor(
     aliases: &[String],
     en: bool,
     pick: &mut Option<(usize, bool)>,
+    draw: &mut Option<usize>,
 ) {
     ui.separator();
     ui.horizontal(|ui| {
@@ -1371,6 +1378,9 @@ fn event_editor(
                     ] {
                         ui.label(name);
                         ui.add(egui::DragValue::new(v).clamp_range(0..=16383));
+                    }
+                    if ui.button(tl(en, "在地圖上框選", "Draw on map")).clicked() {
+                        *draw = Some(i);
                     }
                 });
             }

@@ -4,6 +4,7 @@ use eframe::egui::{self, Color32, Pos2, Rect, Stroke};
 
 #[derive(Clone)]
 pub(crate) enum PickTarget {
+    Condition { event: usize, condition: usize, snapshot: Event },
     Event { event: usize, action: usize, destination: bool, snapshot: Event },
     Wave { destination: bool },
 }
@@ -12,11 +13,12 @@ pub(crate) struct ScenarioCanvas {
     pub show: bool,
     pub pick: Option<PickTarget>,
     holding: bool,
+    drag: Option<(WorldPosition, WorldPosition)>,
 }
 
 impl Default for ScenarioCanvas {
     fn default() -> Self {
-        Self { show: true, pick: None, holding: false }
+        Self { show: true, pick: None, holding: false, drag: None }
     }
 }
 
@@ -35,6 +37,7 @@ impl ScenarioUi {
         if self.canvas.pick.is_some() && ctx.input(|i|
             i.key_pressed(egui::Key::Escape) || i.pointer.secondary_pressed()) {
             self.canvas.pick = None;
+            self.canvas.drag = None;
             self.canvas.holding = ctx.input(|i| i.pointer.primary_down() || i.pointer.secondary_down());
             return Some(if en { "Map pick cancelled." } else { "已取消地圖取點。" }.into());
         }
@@ -43,8 +46,13 @@ impl ScenarioUi {
 
     pub(crate) fn pick_prompt(&self, en: bool) -> Option<&'static str> {
         self.canvas.pick.as_ref().map(|target| {
+            if matches!(target, PickTarget::Condition { .. }) {
+                return if en { "Draw rectangle: left-drag the 2D canvas; Esc/right-click cancels." }
+                else { "框選矩形：在 2D 畫布拖曳左鍵；Esc／右鍵取消。" };
+            }
             let destination = match target {
                 PickTarget::Event { destination, .. } | PickTarget::Wave { destination } => *destination,
+                PickTarget::Condition { .. } => false,
             };
             match (en, destination) {
                 (true, false) => "Pick spawn: left-click the 2D canvas; Esc/right-click cancels.",
@@ -61,6 +69,42 @@ impl ScenarioUi {
         let owns = self.canvas.pick.is_some() || self.canvas.holding;
         if self.canvas.holding {
             self.canvas.holding = ctx.input(|i| i.pointer.primary_down() || i.pointer.secondary_down());
+        }
+        if matches!(self.canvas.pick, Some(PickTarget::Condition { .. })) {
+            let point = ctx.input(|i| i.pointer.interact_pos()).map(|pos| {
+                let (x, z) = world_from_screen(rect, pos);
+                WorldPosition { x: x.round().clamp(0., 16383.) as i32,
+                    z: z.round().clamp(0., 16383.) as i32 }
+            });
+            if response.hovered() && ctx.input(|i| i.pointer.primary_pressed()) {
+                self.canvas.drag = point.clone().map(|p| (p.clone(), p));
+                self.canvas.holding = true;
+            }
+            if let Some((_, end)) = &mut self.canvas.drag {
+                if let Some(point) = point { *end = point; }
+            }
+            if ctx.input(|i| i.pointer.primary_released()) {
+                if let Some((start, end)) = self.canvas.drag.take() {
+                    let target = self.canvas.pick.take();
+                    let status = if start.x == end.x || start.z == end.z {
+                        (if en { "Zero-size rectangle cancelled." } else { "已取消零大小矩形。" }.into(), false)
+                    } else if let Some(PickTarget::Condition { event, condition, snapshot }) = target {
+                        let result = self.document().events.get(event).filter(|e| **e == snapshot).cloned()
+                            .and_then(|mut item| {
+                                let c = item.conditions.get_mut(condition).filter(|c| c.kind == 2)?;
+                                c.min_x = start.x.min(end.x); c.max_x = start.x.max(end.x);
+                                c.min_z = start.z.min(end.z); c.max_z = start.z.max(end.z);
+                                Some(item)
+                            }).ok_or(()).and_then(|item| self.replace_event(event, item).map_err(|_| ()));
+                        match result {
+                            Ok(()) => (if en { "Rectangle updated; Save to write it." } else { "已更新矩形；請存檔以寫入變更。" }.into(), false),
+                            Err(()) => (if en { "Rectangle target changed; draw again." } else { "矩形目標已變更；請重新框選。" }.into(), true),
+                        }
+                    } else { return (true, None); };
+                    return (true, Some(status));
+                }
+            }
+            return (true, None);
         }
         if self.canvas.pick.is_some() && response.hovered() && ctx.input(|i| i.pointer.primary_pressed()) {
             if let Some(pos) = ctx.input(|i| i.pointer.interact_pos()) {
@@ -87,6 +131,7 @@ impl ScenarioUi {
 
     fn apply_canvas_pick(&mut self, point: WorldPosition) -> Result<bool, ()> {
         match self.canvas.pick.take().ok_or(())? {
+            PickTarget::Condition { .. } => Err(()),
             PickTarget::Wave { destination } => {
                 let g = &mut self.wave_generator;
                 if destination { g.destination = point; }
@@ -106,10 +151,18 @@ impl ScenarioUi {
 
     pub(crate) fn paint_canvas(&self, painter: &egui::Painter, rect: Rect, en: bool) {
         if !self.open || !self.canvas.show { return; }
-        for e in self.document().events.iter().filter(|e| e.enabled) {
+        for (index, e) in self.document().events.iter().enumerate().filter(|(_, e)| e.enabled) {
+            for c in e.conditions.iter().filter(|c| c.kind == 2) {
+                paint_rectangle(painter, rect, (c.min_x, c.min_z), (c.max_x, c.max_z),
+                    &e.name, index == self.selected);
+            }
             for a in e.actions.iter().filter(|a| a.kind == 2) {
                 paint_spawn(painter, rect, a.x, a.z, a.team, &e.name, a.move_destination.as_ref(), false);
             }
+        }
+        if let Some((start, end)) = &self.canvas.drag {
+            paint_rectangle(painter, rect, (start.x, start.z), (end.x, end.z),
+                if en { "Draw rectangle" } else { "框選矩形" }, true);
         }
         if self.open && self.wave_generator.initialized {
             let g = &self.wave_generator;
@@ -117,6 +170,17 @@ impl ScenarioUi {
                 if en { "Pending wave" } else { "待產生波次" }, Some(&g.destination), true);
         }
     }
+}
+
+fn paint_rectangle(painter: &egui::Painter, rect: Rect, start: (i32, i32), end: (i32, i32),
+    label: &str, selected: bool) {
+    let bounds = Rect::from_two_pos(screen_from_world(rect, start.0 as f32, start.1 as f32),
+        screen_from_world(rect, end.0 as f32, end.1 as f32));
+    let color = if selected { Color32::YELLOW } else { Color32::LIGHT_BLUE };
+    painter.rect_filled(bounds, 0., color.linear_multiply(if selected { 0.22 } else { 0.12 }));
+    painter.rect_stroke(bounds, 0., Stroke::new(if selected { 3_f32 } else { 1.5_f32 }, color));
+    painter.text(bounds.min + egui::vec2(4., 4.), egui::Align2::LEFT_TOP,
+        label, egui::FontId::proportional(13.), color);
 }
 
 fn paint_spawn(painter: &egui::Painter, rect: Rect, x: f32, z: f32, team: i32,

@@ -1,3 +1,9 @@
+## 2026-10-24 Codex：條件矩形框選（自動化驗證通過）
+
+- 變更：啟用事件的 kind 2 條件顯示半透明矩形、事件名稱與選取高亮，沿用劇本覆蓋圖開關；bounds 旁新增「Draw on map／在地圖上框選」。拖曳僅預覽，座標正規化／四捨五入／夾限 0..16383，放開經 replace_event 產生一步 undo；Esc／右鍵、零大小取消不寫入，快照防護避免誤改目標，手勢期間阻止筆刷／選取。角點縮放略過。
+- 驗證：依序 cargo check、cargo test、cargo build，全部加 --workspace --locked --offline --target-dir re_workspace/codex-wave-dest-target，均 exit 0（x86_64-pc-windows-msvc，無連結錯誤）。完整測試 283 組合計 **2,385 passed／0 failed／24 ignored**；輸出 re_workspace/condition-rect-workspace-test.log，check/build 為同前綴 -check.log／-build.log。新增 5 項 egui 測試涵蓋四方向、邊界與畫布外 release、取消／零大小無 undo、單步復原、地形／選取不變、過期目標、覆蓋圖高亮與座標／JSON 往返、雙語按鈕及預覽；focused 11 passed／0 failed。
+- 限制：GUI 視覺待驗證。一般 Shell 沙箱初始化失敗，改用獲准 require_escalated；未碰安裝遊戲目錄、未 stage/commit/push。AGENTS.md／README.md 既有內容雜湊保持一致，暫存區為空。
+
 ## 2026-10-24 Codex：劇本畫布標記與取點（自動化驗證通過）
 
 - 變更：Scenario 開啟時顯示啟用 SpawnUnit 的隊伍色、事件名稱與目的地箭頭，待產生波次使用空心方框；預設開啟「Show scenario overlay／顯示劇本標記」。四組 X/Z 提供雙語在地圖上點選，沿用共用 map_rect 轉換，四捨五入並夾限 0..16383；Esc／右鍵取消，按下至放開獨占畫布，不觸發筆刷或選取。事件經 replace_event＝一步 undo，波次只改表單；過期事件目標拒絕套用。
