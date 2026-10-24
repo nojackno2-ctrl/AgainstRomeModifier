@@ -1,3 +1,9 @@
+## 2026-10-24 Codex：導航路徑視覺診斷（自動化驗證通過）
+
+- 變更：導航新增地圖選起／終點，沿用 Coordinate 與 scenario_canvas 座標轉換；折線、起終點標記、不可達終點格與雙語模型估計說明；沿用快照與 invalidate 清除疊圖，關閉視窗仍檢查失效。Esc／右鍵取消，手勢放開前獨占畫布；3D 取點切換 2D。
+- 驗證：依序 cargo check、cargo test、cargo build，均加 --workspace --locked --offline --target-dir re_workspace/codex-wave-dest-target，全部 exit 0（Windows MSVC，無連結錯誤）。完整測試 283 組：2,395 passed／0 failed／24 ignored；輸出 re_workspace/route-overlay-workspace-test.log，check/build 為同前綴 -check.log／-build.log。新增 6 項測試涵蓋座標往返、實際折線避障、不可達格、取消、碰撞編輯失效及取點放開手勢；導航 focused 7 passed／0 failed／0 ignored。初次編譯因 find_path 回傳格座標失敗，已以 grid.coordinate 轉換修正。
+- 範圍：略過可選孤立區域染色以保持精簡；人工 GUI 待驗證。不碰安裝遊戲目錄，不修改／暫存既有 AGENTS.md、README.md，不 stage/commit/push。一般 Shell 初始化失敗，使用 require_escalated。
+
 ## 2026-10-24 Codex：可搜尋事件瀏覽器（自動化驗證通過）
 
 - 變更：scenario_ui.rs 新增名稱／動作文字／別名搜尋、隊伍／動作種類／僅啟用篩選、符合數量、雙語時間／條件／動作摘要、停用灰色與時間排序；只排序顯示索引，保留原始事件順序與選取，隱藏選取顯示提示。

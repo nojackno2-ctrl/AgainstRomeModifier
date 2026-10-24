@@ -1,51 +1,188 @@
 //! 目前編輯圖層的唯讀診斷，不依地形推導或改寫 collision。
 //! 未指定單位通行能力時，保守視非零 collision 為阻擋；不代表原生逐單位尋路。
 use crate::terrain::TerrainSession;
-use against_rome_navigation::{analyze_connectivity, find_path, IsolatedRegion, PassabilityGrid};
+use against_rome_navigation::{
+    analyze_connectivity, find_path, Coordinate, IsolatedRegion, PassabilityGrid,
+};
 use eframe::egui;
 
 #[derive(Default)]
 pub struct NavigationUi {
     pub open: bool,
-    seed: [i32;2],
-    target: [i32;2],
+    pick: Option<bool>,
+    holding: bool,
+    seed: [i32; 2],
+    target: [i32; 2],
     report: Option<NavigationReport>,
     error: Option<String>,
-    snapshot: Option<(Vec<u8>,Vec<u8>,u32)>,
+    snapshot: Option<(Vec<u8>, Vec<u8>, u32)>,
 }
 pub struct NavigationReport {
     pub passable: usize,
     pub seed_passable: bool,
     pub isolated: Vec<IsolatedRegion>,
     pub path_cells: Option<usize>,
+    pub path: Option<Vec<Coordinate>>,
 }
-pub fn diagnose(session: &TerrainSession, water_surface:f32, seed:[i32;2], target:[i32;2]) -> Result<NavigationReport,String> {
-    if !water_surface.is_finite() { return Err("Water surface must be finite".into()); }
-    let grid = PassabilityGrid::new(session.collision_size,Some(session.collision()),
-        Some((session.vertex_size, session.heights(), 1.0,water_surface)),16384.0)
-        .map_err(str::to_owned)?;
-    if !grid.in_bounds(seed[0], seed[1]) || !grid.in_bounds(target[0],target[1]) {
+pub fn diagnose(
+    session: &TerrainSession,
+    water_surface: f32,
+    seed: [i32; 2],
+    target: [i32; 2],
+) -> Result<NavigationReport, String> {
+    if !water_surface.is_finite() {
+        return Err("Water surface must be finite".into());
+    }
+    let grid = PassabilityGrid::new(
+        session.collision_size,
+        Some(session.collision()),
+        Some((session.vertex_size, session.heights(), 1.0, water_surface)),
+        16384.0,
+    )
+    .map_err(str::to_owned)?;
+    if !grid.in_bounds(seed[0], seed[1]) || !grid.in_bounds(target[0], target[1]) {
         return Err("Seed and destination must lie inside the collision grid".into());
     }
-    let passable = (0..grid.size).flat_map(|z|(0..grid.size).map(move|x|(x,z)))
-        .filter(|&(x,z)|grid.passable(x as i32,z as i32)).count();
+    let passable = (0..grid.size)
+        .flat_map(|z| (0..grid.size).map(move |x| (x, z)))
+        .filter(|&(x, z)| grid.passable(x as i32, z as i32))
+        .count();
+    let path = find_path(&grid, (seed[0], seed[1]), (target[0], target[1]));
     Ok(NavigationReport {
-        passable, seed_passable:grid.passable(seed[0],seed[1]),
-        isolated:analyze_connectivity(&grid,&[(seed[0],seed[1])],&[(target[0],target[1])],1),
-        path_cells:find_path(&grid,(seed[0],seed[1]),(target[0],target[1])).map(|p|p.len()),
+        passable,
+        seed_passable: grid.passable(seed[0], seed[1]),
+        isolated: analyze_connectivity(&grid, &[(seed[0], seed[1])], &[(target[0], target[1])], 1),
+        path_cells: path.as_ref().map(Vec::len),
+        path: path.map(|p| p.into_iter().map(|(x, z)| grid.coordinate(x, z)).collect()),
     })
 }
 impl NavigationUi {
-    pub fn invalidate(&mut self) { self.report=None; self.error=None; self.snapshot=None; }
-    pub fn show(&mut self,ctx:&egui::Context,session:Option<&TerrainSession>,water_surface:f32) {
-        if !self.open {return;}
-        if let Some((heights,collision,water))=&self.snapshot {
-            if session.is_none_or(|s|s.heights()!=heights || s.collision()!=collision) || *water!=water_surface.to_bits() {
+    pub(crate) fn owns_canvas(&self) -> bool {
+        self.pick.is_some() || self.holding
+    }
+    pub(crate) fn refresh(&mut self, session: Option<&TerrainSession>, water_surface: f32) {
+        if let Some((heights, collision, water)) = &self.snapshot {
+            if session.is_none_or(|s| s.heights() != heights || s.collision() != collision)
+                || *water != water_surface.to_bits()
+            {
                 self.invalidate();
             }
         }
+    }
+    /// 取消及完成取點後，直到按鍵放開都獨占畫布，避免塗畫地形。
+    pub(crate) fn cancel_pick(&mut self, ctx: &egui::Context) {
+        if self.pick.is_some()
+            && (!self.open
+                || ctx.input(|i| i.key_pressed(egui::Key::Escape) || i.pointer.secondary_pressed()))
+        {
+            self.pick = None;
+            self.holding = true;
+        }
+    }
+    pub(crate) fn canvas_input(
+        &mut self,
+        ctx: &egui::Context,
+        response: &egui::Response,
+        rect: egui::Rect,
+        size: usize,
+    ) -> bool {
+        let owns = self.owns_canvas();
+        if self.holding {
+            self.holding = ctx.input(|i| i.pointer.primary_down() || i.pointer.secondary_down());
+        } else if self.pick.is_some()
+            && response.hovered()
+            && ctx.input(|i| i.pointer.primary_pressed())
+        {
+            if let Some(pos) = ctx
+                .input(|i| i.pointer.interact_pos())
+                .filter(|p| rect.contains(*p))
+            {
+                let (x, z) = crate::scenario_canvas::world_from_screen(rect, pos);
+                let c = Coordinate::from_world(x, z, size, 16384.0);
+                if self.pick.take() == Some(true) {
+                    self.target = [c.x, c.z];
+                } else {
+                    self.seed = [c.x, c.z];
+                }
+                self.invalidate();
+                self.holding = true;
+            }
+        }
+        owns
+    }
+    pub(crate) fn paint_canvas(&self, painter: &egui::Painter, rect: egui::Rect, size: usize) {
+        let Some(report) = &self.report else {
+            return;
+        };
+        let screen =
+            |c: &Coordinate| crate::scenario_canvas::screen_from_world(rect, c.world_x, c.world_z);
+        if let Some(path) = &report.path {
+            let points: Vec<_> = path.iter().map(screen).collect();
+            if points.len() > 1 {
+                painter.add(egui::Shape::line(
+                    points,
+                    egui::Stroke::new(3.0_f32, egui::Color32::YELLOW),
+                ));
+            }
+        }
+        let start = Coordinate::from_tile(self.seed[0], self.seed[1], size, 16384.0);
+        let end = Coordinate::from_tile(self.target[0], self.target[1], size, 16384.0);
+        let color = if report.path.is_none() {
+            egui::Color32::RED
+        } else {
+            egui::Color32::LIGHT_BLUE
+        };
+        if report.path.is_none() {
+            let cell = egui::Rect::from_center_size(
+                screen(&end),
+                egui::vec2(rect.width() / size as f32, rect.height() / size as f32),
+            );
+            painter.rect_filled(
+                cell,
+                0.0,
+                egui::Color32::from_rgba_unmultiplied(255, 0, 0, 100),
+            );
+            painter.rect_stroke(cell, 0.0, egui::Stroke::new(2.0_f32, color));
+        }
+        for (c, color, label) in [
+            (&start, egui::Color32::GREEN, "起點 / Start"),
+            (
+                &end,
+                color,
+                if report.path.is_none() {
+                    "終點無法抵達 / End unreachable"
+                } else {
+                    "終點 / End"
+                },
+            ),
+        ] {
+            painter.circle_filled(screen(c), 5.0, color);
+            painter.text(
+                screen(c) + egui::vec2(8.0, -8.0),
+                egui::Align2::LEFT_BOTTOM,
+                label,
+                egui::FontId::proportional(13.0),
+                color,
+            );
+        }
+    }
+    pub fn invalidate(&mut self) {
+        self.report = None;
+        self.error = None;
+        self.snapshot = None;
+    }
+    pub fn show(
+        &mut self,
+        ctx: &egui::Context,
+        session: Option<&TerrainSession>,
+        water_surface: f32,
+    ) {
+        self.refresh(session, water_surface);
+        if !self.open {
+            return;
+        }
         egui::Window::new("通行診斷 / Navigation").open(&mut self.open).show(ctx,|ui| {
-            ui.label("依目前編輯圖層檢查；結果是編輯器診斷，非原遊戲尋路保證。");
+            ui.label("編輯器連通模型估計，非遊戲精確尋路器。 / Editor connectivity estimate; not the exact game pathfinder.");
             let Some(session)=session else {ui.label("請先載入地圖。");return;};
             ui.label(format!("Collision {} × {} ; water surface {:.2} height samples",session.collision_size,session.collision_size,water_surface));
             let max=(session.collision_size-1) as i32;
@@ -53,6 +190,11 @@ impl NavigationUi {
             for (label,point) in [("起點 / Seed",&mut self.seed),("終點 / Destination",&mut self.target)] {
                 ui.horizontal(|ui|{ui.label(label);for value in point {changed |= ui.add(egui::DragValue::new(value).clamp_range(0..=max)).changed();}});
             }
+            ui.horizontal(|ui| {
+                if ui.button("地圖選起點 / Pick start on map").clicked() { self.pick=Some(false); }
+                if ui.button("地圖選終點 / Pick end on map").clicked() { self.pick=Some(true); }
+            });
+            if self.pick.is_some() { ui.label("左鍵點選 2D 地圖；Esc／右鍵取消。 / Click 2D map; Esc/right-click cancels."); }
             if changed {self.report=None;}
             if ui.button("重新檢查 / Analyze current layers").clicked() {
                 match diagnose(session,water_surface,self.seed,self.target) {
@@ -64,7 +206,7 @@ impl NavigationUi {
             if let Some(report)=&self.report {
                 ui.label(format!("Passable: {} ; isolated regions from seed: {}",report.passable,report.isolated.len()));
                 if !report.seed_passable {ui.label("起點在阻擋格或水下，請選擇其他起點。");}
-                ui.label(match report.path_cells {Some(n)=>format!("Path: {n} grid cells"),None=>"No passable path".into()});
+                ui.label(match report.path_cells {Some(n)=>format!("Path: {n} grid cells"),None=>"終點無法抵達 / End unreachable".into()});
                 egui::ScrollArea::vertical().max_height(240.0).show(ui,|ui| {
                     for region in &report.isolated {
                         ui.label(format!("{} cells; center ({}, {}); bridge suggestion: {:?}",region.tile_count,region.centroid.x,region.centroid.z,region.bridge.map(|p|(p.x,p.z))));
@@ -81,19 +223,263 @@ mod tests {
     use crate::terrain::CollisionBrushOp;
     #[test]
     fn live_diagnostics_follow_edits_and_undo_without_modifying_layers() {
-        let mut s=TerrainSession::create_blank(6,32);
-        let initial=s.collision().to_vec();
-        let r=diagnose(&s,0.0,[0,0],[4,4]).unwrap();
-        assert_eq!(r.passable,25); assert!(r.path_cells.is_some());
-        for z in 0..5 {s.paint_collision(2.5,z as f32+0.5,0.6,CollisionBrushOp::Block).unwrap();}
+        let mut s = TerrainSession::create_blank(6, 32);
+        let initial = s.collision().to_vec();
+        let r = diagnose(&s, 0.0, [0, 0], [4, 4]).unwrap();
+        assert_eq!(r.passable, 25);
+        assert!(r.path_cells.is_some());
+        for z in 0..5 {
+            s.paint_collision(2.5, z as f32 + 0.5, 0.6, CollisionBrushOp::Block)
+                .unwrap();
+        }
         s.commit_stroke();
-        let blocked=s.collision().to_vec();
-        let r=diagnose(&s,0.0,[0,0],[4,4]).unwrap();
-        assert_eq!(r.passable,20);assert!(r.path_cells.is_none());assert_eq!(r.isolated.len(),1);
-        assert_eq!(s.collision(),blocked);
-        s.undo();assert_eq!(s.collision(),initial);
-        assert!(diagnose(&s,0.0,[0,0],[4,4]).unwrap().path_cells.is_some());
-        assert!(diagnose(&s,f32::NAN,[0,0],[4,4]).is_err());
-        assert!(diagnose(&s,0.0,[-1,0],[4,4]).is_err());
+        let blocked = s.collision().to_vec();
+        let r = diagnose(&s, 0.0, [0, 0], [4, 4]).unwrap();
+        assert_eq!(r.passable, 20);
+        assert!(r.path_cells.is_none());
+        assert_eq!(r.isolated.len(), 1);
+        assert_eq!(s.collision(), blocked);
+        s.undo();
+        assert_eq!(s.collision(), initial);
+        assert!(diagnose(&s, 0.0, [0, 0], [4, 4])
+            .unwrap()
+            .path_cells
+            .is_some());
+        assert!(diagnose(&s, f32::NAN, [0, 0], [4, 4]).is_err());
+        assert!(diagnose(&s, 0.0, [-1, 0], [4, 4]).is_err());
+    }
+}
+
+#[cfg(test)]
+mod overlay_tests {
+    use super::*;
+    use crate::terrain::CollisionBrushOp;
+    use egui::{pos2, vec2, Rect};
+
+    #[test]
+    fn world_grid_screen_round_trip_uses_navigation_scale() {
+        let rect = Rect::from_min_size(pos2(-37.0, 81.0), vec2(743.0, 591.0));
+        for size in [5, 192, 256] {
+            let grid = PassabilityGrid::new(size, None, None, 16384.0).unwrap();
+            for (x, z) in [
+                (0, 0),
+                (size as i32 / 2, size as i32 / 3),
+                (size as i32 - 1, size as i32 - 1),
+            ] {
+                let c = grid.coordinate(x, z);
+                let p = crate::scenario_canvas::screen_from_world(rect, c.world_x, c.world_z);
+                let (wx, wz) = crate::scenario_canvas::world_from_screen(rect, p);
+                let picked = Coordinate::from_world(wx, wz, size, 16384.0);
+                assert_eq!((picked.x, picked.z), grid.world_to_tile(wx, wz));
+                assert_eq!((picked.x, picked.z), (x, z));
+            }
+        }
+    }
+
+    fn barrier(gap: bool) -> TerrainSession {
+        let mut s = TerrainSession::create_blank(6, 32);
+        for z in 0..5 {
+            if gap && z == 3 {
+                continue;
+            }
+            s.paint_collision(2.5, z as f32 + 0.5, 0.4, CollisionBrushOp::Block)
+                .unwrap();
+        }
+        s.commit_stroke();
+        s
+    }
+
+    fn shapes(nav: &NavigationUi, size: usize) -> Vec<egui::epaint::ClippedShape> {
+        let ctx = egui::Context::default();
+        ctx.run(egui::RawInput::default(), |ctx| {
+            let painter = ctx.layer_painter(egui::LayerId::background());
+            nav.paint_canvas(
+                &painter,
+                Rect::from_min_size(pos2(0.0, 0.0), vec2(16384.0, 16384.0)),
+                size,
+            );
+        })
+        .shapes
+    }
+
+    #[test]
+    fn drawn_polyline_avoids_barrier_cells() {
+        let s = barrier(true);
+        let report = diagnose(&s, 0.0, [0, 0], [4, 4]).unwrap();
+        let path = report.path.as_ref().unwrap();
+        assert_eq!(report.path_cells, Some(path.len()));
+        let expected: Vec<_> = path.iter().map(|c| pos2(c.world_x, c.world_z)).collect();
+        let nav = NavigationUi {
+            target: [4, 4],
+            report: Some(report),
+            ..Default::default()
+        };
+        let line = shapes(&nav, 5)
+            .into_iter()
+            .find_map(|s| match s.shape {
+                egui::Shape::Path(p) => Some(p.points),
+                _ => None,
+            })
+            .unwrap();
+        assert_eq!(line, expected);
+        for point in line {
+            let c = Coordinate::from_world(point.x, point.y, 5, 16384.0);
+            assert_eq!(s.collision()[c.z as usize * 5 + c.x as usize], 0);
+        }
+    }
+
+    #[test]
+    fn unreachable_draws_end_cell_without_path() {
+        let s = barrier(false);
+        let report = diagnose(&s, 0.0, [0, 0], [4, 4]).unwrap();
+        assert!(report.path.is_none());
+        let nav = NavigationUi {
+            target: [4, 4],
+            report: Some(report),
+            ..Default::default()
+        };
+        let shapes = shapes(&nav, 5);
+        assert!(!shapes
+            .iter()
+            .any(|s| matches!(s.shape, egui::Shape::Path(_))));
+        assert!(shapes.iter().any(
+            |s| matches!(&s.shape,egui::Shape::Rect(r) if r.rect.contains(pos2(14745.6,14745.6)))
+        ));
+    }
+
+    #[test]
+    fn collision_edit_invalidates_overlay_even_with_window_closed() {
+        let mut s = TerrainSession::create_blank(6, 32);
+        let mut nav = NavigationUi {
+            report: Some(diagnose(&s, 0.0, [0, 0], [4, 4]).unwrap()),
+            snapshot: Some((
+                s.heights().to_vec(),
+                s.collision().to_vec(),
+                0.0_f32.to_bits(),
+            )),
+            ..Default::default()
+        };
+        nav.refresh(Some(&s), 0.0);
+        assert!(!shapes(&nav, 5).is_empty());
+        s.paint_collision(1.5, 1.5, 0.4, CollisionBrushOp::Block)
+            .unwrap();
+        nav.refresh(Some(&s), 0.0);
+        assert!(nav.report.is_none());
+        assert!(shapes(&nav, 5).is_empty());
+    }
+
+    #[test]
+    fn escape_and_right_click_cancel_without_changing_endpoints_or_report() {
+        for event in [
+            egui::Event::Key {
+                key: egui::Key::Escape,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::NONE,
+            },
+            egui::Event::PointerButton {
+                pos: pos2(30.0, 30.0),
+                button: egui::PointerButton::Secondary,
+                pressed: true,
+                modifiers: egui::Modifiers::NONE,
+            },
+        ] {
+            let s = TerrainSession::create_blank(6, 32);
+            let mut nav = NavigationUi {
+                open: true,
+                pick: Some(true),
+                seed: [1, 1],
+                target: [4, 4],
+                report: Some(diagnose(&s, 0.0, [1, 1], [4, 4]).unwrap()),
+                ..Default::default()
+            };
+            let ctx = egui::Context::default();
+            let _ = ctx.run(
+                egui::RawInput {
+                    events: vec![event],
+                    ..Default::default()
+                },
+                |ctx| {
+                    nav.cancel_pick(ctx);
+                    egui::CentralPanel::default().show(ctx, |ui| {
+                        let (rect, response) = ui
+                            .allocate_exact_size(vec2(100.0, 100.0), egui::Sense::click_and_drag());
+                        assert!(nav.canvas_input(ctx, &response, rect, 5));
+                    });
+                },
+            );
+            assert!(nav.pick.is_none());
+            assert_eq!(nav.seed, [1, 1]);
+            assert_eq!(nav.target, [4, 4]);
+            assert!(nav.report.is_some());
+            assert_eq!(s.collision(), vec![0; 25]);
+        }
+    }
+}
+#[cfg(test)]
+mod pick_tests {
+    use super::*;
+    #[test]
+    fn pick_uses_collision_coordinates_and_holds_canvas_until_release() {
+        for end in [false, true] {
+            let ctx = egui::Context::default();
+            let mut nav = NavigationUi {
+                open: true,
+                pick: Some(end),
+                seed: [0, 0],
+                target: [1, 1],
+                ..Default::default()
+            };
+            let mut rect = egui::Rect::NOTHING;
+            let input = |events| egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(400.0, 400.0),
+                )),
+                events,
+                ..Default::default()
+            };
+            let _ = ctx.run(input(vec![]), |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    let (r, response) = ui.allocate_exact_size(
+                        egui::vec2(200.0, 200.0),
+                        egui::Sense::click_and_drag(),
+                    );
+                    rect = r;
+                    assert!(nav.canvas_input(ctx, &response, r, 5));
+                });
+            });
+            let pos = rect.min + egui::vec2(140.0, 100.0);
+            for pressed in [true, false] {
+                let _ = ctx.run(
+                    input(vec![
+                        egui::Event::PointerMoved(pos),
+                        egui::Event::PointerButton {
+                            pos,
+                            button: egui::PointerButton::Primary,
+                            pressed,
+                            modifiers: egui::Modifiers::NONE,
+                        },
+                    ]),
+                    |ctx| {
+                        egui::CentralPanel::default().show(ctx, |ui| {
+                            let (r, response) = ui.allocate_exact_size(
+                                egui::vec2(200.0, 200.0),
+                                egui::Sense::click_and_drag(),
+                            );
+                            assert!(nav.canvas_input(ctx, &response, r, 5));
+                        });
+                    },
+                );
+                assert_eq!(if end { nav.target } else { nav.seed }, [3, 2]);
+                assert!(nav.pick.is_none());
+            }
+            assert!(!nav.owns_canvas());
+            assert_eq!(
+                if end { nav.seed } else { nav.target },
+                if end { [0, 0] } else { [1, 1] }
+            );
+        }
     }
 }

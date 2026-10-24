@@ -9842,6 +9842,8 @@ impl EditorApp {
     /// One full editor frame. `eframe::App::update` delegates here; tests drive it headlessly
     /// with an `egui::Context` (no window or `eframe::Frame` needed).
     pub fn ui_frame(&mut self, ctx: &egui::Context) {
+        self.navigation.refresh(self.session.as_ref(), self.water_surface);
+        self.navigation.cancel_pick(ctx);
         let pick_cancel = self.scenario.cancel_canvas_pick(ctx, self.lang() == AppLanguage::English);
         let scenario_cancelled = pick_cancel.is_some();
         if let Some(message) = pick_cancel { self.set_status(message, false); }
@@ -10371,6 +10373,11 @@ impl EditorApp {
                 });
             });
 
+        // 導航取點僅使用 2D 畫布，避免 3D 筆刷接收相同手勢。
+        if self.navigation.owns_canvas() && self.view_mode == ViewMode::View3D {
+            self.view_mode = ViewMode::Blended;
+            self.texture_dirty = true;
+        }
         // 中央畫布檢視區
         egui::CentralPanel::default().show(ctx, |ui| {
             if self.view_mode == ViewMode::View3D {
@@ -10472,6 +10479,12 @@ impl EditorApp {
                 self.spawn_ui.draw_overlay(&painter, map_rect);
             }
 
+            self.navigation.paint_canvas(&painter, map_rect, session.collision_size);
+            if self.navigation.canvas_input(ctx, &response, map_rect, session.collision_size) {
+                self.spawn_ui.cancel_drag();
+                self.scene.end_drag();
+                return;
+            }
             self.scenario.paint_canvas(&painter, map_rect, lang == AppLanguage::English);
             let (pick_owned, pick_status) = self.scenario.canvas_pick_input(
                 ctx, &response, map_rect, lang == AppLanguage::English);
