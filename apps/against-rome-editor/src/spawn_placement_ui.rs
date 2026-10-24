@@ -207,7 +207,7 @@ impl Default for SpawnPlacementUi {
     }
 }
 
-fn team_color(team: i32) -> Color32 {
+pub(crate) fn team_color(team: i32) -> Color32 {
     const PALETTE: [(u8, u8, u8); 9] = [
         (80, 160, 255),
         (255, 90, 90),

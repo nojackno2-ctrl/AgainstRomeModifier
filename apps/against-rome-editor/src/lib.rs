@@ -10,6 +10,7 @@ pub mod map_settings;
 pub mod layout_io;
 pub mod placement_ui;
 pub mod scenario_ui;
+mod scenario_canvas;
 pub mod spawn_placement;
 pub mod spawn_placement_ui;
 pub mod textures_ui;

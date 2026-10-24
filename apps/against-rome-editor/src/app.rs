@@ -4026,12 +4026,7 @@ impl EditorApp {
             return;
         }
         let world_size = 16384.0_f32;
-        let to_world = |p: Pos2| {
-            (
-                (p.x - map_rect.min.x) / map_rect.width() * world_size,
-                (p.y - map_rect.min.y) / map_rect.height() * world_size,
-            )
-        };
+        let to_world = |p: Pos2| crate::scenario_canvas::world_from_screen(map_rect, p);
         let units_per_pixel = world_size / map_rect.width().max(1.0);
         let (pressed, down, pointer, modifiers) = ctx.input(|i| {
             (i.pointer.primary_pressed(), i.pointer.primary_down(), i.pointer.interact_pos(), i.modifiers)
@@ -4230,6 +4225,7 @@ mod tests {
     use crate::terrain::SampleChange;
 
     mod objectives_apply_tests;
+    mod scenario_canvas_tests;
     mod settlement_apply_tests;
     mod spawn_save_tests;
     mod starter_kit_tests;
@@ -9846,6 +9842,9 @@ impl EditorApp {
     /// One full editor frame. `eframe::App::update` delegates here; tests drive it headlessly
     /// with an `egui::Context` (no window or `eframe::Frame` needed).
     pub fn ui_frame(&mut self, ctx: &egui::Context) {
+        let pick_cancel = self.scenario.cancel_canvas_pick(ctx, self.lang() == AppLanguage::English);
+        let scenario_cancelled = pick_cancel.is_some();
+        if let Some(message) = pick_cancel { self.set_status(message, false); }
         if ctx.input(|i| i.viewport().close_requested())
             && !self.close_allowed
             && self.has_unsaved_changes()
@@ -9853,7 +9852,7 @@ impl EditorApp {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
             self.pending_action = Some(PendingAction::Close);
         }
-        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+        if !scenario_cancelled && ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
             if self.box_select {
                 self.cancel_box_select();
             } else if self.ramp_selecting {
@@ -10320,6 +10319,8 @@ impl EditorApp {
                         }
                     });
                     ui.checkbox(&mut self.show_grid, tr(lang, "Show grid", "顯示格線"));
+                    ui.checkbox(&mut self.scenario.canvas.show,
+                        tr(lang, "Show scenario overlay", "顯示劇本標記"));
                     ui.checkbox(
                         &mut self.show_objects,
                         tr(lang, "Show buildings and objects", "顯示建築與場景物件"),
@@ -10471,6 +10472,19 @@ impl EditorApp {
                 self.spawn_ui.draw_overlay(&painter, map_rect);
             }
 
+            self.scenario.paint_canvas(&painter, map_rect, lang == AppLanguage::English);
+            let (pick_owned, pick_status) = self.scenario.canvas_pick_input(
+                ctx, &response, map_rect, lang == AppLanguage::English);
+            if let Some((message, error)) = pick_status {
+                self.status_message = message;
+                self.status_is_error = error;
+            }
+            if pick_owned || scenario_cancelled {
+                self.spawn_ui.cancel_drag();
+                self.scene.end_drag();
+                return;
+            }
+
             // 放置物件面板：點選／拖曳 2D 標記（命中時筆刷不作用）
             let tool_busy = self.pending_action.is_some()
                 || self.box_select
@@ -10496,19 +10510,8 @@ impl EditorApp {
 
             // SDL 場景物件：疊圖＋移動模式的點選／拖曳（命中時筆刷不作用）
             {
-                let world_size = 16384.0_f32;
-                let world_from_screen = |p: Pos2| {
-                    (
-                        (p.x - map_rect.min.x) / map_rect.width() * world_size,
-                        (p.y - map_rect.min.y) / map_rect.height() * world_size,
-                    )
-                };
-                let screen_from_world = |w: (f32, f32)| {
-                    Pos2::new(
-                        map_rect.min.x + w.0 / world_size * map_rect.width(),
-                        map_rect.min.y + w.1 / world_size * map_rect.height(),
-                    )
-                };
+                let world_from_screen = |p: Pos2| crate::scenario_canvas::world_from_screen(map_rect, p);
+                let screen_from_world = |w: (f32, f32)| crate::scenario_canvas::screen_from_world(map_rect, w.0, w.1);
                 if self.show_objects {
                     self.scene.paint_scene_overlay(&painter, &screen_from_world);
                 }
@@ -10806,6 +10809,10 @@ impl EditorApp {
         }
         self.scenario.english = self.lang() == AppLanguage::English;
         self.scenario.show(ctx);
+        if let Some(prompt) = self.scenario.pick_prompt(self.scenario.english) {
+            self.status_message = prompt.into();
+            self.status_is_error = false;
+        }
         if let Some(result) = self.scenario.objective_notice.take() {
             match result {
                 Ok(added) => {

@@ -33,7 +33,7 @@ pub(crate) struct WaveGenerator {
     pub x: f32,
     pub z: f32,
     pub destination: WorldPosition,
-    initialized: bool,
+    pub(crate) initialized: bool,
 }
 impl Default for WaveGenerator {
     fn default() -> Self {
@@ -66,6 +66,7 @@ fn unused_event_name(base: &str, events: &[Event]) -> String {
     name
 }
 pub struct ScenarioUi {
+    pub(crate) canvas: crate::scenario_canvas::ScenarioCanvas,
     objective_seconds: i32,
     objective_team: i32,
     objective_targets: [Option<uuid::Uuid>; 2],
@@ -102,6 +103,7 @@ impl Default for ScenarioUi {
         };
         let baseline = state_bytes(&document, &camera).unwrap();
         Self {
+            canvas: Default::default(),
             objective_seconds: 300,
             objective_team: 1,
             objective_targets: [None, None],
@@ -398,6 +400,7 @@ impl ScenarioUi {
         self.error = None;
         self.graph_ui.reset_session();
         self.wave_generator = WaveGenerator::default();
+        self.canvas = Default::default();
         self.wave_target = None;
         self.wave_target_requested = true;
         self.wave_notice = None;
@@ -477,6 +480,7 @@ impl ScenarioUi {
         self.aliases = aliases;
         self.active_bindings=active_bindings;
         self.source = Some(source);
+        self.canvas = Default::default();
         self.watched = watched;
         self.selected = 0;
         self.error = None;
@@ -1026,12 +1030,18 @@ impl ScenarioUi {
                 ui.label(tl(en, "生成 X/Z", "Spawn X/Z"));
                 ui.add(egui::DragValue::new(&mut g.x).clamp_range(0. ..=16383.));
                 ui.add(egui::DragValue::new(&mut g.z).clamp_range(0. ..=16383.));
+                if ui.button(tl(en, "在地圖上點選（生成點）", "Pick on map (spawn)")).clicked() {
+                    self.canvas.pick = Some(crate::scenario_canvas::PickTarget::Wave { destination: false });
+                }
                 if ui.button(tl(en, "地圖邊緣", "Map edge")).clicked() { g.x = 0.; g.z = 8000.; }
             });
             ui.horizontal(|ui| {
                 ui.label(tl(en, "目的 X/Z", "Destination X/Z"));
                 ui.add(egui::DragValue::new(&mut g.destination.x).clamp_range(0..=16383));
                 ui.add(egui::DragValue::new(&mut g.destination.z).clamp_range(0..=16383));
+                if ui.button(tl(en, "在地圖上點選（目的地）", "Pick on map (destination)")).clicked() {
+                    self.canvas.pick = Some(crate::scenario_canvas::PickTarget::Wave { destination: true });
+                }
                 if ui.button(tl(en, "玩家主屋", "Player base")).clicked() {
                     self.wave_target_requested = true;
                 }
@@ -1226,7 +1236,14 @@ impl ScenarioUi {
                             .collect();
                         if let Some(current) = self.document.events.get(self.selected) {
                             let mut edited = current.clone();
-                            event_editor(ui, &mut edited, &targets, &self.aliases, en);
+                            let mut pick = None;
+                            event_editor(ui, &mut edited, &targets, &self.aliases, en, &mut pick);
+                            if let Some((action, destination)) = pick {
+                                self.canvas.pick = Some(crate::scenario_canvas::PickTarget::Event {
+                                    event: self.selected, action, destination,
+                                    snapshot: edited.clone(),
+                                });
+                            }
                             if &edited != current {
                                 if let Err(e) = self.replace_event(self.selected, edited) {
                                     self.error = Some(e);
@@ -1300,6 +1317,7 @@ fn event_editor(
     targets: &[(Spawn, String)],
     aliases: &[String],
     en: bool,
+    pick: &mut Option<(usize, bool)>,
 ) {
     ui.separator();
     ui.horizontal(|ui| {
@@ -1428,6 +1446,9 @@ fn event_editor(
                             ui.add(egui::DragValue::new(&mut a.x).clamp_range(0. ..=16383.));
                             ui.label("Z");
                             ui.add(egui::DragValue::new(&mut a.z).clamp_range(0. ..=16383.));
+                            if ui.button(tl(en, "在地圖上點選（生成點）", "Pick on map (spawn)")).clicked() {
+                                *pick = Some((i, false));
+                            }
                         });
                         let mut moved = a.move_destination.is_some();
                         if ui.checkbox(&mut moved, tl(en, "生成成功後移動至目的地", "Move to destination after spawning")).changed() {
@@ -1443,6 +1464,9 @@ fn event_editor(
                                 ui.add(egui::DragValue::new(&mut p.x).clamp_range(0..=16383));
                                 ui.label(tl(en, "目的 Z", "Destination Z"));
                                 ui.add(egui::DragValue::new(&mut p.z).clamp_range(0..=16383));
+                                if ui.button(tl(en, "在地圖上點選（目的地）", "Pick on map (destination)")).clicked() {
+                                    *pick = Some((i, true));
+                                }
                             });
                         }
                     }

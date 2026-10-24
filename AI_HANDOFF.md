@@ -1,3 +1,9 @@
+## 2026-10-24 Codex：劇本畫布標記與取點（自動化驗證通過）
+
+- 變更：Scenario 開啟時顯示啟用 SpawnUnit 的隊伍色、事件名稱與目的地箭頭，待產生波次使用空心方框；預設開啟「Show scenario overlay／顯示劇本標記」。四組 X/Z 提供雙語在地圖上點選，沿用共用 map_rect 轉換，四捨五入並夾限 0..16383；Esc／右鍵取消，按下至放開獨占畫布，不觸發筆刷或選取。事件經 replace_event＝一步 undo，波次只改表單；過期事件目標拒絕套用。
+- 驗證：依序 cargo check、cargo test、cargo build，均加 --workspace --locked --offline --target-dir re_workspace/codex-wave-dest-target，全部 exit 0（Windows MSVC，無連結錯誤）。完整測試 283 組合計 **2,380 passed／0 failed／24 ignored**；輸出 re_workspace/scenario-overlay-workspace-test.log，check/build 為同前綴 -check.log／-build.log。新增 6 項測試涵蓋座標往返、ui_frame 指標事件、生成與目的地、雙語按鈕、按住不塗畫、取消不變、單步復原、過期目標、開關疊圖與面板關閉隱藏。
+- 限制：GUI 視覺與遊戲內確認待驗證；未碰安裝遊戲目錄、未 stage/commit/push，保留 AGENTS.md／README.md 既有變更。一般 Shell 沙箱初始化失敗，已核准 require_escalated 可執行；額外 AGY 唯讀派工遭自動審查拒絕，未執行，改由 Codex 實作與主代理審查。
+
 ## 2026-10-24 Codex：勝負條件預設（自動化驗證通過，遊戲內待確認）
 
 - 變更：劇本面板新增雙語 Objective presets／勝負條件預設，支援存活秒數勝利、玩家主屋摧毀失敗、敵隊 1–7 主屋摧毀勝利。引用 kind 1 Dead/Removed Spawn；prebuilt 必須有有效 DATA 綁定，無可用目標時停用並說明。名稱避碰、等價啟用事件去重、每次新增一次 add_events＝一步 undo/redo；新增前完整編譯、重新 Design Check。
