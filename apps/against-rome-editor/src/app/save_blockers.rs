@@ -14,6 +14,7 @@ pub enum SaveBlockerKind {
 pub enum SavePanel {
     EventGraph,
     ScenarioGraph,
+    Spawns,
     Maps,
     Environment,
     Landscape,
@@ -270,7 +271,7 @@ impl EditorApp {
             match self.preview_spawn_data_for_save(&path) {
                 Ok(p) => p,
                 Err(e) => {
-                    check(Scenario, Err(e));
+                    check(if self.spawn_ui.pending_starter_kit().is_some() { Spawns } else { Scenario }, Err(e));
                     None
                 }
             }
@@ -362,6 +363,16 @@ impl EditorApp {
                 }
             }
         }
+        // 僅重用既有確認捨棄流程；DATA 與生成放置不新增重設語意。
+        for blocker in &mut blockers {
+            if (blocker.panel == Ambience && self.ambience.is_dirty())
+                || (blocker.panel == Campaign && self.campaign.is_dirty())
+            {
+                if !blocker.actions.contains(&SaveBlockerAction::Discard) {
+                    blocker.actions.push(SaveBlockerAction::Discard);
+                }
+            }
+        }
         blockers
     }
 
@@ -370,8 +381,9 @@ impl EditorApp {
         use SaveBlockerKind::*;
         use SavePanel::*;
         let mut blockers = Vec::new();
-        if spawn_data && (self.placement.is_dirty() || self.nature.session.is_dirty()) {
-            blockers.push(SaveBlocker::new(DataConflict, if self.placement.is_dirty() { Objects } else { Nature }, "Spawn placement DATA changes (prebuilt buildings / bound spawns) cannot be saved together with pending Objects (DATA) or Nature edits; save or discard those first", "生成物件的 DATA 變更不可與物件或自然地景變更同時儲存；請先處理其中一方"));
+        for (dirty, panel) in [(self.placement.is_dirty(), Objects), (self.nature.session.is_dirty(), Nature)] {
+            if !spawn_data || !dirty { continue; }
+            blockers.push(SaveBlocker::new(DataConflict, panel, "Spawn placement DATA changes (prebuilt buildings / bound spawns) cannot be saved together with pending Objects (DATA) or Nature edits; save or discard those first", "生成物件的 DATA 變更不可與物件或自然地景變更同時儲存；請先處理其中一方"));
         }
         if spawn_data && self.campaign.camera_pending() {
             blockers.push(SaveBlocker::new(DataConflict, Campaign, "Start camera candidate and new prebuilt DATA objects cannot be saved in one transaction; apply one and save first", "開局鏡頭與新增預建物件不可在同一交易儲存"));
@@ -399,6 +411,10 @@ impl EditorApp {
             EventGraph => {
                 self.event_graph.open = true;
                 "Visual Event Graph (劇情事件節點圖)"
+            }
+            Spawns => {
+                self.spawn_ui.open = true;
+                tr(self.loc.current_language(), "Place Script Objects (Spawns)", "放置腳本物件 (Spawns)")
             }
             ScenarioGraph => {
                 self.scenario.open_graph();
@@ -546,6 +562,7 @@ impl EditorApp {
                 }
             }
             SaveBlockerAction::Discard => match panel {
+                SavePanel::Ambience => self.ambience.request_close(),
                 SavePanel::EventGraph => self.event_graph.request_close(),
                 SavePanel::ScenarioGraph => self.scenario.graph_ui_mut().request_close(),
                 SavePanel::Maps => self.maps.request_close(),
@@ -662,6 +679,27 @@ impl EditorApp {
         }
         if save {
             self.save_now_from_blockers();
+        }
+    }
+}
+
+#[cfg(test)]
+mod resolution_tests {
+    use super::*;
+
+    #[test]
+    fn every_blocker_kind_has_an_action_or_explanation() {
+        for kind in [
+            SaveBlockerKind::PendingPanel,
+            SaveBlockerKind::MissingSession,
+            SaveBlockerKind::Target,
+            SaveBlockerKind::Validation,
+            SaveBlockerKind::DataConflict,
+            SaveBlockerKind::DesignError,
+        ] {
+            let blocker = SaveBlocker::new(kind, SavePanel::Maps, "Open panel to resolve", "請開啟面板處理");
+            assert!(!blocker.actions.is_empty() || (!blocker.english.is_empty() && !blocker.chinese.is_empty()));
+            assert!(blocker.actions.contains(&SaveBlockerAction::OpenPanel));
         }
     }
 }

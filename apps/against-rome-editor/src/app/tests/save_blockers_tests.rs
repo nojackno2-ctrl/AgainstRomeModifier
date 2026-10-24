@@ -169,6 +169,14 @@ fn save_blockers_previous_rejections_table() {
             },
             "Ambience",
         ),
+        (
+            Panel::Ambience,
+            |a, _| {
+                a.ambience.profile.preset_id = "preview".into();
+                a.ambience.mark_dirty();
+            },
+            "unsupported dirty profile fields",
+        ),
     ];
     for (panel, edit, message) in cases {
         let (mut app, dir) = app_with_target("blockers_table");
@@ -180,6 +188,18 @@ fn save_blockers_previous_rejections_table() {
                 .any(|b| b.panel == *panel && b.english.contains(message)),
             "{panel:?}"
         );
+        let ctx = egui::Context::default();
+        for blocker in app.save_blockers() {
+            assert!(!blocker.actions.is_empty() || (!blocker.english.is_empty() && !blocker.chinese.is_empty()));
+            assert!(blocker.actions.contains(&Action::OpenPanel), "{blocker:?}");
+            app.resolve_save_blocker(blocker.panel, Action::OpenPanel, &ctx);
+        }
+        match panel {
+            Panel::Ambience => assert!(app.ambience.open),
+            Panel::AiPlanner => assert!(app.ai_planner.open),
+            Panel::Packaging => assert!(app.packaging.open),
+            _ => (),
+        }
         app.safe_save_current_using(|_| panic!("既有拒絕條件不可放寬"));
         assert!(app.status_is_error, "{panel:?}");
         assert!(
@@ -197,6 +217,9 @@ fn save_blockers_open_panels_and_focus_existing_windows() {
     let (mut app, dir) = app_with_target("blockers_open");
     let ctx = egui::Context::default();
     for panel in [
+        Panel::Spawns,
+        Panel::Nature,
+        Panel::ScenarioGraph,
         Panel::EventGraph,
         Panel::Maps,
         Panel::Environment,
@@ -214,6 +237,7 @@ fn save_blockers_open_panels_and_focus_existing_windows() {
     ] {
         app.open_save_panel(panel, &ctx);
     }
+    assert!(app.spawn_ui.open && app.save_focus_nature && app.scenario.graph_ui().open);
     assert!(app.event_graph.open && app.maps.open && app.environment.open && app.landscape.open);
     assert!(app.packaging.open && app.campaign.open && app.ai_planner.open && app.toolbox.open);
     assert!(
@@ -357,6 +381,12 @@ fn save_blockers_data_conflicts_are_reported_together() {
     app.apply_start_camera_candidate().unwrap();
     let before = save_file_snapshot(&root);
     let blockers = app.save_blockers();
+    let ctx = egui::Context::default();
+    for blocker in blockers.iter().filter(|b| b.kind == Kind::DataConflict) {
+        assert!(blocker.actions.contains(&Action::OpenPanel));
+        app.resolve_save_blocker(blocker.panel, Action::OpenPanel, &ctx);
+    }
+    assert!(app.placement.open && app.campaign.open);
     assert!(blockers
         .iter()
         .any(|b| b.kind == Kind::DataConflict && b.panel == Panel::Objects));
@@ -456,4 +486,35 @@ fn save_blockers_dialog_is_bilingual_and_buttons_recompute() {
     }
     assert!(dir.join("boden.bmp").exists(), "{}", app.status_message);
     std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn save_blockers_weather_discard_keeps_confirmation() {
+    let (mut app, dir) = app_with_target("blocker_weather_discard");
+    app.ambience.profile.preset_id = "preview".into();
+    app.ambience.mark_dirty();
+    let blocker = app.save_blockers().into_iter().find(|b| b.panel == Panel::Ambience && b.english.contains("unsupported")).unwrap();
+    assert!(blocker.actions.contains(&Action::OpenPanel));
+    assert!(blocker.actions.contains(&Action::Discard));
+    app.resolve_save_blocker(Panel::Ambience, Action::Discard, &egui::Context::default());
+    assert!(app.ambience.open && app.ambience.pending_discard && app.ambience.is_dirty());
+    app.ambience.pending_discard = false;
+    assert!(app.ambience.is_dirty());
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn save_blockers_nature_data_conflict_opens_nature() {
+    let (mut app, root) = nature_app("blocker_nature_route");
+    app.nature_set_enabled(true);
+    app.nature_select_type(i32::from(NATURE_TREE));
+    app.nature.density = NatureDensity::Dense;
+    assert!(nature_stroke(&mut app, &[(10, 10)]).planted > 0);
+    let path = PathBuf::from(&app.map_path_input);
+    let blockers = app.save_data_blockers(&path, true);
+    let blocker = blockers.iter().find(|b| b.panel == Panel::Nature).unwrap();
+    assert!(blocker.actions.contains(&Action::OpenPanel));
+    app.open_save_panel(blocker.panel, &egui::Context::default());
+    assert!(app.save_focus_nature);
+    std::fs::remove_dir_all(root).unwrap();
 }

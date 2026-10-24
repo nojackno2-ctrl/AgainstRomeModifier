@@ -1,8 +1,10 @@
-## 2026-10-25 Codex：Safe Save 待處理工作（第 1 部分已驗證，尚有缺口）
-- 狀態：Codex 於 18:19Z 額度用盡中斷（06:02 本地時間重置）。Claude 以目前工作樹重跑 `cargo test --workspace --locked --offline --no-fail-fast`，exit 0，**2,488 passed／0 failed／24 ignored**（`re_workspace/save-blockers-claude-test.log`），以第 1 部分提交。新增 `app/save_blockers.rs`（集中 `SaveBlocker` 清單）與 `app/tests/save_blockers_tests.rs`（含 `save_blockers_previous_rejections_table`，比對舊拒絕條件）。
-- 尚未完成（Codex 中斷前自述）：Weather 預覽欄位、DATA 衝突等阻擋項目的安全捨棄入口，以及 starter kit 導向按鈕；這些項目目前只列出、沒有直接操作按鈕。下一步交給 Codex 補齊。
-- 已盤點中央儲存與各面板原有拒絕條件；實作集中阻擋清單、雙語處理視窗與既有套用／確認捨棄路徑，保留原交易及 Design Check 閘門。唯讀追查發現兩套 EventGraph、生成中的 AI 工作、報告狀態、Weather 預覽欄位與 DATA／鏡頭交易衝突都需涵蓋。
-- 驗證尚未完成；後續執行指定完整離線測試並將結果記於 re_workspace/save-blockers-test.log。不 stage／commit，不修改 AGENTS.md／README.md／docs，不接觸安裝遊戲，維持系統 TEMP/TMP。內建子代理因 thread-store 啟動失敗，改用 agent-delegation-tools 主機 MCP 分工。
+## 2026-10-25 Codex：Safe Save 待處理工作（第 2 部分已驗證，未提交）
+- 第 1 部分基準：7153ba4，既有完整測試 2,488 passed／0 failed／24 ignored。
+- 第 2 部分：保留所有 blocker 的既有「開啟面板」；starter kit 預覽失敗改導向生成放置面板；DATA 衝突依 Objects／Nature 各列面板；氛圍預覽／驗證與戰役衝突沿用既有 request_close 確認捨棄，不新增 DATA 或 starter kit 捨棄語意。AI 生成與封裝報告已由既有 is_dirty 涵蓋。
+- 測試擴充：拒絕條件表逐項檢查可用操作並執行開啟面板；補生成放置、Nature、劇本事件圖導向、DATA 衝突開啟及天氣捨棄確認。
+- 驗證：cargo check --workspace --locked --offline --target-dir re_workspace/codex-wave-dest-target 通過；指定 cargo test --workspace --locked --offline --no-fail-fast --target-dir re_workspace/codex-wave-dest-target 通過（exit 0，283 群組，2492 passed／0 failed／24 ignored），日誌 re_workspace/save-blockers-part2-test.log；相同 workspace／locked／offline／target-dir 的 cargo build 通過，git diff --check 通過。
+- 回歸測試首次刪除 objdef.dau 未觸發預期匯入 blocker（新測試失敗）；改以遺失可信地形觸發既有匯入拒絕，針對性及完整重驗均通過。
+- 限制：不 stage／commit，不修改 AGENTS.md／README.md，不接觸安裝遊戲；保留既有兩檔變更，維持系統 TEMP/TMP。直接工作，未委派；未進行 GUI／遊戲內驗收。
 ## 2026-10-25 Codex：統一復原 step 5（已驗證，未提交）
 - 成功 Safe Save 配合地形／DATA／Scene 等本地歷史清除建立新 epoch；載入、空白地圖、關閉、捨棄及還原地表清除 journal，並排空待收通知。復原依地形、材質、劇本固定順序記錄；空白地形合併輔助旗標／浮雕快照。
 - 驗證：cargo check --workspace --locked --offline --target-dir re_workspace/codex-wave-dest-target 通過；新增測試首次因材質快照借用跨可變操作而編譯失敗，已改為擁有的 Vec，編輯器首輪 637 passed／2 failed／5 ignored：DATA 延遲載入障壁抹除空白地形收據，已前移載入；既有 collector 測試固定 epoch 0，已改跟隨載入後 epoch。空白地形針對性重驗通過。子代理 thread-store 啟動失敗，由主代理接手。

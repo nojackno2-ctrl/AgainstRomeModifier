@@ -319,3 +319,20 @@ fn dialog_request_is_taken_once_in_world_units() {
     assert!(app.spawn_ui.take_starter_request().is_none(), "nothing until the dialog is confirmed");
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn save_blockers_pending_kit_opens_spawn_placement_on_import_failure() {
+    use crate::save_blockers::{SaveBlockerAction, SavePanel};
+    let (mut app, root, _) = fixture("blocker_kit_route", &[]);
+    kit_ok(&mut app);
+    // 模擬可信地形遺失，確認儲存錯誤導回持有待處理配置的面板。
+    app.session = None;
+    let blocker = app.save_blockers().into_iter()
+        .find(|b| b.panel == SavePanel::Spawns).unwrap();
+    assert!(blocker.actions.contains(&SaveBlockerAction::OpenPanel));
+    app.spawn_ui.open = false;
+    app.resolve_save_blocker(blocker.panel, SaveBlockerAction::OpenPanel, &egui::Context::default());
+    assert!(app.spawn_ui.open);
+    assert!(app.spawn_ui.pending_starter_kit().is_some());
+    std::fs::remove_dir_all(root).unwrap();
+}
