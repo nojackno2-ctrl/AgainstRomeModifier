@@ -2767,6 +2767,8 @@ impl ObjectStore {
     pub fn can_redo(&self) -> bool {
         !self.redo.is_empty()
     }
+    /// 僅移除重做歷史，保留目前內容、基準與復原。
+    pub fn clear_redo(&mut self) { self.redo.clear(); }
     pub fn payload(&self, name: &str) -> Option<&[u8]> {
         self.pools.get(name).map(|b| b.bytes.as_slice())
     }

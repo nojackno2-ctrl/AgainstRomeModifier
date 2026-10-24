@@ -65,6 +65,34 @@ fn unused_event_name(base: &str, events: &[Event]) -> String {
     }
     name
 }
+/// 旁錄核心的每一步；原有相同值取代仍保留 undo，但不產生提交 receipt。
+#[derive(Clone, Debug, Default)]
+struct EventHistory {
+    tokens: against_rome_textures::history::HistoryTokens,
+    undo: Vec<bool>,
+    redo: Vec<bool>,
+}
+impl EventHistory {
+    fn commit(&mut self, changed: bool) {
+        self.undo.push(changed);
+        self.redo.clear();
+        if changed { self.tokens.commit(); } else { self.tokens.clear_redo(); }
+    }
+    fn undo(&mut self) {
+        if let Some(changed) = self.undo.pop() {
+            if changed { self.tokens.undo(); }
+            self.redo.push(changed);
+        }
+    }
+    fn redo(&mut self) {
+        if let Some(changed) = self.redo.pop() {
+            if changed { self.tokens.redo(); }
+            self.undo.push(changed);
+        }
+    }
+    fn clear_redo(&mut self) { self.redo.clear(); self.tokens.clear_redo(); }
+}
+
 pub struct ScenarioUi {
     browser: EventBrowser,
     pub(crate) canvas: crate::scenario_canvas::ScenarioCanvas,
@@ -81,8 +109,8 @@ pub struct ScenarioUi {
     pub english: bool,
     document: ScenarioDocument,
     camera: StartCamera,
-    recovery_undo: Option<(ScenarioDocument, StartCamera, ScenarioEventSession)>,
-    recovery_redo: Option<(ScenarioDocument, StartCamera, ScenarioEventSession)>,
+    recovery_undo: Option<(ScenarioDocument, StartCamera, ScenarioEventSession, EventHistory)>,
+    recovery_redo: Option<(ScenarioDocument, StartCamera, ScenarioEventSession, EventHistory)>,
     source: Option<Source>,
     watched: Vec<Source>,
     aliases: Vec<String>,
@@ -92,6 +120,8 @@ pub struct ScenarioUi {
     pub(crate) selected: usize,
     baseline: Vec<u8>,
     events: ScenarioEventSession,
+    history: EventHistory,
+    receipts: Vec<crate::undo_journal::SubsystemStep>,
     pending: Option<Pending>,
     report: String,
     error: Option<String>,
@@ -131,6 +161,8 @@ impl Default for ScenarioUi {
             selected: 0,
             baseline,
             events: ScenarioEventSession::new(),
+            history: Default::default(),
+            receipts: vec![],
             pending: None,
             report: String::new(),
             error: None,
@@ -285,6 +317,35 @@ fn safe_parent(path: &Path) -> Result<PathBuf> {
     Ok(parent.join(absolute.file_name().ok_or("缺少輸出資料夾名稱")?))
 }
 impl ScenarioUi {
+    pub fn history_token(&self) -> u64 { self.history.tokens.token() }
+
+    pub fn take_history_receipts(&mut self) -> Vec<crate::undo_journal::SubsystemStep> {
+        std::mem::take(&mut self.receipts)
+    }
+
+    pub fn clear_redo(&mut self) {
+        self.events.clear_redo();
+        self.history.clear_redo();
+        if let Some((_, _, events, history)) = self.recovery_undo.as_mut() {
+            events.clear_redo();
+            history.clear_redo();
+        }
+        self.recovery_redo = None;
+    }
+
+    fn invalidate_history(&mut self) {
+        self.history = Default::default();
+        self.receipts.clear();
+    }
+
+    fn record_event_commit(&mut self, before: &[Event]) {
+        self.history.commit(before != self.events.capture());
+        self.receipts.extend(self.history.tokens.take_receipts().into_iter().map(
+            |(before_token, after_token)| crate::undo_journal::SubsystemStep {
+                subsystem: crate::undo_journal::SubsystemId::Scenario, before_token, after_token,
+            }));
+    }
+
     /// Live scenario document for read-only consumers (maps/campaign/packaging panels).
     pub fn document(&self) -> &ScenarioDocument {
         &self.document
@@ -326,7 +387,8 @@ impl ScenarioUi {
         if self.events.capture() != self.document.events {
             self.recovery_redo = None;
             let current = self.document.events.clone();
-            let _ = self.events.replace_all(&current);
+            let before = self.events.capture();
+            if self.events.replace_all(&current).is_ok() { self.record_event_commit(&before); }
         }
     }
     fn clamp_selected(&mut self) {
@@ -350,7 +412,9 @@ impl ScenarioUi {
     /// Applies an already validated draft through the session (one undo step).
     fn commit_events(&mut self, draft: ScenarioDocument) {
         self.sync_session();
+        let before = self.events.capture();
         if self.events.replace_all(&draft.events).is_ok() {
+            self.record_event_commit(&before);
             self.recovery_redo = None;
             self.document = draft;
         }
@@ -378,7 +442,9 @@ impl ScenarioUi {
             self.error = Some(e.clone());
             return Err(e);
         }
+        let before = self.events.capture();
         self.events.add_range(items)?;
+        if !items.is_empty() { self.record_event_commit(&before); }
         self.recovery_redo = None;
         self.document.events = self.events.capture();
         self.error = None;
@@ -389,7 +455,9 @@ impl ScenarioUi {
     /// The session enforces the event limit and UTF-16 name cap in one undo step.
     fn duplicate_event(&mut self, index: usize) -> Result<usize> {
         self.sync_session();
+        let before = self.events.capture();
         let selected = self.events.duplicate(index, "（副本）")?;
+        self.record_event_commit(&before);
         self.recovery_redo = None;
         self.document.events = self.events.capture();
         self.selected = selected;
@@ -399,7 +467,9 @@ impl ScenarioUi {
     }
     pub fn remove_event(&mut self, index: usize) -> Result<()> {
         self.sync_session();
+        let before = self.events.capture();
         self.events.remove_at(index)?;
+        self.record_event_commit(&before);
         self.recovery_redo = None;
         self.document.events = self.events.capture();
         self.clamp_selected();
@@ -410,7 +480,9 @@ impl ScenarioUi {
     /// here (intermediate typing states); validation still runs at preview/export/save.
     pub fn replace_event(&mut self, index: usize, item: Event) -> Result<()> {
         self.sync_session();
+        let before = self.events.capture();
         self.events.replace(index, item)?;
+        self.record_event_commit(&before);
         self.recovery_redo = None;
         self.document.events = self.events.capture();
         Ok(())
@@ -424,7 +496,9 @@ impl ScenarioUi {
         draft.events = items;
         self.validate_draft(&draft)?;
         self.sync_session();
+        let before = self.events.capture();
         self.events.replace_all(&draft.events)?;
+        self.record_event_commit(&before);
         self.recovery_redo = None;
         self.document = draft;
         self.clamp_selected();
@@ -435,17 +509,19 @@ impl ScenarioUi {
     pub fn undo_events(&mut self) -> bool {
         self.sync_session();
         if !self.events.can_undo() {
-            if let Some((document, camera, events)) = self.recovery_undo.take() {
-                self.recovery_redo = Some((self.document.clone(), self.camera.clone(), self.events.clone()));
+            if let Some((document, camera, events, history)) = self.recovery_undo.take() {
+                self.recovery_redo = Some((self.document.clone(), self.camera.clone(), self.events.clone(), self.history.clone()));
                 self.document = document;
                 self.camera = camera;
                 self.events = events;
+                self.history = history;
                 self.clamp_selected();
                 self.refresh_graph_after_event_change();
                 return true;
             }
         }
         let changed = self.events.undo();
+        if changed { self.history.undo(); }
         if changed {
             self.document.events = self.events.capture();
             self.clamp_selected();
@@ -455,14 +531,16 @@ impl ScenarioUi {
     }
     pub fn redo_events(&mut self) -> bool {
         self.sync_session();
-        if let Some((document, camera, events)) = self.recovery_redo.take() {
-            self.recovery_undo = Some((self.document.clone(), self.camera.clone(), self.events.clone()));
+        if let Some((document, camera, events, history)) = self.recovery_redo.take() {
+            self.recovery_undo = Some((self.document.clone(), self.camera.clone(), self.events.clone(), self.history.clone()));
             self.document = document; self.camera = camera;
             self.events = events;
+            self.history = history;
             self.clamp_selected();
             self.refresh_graph_after_event_change(); return true;
         }
         let changed = self.events.redo();
+        if changed { self.history.redo(); }
         if changed {
             self.document.events = self.events.capture();
             self.clamp_selected();
@@ -483,10 +561,17 @@ impl ScenarioUi {
         self.validate_draft(&document)?;
         camera.validate()?;
         self.sync_session();
-        self.recovery_undo = Some((self.document.clone(), self.camera.clone(), self.events.clone()));
+        self.recovery_undo = Some((self.document.clone(), self.camera.clone(), self.events.clone(), self.history.clone()));
         self.recovery_redo = None;
         self.document = document; self.camera = camera;
-        self.events.load(&self.document.events); self.refresh_graph_after_event_change();
+        let before_token = self.history_token();
+        self.events.load(&self.document.events);
+        self.history = Default::default();
+        self.receipts.push(crate::undo_journal::SubsystemStep {
+            subsystem: crate::undo_journal::SubsystemId::Scenario,
+            before_token, after_token: self.history_token(),
+        });
+        self.refresh_graph_after_event_change();
         Ok(())
     }
     pub fn dirty(&self) -> bool {
@@ -505,6 +590,7 @@ impl ScenarioUi {
         self.baseline = state_bytes(&document, &camera).unwrap_or_default();
         self.document = document;
         self.events = ScenarioEventSession::new();
+        self.invalidate_history();
         self.camera = camera;
         self.recovery_undo = None; self.recovery_redo = None;
         self.source = None;
@@ -594,6 +680,7 @@ impl ScenarioUi {
         self.recovery_undo = None; self.recovery_redo = None;
         self.baseline = state_bytes(&document, &camera)?;
         self.events = ScenarioEventSession::with_events(document.events.clone());
+        self.invalidate_history();
         self.document = document;
         self.camera = camera;
         self.aliases = aliases;
@@ -1746,6 +1833,130 @@ fn export_files(target: &Path, files: &[(&str, Vec<u8>)], fail_after: Option<usi
 }
 #[cfg(test)]
 mod tests {
+    fn shadow_event(name: &str) -> Event {
+        Event { name: name.into(), actions: vec![Action { text: "shadow".into(),
+            ..Default::default() }], ..Default::default() }
+    }
+
+    #[test]
+    fn shadow_events_all_commit_paths_and_token_roundtrip() {
+        let mut ui = ScenarioUi::default();
+        ui.source = Some(Source { path: "unused.bci".into(), bytes: vec![] });
+        let mut tokens = vec![ui.history_token()];
+        ui.add_events(&[shadow_event("新增")]).unwrap();
+        tokens.push(ui.history_token());
+        ui.duplicate_event(0).unwrap();
+        tokens.push(ui.history_token());
+        ui.replace_event(0, shadow_event("取代")).unwrap();
+        tokens.push(ui.history_token());
+        ui.remove_event(1).unwrap();
+        tokens.push(ui.history_token());
+        ui.replace_events(vec![shadow_event("整批")]).unwrap();
+        tokens.push(ui.history_token());
+        let mut draft = ui.document.clone();
+        draft.events.push(shadow_event("提交"));
+        ui.commit_events(draft);
+        tokens.push(ui.history_token());
+        ui.document.events.push(shadow_event("外部同步"));
+        ui.sync_session();
+        tokens.push(ui.history_token());
+        let receipts = ui.take_history_receipts();
+        assert_eq!(receipts.len(), tokens.len() - 1);
+        for (receipt, pair) in receipts.iter().zip(tokens.windows(2)) {
+            assert_eq!(receipt.subsystem, crate::undo_journal::SubsystemId::Scenario);
+            assert_eq!((receipt.before_token, receipt.after_token), (pair[0], pair[1]));
+            assert_ne!(pair[0], pair[1]);
+        }
+        for token in tokens[..tokens.len()-1].iter().rev() {
+            assert!(ui.undo_events());
+            assert_eq!(ui.history_token(), *token);
+        }
+        for token in &tokens[1..] {
+            assert!(ui.redo_events());
+            assert_eq!(ui.history_token(), *token);
+        }
+        assert!(ui.take_history_receipts().is_empty());
+    }
+
+    #[test]
+    fn shadow_events_noop_reject_branch_clear_and_external_invalidation() {
+        let mut ui = ScenarioUi::default();
+        ui.source = Some(Source { path: "unused.bci".into(), bytes: vec![] });
+        ui.add_events(&[shadow_event("原始")]).unwrap();
+        ui.take_history_receipts();
+        let token = ui.history_token();
+        ui.add_events(&[]).unwrap();
+        ui.replace_event(0, ui.document.events[0].clone()).unwrap();
+        ui.replace_events(ui.document.events.clone()).unwrap();
+        ui.commit_events(ui.document.clone());
+        assert_eq!(ui.history_token(), token);
+        assert!(ui.take_history_receipts().is_empty());
+        for _ in 0..3 {
+            assert!(ui.undo_events());
+            assert_eq!(ui.history_token(), token);
+        }
+        let before = ui.document.clone();
+        assert!(ui.remove_event(99).is_err());
+        assert!(ui.duplicate_event(99).is_err());
+        assert!(ui.replace_event(99, shadow_event("無效")).is_err());
+        assert!(ui.add_events(&vec![shadow_event("過量"); 256]).is_err());
+        assert_eq!(ui.document, before);
+        assert_eq!(ui.history_token(), token);
+        assert!(ui.can_redo_events());
+        assert!(ui.take_history_receipts().is_empty());
+        let baseline = ui.events.baseline().to_vec();
+        let dirty = ui.dirty();
+        ui.clear_redo();
+        assert_eq!(ui.events.baseline(), baseline);
+        assert_eq!(ui.dirty(), dirty);
+        assert!(!ui.can_redo_events());
+        assert_eq!(ui.history_token(), token);
+        assert_eq!(ui.document, before);
+        assert!(ui.undo_events());
+        assert!(ui.redo_events());
+        assert_eq!(ui.history_token(), token);
+        ui.add_events(&[shadow_event("舊分支")]).unwrap();
+        let old_branch = ui.history_token();
+        assert!(ui.undo_events());
+        ui.add_events(&[shadow_event("新分支")]).unwrap();
+        assert_ne!(ui.history_token(), old_branch);
+        assert!(!ui.can_redo_events());
+        let token = ui.history_token();
+        ui.reset_session(None);
+        assert_ne!(ui.history_token(), token);
+        assert!(ui.take_history_receipts().is_empty());
+        assert!(!ui.can_undo_events());
+    }
+
+    #[test]
+    fn shadow_events_recovery_tokens_and_redo_clearing_preserve_undo() {
+        let mut ui = recovery_scenario();
+        let restored = ui.history_token();
+        let receipt = ui.take_history_receipts();
+        assert_eq!(receipt.len(), 1);
+        assert_eq!(receipt[0].after_token, restored);
+        ui.add_events(&[shadow_event("復原後")]).unwrap();
+        let edited = ui.history_token();
+        assert!(ui.undo_events());
+        assert_eq!(ui.history_token(), restored);
+        assert!(ui.undo_events());
+        assert_eq!(ui.history_token(), receipt[0].before_token);
+        assert!(ui.redo_events());
+        assert_eq!(ui.history_token(), restored);
+        assert!(ui.redo_events());
+        assert_eq!(ui.history_token(), edited);
+        assert!(ui.undo_events());
+        ui.clear_redo();
+        assert!(!ui.can_redo_events());
+        assert!(ui.undo_events());
+        assert!(ui.redo_events());
+        assert_eq!(ui.history_token(), restored);
+        assert!(!ui.can_redo_events());
+        assert!(ui.undo_events());
+        ui.clear_redo();
+        assert!(!ui.redo_events());
+    }
+
     use super::*;
     fn recovery_scenario() -> ScenarioUi {
         let mut ui = ScenarioUi::default();

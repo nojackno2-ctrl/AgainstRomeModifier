@@ -170,6 +170,8 @@ impl SpawnPlacementSession {
     pub fn can_redo(&self) -> bool {
         !self.redo.is_empty()
     }
+    /// 僅移除重做歷史，保留目前內容、基準與復原。
+    pub fn clear_redo(&mut self) { self.redo.clear(); }
     pub fn undo_depth(&self) -> usize {
         self.undo.len()
     }

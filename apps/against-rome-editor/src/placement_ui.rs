@@ -13,6 +13,58 @@ use std::{
 
 type Result<T> = std::result::Result<T, String>;
 
+/// Barrier 必須使整合端的 journal 失效，不可當成可復原步驟。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PlacementHistoryReceipt {
+    Commit(crate::undo_journal::SubsystemStep),
+    Barrier { after_token: u64 },
+}
+
+impl PlacementHistoryReceipt {
+    pub fn after_token(&self) -> u64 {
+        match self {
+            Self::Commit(step) => step.after_token,
+            Self::Barrier { after_token } => *after_token,
+        }
+    }
+}
+
+/// 與既有分組步數同步；核心接受的相同值操作不產生新 token。
+#[derive(Clone, Debug, Default)]
+struct PlacementHistory {
+    tokens: against_rome_textures::history::HistoryTokens,
+    undo: Vec<bool>,
+    redo: Vec<bool>,
+}
+
+impl PlacementHistory {
+    fn token(&self) -> u64 { self.tokens.token() }
+    fn commit(&mut self, changed: bool) {
+        self.undo.push(changed);
+        self.redo.clear();
+        if changed { self.tokens.commit(); } else { self.tokens.clear_redo(); }
+    }
+    fn undo(&mut self) {
+        if let Some(changed) = self.undo.pop() {
+            if changed { self.tokens.undo(); }
+            self.redo.push(changed);
+        }
+    }
+    fn redo(&mut self) {
+        if let Some(changed) = self.redo.pop() {
+            if changed { self.tokens.redo(); }
+            self.undo.push(changed);
+        }
+    }
+    fn clear_redo(&mut self) { self.redo.clear(); self.tokens.clear_redo(); }
+}
+
+fn history_payloads(store: Option<&ObjectStore>) -> Vec<Option<Vec<u8>>> {
+    ["objects", "objdata", "position", "anim", "gfxtype", "action", "engine",
+        "light", "particle", "lager", "biglager"]
+        .iter().map(|name| store.and_then(|s| s.payload(name)).map(<[u8]>::to_vec)).collect()
+}
+
 /// Encodes raw uncompressed payload into Against Rome's native PFIL container format.
 /// Preserves the 64-byte header while updating the uncompressed length at offset 16..20,
 /// and packages chunks with uncompressed control bytes.
@@ -129,6 +181,7 @@ enum Pending {
 #[derive(Clone)]
 pub(crate) struct PlacementState {
     store: Option<ObjectStore>,
+    history: PlacementHistory,
     undo: Vec<usize>,
     redo: Vec<usize>,
     selected: Option<(usize, u32)>,
@@ -156,6 +209,9 @@ pub struct PlacementUi {
     status: String,
     /// History entries per user-visible edit (a batch apply is one undo step).
     undo_groups: Vec<usize>,
+    history: PlacementHistory,
+    history_payloads: Vec<Option<Vec<u8>>>,
+    history_receipts: Vec<PlacementHistoryReceipt>,
     redo_groups: Vec<usize>,
     /// Raised by the Save button; `EditorApp` consumes it and routes to the central Safe Save.
     save_requested: bool,
@@ -204,6 +260,9 @@ impl Default for PlacementUi {
             pending: None,
             status: String::new(),
             undo_groups: Vec::new(),
+            history: Default::default(),
+            history_payloads: history_payloads(None),
+            history_receipts: Vec::new(),
             redo_groups: Vec::new(),
             save_requested: false,
             settlement_history_routing: false,
@@ -220,9 +279,32 @@ impl Default for PlacementUi {
     }
 }
 impl PlacementUi {
+    pub fn history_token(&self) -> u64 { self.history.token() }
+
+    pub fn take_history_receipts(&mut self) -> Vec<PlacementHistoryReceipt> {
+        std::mem::take(&mut self.history_receipts)
+    }
+
+    /// 僅清除面板分組與 token 的重做，保留復原紀錄。
+    /// ObjectStore 未提供 clear_redo；直接操作共用 store 的面板仍須通知外部編輯 barrier。
+    pub fn clear_redo(&mut self) {
+        self.redo_groups.clear();
+        if let Some(store) = self.store.as_mut() { store.clear_redo(); }
+        self.history.clear_redo();
+    }
+
+    fn history_barrier(&mut self) {
+        self.history = Default::default();
+        self.history_payloads = history_payloads(self.store.as_ref());
+        self.history_receipts.push(PlacementHistoryReceipt::Barrier {
+            after_token: self.history.token(),
+        });
+    }
+
     pub(crate) fn capture_state(&self) -> PlacementState {
         PlacementState {
             store: self.store.clone(),
+            history: self.history.clone(),
             undo: self.undo_groups.clone(),
             redo: self.redo_groups.clone(),
             selected: self.selected,
@@ -247,7 +329,13 @@ impl PlacementUi {
     }
 
     pub(crate) fn restore_state(&mut self, state: &PlacementState) {
+        // 快照交換的複合紀錄留待後續整合；目前先使旁錄失效。
+        if self.history.token() != state.history.token() {
+            self.history_barrier();
+        }
+        self.history = state.history.clone();
         self.store = state.store.clone();
+        self.history_payloads = history_payloads(self.store.as_ref());
         self.undo_groups = state.undo.clone();
         self.redo_groups = state.redo.clone();
         self.selected = state.selected;
@@ -361,6 +449,7 @@ impl PlacementUi {
         self.status.clear();
         self.undo_groups.clear();
         self.redo_groups.clear();
+        self.history_barrier();
         self.map_input = map_path
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_default();
@@ -397,6 +486,7 @@ impl PlacementUi {
             self.status.clear();
             self.undo_groups.clear();
             self.redo_groups.clear();
+            self.history_barrier();
             Ok(())
         } else {
             self.reset_session(Some(map_path));
@@ -466,6 +556,7 @@ impl PlacementUi {
         self.store = Some(restored);
         self.undo_groups.clear();
         self.redo_groups.clear();
+        self.history_barrier();
         self.pending = None;
         self.check_selection();
         Ok(())
@@ -608,6 +699,16 @@ impl PlacementUi {
         if entries > 0 {
             self.undo_groups.push(entries);
             self.redo_groups.clear();
+            let payloads = history_payloads(self.store.as_ref());
+            self.history.commit(payloads != self.history_payloads);
+            self.history_payloads = payloads;
+            self.history_receipts.extend(self.history.tokens.take_receipts().into_iter().map(
+                |(before_token, after_token)| PlacementHistoryReceipt::Commit(crate::undo_journal::SubsystemStep {
+                    subsystem: crate::undo_journal::SubsystemId::Placement,
+                    before_token,
+                    after_token,
+                }),
+            ));
         }
     }
     /// Applies design-panel placements as one undoable group (bounded per call, see
@@ -637,6 +738,7 @@ impl PlacementUi {
     pub fn note_external_store_edit(&mut self) {
         self.undo_groups.clear();
         self.redo_groups.clear();
+        self.history_barrier();
         self.pending = None;
         self.check_selection();
     }
@@ -838,6 +940,7 @@ impl PlacementUi {
                 self.selection.clear();
                 self.undo_groups.clear();
                 self.redo_groups.clear();
+                self.history_barrier();
                 self.open = false;
                 Ok(())
             }
@@ -1086,6 +1189,8 @@ impl PlacementUi {
             return Err("沒有可復原操作".into());
         }
         self.redo_groups.push(done);
+        if done == group { self.history.undo(); } else { self.history_barrier(); }
+        self.history_payloads = history_payloads(self.store.as_ref());
         self.check_selection();
         self.pending = None;
         Ok(())
@@ -1104,6 +1209,8 @@ impl PlacementUi {
             return Err("沒有可重做操作".into());
         }
         self.undo_groups.push(done);
+        if done == group { self.history.redo(); } else { self.history_barrier(); }
+        self.history_payloads = history_payloads(self.store.as_ref());
         self.check_selection();
         self.pending = None;
         Ok(())
@@ -1137,6 +1244,7 @@ impl PlacementUi {
         // groups are the authoritative boundary for both undo/redo and buttons.
         self.undo_groups.clear();
         self.redo_groups.clear();
+        self.history_barrier();
         self.pending = None;
         Ok(())
     }
@@ -2619,6 +2727,116 @@ mod tests {
             rotation_deg: 90.0,
             team: Some(3),
         }
+    }
+
+    fn history_fixture() -> (Temp, PlacementUi) {
+        let temp = Temp::new();
+        fixture(&temp.0);
+        free_last_slot(&temp.0);
+        let mut ui = PlacementUi::default();
+        ui.load_now(&temp.0.display().to_string()).unwrap();
+        ui.take_history_receipts();
+        (temp, ui)
+    }
+
+    #[test]
+    fn shadow_history_group_tokens_round_trip_and_branch() {
+        let (_temp, mut ui) = history_fixture();
+        let original = ui.history_token();
+        let before = history_payloads(ui.store.as_ref());
+        assert!(ui.apply_requests(&[request(10.0, 10.0)]).unwrap().ops > 0);
+        let first = ui.history_token();
+        let after = history_payloads(ui.store.as_ref());
+        assert_ne!(original, first);
+        assert_eq!(ui.take_history_receipts(), vec![PlacementHistoryReceipt::Commit(
+            crate::undo_journal::SubsystemStep {
+                subsystem: crate::undo_journal::SubsystemId::Placement,
+                before_token: original, after_token: first,
+            },
+        )]);
+        ui.undo().unwrap();
+        assert_eq!(ui.history_token(), original);
+        assert_eq!(history_payloads(ui.store.as_ref()), before);
+        ui.redo().unwrap();
+        assert_eq!(ui.history_token(), first);
+        assert_eq!(history_payloads(ui.store.as_ref()), after);
+        assert!(ui.take_history_receipts().is_empty());
+        ui.undo().unwrap();
+        ui.apply_requests(&[request(20.0, 20.0)]).unwrap();
+        assert_ne!(ui.history_token(), first);
+        assert_eq!(ui.redo_depth(), 0);
+        assert!(!ui.store.as_ref().unwrap().can_redo());
+        assert_eq!(ui.take_history_receipts().len(), 1);
+    }
+
+    #[test]
+    fn shadow_history_noop_and_rejection_emit_nothing() {
+        let (_temp, mut ui) = history_fixture();
+        let original = ui.history_token();
+        ui.apply_requests(&[]).unwrap();
+        ui.apply_requests(&[request(-1.0, 0.0)]).unwrap();
+        assert!(ui.apply_requests(&[request(10.0, 10.0), request(20.0, 20.0)]).is_err());
+        ui.select_object(Some((0, 1)));
+        ui.move_family().unwrap();
+        assert!(ui.batch_edit(Some(99), None).is_err());
+        assert_eq!(ui.history_token(), original);
+        assert!(ui.take_history_receipts().is_empty());
+        // 核心仍接受相同值命令並保留既有 undo 行為，旁錄不虛構提交。
+        let team = ui.objects().iter().find(|o| o.slot == 0).unwrap().team;
+        ui.batch_edit(Some(team), None).unwrap();
+        assert_eq!(ui.undo_depth(), 1);
+        assert_eq!(ui.history_token(), original);
+        ui.undo().unwrap();
+        ui.redo().unwrap();
+        assert_eq!(ui.history_token(), original);
+        assert!(ui.take_history_receipts().is_empty());
+    }
+
+    #[test]
+    fn shadow_history_external_store_barrier_invalidates_journal() {
+        let (_temp, mut ui) = history_fixture();
+        ui.apply_requests(&[request(10.0, 10.0)]).unwrap();
+        let mut journal = crate::undo_journal::UndoJournal::default();
+        for receipt in ui.take_history_receipts() {
+            if let PlacementHistoryReceipt::Commit(step) = receipt {
+                assert!(journal.record_compound(vec![step]));
+            } else { panic!("預期提交通知"); }
+        }
+        let prior = ui.history_token();
+        // Families／Effects 使用同一個 store，沿用既有編輯後通知入口。
+        ui.store_mut().unwrap().translate_families_fixed(&[(0, 1)], [65536, 0, 0]).unwrap();
+        ui.note_external_store_edit();
+        assert_ne!(ui.history_token(), prior);
+        let receipts = ui.take_history_receipts();
+        assert_eq!(receipts, vec![PlacementHistoryReceipt::Barrier { after_token: ui.history_token() }]);
+        for receipt in receipts {
+            if let PlacementHistoryReceipt::Barrier { .. } = receipt { journal.new_epoch(); }
+        }
+        assert!(!journal.can_undo() && !journal.can_redo());
+        assert!(ui.store.as_ref().unwrap().can_undo(), "保留共用 store 的既有歷史");
+        assert_eq!((ui.undo_depth(), ui.redo_depth()), (0, 0));
+        ui.select_object(Some((0, 1)));
+        ui.nudge_selection(1.0, 0.0).unwrap();
+        assert!(matches!(ui.take_history_receipts().as_slice(), [PlacementHistoryReceipt::Commit(_)]));
+    }
+
+    #[test]
+    fn shadow_history_clear_redo_preserves_undo() {
+        let (_temp, mut ui) = history_fixture();
+        ui.select_object(Some((0, 1)));
+        ui.nudge_selection(1.0, 0.0).unwrap();
+        let first = ui.history_token();
+        ui.nudge_selection(1.0, 0.0).unwrap();
+        ui.undo().unwrap();
+        ui.take_history_receipts();
+        ui.clear_redo();
+        assert_eq!(ui.history_token(), first);
+        assert_eq!((ui.undo_depth(), ui.redo_depth()), (1, 0));
+        assert!(ui.redo().is_err());
+        assert!(!ui.store.as_ref().unwrap().can_redo());
+        ui.undo().unwrap();
+        assert_ne!(ui.history_token(), first);
+        assert!(ui.take_history_receipts().is_empty());
     }
     fn free_last_slot(map: &Path) {
         let objects_path = map.join("DATA/objects.dat");

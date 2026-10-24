@@ -2841,7 +2841,9 @@ impl Default for NatureWorkflow {
             show_other_regions: false,
             category: None,
             selected_type: None,
-            session: NatureEditSession::new(),
+            session: NatureEditSession::new_with_history_token_allocator(
+                against_rome_textures::history::next_history_token,
+            ),
             driver: NatureStrokeDriver::new(),
             random: DotNetRandom::new(seed),
             names: None,
@@ -3124,8 +3126,9 @@ impl EditorApp {
 
     /// Esc: drop the stroke in progress without leaving an undo step.
     pub fn nature_cancel_stroke(&mut self) {
-        if self.nature.driver.end(&mut self.nature.session) {
-            self.nature.session.undo();
+        let cancelled = self.nature.session.cancel_stroke();
+        self.nature.driver.end(&mut self.nature.session);
+        if cancelled {
             self.status_message = "Nature stroke cancelled.".into();
             self.status_is_error = false;
         }
@@ -10897,18 +10900,52 @@ impl EditorApp {
 impl EditorApp {
     /// 試行只旁錄，不參與既有工具列或面板的復原路由。
     fn collect_pilot_receipts(&mut self) {
-        let mut receipts = self.session.as_mut().map_or_else(Vec::new, |s| s.take_history_receipts());
+        use crate::placement_ui::PlacementHistoryReceipt;
+        use crate::undo_journal::{SubsystemId, SubsystemStep};
+
+        let mut receipts = self
+            .session
+            .as_mut()
+            .map_or_else(Vec::new, |s| s.take_history_receipts());
         receipts.extend(self.textures.take_history_receipts());
-        receipts.sort_by_key(|step| step.after_token);
-        for receipt in receipts { self.undo_journal.record_compound(vec![receipt]); }
+        receipts.extend(self.spawn_ui.take_history_receipts());
+        receipts.extend(self.scenario.take_history_receipts());
+        receipts.extend(self.nature.session.take_history_receipts().into_iter().map(
+            |(before_token, after_token)| SubsystemStep {
+                subsystem: SubsystemId::Nature,
+                before_token,
+                after_token,
+            },
+        ));
+        let mut notifications: Vec<_> = receipts
+            .into_iter()
+            .map(PlacementHistoryReceipt::Commit)
+            .collect();
+        notifications.extend(self.placement.take_history_receipts());
+        // 外部 DATA 修改也佔用同一序號軸，僅清除它之前的旁錄。
+        notifications.sort_by_key(PlacementHistoryReceipt::after_token);
+        for notification in notifications {
+            match notification {
+                PlacementHistoryReceipt::Commit(step) => {
+                    self.undo_journal.record_compound(vec![step]);
+                }
+                PlacementHistoryReceipt::Barrier { .. } => self.undo_journal.clear(),
+            }
+        }
     }
 }
 #[cfg(test)]
 impl EditorApp {
     fn pilot_history_consistent(&self) -> bool {
         self.undo_journal.consistent_tokens(|id| match id {
-            crate::undo_journal::SubsystemId::Terrain => self.session.as_ref().map_or(0, |s| s.history_token()),
+            crate::undo_journal::SubsystemId::Terrain => {
+                self.session.as_ref().map_or(0, |s| s.history_token())
+            }
             crate::undo_journal::SubsystemId::Materials => self.textures.history_token(),
+            crate::undo_journal::SubsystemId::Placement => self.placement.history_token(),
+            crate::undo_journal::SubsystemId::Spawns => self.spawn_ui.history_token(),
+            crate::undo_journal::SubsystemId::Scenario => self.scenario.history_token(),
+            crate::undo_journal::SubsystemId::Nature => self.nature.session.history_token(),
             _ => 0,
         })
     }
@@ -10921,12 +10958,240 @@ mod pilot_history_tests {
     fn pilot_records_without_switching_old_navigation() {
         let mut app = EditorApp::initial_state();
         let terrain = app.session.as_mut().unwrap();
-        terrain.apply_height_changes(&[crate::terrain::SampleChange { index: 0, before: 32, after: 40 }]);
+        terrain.apply_height_changes(&[crate::terrain::SampleChange {
+            index: 0,
+            before: 32,
+            after: 40,
+        }]);
         assert!(terrain.commit_stroke());
         app.collect_pilot_receipts();
         assert!(app.undo_journal.can_undo());
         assert!(app.pilot_history_consistent());
         assert!(app.session.as_mut().unwrap().undo());
         assert!(!app.pilot_history_consistent());
+    }
+}
+
+#[cfg(test)]
+mod step3a_history_tests {
+    use super::tests::spawn_save_tests::{cx, fixture, place_house};
+    use super::*;
+    use crate::undo_journal::{SubsystemId, UndoJournal, UndoTarget};
+
+    /// 僅供交錯測試使用，不接管工具列或面板路由。
+    struct RealTarget<'a> {
+        app: &'a mut EditorApp,
+        calls: Vec<(bool, SubsystemId)>,
+    }
+
+    impl UndoTarget for RealTarget<'_> {
+        fn token(&self, id: SubsystemId) -> u64 {
+            match id {
+                SubsystemId::Terrain => self.app.session.as_ref().unwrap().history_token(),
+                SubsystemId::Spawns => self.app.spawn_ui.history_token(),
+                SubsystemId::Scenario => self.app.scenario.history_token(),
+                SubsystemId::Nature => self.app.nature.session.history_token(),
+                _ => panic!("測試未支援的子系統：{id:?}"),
+            }
+        }
+
+        fn undo(&mut self, id: SubsystemId) -> bool {
+            self.calls.push((false, id));
+            match id {
+                SubsystemId::Terrain => self.app.session.as_mut().unwrap().undo(),
+                SubsystemId::Spawns => self.app.spawn_ui.undo(&mut self.app.scenario, &cx()),
+                SubsystemId::Scenario => self.app.scenario.undo_events(),
+                SubsystemId::Nature => self.app.nature.session.undo(),
+                _ => panic!("測試未支援的子系統：{id:?}"),
+            }
+        }
+
+        fn redo(&mut self, id: SubsystemId) -> bool {
+            self.calls.push((true, id));
+            match id {
+                SubsystemId::Terrain => self.app.session.as_mut().unwrap().redo(),
+                SubsystemId::Spawns => self.app.spawn_ui.redo(&mut self.app.scenario, &cx()),
+                SubsystemId::Scenario => self.app.scenario.redo_events(),
+                SubsystemId::Nature => self.app.nature.session.redo(),
+                _ => panic!("測試未支援的子系統：{id:?}"),
+            }
+        }
+    }
+
+    fn terrain_edit(app: &mut EditorApp, after: u8) {
+        let terrain = app.session.as_mut().unwrap();
+        let before = terrain.heights()[0];
+        terrain.apply_height_changes(&[crate::terrain::SampleChange {
+            index: 0,
+            before,
+            after,
+        }]);
+        assert!(terrain.commit_stroke());
+    }
+
+    fn event_edit(app: &mut EditorApp) {
+        use against_rome_scenario::{Action, Event};
+        let first = app.scenario.document().events.len();
+        assert_eq!(
+            app.scenario
+                .add_events(&[Event {
+                    name: "交錯事件".into(),
+                    actions: vec![Action {
+                        text: "step3a".into(),
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                }])
+                .unwrap(),
+            first
+        );
+    }
+
+    fn nature_edit(app: &mut EditorApp) {
+        app.nature
+            .session
+            .plant(against_rome_environment::nature::NatureAddition::new(
+                1, "Tree", 10.0, 0.0, 10.0, 0.0,
+            ));
+        assert!(app.nature.session.commit_stroke());
+    }
+
+    fn snapshot(
+        app: &EditorApp,
+    ) -> (
+        Vec<u8>,
+        Vec<u8>,
+        against_rome_environment::nature::NatureSnapshot,
+    ) {
+        (
+            app.session.as_ref().unwrap().heights().to_vec(),
+            serde_json::to_vec(app.scenario.document()).unwrap(),
+            app.nature.session.capture(),
+        )
+    }
+
+    #[test]
+    fn terrain_spawn_event_nature_chronological_undo_redo() {
+        use SubsystemId::{Nature, Scenario, Spawns, Terrain};
+        let (mut app, root, _) = fixture("step3a_chronological", &[]);
+        app.collect_pilot_receipts();
+        app.undo_journal.clear();
+        let mut states = vec![snapshot(&app)];
+        terrain_edit(&mut app, 40);
+        states.push(snapshot(&app));
+        place_house(&mut app, (30, 30), 0);
+        states.push(snapshot(&app));
+        event_edit(&mut app);
+        states.push(snapshot(&app));
+        nature_edit(&mut app);
+        states.push(snapshot(&app));
+
+        // 故意整批收集，驗證不同子系統的掃描順序不會取代提交順序。
+        app.collect_pilot_receipts();
+        assert!(app.pilot_history_consistent());
+        let mut journal = std::mem::take(&mut app.undo_journal);
+        let mut target = RealTarget {
+            app: &mut app,
+            calls: vec![],
+        };
+        for expected in states[..4].iter().rev() {
+            assert!(journal.undo(&mut target));
+            assert_eq!(&snapshot(target.app), expected);
+            assert!(journal.consistent_tokens(|id| target.token(id)));
+        }
+        assert!(!journal.undo(&mut target));
+        for expected in &states[1..] {
+            assert!(journal.redo(&mut target));
+            assert_eq!(&snapshot(target.app), expected);
+            assert!(journal.consistent_tokens(|id| target.token(id)));
+        }
+        assert!(!journal.redo(&mut target));
+        assert_eq!(
+            target.calls,
+            vec![
+                (false, Nature),
+                (false, Scenario),
+                (false, Spawns),
+                (false, Terrain),
+                (true, Terrain),
+                (true, Spawns),
+                (true, Scenario),
+                (true, Nature),
+            ]
+        );
+        app.undo_journal = journal;
+        let recorded = app.undo_journal.clone();
+        app.collect_pilot_receipts();
+        assert_eq!(app.undo_journal, recorded, "重收與導航不得新增 receipt");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn collector_orders_multiple_external_barriers_with_commits() {
+        use crate::undo_journal::SubsystemStep;
+        let (mut app, root, map) = fixture("step3a_barriers", &[(232, None)]);
+        app.placement.load_session(&map).unwrap();
+        app.collect_pilot_receipts();
+        app.undo_journal.clear();
+        terrain_edit(&mut app, 40);
+        place_house(&mut app, (30, 30), 0);
+        app.placement.select_object(Some((0, 1)));
+        app.placement.nudge_selection(1.0, 0.0).unwrap();
+        app.placement.note_external_store_edit();
+        event_edit(&mut app);
+        app.placement.note_external_store_edit();
+
+        // 最後一道 barrier 之後的提交必須留下，且仍依跨系統時間排列。
+        let nature_before = app.nature.session.history_token();
+        nature_edit(&mut app);
+        let nature_after = app.nature.session.history_token();
+        let terrain_before = app.session.as_ref().unwrap().history_token();
+        terrain_edit(&mut app, 48);
+        let terrain_after = app.session.as_ref().unwrap().history_token();
+        let placement_before = app.placement.history_token();
+        app.placement.nudge_selection(1.0, 0.0).unwrap();
+        let placement_after = app.placement.history_token();
+        let content = snapshot(&app);
+        app.collect_pilot_receipts();
+
+        let mut expected = UndoJournal::default();
+        for (subsystem, before_token, after_token) in [
+            (SubsystemId::Nature, nature_before, nature_after),
+            (SubsystemId::Terrain, terrain_before, terrain_after),
+            (SubsystemId::Placement, placement_before, placement_after),
+        ] {
+            assert!(expected.record_compound(vec![SubsystemStep {
+                subsystem,
+                before_token,
+                after_token
+            }]));
+        }
+        assert_eq!(app.undo_journal, expected);
+        assert!(app.pilot_history_consistent());
+        assert_eq!(snapshot(&app), content, "collector 只能旁錄，不得導航");
+        app.collect_pilot_receipts();
+        assert_eq!(app.undo_journal, expected, "所有通知都必須只消耗一次");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn collector_external_barrier_clears_existing_redo_and_pending_commits() {
+        let mut app = EditorApp::initial_state();
+        terrain_edit(&mut app, 40);
+        app.collect_pilot_receipts();
+        let mut journal = std::mem::take(&mut app.undo_journal);
+        assert!(journal.undo(&mut RealTarget {
+            app: &mut app,
+            calls: vec![]
+        }));
+        assert!(journal.can_redo());
+        app.undo_journal = journal;
+        // 未收集的提交也在 barrier 之前，不能在清除之後被重新加回。
+        nature_edit(&mut app);
+        app.placement.note_external_store_edit();
+        let content = snapshot(&app);
+        app.collect_pilot_receipts();
+        assert!(!app.undo_journal.can_undo());
+        assert!(!app.undo_journal.can_redo());
+        assert_eq!(snapshot(&app), content);
     }
 }

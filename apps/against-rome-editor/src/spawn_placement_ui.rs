@@ -131,6 +131,9 @@ pub struct SpawnPlacementUi {
     layout_to: i32,
     pub open: bool,
     session: SpawnPlacementSession,
+    history: against_rome_textures::history::HistoryTokens,
+    history_undo: Vec<bool>,
+    history_redo: Vec<bool>,
     catalog: Vec<SdlObjectType>,
     catalog_root: Option<PathBuf>,
     catalog_fixed: bool,
@@ -181,6 +184,9 @@ impl Default for SpawnPlacementUi {
             layout_to: 1,
             open: false,
             session: SpawnPlacementSession::new(),
+            history: Default::default(),
+            history_undo: vec![],
+            history_redo: vec![],
             catalog: Vec::new(),
             catalog_root: None,
             catalog_fixed: false,
@@ -243,6 +249,28 @@ fn error_text(lang: AppLanguage, error: &PlacementError, out_of_range: (&'static
 impl SpawnPlacementUi {
     // ---- state access (tests / app) ----------------------------------------------------
 
+    pub fn history_token(&self) -> u64 { self.history.token() }
+
+    pub fn take_history_receipts(&mut self) -> Vec<crate::undo_journal::SubsystemStep> {
+        self.history.take_receipts().into_iter().map(|(before_token, after_token)|
+            crate::undo_journal::SubsystemStep {
+                subsystem: crate::undo_journal::SubsystemId::Spawns, before_token, after_token,
+            }).collect()
+    }
+
+    /// 僅清除重做，保留內容、基準與復原。
+    pub fn clear_redo(&mut self) {
+        self.session.clear_redo();
+        self.history.clear_redo();
+        self.history_redo.clear();
+    }
+
+    fn invalidate_history(&mut self) {
+        self.history = Default::default();
+        self.history_undo.clear();
+        self.history_redo.clear();
+    }
+
     pub fn session(&self) -> &SpawnPlacementSession {
         &self.session
     }
@@ -255,6 +283,7 @@ impl SpawnPlacementUi {
         self.catalog_fixed = true;
         self.catalog_root = None;
         self.synced.clear();
+        self.invalidate_history();
     }
     pub fn place_mode(&self) -> bool {
         self.open && self.place_mode
@@ -321,6 +350,7 @@ impl SpawnPlacementUi {
         };
         self.catalog_root = root;
         self.synced.clear();
+        self.invalidate_history();
         self.selected_type = None;
     }
 
@@ -383,6 +413,7 @@ impl SpawnPlacementUi {
             self.map_key = key;
             let (placed, foreign) = load_spawns(spawns, &self.catalog);
             self.session.load(&placed);
+            self.invalidate_history();
             self.foreign = foreign;
             self.synced = spawns.clone();
             self.loaded = spawns.clone();
@@ -395,6 +426,7 @@ impl SpawnPlacementUi {
         } else if self.session.is_dirty() && !scenario.dirty() {
             // Safe Save committed the spawns (scenario baseline advanced): re-baseline.
             self.session.accept_saved_changes();
+            self.invalidate_history();
             self.pending_kit = None;
             self.rebuild_bound(scenario);
         }
@@ -435,15 +467,20 @@ impl SpawnPlacementUi {
         out_of_range: (&'static str, &'static str),
         command: impl FnOnce(&mut SpawnPlacementSession) -> Result<(), PlacementError>,
     ) -> Result<(), String> {
+        let saved_session = self.session.clone();
         let before = self.session.undo_depth();
         command(&mut self.session).map_err(|e| error_text(lang, &e, out_of_range))?;
         if self.session.undo_depth() == before {
             return Ok(()); // no-op command (nothing changed)
         }
         if let Err(e) = self.push_to_scenario(scenario) {
-            self.session.abort_last();
+            self.session = saved_session;
             return Err(e);
         }
+        let changed = saved_session.capture() != self.session.capture();
+        self.history_undo.push(changed);
+        self.history_redo.clear();
+        if changed { self.history.commit(); } else { self.history.clear_redo(); }
         Ok(())
     }
 
@@ -834,6 +871,10 @@ impl SpawnPlacementUi {
             self.set_status(e, true);
             return false;
         }
+        if let Some(changed) = self.history_undo.pop() {
+            if changed { self.history.undo(); }
+            self.history_redo.push(changed);
+        }
         self.set_status(tr(cx.lang, "Undo performed.", "已復原。"), false);
         true
     }
@@ -846,6 +887,10 @@ impl SpawnPlacementUi {
             self.session.undo();
             self.set_status(e, true);
             return false;
+        }
+        if let Some(changed) = self.history_redo.pop() {
+            if changed { self.history.redo(); }
+            self.history_undo.push(changed);
         }
         self.set_status(tr(cx.lang, "Redo performed.", "已重做。"), false);
         true
@@ -1587,6 +1632,134 @@ impl SpawnPlacementUi {
 #[cfg(test)]
 mod palette_thumbnail_tests {
     use super::*;
+    #[test]
+    fn shadow_spawn_clear_multiple_dependent_redo_preserves_state_and_undo() {
+        let (root, mut scenario, mut panel, cx) = shadow_fixture();
+        for i in 0..3 {
+            let item = new_placement(&panel.catalog[0], 100. + i as f32, 0., 100., 0, 0., 1).unwrap();
+            panel.mutate(&mut scenario, cx.lang, ("", ""), |s| s.add(item)).unwrap();
+        }
+        assert!(panel.undo(&mut scenario, &cx));
+        assert!(panel.undo(&mut scenario, &cx));
+        let token = panel.history_token();
+        let objects = panel.session.capture();
+        let dirty = panel.session.is_dirty();
+        let document = scenario.document().clone();
+        panel.take_history_receipts();
+        panel.clear_redo();
+        assert_eq!(panel.history_token(), token);
+        assert_eq!(panel.session.capture(), objects);
+        assert_eq!(panel.session.is_dirty(), dirty);
+        assert_eq!(scenario.document(), &document);
+        assert_eq!(panel.session.undo_depth(), 1);
+        assert_eq!(panel.session.redo_depth(), 0);
+        assert!(panel.take_history_receipts().is_empty());
+        assert!(panel.undo(&mut scenario, &cx));
+        assert!(panel.redo(&mut scenario, &cx));
+        assert_eq!(panel.history_token(), token);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+    fn shadow_fixture() -> (PathBuf, ScenarioUi, SpawnPlacementUi, SpawnContext<'static>) {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../re_workspace")
+            .join(format!("spawn-shadow-{}", Uuid::new_v4()));
+        let map = root.join("MAPS/test");
+        std::fs::create_dir_all(map.join("SCRIPT")).unwrap();
+        std::fs::write(map.join("SCRIPT/ak_level.bci"),
+            against_rome_scenario::BciImage::idle().serialize()).unwrap();
+        let mut scenario = ScenarioUi::default();
+        scenario.load_session(&map).unwrap();
+        let mut panel = SpawnPlacementUi::default();
+        panel.set_catalog(vec![SdlObjectType::new("wolf", 1, SdlObjectCategory::Other,
+            "", 0, Default::default())]);
+        let cx = SpawnContext { lang: AppLanguage::English, heights: None,
+            vertex_size: 0, height_step: 4., read_only: false };
+        (root, scenario, panel, cx)
+    }
+
+    #[test]
+    fn shadow_spawn_roundtrip_branch_clear_and_external_invalidation() {
+        let (root, mut scenario, mut panel, cx) = shadow_fixture();
+        let map = root.join("MAPS/test");
+        panel.sync_with_document(&scenario, Some(&map));
+        let original = panel.history_token();
+        let spawn = Spawn { alias: "wolf".into(), id: Uuid::new_v4(), count: 1, ..Default::default() };
+        // 使用注入的目錄驗證出版與歷史，不依賴遊戲安裝資料。
+        let mut item = new_placement(&panel.catalog[0], 100., 0., 100., 0, 0., 1).unwrap(); item.scenario_id = spawn.id;
+        panel.mutate(&mut scenario, cx.lang, ("", ""), |s| s.add(item.clone())).unwrap();
+        let first = panel.history_token();
+        assert_ne!(first, original);
+        let receipts = panel.take_history_receipts();
+        assert_eq!(receipts.len(), 1);
+        assert_eq!(receipts[0], crate::undo_journal::SubsystemStep {
+            subsystem: crate::undo_journal::SubsystemId::Spawns,
+            before_token: original, after_token: first,
+        });
+        assert!(panel.undo(&mut scenario, &cx));
+        assert_eq!(panel.history_token(), original);
+        assert!(panel.redo(&mut scenario, &cx));
+        assert_eq!(panel.history_token(), first);
+        assert!(panel.take_history_receipts().is_empty());
+        assert!(panel.undo(&mut scenario, &cx));
+        panel.mutate(&mut scenario, cx.lang, ("", ""), |s| s.add(item.clone())).unwrap();
+        assert_ne!(panel.history_token(), first);
+        assert!(!panel.session.can_redo());
+        panel.mutate(&mut scenario, cx.lang, ("", ""), |s| s.add(
+            SdlPlacedObject { scenario_id: Uuid::new_v4(), ..item.clone() })).unwrap();
+        assert!(panel.undo(&mut scenario, &cx));
+        let token = panel.history_token();
+        let depth = panel.session.undo_depth();
+        let objects = panel.session.capture();
+        panel.clear_redo();
+        assert_eq!(panel.history_token(), token);
+        assert_eq!(panel.session.undo_depth(), depth);
+        assert_eq!(panel.session.capture(), objects);
+        assert!(!panel.session.can_redo());
+        assert!(panel.undo(&mut scenario, &cx));
+        assert!(panel.redo(&mut scenario, &cx));
+        panel.take_history_receipts();
+        scenario.apply_spawns(vec![spawn]).unwrap();
+        panel.sync_with_document(&scenario, Some(&map));
+        assert_ne!(panel.history_token(), token);
+        assert!(panel.take_history_receipts().is_empty());
+        assert!(!panel.session.can_undo());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn shadow_spawn_noop_and_rejected_publication_preserve_token_and_redo() {
+        let (root, mut scenario, mut panel, cx) = shadow_fixture();
+        let token = panel.history_token();
+        panel.mutate(&mut scenario, cx.lang, ("", ""), |_| Ok(())).unwrap();
+        assert_eq!(panel.history_token(), token);
+        assert!(panel.take_history_receipts().is_empty());
+        let item = new_placement(&panel.catalog[0], 100., 0., 100., 0, 0., 1).unwrap();
+        panel.mutate(&mut scenario, cx.lang, ("", ""), |s| s.add(item.clone())).unwrap();
+        assert!(panel.undo(&mut scenario, &cx));
+        let token = panel.history_token();
+        assert!(panel.redo(&mut scenario, &cx));
+        let same = panel.session.get(0).unwrap();
+        let same_token = panel.history_token();
+        panel.take_history_receipts();
+        panel.mutate(&mut scenario, cx.lang, ("", ""), |s| s.replace(0, same)).unwrap();
+        assert_eq!(panel.history_token(), same_token);
+        assert!(panel.take_history_receipts().is_empty());
+        assert!(panel.undo(&mut scenario, &cx));
+        assert_eq!(panel.history_token(), same_token);
+        assert!(panel.undo(&mut scenario, &cx));
+        assert_eq!(panel.history_token(), token);
+        panel.take_history_receipts();
+        scenario.reset_session(None);
+        assert!(panel.mutate(&mut scenario, cx.lang, ("", ""), |s| s.add(item)).is_err());
+        assert_eq!(panel.history_token(), token);
+        assert!(panel.session.can_redo());
+        assert_eq!(panel.session.undo_depth(), 0);
+        assert!(panel.session.is_empty());
+        assert!(panel.take_history_receipts().is_empty());
+        assert!(panel.mutate(&mut scenario, cx.lang, ("", ""), |s| s.remove_at(99)).is_err());
+        assert_eq!(panel.history_token(), token);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
 
     #[test]
     fn spawn_layout_import_is_one_undo_and_unknown_alias_leaves_document_unchanged() {
