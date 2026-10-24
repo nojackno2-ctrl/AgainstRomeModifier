@@ -1,3 +1,7 @@
+## 2026-10-24 Codex：統一復原計畫第 1 步（已驗證）
+- 依 docs/map-editor-unified-undo-plan.md 新增獨立 undo_journal 與假目標測試，僅於 lib.rs 註冊，未接 EditorApp/UI。驗證 token、委派順序與成功後才移動紀錄；複合失敗嘗試補償，目標需遵守失敗不變更與反向可還原契約。
+- 未修改或暫存 AGENTS.md、README.md；未提交，未存取遊戲目錄。依序 cargo check、cargo test、cargo build，皆使用 --workspace --locked --offline --target-dir re_workspace/codex-wave-dest-target，exit 0；測試 2428 passed、0 failed、24 ignored（新增 journal 8 passed）。完整輸出：re_workspace/undo-journal-step1-test.log；另有同前綴 check/build 日誌。
+
 ## 2026-10-24 Codex：未儲存工作當機復原（已驗證）
 
 - 實作：`%APPDATA%/AgainstRomeModifier/editor/recovery/<map-key>/manifest.json`；loaded＋dirty 每 120 秒且內容變更才背景原子快照，包含開圖來源 size＋mtime 指紋、版本、UTC 時間與實際包含／缺漏清單。復原高度、通行性、材質、水面控制、劇本／腳本生成物件與起始鏡頭；地形／材質／劇本各一步 undo，僅修改記憶體。雙語 Restore／Discard／Decide later，拒絕來源不符、未來版本與損毀內容；成功 Safe Save、明確捨棄、clean close 清除，稍後決定保留舊快照並暫停覆寫。

@@ -46,3 +46,4 @@ pub use tech_doc_ui::{TechDocLanguage, TechDocUi};
 pub use terrain::{CollisionBrushOp, HeightBrushOp, TerrainSession};
 pub use viewport_3d::{ShadingMode, Viewport3d, ViewportAction};
 pub mod recovery;
+pub mod undo_journal;

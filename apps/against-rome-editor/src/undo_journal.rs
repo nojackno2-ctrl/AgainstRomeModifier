@@ -1,0 +1,339 @@
+//! 尚未接入編輯器的跨子系統歷程骨架。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum SubsystemId {
+    Terrain,
+    Materials,
+    Placement,
+    Nature,
+    Spawns,
+    Scenario,
+    Scene,
+    Other,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SubsystemStep {
+    pub subsystem: SubsystemId,
+    pub before_token: u64,
+    pub after_token: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct JournalEntry {
+    pub epoch: u64,
+    pub children: Vec<SubsystemStep>,
+}
+
+/// 回傳 false 必須保持該次呼叫前的狀態；反向操作必須能還原成功的操作。
+/// 複合操作失敗會嘗試補償；此 bool 介面無法保證補償失敗時的目標原子性。
+pub trait UndoTarget {
+    fn token(&self, subsystem: SubsystemId) -> u64;
+    fn undo(&mut self, subsystem: SubsystemId) -> bool;
+    fn redo(&mut self, subsystem: SubsystemId) -> bool;
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct UndoJournal {
+    epoch: u64,
+    undo: Vec<JournalEntry>,
+    redo: Vec<JournalEntry>,
+}
+
+impl UndoJournal {
+    pub fn epoch(&self) -> u64 {
+        self.epoch
+    }
+
+    /// 拒絕過期、空白與重複子系統；每筆子紀錄代表該子系統的一次歷程操作。
+    pub fn record(&mut self, entry: JournalEntry) -> bool {
+        if entry.epoch != self.epoch
+            || entry.children.is_empty()
+            || entry.children.iter().enumerate().any(|(i, child)| {
+                entry.children[..i]
+                    .iter()
+                    .any(|prior| prior.subsystem == child.subsystem)
+            })
+        {
+            return false;
+        }
+        self.redo.clear();
+        self.undo.push(entry);
+        true
+    }
+
+    pub fn record_compound(&mut self, children: Vec<SubsystemStep>) -> bool {
+        self.record(JournalEntry {
+            epoch: self.epoch,
+            children,
+        })
+    }
+
+    pub fn can_undo(&self) -> bool {
+        !self.undo.is_empty()
+    }
+    pub fn can_redo(&self) -> bool {
+        !self.redo.is_empty()
+    }
+
+    pub fn undo(&mut self, target: &mut dyn UndoTarget) -> bool {
+        self.navigate(target, false)
+    }
+
+    pub fn redo(&mut self, target: &mut dyn UndoTarget) -> bool {
+        self.navigate(target, true)
+    }
+
+    fn navigate(&mut self, target: &mut dyn UndoTarget, forward: bool) -> bool {
+        let (source, destination) = if forward {
+            (&mut self.redo, &mut self.undo)
+        } else {
+            (&mut self.undo, &mut self.redo)
+        };
+        let Some(entry) = source.last() else {
+            return false;
+        };
+        if entry.epoch != self.epoch
+            || entry.children.iter().any(|child| {
+                target.token(child.subsystem)
+                    != if forward {
+                        child.before_token
+                    } else {
+                        child.after_token
+                    }
+            })
+        {
+            return false;
+        }
+        let ordered: Vec<_> = if forward {
+            entry.children.iter().collect()
+        } else {
+            entry.children.iter().rev().collect()
+        };
+        for (index, child) in ordered.iter().enumerate() {
+            let success = if forward {
+                target.redo(child.subsystem)
+            } else {
+                target.undo(child.subsystem)
+            };
+            if !success {
+                for completed in ordered[..index].iter().rev() {
+                    let restored = if forward {
+                        target.undo(completed.subsystem)
+                    } else {
+                        target.redo(completed.subsystem)
+                    };
+                    if !restored {
+                        break;
+                    }
+                }
+                return false;
+            }
+        }
+        if let Some(entry) = source.pop() {
+            destination.push(entry);
+        }
+        true
+    }
+
+    pub fn clear(&mut self) {
+        self.undo.clear();
+        self.redo.clear();
+    }
+
+    pub fn new_epoch(&mut self) {
+        self.clear();
+        self.epoch = self.epoch.wrapping_add(1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+    use SubsystemId::{Materials, Terrain};
+
+    #[derive(Default)]
+    struct Fake {
+        tokens: HashMap<SubsystemId, u64>,
+        calls: Vec<(bool, SubsystemId)>,
+        fail: Option<(bool, SubsystemId)>,
+    }
+
+    impl UndoTarget for Fake {
+        fn token(&self, id: SubsystemId) -> u64 {
+            *self.tokens.get(&id).unwrap_or(&0)
+        }
+        fn undo(&mut self, id: SubsystemId) -> bool {
+            self.calls.push((false, id));
+            if self.fail == Some((false, id)) {
+                return false;
+            }
+            self.tokens.insert(id, self.token(id) - 1);
+            true
+        }
+        fn redo(&mut self, id: SubsystemId) -> bool {
+            self.calls.push((true, id));
+            if self.fail == Some((true, id)) {
+                return false;
+            }
+            self.tokens.insert(id, self.token(id) + 1);
+            true
+        }
+    }
+
+    fn step(subsystem: SubsystemId, before_token: u64) -> SubsystemStep {
+        SubsystemStep {
+            subsystem,
+            before_token,
+            after_token: before_token + 1,
+        }
+    }
+
+    fn compound() -> (UndoJournal, Fake) {
+        let mut journal = UndoJournal::default();
+        assert!(journal.record_compound(vec![step(Terrain, 0), step(Materials, 0)]));
+        let target = Fake {
+            tokens: HashMap::from([(Terrain, 1), (Materials, 1)]),
+            ..Fake::default()
+        };
+        (journal, target)
+    }
+
+    #[test]
+    fn chronological_order_across_subsystems() {
+        let mut j = UndoJournal::default();
+        let mut t = Fake::default();
+        for id in [Terrain, Materials, Terrain] {
+            let before = t.token(id);
+            t.tokens.insert(id, before + 1);
+            assert!(j.record_compound(vec![step(id, before)]));
+        }
+        for _ in 0..3 {
+            assert!(j.undo(&mut t));
+        }
+        assert!(!j.undo(&mut t));
+        for _ in 0..3 {
+            assert!(j.redo(&mut t));
+        }
+        assert_eq!(
+            t.calls,
+            vec![
+                (false, Terrain),
+                (false, Materials),
+                (false, Terrain),
+                (true, Terrain),
+                (true, Materials),
+                (true, Terrain)
+            ]
+        );
+    }
+
+    #[test]
+    fn mismatch_preflights_every_child_in_both_directions() {
+        let (mut j, mut t) = compound();
+        t.tokens.insert(Terrain, 99);
+        let saved = j.clone();
+        assert!(!j.undo(&mut t));
+        assert_eq!(j, saved);
+        assert!(t.calls.is_empty());
+        t.tokens.insert(Terrain, 1);
+        assert!(j.undo(&mut t));
+        t.calls.clear();
+        t.tokens.insert(Materials, 99);
+        let saved = j.clone();
+        assert!(!j.redo(&mut t));
+        assert_eq!(j, saved);
+        assert!(t.calls.is_empty());
+    }
+
+    #[test]
+    fn failed_delegation_never_falls_through() {
+        let (mut j, mut t) = compound();
+        t.fail = Some((false, Materials));
+        let saved = j.clone();
+        assert!(!j.undo(&mut t));
+        assert_eq!(j, saved);
+        assert_eq!(t.calls, vec![(false, Materials)]);
+    }
+
+    #[test]
+    fn compounds_undo_reverse_and_redo_forward() {
+        let (mut j, mut t) = compound();
+        assert!(j.undo(&mut t));
+        assert!(!j.can_undo());
+        assert!(j.can_redo());
+        assert!(j.redo(&mut t));
+        assert_eq!(
+            t.calls,
+            vec![
+                (false, Materials),
+                (false, Terrain),
+                (true, Terrain),
+                (true, Materials)
+            ]
+        );
+    }
+
+    #[test]
+    fn compound_failure_compensates_and_preserves_journal() {
+        for forward in [false, true] {
+            let (mut j, mut t) = compound();
+            if forward {
+                assert!(j.undo(&mut t));
+            }
+            t.calls.clear();
+            t.fail = Some((forward, if forward { Materials } else { Terrain }));
+            let saved = j.clone();
+            let tokens = t.tokens.clone();
+            assert!(!if forward {
+                j.redo(&mut t)
+            } else {
+                j.undo(&mut t)
+            });
+            assert_eq!(j, saved);
+            assert_eq!(t.tokens, tokens);
+            let first = if forward { Terrain } else { Materials };
+            let second = if forward { Materials } else { Terrain };
+            assert_eq!(
+                t.calls,
+                vec![(forward, first), (forward, second), (!forward, first)]
+            );
+        }
+    }
+
+    #[test]
+    fn new_record_clears_redo() {
+        let (mut j, mut t) = compound();
+        assert!(j.undo(&mut t));
+        assert!(j.record_compound(vec![step(Terrain, 0)]));
+        assert!(!j.can_redo());
+    }
+
+    #[test]
+    fn clear_and_epoch_discard_both_stacks_and_reject_stale_entries() {
+        let (mut j, mut t) = compound();
+        assert!(j.undo(&mut t));
+        j.clear();
+        assert_eq!(j.epoch(), 0);
+        assert!(!j.can_undo() && !j.can_redo());
+        assert!(j.record_compound(vec![step(Terrain, 0)]));
+        j.new_epoch();
+        assert_eq!(j.epoch(), 1);
+        assert!(!j.can_undo() && !j.can_redo());
+        assert!(!j.record(JournalEntry {
+            epoch: 0,
+            children: vec![step(Terrain, 0)]
+        }));
+        assert!(j.record_compound(vec![step(Terrain, 0)]));
+    }
+
+    #[test]
+    fn invalid_compounds_preserve_redo() {
+        let (mut j, mut t) = compound();
+        assert!(j.undo(&mut t));
+        let saved = j.clone();
+        assert!(!j.record_compound(vec![]));
+        assert!(!j.record_compound(vec![step(Terrain, 0), step(Terrain, 1)]));
+        assert_eq!(j, saved);
+    }
+}
