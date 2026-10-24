@@ -1680,9 +1680,9 @@ fn event_editor(
                     }
                     1 => {
                         ui.horizontal(|ui| {
-                            ui.label("team");
+                            ui.label(tl(en, "隊伍", "team"));
                             ui.add(egui::DragValue::new(&mut a.team).clamp_range(0..=7));
-                            ui.label("other team");
+                            ui.label(tl(en, "對方隊伍", "other team"));
                             ui.add(egui::DragValue::new(&mut a.other_team).clamp_range(0..=7));
                             ui.checkbox(&mut a.hostile, tl(en, "敵對", "Hostile"));
                         });
@@ -1692,9 +1692,9 @@ fn event_editor(
                             ui.label(tl(en, "ObjDefName 別名", "ObjDefName alias"));
                             ui.text_edit_singleline(&mut a.alias);
                             alias_combo(ui, &mut a.alias, aliases, en);
-                            ui.label("team");
+                            ui.label(tl(en, "隊伍", "team"));
                             ui.add(egui::DragValue::new(&mut a.team).clamp_range(0..=7));
-                            ui.label("count");
+                            ui.label(tl(en, "數量", "count"));
                             ui.add(egui::DragValue::new(&mut a.count).clamp_range(1..=20));
                         });
                         ui.horizontal(|ui| {
@@ -1835,6 +1835,44 @@ fn export_files(target: &Path, files: &[(&str, Vec<u8>)], fail_after: Option<usi
 }
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn action_field_labels_follow_language_snapshot() {
+        for (english, expected) in [
+            (false, vec!["隊伍", "對方隊伍", "隊伍", "數量"]),
+            (true, vec!["team", "other team", "team", "count"]),
+        ] {
+            let ctx = egui::Context::default();
+            let mut event = Event {
+                actions: vec![
+                    Action { kind: 1, ..Default::default() },
+                    Action { kind: 2, ..Default::default() },
+                ],
+                ..Default::default()
+            };
+            let mut pick = None;
+            let mut draw = None;
+            ctx.begin_frame(egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO, egui::vec2(1800.0, 1400.0),
+                )),
+                ..Default::default()
+            });
+            egui::CentralPanel::default().show(&ctx, |ui| {
+                event_editor(ui, &mut event, &[], &[], english, &mut pick, &mut draw);
+            });
+            let output = ctx.end_frame();
+            let labels: Vec<String> = output.shapes.iter().filter_map(|shape| {
+                if let egui::epaint::Shape::Text(text) = &shape.shape {
+                    let label = text.galley.text();
+                    if ["隊伍", "對方隊伍", "數量", "team", "other team", "count"].contains(&label) {
+                        return Some(label.to_owned());
+                    }
+                }
+                None
+            }).collect();
+            assert_eq!(labels, expected);
+        }
+    }
     fn shadow_event(name: &str) -> Event {
         Event { name: name.into(), actions: vec![Action { text: "shadow".into(),
             ..Default::default() }], ..Default::default() }
