@@ -209,6 +209,18 @@
   - 移動/巡邏路徑 (`AssignedPathId`)、指定攻擊目標物件 (`TargetObjectId`)、部隊相對延遲 (`RelativeDelaySeconds`) 以及勢力 AI 戰術姿態等設定，尚未由底層 ScenarioEvent ABI 支援；編譯器會**明確報錯拒絕而非靜默忽略**。
   - 點擊「合併事件」後，波次事件會透過 `ScenarioEventSession.AddRange` 原子加入事件清單，可單步 Undo/Redo；儲存地圖時才寫入檔案。
 
+### 3.6 劇本設計輔助工具 (Scenario Design Helpers)
+
+- 設計檢查提醒「波次未設定移動目的地」(wave-no-destination)：事件生成隊伍 1–7 部隊但沒有移動目的地時提醒；一鍵「讓波次進攻玩家主屋」(Send waves toward the player base) 以玩家主屋為目標，找不到則用開局鏡頭，整批一次復原。
+- 進攻波次產生器 (Attack wave generator)：設定敵方隊伍、單位別名、波數、首波秒數、間隔、基本數量、每波增加（每波 1–20 單位）、生成與目的地 X/Z；需要時自動補上隊伍敵對外交事件；整批一次復原。
+- 勝負條件預設 (Objective presets)：存活 N 秒勝利、玩家主屋被摧毀失敗、摧毀敵方主屋勝利；已有等價事件時不重複新增；沒有可引用的主屋 Spawn 時按鈕停用並說明原因。
+- 劇本畫布標記 (Show scenario overlay)：2D 畫布顯示各隊生成點、往目的地的箭頭與區域條件矩形；X/Z 欄位旁「在地圖上點選」(Pick on map)，區域條件可「在地圖上框選」(Draw on map)；Esc 或右鍵取消，取點期間不會塗地形。
+- 事件瀏覽器：文字搜尋、隊伍／動作種類／僅啟用篩選、「N / M 個事件」計數、每列摘要；依時間排序只影響顯示，不改變實際執行順序。
+- 路徑診斷：在地圖上選起點與終點，顯示估計路線，無法到達時標示終點；結果是編輯器通行模型的估計，不等同遊戲尋路；編輯地形後路線清除。
+- 腳本配置匯出／匯入 (Export/Import script layout)：只匯出未綁定、非預建的 Spawn 為 .arm-spawns.json；匯入時檢查別名、點選地圖錨點、可重新對應隊伍、座標限制在 0–16383，整批一次復原。
+
+> 以上功能已通過自動化測試；遊戲內效果與人工畫面確認仍待驗證。
+
 ---
 
 ## 4. 多 AI 共同製圖流程 (Multi-AI Map Planning)
