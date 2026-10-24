@@ -1,5 +1,7 @@
 ﻿# Against Rome 無盡模式地圖編輯器 — 實作任務規格書
 
+> **現行架構（Rust-only）**：下方 C#／.NET／WinForms 架構、舊專案路徑與測試描述均為歷史設計，不作為目前的建置或安裝指引。現行桌面程式為 `apps/against-rome-editor`（egui / eframe），核心 crate 位於 `native/`；可攜版執行檔為 `against-rome-editor.exe`，不需安裝 .NET。現行測試使用 `cargo test --workspace --locked`，可攜版打包使用 `tools/publish-rust.ps1`（PowerShell 7）。啟動方式見 [使用者指南](map-editor-user-guide.md#1-系統環境與執行前置需求)。
+
 > 本文件是自足的實作規格:實作者只需要本文件 + 本 repo 即可完成開發,不需要其他對話上下文。
 > 語言慣例:說明用繁體中文,程式識別字/檔名/技術名詞保留英文。
 >
@@ -62,7 +64,7 @@
 - `src/Core/FileRollbackScope.cs` — 跨多檔交易(`TrackFile` → `Commit`,例外時自動還原)。
 - Windows-1251 編碼常數(現在散在 `src/Core/Patches/PatchText.cs` 的 `GameEncoding`)。
 
-**硬性要求:搬移後修改器行為不得改變**,`dotnet test` 現有 ~98 個測試必須全綠。修改器專案改為引用 Shared 專案。
+**硬性要求:搬移後修改器行為不得改變**,現行 `cargo test --workspace --locked` 必須全綠（取代歷史 .NET 測試要求）。修改器專案改為引用 Shared 專案。
 
 ### 1.4 修改器側:新「地圖管理」分頁
 
@@ -367,7 +369,7 @@ Phase 1 編輯操作:改 `team`/`nation`、整體平移(改 `refpos`,物件 `pos
 - **CustomMapManifestTests**:三重防護各自缺一即拒刪;拒刪 ENDL_000–004;拒刪 MAPS 外路徑。
 - **EndlessAiOrchestratorTests(擴充現有)**:fixture 加 ENDL_005 後 `ResolvePaths` 回傳 6 個 ak_level.bci、`GetExpectedFileCount` 動態正確、Detect/Apply 涵蓋新圖;無自製圖時行為與現在完全相同(回歸)。
 - **BackupManagerTests(擴充)**:自製圖 team.dat 不進備份基準。
-- CI:三個(以上)專案 build + `dotnet test` 全綠(windows-latest)。
+- 現行測試：`cargo test --workspace --locked` 全綠；上述 .NET 多專案 CI 規劃為歷史設計。
 
 ---
 
@@ -375,7 +377,7 @@ Phase 1 編輯操作:改 `team`/`nation`、整體平移(改 `refpos`,物件 `pos
 
 ### 6.1 自動驗證
 
-- `dotnet build -c Release`(x64)無新增警告;全部測試綠。
+- 現行建置：`cargo build --workspace --release --locked`；測試使用 `cargo test --workspace --locked`。
 - 修改器既有功能零回歸(現有測試全綠即視為通過)。
 
 ### 6.2 使用者進遊戲手動驗證(關鍵假設,Phase 1 完成後立即做)
