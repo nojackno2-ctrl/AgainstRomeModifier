@@ -92,6 +92,13 @@ impl IssueRow {
     }
 }
 
+/// 有完整有效座標時提供直接前往入口，沿用既有定位流程。
+fn issue_go_to(ui: &mut egui::Ui, row: &IssueRow, lang: AppLanguage) -> Option<egui::Response> {
+    row.focus_world()?;
+    Some(ui.small_button(tr(lang, "Go to", "前往"))
+        .on_hover_text(tr(lang, "Center the 2D canvas on this issue", "將 2D 畫布置中於此問題位置")))
+}
+
 impl From<&MapIssue> for IssueRow {
     fn from(i: &MapIssue) -> Self {
         Self {
@@ -478,13 +485,19 @@ impl EditorApp {
                                         row.text(lang)
                                     ))
                                     .color(color);
-                                    let response = ui.selectable_label(selected == Some(index), text);
-                                    if response.clicked() {
-                                        selected = Some(index);
-                                    }
-                                    if response.double_clicked() {
-                                        locate = Some(index);
-                                    }
+                                    ui.horizontal(|ui| {
+                                        if issue_go_to(ui, row, lang).is_some_and(|r| r.clicked()) {
+                                            selected = Some(index);
+                                            locate = Some(index);
+                                        }
+                                        let response = ui.selectable_label(selected == Some(index), text);
+                                        if response.clicked() {
+                                            selected = Some(index);
+                                        }
+                                        if response.double_clicked() {
+                                            locate = Some(index);
+                                        }
+                                    });
                                 }
                             });
                             if let Some(row) = selected.and_then(|i| rows.get(i)) {
@@ -545,6 +558,44 @@ impl EditorApp {
 mod tests {
     use super::*;
 
+    #[test]
+    fn go_to_button_handles_clicks_and_invalid_coordinates() {
+        let ctx = egui::Context::default();
+        let mut row = IssueRow::from(&map_issue(MapIssueSeverity::Warning, "position", Some(512.0), Some(768.0)));
+        for lang in [AppLanguage::English, AppLanguage::TraditionalChinese] {
+            let mut rect = egui::Rect::NOTHING;
+            let _ = ctx.run(egui::RawInput::default(), |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    rect = issue_go_to(ui, &row, lang).expect("有效座標應提供前往").rect;
+                });
+            });
+            let pos = rect.center();
+            let mut clicked = false;
+            let input = egui::RawInput {
+                events: vec![
+                    egui::Event::PointerMoved(pos),
+                    egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed: true, modifiers: egui::Modifiers::NONE },
+                    egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed: false, modifiers: egui::Modifiers::NONE },
+                ],
+                ..Default::default()
+            };
+            let _ = ctx.run(input, |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    clicked = issue_go_to(ui, &row, lang).unwrap().clicked();
+                });
+            });
+            assert!(clicked, "不必先選取問題即可前往");
+            assert_eq!(row.focus_world(), Some((512.0, 768.0)));
+        }
+        for coordinates in [(None, Some(1.0)), (Some(1.0), None), (Some(f32::NAN), Some(1.0)), (Some(1.0), Some(f32::INFINITY))] {
+            (row.world_x, row.world_z) = coordinates;
+            let _ = ctx.run(egui::RawInput::default(), |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    assert!(issue_go_to(ui, &row, AppLanguage::English).is_none());
+                });
+            });
+        }
+    }
     fn map_issue(sev: MapIssueSeverity, code: &str, x: Option<f32>, z: Option<f32>) -> MapIssue {
         let mut issue = MapIssue::new(sev, code, format!("zh-{code}"), format!("en-{code}"));
         issue.world_x = x;

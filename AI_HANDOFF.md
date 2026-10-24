@@ -1,3 +1,6 @@
+## 2026-10-25 Codex：Design Check 每列前往入口
+- 有效座標問題列新增雙語「Go to／前往」與置中提示，沿用既有 2D 畫布定位；無完整有限座標不顯示。新增無介面點擊及無效座標測試通過。證據：design_check_ui.rs:488 原僅支援選取／雙擊，新增每列入口；app.rs:2012 沿用既有定位消費端。
+- 驗證：cargo check／build --workspace --locked --offline --target-dir re_workspace/codex-wave-dest-target 均 exit 0；cargo test --workspace --locked --offline --no-fail-fast --target-dir re_workspace/codex-wave-dest-target exit 0，283 組、2503 passed、0 failed、24 ignored（日誌 re_workspace/small-ux-fixes2-test.log）。git diff --check 通過；未驗收實體 GUI。未 stage／commit、未碰安裝遊戲；AGENTS.md／README.md 既有變更保留，TEMP／TMP 未變更。
 ## 2026-10-25 Codex：四項小型介面修正（已驗證、未提交）
 - 加入清除巢穴確認（取消保留、空資料不詢問）、捨棄對話雙語、診斷節點定位與失效停用；侵蝕重設僅處理已啟用模式，保留另一模式參數。新增 4 項測試。
 - 驗證：cargo check／build --workspace --locked --offline --target-dir re_workspace/codex-wave-dest-target 均 exit 0；指定 cargo test --workspace --locked --offline --no-fail-fast --target-dir re_workspace/codex-wave-dest-target exit 0，283 組、2502 passed、0 failed、24 ignored（re_workspace/small-ux-fixes-test.log）。最後整理後 small_ux_tests 另跑 4 passed（small-ux-fixes-focused.log）；未進行實體 GUI 驗收。
