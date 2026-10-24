@@ -173,11 +173,20 @@ mod tests {
     }
     fn disk_fixture(label: &str) -> ObjectStore {
         let mut store = fixture();
-        store.root = std::env::temp_dir().join(format!(
-            "ar-placement-{label}-{}-{}", std::process::id(),
-            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
-        ));
-        fs::create_dir(&store.root).unwrap();
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        loop {
+            store.root = std::env::temp_dir().join(format!(
+                "ar-placement-{label}-{}-{}-{}", std::process::id(),
+                std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos(),
+                NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            ));
+            // 排他建立；即使 PID 與時間戳重複，也不可重用先前的鎖檔或復原目錄。
+            match fs::create_dir(&store.root) {
+                Ok(()) => break,
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(error) => panic!("建立測試目錄 {}: {error}", store.root.display()),
+            }
+        }
         for (name, blob) in &store.pools {
             fs::write(store.root.join(format!("{name}.dat")), &blob.raw).unwrap();
         }
@@ -717,12 +726,7 @@ mod tests {
     }
     #[test]
     fn save_checks_unchanged_dependency_and_exclusive_lock() {
-        let mut s = fixture();
-        s.root = std::env::temp_dir().join(format!("ar-placement-conflict-{}", std::process::id()));
-        fs::create_dir_all(&s.root).unwrap();
-        for (n, b) in &s.pools {
-            fs::write(s.root.join(format!("{n}.dat")), &b.raw).unwrap();
-        }
+        let mut s = disk_fixture("conflict");
         s.translate_family_fixed(0, 1, [65536, 0, 0]).unwrap();
         let position = fs::read(s.root.join("position.dat")).unwrap();
         let objects = s.root.join("objects.dat");
@@ -741,12 +745,7 @@ mod tests {
     }
     #[test]
     fn failed_rollback_retains_original_recovery_evidence() {
-        let mut s = fixture();
-        s.root = std::env::temp_dir().join(format!("ar-placement-recovery-{}", std::process::id()));
-        fs::create_dir_all(&s.root).unwrap();
-        for (n, b) in &s.pools {
-            fs::write(s.root.join(format!("{n}.dat")), &b.raw).unwrap();
-        }
+        let mut s = disk_fixture("recovery");
         let original = s.snapshot();
         s.remove_family(0, 1).unwrap();
         let error = s

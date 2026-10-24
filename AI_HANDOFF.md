@@ -1,3 +1,8 @@
+## 2026-10-24 Codex：placement 偶發測試修正（已驗證）
+- 根因：僅含 PID 的 TEMP 目錄會在 PID 重用後留下測試刻意建立的鎖檔與 objects.dat 目錄；正式儲存已逐位元組比對，不依賴 mtime。兩測試改用含 PID／時間戳／原子計數且排他建立的 disk_fixture，無新相依、無正式程式變更。
+- 證據：系統 TEMP 的 ar-placement-recovery-{10288,11560}/objects.dat 為目錄，ar-placement-conflict-{10288,11560}/.ar-placement.lock 仍存在；符合舊測試留下的失敗條件。沒有持有未關閉的 fixture 檔案控制代碼。
+- 驗證：cargo test -p against-rome-placement --lib --locked --offline --target-dir re_workspace/codex-wave-dest-target 五輪各 55 passed／0 failed／3 ignored；cargo test --workspace --locked --offline --no-fail-fast --target-dir re_workspace/codex-wave-dest-target 一輪 283 組、2458 passed／0 failed／24 ignored，全部 exit 0。日誌 re_workspace/placement-flaky-fix-test.log；git diff --check 通過。保留原系統 TEMP/TMP，未修改或暫存 AGENTS.md／README.md、未提交、未碰遊戲目錄。
+
 ## 2026-10-24 Codex：統一復原 step 3b（已驗證）
 - Claude 父端重跑：完整 workspace 2,456 passed／**2 failed**／24 ignored，失敗皆在未修改的 `against-rome-placement` lib：`failed_rollback_retains_original_recovery_evidence`（lib.rs:748 PermissionDenied 存取被拒）與 `save_checks_unchanged_dependency_and_exclusive_lock`（lib.rs:732 未偵測到 external file change）。該 crate 單獨連跑 3 次皆 55 passed／0 failed，屬於完整並行負載下的既有偶發失敗（當機復原那輪也出現過），與 step 3b 無關；需另行修成穩定測試。
 - 僅修改 scene_ui.rs／app.rs：Scene 對稱快照 redo、雙語按鈕、穩定 token、僅清 redo 與成功提交 receipts；app 依共用序號旁錄 Scene，不切換工具列路由。拖曳合併一步、結束才提交，空操作不發通知；Safe Save 基準／dirty 邏輯保留。新增 6 項皆通過，涵蓋精確狀態／token 往返、分支、空操作／拒絕、拖曳邊界、儲存基準及 Scene／Terrain 收集順序。
