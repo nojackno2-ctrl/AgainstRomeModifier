@@ -14,6 +14,8 @@ pub struct TerrainSession {
     pub raw_boden_bmp: Option<BmpImage>,
     pub raw_collision_bmp: Option<BmpImage>,
     core: CoreSession,
+    recovery_swap: Option<CoreSession>,
+    recovery_applied: bool,
     original_heights: Vec<u8>,
     original_collision: Vec<u8>,
 }
@@ -49,6 +51,8 @@ impl TerrainSession {
             raw_boden_bmp,
             raw_collision_bmp,
             core,
+            recovery_swap: None,
+            recovery_applied: false,
             original_heights: heights,
             original_collision: collision,
         })
@@ -106,24 +110,28 @@ impl TerrainSession {
         &self.original_collision
     }
     pub fn is_dirty(&self) -> bool {
-        self.core.is_dirty()
+        self.core.is_dirty() || self.recovery_applied
     }
     pub fn can_undo(&self) -> bool {
-        self.core.can_undo()
+        self.core.can_undo() || (self.recovery_swap.is_some() && self.recovery_applied)
     }
     pub fn can_redo(&self) -> bool {
-        self.core.can_redo()
+        self.core.can_redo() || (self.recovery_swap.is_some() && !self.recovery_applied)
     }
     pub fn commit_stroke(&mut self) -> bool {
-        self.core.commit_stroke()
+        let changed = self.core.commit_stroke();
+        if changed && !self.recovery_applied { self.recovery_swap = None; }
+        changed
     }
     pub fn cancel_stroke(&mut self) -> StrokeTransaction {
         self.core.cancel_stroke()
     }
     pub fn undo(&mut self) -> bool {
-        self.core.undo().is_some()
+        if self.core.can_undo() { return self.core.undo().is_some(); }
+        self.swap_recovery(true)
     }
     pub fn redo(&mut self) -> bool {
+        if !self.recovery_applied && self.recovery_swap.is_some() { return self.swap_recovery(false); }
         self.core.redo().is_some()
     }
     pub fn apply_height_changes(&mut self, changes: &[SampleChange]) -> Vec<SampleChange> {
@@ -178,7 +186,33 @@ impl TerrainSession {
     ) -> Result<Vec<SampleChange>, Error> {
         self.core.apply_ramp(start, end, parameters)
     }
+    /// 保留原始 BMP 與基準，以整個地形子系統的一步復原套用快照。
+    pub(crate) fn restore_recovery(&mut self, heights: Vec<u8>, collision: Vec<u8>) -> Result<(), String> {
+        let replacement = CoreSession::new(self.vertex_size, heights, self.collision_size, Some(collision)).map_err(|e| e.to_string())?;
+        self.recovery_swap = Some(std::mem::replace(&mut self.core, replacement));
+        self.recovery_applied = true;
+        Ok(())
+    }
+    fn swap_recovery(&mut self, undo: bool) -> bool {
+        if self.recovery_applied != undo { return false; }
+        if let Some(other) = self.recovery_swap.as_mut() {
+            std::mem::swap(&mut self.core, other);
+            self.recovery_applied = !undo;
+            true
+        } else { false }
+    }
+    /// 明確捨棄時回到開圖基準，而不是復原後建立的暫時核心基準。
+    pub fn reset_to_baseline(&mut self) {
+        if self.recovery_applied {
+            if let Some(original) = self.recovery_swap.take() { self.core = original; }
+        }
+        self.recovery_swap = None;
+        self.recovery_applied = false;
+        self.core.reset_to_baseline();
+    }
     pub fn commit_baseline(&mut self) {
+        self.recovery_swap = None;
+        self.recovery_applied = false;
         self.core.commit_baseline();
         self.original_heights = self.heights().to_vec();
         self.original_collision = self.collision().to_vec();

@@ -51,6 +51,21 @@ fn kit_ok(app: &mut EditorApp) {
     assert!(!app.spawn_ui.status().1, "{}", app.spawn_ui.status().0);
 }
 
+#[test]
+fn recovery_reports_pending_starter_kit_instead_of_claiming_scenario_restore() {
+    let (mut app, root, map) = fixture("recovery_omitted", &[]);
+    app.recovery.root = Some(root.join("editor"));
+    kit_ok(&mut app);
+    assert!(app.spawn_ui.pending_starter_kit().is_some());
+    let pending = app.recovery_pending();
+    assert!(pending["scenario"].is_null());
+    assert!(pending["omitted_panels"].as_array().unwrap().iter().any(|v| v.as_str().unwrap().contains("starter kit")));
+    let snapshot = crate::recovery::manifest(&map, &app.recovery.source, pending);
+    assert!(!snapshot["included_parts"].as_array().unwrap().contains(&serde_json::json!("script_spawns")));
+    drop(app);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
 fn saved_scenario(map: &Path) -> against_rome_scenario::ScenarioDocument {
     against_rome_scenario::ScenarioDocument::from_json(&std::fs::read(map.join("arm_scenario.json")).unwrap()).unwrap()
 }

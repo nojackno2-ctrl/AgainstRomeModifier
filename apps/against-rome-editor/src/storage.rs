@@ -695,3 +695,8 @@ mod tests {
         assert_eq!(fs::read(d.0.join("collision.bmp")).unwrap(), c);
     }
 }
+
+/// 編輯器自己的資料目錄，與共用設定位於相同產品根目錄，禁止使用地圖目錄。
+pub fn editor_data_dir() -> Option<PathBuf> {
+    std::env::var_os("APPDATA").map(|p| PathBuf::from(p).join("AgainstRomeModifier").join("editor"))
+}

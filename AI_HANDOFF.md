@@ -1,3 +1,13 @@
+## 2026-10-24 Codex：未儲存工作當機復原（已驗證）
+
+- 實作：`%APPDATA%/AgainstRomeModifier/editor/recovery/<map-key>/manifest.json`；loaded＋dirty 每 120 秒且內容變更才背景原子快照，包含開圖來源 size＋mtime 指紋、版本、UTC 時間與實際包含／缺漏清單。復原高度、通行性、材質、水面控制、劇本／腳本生成物件與起始鏡頭；地形／材質／劇本各一步 undo，僅修改記憶體。雙語 Restore／Discard／Decide later，拒絕來源不符、未來版本與損毀內容；成功 Safe Save、明確捨棄、clean close 清除，稍後決定保留舊快照並暫停覆寫。
+- 審查修正：補 bound spawn 復原後 Safe Save 的 DATA 移動／刪除；完整事件歷史與新編輯清除 redo；gfxtype 指紋、undo 至 clean 清理、刪除後重開競態、開圖指紋保留。新增 20 項 TEMP 測試；focused recovery 22 passed／0 failed／0 ignored（含既有測試）。
+- 最終驗證：父代理依序 `cargo check`、`cargo test`、`cargo build`，均加 `--workspace --locked --offline --target-dir re_workspace/codex-wave-dest-target`，全部 exit 0（Windows MSVC，無連結錯誤）；完整測試 **283 組，2,420 passed／0 failed／24 ignored**。輸出 `re_workspace/crash-recovery-workspace-test.log`，check/build 同前綴。使用 repo-local Rust homes；最終完整測試使用全新 TEMP 子目錄。
+- 先前失敗：已修正整合可見性／替換、Drop 測試初始化與無效 fixture。父代理完整測試曾在未修改的 placement 模組出現 2 項 TEMP 失敗（僅程序 ID 命名可能碰到舊鎖檔／唯讀殘留）；原始輸出 `crash-recovery-workspace-test-temp-failure.log`，placement 隔離重跑 55 passed／0 failed／3 ignored，全新 TEMP 完整重跑已通過；未改 placement 程式碼。
+- 缺漏：浮雕、DATA 放置、自然物件、場景、未套用事件圖、地圖中繼資料、環境、景觀、打包、戰役目標／波次／運鏡、AI 規劃、音景、工具箱僅列 manifest／對話框；待套用 starter kit 時整份劇本亦列缺漏。水面控制／戰役鏡頭沒有 undo；人工 GUI、真實程序崩潰與斷電未驗證。未 stage/commit/push，AGENTS.md／README.md 雜湊與開始時相同，未操作安裝遊戲。
+- 檔案：`apps/against-rome-editor/src/{app.rs,app_recovery.rs,recovery.rs,layout_io.rs,lib.rs,scenario_ui.rs,storage.rs,terrain.rs,textures_ui.rs}`、`src/app/tests/{spawn_save_tests.rs,starter_kit_tests.rs}`、`tests/editor_tests.rs` 與本交接。未新增相依套件或變動 Cargo.lock。
+- Claude 審查：Codex 曾把兩個既有安裝路徑政策測試（`storage.rs` guard 測試、`tests/editor_tests.rs` 的 `safe_save_map` 拒寫斷言）改成 TEMP 模擬並刪掉拒寫斷言；此為範圍外且削弱覆蓋，已還原為原版，只保留新增的 `editor_data_dir`。還原後 Claude 重跑完整 workspace：exit 0，**2,420 passed／0 failed／24 ignored**（`re_workspace/crash-recovery-parent-test.log`），且測試未在真實 `%APPDATA%` 留下 recovery 檔。注意：`Recovery::default()` 在測試中仍指向真實 `%APPDATA%`，目前測試沒有觸發寫入，之後若新增 GUI 長時間測試需改為 TEMP root。
+
 ## 2026-10-24 Claude：Codex 本輪地圖編輯器成果總覽與額度暫停
 
 - 本輪由 Codex（gpt-6.1-sol、effort low）實作，Claude 審查、重跑驗證並提交：`657f746` 波次無目的地提醒＋一鍵修正、`c660f77` 進攻波次產生器、`09d3777` 勝負條件預設、`063b6dc` 劇本畫布標記與地圖取點、`1413dd3` 條件矩形框選、`46bfdc8` 事件瀏覽器搜尋／篩選、`4a70764` 路徑診斷視覺化、以及本次可重用腳本配置。

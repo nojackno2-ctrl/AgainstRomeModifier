@@ -76,17 +76,28 @@ pub fn write_layout_file(path: &Path, preset: &MapLayoutPreset) -> Result<PathBu
 
 /// 配置共用的原子寫入；呼叫端先完成格式驗證。
 pub fn write_json_atomic(target: &Path, json: &str) -> Result<(), String> {
-    let mut temp_name = target.file_name().map(|n| n.to_os_string()).unwrap_or_default();
-    temp_name.push(".tmp");
-    let temp = target.with_file_name(temp_name);
-    std::fs::write(&temp, json.as_bytes()).map_err(|e| format!("{}: {e}", temp.display()))?;
-    std::fs::rename(&temp, &target).map_err(|e| {
-        let _ = std::fs::remove_file(&temp);
-        format!("{}: {e}", target.display())
-    })?;
-    Ok(())
+    write_json_atomic_using(target, json, |from, to| std::fs::rename(from, to))
 }
 
+/// 可注入發布失敗；暫存檔以唯一名稱建立，失敗保留上一份完整快照。
+pub(crate) fn write_json_atomic_using(target: &Path, json: &str, publish: impl FnOnce(&Path, &Path) -> std::io::Result<()>) -> Result<(), String> {
+    use std::io::Write;
+    let mut name = target.file_name().ok_or("Missing file name")?.to_os_string();
+    name.push(format!(".{}.tmp", uuid::Uuid::new_v4().simple()));
+    let temp = target.with_file_name(name);
+    let result = (|| {
+        let mut file = std::fs::OpenOptions::new().write(true).create_new(true).open(&temp)?;
+        file.write_all(json.as_bytes())?;
+        file.sync_all()?;
+        drop(file);
+        publish(&temp, target)
+    })();
+    if let Err(e) = result {
+        let _ = std::fs::remove_file(&temp);
+        return Err(format!("{}: {e}", target.display()));
+    }
+    Ok(())
+}
 /// Reads and validates a layout file (rejects > 2 MB before reading it).
 pub fn read_layout_file(path: &Path) -> Result<MapLayoutPreset, String> {
     deserialize(&read_json_file(path)?)

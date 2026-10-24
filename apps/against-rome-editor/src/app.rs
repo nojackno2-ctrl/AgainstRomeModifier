@@ -1,5 +1,8 @@
 //! Against Rome 原生 Rust 桌面地圖編輯器主介面 (egui/eframe)
 
+#[path = "app_recovery.rs"]
+mod app_recovery;
+
 use against_rome_environment::nature::{
     map_nature_regions, NatureCatalogItem, NatureCategory, NatureDensity, NatureEditSession,
     NatureHeightField, NatureOperation, NaturePaletteFilter, NatureStrokeDriver,
@@ -96,6 +99,8 @@ struct ToolbarGraphSource {
 mod toolbar_event_graph_tests;
 
 pub struct EditorApp {
+    recovery: crate::recovery::Recovery,
+    recovery_deferred: bool,
     pub map_path_input: String,
     pub(crate) loaded_map_path: Option<PathBuf>,
     pub session: Option<TerrainSession>,
@@ -326,6 +331,8 @@ impl EditorApp {
             stroke_path: BrushPath::default(),
             pending_action: None,
             close_allowed: false,
+            recovery: Default::default(),
+            recovery_deferred: false,
             pending_save_warnings: None,
             toolbox: ToolboxUi::default(),
             navigation: NavigationUi::default(),
@@ -914,6 +921,9 @@ impl EditorApp {
         if scene_dirty {
             self.scene.commit_baseline(&path)?;
         }
+        self.clear_recovery();
+        if let Ok(source) = crate::recovery::fingerprint(&path) { self.recovery.source = source; }
+        self.recovery_deferred = false;
         Ok(report)
     }
 
@@ -1072,6 +1082,8 @@ impl EditorApp {
         self.reset_auxiliary_layers = false;
         self.terrain_confirm = None;
         self.loaded_map_path = Some(path.clone());
+        self.recovery.open(&path);
+        self.recovery_deferred = false;
         self.map_path_input = path.to_string_lossy().into_owned();
         self.status_is_error = false;
         self.status_message = format!("Loaded {}", path.display());
@@ -1109,6 +1121,10 @@ impl EditorApp {
     }
 
     fn install_blank_map(&mut self, size: usize) {
+        self.recovery.offer = None;
+        self.recovery.last = None;
+        self.recovery.source = serde_json::Value::Null;
+        self.recovery_deferred = false;
         self.pending_save_warnings = None;
         self.loaded_map_path = None;
         self.session = Some(TerrainSession::create_blank(size, 32));
@@ -1325,6 +1341,8 @@ impl EditorApp {
                 });
             });
         if discard {
+            self.clear_recovery();
+            self.recovery_deferred = false;
             let action = self.pending_action.take().unwrap();
             self.perform_action(action, ctx);
         } else if cancel {
@@ -2493,6 +2511,7 @@ impl EditorApp {
 
     pub fn has_unsaved_changes(&self) -> bool {
         self.session.as_ref().is_some_and(|s| s.is_dirty())
+            || self.session.as_ref().zip(self.emboss.as_ref()).is_some_and(|(s, e)| e.session.is_dirty(s.heights()))
             || self.reset_auxiliary_layers
             || self.placement.is_dirty()
             || self.nature.session.is_dirty()
@@ -3500,7 +3519,7 @@ impl EditorApp {
         self.textures.end_material_stroke();
         if let Some(session) = self.session.as_mut() {
             session.cancel_stroke();
-            session.core_mut().reset_to_baseline();
+            session.reset_to_baseline();
         }
         if let Some(emboss) = self.emboss.as_mut() {
             emboss.session.reset_to_baseline();
@@ -3508,6 +3527,7 @@ impl EditorApp {
         self.reset_auxiliary_layers = false;
         self.nature_discard();
         self.textures.reset_to_baseline();
+        self.clear_recovery();
         self.is_painting = false;
         self.stroke_path.clear();
         self.texture_dirty = true;
@@ -4053,16 +4073,17 @@ impl EditorApp {
 
     /// C# prebuilt block of `TrySaveMap` for this save: marks the placements that become DATA
     /// objects, then plans the detached DATA candidate (templates, family copies, bindings).
-    /// `Ok(None)` when the spawn panel has no placement edits or nothing is / was prebuilt.
+    /// 復原後面板可能已同步為 clean，仍須比較已儲存與目前劇本並同步放置物件。
     fn plan_spawn_data_for_save(
-        &self,
+        &mut self,
         map: &Path,
     ) -> Result<Option<against_rome_maps::spawn_data::SpawnDataPlan>, String> {
         use against_rome_maps::spawn_data::{mark_prebuilt, SpawnDataCatalog};
-        if !self.spawn_ui.session().is_dirty() {
+        let previous = self.scenario.saved_document()?;
+        self.spawn_ui.sync_with_document(&self.scenario, Some(map));
+        if !self.spawn_ui.session().is_dirty() && previous.spawns == self.scenario.document().spawns {
             return Ok(None);
         }
-        let previous = self.scenario.saved_document()?;
         let mut next = self.scenario.document().clone();
         let placed = self.spawn_ui.session().objects();
         mark_prebuilt(&mut next.spawns, placed);
@@ -4227,7 +4248,7 @@ mod tests {
     mod objectives_apply_tests;
     mod scenario_canvas_tests;
     mod settlement_apply_tests;
-    mod spawn_save_tests;
+    pub(super) mod spawn_save_tests;
     mod starter_kit_tests;
 
     fn start_camera_app(pfil: bool) -> (EditorApp, PathBuf, Vec<u8>) {
@@ -9842,6 +9863,9 @@ impl EditorApp {
     /// One full editor frame. `eframe::App::update` delegates here; tests drive it headlessly
     /// with an `egui::Context` (no window or `eframe::Frame` needed).
     pub fn ui_frame(&mut self, ctx: &egui::Context) {
+        if !self.recovery_deferred { self.recovery_tick(ctx); }
+        self.recovery_dialog(ctx);
+        if ctx.input(|i| i.viewport().close_requested()) && !self.has_unsaved_changes() && !self.recovery_deferred && self.recovery.offer.is_none() { self.clear_recovery(); }
         self.navigation.refresh(self.session.as_ref(), self.water_surface);
         self.navigation.cancel_pick(ctx);
         let pick_cancel = self.scenario.cancel_canvas_pick(ctx, self.lang() == AppLanguage::English);

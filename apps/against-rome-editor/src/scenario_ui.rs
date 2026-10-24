@@ -81,6 +81,8 @@ pub struct ScenarioUi {
     pub english: bool,
     document: ScenarioDocument,
     camera: StartCamera,
+    recovery_undo: Option<(ScenarioDocument, StartCamera, ScenarioEventSession)>,
+    recovery_redo: Option<(ScenarioDocument, StartCamera, ScenarioEventSession)>,
     source: Option<Source>,
     watched: Vec<Source>,
     aliases: Vec<String>,
@@ -118,6 +120,8 @@ impl Default for ScenarioUi {
             english: false,
             document,
             camera,
+            recovery_undo: None,
+            recovery_redo: None,
             source: None,
             watched: vec![],
             aliases: vec![],
@@ -303,6 +307,7 @@ impl ScenarioUi {
             .filter(|b| draft.spawns.iter().any(|s| s.id == b.spawn_id && s.prebuilt))
             .collect();
         self.validate_draft(&draft)?;
+        self.recovery_redo = None;
         self.document = draft;
         self.error = None;
         Ok(())
@@ -319,6 +324,7 @@ impl ScenarioUi {
     /// test-side edits) so undo/redo always starts from what the user currently sees.
     fn sync_session(&mut self) {
         if self.events.capture() != self.document.events {
+            self.recovery_redo = None;
             let current = self.document.events.clone();
             let _ = self.events.replace_all(&current);
         }
@@ -345,15 +351,16 @@ impl ScenarioUi {
     fn commit_events(&mut self, draft: ScenarioDocument) {
         self.sync_session();
         if self.events.replace_all(&draft.events).is_ok() {
+            self.recovery_redo = None;
             self.document = draft;
         }
         self.clamp_selected();
     }
     pub fn can_undo_events(&self) -> bool {
-        self.events.can_undo()
+        self.recovery_undo.is_some() || self.events.can_undo()
     }
     pub fn can_redo_events(&self) -> bool {
-        self.events.can_redo()
+        self.recovery_redo.is_some() || self.events.can_redo()
     }
     /// Appends a batch of events (max 256 total). Validates the resulting document first;
     /// on any failure neither `document` nor the session is modified. Returns the first new index.
@@ -372,6 +379,7 @@ impl ScenarioUi {
             return Err(e);
         }
         self.events.add_range(items)?;
+        self.recovery_redo = None;
         self.document.events = self.events.capture();
         self.error = None;
         self.refresh_graph_after_event_change();
@@ -382,6 +390,7 @@ impl ScenarioUi {
     fn duplicate_event(&mut self, index: usize) -> Result<usize> {
         self.sync_session();
         let selected = self.events.duplicate(index, "（副本）")?;
+        self.recovery_redo = None;
         self.document.events = self.events.capture();
         self.selected = selected;
         self.error = None;
@@ -391,6 +400,7 @@ impl ScenarioUi {
     pub fn remove_event(&mut self, index: usize) -> Result<()> {
         self.sync_session();
         self.events.remove_at(index)?;
+        self.recovery_redo = None;
         self.document.events = self.events.capture();
         self.clamp_selected();
         self.refresh_graph_after_event_change();
@@ -401,6 +411,7 @@ impl ScenarioUi {
     pub fn replace_event(&mut self, index: usize, item: Event) -> Result<()> {
         self.sync_session();
         self.events.replace(index, item)?;
+        self.recovery_redo = None;
         self.document.events = self.events.capture();
         Ok(())
     }
@@ -414,6 +425,7 @@ impl ScenarioUi {
         self.validate_draft(&draft)?;
         self.sync_session();
         self.events.replace_all(&draft.events)?;
+        self.recovery_redo = None;
         self.document = draft;
         self.clamp_selected();
         self.error = None;
@@ -422,6 +434,17 @@ impl ScenarioUi {
     }
     pub fn undo_events(&mut self) -> bool {
         self.sync_session();
+        if !self.events.can_undo() {
+            if let Some((document, camera, events)) = self.recovery_undo.take() {
+                self.recovery_redo = Some((self.document.clone(), self.camera.clone(), self.events.clone()));
+                self.document = document;
+                self.camera = camera;
+                self.events = events;
+                self.clamp_selected();
+                self.refresh_graph_after_event_change();
+                return true;
+            }
+        }
         let changed = self.events.undo();
         if changed {
             self.document.events = self.events.capture();
@@ -432,6 +455,13 @@ impl ScenarioUi {
     }
     pub fn redo_events(&mut self) -> bool {
         self.sync_session();
+        if let Some((document, camera, events)) = self.recovery_redo.take() {
+            self.recovery_undo = Some((self.document.clone(), self.camera.clone(), self.events.clone()));
+            self.document = document; self.camera = camera;
+            self.events = events;
+            self.clamp_selected();
+            self.refresh_graph_after_event_change(); return true;
+        }
         let changed = self.events.redo();
         if changed {
             self.document.events = self.events.capture();
@@ -439,6 +469,25 @@ impl ScenarioUi {
             self.refresh_graph_after_event_change();
         }
         changed
+    }
+    /// 劇本、起始鏡頭與腳本生成物件共用一份復原狀態。
+    pub(crate) fn recovery_state(&self) -> serde_json::Value {
+        serde_json::json!([self.document, self.camera])
+    }
+    fn finish_camera_edit(&mut self, before: &StartCamera) {
+        if !camera_eq(before, &self.camera) { self.recovery_redo = None; }
+    }
+    pub(crate) fn restore_recovery(&mut self, value: serde_json::Value) -> Result<()> {
+        let (document, camera): (ScenarioDocument, StartCamera) = serde_json::from_value(value).map_err(|e| e.to_string())?;
+        if !self.is_loaded() { return Err("Scenario source unavailable / 劇本來源未載入".into()); }
+        self.validate_draft(&document)?;
+        camera.validate()?;
+        self.sync_session();
+        self.recovery_undo = Some((self.document.clone(), self.camera.clone(), self.events.clone()));
+        self.recovery_redo = None;
+        self.document = document; self.camera = camera;
+        self.events.load(&self.document.events); self.refresh_graph_after_event_change();
+        Ok(())
     }
     pub fn dirty(&self) -> bool {
         state_bytes(&self.document, &self.camera).map_or(true, |s| s != self.baseline)
@@ -452,10 +501,12 @@ impl ScenarioUi {
             enabled: false,
             ..Default::default()
         };
+        self.recovery_undo = None; self.recovery_redo = None;
         self.baseline = state_bytes(&document, &camera).unwrap_or_default();
         self.document = document;
         self.events = ScenarioEventSession::new();
         self.camera = camera;
+        self.recovery_undo = None; self.recovery_redo = None;
         self.source = None;
         self.watched.clear();
         self.active_bindings = None;
@@ -540,6 +591,7 @@ impl ScenarioUi {
         let (active_bindings,data_watched)=binding_context(map,&document)?;
         watched.extend(data_watched);
         let aliases=map.parent().and_then(Path::parent).and_then(|root|scenario::load_aliases(root).ok()).unwrap_or_default();
+        self.recovery_undo = None; self.recovery_redo = None;
         self.baseline = state_bytes(&document, &camera)?;
         self.events = ScenarioEventSession::with_events(document.events.clone());
         self.document = document;
@@ -742,6 +794,7 @@ impl ScenarioUi {
         self.document = d;
         self.sync_session();
         self.events.accept_changes();
+        self.recovery_undo = None; self.recovery_redo = None;
         self.baseline = state_bytes(&self.document, &self.camera)?;
         self.report=format!("已輸出劇本工作副本：{}。含原版備份與 JSON；這不是完整地圖封裝，遊戲驗收前需複製其他地圖檔案。",target.display());
         Ok(())
@@ -1219,6 +1272,7 @@ impl ScenarioUi {
                         self.show_wave_generator(ui);
                         self.show_objective_presets(ui);
                         ui.collapsing(tl(en, "開局鏡頭", "Start camera"), |ui| {
+                            let before = self.camera.clone();
                             ui.checkbox(&mut self.camera.enabled, tl(en, "啟用", "Enabled"));
                             ui.horizontal(|ui| {
                                 for (name, v) in [
@@ -1241,6 +1295,7 @@ impl ScenarioUi {
                                     ui.selectable_value(&mut self.camera.primitive, 0, tl(en, "世界焦點", "World focus"));
                                     ui.selectable_value(&mut self.camera.primitive, 1, tl(en, "引擎座標", "Engine position"));
                                 });
+                            self.finish_camera_edit(&before);
                         });
                         ui.collapsing(tl(en, "場景生成物件與持久 ID（唯讀；請用「放置腳本物件」面板編輯）", "Scenario objects and persistent IDs (read-only; edit them in the Spawns panel)"), |ui| {
                             ui.small(tl(en, "新增、移動、旋轉、複製與刪除請使用工具列的「放置腳本物件 / Spawns」面板（含驗證與復原）。", "Add, move, rotate, copy and delete objects in the toolbar's Spawns panel (with validation and undo)."));
@@ -1692,6 +1747,51 @@ fn export_files(target: &Path, files: &[(&str, Vec<u8>)], fail_after: Option<usi
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn recovery_scenario() -> ScenarioUi {
+        let mut ui = ScenarioUi::default();
+        ui.source = Some(Source { path: PathBuf::from("TEMP-recovery-test.bci"), bytes: vec![] });
+        let mut state = ui.recovery_state();
+        state[0]["Events"] = serde_json::json!([Event {
+            name: "復原事件".into(), actions: vec![Action { text: "recovered".into(), ..Default::default() }], ..Default::default()
+        }]);
+        ui.restore_recovery(state).unwrap();
+        ui
+    }
+    #[test]
+    fn recovery_preserves_event_redo_history_across_full_swap() {
+        let mut ui = recovery_scenario();
+        ui.add_events(&[Event { name: "新增事件".into(), actions: vec![Action { text: "added".into(), ..Default::default() }], ..Default::default() }]).unwrap();
+        assert!(ui.undo_events());
+        assert_eq!(ui.document.events.len(), 1);
+        assert!(ui.undo_events());
+        assert!(ui.document.events.is_empty());
+        assert!(ui.redo_events());
+        assert_eq!(ui.document.events.len(), 1);
+        assert!(ui.redo_events());
+        assert_eq!(ui.document.events.len(), 2);
+        assert_eq!(ui.document.events[1].name, "新增事件");
+        assert!(ui.undo_events());
+        assert!(ui.undo_events());
+        assert!(ui.redo_events());
+        assert!(ui.redo_events());
+        assert_eq!(ui.document.events.len(), 2);
+    }
+    #[test]
+    fn recovery_redo_is_invalidated_by_spawn_event_and_inline_camera_edits() {
+        for kind in 0..3 {
+            let mut ui = recovery_scenario();
+            assert!(ui.undo_events());
+            match kind {
+                0 => ui.apply_spawns(vec![Spawn { alias: "wolf".into(), id: uuid::Uuid::new_v4(), count: 1, ..Default::default() }]).unwrap(),
+                1 => { ui.add_events(&[Event { name: "新分支".into(), actions: vec![Action { text: "added".into(), ..Default::default() }], ..Default::default() }]).unwrap(); }
+                _ => { let before = ui.camera.clone(); ui.camera.x += 10.0; ui.finish_camera_edit(&before); }
+            }
+            assert!(!ui.can_redo_events());
+            let current = ui.recovery_state();
+            assert!(!ui.redo_events());
+            assert_eq!(ui.recovery_state(), current);
+        }
+    }
     fn browser_events() -> Vec<Event> {
         vec![
             Event { name: "Late Guard".into(), delay_seconds: 125, repeat: true,
