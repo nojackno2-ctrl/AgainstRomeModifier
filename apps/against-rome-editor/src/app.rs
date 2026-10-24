@@ -2348,6 +2348,7 @@ impl EditorApp {
         if requests.is_empty() && additions.is_empty() {
             return Err("Settlement: empty generated plan".into());
         }
+        self.collect_pilot_receipts();
         let before = self.placement.capture_state();
         let after = self.placement.settlement_candidate(&requests)?;
         let nature_before = self.nature.session.clone();
@@ -2374,6 +2375,15 @@ impl EditorApp {
             nature_changed: !additions.is_empty(),
         });
         self.settlement_redo.clear();
+        // 複合操作只旁錄一次，子系統收據由既有原子歷程接管。
+        self.placement.take_history_receipts();
+        self.nature.session.take_history_receipts();
+        let depth = self.settlement_undo.len() as u64;
+        self.undo_journal.record_compound(vec![crate::undo_journal::SubsystemStep {
+            subsystem: crate::undo_journal::SubsystemId::Other,
+            before_token: depth - 1,
+            after_token: depth,
+        }]);
         Ok(requests.len() + additions.len())
     }
 
@@ -4250,6 +4260,7 @@ mod tests {
     use super::*;
     use crate::terrain::SampleChange;
 
+    mod unified_undo_tests;
     mod objectives_apply_tests;
     mod scenario_canvas_tests;
     mod settlement_apply_tests;
@@ -9902,12 +9913,14 @@ impl EditorApp {
                 self.texture_dirty = true;
             }
         }
+        self.collect_pilot_receipts();
         // 快捷鍵處理
-        if ctx.input(|i| i.modifiers.ctrl && i.key_pressed(egui::Key::Z)) {
-            self.perform_undo();
-        }
-        if ctx.input(|i| i.modifiers.ctrl && i.key_pressed(egui::Key::Y)) {
-            self.perform_redo();
+        if !ctx.wants_keyboard_input() {
+            if ctx.input(|i| i.modifiers.ctrl && i.key_pressed(egui::Key::Z)) {
+                self.navigate_journal(ctx.input(|i| i.modifiers.shift));
+            } else if ctx.input(|i| i.modifiers.ctrl && i.key_pressed(egui::Key::Y)) {
+                self.navigate_journal(true);
+            }
         }
 
         // Editor shortcuts: Ctrl+S, Ctrl+A, Ctrl+D, Delete, Ctrl+Arrow nudge.
@@ -10057,20 +10070,21 @@ impl EditorApp {
 
                 ui.separator();
 
-                let can_undo = self.can_undo_any();
+                self.collect_pilot_receipts();
+                let can_undo = self.undo_journal.can_undo() || (!self.undo_journal.can_redo() && self.can_undo_any());
                 if ui
                     .add_enabled(can_undo, egui::Button::new(tr(lang, "Undo (Ctrl+Z)", "復原 (Ctrl+Z)")))
                     .clicked()
                 {
-                    self.perform_undo();
+                    self.navigate_journal(false);
                 }
 
-                let can_redo = self.can_redo_any();
+                let can_redo = self.undo_journal.can_redo() || (!self.undo_journal.can_undo() && self.can_redo_any());
                 if ui
                     .add_enabled(can_redo, egui::Button::new(tr(lang, "Redo (Ctrl+Y)", "重做 (Ctrl+Y)")))
                     .clicked()
                 {
-                    self.perform_redo();
+                    self.navigate_journal(true);
                 }
             });
 
@@ -10898,7 +10912,7 @@ impl EditorApp {
 }
 
 impl EditorApp {
-    /// 試行只旁錄，不參與既有工具列或面板的復原路由。
+    /// 收集已提交的子系統操作，依全域序號排列。
     fn collect_pilot_receipts(&mut self) {
         use crate::placement_ui::PlacementHistoryReceipt;
         use crate::undo_journal::{SubsystemId, SubsystemStep};
@@ -11273,5 +11287,125 @@ mod step3a_history_tests {
         assert!(!app.undo_journal.can_undo());
         assert!(!app.undo_journal.can_redo());
         assert_eq!(snapshot(&app), content);
+    }
+}
+
+impl EditorApp {
+    /// 先結束手勢，再選擇統一紀錄或相容路由；委派失敗不得轉往其他子系統。
+    fn navigate_journal(&mut self, forward: bool) {
+        if let Some(session) = self.session.as_mut() { session.commit_stroke(); }
+        self.is_painting = false;
+        self.stroke_path.clear();
+        self.textures.end_material_stroke();
+        self.nature_end_stroke();
+        self.scene.end_drag();
+        let cx = Self::spawn_cx(&self.session, self.loc.current_language(), self.height_step, self.current_map_is_original());
+        self.spawn_ui.canvas_release(&mut self.scenario, &cx);
+        self.collect_pilot_receipts();
+        let mut journal = std::mem::take(&mut self.undo_journal);
+        let available = if forward { journal.can_redo() } else { journal.can_undo() };
+        let desync = !journal.matches_target(self, forward);
+        if desync { journal.clear(); }
+        if desync || (!journal.can_undo() && !journal.can_redo()) {
+            self.undo_journal = journal;
+            if forward { self.perform_redo(); } else { self.perform_undo(); }
+            if desync {
+                self.status_message = tr(self.loc.current_language(), "Undo history out of sync; cleared and used current tool history.", "復原紀錄已失同步，已清除並改用目前工具的復原路由。").into();
+                self.status_is_error = false;
+            }
+            return;
+        }
+        if !available {
+            self.undo_journal = journal;
+            return;
+        }
+        let success = if forward { journal.redo(self) } else { journal.undo(self) };
+        self.undo_journal = journal;
+        self.texture_dirty = true;
+        if success { self.spawn_landscape = None; }
+        self.status_message = if success {
+            tr(self.loc.current_language(), "Unified undo history applied.", "已套用統一復原紀錄。")
+        } else {
+            tr(self.loc.current_language(), "Undo operation failed; stopped without switching tools.", "復原操作失敗，已停止，未改用其他工具。")
+        }.into();
+        self.status_is_error = !success;
+    }
+}
+
+impl crate::undo_journal::UndoTarget for EditorApp {
+    fn token(&self, id: crate::undo_journal::SubsystemId) -> u64 {
+        use crate::undo_journal::SubsystemId::*;
+        match id {
+            Terrain => self.session.as_ref().map_or(0, |s| s.history_token()),
+            Materials => self.textures.history_token(),
+            Placement => self.placement.history_token(),
+            Nature => self.nature.session.history_token(),
+            Spawns => self.spawn_ui.history_token(),
+            Scenario => self.scenario.history_token(),
+            Scene => self.scene.history_token(),
+            Other => {
+                // 局部操作若改動任一側，不得讓 journal 跨過複合操作邊界。
+                let matches = self.settlement_undo.last().is_some_and(|edit| {
+                    self.placement.matches_undo_boundary(&edit.after)
+                        && self.nature.session.history_token() == edit.nature_after.history_token()
+                        && self.nature.session.capture() == edit.nature_after.capture()
+                }) || self.settlement_redo.last().is_some_and(|edit| {
+                    self.placement.matches_state(&edit.before)
+                        && self.nature.session.history_token() == edit.nature_before.history_token()
+                        && self.nature.session.capture() == edit.nature_before.capture()
+                });
+                if matches { self.settlement_undo.len() as u64 } else { u64::MAX }
+            },
+        }
+    }
+    fn undo(&mut self, id: crate::undo_journal::SubsystemId) -> bool {
+        use crate::undo_journal::SubsystemId::*;
+        match id {
+            Terrain => self.session.as_mut().is_some_and(|s| s.undo()),
+            Materials => self.textures.material_undo(),
+            Placement => self.placement.undo().is_ok(),
+            Nature => {
+                let success = self.nature.session.undo();
+                if success { self.nature.last_action = true; }
+                success
+            },
+            Spawns => {
+                let cx = Self::spawn_cx(&self.session, self.loc.current_language(), self.height_step, self.current_map_is_original());
+                self.spawn_ui.undo(&mut self.scenario, &cx)
+            }
+            Scenario => self.scenario.undo_events(),
+            Scene => self.scene.undo(),
+            Other => {
+                let success = self.settlement_history(false);
+                // 此快照交換已由 journal 導航，不再送出旁錄 barrier。
+                if success { self.placement.take_history_receipts(); }
+                success
+            },
+        }
+    }
+    fn redo(&mut self, id: crate::undo_journal::SubsystemId) -> bool {
+        use crate::undo_journal::SubsystemId::*;
+        match id {
+            Terrain => self.session.as_mut().is_some_and(|s| s.redo()),
+            Materials => self.textures.material_redo(),
+            Placement => self.placement.redo().is_ok(),
+            Nature => {
+                let success = self.nature.session.redo();
+                if success { self.nature.last_action = true; }
+                success
+            },
+            Spawns => {
+                let cx = Self::spawn_cx(&self.session, self.loc.current_language(), self.height_step, self.current_map_is_original());
+                self.spawn_ui.redo(&mut self.scenario, &cx)
+            }
+            Scenario => self.scenario.redo_events(),
+            Scene => self.scene.redo(),
+            Other => {
+                let success = self.settlement_history(true);
+                // 此快照交換已由 journal 導航，不再送出旁錄 barrier。
+                if success { self.placement.take_history_receipts(); }
+                success
+            },
+        }
     }
 }

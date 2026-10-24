@@ -1,3 +1,9 @@
+## 2026-10-24 Codex：統一復原 step 4a（審查修正已驗證，未提交）
+- 工具列與全域 Ctrl+Z／Ctrl+Y／Ctrl+Shift+Z 改用 journal；導航前結束筆觸／拖曳，面板局部按鈕保留。token 失同步清除 journal 並於該次點擊回退舊路由，委派失敗停止；barrier／空 journal 使用舊路由。
+- 審查修正：Settlement 使用單筆 Other entry，token 代表 settlement stack 深度並檢查 Placement／Nature 邊界，Undo／Redo 委派 settlement_history；消耗個別收據及 journal 導航產生的快照交換 barrier，確保單步原子操作與前後地形時間順序。starter kit 經 mutate/add_many 僅產生一筆 Spawns 歷程。狀態使用 tr 雙語；保留手勢清除、貼圖失效，成功後清除 spawn_landscape，Nature 導航更新 last_action。
+- 測試：六項 unified_ 通過，涵蓋交錯順序、局部失同步、barrier、文字焦點、Settlement 含／不含 Nature 單步復原重做、英語狀態與貼圖失效。初版誤用 BrushPath::is_empty、於 UI 消費後斷言 texture_dirty，已改為直接導航驗證；首輪完整測試發現快照交換 barrier 清除 journal，已修正並完整重跑。失敗輪保留於 re_workspace/undo-journal-step4a-fix-first-test.log。
+- 最終驗證：cargo check --workspace --locked --offline --target-dir re_workspace/codex-wave-dest-target → exit 0；cargo test --workspace --locked --offline --no-fail-fast --target-dir re_workspace/codex-wave-dest-target → 283 組，2464 passed／0 failed／24 ignored，exit 0；相同 workspace／locked／offline／target-dir 的 cargo build → exit 0，無 MSVC 連結錯誤。日誌 re_workspace/undo-journal-step4a-fix-{check,test,build}.log；git diff --check 通過。
+- 未 stage／commit，未修改 AGENTS.md／README.md，保留其原變更；維持系統 TEMP/TMP，未碰安裝遊戲目錄。未做真人 GUI 驗收，step 4b 面板路由仍待辦。先前子代理 thread-store 錯誤由主代理接手，本輪未委派。
 ## 2026-10-24 Codex：placement 偶發測試修正（已驗證）
 - 根因：僅含 PID 的 TEMP 目錄會在 PID 重用後留下測試刻意建立的鎖檔與 objects.dat 目錄；正式儲存已逐位元組比對，不依賴 mtime。兩測試改用含 PID／時間戳／原子計數且排他建立的 disk_fixture，無新相依、無正式程式變更。
 - 證據：系統 TEMP 的 ar-placement-recovery-{10288,11560}/objects.dat 為目錄，ar-placement-conflict-{10288,11560}/.ar-placement.lock 仍存在；符合舊測試留下的失敗條件。沒有持有未關閉的 fixture 檔案控制代碼。
@@ -253,7 +259,7 @@
 - 起點 bfb6597，僅既有 AGENTS.md／README.md 未提交修改，保留。不得把疑點直接改成新行為；只讀零售遊戲、需要寫入時使用 TEMP fixtures。完成後依序 workspace check/test/build，並重跑零售記憶體 gate 與功能契約探針。
 - 父端已修：寬螢幕只還原已知舊 EXE 六點，置中呈現自動依賴 dgVoodoo；速度未知且要求>1時回 Err，不發布局部計畫；CustomUnitStats 可在 Balance=false 以原版基準套用，GUI 讀取目前安裝狀態不保留未驗證舊草稿；部署偵測核對受管理 binary hash、必要設定檔並拒絕重複呈現鍵。
 - 父端定向 check --tests 通過；定向測試 82 lib＋11 category restore＋3 install integrity＋5 install compose＋5 metadata 全通過。最初新測試誤用不存在的 compose_install_features 已改正為 plan_install；原有測試要求未知速度靜默略過，依新失敗封閉行為更新為原子拒絕。記錄 re_workspace/feature-fix-parent-focused.log；這不是完整 workspace 或遊戲內驗收。
-- 別名／P20 代理定向驗證回報 115 passed，含唯讀 retail BCI；父端再補主功能停用清除 Core／M6 鏡射，避免 OR 正規化重新啟用，alias＋interrupted parity **13 passed／1 ignored**。父端 GUI model **31 passed**（含自訂無 Balance 預覽、讀目前狀態不留舊草稿）；早先未知速度測試 fixture 缺常數已補成有效原版時鐘。完整 modifier 初整合因新 RomanEndless 必須同時確認 team.dat 而遇舊無效 team fixture 斷言，已保留 EXE 精確斷言並改驗無效資料不得報整項已套用；待重跑。
+- 別名／P20 代理定向驗證回報 115 passed，含唯讀 retail BCI；父端再補主功能停用清除 Core／M6 鏡射，避免 OR 正規化重新啟用，alias＋interrupted parity **13 passed／1 ignored**。父端 GUI model **31 passed**（含自訂無 Balance 預覽、讀目前狀態不留舊草稿）；早先未知速度測試 fixture 缺常數已補成有效原版時鐘。完整 modifier 初整合因新 RomanEndless 必須同時確認 team.dat 而遇舊無效 team fixture 斷言，已保留 EXE 精確斷言並改驗無效資料不得報整項已套用；集中測試 unified_：6 passed／0 failed；再次 cargo check exit 0，完整測試與 build 重跑中。
 
 ## 2026-10-21 Codex：49 項功能反編譯稽核（有缺陷，未全數通過）
 

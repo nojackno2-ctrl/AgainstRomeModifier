@@ -1,4 +1,4 @@
-//! 尚未接入編輯器的跨子系統歷程骨架。
+//! 編輯器工具列與全域快捷鍵共用的跨子系統歷程。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum SubsystemId {
     Terrain,
@@ -87,6 +87,15 @@ impl UndoJournal {
         !self.redo.is_empty()
     }
 
+    /// 導航前驗證最新紀錄，讓呼叫端區分失同步與委派失敗。
+    pub fn matches_target(&self, target: &dyn UndoTarget, forward: bool) -> bool {
+        let source = if forward { &self.redo } else { &self.undo };
+        source.last().is_none_or(|entry| {
+            entry.epoch == self.epoch && entry.children.iter().all(|step| {
+                target.token(step.subsystem) == if forward { step.before_token } else { step.after_token }
+            })
+        })
+    }
     pub fn undo(&mut self, target: &mut dyn UndoTarget) -> bool {
         self.navigate(target, false)
     }
