@@ -695,7 +695,7 @@ impl PlacementUi {
         self.status = "Placement DATA saved in whole-map transaction.".into();
         Ok(())
     }
-    fn record_edit(&mut self, entries: usize) {
+    pub(crate) fn record_edit(&mut self, entries: usize) {
         if entries > 0 {
             self.undo_groups.push(entries);
             self.redo_groups.clear();
@@ -1681,15 +1681,13 @@ impl PlacementUi {
                         self.report(r);
                     }
                 }
-                let can_undo=!self.undo_groups.is_empty() || self.settlement_history_available.0;
-                let can_redo=!self.redo_groups.is_empty() || self.settlement_history_available.1;
+                let can_undo=!self.undo_groups.is_empty();
+                let can_redo=!self.redo_groups.is_empty();
                 if ui.add_enabled(can_undo,egui::Button::new("Undo")).clicked() {
-                    if self.settlement_history_routing { self.history_request = Some(false); }
-                    else { let r=self.undo();self.report(r); }
+                    self.history_request = Some(false);
                 }
                 if ui.add_enabled(can_redo,egui::Button::new("Redo")).clicked() {
-                    if self.settlement_history_routing { self.history_request = Some(true); }
-                    else { let r=self.redo();self.report(r); }
+                    self.history_request = Some(true);
                 }
                 if ui.add_enabled(self.is_dirty(),egui::Button::new("Save DATA")).clicked() {self.request_save();}
                 if ui.add_enabled(self.is_loaded(),egui::Button::new("Reset DATA…")).clicked() {let r=self.request_reset();self.report(r);}

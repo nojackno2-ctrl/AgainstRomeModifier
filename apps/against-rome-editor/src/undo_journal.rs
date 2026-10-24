@@ -156,6 +156,40 @@ impl UndoJournal {
         true
     }
 
+    /// 局部導航只移動該子系統最新的單筆紀錄；複合邊界或缺少收據由呼叫端清除紀錄。
+    /// 埋藏的獨立步驟移至反向堆疊頂端，保留其餘子系統的時間順序。
+    pub fn navigate_subsystem(&mut self, target: &mut dyn UndoTarget, id: SubsystemId, forward: bool) -> Option<bool> {
+        let source = if forward { &self.redo } else { &self.undo };
+        let index = source.iter().rposition(|entry| entry.children.iter().any(|step| step.subsystem == id))?;
+        // Settlement 的 Other 收據包含 DATA／Nature 快照，不能跨越或拆開。
+        if matches!(id, SubsystemId::Placement | SubsystemId::Nature)
+            && self.undo.iter().chain(&self.redo).any(|entry| entry.children.iter().any(|step| step.subsystem == SubsystemId::Other)) {
+            return None;
+        }
+        let entry = &source[index];
+        if entry.children.len() != 1 || entry.epoch != self.epoch { return None; }
+        let mut isolated = Self { epoch: self.epoch, ..Default::default() };
+        if forward { isolated.redo.push(entry.clone()); } else { isolated.undo.push(entry.clone()); }
+        if !isolated.matches_target(target, forward) { return None; }
+        if !isolated.navigate(target, forward) { return Some(false); }
+        let (source, destination) = if forward { (&mut self.redo, &mut self.undo) } else { (&mut self.undo, &mut self.redo) };
+        destination.push(source.remove(index));
+        Some(true)
+    }
+    /// 已由 settlement 原子路由完成操作；核對前後 token 後只移動收據。
+    pub fn reconcile_settlement(&mut self, target: &dyn UndoTarget, forward: bool, before: u64) -> bool {
+        let (source, destination) = if forward { (&mut self.redo, &mut self.undo) } else { (&mut self.undo, &mut self.redo) };
+        let Some(entry) = source.last() else { return false; };
+        if entry.epoch != self.epoch || entry.children.len() != 1 { return false; }
+        let step = &entry.children[0];
+        if step.subsystem != SubsystemId::Other
+            || before != if forward { step.before_token } else { step.after_token }
+            || target.token(SubsystemId::Other) != if forward { step.after_token } else { step.before_token } {
+            return false;
+        }
+        if let Some(entry) = source.pop() { destination.push(entry); }
+        true
+    }
     pub fn clear(&mut self) {
         self.undo.clear();
         self.redo.clear();
@@ -220,6 +254,29 @@ mod tests {
         (journal, target)
     }
 
+    #[test]
+    fn panel_failure_and_compound_leave_journal_unchanged() {
+        let (mut journal, mut target) = compound();
+        let original = journal.clone();
+        assert_eq!(journal.navigate_subsystem(&mut target, Terrain, false), None);
+        assert_eq!(journal, original);
+        assert!(target.calls.is_empty());
+
+        journal.clear();
+        assert!(journal.record_compound(vec![step(Terrain, 0)]));
+        assert!(journal.record_compound(vec![step(Materials, 0)]));
+        let original = journal.clone();
+        target.fail = Some((false, Terrain));
+        assert_eq!(journal.navigate_subsystem(&mut target, Terrain, false), Some(false));
+        assert_eq!(journal, original);
+        assert_eq!(target.calls, vec![(false, Terrain)]);
+        target.fail = None;
+        assert_eq!(journal.navigate_subsystem(&mut target, Terrain, false), Some(true));
+        let original = journal.clone();
+        target.fail = Some((true, Terrain));
+        assert_eq!(journal.navigate_subsystem(&mut target, Terrain, true), Some(false));
+        assert_eq!(journal, original);
+    }
     #[test]
     fn chronological_order_across_subsystems() {
         let mut j = UndoJournal::default();

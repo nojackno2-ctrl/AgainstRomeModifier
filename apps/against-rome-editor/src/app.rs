@@ -1665,7 +1665,7 @@ impl EditorApp {
             });
         self.family_open = open;
         if self.family.take_store_changed() {
-            self.placement.note_external_store_edit();
+            self.placement.record_edit(1);
             self.navigation.invalidate();
         }
     }
@@ -3388,14 +3388,14 @@ impl EditorApp {
                 .clicked()
             {
                 self.nature.last_action = true;
-                self.nature_undo();
+                self.navigate_panel(crate::undo_journal::SubsystemId::Nature, false);
             }
             if ui
                 .add_enabled(self.nature.session.can_redo() || !self.settlement_redo.is_empty(), egui::Button::new("Redo"))
                 .clicked()
             {
                 self.nature.last_action = true;
-                self.nature_redo();
+                self.navigate_panel(crate::undo_journal::SubsystemId::Nature, true);
             }
             if ui
                 .add_enabled(self.nature.session.is_dirty(), egui::Button::new("Discard"))
@@ -10832,12 +10832,6 @@ impl EditorApp {
         self.placement.settlement_history_routing = !self.settlement_undo.is_empty() || !self.settlement_redo.is_empty();
         self.placement.settlement_history_available = (!self.settlement_undo.is_empty(), !self.settlement_redo.is_empty());
         self.placement.show(ctx);
-        if let Some(redo) = self.placement.history_request.take() {
-            if !self.settlement_history(redo) {
-                if redo { let _ = self.placement.redo(); }
-                else { let _ = self.placement.undo(); }
-            }
-        }
         // Opening the Scenario or Spawns panel loads the open map's script on demand (once per
         // map, never over pending edits); otherwise added events or objects could not be
         // checked or saved, and Spawns would send the designer to the Scenario panel.
@@ -10906,6 +10900,7 @@ impl EditorApp {
         self.show_design_check(ctx);
         self.consume_design_check_focus();
         self.show_studio_panels(ctx);
+        self.consume_panel_history_requests();
         self.consume_panel_save_requests();
         self.collect_pilot_receipts();
     }
@@ -11292,7 +11287,7 @@ mod step3a_history_tests {
 
 impl EditorApp {
     /// 先結束手勢，再選擇統一紀錄或相容路由；委派失敗不得轉往其他子系統。
-    fn navigate_journal(&mut self, forward: bool) {
+    fn finish_history_gestures(&mut self) {
         if let Some(session) = self.session.as_mut() { session.commit_stroke(); }
         self.is_painting = false;
         self.stroke_path.clear();
@@ -11302,6 +11297,9 @@ impl EditorApp {
         let cx = Self::spawn_cx(&self.session, self.loc.current_language(), self.height_step, self.current_map_is_original());
         self.spawn_ui.canvas_release(&mut self.scenario, &cx);
         self.collect_pilot_receipts();
+    }
+    fn navigate_journal(&mut self, forward: bool) {
+        self.finish_history_gestures();
         let mut journal = std::mem::take(&mut self.undo_journal);
         let available = if forward { journal.can_redo() } else { journal.can_undo() };
         let desync = !journal.matches_target(self, forward);
@@ -11407,5 +11405,72 @@ impl crate::undo_journal::UndoTarget for EditorApp {
                 success
             },
         }
+    }
+}
+impl EditorApp {
+    fn consume_panel_history_requests(&mut self) {
+        use crate::undo_journal::SubsystemId::*;
+        let requests = [
+            (Placement, self.placement.history_request.take()),
+            (Scenario, self.scenario.history_request.take()),
+            (Spawns, self.spawn_ui.history_request.take()),
+            (Materials, self.textures.history_request.take()),
+            (Scene, self.scene.history_request.take()),
+            (Placement, self.family.history_request.take()),
+        ];
+        for (id, forward) in requests {
+            if let Some(forward) = forward { self.navigate_panel(id, forward); }
+        }
+    }
+
+    fn navigate_panel(&mut self, id: crate::undo_journal::SubsystemId, forward: bool) -> bool {
+        use crate::undo_journal::UndoTarget;
+        self.finish_history_gestures();
+        let mut journal = std::mem::take(&mut self.undo_journal);
+        if matches!(id, crate::undo_journal::SubsystemId::Placement | crate::undo_journal::SubsystemId::Nature) {
+            let before = self.token(crate::undo_journal::SubsystemId::Other);
+            if self.settlement_history(forward) {
+                self.placement.take_history_receipts();
+                if !journal.reconcile_settlement(self, forward, before) {
+                    journal.clear();
+                    self.status_message = tr(self.loc.current_language(),
+                        "Panel history could not be reconciled; unified history cleared.",
+                        "面板歷程無法安全整合，已清除統一復原紀錄。").into();
+                }
+                self.undo_journal = journal;
+                self.texture_dirty = true;
+                self.spawn_landscape = None;
+                self.family.invalidate();
+                self.navigation.invalidate();
+                return true;
+            }
+        }
+        let result = journal.navigate_subsystem(self, id, forward);
+        let cleared = result.is_none();
+        let success = result.unwrap_or_else(|| {
+            // 無法安全拆解複合操作或 token 不符時，清除 journal，再只操作指定子系統。
+            journal.clear();
+            if forward { UndoTarget::redo(self, id) } else { UndoTarget::undo(self, id) }
+        });
+        self.undo_journal = journal;
+        self.texture_dirty = true;
+        if success {
+            self.spawn_landscape = None;
+            if id == crate::undo_journal::SubsystemId::Placement {
+                self.family.invalidate();
+                self.navigation.invalidate();
+            }
+        }
+        self.status_message = if cleared {
+            tr(self.loc.current_language(),
+                "Panel history could not be reconciled; unified history cleared.",
+                "面板歷程無法安全整合，已清除統一復原紀錄。")
+        } else if success {
+            tr(self.loc.current_language(), "Panel undo history applied.", "已套用面板復原紀錄。")
+        } else {
+            tr(self.loc.current_language(), "Panel undo operation failed; stopped.", "面板復原操作失敗，已停止。")
+        }.into();
+        self.status_is_error = !success;
+        success
     }
 }

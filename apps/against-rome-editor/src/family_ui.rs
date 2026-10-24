@@ -430,6 +430,7 @@ pub struct FamilyCtx<'a> {
 }
 
 pub struct FamilyUi {
+    pub(crate) history_request: Option<bool>,
     pub tab: FamilyTab,
     /// Selected family root `(slot, uid)`.
     pub selected: Option<(usize, u32)>,
@@ -453,6 +454,7 @@ pub struct FamilyUi {
 impl Default for FamilyUi {
     fn default() -> Self {
         Self {
+            history_request: None,
             tab: FamilyTab::Families,
             selected: None,
             only_effects: false,
@@ -827,14 +829,8 @@ impl FamilyUi {
         if do_copy {
             self.run_copy(ctx, bound);
         }
-        if let Some(store) = ctx.store.as_deref_mut() {
-            if do_undo && store.undo() {
-                self.after_edit(tr(en, "Undone.", "已復原。"));
-            }
-            if do_redo && store.redo() {
-                self.after_edit(tr(en, "Redone.", "已重做。"));
-            }
-        }
+        if do_undo { self.history_request = Some(false); }
+        if do_redo { self.history_request = Some(true); }
     }
 
     fn after_edit(&mut self, message: &str) {

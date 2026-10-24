@@ -163,3 +163,156 @@ fn unified_navigation_invalidates_terrain_view() {
     }
     std::fs::remove_dir_all(root).unwrap();
 }
+fn event(app: &mut EditorApp) {
+    app.scenario.add_events(&[against_rome_scenario::Event {
+        name: "面板復原測試".into(),
+        actions: vec![against_rome_scenario::Action { text: "step4b".into(), ..Default::default() }],
+        ..Default::default()
+    }]).unwrap();
+}
+
+#[test]
+fn unified_panel_newest_then_toolbar_keeps_chronology_and_redo() {
+    let (mut app, root, ctx) = setup("step4b_newest");
+    let baseline = snapshot(&app);
+    terrain(&mut app, 40);
+    let terrain_only = snapshot(&app);
+    event(&mut app);
+    let edited = snapshot(&app);
+    app.spawn_ui.open = false;
+    app.scenario.open = true;
+    app.scenario.history_request = Some(false);
+    gui_frame(&mut app, &ctx, vec![]);
+    assert_eq!(snapshot(&app), terrain_only);
+    assert!(app.pilot_history_consistent());
+    app.navigate_journal(false);
+    assert_eq!(snapshot(&app), baseline);
+    app.navigate_journal(true);
+    assert_eq!(snapshot(&app), terrain_only);
+    app.scenario.history_request = Some(true);
+    app.consume_panel_history_requests();
+    assert_eq!(snapshot(&app), edited);
+    assert!(app.pilot_history_consistent());
+    assert!(!app.undo_journal.can_redo());
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn unified_panel_buried_step_preserves_other_tools_and_redo_order() {
+    let (mut app, root, _) = setup("step4b_buried");
+    let baseline = snapshot(&app);
+    event(&mut app);
+    let event_only = snapshot(&app);
+    terrain(&mut app, 40);
+    let edited = snapshot(&app);
+    assert!(app.navigate_panel(SubsystemId::Scenario, false));
+    assert_eq!(app.session.as_ref().unwrap().heights()[0], 40);
+    assert_eq!(snapshot(&app).1, baseline.1);
+    assert!(app.pilot_history_consistent());
+    app.navigate_journal(false);
+    assert_eq!(snapshot(&app), baseline);
+    app.navigate_journal(true);
+    assert_eq!(app.session.as_ref().unwrap().heights()[0], 40);
+    app.navigate_journal(true);
+    assert_eq!(snapshot(&app), edited);
+    // Redo 堆疊中事件埋在地形下方，局部重做仍只操作事件。
+    app.navigate_journal(false);
+    app.navigate_journal(false);
+    assert!(app.navigate_panel(SubsystemId::Scenario, true));
+    assert_eq!(snapshot(&app), event_only);
+    assert!(app.pilot_history_consistent());
+    app.navigate_journal(true);
+    assert_eq!(snapshot(&app), edited);
+    app.navigate_journal(false);
+    assert_eq!(snapshot(&app), event_only);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn unified_panel_token_mismatch_clears_with_local_only_fallback() {
+    let (mut app, root, _) = setup("step4b_mismatch");
+    event(&mut app);
+    terrain(&mut app, 40);
+    app.collect_pilot_receipts();
+    assert!(app.scenario.undo_events());
+    assert!(app.navigate_panel(SubsystemId::Scenario, true));
+    assert_eq!(app.session.as_ref().unwrap().heights()[0], 40);
+    assert!(!app.undo_journal.can_undo() && !app.undo_journal.can_redo());
+    assert!(app.status_message.contains("unified history cleared"));
+    assert!(!app.status_is_error);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn unified_family_copy_uses_placement_receipt_and_shared_panel_navigation() {
+    let (mut app, root, map) = fixture("step4b_family", &[(232, None)]);
+    app.placement.load_session(&map).unwrap();
+    app.collect_pilot_receipts();
+    app.undo_journal.clear();
+    // 群組複製為單一 store transaction，由 DATA adapter 記錄。
+    let baseline = app.placement.objects();
+    let store = app.placement.store_mut().unwrap();
+    let source = crate::family_ui::validate_native_source(store, baseline[0].slot, &Default::default()).unwrap();
+    crate::family_ui::copy_family(store, &source, &Default::default(), [100, 0, 0]).unwrap();
+    app.placement.record_edit(1);
+    let copied = app.placement.objects();
+    terrain(&mut app, 40);
+    app.family.history_request = Some(false);
+    app.consume_panel_history_requests();
+    assert_eq!(app.placement.objects(), baseline);
+    assert_eq!(app.session.as_ref().unwrap().heights()[0], 40);
+    assert!(app.pilot_history_consistent());
+    app.navigate_journal(false);
+    app.navigate_journal(true);
+    app.family.history_request = Some(true);
+    app.consume_panel_history_requests();
+    assert_eq!(app.placement.objects(), copied);
+    assert!(app.pilot_history_consistent());
+    std::fs::remove_dir_all(root).unwrap();
+}
+#[test]
+fn unified_panel_settlement_atomic_undo_redo_then_toolbar() {
+    for id in [SubsystemId::Nature, SubsystemId::Placement] {
+        for include_nature in [true, false] {
+            for buried in [true, false] {
+                let (mut app, root, _) = super::settlement_apply_tests::fixture("step4b_settlement", include_nature, 384);
+                app.set_app_language(AppLanguage::English);
+                app.collect_pilot_receipts();
+                app.undo_journal.clear();
+                let baseline = (snapshot(&app), app.placement.objects());
+                terrain(&mut app, 40);
+                let before = (snapshot(&app), app.placement.objects());
+                app.apply_settlement().unwrap();
+                let applied = (snapshot(&app), app.placement.objects());
+                assert_ne!(applied.1, before.1);
+                if include_nature { assert_ne!(applied.0.2, before.0.2); }
+                // 埋藏的 settlement 無法移動頂端收據，必須清除而非拆成半筆。
+                if buried { event(&mut app); }
+                for forward in [false, true, false] {
+                    assert!(app.navigate_panel(id, forward));
+                    let expected = if forward { &applied } else { &before };
+                    assert_eq!(app.placement.objects(), expected.1);
+                    assert_eq!(app.nature.session.capture(), expected.0.2);
+                    assert_eq!(app.settlement_undo.len(), usize::from(forward));
+                    assert_eq!(app.settlement_redo.len(), usize::from(!forward));
+                    if buried {
+                        assert!(!app.undo_journal.can_undo() && !app.undo_journal.can_redo());
+                        assert!(app.status_message.contains("unified history cleared"));
+                    } else {
+                        assert!(app.undo_journal.consistent_tokens(|id| app.token(id)));
+                    }
+                }
+                if !buried {
+                    app.navigate_journal(false);
+                    assert_eq!((snapshot(&app), app.placement.objects()), baseline);
+                    app.navigate_journal(true);
+                    assert_eq!((snapshot(&app), app.placement.objects()), before);
+                    app.navigate_journal(true);
+                    assert_eq!((snapshot(&app), app.placement.objects()), applied);
+                    assert_eq!((app.settlement_undo.len(), app.settlement_redo.len()), (1, 0));
+                }
+                std::fs::remove_dir_all(root).unwrap();
+            }
+        }
+    }
+}

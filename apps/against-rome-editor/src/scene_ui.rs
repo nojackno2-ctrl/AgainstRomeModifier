@@ -88,6 +88,7 @@ pub fn nearest_marker(
 
 #[derive(Default)]
 pub struct SceneUi {
+    pub(crate) history_request: Option<bool>,
     pub open: bool,
     pub status: String,
     map_dir: Option<PathBuf>,
@@ -1250,13 +1251,13 @@ impl SceneUi {
                 .add_enabled(self.can_undo(), egui::Button::new(self.t("復原", "Undo")))
                 .clicked()
             {
-                self.undo();
+                self.history_request = Some(false);
             }
             if ui
                 .add_enabled(self.can_redo(), egui::Button::new(self.t("重做", "Redo")))
                 .clicked()
             {
-                self.redo();
+                self.history_request = Some(true);
             }
         });
         ui.horizontal_wrapped(|ui| {

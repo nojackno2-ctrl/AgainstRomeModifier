@@ -1,3 +1,9 @@
+## 2026-10-25 Codex：統一復原 step 4b（審查修正已驗證，未提交）
+- Scenario／Spawns／DATA／Nature／Materials／Scene／Families & Effects 局部按鈕改由共用 journal 導航；可驗證的埋藏單筆紀錄移至反向堆疊，保留其他子系統順序；複合邊界或 token 不符則清除 journal、顯示雙語狀態，僅操作指定子系統。事件圖無獨立導航；Console 為獨立巨集 context。
+- 審查修正：Nature／Placement 局部導航優先執行 settlement_history，原子還原 DATA 與 Nature；成功後核對 Other 收據前後 token 並移動，無法核對則清除 journal 與雙語提示，消費快照交換 barrier。恢復 Nature settlement 堆疊啟用條件。新增回歸測試涵蓋兩面板、有／無 Nature、埋藏收據清除、Undo／Redo 與後續工具列導航。首輪新測試使用舊 pilot 檢查器（Other 固定為 0）而失敗，已改以正式 UndoTarget token 核對；完整 workspace 重驗通過；首輪保留於 re_workspace/undo-journal-step4b-fix-first-test.log。
+- Families & Effects 複製改以 Placement record_edit(1) 產生收據；各面板依自身歷程啟用。新增 5 項測試涵蓋局部／工具列順序、埋藏復原與重做、token 不符、群組複製及委派失敗／複合拒拆。
+- 驗證：cargo check／cargo build --workspace --locked --offline --target-dir re_workspace/codex-wave-dest-target 均 exit 0；cargo test --workspace --locked --offline --no-fail-fast --target-dir re_workspace/codex-wave-dest-target → 283 組，2470 passed／0 failed／24 ignored，exit 0。審查修正日誌 re_workspace/undo-journal-step4b-fix-{check,test,build}.log（均 exit 0）；git diff --check 通過，未做真人 GUI 驗收。
+- 初版初始化位置與測試 baseline／DATA fixture 假設已修正；捲動區按鈕改以完整 frame 消費導航請求驗證。子代理 thread-store 啟動失敗由主代理接手。未 stage／commit，保留 AGENTS.md／README.md 既有變更，未碰安裝遊戲，維持系統 TEMP/TMP。
 ## 2026-10-24 Codex：統一復原 step 4a（審查修正已驗證，未提交）
 - 工具列與全域 Ctrl+Z／Ctrl+Y／Ctrl+Shift+Z 改用 journal；導航前結束筆觸／拖曳，面板局部按鈕保留。token 失同步清除 journal 並於該次點擊回退舊路由，委派失敗停止；barrier／空 journal 使用舊路由。
 - 審查修正：Settlement 使用單筆 Other entry，token 代表 settlement stack 深度並檢查 Placement／Nature 邊界，Undo／Redo 委派 settlement_history；消耗個別收據及 journal 導航產生的快照交換 barrier，確保單步原子操作與前後地形時間順序。starter kit 經 mutate/add_many 僅產生一筆 Spawns 歷程。狀態使用 tr 雙語；保留手勢清除、貼圖失效，成功後清除 spawn_landscape，Nature 導航更新 last_action。

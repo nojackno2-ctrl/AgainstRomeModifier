@@ -94,6 +94,7 @@ impl EventHistory {
 }
 
 pub struct ScenarioUi {
+    pub(crate) history_request: Option<bool>,
     browser: EventBrowser,
     pub(crate) canvas: crate::scenario_canvas::ScenarioCanvas,
     objective_seconds: i32,
@@ -136,6 +137,7 @@ impl Default for ScenarioUi {
         };
         let baseline = state_bytes(&document, &camera).unwrap();
         Self {
+            history_request: None,
             browser: EventBrowser::default(),
             canvas: Default::default(),
             objective_seconds: 300,
@@ -1448,13 +1450,13 @@ impl ScenarioUi {
                                 .add_enabled(self.can_undo_events(), egui::Button::new(tl(en, "復原", "Undo")))
                                 .clicked()
                             {
-                                self.undo_events();
+                                self.history_request = Some(false);
                             }
                             if ui
                                 .add_enabled(self.can_redo_events(), egui::Button::new(tl(en, "重做", "Redo")))
                                 .clicked()
                             {
-                                self.redo_events();
+                                self.history_request = Some(true);
                             }
                             ui.separator();
                             if ui.button(tl(en, "視覺化節點圖 (Event Graph)", "Event Graph")).clicked() {

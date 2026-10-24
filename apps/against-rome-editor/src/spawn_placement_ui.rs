@@ -124,6 +124,7 @@ enum RowClick {
 }
 
 pub struct SpawnPlacementUi {
+    pub(crate) history_request: Option<bool>,
     layout_picker: crate::layout_io::LayoutFilePicker,
     pending_layout: Option<crate::spawn_layout::SpawnLayout>,
     layout_remap: bool,
@@ -177,6 +178,7 @@ pub struct SpawnPlacementUi {
 impl Default for SpawnPlacementUi {
     fn default() -> Self {
         Self {
+            history_request: None,
             layout_picker: crate::layout_io::native_layout_picker(),
             pending_layout: None,
             layout_remap: false,
@@ -1354,10 +1356,10 @@ impl SpawnPlacementUi {
             self.rotate_selected(scenario, cx, degrees);
         }
         if action_undo {
-            self.undo(scenario, cx);
+            self.history_request = Some(false);
         }
         if action_redo {
-            self.redo(scenario, cx);
+            self.history_request = Some(true);
         }
         self.show_dialogs(ctx, scenario, cx);
     }
