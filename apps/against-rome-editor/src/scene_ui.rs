@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 
 type Result<T> = std::result::Result<T, String>;
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 struct SceneSnapshot {
     objects: Vec<MapSceneObject>,
     removals: Vec<SdlSceneObjectRemoval>,
@@ -96,6 +96,8 @@ pub struct SceneUi {
     removals: Vec<SdlSceneObjectRemoval>,
     additions: Vec<SdlSceneObjectAddition>,
     undo: Vec<SceneSnapshot>,
+    redo: Vec<SceneSnapshot>,
+    history: against_rome_textures::history::HistoryTokens,
     selected: Option<usize>,
     dup_team: i32,
     dup_pos: [f32; 3],
@@ -137,6 +139,8 @@ impl SceneUi {
         self.additions.clear();
         self.offsets.clear();
         self.undo.clear();
+        self.redo.clear();
+        self.history = Default::default();
         self.selected = None;
         self.selected_addition = None;
         self.drag = None;
@@ -166,6 +170,30 @@ impl SceneUi {
         !self.undo.is_empty()
     }
 
+    pub fn can_redo(&self) -> bool {
+        !self.redo.is_empty()
+    }
+
+    pub fn undo_depth(&self) -> usize { self.undo.len() }
+    pub fn redo_depth(&self) -> usize { self.redo.len() }
+    pub fn history_token(&self) -> u64 { self.history.token() }
+
+    pub fn take_history_receipts(&mut self) -> Vec<crate::undo_journal::SubsystemStep> {
+        self.history.take_receipts().into_iter().map(|(before_token, after_token)| {
+            crate::undo_journal::SubsystemStep {
+                subsystem: crate::undo_journal::SubsystemId::Scene,
+                before_token,
+                after_token,
+            }
+        }).collect()
+    }
+
+    /// 僅清除重做分支，保留目前內容、基準與復原紀錄。
+    pub fn clear_redo(&mut self) {
+        self.redo.clear();
+        self.history.clear_redo();
+    }
+
     pub fn is_dirty(&self) -> bool {
         !self.removals.is_empty()
             || !self.additions.is_empty()
@@ -189,13 +217,28 @@ impl SceneUi {
         })
     }
 
-    fn push_undo(&mut self) {
-        self.undo.push(SceneSnapshot {
+    fn snapshot(&self) -> SceneSnapshot {
+        SceneSnapshot {
             objects: self.objects.clone(),
             removals: self.removals.clone(),
             additions: self.additions.clone(),
             offsets: self.offsets.clone(),
-        });
+        }
+    }
+
+    fn push_undo(&mut self) {
+        self.end_drag();
+        self.undo.push(self.snapshot());
+    }
+
+    /// 所有驗證通過且內容發布後才提交；空操作保留原重做分支。
+    fn finish_edit(&mut self) {
+        if self.undo.last() == Some(&self.snapshot()) {
+            self.undo.pop();
+        } else {
+            self.clear_redo();
+            self.history.commit();
+        }
     }
 
     fn editable(&self, index: usize) -> Result<()> {
@@ -225,6 +268,7 @@ impl SceneUi {
         Self::validate_fields(team, [o.local_x, o.local_y, o.local_z], o.angle)?;
         self.push_undo();
         self.objects[index].team = team;
+        self.finish_edit();
         Ok(())
     }
 
@@ -236,6 +280,7 @@ impl SceneUi {
         o.local_x = pos[0];
         o.local_y = pos[1];
         o.local_z = pos[2];
+        self.finish_edit();
         Ok(())
     }
 
@@ -245,6 +290,7 @@ impl SceneUi {
         Self::validate_fields(o.team, [o.local_x, o.local_y, o.local_z], angle)?;
         self.push_undo();
         self.objects[index].angle = angle;
+        self.finish_edit();
         Ok(())
     }
 
@@ -264,6 +310,7 @@ impl SceneUi {
             source_file: o.source_file.clone(),
             object_index: o.object_index,
         });
+        self.finish_edit();
         Ok(())
     }
 
@@ -289,6 +336,7 @@ impl SceneUi {
             angle,
             target_file: None,
         });
+        self.finish_edit();
         Ok(())
     }
 
@@ -303,13 +351,33 @@ impl SceneUi {
             Some(i) if i > index => Some(i - 1),
             other => other,
         };
+        self.finish_edit();
         Ok(())
     }
 
     pub fn undo(&mut self) -> bool {
+        self.end_drag();
         let Some(s) = self.undo.pop() else {
             return false;
         };
+        self.redo.push(self.snapshot());
+        self.restore_snapshot(s);
+        self.history.undo();
+        true
+    }
+
+    pub fn redo(&mut self) -> bool {
+        self.end_drag();
+        let Some(s) = self.redo.pop() else {
+            return false;
+        };
+        self.undo.push(self.snapshot());
+        self.restore_snapshot(s);
+        self.history.redo();
+        true
+    }
+
+    fn restore_snapshot(&mut self, s: SceneSnapshot) {
         self.objects = s.objects;
         self.removals = s.removals;
         self.additions = s.additions;
@@ -318,7 +386,6 @@ impl SceneUi {
         self.selected_addition = self
             .selected_addition
             .filter(|i| *i < self.additions.len());
-        true
     }
 
     fn t(&self, zh: &str, en: &str) -> String {
@@ -435,6 +502,7 @@ impl SceneUi {
 
     /// Selects `target` and arms a drag (3D/2D press on a marker). No undo step yet.
     pub fn begin_drag(&mut self, target: SceneRef) {
+        self.end_drag();
         self.select_ref(Some(target));
         let name = self.name_of(target);
         let movable = match target {
@@ -536,6 +604,7 @@ impl SceneUi {
         if !drag.pushed {
             return;
         }
+        self.finish_edit();
         let m = self.markers().into_iter().find(|m| m.target == drag.target);
         if let Some(m) = m {
             self.status = self.t(
@@ -554,7 +623,7 @@ impl SceneUi {
     /// 3D viewport gesture entry point; returns true while the gesture is captured.
     pub fn scene_pointer(&mut self, event: ScenePointer) -> bool {
         if !self.scene_pick_active() {
-            self.drag = None;
+            self.end_drag();
             return false;
         }
         match event {
@@ -585,7 +654,7 @@ impl SceneUi {
         screen_from_world: &dyn Fn((f32, f32)) -> egui::Pos2,
     ) -> bool {
         if !self.scene_pick_active() {
-            self.drag = None;
+            self.end_drag();
             return false;
         }
         let (pressed, down, pointer) = response.ctx.input(|i| {
@@ -676,6 +745,7 @@ impl SceneUi {
                 if let Some(pos) = existing {
                     self.push_undo();
                     self.removals.remove(pos);
+                    self.finish_edit();
                     Ok(())
                 } else {
                     self.remove_object(i)
@@ -753,6 +823,7 @@ impl SceneUi {
         if next != SdlVector3::default() {
             self.offsets.insert(key, next);
         }
+        self.finish_edit();
         Ok(())
     }
 
@@ -879,6 +950,7 @@ impl SceneUi {
             angle: t.angle,
             target_file: Some(file.clone()),
         });
+        self.finish_edit();
         let n = self.additions.len() - 1;
         self.select_ref(Some(SceneRef::Addition(n)));
         self.status = self.t(
@@ -931,6 +1003,7 @@ impl SceneUi {
         self.drag = None;
         self.selected = self.selected.filter(|i| *i < self.objects.len());
         self.selected_addition = None;
+        self.finish_edit();
         true
     }
 
@@ -989,6 +1062,8 @@ impl SceneUi {
         self.additions.clear();
         self.offsets.clear();
         self.undo.clear();
+        self.redo.clear();
+        self.history = Default::default();
         self.selected = None;
         self.selected_addition = None;
         self.drag = None;
@@ -1172,10 +1247,16 @@ impl SceneUi {
                 if self.is_dirty() { " *" } else { "" }
             ));
             if ui
-                .add_enabled(self.can_undo(), egui::Button::new("復原"))
+                .add_enabled(self.can_undo(), egui::Button::new(self.t("復原", "Undo")))
                 .clicked()
             {
                 self.undo();
+            }
+            if ui
+                .add_enabled(self.can_redo(), egui::Button::new(self.t("重做", "Redo")))
+                .clicked()
+            {
+                self.redo();
             }
         });
         ui.horizontal_wrapped(|ui| {
@@ -1383,6 +1464,164 @@ mod tests {
             tx.stage_file(p, b.clone()).unwrap();
         }
         tx.commit().unwrap();
+    }
+
+    #[test]
+    fn step3b_exact_snapshots_and_tokens_round_trip() {
+        let (mut ui, dir) = loaded("step3b_exact");
+        let mut states = vec![(ui.snapshot(), ui.history_token(), ui.is_dirty())];
+        macro_rules! edit {
+            ($edit:expr) => {{
+                $edit;
+                states.push((ui.snapshot(), ui.history_token(), ui.is_dirty()));
+            }};
+        }
+        edit!(ui.set_team(0, 3).unwrap());
+        edit!(ui.set_position(0, [140.0, 12.0, 160.0]).unwrap());
+        edit!(ui.set_angle(0, Some(90.0)).unwrap());
+        edit!(ui.duplicate_object(0, 2, [200.0, 0.0, 200.0], None).unwrap());
+        edit!({
+            ui.begin_drag(SceneRef::Addition(0));
+            ui.drag_to_world((1300.0, 2300.0)).unwrap();
+            ui.drag_to_world((1400.0, 2400.0)).unwrap();
+            ui.end_drag();
+        });
+        edit!(ui.translate_settlement(NAME, [20.0, 5.0, 30.0]).unwrap());
+        edit!(ui.remove_addition(0).unwrap());
+        edit!(ui.remove_object(1).unwrap());
+        edit!({ ui.select(Some(1)); ui.toggle_delete_selected().unwrap(); });
+        edit!(ui.add_object_from_catalog(0, NAME, 4).unwrap());
+        edit!(assert!(ui.restore_to_open()));
+        let receipts = ui.take_history_receipts();
+        assert_eq!(receipts.len(), states.len() - 1);
+        for (receipt, pair) in receipts.iter().zip(states.windows(2)) {
+            assert_eq!(receipt.subsystem, crate::undo_journal::SubsystemId::Scene);
+            assert_eq!((receipt.before_token, receipt.after_token), (pair[0].1, pair[1].1));
+        }
+        for (snapshot, token, dirty) in states.iter().rev().skip(1) {
+            assert!(ui.undo());
+            assert_eq!(&ui.snapshot(), snapshot);
+            assert_eq!(ui.history_token(), *token);
+            assert_eq!(ui.is_dirty(), *dirty);
+        }
+        assert!(!ui.undo());
+        for (snapshot, token, dirty) in states.iter().skip(1) {
+            assert!(ui.redo());
+            assert_eq!(&ui.snapshot(), snapshot);
+            assert_eq!(ui.history_token(), *token);
+            assert_eq!(ui.is_dirty(), *dirty);
+        }
+        assert!(!ui.redo());
+        assert!(ui.take_history_receipts().is_empty());
+        cleanup(dir);
+    }
+
+    #[test]
+    fn step3b_drag_navigation_and_deactivation_finalize_one_receipt() {
+        let (mut ui, dir) = loaded("step3b_drag_navigation");
+        ui.begin_drag(SceneRef::Object(0));
+        ui.drag_to_world((1300.0, 2300.0)).unwrap();
+        let edited = ui.snapshot();
+        // 拖曳中復原會先提交該手勢，再復原同一步。
+        assert!(ui.undo() && !ui.is_dirty() && !ui.is_capturing());
+        assert_eq!(ui.take_history_receipts().len(), 1);
+        assert!(ui.redo());
+        assert_eq!(ui.snapshot(), edited);
+        assert!(ui.take_history_receipts().is_empty());
+        ui.begin_drag(SceneRef::Object(0));
+        ui.drag_to_world((1400.0, 2400.0)).unwrap();
+        ui.open = false;
+        assert!(!ui.scene_pointer(ScenePointer::Release));
+        assert!(!ui.is_capturing());
+        assert_eq!(ui.take_history_receipts().len(), 1);
+        assert!(ui.undo());
+        assert_eq!(ui.snapshot(), edited);
+        cleanup(dir);
+    }
+
+    #[test]
+    fn step3b_branch_and_redo_only_clear_preserve_undo() {
+        let (mut ui, dir) = loaded("step3b_branch");
+        ui.set_team(0, 1).unwrap();
+        let first = (ui.snapshot(), ui.history_token());
+        ui.set_team(0, 2).unwrap();
+        let abandoned = ui.history_token();
+        assert!(ui.undo());
+        ui.set_angle(0, Some(45.0)).unwrap();
+        assert_ne!(ui.history_token(), abandoned);
+        assert!(!ui.can_redo() && !ui.redo());
+        assert!(ui.undo());
+        ui.take_history_receipts();
+        ui.clear_redo();
+        assert_eq!((ui.undo_depth(), ui.redo_depth()), (1, 0));
+        assert_eq!((ui.snapshot(), ui.history_token()), first);
+        assert!(ui.is_dirty());
+        assert!(!ui.redo());
+        assert!(ui.undo());
+        assert!(!ui.is_dirty());
+        assert!(ui.take_history_receipts().is_empty());
+        cleanup(dir);
+    }
+
+    #[test]
+    fn step3b_noop_and_rejected_edits_preserve_redo_without_receipts() {
+        let (mut ui, dir) = loaded("step3b_noop");
+        assert!(!ui.undo() && !ui.redo() && !ui.restore_to_open());
+        ui.set_team(0, 2).unwrap();
+        assert!(ui.undo());
+        ui.take_history_receipts();
+        let token = ui.history_token();
+        let object = ui.objects[0].clone();
+        ui.set_team(0, object.team).unwrap();
+        ui.set_position(0, [object.local_x, object.local_y, object.local_z]).unwrap();
+        ui.set_angle(0, object.angle).unwrap();
+        ui.translate_settlement(NAME, [0.0; 3]).unwrap();
+        assert!(ui.set_team(0, 16).is_err());
+        assert!(ui.set_position(0, [f32::NAN; 3]).is_err());
+        assert!(ui.remove_addition(0).is_err());
+        assert!(ui.translate_settlement(NAME, [f32::INFINITY; 3]).is_err());
+        ui.begin_drag(SceneRef::Object(0));
+        ui.end_drag();
+        ui.begin_drag(SceneRef::Object(0));
+        let world = ui.markers()[0].world;
+        assert!(!ui.drag_to_world((world[0], world[2])).unwrap());
+        assert!(ui.drag_to_world((world[0] + 100.0, world[2])).unwrap());
+        assert!(ui.take_history_receipts().is_empty());
+        ui.drag_to_world((world[0], world[2])).unwrap();
+        ui.end_drag();
+        assert_eq!(ui.history_token(), token);
+        assert_eq!((ui.undo_depth(), ui.redo_depth()), (0, 1));
+        assert!(!ui.is_dirty());
+        assert!(ui.take_history_receipts().is_empty());
+        assert!(ui.redo() && ui.is_dirty());
+        cleanup(dir);
+    }
+
+    #[test]
+    fn step3b_dirty_baseline_save_failure_and_success() {
+        let (mut ui, dir) = loaded("step3b_baseline");
+        ui.set_team(0, 3).unwrap();
+        let edited = ui.snapshot();
+        let token = ui.history_token();
+        assert!(ui.commit_baseline(&dir.join("missing")).is_err());
+        assert_eq!((ui.snapshot(), ui.history_token()), (edited.clone(), token));
+        assert!(ui.is_dirty() && ui.undo() && !ui.is_dirty());
+        assert!(ui.redo() && ui.is_dirty());
+        assert_eq!(ui.snapshot(), edited);
+        let files = ui.stage_transaction_files(&dir).unwrap();
+        commit(&dir, &files);
+        ui.commit_baseline(&dir).unwrap();
+        assert!(!ui.is_dirty() && !ui.can_undo() && !ui.can_redo());
+        assert!(ui.take_history_receipts().is_empty());
+        ui.set_team(0, 4).unwrap();
+        assert!(ui.is_dirty() && ui.undo() && !ui.is_dirty());
+        assert_eq!(ui.objects[0].team, 3);
+        assert!(ui.redo() && ui.is_dirty());
+        assert_eq!(ui.objects[0].team, 4);
+        ui.reset_session(Some(&dir));
+        assert!(!ui.is_dirty() && !ui.can_undo() && !ui.can_redo());
+        assert!(ui.take_history_receipts().is_empty());
+        cleanup(dir);
     }
 
     #[test]

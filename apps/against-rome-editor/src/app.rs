@@ -10910,6 +10910,7 @@ impl EditorApp {
         receipts.extend(self.textures.take_history_receipts());
         receipts.extend(self.spawn_ui.take_history_receipts());
         receipts.extend(self.scenario.take_history_receipts());
+        receipts.extend(self.scene.take_history_receipts());
         receipts.extend(self.nature.session.take_history_receipts().into_iter().map(
             |(before_token, after_token)| SubsystemStep {
                 subsystem: SubsystemId::Nature,
@@ -10946,6 +10947,7 @@ impl EditorApp {
             crate::undo_journal::SubsystemId::Spawns => self.spawn_ui.history_token(),
             crate::undo_journal::SubsystemId::Scenario => self.scenario.history_token(),
             crate::undo_journal::SubsystemId::Nature => self.nature.session.history_token(),
+            crate::undo_journal::SubsystemId::Scene => self.scene.history_token(),
             _ => 0,
         })
     }
@@ -10954,6 +10956,84 @@ impl EditorApp {
 #[cfg(test)]
 mod pilot_history_tests {
     use super::*;
+    #[test]
+    fn step3b_scene_receipts_are_collected_in_commit_order_shadow_only() {
+        use crate::undo_journal::{SubsystemId, UndoTarget};
+
+        // 僅供測試委派順序，不接入任何正式 UI 路由。
+        struct Target<'a>(&'a mut EditorApp, Vec<SubsystemId>);
+        impl UndoTarget for Target<'_> {
+            fn token(&self, id: SubsystemId) -> u64 {
+                match id {
+                    SubsystemId::Scene => self.0.scene.history_token(),
+                    SubsystemId::Terrain => self.0.session.as_ref().unwrap().history_token(),
+                    _ => panic!("非預期子系統：{id:?}"),
+                }
+            }
+            fn undo(&mut self, id: SubsystemId) -> bool {
+                self.1.push(id);
+                match id {
+                    SubsystemId::Scene => self.0.scene.undo(),
+                    SubsystemId::Terrain => self.0.session.as_mut().unwrap().undo(),
+                    _ => panic!("非預期子系統：{id:?}"),
+                }
+            }
+            fn redo(&mut self, id: SubsystemId) -> bool {
+                self.1.push(id);
+                match id {
+                    SubsystemId::Scene => self.0.scene.redo(),
+                    SubsystemId::Terrain => self.0.session.as_mut().unwrap().redo(),
+                    _ => panic!("非預期子系統：{id:?}"),
+                }
+            }
+        }
+        let dir = std::env::temp_dir().join(format!("arm_step3b_shadow_{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("scene.sdl"),
+            "[settlement]\nrefpos=1000,0,2000\n[object0000]\ndef=1700\nnamedef=BauRomHau00_Haupthaus\npos=100,0,100\nteam=0\n").unwrap();
+        let mut app = EditorApp::initial_state();
+        app.scene.reset_session(Some(&dir));
+        assert_eq!(app.scene.objects().len(), 1);
+        let original = app.scene.history_token();
+        app.scene.set_team(0, 3).unwrap();
+        let scene_token = app.scene.history_token();
+        let terrain = app.session.as_mut().unwrap();
+        terrain.apply_height_changes(&[crate::terrain::SampleChange {
+            index: 0, before: 32, after: 40,
+        }]);
+        assert!(terrain.commit_stroke());
+        app.collect_pilot_receipts();
+        assert!(app.pilot_history_consistent());
+        let journal = app.undo_journal.clone();
+        app.collect_pilot_receipts();
+        assert_eq!(app.undo_journal, journal);
+        // 原面板仍只復原 Scene，旁錄不介入路由。
+        assert!(app.scene.undo());
+        assert_eq!(app.scene.history_token(), original);
+        assert_eq!(app.session.as_ref().unwrap().heights()[0], 40);
+        assert!(!app.pilot_history_consistent());
+        assert!(app.scene.redo());
+        assert_eq!(app.scene.history_token(), scene_token);
+        assert!(app.pilot_history_consistent());
+        app.collect_pilot_receipts();
+        assert_eq!(app.undo_journal, journal);
+        let mut replay = journal.clone();
+        let mut target = Target(&mut app, Vec::new());
+        assert!(replay.undo(&mut target));
+        assert!(replay.undo(&mut target));
+        assert!(!replay.undo(&mut target));
+        assert_eq!(target.0.scene.history_token(), original);
+        assert!(replay.redo(&mut target));
+        assert!(replay.redo(&mut target));
+        assert!(!replay.redo(&mut target));
+        assert_eq!(target.1, vec![SubsystemId::Terrain, SubsystemId::Scene,
+            SubsystemId::Scene, SubsystemId::Terrain]);
+        app.scene.set_team(0, 3).unwrap();
+        app.collect_pilot_receipts();
+        assert_eq!(app.undo_journal, journal);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
     #[test]
     fn pilot_records_without_switching_old_navigation() {
         let mut app = EditorApp::initial_state();
