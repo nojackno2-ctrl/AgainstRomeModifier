@@ -156,24 +156,24 @@ pub struct EditorApp {
     family_open: bool,
     pub map_properties_open: bool,
     family_history_key: (usize, usize, usize),
-    pub(crate) scenario: ScenarioUi,
+    pub scenario: ScenarioUi,
     spawn_ui: SpawnPlacementUi,
     /// DATA landscape objects `(slot, x, z)` of the map (building clearance warning), per map.
     spawn_landscape: Option<(PathBuf, Vec<(i32, f32, f32)>)>,
-    textures: TexturesUi,
-    undo_journal: crate::undo_journal::UndoJournal,
+    pub(crate) textures: TexturesUi,
+    pub(crate) undo_journal: crate::undo_journal::UndoJournal,
     auxiliary_undo: Vec<(bool, Option<EmbossBaseline>)>,
     auxiliary_redo: Vec<(bool, Option<EmbossBaseline>)>,
-    scene: SceneUi,
-    event_graph: EventGraphUi,
+    pub(crate) scene: SceneUi,
+    pub(crate) event_graph: EventGraphUi,
     toolbar_graph_source: Option<ToolbarGraphSource>,
     console: ConsoleUi,
     pub maps: MapsUi,
     pub(crate) environment: EnvironmentUi,
-    landscape: LandscapeUi,
-    packaging: PackagingUi,
-    campaign: CampaignUi,
-    ai_planner: AiPlannerUi,
+    pub landscape: LandscapeUi,
+    pub packaging: PackagingUi,
+    pub(crate) campaign: CampaignUi,
+    pub(crate) ai_planner: AiPlannerUi,
     /// Edit area + material revision the AI material options were computed for.
     ai_materials_key: String,
     /// Map for which the Material brush already tried to load boden.txt on demand.
@@ -187,6 +187,7 @@ pub struct EditorApp {
     pub minimap: MinimapUi,
     pub(crate) design_check: crate::design_check_ui::DesignCheckUi,
     pub(crate) balance_summary: crate::balance_summary_ui::BalanceSummaryUi,
+    pub ready_to_test: crate::ready_to_test_ui::ReadyToTestUi,
     pub editor_settings: crate::editor_settings::EditorSettings,
     nature: NatureWorkflow,
     settlement_undo: Vec<SettlementEdit>,
@@ -199,7 +200,7 @@ pub struct EditorApp {
     pub show_grid: bool,
     pub show_objects: bool,
     /// C# `_resetAuxiliaryLayers`: Flat Terrain resets `vertex.bmp` / `smooth.bmp` on the next save.
-    reset_auxiliary_layers: bool,
+    pub(crate) reset_auxiliary_layers: bool,
     /// Pending confirm dialog of a bulk terrain action (C# `MessageBox`).
     terrain_confirm: Option<TerrainBulkAction>,
     /// Squad catalog and formation layout feeding the 3D view's formation members.
@@ -443,6 +444,7 @@ impl EditorApp {
             minimap: MinimapUi::default(),
             design_check: Default::default(),
             balance_summary: Default::default(),
+            ready_to_test: Default::default(),
             nature: NatureWorkflow::default(),
             settlement_undo: Vec::new(),
             settlement_redo: Vec::new(),
@@ -547,7 +549,7 @@ impl EditorApp {
         }
     }
 
-    fn request_safe_save(&mut self) {
+    pub(crate) fn request_safe_save(&mut self) {
         self.confirm_safe_save(None);
     }
 
@@ -2724,10 +2726,14 @@ impl EditorApp {
             .apply_camera_candidate(path, &scenario_files, self.scenario.known_aliases())
     }
 
-    pub fn has_unsaved_changes(&self) -> bool {
+    pub fn terrain_is_dirty(&self) -> bool {
         self.session.as_ref().is_some_and(|s| s.is_dirty())
             || self.session.as_ref().zip(self.emboss.as_ref()).is_some_and(|(s, e)| e.session.is_dirty(s.heights()))
             || self.reset_auxiliary_layers
+    }
+
+    pub fn has_unsaved_changes(&self) -> bool {
+        self.terrain_is_dirty()
             || self.placement.is_dirty()
             || self.nature.session.is_dirty()
             || self.scenario.dirty()
@@ -4209,7 +4215,7 @@ impl EditorApp {
         self.loc.current_language()
     }
 
-    fn set_app_language(&mut self, language: AppLanguage) {
+    pub fn set_app_language(&mut self, language: AppLanguage) {
         self.loc.set_language(language);
         self.ambience.app_language = language;
     }
@@ -4244,6 +4250,7 @@ impl EditorApp {
         if settings.is_panel_open("console") { self.console.open = true; }
         if settings.is_panel_open("tech_doc") { self.tech_doc.open = true; }
         if settings.is_panel_open("balance_summary") { self.balance_summary.open = true; }
+        if settings.is_panel_open("ready_to_test") { self.ready_to_test.open = true; }
         if settings.is_panel_open("getting_started") { self.getting_started.open = true; }
     }
 
@@ -4267,6 +4274,7 @@ impl EditorApp {
             ("console", self.console.open),
             ("tech_doc", self.tech_doc.open),
             ("balance_summary", self.balance_summary.open),
+            ("ready_to_test", self.ready_to_test.open),
             ("getting_started", self.getting_started.open),
         ]
     }
@@ -11523,6 +11531,24 @@ impl EditorApp {
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             ui.horizontal_wrapped(|ui| {
                 ui.heading(tr(lang, "Against Rome Map Editor (Rust)", "Against Rome 地圖編輯器 (Rust)"));
+                let mut chosen = lang;
+                if ui
+                    .selectable_label(lang == AppLanguage::TraditionalChinese, "中")
+                    .on_hover_text("繁體中文")
+                    .clicked()
+                {
+                    chosen = AppLanguage::TraditionalChinese;
+                }
+                if ui
+                    .selectable_label(lang == AppLanguage::English, "EN")
+                    .on_hover_text("English")
+                    .clicked()
+                {
+                    chosen = AppLanguage::English;
+                }
+                if chosen != lang {
+                    self.set_app_language(chosen);
+                }
                 ui.separator();
                 if ui.button(tr(lang, "Modifier", "修改器")).on_hover_text(tr(lang, "Open game save and memory trainer window", "開啟遊戲存檔與記憶體修改器視窗")).clicked() {
                     self.toolbox.open_modifier();
@@ -11613,6 +11639,9 @@ impl EditorApp {
                 if ui.button(tr(lang, "Map Balance Summary", "地圖平衡摘要")).on_hover_text(tr(lang, "Compare player team resource balance, settlement sizes, and unit counts", "檢視各隊伍起始資源、聚落規模與部隊數量平衡")).clicked() {
                     self.balance_summary.open = true;
                 }
+                if ui.button(tr(lang, "Ready to Test", "準備測試")).on_hover_text(tr(lang, "Open pre-flight test checklist, subsystem change summary, and copy in-game test guide", "開啟實機測試前檢核清單、子系統變更摘要與複製驗收指引")).clicked() {
+                    self.ready_to_test.open = true;
+                }
 
                 ui.label(tr(lang, "Map Folder:", "地圖資料夾:"));
                 ui.text_edit_singleline(&mut self.map_path_input);
@@ -11633,26 +11662,6 @@ impl EditorApp {
                     .clicked()
                 {
                     self.test_in_game();
-                }
-
-                ui.separator();
-                let mut chosen = lang;
-                if ui
-                    .selectable_label(lang == AppLanguage::TraditionalChinese, "中")
-                    .on_hover_text("繁體中文")
-                    .clicked()
-                {
-                    chosen = AppLanguage::TraditionalChinese;
-                }
-                if ui
-                    .selectable_label(lang == AppLanguage::English, "EN")
-                    .on_hover_text("English")
-                    .clicked()
-                {
-                    chosen = AppLanguage::English;
-                }
-                if chosen != lang {
-                    self.set_app_language(chosen);
                 }
 
                 ui.separator();
@@ -12547,7 +12556,7 @@ impl EditorApp {
         // Opening the Scenario, Spawns, or Balance Summary panel loads the open map's script on demand (once per
         // map, never over pending edits); otherwise added events or objects could not be
         // checked or saved, and Spawns would send the designer to the Scenario panel.
-        if self.scenario.open || self.spawn_ui.open || self.balance_summary.open {
+        if self.scenario.open || self.spawn_ui.open || self.balance_summary.open || self.ready_to_test.open {
             self.autoload_scenario_if_needed();
         }
         // 初次開啟與按下主屋按鈕才重算，避免每幀讀取原生 DATA。
@@ -12601,6 +12610,7 @@ impl EditorApp {
         self.tech_doc.show(ctx);
         self.show_design_check(ctx);
         self.show_balance_summary(ctx);
+        self.show_ready_to_test(ctx);
         self.show_map_properties(ctx);
         self.show_save_blockers(ctx);
         self.consume_design_check_focus();

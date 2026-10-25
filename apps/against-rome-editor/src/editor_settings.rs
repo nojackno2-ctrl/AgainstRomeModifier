@@ -23,6 +23,7 @@ pub const KNOWN_PANELS: &[&str] = &[
     "console",
     "tech_doc",
     "balance_summary",
+    "ready_to_test",
     "getting_started",
 ];
 

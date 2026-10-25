@@ -1,3 +1,9 @@
+## 2026-10-26 Agy：自主批次 #25 實機測試前檢核面板、子系統變更摘要與一鍵複製測試指引（已驗證）
+- 1. 實機測試前檢核面板（Ready to Test Checklist，apps/against-rome-editor/src/ready_to_test_ui.rs）：重用現有 Design Check 報告、勝負目標檢查（無勝利／無失敗）、進攻波次完整性（無敵對關係／無目的地）、未儲存修改與 Safe Save 阻擋狀態，集中於單一整合檢核清單，並提供跳轉／修復按鈕直達對應面板；於工具列與視窗狀態註冊記憶（editor_settings.rs）。
+- 2. 子系統變更追蹤摘要（subsystem_change_summary，apps/against-rome-editor/src/ready_to_test_ui.rs:41-96，apps/against-rome-editor/src/undo_journal.rs:91-103）：依據各子系統既有 dirty flags 與 UndoJournal 復原堆疊次數，列出自上次儲存以來的變更清單（草稿／已修改／已儲存／歷史步數），清楚掌握地圖編輯歷程。
+- 3. 一鍵複製遊戲內驗收指引（generate_test_instructions / copy_test_instructions，apps/against-rome-editor/src/ready_to_test_ui.rs:98-175）：依目前地圖路徑、隊伍數、波次、勝負條件及未儲存狀態，動態生成符合 `docs/map-editor-ingame-checklist.md` 規範的雙語 Markdown 測試指引並複製至系統剪貼簿；同步更新 `docs/map-editor-user-guide.md` 第 6.5 節。
+- 4. 驗證：執行 `cargo test --workspace --locked --offline --no-fail-fast --target-dir re_workspace/agy-target`（日誌 `re_workspace/agy-batch-25-test.log`）：287 組共 2,645 passed／0 failed／25 ignored（exit 0，無任何失敗）；新增 4 項單元測試與 4 項無頭整合測試均通過；`ui_literal_sweep` 與 `guide_shortcuts` 均通過；`git diff --check` 通過。未 stage／commit，遊戲目錄唯讀，AGENTS.md／README.md 既有變更嚴格保留。
+
 ## 2026-10-26 Codex：批次 #24（已驗證）
 - 核對並修正指南快捷鍵來源、雙語標籤、Delete 與 2D 平移描述；新增指南按鍵／修飾鍵／輪詢常數防漂移測試，以及設計檢查雙語搜尋（代碼與說明，不分英文大小寫，保留列索引及層級篩選）。依序 cargo check／test／build，均使用 --workspace --locked --offline --target-dir re_workspace/codex-wave-dest-target（test 另加 --no-fail-fast）：exit 0；286 組共 2637 passed／0 failed／25 ignored，install_resource_discovery 12 passed／0 failed，無升權環境限定失敗。最終指南／搜尋／ui_literal_sweep 聚焦測試 3 passed；git diff --check 通過。日誌 re_workspace/codex-batch-24-{check,test,build,focused}.log。未 stage／commit；AGENTS.md／README.md 既有變更保留，安裝目錄唯讀，GUI 未驗收。
 

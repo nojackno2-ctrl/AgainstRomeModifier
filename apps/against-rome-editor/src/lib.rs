@@ -8,6 +8,7 @@ pub mod design_apply;
 pub mod design_check_ui;
 pub mod balance_summary;
 pub mod balance_summary_ui;
+pub mod ready_to_test_ui;
 pub mod toolbox;
 pub mod navigation;
 pub mod map_settings;

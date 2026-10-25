@@ -88,6 +88,19 @@ impl UndoJournal {
         !self.redo.is_empty()
     }
 
+    /// 統計指定子系統在復原堆疊中的歷史操作次數。
+    pub fn subsystem_step_count(&self, subsystem: SubsystemId) -> usize {
+        self.undo
+            .iter()
+            .map(|entry| entry.children.iter().filter(|c| c.subsystem == subsystem).count())
+            .sum()
+    }
+
+    /// 取得目前復原堆疊中的總操作筆數。
+    pub fn total_undo_entries(&self) -> usize {
+        self.undo.len()
+    }
+
     /// 導航前驗證最新紀錄，讓呼叫端區分失同步與委派失敗。
     pub fn matches_target(&self, target: &dyn UndoTarget, forward: bool) -> bool {
         let source = if forward { &self.redo } else { &self.undo };
