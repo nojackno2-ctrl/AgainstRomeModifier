@@ -2,8 +2,8 @@ use super::*;
 pub(crate) struct Temp(pub(crate) PathBuf);
 impl Temp {
     pub(crate) fn new() -> Self {
-        let p = unique(&std::env::temp_dir(), "ar_saves_test");
-        fs::create_dir(&p).unwrap();
+        let p = temp_fixture::dir("ar_saves_test");
+
         Self(p)
     }
     pub(crate) fn service(&self) -> SaveService {
@@ -557,4 +557,8 @@ fn malformed_save_ini_keeps_manifest_metadata_and_reports_unparsed() {
     assert!(!s.verify_backup("unsafe.zip").unwrap().is_ok());
     assert!(s.restore("unsafe.zip", "SAVE_007").is_err());
     assert!(!s.root().join("SAVE_007").exists());
+}
+
+mod temp_fixture {
+    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/temp_unique.rs"));
 }

@@ -448,17 +448,13 @@ fn save_using(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicUsize, Ordering};
-    static NEXT: AtomicUsize = AtomicUsize::new(0);
+
+
     struct Dir(PathBuf);
     impl Dir {
         fn new() -> Self {
-            let p = std::env::temp_dir().join(format!(
-                "arm-storage-{}-{}",
-                std::process::id(),
-                NEXT.fetch_add(1, Ordering::Relaxed)
-            ));
-            fs::create_dir(&p).unwrap();
+            let p = crate::storage::temp_fixture::dir("arm-storage");
+            fs::create_dir_all(&p).unwrap();
             Self(p)
         }
     }
@@ -699,4 +695,9 @@ mod tests {
 /// 編輯器自己的資料目錄，與共用設定位於相同產品根目錄，禁止使用地圖目錄。
 pub fn editor_data_dir() -> Option<PathBuf> {
     std::env::var_os("APPDATA").map(|p| PathBuf::from(p).join("AgainstRomeModifier").join("editor"))
+}
+
+#[cfg(test)]
+mod temp_fixture {
+    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/temp_unique.rs"));
 }

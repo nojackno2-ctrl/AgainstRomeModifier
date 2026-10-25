@@ -570,7 +570,7 @@ mod tests {
 
     #[test]
     fn test_create_new_file_refuses_overwrite() {
-        let temp_dir = std::env::temp_dir();
+        let temp_dir = crate::temp_fixture::dir("roads-create-new");
         let unique = format!(
             "roads_golden_overwrite_test_{}_{}.txt",
             std::process::id(),
@@ -612,4 +612,9 @@ mod tests {
             "Byte-exact content mismatch against connectivity_roads_golden.txt"
         );
     }
+}
+
+#[cfg(test)]
+mod temp_fixture {
+    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/temp_unique.rs"));
 }

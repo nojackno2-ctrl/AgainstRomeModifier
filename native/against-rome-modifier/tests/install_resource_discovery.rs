@@ -3,19 +3,14 @@ use against_rome_modifier::install::{ArgmTraceFeature, DgVoodooFeature, InstallR
 use std::{
     fs,
     path::{Path, PathBuf},
-    sync::atomic::{AtomicUsize, Ordering},
+
 };
 
-static NEXT: AtomicUsize = AtomicUsize::new(0);
 struct Temp(PathBuf);
 impl Temp {
     fn new() -> Self {
-        let root = std::env::temp_dir().join(format!(
-            "arm-resource-discovery-{}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, Ordering::Relaxed)
-        ));
-        fs::create_dir(&root).unwrap();
+        let root = crate::temp_fixture::dir("arm-resource-discovery");
+        fs::create_dir_all(&root).unwrap();
         Self(root)
     }
     fn put(&self, relative: &str, bytes: &[u8]) -> PathBuf {
@@ -197,4 +192,9 @@ fn no_discovery_inputs_yields_no_resources() {
     let resources = InstallResources::discover_with(None, None, None);
     assert!(resources.argm_winmm.is_empty());
     assert!(resources.dgvoodoo.is_empty());
+}
+
+#[cfg(test)]
+mod temp_fixture {
+    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/temp_unique.rs"));
 }

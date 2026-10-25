@@ -188,7 +188,7 @@ fn plain_bci() -> Vec<u8> {
 
 #[test]
 fn script_file_save_is_atomic_and_reloadable() {
-    let dir = std::env::temp_dir().join(format!("arm-bci-script-{}", std::process::id()));
+    let dir = crate::temp_fixture::dir("arm-bci-script");
     fs::create_dir_all(&dir).unwrap();
     let path = dir.join("ak_level.bci");
     fs::write(&path, script().raw_bytes()).unwrap();
@@ -286,4 +286,9 @@ fn csharp_bci_pattern_and_pfil_differential() {
             "Rust round-trip pfil {i}"
         );
     }
+}
+
+#[cfg(test)]
+mod temp_fixture {
+    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/temp_unique.rs"));
 }

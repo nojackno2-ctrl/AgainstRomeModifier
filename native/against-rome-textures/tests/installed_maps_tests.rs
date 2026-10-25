@@ -3,7 +3,7 @@ use against_rome_textures::{
     BodenTexturesDocument, FloortexLibrary, StandardFloorMaterialCatalog,
     TerrainBlendAuthoringMap, TerrainBlendEditSession,
 };
-use std::env;
+
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -23,7 +23,7 @@ fn get_game_dir() -> PathBuf {
 fn test_installed_maps_read_only_and_temp_hash_preservation() {
     let game_dir = get_game_dir();
     let sample_maps = ["TUTOR_01", "ENDL_000", "KAMP_002", "MP_000"];
-    let temp_root = env::temp_dir().join(format!("ar_textures_installed_{}", std::process::id()));
+    let temp_root = crate::temp_fixture::dir("ar_textures_installed");
     fs::create_dir_all(&temp_root).unwrap();
 
     for map_name in sample_maps {
@@ -90,7 +90,7 @@ fn test_tutor_01_real_map_pfil_decode_edit_undo_and_safe_save() {
     assert!(doc.is_pfil(), "TUTOR_01 must be recognized as PFIL");
 
     // 2. Copy TUTOR_01 to TEMP directory
-    let temp_root = env::temp_dir().join(format!("ar_textures_tutor_{}", std::process::id()));
+    let temp_root = crate::temp_fixture::dir("ar_textures_tutor");
     fs::create_dir_all(&temp_root).unwrap();
     let temp_file = temp_root.join("boden.txt");
     fs::write(&temp_file, &original_bytes).unwrap();
@@ -215,4 +215,9 @@ fn test_tutor_01_real_map_pfil_decode_edit_undo_and_safe_save() {
 
     // Clean up TEMP directory
     let _ = fs::remove_dir_all(&temp_root);
+}
+
+#[cfg(test)]
+mod temp_fixture {
+    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/temp_unique.rs"));
 }

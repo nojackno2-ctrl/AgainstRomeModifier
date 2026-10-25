@@ -312,8 +312,8 @@ pub(crate) fn replace(path: &Path, replacement: &Path) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicUsize, Ordering};
-    static NEXT: AtomicUsize = AtomicUsize::new(0);
+
+
     fn fixture() -> Vec<u8> {
         let mut bytes = vec![0x5a; FOCUS.offset + FOCUS.original.len() + 12];
         for p in [FOCUS, ROMAN_ENDLESS, UNIT_RECRUIT_20] {
@@ -324,12 +324,8 @@ mod tests {
     struct Directory(PathBuf);
     impl Directory {
         fn new() -> Self {
-            let p = std::env::temp_dir().join(format!(
-                "arm-rust-patch-{}-{}",
-                std::process::id(),
-                NEXT.fetch_add(1, Ordering::Relaxed)
-            ));
-            fs::create_dir(&p).unwrap();
+            let p = crate::temp_fixture::dir("arm-rust-patch");
+            fs::create_dir_all(&p).unwrap();
             Self(p)
         }
     }
@@ -549,4 +545,9 @@ mod tests {
             State::Patched
         );
     }
+}
+
+#[cfg(test)]
+mod temp_fixture {
+    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/temp_unique.rs"));
 }

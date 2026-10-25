@@ -298,7 +298,7 @@ mod tests {
     fn missing_inputs_degrade_gracefully() {
         let none = load_unit_icons(None, Some(b"x"));
         assert_eq!(none.log, vec![IconLog::GamePathNotSet]);
-        let tmp = std::env::temp_dir().join(format!("ar_icons_{}", std::process::id()));
+        let tmp = crate::icons::temp_fixture::dir("ar_icons");
         std::fs::create_dir_all(&tmp).unwrap();
         let no_gui = load_unit_icons(Some(&tmp), Some(b"x"));
         assert_eq!(no_gui.log, vec![IconLog::GuiDatNotFound]);
@@ -322,4 +322,9 @@ mod tests {
         assert_eq!(IconLog::Loaded(3).format(loc), "Loaded 3 icons.");
         assert_eq!(IconLog::Failed("boom".into()).format(loc), "Failed: boom");
     }
+}
+
+#[cfg(test)]
+mod temp_fixture {
+    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/temp_unique.rs"));
 }

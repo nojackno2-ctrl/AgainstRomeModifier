@@ -332,7 +332,7 @@ mod tests {
     }
     #[test]
     fn output_create_new_preserves_existing() {
-        let p = std::env::temp_dir().join(format!("particle-numeric-create-new-test-{}.json", std::process::id()));
+        let p = crate::temp_fixture::dir("particle-numeric-create-new-test-.json").join("particle-numeric-create-new-test-.json");
         let _ = fs::remove_file(&p);
         write_new(&p, &json!({"test":1})).unwrap();
         let b = fs::read(&p).unwrap();
@@ -369,4 +369,9 @@ mod tests {
         assert!(verify_frozen(&pe, &f).is_err());
         assert_eq!(fs::read(exe).unwrap(), b);
     }
+}
+
+#[cfg(test)]
+mod temp_fixture {
+    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/temp_unique.rs"));
 }

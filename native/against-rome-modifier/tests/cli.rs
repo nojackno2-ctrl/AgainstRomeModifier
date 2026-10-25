@@ -3,9 +3,9 @@ use std::{
     fs,
     path::PathBuf,
     process::Command,
-    sync::atomic::{AtomicUsize, Ordering},
+
 };
-static NEXT: AtomicUsize = AtomicUsize::new(0);
+
 struct Fixture {
     root: PathBuf,
     exe: PathBuf,
@@ -13,12 +13,8 @@ struct Fixture {
 }
 impl Fixture {
     fn new() -> Self {
-        let root = std::env::temp_dir().join(format!(
-            "arm-modifier-cli-{}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, Ordering::Relaxed)
-        ));
-        fs::create_dir(&root).unwrap();
+        let root = crate::temp_fixture::dir("arm-modifier-cli");
+        fs::create_dir_all(&root).unwrap();
         let exe = root.join("synthetic game.exe");
         let mut original = vec![0x55; FOCUS.offset + FOCUS.original.len() + 1];
         for p in [FOCUS, ROMAN_ENDLESS, UNIT_RECRUIT_20] {
@@ -133,4 +129,9 @@ fn cli_rejects_invalid_arguments_without_writing() {
         .status
         .success());
     assert_eq!(fs::read_dir(&f.root).unwrap().count(), 1);
+}
+
+#[cfg(test)]
+mod temp_fixture {
+    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/temp_unique.rs"));
 }

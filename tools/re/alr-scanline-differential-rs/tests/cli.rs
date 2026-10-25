@@ -7,7 +7,7 @@ use std::{
     io::Write,
     path::PathBuf,
     process::Command,
-    sync::atomic::{AtomicU64, Ordering},
+
 };
 
 struct Fixture {
@@ -18,13 +18,9 @@ struct Fixture {
 }
 impl Fixture {
     fn new() -> Self {
-        static NEXT: AtomicU64 = AtomicU64::new(0);
-        let root = std::env::temp_dir().join(format!(
-            "arm-scanline-test-{}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, Ordering::Relaxed)
-        ));
-        fs::create_dir(&root).unwrap();
+
+        let root = crate::temp_fixture::dir("arm-scanline-test");
+        fs::create_dir_all(&root).unwrap();
         let game = root.join("game");
         fs::create_dir(&game).unwrap();
         Self {
@@ -396,4 +392,9 @@ fn executable_usage_and_io_exit_codes() {
     assert!(failure.stdout.is_empty());
     assert!(!failure.stderr.is_empty());
     assert!(!f.output.exists());
+}
+
+#[cfg(test)]
+mod temp_fixture {
+    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/temp_unique.rs"));
 }

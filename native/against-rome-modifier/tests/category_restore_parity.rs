@@ -13,21 +13,14 @@ use against_rome_modifier::{
 use std::{
     fs,
     path::{Path, PathBuf},
-    sync::atomic::{AtomicUsize, Ordering},
+
 };
 
-static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
 
 struct TempSandbox(PathBuf);
 impl TempSandbox {
     fn new(prefix: &str) -> Self {
-        let dir = std::env::temp_dir().join(format!(
-            "arm-cat-restore-{}-{}-{}",
-            prefix,
-            std::process::id(),
-            NEXT_ID.fetch_add(1, Ordering::Relaxed)
-        ));
-        let _ = fs::remove_dir_all(&dir);
+        let dir = crate::temp_fixture::dir(&format!("arm-cat-restore-{prefix}"));
         fs::create_dir_all(&dir).unwrap();
         Self(dir)
     }
@@ -624,4 +617,9 @@ fn restore_on_clean_environment_is_legitimate_noop() {
         lang_plan.deletes.is_empty(),
         "No language files should be queued for delete"
     );
+}
+
+#[cfg(test)]
+mod temp_fixture {
+    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/temp_unique.rs"));
 }

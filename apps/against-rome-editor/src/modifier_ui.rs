@@ -1892,14 +1892,12 @@ mod tests {
     use against_rome_modifier::{cli::run_cli, compress_pfil, endless_ai::words_bytes, FOCUS};
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    static NEXT: AtomicUsize = AtomicUsize::new(0);
 
     /// Synthetic game directory with `.bak` baselines (no installed game, no Backup.zip).
     struct Sandbox(PathBuf);
     impl Sandbox {
         fn new() -> Self {
-            let dir = std::env::temp_dir().join(format!("arm-modifier-ui-{}-{}", std::process::id(), NEXT.fetch_add(1, Ordering::Relaxed)));
-            let _ = fs::remove_dir_all(&dir);
+            let dir = crate::modifier_ui::temp_fixture::dir("arm-modifier-ui");
             let game = dir.join("game");
             fs::create_dir_all(&game).unwrap();
             let sb = Self(dir);
@@ -2984,8 +2982,7 @@ mod startup_migration_tests {
     use super::*;
 
     fn temp(tag: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!("arm-modifier-startup-{tag}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&d);
+        let d = crate::modifier_ui::temp_fixture::dir(&format!("arm-modifier-startup-{tag}"));
         fs::create_dir_all(&d).unwrap();
         d
     }
@@ -3034,4 +3031,9 @@ mod startup_migration_tests {
         assert!(ui.startup_migrated && ui.status.is_none(), "second call must not re-run (was {status:?})");
         let _ = fs::remove_dir_all(&dir);
     }
+}
+
+#[cfg(test)]
+mod temp_fixture {
+    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/temp_unique.rs"));
 }

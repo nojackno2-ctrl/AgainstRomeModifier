@@ -27,7 +27,7 @@ fn rejects_missing_relative_and_extra_arguments() {
 #[test]
 fn rejects_missing_file_and_non_dll_pe_without_fallback() {
     let missing =
-        std::env::temp_dir().join(format!("absent-native-probe-{}.dll", std::process::id()));
+        crate::temp_fixture::dir("absent-native-probe-.dll").join("absent-native-probe-.dll");
     assert!(!missing.exists());
     rejected(run(&[missing.as_os_str()]), "FAIL:");
     // The probe executable is a valid PE, but does not have IMAGE_FILE_DLL.
@@ -62,7 +62,7 @@ fn explicit_dll_passes_actual_load_and_pixel_calls() {
             .unwrap()
             .as_nanos()
     ));
-    std::fs::create_dir(&dir).unwrap();
+    std::fs::create_dir_all(&dir).unwrap();
     let selected = dir.join("selected library.dll");
     std::fs::copy(&dll, &selected).unwrap();
     let output = run(&[selected.as_os_str()]);
@@ -72,4 +72,9 @@ fn explicit_dll_passes_actual_load_and_pixel_calls() {
     assert!(output.status.success(), "{output:?}");
     assert!(String::from_utf8_lossy(&output.stdout).contains("PASS:"));
     assert!(output.stderr.is_empty(), "{output:?}");
+}
+
+#[cfg(test)]
+mod temp_fixture {
+    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/temp_unique.rs"));
 }

@@ -278,7 +278,7 @@ mod tests {
 
     #[test]
     fn loads_from_game_dir_with_layers() {
-        let dir = std::env::temp_dir().join(format!("ar_lightdef_{}", std::process::id()));
+        let dir = crate::light_definitions::temp_fixture::dir("ar_lightdef");
         let defaults = dir.join("SYSTEM").join("DATA_MP").join("DEFAULTS");
         std::fs::create_dir_all(&defaults).unwrap();
         std::fs::write(defaults.join("lightdef.dau"), BASE).unwrap();
@@ -288,4 +288,9 @@ mod tests {
         assert_eq!(t[&1].name, "torch");
         let _ = std::fs::remove_dir_all(&dir);
     }
+}
+
+#[cfg(test)]
+mod temp_fixture {
+    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/temp_unique.rs"));
 }

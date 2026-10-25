@@ -74,7 +74,7 @@ fn test_from_form_def_text_invalid() {
 #[test]
 fn test_run_layout_synthetic_file() {
     let temp_dir =
-        std::env::temp_dir().join(format!("formation_layout_test_{}", std::process::id()));
+        crate::temp_fixture::dir("formation_layout_test");
     let _ = fs::remove_dir_all(&temp_dir);
     fs::create_dir_all(&temp_dir).unwrap();
 
@@ -101,4 +101,9 @@ fn test_run_layout_synthetic_file() {
     assert_eq!(pfil_report.layouts, report.layouts);
 
     let _ = fs::remove_dir_all(&temp_dir);
+}
+
+#[cfg(test)]
+mod temp_fixture {
+    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/temp_unique.rs"));
 }

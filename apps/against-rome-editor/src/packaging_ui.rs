@@ -1216,8 +1216,7 @@ pub fn launch_game(game_dir: &Path, spawn: GameSpawner<'_>) -> Result<PathBuf, S
 mod tests {
     #[test]
     fn launch_game_uses_injected_spawner_and_checks_exe() {
-        let dir = std::env::temp_dir().join(format!("ar_launch_{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
+        let dir = crate::packaging_ui::temp_fixture::dir("ar_launch");
         std::fs::create_dir_all(dir.join("MAPS").join("ENDL_007")).unwrap();
         let mut calls = Vec::new();
         let mut spawn = |exe: &Path, cwd: &Path| {
@@ -1291,4 +1290,9 @@ mod tests {
         assert!(ui.budget_report.is_some());
         assert!(ui.is_dirty());
     }
+}
+
+#[cfg(test)]
+mod temp_fixture {
+    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/temp_unique.rs"));
 }

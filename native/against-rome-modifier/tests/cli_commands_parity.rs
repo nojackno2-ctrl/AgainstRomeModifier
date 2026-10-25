@@ -4,18 +4,14 @@ use serde_json::Value;
 use std::{
     fs,
     path::PathBuf,
-    sync::atomic::{AtomicUsize, Ordering},
+
 };
-static NEXT: AtomicUsize = AtomicUsize::new(0);
+
 struct Tmp(PathBuf);
 impl Tmp {
     fn new() -> Self {
-        let p = std::env::temp_dir().join(format!(
-            "arm-commands-{}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, Ordering::Relaxed)
-        ));
-        fs::create_dir(&p).unwrap();
+        let p = crate::temp_fixture::dir("arm-commands");
+        fs::create_dir_all(&p).unwrap();
         Self(p)
     }
 }
@@ -172,4 +168,9 @@ fn version_does_not_touch_game_directory() {
     // `-v` next to a command is still --verbose, not version.
     let (_, out, _) = run_raw(&["help", "-v"]);
     assert!(!out.starts_with(env!("CARGO_PKG_NAME")));
+}
+
+#[cfg(test)]
+mod temp_fixture {
+    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/temp_unique.rs"));
 }

@@ -173,20 +173,7 @@ mod tests {
     }
     fn disk_fixture(label: &str) -> ObjectStore {
         let mut store = fixture();
-        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-        loop {
-            store.root = std::env::temp_dir().join(format!(
-                "ar-placement-{label}-{}-{}-{}", std::process::id(),
-                std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos(),
-                NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            ));
-            // 排他建立；即使 PID 與時間戳重複，也不可重用先前的鎖檔或復原目錄。
-            match fs::create_dir(&store.root) {
-                Ok(()) => break,
-                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
-                Err(error) => panic!("建立測試目錄 {}: {error}", store.root.display()),
-            }
-        }
+        store.root = super::temp_fixture::dir(&format!("ar-placement-{label}"));
         for (name, blob) in &store.pools {
             fs::write(store.root.join(format!("{name}.dat")), &blob.raw).unwrap();
         }
@@ -690,13 +677,7 @@ mod tests {
     }
     #[test]
     fn save_second_publish_failure_restores_all_and_retry() {
-        let mut s = fixture();
-        let dir = std::env::temp_dir().join(format!("ar-placement-failure-{}", std::process::id()));
-        let _ = fs::create_dir(&dir);
-        s.root = dir;
-        for (n, b) in &s.pools {
-            fs::write(s.root.join(format!("{n}.dat")), &b.raw).unwrap();
-        }
+        let mut s = disk_fixture("failure");
         let original = s.snapshot();
         s.remove_family(0, 1).unwrap();
         let pending = s.snapshot();
@@ -1160,7 +1141,7 @@ mod tests {
     #[ignore = "requires installed retail map; read only source, edits TEMP"]
     fn retail_temp_roundtrip() {
         let source = Path::new(r"C:\Program Files (x86)\Against Rome\MAPS\TUTOR_01");
-        let dir = std::env::temp_dir().join(format!("ar-rust-placement-{}", std::process::id()));
+        let dir = super::temp_fixture::dir("ar-rust-placement");
         fs::create_dir_all(dir.join("DATA")).unwrap();
         let before: Vec<_> = fs::read_dir(source.join("DATA"))
             .unwrap()
@@ -1223,7 +1204,7 @@ mod tests {
     #[ignore = "requires installed retail map TUTOR_01; compares against frozen C# oracle hashes"]
     fn retail_managed_differential() {
         let source = Path::new(r"C:\Program Files (x86)\Against Rome\MAPS\TUTOR_01");
-        let root = std::env::temp_dir().join(format!("ar-placement-oracle-{}", std::process::id()));
+        let root = super::temp_fixture::dir("ar-placement-oracle");
         let rust = root.join("rust");
         fs::create_dir_all(rust.join("DATA")).unwrap();
         let before: Vec<_> = fs::read_dir(source.join("DATA"))
@@ -4365,3 +4346,8 @@ impl ObjectStore {
 
 mod import;
 pub use import::fixed_displacement;
+
+#[cfg(test)]
+mod temp_fixture {
+    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/temp_unique.rs"));
+}

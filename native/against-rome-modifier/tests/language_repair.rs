@@ -7,9 +7,9 @@ use std::{
     fs,
     path::{Path, PathBuf},
     process::Command,
-    sync::atomic::{AtomicUsize, Ordering},
+
 };
-static NEXT: AtomicUsize = AtomicUsize::new(0);
+
 struct Env {
     root: PathBuf,
     game: PathBuf,
@@ -17,11 +17,7 @@ struct Env {
 }
 impl Env {
     fn new() -> Self {
-        let root = std::env::temp_dir().join(format!(
-            "arm-langrepair-{}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, Ordering::Relaxed)
-        ));
+        let root = crate::temp_fixture::dir("arm-langrepair");
         let (game, orig) = (root.join("game"), root.join("orig"));
         for (d, exe) in [(&game, b"G".as_slice()), (&orig, b"O".as_slice())] {
             fs::create_dir_all(d).unwrap();
@@ -166,4 +162,9 @@ fn cli_dry_run_then_real_run() {
     assert_eq!(v["data"]["existingCount"], 2);
     assert!(e.game.join(LANGUAGE_BACKUP).join("manifest.json").is_file());
     assert_eq!(run(&[]).status.code(), Some(1));
+}
+
+#[cfg(test)]
+mod temp_fixture {
+    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/temp_unique.rs"));
 }

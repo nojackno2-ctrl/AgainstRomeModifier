@@ -6,18 +6,14 @@ use against_rome_modifier::{
 use std::{
     fs,
     path::PathBuf,
-    sync::atomic::{AtomicUsize, Ordering},
+
 };
-static NEXT: AtomicUsize = AtomicUsize::new(0);
+
 struct Tmp(PathBuf);
 impl Tmp {
     fn new() -> Self {
-        let p = std::env::temp_dir().join(format!(
-            "arm-interrupted-{}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, Ordering::Relaxed)
-        ));
-        fs::create_dir(&p).unwrap();
+        let p = crate::temp_fixture::dir("arm-interrupted");
+        fs::create_dir_all(&p).unwrap();
         Self(p)
     }
 }
@@ -251,4 +247,9 @@ fn compose_bci_food_healing_enable_disable_is_exact_and_read_only() {
             against_rome_modifier::decompress_pfil(&originals[&path]).unwrap()
         );
     }
+}
+
+#[cfg(test)]
+mod temp_fixture {
+    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/temp_unique.rs"));
 }

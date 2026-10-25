@@ -13,8 +13,7 @@ use std::{fs, path::PathBuf};
 struct Tmp(PathBuf);
 impl Tmp {
     fn new(tag: &str) -> Self {
-        let p = std::env::temp_dir().join(format!("arm-stale-{}-{tag}", std::process::id()));
-        let _ = fs::remove_dir_all(&p);
+        let p = crate::temp_fixture::dir(&format!("arm-stale-{tag}"));
         fs::create_dir_all(&p).unwrap();
         Tmp(p)
     }
@@ -115,4 +114,9 @@ fn bci_detector_resets_food_healing_on_ambiguous_site_count() {
         !profile.get_bool("FoodHealing10x"),
         "FoodHealing10x stayed stale"
     );
+}
+
+#[cfg(test)]
+mod temp_fixture {
+    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/temp_unique.rs"));
 }

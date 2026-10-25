@@ -306,7 +306,7 @@ mod identity_tests {
     #[test]
     fn detects_hash_length_and_mtime_changes() {
         let path =
-            std::env::temp_dir().join(format!("arm-scanline-identity-{}.bin", std::process::id()));
+            crate::temp_fixture::dir("arm-scanline-identity-.bin").join("arm-scanline-identity-.bin");
         let mut file = OpenOptions::new()
             .write(true)
             .create_new(true)
@@ -397,4 +397,9 @@ pub fn cli(args: &[OsString], stdout: &mut dyn Write, stderr: &mut dyn Write) ->
             1
         }
     }
+}
+
+#[cfg(test)]
+mod temp_fixture {
+    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/temp_unique.rs"));
 }

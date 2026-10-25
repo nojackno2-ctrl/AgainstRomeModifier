@@ -67,8 +67,7 @@ fn create_synthetic_zip(zip_path: &std::path::Path, entry_name: &str, alr_data: 
 
 #[test]
 fn test_archive_export_frames() {
-    let temp_dir = std::env::temp_dir().join(format!("alr_archive_test_{}", std::process::id()));
-    let _ = fs::remove_dir_all(&temp_dir);
+    let temp_dir = crate::temp_fixture::dir("alr_archive_test");
     fs::create_dir_all(&temp_dir).unwrap();
 
     let zip_path = temp_dir.join("alr.dat");
@@ -111,8 +110,7 @@ fn test_archive_export_frames() {
 
 #[test]
 fn test_archive_missing_asset() {
-    let temp_dir = std::env::temp_dir().join(format!("alr_missing_test_{}", std::process::id()));
-    let _ = fs::remove_dir_all(&temp_dir);
+    let temp_dir = crate::temp_fixture::dir("alr_missing_test").join("alr_missing_test");
     fs::create_dir_all(&temp_dir).unwrap();
 
     let zip_path = temp_dir.join("alr.dat");
@@ -127,8 +125,7 @@ fn test_archive_missing_asset() {
 
 #[test]
 fn test_archive_entry_lookup_preserves_zip_case_sensitivity() {
-    let temp_dir = std::env::temp_dir().join(format!("alr_case_test_{}", std::process::id()));
-    let _ = fs::remove_dir_all(&temp_dir);
+    let temp_dir = crate::temp_fixture::dir("alr_case_test");
     fs::create_dir_all(&temp_dir).unwrap();
 
     let zip_path = temp_dir.join("alr.dat");
@@ -140,4 +137,9 @@ fn test_archive_entry_lookup_preserves_zip_case_sensitivity() {
     assert!(!output_dir.exists());
 
     let _ = fs::remove_dir_all(&temp_dir);
+}
+
+#[cfg(test)]
+mod temp_fixture {
+    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/temp_unique.rs"));
 }

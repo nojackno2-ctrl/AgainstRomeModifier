@@ -7,15 +7,14 @@ fn args(a: &[&str]) -> Vec<String> {
 }
 
 fn temp(name: &str) -> PathBuf {
-    let d = std::env::temp_dir().join(format!("arm-gp-{name}-{}", std::process::id()));
-    let _ = fs::remove_dir_all(&d);
+    let d = crate::temp_fixture::dir(&format!("arm-gp-{name}"));
     fs::create_dir_all(&d).unwrap();
     d
 }
 
 #[test]
 fn csharp_messages_match_rust_messages() {
-    let missing = std::env::temp_dir().join("arm-gp-definitely-missing-dir");
+    let missing = crate::temp_fixture::dir("arm-gp-definitely-missing-dir").join("arm-gp-definitely-missing-dir");
     let err = resolve_game_path(Some(missing.to_str().unwrap())).unwrap_err();
     assert_eq!(err.kind(), std::io::ErrorKind::NotFound);
     assert_eq!(
@@ -79,4 +78,9 @@ fn verbatim_prefix_stripping_is_conservative() {
         PathBuf::from(r"\\?\Volume{1234}\AR")
     );
     assert_eq!(s(r"\\?\C:"), PathBuf::from(r"\\?\C:"));
+}
+
+#[cfg(test)]
+mod temp_fixture {
+    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/temp_unique.rs"));
 }

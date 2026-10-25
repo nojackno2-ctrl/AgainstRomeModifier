@@ -6,8 +6,7 @@ use std::path::Path;
 
 #[test]
 fn test_green_channel_exact_preservation_and_non_257_sizes() {
-    let temp_dir = std::env::temp_dir().join("ar_test_pixel_preservation_non_257");
-    let _ = fs::remove_dir_all(&temp_dir);
+    let temp_dir = crate::temp_fixture::dir("ar_test_pixel_preservation_non_257");
     fs::create_dir_all(&temp_dir).unwrap();
 
     // 建立 193x193 (TUTOR_01 尺寸) 原生 BMP，賦予獨特的 Red 與 Blue 通道特徵
@@ -95,7 +94,7 @@ fn water_brush_height_and_collision_undo_redo_save_reload_roundtrip() {
         std::process::id(),
         unique
     ));
-    fs::create_dir(&temp_dir).unwrap();
+    fs::create_dir_all(&temp_dir).unwrap();
 
     let height = BmpImage::new_solid(9, 9, 123, 100, 210);
     fs::write(temp_dir.join("boden.bmp"), height.encode_bmp()).unwrap();
@@ -205,4 +204,9 @@ fn test_security_guard_rejects_install_path() {
     assert!(result.is_err());
     let err_msg = result.unwrap_err();
     assert!(err_msg.contains("Security Guard"));
+}
+
+#[cfg(test)]
+mod temp_fixture {
+    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/temp_unique.rs"));
 }

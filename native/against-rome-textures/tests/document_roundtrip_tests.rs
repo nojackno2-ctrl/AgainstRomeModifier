@@ -119,7 +119,7 @@ fn pfil_preserves_unknown_bytes_in_64_byte_header() {
 
 #[test]
 fn safe_save_rejects_readonly_file_and_preserves_content() {
-    let temp_dir = std::env::temp_dir().join(format!("ar_textures_ro_{}", std::process::id()));
+    let temp_dir = crate::temp_fixture::dir("ar_textures_ro");
     std::fs::create_dir_all(&temp_dir).unwrap();
     let temp_file = temp_dir.join("readonly_test.txt");
 
@@ -148,7 +148,7 @@ fn safe_save_rejects_readonly_file_and_preserves_content() {
 
 #[test]
 fn safe_save_creates_backup_and_preserves_content() {
-    let temp_dir = std::env::temp_dir().join(format!("ar_textures_bak_{}", std::process::id()));
+    let temp_dir = crate::temp_fixture::dir("ar_textures_bak");
     std::fs::create_dir_all(&temp_dir).unwrap();
     let temp_file = temp_dir.join("backup_test.txt");
 
@@ -174,7 +174,7 @@ fn safe_save_creates_backup_and_preserves_content() {
 
 #[test]
 fn safe_save_detects_external_file_conflict() {
-    let temp_dir = std::env::temp_dir().join(format!("ar_textures_conflict_{}", std::process::id()));
+    let temp_dir = crate::temp_fixture::dir("ar_textures_conflict");
     std::fs::create_dir_all(&temp_dir).unwrap();
     let temp_file = temp_dir.join("conflict_test.txt");
 
@@ -199,4 +199,9 @@ fn utf8_and_multibyte_comments_do_not_panic() {
     let doc = BodenTexturesDocument::from_bytes(content.as_bytes()).unwrap();
     assert_eq!(doc.dimension(), 2);
     assert_eq!(doc.textures().len(), 4);
+}
+
+#[cfg(test)]
+mod temp_fixture {
+    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/temp_unique.rs"));
 }

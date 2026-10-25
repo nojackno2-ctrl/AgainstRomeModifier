@@ -1,6 +1,6 @@
 use saved_light_contract::{canonical,contract,cross_check,inspect,output_path,sha256,validate_evidence,validate_fields,verify_instruction,Pe,EXE_SHA256,WIDTHS};
 use serde_json::{json,Value};
-use std::{fs,path::PathBuf,sync::atomic::{AtomicU64,Ordering}};
+use std::{fs,path::PathBuf};
 
 fn bytes(s: &str) -> Vec<u8> {
     (0..s.len()).step_by(2).map(|i| u8::from_str_radix(&s[i..i+2],16).unwrap()).collect()
@@ -167,10 +167,9 @@ fn pe_bounds_architecture_and_hash_fail_closed() {
 }
 #[test]
 fn output_is_new_json_directly_in_workspace_and_create_new_prevents_race() {
-    static ID: AtomicU64 = AtomicU64::new(0);
     // All fixtures stay in this crate's target artifacts, even when no Rust
     // toolchain has been installed globally.
-    let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/test-scratch").join(format!("{}-{}",std::process::id(),ID.fetch_add(1,Ordering::Relaxed)));
+    let repo = temp_fixture::under(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/test-scratch"), "saved-light");
     fs::create_dir_all(repo.join("re_workspace/nested")).unwrap();
     let output = repo.join("re_workspace/new.json");
     let validated = output_path(&repo,&output).unwrap();
@@ -181,4 +180,8 @@ fn output_is_new_json_directly_in_workspace_and_create_new_prevents_race() {
         assert!(output_path(&repo,&path).is_err(),"{path:?}");
     }
     assert_eq!(fs::read(&output).unwrap(),b"existing");
+}
+
+mod temp_fixture {
+    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/temp_unique.rs"));
 }

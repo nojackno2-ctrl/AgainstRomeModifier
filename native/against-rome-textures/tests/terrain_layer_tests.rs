@@ -35,8 +35,7 @@ fn sample() -> Vec<u8> {
 }
 
 fn tmpdir(n: &str) -> std::path::PathBuf {
-    let d = std::env::temp_dir().join(format!("ar_tl_{}_{}", n, std::process::id()));
-    let _ = fs::remove_dir_all(&d);
+    let d = crate::temp_fixture::dir(&format!("ar_tl-{n}"));
     fs::create_dir_all(&d).unwrap();
     d
 }
@@ -105,4 +104,9 @@ fn invalidate_removes_only_height_caches_including_readonly() {
     assert!(d.join("boden.bmp").exists());
     assert!(invalidate_height_caches(&d).unwrap().is_empty());
     fs::remove_dir_all(d).unwrap();
+}
+
+#[cfg(test)]
+mod temp_fixture {
+    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/temp_unique.rs"));
 }

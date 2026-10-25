@@ -97,7 +97,7 @@ fn make_apt_fixture(version: u32) -> Vec<u8> {
 
 #[test]
 fn test_archive_cli_mode_synthetic_zip() {
-    let temp_dir = std::env::temp_dir();
+    let temp_dir = crate::temp_fixture::dir("test_lighting_probe");
     let zip_path = temp_dir.join(format!("test_lighting_probe_{}.zip", std::process::id()));
 
     {
@@ -154,4 +154,9 @@ fn test_archive_cli_mode_synthetic_zip() {
     assert_eq!(samples[1].frame, 0);
     assert_eq!(samples[1].width, 64);
     assert_eq!(samples[1].height, 31);
+}
+
+#[cfg(test)]
+mod temp_fixture {
+    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/temp_unique.rs"));
 }

@@ -5,18 +5,14 @@ use std::{
     fs,
     io::Write,
     path::PathBuf,
-    sync::atomic::{AtomicUsize, Ordering},
+
 };
-static NEXT: AtomicUsize = AtomicUsize::new(0);
+
 struct Fixture(PathBuf);
 impl Fixture {
     fn new() -> Self {
-        let dir = std::env::temp_dir().join(format!(
-            "arm-save-parity-{}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, Ordering::Relaxed)
-        ));
-        fs::create_dir(&dir).unwrap();
+        let dir = crate::temp_fixture::dir("arm-save-parity");
+        fs::create_dir_all(&dir).unwrap();
         Self(dir)
     }
     fn service(&self) -> SaveBackupService {
@@ -192,4 +188,9 @@ fn missing_unsupported_and_io_failed_previews_remain_distinct() {
     huge[12..14].copy_from_slice(&20000u16.to_le_bytes());
     huge[14..16].copy_from_slice(&20000u16.to_le_bytes());
     assert!(tga::decode(&huge).is_none()); // no 1.6 GB allocation for an 18-byte file
+}
+
+#[cfg(test)]
+mod temp_fixture {
+    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/temp_unique.rs"));
 }

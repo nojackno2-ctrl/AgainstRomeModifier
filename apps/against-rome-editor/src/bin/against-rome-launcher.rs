@@ -1162,7 +1162,7 @@ mod tests {
 
     #[test]
     fn game_path_chain_prefers_portable_then_registry_then_default() {
-        let tmp = std::env::temp_dir().join(format!("ar_launcher_chain_{}", std::process::id()));
+        let tmp = crate::temp_fixture::dir("ar_launcher_chain");
         let base = tmp.join("base");
         let default = tmp.join("default");
         std::fs::create_dir_all(&base).unwrap();
@@ -1312,7 +1312,7 @@ mod tests {
 
     #[test]
     fn test_resolve_child_executable_missing_returns_actionable_error() {
-        let temp_dir = std::env::temp_dir().join(format!("launcher_test_{}", std::process::id()));
+        let temp_dir = crate::temp_fixture::dir("launcher_test");
         let _ = std::fs::create_dir_all(&temp_dir);
 
         let err_zh = resolve_child_executable(&temp_dir, ChildApp::MapEditor, Language::TraditionalChinese)
@@ -1329,7 +1329,7 @@ mod tests {
 
     #[test]
     fn test_resolve_child_executable_existing() {
-        let temp_dir = std::env::temp_dir().join(format!("launcher_test_found_{}", std::process::id()));
+        let temp_dir = crate::temp_fixture::dir("launcher_test_found");
         let _ = std::fs::create_dir_all(&temp_dir);
 
         let exe_file = temp_dir.join("against-rome-editor.exe");
@@ -1377,7 +1377,7 @@ mod tests {
 
     #[test]
     fn test_launch_child_process_missing_binary() {
-        let temp_dir = std::env::temp_dir().join(format!("launcher_spawn_missing_{}", std::process::id()));
+        let temp_dir = crate::temp_fixture::dir("launcher_spawn_missing").join("launcher_spawn_missing");
         let _ = std::fs::create_dir_all(&temp_dir);
 
         let res = launch_child_process(
@@ -1398,7 +1398,7 @@ mod tests {
         assert!(!verify_game_path(""));
         assert!(!verify_game_path("C:\\nonexistent_against_rome_directory_12345"));
 
-        let temp_dir = std::env::temp_dir().join(format!("launcher_verify_game_{}", std::process::id()));
+        let temp_dir = crate::temp_fixture::dir("launcher_verify_game");
         let _ = std::fs::create_dir_all(&temp_dir);
 
         // Empty directory is not a game folder
@@ -1414,7 +1414,7 @@ mod tests {
 
     #[test]
     fn test_headless_smoke_frames() {
-        let isolated_dir = std::env::temp_dir().join(format!("launcher_test_smoke_frames_{}", std::process::id()));
+        let isolated_dir = crate::temp_fixture::dir("launcher_test_smoke_frames");
         let _ = std::fs::create_dir_all(&isolated_dir);
         let mut app = LauncherApp::with_base_dir(
             Some("C:\\Games\\Against Rome".into()),
@@ -1582,10 +1582,7 @@ mod tests {
     #[test]
     fn test_smoke_test_does_not_execute_sibling_binaries() {
         // Create a mock directory with dummy executable files matching child candidates
-        let mock_sibling_dir = std::env::temp_dir().join(format!(
-            "launcher_mock_sibling_test_{}",
-            std::process::id()
-        ));
+        let mock_sibling_dir = crate::temp_fixture::dir("launcher_mock_sibling_test");
         let _ = std::fs::create_dir_all(&mock_sibling_dir);
 
         let dummy_editor = mock_sibling_dir.join("against-rome-editor.exe");
@@ -1597,10 +1594,7 @@ mod tests {
         assert!(resolve_child_executable(&mock_sibling_dir, ChildApp::MapEditor, Language::English).is_ok());
 
         // But smoke-test requires an isolated clean base directory where no siblings exist
-        let isolated_smoke_dir = std::env::temp_dir().join(format!(
-            "launcher_isolated_smoke_test_{}",
-            std::process::id()
-        ));
+        let isolated_smoke_dir = crate::temp_fixture::dir("launcher_isolated_smoke_test");
         let _ = std::fs::create_dir_all(&isolated_smoke_dir);
 
         let mut smoke_app = LauncherApp::with_base_dir(
@@ -1625,10 +1619,7 @@ mod tests {
 
     #[test]
     fn test_actionable_error_on_missing_binaries_all_children() {
-        let empty_dir = std::env::temp_dir().join(format!(
-            "launcher_empty_actionable_err_{}",
-            std::process::id()
-        ));
+        let empty_dir = crate::temp_fixture::dir("launcher_empty_actionable_err");
         let _ = std::fs::create_dir_all(&empty_dir);
 
         let children = [
@@ -1657,4 +1648,9 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&empty_dir);
     }
+}
+
+#[cfg(test)]
+mod temp_fixture {
+    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/temp_unique.rs"));
 }

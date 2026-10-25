@@ -11,21 +11,14 @@ use std::{
     fs,
     io::Write,
     path::{Path, PathBuf},
-    sync::atomic::{AtomicUsize, Ordering},
+
 };
 
-static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
 
 struct TempSandbox(PathBuf);
 impl TempSandbox {
     fn new(prefix: &str) -> Self {
-        let dir = std::env::temp_dir().join(format!(
-            "arm-safety-{}-{}-{}",
-            prefix,
-            std::process::id(),
-            NEXT_ID.fetch_add(1, Ordering::Relaxed)
-        ));
-        let _ = fs::remove_dir_all(&dir);
+        let dir = crate::temp_fixture::dir(&format!("arm-safety-{prefix}"));
         fs::create_dir_all(&dir).unwrap();
         Self(dir)
     }
@@ -307,4 +300,9 @@ fn profile_legacy_fields_and_modules_roundtrip_losslessly() {
     assert!(roundtripped.get_bool("RomanReinforcementGarrison"));
     assert!(roundtripped.get_bool("EndlessAi.Core"));
     assert!(roundtripped.get_bool("FoodHealing10x"));
+}
+
+#[cfg(test)]
+mod temp_fixture {
+    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/temp_unique.rs"));
 }

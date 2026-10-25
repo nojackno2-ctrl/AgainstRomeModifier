@@ -86,13 +86,13 @@ mod tests {
 
     #[test]
     fn missing_file_is_empty() {
-        let dir = std::env::temp_dir().join("ar_script_alias_missing_dir");
+        let dir = crate::script_aliases::temp_fixture::dir("ar_script_alias_missing_dir").join("ar_script_alias_missing_dir");
         assert!(ScriptObjectAliases::load(&dir).unwrap().is_empty());
     }
 
     #[test]
     fn loads_plain_file() {
-        let dir = std::env::temp_dir().join(format!("ar_script_alias_{}", std::process::id()));
+        let dir = crate::script_aliases::temp_fixture::dir("ar_script_alias");
         let clak = dir.join("SYSTEM").join("CLAK");
         std::fs::create_dir_all(&clak).unwrap();
         std::fs::write(clak.join("cl_scint.ini"), "[ObjDefName]\nA=BauX\n").unwrap();
@@ -100,4 +100,9 @@ mod tests {
         assert_eq!(list, vec![ScriptObjectAlias { alias: "A".into(), name_def: "BauX".into() }]);
         let _ = std::fs::remove_dir_all(&dir);
     }
+}
+
+#[cfg(test)]
+mod temp_fixture {
+    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/temp_unique.rs"));
 }

@@ -16,10 +16,9 @@ use std::{
     fs,
     io::Write,
     path::PathBuf,
-    sync::atomic::{AtomicUsize, Ordering},
+
 };
 
-static TEST_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 struct TestSandbox {
     root: PathBuf,
@@ -27,13 +26,7 @@ struct TestSandbox {
 
 impl TestSandbox {
     fn new(prefix: &str) -> Self {
-        let root = std::env::temp_dir().join(format!(
-            "arm-patch-compose-{}-{}-{}",
-            prefix,
-            std::process::id(),
-            TEST_COUNTER.fetch_add(1, Ordering::Relaxed)
-        ));
-        let _ = fs::remove_dir_all(&root);
+        let root = crate::temp_fixture::dir(&format!("arm-patch-compose-{prefix}"));
         fs::create_dir_all(&root).expect("create test sandbox dir");
         Self { root }
     }
@@ -505,4 +498,9 @@ fn cli_apply_uses_service_compose_with_install() {
     assert_eq!(val["success"], true);
     assert_eq!(val["data"]["isDryRun"], true);
     assert!(val["data"]["plannedFiles"].as_u64().unwrap() > 0);
+}
+
+#[cfg(test)]
+mod temp_fixture {
+    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/temp_unique.rs"));
 }

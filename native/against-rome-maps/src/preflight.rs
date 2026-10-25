@@ -237,7 +237,7 @@ mod native_load_contract_tests {
     fn lists_24_unique_files_and_detects_missing() {
         let set: std::collections::HashSet<_> = required_data_files().iter().collect();
         assert_eq!(set.len(), 24);
-        let dir = std::env::temp_dir().join(format!("ar_loadcontract_{}", std::process::id()));
+        let dir = crate::preflight::temp_fixture::dir("ar_loadcontract");
         let data = dir.join("DATA");
         std::fs::create_dir_all(&data).unwrap();
         assert_eq!(find_missing_data_files(&dir).unwrap().len(), 24);
@@ -248,4 +248,9 @@ mod native_load_contract_tests {
         assert!(find_missing_data_files(std::path::Path::new("")).is_err());
         let _ = std::fs::remove_dir_all(&dir);
     }
+}
+
+#[cfg(test)]
+mod temp_fixture {
+    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/temp_unique.rs"));
 }

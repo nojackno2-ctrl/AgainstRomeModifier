@@ -6,18 +6,13 @@ use std::ffi::OsString;
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicUsize, Ordering};
 
-static COUNTER: AtomicUsize = AtomicUsize::new(0);
+
 
 struct TempDir(PathBuf);
 impl TempDir {
     fn new() -> Self {
-        let p = std::env::temp_dir().join(format!(
-            "apt-probe-rs-{}-{}",
-            std::process::id(),
-            COUNTER.fetch_add(1, Ordering::SeqCst)
-        ));
+        let p = crate::temp_fixture::dir("apt-probe-rs");
         fs::create_dir_all(&p).unwrap();
         TempDir(p)
     }
@@ -468,4 +463,9 @@ fn cli_exit_codes_and_summary() {
     // Unreadable input => 1.
     let (code, _, _) = run_cli(&args(&[&dir.join("missing.dat"), &t.0.join("m")]));
     assert_eq!(code, 1);
+}
+
+#[cfg(test)]
+mod temp_fixture {
+    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/temp_unique.rs"));
 }

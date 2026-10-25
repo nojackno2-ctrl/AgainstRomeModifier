@@ -53,7 +53,7 @@ fn studio_parity_tracks_missing_and_stale() {
 
 #[test]
 fn save_transaction_writes_per_language_and_preflight_rejects() {
-    let dir = std::env::temp_dir().join(format!("ar_amb_{}", std::process::id()));
+    let dir = crate::temp_fixture::dir("ar_amb");
     let mut tables = BTreeMap::new();
     let mut en = BriefingTextTable::create_empty();
     en.set_title1("Map");
@@ -67,4 +67,9 @@ fn save_transaction_writes_per_language_and_preflight_rejects() {
     btables.insert(SupportedLanguage::English, bad);
     assert!(BriefingSaveTransaction::preflight_validate(&btables).is_err());
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[cfg(test)]
+mod temp_fixture {
+    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/temp_unique.rs"));
 }

@@ -17,8 +17,7 @@ fn test_safety_explicit_path() {
 
 #[test]
 fn test_safety_new_output_dir() {
-    let temp_dir = std::env::temp_dir().join(format!("safety_test_{}", std::process::id()));
-    let _ = fs::remove_dir_all(&temp_dir);
+    let temp_dir = crate::temp_fixture::dir("safety_test");
     fs::create_dir_all(&temp_dir).unwrap();
 
     let existing = temp_dir.join("existing_folder");
@@ -71,8 +70,7 @@ fn test_cli_disassembly_boundary() {
 
 #[test]
 fn test_cli_layout_command() {
-    let temp_dir = std::env::temp_dir().join(format!("cli_layout_test_{}", std::process::id()));
-    let _ = fs::remove_dir_all(&temp_dir);
+    let temp_dir = crate::temp_fixture::dir("cli_layout_test");
     fs::create_dir_all(&temp_dir).unwrap();
 
     let formdef_text = "\
@@ -101,8 +99,7 @@ fn test_cli_layout_command() {
 
 #[test]
 fn test_cli_dump_command() {
-    let temp_dir = std::env::temp_dir().join(format!("cli_dump_test_{}", std::process::id()));
-    let _ = fs::remove_dir_all(&temp_dir);
+    let temp_dir = crate::temp_fixture::dir("cli_dump_test");
     fs::create_dir_all(&temp_dir).unwrap();
 
     let path = temp_dir.join("data.bin");
@@ -129,4 +126,9 @@ fn test_cli_dump_command() {
         .contains("000000 41 67 61 69 6e 73 74 52 6f 6d 65 46 6f 72 6d 61 b'AgainstRomeForma'"));
 
     let _ = fs::remove_dir_all(&temp_dir);
+}
+
+#[cfg(test)]
+mod temp_fixture {
+    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/temp_unique.rs"));
 }

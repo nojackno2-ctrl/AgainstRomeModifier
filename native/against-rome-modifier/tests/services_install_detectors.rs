@@ -11,19 +11,13 @@ use std::{
     fs,
     io::Write,
     path::{Path, PathBuf},
-    sync::atomic::{AtomicUsize, Ordering},
+
 };
 
-static N: AtomicUsize = AtomicUsize::new(0);
 struct Tmp(PathBuf);
 impl Tmp {
     fn new() -> Self {
-        let p = std::env::temp_dir().join(format!(
-            "arm-svc-{}-{}",
-            std::process::id(),
-            N.fetch_add(1, Ordering::Relaxed)
-        ));
-        let _ = fs::remove_dir_all(&p);
+        let p = crate::temp_fixture::dir("arm-svc");
         fs::create_dir_all(&p).unwrap();
         Tmp(p)
     }
@@ -354,4 +348,9 @@ fn install_feature_detector_clears_stale_to_english_and_detects_overlay() {
         !profile_mismatch.get_bool("ToEnglish"),
         "detect on game dir with mismatched ToEng overlay must clear stale ToEnglish flag"
     );
+}
+
+#[cfg(test)]
+mod temp_fixture {
+    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/temp_unique.rs"));
 }

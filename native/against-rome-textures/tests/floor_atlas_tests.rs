@@ -307,7 +307,7 @@ fn create_mock_bmp(width: usize, height: usize, fill_color: u32) -> Vec<u8> {
 
 #[test]
 fn test_floortex_library_mock_zip_roundtrip() {
-    let temp_dir = std::env::temp_dir().join(format!("floor_atlas_test_{}", std::process::id()));
+    let temp_dir = crate::temp_fixture::dir("floor_atlas_test");
     std::fs::create_dir_all(&temp_dir).unwrap();
     let zip_path = temp_dir.join("mock_floortex.dat");
 
@@ -349,4 +349,9 @@ fn test_floortex_library_mock_zip_roundtrip() {
 
     // Cleanup
     let _ = std::fs::remove_dir_all(&temp_dir);
+}
+
+#[cfg(test)]
+mod temp_fixture {
+    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/temp_unique.rs"));
 }

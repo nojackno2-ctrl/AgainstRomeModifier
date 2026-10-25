@@ -16,8 +16,7 @@ const BOUNDS: (usize, usize, usize, usize) = (8, 8, 48, 48);
 #[test]
 #[ignore = "requires a local Ollama server"]
 fn live_ollama_terrain_plan_preview_apply_undo_save_reload() {
-    let dir = std::env::temp_dir().join(format!("arm_ai_live_{}", std::process::id()));
-    let _ = fs::remove_dir_all(&dir);
+    let dir = crate::temp_fixture::dir("arm_ai_live");
     fs::create_dir_all(&dir).unwrap();
     fs::write(dir.join("boden.bmp"), BmpImage::new_solid(SIZE, SIZE, 0, 60, 0).encode_bmp()).unwrap();
     fs::write(dir.join("collision.bmp"), BmpImage::new_solid(SIZE - 1, SIZE - 1, 0, 0, 0).encode_bmp()).unwrap();
@@ -67,4 +66,9 @@ fn live_ollama_terrain_plan_preview_apply_undo_save_reload() {
     let reloaded = load_map(&dir).unwrap();
     assert_eq!(reloaded.heights(), &applied[..], "saved heights reload identically");
     fs::remove_dir_all(&dir).unwrap();
+}
+
+#[cfg(test)]
+mod temp_fixture {
+    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/temp_unique.rs"));
 }

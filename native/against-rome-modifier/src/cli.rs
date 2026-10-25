@@ -1396,8 +1396,7 @@ mod tests {
     }
     #[test]
     fn commit_plan_writes_deletes_and_rolls_back() {
-        let d = std::env::temp_dir().join(format!("arm-cli-commit-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&d);
+        let d = crate::cli::temp_fixture::dir("arm-cli-commit");
         fs::create_dir_all(&d).unwrap();
         let (a, b, c) = (d.join("a.bin"), d.join("b.bin"), d.join("c.bin"));
         fs::write(&a, b"old").unwrap();
@@ -1418,4 +1417,9 @@ mod tests {
         assert_eq!(fs::read(&a).unwrap(), b"new");
         let _ = fs::remove_dir_all(&d);
     }
+}
+
+#[cfg(test)]
+mod temp_fixture {
+    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/temp_unique.rs"));
 }

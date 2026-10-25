@@ -15,12 +15,12 @@ use against_rome_modifier::{
 use std::{
     fs,
     path::PathBuf,
-    sync::atomic::{AtomicUsize, Ordering},
+
 };
 const OBJ: &str = "SYSTEM/DATA_MP/DEFAULTS/objdef.dau";
 const GEO: &str = "SYSTEM/DATA_MP/DEFAULTS/partgeo.dau";
 const EPA: &str = "SYSTEM/cl_epara.ini";
-static NEXT: AtomicUsize = AtomicUsize::new(0);
+
 struct Fixture {
     dir: PathBuf,
     backup: BackupManager,
@@ -32,11 +32,7 @@ impl Drop for Fixture {
 }
 impl Fixture {
     fn new() -> Self {
-        let dir = std::env::temp_dir().join(format!(
-            "arm-complete-{}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, Ordering::Relaxed)
-        ));
+        let dir = crate::temp_fixture::dir("arm-complete");
         fs::create_dir_all(&dir).unwrap();
         let mut f = Self {
             dir,
@@ -666,4 +662,9 @@ fn resource_required_columns_and_duplicates_fail_closed() {
     RessFeatureDetector::detect_text(&format!("[objres]\n{row}\n{row}"), &mut p);
     assert!(!p.get_bool("FreeProduction"));
     assert!(!p.get_bool("NoSpellCost"));
+}
+
+#[cfg(test)]
+mod temp_fixture {
+    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/temp_unique.rs"));
 }

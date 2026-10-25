@@ -619,11 +619,7 @@ struct TempDir(PathBuf);
 impl TempDir {
     fn new(tag: &str) -> Self {
         static N: AtomicUsize = AtomicUsize::new(0);
-        let path = std::env::temp_dir().join(format!(
-            "arm-env-shadow-{tag}-{}-{}",
-            std::process::id(),
-            N.fetch_add(1, Ordering::SeqCst)
-        ));
+        let path = crate::temp_fixture::dir("arm-env-shadow");
         std::fs::create_dir_all(&path).unwrap();
         Self(path)
     }
@@ -683,7 +679,7 @@ const OPEN_INI: &str =
 
 #[test]
 fn open_returns_none_for_missing_directory_or_required_files() {
-    let missing = std::env::temp_dir().join("arm-env-shadow-definitely-missing-dir");
+    let missing = crate::temp_fixture::dir("arm-env-shadow-definitely-missing-dir").join("arm-env-shadow-definitely-missing-dir");
     assert!(ShadowCatalog::open(&missing).unwrap().is_none());
 
     let dir = TempDir::new("partial");
@@ -767,4 +763,9 @@ fn open_reports_corrupt_assets_and_skips_oversized_or_invalid_masks() {
     let catalog = ShadowCatalog::open(&junk.0).unwrap().unwrap();
     assert!(catalog.get_shadow("BauGerWoh00_Wohnhaus").is_none());
     assert!(catalog.get_shadow("BauGerHau00_Haupthaus").is_none());
+}
+
+#[cfg(test)]
+mod temp_fixture {
+    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/temp_unique.rs"));
 }
