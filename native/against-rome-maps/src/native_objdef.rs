@@ -10,6 +10,7 @@ use crate::text_encoding::{decode_cp1251, decompress_pfil_if_needed};
 pub struct NativeObjectDefinition {
     pub type_id: i32,
     pub active: bool,
+    pub aptix: Option<i16>,
     pub afstr: i16,
     pub initial_hp: Option<i32>,
     pub initial_morale: Option<i32>,
@@ -29,6 +30,7 @@ impl NativeObjectDefinition {
         Self {
             type_id,
             active,
+            aptix: None,
             afstr,
             initial_hp: Some(0),
             initial_morale: Some(0),
@@ -217,6 +219,12 @@ impl NativeObjectDefinitions {
                 prev.afstr = afstr;
             }
 
+            if columns.len() > 14 {
+                if let Ok(aptix) = columns[14].trim().parse::<i16>() {
+                    prev.aptix = Some(aptix);
+                }
+            }
+
             if columns.len() > 19 {
                 prev.initial_hp = Some(read_vital(columns[19], id, "lpmax")?);
             }
@@ -356,4 +364,29 @@ fn read_finite_float(val: &str, id: i32, field: &str) -> Result<f32, String> {
         return Err(format!("objdef 物件 {id} 的 {field} float 欄位無效。"));
     }
     Ok(f)
+}
+
+#[cfg(test)]
+mod footprint_tests {
+    use super::*;
+    #[test]
+    fn aptix_inherits_and_later_layers_override() {
+        let mut definitions = HashMap::new();
+        let row = |aptix: &str| format!("[ObjectDefaults]\n34,1,0,0,0,0,0,0,0,0,0,0,0,0,{aptix}\n");
+        NativeObjectDefinitions::apply_layer(&row("9"), &mut definitions).unwrap();
+        NativeObjectDefinitions::apply_layer("[ObjectDefaults]\n34,1\n", &mut definitions).unwrap();
+        assert_eq!(definitions[&34].aptix, Some(9));
+        NativeObjectDefinitions::apply_layer(&row("-1"), &mut definitions).unwrap();
+        assert_eq!(definitions[&34].aptix, Some(-1));
+    }
+    #[test]
+    fn unparsable_aptix_preserves_inherited_or_unknown_value() {
+        let mut definitions = HashMap::new();
+        let row = "[ObjectDefaults]\n34,1,0,0,0,0,0,0,0,0,0,0,0,0,modded\n";
+        NativeObjectDefinitions::apply_layer(row, &mut definitions).unwrap();
+        assert_eq!(definitions[&34].aptix, None);
+        definitions.get_mut(&34).unwrap().aptix = Some(9);
+        NativeObjectDefinitions::apply_layer(row, &mut definitions).unwrap();
+        assert_eq!(definitions[&34].aptix, Some(9));
+    }
 }

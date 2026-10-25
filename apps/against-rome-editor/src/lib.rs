@@ -53,3 +53,4 @@ pub mod recovery;
 pub mod undo_journal;
 
 pub use app::save_blockers;
+pub mod building_footprint;

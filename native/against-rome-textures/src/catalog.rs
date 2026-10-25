@@ -944,3 +944,10 @@ fn read_archive_entry<R: std::io::Read + std::io::Seek>(
     }
     None
 }
+
+/// 唯讀 ZIP member，沿用既有大小寫與路徑分隔符比對。
+pub fn read_apt_member(archive_path: &Path, member: &str) -> Option<Vec<u8>> {
+    let file = std::fs::File::open(archive_path).ok()?;
+    let mut archive = zip::ZipArchive::new(file).ok()?;
+    read_archive_entry(&mut archive, member)
+}

@@ -10415,6 +10415,11 @@ impl EditorApp {
         };
         self.navigation.update_placement(&route_objects);
         self.navigation.update_buildings(self.placement.navigation_buildings(&route_objects));
+        let footprint_game = self.troop_game_root().or_else(|| {
+            let path = PathBuf::from(self.maps.game_path_input.trim());
+            path.join("SYSTEM/clengine.ini").is_file().then_some(path)
+        });
+        self.navigation.update_apt(footprint_game, &route_objects, self.placement.type_names());
         self.navigation.refresh(self.session.as_ref(), self.water_surface);
         self.navigation.cancel_pick(ctx);
         let pick_cancel = self.scenario.cancel_canvas_pick(ctx, self.lang() == AppLanguage::English);

@@ -41,3 +41,4 @@ pub use projection::{
     project_batch, project_particle_batch, BatchError, LightProjectionRequest,
     ParticleLightRequest, ParticleProjectedLight, ProjectedLight,
 };
+pub mod apt_footprint;

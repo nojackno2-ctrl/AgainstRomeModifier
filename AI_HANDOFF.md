@@ -1,3 +1,8 @@
+## 2026-10-25 Codex：編輯器 APT footprint（已驗證）
+- aptix 相容性修正：第 14 欄無法解析時保留繼承值或 None，不中止載入；新增非數字欄位涵蓋兩種情況的回歸測試。驗證：cargo test -p against-rome-maps --locked --offline --target-dir re_workspace/codex-wave-dest-target，183 passed、0 failed、3 ignored，結束碼 0（re_workspace/aptix-nonfatal-test.log）；未 stage／commit。
+- 新增唯讀 APAT v2/v3 逐群組 stencil、負數向下取整投影、effective objdef aptix → AptNames → AptPath → apt.dat 與依 type 快取；導覽支援 Off／Approximate／APT，標示 group 0（預設狀態）估計，所有列出格保守阻擋，解析失敗計數並回退原邊距，只使用暫存遮罩。
+- 驗證：cargo check／build --workspace --locked --offline --target-dir re_workspace/codex-wave-dest-target 通過；cargo test --workspace --locked --offline --no-fail-fast --target-dir re_workspace/codex-wave-dest-target 結束碼 0，283 組、2549 passed、0 failed、25 ignored（re_workspace/apt-footprint-test.log）。另以 retail_apt_footprint_gate --ignored --nocapture 通過 1 項，三例 101／13×9、36／6×6、49／7×7 與 SHA256 全符契約（re_workspace/apt-footprint-retail.log）。
+- 初次 check 誤加 Typus 欄位已修正；首輪 8 個 rustdoc E0463 疑與同 target 編譯交錯有關，停止交錯後完整重跑通過，原紀錄 apt-footprint-test-first.log。未手動驗證 GUI／遊戲尋路；遊戲唯讀，未 stage／commit，AGENTS.md／README.md 既有變更保留。
 ## 2026-10-25 Codex：建築 footprint 唯讀研究（已確認來源，未驗收遊戲）
 - 確認 APT 群組逐格 value/x/y 清單由 0x4d7d80 寫入占用／owner 格區；主屋、住宅、農場 group 0 分別 101／36／49 格，詳 docs/reverse-engineering/building-footprint-contract.md。
 - 佐證：re_workspace/footprint-probe 的 check／test／build 與實際資料斷言通過，Ghidra 定向 log 完成；塔樓資產、完整施工／尋路語意未驗證，未改產品、未寫遊戲、未提交。

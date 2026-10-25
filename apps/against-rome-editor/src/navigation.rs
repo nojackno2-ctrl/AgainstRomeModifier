@@ -6,10 +6,18 @@ use against_rome_navigation::{
 };
 use eframe::egui;
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum BuildingMode { #[default] Off, Approximate, Apt }
+
 #[derive(Default)]
 pub struct NavigationUi {
     pub open: bool,
-    approximate_buildings: bool,
+    building_mode: BuildingMode,
+    apt_cells: Vec<[i64; 2]>,
+    apt_fallbacks: Vec<[f32; 4]>,
+    fallback_count: usize,
+    game: Option<std::path::PathBuf>,
+    resolver: Option<crate::building_footprint::FootprintResolver>,
     buildings: Vec<[f32; 4]>,
     placement_snapshot: Vec<u32>,
     pick: Option<bool>,
@@ -39,6 +47,12 @@ fn diagnose_with_buildings(
     session: &TerrainSession, water_surface: f32, seed: [i32; 2], target: [i32; 2],
     buildings: &[[f32; 4]],
 ) -> Result<NavigationReport, String> {
+    diagnose_with_obstacles(session, water_surface, seed, target, buildings, &[])
+}
+fn diagnose_with_obstacles(
+    session: &TerrainSession, water_surface: f32, seed: [i32; 2], target: [i32; 2],
+    buildings: &[[f32; 4]], cells: &[[i64; 2]],
+) -> Result<NavigationReport, String> {
     // 僅建立暫存遮罩，不改動地形 session 或原始 collision。
     let mut collision = session.collision().to_vec();
     let size = session.collision_size;
@@ -53,6 +67,15 @@ fn diagnose_with_buildings(
                 }
             }
         }
+    }
+    for &[cx, cz] in cells {
+        // 原生占用格固定 256×256；非標準 collision 尺寸採相交格保守映射。
+        if !(0..256).contains(&cx) || !(0..256).contains(&cz) { continue; }
+        let start_x = cx as usize * size / 256;
+        let end_x = ((cx as usize + 1) * size).div_ceil(256).min(size);
+        let start_z = cz as usize * size / 256;
+        let end_z = ((cz as usize + 1) * size).div_ceil(256).min(size);
+        for z in start_z..end_z { for x in start_x..end_x { collision[z * size + x] = 255; } }
     }
     if !water_surface.is_finite() {
         return Err("Water surface must be finite".into());
@@ -98,13 +121,51 @@ impl NavigationUi {
             self.buildings = buildings;
         }
     }
+    #[cfg(test)]
     fn set_approximate_buildings(&mut self, enabled: bool) {
-        if self.approximate_buildings != enabled {
-            self.approximate_buildings = enabled;
-            self.invalidate();
+        let mode = if enabled { BuildingMode::Approximate } else { BuildingMode::Off };
+        if mode != self.building_mode { self.building_mode = mode; self.invalidate(); }
+    }
+    fn analyze(&self, session: &TerrainSession, water: f32, seed: [i32; 2], target: [i32; 2]) -> Result<NavigationReport, String> {
+        match self.building_mode {
+            BuildingMode::Off => diagnose(session, water, seed, target),
+            BuildingMode::Approximate => diagnose_with_buildings(session, water, seed, target, &self.buildings),
+            BuildingMode::Apt => diagnose_with_obstacles(session, water, seed, target, &self.apt_fallbacks, &self.apt_cells),
         }
     }
-    pub(crate) fn owns_canvas(&self) -> bool {
+    pub(crate) fn update_apt(
+        &mut self, game: Option<std::path::PathBuf>, objects: &[against_rome_placement::WorldObject],
+        names: &std::collections::HashMap<i32, String>,
+    ) {
+        if self.game != game {
+            self.resolver = game.as_deref().and_then(|g| crate::building_footprint::FootprintResolver::load(g).ok());
+            self.game = game;
+            self.invalidate();
+        }
+        let roots = objects.iter().filter(|o| o.parent.is_none()).filter(|o| {
+            names.get(&i32::from(o.type_id)).is_some_and(|name|
+                against_rome_maps::SdlObjectCatalog::categorize(name) == against_rome_maps::SdlObjectCategory::Building)
+        });
+        let mut cells = Vec::new();
+        let mut fallbacks = Vec::new();
+        for (object, bounds) in roots.zip(&self.buildings) {
+            if !object.position[0].is_finite() || !object.position[2].is_finite() {
+                fallbacks.push(*bounds); continue;
+            }
+            let stencil = self.resolver.as_mut().and_then(|r| r.resolve(i32::from(object.type_id)).ok());
+            if let Some(stencil) = stencil {
+                let anchor = [(object.position[0] as f64 / 64.0).floor() as i64,
+                    (object.position[2] as f64 / 64.0).floor() as i64];
+                cells.extend(stencil.cells.iter().map(|c| [anchor[0].saturating_add(c.relative[0]), anchor[1].saturating_add(c.relative[1])]));
+            } else { fallbacks.push(*bounds); }
+        }
+        if self.apt_cells != cells || self.apt_fallbacks != fallbacks {
+            self.invalidate();
+            self.apt_cells = cells;
+            self.apt_fallbacks = fallbacks;
+        }
+        self.fallback_count = self.apt_fallbacks.len();
+    }    pub(crate) fn owns_canvas(&self) -> bool {
         self.pick.is_some() || self.holding
     }
     pub(crate) fn refresh(&mut self, session: Option<&TerrainSession>, water_surface: f32) {
@@ -228,18 +289,23 @@ impl NavigationUi {
         if !self.open {
             return;
         }
-        let mut enabled = self.approximate_buildings;
+        let mut mode = self.building_mode;
         let mut open = self.open;
         egui::Window::new("通行診斷 / Navigation").open(&mut open).show(ctx,|ui| {
             ui.label("編輯器連通模型估計，非遊戲精確尋路器。 / Editor connectivity estimate; not the exact game pathfinder.");
             let Some(session)=session else {ui.label("請先載入地圖。");return;};
             ui.label(format!("Collision {} × {} ; water surface {:.2} height samples",session.collision_size,session.collision_size,water_surface));
-            ui.checkbox(&mut enabled, "Treat buildings as obstacles (approximate) / 將建築視為障礙（近似）")
-                .on_hover_text(format!("固定 family 外擴範圍：主屋 {}、其他建築 {} world units；與 spawn_data 相同，並非遊戲真實 footprint。 / Fixed family extent; not the game's real footprint.",
-                    against_rome_maps::placement_edit::spawn_data::APPROXIMATE_MAIN_HOUSE_MARGIN,
-                    against_rome_maps::placement_edit::spawn_data::APPROXIMATE_FAMILY_MARGIN));
-            self.set_approximate_buildings(enabled);
-            let max=(session.collision_size-1) as i32;
+            ui.horizontal(|ui| {
+                ui.label("建築障礙估計 / Building obstacle estimate");
+                ui.selectable_value(&mut mode, BuildingMode::Off, "關閉 / Off");
+                ui.selectable_value(&mut mode, BuildingMode::Approximate, "近似 384/64 / Approximate");
+                ui.selectable_value(&mut mode, BuildingMode::Apt, "APT footprint（遊戲資料 / game data）");
+            });
+            if mode != self.building_mode { self.building_mode = mode; self.invalidate(); }
+            if mode == BuildingMode::Apt {
+                ui.label(crate::building_footprint::GROUP_LABEL);
+                ui.label(format!("估計：全部列出格皆阻擋；{} 個建築無法解析，改用近似邊距。 / Estimate: all listed cells blocked; {} unresolved buildings use approximate margins.", self.fallback_count, self.fallback_count));
+            }            let max=(session.collision_size-1) as i32;
             let mut changed=false;
             for (label,point) in [("起點 / Seed",&mut self.seed),("終點 / Destination",&mut self.target)] {
                 ui.horizontal(|ui|{ui.label(label);for value in point {changed |= ui.add(egui::DragValue::new(value).clamp_range(0..=max)).changed();}});
@@ -251,14 +317,14 @@ impl NavigationUi {
             if self.pick.is_some() { ui.label("左鍵點選 2D 地圖；Esc／右鍵取消。 / Click 2D map; Esc/right-click cancels."); }
             if changed {self.report=None;}
             if ui.button("重新檢查 / Analyze current layers").clicked() {
-                match diagnose_with_buildings(session,water_surface,self.seed,self.target,if enabled { &self.buildings } else { &[] }) {
+                match self.analyze(session,water_surface,self.seed,self.target) {
                     Ok(report)=>{self.report=Some(report);self.error=None;self.snapshot=Some((session.heights().to_vec(),session.collision().to_vec(),water_surface.to_bits()));},
                     Err(e)=>{self.report=None;self.error=Some(e);},
                 }
             }
             if let Some(error)=&self.error {ui.colored_label(egui::Color32::RED,error);}
             if let Some(report)=&self.report {
-                if enabled { ui.label("estimate incl. approximate buildings / 包含近似建築障礙的估計"); } ui.label(format!("Passable: {} ; isolated regions from seed: {}",report.passable,report.isolated.len()));
+                if mode != BuildingMode::Off { ui.label("包含建築障礙的估計 / Estimate including building obstacles"); } ui.label(format!("Passable: {} ; isolated regions from seed: {}",report.passable,report.isolated.len()));
                 if !report.seed_passable {ui.label("起點在阻擋格或水下，請選擇其他起點。");}
                 ui.label(match report.path_cells {Some(n)=>format!("Path: {n} grid cells"),None=>"終點無法抵達 / End unreachable".into()});
                 egui::ScrollArea::vertical().max_height(240.0).show(ui,|ui| {
@@ -563,7 +629,7 @@ mod building_tests {
         assert_eq!(s.collision(), collision);
         assert_eq!(s.heights(), heights);
         let mut nav = NavigationUi::default();
-        assert!(!nav.approximate_buildings);
+        assert_eq!(nav.building_mode, BuildingMode::Off);
         nav.report = Some(diagnose(&s, 0.0, [0, 2], [4, 2]).unwrap());
         nav.set_approximate_buildings(true);
         assert!(nav.report.is_none());
@@ -576,5 +642,57 @@ mod building_tests {
         nav.report = Some(diagnose(&s, 0.0, [0, 2], [4, 2]).unwrap());
         nav.set_approximate_buildings(false);
         assert!(nav.report.is_none());
+    }
+}
+
+#[cfg(test)]
+mod apt_tests {
+    use super::*;
+    use against_rome_data::{apt::AptPoint, apt_footprint::{AptFootprint, FootprintCell}};
+    fn object(type_id: u16) -> against_rome_placement::WorldObject {
+        against_rome_placement::WorldObject { slot: 0, type_id, team: 0, uid: 1,
+            position: [8192.0, 0.0, 8192.0], rotation_degrees: 0.0, parent: None, vitals: None }
+    }
+    fn session() -> TerrainSession {
+        let mut s = TerrainSession::create_blank(6, 32);
+        for z in [0, 1, 3, 4] {
+            s.paint_collision(2.5, z as f32 + 0.5, 0.4, crate::terrain::CollisionBrushOp::Block).unwrap();
+        }
+        s.commit_stroke(); s
+    }
+    #[test]
+    fn synthetic_apt_mode_closes_corridor_without_collision_changes() {
+        let mut b = vec![0u8; 428];
+        b[..4].copy_from_slice(b"APAT");
+        for (at, value) in [(4, 3u32), (12, 112), (36, 1), (384, 1), (396, 1), (416, 1)] {
+            b[at..at+4].copy_from_slice(&value.to_le_bytes());
+        }
+        let stencil = AptFootprint::parse(&b).unwrap();
+        assert_eq!(stencil.groups[0], vec![FootprintCell { value: 1, point: AptPoint::default(), relative: [0,0] }]);
+        let mut nav = NavigationUi { building_mode: BuildingMode::Apt,
+            resolver: Some(crate::building_footprint::FootprintResolver::synthetic(34, stencil.groups[0].clone())), ..Default::default() };
+        nav.update_buildings(vec![[8000.0, 8400.0, 8000.0, 8400.0]]);
+        nav.update_apt(None, &[object(34)], &std::collections::HashMap::from([(34, "BauGerBau00".into())]));
+        assert_eq!(nav.apt_cells, vec![[128,128]]);
+        assert_eq!(nav.fallback_count, 0);
+        let s = session(); let collision = s.collision().to_vec();
+        assert!(diagnose(&s, 0.0, [0,2], [4,2]).unwrap().path.is_some());
+        assert!(nav.analyze(&s, 0.0, [0,2], [4,2]).unwrap().path.is_none());
+        nav.building_mode = BuildingMode::Off;
+        assert!(nav.analyze(&s, 0.0, [0,2], [4,2]).unwrap().path.is_some());
+        assert_eq!(s.collision(), collision);
+    }
+    #[test]
+    fn unresolved_type_falls_back_and_counts_placed_buildings() {
+        let mut nav = NavigationUi { building_mode: BuildingMode::Apt, ..Default::default() };
+        let bounds = [8192.0-64.0,8192.0+64.0,8192.0-64.0,8192.0+64.0];
+        nav.update_buildings(vec![bounds]);
+        nav.update_apt(None, &[object(999)], &std::collections::HashMap::from([(999, "BauUnknown".into())]));
+        assert_eq!(nav.fallback_count, 1);
+        assert_eq!(nav.apt_fallbacks, vec![bounds]);
+        assert!(nav.apt_cells.is_empty());
+        let s = session(); let bytes = s.collision().to_vec();
+        assert!(nav.analyze(&s,0.0,[0,2],[4,2]).unwrap().path.is_none());
+        assert_eq!(s.collision(),bytes);
     }
 }
