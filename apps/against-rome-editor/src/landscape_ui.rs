@@ -173,16 +173,26 @@ pub struct LandscapeUi {
     /// Cached read-out of the ambience boden water level (not persisted separately).
     pub cached_water_level: Option<f32>,
 
+    pub english: bool,
     pub dirty: bool,
     pub pending_discard: bool,
     pub status_message: String,
     pub status_is_error: bool,
 }
 
+fn tl<'a>(english: bool, zh: &'a str, en: &'a str) -> &'a str {
+    if english {
+        en
+    } else {
+        zh
+    }
+}
+
 impl Default for LandscapeUi {
     fn default() -> Self {
         Self {
             open: false,
+            english: false,
             current_tab: LandscapeTab::CliffPlanner,
             cliff_min_slope: DEFAULT_MIN_SLOPE_DEGREES,
             cliff_min_delta: DEFAULT_MIN_ELEVATION_DELTA,
@@ -722,8 +732,12 @@ impl LandscapeUi {
 
     fn apply_button(&mut self, ui: &mut egui::Ui, kind: LandscapeApply, enabled: bool) {
         if ui
-            .add_enabled(enabled, egui::Button::new("Apply to map"))
-            .on_hover_text("Writes the plan into the terrain / material / object sessions as undoable edits.")
+            .add_enabled(enabled, egui::Button::new(tl(self.english, "套用至地圖", "Apply to map")))
+            .on_hover_text(tl(
+                self.english,
+                "將規劃寫入地形／材質／物件工作階段（可復原編輯）。",
+                "Writes the plan into the terrain / material / object sessions as undoable edits.",
+            ))
             .clicked()
         {
             self.apply_requested = Some(kind);
@@ -736,29 +750,34 @@ impl LandscapeUi {
         }
 
         let mut is_open = self.open;
-        egui::Window::new("Landscape & Fortification Studio")
+        egui::Window::new(tl(self.english, "地貌與防禦工事工作室", "Landscape & Fortification Studio"))
             .open(&mut is_open)
             .min_size(Vec2::new(720.0, 520.0))
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
-                    ui.selectable_value(&mut self.current_tab, LandscapeTab::CliffPlanner, "Cliff Edge & Face");
-                    ui.selectable_value(&mut self.current_tab, LandscapeTab::RiverPlanner, "River Flow");
-                    ui.selectable_value(&mut self.current_tab, LandscapeTab::RoadPlanner, "Road Polyline");
-                    ui.selectable_value(&mut self.current_tab, LandscapeTab::WallPlanner, "Wall / Palisade");
-                    ui.selectable_value(&mut self.current_tab, LandscapeTab::ErosionPlanner, "Erosion (Hydraulic & Thermal)");
-                    ui.selectable_value(&mut self.current_tab, LandscapeTab::RegionTools, "Region Tools");
+                    ui.selectable_value(&mut self.current_tab, LandscapeTab::CliffPlanner, tl(self.english, "懸崖邊緣與崖壁", "Cliff Edge & Face"));
+                    ui.selectable_value(&mut self.current_tab, LandscapeTab::RiverPlanner, tl(self.english, "河流流向", "River Flow"));
+                    ui.selectable_value(&mut self.current_tab, LandscapeTab::RoadPlanner, tl(self.english, "道路折線", "Road Polyline"));
+                    ui.selectable_value(&mut self.current_tab, LandscapeTab::WallPlanner, tl(self.english, "城牆 / 柵欄", "Wall / Palisade"));
+                    ui.selectable_value(&mut self.current_tab, LandscapeTab::ErosionPlanner, tl(self.english, "侵蝕（水力與熱力）", "Erosion (Hydraulic & Thermal)"));
+                    ui.selectable_value(&mut self.current_tab, LandscapeTab::RegionTools, tl(self.english, "區域工具", "Region Tools"));
                 });
                 ui.separator();
 
                 if let Some(ambience) = ambience.as_mut() {
                     self.cached_water_level = Some(ambience.profile.boden.waterlevel);
                     ui.horizontal(|ui| {
-                        ui.label(format!("Current water level / 目前水位: {:.1}", ambience.profile.boden.waterlevel));
+                        ui.label(tl(self.english, "目前水位 / Current water level:", "Current water level:"));
+                        ui.label(format!("{:.1}", ambience.profile.boden.waterlevel));
                         ui.separator();
                         ui.label("Water level / 水位:");
                         let resp = ui.add(
                             egui::DragValue::new(&mut ambience.profile.boden.waterlevel).speed(0.5)
-                        ).on_hover_text("Same setting as Ambience → Boden (boden.ini [Waterlevel]) / 與「氛圍 → 地表」為相同設定（boden.ini 水位）");
+                        ).on_hover_text(tl(
+                            self.english,
+                            "與「氛圍 → 地表」為相同設定（boden.ini 水位）",
+                            "Same setting as Ambience → Boden (boden.ini [Waterlevel])",
+                        ));
                         if resp.changed() {
                             ambience.dirty = true;
                             ambience.validate_current();
@@ -768,7 +787,7 @@ impl LandscapeUi {
                     ui.separator();
                 } else if let Some(wl) = self.cached_water_level {
                     ui.horizontal(|ui| {
-                        ui.label(format!("Current water level / 目前水位: {:.1}", wl));
+                        ui.label(format!("{}: {:.1}", tl(self.english, "目前水位", "Current water level"), wl));
                     });
                     ui.separator();
                 }
@@ -801,17 +820,21 @@ impl LandscapeUi {
             let mut close_modal = false;
             let mut confirm = false;
 
-            egui::Window::new("Discard Unsaved Landscape Plans?")
+            egui::Window::new(tl(self.english, "捨棄未儲存的地貌規劃？", "Discard Unsaved Landscape Plans?"))
                 .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
                 .collapsible(false)
                 .resizable(false)
                 .show(ctx, |ui| {
-                    ui.label("Closing will discard currently planned cliff, river, road, wall, and erosion strokes.");
+                    ui.label(tl(
+                        self.english,
+                        "關閉將捨棄目前規劃中的懸崖、河流、道路、城牆及侵蝕筆畫。",
+                        "Closing will discard currently planned cliff, river, road, wall, and erosion strokes.",
+                    ));
                     ui.horizontal(|ui| {
-                        if ui.button("Discard & Close").clicked() {
+                        if ui.button(tl(self.english, "捨棄並關閉", "Discard & Close")).clicked() {
                             confirm = true;
                         }
-                        if ui.button("Keep Editing").clicked() {
+                        if ui.button(tl(self.english, "繼續編輯", "Keep Editing")).clicked() {
                             close_modal = true;
                         }
                     });
@@ -831,26 +854,26 @@ impl LandscapeUi {
     }
 
     fn render_cliff_tab(&mut self, ui: &mut egui::Ui, cx: &LandscapeContext) {
-        ui.heading("Cliff Edge Detection & Face Planning");
-        ui.label("Detects steep elevation gradients and extracts continuous cliff contour lines.");
+        ui.heading(tl(self.english, "懸崖邊緣偵測與崖壁規劃", "Cliff Edge Detection & Face Planning"));
+        ui.label(tl(self.english, "偵測陡峭的高程坡度並擷取連續的懸崖等高線路徑。", "Detects steep elevation gradients and extracts continuous cliff contour lines."));
 
         ui.add_space(6.0);
         egui::Grid::new("cliff_settings").num_columns(2).spacing([12.0, 6.0]).show(ui, |ui| {
-            ui.label("Min Slope Degrees:");
+            ui.label(tl(self.english, "最小坡度角度：", "Min Slope Degrees:"));
             ui.add(egui::Slider::new(&mut self.cliff_min_slope, 15.0..=75.0).text("°"));
             ui.end_row();
 
-            ui.label("Min Elevation Delta:");
+            ui.label(tl(self.english, "最小高程落差：", "Min Elevation Delta:"));
             ui.add(egui::Slider::new(&mut self.cliff_min_delta, 5.0..=64.0));
             ui.end_row();
 
-            ui.label("Blend scree at cliff foot:");
-            ui.checkbox(&mut self.cliff_generate_scree, "needs the original transition tiles");
+            ui.label(tl(self.english, "崖腳混合碎石：", "Blend scree at cliff foot:"));
+            ui.checkbox(&mut self.cliff_generate_scree, tl(self.english, "需要原版過渡圖塊", "needs the original transition tiles"));
             ui.end_row();
         });
 
         ui.add_space(8.0);
-        if ui.button("Detect Cliffs on Heightmap").clicked() {
+        if ui.button(tl(self.english, "在高度圖上偵測懸崖", "Detect Cliffs on Heightmap")).clicked() {
             let _ = self.plan_cliffs(cx);
         }
 
@@ -859,67 +882,83 @@ impl LandscapeUi {
             (res.cliff_cells.len(), res.contours.len(), paths)
         }) {
             ui.separator();
-            ui.label(format!("Detected Cliff Cells: {}", cell_count));
-            ui.label(format!("Contour Paths: {}", contour_count));
+            ui.label(format!("{}: {}", tl(self.english, "偵測到懸崖網格數", "Detected Cliff Cells"), cell_count));
+            ui.label(format!("{}: {}", tl(self.english, "等高線路徑數", "Contour Paths"), contour_count));
             let ready = cell_count > 0 && cx.textures.is_some();
             self.apply_button(ui, LandscapeApply::Cliff, ready);
             if cx.textures.is_none() {
-                ui.label("Load the map in the Materials panel to apply cliff textures.");
+                ui.label(tl(self.english, "在材質面板中載入地圖以套用懸崖材質。", "Load the map in the Materials panel to apply cliff textures."));
             }
 
             egui::ScrollArea::vertical().max_height(200.0).show(ui, |ui| {
                 for (idx, len, closed) in paths {
-                    ui.label(format!("Path #{}: {} cells (Closed: {})", idx, len, closed));
+                    ui.label(format!(
+                        "{} #{}: {} {} ({}: {})",
+                        tl(self.english, "路徑", "Path"),
+                        idx,
+                        len,
+                        tl(self.english, "個網格", "cells"),
+                        tl(self.english, "閉合", "Closed"),
+                        if closed { tl(self.english, "是", "true") } else { tl(self.english, "否", "false") }
+                    ));
                 }
             });
         }
     }
 
     fn render_river_tab(&mut self, ui: &mut egui::Ui, cx: &LandscapeContext) {
-        ui.heading("River Flow Planner");
-        ui.label("Traces natural downhill water courses with seamless water and riverbank textures.");
+        ui.heading(tl(self.english, "河流流向規劃器", "River Flow Planner"));
+        ui.label(tl(self.english, "循自然順坡走向追蹤水流路徑，配置無縫水面與河岸材質。", "Traces natural downhill water courses with seamless water and riverbank textures."));
 
         ui.add_space(6.0);
         egui::Grid::new("river_settings").num_columns(2).spacing([12.0, 6.0]).show(ui, |ui| {
-            ui.label("Start Coordinate (X, Y):");
+            ui.label(tl(self.english, "起點座標 (X, Y)：", "Start Coordinate (X, Y):"));
             ui.horizontal(|ui| {
                 ui.add(egui::DragValue::new(&mut self.river_start_x));
                 ui.add(egui::DragValue::new(&mut self.river_start_y));
             });
             ui.end_row();
 
-            ui.label("End Coordinate (X, Y):");
+            ui.label(tl(self.english, "終點座標 (X, Y)：", "End Coordinate (X, Y):"));
             ui.horizontal(|ui| {
                 ui.add(egui::DragValue::new(&mut self.river_end_x));
                 ui.add(egui::DragValue::new(&mut self.river_end_y));
             });
             ui.end_row();
 
-            ui.label("Water Texture:");
+            ui.label(tl(self.english, "水面材質：", "Water Texture:"));
             ui.text_edit_singleline(&mut self.river_preferred_texture);
             ui.end_row();
 
-            ui.label("Riverbed:");
+            ui.label(tl(self.english, "河床高程模式：", "Riverbed:"));
+            let mode_label = match (self.river_mode, self.english) {
+                (RiverElevationMode::ValidateOnly, false) => "僅驗證（不修改高程）",
+                (RiverElevationMode::ValidateOnly, true) => "ValidateOnly (no height edits)",
+                (RiverElevationMode::AutoCarveDescending, false) => "自動順坡向下雕刻",
+                (RiverElevationMode::AutoCarveDescending, true) => "AutoCarveDescending",
+                (RiverElevationMode::AutoCarveTrench, false) => "自動雕刻凹槽河床",
+                (RiverElevationMode::AutoCarveTrench, true) => "AutoCarveTrench",
+            };
             egui::ComboBox::from_id_source("river_mode_select")
-                .selected_text(format!("{:?}", self.river_mode))
+                .selected_text(mode_label)
                 .show_ui(ui, |ui| {
-                    ui.selectable_value(&mut self.river_mode, RiverElevationMode::ValidateOnly, "ValidateOnly (no height edits)");
-                    ui.selectable_value(&mut self.river_mode, RiverElevationMode::AutoCarveDescending, "AutoCarveDescending");
-                    ui.selectable_value(&mut self.river_mode, RiverElevationMode::AutoCarveTrench, "AutoCarveTrench");
+                    ui.selectable_value(&mut self.river_mode, RiverElevationMode::ValidateOnly, tl(self.english, "僅驗證（不修改高程）", "ValidateOnly (no height edits)"));
+                    ui.selectable_value(&mut self.river_mode, RiverElevationMode::AutoCarveDescending, tl(self.english, "自動順坡向下雕刻", "AutoCarveDescending"));
+                    ui.selectable_value(&mut self.river_mode, RiverElevationMode::AutoCarveTrench, tl(self.english, "自動雕刻凹槽河床", "AutoCarveTrench"));
                 });
             ui.end_row();
 
-            ui.label("Water Level / 水位:");
+            ui.label(tl(self.english, "水位：", "Water Level:"));
             if let Some(wl) = self.cached_water_level {
                 ui.label(format!("{:.1}", wl));
             } else {
-                ui.label("Unspecified / 未指定");
+                ui.label(tl(self.english, "未指定", "Unspecified"));
             }
             ui.end_row();
         });
 
         ui.add_space(8.0);
-        if ui.button("Plan River Stroke").clicked() {
+        if ui.button(tl(self.english, "規劃水流路徑", "Plan River Stroke")).clicked() {
             let _ = self.plan_river(cx);
         }
 
@@ -927,80 +966,90 @@ impl LandscapeUi {
             (plan.water_tiles.len(), plan.bank_tiles.len(), plan.height_adjustments.len(), plan.unsupported.len(), plan.succeeded)
         }) {
             ui.separator();
-            ui.label(format!("Water Tiles Planned: {}", water_count));
-            ui.label(format!("Bank Transition Tiles: {}", bank_count));
-            ui.label(format!("Riverbed height edits: {}", height_count));
+            ui.label(format!("{}: {}", tl(self.english, "已規劃水面圖塊數", "Water Tiles Planned"), water_count));
+            ui.label(format!("{}: {}", tl(self.english, "河岸過渡圖塊數", "Bank Transition Tiles"), bank_count));
+            ui.label(format!("{}: {}", tl(self.english, "河床高度編輯頂點數", "Riverbed height edits"), height_count));
             let ready = succeeded && cx.textures.is_some();
             self.apply_button(ui, LandscapeApply::River, ready);
             if unsupported_count > 0 {
-                ui.label("The path leaves the map; fix the coordinates before applying.");
-                ui.colored_label(Color32::from_rgb(255, 180, 50), format!("Unsupported Tiles: {}", unsupported_count));
+                ui.label(tl(self.english, "路徑超出地圖邊界；請修正座標後再套用。", "The path leaves the map; fix the coordinates before applying."));
+                ui.colored_label(Color32::from_rgb(255, 180, 50), format!("{}: {}", tl(self.english, "不支援／越界圖塊數", "Unsupported Tiles"), unsupported_count));
             }
         }
     }
 
     fn render_road_tab(&mut self, ui: &mut egui::Ui, cx: &LandscapeContext) {
-        ui.heading("Road & Path Polyline Planner");
-        ui.label("Draws continuous road strokes with proper straight, turn, and T-junction textures.");
+        ui.heading(tl(self.english, "道路與小徑折線規劃器", "Road & Path Polyline Planner"));
+        ui.label(tl(self.english, "沿折線繪製連續道路筆畫，自動配置直道、轉角與 T 型交叉口材質。", "Draws continuous road strokes with proper straight, turn, and T-junction textures."));
 
         ui.add_space(6.0);
-        ui.label("Waypoints (One X,Y per line):");
+        ui.label(tl(self.english, "路徑節點（每行一組 X,Y）：", "Waypoints (One X,Y per line):"));
         ui.text_edit_multiline(&mut self.road_waypoints_text);
 
         ui.horizontal(|ui| {
-            ui.label("Road Texture:");
+            ui.label(tl(self.english, "道路材質：", "Road Texture:"));
             ui.text_edit_singleline(&mut self.road_preferred_texture);
         });
 
         ui.add_space(8.0);
-        if ui.button("Plan Road Stroke").clicked() {
+        if ui.button(tl(self.english, "規劃道路筆畫", "Plan Road Stroke")).clicked() {
             let _ = self.plan_road(cx);
         }
 
         if let Some((tile_count, succeeded)) = self.last_road_plan.as_ref().map(|plan| (plan.tiles.len(), plan.succeeded)) {
             ui.separator();
-            ui.label(format!("Road Placements Planned: {}", tile_count));
+            ui.label(format!("{}: {}", tl(self.english, "規劃道路配置圖塊數", "Road Placements Planned"), tile_count));
             let ready = succeeded && cx.textures.is_some();
             self.apply_button(ui, LandscapeApply::Road, ready);
             if !succeeded {
-                ui.colored_label(Color32::from_rgb(255, 100, 100), "Road stroke encountered out-of-bounds tiles.");
+                ui.colored_label(Color32::from_rgb(255, 100, 100), tl(self.english, "道路筆畫遇到超出地圖邊界的圖塊。", "Road stroke encountered out-of-bounds tiles."));
             }
         }
     }
 
     fn render_wall_tab(&mut self, ui: &mut egui::Ui, cx: &LandscapeContext) {
-        ui.heading("Wall & Palisade Planner");
-        ui.label("Places straight walls, corner segments, defensive towers, and gates along waypoints.");
+        ui.heading(tl(self.english, "城牆與木柵規劃器", "Wall & Palisade Planner"));
+        ui.label(tl(self.english, "沿路徑節點配置直牆、轉角段、防禦塔樓與城門。", "Places straight walls, corner segments, defensive towers, and gates along waypoints."));
 
         ui.add_space(6.0);
         egui::Grid::new("wall_settings").num_columns(2).spacing([12.0, 6.0]).show(ui, |ui| {
-            ui.label("Fortification Style:");
+            ui.label(tl(self.english, "防禦工事風格：", "Fortification Style:"));
+            let style_label = match (self.wall_style, self.english) {
+                (FortificationStyle::GermanicPalisade, false) => "日耳曼木柵",
+                (FortificationStyle::GermanicPalisade, true) => "Germanic Palisade",
+                (FortificationStyle::RomanStoneWall, false) => "羅馬石牆",
+                (FortificationStyle::RomanStoneWall, true) => "Roman Stone Wall",
+                (FortificationStyle::CelticPalisade, false) => "塞爾特木柵",
+                (FortificationStyle::CelticPalisade, true) => "Celtic Palisade",
+                (FortificationStyle::HunBarricade, false) => "匈人路障",
+                (FortificationStyle::HunBarricade, true) => "Hun Barricade",
+            };
             egui::ComboBox::from_id_source("wall_style_select")
-                .selected_text(format!("{:?}", self.wall_style))
+                .selected_text(style_label)
                 .show_ui(ui, |ui| {
-                    ui.selectable_value(&mut self.wall_style, FortificationStyle::GermanicPalisade, "Germanic Palisade (日耳曼木柵)");
-                    ui.selectable_value(&mut self.wall_style, FortificationStyle::RomanStoneWall, "Roman Stone Wall (羅馬石牆)");
-                    ui.selectable_value(&mut self.wall_style, FortificationStyle::CelticPalisade, "Celtic Palisade (塞爾特木柵)");
-                    ui.selectable_value(&mut self.wall_style, FortificationStyle::HunBarricade, "Hun Barricade (匈人路障)");
+                    ui.selectable_value(&mut self.wall_style, FortificationStyle::GermanicPalisade, tl(self.english, "日耳曼木柵", "Germanic Palisade"));
+                    ui.selectable_value(&mut self.wall_style, FortificationStyle::RomanStoneWall, tl(self.english, "羅馬石牆", "Roman Stone Wall"));
+                    ui.selectable_value(&mut self.wall_style, FortificationStyle::CelticPalisade, tl(self.english, "塞爾特木柵", "Celtic Palisade"));
+                    ui.selectable_value(&mut self.wall_style, FortificationStyle::HunBarricade, tl(self.english, "匈人路障", "Hun Barricade"));
                 });
             ui.end_row();
 
-            ui.label("Towers on Corners/Intervals:");
+            ui.label(tl(self.english, "轉角／間距放置防禦塔：", "Towers on Corners/Intervals:"));
             ui.checkbox(&mut self.wall_place_towers, "");
             ui.end_row();
 
-            ui.label("Gates on Road Intersections:");
+            ui.label(tl(self.english, "道路交叉處放置城門：", "Gates on Road Intersections:"));
             ui.checkbox(&mut self.wall_place_gates, "");
             ui.end_row();
         });
 
-        ui.label("Waypoints (One X,Y per line):");
+        ui.label(tl(self.english, "路徑節點（每行一組 X,Y）：", "Waypoints (One X,Y per line):"));
         ui.text_edit_multiline(&mut self.wall_waypoints_text);
-        ui.label("Object templates (id,name per line; the map needs an existing object of each type):");
+        ui.label(tl(self.english, "物件範本（每行 id,name；地圖需有各類型既有物件）：", "Object templates (id,name per line; the map needs an existing object of each type):"));
         ui.add(egui::TextEdit::multiline(&mut self.wall_templates_text).desired_rows(2));
 
         ui.add_space(8.0);
-        if ui.button("Plan Wall Stroke").clicked() {
+        if ui.button(tl(self.english, "規劃城牆筆畫", "Plan Wall Stroke")).clicked() {
             let _ = self.plan_wall(cx);
         }
 
@@ -1009,9 +1058,9 @@ impl LandscapeUi {
             (plan.placements.len(), count(WallComponentKind::Tower), count(WallComponentKind::Gate), plan.footprint_tiles.len(), plan.succeeded)
         }) {
             ui.separator();
-            ui.label(format!("Placements Planned: {}", placement_count));
-            ui.label(format!("Towers: {}, Gates: {}", tower_count, gate_count));
-            ui.label(format!("Blocked Footprint Tiles: {}", footprint_count));
+            ui.label(format!("{}: {}", tl(self.english, "規劃配置物件數", "Placements Planned"), placement_count));
+            ui.label(format!("{}: {}, {}: {}", tl(self.english, "防禦塔", "Towers"), tower_count, tl(self.english, "城門", "Gates"), gate_count));
+            ui.label(format!("{}: {}", tl(self.english, "阻擋佔地圖塊數", "Blocked Footprint Tiles"), footprint_count));
             let ready = succeeded;
             self.apply_button(ui, LandscapeApply::Wall, ready);
         }
@@ -1028,13 +1077,21 @@ impl LandscapeUi {
 
     fn render_erosion_tab(&mut self, ui: &mut egui::Ui, cx: &LandscapeContext) {
         let (dim, _) = cx.geometry();
-        ui.heading("Hydraulic & Thermal Erosion in Rectangle");
-        ui.label(
+        ui.heading(tl(self.english, "矩形區域水力與熱力侵蝕", "Hydraulic & Thermal Erosion in Rectangle"));
+        ui.label(tl(
+            self.english,
+            "在選取的矩形圖塊區域內模擬降雨水滴逕流與碎石邊坡熱力分散。",
             "Simulates rainfall droplet runoff and talus slope dispersion inside a selected rectangular tile region.",
-        );
+        ));
 
         ui.add_space(6.0);
-        ui.label(format!("Tile coordinates: 0–{}. Opposite corners (One X,Y per line):", dim.saturating_sub(1)));
+        ui.label(format!(
+            "{} 0–{}。{}（{}）：",
+            tl(self.english, "圖塊座標範圍", "Tile coordinates:"),
+            dim.saturating_sub(1),
+            tl(self.english, "對角頂點", "Opposite corners"),
+            tl(self.english, "每行一組 X,Y", "One X,Y per line"),
+        ));
         if ui
             .add(egui::TextEdit::multiline(&mut self.erosion_rectangle_text).desired_rows(2))
             .changed()
@@ -1043,10 +1100,10 @@ impl LandscapeUi {
         }
 
         ui.horizontal(|ui| {
-            ui.label("Corner 1 (X, Y):");
+            ui.label(tl(self.english, "頂點 1 (X, Y)：", "Corner 1 (X, Y):"));
             let c1 = ui.add(egui::DragValue::new(&mut self.erosion_start_x)).changed()
                 | ui.add(egui::DragValue::new(&mut self.erosion_start_y)).changed();
-            ui.label("Corner 2 (X, Y):");
+            ui.label(tl(self.english, "頂點 2 (X, Y)：", "Corner 2 (X, Y):"));
             let c2 = ui.add(egui::DragValue::new(&mut self.erosion_end_x)).changed()
                 | ui.add(egui::DragValue::new(&mut self.erosion_end_y)).changed();
             if c1 || c2 {
@@ -1056,49 +1113,49 @@ impl LandscapeUi {
 
         ui.add_space(6.0);
         ui.horizontal(|ui| {
-            ui.checkbox(&mut self.erosion_enable_hydraulic, "Hydraulic Erosion (水力侵蝕)");
-            ui.checkbox(&mut self.erosion_enable_thermal, "Thermal Erosion (熱力侵蝕)");
+            ui.checkbox(&mut self.erosion_enable_hydraulic, tl(self.english, "水力侵蝕", "Hydraulic Erosion"));
+            ui.checkbox(&mut self.erosion_enable_thermal, tl(self.english, "熱力侵蝕", "Thermal Erosion"));
         });
 
         ui.separator();
-        egui::CollapsingHeader::new("Simulation Parameters")
+        egui::CollapsingHeader::new(tl(self.english, "模擬參數", "Simulation Parameters"))
             .default_open(true)
             .show(ui, |ui| {
                 if self.erosion_enable_hydraulic {
-                    ui.strong("Hydraulic Droplet Parameters");
+                    ui.strong(tl(self.english, "水滴水力參數", "Hydraulic Droplet Parameters"));
                     egui::Grid::new("hydraulic_params_grid")
                         .num_columns(2)
                         .spacing([12.0, 4.0])
                         .show(ui, |ui| {
-                            ui.label("Droplet Count:");
+                            ui.label(tl(self.english, "水滴數量：", "Droplet Count:"));
                             ui.add(egui::Slider::new(&mut self.erosion_hydraulic_params.droplet_count, 100..=50000));
                             ui.end_row();
 
-                            ui.label("Max Lifetime:");
+                            ui.label(tl(self.english, "最大生命週期：", "Max Lifetime:"));
                             ui.add(egui::Slider::new(&mut self.erosion_hydraulic_params.max_lifetime, 10..=100));
                             ui.end_row();
 
-                            ui.label("Inertia:");
+                            ui.label(tl(self.english, "慣性：", "Inertia:"));
                             ui.add(egui::Slider::new(&mut self.erosion_hydraulic_params.inertia, 0.0..=0.5));
                             ui.end_row();
 
-                            ui.label("Gravity:");
+                            ui.label(tl(self.english, "重力：", "Gravity:"));
                             ui.add(egui::Slider::new(&mut self.erosion_hydraulic_params.gravity, 1.0..=10.0));
                             ui.end_row();
 
-                            ui.label("Erosion Rate:");
+                            ui.label(tl(self.english, "侵蝕速率：", "Erosion Rate:"));
                             ui.add(egui::Slider::new(&mut self.erosion_hydraulic_params.erosion_rate, 0.01..=1.0));
                             ui.end_row();
 
-                            ui.label("Deposition Rate:");
+                            ui.label(tl(self.english, "堆積速率：", "Deposition Rate:"));
                             ui.add(egui::Slider::new(&mut self.erosion_hydraulic_params.deposition_rate, 0.01..=1.0));
                             ui.end_row();
 
-                            ui.label("Erosion Radius:");
+                            ui.label(tl(self.english, "侵蝕半徑：", "Erosion Radius:"));
                             ui.add(egui::Slider::new(&mut self.erosion_hydraulic_params.erosion_radius, 1..=5));
                             ui.end_row();
 
-                            ui.label("Random Seed:");
+                            ui.label(tl(self.english, "隨機種子碼：", "Random Seed:"));
                             ui.add(egui::DragValue::new(&mut self.erosion_hydraulic_params.random_seed));
                             ui.end_row();
                         });
@@ -1108,33 +1165,33 @@ impl LandscapeUi {
                     if self.erosion_enable_hydraulic {
                         ui.add_space(4.0);
                     }
-                    ui.strong("Thermal Talus Parameters");
+                    ui.strong(tl(self.english, "邊坡熱力參數", "Thermal Talus Parameters"));
                     egui::Grid::new("thermal_params_grid")
                         .num_columns(2)
                         .spacing([12.0, 4.0])
                         .show(ui, |ui| {
-                            ui.label("Talus Angle:");
+                            ui.label(tl(self.english, "休止角（邊坡角度）：", "Talus Angle:"));
                             ui.add(egui::Slider::new(&mut self.erosion_thermal_params.talus_angle_degrees, 15.0..=75.0).text("°"));
                             ui.end_row();
 
-                            ui.label("Erosion Rate:");
+                            ui.label(tl(self.english, "侵蝕速率：", "Erosion Rate:"));
                             ui.add(egui::Slider::new(&mut self.erosion_thermal_params.erosion_rate, 0.05..=1.0));
                             ui.end_row();
 
-                            ui.label("Iterations:");
+                            ui.label(tl(self.english, "反覆運算次數：", "Iterations:"));
                             ui.add(egui::Slider::new(&mut self.erosion_thermal_params.iterations, 1..=32));
                             ui.end_row();
                         });
                 }
 
                 ui.add_space(4.0);
-                if ui.button("Reset to Defaults").clicked() {
+                if ui.button(tl(self.english, "重設為預設值", "Reset to Defaults")).clicked() {
                     self.reset_enabled_erosion_parameters();
                 }
             });
 
         ui.add_space(8.0);
-        if ui.button("Simulate Erosion in Selection").clicked() {
+        if ui.button(tl(self.english, "在選區內模擬侵蝕", "Simulate Erosion in Selection")).clicked() {
             let _ = self.plan_erosion(cx);
         }
 
@@ -1142,28 +1199,33 @@ impl LandscapeUi {
         if let Some(plan) = &self.last_erosion_plan {
             ui.separator();
             ui.label(format!(
-                "Tile Selection: ({}, {}) to ({}, {}) [Vertices: ({}, {}) to ({}, {})]",
+                "{}: ({}, {}) {} ({}, {}) [{}: ({}, {}) {} ({}, {})]",
+                tl(self.english, "選取圖塊範圍", "Tile Selection"),
                 plan.tile_bounds.0,
                 plan.tile_bounds.1,
+                tl(self.english, "至", "to"),
                 plan.tile_bounds.2,
                 plan.tile_bounds.3,
+                tl(self.english, "頂點範圍", "Vertices"),
                 plan.vertex_bounds.0,
                 plan.vertex_bounds.1,
+                tl(self.english, "至", "to"),
                 plan.vertex_bounds.2,
                 plan.vertex_bounds.3,
             ));
-            ui.label(format!("Height Samples Changed: {}", plan.changes.len()));
+            ui.label(format!("{}: {}", tl(self.english, "高度變更取樣點數", "Height Samples Changed"), plan.changes.len()));
 
             if !plan.changes.is_empty() {
                 ui.label(format!(
-                    "Elevation Delta Range: [{}, {}]",
+                    "{}: [{}, {}]",
+                    tl(self.english, "高程落差變更範圍", "Elevation Delta Range"),
                     plan.min_delta, plan.max_delta
                 ));
 
                 let ready = cx.heights.is_some();
                 if ui
-                    .add_enabled(ready, egui::Button::new("Apply to map"))
-                    .on_hover_text("Requests applying the erosion height changes to the loaded terrain.")
+                    .add_enabled(ready, egui::Button::new(tl(self.english, "套用至地圖", "Apply to map")))
+                    .on_hover_text(tl(self.english, "請求將侵蝕高度變更套用至已載入的地形。", "Requests applying the erosion height changes to the loaded terrain."))
                     .clicked()
                 {
                     apply_clicked = true;
@@ -1172,7 +1234,7 @@ impl LandscapeUi {
                 if self.erosion_apply_requested {
                     ui.colored_label(
                         Color32::from_rgb(100, 200, 255),
-                        "Apply requested: ready in apply contract. (app.rs integration pending)",
+                        tl(self.english, "已請求套用：套用合約已就緒。", "Apply requested: ready in apply contract. (app.rs integration pending)"),
                     );
                 }
 
@@ -1181,16 +1243,28 @@ impl LandscapeUi {
                     for c in &plan.changes[..preview_count] {
                         let delta = c.after as i16 - c.before as i16;
                         ui.label(format!(
-                            "Vertex #{}: before={}, after={} (delta={:+})",
-                            c.index, c.before, c.after, delta
+                            "{} #{}: {}={}, {}={} ({}={:+})",
+                            tl(self.english, "頂點", "Vertex"),
+                            c.index,
+                            tl(self.english, "變更前", "before"),
+                            c.before,
+                            tl(self.english, "變更後", "after"),
+                            c.after,
+                            tl(self.english, "落差", "delta"),
+                            delta
                         ));
                     }
                     if plan.changes.len() > 50 {
-                        ui.label(format!("... and {} more vertices", plan.changes.len() - 50));
+                        ui.label(format!(
+                            "{} {} {}",
+                            tl(self.english, "... 以及另外", "... and"),
+                            plan.changes.len() - 50,
+                            tl(self.english, "個頂點", "more vertices")
+                        ));
                     }
                 });
             } else {
-                ui.label("Erosion produced no height changes on this terrain with current parameters.");
+                ui.label(tl(self.english, "使用目前參數在此地形上侵蝕未產生高度變化。", "Erosion produced no height changes on this terrain with current parameters."));
             }
         }
 
@@ -1668,10 +1742,17 @@ impl LandscapeUi {
 
     fn render_region_tab(&mut self, ui: &mut egui::Ui, cx: &LandscapeContext) {
         let (dimension, _) = cx.geometry();
-        ui.heading("Region Tools");
+        ui.heading(tl(self.english, "區域工具", "Region Tools"));
         ui.label(format!(
-            "Tile coordinates 0-{}. One X,Y per line: fill/select take two opposite corners, connected fill one seed, road any number of waypoints. River, cliff, wall and erosion have their own tabs (the erosion rectangle follows the dragged selection).",
-            dimension.saturating_sub(1)
+            "{} 0-{}。{}：{}，{}，{}。{}（{}）。",
+            tl(self.english, "圖塊座標範圍", "Tile coordinates:"),
+            dimension.saturating_sub(1),
+            tl(self.english, "每行一組 X,Y", "One X,Y per line"),
+            tl(self.english, "填色／選取需兩組對角頂點", "fill/select take two opposite corners"),
+            tl(self.english, "連通填色需一組種子點", "connected fill one seed"),
+            tl(self.english, "道路可填入任意數量路徑點", "road any number of waypoints"),
+            tl(self.english, "河流、懸崖、城牆與侵蝕擁有各自專屬分頁", "River, cliff, wall and erosion have their own tabs"),
+            tl(self.english, "侵蝕矩形會同步跟隨拖曳框選區域", "the erosion rectangle follows the dragged selection"),
         ));
         ui.add_space(6.0);
         egui::ComboBox::from_id_source("region_op_select")
@@ -1684,43 +1765,53 @@ impl LandscapeUi {
             });
         ui.add(egui::TextEdit::multiline(&mut self.region.vertices_text).desired_rows(3));
         ui.horizontal(|ui| {
-            ui.checkbox(&mut self.region.pick_armed, "Drag a rectangle on the 2D map");
+            ui.checkbox(&mut self.region.pick_armed, tl(self.english, "在 2D 地圖上拖曳框選矩形", "Drag a rectangle on the 2D map"));
             if let Some(sel) = self.region.selection {
-                ui.label(format!("selection {}x{} tiles", sel.max_x - sel.min_x + 1, sel.max_y - sel.min_y + 1));
+                ui.label(format!(
+                    "{} {}x{} {}",
+                    tl(self.english, "選區尺寸", "selection"),
+                    sel.max_x - sel.min_x + 1,
+                    sel.max_y - sel.min_y + 1,
+                    tl(self.english, "圖塊", "tiles")
+                ));
             }
         });
         if self.region.op != RegionOperation::SelectObjects {
             egui::Grid::new("region_settings").num_columns(2).spacing([12.0, 6.0]).show(ui, |ui| {
-                ui.label("Material id:");
+                ui.label(tl(self.english, "材質代碼：", "Material id:"));
                 ui.text_edit_singleline(&mut self.region.material);
                 ui.end_row();
                 if self.region.op == RegionOperation::RoadPolyline {
-                    ui.label("Road width (tiles):");
+                    ui.label(tl(self.english, "道路寬度（圖塊）：", "Road width (tiles):"));
                     ui.add(egui::DragValue::new(&mut self.region.road_width).clamp_range(1..=dimension.max(1)));
                     ui.end_row();
                 }
-                ui.label("Auto bridge transitions:");
+                ui.label(tl(self.english, "自動橋接過渡：", "Auto bridge transitions:"));
                 ui.checkbox(&mut self.region.auto_bridge, "");
                 ui.end_row();
             });
         }
         ui.add_space(8.0);
-        if ui.button("Plan Region").clicked() {
+        if ui.button(tl(self.english, "規劃區域", "Plan Region")).clicked() {
             let _ = self.plan_region(cx);
         }
         if let Some((count, op)) = self.region.plan.as_ref().map(|p| (p.cells.len(), p.op)) {
             ui.separator();
-            ui.label(format!("Tiles covered: {count}"));
+            ui.label(format!("{}: {count}", tl(self.english, "涵蓋圖塊數", "Tiles covered")));
             let ready = op == RegionOperation::SelectObjects || cx.textures.is_some();
             if ui
-                .add_enabled(ready, egui::Button::new("Apply region"))
-                .on_hover_text("Fills as one undoable texture stroke; selection only picks placed objects.")
+                .add_enabled(ready, egui::Button::new(tl(self.english, "套用區域", "Apply region")))
+                .on_hover_text(tl(
+                    self.english,
+                    "填色為單一步驟可復原之材質筆畫；選取僅會選定已放置之物件。",
+                    "Fills as one undoable texture stroke; selection only picks placed objects.",
+                ))
                 .clicked()
             {
                 let _ = self.request_region_apply();
             }
             if !ready {
-                ui.label("Load the map in the Materials panel to apply a fill.");
+                ui.label(tl(self.english, "在材質面板中載入地圖以套用填色。", "Load the map in the Materials panel to apply a fill."));
             }
         }
     }
@@ -2073,5 +2164,124 @@ mod small_ux_tests {
         assert!(ambience.dirty, "editing water level in landscape window must mark ambience dirty");
         assert_eq!(ambience.profile.boden.waterlevel, 35.0, "drag should increase waterlevel from 20.0 to 35.0");
         assert_eq!(landscape.cached_water_level, Some(35.0));
+    }
+
+    fn collect_shape_texts(shape: &egui::epaint::Shape, out: &mut Vec<String>) {
+        match shape {
+            egui::epaint::Shape::Text(t) => out.push(t.galley.text().to_string()),
+            egui::epaint::Shape::Vec(shapes) => {
+                for s in shapes {
+                    collect_shape_texts(s, out);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    #[test]
+    fn test_landscape_ui_chinese_localization_renders_no_untranslated_literals() {
+        let tabs = [
+            LandscapeTab::CliffPlanner,
+            LandscapeTab::RiverPlanner,
+            LandscapeTab::RoadPlanner,
+            LandscapeTab::WallPlanner,
+            LandscapeTab::ErosionPlanner,
+            LandscapeTab::RegionTools,
+        ];
+        let english_literals_to_forbid = [
+            "Landscape & Fortification Studio",
+            "Cliff Edge Detection & Face Planning",
+            "Detects steep elevation gradients",
+            "River Flow Planner",
+            "Traces natural downhill water courses",
+            "Road & Path Polyline Planner",
+            "Draws continuous road strokes",
+            "Wall & Palisade Planner",
+            "Places straight walls, corner segments",
+            "Hydraulic & Thermal Erosion in Rectangle",
+            "Simulates rainfall droplet runoff",
+            "Apply to map",
+            "needs the original transition tiles",
+            "Min Slope Degrees:",
+            "Min Elevation Delta:",
+            "Blend scree at cliff foot:",
+            "Start Coordinate (X, Y):",
+            "End Coordinate (X, Y):",
+            "Water Texture:",
+            "Riverbed:",
+            "Road Texture:",
+            "Fortification Style:",
+            "Towers on Corners/Intervals:",
+            "Gates on Road Intersections:",
+            "Waypoints (One X,Y per line):",
+            "Corner 1 (X, Y):",
+            "Corner 2 (X, Y):",
+            "Droplet Count:",
+            "Max Lifetime:",
+            "Inertia:",
+            "Gravity:",
+            "Erosion Rate:",
+            "Deposition Rate:",
+            "Erosion Radius:",
+            "Random Seed:",
+            "Talus Angle:",
+            "Iterations:",
+            "Material id:",
+            "Road width (tiles):",
+            "Auto bridge transitions:",
+            "Apply region",
+            "Drag a rectangle on the 2D map",
+        ];
+
+        let ctx = egui::Context::default();
+        let heights = vec![30u8; 33 * 33];
+        let cx = LandscapeContext::plain(33, Some(&heights));
+
+        for tab in tabs {
+            let mut ui = LandscapeUi::default();
+            ui.open = true;
+            ui.english = false;
+            ui.current_tab = tab;
+
+            // egui windows measure on first frame and paint on subsequent frames
+            let _ = ctx.run(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 900.0))),
+                    ..Default::default()
+                },
+                |ctx| {
+                    ui.show_without_ambience(ctx, &cx);
+                },
+            );
+
+            let output = ctx.run(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 900.0))),
+                    ..Default::default()
+                },
+                |ctx| {
+                    ui.show_without_ambience(ctx, &cx);
+                },
+            );
+
+            let mut texts = Vec::new();
+            for shape in &output.shapes {
+                collect_shape_texts(&shape.shape, &mut texts);
+            }
+            let all_text = texts.join(" ");
+
+            // Assert Chinese header is present
+            assert!(all_text.contains("地貌與防禦工事工作室"), "tab {:?} missing Chinese window title", tab);
+
+            // Assert no untranslated literals remain in rendered UI
+            for &forbidden in &english_literals_to_forbid {
+                assert!(
+                    !all_text.contains(forbidden),
+                    "Tab {:?} rendered untranslated literal: '{}'",
+                    tab,
+                    forbidden
+                );
+            }
+        }
     }
 }

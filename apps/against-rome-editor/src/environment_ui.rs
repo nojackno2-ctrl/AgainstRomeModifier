@@ -1078,20 +1078,20 @@ impl EnvironmentUi {
         }
 
         let mut is_open = self.open;
-        egui::Window::new("Environment & Settlement Studio")
+        egui::Window::new(tl(self.english, "環境與聚落工作室", "Environment & Settlement Studio"))
             .open(&mut is_open)
             .min_size(Vec2::new(740.0, 540.0))
             .show(ctx, |ui| {
                 ui.set_enabled(!self.has_modal());
                 ui.horizontal(|ui| {
-                    ui.selectable_value(&mut self.current_tab, EnvironmentTab::FloraScatter, "Flora Scatter");
-                    ui.selectable_value(&mut self.current_tab, EnvironmentTab::NeutralLairs, "Neutral Lairs");
+                    ui.selectable_value(&mut self.current_tab, EnvironmentTab::FloraScatter, tl(self.english, "植物散布", "Flora Scatter"));
+                    ui.selectable_value(&mut self.current_tab, EnvironmentTab::NeutralLairs, tl(self.english, "中立巢穴", "Neutral Lairs"));
                     ui.selectable_value(
                         &mut self.current_tab,
                         EnvironmentTab::SettlementGenerator,
-                        "Settlement Generator",
+                        tl(self.english, "聚落生成器", "Settlement Generator"),
                     );
-                    ui.selectable_value(&mut self.current_tab, EnvironmentTab::Layouts, "Layouts (.arm-layout.json)");
+                    ui.selectable_value(&mut self.current_tab, EnvironmentTab::Layouts, tl(self.english, "配置範本 (.arm-layout.json)", "Layouts (.arm-layout.json)"));
                 });
                 ui.separator();
 
@@ -1163,64 +1163,82 @@ impl EnvironmentUi {
     }
 
     fn render_flora_tab(&mut self, ui: &mut egui::Ui, dimension: usize, heights: Option<&[u8]>, water_level: f32) {
-        ui.heading("Flora & Ecology Auto-Scatter");
-        ui.label("Generates organic nature foliage and rock formations based on Perlin hydrology and biome profiles.");
+        ui.heading(tl(self.english, "植物與生態自動散布", "Flora & Ecology Auto-Scatter"));
+        ui.label(tl(
+            self.english,
+            "依據 Perlin 水文與生物群落設定檔自動生成有機植被與岩石結構。",
+            "Generates organic nature foliage and rock formations based on Perlin hydrology and biome profiles.",
+        ));
 
         ui.add_space(6.0);
         egui::Grid::new("flora_settings").num_columns(2).spacing([12.0, 6.0]).show(ui, |ui| {
-            ui.label("Biome Ecology:");
+            ui.label(tl(self.english, "生物群落生態：", "Biome Ecology:"));
+            let biome_label = match (self.selected_biome, self.english) {
+                (BiomeType::GermanicForest, false) => "日耳曼森林",
+                (BiomeType::GermanicForest, true) => "Germanic Forest",
+                (BiomeType::DanubeBroadleaf, false) => "多瑙河闊葉林",
+                (BiomeType::DanubeBroadleaf, true) => "Danube Broadleaf",
+                (BiomeType::ItalianHills, false) => "義大利丘陵",
+                (BiomeType::ItalianHills, true) => "Italian Hills",
+                (BiomeType::BritishMarsh, false) => "不列顛沼澤",
+                (BiomeType::BritishMarsh, true) => "British Marsh",
+            };
             egui::ComboBox::from_id_source("biome_select")
-                .selected_text(format!("{:?}", self.selected_biome))
+                .selected_text(biome_label)
                 .show_ui(ui, |ui| {
-                    ui.selectable_value(&mut self.selected_biome, BiomeType::GermanicForest, "Germanic Forest");
-                    ui.selectable_value(&mut self.selected_biome, BiomeType::DanubeBroadleaf, "Danube Broadleaf");
-                    ui.selectable_value(&mut self.selected_biome, BiomeType::ItalianHills, "Italian Hills");
-                    ui.selectable_value(&mut self.selected_biome, BiomeType::BritishMarsh, "British Marsh");
+                    ui.selectable_value(&mut self.selected_biome, BiomeType::GermanicForest, tl(self.english, "日耳曼森林", "Germanic Forest"));
+                    ui.selectable_value(&mut self.selected_biome, BiomeType::DanubeBroadleaf, tl(self.english, "多瑙河闊葉林", "Danube Broadleaf"));
+                    ui.selectable_value(&mut self.selected_biome, BiomeType::ItalianHills, tl(self.english, "義大利丘陵", "Italian Hills"));
+                    ui.selectable_value(&mut self.selected_biome, BiomeType::BritishMarsh, tl(self.english, "不列顛沼澤", "British Marsh"));
                 });
             ui.end_row();
 
-            ui.label("Random Seed:");
+            ui.label(tl(self.english, "隨機種子碼：", "Random Seed:"));
             ui.add(egui::DragValue::new(&mut self.flora_seed));
             ui.end_row();
 
-            ui.label("Density Multiplier:");
+            ui.label(tl(self.english, "密度倍率：", "Density Multiplier:"));
             ui.add(egui::Slider::new(&mut self.flora_density, 0.1..=3.0).text("x"));
             ui.end_row();
 
-            ui.label("Forest Coverage:");
+            ui.label(tl(self.english, "森林覆蓋率：", "Forest Coverage:"));
             ui.add(egui::Slider::new(&mut self.forest_coverage, 0.1..=2.0).text("ratio"));
             ui.end_row();
 
-            ui.label("Forest Patch Scale:");
+            ui.label(tl(self.english, "林區區塊尺度：", "Forest Patch Scale:"));
             ui.add(egui::Slider::new(&mut self.forest_patch_scale, 0.01..=0.1));
             ui.end_row();
 
-            ui.label("Jitter Amount:");
+            ui.label(tl(self.english, "抖動散布量：", "Jitter Amount:"));
             ui.add(egui::Slider::new(&mut self.flora_jitter, 0.0..=1.0));
             ui.end_row();
 
-            ui.label("Avoid Roads & Buildings:");
+            ui.label(tl(self.english, "避開道路與建築：", "Avoid Roads & Buildings:"));
             ui.checkbox(&mut self.avoid_roads, "");
             ui.end_row();
 
-            ui.label("Object templates (id,name):");
+            ui.label(tl(self.english, "物件範本 (id,name)：", "Object templates (id,name):"));
             ui.add(egui::TextEdit::multiline(&mut self.flora_templates_text).desired_rows(4));
             ui.end_row();
         });
 
         ui.add_space(8.0);
         ui.horizontal(|ui| {
-            if ui.button("Generate Flora Scatter").clicked() {
+            if ui.button(tl(self.english, "產生植物散布", "Generate Flora Scatter")).clicked() {
                 self.generate_flora_scatter(dimension, heights, water_level);
             }
-            if ui.button("Clear Generated Flora").clicked() {
+            if ui.button(tl(self.english, "清除已產生的植物", "Clear Generated Flora")).clicked() {
                 self.generated_flora.clear();
-                self.status_message = "Cleared generated flora.".to_string();
+                self.status_message = tl(self.english, "已清除產生的植物。", "Cleared generated flora.").to_string();
                 self.status_is_error = false;
             }
             if ui
-                .add_enabled(!self.generated_flora.is_empty(), egui::Button::new("Apply to Objects session"))
-                .on_hover_text("Clones existing map objects of each template type; load DATA in the Objects panel first.")
+                .add_enabled(!self.generated_flora.is_empty(), egui::Button::new(tl(self.english, "套用至物件工作階段", "Apply to Objects session")))
+                .on_hover_text(tl(
+                    self.english,
+                    "以各範本類型複製地圖既有物件；請先在物件面板載入 DATA。",
+                    "Clones existing map objects of each template type; load DATA in the Objects panel first.",
+                ))
                 .clicked()
             {
                 self.apply_requested = Some(EnvApply::Flora);
@@ -1228,24 +1246,33 @@ impl EnvironmentUi {
         });
 
         ui.separator();
-        ui.label(format!("Generated Flora Count: {}", self.generated_flora.len()));
+        ui.label(format!("{}: {}", tl(self.english, "已產生植物數量", "Generated Flora Count"), self.generated_flora.len()));
         egui::ScrollArea::vertical().max_height(200.0).show(ui, |ui| {
             for (i, item) in self.generated_flora.iter().take(50).enumerate() {
                 ui.label(format!("{}. {} (Pos: {:.1}, {:.1}, {:.1})", i + 1, item.name, item.x, item.y, item.z));
             }
             if self.generated_flora.len() > 50 {
-                ui.label(format!("... and {} more flora objects.", self.generated_flora.len() - 50));
+                ui.label(format!(
+                    "{} {} {}",
+                    tl(self.english, "... 以及另外", "... and"),
+                    self.generated_flora.len() - 50,
+                    tl(self.english, "個植物物件。", "more flora objects.")
+                ));
             }
         });
     }
 
     fn render_lairs_tab(&mut self, ui: &mut egui::Ui) {
-        ui.heading("Neutral Wildlife & Lair Setup");
-        ui.label("The current catalog contains observed neutral animal types. Add matching id,name templates in the Flora tab, then clone them into the Objects session. Unverified lair buildings and spawn rules are not inferred.");
+        ui.heading(tl(self.english, "中立野生動物與巢穴配置", "Neutral Wildlife & Lair Setup"));
+        ui.label(tl(
+            self.english,
+            "目前目錄包含已觀察到的中立動物類型。請在植物分頁新增相應的 id,name 範本，然後複製至物件工作階段。未驗證的巢穴建築與生成規則不作推測。",
+            "The current catalog contains observed neutral animal types. Add matching id,name templates in the Flora tab, then clone them into the Objects session. Unverified lair buildings and spawn rules are not inferred.",
+        ));
 
         ui.add_space(6.0);
         egui::Grid::new("lair_settings").num_columns(2).spacing([12.0, 6.0]).show(ui, |ui| {
-            ui.label("Lair Definition:");
+            ui.label(tl(self.english, "巢穴定義：", "Lair Definition:"));
             egui::ComboBox::from_id_source("lair_def_select")
                 .selected_text(&self.selected_lair_id)
                 .show_ui(ui, |ui| {
@@ -1259,20 +1286,20 @@ impl EnvironmentUi {
                 });
             ui.end_row();
 
-            ui.label("World Location X / Z:");
+            ui.label(tl(self.english, "世界座標 X / Z：", "World Location X / Z:"));
             ui.horizontal(|ui| {
                 ui.add(egui::DragValue::new(&mut self.lair_world_x).clamp_range(0.0..=16383.0).prefix("X: "));
                 ui.add(egui::DragValue::new(&mut self.lair_world_z).clamp_range(0.0..=16383.0).prefix("Z: "));
             });
             ui.end_row();
 
-            ui.label("Rotation (deg):");
+            ui.label(tl(self.english, "旋轉角度（度）：", "Rotation (deg):"));
             ui.add(egui::DragValue::new(&mut self.lair_rotation_deg).clamp_range(0.0..=359.0));
             ui.end_row();
         });
 
         ui.add_space(8.0);
-        if ui.button("Add Neutral Lair").clicked() {
+        if ui.button(tl(self.english, "新增中立巢穴", "Add Neutral Lair")).clicked() {
             if let Err(e) = self.add_neutral_lair() {
                 self.status_message = format!("Failed to add neutral lair: {e}");
                 self.status_is_error = true;
@@ -1283,11 +1310,13 @@ impl EnvironmentUi {
         if ui
             .add_enabled(
                 !self.generated_lairs.is_empty(),
-                egui::Button::new("Apply Animals to Objects session"),
+                egui::Button::new(tl(self.english, "套用動物至物件工作階段", "Apply Animals to Objects session")),
             )
-            .on_hover_text(
+            .on_hover_text(tl(
+                self.english,
+                "需要每種動物類型在載入的地圖中以可複製範本形式存在。",
                 "Requires each animal type to exist in the loaded map as a cloneable template.",
-            )
+            ))
             .clicked()
         {
             self.apply_requested = Some(EnvApply::Lairs);
@@ -1295,13 +1324,19 @@ impl EnvironmentUi {
         if ui
             .add_enabled(
                 !self.generated_lair_events.is_empty(),
-                egui::Button::new("Apply Lair Events"),
+                egui::Button::new(tl(self.english, "套用巢穴事件", "Apply Lair Events")),
             )
             .clicked()
         {
             self.request_lair_events_apply();
         }
-        ui.label(format!("Placed Lairs: {} (Scenario Events: {})", self.generated_lairs.len(), self.generated_lair_events.len()));
+        ui.label(format!(
+            "{}: {} ({}: {})",
+            tl(self.english, "已放置巢穴", "Placed Lairs"),
+            self.generated_lairs.len(),
+            tl(self.english, "劇本事件", "Scenario Events"),
+            self.generated_lair_events.len()
+        ));
         if ui
             .add_enabled(!self.generated_lairs.is_empty() || !self.generated_lair_events.is_empty() || !self.lair_event_counts.is_empty(), egui::Button::new(tl(self.english, "清除所有巢穴", "Clear Lairs")))
             .clicked()
@@ -1321,7 +1356,7 @@ impl EnvironmentUi {
                         lair.rotation_deg,
                         self.lair_event_counts.get(i).copied().unwrap_or(0)
                     ));
-                    if ui.small_button("Remove").clicked() {
+                    if ui.small_button(tl(self.english, "移除", "Remove")).clicked() {
                         remove = Some(i);
                     }
                 });
@@ -1332,7 +1367,7 @@ impl EnvironmentUi {
         }
         if !self.generated_lair_events.is_empty() {
             ui.separator();
-            ui.label("Scenario event preview:");
+            ui.label(tl(self.english, "劇本事件預覽：", "Scenario event preview:"));
             egui::ScrollArea::vertical().id_source("lair_event_preview").max_height(120.0).show(ui, |ui| {
                 for e in &self.generated_lair_events {
                     ui.label(format!(
@@ -1353,40 +1388,44 @@ impl EnvironmentUi {
         water_level: f32,
         height_step: f32,
     ) {
-        ui.heading("One-Click Settlement / Base Generator");
-        ui.label("Instantly balances starting town centers, barracks, resource depots, and surrounding forests/stone.");
+        ui.heading(tl(self.english, "一鍵聚落 / 基地生成器", "One-Click Settlement / Base Generator"));
+        ui.label(tl(
+            self.english,
+            "即時平衡起始市中心、兵營、資源堆與周圍森林／採石場。",
+            "Instantly balances starting town centers, barracks, resource depots, and surrounding forests/stone.",
+        ));
 
         ui.add_space(6.0);
         egui::Grid::new("settlement_settings").num_columns(2).spacing([12.0, 6.0]).show(ui, |ui| {
-            ui.label("Player Count (2..8):");
+            ui.label(tl(self.english, "玩家人數 (2..8)：", "Player Count (2..8):"));
             ui.add(egui::Slider::new(&mut self.settlement_players, 2..=8));
             ui.end_row();
 
-            ui.label("Tribe Architecture:");
+            ui.label(tl(self.english, "部族建築風格：", "Tribe Architecture:"));
             egui::ComboBox::from_id_source("settlement_tribe_select")
                 .selected_text(format!("{:?}", self.settlement_tribe))
                 .show_ui(ui, |ui| {
-                    ui.selectable_value(&mut self.settlement_tribe, SettlementTribe::Germanic, "Germanic (日耳曼)");
-                    ui.selectable_value(&mut self.settlement_tribe, SettlementTribe::Roman, "Roman (羅馬)");
-                    ui.selectable_value(&mut self.settlement_tribe, SettlementTribe::Celtic, "Celtic (塞爾特)");
-                    ui.selectable_value(&mut self.settlement_tribe, SettlementTribe::Hun, "Hun (匈人)");
+                    ui.selectable_value(&mut self.settlement_tribe, SettlementTribe::Germanic, tl(self.english, "日耳曼", "Germanic"));
+                    ui.selectable_value(&mut self.settlement_tribe, SettlementTribe::Roman, tl(self.english, "羅馬", "Roman"));
+                    ui.selectable_value(&mut self.settlement_tribe, SettlementTribe::Celtic, tl(self.english, "塞爾特", "Celtic"));
+                    ui.selectable_value(&mut self.settlement_tribe, SettlementTribe::Hun, tl(self.english, "匈人", "Hun"));
                 });
             ui.end_row();
 
-            ui.label("Layout Symmetry:");
+            ui.label(tl(self.english, "配置對稱性：", "Layout Symmetry:"));
             egui::ComboBox::from_id_source("settlement_symmetry_select")
                 .selected_text(format!("{:?}", self.settlement_symmetry))
                 .show_ui(ui, |ui| {
-                    ui.selectable_value(&mut self.settlement_symmetry, SymmetryMode::RotationalSymmetry, "Rotational (環形對稱)");
-                    ui.selectable_value(&mut self.settlement_symmetry, SymmetryMode::CentralSymmetry, "Central (中心點對稱)");
-                    ui.selectable_value(&mut self.settlement_symmetry, SymmetryMode::TopologicalEquidistant, "Topological equidistant (拓撲等距)");
+                    ui.selectable_value(&mut self.settlement_symmetry, SymmetryMode::RotationalSymmetry, tl(self.english, "環形對稱", "Rotational"));
+                    ui.selectable_value(&mut self.settlement_symmetry, SymmetryMode::CentralSymmetry, tl(self.english, "中心點對稱", "Central"));
+                    ui.selectable_value(&mut self.settlement_symmetry, SymmetryMode::TopologicalEquidistant, tl(self.english, "拓撲等距", "Topological equidistant"));
                 });
             ui.end_row();
 
-            ui.label("Seed:");
+            ui.label(tl(self.english, "種子碼：", "Seed:"));
             ui.horizontal(|ui| {
                 ui.add(egui::DragValue::new(&mut self.settlement_seed));
-                if ui.button("Randomize").clicked() {
+                if ui.button(tl(self.english, "隨機抽樣", "Randomize")).clicked() {
                     let nanos = std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
                         .map_or(1, |d| d.subsec_nanos());
@@ -1395,11 +1434,11 @@ impl EnvironmentUi {
             });
             ui.end_row();
 
-            ui.label("Include Nature Objects:");
-            ui.checkbox(&mut self.settlement_include_nature, "Generate Forests & Stone Quarries");
+            ui.label(tl(self.english, "包含自然物件：", "Include Nature Objects:"));
+            ui.checkbox(&mut self.settlement_include_nature, tl(self.english, "產生森林與採石場露頭", "Generate Forests & Stone Quarries"));
             ui.end_row();
 
-            ui.label("Spawn Radius Ratio:");
+            ui.label(tl(self.english, "生成半徑比例：", "Spawn Radius Ratio:"));
             ui.add(egui::Slider::new(&mut self.settlement_spawn_radius, 0.4..=0.75));
             ui.end_row();
         });
@@ -1590,23 +1629,37 @@ impl EnvironmentUi {
     }
 
     fn render_layouts_tab(&mut self, ui: &mut egui::Ui) {
-        ui.heading("Layouts / 配置");
-        ui.label("Forest (nature) layouts capture landscape objects in a tile rectangle; settlement layouts are saved from the Objects panel (selection) or the Settlement Generator.");
+        ui.heading(tl(self.english, "配置", "Layouts"));
+        ui.label(tl(
+            self.english,
+            "森林（自然）配置會捕捉圖塊矩形內的景觀物件；聚落配置則可由物件面板（選取）或聚落生成器儲存。",
+            "Forest (nature) layouts capture landscape objects in a tile rectangle; settlement layouts are saved from the Objects panel (selection) or the Settlement Generator.",
+        ));
         ui.horizontal(|ui| {
-            for (index, name) in ["left", "top", "right", "bottom"].iter().enumerate() {
+            let labels = [
+                tl(self.english, "左", "left"),
+                tl(self.english, "上", "top"),
+                tl(self.english, "右", "right"),
+                tl(self.english, "下", "bottom"),
+            ];
+            for (index, name) in labels.iter().enumerate() {
                 ui.label(*name);
                 ui.add(egui::TextEdit::singleline(&mut self.layout_rect[index]).desired_width(48.0));
             }
         });
         ui.horizontal(|ui| {
-            if ui.button("Save forest region... / 保存森林區域").clicked() {
+            if ui.button(tl(self.english, "保存森林區域...", "Save forest region...")).clicked() {
                 self.request_nature_layout_export();
             }
-            if ui.button("Load and apply layout... / 載入並套用配置").clicked() {
+            if ui.button(tl(self.english, "載入並套用配置...", "Load and apply layout...")).clicked() {
                 self.request_layout_import();
             }
         });
-        ui.small("Apply opens the Objects panel's Apply layout dialog (anchor tile, rotation, team override); one Undo step.");
+        ui.small(tl(
+            self.english,
+            "「套用」會開啟物件面板的套用配置對話框（錨點圖塊、旋轉、隊伍覆蓋）；佔一步復原步驟。",
+            "Apply opens the Objects panel's Apply layout dialog (anchor tile, rotation, team override); one Undo step.",
+        ));
     }
 }
 
@@ -2155,5 +2208,122 @@ mod small_ux_tests {
         ui.reset_session();
         assert!(ui.last_distribution.is_none());
         assert!(ui.focus_base_request.is_none());
+    }
+
+    fn collect_shape_texts(shape: &egui::epaint::Shape, out: &mut Vec<String>) {
+        match shape {
+            egui::epaint::Shape::Text(t) => out.push(t.galley.text().to_string()),
+            egui::epaint::Shape::Vec(shapes) => {
+                for s in shapes {
+                    collect_shape_texts(s, out);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    #[test]
+    fn test_environment_ui_chinese_localization_renders_no_untranslated_literals() {
+        let tabs = [
+            EnvironmentTab::FloraScatter,
+            EnvironmentTab::NeutralLairs,
+            EnvironmentTab::SettlementGenerator,
+            EnvironmentTab::Layouts,
+        ];
+        let english_literals_to_forbid = [
+            "Flora & Ecology Auto-Scatter",
+            "Neutral Wildlife & Lair Setup",
+            "One-Click Settlement / Base Generator",
+            "Environment & Settlement Studio",
+            "Generates organic nature foliage",
+            "Biome Ecology:",
+            "Random Seed:",
+            "Density Multiplier:",
+            "Forest Coverage:",
+            "Forest Patch Scale:",
+            "Jitter Amount:",
+            "Avoid Roads & Buildings:",
+            "Object templates (id,name):",
+            "Generate Flora Scatter",
+            "Clear Generated Flora",
+            "Lair Definition:",
+            "World Location X / Z:",
+            "Rotation (deg):",
+            "Add Neutral Lair",
+            "Apply Animals to Objects session",
+            "Apply Lair Events",
+            "Player Count (2..8):",
+            "Tribe Architecture:",
+            "Layout Symmetry:",
+            "Generate Forests & Stone Quarries",
+            "Spawn Radius Ratio:",
+            "Save forest region... / 保存森林區域",
+            "Load and apply layout... / 載入並套用配置",
+        ];
+
+        let ctx = egui::Context::default();
+        let heights = vec![20u8; 129 * 129];
+        let collision = vec![0u8; 128 * 128];
+
+        for tab in tabs {
+            let mut ui = EnvironmentUi::default();
+            ui.open = true;
+            ui.english = false;
+            ui.current_tab = tab;
+
+            // egui windows measure on first frame and paint on subsequent frames
+            let _ = ctx.run(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 900.0))),
+                    ..Default::default()
+                },
+                |ctx| {
+                    ui.show(
+                        ctx,
+                        129,
+                        Some(&heights),
+                        Some((128, &collision)),
+                        0.0,
+                        4.0,
+                    );
+                },
+            );
+
+            let output = ctx.run(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 900.0))),
+                    ..Default::default()
+                },
+                |ctx| {
+                    ui.show(
+                        ctx,
+                        129,
+                        Some(&heights),
+                        Some((128, &collision)),
+                        0.0,
+                        4.0,
+                    );
+                },
+            );
+
+            let mut texts = Vec::new();
+            for shape in &output.shapes {
+                collect_shape_texts(&shape.shape, &mut texts);
+            }
+            let all_text = texts.join(" ");
+
+            // Assert Chinese header is present
+            assert!(all_text.contains("環境與聚落工作室"), "tab {:?} missing Chinese window title", tab);
+
+            // Assert no untranslated literals remain in rendered UI
+            for &forbidden in &english_literals_to_forbid {
+                assert!(
+                    !all_text.contains(forbidden),
+                    "Tab {:?} rendered untranslated literal: '{}'",
+                    tab,
+                    forbidden
+                );
+            }
+        }
     }
 }

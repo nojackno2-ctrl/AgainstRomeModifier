@@ -428,3 +428,9 @@
 - 技術文件面板新增「搜尋 / Search」：不分英文大小寫，顯示符合行及原始行號；清除搜尋恢復全文，切換語系搜尋該語系文件，無結果會提示。
 - 「複製顯示文字 / Copy displayed text」將目前全文或搜尋結果複製至剪貼簿，保留 Markdown；方便整理設計參考，不寫入檔案或修改地圖與復原紀錄。
 - 重開編輯器時，修改器面板也會正確還原開啟狀態。損毀或未來版本面板設定只顯示警告並繼續啟動，保留原檔。
+
+### 地貌、環境與地圖工作室全域雙語在地化（批次 #19） / Landscape, Environment, and Maps Studios Full Bilingual Localization
+
+- **地貌工作室全域雙語在地化 (Landscape Studio Bilingual Localization)**：地貌與防禦工事工作室 (Landscape & Fortification Studio) 之懸崖偵測、河流規劃、道路折線、城牆配置、水力／熱力侵蝕及區域工具共 6 大分頁的所有標籤、數值滑桿提示、下拉選單、套用與捨棄對話框均全面支援正體中文與英文雙語切換。
+- **環境與聚落工作室全域雙語在地化 (Environment Studio Bilingual Localization)**：植物與生態自動散布、中立野生動物與巢穴、一鍵聚落生成器及配置範本 (.arm-layout.json) 分頁之純英文文字均完成雙語在地化，包含生物群落選擇、巢穴世界座標、種子碼抽樣與配置區域輸入說明。
+- **地圖目錄與診斷工作室全域雙語在地化 (Maps Studio Bilingual Localization)**：地圖目錄、地圖複製與安全刪除、空白場景建置、設計驗證器、連通與通行診斷及存檔預檢分頁全面支援正體中文與英文切換，維持底層地圖代碼與持久化檔案格式不變。

@@ -1542,6 +1542,7 @@ impl EditorApp {
             let mut cb = |p: PathBuf| {
                 load_req = Some(p);
             };
+            self.maps.english = self.lang() == AppLanguage::English;
             self.maps.show(ctx, &cx, Some(&mut cb));
         }
         if let Some(p) = load_req {
@@ -1587,6 +1588,7 @@ impl EditorApp {
             textures,
             texture_names,
         };
+        self.landscape.english = self.lang() == AppLanguage::English;
         self.landscape.show(ctx, &lcx, Some(&mut self.ambience));
         if let Some(plan) = self.landscape.take_erosion_apply_request() {
             self.handle_erosion_apply(plan);

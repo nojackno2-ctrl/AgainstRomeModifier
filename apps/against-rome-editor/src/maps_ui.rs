@@ -85,6 +85,7 @@ impl BlankMapBuildIntent {
 
 pub struct MapsUi {
     pub open: bool,
+    pub english: bool,
     pub current_tab: MapsTab,
     pub game_path_input: String,
     /// Injectable for UI tests; the desktop default opens the native folder picker.
@@ -129,10 +130,19 @@ pub struct MapsUi {
     pub dirty: bool,
 }
 
+fn tl<'a>(english: bool, zh: &'a str, en: &'a str) -> &'a str {
+    if english {
+        en
+    } else {
+        zh
+    }
+}
+
 impl Default for MapsUi {
     fn default() -> Self {
         Self {
             open: false,
+            english: false,
             current_tab: MapsTab::Catalog,
             game_path_input: String::new(),
             game_folder_picker: None,
@@ -552,17 +562,17 @@ impl MapsUi {
         }
 
         let mut is_open = self.open;
-        egui::Window::new("Maps & Diagnostics Studio")
+        egui::Window::new(tl(self.english, "地圖目錄與診斷工作室", "Maps & Diagnostics Studio"))
             .open(&mut is_open)
             .min_size(Vec2::new(720.0, 520.0))
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
-                    ui.selectable_value(&mut self.current_tab, MapsTab::Catalog, "Map Catalog");
-                    ui.selectable_value(&mut self.current_tab, MapsTab::ClonerDeleter, "Clone / Delete");
-                    ui.selectable_value(&mut self.current_tab, MapsTab::NewBlankMap, "Empty Scene (Exp.) / 空白場景（實驗）");
-                    ui.selectable_value(&mut self.current_tab, MapsTab::DesignValidator, "Design Validator");
-                    ui.selectable_value(&mut self.current_tab, MapsTab::Diagnostics, "Diagnostics");
-                    ui.selectable_value(&mut self.current_tab, MapsTab::Preflight, "Save Preflight");
+                    ui.selectable_value(&mut self.current_tab, MapsTab::Catalog, tl(self.english, "地圖目錄", "Map Catalog"));
+                    ui.selectable_value(&mut self.current_tab, MapsTab::ClonerDeleter, tl(self.english, "複製 / 刪除", "Clone / Delete"));
+                    ui.selectable_value(&mut self.current_tab, MapsTab::NewBlankMap, tl(self.english, "空白場景（實驗）", "Empty Scene (Exp.)"));
+                    ui.selectable_value(&mut self.current_tab, MapsTab::DesignValidator, tl(self.english, "設計驗證器", "Design Validator"));
+                    ui.selectable_value(&mut self.current_tab, MapsTab::Diagnostics, tl(self.english, "地圖診斷", "Diagnostics"));
+                    ui.selectable_value(&mut self.current_tab, MapsTab::Preflight, tl(self.english, "存檔預檢", "Save Preflight"));
                 });
                 ui.separator();
 
@@ -597,24 +607,32 @@ impl MapsUi {
             let mut confirm = false;
             let action_copy = pending.clone();
 
-            egui::Window::new("Confirm Action")
+            egui::Window::new(tl(self.english, "確認操作", "Confirm Action"))
                 .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
                 .collapsible(false)
                 .resizable(false)
                 .show(ctx, |ui| {
                     match action_copy {
                         MapsPendingAction::DeleteCustom(slot) => {
-                            ui.label(format!("Are you sure you want to permanently delete custom map ENDL_{:03}?", slot));
+                            ui.label(format!(
+                                "{} ENDL_{:03}?",
+                                tl(self.english, "確定要永久刪除自訂地圖", "Are you sure you want to permanently delete custom map"),
+                                slot
+                            ));
                         }
                         MapsPendingAction::DiscardAndClose => {
-                            ui.label("You have uncommitted map changes. Discard and close?");
+                            ui.label(tl(
+                                self.english,
+                                "您有未提交的地圖變更。確定捨棄並關閉嗎？",
+                                "You have uncommitted map changes. Discard and close?",
+                            ));
                         }
                     }
                     ui.horizontal(|ui| {
-                        if ui.button("Confirm").clicked() {
+                        if ui.button(tl(self.english, "確認", "Confirm")).clicked() {
                             confirm = true;
                         }
-                        if ui.button("Cancel").clicked() {
+                        if ui.button(tl(self.english, "取消", "Cancel")).clicked() {
                             close_modal = true;
                         }
                     });
@@ -642,12 +660,12 @@ impl MapsUi {
 
     fn render_catalog_tab(&mut self, ui: &mut egui::Ui, on_load_requested: &mut Option<&mut dyn FnMut(PathBuf)>) {
         ui.horizontal(|ui| {
-            ui.label("Game Root Path:");
+            ui.label(tl(self.english, "遊戲主目錄路徑：", "Game Root Path:"));
             ui.text_edit_singleline(&mut self.game_path_input);
-            if ui.button("Browse... / 瀏覽").clicked() {
+            if ui.button(tl(self.english, "瀏覽...", "Browse...")).clicked() {
                 self.browse_game_folder();
             }
-            if ui.button("Refresh Catalog").clicked() {
+            if ui.button(tl(self.english, "重新整理目錄", "Refresh Catalog")).clicked() {
                 self.refresh_catalog();
             }
         });
@@ -655,18 +673,18 @@ impl MapsUi {
         ui.separator();
 
         egui::ScrollArea::vertical().max_height(340.0).show(ui, |ui| {
-            ui.heading("Endless Maps");
+            ui.heading(tl(self.english, "無盡模式地圖", "Endless Maps"));
             if self.endless_maps.is_empty() {
-                ui.label("No endless maps found or catalog not yet scanned.");
+                ui.label(tl(self.english, "找不到無盡模式地圖或目錄尚未掃描。", "No endless maps found or catalog not yet scanned."));
             } else {
                 let maps = self.endless_maps.clone();
                 for map in &maps {
                     let is_selected = self.selected_map_id.as_deref() == Some(&map.id());
                     let label = format!(
                         "[{}] {} ({}) - {}",
-                        if map.is_custom { "Custom" } else { "Retail" },
+                        if map.is_custom { tl(self.english, "自訂", "Custom") } else { tl(self.english, "原版", "Retail") },
                         map.id(),
-                        map.display_name.as_deref().unwrap_or("Unnamed"),
+                        map.display_name.as_deref().unwrap_or_else(|| tl(self.english, "未命名", "Unnamed")),
                         map.directory_path.display()
                     );
                     if ui.selectable_label(is_selected, label).clicked() {
@@ -676,15 +694,15 @@ impl MapsUi {
             }
 
             ui.separator();
-            ui.heading("General Game Maps");
+            ui.heading(tl(self.english, "一般戰役／任務地圖", "General Game Maps"));
             if self.general_maps.is_empty() {
-                ui.label("No general maps catalogued.");
+                ui.label(tl(self.english, "未編錄一般地圖。", "No general maps catalogued."));
             } else {
                 for map in &self.general_maps {
                     let is_selected = self.selected_map_id.as_deref() == Some(&map.id);
                     let label = format!(
                         "[{}] {} - {}",
-                        if map.is_custom { "Custom" } else { "Retail" },
+                        if map.is_custom { tl(self.english, "自訂", "Custom") } else { tl(self.english, "原版", "Retail") },
                         map.id,
                         map.directory_path.display()
                     );
@@ -703,27 +721,29 @@ impl MapsUi {
         let mut copy_requested = false;
         ui.horizontal(|ui| {
             if let Some(path) = &self.selected_map_path {
-                ui.label(format!("Selected: {}", path.display()));
-                if ui.button("Load Map into Editor").clicked() {
+                ui.label(format!("{}: {}", tl(self.english, "已選取", "Selected"), path.display()));
+                if ui.button(tl(self.english, "載入地圖至編輯器", "Load Map into Editor")).clicked() {
                     if let Some(cb) = on_load_requested.as_deref_mut() {
                         cb(path.clone());
                     }
                 }
             } else {
-                ui.label("Select a map from the catalog to inspect or load.");
+                ui.label(tl(self.english, "請從目錄中選取地圖以檢查或載入。", "Select a map from the catalog to inspect or load."));
             }
         });
         if let Some(id) = self.selected_map_id.clone() {
             if !self.selected_is_custom {
                 ui.horizontal(|ui| {
-                    ui.label("Retail maps are read-only. Copy to edit / 原版地圖唯讀；複製後可編輯:");
+                    ui.label(tl(self.english, "原版地圖唯讀；請複製為自製地圖後編輯：", "Retail maps are read-only. Copy to edit:"));
                     ui.text_edit_singleline(&mut self.clone_new_name);
                     let allowed = Self::can_clone_to_custom(&id, false);
                     if ui
-                        .add_enabled(allowed, egui::Button::new("Copy to Custom Map / 複製到自製地圖"))
-                        .on_disabled_hover_text(
-                            "Only Endless Mode (ENDL) maps can be copied. 只有無盡模式（ENDL）地圖能複製。",
-                        )
+                        .add_enabled(allowed, egui::Button::new(tl(self.english, "複製為自製地圖", "Copy to Custom Map")))
+                        .on_disabled_hover_text(tl(
+                            self.english,
+                            "只有無盡模式（ENDL）地圖能複製。",
+                            "Only Endless Mode (ENDL) maps can be copied.",
+                        ))
                         .clicked()
                     {
                         copy_requested = true;
@@ -748,25 +768,33 @@ impl MapsUi {
     }
 
     fn render_cloner_tab(&mut self, ui: &mut egui::Ui) {
-        ui.heading("Map Cloner & Safe Deleter");
-        ui.label("Duplicate any retail or custom map into an isolated custom slot (5..999).");
+        ui.heading(tl(self.english, "地圖複製器與安全刪除", "Map Cloner & Safe Deleter"));
+        ui.label(tl(
+            self.english,
+            "將任何原版或自訂地圖複製到獨立的自訂槽位 (5..999)。",
+            "Duplicate any retail or custom map into an isolated custom slot (5..999).",
+        ));
 
         ui.add_space(8.0);
         ui.horizontal(|ui| {
-            ui.label("Source Slot (ENDL_###):");
+            ui.label(tl(self.english, "來源槽位 (ENDL_###)：", "Source Slot (ENDL_###):"));
             ui.add(egui::DragValue::new(&mut self.clone_source_slot).clamp_range(0..=999));
         });
 
         ui.horizontal(|ui| {
-            ui.label("Target Slot: next free custom slot (assigned automatically, like the C# editor)");
+            ui.label(tl(
+                self.english,
+                "目標槽位：下一個可用的自訂槽位（如同 C# 編輯器自動指定）",
+                "Target Slot: next free custom slot (assigned automatically, like the C# editor)",
+            ));
         });
 
         ui.horizontal(|ui| {
-            ui.label("New Map Name:");
+            ui.label(tl(self.english, "新地圖名稱：", "New Map Name:"));
             ui.text_edit_singleline(&mut self.clone_new_name);
         });
 
-        if ui.button("Clone Map").clicked() {
+        if ui.button(tl(self.english, "複製地圖", "Clone Map")).clicked() {
             match self.execute_clone() {
                 Ok(_) => {}
                 Err(e) => {
@@ -777,8 +805,12 @@ impl MapsUi {
         }
 
         ui.separator();
-        ui.heading("Custom Map Deleter");
-        ui.label("Only custom maps (slots 5..999) can be deleted. Retail maps are strictly guarded.");
+        ui.heading(tl(self.english, "自訂地圖刪除器", "Custom Map Deleter"));
+        ui.label(tl(
+            self.english,
+            "僅自訂地圖（槽位 5..999）可刪除。原版地圖受嚴格保護。",
+            "Only custom maps (slots 5..999) can be deleted. Retail maps are strictly guarded.",
+        ));
 
         if let Some(slot) = self.selected_map_id.as_deref().and_then(|id| {
             if id.starts_with("ENDL_") {
@@ -788,14 +820,14 @@ impl MapsUi {
             }
         }) {
             if slot >= 5 && self.selected_is_custom {
-                if ui.button(format!("Delete Custom Map ENDL_{:03}", slot)).clicked() {
+                if ui.button(format!("{}: ENDL_{:03}", tl(self.english, "刪除自訂地圖", "Delete Custom Map"), slot)).clicked() {
                     self.pending_action = Some(MapsPendingAction::DeleteCustom(slot));
                 }
             } else {
-                ui.label("Current selected map is retail or non-custom: Deletion disabled.");
+                ui.label(tl(self.english, "目前選取的為原版或非自訂地圖：已停用刪除。", "Current selected map is retail or non-custom: Deletion disabled."));
             }
         } else {
-            ui.label("Select a custom map in the catalog to delete.");
+            ui.label(tl(self.english, "請在目錄中選取自訂地圖以進行刪除。", "Select a custom map in the catalog to delete."));
         }
     }
 
@@ -807,10 +839,14 @@ impl MapsUi {
     }
 
     fn render_blank_map_tab(&mut self, ui: &mut egui::Ui) {
-        ui.heading("Empty Scene (Exp.) / 空白場景（實驗）");
-        ui.label("根據規格建立全新平坦自訂地圖 (ENDL_005..ENDL_999)。自動繼承資產、重設池、清理快取並註冊清單。");
+        ui.heading(tl(self.english, "空白場景（實驗）", "Empty Scene (Exp.)"));
+        ui.label(tl(
+            self.english,
+            "根據規格建立全新平坦自訂地圖 (ENDL_005..ENDL_999)。自動繼承資產、重設池、清理快取並註冊清單。",
+            "Builds a clean flat custom map (ENDL_005..ENDL_999) from spec. Inherits assets, resets pools, clears cache and registers catalog.",
+        ));
         ui.label(Self::empty_scene_help());
-        ui.collapsing("清除／保留內容說明 (What is cleared / kept)", |ui| {
+        ui.collapsing(tl(self.english, "清除／保留內容說明", "What is cleared / kept"), |ui| {
             let source_id = format!("ENDL_{:03}", self.blank_source_slot);
             ui.label(BlankMapBuilder::describe(&source_id, false));
             ui.label(BlankMapBuilder::describe(&source_id, true));
@@ -818,57 +854,57 @@ impl MapsUi {
 
         ui.add_space(6.0);
         ui.horizontal(|ui| {
-            ui.label("遊戲目錄路徑 (Game Root):");
+            ui.label(tl(self.english, "遊戲主目錄路徑：", "Game Root Path:"));
             ui.text_edit_singleline(&mut self.game_path_input);
-            if ui.button("瀏覽遊戲資料夾 (Browse...)").clicked() {
+            if ui.button(tl(self.english, "瀏覽遊戲資料夾...", "Browse Game Folder...")).clicked() {
                 self.browse_game_folder();
             }
         });
 
         ui.horizontal(|ui| {
-            ui.label("來源模板槽位 (Source Slot):");
+            ui.label(tl(self.english, "來源模板槽位：", "Source Slot:"));
             ui.add(egui::DragValue::new(&mut self.blank_source_slot).clamp_range(0..=999).prefix("ENDL_"));
-            ui.label("(預設 ENDL_000 零售模板)");
+            ui.label(tl(self.english, "(預設 ENDL_000 零售模板)", "(default ENDL_000 retail template)"));
         });
 
         ui.horizontal(|ui| {
-            ui.label("目標地圖槽位 (Target Slot):");
+            ui.label(tl(self.english, "目標地圖槽位：", "Target Slot:"));
             ui.add(egui::DragValue::new(&mut self.blank_target_slot).clamp_range(5..=999).prefix("ENDL_"));
-            ui.label("(自訂地圖範圍 5..999)");
+            ui.label(tl(self.english, "(自訂地圖範圍 5..999)", "(custom map range 5..999)"));
         });
 
         ui.horizontal(|ui| {
-            ui.label("新地圖名稱 (Map Name):");
+            ui.label(tl(self.english, "新地圖名稱：", "New Map Name:"));
             ui.text_edit_singleline(&mut self.blank_target_name);
         });
 
         ui.horizontal(|ui| {
-            ui.label("基礎地形高度 (Base Height):");
+            ui.label(tl(self.english, "基礎地形高度：", "Base Height:"));
             ui.add(egui::Slider::new(&mut self.blank_height_override, 0..=255));
         });
 
         ui.separator();
-        ui.checkbox(&mut self.blank_include_starter_kit, "配置起始聚落 (Starter Kit: 主城與初始部隊)");
+        ui.checkbox(&mut self.blank_include_starter_kit, tl(self.english, "配置起始聚落 (主城與初始部隊)", "Starter Kit: Town Center & Initial Units"));
         if self.blank_include_starter_kit {
             ui.horizontal(|ui| {
-                ui.label("起始陣營 (Team 0..7):");
+                ui.label(tl(self.english, "起始陣營 (Team 0..7)：", "Starter Team (0..7):"));
                 ui.add(egui::DragValue::new(&mut self.blank_starter_team).clamp_range(0..=7));
             });
             ui.horizontal(|ui| {
-                ui.label("聚落中心位置 X, Z (0..16383):");
+                ui.label(tl(self.english, "聚落中心位置 X, Z (0..16383)：", "Settlement Center X, Z (0..16383):"));
                 ui.add(egui::DragValue::new(&mut self.blank_starter_x).prefix("X: "));
                 ui.add(egui::DragValue::new(&mut self.blank_starter_z).prefix("Z: "));
             });
         }
 
         ui.horizontal(|ui| {
-            ui.label("任務簡報說明 (Briefing, 選填):");
+            ui.label(tl(self.english, "任務簡報說明（選填）：", "Briefing (Optional):"));
             ui.text_edit_singleline(&mut self.blank_briefing);
         });
 
         ui.separator();
         ui.horizontal(|ui| {
-            if ui.button("驗證規格 (Validate Spec)").clicked() {
+            if ui.button(tl(self.english, "驗證規格", "Validate Spec")).clicked() {
                 let game_path = Path::new(self.game_path_input.trim());
                 let source_id = format!("ENDL_{:03}", self.blank_source_slot);
                 let mut spec = BlankMapSpec::new(source_id, self.blank_target_slot, &self.blank_target_name)
@@ -881,7 +917,7 @@ impl MapsUi {
                 }
                 match spec.validate(game_path) {
                     Ok(()) => {
-                        self.status_message = "規格驗證通過，隨時可建置地圖。".to_string();
+                        self.status_message = tl(self.english, "規格驗證通過，隨時可建置地圖。", "Spec validation passed, ready to build map.").to_string();
                         self.status_is_error = false;
                     }
                     Err(e) => {
@@ -892,14 +928,19 @@ impl MapsUi {
             }
 
             if ui
-                .button("建立平坦範本地圖 (Build Flat Template & Open)")
-                .on_hover_text("複製範本（保留聚落、腳本與 DATA），開啟後立即整平地形並重設地表材質、阻擋、光照；儲存前仍可還原。使用下一個可用的自製地圖槽位。")
+                .button(tl(self.english, "建立平坦範本地圖", "Build Flat Template & Open"))
+                .on_hover_text(tl(
+                    self.english,
+                    "複製範本（保留聚落、腳本與 DATA），開啟後立即整平地形並重設地表材質、阻擋、光照；儲存前仍可還原。使用下一個可用的自製地圖槽位。",
+                    "Copies template (keeps settlements, scripts, DATA), levels terrain and resets ground materials, collision, lighting on open; undoable before saving. Uses next available custom slot.",
+                ))
                 .clicked()
             {
                 match self.request_build_flat_template() {
                     Ok(intent) => {
                         self.status_message = format!(
-                            "已提出平坦範本建置請求 (ENDL_{:03})，等待確認...",
+                            "{}: ENDL_{:03}...",
+                            tl(self.english, "已提出平坦範本建置請求", "Flat template build intent requested"),
                             intent.spec.target_slot
                         );
                         self.status_is_error = false;
@@ -911,34 +952,39 @@ impl MapsUi {
                 }
             }
 
-            if ui.button("建立並載入空白場景 (Build Empty Scene & Open)").clicked() {
+            if ui.button(tl(self.english, "建立並載入空白場景", "Build Empty Scene & Open")).clicked() {
                 let intent = self.request_build_blank_map();
                 self.status_message = format!(
-                    "已提出空白地圖建置請求 (ENDL_{:03})，等待確認...",
+                    "{}: ENDL_{:03}...",
+                    tl(self.english, "已提出空白地圖建置請求", "Blank map build intent requested"),
                     intent.spec.target_slot
                 );
                 self.status_is_error = false;
             }
 
             ui.separator();
-            if ui.button("新增對戰地圖… (New Skirmish Map Wizard…)").clicked() {
+            if ui.button(tl(self.english, "新增對戰地圖…", "New Skirmish Map Wizard…")).clicked() {
                 self.request_skirmish_wizard = true;
             }
         });
 
         if let Some(res) = &self.blank_last_result {
             ui.separator();
-            ui.colored_label(Color32::LIGHT_GREEN, format!("最近建置地圖: {} ({})", res.info.id(), res.info.display_name.as_deref().unwrap_or("")));
-            ui.label(format!("路徑: {}", res.map_path.display()));
-            ui.label(format!("套用地形高度: {} | 代表性材質: {}", res.applied_height, res.representative_texture));
-            ui.label(format!("起始聚落配置: {} (生成物件數: {})", res.starter_kit_applied, res.starter_spawns_count));
+            ui.colored_label(Color32::LIGHT_GREEN, format!("{}: {} ({})", tl(self.english, "最近建置地圖", "Recent Map"), res.info.id(), res.info.display_name.as_deref().unwrap_or("")));
+            ui.label(format!("{}: {}", tl(self.english, "路徑", "Path"), res.map_path.display()));
+            ui.label(format!("{} {} | {} {}", tl(self.english, "套用地形高度:", "Applied height:"), res.applied_height, tl(self.english, "代表性材質:", "Representative texture:"), res.representative_texture));
+            ui.label(format!("{} {} ({} {})", tl(self.english, "起始聚落配置:", "Starter kit:"), res.starter_kit_applied, tl(self.english, "生成物件數:", "Spawns:"), res.starter_spawns_count));
         }
     }
 
     fn render_validator_tab(&mut self, ui: &mut egui::Ui, cx: &MapsContext<'_>) {
-        ui.heading("Design Validator");
-        ui.label("Static gameplay sanity rules: bounds, water/blocked spawn, main house & unit presence.");
-        if ui.button("Run Design Validator on current map").clicked() {
+        ui.heading(tl(self.english, "設計驗證器", "Design Validator"));
+        ui.label(tl(
+            self.english,
+            "靜態遊戲玩法完整性規則：邊界、水中／阻擋生成、主城與單位存在性。",
+            "Static gameplay sanity rules: bounds, water/blocked spawn, main house & unit presence.",
+        ));
+        if ui.button(tl(self.english, "在目前地圖上執行設計驗證", "Run Design Validator on current map")).clicked() {
             match cx.scenario {
                 Some(sc) => self.run_design_validator(
                     &sc.spawns,
@@ -950,7 +996,7 @@ impl MapsUi {
                     cx.water_level,
                 ),
                 None => {
-                    self.status_message = "No scenario loaded.".to_string();
+                    self.status_message = tl(self.english, "未載入劇本。", "No scenario loaded.").to_string();
                     self.status_is_error = true;
                 }
             }
@@ -958,7 +1004,7 @@ impl MapsUi {
 
         egui::ScrollArea::vertical().max_height(360.0).show(ui, |ui| {
             if self.design_issues.is_empty() {
-                ui.colored_label(Color32::LIGHT_GREEN, "No design issues found or validator has not been run yet.");
+                ui.colored_label(Color32::LIGHT_GREEN, tl(self.english, "未發現設計問題或驗證器尚未執行。", "No design issues found or validator has not been run yet."));
             } else {
                 for (idx, issue) in self.design_issues.iter().enumerate() {
                     let color = match issue.severity {
@@ -978,15 +1024,19 @@ impl MapsUi {
     }
 
     fn render_diagnostics_tab(&mut self, ui: &mut egui::Ui, cx: &MapsContext<'_>) {
-        ui.heading("Map Diagnostics");
-        ui.label("Checks isolated passability regions, connectivity chokepoints, road gaps, and event issues.");
-        if ui.button("Run Diagnostics on current map").clicked() {
+        ui.heading(tl(self.english, "地圖連通與通行診斷", "Map Diagnostics"));
+        ui.label(tl(
+            self.english,
+            "檢查孤立通行區域、連通瓶頸、道路中斷與事件問題。",
+            "Checks isolated passability regions, connectivity chokepoints, road gaps, and event issues.",
+        ));
+        if ui.button(tl(self.english, "在目前地圖上執行診斷", "Run Diagnostics on current map")).clicked() {
             self.run_diagnostics(cx);
         }
 
         egui::ScrollArea::vertical().max_height(360.0).show(ui, |ui| {
             if self.diagnostic_issues.is_empty() {
-                ui.colored_label(Color32::LIGHT_GREEN, "No diagnostic issues found.");
+                ui.colored_label(Color32::LIGHT_GREEN, tl(self.english, "未發現診斷問題。", "No diagnostic issues found."));
             } else {
                 for (idx, issue) in self.diagnostic_issues.iter().enumerate() {
                     let color = match issue.severity {
@@ -1003,13 +1053,17 @@ impl MapsUi {
     }
 
     fn render_preflight_tab(&mut self, ui: &mut egui::Ui, cx: &MapsContext<'_>) {
-        ui.heading("Scenario Save Preflight");
-        ui.label("Pre-save contract checks for BCI bytecode bounds, scenario UUID consistency, and actions.");
-        if ui.button("Run Save Preflight on current scenario").clicked() {
+        ui.heading(tl(self.english, "劇本存檔合約預檢", "Scenario Save Preflight"));
+        ui.label(tl(
+            self.english,
+            "存檔前合約檢查：BCI 位元組碼邊界、劇本 UUID 一致性與動作定義。",
+            "Pre-save contract checks for BCI bytecode bounds, scenario UUID consistency, and actions.",
+        ));
+        if ui.button(tl(self.english, "在目前劇本上執行存檔預檢", "Run Save Preflight on current scenario")).clicked() {
             match cx.scenario {
                 Some(sc) => self.run_preflight(sc, cx.aliases),
                 None => {
-                    self.status_message = "No scenario loaded.".to_string();
+                    self.status_message = tl(self.english, "未載入劇本。", "No scenario loaded.").to_string();
                     self.status_is_error = true;
                 }
             }
@@ -1018,14 +1072,14 @@ impl MapsUi {
         if let Some(res) = &self.preflight_result {
             match res {
                 Ok(msg) => {
-                    ui.colored_label(Color32::LIGHT_GREEN, format!("Success: {msg}"));
+                    ui.colored_label(Color32::LIGHT_GREEN, format!("{}: {msg}", tl(self.english, "預檢成功", "Success")));
                 }
                 Err(err) => {
-                    ui.colored_label(Color32::from_rgb(255, 90, 90), format!("Validation Error: {err}"));
+                    ui.colored_label(Color32::from_rgb(255, 90, 90), format!("{}: {err}", tl(self.english, "驗證錯誤", "Validation Error")));
                 }
             }
         } else {
-            ui.label("Preflight check has not been run for the current scenario document.");
+            ui.label(tl(self.english, "目前劇本文件尚未執行存檔預檢。", "Preflight check has not been run for the current scenario document."));
         }
     }
 }
@@ -1349,5 +1403,120 @@ refpos=100.0,0.0,100.0
             "request_build_flat_template must carry through the user's typed briefing text"
         );
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    fn collect_shape_texts(shape: &egui::epaint::Shape, out: &mut Vec<String>) {
+        match shape {
+            egui::epaint::Shape::Text(t) => out.push(t.galley.text().to_string()),
+            egui::epaint::Shape::Vec(shapes) => {
+                for s in shapes {
+                    collect_shape_texts(s, out);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    #[test]
+    fn test_maps_ui_chinese_localization_renders_no_untranslated_literals() {
+        let tabs = [
+            MapsTab::Catalog,
+            MapsTab::ClonerDeleter,
+            MapsTab::NewBlankMap,
+            MapsTab::DesignValidator,
+            MapsTab::Diagnostics,
+            MapsTab::Preflight,
+        ];
+        let english_literals_to_forbid = [
+            "Maps & Diagnostics Studio",
+            "Map Catalog",
+            "Clone / Delete",
+            "Save Preflight",
+            "Game Root Path:",
+            "Endless Maps",
+            "No endless maps found or catalog not yet scanned.",
+            "General Game Maps",
+            "No general maps catalogued.",
+            "Load Map into Editor",
+            "Select a map from the catalog to inspect or load.",
+            "Map Cloner & Safe Deleter",
+            "Duplicate any retail or custom map into an isolated custom slot (5..999).",
+            "Source Slot (ENDL_###):",
+            "Target Slot: next free custom slot (assigned automatically, like the C# editor)",
+            "New Map Name:",
+            "Clone Map",
+            "Custom Map Deleter",
+            "Only custom maps (slots 5..999) can be deleted. Retail maps are strictly guarded.",
+            "Select a custom map in the catalog to delete.",
+            "Static gameplay sanity rules: bounds, water/blocked spawn, main house & unit presence.",
+            "Run Design Validator on current map",
+            "No design issues found or validator has not been run yet.",
+            "Checks isolated passability regions, connectivity chokepoints, road gaps, and event issues.",
+            "Run Diagnostics on current map",
+            "No diagnostic issues found.",
+            "Scenario Save Preflight",
+            "Pre-save contract checks for BCI bytecode bounds, scenario UUID consistency, and actions.",
+            "Run Save Preflight on current scenario",
+            "Preflight check has not been run for the current scenario document.",
+        ];
+
+        let ctx = egui::Context::default();
+        let heights = vec![20u8; 33 * 33];
+        let cx = MapsContext {
+            scenario: None,
+            aliases: &[],
+            heights: Some(&heights),
+            height_size: 33,
+            collision: None,
+            height_step: 4.0,
+            water_level: 0.0,
+        };
+
+        for tab in tabs {
+            let mut ui = MapsUi::default();
+            ui.open = true;
+            ui.english = false;
+            ui.current_tab = tab;
+
+            // egui windows measure on first frame and paint on subsequent frames
+            let _ = ctx.run(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 900.0))),
+                    ..Default::default()
+                },
+                |ctx| {
+                    ui.show(ctx, &cx, None);
+                },
+            );
+
+            let output = ctx.run(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 900.0))),
+                    ..Default::default()
+                },
+                |ctx| {
+                    ui.show(ctx, &cx, None);
+                },
+            );
+
+            let mut texts = Vec::new();
+            for shape in &output.shapes {
+                collect_shape_texts(&shape.shape, &mut texts);
+            }
+            let all_text = texts.join(" ");
+
+            // Assert Chinese header is present
+            assert!(all_text.contains("地圖目錄與診斷工作室"), "tab {:?} missing Chinese window title", tab);
+
+            // Assert no untranslated literals remain in rendered UI
+            for &forbidden in &english_literals_to_forbid {
+                assert!(
+                    !all_text.contains(forbidden),
+                    "Tab {:?} rendered untranslated literal: '{}'",
+                    tab,
+                    forbidden
+                );
+            }
+        }
     }
 }
