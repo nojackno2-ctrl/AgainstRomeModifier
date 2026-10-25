@@ -1,3 +1,14 @@
+## 2026-10-25 Agy：劇本事件範本匯出與匯入（已驗證，未手動驗證 GUI）
+- 新增可重複使用的劇本事件範本功能（檔案格式 `.arm-events.json`，`version: 1`, `kind: "ScenarioEvents"`，複用 `layout_io` 的大小上限與原子寫入）。
+- 純處理模組 apps/against-rome-editor/src/event_templates.rs（註冊於 lib.rs）：
+  1. 匯出 capture：檢查並略過具備物件引用條件（`Condition.target_id != nil`）的事件，統計並於狀態列雙語回報略過數量與原因（引用特定地圖物件無法跨圖攜帶）。
+  2. 格式序列化與驗證：嚴格檢查版本（僅支援 1）、種類（`ScenarioEvents`）與大小上限（2MB），拒絕未來版本、不符種類或過大檔案。
+  3. 規劃 plan：支援選用隊伍重對應（`source team -> target team`，套用至動作之 `team` 與 `other_team`）；名稱衝突時複用 `scenario_ui::unused_event_name` 自動加上後綴避讓；檢查總數不超過 256 個上限。
+- 介面與整批加入 apps/against-rome-editor/src/scenario_ui.rs：
+  - 工具列新增「匯出選取事件… / Export selected events…」與「匯入事件… / Import events…」按鈕及隊伍重對應勾選／來源／目標微調項。
+  - 匯入時經由一次 `add_events` 呼叫加入（包含文件合法性驗證與 256 事件上限檢查），驗證失敗時整批拒絕且完全不變更文件狀態，成功時保留單一 undo 復原步驟。
+- 驗證：cargo test --workspace --locked --offline --no-fail-fast --target-dir re_workspace/agy-target 通過（283 組、2523 passed、0 failed、24 ignored；日誌保存至 re_workspace/event-templates-test.log）。實體 GUI 未手動驗收；未 stage／commit，保留 AGENTS.md／README.md 既有變更，未寫入 repo 以外目錄。
+
 ## 2026-10-25 Agy：地圖平衡摘要視窗（已驗證，未手動驗證 GUI）
 - 新增唯讀「Map balance summary / 地圖平衡摘要」功能與視窗，遵循 Design Check 模式於頂部工具列加入雙語按鈕 `tr(lang, "Map Balance Summary", "地圖平衡摘要")`。
 - 純計算模組 apps/against-rome-editor/src/balance_summary.rs（`summarize`）：

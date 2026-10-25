@@ -56,7 +56,7 @@ pub(crate) fn hostile_wave_event(team: i32) -> Event {
         actions: vec![Action { kind: 1, team: 0, other_team: team, hostile: true,
             ..Default::default() }], ..Default::default() }
 }
-fn unused_event_name(base: &str, events: &[Event]) -> String {
+pub(crate) fn unused_event_name(base: &str, events: &[Event]) -> String {
     let mut name = base.to_string();
     let mut suffix = 2;
     while events.iter().any(|e| e.name.eq_ignore_ascii_case(&name)) {
@@ -127,6 +127,10 @@ pub struct ScenarioUi {
     report: String,
     error: Option<String>,
     pub graph_ui: EventGraphUi,
+    pub template_remap: bool,
+    pub template_from: i32,
+    pub template_to: i32,
+    pub event_picker: crate::event_templates::EventFilePicker,
 }
 impl Default for ScenarioUi {
     fn default() -> Self {
@@ -169,6 +173,10 @@ impl Default for ScenarioUi {
             report: String::new(),
             error: None,
             graph_ui: EventGraphUi::default(),
+            template_remap: false,
+            template_from: 0,
+            template_to: 1,
+            event_picker: crate::event_templates::native_event_picker(),
         }
     }
 }
@@ -550,6 +558,149 @@ impl ScenarioUi {
         }
         changed
     }
+    pub(crate) fn selected_events(&self) -> Vec<Event> {
+        if self.selected < self.document.events.len() {
+            vec![self.document.events[self.selected].clone()]
+        } else {
+            vec![]
+        }
+    }
+
+    /// Exports the selected events (or all selected if multi-selection exists) to a template file.
+    /// Events targeting specific objects (Condition.target_id) are skipped and reported.
+    pub fn export_events(&mut self) -> Result<bool> {
+        let en = self.english;
+        let selected_events = self.selected_events();
+        if selected_events.is_empty() {
+            let msg = tl(en, "請先選取要匯出的事件。", "Select an event to export first.");
+            self.error = Some(msg.to_string());
+            return Err(msg.to_string());
+        }
+        let (template, skipped) = crate::event_templates::EventTemplate::capture(&selected_events);
+        if template.0.is_empty() {
+            let msg = if en {
+                format!("Export cancelled: skipped {skipped} event(s) referencing specific map objects; no portable events left.")
+            } else {
+                format!("匯出已取消：已略過 {skipped} 個引用特定地圖物件的事件；無可匯出的通用事件。")
+            };
+            self.error = Some(msg.clone());
+            return Err(msg);
+        }
+        let suggested_name = if template.0.len() == 1 {
+            let safe_name: String = template.0[0]
+                .name
+                .chars()
+                .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+                .collect();
+            if safe_name.is_empty() || safe_name.chars().all(|c| c == '_') {
+                format!("events.{}", crate::event_templates::EVENT_TEMPLATE_EXTENSION)
+            } else {
+                format!("{safe_name}.{}", crate::event_templates::EVENT_TEMPLATE_EXTENSION)
+            }
+        } else {
+            format!("events.{}", crate::event_templates::EVENT_TEMPLATE_EXTENSION)
+        };
+
+        let path = (self.event_picker)(&crate::layout_io::LayoutDialogKind::Save { suggested_name });
+        let Some(path) = path else {
+            self.report = tl(en, "已取消匯出。", "Export cancelled.").to_string();
+            return Ok(false);
+        };
+        self.export_events_to(&path)?;
+        Ok(true)
+    }
+
+    /// Exports selected events directly to the given path without opening a file dialog.
+    pub fn export_events_to(&mut self, path: &Path) -> Result<(usize, usize)> {
+        let en = self.english;
+        let selected_events = self.selected_events();
+        if selected_events.is_empty() {
+            let msg = tl(en, "請先選取要匯出的事件。", "Select an event to export first.");
+            self.error = Some(msg.to_string());
+            return Err(msg.to_string());
+        }
+        let (template, skipped) = crate::event_templates::EventTemplate::capture(&selected_events);
+        if template.0.is_empty() {
+            let msg = if en {
+                format!("Export cancelled: skipped {skipped} event(s) referencing specific map objects; no portable events left.")
+            } else {
+                format!("匯出已取消：已略過 {skipped} 個引用特定地圖物件的事件；無可匯出的通用事件。")
+            };
+            self.error = Some(msg.clone());
+            return Err(msg);
+        }
+        let json = template.serialize()?;
+        let target = crate::event_templates::with_default_extension(path);
+        crate::layout_io::write_json_atomic(&target, &json)?;
+        let count = template.0.len();
+        self.report = if skipped > 0 {
+            if en {
+                format!("Export complete ({count} event(s)); skipped {skipped} event(s) referencing specific map objects.")
+            } else {
+                format!("匯出完成（共 {count} 個事件）；已略過 {skipped} 個引用特定地圖物件的事件。")
+            }
+        } else if en {
+            format!("Export complete ({count} event(s)).")
+        } else {
+            format!("匯出完成（共 {count} 個事件）。")
+        };
+        self.error = None;
+        Ok((count, skipped))
+    }
+
+    /// Opens the file dialog and imports scenario events from the chosen template file.
+    pub fn import_events(&mut self) -> Result<usize> {
+        let en = self.english;
+        if !self.is_loaded() {
+            let msg = tl(en, "請先載入地圖劇本。", "Load a map scenario first.");
+            self.error = Some(msg.to_string());
+            return Err(msg.to_string());
+        }
+        let path = (self.event_picker)(&crate::layout_io::LayoutDialogKind::Open);
+        let Some(path) = path else {
+            self.report = tl(en, "已取消匯入。", "Import cancelled.").to_string();
+            return Ok(0);
+        };
+        let remap = self.template_remap.then_some((self.template_from, self.template_to));
+        self.import_events_from(&path, remap)
+    }
+
+    /// Imports scenario events from a file with optional team remapping.
+    pub fn import_events_from(&mut self, path: &Path, remap: Option<(i32, i32)>) -> Result<usize> {
+        let en = self.english;
+        if !self.is_loaded() {
+            let msg = tl(en, "請先載入地圖劇本。", "Load a map scenario first.");
+            self.error = Some(msg.to_string());
+            return Err(msg.to_string());
+        }
+        let text = crate::layout_io::read_json_file(path).map_err(|e| {
+            let msg = if en { format!("Read failed: {e}") } else { format!("讀取失敗：{e}") };
+            self.error = Some(msg.clone());
+            msg
+        })?;
+        let template = crate::event_templates::EventTemplate::deserialize(&text).map_err(|e| {
+            self.error = Some(e.clone());
+            e
+        })?;
+        let planned = template.plan(&self.document.events, remap).map_err(|e| {
+            self.error = Some(e.clone());
+            e
+        })?;
+        let first = self.add_events(&planned).map_err(|e| {
+            self.error = Some(e.clone());
+            e
+        })?;
+        self.selected = first;
+        let count = planned.len();
+        self.report = if en {
+            format!("Successfully imported {count} event(s).")
+        } else {
+            format!("已成功匯入 {count} 個事件。")
+        };
+        self.error = None;
+        Ok(count)
+    }
+
     /// 劇本、起始鏡頭與腳本生成物件共用一份復原狀態。
     pub(crate) fn recovery_state(&self) -> serde_json::Value {
         serde_json::json!([self.document, self.camera])
@@ -1472,6 +1623,37 @@ impl ScenarioUi {
                             if graph_dirty {
                                 ui.colored_label(egui::Color32::YELLOW, tl(en, "[節點圖有未套用變更]", "[Event graph has unapplied changes]"));
                             }
+                        });
+                        ui.horizontal_wrapped(|ui| {
+                            let can_export = self.selected < self.document.events.len();
+                            if ui
+                                .add_enabled(
+                                    can_export,
+                                    egui::Button::new(tl(en, "匯出選取事件…", "Export selected events…")),
+                                )
+                                .clicked()
+                            {
+                                if let Err(e) = self.export_events() {
+                                    self.error = Some(e);
+                                }
+                            }
+                            if ui
+                                .add_enabled(
+                                    self.is_loaded(),
+                                    egui::Button::new(tl(en, "匯入事件…", "Import events…")),
+                                )
+                                .clicked()
+                            {
+                                if let Err(e) = self.import_events() {
+                                    self.error = Some(e);
+                                }
+                            }
+                            ui.separator();
+                            ui.checkbox(&mut self.template_remap, tl(en, "重新對應隊伍", "Remap team"));
+                            ui.label(tl(en, "來源", "Source"));
+                            ui.add(egui::DragValue::new(&mut self.template_from).clamp_range(-1..=15));
+                            ui.label(tl(en, "目標", "Target"));
+                            ui.add(egui::DragValue::new(&mut self.template_to).clamp_range(-1..=15));
                         });
                         self.show_event_browser(ui);
                         let targets: Vec<_> = self
@@ -2873,6 +3055,130 @@ mod tests {
         assert!(!loaded.dirty());
         let staged = loaded.stage_transaction_files(&p).unwrap();
         assert!(staged.is_empty());
+    }
+
+    #[test]
+    fn event_template_export_import_roundtrip_with_collision_rename_and_picker() {
+        let p = source();
+        let mut ui = ScenarioUi::default();
+        ui.load_now(&p).unwrap();
+        ui.add_events(&[ev("Wave 1"), ev("Defense")]).unwrap();
+
+        let temp_dir = scratch();
+        let template_path = temp_dir.join("test_export.arm-events.json");
+        let picker_path = template_path.clone();
+
+        ui.selected = 0; // "Wave 1"
+        ui.event_picker = Box::new(move |kind| match kind {
+            crate::layout_io::LayoutDialogKind::Save { .. } => Some(picker_path.clone()),
+            crate::layout_io::LayoutDialogKind::Open => Some(picker_path.clone()),
+        });
+
+        // Export selected event "Wave 1"
+        assert!(ui.export_events().unwrap());
+        assert!(template_path.is_file());
+        assert!(ui.report.contains("匯出完成") || ui.report.contains("Export complete"));
+
+        // Import back: "Wave 1" collides with existing "Wave 1", should be renamed to "Wave 1_2"
+        let count = ui.import_events().unwrap();
+        assert_eq!(count, 1);
+        assert_eq!(ui.document.events.len(), 3);
+        assert_eq!(ui.document.events[2].name, "Wave 1_2");
+
+        // Verify one undo step removes the imported event
+        assert!(ui.undo_events());
+        assert_eq!(ui.document.events.len(), 2);
+        assert_eq!(ui.document.events[0].name, "Wave 1");
+        assert_eq!(ui.document.events[1].name, "Defense");
+
+        fs::remove_dir_all(temp_dir).unwrap();
+        fs::remove_dir_all(p).unwrap();
+    }
+
+    #[test]
+    fn event_template_export_skips_object_targeted_conditions_with_bilingual_report() {
+        let p = source();
+        let mut ui = ScenarioUi::default();
+        ui.load_now(&p).unwrap();
+
+        let mut event_with_target = ev("Targeted");
+        event_with_target.enabled = false;
+        event_with_target.conditions.push(Condition {
+            kind: 0,
+            target_id: uuid::Uuid::new_v4(),
+            ..Default::default()
+        });
+        ui.add_events(&[event_with_target]).unwrap();
+
+        let temp_dir = scratch();
+        let template_path = temp_dir.join("should_not_exist.arm-events.json");
+
+        ui.selected = 0;
+        let err = ui.export_events_to(&template_path).unwrap_err();
+        assert!(err.contains("略過 1 個引用特定地圖物件") || err.contains("skipped 1 event(s) referencing"));
+        assert!(!template_path.is_file());
+
+        fs::remove_dir_all(temp_dir).unwrap();
+        fs::remove_dir_all(p).unwrap();
+    }
+
+    #[test]
+    fn event_template_import_team_remap() {
+        let p = source();
+        let mut ui = ScenarioUi::default();
+        ui.load_now(&p).unwrap();
+
+        let template_events = vec![Event {
+            name: "Diplomatic".into(),
+            actions: vec![Action {
+                kind: 1,
+                team: 2,
+                other_team: 3,
+                hostile: true,
+                ..Default::default()
+            }],
+            ..Default::default()
+        }];
+        let template = crate::event_templates::EventTemplate(template_events);
+        let temp_dir = scratch();
+        let template_path = temp_dir.join("remap.arm-events.json");
+        let json = template.serialize().unwrap();
+        fs::write(&template_path, json).unwrap();
+
+        // Remap team 2 -> 5
+        let imported = ui.import_events_from(&template_path, Some((2, 5))).unwrap();
+        assert_eq!(imported, 1);
+        assert_eq!(ui.document.events[0].actions[0].team, 5);
+        assert_eq!(ui.document.events[0].actions[0].other_team, 3);
+
+        fs::remove_dir_all(temp_dir).unwrap();
+        fs::remove_dir_all(p).unwrap();
+    }
+
+    #[test]
+    fn event_template_256_limit_rejection_leaves_document_unchanged() {
+        let p = source();
+        let mut ui = ScenarioUi::default();
+        ui.load_now(&p).unwrap();
+
+        // Fill up to 255 events
+        let full_255: Vec<Event> = (0..255).map(|i| ev(&format!("ev_{i}"))).collect();
+        ui.add_events(&full_255).unwrap();
+        assert_eq!(ui.document.events.len(), 255);
+
+        // Create a template with 2 events (255 + 2 = 257 > 256)
+        let template = crate::event_templates::EventTemplate(vec![ev("Extra 1"), ev("Extra 2")]);
+        let temp_dir = scratch();
+        let template_path = temp_dir.join("exceed_256.arm-events.json");
+        fs::write(&template_path, template.serialize().unwrap()).unwrap();
+
+        let err = ui.import_events_from(&template_path, None).unwrap_err();
+        assert!(err.contains("256"));
+        // Document must remain unchanged!
+        assert_eq!(ui.document.events.len(), 255);
+
+        fs::remove_dir_all(temp_dir).unwrap();
+        fs::remove_dir_all(p).unwrap();
     }
 }
 

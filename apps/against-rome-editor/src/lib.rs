@@ -14,6 +14,7 @@ pub mod placement_ui;
 pub mod scenario_ui;
 mod scenario_canvas;
 mod spawn_layout;
+pub mod event_templates;
 pub mod spawn_placement;
 pub mod spawn_placement_ui;
 pub mod textures_ui;
