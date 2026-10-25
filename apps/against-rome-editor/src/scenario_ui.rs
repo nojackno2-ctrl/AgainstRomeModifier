@@ -387,6 +387,21 @@ impl ScenarioUi {
     pub fn is_loaded(&self) -> bool {
         self.source.is_some()
     }
+
+    /// 未載入與尚無事件時提供下一步；僅顯示提示，不修改劇本。
+    fn empty_state_hint(&self) -> Option<&'static str> {
+        if !self.is_loaded() {
+            Some(tl(self.english,
+                "先在上方指定地圖資料夾並按「載入」（需有 SCRIPT/ak_level.bci）；載入地形不會自動載入劇本。",
+                "Choose a map folder above and press Load (requires SCRIPT/ak_level.bci). Loading terrain does not load the scenario."))
+        } else if self.document.events.is_empty() {
+            Some(tl(self.english,
+                "尚無事件：展開「勝負條件預設」或「進攻波次產生器」建立玩法，也可使用下方「新增事件」。變更可復原，完成後請安全儲存。",
+                "No events yet: use Objective presets or Attack wave generator, or Add event below. Changes support undo; use Safe Save when ready."))
+        } else {
+            None
+        }
+    }
     /// Loaded game ObjDefName aliases; empty when no catalog was found.
     #[cfg(test)]
     pub fn set_known_aliases(&mut self, aliases: Vec<String>) {
@@ -1495,6 +1510,13 @@ impl ScenarioUi {
                         self.request_load(PathBuf::from(self.load_path.trim()))
                     }
                 });
+                if let Some(hint) = self.empty_state_hint() {
+                    ui.small(if self.is_loaded() {
+                        tl(en, "尚無事件：請用下方預設或新增事件。", "No events yet: use presets or Add event below.")
+                    } else {
+                        tl(en, "請在上方載入劇本（SCRIPT/ak_level.bci）。", "Load the scenario above (SCRIPT/ak_level.bci).")
+                    }).on_hover_text(hint);
+                }
                 if let Some(s) = &self.source {
                     ui.small(if en {
                         format!("Original BCI: {}", s.path.display())
@@ -2022,6 +2044,34 @@ fn export_files(target: &Path, files: &[(&str, Vec<u8>)], fail_after: Option<usi
 }
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn empty_state_hints_are_bilingual_and_follow_scenario_state() {
+        let mut panel = super::ScenarioUi::default();
+        for en in [false, true] {
+            panel.english = en;
+            let hint = panel.empty_state_hint().unwrap();
+            assert!(hint.contains("SCRIPT/ak_level.bci"));
+            assert!(hint.contains(if en { "Loading terrain" } else { "載入地形" }));
+        }
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../re_workspace").join(format!("empty-hint-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(root.join("SCRIPT")).unwrap();
+        std::fs::write(root.join("SCRIPT/ak_level.bci"), against_rome_scenario::BciImage::idle().serialize()).unwrap();
+        panel.load_session(&root).unwrap();
+        for en in [false, true] {
+            panel.english = en;
+            assert!(panel.empty_state_hint().unwrap().contains(if en { "No events yet" } else { "尚無事件" }));
+            panel.open = true;
+            let ctx = egui::Context::default();
+            let before = panel.document.clone();
+            let _ = ctx.run(Default::default(), |ctx| panel.show(ctx));
+            assert_eq!(panel.document, before);
+            assert!(!panel.dirty());
+        }
+        panel.document.events.push(Default::default());
+        assert!(panel.empty_state_hint().is_none());
+        std::fs::remove_dir_all(root).unwrap();
+    }
     #[test]
     fn action_field_labels_follow_language_snapshot() {
         for (english, expected) in [

@@ -320,6 +320,24 @@ impl SpawnPlacementSession {
     /// Validates every copy first, then inserts them as one undo step. An offset that leaves the
     /// map rejects the whole batch. Returns the indices of the new copies.
     pub fn duplicate_many(&mut self, indices: &[usize], offset_x: f32, offset_z: f32) -> PlacementResult<Vec<usize>> {
+        self.duplicate_transformed(indices, |item| {
+            item.world_x += offset_x;
+            item.world_z += offset_z;
+        })
+    }
+
+    /// 以世界座標中心 (8192, 8192) 複製位置；保留方向、隊伍與來源關聯。
+    pub fn duplicate_opposite_many(&mut self, indices: &[usize], height_at: Option<&dyn Fn(f32, f32) -> f32>) -> PlacementResult<Vec<usize>> {
+        self.duplicate_transformed(indices, |item| {
+            item.world_x = 16384.0 - item.world_x;
+            item.world_z = 16384.0 - item.world_z;
+            if let Some(height_at) = height_at {
+                item.world_y = height_at(item.world_x, item.world_z);
+            }
+        })
+    }
+
+    fn duplicate_transformed(&mut self, indices: &[usize], transform: impl Fn(&mut SdlPlacedObject)) -> PlacementResult<Vec<usize>> {
         let selected = self.validate_indices(indices)?;
         if selected.is_empty() {
             return Ok(Vec::new());
@@ -336,8 +354,7 @@ impl SpawnPlacementSession {
                 (source.scenario_id, None)
             };
             let mut duplicate = source.clone();
-            duplicate.world_x = source.world_x + offset_x;
-            duplicate.world_z = source.world_z + offset_z;
+            transform(&mut duplicate);
             duplicate.scenario_id = Uuid::new_v4();
             duplicate.copy_source_scenario_id = source_provenance;
             duplicate.native_source_identity = native_identity;

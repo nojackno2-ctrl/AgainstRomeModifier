@@ -103,6 +103,7 @@ mod toolbar_event_graph_tests;
 pub struct EditorApp {
     recovery: crate::recovery::Recovery,
     recovery_deferred: bool,
+    recent_maps: crate::recent_maps::RecentMaps,
     pub map_path_input: String,
     pub(crate) loaded_map_path: Option<PathBuf>,
     pub session: Option<TerrainSession>,
@@ -343,6 +344,15 @@ impl EditorApp {
         #[cfg(not(windows))]
         let _ = cc;
         let mut app = Self::initial_state();
+        if let Some(dir) = crate::storage::editor_data_dir() {
+            match crate::recent_maps::RecentMaps::load(dir.join("recent-maps.json")) {
+                Ok(recent) => app.recent_maps = recent,
+                Err(e) => {
+                    app.status_message = format!("Recent maps unavailable / 最近地圖無法讀取：{e}");
+                    app.status_is_error = true;
+                }
+            }
+        }
         app.modifier = ModifierUi::persisted(crate::modifier_ui::default_state_dir());
         if let Some(path) = app_settings_path() {
             app.loc = Loc::load(path, "");
@@ -356,6 +366,7 @@ impl EditorApp {
         let session = TerrainSession::create_blank(257, 32);
 
         Self {
+            recent_maps: Default::default(),
             map_path_input: String::new(),
             loaded_map_path: None,
             session: Some(session),
@@ -1171,6 +1182,10 @@ impl EditorApp {
         self.stroke_path.clear();
         self.ramp_selecting = false;
         self.ramp_start = None;
+        if let Err(e) = self.recent_maps.remember(&path) {
+            self.status_message = format!("Map loaded; recent maps not saved / 地圖已載入；最近地圖未儲存：{e}");
+            self.status_is_error = true;
+        }
         Ok(())
     }
 
@@ -4837,6 +4852,49 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("arm_app_{tag}_{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         dir
+    }
+
+    #[test]
+    fn recent_maps_only_track_successful_loads_and_keep_dirty_switch_guard() {
+        let root = temp_map_dir("recent_load");
+        let a = root.join("a");
+        let b = root.join("b");
+        std::fs::create_dir_all(&a).unwrap();
+        std::fs::create_dir_all(&b).unwrap();
+        let mut app = EditorApp::initial_state();
+        app.set_loaded_map(a.clone(), TerrainSession::create_blank(257, 32)).unwrap();
+        assert_eq!(app.recent_maps.paths, vec![std::fs::canonicalize(&a).unwrap()]);
+        app.ambience.mark_dirty();
+        assert!(app.set_loaded_map(b.clone(), TerrainSession::create_blank(257, 32)).is_err());
+        assert_eq!(app.recent_maps.paths.len(), 1);
+        app.install_loaded_map(b.clone(), TerrainSession::create_blank(257, 32)).unwrap();
+        assert_eq!(app.recent_maps.paths[0], std::fs::canonicalize(&b).unwrap());
+        std::fs::write(a.join("daynight.bmp"), "invalid").unwrap();
+        let before = app.recent_maps.paths.clone();
+        assert!(app.install_loaded_map(a, TerrainSession::create_blank(257, 32)).is_err());
+        assert_eq!(app.recent_maps.paths, before);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn recent_menu_uses_existing_dirty_map_confirmation() {
+        let root = temp_map_dir("recent_menu");
+        let a = root.join("a");
+        let b = root.join("b");
+        std::fs::create_dir_all(&a).unwrap();
+        std::fs::create_dir_all(&b).unwrap();
+        let mut app = EditorApp::initial_state();
+        app.set_loaded_map(a.clone(), TerrainSession::create_blank(33, 32)).unwrap();
+        app.recent_maps.remember(&b).unwrap();
+        app.ambience.mark_dirty();
+        let ctx = egui::Context::default();
+        gui_click(&mut app, &ctx, "Recent maps");
+        let label = std::fs::canonicalize(&b).unwrap().display().to_string();
+        gui_click(&mut app, &ctx, &label);
+        assert_eq!(app.loaded_map_path.as_deref(), Some(a.as_path()));
+        assert!(matches!(&app.pending_action, Some(PendingAction::Load(p)) if *p == std::fs::canonicalize(&b).unwrap()));
+        assert!(app.ambience.is_dirty());
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
@@ -10813,6 +10871,21 @@ impl EditorApp {
             .show(ctx, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     ui.heading(tr(lang, "Tools & Settings", "工具與設定"));
+                    ui.menu_button(tr(lang, "Recent maps", "最近開啟"), |ui| {
+                        if let Err(e) = self.recent_maps.prune() {
+                            ui.label(format!("Recent maps / 最近地圖：{e}"));
+                        }
+                        if self.recent_maps.paths.is_empty() {
+                            ui.label(tr(lang, "Load a map folder to start this list.", "載入地圖資料夾後會顯示於此。"));
+                        }
+                        for path in self.recent_maps.paths.clone() {
+                            if ui.button(path.display().to_string()).clicked() {
+                                self.pending_action = Some(PendingAction::Load(path));
+                                ui.close_menu();
+                            }
+                        }
+                    });
+
                     ui.separator();
 
                     ui.label(tr(lang, "Display Mode:", "顯示模式:"));

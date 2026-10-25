@@ -580,6 +580,15 @@ impl SpawnPlacementUi {
     }
 
     pub fn duplicate_selected(&mut self, scenario: &mut ScenarioUi, cx: &SpawnContext) {
+        self.duplicate_selection(scenario, cx, false);
+    }
+
+    /// 對稱複製與一般複製共用來源關聯、驗證、出版及單步復原流程。
+    pub fn duplicate_opposite_selected(&mut self, scenario: &mut ScenarioUi, cx: &SpawnContext) {
+        self.duplicate_selection(scenario, cx, true);
+    }
+
+    fn duplicate_selection(&mut self, scenario: &mut ScenarioUi, cx: &SpawnContext, opposite: bool) {
         let indices = self.selection();
         if indices.is_empty() || !self.guard(scenario, cx) {
             return;
@@ -593,7 +602,13 @@ impl SpawnPlacementUi {
                 "無法複製：偏移後有物件超出地圖或數值無效；所有物件均未變更。",
             ),
             |s| {
-                copies = s.duplicate_many(&indices, 256.0, 256.0)?;
+                copies = if opposite {
+                    let height_at = |x, z| cx.heights.map_or(0.0, |h|
+                        world_ground_height(h, cx.vertex_size, x, z, cx.height_step));
+                    s.duplicate_opposite_many(&indices, cx.heights.map(|_| &height_at as &dyn Fn(f32, f32) -> f32))?
+                } else {
+                    s.duplicate_many(&indices, 256.0, 256.0)?
+                };
                 Ok(())
             },
         );
@@ -1017,6 +1032,7 @@ impl SpawnPlacementUi {
         let mut action_edit = false;
         let mut action_batch = false;
         let mut action_duplicate = false;
+        let mut action_opposite = false;
         let mut action_delete = false;
         let mut action_snap = false;
         let mut action_undo = false;
@@ -1247,9 +1263,20 @@ impl SpawnPlacementUi {
                 });
                 hovered_list = ui.rect_contains_pointer(list.inner_rect);
                 let count = self.selection.len();
+                if scenario.is_loaded() && self.session.is_empty() {
+                    ui.label(tr(lang,
+                        "No spawns yet: choose a palette type, enable Place on map, then click the 2D map. Save when ready.",
+                        "尚無生成物件：選擇清單中的類型、啟用「在地圖上放置」，再點擊 2D 地圖；完成後請儲存。"));
+                }
                 ui.horizontal_wrapped(|ui| {
                     action_edit = ui.add_enabled(count == 1, egui::Button::new(tr(lang, "Edit...", "編輯..."))).clicked();
                     action_duplicate = ui.add_enabled(count > 0, egui::Button::new(tr(lang, "Duplicate", "複製選取"))).clicked();
+                    action_opposite = ui.add_enabled(count > 0 && !cx.read_only && scenario.is_loaded(),
+                        egui::Button::new(tr(lang, "Copy opposite", "中心對稱複製")))
+                        .on_hover_text(tr(lang,
+                            "Copy positions across (8192,8192), keeping team and heading; sample terrain height. One undo step. Out-of-bounds copies reject the entire group.",
+                            "以 (8192,8192) 為中心複製位置，保留隊伍與方向並取樣地形高度；一次復原。任一副本超界即整組拒絕。"))
+                        .clicked();
                     action_batch = ui
                         .add_enabled(count > 0, egui::Button::new(tr(lang, "Team / Direction...", "隊伍／方向…")))
                         .clicked();
@@ -1345,6 +1372,9 @@ impl SpawnPlacementUi {
         }
         if action_duplicate {
             self.duplicate_selected(scenario, cx);
+        }
+        if action_opposite {
+            self.duplicate_opposite_selected(scenario, cx);
         }
         if action_delete {
             self.delete_selected(scenario, cx);
@@ -1676,6 +1706,49 @@ mod palette_thumbnail_tests {
         let cx = SpawnContext { lang: AppLanguage::English, heights: None,
             vertex_size: 0, height_step: 4., read_only: false };
         (root, scenario, panel, cx)
+    }
+
+    #[test]
+    fn opposite_group_copies_publish_once_undo_redo_and_reject_edges_atomically() {
+        let (root, mut scenario, mut panel, cx) = shadow_fixture();
+        panel.sync_with_document(&scenario, Some(&root.join("MAPS/test")));
+        for x in [128., 384.] {
+            let item = new_placement(&panel.catalog[0], x, 10., 640., 2, 45., 1).unwrap();
+            panel.mutate(&mut scenario, cx.lang, ("", ""), |s| s.add(item)).unwrap();
+        }
+        panel.selection = [0, 1].into_iter().collect();
+        let before = scenario.document().clone();
+        let depth = panel.session.undo_depth();
+        panel.take_history_receipts();
+        let heights = vec![7; 257 * 257];
+        let sampled = SpawnContext { heights: Some(&heights), vertex_size: 257, ..cx };
+        panel.duplicate_opposite_selected(&mut scenario, &sampled);
+        assert_eq!(panel.session.undo_depth(), depth + 1);
+        assert_eq!(panel.take_history_receipts().len(), 1);
+        assert_eq!(panel.selection(), vec![1, 3]);
+        assert_eq!(scenario.document().spawns.len(), 4);
+        for (&i, source) in [1, 3].iter().zip(before.spawns.iter()) {
+            let copy = &scenario.document().spawns[i];
+            assert_eq!((copy.x, copy.z, copy.y), (16384. - source.x, 16384. - source.z, 28.));
+            assert_eq!((copy.team, copy.angle), (source.team, source.angle));
+            assert_ne!(copy.id, source.id);
+        }
+        let copied = scenario.document().clone();
+        assert!(panel.undo(&mut scenario, &cx));
+        assert_eq!(*scenario.document(), before);
+        assert!(panel.redo(&mut scenario, &cx));
+        assert_eq!(*scenario.document(), copied);
+        panel.duplicate_opposite_selected(&mut scenario, &SpawnContext { read_only: true, ..cx });
+        assert_eq!(*scenario.document(), copied);
+        let edge = new_placement(&panel.catalog[0], 0., 0., 128., 0, 0., 1).unwrap();
+        panel.mutate(&mut scenario, cx.lang, ("", ""), |s| s.add(edge)).unwrap();
+        panel.selection = [0, panel.session.count() - 1].into_iter().collect();
+        let before = scenario.document().clone();
+        let depth = panel.session.undo_depth();
+        panel.duplicate_opposite_selected(&mut scenario, &cx);
+        assert_eq!(*scenario.document(), before);
+        assert_eq!(panel.session.undo_depth(), depth);
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
