@@ -779,6 +779,47 @@ impl SpawnPlacementUi {
         self.anchor = self.selection.iter().next().copied();
     }
 
+    /// Selects all placed objects sharing the same object type as any currently selected object.
+    /// If no object is currently selected, tries to select objects matching `selected_type` palette filter.
+    pub fn select_all_of_type(&mut self) -> usize {
+        let types: std::collections::HashSet<String> = if !self.selection.is_empty() {
+            self.selection
+                .iter()
+                .filter_map(|&i| self.session.get(i).map(|item| item.obj_type.name_def.clone()))
+                .collect()
+        } else if let Some(t) = &self.selected_type {
+            let mut set = std::collections::HashSet::new();
+            set.insert(t.clone());
+            set
+        } else {
+            std::collections::HashSet::new()
+        };
+
+        if types.is_empty() {
+            return 0;
+        }
+
+        let mut matching = std::collections::BTreeSet::new();
+        for (index, item) in self.session.objects().iter().enumerate() {
+            if types.contains(&item.obj_type.name_def) {
+                matching.insert(index);
+            }
+        }
+        self.selection = matching;
+        self.anchor = self.selection.iter().next().copied();
+        self.selection.len()
+    }
+
+    /// Returns the world (X, Z) coordinates of the single selected object, if exactly one is selected.
+    pub fn selected_coordinates(&self) -> Option<(f32, f32)> {
+        let indices = self.selection();
+        if indices.len() == 1 {
+            self.session.get(indices[0]).map(|item| (item.world_x, item.world_z))
+        } else {
+            None
+        }
+    }
+
     pub fn apply_batch(&mut self, scenario: &mut ScenarioUi, cx: &SpawnContext, team: Option<i32>, angle: Option<f32>) {
         let indices = self.selection();
         if indices.is_empty() || !self.guard(scenario, cx) {
@@ -1036,6 +1077,8 @@ impl SpawnPlacementUi {
         let mut open = true;
         let mut clicked: Option<RowClick> = None;
         let mut action_edit = false;
+        let mut action_copy_xz = false;
+        let mut action_select_type = false;
         let mut action_batch = false;
         let mut action_duplicate = false;
         let mut action_opposite = false;
@@ -1276,6 +1319,18 @@ impl SpawnPlacementUi {
                 }
                 ui.horizontal_wrapped(|ui| {
                     action_edit = ui.add_enabled(count == 1, egui::Button::new(tr(lang, "Edit...", "編輯..."))).clicked();
+                    action_copy_xz = ui
+                        .add_enabled(count == 1, egui::Button::new(tr(lang, "Copy X/Z", "複製 X/Z")))
+                        .on_hover_text(tr(lang,
+                            "Copy world X and Z coordinates of the selected object to the clipboard.",
+                            "複製選取物件的世界座標 (X, Z) 至剪貼簿。"))
+                        .clicked();
+                    action_select_type = ui
+                        .add_enabled(count > 0, egui::Button::new(tr(lang, "Select type", "選取同類型")))
+                        .on_hover_text(tr(lang,
+                            "Select all placed objects sharing the same type as the current selection.",
+                            "選取所有與目前選取物件具相同類型的已放置物件。"))
+                        .clicked();
                     action_duplicate = ui.add_enabled(count > 0, egui::Button::new(tr(lang, "Duplicate", "複製選取"))).clicked();
                     action_opposite = ui.add_enabled(count > 0 && !cx.read_only && scenario.is_loaded(),
                         egui::Button::new(tr(lang, "Copy opposite", "中心對稱複製")))
@@ -1372,6 +1427,31 @@ impl SpawnPlacementUi {
         // Actions
         if action_edit {
             self.open_edit_dialog(cx);
+        }
+        if action_copy_xz {
+            if let Some((x, z)) = self.selected_coordinates() {
+                let text = format!("{x:.1}, {z:.1}");
+                ctx.copy_text(text.clone());
+                self.set_status(
+                    if cx.english() {
+                        format!("Copied X/Z to clipboard: {text}")
+                    } else {
+                        format!("已複製 X/Z 座標至剪貼簿：{text}")
+                    },
+                    false,
+                );
+            }
+        }
+        if action_select_type {
+            let n = self.select_all_of_type();
+            self.set_status(
+                if cx.english() {
+                    format!("Selected {n} object(s) of same type.")
+                } else {
+                    format!("已選取 {n} 個同類型物件。")
+                },
+                false,
+            );
         }
         if action_batch {
             self.open_batch_dialog();
@@ -1712,6 +1792,52 @@ mod palette_thumbnail_tests {
         let cx = SpawnContext { lang: AppLanguage::English, heights: None,
             vertex_size: 0, height_step: 4., read_only: false };
         (root, scenario, panel, cx)
+    }
+
+    #[test]
+    fn select_all_of_type_and_copy_selected_coordinates() {
+        let (root, mut scenario, mut panel, cx) = shadow_fixture();
+        panel.sync_with_document(&scenario, Some(&root.join("MAPS/test")));
+        let wolf_type = panel.catalog[0].clone();
+        let bear_type = SdlObjectType::new("bear", 2, SdlObjectCategory::Other, "", 0, Default::default());
+
+        let w1 = new_placement(&wolf_type, 100., 10., 200., 0, 0., 1).unwrap();
+        let w2 = new_placement(&wolf_type, 300., 10., 400., 0, 0., 1).unwrap();
+        let b1 = new_placement(&bear_type, 500., 10., 600., 0, 0., 1).unwrap();
+
+        panel.mutate(&mut scenario, cx.lang, ("", ""), |s| {
+            s.add(w1)?;
+            s.add(w2)?;
+            s.add(b1)?;
+            Ok(())
+        }).unwrap();
+
+        // No selection: selected_coordinates returns None, select_all_of_type with no selection or palette returns 0
+        panel.selection.clear();
+        assert_eq!(panel.selected_coordinates(), None);
+        assert_eq!(panel.select_all_of_type(), 0);
+
+        // Select first wolf
+        panel.selection = [0].into_iter().collect();
+        assert_eq!(panel.selected_coordinates(), Some((100.0, 200.0)));
+
+        // Select all of type: selects w1 and w2 (indices 0 and 1), but not b1 (index 2)
+        let count = panel.select_all_of_type();
+        assert_eq!(count, 2);
+        let mut selected = panel.selection();
+        selected.sort();
+        assert_eq!(selected, vec![0, 1]);
+
+        // When multiple selected, selected_coordinates returns None
+        assert_eq!(panel.selected_coordinates(), None);
+
+        // Select bear
+        panel.selection = [2].into_iter().collect();
+        assert_eq!(panel.selected_coordinates(), Some((500.0, 600.0)));
+        assert_eq!(panel.select_all_of_type(), 1);
+        assert_eq!(panel.selection(), vec![2]);
+
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

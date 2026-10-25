@@ -536,6 +536,26 @@ impl ScenarioUi {
         self.refresh_graph_after_event_change();
         Ok(())
     }
+    /// 批次設定指定事件索引的啟用狀態（單步復原）；若無任何事件狀態變更則不產生復原步驟。
+    pub fn set_events_enabled(&mut self, indices: &[usize], enabled: bool) -> Result<usize> {
+        if !self.is_loaded() {
+            return Err(tl(self.english, "請先載入地圖劇本。", "Load a map scenario first.").into());
+        }
+        let mut changed_count = 0;
+        let mut events = self.document.events.clone();
+        for &idx in indices {
+            if let Some(event) = events.get_mut(idx) {
+                if event.enabled != enabled {
+                    event.enabled = enabled;
+                    changed_count += 1;
+                }
+            }
+        }
+        if changed_count > 0 {
+            self.replace_events(events)?;
+        }
+        Ok(changed_count)
+    }
     pub fn undo_events(&mut self) -> bool {
         self.sync_session();
         if !self.events.can_undo() {
@@ -1467,8 +1487,29 @@ impl ScenarioUi {
             ui.selectable_value(&mut browser.time_order, true, tl(en, "時間", "Time"));
         });
         let indices = browser.indices(&self.document.events);
-        ui.label(if en { format!("{} of {} events", indices.len(), self.document.events.len()) }
-            else { format!("顯示 {} / {} 個事件", indices.len(), self.document.events.len()) });
+        ui.horizontal(|ui| {
+            ui.label(if en { format!("{} of {} events", indices.len(), self.document.events.len()) }
+                else { format!("顯示 {} / {} 個事件", indices.len(), self.document.events.len()) });
+            if !indices.is_empty() {
+                let (enable_label, disable_label) = if indices.len() == self.document.events.len() {
+                    (tl(en, "啟用全部", "Enable all"), tl(en, "停用全部", "Disable all"))
+                } else {
+                    (tl(en, "啟用篩選", "Enable filtered"), tl(en, "停用篩選", "Disable filtered"))
+                };
+                if ui.button(enable_label).on_hover_text(tl(en, "啟用所有顯示的事件（單步復原）", "Enable all displayed events (single undo step)")).clicked() {
+                    match self.set_events_enabled(&indices, true) {
+                        Ok(n) => self.report = if en { format!("Enabled {n} event(s).") } else { format!("已啟用 {n} 個事件。") },
+                        Err(e) => self.error = Some(e),
+                    }
+                }
+                if ui.button(disable_label).on_hover_text(tl(en, "停用所有顯示的事件（單步復原）", "Disable all displayed events (single undo step)")).clicked() {
+                    match self.set_events_enabled(&indices, false) {
+                        Ok(n) => self.report = if en { format!("Disabled {n} event(s).") } else { format!("已停用 {n} 個事件。") },
+                        Err(e) => self.error = Some(e),
+                    }
+                }
+            }
+        });
         if selection_hidden(self.selected, &self.document.events, &indices) {
             ui.colored_label(egui::Color32::YELLOW, tl(en,
                 "已選事件被篩選隱藏；下方仍編輯原本選取的事件。",
@@ -2533,6 +2574,64 @@ mod tests {
         assert!(!ui.dirty() && !ui.can_undo_events());
         assert!(ui.redo_events());
         assert_eq!(texts(&ui.document.events[0]), ["b", "a", "c"]);
+    }
+    #[test]
+    fn bulk_enable_disable_events_is_one_undo_step_and_respects_filter() {
+        let mut ui = ScenarioUi::default();
+        let mut ev1 = ev("Event_1");
+        ev1.enabled = true;
+        let mut ev2 = ev("Event_2");
+        ev2.enabled = true;
+        let mut ev3 = ev("Event_3");
+        ev3.enabled = false;
+        ui.document.events = vec![ev1, ev2, ev3];
+        ui.events = ScenarioEventSession::with_events(ui.document.events.clone());
+        ui.baseline = state_bytes(&ui.document, &ui.camera).unwrap();
+        ui.source = Some(Source { path: PathBuf::from("test"), bytes: Vec::new() });
+
+        // Unloaded scenario test (with a fresh ui)
+        let mut unloaded = ScenarioUi::default();
+        assert!(unloaded.set_events_enabled(&[0], true).is_err());
+
+        // Initial state: ev1=true, ev2=true, ev3=false
+        assert_eq!(ui.document.events[0].enabled, true);
+        assert_eq!(ui.document.events[1].enabled, true);
+        assert_eq!(ui.document.events[2].enabled, false);
+
+        // Bulk disable indices [0, 1]
+        let changed = ui.set_events_enabled(&[0, 1], false).unwrap();
+        assert_eq!(changed, 2);
+        assert_eq!(ui.document.events[0].enabled, false);
+        assert_eq!(ui.document.events[1].enabled, false);
+        assert_eq!(ui.document.events[2].enabled, false);
+        assert!(ui.dirty());
+
+        // Single undo step restores both
+        assert!(ui.undo_events());
+        assert_eq!(ui.document.events[0].enabled, true);
+        assert_eq!(ui.document.events[1].enabled, true);
+        assert_eq!(ui.document.events[2].enabled, false);
+
+        // Redo re-disables both
+        assert!(ui.redo_events());
+        assert_eq!(ui.document.events[0].enabled, false);
+        assert_eq!(ui.document.events[1].enabled, false);
+        assert_eq!(ui.document.events[2].enabled, false);
+
+        // No-op when all target events already in state: returns 0 and does not record undo step
+        let noop = ui.set_events_enabled(&[0, 1, 2], false).unwrap();
+        assert_eq!(noop, 0);
+
+        // Bulk enable [1, 2]: ev1 remains false, ev2 and ev3 become true (changed count = 2)
+        let enabled_count = ui.set_events_enabled(&[1, 2], true).unwrap();
+        assert_eq!(enabled_count, 2);
+        assert_eq!(ui.document.events[0].enabled, false);
+        assert_eq!(ui.document.events[1].enabled, true);
+        assert_eq!(ui.document.events[2].enabled, true);
+
+        // Out of bound index is safely ignored
+        let safe = ui.set_events_enabled(&[999], false).unwrap();
+        assert_eq!(safe, 0);
     }
     #[test]
     fn duplicate_event_preserves_content_order_and_is_one_undo_step() {

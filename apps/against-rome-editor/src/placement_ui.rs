@@ -932,6 +932,38 @@ impl PlacementUi {
             self.pending = None;
         }
     }
+
+    /// Selects all objects sharing the type_id of any currently selected object.
+    pub fn select_all_of_type(&mut self) -> usize {
+        let Some(store) = &self.store else { return 0; };
+        let selected_types: std::collections::HashSet<u16> = self
+            .selection
+            .iter()
+            .filter_map(|&(slot, uid)| store.objects().iter().find(|o| o.slot == slot && o.uid == uid).map(|o| o.type_id))
+            .collect();
+        if selected_types.is_empty() {
+            return 0;
+        }
+        let matching: Vec<(usize, u32)> = store
+            .objects()
+            .iter()
+            .filter(|o| selected_types.contains(&o.type_id))
+            .map(|o| (o.slot, o.uid))
+            .collect();
+        let count = matching.len();
+        self.selection = matching;
+        if let Some(&first) = self.selection.first() {
+            self.selected = Some(first);
+        }
+        count
+    }
+
+    /// Returns the world (X, Z) coordinates of the single selected object, if exactly one is selected.
+    pub fn selected_coordinates(&self) -> Option<(f32, f32)> {
+        let (slot, uid) = self.selected?;
+        let store = self.store.as_ref()?;
+        store.objects().iter().find(|o| o.slot == slot && o.uid == uid).map(|o| (o.position[0], o.position[2]))
+    }
     fn request_load(&mut self) -> Result<()> {
         explicit_map(&self.map_input)?;
         if self.is_dirty() {
@@ -1631,6 +1663,13 @@ impl PlacementUi {
                 if ui.button("Select all").clicked() {
                     self.select_all();
                 }
+                if ui.add_enabled(!self.selection.is_empty(), egui::Button::new("Select type / 選取同類型"))
+                    .on_hover_text("選取所有與目前選取物件具相同類型的物件 / Select all objects of same type")
+                    .clicked()
+                {
+                    let n = self.select_all_of_type();
+                    self.status = format!("已選取 {n} 個同類型物件 / Selected {n} objects of same type");
+                }
                 if ui.button("Clear selection").clicked() {
                     self.clear_selection();
                 }
@@ -1665,9 +1704,19 @@ impl PlacementUi {
                 }
             });
             if let Some(o) = self.selected.and_then(|k| objects.iter().find(|o| (o.slot, o.uid) == k)) {
-                if let Some(limits) = self.category_limits(o.type_id as i32) {
-                    ui.label(format!("類別限制：{limits}（單位數量存於 SDL，不在 DATA）"));
-                }
+                ui.horizontal(|ui| {
+                    if let Some(limits) = self.category_limits(o.type_id as i32) {
+                        ui.label(format!("類別限制：{limits}（單位數量存於 SDL，不在 DATA）"));
+                    }
+                    if ui.button("Copy X/Z / 複製 X/Z")
+                        .on_hover_text("複製選取物件的世界座標 (X, Z) 至剪貼簿 / Copy world X and Z coordinates of the selected object to clipboard")
+                        .clicked()
+                    {
+                        let text = format!("{:.1}, {:.1}", o.position[0], o.position[2]);
+                        ctx.copy_text(text.clone());
+                        self.status = format!("已複製 X/Z 座標至剪貼簿：{text} / Copied X/Z to clipboard: {text}");
+                    }
+                });
             }
             if let Some(store) = &self.store {
                 let families = self.selected_families();
@@ -3192,6 +3241,17 @@ mod tests {
         // 7. Toggle on non-existent key is safely ignored
         ui.toggle_select_object((99, 99));
         assert_eq!(ui.selected_objects(), vec![(0, 1)]);
+
+        // 8. Select all of type and copy coordinates
+        let coords = ui.selected_coordinates();
+        assert!(coords.is_some());
+        let count_type = ui.select_all_of_type();
+        assert!(count_type >= 1);
+        let first_type = ui.store.as_ref().unwrap().objects().iter().find(|o| o.slot == 0 && o.uid == 1).unwrap().type_id;
+        for &(slot, uid) in &ui.selection {
+            let t = ui.store.as_ref().unwrap().objects().iter().find(|o| o.slot == slot && o.uid == uid).unwrap().type_id;
+            assert_eq!(t, first_type);
+        }
     }
 
     #[test]

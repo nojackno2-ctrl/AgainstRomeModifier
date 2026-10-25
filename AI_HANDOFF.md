@@ -1,3 +1,9 @@
+## 2026-10-25 Agy：自主批次 #8 設計者工作流程三項優化（已驗證）
+- 1. 劇本事件批次啟用／停用（scenario_ui.rs:1469-1485 原清單僅顯示篩選筆數，無批次切換，需逐一勾選:1786）：新增 `set_events_enabled(&mut self, indices: &[usize], enabled: bool)`，於事件瀏覽器提供「啟用全部／啟用篩選」(Enable all / filtered) 與「停用全部／停用篩選」(Disable all / filtered) 雙語按鈕與 hover 說明，整批共享單一步驟復原（Ctrl+Z）。
+- 2. 放置物件快速「選取同類型」(spawn_placement_ui.rs:1277-1295、placement_ui.rs:1631-1637 原操作僅有 Edit/Duplicate/Delete/All，無同類型選取）：新增 `select_all_of_type()`，一鍵選取畫布與地圖上所有符合目前選取物件類型的放置物件（支援腳本生成與 DATA 物件），便於整批調整隊伍、方向或刪除。
+- 3. 選取物件「複製 X/Z 座標」(spawn_placement_ui.rs:1257-1285、placement_ui.rs:1651-1671 座標僅格式化為唯讀文字）：新增 `selected_coordinates()` 與「複製 X/Z (Copy X/Z)」雙語按鈕，單選物件時一鍵將精確世界座標複製至系統剪貼簿（如 `8192.0, 4096.0`），便於貼入劇本觸發器、鏡頭位置與生成器目標。
+- 驗證：執行 cargo test --workspace --locked --offline --no-fail-fast --target-dir re_workspace/agy-target 完成 283 組測試套件，**2,573 passed／0 failed／25 ignored**（exit 0，日誌 re_workspace/agy-batch-8-test.log），編輯器單元測試 731 passed／0 failed／6 ignored（新增 3 項無視窗單元測試均通過）。同步更新 docs/map-editor-user-guide.md。未 stage／commit，遊戲唯讀，AGENTS.md／README.md 既有變更保留；未手動驗收 GUI。
+
 ## 2026-10-25 Codex：批次 #7（編輯器通過；四項既有環境失敗）
 - 修正 2cff58b：2D／3D 讀數統一 256 格／16384 世界單位（app.rs:3863、11404、11560），方向鍵遵守 shortcuts_blocked、Shift 僅平移一次（:11447）。新增雙語縮放百分比／重設視角、複製已載入資料夾；缺口為原 app.rs:10991 狀態區無視角操作、:10930 路徑欄無複製且可能尚未載入；指南同步，四項無視窗回歸通過，無新增逐格掃描／磁碟讀取。
 - 依序 cargo check／test／build --workspace --locked --offline --target-dir re_workspace/codex-wave-dest-target（test 加 --no-fail-fast）：check／build exit 0，完整 283 組、2567 passed／4 failed／25 ignored（exit 101），編輯器單元 729 passed／0 failed／6 ignored；日誌 re_workspace/codex-batch-7-{check,test,build}.log。四失敗僅 install_resource_discovery::{app_local_trace_works_without_third_party,ancestor_and_third_party_override_never_implicitly_supply_trace,executable_at_source_root_does_not_use_tracked_cpp_payload,dgvoodoo_remains_available_when_trace_is_missing}（:55／111／128／162），提權環境內暫存祖先既有 ThirdParty／trace DLL 汙染，未改無關產品。
