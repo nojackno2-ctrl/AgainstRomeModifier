@@ -23,6 +23,22 @@ pub(crate) fn format_time_mmss(seconds: i32) -> String {
     }
 }
 
+/// Formats attack wave time for display.
+///
+/// Time-only events fire at exact mission time `m:ss`.
+/// Condition-triggered events fire at earliest `m:ss` of mission time (when conditions are met).
+pub(crate) fn format_wave_time(seconds: i32, condition_triggered: bool, english: bool) -> String {
+    if condition_triggered {
+        if english {
+            format!("earliest {}, when condition met", format_time_mmss(seconds))
+        } else {
+            format!("最早 {}，且條件成立時", format_time_mmss(seconds))
+        }
+    } else {
+        format_time_mmss(seconds)
+    }
+}
+
 /// Balance statistics for a single team (0..=7).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct TeamBalance {
@@ -172,11 +188,7 @@ pub(crate) fn summarize(
             condition_triggered_units += c.units;
         }
 
-        let time_formatted = if c.condition_triggered {
-            format!("+{} after condition", format_time_mmss(c.delay_seconds))
-        } else {
-            format_time_mmss(c.delay_seconds)
-        };
+        let time_formatted = format_wave_time(c.delay_seconds, c.condition_triggered, true);
 
         waves.push(AttackWaveEntry {
             delay_seconds: c.delay_seconds,
@@ -637,7 +649,7 @@ mod tests {
         // Must appear after time-only waves (Wave 0..2)
         assert_eq!(summary.waves[3].event_name, "Endless Camp Defense");
         assert_eq!(summary.waves[3].delay_seconds, 0);
-        assert_eq!(summary.waves[3].time_formatted, "+0:00 after condition");
+        assert_eq!(summary.waves[3].time_formatted, "earliest 0:00, when condition met");
         assert_eq!(summary.waves[3].units, 10);
         assert_eq!(summary.waves[3].cumulative_units, None, "condition-triggered waves excluded from mission cumulative");
         assert!(summary.waves[3].repeats);
@@ -646,10 +658,29 @@ mod tests {
         // Wave 4: Ambush When Player Near Camp (condition-triggered, 10s delay, repeats == false)
         assert_eq!(summary.waves[4].event_name, "Ambush When Player Near Camp");
         assert_eq!(summary.waves[4].delay_seconds, 10);
-        assert_eq!(summary.waves[4].time_formatted, "+0:10 after condition");
+        assert_eq!(summary.waves[4].time_formatted, "earliest 0:10, when condition met");
         assert_eq!(summary.waves[4].units, 15);
         assert_eq!(summary.waves[4].cumulative_units, None, "condition-triggered waves excluded from mission cumulative");
         assert!(!summary.waves[4].repeats);
         assert!(summary.waves[4].condition_triggered);
+    }
+
+    #[test]
+    fn test_condition_triggered_label_text_bilingual() {
+        // Condition-triggered entries (English and Traditional Chinese)
+        assert_eq!(format_wave_time(0, true, true), "earliest 0:00, when condition met");
+        assert_eq!(format_wave_time(0, true, false), "最早 0:00，且條件成立時");
+        assert_eq!(format_wave_time(10, true, true), "earliest 0:10, when condition met");
+        assert_eq!(format_wave_time(10, true, false), "最早 0:10，且條件成立時");
+        assert_eq!(format_wave_time(90, true, true), "earliest 1:30, when condition met");
+        assert_eq!(format_wave_time(90, true, false), "最早 1:30，且條件成立時");
+        assert_eq!(format_wave_time(305, true, true), "earliest 5:05, when condition met");
+        assert_eq!(format_wave_time(305, true, false), "最早 5:05，且條件成立時");
+
+        // Time-only entries remain exact m:ss in both languages
+        assert_eq!(format_wave_time(0, false, true), "0:00");
+        assert_eq!(format_wave_time(0, false, false), "0:00");
+        assert_eq!(format_wave_time(90, false, true), "1:30");
+        assert_eq!(format_wave_time(90, false, false), "1:30");
     }
 }

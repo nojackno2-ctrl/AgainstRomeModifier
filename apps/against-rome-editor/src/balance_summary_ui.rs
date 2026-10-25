@@ -9,9 +9,32 @@ use crate::app::{tr, EditorApp};
 use against_rome_ambience::Language as AppLanguage;
 use eframe::egui::{self, Color32, Grid, RichText, ScrollArea};
 
+/// Fingerprint used to invalidate cached balance summary.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct BalanceCacheKey {
+    pub map_path: Option<std::path::PathBuf>,
+    pub scenario_loaded: bool,
+    pub scenario_token: u64,
+    pub scenario_spawns_len: usize,
+    pub scenario_events_len: usize,
+    pub placement_loaded: bool,
+    pub placement_token: u64,
+}
+
 #[derive(Default)]
 pub struct BalanceSummaryUi {
     pub open: bool,
+    pub(crate) cached_summary: Option<crate::balance_summary::BalanceSummary>,
+    pub(crate) cache_key: Option<BalanceCacheKey>,
+    pub recompute_count: usize,
+}
+
+impl BalanceSummaryUi {
+    /// Manually invalidate the cached balance summary.
+    pub fn invalidate_cache(&mut self) {
+        self.cached_summary = None;
+        self.cache_key = None;
+    }
 }
 
 impl EditorApp {
@@ -35,9 +58,11 @@ impl EditorApp {
             return;
         }
 
+        // Trigger the same one-time scenario autoload as Scenario/Spawns panels
+        self.autoload_scenario_if_needed();
+
         let lang = self.lang();
         let mut open = true;
-        let summary = self.compute_balance_summary();
 
         egui::Window::new(tr(lang, "Map Balance Summary (read-only)", "地圖平衡摘要（唯讀）"))
             .open(&mut open)
@@ -45,6 +70,48 @@ impl EditorApp {
             .resizable(true)
             .show(ctx, |ui| {
                 ScrollArea::vertical().show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        if ui.button(tr(lang, "Refresh", "重新整理")).clicked() {
+                            self.balance_summary.invalidate_cache();
+                            if !self.scenario.is_loaded() {
+                                self.scenario_autoload_tried = None;
+                                self.autoload_scenario_if_needed();
+                            }
+                        }
+                    });
+                    ui.add_space(4.0);
+
+                    // If scenario loading failed or is unavailable, show a bilingual notice
+                    // instead of misleading empty results.
+                    if !self.scenario.is_loaded() {
+                        ui.colored_label(
+                            Color32::from_rgb(230, 80, 80),
+                            tr(lang, "Scenario unavailable", "劇本無法載入"),
+                        );
+                        return;
+                    }
+
+                    // Check cache token against scenario and placement state
+                    let key = BalanceCacheKey {
+                        map_path: self.loaded_map_path.clone(),
+                        scenario_loaded: self.scenario.is_loaded(),
+                        scenario_token: self.scenario.history_token(),
+                        scenario_spawns_len: self.scenario.document().spawns.len(),
+                        scenario_events_len: self.scenario.document().events.len(),
+                        placement_loaded: self.placement.is_loaded(),
+                        placement_token: self.placement.history_token(),
+                    };
+
+                    if self.balance_summary.cache_key.as_ref() != Some(&key)
+                        || self.balance_summary.cached_summary.is_none()
+                    {
+                        let computed = self.compute_balance_summary();
+                        self.balance_summary.recompute_count += 1;
+                        self.balance_summary.cache_key = Some(key);
+                        self.balance_summary.cached_summary = Some(computed);
+                    }
+
+                    let summary = self.balance_summary.cached_summary.clone().unwrap();
                     // 1. Objectives sanity check
                     ui.heading(tr(lang, "Scenario Objectives", "劇本勝負目標"));
                     if !summary.objectives.has_victory {
@@ -138,8 +205,8 @@ impl EditorApp {
                         ui.label(
                             RichText::new(tr(
                                 lang,
-                                "Cumulative total excludes repeating events",
-                                "累計不含重複事件",
+                                "Cumulative total excludes repeating events (repeats occur at least every delay_seconds)",
+                                "累計不含重複事件（重複事件至少每隔 delay_seconds 再次發生）",
                             ))
                             .italics(),
                         );
@@ -161,18 +228,11 @@ impl EditorApp {
                                 ui.end_row();
 
                                 for wave in &summary.waves {
-                                    let time_display = if wave.condition_triggered {
-                                        if lang == AppLanguage::English {
-                                            wave.time_formatted.clone()
-                                        } else {
-                                            format!(
-                                                "條件成立後 +{}",
-                                                crate::balance_summary::format_time_mmss(wave.delay_seconds)
-                                            )
-                                        }
-                                    } else {
-                                        wave.time_formatted.clone()
-                                    };
+                                    let time_display = crate::balance_summary::format_wave_time(
+                                        wave.delay_seconds,
+                                        wave.condition_triggered,
+                                        lang == AppLanguage::English,
+                                    );
                                     ui.label(time_display);
 
                                     let event_label = if wave.repeats {
@@ -184,7 +244,21 @@ impl EditorApp {
                                     } else {
                                         wave.event_name.clone()
                                     };
-                                    ui.label(event_label);
+                                    let label_response = ui.label(event_label);
+                                    if wave.repeats {
+                                        let tooltip = if lang == AppLanguage::English {
+                                            format!(
+                                                "Repeats occur at least every {} (delay_seconds)",
+                                                crate::balance_summary::format_time_mmss(wave.delay_seconds)
+                                            )
+                                        } else {
+                                            format!(
+                                                "每次重複至少間隔 {} (delay_seconds)",
+                                                crate::balance_summary::format_time_mmss(wave.delay_seconds)
+                                            )
+                                        };
+                                        label_response.on_hover_text(tooltip);
+                                    }
 
                                     ui.label(format!("{} {}", tr(lang, "Team", "隊伍"), wave.team));
                                     ui.label(wave.units.to_string());
@@ -240,6 +314,8 @@ mod tests {
             },
         );
         assert!(app.balance_summary.open);
+        assert!(!app.scenario.is_loaded());
+        assert!(app.balance_summary.cached_summary.is_none());
     }
 
     #[test]
@@ -322,6 +398,7 @@ mod tests {
         assert_eq!(summary.total_enemy_wave_units, 0);
         assert_eq!(summary.condition_triggered_units, 10);
         assert!(summary.waves.iter().any(|w| w.repeats));
+        assert_eq!(summary.waves[1].time_formatted, "earliest 0:15, when condition met");
 
         app.balance_summary.open = true;
 
@@ -338,6 +415,7 @@ mod tests {
             },
         );
         assert!(app.balance_summary.open);
+        assert_eq!(app.balance_summary.recompute_count, 1);
 
         // 2. Traditional Chinese rendering
         app.ambience.app_language = AppLanguage::TraditionalChinese;
@@ -352,6 +430,206 @@ mod tests {
             },
         );
         assert!(app.balance_summary.open);
+        assert_eq!(app.balance_summary.recompute_count, 1, "Redraw in another language must use cache");
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_summary_opening_autoloads_scenario_waves_and_handles_unavailable() {
+        use against_rome_scenario::{Action, Event};
+
+        // 1. Valid scenario map: opening summary should trigger scenario autoload
+        let temp_dir = std::env::temp_dir().join(format!(
+            "ar_test_balance_autoload_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(temp_dir.join("SCRIPT")).unwrap();
+        std::fs::write(
+            temp_dir.join("SCRIPT/ak_level.bci"),
+            against_rome_scenario::BciImage::idle().serialize(),
+        )
+        .unwrap();
+
+        // Populate SCRIPT/ak_level.bci with an attack wave and victory objective
+        {
+            let doc = against_rome_scenario::ScenarioDocument {
+                events: vec![
+                    Event {
+                        name: "Autoload Wave".into(),
+                        delay_seconds: 45,
+                        enabled: true,
+                        actions: vec![Action {
+                            kind: 2,
+                            team: 2,
+                            count: 12,
+                            alias: "Speer".into(),
+                            x: 2000.0,
+                            z: 2000.0,
+                            ..Default::default()
+                        }],
+                        ..Default::default()
+                    },
+                    Event {
+                        name: "Victory Condition".into(),
+                        delay_seconds: 0,
+                        enabled: true,
+                        actions: vec![Action {
+                            kind: 3,
+                            ..Default::default()
+                        }],
+                        ..Default::default()
+                    },
+                ],
+                ..Default::default()
+            };
+            std::fs::write(temp_dir.join("arm_scenario.json"), doc.to_json().unwrap()).unwrap();
+        }
+
+        let mut app = EditorApp::initial_state();
+        app.loaded_map_path = Some(temp_dir.clone());
+        // Verify scenario is NOT loaded initially before opening summary
+        assert!(!app.scenario.is_loaded());
+
+        app.balance_summary.open = true;
+        let ctx = egui::Context::default();
+        let _ = ctx.run(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 800.0))),
+                ..Default::default()
+            },
+            |ctx| {
+                app.show_balance_summary(ctx);
+            },
+        );
+
+        // Opening the summary triggered autoload:
+        assert!(app.scenario.is_loaded(), "Opening summary must trigger scenario autoload");
+        let cached = app.balance_summary.cached_summary.as_ref().expect("cached summary");
+        assert_eq!(cached.waves.len(), 1);
+        assert_eq!(cached.waves[0].event_name, "Autoload Wave");
+        assert_eq!(cached.waves[0].units, 12);
+        assert!(cached.objectives.has_victory);
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+
+        // 2. Scenario unavailable: invalid map directory without SCRIPT
+        let empty_dir = std::env::temp_dir().join(format!(
+            "ar_test_balance_unavailable_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&empty_dir).unwrap();
+
+        let mut app_unavailable = EditorApp::initial_state();
+        app_unavailable.loaded_map_path = Some(empty_dir.clone());
+        app_unavailable.balance_summary.open = true;
+
+        let ctx_unav = egui::Context::default();
+        let _ = ctx_unav.run(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 800.0))),
+                ..Default::default()
+            },
+            |ctx| {
+                app_unavailable.show_balance_summary(ctx);
+            },
+        );
+
+        // Scenario could not load, so scenario.is_loaded() is false and no misleading empty results are cached
+        assert!(!app_unavailable.scenario.is_loaded());
+        assert!(app_unavailable.balance_summary.cached_summary.is_none());
+
+        let _ = std::fs::remove_dir_all(&empty_dir);
+    }
+
+    #[test]
+    fn test_balance_summary_caching_and_recompute_on_edit() {
+        use against_rome_scenario::{Action, Event};
+
+        let temp_dir = std::env::temp_dir().join(format!(
+            "ar_test_balance_cache_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(temp_dir.join("SCRIPT")).unwrap();
+        std::fs::write(
+            temp_dir.join("SCRIPT/ak_level.bci"),
+            against_rome_scenario::BciImage::idle().serialize(),
+        )
+        .unwrap();
+
+        let mut app = EditorApp::initial_state();
+        app.scenario.load_session(&temp_dir).unwrap();
+        app.balance_summary.open = true;
+
+        let ctx = egui::Context::default();
+        let run_frame = |app: &mut EditorApp| {
+            let _ = ctx.run(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 800.0))),
+                    ..Default::default()
+                },
+                |ctx| {
+                    app.show_balance_summary(ctx);
+                },
+            );
+        };
+
+        // Frame 1: initial computation
+        run_frame(&mut app);
+        assert_eq!(app.balance_summary.recompute_count, 1);
+
+        // Frame 2: nothing changed -> cache reused
+        run_frame(&mut app);
+        assert_eq!(app.balance_summary.recompute_count, 1, "Cache must not recompute when nothing changed");
+
+        // Explicit cache invalidation (e.g. Refresh button clicked)
+        app.balance_summary.invalidate_cache();
+        run_frame(&mut app);
+        assert_eq!(app.balance_summary.recompute_count, 2, "Cache must recompute after invalidation");
+
+        // Frame 4: nothing changed -> cache reused
+        run_frame(&mut app);
+        assert_eq!(app.balance_summary.recompute_count, 2);
+
+        // Make an edit to scenario
+        app.scenario
+            .add_events(&[Event {
+                name: "New Wave".into(),
+                delay_seconds: 100,
+                enabled: true,
+                actions: vec![Action {
+                    kind: 2,
+                    team: 1,
+                    count: 7,
+                    alias: "Speer".into(),
+                    x: 2000.0,
+                    z: 2000.0,
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }])
+            .unwrap();
+
+        // Frame 5: edit detected -> cache recomputed!
+        run_frame(&mut app);
+        assert_eq!(app.balance_summary.recompute_count, 3, "Cache must recompute after scenario edit");
+        assert_eq!(app.balance_summary.cached_summary.as_ref().unwrap().waves.len(), 1);
+
+        // Frame 6: nothing changed -> cache reused
+        run_frame(&mut app);
+        assert_eq!(app.balance_summary.recompute_count, 3);
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }

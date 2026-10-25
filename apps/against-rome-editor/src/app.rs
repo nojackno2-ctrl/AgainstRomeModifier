@@ -175,7 +175,7 @@ pub struct EditorApp {
     /// Map for which the Material brush already tried to load boden.txt on demand.
     material_autoload_tried: Option<PathBuf>,
     /// Map for which the Scenario panel already tried to load its script on demand.
-    scenario_autoload_tried: Option<PathBuf>,
+    pub(crate) scenario_autoload_tried: Option<PathBuf>,
     pub ambience: AmbienceUi,
     pub modifier: ModifierUi,
     pub viewport_3d: Viewport3d,
@@ -10956,21 +10956,11 @@ impl EditorApp {
         self.placement.settlement_history_routing = !self.settlement_undo.is_empty() || !self.settlement_redo.is_empty();
         self.placement.settlement_history_available = (!self.settlement_undo.is_empty(), !self.settlement_redo.is_empty());
         self.placement.show(ctx);
-        // Opening the Scenario or Spawns panel loads the open map's script on demand (once per
+        // Opening the Scenario, Spawns, or Balance Summary panel loads the open map's script on demand (once per
         // map, never over pending edits); otherwise added events or objects could not be
         // checked or saved, and Spawns would send the designer to the Scenario panel.
-        if (self.scenario.open || self.spawn_ui.open)
-            && !self.scenario.is_loaded()
-            && !self.scenario.dirty()
-            && self.scenario_autoload_tried != self.loaded_map_path
-        {
-            self.scenario_autoload_tried = self.loaded_map_path.clone();
-            if let Some(path) = self.loaded_map_path.clone() {
-                if let Err(e) = self.scenario.load_session(&path) {
-                    self.status_message = format!("Scenario: {e}");
-                    self.status_is_error = true;
-                }
-            }
+        if self.scenario.open || self.spawn_ui.open || self.balance_summary.open {
+            self.autoload_scenario_if_needed();
         }
         // 初次開啟與按下主屋按鈕才重算，避免每幀讀取原生 DATA。
         if self.scenario.open && self.scenario.wave_target_requested {
@@ -11033,6 +11023,23 @@ impl EditorApp {
 }
 
 impl EditorApp {
+    /// Autoloads the scenario on demand (once per map, never over pending edits)
+    /// when panels like Scenario, Spawns, or Balance Summary are opened.
+    pub(crate) fn autoload_scenario_if_needed(&mut self) {
+        if !self.scenario.is_loaded()
+            && !self.scenario.dirty()
+            && self.scenario_autoload_tried != self.loaded_map_path
+        {
+            self.scenario_autoload_tried = self.loaded_map_path.clone();
+            if let Some(path) = self.loaded_map_path.clone() {
+                if let Err(e) = self.scenario.load_session(&path) {
+                    self.status_message = format!("Scenario: {e}");
+                    self.status_is_error = true;
+                }
+            }
+        }
+    }
+
     /// 收集已提交的子系統操作，依全域序號排列。
     fn collect_pilot_receipts(&mut self) {
         use crate::placement_ui::PlacementHistoryReceipt;
