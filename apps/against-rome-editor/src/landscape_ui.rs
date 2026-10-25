@@ -16,6 +16,7 @@ use against_rome_landscape::{
     TerrainHeightWorkBuffer, TerrainSampleChange, ThermalErosionParams, Point,
 };
 use against_rome_textures::{TerrainBlendEditSession, TerrainRegionPlanner};
+use crate::ambience_ui::AmbienceUi;
 use eframe::egui::{self, Color32, Vec2};
 
 /// Which plan the "Apply to map" button asks the app to write into the edit sessions.
@@ -169,6 +170,9 @@ pub struct LandscapeUi {
     // Dirty / guards
     pub apply_requested: Option<LandscapeApply>,
 
+    /// Cached read-out of the ambience boden water level (not persisted separately).
+    pub cached_water_level: Option<f32>,
+
     pub dirty: bool,
     pub pending_discard: bool,
     pub status_message: String,
@@ -216,6 +220,7 @@ impl Default for LandscapeUi {
             erosion_apply_requested: false,
             region: RegionToolState::default(),
             apply_requested: None,
+            cached_water_level: None,
             dirty: false,
             pending_discard: false,
             status_message: "Ready.".to_string(),
@@ -337,6 +342,7 @@ impl LandscapeUi {
         let options = RiverPlannerOptions {
             preferred_river_texture: preferred.map(str::to_string),
             elevation_mode: self.river_mode,
+            water_level: self.cached_water_level,
             ..Default::default()
         };
         let (tiles, textures) = cx.texture_grid();
@@ -724,7 +730,7 @@ impl LandscapeUi {
         }
     }
 
-    pub fn show(&mut self, ctx: &egui::Context, cx: &LandscapeContext) {
+    pub fn show(&mut self, ctx: &egui::Context, cx: &LandscapeContext, mut ambience: Option<&mut AmbienceUi>) {
         if !self.open {
             return;
         }
@@ -743,6 +749,29 @@ impl LandscapeUi {
                     ui.selectable_value(&mut self.current_tab, LandscapeTab::RegionTools, "Region Tools");
                 });
                 ui.separator();
+
+                if let Some(ambience) = ambience.as_mut() {
+                    self.cached_water_level = Some(ambience.profile.boden.waterlevel);
+                    ui.horizontal(|ui| {
+                        ui.label(format!("Current water level / 目前水位: {:.1}", ambience.profile.boden.waterlevel));
+                        ui.separator();
+                        ui.label("Water level / 水位:");
+                        let resp = ui.add(
+                            egui::DragValue::new(&mut ambience.profile.boden.waterlevel).speed(0.5)
+                        ).on_hover_text("Same setting as Ambience → Boden (boden.ini [Waterlevel]) / 與「氛圍 → 地表」為相同設定（boden.ini 水位）");
+                        if resp.changed() {
+                            ambience.dirty = true;
+                            ambience.validate_current();
+                            self.cached_water_level = Some(ambience.profile.boden.waterlevel);
+                        }
+                    });
+                    ui.separator();
+                } else if let Some(wl) = self.cached_water_level {
+                    ui.horizontal(|ui| {
+                        ui.label(format!("Current water level / 目前水位: {:.1}", wl));
+                    });
+                    ui.separator();
+                }
 
                 if !self.status_message.is_empty() {
                     let color = if self.status_is_error {
@@ -795,6 +824,10 @@ impl LandscapeUi {
                 self.pending_discard = false;
             }
         }
+    }
+
+    pub fn show_without_ambience(&mut self, ctx: &egui::Context, cx: &LandscapeContext) {
+        self.show(ctx, cx, None);
     }
 
     fn render_cliff_tab(&mut self, ui: &mut egui::Ui, cx: &LandscapeContext) {
@@ -874,6 +907,14 @@ impl LandscapeUi {
                     ui.selectable_value(&mut self.river_mode, RiverElevationMode::AutoCarveDescending, "AutoCarveDescending");
                     ui.selectable_value(&mut self.river_mode, RiverElevationMode::AutoCarveTrench, "AutoCarveTrench");
                 });
+            ui.end_row();
+
+            ui.label("Water Level / 水位:");
+            if let Some(wl) = self.cached_water_level {
+                ui.label(format!("{:.1}", wl));
+            } else {
+                ui.label("Unspecified / 未指定");
+            }
             ui.end_row();
         });
 
@@ -1951,5 +1992,86 @@ mod small_ux_tests {
         ui.reset_enabled_erosion_parameters();
         assert_eq!(format!("{:?}", ui.erosion_hydraulic_params), hydraulic);
         assert_eq!(ui.erosion_thermal_params.iterations, ThermalErosionParams::default().iterations);
+    }
+
+    #[test]
+    fn test_landscape_ui_water_level_drag_edits_ambience_and_marks_dirty() {
+        let mut landscape = LandscapeUi::default();
+        landscape.open = true;
+        let mut ambience = AmbienceUi::default();
+        ambience.profile.boden.waterlevel = 20.0;
+        ambience.dirty = false;
+
+        let ctx = egui::Context::default();
+        let cx = LandscapeContext::plain(33, None);
+
+        // Frame 1: render landscape window with ambience
+        let _ = ctx.run(Default::default(), |ctx| {
+            landscape.show(ctx, &cx, Some(&mut ambience));
+        });
+        assert_eq!(landscape.cached_water_level, Some(20.0));
+        assert!(!ambience.dirty, "ambience should remain clean before edits");
+
+        // Frame 2: find position of "Water level / 水位:" to locate DragValue
+        let shapes = ctx.run(Default::default(), |ctx| {
+            landscape.show(ctx, &cx, Some(&mut ambience));
+        }).shapes;
+
+        let label_rect = shapes.iter().find_map(|s| match &s.shape {
+            egui::epaint::Shape::Text(t) if t.galley.text().contains("Water level / 水位:") => {
+                Some(egui::Rect::from_min_size(t.pos, t.galley.size()))
+            }
+            _ => None,
+        }).expect("found Water level label in landscape window");
+
+        // Target DragValue center (placed immediately to the right of the label)
+        let drag_pos = egui::pos2(label_rect.max.x + 20.0, label_rect.center().y);
+
+        // Press pointer on the drag field
+        let _ = ctx.run(egui::RawInput {
+            events: vec![
+                egui::Event::PointerMoved(drag_pos),
+                egui::Event::PointerButton {
+                    pos: drag_pos,
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    modifiers: Default::default(),
+                },
+            ],
+            ..Default::default()
+        }, |ctx| {
+            landscape.show(ctx, &cx, Some(&mut ambience));
+        });
+
+        // Drag to the right by 30 pixels (speed is 0.5, so delta is +15.0)
+        let dragged_pos = egui::pos2(drag_pos.x + 30.0, drag_pos.y);
+        let _ = ctx.run(egui::RawInput {
+            events: vec![
+                egui::Event::PointerMoved(dragged_pos),
+            ],
+            ..Default::default()
+        }, |ctx| {
+            landscape.show(ctx, &cx, Some(&mut ambience));
+        });
+
+        // Release pointer
+        let _ = ctx.run(egui::RawInput {
+            events: vec![
+                egui::Event::PointerButton {
+                    pos: dragged_pos,
+                    button: egui::PointerButton::Primary,
+                    pressed: false,
+                    modifiers: Default::default(),
+                },
+            ],
+            ..Default::default()
+        }, |ctx| {
+            landscape.show(ctx, &cx, Some(&mut ambience));
+        });
+
+        // Verify editing in landscape window updated ambience boden water level and marked ambience dirty
+        assert!(ambience.dirty, "editing water level in landscape window must mark ambience dirty");
+        assert_eq!(ambience.profile.boden.waterlevel, 35.0, "drag should increase waterlevel from 20.0 to 35.0");
+        assert_eq!(landscape.cached_water_level, Some(35.0));
     }
 }

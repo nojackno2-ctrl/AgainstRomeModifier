@@ -1269,21 +1269,32 @@ impl EditorApp {
             spec.target_slot,
             &spec.target_name,
         )?;
+        let mut briefing_warning: Option<String> = None;
         if let Some(briefing_text) = &spec.briefing_text {
             let briefing = info.directory_path.join("TEXT").join("US").join("briefing.put");
-            if briefing.exists() {
-                if let Ok(mut put) = against_rome_maps::text_docs::PutTextDocument::load(&briefing) {
-                    let _ = put.set_value("briefing_titel_1", briefing_text);
-                    let _ = put.save();
-                }
+            let write_res: Result<(), String> = if !briefing.is_file() {
+                Err(format!("briefing.put not found or is a directory: {}", briefing.display()))
+            } else {
+                against_rome_maps::text_docs::PutTextDocument::load(&briefing)
+                    .and_then(|mut put| {
+                        put.set_value("briefing_titel_1", briefing_text)?;
+                        put.save()
+                    })
+            };
+            if let Err(err) = write_res {
+                briefing_warning = Some(format!(
+                    "Warning: Failed to update briefing file ({err}); briefing title kept in memory (unsaved) / 警告：簡報檔案寫入失敗（{err}）；簡報標題暫存於記憶體（未儲存）"
+                ));
             }
         }
         let loaded = load_map(&info.directory_path)?;
         self.install_loaded_map(info.directory_path.clone(), loaded)?;
         if let Some(briefing_text) = &spec.briefing_text {
-            if self.ambience.briefing_title != *briefing_text {
+            if briefing_warning.is_some() {
                 self.ambience.briefing_title = briefing_text.clone();
                 self.ambience.dirty = true;
+            } else {
+                self.ambience.dirty = false;
             }
         }
         self.maps.refresh_catalog();
@@ -1294,11 +1305,21 @@ impl EditorApp {
                 self.status_message
             ));
         }
-        self.maps.status_message = format!(
-            "Flat template {} created; terrain flattened (unsaved). Shape it, then Save.",
-            info.id()
-        );
-        self.maps.status_is_error = false;
+        if let Some(warning) = &briefing_warning {
+            self.status_message = warning.clone();
+            self.status_is_error = false;
+            self.maps.status_message = format!(
+                "Flat template {} created; terrain flattened (unsaved). {warning}",
+                info.id()
+            );
+            self.maps.status_is_error = false;
+        } else {
+            self.maps.status_message = format!(
+                "Flat template {} created; terrain flattened (unsaved). Shape it, then Save.",
+                info.id()
+            );
+            self.maps.status_is_error = false;
+        }
         Ok(info)
     }
 
@@ -1329,11 +1350,13 @@ impl EditorApp {
             PendingAction::BuildBlank(intent) if intent.flat_template => {
                 match self.build_and_install_flat_template(&intent.game_path, &intent.spec) {
                     Ok(info) => {
-                        self.status_message = format!(
-                            "Flat template {} created and opened; terrain flattened (unsaved).",
-                            info.id()
-                        );
-                        self.status_is_error = false;
+                        if !self.status_message.contains("Warning") && !self.status_message.contains("警告") {
+                            self.status_message = format!(
+                                "Flat template {} created and opened; terrain flattened (unsaved).",
+                                info.id()
+                            );
+                            self.status_is_error = false;
+                        }
                     }
                     Err(error) => {
                         self.status_message = format!("Flat template failed: {error}");
@@ -1478,7 +1501,7 @@ impl EditorApp {
             textures,
             texture_names,
         };
-        self.landscape.show(ctx, &lcx);
+        self.landscape.show(ctx, &lcx, Some(&mut self.ambience));
         if let Some(plan) = self.landscape.take_erosion_apply_request() {
             self.handle_erosion_apply(plan);
         }
@@ -4784,12 +4807,53 @@ mod tests {
 
         let info = app.build_and_install_flat_template(&intent.game_path, &intent.spec).expect("build flat template");
         assert_eq!(app.ambience.briefing_title, "Alpine conquest mission briefing.");
+        assert!(!app.ambience.dirty, "success path must leave dirty=false");
+        assert!(!app.status_message.contains("Warning:"), "success path must not have warning: {}", app.status_message);
 
         let saved_put = std::fs::read_to_string(info.directory_path.join("TEXT").join("US").join("briefing.put"))
             .or_else(|_| std::fs::read_to_string(info.directory_path.join("SCRIPT").join("briefing.put")))
             .or_else(|_| std::fs::read_to_string(info.directory_path.join("briefing.put")))
             .expect("read briefing.put");
         assert!(saved_put.contains("Alpine conquest mission briefing."));
+
+        let _ = std::fs::remove_dir_all(&temp_root);
+    }
+
+    #[test]
+    fn test_flat_template_briefing_failure_path_sets_warning_and_dirty() {
+        let temp_root = temp_map_dir("flat_briefing_fail");
+        let src = temp_root.join("MAPS").join("ENDL_001");
+        std::fs::create_dir_all(&src).unwrap();
+        let mut terrain = TerrainSession::create_blank(257, 50);
+        safe_save_map(&src, &mut terrain).unwrap();
+        std::fs::write(src.join("level.put"), "var:map_name =\"Template\";\r\n").unwrap();
+        // Do not create TEXT/US/briefing.put so write fails in build_and_install_flat_template
+        std::fs::create_dir_all(src.join("TEXT").join("US")).unwrap();
+        std::fs::write(src.join("map.sdl"), "[settlement]\r\nrefpos=100.0,0.0,100.0\r\n").unwrap();
+        std::fs::write(src.join("boden.ini"), "[Dimension]\r\n64\r\n[Waterlevel]\r\n30.0\r\n[Heightmapstep]\r\n2.0\r\n").unwrap();
+        let mut boden_txt = String::from("[Dimension]\n64\n\n[Texturen]\n");
+        for _ in 0..4096 {
+            boden_txt.push_str("GRAS_1\n");
+        }
+        std::fs::write(src.join("boden.txt"), boden_txt).unwrap();
+
+        let mut app = EditorApp::initial_state();
+        app.maps.game_path_input = temp_root.to_string_lossy().to_string();
+        app.maps.blank_source_slot = 1;
+        app.maps.blank_target_name = "Flat Alpine Fail".to_string();
+        app.maps.blank_briefing = "Alpine conquest mission briefing.".to_string();
+
+        let intent = app.maps.request_build_flat_template().expect("flat template intent");
+        let info = app.build_and_install_flat_template(&intent.game_path, &intent.spec).expect("map build still succeeds on briefing failure");
+
+        assert_eq!(info.id(), "ENDL_005");
+        assert_eq!(app.ambience.briefing_title, "Alpine conquest mission briefing.");
+        assert!(app.ambience.dirty, "failed file write must keep ambience.dirty = true");
+        assert!(
+            app.status_message.contains("Warning") && app.status_message.contains("警告"),
+            "status bar warning must be reported: {}",
+            app.status_message
+        );
 
         let _ = std::fs::remove_dir_all(&temp_root);
     }

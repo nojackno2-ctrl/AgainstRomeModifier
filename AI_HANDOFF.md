@@ -1,3 +1,9 @@
+## 2026-10-25 Agy：平坦範本簡報失敗警告與地景視窗水位微調（已驗證，未手動驗證 GUI）
+- 1. 平坦範本簡報寫入失敗防護與雙語警告：`app.rs` 之 `build_and_install_flat_template` 完整檢查 `briefing.put` 之存在、載入、`set_value` 與 `save` 結果；寫入失敗時保留地圖建置成功，於狀態列回報雙語警告並保持 `self.ambience.dirty = true` 供設計者透過 Safe Save 再次儲存；寫入成功時磁碟已匹配，保持 `dirty = false`。
+- 2. 地景工作室視窗整合地表水位：`landscape_ui.rs` 與 `app.rs` 於地景工作室視窗新增目前水位數值顯示與雙語拖曳欄位「Water level / 水位」，直接綁定至既有 `self.ambience.profile.boden.waterlevel` 與 dirty 旗標，沿用既有 Safe Save 路徑不建立第二持久化來源，附浮動提示標記與「Ambience → Boden」為相同設定；河道規劃（`plan_river`）複用該水位參數。
+- 測試新增：`test_flat_template_briefing_failure_path_sets_warning_and_dirty`（驗證失敗路徑回報雙語警告且 dirty=true，成功路徑 dirty=false）與 `test_landscape_ui_water_level_drag_edits_ambience_and_marks_dirty`（驗證於地景視窗拖曳水位即時變更 ambience 數值並觸發 dirty）。
+- 驗證：cargo test --workspace --locked --offline --no-fail-fast --target-dir re_workspace/agy-target 通過（283 組、2532 passed、0 failed、24 ignored；日誌保存至 re_workspace/agy-followups-test.log）。未 stage／commit，保留 AGENTS.md／README.md 既有變更，未寫入 repo 以外目錄。
+
 ## 2026-10-25 Agy：地圖屬性視窗與平坦範本簡報保留修復（已驗證，未手動驗證 GUI）
 - A 項確認為真缺陷並修復：`maps_ui.rs` `request_build_flat_template` 原先忽略 `self.blank_briefing`，已補齊 `.with_briefing` 帶入 `BlankMapSpec`；且 `app.rs` 之 `build_and_install_flat_template` 於複製後同步寫入 `TEXT/US/briefing.put` 並更新 `self.ambience.briefing_title`，確保平坦範本地圖保留設計者輸入之簡報標題。
 - B 項新增地圖屬性視窗：頂端工具列新增「Map properties / 地圖屬性」按鈕，開啟獨立小視窗直接綁定 `self.ambience` 的 `briefing_title`、`briefing_subtitle` 與 `briefing_body`；編輯即標記 `self.ambience.dirty = true`，沿用原生 Safe Save 儲存路徑，不建立第二資料來源。
