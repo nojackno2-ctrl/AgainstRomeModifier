@@ -279,11 +279,26 @@ impl NavigationUi {
         self.error = None;
         self.snapshot = None;
     }
+    /// 交換診斷方向並取消取點，不修改地圖或復原紀錄。
+    fn swap_endpoints(&mut self, allowed: bool) {
+        if !allowed { return; }
+        std::mem::swap(&mut self.seed, &mut self.target);
+        self.clear_diagnostics(true);
+    }
+
+    /// 清除路徑覆蓋與錯誤，保留端點與障礙設定。
+    fn clear_diagnostics(&mut self, allowed: bool) {
+        if !allowed { return; }
+        self.invalidate();
+        if self.pick.take().is_some() { self.holding = true; }
+    }
+
     pub fn show(
         &mut self,
         ctx: &egui::Context,
         session: Option<&TerrainSession>,
         water_surface: f32,
+        interaction_allowed: bool,
     ) {
         self.refresh(session, water_surface);
         if !self.open {
@@ -314,6 +329,14 @@ impl NavigationUi {
                 if ui.button("地圖選起點 / Pick start on map").clicked() { self.pick=Some(false); }
                 if ui.button("地圖選終點 / Pick end on map").clicked() { self.pick=Some(true); }
             });
+            ui.horizontal(|ui| {
+                if ui.add_enabled(interaction_allowed, egui::Button::new("交換起終點 / Swap endpoints")).clicked() {
+                    self.swap_endpoints(interaction_allowed);
+                }
+                if ui.add_enabled(interaction_allowed, egui::Button::new("清除診斷覆蓋 / Clear diagnostics")).clicked() {
+                    self.clear_diagnostics(interaction_allowed);
+                }
+            });
             if self.pick.is_some() { ui.label("左鍵點選 2D 地圖；Esc／右鍵取消。 / Click 2D map; Esc/right-click cancels."); }
             if changed {self.report=None;}
             if ui.button("重新檢查 / Analyze current layers").clicked() {
@@ -342,6 +365,32 @@ impl NavigationUi {
 mod tests {
     use super::*;
     use crate::terrain::CollisionBrushOp;
+    #[test]
+    fn swap_and_clear_preserve_layers_history_and_obstacle_settings() {
+        let s = TerrainSession::create_blank(6, 32);
+        let token = s.history_token();
+        let mut nav = NavigationUi::default();
+        nav.seed = [1, 2]; nav.target = [4, 3];
+        nav.building_mode = BuildingMode::Approximate;
+        nav.report = Some(diagnose(&s, 0.0, nav.seed, nav.target).unwrap());
+        nav.pick = Some(true);
+        nav.swap_endpoints(false);
+        assert_eq!(nav.seed, [1, 2]);
+        assert!(nav.report.is_some());
+        nav.swap_endpoints(true);
+        assert_eq!((nav.seed, nav.target), ([4, 3], [1, 2]));
+        assert!(nav.report.is_none() && nav.pick.is_none() && nav.holding);
+        nav.report = Some(diagnose(&s, 0.0, nav.seed, nav.target).unwrap());
+        nav.error = Some("舊診斷".into());
+        nav.clear_diagnostics(false);
+        assert!(nav.report.is_some());
+        nav.clear_diagnostics(true);
+        assert!(nav.report.is_none() && nav.error.is_none() && nav.snapshot.is_none());
+        assert_eq!((nav.seed, nav.target), ([4, 3], [1, 2]));
+        assert_eq!(nav.building_mode, BuildingMode::Approximate);
+        assert_eq!(s.history_token(), token);
+        assert!(!s.is_dirty() && !s.can_undo());
+    }
     #[test]
     fn live_diagnostics_follow_edits_and_undo_without_modifying_layers() {
         let mut s = TerrainSession::create_blank(6, 32);

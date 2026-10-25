@@ -22,6 +22,12 @@ pub enum GettingStartedAction {
     OpenMinimap,
 }
 
+impl GettingStartedAction {
+    pub fn requires_map(self) -> bool {
+        !matches!(self, Self::OpenMaps | Self::OpenSkirmishWizard)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct GettingStartedUi {
     pub open: bool,
@@ -39,7 +45,7 @@ impl GettingStartedUi {
     }
 
     /// 繪製「新手入門」導引視窗。若使用者點選面板快捷按鈕，回傳相應之動作枚舉。
-    pub fn show(&mut self, ctx: &egui::Context, lang: AppLanguage) -> Option<GettingStartedAction> {
+    pub fn show(&mut self, ctx: &egui::Context, lang: AppLanguage, map_loaded: bool) -> Option<GettingStartedAction> {
         if !self.open {
             return None;
         }
@@ -66,6 +72,9 @@ impl GettingStartedUi {
                         "歡迎使用 Against Rome 地圖編輯器！請依照以下 5 大核心步驟製作平衡完整的自製地圖。",
                     )).color(Color32::from_rgb(200, 220, 255)));
                     ui.add_space(6.0);
+                    if !map_loaded {
+                        ui.label(tr(lang, "Load a map before using map tools.", "請先載入地圖，再使用地圖工具。"));
+                    }
 
                     egui::ScrollArea::vertical().show(ui, |ui| {
                         // 步驟一：地圖設定
@@ -83,7 +92,7 @@ impl GettingStartedUi {
                                 if ui.button(tr(lang, "Skirmish Wizard…", "新增對戰精靈…")).on_hover_text(tr(lang, "Launch 4-step skirmish map setup wizard", "啟動 4 步驟對戰地圖設定精靈")).clicked() {
                                     action = Some(GettingStartedAction::OpenSkirmishWizard);
                                 }
-                                if ui.button(tr(lang, "Map Properties", "地圖屬性")).on_hover_text(tr(lang, "Edit map title, briefing, and starting camera", "編輯地圖標題、簡報與初始相機位置")).clicked() {
+                                if ui.add_enabled(map_loaded, egui::Button::new(tr(lang, "Map Properties", "地圖屬性"))).on_hover_text(tr(lang, "Edit map title, briefing, and starting camera", "編輯地圖標題、簡報與初始相機位置")).clicked() {
                                     action = Some(GettingStartedAction::OpenMapProperties);
                                 }
                             });
@@ -99,10 +108,10 @@ impl GettingStartedUi {
                                 "使用升高、降低、整平、平滑與水面工具雕刻山脈與河道。可切換 3D 視角檢視真實遊戲等角比例。",
                             ));
                             ui.horizontal_wrapped(|ui| {
-                                if ui.button(tr(lang, "Terrain Toolbox", "開啟地形工具箱")).on_hover_text(tr(lang, "Toggle terrain sculpt and brush tools", "切換高度筆刷與水面調整工具箱")).clicked() {
+                                if ui.add_enabled(map_loaded, egui::Button::new(tr(lang, "Terrain Toolbox", "開啟地形工具箱"))).on_hover_text(tr(lang, "Toggle terrain sculpt and brush tools", "切換高度筆刷與水面調整工具箱")).clicked() {
                                     action = Some(GettingStartedAction::OpenToolbox);
                                 }
-                                if ui.button(tr(lang, "Toggle 3D View", "切換 2D/3D 視角")).on_hover_text(tr(lang, "Switch between 2D canvas and 3D preview", "切換 2D 畫布與 3D 原生視角")).clicked() {
+                                if ui.add_enabled(map_loaded, egui::Button::new(tr(lang, "Toggle 3D View", "切換 2D/3D 視角"))).on_hover_text(tr(lang, "Switch between 2D canvas and 3D preview", "切換 2D 畫布與 3D 原生視角")).clicked() {
                                     action = Some(GettingStartedAction::Toggle3DView);
                                 }
                             });
@@ -118,10 +127,10 @@ impl GettingStartedUi {
                                 "繪製草地、沙地、碎石與道路材質（按 I 可吸管取樣）。檢查通行網格與建築占地是否暢通。",
                             ));
                             ui.horizontal_wrapped(|ui| {
-                                if ui.button(tr(lang, "Materials", "地表材質")).on_hover_text(tr(lang, "Paint surface textures and blending layers", "繪製地表材質與過渡圖層")).clicked() {
+                                if ui.add_enabled(map_loaded, egui::Button::new(tr(lang, "Materials", "地表材質"))).on_hover_text(tr(lang, "Paint surface textures and blending layers", "繪製地表材質與過渡圖層")).clicked() {
                                     action = Some(GettingStartedAction::OpenTextures);
                                 }
-                                if ui.button(tr(lang, "Navigation", "通行導航")).on_hover_text(tr(lang, "Inspect passability grid, APAT footprints, and routes", "檢視通行網格、APAT 建築占地與尋路路徑")).clicked() {
+                                if ui.add_enabled(map_loaded, egui::Button::new(tr(lang, "Navigation", "通行導航"))).on_hover_text(tr(lang, "Inspect passability grid, APAT footprints, and routes", "檢視通行網格、APAT 建築占地與尋路路徑")).clicked() {
                                     action = Some(GettingStartedAction::OpenNavigation);
                                 }
                             });
@@ -137,10 +146,10 @@ impl GettingStartedUi {
                                 "配置主屋、防禦塔、城牆與自然景觀；配置腳本生成的初始部隊與集結點。按 F 可快速將鏡頭對齊選取物件。",
                             ));
                             ui.horizontal_wrapped(|ui| {
-                                if ui.button(tr(lang, "Placed Objects", "已放置物件")).on_hover_text(tr(lang, "Open DATA objects placement inspector", "開啟 DATA 物件檢查器與屬性面板")).clicked() {
+                                if ui.add_enabled(map_loaded, egui::Button::new(tr(lang, "Placed Objects", "已放置物件"))).on_hover_text(tr(lang, "Open DATA objects placement inspector", "開啟 DATA 物件檢查器與屬性面板")).clicked() {
                                     action = Some(GettingStartedAction::OpenPlacement);
                                 }
-                                if ui.button(tr(lang, "Spawns", "腳本生成點")).on_hover_text(tr(lang, "Place and manage script-spawned units and buildings", "配置與管理腳本生成的部隊與建築")).clicked() {
+                                if ui.add_enabled(map_loaded, egui::Button::new(tr(lang, "Spawns", "腳本生成點"))).on_hover_text(tr(lang, "Place and manage script-spawned units and buildings", "配置與管理腳本生成的部隊與建築")).clicked() {
                                     action = Some(GettingStartedAction::OpenSpawns);
                                 }
                             });
@@ -156,13 +165,13 @@ impl GettingStartedUi {
                                 "設定勝利／失敗目標、波次進攻與劇本事件。存檔前執行設計檢查 (F5) 確保 24 項 DATA 檔案與連通性完整無缺。",
                             ));
                             ui.horizontal_wrapped(|ui| {
-                                if ui.button(tr(lang, "Scenario / Camera", "劇本／鏡頭")).on_hover_text(tr(lang, "Edit triggers, conditions, and camera actions", "編輯觸發事件、判斷條件與鏡頭動作")).clicked() {
+                                if ui.add_enabled(map_loaded, egui::Button::new(tr(lang, "Scenario / Camera", "劇本／鏡頭"))).on_hover_text(tr(lang, "Edit triggers, conditions, and camera actions", "編輯觸發事件、判斷條件與鏡頭動作")).clicked() {
                                     action = Some(GettingStartedAction::OpenScenario);
                                 }
-                                if ui.button(tr(lang, "Design Check (F5)", "設計檢查 (F5)")).on_hover_text(tr(lang, "Run design validation and diagnose errors", "執行設計驗證並診斷潛在錯誤")).clicked() {
+                                if ui.add_enabled(map_loaded, egui::Button::new(tr(lang, "Design Check (F5)", "設計檢查 (F5)"))).on_hover_text(tr(lang, "Run design validation and diagnose errors", "執行設計驗證並診斷潛在錯誤")).clicked() {
                                     action = Some(GettingStartedAction::RunDesignCheck);
                                 }
-                                if ui.button(tr(lang, "Minimap", "小地圖")).on_hover_text(tr(lang, "Toggle minimap overview window", "切換小地圖總覽視窗")).clicked() {
+                                if ui.add_enabled(map_loaded, egui::Button::new(tr(lang, "Minimap", "小地圖"))).on_hover_text(tr(lang, "Toggle minimap overview window", "切換小地圖總覽視窗")).clicked() {
                                     action = Some(GettingStartedAction::OpenMinimap);
                                 }
                             });

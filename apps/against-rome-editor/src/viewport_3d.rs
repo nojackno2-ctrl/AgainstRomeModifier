@@ -113,7 +113,6 @@ pub enum CameraKeyAction {
     ZoomIn,
     ZoomOut,
     ResetGameScale,
-    FrameSelection,
 }
 
 /// Pure key -> camera mapping. Ctrl/Alt combinations belong to other features
@@ -130,12 +129,11 @@ pub fn camera_key_action(key: egui::Key, ctrl: bool, alt: bool) -> Option<Camera
         egui::Key::PageUp => CameraKeyAction::ZoomIn,
         egui::Key::PageDown => CameraKeyAction::ZoomOut,
         egui::Key::Home => CameraKeyAction::ResetGameScale,
-        egui::Key::F => CameraKeyAction::FrameSelection,
         _ => return None,
     })
 }
 
-const CAMERA_KEYS: [egui::Key; 8] = [
+const CAMERA_KEYS: [egui::Key; 7] = [
     egui::Key::ArrowLeft,
     egui::Key::ArrowRight,
     egui::Key::ArrowUp,
@@ -143,7 +141,6 @@ const CAMERA_KEYS: [egui::Key; 8] = [
     egui::Key::PageUp,
     egui::Key::PageDown,
     egui::Key::Home,
-    egui::Key::F,
 ];
 
 /// Interactive 3D terrain and object viewport state and renderer.
@@ -412,8 +409,6 @@ impl Viewport3d {
             CameraKeyAction::ZoomOut => self.camera.zoom(1.19),
             CameraKeyAction::ResetGameScale => {
                 self.camera.zoom_to_game_scale(viewport_height.max(1.0) as i32)
-            }
-            CameraKeyAction::FrameSelection => {
             }
         }
     }
@@ -762,11 +757,7 @@ impl Viewport3d {
             for key in CAMERA_KEYS {
                 if ctx.input(|i| i.key_pressed(key)) {
                     if let Some(action) = camera_key_action(key, ctrl, alt) {
-                        if action == CameraKeyAction::FrameSelection {
-                            self.frame_selection(objects, selected_object);
-                        } else {
-                            self.apply_camera_key(action, rect.height());
-                        }
+                        self.apply_camera_key(action, rect.height());
                     }
                 }
             }
@@ -1961,7 +1952,7 @@ mod tests {
         assert_eq!(camera_key_action(PageUp, false, false), Some(CameraKeyAction::ZoomIn));
         assert_eq!(camera_key_action(PageDown, false, false), Some(CameraKeyAction::ZoomOut));
         assert_eq!(camera_key_action(Home, false, false), Some(CameraKeyAction::ResetGameScale));
-        assert_eq!(camera_key_action(F, false, false), Some(CameraKeyAction::FrameSelection));
+        assert_eq!(camera_key_action(F, false, false), None);
         assert_eq!(camera_key_action(F, true, false), None);
         assert_eq!(camera_key_action(F, false, true), None);
         assert_eq!(camera_key_action(ArrowLeft, true, false), None);

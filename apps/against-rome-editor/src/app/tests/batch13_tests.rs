@@ -89,6 +89,8 @@ fn test_getting_started_workflow_action_dispatch() {
     app.getting_started.open = true;
     assert!(app.getting_started.open);
 
+    app.session = Some(TerrainSession::create_blank(257, 32));
+    app.loaded_map_path = Some(PathBuf::from("workflow-map"));
     // 驗證步驟一動作分發
     assert!(!app.maps.open);
     app.handle_getting_started_action(GettingStartedAction::OpenMaps);

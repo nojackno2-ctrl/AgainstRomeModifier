@@ -213,6 +213,14 @@ impl MinimapNavigator {
         Vec2::new(-(u - 0.5) * display_size.x, -(v - 0.5) * display_size.y)
     }
 
+    /// 連續世界座標的視角置中，不加入 Tile 中心半格偏移。
+    pub fn focus_world_pan(x: f32, z: f32, size: Vec2, zoom: f32) -> Vec2 {
+        if !x.is_finite() || !z.is_finite() || !zoom.is_finite() || zoom <= 0.0 {
+            return Vec2::ZERO;
+        }
+        Self::focus_tile_pan(Pos2::new(x / 16384.0 - 0.5, z / 16384.0 - 0.5), 1, size, zoom)
+    }
+
     /// 將世界座標 (0..16384) 投影為小地圖繪製矩形內的客戶區點位。
     pub fn world_to_minimap_point(world_x: f32, world_z: f32, minimap_bounds: Rect) -> Pos2 {
         let u = (world_x / 16384.0).clamp(0.0, 1.0);
@@ -225,7 +233,7 @@ impl MinimapNavigator {
 
     /// 將小地圖上的客戶區點位轉換為世界座標 (0..16384)。
     pub fn point_to_world(point: Pos2, minimap_bounds: Rect) -> Option<(f32, f32)> {
-        if minimap_bounds.width() <= 0.0 || minimap_bounds.height() <= 0.0 {
+        if !point.is_finite() || !minimap_bounds.is_finite() || minimap_bounds.width() <= 0.0 || minimap_bounds.height() <= 0.0 {
             return None;
         }
         if point.x < minimap_bounds.min.x
@@ -411,8 +419,7 @@ impl MinimapUi {
                 }
 
                 // 處理左鍵點擊與拖曳導航
-                if (response.clicked() || response.dragged())
-                    && ctx.input(|i| i.pointer.primary_down())
+                if response.clicked() || response.dragged_by(egui::PointerButton::Primary)
                 {
                     if let Some(hover_pos) = response.hover_pos() {
                         let local_pt = Pos2::new(
@@ -422,14 +429,9 @@ impl MinimapUi {
                         if let Some(tile_pos) =
                             MinimapNavigator::try_point_to_tile(local_pt, local_bounds, dimension)
                         {
-                            let new_pan = MinimapNavigator::focus_tile_pan(
-                                tile_pos,
-                                dimension,
-                                canvas_rect.size(),
-                                zoom,
-                            );
                             let world_x = (tile_pos.x / dimension as f32) * 16384.0;
                             let world_z = (tile_pos.y / dimension as f32) * 16384.0;
+                            let new_pan = MinimapNavigator::focus_world_pan(world_x, world_z, canvas_rect.size(), zoom);
                             target_nav = Some(MinimapNavResult {
                                 canvas_pan: new_pan,
                                 world_x,
@@ -448,6 +450,41 @@ impl MinimapUi {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn primary_click_release_navigates_without_dragging() {
+        let ctx = egui::Context::default();
+        let mut mini = MinimapUi::default();
+        let canvas = Rect::from_min_size(Pos2::ZERO, Vec2::splat(500.0));
+        let mut bounds = Rect::ZERO;
+        for _ in 0..3 {
+            let output = ctx.run(egui::RawInput::default(), |ctx| {
+                mini.show(ctx, None, None, canvas, canvas, 1.0, AppLanguage::English, &[]);
+            });
+            bounds = output.shapes.iter().find_map(|s| match &s.shape {
+                egui::Shape::Rect(r) if r.fill == Color32::from_rgb(28, 32, 40) => Some(r.rect),
+                _ => None,
+            }).expect("小地圖影像矩形");
+        }
+        let p = bounds.center();
+        let mut result = None;
+        for pressed in [true, false] {
+            let input = egui::RawInput {
+                events: vec![egui::Event::PointerMoved(p), egui::Event::PointerButton {
+                    pos: p, button: egui::PointerButton::Primary, pressed,
+                    modifiers: egui::Modifiers::NONE,
+                }],
+                ..Default::default()
+            };
+            let _ = ctx.run(input, |ctx| {
+                result = mini.show(ctx, None, None, canvas, canvas, 1.0, AppLanguage::English, &[]);
+            });
+        }
+        let nav = result.expect("放開左鍵應導航");
+        assert!((nav.world_x - 8192.0).abs() < 0.1);
+        assert!((nav.world_z - 8192.0).abs() < 0.1);
+        assert!(nav.canvas_pan.length() < 0.01);
+    }
 
     #[test]
     fn test_minimap_zoom_bounds_letterbox_horizontal_and_vertical() {

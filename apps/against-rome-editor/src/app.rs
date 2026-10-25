@@ -4592,6 +4592,7 @@ impl EditorApp {
 
     /// 將視角聚焦置中對齊目前選取的物件（支援 3D 視角與 2D 畫布；支援放置物件與腳本生成點）。
     pub fn frame_selection_target(&mut self) -> bool {
+        if self.shortcuts_blocked() { return false; }
         let coords = if self.spawn_ui.is_active() && self.spawn_ui.has_selection() {
             self.spawn_ui.selected_coordinates()
         } else {
@@ -4602,13 +4603,8 @@ impl EditorApp {
                 self.viewport_3d.center_on_world(wx, wz);
                 true
             } else {
-                let dimension = self.session.as_ref().map_or(64, |s| s.vertex_size as u32);
-                let tile_pos = Pos2::new(wx / 256.0, wz / 256.0);
-                self.pan = crate::minimap_ui::MinimapNavigator::focus_tile_pan(
-                    tile_pos,
-                    dimension,
-                    self.last_canvas_rect.size(),
-                    self.zoom,
+                self.pan = crate::minimap_ui::MinimapNavigator::focus_world_pan(
+                    wx, wz, self.last_canvas_rect.size(), self.zoom,
                 );
                 true
             }
@@ -4619,6 +4615,11 @@ impl EditorApp {
 
     /// 處理「新手入門」導引面板觸發之面板開啟或視圖切換動作。
     pub fn handle_getting_started_action(&mut self, action: GettingStartedAction) {
+        if self.shortcuts_blocked() { return; }
+        if action.requires_map() && (self.session.is_none() || self.loaded_map_path.is_none()) {
+            self.set_status(tr(self.lang(), "Load a map first.", "請先載入地圖。").into(), true);
+            return;
+        }
         match action {
             GettingStartedAction::OpenMaps => {
                 self.maps.open = true;
@@ -4831,6 +4832,7 @@ mod tests {
     mod batch10_tests;
     mod batch11_tests;
     mod batch13_tests;
+    mod batch14_tests;
     mod save_blockers_tests;
     mod unified_undo_tests;
     mod objectives_apply_tests;
@@ -12135,22 +12137,26 @@ impl EditorApp {
         });
         self.handle_pending_action(ctx);
         self.toolbox.show(ctx);
+        let navigation_allowed = !self.shortcuts_blocked();
         self.navigation
-            .show(ctx, self.session.as_ref(), self.water_surface);
+            .show(ctx, self.session.as_ref(), self.water_surface, navigation_allowed);
         let mut minimap_markers = Vec::new();
-        for (slot, uid) in self.placement.selected_objects() {
-            if let Some(obj) = self.placement.objects().iter().find(|o| (o.slot, o.uid) == (slot, uid)) {
-                if obj.position[0].is_finite() && obj.position[2].is_finite() {
-                    minimap_markers.push(MinimapMarker::selected(obj.position[0], obj.position[2]));
+        if self.minimap.open && self.minimap.show_selection {
+            let selected: std::collections::HashSet<_> = self.placement.selected_objects().into_iter().collect();
+            if !selected.is_empty() {
+                for obj in self.placement.objects().iter().filter(|o| selected.contains(&(o.slot, o.uid))) {
+                    if obj.position[0].is_finite() && obj.position[2].is_finite() {
+                        minimap_markers.push(MinimapMarker::selected(obj.position[0], obj.position[2]));
+                    }
+                }
+            }
+            if self.spawn_ui.is_active() {
+                if let Some((sx, sz)) = self.spawn_ui.selected_coordinates() {
+                    minimap_markers.push(MinimapMarker::selected(sx, sz));
                 }
             }
         }
-        if self.spawn_ui.is_active() {
-            if let Some((sx, sz)) = self.spawn_ui.selected_coordinates() {
-                minimap_markers.push(MinimapMarker::selected(sx, sz));
-            }
-        }
-        if self.scenario.open {
+        if self.minimap.open && self.minimap.show_markers && self.scenario.is_loaded() {
             let cam = self.scenario.start_camera();
             if (cam.x as f32).is_finite() && (cam.z as f32).is_finite() {
                 minimap_markers.push(MinimapMarker::camera(cam.x as f32, cam.z as f32));
@@ -12164,7 +12170,7 @@ impl EditorApp {
                             action.x,
                             action.z,
                             color,
-                            Some(event.name.clone()),
+                            None,
                         ));
                     }
                 }
@@ -12185,7 +12191,7 @@ impl EditorApp {
                 self.viewport_3d.center_on_world(nav.world_x, nav.world_z);
             }
         }
-        if let Some(action) = self.getting_started.show(ctx, lang) {
+        if let Some(action) = self.getting_started.show(ctx, lang, self.session.is_some() && self.loaded_map_path.is_some()) {
             self.handle_getting_started_action(action);
         }
         self.refresh_placement_type_names();

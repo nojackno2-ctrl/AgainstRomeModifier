@@ -1,3 +1,7 @@
+## 2026-10-26 Codex：批次 #14（編輯器通過；四項環境失敗）
+- 審查 09bf32f：修正聚焦比例／小地圖偏移與單擊、F 重複入口、載圖防護及標記重建成本；新增雙語通行診斷交換端點／清除覆蓋，保留復原紀錄，指南與 5 項回歸同步。首輪暫存受 re_workspace/Against_Rome.exe 汙染，改用工作區 TEMP；中間輪補正初始空白 session 非已載圖。
+- cargo check／test／build --workspace --locked --offline --target-dir re_workspace/codex-wave-dest-target（test 加 --no-fail-fast）：check／build exit 0；test exit 101，283 組、2599 passed／4 failed／25 ignored；編輯器 761／0／6。四失敗僅 install_resource_discovery.rs:55／111／162／128 的提權環境祖先資源汙染。日誌 re_workspace/codex-batch-14-{check,test,build}.log，另保留 test-first／test-second.log；git diff --check 通過。GUI 未手動驗收；遊戲唯讀，未 stage／commit，AGENTS.md／README.md 既有修改保留。
+
 ## 2026-10-26 Agy：自主批次 #13 小地圖標記與 3D 導航、3D 聚焦快捷鍵 F、新手入門工作流程面板（已驗證）
 - 1. 小地圖選取物件與劇本標記視覺化與 3D 導航連動（minimap_ui.rs:179-250 原僅縮圖與 2D 視框，無物件／劇本標記且文字未 tr()，app.rs:12048-12057 點擊未連動 3D）：新增 `MinimapMarker`、`MinimapNavResult` 與世界點轉換；於小地圖繪製選取物件（白外環+金核心）、起始相機（青藍菱形）與生成點（隊伍色），提供雙語切換勾選；點擊／拖曳小地圖在 3D 視角模式下即時平移 3D 攝影機目標至該座標。
 - 2. 視角選取物件聚焦 (Frame Selection) 快捷鍵 `F` 與工具列支援（viewport_3d.rs:120-134、1242-1245 原無聚焦按鍵，app.rs:3898-3978 快捷鍵無 F）：新增 `CameraKeyAction::FrameSelection` 與 `ShortcutAction::FrameSelection`（映射 `Key::F`，遵守 `shortcuts_blocked()`、文字焦點與修飾鍵保護）；支援在 3D 視角與 2D 畫布下一鍵將視角中心對齊選取的放置物件或生成點座標，3D 工具列同步提供雙語聚焦按鈕。
