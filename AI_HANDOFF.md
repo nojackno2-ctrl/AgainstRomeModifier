@@ -1,3 +1,7 @@
+## 2026-10-25 Codex：Design Check APT 重疊（已驗證）
+- 雙方建築可解析時採群組 0、每格 64 world units 的 stencil 交集；核心 Warning，外圈採現有最低 Warning 並明示提示，雙語標示估計與預設狀態。不相交不報 overlap，未解析保留近似檢查；起始配置與 Safe Save 的 Error 阻擋規則不變。
+- 驗證：依序 cargo check／cargo test／cargo build，check／build 均加 --workspace --locked --offline --target-dir re_workspace/codex-wave-dest-target，結束碼皆 0。指定 cargo test --workspace --locked --offline --no-fail-fast --target-dir re_workspace/codex-wave-dest-target 通過 283 組，2554 passed、0 failed、25 ignored；日誌 re_workspace/apt-overlap-test.log，check／build 為 apt-overlap-check.log／apt-overlap-build.log。四項合成 stencil 測試皆通過。
+- 首輪 overlap_issues_follow_first_seen_group_order 失敗，已恢復原分組回報順序，最終完整重跑通過；首輪紀錄 apt-overlap-test-first.log。未手動驗收 GUI／遊戲；遊戲唯讀，未 stage／commit，AGENTS.md／README.md 既有變更保留。
 ## 2026-10-25 Codex：編輯器 APT footprint（已驗證）
 - aptix 相容性修正：第 14 欄無法解析時保留繼承值或 None，不中止載入；新增非數字欄位涵蓋兩種情況的回歸測試。驗證：cargo test -p against-rome-maps --locked --offline --target-dir re_workspace/codex-wave-dest-target，183 passed、0 failed、3 ignored，結束碼 0（re_workspace/aptix-nonfatal-test.log）；未 stage／commit。
 - 新增唯讀 APAT v2/v3 逐群組 stencil、負數向下取整投影、effective objdef aptix → AptNames → AptPath → apt.dat 與依 type 快取；導覽支援 Off／Approximate／APT，標示 group 0（預設狀態）估計，所有列出格保守阻擋，解析失敗計數並回退原邊距，只使用暫存遮罩。
@@ -1348,7 +1352,9 @@
 - Parent `dotnet build AgainstRomeModifier.slnx -c Release --nologo --no-restore`：0errors/71warnings；Modules完整1152pass/2skip/0fail。logs `re_workspace/rust-wave2-dotnet-{build,tests}.log`。本輪沒再跑全Host。
 - Debug app test反覆在serde build-script被 Windows應用程式控制原則 **4551** 擋；CodeIntegrity Operational事件3077已唯讀查證，尚未到app編譯。`rust-wave2-desktop-tests.log`。
 - 正常Release test `18385`也在parking_lot_core/paste build-scripts4551終止，`rust-wave2-desktop-release-tests.log`。未調整policy、未重命名/搬移binary或變更編譯設定繞過限制。遇同handle timeout要確認process終態，不能盲目重啟。
-- Rust工具鏈process-local：CARGO_HOME=`D:\Github\AgainstRomeModifiere_workspaceust-runtime\cargo`，RUSTUP_HOME同root的`rustup`，PATH前加cargo/bin；cargo.exe位於CARGO_HOME/bin，repo-local stable1.99。targets一律re_workspace；不要改全域環境。
+- Rust工具鏈process-local：CARGO_HOME=`D:\Github\AgainstRomeModifier
+e_workspace
+ust-runtime\cargo`，RUSTUP_HOME同root的`rustup`，PATH前加cargo/bin；cargo.exe位於CARGO_HOME/bin，repo-local stable1.99。targets一律re_workspace；不要改全域環境。
 
 ## 明確恢復後的先後順序
 

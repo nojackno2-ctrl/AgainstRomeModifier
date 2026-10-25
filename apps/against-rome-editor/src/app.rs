@@ -679,7 +679,20 @@ impl EditorApp {
                 self.water_surface
             },
         };
-        let mut map_issues = MapDiagnostics::check(&snapshot);
+        let mut footprint_resolver = path.parent().and_then(Path::parent)
+            .and_then(|root| crate::building_footprint::FootprintResolver::load(root).ok());
+        let mut footprints = std::collections::HashMap::new();
+        if let Ok(store) = self.placement.detached_store().or_else(|_| against_rome_placement::ObjectStore::load(path)) {
+            let objects = store.objects();
+            for binding in &document.data_slots {
+                if let Some(object) = objects.iter().find(|o| o.slot as i32 == binding.slot && o.uid == binding.uid) {
+                    if let Some(stencil) = footprint_resolver.as_mut().and_then(|r| r.resolve_building(i32::from(object.type_id))) {
+                        footprints.insert(binding.spawn_id, stencil.cells.clone());
+                    }
+                }
+            }
+        }
+        let mut map_issues = MapDiagnostics::check_with_footprints(&snapshot, &footprints);
         if check_pending_data && (self.placement.is_dirty() || self.nature.session.is_dirty()) {
             let pending = (|| {
                 let candidate = self.replay_nature_candidate(
@@ -690,8 +703,8 @@ impl EditorApp {
             })();
             match pending {
                 Ok((candidate, saved)) => {
-                    let baseline = crate::design_check_ui::data_candidate_issues(&saved, &snapshot);
-                    for mut issue in crate::design_check_ui::data_candidate_issues(&candidate, &snapshot) {
+                    let baseline = crate::design_check_ui::data_candidate_issues(&saved, &snapshot, &mut footprint_resolver);
+                    for mut issue in crate::design_check_ui::data_candidate_issues(&candidate, &snapshot, &mut footprint_resolver) {
                         if !baseline.contains(&issue) {
                             issue.chinese.push_str("（未儲存）");
                             issue.english.push_str(" (unsaved)");

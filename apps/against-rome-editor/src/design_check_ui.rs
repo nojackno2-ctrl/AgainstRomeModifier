@@ -19,12 +19,14 @@ use uuid::Uuid;
 pub(crate) fn data_candidate_issues(
     store: &against_rome_placement::ObjectStore,
     terrain: &against_rome_maps::diagnostics::MapCheckSnapshot,
+    resolver: &mut Option<crate::building_footprint::FootprintResolver>,
 ) -> Vec<MapIssue> {
     use against_rome_maps::diagnostics::{MapCheckObject, MapDiagnostics};
     let mut snapshot = terrain.clone();
     snapshot.events.clear();
     snapshot.objects.clear();
     let mut issues = Vec::new();
+    let mut footprints = std::collections::HashMap::new();
     for object in store.objects().into_iter().filter(|o| o.parent.is_none()) {
         // slot 與 UID 組成穩定識別，讓已儲存／候選結果可直接比對。
         let id = Uuid::from_u128((1u128 << 127) | ((object.slot as u128) << 32) | u128::from(object.uid));
@@ -34,12 +36,15 @@ pub(crate) fn data_candidate_issues(
             issue.object_id = id;
             issues.push(issue);
         }
+        if let Some(stencil) = resolver.as_mut().and_then(|r| r.resolve_building(i32::from(object.type_id))) {
+            footprints.insert(id, stencil.cells.clone());
+        }
         snapshot.objects.push(MapCheckObject::new(against_rome_scenario::Spawn {
             id, x: object.position[0], y: object.position[1], z: object.position[2],
             prebuilt: true, ..Default::default()
-        }, false, true));
+        }, footprints.contains_key(&id), true));
     }
-    issues.extend(MapDiagnostics::check(&snapshot).into_iter()
+    issues.extend(MapDiagnostics::check_with_footprints(&snapshot, &footprints).into_iter()
         .filter(|i| matches!(i.code.as_str(), "coordinates" | "overlap")));
     issues
 }

@@ -241,6 +241,13 @@ impl MapDiagnostics {
     }
 
     pub fn check(map: &MapCheckSnapshot) -> Vec<MapIssue> {
+        Self::check_with_footprints(map, &HashMap::new())
+    }
+
+    /// 雙方足跡可用時以群組 0 格點交集取代近似錨點。
+    pub fn check_with_footprints(map: &MapCheckSnapshot,
+        footprints: &HashMap<Uuid, Vec<against_rome_data::apt_footprint::FootprintCell>>,
+    ) -> Vec<MapIssue> {
         let mut issues = Vec::new();
 
         // An empty alias list means the ObjDefName catalog could not be read (map outside a
@@ -390,35 +397,93 @@ impl MapDiagnostics {
             .filter(|obj| Self::valid_point(obj.spawn.x, obj.spawn.z))
             .collect();
 
-        // 64 單位重疊檢查
-        // Keep first-seen group order (C# GroupBy) so issue order is deterministic.
-        let mut group_slot: HashMap<(i32, i32), usize> = HashMap::new();
-        let mut grouped: Vec<Vec<&MapCheckObject>> = Vec::new();
-        for obj in &valid {
-            let key = (
-                (obj.spawn.x / 64.0) as i32,
-                (obj.spawn.z / 64.0) as i32,
-            );
-            let slot = *group_slot.entry(key).or_insert_with(|| {
-                grouped.push(Vec::new());
-                grouped.len() - 1
-            });
-            grouped[slot].push(obj);
+        // 保留原先依錨點格首次出現分組的回報順序。
+        let mut overlaps: HashMap<usize, (bool, bool, bool)> = HashMap::new();
+        // 未解析物件只需檢查同錨點格；跨格配對限於雙方皆可解析的建築。
+        let mut anchors = HashMap::<(i32, i32), Vec<usize>>::new();
+        for (i, obj) in valid.iter().enumerate() {
+            anchors.entry(((obj.spawn.x / 64.0) as i32, (obj.spawn.z / 64.0) as i32)).or_default().push(i);
         }
-        for group in grouped {
-            if group.len() > 1 {
-                for obj in group {
-                    issues.push(MapIssue {
-                        severity: MapIssueSeverity::Warning,
-                        code: "overlap".into(),
-                        chinese: "多個放置物件錨點位於同一個 64 單位區域，請檢查重疊。".into(),
-                        english: "Multiple placement anchors share a 64-unit area; inspect for overlap.".into(),
-                        object_id: obj.spawn.id,
-                        event_index: -1,
-                        world_x: Some(obj.spawn.x),
-                        world_z: Some(obj.spawn.z),
-                    });
+        let resolved: Vec<usize> = valid.iter().enumerate()
+            .filter(|(_, o)| o.is_building && footprints.contains_key(&o.spawn.id))
+            .map(|(i, _)| i).collect();
+        for (i, left) in valid.iter().enumerate() {
+            let key = ((left.spawn.x / 64.0) as i32, (left.spawn.z / 64.0) as i32);
+            let mut pairs = anchors[&key].clone();
+            if left.is_building && footprints.contains_key(&left.spawn.id) {
+                pairs.extend(&resolved);
+            }
+            pairs.sort_unstable();
+            pairs.dedup();
+            for j in pairs.into_iter().filter(|j| *j > i) {
+                let right = valid[j];
+                let grid = |o: &MapCheckObject| [(o.spawn.x as f64 / 64.0).floor() as i64,
+                    (o.spawn.z as f64 / 64.0).floor() as i64];
+                let (lg, rg) = (grid(left), grid(right));
+                let detail = match (footprints.get(&left.spawn.id), footprints.get(&right.spawn.id)) {
+                    (Some(l), Some(r)) if left.is_building && right.is_building => {
+                        let mut cells = HashMap::<[i64; 2], u32>::new();
+                        for c in l.iter().filter(|c| c.value > 0) {
+                            let key = [lg[0].saturating_add(c.relative[0]), lg[1].saturating_add(c.relative[1])];
+                            let v = cells.entry(key).or_default();
+                            *v = (*v).max(c.value);
+                        }
+                        let mut ring = false;
+                        let mut core = false;
+                        for c in r.iter().filter(|c| c.value > 0) {
+                            if let Some(v) = cells.get(&[rg[0].saturating_add(c.relative[0]), rg[1].saturating_add(c.relative[1])]) {
+                                ring = true;
+                                core |= *v > 1 && c.value > 1;
+                            }
+                        }
+                        if !ring { continue; }
+                        (false, core)
+                    }
+                    _ => { if lg != rg { continue; } (true, false) }
+                };
+                for id in [i, j] {
+                    let entry = overlaps.entry(id).or_default();
+                    entry.0 |= detail.0;
+                    entry.1 |= detail.1;
+                    entry.2 |= !detail.0;
                 }
+            }
+        }
+        let mut report_order = Vec::<Vec<usize>>::new();
+        let mut group_slot = HashMap::new();
+        for (i, obj) in valid.iter().enumerate() {
+            let key = ((obj.spawn.x / 64.0) as i32, (obj.spawn.z / 64.0) as i32);
+            let slot = *group_slot.entry(key).or_insert_with(|| {
+                report_order.push(Vec::new()); report_order.len() - 1
+            });
+            report_order[slot].push(i);
+        }
+        for i in report_order.into_iter().flatten() {
+            let obj = valid[i];
+            if let Some(&(approximate, core, apt)) = overlaps.get(&i) {
+                let (chinese, english) = if approximate {
+                    ("多個放置物件錨點位於同一個 64 單位區域，請檢查重疊。",
+                     "Multiple placement anchors share a 64-unit area; inspect for overlap.")
+                } else if core {
+                    ("建築重疊（APT footprint 核心；估計，預設狀態，群組 0）。",
+                     "buildings overlap (APT footprint core); estimate, default state, group 0.")
+                } else {
+                    ("建築 APT footprint 外圈交集提示（估計，預設狀態，群組 0；無核心交集）。",
+                     "Building APT footprint outer-ring note (estimate, default state, group 0; no core-core intersection).")
+                };
+                let (mut chinese, mut english) = (chinese.to_string(), english.to_string());
+                if approximate && apt {
+                    if core {
+                        chinese.push_str(" 另有建築重疊（APT footprint 核心；估計，預設狀態，群組 0）。");
+                        english.push_str(" Also: buildings overlap (APT footprint core); estimate, default state, group 0.");
+                    } else {
+                        chinese.push_str(" 另有 APT footprint 外圈交集提示（估計，預設狀態，群組 0）。");
+                        english.push_str(" Also: APT footprint outer-ring note (estimate, default state, group 0).");
+                    }
+                }
+                issues.push(MapIssue { severity: MapIssueSeverity::Warning, code: "overlap".into(),
+                    chinese, english, object_id: obj.spawn.id,
+                    event_index: -1, world_x: Some(obj.spawn.x), world_z: Some(obj.spawn.z) });
             }
         }
 
@@ -849,5 +914,50 @@ impl MapDiagnostics {
         issues.extend(nav_result.route_issues.iter().cloned());
 
         issues
+    }
+}
+
+#[cfg(test)]
+mod apt_overlap_tests {
+    use super::*;
+    use against_rome_data::{apt::AptPoint, apt_footprint::FootprintCell};
+    fn fixture() -> MapCheckSnapshot {
+        MapCheckSnapshot::new((1..=2).map(|n| MapCheckObject::new(Spawn {
+            id: Uuid::from_u128(n), x: 128.0, z: 128.0, ..Default::default()
+        }, true, true)).collect(), vec![], vec![], 0, None)
+    }
+    fn footprints(value: u32, offset: i64) -> HashMap<Uuid, Vec<FootprintCell>> {
+        HashMap::from([(Uuid::from_u128(1), vec![FootprintCell { value: 20, point: AptPoint::default(), relative: [0,0] }]),
+            (Uuid::from_u128(2), vec![FootprintCell { value, point: AptPoint::default(), relative: [offset,0] }])])
+    }
+    fn overlaps(map: &MapCheckSnapshot, cells: &HashMap<Uuid, Vec<FootprintCell>>) -> Vec<MapIssue> {
+        MapDiagnostics::check_with_footprints(map, cells).into_iter().filter(|i| i.code == "overlap").collect()
+    }
+    #[test]
+    fn core_overlap_warns() {
+        let issues = overlaps(&fixture(), &footprints(20,0));
+        assert_eq!(issues.len(), 2);
+        assert!(issues.iter().all(|i| i.severity == MapIssueSeverity::Warning && i.english.contains("buildings overlap (APT footprint core)") && i.english.contains("estimate, default state")));
+    }
+    #[test]
+    fn ring_only_uses_lowest_existing_severity() {
+        for cells in [footprints(1,0), {
+            let mut cells = footprints(1,0); cells.get_mut(&Uuid::from_u128(1)).unwrap()[0].value=1; cells
+        }] {
+            let issues = overlaps(&fixture(), &cells);
+            assert_eq!(issues.len(), 2);
+            assert!(issues.iter().all(|i| i.severity == MapIssueSeverity::Warning && i.english.contains("outer-ring note")));
+        }
+    }
+    #[test]
+    fn nearby_disjoint_stencils_have_no_overlap() {
+        assert!(overlaps(&fixture(), &footprints(20,1)).is_empty());
+        let mut map = fixture(); map.objects[1].spawn.x += 64.0;
+        assert_eq!(overlaps(&map, &footprints(20,-1)).len(), 2);
+    }
+    #[test]
+    fn unresolved_pair_preserves_original_issues() {
+        let map=fixture(); let mut cells=footprints(20,1); cells.remove(&Uuid::from_u128(2));
+        assert_eq!(MapDiagnostics::check_with_footprints(&map,&cells), MapDiagnostics::check(&map));
     }
 }

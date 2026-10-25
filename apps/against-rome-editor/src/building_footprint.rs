@@ -91,6 +91,14 @@ impl FootprintResolver {
             cache: HashMap::from([(type_id, Ok(Arc::new(stencil)))]),
         }
     }
+    /// 設計檢查只採用名稱分類為建築的有效定義。
+    pub(crate) fn resolve_building(&mut self, type_id: i32) -> Option<Arc<ResolvedFootprint>> {
+        let name = self.definitions.get(&type_id)?.name.as_deref()?;
+        if against_rome_maps::SdlObjectCatalog::categorize(name) != against_rome_maps::SdlObjectCategory::Building {
+            return None;
+        }
+        self.resolve(type_id).ok()
+    }
     pub fn resolve(&mut self, type_id: i32) -> Result<Arc<ResolvedFootprint>, String> {
         if let Some(hit) = self.cache.get(&type_id) {
             return hit.clone();
