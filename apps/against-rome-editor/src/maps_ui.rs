@@ -218,7 +218,11 @@ impl MapsUi {
         }
         let slot = EndlessMapCatalog::new().get_next_free_slot(&game_path)?;
         self.blank_target_slot = slot;
-        let spec = BlankMapSpec::new(format!("ENDL_{:03}", self.blank_source_slot), slot, name);
+        let mut spec = BlankMapSpec::new(format!("ENDL_{:03}", self.blank_source_slot), slot, name);
+        let trimmed_briefing = self.blank_briefing.trim();
+        if !trimmed_briefing.is_empty() {
+            spec = spec.with_briefing(trimmed_briefing);
+        }
         let intent = BlankMapBuildIntent::new(game_path, spec).with_flat_template();
         self.pending_build_intent = Some(intent.clone());
         Ok(intent)
@@ -1320,5 +1324,23 @@ refpos=100.0,0.0,100.0
         let intent = ui.request_build_blank_map();
         assert_eq!(intent.spec.target_slot, ui.blank_target_slot);
         assert!(ui.pending_build_intent.is_some());
+    }
+
+    #[test]
+    fn test_flat_template_intent_preserves_briefing_text() {
+        let root = disk_fixture();
+        let mut ui = MapsUi::default();
+        ui.game_path_input = root.to_string_lossy().to_string();
+        ui.blank_source_slot = 1;
+        ui.blank_target_name = "Flat Mission".to_string();
+        ui.blank_briefing = "Custom flat mission briefing".to_string();
+
+        let intent = ui.request_build_flat_template().expect("flat template intent");
+        assert_eq!(
+            intent.spec.briefing_text.as_deref(),
+            Some("Custom flat mission briefing"),
+            "request_build_flat_template must carry through the user's typed briefing text"
+        );
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

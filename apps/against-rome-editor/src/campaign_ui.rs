@@ -118,7 +118,7 @@ pub struct CampaignUi {
     pub start_camera: MapStartCamera,
     /// Explicit source for a new script work copy; never the active map's save target.
     start_camera_source: String,
-    camera_dirty: bool,
+    pub(crate) camera_dirty: bool,
     camera_candidate: Option<StartCameraCandidate>,
     camera_apply_requested: bool,
     camera_capture_requested: bool,

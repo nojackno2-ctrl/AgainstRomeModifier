@@ -151,6 +151,7 @@ pub struct EditorApp {
     pub(crate) placement: PlacementUi,
     family: crate::family_ui::FamilyUi,
     family_open: bool,
+    pub map_properties_open: bool,
     family_history_key: (usize, usize, usize),
     pub(crate) scenario: ScenarioUi,
     spawn_ui: SpawnPlacementUi,
@@ -222,7 +223,10 @@ pub enum TerrainBulkAction {
 
 impl EditorApp {
     /// 以目前地圖的玩家主屋為目標；沒有主屋時使用已啟用的玩家起始鏡頭。
-    pub(crate) fn wave_player_target(&self, path: &Path) -> Option<against_rome_scenario::WorldPosition> {
+    pub(crate) fn player_main_house_target_opt(
+        &self,
+        path: Option<&Path>,
+    ) -> Option<against_rome_scenario::WorldPosition> {
         use against_rome_maps::design_validator::MapDesignValidator;
         use against_rome_scenario::WorldPosition;
         let position = |x: f64, z: f64| {
@@ -233,8 +237,12 @@ impl EditorApp {
         let document = self.scenario.document();
         let objects = if self.placement.is_loaded() {
             self.placement.objects()
+        } else if let Some(path) = path {
+            against_rome_placement::ObjectStore::load(path)
+                .map(|s| s.objects())
+                .unwrap_or_default()
         } else {
-            against_rome_placement::ObjectStore::load(path).map(|s| s.objects()).unwrap_or_default()
+            Vec::new()
         };
         for spawn in &document.spawns {
             if !MapDesignValidator::is_main_house(&spawn.alias) {
@@ -254,21 +262,56 @@ impl EditorApp {
             }
         }
         // 原生地圖的主屋可能只存在 DATA，未收錄於編輯器劇本。
-        if let Some(game) = path.parent().and_then(Path::parent) {
-            if let Ok(definitions) = against_rome_maps::NativeObjectDefinitions::load(game) {
-                for object in objects.iter().filter(|o| o.team == 0 && o.parent.is_none()) {
-                    if definitions.get(&i32::from(object.type_id))
-                        .and_then(|d| d.name.as_deref()).is_some_and(MapDesignValidator::is_main_house)
-                    {
-                        if let Some(target) = position(object.position[0] as f64, object.position[2] as f64) {
-                            return Some(target);
+        if let Some(path) = path {
+            if let Some(game) = path.parent().and_then(Path::parent) {
+                if let Ok(definitions) = against_rome_maps::NativeObjectDefinitions::load(game) {
+                    for object in objects.iter().filter(|o| o.team == 0 && o.parent.is_none()) {
+                        if definitions.get(&i32::from(object.type_id))
+                            .and_then(|d| d.name.as_deref()).is_some_and(MapDesignValidator::is_main_house)
+                        {
+                            if let Some(target) = position(object.position[0] as f64, object.position[2] as f64) {
+                                return Some(target);
+                            }
                         }
                     }
                 }
             }
         }
+        None
+    }
+
+    pub(crate) fn player_main_house_target(&self, path: &Path) -> Option<against_rome_scenario::WorldPosition> {
+        self.player_main_house_target_opt(Some(path))
+    }
+
+    pub(crate) fn wave_player_target(&self, path: &Path) -> Option<against_rome_scenario::WorldPosition> {
+        if let Some(target) = self.player_main_house_target(path) {
+            return Some(target);
+        }
+        let position = |x: f64, z: f64| {
+            (x.is_finite() && z.is_finite() && (0.0..=16383.0).contains(&x)
+                && (0.0..=16383.0).contains(&z))
+                .then(|| against_rome_scenario::WorldPosition { x: x.round() as i32, z: z.round() as i32 })
+        };
         let camera = &self.campaign.start_camera;
         camera.enabled.then(|| position(camera.x, camera.z)).flatten()
+    }
+
+    pub fn player_main_house_position(&self) -> Option<(f64, f64)> {
+        let path = self.loaded_map_path.as_deref();
+        self.player_main_house_target_opt(path)
+            .map(|target| (target.x as f64, target.z as f64))
+    }
+
+    pub fn center_start_camera_on_player_main_house(&mut self) -> bool {
+        if let Some((x, z)) = self.player_main_house_position() {
+            self.campaign.start_camera.x = x;
+            self.campaign.start_camera.z = z;
+            self.campaign.camera_dirty = true;
+            true
+        } else {
+            false
+        }
     }
 
 
@@ -350,6 +393,7 @@ impl EditorApp {
             placement: PlacementUi::default(),
             family: crate::family_ui::FamilyUi::default(),
             family_open: false,
+            map_properties_open: false,
             family_history_key: (0, 0, 0),
             scenario: ScenarioUi::default(),
             spawn_ui: SpawnPlacementUi::default(),
@@ -1225,8 +1269,23 @@ impl EditorApp {
             spec.target_slot,
             &spec.target_name,
         )?;
+        if let Some(briefing_text) = &spec.briefing_text {
+            let briefing = info.directory_path.join("TEXT").join("US").join("briefing.put");
+            if briefing.exists() {
+                if let Ok(mut put) = against_rome_maps::text_docs::PutTextDocument::load(&briefing) {
+                    let _ = put.set_value("briefing_titel_1", briefing_text);
+                    let _ = put.save();
+                }
+            }
+        }
         let loaded = load_map(&info.directory_path)?;
         self.install_loaded_map(info.directory_path.clone(), loaded)?;
+        if let Some(briefing_text) = &spec.briefing_text {
+            if self.ambience.briefing_title != *briefing_text {
+                self.ambience.briefing_title = briefing_text.clone();
+                self.ambience.dirty = true;
+            }
+        }
         self.maps.refresh_catalog();
         if !self.apply_flat_terrain_now() {
             return Err(format!(
@@ -4688,6 +4747,135 @@ mod tests {
         assert!(app.status_message.starts_with("Saved safely"));
         assert!(!app.ambience.is_dirty());
         assert!(dir.join("boden.ini").is_file());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_flat_build_keeps_briefing() {
+        let temp_root = temp_map_dir("flat_briefing");
+        let src = temp_root.join("MAPS").join("ENDL_001");
+        std::fs::create_dir_all(&src).unwrap();
+        let mut terrain = TerrainSession::create_blank(257, 50);
+        safe_save_map(&src, &mut terrain).unwrap();
+        std::fs::write(src.join("level.put"), "var:map_name =\"Template\";\r\n").unwrap();
+        std::fs::write(src.join("briefing.put"), "var:briefing_titel_1 =\"Original Title\";\r\n").unwrap();
+        let us_dir = src.join("TEXT").join("US");
+        std::fs::create_dir_all(&us_dir).unwrap();
+        std::fs::write(us_dir.join("briefing.put"), "var:briefing_titel_1 =\"Original Title\";\r\n").unwrap();
+        std::fs::write(src.join("map.sdl"), "[settlement]\r\nrefpos=100.0,0.0,100.0\r\n").unwrap();
+        std::fs::write(src.join("boden.ini"), "[Dimension]\r\n64\r\n[Waterlevel]\r\n30.0\r\n[Heightmapstep]\r\n2.0\r\n").unwrap();
+        let mut boden_txt = String::from("[Dimension]\n64\n\n[Texturen]\n");
+        for _ in 0..4096 {
+            boden_txt.push_str("GRAS_1\n");
+        }
+        std::fs::write(src.join("boden.txt"), boden_txt).unwrap();
+
+        let mut app = EditorApp::initial_state();
+        app.maps.game_path_input = temp_root.to_string_lossy().to_string();
+        app.maps.blank_source_slot = 1;
+        app.maps.blank_target_name = "Flat Alpine".to_string();
+        app.maps.blank_briefing = "Alpine conquest mission briefing.".to_string();
+
+        let intent = app.maps.request_build_flat_template().expect("flat template intent");
+        assert_eq!(
+            intent.spec.briefing_text.as_deref(),
+            Some("Alpine conquest mission briefing.")
+        );
+
+        let info = app.build_and_install_flat_template(&intent.game_path, &intent.spec).expect("build flat template");
+        assert_eq!(app.ambience.briefing_title, "Alpine conquest mission briefing.");
+
+        let saved_put = std::fs::read_to_string(info.directory_path.join("TEXT").join("US").join("briefing.put"))
+            .or_else(|_| std::fs::read_to_string(info.directory_path.join("SCRIPT").join("briefing.put")))
+            .or_else(|_| std::fs::read_to_string(info.directory_path.join("briefing.put")))
+            .expect("read briefing.put");
+        assert!(saved_put.contains("Alpine conquest mission briefing."));
+
+        let _ = std::fs::remove_dir_all(&temp_root);
+    }
+
+    #[test]
+    fn test_map_properties_updates_ambience_and_safe_save() {
+        let dir = temp_map_dir("map_props_save");
+        let mut app = EditorApp::initial_state();
+        app.session = Some(TerrainSession::create_blank(5, 32));
+        app.loaded_map_path = Some(dir.clone());
+        app.map_path_input = dir.to_string_lossy().into_owned();
+        app.map_properties_open = true;
+
+        // Render Map Properties window using egui context to verify UI integration
+        let ctx = egui::Context::default();
+        let _ = ctx.run(Default::default(), |ctx| {
+            app.show_map_properties(ctx);
+        });
+
+        // Edit title and briefing in Map properties: reuses existing Ambience state
+        app.ambience.briefing_title = "Prop Window Title".to_string();
+        app.ambience.briefing_body = "Prop Window Description".to_string();
+        app.ambience.dirty = true;
+
+        assert!(app.ambience.is_dirty(), "dirty flag must be set when editing properties");
+
+        app.safe_save_current();
+        assert!(!app.status_is_error, "{}", app.status_message);
+        assert!(!app.ambience.is_dirty(), "save clears dirty flag");
+
+        // Verify native location TEXT/US/briefing.put was written with the updated title and body
+        let briefing_path = dir.join("TEXT").join("US").join("briefing.put");
+        assert!(briefing_path.is_file(), "TEXT/US/briefing.put must be saved to disk");
+        let put_doc = against_rome_maps::text_docs::PutTextDocument::load(&briefing_path).unwrap();
+        assert_eq!(put_doc.get_value("briefing_titel_1").as_deref(), Some("Prop Window Title"));
+        assert_eq!(put_doc.get_value("briefing_text").as_deref(), Some("Prop Window Description"));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_map_properties_center_start_camera_on_player_main_house() {
+        let (mut app, dir, _) = start_camera_app(false);
+        app.campaign.start_camera.enabled = false;
+        app.campaign.start_camera.x = 100.0;
+        app.campaign.start_camera.z = 200.0;
+        assert!(!app.campaign.camera_dirty);
+
+        // When no player main house exists:
+        assert_eq!(app.player_main_house_position(), None);
+        assert!(!app.center_start_camera_on_player_main_house(), "center button must be disabled/inactive when no house");
+        assert_eq!(app.campaign.start_camera.x, 100.0);
+        assert_eq!(app.campaign.start_camera.z, 200.0);
+
+        // UI rendering with no main house (disabled button with tooltip):
+        app.map_properties_open = true;
+        let ctx = egui::Context::default();
+        let _ = ctx.run(Default::default(), |ctx| {
+            app.show_map_properties(ctx);
+        });
+
+        // Add a team-0 main house spawn:
+        let spawn = against_rome_scenario::Spawn {
+            id: uuid::Uuid::new_v4(),
+            alias: "GER_HAU00".into(),
+            team: 0,
+            x: 4500.0,
+            y: 0.0,
+            z: 6200.0,
+            count: 1,
+            ..Default::default()
+        };
+        app.scenario.load_session(&dir).unwrap();
+        app.scenario.apply_spawns(vec![spawn]).unwrap();
+
+        assert_eq!(app.player_main_house_position(), Some((4500.0, 6200.0)));
+        assert!(app.center_start_camera_on_player_main_house());
+        assert_eq!(app.campaign.start_camera.x, 4500.0);
+        assert_eq!(app.campaign.start_camera.z, 6200.0);
+        assert!(app.campaign.camera_dirty, "camera dirty flag must be set on center");
+
+        // UI rendering with main house (enabled button):
+        let _ = ctx.run(Default::default(), |ctx| {
+            app.show_map_properties(ctx);
+        });
+
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -10107,6 +10295,9 @@ impl EditorApp {
                 if ui.button(tr(lang, "Maps", "地圖")).clicked() {
                     self.maps.open = true;
                 }
+                if ui.button(tr(lang, "Map properties", "地圖屬性")).clicked() {
+                    self.map_properties_open = true;
+                }
                 if ui.button(tr(lang, "New Map", "新地圖")).clicked() {
                     self.maps.open = true;
                     self.maps.current_tab = crate::maps_ui::MapsTab::NewBlankMap;
@@ -11013,6 +11204,7 @@ impl EditorApp {
         self.tech_doc.show(ctx);
         self.show_design_check(ctx);
         self.show_balance_summary(ctx);
+        self.show_map_properties(ctx);
         self.show_save_blockers(ctx);
         self.consume_design_check_focus();
         self.show_studio_panels(ctx);
@@ -11637,5 +11829,111 @@ impl EditorApp {
         }.into();
         self.status_is_error = !success;
         success
+    }
+
+    /// Renders the small Map Properties window displaying title, briefing, and start camera settings.
+    pub fn show_map_properties(&mut self, ctx: &egui::Context) {
+        if !self.map_properties_open {
+            return;
+        }
+
+        self.autoload_scenario_if_needed();
+
+        let lang = self.lang();
+        let mut open = self.map_properties_open;
+
+        egui::Window::new(tr(lang, "Map properties", "地圖屬性"))
+            .open(&mut open)
+            .default_width(460.0)
+            .resizable(true)
+            .show(ctx, |ui| {
+                egui::ScrollArea::vertical().show(ui, |ui| {
+                    ui.heading(tr(lang, "Map Title & Briefing", "地圖標題與任務簡報"));
+                    ui.label(tr(
+                        lang,
+                        "Edits native briefing metadata (TEXT/US/briefing.put).",
+                        "編輯原生簡報資料（TEXT/US/briefing.put）。",
+                    ));
+                    ui.add_space(4.0);
+
+                    ui.label(tr(lang, "Map Title:", "地圖標題:"));
+                    if ui.text_edit_singleline(&mut self.ambience.briefing_title).changed() {
+                        self.ambience.dirty = true;
+                    }
+
+                    ui.label(tr(lang, "Briefing Subtitle:", "任務副標題:"));
+                    if ui.text_edit_singleline(&mut self.ambience.briefing_subtitle).changed() {
+                        self.ambience.dirty = true;
+                    }
+
+                    ui.label(tr(lang, "Briefing Description / Objectives:", "任務簡報說明 / 目標:"));
+                    if ui
+                        .add(egui::TextEdit::multiline(&mut self.ambience.briefing_body).desired_rows(5))
+                        .changed()
+                    {
+                        self.ambience.dirty = true;
+                    }
+
+                    ui.add_space(8.0);
+                    ui.separator();
+                    ui.heading(tr(lang, "Start Camera", "起始鏡頭"));
+                    ui.label(tr(
+                        lang,
+                        "Initial camera coordinates when the map loads.",
+                        "地圖載入時的初始鏡頭座標。",
+                    ));
+                    ui.add_space(4.0);
+
+                    let camera_before = self.campaign.start_camera.clone();
+
+                    ui.horizontal(|ui| {
+                        ui.label(tr(lang, "Start Camera Enabled:", "啟用起始鏡頭:"));
+                        ui.checkbox(&mut self.campaign.start_camera.enabled, "");
+                    });
+
+                    ui.horizontal(|ui| {
+                        ui.label(tr(lang, "Start Position (X, Z):", "起始位置 (X, Z):"));
+                        ui.add(
+                            egui::DragValue::new(&mut self.campaign.start_camera.x)
+                                .prefix("X: ")
+                                .clamp_range(0.0..=16383.0),
+                        );
+                        ui.add(
+                            egui::DragValue::new(&mut self.campaign.start_camera.z)
+                                .prefix("Z: ")
+                                .clamp_range(0.0..=16383.0),
+                        );
+                    });
+
+                    if self.campaign.start_camera != camera_before {
+                        self.campaign.camera_dirty = true;
+                    }
+
+                    ui.add_space(4.0);
+                    let main_house = self.player_main_house_position();
+                    let has_main_house = main_house.is_some();
+                    let center_btn = ui.add_enabled(
+                        has_main_house,
+                        egui::Button::new(tr(
+                            lang,
+                            "Center on player main house",
+                            "置中玩家主屋",
+                        )),
+                    );
+                    if has_main_house {
+                        if center_btn.clicked() {
+                            self.center_start_camera_on_player_main_house();
+                        }
+                    } else {
+                        center_btn.on_disabled_hover_text(tr(
+                            lang,
+                            "No player main house (Team 0) found on the map",
+                            "未在地圖上找到玩家主屋（陣營 0）",
+                        ));
+                    }
+                });
+            });
+
+        self.map_properties_open = open;
     }
 }

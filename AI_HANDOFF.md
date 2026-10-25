@@ -1,3 +1,10 @@
+## 2026-10-25 Agy：地圖屬性視窗與平坦範本簡報保留修復（已驗證，未手動驗證 GUI）
+- A 項確認為真缺陷並修復：`maps_ui.rs` `request_build_flat_template` 原先忽略 `self.blank_briefing`，已補齊 `.with_briefing` 帶入 `BlankMapSpec`；且 `app.rs` 之 `build_and_install_flat_template` 於複製後同步寫入 `TEXT/US/briefing.put` 並更新 `self.ambience.briefing_title`，確保平坦範本地圖保留設計者輸入之簡報標題。
+- B 項新增地圖屬性視窗：頂端工具列新增「Map properties / 地圖屬性」按鈕，開啟獨立小視窗直接綁定 `self.ambience` 的 `briefing_title`、`briefing_subtitle` 與 `briefing_body`；編輯即標記 `self.ambience.dirty = true`，沿用原生 Safe Save 儲存路徑，不建立第二資料來源。
+- C 項起始鏡頭設定與置中玩家主屋：於地圖屬性視窗綁定 `self.campaign.start_camera` 之 `enabled`、`x`、`z` 欄位並維護 `camera_dirty`；新增「Center on player main house / 置中玩家主屋」按鈕，複用 `wave_player_target` 之主屋判定邏輯取得陣營 0 主屋座標，無主屋時停用並顯示雙語浮動提示。
+- 測試新增：A 平坦範本意圖與建置保留簡報測試、B 地圖屬性編輯標題與 Safe Save 同步測試、C 置中按鈕設置鏡頭座標與無主屋時停用測試。
+- 驗證：cargo test --workspace --locked --offline --no-fail-fast --target-dir re_workspace/agy-target 通過（283 組、2530 passed、0 failed、24 ignored；日誌保存至 re_workspace/map-properties-test.log）。未 stage／commit，保留 AGENTS.md／README.md 既有變更，未寫入 repo 以外目錄。
+
 ## 2026-10-25 Agy：劇本事件範本匯出與匯入（已驗證，未手動驗證 GUI）
 - 新增可重複使用的劇本事件範本功能（檔案格式 `.arm-events.json`，`version: 1`, `kind: "ScenarioEvents"`，複用 `layout_io` 的大小上限與原子寫入）。
 - 純處理模組 apps/against-rome-editor/src/event_templates.rs（註冊於 lib.rs）：
