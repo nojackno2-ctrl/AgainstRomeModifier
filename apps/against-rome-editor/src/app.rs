@@ -101,6 +101,15 @@ struct ToolbarGraphSource {
 #[path = "../tests/toolbar_event_graph/mod.rs"]
 mod toolbar_event_graph_tests;
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct NavigationCacheKey {
+    pub map_path: Option<PathBuf>,
+    pub placement_loaded: bool,
+    pub placement_token: u64,
+    pub placement_count: usize,
+    pub footprint_game: Option<PathBuf>,
+}
+
 pub struct EditorApp {
     recovery: crate::recovery::Recovery,
     recovery_deferred: bool,
@@ -143,13 +152,18 @@ pub struct EditorApp {
     pub pending_action: Option<PendingAction>,
     close_allowed: bool,
     save_blockers_open: bool,
+    pub(super) cached_save_blockers: Option<Vec<save_blockers::SaveBlocker>>,
+    pub(super) save_blockers_cache_key: Option<save_blockers::SaveBlockersCacheKey>,
+    pub save_blockers_recompute_count: usize,
     save_focus_nature: bool,
     pending_save_warnings: Option<(
         PathBuf,
         Vec<against_rome_maps::design_validator::MapDesignIssue>,
     )>,
     pub(crate) toolbox: ToolboxUi,
-    navigation: NavigationUi,
+    pub(crate) navigation: NavigationUi,
+    navigation_cache_key: Option<NavigationCacheKey>,
+    pub navigation_recompute_count: usize,
     pub(crate) height_step: f32,
     pub(crate) placement: PlacementUi,
     family: crate::family_ui::FamilyUi,
@@ -407,10 +421,15 @@ impl EditorApp {
             recovery: Default::default(),
             recovery_deferred: false,
             save_blockers_open: false,
+            cached_save_blockers: None,
+            save_blockers_cache_key: None,
+            save_blockers_recompute_count: 0,
             save_focus_nature: false,
             pending_save_warnings: None,
             toolbox: ToolboxUi::default(),
             navigation: NavigationUi::default(),
+            navigation_cache_key: None,
+            navigation_recompute_count: 0,
             height_step: 4.0,
             placement: PlacementUi::default(),
             family: crate::family_ui::FamilyUi::default(),
@@ -1216,7 +1235,8 @@ impl EditorApp {
         self.ai_planner.reset_session();
         self.toolbox.clear_transient_reviews();
 
-        self.navigation.invalidate();
+        self.invalidate_save_blockers_cache();
+        self.invalidate_navigation_cache();
         self.texture_dirty = true;
         self.is_painting = false;
         self.stroke_path.clear();
@@ -1272,7 +1292,8 @@ impl EditorApp {
         self.ai_planner.reset_session();
         self.toolbox.clear_transient_reviews();
 
-        self.navigation.invalidate();
+        self.invalidate_save_blockers_cache();
+        self.invalidate_navigation_cache();
         self.texture_dirty = true;
         self.is_painting = false;
         self.stroke_path.clear();
@@ -1661,7 +1682,8 @@ impl EditorApp {
         self.show_skirmish_wizard(ctx);
         if had_session && self.session.as_ref().is_some_and(|s| s.is_dirty()) && !before {
             self.texture_dirty = true;
-            self.navigation.invalidate();
+            self.invalidate_save_blockers_cache();
+        self.invalidate_navigation_cache();
         }
         let _ = self.persist_open_panels();
     }
@@ -1850,7 +1872,8 @@ impl EditorApp {
         self.family_open = open;
         if self.family.take_store_changed() {
             self.placement.record_edit(1);
-            self.navigation.invalidate();
+            self.invalidate_save_blockers_cache();
+        self.invalidate_navigation_cache();
         }
     }
 
@@ -1867,7 +1890,8 @@ impl EditorApp {
             .apply_pending_region(self.textures.session_mut(), || objects);
         if outcome.textures_changed > 0 {
             self.texture_dirty = true;
-            self.navigation.invalidate();
+            self.invalidate_save_blockers_cache();
+        self.invalidate_navigation_cache();
         }
         if let Some(ids) = outcome.selected_objects {
             let keys: Vec<(usize, u32)> = self
@@ -1939,7 +1963,8 @@ impl EditorApp {
                 ) {
                     Ok(report) => {
                         self.texture_dirty = true;
-                        self.navigation.invalidate();
+                        self.invalidate_save_blockers_cache();
+        self.invalidate_navigation_cache();
                         self.landscape
                             .plan_applied(LandscapeApply::Cliff, &report.summary());
                     }
@@ -1966,7 +1991,8 @@ impl EditorApp {
                 match crate::design_apply::apply_river(terrain, textures_session, &known, &plan) {
                     Ok(report) => {
                         self.texture_dirty = true;
-                        self.navigation.invalidate();
+                        self.invalidate_save_blockers_cache();
+        self.invalidate_navigation_cache();
                         self.landscape
                             .plan_applied(LandscapeApply::River, &report.summary());
                     }
@@ -2072,7 +2098,8 @@ impl EditorApp {
                     placement_note.push_str(" (objects skipped: load DATA in Objects panel first)");
                 }
                 self.texture_dirty = true;
-                self.navigation.invalidate();
+                self.invalidate_save_blockers_cache();
+        self.invalidate_navigation_cache();
                 let summary = format!(
                     "wall applied: {blocked} collision pixels, {foundations} foundation tiles, {placed_count} objects placed{placement_note}"
                 );
@@ -2116,7 +2143,8 @@ impl EditorApp {
         }
         terrain.commit_stroke();
         self.texture_dirty = true;
-        self.navigation.invalidate();
+        self.invalidate_save_blockers_cache();
+        self.invalidate_navigation_cache();
         self.landscape
             .erosion_applied(&format!("{} height samples modified", applied.len()));
     }
@@ -2150,7 +2178,8 @@ impl EditorApp {
             Ok(changes) if !changes.is_empty() => {
                 self.ramp_selecting = false;
                 self.texture_dirty = true;
-                self.navigation.invalidate();
+                self.invalidate_save_blockers_cache();
+        self.invalidate_navigation_cache();
                 self.status_message =
                     format!("Ramp applied: {} height samples modified.", changes.len());
                 self.status_is_error = false;
@@ -3762,7 +3791,8 @@ impl EditorApp {
         self.is_painting = false;
         self.stroke_path.clear();
         self.texture_dirty = true;
-        self.navigation.invalidate();
+        self.invalidate_save_blockers_cache();
+        self.invalidate_navigation_cache();
         self.set_status(
             tr(
                 lang,
@@ -3835,7 +3865,8 @@ impl EditorApp {
         self.is_painting = false;
         self.stroke_path.clear();
         self.texture_dirty = true;
-        self.navigation.invalidate();
+        self.invalidate_save_blockers_cache();
+        self.invalidate_navigation_cache();
         let material_note = match &material {
             Some(id) => format!("{} {id}", tr(lang, "material", "材質")),
             None => tr(lang, "no material layer", "無材質層").to_string(),
@@ -11083,6 +11114,36 @@ angle=0.00
         assert!(app.pending_action.is_none());
         assert_eq!(app.session.as_ref().unwrap().heights(), TerrainSession::create_blank(257, 32).heights());
     }
+
+    #[test]
+    fn navigation_objects_caching_and_recompute_count() {
+        let mut app = EditorApp::default();
+        let ctx = egui::Context::default();
+        assert_eq!(app.navigation_recompute_count, 0);
+
+        // Frame with navigation.open == false: does not recompute or load from disk
+        gui_frame(&mut app, &ctx, vec![]);
+        assert_eq!(app.navigation_recompute_count, 0);
+
+        // Open navigation: first frame recomputes once
+        app.navigation.open = true;
+        gui_frame(&mut app, &ctx, vec![]);
+        assert_eq!(app.navigation_recompute_count, 1);
+
+        // Subsequent frame with no placement changes: reuses cache (count stays 1)
+        gui_frame(&mut app, &ctx, vec![]);
+        assert_eq!(app.navigation_recompute_count, 1);
+
+        // Invalidation triggers recompute on next frame
+        app.invalidate_navigation_cache();
+        gui_frame(&mut app, &ctx, vec![]);
+        assert_eq!(app.navigation_recompute_count, 2);
+
+        // Closing navigation: no further recompute
+        app.navigation.open = false;
+        gui_frame(&mut app, &ctx, vec![]);
+        assert_eq!(app.navigation_recompute_count, 2);
+    }
     #[test]
     fn global_shortcuts_do_not_escape_dialogs_or_event_graph() {
         for context in 0..6 {
@@ -11439,6 +11500,43 @@ impl EditorApp {
             || self.skirmish_wizard.open || self.event_graph.open || self.event_graph.pending_close
     }
 
+    /// Invalidate navigation passability & building footprints cache.
+    pub fn invalidate_navigation_cache(&mut self) {
+        self.navigation_cache_key = None;
+        self.navigation.invalidate();
+    }
+
+    /// Synchronizes placement & APT building footprints with the navigation panel only when needed.
+    pub(crate) fn update_navigation_objects_if_needed(&mut self) {
+        if !self.navigation.open {
+            return;
+        }
+        let footprint_game = self.troop_game_root().or_else(|| {
+            let path = PathBuf::from(self.maps.game_path_input.trim());
+            path.join("SYSTEM/clengine.ini").is_file().then_some(path)
+        });
+        let current_key = NavigationCacheKey {
+            map_path: self.loaded_map_path.clone(),
+            placement_loaded: self.placement.is_loaded(),
+            placement_token: self.placement.history_token(),
+            placement_count: self.placement.object_count(),
+            footprint_game: footprint_game.clone(),
+        };
+        if self.navigation_cache_key.as_ref() != Some(&current_key) {
+            let route_objects = if self.placement.is_loaded() {
+                self.placement.objects()
+            } else {
+                self.loaded_map_path.as_ref().and_then(|path|
+                    against_rome_placement::ObjectStore::load(path).ok()).map(|s| s.objects()).unwrap_or_default()
+            };
+            self.navigation.update_placement(&route_objects);
+            self.navigation.update_buildings(self.placement.navigation_buildings(&route_objects));
+            self.navigation.update_apt(footprint_game, &route_objects, self.placement.type_names());
+            self.navigation_cache_key = Some(current_key);
+            self.navigation_recompute_count += 1;
+        }
+    }
+
     /// One full editor frame. `eframe::App::update` delegates here; tests drive it headlessly
     /// with an `egui::Context` (no window or `eframe::Frame` needed).
     pub fn ui_frame(&mut self, ctx: &egui::Context) {
@@ -11449,20 +11547,10 @@ impl EditorApp {
             self.reset_journal_epoch();
             if !self.recovery_deferred && self.recovery.offer.is_none() { self.clear_recovery(); }
         }
-        let route_objects = if self.placement.is_loaded() {
-            self.placement.objects()
-        } else {
-            self.loaded_map_path.as_ref().and_then(|path|
-                against_rome_placement::ObjectStore::load(path).ok()).map(|s| s.objects()).unwrap_or_default()
-        };
-        self.navigation.update_placement(&route_objects);
-        self.navigation.update_buildings(self.placement.navigation_buildings(&route_objects));
-        let footprint_game = self.troop_game_root().or_else(|| {
-            let path = PathBuf::from(self.maps.game_path_input.trim());
-            path.join("SYSTEM/clengine.ini").is_file().then_some(path)
-        });
-        self.navigation.update_apt(footprint_game, &route_objects, self.placement.type_names());
-        self.navigation.refresh(self.session.as_ref(), self.water_surface);
+        self.update_navigation_objects_if_needed();
+        if self.navigation.open {
+            self.navigation.refresh(self.session.as_ref(), self.water_surface);
+        }
         self.navigation.cancel_pick(ctx);
         let pick_cancel = self.scenario.cancel_canvas_pick(ctx, self.lang() == AppLanguage::English);
         let scenario_cancelled = pick_cancel.is_some();
@@ -13238,7 +13326,8 @@ impl EditorApp {
                 self.texture_dirty = true;
                 self.spawn_landscape = None;
                 self.family.invalidate();
-                self.navigation.invalidate();
+                self.invalidate_save_blockers_cache();
+        self.invalidate_navigation_cache();
                 return true;
             }
         }
@@ -13255,7 +13344,8 @@ impl EditorApp {
             self.spawn_landscape = None;
             if id == crate::undo_journal::SubsystemId::Placement {
                 self.family.invalidate();
-                self.navigation.invalidate();
+                self.invalidate_save_blockers_cache();
+        self.invalidate_navigation_cache();
             }
         }
         self.status_message = if cleared {

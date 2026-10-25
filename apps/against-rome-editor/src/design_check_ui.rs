@@ -304,6 +304,13 @@ pub fn format_issue_row(row: &IssueRow, lang: AppLanguage) -> String {
     line
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct DesignCheckCacheKey {
+    pub report: Option<DesignCheckReport>,
+    pub extra_issues: Vec<MapIssue>,
+    pub lang: AppLanguage,
+}
+
 pub struct DesignCheckUi {
     pub open: bool,
     pub report: Option<DesignCheckReport>,
@@ -325,6 +332,9 @@ pub struct DesignCheckUi {
     pub rerun_after_save: bool,
     /// 與配置面板相同的可注入選檔器介面。
     pub report_picker: crate::layout_io::LayoutFilePicker,
+    pub(crate) cached_rows: Option<Vec<IssueRow>>,
+    pub(crate) cache_key: Option<DesignCheckCacheKey>,
+    pub recompute_count: usize,
 }
 
 impl Default for DesignCheckUi {
@@ -349,11 +359,38 @@ impl Default for DesignCheckUi {
                     .set_file_name(suggested_name)
                     .save_file()
             }),
+            cached_rows: None,
+            cache_key: None,
+            recompute_count: 0,
         }
     }
 }
 
 impl DesignCheckUi {
+    /// Invalidate cached issue rows.
+    pub fn invalidate_cache(&mut self) {
+        self.cached_rows = None;
+        self.cache_key = None;
+    }
+
+    /// Returns the cached IssueRow slice or computes and sorts it if stale.
+    pub fn get_or_compute_rows(&mut self, lang: AppLanguage) -> &[IssueRow] {
+        let key = DesignCheckCacheKey {
+            report: self.report.clone(),
+            extra_issues: self.extra_issues.clone(),
+            lang,
+        };
+        if self.cached_rows.is_none() || self.cache_key.as_ref() != Some(&key) {
+            let rows = match &self.report {
+                Some(report) => report_rows(report, &self.extra_issues, lang),
+                None => Vec::new(),
+            };
+            self.cached_rows = Some(rows);
+            self.cache_key = Some(key);
+            self.recompute_count += 1;
+        }
+        self.cached_rows.as_deref().unwrap_or(&[])
+    }
     /// Checks whether an issue with the given severity is visible under current filter toggles.
     pub fn is_severity_visible(&self, severity: MapIssueSeverity) -> bool {
         match severity {
@@ -480,6 +517,7 @@ pub fn default_report_path(map_path: &Path) -> PathBuf {
 impl EditorApp {
     /// Evaluate the current effective state without side effects and show the result.
     pub fn run_design_check(&mut self) {
+        self.design_check.invalidate_cache();
         let report = self.design_check_report();
         let path = if self.map_path_input.trim().is_empty() {
             self.loaded_map_path.clone().unwrap_or_default()
@@ -656,10 +694,7 @@ impl EditorApp {
         let mut fix_hostility = false;
         let mut fix_destination = false;
         let mut locate: Option<usize> = None;
-        let rows = match &self.design_check.report {
-            Some(report) => report_rows(report, &self.design_check.extra_issues, lang),
-            None => Vec::new(),
-        };
+        let rows = self.design_check.get_or_compute_rows(lang).to_vec();
         let mut selected = self.design_check.selected.filter(|i| *i < rows.len());
         egui::Window::new(tr(lang, "Design Check (read-only)", "設計檢查（唯讀）"))
             .open(&mut open)
@@ -1114,5 +1149,51 @@ mod tests {
         assert!(app.status_message.contains("Design Check:"));
 
         let _ = std::fs::remove_dir_all(temp_dir);
+    }
+
+    #[test]
+    fn test_design_check_rows_caching_and_recompute_count() {
+        let mut dc = DesignCheckUi::default();
+        assert_eq!(dc.recompute_count, 0);
+
+        let report = DesignCheckReport::Checked {
+            map_issues: vec![
+                MapIssue::new(
+                    MapIssueSeverity::Error,
+                    "sample_error",
+                    "樣本錯誤",
+                    "Sample error",
+                ),
+            ],
+            preflight_error: None,
+            design_issues: vec![],
+        };
+        dc.report = Some(report);
+
+        // First access computes and caches
+        let rows1 = dc.get_or_compute_rows(AppLanguage::English);
+        assert_eq!(rows1.len(), 1);
+        assert_eq!(dc.recompute_count, 1);
+
+        // Successive access reuses cache
+        let rows2 = dc.get_or_compute_rows(AppLanguage::English);
+        assert_eq!(rows2.len(), 1);
+        assert_eq!(dc.recompute_count, 1);
+
+        // Language change recomputes
+        let rows_zh = dc.get_or_compute_rows(AppLanguage::TraditionalChinese);
+        assert_eq!(rows_zh.len(), 1);
+        assert_eq!(dc.recompute_count, 2);
+
+        // Same language cached again
+        let rows_zh2 = dc.get_or_compute_rows(AppLanguage::TraditionalChinese);
+        assert_eq!(rows_zh2.len(), 1);
+        assert_eq!(dc.recompute_count, 2);
+
+        // Invalidation triggers recompute
+        dc.invalidate_cache();
+        let rows3 = dc.get_or_compute_rows(AppLanguage::TraditionalChinese);
+        assert_eq!(rows3.len(), 1);
+        assert_eq!(dc.recompute_count, 3);
     }
 }

@@ -518,3 +518,44 @@ fn save_blockers_nature_data_conflict_opens_nature() {
     assert!(app.save_focus_nature);
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn save_blockers_caching_and_recompute_count() {
+    let (mut app, dir) = app_with_target("blockers_caching_test");
+    app.maps.mark_dirty();
+    app.save_blockers_open = true;
+    let ctx = egui::Context::default();
+    assert_eq!(app.save_blockers_recompute_count, 0);
+
+    let frame = |app: &mut EditorApp, ctx: &egui::Context| {
+        let _ = ctx.run(egui::RawInput::default(), |ctx| {
+            app.show_save_blockers(ctx);
+        });
+    };
+
+    // First frame computes and caches blockers
+    frame(&mut app, &ctx);
+    assert_eq!(app.save_blockers_recompute_count, 1);
+
+    // Successive frames reuse cache without re-encoding terrain or re-validating
+    frame(&mut app, &ctx);
+    frame(&mut app, &ctx);
+    assert_eq!(app.save_blockers_recompute_count, 1);
+
+    // Making another panel dirty invalidates cache key and triggers recompute
+    app.environment.mark_dirty();
+    frame(&mut app, &ctx);
+    assert_eq!(app.save_blockers_recompute_count, 2);
+
+    // Invalidation method also triggers recompute
+    app.invalidate_save_blockers_cache();
+    frame(&mut app, &ctx);
+    assert_eq!(app.save_blockers_recompute_count, 3);
+
+    // When save blockers is closed, show_save_blockers does nothing
+    app.save_blockers_open = false;
+    frame(&mut app, &ctx);
+    assert_eq!(app.save_blockers_recompute_count, 3);
+
+    std::fs::remove_dir_all(dir).unwrap();
+}

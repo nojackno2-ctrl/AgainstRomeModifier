@@ -46,6 +46,16 @@ pub enum SaveBlockerAction {
     ApplyWaves,
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SaveBlockersCacheKey {
+    pub map_path_input: String,
+    pub loaded_map_path: Option<PathBuf>,
+    pub subsystem_tokens: Vec<u64>,
+    pub panel_dirty_flags: Vec<bool>,
+    pub session_present: bool,
+    pub session_dirty: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SaveBlocker {
     pub kind: SaveBlockerKind,
     pub panel: SavePanel,
@@ -501,6 +511,7 @@ impl EditorApp {
         action: SaveBlockerAction,
         ctx: &egui::Context,
     ) {
+        self.invalidate_save_blockers_cache();
         // 每次重新檢查可用操作，避免對已改變或已解決的草稿執行舊按鈕。
         if !self
             .save_blockers()
@@ -579,7 +590,67 @@ impl EditorApp {
         }
     }
 
+    pub fn invalidate_save_blockers_cache(&mut self) {
+        self.cached_save_blockers = None;
+        self.save_blockers_cache_key = None;
+    }
+
+    pub fn current_save_blockers_cache_key(&self) -> SaveBlockersCacheKey {
+        use crate::undo_journal::{SubsystemId, UndoTarget};
+        let tokens = [
+            SubsystemId::Terrain,
+            SubsystemId::Materials,
+            SubsystemId::Placement,
+            SubsystemId::Nature,
+            SubsystemId::Spawns,
+            SubsystemId::Scenario,
+            SubsystemId::Scene,
+            SubsystemId::Auxiliary,
+        ]
+        .iter()
+        .map(|id| self.token(*id))
+        .collect();
+
+        let panel_dirty_flags = vec![
+            self.event_graph.is_dirty(),
+            self.scenario.graph_ui().is_dirty(),
+            self.maps.is_dirty(),
+            self.environment.is_dirty(),
+            self.landscape.is_dirty(),
+            self.packaging.is_dirty(),
+            self.campaign.has_unsupported_edits(),
+            self.ai_planner.is_dirty(),
+            self.toolbox.is_dirty(),
+            self.ambience.is_dirty(),
+            self.placement.is_dirty(),
+            self.nature.session.is_dirty(),
+            self.textures.is_dirty(),
+            self.scenario.dirty(),
+        ];
+
+        SaveBlockersCacheKey {
+            map_path_input: self.map_path_input.clone(),
+            loaded_map_path: self.loaded_map_path.clone(),
+            subsystem_tokens: tokens,
+            panel_dirty_flags,
+            session_present: self.session.is_some(),
+            session_dirty: self.session.as_ref().is_some_and(|s| s.is_dirty()),
+        }
+    }
+
+    pub fn evaluate_save_blockers_cached(&mut self) -> &[SaveBlocker] {
+        let key = self.current_save_blockers_cache_key();
+        if self.cached_save_blockers.is_none() || self.save_blockers_cache_key.as_ref() != Some(&key) {
+            let blockers = self.save_blockers();
+            self.cached_save_blockers = Some(blockers);
+            self.save_blockers_cache_key = Some(key);
+            self.save_blockers_recompute_count += 1;
+        }
+        self.cached_save_blockers.as_deref().unwrap_or(&[])
+    }
+
     pub(super) fn save_now_from_blockers(&mut self) {
+        self.invalidate_save_blockers_cache();
         if self.save_blockers().is_empty() {
             self.save_blockers_open = false;
             self.request_safe_save();
@@ -590,7 +661,7 @@ impl EditorApp {
         if !self.save_blockers_open {
             return;
         }
-        let blockers = self.save_blockers();
+        let blockers = self.evaluate_save_blockers_cached().to_vec();
         let lang = self.loc.current_language();
         let mut open = true;
         let mut action = None;
