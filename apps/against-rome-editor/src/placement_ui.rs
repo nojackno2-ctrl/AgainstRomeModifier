@@ -190,6 +190,7 @@ pub(crate) struct PlacementState {
 }
 
 pub struct PlacementUi {
+    pub english: bool,
     pub open: bool,
     pub(crate) selection_tools_blocked: bool,
     map_input: String,
@@ -242,10 +243,15 @@ pub enum LayoutRequest {
     },
 }
 
+fn tl(english: bool, zh: &'static str, en: &'static str) -> &'static str {
+    if english { en } else { zh }
+}
+
 impl Default for PlacementUi {
     fn default() -> Self {
         Self {
             open: false,
+            english: false,
             selection_tools_blocked: false,
             map_input: String::new(),
             loaded_map: None,
@@ -1506,19 +1512,19 @@ impl PlacementUi {
     fn layout_section(&mut self, ui: &mut egui::Ui) {
         ui.separator();
         ui.horizontal_wrapped(|ui| {
-            ui.label("配置 / Layout (.arm-layout.json)");
+            ui.label(tl(self.english, "配置 (.arm-layout.json)", "Layout (.arm-layout.json)"));
             let has_selection = !self.selected_families().is_empty();
             if ui
                 .add_enabled(
                     self.is_loaded() && has_selection,
-                    egui::Button::new("保存選取的聚落／物件… / Export selection"),
+                    egui::Button::new(tl(self.english, "儲存選取的聚落／物件…", "Export selection…")),
                 )
                 .clicked()
             {
                 self.request_layout(LayoutRequest::ExportSelection);
             }
             if ui
-                .add_enabled(self.is_loaded(), egui::Button::new("載入並套用配置… / Import layout"))
+                .add_enabled(self.is_loaded(), egui::Button::new(tl(self.english, "載入並套用配置…", "Import layout…")))
                 .clicked()
             {
                 self.begin_layout_import();
@@ -1535,7 +1541,7 @@ impl PlacementUi {
         let mut confirm = false;
         let mut cancel = false;
         let mut open = true;
-        egui::Window::new("套用配置 / Apply layout")
+        egui::Window::new(tl(self.english, "套用配置", "Apply layout"))
             .open(&mut open)
             .collapsible(false)
             .resizable(false)
@@ -1545,30 +1551,30 @@ impl PlacementUi {
                     preset.kind,
                     preset.entries.len()
                 ));
-                ui.label("Anchor is in tile units; rotates about the saved origin; heights follow terrain; the whole layout is rejected if any type or position is invalid.");
+                ui.label(tl(self.english, "錨點使用圖格座標；繞已儲存原點旋轉並貼合地形；類型或位置無效時拒絕整批套用。", "Anchor is in tile units; rotates about the saved origin; heights follow terrain; the whole layout is rejected if any type or position is invalid."));
                 ui.horizontal(|ui| {
-                    ui.label("錨點 X / Anchor X");
+                    ui.label(tl(self.english, "錨點 X", "Anchor X"));
                     ui.add(egui::DragValue::new(&mut self.layout_options.anchor_tile_x).clamp_range(0.0..=63.99).speed(0.1));
-                    ui.label("錨點 Z / Anchor Z");
+                    ui.label(tl(self.english, "錨點 Z", "Anchor Z"));
                     ui.add(egui::DragValue::new(&mut self.layout_options.anchor_tile_z).clamp_range(0.0..=63.99).speed(0.1));
                 });
                 ui.horizontal(|ui| {
-                    ui.label("旋轉（度）/ Rotation");
+                    ui.label(tl(self.english, "旋轉（度）", "Rotation (degrees)"));
                     ui.add(egui::DragValue::new(&mut self.layout_options.rotation).clamp_range(0.0..=359.0).speed(45.0));
                 });
                 let placement = preset.kind == MapLayoutKind::Placement;
                 ui.horizontal(|ui| {
-                    ui.add_enabled(placement, egui::Checkbox::new(&mut self.layout_team_override, "指定隊伍 / Override team"));
+                    ui.add_enabled(placement, egui::Checkbox::new(&mut self.layout_team_override, tl(self.english, "指定隊伍", "Override team")));
                     ui.add_enabled(
                         placement && self.layout_team_override,
                         egui::DragValue::new(&mut self.layout_team).clamp_range(-1..=15),
                     );
                 });
                 ui.horizontal(|ui| {
-                    if ui.button("套用 / Apply").clicked() {
+                    if ui.button(tl(self.english, "套用", "Apply")).clicked() {
                         confirm = true;
                     }
-                    if ui.button("取消 / Cancel").clicked() {
+                    if ui.button(tl(self.english, "取消", "Cancel")).clicked() {
                         cancel = true;
                     }
                 });
@@ -1631,10 +1637,10 @@ impl PlacementUi {
     }
 
     fn tile_bounds_form(&mut self, ui: &mut egui::Ui) {
-        ui.label("矩形選取 tiles：[left, right) × [top, bottom)，world X/Z，每 tile 256；取代選取（忽略 Filter）");
+        ui.label(tl(self.english, "矩形選取圖格：[左, 右) × [上, 下)，世界座標 X/Z，每格 256；取代選取（忽略篩選）", "Rectangle tiles: [left, right) x [top, bottom), world X/Z, 256 per tile; replaces selection (ignores filter)"));
         ui.horizontal_wrapped(|ui| {
             for (index, name) in ["left", "top", "right", "bottom"].iter().enumerate() {
-                ui.label(*name);
+                ui.label(if self.english { *name } else { ["左", "上", "右", "下"][index] });
                 ui.add(
                     egui::TextEdit::singleline(&mut self.tile_bounds[index])
                         .id_source(("placement-tile-bound", index))
@@ -1642,7 +1648,7 @@ impl PlacementUi {
                 );
             }
             if ui
-                .add_enabled(self.is_loaded(), egui::Button::new("Select rectangle"))
+                .add_enabled(self.is_loaded(), egui::Button::new(tl(self.english, "選取矩形範圍", "Select rectangle")))
                 .clicked()
             {
                 self.status = match self.select_tile_bounds() {
@@ -1655,48 +1661,48 @@ impl PlacementUi {
 
     pub fn show(&mut self, ctx: &egui::Context) {
         let mut visible = self.open;
-        egui::Window::new("Rust 物件 / Family 工具").open(&mut visible)
+        egui::Window::new(tl(self.english, "物件與關聯群組工具", "Rust 物件 / Family 工具")).open(&mut visible)
             .default_width(760.0).show(ctx, |ui| {
-            ui.label("DATA 獨立編輯階段：此處 Save 只保存 DATA 物件與關聯池，不保存 terrain、材質或劇本。");
+            ui.label(tl(self.english, "DATA 獨立編輯階段：此處儲存僅保存 DATA 物件與關聯池，不保存地形、材質或劇本。", "Independent DATA session: saves objects and related pools only; terrain, materials and scenarios are saved separately."));
             ui.label("只編輯明確指定的 MAP；安裝目錄允許唯讀載入，保存請使用工作副本。");
             ui.label("MAP 完整路徑（包含 DATA 的資料夾）");
             ui.text_edit_singleline(&mut self.map_input);
             ui.horizontal(|ui| {
-                if ui.button("Load DATA").clicked() { let r = self.request_load(); self.report(r); }
-                if ui.button("Close tool").clicked() { self.request_close(); }
+                if ui.button(tl(self.english, "載入 DATA", "Load DATA")).clicked() { let r = self.request_load(); self.report(r); }
+                if ui.button(tl(self.english, "關閉工具", "Close tool")).clicked() { self.request_close(); }
             });
             if let Some(path) = &self.loaded_map {
                 ui.label(format!("實際載入：{} {}", path.display(), if self.is_dirty() {"（未保存）"} else {"（已保存）"}));
             }
             if let Some(store) = &self.store {
-                ui.label(format!("Active objects={} / capacity={}",store.objects().len(),store.capacity()));
+                ui.label(format!("{} {} / {} {}", tl(self.english, "有效物件：", "Active objects:"), store.objects().len(), tl(self.english, "容量：", "Capacity:"), store.capacity()));
             }
             ui.horizontal(|ui| {
-                ui.label("Filter slot / UID / type / team / parent");
+                ui.label(tl(self.english, "篩選槽位／UID／類型／隊伍／父物件", "Filter slot / UID / type / team / parent"));
                 ui.text_edit_singleline(&mut self.filter);
-                if ui.button("Select all").clicked() {
+                if ui.button(tl(self.english, "全選", "Select all")).clicked() {
                     self.select_all();
                 }
-                if ui.add_enabled(!self.selection.is_empty(), egui::Button::new("Select type / 選取同類型"))
-                    .on_hover_text("選取所有與目前選取物件具相同類型的物件 / Select all objects of same type")
+                if ui.add_enabled(!self.selection.is_empty(), egui::Button::new(tl(self.english, "選取同類型", "Select type / 選取同類型")))
+                    .on_hover_text(tl(self.english, "選取所有與目前選取物件具相同類型的物件", "Select all objects of same type"))
                     .clicked()
                 {
                     let n = self.select_all_of_type();
                     self.status = format!("已選取 {n} 個同類型物件 / Selected {n} objects of same type");
                 }
-                if ui.button("Clear selection").clicked() {
+                if ui.button(tl(self.english, "清除選取", "Clear selection")).clicked() {
                     self.clear_selection();
                 }
             });
             self.tile_bounds_form(ui);
             ui.horizontal(|ui| {
-                if ui.add_enabled(self.pending.is_none() && !self.selection_tools_blocked, egui::Button::new("反向選取 / Invert selection")).clicked() {
+                if ui.add_enabled(self.pending.is_none() && !self.selection_tools_blocked, egui::Button::new(tl(self.english, "反向選取", "Invert selection"))).clicked() {
                     self.invert_selection();
                 }
-                if ui.add_enabled(self.pending.is_none() && !self.selection_tools_blocked && !self.selected_objects().is_empty(), egui::Button::new("選取同隊伍 / Select same teams")).clicked() {
+                if ui.add_enabled(self.pending.is_none() && !self.selection_tools_blocked && !self.selected_objects().is_empty(), egui::Button::new(tl(self.english, "選取同隊伍", "Select same teams"))).clicked() {
                     self.select_same_teams();
                 }
-                ui.small("全地圖，包含隱藏項目 / Whole map, including filtered objects");
+                ui.small(tl(self.english, "全地圖，包含隱藏項目", "Whole map, including filtered objects"));
             });
             let objects = self.visible(self.store.as_ref().map(ObjectStore::objects).unwrap_or_default());
             let selected_count = self.selected_families().len();
@@ -1731,8 +1737,8 @@ impl PlacementUi {
                     if let Some(limits) = self.category_limits(o.type_id as i32) {
                         ui.label(format!("類別限制：{limits}（單位數量存於 SDL，不在 DATA）"));
                     }
-                    if ui.add_enabled(self.selected_coordinates().is_some(), egui::Button::new("Copy X/Z / 複製 X/Z"))
-                        .on_hover_text("複製選取物件的世界座標 (X, Z) 至剪貼簿 / Copy world X and Z coordinates of the selected object to clipboard")
+                    if ui.add_enabled(self.selected_coordinates().is_some(), egui::Button::new(tl(self.english, "複製 X/Z", "Copy X/Z / 複製 X/Z")))
+                        .on_hover_text(tl(self.english, "複製選取物件的世界座標 (X, Z) 至剪貼簿", "Copy world X and Z coordinates of the selected object to clipboard"))
                         .clicked()
                     {
                         let text = format!("{:.1}, {:.1}", o.position[0], o.position[2]);
@@ -1753,43 +1759,43 @@ impl PlacementUi {
                     ui.label(format!("多選中的 family roots: {families:?}"));
                 }
             }
-            ui.label("Move / Clone 的相對 world 位移；X/Y/Z → signed 16.16（四捨五入至 1/65536）。");
+            ui.label(tl(self.english, "移動／複製的相對世界位移；X/Y/Z → 帶正負號的 16.16（四捨五入至 1/65536）。", "Move / Clone 的相對 world 位移；X/Y/Z → signed 16.16（四捨五入至 1/65536）。"));
             ui.horizontal(|ui| {for axis in 0..3 {ui.label(["ΔX","ΔY","ΔZ"][axis]);ui.add(egui::TextEdit::singleline(&mut self.delta[axis]).desired_width(95.0));}});
-            if let Ok(delta)=fixed_delta(&self.delta) {ui.label(format!("16.16 delta: {delta:?}"));}
+            if let Ok(delta)=fixed_delta(&self.delta) {ui.label(format!("{} {delta:?}", tl(self.english, "16.16 位移：", "16.16 delta:")));}
             ui.label("地圖外座標沿用原有 family 契約，不自動 clamp。未知／不支援關聯由 core 拒絕，錯誤原樣顯示。");
             ui.horizontal(|ui| {
                 ui.label("角度（度）");ui.add(egui::TextEdit::singleline(&mut self.angle).desired_width(70.0));
-                if ui.button("Set rotation").clicked() {let r=self.rotate_family(true);self.report(r);}
-                if ui.button("Rotate by").clicked() {let r=self.rotate_family(false);self.report(r);}
+                if ui.button(tl(self.english, "設定旋轉角度", "Set rotation")).clicked() {let r=self.rotate_family(true);self.report(r);}
+                if ui.button(tl(self.english, "增加旋轉角度", "Rotate by")).clicked() {let r=self.rotate_family(false);self.report(r);}
                 ui.label("隊伍 0..15 / -1");ui.add(egui::TextEdit::singleline(&mut self.team).desired_width(40.0));
-                if ui.button("Set team").clicked() {let r=self.set_team();self.report(r);}
-                if ui.button("Snap to tile").clicked() {let r=self.snap_to_grid();self.report(r);}
+                if ui.button(tl(self.english, "設定隊伍", "Set team")).clicked() {let r=self.set_team();self.report(r);}
+                if ui.button(tl(self.english, "對齊圖格", "Snap to tile")).clicked() {let r=self.snap_to_grid();self.report(r);}
             });
             ui.horizontal_wrapped(|ui| {
                 let count = self.selected_families().len();
-                let move_label = if count > 1 { format!("Move {count} families") } else { "Move family".into() };
-                let clone_label = if count > 1 { format!("Clone {count} families") } else { "Clone family".into() };
-                let remove_label = if count > 1 { format!("Remove {count} families…") } else { "Remove family…".into() };
+                let move_label = if count > 1 { format!("{} {count} {}", tl(self.english, "移動", "Move"), tl(self.english, "個關聯群組", "families")) } else { tl(self.english, "移動關聯群組", "Move family").into() };
+                let clone_label = if count > 1 { format!("{} {count} {}", tl(self.english, "複製", "Clone"), tl(self.english, "個關聯群組", "families")) } else { tl(self.english, "複製關聯群組", "Clone family").into() };
+                let remove_label = if count > 1 { format!("{} {count} {}", tl(self.english, "移除", "Remove"), tl(self.english, "個關聯群組", "families")) } else { tl(self.english, "移除關聯群組…", "Remove family…").into() };
 
                 if ui.button(move_label).clicked() {let r=self.move_family();self.report(r);}
                 if ui.button(clone_label).clicked() {let r=self.clone_family();self.report(r);}
                 if ui.button(remove_label).clicked() {let r=self.request_remove();self.report(r);}
                 if count > 1 {
-                    if ui.button("Batch edit team & rotation").clicked() {
+                    if ui.button(tl(self.english, "批次編輯隊伍與旋轉角度", "Batch edit team & rotation")).clicked() {
                         let r = self.apply_batch_edit_fields();
                         self.report(r);
                     }
                 }
                 let can_undo=!self.undo_groups.is_empty();
                 let can_redo=!self.redo_groups.is_empty();
-                if ui.add_enabled(can_undo,egui::Button::new("Undo")).clicked() {
+                if ui.add_enabled(can_undo,egui::Button::new(tl(self.english, "復原", "Undo"))).clicked() {
                     self.history_request = Some(false);
                 }
-                if ui.add_enabled(can_redo,egui::Button::new("Redo")).clicked() {
+                if ui.add_enabled(can_redo,egui::Button::new(tl(self.english, "重做", "Redo"))).clicked() {
                     self.history_request = Some(true);
                 }
-                if ui.add_enabled(self.is_dirty(),egui::Button::new("Save DATA")).clicked() {self.request_save();}
-                if ui.add_enabled(self.is_loaded(),egui::Button::new("Reset DATA…")).clicked() {let r=self.request_reset();self.report(r);}
+                if ui.add_enabled(self.is_dirty(),egui::Button::new(tl(self.english, "儲存 DATA", "Save DATA"))).clicked() {self.request_save();}
+                if ui.add_enabled(self.is_loaded(),egui::Button::new(tl(self.english, "還原 DATA…", "Reset DATA…"))).clicked() {let r=self.request_reset();self.report(r);}
             });
             self.layout_section(ui);
             ui.separator();ui.label(&self.status);
@@ -2047,7 +2053,7 @@ mod tests {
             .shapes
             .iter()
             .find_map(|shape| match &shape.shape {
-                egui::epaint::Shape::Text(text) if text.galley.text() == "Select rectangle" => {
+                egui::epaint::Shape::Text(text) if ["選取矩形範圍", "Select rectangle"].contains(&text.galley.text()) => {
                     Some(text.pos + text.galley.rect.center().to_vec2())
                 }
                 _ => None,
@@ -2101,7 +2107,7 @@ mod tests {
         panel.status = "unchanged".into();
         click_rectangle(&mut panel, &ctx);
         let output = rectangle_frame(&mut panel, &ctx, vec![]);
-        for label in ["left", "top", "right", "bottom"] {
+        for label in if panel.english { ["left", "top", "right", "bottom"] } else { ["左", "上", "右", "下"] } {
             assert!(output.shapes.iter().any(|shape| matches!(
                 &shape.shape,
                 egui::epaint::Shape::Text(text) if text.galley.text() == label
@@ -3782,5 +3788,30 @@ mod navigation_building_tests {
         assert_eq!(ui.navigation_buildings(&objects)[0][0], 7168.0-margin);
         objects[0].type_id = 2;
         assert!(ui.navigation_buildings(&objects).is_empty());
+    }
+}
+
+#[cfg(test)]
+mod batch20_tests {
+    use super::*;
+    #[test]
+    fn chinese_ui_has_no_untranslated_literals() {
+        let mut panel = PlacementUi::default();
+        panel.open = true;
+        panel.map_input = "DATA-test-path".into();
+        for english in [true, false, true, false] {
+            panel.english = english;
+            let text = crate::batch20_localization_tests::render(|ctx| panel.show(ctx));
+            assert!(text.contains(if english { "Load DATA" } else { "載入 DATA" }), "{text}");
+            if !english {
+                for literal in ["Load DATA", "Close tool", "Filter slot", "Select all", "Clear selection", "Select rectangle", "Set rotation", "Rotate by", "Set team", "Snap to tile", "Move family", "Clone family", "Remove family", "Undo", "Redo", "Save DATA", "Reset DATA"] {
+                    assert!(!text.contains(literal), "未翻譯：{literal}\n{text}");
+                }
+            }
+            assert_eq!(panel.map_input, "DATA-test-path");
+            assert!(!panel.is_loaded());
+            assert!(!panel.is_dirty());
+            assert!(panel.selection.is_empty());
+        }
     }
 }

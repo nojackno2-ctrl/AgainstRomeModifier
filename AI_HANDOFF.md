@@ -1,3 +1,7 @@
+## 2026-10-26 Codex：批次 #20（編輯器通過；四項既有環境失敗）
+- 審查 9fecc02：未見資料鍵值／檔名誤譯；修正 environment_ui 聚落選取文字漏譯及旋轉對稱誤譯。在地化英文呼叫最多的 ambience_ui（16）、placement_ui（12），新增三項無視窗雙語／資料不變回歸。初驗的測試編譯、英文定位與音效類別漏譯已修正；既有 re_workspace 執行檔污染暫存，改用工作區 target 暫存重驗並清理。
+- 依序 cargo check／test／build --workspace --locked --offline --target-dir re_workspace/codex-wave-dest-target（test 加 --no-fail-fast）：check／build exit 0；test exit 101，283 組、2625 passed／4 failed／25 ignored；編輯器 787／0／6。install_resource_discovery.rs:55、111、128、162 與 batch 18 提升環境失敗相同。日誌 re_workspace/codex-batch-20-{check,test,build,focused,test-polluted,test-before-label-fix}.log；git diff --check 通過。遊戲唯讀；AGENTS.md／README.md 既有變更保留；未 stage／commit；GUI 未手動驗收。
+
 ## 2026-10-26 Agy：自主批次 #19 地貌、環境聚落與地圖目錄三大面板純英文文字全域雙語在地化（已驗證）
 - 1. 地貌與防禦工事工作室雙語在地化（landscape_ui.rs:739-1230、1742-1798 原 50 處純英文 UI 字串）：引入 `english: bool` 與 `tl()` 雙語 helper，全面在地化懸崖邊緣偵測、河流流向規劃、道路折線、城牆與木柵防禦工事、水力／熱力矩形侵蝕及區域工具共 6 大分頁之所有視窗標題、標籤、數值滑桿說明、下拉選單、套用與捨棄對話框；於 `EditorApp::show_active_panels` 同步語言設定；新增 `test_landscape_ui_chinese_localization_renders_no_untranslated_literals` 斷言中文介面無未翻譯英文字面量。
 - 2. 環境氛圍與聚落工作室雙語在地化（environment_ui.rs:1081-1094、1166-1405、1631-1649 原 29 處純英文 UI 字串）：在地化視窗標題與分頁切換、植物與生態自動散布、生物群落選單、隨機種子碼、中立野生動物與巢穴配置、一鍵聚落生成器參數及配置範本 (.arm-layout.json) 分頁說明；新增 `test_environment_ui_chinese_localization_renders_no_untranslated_literals` 無視窗渲染斷言驗證。

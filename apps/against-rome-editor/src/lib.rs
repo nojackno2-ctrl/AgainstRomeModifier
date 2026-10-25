@@ -1,4 +1,6 @@
 pub mod app;
+#[cfg(test)]
+mod batch20_localization_tests;
 pub mod bmp;
 pub mod storage;
 pub mod terrain;

@@ -8650,6 +8650,15 @@ angle=0.00
         panel: usize,
         label: &str,
     ) -> Rect {
+        // 測試定位跟隨面板語言，避免依賴英文預設值。
+        let label = if panel == 0 && !app.placement.english {
+            match label {
+                "Load DATA" => "載入 DATA",
+                "Snap to tile" => "對齊圖格",
+                "Move family" => "移動關聯群組",
+                other => other,
+            }
+        } else { label };
         // Settle the window's first-frame sizing before locating painted text.
         pending_panel_frame(app, ctx, panel, vec![]);
         let output = pending_panel_frame(app, ctx, panel, vec![]);
@@ -12514,6 +12523,7 @@ impl EditorApp {
         self.placement.settlement_history_routing = !self.settlement_undo.is_empty() || !self.settlement_redo.is_empty();
         self.placement.settlement_history_available = (!self.settlement_undo.is_empty(), !self.settlement_redo.is_empty());
         self.placement.selection_tools_blocked = self.shortcuts_blocked() || ctx.wants_keyboard_input();
+        self.placement.english = self.lang() == AppLanguage::English;
         self.placement.show(ctx);
         // Opening the Scenario, Spawns, or Balance Summary panel loads the open map's script on demand (once per
         // map, never over pending edits); otherwise added events or objects could not be

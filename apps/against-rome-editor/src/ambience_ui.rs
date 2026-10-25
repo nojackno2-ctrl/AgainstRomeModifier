@@ -241,6 +241,33 @@ impl Default for AmbienceUi {
     }
 }
 
+fn precipitation_label(lang: AppLanguage, value: PrecipitationType) -> &'static str {
+    match value {
+        PrecipitationType::None => tr(lang, "None", "無"),
+        PrecipitationType::Rain => tr(lang, "Rain", "雨"),
+        PrecipitationType::Snow => tr(lang, "Snow", "雪"),
+        PrecipitationType::Hail => tr(lang, "Hail", "冰雹"),
+    }
+}
+fn category_label(lang: AppLanguage, value: AudioCategory) -> &'static str {
+    match value {
+        AudioCategory::Hydrology => tr(lang, "Hydrology", "水文"),
+        AudioCategory::Vegetation => tr(lang, "Vegetation", "植被／森林"),
+        AudioCategory::Settlement => tr(lang, "Settlement", "城鎮／村落"),
+        AudioCategory::AmbientGlobal => tr(lang, "AmbientGlobal", "全域"),
+        AudioCategory::AmbientZone => tr(lang, "AmbientZone", "環境區域"),
+        AudioCategory::PointEmitter => tr(lang, "PointEmitter", "點音源"),
+        AudioCategory::WeatherFx => tr(lang, "WeatherFx", "天候音效"),
+    }
+}
+fn attenuation_label(lang: AppLanguage, value: AttenuationCurveKind) -> &'static str {
+    match value {
+        AttenuationCurveKind::SmoothStep => tr(lang, "SmoothStep", "平滑階梯"),
+        AttenuationCurveKind::Linear => tr(lang, "Linear", "線性"),
+        AttenuationCurveKind::Logarithmic => tr(lang, "Logarithmic", "對數"),
+        AttenuationCurveKind::Exponential => tr(lang, "Exponential", "指數"),
+    }
+}
 fn tr(lang: AppLanguage, en: &'static str, zh: &'static str) -> &'static str {
     if lang == AppLanguage::English {
         en
@@ -732,7 +759,7 @@ impl AmbienceUi {
         }
 
         let mut open = self.open;
-        egui::Window::new("Ambience & Localization Studio (環境氛圍與在地化)")
+        egui::Window::new(tr(self.app_language, "Ambience & Localization Studio (環境氛圍與在地化)", "環境氛圍與在地化工作室"))
             .open(&mut open)
             .default_width(740.0)
             .show(ctx, |ui| {
@@ -758,22 +785,22 @@ impl AmbienceUi {
                     ui.selectable_value(
                         &mut self.current_tab,
                         AmbienceTab::Atmosphere,
-                        "Atmosphere & Weather (天候光影)",
+                        tr(self.app_language, "Atmosphere & Weather", "天候光影"),
                     );
                     ui.selectable_value(
                         &mut self.current_tab,
                         AmbienceTab::Soundscape,
-                        "Soundscape Zones (音效區域)",
+                        tr(self.app_language, "Soundscape Zones", "音效區域"),
                     );
                     ui.selectable_value(
                         &mut self.current_tab,
                         AmbienceTab::Localization,
-                        "Briefing PUT (任務簡報在地化)",
+                        tr(self.app_language, "Briefing PUT", "任務簡報在地化"),
                     );
                     ui.selectable_value(
                         &mut self.current_tab,
                         AmbienceTab::AppLanguage,
-                        "App Language (介面語言)",
+                        tr(self.app_language, "App Language", "介面語言"),
                     );
                 });
                 ui.separator();
@@ -821,7 +848,7 @@ impl AmbienceUi {
         water_surface: f32,
         map_path: Option<&Path>,
     ) {
-        ui.heading("Atmospheric Lighting & Weather Profile");
+        ui.heading(tr(self.app_language, "Atmospheric Lighting & Weather Profile", "大氣光照與天候設定"));
         ui.label(PREVIEW_LABEL).on_hover_text(PREVIEW_TOOLTIP);
         if ui.button(RESET_PREVIEW_LABEL).on_hover_text(PREVIEW_TOOLTIP).clicked() {
             self.reset_preview_only_fields();
@@ -829,14 +856,14 @@ impl AmbienceUi {
         ui.label("設定地圖天候、光影、霧氣以及底層 boden.ini 渲染參數。");
 
         ui.horizontal(|ui| {
-            ui.label("Weather Preset (預設天候):");
+            ui.label(tr(self.app_language, "Weather Preset (預設天候):", "預設天候："));
             let mut changed = false;
             for (id, label) in [
-                (WeatherPresets::CLEAR_SKY_ID, "Clear Sky (晴空)"),
-                (WeatherPresets::STORM_ID, "Storm (暴雨)"),
-                (WeatherPresets::SUNSET_DUSK_ID, "Sunset (黃昏)"),
-                (WeatherPresets::DENSE_FOG_ID, "Dense Fog (濃霧)"),
-                (WeatherPresets::MOUNTAIN_SNOW_ID, "Mountain Snow (霜雪)"),
+                (WeatherPresets::CLEAR_SKY_ID, tr(self.app_language, "Clear Sky (晴空)", "晴空")),
+                (WeatherPresets::STORM_ID, tr(self.app_language, "Storm (暴雨)", "暴雨")),
+                (WeatherPresets::SUNSET_DUSK_ID, tr(self.app_language, "Sunset (黃昏)", "黃昏")),
+                (WeatherPresets::DENSE_FOG_ID, tr(self.app_language, "Dense Fog (濃霧)", "濃霧")),
+                (WeatherPresets::MOUNTAIN_SNOW_ID, tr(self.app_language, "Mountain Snow (霜雪)", "霜雪")),
             ] {
                 if ui
                     .selectable_label(self.selected_preset == id, label)
@@ -857,29 +884,29 @@ impl AmbienceUi {
             .num_columns(2)
             .spacing([12.0, 6.0])
             .show(ui, |ui| {
-                ui.label("Precipitation (降水型態):");
+                ui.label(tr(self.app_language, "Precipitation (降水型態):", "降水型態："));
                 egui::ComboBox::from_id_source("precip_select")
-                    .selected_text(format!("{:?}", self.profile.precipitation))
+                    .selected_text(precipitation_label(self.app_language, self.profile.precipitation))
                     .show_ui(ui, |ui| {
                         ui.selectable_value(
                             &mut self.profile.precipitation,
                             PrecipitationType::None,
-                            "None (無)",
+                            tr(self.app_language, "None (無)", "無"),
                         );
                         ui.selectable_value(
                             &mut self.profile.precipitation,
                             PrecipitationType::Rain,
-                            "Rain (雨)",
+                            tr(self.app_language, "Rain (雨)", "雨"),
                         );
                         ui.selectable_value(
                             &mut self.profile.precipitation,
                             PrecipitationType::Snow,
-                            "Snow (雪)",
+                            tr(self.app_language, "Snow (雪)", "雪"),
                         );
                         ui.selectable_value(
                             &mut self.profile.precipitation,
                             PrecipitationType::Hail,
-                            "Hail (冰雹)",
+                            tr(self.app_language, "Hail (冰雹)", "冰雹"),
                         );
                     });
                 ui.end_row();
@@ -897,7 +924,7 @@ impl AmbienceUi {
                 }
                 ui.end_row();
 
-                ui.label("Wind Speed (風速):");
+                ui.label(tr(self.app_language, "Wind Speed (風速):", "風速："));
                 if ui
                     .add(egui::Slider::new(&mut self.profile.wind_speed, 0.0..=30.0).suffix(" m/s"))
                     .changed()
@@ -906,7 +933,7 @@ impl AmbienceUi {
                 }
                 ui.end_row();
 
-                ui.label("Wind Direction (風向角度):");
+                ui.label(tr(self.app_language, "Wind Direction (風向角度):", "風向角度："));
                 if ui
                     .add(
                         egui::Slider::new(&mut self.profile.wind_direction, 0.0..=360.0)
@@ -918,7 +945,7 @@ impl AmbienceUi {
                 }
                 ui.end_row();
 
-                ui.label("Fog Enabled (迷霧):");
+                ui.label(tr(self.app_language, "Fog Enabled (迷霧):", "啟用霧氣："));
                 if ui.checkbox(&mut self.profile.fog_enabled, "").changed() {
                     self.dirty = true;
                     self.evaluate_scene_lighting();
@@ -931,7 +958,7 @@ impl AmbienceUi {
                         if ui
                             .add(
                                 egui::DragValue::new(&mut self.profile.fog_start_distance)
-                                    .prefix("Start: "),
+                                    .prefix(tr(self.app_language, "Start: ", "開始：")),
                             )
                             .changed()
                         {
@@ -941,7 +968,7 @@ impl AmbienceUi {
                         if ui
                             .add(
                                 egui::DragValue::new(&mut self.profile.fog_end_distance)
-                                    .prefix("End: "),
+                                    .prefix(tr(self.app_language, "End: ", "結束：")),
                             )
                             .changed()
                         {
@@ -974,16 +1001,16 @@ impl AmbienceUi {
             });
 
         ui.separator();
-        ui.heading("Scene Lighting Bridge (原生場景光照計算)");
+        ui.heading(tr(self.app_language, "Scene Lighting Bridge (原生場景光照計算)", "原生場景光照計算"));
         ui.horizontal(|ui| {
-            ui.label("Game Clock (遊戲時間 0..24h):");
+            ui.label(tr(self.app_language, "Game Clock (遊戲時間 0..24h):", "遊戲時間 (0..24 小時)："));
             if ui
                 .add(egui::Slider::new(&mut self.game_hour, 0.0..=24.0).suffix("h"))
                 .changed()
             {
                 self.evaluate_scene_lighting();
             }
-            if ui.button("Trigger Flash (閃電爆閃)").clicked() {
+            if ui.button(tr(self.app_language, "Trigger Flash (閃電爆閃)", "觸發閃電")).clicked() {
                 self.trigger_manual_flash(1.0);
             }
         });
@@ -991,14 +1018,14 @@ impl AmbienceUi {
         if let Some(uniforms) = &self.last_computed_uniforms {
             ui.horizontal(|ui| {
                 ui.label(format!(
-                    "Effective Ambient: [{:.2}, {:.2}, {:.2}] | Fog: [{:.2}, {:.2}, {:.2}] | Flash: {:.2}",
-                    uniforms.effective_ambient[0],
+                    "{} [{:.2}, {:.2}, {:.2}] | {} [{:.2}, {:.2}, {:.2}] | {} {:.2}",
+                    tr(self.app_language, "Effective Ambient:", "有效環境光："), uniforms.effective_ambient[0],
                     uniforms.effective_ambient[1],
                     uniforms.effective_ambient[2],
-                    uniforms.fog_color[0],
+                    tr(self.app_language, "Fog:", "霧色："), uniforms.fog_color[0],
                     uniforms.fog_color[1],
                     uniforms.fog_color[2],
-                    uniforms.flash_intensity,
+                    tr(self.app_language, "Flash:", "閃光："), uniforms.flash_intensity,
                 ));
             });
         }
@@ -1008,12 +1035,12 @@ impl AmbienceUi {
             "{} → boden.ini / 其餘 profile 欄位僅供預覽",
             PERSISTENT_PROFILE_FIELDS.join(", ")
         ));
-        ui.heading("boden.ini Environment Parameters");
+        ui.heading(tr(self.app_language, "boden.ini Environment Parameters", "boden.ini 環境參數"));
         egui::Grid::new("boden_ini_grid")
             .num_columns(2)
             .spacing([12.0, 6.0])
             .show(ui, |ui| {
-                ui.label("Water Level (水位):");
+                ui.label(tr(self.app_language, "Water Level (水位):", "水位："));
                 ui.horizontal(|ui| {
                     if ui
                         .add(egui::DragValue::new(&mut self.profile.boden.waterlevel).speed(0.5))
@@ -1022,13 +1049,13 @@ impl AmbienceUi {
                         self.dirty = true;
                         self.validate_current();
                     }
-                    if ui.button("Sync with Editor Water").clicked() {
+                    if ui.button(tr(self.app_language, "Sync with Editor Water", "同步編輯器水位")).clicked() {
                         self.sync_water_level(water_surface);
                     }
                 });
                 ui.end_row();
 
-                ui.label("Water Color (BGR Hex, 例 0xffdfbf):");
+                ui.label(tr(self.app_language, "Water Color (BGR Hex, 例 0xffdfbf):", "水面色彩（BGR 十六進位，例如 0xffdfbf）："));
                 ui.horizontal(|ui| {
                     // Color picker over the BGR hex string (C# ChooseWaterColor); text stays editable.
                     let rgb = self.profile.boden.get_water_rgb();
@@ -1103,13 +1130,13 @@ impl AmbienceUi {
                 }
                 ui.end_row();
 
-                ui.label("Day Start / End Time (0..24h):");
+                ui.label(tr(self.app_language, "Day Start / End Time (0..24h):", "日間開始／結束時間 (0..24 小時)："));
                 ui.horizontal(|ui| {
                     if ui
                         .add(
                             egui::DragValue::new(&mut self.profile.boden.day_start_time)
                                 .speed(0.1)
-                                .prefix("Start: "),
+                                .prefix(tr(self.app_language, "Start: ", "開始：")),
                         )
                         .changed()
                     {
@@ -1120,7 +1147,7 @@ impl AmbienceUi {
                         .add(
                             egui::DragValue::new(&mut self.profile.boden.day_end_time)
                                 .speed(0.1)
-                                .prefix("End: "),
+                                .prefix(tr(self.app_language, "End: ", "結束：")),
                         )
                         .changed()
                     {
@@ -1141,14 +1168,14 @@ impl AmbienceUi {
 
         ui.add_space(8.0);
         if let Some(path) = map_path {
-            ui.label(format!("Active map directory: {}", path.display()));
+            ui.label(format!("{} {}", tr(self.app_language, "Active map directory:", "目前地圖目錄："), path.display()));
         } else {
-            ui.label("No active map folder loaded. Parameters are in-memory.");
+            ui.label(tr(self.app_language, "No active map folder loaded. Parameters are in-memory.", "未載入地圖資料夾；參數僅保留於記憶體。"));
         }
     }
 
     fn render_soundscape_tab(&mut self, ui: &mut egui::Ui, _map_path: Option<&Path>) {
-        ui.heading("Soundscape Zone Studio (SNDZ)");
+        ui.heading(tr(self.app_language, "Soundscape Zone Studio (SNDZ)", "環境音效區域工作室 (SNDZ)"));
         ui.label("配置地圖環境音效區域：水體流動、森林鳥鳴、定居點人聲、戰場氛圍。");
 
         ui.separator();
@@ -1175,36 +1202,36 @@ impl AmbienceUi {
             ui.text_edit_singleline(&mut self.new_zone_sound_id);
 
             egui::ComboBox::from_id_source("new_cat_select")
-                .selected_text(format!("{:?}", self.new_zone_category))
+                .selected_text(category_label(self.app_language, self.new_zone_category))
                 .show_ui(ui, |ui| {
                     ui.selectable_value(
                         &mut self.new_zone_category,
                         AudioCategory::Hydrology,
-                        "Hydrology (水文)",
+                        tr(self.app_language, "Hydrology (水文)", "水文"),
                     );
                     ui.selectable_value(
                         &mut self.new_zone_category,
                         AudioCategory::Vegetation,
-                        "Vegetation (植被/森林)",
+                        tr(self.app_language, "Vegetation (植被/森林)", "植被／森林"),
                     );
                     ui.selectable_value(
                         &mut self.new_zone_category,
                         AudioCategory::Settlement,
-                        "Settlement (城鎮/村落)",
+                        tr(self.app_language, "Settlement (城鎮/村落)", "城鎮／村落"),
                     );
                     ui.selectable_value(
                         &mut self.new_zone_category,
                         AudioCategory::AmbientGlobal,
-                        "AmbientGlobal (全域)",
+                        tr(self.app_language, "AmbientGlobal (全域)", "全域"),
                     );
                     ui.selectable_value(
                         &mut self.new_zone_category,
                         AudioCategory::WeatherFx,
-                        "WeatherFx (天候音效)",
+                        tr(self.app_language, "WeatherFx (天候音效)", "天候音效"),
                     );
                 });
 
-            if ui.button("Add Sound Zone").clicked() {
+            if ui.button(tr(self.app_language, "Add Sound Zone", "新增音效區域")).clicked() {
                 let name = self.new_zone_name.clone();
                 let sound_id = self.new_zone_sound_id.clone();
                 let category = self.new_zone_category;
@@ -1214,7 +1241,7 @@ impl AmbienceUi {
         });
 
         ui.separator();
-        ui.label(format!("Configured Sound Zones: {}", self.zones.len()));
+        ui.label(format!("{} {}", tr(self.app_language, "Configured Sound Zones:", "已設定音效區域："), self.zones.len()));
 
         egui::ScrollArea::vertical()
             .max_height(200.0)
@@ -1227,15 +1254,15 @@ impl AmbienceUi {
                             .selectable_label(
                                 is_sel,
                                 format!(
-                                    "#{i}: {} ({:?}) - {}",
-                                    zone.name, zone.category, zone.sound_def_id
+                                    "#{i}: {} ({}) - {}",
+                                    zone.name, category_label(self.app_language, zone.category), zone.sound_def_id
                                 ),
                             )
                             .clicked()
                         {
                             self.selected_zone_index = Some(i);
                         }
-                        if ui.small_button("Delete").clicked() {
+                        if ui.small_button(tr(self.app_language, "Delete", "刪除")).clicked() {
                             remove_idx = Some(i);
                         }
                     });
@@ -1249,7 +1276,7 @@ impl AmbienceUi {
             if idx < self.zones.len() {
                 let zone = &mut self.zones[idx];
                 ui.separator();
-                ui.heading(format!("Edit Zone: {}", zone.name));
+                ui.heading(format!("{} {}", tr(self.app_language, "Edit Zone:", "編輯區域："), zone.name));
                 egui::Grid::new("zone_edit_grid")
                     .num_columns(2)
                     .spacing([12.0, 6.0])
@@ -1278,13 +1305,13 @@ impl AmbienceUi {
                         ui.label(tr(self.app_language, "Inner / Outer Radius:", "內徑／外徑半徑："));
                         ui.horizontal(|ui| {
                             if ui
-                                .add(egui::DragValue::new(&mut zone.inner_radius).prefix("Inner: "))
+                                .add(egui::DragValue::new(&mut zone.inner_radius).prefix(tr(self.app_language, "Inner: ", "內側：")))
                                 .changed()
                             {
                                 self.dirty = true;
                             }
                             if ui
-                                .add(egui::DragValue::new(&mut zone.outer_radius).prefix("Outer: "))
+                                .add(egui::DragValue::new(&mut zone.outer_radius).prefix(tr(self.app_language, "Outer: ", "外側：")))
                                 .changed()
                             {
                                 self.dirty = true;
@@ -1316,13 +1343,13 @@ impl AmbienceUi {
 
                         ui.label(tr(self.app_language, "Attenuation Curve:", "衰減曲線："));
                         egui::ComboBox::from_id_source("atten_curve_select")
-                            .selected_text(format!("{:?}", zone.attenuation_curve))
+                            .selected_text(attenuation_label(self.app_language, zone.attenuation_curve))
                             .show_ui(ui, |ui| {
                                 if ui
                                     .selectable_value(
                                         &mut zone.attenuation_curve,
                                         AttenuationCurveKind::SmoothStep,
-                                        "SmoothStep",
+                                        tr(self.app_language, "SmoothStep", "平滑階梯"),
                                     )
                                     .clicked()
                                 {
@@ -1332,7 +1359,7 @@ impl AmbienceUi {
                                     .selectable_value(
                                         &mut zone.attenuation_curve,
                                         AttenuationCurveKind::Linear,
-                                        "Linear",
+                                        tr(self.app_language, "Linear", "線性"),
                                     )
                                     .clicked()
                                 {
@@ -1342,7 +1369,7 @@ impl AmbienceUi {
                                     .selectable_value(
                                         &mut zone.attenuation_curve,
                                         AttenuationCurveKind::Logarithmic,
-                                        "Logarithmic",
+                                        tr(self.app_language, "Logarithmic", "對數"),
                                     )
                                     .clicked()
                                 {
@@ -1352,7 +1379,7 @@ impl AmbienceUi {
                                     .selectable_value(
                                         &mut zone.attenuation_curve,
                                         AttenuationCurveKind::Exponential,
-                                        "Exponential",
+                                        tr(self.app_language, "Exponential", "指數"),
                                     )
                                     .clicked()
                                 {
@@ -1366,15 +1393,15 @@ impl AmbienceUi {
     }
 
     fn render_localization_tab(&mut self, ui: &mut egui::Ui) {
-        ui.heading("Map Briefing Localization (任務簡報多語言)");
+        ui.heading(tr(self.app_language, "Map Briefing Localization (任務簡報多語言)", "任務簡報多語言"));
         ui.label(
             "編輯地圖任務標題、副標題、說明文字與隊伍名稱（原生 TEXT/US/briefing.put，CP1251）。",
         );
 
         ui.separator();
         ui.label(format!(
-            "Path: {} | Encoding: CP1251 (PFIL preserved)",
-            BRIEFING_NATIVE_RELATIVE.join("/")
+            "{} {} | {} CP1251 (PFIL)", tr(self.app_language, "Path:", "路徑："),
+            BRIEFING_NATIVE_RELATIVE.join("/"), tr(self.app_language, "Encoding:", "編碼（保留封裝）：")
         ));
 
         ui.label(tr(self.app_language, "Briefing Title:", "簡報標題："));
@@ -1398,10 +1425,10 @@ impl AmbienceUi {
             self.dirty = true;
         }
 
-        ui.collapsing("Team Names", |ui| {
+        ui.collapsing(tr(self.app_language, "Team Names", "隊伍名稱"), |ui| {
             for (index, name) in self.briefing_team_names.iter_mut().enumerate() {
                 ui.horizontal(|ui| {
-                    ui.label(format!("Team {index}:"));
+                    ui.label(format!("{} {index}:", tr(self.app_language, "Team", "隊伍")));
                     if ui.text_edit_singleline(name).changed() {
                         self.dirty = true;
                     }
@@ -1431,7 +1458,7 @@ impl AmbienceUi {
     }
 
     fn render_app_language_tab(&mut self, ui: &mut egui::Ui) {
-        ui.heading("Application Language (介面語言)");
+        ui.heading(tr(self.app_language, "Application Language (介面語言)", "介面語言"));
         ui.label("切換地圖編輯器介面顯示語系。");
 
         ui.horizontal(|ui| {
@@ -1967,5 +1994,41 @@ mod boundary_tests {
         // Bilingual tr test
         assert_eq!(tr(AppLanguage::English, "Focus", "定位"), "Focus");
         assert_eq!(tr(AppLanguage::TraditionalChinese, "Focus", "定位"), "定位");
+    }
+}
+
+#[cfg(test)]
+mod batch20_tests {
+    use super::*;
+    #[test]
+    fn chinese_ui_has_no_untranslated_literals() {
+        let mut panel = AmbienceUi::default();
+        panel.add_sound_zone("測試區域", "snd_test_id", AudioCategory::Hydrology, panel.new_zone_shape);
+        panel.selected_zone_index = Some(0);
+        let before = format!("{:?}", panel.profile);
+        let zone_before = format!("{:?}", panel.zones);
+        for lang in [AppLanguage::English, AppLanguage::TraditionalChinese, AppLanguage::English, AppLanguage::TraditionalChinese] {
+            panel.app_language = lang;
+            for tab in [AmbienceTab::Atmosphere, AmbienceTab::Soundscape, AmbienceTab::Localization, AmbienceTab::AppLanguage] {
+                let text = crate::batch20_localization_tests::render(|ctx| {
+                    egui::CentralPanel::default().show(ctx, |ui| match tab {
+                        AmbienceTab::Atmosphere => panel.render_atmosphere_tab(ui, 0.0, None),
+                        AmbienceTab::Soundscape => panel.render_soundscape_tab(ui, None),
+                        AmbienceTab::Localization => panel.render_localization_tab(ui),
+                        AmbienceTab::AppLanguage => panel.render_app_language_tab(ui),
+                    });
+                });
+                assert!(!text.is_empty());
+                if lang == AppLanguage::TraditionalChinese {
+                    for literal in ["Atmospheric Lighting", "Weather Preset", "Precipitation", "Wind Speed", "Wind Direction", "Fog Enabled", "Scene Lighting Bridge", "Game Clock", "Trigger Flash", "Environment Parameters", "Water Level", "Sync with Editor Water", "Water Color", "Day Start", "No active map", "Soundscape Zone Studio", "Add Sound Zone", "Configured Sound Zones", "Edit Zone", "Delete", "Hydrology", "SmoothStep", "Map Briefing Localization", "Application Language"] {
+                        assert!(!text.contains(literal), "未翻譯：{literal}\n{text}");
+                    }
+                    assert!(text.chars().any(|c| ('\u{4e00}'..='\u{9fff}').contains(&c)));
+                }
+                assert_eq!(format!("{:?}", panel.profile), before);
+                assert_eq!(format!("{:?}", panel.zones), zone_before);
+                assert_eq!(panel.zones[0].sound_def_id, "snd_test_id");
+            }
+        }
     }
 }

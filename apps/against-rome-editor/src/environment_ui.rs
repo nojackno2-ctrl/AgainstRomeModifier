@@ -1403,7 +1403,7 @@ impl EnvironmentUi {
 
             ui.label(tl(self.english, "部族建築風格：", "Tribe Architecture:"));
             egui::ComboBox::from_id_source("settlement_tribe_select")
-                .selected_text(format!("{:?}", self.settlement_tribe))
+                .selected_text(settlement_tribe_label(self.english, self.settlement_tribe))
                 .show_ui(ui, |ui| {
                     ui.selectable_value(&mut self.settlement_tribe, SettlementTribe::Germanic, tl(self.english, "日耳曼", "Germanic"));
                     ui.selectable_value(&mut self.settlement_tribe, SettlementTribe::Roman, tl(self.english, "羅馬", "Roman"));
@@ -1414,9 +1414,9 @@ impl EnvironmentUi {
 
             ui.label(tl(self.english, "配置對稱性：", "Layout Symmetry:"));
             egui::ComboBox::from_id_source("settlement_symmetry_select")
-                .selected_text(format!("{:?}", self.settlement_symmetry))
+                .selected_text(settlement_symmetry_label(self.english, self.settlement_symmetry))
                 .show_ui(ui, |ui| {
-                    ui.selectable_value(&mut self.settlement_symmetry, SymmetryMode::RotationalSymmetry, tl(self.english, "環形對稱", "Rotational"));
+                    ui.selectable_value(&mut self.settlement_symmetry, SymmetryMode::RotationalSymmetry, settlement_symmetry_label(self.english, SymmetryMode::RotationalSymmetry));
                     ui.selectable_value(&mut self.settlement_symmetry, SymmetryMode::CentralSymmetry, tl(self.english, "中心點對稱", "Central"));
                     ui.selectable_value(&mut self.settlement_symmetry, SymmetryMode::TopologicalEquidistant, tl(self.english, "拓撲等距", "Topological equidistant"));
                 });
@@ -2058,6 +2058,23 @@ mod tests {
     }
 }
 
+fn settlement_tribe_label(english: bool, value: SettlementTribe) -> &'static str {
+    match value {
+        SettlementTribe::Germanic => tl(english, "日耳曼", "Germanic"),
+        SettlementTribe::Roman => tl(english, "羅馬", "Roman"),
+        SettlementTribe::Celtic => tl(english, "塞爾特", "Celtic"),
+        SettlementTribe::Hun => tl(english, "匈人", "Hun"),
+    }
+}
+
+fn settlement_symmetry_label(english: bool, value: SymmetryMode) -> &'static str {
+    match value {
+        SymmetryMode::RotationalSymmetry => tl(english, "旋轉對稱", "Rotational"),
+        SymmetryMode::CentralSymmetry => tl(english, "中心點對稱", "Central"),
+        SymmetryMode::TopologicalEquidistant => tl(english, "拓撲等距", "Topological equidistant"),
+    }
+}
+
 fn tl(english: bool, zh: &'static str, en: &'static str) -> &'static str {
     if english { en } else { zh }
 }
@@ -2323,6 +2340,37 @@ mod small_ux_tests {
                     tab,
                     forbidden
                 );
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod batch20_tests {
+    use super::*;
+    #[test]
+    fn settlement_selected_labels_follow_language_without_changing_values() {
+        let mut panel = EnvironmentUi::default();
+        for tribe in [SettlementTribe::Germanic, SettlementTribe::Roman, SettlementTribe::Celtic, SettlementTribe::Hun] {
+            for symmetry in [SymmetryMode::RotationalSymmetry, SymmetryMode::CentralSymmetry, SymmetryMode::TopologicalEquidistant] {
+                panel.settlement_tribe = tribe;
+                panel.settlement_symmetry = symmetry;
+                for english in [true, false, true, false] {
+                    panel.english = english;
+                    let text = crate::batch20_localization_tests::render(|ctx| {
+                        egui::CentralPanel::default().show(ctx, |ui| panel.render_settlement_tab(ui, 33, None, None, 0.0, 4.0));
+                    });
+                    assert!(text.contains(settlement_tribe_label(english, tribe)), "{text}");
+                    assert!(text.contains(settlement_symmetry_label(english, symmetry)), "{text}");
+                    if !english {
+                        assert!(!text.contains("RotationalSymmetry"));
+                        assert!(!text.contains("Germanic"));
+                        assert!(!text.contains("環形對稱"));
+                        if symmetry == SymmetryMode::RotationalSymmetry { assert!(text.contains("旋轉對稱")); }
+                    }
+                    assert_eq!(panel.settlement_tribe, tribe);
+                    assert_eq!(panel.settlement_symmetry, symmetry);
+                }
             }
         }
     }
