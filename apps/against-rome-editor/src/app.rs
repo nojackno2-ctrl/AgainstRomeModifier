@@ -148,7 +148,7 @@ pub struct EditorApp {
     toolbox: ToolboxUi,
     navigation: NavigationUi,
     height_step: f32,
-    placement: PlacementUi,
+    pub(crate) placement: PlacementUi,
     family: crate::family_ui::FamilyUi,
     family_open: bool,
     family_history_key: (usize, usize, usize),
@@ -182,6 +182,7 @@ pub struct EditorApp {
     pub tech_doc: TechDocUi,
     pub minimap: MinimapUi,
     pub(crate) design_check: crate::design_check_ui::DesignCheckUi,
+    pub(crate) balance_summary: crate::balance_summary_ui::BalanceSummaryUi,
     nature: NatureWorkflow,
     settlement_undo: Vec<SettlementEdit>,
     settlement_redo: Vec<SettlementEdit>,
@@ -376,6 +377,7 @@ impl EditorApp {
             tech_doc: TechDocUi::default(),
             minimap: MinimapUi::default(),
             design_check: Default::default(),
+            balance_summary: Default::default(),
             nature: NatureWorkflow::default(),
             settlement_undo: Vec::new(),
             settlement_redo: Vec::new(),
@@ -10146,6 +10148,9 @@ impl EditorApp {
                 if ui.button(tr(lang, "Design Check", "設計檢查")).clicked() {
                     self.run_design_check();
                 }
+                if ui.button(tr(lang, "Map Balance Summary", "地圖平衡摘要")).clicked() {
+                    self.balance_summary.open = true;
+                }
 
                 ui.label(tr(lang, "Map Folder:", "地圖資料夾:"));
                 ui.text_edit_singleline(&mut self.map_path_input);
@@ -11017,6 +11022,7 @@ impl EditorApp {
         self.console.show(ctx);
         self.tech_doc.show(ctx);
         self.show_design_check(ctx);
+        self.show_balance_summary(ctx);
         self.show_save_blockers(ctx);
         self.consume_design_check_focus();
         self.show_studio_panels(ctx);

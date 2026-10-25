@@ -1,3 +1,12 @@
+## 2026-10-25 Agy：地圖平衡摘要視窗（已驗證，未手動驗證 GUI）
+- 新增唯讀「Map balance summary / 地圖平衡摘要」功能與視窗，遵循 Design Check 模式於頂部工具列加入雙語按鈕 `tr(lang, "Map Balance Summary", "地圖平衡摘要")`。
+- 純計算模組 apps/against-rome-editor/src/balance_summary.rs（`summarize`）：
+  1. 隊伍 0..7：計算腳本 Spawn 筆數與總單位數；若放置工作階段已載入，依 `SdlObjectCatalog::categorize == Building` 分類統計各隊伍放置建築數量。
+  2. 進攻波次：統計已啟用事件中隊伍 1..7 的 SpawnUnit 動作（kind 2），按延遲時間（m:ss）排序並累計敵軍數量，標記是否具備 move_destination。
+  3. 勝負條件：檢查是否存在已啟用的勝利（kind 3）與失敗（kind 4）事件，缺漏時顯示雙語警告。
+- 輕量介面模組 apps/against-rome-editor/src/balance_summary_ui.rs（`BalanceSummaryUi`，註冊於 lib.rs）。
+- 驗證：cargo test --workspace --locked --offline --no-fail-fast --target-dir re_workspace/agy-target 通過（283 組、2513 passed、0 failed、24 ignored；日誌保存至 re_workspace/balance-summary-test.log）。實體 GUI 未手動驗收；未 stage／commit，保留 AGENTS.md／README.md 既有變更，未接觸安裝遊戲或 TEMP／TMP 設定。
+
 ## 2026-10-25 Codex：測試暫存路徑排他配置（已驗證）
 - 僅調整測試：修正 placement 失敗復原與 saved-light 輸出測試，掃描 workspace 並替換固定名稱／PID（含僅計數器）暫存路徑；各 crate 共用 PID、時間戳、原子計數器與排他 create_dir helper。
 - cargo check --workspace --locked --offline --target-dir re_workspace/codex-wave-dest-target 已通過。首次測試編譯發現 maps 以子模組載入 placement，已將該測試 helper 引用改成相對父模組；19 個 crate 三輪均通過（每輪 202 組、1,986 passed、0 failed、22 ignored；re_workspace/temp-unique-crates-{1,2,3}.log），cargo test --workspace --locked --offline --no-fail-fast --target-dir re_workspace/codex-wave-dest-target exit 0（283 組、2506 passed、0 failed、24 ignored；re_workspace/temp-unique-fix-test.log），同參數 cargo build exit 0；git diff --check 通過。完整檔案清單：re_workspace/temp-unique-changed-files.txt。未修改正式程式碼、AGENTS.md、README.md；未 stage／commit，TEMP/TMP 保持系統設定。

@@ -773,6 +773,9 @@ impl PlacementUi {
     pub fn has_type_names(&self) -> bool {
         !self.type_names.is_empty()
     }
+    pub fn type_names(&self) -> &std::collections::HashMap<i32, String> {
+        &self.type_names
+    }
     /// Per-category team limits and unit-count rule of an object type (C# `ValidateBounds`):
     /// squads (figures) team 0..=7, animals count 0, others team -1..=15.
     pub fn category_limits(&self, type_id: i32) -> Option<String> {
