@@ -1,3 +1,9 @@
+## 2026-10-26 Agy：批次 #23 使用者指南重構收斂與快捷鍵／合約整合（已驗證）
+- 1. 文件架構整併：將 `docs/map-editor-user-guide.md` 從依批次累加的零散附註重構為 10 大設計者導向結構（開始使用／新增地圖／地形與材質／物件與聚落／劇本與事件／檢查與分析／存檔與復原／打包與分享／快捷鍵總表／已知限制與待驗證項目），完整保留所有數值常數、規格上限、演算法與操作合約。
+- 2. 矛盾與實機行為收斂：更正報告與套件預設匯出路徑（實機行為嚴格禁止儲存於遊戲目錄或 `MAPS` 目錄中，統一輸出至外部安全目錄）；整併通行診斷之建築障礙模式（`APT footprint` 真實原生網格 vs `Approximate 384/64` 固定近似邊距，均不改寫 `collision.bmp`）；收斂條件事件延遲時間機制（自開局起算，條件滿足且任務經過延遲時觸發）；將全域「以上功能已通過自動化測試；遊戲內效果與人工畫面確認仍待驗證」聲明集中收斂至第 10 節，並精確連結 `docs/map-editor-ingame-checklist.md`。
+- 3. 完整快捷鍵總表：依據 `app.rs`（`SHORTCUT_KEYS`、`shortcut_action`、復原歷史、2D 畫布平移與縮放）與 `viewport_3d.rs`（`CAMERA_KEYS`、`camera_key_action`、滑鼠拖曳與滾輪）建立完整 36 項輸入操作表，無虛構或缺失按鍵。
+- 4. 驗證：執行 `cargo test --test ui_literal_sweep --locked --offline` 通過（1 passed，exit 0）；`git diff --check` 通過。未修改原始碼；未 stage/commit，安裝目錄唯讀，AGENTS.md/README.md 既有變更嚴格保留。
+
 ## 2026-10-26 Codex：批次 #22（已驗證，環境限定失敗另列）
 - 審查 93361b7：恢復報告固定資料標籤，明確說明還原覆寫／永久刪除後果，修正 3D 預覽措辭；98 處英文介面全數在地化，完整清單 re_workspace/codex-batch-22-all-literals.txt。新增單一工作區語法掃描（明確技術名稱允許清單）、雙語真實點擊與資料值回歸。依序 cargo check、cargo test --workspace --locked --offline --no-fail-fast --target-dir re_workspace/codex-wave-dest-target、cargo build：check/build exit 0；test exit 101，284 組共 2631 passed／4 failed／25 ignored，僅 install_resource_discovery.rs:55、111、128、162 為提升權限環境的資源發現失敗；日誌 re_workspace/codex-batch-22-{check,test,build}.log。首輪暫存路徑受既有 re_workspace/Against_Rome.exe 汙染（test-polluted.log），改用工作區獨立暫存目錄後其餘失敗消失，暫存已清除。git diff --check 通過；未 stage／commit，安裝目錄唯讀，保留 AGENTS.md／README.md 原有變更；實機 GUI 未驗證。
 
