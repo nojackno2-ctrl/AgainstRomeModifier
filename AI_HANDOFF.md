@@ -1,3 +1,6 @@
+## 2026-10-25 Codex：建築 footprint 唯讀研究（已確認來源，未驗收遊戲）
+- 確認 APT 群組逐格 value/x/y 清單由 0x4d7d80 寫入占用／owner 格區；主屋、住宅、農場 group 0 分別 101／36／49 格，詳 docs/reverse-engineering/building-footprint-contract.md。
+- 佐證：re_workspace/footprint-probe 的 check／test／build 與實際資料斷言通過，Ghidra 定向 log 完成；塔樓資產、完整施工／尋路語意未驗證，未改產品、未寫遊戲、未提交。
 ## 2026-10-25 Agy：新增對戰地圖精靈（New skirmish map… wizard）串接實作（已驗證，未手動驗證 GUI）
 - 2026-10-25 Codex 修正：移除 DATA 主屋的補造 Spawn，無腳本主屋時略過失敗目標並顯示指定雙語提示；第三步新增劇本面板同模式別名選單，波次須指定別名才可下一步（停用提示），產生器採用該選擇；DATA／Scenario 載入錯誤改為 Step 2 (Load map) failed 並中止。既有導航與完整流程測試補上回歸斷言；cargo test --workspace --locked --offline --no-fail-fast --target-dir re_workspace/codex-wave-dest-target 結束碼 0（283 組、2543 passed、0 failed、24 ignored；精靈 5 項皆通過），日誌 re_workspace/new-map-wizard-fix-test.log；未手動驗證 GUI。僅修改精靈及本交接檔，未 stage／commit。
 - 1. 對戰地圖精靈單重視窗與四步驟導覽：新增 `skirmish_wizard_ui.rs`，提供「1. 範本 (Template)」、「2. 標題與簡報 (Title & Briefing)」、「3. 基地、資源與規則 (Bases, Resources & Rules)」、「4. 摘要與確認 (Summary)」四步驟。全視窗標籤與操作按鈕均透過 `tr()` 支援雙語化，支援「上一步 (Back)」、「下一步 (Next)」、「取消 (Cancel)」與「建立 (Create)」，任何步驟取消均不進行變更與檔案寫入。
