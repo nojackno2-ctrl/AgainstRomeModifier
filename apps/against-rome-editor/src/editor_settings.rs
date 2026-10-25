@@ -127,6 +127,34 @@ mod tests {
     use super::*;
 
     #[test]
+    fn defaults_are_memory_only_and_invalid_files_are_preserved() {
+        let mut defaults = EditorSettings::default();
+        assert!(defaults.file.is_none());
+        defaults.set_panel_open("maps", true).unwrap();
+        assert!(defaults.file.is_none());
+        let dir = std::env::temp_dir().join(format!("arm_settings_invalid_{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("editor-panels.json");
+        for payload in ["{broken", r#"{"version":99,"open_panels":["maps"]}"#] {
+            std::fs::write(&file, payload).unwrap();
+            assert!(EditorSettings::load(file.clone()).is_err());
+            assert_eq!(std::fs::read_to_string(&file).unwrap(), payload);
+        }
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn unchanged_snapshot_never_recreates_a_deleted_file() {
+        let dir = std::env::temp_dir().join(format!("arm_settings_sync_{}", uuid::Uuid::new_v4()));
+        let file = dir.join("editor-panels.json");
+        let mut settings = EditorSettings::load(file.clone()).unwrap();
+        assert!(settings.sync_panels(&[("maps", true)]).unwrap());
+        std::fs::remove_file(&file).unwrap();
+        assert!(!settings.sync_panels(&[("maps", true)]).unwrap());
+        assert!(!file.exists());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+    #[test]
     fn editor_settings_roundtrip_prunes_unknown_and_refuses_maps_dir() {
         let temp_dir = std::env::temp_dir().join(format!("arm_test_settings_{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&temp_dir).unwrap();

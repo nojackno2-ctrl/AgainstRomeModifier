@@ -1,3 +1,7 @@
+## 2026-10-26 Codex：批次 #18（編輯器通過；四項既有環境失敗）
+- 審查 de25af9：修正修改器初始化覆蓋面板還原（app.rs:351）；五項新增回歸涵蓋損毀／未來版本保留、預設無檔案、重複同步零寫入、未載圖雙語畫面不載劇本／不開阻擋對話框且保留資料。新增技術文件雙語搜尋（原始行號）及複製顯示文字，指南同步；不修改地圖或復原紀錄。
+- 依序 cargo check／test／build --workspace --locked --offline --target-dir re_workspace/codex-wave-dest-target（test 加 --no-fail-fast）：check／build exit 0；test exit 101，283 組、2619 passed／4 failed／25 ignored，編輯器 781／0／6。僅 install_resource_discovery.rs:55／111／128／162 為既有提權環境資源發現失敗。日誌 re_workspace/codex-batch-18-{check,test,build}.log；首輪 TEMP 受 re_workspace/Against_Rome.exe 祖先污染，保留 test-polluted.log，改工作區根目錄專用 TEMP 後重跑並清理本批暫存。git diff --check 通過；GUI 未手動驗收。遊戲唯讀，未 stage／commit，AGENTS.md／README.md 既有變更保留。
+
 ## 2026-10-26 Agy：自主批次 #17 編輯器工作階段面板狀態記憶、戰役／AI 企劃工作室雙語在地化、環境音效區域視角聚焦（已驗證）
 - 1. 跨工作階段開啟面板記憶與自動還原（app.rs:356 原僅讀取 recent-maps.json，面板狀態在每次重開時重設為全部關閉）：新增 `editor_settings.rs`（`EditorSettings`、`KNOWN_PANELS` 清單、原子安全寫入），將開啟面板集合持久化至 `%APPDATA%\AgainstRomeModifier\editor\editor-panels.json`，嚴格遵守 `is_game_maps_dir` 阻擋原則；於 `EditorApp::startup_app` 自動還原並在面板狀態更動時自動更新。
 - 2. 戰役工作室與 AI 企劃工作室全面雙語在地化與視窗標題統一（campaign_ui.rs:59-67、107-160 原純英文字串與無 tr()/tl() 函式，ai_planner_ui.rs:43-52、126-150 原純英文標籤、按鈕與角色顯示）：於 `campaign_ui.rs` 與 `ai_planner_ui.rs` 引入 `english: bool` 與 `tl()` 雙語 helper，統一視窗標題（「戰役、目標與過場動畫工作室 / Campaign Studio」、「AI 地圖企劃工作室 (Ollama) / AI Planner Studio」），在地化所有分頁標籤、角色工作狀態、未儲存捨棄對話框與按鈕提示；由 `EditorApp::show_active_panels` 同步語言狀態。

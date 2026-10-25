@@ -348,6 +348,7 @@ impl EditorApp {
         #[cfg(not(windows))]
         let _ = cc;
         let mut app = Self::initial_state();
+        app.modifier = ModifierUi::persisted(crate::modifier_ui::default_state_dir());
         if let Some(dir) = crate::storage::editor_data_dir() {
             match crate::recent_maps::RecentMaps::load(dir.join("recent-maps.json")) {
                 Ok(recent) => app.recent_maps = recent,
@@ -356,18 +357,9 @@ impl EditorApp {
                     app.status_is_error = true;
                 }
             }
-            match crate::editor_settings::EditorSettings::load(dir.join("editor-panels.json")) {
-                Ok(settings) => {
-                    app.apply_editor_settings(&settings);
-                    app.editor_settings = settings;
-                }
-                Err(e) => {
-                    app.status_message = format!("Editor settings unavailable / 編輯器設定無法讀取：{e}");
-                    app.status_is_error = true;
-                }
-            }
+            app.restore_editor_settings(dir.join("editor-panels.json"));
         }
-        app.modifier = ModifierUi::persisted(crate::modifier_ui::default_state_dir());
+
         if let Some(path) = app_settings_path() {
             app.loc = Loc::load(path, "");
             app.ambience.app_language = app.loc.current_language();
@@ -4218,6 +4210,17 @@ impl EditorApp {
         self.ambience.app_language = language;
     }
 
+    /// 設定讀取失敗只回報狀態，保留檔案並繼續啟動。
+    fn restore_editor_settings(&mut self, file: PathBuf) {
+        match crate::editor_settings::EditorSettings::load(file) {
+            Ok(settings) => {
+                self.apply_editor_settings(&settings);
+                self.editor_settings = settings;
+            }
+            Err(e) => self.set_status(
+                format!("Editor settings unavailable / 編輯器設定無法讀取：{e}"), true),
+        }
+    }
     pub fn apply_editor_settings(&mut self, settings: &crate::editor_settings::EditorSettings) {
         if settings.is_panel_open("maps") { self.maps.open = true; }
         if settings.is_panel_open("environment") { self.environment.open = true; }
@@ -5036,6 +5039,51 @@ mod tests {
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
 
+    #[test]
+    fn startup_settings_restore_is_safe_without_a_loaded_map() {
+        let dir = temp_map_dir("startup_panels");
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("editor-panels.json");
+        let mut app = EditorApp::initial_state();
+        app.modifier = ModifierUi::persisted(dir.join("modifier"));
+        std::fs::write(&file, serde_json::json!({
+            "version": 1, "open_panels": crate::editor_settings::KNOWN_PANELS
+        }).to_string()).unwrap();
+        app.restore_editor_settings(file.clone());
+        assert!(app.current_panel_snapshot().iter().all(|(_, open)| *open));
+        assert!(app.loaded_map_path.is_none());
+        assert!(!app.scenario.is_loaded());
+        assert!(app.scenario_autoload_tried.is_none());
+        assert!(!app.shortcuts_blocked());
+        let profile = serde_json::to_value(&app.ambience.profile).unwrap();
+        let preset = app.ambience.selected_preset.clone();
+        let models = app.ai_planner.role_models.clone();
+        let camera = serde_json::to_value(&app.campaign.start_camera).unwrap();
+        let panels = app.editor_settings.open_panels.clone();
+        let ctx = egui::Context::default();
+        for language in [AppLanguage::English, AppLanguage::TraditionalChinese] {
+            app.set_app_language(language);
+            let _ = ctx.run(egui::RawInput::default(), |ctx| app.ui_frame(ctx));
+            assert!(!app.scenario.is_loaded());
+            assert!(app.scenario_autoload_tried.is_none());
+            assert!(!app.shortcuts_blocked());
+            assert_eq!(serde_json::to_value(&app.ambience.profile).unwrap(), profile);
+            assert_eq!(app.ambience.selected_preset, preset);
+            assert_eq!(app.ai_planner.role_models, models);
+            assert_eq!(serde_json::to_value(&app.campaign.start_camera).unwrap(), camera);
+            assert_eq!(app.editor_settings.open_panels, panels);
+        }
+        for payload in ["{broken", r#"{"version":99}"#] {
+            std::fs::write(&file, payload).unwrap();
+            let mut fallback = EditorApp::initial_state();
+            fallback.restore_editor_settings(file.clone());
+            assert!(fallback.session.is_some());
+            assert!(fallback.status_is_error);
+            fallback.persist_open_panels().unwrap();
+            assert_eq!(std::fs::read_to_string(&file).unwrap(), payload);
+        }
+        let _ = std::fs::remove_dir_all(dir);
+    }
     fn start_camera_app(pfil: bool) -> (EditorApp, PathBuf, Vec<u8>) {
         let dir = temp_map_dir("start_camera");
         std::fs::create_dir_all(dir.join("SCRIPT")).unwrap();

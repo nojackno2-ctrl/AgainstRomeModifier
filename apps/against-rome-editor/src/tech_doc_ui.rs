@@ -67,6 +67,7 @@ impl From<TechDocLanguage> for Language {
 pub struct TechDocUi {
     pub open: bool,
     pub language: TechDocLanguage,
+    search: String,
 }
 
 impl Default for TechDocUi {
@@ -80,6 +81,7 @@ impl TechDocUi {
         Self {
             open: false,
             language: TechDocLanguage::TraditionalChinese,
+            search: String::new(),
         }
     }
 
@@ -87,6 +89,7 @@ impl TechDocUi {
         Self {
             open: false,
             language,
+            search: String::new(),
         }
     }
 
@@ -118,6 +121,20 @@ impl TechDocUi {
         }
     }
 
+    /// 搜尋目前語系，附上原始行號；空白搜尋保留全文。
+    fn visible_content(&self) -> String {
+        let query = self.search.trim().to_lowercase();
+        if query.is_empty() { return self.content().to_owned(); }
+        self.content().lines().enumerate()
+            .filter(|(_, line)| line.to_lowercase().contains(&query))
+            .map(|(index, line)| format!("{}: {}", index + 1, line))
+            .collect::<Vec<_>>().join("\n")
+    }
+
+    /// 複製目前顯示內容，保留 Markdown 與搜尋行號。
+    fn copy_visible(&self, ctx: &egui::Context) {
+        ctx.output_mut(|out| out.copied_text = self.visible_content());
+    }
     /// 呈現技術文件視窗
     pub fn show(&mut self, ctx: &egui::Context) {
         if !self.open {
@@ -160,13 +177,30 @@ impl TechDocUi {
 
                 ui.separator();
 
+                ui.horizontal(|ui| {
+                    let english = self.language == TechDocLanguage::English;
+                    ui.label(if english { "Search:" } else { "搜尋：" });
+                    ui.text_edit_singleline(&mut self.search);
+                    if ui.button(if english { "Clear search" } else { "清除搜尋" }).clicked() {
+                        self.search.clear();
+                    }
+                    if ui.button(if english { "Copy displayed text" } else { "複製顯示文字" }).clicked() {
+                        self.copy_visible(ctx);
+                    }
+                });
+                let visible = self.visible_content();
+                if visible.is_empty() {
+                    ui.label(if self.language == TechDocLanguage::English {
+                        "No matching lines."
+                    } else { "沒有符合的行。" });
+                }
                 // 唯讀捲動閱讀區：保留換行並支援文字折行與選取複製
                 ScrollArea::vertical()
                     .id_source("tech_doc_scroll_area")
                     .auto_shrink([false, false])
                     .show(ui, |ui| {
                         ui.add(
-                            egui::Label::new(self.content())
+                            egui::Label::new(visible)
                                 .wrap(true)
                                 .selectable(true),
                         );
@@ -180,6 +214,38 @@ impl TechDocUi {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn search_is_case_insensitive_numbered_and_language_specific() {
+        let mut doc = TechDocUi::with_language(TechDocLanguage::English);
+        doc.search = "  AGAINST ROME  ".into();
+        let text = doc.visible_content();
+        assert!(!text.is_empty());
+        for line in text.lines() {
+            let (number, original) = line.split_once(": ").unwrap();
+            assert_eq!(doc.content().lines().nth(number.parse::<usize>().unwrap() - 1), Some(original));
+            assert!(original.to_lowercase().contains("against rome"));
+        }
+        doc.search = "找不到的關鍵字__no_match__".into();
+        assert!(doc.visible_content().is_empty());
+        doc.search.clear();
+        assert_eq!(doc.visible_content(), TECH_DOC_EN);
+        doc.set_language(TechDocLanguage::TraditionalChinese);
+        assert_eq!(doc.visible_content(), TECH_DOC_ZH);
+    }
+
+    #[test]
+    fn copy_displayed_text_uses_clipboard_output_without_changing_document() {
+        let mut doc = TechDocUi::new();
+        let ctx = egui::Context::default();
+        doc.copy_visible(&ctx);
+        assert_eq!(ctx.output(|out| out.copied_text.clone()), TECH_DOC_ZH);
+        doc.search = "Against Rome".into();
+        doc.copy_visible(&ctx);
+        assert_eq!(ctx.output(|out| out.copied_text.clone()), doc.visible_content());
+        assert_eq!(doc.content(), TECH_DOC_ZH);
+        assert!(!doc.open);
+    }
+
 
     #[test]
     fn test_embedded_markdown_sources_integrity() {
