@@ -416,3 +416,9 @@
 - 聚落重生遇到錯誤會保留原種子碼與草稿；確認對話框或文字輸入期間不執行重生。已套用的物件與自然物件仍保留，並可循原路徑復原。資源表食物數依實際套用物件筆數，未啟用自然物件時木材／石材顯示 0。
 - Failed regeneration preserves the seed and draft. Dialogs and text input block regeneration. Previously applied objects and nature retain their undo history. Food counts reflect actual object entries; wood/stone show zero when nature is excluded.
 - 自然種植狀態列現會顯示目前密度（稀疏／一般／茂密）；清除模式不顯示密度。The nature planting status now shows Sparse / Normal / Dense; removal omits density.
+
+### 批次 #17：工作階段面板記憶、音效區域聚焦與雙語在地化 / Session panel memory, sound zone focus, and bilingual studio polish
+
+- **編輯器工作階段面板記憶 (Session panel memory)**：編輯器於關閉或切換地圖時，自動在使用者應用程式設定目錄（`%APPDATA%\AgainstRomeModifier\editor\editor-panels.json`）持久化記錄開啟中的面板集合（支援物件、相機、生成點、材質、事件、主控制台、環境聚落、地景自然、戰役工作室、AI 企劃、氛圍音效、族系效果、規格研究、平衡摘要與通行診斷等已知面板），並於下次啟動時自動還原面板配置；若檔案損毀或路徑不合法則安全忽略，絕不寫入遊戲安裝目錄或地圖資料夾。
+- **環境氛圍音效區域視角聚焦 (Sound zone viewport focus)**：在環境氛圍工作室 (Ambience Studio) 的音效區域編輯器中，每個音效區中心座標旁新增「定位 / Focus」按鈕，點擊後視角（2D 畫布與 3D 視角）立即置中對齊該音效區域中心座標，便於設計者比對地貌特徵與發聲範圍。
+- **戰役／AI 企劃／氛圍工作室雙語在地化與標題統一 (Bilingual studio polish)**：戰役目標工作室 (Campaign Studio)、AI 企劃工作室 (AI Planner Studio) 及環境氛圍工作室 (Ambience Studio) 統一視窗標題格式，所有按鈕、分頁、輸入欄位說明、波次參數與未儲存捨棄對話框均支援完整的正體中文與英文雙語切換 (`tr()` / `tl()`)。

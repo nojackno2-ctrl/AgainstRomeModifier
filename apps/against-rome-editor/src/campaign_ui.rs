@@ -77,6 +77,7 @@ pub enum CampaignTab {
 
 pub struct CampaignUi {
     pub open: bool,
+    pub english: bool,
     pub current_tab: CampaignTab,
 
     // --- Objectives Studio state ---
@@ -135,6 +136,14 @@ pub struct CampaignUi {
     pub status_is_error: bool,
 }
 
+pub fn tl<'a>(english: bool, zh: &'a str, en: &'a str) -> &'a str {
+    if english {
+        en
+    } else {
+        zh
+    }
+}
+
 impl Default for CampaignUi {
     fn default() -> Self {
         let archetypes = AiArchetypeCatalog::all();
@@ -157,6 +166,7 @@ impl Default for CampaignUi {
 
         Self {
             open: false,
+            english: false,
             current_tab: CampaignTab::ObjectivesStudio,
             objectives: Vec::new(),
             selected_objective_idx: None,
@@ -780,7 +790,12 @@ impl CampaignUi {
         }
 
         let mut is_open = self.open;
-        egui::Window::new("Campaign, Objectives & Cinematics Studio")
+        let title = tl(
+            self.english,
+            "戰役、目標與過場動畫工作室 / Campaign Studio",
+            "Campaign, Objectives & Cinematics Studio",
+        );
+        egui::Window::new(title)
             .open(&mut is_open)
             .min_size(Vec2::new(760.0, 560.0))
             .show(ctx, |ui| {
@@ -788,17 +803,17 @@ impl CampaignUi {
                     ui.selectable_value(
                         &mut self.current_tab,
                         CampaignTab::ObjectivesStudio,
-                        "Objectives Studio",
+                        tl(self.english, "任務目標工作室", "Objectives Studio"),
                     );
                     ui.selectable_value(
                         &mut self.current_tab,
                         CampaignTab::AiWaves,
-                        "AI Waves & Missions",
+                        tl(self.english, "AI 波次與作戰風格", "AI Waves & Missions"),
                     );
                     ui.selectable_value(
                         &mut self.current_tab,
                         CampaignTab::CameraCinematics,
-                        "Camera & Cinematics",
+                        tl(self.english, "相機與過場動畫", "Camera & Cinematics"),
                     );
                 });
                 ui.separator();
@@ -830,17 +845,26 @@ impl CampaignUi {
             let mut close_modal = false;
             let mut confirm = false;
 
-            egui::Window::new("Discard Unsaved Campaign Edits?")
+            let modal_title = tl(
+                self.english,
+                "放棄未儲存的戰役修改？",
+                "Discard Unsaved Campaign Edits?",
+            );
+            egui::Window::new(modal_title)
                 .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
                 .collapsible(false)
                 .resizable(false)
                 .show(ctx, |ui| {
-                    ui.label("Closing will discard currently configured objectives, wave plans, and cinematic tracks.");
+                    ui.label(tl(
+                        self.english,
+                        "關閉視窗將放棄目前設定的目標、波次企劃與過場相機軌跡。",
+                        "Closing will discard currently configured objectives, wave plans, and cinematic tracks.",
+                    ));
                     ui.horizontal(|ui| {
-                        if ui.button("Discard & Close").clicked() {
+                        if ui.button(tl(self.english, "放棄並關閉", "Discard & Close")).clicked() {
                             confirm = true;
                         }
-                        if ui.button("Keep Editing").clicked() {
+                        if ui.button(tl(self.english, "繼續編輯", "Keep Editing")).clicked() {
                             close_modal = true;
                         }
                     });
@@ -861,23 +885,27 @@ impl CampaignUi {
         scenario: Option<&ScenarioDocument>,
         aliases: &[String],
     ) {
-        ui.heading("Campaign Objectives Studio");
-        ui.label("Designs primary, bonus, and failure objectives with dependency graphs and BCI compilation.");
+        ui.heading(tl(self.english, "戰役目標工作室", "Campaign Objectives Studio"));
+        ui.label(tl(
+            self.english,
+            "設計主要、次要獎勵與失敗判斷目標，支援依賴關係圖與 BCI 編譯。",
+            "Designs primary, bonus, and failure objectives with dependency graphs and BCI compilation.",
+        ));
 
         ui.add_space(6.0);
         egui::Grid::new("obj_input_grid")
             .num_columns(2)
             .spacing([12.0, 6.0])
             .show(ui, |ui| {
-                ui.label("Title:");
+                ui.label(tl(self.english, "標題：", "Title:"));
                 ui.text_edit_singleline(&mut self.obj_title_input);
                 ui.end_row();
 
-                ui.label("Description:");
+                ui.label(tl(self.english, "描述：", "Description:"));
                 ui.text_edit_multiline(&mut self.obj_desc_input);
                 ui.end_row();
 
-                ui.label("Objective Kind:");
+                ui.label(tl(self.english, "目標類型：", "Objective Kind:"));
                 egui::ComboBox::from_id_source("obj_kind_select")
                     .selected_text(format!("{:?}", self.obj_kind))
                     .show_ui(ui, |ui| {
@@ -914,7 +942,7 @@ impl CampaignUi {
                     });
                 ui.end_row();
 
-                ui.label("Category:");
+                ui.label(tl(self.english, "目標分類：", "Category:"));
                 egui::ComboBox::from_id_source("obj_cat_select")
                     .selected_text(format!("{:?}", self.obj_category))
                     .show_ui(ui, |ui| {
@@ -936,31 +964,31 @@ impl CampaignUi {
                     });
                 ui.end_row();
 
-                ui.label("Target object GUID:");
+                ui.label(tl(self.english, "目標物件 GUID：", "Target object GUID:"));
                 ui.text_edit_singleline(&mut self.obj_target_guid);
                 ui.end_row();
 
-                ui.label("Hold Duration (s):");
+                ui.label(tl(self.english, "堅守秒數 (秒)：", "Hold Duration (s):"));
                 ui.add(egui::DragValue::new(&mut self.obj_hold_duration).clamp_range(0..=86400));
                 ui.end_row();
 
-                ui.label("Reward Message:");
+                ui.label(tl(self.english, "獎勵訊息：", "Reward Message:"));
                 ui.text_edit_singleline(&mut self.obj_reward_msg);
                 ui.end_row();
             });
 
         ui.add_space(8.0);
         ui.horizontal(|ui| {
-            if ui.button("Add Objective").clicked() {
+            if ui.button(tl(self.english, "新增目標", "Add Objective")).clicked() {
                 self.add_objective();
             }
-            if ui.button("Compile Preview").clicked() {
+            if ui.button(tl(self.english, "編譯預覽", "Compile Preview")).clicked() {
                 let _ = self.compile_objectives_to_events(scenario, aliases);
             }
             if ui
                 .add_enabled(
                     scenario.is_some() && !self.objectives.is_empty(),
-                    egui::Button::new("Apply Objectives to Scenario"),
+                    egui::Button::new(tl(self.english, "套用目標至劇本", "Apply Objectives to Scenario")),
                 )
                 .clicked()
             {
@@ -1000,17 +1028,19 @@ impl CampaignUi {
         scenario: Option<&ScenarioDocument>,
         aliases: &[String],
     ) {
-        ui.heading("Campaign Wave Attack & AI Planner");
-        ui.label(
+        ui.heading(tl(self.english, "戰役進攻波次與 AI 企劃", "Campaign Wave Attack & AI Planner"));
+        ui.label(tl(
+            self.english,
+            "配置循環進攻波次、戰術姿態設定檔與路徑點巡航路線。",
             "Configures recurring attack waves, tactical posture profiles, and waypoint routes.",
-        );
+        ));
 
         ui.add_space(6.0);
         egui::Grid::new("wave_settings")
             .num_columns(2)
             .spacing([12.0, 6.0])
             .show(ui, |ui| {
-                ui.label("AI Archetype:");
+                ui.label(tl(self.english, "AI 作戰風格：", "AI Archetype:"));
                 egui::ComboBox::from_id_source("archetype_select")
                     .selected_text(&self.selected_archetype_id)
                     .show_ui(ui, |ui| {
@@ -1034,15 +1064,15 @@ impl CampaignUi {
                     });
                 ui.end_row();
 
-                ui.label("Known unit aliases:");
+                ui.label(tl(self.english, "已知部隊別名：", "Known unit aliases:"));
                 ui.text_edit_multiline(&mut self.wave_aliases_text);
                 ui.end_row();
 
-                ui.label("Wave Count (1..256):");
+                ui.label(tl(self.english, "波次數量 (1..256)：", "Wave Count (1..256):"));
                 ui.add(egui::DragValue::new(&mut self.wave_count).clamp_range(1..=256));
                 ui.end_row();
 
-                ui.label("First Delay / Interval (s):");
+                ui.label(tl(self.english, "首波延遲／間隔 (秒)：", "First Delay / Interval (s):"));
                 ui.horizontal(|ui| {
                     ui.add(
                         egui::DragValue::new(&mut self.first_delay_seconds)
@@ -1057,15 +1087,15 @@ impl CampaignUi {
                 });
                 ui.end_row();
 
-                ui.label("Squad Unit Count (1..20):");
+                ui.label(tl(self.english, "每小隊人數 (1..20)：", "Squad Unit Count (1..20):"));
                 ui.add(egui::DragValue::new(&mut self.squad_count).clamp_range(1..=20));
                 ui.end_row();
 
-                ui.label("Team (0..7):");
+                ui.label(tl(self.english, "隊伍 (0..7)：", "Team (0..7):"));
                 ui.add(egui::DragValue::new(&mut self.wave_team).clamp_range(0..=7));
                 ui.end_row();
 
-                ui.label("Spawn Location (X, Z):");
+                ui.label(tl(self.english, "生成座標 (X, Z)：", "Spawn Location (X, Z):"));
                 ui.horizontal(|ui| {
                     ui.add(
                         egui::DragValue::new(&mut self.wave_spawn_x)
@@ -1080,12 +1110,12 @@ impl CampaignUi {
                 });
                 ui.end_row();
 
-                ui.label("Move after Spawn:");
+                ui.label(tl(self.english, "生成後移動：", "Move after Spawn:"));
                 ui.checkbox(&mut self.move_after_spawn, "");
                 ui.end_row();
 
                 if self.move_after_spawn {
-                    ui.label("Destination (X, Z):");
+                    ui.label(tl(self.english, "目的地 (X, Z)：", "Destination (X, Z):"));
                     ui.horizontal(|ui| {
                         ui.add(
                             egui::DragValue::new(&mut self.dest_x)
@@ -1103,7 +1133,7 @@ impl CampaignUi {
             });
 
         ui.add_space(8.0);
-        if ui.button("Compile AI Waves").clicked() {
+        if ui.button(tl(self.english, "編譯 AI 波次", "Compile AI Waves")).clicked() {
             let _ = self.compile_wave_attack(scenario, aliases);
         }
         if self
@@ -1111,7 +1141,7 @@ impl CampaignUi {
             .as_ref()
             .is_some_and(|r| r.success && !r.compiled_events.is_empty())
             && scenario.is_some()
-            && ui.button("Add to Scenario").clicked()
+            && ui.button(tl(self.english, "加入劇本事件", "Add to Scenario")).clicked()
         {
             self.request_wave_merge();
         }
@@ -1444,8 +1474,12 @@ impl CampaignUi {
     }
 
     fn render_camera_tab(&mut self, ui: &mut egui::Ui) {
-        ui.heading("Map Start Camera & Cinematic Tracks");
-        ui.label("Specifies the map intro viewport camera position and multi-waypoint cinematic flight paths.");
+        ui.heading(tl(self.english, "地圖起始相機與過場軌跡", "Map Start Camera & Cinematic Tracks"));
+        ui.label(tl(
+            self.english,
+            "指定地圖開場視野攝影機位置與多路徑點運鏡航線。",
+            "Specifies the map intro viewport camera position and multi-waypoint cinematic flight paths.",
+        ));
 
         ui.add_space(6.0);
         let camera_before = self.start_camera.clone();
@@ -1453,11 +1487,11 @@ impl CampaignUi {
             .num_columns(2)
             .spacing([12.0, 6.0])
             .show(ui, |ui| {
-                ui.label("Start Camera Enabled:");
+                ui.label(tl(self.english, "啟用起始相機：", "Start Camera Enabled:"));
                 ui.checkbox(&mut self.start_camera.enabled, "");
                 ui.end_row();
 
-                ui.label("Start Position (X, Y, Z):");
+                ui.label(tl(self.english, "起始位置 (X, Y, Z)：", "Start Position (X, Y, Z):"));
                 ui.horizontal(|ui| {
                     ui.add(
                         egui::DragValue::new(&mut self.start_camera.x)
@@ -1477,11 +1511,11 @@ impl CampaignUi {
                 });
                 ui.end_row();
 
-                ui.label("Start Zoom:");
+                ui.label(tl(self.english, "起始縮放：", "Start Zoom:"));
                 ui.add(egui::Slider::new(&mut self.start_camera.zoom, 0.0..=9.0));
                 ui.end_row();
 
-                ui.label("Primitive:");
+                ui.label(tl(self.english, "運鏡指令：", "Primitive:"));
                 ui.horizontal(|ui| {
                     ui.selectable_value(
                         &mut self.start_camera.primitive,
@@ -1496,7 +1530,7 @@ impl CampaignUi {
                 });
                 ui.end_row();
 
-                ui.label("Intro subtitle:");
+                ui.label(tl(self.english, "開場字幕：", "Intro subtitle:"));
                 ui.text_edit_singleline(&mut self.cutscene_subtitle);
                 ui.end_row();
             });
@@ -1506,19 +1540,27 @@ impl CampaignUi {
         }
 
         ui.horizontal(|ui| {
-            if ui.button("Capture Current 3D View").clicked() {
+            if ui.button(tl(self.english, "擷取目前 3D 視角", "Capture Current 3D View")).clicked() {
                 self.camera_capture_requested = true;
             }
-            if ui.button("Apply Start Camera to Loaded Map").clicked() {
+            if ui.button(tl(self.english, "套用起始相機至地圖", "Apply Start Camera to Loaded Map")).clicked() {
                 self.camera_apply_requested = true;
             }
         });
-        ui.label("Apply prepares a candidate. Safe Save writes camera, events and terrain together. Native zoom capture uses 5, as in C#.");
-        ui.label("Export a new script work copy from an original BCI (raw or PFIL). Output is raw BCI; the loaded map is not saved. Disabling the camera adds no shim; it does not remove a camera already in the source.");
+        ui.label(tl(
+            self.english,
+            "套用將建立待確認候選。安全儲存將相機、事件與地形一併寫入。原生縮放擷取使用 5（同 C#）。",
+            "Apply prepares a candidate. Safe Save writes camera, events and terrain together. Native zoom capture uses 5, as in C#.",
+        ));
+        ui.label(tl(
+            self.english,
+            "從原始 BCI (原始或 PFIL) 匯出新腳本副本。輸出為原始 BCI；已載入地圖不會被覆蓋。",
+            "Export a new script work copy from an original BCI (raw or PFIL). Output is raw BCI; the loaded map is not saved. Disabling the camera adds no shim; it does not remove a camera already in the source.",
+        ));
         ui.horizontal(|ui| {
-            ui.label("Original script:");
+            ui.label(tl(self.english, "原始腳本：", "Original script:"));
             ui.text_edit_singleline(&mut self.start_camera_source);
-            if ui.button("Browse BCI…").clicked() {
+            if ui.button(tl(self.english, "瀏覽 BCI…", "Browse BCI…")).clicked() {
                 if let Some(path) = rfd::FileDialog::new()
                     .add_filter("BCI script", &["bci", "arm_original"])
                     .pick_file()
@@ -1530,7 +1572,7 @@ impl CampaignUi {
         if ui
             .add_enabled(
                 !self.start_camera_source.trim().is_empty(),
-                egui::Button::new("Export Start Camera Script Copy…"),
+                egui::Button::new(tl(self.english, "匯出起始相機腳本副本…", "Export Start Camera Script Copy…")),
             )
             .clicked()
         {
@@ -1543,7 +1585,7 @@ impl CampaignUi {
             }
         }
 
-        if ui.button("Validate Start Camera").clicked() {
+        if ui.button(tl(self.english, "驗證起始相機", "Validate Start Camera")).clicked() {
             match self.start_camera.validate() {
                 Ok(()) => {
                     self.status_message = "Start camera is valid.".to_string();
@@ -1557,10 +1599,10 @@ impl CampaignUi {
         }
 
         ui.separator();
-        ui.heading("Cinematic Flight Tracks");
+        ui.heading(tl(self.english, "運鏡飛行軌跡", "Cinematic Flight Tracks"));
         ui.label(format!("Waypoints: {}", self.camera_waypoints.len()));
 
-        if ui.button("Compile Spline Flight Path").clicked() {
+        if ui.button(tl(self.english, "編譯樣條飛行路徑", "Compile Spline Flight Path")).clicked() {
             let _ = self.compile_cinematics_flight();
         }
 
@@ -2038,5 +2080,15 @@ mod tests {
         assert!(ui.compile_cinematics_flight().is_ok());
         assert!(!ui.last_cinematic_events.is_empty());
         assert!(ui.is_dirty());
+    }
+
+    #[test]
+    fn test_campaign_ui_bilingual_titles_and_labels() {
+        let mut ui = CampaignUi::default();
+        assert!(!ui.english);
+        assert_eq!(tl(false, "任務目標工作室", "Objectives Studio"), "任務目標工作室");
+        assert_eq!(tl(true, "任務目標工作室", "Objectives Studio"), "Objectives Studio");
+        ui.english = true;
+        assert!(ui.english);
     }
 }

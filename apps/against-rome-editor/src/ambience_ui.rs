@@ -191,6 +191,7 @@ pub struct AmbienceUi {
 
     // --- App Language ---
     pub app_language: AppLanguage,
+    pub pending_focus_zone: Option<(f32, f32)>,
 
     // Dirty / guards
     pub dirty: bool,
@@ -227,6 +228,7 @@ impl Default for AmbienceUi {
             briefing_subtitle: String::new(),
             briefing_team_names: Default::default(),
             app_language: AppLanguage::TraditionalChinese,
+            pending_focus_zone: None,
             dirty: false,
             pending_discard: false,
             status_message: "Ready.".to_string(),
@@ -239,7 +241,18 @@ impl Default for AmbienceUi {
     }
 }
 
+fn tr(lang: AppLanguage, en: &'static str, zh: &'static str) -> &'static str {
+    if lang == AppLanguage::English {
+        en
+    } else {
+        zh
+    }
+}
+
 impl AmbienceUi {
+    pub fn take_focus_zone_request(&mut self) -> Option<(f32, f32)> {
+        self.pending_focus_zone.take()
+    }
     pub fn is_dirty(&self) -> bool {
         self.dirty
     }
@@ -871,7 +884,7 @@ impl AmbienceUi {
                     });
                 ui.end_row();
 
-                ui.label("Precipitation Intensity:");
+                ui.label(tr(self.app_language, "Precipitation Intensity:", "降水強度："));
                 if ui
                     .add(egui::Slider::new(
                         &mut self.profile.precipitation_intensity,
@@ -913,7 +926,7 @@ impl AmbienceUi {
                 ui.end_row();
 
                 if self.profile.fog_enabled {
-                    ui.label("Fog Distance (Start / End):");
+                    ui.label(tr(self.app_language, "Fog Distance (Start / End):", "迷霧起訖距離 (起始 / 結束)："));
                     ui.horizontal(|ui| {
                         if ui
                             .add(
@@ -938,7 +951,7 @@ impl AmbienceUi {
                     });
                     ui.end_row();
 
-                    ui.label("Fog Density:");
+                    ui.label(tr(self.app_language, "Fog Density:", "迷霧濃度："));
                     if ui
                         .add(egui::Slider::new(&mut self.profile.fog_density, 0.0..=1.0))
                         .changed()
@@ -949,7 +962,7 @@ impl AmbienceUi {
                     ui.end_row();
                 }
 
-                ui.label("Sun / Ambient Exposure:");
+                ui.label(tr(self.app_language, "Sun / Ambient Exposure:", "太陽／環境曝光度："));
                 if ui
                     .add(egui::Slider::new(&mut self.profile.exposure, 0.2..=2.0))
                     .changed()
@@ -1035,7 +1048,7 @@ impl AmbienceUi {
                 });
                 ui.end_row();
 
-                ui.label("Water Bump Amplitude:");
+                ui.label(tr(self.app_language, "Water Bump Amplitude:", "水面凹凸波紋幅度："));
                 if ui
                     .add(egui::Slider::new(
                         &mut self.profile.boden.water_bump_amplitude,
@@ -1049,7 +1062,7 @@ impl AmbienceUi {
                 }
                 ui.end_row();
 
-                ui.label("Water Bump Frequency:");
+                ui.label(tr(self.app_language, "Water Bump Frequency:", "水面凹凸波紋頻率："));
                 if ui
                     .add(egui::Slider::new(
                         &mut self.profile.boden.water_bump_frequency,
@@ -1063,7 +1076,7 @@ impl AmbienceUi {
                 }
                 ui.end_row();
 
-                ui.label("Water Warp Shift (0 = 關閉, 10..18):");
+                ui.label(tr(self.app_language, "Water Warp Shift (0 = disabled, 10..18):", "水面擾動位移 (0 = 關閉, 10..18)："));
                 if ui
                     .add(egui::Slider::new(
                         &mut self.profile.boden.water_warp_shift,
@@ -1077,7 +1090,7 @@ impl AmbienceUi {
                 }
                 ui.end_row();
 
-                ui.label("Flash Probability (雷電機率 0..1000):");
+                ui.label(tr(self.app_language, "Flash Probability (0..1000):", "雷電機率 (0..1000)："));
                 if ui
                     .add(egui::Slider::new(
                         &mut self.profile.boden.flash_propability,
@@ -1140,11 +1153,11 @@ impl AmbienceUi {
 
         ui.separator();
         ui.horizontal(|ui| {
-            ui.label("Global Ambience Sound ID:");
+            ui.label(tr(self.app_language, "Global Ambience Sound ID:", "全域環境背景音效 ID："));
             if ui.text_edit_singleline(&mut self.global_sound_id).changed() {
                 self.dirty = true;
             }
-            ui.label("Volume:");
+            ui.label(tr(self.app_language, "Volume:", "音量："));
             if ui
                 .add(egui::Slider::new(&mut self.global_volume, 0.0..=1.0))
                 .changed()
@@ -1155,10 +1168,10 @@ impl AmbienceUi {
 
         ui.separator();
         ui.horizontal(|ui| {
-            ui.label("New Zone Name:");
+            ui.label(tr(self.app_language, "New Zone Name:", "新區域名稱："));
             ui.text_edit_singleline(&mut self.new_zone_name);
 
-            ui.label("Sound ID:");
+            ui.label(tr(self.app_language, "Sound ID:", "音效 ID："));
             ui.text_edit_singleline(&mut self.new_zone_sound_id);
 
             egui::ComboBox::from_id_source("new_cat_select")
@@ -1241,19 +1254,19 @@ impl AmbienceUi {
                     .num_columns(2)
                     .spacing([12.0, 6.0])
                     .show(ui, |ui| {
-                        ui.label("Zone Name:");
+                        ui.label(tr(self.app_language, "Zone Name:", "區域名稱："));
                         if ui.text_edit_singleline(&mut zone.name).changed() {
                             self.dirty = true;
                         }
                         ui.end_row();
 
-                        ui.label("Sound Definition ID:");
+                        ui.label(tr(self.app_language, "Sound Definition ID:", "音效定義 ID："));
                         if ui.text_edit_singleline(&mut zone.sound_def_id).changed() {
                             self.dirty = true;
                         }
                         ui.end_row();
 
-                        ui.label("Base Volume (基礎音量):");
+                        ui.label(tr(self.app_language, "Base Volume:", "基礎音量："));
                         if ui
                             .add(egui::Slider::new(&mut zone.base_volume, 0.0..=2.0))
                             .changed()
@@ -1262,7 +1275,7 @@ impl AmbienceUi {
                         }
                         ui.end_row();
 
-                        ui.label("Inner / Outer Radius:");
+                        ui.label(tr(self.app_language, "Inner / Outer Radius:", "內徑／外徑半徑："));
                         ui.horizontal(|ui| {
                             if ui
                                 .add(egui::DragValue::new(&mut zone.inner_radius).prefix("Inner: "))
@@ -1279,7 +1292,12 @@ impl AmbienceUi {
                         });
                         ui.end_row();
 
-                        ui.label("Center Position (X, Z):");
+                                                ui.horizontal(|ui| {
+                            ui.label(tr(self.app_language, "Center Position (X, Z):", "中心座標 (X, Z)："));
+                            if ui.button(tr(self.app_language, "Focus", "定位")).on_hover_text(tr(self.app_language, "Center camera view on this sound zone", "將視角置中對齊此音效區域座標")).clicked() {
+                                self.pending_focus_zone = Some((zone.center_world_x, zone.center_world_z));
+                            }
+                        });
                         ui.horizontal(|ui| {
                             if ui
                                 .add(egui::DragValue::new(&mut zone.center_world_x).prefix("X: "))
@@ -1296,7 +1314,7 @@ impl AmbienceUi {
                         });
                         ui.end_row();
 
-                        ui.label("Attenuation Curve:");
+                        ui.label(tr(self.app_language, "Attenuation Curve:", "衰減曲線："));
                         egui::ComboBox::from_id_source("atten_curve_select")
                             .selected_text(format!("{:?}", zone.attenuation_curve))
                             .show_ui(ui, |ui| {
@@ -1359,12 +1377,12 @@ impl AmbienceUi {
             BRIEFING_NATIVE_RELATIVE.join("/")
         ));
 
-        ui.label("Briefing Title:");
+        ui.label(tr(self.app_language, "Briefing Title:", "簡報標題："));
         if ui.text_edit_singleline(&mut self.briefing_title).changed() {
             self.dirty = true;
         }
 
-        ui.label("Briefing Subtitle:");
+        ui.label(tr(self.app_language, "Briefing Subtitle:", "簡報副標題："));
         if ui
             .text_edit_singleline(&mut self.briefing_subtitle)
             .changed()
@@ -1372,7 +1390,7 @@ impl AmbienceUi {
             self.dirty = true;
         }
 
-        ui.label("Briefing Description / Objectives:");
+        ui.label(tr(self.app_language, "Briefing Description / Objectives:", "任務簡報與目標說明："));
         if ui
             .add(egui::TextEdit::multiline(&mut self.briefing_body).desired_rows(6))
             .changed()
@@ -1933,5 +1951,21 @@ mod boundary_tests {
             assert!(label.contains(english) && label.contains(chinese));
         }
         assert!(PREVIEW_TOOLTIP.contains("before saving") && PREVIEW_TOOLTIP.contains("儲存前"));
+    }
+
+    #[test]
+    fn test_ambience_sound_zone_focus_and_bilingual_labels() {
+        let mut ui = AmbienceUi::default();
+        assert_eq!(ui.pending_focus_zone, None);
+        assert_eq!(ui.take_focus_zone_request(), None);
+
+        // Setting a focus coordinate
+        ui.pending_focus_zone = Some((1024.0, 2048.0));
+        assert_eq!(ui.take_focus_zone_request(), Some((1024.0, 2048.0)));
+        assert_eq!(ui.take_focus_zone_request(), None);
+
+        // Bilingual tr test
+        assert_eq!(tr(AppLanguage::English, "Focus", "定位"), "Focus");
+        assert_eq!(tr(AppLanguage::TraditionalChinese, "Focus", "定位"), "定位");
     }
 }

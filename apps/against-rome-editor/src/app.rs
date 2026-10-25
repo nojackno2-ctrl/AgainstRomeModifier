@@ -187,6 +187,7 @@ pub struct EditorApp {
     pub minimap: MinimapUi,
     pub(crate) design_check: crate::design_check_ui::DesignCheckUi,
     pub(crate) balance_summary: crate::balance_summary_ui::BalanceSummaryUi,
+    pub editor_settings: crate::editor_settings::EditorSettings,
     nature: NatureWorkflow,
     settlement_undo: Vec<SettlementEdit>,
     settlement_redo: Vec<SettlementEdit>,
@@ -355,6 +356,16 @@ impl EditorApp {
                     app.status_is_error = true;
                 }
             }
+            match crate::editor_settings::EditorSettings::load(dir.join("editor-panels.json")) {
+                Ok(settings) => {
+                    app.apply_editor_settings(&settings);
+                    app.editor_settings = settings;
+                }
+                Err(e) => {
+                    app.status_message = format!("Editor settings unavailable / 編輯器設定無法讀取：{e}");
+                    app.status_is_error = true;
+                }
+            }
         }
         app.modifier = ModifierUi::persisted(crate::modifier_ui::default_state_dir());
         if let Some(path) = app_settings_path() {
@@ -453,6 +464,7 @@ impl EditorApp {
             troops: TroopDisplay::default(),
             skirmish_wizard: crate::skirmish_wizard_ui::SkirmishWizardUi::default(),
             getting_started: GettingStartedUi::default(),
+            editor_settings: crate::editor_settings::EditorSettings::default(),
         }
     }
 }
@@ -1605,6 +1617,7 @@ impl EditorApp {
                 &self.scenario,
             ),
         );
+        self.campaign.english = self.lang() == AppLanguage::English;
         self.campaign.show(
             ctx,
             Some(self.scenario.document()),
@@ -1620,6 +1633,15 @@ impl EditorApp {
         };
         self.ambience.app_language = self.loc.current_language();
         self.ambience.show(ctx, map_path, water);
+        if let Some((wx, wz)) = self.ambience.take_focus_zone_request() {
+            self.focus_world_coordinates(wx, wz);
+            let msg = format!(
+                "{} ({:.0}, {:.0})",
+                tr(self.lang(), "Centered view on sound zone at", "已將視角置中對齊音效區域於"),
+                wx, wz,
+            );
+            self.set_status(msg, false);
+        }
         if self.ambience.app_language != self.loc.current_language() {
             let chosen = self.ambience.app_language;
             self.set_app_language(chosen);
@@ -1630,6 +1652,7 @@ impl EditorApp {
         let before = self.session.as_ref().is_some_and(|s| s.is_dirty());
         self.sync_ai_materials();
         let ai_applied = self.ai_planner.applied_revision;
+        self.ai_planner.english = self.lang() == AppLanguage::English;
         self.ai_planner
             .show(ctx, self.session.as_mut(), self.textures.session_mut(), water);
         if self.ai_planner.applied_revision != ai_applied {
@@ -1643,6 +1666,7 @@ impl EditorApp {
             self.texture_dirty = true;
             self.navigation.invalidate();
         }
+        let _ = self.persist_open_panels();
     }
 
     /// 首次開啟時以目前的劇本資料載入獨立事件圖。
@@ -4194,6 +4218,57 @@ impl EditorApp {
         self.ambience.app_language = language;
     }
 
+    pub fn apply_editor_settings(&mut self, settings: &crate::editor_settings::EditorSettings) {
+        if settings.is_panel_open("maps") { self.maps.open = true; }
+        if settings.is_panel_open("environment") { self.environment.open = true; }
+        if settings.is_panel_open("landscape") { self.landscape.open = true; }
+        if settings.is_panel_open("packaging") { self.packaging.open = true; }
+        if settings.is_panel_open("campaign") { self.campaign.open = true; }
+        if settings.is_panel_open("ai_planner") { self.ai_planner.open = true; }
+        if settings.is_panel_open("ambience") { self.ambience.open = true; }
+        if settings.is_panel_open("modifier") { self.modifier.open = true; }
+        if settings.is_panel_open("navigation") { self.navigation.open = true; }
+        if settings.is_panel_open("minimap") { self.minimap.open = true; }
+        if settings.is_panel_open("placement") { self.placement.open = true; }
+        if settings.is_panel_open("scenario") { self.scenario.open = true; }
+        if settings.is_panel_open("spawns") { self.spawn_ui.open = true; }
+        if settings.is_panel_open("textures") { self.textures.open = true; }
+        if settings.is_panel_open("scene") { self.scene.open = true; }
+        if settings.is_panel_open("console") { self.console.open = true; }
+        if settings.is_panel_open("tech_doc") { self.tech_doc.open = true; }
+        if settings.is_panel_open("balance_summary") { self.balance_summary.open = true; }
+        if settings.is_panel_open("getting_started") { self.getting_started.open = true; }
+    }
+
+    pub fn current_panel_snapshot(&self) -> Vec<(&'static str, bool)> {
+        vec![
+            ("maps", self.maps.open),
+            ("environment", self.environment.open),
+            ("landscape", self.landscape.open),
+            ("packaging", self.packaging.open),
+            ("campaign", self.campaign.open),
+            ("ai_planner", self.ai_planner.open),
+            ("ambience", self.ambience.open),
+            ("modifier", self.modifier.open),
+            ("navigation", self.navigation.open),
+            ("minimap", self.minimap.open),
+            ("placement", self.placement.open),
+            ("scenario", self.scenario.open),
+            ("spawns", self.spawn_ui.open),
+            ("textures", self.textures.open),
+            ("scene", self.scene.open),
+            ("console", self.console.open),
+            ("tech_doc", self.tech_doc.open),
+            ("balance_summary", self.balance_summary.open),
+            ("getting_started", self.getting_started.open),
+        ]
+    }
+
+    pub fn persist_open_panels(&mut self) -> Result<bool, String> {
+        let snapshot = self.current_panel_snapshot();
+        self.editor_settings.sync_panels(&snapshot)
+    }
+
     fn current_map_is_original(&self) -> bool {
         is_original_map_dir(Path::new(self.map_path_input.trim()))
     }
@@ -4924,6 +4999,42 @@ mod tests {
     mod settlement_apply_tests;
     pub(super) mod spawn_save_tests;
     mod starter_kit_tests;
+
+    #[test]
+    fn test_editor_app_panel_persistence_and_snapshot() {
+        let mut app = EditorApp::initial_state();
+        assert!(!app.campaign.open);
+        assert!(!app.ai_planner.open);
+        assert!(!app.ambience.open);
+
+        let temp_dir = std::env::temp_dir().join(format!("arm_test_app_settings_{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&temp_dir).unwrap();
+        let settings_file = temp_dir.join("editor-panels.json");
+
+        let mut settings = crate::editor_settings::EditorSettings::load(settings_file.clone()).unwrap();
+        settings.set_panel_open("campaign", true).unwrap();
+        settings.set_panel_open("ai_planner", true).unwrap();
+        settings.set_panel_open("ambience", true).unwrap();
+
+        app.apply_editor_settings(&settings);
+        assert!(app.campaign.open);
+        assert!(app.ai_planner.open);
+        assert!(app.ambience.open);
+
+        let snapshot = app.current_panel_snapshot();
+        assert!(snapshot.iter().any(|&(name, open)| name == "campaign" && open));
+        assert!(snapshot.iter().any(|&(name, open)| name == "ai_planner" && open));
+        assert!(snapshot.iter().any(|&(name, open)| name == "ambience" && open));
+
+        app.editor_settings = settings;
+        app.campaign.open = false;
+        let changed = app.persist_open_panels().unwrap();
+        assert!(changed);
+        assert!(!app.editor_settings.is_panel_open("campaign"));
+        assert!(app.editor_settings.is_panel_open("ai_planner"));
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
 
     fn start_camera_app(pfil: bool) -> (EditorApp, PathBuf, Vec<u8>) {
         let dir = temp_map_dir("start_camera");

@@ -56,4 +56,6 @@ pub mod undo_journal;
 
 pub use app::save_blockers;
 pub mod building_footprint;
+pub mod editor_settings;
+pub use editor_settings::EditorSettings;
 mod recent_maps;

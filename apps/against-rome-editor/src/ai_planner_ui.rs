@@ -42,6 +42,7 @@ struct GenerationJob {
 
 pub struct AiPlannerUi {
     pub open: bool,
+    pub english: bool,
     pub ollama_url: String,
     /// One model per role (Terrain, Water, Materials), like the three C# model boxes.
     pub role_models: [String; 3],
@@ -90,6 +91,7 @@ impl Default for AiPlannerUi {
     fn default() -> Self {
         let mut ui = Self {
             open: false,
+            english: false,
             ollama_url: "http://localhost:11434".to_string(),
             role_models: std::array::from_fn(|_| DEFAULT_MODEL.to_string()),
             available_models: vec![DEFAULT_MODEL.to_string(), "llama3:latest".to_string()],
@@ -117,6 +119,14 @@ impl Default for AiPlannerUi {
         };
         ui.inputs_key = ui.compute_inputs_key();
         ui
+    }
+}
+
+pub fn tl<'a>(english: bool, zh: &'a str, en: &'a str) -> &'a str {
+    if english {
+        en
+    } else {
+        zh
     }
 }
 
@@ -159,6 +169,22 @@ impl AiPlannerUi {
             self.pending_discard = true;
         } else {
             self.open = false;
+        }
+    }
+
+    pub fn role_label_localized(role: AiMapDesignRole, english: bool) -> &'static str {
+        match role {
+            AiMapDesignRole::Terrain => tl(english, "地形 (Terrain)", "Terrain"),
+            AiMapDesignRole::Water => tl(english, "水域 (Water)", "Water"),
+            AiMapDesignRole::Materials => tl(english, "材質 (Materials)", "Materials"),
+        }
+    }
+
+    pub fn status_label_localized(status: AiMapRoleStatus, english: bool) -> &'static str {
+        match status {
+            AiMapRoleStatus::Succeeded => tl(english, "成功", "Succeeded"),
+            AiMapRoleStatus::Failed => tl(english, "失敗", "Failed"),
+            AiMapRoleStatus::Cancelled => tl(english, "已取消", "Cancelled"),
         }
     }
 
@@ -658,12 +684,21 @@ impl AiPlannerUi {
         }
 
         let mut is_open = self.open;
-        egui::Window::new("AI Map Planning Studio (Ollama)")
+        let title = tl(
+            self.english,
+            "AI 地圖企劃工作室 (Ollama) / AI Planner Studio",
+            "AI Map Planning Studio (Ollama)",
+        );
+        egui::Window::new(title)
             .open(&mut is_open)
             .min_size(Vec2::new(760.0, 560.0))
             .show(ctx, |ui| {
-                ui.heading("Multi-AI Map Planning & Brush Operator");
-                ui.label("Directs AI LLMs to design terrain features, executing changes exclusively through verified /brush editor operations.");
+                ui.heading(tl(self.english, "多角色 AI 製圖與筆刷執行器", "Multi-AI Map Planning & Brush Operator"));
+                ui.label(tl(
+                    self.english,
+                    "引導本機 AI LLM 規劃地形特徵，完全透過通過驗證的編輯器筆刷操作執行變更。",
+                    "Directs AI LLMs to design terrain features, executing changes exclusively through verified /brush editor operations.",
+                ));
 
                 ui.separator();
                 if !self.status_message.is_empty() {
@@ -688,17 +723,17 @@ impl AiPlannerUi {
 
                 ui.add_enabled_ui(!busy, |ui| {
                     egui::Grid::new("ai_settings").num_columns(2).spacing([12.0, 6.0]).show(ui, |ui| {
-                        ui.label("Ollama Endpoint URL:");
+                        ui.label(tl(self.english, "Ollama 端點 URL：", "Ollama Endpoint URL:"));
                         ui.horizontal(|ui| {
                             ui.text_edit_singleline(&mut self.ollama_url);
-                            if ui.button("Connect & List Models").clicked() {
+                            if ui.button(tl(self.english, "連線並列出模型", "Connect & List Models")).clicked() {
                                 self.refresh_models();
                             }
                         });
                         ui.end_row();
 
                         for (i, role) in ROLES.iter().enumerate() {
-                            ui.checkbox(&mut self.role_checks[i], Self::role_label(*role));
+                            ui.checkbox(&mut self.role_checks[i], Self::role_label_localized(*role, self.english));
                             ui.horizontal(|ui| {
                                 ui.text_edit_singleline(&mut self.role_models[i]);
                                 egui::ComboBox::from_id_source(("ai_model_select", i))
@@ -712,14 +747,14 @@ impl AiPlannerUi {
                             ui.end_row();
                         }
 
-                        ui.label("Area X,Y,width,height:");
+                        ui.label(tl(self.english, "生效區域 (X, Y, 寬, 高)：", "Area X,Y,width,height:"));
                         ui.horizontal(|ui| {
                             ui.text_edit_singleline(&mut self.bounds_text);
-                            ui.checkbox(&mut self.edit_passability, "Edit passability");
+                            ui.checkbox(&mut self.edit_passability, tl(self.english, "編輯通行度", "Edit passability"));
                         });
                         ui.end_row();
 
-                        ui.label("AI locks (one area per line):");
+                        ui.label(tl(self.english, "AI 鎖定區域（每行一個區域）：", "AI locks (one area per line):"));
                         ui.add(
                             egui::TextEdit::multiline(&mut self.locks_text)
                                 .desired_rows(3)
@@ -729,21 +764,21 @@ impl AiPlannerUi {
                     });
 
                     ui.add_space(6.0);
-                    ui.label("Design Description / Prompt:");
+                    ui.label(tl(self.english, "企劃設計描述／提示詞：", "Design Description / Prompt:"));
                     ui.text_edit_multiline(&mut self.prompt_description);
                 });
 
                 ui.add_space(8.0);
                 ui.horizontal(|ui| {
-                    if ui.add_enabled(!busy, egui::Button::new("Generate / Retry")).clicked() {
+                    if ui.add_enabled(!busy, egui::Button::new(tl(self.english, "產生企劃／重試", "Generate / Retry"))).clicked() {
                         let _ = self.start_generation(water_level);
                     }
-                    if ui.add_enabled(busy, egui::Button::new("Cancel generation")).clicked() {
+                    if ui.add_enabled(busy, egui::Button::new(tl(self.english, "取消產生", "Cancel generation"))).clicked() {
                         self.cancel_generation();
                     }
 
                     let can_apply = self.current_plan.is_some() && session.is_some() && !busy;
-                    if ui.add_enabled(can_apply, egui::Button::new("Apply Plan to Map Terrain")).clicked() {
+                    if ui.add_enabled(can_apply, egui::Button::new(tl(self.english, "套用 AI 企劃至地形", "Apply Plan to Map Terrain"))).clicked() {
                         if let Some(s) = session {
                             if let Err(e) = self.apply_plan_to_session(s, blend, water_level) {
                                 self.status_message = e;
@@ -755,7 +790,7 @@ impl AiPlannerUi {
 
                 ui.separator();
                 if let Some(plan) = &self.current_plan {
-                    ui.heading("Plan Preview:");
+                    ui.heading(tl(self.english, "企劃預覽：", "Plan Preview:"));
                     ui.label(format!(
                         "Features: {} (Base Height: {:?}, Base Material: {:?})",
                         plan.features.len(),
@@ -768,12 +803,12 @@ impl AiPlannerUi {
                         });
                     }
                 } else if !busy {
-                    ui.label("No AI plan generated. Click 'Generate / Retry' to start.");
+                    ui.label(tl(self.english, "尚未產生 AI 企劃。請點選「產生企劃／重試」開始。", "No AI plan generated. Click 'Generate / Retry' to start."));
                 }
 
                 if let Some(apply_res) = &self.last_apply_result {
                     ui.separator();
-                    ui.heading("Execution Report:");
+                    ui.heading(tl(self.english, "執行報告：", "Execution Report:"));
                     ui.label(format!("Modified Height Samples: {}", apply_res.height_samples_changed));
                     ui.label(format!("Modified Collision Pixels: {}", apply_res.collision_pixels_changed));
                     egui::ScrollArea::vertical().max_height(140.0).show(ui, |ui| {
@@ -792,17 +827,26 @@ impl AiPlannerUi {
             let mut close_modal = false;
             let mut confirm = false;
 
-            egui::Window::new("Discard Unsaved AI Plan?")
+            let modal_title = tl(
+                self.english,
+                "放棄未儲存的 AI 企劃？",
+                "Discard Unsaved AI Plan?",
+            );
+            egui::Window::new(modal_title)
                 .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
                 .collapsible(false)
                 .resizable(false)
                 .show(ctx, |ui| {
-                    ui.label("Closing will discard currently generated AI plan features (and cancel any running generation).");
+                    ui.label(tl(
+                        self.english,
+                        "關閉視窗將放棄目前產生的 AI 企劃特徵（並取消任何執行中的生成）。",
+                        "Closing will discard currently generated AI plan features (and cancel any running generation).",
+                    ));
                     ui.horizontal(|ui| {
-                        if ui.button("Discard & Close").clicked() {
+                        if ui.button(tl(self.english, "放棄並關閉", "Discard & Close")).clicked() {
                             confirm = true;
                         }
-                        if ui.button("Keep Editing").clicked() {
+                        if ui.button(tl(self.english, "繼續編輯", "Keep Editing")).clicked() {
                             close_modal = true;
                         }
                     });
@@ -1244,5 +1288,19 @@ mod tests {
         assert!(!ui.is_generating());
         assert!(!ui.is_dirty());
         release(&gate);
+    }
+
+    #[test]
+    fn test_ai_planner_bilingual_titles_and_labels() {
+        let mut ui = test_ui();
+        assert!(!ui.english);
+        assert_eq!(AiPlannerUi::role_label_localized(AiMapDesignRole::Terrain, false), "地形 (Terrain)");
+        assert_eq!(AiPlannerUi::role_label_localized(AiMapDesignRole::Terrain, true), "Terrain");
+        assert_eq!(AiPlannerUi::status_label_localized(AiMapRoleStatus::Succeeded, false), "成功");
+        assert_eq!(AiPlannerUi::status_label_localized(AiMapRoleStatus::Succeeded, true), "Succeeded");
+        assert_eq!(tl(false, "企劃預覽：", "Plan Preview:"), "企劃預覽：");
+        assert_eq!(tl(true, "企劃預覽：", "Plan Preview:"), "Plan Preview:");
+        ui.english = true;
+        assert!(ui.english);
     }
 }
