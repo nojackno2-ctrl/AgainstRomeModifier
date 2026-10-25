@@ -4,7 +4,8 @@
 //! 1. Per team 0..7: scripted spawns (document.spawns), total unit count,
 //!    and placed DATA buildings (if placement is loaded).
 //! 2. Attack waves: timeline of enabled events with SpawnUnit actions (kind 2)
-//!    for teams 1..7, cumulative units, and destination status.
+//!    for teams 1..7, cumulative units, repeats and condition-triggered status,
+//!    and destination status.
 //! 3. Objectives: presence of enabled Victory (kind 3) and Defeat (kind 4) events.
 
 use against_rome_maps::{SdlObjectCatalog, SdlObjectCategory};
@@ -39,8 +40,10 @@ pub(crate) struct AttackWaveEntry {
     pub event_name: String,
     pub team: i32,
     pub units: i32,
-    pub cumulative_units: i32,
+    pub cumulative_units: Option<i32>,
     pub has_move_destination: bool,
+    pub repeats: bool,
+    pub condition_triggered: bool,
 }
 
 /// Objectives presence status.
@@ -56,6 +59,7 @@ pub(crate) struct BalanceSummary {
     pub teams: [TeamBalance; 8],
     pub waves: Vec<AttackWaveEntry>,
     pub total_enemy_wave_units: i32,
+    pub condition_triggered_units: i32,
     pub waves_with_destination: usize,
     pub total_wave_actions: usize,
     pub objectives: ObjectivesSummary,
@@ -107,6 +111,8 @@ pub(crate) fn summarize(
         team: i32,
         units: i32,
         has_move_destination: bool,
+        repeats: bool,
+        condition_triggered: bool,
     }
 
     let mut candidates = Vec::new();
@@ -132,6 +138,8 @@ pub(crate) fn summarize(
                         team: action.team,
                         units: action.count.max(0),
                         has_move_destination: action.move_destination.is_some(),
+                        repeats: event.repeat,
+                        condition_triggered: !event.conditions.is_empty(),
                     });
                 }
                 _ => {}
@@ -139,31 +147,52 @@ pub(crate) fn summarize(
         }
     }
 
-    // Sort timeline order: delay_seconds ascending, then team ascending
-    candidates.sort_by_key(|c| (c.delay_seconds, c.team));
+    // Sort timeline order: condition-triggered entries after time-only entries,
+    // then delay_seconds ascending, then team ascending.
+    candidates.sort_by_key(|c| (c.condition_triggered, c.delay_seconds, c.team));
 
     let mut waves = Vec::with_capacity(candidates.len());
-    let mut cumulative = 0;
+    let mut cumulative_mission_time = 0;
+    let mut condition_triggered_units = 0;
     let mut waves_with_destination = 0;
 
     for c in candidates {
-        cumulative += c.units;
         if c.has_move_destination {
             waves_with_destination += 1;
         }
+
+        let cumulative_units = if !c.condition_triggered && !c.repeats {
+            cumulative_mission_time += c.units;
+            Some(cumulative_mission_time)
+        } else {
+            None
+        };
+
+        if c.condition_triggered {
+            condition_triggered_units += c.units;
+        }
+
+        let time_formatted = if c.condition_triggered {
+            format!("+{} after condition", format_time_mmss(c.delay_seconds))
+        } else {
+            format_time_mmss(c.delay_seconds)
+        };
+
         waves.push(AttackWaveEntry {
             delay_seconds: c.delay_seconds,
-            time_formatted: format_time_mmss(c.delay_seconds),
+            time_formatted,
             event_name: c.event_name,
             team: c.team,
             units: c.units,
-            cumulative_units: cumulative,
+            cumulative_units,
             has_move_destination: c.has_move_destination,
+            repeats: c.repeats,
+            condition_triggered: c.condition_triggered,
         });
     }
 
     let total_wave_actions = waves.len();
-    let total_enemy_wave_units = cumulative;
+    let total_enemy_wave_units = cumulative_mission_time;
 
     // 3. Objectives summary
     let objectives = ObjectivesSummary {
@@ -175,6 +204,7 @@ pub(crate) fn summarize(
         teams,
         waves,
         total_enemy_wave_units,
+        condition_triggered_units,
         waves_with_destination,
         total_wave_actions,
         objectives,
@@ -184,7 +214,7 @@ pub(crate) fn summarize(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use against_rome_scenario::{Action, Event, Spawn, WorldPosition};
+    use against_rome_scenario::{Action, Condition, Event, Spawn, WorldPosition};
 
     #[test]
     fn test_format_time_mmss() {
@@ -301,6 +331,7 @@ mod tests {
         assert_eq!(summary.waves.len(), 3);
         assert_eq!(summary.total_wave_actions, 3);
         assert_eq!(summary.total_enemy_wave_units, 33);
+        assert_eq!(summary.condition_triggered_units, 0);
         assert_eq!(summary.waves_with_destination, 2);
 
         // Wave 0: 45s (0:45), team 2, 8 units, cumulative 8, destination None
@@ -309,8 +340,10 @@ mod tests {
         assert_eq!(summary.waves[0].event_name, "Early Wave");
         assert_eq!(summary.waves[0].team, 2);
         assert_eq!(summary.waves[0].units, 8);
-        assert_eq!(summary.waves[0].cumulative_units, 8);
+        assert_eq!(summary.waves[0].cumulative_units, Some(8));
         assert!(!summary.waves[0].has_move_destination);
+        assert!(!summary.waves[0].repeats);
+        assert!(!summary.waves[0].condition_triggered);
 
         // Wave 1: 120s (2:00), team 1, 10 units, cumulative 18, destination Some
         assert_eq!(summary.waves[1].delay_seconds, 120);
@@ -318,8 +351,10 @@ mod tests {
         assert_eq!(summary.waves[1].event_name, "Mid Wave");
         assert_eq!(summary.waves[1].team, 1);
         assert_eq!(summary.waves[1].units, 10);
-        assert_eq!(summary.waves[1].cumulative_units, 18);
+        assert_eq!(summary.waves[1].cumulative_units, Some(18));
         assert!(summary.waves[1].has_move_destination);
+        assert!(!summary.waves[1].repeats);
+        assert!(!summary.waves[1].condition_triggered);
 
         // Wave 2: 300s (5:00), team 1, 15 units, cumulative 33, destination Some
         assert_eq!(summary.waves[2].delay_seconds, 300);
@@ -327,8 +362,10 @@ mod tests {
         assert_eq!(summary.waves[2].event_name, "Late Wave");
         assert_eq!(summary.waves[2].team, 1);
         assert_eq!(summary.waves[2].units, 15);
-        assert_eq!(summary.waves[2].cumulative_units, 33);
+        assert_eq!(summary.waves[2].cumulative_units, Some(33));
         assert!(summary.waves[2].has_move_destination);
+        assert!(!summary.waves[2].repeats);
+        assert!(!summary.waves[2].condition_triggered);
     }
 
     #[test]
@@ -365,6 +402,7 @@ mod tests {
         let summary = summarize(&doc, None);
         assert!(summary.waves.is_empty());
         assert_eq!(summary.total_enemy_wave_units, 0);
+        assert_eq!(summary.condition_triggered_units, 0);
         assert_eq!(summary.total_wave_actions, 0);
         assert_eq!(summary.waves_with_destination, 0);
         assert!(!summary.objectives.has_victory);
@@ -454,6 +492,164 @@ mod tests {
         assert_eq!(summary.waves.len(), 1);
         assert_eq!(summary.waves[0].team, 2);
         assert_eq!(summary.waves[0].units, 12);
+        assert_eq!(summary.waves[0].cumulative_units, Some(12));
+        assert!(!summary.waves[0].repeats);
+        assert!(!summary.waves[0].condition_triggered);
         assert_eq!(summary.total_enemy_wave_units, 12);
+        assert_eq!(summary.condition_triggered_units, 0);
+    }
+
+    #[test]
+    fn test_repeating_and_condition_triggered_waves() {
+        let mut doc = ScenarioDocument::default();
+
+        // 1. Mission start scout: time-only, non-repeating (60s, 6 units)
+        doc.events.push(Event {
+            name: "Mission Start Scout".into(),
+            delay_seconds: 60,
+            repeat: false,
+            enabled: true,
+            conditions: vec![],
+            actions: vec![Action {
+                kind: 2,
+                team: 1,
+                count: 6,
+                move_destination: Some(WorldPosition { x: 50, z: 50 }),
+                ..Default::default()
+            }],
+        });
+
+        // 2. Patrol periodic: time-only, repeating (120s, 4 units) -> excluded from cumulative total
+        doc.events.push(Event {
+            name: "Patrol Periodic".into(),
+            delay_seconds: 120,
+            repeat: true,
+            enabled: true,
+            conditions: vec![],
+            actions: vec![Action {
+                kind: 2,
+                team: 2,
+                count: 4,
+                move_destination: None,
+                ..Default::default()
+            }],
+        });
+
+        // 3. Main Force: time-only, non-repeating (300s, 20 units) -> cumulative 6 + 20 = 26
+        doc.events.push(Event {
+            name: "Main Force".into(),
+            delay_seconds: 300,
+            repeat: false,
+            enabled: true,
+            conditions: vec![],
+            actions: vec![Action {
+                kind: 2,
+                team: 1,
+                count: 20,
+                move_destination: Some(WorldPosition { x: 100, z: 100 }),
+                ..Default::default()
+            }],
+        });
+
+        // 4. Ambush: condition-triggered, non-repeating (delay 10s after condition, 15 units)
+        // Even though delay 10s < 60s/120s/300s, it must be sorted AFTER time-only entries!
+        doc.events.push(Event {
+            name: "Ambush When Player Near Camp".into(),
+            delay_seconds: 10,
+            repeat: false,
+            enabled: true,
+            conditions: vec![Condition {
+                min_x: 100,
+                max_x: 200,
+                ..Default::default()
+            }],
+            actions: vec![Action {
+                kind: 2,
+                team: 3,
+                count: 15,
+                move_destination: None,
+                ..Default::default()
+            }],
+        });
+
+        // 5. Endless Camp Defense: condition-triggered, repeating (delay 0s after condition, 10 units)
+        doc.events.push(Event {
+            name: "Endless Camp Defense".into(),
+            delay_seconds: 0,
+            repeat: true,
+            enabled: true,
+            conditions: vec![Condition {
+                min_x: 300,
+                max_x: 400,
+                ..Default::default()
+            }],
+            actions: vec![Action {
+                kind: 2,
+                team: 3,
+                count: 10,
+                move_destination: Some(WorldPosition { x: 200, z: 200 }),
+                ..Default::default()
+            }],
+        });
+
+        let summary = summarize(&doc, None);
+
+        // 5 total wave actions
+        assert_eq!(summary.total_wave_actions, 5);
+        assert_eq!(summary.waves.len(), 5);
+
+        // Cumulative "by mission time" total = 6 (scout) + 20 (main force) = 26
+        // Repeating event (4 units) and condition-triggered events (15 + 10 = 25 units) are excluded!
+        assert_eq!(summary.total_enemy_wave_units, 26);
+
+        // Condition-triggered total = 10 (endless) + 15 (ambush) = 25
+        assert_eq!(summary.condition_triggered_units, 25);
+
+        // Ordering check:
+        // Wave 0: Mission Start Scout (time-only, 60s)
+        assert_eq!(summary.waves[0].event_name, "Mission Start Scout");
+        assert_eq!(summary.waves[0].delay_seconds, 60);
+        assert_eq!(summary.waves[0].time_formatted, "1:00");
+        assert_eq!(summary.waves[0].units, 6);
+        assert_eq!(summary.waves[0].cumulative_units, Some(6));
+        assert!(!summary.waves[0].repeats);
+        assert!(!summary.waves[0].condition_triggered);
+
+        // Wave 1: Patrol Periodic (time-only, 120s, repeats == true)
+        assert_eq!(summary.waves[1].event_name, "Patrol Periodic");
+        assert_eq!(summary.waves[1].delay_seconds, 120);
+        assert_eq!(summary.waves[1].time_formatted, "2:00");
+        assert_eq!(summary.waves[1].units, 4);
+        assert_eq!(summary.waves[1].cumulative_units, None, "repeating waves excluded from cumulative total");
+        assert!(summary.waves[1].repeats);
+        assert!(!summary.waves[1].condition_triggered);
+
+        // Wave 2: Main Force (time-only, 300s)
+        assert_eq!(summary.waves[2].event_name, "Main Force");
+        assert_eq!(summary.waves[2].delay_seconds, 300);
+        assert_eq!(summary.waves[2].time_formatted, "5:00");
+        assert_eq!(summary.waves[2].units, 20);
+        assert_eq!(summary.waves[2].cumulative_units, Some(26), "cumulative ignores repeating wave 1");
+        assert!(!summary.waves[2].repeats);
+        assert!(!summary.waves[2].condition_triggered);
+
+        // Wave 3: Endless Camp Defense (condition-triggered, 0s delay, repeats == true)
+        // Must appear after time-only waves (Wave 0..2)
+        assert_eq!(summary.waves[3].event_name, "Endless Camp Defense");
+        assert_eq!(summary.waves[3].delay_seconds, 0);
+        assert_eq!(summary.waves[3].time_formatted, "+0:00 after condition");
+        assert_eq!(summary.waves[3].units, 10);
+        assert_eq!(summary.waves[3].cumulative_units, None, "condition-triggered waves excluded from mission cumulative");
+        assert!(summary.waves[3].repeats);
+        assert!(summary.waves[3].condition_triggered);
+
+        // Wave 4: Ambush When Player Near Camp (condition-triggered, 10s delay, repeats == false)
+        assert_eq!(summary.waves[4].event_name, "Ambush When Player Near Camp");
+        assert_eq!(summary.waves[4].delay_seconds, 10);
+        assert_eq!(summary.waves[4].time_formatted, "+0:10 after condition");
+        assert_eq!(summary.waves[4].units, 15);
+        assert_eq!(summary.waves[4].cumulative_units, None, "condition-triggered waves excluded from mission cumulative");
+        assert!(!summary.waves[4].repeats);
+        assert!(summary.waves[4].condition_triggered);
     }
 }

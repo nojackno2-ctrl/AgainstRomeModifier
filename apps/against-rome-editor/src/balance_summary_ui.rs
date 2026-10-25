@@ -6,6 +6,7 @@
 //! - Scenario win/loss condition validation
 
 use crate::app::{tr, EditorApp};
+use against_rome_ambience::Language as AppLanguage;
 use eframe::egui::{self, Color32, Grid, RichText, ScrollArea};
 
 #[derive(Default)]
@@ -121,15 +122,28 @@ impl EditorApp {
                     // 3. Attack waves (teams 1..7)
                     ui.heading(tr(lang, "Attack Waves (Teams 1..7)", "進攻波次時間表 (隊伍 1..7)"));
                     ui.label(format!(
-                        "{}: {} | {}: {} | {}: {}/{}",
+                        "{}: {} | {}: {} | {}: {} | {}: {}/{}",
                         tr(lang, "Wave actions", "波次動作數"),
                         summary.total_wave_actions,
-                        tr(lang, "Enemy wave units", "敵軍波次單位數"),
+                        tr(lang, "Enemy wave units (by mission time)", "敵軍波次單位數（按任務時間）"),
                         summary.total_enemy_wave_units,
+                        tr(lang, "Condition-triggered units", "條件觸發兵力"),
+                        summary.condition_triggered_units,
                         tr(lang, "With destination", "具有目的地"),
                         summary.waves_with_destination,
                         summary.total_wave_actions,
                     ));
+
+                    if summary.waves.iter().any(|w| w.repeats) {
+                        ui.label(
+                            RichText::new(tr(
+                                lang,
+                                "Cumulative total excludes repeating events",
+                                "累計不含重複事件",
+                            ))
+                            .italics(),
+                        );
+                    }
 
                     if summary.waves.is_empty() {
                         ui.label(tr(lang, "No enabled attack waves found.", "未發現任何已啟用的進攻波次。"));
@@ -147,11 +161,41 @@ impl EditorApp {
                                 ui.end_row();
 
                                 for wave in &summary.waves {
-                                    ui.label(&wave.time_formatted);
-                                    ui.label(&wave.event_name);
+                                    let time_display = if wave.condition_triggered {
+                                        if lang == AppLanguage::English {
+                                            wave.time_formatted.clone()
+                                        } else {
+                                            format!(
+                                                "條件成立後 +{}",
+                                                crate::balance_summary::format_time_mmss(wave.delay_seconds)
+                                            )
+                                        }
+                                    } else {
+                                        wave.time_formatted.clone()
+                                    };
+                                    ui.label(time_display);
+
+                                    let event_label = if wave.repeats {
+                                        if wave.event_name.is_empty() {
+                                            format!("[{}]", tr(lang, "repeats", "重複"))
+                                        } else {
+                                            format!("{} [{}]", wave.event_name, tr(lang, "repeats", "重複"))
+                                        }
+                                    } else {
+                                        wave.event_name.clone()
+                                    };
+                                    ui.label(event_label);
+
                                     ui.label(format!("{} {}", tr(lang, "Team", "隊伍"), wave.team));
                                     ui.label(wave.units.to_string());
-                                    ui.label(wave.cumulative_units.to_string());
+                                    match wave.cumulative_units {
+                                        Some(cum) => {
+                                            ui.label(cum.to_string());
+                                        }
+                                        None => {
+                                            ui.label("-");
+                                        }
+                                    }
                                     if wave.has_move_destination {
                                         ui.colored_label(Color32::from_rgb(80, 200, 80), tr(lang, "Yes", "有"));
                                     } else {
@@ -180,6 +224,7 @@ mod tests {
         let summary = app.compute_balance_summary();
         assert_eq!(summary.total_wave_actions, 0);
         assert_eq!(summary.total_enemy_wave_units, 0);
+        assert_eq!(summary.condition_triggered_units, 0);
         assert!(!summary.objectives.has_victory);
         assert!(!summary.objectives.has_defeat);
 
@@ -195,5 +240,119 @@ mod tests {
             },
         );
         assert!(app.balance_summary.open);
+    }
+
+    #[test]
+    fn test_balance_summary_ui_renders_repeating_and_condition_waves_bilingual() {
+        use against_rome_scenario::{Action, Condition, Event, Spawn};
+
+        let temp_dir = std::env::temp_dir().join(format!(
+            "ar_test_balance_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(temp_dir.join("SCRIPT")).unwrap();
+        std::fs::write(
+            temp_dir.join("SCRIPT/ak_level.bci"),
+            against_rome_scenario::BciImage::idle().serialize(),
+        )
+        .unwrap();
+
+        let mut app = EditorApp::initial_state();
+        app.scenario.load_session(&temp_dir).unwrap();
+
+        let spawn_id = uuid::Uuid::new_v4();
+        app.scenario
+            .apply_spawns(vec![Spawn {
+                id: spawn_id,
+                alias: "Speer".into(),
+                team: 0,
+                count: 10,
+                x: 1000.0,
+                z: 1000.0,
+                ..Default::default()
+            }])
+            .unwrap();
+
+        app.scenario
+            .add_events(&[
+                Event {
+                    name: "Repeating Wave".into(),
+                    delay_seconds: 60,
+                    repeat: true,
+                    enabled: true,
+                    conditions: vec![],
+                    actions: vec![Action {
+                        kind: 2,
+                        team: 1,
+                        count: 5,
+                        alias: "Speer".into(),
+                        x: 2000.0,
+                        z: 2000.0,
+                        ..Default::default()
+                    }],
+                },
+                Event {
+                    name: "Condition Wave".into(),
+                    delay_seconds: 15,
+                    repeat: false,
+                    enabled: true,
+                    conditions: vec![Condition {
+                        target_id: spawn_id,
+                        ..Default::default()
+                    }],
+                    actions: vec![Action {
+                        kind: 2,
+                        team: 2,
+                        count: 10,
+                        alias: "Speer".into(),
+                        x: 3000.0,
+                        z: 3000.0,
+                        ..Default::default()
+                    }],
+                },
+            ])
+            .unwrap();
+
+        let summary = app.compute_balance_summary();
+        assert_eq!(summary.total_wave_actions, 2);
+        assert_eq!(summary.total_enemy_wave_units, 0);
+        assert_eq!(summary.condition_triggered_units, 10);
+        assert!(summary.waves.iter().any(|w| w.repeats));
+
+        app.balance_summary.open = true;
+
+        // 1. English rendering
+        app.ambience.app_language = AppLanguage::English;
+        let ctx_en = egui::Context::default();
+        let _ = ctx_en.run(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 800.0))),
+                ..Default::default()
+            },
+            |ctx| {
+                app.show_balance_summary(ctx);
+            },
+        );
+        assert!(app.balance_summary.open);
+
+        // 2. Traditional Chinese rendering
+        app.ambience.app_language = AppLanguage::TraditionalChinese;
+        let ctx_zh = egui::Context::default();
+        let _ = ctx_zh.run(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 800.0))),
+                ..Default::default()
+            },
+            |ctx| {
+                app.show_balance_summary(ctx);
+            },
+        );
+        assert!(app.balance_summary.open);
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 }
