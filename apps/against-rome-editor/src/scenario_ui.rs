@@ -388,6 +388,11 @@ impl ScenarioUi {
         self.source.is_some()
     }
     /// Loaded game ObjDefName aliases; empty when no catalog was found.
+    #[cfg(test)]
+    pub fn set_known_aliases(&mut self, aliases: Vec<String>) {
+        self.aliases = aliases;
+    }
+
     pub fn known_aliases(&self) -> &[String] {
         &self.aliases
     }

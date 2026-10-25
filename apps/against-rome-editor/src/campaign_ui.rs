@@ -1180,6 +1180,12 @@ impl CampaignUi {
         self.status_is_error = false;
     }
 
+    pub(crate) fn camera_candidate_ready(&self) -> bool {
+        self.camera_candidate
+            .as_ref()
+            .is_some_and(|c| c.camera == self.start_camera)
+    }
+
     pub(crate) fn camera_pending(&self) -> bool {
         self.camera_candidate.is_some()
     }

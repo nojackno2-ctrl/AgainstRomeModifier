@@ -1,3 +1,9 @@
+## 2026-10-25 Agy：地圖屬性起始鏡頭套用修復與平坦範本狀態訊息強化（已驗證，未手動驗證 GUI）
+- 1. 地圖屬性視窗起始鏡頭套用與置中主屋候選修復（Codex 審查）：先以測試重現缺陷（編輯鏡頭或點擊置中主屋僅標記 `camera_dirty` 未建置 `camera_candidate`，導致 Safe Save 被「Apply to the loaded map before Safe Save」阻擋）；修復複用戰役面板既有套用邏輯，於 `app.rs` 抽出 `apply_start_camera_candidate_from_ui`，地圖屬性鏡頭區新增「Apply / 套用」按鈕，且「Center on player main house / 置中玩家主屋」自動啟用鏡頭並呼叫該套用函式產生合法候選，`campaign_ui.rs` 補 `camera_candidate_ready` 輔助檢驗，確保 Safe Save 成功寫入 `arm_start_camera.json` 與 `SCRIPT/ak_level.bci` 且不繞過安全儲存驗證。
+- 2. 平坦範本狀態列健全度提升：`build_and_install_flat_template` 回傳型別調整為 `Result<(EndlessMapInfo, Option<String>), String>`，直接回傳 `briefing_warning` 選用字串；`perform_action` 移除 `self.status_message` 舊警告子字串檢查，改由回傳值判斷，避免先前不相干的舊警告誤壓抑平坦範本建置成功訊息。
+- 測試新增：`test_map_properties_camera_safe_save_workflow`（完整涵蓋未套用阻擋、套用後儲存成功寫入檔案、置中主屋自動套用並儲存）與 `test_perform_action_flat_template_clears_stale_warning`（驗證舊警告不壓抑成功訊息）。
+- 驗證：cargo test --workspace --locked --offline --no-fail-fast --target-dir re_workspace/agy-target 通過（283 組、2534 passed、0 failed、24 ignored；日誌保存至 re_workspace/agy-camera-fix-test.log）。未 stage／commit，保留 AGENTS.md／README.md 既有變更，未寫入 repo 以外目錄。
+
 ## 2026-10-25 Agy：平坦範本簡報失敗警告與地景視窗水位微調（已驗證，未手動驗證 GUI）
 - 1. 平坦範本簡報寫入失敗防護與雙語警告：`app.rs` 之 `build_and_install_flat_template` 完整檢查 `briefing.put` 之存在、載入、`set_value` 與 `save` 結果；寫入失敗時保留地圖建置成功，於狀態列回報雙語警告並保持 `self.ambience.dirty = true` 供設計者透過 Safe Save 再次儲存；寫入成功時磁碟已匹配，保持 `dirty = false`。
 - 2. 地景工作室視窗整合地表水位：`landscape_ui.rs` 與 `app.rs` 於地景工作室視窗新增目前水位數值顯示與雙語拖曳欄位「Water level / 水位」，直接綁定至既有 `self.ambience.profile.boden.waterlevel` 與 dirty 旗標，沿用既有 Safe Save 路徑不建立第二持久化來源，附浮動提示標記與「Ambience → Boden」為相同設定；河道規劃（`plan_river`）複用該水位參數。

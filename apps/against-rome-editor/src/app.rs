@@ -305,9 +305,11 @@ impl EditorApp {
 
     pub fn center_start_camera_on_player_main_house(&mut self) -> bool {
         if let Some((x, z)) = self.player_main_house_position() {
+            self.campaign.start_camera.enabled = true;
             self.campaign.start_camera.x = x;
             self.campaign.start_camera.z = z;
             self.campaign.camera_dirty = true;
+            let _ = self.apply_start_camera_candidate_from_ui();
             true
         } else {
             false
@@ -1256,7 +1258,7 @@ impl EditorApp {
         &mut self,
         game_path: &Path,
         spec: &against_rome_maps::blank_builder::BlankMapSpec,
-    ) -> Result<against_rome_maps::catalog::EndlessMapInfo, String> {
+    ) -> Result<(against_rome_maps::catalog::EndlessMapInfo, Option<String>), String> {
         let source_slot = spec
             .source_map_id
             .to_ascii_uppercase()
@@ -1320,7 +1322,7 @@ impl EditorApp {
             );
             self.maps.status_is_error = false;
         }
-        Ok(info)
+        Ok((info, briefing_warning))
     }
 
     /// Queue a typed blank map build intent into the pending action pipeline.
@@ -1349,14 +1351,16 @@ impl EditorApp {
             }
             PendingAction::BuildBlank(intent) if intent.flat_template => {
                 match self.build_and_install_flat_template(&intent.game_path, &intent.spec) {
-                    Ok(info) => {
-                        if !self.status_message.contains("Warning") && !self.status_message.contains("警告") {
+                    Ok((info, briefing_warning)) => {
+                        if let Some(warning) = briefing_warning {
+                            self.status_message = warning;
+                        } else {
                             self.status_message = format!(
                                 "Flat template {} created and opened; terrain flattened (unsaved).",
                                 info.id()
                             );
-                            self.status_is_error = false;
                         }
+                        self.status_is_error = false;
                     }
                     Err(error) => {
                         self.status_message = format!("Flat template failed: {error}");
@@ -2565,19 +2569,36 @@ impl EditorApp {
             }
         }
         if apply {
-            let result = self.apply_start_camera_candidate();
-            match result {
-                Ok(()) => {
-                    self.campaign.status_message =
-                        "Start camera candidate ready; use Safe Save to write.".into();
-                    self.campaign.status_is_error = false;
-                }
-                Err(e) => {
-                    self.campaign.status_message = format!("Start camera Apply rejected: {e}");
-                    self.campaign.status_is_error = true;
-                }
+            let _ = self.apply_start_camera_candidate_from_ui();
+        }
+    }
+
+    pub(crate) fn apply_start_camera_candidate_from_ui(&mut self) -> Result<(), String> {
+        let result = self.apply_start_camera_candidate();
+        match &result {
+            Ok(()) => {
+                let msg = tr(
+                    self.lang(),
+                    "Start camera candidate ready; use Safe Save to write.",
+                    "起始鏡頭候選已備妥，請使用安全儲存寫入。",
+                );
+                self.campaign.status_message = msg.into();
+                self.campaign.status_is_error = false;
+                self.status_message = msg.into();
+                self.status_is_error = false;
+            }
+            Err(e) => {
+                let msg = format!(
+                    "{}: {e}",
+                    tr(self.lang(), "Start camera Apply rejected", "起始鏡頭套用失敗")
+                );
+                self.campaign.status_message = msg.clone();
+                self.campaign.status_is_error = true;
+                self.status_message = msg;
+                self.status_is_error = true;
             }
         }
+        result
     }
 
     fn apply_start_camera_candidate(&mut self) -> Result<(), String> {
@@ -4805,7 +4826,10 @@ mod tests {
             Some("Alpine conquest mission briefing.")
         );
 
-        let info = app.build_and_install_flat_template(&intent.game_path, &intent.spec).expect("build flat template");
+        let (info, briefing_warning) = app
+            .build_and_install_flat_template(&intent.game_path, &intent.spec)
+            .expect("build flat template");
+        assert!(briefing_warning.is_none());
         assert_eq!(app.ambience.briefing_title, "Alpine conquest mission briefing.");
         assert!(!app.ambience.dirty, "success path must leave dirty=false");
         assert!(!app.status_message.contains("Warning:"), "success path must not have warning: {}", app.status_message);
@@ -4844,7 +4868,10 @@ mod tests {
         app.maps.blank_briefing = "Alpine conquest mission briefing.".to_string();
 
         let intent = app.maps.request_build_flat_template().expect("flat template intent");
-        let info = app.build_and_install_flat_template(&intent.game_path, &intent.spec).expect("map build still succeeds on briefing failure");
+        let (info, briefing_warning) = app
+            .build_and_install_flat_template(&intent.game_path, &intent.spec)
+            .expect("map build still succeeds on briefing failure");
+        assert!(briefing_warning.is_some());
 
         assert_eq!(info.id(), "ENDL_005");
         assert_eq!(app.ambience.briefing_title, "Alpine conquest mission briefing.");
@@ -4854,6 +4881,42 @@ mod tests {
             "status bar warning must be reported: {}",
             app.status_message
         );
+
+        let _ = std::fs::remove_dir_all(&temp_root);
+    }
+
+    #[test]
+    fn test_perform_action_flat_template_clears_stale_warning() {
+        let temp_root = temp_map_dir("flat_stale_warn");
+        let src = temp_root.join("MAPS").join("ENDL_001");
+        std::fs::create_dir_all(&src).unwrap();
+        let mut terrain = TerrainSession::create_blank(257, 50);
+        safe_save_map(&src, &mut terrain).unwrap();
+        std::fs::write(src.join("level.put"), "var:map_name =\"Template\";\r\n").unwrap();
+        std::fs::create_dir_all(src.join("TEXT").join("US")).unwrap();
+        std::fs::write(src.join("TEXT").join("US").join("briefing.put"), "var:briefing_titel_1=\"Original\"\r\n").unwrap();
+        std::fs::write(src.join("map.sdl"), "[settlement]\r\nrefpos=100.0,0.0,100.0\r\n").unwrap();
+        std::fs::write(src.join("boden.ini"), "[Dimension]\r\n64\r\n[Waterlevel]\r\n30.0\r\n[Heightmapstep]\r\n2.0\r\n").unwrap();
+        let mut boden_txt = String::from("[Dimension]\n64\n\n[Texturen]\n");
+        for _ in 0..4096 {
+            boden_txt.push_str("GRAS_1\n");
+        }
+        std::fs::write(src.join("boden.txt"), boden_txt).unwrap();
+
+        let mut app = EditorApp::initial_state();
+        app.maps.game_path_input = temp_root.to_string_lossy().to_string();
+        app.maps.blank_source_slot = 1;
+        app.maps.blank_target_name = "Flat Stale Test".to_string();
+        // Stale warning from an earlier unrelated action
+        app.status_message = "Warning: Some stale unrelated warning from earlier / 警告：先前不相干的舊警告".to_string();
+
+        let intent = app.maps.request_build_flat_template().expect("flat template intent");
+        let ctx = egui::Context::default();
+        app.perform_action(PendingAction::BuildBlank(intent), &ctx);
+
+        assert!(!app.status_is_error);
+        assert!(app.status_message.contains("created and opened; terrain flattened (unsaved)"));
+        assert!(!app.status_message.contains("stale unrelated warning"));
 
         let _ = std::fs::remove_dir_all(&temp_root);
     }
@@ -4941,6 +5004,91 @@ mod tests {
         });
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_map_properties_camera_safe_save_workflow() {
+        let root = temp_map_dir("camera_safe_save_root");
+        let dir = root.join("MAPS").join("ENDL_006");
+        std::fs::create_dir_all(dir.join("SCRIPT")).unwrap();
+        std::fs::create_dir_all(root.join("SYSTEM/CLAK")).unwrap();
+        std::fs::write(root.join("SYSTEM/CLAK/cl_scint.ini"), "[ObjDefName]\nGER_HAU00=BauGerHau00\n").unwrap();
+        let original = against_rome_scenario::BciImage::idle().serialize();
+        std::fs::write(dir.join("SCRIPT/ak_level.bci"), &original).unwrap();
+
+        let doc = against_rome_scenario::ScenarioDocument {
+            spawns: vec![against_rome_scenario::Spawn {
+                id: uuid::Uuid::new_v4(),
+                alias: "GER_HAU00".into(),
+                team: 0,
+                x: 4500.0,
+                y: 0.0,
+                z: 6200.0,
+                count: 1,
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        std::fs::write(dir.join("arm_scenario.json"), serde_json::to_string(&doc).unwrap()).unwrap();
+
+        let mut app = EditorApp::initial_state();
+        app.set_loaded_map(dir.clone(), TerrainSession::create_blank(33, 32)).unwrap();
+        app.scenario.load_session(&dir).unwrap();
+        assert!(!app.scenario.dirty());
+        assert_eq!(app.player_main_house_position(), Some((4500.0, 6200.0)));
+
+        app.map_properties_open = true;
+
+        // 1. Change start camera via Map properties (sets camera_dirty = true, candidate is None)
+        app.campaign.start_camera.enabled = true;
+        app.campaign.start_camera.x = 1200.0;
+        app.campaign.start_camera.z = 3400.0;
+        app.campaign.camera_dirty = true;
+        assert!(!app.campaign.camera_candidate_ready());
+
+        // Safe Save is blocked before applying
+        app.safe_save_current();
+        assert!(app.status_is_error, "Safe Save must be blocked without apply");
+        assert!(app.status_message.contains("Apply to the loaded map before Safe Save"));
+
+        // 2. Click Apply in Map properties:
+        app.apply_start_camera_candidate_from_ui().unwrap();
+        assert!(app.campaign.camera_candidate_ready());
+
+        // Safe Save now succeeds and writes camera
+        app.safe_save_current();
+        assert!(!app.status_is_error, "Safe Save must succeed after Apply: {}", app.status_message);
+        assert!(!app.campaign.camera_dirty);
+        assert!(!app.campaign.camera_pending());
+
+        let written_cam: against_rome_campaign::MapStartCamera = serde_json::from_str(
+            &std::fs::read_to_string(dir.join("arm_start_camera.json")).expect("arm_start_camera.json written"),
+        ).unwrap();
+        assert!(written_cam.enabled);
+        assert_eq!(written_cam.x, 1200.0);
+        assert_eq!(written_cam.z, 3400.0);
+        let bci_bytes = std::fs::read(dir.join("SCRIPT/ak_level.bci")).unwrap();
+        assert_ne!(bci_bytes, original, "BCI script must be updated with camera shim");
+
+        // 3. Center on player main house automatically applies candidate:
+        assert!(app.center_start_camera_on_player_main_house());
+        assert_eq!(app.campaign.start_camera.x, 4500.0);
+        assert_eq!(app.campaign.start_camera.z, 6200.0);
+        assert!(app.campaign.camera_dirty);
+        assert!(app.campaign.camera_candidate_ready());
+
+        // Safe Save succeeds and writes the centered camera
+        app.safe_save_current();
+        assert!(!app.status_is_error, "Safe Save must succeed after center on main house: {}", app.status_message);
+
+        let written_cam2: against_rome_campaign::MapStartCamera = serde_json::from_str(
+            &std::fs::read_to_string(dir.join("arm_start_camera.json")).expect("arm_start_camera.json written"),
+        ).unwrap();
+        assert!(written_cam2.enabled);
+        assert_eq!(written_cam2.x, 4500.0);
+        assert_eq!(written_cam2.z, 6200.0);
+
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
@@ -11976,24 +12124,52 @@ impl EditorApp {
                     ui.add_space(4.0);
                     let main_house = self.player_main_house_position();
                     let has_main_house = main_house.is_some();
-                    let center_btn = ui.add_enabled(
-                        has_main_house,
-                        egui::Button::new(tr(
-                            lang,
-                            "Center on player main house",
-                            "置中玩家主屋",
-                        )),
-                    );
-                    if has_main_house {
-                        if center_btn.clicked() {
-                            self.center_start_camera_on_player_main_house();
+                    ui.horizontal(|ui| {
+                        let center_btn = ui.add_enabled(
+                            has_main_house,
+                            egui::Button::new(tr(
+                                lang,
+                                "Center on player main house",
+                                "置中玩家主屋",
+                            )),
+                        );
+                        if has_main_house {
+                            if center_btn.clicked() {
+                                self.center_start_camera_on_player_main_house();
+                            }
+                        } else {
+                            center_btn.on_disabled_hover_text(tr(
+                                lang,
+                                "No player main house (Team 0) found on the map",
+                                "未在地圖上找到玩家主屋（陣營 0）",
+                            ));
                         }
-                    } else {
-                        center_btn.on_disabled_hover_text(tr(
-                            lang,
-                            "No player main house (Team 0) found on the map",
-                            "未在地圖上找到玩家主屋（陣營 0）",
-                        ));
+
+                        if ui.button(tr(lang, "Apply", "套用")).clicked() {
+                            let _ = self.apply_start_camera_candidate_from_ui();
+                        }
+                    });
+
+                    if self.campaign.camera_dirty {
+                        if self.campaign.camera_candidate_ready() {
+                            ui.colored_label(
+                                egui::Color32::from_rgb(120, 200, 120),
+                                tr(
+                                    lang,
+                                    "Candidate ready; use Safe Save to write.",
+                                    "候選已備妥；使用安全儲存寫入。",
+                                ),
+                            );
+                        } else {
+                            ui.colored_label(
+                                egui::Color32::from_rgb(220, 180, 80),
+                                tr(
+                                    lang,
+                                    "Camera edited; click Apply before Safe Save.",
+                                    "鏡頭已變更；安全儲存前請點擊「套用」。",
+                                ),
+                            );
+                        }
                     }
                 });
             });
